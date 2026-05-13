@@ -6,7 +6,7 @@ to `pr-open`. This phase is terminal.
 ## Pre-flight
 
 User must have confirmed in Phase 3. If unclear, ask again:
-> "Sicher, dass ich den PR jetzt erstelle? (ja / nein)"
+> "Are you sure you want to create the PR now? (yes / no)"
 
 ### 4.1 Check `gh` auth
 
@@ -14,7 +14,7 @@ User must have confirmed in Phase 3. If unclear, ask again:
 gh auth status
 ```
 
-If not authenticated: tell user in German to run `gh auth login`, abort.
+If not authenticated: tell the user to run `gh auth login`, abort.
 
 ### 4.2 Push branch (if needed)
 
@@ -51,15 +51,15 @@ node ~/.claude/skills/_shared/a1-tools.cjs pr mark-pr-open <id> "<pr-url>"
 
 This sets `status: pr-open` and appends to `phase_history`.
 
-### 4.6 Report (German)
+### 4.6 Report
 
 ```
-PR ist offen: <pr-url>
+PR is open: <pr-url>
 
-Inline-Kommentare aus MINOR-Findings (optional manuell posten):
-<worktree>/.a1-review/inline-comments.md  (X Einträge)
+Inline comments from MINOR findings (optionally post manually):
+<worktree>/.a1-review/inline-comments.md  (X entries)
 
-a1-pr-review ist fertig. Registry steht auf `pr-open`.
+a1-pr-review is complete. Registry status: `pr-open`.
 ```
 
 ## Failure modes

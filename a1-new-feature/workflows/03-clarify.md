@@ -42,40 +42,39 @@ spawning Rene, so Rene has a complete list in one pass.
 Use the **Agent** tool with `subagent_type: "rene-requirement-engineer"` and
 `model: "opus"` to spawn Rene with this brief:
 
-> Du bist Rene. Die Spec in `<spec-path>` hat N offene `[NEEDS CLARIFICATION]`-Marker —
-> sowohl die vom Specify-Schritt als auch frisch identifizierte Scope-Lücken.
-> Dein Auftrag: jeden Marker klären. **Maximal 2 Fragen pro Turn**, auf **Deutsch**.
+> You are Rene. The spec at `<spec-path>` has N open `[NEEDS CLARIFICATION]` markers —
+> both from the Specify step and freshly identified scope gaps.
+> Your task: clarify every marker. **Maximum 2 questions per turn**.
 >
-> **Vorgehen pro Marker:**
+> **Approach per marker:**
 >
-> 1. Lies die Stelle inkl. Kontext (Story, FR, SC, Edge Case, Scope-Gap-Kategorie).
-> 2. Stelle dem User die konkrete Frage. Biete wo sinnvoll 2–3 Optionen mit einer klaren
->    Empfehlung an (1 Satz Begründung reicht). Faustregel: wenn die Antwort die
->    Implementation signifikant verändert → fragen; wenn es eine vernünftige Default-Wahl
->    gibt und Robert damit zufrieden wäre → empfehlen und nur bestätigen lassen.
-> 3. Sobald die Antwort da ist:
->    - Ersetze den Marker durch den konkreten Wert/die Entscheidung.
->    - Hänge unter `## Clarifications` an:
+> 1. Read the location including context (story, FR, SC, edge case, scope-gap category).
+> 2. Ask the user the concrete question. Where useful, offer 2–3 options with a clear
+>    recommendation (1-sentence reasoning). Rule of thumb: if the answer significantly
+>    changes the implementation → ask; if there is a sensible default → recommend and just
+>    confirm.
+> 3. Once the answer is in:
+>    - Replace the marker with the concrete value/decision.
+>    - Append under `## Clarifications`:
 >      ```
->      - **YYYY-MM-DD** — <Kategorie>: <Entscheidung>. Reason: <1-Satz>.
+>      - **YYYY-MM-DD** — <Category>: <Decision>. Reason: <1-sentence>.
 >      ```
-> 4. Nächster Marker.
+> 4. Next marker.
 >
-> **Scope-Gap-Fragen** (Kategorie-Tags in den Markern): Priorisiere diese zusätzlich nach
-> Rework-Risiko. Ein falscher Annahme bei "Navigation after save" kostet 2 Fixes; ein
-> falscher Default bei "Mobile" kostet 0 wenn wir Desktop-first bauen. Dementsprechend
-> priorisieren.
+> **Scope-gap questions** (category tags in the markers): additionally prioritize by
+> rework risk. A wrong assumption about "Navigation after save" costs 2 fixes; a wrong
+> default for "Mobile" costs 0 if we build desktop-first. Prioritize accordingly.
 >
 > **Hard rules:**
-> - Keine Marker ungefragt überschreiben.
-> - Wenn beim Klären eine neue Ambiguität entsteht: sofort als Marker hinzufügen und
->   in dieser Session klären — kein Defer auf später.
-> - Wenn der User "mach einfach" sagt: dokumentiere den gewählten Default als
->   Clarification-Eintrag mit "Default adopted:" und schließe den Marker.
-> - Phase 3 endet erst wenn ALLE Marker weg sind (0 verbleibende).
+> - Never overwrite markers without asking.
+> - If a new ambiguity emerges while clarifying: immediately add it as a marker and
+>   resolve it in this session — no deferring.
+> - If the user says "just do it": document the chosen default as a Clarification entry
+>   with "Default adopted:" and close the marker.
+> - Phase 3 ends only when ALL markers are gone (0 remaining).
 >
-> Wenn fertig: melde "Clarify komplett. N Klärungen gespeichert. Spec ist
-> implementation-ready." und liste die Entscheidungen kurz auf.
+> When done: report "Clarify complete. N clarifications saved. Spec is
+> implementation-ready." and briefly list the decisions.
 
 ## Step 2b — UX Mockups (frontend features only)
 
@@ -95,47 +94,47 @@ Screen 2: …
 ### 2b-2 — Determine design system skill
 
 Check target project CLAUDE.md. Use the mapping from SKILL.md → `Design-System Skill per Project`.
-For n3ural-platform: skill is `n3urala1-design` (`~/.claude/skills/n3urala1-design`).
+Fallback if no design system is specified: `frontend-design`.
 
 ### 2b-3 — Spawn Uwe
 
 Use the **Agent** tool with `subagent_type: "uwe-ux-expert"` and this brief:
 
-> Du bist Uwe. Wir sind in Phase 3 (Clarify) des a1-new-feature Flows für das Feature
+> You are Uwe. We are in Phase 3 (Clarify) of the a1-new-feature flow for the feature
 > `<feature-name>`.
 >
-> **Dein Auftrag:** Baue für jeden der folgenden Screens **mindestens 2–3 Mockup-Varianten**
-> (ASCII-Wireframe-Stil, klar beschriftet) und präsentiere sie Robert zur Abnahme.
+> **Your task:** Build **at least 2–3 mockup variants** for each of the following screens
+> (ASCII wireframe style, clearly labeled) and present them to the user for approval.
 >
 > **Screens:**
 > <list from 2b-1>
 >
-> **Design System:** Projekt `<project-name>`. Lade den Skill `<design-system-skill>` und
-> halte alle Mockups konsequent darin: Farbpalette, Spacing-System, Typografie, Komponenten-
-> Namen (Buttons, Badges, Cards, Tables, Modals) exakt so wie im Design System definiert.
+> **Design system:** Project `<project-name>`. Load the skill `<design-system-skill>` and
+> keep all mockups strictly within it: color palette, spacing system, typography, component
+> names (buttons, badges, cards, tables, modals) exactly as defined in the design system.
 >
-> **Vorgehen pro Screen:**
-> 1. Baue 2–3 Varianten (unterschiedliche Layouts / Interaktionsmuster — nicht nur kosmetische
->    Unterschiede). Jede Variante bekommt einen Namen und eine 1-Satz-Begründung.
-> 2. Empfiehl eine Variante mit max. 2 Sätzen Begründung.
-> 3. Präsentiere Robert die Varianten und bitte um Auswahl oder Feedback.
-> 4. Nach Auswahl: dokumentiere die Entscheidung als `UX Decision` (Format unten).
+> **Approach per screen:**
+> 1. Build 2–3 variants (different layouts / interaction patterns — not just cosmetic
+>    differences). Each variant gets a name and a 1-sentence rationale.
+> 2. Recommend one variant with max. 2 sentences of reasoning.
+> 3. Present the variants to the user and ask for a selection or feedback.
+> 4. After selection: document the decision as a `UX Decision` (format below).
 >
-> **Format UX Decision:**
+> **UX Decision format:**
 > ```
-> - **YYYY-MM-DD** — UX/<screen-name>: Variante <X> gewählt. Reason: <1-Satz>.
+> - **YYYY-MM-DD** — UX/<screen-name>: Variant <X> chosen. Reason: <1-sentence>.
 > ```
-> Hänge alle UX Decisions unter `## Clarifications` in der Spec an:
+> Append all UX Decisions under `## Clarifications` in the spec:
 > `<spec-path>`
 >
 > **Hard rules:**
-> - Keine Variante ohne Design-System-Konformität präsentieren.
-> - Wenn Robert "mach einfach" sagt: empfohlene Variante nehmen, als "Default adopted:" dokumentieren.
-> - Wenn Robert eine eigene Idee einbringt: als Variante 0 aufnehmen und mit den anderen vergleichen.
-> - Wenn der Screen responsiv sein muss: je Variante Desktop + Mobile zeigen.
+> - Never present a variant that doesn't comply with the design system.
+> - If the user says "just do it": take the recommended variant, document as "Default adopted:".
+> - If the user brings their own idea: add it as Variant 0 and compare it with the others.
+> - If the screen must be responsive: show Desktop + Mobile for each variant.
 >
-> Wenn alle Screens abgenommen sind: melde "UX Mockups abgenommen. N Screens, N Entscheidungen
-> gespeichert." und liste die gewählten Varianten kurz auf.
+> When all screens are approved: report "UX Mockups approved. N screens, N decisions saved."
+> and briefly list the chosen variants.
 
 ### 2b-4 — Verify UX decisions written
 
@@ -167,7 +166,7 @@ Helper appends `phase: specify, completed: <iso>` and `phase: clarify, completed
 
 ## Hand-off to Phase 4
 
-Tell user (German): "Spec ist clarified. Soll Vincente jetzt den Wave-Plan bauen (Phase 4)?"
+Tell the user: "Spec is clarified. Should Vincente build the wave plan now (Phase 4)?"
 
 On yes: load `workflows/04-plan.md`.
 On hold: stop. The spec sits at status `clarified` and can be picked up later without rework.

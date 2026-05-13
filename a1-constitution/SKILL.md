@@ -76,7 +76,7 @@ user removes or archives it manually.
    - `reviewed` → Phase 4 (Write)
    - `written` → Done; offer to start an update cycle (which archives current
      and re-enters Phase 1) or exit.
-   - `cancelled` → confirm and stop; ask Robert to clean up manually.
+   - `cancelled` → confirm and stop; ask the user to clean up manually.
 
 ## State mechanics
 
@@ -145,27 +145,26 @@ set-body` and transitions to `drafted`.
 - The repo CLAUDE.md is touched ONLY via `constitution link-claudemd`, which
   is idempotent (managed HTML-comment block).
 - One question per turn in Phase 1 interview. Max 3 user-facing questions.
-- User-facing prompts are in **German**. All file content (frontmatter, body,
+- User-facing prompts are in **English**. All file content (frontmatter, body,
   references) stays in English.
 - Finn is referenced via `agents/finn-link.md`, never redefined here.
 - The skill NEVER auto-spawns Reinhard, Tobi, or any other agent after Phase 4.
   Post-write recommendations are surface-level suggestions only.
-- A `cancelled` constitution keeps its file slot. Robert must manually delete
+- A `cancelled` constitution keeps its file slot. The user must manually delete
   or move it to `history/` before a fresh init.
 
 ## Hand-offs (soft, no auto-spawn)
 
-After Phase 4, the skill surfaces these recommendations in German:
+After Phase 4, the skill surfaces these recommendations:
 
-- **First-time constitution:** "CLAUDE.md wurde um Cross-Link ergänzt. Repo-Spiegel
-  geschrieben. Vault-File ist Source of Truth."
-- **Updated constitution:** "History-Snapshot unter `history/<date>-v<N>.md`
-  gesichert. Wenn Regeln verschärft wurden, kann Reinhard manuell bestehende
-  PRs gegen die neue Constitution prüfen (constitution-aware Review ist M3-Roadmap,
-  noch nicht automatisch)."
-- **Missing CLAUDE.md:** Phase 1 soft-blocks. "CLAUDE.md fehlt unter
-  `<repo-root>/CLAUDE.md`. Bitte zuerst über `~/.claude/templates/CLAUDE.md.template`
-  anlegen, dann `a1-constitution` erneut starten."
+- **First-time constitution:** "CLAUDE.md has been updated with a cross-link.
+  Repo mirror written. Vault file is the source of truth."
+- **Updated constitution:** "History snapshot saved under `history/<date>-v<N>.md`.
+  If rules were tightened, Reinhard can manually review recent PRs against the
+  new constitution (constitution-aware review is M3-roadmap, not yet automatic)."
+- **Missing CLAUDE.md:** Phase 1 soft-blocks. "CLAUDE.md is missing at
+  `<repo-root>/CLAUDE.md`. Please create it first from
+  `~/.claude/templates/CLAUDE.md.template`, then restart `a1-constitution`."
 
 ## Versions
 

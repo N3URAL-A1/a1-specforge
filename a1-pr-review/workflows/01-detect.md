@@ -23,9 +23,9 @@ phase_history }`.
 ### 1.2 Resolve to one entry
 
 - If user named a slug → filter by `slug`. If 0 matches → tell the user
-  in German which slugs ARE available, abort.
+  which slugs ARE available, abort.
 - If user did not name one and the array has exactly one entry → use it.
-- If more than one entry → list slugs to the user in German, ask which.
+- If more than one entry → list slugs to the user, ask which to use.
 
 ### 1.3 Validate worktree on disk
 
@@ -50,13 +50,12 @@ node ~/.claude/skills/_shared/a1-tools.cjs pr mark-status <id> in-review
 
 ### 1.6 Hand-off to Phase 2
 
-Tell the user in German what was selected (slug, branch, commits since
+Tell the user what was selected (slug, branch, commits since
 base). Then proceed to `workflows/02-review.md` automatically.
 
 ## Failure modes
 
-- No handoff entries → exit with German message: "Keine Worktrees im
-  Status `handoff`. Erst per `a1-worktree exit --mode handoff` einen
-  Branch übergeben."
+- No handoff entries → exit with message: "No worktrees in status
+  `handoff`. Use `a1-worktree exit --mode handoff` to hand off a branch first."
 - Slug ambiguous → ask the user, do not guess.
 - Worktree path missing → do not proceed; user must run `worktree gc`.

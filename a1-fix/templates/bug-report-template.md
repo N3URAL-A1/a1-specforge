@@ -6,7 +6,7 @@ title: <ONE_LINE_TITLE>
 status: reported
 severity: <blocker|major|minor|nit>
 reported_at: <YYYY-MM-DDTHH:MM>
-reporter: Robert
+reporter: <REPORTER>
 affected_repos:
   - <repo-name>
 related_deploy: <commit-hash-or-date-or-unknown>

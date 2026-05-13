@@ -1,27 +1,27 @@
 # Phase 01 — Discover
 
-Goal: turn a vague request ("Constitution für niimo") into a fully scoped
+Goal: turn a vague request ("Constitution for my-project") into a fully scoped
 discovery payload ready to feed Finn in Phase 2. Output: vault constitution
 file on disk with `status: discovering` and a `discovery_payload.json` cached
 in a tmp file for Phase 2.
 
 ## Inputs you need before starting
 
-- Project slug (e.g. `niimo`, `n3ural-platform`)
+- Project slug (e.g. `my-project`, `my-platform`)
 - Repo root (absolute path on disk) — needed for CLAUDE.md scan + later mirror
 - 3-5 project-specific behavioral concerns from the user (interview)
 
-Max 3 user-facing questions, one per turn, **in German**.
+Max 3 user-facing questions, one per turn.
 
 ## Step 1 — Determine project slug
 
 If the user named a project, derive the slug:
-- "Niimo" → `niimo`
-- "n3ural-platform" / "Plattform" → `n3ural-platform`
+- "my-project" → `my-project`
+- "my-platform" / "platform" → `my-platform`
 - "a1-specforge" → `a1-specforge`
 
-If unclear, ask **in German**:
-> "Für welches Projekt soll die Constitution gebaut werden? (slug, z.B. `niimo`, `n3ural-platform`)"
+If unclear, ask the user:
+> "Which project should the constitution be built for? (slug, e.g. `my-project`, `my-platform`)"
 
 ## Step 2 — Determine repo root
 
@@ -29,17 +29,17 @@ Default mapping (verify via Bash before using):
 
 | Slug | Default repo root |
 |---|---|
-| `niimo` | `/Users/rob/code/niimo` |
-| `n3ural-platform` | `/Users/rob/code/n3ural-platform` |
-| `a1-specforge` | `/Users/rob/code/a1-specforge` |
+| `my-project` | `/path/to/my-project` |
+| `my-platform` | `/path/to/my-platform` |
+| `a1-specforge` | `/path/to/a1-specforge` |
 
 Verify:
 ```bash
 ls -d <candidate-path> 2>&1
 ```
 
-If ambiguous or missing, ask **in German**:
-> "Wo liegt das Repo lokal? (absoluter Pfad, z.B. `/Users/rob/code/<slug>`)"
+If ambiguous or missing, ask the user:
+> "Where is the repo located locally? (absolute path, e.g. `/path/to/<slug>`)"
 
 ## Step 3 — Check preconditions and existing state
 
@@ -51,21 +51,20 @@ node ~/.claude/skills/_shared/a1-tools.cjs constitution discover <project-slug> 
 
 Parse the JSON. Check three things:
 
-1. **CLAUDE.md missing?** If `claudemd_present: false` → soft-block. Tell Robert
-   **in German**:
-   > "CLAUDE.md fehlt unter `<repo-root>/CLAUDE.md`. Constitution braucht CLAUDE.md
-   > als Daten-Pendant. Bitte zuerst über `~/.claude/templates/CLAUDE.md.template`
-   > anlegen, dann starte ich erneut."
+1. **CLAUDE.md missing?** If `claudemd_present: false` → soft-block. Tell the user:
+   > "CLAUDE.md is missing at `<repo-root>/CLAUDE.md`. Constitution requires CLAUDE.md
+   > as its data counterpart. Please create it first from
+   > `~/.claude/templates/CLAUDE.md.template`, then try again."
 
    Stop. Do not init the vault file.
 
 2. **Vault constitution already exists?** Check
    `ls "<vault-root>/projects/<slug>/constitution/constitution.md"`. If yes:
    - Read its frontmatter (via Read tool, just to inspect — do NOT modify).
-   - If `status` is `written`: ask Robert **in German**:
-     > "Es existiert bereits eine Constitution für `<slug>` (version <N>, zuletzt
-     > geschrieben <date>). Möchtest du eine neue Version starten? (ja = aktuelle
-     > wird archiviert in `history/`, dann neu init / nein = abbrechen)"
+   - If `status` is `written`: ask the user:
+     > "A constitution for `<slug>` already exists (version <N>, last written <date>).
+     > Would you like to start a new version? (yes = current will be archived in
+     > `history/`, then re-init / no = cancel)"
      If yes: run `archive-current` (this also bumps version in the live file)
      and continue with init. Note: re-init will fail if the live file still
      exists, so we delete the live file after archiving:
@@ -75,15 +74,15 @@ Parse the JSON. Check three things:
      ```
      Then proceed to Step 4.
    - If `status` is `discovering`, `drafted`, or `reviewed`: do NOT init. Tell
-     Robert and offer to resume that phase instead.
-   - If `status` is `cancelled`: tell Robert and ask him to clean up manually
+     the user and offer to resume that phase instead.
+   - If `status` is `cancelled`: tell the user and ask them to clean up manually
      (move or delete the cancelled file).
 
 3. **Repo constitution.md already exists but no vault file?** That is a drift.
-   Tell Robert **in German**: "Im Repo gibt es bereits eine `constitution.md`,
-   aber keine Vault-Version. Soll ich die Vault-Version aus dem Repo importieren
-   (manueller Schritt — bitte Inhalt prüfen) oder bei Null anfangen und den
-   Repo-Spiegel später überschreiben?" — wait for decision.
+   Tell the user: "The repo already has a `constitution.md`, but no vault version
+   exists. Should I import the vault version from the repo (manual step — please
+   review the content) or start from scratch and overwrite the repo mirror later?"
+   — wait for decision.
 
 ## Step 4 — Initialize the vault file
 
@@ -94,22 +93,22 @@ node ~/.claude/skills/_shared/a1-tools.cjs constitution init <project-slug> \
 
 Returns JSON with the absolute vault path. Capture it as `CONST_PATH`.
 
-## Step 5 — Behavioral-rules interview (3-5 Q in German)
+## Step 5 — Behavioral-rules interview (3 questions)
 
 Now collect project-specific behavioral concerns. These become the "Project
 Behavioral Rules" section in the constitution. Ask **one question per turn**,
-in German, max 3 questions total. Suggested:
+max 3 questions total. Suggested:
 
-1. > "Welche 2-3 Regeln gelten projektweit, die nicht in den globalen Rules
-   >  stehen? (z.B. RLS-Pflicht, kein Hotfix ohne PR-Review, Migrations immer
-   >  in eigener PR, ...)"
+1. > "What are 2-3 project-wide rules that are not in the global rules?
+   >  (e.g. RLS required everywhere, no hotfix without PR review, migrations always
+   >  in a dedicated PR, ...)"
 
-2. > "Gibt es Agent-Rollen, die in diesem Projekt **eingeschränkt** sind?
-   >  (z.B. „Walter darf hier nichts deployen, nur lokal bauen", „Aik macht
-   >  keine RAG-Experimente in production code", ...)"
+2. > "Are there agent roles that are **restricted** in this project?
+   >  (e.g. 'Walter may not deploy here, only build locally', 'Aik does no RAG
+   >  experiments in production code', ...)"
 
-3. > "Was ist die wichtigste Konvention, die ein neuer Agent in 30 Sekunden
-   >  wissen muss, bevor er Code anfasst?"
+3. > "What is the most important convention a new agent must know in 30 seconds
+   >  before touching any code?"
 
 Capture answers verbatim. They go into the Finn brief in Phase 2.
 
@@ -142,29 +141,26 @@ Capture the tmp path as `DISCOVERY_PAYLOAD_PATH`.
 
 ## Step 7 — Confirm and route to Phase 2
 
-Tell Robert **in German**:
-> "Discovery abgeschlossen. Vault-Datei: `projects/<slug>/constitution/constitution.md`
->  (status: discovering). Globale Rules erfasst: <N>, CLAUDE.md gelesen, Interview
->  geführt.
+Tell the user:
+> "Discovery complete. Vault file: `projects/<slug>/constitution/constitution.md`
+>  (status: discovering). Global rules captured: <N>, CLAUDE.md read, interview done.
 >
->  Soll ich Phase 2 starten? Finn (cc-architect) bekommt den Discovery-Output
->  und entwirft die Constitution."
+>  Should I start Phase 2? Finn (cc-architect) will receive the discovery output
+>  and draft the constitution."
 
 If yes: proceed to `02-draft.md`. Do NOT auto-update status — the status moves
 to `drafted` only AFTER Finn returns successfully in Phase 2.
 
 ## Special exits
 
-- **User abbricht in Phase 1:**
+- **User cancels in Phase 1:**
   ```bash
   node ~/.claude/skills/_shared/a1-tools.cjs constitution update-status \
     "<CONST_PATH>" cancelled
   ```
-  Tell Robert auf Deutsch: "Constitution abgebrochen vor Draft. Status auf
-  cancelled. Vault-File bleibt für Audit. Beim nächsten Start bitte erst
-  manuell aufräumen."
+  Tell the user: "Constitution cancelled before Draft. Status set to cancelled.
+  Vault file is kept for audit. Please clean up manually before the next run."
 
 - **CLI-Error in `init` (file already exists):** that means there's a leftover
-  file the routing in Step 3 missed. Tell Robert auf Deutsch was kaputt ist
-  und biete an, ihn beim Aufräumen zu unterstützen — aber editiere keine Files
-  ohne explizite Bestätigung.
+  file the routing in Step 3 missed. Tell the user what is broken and offer to
+  help clean up — but do not edit any files without explicit confirmation.

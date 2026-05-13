@@ -5,12 +5,12 @@ Goal: clarify trigger mode + targets, then create the drift-report file with
 
 ## Step 1 — Determine trigger mode
 
-If Robert didn't say it explicitly, ask in German (one question per turn):
+If the user didn't say it explicitly, ask (one question per turn):
 
-> "Welcher Drift-Check?
->  - `single` — eine bestimmte Spec eines Projekts
->  - `project` — alle Specs eines Projekts (Pre-Release-Audit)
->  - `vault-sync` — alle Projekte (wöchentliches Hygiene-Sweep)"
+> "Which drift check?
+>  - `single` — a specific spec of one project
+>  - `project` — all specs of one project (pre-release audit)
+>  - `vault-sync` — all projects (weekly hygiene sweep)"
 
 ## Step 2 — Resolve targets
 
@@ -18,7 +18,7 @@ If Robert didn't say it explicitly, ask in German (one question per turn):
 |---|---|---|
 | `single` | project slug + spec id (`<###>-<slug>`) | Ask if missing; verify spec file exists |
 | `project` | project slug | List `projects/<slug>/spec/*.md`, filter `status: clarified` or `status: shipped` |
-| `vault-sync` | — | Scan `~/Documents/Obsidian Vault/projects/*/spec/` |
+| `vault-sync` | — | Scan `$A1_VAULT_ROOT/projects/*/spec/` (default: `~/Documents/Obsidian Vault`) |
 
 For `single`/`project`, confirm the absolute repo path of the project (where
 the code lives). For `vault-sync`, the skill maps each project slug to its
@@ -53,20 +53,20 @@ node ~/.claude/skills/_shared/a1-tools.cjs reconcile init \
 The CLI writes the frontmatter (status=`scoped`, scope_mode, scope_targets[],
 phase_history with Phase 1 timestamp) and an empty body skeleton.
 
-## Step 4 — Summarize for Robert, in German
+## Step 4 — Summarize for the user
 
-> "Drift-Report angelegt: `<path>`
->  Mode: <mode>. <n> Target(s):
+> "Drift report created: `<path>`
+>  Mode: <mode>. <n> target(s):
 >    - <project>/<spec-id>
 >    - ...
->  Soll ich Phase 2 (Parse — Acceptance Criteria extrahieren) starten?"
+>  Should I start Phase 2 (Parse — extract acceptance criteria)?"
 
 If yes: proceed to `02-parse.md`.
 If no: stop. Status `scoped` persists.
 
 ## Edge cases
 
-- **Spec not found:** ask Robert to create the spec first (`a1-new-feature`)
+- **Spec not found:** ask the user to create the spec first (`a1-new-feature`)
   or correct the id. Do not create a drift report yet.
 - **Spec status is `draft`:** confirm the user wants to reconcile against an
   unfinished spec. Default: refuse, status must be `clarified` or later.

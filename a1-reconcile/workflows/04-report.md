@@ -74,20 +74,20 @@ node ~/.claude/skills/_shared/a1-tools.cjs reconcile update-status \
   "<drift-path>" reported
 ```
 
-## Step 6 — Summarize for Robert, in German
+## Step 6 — Summarize for the user
 
-> "Drift-Report fertig: `<path>`
+> "Drift report complete: `<path>`
 >
->  Befund: <n> Drifts (<m> MISSING, <e> EXTRA, <d> DIVERGED, <s> STALE),
->  <i> Artefakte in-sync.
+>  Findings: <n> drifts (<m> MISSING, <e> EXTRA, <d> DIVERGED, <s> STALE),
+>  <i> artifacts in-sync.
 >
->  Vorschlag(e):
+>  Suggestion(s):
 >  - <skill>: <reason> — FRs <list>
 >  - ...
 >
->  Soll ich einen davon anstoßen, oder reicht der Report?"
+>  Should I trigger one of these, or is the report sufficient?"
 
-Wait for Robert's decision. **Never auto-trigger another skill.**
+Wait for the user's decision. **Never auto-trigger another skill.**
 
 ## Edge cases
 
@@ -99,6 +99,6 @@ Wait for Robert's decision. **Never auto-trigger another skill.**
   agents completed and which didn't.
 - **vault-sync with skipped projects:** the body's "Skipped projects" section
   must list each one. Hand-offs are computed only over non-skipped targets.
-- **Robert closes the chat before approving Step 6's hand-offs:** the report
+- **User closes the chat before approving Step 6's hand-offs:** the report
   is final on disk (status `reported`), `suggested_next[]` is set in
   frontmatter, no irreversible action was taken. Safe to abandon.

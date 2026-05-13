@@ -29,14 +29,14 @@ Für jede User Story (P1 zuerst, dann P2, P3):
 Nutze Browser-Automation wenn verfügbar (mcp__claude-in-chrome__*), sonst gib dem User
 eine **konkrete, schrittweise Anleitung mit exakter URL und erwarteter UI-Reaktion**:
 
-> "**Story <US-ID> — <kurzer Titel>**
+> "**Story <US-ID> — <short title>**
 >
-> Bitte öffne: `<production-url>/<pfad>`
-> Schritt 1: <klick/eingabe>
-> Schritt 2: <klick/eingabe>
-> Erwartetes Ergebnis: <was genau zu sehen sein soll>
+> Please open: `<production-url>/<path>`
+> Step 1: <click/input>
+> Step 2: <click/input>
+> Expected result: <what exactly should be visible>
 >
-> Verhält es sich so? (ja / nein / teilweise)"
+> Does it behave like this? (yes / no / partially)"
 
 Akzeptiere kein "müsste funktionieren" oder "hab ich nicht getestet" als `ja`.
 Nur "ich habe es gerade gemacht und es funktioniert" zählt als grün.
@@ -98,10 +98,10 @@ The helper:
   `phase_history`,
 - clears `verify_failures` to `[]`.
 
-Tell the user (German):
+Tell the user:
 
-> "Phase 6 grün. Spec ist `done`. Wave-Plan kann archiviert oder als Referenz für
-> ähnliche Features genutzt werden. Optional: Tobi für ein Final-Audit?"
+> "Phase 6 green. Spec is `done`. Wave plan can be archived or used as a reference for
+> similar features. Optional: Tobi for a final audit?"
 
 ### One or more scenarios failed
 
@@ -124,11 +124,11 @@ node ~/.claude/skills/_shared/a1-tools.cjs spec update-status \
 The helper reads the JSON file, validates the schema, and writes the entries into the
 `verify_failures` frontmatter array atomically.
 
-Status stays `implementing`. Tell the user (German):
+Status stays `implementing`. Tell the user:
 
-> "Phase 6 hat N Punkte gefunden, die nicht passen. Möchtest du:
-> a) Diese als Bugs zurück an die Code-Agents geben (Phase 5 erneut für betroffene Waves)?
-> b) Die Spec öffnen, falls die Erwartung selbst falsch war (zurück zu Phase 2/3)?"
+> "Phase 6 found N points that don't match. Would you like to:
+> a) Send these back to the code agents as bugs (re-run Phase 5 for affected waves)?
+> b) Open the spec, if the expectation itself was wrong (back to Phase 2/3)?"
 
 Do not advance to `done` until all failures are resolved and a re-verify is green.
 
@@ -142,5 +142,5 @@ brief:
 > Produkt?), UX (User Flow nachvollziehbar?), Architektur (saubere Trennung?), Compliance
 > (Datenschutz, Security, projekt-spezifische Regeln). Output als BLOCKER / MAJOR / MINOR.
 
-Tobi-Findings werden NICHT automatisch zu verify_failures — Robert entscheidet, ob ein Finding
-einen Bug zurück zu Phase 5 auslöst oder als Backlog läuft.
+Tobi findings do NOT automatically become verify_failures — the user decides whether a finding
+triggers a bug back to Phase 5 or goes to the backlog.

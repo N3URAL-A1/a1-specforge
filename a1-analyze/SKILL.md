@@ -153,8 +153,8 @@ into code.
   approval needed before each dispatch.
 - The skill NEVER writes into `projects/<slug>/fixes/` or `projects/<slug>/features/`.
 - The skill NEVER auto-activates `a1-fix` or `a1-new-feature`. It proposes;
-  Robert decides.
-- User-facing prompts and questions are in **German**. All file content
+  the user decides.
+- User-facing prompts and questions are in **English**. All file content
   (frontmatter, findings, code refs) stays in English.
 - One question per turn in Phase 1 (Scope). Max 2 clarifying questions.
 - Sub-agents are referenced via `agents/<name>-link.md`, never redefined here.

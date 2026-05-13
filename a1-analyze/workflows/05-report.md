@@ -1,7 +1,7 @@
 # Phase 05 — Report (finalize + propose follow-ups)
 
 Goal: render the final report sections, populate `suggested_next[]`, deliver a
-compact German summary to Robert. Output: analysis file with `status: reported`,
+compact summary to the user. Output: analysis file with `status: reported`,
 filled Recommendations section, populated `suggested_next[]`.
 
 This phase is LLM-driven, no sub-agents.
@@ -57,57 +57,58 @@ Follow the shape from `~/.claude/skills/a1-analyze/templates/report-sections.md`
    - Targets: F-NNN, F-NNN, F-NNN
 ```
 
-## Step 4 — Deliver the compact German summary to Robert
+## Step 4 — Deliver the compact summary to the user
 
 This is the user-facing handoff. Strict format:
 
 ```
-Analyse abgeschlossen: projects/<slug>/analyses/<file>
+Analysis complete: projects/<slug>/analyses/<file>
 
 Findings:
 • <n> BLOCKER — <one-line summary of biggest BLOCKER>
 • <n> MAJOR — <one-line summary>
 • <n> MINOR — <one-line summary>
 
-Vorgeschlagene nächste Schritte:
-1. a1-fix für <kurz> — <why critical>
-2. a1-new-feature für <kurz> — <why grouped>
-3. Backlog für <kurz>
+Suggested next steps:
+1. a1-fix for <short> — <why critical>
+2. a1-new-feature for <short> — <why grouped>
+3. Backlog for <short>
 
-Was tun? (1 / 2 / 3 / nichts)
+What would you like to do? (1 / 2 / 3 / nothing)
 ```
 
-## Step 5 — Wait for Robert's decision
+## Step 5 — Wait for the user's decision
 
 Do NOT auto-activate any follow-up skill. The hard rule applies:
 - Skill writes nothing in `projects/<slug>/fixes/`
 - Skill writes nothing in `projects/<slug>/features/`
 - Skill does not invoke `a1-fix` or `a1-new-feature`
 
-When Robert picks an option, formulate the next prompt for him in German:
+When the user picks an option, formulate the next prompt:
 
-- For `1` (a1-fix): "Du kannst jetzt sagen: 'Bug-Report: <BLOCKER-Symptom>
-  in <project>.' Dann aktiviert sich a1-fix mit dem Triage-Interview von Falk."
-- For `2` (a1-new-feature): "Du kannst jetzt sagen: 'Neues Feature: <refactor-scope>
-  in <project>.' Dann aktiviert sich a1-new-feature."
-- For `3` (Backlog): "Backlog dokumentiert in der Analyse-Datei (Section
-  Recommendations). Kein weiterer Skill nötig."
-- For `nichts`: "Verstanden. Analyse liegt unter <path>. Du kannst sie jederzeit
-  via 'Zeig mir die letzte Analyse von <project>' wieder aufrufen."
+- For `1` (a1-fix): "You can now say: 'Bug report: <BLOCKER-symptom>
+  in <project>.' That activates a1-fix with Falk's triage interview."
+- For `2` (a1-new-feature): "You can now say: 'New feature: <refactor-scope>
+  in <project>.' That activates a1-new-feature."
+- For `3` (Backlog): "Backlog documented in the analysis file (Recommendations
+  section). No further skill needed."
+- For `nothing`: "Understood. Analysis is at <path>. You can retrieve it at
+  any time by referencing the analysis path."
 
 ## Step 6 — End of phase
 
 The skill ends here. Status `reported` is terminal for `a1-analyze`. The file
 persists. Suggestions in `suggested_next[]` are machine-readable for future
-orchestrators (Pablo, Vincente, or a future M3 skill).
+orchestrators.
 
 ## Edge cases
 
 - **No BLOCKER, no MAJOR (only MINOR or none):** suggested_next has only a
-  "backlog" entry (or is empty). Summary auf Deutsch sagt: "Keine kritischen
-  Funde — Projekt ist im gewählten Fokus stabil."
+  "backlog" entry (or is empty). Summary says: "No critical findings —
+  project is stable in the chosen focus."
 - **All findings are BLOCKER (panic-mode):** suggested_next has multiple a1-fix
-  entries. Summary explicitly states "Mehrere BLOCKER — sofort handeln empfohlen."
-- **Robert wants to compare with a previous analysis:** mention that
+  entries. Summary explicitly states "Multiple BLOCKERS — immediate action
+  recommended."
+- **User wants to compare with a previous analysis:** mention that
   `a1-tools analyze list <slug>` returns all analyses sorted by date. Out of
   scope for this skill to do diff-reports — that's M3 `a1-reconcile`.

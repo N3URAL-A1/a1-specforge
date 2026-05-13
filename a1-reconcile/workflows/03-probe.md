@@ -64,8 +64,8 @@ Validation:
 
 1. Valid JSON array → continue.
 2. Empty array `[]` → record dispatch with zero drifts.
-3. Non-JSON / wrong shape → re-dispatch ONCE: "Letzte Antwort war kein
-   gültiges JSON-Array. Bitte nochmal, NUR JSON gemäss Output-Contract."
+3. Non-JSON / wrong shape → re-dispatch ONCE: "Last response was not a valid
+   JSON array. Please retry with ONLY JSON per Output-Contract."
    If second attempt also fails → record failure in `probe_notes[]`, skip
    this agent's findings.
 4. Filter out `class: IN_SYNC` entries — they confirm presence but don't
@@ -121,16 +121,16 @@ node ~/.claude/skills/_shared/a1-tools.cjs reconcile update-status \
   }'
 ```
 
-## Step 8 — Summarize for Robert, in German
+## Step 8 — Summarize for the user
 
-> "Probe abgeschlossen. <total> Drifts gefunden:
->  - MISSING: <n> (Spec fordert, Code fehlt)
->  - EXTRA:   <n> (Code existiert, in Spec nicht referenziert)
->  - DIVERGED:<n> (Pfad/Signatur weicht ab)
->  - STALE:   <n> (Spec neuer als Code)
->  - In-Sync: <n> (kein Drift)
+> "Probe complete. <total> drifts found:
+>  - MISSING: <n> (spec requires, code lacks)
+>  - EXTRA:   <n> (code exists, not referenced in spec)
+>  - DIVERGED:<n> (path/signature differs)
+>  - STALE:   <n> (spec newer than code)
+>  - In-sync: <n> (no drift)
 >
->  Soll ich Phase 4 (Report — Markdown-Bericht generieren) starten?"
+>  Should I start Phase 4 (Report — generate Markdown report)?"
 
 If yes: proceed to `04-report.md`.
 If no: stop. Status `probed` persists.
@@ -138,11 +138,11 @@ If no: stop. Status `probed` persists.
 ## Edge cases
 
 - **All targets IN_SYNC:** legitimate result. Phase 4 will produce a "clean"
-  report. Do not skip Phase 4 — Robert needs the artifact.
+  report. Do not skip Phase 4 — the user needs the artifact.
 - **Agent timeout:** record the failure in `probe_notes[]`, continue with
   other agents. Do not block.
 - **Agent suggests code edits:** Output-Contract violation. Re-ask once with
-  "Du bist read-only, keine Code-Edits."
+  "You are read-only, no code edits."
 - **Repo path missing on disk:** mark every target in that repo as
   `class: MISSING` with `description: "repo not accessible: <reason>"`. The
   user decides whether to fix the path and re-run.

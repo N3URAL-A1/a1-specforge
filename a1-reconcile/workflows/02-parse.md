@@ -64,14 +64,14 @@ node ~/.claude/skills/_shared/a1-tools.cjs reconcile update-status \
 the CLI is conservative: it writes `parsed_targets[]` but leaves status
 updates to an explicit call, so the skill can review and add metadata.)
 
-## Step 4 — Summarize for Robert, in German
+## Step 4 — Summarize for the user
 
-> "Phase 2 (Parse) abgeschlossen.
->  - <n> Acceptance-Criteria-Anker extrahiert über <s> Spec(s).
->  - Davon <m> STALE-Kandidaten (Spec neuer als Code).
->  - Verteilung: <files> Dateien, <functions> Funktionen, <endpoints> Endpoints, <other> ohne konkrete Ref.
+> "Phase 2 (Parse) complete.
+>  - <n> acceptance criteria anchors extracted across <s> spec(s).
+>  - Of which <m> are STALE candidates (spec newer than code).
+>  - Distribution: <files> files, <functions> functions, <endpoints> endpoints, <other> without concrete ref.
 >
->  Soll ich Phase 3 (Probe — Sub-Agents prüfen Code-Stand) starten?"
+>  Should I start Phase 3 (Probe — sub-agents check code state)?"
 
 If yes: proceed to `03-probe.md`.
 If no: stop. Status `parsed` persists.

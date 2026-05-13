@@ -11,10 +11,10 @@ You need:
 
 - **Repo root** — absolute path to the source repo. If the user did not give
   one, default to the current working directory (`pwd`). If `pwd` is not a
-  git repo, ask one German question:
-  > "In welchem Repository soll der Worktree angelegt werden? (absoluter Pfad)"
+  git repo, ask one question:
+  > "Which repository should the worktree be created in? (absolute path)"
 - **Slug** — short feature identifier (kebab-case). If absent, ask:
-  > "Welchen Slug soll der Worktree bekommen? (kurz, kebab-case, z.B. `auth-rework`)"
+  > "What slug should the worktree get? (short, kebab-case, e.g. `auth-rework`)"
 - **Optional branch** — only if user explicitly named one. Default is
   `feature/<slug>`.
 - **Optional base branch** — default `main`. Override only on explicit ask.
@@ -59,23 +59,23 @@ Exit codes: 0 PASS, 1 BLOCKER, 2 ERROR.
 
 ### Exit 0 — PASS
 
-Show the user a German summary:
+Show the user a summary:
 
-> "Pre-Flight grün. Worktree-ID: `<id>`. Soll ich den Worktree jetzt anlegen?"
+> "Pre-flight green. Worktree ID: `<id>`. Should I create the worktree now?"
 
 If yes → proceed to **Phase 2 (Enter)**.
 
 ### Exit 1 — BLOCKER
 
-Read the `checks` array, list each failed check in German:
+Read the `checks` array, list each failed check:
 
-| Check | German hint |
+| Check | Hint |
 |---|---|
-| `working_tree_clean` | "Der Working Tree hat uncommitted changes. Bitte erst committen oder stashen." |
-| `base_branch_exists` | "Der Base-Branch (`<base>`) existiert nicht. Anderen Base nennen oder erst Branch anlegen." |
-| `target_branch_free` | "Der Branch `<branch>` existiert bereits oder hat schon einen Worktree. Anderen Branch wählen oder bestehenden aufräumen." |
-| `worktree_path_free` | "Der Pfad `<path>` ist nicht frei. Manuell aufräumen oder anderen Slug wählen." |
-| `no_active_registry_entry` | "Für `<repo-root, slug>` existiert schon ein aktiver Registry-Eintrag. Erst `exit` für den alten, dann neu starten — oder anderen Slug." |
+| `working_tree_clean` | "The working tree has uncommitted changes. Please commit or stash first." |
+| `base_branch_exists` | "The base branch (`<base>`) does not exist. Name a different base or create the branch first." |
+| `target_branch_free` | "Branch `<branch>` already exists or already has a worktree. Choose a different branch or clean up the existing one." |
+| `worktree_path_free` | "Path `<path>` is not free. Clean it up manually or choose a different slug." |
+| `no_active_registry_entry` | "An active registry entry already exists for `<repo-root, slug>`. Run `exit` for the old one first, then start again — or choose a different slug." |
 
 Stop. Do not auto-fix.
 

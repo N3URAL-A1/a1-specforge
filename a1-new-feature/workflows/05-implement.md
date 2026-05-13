@@ -43,17 +43,17 @@ wave heading after dispatch:
 
 ## Step 3 — Propose the agent(s) to the user
 
-For the next wave, present (in German):
+For the next wave, present:
 
-> "**Wave N — <Titel>**
+> "**Wave N — <Title>**
 >
 > Goal: <goal>
 > FRs: <list>
-> Brief: <kurz zusammengefasst>
+> Brief: <short summary>
 >
-> Vorschlag: **<agent-name>** für <Sub-Aufgabe>.
+> Suggestion: **<agent-name>** for <sub-task>.
 >
-> Soll ich den Agent so dispatchen, oder willst du einen anderen?"
+> Should I dispatch the agent like this, or would you like a different one?"
 
 Wait for user confirmation. Do **not** dispatch automatically.
 
@@ -62,90 +62,90 @@ Wait for user confirmation. Do **not** dispatch automatically.
 Once the user confirms (or names a different agent), spawn the agent via the Task tool with
 this brief:
 
-> Du bist <agent-name>. Du arbeitest an Wave N aus dem Wave-Plan unter `<plan-path>`.
-> Die zugehörige Spec liegt unter `<spec-path>` (READ-ONLY für dich — keine Spec-Änderungen
-> ohne Rückfrage).
+> You are <agent-name>. You are working on Wave N from the wave plan at `<plan-path>`.
+> The associated spec is at `<spec-path>` (READ-ONLY for you — no spec changes
+> without asking first).
 >
-> Dein Auftrag steht im Wave-Brief unter `## Wave N`. Implementiere strikt nach Brief.
-> Wenn du beim Bauen merkst, dass die Spec wackelt: stoppe, melde dich, schlage eine
-> Spec-Anpassung vor — der User entscheidet, ob die Spec ergänzt wird (das löst
-> potentiell Phase 3/Phase 4-Rework aus).
+> Your task is in the wave brief under `## Wave N`. Implement strictly per the brief.
+> If you notice the spec is unstable while building: stop, report back, suggest a
+> spec update — the user decides whether to amend the spec (potentially triggering
+> Phase 3/Phase 4 rework).
 >
-> File-Ownership: <aus Wave-Brief>.
-> Tests: schreibe oder ergänze die Tests, die zu den FR-### dieser Wave passen.
+> File ownership: <from wave brief>.
+> Tests: write or extend the tests that correspond to the FR-### of this wave.
 >
-> Wenn fertig: melde "Wave N done. <kurze Zusammenfassung der Änderungen>."
+> When done: report "Wave N done. <short summary of changes>."
 
 If the wave is parallelizable and the user wants both agents at once, dispatch them in a
 **single** assistant turn (parallel Task calls).
 
 ## Step 5 — Nach Agent-Meldung: Build + Deploy + Smoke-Test (Pflicht)
 
-Wenn der Agent "Wave N done" meldet, NICHT sofort als `done` markieren.
-Erst diese drei Gates durchlaufen:
+When the agent reports "Wave N done", do NOT mark as `done` immediately.
+Run these three gates first:
 
 **Gate 1 — Build**
 
-Führe den projektspezifischen Build-Command aus (steht in CLAUDE.md, z.B. `npm run build`).
-Bei Build-Fehler: Wave bleibt `in-progress`, Agent repariert. Kein Weiter.
+Run the project-specific build command (in CLAUDE.md, e.g. `npm run build`).
+On build failure: wave stays `in-progress`, agent repairs it. No proceeding.
 
 **Gate 2 — Preview-Deploy**
 
 ```bash
-vercel   # erzeugt Preview-URL
+vercel   # creates preview URL
 ```
 
-Notiere die Preview-URL für Gate 3 und für Phase 6. Kein Skip auch wenn "nur ein kleiner Fix".
+Record the preview URL for Gate 3 and for Phase 6. Never skip, even for "just a small fix".
 
-**Gate 3 — Smoke-Test der Wave-Goal-Story**
+**Gate 3 — Smoke test of the wave goal story**
 
-Der Wave-Brief enthält `**Goal:** nach dieser Wave funktioniert X`. Teste genau dieses X
-gegen die Preview-URL — manuell oder via Playwright. Konkret:
+The wave brief contains `**Goal:** after this wave, X works`. Test exactly that X
+against the preview URL — manually or via Playwright. Specifically:
 
-- Wenn die Wave eine neue UI-Route liefert: öffne sie, prüfe ob sie lädt (kein 404/500).
-- Wenn die Wave eine API-Route liefert: sende einen echten Request (curl oder Browser-DevTools),
-  prüfe den Response-Body und HTTP-Status-Code.
-- Wenn die Wave einen Client + API kombiniert: führe den kompletten User-Flow einmal durch
-  (klicken, absenden, Ergebnis sehen).
+- If the wave delivers a new UI route: open it, check that it loads (no 404/500).
+- If the wave delivers an API route: send a real request (curl or browser DevTools),
+  check the response body and HTTP status code.
+- If the wave combines client + API: run through the complete user flow once
+  (click, submit, see result).
 
-Bei Smoke-Test-Fehler: Wave `failed`, nicht `done`. Weiter mit dem Failure-Flow unten.
+On smoke test failure: wave is `failed`, not `done`. Continue with the failure flow below.
 
-**Erst nach grünen Gates:**
+**Only after all gates are green:**
 
 Update the wave heading in the wave-plan file: `⟶ status: done`.
 Loop to Step 2 for the next wave.
 
 ---
 
-If a wave fails (agent reports blockers, tests stay red, Smoke-Test schlägt fehl):
+If a wave fails (agent reports blockers, tests stay red, smoke test fails):
 
 1. Mark the wave `⟶ status: failed`.
-2. Ask user: "Wave N failed — wollen wir den Brief anpassen, oder die Spec öffnen
-   (zurück zu Phase 3)?"
+2. Ask user: "Wave N failed — should we adjust the brief, or open the spec
+   (back to Phase 3)?"
 3. Do not advance the spec status.
 
-## Step 5b — E2E-Test vor letzter Wave-Freigabe (Pflicht)
+## Step 5b — E2E test before last wave approval (required)
 
-Wenn alle Waves außer der aktuellen `done` sind (d.h. dies ist die letzte Wave):
+When all waves except the current one are `done` (i.e. this is the last wave):
 
-Vor dem Übergang zu Phase 6 spawne den projektspezifischen QA-Agent (aus CLAUDE.md Agents-
-Tabelle, z.B. `n3ural-qa`) oder Playwright-fähigen Agent mit folgendem Brief:
+Before transitioning to Phase 6, spawn the project-specific QA agent (from CLAUDE.md
+agents table) or a Playwright-capable agent with this brief:
 
-> "Schreibe einen Playwright-Test für den Golden Path der Spec unter `<spec-path>`.
-> Der Test soll den vollständigen Happy Path der P1-User-Stories abdecken:
-> <P1-Stories aus Spec, 3–5 Schritte pro Story>.
-> Laufe gegen die Preview-URL `<preview-url>` (Auth-State falls nötig aus `.playwright/`).
-> Der Test muss grün sein, bevor Phase 6 starten kann.
-> Lege den Test unter `tests/e2e/<feature-slug>.spec.ts` ab."
+> "Write a Playwright test for the golden path of the spec at `<spec-path>`.
+> The test should cover the complete happy path of the P1 user stories:
+> <P1-stories from spec, 3–5 steps per story>.
+> Run against the preview URL `<preview-url>` (auth state if needed from `.playwright/`).
+> The test must be green before Phase 6 can start.
+> Place the test at `tests/e2e/<feature-slug>.spec.ts`."
 
-Phase 6 startet erst wenn dieser E2E-Test grün läuft.
-Wenn kein Playwright vorhanden ist: dokumentiere das explizit und eskaliere an Robert.
+Phase 6 only starts when this E2E test is green.
+If Playwright is not available: document this explicitly and escalate to the user.
 
 ## Step 6 — All waves done?
 
 When every wave in the plan is marked `done`:
 
-- Tell the user (German): "Alle Waves abgeschlossen. Phase 6 (Verify) starten?"
+- Tell the user: "All waves complete. Start Phase 6 (Verify)?"
 - On yes: load `workflows/06-verify.md`. Status stays `implementing` until Verify passes.
 - Do **not** set status to `done` here — that is Phase 6's job.
 

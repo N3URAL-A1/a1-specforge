@@ -8,15 +8,15 @@ with the new data point.
 
 - Vault path to the bug-report file (status must be `fixing`, `fix_commit` set)
 
-If `fix_commit` is null: abort and tell the user in German that Phase 3 is not
+If `fix_commit` is null: abort and tell the user that Phase 3 is not
 complete (no commit recorded).
 
 ## Step 1 — Re-run reproduction
 
 Read the bug report's `## Reproduction Steps` section. Walk the user through
-each step **in German**, one at a time:
+each step one at a time:
 
-> "Verify Schritt 1: <step>. Tritt das Symptom noch auf?"
+> "Verify step 1: <step>. Does the symptom still occur?"
 
 Wait for an answer before moving to the next step. If the user reports the
 symptom is gone at any step where it was previously reproducible: continue.
@@ -25,23 +25,21 @@ to Step 4 (back to Phase 2).
 
 ## Step 2 — Optional: Quak QA-regression for severity ≥ MAJOR
 
-If `severity` is `blocker` or `major`, propose a QA regression run **in German**:
+If `severity` is `blocker` or `major`, propose a QA regression run:
 
-> "Severity ist <severity>. Ich kann Quak für eine QA-Regression-Suite
-> anstoßen, um sicherzugehen, dass der Fix nichts anderes gebrochen hat.
-> Möchtest du das?"
+> "Severity is <severity>. I can trigger Quak for a QA regression suite
+> to make sure the fix didn't break anything else. Would you like that?"
 
 If yes: spawn Quak via `Task` with this brief:
 
-> Du bist Quak. Aufgabe: QA-Regression für einen frisch gefixten Bug.
-> **Bug-Report:** <ABSOLUTE_VAULT_PATH>
-> **Fix-Commit:** <hash>
-> **Affected Repos:** <list>
+> You are Quak. Task: QA regression for a freshly fixed bug.
+> **Bug report:** <ABSOLUTE_VAULT_PATH>
+> **Fix commit:** <hash>
+> **Affected repos:** <list>
 >
-> Lies den Bug-Report, identifiziere kritische User-Journeys, die durch den
-> Fix berührt sein könnten, und führe die Regression-Suite des Projekts aus
-> (E2E + Integration). Output: pass/fail pro Suite plus Liste neuer Failures
-> (falls vorhanden).
+> Read the bug report, identify critical user journeys that could be affected
+> by the fix, and run the project's regression suite (E2E + integration).
+> Output: pass/fail per suite plus list of new failures (if any).
 
 If Quak reports failures: do NOT mark `fixed`. Add failures to `## Notes` and
 recommend re-opening (Step 4).
@@ -64,11 +62,10 @@ node ~/.claude/skills/_shared/a1-tools.cjs fix update-status \
 3. Use the Edit tool to fill the `## Verification (Phase 04 — filled by skill)`
    section in the bug report with the verification details.
 
-4. Tell the user **in German**:
+4. Tell the user:
 
-> "Fix verifiziert. Status: fixed. Bug-Report:
-> `projects/<slug>/fixes/<file>`. Audit-Trail vollständig in
-> `phase_history`."
+> "Fix verified. Status: fixed. Bug report:
+> `projects/<slug>/fixes/<file>`. Audit trail complete in `phase_history`."
 
 ## Step 4 — Symptom still present → back to Phase 2
 
@@ -96,10 +93,10 @@ node ~/.claude/skills/_shared/a1-tools.cjs fix update-status \
    diagnosis with the new data point. The `verify_result` becomes input to the
    next diagnosis round.
 
-4. Tell the user **in German**:
+4. Tell the user:
 
-> "Symptom noch da. Status zurück auf `diagnosed`. Soll ich Phase 2 erneut
-> starten mit den neuen Erkenntnissen?"
+> "Symptom still present. Status back to `diagnosed`. Should I restart Phase 2
+> with the new findings?"
 
 If yes: proceed to `02-diagnose.md`. Falk should read `## Notes` plus the new
 `verify_result` as additional evidence.

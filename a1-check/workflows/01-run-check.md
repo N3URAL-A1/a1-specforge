@@ -13,10 +13,10 @@ You need two values:
 - `<project-slug>` — the Obsidian Vault project folder name
 - `<feature>` — the feature id in the form `<###>-<feature-slug>` (e.g. `001-login`)
 
-If the user did not provide both, ask **one** German question for the missing one.
+If the user did not provide both, ask **one** question for the missing one.
 Do not ask both at once. Example:
 
-> "Für welches Projekt soll ich den Konsistenz-Check laufen lassen?"
+> "Which project should the consistency check run for?"
 
 Do not infer the feature id from filesystem listings unless the user
 explicitly asks you to list features. The check is cheap; ambiguity is the
@@ -31,22 +31,22 @@ node ~/.claude/skills/_shared/a1-tools.cjs check <project-slug> \
   --feature <feature> --format human
 ```
 
-Capture both stdout and the exit code. Stdout already contains the German
-report; the exit code drives what comes next.
+Capture both stdout and the exit code. Stdout already contains the report;
+the exit code drives what comes next.
 
 ## Step 3 — Branch on exit code
 
 ### Exit 0 — PASS
 
-Show the user the German stdout verbatim, then:
+Show the user the stdout verbatim, then:
 
-> "Spec und Wave-Plan sind konsistent. Du kannst Phase 5 (Implement) starten."
+> "Spec and wave-plan are consistent. You can start Phase 5 (Implement)."
 
 Stop. No further action.
 
 ### Exit 1 — FAIL (content inconsistency)
 
-Show the user the German stdout verbatim. Then re-run the CLI with
+Show the user the stdout verbatim. Then re-run the CLI with
 `--format json` to read the structured diff:
 
 ```bash
@@ -57,12 +57,12 @@ node ~/.claude/skills/_shared/a1-tools.cjs check <project-slug> \
 Parse the JSON. Pick the fix-path suggestion from the table below based on
 which diff fields are non-empty (multiple may apply — list all that match).
 
-| Diff field | Suggestion (German) |
+| Diff field | Suggestion |
 |---|---|
-| `diffs.missing_in_plan` not empty | "Es fehlen FRs in den Waves. Soll ich `a1-new-feature` Phase 4 (Plan) erneut starten, damit Vincente den Wave-Plan überarbeitet?" |
-| `diffs.duplicated_in_plan` not empty | "Eine oder mehrere FRs sind in mehreren Waves. Soll ich `a1-new-feature` Phase 4 starten, damit Vincente die Wave-Zuordnung korrigiert?" |
-| `diffs.phantom_in_plan` not empty | "Der Wave-Plan referenziert FR-IDs, die in der Spec nicht existieren. Möchtest du Phase 3 (Clarify) erneut starten, um die fehlenden FRs in der Spec zu ergänzen — oder direkt im Plan die Phantome streichen?" |
-| `checks.frontmatter_link == "FAIL"` | "Das Plan-Frontmatter zeigt auf eine falsche Spec. Soll ich den `spec_path` im Plan-Frontmatter direkt korrigieren?" |
+| `diffs.missing_in_plan` not empty | "Some FRs are missing from the waves. Should I restart `a1-new-feature` Phase 4 (Plan) so the wave plan can be revised?" |
+| `diffs.duplicated_in_plan` not empty | "One or more FRs appear in multiple waves. Should I start `a1-new-feature` Phase 4 to fix the wave assignment?" |
+| `diffs.phantom_in_plan` not empty | "The wave plan references FR-IDs that don't exist in the spec. Would you like to restart Phase 3 (Clarify) to add the missing FRs — or remove the phantom references directly from the plan?" |
+| `checks.frontmatter_link == "FAIL"` | "The plan frontmatter points to the wrong spec. Should I correct the `spec_path` in the plan frontmatter directly?" |
 
 If the user says **yes** to a suggestion: invoke the named action (e.g.
 trigger `a1-new-feature` for the same project/feature; it will route into the
@@ -71,11 +71,10 @@ themselves, stop and let them work.
 
 ### Exit 2 — ERROR (setup)
 
-Show the user the German stdout verbatim. Then:
+Show the user the stdout verbatim. Then:
 
-> "Das Gate konnte den Check nicht ausführen, weil die Artifacts unvollständig
-> sind. Bitte fehlende Datei anlegen oder Frontmatter reparieren. Danach
-> einfach erneut aufrufen."
+> "The gate could not run the check because artifacts are incomplete.
+> Please create the missing file or repair the frontmatter, then call it again."
 
 Stop. Do not propose `a1-new-feature` re-entry — the problem is below that level.
 

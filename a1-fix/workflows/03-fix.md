@@ -31,40 +31,40 @@ type error) with no UI surface — skip directly to Step 2.
 
 **How to run (model: `claude-opus-4-7`):**
 
-Read the diagnosis and the affected UI surface, then ask the user **in German** up to
+Read the diagnosis and the affected UI surface, then ask the user up to
 **3 questions** — only the ones that could cause a rework loop if answered wrong.
 Pick from this catalogue the most relevant ones for this fix:
 
 | Probe category | Example question |
 |---|---|
-| **In / Out — elements** | "Die Tabelle hat aktuell [X, Y, Z] Spalten. Welche sollen bleiben, welche weg?" |
-| **Surrounding actions** | "Neben dem neuen Button gibt es [Löschen / Beleg]. Bleiben die, oder fällt auch einer weg?" |
-| **State after save/action** | "Nachdem der User speichert — bleibt er auf der Seite oder geht er zur Liste?" |
-| **Empty / error state** | "Was soll passieren wenn [kein Eintrag / API-Fehler]?" |
-| **Permissions / visibility** | "Soll das für alle Tenant-User sichtbar sein oder nur Owner?" |
-| **Mobile vs Desktop** | "Gilt das für die Desktop-Tabelle, die Mobile-Ansicht, oder beide?" |
+| **In / Out — elements** | "The table currently has columns [X, Y, Z]. Which should stay, which should go?" |
+| **Surrounding actions** | "Next to the new button there are [Delete / Receipt]. Do they stay, or does one go too?" |
+| **State after save/action** | "After the user saves — do they stay on the page or go back to the list?" |
+| **Empty / error state** | "What should happen when [no entry / API error]?" |
+| **Permissions / visibility** | "Should this be visible to all tenant users or only the owner?" |
+| **Mobile vs Desktop** | "Does this apply to the desktop table, the mobile view, or both?" |
 
 Format the questions as a concise numbered list. Wait for answers before dispatching
 the code agent. Incorporate answers into the code agent brief in Step 3.
 
-If the user says "mach einfach" or waves the question away: use sensible defaults,
+If the user says "just do it" or waves the question away: use sensible defaults,
 document the defaults in the bug report `## Notes` section, and proceed.
 
 ## Step 2 — Propose the code agent dispatch
 
-Tell the user **in German**, summarizing the brief that would go to the agent:
+Tell the user, summarizing the brief that would go to the agent:
 
-> "Phase 3 — Fix. Vorschlag:
+> "Phase 3 — Fix. Proposal:
 >
-> - **Code-Agent:** <agent-name>
-> - **Severity:** <severity> → <"Regression-Test ZUERST empfohlen" wenn ≥ MAJOR sonst "Test optional">
-> - **Bug-Report:** `<vault-path>`
-> - **Affected Repos:** <repos>
-> - **Confidence der Diagnose:** <level>
-> - **Fix-Ansatz (aus Diagnose):** <one-line summary>
+> - **Code agent:** <agent-name>
+> - **Severity:** <severity> → <"Regression test recommended first" if ≥ MAJOR, else "Test optional">
+> - **Bug report:** `<vault-path>`
+> - **Affected repos:** <repos>
+> - **Diagnosis confidence:** <level>
+> - **Fix approach (from diagnosis):** <one-line summary>
 >
-> Soll ich `<agent-name>` mit diesem Brief anstoßen, oder willst du einen
-> anderen Agenten / selbst übernehmen?"
+> Should I dispatch `<agent-name>` with this brief, or would you like a
+> different agent / take over manually?"
 
 If the user confirms a different agent: use that one. If the user wants to fix
 manually: skip Step 3, jump to Step 4 once they have a commit hash.
@@ -81,30 +81,30 @@ node ~/.claude/skills/_shared/a1-tools.cjs fix update-status \
 
 Spawn the code agent via the `Task` tool with this brief:
 
-> **Auftrag:** Bug-Fix nach Diagnose.
+> **Task:** Bug fix following diagnosis.
 >
-> **Bug-Report (Single Source of Truth):** <ABSOLUTE_VAULT_PATH>
->   → Lies die Datei vollständig. Symptom, Repro Steps, Diagnose, Confidence
->   und vorgeschlagener Fix-Ansatz stehen drin.
+> **Bug report (single source of truth):** <ABSOLUTE_VAULT_PATH>
+>   → Read the file fully. Symptom, repro steps, diagnosis, confidence,
+>   and suggested fix approach are all in there.
 >
 > **Affected Repos:** <list with concrete files from Diagnosis>
 >
 > **Severity:** <severity>
->   → Wenn ≥ MAJOR: schreibe ZUERST einen Regression-Test, der das Symptom
->   reproduziert (rot). Erst dann fix. Test muss grün werden.
+>   → If ≥ MAJOR: write a regression test FIRST that reproduces the symptom
+>   (red). Then fix. The test must turn green.
 >
 > **Hard Rules:**
-> - Bug-Report-Frontmatter NICHT manuell editieren — der Skill kümmert sich.
-> - Commit-Message: `fix(<scope>): <one-line> — <bug-report-filename>`
-> - Nach Commit: dem Skill den Commit-Hash zurückmelden.
+> - Do NOT manually edit the bug report frontmatter — the skill handles that.
+> - Commit message: `fix(<scope>): <one-line> — <bug-report-filename>`
+> - After the commit: report the commit hash back to the skill.
 >
-> **Erwartetes Output:** Commit-Hash + ein-Satz-Beschreibung was geändert wurde
-> + bestätigung dass Reproduction Steps jetzt nicht mehr greifen (oder
-> Begründung, warum die Diagnose erweitert werden muss).
+> **Expected output:** Commit hash + one-sentence description of what changed
+> + confirmation that the reproduction steps no longer apply (or explanation
+> of why the diagnosis needs to be extended).
 
 ## Step 4 — Record the fix commit
 
-When the agent (or Robert) returns with a commit hash:
+When the agent (or the user) returns with a commit hash:
 
 ```bash
 node ~/.claude/skills/_shared/a1-tools.cjs fix update-status \
@@ -122,10 +122,10 @@ test path, risk).
 
 ## Step 5 — Hand off
 
-Tell the user **in German**:
+Tell the user:
 
-> "Fix-Commit aufgezeichnet: `<hash>`. Status bleibt `fixing` bis Phase 4
-> bestätigt, dass das Symptom weg ist. Soll ich Phase 4 (Verify) starten?"
+> "Fix commit recorded: `<hash>`. Status stays `fixing` until Phase 4
+> confirms the symptom is gone. Should I start Phase 4 (Verify)?"
 
 If yes: proceed to `04-verify.md`.
 

@@ -104,24 +104,24 @@ Follow the shape from `~/.claude/skills/a1-analyze/templates/report-sections.md`
 
 Also render the Findings section now (grouped by severity, as per template).
 
-## Step 9 — Summarize for Robert, in German
+## Step 9 — Summarize for the user
 
-> "Synthesize abgeschlossen. <n> BLOCKER, <n> MAJOR, <n> MINOR.
->  Top-3 Pattern: <stichworte>.
->  Top-Empfehlung: <kurz>.
+> "Synthesize complete. <n> BLOCKER, <n> MAJOR, <n> MINOR.
+>  Top-3 patterns: <keywords>.
+>  Top recommendation: <short>.
 >  
->  Soll ich Phase 5 (Report — finalisieren + Folge-Vorschläge) starten?"
+>  Should I start Phase 5 (Report — finalize + follow-up suggestions)?"
 
 If yes: proceed to `05-report.md`.
 If no: stop. Status `synthesized` persists.
 
 ## Edge cases
 
-- **0 findings total:** das ist ein legitimes Ergebnis. Synthesis sagt: "Im
-  gewählten Fokus wurden keine Findings gefunden. Das kann bedeuten: (a) Projekt
-  ist sauber, (b) Sub-Agents hatten zu wenig Kontext (c) Fokus war zu eng.
-  Empfehlung: ggf. mit anderem Fokus erneut analysieren."
-- **Nur MINOR findings:** Top-5 wird kleiner als 5, das ist ok. Synthesis sollte
-  explizit machen, dass nichts Kritisches gefunden wurde.
-- **Findings mit nicht-zuordenbarer location:** behalte sie, markiere in der
-  Synthesis als "unspezifisch lokalisiert".
+- **0 findings total:** that is a legitimate result. Synthesis says: "No
+  findings in the chosen focus. This can mean: (a) project is clean, (b)
+  sub-agents had too little context, (c) focus was too narrow.
+  Recommendation: try re-analyzing with a different focus."
+- **Only MINOR findings:** Top-5 becomes smaller than 5, that is fine.
+  Synthesis should explicitly state that nothing critical was found.
+- **Findings with unresolvable location:** keep them, mark in the Synthesis
+  as "location unspecified".

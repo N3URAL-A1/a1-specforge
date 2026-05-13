@@ -50,13 +50,13 @@ Finn's response should be a Markdown document with these top-level sections
 - `## Key Convention` (may be a short single-rule section from Q3)
 
 If any required section is missing, **re-ask Finn ONCE** with a follow-up:
-> "Deine Antwort hat den Abschnitt `<missing-section>` nicht enthalten.
->  Bitte liefere das vollständige Markdown-Dokument mit ALLEN vier Pflicht-
->  Abschnitten neu."
+> "Your response did not contain the section `<missing-section>`.
+>  Please provide the complete Markdown document with ALL four required
+>  sections again."
 
-If the second attempt also fails: surface the issue to Robert auf Deutsch
-("Finn liefert kein vollständiges Constitution-Markdown — möchtest du den
-Output sehen und manuell anpassen?") and stop. Do NOT advance status.
+If the second attempt also fails: surface the issue to the user
+("Finn did not return a complete constitution Markdown — would you like to see
+the output and adjust it manually?") and stop. Do NOT advance status.
 
 The response must NOT contain a YAML frontmatter block (no `---` at start) —
 frontmatter stays under skill control. If it does, strip it before saving.
@@ -88,21 +88,20 @@ This appends a `phase=draft completed=<iso>` entry to `phase_history`.
 
 ## Step 6 — Confirm and route to Phase 3
 
-Tell Robert **in German**:
-> "Draft fertig. Finn hat <N> Behavioral Rules und die 4-Layer Override-
->  Precedence formuliert. Status: `drafted`.
+Tell the user:
+> "Draft complete. Finn has formulated <N> behavioral rules and the 4-layer
+>  override precedence. Status: `drafted`.
 >
->  Soll ich Phase 3 starten? Du bekommst den Draft zum Lesen und kannst
->  Änderungen ansagen, bevor wir schreiben."
+>  Should I start Phase 3? You will see the draft and can request changes
+>  before we write it."
 
 If yes: proceed to `03-review.md`.
 
 ## Special exits
 
 - **Finn returns prose explaining why he can't draft:** surface his text to
-  Robert auf Deutsch. Most common cause: discovery payload is too thin
-  (CLAUDE.md empty, no interview answers). Re-enter Phase 1 to fill gaps,
-  do not advance status.
+  the user. Most common cause: discovery payload is too thin (CLAUDE.md empty,
+  no interview answers). Re-enter Phase 1 to fill gaps, do not advance status.
 
 - **CLI `set-body` fails (e.g. body-file unreadable):** surface error, do not
   advance status. Status stays at `discovering`.

@@ -55,12 +55,12 @@ delegate directly to the relevant agent (Rene / Vincente / code agents) and skip
 > start on FAIL. On FAIL the spec status moves to `awaiting-consistency-fix`
 > and re-invocation routes back to Phase 4.5 automatically.
 
-> **Clarify (Phase 3)** läuft mit **Opus 4.7** und enthält einen proaktiven Scope-Scan sowie
-> — bei Frontend-Features — **UX Mockups von Uwe**: mindestens 2–3 Varianten pro Screen,
-> basierend auf dem projektspezifischen Design-System-Skill, zur Abnahme durch Robert bevor
-> der Wave-Plan gebaut wird.
+> **Clarify (Phase 3)** runs with **Opus 4.7** and includes a proactive scope scan plus
+> — for frontend features — **UX Mockups from Uwe**: at least 2–3 variants per screen,
+> based on the project-specific design-system skill, for user approval before the
+> wave plan is built.
 
-> **Plan (Phase 4)** läuft mit **Opus 4.7** für tiefere Wave-Dependency-Analyse.
+> **Plan (Phase 4)** runs with **Opus 4.7** for deeper wave-dependency analysis.
 
 A spec abandoned at any phase is moved to status `cancelled`; its sequence number is **not**
 recycled.
@@ -121,7 +121,7 @@ Override via env var `A1_VAULT_ROOT` if testing.
 
 | Project | Skill |
 |---|---|
-| n3ural-platform / n3ural-ui | `n3urala1-design` (`~/.claude/skills/n3urala1-design`) |
+| Projects using n3ural design system | `n3urala1-design` (`~/.claude/skills/n3urala1-design`) |
 | Other projects | Check project CLAUDE.md for design system skill reference; fallback: `frontend-design` |
 
 The skill **proposes** code agents in Phase 5 based on the wave-plan brief; the user dispatches.
@@ -134,8 +134,8 @@ The skill **proposes** code agents in Phase 5 based on the wave-plan brief; the 
 - Never recycle sequence numbers. Cancelled specs keep their slot.
 - Never modify a spec while it is in `implementing` without surfacing the change to the user
   first; spec drift mid-implementation breaks Phase 6 verify.
-- User-facing prompts and questions are in **German**. All file content (spec frontmatter,
-  technical notes, FR/SC IDs) stays in English unless the existing file establishes German.
+- User-facing prompts and questions are in **English**. All file content (spec frontmatter,
+  technical notes, FR/SC IDs) stays in English.
 - One question per turn during Discover and Clarify. No wall-of-text interviews.
 
 ## Hand-offs (out of scope for this skill)

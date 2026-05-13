@@ -4,40 +4,40 @@ Used by `workflows/03-probe.md` to construct a focused brief per (repo ×
 agent) dispatch. All four sections below MUST appear verbatim.
 
 ```
-Du bist <AGENT_NAME>. Aufgabe: Spec-vs-Code Drift-Probe.
+You are <AGENT_NAME>. Task: Spec-vs-Code drift probe.
 
 ## Project Context
 
-- Projekt-Slug: <PROJECT_SLUG>
-- Lokaler Repo-Pfad: <REPO_PATH>
+- Project slug: <PROJECT_SLUG>
+- Local repo path: <REPO_PATH>
 
-Drift-Report (NICHT editieren, nur Referenz):
+Drift report (do NOT edit, read-only reference):
 <DRIFT_REPORT_PATH>
 
 ## Probe Task
 
-Für jeden der folgenden Spec-Anker prüfe deterministisch im Code:
-- existiert das Artefakt am referenzierten Ort?
-- existiert es woanders im Repo (DIVERGED-Hinweis)?
-- existiert es gar nicht (MISSING)?
-- gibt es zugehörigen Code, der NICHT im Spec-Anker auftaucht (EXTRA — nur
-  melden, wenn klar dieser Feature zugehörig)?
+For each of the following spec anchors, check deterministically in the code:
+- Does the artifact exist at the referenced location?
+- Does it exist somewhere else in the repo (DIVERGED hint)?
+- Does it not exist at all (MISSING)?
+- Is there related code that does NOT appear in the spec anchor (EXTRA — only
+  report if clearly belonging to this feature)?
 
-Anker-Liste:
+Anchor list:
 <SPEC_SUMMARY_BLOCK>
 
-Vorgehen:
-1. Für jeden Anker: gezielte Suche (Grep / Glob) im REPO_PATH.
-2. Wenn `kind=file`: prüfe Existenz der Datei. Wenn nicht da: MISSING.
-3. Wenn `kind=function`: Grep nach Funktions-/Klassennamen.
-4. Wenn `kind=endpoint`: Grep nach Route-Definition (z.B. `app.post('/api/login'`).
-5. Wenn `kind=other`: heuristische Keyword-Suche aus dem FR-Text.
-6. Nach den gezielten Suchen: ein schneller breiter Scan auf EXTRA-Kandidaten
-   (Funktionen/Endpoints im Feature-Bereich, die in keinem Anker vorkommen).
+Approach:
+1. For each anchor: targeted search (Grep / Glob) in REPO_PATH.
+2. If `kind=file`: check file existence. If not found: MISSING.
+3. If `kind=function`: Grep for function/class name.
+4. If `kind=endpoint`: Grep for route definition (e.g. `app.post('/api/login'`).
+5. If `kind=other`: heuristic keyword search from FR text.
+6. After targeted searches: a quick broad scan for EXTRA candidates
+   (functions/endpoints in the feature area not covered by any anchor).
 
 ## Output Contract (HARD)
 
-Liefere AUSSCHLIESSLICH eine JSON-Liste. Pro Eintrag:
+Return ONLY a JSON list. Per entry:
 
 ```json
 {
@@ -50,27 +50,27 @@ Liefere AUSSCHLIESSLICH eine JSON-Liste. Pro Eintrag:
 }
 ```
 
-Klassen-Definitionen:
-- MISSING: Spec fordert es, im Code nicht auffindbar.
-- EXTRA: Code-Artefakt existiert (feature-relevant), Spec referenziert es nicht.
-- DIVERGED: Existiert in beidem, aber Pfad/Signatur/Struktur weicht ab.
-- STALE: nutze NUR, wenn du explizit Hinweise auf veralteten Code-Stand
-  findest (z.B. TODO-Marker, "deprecated", auskommentierte Implementation,
-  die der Spec entsprechen würde). Sonst nicht setzen — Phase 3 macht
-  STALE-Reklassifikation aus Pre-Filter.
-- IN_SYNC: bestätigte Übereinstimmung. EIN Eintrag pro geprüftem Anker reicht.
+Class definitions:
+- MISSING: spec requires it, not found in code.
+- EXTRA: code artifact exists (feature-relevant), spec does not reference it.
+- DIVERGED: exists in both, but path/signature/structure differs.
+- STALE: use ONLY if you find explicit hints of outdated code state
+  (e.g. TODO markers, "deprecated", commented-out implementation that
+  matches the spec). Otherwise do not set — Phase 3 does STALE reclassification
+  from the pre-filter.
+- IN_SYNC: confirmed match. ONE entry per probed anchor is enough.
 
-Free-Prosa wird abgelehnt. Wenn du nichts findest: `[]`.
+Free prose is rejected. If you find nothing: `[]`.
 
 ## Out of Scope
 
-- KEINE Code-Änderungen. Du bist read-only.
-- KEIN Test-Run, KEIN Build, KEIN Deploy.
-- KEINE Files in REPO_PATH modifizieren.
-- KEINE Drift-Report-Files anlegen oder editieren.
-- KEINE Spec-Edits.
-- KEINE Aussagen über semantische Korrektheit — nur strukturelle Präsenz/Form.
-- KEINE Diskussion alternativer Architekturen.
+- NO code changes. You are read-only.
+- NO test runs, NO builds, NO deploys.
+- Do NOT modify any files in REPO_PATH.
+- Do NOT create or edit drift report files.
+- NO spec edits.
+- NO statements about semantic correctness — only structural presence/form.
+- NO discussion of alternative architectures.
 ```
 
 ## Dispatch checklist (workflow uses this)

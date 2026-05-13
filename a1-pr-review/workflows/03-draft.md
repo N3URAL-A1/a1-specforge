@@ -87,20 +87,20 @@ Atomic write (tmp + rename).
 Also write `<worktree>/.a1-review/inline-comments.md` if MINOR findings
 exist.
 
-### 3.5 Show draft to user (German)
+### 3.5 Show draft to user
 
 ```
-PR-Draft fertig. Titel + erste 20 Zeilen Body:
+PR draft ready. Title + first 20 lines of body:
 <excerpt>
 
-Datei: <worktree>/.a1-review/pr-draft.md
+File: <worktree>/.a1-review/pr-draft.md
 
-Soll ich den PR jetzt mit gh erstellen (Phase 4)? (ja / nein / draft anpassen)
+Should I create the PR now with gh (Phase 4)? (yes / no / adjust draft)
 ```
 
-- "ja" → Phase 4.
-- "nein" → stop, registry bleibt auf `reviewed`.
-- "draft anpassen" → wait for user edits, then ask again.
+- "yes" → Phase 4.
+- "no" → stop, registry stays on `reviewed`.
+- "adjust draft" → wait for user edits, then ask again.
 
 ## Failure modes
 

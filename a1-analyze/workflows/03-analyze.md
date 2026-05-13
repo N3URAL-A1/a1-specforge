@@ -18,7 +18,7 @@ Read the focus from frontmatter. Use this mapping:
 
 The stack-specialist for `onboarding` is chosen from the discover `tech_stack`:
 - If `tech_stack` contains `flutter`/`dart` → Felix
-- If `tech_stack` contains AI/ML markers (langchain, transformers, vector DBs) or repo name matches `n3ural*` → Aik
+- If `tech_stack` contains AI/ML markers (langchain, transformers, vector DBs) → Aik
 - Otherwise → Walter
 
 ## Step 2 — Build briefs from the template
@@ -27,7 +27,7 @@ For each selected agent, read `~/.claude/skills/a1-analyze/templates/agent-brief
 and construct the brief by substituting:
 
 - `<AGENT_NAME>` — the agent name (e.g. `Reinhard`)
-- `<FOCUS_HUMAN>` — the focus label in German (Sicherheit / Architektur / Qualität / Onboarding / Allgemein)
+- `<FOCUS_HUMAN>` — the focus label (Security / Architecture / Quality / Onboarding / General)
 - `<PROJECT_SLUG>`, `<ANALYZED_PATH>` — from frontmatter
 - `<TECH_STACK_LIST>`, `<LOC>`, `<FILE_COUNT>`, `<LAST_COMMIT>`, `<BRANCH>`, `<COMMIT_COUNT_30D>` — from `discover[]`
 - `<ANALYSIS_PATH>` — absolute analysis file path
@@ -61,9 +61,9 @@ Each agent MUST return a JSON array of finding objects. Parse the response:
 1. If the response contains a valid JSON array → continue.
 2. If empty array `[]` → record agent dispatch but no findings.
 3. If non-JSON / wrong shape → re-dispatch ONCE with a stricter brief reminder:
-   "Letzte Antwort war kein gültiges JSON-Array. Bitte nochmal, NUR JSON gemäss
-   Output-Contract." If second attempt also fails → record the failure auf
-   Deutsch in the Notes section, skip this agent's findings.
+   "Last response was not a valid JSON array. Please retry with ONLY JSON per
+   Output-Contract." If second attempt also fails → record the failure in the
+   Notes section, skip this agent's findings.
 
 Each finding object must have: `severity`, `category`, `location`, `description`.
 `recommendation` is optional. Reject and re-ask if any required field is missing.
@@ -100,26 +100,26 @@ node ~/.claude/skills/_shared/a1-tools.cjs analyze update-status \
   }'
 ```
 
-## Step 7 — Summarize for Robert, in German
+## Step 7 — Summarize for the user
 
-> "Analyze abgeschlossen. <n> Findings von <m> Sub-Agents:
->  - Reinhard: <k> Findings (security)
->  - Alex: <k> Findings (architecture)
+> "Analyze complete. <n> findings from <m> sub-agents:
+>  - Reinhard: <k> findings (security)
+>  - Alex: <k> findings (architecture)
 >  
->  Soll ich Phase 4 (Synthesize — Dedup, Priorisierung) starten?"
+>  Should I start Phase 4 (Synthesize — dedup, prioritization)?"
 
 If yes: proceed to `04-synthesize.md`.
 If no: stop. Status `analyzed` persists.
 
 ## Edge cases
 
-- **Alle Agents liefern leer:** das ist ein legitimes Ergebnis (Projekt ist
-  sauber). Status auf `analyzed` setzen, in Phase 4 wird die Synthesis das
-  reflektieren ("no findings in this focus").
-- **Ein Agent timeout / no response:** record the failure, continue with the
+- **All agents return empty:** that is a legitimate result (project is clean).
+  Set status to `analyzed`; in Phase 4 the synthesis will reflect this
+  ("no findings in this focus").
+- **One agent timeout / no response:** record the failure, continue with the
   other agents. Don't block the phase on one slow agent.
-- **Agent liefert Code-Edits statt Findings:** Output-Contract-Verletzung.
-  Reject, re-ask once mit dem Hinweis "Du bist read-only, keine Code-Edits."
-- **Sub-Agent sagt "ich brauche mehr Kontext":** Liefere expliziten Sub-Pfad
-  oder File-Liste im Re-Dispatch. Wenn das nicht hilft, Finding-frei lassen,
-  Notes-Eintrag.
+- **Agent returns code edits instead of findings:** Output-Contract violation.
+  Reject, re-ask once with "You are read-only, no code edits."
+- **Sub-agent says "I need more context":** provide an explicit sub-path or
+  file list in the re-dispatch. If that doesn't help, leave findings empty,
+  add a Notes entry.

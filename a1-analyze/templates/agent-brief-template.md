@@ -7,29 +7,29 @@ all be present in every dispatch.
 ## Brief structure (fill these four sections)
 
 ```
-Du bist <AGENT_NAME>. Aufgabe: <FOCUS_HUMAN>-Analyse eines bestehenden Projekts.
+You are <AGENT_NAME>. Task: <FOCUS_HUMAN> analysis of an existing project.
 
 ## Project Context
 
-- Projekt-Slug: <PROJECT_SLUG>
-- Lokaler Pfad: <ANALYZED_PATH>
-- Tech-Stack: <TECH_STACK_LIST>
-- LOC: <LOC> in <FILE_COUNT> Dateien
-- Letzter Commit: <LAST_COMMIT> auf Branch <BRANCH>
-- Commit-Aktivität (30 Tage): <COMMIT_COUNT_30D>
+- Project slug: <PROJECT_SLUG>
+- Local path: <ANALYZED_PATH>
+- Tech stack: <TECH_STACK_LIST>
+- LOC: <LOC> in <FILE_COUNT> files
+- Last commit: <LAST_COMMIT> on branch <BRANCH>
+- Commit activity (30 days): <COMMIT_COUNT_30D>
 
-Analyse-Datei (für deine Referenz, NICHT editieren):
+Analysis file (for your reference, do NOT edit):
 <ANALYSIS_PATH>
 
 ## Focus
 
 <FOCUS_SPECIFIC_PROMPT>
 
-(siehe Mapping unten je Agent.)
+(see mapping below per agent.)
 
 ## Output Contract (HARD)
 
-Liefere AUSSCHLIESSLICH eine JSON-Liste mit Findings. Pro Finding:
+Return ONLY a JSON list of findings. Per finding:
 
 ```json
 {
@@ -41,61 +41,59 @@ Liefere AUSSCHLIESSLICH eine JSON-Liste mit Findings. Pro Finding:
 }
 ```
 
-Severity-Definitionen:
-- BLOCKER: Sicherheits-Hole, Daten-Verlust-Risiko, Compliance-Verletzung, defekter Core-Flow.
-- MAJOR: Erhebliches Risiko / Qualität / Wartbarkeit, sollte vor Launch oder bald gefixt sein.
-- MINOR: Polish, Style, kleine Verbesserung, Backlog-Material.
+Severity definitions:
+- BLOCKER: security hole, data-loss risk, compliance violation, broken core flow.
+- MAJOR: significant risk / quality / maintainability issue; should be fixed before launch or soon.
+- MINOR: polish, style, small improvement, backlog material.
 
-Free-Prosa-Antworten werden zurückgewiesen. Wenn du nichts findest: leeres JSON-Array `[]`.
-Wenn du mehr Kontext brauchst: liefere `[]` und einen Hinweis in Prosa was du brauchst.
+Free-prose responses are rejected. If you find nothing: return empty JSON array `[]`.
+If you need more context: return `[]` and a brief prose note explaining what you need.
 
 ## Out of Scope
 
-- KEINE Code-Änderungen. Du bist read-only.
-- KEIN Test-Run, KEIN Build, KEIN Deploy.
-- KEINE Files in <ANALYZED_PATH> modifizieren.
-- KEINE neuen Files anlegen (kein Report-File schreiben — Findings als Tool-Output).
-- KEINE Diskussion alternativer Architekturen, die nichts mit dem Focus zu tun haben.
-- KEINE Empfehlungen, die nicht zu einem konkreten `recommendation`-Feld passen.
+- NO code changes. You are read-only.
+- NO test runs, NO builds, NO deploys.
+- Do NOT modify any files in <ANALYZED_PATH>.
+- Do NOT create new files (no report files — return findings as tool output).
+- NO discussion of alternative architectures unrelated to the focus.
+- NO recommendations that don't fit a concrete `recommendation` field.
 ```
 
 ## Focus-specific prompts
 
 ### general
 
-> Verschaffe einen High-Level-Überblick. Was sind die 5 wichtigsten Beobachtungen
-> über dieses Projekt (Architektur, Qualität, Risiken)? Eine Beobachtung pro
-> Finding. Severity nach echter Schwere, nicht nach Auffälligkeit.
+> Provide a high-level overview. What are the 5 most important observations
+> about this project (architecture, quality, risks)? One observation per finding.
+> Severity based on actual impact, not visual prominence.
 
 ### security
 
-> Suche nach: hardcoded secrets, fehlende Input-Validierung, Auth-Bypass-Risiken,
-> RLS-Lücken (bei Supabase/Postgres), unsichere Default-Configs, veraltete
-> Dependencies mit bekannten CVEs, Logging von PII, fehlendes Rate-Limiting,
-> XSS/CSRF-Vektoren. Priorisiere BLOCKER für alles, was Daten-Exfiltration oder
-> Account-Takeover ermöglicht.
+> Look for: hardcoded secrets, missing input validation, auth-bypass risks,
+> RLS gaps (Supabase/Postgres), insecure default configs, outdated dependencies
+> with known CVEs, PII in logs, missing rate limiting, XSS/CSRF vectors.
+> Prioritize BLOCKER for anything enabling data exfiltration or account takeover.
 
 ### architecture
 
-> Bewerte Modul-Grenzen, Coupling, Konsistenz der Abstraktion, fehlende ADRs für
-> nicht-triviale Decisions, Wachstums-Bottlenecks. Sind die wichtigsten
-> Architektur-Entscheidungen irgendwo dokumentiert? Sind die Module so geschnitten,
-> dass parallele Entwicklung möglich ist? BLOCKER nur bei strukturellen Schäden
-> (z.B. Zirkular-Abhängigkeiten zwischen Core-Modulen).
+> Evaluate module boundaries, coupling, abstraction consistency, missing ADRs for
+> non-trivial decisions, growth bottlenecks. Are the key architecture decisions
+> documented anywhere? Are modules cut such that parallel development is possible?
+> BLOCKER only for structural damage (e.g. circular dependencies between core modules).
 
 ### quality
 
-> Prüfe Code-Qualität: Komplexität, Duplikation, fehlende Tests in kritischen
-> Pfaden, Dead Code, inkonsistente Patterns, fehlerhafte Error-Handling-Praxis,
-> übermäßig große Files (>800 Zeilen), tiefe Nesting (>4 Ebenen). BLOCKER nur
-> bei systemischen Quality-Verletzungen, die Wartung verhindern.
+> Check code quality: complexity, duplication, missing tests in critical paths,
+> dead code, inconsistent patterns, faulty error-handling practices, oversized files
+> (>800 lines), deep nesting (>4 levels). BLOCKER only for systemic quality violations
+> that block maintenance.
 
 ### onboarding
 
-> Aus Sicht eines neuen Entwicklers: was würde 80% des Onboarding-Wegs beschleunigen?
-> Identifiziere fehlende READMEs, unklare Entry-Points, nicht-offensichtliche
-> Abhängigkeiten, Mental-Model-Lücken. Findings hier sind primär MINOR/MAJOR —
-> echte BLOCKER (z.B. "Projekt baut nicht ohne undokumentiertes Setup") sind selten.
+> From the perspective of a new developer: what would accelerate 80% of the onboarding
+> journey? Identify missing READMEs, unclear entry points, non-obvious dependencies,
+> mental model gaps. Findings here are primarily MINOR/MAJOR —
+> real BLOCKERs (e.g. "project does not build without undocumented setup") are rare.
 
 ## Dispatch checklist (workflow uses this)
 

@@ -13,9 +13,9 @@ If you are entering this phase directly from Phase 1, the `id` is in the
 
 ## Step 1 — Confirm with user
 
-If Phase 1 just ran and PASS was shown, ask in German:
+If Phase 1 just ran and PASS was shown, ask:
 
-> "Worktree `<id>` jetzt anlegen unter `<worktree_path>`?"
+> "Create worktree `<id>` now at `<worktree_path>`?"
 
 Wait for explicit yes before proceeding.
 
@@ -49,14 +49,14 @@ Exit 0 on success, 1 on git failure (e.g. branch race), 2 on internal error.
 
 ## Step 3 — Hand off the path
 
-On success, tell the user in German:
+On success, tell the user:
 
-> "Worktree ist live. Pfad: `<worktree_path>`. Branch: `<branch>`.
-> Der Agent kann jetzt dort arbeiten. Sag Bescheid, wenn ich den Worktree
-> beenden soll — die Modi sind:
-> - `keep` — Worktree weg, Branch bleibt
-> - `discard` — beides weg (nur ohne ungemergete Commits)
-> - `handoff` — Worktree bleibt, an `a1-pr-review` übergeben (M3)"
+> "Worktree is live. Path: `<worktree_path>`. Branch: `<branch>`.
+> The agent can now work there. Let me know when you want to end the worktree —
+> the modes are:
+> - `keep` — worktree removed, branch stays
+> - `discard` — both removed (only if no unmerged commits)
+> - `handoff` — worktree stays, handed off to `a1-pr-review`"
 
 Then stop. This skill does not monitor the agent's work inside the worktree.
 
@@ -64,8 +64,8 @@ Then stop. This skill does not monitor the agent's work inside the worktree.
 
 If exit 1 (git failure), show stderr verbatim and ask:
 
-> "Git konnte den Worktree nicht anlegen. Soll ich den Registry-Eintrag
-> auf `cleaned` setzen und neu mit Prepare starten?"
+> "Git could not create the worktree. Should I set the registry entry to
+> `cleaned` and restart with Prepare?"
 
 If the user agrees, run `exit --mode discard --force` (CLI rolls back the
 registry without touching git, since nothing was created).

@@ -57,7 +57,7 @@ Wait for reinhard's response.
 ### 2.3 Extract JSON block
 
 Parse the fenced ```json block from reinhard's response. If parsing
-fails, tell the user in German and re-prompt reinhard with a stricter
+fails, tell the user and re-prompt reinhard with a stricter
 "JSON only, no prose" directive (max one retry).
 
 ### 2.4 Persist findings
@@ -71,17 +71,17 @@ Write the parsed JSON to `<worktree_path>/.a1-review/findings.json`
 node ~/.claude/skills/_shared/a1-tools.cjs pr mark-status <id> reviewed
 ```
 
-### 2.6 Report to user (German)
+### 2.6 Report to user
 
-Show counts: "Reinhard hat geprüft: X BLOCKER, Y MAJOR, Z MINOR." Then:
+Show counts: "Reinhard reviewed: X BLOCKER, Y MAJOR, Z MINOR." Then:
 
-- If BLOCKER count > 0: list each BLOCKER (Titel + Datei:Zeile). Ask
+- If BLOCKER count > 0: list each BLOCKER (title + file:line). Ask
   the user explicitly:
-  > "Es liegen BLOCKER vor. Trotzdem PR draften (Phase 3), oder erst
-  > Fixes im Worktree machen?"
+  > "There are BLOCKERs. Draft the PR anyway (Phase 3), or fix them
+  > in the worktree first?"
 
-  - Answer "trotzdem" / "weiter" → Phase 3.
-  - Answer "erst fixen" / "stop" → exit skill. User edits worktree, re-
+  - Answer "anyway" / "continue" → Phase 3.
+  - Answer "fix first" / "stop" → exit skill. User edits worktree, re-
     runs Phase 2 later.
 
 - If only MAJOR/MINOR or zero findings: proceed to Phase 3 automatically.

@@ -1,6 +1,6 @@
 # Phase 03 — Review
 
-Goal: present Finn's draft to Robert, capture any change requests, apply them
+Goal: present Finn's draft to the user, capture any change requests, apply them
 deterministically, and transition status to `reviewed`. No sub-agent in this
 phase — direct dialogue + targeted edits only.
 
@@ -17,76 +17,75 @@ in `SKILL.md`.
 
 Read the constitution body (skip frontmatter):
 ```bash
-# Use Read tool on CONST_PATH, then display body to Robert.
+# Use Read tool on CONST_PATH, then display body to the user.
 ```
 
-Show Robert auf Deutsch a structured preview:
-> "Hier ist der Draft. Bitte einmal komplett lesen:
+Show the user a structured preview:
+> "Here is the draft. Please read through it completely:
 >
 >  ---
 >  <full body>
 >  ---
 >
->  Drei mögliche Reaktionen:
->  1) Passt so → ich gehe weiter zu Phase 4 (Write).
->  2) Kleine Änderungen → sag mir konkret was wo geändert werden soll.
->  3) Größere Umarbeitung → ich schicke Finn zurück mit deinen Anmerkungen
->     als neuen Brief (Re-Draft)."
+>  Three possible responses:
+>  1) Looks good → I proceed to Phase 4 (Write).
+>  2) Small changes → tell me concretely what should change and where.
+>  3) Larger rework → I send Finn back with your feedback for a re-draft."
 
 ## Step 2 — Capture decision
 
-Wait for Robert. Branch:
+Wait for the user. Branch:
 
-### 2a — "Passt"
+### 2a — "Looks good"
 
 Proceed to Step 4.
 
 ### 2b — Small edits
 
-Robert nennt konkrete Änderungen (z.B. "Regel 3 muss strenger formuliert sein"
-oder "Override-Precedence-Tabelle: füge Beispiel für jede Layer hinzu").
+The user specifies concrete changes (e.g. "Rule 3 needs to be stricter"
+or "Override-Precedence table: add an example for each layer").
 
 For each change:
 - Read the current body.
 - Apply the change with the `Edit` tool **on the vault file directly**.
   Note: this is the ONE phase where direct body edits are allowed because
-  they are minor, user-driven, and traceable (we'll show the diff before
-  transitioning). Frontmatter is never touched by Edit — only via CLI.
+  they are minor, user-driven, and traceable. Frontmatter is never touched
+  by Edit — only via CLI.
 
-After all edits applied: re-show the changed sections to Robert auf Deutsch
-für eine kurze Bestätigung ("So jetzt?"). If he says yes, proceed to Step 4.
-If he wants more changes, loop within Step 2b.
+After all edits applied: re-show the changed sections to the user for a brief
+confirmation ("Does this look right?"). If yes, proceed to Step 4.
+If they want more changes, loop within Step 2b.
 
 ### 2c — Re-draft
 
-If Robert wants a significant rework, write a new tmp file with his feedback:
+If the user wants a significant rework, write a new tmp file with their feedback:
 
 ```json
 {
   "previous_body_path": "<CONST_PATH>",
-  "robert_feedback": "<verbatim>",
+  "user_feedback": "<verbatim>",
   "specific_concerns": ["..."]
 }
 ```
 
 Construct a follow-up brief and re-dispatch Finn with subagent_type
-`finn-cc-architect`, including the previous body and Robert's feedback.
+`finn-cc-architect`, including the previous body and the user's feedback.
 Finn returns a revised body. Write it back via `constitution set-body`,
-status STAYS at `drafted`, and we loop back to Step 1 (Robert reviews
+status STAYS at `drafted`, and we loop back to Step 1 (user reviews
 the new draft).
 
-Max 2 re-draft cycles before escalating to Robert auf Deutsch:
-> "Wir sind beim 3. Draft. Möchtest du selbst übernehmen und die Constitution
->  direkt im Vault-File editieren? Ich kann den Pfad öffnen."
+Max 2 re-draft cycles before escalating to the user:
+> "We are on draft 3. Would you like to take over and edit the constitution
+>  directly in the vault file? I can provide the path."
 
 ## Step 3 — User cancellation
 
-Anytime Robert says "abbrechen":
+Anytime the user says "cancel":
 ```bash
 node ~/.claude/skills/_shared/a1-tools.cjs constitution update-status \
   "<CONST_PATH>" cancelled
 ```
-Tell Robert auf Deutsch was passiert ist und stop.
+Tell the user what happened and stop.
 
 ## Step 4 — Transition status to `reviewed`
 
@@ -99,11 +98,11 @@ This appends `phase=review completed=<iso>` to `phase_history`.
 
 ## Step 5 — Route to Phase 4
 
-Tell Robert **in German**:
-> "Review abgeschlossen. Status: `reviewed`. Soll ich Phase 4 (Write) starten?
->  Das macht: (a) History-Snapshot wenn nötig, (b) Repo-Spiegel nach
->  `<repo-root>/constitution.md`, (c) Cross-Link in CLAUDE.md ergänzen,
->  (d) Status auf `written` setzen."
+Tell the user:
+> "Review complete. Status: `reviewed`. Should I start Phase 4 (Write)?
+>  That will: (a) create a history snapshot if needed, (b) write the repo
+>  mirror to `<repo-root>/constitution.md`, (c) add a cross-link in CLAUDE.md,
+>  (d) set status to `written`."
 
 If yes: proceed to `04-write.md`.
 
@@ -112,4 +111,4 @@ If yes: proceed to `04-write.md`.
 - Edit-tool may modify the **body** but never the YAML frontmatter.
 - After every Edit-tool change, re-read the file before the next Edit to keep
   the in-memory view consistent.
-- Re-draft loop max 2 iterations. Beyond that, hand control to Robert.
+- Re-draft loop max 2 iterations. Beyond that, hand control to the user.

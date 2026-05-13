@@ -39,31 +39,30 @@ node ~/.claude/skills/_shared/a1-tools.cjs phantom check "<plan_path>" \
 
 Exit code is always 0. Capture stdout.
 
-## Step 3 — Report to the user (German)
+## Step 3 — Report to the user
 
 If `status: clean`:
 
-> Phantom-Check sauber: alle {N} erledigten Tasks haben Code-Spuren im Diff
-> seit `<since>`.
+> Phantom check clean: all {N} completed tasks have code traces in the diff
+> since `<since>`.
 
 If `status: phantoms_found`:
 
-> Phantom-Check: {K} von {N} erledigten Tasks haben keine Code-Spur.
+> Phantom check: {K} of {N} completed tasks have no code trace.
 >
-> Pro Phantom:
+> Per phantom:
 >
-> 1. **Zeile {line}:** {task}
->    - Gesuchte Begriffe: {keywords}
->    - Grund: {reason}
->    - Optionen:
->      - Code nachliefern (Task war tatsächlich nicht erledigt)
->      - Checkbox zurück auf `[ ]` setzen
->      - `# no-code` an die Task-Zeile anhängen, falls es ein reiner Docs-
->        oder Ops-Schritt war
+> 1. **Line {line}:** {task}
+>    - Keywords searched: {keywords}
+>    - Reason: {reason}
+>    - Options:
+>      - Deliver the code (the task was not actually done)
+>      - Revert the checkbox to `[ ]`
+>      - Append `# no-code` to the task line if it was a pure docs or ops step
 
 Always include the docs-only-skipped count when non-zero:
 
-> {M} Tasks waren mit `# no-code` markiert und wurden übersprungen.
+> {M} tasks were marked with `# no-code` and were skipped.
 
 ## Step 4 — Do NOT auto-fix
 
@@ -73,8 +72,8 @@ phantom report is the deliverable.
 
 ## Edge cases
 
-- **No completed tasks in PLAN.md.** Report "Keine erledigten Tasks im
-  Plan gefunden — Phantom-Check entfällt." and exit.
+- **No completed tasks in PLAN.md.** Report "No completed tasks found in
+  the plan — phantom check skipped." and exit.
 - **`git diff` fails** (bad ref, detached HEAD without history, etc.).
   The CLI errors out with exit code 2 in that case (the only non-zero
   exit path). Surface the stderr to the user and suggest passing an

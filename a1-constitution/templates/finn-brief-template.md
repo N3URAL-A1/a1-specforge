@@ -66,7 +66,7 @@ Inhaltliche Anforderungen:
    manuell geprüft").
 
 3. **Agent-Specific Constraints** — leite aus User-Interview Q2 ab. Wenn
-   Robert nichts angegeben hat (leerer String, "keine", "none"), schreibe
+   the user nichts angegeben hat (leerer String, "keine", "none"), schreibe
    genau "None." als Inhalt. Sonst: pro Agent ein eigener Block mit Name,
    Constraint, Begründung.
 
@@ -74,7 +74,7 @@ Inhaltliche Anforderungen:
    Anspruch: jeder neue Agent versteht es ohne Code zu lesen.
 
 5. **Notes** — leer lassen oder eine einzige Zeile mit dem Erstellungs-
-   Datum + Vault-Pfad. Robert nutzt das später für Updates.
+   Datum + Vault-Pfad. the user nutzt das später für Updates.
 
 ## Output Contract (HARD)
 

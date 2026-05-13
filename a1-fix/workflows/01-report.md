@@ -5,11 +5,11 @@ report on disk. Output: a bug-report file in the Vault with `status: reported`.
 
 ## Inputs you need before starting
 
-- Project slug (e.g. `n3ural-platform`, `niimo`)
+- Project slug (e.g. `my-platform`, `my-project`)
 - A symptom description (even one sentence is enough to start)
 
-If the project slug is unclear, **ask the user in German**:
-> "In welchem Projekt tritt der Bug auf? (slug, z.B. `n3ural-platform`)"
+If the project slug is unclear, **ask the user**:
+> "In which project does the bug occur? (slug, e.g. `my-platform`)"
 
 ## Step 1 — Duplicate check (before anything else)
 
@@ -21,44 +21,44 @@ node ~/.claude/skills/_shared/a1-tools.cjs fix find-duplicates <project-slug> <k
 ```
 
 The helper greps the last 30 days of bug reports in the project. If matches come
-back with `hit_count >= 2`, surface them to the user **in German**:
+back with `hit_count >= 2`, surface them to the user:
 
-> "Es gibt vorhandene Bug-Reports der letzten 30 Tage, die ähnlich aussehen:
-> - <file> ("<title>", status: <status>) — Treffer: <keywords>
+> "There are existing bug reports from the last 30 days that look similar:
+> - <file> ("<title>", status: <status>) — matched: <keywords>
 >
-> Ist das derselbe Bug, oder ein eigener Report?"
+> Is this the same bug, or a separate report?"
 
-If user says "derselbe": stop here. Open the existing file, append a new symptom
+If user says "same bug": stop here. Open the existing file, append a new symptom
 note in `## Notes`, do NOT create a new file.
 
-If user says "neuer Report, aber verwandt": continue with Step 2 and add
+If user says "new report, but related": continue with Step 2 and add
 `duplicate_of: <path>` to the new bug's frontmatter after creation.
 
 ## Step 2 — Spawn Falk for the triage interview
 
 Use the `Task` tool to spawn Falk (`~/.claude/agents/falk-bug-hunter.md`) with this brief:
 
-> Du bist Falk im Triage-Modus. Aufgabe: ein strukturiertes Bug-Triage-Interview
-> mit Robert führen. Pflicht-Themen, in dieser Reihenfolge:
+> You are Falk in triage mode. Task: conduct a structured bug triage interview
+> with the user. Required topics, in this order:
 >
-> 1. Symptom (was geht konkret schief)
-> 2. Reproduction Steps (Schritte 1–N + Expected vs Actual)
-> 3. Environment (Browser/OS, App-Version/Commit, Tenant/Role, Netzwerk)
+> 1. Symptom (what exactly is going wrong)
+> 2. Reproduction Steps (steps 1–N + Expected vs Actual)
+> 3. Environment (Browser/OS, App version/commit, Tenant/Role, Network)
 > 4. Frequency (always / X-of-Y / once / unknown)
-> 5. Severity-Vorschlag (blocker / major / minor / nit) mit Begründung
-> 6. User-Impact (wer ist betroffen, was geht nicht)
-> 7. Affected Components (Repos, vermutete Files/Routes/Services)
-> 8. Recent Changes (jüngste Deploys/Migrationen im Verdachtsfenster)
+> 5. Severity suggestion (blocker / major / minor / nit) with reasoning
+> 6. User Impact (who is affected, what they cannot do)
+> 7. Affected Components (repos, suspected files/routes/services)
+> 8. Recent Changes (recent deploys/migrations in the suspected window)
 >
-> **Hard Rules:** Eine Frage pro Turn. Deutsch mit Robert. Keine Diagnose, keine
-> Code-Reads in dieser Phase — nur Fakten sammeln. Wenn Robert sagt "weiß ich
-> nicht": akzeptieren, "unknown" notieren, nächste Frage.
+> **Hard Rules:** One question per turn. No diagnosis, no code reads in this
+> phase — only collect facts. If the user says "don't know": accept it, record
+> "unknown", move to the next question.
 >
-> Wenn der Bug nicht reproduzierbar ist (Reproduction Steps unklar bleiben nach
-> 2 Versuchen): Status "cant-reproduce" vorschlagen, Pause empfehlen.
+> If the bug is not reproducible (reproduction steps remain unclear after
+> 2 attempts): suggest status "cant-reproduce", recommend a pause.
 >
-> Output: ein strukturierter Block mit allen 8 Pflicht-Themen, sowie einem
-> vorgeschlagenen `bug_slug` (kebab-case, max 5 Wörter) und Severity.
+> Output: a structured block with all 8 required topics, a suggested
+> `bug_slug` (kebab-case, max 5 words), and severity.
 
 ## Step 3 — Compute the file slot
 
@@ -82,6 +82,7 @@ Read `~/.claude/skills/a1-fix/templates/bug-report-template.md` and substitute:
 - `<PROJECT_SLUG>`, `<BUG_SLUG>`, `<ONE_LINE_TITLE>`
 - `<YYYY-MM-DDTHH:MM>` for `reported_at` (use local time, minute precision)
 - `<ISO_TIMESTAMP>` for the `phase_history` entry (full ISO)
+- `<REPORTER>` — the name or identifier of the person reporting (from user context)
 - Severity from Falk's recommendation
 - Affected repos as a YAML list
 - All eight interview themes filled into the corresponding sections
@@ -93,10 +94,10 @@ Write the file via the Write tool to the absolute path
 
 ## Step 5 — Confirm and hand off
 
-Tell the user **in German**:
+Tell the user:
 
-> "Bug-Report angelegt: `projects/<slug>/fixes/<file>`. Status: reported,
-> Severity: <severity>. Soll ich Phase 2 (Diagnose mit Falk) starten?"
+> "Bug report created: `projects/<slug>/fixes/<file>`. Status: reported,
+> Severity: <severity>. Should I start Phase 2 (Diagnose with Falk)?"
 
 If yes: proceed to `02-diagnose.md`.
 If no: stop. The file persists; the skill can resume from frontmatter status.
@@ -104,8 +105,8 @@ If no: stop. The file persists; the skill can resume from frontmatter status.
 ## Special exits
 
 - **cant-reproduce:** run
-  `a1-tools fix update-status <bug-path> cant-reproduce` and tell Robert in German:
-  "Bug nicht reproduzierbar nach Triage. Status auf cant-reproduce gesetzt.
-  Wenn das Symptom wiederkehrt: einfach erneut melden."
-- **cancelled:** if Robert wants to drop the report mid-triage, run
+  `a1-tools fix update-status <bug-path> cant-reproduce` and tell the user:
+  "Bug not reproducible after triage. Status set to cant-reproduce.
+  If the symptom comes back, just report it again."
+- **cancelled:** if the user wants to drop the report mid-triage, run
   `a1-tools fix update-status <bug-path> cancelled`. The slot stays.

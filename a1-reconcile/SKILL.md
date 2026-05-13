@@ -159,7 +159,7 @@ spec, never touch the drift report. If they want a change, it goes into
 - Never modify the spec from this skill. The spec is the anchor; reconcile
   reads it.
 - Never modify project code from this skill. Drift findings drive hand-offs;
-  the actual fix runs through `a1-fix` / `a1-new-feature` after Robert decides.
+  the actual fix runs through `a1-fix` / `a1-new-feature` after the user decides.
 - Phase 2 (Parse) runs **without** sub-agents. Acceptance-Criteria + artifact
   references are extracted deterministically by the CLI.
 - Phase 3 (Probe) dispatches sub-agents in parallel when targets are
@@ -168,8 +168,8 @@ spec, never touch the drift report. If they want a change, it goes into
   `{class: MISSING|EXTRA|DIVERGED|STALE, artifact, spec_ref, code_ref,
   description, recommendation}`. Free-prose is rejected and re-asked once.
 - The skill NEVER auto-activates `a1-fix` or `a1-new-feature`. It proposes in
-  `suggested_next:`; Robert decides.
-- User-facing prompts and questions are in **German**. All file content
+  `suggested_next:`; the user decides.
+- User-facing prompts and questions are in **English**. All file content
   (frontmatter, drift entries, code refs, spec refs) stays in English.
 - One question per turn in Phase 1. Max 2 clarifying questions.
 - Reports in `cancelled` status keep their date+suffix slot.
@@ -181,7 +181,7 @@ spec, never touch the drift report. If they want a change, it goes into
 
 - Implementation gaps surfaced as MISSING → `a1-new-feature` (if scope is
   whole new functionality) or `a1-fix` (if surgical).
-- DIVERGED findings → manual inspection by Robert, then `a1-fix` for the
+- DIVERGED findings → manual inspection by the user, then `a1-fix` for the
   edit. The skill proposes; it does not auto-route.
 - EXTRA findings → user decides: update spec via `a1-new-feature` (Phase 3
   Clarify) or remove the code via `a1-fix`.

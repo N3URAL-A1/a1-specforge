@@ -10,7 +10,7 @@ set in frontmatter.
 - Vault path to the bug-report file
 - Bug-report frontmatter must be in `status: reported`
 
-If status is not `reported`, abort and explain to the user in German which phase
+If status is not `reported`, abort and explain to the user which phase
 is actually next based on the current status.
 
 ## Step 1 — Read the bug report and the project
@@ -27,37 +27,36 @@ is actually next based on the current status.
 
 Use the `Task` tool to spawn Falk (`~/.claude/agents/falk-bug-hunter.md`) with this brief:
 
-> Du bist Falk im Diagnose-Modus. Aufgabe: aus dem Bug-Report die wahrscheinlichste
-> Root Cause ableiten und mit Evidenz belegen. Niemals fixen, niemals committen,
-> niemals Files schreiben außerhalb des Bug-Reports.
+> You are Falk in diagnosis mode. Task: derive the most likely root cause from
+> the bug report and back it with evidence. Never fix, never commit, never write
+> files outside the bug report.
 >
-> **Vault-Pfad zum Bug-Report:** <ABSOLUTE_PATH>
+> **Vault path to bug report:** <ABSOLUTE_PATH>
 > **Affected Repos:** <list>
-> **Symptom + Repro Steps:** (in der Datei)
+> **Symptom + Repro Steps:** (in the file)
 >
-> **Vorgehen:**
-> 1. Bug-Report lesen, Symptom + Reproduction Steps verinnerlichen.
-> 2. Stack-Trace folgen, falls vorhanden — Glob/Grep, nicht Volltextlesung.
-> 3. Git-Log der affected files im Verdachtsfenster prüfen
->    (`related_deploy` als Anker).
-> 4. Hypothese formulieren mit:
->    - **Root Cause** (eine Aussage, was wirklich kaputt ist)
->    - **Evidence** (Datei:Zeile-Verweise, Log-Auszüge, Commit-Hashes)
->    - **Confidence** (low / medium / high) — explizit begründet
+> **Approach:**
+> 1. Read the bug report, internalize symptom + reproduction steps.
+> 2. Follow the stack trace if present — Glob/Grep, not full-file reads.
+> 3. Check git log of affected files in the suspected window
+>    (`related_deploy` as anchor).
+> 4. Formulate a hypothesis with:
+>    - **Root Cause** (one statement of what is actually broken)
+>    - **Evidence** (file:line references, log excerpts, commit hashes)
+>    - **Confidence** (low / medium / high) — explicitly justified
 >    - **Recommended code agent** (walter / bernd / aik / toni / felix / alex),
->      basierend auf Stack des affected repo
->    - **Suggested fix approach** (ein Absatz, kein Code)
+>      based on the stack of the affected repo
+>    - **Suggested fix approach** (one paragraph, no code)
 >
 > **Hard Rules:**
-> - Niemals raten ohne Evidenz. Wenn keine Evidenz: "Confidence low,
->   weitere Reproduktion nötig" und stop.
-> - Wenn die wahrscheinlichste Hypothese das Symptom nur teilweise erklärt:
->   das explizit sagen, nicht beschönigen.
-> - Antwort auf Deutsch an Robert, technische Inhalte (file:line, code-Begriffe)
->   bleiben Englisch.
+> - Never guess without evidence. If no evidence: "Confidence low,
+>   further reproduction needed" and stop.
+> - If the most likely hypothesis only partially explains the symptom:
+>   say so explicitly, do not paper over it.
 >
-> Output: kompletter Diagnose-Block (Markdown) im Format der `## Diagnosis`-Sektion
-> des Bug-Report-Templates, plus eine Empfehlung, ob Phase 03 starten soll.
+> Output: complete diagnosis block (Markdown) in the format of the `## Diagnosis`
+> section of the bug report template, plus a recommendation on whether to start
+> Phase 03.
 
 ## Step 3 — Update the bug report
 
@@ -78,10 +77,10 @@ This appends `phase=diagnose completed=<iso>` to phase_history and sets
 
 ## Step 4 — Hand off
 
-Tell the user **in German**:
+Tell the user:
 
-> "Diagnose abgeschlossen. Root Cause: <one-line summary>. Confidence: <level>.
-> Vorgeschlagener Code-Agent: **<agent>**. Soll ich Phase 3 (Fix) anstoßen?"
+> "Diagnosis complete. Root Cause: <one-line summary>. Confidence: <level>.
+> Suggested code agent: **<agent>**. Should I start Phase 3 (Fix)?"
 
 If yes: proceed to `03-fix.md`.
 If no: stop. State persists.
@@ -89,8 +88,8 @@ If no: stop. State persists.
 ## Special exits from Phase 02
 
 - **Confidence too low to proceed:** Falk says diagnosis is unsafe. Do NOT flip
-  status to `diagnosed`. Tell Robert in German that more reproduction data is
-  needed and recommend extending Phase 1 with additional logging or scenarios.
+  status to `diagnosed`. Tell the user that more reproduction data is needed
+  and recommend extending Phase 1 with additional logging or scenarios.
 - **Discovery: it's a duplicate:** if Falk's diagnosis points to a known earlier
   bug, run
   `a1-tools fix update-status <bug-path> duplicate --duplicate-of <path-to-original>`

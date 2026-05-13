@@ -26,16 +26,16 @@ create it (use Bash with the absolute vault root).
 Use the **Agent** tool with `subagent_type: "vincente-vibe-optimizer"` and
 `model: "opus"` to spawn Vincente with this brief:
 
-> Du bist Vincente. Die Spec liegt unter `<spec-path>` mit Status `clarified`. Dein Auftrag:
-> einen Wave-Plan bauen und unter `<plan-path>` speichern.
+> You are Vincente. The spec is at `<spec-path>` with status `clarified`. Your task:
+> build a wave plan and save it under `<plan-path>`.
 >
-> **Pflicht-Inputs aus der Spec:**
-> - User Stories (P1/P2/P3) → Wave-Reihenfolge orientiert sich an Priorität.
-> - FR-### → werden auf Waves verteilt, jeder FR landet in genau einer Wave.
-> - SC-### → bleibt für Phase 6, du nimmst sie nur als Fitness-Check pro Wave.
-> - Dependencies → bestimmen die Reihenfolge.
+> **Required inputs from the spec:**
+> - User Stories (P1/P2/P3) → wave order follows priority.
+> - FR-### → distributed across waves; each FR lands in exactly one wave.
+> - SC-### → kept for Phase 6; use them only as a fitness check per wave.
+> - Dependencies → determine the order.
 >
-> **Wave-Plan-Struktur (Markdown mit YAML-Frontmatter):**
+> **Wave plan structure (Markdown with YAML frontmatter):**
 >
 > ```yaml
 > ---
@@ -47,54 +47,54 @@ Use the **Agent** tool with `subagent_type: "vincente-vibe-optimizer"` and
 > ---
 > ```
 >
-> Pro Wave:
+> Per wave:
 >
 > ```markdown
-> ## Wave N — <kurzer Titel>
+> ## Wave N — <short title>
 >
-> **Goal:** <1 Satz, was nach dieser Wave funktioniert>
-> **Depends on:** Wave M (oder "none")
-> **Parallelizable:** ja/nein (mehrere Code-Agents in dieser Wave?)
+> **Goal:** <1 sentence, what works after this wave>
+> **Depends on:** Wave M (or "none")
+> **Parallelizable:** yes/no (multiple code agents in this wave?)
 > **FRs covered:** FR-001, FR-002, …
 > **Stories advanced:** US-<###>-1, …
 >
-> ### Brief für Code-Agents
+> ### Brief for code agents
 >
-> <Konkreter Auftrag, File-Ownership-Hinweise (lib/ vs functions/src/),
-> erwartetes Test-Verhalten, Acceptance-Bezug>
+> <Concrete task, file-ownership hints (lib/ vs functions/src/),
+> expected test behavior, acceptance reference>
 >
 > ### Suggested agent(s)
 >
-> - **<agent-name>** für <konkrete Sub-Aufgabe in dieser Wave>
+> - **<agent-name>** for <concrete sub-task in this wave>
 > ```
 >
-> **Code-Agent-Vorschläge:**
+> **Code agent suggestions:**
 > - Frontend / Web: Walter
-> - Backend / API / Cloud Functions: Bernd (Niimo) oder Walter (generisch)
+> - Backend / API / Cloud Functions: Bernd or Walter (generic)
 > - AI/ML/RAG/LLM: Aik
-> - Flutter Mobile: Felix (oder projekt-spezifisch flutter-toni)
-> - System-Design / ADRs (vor einer Wave nötig?): Alex
+> - Flutter Mobile: Felix (or project-specific flutter agent)
+> - System design / ADRs (needed before a wave?): Alex
 >
-> Du **schlägst** die Agents vor; der User dispatched in Phase 5 selbst.
+> You **suggest** the agents; the user dispatches in Phase 5.
 >
-> **HTTP-Contract-Pflicht (für jede Wave die API + Client kombiniert):**
-> Wenn eine Wave sowohl eine API-Route als auch einen Client (React-Component, fetch-Call,
-> Link-href) liefert, muss der Wave-Brief explizit festhalten:
-> - HTTP-Methode: muss im Route-Handler-Export (`export async function DELETE`) UND im
->   Client-fetch-Call (`method: "DELETE"`) identisch sein — nie implizit lassen.
-> - Response-Shape: welche Keys gibt die Route zurück, welche liest der Client?
->   (z.B. `{ expenses: [...] }` nicht `{ data: [...] }`)
-> - URL-Pattern: bei `<Link href=...>` relative vs. absolute Pfade explizit angeben.
->   Relative hrefs aus einer Listenseite (`ausgaben/`) verdoppeln das Segment —
->   korrekt ist `${id}/` nicht `ausgaben/${id}/`.
+> **HTTP contract requirement (for each wave combining API + client):**
+> When a wave delivers both an API route and a client (React component, fetch call,
+> link href), the wave brief must explicitly state:
+> - HTTP method: must be identical in the route handler export (`export async function DELETE`)
+>   AND in the client fetch call (`method: "DELETE"`) — never leave it implicit.
+> - Response shape: which keys does the route return, which does the client read?
+>   (e.g. `{ expenses: [...] }` not `{ data: [...] }`)
+> - URL pattern: for `<Link href=...>` explicitly state relative vs. absolute paths.
+>   Relative hrefs from a list page can double the segment — use `${id}/` not
+>   `list/${id}/`.
 >
 > **Hard rules:**
-> - Jeder FR muss in genau einer Wave landen.
-> - Keine Wave ohne expliziten Acceptance-Bezug.
-> - Wenn eine Wave > 5 FRs trägt: in zwei Waves splitten.
-> - Wenn unklar bleibt, welcher Agent passt: vorschlagen mit Kommentar `(unsicher: …)`.
+> - Every FR must land in exactly one wave.
+> - No wave without an explicit acceptance reference.
+> - If a wave carries > 5 FRs: split into two waves.
+> - If the right agent is unclear: suggest with comment `(uncertain: …)`.
 >
-> Wenn fertig: melde "Wave-Plan fertig: N Waves, M FRs verteilt, K parallelisierbar."
+> When done: report "Wave plan complete: N waves, M FRs distributed, K parallelizable."
 
 ## Step 3 — Update spec frontmatter
 
@@ -120,11 +120,10 @@ If either fails, ask Vincente to revise before handing off.
 
 ## Hand-off to Phase 4.5 (Consistency Gate)
 
-Tell the user (German):
+Tell the user:
 
-> "Wave-Plan steht: N Waves, vorgeschlagene Agents pro Wave sind drin. Ich
-> lasse jetzt das Konsistenz-Gate gegen die Spec laufen — das ist
-> deterministisch und dauert keine Sekunde."
+> "Wave plan ready: N waves, suggested agents per wave included. Running the
+> consistency gate against the spec now — it is deterministic and takes no time."
 
 Then load `workflows/04.5-consistency-gate.md`. **Do not skip the gate**, even
 if you are confident the plan is correct. The gate is cheap and prevents

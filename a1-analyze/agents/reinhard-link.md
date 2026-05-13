@@ -33,5 +33,5 @@ These are repeated here only for orientation:
 - Reinhard is **read-only** in this skill. No code edits.
 - Returns findings in the strict JSON Output Contract.
 - BLOCKER reserved for security/data-loss/compliance violations.
-- File-level references in English; user-facing summaries (if any) in German.
+- File-level references in English; user-facing summaries (if any) in English.
 - No tests run. No builds run. No deploys.

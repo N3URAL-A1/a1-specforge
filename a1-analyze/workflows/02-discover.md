@@ -15,7 +15,7 @@ node ~/.claude/skills/_shared/a1-tools.cjs analyze discover <absolute-project-pa
 The helper returns JSON:
 ```json
 {
-  "project_path": "/Users/rob/code/niimo",
+  "project_path": "/path/to/my-project",
   "tech_stack": ["docker", "flutter", "node", "supabase", "typescript"],
   "loc": 24800,
   "file_count": 312,
@@ -26,7 +26,7 @@ The helper returns JSON:
 ```
 
 Capture this JSON. If the helper exits non-zero or returns empty `tech_stack`,
-do NOT proceed — tell Robert which path was tried and ask for a corrected path.
+do NOT proceed — tell the user which path was tried and ask for a corrected path.
 A discover step with no stack signals fail-fast.
 
 ## Step 2 — Persist into frontmatter
@@ -58,14 +58,14 @@ with a Markdown table:
 | Commits (30 days) | <n> |
 ```
 
-## Step 4 — Summarize for Robert, in German
+## Step 4 — Summarize for the user
 
-> "Discover abgeschlossen für `<project-slug>`:
->  - Tech-Stack: <list>
->  - <loc> LOC in <file_count> Dateien
->  - Letzter Commit: <date> auf Branch `<branch>` (<n> Commits in 30 Tagen)
+> "Discover complete for `<project-slug>`:
+>  - Tech stack: <list>
+>  - <loc> LOC in <file_count> files
+>  - Last commit: <date> on branch `<branch>` (<n> commits in 30 days)
 >  
->  Soll ich Phase 3 (Analyze — Sub-Agents parallel dispatchen) starten?"
+>  Should I start Phase 3 (Analyze — dispatch sub-agents in parallel)?"
 
 If yes: proceed to `03-analyze.md`.
 If no: stop. State persists; resume reads `status: discovered`.
@@ -73,11 +73,11 @@ If no: stop. State persists; resume reads `status: discovered`.
 ## Edge cases
 
 - **No git repo (`last_commit` is null):** that's okay, the helper handles it.
-  In the summary, say: "Kein Git-Repo gefunden — Commit-Stats nicht verfügbar."
+  In the summary, say: "No git repo found — commit stats not available."
 - **Empty tech_stack:** likely the path is not actually a project root.
-  Stop. Ask Robert to verify the path. Do NOT advance status.
-- **Very large repo (LOC > 200k):** flag it in the summary auf Deutsch
-  ("Großes Repo, Sub-Agent-Dispatches in Phase 3 brauchen mehr Tokens"). Robert
+  Stop. Ask the user to verify the path. Do NOT advance status.
+- **Very large repo (LOC > 200k):** flag it in the summary
+  ("Large repo — sub-agent dispatches in Phase 3 will use more tokens"). The user
   decides whether to continue.
 - **Mono-repo:** if the helper detects `turborepo` or `nx` in the stack, mention
   in the summary that sub-agents in Phase 3 should be briefed with the specific

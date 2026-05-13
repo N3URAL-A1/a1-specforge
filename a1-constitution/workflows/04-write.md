@@ -7,7 +7,7 @@ in this phase — pure CLI sequence + final user-facing summary.
 
 - Vault file exists with `status: reviewed`.
 - `CONST_PATH` is set.
-- `REPO_ROOT` is set (from Phase 1 payload, or re-ask Robert if missing).
+- `REPO_ROOT` is set (from Phase 1 payload, or re-ask the user if missing).
 
 If status ≠ `reviewed`: route to the matching phase.
 
@@ -47,9 +47,9 @@ node ~/.claude/skills/_shared/a1-tools.cjs constitution link-claudemd \
 
 Parse JSON. Capture `action` (`appended` or `updated`).
 
-If the CLI fails with "CLAUDE.md not found": surface auf Deutsch and stop
+If the CLI fails with "CLAUDE.md not found": surface the error and stop
 WITHOUT setting status to `written`. The vault constitution remains at
-`reviewed` so Robert can fix CLAUDE.md and re-run Phase 4.
+`reviewed` so the user can fix CLAUDE.md and re-run Phase 4.
 
 ## Step 4 — Transition status to `written`
 
@@ -61,28 +61,28 @@ node ~/.claude/skills/_shared/a1-tools.cjs constitution update-status \
 This appends `phase=write completed=<iso>` to `phase_history` and sets
 `last_written_at` to the current ISO timestamp.
 
-## Step 5 — Final report (German, structured)
+## Step 5 — Final report
 
-Tell Robert auf Deutsch:
+Tell the user:
 
 ```
-Constitution geschrieben.
+Constitution written.
 
-  Projekt:           <slug>
-  Version:           v<N> (aus Vault-Frontmatter)
-  Vault-Datei:       projects/<slug>/constitution/constitution.md
-  Repo-Spiegel:      <REPO_ROOT>/constitution.md (<bytes> bytes)
-  CLAUDE.md-Link:    <action> (appended | updated)
+  Project:           <slug>
+  Version:           v<N> (from vault frontmatter)
+  Vault file:        projects/<slug>/constitution/constitution.md
+  Repo mirror:       <REPO_ROOT>/constitution.md (<bytes> bytes)
+  CLAUDE.md link:    <action> (appended | updated)
 
-  Phase-Historie:
+  Phase history:
     - discover: <iso>
     - draft:    <iso>
     - review:   <iso>
     - write:    <iso>
 
-  Single Source of Truth: das Vault-File. Wenn die Repo-Datei mal verändert
-  wurde oder verloren geht: einfach `a1-constitution` mit der Bitte um
-  Re-Mirror starten — der Vault rebuilt ihn.
+  Single source of truth: the vault file. If the repo file is ever changed
+  or lost: just run `a1-constitution` requesting a re-mirror — the vault
+  rebuilds it.
 ```
 
 ## Step 6 — Soft hand-off recommendations (no auto-spawn)
@@ -90,15 +90,15 @@ Constitution geschrieben.
 Append to the report:
 
 ```
-Was du jetzt tun kannst (manuell, optional):
+What you can do next (optional):
 
-  - Commit machen: CLAUDE.md + constitution.md gehören in einen Commit
+  - Commit: CLAUDE.md + constitution.md belong in one commit
     ("docs(constitution): add behavioral rules v<N>").
-  - Reinhard manuell bitten, einen Compliance-Review auf den jüngsten PR
-    zu machen — er ist noch NICHT constitution-aware (M3-Roadmap), aber
-    du kannst ihm den Link zur Constitution explizit mitgeben.
-  - Wenn andere Projekte (niimo, n3ural-platform) noch keine Constitution
-    haben: a1-constitution für diese starten — pro Projekt eine Constitution.
+  - Ask Reinhard to do a compliance review on the latest PR — he is NOT yet
+    constitution-aware (M3-roadmap), but you can explicitly give him the link
+    to the constitution.
+  - If other projects don't have a constitution yet: run a1-constitution for
+    those — one constitution per project.
 ```
 
 ## Hard rules
@@ -111,4 +111,4 @@ Was du jetzt tun kannst (manuell, optional):
 - If write-mirror fails (e.g. repo-root permission), do NOT call link-claudemd.
   Status stays at `reviewed`.
 - Frontmatter changes only via CLI. Body changes are forbidden in Phase 4.
-- No automatic git operations. Robert commits manually when he wants.
+- No automatic git operations. the user commits manually when he wants.

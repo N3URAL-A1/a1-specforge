@@ -9,7 +9,7 @@ Claude Code is powerful. But without structure, every session starts from scratc
 You describe what you want in plain language. The right skill activates automatically and runs the pipeline — spawning sub-agents, writing specs, validating plans, detecting drift, and preparing PRs.
 
 ```
-"neues Feature für niimo: User-Profil editieren"
+"new feature for my-project: edit user profile"
 → a1-new-feature activates → Rene writes spec → Vincente builds wave plan
 → consistency gate checks spec↔plan → code agents implement → Reinhard reviews PR
 ```
@@ -42,21 +42,32 @@ Creates symlinks from `~/.claude/skills/` to this repo. Edits are live immediate
 
 **Requirements:** Claude Code CLI, Node.js ≥ 18, git.
 
+## Configuration
+
+| Variable | Default | Description |
+|---|---|---|
+| `A1_VAULT_ROOT` | `~/Documents/Obsidian Vault` | Path to your Obsidian vault (or any markdown notes directory) |
+
+Set in your shell profile:
+```bash
+export A1_VAULT_ROOT="/path/to/your/notes"
+```
+
 ## Usage
 
 Skills activate automatically when you describe what you want:
 
 | You say | Skill activates |
 |---|---|
-| "neues Feature für \<projekt\>" | `a1-new-feature` |
-| "Bug in \<projekt\>: X funktioniert nicht" | `a1-fix` |
-| "Analysiere \<projekt\>" | `a1-analyze` |
-| "Check die Konsistenz für \<slug\>/\<id\>" | `a1-check` |
-| "Checkliste für \<slug\>/\<id\>" | `a1-checklist` |
-| "Constitution für \<projekt\>" | `a1-constitution` |
-| "Worktree für \<feature\>" | `a1-worktree` |
-| "Phantom check für \<slug\>" | `a1-phantom` |
-| "Drift check für \<slug\>/\<id\>" | `a1-reconcile` |
+| "new feature for \<project\>" | `a1-new-feature` |
+| "bug in \<project\>: X is broken" | `a1-fix` |
+| "analyze \<project\>" | `a1-analyze` |
+| "check consistency for \<slug\>/\<id\>" | `a1-check` |
+| "checklist for \<slug\>/\<id\>" | `a1-checklist` |
+| "constitution for \<project\>" | `a1-constitution` |
+| "worktree for \<feature\>" | `a1-worktree` |
+| "phantom check for \<slug\>" | `a1-phantom` |
+| "drift check for \<slug\>/\<id\>" | `a1-reconcile` |
 
 ## vs. GSD / spec-kit
 
