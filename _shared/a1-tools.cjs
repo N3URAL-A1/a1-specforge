@@ -2481,6 +2481,499 @@ function cmdChecklistList(args) {
   return { project: slug, reports };
 }
 
+// ---------- worktree subcommands ----------
+
+const WORKTREE_STATUSES = new Set(['prepared', 'active', 'handoff', 'cleaned']);
+const WORKTREE_EXIT_MODES = new Set(['keep', 'discard', 'handoff']);
+const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/;
+const { execFileSync } = require('child_process');
+
+function worktreeRegistryPath() {
+  if (process.env.A1_WORKTREE_REGISTRY) return process.env.A1_WORKTREE_REGISTRY;
+  return path.join(os.homedir(), '.a1-worktrees-registry.json');
+}
+
+function readRegistry() {
+  const p = worktreeRegistryPath();
+  if (!fs.existsSync(p)) return { version: 1, worktrees: [] };
+  try {
+    const raw = fs.readFileSync(p, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.worktrees)) {
+      throw new Error('registry shape invalid');
+    }
+    if (!parsed.version) parsed.version = 1;
+    return parsed;
+  } catch (e) {
+    throw new Error(`cannot parse worktree registry ${p}: ${e.message}`);
+  }
+}
+
+function writeRegistryAtomic(reg) {
+  const p = worktreeRegistryPath();
+  const tmp = `${p}.tmp.${process.pid}`;
+  fs.writeFileSync(tmp, JSON.stringify(reg, null, 2) + '\n', 'utf8');
+  fs.renameSync(tmp, p);
+}
+
+function nowCompactId(slug) {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const stamp = `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}-${pad(
+    d.getUTCHours()
+  )}${pad(d.getUTCMinutes())}`;
+  return `${stamp}-${slug}`;
+}
+
+function git(repoRoot, args, opts = {}) {
+  // Returns trimmed stdout. Throws Error with stderr on non-zero exit unless allowFail.
+  try {
+    const out = execFileSync('git', ['-C', repoRoot, ...args], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return out.trim();
+  } catch (e) {
+    const msg = (e.stderr && e.stderr.toString().trim()) || e.message;
+    if (opts.allowFail) return { __error: msg, __code: e.status };
+    throw new Error(`git ${args.join(' ')} failed: ${msg}`);
+  }
+}
+
+function gitIsRepo(repoRoot) {
+  if (!fs.existsSync(repoRoot)) return false;
+  const res = git(repoRoot, ['rev-parse', '--is-inside-work-tree'], { allowFail: true });
+  if (typeof res === 'string') return res === 'true';
+  return false;
+}
+
+function gitWorkingTreeClean(repoRoot) {
+  const out = git(repoRoot, ['status', '--porcelain']);
+  return out.length === 0;
+}
+
+function gitBranchExists(repoRoot, branch) {
+  const res = git(repoRoot, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], {
+    allowFail: true,
+  });
+  return typeof res === 'string' && res.length > 0;
+}
+
+function gitWorktreeList(repoRoot) {
+  // Returns array of { path, branch }
+  const out = git(repoRoot, ['worktree', 'list', '--porcelain']);
+  const entries = [];
+  let cur = {};
+  for (const line of out.split('\n')) {
+    if (line.startsWith('worktree ')) {
+      if (cur.path) entries.push(cur);
+      cur = { path: line.slice('worktree '.length) };
+    } else if (line.startsWith('branch ')) {
+      cur.branch = line.slice('branch '.length).replace(/^refs\/heads\//, '');
+    }
+  }
+  if (cur.path) entries.push(cur);
+  return entries;
+}
+
+function gitBranchHasWorktree(repoRoot, branch) {
+  return gitWorktreeList(repoRoot).some((w) => w.branch === branch);
+}
+
+function findRegistryEntry(reg, id) {
+  return reg.worktrees.find((w) => w.id === id);
+}
+
+function findActiveBySlug(reg, repoRoot, slug) {
+  return reg.worktrees.find(
+    (w) => w.repo_root === repoRoot && w.slug === slug && w.status !== 'cleaned'
+  );
+}
+
+function repoParentWorktreeDir(repoRoot) {
+  return path.join(path.dirname(repoRoot), 'a1-worktrees');
+}
+
+function cmdWorktreePrepare(args) {
+  const flags = parseFlags(args, {
+    branch: 'string',
+    base: 'string',
+    'force-reset': 'bool',
+  });
+  const [repoRootRaw, slug] = flags._;
+  if (!repoRootRaw) usage('worktree prepare requires <repo-root>');
+  if (!slug) usage('worktree prepare requires <slug>');
+  const repoRoot = path.resolve(repoRootRaw);
+  const branch = flags.branch || `feature/${slug}`;
+  const baseBranch = flags.base || 'main';
+
+  const checks = [];
+  const fail = (name, hint) => checks.push({ name, result: 'FAIL', hint });
+  const pass = (name) => checks.push({ name, result: 'PASS' });
+
+  // 1. slug valid
+  if (!SLUG_RE.test(slug)) {
+    process.stderr.write(`error: invalid slug "${slug}" (must match ${SLUG_RE})\n`);
+    process.exit(2);
+  }
+  pass('slug_valid');
+
+  // 2. repo exists & is git
+  if (!gitIsRepo(repoRoot)) {
+    process.stderr.write(`error: ${repoRoot} is not a git repository\n`);
+    process.exit(2);
+  }
+  pass('repo_is_git');
+
+  // 3. working tree clean
+  if (gitWorkingTreeClean(repoRoot)) pass('working_tree_clean');
+  else fail('working_tree_clean', 'Working tree has uncommitted changes');
+
+  // 4. base branch exists
+  if (gitBranchExists(repoRoot, baseBranch)) pass('base_branch_exists');
+  else fail('base_branch_exists', `Base branch "${baseBranch}" does not exist`);
+
+  // 5. target branch free OR not in worktree
+  if (gitBranchExists(repoRoot, branch)) {
+    if (gitBranchHasWorktree(repoRoot, branch)) {
+      fail('target_branch_free', `Branch "${branch}" already has a worktree`);
+    } else {
+      // branch exists but no worktree — acceptable, we'll attach to it
+      pass('target_branch_free');
+    }
+  } else {
+    pass('target_branch_free');
+  }
+
+  // 6. worktree path free
+  const worktreePath = path.join(repoParentWorktreeDir(repoRoot), slug);
+  if (fs.existsSync(worktreePath)) {
+    fail('worktree_path_free', `Path ${worktreePath} already exists`);
+  } else {
+    pass('worktree_path_free');
+  }
+
+  // 7. no active registry entry
+  const reg = readRegistry();
+  const existing = findActiveBySlug(reg, repoRoot, slug);
+  if (existing && !flags['force-reset']) {
+    fail(
+      'no_active_registry_entry',
+      `Registry already has active entry ${existing.id} (status=${existing.status}) for this repo+slug`
+    );
+  } else {
+    pass('no_active_registry_entry');
+  }
+
+  const blocker = checks.some((c) => c.result === 'FAIL');
+  if (blocker) {
+    process.stdout.write(JSON.stringify({ status: 'BLOCKER', checks }, null, 2) + '\n');
+    process.exit(1);
+  }
+
+  // All green — write registry entry
+  const id = nowCompactId(slug);
+  const entry = {
+    id,
+    slug,
+    repo_root: repoRoot,
+    worktree_path: worktreePath,
+    branch,
+    base_branch: baseBranch,
+    status: 'prepared',
+    created_at: nowIso(),
+    last_status_change: nowIso(),
+    agent_brief: null,
+    commit_count: 0,
+    exit_mode: null,
+    phase_history: [`phase=prepare completed=${nowIso()}`],
+  };
+
+  // If force-reset, drop the old active entry
+  if (flags['force-reset'] && existing) {
+    reg.worktrees = reg.worktrees.filter((w) => w.id !== existing.id);
+  }
+  reg.worktrees.push(entry);
+  writeRegistryAtomic(reg);
+
+  return {
+    id,
+    repo_root: repoRoot,
+    worktree_path: worktreePath,
+    branch,
+    base_branch: baseBranch,
+    status: 'prepared',
+    checks,
+  };
+}
+
+function cmdWorktreeEnter(args) {
+  const flags = parseFlags(args, {});
+  const id = flags._[0];
+  if (!id) usage('worktree enter requires <id>');
+  const reg = readRegistry();
+  const entry = findRegistryEntry(reg, id);
+  if (!entry) {
+    process.stderr.write(`error: no registry entry with id "${id}"\n`);
+    process.exit(1);
+  }
+  if (entry.status !== 'prepared') {
+    process.stderr.write(`error: entry ${id} has status "${entry.status}", expected "prepared"\n`);
+    process.exit(1);
+  }
+  // race-safety: path still free?
+  if (fs.existsSync(entry.worktree_path)) {
+    process.stderr.write(`error: worktree path ${entry.worktree_path} appeared since prepare\n`);
+    process.exit(1);
+  }
+
+  // ensure parent dir exists
+  fs.mkdirSync(path.dirname(entry.worktree_path), { recursive: true });
+
+  // git worktree add: -b only if branch does not yet exist
+  const branchExists = gitBranchExists(entry.repo_root, entry.branch);
+  const gitArgs = branchExists
+    ? ['worktree', 'add', entry.worktree_path, entry.branch]
+    : ['worktree', 'add', '-b', entry.branch, entry.worktree_path, entry.base_branch];
+
+  const res = git(entry.repo_root, gitArgs, { allowFail: true });
+  if (res && typeof res === 'object' && res.__error) {
+    process.stderr.write(`error: git worktree add failed: ${res.__error}\n`);
+    process.exit(1);
+  }
+
+  entry.status = 'active';
+  entry.last_status_change = nowIso();
+  entry.phase_history.push(`phase=enter completed=${nowIso()}`);
+  writeRegistryAtomic(reg);
+
+  return {
+    id,
+    worktree_path: entry.worktree_path,
+    branch: entry.branch,
+    status: 'active',
+  };
+}
+
+function cmdWorktreeStatus(args) {
+  const flags = parseFlags(args, {});
+  const id = flags._[0];
+  if (!id) usage('worktree status requires <id>');
+  const reg = readRegistry();
+  const entry = findRegistryEntry(reg, id);
+  if (!entry) {
+    process.stderr.write(`error: no registry entry with id "${id}"\n`);
+    process.exit(1);
+  }
+
+  const result = {
+    id: entry.id,
+    slug: entry.slug,
+    repo_root: entry.repo_root,
+    worktree_path: entry.worktree_path,
+    branch: entry.branch,
+    base_branch: entry.base_branch,
+    status: entry.status,
+    worktree_exists_on_disk: fs.existsSync(entry.worktree_path),
+    has_uncommitted: null,
+    commit_count: null,
+    branch_ahead: null,
+    branch_behind: null,
+  };
+
+  if (result.worktree_exists_on_disk && entry.status === 'active') {
+    const status = git(entry.worktree_path, ['status', '--porcelain'], { allowFail: true });
+    result.has_uncommitted = typeof status === 'string' ? status.length > 0 : null;
+
+    const range = `${entry.base_branch}..${entry.branch}`;
+    const aheadOut = git(entry.repo_root, ['rev-list', '--count', range], { allowFail: true });
+    if (typeof aheadOut === 'string') {
+      const n = parseInt(aheadOut, 10);
+      result.branch_ahead = Number.isNaN(n) ? null : n;
+      result.commit_count = result.branch_ahead;
+    }
+    const behindOut = git(entry.repo_root, ['rev-list', '--count', `${entry.branch}..${entry.base_branch}`], {
+      allowFail: true,
+    });
+    if (typeof behindOut === 'string') {
+      const n = parseInt(behindOut, 10);
+      result.branch_behind = Number.isNaN(n) ? null : n;
+    }
+  }
+
+  return result;
+}
+
+function cmdWorktreeExit(args) {
+  const flags = parseFlags(args, {
+    mode: 'string',
+    'force-discard': 'bool',
+  });
+  const id = flags._[0];
+  if (!id) usage('worktree exit requires <id>');
+  if (!flags.mode) usage('worktree exit requires --mode <keep|discard|handoff>');
+  if (!WORKTREE_EXIT_MODES.has(flags.mode)) {
+    usage(`invalid --mode "${flags.mode}", expected one of: ${[...WORKTREE_EXIT_MODES].join(', ')}`);
+  }
+  const mode = flags.mode;
+
+  const reg = readRegistry();
+  const entry = findRegistryEntry(reg, id);
+  if (!entry) {
+    process.stderr.write(`error: no registry entry with id "${id}"\n`);
+    process.exit(1);
+  }
+  if (entry.status === 'cleaned') {
+    process.stderr.write(`error: entry ${id} is already cleaned\n`);
+    process.exit(1);
+  }
+
+  let removed = false;
+  let branchKept = true;
+
+  if (mode === 'handoff') {
+    entry.status = 'handoff';
+    entry.exit_mode = 'handoff';
+    entry.last_status_change = nowIso();
+    entry.phase_history.push(`phase=exit-handoff completed=${nowIso()}`);
+    writeRegistryAtomic(reg);
+    return {
+      id,
+      exit_mode: 'handoff',
+      status: 'handoff',
+      removed: false,
+      branch_kept: true,
+    };
+  }
+
+  // For keep / discard, we need to remove the worktree.
+  // For discard, also check unmerged commits unless --force-discard.
+  if (mode === 'discard' && !flags['force-discard']) {
+    if (gitBranchExists(entry.repo_root, entry.branch)) {
+      const aheadOut = git(entry.repo_root, ['rev-list', '--count', `${entry.base_branch}..${entry.branch}`], {
+        allowFail: true,
+      });
+      const ahead = typeof aheadOut === 'string' ? parseInt(aheadOut, 10) : 0;
+      if (ahead > 0) {
+        process.stderr.write(
+          `error: branch "${entry.branch}" is ${ahead} commit(s) ahead of "${entry.base_branch}". ` +
+            `Refusing discard. Re-run with --force-discard, or use --mode handoff.\n`
+        );
+        process.exit(1);
+      }
+    }
+  }
+
+  // Remove worktree (if it exists on disk)
+  if (fs.existsSync(entry.worktree_path)) {
+    const removeArgs = ['worktree', 'remove'];
+    if (mode === 'discard' && flags['force-discard']) removeArgs.push('--force');
+    removeArgs.push(entry.worktree_path);
+    const res = git(entry.repo_root, removeArgs, { allowFail: true });
+    if (res && typeof res === 'object' && res.__error) {
+      process.stderr.write(`error: git worktree remove failed: ${res.__error}\n`);
+      process.exit(1);
+    }
+    removed = true;
+  } else {
+    // Prune stale registration in git if any
+    git(entry.repo_root, ['worktree', 'prune'], { allowFail: true });
+    removed = true;
+  }
+
+  if (mode === 'discard') {
+    if (gitBranchExists(entry.repo_root, entry.branch)) {
+      const delArgs = ['branch', flags['force-discard'] ? '-D' : '-d', entry.branch];
+      const res = git(entry.repo_root, delArgs, { allowFail: true });
+      if (res && typeof res === 'object' && res.__error) {
+        process.stderr.write(`error: git branch delete failed: ${res.__error}\n`);
+        process.exit(1);
+      }
+      branchKept = false;
+    } else {
+      branchKept = false;
+    }
+  }
+
+  entry.status = 'cleaned';
+  entry.exit_mode = mode;
+  entry.last_status_change = nowIso();
+  entry.phase_history.push(`phase=exit-${mode} completed=${nowIso()}`);
+  writeRegistryAtomic(reg);
+
+  return {
+    id,
+    exit_mode: mode,
+    status: 'cleaned',
+    removed,
+    branch_kept: branchKept,
+  };
+}
+
+function cmdWorktreeList(args) {
+  const flags = parseFlags(args, {
+    status: 'string',
+    'repo-root': 'string',
+  });
+  const reg = readRegistry();
+  let entries = reg.worktrees.slice();
+  if (flags.status) {
+    if (!WORKTREE_STATUSES.has(flags.status)) {
+      usage(`invalid --status "${flags.status}", expected one of: ${[...WORKTREE_STATUSES].join(', ')}`);
+    }
+    entries = entries.filter((e) => e.status === flags.status);
+  }
+  if (flags['repo-root']) {
+    const abs = path.resolve(flags['repo-root']);
+    entries = entries.filter((e) => e.repo_root === abs);
+  }
+  entries.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+  return {
+    count: entries.length,
+    worktrees: entries.map((e) => ({
+      id: e.id,
+      slug: e.slug,
+      status: e.status,
+      branch: e.branch,
+      base_branch: e.base_branch,
+      repo_root: e.repo_root,
+      worktree_path: e.worktree_path,
+      created_at: e.created_at,
+      exit_mode: e.exit_mode,
+    })),
+  };
+}
+
+function cmdWorktreeGc(args) {
+  const flags = parseFlags(args, { 'dry-run': 'bool' });
+  const reg = readRegistry();
+  const stale = [];
+  const removedFromRegistry = [];
+
+  for (const e of reg.worktrees) {
+    if (e.status === 'cleaned') continue;
+    if (!fs.existsSync(e.worktree_path) && e.status !== 'handoff') {
+      stale.push({ id: e.id, reason: 'worktree path missing', path: e.worktree_path });
+      if (!flags['dry-run']) {
+        e.status = 'cleaned';
+        e.exit_mode = e.exit_mode || 'gc';
+        e.last_status_change = nowIso();
+        e.phase_history.push(`phase=gc completed=${nowIso()}`);
+        removedFromRegistry.push(e.id);
+      }
+    }
+  }
+
+  if (!flags['dry-run'] && removedFromRegistry.length > 0) writeRegistryAtomic(reg);
+
+  return {
+    count: stale.length,
+    stale,
+    removed: removedFromRegistry,
+    dry_run: !!flags['dry-run'],
+  };
+}
+
 // ---------- entry point ----------
 
 function usage(msg) {
@@ -2534,6 +3027,18 @@ Usage:
   a1-tools constitution write-mirror <project-slug> --repo-root <abs>
   a1-tools constitution link-claudemd <project-slug> --repo-root <abs>
   a1-tools constitution list [--status=<s>]
+
+  a1-tools worktree prepare <repo-root> <slug> [--branch <name>] [--base <branch>] [--force-reset]
+                  Pre-Flight validation + registry entry. Exit: 0 PASS, 1 BLOCKER, 2 ERROR.
+  a1-tools worktree enter <id>
+                  Runs 'git worktree add'. Registry: prepared -> active.
+  a1-tools worktree status <id>
+                  Reports commit_count, has_uncommitted, branch_ahead/behind.
+  a1-tools worktree exit <id> --mode <keep|discard|handoff> [--force-discard]
+                  keep: remove worktree, keep branch. discard: remove both (refuses on unmerged commits without --force-discard). handoff: keep both for a1-pr-review.
+  a1-tools worktree list [--status=<s>] [--repo-root=<abs>]
+  a1-tools worktree gc [--dry-run]
+                  Reconcile registry with on-disk state. Mark missing worktrees as cleaned.
 
 Spec statuses: ${[...SPEC_STATUSES].join(', ')}
 Bug statuses:  ${[...BUG_STATUSES].join(', ')}
@@ -2601,8 +3106,16 @@ function main() {
       else if (sub === 'link-claudemd') result = cmdConstitutionLinkClaudemd(rest);
       else if (sub === 'list') result = cmdConstitutionList(rest);
       else usage(`unknown constitution subcommand: ${sub}`);
+    } else if (group === 'worktree') {
+      if (sub === 'prepare') result = cmdWorktreePrepare(rest);
+      else if (sub === 'enter') result = cmdWorktreeEnter(rest);
+      else if (sub === 'status') result = cmdWorktreeStatus(rest);
+      else if (sub === 'exit') result = cmdWorktreeExit(rest);
+      else if (sub === 'list') result = cmdWorktreeList(rest);
+      else if (sub === 'gc') result = cmdWorktreeGc(rest);
+      else usage(`unknown worktree subcommand: ${sub}`);
     } else {
-      usage(`unknown command group: ${group} (expected "spec", "fix", "analyze", "check", "checklist", or "constitution")`);
+      usage(`unknown command group: ${group} (expected "spec", "fix", "analyze", "check", "checklist", "constitution", or "worktree")`);
     }
   } catch (e) {
     process.stderr.write(`internal error: ${e.message}\n`);
