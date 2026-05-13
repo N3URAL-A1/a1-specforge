@@ -1,16 +1,17 @@
-# gsd-codebase-mapper — Repository Map Builder (Sub-Agent Reference)
+# codebase-mapper — Repository Map Builder (Sub-Agent Reference)
 
 This is **not** an agent definition. It is a pointer.
 
 ## Source of truth
 
-The gsd-codebase-mapper is part of the GSD framework and available as a
-dedicated `subagent_type` in Claude Code. Its formal definition lives in the
-GSD installation; refer to the GSD framework's own documentation.
+The codebase-mapper is a codebase exploration agent available at
+`~/.claude/agents/gsd-codebase-mapper.md` or an equivalent agent in your
+local setup. Its formal definition lives in your agent library; refer to
+that agent's own documentation.
 
 ## Usage in a1-analyze
 
-gsd-codebase-mapper is dispatched in Phase 3 for these focuses:
+codebase-mapper is dispatched in Phase 3 for these focuses:
 
 | Focus | What it maps |
 |---|---|

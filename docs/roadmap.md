@@ -61,8 +61,8 @@ Skill-Set aus `~/.claude/skills/` in dieses Repo extrahiert. Symlinks gesetzt. D
 ### Features
 
 - **Phantom-Task-Detection** (MUST)
-  - Erweiterung gsd-verifier Phase 6: prüft ob jede `[X]`-Task einen Code-Change hat
-  - CLI-Patch: `gsd:verify-work` mit Warning-Level
+  - Erweiterung phase-verifier Phase 6: prüft ob jede `[X]`-Task einen Code-Change hat
+  - CLI-Patch: `verify-work` CLI mit Warning-Level
   - Docs-only Tasks via `# no-code`-Tag in PLAN.md ausgenommen
 
 - **`a1-checklist` Skill** (SHOULD)

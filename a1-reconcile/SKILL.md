@@ -16,7 +16,7 @@ description: >
   still in sync with the spec", "spec-drift", "passt der code noch zur spec",
   "implementation drift", or any request to check whether what was specified
   matches what was actually built. This skill orchestrates sub-agents
-  (gsd-codebase-mapper for structural probing, Alex for architecture drift); it
+  (codebase-mapper for structural probing, Alex for architecture drift); it
   does NOT modify project code, never edits specs. Do not activate for: generic
   codebase audits without spec anchor (use a1-analyze), structural spec↔plan
   consistency (use a1-check, which is deterministic and CLI-only), bug reports
@@ -140,7 +140,7 @@ via env var `A1_VAULT_ROOT`.
 |---|---|---|
 | 1 Scope | — (the skill itself) | — |
 | 2 Parse | — (CLI helper only) | `_shared/a1-tools.cjs reconcile parse-spec` |
-| 3 Probe | gsd-codebase-mapper, Alex (optional, for architecture-level DIVERGED) | `agents/*-link.md` |
+| 3 Probe | codebase-mapper, Alex (optional, for architecture-level DIVERGED) | `agents/*-link.md` |
 | 4 Report | — (the skill itself) | — |
 
 Sub-agents in Phase 3 receive a probe brief (`templates/agent-probe-brief.md`)

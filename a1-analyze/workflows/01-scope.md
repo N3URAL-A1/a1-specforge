@@ -41,7 +41,6 @@ The default mapping for known projects (verify via Bash before using):
 |---|---|
 | `niimo` | `/Users/rob/code/niimo` |
 | `n3ural-platform` | `/Users/rob/code/n3ural-platform` |
-| `n3ural.a1` | `/Users/rob/code/n3ural.a1_gsd` |
 | `a1-specforge` | `/Users/rob/code/a1-specforge` |
 
 Verify the path exists:

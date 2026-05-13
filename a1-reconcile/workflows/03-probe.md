@@ -15,7 +15,7 @@ context once, not per-target).
 For each repo group, read
 `~/.claude/skills/a1-reconcile/templates/agent-probe-brief.md` and substitute:
 
-- `<AGENT_NAME>` — `gsd-codebase-mapper` for the structural probe; add `Alex`
+- `<AGENT_NAME>` — `codebase-mapper` for the structural probe; add `Alex`
   as a second parallel dispatch if any target has `kind: function` or
   `kind: endpoint` AND the project has > 5 such targets (architecture-level
   scrutiny).
@@ -34,14 +34,14 @@ single turn.
 
 ```
 Task(subagent_type="general-purpose",
-     description="gsd-codebase-mapper drift probe <slug>",
+     description="codebase-mapper drift probe <slug>",
      prompt="<the full brief>")
 Task(subagent_type="general-purpose",
      description="Alex architecture drift probe <slug>",
      prompt="<the full brief>")
 ```
 
-For agents with a dedicated `subagent_type` (e.g. `gsd-codebase-mapper`), use
+For agents with a dedicated `subagent_type` (e.g. `codebase-mapper`), use
 that type. Otherwise `general-purpose` with the agent persona on line 1 of
 the brief.
 
@@ -114,7 +114,7 @@ node ~/.claude/skills/_shared/a1-tools.cjs reconcile update-status \
   "<drift-path>" probed \
   --phase-data '{
     "agents_dispatched": [
-      {"name": "gsd-codebase-mapper", "completed_at": "<ISO>", "drift_count": <n>},
+      {"name": "codebase-mapper", "completed_at": "<ISO>", "drift_count": <n>},
       {"name": "Alex", "completed_at": "<ISO>", "drift_count": <n>}
     ],
     "in_sync_count": <n>
@@ -146,7 +146,7 @@ If no: stop. Status `probed` persists.
 - **Repo path missing on disk:** mark every target in that repo as
   `class: MISSING` with `description: "repo not accessible: <reason>"`. The
   user decides whether to fix the path and re-run.
-- **Conflict between agents:** if `gsd-codebase-mapper` says IN_SYNC and Alex
+- **Conflict between agents:** if `codebase-mapper` says IN_SYNC and Alex
   says DIVERGED for the same artifact, keep both findings; Phase 4 dedups by
   picking the higher-severity class (DIVERGED > MISSING > EXTRA > STALE >
   IN_SYNC).

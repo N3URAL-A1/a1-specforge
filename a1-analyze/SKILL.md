@@ -14,7 +14,7 @@ description: >
   <projekt>", "a1-analyze", "Pre-Refactor-Audit", or any request to assess,
   audit, map, or survey an existing project without changing its code. This
   skill orchestrates sub-agents (Reinhard for security/quality, Alex for
-  architecture, gsd-codebase-mapper for structure, Walter/Aik for stack-specific
+  architecture, codebase-mapper for structure, Walter/Aik for stack-specific
   depth, optionally Ludwig for legal/compliance); it does NOT replace them and
   it does NOT modify project code. Do not activate for: bug reports (use
   a1-fix for "Bug in <projekt>", "crash", "Fehler", "broken"), new feature work
@@ -66,11 +66,11 @@ The skill operates in one of five focus modes, set in Phase 1:
 
 | Focus | Primary sub-agents (Phase 3) | What gets analyzed |
 |---|---|---|
-| `general` | gsd-codebase-mapper + Reinhard | Tech stack, structure, top quality concerns |
+| `general` | codebase-mapper + Reinhard | Tech stack, structure, top quality concerns |
 | `security` | Reinhard + optional Ludwig | Auth, secrets, RLS, dependencies, compliance |
 | `architecture` | Alex | System design, module boundaries, coupling, ADRs gap |
-| `quality` | Reinhard + gsd-codebase-mapper | Code quality, complexity, test coverage, dead code |
-| `onboarding` | gsd-codebase-mapper + Alex + Walter/Aik | "How does this project work" doc for newcomers |
+| `quality` | Reinhard + codebase-mapper | Code quality, complexity, test coverage, dead code |
+| `onboarding` | codebase-mapper + Alex + Walter/Aik | "How does this project work" doc for newcomers |
 
 ## Routing — pick the right phase
 
@@ -125,7 +125,7 @@ Override via env var `A1_VAULT_ROOT` if testing.
 |---|---|---|
 | 1 Scope | — (the skill itself) | — |
 | 2 Discover | — (CLI helper only) | `_shared/a1-tools.cjs analyze discover` |
-| 3 Analyze | Reinhard, Alex, Ludwig, Walter, Aik, gsd-codebase-mapper | `~/.claude/agents/*.md` (see `agents/*-link.md`) |
+| 3 Analyze | Reinhard, Alex, Ludwig, Walter, Aik, codebase-mapper | `~/.claude/agents/*.md` (see `agents/*-link.md`) |
 | 4 Synthesize | — (the skill itself) | — |
 | 5 Report | — (the skill itself) | — |
 

@@ -10,11 +10,11 @@ Read the focus from frontmatter. Use this mapping:
 
 | Focus | Agents to dispatch (parallel) |
 |---|---|
-| `general` | gsd-codebase-mapper, Reinhard |
+| `general` | codebase-mapper, Reinhard |
 | `security` | Reinhard (always), Ludwig (only if compliance/DSGVO mentioned in Scope) |
 | `architecture` | Alex |
-| `quality` | Reinhard, gsd-codebase-mapper |
-| `onboarding` | gsd-codebase-mapper, Alex, plus stack-specialist: Aik for AI-heavy, Walter for web-heavy, Felix for Flutter |
+| `quality` | Reinhard, codebase-mapper |
+| `onboarding` | codebase-mapper, Alex, plus stack-specialist: Aik for AI-heavy, Walter for web-heavy, Felix for Flutter |
 
 The stack-specialist for `onboarding` is chosen from the discover `tech_stack`:
 - If `tech_stack` contains `flutter`/`dart` → Felix
@@ -50,7 +50,7 @@ Task(subagent_type="general-purpose", description="Alex architecture review",
      prompt="<the full brief>")
 ```
 
-For agents that have a dedicated `subagent_type` available (e.g. `gsd-codebase-mapper`),
+For agents that have a dedicated `subagent_type` available (e.g. `codebase-mapper`),
 use that type. Otherwise use `general-purpose` and let the brief's first line
 identify the agent persona.
 

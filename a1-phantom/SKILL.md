@@ -9,10 +9,10 @@ description: >
   skipped. MUST trigger when the user says: "phantom check", "phantom-task
   detection", "a1-phantom", "prüfe PLAN auf phantom tasks", "check completed
   tasks have code", "verify work was done", or when an upstream verifier
-  (e.g. gsd-verifier) asks for phantom detection as part of phase
-  verification. Do NOT activate for: full goal verification (gsd-verifier
+  (e.g. phase-verifier) asks for phantom detection as part of phase
+  verification. Do NOT activate for: full goal verification (phase-verifier
   owns that), code review (reinhard), or anti-pattern scans of source files
-  (a1-analyze / gsd-verifier Step 7).
+  (a1-analyze / phase-verifier Step 7).
 allowed-tools:
   - Bash
   - Read
@@ -30,7 +30,7 @@ are reported as phantoms.
 
 - A GSD phase claims to be done — verify no checkboxes were ticked
   without corresponding code.
-- gsd-verifier Step 6.5 (phantom detection): the verifier shells out to this
+- phase-verifier Step 6.5 (phantom detection): the verifier shells out to this
   CLI and folds the report into its VERIFICATION.md.
 - Manual sanity check before a phase hand-off, PR, or release.
 
@@ -135,9 +135,9 @@ or mark it `# no-code`.
 Never auto-edit PLAN.md from this skill. Never invoke a sub-agent. The
 caller decides next steps.
 
-## Caller integration: gsd-verifier
+## Caller integration: phase-verifier
 
-When gsd-verifier runs phase verification, it can insert a Phantom
+When phase-verifier runs phase verification, it can insert a Phantom
 Detection step between Requirements Coverage (Step 6) and Anti-Pattern Scan
 (Step 7) by shelling out:
 

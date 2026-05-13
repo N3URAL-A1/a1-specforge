@@ -28,7 +28,7 @@ Before invoking the CLI:
 ## Step 2 — Invoke the CLI
 
 Run with `--format human` for direct user output, or `--format json` when
-embedded in another workflow (e.g. gsd-verifier).
+embedded in another workflow (e.g. phase-verifier).
 
 ```bash
 node ~/.claude/skills/_shared/a1-tools.cjs phantom check "<plan_path>" \
