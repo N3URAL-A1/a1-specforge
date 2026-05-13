@@ -10,7 +10,8 @@ Ein eigenes SDD-Toolkit — ähnlich wie [spec-kit](https://github.com/github/sp
 |---|---|
 | `a1-new-feature` | 6-Phasen Feature-Pipeline: Discover → Specify → Clarify → Plan → Implement → Verify |
 | `a1-fix` | 4-Phasen Bug-Pipeline: Report → Diagnose → Fix → Verify |
-| `_shared/a1-tools.cjs` | CLI-Helper für beide Pipelines (Frontmatter-State, Phase-Transitions) |
+| `a1-analyze` | 5-Phasen Projekt-Analyse: Scope → Discover → Analyze → Synthesize → Report |
+| `_shared/a1-tools.cjs` | CLI-Helper für alle Pipelines (Frontmatter-State, Phase-Transitions) |
 
 ## Installation
 

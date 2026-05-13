@@ -12,7 +12,7 @@ echo "→ Target: $SKILLS_DIR"
 echo ""
 
 # Skills to symlink
-SKILLS=("a1-new-feature" "a1-fix" "_shared")
+SKILLS=("a1-new-feature" "a1-fix" "a1-analyze" "_shared")
 
 for skill in "${SKILLS[@]}"; do
   src="$REPO_DIR/$skill"
