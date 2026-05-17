@@ -56,7 +56,7 @@ for skill in "${SKILLS[@]}"; do
   symlink_item "$REPO_DIR/$skill" "$SKILLS_DIR/$skill" "$skill"
 done
 
-# Agents to symlink (a1-* agents from this repo)
+# Agents to symlink (all agents from this repo)
 AGENTS=(
   "a1-researcher"
   "a1-planner"
@@ -64,6 +64,16 @@ AGENTS=(
   "a1-verifier"
   "a1-mapper"
   "a1-auditor"
+  "alex-super-architekt"
+  "falk-bug-hunter"
+  "rene-requirement-engineer"
+  "reinhard"
+  "walter"
+  "aik-senior-ai-engineer"
+  "vincente-vibe-optimizer"
+  "tobi-the-checker"
+  "uwe-ux-expert"
+  "ludwig-legal"
 )
 
 echo ""
