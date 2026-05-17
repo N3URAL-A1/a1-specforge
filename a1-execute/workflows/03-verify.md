@@ -60,54 +60,71 @@ For FAIL/PARTIAL re-execution: spawn a1-executor with a targeted prompt listing 
 
 ## Retro-Capture (always — after verdict is shown)
 
-After presenting the verdict, write a learning entry to `~/.claude/skills/a1-execute/_learning.md`:
+After presenting the verdict, write the learning entry to **two places**:
+1. Local cache: `~/.claude/skills/a1-execute/_learning.md`
+2. **Obsidian Vault** (canonical): `~/Documents/Obsidian Vault/areas/a1-learnings/a1-execute.md`
+
+The Vault is the brain — always write there. The local file is a fast-access cache for a1-evolve.
+
+### Build the retro content
 
 ```bash
-LEARNING_FILE="$HOME/.claude/skills/a1-execute/_learning.md"
 OBS_FILE=".a1/phases/<phase_name>/observations.jsonl"
-
-# Count observations
 OBS_COUNT=$(wc -l < "$OBS_FILE" 2>/dev/null || echo 0)
-# Count major+ observations
 MAJOR_COUNT=$(grep -c '"severity":"major\|critical"' "$OBS_FILE" 2>/dev/null || echo 0)
+PROJECT_NAME=$(basename $(pwd))
+DATE=$(date +%Y-%m-%d)
+```
+
+**Retro format — fill in honestly (3-5 bullets max):**
+```
+✅ <what worked well — specific, not generic>
+✅ <what worked well>
+⚠️ <what didn't work / required unplanned effort>
+⚠️ <pattern that's recurring across runs>
+💡 Suggestion: <one concrete sentence: which file, what change>
+```
+
+### Write to local cache
+```bash
+LEARNING_FILE="$HOME/.claude/skills/a1-execute/_learning.md"
 
 cat >> "$LEARNING_FILE" << ENTRY
 
-## $(date +%Y-%m-%d) — <project_name> / <phase_name>
+## $DATE — $PROJECT_NAME / <phase_name>
+**Outcome:** <PASS|PARTIAL|FAIL> | **Stack:** <e.g. Next.js + Postgres> | **Obs:** $OBS_COUNT ($MAJOR_COUNT major+)
 
-**Skill:** a1-execute
-**Outcome:** <PASS|PARTIAL|FAIL> (<gaps count> gaps)
-**Project type:** <detected stack, e.g. Next.js + Postgres>
-**Observations:** $OBS_COUNT total, $MAJOR_COUNT major+
+<observations summary — one line per observation>
 
-### Observations summary
-$(cat "$OBS_FILE" 2>/dev/null | python3 -c "
-import sys, json
-for line in sys.stdin:
-    try:
-        o = json.loads(line)
-        print(f'- [{o[\"agent\"]}/W{o.get(\"wave\",\"?\")}/{o[\"severity\"]}] {o[\"msg\"]} (pattern: {o[\"pattern\"]})')
-    except: pass
-" 2>/dev/null || echo "- (no observations file)")
-
-### Retro
-<3-5 honest bullets — what went well, what didn't, one improvement suggestion>
+<retro bullets>
 ENTRY
 ```
 
-**Retro format (fill in honestly):**
-```
-✅ <what worked well — specific>
-✅ <what worked well>
-⚠️ <what didn't work / took extra effort>
-⚠️ <pattern that keeps recurring>
-💡 Suggestion: <one concrete improvement to a skill/agent file>
+### Write to Obsidian Vault
+```bash
+VAULT="$HOME/Documents/Obsidian Vault"
+VAULT_FILE="$VAULT/areas/a1-learnings/a1-execute.md"
+
+cat >> "$VAULT_FILE" << ENTRY
+
+## $DATE — [[projects/<project-slug>]] / <phase_name>
+**Outcome:** <PASS|PARTIAL|FAIL> | **Stack:** <stack> | **Obs:** $OBS_COUNT ($MAJOR_COUNT major+)
+Patterns: [[a1-learnings/patterns]]
+
+### Observations
+<observations — one line per item, with pattern tag>
+
+### Retro
+<retro bullets>
+ENTRY
+
+# Update the index table (sed the entry count + last-date)
+sed -i '' "s/| a1-execute | \[\[a1-learnings\/a1-execute\]\] | .* |/| a1-execute | [[a1-learnings\/a1-execute]] | $DATE | $(grep -c "^## 20" "$VAULT_FILE") |/" "$VAULT/areas/a1-learnings/index.md"
 ```
 
-**Learning threshold check:**
-After writing, count total entries in `_learning.md`:
+### Threshold check
 ```bash
 ENTRY_COUNT=$(grep -c "^## 20" "$LEARNING_FILE" 2>/dev/null || echo 0)
 ```
-If `$ENTRY_COUNT` is a multiple of 5 (5, 10, 15...): surface to user:
-> "📚 5 neue Learnings akkumuliert. `a1-evolve` ausführen um Skill-Verbesserungen vorzuschlagen?"
+If `$ENTRY_COUNT` is a multiple of 5:
+> "📚 5 neue Learnings akkumuliert — in Vault unter [[areas/a1-learnings/index]] gespeichert. `a1-evolve` ausführen?"

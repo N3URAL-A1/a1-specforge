@@ -23,23 +23,33 @@ Quick read-back to confirm the edit landed cleanly.
 
 ## After all proposals processed
 
-### Update learnings-index.md
+### Update Obsidian Vault — patterns.md (primary)
+```bash
+VAULT="$HOME/Documents/Obsidian Vault"
+PATTERNS="$VAULT/areas/a1-learnings/patterns.md"
+```
+
+Update `patterns.md`:
+1. Update frontmatter `updated:` date
+2. Update "Aktive Patterns" table — add/update rows for each processed pattern
+3. Append to "Changelog" table — one row per applied change with commit hash
+
+Format for new pattern rows:
+```markdown
+| missing_wiring | 8 | HIGH | agents/a1-planner.md | ✅ applied 2026-05-17 |
+| wave_ordering | 3 | MED | agents/a1-planner.md | ✅ applied 2026-05-17 |
+| vague_action | 2 | LOW | — | 👀 monitoring |
+```
+
+Also update `index.md` — set "Last synthesis" date in the intro block.
+
+### Update local cache
 ```bash
 cat > ~/.claude/skills/_shared/learnings-index.md << EOF
-# Learning Index
+# Learning Index (cache — canonical is Obsidian Vault areas/a1-learnings/patterns.md)
 
 Last synthesis: $(date +%Y-%m-%d)
-Total patterns analyzed: <N>
-Applied changes: <count>
-Skipped: <count>
-
-## Pattern History
-
-| Pattern | Count | Status | Last seen | Change applied |
-|---|---|---|---|---|
-| missing_wiring | 8 | ✅ applied | 2026-05-17 | a1-planner.md +wiring checklist |
-| wave_ordering | 3 | ✅ applied | 2026-05-17 | a1-planner.md +wave rules |
-| vague_action | 2 | 👀 monitoring | 2026-05-17 | below threshold |
+Applied: <count> | Skipped: <count> | Monitoring: <count>
 EOF
 ```
 
