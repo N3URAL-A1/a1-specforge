@@ -32,20 +32,20 @@ When two rules conflict, the higher layer wins. From lowest to highest:
 > Project-specific rules that are NOT covered by global rules. These extend or
 > tighten the global baseline.
 
-<filled by Finn from interview Q1>
+<filled by Alex from interview Q1>
 
 ## Agent-Specific Constraints
 
 > Restrictions or scope-limits that apply to specific agents when working on
 > this project. Leave empty (or "None.") if there are no agent-level overrides.
 
-<filled by Finn from interview Q2; may be "None."  if user provided no input>
+<filled by Alex from interview Q2; may be "None."  if user provided no input>
 
 ## Key Convention
 
 > The one thing a new agent must know in 30 seconds before touching code.
 
-<filled by Finn from interview Q3>
+<filled by Alex from interview Q3>
 
 ## Notes
 

@@ -4,6 +4,10 @@ Used by `workflows/03-probe.md` to construct a focused brief per (repo ×
 agent) dispatch. All four sections below MUST appear verbatim.
 
 ```
+IMPORTANT: Return ONLY a JSON array. No text before or after the array. No
+headers, no prose, no markdown. Only the JSON array. Non-JSON output is
+rejected and will require a re-run.
+
 You are <AGENT_NAME>. Task: Spec-vs-Code drift probe.
 
 ## Project Context

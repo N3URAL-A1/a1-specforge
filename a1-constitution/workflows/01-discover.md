@@ -1,7 +1,7 @@
 # Phase 01 — Discover
 
 Goal: turn a vague request ("Constitution for my-project") into a fully scoped
-discovery payload ready to feed Finn in Phase 2. Output: vault constitution
+discovery payload ready to feed Alex in Phase 2. Output: vault constitution
 file on disk with `status: discovering` and a `discovery_payload.json` cached
 in a tmp file for Phase 2.
 
@@ -110,11 +110,11 @@ max 3 questions total. Suggested:
 3. > "What is the most important convention a new agent must know in 30 seconds
    >  before touching any code?"
 
-Capture answers verbatim. They go into the Finn brief in Phase 2.
+Capture answers verbatim. They go into the Alex brief in Phase 2.
 
 ## Step 6 — Stash discovery payload for Phase 2
 
-Write a tmp JSON file with everything Finn needs. Use `Write` tool to a path
+Write a tmp JSON file with everything Alex needs. Use `Write` tool to a path
 like `/tmp/a1-const-<slug>-<timestamp>.json`. Schema:
 
 ```json
@@ -145,11 +145,11 @@ Tell the user:
 > "Discovery complete. Vault file: `projects/<slug>/constitution/constitution.md`
 >  (status: discovering). Global rules captured: <N>, CLAUDE.md read, interview done.
 >
->  Should I start Phase 2? Finn (cc-architect) will receive the discovery output
+>  Should I start Phase 2? Alex (alex-super-architekt) will receive the discovery output
 >  and draft the constitution."
 
 If yes: proceed to `02-draft.md`. Do NOT auto-update status — the status moves
-to `drafted` only AFTER Finn returns successfully in Phase 2.
+to `drafted` only AFTER Alex returns successfully in Phase 2.
 
 ## Special exits
 

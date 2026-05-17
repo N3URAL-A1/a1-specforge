@@ -1,6 +1,6 @@
 # Phase 03 — Review
 
-Goal: present Finn's draft to the user, capture any change requests, apply them
+Goal: present Alex's draft to the user, capture any change requests, apply them
 deterministically, and transition status to `reviewed`. No sub-agent in this
 phase — direct dialogue + targeted edits only.
 
@@ -30,7 +30,7 @@ Show the user a structured preview:
 >  Three possible responses:
 >  1) Looks good → I proceed to Phase 4 (Write).
 >  2) Small changes → tell me concretely what should change and where.
->  3) Larger rework → I send Finn back with your feedback for a re-draft."
+>  3) Larger rework → I send Alex back with your feedback for a re-draft."
 
 ## Step 2 — Capture decision
 
@@ -68,9 +68,9 @@ If the user wants a significant rework, write a new tmp file with their feedback
 }
 ```
 
-Construct a follow-up brief and re-dispatch Finn with subagent_type
-`finn-cc-architect`, including the previous body and the user's feedback.
-Finn returns a revised body. Write it back via `constitution set-body`,
+Construct a follow-up brief and re-dispatch Alex with subagent_type
+`alex-super-architekt`, including the previous body and the user's feedback.
+Alex returns a revised body. Write it back via `constitution set-body`,
 status STAYS at `drafted`, and we loop back to Step 1 (user reviews
 the new draft).
 

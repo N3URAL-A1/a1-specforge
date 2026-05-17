@@ -16,10 +16,10 @@ description: >
   <projekt>", "generate constitution", "constitution erzeugen", "verhaltensregeln
   für <projekt>", "override-reihenfolge dokumentieren", "a1-constitution",
   "update constitution", or asks to define/update the per-project behavioral
-  rules separate from CLAUDE.md. Phase 2 (Draft) dispatches finn-cc-architect
+  rules separate from CLAUDE.md. Phase 2 (Draft) dispatches alex-super-architekt
   as the domain authority on CLAUDE.md/constitution separation and CC override
   layers; other phases run in the main thread. Do not activate for: editing
-  CLAUDE.md content itself (manual edit or finn directly), generic project
+  CLAUDE.md content itself (manual edit or alex directly), generic project
   audits (a1-analyze), bug fixes (a1-fix), feature work (a1-new-feature), or
   compliance reviews of an existing constitution (planned: Reinhard/Tobi in
   M3 roadmap).
@@ -38,7 +38,7 @@ allowed-tools:
 This skill is a thin orchestrator. The phase logic lives in `workflows/`. The
 shared CLI helper (`~/.claude/skills/_shared/a1-tools.cjs`) handles deterministic
 file ops (vault file init, discovery, status updates, body writes, history
-snapshots, repo mirror, CLAUDE.md cross-link). Finn (finn-cc-architect) does
+snapshots, repo mirror, CLAUDE.md cross-link). Alex (alex-super-architekt) does
 the drafting in Phase 2.
 
 ## When to use
@@ -49,7 +49,7 @@ overloaded CLAUDE.md; an existing project's rules drifted and need a refresh;
 a global rule changed and projects need updated override snapshots.
 
 If the user wants to edit CLAUDE.md content (facts about the project), do that
-manually or via Finn directly. If the user wants to audit whether code complies
+manually or via Alex directly. If the user wants to audit whether code complies
 with a constitution, that is M3 roadmap (Reinhard/Tobi) — not this skill.
 
 ## Phases
@@ -96,7 +96,7 @@ The body is written in Phase 2 via:
 
 ```bash
 node ~/.claude/skills/_shared/a1-tools.cjs constitution set-body \
-  "<constitution-path>" --body-file "<tmp-file-from-finn>"
+  "<constitution-path>" --body-file "<tmp-file-from-alex>"
 ```
 
 ## Storage
@@ -119,17 +119,17 @@ Override via env var `A1_VAULT_ROOT` if testing.
 | Phase | Agent | Source |
 |---|---|---|
 | 1 Discover | — (skill itself + CLI) | `_shared/a1-tools.cjs constitution discover` |
-| 2 Draft | **Finn (finn-cc-architect)** | `~/.claude/agents/finn-cc-architect.md` (see `agents/finn-link.md`) |
+| 2 Draft | **Alex (alex-super-architekt)** | `~/.claude/agents/alex-super-architekt.md` (see `agents/alex-link.md`) |
 | 3 Review | — (skill itself + user) | — |
 | 4 Write | — (CLI only) | — |
 
-Finn is spawned via the `Task` tool with a focused brief constructed from
-`templates/finn-brief-template.md`. The brief contains: project slug, vault
+Alex is spawned via the `Task` tool with a focused brief constructed from
+`templates/alex-brief-template.md`. The brief contains: project slug, vault
 path, discovery output (CLAUDE.md excerpt, global rules listing, existing repo
 file), 3-5 user-provided behavioral concerns from Phase 1 interview, the
 constitution-template skeleton, and a strict Output Contract.
 
-Finn's output is the **full constitution body** (Markdown, no YAML frontmatter
+Alex's output is the **full constitution body** (Markdown, no YAML frontmatter
 — that stays under skill control). The skill writes it via `constitution
 set-body` and transitions to `drafted`.
 
@@ -147,7 +147,7 @@ set-body` and transitions to `drafted`.
 - One question per turn in Phase 1 interview. Max 3 user-facing questions.
 - User-facing prompts are in **English**. All file content (frontmatter, body,
   references) stays in English.
-- Finn is referenced via `agents/finn-link.md`, never redefined here.
+- Alex is referenced via `agents/alex-link.md`, never redefined here.
 - The skill NEVER auto-spawns Reinhard, Tobi, or any other agent after Phase 4.
   Post-write recommendations are surface-level suggestions only.
 - A `cancelled` constitution keeps its file slot. The user must manually delete

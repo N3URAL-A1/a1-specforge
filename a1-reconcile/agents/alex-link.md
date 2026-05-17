@@ -12,11 +12,17 @@ This file is a pointer, not a redefinition.
 ## How a1-reconcile uses it
 
 - Dispatched in parallel with `codebase-mapper` via `Task` tool.
-- Brief from `templates/agent-probe-brief.md`, with a hint at the top:
-  "Fokus: Architektur-Drift. Verbringe keine Zeit mit Datei-Existenz —
-  codebase-mapper deckt das ab. Suche stattdessen nach Boundary-/Layer-/
-  Coupling-Drift gegenüber Spec-Erwartung."
+- Brief from `templates/agent-probe-brief.md`, with a header hint at the top:
+  "Focus: Architecture drift. Do not spend time on file existence —
+  codebase-mapper covers that. Look instead for Boundary/Layer/Coupling drift
+  against the spec expectation."
+- **JSON-only output is mandatory.** Alex tends to produce prose explanations.
+  The brief must start with: "IMPORTANT: Return ONLY a JSON array. No text
+  before or after. No headers. No markdown. Only the array." The workflow
+  must re-ask once if Alex returns prose, and record failure if he does it twice.
 - Read-only.
 - Same Output Contract as codebase-mapper.
 - Conflicts with codebase-mapper output are resolved in Phase 3 Step 4:
   higher-severity class wins (DIVERGED > MISSING > EXTRA > STALE > IN_SYNC).
+- Alex is NOT dispatched for MISSING/EXTRA checks — codebase-mapper owns those.
+  Alex's value is DIVERGED detection (wrong layer, broken boundary, coupling shift).

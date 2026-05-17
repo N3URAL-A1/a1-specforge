@@ -105,6 +105,36 @@ node ~/.claude/skills/_shared/a1-tools.cjs reconcile add-drift \
 The helper auto-increments the ID (D-001, D-002, ...) and atomically appends
 to the frontmatter `drifts[]`.
 
+## Step 6b — DIVERGED follow-up: semantic probe (if needed)
+
+After collecting codebase-mapper results, check if any drift has
+`class: DIVERGED`. If yes AND Alex was NOT already dispatched in Step 3:
+
+Dispatch Alex as a focused DIVERGED semantic probe:
+
+```
+Task(subagent_type="alex-super-architekt",
+     description="Alex DIVERGED semantic probe <slug>",
+     prompt="IMPORTANT: Return ONLY a JSON array. No prose.\n\n
+You are Alex (alex-super-architekt). Task: semantic analysis of DIVERGED spec findings.\n\n
+Project: <PROJECT_SLUG>, repo: <REPO_PATH>.\n\n
+The following artifacts were classified as DIVERGED by a structural probe
+(they exist in code but path, signature, or boundary differs from spec).
+For each one, confirm or refine the classification with an architecture-level
+assessment. Focus on: wrong module, wrong layer, broken interface boundary,
+coupling violations.\n\n
+DIVERGED artifacts to assess:\n<DIVERGED_ARTIFACT_LIST>\n\n
+Output Contract: JSON array with same schema as primary probe.
+Return [] if all DIVERGED findings hold up without refinement.")
+```
+
+Merge Alex's DIVERGED results into the drift list: Alex's findings override
+codebase-mapper's DIVERGED entries for the same artifact (Alex has deeper
+semantic context). Apply Step 4 validation rules (JSON check, re-ask once).
+
+If Alex was already dispatched in Step 3 (> 5 function/endpoint targets):
+his DIVERGED findings from that run already cover this — skip Step 6b.
+
 ## Step 7 — Record probe metadata
 
 After all agents complete:
@@ -150,3 +180,8 @@ If no: stop. Status `probed` persists.
   says DIVERGED for the same artifact, keep both findings; Phase 4 dedups by
   picking the higher-severity class (DIVERGED > MISSING > EXTRA > STALE >
   IN_SYNC).
+- **Alex returns prose instead of JSON:** This is a known failure mode. Re-ask
+  once: "Your response was not a valid JSON array. Return ONLY the JSON array
+  per Output Contract." If the second attempt also returns prose, record
+  `probe_notes: [{agent: "Alex", status: "json-contract-failed", note: "returned prose twice"}]`
+  and continue without Alex's findings.
