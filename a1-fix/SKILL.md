@@ -1,20 +1,18 @@
 ---
 name: a1-fix
 description: >
-  End-to-end pipeline for taking a reported bug from triage to verified fix.
-  Four phases: Report → Diagnose → Fix → Verify. State lives in the bug-report
-  file's YAML frontmatter and progresses through: reported → diagnosed → fixing
-  → fixed (or cant-reproduce, wont-fix, duplicate, cancelled). Bug reports are
-  stored in the Obsidian Vault under projects/<slug>/fixes/<YYYY-MM-DD>-<bug-slug>.md.
-  MUST trigger when the user says: "Bug in <projekt>", "Fehler in <projekt>",
-  "<projekt> crasht", "<feature> funktioniert nicht", "broken since deploy",
-  "X funktioniert nicht", "crash", "broken", "regression", "a1-fix", "Bug-Report
-  anlegen", or any request to investigate, diagnose, or fix a malfunction in a
-  shipped feature. This skill orchestrates sub-agents (Falk for triage and
-  diagnosis, project code agents for the fix, optionally Quak for QA regression);
-  it does NOT replace them. Do not activate for: new feature work (use
-  a1-new-feature for "neues Feature", "spec", "Anforderung"), code review of a
-  PR (use Reinhard), or refactor without a reported defect.
+  End-to-end bug pipeline: Report → Diagnose → Fix → Verify. State persists in the
+  bug-report YAML frontmatter (reported → diagnosed → fixing → fixed). Bug reports live
+  under `projects/<slug>/fixes/<YYYY-MM-DD>-<bug-slug>.md` in the Obsidian Vault.
+  MUST trigger when the user says: "bug in <X>", "fehler in <X>", "<X> crasht",
+  "<feature> funktioniert nicht", "X is broken", "broken since deploy", "regression",
+  "crash", "a1-fix", "fix this", "bug-report anlegen", "this used to work",
+  "it stopped working", or any request to investigate/diagnose/fix a malfunction in
+  shipped functionality. Orchestrates a1-falk-fault-finder (triage + diagnosis) and a
+  project code agent (the fix); skill never edits code itself. Writes a Retro to the
+  Obsidian Vault after every verified fix. Do NOT activate for: new feature work
+  (use a1-new-feature), PR code review without a reported defect (use Reinhard),
+  or refactor without a defect.
 allowed-tools:
   - Read
   - Write

@@ -1,12 +1,15 @@
 ---
 name: a1-plan
 description: >
-  Full planning pipeline for a project phase. Research → Map codebase → Create plan → Audit plan.
-  Produces a verified, executor-ready PLAN.md. State lives in `.a1/phases/<name>/`.
-  MUST trigger when the user says: "phase planen", "plan phase", "a1-plan", "neue phase",
-  "plan erstellen", "plan this", "plan phase <name>", or any request to plan a phase or
-  milestone of implementation work. Do not activate for: feature ideation (use a1-new-feature),
-  bug fixes (use a1-fix), or executing an existing plan (use a1-execute).
+  Full planning pipeline for an implementation phase: Research → Map → Plan → Audit, producing
+  an executor-ready PLAN.md with waves, tasks, and verifiable success criteria. State lives in
+  `.a1/phases/<name>/`. MUST trigger when the user says: "plan phase", "phase planen",
+  "neue phase planen", "plan erstellen", "PLAN.md erstellen", "a1-plan", "plan this milestone",
+  "plan M2-P1", "I need a plan for X", "let's plan the next phase", or any request to turn a
+  goal/spec into an actionable, audited plan before execution. Auto-loops back through plan→audit
+  on FAIL verdicts (max 2 cycles). Do NOT activate for: feature ideation from scratch (use
+  a1-new-feature), bug fixes (use a1-fix), running an existing PLAN.md (use a1-execute),
+  or codebase analysis without plan output (use a1-analyze).
 allowed-tools:
   - Read
   - Write

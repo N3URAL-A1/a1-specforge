@@ -43,3 +43,39 @@ Options:
 2. Proceed anyway (I'll flag these as known risks)
 3. Cancel and start fresh
 ```
+
+---
+
+## Retro (mandatory, every run)
+
+After every a1-plan run — PASS or revision-limit-reached — write one structured entry.
+Takes ~2 minutes. Do not skip. Used by `a1-evolve` for pattern clustering.
+
+**Append to local cache:**
+
+```bash
+cat >> ~/.claude/skills/a1-plan/_learning.md <<'EOF'
+---
+date: <YYYY-MM-DD>
+phase: <phase-name>
+project: <project-slug>
+spec: <spec-path or "none">
+result: <pass|pass-after-revision|blocked>
+revisions: <0|1|2>
+audit_findings: <total-blocker-count-across-rounds>
+finding_classes: [<from: missing_acceptance_criteria, vague_tasks, no_success_criteria, wave_too_large, missing_dependency, unverifiable_goal, spec_omission>]
+phase_that_produced_issues: [<from: research, map, plan>]
+one_line_learning: <what would have prevented the main audit finding, or "no findings">
+EOF
+```
+
+**Append the same entry to the Vault:**
+
+```
+~/Documents/Obsidian Vault/areas/a1-learnings/a1-plan.md
+```
+
+Use the `finding_classes` tags consistently — they feed into `patterns.md` clustering:
+`missing_acceptance_criteria` | `vague_tasks` | `no_success_criteria` | `wave_too_large` | `missing_dependency` | `unverifiable_goal` | `spec_omission`
+
+A run with zero findings is still useful data — write the entry with `audit_findings: 0`.

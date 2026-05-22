@@ -106,3 +106,49 @@ If yes: proceed to `02-diagnose.md`. Falk should read `## Notes` plus the new
 - **User wants to close as wont-fix:** run
   `a1-tools fix update-status <bug-path> wont-fix --verify-result "<reason>"`.
   The slot stays.
+
+---
+
+## Retro (mandatory, after every terminal verdict)
+
+Run this once the bug reaches a terminal status (`fixed`, `wont-fix`, `cant-reproduce`,
+`duplicate`). Takes ~2 minutes. Do not skip. Used by `a1-evolve` for pattern clustering.
+
+### Step 1 — Append to local cache
+
+```bash
+cat >> ~/.claude/skills/a1-fix/_learning.md <<EOF
+---
+date: <YYYY-MM-DD>
+bug: <bug-slug>
+project: <project-slug>
+severity: <blocker|major|minor|nit>
+terminal_status: <fixed|wont-fix|cant-reproduce|duplicate>
+diagnosis_confidence: <low|medium|high>
+diagnosis_rounds: <1|2|...>
+root_cause_class: [<from: missing_wiring, schema_flaw, regression, race_condition, env_config, third_party_change, ui_state_bug, auth_tenant, spec_omission, off_by_one>]
+fix_required_test_first: <true|false>
+quak_regression: <passed|failed|skipped>
+phase_that_produced_most_friction: <report|diagnose|fix|verify>
+one_line_learning: <what would have prevented the bug, or shortened triage/diagnosis>
+EOF
+```
+
+### Step 2 — Append the same entry to the Vault
+
+```
+~/Documents/Obsidian Vault/areas/a1-learnings/a1-fix.md
+```
+
+Use the `root_cause_class` tags consistently — they feed into `patterns.md` clustering:
+`missing_wiring` | `schema_flaw` | `regression` | `race_condition` | `env_config` | `third_party_change` | `ui_state_bug` | `auth_tenant` | `spec_omission` | `off_by_one`
+
+For `cant-reproduce` / `duplicate`: still write the entry — the recurrence signal is valuable.
+
+### Step 3 — Threshold check
+
+```bash
+ENTRY_COUNT=$(grep -c "^date:" ~/.claude/skills/a1-fix/_learning.md 2>/dev/null || echo 0)
+```
+If `$ENTRY_COUNT` is a multiple of 5:
+> "5 neue Bug-Learnings akkumuliert — in Vault unter [[areas/a1-learnings/index]] gespeichert. `a1-evolve` ausführen?"

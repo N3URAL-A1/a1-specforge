@@ -1,11 +1,15 @@
 ---
 name: a1-execute
 description: >
-  Executes a PLAN.md wave by wave with checkpoints and final verification.
-  State lives in `.a1/phases/<name>/STATUS.md`. MUST trigger when the user says:
-  "phase ausführen", "execute phase", "a1-execute", "plan ausführen", "execute plan",
-  "implementieren starten", "start execution", or any request to run an existing plan.
-  Do not activate for: planning (use a1-plan), bug fixes (use a1-fix).
+  Wave-by-wave execution of an existing PLAN.md with mandatory user-checkpoint between waves
+  and final goal-backward verification. State lives in `.a1/phases/<name>/STATUS.md`; a
+  VERIFICATION.md captures the verdict. MUST trigger when the user says: "execute plan",
+  "plan ausführen", "phase ausführen", "execute phase", "a1-execute", "implementieren starten",
+  "start execution", "run the plan", "execute wave 1", "let's build this phase",
+  "weiter mit der phase", or any request to implement work from an already-created PLAN.md.
+  Captures observations.jsonl during execution and writes a Retro to the Obsidian Vault
+  after every run. Do NOT activate for: creating a plan (use a1-plan), feature ideation
+  from scratch (use a1-new-feature), bug fixes (use a1-fix).
 allowed-tools:
   - Read
   - Write

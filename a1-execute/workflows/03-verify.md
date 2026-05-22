@@ -58,73 +58,54 @@ For FAIL/PARTIAL re-execution: spawn a1-erik-executor with a targeted prompt lis
 
 ---
 
-## Retro-Capture (always — after verdict is shown)
+## Retro (mandatory, every run)
 
-After presenting the verdict, write the learning entry to **two places**:
-1. Local cache: `~/.claude/skills/a1-execute/_learning.md`
-2. **Obsidian Vault** (canonical): `~/Documents/Obsidian Vault/areas/a1-learnings/a1-execute.md`
+After presenting the verdict — PASS, PARTIAL, or FAIL — write one structured entry.
+Takes ~2 minutes. Do not skip. Used by `a1-evolve` for pattern clustering.
 
-The Vault is the brain — always write there. The local file is a fast-access cache for a1-evolve.
-
-### Build the retro content
+### Step 1 — Gather observation metrics
 
 ```bash
 OBS_FILE=".a1/phases/<phase_name>/observations.jsonl"
 OBS_COUNT=$(wc -l < "$OBS_FILE" 2>/dev/null || echo 0)
 MAJOR_COUNT=$(grep -c '"severity":"major\|critical"' "$OBS_FILE" 2>/dev/null || echo 0)
-PROJECT_NAME=$(basename $(pwd))
+PROJECT_NAME=$(basename "$(pwd)")
 DATE=$(date +%Y-%m-%d)
 ```
 
-**Retro format — fill in honestly (3-5 bullets max):**
-```
-✅ <what worked well — specific, not generic>
-✅ <what worked well>
-⚠️ <what didn't work / required unplanned effort>
-⚠️ <pattern that's recurring across runs>
-💡 Suggestion: <one concrete sentence: which file, what change>
-```
+### Step 2 — Append to local cache
 
-### Write to local cache
 ```bash
-LEARNING_FILE="$HOME/.claude/skills/a1-execute/_learning.md"
-
-cat >> "$LEARNING_FILE" << ENTRY
-
-## $DATE — $PROJECT_NAME / <phase_name>
-**Outcome:** <PASS|PARTIAL|FAIL> | **Stack:** <e.g. Next.js + Postgres> | **Obs:** $OBS_COUNT ($MAJOR_COUNT major+)
-
-<observations summary — one line per observation>
-
-<retro bullets>
-ENTRY
+cat >> ~/.claude/skills/a1-execute/_learning.md <<EOF
+---
+date: $DATE
+phase: <phase-name>
+project: $PROJECT_NAME
+result: <pass|partial|fail>
+waves_executed: <N>
+observations_total: $OBS_COUNT
+observations_major_plus: $MAJOR_COUNT
+issue_classes: [<from: plan_drift, missing_dependency, wave_too_large, flaky_test, env_issue, spec_omission, unverifiable_criterion, blocker_unforeseen>]
+phase_that_produced_most_issues: <plan|implement|verify>
+one_line_learning: <what would have prevented the main issue, or "no issues">
+EOF
 ```
 
-### Write to Obsidian Vault
-```bash
-VAULT="$HOME/Documents/Obsidian Vault"
-VAULT_FILE="$VAULT/areas/a1-learnings/a1-execute.md"
+### Step 3 — Append the same entry to the Vault
 
-cat >> "$VAULT_FILE" << ENTRY
-
-## $DATE — [[projects/<project-slug>]] / <phase_name>
-**Outcome:** <PASS|PARTIAL|FAIL> | **Stack:** <stack> | **Obs:** $OBS_COUNT ($MAJOR_COUNT major+)
-Patterns: [[a1-learnings/patterns]]
-
-### Observations
-<observations — one line per item, with pattern tag>
-
-### Retro
-<retro bullets>
-ENTRY
-
-# Update the index table (sed the entry count + last-date)
-sed -i '' "s/| a1-execute | \[\[a1-learnings\/a1-execute\]\] | .* |/| a1-execute | [[a1-learnings\/a1-execute]] | $DATE | $(grep -c "^## 20" "$VAULT_FILE") |/" "$VAULT/areas/a1-learnings/index.md"
+```
+~/Documents/Obsidian Vault/areas/a1-learnings/a1-execute.md
 ```
 
-### Threshold check
+Use the `issue_classes` tags consistently — they feed into `patterns.md` clustering:
+`plan_drift` | `missing_dependency` | `wave_too_large` | `flaky_test` | `env_issue` | `spec_omission` | `unverifiable_criterion` | `blocker_unforeseen`
+
+A run with zero issues is still useful data — write the entry with `observations_total: 0`.
+
+### Step 4 — Threshold check
+
 ```bash
-ENTRY_COUNT=$(grep -c "^## 20" "$LEARNING_FILE" 2>/dev/null || echo 0)
+ENTRY_COUNT=$(grep -c "^date:" ~/.claude/skills/a1-execute/_learning.md 2>/dev/null || echo 0)
 ```
 If `$ENTRY_COUNT` is a multiple of 5:
-> "📚 5 neue Learnings akkumuliert — in Vault unter [[areas/a1-learnings/index]] gespeichert. `a1-evolve` ausführen?"
+> "5 neue Learnings akkumuliert — in Vault unter [[areas/a1-learnings/index]] gespeichert. `a1-evolve` ausführen?"
