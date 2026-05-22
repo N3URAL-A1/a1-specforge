@@ -19,6 +19,14 @@ Default fallbacks (if no project CLAUDE.md found): Walter (web/backend), Bernd (
 
 Spec status is `planned` and frontmatter `wave_plan_path` is set. Wave-plan file exists.
 
+**Consistency Gate must be PASS before Wave 1 starts.** If it hasn't run yet:
+
+```bash
+node ~/.claude/skills/_shared/a1-tools.cjs consistency-check <plan-path> <spec-path>
+```
+
+Do NOT start Wave 1 if the gate returns FAIL. Orphaned FRs (FRs not mapped to any wave) produced 44% of historical post-deploy bugs — the gate costs 30 seconds and prevents hours of fixes.
+
 ## Step 1 — Set status to implementing (first time only)
 
 If status is still `planned`:

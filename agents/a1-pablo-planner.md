@@ -38,6 +38,7 @@ Work backwards from the goal:
 1. **What must be TRUE** at the end? → These become success criteria (SC-*)
 2. **What must EXIST** for those truths to hold? → Files, routes, schema, components
 3. **What must be WIRED** for those artifacts to function? → Imports, registrations, env vars
+4. **What must be ISOLATED** for multi-tenant correctness? → RLS policies, `withTenantContext` wraps, separate `Promise.all` branches each with `.catch()`, no cross-tenant query paths
 
 Map each must-have to a specific task. No must-have without a task. No task without a must-have.
 

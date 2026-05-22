@@ -14,6 +14,21 @@ All waves in the wave-plan are marked `⟶ status: done`. Spec status is `implem
 E2E-Test aus Step 5b (Phase 5) ist grün. Production-URL oder Preview-URL aus letztem Deploy
 ist bekannt — falls nicht, `vercel ls` ausführen und URL notieren.
 
+## Step 0 — Live-URL Reachability Check
+
+Before the scenario walkthrough, confirm every feature route is reachable. This takes 2 minutes and prevents false-negatives from a silent deployment gap.
+
+```bash
+# Check each feature route added in the wave plan:
+for path in <route-1> <route-2> ...; do
+  code=$(curl -s -o /dev/null -w "%{http_code}" "<production-url>$path")
+  echo "$path → $code"
+done
+# Expected: 200 or 30x — never 404/500
+```
+
+If any route returns 4xx/5xx: do NOT proceed to the scenario walkthrough. Run `vercel ls` to confirm the active deployment, trigger a fresh deploy if needed, and re-check before continuing. A 404 here means the feature was not deployed — not that it's broken.
+
 ## Step 1 — Extract Acceptance Scenarios
 
 Read the spec. Collect every Given/When/Then block under `## Acceptance Scenarios`, grouped
