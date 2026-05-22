@@ -33,6 +33,8 @@ gets added to the question queue alongside the explicit markers:
 | **Mobile vs Desktop** | Does the spec mention responsive behavior? Is mobile parity required? |
 | **Out of scope gaps** | Is there anything users will *expect* to work that is not explicitly excluded? |
 | **Data / existing records** | Does the feature change existing data? What happens to records created before the feature exists? |
+| **Duplicate submit** | What happens if the user submits the same data twice (double-tap, back-and-resubmit, concurrent session)? Is there duplicate detection? If yes: what does the UI show, and what happens when the user confirms "save anyway"? |
+| **Navigation context carry** | When navigating from screen A to screen B via a link or button: what context does B need from A (IDs, date range, plan reference)? How is it passed (route param, query param, global state)? What does B show if the context is missing or stale? |
 
 Add any discovered gaps as `[NEEDS CLARIFICATION: <question>]` inline in the spec before
 spawning Rene, so Rene has a complete list in one pass.
