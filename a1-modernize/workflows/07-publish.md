@@ -1,0 +1,123 @@
+# Phase 07 — Publish
+
+Goal: publish the approved modernization report to Notion. If Notion is
+unavailable, export to local Markdown. Output: Notion page (or local export),
+status `published`.
+
+**Stop-gate G6 before publish.** Robert sees the report preview first.
+
+## Step 1 — Compile report
+
+Assemble the full report from master file and phase artifacts:
+
+```markdown
+# Modernize Report: <project-slug>
+
+**Run:** <YYYY-MM-DD> | **Mode:** <full/spec-only>
+**Code path:** <analyzed_path>
+**Status:** executed
+
+## 1. Reverse-Spec Summary
+<FR count, key user roles, data model overview>
+<Link to full reverse-spec>
+
+## 2. Gap Findings
+| Severity | Count | Top finding |
+|---|---|---|
+| BLOCKER | <N> | <description> |
+| MAJOR | <N> | ... |
+| MINOR | <N> | ... |
+
+## 3. Tech Proposals
+| ID | Title | Decision | Risk | Effort |
+|---|---|---|---|---|
+| P-001 | <title> | approved | <risk> | <effort> |
+| P-002 | <title> | rejected — <reason> | ... | ... |
+| P-003 | <title> | deferred | ... | ... |
+
+## 4. Waves Executed
+| Wave | Title | Status | Tests | Parity |
+|---|---|---|---|---|
+| W-01 | <title> | ✅ done | <N> passing | ✅ |
+| ... |
+
+## 5. Parity Verification
+All <N> parity assertions: ✅ green
+Commit range: <first-commit>..<last-commit>
+
+## 6. Deferred Proposals (Backlog)
+<list of deferred proposals for next run>
+
+## 7. Open Questions Remaining
+<list of OQ-XXX not resolved in this run>
+```
+
+## Step 2 — Gate G6: preview report
+
+Show the compiled report structure to Robert:
+
+> "Report-Vorschau für <project-slug>. Soll ich so nach Notion publishen?"
+
+Wait for confirmation. Do not publish without explicit approval.
+
+## Step 3a — Publish to Notion (primary)
+
+If Notion-MCP is available:
+
+```bash
+node ~/.claude/skills/_shared/a1-tools.cjs modernize publish-notion \
+  "<master-path>" \
+  --notion-parent "<parent-page-id>"
+```
+
+The command creates:
+- A sub-page under the parent with the compiled report
+- Sections: Reverse-Spec, Approved/Rejected/Deferred Proposals, Wave List, Parity Verification
+- Properties: `obsidian_master_path`, `repo_url` (if git remote available), `commit_range`
+
+On success, update status:
+
+```bash
+node ~/.claude/skills/_shared/a1-tools.cjs modernize update-status \
+  "<master-path>" published \
+  --phase-data '{"notion_page_id": "<id>", "exported_at": "<iso8601>"}'
+```
+
+## Step 3b — Fallback: local Markdown export
+
+If Notion-MCP fails or is not connected:
+
+```
+Notion-MCP nicht erreichbar. Lokaler Markdown-Export wird erstellt.
+→ projects/<slug>/modernize/<date>/modernize-export/report.md
+```
+
+Write the compiled report to that path. Update status to `published` with
+`fallback_path` set.
+
+```bash
+node ~/.claude/skills/_shared/a1-tools.cjs modernize update-status \
+  "<master-path>" published \
+  --phase-data '{"fallback_path": "projects/<slug>/modernize/<date>/modernize-export/report.md"}'
+```
+
+**Never silently skip publishing.** Always show the user where the report ended up.
+
+## Step 4 — Final summary
+
+```
+Modernize-Lauf abgeschlossen für <project-slug>.
+
+📄 Report: <Notion URL oder lokaler Pfad>
+🔗 Obsidian: projects/<slug>/modernize/<date>-<focus>.md
+
+Zusammenfassung:
+- FRs extrahiert: <N>
+- Gaps gefunden: <N> BLOCKER, <N> MAJOR, <N> MINOR
+- Proposals: <N> approved, <N> rejected, <N> deferred
+- Waves ausgeführt: <N>
+- Tests hinzugefügt: <N>
+- Offene Fragen: <N> (im Vault dokumentiert)
+```
+
+Show `suggested_next` from frontmatter.

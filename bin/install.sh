@@ -48,6 +48,7 @@ SKILLS=(
   "a1-progress"
   "a1-roadmap"
   "a1-evolve"
+  "a1-modernize"
   "_shared"
 )
 
@@ -74,6 +75,8 @@ AGENTS=(
   "a1-tobi-tester"
   "a1-uwe-ux-expert"
   "a1-ludwig-legal"
+  "a1-rafael-reverse-spec"
+  "a1-theo-test-engineer"
 )
 
 echo ""

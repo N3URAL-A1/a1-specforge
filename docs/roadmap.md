@@ -105,6 +105,33 @@ Extracted skill set from `~/.claude/skills/` into this repo. Symlinks set. Deplo
 
 ---
 
+## M5 — Brownfield Modernization (2026-05-25)
+
+**Goal:** Handle existing codebases that lack docs, specs, and tests. Derive the spec from code, find gaps, propose improvements, execute wave-by-wave with guaranteed parity.
+
+### Shipped
+
+- **`a1-modernize`** — 7-phase brownfield pipeline (Scope → Reverse-Spec → Gap-Analysis → Tech-Proposals → Plan → Execute → Publish). Two modes: `spec-only` (read-only, understand what the app does) and `full` (understand + modernize). Stop-gate before every major transition — Robert approves everything individually.
+- **`a1-rafael-reverse-spec`** — New agent. Reads existing code without documentation, extracts observed behavior into user stories, flows, data models, and acceptance criteria. Flags unclear intent as `open_question:` — never guesses.
+- **`a1-theo-test-engineer`** — New agent. Provides current test patterns per stack, writes skeleton test files per wave, marks parity assertions explicitly. Works together with Erik in Phase 6.
+- **13 CLI subcommands** (`modernize` group in `_shared/a1-tools.cjs`): `init`, `next-slot`, `update-status`, `discover-stack`, `add-proposal`, `approve-proposal`, `add-wave`, `snapshot-behavior`, `start-wave`, `complete-wave`, `verify-parity`, `publish-notion`, `list`.
+
+### Design decisions
+
+- Eigenständiger Skill (nicht Mode von `a1-analyze`) — a1-analyze ist read-only, a1-modernize schreibt.
+- Proposals haben Status `pending / approved / rejected / deferred` — einzeln, nie batch.
+- Funktionale Parität (`verify-parity` grün) ist Definition-of-Done pro Wave.
+- Notion-Publish mit lokalem Markdown-Fallback — kein stiller Skip.
+
+### Success criteria
+
+- [ ] `a1-modernize spec-only` runs on a project with no docs and produces a complete reverse-spec
+- [ ] `a1-modernize full` executes a wave with behavior-snapshot + parity-replay
+- [ ] `a1-rafael-reverse-spec` flags at least 1 open_question on an ambiguous codebase
+- [ ] `a1-theo-test-engineer` produces a skeleton test with parity assertions for Flutter + React
+
+---
+
 ## Backlog (Someday / Maybe)
 
 - Cost tracker per spec (token spend per feature build)
@@ -128,4 +155,5 @@ M0: Repo extract
         └── M2: a1-checklist, a1-phantom, a1-worktree, a1-pr-review
               └── M3: Reinhard/Tobi extensions, a1-reconcile, feature-entry-conditions
                     └── M4: a1-plan, a1-execute, a1-evolve, a1-progress, a1-roadmap
+                          └── M5: a1-modernize, a1-rafael-reverse-spec, a1-theo-test-engineer
 ```
