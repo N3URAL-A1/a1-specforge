@@ -36,6 +36,31 @@
  *       → JSON { project, window_days: 30, matches: [...] }
  *         grep over projects/<slug>/fixes/*.md within 30 days, case-insensitive.
  *
+ *   a1-tools fix integrity-check [--agents-dir <abs>] [--skills-dir <abs>]
+ *       → JSON { status: "ok"|"mismatch"|"bootstrapped", mismatches: [], files_checked }
+ *         On first run: bootstraps wiki/_canonical/agents.lock.json from current state.
+ *         On subsequent runs: compares SHA256 hashes. status="mismatch" means skill STOPS.
+ *
+ *   a1-tools fix init-postmortem <bug-slug> <project-slug> [flags]
+ *       Flags: --date --severity --root-cause-class --terminal-status --one-line-learning
+ *              --fix-wave-count --diagnosis-rounds --phase-friction --quak-regression
+ *              --fix-required-test-first
+ *       → JSON { path, project, bug_slug, date, filename }
+ *         Creates wiki/postmortems/<project>/<date>-<bug-slug>.md with YAML frontmatter.
+ *
+ *   a1-tools fix count-postmortems-since --since <ISO-timestamp>
+ *       → JSON { count, since, files: [...] }
+ *         Counts postmortem files in wiki/postmortems/ modified after the given timestamp.
+ *
+ *   a1-tools fix update-promote-state [--at <ISO-timestamp>]
+ *       → JSON { last_promote_at, path }
+ *         Writes wiki/_state/last_promote.json with promote timestamp.
+ *
+ *   a1-tools fix write-suggestion <agent-name> [--title <t>] [--body-file <path>|--body <text>]
+ *                                              [--source-postmortem <path>] [--skill <name>]
+ *       → JSON { path, agent, title, date, filename }
+ *         Creates wiki/lessons/<agent>/_suggestions/<date>-<slug>.md. NEVER writes _active.md.
+ *
  *   a1-tools analyze next-slot <project-slug> <focus> [--date YYYY-MM-DD]
  *       → JSON { project, focus, date, suffix, filename, path, dir }
  *
@@ -779,6 +804,267 @@ function cmdFixFindDuplicates(args) {
   }
   matches.sort((a, b) => b.hit_count - a.hit_count);
   return { project: projectSlug, window_days: 30, matches };
+}
+
+// ---------- fix learning-loop subcommands ----------
+
+function postmortemsDir(projectSlug) {
+  if (projectSlug) {
+    return path.join(vaultRoot(), 'wiki', 'postmortems', projectSlug);
+  }
+  return path.join(vaultRoot(), 'wiki', 'postmortems');
+}
+
+function agentsLockPath() {
+  return path.join(vaultRoot(), 'wiki', '_canonical', 'agents.lock.json');
+}
+
+function lastPromotePath() {
+  return path.join(vaultRoot(), 'wiki', '_state', 'last_promote.json');
+}
+
+function cmdFixIntegrityCheck(args) {
+  const flags = parseFlags(args, {
+    'agents-dir': 'value',
+    'skills-dir': 'value',
+  });
+  const agentsDir = flags['agents-dir'] || path.join(os.homedir(), '.claude', 'agents');
+  const skillsDir = flags['skills-dir'] || path.join(os.homedir(), '.claude', 'skills');
+  const lockPath = agentsLockPath();
+
+  if (!fs.existsSync(lockPath)) {
+    // Bootstrap: write the lock file from current state
+    const crypto = require('crypto');
+    const hashes = {};
+    for (const dir of [agentsDir, skillsDir]) {
+      if (!fs.existsSync(dir)) continue;
+      for (const entry of fs.readdirSync(dir)) {
+        if (!entry.endsWith('.md')) continue;
+        const full = path.join(dir, entry);
+        try {
+          const content = fs.readFileSync(full, 'utf8');
+          hashes[entry] = crypto.createHash('sha256').update(content).digest('hex').slice(0, 16);
+        } catch (_e) {}
+      }
+    }
+    const lockDir = path.dirname(lockPath);
+    if (!fs.existsSync(lockDir)) fs.mkdirSync(lockDir, { recursive: true });
+    fs.writeFileSync(lockPath, JSON.stringify({ generated_at: nowIso(), hashes }, null, 2), 'utf8');
+    return { status: 'bootstrapped', lock_path: lockPath, file_count: Object.keys(hashes).length };
+  }
+
+  const lock = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+  const crypto = require('crypto');
+  const mismatches = [];
+  const current = {};
+  for (const dir of [agentsDir, skillsDir]) {
+    if (!fs.existsSync(dir)) continue;
+    for (const entry of fs.readdirSync(dir)) {
+      if (!entry.endsWith('.md')) continue;
+      const full = path.join(dir, entry);
+      try {
+        const content = fs.readFileSync(full, 'utf8');
+        const hash = crypto.createHash('sha256').update(content).digest('hex').slice(0, 16);
+        current[entry] = hash;
+        if (lock.hashes[entry] && lock.hashes[entry] !== hash) {
+          mismatches.push({ file: entry, expected: lock.hashes[entry], actual: hash });
+        }
+      } catch (_e) {}
+    }
+  }
+  return {
+    status: mismatches.length === 0 ? 'ok' : 'mismatch',
+    mismatches,
+    files_checked: Object.keys(current).length,
+    lock_generated_at: lock.generated_at,
+  };
+}
+
+function cmdFixInitPostmortem(args) {
+  const flags = parseFlags(args, {
+    'date': 'value',
+    'severity': 'value',
+    'root-cause-class': 'value',
+    'terminal-status': 'value',
+    'one-line-learning': 'value',
+    'fix-wave-count': 'value',
+    'diagnosis-rounds': 'value',
+    'phase-friction': 'value',
+    'quak-regression': 'value',
+    'fix-required-test-first': 'value',
+  });
+  const bugSlug = flags._[0];
+  const projectSlug = flags._[1];
+  if (!bugSlug || !projectSlug) {
+    usage('fix init-postmortem <bug-slug> <project-slug> [flags]');
+  }
+  const date = flags['date'] || new Date().toISOString().slice(0, 10);
+  const dir = postmortemsDir(projectSlug);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+  const filename = `${date}-${bugSlug}.md`;
+  const filePath = path.join(dir, filename);
+
+  const severity = flags['severity'] || 'major';
+  const terminalStatus = flags['terminal-status'] || 'fixed';
+  const rootCauseClass = flags['root-cause-class'] || 'unknown';
+  const oneLineLearning = flags['one-line-learning'] || '';
+  const fixWaveCount = flags['fix-wave-count'] || '1';
+  const diagnosisRounds = flags['diagnosis-rounds'] || '1';
+  const phaseFriction = flags['phase-friction'] || 'diagnose';
+  const quakRegression = flags['quak-regression'] || 'skipped';
+  const fixRequiredTestFirst = flags['fix-required-test-first'] || 'false';
+
+  const body = `---
+type: postmortem
+bug_slug: ${bugSlug}
+project: ${projectSlug}
+date: ${date}
+severity: ${severity}
+terminal_status: ${terminalStatus}
+root_cause_class: [${rootCauseClass}]
+fix_wave_count: ${fixWaveCount}
+diagnosis_rounds: ${diagnosisRounds}
+phase_that_produced_most_friction: ${phaseFriction}
+quak_regression: ${quakRegression}
+fix_required_test_first: ${fixRequiredTestFirst}
+one_line_learning: "${oneLineLearning}"
+created_at: ${nowIso()}
+---
+
+# Postmortem: ${bugSlug} (${date})
+
+## Bug Summary
+
+<!-- Short description of what was broken -->
+
+## Timeline
+
+| Time | Event |
+|------|-------|
+| | Reported |
+| | Diagnosed |
+| | Fixed (commit ) |
+| | Verified |
+
+## Root Cause
+
+<!-- One paragraph: what was the technical cause? -->
+
+## Contributing Factors
+
+<!-- What conditions allowed this bug to exist/survive? -->
+
+## What Went Well
+
+<!-- Diagnosis speed, tooling, team response -->
+
+## What Didn't Go Well
+
+<!-- Where did friction come from? -->
+
+## One-Line Learning
+
+${oneLineLearning}
+
+## Suggested Lesson (for promote-lessons to evaluate)
+
+<!-- One concrete, actionable rule that would prevent recurrence -->
+`;
+
+  fs.writeFileSync(filePath, body, 'utf8');
+  return {
+    path: filePath,
+    project: projectSlug,
+    bug_slug: bugSlug,
+    date,
+    filename,
+  };
+}
+
+function cmdFixCountPostmortemsSince(args) {
+  const flags = parseFlags(args, { 'since': 'value' });
+  const sinceStr = flags['since'] || flags._[0];
+  if (!sinceStr) {
+    usage('fix count-postmortems-since --since <ISO-timestamp>');
+  }
+  const sinceMs = new Date(sinceStr).getTime();
+  if (isNaN(sinceMs)) usage(`invalid timestamp: ${sinceStr}`);
+
+  const root = path.join(vaultRoot(), 'wiki', 'postmortems');
+  if (!fs.existsSync(root)) return { count: 0, since: sinceStr };
+
+  let count = 0;
+  const found = [];
+  for (const projectDir of fs.readdirSync(root)) {
+    const pDir = path.join(root, projectDir);
+    if (!fs.statSync(pDir).isDirectory()) continue;
+    for (const entry of fs.readdirSync(pDir)) {
+      if (!entry.endsWith('.md')) continue;
+      const full = path.join(pDir, entry);
+      try {
+        const stat = fs.statSync(full);
+        if (stat.mtimeMs >= sinceMs) {
+          count++;
+          found.push(path.join(projectDir, entry));
+        }
+      } catch (_e) {}
+    }
+  }
+  return { count, since: sinceStr, files: found };
+}
+
+function cmdFixUpdatePromoteState(args) {
+  const flags = parseFlags(args, { 'at': 'value' });
+  const at = flags['at'] || nowIso();
+  const stateDir = path.join(vaultRoot(), 'wiki', '_state');
+  if (!fs.existsSync(stateDir)) fs.mkdirSync(stateDir, { recursive: true });
+  const p = lastPromotePath();
+  const data = { last_promote_at: at, updated_at: nowIso() };
+  fs.writeFileSync(p, JSON.stringify(data, null, 2), 'utf8');
+  return { last_promote_at: at, path: p };
+}
+
+function cmdFixWriteSuggestion(args) {
+  const flags = parseFlags(args, {
+    'title': 'value',
+    'body-file': 'value',
+    'body': 'value',
+    'source-postmortem': 'value',
+    'skill': 'value',
+  });
+  const agentName = flags._[0];
+  if (!agentName) usage('fix write-suggestion <agent-name> [--title <t>] [--body-file <path>|--body <text>] [--source-postmortem <path>] [--skill <name>]');
+  const title = flags['title'] || 'Untitled suggestion';
+  let body = '';
+  if (flags['body-file']) {
+    body = fs.readFileSync(flags['body-file'], 'utf8');
+  } else if (flags['body']) {
+    body = flags['body'];
+  }
+  const date = new Date().toISOString().slice(0, 10);
+  const slugTitle = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+  const filename = `${date}-${slugTitle}.md`;
+  const dir = path.join(vaultRoot(), 'wiki', 'lessons', agentName, '_suggestions');
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  const filePath = path.join(dir, filename);
+  const content = `---
+type: lesson-suggestion
+agent: ${agentName}
+title: "${title}"
+status: pending
+date: ${date}
+source_postmortem: "${flags['source-postmortem'] || ''}"
+skill: "${flags['skill'] || ''}"
+created_at: ${nowIso()}
+---
+
+# ${title}
+
+${body}
+`;
+  fs.writeFileSync(filePath, content, 'utf8');
+  return { path: filePath, agent: agentName, title, date, filename };
 }
 
 // ---------- analyze subcommands ----------
@@ -4621,6 +4907,11 @@ function main() {
       else if (sub === 'update-status') result = cmdFixUpdateStatus(rest);
       else if (sub === 'list') result = cmdFixList(rest);
       else if (sub === 'find-duplicates') result = cmdFixFindDuplicates(rest);
+      else if (sub === 'integrity-check') result = cmdFixIntegrityCheck(rest);
+      else if (sub === 'init-postmortem') result = cmdFixInitPostmortem(rest);
+      else if (sub === 'count-postmortems-since') result = cmdFixCountPostmortemsSince(rest);
+      else if (sub === 'update-promote-state') result = cmdFixUpdatePromoteState(rest);
+      else if (sub === 'write-suggestion') result = cmdFixWriteSuggestion(rest);
       else usage(`unknown fix subcommand: ${sub}`);
     } else if (group === 'analyze') {
       if (sub === 'next-slot') result = cmdAnalyzeNextSlot(rest);
@@ -4705,7 +4996,7 @@ function main() {
       else if (sub === 'list') result = cmdModernizeList(rest);
       else usage(`unknown modernize subcommand: ${sub}`);
     } else {
-      usage(`unknown command group: ${group} (expected "spec", "fix", "analyze", "check", "checklist", "constitution", "worktree", "pr", "phantom", "reconcile", or "modernize")`);
+      usage(`unknown command group: ${group} (expected "spec", "fix", "analyze", "check", "checklist", "constitution", "worktree", "pr", "phantom", "reconcile", or "modernize"). fix supports: next-suffix, update-status, list, find-duplicates, integrity-check, init-postmortem, count-postmortems-since, update-promote-state, write-suggestion`);
     }
   } catch (e) {
     process.stderr.write(`internal error: ${e.message}\n`);

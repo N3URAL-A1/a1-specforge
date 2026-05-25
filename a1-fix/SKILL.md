@@ -1,18 +1,19 @@
 ---
 name: a1-fix
 description: >
-  End-to-end bug pipeline: Report → Diagnose → Fix → Verify. State persists in the
-  bug-report YAML frontmatter (reported → diagnosed → fixing → fixed). Bug reports live
-  under `projects/<slug>/fixes/<YYYY-MM-DD>-<bug-slug>.md` in the Obsidian Vault.
+  End-to-end bug pipeline with project-scoped learning loop: Pre-Flight → Report →
+  Diagnose → Fix → Verify → Postmortem. State persists in bug-report YAML frontmatter
+  (reported → diagnosed → fixing → fixed). Bug reports live under
+  `projects/<slug>/fixes/<YYYY-MM-DD>-<bug-slug>.md` in the Obsidian Vault.
   MUST trigger when the user says: "bug in <X>", "fehler in <X>", "<X> crasht",
   "<feature> funktioniert nicht", "X is broken", "broken since deploy", "regression",
   "crash", "a1-fix", "fix this", "bug-report anlegen", "this used to work",
   "it stopped working", or any request to investigate/diagnose/fix a malfunction in
   shipped functionality. Orchestrates a1-falk-fault-finder (triage + diagnosis) and a
-  project code agent (the fix); skill never edits code itself. Writes a Retro to the
-  Obsidian Vault after every verified fix. Do NOT activate for: new feature work
-  (use a1-new-feature), PR code review without a reported defect (use Reinhard),
-  or refactor without a defect.
+  project code agent (the fix). Writes a structured Postmortem to the Obsidian Vault
+  after every terminal verdict. Do NOT activate for: new feature work (use
+  a1-new-feature), PR code review without a reported defect (use Reinhard), or
+  refactor without a defect.
 allowed-tools:
   - Read
   - Write
@@ -23,41 +24,59 @@ allowed-tools:
   - Task
 ---
 
-# a1-fix — Bug Pipeline (Report → Verify)
+# a1-fix — Bug Pipeline (Pre-Flight → Postmortem)
 
 This skill is a thin orchestrator. The phase logic lives in `workflows/`. The
 shared CLI helper (`~/.claude/skills/_shared/a1-tools.cjs`) handles deterministic
-file ops (suffix calculation, status updates, listing, duplicate-search). Sub-agents
-do the actual thinking.
-
-## When to use
-
-Activate when the user reports a malfunction, crash, regression, or any defect in
-shipped functionality. If the user wants to add new functionality, use
-`a1-new-feature`. If they want a code review without a reported defect, use Reinhard.
+file ops. Sub-agents do the actual thinking.
 
 ## Phases
 
 | # | Phase | Workflow | Status after |
 |---|---|---|---|
+| 0 | Pre-Flight | `workflows/00-preflight.md` | — (no file created yet) |
 | 1 | Report | `workflows/01-report.md` | reported |
 | 2 | Diagnose | `workflows/02-diagnose.md` | diagnosed |
-| 3 | Fix (incl. Scope-Clarify Gate) | `workflows/03-fix.md` | fixing → (fix_commit set, awaits verify) |
-| 4 | Verify | `workflows/04-verify.md` | fixed (or back to Phase 2) |
+| 3 | Fix (incl. Scope-Clarify Gate) | `workflows/03-fix.md` | fixing → (fix_commit set) |
+| 4 | Verify + Postmortem | `workflows/04-verify.md` | fixed (or back to Phase 2) |
 
-> **Scope-Clarify Gate (Phase 3, Step 1.5):** For any fix that touches UI (columns,
-> buttons, forms, layouts), ask up to 3 targeted scope questions **before** dispatching
-> the code agent. Model: `claude-opus-4-7`. Skip for pure logic/crash bugs.
+**Scope-Clarify Gate (Phase 3, Step 1.5):** For any fix touching UI (columns,
+buttons, forms, layouts), ask up to 3 targeted scope questions **before** dispatching
+the code agent. Model: `claude-opus-4-7`. Skip for pure logic/crash bugs.
 
 Terminal non-fix statuses: `cant-reproduce`, `wont-fix`, `duplicate`, `cancelled`.
-Bugs in these states stay on disk; they are NOT deleted. The date+suffix slot is
-not recycled.
+Bugs in these states stay on disk; slots are NOT recycled.
+
+## Drift-Prevention Architecture
+
+This skill treats two layers differently:
+
+**IMMUTABLE EXECUTOR** (never written by the skill at runtime):
+- `agents/*.md` — agent definitions
+- `skills/*.md` — skill definitions
+
+**MUTABLE KNOWLEDGE LAYER** (written by the skill, always append-only):
+- `wiki/postmortems/<project>/<date>-<bug-slug>.md` — raw learning artifacts
+- `wiki/bug-patterns/<project>.md` — pattern proposals section only (append)
+- `wiki/lessons/<agent>/_suggestions/<date>-<slug>.md` — candidate lessons
+
+**Robert is THE ONLY writer to `wiki/lessons/<agent>/_active.md`.** The skill
+never touches `_active.md` files. Promote-lessons writes suggestions only.
+
+## Pre-Flight (mandatory on every new bug)
+
+Before Phase 1, run `00-preflight.md`. Three checks:
+
+1. **integrity-check** — verifies agents and skills have not drifted from the lock
+   file. If mismatch detected: STOP, report to Robert, write nothing.
+2. **bug-patterns lookup** — reads `wiki/bug-patterns/<project>.md` and surfaces
+   relevant patterns to Falk's context before triage.
+3. **postmortem search** — searches `wiki/postmortems/<project>/` for similar bugs.
 
 ## Routing — pick the right phase
 
 1. If the user provides a bug-report path: read frontmatter `status`.
-2. If no bug-report exists yet: start Phase 1 (Report) — Falk runs triage, the
-   skill creates the bug file from the template with status `reported`.
+2. If no bug-report exists yet: run Pre-Flight → Phase 1 (Report).
 3. Otherwise route by status:
    - `reported` → Phase 2 (Diagnose) via Falk
    - `diagnosed` → Phase 3 (Fix) — propose code agent, user dispatches
@@ -67,8 +86,7 @@ not recycled.
 
 ## State mechanics
 
-State is persisted in the bug-report frontmatter. Update it via the shared CLI
-helper, never with raw string-replace on the file:
+State is persisted in the bug-report frontmatter. Update via the shared CLI:
 
 ```bash
 node ~/.claude/skills/_shared/a1-tools.cjs fix update-status \
@@ -78,53 +96,65 @@ node ~/.claude/skills/_shared/a1-tools.cjs fix update-status \
 Flags: `--recommended-code-agent <name>`, `--fix-commit <hash>`,
 `--verify-result <text>`, `--duplicate-of <path>`.
 
-The helper performs an atomic frontmatter rewrite (read → modify → write-temp →
-rename) and appends a `phase_history` entry with the completion timestamp.
+## Storage — Write Whitelist (HARD RULE)
 
-## Storage
+The skill may ONLY write to these paths inside the Vault:
 
-All artifacts live in the Obsidian Vault:
+| Path | What |
+|------|------|
+| `projects/<slug>/fixes/<date>-<slug>.md` | Bug reports |
+| `wiki/postmortems/<project>/<date>-<slug>.md` | Postmortems |
+| `wiki/bug-patterns/<project>.md` | Proposals section only (append) |
+| `wiki/lessons/<agent>/_suggestions/<date>-<slug>.md` | Lesson candidates |
+| `wiki/_canonical/agents.lock.json` | Lock file (bootstrap only) |
+| `wiki/_state/last_promote.json` | Promote state |
 
-- Bug reports: `projects/<slug>/fixes/<YYYY-MM-DD>-<bug-slug>.md`
+**NEVER WRITE:**
+- `agents/*.md` (agent definitions)
+- Any `skills/*.md` file
+- `wiki/lessons/<agent>/_active.md`
 
-Suffixes `-2`, `-3` are appended for the second, third, ... bug filed on the same
-day in the same project. The shared helper `fix next-suffix` returns the next free
-slot. Bugs in terminal non-fix states keep their slot.
+## Learning Loop (4 stages)
 
-Default vault root: `~/Documents/Obsidian Vault/` (note the space).
-Override via env var `A1_VAULT_ROOT` if testing.
+**Stage 1 — Pre-Flight:** Check integrity + load patterns + search postmortems.
+
+**Stage 2 — Fix Execution:** Normal Phase 1–3.
+
+**Stage 3 — Post-Mortem (hard gate in Phase 4):** After every terminal verdict,
+write a structured postmortem via `fix init-postmortem`. Not optional.
+
+**Stage 4 — promote-lessons (auto-trigger):** After Phase 4, count postmortems
+since last promote. If ≥5 new postmortems: offer Robert to run promote-lessons.
+Promote-lessons reads all postmortems, clusters patterns, writes suggestions to
+`wiki/lessons/<agent>/_suggestions/` only. Robert manually promotes to `_active.md`.
 
 ## Agent integration
 
 | Phase | Agent | Source |
 |---|---|---|
-| 1 Report | Falk | `~/.claude/agents/a1-falk-fault-finder.md` (see `agents/falk-link.md`) |
+| 0 Pre-Flight | Skill itself (no agent) | — |
+| 1 Report | Falk | `~/.claude/agents/a1-falk-fault-finder.md` |
 | 2 Diagnose | Falk | same |
-| 3 Fix | Project code agent (Walter / Bernd / Aik / Toni / Felix / Alex) | Read target project's CLAUDE.md → Agent Workflow table. Skill **proposes**; user dispatches. |
-| 4 Verify | The skill itself; optionally Quak for QA-regression when severity ≥ MAJOR | — |
+| 3 Fix | Project code agent (Walter / Bernd / Aik / Felix / Alex) | Read target CLAUDE.md |
+| 4 Verify | Skill itself; optionally Quak (severity ≥ MAJOR) | — |
 
-Falk is spawned via the `Task` tool with a focused brief. Falk never edits code;
-he interviews (Phase 1) and diagnoses (Phase 2) only.
+Falk is spawned via the `Task` tool. Falk never edits code.
 
 ## Hard rules
 
-- Never edit the bug-report frontmatter directly with Edit/Write — always use
-  `a1-tools fix update-status`.
-- Never skip Phase 1 (Report). Even for "obvious" bugs, the structured triage
-  prevents diagnosis on incomplete information.
-- Never let Falk fix code. Falk diagnoses, code agents fix.
-- Never recycle date+suffix slots. Cancelled / duplicate / wont-fix bugs keep
-  their slot.
-- If a duplicate is detected in Phase 1: do NOT create a new report; set
-  `duplicate_of` on the new entry only if the user insists on a separate
-  tracking file, otherwise extend the original.
-- User-facing prompts and questions are in **German**. All file content
-  (frontmatter, technical notes, file:line references) stays in English.
-- One question per turn during Phase 1 triage interview. No wall-of-text.
+- Never edit bug-report frontmatter with Edit/Write — always use `fix update-status`.
+- Never skip Phase 0 (Pre-Flight). If integrity-check fails: STOP immediately.
+- Never skip Phase 1 (Report). Structured triage prevents diagnosis on incomplete info.
+- Never let Falk fix code. Falk diagnoses; code agents fix.
+- Never recycle date+suffix slots.
+- Postmortem is a hard gate after every terminal verdict — not optional.
+- promote-lessons writes to `_suggestions/` only. Never to `_active.md`.
+- User-facing prompts and questions in **German**. File content stays in English.
+- One question per turn during Phase 1. No wall-of-text.
 
-## Hand-offs (out of scope for this skill)
+## Hand-offs
 
-- New features: `a1-new-feature` skill.
+- New features: `a1-new-feature`.
 - PR code review: Reinhard.
-- QA regression suite design: Quak (spawned from Phase 4 if severity ≥ MAJOR).
-- Cross-cutting incident response: project lead (Pablo) + DevOps (Dirk).
+- QA regression suite design: Quak (Phase 4, severity ≥ MAJOR).
+- Cross-cutting incident response: Pablo + Dirk.

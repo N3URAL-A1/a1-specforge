@@ -3,10 +3,16 @@
 Goal: turn a vague user report ("X is broken") into a complete, structured bug
 report on disk. Output: a bug-report file in the Vault with `status: reported`.
 
+**Pre-condition:** Phase 00 (Pre-Flight) must have completed with integrity-check
+status `ok` or `bootstrapped`. Never run Phase 01 if integrity-check returned
+`mismatch`.
+
 ## Inputs you need before starting
 
 - Project slug (e.g. `my-platform`, `my-project`)
 - A symptom description (even one sentence is enough to start)
+- Bug-patterns summary from Pre-Flight (carry forward into Falk's brief)
+- Related postmortems found in Pre-Flight (if any)
 
 If the project slug is unclear, **ask the user**:
 > "In which project does the bug occur? (slug, e.g. `my-platform`)"
@@ -40,6 +46,10 @@ Use the `Task` tool to spawn Falk (`~/.claude/agents/a1-falk-fault-finder.md`) w
 
 > You are Falk in triage mode. Task: conduct a structured bug triage interview
 > with the user. Required topics, in this order:
+>
+> **Context from Pre-Flight (use to inform diagnosis cross-check):**
+> <bug-patterns-summary from Phase 00>
+> <related-postmortems from Phase 00, if any>
 >
 > 1. Symptom (what exactly is going wrong)
 > 2. Reproduction Steps (steps 1–N + Expected vs Actual)

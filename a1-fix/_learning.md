@@ -1,12 +1,9 @@
 # a1-fix — Learning Log
 
-Entries appended automatically by Phase 4 (Verify) after every terminal verdict
-(`fixed`, `wont-fix`, `cant-reproduce`, `duplicate`).
-Used by a1-evolve for pattern clustering (threshold: 3+ same tag = proposal).
+Fast-access cache. Canonical source: `wiki/postmortems/` in Obsidian Vault.
+Entries appended automatically by Phase 4 (Verify) after every terminal verdict.
 
 Tags: missing_wiring | schema_flaw | regression | race_condition | env_config | third_party_change | ui_state_bug | auth_tenant | spec_omission | off_by_one
-
-Canonical source: `~/Documents/Obsidian Vault/areas/a1-learnings/a1-fix.md`. This file is a fast-access cache.
 
 ---
 
@@ -18,6 +15,7 @@ verdict: fixed
 root_cause_class: [missing_wiring]
 fix_wave_count: 1
 one_line_learning: Wave 6 placeholder comments + URL Link targets in code are no substitute for Phase 6 Verify checklist; use FR ID references to confirm shipment
+postmortem: wiki/postmortems/n3ural-platform/2026-05-08-upload-beleg-404.md
 ---
 
 # BUG-01: Upload route 404 — page never created (May 8)
@@ -43,6 +41,7 @@ verdict: fixed
 root_cause_class: [schema_flaw]
 fix_wave_count: 2
 one_line_learning: Two-phase upload flow (upload with NULL expense_id, then save to link) requires nullable FK + RLS policies that respect NULL state; migration cannot be skew between schema + code
+postmortem: wiki/postmortems/n3ural-platform/2026-05-08-upload-save-error-schema-rls-mismatch.md
 ---
 
 # BUG-02: Save fails 500 — schema NOT NULL + RLS mismatch (May 8)
@@ -70,6 +69,7 @@ verdict: fixed
 root_cause_class: [schema_flaw]
 fix_wave_count: 1
 one_line_learning: Save endpoints touching 4+ RLS-protected tables must pre-verify all GRANTs + RLS policies for multi-table transaction; one missing grant = silent rollback
+postmortem: wiki/postmortems/n3ural-platform/2026-05-09-save-persists-nothing-rls-grants.md
 ---
 
 # BUG-03: Save persists nothing — RLS grants incomplete (May 9)
@@ -95,6 +95,7 @@ verdict: fixed
 root_cause_class: [spec_omission]
 fix_wave_count: 1
 one_line_learning: Duplicate warning flows with "Trotzdem speichern" require explicit confirm_duplicate flag in request schema; frontend assumption "backend accepts on retry" without flag = infinite loop + phantom rows
+postmortem: wiki/postmortems/n3ural-platform/2026-05-09-duplicate-confirm-loop-no-flag.md
 ---
 
 # BUG-04: Duplicate confirm loop — "Trotzdem speichern" saves nothing (May 9)
@@ -120,6 +121,7 @@ verdict: fixed
 root_cause_class: [wrong_behavior_vs_spec]
 fix_wave_count: 1
 one_line_learning: Soft-delete pattern (deleted_at IS NULL) must be enforced in ALL queries on a table, not per-endpoint; one inconsistent filter = wrong aggregates + trust loss
+postmortem: wiki/postmortems/n3ural-platform/2026-05-11-reports-ausgaben-filter-deleted-inconsistent.md
 ---
 
 # BUG-05: Reports Ausgaben show 0 — wrong filter + hardcoded label (May 11)
@@ -136,3 +138,14 @@ Walter: Changed filter from `status != 'deleted'` to `deleted_at IS NULL` to mat
 ## Learning
 Soft-delete pattern requires consistent WHERE clause across ALL endpoints. Create a shared query fragment or constants file with the canonical filter (deleted_at IS NULL). Audit at schema review time. Also: HTTP self-calls in server components hide failures — prefer direct DB when available.
 
+
+---
+date: 2026-05-24
+bug_id: dtg-tenant-404-sidebar-filter
+project: n3ural-platform
+verdict: fixed
+root_cause_class: [auth_tenant]
+fix_wave_count: 3
+one_line_learning: HTTP self-calls in middleware = cold-start cascade; use direct DB with explicit tenant context; always run \\d tablename before any new DB query
+postmortem: wiki/postmortems/n3ural-platform/2026-05-24-dtg-tenant-404-sidebar-filter.md
+---

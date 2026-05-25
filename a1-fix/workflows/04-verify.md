@@ -109,46 +109,102 @@ If yes: proceed to `02-diagnose.md`. Falk should read `## Notes` plus the new
 
 ---
 
-## Retro (mandatory, after every terminal verdict)
+## Postmortem (hard gate after every terminal verdict)
 
-Run this once the bug reaches a terminal status (`fixed`, `wont-fix`, `cant-reproduce`,
-`duplicate`). Takes ~2 minutes. Do not skip. Used by `a1-evolve` for pattern clustering.
+Run this after every terminal status (`fixed`, `wont-fix`, `cant-reproduce`, `duplicate`).
+**Not optional.** Canonical source: `wiki/postmortems/<project>/<date>-<bug-slug>.md`.
+The `_learning.md` cache is updated as a fast-access mirror.
 
-### Step 1 — Append to local cache
+### Step 1 — Create the Postmortem file
+
+```bash
+node ~/.claude/skills/_shared/a1-tools.cjs fix init-postmortem \
+  "<bug-slug>" "<project-slug>" \
+  --date "$(date +%F)" \
+  --severity "<blocker|major|minor|nit>" \
+  --root-cause-class "<tag>" \
+  --terminal-status "<fixed|wont-fix|cant-reproduce|duplicate>" \
+  --one-line-learning "<what would have prevented the bug>" \
+  --fix-wave-count "<N>" \
+  --diagnosis-rounds "<N>" \
+  --phase-friction "<report|diagnose|fix|verify>" \
+  --quak-regression "<passed|failed|skipped>" \
+  --fix-required-test-first "<true|false>"
+```
+
+Then open the returned file path and fill in:
+- **Bug Summary** — 2-3 sentences
+- **Timeline** — reported / diagnosed / fixed (commit) / verified with times
+- **Root Cause** — one paragraph
+- **Contributing Factors** — what conditions allowed this to exist/survive?
+- **What Went Well** — diagnosis speed, tooling quality
+- **What Didn't Go Well** — friction points
+- **Suggested Lesson** — one concrete, actionable rule for prevention
+
+Root cause tags: `missing_wiring` | `schema_flaw` | `regression` | `race_condition` |
+`env_config` | `third_party_change` | `ui_state_bug` | `auth_tenant` | `spec_omission` |
+`off_by_one`
+
+For `cant-reproduce` / `duplicate`: still write the postmortem — recurrence signal is valuable.
+
+### Step 2 — Update local cache
 
 ```bash
 cat >> ~/.claude/skills/a1-fix/_learning.md <<EOF
 ---
 date: <YYYY-MM-DD>
-bug: <bug-slug>
+bug_id: <bug-slug>
 project: <project-slug>
-severity: <blocker|major|minor|nit>
-terminal_status: <fixed|wont-fix|cant-reproduce|duplicate>
-diagnosis_confidence: <low|medium|high>
-diagnosis_rounds: <1|2|...>
-root_cause_class: [<from: missing_wiring, schema_flaw, regression, race_condition, env_config, third_party_change, ui_state_bug, auth_tenant, spec_omission, off_by_one>]
-fix_required_test_first: <true|false>
-quak_regression: <passed|failed|skipped>
-phase_that_produced_most_friction: <report|diagnose|fix|verify>
-one_line_learning: <what would have prevented the bug, or shortened triage/diagnosis>
+verdict: <fixed|wont-fix|cant-reproduce|duplicate>
+root_cause_class: [<tag>]
+fix_wave_count: <N>
+one_line_learning: <from postmortem>
+postmortem: wiki/postmortems/<project>/<date>-<bug-slug>.md
+---
 EOF
 ```
 
-### Step 2 — Append the same entry to the Vault
+The `_learning.md` is a fast-access cache. The Vault postmortem is canonical.
 
-```
-~/Documents/Obsidian Vault/areas/a1-learnings/a1-fix.md
-```
-
-Use the `root_cause_class` tags consistently — they feed into `patterns.md` clustering:
-`missing_wiring` | `schema_flaw` | `regression` | `race_condition` | `env_config` | `third_party_change` | `ui_state_bug` | `auth_tenant` | `spec_omission` | `off_by_one`
-
-For `cant-reproduce` / `duplicate`: still write the entry — the recurrence signal is valuable.
-
-### Step 3 — Threshold check
+### Step 3 — Check promote-lessons threshold
 
 ```bash
-ENTRY_COUNT=$(grep -c "^date:" ~/.claude/skills/a1-fix/_learning.md 2>/dev/null || echo 0)
+# Get last promote timestamp
+LAST_PROMOTE=$(node ~/.claude/skills/_shared/a1-tools.cjs fix count-postmortems-since \
+  --since "$(cat "~/Documents/Obsidian Vault/wiki/_state/last_promote.json" | grep -o '"last_promote_at":"[^"]*"' | cut -d'"' -f4)")
 ```
-If `$ENTRY_COUNT` is a multiple of 5:
-> "5 neue Bug-Learnings akkumuliert — in Vault unter [[areas/a1-learnings/index]] gespeichert. `a1-evolve` ausführen?"
+
+If the count is ≥5, tell the user (German):
+> "5 neue Postmortems seit dem letzten promote-lessons Durchlauf. Soll ich promote-lessons
+> starten? Das wertet alle neuen Postmortems aus und schreibt Vorschläge in
+> `wiki/lessons/<agent>/_suggestions/`. Du entscheidest danach, welche Vorschläge
+> nach `_active.md` wandern."
+
+If yes: run promote-lessons (see below).
+If no: proceed. Counter accumulates until next run.
+
+### promote-lessons procedure
+
+1. Read all postmortems in `wiki/postmortems/` created since `last_promote.json`
+2. Group by `root_cause_class`
+3. For each group with ≥3 occurrences: identify the agent most relevant
+4. Write a suggestion via:
+   ```bash
+   node ~/.claude/skills/_shared/a1-tools.cjs fix write-suggestion \
+     "<agent-name>" \
+     --title "<lesson title>" \
+     --body "<actionable rule text>" \
+     --source-postmortem "<path>" \
+     --skill "a1-fix"
+   ```
+5. Update promote state:
+   ```bash
+   node ~/.claude/skills/_shared/a1-tools.cjs fix update-promote-state
+   ```
+6. Tell the user:
+   > "promote-lessons abgeschlossen. Neue Vorschläge in:
+   > - `wiki/lessons/<agent>/_suggestions/` (N Vorschläge)
+   >
+   > Bitte prüfe die Vorschläge und promotiere die nützlichen manuell nach `_active.md`."
+
+**NEVER:** Write to `_active.md`. Never modify `agents/*.md` or `skills/*.md` directly.
