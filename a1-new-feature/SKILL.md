@@ -66,6 +66,36 @@ delegate directly to the relevant agent (Rene / Vincente / code agents) and skip
 A spec abandoned at any phase is moved to status `cancelled`; its sequence number is **not**
 recycled.
 
+## Isolation Gate (HARD RULE — before Phase 5 Implement)
+
+No feature code is written in the primary checkout. Before the first wave of
+Phase 5, the feature MUST be moved into its own git worktree on a fresh branch off
+`main`. This prevents the parallel-session corruption class: two sessions editing
+the same working tree overwrite each other's files and push half-finished work
+(e.g. a referenced type that was never committed) to `main`, leaving it build-red.
+
+1. **Create the worktree** (delegate to the `a1-worktree` skill, or inline):
+   ```bash
+   git -C <repo> fetch origin main
+   git -C <repo> worktree add ../a1-worktrees/<feature-slug> -b feature/<feature-slug> origin/main
+   ```
+   Every wave's edits, builds, and tests happen inside that worktree path.
+2. **Implement wave by wave** there. After each wave, build + tests must be GREEN
+   in the worktree before the next wave.
+3. **Merge + push** only after the final wave is GREEN (typically after Phase 6
+   Verify passes):
+   ```bash
+   git -C <repo> checkout main && git -C <repo> pull --ff-only origin main
+   git -C <repo> merge --no-ff feature/<feature-slug> && git -C <repo> push origin main
+   ```
+   If `git pull` brings in a `main` that no longer builds for reasons unrelated to
+   this feature: STOP, do NOT layer on top, report to Robert.
+4. **Tear down** the worktree (`a1-worktree` exit, or `git worktree remove`).
+
+**Never** cherry-pick commits onto a fresh main branch as a merge workaround.
+**Never** push a build-red `main`. **Never** edit the primary checkout mid-feature
+while another session may hold it.
+
 ## Routing — pick the right phase
 
 1. Read the spec frontmatter `status` field if a spec path is given.
@@ -129,6 +159,9 @@ The skill **proposes** code agents in Phase 5 based on the wave-plan brief; the 
 
 ## Hard rules
 
+- **Never write feature code outside an isolated worktree on a feature branch.**
+  The Isolation Gate runs before Phase 5. Merge to `main` only when build + tests
+  are GREEN. Never cherry-pick as a merge workaround. Never push a build-red `main`.
 - Never edit the spec frontmatter directly with Edit/Write — always use `a1-tools spec update-status`.
 - Never skip a phase. If a feature seems trivial enough to skip Discover/Clarify, do them
   anyway — they take seconds and prevent rework.

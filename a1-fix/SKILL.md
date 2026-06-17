@@ -65,13 +65,45 @@ never touches `_active.md` files. Promote-lessons writes suggestions only.
 
 ## Pre-Flight (mandatory on every new bug)
 
-Before Phase 1, run `00-preflight.md`. Three checks:
+Before Phase 1, run `00-preflight.md`. Four checks:
 
+0. **isolation-gate (HARD RULE — runs FIRST)** — before any code is touched, the
+   fix MUST run in an isolated git worktree on its own branch. This prevents the
+   parallel-session corruption class (two sessions in the same working tree
+   overwrite each other's files and push half-finished work to `main`). See
+   **Isolation Gate** below. If the gate cannot be satisfied: STOP and ask Robert.
 1. **integrity-check** — verifies agents and skills have not drifted from the lock
    file. If mismatch detected: STOP, report to Robert, write nothing.
 2. **bug-patterns lookup** — reads `wiki/bug-patterns/<project>.md` and surfaces
    relevant patterns to Falk's context before triage.
 3. **postmortem search** — searches `wiki/postmortems/<project>/` for similar bugs.
+
+## Isolation Gate (HARD RULE — before any code change)
+
+Every fix runs in its own git worktree on a fresh branch off `main`. No exceptions
+for "it's just a one-liner". The flow:
+
+1. **Create the worktree** (delegate to the `a1-worktree` skill, or inline):
+   ```bash
+   git -C <repo> fetch origin main
+   git -C <repo> worktree add ../a1-worktrees/fix-<bug-slug> -b fix/<bug-slug> origin/main
+   ```
+   All subsequent edits, builds, and tests happen inside that worktree path —
+   never in the primary checkout.
+2. **Work the fix** there (Phases 1–4). Build + test must be GREEN in the worktree.
+3. **Merge + push** only after GREEN:
+   ```bash
+   git -C <repo> checkout main && git -C <repo> pull --ff-only origin main
+   git -C <repo> merge --no-ff fix/<bug-slug> && git -C <repo> push origin main
+   ```
+   If `git pull` brings in a broken `main` (build fails for reasons unrelated to
+   your fix): STOP, do NOT layer your fix on top, report to Robert.
+4. **Tear down** the worktree (`a1-worktree` exit, or `git worktree remove`).
+
+**Never** cherry-pick a commit from a feature branch onto a fresh main branch as a
+workaround — that is the anti-pattern this gate exists to eliminate. **Never** push
+a build-red `main`. **Never** edit files in the primary checkout while another
+session may be using it.
 
 ## Routing — pick the right phase
 
@@ -142,6 +174,9 @@ Falk is spawned via the `Task` tool. Falk never edits code.
 
 ## Hard rules
 
+- **Never touch code outside an isolated worktree on a fix branch.** The Isolation
+  Gate runs before everything. Merge to `main` only when build + tests are GREEN.
+  Never cherry-pick as a merge workaround. Never push a build-red `main`.
 - Never edit bug-report frontmatter with Edit/Write — always use `fix update-status`.
 - Never skip Phase 0 (Pre-Flight). If integrity-check fails: STOP immediately.
 - Never skip Phase 1 (Report). Structured triage prevents diagnosis on incomplete info.
