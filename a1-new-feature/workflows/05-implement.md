@@ -90,7 +90,22 @@ If the wave is parallelizable and the user wants both agents at once, dispatch t
 ## Step 5 — Nach Agent-Meldung: Build + Deploy + Smoke-Test (Pflicht)
 
 When the agent reports "Wave N done", do NOT mark as `done` immediately.
-Run these three gates first:
+Run these gates first:
+
+**Gate 0 — Verify the agent's self-report (do NOT trust it)**
+
+Code agents routinely report claims that are false: a sidebar/nav entry they say they
+added but didn't, "pre-existing" test failures that are actually green with the right env,
+a query they call "green" that returns empty at runtime. Before any other gate, spot-check
+the agent's concrete claims against reality — cheaply:
+- Claimed a file/symbol/route/nav-entry exists → `grep`/Read it, don't assume.
+- Claimed tests pass → re-run them yourself with the correct env (DB vars, etc.).
+- Claimed a DB-backed surface "works" → run the actual query/endpoint and confirm it
+  returns data, not just that it compiles.
+- Claimed "pre-existing failure, not mine" → verify it fails on `origin/main` too before believing it.
+
+If a claim doesn't hold, the wave is NOT done — send it back with the specific gap. This
+gate has caught real defects (empty dashboards, missing nav, false green) every time it ran.
 
 **Gate 1 — Build**
 

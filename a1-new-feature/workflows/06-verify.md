@@ -113,6 +113,30 @@ The helper:
   `phase_history`,
 - clears `verify_failures` to `[]`.
 
+### Pre-merge check — rebase + migration-number collision (do this BEFORE merging to main)
+
+The feature branch was cut from `origin/main` at the START of Phase 5. By the time Verify
+passes, a PARALLEL feature may have merged to `main` and claimed the same migration numbers
+or touched the same shared files. Merging naively then either reverts their work or ships two
+migrations with the same number (runner breaks). Before `git merge`:
+
+```bash
+git -C <repo> fetch origin main
+# 1. Is the branch behind origin/main?
+git -C <repo> log --oneline <feature-branch>..origin/main        # non-empty → rebase needed
+# 2. Migration-number collision? Compare your new migration numbers against origin/main's:
+git -C <repo> ls-tree origin/main automation/db/migrations/ | grep -E '<your-new-numbers>'
+```
+
+- If behind: `git rebase origin/main`, resolve conflicts (keep BOTH sides for additive files
+  like a capability manifest or a shared route's imports — never drop the other feature's lines).
+- If migration numbers collide: renumber YOUR migrations (up + down + every in-file and in-code
+  comment reference) to the next free numbers AFTER origin/main's highest. Re-run the dry-run.
+- "main looks build-red after pull": first rebuild gitignored package `dist/` (`pnpm --filter <pkg> build`)
+  before concluding main is broken — a stale local build masquerades as a red main.
+
+Only after a clean rebase + no number collision + green build on the merged tree do you push.
+
 Tell the user:
 
 > "Phase 6 green. Spec is `done`. Wave plan can be archived or used as a reference for

@@ -32,6 +32,16 @@ Use the **Agent** tool with `subagent_type: "a1-vincente-vibe-optimizer"` and
 > **Required inputs from the spec:**
 > - User Stories (P1/P2/P3) → wave order follows priority.
 > - FR-### → distributed across waves; each FR lands in exactly one wave.
+>   **CRITICAL — the consistency gate (Phase 4.5) parses EVERY `FR-NNN` token inside a
+>   `## Wave N` section as a coverage claim for that wave.** A bare `FR-001` in a narrative
+>   line ("Beitrag zu FR-001", "Vorbereitung für FR-002") counts as a SECOND coverage and
+>   FAILs the gate (duplicate across waves). To stay gate-green:
+>   - Each FR appears in a `**FRs covered:**` line of EXACTLY ONE wave.
+>   - In every OTHER wave, refer to it WITHOUT the `FR-NNN` token — name the requirement in
+>     prose and point to the coverage matrix ("siehe Coverage-Matrix"), never write `FR-001`.
+>   - A top-of-plan coverage-matrix TABLE is safe (it sits outside any `## Wave` heading).
+>   - A DEFERRED FR that is still present in the spec MUST keep exactly one wave as its
+>     coverage-home (a placeholder "Wave N — DEFERRED" section carrying only that FR token).
 > - SC-### → kept for Phase 6; use them only as a fitness check per wave.
 > - Dependencies → determine the order.
 >
