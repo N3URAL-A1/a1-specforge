@@ -114,6 +114,24 @@ Use the **Agent** tool with `subagent_type: "a1-vincente-vibe-optimizer"` and
 > - **ENV vars:** none / [list new vars — must appear in .env.example in THIS wave]
 > - **Services to restart after deploy:** none / [e.g. PostgREST Cloud Run, Cloud Functions]
 >
+> **DB-schema checklist (mandatory for EVERY new or altered table — `schema_flaw` is the
+> single most frequent bug class across runs, 8× over 17 features). For each table the wave
+> touches, the brief must answer:**
+> - **Audit trigger?** Does the table have the project's `audit_row`/equivalent AFTER-trigger?
+>   (Real bug: `time_entries` had only `update_project_timestamp`, no audit trigger → GoBD-audit
+>   silently missing.) New mutated tables without an audit trigger are a defect.
+> - **RLS + GRANT matrix?** ENABLE+FORCE RLS, SELECT/INSERT/UPDATE policies AND matching GRANTs to
+>   the app role. A missing GRANT or policy = silent rollback (42501/42P17), not a loud error.
+> - **FK types match?** FK column type == referenced PK type (uuid vs integer vs text). (Real bug:
+>   wrote string "klaus" into a uuid FK → crash; `route_ref bigint` vs `agent_runs.id uuid`.)
+> - **Enum / CHECK values complete?** Every value the code can write is in the CHECK/enum. (Real
+>   bug: code wrote `declined`/`api` not in the enum/CHECK → insert rejected.)
+> - **Migration hygiene?** `-down.sql` reversible; NO embedded BEGIN/COMMIT (defeats the
+>   BEGIN/ROLLBACK dry-run); `CONCURRENTLY` indexes need connection-leak awareness
+>   (`withTenantContext` left an idle-in-transaction conn that blocked VACUUM for 35min).
+> - **Expand→Migrate→Contract?** Dropping a column/enum needs a 2-PR split with strict deploy
+>   order (code Ready, THEN migration) — never in one shot, or production outage.
+>
 > **Hard rules:**
 > - Every FR must land in exactly one wave.
 > - No wave without an explicit acceptance reference.
