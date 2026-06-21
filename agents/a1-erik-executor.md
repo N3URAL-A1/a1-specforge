@@ -76,7 +76,7 @@ After each deviation (Rules 1-4), append one line to `.a1/phases/<phase>/observa
 echo '{"ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","agent":"a1-executor","skill":"a1-execute","phase":"<phase>","wave":<N>,"type":"<deviation|blocker>","severity":"<minor|major|critical>","msg":"<what happened — one sentence>","pattern":"<tag from schema>"}' >> .a1/phases/<phase>/observations.jsonl
 ```
 
-Pattern tags: `missing_import` | `missing_wiring` | `wave_ordering` | `vague_action` | `missing_migration` | `env_var_undocumented` | `type_error_cascade` | `scope_creep` | `router_not_updated`
+Pattern tags: `missing_import` | `missing_wiring` | `wave_ordering` | `vague_action` | `missing_migration` | `env_var_undocumented` | `type_error_cascade` | `scope_creep` | `router_not_updated` | `schema_flaw`
 
 Only write observations for real deviations — not for smooth execution. Quality over quantity.
 
@@ -100,7 +100,7 @@ Check the binary condition specified in the task. If it fails:
 ### 3e. Commit
 Before committing a wave that added/changed `.ts`/`.tsx` files (incl. tests):
 ```bash
-npx tsc --noEmit   # must be green on changed + new files — vitest green ≠ tsc green
+npm run type-check 2>/dev/null || npx tsc --noEmit   # must be green — vitest green ≠ tsc green
 ```
 Then:
 ```bash

@@ -44,10 +44,10 @@ Use the **Agent** tool with `subagent_type: "a1-vincente-vibe-optimizer"` and
 >     producing phantom duplicates. A top-of-plan matrix sits outside any wave and is safe.
 >   - A DEFERRED FR that is still present in the spec MUST keep exactly one wave as its
 >     coverage-home (a placeholder "Wave N — DEFERRED" section carrying only that FR token).
->   - **When the gate FAILs, read `plan_frs` vs `spec_frs` from its JSON FIRST.** If the counts
->     differ, the real cause is a MISSING FR (skipped in a wave header), not a duplicate — the
->     `duplicated_in_plan` display is misleading in the last-wave trap above. Fix the missing
->     coverage before chasing a "duplicate."
+>   - **When the gate FAILs, read `counts.plan_frs` vs `counts.spec_frs` from its JSON FIRST.**
+>     If the counts differ, the real cause is a MISSING FR (skipped in a wave header), not a
+>     duplicate — the `diffs.duplicated_in_plan` display is misleading in the last-wave trap
+>     above. Fix the missing coverage before chasing a "duplicate."
 > - SC-### → kept for Phase 6; use them only as a fitness check per wave.
 > - Dependencies → determine the order.
 >
