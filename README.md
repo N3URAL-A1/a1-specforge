@@ -46,7 +46,7 @@ Creates symlinks from `~/.claude/skills/` to this repo. Edits are live immediate
 
 | Variable | Default | Description |
 |---|---|---|
-| `A1_VAULT_ROOT` | `~/Documents/Obsidian Vault` | Path to your Obsidian vault (or any markdown notes directory) |
+| `A1_VAULT_ROOT` | `~/N3URAL-Vault` | Path to your Obsidian vault (or any markdown notes directory) |
 
 Set in your shell profile:
 ```bash

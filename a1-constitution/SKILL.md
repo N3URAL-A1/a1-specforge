@@ -111,7 +111,7 @@ node ~/.claude/skills/_shared/a1-tools.cjs constitution set-body \
 Single source of truth: the vault file. The repo mirror is derived in Phase 4
 and is regenerable at any time via `constitution write-mirror`.
 
-Default vault root: `~/Documents/Obsidian Vault/` (note the space).
+Default vault root: `~/N3URAL-Vault/`.
 Override via env var `A1_VAULT_ROOT` if testing.
 
 ## Agent integration

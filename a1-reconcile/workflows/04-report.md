@@ -123,6 +123,6 @@ EOF
 
 **To Vault:**
 Append the same entry to:
-`~/Documents/Obsidian Vault/areas/a1-learnings/a1-reconcile.md`
+`~/N3URAL-Vault/pattern/a1-learnings/a1-reconcile.md`
 
 A run with no issues is still useful data — write the entry.

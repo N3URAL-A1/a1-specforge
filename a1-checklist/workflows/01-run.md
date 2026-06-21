@@ -38,7 +38,7 @@ node ~/.claude/skills/_shared/a1-tools.cjs checklist run <target> --format human
 ```
 
 If a vault override is needed (`$A1_VAULT_ROOT` not set, or user gave
-`--vault <path>`), forward it. Default is `~/Documents/Obsidian Vault`.
+`--vault <path>`), forward it. Default is `~/N3URAL-Vault`.
 
 ## Step 3 — Branch on exit code
 
@@ -131,6 +131,6 @@ EOF
 
 **To Vault:**
 Append the same entry to:
-`~/Documents/Obsidian Vault/areas/a1-learnings/a1-checklist.md`
+`~/N3URAL-Vault/pattern/a1-learnings/a1-checklist.md`
 
 A run with no issues is still useful data — write the entry.

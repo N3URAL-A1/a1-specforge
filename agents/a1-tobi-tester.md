@@ -27,7 +27,7 @@ Check for project-specific skill constraints in CLAUDE.md — any `constitution.
 
 Establish: What is this product? Who is it for? What problem does it solve? What stage (idea/MVP/scaling)?
 
-If no brief is provided, search Obsidian Vault (`~/Documents/Obsidian Vault/`), Notion, and available files. Document your understanding before continuing.
+If no brief is provided, search Obsidian Vault (`~/N3URAL-Vault/`), Notion, and available files. Document your understanding before continuing.
 
 ### STEP 1 — LOAD ALL DOCUMENTATION
 

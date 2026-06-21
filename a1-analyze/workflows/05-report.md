@@ -148,10 +148,8 @@ new always-on lanes and are exactly the signal we want to feed forward into buil
 
 ### Step 2 — Append the SAME entry to the Vault (canonical source)
 
-Canonical path — the learnings live under `pattern/`. An older
-`~/Documents/Obsidian Vault/areas/a1-learnings/` path is still referenced by some
-other a1 skills and is being migrated away from; do NOT write there from
-a1-analyze. Use:
+Canonical path — the learnings live under `pattern/a1-learnings/` in the Vault
+(`A1_VAULT_ROOT`, default `~/N3URAL-Vault`). Use:
 
 ```
 ~/N3URAL-Vault/pattern/a1-learnings/a1-analyze.md

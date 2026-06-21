@@ -43,8 +43,8 @@ Load project-specific patterns into context for Falk:
 
 ```bash
 # Read the project's pattern file if it exists
-cat "~/Documents/Obsidian Vault/wiki/bug-patterns/<project-slug>.md"
-cat "~/Documents/Obsidian Vault/wiki/bug-patterns/_cross-cutting.md"
+cat "~/N3URAL-Vault/wiki/bug-patterns/<project-slug>.md"
+cat "~/N3URAL-Vault/wiki/bug-patterns/_cross-cutting.md"
 ```
 
 If either file doesn't exist: skip silently. Do not create it here.
@@ -67,7 +67,7 @@ node ~/.claude/skills/_shared/a1-tools.cjs fix find-duplicates <project-slug> <k
 Also search postmortems directly:
 
 ```bash
-grep -l "<symptom-keyword>" "~/Documents/Obsidian Vault/wiki/postmortems/<project-slug>/"
+grep -l "<symptom-keyword>" "~/N3URAL-Vault/wiki/postmortems/<project-slug>/"
 ```
 
 If postmortems found with the same keyword: tell the user:

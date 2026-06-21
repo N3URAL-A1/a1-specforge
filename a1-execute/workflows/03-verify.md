@@ -94,7 +94,7 @@ EOF
 ### Step 3 — Append the same entry to the Vault
 
 ```
-~/Documents/Obsidian Vault/areas/a1-learnings/a1-execute.md
+~/N3URAL-Vault/pattern/a1-learnings/a1-execute.md
 ```
 
 Use the `issue_classes` tags consistently — they feed into `patterns.md` clustering:
@@ -108,4 +108,4 @@ A run with zero issues is still useful data — write the entry with `observatio
 ENTRY_COUNT=$(grep -c "^date:" ~/.claude/skills/a1-execute/_learning.md 2>/dev/null || echo 0)
 ```
 If `$ENTRY_COUNT` is a multiple of 5:
-> "5 neue Learnings akkumuliert — in Vault unter [[areas/a1-learnings/index]] gespeichert. `a1-evolve` ausführen?"
+> "5 neue Learnings akkumuliert — in Vault unter [[pattern/a1-learnings/index]] gespeichert. `a1-evolve` ausführen?"

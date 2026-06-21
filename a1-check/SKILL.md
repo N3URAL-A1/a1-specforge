@@ -65,7 +65,7 @@ Exit codes:
 | 2 | ERROR — setup problem (file missing, frontmatter unparseable) |
 
 Vault root resolution: env var `A1_VAULT_ROOT`, falling back to
-`~/Documents/Obsidian Vault`. Override per-call via `--vault`.
+`~/N3URAL-Vault`. Override per-call via `--vault`.
 
 ## Three check classes (all structural)
 

@@ -116,7 +116,7 @@ All artifacts live in the Obsidian Vault:
 Suffixes `-2`, `-3` are appended for second, third, ... analyses of the same
 focus on the same day. The helper `analyze next-slot` returns the next free slot.
 
-Default vault root: `~/Documents/Obsidian Vault/` (note the space).
+Default vault root: `~/N3URAL-Vault/`.
 Override via env var `A1_VAULT_ROOT` if testing.
 
 ## Agent integration
@@ -217,8 +217,6 @@ findings are the highest-signal input for "what should the next build avoid."
   `security-review` skill (in-conversation, serial), every focus mode;
   self-learning loop hardened (Retro mandatory, canonical Vault path
   `~/N3URAL-Vault/pattern/a1-learnings/`, threshold counts since last synthesis,
-  offers a1-evolve). Vault-path migration scope: this change migrates only
-  a1-analyze + a1-evolve to the canonical `pattern/` path. The remaining a1 skills
-  (a1-plan, a1-execute, a1-fix, …) and the `_shared/a1-tools.cjs` default still use
-  the legacy `~/Documents/Obsidian Vault/areas/...` path — a full sweep is tracked
-  as separate follow-up to keep this change atomic.
+  offers a1-evolve). Vault-path migration for a1-analyze + a1-evolve to the
+  canonical `pattern/` path; the repo-wide sweep of all remaining skills and the
+  `_shared/a1-tools.cjs` default followed in a separate change.

@@ -102,6 +102,6 @@ EOF
 
 **To Vault:**
 Append the same entry to:
-`~/Documents/Obsidian Vault/areas/a1-learnings/a1-phantom.md`
+`~/N3URAL-Vault/pattern/a1-learnings/a1-phantom.md`
 
 A run with no issues is still useful data — write the entry. Even a clean check helps tune false-positive rates over time.

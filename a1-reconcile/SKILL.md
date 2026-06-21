@@ -130,7 +130,7 @@ day. The helper `reconcile next-slot` returns the next free slot.
 For `vault-sync` mode, a single dated report aggregates all projects:
 `projects/_vault-sync/drift-<YYYY-MM-DD>[-N].md` — same suffix logic.
 
-Default vault root: `~/Documents/Obsidian Vault/` (note the space). Override
+Default vault root: `~/N3URAL-Vault/`. Override
 via env var `A1_VAULT_ROOT`.
 
 ## Agent integration

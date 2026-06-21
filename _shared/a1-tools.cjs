@@ -120,7 +120,7 @@
  *   a1-tools constitution list [--status=<s>]
  *       → JSON { count, constitutions: [...] }
  *
- * Vault root: env A1_VAULT_ROOT, default "~/Documents/Obsidian Vault".
+ * Vault root: env A1_VAULT_ROOT, default "~/N3URAL-Vault".
  * All writes are atomic: read → modify → write to <path>.tmp.<pid> → rename.
  *
  * Exit codes: 0 success, 1 user/usage error, 2 internal error.
@@ -236,7 +236,7 @@ const MODERNIZE_WAVE_STATUSES = new Set([
 
 function vaultRoot() {
   if (process.env.A1_VAULT_ROOT) return process.env.A1_VAULT_ROOT;
-  return path.join(os.homedir(), 'Documents', 'Obsidian Vault');
+  return path.join(os.homedir(), 'N3URAL-Vault');
 }
 
 function resolveVaultPath(input) {
@@ -4610,7 +4610,7 @@ Reconcile statuses: ${[...RECONCILE_STATUSES].join(', ')}
 Reconcile scope modes: ${[...RECONCILE_SCOPE_MODES].join(', ')}
 Reconcile drift classes: ${[...RECONCILE_DRIFT_CLASSES].join(', ')}
 
-Vault root: env A1_VAULT_ROOT, default "~/Documents/Obsidian Vault".
+Vault root: env A1_VAULT_ROOT, default "~/N3URAL-Vault".
 Exit codes: 0 success, 1 user/usage error, 2 internal error.`;
 
 // ---------------------------------------------------------------------------

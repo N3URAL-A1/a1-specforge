@@ -87,7 +87,7 @@ Stop. Do not propose `a1-new-feature` re-entry — the problem is below that lev
   one feature per run.
 - If the user provided a `--vault <path>` override (or the env var
   `A1_VAULT_ROOT` is set), forward it; otherwise the CLI defaults to
-  `~/Documents/Obsidian Vault`.
+  `~/N3URAL-Vault`.
 
 ## When this workflow ends
 
@@ -118,6 +118,6 @@ EOF
 
 **To Vault:**
 Append the same entry to:
-`~/Documents/Obsidian Vault/areas/a1-learnings/a1-check.md`
+`~/N3URAL-Vault/pattern/a1-learnings/a1-check.md`
 
 A run with no issues is still useful data — write the entry.

@@ -171,7 +171,7 @@ The `_learning.md` is a fast-access cache. The Vault postmortem is canonical.
 ```bash
 # Get last promote timestamp
 LAST_PROMOTE=$(node ~/.claude/skills/_shared/a1-tools.cjs fix count-postmortems-since \
-  --since "$(cat "~/Documents/Obsidian Vault/wiki/_state/last_promote.json" | grep -o '"last_promote_at":"[^"]*"' | cut -d'"' -f4)")
+  --since "$(cat "~/N3URAL-Vault/wiki/_state/last_promote.json" | grep -o '"last_promote_at":"[^"]*"' | cut -d'"' -f4)")
 ```
 
 If the count is ≥5, tell the user (German):
