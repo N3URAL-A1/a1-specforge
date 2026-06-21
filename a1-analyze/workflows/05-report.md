@@ -148,8 +148,10 @@ new always-on lanes and are exactly the signal we want to feed forward into buil
 
 ### Step 2 — Append the SAME entry to the Vault (canonical source)
 
-Canonical path — the learnings live under `pattern/`, NOT under any
-`~/Documents/Obsidian Vault/areas/...` path (that older path does not exist):
+Canonical path — the learnings live under `pattern/`. An older
+`~/Documents/Obsidian Vault/areas/a1-learnings/` path is still referenced by some
+other a1 skills and is being migrated away from; do NOT write there from
+a1-analyze. Use:
 
 ```
 ~/N3URAL-Vault/pattern/a1-learnings/a1-analyze.md
@@ -161,13 +163,23 @@ A run with no issues is still useful data — write the entry with
 
 ### Step 3 — Threshold check (hands off to a1-evolve)
 
+Count entries written **since the last a1-evolve synthesis**, not the lifetime
+total — otherwise the cache's historical count keeps re-tripping "multiple of 5"
+on every run. The synthesis watermark is the `updated:` date in the Vault
+`patterns.md` (the same date a1-evolve uses for de-duplication):
+
 ```bash
-ENTRY_COUNT=$(grep -c "^date:" ~/.claude/skills/a1-analyze/_learning.md 2>/dev/null || echo 0)
+PATTERNS=~/N3URAL-Vault/pattern/a1-learnings/patterns.md
+LAST_SYNTH=$(grep -m1 '^updated:' "$PATTERNS" 2>/dev/null | sed 's/updated:[[:space:]]*//')
+# Count a1-analyze cache entries dated after the last synthesis:
+NEW_COUNT=$(awk -v cutoff="$LAST_SYNTH" '
+  /^date:/ { d=$2; if (cutoff=="" || d > cutoff) c++ }
+  END { print c+0 }' ~/.claude/skills/a1-analyze/_learning.md 2>/dev/null || echo 0)
 ```
 
-If `$ENTRY_COUNT` is a multiple of 5, tell the user (German):
-> "5 neue a1-analyze-Learnings akkumuliert (Vault `pattern/a1-learnings/`).
-> `a1-evolve` ausführen, um Patterns auszuwerten?"
+If `$NEW_COUNT` is ≥ 5, tell the user (German):
+> "≥5 neue a1-analyze-Learnings seit der letzten Synthese (Vault
+> `pattern/a1-learnings/`). `a1-evolve` ausführen, um Patterns auszuwerten?"
 
 `a1-evolve` reads `pattern/a1-learnings/a1-analyze.md` alongside the other skills'
 learnings and proposes concrete improvements. Do not run it automatically — the

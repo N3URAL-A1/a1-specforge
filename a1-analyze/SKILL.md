@@ -152,15 +152,22 @@ into code.
 - Phase 3 dispatches sub-agents in parallel when independent (multi-tool-call
   with several Task invocations in one turn, each with the correct
   `subagent_type` of the named a1 agent).
-- Phase 3 ALWAYS dispatches two standing read-only lanes in addition to the
-  focus-specific agents — the `code-simplifier` agent (in report-only mode) and
-  the `security-review` skill — for every focus mode. They emit findings into the
-  same contract; they never edit code. If a lane's agent/command is unavailable,
-  record a Notes entry and continue — never block the phase.
-- The Retro in Phase 5 (Report) is MANDATORY on every run and writes to BOTH the
-  local `_learning.md` cache and the canonical Vault file
-  `~/N3URAL-Vault/pattern/a1-learnings/a1-analyze.md`. At every 5th entry it
-  offers `a1-evolve`. This is the self-learning loop — never skip it.
+- Phase 3 ALWAYS runs two standing read-only lanes in addition to the
+  focus-specific agents, for every focus mode: the `code-simplifier` **agent**
+  (parallel Task, report-only) and the `security-review` **skill**
+  (in-conversation, serial — a skill cannot be a `subagent_type`). They emit
+  findings into the same contract; they never edit code. If a lane's
+  agent/command is unavailable, record a Notes entry and continue — never block
+  the phase.
+- The `code-simplifier` agent keeps its edit tools when dispatched, so its
+  read-only promise is enforced **structurally**, not by prompt alone: Phase 3b
+  snapshots `git status --porcelain` of the analyzed tree before the lane and
+  diffs it after. Any on-disk change is a hard breach → revert, discard findings,
+  BLOCKER Notes entry. (If the tree is not a git repo, the tripwire can't run —
+  Notes must say the lane was prompt-only guarded.)
+- The Retro in Phase 5 (Report) is MANDATORY on every run, writes to the local
+  cache + canonical Vault, and offers `a1-evolve` at every 5th entry. See the
+  Self-learning loop section for the canonical statement — do not skip it.
 - Auto-dispatch in Phase 3 is allowed because sub-agents are read-only. No user
   approval needed before each dispatch.
 - The skill NEVER writes into `projects/<slug>/fixes/` or `projects/<slug>/features/`.
@@ -205,8 +212,13 @@ findings are the highest-signal input for "what should the next build avoid."
 ## Versions
 
 - v1 (2026-05-12): initial build. 6 CLI subcommands, 5 phases, 5 focus modes.
-- v2 (2026-06-21): two always-on read-only lanes in Phase 3 (`code-simplifier`
-  report-only + `security-review` skill, every focus mode); self-learning loop
-  hardened (Retro mandatory, canonical Vault path fixed from broken
-  `~/Documents/Obsidian Vault/areas/...` to `~/N3URAL-Vault/pattern/a1-learnings/`,
-  threshold → a1-evolve added).
+- v2 (2026-06-21): two always-on read-only lanes in Phase 3 — `code-simplifier`
+  agent (parallel Task, report-only, with a structural git-status tripwire) +
+  `security-review` skill (in-conversation, serial), every focus mode;
+  self-learning loop hardened (Retro mandatory, canonical Vault path
+  `~/N3URAL-Vault/pattern/a1-learnings/`, threshold counts since last synthesis,
+  offers a1-evolve). Vault-path migration scope: this change migrates only
+  a1-analyze + a1-evolve to the canonical `pattern/` path. The remaining a1 skills
+  (a1-plan, a1-execute, a1-fix, …) and the `_shared/a1-tools.cjs` default still use
+  the legacy `~/Documents/Obsidian Vault/areas/...` path — a full sweep is tracked
+  as separate follow-up to keep this change atomic.
