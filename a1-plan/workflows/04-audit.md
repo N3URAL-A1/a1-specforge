@@ -72,7 +72,7 @@ EOF
 **Append the same entry to the Vault:**
 
 ```
-~/Documents/Obsidian Vault/areas/a1-learnings/a1-plan.md
+~/N3URAL-Vault/pattern/a1-learnings/a1-plan.md
 ```
 
 Use the `finding_classes` tags consistently — they feed into `patterns.md` clustering:

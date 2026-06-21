@@ -135,7 +135,7 @@ All artifacts live in the Obsidian Vault:
 The `<###>` sequence is per-project, zero-padded to 3 digits, monotonically increasing.
 Cancelled specs keep their number; the helper picks the next unused number via glob.
 
-Default vault root: `~/Documents/Obsidian Vault/` (note the space).
+Default vault root: `~/N3URAL-Vault/`.
 Override via env var `A1_VAULT_ROOT` if testing.
 
 ## Agent integration
