@@ -1,159 +1,119 @@
-# a1-specforge Roadmap — v2.0
+# a1-specforge Roadmap — v3.0
 
-**Created:** 2026-05-12  
-**Owner:** N3URAL.AI  
-**Horizon:** May – July 2026
+**Created:** 2026-07-04 · **Owner:** N3URAL.AI · **Horizon:** July – September 2026
+**Vision:** → [`docs/VISION.md`](VISION.md)
 
-## Vision
+Two priorities, in order: **(1) reliability for daily production use** (gates, cost, ergonomics), **(2) open-source launch** (reputation + community adoption). Decisions 2026-07-04: product name is `a1-specforge`; learning store becomes repo-local (`.a1/learnings/`) by default with the Obsidian vault as optional sink via `A1_VAULT_ROOT`; no commercial layer.
 
-Turn a good multi-agent framework into a complete, provably-closed development system: every phase verifiably done, every artifact consistent, no task silently empty.
-
-## Background
-
-Comparing against [GitHub spec-kit](https://github.com/github/spec-kit): a1-specforge is stronger in four areas (Vault integration, multi-agent personas, code-review graph MCP, self-learning loop). It started weaker in three:
-
-1. Cross-artifact consistency (no check: does spec↔plan↔tasks align?)
-2. Constitution separation (CLAUDE.md mixed rules with project data)
-3. Phantom-task detection (task marked [X] but no code behind it?)
-
-This roadmap closes those gaps.
+Basis: general analysis 2026-07-04 (3 OSS-BLOCKER, 6 MAJOR, 5 MINOR) + learning corpus (17+ runs, 15 applied patterns).
 
 ---
 
-## M0 — Repo Extract ✅ (2026-05-12)
+## M6 — Works for Rob (July 2026)
 
-Extracted skill set from `~/.claude/skills/` into this repo. Symlinks set. Deployment via `bin/install.sh`.
+**Goal:** Fewer escaped bugs, earlier detection, lower friction — validated on a1-office feature builds.
 
-**Result:** Skills are versioned, reproducible, and publicly shareable.
+### Scope
 
----
-
-## M1 — Integrity Gates ✅ (2026-05-17)
-
-**Goal:** No feature build starts without a verified artifact stack.
-
-### Shipped
-
-- **`a1-analyze`** — 5-phase parallel codebase analysis (general, security, architecture, quality, onboarding). Hard gate between Plan → Build in `a1-new-feature`.
-- **`a1-constitution`** — Generates `constitution.md` per project. Clear separation: `CLAUDE.md` = facts + context / `constitution.md` = behavioral rules + 4-layer override precedence (Global Rules < Project CLAUDE.md < Agent Frontmatter < Session Instruction).
-- **`a1-check`** — Bijective FR-coverage gate: every functional requirement maps to exactly one wave, no gaps, no duplicates.
+- **Gate hardening**
+  - Extend Surface-Coverage Gate 0.5 to content-derived surfaces (heading counts, slug/classification lists, test fixtures) — pattern recurred 2026-07-03 despite the gate. Rule: grep the new entity name across copy + logic + fixtures.
+  - Hard read-only enforcement line in all a1-analyze agent briefs ("return output as TEXT, write NO files") — Marco breach 2026-06/07.
+  - Promote `request_scoped_not_module_global` (security-relevant, Fluid Compute) into backend/web agent briefs.
+  - Evaluate a deterministic CLI check for the `schema_flaw` class (8×) instead of prompt-only checklist.
+- **CLI ergonomics**
+  - `a1-tools add-findings --json <file|->` batch mode + fix word-splitting on multi-arg descriptions.
+  - Fix install drift: install.sh covers all shipped skills (checkpoint deliberately excluded, commented).
+- **Cost tracker v1** — `a1-tools cost`: token spend per spec/phase/wave from session logs, summary line in VERIFICATION.md.
+- **M5 validation** — run the 4 open a1-modernize success criteria end-to-end and check them off.
 
 ### Success criteria
 
-- [x] `a1-analyze` ships with 5 parallel sub-agent phases
-- [x] Constitution skill generates a complete `constitution.md` with 4-layer override model
-- [x] Override precedence documented in one place, enforced in Reinhard reviews
+- [ ] Gate 0.5 catches a content-derived surface gap on a real run (or 5 clean runs pass)
+- [ ] `add-findings --json` lands with fixture test; analyze retro friction gone
+- [ ] Cost per feature visible in VERIFICATION.md for 3 consecutive specs
+- [ ] M5 criteria all checked
 
 ---
 
-## M2 — Phantom-Proof Execution ✅ (2026-05-17)
+## M7 — OSS-Ready (August 2026)
 
-**Goal:** No task silently empty.
+**Goal:** An external user goes from `git clone` to first verified feature without editing a single file.
 
-### Shipped
+### Scope
 
-- **`a1-phantom`** — Phantom-task detection: checks every `[X]` task in PLAN.md against the actual git diff. Docs-only tasks exempt via `# no-code` tag.
-- **`a1-checklist`** — Pre-flight validator. 8 checks before execution: BLOCKER / MAJOR / MINOR severity. Integrates into `a1-new-feature` as an optional pre-check.
-- **`a1-worktree`** — Git worktree lifecycle: prepare → enter → exit (keep / discard / handoff). Layout: `~/code/.worktrees/<project>/wave-<id>-<slug>/`.
-- **`a1-pr-review` + Reinhard PR-mode** — One PR per wave. Reinhard reviews via `gh pr diff`, writes `gh pr review --comment`, APPROVE/REQUEST_CHANGES gate before merge.
+- **Portability**
+  - All `~/N3URAL-Vault` hardcodes (~30 sites) → `A1_VAULT_ROOT` with repo-local `.a1/learnings/` default; learning loop must not silently degrade without a vault.
+  - All `~/code/a1-skills` hardcodes (a1-evolve) → dynamic repo-root resolution.
+  - Remove `/Users/rob/...` examples from workflows/_learning files.
+  - Move the personal `checkpoint` skill out of the OSS repo into a private overlay.
+- **Docs & language**
+  - README rewrite: all skills documented, honest metrics, quickstart, demo GIF.
+  - Unify to English (keep German trigger phrases as aliases).
+- **CI**
+  - GitHub Actions runs all `_test-fixtures/*/run.sh`; add the missing a1-phantom runner; smoke-test install.sh on a clean $HOME.
 
 ### Success criteria
 
-- [x] `a1-phantom` ships and detects phantom tasks against real git diffs
-- [x] `a1-checklist` runs as optional pre-check in `a1-new-feature`
-- [x] `a1-worktree` lifecycle fully implemented
-- [x] Reinhard reviews a wave PR and returns APPROVE or REQUEST_CHANGES
+- [ ] Fresh-machine test (no vault, clean `~/.claude`): install → a1-new-feature run → verified feature, zero file edits
+- [ ] CI green on PRs; phantom fixtures covered
+- [ ] README lists exactly the installed skill set (single source of truth)
 
 ---
 
-## M3 — Quality Surface Expansion ✅ (2026-05-17)
+## M8 — Launch & Community (September 2026)
 
-**Goal:** Code review and feature ideation seamlessly integrated.
+**Goal:** Real adoption: stars, first external contributors, first shared patterns.
 
-### Shipped
+### Scope
 
-- **Reinhard + Tobi extensions** — Reinhard: `constitution.md`-aware reviews, RLS check as mandatory for n3ural-platform PRs. Tobi: `constitution.md` compliance as blocking gate in launch-readiness checklist (STEP 8).
-- **Feature entry conditions** — `docs/feature-entry-conditions.md`: clear decision tree for `feature-idea` vs `feature-spec` vs `a1-new-feature`. No more guessing.
-- **`a1-reconcile`** — Spec-drift detection: compares implementation against spec, classifies MISSING / EXTRA / DIVERGED / STALE. Output: `projects/<name>/drift-YYYY-MM-DD.md` in Obsidian Vault.
-
-### Success criteria
-
-- [x] Reinhard flags missing RLS coverage in constitution-aware review mode
-- [x] `feature-idea` / `feature-spec` have documented, unambiguous entry conditions
-- [x] `a1-reconcile` runs cleanly on a test project with DIVERGED semantic routing to Alex
-
----
-
-## M4 — Self-Learning Loop ✅ (2026-05-17)
-
-**Goal:** Skills improve through use, not through theorizing.
-
-### Shipped
-
-- **`a1-plan`** — Research → Map → Plan → Audit pipeline. 4 parallel sub-agents: a1-rico-researcher, a1-marco-mapper, a1-pablo-planner, a1-adam-auditor.
-- **`a1-execute`** — Wave-by-wave execution with a1-erik-executor + a1-victor-verifier. Inline observations written to `.a1/phases/<name>/observations.jsonl`.
-- **`a1-progress`** — Project status check across all active phases.
-- **`a1-roadmap`** — New project / milestone planning.
-- **`a1-evolve`** — Self-optimization engine: reads `_learning.md` files + Obsidian Vault learning store, clusters patterns (threshold: 3+ occurrences), proposes diffs for SKILL.md and agent files.
-- **6 framework agents** — a1-rico-researcher, a1-pablo-planner, a1-erik-executor, a1-victor-verifier, a1-marco-mapper, a1-adam-auditor.
+- Claude Code plugin-marketplace packaging (one-command install).
+- Launch content: Show-HN / Reddit / LinkedIn posts (via Sabine), demo video, docs site or extended docs/.
+- CONTRIBUTING path for community retros + gate-packs (retro schema, PR template, a1-evolve clusters community patterns).
+- First published gate-pack (candidate: "Postgres-RLS pack" from the a1-office corpus, anonymized).
 
 ### Success criteria
 
-- [x] a1-execute writes structured observations after each wave
-- [x] a1-evolve reads Vault as canonical learning store
-- [x] 5-run accumulation triggers an evolution proposal
-
----
-
-## M5 — Brownfield Modernization (2026-05-25)
-
-**Goal:** Handle existing codebases that lack docs, specs, and tests. Derive the spec from code, find gaps, propose improvements, execute wave-by-wave with guaranteed parity.
-
-### Shipped
-
-- **`a1-modernize`** — 7-phase brownfield pipeline (Scope → Reverse-Spec → Gap-Analysis → Tech-Proposals → Plan → Execute → Publish). Two modes: `spec-only` (read-only, understand what the app does) and `full` (understand + modernize). Stop-gate before every major transition — Robert approves everything individually.
-- **`a1-rafael-reverse-spec`** — New agent. Reads existing code without documentation, extracts observed behavior into user stories, flows, data models, and acceptance criteria. Flags unclear intent as `open_question:` — never guesses.
-- **`a1-theo-test-engineer`** — New agent. Provides current test patterns per stack, writes skeleton test files per wave, marks parity assertions explicitly. Works together with Erik in Phase 6.
-- **13 CLI subcommands** (`modernize` group in `_shared/a1-tools.cjs`): `init`, `next-slot`, `update-status`, `discover-stack`, `add-proposal`, `approve-proposal`, `add-wave`, `snapshot-behavior`, `start-wave`, `complete-wave`, `verify-parity`, `publish-notion`, `list`.
-
-### Design decisions
-
-- Eigenständiger Skill (nicht Mode von `a1-analyze`) — a1-analyze ist read-only, a1-modernize schreibt.
-- Proposals haben Status `pending / approved / rejected / deferred` — einzeln, nie batch.
-- Funktionale Parität (`verify-parity` grün) ist Definition-of-Done pro Wave.
-- Notion-Publish mit lokalem Markdown-Fallback — kein stiller Skip.
-
-### Success criteria
-
-- [ ] `a1-modernize spec-only` runs on a project with no docs and produces a complete reverse-spec
-- [ ] `a1-modernize full` executes a wave with behavior-snapshot + parity-replay
-- [ ] `a1-rafael-reverse-spec` flags at least 1 open_question on an ambiguous codebase
-- [ ] `a1-theo-test-engineer` produces a skeleton test with parity assertions for Flutter + React
+- [ ] Plugin installable via marketplace
+- [ ] Launch posts live; ≥ 100 GitHub stars
+- [ ] ≥ 1 external PR merged; ≥ 1 gate-pack published
 
 ---
 
 ## Backlog (Someday / Maybe)
 
-- Cost tracker per spec (token spend per feature build)
+- **a1-dashboard** — local web UI over `.a1/` state (phases, waves, verifications, learnings, token spend)
+- **a1-test** — spec-driven Playwright/Vitest generation from acceptance criteria
+- **Learning-Exchange service** — hosted community pattern registry (post-M8, only if adoption warrants)
 - PR-bridge / auto-changelog (PLAN.md → PR description)
-- GitHub Actions integration (multi-person setup)
-- `a1-test` — spec-driven test generation (Playwright + Vitest from acceptance criteria)
+- GitHub Actions as *pipeline gates* on PRs (a1-check/a1-checklist/a1-phantom in CI)
 
 ## Deliberately excluded
 
-- Full spec-kit adoption (a1-specforge is better adapted to our stack)
-- Jira / Confluence integration (no need for solo operator)
-- V-model extension (overkill)
+- Commercial layer (paid tier, SaaS) — reputation + community only, for now
+- Full spec-kit adoption, Jira/Confluence, V-model (unchanged from v2)
+- Multi-LLM abstraction — this is a Claude Code framework
 
 ---
 
 ## Dependency graph
 
 ```
-M0: Repo extract
-  └── M1: a1-constitution, a1-analyze, a1-check
-        └── M2: a1-checklist, a1-phantom, a1-worktree, a1-pr-review
-              └── M3: Reinhard/Tobi extensions, a1-reconcile, feature-entry-conditions
-                    └── M4: a1-plan, a1-execute, a1-evolve, a1-progress, a1-roadmap
-                          └── M5: a1-modernize, a1-rafael-reverse-spec, a1-theo-test-engineer
+M6: reliability (gates, CLI, cost)      ← must not regress during M7
+  └── M7: portability, CI, docs
+        └── M8: plugin, launch, community
 ```
+
+---
+
+## History — Roadmap v2.0 (May–June 2026, all shipped)
+
+| Milestone | Shipped | Contents |
+|---|---|---|
+| M0 — Repo Extract | 2026-05-12 | Skills versioned in repo, install.sh symlinks |
+| M1 — Integrity Gates | 2026-05-17 | a1-analyze, a1-constitution (4-layer override), a1-check (bijective FR coverage) |
+| M2 — Phantom-Proof Execution | 2026-05-17 | a1-phantom, a1-checklist, a1-worktree, a1-pr-review + Reinhard PR mode |
+| M3 — Quality Surface Expansion | 2026-05-17 | Reinhard/Tobi constitution-aware, feature-entry-conditions, a1-reconcile |
+| M4 — Self-Learning Loop | 2026-05-17 | a1-plan, a1-execute, a1-progress, a1-roadmap, a1-evolve + 6 framework agents |
+| M5 — Brownfield Modernization | 2026-05-25 | a1-modernize (7 phases, 2 modes), a1-rafael-reverse-spec, a1-theo-test-engineer, 13 CLI subcommands — **success criteria still open → validated in M6** |
+
+v2 background: gap-closing vs GitHub spec-kit (consistency gates, constitution separation, phantom detection). All three gaps closed.
