@@ -40,6 +40,7 @@ Work backwards from the goal:
 3. **What must be WIRED** for those artifacts to function? → Imports, registrations, env vars
 4. **What must be ISOLATED** for multi-tenant correctness? → RLS policies, `withTenantContext` wraps, separate `Promise.all` branches each with `.catch()`, no cross-tenant query paths
 5. **How is data ACCESSED** in Server Components / Middleware? → Direct DB call via `withTenantContext`, **NEVER an HTTP self-call to your own API routes**. Self-calls hide failures behind silent fallbacks (e.g. KPI cards showing 0) and cause cold-start cascades. Multi-query server components get one `withTenantContext` call per query, each with its own `.catch()`. (Pattern from 4 postmortems: a1-evolve 2026-06-08.)
+6. **Is state REQUEST-SCOPED?** (`request_scoped_not_module_global` — hard constraint, security-relevant.) Every wave brief that touches a serverless/Fluid-Compute backend MUST include the request-scoped check: state instantiated per-request, not at module load; no `let globalX = null; init(x) { globalX = x }` pattern; context passed as parameters or request-scoped containers; explicitly check DB connections, auth handlers, config loaders. Module-global injected state leaks across concurrent requests. (Full wording: `a1-new-feature/workflows/04-plan.md`, "Request-scoped state".)
 
 Map each must-have to a specific task. No must-have without a task. No task without a must-have.
 

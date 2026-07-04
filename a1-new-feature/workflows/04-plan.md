@@ -120,6 +120,14 @@ Use the **Agent** tool with `subagent_type: "a1-vincente-vibe-optimizer"` and
 > - **ENV vars:** none / [list new vars — must appear in .env.example in THIS wave]
 > - **Services to restart after deploy:** none / [e.g. PostgREST Cloud Run, Cloud Functions]
 >
+> **Request-scoped state (mandatory for serverless/Fluid Compute):**
+> If the wave touches any module-global state (injected dependencies, cached connections,
+> auth context), the brief must ensure — `request_scoped_not_module_global`, security-relevant:
+> - State is instantiated per-request, not once at module load
+> - No `let globalX = null; init(x) { globalX = x }` pattern
+> - Pass context as function parameters or request-scoped containers
+> - Specifically check: database connections, auth handlers, config loaders
+>
 > **DB-schema checklist (mandatory for EVERY new or altered table — `schema_flaw` is the
 > single most frequent bug class across runs, 8× over 17 features). For each table the wave
 > touches, the brief must answer:**

@@ -90,6 +90,13 @@ If a task adds or changes a raw SQL query, DB function, or migration:
   the columns it references actually exist (`\d <table>`). Do not trust a
   self-report that "tests are green" — green mocks ≠ correct SQL.
 
+### 3c-ter. Serverless backend tasks — request-scoped state (mandatory)
+If a task touches a serverless / Fluid-Compute backend: state MUST be request-scoped,
+never module-global (`request_scoped_not_module_global`, security-relevant — module-global
+injected state leaks across concurrent requests). No `let globalX = null; init(x)` pattern;
+instantiate per-request; pass context as parameters. Check DB connections, auth handlers,
+config loaders. Full wording: `a1-new-feature/workflows/04-plan.md`, "Request-scoped state".
+
 ### 3d. Verify "done when" condition
 Check the binary condition specified in the task. If it fails:
 1. Review what you built
