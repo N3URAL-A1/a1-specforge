@@ -125,10 +125,20 @@ surfaces (skip the ones that genuinely don't apply, but say so):
 - **Detail / list render** — a field you can set but not see = half-built. Check the detail component and any table column.
 - **API response shape** — new fetch consumers must read the real envelope key (`{ items }` for lists vs `{ data }` for single records — don't guess, grep the route's `return NextResponse.json(...)`).
 - **Sync / mirror logic** — if the concept is mirrored to another row (twin/shadow/denormalized copy), the sync must carry ALL relevant fields, not just the ones added first.
+- **6. Heading/copy counts** — if the change alters the cardinality of any entity list, grep the old count word/number across `app/ components/ lib/ tests/` (e.g. `grep -rn "Three Products\|three products"`) — every hit must be updated or justified.
+- **7. Slug/classification constant lists** — grep the constant name (e.g. `AI_PRODUCT_SLUGS`) across the whole repo; every definition/duplicate must include the new entry.
+- **8. Test fixtures/mocks** — grep the new entity name across `tests/_fixtures/ tests/mocks/ tests/e2e/`; every fixture enumerating the entity type must include the new instance.
+
+**Rule: for each new entity/field/concept, grep its name (and any derived count text) across copy + logic + fixtures — not just DB/API/UI.**
 
 Cheap method: `grep -rn "<new_field>" app/ lib/ packages/ components/` and eyeball whether
 every hit-site and every sibling site (other writers, the renderer) is consistent. If a
-surface is missing, the wave is NOT done.
+surface is missing — including a hit found in only SOME of the surfaces above — Gate 0.5
+FAILS and the wave is NOT signed off.
+
+Rationale: on 2026-07-03 (spec 001-homepage-redesign) a new entity was wired into DB/API/UI
+but stale copy counts, a classification constant list, and test fixtures escaped — exactly
+surfaces 6–8.
 
 **Anti-pattern this prevents (symptom-fix loop):** when the SAME defect shows up on a
 second record/screen, do NOT patch the instance — `grep` for the root surface and fix all
