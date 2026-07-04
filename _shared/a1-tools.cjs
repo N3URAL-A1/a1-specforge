@@ -84,6 +84,11 @@
  *       severity: BLOCKER | MAJOR | MINOR
  *       → JSON { analysis_path, finding_id, total_findings }
  *
+ *   a1-tools analyze add-findings <analysis-path> --json <file|->
+ *       batch mode: JSON array of {severity, category, location, description, recommendation?}
+ *       '-' reads from stdin. Single atomic write, no shell-quoting pitfalls.
+ *       → JSON { analysis_path, finding_ids[], added, total_findings }
+ *
  *   a1-tools analyze list <project-slug> [--status=<s>] [--focus=<s>]
  *       → JSON { project, count, analyses: [...] }
  *
@@ -1426,25 +1431,38 @@ function cmdAnalyzeAddFinding(args) {
   const analysisPath = resolveVaultPath(analysisPathInput);
   if (!fs.existsSync(analysisPath)) fail(`analysis file not found: ${analysisPath}`);
   const { fm, body } = readMd(analysisPath);
+  const findingId = appendFinding(fm, {
+    severity,
+    category,
+    location,
+    description,
+    recommendation: flags.recommendation,
+  });
+  writeMdAtomic(analysisPath, fm, body);
+  return {
+    analysis_path: analysisPath,
+    finding_id: findingId,
+    total_findings: fm.findings.length,
+  };
+}
 
+function appendFinding(fm, { severity, category, location, description, recommendation }) {
+  if (!severity || !category || !location || !description) {
+    fail('finding requires severity, category, location, description');
+  }
+  if (!ANALYSIS_SEVERITIES.has(severity)) {
+    fail(`invalid severity "${severity}". valid: ${[...ANALYSIS_SEVERITIES].join(', ')}`);
+  }
   if (!Array.isArray(fm.findings)) fm.findings = [];
-  // Compute next finding id (F-001, F-002, …).
   let maxN = 0;
   for (const f of fm.findings) {
     if (typeof f === 'string') {
       const m = f.match(/^id=F-(\d+)/);
-      if (m) {
-        const n = parseInt(m[1], 10);
-        if (n > maxN) maxN = n;
-      }
+      if (m) maxN = Math.max(maxN, parseInt(m[1], 10));
     }
   }
   const findingId = `F-${String(maxN + 1).padStart(3, '0')}`;
-
-  // Encode as flat key=val pairs separated by "; ". Sanitize semicolons in inputs.
-  function clean(s) {
-    return String(s).replace(/;/g, ',').replace(/\n/g, ' ');
-  }
+  const clean = (s) => String(s).replace(/;/g, ',').replace(/\n/g, ' ');
   const parts = [
     `id=${findingId}`,
     `severity=${severity}`,
@@ -1452,13 +1470,36 @@ function cmdAnalyzeAddFinding(args) {
     `location=${clean(location)}`,
     `description=${clean(description)}`,
   ];
-  if (flags.recommendation) parts.push(`recommendation=${clean(flags.recommendation)}`);
+  if (recommendation) parts.push(`recommendation=${clean(recommendation)}`);
   fm.findings.push(parts.join('; '));
+  return findingId;
+}
 
+function cmdAnalyzeAddFindings(args) {
+  const flags = parseFlags(args, { json: 'value' });
+  const analysisPathInput = flags._[0];
+  if (!analysisPathInput || !flags.json) {
+    usage('analyze add-findings requires <analysis-path> --json <file|-> (JSON array of {severity, category, location, description, recommendation?})');
+  }
+  const raw = flags.json === '-' ? fs.readFileSync(0, 'utf8') : fs.readFileSync(flags.json, 'utf8');
+  let items;
+  try {
+    items = JSON.parse(raw);
+  } catch (e) {
+    fail(`invalid JSON input: ${e.message}`);
+  }
+  if (!Array.isArray(items) || items.length === 0) {
+    fail('JSON input must be a non-empty array of finding objects');
+  }
+  const analysisPath = resolveVaultPath(analysisPathInput);
+  if (!fs.existsSync(analysisPath)) fail(`analysis file not found: ${analysisPath}`);
+  const { fm, body } = readMd(analysisPath);
+  const ids = items.map((item) => appendFinding(fm, item || {}));
   writeMdAtomic(analysisPath, fm, body);
   return {
     analysis_path: analysisPath,
-    finding_id: findingId,
+    finding_ids: ids,
+    added: ids.length,
     total_findings: fm.findings.length,
   };
 }
@@ -4520,6 +4561,7 @@ Usage:
   a1-tools analyze update-status <analysis-path> <new-status> [--phase-data <json>]
   a1-tools analyze discover <project-path>
   a1-tools analyze add-finding <analysis-path> <severity> <category> <location> <description> [--recommendation <text>]
+  a1-tools analyze add-findings <analysis-path> --json <file|->   (batch: JSON array of finding objects)
   a1-tools analyze list <project-slug> [--status=<s>] [--focus=<s>]
 
   a1-tools check <project-slug> --feature <###-feature-slug> [--format json|human] [--vault <path>]
@@ -4919,6 +4961,7 @@ function main() {
       else if (sub === 'update-status') result = cmdAnalyzeUpdateStatus(rest);
       else if (sub === 'discover') result = cmdAnalyzeDiscover(rest);
       else if (sub === 'add-finding') result = cmdAnalyzeAddFinding(rest);
+      else if (sub === 'add-findings') result = cmdAnalyzeAddFindings(rest);
       else if (sub === 'list') result = cmdAnalyzeList(rest);
       else usage(`unknown analyze subcommand: ${sub}`);
     } else if (group === 'check') {
