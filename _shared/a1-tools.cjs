@@ -125,6 +125,10 @@
  *   a1-tools constitution list [--status=<s>]
  *       → JSON { count, constitutions: [...] }
  *
+ *   a1-tools schema-check parse --migrations <dir> [--json]
+ *       → JSON schema model { files, tables, triggers, rls, skippedStatements }
+ *         Debug mode for the bounded SQL parser (see supported subset in HELP).
+ *
  * Vault root: env A1_VAULT_ROOT, default "~/N3URAL-Vault".
  * All writes are atomic: read → modify → write to <path>.tmp.<pid> → rename.
  *
@@ -4533,6 +4537,296 @@ function cmdReconcileList(args) {
   return { project: projectSlug, count: reports.length, reports };
 }
 
+// ---------------------------------------------------------------------------
+// schema-check — SQL parsing (M6 Task 2.1a)
+//
+// Bounded parser for the deterministic subset of schema_flaw checks.
+// Pure functions, no I/O beyond reading .sql files from a directory.
+//
+// SUPPORTED SQL SUBSET (also documented in HELP):
+//   - Top-level semicolon-terminated statements only.
+//   - Single-quoted strings and $$-dollar-quoted regions are treated as opaque
+//     (semicolons inside them do not split statements).
+//   - No quoted identifiers ("My Table") — plain / schema-qualified names only.
+//   - CREATE TABLE: column defs with declared types, inline PRIMARY KEY,
+//     table-level PRIMARY KEY (...), inline REFERENCES other(col),
+//     table-level FOREIGN KEY (col) REFERENCES other(col).
+//   - ALTER TABLE ... ADD CONSTRAINT ... FOREIGN KEY (col) REFERENCES other(col).
+//   - ALTER TABLE ... ENABLE ROW LEVEL SECURITY (+ FORCE ROW LEVEL SECURITY).
+//   - CREATE TRIGGER <name> ... ON <table> — header only; $$ function bodies
+//     are NOT parsed beyond the trigger header.
+//   - Unsupported constructs are skipped and counted, never crash.
+// ---------------------------------------------------------------------------
+
+function sqlStripComments(sql) {
+  // Remove -- line comments and /* */ block comments (naive, no nesting;
+  // does not protect comments inside string literals — acceptable for subset).
+  return sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, '');
+}
+
+function sqlSplitStatements(sql) {
+  const statements = [];
+  let cur = '';
+  let i = 0;
+  while (i < sql.length) {
+    const ch = sql[i];
+    if (ch === "'") {
+      // opaque single-quoted string ('' escapes)
+      cur += ch;
+      i++;
+      while (i < sql.length) {
+        cur += sql[i];
+        if (sql[i] === "'") {
+          if (sql[i + 1] === "'") {
+            cur += sql[++i];
+          } else {
+            i++;
+            break;
+          }
+        }
+        i++;
+      }
+      continue;
+    }
+    if (ch === '$' && sql[i + 1] === '$') {
+      // opaque $$-quoted region
+      const end = sql.indexOf('$$', i + 2);
+      if (end === -1) {
+        cur += sql.slice(i);
+        i = sql.length;
+      } else {
+        cur += sql.slice(i, end + 2);
+        i = end + 2;
+      }
+      continue;
+    }
+    if (ch === ';') {
+      if (cur.trim()) statements.push(cur.trim());
+      cur = '';
+      i++;
+      continue;
+    }
+    cur += ch;
+    i++;
+  }
+  if (cur.trim()) statements.push(cur.trim());
+  return statements;
+}
+
+// serial family → integer family; common aliases; strip length/precision.
+const SQL_TYPE_ALIASES = {
+  serial: 'integer',
+  serial4: 'integer',
+  bigserial: 'bigint',
+  serial8: 'bigint',
+  smallserial: 'smallint',
+  serial2: 'smallint',
+  int: 'integer',
+  int4: 'integer',
+  int8: 'bigint',
+  int2: 'smallint',
+  bool: 'boolean',
+  varchar: 'character varying',
+  timestamptz: 'timestamp with time zone',
+};
+
+function normalizeSqlType(raw) {
+  let t = String(raw || '')
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, '') // strip length/precision suffix
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (SQL_TYPE_ALIASES[t]) t = SQL_TYPE_ALIASES[t];
+  return t;
+}
+
+function sqlIdent(raw) {
+  // strip optional schema qualifier and quotes; lowercase
+  const s = String(raw || '').replace(/"/g, '').trim().toLowerCase();
+  const parts = s.split('.');
+  return parts[parts.length - 1];
+}
+
+// Split a CREATE TABLE body at top-level commas (parens-aware).
+function splitTopLevelCommas(body) {
+  const items = [];
+  let depth = 0;
+  let cur = '';
+  for (const ch of body) {
+    if (ch === '(') depth++;
+    else if (ch === ')') depth--;
+    if (ch === ',' && depth === 0) {
+      if (cur.trim()) items.push(cur.trim());
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  if (cur.trim()) items.push(cur.trim());
+  return items;
+}
+
+// Keywords that terminate a column's type token sequence.
+const SQL_COLDEF_STOPWORDS = new Set([
+  'not', 'null', 'default', 'primary', 'references', 'unique', 'check',
+  'constraint', 'generated', 'collate',
+]);
+
+function parseColumnDef(item) {
+  const tokens = item.replace(/\s+/g, ' ').trim().split(' ');
+  const name = sqlIdent(tokens[0]);
+  const typeTokens = [];
+  let i = 1;
+  while (i < tokens.length) {
+    const t = tokens[i].toLowerCase().replace(/,$/, '');
+    if (SQL_COLDEF_STOPWORDS.has(t)) break;
+    typeTokens.push(tokens[i]);
+    i++;
+  }
+  const rest = tokens.slice(i).join(' ');
+  const col = { name, type: typeTokens.join(' ') };
+  const restLc = ` ${rest.toLowerCase()} `;
+  col.primaryKey = restLc.includes(' primary key');
+  const refM = rest.match(/references\s+([A-Za-z0-9_."]+)\s*(?:\(\s*([A-Za-z0-9_"]+)\s*\))?/i);
+  if (refM) {
+    col.references = { table: sqlIdent(refM[1]), column: refM[2] ? sqlIdent(refM[2]) : null };
+  }
+  return col;
+}
+
+function parseCreateTable(stmt) {
+  const m = stmt.match(/^create\s+table\s+(?:if\s+not\s+exists\s+)?([A-Za-z0-9_."]+)\s*\(([\s\S]*)\)\s*[^)]*$/i);
+  if (!m) return null;
+  const table = { name: sqlIdent(m[1]), columns: [], pk: [], fks: [] };
+  for (const item of splitTopLevelCommas(m[2])) {
+    const lc = item.toLowerCase();
+    if (/^(constraint\s+[A-Za-z0-9_"]+\s+)?primary\s+key\s*\(/.test(lc)) {
+      const pkM = item.match(/primary\s+key\s*\(([^)]*)\)/i);
+      if (pkM) table.pk = pkM[1].split(',').map(sqlIdent);
+      continue;
+    }
+    if (/^(constraint\s+[A-Za-z0-9_"]+\s+)?foreign\s+key\s*\(/.test(lc)) {
+      const fkM = item.match(/foreign\s+key\s*\(\s*([A-Za-z0-9_"]+)\s*\)\s*references\s+([A-Za-z0-9_."]+)\s*(?:\(\s*([A-Za-z0-9_"]+)\s*\))?/i);
+      if (fkM) {
+        table.fks.push({
+          column: sqlIdent(fkM[1]),
+          refTable: sqlIdent(fkM[2]),
+          refColumn: fkM[3] ? sqlIdent(fkM[3]) : null,
+          source: 'table-constraint',
+        });
+      }
+      continue;
+    }
+    if (/^(unique|check|exclude|like)\b/.test(lc)) continue; // other table constraints — skipped
+    const col = parseColumnDef(item);
+    if (!col.name || !col.type) continue; // unparseable — skip, never crash
+    table.columns.push({ name: col.name, type: col.type });
+    if (col.primaryKey) table.pk.push(col.name);
+    if (col.references) {
+      table.fks.push({
+        column: col.name,
+        refTable: col.references.table,
+        refColumn: col.references.column,
+        source: 'inline',
+      });
+    }
+  }
+  return table;
+}
+
+function parseAlterTable(stmt) {
+  const m = stmt.match(/^alter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?([A-Za-z0-9_."]+)\s+([\s\S]*)$/i);
+  if (!m) return null;
+  const table = sqlIdent(m[1]);
+  const body = m[2];
+  const out = { table };
+  if (/enable\s+row\s+level\s+security/i.test(body)) out.rlsEnable = true;
+  if (/force\s+row\s+level\s+security/i.test(body)) out.rlsForce = true;
+  const fkM = body.match(/add\s+constraint\s+[A-Za-z0-9_"]+\s+foreign\s+key\s*\(\s*([A-Za-z0-9_"]+)\s*\)\s*references\s+([A-Za-z0-9_."]+)\s*(?:\(\s*([A-Za-z0-9_"]+)\s*\))?/i);
+  if (fkM) {
+    out.fk = {
+      column: sqlIdent(fkM[1]),
+      refTable: sqlIdent(fkM[2]),
+      refColumn: fkM[3] ? sqlIdent(fkM[3]) : null,
+      source: 'alter-table',
+    };
+  }
+  return out;
+}
+
+function parseCreateTrigger(stmt) {
+  const m = stmt.match(/^create\s+(?:or\s+replace\s+)?(?:constraint\s+)?trigger\s+([A-Za-z0-9_"]+)[\s\S]*?\son\s+([A-Za-z0-9_."]+)/i);
+  if (!m) return null;
+  return { name: sqlIdent(m[1]), table: sqlIdent(m[2]) };
+}
+
+// Read all .sql files in dir (sorted), parse into a schema model.
+// Returns { files, tables: {name → {name, columns, pk, fks, file}},
+//           triggers: [{name, table, file}], rls: {table → {enabled, force}},
+//           skippedStatements }
+function parseSqlFiles(dir) {
+  const files = fs
+    .readdirSync(dir)
+    .filter((f) => f.endsWith('.sql'))
+    .sort();
+  const model = { files, tables: {}, triggers: [], rls: {}, skippedStatements: 0 };
+  for (const file of files) {
+    const sql = sqlStripComments(fs.readFileSync(path.join(dir, file), 'utf8'));
+    for (const stmt of sqlSplitStatements(sql)) {
+      const lc = stmt.toLowerCase();
+      if (/^create\s+table\b/.test(lc)) {
+        const t = parseCreateTable(stmt);
+        if (t) {
+          t.file = file;
+          model.tables[t.name] = t;
+        } else {
+          model.skippedStatements++;
+        }
+      } else if (/^alter\s+table\b/.test(lc)) {
+        const a = parseAlterTable(stmt);
+        if (!a) {
+          model.skippedStatements++;
+          continue;
+        }
+        if (a.rlsEnable || a.rlsForce) {
+          const cur = model.rls[a.table] || { enabled: false, force: false };
+          model.rls[a.table] = {
+            enabled: cur.enabled || !!a.rlsEnable,
+            force: cur.force || !!a.rlsForce,
+          };
+        }
+        if (a.fk && model.tables[a.table]) model.tables[a.table].fks.push(a.fk);
+        else if (a.fk) {
+          model.tables[a.table] = { name: a.table, columns: [], pk: [], fks: [a.fk], file };
+        }
+        if (!a.rlsEnable && !a.rlsForce && !a.fk) model.skippedStatements++;
+      } else if (/^create\s+(or\s+replace\s+)?(constraint\s+)?trigger\b/.test(lc)) {
+        const tr = parseCreateTrigger(stmt);
+        if (tr) {
+          tr.file = file;
+          model.triggers.push(tr);
+        } else {
+          model.skippedStatements++;
+        }
+      } else {
+        // any other statement type: outside the supported subset — skip silently
+      }
+    }
+  }
+  return model;
+}
+
+// schema-check parse — hidden debug mode: dump the parsed schema model as JSON.
+function cmdSchemaCheckParse(args) {
+  const flags = parseFlags(args, { migrations: 'value', json: 'bool' });
+  const dir = flags.migrations;
+  if (!dir) usage('schema-check parse requires --migrations <dir>');
+  if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
+    throw new Error(`migrations dir not found: ${dir}`);
+  }
+  return parseSqlFiles(dir);
+}
+
 function usage(msg) {
   process.stderr.write(`usage error: ${msg}\n`);
   process.stderr.write(`\n${HELP}\n`);
@@ -4640,6 +4934,16 @@ Usage:
   a1-tools reconcile list <project-slug> [--status=<s>]
                   List drift reports for a project. Use slug "_vault-sync" for
                   the cross-project sweep folder.
+
+  a1-tools schema-check parse --migrations <dir> [--json]
+                  Debug: dump the parsed SQL schema model (tables, columns, PKs,
+                  FKs, triggers, RLS) as JSON.
+                  Supported SQL subset: top-level semicolon-terminated statements;
+                  '…' strings and $$…$$ bodies are opaque; no quoted identifiers;
+                  CREATE TABLE (inline + table-level PK/FK), ALTER TABLE ADD
+                  CONSTRAINT … FOREIGN KEY, ALTER TABLE … ENABLE/FORCE ROW LEVEL
+                  SECURITY, CREATE TRIGGER … ON <table> (header only). Unsupported
+                  constructs are skipped, never crash.
 
 Spec statuses: ${[...SPEC_STATUSES].join(', ')}
 Bug statuses:  ${[...BUG_STATUSES].join(', ')}
@@ -5038,8 +5342,11 @@ function main() {
       else if (sub === 'publish-notion') result = cmdModernizePublishNotion(rest);
       else if (sub === 'list') result = cmdModernizeList(rest);
       else usage(`unknown modernize subcommand: ${sub}`);
+    } else if (group === 'schema-check') {
+      if (sub === 'parse') result = cmdSchemaCheckParse(rest);
+      else usage(`unknown schema-check subcommand: ${sub}`);
     } else {
-      usage(`unknown command group: ${group} (expected "spec", "fix", "analyze", "check", "checklist", "constitution", "worktree", "pr", "phantom", "reconcile", or "modernize"). fix supports: next-suffix, update-status, list, find-duplicates, integrity-check, init-postmortem, count-postmortems-since, update-promote-state, write-suggestion`);
+      usage(`unknown command group: ${group} (expected "spec", "fix", "analyze", "check", "checklist", "constitution", "worktree", "pr", "phantom", "reconcile", "modernize", or "schema-check"). fix supports: next-suffix, update-status, list, find-duplicates, integrity-check, init-postmortem, count-postmortems-since, update-promote-state, write-suggestion`);
     }
   } catch (e) {
     process.stderr.write(`internal error: ${e.message}\n`);

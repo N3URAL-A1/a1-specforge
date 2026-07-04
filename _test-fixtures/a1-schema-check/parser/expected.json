@@ -1,0 +1,129 @@
+{
+  "files": [
+    "001_create_users.sql",
+    "002_create_orders.sql",
+    "003_alter_fk_and_function.sql"
+  ],
+  "tables": {
+    "users": {
+      "name": "users",
+      "columns": [
+        {
+          "name": "id",
+          "type": "serial"
+        },
+        {
+          "name": "email",
+          "type": "varchar(255)"
+        },
+        {
+          "name": "display_name",
+          "type": "text"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz"
+        }
+      ],
+      "pk": [
+        "id"
+      ],
+      "fks": [],
+      "file": "001_create_users.sql"
+    },
+    "orders": {
+      "name": "orders",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigserial"
+        },
+        {
+          "name": "user_id",
+          "type": "integer"
+        },
+        {
+          "name": "amount_cents",
+          "type": "bigint"
+        },
+        {
+          "name": "note",
+          "type": "text"
+        }
+      ],
+      "pk": [
+        "id"
+      ],
+      "fks": [
+        {
+          "column": "user_id",
+          "refTable": "users",
+          "refColumn": "id",
+          "source": "inline"
+        }
+      ],
+      "file": "002_create_orders.sql"
+    },
+    "order_items": {
+      "name": "order_items",
+      "columns": [
+        {
+          "name": "id",
+          "type": "serial"
+        },
+        {
+          "name": "order_id",
+          "type": "bigint"
+        },
+        {
+          "name": "qty",
+          "type": "int"
+        }
+      ],
+      "pk": [
+        "id"
+      ],
+      "fks": [
+        {
+          "column": "order_id",
+          "refTable": "orders",
+          "refColumn": "id",
+          "source": "alter-table"
+        }
+      ],
+      "file": "003_alter_fk_and_function.sql"
+    }
+  },
+  "triggers": [
+    {
+      "name": "users_audit_trg",
+      "table": "users",
+      "file": "001_create_users.sql"
+    },
+    {
+      "name": "orders_audit_trg",
+      "table": "orders",
+      "file": "002_create_orders.sql"
+    },
+    {
+      "name": "order_items_audit_trg",
+      "table": "order_items",
+      "file": "003_alter_fk_and_function.sql"
+    }
+  ],
+  "rls": {
+    "users": {
+      "enabled": true,
+      "force": true
+    },
+    "orders": {
+      "enabled": true,
+      "force": false
+    },
+    "order_items": {
+      "enabled": true,
+      "force": false
+    }
+  },
+  "skippedStatements": 0
+}
