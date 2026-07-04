@@ -1,0 +1,21 @@
+[
+  {
+    "severity": "BLOCKER",
+    "category": "security",
+    "location": "src/auth.ts:42",
+    "description": "Module-global auth context leaks across requests",
+    "recommendation": "Instantiate per request"
+  },
+  {
+    "severity": "MAJOR",
+    "category": "schema",
+    "location": "migrations/001.sql",
+    "description": "FK type mismatch uuid vs bigint"
+  },
+  {
+    "severity": "MINOR",
+    "category": "style",
+    "location": "lib/util.ts:7",
+    "description": "Mutating helper instead of returning a copy"
+  }
+]

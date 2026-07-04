@@ -1,0 +1,14 @@
+[
+  {
+    "severity": "BLOCKER",
+    "category": "security",
+    "location": "src/a.ts:1",
+    "description": "Valid finding before the invalid one"
+  },
+  {
+    "severity": "CRITICAL",
+    "category": "bogus",
+    "location": "src/b.ts:2",
+    "description": "Invalid severity — must reject the whole batch, no partial write"
+  }
+]
