@@ -51,10 +51,13 @@ If you need more context: return `[]` and a brief prose note explaining what you
 
 ## Out of Scope
 
-- NO code changes. You are read-only.
-- NO test runs, NO builds, NO deploys.
+- HARD READ-ONLY. Return your findings as TEXT (tool output). Write NO files —
+  ANYWHERE. Not in <ANALYZED_PATH>, not in docs/, not in /tmp, not in the vault.
+  Using the Write or Edit tool at all is a contract breach; the orchestrator runs
+  a git tripwire and will discard your findings if the worktree changed.
+- NO code changes. NO test runs, NO builds, NO deploys.
 - Do NOT modify any files in <ANALYZED_PATH>.
-- Do NOT create new files (no report files — return findings as tool output).
+- Do NOT create new files (no report files, no "helpful" docs — findings are tool output only).
 - NO discussion of alternative architectures unrelated to the focus.
 - NO recommendations that don't fit a concrete `recommendation` field.
 ```

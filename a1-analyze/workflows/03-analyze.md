@@ -74,6 +74,13 @@ Task(subagent_type="a1-marco-mapper", description="repo structure map",
 Do NOT fall back to `general-purpose`. If an agent is not available, surface
 that as an error to the user and stop the phase.
 
+**Git tripwire for ALL Phase-3 agents (not just the lanes):** take the same
+before/after worktree snapshot as in Step 3b around the whole Task fan-out.
+If ANY dispatched agent changed the tree (learning 2026-06-30: the mapper wrote
+files to `docs/` despite a read-only brief), run `git checkout -- . && git clean -fd`
+on the delta, discard THAT agent's findings, and record a BLOCKER Notes entry
+naming the agent.
+
 ## Step 3b — Run the always-on Simplify + Security lanes (read-only)
 
 Both standing lanes run on every analysis, but their invocation mechanism differs
