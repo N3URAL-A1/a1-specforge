@@ -145,6 +145,9 @@ Use the **Agent** tool with `subagent_type: "a1-vincente-vibe-optimizer"` and
 >   (`withTenantContext` left an idle-in-transaction conn that blocked VACUUM for 35min).
 > - **Expand→Migrate→Contract?** Dropping a column/enum needs a 2-PR split with strict deploy
 >   order (code Ready, THEN migration) — never in one shot, or production outage.
+> - Note: the deterministic subset of these checks (audit trigger, RLS enabled, FK type
+>   match) is enforced at implementation time by `a1-tools schema-check run` (Gate 0.6 in
+>   05-implement.md); the semantic checks above remain this checklist's responsibility.
 >
 > **Hard rules:**
 > - Every FR must land in exactly one wave.

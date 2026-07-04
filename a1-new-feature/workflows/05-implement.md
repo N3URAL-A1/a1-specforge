@@ -144,6 +144,14 @@ surfaces 6–8.
 second record/screen, do NOT patch the instance — `grep` for the root surface and fix all
 sites at once. Three identical data-corrections in a row means you skipped this gate.
 
+**Gate 0.6 — Schema check (waves with DB migrations only)**
+
+For waves that add or change migrations, run the deterministic pre-gate before wave
+sign-off: `node ~/.claude/skills/_shared/a1-tools.cjs schema-check run --migrations <dir>`
+(checks: audit trigger per table, RLS enabled, FK type match — exit 1 = wave not signed
+off). Semantic checks (enum completeness, expand→migrate→contract) stay in the 04-plan.md
+migration checklist.
+
 **Gate 1 — Build**
 
 Run the project-specific build command (in CLAUDE.md, e.g. `npm run build`).

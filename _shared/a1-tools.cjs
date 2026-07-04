@@ -125,6 +125,11 @@
  *   a1-tools constitution list [--status=<s>]
  *       → JSON { count, constitutions: [...] }
  *
+ *   a1-tools schema-check run --migrations <dir> [--tables t1,t2]
+ *                             [--trigger-pattern 'audit|log'] [--json]
+ *       Deterministic schema pre-gate (audit trigger, RLS, FK type match).
+ *       Owns exit code: 0 pass, 1 findings, 2 error.
+ *
  *   a1-tools schema-check parse --migrations <dir> [--json]
  *       → JSON schema model { files, tables, triggers, rls, skippedStatements }
  *         Debug mode for the bounded SQL parser (see supported subset in HELP).
@@ -4827,6 +4832,160 @@ function cmdSchemaCheckParse(args) {
   return parseSqlFiles(dir);
 }
 
+// ---------------------------------------------------------------------------
+// schema-check run — the 3 deterministic checks (M6 Task 2.1b)
+//
+// Check A (audit trigger): every created table has a CREATE TRIGGER matching
+//   --trigger-pattern (default: audit|log). Projects can override the pattern
+//   via the flag (a constitution may document a project default — no
+//   constitution code integration in M6).
+// Check B (RLS): every created table has ALTER TABLE … ENABLE ROW LEVEL
+//   SECURITY (warn if no FORCE).
+// Check C (FK types): each FK column's normalized type equals the referenced
+//   PK column's normalized type (serial→integer etc.).
+//
+// Owns stdout + exit code: 0 = pass, 1 = findings, 2 = error.
+// ---------------------------------------------------------------------------
+
+function cmdSchemaCheckRun(args) {
+  const flags = parseFlags(args, {
+    migrations: 'value',
+    tables: 'value',
+    'trigger-pattern': 'value',
+    json: 'bool',
+  });
+  const dir = flags.migrations;
+  if (!dir) usage('schema-check run requires --migrations <dir>');
+
+  let model;
+  try {
+    if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
+      throw new Error(`migrations dir not found: ${dir}`);
+    }
+    model = parseSqlFiles(dir);
+    if (model.files.length === 0) throw new Error(`no .sql files in: ${dir}`);
+  } catch (e) {
+    process.stderr.write(`error: ${e.message}\n`);
+    process.exit(2);
+  }
+
+  let triggerPattern;
+  try {
+    triggerPattern = new RegExp(flags['trigger-pattern'] || 'audit|log', 'i');
+  } catch (e) {
+    process.stderr.write(`error: invalid --trigger-pattern: ${e.message}\n`);
+    process.exit(2);
+  }
+
+  const only = flags.tables ? new Set(flags.tables.split(',').map((t) => sqlIdent(t))) : null;
+  const tableNames = Object.keys(model.tables).filter((t) => !only || only.has(t));
+  if (tableNames.length === 0) {
+    process.stderr.write(`error: no matching tables found in migrations\n`);
+    process.exit(2);
+  }
+
+  const findings = [];
+  const warnings = [];
+  const lines = [];
+
+  for (const name of tableNames) {
+    const table = model.tables[name];
+    const tableFindings = [];
+
+    // Check A — audit trigger
+    const hasTrigger = model.triggers.some((tr) => tr.table === name && triggerPattern.test(tr.name));
+    if (!hasTrigger) {
+      tableFindings.push({
+        check: 'audit_trigger',
+        table: name,
+        message: `no CREATE TRIGGER matching /${triggerPattern.source}/i on table "${name}"`,
+      });
+    }
+
+    // Check B — RLS enabled
+    const rls = model.rls[name];
+    if (!rls || !rls.enabled) {
+      tableFindings.push({
+        check: 'rls',
+        table: name,
+        message: `no ALTER TABLE ${name} ENABLE ROW LEVEL SECURITY found`,
+      });
+    } else if (!rls.force) {
+      warnings.push({
+        check: 'rls_force',
+        table: name,
+        message: `RLS enabled but not FORCEd on "${name}" (table owner bypasses RLS)`,
+      });
+    }
+
+    // Check C — FK type match
+    for (const fk of table.fks) {
+      const refTable = model.tables[fk.refTable];
+      if (!refTable) {
+        warnings.push({
+          check: 'fk_type',
+          table: name,
+          message: `FK ${name}.${fk.column} references unknown table "${fk.refTable}" — skipped`,
+        });
+        continue;
+      }
+      const refColName = fk.refColumn || refTable.pk[0];
+      const localCol = table.columns.find((c) => c.name === fk.column);
+      const refCol = refTable.columns.find((c) => c.name === refColName);
+      if (!localCol || !refCol) {
+        warnings.push({
+          check: 'fk_type',
+          table: name,
+          message: `FK ${name}.${fk.column} → ${fk.refTable}.${refColName}: column not found — skipped`,
+        });
+        continue;
+      }
+      const localType = normalizeSqlType(localCol.type);
+      const refType = normalizeSqlType(refCol.type);
+      if (localType !== refType) {
+        tableFindings.push({
+          check: 'fk_type',
+          table: name,
+          message: `FK type mismatch: ${name}.${fk.column} is ${localType}, but ${fk.refTable}.${refColName} is ${refType}`,
+        });
+      }
+    }
+
+    if (tableFindings.length === 0) {
+      lines.push(`PASS  ${name}`);
+    } else {
+      lines.push(`FAIL  ${name}`);
+      for (const f of tableFindings) lines.push(`      - [${f.check}] ${f.message}`);
+      findings.push(...tableFindings);
+    }
+  }
+
+  const status = findings.length === 0 ? 'PASS' : 'FAIL';
+  if (flags.json) {
+    process.stdout.write(
+      JSON.stringify(
+        {
+          status,
+          migrations: dir,
+          tables_checked: tableNames,
+          findings,
+          warnings,
+          skipped_statements: model.skippedStatements,
+        },
+        null,
+        2
+      ) + '\n'
+    );
+  } else {
+    for (const l of lines) process.stdout.write(`${l}\n`);
+    for (const w of warnings) process.stdout.write(`WARN  [${w.check}] ${w.message}\n`);
+    process.stdout.write(
+      `schema-check: ${status} — ${tableNames.length} table(s), ${findings.length} finding(s), ${warnings.length} warning(s)\n`
+    );
+  }
+  process.exit(findings.length === 0 ? 0 : 1);
+}
+
 function usage(msg) {
   process.stderr.write(`usage error: ${msg}\n`);
   process.stderr.write(`\n${HELP}\n`);
@@ -4935,6 +5094,13 @@ Usage:
                   List drift reports for a project. Use slug "_vault-sync" for
                   the cross-project sweep folder.
 
+  a1-tools schema-check run --migrations <dir> [--tables t1,t2]
+                            [--trigger-pattern 'audit|log'] [--json]
+                  Deterministic schema pre-gate: (A) audit trigger exists per
+                  table, (B) RLS enabled (warn if no FORCE), (C) FK column type
+                  matches referenced PK type. Per-table PASS/FAIL + summary;
+                  --json emits structured findings.
+                  Exit: 0 pass, 1 findings, 2 error (dir/pattern/setup).
   a1-tools schema-check parse --migrations <dir> [--json]
                   Debug: dump the parsed SQL schema model (tables, columns, PKs,
                   FKs, triggers, RLS) as JSON.
@@ -5344,7 +5510,11 @@ function main() {
       else usage(`unknown modernize subcommand: ${sub}`);
     } else if (group === 'schema-check') {
       if (sub === 'parse') result = cmdSchemaCheckParse(rest);
-      else usage(`unknown schema-check subcommand: ${sub}`);
+      else if (sub === 'run') {
+        // owns its own exit code (0 pass / 1 findings / 2 error) and stdout
+        cmdSchemaCheckRun(rest);
+        return; // unreachable — cmdSchemaCheckRun calls process.exit()
+      } else usage(`unknown schema-check subcommand: ${sub}`);
     } else {
       usage(`unknown command group: ${group} (expected "spec", "fix", "analyze", "check", "checklist", "constitution", "worktree", "pr", "phantom", "reconcile", "modernize", or "schema-check"). fix supports: next-suffix, update-status, list, find-duplicates, integrity-check, init-postmortem, count-postmortems-since, update-promote-state, write-suggestion`);
     }
