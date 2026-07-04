@@ -296,3 +296,14 @@ one_line_learning: parallel zu Spec 016 entwickelt+gemergt — belegte Migr-Numm
 ✅ Was gut war: Explore-Agent für die Bestandsaufnahme (7 Felder in 5 Modals) vor dem Bau — verhinderte blindes Patchen + lieferte die Best-Practice-Referenz (CreateDealModal Lead-Inline). Generische Komponente statt 6× Duplikat. Akuter Einzelfall (Position) zuerst als a1-fix gelöst (entblockt User sofort), dann Pattern als Feature. Eigene Verifikation: vorbestehende 72 Test-Failures gegen main gegengeprüft (auch dort rot) statt der eigenen Änderung anzulasten.
 ⚠️ Was nicht passte: Consistency-Gate FAIL war IRREFÜHREND als "Duplikate Wave 1+Wave 3" angezeigt — echte Ursache war ein FEHLENDES FR-007 in der Wave-Header-Zeile (plan_frs 13 vs spec_frs 14). Außerdem: Matrix-Tabelle nach der letzten Wave platziert → Gate ordnet alles nach `## Wave N` der letzten Wave zu. Bernd lieferte wieder einen tsc-roten Test (Fixture fehlende Felder) trotz grüner vitest-Runs.
 💡 Suggestion: (1) Bei Gate-FAIL IMMER zuerst `plan_frs vs spec_frs` aus dem JSON prüfen — wenn ungleich, ist es ein FEHLENDES FR (in einer Header-Zeile übersprungen), nicht ein Duplikat. Die `duplicated_in_plan`-Anzeige ist bei der letzten-Wave-Falle irreführend. (2) FR-Abdeckungs-Matrix IMMER VOR Wave 1 platzieren (Text vor erster `## Wave` wird vom Gate ignoriert). (3) Code-Agent-Briefing: nach jeder Wave `npx tsc --noEmit` auf die GEÄNDERTEN+NEUEN Dateien (inkl. Tests) — vitest grün ≠ tsc grün.
+---
+date: 2026-07-03
+spec: 001-homepage-redesign
+project: n3ural-website
+result: pass
+waves_total: 6
+bugs_found_in_verify: 2
+bug_classes: [regression, wrong_behavior_vs_spec]
+gate_that_caught_most: Phase 6
+phase_that_produced_most_bugs: implement
+one_line_learning: Content-Ergänzungen (neue Case Study) müssen ALLE abgeleiteten Flächen mitziehen — Anzahl-Wörter in Headings ("Three Products"), Klassifikations-Listen (AI_PRODUCT_SLUGS), Test-Fixtures; beim Hinzufügen einer Entity nach ihrem Namen über Copy+Logik greppen. Zweites Learning: Agent-Teammate-Messaging kreuzt sich regelmäßig — nach jedem Dispatch Commit-Stand prüfen statt auf Reports warten.
