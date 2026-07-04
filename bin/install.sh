@@ -49,8 +49,11 @@ SKILLS=(
   "a1-roadmap"
   "a1-evolve"
   "a1-modernize"
+  "a1-new-project"
   "_shared"
 )
+# Deliberately NOT installed: "checkpoint" — personal session-state skill
+# (Cloud-Brain-Wiki/Notion specific), slated to move to a private overlay (roadmap M7).
 
 echo "Skills:"
 for skill in "${SKILLS[@]}"; do
