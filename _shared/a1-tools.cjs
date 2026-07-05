@@ -269,9 +269,86 @@ const MODERNIZE_WAVE_STATUSES = new Set([
 
 // ---------- vault root resolution ----------
 
+// Module-level once-flag: the status line is printed on the FIRST vaultRoot()
+// call per process only. vaultRoot() is the single choke point for all ~32
+// call sites (spec, fix, analyze, constitution, checklist, reconcile,
+// modernize AND every wiki/-writing subcommand: postmortem, promote,
+// write-suggestion). No per-subcommand status emission.
+let _vaultRootAnnounced = false;
+
+/**
+ * Resolve the learning-store root via a 3-tier fallback chain. No silent
+ * degradation: the chosen tier is always announced once per process to stderr.
+ *
+ * Precedence (env wins over repo-local, repo-local wins over legacy):
+ *   Tier 1  A1_VAULT_ROOT env var      → used as-is (dir created on first write).
+ *           Rob's machine keeps writing to ~/N3URAL-Vault ONLY via this env var.
+ *   Tier 2  inside a git repo          → <repo>/.a1/learnings/ (auto-created).
+ *           Always succeeds inside a repo — this is the OSS default.
+ *   Tier 3  legacy ~/N3URAL-Vault      → ONLY if it already exists AND we are
+ *           NOT inside a git repo. Emits a deprecation warning.
+ *   none    not in a repo, no env, no legacy → hard-fail exit 2 (NO Tier 4).
+ *
+ * All stderr; never stdout (stdout is the JSON contract of the CLI).
+ */
 function vaultRoot() {
-  if (process.env.A1_VAULT_ROOT) return process.env.A1_VAULT_ROOT;
-  return path.join(os.homedir(), 'N3URAL-Vault');
+  let root;
+  let source;
+
+  // Tier 1 — explicit env var.
+  if (process.env.A1_VAULT_ROOT) {
+    root = process.env.A1_VAULT_ROOT;
+    source = 'env';
+  } else {
+    // Tier 2 — repo-local, if inside a git repo (CWD-based).
+    let repoTop = null;
+    try {
+      const { execSync } = require('child_process');
+      repoTop = execSync('git rev-parse --show-toplevel', {
+        stdio: ['ignore', 'pipe', 'ignore'],
+      })
+        .toString()
+        .trim();
+    } catch (_e) {
+      repoTop = null;
+    }
+
+    if (repoTop) {
+      root = path.join(repoTop, '.a1', 'learnings');
+      source = 'repo-local';
+      if (!fs.existsSync(root)) {
+        fs.mkdirSync(root, { recursive: true });
+        process.stderr.write('[a1-tools] created .a1/learnings/\n');
+      }
+    } else {
+      // Tier 3 — legacy vault, ONLY if it already exists and we are not in a repo.
+      const legacy = path.join(os.homedir(), 'N3URAL-Vault');
+      if (fs.existsSync(legacy)) {
+        root = legacy;
+        source = 'legacy';
+        process.stderr.write(
+          '[a1-tools] Using legacy vault ~/N3URAL-Vault — set A1_VAULT_ROOT or run inside a git repo for repo-local .a1/learnings/\n'
+        );
+      } else {
+        // Nothing resolves — hard fail, no silent fallback.
+        process.stderr.write(
+          '[a1-tools] error: cannot resolve a learning-store root.\n' +
+            '  Set A1_VAULT_ROOT to an explicit path, or run inside a git repo\n' +
+            '  (repo-local .a1/learnings/ is used automatically there).\n'
+        );
+        process.exit(2);
+      }
+    }
+  }
+
+  if (!_vaultRootAnnounced) {
+    _vaultRootAnnounced = true;
+    process.stderr.write(
+      `[a1-tools] learnings root: ${root} (source: ${source})\n`
+    );
+  }
+
+  return root;
 }
 
 function resolveVaultPath(input) {
