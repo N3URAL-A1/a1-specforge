@@ -63,9 +63,16 @@ fix(a1-constitution): replace Finn with Alex as Phase 2 agent
 docs(readme): add A1_VAULT_ROOT configuration section
 ```
 
+## Using vs. contributing
+
+- **Using a1-specforge (most people):** install it as a Claude Code plugin from the marketplace — no clone required. See the "Install via plugin marketplace" section in the [README](README.md).
+- **Contributing (you, here):** clone this repo and run `./bin/install.sh` to symlink the skills and agents into `~/.claude/`. Symlinks mean your edits are live immediately — no reinstall between changes.
+
 ## Contributing a Gate-Pack
 
 A Gate-Pack (see `docs/adr/2026-07-05-gate-pack-format.md`) is a versioned bundle of battle-tested gate patterns so others import proven gates instead of re-collecting the same bugs. The contribution path is one CLI call plus one PR.
+
+See `packs/postgres-rls/` for a complete worked example (pack.yaml + 3 patterns) — read it before authoring your first pack.
 
 1. **Export** a pack from your local learnings:
    ```bash
@@ -90,6 +97,7 @@ Imported packs never self-apply: `pack import` stages them under `.a1/packs/<nam
 - One skill or concern per PR. Avoid mixing skill changes with unrelated refactors.
 - Include a short description of the change and the motivation.
 - If the change affects an agent brief (Output Contract), describe what changed and why.
+- PRs are typically reviewed within a few days — if a week passes without a response, ping the linked issue.
 
 ## Questions
 
