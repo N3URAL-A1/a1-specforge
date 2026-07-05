@@ -1,0 +1,41 @@
+name: test
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Syntax check
+        run: node --check _shared/a1-tools.cjs
+
+      - name: Fixtures
+        run: |
+          set -e
+          for r in _test-fixtures/*/run*.sh; do
+            echo "== $r"
+            bash "$r"
+          done
+          echo "== _test-fixtures/a1-schema-check/parser/run-parser.sh"
+          bash _test-fixtures/a1-schema-check/parser/run-parser.sh
+
+      - name: Install smoke test
+        run: |
+          set -e
+          export HOME="$(mktemp -d)"
+          bash ./bin/install.sh
+          test -L "$HOME/.claude/skills/a1-new-feature"
+          test -L "$HOME/.claude/skills/_shared"
+          test ! -e "$HOME/.claude/skills/checkpoint"
+
+      - name: Vault-free CLI check
+        run: |
+          set -e
+          env -u A1_VAULT_ROOT HOME="$(mktemp -d)" node _shared/a1-tools.cjs spec next-number ci-demo
+          test -d .a1/learnings/projects/ci-demo/spec

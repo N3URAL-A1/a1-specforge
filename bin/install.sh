@@ -13,6 +13,9 @@ echo "→ Skills: $SKILLS_DIR"
 echo "→ Agents: $AGENTS_DIR"
 echo ""
 
+# Ensure target dirs exist (fresh machine: ~/.claude may not exist yet)
+mkdir -p "$SKILLS_DIR" "$AGENTS_DIR"
+
 symlink_item() {
   local src="$1"
   local dst="$2"
