@@ -120,4 +120,51 @@ Zusammenfassung:
 - Offene Fragen: <N> (im Vault dokumentiert)
 ```
 
+## Step 5 — Retro (mandatory, every run)
+
+After the final summary, write one structured entry. Takes ~2 minutes. Do not
+skip. Used by `a1-evolve` for pattern clustering.
+
+```bash
+PROJECT_NAME="<project-slug>"
+DATE=$(date +%Y-%m-%d)
+```
+
+### Append to local cache
+
+```bash
+cat >> ~/.claude/skills/a1-modernize/_learning.md <<EOF
+---
+date: $DATE
+project: $PROJECT_NAME
+result: <pass|partial|fail>
+frs_extracted: <N>
+gaps: <N blocker>/<N major>/<N minor>
+waves_executed: <N>
+issue_classes: [<from tags below>]
+one_line_learning: <what would have prevented the main issue, or "no issues">
+EOF
+```
+
+Then append the **same entry** to the Vault mirror:
+
+```
+~/N3URAL-Vault/pattern/a1-learnings/a1-modernize.md
+```
+
+Use the `issue_classes` tags consistently — they feed `patterns.md` clustering:
+`fr_extraction_gap` | `gap_misclassified` | `proposal_scope_creep` |
+`migration_missing` | `test_mock_only` | `wave_too_large` | `spec_drift` |
+`publish_target_missing`
+
+A run with zero issues is still useful data — write the entry with `issue_classes: []`.
+
+### Threshold check
+
+```bash
+ENTRY_COUNT=$(grep -c "^date:" ~/.claude/skills/a1-modernize/_learning.md 2>/dev/null || echo 0)
+```
+If `$ENTRY_COUNT` is a multiple of 5:
+> "5 neue Learnings akkumuliert — in Vault unter [[pattern/a1-learnings/index]] gespeichert. `a1-evolve` ausführen?"
+
 Show `suggested_next` from frontmatter.
