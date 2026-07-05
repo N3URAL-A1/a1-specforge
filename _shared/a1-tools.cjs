@@ -3836,12 +3836,29 @@ function cmdModernizeApproveProposal(args) {
   if (!fs.existsSync(masterPath)) fail(`master file not found: ${masterPath}`);
   const { fm, body } = readMd(masterPath);
   if (!Array.isArray(fm.proposals)) fail('no proposals found in master file');
+  normalizeJsonEntries(fm, 'proposals');
   const p = fm.proposals.find((x) => x.id === proposalId);
   if (!p) fail(`proposal ${proposalId} not found`);
   p.approved_by_robert = decision;
   if (flags.reason) p.rejection_reason = flags.reason;
   writeMdAtomic(masterPath, fm, body);
   return { path: masterPath, proposal_id: proposalId, decision };
+}
+
+// Frontmatter round-trip fix: writeMdAtomic serializes array-of-object entries
+// as JSON strings; on re-read they stay strings, so id-lookups (x.id) miss.
+// Normalize in place: parse string entries back into objects before use.
+function normalizeJsonEntries(fm, key) {
+  if (!Array.isArray(fm[key])) return;
+  fm[key] = fm[key].map((entry) => {
+    if (typeof entry !== 'string') return entry;
+    try {
+      const parsed = JSON.parse(entry);
+      return parsed && typeof parsed === 'object' ? parsed : entry;
+    } catch (_e) {
+      return entry;
+    }
+  });
 }
 
 function cmdModernizeAddWave(args) {
@@ -3895,6 +3912,7 @@ function cmdModernizeStartWave(args) {
   if (!fs.existsSync(masterPath)) fail(`master file not found: ${masterPath}`);
   const { fm, body } = readMd(masterPath);
   if (!Array.isArray(fm.waves)) fail('no waves found in master file');
+  normalizeJsonEntries(fm, 'waves');
   const w = fm.waves.find((x) => x.id === waveId);
   if (!w) fail(`wave ${waveId} not found`);
   w.status = 'implementing';
@@ -3919,6 +3937,7 @@ function cmdModernizeCompleteWave(args) {
   if (!fs.existsSync(masterPath)) fail(`master file not found: ${masterPath}`);
   const { fm, body } = readMd(masterPath);
   if (!Array.isArray(fm.waves)) fail('no waves found in master file');
+  normalizeJsonEntries(fm, 'waves');
   const w = fm.waves.find((x) => x.id === waveId);
   if (!w) fail(`wave ${waveId} not found`);
   if (flags['snapshot-replay'] !== 'pass') {
