@@ -42,7 +42,7 @@ one_line_learning: Refactoring-Voraussetzungen (Quality-Audit-Findings) hätten 
 date: 2026-05-29
 phase: ofp046-markdown-brain-railway
 project: a1-office
-spec: /Users/rob/.claude/plans/rolle-du-bist-senior-giggly-backus.md
+spec: ~/.claude/plans/rolle-du-bist-senior-giggly-backus.md
 result: pass
 revisions: 0
 audit_findings: 0

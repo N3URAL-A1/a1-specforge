@@ -35,7 +35,7 @@ ls -d "<candidate-path>" 2>&1
 ```
 
 If the path does not exist, ask:
-> "Wo liegt der Code? (absoluter Pfad, z.B. `/Users/rob/code/my-app`)"
+> "Wo liegt der Code? (absoluter Pfad, z.B. `<project-root>`)"
 
 ## Step 4 — Initialize the master file
 

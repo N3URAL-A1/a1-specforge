@@ -49,3 +49,10 @@ All pre-existing fixture runners re-run: 12/12 exit 0 (plus nested `a1-schema-ch
 - Whitelist honored: `*/_learning.md` retro bodies + `_shared/learnings-index.md` left untouched.
 - Done-when: `grep -rl 'N3URAL-Vault' a1-*/SKILL.md a1-*/workflows/` → exit 1 (empty) ✓
 - Deviation [Rule 3-scope]: patched far more than the 7 inventoried files (a1-fix wiki paths, a1-new-project VROOT, all skill retro paths) — required so no active SKILL.md/workflow hit remains.
+
+### Task 2.3 — /Users/rob example cleanup — DONE
+- a1-modernize/workflows/01-scope.md:38 → `<project-root>` placeholder
+- a1-plan/_learning.md:45 → `~/.claude/...` (plan explicitly whitelisted this one for generalization)
+- docs/roadmap.md:47 → "personal absolute-path examples" (removed literal /Users/rob token)
+- Done-when: `grep -rl '/Users/rob' a1-*/ agents/ _shared/ bin/ README.md docs/` → exit 1 (empty) ✓
+- Note: docs/analysis + docs/adr had no active /Users/rob hits; `.a1/phases/` history untouched (whitelisted, outside swept trees).

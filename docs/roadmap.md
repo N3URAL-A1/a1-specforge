@@ -44,7 +44,7 @@ Basis: general analysis 2026-07-04 (3 OSS-BLOCKER, 6 MAJOR, 5 MINOR) + learning 
 - **Portability**
   - All `~/N3URAL-Vault` hardcodes (~30 sites) → `A1_VAULT_ROOT` with repo-local `.a1/learnings/` default; learning loop must not silently degrade without a vault.
   - All `~/code/a1-skills` hardcodes (a1-evolve) → dynamic repo-root resolution.
-  - Remove `/Users/rob/...` examples from workflows/_learning files.
+  - Remove personal absolute-path examples from workflows/_learning files.
   - Move the personal `checkpoint` skill out of the OSS repo into a private overlay.
 - **Docs & language**
   - README rewrite: all skills documented, honest metrics, quickstart, demo GIF.
