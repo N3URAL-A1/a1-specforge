@@ -62,6 +62,19 @@ grep -iE "verdict|outcome|PASS|FAIL|PARTIAL" "<referenced-VERIFICATION.md>" | he
 `retro_integrity` findings surface in the Phase 2 cluster and the Phase 3
 proposal report so rosy self-reports cannot silently harden the wrong things.
 
+### 1c-quater. Read staged Gate-Packs (community source)
+Imported Gate-Packs (see `docs/adr/2026-07-05-gate-pack-format.md`) stage their
+patterns under `.a1/packs/*/patterns/*.md`. Collect them so community-contributed
+gates enter clustering:
+```bash
+find ~/code -path "*/.a1/packs/*/patterns/*.md" 2>/dev/null | sort
+```
+Each such pattern enters Phase 2 clustering as `source: community` with its
+provenance count **capped at 2** (ADR §4) — i.e. one local occurrence is still
+required before a community pattern reaches the propose-threshold of 3. Community
+evidence lowers the bar but never replaces local evidence, so a poisoned pack can
+propose nothing on its own.
+
 ### 1d. Check last synthesis date
 From `$VAULT/pattern/a1-learnings/patterns.md` frontmatter `updated:` field.
 Only process entries newer than that date to avoid double-counting.

@@ -63,6 +63,28 @@ fix(a1-constitution): replace Finn with Alex as Phase 2 agent
 docs(readme): add A1_VAULT_ROOT configuration section
 ```
 
+## Contributing a Gate-Pack
+
+A Gate-Pack (see `docs/adr/2026-07-05-gate-pack-format.md`) is a versioned bundle of battle-tested gate patterns so others import proven gates instead of re-collecting the same bugs. The contribution path is one CLI call plus one PR.
+
+1. **Export** a pack from your local learnings:
+   ```bash
+   node _shared/a1-tools.cjs pack export \
+     --patterns rls-grant-matrix,schema-audit-trigger \
+     --anonymize A2 --out packs/<name>/ --source "<your-corpus> (anonymized)"
+   ```
+   Export **refuses to write** if the anonymization deny-regex (`/Users/`, vault paths, e-mails, tenant names) hits the generated output — it lists the leak and exits non-zero. Use `--anonymize A3` for mechanism-only packs (code blocks stripped from diffs). Fill in `provenance` (occurrences, severity, date_range, source) in the generated `pack.yaml`.
+
+2. **Validate** before opening the PR:
+   ```bash
+   node _shared/a1-tools.cjs pack validate packs/<name>/
+   ```
+   Must exit 0. `checks/` may contain **only** `.json`/`.args.json` parameter files for already-shipped CLI subcommands — never executable payloads (that is the whole trust model: the PR review is the signature).
+
+3. **Open a PR** with the pack directory. Maintainer review checks (ADR §6): anonymization holds (no paths/slugs/names/e-mails), every pattern has a valid `target{kind, skill, anchor}` and an `evidence_schema` describing what proof a run must show, and `checks/` carries no executable code.
+
+Imported packs never self-apply: `pack import` stages them under `.a1/packs/<name>/`; application happens only through a1-evolve, where community provenance is capped so local evidence is still required.
+
 ## Pull requests
 
 - One skill or concern per PR. Avoid mixing skill changes with unrelated refactors.
