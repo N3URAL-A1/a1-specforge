@@ -38,3 +38,15 @@ issues: []
 what_worked: TDD-first (42 Tests, 100% Coverage); ADR-010/017 Compliance explizit als Wave 5; 3 CFs zu Thin Wrapper (-448 Zeilen)
 one_line_learning: Zero Production-Bugs bei stricter Wave-Isolation + expliziten Compliance-Tests als eigene Wave — Muster wiederholen
 ---
+---
+date: 2026-07-04
+phase: p1-pilot-readiness
+project: a1-office
+result: pass
+waves: 4 (+1 BLOCKED-ON-ROBERT)
+verification: PASS 10/10 SC, 22/22 neue Integrationstests grün
+deviations: 6 (alle minor/dokumentiert)
+✅ Was gut war: Parallel-Split Wave 1 (Ludwig+Erik) und Wave 3 (2 Executors, disjunkte Dateien) lief konfliktfrei; Schema-Verifikation vor Code (Preprod \d) verhinderte erfundene Spalten; SC-7-Lücke aus Wave-2-Report direkt in Wave 3 als Zusatz-Task eingeplant statt liegen gelassen.
+⚠️ Was nicht passte: Plan referenzierte 2x falsche Pfade/APIs (RESERVED_SLUGS-Modul, vitest singleFork entfernt) — Executor musste abweichen; Test-Skip-Guard prüft DATABASE_URL nicht mit (Verifier-Fund).
+💡 Suggestion: Planner-Checkliste ergänzen: Import-Pfade und Lib-API-Versionen (package.json) im Plan real verifizieren, nicht aus MAP übernehmen; Test-Env-Preconditions (ENVs) als expliziten Plan-Fakt aufnehmen.
+
