@@ -197,11 +197,32 @@ If no: proceed. Counter accumulates until next run.
      --source-postmortem "<path>" \
      --skill "a1-fix"
    ```
-5. Update promote state:
+5. **Bridge to a1-evolve's primary glob (framework invariant 4).** For each
+   promoted lesson, ALSO append a normalized entry in the standard YAML retro
+   format to the Vault file `pattern/a1-learnings/a1-fix.md`, so a1-evolve's
+   primary collect glob (`pattern/a1-learnings/*.md`) sees the bug corpus. The
+   `wiki/` postmortem stays the canonical detail; this is the optimizer-visible
+   summary:
+   ```bash
+   cat >> "$HOME/N3URAL-Vault/pattern/a1-learnings/a1-fix.md" <<EOF
+
+   ## $(date +%F) — <project-slug> / <bug-slug>
+
+   **Skill:** a1-fix
+   **Outcome:** <fixed|wont-fix|cant-reproduce|duplicate>
+   **root_cause_class:** [<tag>]
+   **evidence:** wiki/postmortems/<project>/<date>-<bug-slug>.md; fix_commit <short-hash>
+
+   ### Retro
+   ⚠️ <one_line_learning — what would have prevented the bug>
+   💡 <the promoted lesson / actionable rule>
+   EOF
+   ```
+6. Update promote state:
    ```bash
    node ~/.claude/skills/_shared/a1-tools.cjs fix update-promote-state
    ```
-6. Tell the user:
+7. Tell the user:
    > "promote-lessons abgeschlossen. Neue Vorschläge in:
    > - `wiki/lessons/<agent>/_suggestions/` (N Vorschläge)
    >

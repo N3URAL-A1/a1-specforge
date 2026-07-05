@@ -33,6 +33,35 @@ find ~/code -path "*/.a1/phases/*/observations.jsonl" 2>/dev/null | head -30
 ```
 Parse JSONL for granular pattern data not yet summarized in retros.
 
+### 1c-bis. Read a1-fix postmortems (richest bug evidence — invariant 4)
+a1-fix keeps detail in `wiki/`-style stores AND appends normalized retros to the
+primary `pattern/a1-learnings/a1-fix.md` glob (read in 1a). Also collect the
+detail stores so the optimizer sees the full bug corpus:
+```bash
+find "$VAULT/wiki/postmortems" -name "*.md" 2>/dev/null | sort
+find "$VAULT/wiki/lessons" -path "*_active.md" 2>/dev/null | sort
+```
+Extract `root_cause_class`, `one_line_learning`, and terminal verdict per postmortem.
+These cluster alongside the pattern-tagged retros in Phase 2.
+
+### 1c-ter. Retro-integrity cross-check (FMEA-3)
+For every retro entry collected in 1a/1b whose `result:` (or Outcome) claims a
+pass AND which names a referenced verification artifact (a VERIFICATION.md path,
+or an `evidence:` field), cross-check the claim against that artifact's actual
+verdict:
+```bash
+# for each retro that references a VERIFICATION.md path:
+grep -iE "verdict|outcome|PASS|FAIL|PARTIAL" "<referenced-VERIFICATION.md>" | head
+```
+- If the retro claims `pass` but the referenced VERIFICATION verdict is FAIL/PARTIAL
+  (or the referenced file is missing), record a `retro_integrity` finding
+  (fields: retro date, project, claimed result, actual verdict, reference path).
+- Retros with no reference are noted as `unverified` but not flagged as integrity
+  violations. Retros whose claim matches the verdict pass silently.
+
+`retro_integrity` findings surface in the Phase 2 cluster and the Phase 3
+proposal report so rosy self-reports cannot silently harden the wrong things.
+
 ### 1d. Check last synthesis date
 From `$VAULT/pattern/a1-learnings/patterns.md` frontmatter `updated:` field.
 Only process entries newer than that date to avoid double-counting.

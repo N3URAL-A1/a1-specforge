@@ -27,7 +27,7 @@ One JSON object per line. Written to `.a1/phases/<name>/observations.jsonl`.
 - `critical` — caused wave to block
 
 ### Pattern field (standardized tags — use these for clustering)
-`missing_import` | `missing_wiring` | `wiring_gap` | `wave_ordering` | `vague_action` | `missing_migration` | `env_var_undocumented` | `test_gap` | `scope_creep` | `research_stale` | `router_not_updated` | `type_error_cascade`
+`missing_import` | `missing_wiring` | `wiring_gap` | `wave_ordering` | `vague_action` | `missing_migration` | `env_var_undocumented` | `test_gap` | `scope_creep` | `research_stale` | `router_not_updated` | `type_error_cascade` | `retro_integrity`
 
 ---
 
@@ -43,6 +43,7 @@ Append-only. One entry per execution run.
 **Skill:** a1-execute  
 **Outcome:** PARTIAL (1 gap — SC-2 not wired)  
 **Project type:** Next.js + Postgres  
+**evidence:** .a1/phases/M1-P2-auth/VERIFICATION.md (verdict: PARTIAL); commits abc1234, def5678  
 
 ### Observations (from agents)
 - [executor/W2/major] Router wiring not in plan — added manually (pattern: missing_wiring)
@@ -58,6 +59,14 @@ Append-only. One entry per execution run.
 ### Suggested improvement
 a1-pablo-planner should add "wire to router/index" as a standard Wave 3 task for API phases.
 ```
+
+**`evidence:` field (recommended — feeds FMEA-3 retro-integrity check).** A retro
+whose `Outcome`/`result:` claims a pass SHOULD carry an `evidence:` reference to a
+verifiable artifact: a VERIFICATION.md path (with its verdict), and/or commit
+hashes, and/or an a1-fix postmortem path. a1-evolve's collect phase cross-checks
+the claimed outcome against the referenced verdict; a retro claiming `pass` whose
+referenced VERIFICATION says FAIL/PARTIAL (or is missing) is flagged as a
+`retro_integrity` finding. No evidence ⇒ the entry is treated as `unverified`.
 
 ---
 
