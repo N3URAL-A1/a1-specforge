@@ -53,6 +53,35 @@ If the cost command fails for any reason, write the fallback instead — the lin
 Cost: unavailable (<reason>)
 ```
 
+## Step 6.5 — Phantom integration (enforces — not warning-only)
+
+Run `a1-phantom` over the completed plan to catch tasks claimed done but not actually built.
+The `phantom check` CLI always exits 0 (so it stays usable standalone); **enforcement lives in
+this verifier contract, not in the exit code.** Victor MUST translate phantom verdicts into
+VERIFICATION.md findings as follows:
+
+- **PHANTOM verdict on a task NOT tagged `# no-code`** → this becomes a **BLOCKER finding** in
+  VERIFICATION.md. The overall verdict **cannot be PASS** while any such phantom BLOCKER is
+  unresolved. List each under a `### Phantom BLOCKERs` heading with the task name and the
+  claimed-but-missing artifact.
+- **PHANTOM verdict on a task tagged `# no-code`** → not a finding (docs/analysis/coordination
+  tasks legitimately produce no code). Note it as informational only.
+- **Weak-match verdict (2-weak-token match — an artifact matched only on weak/ambiguous
+  tokens)** → becomes a **"verify manually"** item listed in the report under a
+  `### Verify manually (weak phantom matches)` heading. Not a BLOCKER, but Victor must surface it
+  so a human confirms the artifact is the real one.
+
+```
+### Phantom BLOCKERs
+- <task name> — claimed done but <artifact> not found (phantom PHANTOM, not `# no-code`)
+
+### Verify manually (weak phantom matches)
+- <task name> — matched only on weak tokens <tokens>; confirm the artifact is correct
+```
+
+If any Phantom BLOCKER is present and unresolved, the verdict routes to FAIL (or PARTIAL only if
+the user explicitly accepts the gap) — never PASS.
+
 ## Routing by verdict
 
 ### PASS
