@@ -42,6 +42,12 @@ the planner from omitting wiring tasks.
 - **Explain the why** — rationale shows where the data came from
 - **Never propose removing content** unless it's clearly wrong
 - **Test mentally** — would this change have prevented the observed failures?
+- **Check against the constitution** — every proposed diff is checked against the
+  ten invariants in `docs/CONSTITUTION.md`. If a diff would introduce a violation
+  (e.g. a second owner for a fact, a new learning store without a matching collect
+  glob, a versioned model pin, an unregistered blocking gate), flag it in the
+  proposal with the violated invariant number and surface it to the user rather than
+  applying it silently.
 
 ## After all proposals
 
