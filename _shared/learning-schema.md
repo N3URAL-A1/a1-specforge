@@ -60,6 +60,24 @@ Append-only. One entry per execution run.
 a1-pablo-planner should add "wire to router/index" as a standard Wave 3 task for API phases.
 ```
 
+**`gates_fired:` field (recommended — feeds gate-ROI).** Replaces free-text gate
+attribution. Optional list, one entry per gate that ran this run:
+
+```yaml
+gates_fired:
+  - {id: gate-3-smoke,     verdict: pass, caught: false}
+  - {id: gate-0.7-realpath, verdict: fail, caught: true}
+  - {id: phase-6-verify,   verdict: pass, caught: false}
+```
+
+- `id` — a stable slug from `_shared/gates-registry.md` (single source of truth; ids
+  not in the registry are ignored by a1-evolve's gate-ROI step).
+- `verdict` — `pass` | `fail` (the gate's own outcome).
+- `caught` — `true` | `false` (did this gate catch the run's escaping bug).
+
+The legacy `gate_that_caught_most` free-text field is still supported for older
+retros; new retros should prefer `gates_fired`. a1-evolve reads both.
+
 **`evidence:` field (recommended — feeds FMEA-3 retro-integrity check).** A retro
 whose `Outcome`/`result:` claims a pass SHOULD carry an `evidence:` reference to a
 verifiable artifact: a VERIFICATION.md path (with its verdict), and/or commit

@@ -61,3 +61,31 @@ Pattern Analysis:
 ```
 
 Only patterns with impact score ≥ 6 proceed to Phase 3.
+
+## 2e. Gate-ROI (gate retirement candidates)
+
+When **≥5 retros carry a `gates_fired` field** (see `_shared/learning-schema.md`),
+compute per-gate return-on-investment. IDs come from `_shared/gates-registry.md` —
+ids not in the registry are ignored.
+
+For each registered gate, across all `gates_fired` entries:
+- **Catch score** = Σ over its `caught: true` entries of the run's severity weight
+  (minor=1, major=3, critical=5).
+- **Cost class** = the gate's `cost` column in gates-registry.md (cheap/med/high).
+- **ROI** = catch score ÷ cost weight (cheap=1, med=3, high=5).
+
+**Retirement candidate rule:** a gate with **0 catches over 10+ runs** in which it
+fired AND a **med or high** cost class becomes a `gate_retirement_candidate` finding.
+
+```
+🕳 gate_retirement_candidate: gate-3-smoke
+   Fired: 14 runs | Catches: 0 | Cost: med
+   → PROPOSAL ONLY. Suggest de-scope / merge into phase-6-verify.
+```
+
+**Constraints (constitution invariant 8 — "a gate that cannot fail is documentation"):**
+- Retirement candidates are **proposals only**. Never auto-remove a gate; a human
+  decides. Emit as a finding for Phase 3, flagged `proposal-only`.
+- Cheap gates are never retirement candidates (keeping them costs ~nothing).
+- Gates younger than 10 fired runs stay in `monitoring` — too little data (e.g. the
+  2026-06/07 additions `gate-0`, `gate-0.5`, `gate-0.6`).
