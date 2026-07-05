@@ -37,5 +37,7 @@ jobs:
       - name: Vault-free CLI check
         run: |
           set -e
+          # next-number is read-only (reports the target dir); analyze init actually writes
           env -u A1_VAULT_ROOT HOME="$(mktemp -d)" node _shared/a1-tools.cjs spec next-number ci-demo
-          test -d .a1/learnings/projects/ci-demo/spec
+          env -u A1_VAULT_ROOT HOME="$(mktemp -d)" node _shared/a1-tools.cjs analyze init ci-demo general
+          test -d .a1/learnings/projects/ci-demo
