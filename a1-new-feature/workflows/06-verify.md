@@ -101,6 +101,28 @@ the actual number if available, e.g. response time, test coverage).
 
 ## Step 5 — Apply result
 
+### Cost line in VERIFICATION.md (mandatory — never omit)
+
+Directly after the verdict line in VERIFICATION.md, write a `**Cost:**` line.
+
+Compute it with:
+
+```bash
+node ~/.claude/skills/_shared/a1-tools.cjs cost run --project ~/.claude/projects/<project-dir> --since <phase-start-ISO>
+```
+
+Summary-line format:
+
+```
+Cost: NNN tokens (in X, out Y, cache Z)
+```
+
+If the cost command fails for any reason, write the fallback instead — the line is never omitted:
+
+```
+Cost: unavailable (<reason>)
+```
+
 ### All scenarios green AND all SCs met
 
 ```bash

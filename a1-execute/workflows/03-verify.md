@@ -16,6 +16,28 @@ Verify that the phase goal was achieved.
 **Output path:** .a1/phases/<phase_name>/VERIFICATION.md
 ```
 
+## Cost line in VERIFICATION.md (mandatory — never omit)
+
+Directly after the verdict line in VERIFICATION.md, the verifier writes a `**Cost:**` line.
+
+Compute it with:
+
+```bash
+node ~/.claude/skills/_shared/a1-tools.cjs cost run --project ~/.claude/projects/<project-dir> --since <phase-start-ISO>
+```
+
+Summary-line format:
+
+```
+Cost: NNN tokens (in X, out Y, cache Z)
+```
+
+If the cost command fails for any reason, write the fallback instead — the line is never omitted:
+
+```
+Cost: unavailable (<reason>)
+```
+
 ## Routing by verdict
 
 ### PASS
