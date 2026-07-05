@@ -5,11 +5,14 @@ description: >
   Lets agents work on a feature branch in a parallel checkout without polluting
   the main tree. Registry at `~/.a1-worktrees-registry.json`, worktrees at
   `<repo-parent>/a1-worktrees/<slug>/`, branches default `feature/<slug>`.
-  MUST trigger when the user says: "worktree für <feature>", "isolierter
-  branch", "a1-worktree", "neuen worktree anlegen", "worktree aufräumen",
-  "worktree exit", "worktree handoff", "worktree für PR vorbereiten",
-  "experimentell entwickeln", "agent in worktree arbeiten lassen", or any
-  request to spawn, manage, or tear down an isolated working copy.
+  MUST trigger when the user says: "worktree for <feature>" (alias: "worktree
+  für <feature>"), "isolated branch" (alias: "isolierter branch"), "a1-worktree",
+  "create a new worktree" (alias: "neuen worktree anlegen"), "clean up worktree"
+  (alias: "worktree aufräumen"), "worktree exit", "worktree handoff", "prepare
+  worktree for PR" (alias: "worktree für PR vorbereiten"), "develop
+  experimentally" (alias: "experimentell entwickeln"), "let an agent work in a
+  worktree" (alias: "agent in worktree arbeiten lassen"), or any request to
+  spawn, manage, or tear down an isolated working copy.
   Distinct from a1-new-feature (which produces specs/plans). Hands off to
   a1-pr-review when exited with `--mode handoff`.
   Do NOT activate for: ordinary `git checkout <branch>` without parallelism,
@@ -21,6 +24,8 @@ allowed-tools:
 ---
 
 # a1-worktree — Isolated Worktree Lifecycle
+
+Language: English-first; German trigger aliases supported.
 
 This skill is a thin orchestrator. The lifecycle logic lives in `workflows/`.
 The shared CLI helper (`~/.claude/skills/_shared/a1-tools.cjs worktree`)

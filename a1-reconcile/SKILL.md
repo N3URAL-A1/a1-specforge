@@ -10,11 +10,14 @@ description: >
   stored in Obsidian Vault at projects/<slug>/drift-<YYYY-MM-DD>[-N].md. Three
   modes: single (one spec), project (all specs), vault-sync (weekly cron).
   MUST trigger when the user says: "drift check", "spec vs implementation",
-  "spec vs code", "reconcile <projekt>", "a1-reconcile", "is the code still
-  in sync with the spec", "spec-drift", "passt der code noch zur spec",
+  "spec vs code", "reconcile <project>" (alias: "reconcile <projekt>"),
+  "a1-reconcile", "is the code still in sync with the spec", "spec-drift",
+  "does the code still match the spec" (alias: "passt der code noch zur spec"),
   "implementation drift", "what did we ship vs what we specified",
-  "pre-release audit", "stimmt spec und code noch überein", "habe ich alles
-  gebaut was in der spec steht", or any request to verify spec/code alignment.
+  "pre-release audit", "do spec and code still agree" (alias: "stimmt spec und
+  code noch überein"), "did I build everything in the spec" (alias: "habe ich
+  alles gebaut was in der spec steht"), or any request to verify spec/code
+  alignment.
   Orchestrates sub-agents (a1-marco-mapper for structural probing, Alex for
   architecture-level DIVERGED); read-only — never modifies project code or
   specs. Do NOT activate for: generic codebase audits without spec anchor
@@ -32,6 +35,8 @@ allowed-tools:
 ---
 
 # a1-reconcile — Spec ↔ Code Drift Detection (Scope → Report)
+
+Language: English-first; German trigger aliases supported.
 
 This skill is a thin orchestrator. The phase logic lives in `workflows/`. The
 shared CLI helper (`~/.claude/skills/_shared/a1-tools.cjs reconcile`) handles

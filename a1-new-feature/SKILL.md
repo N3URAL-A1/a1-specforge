@@ -6,10 +6,11 @@ description: >
   file's YAML frontmatter and progresses through: discovering → draft → clarified → planned →
   implementing → done (or cancelled). Specs are stored in the Obsidian Vault under
   projects/<slug>/spec/<###>-<feature-slug>.md, wave plans under projects/<slug>/plans/.
-  MUST trigger when the user says: "neues Feature für <projekt>", "spec für <projekt>",
-  "new feature for <project>", "feature pipeline", "a1-new-feature", "neues Feature anlegen",
-  "Feature von Idee bis Verify", or any request to start a feature from scratch and walk it
-  through requirements, planning, implementation, and verification. This skill orchestrates
+  MUST trigger when the user says: "new feature for <project>" (alias: "neues Feature für
+  <projekt>"), "spec for <project>" (alias: "spec für <projekt>"), "feature pipeline",
+  "a1-new-feature", "create a new feature" (alias: "neues Feature anlegen"), "feature from
+  idea to verify" (alias: "Feature von Idee bis Verify"), or any request to start a feature
+  from scratch and walk it through requirements, planning, implementation, and verification. This skill orchestrates
   sub-agents (Rene for phases 1–3, Vincente for phase 4, code agents for phase 5); it does NOT
   replace them. Do not activate for: pure spec writing on an existing feature (use Rene
   directly), bug fixes (use a1-fix), or wave planning of an already-specified
@@ -25,6 +26,8 @@ allowed-tools:
 ---
 
 # a1-new-feature — Feature Pipeline (Discover → Verify)
+
+Language: English-first; German trigger aliases supported.
 
 This skill is a thin orchestrator. The phase logic lives in `workflows/`. The shared CLI
 helper (`~/.claude/skills/_shared/a1-tools.cjs`) handles deterministic file ops (sequence

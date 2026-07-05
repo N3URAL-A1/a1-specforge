@@ -10,13 +10,16 @@ description: >
   prioritized feature backlog in .a1/features-backlog.md + Vault projects/<slug>/)
   → Feature-Loop (run every feature through a1-new-feature, with a checkpoint +
   context reset between features so the loop is resumable from file state).
-  MUST trigger when the user says: "neues projekt von null", "new project from
-  scratch", "projekt initialisieren", "initiales projekt aufsetzen",
-  "a1-new-project", "bootstrap project", "projekt-grundstruktur anlegen",
-  "vom scope bis zu den features", "projekt scaffolden und in features splitten",
-  "set up a new project and split it into features", "start a new project from
-  nothing", or any request to take an empty idea/folder and turn it into a
-  scaffolded project with a worked-through feature backlog. This skill is a thin
+  MUST trigger when the user says: "new project from scratch" (alias: "neues
+  projekt von null"), "initialize a project" (alias: "projekt initialisieren"),
+  "set up an initial project" (alias: "initiales projekt aufsetzen"),
+  "a1-new-project", "bootstrap project", "create the project base structure"
+  (alias: "projekt-grundstruktur anlegen"), "from scope to features" (alias:
+  "vom scope bis zu den features"), "scaffold a project and split into features"
+  (alias: "projekt scaffolden und in features splitten"), "set up a new project
+  and split it into features", "start a new project from nothing", or any request
+  to take an empty idea/folder and turn it into a scaffolded project with a
+  worked-through feature backlog. This skill is a thin
   orchestrator: it calls a1-roadmap (Phase 3), a1-new-feature (Phase 5), and
   optionally a1-constitution (Phase 1) and checkpoint (Phase 5). It does NOT
   replace them.
@@ -38,6 +41,8 @@ allowed-tools:
 ---
 
 # a1-new-project — Zero-to-Backlog Bootstrap
+
+Language: English-first; German trigger aliases supported.
 
 Thin orchestrator. Phase logic lives in `workflows/`. This skill stitches
 together existing skills — `a1-roadmap`, `a1-new-feature`, `a1-constitution`,

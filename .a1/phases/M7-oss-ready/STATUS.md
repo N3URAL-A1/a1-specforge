@@ -56,3 +56,24 @@ All pre-existing fixture runners re-run: 12/12 exit 0 (plus nested `a1-schema-ch
 - docs/roadmap.md:47 → "personal absolute-path examples" (removed literal /Users/rob token)
 - Done-when: `grep -rl '/Users/rob' a1-*/ agents/ _shared/ bin/ README.md docs/` → exit 1 (empty) ✓
 - Note: docs/analysis + docs/adr had no active /Users/rob hits; `.a1/phases/` history untouched (whitelisted, outside swept trees).
+
+## Wave 3 — Task 3.2: README rewrite
+Completed: 
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| 3.2 README rewrite | ✓ DONE | 7043c63 | Bijective install↔README diff exits 0; A1_VAULT_ROOT + .a1/learnings present; honest metrics (6.8k LOC, 13 fixtures, 18 agents) |
+
+### Deviations
+- Plan estimated CLI ~5.4k LOC and "10+ fixture suites"; verified real numbers are ~6.8k LOC and 13 suites — used the honest figures.
+- Plan said "17 shared agents"; agents/*.md count is 18 — used 18.
+- Bijective scope: install.sh grep set includes all 18 agent names + project slug, not just skills. Kept README free of any non-installed a1- token (CLI referenced as _shared/ path, not a1-tools filename) so the whole-file diff passes without scoping the grep.
+
+### Task 3.3 — Language unification (SKILL.md fronts only) — ✓ DONE
+- All 17 a1-*/SKILL.md now carry `Language: English-first; German trigger aliases supported.` immediately after the H1 title.
+- MUST-trigger lists normalized English-first; every German phrase preserved as an explicit `(alias: "…")` — none deleted. Descriptions were already English prose, left untouched.
+- All "Do NOT activate for" boundaries and English trigger phrases preserved verbatim.
+- Cap honored: no workflow-body files touched (deferred to M8).
+- Done-when: `[ -z "$(grep -L 'German trigger aliases' a1-*/SKILL.md)" ]` → exit 0 (17/17 contain the line) ✓
+- Ambiguous German phrases: none — all mapped cleanly to English equivalents. Two aliases ("worktree für <feature>", "skills verbessern") are line-wrapped in the rewritten description but present intact.
+- Deviations: none.

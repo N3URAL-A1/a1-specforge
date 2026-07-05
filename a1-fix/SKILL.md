@@ -5,11 +5,12 @@ description: >
   Diagnose → Fix → Verify → Postmortem. State persists in bug-report YAML frontmatter
   (reported → diagnosed → fixing → fixed). Bug reports live under
   `projects/<slug>/fixes/<YYYY-MM-DD>-<bug-slug>.md` in the Obsidian Vault.
-  MUST trigger when the user says: "bug in <X>", "fehler in <X>", "<X> crasht",
-  "<feature> funktioniert nicht", "X is broken", "broken since deploy", "regression",
-  "crash", "a1-fix", "fix this", "bug-report anlegen", "this used to work",
-  "it stopped working", or any request to investigate/diagnose/fix a malfunction in
-  shipped functionality. Orchestrates a1-falk-fault-finder (triage + diagnosis) and a
+  MUST trigger when the user says: "bug in <X>" (alias: "fehler in <X>"),
+  "<X> crashes" (alias: "<X> crasht"), "<feature> doesn't work" (alias:
+  "<feature> funktioniert nicht"), "X is broken", "broken since deploy", "regression",
+  "crash", "a1-fix", "fix this", "create a bug report" (alias: "bug-report anlegen"),
+  "this used to work", "it stopped working", or any request to investigate/diagnose/fix
+  a malfunction in shipped functionality. Orchestrates a1-falk-fault-finder (triage + diagnosis) and a
   project code agent (the fix). Writes a structured Postmortem to the Obsidian Vault
   after every terminal verdict. Do NOT activate for: new feature work (use
   a1-new-feature), PR code review without a reported defect (use Reinhard), or
@@ -25,6 +26,8 @@ allowed-tools:
 ---
 
 # a1-fix — Bug Pipeline (Pre-Flight → Postmortem)
+
+Language: English-first; German trigger aliases supported.
 
 This skill is a thin orchestrator. The phase logic lives in `workflows/`. The
 shared CLI helper (`~/.claude/skills/_shared/a1-tools.cjs`) handles deterministic

@@ -10,12 +10,17 @@ description: >
   (scoped → spec-drafted → gap-analyzed → proposals-pending → planned →
   executing → published). Output stored in Obsidian Vault:
   projects/<slug>/modernize/<YYYY-MM-DD>-<focus>[-N].md.
-  MUST trigger on: "modernize <project>", "alte Codebase aufräumen",
-  "specs ableiten", "reverse-spec", "was tut diese App", "code ohne docs",
-  "ungepflegte App", "legacy-code aufräumen", "bestehende Codebase",
-  "code verstehen ohne doku", "a1-modernize", "specs für bestehendes projekt",
-  "brownfield", "tech debt abbauen", "codebase modernisieren",
-  "funktioniert aber niemand weiß wie", or any request to understand/improve
+  MUST trigger on: "modernize <project>", "clean up an old codebase" (alias:
+  "alte Codebase aufräumen"), "derive specs" (alias: "specs ableiten"),
+  "reverse-spec", "what does this app do" (alias: "was tut diese App"), "code
+  without docs" (alias: "code ohne docs"), "unmaintained app" (alias:
+  "ungepflegte App"), "clean up legacy code" (alias: "legacy-code aufräumen"),
+  "existing codebase" (alias: "bestehende Codebase"), "understand code without
+  docs" (alias: "code verstehen ohne doku"), "a1-modernize", "specs for an
+  existing project" (alias: "specs für bestehendes projekt"), "brownfield",
+  "reduce tech debt" (alias: "tech debt abbauen"), "modernize the codebase"
+  (alias: "codebase modernisieren"), "it works but nobody knows how" (alias:
+  "funktioniert aber niemand weiß wie"), or any request to understand/improve
   an existing app without a greenfield redesign.
   Orchestrates a1-rafael-reverse-spec + a1-marco-mapper (Phase 2),
   a1-reinhard-reviewer + a1-alex-architekt + a1-reconcile (Phase 3),
@@ -36,6 +41,8 @@ allowed-tools:
 ---
 
 # a1-modernize — Brownfield Modernization Pipeline
+
+Language: English-first; German trigger aliases supported.
 
 This skill is a thin orchestrator. Phase logic lives in `workflows/`. The CLI
 helper (`~/.claude/skills/_shared/a1-tools.cjs`) handles deterministic file ops.

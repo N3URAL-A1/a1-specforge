@@ -7,11 +7,13 @@ description: >
   Warning-level only: never blocks, always exits 0, report is informational.
   Tasks tagged `# no-code` (docs-only, manual ops) are skipped.
   MUST trigger when the user says: "phantom check", "phantom-task detection",
-  "a1-phantom", "prüfe PLAN auf phantom tasks", "wurde das wirklich gebaut",
-  "wurde das alles wirklich gemacht", "check completed tasks have code",
-  "verify work was done", "scheinerfolge prüfen", "wurden alle haken zu
-  recht gesetzt", or when an upstream verifier (e.g. a1-victor-verifier) requests
-  phantom detection as part of phase verification.
+  "a1-phantom", "check PLAN for phantom tasks" (alias: "prüfe PLAN auf phantom
+  tasks"), "was this actually built" (alias: "wurde das wirklich gebaut"), "was
+  all of this really done" (alias: "wurde das alles wirklich gemacht"), "check
+  completed tasks have code", "verify work was done", "check for false successes"
+  (alias: "scheinerfolge prüfen"), "were all boxes ticked rightfully" (alias:
+  "wurden alle haken zu recht gesetzt"), or when an upstream verifier (e.g.
+  a1-victor-verifier) requests phantom detection as part of phase verification.
   Do NOT activate for: full goal verification (a1-victor-verifier owns that), code
   review (a1-reinhard-reviewer), spec-drift (a1-reconcile), or anti-pattern
   scans of source files (a1-analyze).
@@ -21,6 +23,8 @@ allowed-tools:
 ---
 
 # a1-phantom — Phantom-Task Detection
+
+Language: English-first; German trigger aliases supported.
 
 Thin Markdown wrapper around the deterministic CLI:
 `_shared/a1-tools.cjs phantom check`. The CLI parses a PLAN.md, extracts every

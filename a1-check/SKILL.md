@@ -9,10 +9,12 @@ description: >
   from the spec. Primary caller is a1-new-feature's Phase 4.5 gate between
   Plan and Implement; can also be invoked manually. Exit semantics: 0=PASS,
   1=FAIL (content inconsistency), 2=ERROR (missing file / bad frontmatter).
-  MUST trigger on: "konsistenz-check für <feature>", "check consistency
-  between spec and plan", "prüfe ob plan zur spec passt", "verify wave plan",
-  "fr-coverage check", "deckt der plan die spec ab", "a1-check", or any request
-  to validate that a wave-plan covers all spec FRs. Do NOT activate for: broader
+  MUST trigger on: "consistency check for <feature>" (alias: "konsistenz-check
+  für <feature>"), "check consistency between spec and plan", "check the plan
+  matches the spec" (alias: "prüfe ob plan zur spec passt"), "verify wave plan",
+  "fr-coverage check", "does the plan cover the spec" (alias: "deckt der plan
+  die spec ab"), "a1-check", or any request to validate that a wave-plan covers
+  all spec FRs. Do NOT activate for: broader
   pre-flight readiness (→ a1-checklist, covers 8 structural+metadata checks),
   bug consistency (→ a1-fix), generic project audits (→ a1-analyze), semantic
   spec review (→ a1-rene-requirement-engineer), or spec-vs-implementation drift
@@ -23,6 +25,8 @@ allowed-tools:
 ---
 
 # a1-check — Spec ↔ Wave-Plan Consistency Gate
+
+Language: English-first; German trigger aliases supported.
 
 Thin Markdown wrapper around the deterministic CLI gate. All logic lives in
 `~/.claude/skills/_shared/a1-tools.cjs check`. The workflow file translates a FAIL

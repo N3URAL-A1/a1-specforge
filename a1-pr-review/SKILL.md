@@ -6,11 +6,14 @@ description: >
   a1-reinhard-reviewer, findings JSON) → Draft (PR title+body) → Submit
   (`gh pr create`). BLOCKER findings halt; MAJOR go into PR body "Known
   Issues"; MINOR stay as inline comment suggestions.
-  MUST trigger when the user says: "pr review für <slug>", "a1-pr-review",
-  "review meinen worktree", "pr draften", "pr aufmachen", "feature ist
-  fertig, PR aufmachen", "worktree zur review", "code review + PR",
-  "reinhard auf <slug> ansetzen", or any request to wrap a handoff-state
-  worktree into a Pull Request.
+  MUST trigger when the user says: "pr review for <slug>" (alias: "pr review
+  für <slug>"), "a1-pr-review", "review my worktree" (alias: "review meinen
+  worktree"), "draft a pr" (alias: "pr draften"), "open a pr" (alias: "pr
+  aufmachen"), "feature is done, open a PR" (alias: "feature ist fertig, PR
+  aufmachen"), "worktree to review" (alias: "worktree zur review"), "code
+  review + PR", "put reinhard on <slug>" (alias: "reinhard auf <slug>
+  ansetzen"), or any request to wrap a handoff-state worktree into a Pull
+  Request.
   Runs strictly AFTER implementation on a branch that has commits.
   Do NOT activate for: raw `gh pr create` without review (use gh directly),
   generic code-review-only (call a1-reinhard-reviewer directly), worktrees
@@ -23,6 +26,8 @@ allowed-tools:
 ---
 
 # a1-pr-review — Handoff to Pull Request
+
+Language: English-first; German trigger aliases supported.
 
 This skill is a thin orchestrator. The lifecycle logic lives in
 `workflows/`. The shared CLI helper

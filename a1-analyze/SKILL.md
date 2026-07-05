@@ -7,11 +7,16 @@ description: >
   frontmatter (scoped → discovered → analyzed → synthesized → reported). Output
   is stored in the Obsidian Vault: projects/<slug>/analyses/<YYYY-MM-DD>-<focus>[-N].md.
   Five focus modes: general, security, architecture, quality, onboarding. MUST
-  trigger on: "analysiere <projekt>", "analyze <projekt>", "projekt-audit",
-  "codebase-überblick", "codebase scan", "security-analyse", "security audit",
-  "architektur-analyse", "architecture review", "quality-check für <projekt>",
-  "tech-stack scannen", "onboarding-doku für <projekt>", "pre-refactor-audit",
-  "wie ist <projekt> aufgebaut", "was läuft in <projekt>", or "a1-analyze".
+  trigger on: "analyze <project>" (alias: "analysiere <projekt>"),
+  "project audit" (alias: "projekt-audit"), "codebase overview" (alias:
+  "codebase-überblick"), "codebase scan", "security analysis" (alias:
+  "security-analyse"), "security audit", "architecture analysis" (alias:
+  "architektur-analyse"), "architecture review", "quality check for <project>"
+  (alias: "quality-check für <projekt>"), "scan the tech stack" (alias:
+  "tech-stack scannen"), "onboarding docs for <project>" (alias:
+  "onboarding-doku für <projekt>"), "pre-refactor-audit", "how is <project>
+  structured" (alias: "wie ist <projekt> aufgebaut"), "what runs in <project>"
+  (alias: "was läuft in <projekt>"), or "a1-analyze".
   Orchestrates read-only sub-agents (a1-reinhard-reviewer, a1-alex-architekt,
   a1-marco-mapper, a1-walter-web-developer, a1-aik-ai-engineer, a1-ludwig-legal)
   in parallel during Phase 3, plus two always-on read-only lanes on every run:
@@ -32,6 +37,8 @@ allowed-tools:
 ---
 
 # a1-analyze — Project Analysis Pipeline (Scope → Report)
+
+Language: English-first; German trigger aliases supported.
 
 This skill is a thin orchestrator. The phase logic lives in `workflows/`. The
 shared CLI helper (`~/.claude/skills/_shared/a1-tools.cjs`) handles deterministic

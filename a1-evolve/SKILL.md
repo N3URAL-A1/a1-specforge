@@ -9,10 +9,12 @@ description: >
   Collect → Cluster → Propose → Apply (with user confirmation per diff).
   Confidence thresholds: 1-2 occurrences = monitor, 3-4 = propose, 5+ =
   high-confidence. Commits applied changes to the skills repo (detected via git). MUST trigger
-  when the user says: "a1-evolve", "skills verbessern", "learnings auswerten",
-  "was können wir verbessern", "skill optimization", "retros auswerten",
-  "synthesize learnings", "pattern analysis", "improve the a1 skills",
-  "evolve the agents", or when a1-execute reports 5+ accumulated learnings
+  when the user says: "a1-evolve", "improve skills" (alias: "skills
+  verbessern"), "evaluate learnings" (alias: "learnings auswerten"), "what can
+  we improve" (alias: "was können wir verbessern"), "skill optimization",
+  "review retros" (alias: "retros auswerten"), "synthesize learnings", "pattern
+  analysis", "improve the a1 skills", "evolve the agents", or when a1-execute
+  reports 5+ accumulated learnings
   since last synthesis. Scope: only edits files in the skills repo — never
   touches ~/.claude/rules/ (user-authored). Do NOT activate for: a single
   retro entry (just write it via the host skill's Retro block), planning new
@@ -27,6 +29,8 @@ allowed-tools:
 ---
 
 # a1-evolve — Self-Optimization Engine
+
+Language: English-first; German trigger aliases supported.
 
 Reads what went wrong and right across all a1 skill runs, then proposes precise, targeted
 improvements to skill and agent files.

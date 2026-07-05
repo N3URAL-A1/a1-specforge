@@ -3,10 +3,11 @@ name: a1-execute
 description: >
   Wave-by-wave execution of an existing PLAN.md with mandatory user-checkpoint between waves
   and final goal-backward verification. State lives in `.a1/phases/<name>/STATUS.md`; a
-  VERIFICATION.md captures the verdict. MUST trigger when the user says: "execute plan",
-  "plan ausführen", "phase ausführen", "execute phase", "a1-execute", "implementieren starten",
-  "start execution", "run the plan", "execute wave 1", "let's build this phase",
-  "weiter mit der phase", or any request to implement work from an already-created PLAN.md.
+  VERIFICATION.md captures the verdict. MUST trigger when the user says: "execute plan"
+  (alias: "plan ausführen"), "execute phase" (alias: "phase ausführen"), "a1-execute",
+  "start implementing" (alias: "implementieren starten"), "start execution", "run the plan",
+  "execute wave 1", "let's build this phase", "continue with the phase" (alias:
+  "weiter mit der phase"), or any request to implement work from an already-created PLAN.md.
   Captures observations.jsonl during execution and writes a Retro to the Obsidian Vault
   after every run. Do NOT activate for: creating a plan (use a1-plan), feature ideation
   from scratch (use a1-new-feature), bug fixes (use a1-fix).
@@ -21,6 +22,8 @@ allowed-tools:
 ---
 
 # a1-execute — Phase Execution Pipeline
+
+Language: English-first; German trigger aliases supported.
 
 Thin orchestrator. Wave logic runs via a1-erik-executor. Verification via a1-victor-verifier.
 

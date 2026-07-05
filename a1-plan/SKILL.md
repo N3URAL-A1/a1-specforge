@@ -3,8 +3,9 @@ name: a1-plan
 description: >
   Full planning pipeline for an implementation phase: Research → Map → Plan → Audit, producing
   an executor-ready PLAN.md with waves, tasks, and verifiable success criteria. State lives in
-  `.a1/phases/<name>/`. MUST trigger when the user says: "plan phase", "phase planen",
-  "neue phase planen", "plan erstellen", "PLAN.md erstellen", "a1-plan", "plan this milestone",
+  `.a1/phases/<name>/`. MUST trigger when the user says: "plan phase" (alias: "phase planen"),
+  "plan a new phase" (alias: "neue phase planen"), "create a plan" (alias: "plan erstellen"),
+  "create PLAN.md" (alias: "PLAN.md erstellen"), "a1-plan", "plan this milestone",
   "plan M2-P1", "I need a plan for X", "let's plan the next phase", or any request to turn a
   goal/spec into an actionable, audited plan before execution. Auto-loops back through plan→audit
   on FAIL verdicts (max 2 cycles). Do NOT activate for: feature ideation from scratch (use
@@ -21,6 +22,8 @@ allowed-tools:
 ---
 
 # a1-plan — Phase Planning Pipeline
+
+Language: English-first; German trigger aliases supported.
 
 Thin orchestrator. Phase logic is in `workflows/`. Sub-agents do the thinking.
 

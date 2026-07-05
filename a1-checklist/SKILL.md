@@ -8,11 +8,14 @@ description: >
   references advanced stories, project CLAUDE.md is present, plans/ directory
   convention is honored, and plan frontmatter has all required fields. Severity
   maps to BLOCKER (stops the gate), MAJOR (warns), MINOR (info). MUST trigger
-  on: "checkliste für <feature>", "pre-flight check", "ist der plan
-  implementierungs-bereit", "ready für implementation", "plan check", "kann ich
-  jetzt mit der umsetzung starten", "prüf die wave-plan-vollständigkeit",
-  "checklist run <slug>", "a1-checklist", or any request to verify whether a
-  wave-plan is ready to be handed to executing agents. Distinct from a1-check
+  on: "checklist for <feature>" (alias: "checkliste für <feature>"),
+  "pre-flight check", "is the plan implementation-ready" (alias: "ist der plan
+  implementierungs-bereit"), "ready for implementation" (alias: "ready für
+  implementation"), "plan check", "can I start implementation now" (alias: "kann
+  ich jetzt mit der umsetzung starten"), "check wave-plan completeness" (alias:
+  "prüf die wave-plan-vollständigkeit"), "checklist run <slug>", "a1-checklist",
+  or any request to verify whether a wave-plan is ready to be handed to executing
+  agents. Distinct from a1-check
   (which is narrow FR-coverage between spec and plan) — this is the broader
   readiness gate covering structure, metadata, and project hygiene. Exit
   semantics: 0=PASS or PASS_WITH_WARNINGS, 1=FAIL (BLOCKER), 2=ERROR (setup).
@@ -25,6 +28,8 @@ allowed-tools:
 ---
 
 # a1-checklist — Pre-Flight Readiness Gate
+
+Language: English-first; German trigger aliases supported.
 
 Thin Markdown wrapper around the deterministic CLI gate. All logic lives in
 `~/.claude/skills/_shared/a1-tools.cjs checklist run`. The workflow file

@@ -12,12 +12,15 @@ description: >
   repo file at <project-root>/constitution.md is a derived mirror written in
   Phase 4. Old versions are snapshotted under
   projects/<slug>/constitution/history/ before each rewrite. MUST trigger
-  when the user says: "constitution für <projekt>", "generate constitution",
-  "constitution erzeugen", "verhaltensregeln für <projekt>",
-  "override-reihenfolge dokumentieren", "a1-constitution", "update
-  constitution", "behavioral rules für das projekt", "carve rules out of
-  CLAUDE.md", "wir brauchen feste regeln für dieses projekt", or any request
-  to define/update per-project behavioral rules separate from CLAUDE.md. Do
+  when the user says: "constitution for <project>" (alias: "constitution für
+  <projekt>"), "generate constitution" (alias: "constitution erzeugen"),
+  "behavioral rules for <project>" (alias: "verhaltensregeln für <projekt>"),
+  "document the override order" (alias: "override-reihenfolge dokumentieren"),
+  "a1-constitution", "update constitution", "behavioral rules for the project"
+  (alias: "behavioral rules für das projekt"), "carve rules out of CLAUDE.md",
+  "we need fixed rules for this project" (alias: "wir brauchen feste regeln für
+  dieses projekt"), or any request to define/update per-project behavioral rules
+  separate from CLAUDE.md. Do
   NOT activate for: editing CLAUDE.md facts (manual or via Alex directly),
   generic project audits (use a1-analyze), bug fixes (use a1-fix), feature
   work (use a1-new-feature), or compliance reviews of an existing
@@ -33,6 +36,8 @@ allowed-tools:
 ---
 
 # a1-constitution — Per-Project Behavioral Rules (Discover → Write)
+
+Language: English-first; German trigger aliases supported.
 
 This skill is a thin orchestrator. The phase logic lives in `workflows/`. The
 shared CLI helper (`~/.claude/skills/_shared/a1-tools.cjs`) handles deterministic

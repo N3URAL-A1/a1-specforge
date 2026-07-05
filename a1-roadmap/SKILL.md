@@ -7,12 +7,15 @@ description: >
   Structure (milestones + phases breakdown) → Scaffold (write .a1/roadmap.md +
   per-phase GOAL.md). Two modes: new-project (full flow) and new-milestone
   (abbreviated, skips research if stack unchanged). MUST trigger when the
-  user says: "neues projekt", "new project", "roadmap erstellen", "a1-roadmap",
-  "milestones planen", "projekt aufsetzen", "project setup", "meilensteine",
-  "milestone plan erstellen", "neue milestone", "new milestone", "projekt von
-  null aufsetzen", "wie strukturieren wir das projekt", "plan the project from
-  scratch", "break this product into milestones", or any request to plan a
-  project from scratch or add a new milestone to an existing project. Hands
+  user says: "new project" (alias: "neues projekt"), "create a roadmap" (alias:
+  "roadmap erstellen"), "a1-roadmap", "plan milestones" (alias: "milestones
+  planen"), "set up a project" (alias: "projekt aufsetzen"), "project setup",
+  "milestones" (alias: "meilensteine"), "create a milestone plan" (alias:
+  "milestone plan erstellen"), "new milestone" (alias: "neue milestone"), "set
+  up a project from scratch" (alias: "projekt von null aufsetzen"), "how do we
+  structure the project" (alias: "wie strukturieren wir das projekt"), "plan the
+  project from scratch", "break this product into milestones", or any request to
+  plan a project from scratch or add a new milestone to an existing project. Hands
   off to a1-plan once the first phase is scaffolded. Do NOT activate for:
   planning a single phase that already exists (use a1-plan), checking project
   status (use a1-progress), feature ideas without a project (use
@@ -28,6 +31,8 @@ allowed-tools:
 ---
 
 # a1-roadmap — Project & Milestone Planning
+
+Language: English-first; German trigger aliases supported.
 
 Thin orchestrator. Phase logic in `workflows/`. a1-rico-researcher does domain research.
 
