@@ -93,3 +93,36 @@ finding_classes: [spec_omission, vague_tasks]
 phase_that_produced_issues: [research, map]
 one_line_learning: Research/Map-Behauptungen über "fehlt komplett" (OpenAPI-Pfade) und offene Spaltenfragen (device_name) waren faktisch falsch — Auditor-Stichproben gegen den Code sind der wirksame Fang; Planner sollte "X fehlt"-Aussagen immer selbst greppen.
 
+---
+date: 2026-07-05
+phase: p1.5-hardening
+project: a1-office
+spec: roadmap data.json / reviews
+result: pass-after-revision
+revisions: 1
+audit_findings: 1
+finding_classes: [missing_dependency]
+phase_that_produced_issues: [map]
+one_line_learning: CI-Migrations-Replay-Annahme (init/ vs migrations/) war unverifiziert — pg_dump-Schema-Seed als robustere Alternative etabliert
+---
+date: 2026-07-05
+phase: p3-pilot-enterprise
+project: a1-office
+spec: roadmap data.json / reviews
+result: pass-after-revision
+revisions: 1
+audit_findings: 2
+finding_classes: [missing_dependency]
+phase_that_produced_issues: [plan]
+one_line_learning: Parallel erstellte Pläne kollidieren bei Migrations-Nummern — Reservierungstabelle MIGRATIONS-RESERVED.md als Konvention etabliert
+---
+date: 2026-07-05
+phase: p4-eu-sovereign
+project: a1-office
+spec: roadmap data.json / reviews
+result: pass-after-revision
+revisions: 1
+audit_findings: 2
+finding_classes: [missing_dependency]
+phase_that_produced_issues: [map]
+one_line_learning: MAP fand nur 1 von 2 GcsProvider-Instanziierungen — Auditor-Stichproben gegen Code bleiben Pflicht
