@@ -46,9 +46,47 @@ the divergence itself as a failure entry. Build a per-AC table as you walk throu
 | "<exact sentence copied from the spec file>" | ✓ / ✗ / partial | <observed behavior / route status / command output> |
 ```
 
+## Step 1.5 — De-duplicate against Gate 3 (don't re-run what per-wave smoke already proved)
+
+Gate 3 (Phase 5) already smoke-tested each FR-AC live against the preview URL, per wave. Phase 6
+must NOT blindly re-run every FR-AC — that is the single biggest redundant cost block in the
+pipeline. Instead, Phase 6 re-runs ONLY:
+
+- **(a)** FR-ACs that FAILED at Gate 3, OR whose code was re-touched after their Gate-3 pass.
+- **(b)** cross-wave integration scenarios (behavior spanning waves that no single Gate 3 covered).
+- **(c)** edge cases (Step 3) + success criteria (Step 4).
+
+Everything Gate 3 already proved per-wave gets a **✓-reference row**, not a re-run.
+
+**How to decide, per FR-AC:**
+
+1. Read the `gate3:` lines in STATUS.md (written per Gate-3 bookkeeping in 05-implement.md):
+   `gate3: <FR-AC id> PASS @<wave> <date>`.
+2. Check `git log` for commits touching that AC's code AFTER the Gate-3 pass date/wave:
+   ```bash
+   git -C <repo> log --oneline --since="<gate3-pass-date>" -- <files-for-this-FR>
+   ```
+3. Classify:
+   - **Recorded `gate3: … PASS` AND no later touch** → ✓-reference row, do NOT re-run.
+   - **Failed at Gate 3, OR re-touched after pass, OR no `gate3:` line found** → RE-RUN in Step 2.
+
+**Safety rule — when in doubt, re-run.** If no `gate3:` line is found for an AC, or you cannot
+determine whether code was re-touched, treat it as unverified and re-run it. Referencing is an
+optimization; a missing reference must never silently skip verification.
+
+In the per-AC table (Step 1), referenced ACs get this row form instead of a live result:
+
+```
+| "<exact spec sentence>" | ✓ (ref) | verified at Gate 3, wave N — not re-run |
+```
+
 ## Step 2 — Szenarien gegen die laufende App prüfen (nicht gegen User-Erinnerung)
 
-Für jede User Story (P1 zuerst, dann P2, P3):
+Walk through only the FR-ACs classified as RE-RUN in Step 1.5 (failed at Gate 3, re-touched, or
+no `gate3:` line) plus cross-wave integration scenarios. FR-ACs with a ✓-reference row are already
+recorded — skip them here.
+
+Für jede zu prüfende User Story (P1 zuerst, dann P2, P3):
 
 **Nicht:** "Hast du das getestet?" — das ist keine Verifikation.
 

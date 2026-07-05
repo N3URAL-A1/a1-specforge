@@ -200,6 +200,19 @@ Additionally check the wave goal story:
 
 If an FR-AC sentence is vague ("AC: works correctly"): flag it, ask the user to clarify, do not mark Gate 3 green.
 
+**Gate-3 pass bookkeeping (mandatory — feeds Phase 6 de-duplication).** For every FR-AC that
+passes its per-wave smoke test, write ONE line into STATUS.md:
+
+```
+gate3: <FR-AC id> PASS @<wave> <date>
+```
+
+Example: `gate3: FR-012-AC1 PASS @wave3 2026-07-05`
+
+Phase 6 reads these lines to decide which ACs it may reference (verified at Gate 3) instead of
+re-running. An AC with no `gate3:` line is treated as unverified and gets re-run in Phase 6 — so
+skipping this bookkeeping only costs you a re-run, never a missed check.
+
 On smoke test failure: wave is `failed`, not `done`. Continue with the failure flow below.
 
 **Only after all gates are green:**
