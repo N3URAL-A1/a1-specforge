@@ -74,13 +74,17 @@ A Gate-Pack (see `docs/adr/2026-07-05-gate-pack-format.md`) is a versioned bundl
 
 See `packs/postgres-rls/` for a complete worked example (pack.yaml + 3 patterns) — read it before authoring your first pack.
 
-1. **Export** a pack from your local learnings:
+1. **Author the pack.** Two ways:
+
+   **a. Export from an existing learnings corpus** (only if you already run a1 with a Vault — `pack export` reads pattern entries from your Vault's `pattern/a1-learnings/patterns.md` and exits `2` on a fresh clone that has no corpus):
    ```bash
    node _shared/a1-tools.cjs pack export \
      --patterns rls-grant-matrix,schema-audit-trigger \
      --anonymize A2 --out packs/<name>/ --source "<your-corpus> (anonymized)"
    ```
    Export **refuses to write** if the anonymization deny-regex (`/Users/`, vault paths, e-mails, tenant names) hits the generated output — it lists the leak and exits non-zero. Use `--anonymize A3` for mechanism-only packs (code blocks stripped from diffs). Fill in `provenance` (occurrences, severity, date_range, source) in the generated `pack.yaml`.
+
+   **b. Hand-author from the worked example** (recommended for a first pack, and the path if you have no Vault corpus): copy `packs/postgres-rls/` as a template — write `packs/<name>/pack.yaml` and one `packs/<name>/patterns/<id>.md` per pattern by hand, following the field structure there. No corpus required.
 
 2. **Validate** before opening the PR:
    ```bash
@@ -94,6 +98,7 @@ Imported packs never self-apply: `pack import` stages them under `.a1/packs/<nam
 
 ## Pull requests
 
+- Branch from `main` with a descriptive name: `<type>-<short-slug>` (e.g. `feat-mypack-gate-pack`, `fix-install-node-guard`), matching the commit `type`.
 - One skill or concern per PR. Avoid mixing skill changes with unrelated refactors.
 - Include a short description of the change and the motivation.
 - If the change affects an agent brief (Output Contract), describe what changed and why.
