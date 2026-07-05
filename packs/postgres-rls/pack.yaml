@@ -1,0 +1,11 @@
+name: postgres-rls
+version: 1.0.0
+stacks: [postgres, supabase]
+provenance:
+  occurrences: 11
+  severity: high
+  date_range: 2026-05..2026-07
+  source: a1-office corpus (anonymized)
+anonymization: A2
+patterns: [rls-grant-matrix, schema-audit-trigger, fk-type-match]
+requires_cli: ">=1.4"
