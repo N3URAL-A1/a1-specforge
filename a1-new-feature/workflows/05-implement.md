@@ -107,6 +107,26 @@ the agent's concrete claims against reality — cheaply:
 If a claim doesn't hold, the wave is NOT done — send it back with the specific gap. This
 gate has caught real defects (empty dashboards, missing nav, false green) every time it ran.
 
+**Evidence lines (mandatory — makes skipping visible).** Every spot-check writes ONE evidence
+line into STATUS.md, so the gate leaves an auditable artifact instead of relying on discipline:
+
+```
+gate0: <claim> → <observed result (route status / file:line / test exit)>
+```
+
+Examples:
+- `gate0: /dashboard/invoices route → 200`
+- `gate0: symbol createInvoice exists → lib/invoices.ts:42`
+- `gate0: unit tests pass → exit 0 (14 passed)`
+
+If a check is skipped, record that too — skipping must be visible, not invisible:
+
+```
+gate0: SKIPPED <claim> (<reason>)
+```
+
+Victor cross-reads these `gate0:` lines in Phase 6, so a skipped or missing check is caught there.
+
 **Gate 0.5 — Surface coverage (every touched field/concept must be wired EVERYWHERE)**
 
 The most expensive bug class is a feature that's built in ONE place but consumed in
