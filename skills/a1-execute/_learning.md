@@ -80,3 +80,5 @@ one_line_learning: Manifest-Schemas aus Doku/Research zweimal falsch — der liv
 ⚠️ Was nicht passte: MAP-Inventar unvollständig (1 Datei mit deutschem Text fehlte); Wave-3-Agent sah Wave-2-Arbeit nicht (Parallel-Race) und meldete falschen Offen-Status — harmlos, aber Reports aus parallelen Wellen dürfen sich nicht gegenseitig referenzieren.
 💡 Suggestion: Parallel-Wave-Briefs sollten explizit sagen "andere Wellen laufen parallel — melde nur deinen eigenen Scope, keine Repo-weiten Statusaussagen".
 
+⚠️ Nachtrag M8 (2026-07-05): Der skills/-Umzug brach Roberts lokale ~/.claude/skills-Symlinks — VERIFICATION prüfte Fresh-Machine, aber nicht die MIGRATION der bestehenden Installation. Lesson: Layout-Moves brauchen einen Bestands-Migrations-Check (install.sh muss tote Symlinks selbst erkennen und ersetzen statt zu skippen). Kandidat für install.sh-Fix + gates-registry Ergänzung.
+
