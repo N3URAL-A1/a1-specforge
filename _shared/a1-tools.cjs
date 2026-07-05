@@ -3554,6 +3554,12 @@ function cmdPrFindingsSummary(args) {
 // deterministic operations: slot calculation, frontmatter updates, proposal
 // management, wave lifecycle, parity snapshot, listing. Sub-agents do the
 // thinking in the skill phases.
+//
+// FMEA-2 (computed parity): snapshot-behavior --manual-smoke stores a sha256
+// snapshot_hash of the smoke artifact in parity_baseline. complete-wave then
+// requires --replay-file and byte-diffs it against the baseline manual_smoke_doc
+// itself — a self-asserted `--snapshot-replay pass` alone is rejected once a
+// snapshot_hash exists. Legacy baselines (no hash) keep claim-based behavior.
 
 function modernizeDir(projectSlug) {
   return path.join(vaultRoot(), 'projects', projectSlug, 'modernize');
@@ -3919,10 +3925,19 @@ function cmdModernizeSnapshotBehavior(args) {
   const baseline = parityBaselineToMap(fm.parity_baseline);
   baseline.snapshot_taken_at = nowIso();
   if (flags['baseline-tests']) baseline.baseline_tests = flags['baseline-tests'];
-  if (flags['manual-smoke']) baseline.manual_smoke_doc = flags['manual-smoke'];
+  if (flags['manual-smoke']) {
+    baseline.manual_smoke_doc = flags['manual-smoke'];
+    // FMEA-2: compute a content hash of the smoke artifact so complete-wave can
+    // recompute + diff it later — turns a claimed parity gate into a computed one.
+    const smokePath = resolveVaultPath(flags['manual-smoke']);
+    if (!fs.existsSync(smokePath)) fail(`--manual-smoke file not found: ${smokePath}`);
+    const crypto = require('crypto');
+    const content = fs.readFileSync(smokePath);
+    baseline.snapshot_hash = crypto.createHash('sha256').update(content).digest('hex');
+  }
   fm.parity_baseline = Object.entries(baseline).map(([k, v]) => `${k}=${v === null || v === undefined ? 'null' : v}`);
   writeMdAtomic(masterPath, fm, body);
-  return { path: masterPath, snapshot_taken_at: baseline.snapshot_taken_at };
+  return { path: masterPath, snapshot_taken_at: baseline.snapshot_taken_at, snapshot_hash: baseline.snapshot_hash || null };
 }
 
 function cmdModernizeStartWave(args) {
@@ -3948,10 +3963,10 @@ function cmdModernizeCompleteWave(args) {
   const masterPathInput = args[0];
   const waveId = args[1];
   if (!masterPathInput || !waveId) {
-    usage('modernize complete-wave requires <master-path> <wave-id> --snapshot-replay pass|fail --fr-ac-checks <json>');
+    usage('modernize complete-wave requires <master-path> <wave-id> --snapshot-replay pass|fail [--replay-file <path>] --fr-ac-checks <json>');
   }
   const flags = parseFlags(args.slice(2), {
-    'snapshot-replay': 'value', 'fr-ac-checks': 'value',
+    'snapshot-replay': 'value', 'fr-ac-checks': 'value', 'replay-file': 'value',
   });
   if (!flags['snapshot-replay']) usage('modernize complete-wave requires --snapshot-replay pass|fail');
   const masterPath = resolveVaultPath(masterPathInput);
@@ -3961,7 +3976,35 @@ function cmdModernizeCompleteWave(args) {
   normalizeJsonEntries(fm, 'waves');
   const w = fm.waves.find((x) => x.id === waveId);
   if (!w) fail(`wave ${waveId} not found`);
-  if (flags['snapshot-replay'] !== 'pass') {
+
+  // FMEA-2: computed parity. If snapshot-behavior stored a snapshot_hash, the
+  // self-asserted `--snapshot-replay pass` claim alone is no longer trusted:
+  //  - --replay-file given → diff its byte-content against the baseline
+  //    manual_smoke_doc file. Identical ⇒ replay pass (regardless of the claim);
+  //    different ⇒ fail. (Diff by content, not by hash-equality of paths.)
+  //  - no --replay-file → reject the claim outright.
+  // Legacy baselines (no snapshot_hash) keep old claim-based behavior.
+  const baseline = parityBaselineToMap(fm.parity_baseline);
+  const hasComputedParity = baseline.snapshot_hash != null && baseline.snapshot_hash !== 'null';
+  if (hasComputedParity) {
+    if (!flags['replay-file']) {
+      fail('computed parity required: pass --replay-file');
+    }
+    const replayPath = resolveVaultPath(flags['replay-file']);
+    if (!fs.existsSync(replayPath)) fail(`--replay-file not found: ${replayPath}`);
+    const baselinePathRaw = baseline.manual_smoke_doc;
+    if (!baselinePathRaw || baselinePathRaw === 'null') {
+      fail('parity drift (computed): baseline manual_smoke_doc missing');
+    }
+    const baselinePath = resolveVaultPath(baselinePathRaw);
+    if (!fs.existsSync(baselinePath)) fail(`parity drift (computed): baseline manual_smoke_doc not found: ${baselinePath}`);
+    const replayContent = fs.readFileSync(replayPath);
+    const baselineContent = fs.readFileSync(baselinePath);
+    if (!replayContent.equals(baselineContent)) {
+      fail('parity drift (computed)');
+    }
+    // computed replay pass — the claim is superseded by the byte-diff verdict.
+  } else if (flags['snapshot-replay'] !== 'pass') {
     fail(`parity check failed (snapshot-replay=${flags['snapshot-replay']}). Fix regression before completing wave.`);
   }
   w.status = 'done';

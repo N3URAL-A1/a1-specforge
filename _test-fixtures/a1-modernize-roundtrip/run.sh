@@ -30,16 +30,34 @@ check "approve unknown proposal fails" 1 node "$CLI" modernize approve-proposal 
 
 check "add-wave" 0 node "$CLI" modernize add-wave "$MASTER" --title "w1"
 check "start-wave after re-read" 0 node "$CLI" modernize start-wave "$MASTER" W-01
-check "complete-wave after re-read" 0 node "$CLI" modernize complete-wave "$MASTER" W-01 --snapshot-replay pass --fr-ac-checks '{}'
+# Legacy (no snapshot_hash yet): claim-based pass/fail still works.
+check "complete-wave after re-read (legacy claim)" 0 node "$CLI" modernize complete-wave "$MASTER" W-01 --snapshot-replay pass --fr-ac-checks '{}'
 check "complete-wave parity fail blocks" 1 node "$CLI" modernize complete-wave "$MASTER" W-01 --snapshot-replay fail --fr-ac-checks '{}'
 
 # Decision must survive in the file
 grep -q 'approved_by_robert.*approved' "$MASTER" || { echo "FAIL decision not persisted"; fail=$((fail+1)); }
 
+# --- FMEA-2: computed parity via snapshot hash + --replay-file ---
+SMOKE="$TMP/smoke.txt"; printf 'baseline smoke output\n' > "$SMOKE"
+REPLAY_SAME="$TMP/replay-same.txt"; printf 'baseline smoke output\n' > "$REPLAY_SAME"
+REPLAY_DIFF="$TMP/replay-diff.txt"; printf 'DRIFTED smoke output\n' > "$REPLAY_DIFF"
+
+# snapshot-behavior stores snapshot_hash of the smoke artifact
+node "$CLI" modernize snapshot-behavior "$MASTER" --manual-smoke "$SMOKE" >/dev/null
+grep -q 'snapshot_hash=' "$MASTER" \
+  && { echo "PASS snapshot_hash stored"; pass=$((pass+1)); } \
+  || { echo "FAIL snapshot_hash stored"; fail=$((fail+1)); }
+node "$CLI" modernize verify-parity "$MASTER" | grep -q "\"manual_smoke_doc\": \"$SMOKE\"" \
+  && { echo "PASS parity_baseline round-trip"; pass=$((pass+1)); } \
+  || { echo "FAIL parity_baseline round-trip"; fail=$((fail+1)); }
+
+# (a) replay-file identical → complete-wave exit 0 (computed pass overrides claim)
+check "complete-wave computed replay identical" 0 node "$CLI" modernize complete-wave "$MASTER" W-01 --snapshot-replay pass --replay-file "$REPLAY_SAME" --fr-ac-checks '{}'
+# (b) replay-file differing → exit 1 (parity drift, even with claim pass)
+check "complete-wave computed replay differing" 1 node "$CLI" modernize complete-wave "$MASTER" W-01 --snapshot-replay pass --replay-file "$REPLAY_DIFF" --fr-ac-checks '{}'
+# (c) hash present + no replay-file + claim pass → exit 1 (claim alone rejected)
+check "complete-wave hash present claim-only rejected" 1 node "$CLI" modernize complete-wave "$MASTER" W-01 --snapshot-replay pass --fr-ac-checks '{}'
+
 echo "---"
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
-# (appended) parity_baseline round-trip: fields must survive re-read
-node "$CLI" modernize snapshot-behavior "$MASTER" --manual-smoke "/tmp/smoke.txt" >/dev/null
-node "$CLI" modernize verify-parity "$MASTER" | grep -q '"manual_smoke_doc": "/tmp/smoke.txt"' \
-  && echo "PASS parity_baseline round-trip" || { echo "FAIL parity_baseline round-trip"; exit 1; }
