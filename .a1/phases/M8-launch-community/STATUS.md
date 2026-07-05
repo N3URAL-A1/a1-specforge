@@ -31,3 +31,22 @@ Completed: 2026-07-05
 ### Deviations (Wave 3)
 - [Rule 4-adjacent / scope] Wave 2 (German→English sweep) is NOT yet done — German prose survives in skills/a1-fix/workflows/*.md. Out of my Wave-3 scope; noted here so good-first-issue candidate selection deliberately EXCLUDED the translation task (per Task 3.2 guidance). No translation performed.
 - 2 dry-run findings → CONTRIBUTING fixes (commit 4db4f3d), logged in observations.jsonl (pattern: vague_action ×2).
+
+## Wave 4 — Launch assets
+Completed: 2026-07-05
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| 4.1 VHS demo tape + GIF | ✓ DONE | 292166d | vhs NOT installed — committed docs/demo.tape + docs/assets/.gitkeep + docs/launch/demo-recording-steps.md (fallback). No faked GIF. Tape scripts 3 real fixture commands (schema-check fail-no-rls → FAIL/exit 1, schema-check pass → PASS/exit 0, pack validate → VALID), all verified live before scripting. |
+| 4.2 Launch drafts | ✓ DONE | 4902e96 | show-hn.md (factual title, first-person, honest-limitations para: single-maintainer / one-project corpus / German roots + prepared author comment), reddit.md (r/ClaudeAI practitioner tone, links GIF, invites good-first-issues), linkedin.md (German, Sabine raw material, N3URAL.AI framing). All marked DRAFT. |
+| 4.3 README hero | ✓ DONE | d6ff8d2 | No GIF yet → TODO(Robert) placeholder + commented GIF ref under title. demo.gif ref count = 2. Bijective install.sh↔README diff exit 0. |
+
+### Deviations (Wave 4)
+- [Rule 1 / grounding] Grounded launch numbers in the **actual current repo counts**, not the dispatch brief's figures: 13 applied patterns (canonical `_shared/learnings-index.md` "Applied: 13", not 15) and 14 fixture suites (`ls -d _test-fixtures/*/` = 14, not 16). Plan Task 4.2 step 1 mandates "use the actual current count" — repo reality supersedes the brief. 17 skills + 18 agents + MIT confirmed as stated.
+- [fallback] Task 4.1: vhs unavailable (`command -v vhs` empty). Committed .tape + render-steps doc per plan step 4; no fabricated GIF; README uses the no-GIF placeholder branch.
+
+### Wave 4 verification proofs
+- Forbidden-word grep (plan regex `revolutionary|game.chang|best|fastest|first ever|10x`): exit 1 (zero hits).
+- Forbidden-word grep (brief regex `revolutionary|game-chang|10x|blazing`): exit 1 (zero hits).
+- Bijective install.sh↔README diff: exit 0 (empty) after README edit.
+- All three drafts contain `DRAFT`; demo commands verified live (schema-check FAIL exit 1 / PASS exit 0, pack VALID exit 0).
