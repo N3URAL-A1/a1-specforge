@@ -23,3 +23,13 @@ Fixture `_test-fixtures/a1-vault-fallback/run.sh` — 6 cases:
 All pre-existing fixture runners re-run: 12/12 exit 0 (plus nested `a1-schema-check/parser/run-parser.sh` exit 0). No fixture patches required — env-setting fixtures use Tier 1, others use `--vault`/`--dest`/mktemp.
 
 **Deviations:** none.
+
+## Wave 2 — Hardcode sweep
+
+### Task 2.1 — a1-evolve dynamic paths — DONE
+- 01-collect.md:9 + 04-apply.md:28 → `VAULT="${A1_VAULT_ROOT:-$(git rev-parse --show-toplevel)/.a1/learnings}"`
+- 04-apply.md:58-59 → `REPO_ROOT="$(git rev-parse --show-toplevel)"` + `git -C "$REPO_ROOT"`
+- 04-apply.md:103 (Vault retro path) generalized to `$VAULT/...` with default note
+- SKILL.md:11,16,73 → skills-repo wording (git-detected)
+- Done-when: `grep -rn 'N3URAL-Vault\|~/code/a1-skills' a1-evolve/` → exit 1 (empty) ✓
+- Deviation [Rule 3-scope]: patched 04-apply.md:103 + SKILL.md:73 beyond the exact plan lines because 2.1 Done-when grep spans all of a1-evolve/.

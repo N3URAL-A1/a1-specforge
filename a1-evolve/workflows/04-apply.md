@@ -25,7 +25,7 @@ Quick read-back to confirm the edit landed cleanly.
 
 ### Update Obsidian Vault — patterns.md (primary)
 ```bash
-VAULT="$HOME/N3URAL-Vault"
+VAULT="${A1_VAULT_ROOT:-$(git rev-parse --show-toplevel)/.a1/learnings}"
 PATTERNS="$VAULT/pattern/a1-learnings/patterns.md"
 ```
 
@@ -55,8 +55,9 @@ EOF
 
 ### Commit applied changes
 ```bash
-git -C ~/code/a1-skills add agents/ */SKILL.md */workflows/
-git -C ~/code/a1-skills commit -m "evolve: apply <N> skill improvements from <M> observations
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+git -C "$REPO_ROOT" add agents/ */SKILL.md */workflows/
+git -C "$REPO_ROOT" commit -m "evolve: apply <N> skill improvements from <M> observations
 
 Patterns addressed:
 - missing_wiring (8 occurrences) → a1-pablo-planner.md
@@ -100,6 +101,6 @@ EOF
 
 **To Vault:**
 Append the same entry to:
-`~/N3URAL-Vault/pattern/a1-learnings/a1-evolve.md`
+`$VAULT/pattern/a1-learnings/a1-evolve.md` (the learning store — defaults to repo-local `.a1/learnings/`; set `A1_VAULT_ROOT` to use an external vault, e.g. Obsidian)
 
 A run with no issues is still useful data — write the entry.

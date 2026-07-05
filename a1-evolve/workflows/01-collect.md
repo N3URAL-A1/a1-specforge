@@ -6,7 +6,7 @@ Gather all learning data from all sources.
 
 ### 1a. Read from Obsidian Vault (primary — the brain)
 ```bash
-VAULT="$HOME/N3URAL-Vault"
+VAULT="${A1_VAULT_ROOT:-$(git rev-parse --show-toplevel)/.a1/learnings}"
 ls "$VAULT/pattern/a1-learnings/"
 ```
 

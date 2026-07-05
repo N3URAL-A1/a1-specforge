@@ -8,12 +8,12 @@ description: >
   improvements to agent files and SKILL.md / workflow files. Four phases:
   Collect → Cluster → Propose → Apply (with user confirmation per diff).
   Confidence thresholds: 1-2 occurrences = monitor, 3-4 = propose, 5+ =
-  high-confidence. Commits applied changes to ~/code/a1-skills/. MUST trigger
+  high-confidence. Commits applied changes to the skills repo (detected via git). MUST trigger
   when the user says: "a1-evolve", "skills verbessern", "learnings auswerten",
   "was können wir verbessern", "skill optimization", "retros auswerten",
   "synthesize learnings", "pattern analysis", "improve the a1 skills",
   "evolve the agents", or when a1-execute reports 5+ accumulated learnings
-  since last synthesis. Scope: only edits files in ~/code/a1-skills/ — never
+  since last synthesis. Scope: only edits files in the skills repo — never
   touches ~/.claude/rules/ (user-authored). Do NOT activate for: a single
   retro entry (just write it via the host skill's Retro block), planning new
   features (use a1-new-feature), or routine project execution.
@@ -70,7 +70,7 @@ See `workflows/01-collect.md` → `02-cluster.md` → `03-propose.md` → `04-ap
 
 ## Scope
 
-a1-evolve only proposes changes to files in `~/code/a1-skills/`:
+a1-evolve only proposes changes to files in the skills repo (detected via git):
 - `agents/*.md` — agent instructions
 - `*/SKILL.md` — skill definitions
 - `*/workflows/*.md` — workflow steps
