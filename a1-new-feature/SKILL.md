@@ -59,7 +59,12 @@ delegate directly to the relevant agent (Rene / Vincente / code agents) and skip
 > (covering navigation context, duplicate submit, permissions, empty states, and more) plus
 > — for frontend features — **UX Mockups from Uwe**: at least 2–3 variants per screen,
 > based on the project-specific design-system skill, for user approval before the
-> wave plan is built.
+> wave plan is built. Phase 3 ends with **Gate C — the AC dry-run walkthrough** (hard gate,
+> before status flips to `clarified`): a cheap read-only agent pass narrates each FR-AC's
+> user path against the app's *real* nav/routes and FAILs any AC that needs an invented
+> element, operates on ambiguous context, or has an unreachable entry point — closing the
+> spec-level blindness that let 15+ nav/context bugs escape. Text walkthrough only; live
+> verification stays with Gate 3.
 
 > **Plan (Phase 4)** runs on the **pinned reasoning-tier model** for deeper wave-dependency analysis.
 

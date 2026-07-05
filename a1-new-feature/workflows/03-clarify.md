@@ -158,6 +158,73 @@ grep -c "\[NEEDS CLARIFICATION" <spec-path>
 
 Must return `0` before proceeding. If not, repeat Step 2.
 
+## Step 3.5 — Gate C: AC dry-run walkthrough (HARD GATE)
+
+**Runs last in Phase 3, before status flips to `clarified`.** This is the missing
+spec-level gate: today the earliest gate fires *after* planning, so spec-level nav/context
+omissions ride through untouched. **Rationale:** 15+ escaped bugs across 2 runs came from
+spec-level nav/context gaps (forensics-batch, meal-swap 2026-05) — every downstream gate
+faithfully verified the wrong thing. One cheap dispatch here catches the entire meal-swap
+class for the cost of a text walkthrough instead of a full failed run.
+
+**Boundary (explicit):** this is a **text walkthrough only** — the agent reads the current
+app's real routes/nav components **read-only**. **No build, no browser, no live actions.**
+Live verification is Gate 3's job (Phase 5, per-wave smoke). Gate C proves the spec's ACs
+map onto the app that actually exists; Gate 3 proves the built code works.
+
+### 3.5-1 — Dispatch the dry-run pass
+
+One cheap agent dispatch — either Rene (`subagent_type: "a1-rene-requirement-engineer"`)
+in a second pass, or the clarify agent itself. Brief:
+
+> You are running Gate C — the AC dry-run walkthrough for the spec at `<spec-path>`.
+>
+> **Read-only.** Locate the target app's real navigation and routing in the codebase
+> (route definitions, nav/menu/layout components). Do NOT build, do NOT open a browser,
+> do NOT run anything — just read the actual routes and components that exist today.
+>
+> **For EACH FR-AC in the spec**, narrate the concrete user path step-by-step against the
+> app's CURRENT real navigation/layout:
+>
+> > "User starts at `<real route>`, clicks `<real nav element>`, lands on `<real route>`,
+> > … completes the AC."
+>
+> **Every step must name a real, existing route or component** — OR explicitly flag the gap
+> as `NEW: <what must be created>`. Never invent an unnamed element to bridge a step.
+>
+> **FAIL an AC (blocks `clarified`) if any of:**
+> 1. The path cannot be narrated without inventing an unnamed element (a step with no real
+>    route/component behind it and no explicit `NEW:` flag).
+> 2. The AC operates on **ambiguous context** — e.g. "the plan" when multiple plans exist,
+>    "the item" without a resolved selection (the meal-swap class).
+> 3. The AC's entry point is **unreachable** from the app's real nav (no path from an
+>    existing screen to where the AC begins).
+>
+> **Output:** append a `## AC Dry-Run` section to `<spec-path>` — **one line per AC**:
+> ```
+> - <FR-AC-id>: PASS — <one-line narrated path>
+> - <FR-AC-id>: FAIL — <reason: which of the 3 conditions, and what is missing>
+> ```
+> A `NEW:`-flagged step is **PASS** (it's an honestly-declared build item, not a gap) as
+> long as the surrounding path is real and the context is unambiguous.
+
+### 3.5-2 — Feed FAILs back as clarification questions (do NOT silently fix)
+
+For every `FAIL` line, add it back into the spec through the **existing Clarify mechanics** —
+one `[NEEDS CLARIFICATION: <the FAIL reason as a concrete question>]` marker inline at the
+relevant FR/AC. Then **loop back to Step 2** (spawn the clarify agent) to resolve them with
+the user. Re-run Step 3 (0 markers) and this gate until the `## AC Dry-Run` section is
+**all PASS**. Findings are surfaced as questions, never patched silently.
+
+### 3.5-3 — Gate verdict
+
+```bash
+grep -c "FAIL" <spec-path>   # within the ## AC Dry-Run section
+```
+
+The gate **PASSES** only when every AC line reads `PASS`. Do not proceed to Step 4 while any
+`FAIL` remains.
+
 ## Step 4 — Status update
 
 ```bash
