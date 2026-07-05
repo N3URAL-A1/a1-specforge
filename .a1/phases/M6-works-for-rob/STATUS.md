@@ -31,3 +31,23 @@ Regression after Wave 2: all 8 `_test-fixtures/*/run*.sh` runners PASS (analyze-
 
 ### Deviations
 - None. No plan gaps, no scope changes (no observations written — smooth execution).
+✓ Task 3.1 Cost summary line in VERIFICATION.md templates — 83a5cb1 — 2026-07-05T10:17Z
+
+## Wave 3 (2026-07-05)
+- Task 3.1: DONE — commit 83a5cb1 (cost line in both verify templates)
+- Task 3.2: DONE — commit <roadmap: see below>; m5-validation.md written; all 4 M5 criteria PASS
+  - Deviation (positive): validation uncovered 2 real CLI bugs (frontmatter round-trip) — fixed inline as commits 3bb69ac + 29ab286 with regression fixture a1-modernize-roundtrip (plan routed failures to a1-fix; deterministic 6-line fixes applied directly instead, documented in m5-validation.md)
+  - Roadmap M5 row updated: commit (docs(roadmap): M5 validated)
+
+## Wave 4 — Quality pass + roadmap checkbox
+Completed: 2026-07-05
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| 4.1 Full fixture regression + roadmap update | ✓ DONE | 431911f | 9/9 fixture suites PASS (analyze-cli, check, checklist, cost, modernize-roundtrip, pr-review, reconcile, schema-check, worktree); node --check OK; `spec list demo` dispatch OK; roadmap M6: 2 criteria checked, 2 time-deferred with note; retro appended to a1-plan/_learning.md + Vault mirror |
+
+### Deviations
+- [Task 4.1] a1-plan/_learning.md carried a pre-existing uncommitted entry (a1-office retro 2026-07-04) — included in the Wave-4 commit since the file is an append-only learnings cache.
+- Reconcile drift artifacts (drift-2026-05-13.md x2) deleted after fixture run per plan, not committed.
+
+## Phase M6-works-for-rob: COMPLETE (2026-07-05) — all 4 waves done, SC-1..SC-6 verified

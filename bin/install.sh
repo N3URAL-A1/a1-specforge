@@ -53,13 +53,15 @@ SKILLS=(
   "a1-evolve"
   "a1-modernize"
   "a1-new-project"
-  "_shared"
 )
 
 echo "Skills:"
 for skill in "${SKILLS[@]}"; do
-  symlink_item "$REPO_DIR/$skill" "$SKILLS_DIR/$skill" "$skill"
+  symlink_item "$REPO_DIR/skills/$skill" "$SKILLS_DIR/$skill" "$skill"
 done
+
+# _shared is a helper dir, not a skill — lives at repo root
+symlink_item "$REPO_DIR/_shared" "$SKILLS_DIR/_shared" "_shared"
 
 # Agents to symlink (all agents from this repo)
 AGENTS=(

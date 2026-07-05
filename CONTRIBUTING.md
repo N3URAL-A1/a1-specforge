@@ -23,7 +23,7 @@ cd ~/code/a1-specforge
 Every skill follows the same layout:
 
 ```
-a1-<name>/
+skills/a1-<name>/
 ├── SKILL.md              # Frontmatter + orchestrator instructions
 ├── workflows/            # Phase-by-phase workflow files (01-*.md, 02-*.md, ...)
 ├── templates/            # Brief templates and artifact skeletons
@@ -36,8 +36,8 @@ Agent pointer files in `agents/` reference the canonical agent definition at `~/
 
 ## Adding a skill
 
-1. Create `a1-<name>/SKILL.md` with valid frontmatter (`name`, `description`, `allowed-tools`).
-2. Add workflows in `a1-<name>/workflows/` — numbered, sequential.
+1. Create `skills/a1-<name>/SKILL.md` with valid frontmatter (`name`, `description`, `allowed-tools`).
+2. Add workflows in `skills/a1-<name>/workflows/` — numbered, sequential.
 3. Add the skill name to the `SKILLS` array in `bin/install.sh`.
 4. Test manually: invoke the skill in Claude Code on a sample project.
 5. Open a PR with a description of what the skill does and a sample invocation.

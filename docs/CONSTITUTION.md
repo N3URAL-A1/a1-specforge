@@ -10,7 +10,7 @@ contradiction (C1–C9 in the consistency audit) began as an unowned duplicate o
 unenforced rule.
 
 **a1-evolve enforces this document.** Its propose phase
-(`a1-evolve/workflows/03-propose.md`) checks every proposed diff against these
+(`skills/a1-evolve/workflows/03-propose.md`) checks every proposed diff against these
 invariants and flags any violation in the proposal, so the self-optimization engine
 cannot evolve the framework into an inconsistent state.
 
@@ -53,7 +53,7 @@ cannot evolve the framework into an inconsistent state.
 ## Enforcement
 
 a1-evolve is the enforcement mechanism. In its propose phase
-(`a1-evolve/workflows/03-propose.md`), every proposed diff is checked against the ten
+(`skills/a1-evolve/workflows/03-propose.md`), every proposed diff is checked against the ten
 invariants above. Any diff that would introduce a violation — e.g. a second owner for
 a fact (invariant 1), a new learning store without a matching collect glob (invariant
 4), a versioned model pin (invariant 6), or an unregistered blocking gate (invariant
