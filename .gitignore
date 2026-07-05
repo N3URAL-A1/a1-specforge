@@ -1,3 +1,5 @@
 .DS_Store
 *.local
 .skill_id
+checkpoint/
+.a1/learnings/
