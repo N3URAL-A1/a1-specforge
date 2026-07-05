@@ -81,3 +81,15 @@ result: pass-after-revision (phase complete, 4 waves, 9/9 fixture suites green)
 ✅ Was gut war: Audit-Loop hat einen echten Blocker gefangen (Roadmap-Kriterium "add-findings --json fixture test" war im ersten Plan-Entwurf gedroppt → als Task 1.4 zurückgeholt). Wave-2 Sequential-Edit-Constraint auf a1-tools.cjs (2.1a → 2.1b → 2.2) hat funktioniert — kein Clobber trotz drei Tasks in derselben Datei. Cost-Tracker Spike-first (Task 1.3 als hartes Gate vor 2.2) hat Rework verhindert: exakte JSONL-Feldpfade + Dedup-Erkenntnis (message.id, Subagent-Logs) lagen vor der Implementierung fest.
 ⚠️ Was nicht passte: M5 galt seit 2026-05-25 als "shipped", aber die End-to-End-Validierung in Task 3.2 fand 2 echte Frontmatter-Round-Trip-Bugs in der CLI, die nur end-to-end erreichbar waren — "shipped" ≠ "validated".
 💡 Suggestion: End-to-End-Validierungs-Runs gehören in den Shipping-Milestone selbst, nicht in einen späteren Milestone deferred — jede Phase, die CLI-Subcommands liefert, braucht mindestens einen echten Durchlauf auf einem Wegwerf-Projekt vor dem Abhaken.
+---
+date: 2026-07-05
+phase: p2-mobile-voice
+project: a1-office
+spec: roadmap data.json P2 + docs/adr/2026-07-05_mobile-auth-und-push.md
+result: pass-after-revision
+revisions: 1
+audit_findings: 2
+finding_classes: [spec_omission, vague_tasks]
+phase_that_produced_issues: [research, map]
+one_line_learning: Research/Map-Behauptungen über "fehlt komplett" (OpenAPI-Pfade) und offene Spaltenfragen (device_name) waren faktisch falsch — Auditor-Stichproben gegen den Code sind der wirksame Fang; Planner sollte "X fehlt"-Aussagen immer selbst greppen.
+
