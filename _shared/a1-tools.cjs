@@ -3848,6 +3848,25 @@ function cmdModernizeApproveProposal(args) {
 // Frontmatter round-trip fix: writeMdAtomic serializes array-of-object entries
 // as JSON strings; on re-read they stay strings, so id-lookups (x.id) miss.
 // Normalize in place: parse string entries back into objects before use.
+// parity_baseline convention: array of "key=val" strings (see modernize init).
+// Tolerates legacy object/string shapes; "null" strings become real nulls.
+function parityBaselineToMap(pb) {
+  const map = {};
+  if (Array.isArray(pb)) {
+    for (const entry of pb) {
+      if (typeof entry !== 'string') continue;
+      const i = entry.indexOf('=');
+      if (i === -1) continue;
+      const k = entry.slice(0, i);
+      const v = entry.slice(i + 1);
+      map[k] = v === 'null' ? null : v;
+    }
+  } else if (pb && typeof pb === 'object') {
+    Object.assign(map, pb);
+  }
+  return map;
+}
+
 function normalizeJsonEntries(fm, key) {
   if (!Array.isArray(fm[key])) return;
   fm[key] = fm[key].map((entry) => {
@@ -3895,13 +3914,15 @@ function cmdModernizeSnapshotBehavior(args) {
   const masterPath = resolveVaultPath(masterPathInput);
   if (!fs.existsSync(masterPath)) fail(`master file not found: ${masterPath}`);
   const { fm, body } = readMd(masterPath);
-  if (!fm.parity_baseline) fm.parity_baseline = {};
-  if (typeof fm.parity_baseline === 'string') fm.parity_baseline = {};
-  fm.parity_baseline.snapshot_taken_at = nowIso();
-  if (flags['baseline-tests']) fm.parity_baseline.baseline_tests = flags['baseline-tests'];
-  if (flags['manual-smoke']) fm.parity_baseline.manual_smoke_doc = flags['manual-smoke'];
+  // parity_baseline follows the repo's flat "key=val" string-array convention
+  // (seeded by modernize init) — read into a map, update, write back as k=v.
+  const baseline = parityBaselineToMap(fm.parity_baseline);
+  baseline.snapshot_taken_at = nowIso();
+  if (flags['baseline-tests']) baseline.baseline_tests = flags['baseline-tests'];
+  if (flags['manual-smoke']) baseline.manual_smoke_doc = flags['manual-smoke'];
+  fm.parity_baseline = Object.entries(baseline).map(([k, v]) => `${k}=${v === null || v === undefined ? 'null' : v}`);
   writeMdAtomic(masterPath, fm, body);
-  return { path: masterPath, snapshot_taken_at: fm.parity_baseline.snapshot_taken_at };
+  return { path: masterPath, snapshot_taken_at: baseline.snapshot_taken_at };
 }
 
 function cmdModernizeStartWave(args) {
@@ -3962,12 +3983,14 @@ function cmdModernizeVerifyParity(args) {
     process.stderr.write('no parity baseline found — run snapshot-behavior first\n');
     process.exit(1);
   }
+  const baseline = parityBaselineToMap(fm.parity_baseline);
+  normalizeJsonEntries(fm, 'waves');
   // Report baseline info; actual test execution is done by the skill
   return {
     path: masterPath,
-    baseline_snapshot_taken_at: fm.parity_baseline.snapshot_taken_at || null,
-    baseline_tests: fm.parity_baseline.baseline_tests || null,
-    manual_smoke_doc: fm.parity_baseline.manual_smoke_doc || null,
+    baseline_snapshot_taken_at: baseline.snapshot_taken_at || null,
+    baseline_tests: baseline.baseline_tests || null,
+    manual_smoke_doc: baseline.manual_smoke_doc || null,
     waves_done: Array.isArray(fm.waves) ? fm.waves.filter((w) => w.status === 'done').length : 0,
   };
 }

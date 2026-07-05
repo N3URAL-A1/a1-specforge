@@ -39,3 +39,7 @@ grep -q 'approved_by_robert.*approved' "$MASTER" || { echo "FAIL decision not pe
 echo "---"
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
+# (appended) parity_baseline round-trip: fields must survive re-read
+node "$CLI" modernize snapshot-behavior "$MASTER" --manual-smoke "/tmp/smoke.txt" >/dev/null
+node "$CLI" modernize verify-parity "$MASTER" | grep -q '"manual_smoke_doc": "/tmp/smoke.txt"' \
+  && echo "PASS parity_baseline round-trip" || { echo "FAIL parity_baseline round-trip"; exit 1; }
