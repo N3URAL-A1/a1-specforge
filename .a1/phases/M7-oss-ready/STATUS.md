@@ -77,3 +77,20 @@ Completed:
 - Done-when: `[ -z "$(grep -L 'German trigger aliases' a1-*/SKILL.md)" ]` → exit 0 (17/17 contain the line) ✓
 - Ambiguous German phrases: none — all mapped cleanly to English equivalents. Two aliases ("worktree für <feature>", "skills verbessern") are line-wrapped in the rewritten description but present intact.
 - Deviations: none.
+
+## Wave 3 — Task 3.1 (a1-phantom fixture runner)
+Completed: 2026-07-05T13:14:51Z
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| 3.1 a1-phantom fixture runner (deterministic nested-repo bootstrap) | ✓ DONE | e5ab7b9 | gitlinks removed, content now in main tree; two-commit bootstrap |
+
+Done-when (all 3 verified):
+- local run exits 0 ✓
+- fresh temp-clone run exits 0 (nested .git stripped → bootstrap proved) ✓
+- run twice in a row exits 0 ✓
+
+### Deviations
+- [Rule 1] Plan's single-commit bootstrap breaks phantom check (empty diff → false phantoms). Rebuilt as two-commit history via committed .baseline/ stubs.
+- [Rule 1] Plan's 'git log -1' fresh-clone detection walks to parent repo and false-succeeds. Switched to 'test -d dir/.git && toplevel==dir'.
+- [Rule 4→resolved-in-scope] no-code-tag/ expectation: CLI never exits non-zero; asserted status=clean + 2 docs_only_skipped (# no-code tag working) instead of "findings".
