@@ -172,6 +172,25 @@ sign-off: `node ~/.claude/skills/_shared/a1-tools.cjs schema-check run --migrati
 off). Semantic checks (enum completeness, expand→migrate→contract) stay in the 04-plan.md
 migration checklist.
 
+**Gate 0.7 — Real-path proof (waves touching SQL / RLS / external HTTP only)**
+
+If this wave's diff touches a SQL query, an RLS policy, or an external HTTP call, mocked tests
+are not evidence — they routinely color broken code green. Before wave sign-off, run the
+deterministic real-path check:
+
+```bash
+node ~/.claude/skills/_shared/a1-tools.cjs realpath-check run \
+  --diff-base <wave-start-ref> --project <dir>
+```
+
+The check greps the wave diff for SQL/fetch signatures and requires the executor to have produced
+`.a1/realpath-evidence.md` — one entry per touched surface category (SQL, RLS, external HTTP)
+containing the command run AND its real (non-mock) output. **Exit 1 = wave NOT signed off.**
+
+Rationale: `mock_tests_hide_sql_bugs` has recurred 3× — most damagingly an hourly-rate crash
+that shipped behind 23 green tests because none hit the real DB path. This gate kills that class
+structurally instead of by prompt appeal.
+
 **Gate 1 — Build**
 
 Run the project-specific build command (in CLAUDE.md, e.g. `npm run build`).
