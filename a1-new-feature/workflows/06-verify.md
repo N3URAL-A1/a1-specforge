@@ -34,6 +34,18 @@ If any route returns 4xx/5xx: do NOT proceed to the scenario walkthrough. Run `v
 Read the spec. Collect every Given/When/Then block under `## Acceptance Scenarios`, grouped
 by User Story. Each scenario is one verification item.
 
+**Verification target — acceptance criteria VERBATIM:** The verification target is the SPEC's
+acceptance criteria quoted VERBATIM — the wave plan is only the route taken, never the truth.
+Quote each AC directly from the spec file, not from the plan task wording. When a plan
+success-criterion has diluted or reworded a spec AC, verify against the spec sentence and record
+the divergence itself as a failure entry. Build a per-AC table as you walk through:
+
+```
+| Spec AC (quoted verbatim) | Result | Evidence |
+|---|---|---|
+| "<exact sentence copied from the spec file>" | ✓ / ✗ / partial | <observed behavior / route status / command output> |
+```
+
 ## Step 2 — Szenarien gegen die laufende App prüfen (nicht gegen User-Erinnerung)
 
 Für jede User Story (P1 zuerst, dann P2, P3):

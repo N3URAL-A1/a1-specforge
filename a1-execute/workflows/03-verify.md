@@ -16,6 +16,21 @@ Verify that the phase goal was achieved.
 **Output path:** .a1/phases/<phase_name>/VERIFICATION.md
 ```
 
+## Per-AC verification table in VERIFICATION.md (mandatory — never omit)
+
+The verification target is the SPEC's acceptance criteria, quoted VERBATIM — **not** the plan's
+task wording. PLAN.md is only the route taken. VERIFICATION.md must contain this table, with one
+row per acceptance criterion, the AC quoted directly from the spec file:
+
+```
+| Spec AC (quoted verbatim) | Result | Evidence |
+|---|---|---|
+| "<exact sentence copied from the spec file>" | ✓ / ✗ / partial | <file:line / route status / test exit / command output> |
+```
+
+Quote the ACs from the spec file, not from PLAN.md. Where a plan success-criterion has diluted or
+reworded a spec AC, verify against the spec sentence — and record the divergence itself as a FINDING.
+
 ## Cost line in VERIFICATION.md (mandatory — never omit)
 
 Directly after the verdict line in VERIFICATION.md, the verifier writes a `**Cost:**` line.
