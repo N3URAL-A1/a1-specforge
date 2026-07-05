@@ -50,3 +50,18 @@ deviations: 6 (alle minor/dokumentiert)
 ⚠️ Was nicht passte: Plan referenzierte 2x falsche Pfade/APIs (RESERVED_SLUGS-Modul, vitest singleFork entfernt) — Executor musste abweichen; Test-Skip-Guard prüft DATABASE_URL nicht mit (Verifier-Fund).
 💡 Suggestion: Planner-Checkliste ergänzen: Import-Pfade und Lib-API-Versionen (package.json) im Plan real verifizieren, nicht aus MAP übernehmen; Test-Env-Preconditions (ENVs) als expliziten Plan-Fakt aufnehmen.
 
+---
+date: 2026-07-05
+phase: M7-oss-ready
+project: a1-specforge
+spec: docs/roadmap.md M7 + .a1/phases/M7-oss-ready/PLAN.md
+result: pass
+evidence: .a1/phases/M7-oss-ready/VERIFICATION.md (verdict PASS 5/5, CI run 28742174363)
+gates_fired:
+  - {id: plan-audit, verdict: pass, caught: true}
+one_line_learning: Fresh-machine-Claims ohne Fresh-Machine-Test sind wertlos — install.sh war seit M0 auf jeder frischen Maschine kaputt (fehlendes mkdir -p) und niemand hat es gemerkt, weil alle Umgebungen das Zielverzeichnis schon hatten.
+---
+✅ Was gut war: Wave-Schnitt nach Datei-Ownership (Sweeps zusammengelegt statt parallel) verhinderte Konflikte komplett; Opus-Executor-Agents meldeten Abweichungen ehrlich (Phantom-Gitlinks, zwei-Commit-Bootstrap, install.sh-Bug) statt sie zu verschweigen; erster CI-Lauf rot → Fix → grün in 3 Minuten ist genau der Instrumentierungs-Loop.
+⚠️ Was nicht passte: Plan-Annahmen über Fixture-Interna waren 2× falsch (git log -1 walk-up, no-code-tag-Semantik) — der Executor musste vor Ort umentscheiden; CI-Assert prüfte Seiteneffekt eines read-only-Subcommands (next-number legt nichts an).
+💡 Suggestion: Für CLI-Subcommands in Plänen immer kennzeichnen ob read-only oder writing — Asserts nur auf writing-Commands bauen.
+

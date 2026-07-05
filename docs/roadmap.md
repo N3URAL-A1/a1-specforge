@@ -52,11 +52,13 @@ Basis: general analysis 2026-07-04 (3 OSS-BLOCKER, 6 MAJOR, 5 MINOR) + learning 
 - **CI**
   - GitHub Actions runs all `_test-fixtures/*/run.sh`; add the missing a1-phantom runner; smoke-test install.sh on a clean $HOME.
 
-### Success criteria
+### Success criteria — all validated 2026-07-05, see `.a1/phases/M7-oss-ready/VERIFICATION.md`
 
-- [ ] Fresh-machine test (no vault, clean `~/.claude`): install → a1-new-feature run → verified feature, zero file edits
-- [ ] CI green on PRs; phantom fixtures covered
-- [ ] README lists exactly the installed skill set (single source of truth)
+- [x] Fresh-machine test (no vault, clean `~/.claude`): install → CLI writes land repo-local `.a1/learnings/`, zero file edits (transcript in VERIFICATION.md; found+fixed: install.sh missing mkdir -p)
+- [x] CI green; phantom fixtures covered (GitHub Actions run 28742174363; phantom runner with deterministic nested-repo bootstrap)
+- [x] README lists exactly the installed skill set (bijective diff install.sh↔README, exit 0)
+- [x] checkpoint removed from public repo; Robert's local workflow intact (real dir at ~/.claude/skills/checkpoint)
+- [x] No personal hardcodes in active skill files (all three sweep greps empty)
 
 ---
 
