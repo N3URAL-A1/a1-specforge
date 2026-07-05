@@ -167,8 +167,8 @@ Promote-lessons reads all postmortems, clusters patterns, writes suggestions to
 | 0 Pre-Flight | Skill itself (no agent) | — |
 | 1 Report | Falk | `~/.claude/agents/a1-falk-fault-finder.md` |
 | 2 Diagnose | Falk | same |
-| 3 Fix | Project code agent (Walter / Bernd / Aik / Felix / Alex) | Read target CLAUDE.md |
-| 4 Verify | Skill itself; optionally Quak (severity ≥ MAJOR) | — |
+| 3 Fix | Project code agent (a1-walter-web-developer / backend-bernd / a1-aik-ai-engineer / felix-flutter-engineer / a1-alex-architekt) | Read target CLAUDE.md |
+| 4 Verify | Skill itself; optionally a1-tobi-tester (severity ≥ MAJOR) | — |
 
 Falk is spawned via the `Task` tool. Falk never edits code.
 
@@ -191,5 +191,5 @@ Falk is spawned via the `Task` tool. Falk never edits code.
 
 - New features: `a1-new-feature`.
 - PR code review: Reinhard.
-- QA regression suite design: Quak (Phase 4, severity ≥ MAJOR).
+- QA regression suite design: a1-tobi-tester (Phase 4, severity ≥ MAJOR).
 - Cross-cutting incident response: Pablo + Dirk.

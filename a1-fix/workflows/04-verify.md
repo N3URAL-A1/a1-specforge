@@ -23,16 +23,16 @@ symptom is gone at any step where it was previously reproducible: continue.
 If the user reports the symptom still appears: stop the walk-through and skip
 to Step 4 (back to Phase 2).
 
-## Step 2 — Optional: Quak QA-regression for severity ≥ MAJOR
+## Step 2 — Optional: a1-tobi-tester QA-regression for severity ≥ MAJOR
 
 If `severity` is `blocker` or `major`, propose a QA regression run:
 
-> "Severity is <severity>. I can trigger Quak for a QA regression suite
+> "Severity is <severity>. I can trigger a1-tobi-tester for a QA regression suite
 > to make sure the fix didn't break anything else. Would you like that?"
 
-If yes: spawn Quak via `Task` with this brief:
+If yes: spawn a1-tobi-tester via `Task` with this brief:
 
-> You are Quak. Task: QA regression for a freshly fixed bug.
+> You are a1-tobi-tester. Task: QA regression for a freshly fixed bug.
 > **Bug report:** <ABSOLUTE_VAULT_PATH>
 > **Fix commit:** <hash>
 > **Affected repos:** <list>
@@ -41,12 +41,12 @@ If yes: spawn Quak via `Task` with this brief:
 > by the fix, and run the project's regression suite (E2E + integration).
 > Output: pass/fail per suite plus list of new failures (if any).
 
-If Quak reports failures: do NOT mark `fixed`. Add failures to `## Notes` and
+If a1-tobi-tester reports failures: do NOT mark `fixed`. Add failures to `## Notes` and
 recommend re-opening (Step 4).
 
 ## Step 3 — Mark fixed
 
-If reproduction confirms symptom is gone (and Quak is green or skipped):
+If reproduction confirms symptom is gone (and a1-tobi-tester is green or skipped):
 
 1. Build a one-line `verify_result` string:
    `"<YYYY-MM-DD>: symptom not reproducible after commit <short-hash>; regression: <passed|skipped>"`
@@ -69,10 +69,10 @@ node ~/.claude/skills/_shared/a1-tools.cjs fix update-status \
 
 ## Step 4 — Symptom still present → back to Phase 2
 
-If the user reports the symptom remains, OR Quak finds a regression:
+If the user reports the symptom remains, OR a1-tobi-tester finds a regression:
 
 1. Capture what we learned:
-   - Which step reproduced it (or which Quak suite failed)
+   - Which step reproduced it (or which a1-tobi-tester suite failed)
    - Whether anything changed in behavior (partial fix?)
 2. Append to `## Notes` in the bug report:
 

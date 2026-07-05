@@ -10,9 +10,9 @@ description: >
   "a1-phantom", "prüfe PLAN auf phantom tasks", "wurde das wirklich gebaut",
   "wurde das alles wirklich gemacht", "check completed tasks have code",
   "verify work was done", "scheinerfolge prüfen", "wurden alle haken zu
-  recht gesetzt", or when an upstream verifier (e.g. a1-verifier) requests
+  recht gesetzt", or when an upstream verifier (e.g. a1-victor-verifier) requests
   phantom detection as part of phase verification.
-  Do NOT activate for: full goal verification (a1-verifier owns that), code
+  Do NOT activate for: full goal verification (a1-victor-verifier owns that), code
   review (a1-reinhard-reviewer), spec-drift (a1-reconcile), or anti-pattern
   scans of source files (a1-analyze).
 allowed-tools:
@@ -32,7 +32,7 @@ are reported as phantoms.
 
 - An a1 phase claims to be done — verify no checkboxes were ticked
   without corresponding code.
-- a1-verifier Step 6.5 (phantom detection): the verifier shells out to this
+- a1-victor-verifier Step 6.5 (phantom detection): the verifier shells out to this
   CLI and folds the report into its VERIFICATION.md.
 - Manual sanity check before a phase hand-off, PR, or release.
 
@@ -137,9 +137,9 @@ or mark it `# no-code`.
 Never auto-edit PLAN.md from this skill. Never invoke a sub-agent. The
 caller decides next steps.
 
-## Caller integration: a1-verifier
+## Caller integration: a1-victor-verifier
 
-When a1-verifier runs phase verification, it can insert a Phantom
+When a1-victor-verifier runs phase verification, it can insert a Phantom
 Detection step between Requirements Coverage (Step 6) and Anti-Pattern Scan
 (Step 7) by shelling out:
 

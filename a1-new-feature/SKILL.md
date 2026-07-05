@@ -43,8 +43,8 @@ delegate directly to the relevant agent (Rene / Vincente / code agents) and skip
 |---|---|---|---|---|
 | 1 | Discover | `workflows/01-discover.md` | Sonnet | discovering |
 | 2 | Specify | `workflows/02-specify.md` | Sonnet | draft |
-| 3 | Clarify | `workflows/03-clarify.md` | **Opus 4.7** | clarified |
-| 4 | Plan | `workflows/04-plan.md` | **Opus 4.7** | planned |
+| 3 | Clarify | `workflows/03-clarify.md` | **reasoning-tier** | clarified |
+| 4 | Plan | `workflows/04-plan.md` | **reasoning-tier** | planned |
 | 4.5 | Consistency Gate | `workflows/04.5-consistency-gate.md` | Sonnet (CLI only) | planned (PASS) / awaiting-consistency-fix (FAIL) |
 | 5 | Implement | `workflows/05-implement.md` | Sonnet | implementing → done |
 | 6 | Verify + Retro | `workflows/06-verify.md` | Sonnet | done (or implementing if failures) |
@@ -55,13 +55,13 @@ delegate directly to the relevant agent (Rene / Vincente / code agents) and skip
 > start on FAIL. On FAIL the spec status moves to `awaiting-consistency-fix`
 > and re-invocation routes back to Phase 4.5 automatically.
 
-> **Clarify (Phase 3)** runs with **Opus 4.7** and includes a **10-category proactive scope scan**
+> **Clarify (Phase 3)** runs on the **pinned reasoning-tier model** and includes a **10-category proactive scope scan**
 > (covering navigation context, duplicate submit, permissions, empty states, and more) plus
 > — for frontend features — **UX Mockups from Uwe**: at least 2–3 variants per screen,
 > based on the project-specific design-system skill, for user approval before the
 > wave plan is built.
 
-> **Plan (Phase 4)** runs with **Opus 4.7** for deeper wave-dependency analysis.
+> **Plan (Phase 4)** runs on the **pinned reasoning-tier model** for deeper wave-dependency analysis.
 
 A spec abandoned at any phase is moved to status `cancelled`; its sequence number is **not**
 recycled.
@@ -145,7 +145,7 @@ Override via env var `A1_VAULT_ROOT` if testing.
 | 1–3 | Rene | `~/.claude/agents/a1-rene-requirement-engineer.md` (see `agents/rene-link.md`) |
 | 3 (UX) | **Uwe** — frontend features only | global `a1-uwe-ux-expert`; uses project design-system skill (see below) |
 | 4 | Vincente | global `a1-vincente-vibe-optimizer` |
-| 5 | Code agents | Agent pool: read from target project's CLAUDE.md → Agent Workflow table. Fallbacks: Walter, Bernd, Aik, Felix, Alex. **User confirms** per wave brief. |
+| 5 | Code agents | Agent pool: read from target project's CLAUDE.md → Agent Workflow table. Fallbacks: a1-walter-web-developer, backend-bernd, a1-aik-ai-engineer, felix-flutter-engineer, a1-alex-architekt. **User confirms** per wave brief. |
 | 6 | The skill itself (and Tobi, optional) | — |
 
 ### Design-System Skill per Project
@@ -153,7 +153,7 @@ Override via env var `A1_VAULT_ROOT` if testing.
 | Project | Skill |
 |---|---|
 | Projects using n3ural design system | `n3urala1-design` (`~/.claude/skills/n3urala1-design`) |
-| Other projects | Check project CLAUDE.md for design system skill reference; fallback: `frontend-design` |
+| Other projects | Check project CLAUDE.md for design system skill reference; fallback: `frontend-design` (if available; otherwise proceed without) |
 
 The skill **proposes** code agents in Phase 5 based on the wave-plan brief; the user dispatches.
 
