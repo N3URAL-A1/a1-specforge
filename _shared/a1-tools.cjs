@@ -3560,6 +3560,9 @@ function cmdPrFindingsSummary(args) {
 // requires --replay-file and byte-diffs it against the baseline manual_smoke_doc
 // itself — a self-asserted `--snapshot-replay pass` alone is rejected once a
 // snapshot_hash exists. Legacy baselines (no hash) keep claim-based behavior.
+// FMEA-5 (approval audit trail): update-status / approve-proposal / start-wave
+// accept --approved-by <human|harness:reason>. update-status appends it to the
+// phase_history entry; approve-proposal/start-wave set approved_by on the object.
 
 function modernizeDir(projectSlug) {
   return path.join(vaultRoot(), 'projects', projectSlug, 'modernize');
@@ -3698,18 +3701,26 @@ function cmdModernizeUpdateStatus(args) {
   const masterPathInput = args[0];
   const newStatus = args[1];
   if (!masterPathInput || !newStatus) {
-    usage('modernize update-status requires <master-path> <new-status> [--phase-data <json>]');
+    usage('modernize update-status requires <master-path> <new-status> [--phase-data <json>] [--approved-by <human|harness:reason>]');
   }
   if (!MODERNIZE_STATUSES.has(newStatus)) {
     usage(`invalid modernize status "${newStatus}". valid: ${[...MODERNIZE_STATUSES].join(', ')}`);
   }
-  const flags = parseFlags(args.slice(2), { 'phase-data': 'value' });
+  const flags = parseFlags(args.slice(2), { 'phase-data': 'value', 'approved-by': 'value' });
   const masterPath = resolveVaultPath(masterPathInput);
   if (!fs.existsSync(masterPath)) fail(`master file not found: ${masterPath}`);
   const { fm, body } = readMd(masterPath);
   fm.status = newStatus;
   const phase = MODERNIZE_STATUS_TO_PHASE[newStatus];
-  if (phase) appendPhaseHistory(fm, phase);
+  if (phase) {
+    appendPhaseHistory(fm, phase);
+    // FMEA-5: audit trail. Auto-approval stays possible but leaves a record —
+    // append approved_by=<value> onto the just-written phase_history entry.
+    if (flags['approved-by']) {
+      const last = fm.phase_history.length - 1;
+      fm.phase_history[last] = `${fm.phase_history[last]} approved_by=${flags['approved-by']}`;
+    }
+  }
   if (flags['phase-data']) {
     let extra;
     try { extra = JSON.parse(flags['phase-data']); } catch (e) {
@@ -3832,12 +3843,12 @@ function cmdModernizeApproveProposal(args) {
   const proposalId = args[1];
   const decision = args[2];
   if (!masterPathInput || !proposalId || !decision) {
-    usage('modernize approve-proposal requires <master-path> <proposal-id> approved|rejected|deferred [--reason <text>]');
+    usage('modernize approve-proposal requires <master-path> <proposal-id> approved|rejected|deferred [--reason <text>] [--approved-by <human|harness:reason>]');
   }
   if (!MODERNIZE_PROPOSAL_DECISIONS.has(decision)) {
     usage(`invalid decision "${decision}". valid: ${[...MODERNIZE_PROPOSAL_DECISIONS].join(', ')}`);
   }
-  const flags = parseFlags(args.slice(3), { 'reason': 'value' });
+  const flags = parseFlags(args.slice(3), { 'reason': 'value', 'approved-by': 'value' });
   const masterPath = resolveVaultPath(masterPathInput);
   if (!fs.existsSync(masterPath)) fail(`master file not found: ${masterPath}`);
   const { fm, body } = readMd(masterPath);
@@ -3847,6 +3858,8 @@ function cmdModernizeApproveProposal(args) {
   if (!p) fail(`proposal ${proposalId} not found`);
   p.approved_by_robert = decision;
   if (flags.reason) p.rejection_reason = flags.reason;
+  // FMEA-5: audit trail — who approved (human vs harness:<reason>).
+  if (flags['approved-by']) p.approved_by = flags['approved-by'];
   writeMdAtomic(masterPath, fm, body);
   return { path: masterPath, proposal_id: proposalId, decision };
 }
@@ -3943,7 +3956,8 @@ function cmdModernizeSnapshotBehavior(args) {
 function cmdModernizeStartWave(args) {
   const masterPathInput = args[0];
   const waveId = args[1];
-  if (!masterPathInput || !waveId) usage('modernize start-wave requires <master-path> <wave-id>');
+  if (!masterPathInput || !waveId) usage('modernize start-wave requires <master-path> <wave-id> [--approved-by <human|harness:reason>]');
+  const flags = parseFlags(args.slice(2), { 'approved-by': 'value' });
   const masterPath = resolveVaultPath(masterPathInput);
   if (!fs.existsSync(masterPath)) fail(`master file not found: ${masterPath}`);
   const { fm, body } = readMd(masterPath);
@@ -3953,6 +3967,8 @@ function cmdModernizeStartWave(args) {
   if (!w) fail(`wave ${waveId} not found`);
   w.status = 'implementing';
   w.approved_by_robert = 'approved';
+  // FMEA-5: audit trail — who approved the wave start (human vs harness:<reason>).
+  if (flags['approved-by']) w.approved_by = flags['approved-by'];
   fm.status = 'executing';
   appendPhaseHistory(fm, `wave-${waveId}-start`);
   writeMdAtomic(masterPath, fm, body);

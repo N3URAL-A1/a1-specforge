@@ -58,6 +58,12 @@ check "complete-wave computed replay differing" 1 node "$CLI" modernize complete
 # (c) hash present + no replay-file + claim pass → exit 1 (claim alone rejected)
 check "complete-wave hash present claim-only rejected" 1 node "$CLI" modernize complete-wave "$MASTER" W-01 --snapshot-replay pass --fr-ac-checks '{}'
 
+# --- FMEA-5: --approved-by audit trail ---
+node "$CLI" modernize approve-proposal "$MASTER" P-001 approved --approved-by "harness:test" >/dev/null
+grep -q 'approved_by.*harness:test' "$MASTER" \
+  && { echo "PASS approved_by audit trail persisted"; pass=$((pass+1)); } \
+  || { echo "FAIL approved_by audit trail persisted"; fail=$((fail+1)); }
+
 echo "---"
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
