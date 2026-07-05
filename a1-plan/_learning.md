@@ -60,3 +60,24 @@ audit_findings: 3
 finding_classes: [missing_dependency, unverifiable_goal]
 phase_that_produced_issues: [plan]
 one_line_learning: Bei Tenant-kritischen Migrationen muss der Äquivalenz-Beweis (Wave 0) verschachtelte Embed-Child-Isolation + Pool-Rollen-Kontamination explizit als testbare STOP-Gates enthalten, nicht nur Top-Level-Row-Isolation.
+---
+date: 2026-07-04
+phase: p1-pilot-readiness
+project: a1-office
+spec: none (roadmap data.json P1)
+result: pass-after-revision
+revisions: 1
+audit_findings: 2
+finding_classes: [missing_dependency, vague_tasks]
+phase_that_produced_issues: [map, plan]
+one_line_learning: Planner sollte Schema-Annahmen (Spalten/Signaturen) schon im ersten Durchgang per Live-Check verifizieren statt aus MAP.md zu übernehmen — beide Blocker waren unverifizierte Annahmen.
+
+
+---
+date: 2026-07-05
+phase: M6-works-for-rob
+project: a1-skills
+result: pass-after-revision (phase complete, 4 waves, 9/9 fixture suites green)
+✅ Was gut war: Audit-Loop hat einen echten Blocker gefangen (Roadmap-Kriterium "add-findings --json fixture test" war im ersten Plan-Entwurf gedroppt → als Task 1.4 zurückgeholt). Wave-2 Sequential-Edit-Constraint auf a1-tools.cjs (2.1a → 2.1b → 2.2) hat funktioniert — kein Clobber trotz drei Tasks in derselben Datei. Cost-Tracker Spike-first (Task 1.3 als hartes Gate vor 2.2) hat Rework verhindert: exakte JSONL-Feldpfade + Dedup-Erkenntnis (message.id, Subagent-Logs) lagen vor der Implementierung fest.
+⚠️ Was nicht passte: M5 galt seit 2026-05-25 als "shipped", aber die End-to-End-Validierung in Task 3.2 fand 2 echte Frontmatter-Round-Trip-Bugs in der CLI, die nur end-to-end erreichbar waren — "shipped" ≠ "validated".
+💡 Suggestion: End-to-End-Validierungs-Runs gehören in den Shipping-Milestone selbst, nicht in einen späteren Milestone deferred — jede Phase, die CLI-Subcommands liefert, braucht mindestens einen echten Durchlauf auf einem Wegwerf-Projekt vor dem Abhaken.

@@ -28,10 +28,10 @@ Basis: general analysis 2026-07-04 (3 OSS-BLOCKER, 6 MAJOR, 5 MINOR) + learning 
 
 ### Success criteria
 
-- [ ] Gate 0.5 catches a content-derived surface gap on a real run (or 5 clean runs pass)
-- [ ] `add-findings --json` lands with fixture test; analyze retro friction gone
-- [ ] Cost per feature visible in VERIFICATION.md for 3 consecutive specs
-- [ ] M5 criteria all checked
+- [ ] Gate 0.5 catches a content-derived surface gap on a real run (or 5 clean runs pass) (instrumented in M6, validated on next runs)
+- [x] `add-findings --json` lands with fixture test; analyze retro friction gone
+- [ ] Cost per feature visible in VERIFICATION.md for 3 consecutive specs (instrumented in M6, validated on next runs)
+- [x] M5 criteria all checked
 
 ---
 
