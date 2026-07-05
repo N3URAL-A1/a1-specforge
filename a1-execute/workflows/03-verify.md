@@ -157,10 +157,12 @@ one_line_learning: <what would have prevented the main issue, or "no issues">
 EOF
 ```
 
-### Step 3 — Append the same entry to the Vault
+### Step 3 — Append the same entry to the learning store
 
-```
-~/N3URAL-Vault/pattern/a1-learnings/a1-execute.md
+Defaults to repo-local `.a1/learnings/`; set `A1_VAULT_ROOT` for an external vault (e.g. Obsidian):
+```bash
+VAULT="${A1_VAULT_ROOT:-$(git rev-parse --show-toplevel)/.a1/learnings}"
+# $VAULT/pattern/a1-learnings/a1-execute.md
 ```
 
 Use the `issue_classes` tags consistently — they feed into `patterns.md` clustering:

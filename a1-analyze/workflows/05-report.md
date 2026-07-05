@@ -148,11 +148,13 @@ new always-on lanes and are exactly the signal we want to feed forward into buil
 
 ### Step 2 — Append the SAME entry to the Vault (canonical source)
 
-Canonical path — the learnings live under `pattern/a1-learnings/` in the Vault
-(`A1_VAULT_ROOT`, default `~/N3URAL-Vault`). Use:
+Canonical path — the learnings live under `pattern/a1-learnings/` in the learning
+store (defaults to repo-local `.a1/learnings/`; set `A1_VAULT_ROOT` to use an
+external vault, e.g. Obsidian). Use:
 
-```
-~/N3URAL-Vault/pattern/a1-learnings/a1-analyze.md
+```bash
+VAULT="${A1_VAULT_ROOT:-$(git rev-parse --show-toplevel)/.a1/learnings}"
+# $VAULT/pattern/a1-learnings/a1-analyze.md
 ```
 
 The `_learning.md` in the skill is a fast-access cache; the Vault file is canonical.
@@ -167,7 +169,8 @@ on every run. The synthesis watermark is the `updated:` date in the Vault
 `patterns.md` (the same date a1-evolve uses for de-duplication):
 
 ```bash
-PATTERNS=~/N3URAL-Vault/pattern/a1-learnings/patterns.md
+VAULT="${A1_VAULT_ROOT:-$(git rev-parse --show-toplevel)/.a1/learnings}"
+PATTERNS="$VAULT/pattern/a1-learnings/patterns.md"
 LAST_SYNTH=$(grep -m1 '^updated:' "$PATTERNS" 2>/dev/null | sed 's/updated:[[:space:]]*//')
 # Count a1-analyze cache entries dated after the last synthesis:
 NEW_COUNT=$(awk -v cutoff="$LAST_SYNTH" '

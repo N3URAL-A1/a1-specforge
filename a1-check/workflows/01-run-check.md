@@ -86,8 +86,8 @@ Stop. Do not propose `a1-new-feature` re-entry — the problem is below that lev
 - Never combine multiple gate invocations in one command line. One project +
   one feature per run.
 - If the user provided a `--vault <path>` override (or the env var
-  `A1_VAULT_ROOT` is set), forward it; otherwise the CLI defaults to
-  `~/N3URAL-Vault`.
+  `A1_VAULT_ROOT` is set), forward it; otherwise the CLI defaults to the
+  repo-local `.a1/learnings/` store.
 
 ## When this workflow ends
 
@@ -118,6 +118,6 @@ EOF
 
 **To Vault:**
 Append the same entry to:
-`~/N3URAL-Vault/pattern/a1-learnings/a1-check.md`
+`<learning-store>/pattern/a1-learnings/a1-check.md` (store defaults to repo-local `.a1/learnings/`; set `A1_VAULT_ROOT` for an external vault)
 
 A run with no issues is still useful data — write the entry.

@@ -126,9 +126,12 @@ one_line_learning: <what would have prevented the main issue, or "no issues">
 EOF
 ```
 
-**To Vault (canonical):**
+**To the learning store (canonical)** — defaults to repo-local `.a1/learnings/`; set `A1_VAULT_ROOT` for an external vault (e.g. Obsidian):
 Append the same entry to:
-`~/N3URAL-Vault/pattern/a1-learnings/a1-new-project.md`
+```bash
+VAULT="${A1_VAULT_ROOT:-$(git rev-parse --show-toplevel)/.a1/learnings}"
+# $VAULT/pattern/a1-learnings/a1-new-project.md
+```
 
 Tags reference: `scope_unclear` (Phase 2 left ambiguity that bit later),
 `bootstrap_collision` / `repo_already_exists` (Phase 1 hit existing files),

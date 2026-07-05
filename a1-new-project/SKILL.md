@@ -106,9 +106,9 @@ This file-based routing is what makes the skill safe to re-enter after a
 Vault mirror (single source of truth for cross-project memory):
 - Project hub: `projects/<slug>/` (created in Phase 4)
 - Specs/plans per feature: written by `a1-new-feature` in Phase 5
-- Learnings: `~/N3URAL-Vault/pattern/a1-learnings/a1-new-project.md`
+- Learnings: `<learning-store>/pattern/a1-learnings/a1-new-project.md`
 
-Default vault root: `~/N3URAL-Vault/`. Override via `A1_VAULT_ROOT` for testing.
+Learning store defaults to repo-local `.a1/learnings/`; set `A1_VAULT_ROOT` to use an external vault (e.g. Obsidian).
 
 ## Hard rules
 

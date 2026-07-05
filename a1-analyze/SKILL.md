@@ -116,7 +116,7 @@ All artifacts live in the Obsidian Vault:
 Suffixes `-2`, `-3` are appended for second, third, ... analyses of the same
 focus on the same day. The helper `analyze next-slot` returns the next free slot.
 
-Default vault root: `~/N3URAL-Vault/`.
+Learning store defaults to repo-local `.a1/learnings/`; set `A1_VAULT_ROOT` to use an external vault (e.g. Obsidian).
 Override via env var `A1_VAULT_ROOT` if testing.
 
 ## Agent integration
@@ -199,8 +199,9 @@ self-learning system so that what an analysis surfaces gets carried into future
 implementations:
 
 1. **Retro (Phase 5, mandatory)** — every run appends a structured entry to
-   `_learning.md` (cache) and `~/N3URAL-Vault/pattern/a1-learnings/a1-analyze.md`
-   (canonical), tagged with `issue_classes` including `simplification_opportunity`
+   `_learning.md` (cache) and the learning store's `pattern/a1-learnings/a1-analyze.md`
+   (canonical; defaults to repo-local `.a1/learnings/`, set `A1_VAULT_ROOT` for an
+   external vault), tagged with `issue_classes` including `simplification_opportunity`
    and `security_vuln` from the two always-on lanes.
 2. **Threshold** — at every 5th entry the skill offers `a1-evolve`.
 3. **Synthesis** — `a1-evolve` clusters the learnings across all skills and
@@ -215,8 +216,8 @@ findings are the highest-signal input for "what should the next build avoid."
 - v2 (2026-06-21): two always-on read-only lanes in Phase 3 — `code-simplifier`
   agent (parallel Task, report-only, with a structural git-status tripwire) +
   `security-review` skill (in-conversation, serial), every focus mode;
-  self-learning loop hardened (Retro mandatory, canonical Vault path
-  `~/N3URAL-Vault/pattern/a1-learnings/`, threshold counts since last synthesis,
+  self-learning loop hardened (Retro mandatory, canonical learning-store path
+  `pattern/a1-learnings/`, threshold counts since last synthesis,
   offers a1-evolve). Vault-path migration for a1-analyze + a1-evolve to the
   canonical `pattern/` path; the repo-wide sweep of all remaining skills and the
   `_shared/a1-tools.cjs` default followed in a separate change.

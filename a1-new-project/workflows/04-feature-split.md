@@ -78,7 +78,7 @@ Mirror the project into the Vault so cross-project memory and `a1-new-feature`
 have a home:
 
 ```bash
-VROOT="${A1_VAULT_ROOT:-$HOME/N3URAL-Vault}"
+VROOT="${A1_VAULT_ROOT:-$(git rev-parse --show-toplevel)/.a1/learnings}"
 mkdir -p "$VROOT/projects/<slug>/spec" "$VROOT/projects/<slug>/plans"
 ```
 

@@ -169,9 +169,11 @@ The `_learning.md` is a fast-access cache. The Vault postmortem is canonical.
 ### Step 3 — Check promote-lessons threshold
 
 ```bash
+# Learning store: defaults to repo-local .a1/learnings/; set A1_VAULT_ROOT for an external vault (e.g. Obsidian)
+VAULT="${A1_VAULT_ROOT:-$(git rev-parse --show-toplevel)/.a1/learnings}"
 # Get last promote timestamp
 LAST_PROMOTE=$(node ~/.claude/skills/_shared/a1-tools.cjs fix count-postmortems-since \
-  --since "$(cat "~/N3URAL-Vault/wiki/_state/last_promote.json" | grep -o '"last_promote_at":"[^"]*"' | cut -d'"' -f4)")
+  --since "$(cat "$VAULT/wiki/_state/last_promote.json" | grep -o '"last_promote_at":"[^"]*"' | cut -d'"' -f4)")
 ```
 
 If the count is ≥5, tell the user (German):
@@ -204,7 +206,7 @@ If no: proceed. Counter accumulates until next run.
    `wiki/` postmortem stays the canonical detail; this is the optimizer-visible
    summary:
    ```bash
-   cat >> "$HOME/N3URAL-Vault/pattern/a1-learnings/a1-fix.md" <<EOF
+   cat >> "$VAULT/pattern/a1-learnings/a1-fix.md" <<EOF
 
    ## $(date +%F) — <project-slug> / <bug-slug>
 

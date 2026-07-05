@@ -117,8 +117,8 @@ one_line_learning: <what would have prevented the main issue, or "no issues">
 EOF
 ```
 
-**To Vault:**
+**To the learning store** (defaults to repo-local `.a1/learnings/`; set `A1_VAULT_ROOT` for an external vault, e.g. Obsidian):
 Append the same entry to:
-`~/N3URAL-Vault/pattern/a1-learnings/a1-worktree.md`
+`<learning-store>/pattern/a1-learnings/a1-worktree.md`
 
 A run with no issues is still useful data — write the entry.

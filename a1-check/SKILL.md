@@ -64,8 +64,7 @@ Exit codes:
 | 1 | FAIL — content inconsistency (diff in output) |
 | 2 | ERROR — setup problem (file missing, frontmatter unparseable) |
 
-Vault root resolution: env var `A1_VAULT_ROOT`, falling back to
-`~/N3URAL-Vault`. Override per-call via `--vault`.
+Learning store defaults to repo-local `.a1/learnings/`; set `A1_VAULT_ROOT` to use an external vault (e.g. Obsidian). Override per-call via `--vault`.
 
 ## Three check classes (all structural)
 

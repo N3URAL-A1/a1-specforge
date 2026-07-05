@@ -33,3 +33,19 @@ All pre-existing fixture runners re-run: 12/12 exit 0 (plus nested `a1-schema-ch
 - SKILL.md:11,16,73 → skills-repo wording (git-detected)
 - Done-when: `grep -rn 'N3URAL-Vault\|~/code/a1-skills' a1-evolve/` → exit 1 (empty) ✓
 - Deviation [Rule 3-scope]: patched 04-apply.md:103 + SKILL.md:73 beyond the exact plan lines because 2.1 Done-when grep spans all of a1-evolve/.
+
+## Task 2.4 — Remove checkpoint from public repo
+✓ DONE — 1cd04cf — 2026-07-05
+- git rm -r checkpoint/ (SKILL.md + push-to-brain.py)
+- .gitignore: added `checkpoint/` and `.a1/learnings/` (Task 4.1 action 2b, owned here)
+- bin/install.sh: removed 2 checkpoint comment lines
+- docs/checkpoint-migration.md created
+- Local: ~/.claude/skills/checkpoint already a real directory (not symlink), SKILL.md present — safety gate passed; local copy is newer than repo (Juli 5 vs Juli 4), preserved as-is (not clobbered with older repo version)
+- Done-when exit 0
+
+### Task 2.2 — SKILL.md prose defaults sweep — DONE
+- 7 inventoried "Default vault root" prose lines → new wording ("Learning store defaults to repo-local `.a1/learnings/`; set `A1_VAULT_ROOT` to use an external vault (e.g. Obsidian).")
+- Straggler sweep patched every ACTIVE N3URAL-Vault hit across SKILL.md + workflows/ (~30 lines in 20 files): retro-path references generalized to `$VAULT="${A1_VAULT_ROOT:-$(git rev-parse --show-toplevel)/.a1/learnings}"` or `<learning-store>` placeholder; CLI-default prose updated to repo-local `.a1/learnings/`.
+- Whitelist honored: `*/_learning.md` retro bodies + `_shared/learnings-index.md` left untouched.
+- Done-when: `grep -rl 'N3URAL-Vault' a1-*/SKILL.md a1-*/workflows/` → exit 1 (empty) ✓
+- Deviation [Rule 3-scope]: patched far more than the 7 inventoried files (a1-fix wiki paths, a1-new-project VROOT, all skill retro paths) — required so no active SKILL.md/workflow hit remains.

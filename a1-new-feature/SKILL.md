@@ -140,7 +140,7 @@ All artifacts live in the Obsidian Vault:
 The `<###>` sequence is per-project, zero-padded to 3 digits, monotonically increasing.
 Cancelled specs keep their number; the helper picks the next unused number via glob.
 
-Default vault root: `~/N3URAL-Vault/`.
+Learning store defaults to repo-local `.a1/learnings/`; set `A1_VAULT_ROOT` to use an external vault (e.g. Obsidian).
 Override via env var `A1_VAULT_ROOT` if testing.
 
 ## Agent integration

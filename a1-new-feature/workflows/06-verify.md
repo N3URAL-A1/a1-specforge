@@ -268,13 +268,13 @@ one_line_learning: <what would have prevented the main failure, or "no failures"
 EOF
 ```
 
-### Step 6b — Append the SAME entry to the Vault (canonical source)
+### Step 6b — Append the SAME entry to the learning store (canonical source)
 
-Path (note: the canonical learnings live under `pattern/`, NOT a `Documents/.../areas/` path —
-that older path does not exist):
+Defaults to repo-local `.a1/learnings/`; set `A1_VAULT_ROOT` for an external vault (e.g. Obsidian). The canonical learnings live under `pattern/`:
 
-```
-~/N3URAL-Vault/pattern/a1-learnings/a1-new-feature.md
+```bash
+VAULT="${A1_VAULT_ROOT:-$(git rev-parse --show-toplevel)/.a1/learnings}"
+# $VAULT/pattern/a1-learnings/a1-new-feature.md
 ```
 
 Use the `bug_classes` tags consistently — they feed `patterns.md` clustering:

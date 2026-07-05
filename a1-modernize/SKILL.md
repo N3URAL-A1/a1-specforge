@@ -147,7 +147,7 @@ All artifacts in the Obsidian Vault:
 - Master file: `projects/<slug>/modernize/<YYYY-MM-DD>-<focus>[-N].md`
 - Wave artifacts in repo: `.a1/phases/<modernize-slug>/waves/wave-NN.md`
 
-Default vault root: `~/N3URAL-Vault/`.
+Learning store defaults to repo-local `.a1/learnings/`; set `A1_VAULT_ROOT` to use an external vault (e.g. Obsidian).
 Override via env var `A1_VAULT_ROOT`.
 
 ## Agent integration
