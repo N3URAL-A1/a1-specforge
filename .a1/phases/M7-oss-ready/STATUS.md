@@ -94,3 +94,21 @@ Done-when (all 3 verified):
 - [Rule 1] Plan's single-commit bootstrap breaks phantom check (empty diff → false phantoms). Rebuilt as two-commit history via committed .baseline/ stubs.
 - [Rule 1] Plan's 'git log -1' fresh-clone detection walks to parent repo and false-succeeds. Switched to 'test -d dir/.git && toplevel==dir'.
 - [Rule 4→resolved-in-scope] no-code-tag/ expectation: CLI never exits non-zero; asserted status=clean + 2 docs_only_skipped (# no-code tag working) instead of "findings".
+
+## Wave 4 — CI
+Completed: 2026-07-05T13:18:51Z
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| 4.1 GitHub Actions test workflow | ✓ DONE | 692a86b | POSIX grep zero hits; full local suite green; docker N/A |
+
+### Deviations
+- [Rule 1] Fixed `bin/install.sh` — added `mkdir -p "$SKILLS_DIR" "$AGENTS_DIR"`; it failed on a clean HOME because target dirs did not exist before `ln -s`. Required for the CI install smoke step to pass.
+
+### Done-when evidence
+- Portability grep (`sed -i ''\|stat -f\|date -r\|date -j\|readlink [^-]\|mktemp -t`) over _test-fixtures/ bin/ → **zero hits** (exit 1).
+- Full local fixture suite (14 runners + nested a1-schema-check parser) → all PASS.
+- Install smoke on `HOME=$(mktemp -d)`: a1-new-feature symlink ✓, _shared symlink ✓, no checkpoint ✓ (rc=0 after fix).
+- Vault-free CLI: writes to `.a1/learnings/projects/ci-demo/spec`, rc=0.
+- Docker: **not available** in this environment → linux-container validation deferred to first CI run (risk recorded in commit body).
+- Not pushed / no PR (orchestrator pushes to main and watches the run).
