@@ -65,3 +65,18 @@ one_line_learning: Fresh-machine-Claims ohne Fresh-Machine-Test sind wertlos —
 ⚠️ Was nicht passte: Plan-Annahmen über Fixture-Interna waren 2× falsch (git log -1 walk-up, no-code-tag-Semantik) — der Executor musste vor Ort umentscheiden; CI-Assert prüfte Seiteneffekt eines read-only-Subcommands (next-number legt nichts an).
 💡 Suggestion: Für CLI-Subcommands in Plänen immer kennzeichnen ob read-only oder writing — Asserts nur auf writing-Commands bauen.
 
+---
+date: 2026-07-05
+phase: M8-launch-community
+project: a1-specforge
+spec: docs/roadmap.md M8 + .a1/phases/M8-launch-community/PLAN.md
+result: pass
+evidence: .a1/phases/M8-launch-community/VERIFICATION.md (enablers shipped; plugin live-validated 17 skills+18 agents)
+gates_fired:
+  - {id: plan-audit, verdict: pass, caught: true}
+one_line_learning: Manifest-Schemas aus Doku/Research zweimal falsch — der live Validator (claude plugin validate) ist die einzige Wahrheit; Executor korrigierte gegen das Tool statt gegen die Zitate. Zweites Learning: Umlaut-basierte Sprach-Greps übersehen umlautfreie deutsche Sätze — Inventar + breites Safety-Net nötig.
+---
+✅ Was gut war: Rollback-SHA vor dem git mv (nie gebraucht, aber billig); Live-Plugin-Install als Validierung statt Doku-Vertrauen; Contributor-Dry-Run fand 2 echte Friction-Points die kein Review gefunden hätte.
+⚠️ Was nicht passte: MAP-Inventar unvollständig (1 Datei mit deutschem Text fehlte); Wave-3-Agent sah Wave-2-Arbeit nicht (Parallel-Race) und meldete falschen Offen-Status — harmlos, aber Reports aus parallelen Wellen dürfen sich nicht gegenseitig referenzieren.
+💡 Suggestion: Parallel-Wave-Briefs sollten explizit sagen "andere Wellen laufen parallel — melde nur deinen eigenen Scope, keine Repo-weiten Statusaussagen".
+

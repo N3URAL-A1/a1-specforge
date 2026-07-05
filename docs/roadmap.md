@@ -73,11 +73,12 @@ Basis: general analysis 2026-07-04 (3 OSS-BLOCKER, 6 MAJOR, 5 MINOR) + learning 
 - CONTRIBUTING path for community retros + gate-packs (retro schema, PR template, a1-evolve clusters community patterns).
 - First published gate-pack (candidate: "Postgres-RLS pack" from the a1-office corpus, anonymized).
 
-### Success criteria
+### Success criteria — enablers built 2026-07-05, see `.a1/phases/M8-launch-community/`
 
-- [ ] Plugin installable via marketplace
-- [ ] Launch posts live; ≥ 100 GitHub stars
-- [ ] ≥ 1 external PR merged; ≥ 1 gate-pack published
+- [x] Plugin installable via marketplace (validated live: `claude plugin install a1-specforge@a1-specforge` loaded 17 skills + 18 agents; self-hosted marketplace.json)
+- [x] ≥ 1 gate-pack published (`packs/postgres-rls/`, A2-anonymized, validate exit 0)
+- [ ] Launch posts live; ≥ 100 GitHub stars — **time-deferred outcome:** drafts ready in `docs/launch/` (Show HN, Reddit, LinkedIn) + demo.tape; publication is Robert/Sabine's call
+- [ ] ≥ 1 external PR merged — **time-deferred outcome:** enablers shipped (CODE_OF_CONDUCT, 4 good-first-issue drafts, contributor dry-run fixed 2 friction points)
 
 ---
 
