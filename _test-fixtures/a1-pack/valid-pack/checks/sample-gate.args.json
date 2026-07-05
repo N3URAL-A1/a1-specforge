@@ -1,0 +1,1 @@
+{ "subcommand": "schema-check run", "trigger-pattern": "audit|log" }

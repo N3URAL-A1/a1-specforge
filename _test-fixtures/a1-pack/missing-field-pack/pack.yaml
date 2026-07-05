@@ -1,0 +1,10 @@
+name: missing-field-pack
+version: 1.0.0
+stacks: [postgres]
+provenance:
+  occurrences: 3
+  severity: high
+  date_range: 2026-05..2026-07
+anonymization: A2
+patterns: [sample-gate]
+requires_cli: ">=1.4"

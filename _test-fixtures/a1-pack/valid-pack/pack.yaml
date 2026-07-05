@@ -1,0 +1,11 @@
+name: valid-pack
+version: 1.0.0
+stacks: [postgres, supabase]
+provenance:
+  occurrences: 5
+  severity: high
+  date_range: 2026-05..2026-07
+  source: a1-office (anonymized)
+anonymization: A2
+patterns: [sample-gate]
+requires_cli: ">=1.4"
