@@ -2,6 +2,11 @@
 
 **Spec-driven development pipeline for Claude Code — from idea to reviewed PR, with a built-in self-learning loop.**
 
+<!-- TODO(Robert): embed docs/assets/demo.gif once rendered — see docs/launch/demo-recording-steps.md -->
+<!-- ![a1-specforge demo](docs/assets/demo.gif) -->
+<!-- Demo: the schema gate fails a migration missing Row-Level Security, the corrected migration passes, and a shareable gate-pack validates. -->
+
+
 Claude Code is powerful, but without structure every session restarts from scratch: unclear specs, inconsistent plans, no trace of what was decided. a1-specforge gives Claude Code a backbone — auto-activating skills that guide every phase of a feature build, enforce consistency at deterministic gates, hand off between sub-agents automatically, and feed observations back into a self-optimizing learning loop.
 
 <!--
