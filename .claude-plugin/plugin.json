@@ -1,0 +1,11 @@
+{
+  "name": "a1-specforge",
+  "displayName": "a1-specforge: Spec-Driven Development Pipeline",
+  "version": "1.0.0",
+  "description": "Spec-driven development pipeline for Claude Code — from idea to reviewed PR, with a built-in self-learning loop.",
+  "author": { "name": "Robert Heine" },
+  "homepage": "https://github.com/mellow-rob/a1-specforge",
+  "repository": "https://github.com/mellow-rob/a1-specforge",
+  "license": "MIT",
+  "keywords": ["development", "planning", "quality-gates", "self-learning", "spec-driven"]
+}

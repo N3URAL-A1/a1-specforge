@@ -1,0 +1,17 @@
+{
+  "name": "a1-specforge",
+  "description": "Self-hosted marketplace for a1-specforge — a spec-driven development pipeline for Claude Code with a self-learning quality-gate loop.",
+  "owner": {
+    "name": "Robert Heine",
+    "url": "https://github.com/mellow-rob"
+  },
+  "plugins": [
+    {
+      "name": "a1-specforge",
+      "version": "1.0.0",
+      "description": "Spec-driven development pipeline for Claude Code",
+      "source": "./",
+      "author": { "name": "Robert Heine" }
+    }
+  ]
+}

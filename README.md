@@ -25,7 +25,19 @@ cd a1-specforge
 ./bin/install.sh
 ```
 
-`install.sh` symlinks all skills and agents into `~/.claude/skills/` and `~/.claude/agents/`. Edits in the repo are live immediately — no reinstall.
+`install.sh` symlinks all skills and agents into `~/.claude/skills/` and `~/.claude/agents/`. Edits in the repo are live immediately — no reinstall. This is the **contributor / dev path** (live-edit symlinks).
+
+### Install via plugin marketplace (users)
+
+If you just want to use a1-specforge (no local edits), install it as a Claude Code plugin from the self-hosted marketplace — three commands:
+
+```bash
+claude plugin marketplace add mellow-rob/a1-specforge
+claude plugin install a1-specforge@a1-specforge
+claude plugin list        # confirm a1-specforge@a1-specforge is installed
+```
+
+All 17 skills and 18 agents load from the plugin. To remove: `claude plugin uninstall a1-specforge` then `claude plugin marketplace remove a1-specforge`. Contributors who want to edit skills in place should use `./bin/install.sh` above instead.
 
 Then just describe what you want in Claude Code; the matching skill activates:
 
