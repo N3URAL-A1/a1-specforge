@@ -18,22 +18,22 @@ Proceed — first run is always safe.
 
 **If status is `"mismatch"`:** **STOP IMMEDIATELY.**
 
-Tell the user (in German):
-> "⛔ Integritätsfehler: Folgende Agent/Skill-Dateien haben sich seit dem letzten
-> Lock geändert:
-> - <file>: erwartet <expected>, aktuell <actual>
+Tell the user:
+> "⛔ Integrity error: The following agent/skill files have changed since the last
+> lock:
+> - <file>: expected <expected>, actual <actual>
 >
-> Mögliche Ursachen: nicht-committeter Edit, manueller Eingriff, oder der Lock ist veraltet.
+> Possible causes: an uncommitted edit, manual intervention, or the lock is stale.
 >
-> Ich schreibe nichts, bis dieser Zustand geklärt ist.
+> I will not write anything until this state is resolved.
 >
-> Optionen:
-> 1. `node ~/.claude/skills/_shared/a1-tools.cjs fix integrity-check` nach jedem
->    absichtlichen Agent-Edit ausführen — aber NICHT automatisch; du musst das bestätigen.
-> 2. Lock manuell neu bootstrappen (lösche `wiki/_canonical/agents.lock.json`) wenn
->    die Änderungen absichtlich waren.
+> Options:
+> 1. Run `node ~/.claude/skills/_shared/a1-tools.cjs fix integrity-check` after every
+>    intentional agent edit — but NOT automatically; you must confirm it.
+> 2. Re-bootstrap the lock manually (delete `wiki/_canonical/agents.lock.json`) if
+>    the changes were intentional.
 >
-> Was soll ich tun?"
+> What should I do?"
 
 Do NOT proceed with the bug pipeline until the user resolves the mismatch.
 
@@ -73,10 +73,10 @@ grep -l "<symptom-keyword>" "$VAULT/wiki/postmortems/<project-slug>/"
 ```
 
 If postmortems found with the same keyword: tell the user:
-> "Ähnliche Bugs in der Postmortem-Datenbank:
+> "Similar bugs in the postmortem database:
 > - <file> — <one_line_learning>
 >
-> Ist das eine Wiederkehr des gleichen Problems?"
+> Is this a recurrence of the same problem?"
 
 If yes → note it on the new bug report as `related_postmortem`.
 If no → proceed normally.

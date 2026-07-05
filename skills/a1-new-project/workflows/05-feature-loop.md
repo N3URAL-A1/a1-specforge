@@ -65,9 +65,10 @@ auto-continue:
    pointer.
 2. **Surface the resume pointer to the user explicitly**, e.g.:
    ```
-   Feature <N> ✓ — State gespeichert. Tippe /clear, dann sag "a1-new-project
-   weiter" (oder starte a1-new-project neu) — der Loop liest .a1/features-backlog.md
-   und macht mit Feature <N+1> weiter. Nichts geht verloren; der Stand steht im File.
+   Feature <N> ✓ — state saved. Type /clear, then say "a1-new-project continue"
+   (or "a1-new-project weiter", or just restart a1-new-project) — the loop reads
+   .a1/features-backlog.md and continues with Feature <N+1>. Nothing is lost; the
+   state lives in the file.
    ```
 3. On the next (fresh-context) invocation, the SKILL.md routing table sees a
    backlog with non-`done` features and re-enters here at the Loop invariant.
@@ -91,13 +92,13 @@ The routing table in SKILL.md enforces this file-based entry.
 When every backlog feature is `done` (or `cancelled` by the user):
 
 ```
-Alle Features abgearbeitet ✓
+All features completed ✓
 
-Projekt: <name>
+Project: <name>
 Features done: <N>/<total>
-Repo: <path>   (Remote: <ja/nein>)
+Repo: <path>   (Remote: <yes/no>)
 
-Nächste Schritte: Deployment (Dirk/Dennis), oder neue Milestone via a1-roadmap.
+Next steps: deployment (Dirk/Dennis), or a new milestone via a1-roadmap.
 ```
 
 Then write the Retro (below).

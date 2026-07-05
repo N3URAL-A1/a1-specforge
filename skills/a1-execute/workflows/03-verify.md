@@ -176,4 +176,4 @@ A run with zero issues is still useful data — write the entry with `observatio
 ENTRY_COUNT=$(grep -c "^date:" ~/.claude/skills/a1-execute/_learning.md 2>/dev/null || echo 0)
 ```
 If `$ENTRY_COUNT` is a multiple of 5:
-> "5 neue Learnings akkumuliert — in Vault unter [[pattern/a1-learnings/index]] gespeichert. `a1-evolve` ausführen?"
+> "5 new learnings accumulated — stored in the Vault under [[pattern/a1-learnings/index]]. Run `a1-evolve`?"

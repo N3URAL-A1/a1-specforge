@@ -45,22 +45,22 @@ node ~/.claude/skills/_shared/a1-tools.cjs modernize update-status \
 Show a structured summary (not the raw file):
 
 ```
-Reverse-Spec fertig für <project-slug>.
+Reverse-Spec complete for <project-slug>.
 
-FRs extrahiert: <N>
-Offene Fragen: <M>
+FRs extracted: <N>
+Open questions: <M>
 
-Top offene Fragen:
+Top open questions:
 1. OQ-001: <what is unclear> (Impact: high) — in <file:line>
 2. ...
 
-Magst du die vollständige Spec lesen?
+Want to read the full spec?
 → `projects/<slug>/modernize/<date>/reverse-spec.md`
 
-Freigabe für Phase 3 (Gap-Analyse)?
+Approval for Phase 3 (Gap Analysis)?
 ```
 
-**Do not proceed to Phase 3 without explicit "ja" / "freigabe" / "weiter".**
+**Do not proceed to Phase 3 without an explicit "yes" / "approve" / "continue" (or "ja" / "freigabe" / "weiter").**
 
 If Robert requests changes to the spec: spawn Rafael again with correction notes.
 Update the file, show the changed sections, ask for re-approval.

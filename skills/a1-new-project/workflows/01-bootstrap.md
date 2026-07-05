@@ -89,8 +89,8 @@ Offer — do not force — the `a1-constitution` skill to define per-project
 behavioral rules:
 
 ```
-Möchtest du jetzt eine constitution (feste Verhaltensregeln für dieses Projekt)
-anlegen? Ist optional — können wir auch später machen. [ja / später]
+Do you want to create a constitution now (fixed behavioral rules for this project)?
+It's optional — we can also do it later. [yes / later]
 ```
 
 If yes: invoke `a1-constitution` for this project slug, then return here.

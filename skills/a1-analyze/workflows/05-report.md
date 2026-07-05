@@ -178,9 +178,9 @@ NEW_COUNT=$(awk -v cutoff="$LAST_SYNTH" '
   END { print c+0 }' ~/.claude/skills/a1-analyze/_learning.md 2>/dev/null || echo 0)
 ```
 
-If `$NEW_COUNT` is ≥ 5, tell the user (German):
-> "≥5 neue a1-analyze-Learnings seit der letzten Synthese (Vault
-> `pattern/a1-learnings/`). `a1-evolve` ausführen, um Patterns auszuwerten?"
+If `$NEW_COUNT` is ≥ 5, tell the user:
+> "≥5 new a1-analyze learnings since the last synthesis (Vault
+> `pattern/a1-learnings/`). Run `a1-evolve` to evaluate patterns?"
 
 `a1-evolve` reads `pattern/a1-learnings/a1-analyze.md` alongside the other skills'
 learnings and proposes concrete improvements. Do not run it automatically — the

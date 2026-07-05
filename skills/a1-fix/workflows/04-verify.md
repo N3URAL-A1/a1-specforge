@@ -176,11 +176,11 @@ LAST_PROMOTE=$(node ~/.claude/skills/_shared/a1-tools.cjs fix count-postmortems-
   --since "$(cat "$VAULT/wiki/_state/last_promote.json" | grep -o '"last_promote_at":"[^"]*"' | cut -d'"' -f4)")
 ```
 
-If the count is ≥5, tell the user (German):
-> "5 neue Postmortems seit dem letzten promote-lessons Durchlauf. Soll ich promote-lessons
-> starten? Das wertet alle neuen Postmortems aus und schreibt Vorschläge in
-> `wiki/lessons/<agent>/_suggestions/`. Du entscheidest danach, welche Vorschläge
-> nach `_active.md` wandern."
+If the count is ≥5, tell the user:
+> "5 new postmortems since the last promote-lessons run. Shall I start promote-lessons?
+> It evaluates all new postmortems and writes suggestions to
+> `wiki/lessons/<agent>/_suggestions/`. You then decide which suggestions
+> move to `_active.md`."
 
 If yes: run promote-lessons (see below).
 If no: proceed. Counter accumulates until next run.
@@ -225,9 +225,9 @@ If no: proceed. Counter accumulates until next run.
    node ~/.claude/skills/_shared/a1-tools.cjs fix update-promote-state
    ```
 7. Tell the user:
-   > "promote-lessons abgeschlossen. Neue Vorschläge in:
-   > - `wiki/lessons/<agent>/_suggestions/` (N Vorschläge)
+   > "promote-lessons complete. New suggestions in:
+   > - `wiki/lessons/<agent>/_suggestions/` (N suggestions)
    >
-   > Bitte prüfe die Vorschläge und promotiere die nützlichen manuell nach `_active.md`."
+   > Please review the suggestions and manually promote the useful ones to `_active.md`."
 
 **NEVER:** Write to `_active.md`. Never modify `agents/*.md` or `skills/*.md` directly.

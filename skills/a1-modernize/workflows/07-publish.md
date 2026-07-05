@@ -56,7 +56,7 @@ Commit range: <first-commit>..<last-commit>
 
 Show the compiled report structure to Robert:
 
-> "Report-Vorschau für <project-slug>. Soll ich so nach Notion publishen?"
+> "Report preview for <project-slug>. Shall I publish it to Notion like this?"
 
 Wait for confirmation. Do not publish without explicit approval.
 
@@ -88,7 +88,7 @@ node ~/.claude/skills/_shared/a1-tools.cjs modernize update-status \
 If Notion-MCP fails or is not connected:
 
 ```
-Notion-MCP nicht erreichbar. Lokaler Markdown-Export wird erstellt.
+Notion-MCP not reachable. Creating local Markdown export.
 → projects/<slug>/modernize/<date>/modernize-export/report.md
 ```
 
@@ -106,18 +106,18 @@ node ~/.claude/skills/_shared/a1-tools.cjs modernize update-status \
 ## Step 4 — Final summary
 
 ```
-Modernize-Lauf abgeschlossen für <project-slug>.
+Modernize run complete for <project-slug>.
 
-📄 Report: <Notion URL oder lokaler Pfad>
+📄 Report: <Notion URL or local path>
 🔗 Obsidian: projects/<slug>/modernize/<date>-<focus>.md
 
-Zusammenfassung:
-- FRs extrahiert: <N>
-- Gaps gefunden: <N> BLOCKER, <N> MAJOR, <N> MINOR
+Summary:
+- FRs extracted: <N>
+- Gaps found: <N> BLOCKER, <N> MAJOR, <N> MINOR
 - Proposals: <N> approved, <N> rejected, <N> deferred
-- Waves ausgeführt: <N>
-- Tests hinzugefügt: <N>
-- Offene Fragen: <N> (im Vault dokumentiert)
+- Waves executed: <N>
+- Tests added: <N>
+- Open questions: <N> (documented in the Vault)
 ```
 
 ## Step 5 — Retro (mandatory, every run)
@@ -166,6 +166,6 @@ A run with zero issues is still useful data — write the entry with `issue_clas
 ENTRY_COUNT=$(grep -c "^date:" ~/.claude/skills/a1-modernize/_learning.md 2>/dev/null || echo 0)
 ```
 If `$ENTRY_COUNT` is a multiple of 5:
-> "5 neue Learnings akkumuliert — in Vault unter [[pattern/a1-learnings/index]] gespeichert. `a1-evolve` ausführen?"
+> "5 new learnings accumulated — stored in the Vault under [[pattern/a1-learnings/index]]. Run `a1-evolve`?"
 
 Show `suggested_next` from frontmatter.

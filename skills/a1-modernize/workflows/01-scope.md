@@ -14,18 +14,18 @@ Max 2 clarifying questions, one per turn.
 ## Step 1 — Determine project slug
 
 If the user named a project, derive the slug. If unclear:
-> "Welches Projekt soll modernisiert werden? (Slug, z.B. `niimo`, `my-app`)"
+> "Which project should be modernized? (slug, e.g. `niimo`, `my-app`)"
 
 ## Step 2 — Determine mode
 
 Ask unless the user already indicated:
-> "Welcher Modus?
-> - `spec-only` — nur verstehen was die App tut (read-only, schnell, keine Code-Änderungen)
-> - `full` — verstehen + Lücken schließen + Code modernisieren (mit deiner Freigabe pro Schritt)"
+> "Which mode?
+> - `spec-only` — just understand what the app does (read-only, fast, no code changes)
+> - `full` — understand + close gaps + modernize the code (with your approval per step)"
 
-Map user answers:
-- "nur verstehen", "lesen", "analyse" → `spec-only`
-- "aufräumen", "fixen", "modernisieren", "verbessern" → `full`
+Map user answers (aliases in either language):
+- "just understand", "read", "analyze" / "nur verstehen", "lesen", "analyse" → `spec-only`
+- "clean up", "fix", "modernize", "improve" / "aufräumen", "fixen", "modernisieren", "verbessern" → `full`
 
 ## Step 3 — Determine local code path
 
@@ -35,7 +35,7 @@ ls -d "<candidate-path>" 2>&1
 ```
 
 If the path does not exist, ask:
-> "Wo liegt der Code? (absoluter Pfad, z.B. `<project-root>`)"
+> "Where is the code? (absolute path, e.g. `<project-root>`)"
 
 ## Step 4 — Initialize the master file
 
@@ -60,11 +60,11 @@ which agents will be relevant in Phase 4.
 
 ## Step 6 — Confirm with the user
 
-> "Modernize-Lauf angelegt: `projects/<slug>/modernize/<file>`.
-> Modus: `<mode>`. Code-Pfad: `<analyzed_path>`.
-> Stack erkannt: <tech_stack list>.
+> "Modernize run created: `projects/<slug>/modernize/<file>`.
+> Mode: `<mode>`. Code path: `<analyzed_path>`.
+> Stack detected: <tech_stack list>.
 >
-> Soll ich Phase 2 starten (Reverse-Spec — Rafael liest den Code und leitet das Verhalten ab)?"
+> Shall I start Phase 2 (Reverse-Spec — Rafael reads the code and derives its behavior)?"
 
 If yes: proceed to `02-reverse-spec.md`.
 If no: stop. Master file persists with `status: scoped`.

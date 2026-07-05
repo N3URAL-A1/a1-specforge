@@ -26,13 +26,13 @@ Present the proposed backlog and priority order. Let the user reorder, merge,
 or drop before anything is written:
 
 ```
-Vorschlag Feature-Backlog (in Reihenfolge):
+Proposed feature backlog (in order):
 
 1. <feature> — <one-line goal>   [MVP]
-2. <feature> — <one-line goal>   [MVP]   (braucht #1)
-3. <feature> — <one-line goal>   [Später]
+2. <feature> — <one-line goal>   [MVP]   (needs #1)
+3. <feature> — <one-line goal>   [Later]
 
-Passt die Reihenfolge? Was zusammenlegen / streichen / verschieben?
+Does the order work? Anything to merge / drop / reorder?
 ```
 
 Wait for confirmation. Only then write the backlog.

@@ -11,8 +11,8 @@ everything is green.
 ## Precondition
 
 All waves in the wave-plan are marked `⟶ status: done`. Spec status is `implementing`.
-E2E-Test aus Step 5b (Phase 5) ist grün. Production-URL oder Preview-URL aus letztem Deploy
-ist bekannt — falls nicht, `vercel ls` ausführen und URL notieren.
+The E2E test from Step 5b (Phase 5) is green. The production URL or preview URL from the last
+deploy is known — if not, run `vercel ls` and note the URL.
 
 ## Step 0 — Live-URL Reachability Check
 
@@ -80,19 +80,19 @@ In the per-AC table (Step 1), referenced ACs get this row form instead of a live
 | "<exact spec sentence>" | ✓ (ref) | verified at Gate 3, wave N — not re-run |
 ```
 
-## Step 2 — Szenarien gegen die laufende App prüfen (nicht gegen User-Erinnerung)
+## Step 2 — Verify scenarios against the running app (not against the user's memory)
 
 Walk through only the FR-ACs classified as RE-RUN in Step 1.5 (failed at Gate 3, re-touched, or
 no `gate3:` line) plus cross-wave integration scenarios. FR-ACs with a ✓-reference row are already
 recorded — skip them here.
 
-Für jede zu prüfende User Story (P1 zuerst, dann P2, P3):
+For each User Story to verify (P1 first, then P2, P3):
 
-**Nicht:** "Hast du das getestet?" — das ist keine Verifikation.
+**Not:** "Did you test that?" — that is not verification.
 
-**Sondern:** Gehe die Schritte des Szenarios gegen die Production/Preview-URL durch.
-Nutze Browser-Automation wenn verfügbar (mcp__claude-in-chrome__*), sonst gib dem User
-eine **konkrete, schrittweise Anleitung mit exakter URL und erwarteter UI-Reaktion**:
+**Instead:** Walk through the scenario's steps against the production/preview URL.
+Use browser automation if available (mcp__claude-in-chrome__*), otherwise give the user
+**a concrete, step-by-step instruction with the exact URL and the expected UI reaction**:
 
 > "**Story <US-ID> — <short title>**
 >
@@ -103,33 +103,33 @@ eine **konkrete, schrittweise Anleitung mit exakter URL und erwarteter UI-Reakti
 >
 > Does it behave like this? (yes / no / partially)"
 
-Akzeptiere kein "müsste funktionieren" oder "hab ich nicht getestet" als `ja`.
-Nur "ich habe es gerade gemacht und es funktioniert" zählt als grün.
+Do not accept "should work" or "I haven't tested it" as a `yes`.
+Only "I just did it and it works" counts as green.
 
-Für technische SCs (Response-Zeit, RLS-Isolation, Error-Handling):
-Stelle einen konkreten Verifikations-Command bereit statt eine Frage zu stellen:
+For technical SCs (response time, RLS isolation, error handling):
+Provide a concrete verification command instead of asking a question:
 
 ```bash
-# Beispiel RLS-Isolation:
+# Example RLS isolation:
 curl -s -o /dev/null -w "%{http_code}" \
-  -H "Authorization: Bearer <fremder-token>" \
-  "<api-url>/api/expenses/<eigene-expense-id>"
-# Erwartung: 404 (nicht 200)
+  -H "Authorization: Bearer <other-user-token>" \
+  "<api-url>/api/expenses/<own-expense-id>"
+# Expected: 404 (not 200)
 
-# Beispiel Response-Shape:
+# Example response shape:
 curl -s -H "Cookie: <session>" "<api-url>/api/expenses/list" | jq 'keys'
-# Erwartung: ["expenses","total"] — NICHT ["data"]
+# Expected: ["expenses","total"] — NOT ["data"]
 ```
 
 Capture the answer:
 
-- **ja** → mark scenario `✓` in your tracking buffer.
-- **nein / teilweise** → ask for the exact deviation. Capture as a failure entry:
+- **yes** → mark scenario `✓` in your tracking buffer.
+- **no / partially** → ask for the exact deviation. Capture as a failure entry:
   ```
   - story: US-<###>-N
-    scenario: <kurzer Titel oder erste Zeile des Given>
-    expected: <was die Spec sagt>
-    actual: <was der User berichtet>
+    scenario: <short title or first line of the Given>
+    expected: <what the spec says>
+    actual: <what the user reports>
     timestamp: <iso>
   ```
 
@@ -139,7 +139,7 @@ Move to the next scenario only after the current one is answered.
 
 After the User Stories, walk through the `## Edge Cases` list. For each edge case ask:
 
-> "Edge Case: <text> — wurde das im Code behandelt?"
+> "Edge Case: <text> — was this handled in the code?"
 
 This is a softer check; flag edge cases that don't have explicit handling and add them as
 verify_failures with `kind: edge-case`.
@@ -290,17 +290,17 @@ A run with zero bugs is still useful data — write the entry with `bugs_found_i
 ENTRY_COUNT=$(grep -c "^date:" ~/.claude/skills/a1-new-feature/_learning.md 2>/dev/null || echo 0)
 ```
 If `$ENTRY_COUNT` is a multiple of 5:
-> "5 neue a1-new-feature-Learnings akkumuliert (Vault `pattern/a1-learnings/`). `a1-evolve` ausführen?"
+> "5 new a1-new-feature learnings accumulated (Vault `pattern/a1-learnings/`). Run `a1-evolve`?"
 
 ## Optional — Tobi audit
 
 If the user wants a deeper audit before declaring done, spawn `a1-tobi-tester` with this
 brief:
 
-> Tobi, mach einen Final-Audit auf die Spec `<spec-path>` und den Code, der unter dem
-> Wave-Plan `<plan-path>` implementiert wurde. Cross-cutting Check: Vision (passt es zum
-> Produkt?), UX (User Flow nachvollziehbar?), Architektur (saubere Trennung?), Compliance
-> (Datenschutz, Security, projekt-spezifische Regeln). Output als BLOCKER / MAJOR / MINOR.
+> Tobi, do a final audit on the spec `<spec-path>` and the code implemented under the
+> wave plan `<plan-path>`. Cross-cutting check: Vision (does it fit the product?),
+> UX (is the user flow coherent?), Architecture (clean separation?), Compliance
+> (data protection, security, project-specific rules). Output as BLOCKER / MAJOR / MINOR.
 
 Tobi findings do NOT automatically become verify_failures — the user decides whether a finding
 triggers a bug back to Phase 5 or goes to the backlog.

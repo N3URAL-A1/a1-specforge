@@ -5,8 +5,8 @@ slug, worktree path, branch, repo root.
 
 ## Inputs
 
-- Either: user names a slug (e.g. "review für `auth-rework`")
-- Or: user says "was steht zur Review?" / "review nächsten"
+- Either: user names a slug (e.g. "review `auth-rework`" / "review für `auth-rework`")
+- Or: user says "what's up for review?" / "review the next one" ("was steht zur Review?" / "review nächsten")
 
 ## Steps
 

@@ -87,7 +87,7 @@ this brief:
 If the wave is parallelizable and the user wants both agents at once, dispatch them in a
 **single** assistant turn (parallel Task calls).
 
-## Step 5 — Nach Agent-Meldung: Build + Deploy + Smoke-Test (Pflicht)
+## Step 5 — After the agent reports back: Build + Deploy + Smoke Test (mandatory)
 
 When the agent reports "Wave N done", do NOT mark as `done` immediately.
 Run these gates first:

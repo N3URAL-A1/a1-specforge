@@ -26,7 +26,7 @@ Deployment chain: <migrations, ENV vars, services>
 Rollback: <how to undo>
 Dependencies: <W-XX done ✅>
 
-Soll ich diese Wave starten?
+Shall I start this wave?
 ```
 
 Do not start until Robert confirms.
@@ -139,23 +139,23 @@ Output: VERIFICATION.md at .a1/phases/<slug>/waves/<wave-id>/VERIFICATION.md
 Present to Robert:
 
 ```
-Wave <W-NN> abgeschlossen.
+Wave <W-NN> complete.
 
-Geänderte Dateien: <list>
+Changed files: <list>
 Tests: <N> passing, 0 failing
-Parity-Replay: ✅ grün
+Parity replay: ✅ green
 FR-AC-Checks:
   - FR-001: ✅ <AC satisfied>
   - FR-002: ✅ <AC satisfied>
 
 Commit: <hash> "<message>"
 
-Deployment chain ausgeführt:
+Deployment chain executed:
   - Migrations: <done/none>
   - ENV vars: <done/none>
   - Services restarted: <done/none>
 
-Soll ich mit Wave <W-NN+1> weitermachen?
+Shall I continue with Wave <W-NN+1>?
 ```
 
 Complete the wave in CLI:
@@ -180,6 +180,6 @@ node ~/.claude/skills/_shared/a1-tools.cjs modernize update-status \
 ```
 
 Ask Robert:
-> "Alle <N> Waves abgeschlossen. Soll ich Phase 7 starten (Publish — Report nach Notion)?"
+> "All <N> waves complete. Shall I start Phase 7 (Publish — report to Notion)?"
 
 Proceed to `07-publish.md`.

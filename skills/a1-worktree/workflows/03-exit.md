@@ -12,8 +12,8 @@
 
 ## Step 1 — Identify the worktree
 
-The user can name the worktree by `id`, by `slug`, or implicitly ("der
-worktree den wir gerade gemacht haben" → take the most recent `active`
+The user can name the worktree by `id`, by `slug`, or implicitly ("the
+worktree we just made" → take the most recent `active`
 entry).
 
 If ambiguous, list candidates:
@@ -108,7 +108,7 @@ After every run — pass or fail — write one structured entry. Takes 2 minutes
 cat >> ~/.claude/skills/a1-worktree/_learning.md <<'EOF'
 ---
 date: <YYYY-MM-DD>
-task: <short description, e.g. "worktree für auth-rework, exit handoff">
+task: <short description, e.g. "worktree for auth-rework, exit handoff">
 project: <project-slug>
 result: <pass|fail|partial>
 issues: [<relevant tags, e.g. prepare-blocker, dirty-tree, branch-collision, handoff-clean>]

@@ -69,10 +69,10 @@ node ~/.claude/skills/_shared/a1-tools.cjs modernize update-status \
 ## Step 3 — Present results to Robert
 
 ```
-Gap-Analyse abgeschlossen für <project-slug>.
+Gap analysis complete for <project-slug>.
 
 Findings:
-- BLOCKER: <N>  (z.B. unsanitized user input in /api/upload)
+- BLOCKER: <N>  (e.g. unsanitized user input in /api/upload)
 - MAJOR:   <N>
 - MINOR:   <N>
 
@@ -81,7 +81,7 @@ Spec-Drift:
 - EXTRA:   <N> behaviors in code not in spec
 - DIVERGED: <N> behaviors that differ
 
-Vollständige Gap-Liste: `projects/<slug>/modernize/<date>/reverse-spec.md`
+Full gap list: `projects/<slug>/modernize/<date>/reverse-spec.md`
 ```
 
 ## Step 4 — spec-only end state
@@ -89,12 +89,12 @@ Vollständige Gap-Liste: `projects/<slug>/modernize/<date>/reverse-spec.md`
 If mode is `spec-only`:
 
 ```
-Spec-Only-Lauf abgeschlossen.
+Spec-only run complete.
 
-Die Reverse-Spec und Gap-Analyse liegen im Vault:
+The reverse-spec and gap analysis are in the Vault:
 → `projects/<slug>/modernize/<date>/reverse-spec.md`
 
-Empfehlungen für nächste Schritte:
+Recommendations for next steps:
 ```
 
 Show `suggested_next` from frontmatter. **Stop here for spec-only.**
@@ -103,6 +103,6 @@ Show `suggested_next` from frontmatter. **Stop here for spec-only.**
 
 For `full` mode:
 
-> "Soll ich Phase 4 starten (Tech-Proposals — welche Stack-Verbesserungen wären sinnvoll)?"
+> "Shall I start Phase 4 (Tech Proposals — which stack improvements would be worthwhile)?"
 
 Do not proceed without confirmation. Proceed to `04-tech-proposals.md`.

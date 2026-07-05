@@ -66,11 +66,11 @@ Present each proposal one at a time (or as a table if fewer than 5 total).
 For each, ask: approve / reject / defer?
 
 ```
-Tech-Proposals für <project-slug>:
+Tech proposals for <project-slug>:
 
 P-001: <title>
-Begründung: <rationale>
-Risiko: <risk> | Aufwand: <effort>
+Rationale: <rationale>
+Risk: <risk> | Effort: <effort>
 Rollback: <rollback>
 → approve / reject / defer?
 
@@ -90,8 +90,8 @@ node ~/.claude/skills/_shared/a1-tools.cjs modernize approve-proposal \
 
 After all proposals have a decision:
 
-> "Alle Proposals entschieden. Genehmigte Proposals: <N>.
+> "All proposals decided. Approved proposals: <N>.
 >
-> Soll ich Phase 5 starten (Plan — Wave-Decomposition mit deinen genehmigten Proposals)?"
+> Shall I start Phase 5 (Plan — wave decomposition with your approved proposals)?"
 
 Proceed to `05-plan.md` on confirmation.

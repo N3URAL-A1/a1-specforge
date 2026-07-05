@@ -15,36 +15,36 @@ Cover, at minimum, all six areas below.
 
 ### 1. Project goal / vision (one sentence)
 
-Free text. Push for ONE crisp sentence: "Was ist das Projekt in einem Satz?"
+Free text. Push for ONE crisp sentence: "What is the project in one sentence?"
 If the answer is two paragraphs, reflect it back compressed and confirm.
 
 ### 2. Target users
 
 Free text or AskUserQuestion if there are obvious segments.
-"Wer ist der primäre Nutzer und was ist sein Kernproblem?"
+"Who is the primary user and what is their core problem?"
 
 ### 3. Core capabilities — MVP scope vs. Later
 
 Use `AskUserQuestion` (multi-select where supported). List candidate
-capabilities, let the user mark each as **MVP** or **Später**. This split is the
+capabilities, let the user mark each as **MVP** or **Later**. This split is the
 seed of the feature backlog in Phase 4 — get it right here.
-"Welche Kern-Fähigkeiten gehören in die erste nutzbare Version (MVP), welche
-kommen später?"
+"Which core capabilities belong in the first usable version (MVP), and which
+come later?"
 
 ### 4. Tech-stack preferences / constraints
 
 Use `AskUserQuestion` with the common stacks the user works in (Next.js/Node,
-Flutter/Dart, Python/FastAPI) plus "ich empfehle einen". Capture hard
+Flutter/Dart, Python/FastAPI) plus "let me recommend one". Capture hard
 constraints (existing systems to integrate, off-limits tech, hosting).
 
 ### 5. Explicit non-goals
 
-Free text. "Was bauen wir bewusst NICHT?" This is as important as the goal —
+Free text. "What are we deliberately NOT building?" This is as important as the goal —
 non-goals stop scope creep in the feature loop. Write them down verbatim.
 
 ### 6. Success criterion
 
-Free text. "Woran erkennen wir, dass die erste Version erfolgreich ist?" Push
+Free text. "How will we know the first version is successful?" Push
 for something observable / measurable, not a feeling.
 
 ## Confirm before writing
@@ -52,17 +52,17 @@ for something observable / measurable, not a feeling.
 Reflect the full scope back and get an explicit yes:
 
 ```
-Hier ist der Scope, wie ich ihn verstanden habe:
+Here is the scope as I understood it:
 
 **Vision:** <one sentence>
-**Nutzer:** <user + core problem>
-**MVP-Capabilities:** <bullet list>
-**Später:** <bullet list>
+**Users:** <user + core problem>
+**MVP capabilities:** <bullet list>
+**Later:** <bullet list>
 **Stack:** <stack + constraints>
-**Non-Goals:** <bullet list>
-**Erfolgskriterium:** <measurable>
+**Non-goals:** <bullet list>
+**Success criterion:** <measurable>
 
-Stimmt das so? Soll ich noch was schärfen, bevor wir die Roadmap planen?
+Is this correct? Should I sharpen anything before we plan the roadmap?
 ```
 
 If the user corrects anything: update and re-confirm. Only when the user

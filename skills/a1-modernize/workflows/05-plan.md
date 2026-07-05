@@ -90,15 +90,15 @@ node ~/.claude/skills/_shared/a1-tools.cjs modernize update-status \
 Show wave summary:
 
 ```
-Plan fertig für <project-slug>. <N> Waves.
+Plan complete for <project-slug>. <N> waves.
 
 W-01: <title> (depends on: none)
 W-02: <title> (depends on: W-01)
 ...
 
-Vollständiger Plan: `.a1/phases/<modernize-slug>/PLAN.md`
+Full plan: `.a1/phases/<modernize-slug>/PLAN.md`
 
-Soll ich mit Phase 6 beginnen (Execution — Wave für Wave, jeweils mit deiner Freigabe)?
+Shall I start Phase 6 (Execution — wave by wave, each with your approval)?
 ```
 
 Do not proceed without confirmation. Proceed to `06-execute.md`.

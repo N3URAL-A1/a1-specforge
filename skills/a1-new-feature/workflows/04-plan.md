@@ -34,7 +34,7 @@ Use the **Agent** tool with `subagent_type: "a1-vincente-vibe-optimizer"` and
 > - FR-### → distributed across waves; each FR lands in exactly one wave.
 >   **CRITICAL — the consistency gate (Phase 4.5) parses EVERY `FR-NNN` token inside a
 >   `## Wave N` section as a coverage claim for that wave.** A bare `FR-001` in a narrative
->   line ("Beitrag zu FR-001", "Vorbereitung für FR-002") counts as a SECOND coverage and
+>   line ("contributes to FR-001", "prep for FR-002") counts as a SECOND coverage and
 >   FAILs the gate (duplicate across waves). To stay gate-green:
 >   - Each FR appears in a `**FRs covered:**` line of EXACTLY ONE wave.
 >   - In every OTHER wave, refer to it WITHOUT the `FR-NNN` token — name the requirement in
