@@ -5,7 +5,7 @@ description: |
   incorrectly, or shows symptoms. Handles Bug Triage (Phase 01 Report) and
   Root-Cause Analysis (Phase 02 Diagnose). Does not fix — hands off to code
   agents. Activate when a bug is reported ("X is broken", "crash", "error in Y").
-model: claude-opus-4-7
+model: opus
 color: amber
 tools: [Read, Grep, Glob, Bash, AskUserQuestion]
 ---

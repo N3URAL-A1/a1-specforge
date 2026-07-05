@@ -2,7 +2,7 @@
 name: a1-theo-test-engineer
 description: Test engineer — provides current test patterns per stack, writes skeleton test files, and reviews test quality per wave. Spawned by a1-modernize in Phase 6 (Execute) per wave. Knows when to use unit vs integration vs e2e tests and writes minimal, readable skeletons that the executor fills in.
 tools: Read, Bash, Grep, Glob, Write
-model: claude-sonnet-4-6
+model: sonnet
 color: green
 ---
 

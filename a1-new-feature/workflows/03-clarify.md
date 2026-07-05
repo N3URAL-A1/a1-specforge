@@ -4,8 +4,8 @@
 scope assumptions that would otherwise cause rework during implementation.
 
 **Sub-agent:** Rene (`~/.claude/agents/a1-rene-requirement-engineer.md`).
-**Model: `claude-opus-4-7`** — Clarify is the highest-leverage phase: wrong decisions here
-cascade into multiple fix cycles. Use Opus for deeper reasoning.
+**Model: the pinned reasoning-tier model** — Clarify is the highest-leverage phase: wrong decisions here
+cascade into multiple fix cycles. Use the reasoning tier for deeper analysis.
 
 **Status transition:** `draft` → `clarified`.
 
@@ -41,7 +41,7 @@ gets added to the question queue alongside the explicit markers:
 Add any discovered gaps as `[NEEDS CLARIFICATION: <question>]` inline in the spec before
 spawning Rene, so Rene has a complete list in one pass.
 
-## Step 2 — Spawn Rene with the Clarify brief (model: claude-opus-4-7)
+## Step 2 — Spawn Rene with the Clarify brief (model: the pinned reasoning-tier model)
 
 Use the **Agent** tool with `subagent_type: "a1-rene-requirement-engineer"` and
 `model: "opus"` to spawn Rene with this brief:

@@ -21,7 +21,7 @@ plan_path = projects/<project-slug>/plans/<###>-<feature-slug>-wave-plan.md
 `<###>` is the same sequence number as the spec. If `projects/<slug>/plans/` does not exist,
 create it (use Bash with the absolute vault root).
 
-## Step 2 — Spawn Vincente with the Plan brief (model: claude-opus-4-7)
+## Step 2 — Spawn Vincente with the Plan brief (model: the pinned reasoning-tier model)
 
 Use the **Agent** tool with `subagent_type: "a1-vincente-vibe-optimizer"` and
 `model: "opus"` to spawn Vincente with this brief:

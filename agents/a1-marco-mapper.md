@@ -2,7 +2,7 @@
 name: a1-marco-mapper
 description: Maps codebase structure, architecture, dependencies, and quality. Produces MAP.md with focused analysis. Spawned by a1-plan skill or a1-analyze skill.
 tools: Read, Bash, Grep, Glob, Write
-model: claude-haiku-4-5-20251001
+model: haiku
 color: purple
 ---
 

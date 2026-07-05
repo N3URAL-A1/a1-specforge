@@ -42,7 +42,7 @@ file ops. Sub-agents do the actual thinking.
 
 **Scope-Clarify Gate (Phase 3, Step 1.5):** For any fix touching UI (columns,
 buttons, forms, layouts), ask up to 3 targeted scope questions **before** dispatching
-the code agent. Model: `claude-opus-4-7`. Skip for pure logic/crash bugs.
+the code agent. Model: the pinned reasoning-tier model. Skip for pure logic/crash bugs.
 
 Terminal non-fix statuses: `cant-reproduce`, `wont-fix`, `duplicate`, `cancelled`.
 Bugs in these states stay on disk; slots are NOT recycled.

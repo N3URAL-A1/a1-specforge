@@ -18,7 +18,7 @@ state.
 3. If `severity` is `blocker` or `major`: a regression test BEFORE the fix is
    strongly recommended (so we have a red test that turns green).
 
-## Step 1.5 — Scope-Clarify Gate (Opus 4.7, mandatory for UI changes)
+## Step 1.5 — Scope-Clarify Gate (reasoning-tier, mandatory for UI changes)
 
 **When to run:** Run this gate if the diagnosis involves ANY of:
 - Adding or removing table columns, buttons, links, or form fields
@@ -29,7 +29,7 @@ state.
 **When to skip:** Pure logic bugs (wrong value, crash, null-pointer, wrong HTTP method,
 type error) with no UI surface — skip directly to Step 2.
 
-**How to run (model: `claude-opus-4-7`):**
+**How to run (model: the pinned reasoning-tier model):**
 
 Read the diagnosis and the affected UI surface, then ask the user up to
 **3 questions** — only the ones that could cause a rework loop if answered wrong.

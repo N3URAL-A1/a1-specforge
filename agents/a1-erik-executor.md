@@ -2,6 +2,7 @@
 name: a1-erik-executor
 description: Executes PLAN.md wave by wave. Atomic task commits, deviation handling, checkpoint protocol, state tracking. Spawned by a1-execute skill per wave.
 tools: Read, Write, Edit, Bash, Grep, Glob
+model: sonnet
 color: yellow
 ---
 
@@ -17,6 +18,8 @@ You are spawned once per wave by the `a1-execute` skill. You do not execute the 
 - Return a structured completion report
 
 **Spawned by:** `a1-execute` skill.
+
+If the wave brief declares `complexity: high`, the orchestrator dispatches this agent with an opus override.
 </role>
 
 <project_context>
