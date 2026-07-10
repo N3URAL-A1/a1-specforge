@@ -53,6 +53,17 @@ Full flow: Discover → Research → Structure → Scaffold
 ### New Milestone
 Abbreviated flow: Understand → Structure → Scaffold (skip full research if project already exists)
 
+### Adopt (brownfield migration — Wave 5)
+Migrates a legacy-only project (`.a1/roadmap.md`, no `docs/product/`) to the
+schema-v1 `docs/product/` layer. Derives the done-part from an evidence
+ladder (VERIFICATION.md → merged branch/commits → spec `status: done`) and
+interviews the user only for the future/planned part not derivable from
+evidence. Never triggered automatically — always an explicit, confirmed
+hand-off from the on-touch rule in `a1-new-feature`/`a1-execute`, or a direct
+user request. Full behavior lands in Wave 5 of this feature; this SKILL.md
+only reserves the mode name and hook so Wave 4's callers have somewhere to
+hand off to.
+
 ## Phases
 
 | # | Phase | Workflow | Agent | Output |
@@ -64,14 +75,29 @@ Abbreviated flow: Understand → Structure → Scaffold (skip full research if p
 
 ## Storage
 
+New projects scaffold **both** the `docs/product/` layer (schema v1, human +
+machine contract — see `docs/product/SCHEMA.md`) and the `.a1/` layer
+(machine execution state only — phases/waves/status). `docs/product/` is
+never overwritten by hand; the Scaffold phase writes it exclusively via
+`node <repo>/_shared/a1-tools.cjs product ...`.
+
 ```
+docs/product/
+├── ROADMAP.md              ← schema v1: ALL milestones + ALL features named
+│                              upfront with 1-sentence goals (rolling wave)
+├── NEXT.md                 ← generated — do not hand-edit (Wave 3 CLI output)
+└── index.json               ← generated — do not hand-edit (Wave 3 CLI output)
+
 .a1/
-├── roadmap.md              ← milestone/phase overview
-└── phases/                 ← one directory per phase (empty until a1-plan runs)
+└── phases/                 ← one directory per phase, machine state only
     ├── M1-P1-<name>/
     ├── M1-P2-<name>/
     └── M2-P1-<name>/
 ```
+
+Legacy projects (only `.a1/roadmap.md`, no `docs/product/`) are migrated via
+`adopt` mode, on-touch — never big-bang (see "Adopt mode" below, landing in
+Wave 5).
 
 ## Roadmap format
 
@@ -200,9 +226,25 @@ Stale entries (per the `stale`/`hint` fields from `code-scope list
 --stale-days 7`) are annotated the same way as in a1-progress — never
 auto-released here either.
 
+## docs/product Wiring (HARD RULE — CLI-only mutations)
+
+All writes to `docs/product/ROADMAP.md`, `NEXT.md`, `index.json`, and any
+`features/<###>-<slug>/feature.md` go through
+`node <repo>/_shared/a1-tools.cjs product ...` — never hand-written
+frontmatter or hand-edited generated files. The Scaffold phase
+(`workflows/04-scaffold.md`) is the primary caller for new projects; see that
+workflow for the exact CLI invocation that emits the full rolling-wave
+`ROADMAP.md`.
+
 ## Hard rules
 
 - Always confirm the milestone/phase breakdown with the user before scaffolding
 - Phase names are in format `M<N>-P<N>-<kebab-name>` (e.g., `M1-P1-auth-setup`)
-- Never scaffold more than one milestone ahead (avoids over-engineering)
+- Never scaffold more than one milestone ahead in `.a1/phases/` (avoids
+  over-engineering the execution scaffold) — this does NOT limit
+  `docs/product/ROADMAP.md`, which always names ALL milestones/features
+  upfront per the rolling-wave contract (schema v1)
 - If project has existing `.a1/`, add new milestone without touching existing phase dirs
+- Never hand-write or hand-edit `docs/product/` artifacts — always through
+  `a1-tools product ...`
+- Never big-bang-migrate a legacy-only project — on-touch via `adopt` mode only

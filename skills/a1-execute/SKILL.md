@@ -64,11 +64,45 @@ This prevents runaway execution — the user stays in control wave by wave.
 ## Roadmap Gate (HARD RULE — before any wave execution)
 
 Before Phase 1 does anything else, it runs a deterministic (grep/parse, no
-LLM) roadmap-existence check: `.a1/roadmap.md` must exist and parse (see
-`workflows/01-load.md` Step 0, and `a1-roadmap` SKILL.md "Feature → Roadmap
-Linkage" for the schema). Missing or unparseable → halt, route to
-`a1-roadmap`; an existing-but-unparseable file gets an explicit
-do-not-overwrite warning and requires user confirmation before handoff.
+LLM) roadmap-existence check that **prefers `docs/product/ROADMAP.md`**
+(schema v1), falling back to the legacy `.a1/roadmap.md` only when the
+preferred file is absent (see `workflows/01-load.md` Step 0, and `a1-roadmap`
+SKILL.md "Feature → Roadmap Linkage" for the schema). Both missing, or the
+found file unparseable → halt, route to `a1-roadmap`; an
+existing-but-unparseable file gets an explicit do-not-overwrite warning and
+requires user confirmation before handoff. A project on the legacy-only
+fallback path proceeds (soft note, not a blocker) with a recommendation to
+migrate on next touch — see "On-touch migration rule" below.
+
+## docs/product Wiring (HARD RULE — CLI-only mutations)
+
+When the project uses `docs/product/` (schema v1), every wave checkpoint
+mirrors its stage transition through the CLI — never a hand-edited
+`ROADMAP.md`/`feature.md`:
+
+```bash
+node <repo>/_shared/a1-tools.cjs product stage --by <spec-id> --set <stage>
+```
+
+Call this at the same points `a1-erik-executor` would otherwise only touch
+`code-scope stage` (see `workflows/02-execute.md`) — it keeps
+`reservations.json` / `feature.md` / `ROADMAP.md` in sync in one invocation.
+Skip it entirely for legacy-only projects (no `docs/product/` directory).
+
+## On-touch Migration Rule (HARD RULE — never big-bang)
+
+If this skill encounters a project that has only the legacy `.a1/roadmap.md`
+(no `docs/product/` directory), it does **not** silently convert it. Offer
+adopt-mode migration instead, once, non-blocking:
+
+> This project's roadmap is still on the legacy `.a1/roadmap.md` format.
+> Want me to migrate it to `docs/product/ROADMAP.md` (schema v1) now via
+> `a1-roadmap`'s adopt mode, or continue on the legacy path for this
+> execution run?
+
+Accept → hand off to `a1-roadmap` in `adopt` mode, then resume execution.
+Decline/defer → continue wave execution on the legacy path; do not force
+migration mid-run.
 
 ## Routing
 

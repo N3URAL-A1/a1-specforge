@@ -63,7 +63,7 @@ directly. If it needs one more feature, use `a1-new-feature` directly.
 |---|---|---|---|---|
 | 1 | Bootstrap | `workflows/01-bootstrap.md` | (optional) a1-constitution | git repo + CLAUDE.md + .claude/ + .a1/ |
 | 2 | Scope-Interview | `workflows/02-scope.md` | AskUserQuestion | `.a1/scope.md` + Vault scope |
-| 3 | Roadmap | `workflows/03-roadmap.md` | **a1-roadmap** | `.a1/roadmap.md` + phase scaffold |
+| 3 | Roadmap | `workflows/03-roadmap.md` | **a1-roadmap** | `docs/product/ROADMAP.md` (schema v1) + `.a1/` phase scaffold |
 | 4 | Feature-Split | `workflows/04-feature-split.md` | — (orchestrator) | `.a1/features-backlog.md` + Vault project hub |
 | 5 | Feature-Loop | `workflows/05-feature-loop.md` | **a1-new-feature** + **checkpoint** | features implemented one by one |
 
@@ -83,7 +83,7 @@ State is inferred from files on disk, in this order:
 
 1. No git repo / no `CLAUDE.md` in the target dir → **Phase 1 (Bootstrap)**.
 2. Bootstrapped but no `.a1/scope.md` → **Phase 2 (Scope-Interview)**.
-3. Scope exists but no `.a1/roadmap.md` → **Phase 3 (Roadmap)**.
+3. Scope exists but no `docs/product/ROADMAP.md` (nor legacy `.a1/roadmap.md`) → **Phase 3 (Roadmap)**.
 4. Roadmap exists but no `.a1/features-backlog.md` → **Phase 4 (Feature-Split)**.
 5. Backlog exists with at least one `pending`/`in-progress` feature →
    **Phase 5 (Feature-Loop)** — resume on the next non-`done` feature.
@@ -101,12 +101,21 @@ This file-based routing is what makes the skill safe to re-enter after a
 ├── .claudeignore              ← stack-matched (Phase 1)
 ├── .claude/
 │   └── agent-memory/MEMORY.md ← "# Memory\n" (Phase 1)
+├── docs/product/
+│   ├── ROADMAP.md              ← schema v1, via a1-roadmap CLI scaffold (Phase 3)
+│   ├── NEXT.md                 ← generated
+│   └── index.json              ← generated
 └── .a1/
     ├── scope.md               ← confirmed scope (Phase 2)
-    ├── roadmap.md             ← via a1-roadmap (Phase 3)
     ├── features-backlog.md    ← prioritized backlog + per-feature status (Phase 4/5)
-    └── phases/                ← phase dirs from a1-roadmap
+    └── phases/                ← phase dirs from a1-roadmap (machine execution state)
 ```
+
+Phase 3 (Roadmap) delegates to `a1-roadmap`, which scaffolds the full
+`docs/product/` structure at this point (FR-017) — all milestones and
+features named upfront via `node _shared/a1-tools.cjs product init` (see
+`a1-roadmap` workflows/04-scaffold.md). This skill never hand-writes
+`docs/product/` files itself; it only calls `a1-roadmap`.
 
 Vault mirror (single source of truth for cross-project memory):
 - Project hub: `projects/<slug>/` (created in Phase 4)
@@ -125,6 +134,10 @@ Learning store defaults to repo-local `.a1/learnings/`; set `A1_VAULT_ROOT` to u
   confirmation (outward-facing action — always confirm).
 - **Never proceed past Phase 2 until the user confirms the scope.** This is the
   one phase where extra clarification is cheap and being wrong is expensive.
+- **Never hand-write `docs/product/` artifacts.** Phase 3 delegates to
+  `a1-roadmap`, which writes `ROADMAP.md`/`NEXT.md`/`index.json` exclusively
+  via `a1-tools product ...` (FR-013). This skill never edits those files
+  directly.
 - **Never skip the checkpoint *save* between features in Phase 5.** Running
   `checkpoint` (which persists state across all memory layers) is mandatory —
   it is what makes the loop resumable. The subsequent `/clear` is user-driven
