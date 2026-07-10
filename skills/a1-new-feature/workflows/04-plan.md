@@ -60,8 +60,22 @@ Use the **Agent** tool with `subagent_type: "a1-vincente-vibe-optimizer"` and
 > project: <project-slug>
 > created: YYYY-MM-DD
 > waves: <count>
+> code_scope:
+>   - <file-or-dir-1>
+>   - <file-or-dir-2>
 > ---
 > ```
+>
+> **`code_scope:` is mandatory (Scope Claim Gate input).** List every file/dir this
+> feature will touch — the Scope Claim Gate (SKILL.md, 05-implement.md Step 0) reads
+> this list at implementation time and blocks any edit outside it. Two cases:
+> - **Existing code:** list the files/dirs you will MODIFY.
+> - **Greenfield (new module/page/service):** list the target directories you will
+>   CREATE (e.g. `app/api/widgets/`, `components/widgets/`). Greenfield features are
+>   NOT exempt from the gate — declare the creation scope up front, same as an
+>   existing-code edit scope.
+> If a wave's actual footprint would exceed this list, revise `code_scope` here
+> before Phase 5, don't discover it silently during implementation.
 >
 > Per wave:
 >
