@@ -1272,6 +1272,456 @@ function cmdProductStage(args) {
   exitWithLock(lockPath, 0);
 }
 
+const MILESTONE_STATUS_VALUES = ['planned', 'in-progress', 'done'];
+const PROJECT_STATUS_VALUES = ['active', 'paused', 'done'];
+
+/** product markers --level <project|milestone|feature> [--id <id>] [--set <marker>]
+ * (FR-007). With no --set: read-only report of the 3 marker levels — roadmap
+ * `next` cursor / project `status`, per-milestone `status`, per-feature
+ * `stage` — as JSON, plus warnings[] for detected inconsistencies (e.g.
+ * `next` pointing at a done/cancelled feature; an in-flight feature with no
+ * matching code_scope reservation). Never mutates any file in this mode.
+ * With --set: writes the marker at the given level under the same
+ * lock+tmp/rename transaction as `product stage`/`product changelog`, then
+ * calls regenerateDerived (index.json + NEXT.md) — matching the Wave 3
+ * brief's explicit contract ("writing under the same lock and calling
+ * regenerateDerived after"). --level and --set require --id except at
+ * project level (there is only one project). Feature-level --set only
+ * updates the feature-stage marker directly (bypassing product stage's
+ * forward-only stage-transition guard and reservations.json/feature.md
+ * mirroring) — use `product stage` instead when those guarantees matter. */
+function cmdProductMarkers(args) {
+  const flags = parseFlags(args, { dir: 'value', level: 'value', id: 'value', set: 'value' });
+  if (flags.set !== undefined) {
+    return cmdProductMarkersSet(flags);
+  }
+  const dir = productDirFromFlags(flags);
+  const roadmap = readProductRoadmap(dir);
+  if (!roadmap) {
+    fail(`product markers: ${path.join(dir, 'ROADMAP.md')} not found`);
+  }
+  const fm = roadmap.fm;
+  const milestones = Array.isArray(fm.milestones) ? fm.milestones : [];
+  const features = Array.isArray(fm.features) ? fm.features : [];
+
+  const warnings = [];
+
+  const nextId = fm.next !== undefined ? fm.next : null;
+  if (nextId !== null) {
+    const nextFeature = features.find((f) => f.id === nextId);
+    if (!nextFeature) {
+      warnings.push(`next cursor '${nextId}' does not match any feature id in ROADMAP.md`);
+    } else if (nextFeature.status === 'done' || nextFeature.status === 'cancelled') {
+      warnings.push(`next cursor '${nextId}' points at a feature with status '${nextFeature.status}' (should point at a not-yet-done feature)`);
+    }
+  }
+
+  const reservationsFilePath = path.join(process.cwd(), '.a1', 'reservations.json');
+  let reservationsById = new Map();
+  if (fs.existsSync(reservationsFilePath)) {
+    const resData = loadReservations(reservationsFilePath);
+    reservationsById = new Map(
+      resData.reservations.filter((r) => r.type === 'code_scope').map((r) => [r.by, r])
+    );
+  }
+
+  for (const f of features) {
+    if (f.status === 'in-flight' && !reservationsById.has(f.id)) {
+      warnings.push(`feature '${f.id}' has status 'in-flight' but no matching code_scope reservation in .a1/reservations.json`);
+    }
+    if (f.status === 'in-flight' && (f.stage === null || f.stage === undefined)) {
+      warnings.push(`feature '${f.id}' has status 'in-flight' but stage is null`);
+    }
+  }
+
+  const out = {
+    project: { id: fm.project, title: fm.title, status: fm.status, marker: 'project-status', value: fm.status },
+    next_cursor: { level: 'project', value: nextId },
+    milestones: milestones.map((m) => ({ id: m.id, marker: 'milestone-status', value: m.status })),
+    features: features.map((f) => ({ id: f.id, marker: 'feature-stage', value: f.stage !== undefined ? f.stage : null, status: f.status })),
+    warnings,
+  };
+
+  if (flags.level) {
+    if (!['project', 'milestone', 'feature'].includes(flags.level)) {
+      usage(`product markers --level must be one of: project|milestone|feature (got: ${flags.level})`);
+    }
+    if (flags.level === 'milestone' && flags.id) {
+      out.filtered = out.milestones.filter((m) => m.id === flags.id);
+    } else if (flags.level === 'feature' && flags.id) {
+      out.filtered = out.features.filter((f) => f.id === flags.id);
+    }
+  }
+
+  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+  process.exit(0);
+}
+
+/** Write path for `product markers --set` (FR-007). Split out of
+ * cmdProductMarkers to keep the read-only report path unchanged. Validates
+ * --level/--id/--set, updates the target marker under the same
+ * lock+tmp/rename transaction as `product stage`/`product changelog`
+ * (including a changelog line + regenerateDerived), then exits. */
+function cmdProductMarkersSet(flags) {
+  if (!flags.level) {
+    usage('product markers --set requires --level <project|milestone|feature>');
+  }
+  if (!['project', 'milestone', 'feature'].includes(flags.level)) {
+    usage(`product markers --level must be one of: project|milestone|feature (got: ${flags.level})`);
+  }
+  if (flags.level !== 'project' && !flags.id) {
+    usage(`product markers --level ${flags.level} --set requires --id <id>`);
+  }
+
+  const dir = productDirFromFlags(flags);
+  const lockFile = path.join(dir, '.product-stage.lock.json');
+  const lockPath = acquireReservationsLock(lockFile);
+
+  const roadmapFile = path.join(dir, 'ROADMAP.md');
+  if (!fs.existsSync(roadmapFile)) {
+    failWithLock(lockPath, `product markers: ${roadmapFile} not found`);
+  }
+  const roadmapContent = fs.readFileSync(roadmapFile, 'utf8');
+  const { fm: roadmapFm, body: roadmapBody } = parseNestedFrontmatter(roadmapContent);
+
+  const today = nowIso().slice(0, 10);
+  let updatedRoadmapFm;
+  let changelogWhat;
+
+  if (flags.level === 'project') {
+    if (!PROJECT_STATUS_VALUES.includes(flags.set)) {
+      failWithLock(
+        lockPath,
+        `product markers --level project --set must be one of: ${PROJECT_STATUS_VALUES.join('|')} (got: ${flags.set})`
+      );
+    }
+    updatedRoadmapFm = { ...roadmapFm, status: flags.set, updated: today };
+    changelogWhat = `project status -> ${flags.set}`;
+  } else if (flags.level === 'milestone') {
+    const milestones = Array.isArray(roadmapFm.milestones) ? roadmapFm.milestones : [];
+    const idx = milestones.findIndex((m) => m.id === flags.id);
+    if (idx === -1) {
+      failWithLock(lockPath, `product markers: milestone '${flags.id}' not found in ${roadmapFile}`);
+    }
+    if (!MILESTONE_STATUS_VALUES.includes(flags.set)) {
+      failWithLock(
+        lockPath,
+        `product markers --level milestone --set must be one of: ${MILESTONE_STATUS_VALUES.join('|')} (got: ${flags.set})`
+      );
+    }
+    const updatedMilestones = milestones.map((m, i) => (i === idx ? { ...m, status: flags.set } : m));
+    updatedRoadmapFm = { ...roadmapFm, milestones: updatedMilestones, updated: today };
+    changelogWhat = `milestone ${flags.id} status -> ${flags.set}`;
+  } else {
+    // feature level: sets the feature-stage marker directly. Unlike
+    // `product stage`, this does not enforce forward-only transitions and
+    // does not mirror reservations.json/feature.md — it is the lightweight
+    // marker writer the Wave 3 brief specifies; use `product stage` when
+    // those additional guarantees are required.
+    const features = Array.isArray(roadmapFm.features) ? roadmapFm.features : [];
+    const idx = features.findIndex((f) => f.id === flags.id);
+    if (idx === -1) {
+      failWithLock(lockPath, `product markers: feature '${flags.id}' not found in ${roadmapFile}`);
+    }
+    if (!CODE_SCOPE_STAGES.includes(flags.set)) {
+      failWithLock(
+        lockPath,
+        `product markers --level feature --set must be one of: ${CODE_SCOPE_STAGES.join('|')} (got: ${flags.set})`
+      );
+    }
+    const updatedFeatures = features.map((f, i) => (i === idx ? { ...f, stage: flags.set } : f));
+    updatedRoadmapFm = { ...roadmapFm, features: updatedFeatures, updated: today };
+    changelogWhat = `feature ${flags.id} stage marker -> ${flags.set}`;
+  }
+
+  const { writes } = buildRoadmapWritesWithChangelog(
+    dir,
+    updatedRoadmapFm,
+    roadmapBody,
+    changelogWhat,
+    'marker set via `product markers --set`'
+  );
+  writeAllOrNothing(lockPath, writes, 'product markers');
+
+  const out = {
+    status: 'OK',
+    level: flags.level,
+    id: flags.id || null,
+    set: flags.set,
+    files_written: writes.map((w) => w.target),
+  };
+  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+  exitWithLock(lockPath, 0);
+}
+
+/** product changelog --entry "<what>" --why "<why>" [--dir]: appends a
+ * changelog line to ROADMAP.md, rotating overflow beyond 100 entries to
+ * CHANGELOG-archive.md, and regenerates index.json/NEXT.md — all under the
+ * same lock + tmp/rename transaction as `product stage` (FR-010). */
+function cmdProductChangelog(args) {
+  const flags = parseFlags(args, { entry: 'value', why: 'value', dir: 'value' });
+  if (!flags.entry || !flags.why) {
+    usage('product changelog requires --entry "<what>" --why "<why>"');
+  }
+  const dir = productDirFromFlags(flags);
+  const lockFile = path.join(dir, '.product-stage.lock.json');
+  const lockPath = acquireReservationsLock(lockFile);
+
+  const roadmapFile = path.join(dir, 'ROADMAP.md');
+  if (!fs.existsSync(roadmapFile)) {
+    failWithLock(lockPath, `product changelog: ${roadmapFile} not found`);
+  }
+  const roadmapContent = fs.readFileSync(roadmapFile, 'utf8');
+  const { fm: roadmapFm, body: roadmapBody } = parseNestedFrontmatter(roadmapContent);
+
+  const today = nowIso().slice(0, 10);
+  const updatedRoadmapFm = { ...roadmapFm, updated: today };
+
+  const { writes } = buildRoadmapWritesWithChangelog(dir, updatedRoadmapFm, roadmapBody, flags.entry, flags.why);
+  writeAllOrNothing(lockPath, writes, 'product changelog');
+
+  const out = { status: 'OK', entry: flags.entry, why: flags.why, files_written: writes.map((w) => w.target) };
+  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+  exitWithLock(lockPath, 0);
+}
+
+/** product init --project <slug> --title <t> [--dir]: scaffold a brand-new
+ * docs/product/ROADMAP.md skeleton (schema v1, empty milestones/features) +
+ * NEXT.md + index.json. Refuses if ROADMAP.md already exists (FR-017: new =
+ * scaffold once, never re-scaffold over an existing contract). */
+function cmdProductInit(args) {
+  const flags = parseFlags(args, { project: 'value', title: 'value', dir: 'value' });
+  if (!flags.project || !flags.title) {
+    usage('product init requires --project <slug> --title <title>');
+  }
+  const dir = productDirFromFlags(flags);
+  const roadmapFile = path.join(dir, 'ROADMAP.md');
+  if (fs.existsSync(roadmapFile)) {
+    fail(`product init: ${roadmapFile} already exists — refusing to overwrite (use add-milestone/add-feature to extend, or product stage to progress it)`);
+  }
+
+  const lockFile = path.join(dir, '.product-stage.lock.json');
+  const lockPath = acquireReservationsLock(lockFile);
+
+  const today = nowIso().slice(0, 10);
+  const roadmapFm = {
+    schema_version: 1,
+    type: 'roadmap',
+    project: flags.project,
+    title: flags.title,
+    status: 'active',
+    updated: today,
+    source: 'scaffolded by a1-tools product init',
+    milestones: [],
+    features: [],
+    next: null,
+  };
+  const body = `\n# ${flags.title}\n\n## Milestones\n\n(none yet — use \`product add-milestone\`)\n\n## In-flight features\n\nNone.\n\n## Changelog\n\n- **${today}** — project initialized — scaffolded by \`product init\`\n\n## Appendix — migrated details\n\n(none)\n`;
+
+  const roadmapFmStr = serializeNestedFrontmatter(roadmapFm, PRODUCT_ROADMAP_KEY_ORDER);
+  const roadmapContent = `---\n${roadmapFmStr}\n---\n${body}`;
+  const { indexJson, nextMd } = regenerateDerived(dir, roadmapFm);
+
+  const writes = [
+    { target: roadmapFile, content: roadmapContent },
+    { target: path.join(dir, 'index.json'), content: JSON.stringify(indexJson, null, 2) + '\n' },
+    { target: path.join(dir, 'NEXT.md'), content: nextMd },
+  ];
+  writeAllOrNothing(lockPath, writes, 'product init');
+
+  const out = { status: 'OK', project: flags.project, files_written: writes.map((w) => w.target) };
+  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+  exitWithLock(lockPath, 0);
+}
+
+/** product add-milestone --id <slug> --title <t> [--target YYYY-MM] [--goal <s>]:
+ * append a new milestone entry to an existing ROADMAP.md's milestones[] list. */
+function cmdProductAddMilestone(args) {
+  const flags = parseFlags(args, { id: 'value', title: 'value', target: 'value', goal: 'value', status: 'value', dir: 'value' });
+  if (!flags.id || !flags.title) {
+    usage('product add-milestone requires --id <slug> --title <title>');
+  }
+  const dir = productDirFromFlags(flags);
+  const lockFile = path.join(dir, '.product-stage.lock.json');
+  const lockPath = acquireReservationsLock(lockFile);
+
+  const roadmapFile = path.join(dir, 'ROADMAP.md');
+  if (!fs.existsSync(roadmapFile)) {
+    failWithLock(lockPath, `product add-milestone: ${roadmapFile} not found (run \`product init\` first)`);
+  }
+  const roadmapContent = fs.readFileSync(roadmapFile, 'utf8');
+  const { fm: roadmapFm, body: roadmapBody } = parseNestedFrontmatter(roadmapContent);
+  const milestones = Array.isArray(roadmapFm.milestones) ? roadmapFm.milestones : [];
+  if (milestones.some((m) => m.id === flags.id)) {
+    failWithLock(lockPath, `product add-milestone: milestone '${flags.id}' already exists`);
+  }
+
+  const newMilestone = {
+    id: flags.id,
+    title: flags.title,
+    status: flags.status || 'planned',
+    target: flags.target || null,
+  };
+  const updatedRoadmapFm = {
+    ...roadmapFm,
+    updated: nowIso().slice(0, 10),
+    milestones: [...milestones, newMilestone],
+  };
+
+  const { writes } = buildRoadmapWritesWithChangelog(
+    dir,
+    updatedRoadmapFm,
+    roadmapBody,
+    `milestone '${flags.id}' added`,
+    flags.goal || 'new milestone via `product add-milestone`'
+  );
+  writeAllOrNothing(lockPath, writes, 'product add-milestone');
+
+  const out = { status: 'OK', milestone: flags.id, files_written: writes.map((w) => w.target) };
+  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+  exitWithLock(lockPath, 0);
+}
+
+/** product add-feature --id <###-slug> --milestone <m> --title <t>
+ * [--goal <s>] [--depends-on a,b]: append a new feature entry to an existing
+ * ROADMAP.md's features[] list (schema-v1 shape, all fields present). */
+function cmdProductAddFeature(args) {
+  const flags = parseFlags(args, {
+    id: 'value', milestone: 'value', title: 'value', goal: 'value',
+    'depends-on': 'value', status: 'value', dir: 'value',
+  });
+  if (!flags.id || !flags.milestone || !flags.title) {
+    usage('product add-feature requires --id <###-slug> --milestone <m-slug> --title <title>');
+  }
+  const dir = productDirFromFlags(flags);
+  const lockFile = path.join(dir, '.product-stage.lock.json');
+  const lockPath = acquireReservationsLock(lockFile);
+
+  const roadmapFile = path.join(dir, 'ROADMAP.md');
+  if (!fs.existsSync(roadmapFile)) {
+    failWithLock(lockPath, `product add-feature: ${roadmapFile} not found (run \`product init\` first)`);
+  }
+  const roadmapContent = fs.readFileSync(roadmapFile, 'utf8');
+  const { fm: roadmapFm, body: roadmapBody } = parseNestedFrontmatter(roadmapContent);
+  const milestones = Array.isArray(roadmapFm.milestones) ? roadmapFm.milestones : [];
+  const features = Array.isArray(roadmapFm.features) ? roadmapFm.features : [];
+
+  if (!milestones.some((m) => m.id === flags.milestone)) {
+    failWithLock(lockPath, `product add-feature: milestone '${flags.milestone}' does not exist — add it first via \`product add-milestone\``);
+  }
+  if (features.some((f) => f.id === flags.id)) {
+    failWithLock(lockPath, `product add-feature: feature '${flags.id}' already exists`);
+  }
+
+  const dependsOn = flags['depends-on']
+    ? flags['depends-on'].split(',').map((s) => s.trim()).filter(Boolean)
+    : [];
+
+  const newFeature = {
+    id: flags.id,
+    milestone: flags.milestone,
+    title: flags.title,
+    status: flags.status || 'planned',
+    stage: null,
+    depends_on: dependsOn,
+    started: null,
+    finished: null,
+    spec_path: null,
+    plan_path: null,
+  };
+  const updatedRoadmapFm = {
+    ...roadmapFm,
+    updated: nowIso().slice(0, 10),
+    features: [...features, newFeature],
+  };
+
+  const { writes } = buildRoadmapWritesWithChangelog(
+    dir,
+    updatedRoadmapFm,
+    roadmapBody,
+    `feature '${flags.id}' added`,
+    flags.goal || 'new feature via `product add-feature`'
+  );
+  writeAllOrNothing(lockPath, writes, 'product add-feature');
+
+  const out = { status: 'OK', feature: flags.id, files_written: writes.map((w) => w.target) };
+  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+  exitWithLock(lockPath, 0);
+}
+
+/** product feature-init --id <###-slug> [--spec-path <p>] [--plan-path <p>]:
+ * creates docs/product/features/<id>/feature.md (schema-v1 frontmatter),
+ * mirroring the ROADMAP.md features[] entry for <id> (FR-015/FR-017 —
+ * on-touch creation, never big-bang). The feature must already be present
+ * in ROADMAP.md features[] (via add-feature or init). */
+function cmdProductFeatureInit(args) {
+  const flags = parseFlags(args, { id: 'value', 'spec-path': 'value', 'plan-path': 'value', dir: 'value' });
+  if (!flags.id) {
+    usage('product feature-init requires --id <###-feature-slug>');
+  }
+  const dir = productDirFromFlags(flags);
+  const lockFile = path.join(dir, '.product-stage.lock.json');
+  const lockPath = acquireReservationsLock(lockFile);
+
+  const roadmapFile = path.join(dir, 'ROADMAP.md');
+  if (!fs.existsSync(roadmapFile)) {
+    failWithLock(lockPath, `product feature-init: ${roadmapFile} not found`);
+  }
+  const roadmapContent = fs.readFileSync(roadmapFile, 'utf8');
+  const { fm: roadmapFm, body: roadmapBody } = parseNestedFrontmatter(roadmapContent);
+  const features = Array.isArray(roadmapFm.features) ? roadmapFm.features : [];
+  const feature = features.find((f) => f.id === flags.id);
+  if (!feature) {
+    failWithLock(lockPath, `product feature-init: feature '${flags.id}' not found in ${roadmapFile} — add it first via \`product add-feature\``);
+  }
+
+  const featureDir = path.join(dir, 'features', flags.id);
+  const featureFile = path.join(featureDir, 'feature.md');
+  if (fs.existsSync(featureFile)) {
+    failWithLock(lockPath, `product feature-init: ${featureFile} already exists`);
+  }
+
+  const specPath = flags['spec-path'] || null;
+  const planPath = flags['plan-path'] || null;
+
+  const featureFm = {
+    id: feature.id,
+    project: roadmapFm.project,
+    milestone: feature.milestone,
+    title: feature.title,
+    status: feature.status,
+    stage: feature.stage !== undefined ? feature.stage : null,
+    depends_on: Array.isArray(feature.depends_on) ? feature.depends_on : [],
+    started: feature.started !== undefined ? feature.started : null,
+    finished: feature.finished !== undefined ? feature.finished : null,
+    spec_path: specPath,
+    plan_path: planPath,
+    schema_version: 1,
+  };
+  const featureFmStr = serializeNestedFrontmatter(featureFm, PRODUCT_FEATURE_KEY_ORDER);
+  const featureContent = `---\n${featureFmStr}\n---\n\n${feature.title} — feature summary (fill in).\n`;
+
+  // Mirror spec_path/plan_path onto the ROADMAP.md features[] entry too, so
+  // index.json regeneration (which reads feature.md OR the frontmatter
+  // fallback) is consistent even before the next `product stage` call.
+  const updatedFeature = { ...feature, spec_path: specPath !== null ? specPath : feature.spec_path, plan_path: planPath !== null ? planPath : feature.plan_path };
+  const updatedFeatures = features.map((f) => (f.id === flags.id ? updatedFeature : f));
+  const updatedRoadmapFm = { ...roadmapFm, updated: nowIso().slice(0, 10), features: updatedFeatures };
+
+  const { writes } = buildRoadmapWritesWithChangelog(
+    dir,
+    updatedRoadmapFm,
+    roadmapBody,
+    `feature.md created for '${flags.id}'`,
+    'formal spec/plan attached via `product feature-init`'
+  );
+  writes.push({ target: featureFile, content: featureContent });
+  writeAllOrNothing(lockPath, writes, 'product feature-init');
+
+  const out = { status: 'OK', feature: flags.id, files_written: writes.map((w) => w.target) };
+  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+  exitWithLock(lockPath, 0);
+}
 
 function appendPhaseHistory(fm, phaseName) {
   if (!Array.isArray(fm.phase_history)) fm.phase_history = [];
@@ -7031,6 +7481,66 @@ Usage:
                   first and renamed only after every tmp write succeeds —
                   any failure rolls back with none of the originals
                   touched. Exit: 0 ok, 1 usage/validation/write error.
+  a1-tools product markers [--dir docs/product] [--level project|milestone|feature --id <id>]
+                  Read-only report (no --set) of the 3 marker levels:
+                  project-level 'next' cursor + 'status', per-milestone
+                  'status', per-feature 'stage'. Flags inconsistencies as
+                  warnings[] (e.g. 'next' pointing at a done/cancelled
+                  feature, or an in-flight feature missing a code_scope
+                  reservation / with a null stage). Never writes any file in
+                  this mode. Exit: 0 ok, 1 ROADMAP.md missing.
+  a1-tools product markers --level <project|milestone|feature> [--id <id>] --set <value> [--dir docs/product]
+                  Writer mode: updates the marker at the given level under
+                  the same lock + tmp/rename transaction as 'product stage'
+                  / 'product changelog', appends a changelog line, and
+                  regenerates index.json + NEXT.md. --id required except at
+                  project level. --set values: project ->
+                  active|paused|done; milestone -> planned|in-progress|done;
+                  feature -> reuses CODE_SCOPE_STAGES (same set as 'product
+                  stage'), but does NOT enforce forward-only transitions or
+                  mirror reservations.json/feature.md — use 'product stage'
+                  for those guarantees. Exit: 0 ok, 1 usage/validation/write
+                  error.
+  a1-tools product changelog --entry "<what>" --why "<why>" [--dir docs/product]
+                  Appends "- **YYYY-MM-DD** — <what> — <why>" under
+                  ROADMAP.md's '## Changelog' section and regenerates
+                  index.json + NEXT.md, under the same lock + tmp/rename
+                  transaction as 'product stage'. When the Changelog holds
+                  more than 100 entries, the oldest overflow is rotated
+                  (append-only) into docs/product/CHANGELOG-archive.md in
+                  the same transaction. Exit: 0 ok, 1 usage/write error.
+  a1-tools product init --project <slug> --title <title> [--dir docs/product]
+                  Scaffold a brand-new docs/product/ROADMAP.md (schema v1,
+                  empty milestones[]/features[]) + NEXT.md + index.json.
+                  Refuses (exit 1) if ROADMAP.md already exists — use
+                  add-milestone/add-feature to extend an existing roadmap
+                  instead. Exit: 0 ok, 1 usage/already-exists/write error.
+  a1-tools product add-milestone --id <slug> --title <title>
+                  [--target YYYY-MM] [--goal <text>] [--status <status>]
+                  [--dir docs/product]
+                  Append a new milestone to an existing ROADMAP.md
+                  milestones[] list; auto-appends a changelog line and
+                  regenerates index.json/NEXT.md. Exit: 0 ok, 1 usage/
+                  duplicate-id/write error.
+  a1-tools product add-feature --id <###-slug> --milestone <m-slug>
+                  --title <title> [--goal <text>] [--depends-on a,b]
+                  [--status <status>] [--dir docs/product]
+                  Append a new feature to an existing ROADMAP.md features[]
+                  list (schema-v1 shape); requires the milestone to already
+                  exist. Auto-appends a changelog line and regenerates
+                  index.json/NEXT.md. Exit: 0 ok, 1 usage/missing-
+                  milestone/duplicate-id/write error.
+  a1-tools product feature-init --id <###-slug> [--spec-path <path>]
+                  [--plan-path <path>] [--dir docs/product]
+                  Creates docs/product/features/<id>/feature.md (schema-v1
+                  frontmatter: id/project/milestone/title/status/stage/
+                  depends_on/spec_path/plan_path), mirrored from the
+                  feature's existing ROADMAP.md features[] entry (which
+                  must already exist — add it first via 'product
+                  add-feature'). Refuses if feature.md already exists.
+                  Auto-appends a changelog line and regenerates
+                  index.json/NEXT.md. Exit: 0 ok, 1 usage/missing-feature/
+                  already-exists/write error.
 
 Spec statuses: ${[...SPEC_STATUSES].join(', ')}
 Bug statuses:  ${[...BUG_STATUSES].join(', ')}
@@ -7922,6 +8432,24 @@ function main() {
       } else if (sub === 'stage') {
         cmdProductStage(rest);
         return; // unreachable — cmdProductStage calls process.exit()
+      } else if (sub === 'markers') {
+        cmdProductMarkers(rest);
+        return; // unreachable — cmdProductMarkers calls process.exit()
+      } else if (sub === 'changelog') {
+        cmdProductChangelog(rest);
+        return; // unreachable — cmdProductChangelog calls process.exit()
+      } else if (sub === 'init') {
+        cmdProductInit(rest);
+        return; // unreachable — cmdProductInit calls process.exit()
+      } else if (sub === 'add-milestone') {
+        cmdProductAddMilestone(rest);
+        return; // unreachable — cmdProductAddMilestone calls process.exit()
+      } else if (sub === 'add-feature') {
+        cmdProductAddFeature(rest);
+        return; // unreachable — cmdProductAddFeature calls process.exit()
+      } else if (sub === 'feature-init') {
+        cmdProductFeatureInit(rest);
+        return; // unreachable — cmdProductFeatureInit calls process.exit()
       } else {
         usage(`unknown product subcommand: ${sub}`);
       }
