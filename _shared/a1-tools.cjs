@@ -5906,6 +5906,66 @@ function cmdCodeScopeClaim(args) {
   process.exit(0);
 }
 
+function cmdCodeScopeStage(args) {
+  const flags = parseFlags(args, { by: 'value', set: 'value', file: 'value' });
+  const file = reservationsFile(flags);
+  if (!flags.by || !flags.set) {
+    usage('code-scope stage requires --by <feature-id> --set <stage>');
+  }
+  const stage = flags.set;
+  if (!CODE_SCOPE_STAGES.includes(stage)) {
+    usage(`code-scope stage --set must be one of: ${CODE_SCOPE_STAGES.join('|')} (got: ${stage})`);
+  }
+  const by = flags.by;
+  const data = loadReservations(file);
+  const existing = data.reservations.find((r) => r.type === 'code_scope' && r.by === by);
+  if (!existing) {
+    fail(`code-scope stage: no in-flight code_scope reservation found for feature '${by}'`);
+  }
+  const updated = { ...existing, stage };
+  const next = {
+    reservations: data.reservations.map((r) =>
+      r.type === 'code_scope' && r.by === by ? updated : r
+    ),
+  };
+  writeJsonAtomic(file, next);
+  const out = { status: 'OK', file, reservation: updated };
+  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+  process.exit(0);
+}
+
+function cmdCodeScopeRelease(args) {
+  const flags = parseFlags(args, { by: 'value', file: 'value' });
+  const file = reservationsFile(flags);
+  if (!flags.by) {
+    usage('code-scope release requires --by <feature-id>');
+  }
+  const by = flags.by;
+  const data = loadReservations(file);
+  const existing = data.reservations.find((r) => r.type === 'code_scope' && r.by === by);
+  if (!existing) {
+    const out = { status: 'OK', file, released: false };
+    process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+    process.exit(0);
+  }
+  const remaining = data.reservations.filter((r) => !(r.type === 'code_scope' && r.by === by));
+  const next = { reservations: remaining };
+  writeJsonAtomic(file, next);
+  const out = { status: 'OK', file, released: true, reservation: existing };
+  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+  process.exit(0);
+}
+
+function cmdCodeScopeList(args) {
+  const flags = parseFlags(args, { file: 'value' });
+  const file = reservationsFile(flags);
+  const data = loadReservations(file);
+  const scopes = data.reservations.filter((r) => r.type === 'code_scope');
+  const out = { file, count: scopes.length, reservations: scopes };
+  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+  process.exit(0);
+}
+
 function cmdCodeScopeCheck(args) {
   const flags = parseFlags(args, { by: 'value', scope: 'value', file: 'value' });
   const file = reservationsFile(flags);
@@ -5981,6 +6041,18 @@ Usage:
                   re-claim is idempotent (exit 0).
   a1-tools code-scope check --by <feature-id> --scope <path>[,<path>...] [--file <path>]
                   Dry-run variant of claim: same overlap comparison, never writes.
+  a1-tools code-scope stage --by <feature-id> --set <stage> [--file <path>]
+                  Advances the lifecycle stage on a feature's code_scope entry.
+                  <stage> one of: started|complete|review|verify|merge|
+                  origin-cleanup|done. Unknown feature-id -> exit 1. Invalid
+                  stage -> exit 1. Rebuilds the reservation immutably, atomic
+                  write, exit 0.
+  a1-tools code-scope release --by <feature-id> [--file <path>]
+                  Removes a feature's code_scope reservation entirely, freeing
+                  its scope for other features to claim (auto-unblock).
+                  Idempotent: no matching entry -> exit 0, {released:false}.
+  a1-tools code-scope list [--file <path>]
+                  Lists all code_scope reservations (feature, stage, paths).
 
   a1-tools checklist run <project-slug>[/<feature-id>] [--format json|human] [--save] [--vault <path>]
                   Pre-flight checklist: 8 structural checks before implementation.
@@ -6897,6 +6969,15 @@ function main() {
       } else if (sub === 'check') {
         cmdCodeScopeCheck(rest);
         return; // unreachable — cmdCodeScopeCheck calls process.exit()
+      } else if (sub === 'stage') {
+        cmdCodeScopeStage(rest);
+        return; // unreachable — cmdCodeScopeStage calls process.exit()
+      } else if (sub === 'release') {
+        cmdCodeScopeRelease(rest);
+        return; // unreachable — cmdCodeScopeRelease calls process.exit()
+      } else if (sub === 'list') {
+        cmdCodeScopeList(rest);
+        return; // unreachable — cmdCodeScopeList calls process.exit()
       } else {
         usage(`unknown code-scope subcommand: ${sub}`);
       }

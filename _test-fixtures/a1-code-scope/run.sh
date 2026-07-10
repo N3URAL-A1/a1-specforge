@@ -107,5 +107,59 @@ else
   echo "PASS  check-dry-run-ok (file untouched)"; pass=$((pass + 1))
 fi
 
+# --- Wave 2: stage lifecycle ---
+
+# --- stage advance persists + visible in list ---
+OUT="$(node "$TOOLS" code-scope stage --by feature-a --set review --file "$FILE" 2>&1)"
+assert_rc "stage-advance" 0 $? "$OUT"
+if ! grep -q '"stage": "review"' <<<"$OUT"; then
+  echo "FAIL  stage-advance: expected stage:review in output"; fail=$((fail + 1))
+else
+  echo "PASS  stage-advance reflects new stage in output"; pass=$((pass + 1))
+fi
+
+LIST_OUT="$(node "$TOOLS" code-scope list --file "$FILE" 2>&1)"
+if ! grep -q '"stage": "review"' <<<"$LIST_OUT"; then
+  echo "FAIL  stage-advance: stage:review not visible in --list output"; fail=$((fail + 1))
+else
+  echo "PASS  stage-advance visible in list output"; pass=$((pass + 1))
+fi
+
+# --- invalid stage -> 1 ---
+OUT="$(node "$TOOLS" code-scope stage --by feature-a --set bogus-stage --file "$FILE" 2>&1)"
+assert_rc "stage-invalid" 1 $? "$OUT"
+
+# --- unknown feature id -> 1 ---
+OUT="$(node "$TOOLS" code-scope stage --by feature-does-not-exist --set review --file "$FILE" 2>&1)"
+assert_rc "stage-unknown-feature" 1 $? "$OUT"
+
+# --- end-to-end auto-unblock: claim A -> claim B blocked -> release A -> claim B succeeds ---
+E2E_FILE="$WORK/e2e-reservations.json"
+OUT="$(node "$TOOLS" code-scope claim --by feature-x --scope "src/payments/" --file "$E2E_FILE" 2>&1)"
+assert_rc "e2e-claim-a" 0 $? "$OUT"
+
+OUT="$(node "$TOOLS" code-scope claim --by feature-y --scope "src/payments/checkout.ts" --file "$E2E_FILE" 2>&1)"
+assert_rc "e2e-claim-b-blocked" 1 $? "$OUT"
+
+OUT="$(node "$TOOLS" code-scope release --by feature-x --file "$E2E_FILE" 2>&1)"
+assert_rc "e2e-release-a" 0 $? "$OUT"
+if ! grep -q '"released": true' <<<"$OUT"; then
+  echo "FAIL  e2e-release-a: expected released:true in output"; fail=$((fail + 1))
+else
+  echo "PASS  e2e-release-a flagged released:true"; pass=$((pass + 1))
+fi
+
+OUT="$(node "$TOOLS" code-scope claim --by feature-y --scope "src/payments/checkout.ts" --file "$E2E_FILE" 2>&1)"
+assert_rc "e2e-claim-b-succeeds-after-release" 0 $? "$OUT"
+
+# --- release idempotent: releasing a non-existent entry -> 0, released:false ---
+OUT="$(node "$TOOLS" code-scope release --by feature-never-claimed --file "$E2E_FILE" 2>&1)"
+assert_rc "release-idempotent" 0 $? "$OUT"
+if ! grep -q '"released": false' <<<"$OUT"; then
+  echo "FAIL  release-idempotent: expected released:false in output"; fail=$((fail + 1))
+else
+  echo "PASS  release-idempotent flagged released:false"; pass=$((pass + 1))
+fi
+
 echo "code-scope fixtures: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]
