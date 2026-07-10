@@ -5905,10 +5905,10 @@ function scopePathsOverlap(rawA, rawB) {
     // each side's fixed (non-glob) prefix and the other side's full path.
     const prefixA = nonGlobPrefix(segsA);
     const prefixB = nonGlobPrefix(segsB);
-    if (isSegmentPrefix(prefixA, segsB)) return true;
-    if (isSegmentPrefix(prefixB, segsA)) return true;
-    if (isSegmentPrefix(segsA, prefixB)) return true;
-    if (isSegmentPrefix(segsB, prefixA)) return true;
+    if (prefixA.length > 0 && isSegmentPrefix(prefixA, segsB)) return true;
+    if (prefixB.length > 0 && isSegmentPrefix(prefixB, segsA)) return true;
+    if (prefixB.length > 0 && isSegmentPrefix(segsA, prefixB)) return true;
+    if (prefixA.length > 0 && isSegmentPrefix(segsB, prefixA)) return true;
   }
   return false;
 }
