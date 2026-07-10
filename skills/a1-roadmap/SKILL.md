@@ -2,11 +2,16 @@
 name: a1-roadmap
 description: >
   Create and manage project roadmaps — break a product vision into milestones,
-  phases, and a scaffolded .a1/ directory ready for a1-plan. Four phases:
-  Discover (interview vision) → Research (a1-rico-researcher domain scan) →
-  Structure (milestones + phases breakdown) → Scaffold (write .a1/roadmap.md +
-  per-phase GOAL.md). Two modes: new-project (full flow) and new-milestone
-  (abbreviated, skips research if stack unchanged). MUST trigger when the
+  phases, and a scaffolded docs/product/ + .a1/ directory ready for a1-plan.
+  Four phases: Discover (interview vision) → Research (a1-rico-researcher
+  domain scan) → Structure (milestones + phases breakdown) → Scaffold (write
+  docs/product/ROADMAP.md via the product CLI + .a1/roadmap.md + per-phase
+  GOAL.md). Three modes: new-project (full flow), new-milestone (abbreviated,
+  skips research if stack unchanged), and adopt (brownfield migration — derives
+  the done-part of the roadmap from an evidence ladder — VERIFICATION.md,
+  merged branches/commits, spec status=done — and interviews the user only for
+  the undetermined future part; conflicting legacy state is resolved
+  newest-evidence-wins with a logged changelog line). MUST trigger when the
   user says: "new project" (alias: "neues projekt"), "create a roadmap" (alias:
   "roadmap erstellen"), "a1-roadmap", "plan milestones" (alias: "milestones
   planen"), "set up a project" (alias: "projekt aufsetzen"), "project setup",
@@ -14,12 +19,18 @@ description: >
   "milestone plan erstellen"), "new milestone" (alias: "neue milestone"), "set
   up a project from scratch" (alias: "projekt von null aufsetzen"), "how do we
   structure the project" (alias: "wie strukturieren wir das projekt"), "plan the
-  project from scratch", "break this product into milestones", or any request to
-  plan a project from scratch or add a new milestone to an existing project. Hands
-  off to a1-plan once the first phase is scaffolded. Do NOT activate for:
-  planning a single phase that already exists (use a1-plan), checking project
-  status (use a1-progress), feature ideas without a project (use
-  a1-new-feature), or constitution/rules (use a1-constitution).
+  project from scratch", "break this product into milestones", "adopt this
+  project" (alias: "projekt adoptieren"), "migrate the roadmap for <project>"
+  (alias: "roadmap für <projekt> migrieren"), "bring this existing project into
+  docs/product" (alias: "bestehendes projekt in docs/product überführen"), or
+  any request to plan a project from scratch, add a new milestone to an
+  existing project, or bring an existing (brownfield) project into the
+  docs/product structure. Hands off to a1-plan once the first phase is
+  scaffolded. Do NOT activate for: planning a single phase that already exists
+  (use a1-plan), checking project status (use a1-progress), feature ideas
+  without a project (use a1-new-feature), constitution/rules (use
+  a1-constitution), or reverse-engineering a spec from code without a roadmap
+  (use a1-modernize spec-only, which adopt mode may call into internally).
 allowed-tools:
   - Read
   - Write
@@ -53,16 +64,113 @@ Full flow: Discover → Research → Structure → Scaffold
 ### New Milestone
 Abbreviated flow: Understand → Structure → Scaffold (skip full research if project already exists)
 
-### Adopt (brownfield migration — Wave 5)
-Migrates a legacy-only project (`.a1/roadmap.md`, no `docs/product/`) to the
-schema-v1 `docs/product/` layer. Derives the done-part from an evidence
-ladder (VERIFICATION.md → merged branch/commits → spec `status: done`) and
-interviews the user only for the future/planned part not derivable from
-evidence. Never triggered automatically — always an explicit, confirmed
-hand-off from the on-touch rule in `a1-new-feature`/`a1-execute`, or a direct
-user request. Full behavior lands in Wave 5 of this feature; this SKILL.md
-only reserves the mode name and hook so Wave 4's callers have somewhere to
-hand off to.
+### Adopt (brownfield migration)
+Brings an existing project — with or without `docs/product/` — into a valid
+schema-v1 `docs/product/ROADMAP.md` **without** the user re-describing work
+that is already provably done. Never triggered automatically — always an
+explicit, confirmed hand-off from the on-touch rule in
+`a1-new-feature`/`a1-execute`, or a direct user request ("adopt this
+project", "migrate the roadmap for `<project>`").
+
+**Never hand-writes `docs/product/` files.** Every write goes through
+`node <repo>/_shared/a1-tools.cjs product ...` (`init` /
+`add-milestone` / `add-feature` / `feature-init` / `stage` / `changelog`) —
+same hard rule as every other mode. Adopt mode's job is to *derive the
+arguments* to those CLI calls from evidence, and to *ask* for whatever
+evidence can't answer.
+
+#### Step 1 — Evidence ladder (derives the "done" part, FR-018)
+
+For each candidate milestone/feature found in the project (from
+`.a1/phases/*`, `.a1/roadmap.md`, an existing `docs/product/ROADMAP.md`, spec
+files under a learning store, or — as a last resort — `a1-modernize`
+spec-only reverse-spec), classify it as **done** using the first rung of this
+ladder that matches; anything not caught by rungs (a)–(c) is weaker evidence
+and falls through to the Step 2 interview instead of being guessed:
+
+1. **(a) VERIFICATION.md present** — a `VERIFICATION.md` (at
+   `.a1/phases/<name>/VERIFICATION.md`, or a root-level
+   `VERIFICATION-<spec-id>.md` — both shapes are observed in real projects)
+   with a PASS/verified verdict for that phase/feature → **done**.
+2. **(b) Merged feature branch or commits referencing the feature** — a
+   merged `feature/<slug>` branch, or `git log --oneline --grep` hits
+   referencing the feature id/slug in commit subjects on the default branch
+   → **done**. Query with:
+   ```bash
+   git -C <project-root> log --oneline --grep="<feature-slug>\|<feature-id>" --all
+   git -C <project-root> branch --merged main | grep -i "<feature-slug>"
+   ```
+3. **(c) Spec frontmatter `status: done`** — a spec file (vault or
+   repo-local learning store) with YAML frontmatter `status: done` for that
+   feature → **done**.
+4. **Weaker than (a)–(c)** (e.g. only a TODO comment, a partially-merged
+   branch, an ambiguous commit) → do not guess; add it to the Step 2
+   interview queue instead.
+
+Evidence is gathered read-only; nothing is written during this step.
+
+#### Step 2 — Interview for the future part (FR-019)
+
+Everything the ladder could not classify as done — plus the entire
+planned/rolling-wave future — is established by interview, **one question at
+a time** (this project's standing convention; never a multi-part
+questionnaire in one message):
+
+1. Confirm the derived milestone list (name + one-sentence goal each) — ask
+   once, allow edits, do not re-litigate per-feature.
+2. For each feature the ladder left undetermined: ask a single yes/no or
+   short-answer question ("Is `<feature/slug>` finished? If not, what
+   milestone does it belong to and what's left?").
+3. Ask for the future/planned milestones and features not present in any
+   evidence at all (rolling-wave: names + one-sentence goals for everything
+   known, not just the next one).
+4. Confirm before writing anything — adopt mode changes shared project
+   state, unlike the read-only Discover interview in New Project mode.
+
+#### Step 3 — Write via CLI, newest-evidence-wins on conflict (FR-020)
+
+Once confirmed, write the derived + interviewed structure through the CLI,
+in this order, inside the target project's working directory:
+
+```bash
+node <repo>/_shared/a1-tools.cjs product init --project <slug> --title "<Product name>"
+node <repo>/_shared/a1-tools.cjs product add-milestone --id <m-slug> --title "<short>" --status <planned|in-progress|done> --target <YYYY-MM|omit>
+# repeat add-milestone per milestone, then per feature:
+node <repo>/_shared/a1-tools.cjs product add-feature --id <###-slug> --milestone <m-slug> --title "<short>" --depends-on <a,b|omit>
+# for every feature the evidence ladder (or the interview) marked done:
+node <repo>/_shared/a1-tools.cjs product stage --by <###-slug> --set done
+```
+
+`product stage --set done` derives `status: done`, stamps `finished`, and
+auto-appends its own changelog line — do not add a duplicate manual entry
+for a plain done-marking.
+
+**Conflict handling (FR-020):** when adopt mode finds legacy state that
+disagrees with newer evidence (e.g. a stale `.planning/` directory, or a
+`.a1/roadmap.md` entry, that contradicts what commit history / VERIFICATION
+show), it MUST NOT silently pick one side. It takes the **newest** evidence
+(by commit date / VERIFICATION timestamp — never by which file happens to be
+read first) and logs the discrepancy as an explicit changelog line via the
+CLI's changelog mechanism:
+
+```bash
+node <repo>/_shared/a1-tools.cjs product changelog \
+  --entry "adopt: <milestone/feature> resolved from conflicting legacy state" \
+  --why "<what disagreed, e.g. '.planning/<dir>/ marked in-progress but VERIFICATION.md (2026-07-06) and merged commits show done>; newest evidence (VERIFICATION.md) wins"
+```
+
+This changelog call is required whenever a conflict is detected — never skip
+it because the resolution "seems obvious"; the discrepancy must be
+discoverable later from `## Changelog` alone.
+
+#### Notes
+
+- May internally invoke `a1-modernize` in `spec-only` mode to reverse-spec
+  code that has no spec at all, purely as an evidence source for the ladder
+  — adopt mode does not depend on `a1-modernize`'s fix-plan/execute phases.
+- On-touch, not big-bang: adopt mode is one deliberate, user-confirmed run
+  per project, not a background migration — see "Hard rules" below.
+- Fixture/regression coverage: `_test-fixtures/product-adopt/run.sh`.
 
 ## Phases
 
