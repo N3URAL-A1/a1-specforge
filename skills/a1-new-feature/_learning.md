@@ -307,3 +307,5 @@ bug_classes: [regression, wrong_behavior_vs_spec]
 gate_that_caught_most: Phase 6
 phase_that_produced_most_bugs: implement
 one_line_learning: Content-Ergänzungen (neue Case Study) müssen ALLE abgeleiteten Flächen mitziehen — Anzahl-Wörter in Headings ("Three Products"), Klassifikations-Listen (AI_PRODUCT_SLUGS), Test-Fixtures; beim Hinzufügen einer Entity nach ihrem Namen über Copy+Logik greppen. Zweites Learning: Agent-Teammate-Messaging kreuzt sich regelmäßig — nach jedem Dispatch Commit-Stand prüfen statt auf Reports warten.
+
+## 2026-07-10 — 001-roadmap-gate-parallel-features (a1-specforge): full pipeline PASS; Gate C flags legit-new deliverables as FAIL (needs PASS-with-note rule); process.exit skips finally → exitWithLock pattern; leading-glob over-match = known MINOR follow-up.
