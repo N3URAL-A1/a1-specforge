@@ -103,6 +103,42 @@ else
   echo "PASS  star-vs-deep-file names holder feature-deep"; pass=$((pass + 1))
 fi
 
+# --- leading-glob no-overmatch: a leading-glob pattern (**/util.js, *, */util.js)
+#     must NOT conflict with a genuinely unrelated path (docs/readme.md), in
+#     either claim direction. Regression for the empty-nonGlobPrefix bug where
+#     isSegmentPrefix([], x) is trivially true and flips every non-match into
+#     a spurious CONFLICT. ---
+OUT="$(node "$TOOLS" code-scope claim --by feature-globdoubledstar --scope "**/util.js" --file "$FILE" 2>&1)"
+assert_rc "leading-doublestar-vs-unrelated" 0 $? "$OUT"
+OUT="$(node "$TOOLS" code-scope claim --by feature-docs-readme --scope "docs/readme.md" --file "$FILE" 2>&1)"
+assert_rc "unrelated-vs-leading-doublestar" 0 $? "$OUT"
+
+OUT="$(node "$TOOLS" code-scope claim --by feature-globstar-only --scope "*" --file "$FILE" 2>&1)"
+assert_rc "leading-star-vs-unrelated-setup" 0 $? "$OUT"
+OUT="$(node "$TOOLS" code-scope claim --by feature-docs-readme2 --scope "docs/readme2.md" --file "$FILE" 2>&1)"
+# NOTE: bare "*" matches any single top-level segment via segmentsMatchGlob,
+# so "*" legitimately conflicts with any single-segment path — but docs/readme2.md
+# has two segments, so it must NOT conflict.
+assert_rc "leading-star-vs-unrelated" 0 $? "$OUT"
+
+OUT="$(node "$TOOLS" code-scope claim --by feature-star-util --scope "*/utilw.js" --file "$FILE" 2>&1)"
+assert_rc "leading-star-slash-util-vs-unrelated-setup" 0 $? "$OUT"
+OUT="$(node "$TOOLS" code-scope claim --by feature-docs-readme3 --scope "docs/readme3.md" --file "$FILE" 2>&1)"
+assert_rc "leading-star-slash-util-vs-unrelated" 0 $? "$OUT"
+
+# --- guard: leading-glob patterns must still CONFLICT when they genuinely
+#     match (do not regress true positives while fixing the false positive) ---
+OUT="$(node "$TOOLS" code-scope claim --by feature-guard-anything --scope "**" --file "$FILE" 2>&1)"
+RC=$?
+assert_rc "guard-doublestar-bare-matches-everything" 1 "$RC" "$OUT"
+
+GUARD_FILE="$WORK/guard-reservations.json"
+OUT="$(node "$TOOLS" code-scope claim --by feature-guard-deep-util --scope "zzz/a/util.js" --file "$GUARD_FILE" 2>&1)"
+assert_rc "guard-deep-util-setup" 0 $? "$OUT"
+OUT="$(node "$TOOLS" code-scope claim --by feature-guard-globstar-util --scope "**/util.js" --file "$GUARD_FILE" 2>&1)"
+RC=$?
+assert_rc "guard-doublestar-util-matches-deep-file" 1 "$RC" "$OUT"
+
 # --- idempotent re-claim: feature-a re-claims identical scope -> 0 ---
 OUT="$(node "$TOOLS" code-scope claim --by feature-a --scope "src/billing/,docs/billing.md" --file "$FILE" 2>&1)"
 assert_rc "idempotent-reclaim" 0 $? "$OUT"
