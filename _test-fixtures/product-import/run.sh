@@ -35,6 +35,9 @@
 #   refuses to overwrite an existing ROADMAP.md                  -> 1
 #   unrecognized shape rejected cleanly                          -> 1
 #   product validate rejects a hand-broken ROADMAP.md             -> 1
+#   product validate: English ROADMAP.md -> no FR-016 warning     -> 0
+#   product validate: German-language ROADMAP.md -> FR-016 warning
+#     (still exit 0 -- lint is a warning, not a hard block)        -> 0
 set -u
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -403,6 +406,95 @@ if echo "$OUT" | grep -q "status:"; then
   assert_true "validate-reports-status-error" "true"
 else
   assert_true "validate-reports-status-error" "false"
+fi
+
+# FR-016 English-only lint: an English ROADMAP.md must validate clean, with
+# no German-marker warning.
+PDIR_E="$WORK/e/docs/product"
+mkdir -p "$PDIR_E"
+cat > "$PDIR_E/ROADMAP.md" <<'EOF'
+---
+schema_version: 1
+type: roadmap
+project: english-fixture
+title: English Fixture — Roadmap
+status: active
+updated: 2026-01-01
+source: "test"
+milestones:
+  - id: m1
+    title: First milestone
+    status: planned
+    target: null
+features: []
+next: null
+---
+
+# English Fixture — Roadmap
+
+This roadmap is written entirely in English. It describes the plan for the
+project and should pass the FR-016 lint without any warning being raised.
+EOF
+OUT="$(node "$TOOLS" product validate --dir "$PDIR_E" 2>&1)"
+RC=$?
+assert_rc "validate-english-exit-0" 0 "$RC" "$OUT"
+if echo "$OUT" | node -e '
+  let s = "";
+  process.stdin.on("data", (d) => (s += d));
+  process.stdin.on("end", () => {
+    const parsed = JSON.parse(s);
+    process.exit(Array.isArray(parsed.warnings) && parsed.warnings.length === 0 ? 0 : 1);
+  });
+'; then
+  assert_true "validate-english-no-fr016-warning" "true"
+else
+  assert_true "validate-english-no-fr016-warning" "false"
+fi
+
+# FR-016 English-only lint: a German-language ROADMAP.md must produce a
+# warning (not an error) -- exit code stays 0 since schema fields are valid,
+# but warnings[] is non-empty and mentions FR-016.
+PDIR_F="$WORK/f/docs/product"
+mkdir -p "$PDIR_F"
+cat > "$PDIR_F/ROADMAP.md" <<'EOF'
+---
+schema_version: 1
+type: roadmap
+project: german-fixture
+title: German Fixture — Roadmap
+status: active
+updated: 2026-01-01
+source: "test"
+milestones:
+  - id: m1
+    title: Erster Meilenstein
+    status: planned
+    target: null
+features: []
+next: null
+---
+
+# German Fixture — Roadmap
+
+Diese Roadmap ist vollständig auf Deutsch geschrieben und beschreibt den Plan
+für das Projekt. Sie sollte die FR-016-Prüfung mit einer Warnung auslösen,
+weil es sich nicht um englischen Text handelt.
+EOF
+OUT="$(node "$TOOLS" product validate --dir "$PDIR_F" 2>&1)"
+RC=$?
+assert_rc "validate-german-exit-0" 0 "$RC" "$OUT"
+if echo "$OUT" | node -e '
+  let s = "";
+  process.stdin.on("data", (d) => (s += d));
+  process.stdin.on("end", () => {
+    const parsed = JSON.parse(s);
+    const hasFr016 = Array.isArray(parsed.warnings) && parsed.warnings.some((w) => w.includes("FR-016"));
+    process.exit(hasFr016 ? 0 : 1);
+  });
+'; then
+  assert_true "validate-german-fr016-warning-present" "true"
+else
+  assert_true "validate-german-fr016-warning-present" "false"
 fi
 
 echo "product-import fixtures: $pass passed, $fail failed"

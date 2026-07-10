@@ -1056,9 +1056,21 @@ function writeAllOrNothing(lockPath, writes, errPrefix) {
       const original = existed ? fs.readFileSync(w.target, 'utf8') : null;
       staged.push({ tmp, target: w.target, existed, original });
     }
-    for (const s of staged) {
+    // Test-only fault injection seam (FR-009 rename-phase coverage): when
+    // A1_TEST_FAIL_RENAME_AT_INDEX is set to a rename-loop index, throw
+    // AFTER the real rename at that index has already completed on disk,
+    // simulating fs.renameSync failing partway through a multi-file write
+    // set (the exact shape of the original atomicity bug). No-op unless the
+    // env var is explicitly set, so production behavior is unchanged.
+    const failAtIdx = process.env.A1_TEST_FAIL_RENAME_AT_INDEX;
+    const failAtIdxNum = failAtIdx !== undefined ? Number(failAtIdx) : -1;
+    for (let idx = 0; idx < staged.length; idx++) {
+      const s = staged[idx];
       fs.renameSync(s.tmp, s.target);
       renamed.push(s);
+      if (idx === failAtIdxNum) {
+        throw new Error(`A1_TEST_FAIL_RENAME_AT_INDEX injected failure at index ${idx}`);
+      }
     }
   } catch (e) {
     // Revert every rename that already succeeded, in reverse order, before
@@ -1842,10 +1854,37 @@ function validateRoadmapFm(fm) {
   return { valid: errors.length === 0, errors };
 }
 
+// German-marker heuristic (FR-016 English-only lint) — reuses the exact
+// proven pattern from the M8 OSS-Ready German->English sweep gate (see
+// .a1/phases/M8-launch-community/PLAN.md Wave 2 Task 2.1): umlauts/ß plus a
+// short list of common German function words surrounded by spaces. That
+// sweep's own retro (skills/a1-execute/_learning.md, M8 entry) notes this
+// grep has false-negative risk (umlaut-free German sentences without any of
+// the listed function words can slip through) — acceptable here because this
+// is an explicitly best-effort lint (flag, never hard-block), not a proof of
+// absence. False positives on English text that happens to contain a listed
+// substring as part of a foreign proper noun are likewise accepted per
+// FR-016's intent (catch accidental full-German writes, not every borrowed
+// word).
+const GERMAN_MARKER_RE = /[äöüßÄÖÜ]| (der|die|das|und|nicht|wird|noch|schon|dann|wenn|für|über) /;
+
+/** Best-effort English-only lint (FR-016): scan `content` (a docs/product/
+ * file's full text — frontmatter + body) for strong German-language markers.
+ * Returns a warning string, or null when no marker was found. Pure — no I/O.
+ * Not a hard gate: callers surface this as a warning, never as a validation
+ * error, since prose bodies can't be perfectly language-detected and
+ * FR-016's intent is to catch accidental full-German writes, not to police
+ * every line. */
+function detectGermanMarkers(content, label) {
+  if (!GERMAN_MARKER_RE.test(content)) return null;
+  return `${label}: contains German-language markers (umlauts/ß or common German function words) — docs/product/ artifacts must be authored in English (FR-016). Best-effort lint; review for accidental German prose.`;
+}
+
 /** product validate [--dir docs/product]: read-only schema-v1 check of
  * <dir>/ROADMAP.md frontmatter against docs/product/SCHEMA.md section 1 /
- * index.schema.json. Never writes any file. Exit: 0 valid, 1 invalid or
- * ROADMAP.md missing. */
+ * index.schema.json, plus a best-effort FR-016 English-only lint (warning
+ * only, never affects `valid`/exit code). Never writes any file. Exit: 0
+ * valid, 1 invalid or ROADMAP.md missing. */
 function cmdProductValidate(args) {
   const flags = parseFlags(args, { dir: 'value' });
   const dir = productDirFromFlags(flags);
@@ -1857,7 +1896,10 @@ function cmdProductValidate(args) {
   const content = fs.readFileSync(roadmapFile, 'utf8');
   const { fm } = parseNestedFrontmatter(content);
   const { valid, errors } = validateRoadmapFm(fm);
-  process.stdout.write(JSON.stringify({ valid, errors, file: roadmapFile }, null, 2) + '\n');
+  const warnings = [];
+  const germanWarning = detectGermanMarkers(content, path.basename(roadmapFile));
+  if (germanWarning) warnings.push(germanWarning);
+  process.stdout.write(JSON.stringify({ valid, errors, warnings, file: roadmapFile }, null, 2) + '\n');
   process.exit(valid ? 0 : 1);
 }
 
@@ -8080,9 +8122,13 @@ Usage:
                   Read-only. Validates <dir>/ROADMAP.md frontmatter against
                   the schema-v1 contract (docs/product/SCHEMA.md section 1 /
                   index.schema.json): required fields, enums, id/date
-                  patterns, milestone/feature cross-references. Prints
-                  { valid, errors[], file }. Never writes any file. Exit: 0
-                  valid, 1 invalid or ROADMAP.md missing.
+                  patterns, milestone/feature cross-references. Also runs a
+                  best-effort FR-016 English-only lint (German-marker
+                  heuristic: umlauts/ß or common German function words)
+                  over the file content, surfaced as warnings[] — never
+                  affects valid/exit code (flag, not a hard block). Prints
+                  { valid, errors[], warnings[], file }. Never writes any
+                  file. Exit: 0 valid, 1 invalid or ROADMAP.md missing.
   a1-tools product import --file <path> --project <slug>
                   [--title <text>] [--dir docs/product]
                   Migrate a legacy hand-rolled roadmap into a fresh
