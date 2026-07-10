@@ -1883,8 +1883,12 @@ function detectGermanMarkers(content, label) {
 /** product validate [--dir docs/product]: read-only schema-v1 check of
  * <dir>/ROADMAP.md frontmatter against docs/product/SCHEMA.md section 1 /
  * index.schema.json, plus a best-effort FR-016 English-only lint (warning
- * only, never affects `valid`/exit code). Never writes any file. Exit: 0
- * valid, 1 invalid or ROADMAP.md missing. */
+ * only, never affects `valid`/exit code). The FR-016 lint covers ALL
+ * docs/product/ artifact types named by the FR — ROADMAP.md, NEXT.md,
+ * index.json (scanned as raw text; a German string value still trips the
+ * marker regex), and every features/<###>-<slug>/feature.md — not just
+ * ROADMAP.md. Never writes any file. Exit: 0 valid, 1 invalid or
+ * ROADMAP.md missing. */
 function cmdProductValidate(args) {
   const flags = parseFlags(args, { dir: 'value' });
   const dir = productDirFromFlags(flags);
@@ -1899,6 +1903,29 @@ function cmdProductValidate(args) {
   const warnings = [];
   const germanWarning = detectGermanMarkers(content, path.basename(roadmapFile));
   if (germanWarning) warnings.push(germanWarning);
+
+  // FR-016 scan sweep — the remaining docs/product/ artifact types.
+  const nextFile = path.join(dir, 'NEXT.md');
+  if (fs.existsSync(nextFile)) {
+    const w = detectGermanMarkers(fs.readFileSync(nextFile, 'utf8'), 'NEXT.md');
+    if (w) warnings.push(w);
+  }
+  const indexFile = path.join(dir, 'index.json');
+  if (fs.existsSync(indexFile)) {
+    const w = detectGermanMarkers(fs.readFileSync(indexFile, 'utf8'), 'index.json');
+    if (w) warnings.push(w);
+  }
+  const featuresDir = path.join(dir, 'features');
+  if (fs.existsSync(featuresDir)) {
+    for (const entry of fs.readdirSync(featuresDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const featureFile = path.join(featuresDir, entry.name, 'feature.md');
+      if (!fs.existsSync(featureFile)) continue;
+      const w = detectGermanMarkers(fs.readFileSync(featureFile, 'utf8'), `features/${entry.name}/feature.md`);
+      if (w) warnings.push(w);
+    }
+  }
+
   process.stdout.write(JSON.stringify({ valid, errors, warnings, file: roadmapFile }, null, 2) + '\n');
   process.exit(valid ? 0 : 1);
 }

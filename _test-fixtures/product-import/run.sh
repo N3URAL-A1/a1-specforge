@@ -497,5 +497,92 @@ else
   assert_true "validate-german-fr016-warning-present" "false"
 fi
 
+# FR-016 sweep: German-language NEXT.md, index.json, or feature.md must each
+# be flagged too -- the lint covers ALL docs/product/ artifact types named by
+# the FR, not just ROADMAP.md. ROADMAP.md itself stays English here so any
+# warning raised must come from the other three files.
+PDIR_G="$WORK/g/docs/product"
+mkdir -p "$PDIR_G/features/001-sweep-feature"
+cat > "$PDIR_G/ROADMAP.md" <<'EOF'
+---
+schema_version: 1
+type: roadmap
+project: sweep-fixture
+title: Sweep Fixture — Roadmap
+status: active
+updated: 2026-01-01
+source: "test"
+milestones:
+  - id: m1
+    title: First milestone
+    status: planned
+    target: null
+features:
+  - id: 001-sweep-feature
+    milestone: m1
+    title: Sweep Feature
+    status: in-flight
+    stage: started
+    depends_on: []
+    started: 2026-01-01
+    finished: null
+next: 001-sweep-feature
+---
+
+# Sweep Fixture — Roadmap
+
+This roadmap body is entirely in English.
+EOF
+cat > "$PDIR_G/NEXT.md" <<'EOF'
+<!-- generated file — do not hand-edit -->
+# Nächste Schritte
+
+Das Feature 001-sweep-feature ist als nächstes dran und wird bearbeitet.
+EOF
+cat > "$PDIR_G/index.json" <<'EOF'
+{
+  "project": "sweep-fixture",
+  "note": "Dieses Projekt befindet sich noch in der Entwicklung und wird bald fertig sein."
+}
+EOF
+cat > "$PDIR_G/features/001-sweep-feature/feature.md" <<'EOF'
+---
+id: 001-sweep-feature
+project: sweep-fixture
+milestone: m1
+title: Sweep Feature
+status: in-flight
+stage: started
+depends_on: []
+started: 2026-01-01
+finished: null
+spec_path: null
+plan_path: null
+schema_version: 1
+---
+
+Diese Feature-Zusammenfassung ist auf Deutsch verfasst und sollte von der
+FR-016-Prüfung als Warnung erkannt werden.
+EOF
+OUT="$(node "$TOOLS" product validate --dir "$PDIR_G" 2>&1)"
+RC=$?
+assert_rc "validate-sweep-exit-0" 0 "$RC" "$OUT"
+if echo "$OUT" | node -e '
+  let s = "";
+  process.stdin.on("data", (d) => (s += d));
+  process.stdin.on("end", () => {
+    const parsed = JSON.parse(s);
+    const w = Array.isArray(parsed.warnings) ? parsed.warnings : [];
+    const hasNext = w.some((x) => x.includes("NEXT.md") && x.includes("FR-016"));
+    const hasIndex = w.some((x) => x.includes("index.json") && x.includes("FR-016"));
+    const hasFeature = w.some((x) => x.includes("feature.md") && x.includes("FR-016"));
+    process.exit(hasNext && hasIndex && hasFeature ? 0 : 1);
+  });
+'; then
+  assert_true "validate-sweep-next-index-feature-fr016-warnings" "true"
+else
+  assert_true "validate-sweep-next-index-feature-fr016-warnings" "false"
+fi
+
 echo "product-import fixtures: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]
