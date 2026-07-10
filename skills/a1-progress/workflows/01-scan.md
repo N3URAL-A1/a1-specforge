@@ -43,6 +43,16 @@ npx tsc --noEmit 2>&1 | tail -3
 npm test -- --passWithNoTests 2>&1 | tail -5
 ```
 
+### 6. In-flight features (parallel feature lifecycle)
+```bash
+# Reads .a1/reservations.json; deterministic, no writes, no auto-release.
+node _shared/a1-tools.cjs code-scope list --stale-days 7
+```
+For each `code_scope` entry in the JSON, render: `by` (feature id), `stage`,
+`paths` (scope), and — when `stale: true` — the entry's `hint` field verbatim.
+If there are zero entries or the file is missing, show "No in-flight
+features" and skip the section.
+
 ## Output format
 
 ```
@@ -65,6 +75,11 @@ Recent commits:
   <last 5 git log lines>
 
 Build/Tests: <ok / N errors>
+
+In-flight features:
+  <feature-id>        stage: <stage>    scope: <paths>
+  <feature-id>        stage: <stage>    scope: <paths>   ⚠ stale
+                        → <hint from JSON>
 
 ━━━ Next Action ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

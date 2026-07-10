@@ -91,6 +91,17 @@ Override registry location via `A1_WORKTREE_REGISTRY` env var (used in tests).
 | `discard` | Worktree removed, branch deleted. Only allowed if branch has no unmerged commits. Otherwise CLI refuses. |
 | `handoff` | Worktree stays, registry status set to `handoff`. Signals to `a1-pr-review` that the branch is ready for PR review. |
 
+## Origin cleanup (Step 4.5 of Exit)
+
+After local `git worktree remove` + `git branch -D` (in `discard`, or for an
+already-merged branch on request), the exit workflow additionally deletes the
+**remote** branch: `git push origin --delete <branch>`, guarded by explicit
+user confirmation. A remote branch that is already gone
+(`git ls-remote --heads origin <branch>` empty, or the delete fails with
+"remote ref does not exist") is treated as **success**, never as an error to
+retry or force through. See `workflows/03-exit.md` Step 4.5 for the full
+sequence.
+
 ## Agent integration
 
 None. This skill is pure lifecycle management. Other skills (notably
@@ -103,7 +114,8 @@ None. This skill is pure lifecycle management. Other skills (notably
 - Never modify `~/.a1-worktrees-registry.json` directly with Edit/Write.
 - Pre-Flight checks are mandatory before `enter` — never skip Prepare.
 - User must confirm before any destructive action (`exit --mode discard`,
-  any branch deletion, force-remove of a dirty worktree).
+  any branch deletion — local or remote, origin cleanup included —
+  force-remove of a dirty worktree).
 - User-facing prompts and messages are in **German**. CLI output (JSON, log
   lines) stays in English.
 - One worktree per `<repo-root, slug>` tuple. If a registry entry already

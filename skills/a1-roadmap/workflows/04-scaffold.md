@@ -16,6 +16,9 @@ mkdir -p .a1/phases/M1-P2-<name>
 ### 4b. Write `.a1/roadmap.md`
 
 Use the format defined in SKILL.md. Include all milestones and phases from Phase 3.
+**Every** milestone (`##`) and phase (`###`) heading gets an `<!-- entry: <slug> -->`
+marker directly beneath it — kebab-case, unique, immutable once referenced by a
+feature. See "Feature → Roadmap Linkage" in SKILL.md for the exact format.
 
 ### 4c. Write phase goal files
 
@@ -47,10 +50,18 @@ Project scaffolded ✓
     ├── M1-P2-<name>/GOAL.md
     └── M2-P1-<name>/GOAL.md
 
+In-flight features:
+  <feature-id>    stage: <stage>    scope: <paths>   [grouped under matching roadmap_entry]
+
 Next step: Run `a1-plan` on the first phase to create an executable plan.
 
 Start with M1-P1-<name>? [y/n]
 ```
+
+The "In-flight features" block is populated by
+`node _shared/a1-tools.cjs code-scope list --stale-days 7` — see "In-flight
+features (roadmap view)" in SKILL.md for the grouping-by-`roadmap_entry` rule.
+Omit the block entirely if there are zero `code_scope` reservations.
 
 If user says yes: hand off to `a1-plan` with the phase goal from GOAL.md.
 

@@ -1,0 +1,305 @@
+#!/usr/bin/env bash
+# Scenario suite for `a1-tools code-scope` (path-list reservation claims,
+# deterministic prefix/glob overlap gate). Mirrors the a1-reservations
+# harness style (mktemp workdir, assert_rc, node invocations).
+# Scenarios:
+#   non-overlap claim                -> 0
+#   prefix overlap (dir vs file)     -> 1, names holder feature
+#   glob overlap                     -> 1, names holder feature
+#   idempotent re-claim              -> 0
+#   check (dry-run) does not write   -> 0/1, file untouched
+#   works in a non-git tmp dir       -> 0 (no git assumptions anywhere)
+set -u
+
+DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$DIR/../.." && pwd)"
+TOOLS="$REPO_ROOT/_shared/a1-tools.cjs"
+
+pass=0
+fail=0
+
+# Use a tmp dir explicitly OUTSIDE any git repo to prove determinism (no git
+# reads anywhere in the code-scope path).
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/a1-code-scope-test.XXXXXX")"
+FILE="$WORK/reservations.json"
+
+assert_rc() {
+  local name="$1" expected="$2" actual="$3" out="$4"
+  if [[ "$actual" -ne "$expected" ]]; then
+    echo "FAIL  $name: expected exit $expected, got $actual"
+    echo "----- output -----"; echo "$out"; echo "------------------"
+    fail=$((fail + 1))
+  else
+    echo "PASS  $name (exit $actual)"
+    pass=$((pass + 1))
+  fi
+}
+
+# --- confirm non-git tmp dir (determinism precondition) ---
+if [[ -d "$WORK/.git" ]]; then
+  echo "FAIL  precondition: tmp workdir unexpectedly has .git"; fail=$((fail + 1))
+else
+  echo "PASS  precondition (non-git tmp dir)"; pass=$((pass + 1))
+fi
+
+# --- claim feature-a: src/billing/,docs/billing.md -> 0 (non-overlapping) ---
+OUT="$(node "$TOOLS" code-scope claim --by feature-a --scope "src/billing/,docs/billing.md" --file "$FILE" 2>&1)"
+assert_rc "claim-non-overlap" 0 $? "$OUT"
+
+# --- claim feature-b: src/auth/ -> 0 (distinct from feature-a's scope) ---
+OUT="$(node "$TOOLS" code-scope claim --by feature-b --scope "src/auth/" --file "$FILE" 2>&1)"
+assert_rc "claim-second-feature" 0 $? "$OUT"
+
+# --- prefix overlap: feature-c claims src/auth/login.ts, held by feature-b's src/auth/ -> 1 ---
+OUT="$(node "$TOOLS" code-scope claim --by feature-c --scope "src/auth/login.ts" --file "$FILE" 2>&1)"
+RC=$?
+assert_rc "prefix-overlap" 1 "$RC" "$OUT"
+if ! grep -q "feature-b" <<<"$OUT"; then
+  echo "FAIL  prefix-overlap: holder feature-b not named"; fail=$((fail + 1))
+else
+  echo "PASS  prefix-overlap names holder feature-b"; pass=$((pass + 1))
+fi
+
+# --- glob overlap: feature-d claims src/billing/** overlapping feature-a's src/billing/ -> 1 ---
+OUT="$(node "$TOOLS" code-scope claim --by feature-d --scope "src/billing/**" --file "$FILE" 2>&1)"
+RC=$?
+assert_rc "glob-overlap" 1 "$RC" "$OUT"
+if ! grep -q "feature-a" <<<"$OUT"; then
+  echo "FAIL  glob-overlap: holder feature-a not named"; fail=$((fail + 1))
+else
+  echo "PASS  glob-overlap names holder feature-a"; pass=$((pass + 1))
+fi
+
+# --- glob overlap (reverse direction): a fresh feature-e declares a glob that
+#     a plain concrete path (feature-b's src/auth/) falls under -> 1 ---
+OUT="$(node "$TOOLS" code-scope claim --by feature-e --scope "src/**" --file "$FILE" 2>&1)"
+RC=$?
+assert_rc "glob-overlap-reverse" 1 "$RC" "$OUT"
+
+# --- glob-vs-ancestor-dir: a plain concrete dir (feature-anc: src/foo) must
+#     CONFLICT with a later glob rooted above it (feature-glob-anc: src/**/util.js) ---
+OUT="$(node "$TOOLS" code-scope claim --by feature-anc --scope "src/foo" --file "$FILE" 2>&1)"
+assert_rc "glob-ancestor-setup" 0 $? "$OUT"
+OUT="$(node "$TOOLS" code-scope claim --by feature-glob-anc --scope "src/**/util.js" --file "$FILE" 2>&1)"
+RC=$?
+assert_rc "glob-vs-ancestor-dir" 1 "$RC" "$OUT"
+if ! grep -q "feature-anc" <<<"$OUT"; then
+  echo "FAIL  glob-vs-ancestor-dir: holder feature-anc not named"; fail=$((fail + 1))
+else
+  echo "PASS  glob-vs-ancestor-dir names holder feature-anc"; pass=$((pass + 1))
+fi
+
+# --- single-star-vs-deep-file: feature-star declares src/* (single wildcard
+#     segment); a deep file src/a/b.js under a different feature's scope must
+#     still CONFLICT (glob's fixed prefix `src` contains the file) ---
+OUT="$(node "$TOOLS" code-scope claim --by feature-deep --scope "src/a/b.js" --file "$FILE" 2>&1)"
+assert_rc "star-vs-deep-file-setup" 0 $? "$OUT"
+OUT="$(node "$TOOLS" code-scope claim --by feature-star --scope "src/*" --file "$FILE" 2>&1)"
+RC=$?
+assert_rc "star-vs-deep-file" 1 "$RC" "$OUT"
+if ! grep -q "feature-deep" <<<"$OUT"; then
+  echo "FAIL  star-vs-deep-file: holder feature-deep not named"; fail=$((fail + 1))
+else
+  echo "PASS  star-vs-deep-file names holder feature-deep"; pass=$((pass + 1))
+fi
+
+# --- idempotent re-claim: feature-a re-claims identical scope -> 0 ---
+OUT="$(node "$TOOLS" code-scope claim --by feature-a --scope "src/billing/,docs/billing.md" --file "$FILE" 2>&1)"
+assert_rc "idempotent-reclaim" 0 $? "$OUT"
+if ! grep -q '"idempotent": true' <<<"$OUT"; then
+  echo "FAIL  idempotent-reclaim: expected idempotent:true in output"; fail=$((fail + 1))
+else
+  echo "PASS  idempotent-reclaim flagged idempotent:true"; pass=$((pass + 1))
+fi
+
+# --- dry-run check: does not write, still reports conflict for overlapping scope ---
+BEFORE_HASH="$(shasum "$FILE" | awk '{print $1}')"
+OUT="$(node "$TOOLS" code-scope check --by feature-z --scope "src/auth/login.ts" --file "$FILE" 2>&1)"
+RC=$?
+assert_rc "check-dry-run-conflict" 1 "$RC" "$OUT"
+AFTER_HASH="$(shasum "$FILE" | awk '{print $1}')"
+if [[ "$BEFORE_HASH" != "$AFTER_HASH" ]]; then
+  echo "FAIL  check-dry-run: file was modified by a dry-run check"; fail=$((fail + 1))
+else
+  echo "PASS  check-dry-run (file untouched)"; pass=$((pass + 1))
+fi
+
+# --- dry-run check: non-overlapping scope -> 0, still no write ---
+OUT="$(node "$TOOLS" code-scope check --by feature-z --scope "packages/unrelated/" --file "$FILE" 2>&1)"
+assert_rc "check-dry-run-ok" 0 $? "$OUT"
+AFTER2_HASH="$(shasum "$FILE" | awk '{print $1}')"
+if [[ "$BEFORE_HASH" != "$AFTER2_HASH" ]]; then
+  echo "FAIL  check-dry-run-ok: file was modified by a dry-run check"; fail=$((fail + 1))
+else
+  echo "PASS  check-dry-run-ok (file untouched)"; pass=$((pass + 1))
+fi
+
+# --- Wave 2: stage lifecycle ---
+
+# --- stage advance persists + visible in list ---
+OUT="$(node "$TOOLS" code-scope stage --by feature-a --set review --file "$FILE" 2>&1)"
+assert_rc "stage-advance" 0 $? "$OUT"
+if ! grep -q '"stage": "review"' <<<"$OUT"; then
+  echo "FAIL  stage-advance: expected stage:review in output"; fail=$((fail + 1))
+else
+  echo "PASS  stage-advance reflects new stage in output"; pass=$((pass + 1))
+fi
+
+LIST_OUT="$(node "$TOOLS" code-scope list --file "$FILE" 2>&1)"
+if ! grep -q '"stage": "review"' <<<"$LIST_OUT"; then
+  echo "FAIL  stage-advance: stage:review not visible in --list output"; fail=$((fail + 1))
+else
+  echo "PASS  stage-advance visible in list output"; pass=$((pass + 1))
+fi
+
+# --- invalid stage -> 1 ---
+OUT="$(node "$TOOLS" code-scope stage --by feature-a --set bogus-stage --file "$FILE" 2>&1)"
+assert_rc "stage-invalid" 1 $? "$OUT"
+
+# --- unknown feature id -> 1 ---
+OUT="$(node "$TOOLS" code-scope stage --by feature-does-not-exist --set review --file "$FILE" 2>&1)"
+assert_rc "stage-unknown-feature" 1 $? "$OUT"
+
+# --- monotonic stage ordering: backward transition -> 1 ---
+# feature-a is currently at "review" (set earlier in this run). Going back to
+# "started" must be rejected.
+OUT="$(node "$TOOLS" code-scope stage --by feature-a --set started --file "$FILE" 2>&1)"
+assert_rc "stage-backward-rejected" 1 $? "$OUT"
+
+# --- monotonic stage ordering: forward skip is allowed, reports "skipped" ---
+# feature-a is at "review"; jump straight to "done", skipping verify, merge,
+# origin-cleanup.
+OUT="$(node "$TOOLS" code-scope stage --by feature-a --set done --file "$FILE" 2>&1)"
+assert_rc "stage-forward-skip" 0 $? "$OUT"
+if echo "$OUT" | node -e '
+  const data = JSON.parse(require("fs").readFileSync(0, "utf8"));
+  const expected = ["verify", "merge", "origin-cleanup"];
+  const got = data.skipped || [];
+  if (JSON.stringify(got) !== JSON.stringify(expected)) process.exit(1);
+'; then
+  echo "PASS  stage-forward-skip: skipped:[verify,merge,origin-cleanup] reported"; pass=$((pass + 1))
+else
+  echo "FAIL  stage-forward-skip: expected skipped list not present/correct"; echo "----- output -----"; echo "$OUT"; echo "------------------"; fail=$((fail + 1))
+fi
+
+# --- end-to-end auto-unblock: claim A -> claim B blocked -> release A -> claim B succeeds ---
+E2E_FILE="$WORK/e2e-reservations.json"
+OUT="$(node "$TOOLS" code-scope claim --by feature-x --scope "src/payments/" --file "$E2E_FILE" 2>&1)"
+assert_rc "e2e-claim-a" 0 $? "$OUT"
+
+OUT="$(node "$TOOLS" code-scope claim --by feature-y --scope "src/payments/checkout.ts" --file "$E2E_FILE" 2>&1)"
+assert_rc "e2e-claim-b-blocked" 1 $? "$OUT"
+
+OUT="$(node "$TOOLS" code-scope release --by feature-x --file "$E2E_FILE" 2>&1)"
+assert_rc "e2e-release-a" 0 $? "$OUT"
+if ! grep -q '"released": true' <<<"$OUT"; then
+  echo "FAIL  e2e-release-a: expected released:true in output"; fail=$((fail + 1))
+else
+  echo "PASS  e2e-release-a flagged released:true"; pass=$((pass + 1))
+fi
+
+OUT="$(node "$TOOLS" code-scope claim --by feature-y --scope "src/payments/checkout.ts" --file "$E2E_FILE" 2>&1)"
+assert_rc "e2e-claim-b-succeeds-after-release" 0 $? "$OUT"
+
+# --- release idempotent: releasing a non-existent entry -> 0, released:false ---
+OUT="$(node "$TOOLS" code-scope release --by feature-never-claimed --file "$E2E_FILE" 2>&1)"
+assert_rc "release-idempotent" 0 $? "$OUT"
+if ! grep -q '"released": false' <<<"$OUT"; then
+  echo "FAIL  release-idempotent: expected released:false in output"; fail=$((fail + 1))
+else
+  echo "PASS  release-idempotent flagged released:false"; pass=$((pass + 1))
+fi
+
+# --- Wave 4: documented done-gate CLI sequence (started -> ... -> done -> release) ---
+# Mirrors the lifecycle-completion-gate sequence documented in
+# skills/a1-new-feature/SKILL.md: claim -> stage complete -> review -> verify ->
+# merge -> origin-cleanup -> release (spec update-status to 'done' happens outside
+# this CLI). Asserts each stage advance persists and is visible via --list, and
+# that release at the end frees the scope (idempotent-release semantics already
+# covered above; this proves the FULL documented stage progression, not just one hop).
+GATE_FILE="$WORK/done-gate-reservations.json"
+
+OUT="$(node "$TOOLS" code-scope claim --by feature-gate --scope "src/gate-demo/" --file "$GATE_FILE" 2>&1)"
+assert_rc "done-gate-claim" 0 $? "$OUT"
+if ! grep -q '"stage": "started"' <<<"$OUT"; then
+  echo "FAIL  done-gate-claim: expected initial stage:started"; fail=$((fail + 1))
+else
+  echo "PASS  done-gate-claim starts at stage:started"; pass=$((pass + 1))
+fi
+
+for STAGE in complete review verify merge origin-cleanup done; do
+  OUT="$(node "$TOOLS" code-scope stage --by feature-gate --set "$STAGE" --file "$GATE_FILE" 2>&1)"
+  assert_rc "done-gate-stage-$STAGE" 0 $? "$OUT"
+  if ! grep -q "\"stage\": \"$STAGE\"" <<<"$OUT"; then
+    echo "FAIL  done-gate-stage-$STAGE: expected stage:$STAGE in output"; fail=$((fail + 1))
+  else
+    echo "PASS  done-gate-stage-$STAGE reflects new stage"; pass=$((pass + 1))
+  fi
+  LIST_OUT="$(node "$TOOLS" code-scope list --file "$GATE_FILE" 2>&1)"
+  if ! grep -q "\"stage\": \"$STAGE\"" <<<"$LIST_OUT"; then
+    echo "FAIL  done-gate-stage-$STAGE: not visible in --list output"; fail=$((fail + 1))
+  else
+    echo "PASS  done-gate-stage-$STAGE visible in list output (progression tracked)"; pass=$((pass + 1))
+  fi
+done
+
+# --- final Done transition: release frees the scope entirely ---
+OUT="$(node "$TOOLS" code-scope release --by feature-gate --file "$GATE_FILE" 2>&1)"
+assert_rc "done-gate-release" 0 $? "$OUT"
+if ! grep -q '"released": true' <<<"$OUT"; then
+  echo "FAIL  done-gate-release: expected released:true in output"; fail=$((fail + 1))
+else
+  echo "PASS  done-gate-release flagged released:true (scope freed at Done)"; pass=$((pass + 1))
+fi
+
+LIST_AFTER="$(node "$TOOLS" code-scope list --file "$GATE_FILE" 2>&1)"
+if grep -q "feature-gate" <<<"$LIST_AFTER"; then
+  echo "FAIL  done-gate-release: feature-gate still present in --list after release"; fail=$((fail + 1))
+else
+  echo "PASS  done-gate-release: feature-gate absent from --list after release"; pass=$((pass + 1))
+fi
+
+# --- scope reclaimable by a different feature after Done+release ---
+OUT="$(node "$TOOLS" code-scope claim --by feature-gate-2 --scope "src/gate-demo/" --file "$GATE_FILE" 2>&1)"
+assert_rc "done-gate-scope-reclaimable-after-done" 0 $? "$OUT"
+
+# --- Wave 5: list --stale-days flag ---
+STALE_FILE="$WORK/stale-reservations.json"
+cat > "$STALE_FILE" <<JSON
+{
+  "reservations": [
+    {"type": "code_scope", "by": "feature-old", "paths": ["src/old/"], "stage": "started", "at": "2020-01-01T00:00:00.000Z"},
+    {"type": "code_scope", "by": "feature-fresh", "paths": ["src/fresh/"], "stage": "started", "at": "$(node -e 'console.log(new Date().toISOString())')"}
+  ]
+}
+JSON
+
+OUT="$(node "$TOOLS" code-scope list --file "$STALE_FILE" --stale-days 7 2>&1)"
+assert_rc "stale-days-list" 0 $? "$OUT"
+
+# feature-old must be flagged stale:true with a release hint
+if echo "$OUT" | node -e '
+  const data = JSON.parse(require("fs").readFileSync(0, "utf8"));
+  const old = data.reservations.find((r) => r.by === "feature-old");
+  const fresh = data.reservations.find((r) => r.by === "feature-fresh");
+  if (!old || old.stale !== true) process.exit(1);
+  if (!old.hint || !old.hint.includes("feature-old")) process.exit(1);
+  if (!fresh || fresh.stale !== false) process.exit(1);
+  if (fresh.hint !== undefined) process.exit(1);
+'; then
+  echo "PASS  stale-days: old entry stale:true with hint, fresh entry stale:false without hint"; pass=$((pass + 1))
+else
+  echo "FAIL  stale-days: stale/hint fields not as expected"; echo "----- output -----"; echo "$OUT"; echo "------------------"; fail=$((fail + 1))
+fi
+
+# --- list without --stale-days omits stale/hint entirely (backward compatible) ---
+OUT="$(node "$TOOLS" code-scope list --file "$STALE_FILE" 2>&1)"
+assert_rc "list-no-stale-days" 0 $? "$OUT"
+if grep -q '"stale"' <<<"$OUT"; then
+  echo "FAIL  list-no-stale-days: stale field present without --stale-days"; fail=$((fail + 1))
+else
+  echo "PASS  list-no-stale-days: no stale field without flag"; pass=$((pass + 1))
+fi
+
+echo "code-scope fixtures: $pass passed, $fail failed"
+[[ $fail -eq 0 ]]

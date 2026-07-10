@@ -44,6 +44,7 @@ delegate directly to the relevant agent (Rene / Vincente / code agents) and skip
 
 | # | Phase | Workflow | Model | Status after |
 |---|---|---|---|---|
+| 0 | Roadmap Gate | `workflows/00-roadmap-gate.md` | — (deterministic, no LLM) | (no status change; hard/soft gate) |
 | 1 | Discover | `workflows/01-discover.md` | Sonnet | discovering |
 | 2 | Specify | `workflows/02-specify.md` | Sonnet | draft |
 | 3 | Clarify | `workflows/03-clarify.md` | **reasoning-tier** | clarified |
@@ -73,6 +74,79 @@ delegate directly to the relevant agent (Rene / Vincente / code agents) and skip
 
 A spec abandoned at any phase is moved to status `cancelled`; its sequence number is **not**
 recycled.
+
+## Roadmap Gate (HARD RULE — before Phase 1 Discover)
+
+Every invocation of this skill runs `workflows/00-roadmap-gate.md` first —
+before any Discover work starts. It deterministically (grep/parse, no LLM)
+checks that `.a1/roadmap.md` exists and, once the feature's `roadmap_entry`
+is known, that it maps to a real roadmap entry. See
+`workflows/00-roadmap-gate.md` for exact checks and outcomes:
+
+- roadmap.md missing → **halt**, route to `a1-roadmap`
+- roadmap.md exists but unparseable → **halt** (treated as missing), but warn
+  the user explicitly and get confirmation before routing to `a1-roadmap`
+  (never silently overwrite an existing file)
+- roadmap.md parseable but the feature's `roadmap_entry` doesn't match any
+  entry → **soft stop**, surface a mismatch notice, user confirms to continue
+
+The linkage convention (`<!-- entry: <slug> -->` markers in roadmap.md,
+`roadmap_entry:` frontmatter field in the spec) is defined in
+`a1-roadmap`'s SKILL.md.
+
+## Scope Claim Gate (HARD RULE — before Phase 5 Implement)
+
+Before the first wave of Phase 5, the feature MUST claim its declared code
+scope so parallel features cannot silently collide on the same files:
+
+```bash
+node ~/.claude/skills/_shared/a1-tools.cjs code-scope claim \
+  --by <spec-id> --scope <code_scope from wave-plan frontmatter>
+```
+
+- **CONFLICT (exit 1)** → Implementation does NOT start. The CLI output names
+  the in-flight feature(s) holding the overlapping path(s) — surface that to
+  the user verbatim and ask how to proceed (wait for the holder to release,
+  narrow this feature's scope, or escalate).
+- **OK (exit 0)** → proceed to Wave 1. The claim is idempotent if this feature
+  re-claims the same scope after a restart.
+
+`<spec-id>` is the feature's stable id (e.g. `<###>-<feature-slug>`) — the
+same id used for `code-scope stage`/`release` in the Completion Gate below.
+
+## Lifecycle Completion Gate (HARD RULE — a feature reaches `done` only through all five confirmed transitions)
+
+A feature's spec status moving to `done` is not just "Phase 6 passed" — it
+requires each of five lifecycle stages to be **explicitly confirmed**, in
+order, with the CLI driven at every transition:
+
+| Transition | When | Command |
+|---|---|---|
+| **Complete** | all waves in Phase 5 marked `⟶ status: done` | `code-scope stage --by <spec-id> --set complete` |
+| **Review** | code review (Reinhard or equivalent) confirmed | `code-scope stage --by <spec-id> --set review` |
+| **Verify** | Phase 6 scenario walkthrough all-green | `code-scope stage --by <spec-id> --set verify` |
+| **Merge** | feature branch merged to `main`, build green post-merge | `code-scope stage --by <spec-id> --set merge` |
+| **Origin cleanup** | remote branch deleted (see `a1-worktree` Step 4.5) | `code-scope stage --by <spec-id> --set origin-cleanup` |
+| **Done** | all of the above confirmed | `code-scope release --by <spec-id>` (frees the scope), then `spec update-status <spec-path> done` |
+
+**Remote-branch gate (hard block):** before running `code-scope stage --set
+origin-cleanup` (and therefore before `done`), check:
+
+```bash
+git -C <repo> ls-remote --heads origin <feature-branch>
+```
+
+Non-empty output → the remote branch still exists → **refuse** to advance to
+`origin-cleanup`/`done`. Route back to `a1-worktree`'s Exit workflow (Step
+4.5) to delete the remote branch first. Only empty output (or an explicit,
+confirmed `git push origin --delete` having just run) permits the
+transition.
+
+Each transition needs an explicit confirmation signal (a passing gate, a
+user "yes", a green build) — never advance the stage speculatively "because
+the next step is probably fine." See `workflows/05-implement.md` and
+`workflows/06-verify.md` for exactly where each `code-scope stage` call sits
+in the phase flow.
 
 ## Isolation Gate (HARD RULE — before Phase 5 Implement)
 
@@ -106,6 +180,9 @@ while another session may hold it.
 
 ## Routing — pick the right phase
 
+0. **Always run the Roadmap Gate first** (`workflows/00-roadmap-gate.md`) —
+   before touching Discover or reading spec status. Only proceed past it on
+   PASS or explicit user confirmation on a soft stop.
 1. Read the spec frontmatter `status` field if a spec path is given.
 2. If no spec exists yet for the feature: start at Phase 1 (Discover) — call the helper to get
    the next sequence number, create the spec file from the template with status `discovering`.
