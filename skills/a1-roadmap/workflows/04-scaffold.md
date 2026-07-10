@@ -16,6 +16,9 @@ mkdir -p .a1/phases/M1-P2-<name>
 ### 4b. Write `.a1/roadmap.md`
 
 Use the format defined in SKILL.md. Include all milestones and phases from Phase 3.
+**Every** milestone (`##`) and phase (`###`) heading gets an `<!-- entry: <slug> -->`
+marker directly beneath it — kebab-case, unique, immutable once referenced by a
+feature. See "Feature → Roadmap Linkage" in SKILL.md for the exact format.
 
 ### 4c. Write phase goal files
 

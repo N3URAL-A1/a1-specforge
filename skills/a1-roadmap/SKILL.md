@@ -102,6 +102,63 @@ created: <date>
 [...]
 ```
 
+## Feature → Roadmap Linkage (machine-readable)
+
+Every roadmap entry (milestone or phase) carries a **stable kebab-case slug** so
+features can reference it deterministically without an LLM. This is what
+`a1-new-feature`'s Phase 0 Roadmap Gate and `a1-execute`'s Load phase check
+against.
+
+### Entry marker
+
+Add an HTML comment marker directly under each `##`/`###` heading in
+`.a1/roadmap.md`:
+
+```markdown
+## Milestone 1: Auth & Onboarding
+<!-- entry: m1-auth-onboarding -->
+**Goal:** Ship a working login + signup flow.
+**Success:** New user can sign up, verify email, log in.
+
+### Phase M1-P1: auth-setup
+<!-- entry: m1-p1-auth-setup -->
+**Goal:** Wire up auth provider and session handling.
+**Scope:** ...
+**Status:** planned
+```
+
+Slug rules:
+- kebab-case, derived from the milestone/phase name (lowercase, spaces → `-`,
+  strip punctuation)
+- unique within `roadmap.md`
+- immutable once referenced by a feature spec — renaming the heading text is
+  fine, the `entry:` slug never changes
+
+### Feature-side reference
+
+A feature's spec (and/or its wave-plan) carries a `roadmap_entry:` frontmatter
+field pointing at the slug it belongs to:
+
+```yaml
+---
+id: 007-password-reset
+project: my-project
+feature_slug: password-reset
+roadmap_entry: m1-p1-auth-setup
+status: draft
+---
+```
+
+### Deterministic membership check (grep, no LLM)
+
+```bash
+# Does .a1/roadmap.md contain this entry slug?
+grep -q "<!-- entry: m1-p1-auth-setup -->" .a1/roadmap.md && echo "FOUND" || echo "MISSING"
+```
+
+This is the exact check `a1-new-feature` Phase 0 and `a1-execute` Phase 1 run
+before proceeding — read-only, deterministic, no parsing beyond a grep.
+
 ## Hard rules
 
 - Always confirm the milestone/phase breakdown with the user before scaffolding

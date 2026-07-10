@@ -44,6 +44,7 @@ delegate directly to the relevant agent (Rene / Vincente / code agents) and skip
 
 | # | Phase | Workflow | Model | Status after |
 |---|---|---|---|---|
+| 0 | Roadmap Gate | `workflows/00-roadmap-gate.md` | — (deterministic, no LLM) | (no status change; hard/soft gate) |
 | 1 | Discover | `workflows/01-discover.md` | Sonnet | discovering |
 | 2 | Specify | `workflows/02-specify.md` | Sonnet | draft |
 | 3 | Clarify | `workflows/03-clarify.md` | **reasoning-tier** | clarified |
@@ -73,6 +74,25 @@ delegate directly to the relevant agent (Rene / Vincente / code agents) and skip
 
 A spec abandoned at any phase is moved to status `cancelled`; its sequence number is **not**
 recycled.
+
+## Roadmap Gate (HARD RULE — before Phase 1 Discover)
+
+Every invocation of this skill runs `workflows/00-roadmap-gate.md` first —
+before any Discover work starts. It deterministically (grep/parse, no LLM)
+checks that `.a1/roadmap.md` exists and, once the feature's `roadmap_entry`
+is known, that it maps to a real roadmap entry. See
+`workflows/00-roadmap-gate.md` for exact checks and outcomes:
+
+- roadmap.md missing → **halt**, route to `a1-roadmap`
+- roadmap.md exists but unparseable → **halt** (treated as missing), but warn
+  the user explicitly and get confirmation before routing to `a1-roadmap`
+  (never silently overwrite an existing file)
+- roadmap.md parseable but the feature's `roadmap_entry` doesn't match any
+  entry → **soft stop**, surface a mismatch notice, user confirms to continue
+
+The linkage convention (`<!-- entry: <slug> -->` markers in roadmap.md,
+`roadmap_entry:` frontmatter field in the spec) is defined in
+`a1-roadmap`'s SKILL.md.
 
 ## Isolation Gate (HARD RULE — before Phase 5 Implement)
 
@@ -106,6 +126,9 @@ while another session may hold it.
 
 ## Routing — pick the right phase
 
+0. **Always run the Roadmap Gate first** (`workflows/00-roadmap-gate.md`) —
+   before touching Discover or reading spec status. Only proceed past it on
+   PASS or explicit user confirmation on a soft stop.
 1. Read the spec frontmatter `status` field if a spec path is given.
 2. If no spec exists yet for the feature: start at Phase 1 (Discover) — call the helper to get
    the next sequence number, create the spec file from the template with status `discovering`.

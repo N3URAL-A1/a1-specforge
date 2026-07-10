@@ -38,7 +38,7 @@ If no plan exists, route the user to `a1-plan` first.
 
 | # | Phase | Workflow | Agent | Trigger |
 |---|---|---|---|---|
-| 1 | Load | `workflows/01-load.md` | — (orchestrator) | Always |
+| 1 | Load (incl. Roadmap Gate) | `workflows/01-load.md` | — (orchestrator) | Always |
 | 2 | Execute | `workflows/02-execute.md` | a1-erik-executor (per wave) | Per wave |
 | 3 | Verify | `workflows/03-verify.md` | a1-victor-verifier | After all waves |
 
@@ -61,8 +61,19 @@ This prevents runaway execution — the user stays in control wave by wave.
 └── VERIFICATION.md (created after all waves)
 ```
 
+## Roadmap Gate (HARD RULE — before any wave execution)
+
+Before Phase 1 does anything else, it runs a deterministic (grep/parse, no
+LLM) roadmap-existence check: `.a1/roadmap.md` must exist and parse (see
+`workflows/01-load.md` Step 0, and `a1-roadmap` SKILL.md "Feature → Roadmap
+Linkage" for the schema). Missing or unparseable → halt, route to
+`a1-roadmap`; an existing-but-unparseable file gets an explicit
+do-not-overwrite warning and requires user confirmation before handoff.
+
 ## Routing
 
+0. **Roadmap Gate first** (`workflows/01-load.md` Step 0) — no wave loads or
+   executes until this passes.
 1. Ask for: project path + phase name (or detect from `.a1/phases/`)
 2. Read PLAN.md — confirm wave count and goal with user
 3. Execute waves one at a time via a1-erik-executor
