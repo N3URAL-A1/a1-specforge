@@ -12,6 +12,10 @@
 #   mirroring: reservations.json code_scope .stage matches ROADMAP
 #   crash-safety: read-only target -> exit non-zero, originals byte-identical
 #   idempotent same-stage re-set                              -> 0, dates stable
+#   crash-safety RENAME PHASE: injected failure mid rename-loop (2nd+ file)
+#     -> exit non-zero, ALL staged files (incl. already-renamed ones) rolled
+#     back byte-identical to pre-call content (covers the original
+#     writeAllOrNothing atomicity bug fixed in 7d42159)
 #   SC-003: 10 consecutive CLI state changes, drift-checked after EVERY step
 #     (not just at the end) -> index.json + NEXT.md agree with ROADMAP.md /
 #     feature.md frontmatter at each of the 10 steps, 0 detected drift
@@ -476,6 +480,95 @@ for i in "${!ALL_STAGES[@]}"; do
   fi
 done
 popd >/dev/null
+
+# --- crash-safety, RENAME PHASE (FR-009): reproduces the exact shape of the
+# original writeAllOrNothing atomicity bug. The bug was that if
+# fs.renameSync() failed partway through the rename loop (AFTER one or more
+# earlier renames in the same staged write set had already succeeded), those
+# already-succeeded renames were never rolled back, leaving mixed old/new
+# content across files. The existing crash-safety case above only injects a
+# failure during the tmp-WRITE/staging phase (chmod 555 on a directory blocks
+# fs.writeFileSync(tmp,...) before any rename starts) — that fault path never
+# reaches the rename loop at all (renamed[] stays empty), so it never
+# exercised the rollback-of-completed-renames code.
+#
+# This case forces the failure INSIDE the rename loop itself, after the
+# first rename has already landed on disk, using the test-only
+# A1_TEST_FAIL_RENAME_AT_INDEX seam in writeAllOrNothing (a1-tools.cjs):
+# it throws right after the real fs.renameSync() at the given 0-based index
+# has completed, so index 0 succeeding + index 1 throwing is byte-for-byte
+# the same failure shape the bug produced (partial rename completion, then a
+# throw). 002-second-feature is currently at stage=done (end of the SC-007
+# walk above) with a feature.md AND a matching reservations.json entry, so an
+# idempotent done->done re-set here still builds the full 5-file write set in
+# this fixed order: [0]=ROADMAP.md [1]=index.json [2]=NEXT.md
+# [3]=feature.md [4]=reservations.json (writes[] are built unconditionally
+# regardless of the idempotent/actual-change branch — see cmdProductStage).
+# Failing at index 1 means ROADMAP.md (index 0) has ALREADY been renamed
+# into place when the injected throw fires — pre-fix code would leave
+# ROADMAP.md holding the NEW content while index.json/NEXT.md/feature.md/
+# reservations.json still hold OLD content: a mixed old/new state across
+# files. Post-fix code must roll ROADMAP.md back too, so ALL FIVE files —
+# not just the one that failed — end up byte-identical to their pre-call
+# content.
+RENAME_PHASE_ROADMAP_BEFORE="$(hash_file "$PDIR/ROADMAP.md")"
+RENAME_PHASE_INDEX_BEFORE="$(hash_file "$PDIR/index.json")"
+RENAME_PHASE_NEXT_BEFORE="$(hash_file "$PDIR/NEXT.md")"
+RENAME_PHASE_FEATURE_MD_BEFORE="$(hash_file "$PDIR/features/002-second-feature/feature.md")"
+RENAME_PHASE_RESERVATIONS_BEFORE="$(hash_file "$WORK/.a1/reservations.json")"
+
+pushd "$WORK" >/dev/null
+OUT="$(A1_TEST_FAIL_RENAME_AT_INDEX=1 node "$TOOLS" product stage --by 002-second-feature --set done --dir "$PDIR" 2>&1)"
+RC=$?
+popd >/dev/null
+
+assert_rc "rename-phase-crash-nonzero-exit" 1 "$RC" "$OUT"
+
+# The injected failure must actually be the one that fired (guards against
+# this test silently degrading into a no-op if the seam or write order ever
+# changes) and the error message must confirm the all-or-nothing rollback
+# path ran, not some unrelated failure.
+if echo "$OUT" | grep -q "A1_TEST_FAIL_RENAME_AT_INDEX injected failure at index 1" && \
+   echo "$OUT" | grep -q "all changes rolled back"; then
+  assert_true "rename-phase-crash-injected-fault-confirmed" "true"
+else
+  assert_true "rename-phase-crash-injected-fault-confirmed" "false"
+fi
+
+RENAME_PHASE_ROADMAP_AFTER="$(hash_file "$PDIR/ROADMAP.md")"
+RENAME_PHASE_INDEX_AFTER="$(hash_file "$PDIR/index.json")"
+RENAME_PHASE_NEXT_AFTER="$(hash_file "$PDIR/NEXT.md")"
+RENAME_PHASE_FEATURE_MD_AFTER="$(hash_file "$PDIR/features/002-second-feature/feature.md")"
+RENAME_PHASE_RESERVATIONS_AFTER="$(hash_file "$WORK/.a1/reservations.json")"
+
+# ROADMAP.md is the critical assertion: its rename (index 0) had ALREADY
+# SUCCEEDED before the injected failure at index 1. This is the exact file
+# the original bug would have left holding new content while its siblings
+# held old content. Everything else must also be unchanged (defense in
+# depth), but ROADMAP.md is the one that proves the rollback-of-already-
+# completed-renames code path (not just the leftover-tmp-cleanup path) ran.
+if [[ "$RENAME_PHASE_ROADMAP_BEFORE" == "$RENAME_PHASE_ROADMAP_AFTER" && \
+      "$RENAME_PHASE_INDEX_BEFORE" == "$RENAME_PHASE_INDEX_AFTER" && \
+      "$RENAME_PHASE_NEXT_BEFORE" == "$RENAME_PHASE_NEXT_AFTER" && \
+      "$RENAME_PHASE_FEATURE_MD_BEFORE" == "$RENAME_PHASE_FEATURE_MD_AFTER" && \
+      "$RENAME_PHASE_RESERVATIONS_BEFORE" == "$RENAME_PHASE_RESERVATIONS_AFTER" ]]; then
+  assert_true "rename-phase-crash-all-files-rolled-back" "true"
+else
+  echo "  ROADMAP   before=$RENAME_PHASE_ROADMAP_BEFORE after=$RENAME_PHASE_ROADMAP_AFTER"
+  echo "  index.json before=$RENAME_PHASE_INDEX_BEFORE after=$RENAME_PHASE_INDEX_AFTER"
+  echo "  NEXT.md   before=$RENAME_PHASE_NEXT_BEFORE after=$RENAME_PHASE_NEXT_AFTER"
+  echo "  feature.md before=$RENAME_PHASE_FEATURE_MD_BEFORE after=$RENAME_PHASE_FEATURE_MD_AFTER"
+  echo "  reservations.json before=$RENAME_PHASE_RESERVATIONS_BEFORE after=$RENAME_PHASE_RESERVATIONS_AFTER"
+  assert_true "rename-phase-crash-all-files-rolled-back" "false"
+fi
+
+# No leftover .tmp files from either the aborted rename or the never-renamed
+# staged entries (best-effort cleanup must still have run).
+if find "$PDIR" "$WORK/.a1" -name '*.tmp.*' 2>/dev/null | grep -q .; then
+  assert_true "rename-phase-crash-no-leftover-tmp-files" "false"
+else
+  assert_true "rename-phase-crash-no-leftover-tmp-files" "true"
+fi
 
 # --- SC-003: 10 consecutive CLI-driven state changes on a real project,
 # drift-checked after EVERY step (not just once at the end). Fresh fixture
