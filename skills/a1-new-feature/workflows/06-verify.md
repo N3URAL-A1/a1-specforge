@@ -173,12 +173,44 @@ If the cost command fails for any reason, write the fallback instead — the lin
 Cost: unavailable (<reason>)
 ```
 
-### All scenarios green AND all SCs met
+### All scenarios green AND all SCs met — Lifecycle Completion Gate (Review → Verify → Merge → Origin cleanup → Done)
 
-```bash
-node ~/.claude/skills/_shared/a1-tools.cjs spec update-status \
-  <spec-path> done
-```
+The spec does not move to `done` on Phase 6 passing alone. Drive the
+remaining lifecycle-stage transitions in order (see SKILL.md's Lifecycle
+Completion Gate), each after its own confirmation:
+
+1. **Review** — once code review (Reinhard or equivalent) has confirmed the
+   implementation:
+   ```bash
+   node ~/.claude/skills/_shared/a1-tools.cjs code-scope stage --by <spec-id> --set review
+   ```
+2. **Verify** — once this Phase 6 walkthrough is all-green (this step):
+   ```bash
+   node ~/.claude/skills/_shared/a1-tools.cjs code-scope stage --by <spec-id> --set verify
+   ```
+3. **Merge** — after the pre-merge check below and a clean `git merge` to
+   `main` with a green post-merge build:
+   ```bash
+   node ~/.claude/skills/_shared/a1-tools.cjs code-scope stage --by <spec-id> --set merge
+   ```
+4. **Origin cleanup** — after the feature branch's remote copy is deleted
+   (via `a1-worktree`'s Exit workflow, Step 4.5). **Hard gate — verify the
+   remote branch is actually gone before advancing:**
+   ```bash
+   git -C <repo> ls-remote --heads origin <feature-branch>
+   ```
+   Non-empty output → the remote branch still exists → **refuse** to set
+   `origin-cleanup` or `done`. Go run `a1-worktree` exit (discard mode) to
+   delete the remote branch, then re-check. Only once empty:
+   ```bash
+   node ~/.claude/skills/_shared/a1-tools.cjs code-scope stage --by <spec-id> --set origin-cleanup
+   ```
+5. **Done** — only after all four transitions above are confirmed, release
+   the scope reservation (frees it for other features) and close the spec:
+   ```bash
+   node ~/.claude/skills/_shared/a1-tools.cjs code-scope release --by <spec-id>
+   node ~/.claude/skills/_shared/a1-tools.cjs spec update-status <spec-path> done
+   ```
 
 The helper:
 - appends `phase: implement, completed: <iso>` and `phase: verify, completed: <iso>` to

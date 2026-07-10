@@ -68,7 +68,7 @@ never touches `_active.md` files. Promote-lessons writes suggestions only.
 
 ## Pre-Flight (mandatory on every new bug)
 
-Before Phase 1, run `00-preflight.md`. Four checks:
+Before Phase 1, run `00-preflight.md`. Five checks:
 
 0. **isolation-gate (HARD RULE — runs FIRST)** — before any code is touched, the
    fix MUST run in an isolated git worktree on its own branch. This prevents the
@@ -80,6 +80,32 @@ Before Phase 1, run `00-preflight.md`. Four checks:
 2. **bug-patterns lookup** — reads `wiki/bug-patterns/<project>.md` and surfaces
    relevant patterns to Falk's context before triage.
 3. **postmortem search** — searches `wiki/postmortems/<project>/` for similar bugs.
+4. **scope-overlap check (non-blocking)** — compares the fix's target files
+   against every in-flight feature's declared `code_scope`. Never blocks the
+   fix; see **Scope Overlap Bypass** below.
+
+## Scope Overlap Bypass (a1-fix never blocks on in-flight feature scope)
+
+Hotfixes and regressions cannot wait behind a parallel feature's claimed
+scope — a production bug does not care that Feature X has reserved
+`src/billing/`. So a1-fix runs the overlap check in **dry-run mode only**
+and always proceeds:
+
+```bash
+node ~/.claude/skills/_shared/a1-tools.cjs code-scope check \
+  --by fix-<bug-slug> --scope <target-file-paths-comma-separated>
+```
+
+- **CONFLICT (exit 1)** → do NOT stop. Print a warning to the user naming
+  the overlapping in-flight feature id(s) from stderr, then proceed to
+  Phase 1 (Report) as normal.
+- **OK (exit 0)** → proceed silently, no warning needed.
+
+**Never claim scope for a hotfix.** Only `code-scope check` (dry-run) is
+called — never `code-scope claim`. A fix's target files are never reserved
+in `.a1/reservations.json`; this keeps the fix out of the lifecycle-stage
+bookkeeping entirely and avoids blocking the feature it briefly overlapped
+with.
 
 ## Isolation Gate (HARD RULE — before any code change)
 

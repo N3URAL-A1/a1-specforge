@@ -1,6 +1,7 @@
 # Phase 00 — Pre-Flight
 
-Run this before Phase 01 (Report) on every new bug. Three checks in sequence.
+Run this before Phase 01 (Report) on every new bug. Four checks in sequence
+plus a non-blocking scope-overlap check.
 Total time: ~30 seconds. Do not skip.
 
 ## Check 1 — Integrity Check
@@ -80,6 +81,34 @@ If postmortems found with the same keyword: tell the user:
 
 If yes → note it on the new bug report as `related_postmortem`.
 If no → proceed normally.
+
+## Check 4 — Scope Overlap Check (non-blocking — never stops the fix)
+
+Once the target files for the fix are roughly known (even a first guess from
+the bug symptom is enough — this check can be re-run once Falk's diagnosis
+narrows the file list), compare them against every in-flight feature's
+declared code scope:
+
+```bash
+node ~/.claude/skills/_shared/a1-tools.cjs code-scope check \
+  --by fix-<bug-slug> --scope <target-file-paths-comma-separated>
+```
+
+- **Exit 1 (CONFLICT)** — the fix's files overlap an in-flight feature. **Do
+  NOT block.** Print a warning naming the overlapping feature id(s) (from
+  stderr) to the user, e.g.:
+
+  > "⚠️ Heads up: this fix touches files also claimed by in-flight feature
+  > `<feature-id>` (currently at stage `<stage>` per `code-scope list`).
+  > Proceeding anyway — a1-fix never blocks on feature scope, but expect a
+  > possible merge conflict with that feature later."
+
+  Then continue to Phase 01 (Report) normally.
+- **Exit 0 (OK)** — no overlap. Proceed silently, no warning.
+
+**Never call `code-scope claim` for a hotfix** — only the dry-run `check`
+subcommand. The fix's files are never reserved; this check exists purely to
+surface a heads-up warning, not to gate anything.
 
 ## Hand-off
 

@@ -94,6 +94,60 @@ The linkage convention (`<!-- entry: <slug> -->` markers in roadmap.md,
 `roadmap_entry:` frontmatter field in the spec) is defined in
 `a1-roadmap`'s SKILL.md.
 
+## Scope Claim Gate (HARD RULE — before Phase 5 Implement)
+
+Before the first wave of Phase 5, the feature MUST claim its declared code
+scope so parallel features cannot silently collide on the same files:
+
+```bash
+node ~/.claude/skills/_shared/a1-tools.cjs code-scope claim \
+  --by <spec-id> --scope <code_scope from wave-plan frontmatter>
+```
+
+- **CONFLICT (exit 1)** → Implementation does NOT start. The CLI output names
+  the in-flight feature(s) holding the overlapping path(s) — surface that to
+  the user verbatim and ask how to proceed (wait for the holder to release,
+  narrow this feature's scope, or escalate).
+- **OK (exit 0)** → proceed to Wave 1. The claim is idempotent if this feature
+  re-claims the same scope after a restart.
+
+`<spec-id>` is the feature's stable id (e.g. `<###>-<feature-slug>`) — the
+same id used for `code-scope stage`/`release` in the Completion Gate below.
+
+## Lifecycle Completion Gate (HARD RULE — a feature reaches `done` only through all five confirmed transitions)
+
+A feature's spec status moving to `done` is not just "Phase 6 passed" — it
+requires each of five lifecycle stages to be **explicitly confirmed**, in
+order, with the CLI driven at every transition:
+
+| Transition | When | Command |
+|---|---|---|
+| **Complete** | all waves in Phase 5 marked `⟶ status: done` | `code-scope stage --by <spec-id> --set complete` |
+| **Review** | code review (Reinhard or equivalent) confirmed | `code-scope stage --by <spec-id> --set review` |
+| **Verify** | Phase 6 scenario walkthrough all-green | `code-scope stage --by <spec-id> --set verify` |
+| **Merge** | feature branch merged to `main`, build green post-merge | `code-scope stage --by <spec-id> --set merge` |
+| **Origin cleanup** | remote branch deleted (see `a1-worktree` Step 4.5) | `code-scope stage --by <spec-id> --set origin-cleanup` |
+| **Done** | all of the above confirmed | `code-scope release --by <spec-id>` (frees the scope), then `spec update-status <spec-path> done` |
+
+**Remote-branch gate (hard block):** before running `code-scope stage --set
+origin-cleanup` (and therefore before `done`), check:
+
+```bash
+git -C <repo> ls-remote --heads origin <feature-branch>
+```
+
+Non-empty output → the remote branch still exists → **refuse** to advance to
+`origin-cleanup`/`done`. Route back to `a1-worktree`'s Exit workflow (Step
+4.5) to delete the remote branch first. Only empty output (or an explicit,
+confirmed `git push origin --delete` having just run) permits the
+transition.
+
+Each transition needs an explicit confirmation signal (a passing gate, a
+user "yes", a green build) — never advance the stage speculatively "because
+the next step is probably fine." See `workflows/05-implement.md` and
+`workflows/06-verify.md` for exactly where each `code-scope stage` call sits
+in the phase flow.
+
 ## Isolation Gate (HARD RULE — before Phase 5 Implement)
 
 No feature code is written in the primary checkout. Before the first wave of

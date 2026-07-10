@@ -161,5 +161,58 @@ else
   echo "PASS  release-idempotent flagged released:false"; pass=$((pass + 1))
 fi
 
+# --- Wave 4: documented done-gate CLI sequence (started -> ... -> done -> release) ---
+# Mirrors the lifecycle-completion-gate sequence documented in
+# skills/a1-new-feature/SKILL.md: claim -> stage complete -> review -> verify ->
+# merge -> origin-cleanup -> release (spec update-status to 'done' happens outside
+# this CLI). Asserts each stage advance persists and is visible via --list, and
+# that release at the end frees the scope (idempotent-release semantics already
+# covered above; this proves the FULL documented stage progression, not just one hop).
+GATE_FILE="$WORK/done-gate-reservations.json"
+
+OUT="$(node "$TOOLS" code-scope claim --by feature-gate --scope "src/gate-demo/" --file "$GATE_FILE" 2>&1)"
+assert_rc "done-gate-claim" 0 $? "$OUT"
+if ! grep -q '"stage": "started"' <<<"$OUT"; then
+  echo "FAIL  done-gate-claim: expected initial stage:started"; fail=$((fail + 1))
+else
+  echo "PASS  done-gate-claim starts at stage:started"; pass=$((pass + 1))
+fi
+
+for STAGE in complete review verify merge origin-cleanup done; do
+  OUT="$(node "$TOOLS" code-scope stage --by feature-gate --set "$STAGE" --file "$GATE_FILE" 2>&1)"
+  assert_rc "done-gate-stage-$STAGE" 0 $? "$OUT"
+  if ! grep -q "\"stage\": \"$STAGE\"" <<<"$OUT"; then
+    echo "FAIL  done-gate-stage-$STAGE: expected stage:$STAGE in output"; fail=$((fail + 1))
+  else
+    echo "PASS  done-gate-stage-$STAGE reflects new stage"; pass=$((pass + 1))
+  fi
+  LIST_OUT="$(node "$TOOLS" code-scope list --file "$GATE_FILE" 2>&1)"
+  if ! grep -q "\"stage\": \"$STAGE\"" <<<"$LIST_OUT"; then
+    echo "FAIL  done-gate-stage-$STAGE: not visible in --list output"; fail=$((fail + 1))
+  else
+    echo "PASS  done-gate-stage-$STAGE visible in list output (progression tracked)"; pass=$((pass + 1))
+  fi
+done
+
+# --- final Done transition: release frees the scope entirely ---
+OUT="$(node "$TOOLS" code-scope release --by feature-gate --file "$GATE_FILE" 2>&1)"
+assert_rc "done-gate-release" 0 $? "$OUT"
+if ! grep -q '"released": true' <<<"$OUT"; then
+  echo "FAIL  done-gate-release: expected released:true in output"; fail=$((fail + 1))
+else
+  echo "PASS  done-gate-release flagged released:true (scope freed at Done)"; pass=$((pass + 1))
+fi
+
+LIST_AFTER="$(node "$TOOLS" code-scope list --file "$GATE_FILE" 2>&1)"
+if grep -q "feature-gate" <<<"$LIST_AFTER"; then
+  echo "FAIL  done-gate-release: feature-gate still present in --list after release"; fail=$((fail + 1))
+else
+  echo "PASS  done-gate-release: feature-gate absent from --list after release"; pass=$((pass + 1))
+fi
+
+# --- scope reclaimable by a different feature after Done+release ---
+OUT="$(node "$TOOLS" code-scope claim --by feature-gate-2 --scope "src/gate-demo/" --file "$GATE_FILE" 2>&1)"
+assert_rc "done-gate-scope-reclaimable-after-done" 0 $? "$OUT"
+
 echo "code-scope fixtures: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

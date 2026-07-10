@@ -27,6 +27,22 @@ node ~/.claude/skills/_shared/a1-tools.cjs consistency-check <plan-path> <spec-p
 
 Do NOT start Wave 1 if the gate returns FAIL. Orphaned FRs (FRs not mapped to any wave) produced 44% of historical post-deploy bugs — the gate costs 30 seconds and prevents hours of fixes.
 
+## Precondition 2 — Scope Claim Gate (before Wave 1, every time)
+
+Before Wave 1 starts (and before any code is touched), claim the feature's
+declared `code_scope` (from the wave-plan frontmatter) so parallel features
+can't silently collide:
+
+```bash
+node ~/.claude/skills/_shared/a1-tools.cjs code-scope claim \
+  --by <spec-id> --scope <code_scope-paths-comma-separated>
+```
+
+- Exit 1 (`CONFLICT`) → **do not start Implementation.** Surface the named
+  overlapping feature(s) from stderr to the user and ask how to proceed.
+- Exit 0 → proceed. Idempotent on re-run (e.g. resuming after a context
+  reset) as long as the scope is unchanged.
+
 ## Step 1 — Set status to implementing (first time only)
 
 If status is still `planned`:
@@ -238,6 +254,22 @@ On smoke test failure: wave is `failed`, not `done`. Continue with the failure f
 
 Update the wave heading in the wave-plan file: `⟶ status: done`.
 Loop to Step 2 for the next wave.
+
+## Step 5c — Lifecycle stage: Complete (after ALL waves are `done`)
+
+Once every wave in the plan is marked `⟶ status: done` (before moving to
+Phase 6), advance the lifecycle stage:
+
+```bash
+node ~/.claude/skills/_shared/a1-tools.cjs code-scope stage \
+  --by <spec-id> --set complete
+```
+
+This is the "Complete" transition of the Lifecycle Completion Gate (see
+SKILL.md). It does not change the spec's `status` frontmatter — that stays
+`implementing` until Phase 6 closes it — it only advances the code-scope
+reservation's lifecycle stage so `a1-progress`/roadmap views show accurate
+in-flight state.
 
 ---
 
