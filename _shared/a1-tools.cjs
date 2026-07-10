@@ -5738,6 +5738,201 @@ function cmdCheckReservations(args) {
   process.exit(0);
 }
 
+// ---------------------------------------------------------------------------
+// code-scope — path-list reservation claims with deterministic overlap gate.
+//
+// Extends the reservations registry (same .a1/reservations.json file) with a
+// new claim shape: { type: "code_scope", paths: [...], by, at, stage }.
+// Unlike scalar `check reservations --claim <type>:<value>` (exact-match),
+// code-scope compares whole path LISTS for prefix/glob overlap so a new
+// feature's declared file scope can be checked against every in-flight
+// feature's declared scope before Implementation starts (FR-004..007, 017).
+// Deterministic: no filesystem reads beyond the registry file itself, no git.
+// ---------------------------------------------------------------------------
+
+/** Normalize a scope path for comparison: strip leading "./", collapse
+ * duplicate slashes, strip a single trailing slash (kept conceptually as
+ * "directory" via segment comparison, not via string suffix). */
+function normalizeScopePath(p) {
+  let out = String(p).trim().replace(/\\/g, '/');
+  while (out.startsWith('./')) out = out.slice(2);
+  out = out.replace(/\/+/g, '/');
+  if (out.length > 1 && out.endsWith('/')) out = out.slice(0, -1);
+  return out;
+}
+
+/** Split a normalized path into non-empty segments. */
+function scopeSegments(p) {
+  return p.split('/').filter(Boolean);
+}
+
+/** True if `pattern` segment is a glob segment ("*" or "**"). */
+function isGlobSegment(seg) {
+  return seg === '*' || seg === '**';
+}
+
+/** Match a single path's segments against a pattern's segments.
+ * "*" matches exactly one segment; "**" matches zero or more segments. */
+function segmentsMatchGlob(patternSegs, pathSegs) {
+  const memo = new Map();
+  function walk(pi, si) {
+    const key = pi + ':' + si;
+    if (memo.has(key)) return memo.get(key);
+    let result;
+    if (pi === patternSegs.length) {
+      result = si === pathSegs.length;
+    } else {
+      const seg = patternSegs[pi];
+      if (seg === '**') {
+        result = walk(pi + 1, si) || (si < pathSegs.length && walk(pi, si + 1));
+      } else if (seg === '*') {
+        result = si < pathSegs.length && walk(pi + 1, si + 1);
+      } else {
+        result = si < pathSegs.length && pathSegs[si] === seg && walk(pi + 1, si + 1);
+      }
+    }
+    memo.set(key, result);
+    return result;
+  }
+  return walk(0, 0);
+}
+
+/** True if segsA is a prefix of segsB at a segment boundary (or equal). */
+function isSegmentPrefix(segsA, segsB) {
+  if (segsA.length > segsB.length) return false;
+  for (let i = 0; i < segsA.length; i++) {
+    if (segsA[i] !== segsB[i]) return false;
+  }
+  return true;
+}
+
+/** Deterministic overlap check between two declared scope paths.
+ * Overlap if:
+ *   - one is a segment-boundary prefix of the other (dir containment), or
+ *   - either contains a glob ("*"/"**") that matches the other via glob math.
+ * No fs reads, no git — pure string/segment comparison. */
+function scopePathsOverlap(rawA, rawB) {
+  const a = normalizeScopePath(rawA);
+  const b = normalizeScopePath(rawB);
+  if (a === b) return true;
+  const segsA = scopeSegments(a);
+  const segsB = scopeSegments(b);
+  const hasGlobA = segsA.some(isGlobSegment);
+  const hasGlobB = segsB.some(isGlobSegment);
+  if (hasGlobA && segmentsMatchGlob(segsA, segsB)) return true;
+  if (hasGlobB && segmentsMatchGlob(segsB, segsA)) return true;
+  if (!hasGlobA && !hasGlobB) {
+    if (isSegmentPrefix(segsA, segsB)) return true;
+    if (isSegmentPrefix(segsB, segsA)) return true;
+  }
+  return false;
+}
+
+/** Find all code_scope reservation entries (excluding a given feature id)
+ * whose declared paths overlap the candidate paths. Returns a flat list of
+ * { feature, path, with } describing each overlapping pair. */
+function findScopeOverlaps(reservations, candidatePaths, excludeBy) {
+  const overlaps = [];
+  for (const r of reservations) {
+    if (r.type !== 'code_scope') continue;
+    if (r.by === excludeBy) continue;
+    const otherPaths = Array.isArray(r.paths) ? r.paths : [];
+    for (const cand of candidatePaths) {
+      for (const other of otherPaths) {
+        if (scopePathsOverlap(cand, other)) {
+          overlaps.push({ feature: r.by, path: cand, with: other });
+        }
+      }
+    }
+  }
+  return overlaps;
+}
+
+function parseScopeList(raw) {
+  if (!raw) return [];
+  return raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+const CODE_SCOPE_STAGES = ['started', 'complete', 'review', 'verify', 'merge', 'origin-cleanup', 'done'];
+
+function cmdCodeScopeClaim(args) {
+  const flags = parseFlags(args, { by: 'value', scope: 'value', file: 'value' });
+  const file = reservationsFile(flags);
+  if (!flags.by || !flags.scope) {
+    usage('code-scope claim requires --by <feature-id> --scope <path>[,<path>...]');
+  }
+  const paths = parseScopeList(flags.scope);
+  if (paths.length === 0) {
+    usage('code-scope claim requires at least one --scope path');
+  }
+  const by = flags.by;
+
+  const data = loadReservations(file);
+  const existingSame = data.reservations.find((r) => r.type === 'code_scope' && r.by === by);
+
+  if (existingSame) {
+    const existingNorm = (existingSame.paths || []).map(normalizeScopePath).sort();
+    const candidateNorm = paths.map(normalizeScopePath).sort();
+    const identical =
+      existingNorm.length === candidateNorm.length &&
+      existingNorm.every((p, i) => p === candidateNorm[i]);
+    if (identical) {
+      const out = { status: 'OK', idempotent: true, file, reservation: existingSame };
+      process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+      process.exit(0);
+    }
+  }
+
+  const overlaps = findScopeOverlaps(data.reservations, paths, by);
+  if (overlaps.length > 0) {
+    const out = { status: 'CONFLICT', file, claim: { by, paths }, overlaps };
+    process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+    const featureIds = [...new Set(overlaps.map((o) => o.feature))];
+    process.stderr.write(
+      `conflict: scope overlaps in-flight feature(s): ${featureIds.join(', ')}\n`
+    );
+    process.exit(1);
+  }
+
+  const reservation = { type: 'code_scope', paths, by, at: nowIso(), stage: 'started' };
+  const remaining = data.reservations.filter((r) => !(r.type === 'code_scope' && r.by === by));
+  const next = { reservations: [...remaining, reservation] };
+  writeJsonAtomic(file, next);
+  const out = { status: 'OK', idempotent: false, file, reservation };
+  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+  process.exit(0);
+}
+
+function cmdCodeScopeCheck(args) {
+  const flags = parseFlags(args, { by: 'value', scope: 'value', file: 'value' });
+  const file = reservationsFile(flags);
+  if (!flags.by || !flags.scope) {
+    usage('code-scope check requires --by <feature-id> --scope <path>[,<path>...]');
+  }
+  const paths = parseScopeList(flags.scope);
+  if (paths.length === 0) {
+    usage('code-scope check requires at least one --scope path');
+  }
+  const by = flags.by;
+  const data = loadReservations(file);
+  const overlaps = findScopeOverlaps(data.reservations, paths, by);
+  if (overlaps.length > 0) {
+    const out = { status: 'CONFLICT', file, claim: { by, paths }, overlaps };
+    process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+    const featureIds = [...new Set(overlaps.map((o) => o.feature))];
+    process.stderr.write(
+      `conflict: scope overlaps in-flight feature(s): ${featureIds.join(', ')}\n`
+    );
+    process.exit(1);
+  }
+  const out = { status: 'OK', file, claim: { by, paths }, overlaps: [] };
+  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+  process.exit(0);
+}
+
 function usage(msg) {
   process.stderr.write(`usage error: ${msg}\n`);
   process.stderr.write(`\n${HELP}\n`);
@@ -5777,6 +5972,15 @@ Usage:
                   Cross-run claim registry (.a1/reservations.json) for migration
                   numbers, route paths, etc. Conflicting claim (held by another
                   spec) exits 1; same-spec re-claim is idempotent (exit 0).
+  a1-tools code-scope claim --by <feature-id> --scope <path>[,<path>...] [--file <path>]
+                  Path-list scope claim (same .a1/reservations.json registry).
+                  Deterministic prefix/glob overlap check against every other
+                  in-flight feature's code_scope. Overlap -> exit 1, JSON
+                  {status:"CONFLICT", overlaps:[...]}, stderr names holder(s).
+                  No overlap -> atomic write, exit 0. Same-feature identical
+                  re-claim is idempotent (exit 0).
+  a1-tools code-scope check --by <feature-id> --scope <path>[,<path>...] [--file <path>]
+                  Dry-run variant of claim: same overlap comparison, never writes.
 
   a1-tools checklist run <project-slug>[/<feature-id>] [--format json|human] [--save] [--vault <path>]
                   Pre-flight checklist: 8 structural checks before implementation.
@@ -6685,6 +6889,17 @@ function main() {
       // the generic JSON.stringify(result) path below.
       cmdCheckRun([sub, ...rest].filter((x) => x !== undefined));
       return; // unreachable — cmdCheckRun calls process.exit()
+    } else if (group === 'code-scope') {
+      // code-scope claim/check own their exit code (0/1) and JSON output.
+      if (sub === 'claim') {
+        cmdCodeScopeClaim(rest);
+        return; // unreachable — cmdCodeScopeClaim calls process.exit()
+      } else if (sub === 'check') {
+        cmdCodeScopeCheck(rest);
+        return; // unreachable — cmdCodeScopeCheck calls process.exit()
+      } else {
+        usage(`unknown code-scope subcommand: ${sub}`);
+      }
     } else if (group === 'realpath-check') {
       if (sub === 'run') {
         // owns its own exit code (0 pass / 1 findings / 2 error) and stdout
