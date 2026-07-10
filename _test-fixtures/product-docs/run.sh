@@ -12,6 +12,9 @@
 #   mirroring: reservations.json code_scope .stage matches ROADMAP
 #   crash-safety: read-only target -> exit non-zero, originals byte-identical
 #   idempotent same-stage re-set                              -> 0, dates stable
+#   SC-003: 10 consecutive CLI state changes, drift-checked after EVERY step
+#     (not just at the end) -> index.json + NEXT.md agree with ROADMAP.md /
+#     feature.md frontmatter at each of the 10 steps, 0 detected drift
 set -u
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -48,6 +51,104 @@ hash_file() {
   else
     sha256sum "$1" | awk '{print $1}'
   fi
+}
+
+# check_no_drift <step-label> <pdir> <feature-md-file-or-empty>
+# SC-003 helper: cross-checks index.json + NEXT.md against ROADMAP.md's own
+# frontmatter (read back via the read-only `product status` subcommand, which
+# the earlier scenario already proves is hash-unchanged / non-mutating) and,
+# when a feature.md mirror exists, against that file's frontmatter too. Fails
+# loudly (non-zero return) on ANY mismatch so the caller can assert per-step,
+# not just once at the end.
+check_no_drift() {
+  local label="$1" pdir="$2" feature_md="${3:-}"
+  local status_out
+  status_out="$(node "$TOOLS" product status --dir "$pdir" 2>&1)"
+  if [[ $? -ne 0 ]]; then
+    echo "  drift-check[$label]: product status failed: $status_out"
+    return 1
+  fi
+  node -e '
+    const fs = require("fs");
+    const [statusJson, indexPath, nextMdPath, featureMdPath] = process.argv.slice(1);
+    const status = JSON.parse(statusJson);
+    const index = JSON.parse(fs.readFileSync(indexPath, "utf8"));
+    const nextMd = fs.readFileSync(nextMdPath, "utf8");
+
+    // project + next cursor must match ROADMAP frontmatter exactly
+    if (status.project.status !== index.project.status) {
+      console.error(`project.status drift: ROADMAP=${status.project.status} index.json=${index.project.status}`);
+      process.exit(1);
+    }
+    if (status.next !== index.next) {
+      console.error(`next cursor drift: ROADMAP=${status.next} index.json=${index.next}`);
+      process.exit(1);
+    }
+
+    // every feature: stage/status/started/finished must match ROADMAP frontmatter
+    for (const rf of status.features) {
+      const idxF = index.features.find((f) => f.id === rf.id);
+      if (!idxF) {
+        console.error(`feature ${rf.id} missing from index.json`);
+        process.exit(1);
+      }
+      const rfStage = rf.stage !== undefined ? rf.stage : null;
+      const rfStatus = rf.status !== undefined ? rf.status : null;
+      const rfStarted = rf.started !== undefined ? rf.started : null;
+      const rfFinished = rf.finished !== undefined ? rf.finished : null;
+      if (idxF.stage !== rfStage || idxF.status !== rfStatus || idxF.started !== rfStarted || idxF.finished !== rfFinished) {
+        console.error(
+          `feature ${rf.id} drift: ROADMAP={stage:${rfStage},status:${rfStatus},started:${rfStarted},finished:${rfFinished}} ` +
+          `index.json={stage:${idxF.stage},status:${idxF.status},started:${idxF.started},finished:${idxF.finished}}`
+        );
+        process.exit(1);
+      }
+      // in-flight features must be named in the NEXT.md In-flight section
+      if (rfStatus === "in-flight" && !nextMd.includes(rf.id)) {
+        console.error(`feature ${rf.id} is in-flight but not mentioned in NEXT.md`);
+        process.exit(1);
+      }
+    }
+
+    // NEXT.md next-cursor section must mention the current cursor id (if any)
+    if (index.cursor !== null && !nextMd.includes(index.cursor)) {
+      console.error(`cursor ${index.cursor} not mentioned in NEXT.md`);
+      process.exit(1);
+    }
+
+    // milestone statuses must match ROADMAP frontmatter
+    for (const rm of status.milestones) {
+      const idxM = index.milestones.find((m) => m.id === rm.id);
+      if (!idxM || idxM.status !== rm.status) {
+        console.error(`milestone ${rm.id} drift: ROADMAP=${rm.status} index.json=${idxM ? idxM.status : "MISSING"}`);
+        process.exit(1);
+      }
+    }
+
+    // feature.md mirror (when present): stage/status must match ROADMAP frontmatter
+    if (featureMdPath) {
+      const fmContent = fs.readFileSync(featureMdPath, "utf8");
+      const targetId = status.features.find((f) => featureMdPath.includes(f.id));
+      if (targetId) {
+        const stageLine = new RegExp(`stage:\\s*${targetId.stage === null ? "null" : targetId.stage}\\b`);
+        const statusLine = new RegExp(`status:\\s*${targetId.status}\\b`);
+        if (!stageLine.test(fmContent)) {
+          console.error(`feature.md stage drift for ${targetId.id}: expected stage ${targetId.stage}`);
+          process.exit(1);
+        }
+        if (!statusLine.test(fmContent)) {
+          console.error(`feature.md status drift for ${targetId.id}: expected status ${targetId.status}`);
+          process.exit(1);
+        }
+      }
+    }
+  ' "$status_out" "$pdir/index.json" "$pdir/NEXT.md" "$feature_md"
+  local rc=$?
+  if [[ $rc -ne 0 ]]; then
+    echo "  drift-check[$label]: MISMATCH (see above)"
+    return 1
+  fi
+  return 0
 }
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-docs-test.XXXXXX")"
@@ -295,6 +396,294 @@ if [[ "$ROADMAP_HASH_BEFORE_CRASH" == "$ROADMAP_HASH_AFTER_CRASH" && \
 else
   assert_true "crash-safety-originals-unchanged" "false"
 fi
+
+# --- SC-007: full 7-stage lifecycle parity -----------------------------
+# "A feature's stage value read from reservations.json, feature.md, and
+# ROADMAP.md is identical after every CLI stage-transition call, checked
+# across all lifecycle stages (started->...->done) in an integration test."
+#
+# 002-second-feature already sits at stage=started (set above, line ~175)
+# and has a feature.md (mirrored above). Give it a matching code_scope
+# reservation at the SAME stage so all three sources start in sync, then
+# walk it through every remaining CODE_SCOPE_STAGES entry in order,
+# asserting 3-way parity after EACH transition (not just at the end).
+ALL_STAGES=(started complete review verify merge origin-cleanup done)
+
+# Seed the reservation at the feature's current stage (started) so the
+# very first transition in the loop below already has a reservation to
+# mirror into (the CLI silently skips mirroring when no reservation
+# exists yet for this feature id).
+node -e '
+  const fs = require("fs");
+  const p = process.argv[1];
+  const data = JSON.parse(fs.readFileSync(p, "utf8"));
+  data.reservations.push({
+    type: "code_scope",
+    by: "002-second-feature",
+    paths: ["src/bar/"],
+    stage: "started",
+    at: "2026-01-01T00:00:00.000Z",
+  });
+  fs.writeFileSync(p, JSON.stringify(data, null, 2) + "\n");
+' "$WORK/.a1/reservations.json"
+
+assert_three_way_parity() {
+  local stage="$1"
+  node -e '
+    const fs = require("fs");
+    const [resPath, featurePath, roadmapPath, stage] = process.argv.slice(1);
+
+    const res = JSON.parse(fs.readFileSync(resPath, "utf8"));
+    const resEntry = res.reservations.find((r) => r.type === "code_scope" && r.by === "002-second-feature");
+    if (!resEntry) { console.error("no reservations.json entry for 002-second-feature"); process.exit(1); }
+    if (resEntry.stage !== stage) { console.error(`reservations.json stage=${resEntry.stage}, expected ${stage}`); process.exit(1); }
+
+    const featureRaw = fs.readFileSync(featurePath, "utf8");
+    const featureStageMatch = featureRaw.match(/^stage:\s*(.+)$/m);
+    const featureStage = featureStageMatch ? featureStageMatch[1].trim() : null;
+    if (featureStage !== stage) { console.error(`feature.md stage=${featureStage}, expected ${stage}`); process.exit(1); }
+
+    const roadmapRaw = fs.readFileSync(roadmapPath, "utf8");
+    const idIdx = roadmapRaw.indexOf("id: 002-second-feature");
+    if (idIdx === -1) { console.error("002-second-feature not found in ROADMAP.md"); process.exit(1); }
+    const afterId = roadmapRaw.slice(idIdx, idIdx + 400);
+    const roadmapStageMatch = afterId.match(/stage:\s*(.+)/);
+    const roadmapStage = roadmapStageMatch ? roadmapStageMatch[1].trim() : null;
+    if (roadmapStage !== stage) { console.error(`ROADMAP.md stage=${roadmapStage}, expected ${stage}`); process.exit(1); }
+  ' "$WORK/.a1/reservations.json" "$PDIR/features/002-second-feature/feature.md" "$PDIR/ROADMAP.md" "$stage"
+}
+
+# Confirm the seeded starting point (stage=started) is already 3-way in sync
+# before we transition anywhere, then walk forward through every remaining
+# stage, asserting parity after EACH call.
+if assert_three_way_parity "started"; then
+  assert_true "sc007-parity-started" "true"
+else
+  assert_true "sc007-parity-started" "false"
+fi
+
+pushd "$WORK" >/dev/null
+for i in "${!ALL_STAGES[@]}"; do
+  [[ "$i" -eq 0 ]] && continue  # 'started' already reached above
+  STAGE="${ALL_STAGES[$i]}"
+  OUT="$(node "$TOOLS" product stage --by 002-second-feature --set "$STAGE" --dir "$PDIR" 2>&1)"
+  RC=$?
+  assert_rc "sc007-stage-transition-$STAGE" 0 "$RC" "$OUT"
+  if assert_three_way_parity "$STAGE"; then
+    assert_true "sc007-parity-$STAGE" "true"
+  else
+    assert_true "sc007-parity-$STAGE" "false"
+  fi
+done
+popd >/dev/null
+
+# --- SC-003: 10 consecutive CLI-driven state changes on a real project,
+# drift-checked after EVERY step (not just once at the end). Fresh fixture
+# dir so this scenario isn't entangled with the mutation history above. ---
+SC003_WORK="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-docs-sc003.XXXXXX")"
+SC003_PDIR="$SC003_WORK/docs/product"
+mkdir -p "$SC003_PDIR/features/002-second-feature"
+
+cat > "$SC003_PDIR/ROADMAP.md" <<'EOF'
+---
+schema_version: 1
+type: roadmap
+project: sc003-project
+title: SC-003 Project — Roadmap
+status: active
+updated: 2026-01-01
+source: "test fixture"
+milestones:
+  - id: m1-first
+    title: First Milestone
+    status: planned
+    target: 2026-02
+features:
+  - id: 001-first-feature
+    milestone: m1-first
+    title: First Feature
+    status: planned
+    stage: null
+    depends_on: []
+    started: null
+    finished: null
+    spec_path: null
+    plan_path: null
+  - id: 002-second-feature
+    milestone: m1-first
+    title: Second Feature
+    status: planned
+    stage: null
+    depends_on: [001-first-feature]
+    started: null
+    finished: null
+    spec_path: null
+    plan_path: null
+next: 001-first-feature
+---
+
+# SC-003 Project — Roadmap
+
+> Fixture roadmap for the SC-003 10-step drift-freedom scenario.
+
+## Milestones
+
+### First Milestone <!-- entry: m1-first -->
+Status: planned · Target: 2026-02
+Goal: fixture milestone.
+
+**Features:**
+- [ ] **001-first-feature** — First Feature: fixture feature.
+- [ ] **002-second-feature** — Second Feature: fixture feature (depends on: 001-first-feature)
+
+## In-flight features
+
+None.
+
+## Changelog
+
+- **2026-01-01** — Created fixture.
+EOF
+
+cat > "$SC003_PDIR/features/002-second-feature/feature.md" <<'EOF'
+---
+id: 002-second-feature
+project: sc003-project
+milestone: m1-first
+title: Second Feature
+status: planned
+stage: null
+depends_on:
+  - 001-first-feature
+started: null
+finished: null
+spec_path: null
+plan_path: null
+schema_version: 1
+---
+
+Fixture feature.md body.
+EOF
+
+SC003_FEATURE_MD="$SC003_PDIR/features/002-second-feature/feature.md"
+sc003_steps=0
+
+# Step 1: stage 001 -> started
+OUT="$(node "$TOOLS" product stage --by 001-first-feature --set started --dir "$SC003_PDIR" 2>&1)"
+RC=$?
+assert_rc "sc003-step1-stage-001-started" 0 "$RC" "$OUT"
+sc003_steps=$((sc003_steps + 1))
+if check_no_drift "step1" "$SC003_PDIR" "$SC003_FEATURE_MD"; then
+  assert_true "sc003-step1-no-drift" "true"
+else
+  assert_true "sc003-step1-no-drift" "false"
+fi
+
+# Step 2: stage 002 -> started (exercises the feature.md mirror path)
+OUT="$(node "$TOOLS" product stage --by 002-second-feature --set started --dir "$SC003_PDIR" 2>&1)"
+RC=$?
+assert_rc "sc003-step2-stage-002-started" 0 "$RC" "$OUT"
+sc003_steps=$((sc003_steps + 1))
+if check_no_drift "step2" "$SC003_PDIR" "$SC003_FEATURE_MD"; then
+  assert_true "sc003-step2-no-drift" "true"
+else
+  assert_true "sc003-step2-no-drift" "false"
+fi
+
+# Step 3: markers --level milestone --set in-progress
+OUT="$(node "$TOOLS" product markers --level milestone --id m1-first --set in-progress --dir "$SC003_PDIR" 2>&1)"
+RC=$?
+assert_rc "sc003-step3-milestone-in-progress" 0 "$RC" "$OUT"
+sc003_steps=$((sc003_steps + 1))
+if check_no_drift "step3" "$SC003_PDIR" "$SC003_FEATURE_MD"; then
+  assert_true "sc003-step3-no-drift" "true"
+else
+  assert_true "sc003-step3-no-drift" "false"
+fi
+
+# Step 4: stage 001 -> complete
+OUT="$(node "$TOOLS" product stage --by 001-first-feature --set complete --dir "$SC003_PDIR" 2>&1)"
+RC=$?
+assert_rc "sc003-step4-stage-001-complete" 0 "$RC" "$OUT"
+sc003_steps=$((sc003_steps + 1))
+if check_no_drift "step4" "$SC003_PDIR" "$SC003_FEATURE_MD"; then
+  assert_true "sc003-step4-no-drift" "true"
+else
+  assert_true "sc003-step4-no-drift" "false"
+fi
+
+# Step 5: changelog append (no stage change, still regenerates index.json/NEXT.md)
+OUT="$(node "$TOOLS" product changelog --entry "reviewed 001 progress" --why "SC-003 fixture step 5" --dir "$SC003_PDIR" 2>&1)"
+RC=$?
+assert_rc "sc003-step5-changelog" 0 "$RC" "$OUT"
+sc003_steps=$((sc003_steps + 1))
+if check_no_drift "step5" "$SC003_PDIR" "$SC003_FEATURE_MD"; then
+  assert_true "sc003-step5-no-drift" "true"
+else
+  assert_true "sc003-step5-no-drift" "false"
+fi
+
+# Step 6: stage 002 -> complete
+OUT="$(node "$TOOLS" product stage --by 002-second-feature --set complete --dir "$SC003_PDIR" 2>&1)"
+RC=$?
+assert_rc "sc003-step6-stage-002-complete" 0 "$RC" "$OUT"
+sc003_steps=$((sc003_steps + 1))
+if check_no_drift "step6" "$SC003_PDIR" "$SC003_FEATURE_MD"; then
+  assert_true "sc003-step6-no-drift" "true"
+else
+  assert_true "sc003-step6-no-drift" "false"
+fi
+
+# Step 7: stage 001 -> review
+OUT="$(node "$TOOLS" product stage --by 001-first-feature --set review --dir "$SC003_PDIR" 2>&1)"
+RC=$?
+assert_rc "sc003-step7-stage-001-review" 0 "$RC" "$OUT"
+sc003_steps=$((sc003_steps + 1))
+if check_no_drift "step7" "$SC003_PDIR" "$SC003_FEATURE_MD"; then
+  assert_true "sc003-step7-no-drift" "true"
+else
+  assert_true "sc003-step7-no-drift" "false"
+fi
+
+# Step 8: stage 002 -> review (via `product stage`, not `product markers
+# --set`: the latter intentionally skips the feature.md mirror per its own
+# code comment, which would inject real drift here — SC-003 requires 0)
+OUT="$(node "$TOOLS" product stage --by 002-second-feature --set review --dir "$SC003_PDIR" 2>&1)"
+RC=$?
+assert_rc "sc003-step8-stage-002-review" 0 "$RC" "$OUT"
+sc003_steps=$((sc003_steps + 1))
+if check_no_drift "step8" "$SC003_PDIR" "$SC003_FEATURE_MD"; then
+  assert_true "sc003-step8-no-drift" "true"
+else
+  assert_true "sc003-step8-no-drift" "false"
+fi
+
+# Step 9: stage 001 -> verify
+OUT="$(node "$TOOLS" product stage --by 001-first-feature --set verify --dir "$SC003_PDIR" 2>&1)"
+RC=$?
+assert_rc "sc003-step9-stage-001-verify" 0 "$RC" "$OUT"
+sc003_steps=$((sc003_steps + 1))
+if check_no_drift "step9" "$SC003_PDIR" "$SC003_FEATURE_MD"; then
+  assert_true "sc003-step9-no-drift" "true"
+else
+  assert_true "sc003-step9-no-drift" "false"
+fi
+
+# Step 10: markers --level project --set active (idempotent project status,
+# still a real CLI-driven state change + regenerateDerived pass)
+OUT="$(node "$TOOLS" product markers --level project --set active --dir "$SC003_PDIR" 2>&1)"
+RC=$?
+assert_rc "sc003-step10-project-active" 0 "$RC" "$OUT"
+sc003_steps=$((sc003_steps + 1))
+if check_no_drift "step10" "$SC003_PDIR" "$SC003_FEATURE_MD"; then
+  assert_true "sc003-step10-no-drift" "true"
+else
+  assert_true "sc003-step10-no-drift" "false"
+fi
+
+# Meta-assertion: exactly 10 distinct steps were actually exercised, per
+# SC-003's "across 10 consecutive CLI-driven state changes" wording.
+assert_true "sc003-exactly-10-steps-exercised" "$([[ $sc003_steps -eq 10 ]] && echo true || echo false)"
 
 echo "product-docs fixtures: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]
