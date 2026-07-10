@@ -214,5 +214,43 @@ fi
 OUT="$(node "$TOOLS" code-scope claim --by feature-gate-2 --scope "src/gate-demo/" --file "$GATE_FILE" 2>&1)"
 assert_rc "done-gate-scope-reclaimable-after-done" 0 $? "$OUT"
 
+# --- Wave 5: list --stale-days flag ---
+STALE_FILE="$WORK/stale-reservations.json"
+cat > "$STALE_FILE" <<JSON
+{
+  "reservations": [
+    {"type": "code_scope", "by": "feature-old", "paths": ["src/old/"], "stage": "started", "at": "2020-01-01T00:00:00.000Z"},
+    {"type": "code_scope", "by": "feature-fresh", "paths": ["src/fresh/"], "stage": "started", "at": "$(node -e 'console.log(new Date().toISOString())')"}
+  ]
+}
+JSON
+
+OUT="$(node "$TOOLS" code-scope list --file "$STALE_FILE" --stale-days 7 2>&1)"
+assert_rc "stale-days-list" 0 $? "$OUT"
+
+# feature-old must be flagged stale:true with a release hint
+if echo "$OUT" | node -e '
+  const data = JSON.parse(require("fs").readFileSync(0, "utf8"));
+  const old = data.reservations.find((r) => r.by === "feature-old");
+  const fresh = data.reservations.find((r) => r.by === "feature-fresh");
+  if (!old || old.stale !== true) process.exit(1);
+  if (!old.hint || !old.hint.includes("feature-old")) process.exit(1);
+  if (!fresh || fresh.stale !== false) process.exit(1);
+  if (fresh.hint !== undefined) process.exit(1);
+'; then
+  echo "PASS  stale-days: old entry stale:true with hint, fresh entry stale:false without hint"; pass=$((pass + 1))
+else
+  echo "FAIL  stale-days: stale/hint fields not as expected"; echo "----- output -----"; echo "$OUT"; echo "------------------"; fail=$((fail + 1))
+fi
+
+# --- list without --stale-days omits stale/hint entirely (backward compatible) ---
+OUT="$(node "$TOOLS" code-scope list --file "$STALE_FILE" 2>&1)"
+assert_rc "list-no-stale-days" 0 $? "$OUT"
+if grep -q '"stale"' <<<"$OUT"; then
+  echo "FAIL  list-no-stale-days: stale field present without --stale-days"; fail=$((fail + 1))
+else
+  echo "PASS  list-no-stale-days: no stale field without flag"; pass=$((pass + 1))
+fi
+
 echo "code-scope fixtures: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

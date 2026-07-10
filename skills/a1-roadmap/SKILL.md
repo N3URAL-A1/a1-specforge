@@ -159,6 +159,47 @@ grep -q "<!-- entry: m1-p1-auth-setup -->" .a1/roadmap.md && echo "FOUND" || ech
 This is the exact check `a1-new-feature` Phase 0 and `a1-execute` Phase 1 run
 before proceeding — read-only, deterministic, no parsing beyond a grep.
 
+## In-flight features (roadmap view)
+
+Whenever the roadmap is displayed (Discover/Structure confirm steps, Scaffold
+confirmation, or on request), render an "In-flight features" section built
+from the same reservation data a1-progress reads — never a separate source:
+
+```bash
+node _shared/a1-tools.cjs code-scope list --stale-days 7
+```
+
+For each `code_scope` reservation, render feature id (`by`), lifecycle
+`stage`, and declared scope (`paths`). Group entries under their roadmap
+entry when the feature's spec/wave-plan carries a matching `roadmap_entry:`
+slug (see "Feature → Roadmap Linkage" above) — resolve the grouping by
+matching the feature's `roadmap_entry` frontmatter value against the
+`<!-- entry: <slug> --> ` markers in `.a1/roadmap.md`. Features with no
+resolvable linkage are listed under an "Unlinked" group, not dropped.
+
+```
+## Milestone 1: Auth & Onboarding
+<!-- entry: m1-auth-onboarding -->
+...
+
+  In-flight features:
+    007-password-reset      stage: review    scope: src/auth/reset.ts
+
+## Milestone 2: Payments
+<!-- entry: m2-payments -->
+...
+
+  In-flight features:
+    (none)
+
+Unlinked:
+  099-experimental-spike     stage: started   scope: src/spike/
+```
+
+Stale entries (per the `stale`/`hint` fields from `code-scope list
+--stale-days 7`) are annotated the same way as in a1-progress — never
+auto-released here either.
+
 ## Hard rules
 
 - Always confirm the milestone/phase breakdown with the user before scaffolding

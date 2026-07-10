@@ -69,6 +69,37 @@ Build: <ok/failing>
 | VERIFICATION.md PASS | → DONE 🎉 (suggest git tag or deploy) |
 | No PLAN.md but goal exists | → `a1-plan` |
 
+## In-flight features (parallel feature lifecycle)
+
+Every run also surfaces in-flight parallel features — reserved `code_scope`
+claims from other features currently being worked on (see the
+roadmap-gate-parallel-features convention: `_shared/a1-tools.cjs code-scope`).
+
+```bash
+node _shared/a1-tools.cjs code-scope list --stale-days 7
+```
+
+For each `code_scope` reservation in the JSON output, display:
+- **id** — the `by` field (feature id)
+- **stage** — lifecycle stage (`started|complete|review|verify|merge|origin-cleanup|done`)
+- **scope** — declared `paths`
+- **stale** — `true`/`false`; when `true`, print the entry's `hint` field
+  verbatim (manual release only — never auto-release)
+
+```
+In-flight features:
+  003-payments-refactor    stage: review    scope: src/payments/
+  005-search-index         stage: started   scope: src/search/, docs/search.md   ⚠ stale (14d)
+                             → release via a1-tools code-scope release --by 005-search-index
+```
+
+This list is directly cross-checkable against `.a1/reservations.json` (SC-004)
+— every id/stage/scope/stale value in the rendered view must match the raw
+JSON exactly; no summarization or reinterpretation.
+
+If `.a1/reservations.json` does not exist or has zero `code_scope` entries,
+show "No in-flight features" and skip the section — this is not an error.
+
 ## Implementation
 
 1. Detect project root (look for `.a1/`, `CLAUDE.md`, `.git`)
@@ -77,4 +108,5 @@ Build: <ok/failing>
 4. Read STATUS.md for completed tasks
 5. Run git log for recent commits
 6. Run test suite briefly (`npm test -- --passWithNoTests 2>/dev/null | tail -5`)
-7. Present status and route
+7. Read in-flight features via `node _shared/a1-tools.cjs code-scope list --stale-days 7` (see above)
+8. Present status and route

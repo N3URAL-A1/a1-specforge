@@ -5957,11 +5957,30 @@ function cmdCodeScopeRelease(args) {
 }
 
 function cmdCodeScopeList(args) {
-  const flags = parseFlags(args, { file: 'value' });
+  const flags = parseFlags(args, { file: 'value', 'stale-days': 'value' });
   const file = reservationsFile(flags);
   const data = loadReservations(file);
   const scopes = data.reservations.filter((r) => r.type === 'code_scope');
-  const out = { file, count: scopes.length, reservations: scopes };
+  const staleDaysRaw = flags['stale-days'];
+  let reservations = scopes;
+  if (staleDaysRaw !== undefined) {
+    const staleDays = Number(staleDaysRaw);
+    if (!Number.isFinite(staleDays) || staleDays < 0) {
+      usage(`code-scope list --stale-days must be a non-negative number (got: ${staleDaysRaw})`);
+    }
+    const thresholdMs = staleDays * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    reservations = scopes.map((r) => {
+      const atMs = Date.parse(r.at);
+      const stale = Number.isFinite(atMs) ? (now - atMs) > thresholdMs : false;
+      const entry = { ...r, stale };
+      if (stale) {
+        entry.hint = `release via a1-tools code-scope release --by ${r.by}`;
+      }
+      return entry;
+    });
+  }
+  const out = { file, count: reservations.length, reservations };
   process.stdout.write(JSON.stringify(out, null, 2) + '\n');
   process.exit(0);
 }
@@ -6051,8 +6070,12 @@ Usage:
                   Removes a feature's code_scope reservation entirely, freeing
                   its scope for other features to claim (auto-unblock).
                   Idempotent: no matching entry -> exit 0, {released:false}.
-  a1-tools code-scope list [--file <path>]
+  a1-tools code-scope list [--file <path>] [--stale-days <n>]
                   Lists all code_scope reservations (feature, stage, paths).
+                  With --stale-days <n>: adds stale:true/false per entry based
+                  on deterministic date math against <n> days ago (no
+                  auto-release). Stale entries also get a hint field:
+                  "release via a1-tools code-scope release --by <id>".
 
   a1-tools checklist run <project-slug>[/<feature-id>] [--format json|human] [--save] [--vault <path>]
                   Pre-flight checklist: 8 structural checks before implementation.
