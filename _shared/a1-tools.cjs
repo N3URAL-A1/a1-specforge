@@ -6712,27 +6712,6 @@ Usage:
                   auto-release). Stale entries also get a hint field:
                   "release via a1-tools code-scope release --by <id>".
 
-  a1-tools product status [--dir <docs/product>]
-                  Read-only: prints milestones/features/next as JSON from
-                  docs/product/ROADMAP.md frontmatter. Never writes.
-  a1-tools product stage --by <feature-id> --set <stage> [--dir <docs/product>] [--file <reservations.json>]
-                  Transactional core: under one lock anchored on
-                  ROADMAP.md, (a) updates the feature's stage in
-                  features/<id>/feature.md frontmatter if the directory
-                  exists, (b) updates the feature entry in ROADMAP.md
-                  frontmatter (stage + derived status: any non-done stage ->
-                  in-flight, done -> done + finished=today), (c) mirrors the
-                  stage into .a1/reservations.json's code_scope entry for
-                  that feature if one exists (forward-only, same semantics
-                  as code-scope stage, "skipped": [...] on skip-ahead), and
-                  (d) regenerates NEXT.md + index.json. All-or-nothing: every
-                  target is staged to a tmp file first, then all renamed;
-                  on any failure all tmp files are unlinked and originals
-                  are left untouched, exit 1. <stage> one of: started|
-                  complete|review|verify|merge|origin-cleanup|done.
-                  Backward transition -> exit 1. Idempotent same-stage
-                  re-set -> exit 0.
-
   a1-tools checklist run <project-slug>[/<feature-id>] [--format json|human] [--save] [--vault <path>]
                   Pre-flight checklist: 8 structural checks before implementation.
                   Severities: BLOCKER (exit 1), MAJOR/MINOR (exit 0, warnings).
