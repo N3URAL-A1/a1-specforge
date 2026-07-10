@@ -117,6 +117,13 @@ features named upfront via `node _shared/a1-tools.cjs product init` (see
 `a1-roadmap` workflows/04-scaffold.md). This skill never hand-writes
 `docs/product/` files itself; it only calls `a1-roadmap`.
 
+**On-touch migration (FR-017):** does not apply to this skill directly —
+`a1-new-project` only ever bootstraps brand-new projects, so Phase 3 always
+scaffolds `docs/product/` fresh (never migrates an existing legacy
+`.a1/roadmap.md`). The on-touch, never-big-bang migration rule lives in
+`a1-roadmap`/`a1-new-feature`/`a1-execute`, which are the skills that can
+actually encounter an existing legacy-only project mid-run.
+
 Vault mirror (single source of truth for cross-project memory):
 - Project hub: `projects/<slug>/` (created in Phase 4)
 - Specs/plans per feature: written by `a1-new-feature` in Phase 5

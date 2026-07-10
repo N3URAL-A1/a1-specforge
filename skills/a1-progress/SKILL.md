@@ -54,6 +54,12 @@ milestone / feature level. Fall back to the legacy `.a1/roadmap.md`-based
 scan (below) only when the project has no `docs/product/` directory — same
 preference order as the roadmap gates in `a1-new-feature`/`a1-execute`.
 
+**On-touch migration (FR-017):** this skill is read-only and never triggers
+or offers migration itself. If a project is still on the legacy
+`.a1/roadmap.md` format, just report status from that fallback scan — the
+migration offer belongs to `a1-new-feature`/`a1-execute`/`a1-roadmap` (see
+their "On-touch Migration Rule — never big-bang" sections), not here.
+
 ## What it shows
 
 ```
