@@ -585,6 +585,530 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+/** Write text content to `file` atomically (tmp-file + rename), mirroring
+ * writeJsonAtomic's pattern but for plain markdown (ROADMAP.md, NEXT.md,
+ * feature.md). Creates the parent dir if missing. */
+function writeTextAtomic(file, content) {
+  const dir = path.dirname(file);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  const tmp = `${file}.tmp.${process.pid}`;
+  fs.writeFileSync(tmp, content, 'utf8');
+  fs.renameSync(tmp, file);
+}
+
+// ---------------------------------------------------------------------------
+// product — nested-object-list frontmatter parser for docs/product/ROADMAP.md
+// and docs/product/features/<###>-<slug>/feature.md (see docs/product/SCHEMA.md
+// sections 1 and 2, binding contract).
+//
+// parseFrontmatter/serializeFrontmatter (above) are FLAT: they only handle
+// scalars and simple string-list values ("- item"). ROADMAP.md's `milestones:`
+// and `features:` keys are lists of YAML OBJECTS ("- id: foo\n  title: bar\n
+// ..."), which the flat parser cannot represent. Rather than force-fit that
+// shape into the existing parser, this is a small, purpose-built, tolerant
+// parser for exactly this document family.
+//
+// Approach (line-based, indentation-driven, no external YAML dependency —
+// consistent with the rest of this file):
+//   1. Split the frontmatter block into lines.
+//   2. A top-level key is a line matching `^key:` (0 leading spaces).
+//   3. If the value after the colon is empty AND the following lines are
+//      `  - key: value` (2-space indent, list-item marker), the key holds a
+//      LIST OF OBJECTS: each `  - ` line starts a new object; subsequent
+//      `    key: value` lines (4-space indent, no dash) are more fields of
+//      the SAME object, until the next `  - ` or a dedent back to 0.
+//   4. If instead the following lines are `  - value` (2-space indent, dash,
+//      but the remainder does NOT look like `key: value`), it's a simple
+//      string list (delegates to the same scalar rules as the flat parser).
+//   5. Otherwise it's a plain scalar on the same line as the key.
+// Scalars reuse the same quoting/null/number rules as serializeScalar so
+// round-tripping (parse -> serialize -> parse) is lossless for every machine
+// field defined in SCHEMA.md sections 1/2.
+// ---------------------------------------------------------------------------
+
+function parseScalarToken(raw) {
+  if (raw === '' || raw === undefined) return null;
+  if (raw === 'null') return null;
+  if (raw === '[]') return [];
+  if (raw === 'true') return true;
+  if (raw === 'false') return false;
+  if (/^-?[0-9]+$/.test(raw)) return parseInt(raw, 10);
+  if (
+    (raw.startsWith('"') && raw.endsWith('"')) ||
+    (raw.startsWith("'") && raw.endsWith("'"))
+  ) {
+    try {
+      if (raw.startsWith('"')) return JSON.parse(raw);
+      return raw.slice(1, -1);
+    } catch (_e) {
+      return raw.slice(1, -1);
+    }
+  }
+  return raw;
+}
+
+/** Parse a nested-object-list frontmatter block (ROADMAP.md / feature.md
+ * shape). Returns { fm, body } where fm is a plain object whose values are
+ * scalars, arrays of scalars, or arrays of flat objects. */
+function parseNestedFrontmatter(content) {
+  if (!content.startsWith('---\n')) {
+    return { fm: {}, body: content };
+  }
+  const end = content.indexOf('\n---', 4);
+  if (end === -1) {
+    throw new Error('frontmatter has no closing "---"');
+  }
+  const raw = content.slice(4, end);
+  const body = content.slice(end + 4).replace(/^\n/, '');
+  const lines = raw.split('\n');
+  const fm = {};
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+    if (line.trim() === '' || line.startsWith('#')) {
+      i++;
+      continue;
+    }
+    const topMatch = line.match(/^([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$/);
+    if (!topMatch) {
+      i++;
+      continue;
+    }
+    const key = topMatch[1];
+    const valueRaw = topMatch[2];
+
+    if (valueRaw !== '') {
+      fm[key] = parseScalarToken(valueRaw);
+      i++;
+      continue;
+    }
+
+    // Empty value on the key line: look ahead for a "  - " block.
+    let j = i + 1;
+    const listLines = [];
+    while (j < lines.length && /^  - /.test(lines[j])) {
+      // Collect this item: the "  - " line, plus any "    " continuation
+      // lines (4-space indent, no dash) that belong to the same object.
+      const itemLines = [lines[j].replace(/^  - /, '')];
+      let k = j + 1;
+      while (k < lines.length && /^    [A-Za-z_]/.test(lines[k])) {
+        itemLines.push(lines[k].replace(/^    /, ''));
+        k++;
+      }
+      listLines.push(itemLines);
+      j = k;
+    }
+
+    if (listLines.length === 0) {
+      fm[key] = null;
+      i++;
+      continue;
+    }
+
+    // Decide: object-list (first sub-line looks like "key: value") vs
+    // simple string list (first sub-line is a bare scalar).
+    const firstItem = listLines[0][0];
+    const looksLikeObject = /^[A-Za-z_][A-Za-z0-9_]*:\s?/.test(firstItem);
+
+    if (looksLikeObject) {
+      const objects = listLines.map((itemLines) => {
+        const obj = {};
+        for (const itemLine of itemLines) {
+          const m = itemLine.match(/^([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$/);
+          if (!m) continue;
+          const k2 = m[1];
+          let v2raw = m[2];
+          if (v2raw === '[]') {
+            obj[k2] = [];
+          } else if (v2raw === '') {
+            obj[k2] = null;
+          } else {
+            obj[k2] = parseScalarToken(v2raw);
+          }
+        }
+        return obj;
+      });
+      fm[key] = objects;
+    } else {
+      fm[key] = listLines.map((itemLines) => parseScalarToken(itemLines[0]));
+    }
+
+    i = j;
+  }
+
+  return { fm, body };
+}
+
+/** Serialize a nested frontmatter object back to the ROADMAP.md/feature.md
+ * YAML-subset shape. `keyOrder` is an array of key names controlling
+ * emission order (unknown keys fall back to insertion order, appended at the
+ * end) — callers pass PRODUCT_ROADMAP_KEY_ORDER / PRODUCT_FEATURE_KEY_ORDER. */
+function serializeNestedFrontmatter(fm, keyOrder) {
+  const keys = Object.keys(fm);
+  const ordered = [];
+  for (const k of keyOrder || []) if (keys.includes(k)) ordered.push(k);
+  for (const k of keys) if (!ordered.includes(k)) ordered.push(k);
+
+  const lines = [];
+  for (const k of ordered) {
+    const v = fm[k];
+    if (Array.isArray(v)) {
+      if (v.length === 0) {
+        lines.push(`${k}: []`);
+        continue;
+      }
+      const isObjectList = v.every((item) => item !== null && typeof item === 'object' && !Array.isArray(item));
+      if (isObjectList) {
+        lines.push(`${k}:`);
+        for (const obj of v) {
+          const objKeys = Object.keys(obj);
+          objKeys.forEach((ok, idx) => {
+            const ov = obj[ok];
+            const prefix = idx === 0 ? '  - ' : '    ';
+            if (Array.isArray(ov)) {
+              if (ov.length === 0) {
+                lines.push(`${prefix}${ok}: []`);
+              } else {
+                lines.push(`${prefix}${ok}:`);
+                for (const item of ov) lines.push(`      - ${serializeScalar(item)}`);
+              }
+            } else {
+              lines.push(`${prefix}${ok}: ${serializeScalar(ov)}`);
+            }
+          });
+        }
+      } else {
+        lines.push(`${k}:`);
+        for (const item of v) lines.push(`  - ${serializeScalar(item)}`);
+      }
+    } else {
+      lines.push(`${k}: ${serializeScalar(v)}`);
+    }
+  }
+  return lines.join('\n');
+}
+
+const PRODUCT_ROADMAP_KEY_ORDER = [
+  'schema_version', 'type', 'project', 'title', 'status', 'updated', 'source',
+  'milestones', 'features', 'next',
+];
+
+const PRODUCT_FEATURE_KEY_ORDER = [
+  'id', 'project', 'milestone', 'title', 'status', 'stage', 'depends_on',
+  'started', 'finished', 'spec_path', 'plan_path', 'schema_version',
+];
+
+function writeNestedMdAtomic(p, fm, body, keyOrder) {
+  const fmStr = serializeNestedFrontmatter(fm, keyOrder);
+  const out = `---\n${fmStr}\n---\n${body.startsWith('\n') ? '' : '\n'}${body}`;
+  writeTextAtomic(p, out);
+  return out;
+}
+
+function readProductRoadmap(dir) {
+  const file = path.join(dir, 'ROADMAP.md');
+  if (!fs.existsSync(file)) return null;
+  const content = fs.readFileSync(file, 'utf8');
+  const parsed = parseNestedFrontmatter(content);
+  return { file, content, ...parsed };
+}
+
+function readProductFeature(dir, id) {
+  const file = path.join(dir, 'features', id, 'feature.md');
+  if (!fs.existsSync(file)) return null;
+  const content = fs.readFileSync(file, 'utf8');
+  const parsed = parseNestedFrontmatter(content);
+  return { file, content, ...parsed };
+}
+
+/** Pure/side-effect-free: compute regenerated index.json and NEXT.md content
+ * strings from the ROADMAP frontmatter (source of truth) and productDir (only
+ * read to fill spec_path/plan_path from feature.md when present — never
+ * written to). Returns { indexJson, nextMd }. */
+function regenerateDerived(productDir, roadmapFm) {
+  const milestones = Array.isArray(roadmapFm.milestones) ? roadmapFm.milestones : [];
+  const featuresIn = Array.isArray(roadmapFm.features) ? roadmapFm.features : [];
+
+  const features = featuresIn.map((f) => {
+    let spec_path = f.spec_path !== undefined ? f.spec_path : null;
+    let plan_path = f.plan_path !== undefined ? f.plan_path : null;
+    const featureMd = readProductFeature(productDir, f.id);
+    if (featureMd) {
+      if ((spec_path === null || spec_path === undefined) && featureMd.fm.spec_path) {
+        spec_path = featureMd.fm.spec_path;
+      }
+      if ((plan_path === null || plan_path === undefined) && featureMd.fm.plan_path) {
+        plan_path = featureMd.fm.plan_path;
+      }
+    }
+    return {
+      id: f.id,
+      milestone: f.milestone,
+      title: f.title,
+      status: f.status,
+      stage: f.stage !== undefined ? f.stage : null,
+      depends_on: Array.isArray(f.depends_on) ? f.depends_on : [],
+      started: f.started !== undefined ? f.started : null,
+      finished: f.finished !== undefined ? f.finished : null,
+      spec_path: spec_path !== undefined ? spec_path : null,
+      plan_path: plan_path !== undefined ? plan_path : null,
+    };
+  });
+
+  // cursor: first not-yet-done/cancelled feature (array order) whose
+  // depends_on are all 'done' among sibling features; null if none qualify.
+  const statusById = new Map(features.map((f) => [f.id, f.status]));
+  let cursor = null;
+  for (const f of features) {
+    if (f.status === 'done' || f.status === 'cancelled') continue;
+    const depsOk = (f.depends_on || []).every((dep) => statusById.get(dep) === 'done');
+    if (depsOk) {
+      cursor = f.id;
+      break;
+    }
+  }
+
+  const indexJson = {
+    schema_version: 1,
+    generated: nowIso(),
+    project: {
+      id: roadmapFm.project,
+      title: roadmapFm.title,
+      status: roadmapFm.status,
+    },
+    milestones: milestones.map((m) => ({
+      id: m.id,
+      title: m.title,
+      status: m.status,
+      target: m.target !== undefined ? m.target : null,
+    })),
+    features,
+    next: roadmapFm.next !== undefined ? roadmapFm.next : null,
+    cursor,
+  };
+
+  const inFlight = features.filter((f) => f.status === 'in-flight');
+  const nextMdLines = [
+    '# NEXT.md',
+    '',
+    '<!-- Wave 2 minimal placeholder — Wave 3 will extend this format -->',
+    '',
+    `Next: ${indexJson.next || 'none'}`,
+    '',
+    '## In-flight features',
+    '',
+  ];
+  if (inFlight.length === 0) {
+    nextMdLines.push('None.');
+  } else {
+    for (const f of inFlight) {
+      nextMdLines.push(`- **${f.id}** — ${f.title} (stage: ${f.stage})`);
+    }
+  }
+  nextMdLines.push('');
+  const nextMd = nextMdLines.join('\n');
+
+  return { indexJson, nextMd };
+}
+
+function productDirFromFlags(flags) {
+  return flags.dir ? path.resolve(flags.dir) : path.join(process.cwd(), 'docs', 'product');
+}
+
+function cmdProductStatus(args) {
+  const flags = parseFlags(args, { dir: 'value' });
+  const dir = productDirFromFlags(flags);
+  const roadmap = readProductRoadmap(dir);
+  if (!roadmap) {
+    fail(`product status: ${path.join(dir, 'ROADMAP.md')} not found`);
+  }
+  const fm = roadmap.fm;
+  const features = (Array.isArray(fm.features) ? fm.features : []).map((f) => {
+    const featureMd = readProductFeature(dir, f.id);
+    if (!featureMd) return { ...f };
+    return { ...f, feature_md_path: featureMd.file };
+  });
+  const out = {
+    project: { id: fm.project, title: fm.title, status: fm.status },
+    milestones: Array.isArray(fm.milestones) ? fm.milestones : [],
+    features,
+    next: fm.next !== undefined ? fm.next : null,
+  };
+  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+  process.exit(0);
+}
+
+function cmdProductStage(args) {
+  const flags = parseFlags(args, { by: 'value', set: 'value', dir: 'value' });
+  if (!flags.by || !flags.set) {
+    usage('product stage requires --by <feature-id> --set <stage>');
+  }
+  const dir = productDirFromFlags(flags);
+  const targetStage = flags.set;
+  if (targetStage !== null && !CODE_SCOPE_STAGES.includes(targetStage)) {
+    usage(`product stage --set must be one of: ${CODE_SCOPE_STAGES.join('|')} (got: ${targetStage})`);
+  }
+  const id = flags.by;
+
+  // Lock file anchor: co-located with the reservations lock convention but
+  // scoped to this product dir specifically (docs/product/.product-stage.lock)
+  // so a product-stage transaction never contends with unrelated
+  // .a1/reservations.json activity, while reusing the exact same
+  // acquire/release/exit/fail primitives (no new lock code needed).
+  const lockFile = path.join(dir, '.product-stage.lock.json');
+  const lockPath = acquireReservationsLock(lockFile);
+
+  const roadmapFile = path.join(dir, 'ROADMAP.md');
+  if (!fs.existsSync(roadmapFile)) {
+    failWithLock(lockPath, `product stage: ${roadmapFile} not found`);
+  }
+  const roadmapContent = fs.readFileSync(roadmapFile, 'utf8');
+  const { fm: roadmapFm, body: roadmapBody } = parseNestedFrontmatter(roadmapContent);
+
+  const featuresList = Array.isArray(roadmapFm.features) ? roadmapFm.features : [];
+  const featureIdx = featuresList.findIndex((f) => f.id === id);
+  if (featureIdx === -1) {
+    failWithLock(lockPath, `product stage: feature '${id}' not found in ${roadmapFile}`);
+  }
+  const existing = featuresList[featureIdx];
+  const currentStage = existing.stage !== undefined ? existing.stage : null;
+
+  const currentIdx = currentStage === null ? -1 : CODE_SCOPE_STAGES.indexOf(currentStage);
+  const nextIdx = CODE_SCOPE_STAGES.indexOf(targetStage);
+  if (currentIdx !== -1 && nextIdx < currentIdx) {
+    failWithLock(
+      lockPath,
+      `product stage: backward transition rejected for '${id}' ` +
+        `(current stage '${currentStage}' is ahead of requested '${targetStage}'). ` +
+        `Stage transitions must be forward-only: ${CODE_SCOPE_STAGES.join(' -> ')}.`
+    );
+  }
+  const skipped =
+    currentIdx !== -1 && nextIdx - currentIdx > 1
+      ? CODE_SCOPE_STAGES.slice(currentIdx + 1, nextIdx)
+      : [];
+
+  const today = nowIso().slice(0, 10);
+  const derivedStatus = targetStage === 'done' ? 'done' : 'in-flight';
+  const updatedFeature = { ...existing, stage: targetStage, status: derivedStatus };
+  if (currentStage === null && targetStage !== null) {
+    if (!updatedFeature.started) updatedFeature.started = today;
+  }
+  if (targetStage === 'done') {
+    if (!updatedFeature.finished) updatedFeature.finished = today;
+  }
+
+  const updatedFeaturesList = featuresList.map((f, idx2) => (idx2 === featureIdx ? updatedFeature : f));
+  const updatedRoadmapFm = {
+    ...roadmapFm,
+    updated: today,
+    features: updatedFeaturesList,
+  };
+
+  // feature.md mirror (only if the directory/file exists already — creation
+  // of new feature.md files is out of scope for Wave 2 per FR-015/FR-017).
+  const featureMd = readProductFeature(dir, id);
+  let updatedFeatureMdContent = null;
+  let featureMdFile = null;
+  if (featureMd) {
+    featureMdFile = featureMd.file;
+    const updatedFeatureFm = {
+      ...featureMd.fm,
+      stage: targetStage,
+      status: derivedStatus,
+      started: updatedFeature.started !== undefined ? updatedFeature.started : featureMd.fm.started,
+      finished: updatedFeature.finished !== undefined ? updatedFeature.finished : featureMd.fm.finished,
+    };
+    const fmStr = serializeNestedFrontmatter(updatedFeatureFm, PRODUCT_FEATURE_KEY_ORDER);
+    updatedFeatureMdContent = `---\n${fmStr}\n---\n${featureMd.body.startsWith('\n') ? '' : '\n'}${featureMd.body}`;
+  }
+
+  // reservations.json mirror (best-effort, silently skipped if no matching
+  // code_scope reservation exists for this feature id).
+  const reservationsFilePath = path.join(process.cwd(), '.a1', 'reservations.json');
+  let updatedReservationsData = null;
+  if (fs.existsSync(reservationsFilePath)) {
+    const resData = loadReservations(reservationsFilePath);
+    const resIdx = resData.reservations.findIndex((r) => r.type === 'code_scope' && r.by === id);
+    if (resIdx !== -1) {
+      const resExisting = resData.reservations[resIdx];
+      const resCurrentIdx = CODE_SCOPE_STAGES.indexOf(resExisting.stage);
+      const resNextIdx = CODE_SCOPE_STAGES.indexOf(targetStage);
+      // Mirror the SAME stage value ROADMAP just decided — do not re-derive
+      // a divergent forward-only decision here, just skip mirroring if this
+      // reservation is somehow already ahead (defensive; should not happen
+      // in practice since ROADMAP is the source of truth for this command).
+      if (resCurrentIdx === -1 || resNextIdx >= resCurrentIdx) {
+        const updatedRes = { ...resExisting, stage: targetStage };
+        updatedReservationsData = {
+          reservations: resData.reservations.map((r, i3) => (i3 === resIdx ? updatedRes : r)),
+        };
+      }
+    }
+  }
+
+  const { indexJson, nextMd } = regenerateDerived(dir, updatedRoadmapFm);
+
+  const roadmapFmStr = serializeNestedFrontmatter(updatedRoadmapFm, PRODUCT_ROADMAP_KEY_ORDER);
+  const updatedRoadmapContent = `---\n${roadmapFmStr}\n---\n${roadmapBody.startsWith('\n') ? '' : '\n'}${roadmapBody}`;
+
+  const indexJsonFile = path.join(dir, 'index.json');
+  const nextMdFile = path.join(dir, 'NEXT.md');
+
+  // Stage all writes as tmp files first; only rename into place once every
+  // tmp write succeeded. On any failure, best-effort unlink whatever tmp
+  // files were created and leave every original untouched.
+  const writes = [
+    { target: roadmapFile, content: updatedRoadmapContent },
+    { target: indexJsonFile, content: JSON.stringify(indexJson, null, 2) + '\n' },
+    { target: nextMdFile, content: nextMd },
+  ];
+  if (updatedFeatureMdContent !== null) {
+    writes.push({ target: featureMdFile, content: updatedFeatureMdContent });
+  }
+  if (updatedReservationsData !== null) {
+    writes.push({
+      target: reservationsFilePath,
+      content: JSON.stringify(updatedReservationsData, null, 2) + '\n',
+    });
+  }
+
+  const staged = [];
+  try {
+    for (const w of writes) {
+      const tmp = `${w.target}.tmp.${process.pid}`;
+      const wdir = path.dirname(w.target);
+      if (!fs.existsSync(wdir)) fs.mkdirSync(wdir, { recursive: true });
+      fs.writeFileSync(tmp, w.content, 'utf8');
+      staged.push({ tmp, target: w.target });
+    }
+    for (const s of staged) {
+      fs.renameSync(s.tmp, s.target);
+    }
+  } catch (e) {
+    for (const s of staged) {
+      try {
+        fs.unlinkSync(s.tmp);
+      } catch (_e2) {
+        // ignore ENOENT etc — best-effort cleanup
+      }
+    }
+    failWithLock(lockPath, `product stage: write failed, all changes rolled back: ${e.message}`);
+  }
+
+  const out = {
+    status: 'OK',
+    feature: id,
+    stage: targetStage,
+    derived_status: derivedStatus,
+    skipped,
+    files_written: writes.map((w) => w.target),
+  };
+  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+  exitWithLock(lockPath, 0);
+}
+
 function appendPhaseHistory(fm, phaseName) {
   if (!Array.isArray(fm.phase_history)) fm.phase_history = [];
   const entry = `phase=${phaseName} completed=${nowIso()}`;
@@ -6188,6 +6712,27 @@ Usage:
                   auto-release). Stale entries also get a hint field:
                   "release via a1-tools code-scope release --by <id>".
 
+  a1-tools product status [--dir <docs/product>]
+                  Read-only: prints milestones/features/next as JSON from
+                  docs/product/ROADMAP.md frontmatter. Never writes.
+  a1-tools product stage --by <feature-id> --set <stage> [--dir <docs/product>] [--file <reservations.json>]
+                  Transactional core: under one lock anchored on
+                  ROADMAP.md, (a) updates the feature's stage in
+                  features/<id>/feature.md frontmatter if the directory
+                  exists, (b) updates the feature entry in ROADMAP.md
+                  frontmatter (stage + derived status: any non-done stage ->
+                  in-flight, done -> done + finished=today), (c) mirrors the
+                  stage into .a1/reservations.json's code_scope entry for
+                  that feature if one exists (forward-only, same semantics
+                  as code-scope stage, "skipped": [...] on skip-ahead), and
+                  (d) regenerates NEXT.md + index.json. All-or-nothing: every
+                  target is staged to a tmp file first, then all renamed;
+                  on any failure all tmp files are unlinked and originals
+                  are left untouched, exit 1. <stage> one of: started|
+                  complete|review|verify|merge|origin-cleanup|done.
+                  Backward transition -> exit 1. Idempotent same-stage
+                  re-set -> exit 0.
+
   a1-tools checklist run <project-slug>[/<feature-id>] [--format json|human] [--save] [--vault <path>]
                   Pre-flight checklist: 8 structural checks before implementation.
                   Severities: BLOCKER (exit 1), MAJOR/MINOR (exit 0, warnings).
@@ -6319,6 +6864,28 @@ Usage:
                   tenant names) — a hit in generated output → exit 1 listing the
                   leak (nothing written). A3 additionally strips code blocks from
                   diffs. Exit: 0 exported, 1 leak/usage, 2 error (Vault missing).
+
+  a1-tools product status [--dir docs/product]
+                  Read-only. Prints { project, milestones, features, next }
+                  parsed from <dir>/ROADMAP.md frontmatter, merging in
+                  <dir>/features/<id>/feature.md (feature_md_path) when
+                  present. Never writes any file. Exit: 0 ok, 1 ROADMAP.md
+                  missing.
+  a1-tools product stage --by <feature-id> --set <stage> [--dir docs/product]
+                  Transactional stage transition (schema v1, see
+                  docs/product/SCHEMA.md). <stage> reuses CODE_SCOPE_STAGES:
+                  started|complete|review|verify|merge|origin-cleanup|done.
+                  Forward-only (backward -> exit 1, nothing written).
+                  Same-stage re-set is idempotent (exit 0, dates untouched).
+                  Under one lock (docs/product/.product-stage.lock.json):
+                  updates ROADMAP.md frontmatter, mirrors features/<id>/
+                  feature.md if it exists, mirrors a matching code_scope
+                  reservation's .stage in .a1/reservations.json if one
+                  exists, regenerates index.json + NEXT.md. All writes are
+                  staged as .tmp files first and renamed only after every
+                  tmp write succeeds — any failure rolls back with none of
+                  the originals touched. Exit: 0 ok, 1 usage/validation/
+                  write error.
 
 Spec statuses: ${[...SPEC_STATUSES].join(', ')}
 Bug statuses:  ${[...BUG_STATUSES].join(', ')}
@@ -7202,6 +7769,17 @@ function main() {
         cmdCostRun(rest);
         return; // unreachable — cmdCostRun calls process.exit()
       } else usage(`unknown cost subcommand: ${sub}`);
+    } else if (group === 'product') {
+      // product status/stage own their exit code (0/1) and JSON output.
+      if (sub === 'status') {
+        cmdProductStatus(rest);
+        return; // unreachable — cmdProductStatus calls process.exit()
+      } else if (sub === 'stage') {
+        cmdProductStage(rest);
+        return; // unreachable — cmdProductStage calls process.exit()
+      } else {
+        usage(`unknown product subcommand: ${sub}`);
+      }
     } else if (group === 'pack') {
       // pack subcommands own their exit codes (0/1/2) and stdout.
       if (sub === 'validate') {
@@ -7215,7 +7793,7 @@ function main() {
         return; // unreachable — cmdPackExport calls process.exit()
       } else usage(`unknown pack subcommand: ${sub}`);
     } else {
-      usage(`unknown command group: ${group} (expected "spec", "fix", "analyze", "check", "checklist", "constitution", "worktree", "pr", "phantom", "reconcile", "modernize", "schema-check", "cost", "pack", or "realpath-check"). fix supports: next-suffix, update-status, list, find-duplicates, integrity-check, init-postmortem, count-postmortems-since, update-promote-state, write-suggestion`);
+      usage(`unknown command group: ${group} (expected "spec", "fix", "analyze", "check", "checklist", "constitution", "worktree", "pr", "phantom", "reconcile", "modernize", "schema-check", "cost", "pack", "product", or "realpath-check"). fix supports: next-suffix, update-status, list, find-duplicates, integrity-check, init-postmortem, count-postmortems-since, update-promote-state, write-suggestion`);
     }
   } catch (e) {
     process.stderr.write(`internal error: ${e.message}\n`);
