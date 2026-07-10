@@ -76,6 +76,33 @@ OUT="$(node "$TOOLS" code-scope claim --by feature-e --scope "src/**" --file "$F
 RC=$?
 assert_rc "glob-overlap-reverse" 1 "$RC" "$OUT"
 
+# --- glob-vs-ancestor-dir: a plain concrete dir (feature-anc: src/foo) must
+#     CONFLICT with a later glob rooted above it (feature-glob-anc: src/**/util.js) ---
+OUT="$(node "$TOOLS" code-scope claim --by feature-anc --scope "src/foo" --file "$FILE" 2>&1)"
+assert_rc "glob-ancestor-setup" 0 $? "$OUT"
+OUT="$(node "$TOOLS" code-scope claim --by feature-glob-anc --scope "src/**/util.js" --file "$FILE" 2>&1)"
+RC=$?
+assert_rc "glob-vs-ancestor-dir" 1 "$RC" "$OUT"
+if ! grep -q "feature-anc" <<<"$OUT"; then
+  echo "FAIL  glob-vs-ancestor-dir: holder feature-anc not named"; fail=$((fail + 1))
+else
+  echo "PASS  glob-vs-ancestor-dir names holder feature-anc"; pass=$((pass + 1))
+fi
+
+# --- single-star-vs-deep-file: feature-star declares src/* (single wildcard
+#     segment); a deep file src/a/b.js under a different feature's scope must
+#     still CONFLICT (glob's fixed prefix `src` contains the file) ---
+OUT="$(node "$TOOLS" code-scope claim --by feature-deep --scope "src/a/b.js" --file "$FILE" 2>&1)"
+assert_rc "star-vs-deep-file-setup" 0 $? "$OUT"
+OUT="$(node "$TOOLS" code-scope claim --by feature-star --scope "src/*" --file "$FILE" 2>&1)"
+RC=$?
+assert_rc "star-vs-deep-file" 1 "$RC" "$OUT"
+if ! grep -q "feature-deep" <<<"$OUT"; then
+  echo "FAIL  star-vs-deep-file: holder feature-deep not named"; fail=$((fail + 1))
+else
+  echo "PASS  star-vs-deep-file names holder feature-deep"; pass=$((pass + 1))
+fi
+
 # --- idempotent re-claim: feature-a re-claims identical scope -> 0 ---
 OUT="$(node "$TOOLS" code-scope claim --by feature-a --scope "src/billing/,docs/billing.md" --file "$FILE" 2>&1)"
 assert_rc "idempotent-reclaim" 0 $? "$OUT"
@@ -132,6 +159,28 @@ assert_rc "stage-invalid" 1 $? "$OUT"
 # --- unknown feature id -> 1 ---
 OUT="$(node "$TOOLS" code-scope stage --by feature-does-not-exist --set review --file "$FILE" 2>&1)"
 assert_rc "stage-unknown-feature" 1 $? "$OUT"
+
+# --- monotonic stage ordering: backward transition -> 1 ---
+# feature-a is currently at "review" (set earlier in this run). Going back to
+# "started" must be rejected.
+OUT="$(node "$TOOLS" code-scope stage --by feature-a --set started --file "$FILE" 2>&1)"
+assert_rc "stage-backward-rejected" 1 $? "$OUT"
+
+# --- monotonic stage ordering: forward skip is allowed, reports "skipped" ---
+# feature-a is at "review"; jump straight to "done", skipping verify, merge,
+# origin-cleanup.
+OUT="$(node "$TOOLS" code-scope stage --by feature-a --set done --file "$FILE" 2>&1)"
+assert_rc "stage-forward-skip" 0 $? "$OUT"
+if echo "$OUT" | node -e '
+  const data = JSON.parse(require("fs").readFileSync(0, "utf8"));
+  const expected = ["verify", "merge", "origin-cleanup"];
+  const got = data.skipped || [];
+  if (JSON.stringify(got) !== JSON.stringify(expected)) process.exit(1);
+'; then
+  echo "PASS  stage-forward-skip: skipped:[verify,merge,origin-cleanup] reported"; pass=$((pass + 1))
+else
+  echo "FAIL  stage-forward-skip: expected skipped list not present/correct"; echo "----- output -----"; echo "$OUT"; echo "------------------"; fail=$((fail + 1))
+fi
 
 # --- end-to-end auto-unblock: claim A -> claim B blocked -> release A -> claim B succeeds ---
 E2E_FILE="$WORK/e2e-reservations.json"

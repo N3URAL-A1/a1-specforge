@@ -5680,6 +5680,70 @@ function writeJsonAtomic(file, data) {
   fs.renameSync(tmp, file);
 }
 
+const RESERVATIONS_LOCK_RETRIES = 20;
+const RESERVATIONS_LOCK_RETRY_DELAY_MS = 50;
+
+/** Best-effort synchronous sleep (busy-wait via Atomics) — no external deps,
+ * bounded by the caller's retry count so it can never hang. */
+function sleepSyncMs(ms) {
+  const sab = new SharedArrayBuffer(4);
+  const view = new Int32Array(sab);
+  Atomics.wait(view, 0, 0, ms);
+}
+
+/** Acquire an exclusive lock for read-check-write sequences on `file` by
+ * creating `<file>.lock` with the 'wx' flag (fails if it already exists).
+ * Retries up to RESERVATIONS_LOCK_RETRIES times with a bounded delay between
+ * attempts. Returns the lock path on success; calls fail() (exit 1) on
+ * timeout so callers never proceed without the lock. */
+function acquireReservationsLock(file) {
+  const dir = path.dirname(file);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  const lockPath = `${file}.lock`;
+  for (let attempt = 0; attempt < RESERVATIONS_LOCK_RETRIES; attempt++) {
+    try {
+      const fd = fs.openSync(lockPath, 'wx');
+      fs.closeSync(fd);
+      return lockPath;
+    } catch (e) {
+      if (e.code !== 'EEXIST') throw e;
+      if (attempt < RESERVATIONS_LOCK_RETRIES - 1) {
+        sleepSyncMs(RESERVATIONS_LOCK_RETRY_DELAY_MS);
+      }
+    }
+  }
+  fail(
+    `could not acquire lock on ${lockPath} after ${RESERVATIONS_LOCK_RETRIES} attempts ` +
+      `(another process holds it) — retry, or remove the stale lock file if no process is running`
+  );
+}
+
+/** Release a lock acquired via acquireReservationsLock. Safe to call even if
+ * the lock file is already gone. */
+function releaseReservationsLock(lockPath) {
+  try {
+    fs.unlinkSync(lockPath);
+  } catch (_e) {
+    // already removed — nothing to do
+  }
+}
+
+/** process.exit() does NOT run try/finally blocks in Node, so every exit
+ * inside a locked read-check-write section must release the lock explicitly
+ * first. Use this instead of a bare process.exit(code) anywhere inside an
+ * acquireReservationsLock(...) section. */
+function exitWithLock(lockPath, code) {
+  releaseReservationsLock(lockPath);
+  process.exit(code);
+}
+
+/** Same idea as exitWithLock, but for the fail()/usage() error paths inside a
+ * locked section: release the lock first, then print the error and exit 1. */
+function failWithLock(lockPath, msg) {
+  releaseReservationsLock(lockPath);
+  fail(msg);
+}
+
 function cmdCheckReservations(args) {
   const flags = parseFlags(args, {
     claim: 'value',
@@ -5806,10 +5870,22 @@ function isSegmentPrefix(segsA, segsB) {
   return true;
 }
 
+/** Segments up to (excluding) the first glob segment, i.e. the fixed
+ * "directory anchor" a glob pattern is rooted under. For a pattern with no
+ * glob segment this is just all of its segments (identical to itself). */
+function nonGlobPrefix(segs) {
+  const idx = segs.findIndex(isGlobSegment);
+  return idx === -1 ? segs : segs.slice(0, idx);
+}
+
 /** Deterministic overlap check between two declared scope paths.
  * Overlap if:
  *   - one is a segment-boundary prefix of the other (dir containment), or
- *   - either contains a glob ("*"/"**") that matches the other via glob math.
+ *   - either contains a glob ("*"/"**") that matches the other via glob math, or
+ *   - either side's glob is rooted under a directory the other side contains
+ *     (or vice versa) — e.g. `src/**\/util.js` vs `src/foo`, or `src/*` vs
+ *     `src/a/b.js`. Compares each side's fixed (non-glob) prefix against the
+ *     other side's full segments via segment-boundary containment.
  * No fs reads, no git — pure string/segment comparison. */
 function scopePathsOverlap(rawA, rawB) {
   const a = normalizeScopePath(rawA);
@@ -5824,6 +5900,15 @@ function scopePathsOverlap(rawA, rawB) {
   if (!hasGlobA && !hasGlobB) {
     if (isSegmentPrefix(segsA, segsB)) return true;
     if (isSegmentPrefix(segsB, segsA)) return true;
+  } else {
+    // At least one side has a glob: also test directory containment between
+    // each side's fixed (non-glob) prefix and the other side's full path.
+    const prefixA = nonGlobPrefix(segsA);
+    const prefixB = nonGlobPrefix(segsB);
+    if (isSegmentPrefix(prefixA, segsB)) return true;
+    if (isSegmentPrefix(prefixB, segsA)) return true;
+    if (isSegmentPrefix(segsA, prefixB)) return true;
+    if (isSegmentPrefix(segsB, prefixA)) return true;
   }
   return false;
 }
@@ -5870,6 +5955,7 @@ function cmdCodeScopeClaim(args) {
   }
   const by = flags.by;
 
+  const lockPath = acquireReservationsLock(file);
   const data = loadReservations(file);
   const existingSame = data.reservations.find((r) => r.type === 'code_scope' && r.by === by);
 
@@ -5882,7 +5968,7 @@ function cmdCodeScopeClaim(args) {
     if (identical) {
       const out = { status: 'OK', idempotent: true, file, reservation: existingSame };
       process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-      process.exit(0);
+      exitWithLock(lockPath, 0);
     }
   }
 
@@ -5894,7 +5980,7 @@ function cmdCodeScopeClaim(args) {
     process.stderr.write(
       `conflict: scope overlaps in-flight feature(s): ${featureIds.join(', ')}\n`
     );
-    process.exit(1);
+    exitWithLock(lockPath, 1);
   }
 
   const reservation = { type: 'code_scope', paths, by, at: nowIso(), stage: 'started' };
@@ -5903,7 +5989,7 @@ function cmdCodeScopeClaim(args) {
   writeJsonAtomic(file, next);
   const out = { status: 'OK', idempotent: false, file, reservation };
   process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-  process.exit(0);
+  exitWithLock(lockPath, 0);
 }
 
 function cmdCodeScopeStage(args) {
@@ -5917,11 +6003,28 @@ function cmdCodeScopeStage(args) {
     usage(`code-scope stage --set must be one of: ${CODE_SCOPE_STAGES.join('|')} (got: ${stage})`);
   }
   const by = flags.by;
+  const lockPath = acquireReservationsLock(file);
   const data = loadReservations(file);
   const existing = data.reservations.find((r) => r.type === 'code_scope' && r.by === by);
   if (!existing) {
-    fail(`code-scope stage: no in-flight code_scope reservation found for feature '${by}'`);
+    failWithLock(lockPath, `code-scope stage: no in-flight code_scope reservation found for feature '${by}'`);
   }
+
+  const currentIdx = CODE_SCOPE_STAGES.indexOf(existing.stage);
+  const nextIdx = CODE_SCOPE_STAGES.indexOf(stage);
+  if (currentIdx !== -1 && nextIdx < currentIdx) {
+    failWithLock(
+      lockPath,
+      `code-scope stage: backward transition rejected for '${by}' ` +
+        `(current stage '${existing.stage}' is ahead of requested '${stage}'). ` +
+        `Stage transitions must be forward-only: ${CODE_SCOPE_STAGES.join(' -> ')}.`
+    );
+  }
+  const skipped =
+    currentIdx !== -1 && nextIdx - currentIdx > 1
+      ? CODE_SCOPE_STAGES.slice(currentIdx + 1, nextIdx)
+      : [];
+
   const updated = { ...existing, stage };
   const next = {
     reservations: data.reservations.map((r) =>
@@ -5930,8 +6033,9 @@ function cmdCodeScopeStage(args) {
   };
   writeJsonAtomic(file, next);
   const out = { status: 'OK', file, reservation: updated };
+  if (skipped.length > 0) out.skipped = skipped;
   process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-  process.exit(0);
+  exitWithLock(lockPath, 0);
 }
 
 function cmdCodeScopeRelease(args) {
@@ -5941,19 +6045,20 @@ function cmdCodeScopeRelease(args) {
     usage('code-scope release requires --by <feature-id>');
   }
   const by = flags.by;
+  const lockPath = acquireReservationsLock(file);
   const data = loadReservations(file);
   const existing = data.reservations.find((r) => r.type === 'code_scope' && r.by === by);
   if (!existing) {
     const out = { status: 'OK', file, released: false };
     process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-    process.exit(0);
+    exitWithLock(lockPath, 0);
   }
   const remaining = data.reservations.filter((r) => !(r.type === 'code_scope' && r.by === by));
   const next = { reservations: remaining };
   writeJsonAtomic(file, next);
   const out = { status: 'OK', file, released: true, reservation: existing };
   process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-  process.exit(0);
+  exitWithLock(lockPath, 0);
 }
 
 function cmdCodeScopeList(args) {
@@ -6066,6 +6171,12 @@ Usage:
                   origin-cleanup|done. Unknown feature-id -> exit 1. Invalid
                   stage -> exit 1. Rebuilds the reservation immutably, atomic
                   write, exit 0.
+                  Forward-only monotonic transitions: the new stage's index in
+                  the list above must be >= the current stage's index. Moving
+                  BACKWARD (e.g. verify -> review) -> exit 1 with a clear
+                  message. Skipping AHEAD (e.g. started -> merge) is allowed;
+                  the JSON output then includes a "skipped": [...] warning
+                  array listing the stage names that were bypassed.
   a1-tools code-scope release --by <feature-id> [--file <path>]
                   Removes a feature's code_scope reservation entirely, freeing
                   its scope for other features to claim (auto-unblock).

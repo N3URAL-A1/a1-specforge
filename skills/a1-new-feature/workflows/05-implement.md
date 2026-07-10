@@ -31,9 +31,14 @@ Do NOT start Wave 1 if the gate returns FAIL. Orphaned FRs (FRs not mapped to an
 
 Before Wave 1 starts (and before any code is touched), claim the feature's
 declared `code_scope` (from the wave-plan frontmatter) so parallel features
-can't silently collide:
+can't silently collide. The wave-plan's `code_scope:` is a YAML list — join
+its entries with commas (no spaces) to build the `--scope` CSV value:
 
 ```bash
+# code_scope:
+#   - app/api/widgets/
+#   - components/widgets/
+# → --scope "app/api/widgets/,components/widgets/"
 node ~/.claude/skills/_shared/a1-tools.cjs code-scope claim \
   --by <spec-id> --scope <code_scope-paths-comma-separated>
 ```

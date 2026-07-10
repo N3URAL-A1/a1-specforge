@@ -67,8 +67,11 @@ Use the **Agent** tool with `subagent_type: "a1-vincente-vibe-optimizer"` and
 > ```
 >
 > **`code_scope:` is mandatory (Scope Claim Gate input).** List every file/dir this
-> feature will touch — the Scope Claim Gate (SKILL.md, 05-implement.md Step 0) reads
-> this list at implementation time and blocks any edit outside it. Two cases:
+> feature will touch — the Scope Claim Gate (05-implement.md, "Precondition 2 —
+> Scope Claim Gate") reads this list at implementation time and blocks any edit
+> outside it. The YAML list here is handed off as a comma-separated `--scope` CSV
+> string: `code-scope claim --by <spec-id> --scope <item-1>,<item-2>,...` — join
+> the list entries with commas, no spaces, when constructing that flag. Two cases:
 > - **Existing code:** list the files/dirs you will MODIFY.
 > - **Greenfield (new module/page/service):** list the target directories you will
 >   CREATE (e.g. `app/api/widgets/`, `components/widgets/`). Greenfield features are
