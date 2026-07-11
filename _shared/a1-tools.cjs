@@ -5433,6 +5433,73 @@ function cmdWorktreeAdopt(args) {
   };
 }
 
+function cmdWorktreeReconcile(args) {
+  const flags = parseFlags(args, { prune: 'bool' });
+  const [repoRootRaw] = flags._;
+  if (!repoRootRaw) usage('worktree reconcile requires <repo-root>');
+
+  const repoRoot = path.resolve(repoRootRaw);
+  if (!gitIsRepo(repoRoot)) {
+    process.stderr.write(`error: ${repoRoot} is not a git repository\n`);
+    process.exit(2);
+  }
+  const repoRootReal = resolveRealOrAbs(repoRootRaw);
+
+  const gitWts = gitWorktreeList(repoRoot).filter((w) => path.resolve(w.path) !== repoRootReal);
+  const reg = readRegistry();
+
+  // Direction A (registry -> disk): registry entries with no matching git
+  // worktree AND no path on disk are stale (orphaned registrations).
+  const stale = [];
+  const pruned = [];
+  for (const e of reg.worktrees) {
+    if (e.repo_root !== repoRoot || e.status === 'cleaned') continue;
+    const entryPathReal = resolveRealOrAbs(e.worktree_path);
+    const hasGitMatch = gitWts.some((w) => path.resolve(w.path) === entryPathReal);
+    if (hasGitMatch || fs.existsSync(e.worktree_path)) continue;
+    stale.push({
+      id: e.id,
+      slug: e.slug,
+      path: e.worktree_path,
+      reason: 'registry entry has no git worktree and path missing on disk',
+    });
+    if (flags.prune) {
+      e.status = 'cleaned';
+      e.exit_mode = e.exit_mode || 'reconcile';
+      e.last_status_change = nowIso();
+      e.phase_history.push(`phase=reconcile completed=${nowIso()}`);
+      pruned.push(e.id);
+    }
+  }
+
+  // Direction B (disk -> registry): git worktrees with no non-cleaned
+  // registry entry are adopt candidates.
+  const adoptCandidates = [];
+  for (const w of gitWts) {
+    const wPathReal = resolveRealOrAbs(w.path);
+    const hasRegMatch = reg.worktrees.some(
+      (e) => e.status !== 'cleaned' && resolveRealOrAbs(e.worktree_path) === wPathReal
+    );
+    if (hasRegMatch) continue;
+    adoptCandidates.push({
+      path: w.path,
+      branch: w.branch || null,
+      hint: `a1-tools worktree adopt ${repoRoot} <slug> --worktree-path ${w.path}`,
+    });
+  }
+
+  if (flags.prune && pruned.length > 0) writeRegistryAtomic(reg);
+
+  return {
+    repo_root: repoRoot,
+    in_sync: stale.length === 0 && adoptCandidates.length === 0,
+    stale,
+    pruned,
+    adopt_candidates: adoptCandidates,
+    prune: !!flags.prune,
+  };
+}
+
 // ---------- entry point ----------
 
 // ---------------------------------------------------------------------------
@@ -8316,6 +8383,8 @@ Usage:
                   Reconcile registry with on-disk state. Mark missing worktrees as cleaned.
   a1-tools worktree adopt <repo-root> <slug> [--worktree-path <abs>] [--branch <name>] [--base <branch>]
                   Register an EXISTING git worktree (created outside a1) as status=active, fields from git truth.
+  a1-tools worktree reconcile <repo-root> [--prune]
+                  Diff registry vs 'git worktree list' both ways. Read-only by default; --prune marks orphaned registry entries cleaned. Unregistered worktrees are listed as adopt candidates.
 
   a1-tools pr list-handoff [--repo-root=<abs>]
                   List registry entries with status=handoff (ready for review).
@@ -9368,6 +9437,7 @@ function main() {
       else if (sub === 'list') result = cmdWorktreeList(rest);
       else if (sub === 'gc') result = cmdWorktreeGc(rest);
       else if (sub === 'adopt') result = cmdWorktreeAdopt(rest);
+      else if (sub === 'reconcile') result = cmdWorktreeReconcile(rest);
       else usage(`unknown worktree subcommand: ${sub}`);
     } else if (group === 'pr') {
       if (sub === 'list-handoff') result = cmdPrListHandoff(rest);

@@ -301,6 +301,125 @@ else
 fi
 
 # ----------------------------------------------------------------------------
+# CASE 14: reconcile — in-sync right after an adopt
+# ----------------------------------------------------------------------------
+REPO="$WORK/repo9"
+make_repo "$REPO"
+WT_DIR9="$WORK/manual-worktrees9"
+mkdir -p "$WT_DIR9"
+git -C "$REPO" worktree add -q "$WT_DIR9/sync-feat" -b feature/sync-feat
+node "$TOOLS" worktree adopt "$REPO" sync-feat --worktree-path "$WT_DIR9/sync-feat" >/dev/null 2>&1
+
+OUT=$(node "$TOOLS" worktree reconcile "$REPO" 2>&1)
+EX=$?
+assert_eq "reconcile-in-sync-exit" "0" "$EX"
+if printf '%s' "$OUT" | grep -q '"in_sync": true'; then
+  results+=("PASS  reconcile-in-sync-true")
+  pass=$((pass + 1))
+else
+  results+=("FAIL  reconcile-in-sync-true  got: $OUT")
+  fail=$((fail + 1))
+fi
+
+# ----------------------------------------------------------------------------
+# CASE 15: reconcile — detects unregistered git worktree as adopt candidate
+# ----------------------------------------------------------------------------
+WT_DIR10="$WORK/manual-worktrees10"
+mkdir -p "$WT_DIR10"
+git -C "$REPO" worktree add -q "$WT_DIR10/unadopted-feat" -b feature/unadopted-feat
+
+REG_BEFORE_SUM=$(cksum "$A1_WORKTREE_REGISTRY" 2>/dev/null)
+OUT=$(node "$TOOLS" worktree reconcile "$REPO" 2>&1)
+EX=$?
+REG_AFTER_SUM=$(cksum "$A1_WORKTREE_REGISTRY" 2>/dev/null)
+assert_eq "reconcile-detects-candidate-exit" "0" "$EX"
+if printf '%s' "$OUT" | grep -q "unadopted-feat"; then
+  results+=("PASS  reconcile-detects-candidate-path")
+  pass=$((pass + 1))
+else
+  results+=("FAIL  reconcile-detects-candidate-path  got: $OUT")
+  fail=$((fail + 1))
+fi
+if [[ "$REG_BEFORE_SUM" == "$REG_AFTER_SUM" ]]; then
+  results+=("PASS  reconcile-detects-candidate-registry-unchanged")
+  pass=$((pass + 1))
+else
+  results+=("FAIL  reconcile-detects-candidate-registry-unchanged  registry file was mutated by a read-only reconcile")
+  fail=$((fail + 1))
+fi
+
+# ----------------------------------------------------------------------------
+# CASE 16: reconcile — detects stale registry entry (dry run, no --prune)
+# ----------------------------------------------------------------------------
+REPO="$WORK/repo10"
+make_repo "$REPO"
+WT_DIR11="$WORK/manual-worktrees11"
+mkdir -p "$WT_DIR11"
+git -C "$REPO" worktree add -q "$WT_DIR11/stale-feat" -b feature/stale-feat
+ADOPT_OUT=$(node "$TOOLS" worktree adopt "$REPO" stale-feat --worktree-path "$WT_DIR11/stale-feat" 2>&1)
+STALE_ID=$(extract_field id "$ADOPT_OUT")
+git -C "$REPO" worktree remove --force "$WT_DIR11/stale-feat"
+
+OUT=$(node "$TOOLS" worktree reconcile "$REPO" 2>&1)
+EX=$?
+assert_eq "reconcile-detects-stale-dry-exit" "0" "$EX"
+if printf '%s' "$OUT" | grep -q "\"id\": \"$STALE_ID\""; then
+  results+=("PASS  reconcile-detects-stale-dry-in-stale")
+  pass=$((pass + 1))
+else
+  results+=("FAIL  reconcile-detects-stale-dry-in-stale  got: $OUT")
+  fail=$((fail + 1))
+fi
+if printf '%s' "$OUT" | grep -q '"pruned": \[\]'; then
+  results+=("PASS  reconcile-detects-stale-dry-pruned-empty")
+  pass=$((pass + 1))
+else
+  results+=("FAIL  reconcile-detects-stale-dry-pruned-empty  got: $OUT")
+  fail=$((fail + 1))
+fi
+STATUS_AFTER_DRY=$(node "$TOOLS" worktree list --status=active 2>&1 | grep -c "\"id\": \"$STALE_ID\"")
+if [[ "$STATUS_AFTER_DRY" -ge 1 ]]; then
+  results+=("PASS  reconcile-detects-stale-dry-entry-still-active")
+  pass=$((pass + 1))
+else
+  results+=("FAIL  reconcile-detects-stale-dry-entry-still-active  entry was mutated without --prune")
+  fail=$((fail + 1))
+fi
+
+# ----------------------------------------------------------------------------
+# CASE 17: reconcile --prune — same state, actually cleans the stale entry
+# ----------------------------------------------------------------------------
+OUT=$(node "$TOOLS" worktree reconcile "$REPO" --prune 2>&1)
+EX=$?
+assert_eq "reconcile-prune-exit" "0" "$EX"
+if printf '%s' "$OUT" | tr -d '\n' | grep -q "\"pruned\": \[[^]]*$STALE_ID"; then
+  results+=("PASS  reconcile-prune-pruned-contains-id")
+  pass=$((pass + 1))
+else
+  results+=("FAIL  reconcile-prune-pruned-contains-id  got: $OUT")
+  fail=$((fail + 1))
+fi
+CLEANED_OUT=$(node "$TOOLS" worktree list --status=cleaned 2>&1)
+if printf '%s' "$CLEANED_OUT" | grep -q "\"id\": \"$STALE_ID\""; then
+  results+=("PASS  reconcile-prune-list-cleaned-shows-id")
+  pass=$((pass + 1))
+else
+  results+=("FAIL  reconcile-prune-list-cleaned-shows-id  got: $CLEANED_OUT")
+  fail=$((fail + 1))
+fi
+
+# ----------------------------------------------------------------------------
+# CASE 18: reconcile — hostile inputs (nonexistent repo-root, missing arg)
+# ----------------------------------------------------------------------------
+OUT=$(node "$TOOLS" worktree reconcile "$WORK/does-not-exist-$$" 2>&1)
+EX=$?
+assert_eq "reconcile-hostile-nonexistent-repo-exit" "2" "$EX"
+
+OUT=$(node "$TOOLS" worktree reconcile 2>&1)
+EX=$?
+assert_eq "reconcile-hostile-missing-arg-exit" "1" "$EX"
+
+# ----------------------------------------------------------------------------
 # Report
 # ----------------------------------------------------------------------------
 echo ""
