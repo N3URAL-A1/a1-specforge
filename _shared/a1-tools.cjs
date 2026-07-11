@@ -1102,7 +1102,13 @@ function writeAllOrNothing(lockPath, writes, errPrefix) {
   } catch (e) {
     // Revert every rename that already succeeded, in reverse order, before
     // reporting failure — this is what makes the rename phase itself
-    // transactional rather than just the tmp-write phase.
+    // transactional rather than just the tmp-write phase. Revert failures
+    // are collected (not swallowed): if the rollback itself can't fully
+    // complete, the repo is left in a partially-reverted state and the
+    // operator needs to know exactly which files still need a manual check,
+    // rather than seeing only the original write error and assuming the
+    // rollback silently succeeded.
+    const revertFailures = [];
     for (let i = renamed.length - 1; i >= 0; i--) {
       const s = renamed[i];
       try {
@@ -1111,10 +1117,12 @@ function writeAllOrNothing(lockPath, writes, errPrefix) {
         } else {
           fs.unlinkSync(s.target);
         }
-      } catch (_e2) {
+      } catch (e2) {
         // best-effort revert — if this also fails there is nothing more we
-        // can safely do automatically; the outer failWithLock message below
-        // still surfaces the original error to the operator.
+        // can safely do automatically, but the failure is surfaced below
+        // instead of discarded so the operator knows this file was NOT
+        // restored to its pre-write state.
+        revertFailures.push({ file: s.target, error: e2.message });
       }
     }
     for (const s of staged) {
@@ -1125,7 +1133,12 @@ function writeAllOrNothing(lockPath, writes, errPrefix) {
         // never renamed and the one tmp file consumed by a failed rename)
       }
     }
-    failWithLock(lockPath, `${errPrefix}: write failed, all changes rolled back: ${e.message}`);
+    let msg = `${errPrefix}: write failed, all changes rolled back: ${e.message}`;
+    if (revertFailures.length > 0) {
+      const detail = revertFailures.map((f) => `${f.file} (${f.error})`).join(', ');
+      msg = `${errPrefix}: write failed AND rollback incomplete — PARTIAL ROLLBACK, manual check needed: ${detail}. Original error: ${e.message}`;
+    }
+    failWithLock(lockPath, msg);
   }
 }
 
@@ -1570,12 +1583,16 @@ function cmdProductInit(args) {
   assertSlug(flags.project, 'project');
   const dir = productDirFromFlags(flags);
   const roadmapFile = path.join(dir, 'ROADMAP.md');
-  if (fs.existsSync(roadmapFile)) {
-    fail(`product init: ${roadmapFile} already exists — refusing to overwrite (use add-milestone/add-feature to extend, or product stage to progress it)`);
-  }
 
   const lockFile = path.join(dir, '.product-stage.lock.json');
   const lockPath = acquireReservationsLock(lockFile);
+
+  // Overwrite guard MUST run inside the locked section (TOCTOU fix, same
+  // pattern as `product import`): otherwise two concurrent `product init`
+  // runs could both pass this check before either held the lock.
+  if (fs.existsSync(roadmapFile)) {
+    failWithLock(lockPath, `product init: ${roadmapFile} already exists — refusing to overwrite (use add-milestone/add-feature to extend, or product stage to progress it)`);
+  }
 
   const today = nowIso().slice(0, 10);
   const roadmapFm = {
@@ -2352,9 +2369,9 @@ function cmdProductImport(args) {
   }
   const dir = productDirFromFlags(flags);
   const roadmapFile = path.join(dir, 'ROADMAP.md');
-  if (fs.existsSync(roadmapFile)) {
-    fail(`product import: ${roadmapFile} already exists — refusing to overwrite (use add-milestone/add-feature to extend, or start from an empty --dir)`);
-  }
+  // Source-file existence is not an overwrite guard on the locked target —
+  // it's a precondition on the (unlocked, read-only) input path — so it can
+  // stay ahead of the lock.
   if (!fs.existsSync(flags.file)) {
     fail(`product import: source file not found: ${flags.file}`);
   }
@@ -2375,6 +2392,14 @@ function cmdProductImport(args) {
 
   const lockFile = path.join(dir, '.product-stage.lock.json');
   const lockPath = acquireReservationsLock(lockFile);
+
+  // Overwrite guard on the locked target MUST run inside the locked section
+  // (TOCTOU fix): two concurrent `product import` runs could otherwise both
+  // pass an existsSync check taken before either held the lock, and the
+  // second to reach writeAllOrNothing would clobber the first's ROADMAP.md.
+  if (fs.existsSync(roadmapFile)) {
+    failWithLock(lockPath, `product import: ${roadmapFile} already exists — refusing to overwrite (use add-milestone/add-feature to extend, or start from an empty --dir)`);
+  }
 
   const roadmapFmStr = serializeNestedFrontmatter(parsed.roadmapFm, PRODUCT_ROADMAP_KEY_ORDER);
   const roadmapContent = `---\n${roadmapFmStr}\n---\n${parsed.body}`;
@@ -7496,6 +7521,14 @@ function writeJsonAtomic(file, data) {
 
 const RESERVATIONS_LOCK_RETRIES = 20;
 const RESERVATIONS_LOCK_RETRY_DELAY_MS = 50;
+// A lock whose owning process is dead is reclaimed immediately (see
+// isLockStale). A lock whose owning process is still alive but has held the
+// lock longer than this is also treated as stale — this is the crash-without-
+// cleanup safety net (SIGKILL/OOM between openSync and release leaves a lock
+// file with no process to detect as dead via process.kill(pid, 0) IF the pid
+// got reused, however unlikely; the timeout bounds that edge case too). Five
+// minutes is generously above any real product-command runtime.
+const RESERVATIONS_LOCK_STALE_MS = 5 * 60 * 1000;
 
 /** Best-effort synchronous sleep (busy-wait via Atomics) — no external deps,
  * bounded by the caller's retry count so it can never hang. */
@@ -7505,11 +7538,65 @@ function sleepSyncMs(ms) {
   Atomics.wait(view, 0, 0, ms);
 }
 
+/** Returns true if the process identified by `pid` is no longer running.
+ * process.kill(pid, 0) sends no signal but still performs the existence
+ * check; it throws ESRCH if the pid is dead, EPERM if it's alive but owned
+ * by another user (still "alive" for our purposes). */
+function isPidDead(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return true;
+  try {
+    process.kill(pid, 0);
+    return false;
+  } catch (e) {
+    return e.code === 'ESRCH';
+  }
+}
+
+/** Decide whether an existing `<file>.lock` is stale (safe to reclaim)
+ * rather than actively held. Reads the {pid, createdAt} JSON payload written
+ * by acquireReservationsLock. A lock is stale if: the file can't be parsed
+ * (pre-fix lock format, or corrupted — never block forever on either), the
+ * owning pid is no longer running, or the lock is older than
+ * RESERVATIONS_LOCK_STALE_MS. Never throws — any error while inspecting the
+ * lock is treated as "stale" so a broken lock file can never wedge the
+ * product-command family permanently. */
+function isLockStale(lockPath) {
+  let raw;
+  try {
+    raw = fs.readFileSync(lockPath, 'utf8');
+  } catch (_e) {
+    // Lock disappeared between EEXIST and this read (another process beat
+    // us to reclaiming it, or released it normally) — not our lock to
+    // reclaim, but also not something to error out on; caller will just
+    // retry the openSync.
+    return false;
+  }
+  let payload;
+  try {
+    payload = JSON.parse(raw);
+  } catch (_e) {
+    // Unreadable/legacy lock content — can't prove it's live, so treat as
+    // stale rather than blocking every future command on a corrupt file.
+    return true;
+  }
+  const { pid, createdAt } = payload || {};
+  if (isPidDead(pid)) return true;
+  const createdMs = typeof createdAt === 'string' ? Date.parse(createdAt) : NaN;
+  if (!Number.isFinite(createdMs)) return true;
+  return Date.now() - createdMs > RESERVATIONS_LOCK_STALE_MS;
+}
+
 /** Acquire an exclusive lock for read-check-write sequences on `file` by
  * creating `<file>.lock` with the 'wx' flag (fails if it already exists).
- * Retries up to RESERVATIONS_LOCK_RETRIES times with a bounded delay between
- * attempts. Returns the lock path on success; calls fail() (exit 1) on
- * timeout so callers never proceed without the lock. */
+ * The lock file content is `{pid, createdAt}` JSON so a stale lock left
+ * behind by a crashed process (SIGKILL, OOM — anything that skips
+ * try/finally) can be detected and reclaimed instead of wedging every future
+ * product-command invocation until a human runs `rm`. On EEXIST, inspects
+ * the existing lock via isLockStale(): if stale, deletes it and retries the
+ * acquire immediately (does not consume a retry attempt); if live, falls
+ * back to the existing bounded retry/backoff. Returns the lock path on
+ * success; calls fail() (exit 1) on timeout so callers never proceed without
+ * the lock. */
 function acquireReservationsLock(file) {
   const dir = path.dirname(file);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -7517,10 +7604,20 @@ function acquireReservationsLock(file) {
   for (let attempt = 0; attempt < RESERVATIONS_LOCK_RETRIES; attempt++) {
     try {
       const fd = fs.openSync(lockPath, 'wx');
+      fs.writeFileSync(fd, JSON.stringify({ pid: process.pid, createdAt: nowIso() }));
       fs.closeSync(fd);
       return lockPath;
     } catch (e) {
       if (e.code !== 'EEXIST') throw e;
+      if (isLockStale(lockPath)) {
+        try {
+          fs.unlinkSync(lockPath);
+        } catch (_e2) {
+          // already gone (another process reclaimed it first) — fall
+          // through to the normal retry loop rather than erroring
+        }
+        continue; // retry acquisition now, without spending a backoff slot
+      }
       if (attempt < RESERVATIONS_LOCK_RETRIES - 1) {
         sleepSyncMs(RESERVATIONS_LOCK_RETRY_DELAY_MS);
       }

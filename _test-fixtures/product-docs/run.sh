@@ -809,5 +809,66 @@ assert_rc "security-path-traversal-init-project-rejected" 1 "$RC" "$OUT"
 
 rm -rf /tmp/a1-tools-ESCAPED
 
+# ===========================================================================
+# Stale-lock recovery (Reinhard review MAJOR finding). A `.lock` file left
+# behind by a crashed process (SIGKILL/OOM between openSync and release)
+# must NOT wedge every future product command until a human runs `rm`.
+# acquireReservationsLock() now writes {pid, createdAt} into the lock file
+# and, on EEXIST, reclaims it automatically when the owning pid is dead or
+# the lock is older than RESERVATIONS_LOCK_STALE_MS (5 min) — see
+# isLockStale() in _shared/a1-tools.cjs.
+# ===========================================================================
+STALE_WORK="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-docs-stale-lock-test.XXXXXX")"
+STALE_PDIR="$STALE_WORK/docs"
+node "$TOOLS" product init --project staledemo --title "Stale Demo" --dir "$STALE_PDIR" >/dev/null 2>&1
+
+# Case A: lock owned by a dead PID, timestamp irrelevant -> must be reclaimed
+# immediately and the command must still succeed (exit 0), not fail/timeout.
+LOCK_FILE="$STALE_PDIR/.product-stage.lock.json.lock"
+mkdir -p "$STALE_PDIR"
+# 999999 is not guaranteed-dead on every OS, but PIDs are 32-bit-capped and
+# this value is far above any realistic live pid on a dev/CI box; isPidDead()
+# treats the ESRCH from process.kill as authoritative either way.
+DEAD_PID=999999
+node -e '
+  const fs = require("fs");
+  fs.writeFileSync(process.argv[1], JSON.stringify({ pid: Number(process.argv[2]), createdAt: new Date().toISOString() }));
+' "$LOCK_FILE" "$DEAD_PID"
+
+START_TS=$(node -e 'console.log(Date.now())')
+OUT="$(node "$TOOLS" product add-milestone --id stale-m1 --title "Stale M1" --dir "$STALE_PDIR" 2>&1)"
+RC=$?
+END_TS=$(node -e 'console.log(Date.now())')
+ELAPSED_MS=$((END_TS - START_TS))
+assert_rc "stale-lock-dead-pid-reclaimed-succeeds" 0 "$RC" "$OUT"
+# Reclaim happens on the first EEXIST hit (no backoff spent) — this must be
+# fast (well under the 20*50ms=1s full-retry-budget ceiling), proving it took
+# the reclaim path rather than exhausting retries against a live holder.
+assert_true "stale-lock-dead-pid-reclaimed-fast" "$([[ $ELAPSED_MS -lt 1000 ]] && echo true || echo false)"
+assert_true "stale-lock-dead-pid-not-left-behind" "$([[ ! -e "$LOCK_FILE" ]] && echo true || echo false)"
+
+# Case B: lock owned by a LIVE pid (this test script's own $$, guaranteed
+# alive for the duration of the call) with a fresh timestamp -> must NOT be
+# reclaimed; acquireReservationsLock must fall back to its normal bounded
+# retry loop and eventually fail (exit 1) with the existing "held by another
+# process" message, proving real contention is still respected.
+node -e '
+  const fs = require("fs");
+  fs.writeFileSync(process.argv[1], JSON.stringify({ pid: process.ppid || process.pid, createdAt: new Date().toISOString() }));
+' "$LOCK_FILE"
+OUT="$(node "$TOOLS" product add-milestone --id stale-m2 --title "Stale M2" --dir "$STALE_PDIR" 2>&1)"
+RC=$?
+assert_rc "stale-lock-live-pid-still-blocks" 1 "$RC" "$OUT"
+assert_true "stale-lock-live-pid-error-mentions-lock" "$(echo "$OUT" | grep -q "could not acquire lock" && echo true || echo false)"
+rm -f "$LOCK_FILE"
+
+# Case C: lock with an unparseable/legacy payload (pre-fix format, or
+# corrupted) -> treated as stale (can't prove it's live) and reclaimed, same
+# as case A.
+echo "not valid json" > "$LOCK_FILE"
+OUT="$(node "$TOOLS" product add-milestone --id stale-m3 --title "Stale M3" --dir "$STALE_PDIR" 2>&1)"
+RC=$?
+assert_rc "stale-lock-corrupt-payload-reclaimed-succeeds" 0 "$RC" "$OUT"
+
 echo "product-docs fixtures: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]
