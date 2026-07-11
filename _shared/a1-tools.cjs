@@ -5633,8 +5633,39 @@ function formatInlineMinorMd(f) {
 }
 
 function cmdPrFindingsSummary(args) {
-  if (args.length < 1) usage('pr findings-summary requires <id-or-slug>');
-  const [slugOrId] = args;
+  const flags = parseFlags(args, { 'worktree-path': 'string' });
+  if (!flags['worktree-path'] && flags._.length < 1) {
+    usage('pr findings-summary requires <id-or-slug> or --worktree-path');
+  }
+  const [slugOrId] = flags._;
+
+  if (flags['worktree-path']) {
+    const wtPath = path.resolve(flags['worktree-path']);
+    if (!fs.existsSync(wtPath)) fail(`worktree path does not exist: ${wtPath}`);
+    const findings = readFindings(wtPath);
+    if (!findings) {
+      fail(`no findings.json in ${wtPath}/.a1-review/ — run Phase 2 first`);
+    }
+    const blocker = Array.isArray(findings.blocker) ? findings.blocker : [];
+    const major = Array.isArray(findings.major) ? findings.major : [];
+    const minor = Array.isArray(findings.minor) ? findings.minor : [];
+    return {
+      id: null,
+      slug: path.basename(wtPath),
+      worktree_path: wtPath,
+      source: 'direct-path',
+      summary: findings.summary || '',
+      counts: {
+        blocker: blocker.length,
+        major: major.length,
+        minor: minor.length,
+      },
+      blocker_md: blocker.map(formatFindingMd).join('\n'),
+      major_md: major.map(formatFindingMd).join('\n'),
+      inline_minor_md: minor.map(formatInlineMinorMd).join('\n'),
+    };
+  }
+
   const reg = readRegistry();
   const entry = findEntryBySlugOrId(reg, slugOrId);
   if (!entry) fail(`no registry entry for "${slugOrId}"`);
@@ -8392,7 +8423,7 @@ Usage:
                   Update worktree status during the review lifecycle.
   a1-tools pr mark-pr-open <id-or-slug> <pr-url>
                   Mark a worktree as having an open PR (terminal status).
-  a1-tools pr findings-summary <id-or-slug>
+  a1-tools pr findings-summary <id-or-slug> | --worktree-path <abs>
                   Read <worktree>/.a1-review/findings.json and return counts + markdown
                   snippets for blocker_md, major_md, inline_minor_md.
 
