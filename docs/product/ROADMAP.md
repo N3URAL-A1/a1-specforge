@@ -56,7 +56,15 @@ features:
     depends_on: []
     started: 2026-07-10
     finished: 2026-07-10
-next: null
+  - id: 002-product-docs-layer
+    milestone: continuous
+    title: "Project Product Docs: docs/product layer + adopt mode"
+    status: in-flight
+    stage: started
+    depends_on: [001-roadmap-gate-parallel-features]
+    started: 2026-07-10
+    finished: null
+next: 002-product-docs-layer
 ---
 
 # a1-specforge — Roadmap
@@ -134,12 +142,15 @@ Goal: Framework hardening features shipped outside the milestone cadence.
 
 **Features:**
 - [x] **001-roadmap-gate-parallel-features** — Roadmap Gate + Parallel Feature Lifecycle: enforce roadmap existence/alignment before feature work and prevent in-flight features from claiming overlapping code scopes (lifecycle stages, code-scope reservations, release gate). Shipped 2026-07-10 (commits 56e0fa4/e55addf; spec + verification in `.a1/learnings/projects/a1-specforge/spec/`).
+- [~] **002-product-docs-layer** — Project Product Docs: human+machine readable `docs/product/` layer (ROADMAP.md, NEXT.md, index.json, features/) as single source of truth with CLI-maintained markers, ProOrg data contract, HTML-roadmap import, and adopt mode for existing projects. (depends on: 001-roadmap-gate-parallel-features)
 
 ## In-flight features
 
 None.
 
 ## Changelog
+
+- **2026-07-10** — added 002-product-docs-layer (in-flight, next) — combined feature from brainstorm: docs/product layer + adopt mode + HTML import.
 
 - **2026-07-10** — Migrated from `docs/roadmap.md` v3.0 (markdown) to `docs/product/ROADMAP.md` schema v1 — new machine-readable roadmap contract; source file left untouched.
 - **2026-07-10** — Added **001-roadmap-gate-parallel-features** (shipped) — first feature under the schema-v1 feature index; roadmap gate + parallel feature lifecycle merged (56e0fa4/e55addf).

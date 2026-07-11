@@ -126,3 +126,14 @@ audit_findings: 2
 finding_classes: [missing_dependency]
 phase_that_produced_issues: [map]
 one_line_learning: MAP fand nur 1 von 2 GcsProvider-Instanziierungen — Auditor-Stichproben gegen Code bleiben Pflicht
+---
+date: 2026-07-06
+phase: p3-pilot-enterprise (extension)
+project: a1-office
+spec: reference/paperclip-competitor-analyse.md
+result: pass-after-revision
+revisions: 0 (2 Minors inline)
+audit_findings: 0
+finding_classes: []
+phase_that_produced_issues: []
+one_line_learning: Competitor-Analyse → gezielte Plan-Extension via Pablo mit grep-Verifikation des Bestands (Spend-Cap existierte als Konstante!) verhindert Doppel-Implementierung; fokussiertes Extension-Audit (nur neue Teile) reicht bei stabilem Rest-Plan.

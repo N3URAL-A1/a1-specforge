@@ -14,6 +14,27 @@ rollback_sha: fb0e5a30950c17789cf50fddf261e3810c3f2081
 ### Deviations (Wave 1)
 - [Rule 2 / schema] Task 1.3: corrected plugin manifests to satisfy `claude plugin validate` (owner object, author object, omit skills/agents string fields, add marketplace description) — MAP template was invalid against the live validator.
 
+## Wave 2 — M7-rest German→English sweep
+Completed: 2026-07-05
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| 2.1 Translate remaining German workflow lines | ✓ DONE | d36e63c | 20 workflow files translated in-place (all 19 MAP-inventory files + 1 safety-net find). Semantics preserved; Markdown/code-fence/placeholder structure untouched. FIXTURES_EXIT=0 (14 runners + nested parser). |
+
+### Wave 2 verification proofs
+- German-marker gate `grep -rnE '[äöüßÄÖÜ]|<function-words>' skills/*/workflows/*.md | grep -v _learning` → after whitelisting 3 intentional trigger-alias lines: **GERMAN_ZERO**.
+- MAP-authoritative skim + broad umlaut-free German-word safety net (soll/welche/nach/pflicht/abgeschlossen/...) → all inventoried files clean; safety net additionally caught 5 grep false-negatives (audit m2 risk confirmed), all fixed.
+- FIXTURES_EXIT=0.
+
+### Whitelisted German (intentional trigger aliases — plan says STAY)
+- `skills/a1-modernize/workflows/01-scope.md:28` — mode aliases `"aufräumen"/"fixen"/"modernisieren"/"verbessern"` (kept alongside English equivalents; these are user-input keywords the skill maps).
+- `skills/a1-pr-review/workflows/01-detect.md:8-9` — user-utterance examples `"review für ..."` / `"was steht zur Review?"` / `"review nächsten"` (kept alongside English; illustrate what the user types).
+
+### Deviations (Wave 2)
+- [Rule 4-adjacent / vague_action] Safety-net grep found a German line NOT in the MAP inventory: `skills/a1-new-feature/workflows/05-implement.md:90` (Step 5 heading "Nach Agent-Meldung: ... (Pflicht)"). In scope for SC-3 (zero German over all `skills/*/workflows/*.md`), so translated it. Logged in observations.jsonl. Total files touched = 20, not the inventory's 19.
+- Grep false-negatives (audit m2 risk) caught only by the umlaut-free safety net and fixed: a1-modernize/01-scope (project-slug prompt), 06-execute (2 wave prompts), a1-worktree/03-exit (implicit-name example), a1-new-feature/05-implement (heading). The MAP inventory alone would have missed the last one entirely.
+- Incidental: running the reconcile fixture rewrote two dated `_test-fixtures/a1-reconcile/.../drift-2026-05-13.md` test artifacts (a test side effect, outside my `skills/*/workflows/*.md` ownership); reverted with `git checkout` — not included in the commit.
+
 ## Wave 3 — Community polish
 Completed: 2026-07-05
 

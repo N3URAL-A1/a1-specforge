@@ -39,3 +39,16 @@ issue_classes: [write_path_duplication, missing_billthrough, missing_legal_page,
 💡 Suggestion: a1-analyze Briefs um harte Zeile ergänzen: "Du darfst KEINE Dateien schreiben — auch keine Doku; Ergebnisse NUR als Text zurückgeben" + Batch-Modus für add-finding (JSON-Liste).
 issue_classes: [readonly_breach, missing_lanes, cli_ergonomics]
 
+---
+date: 2026-07-05
+task: niimo full analysis (general + architecture + security + compliance)
+project: niimo
+result: pass
+focus: general
+findings_total: 31
+findings_blocker: 5
+issue_classes: [security_vuln, arch_drift_found, duplicate_critical_logic, simplification_opportunity, quality_finding_actionable]
+simplify_lane: ran
+security_lane: ran
+what_worked: 6 parallel read-only lanes (4 a1 agents + simplify + security-review) dispatched in one turn, git tripwire clean
+one_line_learning: security lane found a real cross-family IDOR (unregisterFcmToken missing verifyFamilyScope) that the focused security reviewer missed — the always-on security lane earns its keep by catching sibling-inconsistency IDORs that per-module review overlooks.
