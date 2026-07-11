@@ -5318,6 +5318,121 @@ function cmdWorktreeGc(args) {
   };
 }
 
+function resolveRealOrAbs(p) {
+  // git worktree list --porcelain prints realpaths (symlinks resolved, e.g.
+  // macOS /tmp -> /private/tmp). path.resolve() alone does not resolve
+  // symlinks, so comparing a raw CLI arg against git's output can spuriously
+  // mismatch. Prefer the realpath when the path exists on disk; fall back to
+  // plain resolve otherwise (path may legitimately not exist yet).
+  const abs = path.resolve(p);
+  try {
+    return fs.realpathSync(abs);
+  } catch (_e) {
+    return abs;
+  }
+}
+
+function cmdWorktreeAdopt(args) {
+  const flags = parseFlags(args, { 'worktree-path': 'string', branch: 'string', base: 'string' });
+  const [repoRootRaw, slug] = flags._;
+  if (!repoRootRaw || !slug) usage('worktree adopt requires <repo-root> <slug>');
+
+  if (!SLUG_RE.test(slug)) {
+    process.stderr.write(`error: invalid slug "${slug}" (must match ${SLUG_RE})\n`);
+    process.exit(2);
+  }
+
+  const repoRoot = path.resolve(repoRootRaw);
+  if (!gitIsRepo(repoRoot)) {
+    process.stderr.write(`error: ${repoRoot} is not a git repository\n`);
+    process.exit(2);
+  }
+  const repoRootReal = resolveRealOrAbs(repoRootRaw);
+
+  const wts = gitWorktreeList(repoRoot).filter((w) => path.resolve(w.path) !== repoRootReal);
+
+  let matches;
+  if (flags['worktree-path']) {
+    const target = resolveRealOrAbs(flags['worktree-path']);
+    matches = wts.filter((w) => path.resolve(w.path) === target);
+  } else if (flags.branch) {
+    matches = wts.filter((w) => w.branch === flags.branch);
+  } else {
+    matches = wts.filter((w) => path.basename(w.path) === slug);
+  }
+
+  if (matches.length === 0) {
+    process.stderr.write('error: no git worktree matches; candidates:\n');
+    process.stdout.write(JSON.stringify({ status: 'NOT_FOUND', candidates: wts }, null, 2) + '\n');
+    process.exit(1);
+  }
+  if (matches.length > 1) {
+    process.stderr.write('error: multiple git worktrees match — pass --worktree-path to disambiguate\n');
+    process.stdout.write(JSON.stringify({ status: 'AMBIGUOUS', candidates: wts }, null, 2) + '\n');
+    process.exit(1);
+  }
+  const match = matches[0];
+
+  const reg = readRegistry();
+  const existingActive = findActiveBySlug(reg, repoRoot, slug);
+  if (existingActive) {
+    process.stderr.write(
+      `error: registry already has active entry ${existingActive.id} for this repo+slug — nothing to adopt\n`
+    );
+    process.exit(1);
+  }
+  const resolvedMatchPath = path.resolve(match.path);
+  const existingPath = reg.worktrees.find(
+    (w) =>
+      w.status !== 'cleaned' &&
+      resolveRealOrAbs(w.worktree_path) === resolveRealOrAbs(resolvedMatchPath)
+  );
+  if (existingPath) {
+    process.stderr.write(`error: worktree path already registered as ${existingPath.id}\n`);
+    process.exit(1);
+  }
+
+  const branch = match.branch || flags.branch || null;
+  const baseBranch = flags.base || 'main';
+  const id = nowCompactId(slug);
+  const commitCountRaw = branch
+    ? git(repoRoot, ['rev-list', '--count', `${baseBranch}..${branch}`], { allowFail: true })
+    : null;
+  const commitCount =
+    typeof commitCountRaw === 'string' && commitCountRaw.length > 0 ? parseInt(commitCountRaw, 10) : 0;
+
+  const entry = {
+    id,
+    slug,
+    repo_root: repoRoot,
+    worktree_path: resolvedMatchPath,
+    branch,
+    base_branch: baseBranch,
+    status: 'active',
+    created_at: nowIso(),
+    last_status_change: nowIso(),
+    agent_brief: null,
+    commit_count: commitCount,
+    exit_mode: null,
+    phase_history: [`phase=adopt completed=${nowIso()}`],
+  };
+
+  reg.worktrees.push(entry);
+  writeRegistryAtomic(reg);
+
+  return {
+    id,
+    slug,
+    repo_root: repoRoot,
+    worktree_path: resolvedMatchPath,
+    branch,
+    base_branch: baseBranch,
+    status: 'active',
+    commit_count: commitCount,
+    adopted: true,
+  };
+}
+
 // ---------- entry point ----------
 
 // ---------------------------------------------------------------------------
@@ -8199,6 +8314,8 @@ Usage:
   a1-tools worktree list [--status=<s>] [--repo-root=<abs>]
   a1-tools worktree gc [--dry-run]
                   Reconcile registry with on-disk state. Mark missing worktrees as cleaned.
+  a1-tools worktree adopt <repo-root> <slug> [--worktree-path <abs>] [--branch <name>] [--base <branch>]
+                  Register an EXISTING git worktree (created outside a1) as status=active, fields from git truth.
 
   a1-tools pr list-handoff [--repo-root=<abs>]
                   List registry entries with status=handoff (ready for review).
@@ -9250,6 +9367,7 @@ function main() {
       else if (sub === 'exit') result = cmdWorktreeExit(rest);
       else if (sub === 'list') result = cmdWorktreeList(rest);
       else if (sub === 'gc') result = cmdWorktreeGc(rest);
+      else if (sub === 'adopt') result = cmdWorktreeAdopt(rest);
       else usage(`unknown worktree subcommand: ${sub}`);
     } else if (group === 'pr') {
       if (sub === 'list-handoff') result = cmdPrListHandoff(rest);
