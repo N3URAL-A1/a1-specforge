@@ -7592,11 +7592,14 @@ function isLockStale(lockPath) {
  * behind by a crashed process (SIGKILL, OOM — anything that skips
  * try/finally) can be detected and reclaimed instead of wedging every future
  * product-command invocation until a human runs `rm`. On EEXIST, inspects
- * the existing lock via isLockStale(): if stale, deletes it and retries the
- * acquire immediately (does not consume a retry attempt); if live, falls
- * back to the existing bounded retry/backoff. Returns the lock path on
- * success; calls fail() (exit 1) on timeout so callers never proceed without
- * the lock. */
+ * the existing lock via isLockStale(): if stale, reclaims it atomically by
+ * writing our payload to a unique tmp file and renameSync-ing it over the
+ * stale lock, then reads the lock back to verify our pid actually won (if
+ * another reclaimer renamed after us, we lost the race and retry instead of
+ * proceeding) — this closes the unlink+open gap where two processes could
+ * both believe they hold the lock; if live, falls back to the existing
+ * bounded retry/backoff. Returns the lock path on success; calls fail()
+ * (exit 1) on timeout so callers never proceed without the lock. */
 function acquireReservationsLock(file) {
   const dir = path.dirname(file);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -7610,13 +7613,23 @@ function acquireReservationsLock(file) {
     } catch (e) {
       if (e.code !== 'EEXIST') throw e;
       if (isLockStale(lockPath)) {
+        // Atomic reclaim: write our payload to a unique tmp file, then
+        // renameSync over the stale lock (atomic replace on POSIX — same
+        // pattern as writeJsonAtomic). Then read back and verify our pid
+        // actually won: if another reclaimer renamed after us, their payload
+        // is in place and we lost — retry instead of proceeding.
+        const tmpLock = `${lockPath}.reclaim.${process.pid}.${attempt}`;
         try {
-          fs.unlinkSync(lockPath);
+          fs.writeFileSync(tmpLock, JSON.stringify({ pid: process.pid, createdAt: nowIso() }));
+          fs.renameSync(tmpLock, lockPath);
         } catch (_e2) {
-          // already gone (another process reclaimed it first) — fall
-          // through to the normal retry loop rather than erroring
+          try { fs.unlinkSync(tmpLock); } catch (_e3) { /* best effort */ }
+          continue;
         }
-        continue; // retry acquisition now, without spending a backoff slot
+        let winner = null;
+        try { winner = JSON.parse(fs.readFileSync(lockPath, 'utf8')); } catch (_e4) { /* raced */ }
+        if (winner && winner.pid === process.pid) return lockPath;
+        continue; // lost the reclaim race — another live holder now owns the lock
       }
       if (attempt < RESERVATIONS_LOCK_RETRIES - 1) {
         sleepSyncMs(RESERVATIONS_LOCK_RETRY_DELAY_MS);

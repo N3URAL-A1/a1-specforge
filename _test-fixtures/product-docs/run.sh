@@ -847,7 +847,7 @@ assert_rc "stale-lock-dead-pid-reclaimed-succeeds" 0 "$RC" "$OUT"
 assert_true "stale-lock-dead-pid-reclaimed-fast" "$([[ $ELAPSED_MS -lt 1000 ]] && echo true || echo false)"
 assert_true "stale-lock-dead-pid-not-left-behind" "$([[ ! -e "$LOCK_FILE" ]] && echo true || echo false)"
 
-# Case B: lock owned by a LIVE pid (this test script's own $$, guaranteed
+# Case B: lock owned by a LIVE pid (process.ppid inside the node -e child = this test script's pid, guaranteed
 # alive for the duration of the call) with a fresh timestamp -> must NOT be
 # reclaimed; acquireReservationsLock must fall back to its normal bounded
 # retry loop and eventually fail (exit 1) with the existing "held by another
