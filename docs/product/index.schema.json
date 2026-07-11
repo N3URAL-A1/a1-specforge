@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://a1-specforge.dev/schemas/docs-product-index.schema.json",
+  "title": "docs/product/index.json — schema v1",
+  "description": "Machine-owned manifest generated from docs/product/ROADMAP.md and docs/product/features/<###>-<slug>/feature.md. See docs/product/SCHEMA.md section 3 for the authoritative prose contract; field names here are identical.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "generated", "project", "milestones", "features", "next", "cursor"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Schema version of this manifest. Current: 1."
+    },
+    "generated": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 UTC timestamp of when this file was generated."
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "status"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "description": "Kebab-case project identifier, matches ROADMAP.md frontmatter `project`."
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Human product/project title, English."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["active", "paused", "done"]
+        }
+      }
+    },
+    "milestones": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/milestone" }
+    },
+    "features": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/feature" }
+    },
+    "next": {
+      "type": ["string", "null"],
+      "description": "Recommended next feature id, or null. References a features[].id."
+    },
+    "cursor": {
+      "type": ["string", "null"],
+      "description": "Pagination/resume cursor for consumers walking the feature list incrementally. Same id space as `next`, may differ from it. Null when there is nothing to resume."
+    }
+  },
+  "$defs": {
+    "milestone": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "status", "target"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "description": "Stable kebab-case slug, never recycled."
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": ["done", "in-progress", "planned"]
+        },
+        "target": {
+          "type": ["string", "null"],
+          "pattern": "^[0-9]{4}-[0-9]{2}$",
+          "description": "Target month YYYY-MM, or null if unscheduled."
+        }
+      }
+    },
+    "feature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "milestone", "title", "status", "stage",
+        "depends_on", "started", "finished", "spec_path", "plan_path"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[0-9]{3}-[a-z0-9]+(-[a-z0-9]+)*$",
+          "description": "3-digit zero-padded sequence + kebab-slug, never recycled."
+        },
+        "milestone": {
+          "type": "string",
+          "description": "Must reference a milestones[].id in this same document."
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": ["done", "in-flight", "planned", "cancelled"]
+        },
+        "stage": {
+          "type": ["string", "null"],
+          "enum": [null, "started", "complete", "review", "verify", "merge", "origin-cleanup", "done"],
+          "description": "Lifecycle stage while in-flight; null when not in-flight. Reuses CODE_SCOPE_STAGES (_shared/a1-tools.cjs)."
+        },
+        "depends_on": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Array of feature ids this feature depends on."
+        },
+        "started": {
+          "type": ["string", "null"],
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+          "description": "Date work began, YYYY-MM-DD, or null."
+        },
+        "finished": {
+          "type": ["string", "null"],
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+          "description": "Date work completed, YYYY-MM-DD, or null."
+        },
+        "spec_path": {
+          "type": ["string", "null"],
+          "description": "Repo-relative path to the feature's spec doc, or null."
+        },
+        "plan_path": {
+          "type": ["string", "null"],
+          "description": "Repo-relative path to the feature's wave-plan doc, or null."
+        }
+      }
+    }
+  }
+}

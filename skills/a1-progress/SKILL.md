@@ -37,6 +37,29 @@ Activate when the user wants to understand **where a project stands** and what t
 
 Works at any level: single phase, full milestone, or overall project.
 
+## docs/product as primary source (FR-013)
+
+When `docs/product/` exists in the project, this skill reads it as the
+**primary** source of roadmap/feature state — never re-derives it from
+`.a1/roadmap.md` or hand-parses `ROADMAP.md` frontmatter directly:
+
+```bash
+node <repo>/_shared/a1-tools.cjs product status
+node <repo>/_shared/a1-tools.cjs product markers
+```
+
+`product status` gives current milestone/feature statuses (read-only, no
+mutation); `product markers` gives the "you are here" marker at project /
+milestone / feature level. Fall back to the legacy `.a1/roadmap.md`-based
+scan (below) only when the project has no `docs/product/` directory — same
+preference order as the roadmap gates in `a1-new-feature`/`a1-execute`.
+
+**On-touch migration (FR-017):** this skill is read-only and never triggers
+or offers migration itself. If a project is still on the legacy
+`.a1/roadmap.md` format, just report status from that fallback scan — the
+migration offer belongs to `a1-new-feature`/`a1-execute`/`a1-roadmap` (see
+their "On-touch Migration Rule — never big-bang" sections), not here.
+
 ## What it shows
 
 ```
@@ -102,8 +125,11 @@ show "No in-flight features" and skip the section — this is not an error.
 
 ## Implementation
 
-1. Detect project root (look for `.a1/`, `CLAUDE.md`, `.git`)
-2. Scan `.a1/` structure for phases and their state
+1. Detect project root (look for `.a1/`, `docs/product/`, `CLAUDE.md`, `.git`)
+2. If `docs/product/` exists: read roadmap/feature state via
+   `node _shared/a1-tools.cjs product status` and `product markers` (primary
+   source, see above). Otherwise fall back to scanning `.a1/` structure for
+   phases and their state.
 3. Read PLAN.md for wave structure
 4. Read STATUS.md for completed tasks
 5. Run git log for recent commits
