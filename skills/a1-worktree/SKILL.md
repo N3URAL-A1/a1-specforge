@@ -52,14 +52,20 @@ operate in a worktree so the user's main checkout stays untouched.
 | 1 | Prepare | `workflows/01-prepare.md` | prepared |
 | 2 | Enter | `workflows/02-enter.md` | active |
 | 3 | Exit | `workflows/03-exit.md` | cleaned (or handoff) |
+| 4 | Adopt / Reconcile | `workflows/04-adopt-reconcile.md` | active (adopt) / unchanged or cleaned (reconcile) |
 
 ## Routing — pick the right phase
 
 1. If the user wants a new worktree → Phase 1 (Prepare).
 2. If a registry entry exists with status `prepared` for the slug → Phase 2 (Enter).
 3. If the user wants to wrap up an active worktree → Phase 3 (Exit).
-4. If the user asks about state (`list`, `status`) → call the CLI directly,
+4. If a worktree exists on disk (raw `git worktree add`, or registry drift)
+   with no matching registry entry → Phase 4 (Adopt / Reconcile).
+5. If the user asks about state (`list`, `status`) → call the CLI directly,
    no phase needed.
+
+**Recovery note:** Worktree exists but `exit` says "no registry entry"
+→ `worktree adopt`, see `workflows/04-adopt-reconcile.md`.
 
 ## State mechanics
 
