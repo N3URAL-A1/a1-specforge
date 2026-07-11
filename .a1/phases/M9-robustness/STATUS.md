@@ -111,3 +111,35 @@ Completed: 2026-07-12
 - Full regression gate (Wave 6, re-run after the Rule-2 fix): `ALL-SUITES-GREEN`
 
 ✓ Task 6.1 Extract core I/O + flag parsing to `_shared/lib/io.cjs` — (commit SHA below) — Wave 6
+
+## Wave 7 — Module split 2/4: `_shared/lib/locks.cjs` (cluster 2b)
+Completed: 2026-07-12
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| 7.1 Extract reservations-lock machinery + transactional writes to `_shared/lib/locks.cjs` | ✓ DONE | 50b1b8b | Pure mechanical move (byte-identical bodies) of `reservationsFile`, `loadReservations`, `writeJsonAtomic`, `RESERVATIONS_LOCK_RETRIES`/`RESERVATIONS_LOCK_RETRY_DELAY_MS`/`RESERVATIONS_LOCK_STALE_MS`, `sleepSyncMs`, `isPidDead`, `isLockStale`, `acquireReservationsLock` (Wave-1 atomic-reclaim version), `releaseReservationsLock`, `exitWithLock`, `failWithLock`, plus `writeAllOrNothing` (located at line 530, well before the P7 block, confirmed self-contained — only uses `fs`/`path`/`process` and calls the co-moving `failWithLock`) into new `_shared/lib/locks.cjs` (own `fs`/`path` requires, `nowIso`/`fail` imported from `lib/io.cjs`). Facade now destructure-requires all 11 names from `lib/locks.cjs` via an `__dirname`-relative require placed directly after the Wave-6 `io.cjs` require block. The P7 section doc-comment block was replaced with a 2-line pointer comment (`// reservations lock machinery lives in lib/locks.cjs`) per plan step 3; `writeAllOrNothing`'s removal site was likewise replaced with a 1-line pointer comment. Facade shrank 9008 → 8761 lines (247 lines this wave; cumulative Waves 6+7: 9584 → 8761 = 823 lines removed so far). |
+
+### Deviations
+None — task executed exactly as specified in the plan. Both source blocks (`writeAllOrNothing` at line ~530 and the full P7 lock-machinery block at lines ~7131-7311) were located by function name via `grep -n "^function <name>"` before editing (per ground rules — line numbers from the plan were stale after Wave 6's shift), verified to have no other modul-lokale free identifiers beyond `fs`/`path`/`process`/`nowIso`/`fail`, cut and pasted unchanged into `locks.cjs`, and confirmed zero remaining `^function <name>` definitions in the facade for all 11 moved names before committing.
+
+### Verification
+- Task 7.1 done-when: `OK` (`node --check` both files; `node -e "require(...)"` runtime-load-proof both files; facade smoke `check reservations --list` from `/tmp` outside repo cwd; `grep -c "^function acquireReservationsLock" _shared/a1-tools.cjs` → 0)
+- Full regression gate (Wave 7, re-run after revert of incidental `a1-reconcile` fixture-data timestamp touches — pre-existing test-isolation issue, out of scope, same as Waves 3-6): `ALL-SUITES-GREEN`
+
+✓ Task 7.1 Extract reservations-lock machinery to `_shared/lib/locks.cjs` — 50b1b8b — Wave 7
+
+## Wave 8 — Module split 3/4: `_shared/lib/worktree-registry.cjs` (cluster 2d)
+Completed: 2026-07-12
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| 8.1 Extract registry + git helpers shared by `worktree` and `pr` groups | ✓ DONE | (see commit below) | Pure mechanical move (byte-identical bodies) of `WORKTREE_STATUSES`, `WORKTREE_EXIT_MODES`, `SLUG_RE`, `worktreeRegistryPath`, `readRegistry`, `writeRegistryAtomic`, `nowCompactId`, `git`, `gitIsRepo`, `gitWorkingTreeClean`, `gitBranchExists`, `gitWorktreeList`, `gitBranchHasWorktree`, `findRegistryEntry`, `findActiveBySlug`, `repoParentWorktreeDir` (located `~4192-4301`) and `prReviewDir`, `ensurePrReviewDir`, `readFindings`, `findEntryBySlugOrId` (located `~4784-4818`, shifted from the plan's stale `~4828-4939`/`~5327-5361` refs by Waves 3/4/6/7 as the ground rules anticipated — re-located by function name via `grep -n "^function <name>"`) into new `_shared/lib/worktree-registry.cjs` (own `fs`/`path`/`os`/`execFileSync` requires). Facade now destructure-requires all 20 names from `lib/worktree-registry.cjs` via an `__dirname`-relative require placed at the top of the `// ---------- worktree subcommands ----------` section. The duplicate `const { execFileSync } = require('child_process');` was removed from the facade per plan step 2. Command functions (`cmdWorktree*`, `cmdPr*`, incl. Wave-3/4's `cmdWorktreeAdopt`/`cmdWorktreeReconcile` and their `resolveRealOrAbs` helper) stayed in the facade untouched, as specified — verified `resolveRealOrAbs` is not referenced by any moved helper before leaving it in place. Facade shrank 8761 → 8646 lines (115 lines this wave; cumulative Waves 6-8: 9584 → 8646 = 938 lines removed so far). |
+
+### Deviations
+None — task executed exactly as specified in the plan. Both source blocks were located by function name (not the plan's stale line numbers, which had shifted due to Waves 3/4/6/7 as flagged by the ground rules) before editing; verified `WORKTREE_STATUSES`/`WORKTREE_EXIT_MODES`/`SLUG_RE` are still referenced by facade-resident `cmdWorktree*` functions (hence exported + re-imported, not left dangling) and that `resolveRealOrAbs` (a Wave-3 addition sitting between the two move-blocks) is not used by any moved helper; confirmed zero remaining `^function <name>` definitions in the facade for all moved function names before committing.
+
+### Verification
+- Task 8.1 done-when: `OK` (`node --check` both files; `node -e "require(...)"` runtime-load-proof both files; facade smoke `worktree list` from `/tmp` outside repo cwd → real registry JSON, exit 0; `grep -c "^function readRegistry" _shared/a1-tools.cjs` → 0)
+- Full regression gate (Wave 8, re-run after revert of incidental `a1-reconcile` fixture-data timestamp touches — pre-existing test-isolation issue, out of scope, same as Waves 3-7): `ALL-SUITES-GREEN`
+
+✓ Task 8.1 Extract registry + git helpers to `_shared/lib/worktree-registry.cjs` — (commit SHA below) — Wave 8
