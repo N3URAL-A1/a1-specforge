@@ -94,3 +94,20 @@ Completed: 2026-07-11
 ✓ Task 5.1 `pr findings-summary --worktree-path` fallback + fixture — ec4a6d4 — Wave 5
 ✓ Task 5.2 a1-worktree skill docs for adopt/reconcile — 27762c6 — Wave 5
 ✓ Task 5.3 a1-pr-review skill fallback docs — a214b79 — Wave 5
+
+## Wave 6 — Module split 1/4: `_shared/lib/io.cjs` (cluster 2a)
+Completed: 2026-07-12
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| 6.1 Extract core I/O + flag parsing to `_shared/lib/io.cjs` | ✓ DONE | (see commit below) | Pure mechanical move of `vaultRoot`, `resolveVaultPath`, `parseFrontmatter`, `serializeScalar`, `detectKeyOrder`, `serializeFrontmatter`, `readMd`, `writeMdAtomic`, `nowIso`, `writeTextAtomic`, `parseScalarToken`, `parseNestedFrontmatter`, `serializeNestedFrontmatter`, `writeNestedMdAtomic`, `parseFlags`, `fail` into new `_shared/lib/io.cjs` (own `fs`/`path`/`os` requires), plus the module-local `_vaultRootAnnounced` flag and the 5 KEY_ORDER consts (`SPEC_KEY_ORDER`, `BUG_KEY_ORDER`, `ANALYSIS_KEY_ORDER`, `CONSTITUTION_KEY_ORDER`, `RECONCILE_KEY_ORDER`) that `detectKeyOrder` needs. Facade now destructure-requires all 16 names from `lib/io.cjs` via an `__dirname`-relative require. `usage` (depends on `HELP`) and the two PRODUCT-KEY_ORDER consts stayed in the facade per plan. Facade shrank 9584 → 9008 lines (576 lines). |
+
+### Deviations
+- [Rule 2, self-caused during this task] The mechanical big-block cut (awk splice of lines 270-841) initially over-deleted `PRODUCT_ROADMAP_KEY_ORDER`/`PRODUCT_FEATURE_KEY_ORDER` — both explicitly required by the plan to stay in the facade (they sat inside the deleted range but are NOT part of the io.cjs move). Caught immediately by the `product-adopt` fixture suite (`internal error: PRODUCT_ROADMAP_KEY_ORDER is not defined`, 24/33 cases failing) during the full regression gate — not by `node --check` (syntax-valid, runtime-only ReferenceError). Re-added both consts immediately after the new `lib/io.cjs` require block in the facade; re-ran the full done-when and full regression gate, both green. Logged in `observations.jsonl` (pattern: `vague_action`). This is exactly the class of bug the plan's runtime-load-proof done-when step is designed to catch, and it worked as intended.
+- Pre-existing, unrelated: as in Waves 3-5, running the full fixture suite touches timestamps in `_test-fixtures/a1-reconcile/{single-missing,single-pass}/vault/projects/demo/drift-2026-05-13.md` (known test-isolation issue in that suite, out of scope here). Reverted with `git checkout --` before committing, not re-logged (already logged in Wave 4).
+
+### Verification
+- Task 6.1 done-when: `OK` (`node --check` both files; `node -e "require(...)"` runtime-load-proof both files; facade smoke `check reservations --list` from `/tmp` outside repo cwd; `grep -c "^function parseFrontmatter" _shared/a1-tools.cjs` → 0)
+- Full regression gate (Wave 6, re-run after the Rule-2 fix): `ALL-SUITES-GREEN`
+
+✓ Task 6.1 Extract core I/O + flag parsing to `_shared/lib/io.cjs` — (commit SHA below) — Wave 6
