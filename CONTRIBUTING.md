@@ -48,6 +48,13 @@ Agent pointer files in `agents/` reference the canonical agent definition at `~/
 - If you change an agent's Output Contract in a brief template, verify that the downstream validation step handles the new shape.
 - If you rename a template or agent pointer, update all references in SKILL.md and workflows.
 
+### Test fixtures
+
+Any change to `_shared/a1-tools.cjs` requires fixture coverage per
+[`_test-fixtures/CONVENTIONS.md`](_test-fixtures/CONVENTIONS.md), including the mandatory
+hostile-input rejection case for every new CLI subcommand. Run the full suite before
+opening a PR: `for r in _test-fixtures/*/run*.sh; do bash "$r" || break; done`.
+
 ## Commit format
 
 ```

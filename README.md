@@ -134,7 +134,7 @@ English-first; German trigger phrases remain supported as aliases. Some workflow
 
 ## Testing
 
-13 fixture test suites live under `_test-fixtures/*/run*.sh` (including the vault-fallback and phantom runners) plus a nested schema-check parser runner. Run them all:
+19 fixture test suites live under `_test-fixtures/*/run*.sh` (including the vault-fallback and phantom runners) plus a nested schema-check parser runner. Run them all:
 
 ```bash
 for r in _test-fixtures/*/run*.sh; do bash "$r" || break; done
