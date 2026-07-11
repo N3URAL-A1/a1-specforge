@@ -2,7 +2,8 @@
 name: a1-pr-review
 description: >
   Turns a finished feature branch into a reviewed Pull Request. Four phases:
-  Detect (scan a1-worktree registry for `handoff`) → Review (spawn
+  Detect (scan a1-worktree registry for `handoff`; no registry entry? →
+  adopt-first fallback, see workflows/01-detect.md) → Review (spawn
   a1-reinhard-reviewer, findings JSON) → Draft (PR title+body) → Submit
   (`gh pr create`). BLOCKER findings halt; MAJOR go into PR body "Known
   Issues"; MINOR stay as inline comment suggestions.
@@ -50,6 +51,9 @@ a1-new-feature → a1-worktree (enter/exit handoff) → a1-pr-review
 - Generic code-review without PR intent — call `a1-reinhard-reviewer` directly.
 - Hot-fix branches that already have an open PR.
 - Re-runs after `pr-open` — registry status is terminal for this skill.
+
+No registry entry for a worktree the user names directly? → adopt-first
+fallback, see `workflows/01-detect.md`.
 
 ## Phases
 
