@@ -79,20 +79,79 @@ recycled.
 
 Every invocation of this skill runs `workflows/00-roadmap-gate.md` first —
 before any Discover work starts. It deterministically (grep/parse, no LLM)
-checks that `.a1/roadmap.md` exists and, once the feature's `roadmap_entry`
-is known, that it maps to a real roadmap entry. See
+checks that a project roadmap exists — preferring `docs/product/ROADMAP.md`
+(schema v1), falling back to the legacy `.a1/roadmap.md` — and, once the
+feature's `roadmap_entry` is known, that it maps to a real roadmap entry. See
 `workflows/00-roadmap-gate.md` for exact checks and outcomes:
 
-- roadmap.md missing → **halt**, route to `a1-roadmap`
-- roadmap.md exists but unparseable → **halt** (treated as missing), but warn
+- both roadmap files missing → **halt**, route to `a1-roadmap`
+- roadmap file exists but unparseable → **halt** (treated as missing), but warn
   the user explicitly and get confirmation before routing to `a1-roadmap`
   (never silently overwrite an existing file)
-- roadmap.md parseable but the feature's `roadmap_entry` doesn't match any
+- only `.a1/roadmap.md` (legacy) found → **pass** (fallback), but note the
+  recommended on-touch migration to `docs/product/ROADMAP.md` (see "On-touch
+  migration rule" below)
+- roadmap parseable but the feature's `roadmap_entry` doesn't match any
   entry → **soft stop**, surface a mismatch notice, user confirms to continue
 
-The linkage convention (`<!-- entry: <slug> -->` markers in roadmap.md,
+The linkage convention (`<!-- entry: <slug> -->` markers in the roadmap file,
 `roadmap_entry:` frontmatter field in the spec) is defined in
 `a1-roadmap`'s SKILL.md.
+
+## docs/product Wiring (HARD RULE — CLI-only mutations)
+
+When the project uses `docs/product/` (schema v1), all mutations to
+`ROADMAP.md`, `NEXT.md`, `index.json`, and `features/<###>-<slug>/feature.md`
+go through `node <repo>/_shared/a1-tools.cjs product ...` — **never**
+hand-edited frontmatter (same rule as `spec update-status`, extended to the
+product-docs layer). Concrete insertion points in this skill:
+
+- **Phase 3 (Clarify) → status `clarified`:** create the feature's product-docs
+  entry via the CLI, which writes `docs/product/features/<###>-<slug>/feature.md`
+  and updates the matching `features[]` entry in `docs/product/ROADMAP.md`
+  frontmatter in one call:
+
+  ```bash
+  node <repo>/_shared/a1-tools.cjs product feature-init \
+    --project <slug> --id <###-feature-slug> --milestone <m-slug> \
+    --title "<short title>" \
+    [--spec-path "projects/<slug>/spec/<###>-<feature-slug>.md"] \
+    [--plan-path "projects/<slug>/plans/<###>-<feature-slug>-wave-plan.md"]
+  ```
+
+  Skip this call entirely if the project has no `docs/product/` directory yet
+  (legacy-only project — see on-touch rule below).
+
+- **Phase 5 (Implement) and Phase 6 (Verify) lifecycle transitions:** every
+  `code-scope stage --by <spec-id> --set <stage>` call in the Lifecycle
+  Completion Gate below is mirrored by `product stage` when `docs/product/`
+  exists, so the feature's `stage` stays in sync across
+  `reservations.json` / `feature.md` / `ROADMAP.md` in one invocation:
+
+  ```bash
+  node <repo>/_shared/a1-tools.cjs product stage --by <spec-id> --set <stage>
+  ```
+
+  This is one CLI call, not two — do not run `code-scope stage` and expect
+  `docs/product/` to update on its own.
+
+## On-touch Migration Rule (HARD RULE — never big-bang)
+
+If this skill encounters a project that has only the legacy `.a1/roadmap.md`
+(no `docs/product/` directory) — whether at the Roadmap Gate or at Phase 3's
+`product feature-init` insertion point — it does **not** silently convert the
+project. Offer adopt-mode migration instead:
+
+> This project's roadmap is still on the legacy `.a1/roadmap.md` format.
+> Want me to migrate it to `docs/product/ROADMAP.md` (schema v1) now via
+> `a1-roadmap`'s adopt mode, or continue on the legacy path for this feature?
+
+- **User accepts** → hand off to `a1-roadmap` in `adopt` mode (see `a1-roadmap`
+  SKILL.md), then resume this feature once migration completes.
+- **User declines / defers** → continue on the legacy `.a1/roadmap.md` path for
+  this feature; do not force it. Re-offer on the next touch, don't nag mid-run.
+
+Never migrate without asking. Never do a partial/silent conversion.
 
 ## Scope Claim Gate (HARD RULE — before Phase 5 Implement)
 

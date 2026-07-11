@@ -7,29 +7,55 @@ Read the plan and confirm with the user before executing.
 Deterministic, read-only check — same convention as `a1-new-feature` Phase 0
 (see `a1-roadmap` SKILL.md "Feature → Roadmap Linkage" for the schema).
 
+`docs/product/ROADMAP.md` (schema v1) is the **preferred** source — check it
+FIRST. Only fall back to the legacy `.a1/roadmap.md` when it's absent:
+
 ```bash
-test -f .a1/roadmap.md && echo "EXISTS" || echo "MISSING"
+if [ -f docs/product/ROADMAP.md ]; then
+  ROADMAP_FILE=docs/product/ROADMAP.md
+  echo "EXISTS: $ROADMAP_FILE (preferred)"
+elif [ -f .a1/roadmap.md ]; then
+  ROADMAP_FILE=.a1/roadmap.md
+  echo "EXISTS: $ROADMAP_FILE (legacy — recommend on-touch migration)"
+else
+  echo "MISSING"
+fi
 ```
 
-- **MISSING** → **HALT.** Do not proceed to Step 1. Tell the user:
+- **MISSING** (neither file exists) → **HALT.** Do not proceed to Step 1.
+  Tell the user:
 
-  > No `.a1/roadmap.md` found for this project. Phase execution needs a
-  > roadmap to link into. Routing to `a1-roadmap` to create one first.
+  > No `docs/product/ROADMAP.md` or `.a1/roadmap.md` found for this project.
+  > Phase execution needs a roadmap to link into. Routing to `a1-roadmap` to
+  > create one first.
 
   Hand off to the `a1-roadmap` skill; do not load or execute any wave until
   the user has run it.
 
-- **EXISTS but unparseable** (no frontmatter or no `<!-- entry: -->` markers):
+- **EXISTS: `.a1/roadmap.md` (legacy)** → proceed, but note to the user once
+  (not a blocker):
+
+  > This project's roadmap is still on the legacy `.a1/roadmap.md` path.
+  > Recommend migrating to `docs/product/ROADMAP.md` (schema v1) on next
+  > touch via `a1-roadmap`'s adopt mode — never a big-bang conversion (see
+  > `a1-roadmap` SKILL.md, FR-017).
+
+- **EXISTS but unparseable** (schema v1 file missing `schema_version:`/entry
+  markers, or legacy file missing frontmatter/entry markers):
 
   ```bash
-  grep -q '^---' .a1/roadmap.md && grep -q '<!-- entry:' .a1/roadmap.md && echo "PARSEABLE" || echo "UNPARSEABLE"
+  if [ "$ROADMAP_FILE" = "docs/product/ROADMAP.md" ]; then
+    grep -q '^schema_version:' "$ROADMAP_FILE" && grep -q '<!-- entry:' "$ROADMAP_FILE" && echo "PARSEABLE" || echo "UNPARSEABLE"
+  else
+    grep -q '^---' "$ROADMAP_FILE" && grep -q '<!-- entry:' "$ROADMAP_FILE" && echo "PARSEABLE" || echo "UNPARSEABLE"
+  fi
   ```
 
   Treat as missing (do not proceed), but the file already exists — **never
   overwrite it silently**. Warn the user explicitly and get confirmation
   before routing to `a1-roadmap`:
 
-  > `.a1/roadmap.md` exists but does not look like a valid roadmap. I will
+  > `<$ROADMAP_FILE>` exists but does not look like a valid roadmap. I will
   > not overwrite it automatically — confirm before I hand off to
   > `a1-roadmap`, or fix it yourself and re-run.
 
@@ -46,15 +72,15 @@ check and proceed to Step 1.
 If a `roadmap_entry: <slug>` value exists:
 
 ```bash
-grep -q "<!-- entry: <slug> -->" .a1/roadmap.md && echo "FOUND" || echo "MISMATCH"
+grep -q "<!-- entry: <slug> -->" "$ROADMAP_FILE" && echo "FOUND" || echo "MISMATCH"
 ```
 
 - **FOUND** → proceed to Step 1.
 - **MISMATCH** → **soft stop.** Do not halt outright — surface a notice and let
   the user decide:
 
-  > This phase's `roadmap_entry: <slug>` does not match any entry in
-  > `.a1/roadmap.md`. Continue anyway, fix the roadmap_entry value, or add the
+  > This phase's `roadmap_entry: <slug>` does not match any entry in the
+  > project roadmap. Continue anyway, fix the roadmap_entry value, or add the
   > missing entry to the roadmap first?
 
   Proceed only after explicit user confirmation to continue.

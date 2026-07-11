@@ -200,6 +200,13 @@ Agents in Phases 2–3 are read-only. No code edits until Phase 6.
 | Post-modernize new feature | `a1-new-feature` |
 | Deferred tech proposal → own sprint | `a1-plan` |
 
+`a1-roadmap`'s `adopt` mode (brownfield migration of a legacy-only project
+to `docs/product/` schema v1) MAY call this skill in `spec-only` mode to
+derive reverse-spec evidence (done/status signals) for milestones/features
+that predate any formal spec — see `a1-roadmap` SKILL.md "Adopt mode". This
+skill itself never writes to `docs/product/`; any such write happens through
+`a1-tools product ...`, called by `a1-roadmap`.
+
 ## Versions
 
 - v1 (2026-05-25): initial build. 7 phases, 2 modes, 13 CLI subcommands, 2 new agents (a1-rafael-reverse-spec, a1-theo-test-engineer), M5.
