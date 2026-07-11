@@ -1027,6 +1027,33 @@ function appendChangelogEntry(body, what, why) {
   return { body: newBody, archiveAppend };
 }
 
+// Slug/id shapes accepted anywhere a user-controlled value is joined into a
+// filesystem path for the `product` subcommands. Defined here (ahead of
+// their first use in the write-path command handlers below) so every entry
+// point can enforce them via assertSlug() before any path.join()/lock
+// acquisition happens — see SEC findings on path traversal via unvalidated
+// --id/--milestone/--project.
+const PRODUCT_SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+const FEATURE_ID_RE = /^[0-9]{3}-[a-z0-9]+(-[a-z0-9]+)*$/;
+
+/** Reject any value that isn't a bare kebab-case slug (or, for kind
+ * 'feature-id', a `###-kebab-slug`) BEFORE it is used to build a filesystem
+ * path. Throws via fail()/failWithLock() semantics — callers pass an
+ * optional lockPath so an already-acquired lock is released on rejection.
+ * Must be called at every product-command entry point that joins a
+ * user-supplied id/milestone/project into a path, prior to the path.join()
+ * and prior to acquireReservationsLock() wherever possible. */
+function assertSlug(value, kind, lockPath) {
+  const re = kind === 'feature-id' ? FEATURE_ID_RE : PRODUCT_SLUG_RE;
+  const label = kind === 'feature-id' ? 'a ###-kebab-slug (e.g. 001-my-feature)' : 'a kebab-case slug (e.g. my-slug)';
+  const ok = typeof value === 'string' && re.test(value);
+  if (!ok) {
+    const msg = `invalid ${kind}: ${JSON.stringify(value)} — must be ${label}, no path separators, dots, or traversal sequences`;
+    if (lockPath) failWithLock(lockPath, msg);
+    else fail(msg);
+  }
+}
+
 function productDirFromFlags(flags) {
   return flags.dir ? path.resolve(flags.dir) : path.join(process.cwd(), 'docs', 'product');
 }
@@ -1540,6 +1567,7 @@ function cmdProductInit(args) {
   if (!flags.project || !flags.title) {
     usage('product init requires --project <slug> --title <title>');
   }
+  assertSlug(flags.project, 'project');
   const dir = productDirFromFlags(flags);
   const roadmapFile = path.join(dir, 'ROADMAP.md');
   if (fs.existsSync(roadmapFile)) {
@@ -1587,6 +1615,7 @@ function cmdProductAddMilestone(args) {
   if (!flags.id || !flags.title) {
     usage('product add-milestone requires --id <slug> --title <title>');
   }
+  assertSlug(flags.id, 'milestone');
   const dir = productDirFromFlags(flags);
   const lockFile = path.join(dir, '.product-stage.lock.json');
   const lockPath = acquireReservationsLock(lockFile);
@@ -1639,6 +1668,8 @@ function cmdProductAddFeature(args) {
   if (!flags.id || !flags.milestone || !flags.title) {
     usage('product add-feature requires --id <###-slug> --milestone <m-slug> --title <title>');
   }
+  assertSlug(flags.id, 'feature-id');
+  assertSlug(flags.milestone, 'milestone');
   const dir = productDirFromFlags(flags);
   const lockFile = path.join(dir, '.product-stage.lock.json');
   const lockPath = acquireReservationsLock(lockFile);
@@ -1705,6 +1736,7 @@ function cmdProductFeatureInit(args) {
   if (!flags.id) {
     usage('product feature-init requires --id <###-feature-slug>');
   }
+  assertSlug(flags.id, 'feature-id');
   const dir = productDirFromFlags(flags);
   const lockFile = path.join(dir, '.product-stage.lock.json');
   const lockPath = acquireReservationsLock(lockFile);
@@ -1779,8 +1811,9 @@ function cmdProductFeatureInit(args) {
 // file's contract changes, update both.
 // ---------------------------------------------------------------------------
 
-const PRODUCT_SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
-const FEATURE_ID_RE = /^[0-9]{3}-[a-z0-9]+(-[a-z0-9]+)*$/;
+// PRODUCT_SLUG_RE / FEATURE_ID_RE are defined earlier (near
+// productDirFromFlags/assertSlug) so the write-path command handlers can
+// use them ahead of this validate section.
 const YYYY_MM_RE = /^[0-9]{4}-[0-9]{2}$/;
 const YYYY_MM_DD_RE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
 const PROJECT_STATUSES = new Set(['active', 'paused', 'done']);
@@ -1997,11 +2030,37 @@ function slugifyFragment(s, maxLen) {
   return slug || 'item';
 }
 
+/** Best-effort, non-executing normalization of a JS object/array literal
+ * into strict JSON text: quotes bare identifier keys (`id:` -> `"id":`) and
+ * drops trailing commas before `]`/`}`. Pure text transformation — no
+ * code execution, no eval/Function/vm. Deliberately conservative: it does
+ * NOT attempt to handle single-quoted strings, comments, or nested
+ * template literals; inputs using those shapes are expected to fail the
+ * subsequent JSON.parse and be rejected by the caller rather than silently
+ * mis-normalized. */
+function normalizeJsLiteralToJson(literal) {
+  return literal
+    // Bare/unquoted object keys: {id: "x"} / , key: -> "key":. Only matches
+    // keys that are plain identifiers directly after `{` or `,` (optionally
+    // across whitespace/newlines), so it never touches string contents.
+    .replace(/([{,]\s*)([A-Za-z_$][A-Za-z0-9_$]*)(\s*:)/g, '$1"$2"$3')
+    // Trailing commas before a closing bracket/brace.
+    .replace(/,(\s*[\]}])/g, '$1');
+}
+
 /** Extract the `const tasks = [ {...}, {...} ]` JS array literal from a
  * Frappe-Gantt-style HTML page as plain objects, without a JS parser
- * dependency: isolates the bracketed literal text and evaluates it with
- * `new Function` in a sandboxed, no-global-access wrapper (the literal is
- * pure data — object/array/string/number literals only, no calls). */
+ * dependency and WITHOUT executing any code: isolates the bracketed
+ * literal text via brace-matching, then parses it as JSON (falling back to
+ * a whitelisted, regex-only normalization pass for the common non-JSON JS
+ * literal shapes — unquoted keys, trailing commas — before re-attempting
+ * JSON.parse). If the literal still can't be parsed as JSON after
+ * normalization, this fails hard rather than falling back to eval/
+ * Function/vm — arbitrary code execution on attacker-controlled HTML input
+ * is not an acceptable fallback (see security review finding: `new
+ * Function` previously allowed RCE via a crafted `data.json`/HTML import
+ * file, e.g. an IIFE with `process.mainModule.require(...)` embedded in a
+ * task name). */
 function extractTasksArrayLiteral(html) {
   const startMatch = /const\s+tasks\s*=\s*(\[)/.exec(html);
   if (!startMatch) return [];
@@ -2017,11 +2076,24 @@ function extractTasksArrayLiteral(html) {
     }
   }
   const literal = html.slice(start, i);
-  // eslint-disable-next-line no-new-func -- literal is a bracketed data
-  // array from a trusted local fixture/legacy file, evaluated with no
-  // access to surrounding scope (Function body only sees its own params).
-  const evalArray = new Function(`"use strict"; return (${literal});`);
-  return evalArray();
+
+  try {
+    return JSON.parse(literal);
+  } catch (_e) {
+    // Fall through to the whitelisted normalization pass below.
+  }
+
+  try {
+    return JSON.parse(normalizeJsLiteralToJson(literal));
+  } catch (_e) {
+    fail(
+      'product import: could not parse tasks array as JSON — unsupported HTML shape '
+      + '(only JSON-compatible object/array literals are supported: double-quoted or '
+      + 'bare-identifier keys, double-quoted string values, no comments, no computed '
+      + 'values, no function calls)'
+    );
+  }
+  return []; // unreachable — fail() exits the process
 }
 
 /** Shape A extraction: hand-written HTML (Niimo-style, Frappe-Gantt). Returns

@@ -778,5 +778,36 @@ fi
 # SC-003's "across 10 consecutive CLI-driven state changes" wording.
 assert_true "sc003-exactly-10-steps-exercised" "$([[ $sc003_steps -eq 10 ]] && echo true || echo false)"
 
+# ===========================================================================
+# Security regression — path traversal via unvalidated --id/--milestone
+# (Reinhard review finding). A crafted feature id containing `../` segments
+# must be rejected before any path is built or file written, for every
+# write-path entry point that joins a user-supplied slug into a path.
+# ===========================================================================
+SEC_WORK="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-docs-sec-test.XXXXXX")"
+SEC_PDIR="$SEC_WORK/docs"
+rm -rf /tmp/a1-tools-ESCAPED
+node "$TOOLS" product init --project secdemo --title "Sec Demo" --dir "$SEC_PDIR" >/dev/null 2>&1
+node "$TOOLS" product add-milestone --id m1 --title "M1" --dir "$SEC_PDIR" >/dev/null 2>&1
+
+OUT="$(node "$TOOLS" product add-feature --id "../../../../../../tmp/a1-tools-ESCAPED" --milestone m1 --title "Evil" --dir "$SEC_PDIR" 2>&1)"
+RC=$?
+assert_rc "security-path-traversal-add-feature-rejected" 1 "$RC" "$OUT"
+assert_true "security-path-traversal-no-escape-dir" "$([[ ! -e /tmp/a1-tools-ESCAPED ]] && echo true || echo false)"
+
+OUT="$(node "$TOOLS" product add-milestone --id "../../../../../../tmp/a1-tools-ESCAPED" --title "Evil" --dir "$SEC_PDIR" 2>&1)"
+RC=$?
+assert_rc "security-path-traversal-add-milestone-rejected" 1 "$RC" "$OUT"
+
+OUT="$(node "$TOOLS" product feature-init --id "../../../../../../tmp/a1-tools-ESCAPED" --dir "$SEC_PDIR" 2>&1)"
+RC=$?
+assert_rc "security-path-traversal-feature-init-rejected" 1 "$RC" "$OUT"
+
+OUT="$(node "$TOOLS" product init --project "../../../../../../tmp/a1-tools-ESCAPED" --title "Evil" --dir "$SEC_WORK/docs-init-evil" 2>&1)"
+RC=$?
+assert_rc "security-path-traversal-init-project-rejected" 1 "$RC" "$OUT"
+
+rm -rf /tmp/a1-tools-ESCAPED
+
 echo "product-docs fixtures: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

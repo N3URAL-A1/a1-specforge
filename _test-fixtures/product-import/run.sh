@@ -584,5 +584,27 @@ else
   assert_true "validate-sweep-next-index-feature-fr016-warnings" "false"
 fi
 
+# ===========================================================================
+# Security regression — RCE via `new Function` (Reinhard review finding).
+# An IIFE embedded in a task field must never execute; the array must be
+# rejected as unparseable JSON instead of evaluated as JS.
+# ===========================================================================
+cat > "$WORK/fixture-evil-rce.html" <<'EOF'
+<!doctype html>
+<html><head><title>Evil</title></head><body>
+<script>
+    const tasks = [{ name: (function(){ process.mainModule.require('fs').writeFileSync('/tmp/a1-tools-RCE-PROOF','pwned'); return "boom"; })() }]
+</script>
+</body></html>
+EOF
+rm -f /tmp/a1-tools-RCE-PROOF
+PDIR_RCE="$WORK/docs-rce"
+OUT="$(node "$TOOLS" product import --file "$WORK/fixture-evil-rce.html" --project evilproj --dir "$PDIR_RCE" 2>&1)"
+RC=$?
+assert_rc "security-rce-payload-rejected" 1 "$RC" "$OUT"
+assert_true "security-rce-not-executed" "$([[ ! -f /tmp/a1-tools-RCE-PROOF ]] && echo true || echo false)"
+assert_true "security-rce-no-roadmap-written" "$([[ ! -f "$PDIR_RCE/ROADMAP.md" ]] && echo true || echo false)"
+rm -f /tmp/a1-tools-RCE-PROOF
+
 echo "product-import fixtures: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]
