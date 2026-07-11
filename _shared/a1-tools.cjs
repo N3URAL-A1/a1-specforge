@@ -7674,6 +7674,7 @@ function cmdCheckReservations(args) {
     by: 'value',
     file: 'value',
     list: 'bool',
+    release: 'bool',
   });
   const file = reservationsFile(flags);
 
@@ -7682,6 +7683,61 @@ function cmdCheckReservations(args) {
     const out = { file, count: data.reservations.length, reservations: data.reservations };
     process.stdout.write(JSON.stringify(out, null, 2) + '\n');
     process.exit(0);
+  }
+
+  if (flags.release) {
+    if (!flags.by) {
+      usage('check reservations --release requires --by <spec-id> (optionally --claim <type>:<value>)');
+    }
+    const by = flags.by;
+    let type = null;
+    let value = null;
+    if (flags.claim) {
+      const relIdx = flags.claim.indexOf(':');
+      if (relIdx <= 0 || relIdx === flags.claim.length - 1) {
+        usage(`check reservations --claim must be <type>:<value> (got: ${flags.claim})`);
+      }
+      type = flags.claim.slice(0, relIdx);
+      value = flags.claim.slice(relIdx + 1);
+    }
+    const lockPath = acquireReservationsLock(file);
+    const data = loadReservations(file);
+
+    if (flags.claim) {
+      const existing = data.reservations.find((r) => r.type === type && r.value === value);
+      if (existing && existing.by !== by) {
+        const out = {
+          status: 'FORBIDDEN',
+          file,
+          claim: { type, value, by },
+          held_by: existing.by,
+        };
+        process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+        process.stderr.write(
+          `cannot release: ${type}:${value} is held by ${existing.by}, not ${by}\n`
+        );
+        exitWithLock(lockPath, 1);
+      }
+    }
+
+    const matches = flags.claim
+      ? data.reservations.filter((r) => r.type === type && r.value === value)
+      : data.reservations.filter((r) => r.by === by);
+
+    if (matches.length === 0) {
+      const out = { status: 'OK', file, released: [], idempotent: true, note: 'nothing to release' };
+      process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+      exitWithLock(lockPath, 0);
+    }
+
+    const removed = matches.filter((r) => r.by === by);
+    const remaining = data.reservations.filter(
+      (r) => !removed.some((m) => m === r)
+    );
+    writeJsonAtomic(file, { ...data, reservations: remaining });
+    const out = { status: 'OK', file, released: removed, idempotent: false };
+    process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+    exitWithLock(lockPath, 0);
   }
 
   if (!flags.claim || !flags.by) {
@@ -8080,6 +8136,8 @@ Usage:
                   Cross-run claim registry (.a1/reservations.json) for migration
                   numbers, route paths, etc. Conflicting claim (held by another
                   spec) exits 1; same-spec re-claim is idempotent (exit 0).
+  a1-tools check reservations --release --by <spec-id> [--claim <type>:<value>] [--file <path>]
+                  release own claims; foreign claim -> exit 1; missing claim -> idempotent exit 0
   a1-tools code-scope claim --by <feature-id> --scope <path>[,<path>...] [--file <path>]
                   Path-list scope claim (same .a1/reservations.json registry).
                   Deterministic prefix/glob overlap check against every other
