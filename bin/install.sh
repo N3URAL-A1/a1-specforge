@@ -83,6 +83,9 @@ AGENTS=(
   "a1-ludwig-legal"
   "a1-rafael-reverse-spec"
   "a1-theo-test-engineer"
+  "a1-samuel-security"
+  "a1-diana-docs"
+  "a1-dario-devops"
 )
 
 echo ""
