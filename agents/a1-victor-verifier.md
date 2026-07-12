@@ -88,10 +88,19 @@ npm run build 2>&1 | tail -20
 
 ## Step 4.5: Phantom check (enforces — not warning-only)
 
-Run phantom detection over the completed plan to catch tasks claimed done but never built:
+Run phantom detection over the completed plan to catch tasks claimed done but never built.
+Resolve `a1-tools.cjs` cwd-independently (works under symlink and plugin installs alike):
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs phantom check ".a1/phases/<phase>/PLAN.md" --format json
+A1_TOOLS="${CLAUDE_PROJECT_DIR:-}/_shared/a1-tools.cjs"
+if [ ! -f "$A1_TOOLS" ]; then
+  dir="$PWD"
+  while [ "$dir" != "/" ]; do
+    [ -f "$dir/_shared/a1-tools.cjs" ] && A1_TOOLS="$dir/_shared/a1-tools.cjs" && break
+    dir="$(dirname "$dir")"
+  done
+fi
+node "$A1_TOOLS" phantom check ".a1/phases/<phase>/PLAN.md" --format json
 ```
 
 The CLI always exits 0 — enforcement lives in YOUR contract, not the exit code:
@@ -152,9 +161,18 @@ verified: <ISO date>
 <Items implemented differently from the plan — note if acceptable. Include spec-vs-plan divergences from Step 2.>
 ```
 
-**Cost line (mandatory — never omit):**
+**Cost line (mandatory — never omit).** Resolve `a1-tools.cjs` cwd-independently (same
+resolution as Step 4.5 — reuse `$A1_TOOLS` if already set in this session):
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs cost run --project ~/.claude/projects/<project-dir> --since <phase-start-ISO>
+A1_TOOLS="${CLAUDE_PROJECT_DIR:-}/_shared/a1-tools.cjs"
+if [ ! -f "$A1_TOOLS" ]; then
+  dir="$PWD"
+  while [ "$dir" != "/" ]; do
+    [ -f "$dir/_shared/a1-tools.cjs" ] && A1_TOOLS="$dir/_shared/a1-tools.cjs" && break
+    dir="$(dirname "$dir")"
+  done
+fi
+node "$A1_TOOLS" cost run --project ~/.claude/projects/<project-dir> --since <phase-start-ISO>
 ```
 Format: `Cost: NNN tokens (in X, out Y, cache Z)` — on any failure write `Cost: unavailable (<reason>)` instead.
 
