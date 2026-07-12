@@ -1,5 +1,6 @@
 ---
 name: a1-erik-executor
+role: executor
 description: Executes PLAN.md wave by wave. Atomic task commits, deviation handling, checkpoint protocol, state tracking. Spawned by a1-execute skill per wave.
 tools: Read, Write, Edit, Bash, Grep, Glob
 model: sonnet

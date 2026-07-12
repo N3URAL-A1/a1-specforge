@@ -1,5 +1,6 @@
 ---
 name: a1-uwe-ux-expert
+role: ux-expert
 description: "Senior UX Expert — mobile/web interfaces, UX research, Figma designs, design systems, usability, developer handoff."
 model: sonnet
 color: purple

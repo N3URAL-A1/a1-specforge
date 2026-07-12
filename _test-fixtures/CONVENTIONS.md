@@ -1,8 +1,9 @@
 # Fixture Suite Conventions
 
-Every CLI change needs fixture coverage. Suites live at `_test-fixtures/<suite>/run*.sh`
-(most use `run.sh`; `a1-worktree` uses `run-tests.sh`, `a1-pr-review` uses `run-test.sh`).
-Run all of them with:
+Every CLI change needs fixture coverage. Suites live at
+`_test-fixtures/<suite>/run-tests.sh` — this is the standardized name across
+all suites (the historical mix of `run.sh` / `run-test.sh` / `run-tests.sh`
+was unified 2026-07-12). Run all of them with:
 
 ```bash
 for r in _test-fixtures/*/run*.sh; do bash "$r" || break; done
@@ -15,7 +16,7 @@ and `assert_rc`/`assert_true`-style helpers that print `PASS`/`FAIL  <name>` per
 last two lines of every suite are a summary echo and the exit gate:
 
 ```bash
-# from _test-fixtures/a1-reservations/run.sh:14-30
+# from _test-fixtures/a1-reservations/run-tests.sh:14-30
 set -u
 
 pass=0
@@ -71,7 +72,7 @@ applicable:
 Expected behavior: non-zero exit with clear stderr, OR safe inert handling — the fixture
 must assert one of the two explicitly (don't just "not crash", assert the actual outcome).
 
-Reference example: the stale-lock cases at `_test-fixtures/product-docs/run.sh:820-871`
+Reference example: the stale-lock cases at `_test-fixtures/product-docs/run-tests.sh:820-871`
 show the house style for this kind of edge-case coverage.
 
 Context note: the historical path-traversal findings in this codebase were fixed in

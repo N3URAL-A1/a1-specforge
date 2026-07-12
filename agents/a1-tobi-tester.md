@@ -1,5 +1,6 @@
 ---
 name: a1-tobi-tester
+role: tester
 description: "Comprehensive, uncompromising audits — coherence across vision, business, UX, architecture, compliance, docs. Launch readiness."
 model: sonnet
 color: red

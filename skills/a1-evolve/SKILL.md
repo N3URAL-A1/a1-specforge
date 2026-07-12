@@ -3,7 +3,9 @@ name: a1-evolve
 description: >
   Self-optimization engine for the a1 skill set. Reads accumulated observations
   (`.a1/phases/*/observations.jsonl`) and per-skill _learning.md files plus the
-  Obsidian Vault `pattern/a1-learnings/*.md`, clusters recurring patterns, scores
+  learning store's `pattern/a1-learnings/*.md` (repo-local `.a1/learnings/` by
+  default; set `A1_VAULT_ROOT` to use an external vault, e.g. Obsidian),
+  clusters recurring patterns, scores
   by impact (frequency × severity), and proposes concrete diff-level
   improvements to agent files and SKILL.md / workflow files. Four phases:
   Collect → Cluster → Propose → Apply (with user confirmation per diff).
@@ -48,8 +50,8 @@ globs in `workflows/01-collect.md` in the same commit (framework invariant 4).
 |---|--------|-----------------|
 | 1 | `~/.claude/skills/<skill>/_learning.md` | Per-skill _learning.md caches — per-run retros with structured observations |
 | 2 | `.a1/phases/*/observations.jsonl` | Raw inline observations from agents during execution |
-| 3 | Vault `pattern/a1-learnings/*.md` | **Canonical learning store** — synthesized per-skill retros (primary source of truth) |
-| 4 | a1-fix postmortems | Vault `wiki/postmortems/` (detail) + promoted lessons in `wiki/lessons/`, plus the normalized retros a1-fix appends to `pattern/a1-learnings/a1-fix.md` |
+| 3 | Learning store `pattern/a1-learnings/*.md` | **Canonical learning store** — synthesized per-skill retros. Defaults to repo-local `.a1/learnings/`; set `A1_VAULT_ROOT` to point at an external vault (e.g. Obsidian) as an optional sink instead |
+| 4 | a1-fix postmortems | Learning store `wiki/postmortems/` (detail) + promoted lessons in `wiki/lessons/`, plus the normalized retros a1-fix appends to `pattern/a1-learnings/a1-fix.md` |
 
 **Not an input:** `~/.claude/skills/_shared/learnings-index.md` is an OUTPUT cache
 written by this skill after synthesis — it is never read as an input source.

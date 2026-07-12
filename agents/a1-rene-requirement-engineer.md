@@ -1,5 +1,6 @@
 ---
 name: a1-rene-requirement-engineer
+role: requirement-engineer
 description: "Transforms vague ideas into structured backlogs — epics, features, user stories with acceptance criteria."
 model: sonnet
 color: blue

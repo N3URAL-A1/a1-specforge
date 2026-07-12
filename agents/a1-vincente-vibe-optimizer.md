@@ -1,5 +1,6 @@
 ---
 name: a1-vincente-vibe-optimizer
+role: vibe-optimizer
 description: "Vibe Coding Optimizer — analyzes/restructures projects, CLAUDE.md, skills, agents for AI-assisted velocity. GSD execution strategies."
 model: sonnet
 color: yellow

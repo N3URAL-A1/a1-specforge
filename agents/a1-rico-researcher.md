@@ -1,5 +1,6 @@
 ---
 name: a1-rico-researcher
+role: researcher
 description: Research context for tasks — project setup, domain knowledge, tech stack, risks. Synthesizes findings into RESEARCH.md. Spawned by a1-plan or a1-roadmap skills.
 tools: Read, Write, Bash, Grep, Glob, WebSearch, WebFetch
 model: sonnet

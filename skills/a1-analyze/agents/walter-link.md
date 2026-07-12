@@ -5,7 +5,7 @@ This is **not** an agent definition. It is a pointer.
 ## Source of truth
 
 ```
-~/.claude/agents/a1-walter-web-developer-web-developer.md
+~/.claude/agents/a1-walter-web-developer.md
 ```
 
 ## Usage in a1-analyze

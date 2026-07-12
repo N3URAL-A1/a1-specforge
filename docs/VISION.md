@@ -33,11 +33,17 @@ No hardcoded personal paths. Learning store is repo-local (`.a1/learnings/`) by 
 
 ### 3. Community learning ("the moat")
 The long-term differentiator is not the pipeline — it's the **learning exchange**:
-- **Gate-Packs:** anonymized, importable pattern bundles ("Postgres-RLS pack", "Next.js deploy pack", "Flutter parity pack"). Users import battle-tested gates instead of collecting their own bugs.
+- **Gate-Packs:** anonymized, importable pattern bundles. Shipped: "Postgres-RLS pack" (`packs/postgres-rls/`). Candidates for future packs: "Next.js deploy pack", "Flutter parity pack". Users import battle-tested gates instead of collecting their own bugs.
 - Network effect: more users → more retros → better shared gates → more users.
 - Contribution path: a retro schema anyone can submit via PR; a1-evolve clusters community patterns the same way it clusters local ones.
 
 ## Creative directions (prioritized)
+
+> Note: this table reflects original prioritization intent, not shipped order.
+> In execution, #5 (GitHub Actions gates) and #6 (Plugin distribution) shipped
+> in M7/M8 ahead of #2 (a1-dashboard) and #4 (a1-test), which remain in
+> `docs/roadmap.md`'s Backlog section. Treat `docs/roadmap.md` as the
+> authoritative sequencing; this table is the original rationale.
 
 | # | Idea | What it is | Why |
 |---|------|-----------|-----|

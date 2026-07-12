@@ -1,5 +1,6 @@
 ---
 name: a1-walter-web-developer
+role: web-developer
 description: "Web development — frontend, backend, full-stack, architecture, code review, debugging, performance optimization."
 model: sonnet
 color: green

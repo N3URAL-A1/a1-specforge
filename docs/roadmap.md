@@ -3,6 +3,14 @@
 **Created:** 2026-07-04 · **Owner:** N3URAL.AI · **Horizon:** July – September 2026
 **Vision:** → [`docs/VISION.md`](VISION.md)
 
+> **Note on self-hosting:** this repo intentionally does not run its own
+> `a1-roadmap` skill to produce a `.a1/roadmap.md` scaffold. `docs/roadmap.md`
+> (this file) is the deliberate single source of truth for a1-specforge's own
+> milestones, hand-maintained alongside `.a1/phases/<milestone>/` state. If
+> you're looking for the `.a1/roadmap.md` convention that `a1-roadmap`
+> documents for *other* projects: for this repo, that role is filled by this
+> file instead.
+
 Two priorities, in order: **(1) reliability for daily production use** (gates, cost, ergonomics), **(2) open-source launch** (reputation + community adoption). Decisions 2026-07-04: product name is `a1-specforge`; learning store becomes repo-local (`.a1/learnings/`) by default with the Obsidian vault as optional sink via `A1_VAULT_ROOT`; no commercial layer.
 
 Basis: general analysis 2026-07-04 (3 OSS-BLOCKER, 6 MAJOR, 5 MINOR) + learning corpus (17+ runs, 15 applied patterns).
@@ -98,12 +106,33 @@ Basis: general analysis 2026-07-04 (3 OSS-BLOCKER, 6 MAJOR, 5 MINOR) + learning 
 
 ---
 
+## M9 — Robustness (July 2026)
+
+**Goal:** Harden the a1 tooling itself — worktree edge cases, the first clean module split of `a1-tools.cjs`, hostile-input fixture convention, atomic lock reclaim.
+
+### Scope
+
+- `worktree adopt`/`reconcile` for on-disk worktrees not (yet) tracked in the registry; `pr-review` fallback with no registry entry.
+- First module split of the CLI facade behind a stable `_shared/lib/` interface (`io`, `locks`, `worktree-registry`, `product`).
+- `_test-fixtures/CONVENTIONS.md` mandatory "Hostile inputs" section; `check reservations --release`.
+- Atomic lock reclaim (`renameSync` + read-back-verify) for stale reservation locks.
+
+### Success criteria — all validated 2026-07-12, see `.a1/phases/M9-robustness/VERIFICATION.md`
+
+- [x] `worktree adopt`/`reconcile` work end-to-end against git truth (PASS 8/8 binary SCs, live-tested)
+- [x] `pr findings-summary --worktree-path` fallback works with no registry entry
+- [x] Facade split: `_shared/lib/{io,locks,worktree-registry,product}.cjs` extracted; facade 9584→7148 lines (2436 removed)
+- [x] Hostile-input fixture convention documented + linked from CONTRIBUTING.md
+- [x] `reservations --release` release/refuse/idempotent semantics + fixture coverage (22 passed, 0 failed)
+- [x] Stale-lock reclaim uses tmp-write + rename + read-back-verify, 3 fixture cases green
+
 ## Dependency graph
 
 ```
 M6: reliability (gates, CLI, cost)      ← must not regress during M7
   └── M7: portability, CI, docs
         └── M8: plugin, launch, community
+              └── M9: robustness (worktree edge cases, module split, hostile inputs)
 ```
 
 ---

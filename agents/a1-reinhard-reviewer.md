@@ -1,5 +1,6 @@
 ---
 name: a1-reinhard-reviewer
+role: reviewer
 description: "Senior Code Reviewer — identifies bugs, redundancies, optimization opportunities. Enforces Skills-First/OpenSpace. Before PRs and deploys."
 model: opus
 color: red

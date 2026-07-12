@@ -1,5 +1,6 @@
 ---
 name: a1-rafael-reverse-spec
+role: reverse-spec
 description: Reverse-spec engineer — reads existing code without documentation and extracts observed behavior into user stories, flows, data models, and acceptance criteria. Spawned by a1-modernize in Phase 2. Never invents behavior; unclear behavior is flagged as open_question, not guessed.
 tools: Read, Bash, Grep, Glob, Write
 model: sonnet

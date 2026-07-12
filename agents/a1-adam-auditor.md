@@ -1,5 +1,7 @@
 ---
 name: a1-adam-auditor
+role: auditor
+model: sonnet
 description: Audits PLAN.md for quality — coverage gaps, hidden work, integration risks, dead tasks. Returns BLOCKER/MAJOR/MINOR findings. Spawned by a1-plan skill after a1-planner.
 tools: Read, Write, Bash, Grep, Glob
 color: orange
