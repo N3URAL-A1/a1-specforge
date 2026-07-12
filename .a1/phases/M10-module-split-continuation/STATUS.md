@@ -113,4 +113,42 @@
 - Facade line count: 6095 → 5831 lines (−264)
 - New module: `_shared/lib/realpath-check.cjs` (274 lines)
 
-## Waves 5-17 — not started
+## Wave 5 — `phantom` group — ✅ COMPLETE
+
+- Commit: `4b94c7f`
+- Task: 5.1 (extract `phantom` to `_shared/lib/phantom.cjs`) — done
+- Moved byte-identical: `PHANTOM_STOP_WORDS`, `parsePhantomTasks`,
+  `extractPhantomKeywords`, `phantomDefaultSince`, `phantomCollectDiff`,
+  `phantomMatch`, `cmdPhantomCheck`, `cmdPhantomListTasks`, plus the
+  doc-comment block explaining the phantom-detection contract. Exports
+  only the two dispatcher-facing functions (`cmdPhantomCheck`,
+  `cmdPhantomListTasks`); the 6 internal helpers + 1 constant stay
+  module-private (verified no external callers via grep before and
+  after the move).
+- Git-safety check (per plan Step 4): `phantomCollectDiff` and
+  `phantomDefaultSince` both invoke git exclusively through the shared
+  `gitSafe()` helper (`_shared/lib/git-safe.cjs`), which uses
+  `execFileSync('git', ['-C', repoPath, ...args], ...)` — the safe
+  argv-array form, no shell string ever involved. Already safe, same
+  principle as the F-015 fix; no code change needed, only imported
+  `gitSafe`/`assertNoShellMetachar` as sibling-module requires.
+- Const-sweep (mandatory per Executor ground rules): ran
+  `grep -n "^const [A-Z_]* = "` restricted to the wave's line range
+  (4898-5168) plus a broader `^const |^let |^var ` sweep over the same
+  window — found only `PHANTOM_STOP_WORDS` in range (already on the
+  plan's MOVE list). The pre-existing `const { usage, HELP } =
+  require(...)` line at the top of the range is Wave 1's facade import,
+  not new wave-local state, and stays untouched. `PACK_ANON_LEVELS`/
+  `PACK_TARGET_KINDS`/`PACK_DENY_REGEX` sit just below the range start
+  (5194+, Wave 6 territory) — correctly out of scope this wave. No
+  undocumented constant found this time (unlike Waves 2 and 4).
+- Deviation (minor, pre-existing, same as Waves 1-4): a1-reconcile fixture
+  suite writes live timestamps into checked-in fixture files during the
+  regression run; diff reverted before staging, suite itself not fixed
+  (out of scope).
+- Full regression gate: ALL-SUITES-GREEN (22 suites, including
+  a1-phantom: 3 passed 0 failed, and a1-cmd-injection: 7 passed 0 failed)
+- Facade line count: 5831 → 5561 lines (−270)
+- New module: `_shared/lib/phantom.cjs` (279 lines)
+
+## Waves 6-17 — not started
