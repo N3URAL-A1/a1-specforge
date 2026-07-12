@@ -815,4 +815,99 @@ faster than estimated is not a STOP-gate condition.
   requirement — confirmed green, confirming the F-015 safe
   `execFileSync`-array form survived the move unchanged.
 
-## Waves 15-17 — not started
+## Wave 15 — Write fixtures for `fix` + `constitution` (F-007 fix, BEFORE extraction) — ✅ COMPLETE
+
+- Commit: `4aa52d7`
+- Task 15.1 (write `_test-fixtures/a1-fix/run-tests.sh`) — done. Read the full
+  `fix` group end-to-end first (`cmdFixNextSuffix`, `cmdFixUpdateStatus`,
+  `cmdFixList`, `cmdFixFindDuplicates`, `postmortemsDir`, `agentsLockPath`,
+  `lastPromotePath`, `cmdFixIntegrityCheck`, `cmdFixInitPostmortem`,
+  `cmdFixCountPostmortemsSince`, `cmdFixUpdatePromoteState`,
+  `cmdFixWriteSuggestion`) to know exact flags/exit codes/file-write side
+  effects before writing assertions. Suite has **46 test cases**: next-suffix
+  (happy-path + second-of-day suffix + invalid-date rejection), update-status
+  (valid transition + phase_history append + invalid-status rejection +
+  missing-file rejection), find-duplicates (no-match / keyword-hit-count
+  match), integrity-check (bootstrap-when-no-lock / clean-state-ok /
+  mismatch-detection-with-file-name — read `cmdFixIntegrityCheck`'s body
+  first to confirm "corrupted" = sha256 mismatch against the lock file),
+  init-postmortem (file creation under `postmortemsDir` + frontmatter
+  content), count-postmortems-since (future-cutoff=0 / past-cutoff>=1 /
+  invalid-timestamp rejection — genuine date-boundary check, not just a
+  smoke call), update-promote-state (initial write + overwrite-on-second-call
+  transition), write-suggestion (file creation). Hostile inputs (3, per
+  CONVENTIONS.md): path traversal (`../../etc/passwd` on `fix list` and
+  `fix find-duplicates` project-slug — asserts no `/etc/passwd` content
+  leak, graceful empty-result handling), injection-shaped strings
+  (`; rm -rf /`-style + `$(...)` + backtick payloads via `write-suggestion
+  --body` AND `init-postmortem`'s bug-slug arg — asserts a marker file is
+  never created by the payload and the string is stored inertly as literal
+  text in the written file), oversized value (10000-char body via
+  `write-suggestion --body` — asserts graceful handling, no stack trace).
+  All 46 cases green against the CURRENT (pre-Wave-16) facade code.
+- Task 15.2 (write `_test-fixtures/a1-constitution/run-tests.sh`) — done.
+  Read the full `constitution` group end-to-end first
+  (`constitutionVaultPath`, `constitutionHistoryDir`, `cmdConstitutionInit`,
+  `cmdConstitutionDiscover`, `cmdConstitutionUpdateStatus`,
+  `cmdConstitutionSetBody`, `cmdConstitutionNextVersion`,
+  `cmdConstitutionArchiveCurrent`, `cmdConstitutionWriteMirror`,
+  `cmdConstitutionLinkClaudemd`, `cmdConstitutionList`). Suite has **57 test
+  cases**: init (scaffold + frontmatter fields + re-init-over-existing
+  rejection), discover (CLAUDE.md detection + cross-link detection +
+  missing-slug rejection), update-status (valid transition + phase_history
+  append + `last_written_at` stamped only on `written` + invalid-status
+  rejection + missing-file rejection), set-body (content write +
+  frontmatter preservation + missing-body-file rejection), next-version
+  (no-history=1, with-history=max+1 regardless of directory listing order,
+  double-digit version parsing v9→10 — proves numeric not lexical max,
+  missing-slug rejection), archive-current (**the RESEARCH.md-flagged
+  regression target**: asserts the archived snapshot's version number
+  matches a DIRECT `next-version` call made immediately before
+  `archive-current`, then asserts a SECOND direct `next-version` call made
+  immediately after equals `direct_next + 1` — proves
+  `cmdConstitutionArchiveCurrent`'s internal `cmdConstitutionNextVersion`
+  call and an external call agree, not just that archiving doesn't crash;
+  also covers the live-version-bump and the
+  no-current-constitution-to-archive rejection), write-mirror (mirror file
+  creation + header content + relative-path rejection + nonexistent-path
+  rejection), link-claudemd (first-run append + idempotent second-run
+  update-not-duplicate, asserting exactly one marker block survives +
+  missing-CLAUDE.md rejection), list (count + project presence). Hostile
+  inputs (3): path traversal (`../../etc/passwd` on `next-version` and
+  `discover` project-slug — asserts no `/etc/passwd` leak), injection-shaped
+  body text via `set-body` AND injection-shaped `--title` on `init` (asserts
+  no marker-file execution, payload stored inertly as literal text),
+  oversized body text (10000+ chars via `set-body` — asserts graceful
+  handling, no stack trace). All 57 cases green against the CURRENT
+  (pre-Wave-16) facade code.
+- Both suites follow the mandatory CONVENTIONS.md shape: `set -u`,
+  `pass=0 fail=0` counters, `assert`/`assert_rc` helpers printing
+  `PASS`/`FAIL <name>`, final summary line + `[[ $fail -eq 0 ]]` exit gate.
+  All mutable state lives under a per-suite `mktemp -d` (`$WORK`/`$VAULT`);
+  nothing is written into the checked-in repo tree. `A1_VAULT_ROOT` env var
+  (Tier 1 of `vaultRoot()`'s fallback chain, `_shared/lib/io.cjs`) points
+  every CLI invocation at the temp vault — same isolation pattern used by
+  `a1-reconcile`'s existing suite.
+- No deviations from the plan's Task 15.1/15.2 action lists — both were
+  pure fixture-writing tasks against already-stable, already-extracted-
+  elsewhere-verified facade code (no bugs found in the `fix`/`constitution`
+  command functions themselves during this wave).
+- Deviation (minor, pre-existing, same as Waves 1-14): a1-reconcile fixture
+  suite writes live timestamps into checked-in fixture files during the
+  regression run; diff reverted before staging (twice — once before the
+  initial commit, once again after the post-commit regression re-run),
+  suite itself not fixed (out of scope).
+- Full regression gate: ALL-SUITES-GREEN (all fixture suites, including the
+  2 new ones: a1-fix: 46 passed 0 failed, a1-constitution: 57 passed 0
+  failed), re-confirmed a second time post-commit for idempotency.
+- Facade line count: **1412 → 1412 lines (unchanged)** — this wave writes
+  fixtures only, nothing moves out of the facade. Real shrinkage from the
+  `fix`/`constitution` extraction happens in Wave 16.
+- **SC-3 confirmation (explicit):** both
+  `_test-fixtures/a1-fix/run-tests.sh` and
+  `_test-fixtures/a1-constitution/run-tests.sh` now exist, follow
+  CONVENTIONS.md's mandatory shape, are green, and were written and
+  committed (`4aa52d7`) BEFORE Wave 16 touches either group's code — F-007
+  is closed.
+
+## Waves 16-17 — not started
