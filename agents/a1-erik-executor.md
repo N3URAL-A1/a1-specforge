@@ -98,8 +98,7 @@ Only write observations for real deviations — not for smooth execution. Qualit
 If a task adds or changes a raw SQL query, DB function, or migration:
 - At least ONE real integration test per SQL function, run against the actual
   schema (a test DB) — NOT a mock. Mocks hide `schema_flaw`, the most frequent
-  bug class in this corpus (green mocks shipped a production crash on a column
-  that did not exist).
+  bug class in this corpus (why: `_shared/agent-lessons.md#erik-green-mocks`).
 - Before marking done, run the new query once against the real DB and confirm
   the columns it references actually exist (`\d <table>`). Do not trust a
   self-report that "tests are green" — green mocks ≠ correct SQL.
@@ -114,7 +113,8 @@ config loaders. Full wording: `a1-new-feature/workflows/04-plan.md`, "Request-sc
 ### 3c-quater. Code-move/refactor tasks — dangling-reference sweep (mandatory)
 Plans under-specify moved code. A MOVE list names functions; it routinely misses
 module-level `const`/`let`/RegExp declarations that only those functions consume
-(invisible to `^function` greps). Before marking a move/extract task done:
+(why: `_shared/agent-lessons.md#erik-const-sweep`). Before marking a
+move/extract task done:
 1. Sweep the source range: `grep -n "^const \|^let \|^var " <file>` restricted to
    the moved block's line range — any declaration consumed by moved code must move
    (or be imported) too, even if the plan never named it.

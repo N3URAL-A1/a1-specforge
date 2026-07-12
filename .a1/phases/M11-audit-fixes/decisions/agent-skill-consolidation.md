@@ -4,7 +4,7 @@ task: 7.4
 status: decided
 decision: per-candidate recommendations adopted — executed M12 Wave 3 where actionable
 decided: 2026-07-12 (Robert delegated via "setze die angesprochenen Punkte um")
-executed: Theo/Rafael/Ludwig/Marco-haiku = keep (no change); Diana = 3a wired into a1-new-feature Phase 6 Step 5.5; hero-animation-builder moved to _extras/ (symlink re-pointed); format axis A block-scalar sweep done; MAP c documented in CONTRIBUTING.md. Deferred as the doc recommends — format axis B (own follow-up phase), MAP b lifecycle-gates extraction (needs dedicated analysis), Ludwig-vs-legal-plugin empirical diff (open verification).
+executed: Theo/Rafael/Ludwig/Marco-haiku = keep (no change); Diana = 3a wired into a1-new-feature Phase 6 Step 5.5; hero-animation-builder moved to _extras/ (symlink re-pointed); format axis A block-scalar sweep done; MAP c documented in CONTRIBUTING.md. M13 closed the deferred items — format axis B executed (9 core agents + rene digit-tags + alex principles → Markdown headings), Ludwig verification resolved (docs/analysis/2026-07-12-ludwig-vs-legal-plugin.md: layered by design via his Hard Rule 4, keep), MAP b analyzed (see M13 phase artifacts for the extraction verdict).
 created: 2026-07-12
 depends_on: Task 4.3 (landed, Wave 4), Task 5.4 (note-only, landed, Wave 5)
 ---
