@@ -12,7 +12,7 @@ Claude Code is powerful, but without structure every session restarts from scrat
 <!--
   README scope note (keeps the bijective install/README check honest):
   bin/install.sh is the single source of truth for the installed set. Its
-  grepped set = 17 skills + 18 agent names + the project slug. This README names
+  grepped set = 17 skills + 21 agent names + the project slug. This README names
   exactly that set (skills AND agents both with the shared prefix) and no other
   matching token. The shared CLI is referenced only as the _shared/
   path, never by its filename, to avoid introducing a non-installed token. The
@@ -42,7 +42,7 @@ claude plugin install a1-specforge@a1-specforge
 claude plugin list        # confirm a1-specforge@a1-specforge is installed
 ```
 
-All 17 skills and 18 agents load from the plugin. To remove: `claude plugin uninstall a1-specforge` then `claude plugin marketplace remove a1-specforge`. Contributors who want to edit skills in place should use `./bin/install.sh` above instead.
+All 17 skills and 21 agents load from the plugin. To remove: `claude plugin uninstall a1-specforge` then `claude plugin marketplace remove a1-specforge`. Contributors who want to edit skills in place should use `./bin/install.sh` above instead.
 
 Then just describe what you want in Claude Code; the matching skill activates:
 
@@ -78,9 +78,9 @@ All 17 skills below match the `SKILLS` array in `bin/install.sh` exactly.
 | `a1-worktree` | Isolation | Isolated Git worktree lifecycle: Prepare → Enter → Exit (keep / discard / handoff), so agents work in a parallel checkout. |
 | `a1-evolve` | Learn | Self-optimization engine — reads accumulated observations and `_learning.md` files, clusters recurring patterns, scores by impact, proposes concrete skill diffs. |
 
-## Agents (18)
+## Agents (21)
 
-`install.sh` also symlinks 18 shared framework agents (counted from `agents/*.md`). Each installed file is the agent name below plus `.md`.
+`install.sh` also symlinks 21 shared framework agents (counted from `agents/*.md`). Each installed file is the agent name below plus `.md`.
 
 | Agent | Role |
 |---|---|
@@ -102,6 +102,9 @@ All 17 skills below match the `SKILLS` array in `bin/install.sh` exactly.
 | `a1-uwe-ux-expert` | UX research and UI design |
 | `a1-vincente-vibe-optimizer` | Build/code-task orchestration |
 | `a1-ludwig-legal` | Legal / compliance (GDPR, EU AI Act) |
+| `a1-samuel-security` | Security specialist — threat modeling, auth/authz, supply-chain, secrets, injection-surface review |
+| `a1-diana-docs` | Documentation specialist — README, API docs, guides, docs-vs-code drift |
+| `a1-dario-devops` | DevOps/deploy specialist — deployments, CI workflows, env/secrets, rollback runbooks |
 
 ## Shared CLI
 
@@ -161,7 +164,7 @@ CI runs the same suites, a `node --check` on the CLI, and an `install.sh` smoke 
 ```
 a1-specforge/
 ├── <skill>/            # 17 skill directories (see table above)
-├── agents/             # 18 shared framework agents (one .md each)
+├── agents/             # 21 shared framework agents (one .md each)
 ├── _shared/            # deterministic CLI helpers (frontmatter, reservations, checks)
 ├── packs/              # reusable gate-packs (e.g. postgres-rls)
 ├── bin/install.sh      # symlink setup
