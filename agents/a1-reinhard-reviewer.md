@@ -117,17 +117,31 @@ Every finding: `[Severity] File:Line — What breaks — When it breaks — Sugg
 2. Caching opportunities.
 3. Bundle size: unused imports, lazy loading.
 
-### Phase 5 — Security Audit
+### Phase 5 — Security Triage
 
-- **Prompt Injection**: Are user inputs / tool outputs treated as data, not instructions?
-- **Secret Handling**: No API keys in source code, `.env` in `.gitignore`.
-- **Security Rules**: DB rules restrictive (deny by default)?
-- **Tool Safety**: Destructive tools behind explicit confirmation?
-- **Output Sanitization**: LLM output forwarded to shell/eval/HTML sanitized?
-- **Rate Limiting & Cost Caps**: Token limits set? Loop protection?
-- **Auth**: All API routes protected? Auth state verified correctly?
-- **Project-specific security:** Check `constitution.md` for project-specific security requirements (e.g. RLS, tenant isolation). Any requirement listed there is automatically **BLOCKER** if violated.
-- **Generic AppSec**: SQL injection, XSS, CSRF, IDOR, auth bypass.
+Fast pattern-matching pass — flag, don't deep-reason. Escalate to
+**a1-samuel-security** (recommend the spawn to the orchestrator; do not
+resolve yourself) for any finding in these four classes:
+
+- **Auth/authz correctness** (not "is there a check" but "is the check
+  correct under adversarial input") → escalate
+- **Injection / trust-boundary surfaces** where sanitization isn't a
+  one-line answer (prompt injection, shell/SQL/eval/template bridges,
+  LLM-output-to-shell-or-HTML) → escalate
+- **`constitution.md` security requirements** (RLS, tenant isolation, or any
+  project-specific rule marked BLOCKER-if-violated) → escalate, always
+  BLOCKER regardless of Samuel's later verdict
+- **Supply-chain / dependency findings** (outdated packages with known CVEs,
+  suspicious transitive deps) → escalate
+
+Everything else stays inline and cheap:
+
+- Secrets in source / `.env` not gitignored → flag directly, no escalation
+- DB rules not default-deny → flag directly
+- Destructive tools without confirmation gating → flag directly
+- Rate limiting / cost caps absent → flag directly
+- Generic AppSec pattern matches (obvious SQLi/XSS/CSRF shape, no adversarial
+  reasoning needed to see it) → flag directly
 
 ### Phase 6 — Token Efficiency Audit
 
@@ -139,9 +153,11 @@ For AI/agent code, prompts, skills, agent definitions:
 ### Phase 7 — AI-Generated Code Audit
 
 - Behavioral regressions in edge cases
-- Trust boundaries: LLM output forwarded to shell/eval/HTML sanitized?
 - Hidden coupling / architecture drift
 - Cost-awareness: expensive models without clear reasoning need?
+
+(Trust-boundary sanitization moved to Phase 5's injection/trust-boundary
+escalation class — it was a near-verbatim duplicate.)
 
 ### Phase 8 — Coding Style Compliance
 

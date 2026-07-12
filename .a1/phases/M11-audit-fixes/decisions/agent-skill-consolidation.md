@@ -1,7 +1,10 @@
 ---
 topic: agent + skill consolidation review
 task: 7.4
-status: awaiting-robert-decision
+status: decided
+decision: per-candidate recommendations adopted — executed M12 Wave 3 where actionable
+decided: 2026-07-12 (Robert delegated via "setze die angesprochenen Punkte um")
+executed: Theo/Rafael/Ludwig/Marco-haiku = keep (no change); Diana = 3a wired into a1-new-feature Phase 6 Step 5.5; hero-animation-builder moved to _extras/ (symlink re-pointed); format axis A block-scalar sweep done; MAP c documented in CONTRIBUTING.md. Deferred as the doc recommends — format axis B (own follow-up phase), MAP b lifecycle-gates extraction (needs dedicated analysis), Ludwig-vs-legal-plugin empirical diff (open verification).
 created: 2026-07-12
 depends_on: Task 4.3 (landed, Wave 4), Task 5.4 (note-only, landed, Wave 5)
 ---

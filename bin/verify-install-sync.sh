@@ -58,12 +58,13 @@ diff_named() {
 }
 
 # ---------------------------------------------------------------------------
-# Known, currently-correct skills-side exclusion. No file-based mechanism
-# exists for this side (per Task 1.3's scope note) — hero-animation-builder
-# is simply absent from install.sh's SKILLS array and README's skills table,
-# and both already agree. Hardcoding the one known name here is intentional.
+# Skills-side exclusions. Empty since M12: hero-animation-builder (the one
+# historical exclusion) moved to repo-root _extras/ — skills/ now contains
+# ONLY installable a1-convention skills, so directory count == install.sh
+# SKILLS array == README table with no carve-outs. Add a name here only if a
+# non-installable directory ever lands in skills/ again.
 # ---------------------------------------------------------------------------
-SKILLS_EXCLUDE=("hero-animation-builder")
+SKILLS_EXCLUDE=()
 
 is_excluded() {
   # $1 = name to test; remaining args = exclusion list (may be empty — guard

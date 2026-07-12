@@ -18,6 +18,17 @@ Apply this change?
 ### 4c. Apply if confirmed
 Use Edit tool to make the exact change.
 
+**Append target for agent-prompt lessons (HARD RULE, M12 decision 7.3a):**
+when a proposal adds a lesson to an *agent* file, the narrative (incident
+story, dated provenance, observed failure mode) goes into
+`_shared/agent-lessons.md` under `## <agent> — <slug>`, NOT into the agent
+prompt. The agent prompt gets at most **one compressed imperative sentence
+plus a pointer** (`see _shared/agent-lessons.md#<anchor>`) — and only if the
+lesson introduces a rule category no existing principle in that prompt
+covers; if it reinforces/refines an existing rule, only the lessons file
+grows. This bounds prompt growth: prompts hold stable operating principles,
+the lessons file holds the append-only incident log.
+
 ### 4d. Verify change is syntactically correct
 Quick read-back to confirm the edit landed cleanly.
 

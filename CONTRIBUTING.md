@@ -52,6 +52,15 @@ language rules in a skill's SKILL.md; link to that file instead.
 - If you change an agent's Output Contract in a brief template, verify that the downstream validation step handles the new shape.
 - If you rename a template or agent pointer, update all references in SKILL.md and workflows.
 
+### `## Versions` sections are opt-in (deliberate, not an inconsistency)
+
+Only skills that have shipped a documented **major behavioral revision** carry
+a `## Versions` section (today: a1-analyze, a1-constitution, a1-modernize,
+a1-reconcile). Do not add empty `## Versions` sections to the other skills to
+"standardize" — a stable single-shot gate has nothing to version. Add the
+section the first time a skill's behavior changes in a way a returning user
+must know about (M12 decision, doc 7.4 MAP c).
+
 ### Test fixtures
 
 Any change to `_shared/a1-tools.cjs` requires fixture coverage per

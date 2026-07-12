@@ -1,7 +1,10 @@
 ---
 topic: Reinhard ↔ Samuel security boundary
 task: 7.2
-status: awaiting-robert-decision
+status: decided
+decision: (a) Phase 5 → security triage with 4 named escalation classes — executed M12 Wave 3
+decided: 2026-07-12 (Robert delegated via "setze die angesprochenen Punkte um")
+executed: draft checklist applied to a1-reinhard-reviewer.md Phase 5; Phase 7 trust-boundary duplicate removed
 created: 2026-07-12
 ---
 

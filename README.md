@@ -166,6 +166,7 @@ a1-specforge/
 ├── <skill>/            # 17 skill directories (see table above)
 ├── agents/             # 21 shared framework agents (one .md each)
 ├── _shared/            # deterministic CLI helpers (frontmatter, reservations, checks)
+├── _extras/            # non-pipeline skills (hero-animation-builder) — not installed by install.sh
 ├── packs/              # reusable gate-packs (e.g. postgres-rls)
 ├── bin/install.sh      # symlink setup
 ├── docs/               # roadmap.md, CONSTITUTION.md, feature-entry-conditions.md, …

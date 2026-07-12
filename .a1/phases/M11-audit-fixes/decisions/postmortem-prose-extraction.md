@@ -1,7 +1,10 @@
 ---
 topic: extract postmortem prose from agent prompts
 task: 7.3
-status: awaiting-robert-decision
+status: decided
+decision: (a) lessons file + one-line principles — executed M12 Wave 3 (pilot Pablo)
+decided: 2026-07-12 (Robert delegated via "setze die angesprochenen Punkte um")
+executed: _shared/agent-lessons.md created; Pablo paragraph compressed per the doc's example diff; a1-evolve 04-apply.md append-target HARD RULE added. Repo-wide sweep deferred until the pilot proves out (per the doc's own risk note).
 created: 2026-07-12
 ---
 

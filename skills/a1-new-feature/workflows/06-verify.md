@@ -275,6 +275,28 @@ Status stays `implementing`. Tell the user:
 
 Do not advance to `done` until all failures are resolved and a re-verify is green.
 
+## Step 5.5 — Docs-drift lane (report-only, spawn a1-diana-docs)
+
+After the verdict is applied and **before** the Retro, spawn `a1-diana-docs`
+via the `Agent` tool with this brief (wired M12, decision doc 7.4 candidate
+3a — mirrors how Samuel is an always-on lane in a1-analyze):
+
+> Diana, the feature `<###>-<feature-slug>` just shipped (spec:
+> `<spec-path>`, verification verdict: `<pass|partial>`). Check the project's
+> user-facing docs for drift introduced by this feature: README sections,
+> API docs, user guides, onboarding steps that this feature's changes make
+> stale or incomplete. Return a short report as TEXT (write NO files):
+> per finding — doc path, what is stale, one-line suggested fix. If nothing
+> drifted, say so explicitly.
+
+Rules:
+
+- **Report-only.** Diana's findings go to the user; they do NOT block the
+  lifecycle gate and do NOT auto-trigger edits. The user decides whether to
+  have Diana apply doc updates as a follow-up.
+- Skip this lane only when the run has no user-facing surface at all (pure
+  internal refactor) — say that you skipped it and why.
+
 ## Step 6 — Retro (MANDATORY, every run — this closes the self-learning loop)
 
 After every Phase 6 run — PASS, PARTIAL, or FAIL — write one retro entry **before you tell

@@ -1,7 +1,10 @@
 ---
 topic: a1-check ⊂ a1-checklist merge
 task: 7.1
-status: awaiting-robert-decision
+status: decided
+decision: (a) merge with deprecated-alias transition — executed M12 Wave 3
+decided: 2026-07-12 (Robert delegated via "setze die angesprochenen Punkte um")
+executed: check #9 fr_coverage_bijective in checklist.cjs (reuses check.cjs primitives); a1-check SKILL.md = alias notice; 04.5 call site untouched per migration step 5
 created: 2026-07-12
 ---
 

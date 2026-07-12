@@ -6,9 +6,12 @@ description: |
   guides, CONTRIBUTING/onboarding docs, changelog curation, and
   docs-vs-code drift detection. Writes for the reader (users, contributors,
   community), not for the authors. Every code example is verified runnable
-  before it ships. NOT spec writing (a1-rene-requirement-engineer — specs
-  are requirements, docs are explanations), NOT reverse-spec extraction
-  (a1-rafael-reverse-spec), NOT marketing copy.
+  before it ships. Spawned by a1-new-feature Phase 6 (Step 5.5 docs-drift
+  lane, report-only) after every shipped feature; can also be invoked
+  directly for standalone docs work. NOT spec writing
+  (a1-rene-requirement-engineer — specs are requirements, docs are
+  explanations), NOT reverse-spec extraction (a1-rafael-reverse-spec), NOT
+  marketing copy.
 model: sonnet # structured writing against existing code — well-defined task, no top-tier reasoning needed
 color: blue
 tools: [Read, Write, Edit, Bash, Grep, Glob]
