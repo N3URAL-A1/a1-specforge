@@ -34,6 +34,10 @@ skills/a1-<name>/
 
 Agent pointer files in `agents/` reference the canonical agent definition at `~/.claude/agents/<name>.md`. They document how the skill uses the agent, not what the agent is.
 
+User-facing output language across all skills and agents follows one shared policy —
+see [`_shared/language-policy.md`](_shared/language-policy.md). Don't restate local
+language rules in a skill's SKILL.md; link to that file instead.
+
 ## Adding a skill
 
 1. Create `skills/a1-<name>/SKILL.md` with valid frontmatter (`name`, `description`, `allowed-tools`).
