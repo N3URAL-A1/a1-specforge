@@ -21,7 +21,7 @@ Constitution rules this table enforces:
 |---|---|---|---|---|---|---|
 | `gate-c-ac-dryrun` | end of Clarify (pre-Phase-4) | prompt | cheap | a1-new-feature | blocking | NEW (P2). Per FR-AC, narrate the user path against the app's real nav/layout — no build. Catches spec-level blindness. |
 | `plan-audit` | Plan | prompt | med | a1-plan (a1-auditor) | blocking | AUDIT.md — plan coverage vs spec ACs. |
-| `check-reservations` | Plan / merge | deterministic | cheap | a1-check | blocking | NEW (P7). `.a1/reservations.json` (migration numbers, route claims) checked by Gate 4.5 — prevents `parallel_collision`. |
+| `check-reservations` | Plan / merge | deterministic | cheap | a1-new-feature (Gate 4.5, PASS path) | blocking | NEW (P7), wired M12. `.a1/reservations.json` (migration numbers, route claims): Gate 4.5 claims plan-declared values via `a1-tools check reservations --claim` before dispatching Phase 5 — prevents `parallel_collision`. |
 | `gate-0-self-report` | Execute (per wave) | deterministic | cheap | a1-execute | blocking | Self-report guard — executor claims cross-checked against artifacts. Added 2026-06/07, no catch data yet. |
 | `gate-0.5-surface` | Execute (per wave) | deterministic | med | a1-execute | blocking | Surface-wiring coverage. Same failure class as reconcile (incomplete surface wiring), in-flight. Added 2026-06/07. |
 | `gate-0.6-schema` | Execute (per wave) | deterministic | cheap | a1-execute | blocking | Schema/DB-checklist check. Cheap, keep as-is. Added 2026-06/07. |

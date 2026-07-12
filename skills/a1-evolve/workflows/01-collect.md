@@ -64,11 +64,22 @@ proposal report so rosy self-reports cannot silently harden the wrong things.
 
 ### 1c-quater. Read staged Gate-Packs (community source)
 Imported Gate-Packs (see `docs/adr/2026-07-05-gate-pack-format.md`) stage their
-patterns under `.a1/packs/*/patterns/*.md`. Collect them so community-contributed
+patterns under `.a1/packs/*/patterns/*.md`. Packs are staged via
+`a1-tools pack import <dir>` (which validates before copying — see
+`packs/README.md`). Before ingesting, re-validate every staged pack — a
+manifest that no longer validates (hand-edited, partially copied) is excluded:
+```bash
+for m in $(find ~/code -path "*/.a1/packs/*" -name pack.yaml 2>/dev/null); do
+  node <repo>/_shared/a1-tools.cjs pack validate "$(dirname "$m")" \
+    || echo "SKIP invalid pack: $(dirname "$m")"
+done
+```
+Then collect patterns from the packs that validated, so community-contributed
 gates enter clustering:
 ```bash
 find ~/code -path "*/.a1/packs/*/patterns/*.md" 2>/dev/null | sort
 ```
+(Exclude pattern files under any pack directory that failed validation above.)
 Each such pattern enters Phase 2 clustering as `source: community` with its
 provenance count **capped at 2** (ADR §4) — i.e. one local occurrence is still
 required before a community pattern reaches the propose-threshold of 3. Community
