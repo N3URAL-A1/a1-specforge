@@ -156,9 +156,8 @@ Learning store defaults to repo-local `.a1/learnings/`; set `A1_VAULT_ROOT` to u
 - **Never split features too coarse or too fine.** One feature ≈ one
   `a1-new-feature` run ≈ one shippable user-visible capability. Confirm the
   split with the user before starting the loop.
-- All file artifacts (scope, backlog, frontmatter) stay in English.
-  User-facing communication follows the project's language convention (German
-  for Robert).
+- User-facing output language: see `_shared/language-policy.md` (artifacts English,
+  conversation in the user's language).
 - One question per turn during the Scope-Interview (use `AskUserQuestion` for
   the structured decisions). No wall-of-text.
 

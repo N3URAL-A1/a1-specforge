@@ -183,8 +183,8 @@ into code.
 - The skill NEVER writes into `projects/<slug>/fixes/` or `projects/<slug>/features/`.
 - The skill NEVER auto-activates `a1-fix` or `a1-new-feature`. It proposes;
   the user decides.
-- User-facing prompts and questions are in **English**. All file content
-  (frontmatter, findings, code refs) stays in English.
+- User-facing output language: see `_shared/language-policy.md` (artifacts English,
+  conversation in the user's language).
 - One question per turn in Phase 1 (Scope). Max 2 clarifying questions.
 - Sub-agents are referenced via `agents/<name>-link.md`, never redefined here.
 - Analyses in `cancelled` status keep their date+focus+suffix slot; it is not

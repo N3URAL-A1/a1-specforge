@@ -150,8 +150,8 @@ set-body` and transitions to `drafted`.
 - The repo CLAUDE.md is touched ONLY via `constitution link-claudemd`, which
   is idempotent (managed HTML-comment block).
 - One question per turn in Phase 1 interview. Max 3 user-facing questions.
-- User-facing prompts are in **English**. All file content (frontmatter, body,
-  references) stays in English.
+- User-facing output language: see `_shared/language-policy.md` (artifacts English,
+  conversation in the user's language).
 - Alex is referenced via `agents/alex-link.md`, never redefined here.
 - The skill NEVER auto-spawns Reinhard, Tobi, or any other agent after Phase 4.
   Post-write recommendations are surface-level suggestions only.

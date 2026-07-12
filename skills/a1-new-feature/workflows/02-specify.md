@@ -21,7 +21,8 @@ Use the **Agent** tool with `subagent_type: "a1-rene-requirement-engineer"` and 
 > `<spec-path>` under the `## Discovery —` headers. Your task: write a complete
 > spec in Spec-Kit format **directly into the same file**, below the discovery sections.
 >
-> The spec MUST have the following sections (in English — the output is a technical artifact):
+> The spec MUST have the following sections (in English — the output is a technical
+> artifact; see `_shared/language-policy.md`):
 >
 > 1. **Overview** — 2–4 sentences describing what the feature is and why.
 > 2. **User Stories** — organized by priority:

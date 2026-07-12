@@ -183,7 +183,8 @@ Agents in Phases 2–3 are read-only. No code edits until Phase 6.
 - Per wave in Phase 6: no behavior snapshot = no implementation, no parity-replay-green = no commit, no FR-AC-check = no done.
 - Sub-agents get a structured brief: Project Context, Focus, Output-Contract, Out-of-Scope.
 - Skill never writes into `fixes/` directly — call `a1-fix` as a wave if appropriate.
-- User-facing prompts and questions in German. File content (frontmatter, specs, tests, commit messages) in English.
+- User-facing output language: see `_shared/language-policy.md` (artifacts English,
+  conversation in the user's language).
 - One question per turn in Phase 1. Max 2 clarifying questions total.
 - Sub-agents referenced via `agents/<name>-link.md`. Never redefine them here.
 - `open_question:` entries in the reverse-spec are never filled by the skill — only Robert can resolve them.

@@ -213,7 +213,8 @@ Falk is spawned via the `Task` tool. Falk never edits code.
 - Never recycle date+suffix slots.
 - Postmortem is a hard gate after every terminal verdict — not optional.
 - promote-lessons writes to `_suggestions/` only. Never to `_active.md`.
-- User-facing prompts and questions in **German**. File content stays in English.
+- User-facing output language: see `_shared/language-policy.md` (artifacts English,
+  conversation in the user's language).
 - One question per turn during Phase 1. No wall-of-text.
 
 ## Hand-offs

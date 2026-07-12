@@ -122,8 +122,8 @@ None. This skill is pure lifecycle management. Other skills (notably
 - User must confirm before any destructive action (`exit --mode discard`,
   any branch deletion — local or remote, origin cleanup included —
   force-remove of a dirty worktree).
-- User-facing prompts and messages are in **German**. CLI output (JSON, log
-  lines) stays in English.
+- User-facing output language: see `_shared/language-policy.md` (artifacts English,
+  conversation in the user's language).
 - One worktree per `<repo-root, slug>` tuple. If a registry entry already
   exists for that pair, `prepare` refuses unless `--force-reset` is given.
 

@@ -26,7 +26,8 @@ allowed-tools:
 
 # a1-check — Spec ↔ Wave-Plan Consistency Gate
 
-Language: English-first; German trigger aliases supported.
+User-facing output language: see `_shared/language-policy.md` (artifacts English,
+conversation in the user's language). German trigger aliases supported.
 
 Thin Markdown wrapper around the deterministic CLI gate. All logic lives in
 `<repo>/_shared/a1-tools.cjs check`. The workflow file translates a FAIL
@@ -97,9 +98,10 @@ See `workflows/01-run-check.md`.
 - Never edit spec or wave-plan files from this skill. The gate is read-only.
 - Never invoke an LLM sub-agent for the consistency check itself — the CLI is
   authoritative.
-- User-facing output (PASS/FAIL summary, fix-path suggestion) is in **German**.
-  The CLI's `--format human` already produces German; pass it through verbatim and
-  add only the fix-path suggestion on top.
+- User-facing output language: see `_shared/language-policy.md` (artifacts English,
+  conversation in the user's language). The CLI's `--format human` output should be
+  passed through verbatim, with only the fix-path suggestion added on top in the
+  user's language.
 - Do not auto-trigger other skills after a FAIL. Always ask the user before
   invoking `a1-new-feature` to re-enter a phase.
 

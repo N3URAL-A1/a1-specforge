@@ -9,7 +9,8 @@ guess. Do NOT proceed to Phase 3 until the scope is confirmed in writing.
 
 One topic per turn. Use the `AskUserQuestion` tool for the structured decisions
 (it gives the user clean options and an "other" escape). Free-text follow-ups
-are fine for the vision sentence and non-goals. All user-facing text in German.
+are fine for the vision sentence and non-goals. User-facing output language: see
+`_shared/language-policy.md` (artifacts English, conversation in the user's language).
 
 Cover, at minimum, all six areas below.
 

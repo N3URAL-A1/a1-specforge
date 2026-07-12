@@ -172,8 +172,8 @@ spec, never touch the drift report. If they want a change, it goes into
   description, recommendation}`. Free-prose is rejected and re-asked once.
 - The skill NEVER auto-activates `a1-fix` or `a1-new-feature`. It proposes in
   `suggested_next:`; the user decides.
-- User-facing prompts and questions are in **English**. All file content
-  (frontmatter, drift entries, code refs, spec refs) stays in English.
+- User-facing output language: see `_shared/language-policy.md` (artifacts English,
+  conversation in the user's language).
 - One question per turn in Phase 1. Max 2 clarifying questions.
 - Reports in `cancelled` status keep their date+suffix slot.
 - For `vault-sync` mode, the skill is allowed to skip projects that have no
