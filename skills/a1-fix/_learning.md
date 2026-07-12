@@ -149,3 +149,12 @@ fix_wave_count: 3
 one_line_learning: HTTP self-calls in middleware = cold-start cascade; use direct DB with explicit tenant context; always run \\d tablename before any new DB query
 postmortem: wiki/postmortems/n3ural-platform/2026-05-24-dtg-tenant-404-sidebar-filter.md
 ---
+---
+date: 2026-07-12
+bug_id: cmd-injection-git-helper
+project: a1-specforge
+verdict: fixed
+root_cause_class: [schema_flaw]
+fix_wave_count: 1
+one_line_learning: JSON.stringify is not a shell-escaping function — any exec call that builds a shell command string from JSON.stringify-quoted args is command-injection-vulnerable; only execFileSync's argv-array form is safe
+postmortem: wiki/postmortems/a1-specforge/2026-07-12-cmd-injection-git-helper.md

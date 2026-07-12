@@ -52,3 +52,16 @@ simplify_lane: ran
 security_lane: ran
 what_worked: 6 parallel read-only lanes (4 a1 agents + simplify + security-review) dispatched in one turn, git tripwire clean
 one_line_learning: security lane found a real cross-family IDOR (unregisterFcmToken missing verifyFamilyScope) that the focused security reviewer missed — the always-on security lane earns its keep by catching sibling-inconsistency IDORs that per-module review overlooks.
+---
+date: 2026-07-12
+task: a1-specforge skillset quality/vision-gap audit
+project: a1-specforge
+result: pass
+focus: quality
+findings_total: 15
+findings_blocker: 0
+issue_classes: [security_vuln, quality_finding_actionable, missing_coverage, arch_drift_found, contract_violation]
+simplify_lane: skipped
+security_lane: ran
+what_worked: 4 parallel lanes (reinhard/marco/tobi/security) each in own context; orchestrator re-verified the 2 highest-risk findings (F-012 broken link, F-015 cmd-injection) by direct file inspection before reporting confirmed
+one_line_learning: sub-agents went idle without auto-delivering results — needed explicit SendMessage(to=main) nudge; a1-analyze Phase-3 dispatch should tell agents up front to deliver findings via SendMessage to main, not just return text
