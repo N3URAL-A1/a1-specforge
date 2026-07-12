@@ -1,0 +1,11 @@
+# Deliberate agent-install exclusions — one entry per line, format: <name>: <reason>
+#
+# Agents only. All 21 agents in agents/*.md are meant to install; there are
+# zero real exclusions today, so this file is intentionally empty of content
+# entries. It exists so bin/verify-install-sync.sh has a stable file to parse
+# for any *future* agent-side exclusion, without needing a second list format.
+#
+# Note: hero-animation-builder is a SKILLS-side exclusion (it has no
+# file-based mechanism — it is simply absent from the SKILLS array in
+# bin/install.sh, which is already correct and in sync). It does NOT belong
+# in this file; this file is agents-only.

@@ -63,7 +63,8 @@ done
 # _shared is a helper dir, not a skill — lives at repo root
 symlink_item "$REPO_DIR/_shared" "$SKILLS_DIR/_shared" "_shared"
 
-# Agents to symlink (all agents from this repo)
+# Agents to symlink (all agents from this repo). Deliberate exclusions (none
+# today) are documented in bin/install-exclusions.txt, not here.
 AGENTS=(
   "a1-rico-researcher"
   "a1-pablo-planner"

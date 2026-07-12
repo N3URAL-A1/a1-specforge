@@ -80,7 +80,7 @@ All 17 skills below match the `SKILLS` array in `bin/install.sh` exactly.
 
 ## Agents (21)
 
-`install.sh` also symlinks 21 shared framework agents (counted from `agents/*.md`). Each installed file is the agent name below plus `.md`.
+`install.sh` also symlinks 21 shared framework agents (counted from `agents/*.md`). Each installed file is the agent name below plus `.md`. Deliberate exclusions from install are tracked in `bin/install-exclusions.txt` (empty today — all agents install).
 
 | Agent | Role |
 |---|---|
