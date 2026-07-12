@@ -605,4 +605,58 @@ faster than estimated is not a STOP-gate condition.
 - Facade line count: 3065 → 2946 lines (−119)
 - New module: `_shared/lib/spec.cjs` (150 lines)
 
-## Waves 12-17 — not started
+## Wave 12 — `analyze` group — ✅ COMPLETE
+
+- Commit: `7476e98`
+- Task: 12.1 (extract `analyze` to `_shared/lib/analyze.cjs`) — done
+- Moved byte-identical: `cmdAnalyzeNextSlot`, `cmdAnalyzeInit`,
+  `cmdAnalyzeUpdateStatus`, `cmdAnalyzeDiscover`, `cmdAnalyzeAddFinding`,
+  `appendFinding`, `cmdAnalyzeAddFindings`, `cmdAnalyzeList`. Exports only
+  the 7 dispatcher-facing functions (`cmdAnalyzeNextSlot`, `cmdAnalyzeInit`,
+  `cmdAnalyzeUpdateStatus`, `cmdAnalyzeDiscover`, `cmdAnalyzeAddFinding`,
+  `cmdAnalyzeAddFindings`, `cmdAnalyzeList`); `appendFinding` stays
+  module-private (verified no external callers via grep before and after
+  the move).
+- `appendPhaseHistory` cross-import (per plan Step 2): confirmed live usage
+  at the `cmdAnalyzeUpdateStatus` call site (bracket-mapped via
+  `ANALYSIS_STATUS_TO_PHASE[newStatus]`, see below) and imported it from
+  `lib/spec.cjs` (`const { appendPhaseHistory } = require('./spec.cjs');`)
+  rather than duplicating the function body — `lib/spec.cjs` already
+  exports it since Wave 11. Verified at runtime with an end-to-end smoke
+  test (`analyze init` → `analyze update-status ... discovered`): the
+  written frontmatter's `phase_history` array gained the expected
+  `phase=discover completed=<iso>` entry, proving the cross-module import
+  resolves correctly, not just that it doesn't throw.
+- Const-sweep (mandatory per Executor ground rules): ran
+  `grep -n "^const [A-Z_]* = "` restricted to the wave's line range
+  (678-1145 pre-move) plus a broader `^const |^let |^var ` sweep over the
+  same window — found **`ANALYSIS_STATUS_TO_PHASE`**, a module-level
+  phase-lookup object (not a `Set`, analogous to Wave 11's
+  `SPEC_STATUS_TO_PHASE` and the immediately-following
+  `CONSTITUTION_STATUS_TO_PHASE`), sitting between `cmdAnalyzeInit` and
+  `cmdAnalyzeUpdateStatus`, not named anywhere in the plan's own Wave 12
+  MOVE list. Consumed via bracket lookup (`ANALYSIS_STATUS_TO_PHASE[newStatus]`)
+  inside `cmdAnalyzeUpdateStatus`, not `.has()`/`.match()`/`.test()` — same
+  detection-blind-spot pattern as Wave 2's `SQL_TYPE_ALIASES` and Wave 11's
+  `SPEC_STATUS_TO_PHASE`. Moved it alongside the 7 named functions; leaving
+  it in the facade would have stranded `cmdAnalyzeUpdateStatus` with a
+  `ReferenceError` on its very first status-transition call. Logged in
+  observations.jsonl (pattern: `missing_wiring`).
+- Determined deps by reading the full moved block: `usage` (from
+  `help.cjs`), `vaultRoot`, `resolveVaultPath`, `parseFlags`, `readMd`,
+  `writeMdAtomic`, `nowIso`, `fail` (all from `io.cjs`), `ANALYSIS_STATUSES`/
+  `ANALYSIS_FOCUSES`/`ANALYSIS_SEVERITIES` (from `status-constants.cjs`, per
+  Wave 1's revision).
+- Export verification: confirmed via grep that only the facade's dispatcher
+  (`group === 'analyze'` branch, 7 call sites) calls the `cmdAnalyze*`
+  functions — no other group referenced them before the move.
+- Deviation (minor, pre-existing, same as Waves 1-11): a1-reconcile fixture
+  suite writes live timestamps into checked-in fixture files during the
+  regression run; diff reverted before staging (twice, once per full
+  regression-gate run), suite itself not fixed (out of scope).
+- Full regression gate: ALL-SUITES-GREEN (all fixture suites, including
+  a1-analyze-cli: 4 passed, 0 failed)
+- Facade line count: 2946 → 2490 lines (−456)
+- New module: `_shared/lib/analyze.cjs` (496 lines)
+
+## Waves 13-17 — not started
