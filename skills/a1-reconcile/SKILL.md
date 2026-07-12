@@ -22,7 +22,7 @@ description: >
   Orchestrates sub-agents (a1-marco-mapper for structural probing, Alex for
   architecture-level DIVERGED); read-only — never modifies project code or
   specs. Do NOT activate for: generic codebase audits without spec anchor
-  (use a1-analyze), structural spec↔plan consistency (use a1-check), bug
+  (use a1-analyze), structural spec↔plan consistency (use a1-checklist --only 9,10), bug
   reports (use a1-fix), new feature work (use a1-new-feature), or PR review
   (use Reinhard directly).
 allowed-tools:
@@ -54,7 +54,7 @@ still requires?").
 
 If the user wants a generic project audit without spec anchor, use `a1-analyze`.
 If they want the structural spec↔plan check (FR coverage, frontmatter link),
-use `a1-check`. If they want to fix the drift, hand off to `a1-fix` or
+use `a1-checklist` (checks #9/#10). If they want to fix the drift, hand off to `a1-fix` or
 `a1-new-feature` after the report.
 
 ## Phases

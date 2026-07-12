@@ -327,8 +327,10 @@ const { cmdRealpathCheckRun } = require(path.join(__dirname, 'lib', 'realpath-ch
 // ---------- check-reservations group (lib/check-reservations.cjs) ----------
 const { cmdCheckReservations } = require(path.join(__dirname, 'lib', 'check-reservations.cjs'));
 
-// ---------- check group (lib/check.cjs) ----------
-const { cmdCheckRun } = require(path.join(__dirname, 'lib', 'check.cjs'));
+// ---------- check group ----------
+// `check run` retired in M13 — the spec↔plan consistency gate lives in
+// `checklist run --only 9,10` (lib/checklist.cjs reuses lib/check.cjs
+// primitives). Only `check reservations` remains in this group.
 
 // ---------- code-scope group (lib/code-scope.cjs) ----------
 const {
@@ -385,11 +387,9 @@ function main() {
         cmdCheckReservations(rest);
         return; // unreachable — cmdCheckReservations calls process.exit()
       }
-      // The default check command is special: it owns its own exit code (0/1/2)
-      // and prints its own report (json or human). It does NOT fall through to
-      // the generic JSON.stringify(result) path below.
-      cmdCheckRun([sub, ...rest].filter((x) => x !== undefined));
-      return; // unreachable — cmdCheckRun calls process.exit()
+      usage(
+        `unknown check subcommand: ${sub} (the spec↔plan gate moved to "checklist run <slug>/<feature> --only 9,10" in M13)`
+      );
     } else if (group === 'code-scope') {
       // code-scope claim/check own their exit code (0/1) and JSON output.
       if (sub === 'claim') {

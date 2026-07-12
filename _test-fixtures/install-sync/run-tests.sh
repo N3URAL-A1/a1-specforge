@@ -136,7 +136,9 @@ node -e '
   const fs = require("fs");
   const path = process.argv[1];
   let content = fs.readFileSync(path, "utf8");
-  content = content.replace(/17 skills \+ 21 agent/, "17 skills + 18 agent");
+  // Count-agnostic (M13): corrupt whatever counts the live scope-note claims,
+  // so this case keeps working when the real skill/agent counts change.
+  content = content.replace(/\d+ skills \+ \d+ agent/, "999 skills + 998 agent");
   fs.writeFileSync(path, content);
 ' "$STALE_COMMENT/README.md"
 OUT="$(run_checker "$STALE_COMMENT")"

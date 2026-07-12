@@ -61,17 +61,17 @@ written by this skill after synthesis — it is never read as an input source.
 "All skills" in the Philosophy line above means "all skills that write a Retro" —
 not literally every skill in the repo. Verified live against every
 `skills/*/SKILL.md` + `workflows/*.md` file (grep for a Retro heading), the
-learning-enabled set is 16: `a1-execute`, `a1-analyze`, `a1-checklist`,
+learning-enabled set is 15: `a1-execute`, `a1-analyze`, `a1-checklist`,
 `a1-new-feature`, `a1-new-project` (originally documented group), `a1-fix`
 (postmortem-based — a distinct mechanism, see source #4 above, not a
 `_learning.md` Retro block), plus `a1-plan`, `a1-roadmap`, `a1-reconcile`,
 `a1-modernize`, `a1-constitution` (added M11-audit-fixes Wave 6, Task 6.1),
-plus `a1-check`, `a1-phantom`, `a1-pr-review`, `a1-worktree` — all four
-already carry a wired, mandatory Retro block on live inspection despite being
-deterministic gates or read-only reporters; earlier planning drafts assumed
-these four were retro-free by design, but the actual repo state (checked
-2026-07-12) shows they already retro. `a1-evolve` itself also retros (source
-of the 16th name above). Only `a1-progress`
+plus `a1-phantom`, `a1-pr-review`, `a1-worktree` — all three carry a wired,
+mandatory Retro block despite being deterministic gates or read-only
+reporters. (`a1-check` was in this set until M13 retired it into
+a1-checklist's checks #9/#10; its retro history migrated into
+`a1-checklist/_learning.md`.) `a1-evolve` itself also retros (source of the
+15th name above). Only `a1-progress`
 (read-only status scan, confirmed no `_learning.md` and no retro mechanism
 anywhere in its files) is genuinely excluded today. `hero-animation-builder`
 follows no a1 convention (no `workflows/` dir) and was never a candidate (see

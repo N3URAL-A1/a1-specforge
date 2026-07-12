@@ -39,7 +39,6 @@ SKILLS=(
   "a1-new-feature"
   "a1-fix"
   "a1-analyze"
-  "a1-check"
   "a1-checklist"
   "a1-constitution"
   "a1-worktree"

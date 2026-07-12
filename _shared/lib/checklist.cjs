@@ -470,6 +470,13 @@ function evaluateChecklistRules(slug, paths, spec, plan, planExists) {
       result: 'FAIL',
       detail: 'Skipped: no wave-plan to inspect.',
     });
+    checks.push({
+      id: 10,
+      name: 'plan_spec_path_link',
+      severity: 'BLOCKER',
+      result: 'FAIL',
+      detail: 'Skipped: no wave-plan to inspect.',
+    });
     return { checks, errors };
   }
 
@@ -507,6 +514,29 @@ function evaluateChecklistRules(slug, paths, spec, plan, planExists) {
       detail: ok
         ? `Every spec FR maps to exactly one wave (${specFRs.size} FRs).`
         : `FR coverage broken: ${parts.join('; ')}.`,
+    });
+  }
+
+  // --- Check 10: plan frontmatter spec_path links back to the spec (BLOCKER) ---
+  // Third invariant of the former a1-check gate (M13 completed the merge —
+  // M12's check #9 carried only FR coverage + phantoms). Semantics replicated
+  // from the retired cmdCheckRun: accept the vault-relative form, the
+  // absolute form, or any path ending in "spec/<feature>.md".
+  {
+    const planSpecPath = plan.fm.spec_path || null;
+    const expectedSuffix = `spec/${path.basename(paths.specRel)}`;
+    const linkOk =
+      planSpecPath === paths.specRel ||
+      planSpecPath === paths.specAbs ||
+      (typeof planSpecPath === 'string' && planSpecPath.endsWith(expectedSuffix));
+    checks.push({
+      id: 10,
+      name: 'plan_spec_path_link',
+      severity: 'BLOCKER',
+      result: linkOk ? 'PASS' : 'FAIL',
+      detail: linkOk
+        ? `Plan frontmatter spec_path resolves to ${paths.specRel}.`
+        : `Plan frontmatter spec_path is ${planSpecPath === null ? '(missing)' : `"${planSpecPath}"`}, expected ${paths.specRel}.`,
     });
   }
 
@@ -610,7 +640,7 @@ function formatChecklistHumanReport(report) {
 }
 
 function cmdChecklistRun(args) {
-  // Parse: <target> [--format json|human] [--save] [--vault <path>]
+  // Parse: <target> [--format json|human] [--save] [--vault <path>] [--only <ids>]
   const target = args[0];
   if (!target || target.startsWith('--')) {
     usage('checklist run requires <project-slug> or <project-slug>/<feature-id>');
@@ -619,10 +649,26 @@ function cmdChecklistRun(args) {
     format: 'value',
     save: 'bool',
     vault: 'value',
+    only: 'value',
   });
   const format = flags.format || 'json';
   if (format !== 'json' && format !== 'human') {
     usage(`checklist run --format must be "json" or "human" (got: ${format})`);
+  }
+  // --only 9,10 runs a subset of checks — used by a1-new-feature's Gate 4.5,
+  // which gates ONLY spec↔plan consistency (the spec is in status `planned`
+  // there, so full-run check #1 `spec_status_clarified` would always fail).
+  // Exit contract is unchanged: 0 pass, 1 BLOCKER fail, 2 setup error.
+  let onlyIds = null;
+  if (flags.only) {
+    onlyIds = new Set(
+      String(flags.only)
+        .split(',')
+        .map((s) => parseInt(s.trim(), 10))
+    );
+    if (onlyIds.size === 0 || [...onlyIds].some((n) => Number.isNaN(n))) {
+      usage(`checklist run --only expects comma-separated check ids (got: ${flags.only})`);
+    }
   }
   if (flags.vault) process.env.A1_VAULT_ROOT = flags.vault;
 
@@ -668,18 +714,27 @@ function cmdChecklistRun(args) {
     return;
   }
 
-  const classified = classifyChecklistResult(checks);
+  let effectiveChecks = checks;
+  if (onlyIds) {
+    effectiveChecks = checks.filter((c) => onlyIds.has(c.id));
+    if (effectiveChecks.length === 0) {
+      usage(`checklist run --only matched no checks (got: ${flags.only})`);
+    }
+  }
+
+  const classified = classifyChecklistResult(effectiveChecks);
   const report = {
     status: classified.status,
     exit_code: classified.exit_code,
     project: slug,
     feature,
+    only: onlyIds ? [...onlyIds].sort((a, b) => a - b) : null,
     paths: {
       spec: paths.specRel,
       plan: paths.planRel,
       claudemd: paths.claudemdRel,
     },
-    checks,
+    checks: effectiveChecks,
     summary: classified.summary,
     errors: [],
   };

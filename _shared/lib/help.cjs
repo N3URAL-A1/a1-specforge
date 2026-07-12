@@ -34,9 +34,6 @@ Usage:
   a1-tools analyze add-findings <analysis-path> --json <file|->   (batch: JSON array of finding objects)
   a1-tools analyze list <project-slug> [--status=<s>] [--focus=<s>]
 
-  a1-tools check <project-slug> --feature <###-feature-slug> [--format json|human] [--vault <path>]
-                  Consistency gate between spec and wave-plan.
-                  Exit: 0 PASS, 1 FAIL (content), 2 ERROR (setup).
   a1-tools check reservations --claim <type>:<value> --by <spec-id> [--file <path>]
   a1-tools check reservations --list [--file <path>]
                   Cross-run claim registry (.a1/reservations.json) for migration
@@ -76,7 +73,10 @@ Usage:
                   auto-release). Stale entries also get a hint field:
                   "release via a1-tools code-scope release --by <id>".
 
-  a1-tools checklist run <project-slug>[/<feature-id>] [--format json|human] [--save] [--vault <path>]
+  a1-tools checklist run <project-slug>[/<feature-id>] [--format json|human] [--save] [--vault <path>] [--only <ids>]
+                  --only 9,10 = spec<->plan consistency gate subset (former
+                  "check run"): FR coverage + frontmatter link. Exit: 0 PASS,
+                  1 FAIL (BLOCKER), 2 ERROR (setup).
                   Pre-flight checklist: 8 structural checks before implementation.
                   Severities: BLOCKER (exit 1), MAJOR/MINOR (exit 0, warnings).
                   Exit: 0 PASS or PASS_WITH_WARNINGS, 1 FAIL (blocker), 2 ERROR (setup).

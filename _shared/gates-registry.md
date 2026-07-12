@@ -29,7 +29,7 @@ Constitution rules this table enforces:
 | `gate-1-build` | Execute (per wave) | deterministic | med | a1-execute | blocking | Build / type-check must be green. |
 | `gate-2-deploy` | Execute (per wave) | deterministic | med | a1-execute | blocking | Deploy/preview succeeds. |
 | `gate-3-smoke` | Execute (per wave) | prompt | med | a1-execute | blocking | Per-wave FR-ACs verified live against real URL. Overlaps Phase-6 (P3 de-dup: Phase 6 ✓-references Gate-3 passes). |
-| `gate-4.5-fr-consistency` | Execute / standalone | deterministic | cheap | a1-check | blocking | FR-consistency CLI. Same engine as a1-check standalone entrypoint (no double cost). |
+| `gate-4.5-fr-consistency` | Execute / standalone | deterministic | cheap | a1-checklist (checks #9/#10) | blocking | FR-consistency gate: `checklist run <slug>/<feature> --only 9,10` (former a1-check, retired M13 — same engine, exit 0/1/2 unchanged). |
 | `phase-6-verify` | Verify | prompt | high | a1-execute (a1-victor-verifier) | blocking | Goal-backward verification vs **spec** ACs. Re-runs only failed/re-touched ACs + cross-wave + edge/SC (P3). |
 | `phantom` | Verify (Victor Step 6.5) | deterministic | cheap | a1-phantom | warning | CLI always exits 0 (standalone). Enforcement point (P4): PHANTOM verdicts on non-`# no-code` tasks become BLOCKER findings inside Victor's VERIFICATION.md. |
 | `fix-integrity` | a1-fix | deterministic | cheap | a1-fix | blocking | Integrity-check / postmortem retro-integrity. Cheap, deterministic, keep as-is. |

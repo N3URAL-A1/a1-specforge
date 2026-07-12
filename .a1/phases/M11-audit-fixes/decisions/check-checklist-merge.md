@@ -2,9 +2,9 @@
 topic: a1-check ⊂ a1-checklist merge
 task: 7.1
 status: decided
-decision: (a) merge with deprecated-alias transition — executed M12 Wave 3
-decided: 2026-07-12 (Robert delegated via "setze die angesprochenen Punkte um")
-executed: check #9 fr_coverage_bijective in checklist.cjs (reuses check.cjs primitives); a1-check SKILL.md = alias notice; 04.5 call site untouched per migration step 5
+decision: (a) merge — executed M12 Wave 3; deprecation window collapsed in M13 (pre-launch, zero external consumers)
+decided: 2026-07-12 (Robert delegated via "setze die angesprochenen Punkte um"; window collapse via "Ich setze noch alles um")
+executed: M12 — check #9 fr_coverage_bijective in checklist.cjs, a1-check SKILL.md = alias notice, 04.5 untouched. M13 — check #10 plan_spec_path_link completed the third invariant, `checklist run --only 9,10` carries the exact 0/1/2 contract, 04.5 switched to it, a1-check skill + `check run` CLI removed (primitives live in check.cjs), fixture scenarios ported as gate-* cases, retro history migrated to a1-checklist/_learning.md
 created: 2026-07-12
 ---
 

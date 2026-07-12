@@ -28,7 +28,7 @@ description: >
   a1-evolve). Never modifies project code; findings only.
   Do NOT activate for: bug reports (→ a1-fix), new feature work (→ a1-new-feature),
   PR code review (→ a1-reinhard-reviewer directly), or spec-vs-plan drift
-  (→ a1-check for FR-coverage, a1-reconcile for spec-vs-implementation).
+  (→ a1-checklist checks #9/#10 for FR-coverage, a1-reconcile for spec-vs-implementation).
 allowed-tools:
   - Read
   - Write

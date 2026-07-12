@@ -12,7 +12,7 @@ Claude Code is powerful, but without structure every session restarts from scrat
 <!--
   README scope note (keeps the bijective install/README check honest):
   bin/install.sh is the single source of truth for the installed set. Its
-  grepped set = 17 skills + 21 agent names + the project slug. This README names
+  grepped set = 16 skills + 21 agent names + the project slug. This README names
   exactly that set (skills AND agents both with the shared prefix) and no other
   matching token. The shared CLI is referenced only as the _shared/
   path, never by its filename, to avoid introducing a non-installed token. The
@@ -42,7 +42,7 @@ claude plugin install a1-specforge@a1-specforge
 claude plugin list        # confirm a1-specforge@a1-specforge is installed
 ```
 
-All 17 skills and 21 agents load from the plugin. To remove: `claude plugin uninstall a1-specforge` then `claude plugin marketplace remove a1-specforge`. Contributors who want to edit skills in place should use `./bin/install.sh` above instead.
+All 16 skills and 21 agents load from the plugin. To remove: `claude plugin uninstall a1-specforge` then `claude plugin marketplace remove a1-specforge`. Contributors who want to edit skills in place should use `./bin/install.sh` above instead.
 
 Then just describe what you want in Claude Code; the matching skill activates:
 
@@ -54,9 +54,9 @@ Then just describe what you want in Claude Code; the matching skill activates:
 
 **Requirements:** Claude Code CLI, Node.js ≥ 18, git.
 
-## Skills (17)
+## Skills (16)
 
-All 17 skills below match the `SKILLS` array in `bin/install.sh` exactly.
+All 16 skills below match the `SKILLS` array in `bin/install.sh` exactly.
 
 | Skill | Phase | Purpose |
 |---|---|---|
@@ -69,8 +69,7 @@ All 17 skills below match the `SKILLS` array in `bin/install.sh` exactly.
 | `a1-analyze` | Insight | Read-only codebase analysis in five phases (parallel sub-agents): general, security, architecture, quality, onboarding. |
 | `a1-modernize` | Insight | Understand, fix, or modernize an undocumented codebase. Two modes: `spec-only` (derive spec, read-only) and `full` (spec + gaps + wave-based fix plan). |
 | `a1-progress` | Insight | Read-only project snapshot — scans `.a1/` state plus git/test/build state and recommends the next skill to run. |
-| `a1-check` | Gate | **Deprecated alias** (merged into `a1-checklist` as check #9). The CLI (`check run`, exit 0/1/2) keeps working and still serves the Phase-4.5 gate during the deprecation window. |
-| `a1-checklist` | Gate | Pre-flight readiness gate — 9 deterministic checks on a wave-plan (BLOCKER / MAJOR / MINOR) before execution starts, incl. bijective spec↔plan FR coverage (check #9). |
+| `a1-checklist` | Gate | Pre-flight readiness gate — 10 deterministic checks on a wave-plan (BLOCKER / MAJOR / MINOR), incl. the spec↔plan consistency gate (checks #9/#10: bijective FR coverage + frontmatter link) that `a1-new-feature`'s Phase 4.5 runs via `--only 9,10`. |
 | `a1-constitution` | Setup | Generate/update a project's `constitution.md` — behavioral rules separated from CLAUDE.md's project facts, with 4-layer override precedence. |
 | `a1-phantom` | Verify | Phantom-task detection — flags `[X]` tasks in `PLAN.md` with no matching git change. Warning-level, never blocks (always exits 0). |
 | `a1-reconcile` | Verify | Spec-vs-implementation drift detection — classifies findings as MISSING / EXTRA / DIVERGED / STALE. |
@@ -137,7 +136,7 @@ English-first; German trigger phrases remain supported as aliases. Some workflow
 
 ## Testing
 
-19 fixture test suites live under `_test-fixtures/*/run*.sh` (including the vault-fallback and phantom runners) plus a nested schema-check parser runner. Run them all:
+22 fixture test suites live under `_test-fixtures/*/run*.sh` (including the vault-fallback and phantom runners) plus a nested schema-check parser runner. Run them all:
 
 ```bash
 for r in _test-fixtures/*/run*.sh; do bash "$r" || break; done
@@ -163,7 +162,7 @@ CI runs the same suites, a `node --check` on the CLI, and an `install.sh` smoke 
 
 ```
 a1-specforge/
-├── <skill>/            # 17 skill directories (see table above)
+├── <skill>/            # 16 skill directories (see table above)
 ├── agents/             # 21 shared framework agents (one .md each)
 ├── _shared/            # deterministic CLI helpers (frontmatter, reservations, checks)
 ├── _extras/            # non-pipeline skills (hero-animation-builder) — not installed by install.sh

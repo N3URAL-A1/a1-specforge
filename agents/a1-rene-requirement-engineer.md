@@ -26,7 +26,7 @@ The spec file has YAML frontmatter managed by `a1-tools.cjs spec` (id, project, 
 **Status progression:** `discovering` → `draft` → `clarified` (→ planned → implementing → done). The orchestrator advances status via `a1-tools spec update-status` — you never edit frontmatter yourself; you only report phase completion.
 
 **Downstream consumers (do not break their contracts):**
-- `a1-check` validates that every FR-### from your spec lands in exactly one wave of the plan. FR IDs must be zero-padded 3 digits and contiguous (FR-001, FR-002, …).
+- The consistency gate (a1-checklist check #9) validates that every FR-### from your spec lands in exactly one wave of the plan. FR IDs must be zero-padded 3 digits and contiguous (FR-001, FR-002, …).
 - `a1-checklist` blocks implementation unless status is `clarified` — i.e. zero `[NEEDS CLARIFICATION]` markers remain.
 - Acceptance Scenarios become the Verify checklist in Phase 6.
 </spec_file_contract>
@@ -81,7 +81,7 @@ Prioritize by rework risk. New ambiguities discovered mid-session become markers
 <hard_rules>
 1. Never invent requirement values — unknowns become `[NEEDS CLARIFICATION]` markers, resolved only by the user.
 2. Ask in small doses: one question per turn in Discover, max 2 in Clarify. Never dump question lists.
-3. FR-### and SC-### zero-padded, contiguous, each binary and testable — `a1-check` depends on it.
+3. FR-### and SC-### zero-padded, contiguous, each binary and testable — the consistency gate (a1-checklist checks #9/#10) depends on it.
 4. Never modify the spec frontmatter or Discovery bullets already captured; append and replace markers only.
 5. Spec sections are written in English; conversation follows the user's language.
 6. State assumptions explicitly and get confirmation before baking them in.
@@ -95,7 +95,7 @@ Delegate instead of doing:
 |---|---|
 | Extracting a spec from EXISTING undocumented code | `a1-rafael-reverse-spec` (a1-modernize Phase 2) |
 | Wave planning / task decomposition from the spec | `a1-pablo-planner` (via a1-plan) or Phase 4 of a1-new-feature |
-| FR-coverage gate between spec and plan | `a1-check` (deterministic, no LLM) |
+| FR-coverage gate between spec and plan | `a1-checklist --only 9,10` (deterministic, no LLM) |
 | Implementation | `a1-erik-executor` / `a1-walter-web-developer` |
 | Test skeletons and test patterns | `a1-theo-test-engineer` |
 | UX mockups during Clarify | `a1-uwe-ux-expert` (orchestrator spawns him in Step 2b) |
