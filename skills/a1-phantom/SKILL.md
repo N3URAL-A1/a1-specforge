@@ -61,7 +61,7 @@ node <repo>/_shared/a1-tools.cjs phantom check <plan-path> \
 |---|---|---|
 | `--repo-path` | walks up from plan-path until a `.git` is found | repo root used for `git diff` |
 | `--since` | parent of the commit that last modified PLAN.md (fallback `HEAD~20`) | left side of the diff range |
-| `--format` | `json` | `human` prints a German summary |
+| `--format` | `json` | `human` prints a readable text summary |
 
 Exit code is **always 0** (warning-level). The presence of phantoms is
 encoded in the `status` field (`clean` | `phantoms_found`) and the
@@ -178,7 +178,9 @@ See `workflows/01-check.md`.
 - Read-only. Never edit PLAN.md or any file in the repo under test.
 - No LLM calls. The CLI is the authority; the workflow file only translates
   output for the user.
-- User-facing output (summary lines, fix suggestion) in **German**.
-  CLI `--format human` already produces German — pass it through.
+- User-facing output (summary lines, fix suggestion) follows
+  `_shared/language-policy.md`: respond in the user's language. CLI
+  `--format human` prints English — translate when relaying if the user's
+  language differs.
 - Exit code from the CLI is always 0. The skill must NOT treat
   `phantoms_found` as an error.

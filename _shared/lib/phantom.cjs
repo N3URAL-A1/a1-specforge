@@ -240,22 +240,22 @@ function cmdPhantomCheck(rest) {
 
   if (format === 'human') {
     const lines = [];
-    lines.push(`Phantom-Check: ${planPath}`);
+    lines.push(`Phantom check: ${planPath}`);
     lines.push(`Repo: ${repoPath}  Since: ${since}`);
-    lines.push(`Erledigte Tasks: ${completed.length}`);
+    lines.push(`Completed tasks:   ${completed.length}`);
     lines.push(`Docs-only (skip):  ${docsOnlySkipped.length}`);
     lines.push(`Phantoms:          ${phantoms.length}`);
     if (phantoms.length === 0) {
       lines.push('');
-      lines.push('Status: clean — alle erledigten Tasks haben Code-Spuren.');
+      lines.push('Status: clean — every completed task left code traces.');
     } else {
       lines.push('');
       lines.push('Status: phantoms_found');
       for (const p of phantoms) {
-        lines.push(`  - Zeile ${p.line}: ${p.task}`);
-        lines.push(`      Grund: ${p.reason}`);
+        lines.push(`  - line ${p.line}: ${p.task}`);
+        lines.push(`      reason: ${p.reason}`);
         if (p.keywords.length)
-          lines.push(`      Gesucht: ${p.keywords.join(', ')}`);
+          lines.push(`      searched: ${p.keywords.join(', ')}`);
       }
     }
     process.stdout.write(lines.join('\n') + '\n');

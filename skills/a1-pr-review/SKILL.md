@@ -110,8 +110,9 @@ JSON which the workflow then writes to `findings.json` via the CLI.
 - Never invoke `git push` or `gh pr create` without explicit user
   confirmation in Phase 4.
 - Never write `~/.a1-worktrees-registry.json` directly. CLI only.
-- User-facing prompts are in **German**. CLI output (JSON, log lines)
-  and file contents (PR body, findings) stay in **English**.
+- User-facing prompts follow `_shared/language-policy.md` (user's language,
+  never hardcoded). CLI output (JSON, log lines) and file contents (PR body,
+  findings) stay in **English**.
 
 ## Hand-offs
 

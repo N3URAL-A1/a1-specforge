@@ -1,12 +1,12 @@
 ---
 phase: 01-check
-purpose: Run phantom detection on a PLAN.md and translate the JSON report into a German summary for the user.
+purpose: Run phantom detection on a PLAN.md and relay the report to the user (in the user's language — see _shared/language-policy.md).
 inputs:
   - plan_path: absolute path to an a1-style PLAN.md
   - repo_path (optional): absolute path to the git repo containing the implementation. Default: nearest .git ancestor of plan_path.
   - since (optional): git ref for the left side of the diff. Default: parent of the commit that last modified plan_path.
 outputs:
-  - German summary printed to the user
+  - Summary printed to the user (user's language)
   - On phantoms_found: a per-task list with line number, task text, and recommended action
 ---
 
