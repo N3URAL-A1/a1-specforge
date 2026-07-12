@@ -23,7 +23,7 @@ Quick read-back to confirm the edit landed cleanly.
 
 ## After all proposals processed
 
-### Update Obsidian Vault — patterns.md (primary)
+### Update the learning store — patterns.md (repo-local `.a1/learnings/` by default; `A1_VAULT_ROOT` for an optional external sink, e.g. Obsidian)
 ```bash
 VAULT="${A1_VAULT_ROOT:-$(git rev-parse --show-toplevel)/.a1/learnings}"
 PATTERNS="$VAULT/pattern/a1-learnings/patterns.md"
@@ -46,7 +46,7 @@ Also update `index.md` — set "Last synthesis" date in the intro block.
 ### Update local cache
 ```bash
 cat > ~/.claude/skills/_shared/learnings-index.md << EOF
-# Learning Index (cache — canonical is Obsidian Vault pattern/a1-learnings/patterns.md)
+# Learning Index (cache — canonical is the learning store's pattern/a1-learnings/patterns.md, repo-local by default with A1_VAULT_ROOT for an optional external sink, e.g. Obsidian)
 
 Last synthesis: $(date +%Y-%m-%d)
 Applied: <count> | Skipped: <count> | Monitoring: <count>

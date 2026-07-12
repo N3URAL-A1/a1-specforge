@@ -36,13 +36,14 @@ result into a concrete fix-path suggestion for the user.
 ## When to use
 
 Activate when the user wants a structural check between an existing spec and its
-wave-plan. Both files must already exist on disk under the Obsidian Vault paths.
+wave-plan. Both files must already exist on disk under the repo-local storage paths
+(external vault via `A1_VAULT_ROOT`, e.g. Obsidian).
 
 - Manual invocation: user names the project slug and the feature id.
 - Programmatic invocation by `a1-new-feature` Phase 4.5: that workflow shells out to
   the CLI directly with `--format json`; this skill is **not** routed through.
 
-## Storage (vault layout)
+## Storage (repo-local layout; external vault via `A1_VAULT_ROOT`)
 
 | Artifact | Path |
 |---|---|

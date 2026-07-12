@@ -4,7 +4,7 @@ Gather all learning data from all sources.
 
 ## Steps
 
-### 1a. Read from Obsidian Vault (primary — the brain)
+### 1a. Read the learning store (repo-local `.a1/learnings/` by default; `A1_VAULT_ROOT` for an optional external sink, e.g. Obsidian)
 ```bash
 VAULT="${A1_VAULT_ROOT:-$(git rev-parse --show-toplevel)/.a1/learnings}"
 ls "$VAULT/pattern/a1-learnings/"

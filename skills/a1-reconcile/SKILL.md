@@ -6,8 +6,9 @@ description: >
   MISSING (spec asks, code lacks), EXTRA (code has, spec silent), DIVERGED
   (signatures/paths differ), or STALE (spec updated after last code touch).
   Four phases: Scope → Parse → Probe → Report. State persisted in the drift
-  report's YAML frontmatter (scoped → parsed → probed → reported). Reports
-  stored in Obsidian Vault at projects/<slug>/drift-<YYYY-MM-DD>[-N].md. Three
+  report's YAML frontmatter (scoped → parsed → probed → reported). Reports stored
+  repo-local (external vault via `A1_VAULT_ROOT`, e.g. Obsidian) at
+  projects/<slug>/drift-<YYYY-MM-DD>[-N].md. Three
   modes: single (one spec), project (all specs), vault-sync (weekly cron).
   MUST trigger when the user says: "drift check", "spec vs implementation",
   "spec vs code", "reconcile <project>" (alias: "reconcile <projekt>"),
@@ -125,7 +126,7 @@ node <repo>/_shared/a1-tools.cjs reconcile add-drift \
 
 ## Storage
 
-All artifacts live in the Obsidian Vault:
+All artifacts default repo-local; external vault via `A1_VAULT_ROOT` (e.g. Obsidian):
 
 - Drift reports: `projects/<slug>/drift-<YYYY-MM-DD>[-N].md`
 

@@ -8,7 +8,8 @@ description: >
   "start implementing" (alias: "implementieren starten"), "start execution", "run the plan",
   "execute wave 1", "let's build this phase", "continue with the phase" (alias:
   "weiter mit der phase"), or any request to implement work from an already-created PLAN.md.
-  Captures observations.jsonl during execution and writes a Retro to the Obsidian Vault
+  Captures observations.jsonl during execution and writes a Retro to the learning
+  store (repo-local default; external vault via `A1_VAULT_ROOT`, e.g. Obsidian)
   after every run. Do NOT activate for: creating a plan (use a1-plan), feature ideation
   from scratch (use a1-new-feature), bug fixes (use a1-fix).
 allowed-tools:

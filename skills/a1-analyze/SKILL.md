@@ -5,7 +5,8 @@ description: >
   document an existing codebase WITHOUT changing its code. Five-phase pipeline:
   Scope → Discover → Analyze → Synthesize → Report. State in the analysis file
   frontmatter (scoped → discovered → analyzed → synthesized → reported). Output
-  is stored in the Obsidian Vault: projects/<slug>/analyses/<YYYY-MM-DD>-<focus>[-N].md.
+  is stored repo-local (external vault via `A1_VAULT_ROOT`, e.g. Obsidian):
+  projects/<slug>/analyses/<YYYY-MM-DD>-<focus>[-N].md.
   Five focus modes: general, security, architecture, quality, onboarding. MUST
   trigger on: "analyze <project>" (alias: "analysiere <projekt>"),
   "project audit" (alias: "projekt-audit"), "codebase overview" (alias:
@@ -22,7 +23,8 @@ description: >
   in parallel during Phase 3, plus two always-on read-only lanes on every run:
   the code-simplifier agent (report-only) and the security-review lane owned by
   the a1-samuel-security agent. Writes a
-  mandatory self-learning Retro to the Obsidian Vault after every run (feeds
+  mandatory self-learning Retro to the learning store (repo-local default;
+  external vault via `A1_VAULT_ROOT`, e.g. Obsidian) after every run (feeds
   a1-evolve). Never modifies project code; findings only.
   Do NOT activate for: bug reports (→ a1-fix), new feature work (→ a1-new-feature),
   PR code review (→ a1-reinhard-reviewer directly), or spec-vs-plan drift
@@ -117,7 +119,7 @@ node <repo>/_shared/a1-tools.cjs analyze add-finding \
 
 ## Storage
 
-All artifacts live in the Obsidian Vault:
+All artifacts default repo-local; external vault via `A1_VAULT_ROOT` (e.g. Obsidian):
 
 - Analyses: `projects/<slug>/analyses/<YYYY-MM-DD>-<focus>[-N].md`
 

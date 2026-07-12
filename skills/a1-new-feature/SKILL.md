@@ -4,8 +4,9 @@ description: >
   End-to-end pipeline for taking a new feature idea from raw concept to verified implementation.
   Seven phases: Discover → Specify → Clarify → Plan → Consistency Gate → Implement → Verify. State lives in the spec
   file's YAML frontmatter and progresses through: discovering → draft → clarified → planned →
-  implementing → done (or cancelled). Specs are stored in the Obsidian Vault under
-  projects/<slug>/spec/<###>-<feature-slug>.md, wave plans under projects/<slug>/plans/.
+  implementing → done (or cancelled). Specs are stored repo-local (external vault via
+  `A1_VAULT_ROOT`, e.g. Obsidian) under projects/<slug>/spec/<###>-<feature-slug>.md,
+  wave plans under projects/<slug>/plans/.
   MUST trigger when the user says: "new feature for <project>" (alias: "neues Feature für
   <projekt>"), "spec for <project>" (alias: "spec für <projekt>"), "feature pipeline",
   "a1-new-feature", "create a new feature" (alias: "neues Feature anlegen"), "feature from
@@ -271,7 +272,7 @@ appends a `phase_history` entry with the completion timestamp.
 
 ## Storage
 
-All artifacts live in the Obsidian Vault:
+All artifacts default repo-local; external vault via `A1_VAULT_ROOT` (e.g. Obsidian):
 
 - Specs: `projects/<slug>/spec/<###>-<feature-slug>.md`
 - Wave plans: `projects/<slug>/plans/<###>-<feature-slug>-wave-plan.md`

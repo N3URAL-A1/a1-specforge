@@ -10,7 +10,7 @@ suggestion when needed.
 
 You need two values:
 
-- `<project-slug>` — the Obsidian Vault project folder name
+- `<project-slug>` — the project folder name (repo-local storage; external vault via `A1_VAULT_ROOT`, e.g. Obsidian)
 - `<feature>` — the feature id in the form `<###>-<feature-slug>` (e.g. `001-login`)
 
 If the user did not provide both, ask **one** question for the missing one.

@@ -1,6 +1,6 @@
 # a1-fix — Learning Log
 
-Fast-access cache. Canonical source: `wiki/postmortems/` in Obsidian Vault.
+Fast-access cache. Canonical source: `wiki/postmortems/`, repo-local by default (external vault via `A1_VAULT_ROOT`, e.g. Obsidian).
 Entries appended automatically by Phase 4 (Verify) after every terminal verdict.
 
 Tags: missing_wiring | schema_flaw | regression | race_condition | env_config | third_party_change | ui_state_bug | auth_tenant | spec_omission | off_by_one

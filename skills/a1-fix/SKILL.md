@@ -4,14 +4,16 @@ description: >
   End-to-end bug pipeline with project-scoped learning loop: Pre-Flight → Report →
   Diagnose → Fix → Verify → Postmortem. State persists in bug-report YAML frontmatter
   (reported → diagnosed → fixing → fixed). Bug reports live under
-  `projects/<slug>/fixes/<YYYY-MM-DD>-<bug-slug>.md` in the Obsidian Vault.
+  `projects/<slug>/fixes/<YYYY-MM-DD>-<bug-slug>.md`, repo-local by default
+  (external vault via `A1_VAULT_ROOT`, e.g. Obsidian).
   MUST trigger when the user says: "bug in <X>" (alias: "fehler in <X>"),
   "<X> crashes" (alias: "<X> crasht"), "<feature> doesn't work" (alias:
   "<feature> funktioniert nicht"), "X is broken", "broken since deploy", "regression",
   "crash", "a1-fix", "fix this", "create a bug report" (alias: "bug-report anlegen"),
   "this used to work", "it stopped working", or any request to investigate/diagnose/fix
   a malfunction in shipped functionality. Orchestrates a1-falk-fault-finder (triage + diagnosis) and a
-  project code agent (the fix). Writes a structured Postmortem to the Obsidian Vault
+  project code agent (the fix). Writes a structured Postmortem to the learning
+  store (repo-local default; external vault via `A1_VAULT_ROOT`, e.g. Obsidian)
   after every terminal verdict. Do NOT activate for: new feature work (use
   a1-new-feature), PR code review without a reported defect (use Reinhard), or
   refactor without a defect.
