@@ -376,4 +376,61 @@ faster than estimated is not a STOP-gate condition.
 - New modules: `_shared/lib/check-reservations.cjs` (127 lines),
   `_shared/lib/code-scope.cjs` (336 lines)
 
-## Waves 9-17 — not started
+## Wave 9 — `check` (FR-coverage gate) group — ✅ COMPLETE
+
+- Commit: `731798b`
+- Task: 9.1 (extract `check` to `_shared/lib/check.cjs`) — done
+- Moved byte-identical: `extractSpecFRs`, `extractWaveFRs`, `diffFRCoverage`,
+  `buildExpectedPaths`, `formatHumanReport`, `cmdCheckRun`, `emitCheckReport`,
+  plus the doc-comment block explaining the consistency-gate contract
+  (frontmatter_link / fr_coverage / fr_phantoms checks, exit codes 0/1/2).
+  Exports only the dispatcher-facing function (`cmdCheckRun`); the 5
+  internal helpers stay module-private (verified no external callers via
+  grep before and after the move — `check reservations` is a fully
+  separate command surface, already extracted in Wave 8 as
+  `cmdCheckReservations`, not conflated with this group).
+- `FR_PATTERN`/`WAVE_HEADING_PATTERN` decision (per plan's explicit
+  verify step): grepped the WHOLE current facade for both names BEFORE
+  moving. Both regex consts are consumed exclusively inside this group's
+  own `extractSpecFRs` (`FR_PATTERN`) and `extractWaveFRs`
+  (`FR_PATTERN`, plus a separate inline `headingRe` literal — not
+  `WAVE_HEADING_PATTERN` itself, which turned out to have no live call
+  site beyond its own definition, but was left in as originally written,
+  a pure byte-identical move). No `checklist` call site found anywhere
+  in the facade for either name (`checklist`'s functions have not been
+  extracted yet, per Wave 10, and do not reference either constant at
+  all — confirmed by grepping the checklist block's line range too).
+  Reasoning: since there is no cross-wave consumer, this is a clean
+  single-owner move, not a duplication case — both consts moved
+  wholesale into `check.cjs`. No shared module invented, no duplication
+  into a not-yet-created `checklist.cjs` needed. If Wave 10's own
+  const-sweep later finds either name referenced inside `checklist`'s
+  block, that will be a fresh finding for Wave 10 to handle independently
+  (this wave's grep found nothing to suggest that).
+- Const-sweep (mandatory per Executor ground rules): ran
+  `grep -n "^const [A-Z_]* = "` restricted to the wave's line range
+  (1688-1980 pre-move) — found exactly the two constants already
+  identified above (`FR_PATTERN`, `WAVE_HEADING_PATTERN`). No additional
+  undocumented module-level const/RegExp found this wave (clean outcome,
+  same as Waves 3, 6, 7, 8).
+- Dispatcher verification (per plan Step 5/7): `main()`'s
+  `group === 'check'` branch keeps its existing special-case routing
+  byte-identical — `check reservations` still routes to
+  `cmdCheckReservations` (Wave 8's module), `check <slug>` still routes
+  to `cmdCheckRun` (this wave's module). Verified via two smoke calls:
+  `check reservations --list --file /tmp/m10-w9-smoke.json` (exit 0,
+  valid JSON `{"count":0,"reservations":[]}`) and
+  `check some-nonexistent-slug --feature 001-test` (exit 0 from the
+  wrapper, but the printed report shows `"status":"ERROR","exit_code":2`
+  — proves it reached `cmdCheckRun`'s load-phase error path, not a
+  `ReferenceError`).
+- Deviation (minor, pre-existing, same as Waves 1-8): a1-reconcile
+  fixture suite writes live timestamps into checked-in fixture files
+  during the regression run; diff reverted before staging, suite itself
+  not fixed (out of scope).
+- Full regression gate: ALL-SUITES-GREEN (all fixture suites, including
+  a1-check: 6 passed 0 failed)
+- Facade line count: 3975 → 3685 lines (−290)
+- New module: `_shared/lib/check.cjs` (301 lines)
+
+## Waves 10-17 — not started
