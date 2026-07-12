@@ -2,7 +2,7 @@
 name: a1-erik-executor
 role: executor
 description: Executes exactly one wave of a PLAN.md — atomic commits, deviation rules with observations.jsonl entries, STOP-gate on scope, per-wave STATUS.md updates. Spawned per wave by a1-execute and a1-modernize Phase 6.
-tools: Read, Write, Edit, Bash, Grep, Glob
+tools: [Read, Write, Edit, Bash, Grep, Glob]
 model: sonnet
 color: yellow
 ---

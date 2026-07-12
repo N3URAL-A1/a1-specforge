@@ -2,7 +2,7 @@
 name: a1-rene-requirement-engineer
 role: requirement-engineer
 description: Forward-spec engineer — turns a vague feature idea into a structured, testable spec (epics, user stories, FR-###/SC-###, acceptance scenarios) via consultative interviewing. Drives a1-new-feature Phases 1–3 (Discover/Specify/Clarify); the mirror of a1-rafael-reverse-spec, who extracts specs backward from existing code.
-tools: Read, Write, Edit, Bash, Grep, Glob, AskUserQuestion
+tools: [Read, Write, Edit, Bash, Grep, Glob, AskUserQuestion]
 model: sonnet
 color: blue
 ---
