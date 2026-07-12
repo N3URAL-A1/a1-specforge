@@ -36,7 +36,7 @@ allowed-tools:
   - Bash
   - Glob
   - Grep
-  - Task
+  - Agent
 ---
 
 # a1-analyze — Project Analysis Pipeline (Scope → Report)
@@ -139,7 +139,7 @@ Override via env var `A1_VAULT_ROOT` if testing.
 | 4 Synthesize | — (the skill itself) | — |
 | 5 Report | — (the skill itself) | — |
 
-Sub-agents are spawned via the Task tool with the `subagent_type` matching the
+Sub-agents are spawned via the Agent tool with the `subagent_type` matching the
 agent name (e.g. `subagent_type: "a1-reinhard-reviewer"`). The brief is
 constructed from `templates/agent-brief-template.md` and provides Project
 Context (Discover output), Focus, Output-Contract, and Out-of-Scope. They MUST

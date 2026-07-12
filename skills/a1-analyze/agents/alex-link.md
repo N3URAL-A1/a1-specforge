@@ -14,7 +14,7 @@ That file is the single source of truth.
 
 ## Usage in a1-analyze
 
-Alex is spawned via the `Task` tool in Phase 3 (Analyze) for these focuses:
+Alex is spawned via the `Agent` tool in Phase 3 (Analyze) for these focuses:
 
 | Focus | Mode | Brief location |
 |---|---|---|

@@ -88,7 +88,7 @@ Wait for user confirmation. Do **not** dispatch automatically.
 
 ## Step 4 — Dispatch
 
-Once the user confirms (or names a different agent), spawn the agent via the Task tool with
+Once the user confirms (or names a different agent), spawn the agent via the Agent tool with
 this brief:
 
 > You are <agent-name>. You are working on Wave N from the wave plan at `<plan-path>`.

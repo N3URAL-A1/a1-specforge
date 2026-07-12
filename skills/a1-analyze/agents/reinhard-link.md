@@ -15,7 +15,7 @@ elsewhere. If Reinhard's behavior needs to change, edit only the central file.
 
 ## Usage in a1-analyze
 
-Reinhard is spawned via the `Task` tool in Phase 3 (Analyze) for these focuses:
+Reinhard is spawned via the `Agent` tool in Phase 3 (Analyze) for these focuses:
 
 | Focus | Mode | Brief location |
 |---|---|---|

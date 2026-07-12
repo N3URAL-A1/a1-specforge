@@ -72,24 +72,10 @@ a1-pr-review is complete. Registry status: `pr-open`.
 
 ## Retro (mandatory, every run)
 
-After every run — pass or fail — write one structured entry. Takes 2 minutes. Do not skip.
+Write one retro entry exactly as defined in `_shared/retro-template.md`
+(entry format + write targets: learning store first, dev cache best-effort),
+with skill = `a1-pr-review`.
 
-**To local cache:**
-```bash
-cat >> ~/.claude/skills/a1-pr-review/_learning.md <<'EOF'
----
-date: <YYYY-MM-DD>
-task: <short description, e.g. "PR review for auth-rework, 0 BLOCKER, 2 MAJOR">
-project: <project-slug>
-result: <pass|fail|partial>
-issues: [<relevant tags, e.g. reinhard-no-json, push-rejected, gh-auth, blocker-overridden>]
-what_worked: <one sentence>
-one_line_learning: <what would have prevented the main issue, or "no issues">
-EOF
-```
+- task wording: <short description, e.g. "PR review for auth-rework, 0 BLOCKER, 2 MAJOR">
+- issue tags: [<relevant tags, e.g. reinhard-no-json, push-rejected, gh-auth, blocker-overridden>]
 
-**To the learning store** (defaults to repo-local `.a1/learnings/`; set `A1_VAULT_ROOT` for an external vault, e.g. Obsidian):
-Append the same entry to:
-`<learning-store>/pattern/a1-learnings/a1-pr-review.md`
-
-A run with no issues is still useful data — write the entry.

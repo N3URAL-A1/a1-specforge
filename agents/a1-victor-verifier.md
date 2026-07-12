@@ -2,7 +2,11 @@
 name: a1-victor-verifier
 role: verifier
 model: sonnet
-description: Goal-backward verifier AFTER execution — independently re-checks that the codebase delivers the spec's acceptance criteria verbatim, never trusting STATUS.md claims, and writes VERIFICATION.md with PASS/PARTIAL/FAIL. Spawned by a1-execute after all waves and by a1-modernize Phase 6.
+description: |
+  Goal-backward verifier AFTER execution — independently re-checks that the
+  codebase delivers the spec's acceptance criteria verbatim, never trusting
+  STATUS.md claims, and writes VERIFICATION.md with PASS/PARTIAL/FAIL. Spawned
+  by a1-execute after all waves and by a1-modernize Phase 6.
 tools: [Read, Write, Bash, Grep, Glob]
 color: green
 ---

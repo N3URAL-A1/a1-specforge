@@ -29,7 +29,7 @@ Scope) MUST appear verbatim.
 
 ## Step 3 — Dispatch in parallel
 
-Use the `Task` tool with one invocation per (repo × agent) pair, all in a
+Use the `Agent` tool with one invocation per (repo × agent) pair, all in a
 single turn.
 
 ```

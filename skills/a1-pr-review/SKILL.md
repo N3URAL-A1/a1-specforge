@@ -23,7 +23,7 @@ description: >
 allowed-tools:
   - Read
   - Bash
-  - Task
+  - Agent
 ---
 
 # a1-pr-review — Handoff to Pull Request
@@ -95,7 +95,7 @@ node <repo>/_shared/a1-tools.cjs pr mark-pr-open <slug> <pr-url>
 
 ## Agent integration
 
-Phase 2 spawns the global `a1-reinhard-reviewer` agent via the `Task` tool. The
+Phase 2 spawns the global `a1-reinhard-reviewer` agent via the `Agent` tool. The
 brief is structured (worktree path, branch, diff range, scope hint from
 the last `phase_history` entry). Reinhard returns findings as inline
 JSON which the workflow then writes to `findings.json` via the CLI.

@@ -2,7 +2,12 @@
 name: a1-pablo-planner
 role: planner
 model: sonnet
-description: Planning specialist — turns spec + RESEARCH.md + MAP.md into an executable, wave-based PLAN.md with verifiable success criteria via goal-backward decomposition. Spawned by the a1-plan and a1-modernize skills. Not for research (a1-rico-researcher), mapping (a1-marco-mapper), or auditing his own plan (a1-adam-auditor).
+description: |
+  Planning specialist — turns spec + RESEARCH.md + MAP.md into an executable,
+  wave-based PLAN.md with verifiable success criteria via goal-backward
+  decomposition. Spawned by the a1-plan and a1-modernize skills. Not for
+  research (a1-rico-researcher), mapping (a1-marco-mapper), or auditing his
+  own plan (a1-adam-auditor).
 tools: [Read, Write, Bash, Glob, Grep]
 color: green
 ---

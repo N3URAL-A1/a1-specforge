@@ -126,8 +126,9 @@ For FAIL/PARTIAL re-execution: spawn a1-erik-executor with a targeted prompt lis
 
 ## Retro (mandatory, every run)
 
-After presenting the verdict — PASS, PARTIAL, or FAIL — write one structured entry.
-Takes ~2 minutes. Do not skip. Used by `a1-evolve` for pattern clustering.
+After presenting the verdict — PASS, PARTIAL, or FAIL — write one retro entry
+per `_shared/retro-template.md` (entry format + write targets: learning store
+first, dev cache best-effort), with skill = `a1-execute`.
 
 ### Step 1 — Gather observation metrics
 
@@ -135,45 +136,32 @@ Takes ~2 minutes. Do not skip. Used by `a1-evolve` for pattern clustering.
 OBS_FILE=".a1/phases/<phase_name>/observations.jsonl"
 OBS_COUNT=$(wc -l < "$OBS_FILE" 2>/dev/null || echo 0)
 MAJOR_COUNT=$(grep -c '"severity":"major\|critical"' "$OBS_FILE" 2>/dev/null || echo 0)
-PROJECT_NAME=$(basename "$(pwd)")
-DATE=$(date +%Y-%m-%d)
 ```
 
-### Step 2 — Append to local cache
+### Step 2 — Additional fields beyond the base schema
 
-```bash
-cat >> ~/.claude/skills/a1-execute/_learning.md <<EOF
----
-date: $DATE
+```
 phase: <phase-name>
-project: $PROJECT_NAME
 result: <pass|partial|fail>
 waves_executed: <N>
 observations_total: $OBS_COUNT
 observations_major_plus: $MAJOR_COUNT
 issue_classes: [<from: plan_drift, missing_dependency, wave_too_large, flaky_test, env_issue, spec_omission, unverifiable_criterion, blocker_unforeseen>]
 phase_that_produced_most_issues: <plan|implement|verify>
-one_line_learning: <what would have prevented the main issue, or "no issues">
-EOF
 ```
 
-### Step 3 — Append the same entry to the learning store
+Use the `issue_classes` tags consistently — they feed `patterns.md`
+clustering. A run with zero issues still gets an entry
+(`observations_total: 0`).
 
-Defaults to repo-local `.a1/learnings/`; set `A1_VAULT_ROOT` for an external vault (e.g. Obsidian):
+### Step 3 — Threshold check
+
+Count entries in the **learning store** (not the dev cache — plugin installs
+have no cache):
+
 ```bash
 VAULT="${A1_VAULT_ROOT:-$(git rev-parse --show-toplevel)/.a1/learnings}"
-# $VAULT/pattern/a1-learnings/a1-execute.md
-```
-
-Use the `issue_classes` tags consistently — they feed into `patterns.md` clustering:
-`plan_drift` | `missing_dependency` | `wave_too_large` | `flaky_test` | `env_issue` | `spec_omission` | `unverifiable_criterion` | `blocker_unforeseen`
-
-A run with zero issues is still useful data — write the entry with `observations_total: 0`.
-
-### Step 4 — Threshold check
-
-```bash
-ENTRY_COUNT=$(grep -c "^date:" ~/.claude/skills/a1-execute/_learning.md 2>/dev/null || echo 0)
+ENTRY_COUNT=$(grep -c "^date:" "$VAULT/pattern/a1-learnings/a1-execute.md" 2>/dev/null || echo 0)
 ```
 If `$ENTRY_COUNT` is a multiple of 5:
-> "5 new learnings accumulated — stored in the Vault under [[pattern/a1-learnings/index]]. Run `a1-evolve`?"
+> "5 new learnings accumulated in the learning store. Run `a1-evolve`?"

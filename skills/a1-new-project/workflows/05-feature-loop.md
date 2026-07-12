@@ -107,32 +107,15 @@ Then write the Retro (below).
 
 ## Retro (mandatory, every run — pass or fail)
 
-After the loop ends — completed, partial, or blocked — write one structured
-entry. Takes 2 minutes. Do not skip. A run with no issues is still useful data:
-write the entry.
+After the loop ends — completed, partial, or blocked — write one retro entry
+per `_shared/retro-template.md` (entry format + write targets: learning store
+first, dev cache best-effort), with skill = `a1-new-project` and these
+**additional fields**: `features_total: <N>`, `features_done: <N>`.
 
-**To local cache:**
-```bash
-cat >> ~/.claude/skills/a1-new-project/_learning.md <<'EOF'
----
-date: <YYYY-MM-DD>
-task: <project-slug> bootstrap (zero → feature backlog)
-project: <project-slug>
-result: <pass|fail|partial>
-issues: [<relevant tags: scope_unclear, bootstrap_collision, feature_split_too_coarse, feature_split_too_fine, checkpoint_skipped, roadmap_handoff_failed, over_engineering, repo_already_exists>]
-features_total: <N>
-features_done: <N>
-what_worked: <one sentence>
-one_line_learning: <what would have prevented the main issue, or "no issues">
-EOF
-```
-
-**To the learning store (canonical)** — defaults to repo-local `.a1/learnings/`; set `A1_VAULT_ROOT` for an external vault (e.g. Obsidian):
-Append the same entry to:
-```bash
-VAULT="${A1_VAULT_ROOT:-$(git rev-parse --show-toplevel)/.a1/learnings}"
-# $VAULT/pattern/a1-learnings/a1-new-project.md
-```
+- task wording: `<project-slug> bootstrap (zero → feature backlog)`
+- issue tags: [scope_unclear, bootstrap_collision, feature_split_too_coarse,
+  feature_split_too_fine, checkpoint_skipped, roadmap_handoff_failed,
+  over_engineering, repo_already_exists]
 
 Tags reference: `scope_unclear` (Phase 2 left ambiguity that bit later),
 `bootstrap_collision` / `repo_already_exists` (Phase 1 hit existing files),

@@ -277,52 +277,40 @@ Do not advance to `done` until all failures are resolved and a re-verify is gree
 
 ## Step 6 — Retro (MANDATORY, every run — this closes the self-learning loop)
 
-After every Phase 6 run — PASS, PARTIAL, or FAIL — write one structured entry **before you tell
-the user the feature is done**. Takes ~2 minutes. This is not optional and not the last thing
-"if there's time" — without it `a1-evolve` is blind and the skills stop improving. A long run is
-exactly when the most learnings exist; that is when it is most tempting to skip and most costly to.
+After every Phase 6 run — PASS, PARTIAL, or FAIL — write one retro entry **before you tell
+the user the feature is done**, per `_shared/retro-template.md` (entry format + write
+targets: learning store first, dev cache best-effort), with skill = `a1-new-feature`.
+This is not optional — without it `a1-evolve` is blind and the skills stop improving.
+A long run is exactly when the most learnings exist; that is when it is most tempting
+to skip and most costly to.
 
-### Step 6a — Append to the local cache (create the file if missing)
+### Step 6a — Additional fields beyond the base schema
 
-```bash
-cat >> ~/.claude/skills/a1-new-feature/_learning.md <<'EOF'
----
-date: <YYYY-MM-DD>
+```
 spec: <###>-<feature-slug>
-project: <project-slug>
 result: <pass|partial|fail>
 waves_total: <N>
 bugs_found_in_verify: <N>
 bug_classes: [<from: missing_wiring, wrong_behavior_vs_spec, deployment_incomplete, schema_flaw, regression, spec_omission, gate_friction, agent_self_report_false, parallel_collision>]
 gate_that_caught_most: <Gate 0|Gate 1|Gate 2|Gate 3|Phase 6|none>
 phase_that_produced_most_bugs: <discover|specify|clarify|plan|implement|verify>
-one_line_learning: <what would have prevented the main failure, or "no failures">
-EOF
 ```
 
-### Step 6b — Append the SAME entry to the learning store (canonical source)
+Use the `bug_classes` tags consistently — they feed `patterns.md` clustering.
+A run with zero bugs is still useful data — write the entry with
+`bugs_found_in_verify: 0` and `one_line_learning: no failures`.
 
-Defaults to repo-local `.a1/learnings/`; set `A1_VAULT_ROOT` for an external vault (e.g. Obsidian). The canonical learnings live under `pattern/`:
+### Step 6b — Threshold check
+
+Count entries in the **learning store** (not the dev cache — plugin installs
+have no cache):
 
 ```bash
 VAULT="${A1_VAULT_ROOT:-$(git rev-parse --show-toplevel)/.a1/learnings}"
-# $VAULT/pattern/a1-learnings/a1-new-feature.md
-```
-
-Use the `bug_classes` tags consistently — they feed `patterns.md` clustering:
-`missing_wiring` | `wrong_behavior_vs_spec` | `deployment_incomplete` | `schema_flaw` |
-`regression` | `spec_omission` | `gate_friction` | `agent_self_report_false` | `parallel_collision`
-
-A run with zero bugs is still useful data — write the entry with `bugs_found_in_verify: 0` and
-`one_line_learning: no failures`.
-
-### Step 6c — Threshold check
-
-```bash
-ENTRY_COUNT=$(grep -c "^date:" ~/.claude/skills/a1-new-feature/_learning.md 2>/dev/null || echo 0)
+ENTRY_COUNT=$(grep -c "^date:" "$VAULT/pattern/a1-learnings/a1-new-feature.md" 2>/dev/null || echo 0)
 ```
 If `$ENTRY_COUNT` is a multiple of 5:
-> "5 new a1-new-feature learnings accumulated (Vault `pattern/a1-learnings/`). Run `a1-evolve`?"
+> "5 new a1-new-feature learnings accumulated in the learning store. Run `a1-evolve`?"
 
 ## Optional — Tobi audit
 

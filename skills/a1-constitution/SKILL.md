@@ -32,7 +32,7 @@ allowed-tools:
   - Bash
   - Glob
   - Grep
-  - Task
+  - Agent
 ---
 
 # a1-constitution — Per-Project Behavioral Rules (Discover → Write)
@@ -131,7 +131,7 @@ Override via env var `A1_VAULT_ROOT` if testing.
 | 3 Review | — (skill itself + user) | — |
 | 4 Write | — (CLI only) | — |
 
-Alex is spawned via the `Task` tool with a focused brief constructed from
+Alex is spawned via the `Agent` tool with a focused brief constructed from
 `templates/alex-brief-template.md`. The brief contains: project slug, vault
 path, discovery output (CLAUDE.md excerpt, global rules listing, existing repo
 file), 3-5 user-provided behavioral concerns from Phase 1 interview, the

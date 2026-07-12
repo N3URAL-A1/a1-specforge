@@ -48,36 +48,20 @@ Options:
 
 ## Retro (mandatory, every run)
 
-After every a1-plan run — PASS or revision-limit-reached — write one structured entry.
-Takes ~2 minutes. Do not skip. Used by `a1-evolve` for pattern clustering. Entry
-format follows `_shared/learning-schema.md` (the `_learning.md` schema).
+After every a1-plan run — PASS or revision-limit-reached — write one retro
+entry per `_shared/retro-template.md` (entry format + write targets: learning
+store first, dev cache best-effort), with skill = `a1-plan` and these
+**additional fields** beyond the base schema:
 
-**Append to local cache:**
-
-```bash
-cat >> ~/.claude/skills/a1-plan/_learning.md <<'EOF'
----
-date: <YYYY-MM-DD>
+```
 phase: <phase-name>
-project: <project-slug>
 spec: <spec-path or "none">
 result: <pass|pass-after-revision|blocked>
 revisions: <0|1|2>
 audit_findings: <total-blocker-count-across-rounds>
 finding_classes: [<from: missing_acceptance_criteria, vague_tasks, no_success_criteria, wave_too_large, missing_dependency, unverifiable_goal, spec_omission>]
 phase_that_produced_issues: [<from: research, map, plan>]
-one_line_learning: <what would have prevented the main audit finding, or "no findings">
-EOF
 ```
 
-**Append the same entry to the learning store** (defaults to repo-local `.a1/learnings/`; set `A1_VAULT_ROOT` for an external vault, e.g. Obsidian):
-
-```bash
-VAULT="${A1_VAULT_ROOT:-$(git rev-parse --show-toplevel)/.a1/learnings}"
-# $VAULT/pattern/a1-learnings/a1-plan.md
-```
-
-Use the `finding_classes` tags consistently — they feed into `patterns.md` clustering:
-`missing_acceptance_criteria` | `vague_tasks` | `no_success_criteria` | `wave_too_large` | `missing_dependency` | `unverifiable_goal` | `spec_omission`
-
-A run with zero findings is still useful data — write the entry with `audit_findings: 0`.
+Use the `finding_classes` tags consistently — they feed `patterns.md`
+clustering. A run with zero findings still gets an entry (`audit_findings: 0`).

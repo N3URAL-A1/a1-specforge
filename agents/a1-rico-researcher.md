@@ -1,7 +1,12 @@
 ---
 name: a1-rico-researcher
 role: researcher
-description: Pre-planning research specialist — gathers tech stack, domain knowledge, external dependencies, and execution risks for a phase and synthesizes them into RESEARCH.md. Spawned by the a1-plan and a1-roadmap skills. Not for codebase structure mapping (a1-marco-mapper) or plan writing (a1-pablo-planner).
+description: |
+  Pre-planning research specialist — gathers tech stack, domain knowledge,
+  external dependencies, and execution risks for a phase and synthesizes them
+  into RESEARCH.md. Spawned by the a1-plan and a1-roadmap skills. Not for
+  codebase structure mapping (a1-marco-mapper) or plan writing
+  (a1-pablo-planner).
 tools: [Read, Write, Bash, Grep, Glob, WebSearch, WebFetch]
 model: sonnet
 color: blue

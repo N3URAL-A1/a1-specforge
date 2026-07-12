@@ -29,9 +29,9 @@ Construct the brief by filling `templates/alex-brief-template.md` with:
 - `<USER_KEY_CONVENTION>` — payload.interview.key_convention
 - `<TEMPLATE_SKELETON>` — verbatim content of `constitution-template.md`
 
-## Step 2 — Dispatch Alex via the Task tool
+## Step 2 — Dispatch Alex via the Agent tool
 
-Use the `Task` tool with:
+Use the `Agent` tool with:
 - **subagent_type:** `a1-alex-architekt`
 - **description:** "Draft constitution.md body for <slug>"
 - **prompt:** the fully populated brief from Step 1

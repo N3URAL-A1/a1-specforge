@@ -56,7 +56,7 @@ MUST appear verbatim. No shortening.
 
 ## Step 3 — Dispatch in parallel
 
-Use the Task tool with multiple invocations in a single turn (one Task call
+Use the Agent tool with multiple invocations in a single turn (one Agent call
 per agent). This gives each sub-agent its own context window.
 
 Always pass the actual agent name as `subagent_type` — every a1 agent has its

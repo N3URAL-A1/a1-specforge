@@ -30,7 +30,7 @@ If `severity` is `blocker` or `major`, propose a QA regression run:
 > "Severity is <severity>. I can trigger a1-tobi-tester for a QA regression suite
 > to make sure the fix didn't break anything else. Would you like that?"
 
-If yes: spawn a1-tobi-tester via `Task` with this brief:
+If yes: spawn a1-tobi-tester via `Agent` with this brief:
 
 > You are a1-tobi-tester. Task: QA regression for a freshly fixed bug.
 > **Bug report:** <ABSOLUTE_VAULT_PATH>

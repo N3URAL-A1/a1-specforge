@@ -122,51 +122,32 @@ Summary:
 
 ## Retro (Step 5, mandatory, every run)
 
-After the final summary, write one structured entry. Takes ~2 minutes. Do not
-skip. Used by `a1-evolve` for pattern clustering. Entry format follows
-`_shared/learning-schema.md` (the `_learning.md` schema).
+After the final summary, write one retro entry per `_shared/retro-template.md`
+(entry format + write targets: learning store first, dev cache best-effort),
+with skill = `a1-modernize` and these **additional fields** beyond the base
+schema:
 
-```bash
-PROJECT_NAME="<project-slug>"
-DATE=$(date +%Y-%m-%d)
 ```
-
-### Append to local cache
-
-```bash
-cat >> ~/.claude/skills/a1-modernize/_learning.md <<EOF
----
-date: $DATE
-project: $PROJECT_NAME
 result: <pass|partial|fail>
 frs_extracted: <N>
 gaps: <N blocker>/<N major>/<N minor>
 waves_executed: <N>
-issue_classes: [<from tags below>]
-one_line_learning: <what would have prevented the main issue, or "no issues">
-EOF
+issue_classes: [<from: fr_extraction_gap, gap_misclassified, proposal_scope_creep, migration_missing, test_mock_only, wave_too_large, spec_drift, publish_target_missing>]
 ```
 
-Then append the **same entry** to the learning store (defaults to repo-local `.a1/learnings/`; set `A1_VAULT_ROOT` for an external vault, e.g. Obsidian):
-
-```bash
-VAULT="${A1_VAULT_ROOT:-$(git rev-parse --show-toplevel)/.a1/learnings}"
-# $VAULT/pattern/a1-learnings/a1-modernize.md
-```
-
-Use the `issue_classes` tags consistently — they feed `patterns.md` clustering:
-`fr_extraction_gap` | `gap_misclassified` | `proposal_scope_creep` |
-`migration_missing` | `test_mock_only` | `wave_too_large` | `spec_drift` |
-`publish_target_missing`
-
-A run with zero issues is still useful data — write the entry with `issue_classes: []`.
+Use the `issue_classes` tags consistently — they feed `patterns.md`
+clustering. A run with zero issues still gets an entry (`issue_classes: []`).
 
 ### Threshold check
 
+Count entries in the **learning store** (not the dev cache — plugin installs
+have no cache):
+
 ```bash
-ENTRY_COUNT=$(grep -c "^date:" ~/.claude/skills/a1-modernize/_learning.md 2>/dev/null || echo 0)
+VAULT="${A1_VAULT_ROOT:-$(git rev-parse --show-toplevel)/.a1/learnings}"
+ENTRY_COUNT=$(grep -c "^date:" "$VAULT/pattern/a1-learnings/a1-modernize.md" 2>/dev/null || echo 0)
 ```
 If `$ENTRY_COUNT` is a multiple of 5:
-> "5 new learnings accumulated — stored in the Vault under [[pattern/a1-learnings/index]]. Run `a1-evolve`?"
+> "5 new learnings accumulated in the learning store. Run `a1-evolve`?"
 
 Show `suggested_next` from frontmatter.

@@ -38,7 +38,7 @@ allowed-tools:
   - Bash
   - Glob
   - Grep
-  - Task
+  - Agent
 ---
 
 # a1-modernize — Brownfield Modernization Pipeline

@@ -1,7 +1,11 @@
 ---
 name: a1-aik-ai-engineer
 role: ai-engineer
-description: "AI/ML IMPLEMENTATION specialist — LLM integrations, RAG pipelines, agent systems, embeddings, vector search, prompt engineering, inference APIs. NOT general web/backend code (a1-walter-web-developer) and NOT system architecture (a1-alex-architekt — Aik designs AI-pipeline internals only)."
+description: |
+  AI/ML IMPLEMENTATION specialist — LLM integrations, RAG pipelines, agent
+  systems, embeddings, vector search, prompt engineering, inference APIs. NOT
+  general web/backend code (a1-walter-web-developer) and NOT system
+  architecture (a1-alex-architekt — Aik designs AI-pipeline internals only).
 model: sonnet
 color: purple
 tools: [Read, Write, Edit, Bash, Grep, Glob]

@@ -11,7 +11,7 @@ This file is a pointer, not a redefinition.
 
 ## How a1-reconcile uses it
 
-- Dispatched in parallel with `a1-marco-mapper` via `Task` tool.
+- Dispatched in parallel with `a1-marco-mapper` via `Agent` tool.
 - Brief from `templates/agent-probe-brief.md`, with a header hint at the top:
   "Focus: Architecture drift. Do not spend time on file existence —
   a1-marco-mapper covers that. Look instead for Boundary/Layer/Coupling drift

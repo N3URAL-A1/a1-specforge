@@ -116,72 +116,47 @@ orchestrators.
 
 ## Retro (MANDATORY, every run — this closes the self-learning loop)
 
-After every run — pass, partial, or fail — write one structured entry **before you
-tell the user the analysis is done**. Takes ~2 minutes. This is not optional and
-not "if there's time" — without it `a1-evolve` is blind and the skills stop
-improving. The whole point of a1-analyze feeding implementation is that what we
-learn here gets carried into future builds; the Retro is how that crosses over.
+After every run — pass, partial, or fail — write one retro entry **before you
+tell the user the analysis is done**, per `_shared/retro-template.md` (entry
+format + write targets: learning store first, dev cache best-effort), with
+skill = `a1-analyze`. This is not optional — without it `a1-evolve` is blind
+and the skills stop improving.
 
-### Step 1 — Append to the local cache (create the file if missing)
+### Additional fields beyond the base schema
 
-```bash
-cat >> ~/.claude/skills/a1-analyze/_learning.md <<'EOF'
----
-date: <YYYY-MM-DD>
-task: <short description of analyzed project + focus>
-project: <project-slug>
-result: <pass|fail|partial>
+```
 focus: <general|security|architecture|quality|onboarding>
 findings_total: <N>
 findings_blocker: <N>
 issue_classes: [<from: missing_coverage, arch_drift_found, quality_finding_actionable, simplification_opportunity, security_vuln, duplicate_critical_logic, agent_timeout, empty_findings, contract_violation, dispatch_error, vault_path_issue>]
 simplify_lane: <ran|skipped>
 security_lane: <ran|skipped>
-what_worked: <one sentence — e.g. "parallel dispatch of 4 lanes completed in one turn">
-one_line_learning: <what a future implementation should carry forward, or "no issues">
-EOF
 ```
 
-The `issue_classes` tags are shared with `patterns.md` clustering. Use them
-consistently — `simplification_opportunity` and `security_vuln` come from the two
-new always-on lanes and are exactly the signal we want to feed forward into builds.
+The `issue_classes` tags are shared with `patterns.md` clustering —
+`simplification_opportunity` and `security_vuln` come from the two always-on
+lanes and are exactly the signal to feed forward into builds. A run with no
+issues still gets an entry (`findings_total: 0`).
 
-### Step 2 — Append the SAME entry to the Vault (canonical source)
-
-Canonical path — the learnings live under `pattern/a1-learnings/` in the learning
-store (defaults to repo-local `.a1/learnings/`; set `A1_VAULT_ROOT` to use an
-external vault, e.g. Obsidian). Use:
-
-```bash
-VAULT="${A1_VAULT_ROOT:-$(git rev-parse --show-toplevel)/.a1/learnings}"
-# $VAULT/pattern/a1-learnings/a1-analyze.md
-```
-
-The `_learning.md` in the skill is a fast-access cache; the Vault file is canonical.
-A run with no issues is still useful data — write the entry with
-`findings_total: 0` and `one_line_learning: no issues`.
-
-### Step 3 — Threshold check (hands off to a1-evolve)
+### Threshold check (hands off to a1-evolve)
 
 Count entries written **since the last a1-evolve synthesis**, not the lifetime
-total — otherwise the cache's historical count keeps re-tripping "multiple of 5"
-on every run. The synthesis watermark is the `updated:` date in the Vault
+total — otherwise the historical count keeps re-tripping "multiple of 5" on
+every run. The synthesis watermark is the `updated:` date in the store's
 `patterns.md` (the same date a1-evolve uses for de-duplication):
 
 ```bash
 VAULT="${A1_VAULT_ROOT:-$(git rev-parse --show-toplevel)/.a1/learnings}"
 PATTERNS="$VAULT/pattern/a1-learnings/patterns.md"
 LAST_SYNTH=$(grep -m1 '^updated:' "$PATTERNS" 2>/dev/null | sed 's/updated:[[:space:]]*//')
-# Count a1-analyze cache entries dated after the last synthesis:
+# Count a1-analyze store entries dated after the last synthesis:
 NEW_COUNT=$(awk -v cutoff="$LAST_SYNTH" '
   /^date:/ { d=$2; if (cutoff=="" || d > cutoff) c++ }
-  END { print c+0 }' ~/.claude/skills/a1-analyze/_learning.md 2>/dev/null || echo 0)
+  END { print c+0 }' "$VAULT/pattern/a1-learnings/a1-analyze.md" 2>/dev/null || echo 0)
 ```
 
 If `$NEW_COUNT` is ≥ 5, tell the user:
-> "≥5 new a1-analyze learnings since the last synthesis (Vault
-> `pattern/a1-learnings/`). Run `a1-evolve` to evaluate patterns?"
+> "≥5 new a1-analyze learnings since the last synthesis. Run `a1-evolve` to
+> evaluate patterns?"
 
-`a1-evolve` reads `pattern/a1-learnings/a1-analyze.md` alongside the other skills'
-learnings and proposes concrete improvements. Do not run it automatically — the
-user decides.
+Do not run it automatically — the user decides.

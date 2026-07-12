@@ -84,24 +84,10 @@ phantom report is the deliverable.
 
 ## Retro (mandatory, every run)
 
-After every run — clean or phantoms_found — write one structured entry. Takes 2 minutes. Do not skip.
+Write one retro entry exactly as defined in `_shared/retro-template.md`
+(entry format + write targets: learning store first, dev cache best-effort),
+with skill = `a1-phantom`.
 
-**To local cache:**
-```bash
-cat >> ~/.claude/skills/a1-phantom/_learning.md <<'EOF'
----
-date: <YYYY-MM-DD>
-task: <short description, e.g. "phantom check on M3-P1 PLAN">
-project: <project-slug>
-result: <clean|phantoms_found|cli-error>
-issues: [<relevant tags, e.g. false-positive, missing-no-code-tag, since-too-wide, no-extractable-keywords>]
-what_worked: <one sentence>
-one_line_learning: <what would have prevented the main issue, or "no issues">
-EOF
-```
+- task wording: <short description, e.g. "phantom check on M3-P1 PLAN">
+- issue tags: [<relevant tags, e.g. false-positive, missing-no-code-tag, since-too-wide, no-extractable-keywords>]
 
-**To the learning store** (defaults to repo-local `.a1/learnings/`; set `A1_VAULT_ROOT` for an external vault, e.g. Obsidian):
-Append the same entry to:
-`<learning-store>/pattern/a1-learnings/a1-phantom.md`
-
-A run with no issues is still useful data — write the entry. Even a clean check helps tune false-positive rates over time.

@@ -1,7 +1,7 @@
 # Sub-Agent Brief Template (Phase 3 — Analyze)
 
 This template is used by `workflows/03-analyze.md` to construct a focused brief
-for each sub-agent dispatched via the `Task` tool. The four sections below MUST
+for each sub-agent dispatched via the `Agent` tool. The four sections below MUST
 all be present in every dispatch.
 
 ## Brief structure (fill these four sections)

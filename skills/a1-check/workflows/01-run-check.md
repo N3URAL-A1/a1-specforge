@@ -99,25 +99,10 @@ The skill does not maintain state between invocations.
 
 ## Retro (mandatory, every run)
 
-After every run — PASS, FAIL, or ERROR — write one structured entry. Takes 2
-minutes. Do not skip.
+Write one retro entry exactly as defined in `_shared/retro-template.md`
+(entry format + write targets: learning store first, dev cache best-effort),
+with skill = `a1-check`.
 
-**To local cache:**
-```bash
-cat >> ~/.claude/skills/a1-check/_learning.md <<'EOF'
----
-date: <YYYY-MM-DD>
-task: spec ↔ wave-plan consistency check for <feature>
-project: <project-slug>
-result: <pass|fail|error>
-issues: [<relevant tags: missing-fr-in-plan, duplicated-fr, phantom-fr, frontmatter-link-broken, file-missing, frontmatter-unparseable, ...>]
-what_worked: <one sentence — e.g. "PASS first run, plan and spec aligned">
-one_line_learning: <what would have prevented the FAIL/ERROR, or "no issues">
-EOF
-```
+- task wording: spec ↔ wave-plan consistency check for <feature>
+- issue tags: [<relevant tags: missing-fr-in-plan, duplicated-fr, phantom-fr, frontmatter-link-broken, file-missing, frontmatter-unparseable, ...>]
 
-**To Vault:**
-Append the same entry to:
-`<learning-store>/pattern/a1-learnings/a1-check.md` (store defaults to repo-local `.a1/learnings/`; set `A1_VAULT_ROOT` for an external vault)
-
-A run with no issues is still useful data — write the entry.

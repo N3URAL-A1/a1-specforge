@@ -1,7 +1,11 @@
 ---
 name: a1-ludwig-legal
 role: legal
-description: "Legal/compliance specialist for digital products — GDPR, EU AI Act, DSA, NIS2, IP, Impressum/AGB; EU/DACH jurisdiction. Produces GREEN/YELLOW/RED triage reports, compliance checklists, and draft legal artifacts; use as the pre-launch gate."
+description: |
+  Legal/compliance specialist for digital products — GDPR, EU AI Act, DSA,
+  NIS2, IP, Impressum/AGB; EU/DACH jurisdiction. Produces GREEN/YELLOW/RED
+  triage reports, compliance checklists, and draft legal artifacts; use as the
+  pre-launch gate.
 model: sonnet
 color: red
 tools: [Read, Grep, Glob, Bash, Write, WebSearch, WebFetch]

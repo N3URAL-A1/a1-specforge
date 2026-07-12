@@ -115,28 +115,10 @@ What you can do next (optional):
 
 ## Retro (mandatory, every run)
 
-After every run — pass or fail — write one structured entry. Takes 2 minutes. Do not
-skip. Entry format follows `_shared/learning-schema.md` (the `_learning.md` schema).
+Write one retro entry exactly as defined in `_shared/retro-template.md`
+(entry format + write targets: learning store first, dev cache best-effort),
+with skill = `a1-constitution`.
 
-**To local cache:**
-```bash
-cat >> ~/.claude/skills/a1-constitution/_learning.md <<'EOF'
----
-date: <YYYY-MM-DD>
-task: <new constitution | update constitution>
-project: <project-slug>
-result: <pass|fail|partial>
-issues: [<relevant tags: claudemd_missing, alex_incomplete_draft, redraft_loop_long, mirror_write_failed, link_claudemd_failed, vault_drift, interview_too_thin, ...>]
-what_worked: <one sentence>
-one_line_learning: <what would have prevented the main issue, or "no issues">
-EOF
-```
+- task wording: <new constitution | update constitution>
+- issue tags: [<relevant tags: claudemd_missing, alex_incomplete_draft, redraft_loop_long, mirror_write_failed, link_claudemd_failed, vault_drift, interview_too_thin, ...>]
 
-**To the learning store** (defaults to repo-local `.a1/learnings/`; set `A1_VAULT_ROOT` for an external vault, e.g. Obsidian):
-Append the same entry to:
-```bash
-VAULT="${A1_VAULT_ROOT:-$(git rev-parse --show-toplevel)/.a1/learnings}"
-# $VAULT/pattern/a1-learnings/a1-constitution.md
-```
-
-A run with no issues is still useful data — write the entry.

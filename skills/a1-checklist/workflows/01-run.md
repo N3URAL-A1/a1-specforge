@@ -112,25 +112,10 @@ The skill does not maintain state between invocations.
 
 ## Retro (mandatory, every run)
 
-After every run — PASS, PASS_WITH_WARNINGS, FAIL, or ERROR — write one
-structured entry. Takes 2 minutes. Do not skip.
+Write one retro entry exactly as defined in `_shared/retro-template.md`
+(entry format + write targets: learning store first, dev cache best-effort),
+with skill = `a1-checklist`.
 
-**To local cache:**
-```bash
-cat >> ~/.claude/skills/a1-checklist/_learning.md <<'EOF'
----
-date: <YYYY-MM-DD>
-task: pre-flight checklist for <feature-target>
-project: <project-slug>
-result: <pass|pass_with_warnings|fail|error>
-issues: [<relevant tags: spec-not-clarified, missing-wave-plan, dep-cycle, missing-claude-md, frontmatter-incomplete, setup-error, ...>]
-what_worked: <one sentence — e.g. "all 8 checks passed first try">
-one_line_learning: <what would have prevented the failed check, or "no issues">
-EOF
-```
+- task wording: pre-flight checklist for <feature-target>
+- issue tags: [<relevant tags: spec-not-clarified, missing-wave-plan, dep-cycle, missing-claude-md, frontmatter-incomplete, setup-error, ...>]
 
-**To Vault:**
-Append the same entry to:
-`<learning-store>/pattern/a1-learnings/a1-checklist.md` (store defaults to repo-local `.a1/learnings/`; set `A1_VAULT_ROOT` for an external vault)
-
-A run with no issues is still useful data — write the entry.

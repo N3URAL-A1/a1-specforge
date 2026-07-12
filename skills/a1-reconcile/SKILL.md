@@ -32,7 +32,7 @@ allowed-tools:
   - Bash
   - Glob
   - Grep
-  - Task
+  - Agent
 ---
 
 # a1-reconcile — Spec ↔ Code Drift Detection (Scope → Report)
@@ -170,7 +170,7 @@ spec, never touch the drift report. If they want a change, it goes into
 - Phase 2 (Parse) runs **without** sub-agents. Acceptance-Criteria + artifact
   references are extracted deterministically by the CLI.
 - Phase 3 (Probe) dispatches sub-agents in parallel when targets are
-  independent (multi-tool-call with several `Task` invocations in one turn).
+  independent (multi-tool-call with several `Agent` invocations in one turn).
 - Sub-agents in Phase 3 must follow the Output-Contract:
   `{class: MISSING|EXTRA|DIVERGED|STALE, artifact, spec_ref, code_ref,
   description, recommendation}`. Free-prose is rejected and re-asked once.

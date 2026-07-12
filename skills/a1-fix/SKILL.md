@@ -24,7 +24,7 @@ allowed-tools:
   - Bash
   - Glob
   - Grep
-  - Task
+  - Agent
 ---
 
 # a1-fix — Bug Pipeline (Pre-Flight → Postmortem)
@@ -201,7 +201,7 @@ Promote-lessons reads all postmortems, clusters patterns, writes suggestions to
 | 3 Fix | Project code agent (a1-walter-web-developer / backend-bernd / a1-aik-ai-engineer / felix-flutter-engineer / a1-alex-architekt) | Read target CLAUDE.md |
 | 4 Verify | Skill itself; optionally a1-tobi-tester (severity ≥ MAJOR) | — |
 
-Falk is spawned via the `Task` tool. Falk never edits code.
+Falk is spawned via the `Agent` tool. Falk never edits code.
 
 ## Hard rules
 

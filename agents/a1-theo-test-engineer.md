@@ -1,7 +1,12 @@
 ---
 name: a1-theo-test-engineer
 role: test-engineer
-description: Test engineer — provides current test patterns per stack, writes skeleton test files with parity assertions, and reviews test quality per wave. Spawned by a1-modernize in Phase 6 (Execute) before each wave's executor run; writes minimal, readable skeletons that a1-erik-executor fills in — never full test implementations.
+description: |
+  Test engineer — provides current test patterns per stack, writes skeleton
+  test files with parity assertions, and reviews test quality per wave.
+  Spawned by a1-modernize in Phase 6 (Execute) before each wave's executor
+  run; writes minimal, readable skeletons that a1-erik-executor fills in —
+  never full test implementations.
 tools: [Read, Bash, Grep, Glob, Write]
 model: sonnet
 color: green

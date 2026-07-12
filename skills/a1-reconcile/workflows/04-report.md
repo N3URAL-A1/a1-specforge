@@ -105,25 +105,10 @@ Wait for the user's decision. **Never auto-trigger another skill.**
 
 ## Retro (mandatory, every run)
 
-After every run — pass or fail — write one structured entry. Takes 2 minutes. Do not
-skip. Entry format follows `_shared/learning-schema.md` (the `_learning.md` schema).
+Write one retro entry exactly as defined in `_shared/retro-template.md`
+(entry format + write targets: learning store first, dev cache best-effort),
+with skill = `a1-reconcile`.
 
-**To local cache:**
-```bash
-cat >> ~/.claude/skills/a1-reconcile/_learning.md <<'EOF'
----
-date: <YYYY-MM-DD>
-task: <short description of what was reconciled>
-project: <project-slug>
-result: <pass|fail|partial>
-issues: [<relevant tags: false_missing, false_extra, agent_json_failure, spec_parse_gap, repo_path_missing, stale_misclassified, ...>]
-what_worked: <one sentence>
-one_line_learning: <what would have prevented the main issue, or "no issues">
-EOF
-```
+- task wording: <short description of what was reconciled>
+- issue tags: [<relevant tags: false_missing, false_extra, agent_json_failure, spec_parse_gap, repo_path_missing, stale_misclassified, ...>]
 
-**To the learning store** (defaults to repo-local `.a1/learnings/`; set `A1_VAULT_ROOT` for an external vault, e.g. Obsidian):
-Append the same entry to:
-`<learning-store>/pattern/a1-learnings/a1-reconcile.md`
-
-A run with no issues is still useful data — write the entry.

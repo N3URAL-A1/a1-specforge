@@ -11,7 +11,7 @@ update the source — not this file.
 
 ## How a1-reconcile uses it
 
-- Dispatched via `Task` tool with `subagent_type="a1-marco-mapper"` if
+- Dispatched via `Agent` tool with `subagent_type="a1-marco-mapper"` if
   available, else `subagent_type="general-purpose"` with the persona on line
   1 of the probe brief.
 - Brief from `templates/agent-probe-brief.md`.

@@ -79,7 +79,7 @@ node <repo>/_shared/a1-tools.cjs fix update-status \
   "<bug-path>" fixing
 ```
 
-Spawn the code agent via the `Task` tool with this brief:
+Spawn the code agent via the `Agent` tool with this brief:
 
 > **Task:** Bug fix following diagnosis.
 >

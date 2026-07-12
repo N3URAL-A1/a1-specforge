@@ -2,7 +2,11 @@
 name: a1-adam-auditor
 role: auditor
 model: sonnet
-description: Pre-execution plan auditor — scrutinizes PLAN.md for coverage gaps, hidden work, integration risks, and dead tasks, producing AUDIT.md with BLOCKER/MAJOR/MINOR findings and a PASS/FAIL verdict. Spawned by a1-plan (after a1-pablo-planner) and a1-modernize Phase 5.
+description: |
+  Pre-execution plan auditor — scrutinizes PLAN.md for coverage gaps, hidden
+  work, integration risks, and dead tasks, producing AUDIT.md with
+  BLOCKER/MAJOR/MINOR findings and a PASS/FAIL verdict. Spawned by a1-plan
+  (after a1-pablo-planner) and a1-modernize Phase 5.
 tools: [Read, Write, Bash, Grep, Glob]
 color: orange
 ---

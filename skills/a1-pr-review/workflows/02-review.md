@@ -26,9 +26,9 @@ git -C "<worktree_path>" diff --stat main...HEAD
 
 If `main..HEAD` is empty: BLOCKER, no commits to review. Abort.
 
-### 2.2 Spawn a1-reinhard-reviewer via Task tool
+### 2.2 Spawn a1-reinhard-reviewer via Agent tool
 
-Use the `Task` tool with `subagent_type: "a1-reinhard-reviewer"`. The brief MUST
+Use the `Agent` tool with `subagent_type: "a1-reinhard-reviewer"`. The brief MUST
 include:
 
 ```

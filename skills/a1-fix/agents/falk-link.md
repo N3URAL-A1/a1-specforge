@@ -15,7 +15,7 @@ elsewhere. If Falk's behavior needs to change, edit only the central file.
 
 ## Usage in a1-fix
 
-Falk is spawned as a sub-agent via the `Task` tool in the following phases of
+Falk is spawned as a sub-agent via the `Agent` tool in the following phases of
 the a1-fix skill:
 
 | Phase | Workflow | Mode | Brief location |

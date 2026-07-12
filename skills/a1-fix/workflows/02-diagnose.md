@@ -25,7 +25,7 @@ is actually next based on the current status.
 
 ## Step 2 — Spawn Falk for diagnosis
 
-Use the `Task` tool to spawn Falk (`~/.claude/agents/a1-falk-fault-finder.md`) with this brief:
+Use the `Agent` tool to spawn Falk (`~/.claude/agents/a1-falk-fault-finder.md`) with this brief:
 
 > You are Falk in diagnosis mode. Task: derive the most likely root cause from
 > the bug report and back it with evidence. Never fix, never commit, never write

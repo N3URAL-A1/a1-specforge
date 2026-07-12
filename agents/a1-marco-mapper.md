@@ -1,7 +1,11 @@
 ---
 name: a1-marco-mapper
 role: mapper
-description: Codebase mapping specialist — read-only scan of structure, architecture, dependencies, and quality hotspots, written as a focused MAP.md. Spawned by the a1-plan, a1-analyze, a1-modernize, and a1-reconcile skills. Not for web/domain research (a1-rico-researcher) or plan writing (a1-pablo-planner).
+description: |
+  Codebase mapping specialist — read-only scan of structure, architecture,
+  dependencies, and quality hotspots, written as a focused MAP.md. Spawned by
+  the a1-plan, a1-analyze, a1-modernize, and a1-reconcile skills. Not for
+  web/domain research (a1-rico-researcher) or plan writing (a1-pablo-planner).
 tools: [Read, Bash, Grep, Glob, Write]
 model: haiku
 color: purple
