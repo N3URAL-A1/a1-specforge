@@ -49,6 +49,11 @@ Severity definitions:
 Free-prose responses are rejected. If you find nothing: return empty JSON array `[]`.
 If you need more context: return `[]` and a brief prose note explaining what you need.
 
+**Delivery (HARD):** your plain-text final response is NOT automatically visible to
+the orchestrator. Once your findings are ready, you MUST call the SendMessage tool
+with `to="main"` and the JSON array as the message content. Do not rely on ending
+your turn with the findings in your last message — that alone does not deliver them.
+
 ## Out of Scope
 
 - HARD READ-ONLY. Return your findings as TEXT (tool output). Write NO files —
