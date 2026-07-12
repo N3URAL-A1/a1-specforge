@@ -555,4 +555,54 @@ faster than estimated is not a STOP-gate condition.
   is the unsplit `cmdChecklistRun` dispatcher at 96 lines, which was never
   an F-009 split target). SC-4 is satisfied.
 
-## Waves 11-17 — not started
+## Wave 11 — `spec` group — ✅ COMPLETE
+
+- Commit: `bbc8fbd`
+- Task: 11.1 (extract `spec` to `_shared/lib/spec.cjs`) — done
+- **Cross-group caller check (mandatory per plan Step 2, MUST-do-before-moving
+  gate):** ran `grep -n "appendPhaseHistory(" _shared/lib/worktree.cjs
+  _shared/lib/checklist.cjs _shared/a1-tools.cjs` BEFORE any move. Result: zero
+  hits in `worktree.cjs` or `checklist.cjs` — all 9 hits (1 definition + 8 call
+  sites) were still inside the facade itself, and every call site belongs to a
+  group not yet extracted (spec/fix/analyze/constitution/reconcile — Waves
+  11-14/16). No dangling-reference / under-scoped-earlier-wave condition
+  found; NOT a STOP-gate case. Proceeded with the move as planned.
+- Moved byte-identical: `appendPhaseHistory`, `cmdSpecNextNumber`,
+  `cmdSpecUpdateStatus`, `cmdSpecList`. Exports all four (per plan Step 4 —
+  `appendPhaseHistory` exported even though this wave's own cross-group check
+  found no live cross-module caller yet, since fix/analyze/constitution/
+  reconcile will import it from `lib/spec.cjs` when they extract in later
+  waves).
+- Const-sweep (mandatory per Executor ground rules): ran
+  `grep -n "^const [A-Z_]* = "` restricted to the wave's line range (165-360
+  pre-move) — found **`SPEC_STATUS_TO_PHASE`**, a module-level const object
+  (not a `Set`, a plain phase-lookup map) sitting between `cmdSpecNextNumber`
+  and `cmdSpecUpdateStatus`, not named in the plan's own Wave 11 MOVE list.
+  Consumed via bracket lookup (`SPEC_STATUS_TO_PHASE[newStatus]`) inside
+  `cmdSpecUpdateStatus`, not `.has()`/`.match()`/`.test()` — the same
+  detection-blind-spot pattern already seen in Wave 2's `SQL_TYPE_ALIASES`
+  finding. Moved it alongside the four named functions; leaving it in the
+  facade would have stranded `cmdSpecUpdateStatus` with a `ReferenceError` on
+  its very first non-trivial call. Logged in observations.jsonl (pattern:
+  `missing_wiring`).
+- Determined deps by reading the full moved block: `usage` (from
+  `help.cjs`), `vaultRoot`, `resolveVaultPath`, `parseFlags`, `readMd`,
+  `writeMdAtomic`, `nowIso`, `fail` (all from `io.cjs`), `SPEC_STATUSES` (from
+  `status-constants.cjs`, per Wave 1's revision — `cmdSpecUpdateStatus`
+  validates via `.has(newStatus)`).
+- Export verification: confirmed via grep that only the facade's dispatcher
+  (`group === 'spec'` branch, 3 call sites) calls the three `cmdSpec*`
+  functions — no other group referenced them before the move.
+- Deviation (minor, pre-existing, same as Waves 1-10): a1-reconcile fixture
+  suite writes live timestamps into checked-in fixture files during the
+  regression run; diff reverted before staging, suite itself not fixed
+  (out of scope).
+- Full regression gate: ALL-SUITES-GREEN (all fixture suites), specifically
+  re-confirmed per plan's Wave 11 Done-when block:
+  `_test-fixtures/a1-worktree/run-tests.sh` → 48 passed, 0 failed;
+  `_test-fixtures/a1-checklist/run-tests.sh` → 9 passed, 0 failed (both guard
+  against a broken `appendPhaseHistory` cross-import, both green).
+- Facade line count: 3065 → 2946 lines (−119)
+- New module: `_shared/lib/spec.cjs` (150 lines)
+
+## Waves 12-17 — not started
