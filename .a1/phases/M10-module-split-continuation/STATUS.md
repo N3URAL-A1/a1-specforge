@@ -433,4 +433,126 @@ faster than estimated is not a STOP-gate condition.
 - Facade line count: 3975 → 3685 lines (−290)
 - New module: `_shared/lib/check.cjs` (301 lines)
 
-## Waves 10-17 — not started
+## Wave 10 — `checklist` group (F-009 split of `runChecklistChecks`) — ✅ COMPLETE
+
+- Commit: `7299033`
+- Task: 10.1 (extract `checklist` to `_shared/lib/checklist.cjs`, splitting
+  `runChecklistChecks`) — done. This wave was a genuine behavior-preserving
+  refactor, not a pure mechanical move (per plan's explicit framing).
+- Moved byte-identical (no split needed): `CHECKLIST_REQUIRED_PLAN_FM_FIELDS`
+  (module-level const array, NOT a function — correctly on the plan's own
+  MOVE list this time, no undocumented-constant finding), `resolveChecklistTarget`,
+  `checklistPaths`, `extractWaveBlocks`, `extractWaveDependencies`,
+  `detectWaveCycles`, `classifyChecklistResult`, `formatChecklistHumanReport`,
+  `cmdChecklistRun`, `emitChecklistReport`, `cmdChecklistList`. Exports only
+  the two dispatcher-facing functions (`cmdChecklistRun`, `cmdChecklistList`);
+  all other moved identifiers stay module-private (verified no external
+  callers via grep before and after the move).
+- **F-009 split of `runChecklistChecks` (246 lines pre-split) — the core
+  task of this wave.** Read the full function end-to-end before writing any
+  code (per plan Step 2 / executor instructions). Split into 5 named helpers,
+  each independently well under the ~100-line ceiling (line counts via
+  `awk` scan of `_shared/lib/checklist.cjs`, includes braces/comments/blanks):
+  - `gatherChecklistInputs(paths)` — **31 lines** — parse/gather phase: loads
+    spec + plan frontmatter/body from disk with the original graceful-fallback
+    error handling, returns `{ spec, plan, planExists, errors, fatal }`.
+  - `evaluateChecklistRules(slug, paths, spec, plan, planExists)` — **87
+    lines** — compute-phase orchestrator: runs checks 1 (`spec_status_clarified`)
+    and 2 (`wave_plan_exists`), then either emits the original 6-check
+    no-plan degenerate branch (checks 3-8 all skipped/FAIL) or delegates to
+    `evaluateChecklistPlanBodyRules` for the full check set.
+  - `evaluateChecklistWaveStructureRules(waveBlocks)` — **64 lines** — checks
+    3 (`waves_have_suggested_agents`), 4 (`wave_dependencies_dag`), 5
+    (`waves_have_stories_advanced`) — all derived purely from parsed wave
+    blocks.
+  - `evaluateChecklistProjectMetaRules(slug, paths, plan)` — **78 lines** —
+    checks 6 (`project_claudemd_exists`), 7 (`plans_directory_convention`), 8
+    (`plan_frontmatter_complete`) — all derived from project metadata rather
+    than wave blocks.
+  - `evaluateChecklistPlanBodyRules(slug, paths, plan)` — **7 lines** — thin
+    composer: extracts wave blocks once, concatenates the two sub-evaluators'
+    results. Kept as its own named function (matching the plan's suggested
+    name) rather than inlined, for readability at the call site.
+  - `runChecklistChecks(slug, feature, paths)` — **14 lines** — kept as a
+    thin orchestrator under its ORIGINAL name (plan's stated option B: "or is
+    removed entirely if `cmdChecklistRun` can call the three directly —
+    whichever keeps the diff smallest and clearest"). Keeping the name and
+    signature meant `cmdChecklistRun`'s call site (`runChecklistChecks(slug,
+    feature, paths)`) needed ZERO changes — smaller, safer diff than
+    inlining three calls into `cmdChecklistRun` directly. Calls
+    `gatherChecklistInputs` then `evaluateChecklistRules` in sequence,
+    returns the exact same `{ checks, errors, fatal }` shape as the
+    pre-split version.
+  - Rationale for the 2-level compute split (5 helpers instead of the
+    plan's suggested 3): a straightforward "gather / one compute / format"
+    3-way split left the single compute helper at ~215 lines (way over
+    the ~100-line ceiling), because checks 3-8's plan-body logic is
+    itself substantial. Split the compute phase into wave-structure
+    checks (3-5) vs. project-metadata checks (6-8) — a natural, readable
+    grouping that keeps every individual helper under 90 lines while
+    preserving the exact same combined checks[] array contents/order as
+    the original single function.
+  - No separate "format" helper was introduced for `runChecklistChecks`
+    itself: the pre-split function's own "format" concern (shaping raw
+    check results into the report object `cmdChecklistRun` expects) was
+    already handled downstream by the pre-existing `classifyChecklistResult`
+    / `formatChecklistHumanReport` functions, which this wave moved
+    unchanged (not part of the F-009 target). Forcing an artificial extra
+    "format" layer purely inside `runChecklistChecks` (which just returns
+    `{ checks, errors, fatal }`, already a plain data shape) would have
+    added indirection without a corresponding size-ceiling or readability
+    benefit — noted as a deliberate deviation from the plan's suggested
+    3-phase shape in favor of what the actual code structure warranted.
+- `FR_PATTERN`/`WAVE_HEADING_PATTERN` check (per plan Step 5, referencing
+  Wave 9's decision): grepped the whole checklist block — neither constant
+  is referenced anywhere in it (Wave 9's own grep across the WHOLE facade
+  already confirmed this before `check.cjs` was created). No duplication
+  needed, no shared module invented.
+- Const-sweep (mandatory per Executor ground rules): ran
+  `grep -n "^const \|^let \|^var "` restricted to the pre-move facade's
+  checklist line range (1688-2310) — found exactly the one constant
+  already named in the plan (`CHECKLIST_REQUIRED_PLAN_FM_FIELDS`). No
+  additional undocumented module-level const/RegExp found this wave (clean
+  outcome, same as Waves 3, 6, 7, 8, 9).
+- **Critical regression check specific to this wave (per plan Step 7,
+  mandatory since this is a genuine refactor not a pure move):** ran the
+  full `_test-fixtures/a1-checklist/run-tests.sh` suite (all 8 vault-fixture
+  cases: pass, blocker-spec-not-clarified, blocker-no-plan,
+  blocker-dep-cycle, major-missing-agents, major-missing-stories,
+  major-missing-frontmatter, minor-no-claudemd, plus a 9th slug-only-resolve
+  variant of the pass case) — all 9 passed. THEN additionally, beyond what
+  the fixture suite's exit-code/status-field assertions check, ran a
+  byte-for-byte stdout diff for EVERY ONE of the 8 fixture cases (not just
+  one passing + one failing case as the plan's minimum bar) between the
+  pre-wave facade (`git show HEAD:_shared/a1-tools.cjs`, restored to a
+  scratch file alongside a copy of `_shared/lib/` with the new
+  `checklist.cjs` removed, so it exercises the pre-split inline function)
+  and the post-wave facade, using `checklist run demo/001-login --vault
+  <fixture-dir> --format json`: all 8 diffs were empty (byte-identical),
+  and all 8 exit codes matched. Also diffed `--format human` output for one
+  case (`major-missing-agents`) and `checklist list demo` output for the
+  `pass` fixture — both byte-identical too. This confirms the split
+  preserved exact output SHAPE (field order, values, formatting), not just
+  exit-code parity.
+- Deviation (minor, pre-existing, same as Waves 1-9): a1-reconcile fixture
+  suite writes live timestamps into checked-in fixture files during the
+  regression run; diff reverted before staging (twice — once before the
+  first commit attempt, once again after a second full regression-gate run
+  re-triggered it), suite itself not fixed (out of scope).
+- Full regression gate: ALL-SUITES-GREEN (all fixture suites, including
+  a1-checklist: 9 passed 0 failed)
+- Facade line count: 3685 → 3065 lines (−620)
+- New module: `_shared/lib/checklist.cjs` (710 lines)
+- **SC-4 confirmation (explicit):** `runChecklistChecks` is split into
+  parse (`gatherChecklistInputs`, 31 lines) / compute
+  (`evaluateChecklistRules` 87 lines, delegating to
+  `evaluateChecklistWaveStructureRules` 64 lines and
+  `evaluateChecklistProjectMetaRules` 78 lines via the 7-line composer
+  `evaluateChecklistPlanBodyRules`) / the pre-existing format helpers
+  (`classifyChecklistResult`, `formatChecklistHumanReport`, moved
+  unchanged). No single helper in the split exceeds ~100 lines (largest
+  compute-phase helper is 87 lines; largest overall function in the file
+  is the unsplit `cmdChecklistRun` dispatcher at 96 lines, which was never
+  an F-009 split target). SC-4 is satisfied.
+
+## Waves 11-17 — not started
