@@ -910,4 +910,135 @@ faster than estimated is not a STOP-gate condition.
   committed (`4aa52d7`) BEFORE Wave 16 touches either group's code — F-007
   is closed.
 
-## Waves 16-17 — not started
+## Wave 16 — Extract `fix` + `constitution` groups — ✅ COMPLETE
+
+- Commits: `7619d07` (Task 16.1, `fix`), `3acdacc` (Task 16.2, `constitution`) —
+  two commits, one per task, matching the one-commit-per-module rule; sequenced
+  16.1 then 16.2 (not concurrent) since both touch the facade's dispatcher
+  region, per the plan's explicit instruction.
+- Task 16.1 (extract `fix` to `_shared/lib/fix.cjs`) — done. Moved
+  byte-identical: `cmdFixNextSuffix`, `cmdFixUpdateStatus`, `cmdFixList`,
+  `cmdFixFindDuplicates`, `postmortemsDir`, `agentsLockPath`,
+  `lastPromotePath`, `cmdFixIntegrityCheck`, `cmdFixInitPostmortem`,
+  `cmdFixCountPostmortemsSince`, `cmdFixUpdatePromoteState`,
+  `cmdFixWriteSuggestion`. Exports only the 9 dispatcher-facing
+  `cmdFix*` functions; `postmortemsDir`/`agentsLockPath`/`lastPromotePath`
+  stay module-private (verified no external callers via grep before and
+  after the move — only called from within the same moved block).
+  `appendPhaseHistory` cross-import (per plan Step 2): confirmed live usage
+  at 1 call site (`cmdFixUpdateStatus`, bracket-mapped via a function-local
+  `PHASE_MAP` — NOT a module-level const, correctly excluded from the
+  const-sweep findings) and imported it from `lib/spec.cjs`, same pattern
+  as Waves 12/13/14.
+- Const-sweep (mandatory per Executor ground rules) for Task 16.1: ran
+  `grep -n "^const [A-Z_]* = "` restricted to the wave's pre-move line range
+  (239-676) plus a broader `^const |^let |^var ` sweep — found NO
+  undocumented module-level const/RegExp in range (the `fix` group's only
+  lookup map, `PHASE_MAP`, is declared inside `cmdFixUpdateStatus`'s
+  function body, not at module level, so it correctly does not need a
+  separate move step). Clean outcome, same as Waves 3, 6, 7, 8, 9.
+  `BUG_STATUSES`/`BUG_SEVERITIES` imported from `status-constants.cjs` per
+  plan instruction; live `.has(` call site confirmed for `BUG_STATUSES`
+  inside `cmdFixUpdateStatus`. `BUG_SEVERITIES` has no live `.has()` call
+  site anywhere in the facade (severity is stored/filtered as free text in
+  `cmdFixList`/`cmdFixInitPostmortem`, never validated against the Set) —
+  imported anyway per the plan's explicit instruction and for consistency
+  with the shared `status-constants.cjs` contract (same harmless-unused-
+  destructure precedent as Wave 13's `MODERNIZE_WAVE_STATUSES`).
+- Determined deps by reading the full moved block: `usage` (from
+  `help.cjs`), `vaultRoot`, `resolveVaultPath`, `parseFlags`, `readMd`,
+  `writeMdAtomic`, `nowIso`, `fail` (all from `io.cjs`).
+- Export verification: confirmed via grep that only the facade's dispatcher
+  (`group === 'fix'` branch, 9 call sites) calls the `cmdFix*` functions —
+  no other group referenced them before the move.
+- `_test-fixtures/a1-fix/run-tests.sh` (Wave 15's new regression net,
+  46 cases): **46 passed, 0 failed** against the post-extraction facade —
+  confirms the extraction is behavior-preserving, not just syntactically
+  valid.
+- Task 16.2 (extract `constitution` to `_shared/lib/constitution.cjs`) —
+  done, after Task 16.1's commit, boundaries re-located against the
+  post-Task-16.1 facade state (per plan Step 1's explicit instruction).
+  Moved byte-identical: `constitutionVaultPath`, `constitutionHistoryDir`,
+  `cmdConstitutionInit`, `cmdConstitutionDiscover`,
+  `cmdConstitutionUpdateStatus`, `cmdConstitutionSetBody`,
+  `cmdConstitutionNextVersion`, `cmdConstitutionArchiveCurrent`,
+  `cmdConstitutionWriteMirror`, `cmdConstitutionLinkClaudemd`,
+  `cmdConstitutionList`, plus the doc-comment block explaining the
+  singleton-per-project + history vault-layout contract. Exports only the
+  9 dispatcher-facing `cmdConstitution*` functions;
+  `constitutionVaultPath`/`constitutionHistoryDir` stay module-private
+  (verified no external callers via grep before and after the move — only
+  called from within the same moved block). The intra-group call
+  `cmdConstitutionArchiveCurrent` → `cmdConstitutionNextVersion` stays a
+  plain in-module call, no export/import needed (both live in
+  `constitution.cjs`), exactly as the plan specified.
+  `appendPhaseHistory` cross-import (per plan Step 3): confirmed live usage
+  at 1 call site (`cmdConstitutionUpdateStatus`, bracket-mapped via
+  `CONSTITUTION_STATUS_TO_PHASE[newStatus]`, see below) and imported it
+  from `lib/spec.cjs`, same pattern as Waves 12/13/14/16.1.
+- **Const-sweep (mandatory per Executor ground rules) for Task 16.2:** ran
+  `grep -n "^const [A-Z_]* = "` restricted to the wave's pre-move line
+  range (263-685) — found **TWO** undocumented module-level consts not
+  named anywhere in the plan's own Wave 16 Task 16.2 MOVE list:
+  - `CONSTITUTION_STATUS_TO_PHASE` — a module-level phase-lookup object
+    (not a `Set`, analogous to Wave 11's `SPEC_STATUS_TO_PHASE`, Wave 12's
+    `ANALYSIS_STATUS_TO_PHASE`, Wave 13's `MODERNIZE_STATUS_TO_PHASE`, and
+    Wave 14's `RECONCILE_STATUS_TO_PHASE`), sitting immediately before
+    `constitutionVaultPath`. Consumed via bracket lookup
+    (`CONSTITUTION_STATUS_TO_PHASE[newStatus]`) inside
+    `cmdConstitutionUpdateStatus` — same detection-blind-spot pattern as
+    every prior *_STATUS_TO_PHASE finding this plan has produced (Waves 2,
+    11, 12, 13, 14). This is the 5th occurrence of the exact same class.
+  - `CLAUDEMD_LINK_MARKER_START` / `CLAUDEMD_LINK_MARKER_END` — two
+    module-level string consts (`'<!-- a1-constitution:link -->'` /
+    `'<!-- /a1-constitution:link -->'`), sitting between
+    `cmdConstitutionWriteMirror` and `cmdConstitutionLinkClaudemd`,
+    consumed by `cmdConstitutionLinkClaudemd` for idempotent
+    marker-block detection/replacement in CLAUDE.md (`.includes(`,
+    `.indexOf(` — not `.has()`/`.match()`/`.test()`, a slightly different
+    variant of the same blind-spot: template-literal interpolation and
+    `.includes()`/`.indexOf()` calls are just as invisible to a naive
+    `^function` boundary grep as bracket-lookup and `.has()` calls are).
+  Both moved alongside the 9 named functions/2 named helpers; leaving
+  either in the facade would have stranded `cmdConstitutionUpdateStatus`
+  (ReferenceError on its first status-transition call) or
+  `cmdConstitutionLinkClaudemd` (ReferenceError on its first invocation).
+  No other consumer found outside the constitution range for either.
+  Logged in observations.jsonl (pattern: `missing_wiring`, 2 entries).
+- Determined deps by reading the full moved block: `usage` (from
+  `help.cjs`), `vaultRoot`, `resolveVaultPath`, `parseFlags`, `readMd`,
+  `writeMdAtomic`, `nowIso`, `fail` (all from `io.cjs`), `CONSTITUTION_STATUSES`
+  (from `status-constants.cjs`, live `.has(` call site confirmed inside
+  `cmdConstitutionUpdateStatus`).
+- Export verification: confirmed via grep that only the facade's
+  dispatcher (`group === 'constitution'` branch, 9 call sites) calls the
+  `cmdConstitution*` functions — no other group referenced them before
+  the move.
+- `_test-fixtures/a1-constitution/run-tests.sh` (Wave 15's new regression
+  net, 57 cases): **57 passed, 0 failed** against the post-extraction
+  facade — specifically exercises the `archive-current`
+  ↔ `next-version` internal-vs-external agreement regression target
+  (RESEARCH.md-flagged), confirming the intra-module plain call
+  (`cmdConstitutionArchiveCurrent` → `cmdConstitutionNextVersion`) still
+  produces numerically consistent results post-extraction.
+- **SC-3 confirmation (explicit):** both `_test-fixtures/a1-fix/run-tests.sh`
+  (46 cases) and `_test-fixtures/a1-constitution/run-tests.sh` (57 cases)
+  were written and committed in Wave 15 (`4aa52d7`) — BEFORE this wave's
+  two extraction commits (`7619d07`, `3acdacc`) touched either group's
+  code. F-007 fixture-coverage gap is closed and validated end-to-end by
+  this wave's green runs against the real post-extraction code, not just
+  the pre-extraction baseline Wave 15 verified.
+- Deviation (minor, pre-existing, same as Waves 1-15): a1-reconcile
+  fixture suite writes live timestamps into checked-in fixture files
+  during the regression run; diff reverted before staging (twice, once
+  per task's full regression-gate run), suite itself not fixed (out of
+  scope).
+- Full regression gate: ALL-SUITES-GREEN after Task 16.1 (22 suites,
+  including a1-fix: 46 passed 0 failed) and ALL-SUITES-GREEN again after
+  Task 16.2 (22 suites, including a1-constitution: 57 passed 0 failed).
+- Facade line count: 1412 → 986 lines (Task 16.1, −426) → 575 lines
+  (Task 16.2, −411). **Wave 16 total: 1412 → 575 lines (−837).**
+- New modules: `_shared/lib/fix.cjs` (469 lines),
+  `_shared/lib/constitution.cjs` (454 lines).
+
+## Wave 17 — not started
