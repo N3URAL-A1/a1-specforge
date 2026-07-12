@@ -736,13 +736,121 @@ Green after Task 6.1 and Task 6.2.
 431176c docs(skills): make Retro mechanism discoverable for 5 pipeline skills
 ```
 
+## Wave 7 — Structural decisions (each task: STOP gate, Robert decides)
+
+**Status: DONE** (all 4 tasks complete — each produced a decision document
+only; no structural change applied to any skill, agent, or frontmatter file,
+per the wave's hard rule. No `bin/`, `.github/`, or `_test-fixtures/` files
+touched, so the regression gate does not apply to this wave.)
+
+### Pre-execution note
+
+Working tree at Wave 7 start had two unrelated, out-of-scope pre-existing
+uncommitted diffs (`_test-fixtures/a1-reconcile/{single-missing,single-pass}/
+vault/projects/demo/drift-2026-05-13.md` — harmless fixture-timestamp drift,
+same files flagged as out-of-scope leftovers in every prior wave's
+pre-execution note). Left untouched throughout, never staged or committed by
+this run. The `decisions/` directory already existed (empty) from an earlier
+concurrent-wave run; no pre-existing decision-doc content was found inside
+it — all four documents below are fresh.
+
+### Task 7.1 — a1-check ⊂ a1-checklist merge
+- **Done.** `decisions/check-checklist-merge.md` created. Verified the live
+  call-site inventory first (a1-check has exactly one production caller:
+  `a1-new-feature/workflows/04.5-consistency-gate.md`) and its 3-way exit
+  code contract (0/1/2), since any merge must preserve that contract for
+  Phase 4.5's branching logic. Recommendation: merge as check #9 into
+  a1-checklist with a deprecated-alias transition period, migration steps
+  included covering the Phase-4.5 wiring impact.
+
+### Task 7.2 — Operationalize the Reinhard ↔ Samuel security boundary
+- **Done.** `decisions/reinhard-samuel-boundary.md` created. Read Reinhard's
+  Phase 5 (Security Audit) and Phase 7 (AI-Generated Code Audit — found a
+  near-duplicate "trust boundaries" bullet overlapping Phase 5's "Output
+  Sanitization" item) and Samuel's frontmatter to confirm the escalation
+  path is asserted on Samuel's side only, not operationalized on Reinhard's.
+  Recommendation: convert Phase 5 into a 4-class triage-and-escalate
+  checklist (auth/authz correctness, injection/trust-boundary surfaces,
+  constitution.md security requirements, supply-chain findings); draft
+  replacement markdown included inline, not applied.
+
+### Task 7.3 — Extract postmortem prose from Pablo/Erik/Victor prompts
+- **Done.** `decisions/postmortem-prose-extraction.md` created.
+  **Correction to the plan's basis text, found during live verification:**
+  Pablo has no "3.5-3.7" numbered subsections — the actual postmortem
+  citation is a single inline sentence inside Step 3 ("Pattern from 4
+  postmortems: a1-evolve 2026-06-08"). Erik's `3c-ter`/`3c-quater` sections
+  were confirmed as named. Victor was checked and confirmed to have zero
+  postmortem/dated markers (correctly not a target for this task).
+  Recommendation: extract into a new `_shared/agent-lessons.md` reference
+  file, prompts keep one-line principles + pointers; example diff for Pablo
+  included per the task's requirement; also proposes an a1-evolve
+  Apply-phase rule change (append to reference file, not prompt, going
+  forward) as a follow-up, not applied here.
+
+### Task 7.4 — Agent + skill consolidation review
+- **Done.** `decisions/agent-skill-consolidation.md` created, covering all
+  six original candidates (Theo: keep; Rafael: keep; Diana: confirmed
+  zero references in `skills/`, genuinely orphaned — recommend wiring into
+  a skill or explicitly documenting as manual-only; Ludwig: keep pending an
+  empirical diff against the installed `legal` plugin, which this pass
+  could not locate/verify in this environment — flagged as an open
+  verification step, not answered; hero-animation-builder: recommend move
+  to repo-root `_extras/`; Marco's haiku pin: keep, revisit only on observed
+  degradation), both Task 5.4 format axes (description-style: 3-way split
+  re-verified live — 8 quoted-single-line / 4 block-scalar / 9 bare-unquoted,
+  recommend block-scalar repo-wide, low risk; prompt-body dialect:
+  **re-verified count differs from Task 5.4's framing** — 9 agents use XML
+  tags, not the "9 vs. 4 newest" framing implied; 12 already use Markdown
+  headings, recommend adopting Markdown-heading repo-wide but as its own
+  higher-risk follow-up phase, not a quick sweep, pending a check that
+  nothing downstream parses the XML tags programmatically), and all three
+  MAP.md-surfaced additions (check⊂checklist cross-referenced to 7.1's own
+  doc, not duplicated; lifecycle-gates extraction — **corrected the plan's
+  a1-fix LOC figure from ~224 to the live-measured ~724** — recommend
+  deferring to a dedicated follow-up analysis rather than extracting on
+  LOC-similarity alone; Versions-section consistency — recommend dropping
+  the universality expectation rather than adding to 14 skills, documenting
+  it as opt-in).
+
+## Deviations from plan (Wave 7)
+
+- Task 7.3: the plan's basis text cited "Pablo 3.5-3.7" as evidence; live
+  grep found no such numbered subsections — the actual site is one inline
+  sentence in Pablo's Step 3. Documented as a correction inside the
+  decision doc itself (not silently substituted) since the doc's job is to
+  reflect what's actually in the files.
+- Task 7.4: the plan's basis text cited a1-fix's lifecycle-gate logic as
+  "~224 LOC"; live `wc -l` on `skills/a1-fix/workflows/*.md` totals 724
+  lines. Documented as a correction inside the decision doc. Also: this
+  pass could not verify the installed `legal` Claude Code plugin's presence
+  or contents in this environment (no local plugin directory found under
+  paths checked) — Ludwig's keep/drop recommendation is explicitly flagged
+  as pending that verification rather than asserting an unverified answer.
+  Also: Task 5.4's prompt-body-dialect count ("9 XML-tag agents vs. 4
+  newest Markdown agents") was re-verified live and found to undercount the
+  Markdown-heading group (actually 12/21, not 4) — corrected in the doc.
+- No structural change was applied anywhere in this wave, per the wave's
+  hard rule — no skill, agent, or frontmatter file outside
+  `.a1/phases/M11-audit-fixes/decisions/` was touched.
+
+## Regression gate results (Wave 7)
+
+Not applicable — no task in this wave touched `bin/`, `.github/`, or
+`_test-fixtures/` (all four tasks produced markdown decision documents
+only). Not run.
+
+## Commit log (Wave 7)
+
+```
+dd4ee5a docs(m11): add Wave 7 structural decision documents
+```
+
 ## Next wave
 
-Wave 7 (Structural decisions) remains, STOP-gated per task — each task
-produces a decision doc under `.a1/phases/M11-audit-fixes/decisions/`
-only, never applies structural change. Depends on notes from Task 4.3
-(landed, Wave 4) and Task 5.4 (landed, Wave 5, note-only) — both inputs
-are available. Wave 7's Task 7.4 should also be made aware of this
-wave's Task 6.2 finding (4 skills misclassified as retro-free in
-earlier planning) in case it's relevant context for the consolidation
-review, though it is not one of Task 7.4's named candidates.
+None — Wave 7 was the last wave in this plan (see PLAN.md "Dependencies":
+"Wave 7 → last"). All 7 waves are now DONE. Remaining work is entirely
+Robert's: review the four decision docs under
+`.a1/phases/M11-audit-fixes/decisions/` and decide which structural changes
+(if any) to greenlight as separate, future phases. None of Wave 7's
+recommendations have been applied.
