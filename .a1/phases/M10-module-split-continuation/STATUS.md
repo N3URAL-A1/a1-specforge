@@ -67,4 +67,50 @@
 - Facade line count: 6287 → 6095 lines (−192)
 - New module: `_shared/lib/cost.cjs` (203 lines)
 
-## Waves 4-17 — not started
+## Wave 4 — `realpath-check` group — ✅ COMPLETE
+
+- Commit: `5d33155`
+- Task: 4.1 (extract `realpath-check` to `_shared/lib/realpath-check.cjs`) — done
+- Moved byte-identical: `REALPATH_SIGNATURES`, `REALPATH_MOCK_MARKERS`,
+  `REALPATH_DEFAULT_REAL_MARKERS`, `REALPATH_URL`, `REALPATH_LOCALHOST` (all
+  5 module-level const/RegExp literals immediately before `runGit`), `runGit`,
+  `scanDiffForSurfaces`, `extractEvidenceSections`, `sectionHasCommand`,
+  `cmdRealpathCheckRun`, plus the doc-comment block explaining the Gate 0.7
+  contract (surface-signature scan, evidence-section requirements, known
+  limits). Exports only the dispatcher-facing function (`cmdRealpathCheckRun`);
+  the 4 helpers + 5 constants stay module-private (verified no external
+  callers via grep before and after the move).
+- Q2 re-verified live (per RESEARCH.md/plan Step 2): `runGit` uses
+  `spawnSync('git', args, { cwd, encoding: 'utf8' })` — the safe array-args
+  form, NOT a shell string. Not an F-015-class issue; moved as-is, no fix
+  needed. No name/behavior collision with `worktree-registry.cjs`'s
+  `git`/`gitSafe` (kept local under its current name per plan Step 2 — no
+  consolidation attempted, out of scope).
+- `REALPATH_SIGNATURES` (flagged by Wave 3's agent as needing re-location and
+  a "does it belong here" check, per plan revision note): confirmed its only
+  consumer is `scanDiffForSurfaces` (via `.sql`/`.rls`/`.http` property
+  access), which is itself on this wave's MOVE list — moved into this module,
+  not stranded in the facade.
+- Const-sweep (mandatory per Executor ground rules): ran
+  `grep -n "^const [A-Z_]* = "` restricted to the wave's line range
+  (4400-4735) — found **`REALPATH_DEFAULT_REAL_MARKERS`**, a fifth
+  module-level const the plan's Wave 4 MOVE-list text never named (plan only
+  named `REALPATH_MOCK_MARKERS`/`REALPATH_URL`/`REALPATH_LOCALHOST` plus
+  flagged `REALPATH_SIGNATURES` for re-verification — `REALPATH_DEFAULT_REAL_MARKERS`
+  wasn't mentioned anywhere). It's consumed directly (not via `.has()`/
+  `.match()`/`.test()`, which is likely why static analysis missed it) inside
+  `cmdRealpathCheckRun`'s `new RegExp(flags['real-markers'] || REALPATH_DEFAULT_REAL_MARKERS, 'i')`
+  line. Moved it alongside the other 4 — leaving it in the facade would have
+  caused a `ReferenceError` on the very first `realpath-check run` invocation
+  with no `--real-markers` flag. Logged in observations.jsonl (pattern:
+  `missing_wiring`).
+- Deviation (minor, pre-existing, same as Waves 1-3): a1-reconcile fixture
+  suite writes live timestamps into checked-in fixture files during the
+  regression run; diff reverted before staging, suite itself not fixed
+  (out of scope).
+- Full regression gate: ALL-SUITES-GREEN (22 suites, including
+  a1-realpath-check: 5 passed, 0 failed, and a1-cmd-injection)
+- Facade line count: 6095 → 5831 lines (−264)
+- New module: `_shared/lib/realpath-check.cjs` (274 lines)
+
+## Waves 5-17 — not started
