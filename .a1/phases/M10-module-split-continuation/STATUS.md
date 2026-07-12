@@ -40,4 +40,31 @@
 - Facade line count: 6728 → 6287 lines (−441)
 - New module: `_shared/lib/schema-check.cjs` (452 lines)
 
-## Waves 3-17 — not started
+## Wave 3 — `cost` group — ✅ COMPLETE
+
+- Commit: `b9d1c31`
+- Task: 3.1 (extract `cost` to `_shared/lib/cost.cjs`) — done
+- Moved byte-identical: `costEmptyTotals`, `costAddUsage`, `costParseJsonlFile`,
+  `cmdCostRun` (187 lines, inherited size per plan note, not in F-009/SC-4
+  scope), plus its doc-comment block explaining the JSONL contract
+  (message.id de-dup, sub-agent usage merging, malformed-line skip counter).
+  Exports only the dispatcher-facing function (`cmdCostRun`); the three
+  helpers stay module-private (verified no external callers via grep before
+  and after the move).
+- Const-sweep (mandatory per Executor ground rules): ran
+  `grep -n "^const [A-Z_]* = "` restricted to the wave's line range (4400-4660)
+  plus a broader `^const |^let |^var ` sweep (4350-4700) as an extra
+  cross-check — found NO additional module-level const/RegExp literals in
+  range beyond the Wave-2-added `require(...)` line for `schema-check.cjs`
+  and the next group's `REALPATH_SIGNATURES` (correctly out of range, stays
+  in the facade for Wave 4). No stranding risk this wave, unlike Wave 2's
+  `SQL_TYPE_ALIASES` finding.
+- Deviation (minor, pre-existing, same as Waves 1-2): a1-reconcile fixture
+  suite writes live timestamps into checked-in fixture files during the
+  regression run; diff reverted before staging, suite itself not fixed
+  (out of scope).
+- Full regression gate: ALL-SUITES-GREEN (22 suites, including a1-cmd-injection)
+- Facade line count: 6287 → 6095 lines (−192)
+- New module: `_shared/lib/cost.cjs` (203 lines)
+
+## Waves 4-17 — not started
