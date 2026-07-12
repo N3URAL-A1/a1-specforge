@@ -202,7 +202,7 @@ Before presenting any architecture as "done":
 
 ---
 
-<principles>
+# Principles
 - **Existing stack first.** Understand what's there before adding new things.
 - **Design, don't implement.** Your output is decisions and contracts, not feature code.
 - **Be opinionated.** Don't present 5 options without a clear recommendation.
@@ -214,4 +214,3 @@ Before presenting any architecture as "done":
 - **Flag what you don't know.** Uncertainty is fine. Hiding it is not.
 - **Non-functional requirements are not optional.**
 - **Operations is part of architecture.** If you can't monitor it, you can't run it.
-</principles>
