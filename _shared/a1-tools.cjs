@@ -302,6 +302,9 @@ const {
   writeAllOrNothing,
 } = require(path.join(__dirname, 'lib', 'locks.cjs'));
 
+// ---------- safe git exec (argv-array, no shell) + metachar guard (lib/git-safe.cjs) ----------
+const { gitSafe, assertNoShellMetachar } = require(path.join(__dirname, 'lib', 'git-safe.cjs'));
+
 
 // ---------- product command group (lib/product.cjs) ----------
 // readProductRoadmap/readProductFeature/regenerateDerived/appendChangelogEntry/
@@ -3669,15 +3672,22 @@ function cmdModernizeDiscoverStack(args) {
     }
   } catch (_e) {}
 
-  // LOC and file count (non-blocking, best-effort)
+  // LOC and file count (non-blocking, best-effort). execFileSync passes
+  // `root` as a literal argv entry (no shell), and the node_modules/.git
+  // exclusion is done in JS instead of a `| grep -v` shell pipeline.
   let loc = 0;
   let fileCount = 0;
   try {
-    const find = require('child_process').execSync(
-      `find "${root}" -type f \\( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.dart" -o -name "*.py" \\) | grep -v node_modules | grep -v ".git"`,
+    const find = require('child_process').execFileSync(
+      'find',
+      [root, '-type', 'f', '(', '-name', '*.ts', '-o', '-name', '*.tsx',
+        '-o', '-name', '*.js', '-o', '-name', '*.dart', '-o', '-name', '*.py', ')'],
       { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] }
     ).trim();
-    const files = find.split('\n').filter(Boolean);
+    const files = find
+      .split('\n')
+      .filter(Boolean)
+      .filter((f) => !f.includes('node_modules') && !f.includes('/.git/'));
     fileCount = files.length;
     for (const f of files.slice(0, 200)) {
       try {
@@ -4263,16 +4273,13 @@ function extractAnchorsFromSpec(specBody) {
 function gitLastTouchIso(repoPath, relRefs) {
   if (!repoPath || !fs.existsSync(path.join(repoPath, '.git'))) return null;
   try {
-    const { execSync } = require('child_process');
     const filtered = relRefs.filter(Boolean);
     if (filtered.length === 0) return null;
     // git log -1 --format=%cI -- <paths...> ; missing paths are tolerated.
+    // execFileSync passes each path as a literal argv entry — no shell
+    // involved, so metacharacters in a hostile path are inert.
     const args = ['log', '-1', '--format=%cI', '--'].concat(filtered);
-    const out = execSync(`git ${args.map((a) => JSON.stringify(a)).join(' ')}`, {
-      cwd: repoPath,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
+    const out = gitSafe(repoPath, args, { stdio: ['ignore', 'pipe', 'ignore'] });
     return out || null;
   } catch (_e) {
     return null;
@@ -6290,22 +6297,15 @@ function phantomDefaultSince(repoPath, planPath) {
   // "before plan was checked off" baseline.
   try {
     const rel = path.relative(repoPath, planPath);
-    const last = require('child_process')
-      .execSync(`git -C "${repoPath}" log -1 --format=%H -- "${rel}"`, {
-        encoding: 'utf8',
-      })
-      .trim();
+    const last = gitSafe(repoPath, ['log', '-1', '--format=%H', '--', rel]);
     if (!last) return 'HEAD~20';
     // Use the PLAN commit's parent so the diff includes the implementation
     // that landed alongside the checkbox flip. Fall back to the commit
     // itself if it is the repo's initial commit.
     try {
-      const parent = require('child_process')
-        .execSync(`git -C "${repoPath}" rev-parse "${last}^"`, {
-          encoding: 'utf8',
-          stdio: ['pipe', 'pipe', 'ignore'],
-        })
-        .trim();
+      const parent = gitSafe(repoPath, ['rev-parse', `${last}^`], {
+        stdio: ['pipe', 'pipe', 'ignore'],
+      });
       return parent;
     } catch {
       return last;
@@ -6316,25 +6316,19 @@ function phantomDefaultSince(repoPath, planPath) {
 }
 
 function phantomCollectDiff(repoPath, since) {
-  const cp = require('child_process');
   let changedFiles = [];
   let diffBody = '';
   try {
-    const names = cp
-      .execSync(`git -C "${repoPath}" diff --name-only ${since}..HEAD`, {
-        encoding: 'utf8',
-      })
-      .trim();
+    const names = gitSafe(repoPath, ['diff', '--name-only', `${since}..HEAD`]);
     changedFiles = names ? names.split(/\n/) : [];
   } catch (e) {
     // git may fail (bad ref, not a repo) — caller surfaces this.
     throw new Error(`git diff --name-only failed: ${e.message}`);
   }
   try {
-    diffBody = cp.execSync(
-      `git -C "${repoPath}" diff ${since}..HEAD`,
-      { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
-    );
+    diffBody = gitSafe(repoPath, ['diff', `${since}..HEAD`], {
+      maxBuffer: 64 * 1024 * 1024,
+    });
   } catch (e) {
     throw new Error(`git diff failed: ${e.message}`);
   }
@@ -6376,6 +6370,15 @@ function cmdPhantomCheck(rest) {
   }
   if (positional.length !== 1) {
     usage('usage: phantom check <plan-path> [--repo-path <abs>] [--since <git-ref>] [--format json|human]');
+  }
+  // Defense-in-depth: reject shell metacharacters at the parsing boundary so
+  // a future exec site added elsewhere (not going through gitSafe) fails
+  // safe too — these values eventually reach git invocations.
+  try {
+    if (repoPath) assertNoShellMetachar(repoPath, '--repo-path');
+    if (since) assertNoShellMetachar(since, '--since');
+  } catch (e) {
+    usage(e.message);
   }
   const planPath = path.resolve(positional[0]);
   if (!fs.existsSync(planPath)) {
