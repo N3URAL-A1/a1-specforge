@@ -206,4 +206,82 @@ of the "5 pure groups") already contributed some of the reduction before
 this checkpoint. No discrepancy investigation needed — a facade shrinking
 faster than estimated is not a STOP-gate condition.
 
-## Waves 7-17 — not started
+## Wave 7 — `worktree` + `pr` pair — ✅ COMPLETE
+
+- Commit: `60956f9`
+- Task: 7.1 (extract `worktree` to `_shared/lib/worktree.cjs` and `pr` to
+  `_shared/lib/pr.cjs`) — done, both files in the same commit per the
+  one-commit-per-wave rule (two separate CLI groups, two separate modules,
+  as the plan requires — NOT merged into one file).
+- Moved byte-identical to `worktree.cjs`: `cmdWorktreePrepare`,
+  `cmdWorktreeEnter`, `cmdWorktreeStatus`, `cmdWorktreeExit`,
+  `cmdWorktreeList`, `cmdWorktreeGc`, `resolveRealOrAbs`, `cmdWorktreeAdopt`,
+  `cmdWorktreeReconcile` (kept in original definition order — `resolveRealOrAbs`
+  sits between `cmdWorktreeGc` and `cmdWorktreeAdopt` in the source, preserved
+  as-is). Imports from `lib/worktree-registry.cjs`: `WORKTREE_STATUSES`,
+  `WORKTREE_EXIT_MODES`, `SLUG_RE`, `readRegistry`, `writeRegistryAtomic`,
+  `nowCompactId`, `git`, `gitIsRepo`, `gitWorkingTreeClean`, `gitBranchExists`,
+  `gitWorktreeList`, `gitBranchHasWorktree`, `findRegistryEntry`,
+  `findActiveBySlug`, `repoParentWorktreeDir` — verified each by reading every
+  moved function body first; deliberately did NOT import
+  `worktreeRegistryPath` (destructured in the old facade require block but
+  never actually called anywhere in the moved code — confirmed via grep, so
+  not carried into the new module; this was dead-in-context, not a new dead
+  import introduced by this wave).
+- Moved byte-identical to `pr.cjs`: `PR_STATUSES` (module-level `const ... =
+  new Set([...])`, correctly excluded from `status-constants.cjs` per Wave
+  1's own reasoning since its only consumer extracts in this same wave —
+  explicitly named in the plan's Wave 7 MOVE list, so no undocumented-constant
+  finding here, unlike Waves 2 and 4), `cmdPrListHandoff`, `cmdPrMarkStatus`,
+  `cmdPrMarkPrOpen`, `formatFindingMd`, `formatInlineMinorMd`,
+  `cmdPrFindingsSummary`. Imports from `lib/worktree-registry.cjs`:
+  `readRegistry`, `writeRegistryAtomic`, `findEntryBySlugOrId`,
+  `readFindings` — verified `prReviewDir`/`ensurePrReviewDir` (named in the
+  plan's suggested destructure list) are NOT actually called anywhere in the
+  moved `pr` functions (only mentioned in a stale in-facade comment); omitted
+  both from `pr.cjs`'s imports to avoid a dead import (plan's suggested
+  import list was a superset of what's actually used — same
+  over-specification pattern as Wave 6's `parseFrontmatter` finding, but
+  caught before writing the file this time, not after).
+- Export verification (per plan Step 6): confirmed via grep that
+  `formatFindingMd`/`formatInlineMinorMd` have no callers anywhere in the
+  facade outside the moved `pr` block — kept module-private in `pr.cjs`,
+  not exported.
+- Dependency-shadowing finding (minor, logged in observations.jsonl):
+  `cmdWorktreePrepare` declares its own local `const fail = (name, hint) =>
+  ...` (a validation-check accumulator, unrelated to `io.cjs`'s `fail(msg)`
+  error-exit helper) that shadows the module scope for the whole function
+  body. Confirmed via grep that every `fail(...)` call inside `worktree.cjs`
+  resolves to this local shadow, not `io.cjs`'s `fail` — so `worktree.cjs`
+  does NOT import `fail` from `io.cjs` at all (only `pr.cjs` does, where
+  `fail` genuinely means the shared error-exit helper). Importing the shared
+  `fail` unused into `worktree.cjs` would have been harmless but sloppy;
+  omitted after tracing every call site.
+- Const-sweep (mandatory per Executor ground rules): ran
+  `grep -n "^const [A-Z_]* = "` restricted to the pre-move facade's wave 7
+  line range (2605-3349) plus a `git diff` check post-move for any removed
+  `^const|^let|^var` lines — found exactly the one constant already named in
+  the plan (`PR_STATUSES`). No additional undocumented module-level
+  const/RegExp found this wave (same clean outcome as Wave 6, in contrast to
+  Waves 2 and 4).
+- Stale comment cleanup (minor): the facade had a leftover
+  `// ---------- entry point ----------` comment line sitting between the
+  worktree and pr blocks (pre-existing misplacement, not something this wave
+  introduced) and a `// prReviewDir, ensurePrReviewDir, readFindings,
+  findEntryBySlugOrId live in lib/worktree-registry.cjs` comment that was
+  stale even before this move (already inaccurate — `ensurePrReviewDir` was
+  never called from the pr group). Both were naturally removed as part of
+  replacing the moved blocks with the two `require(...)` lines; no separate
+  action needed.
+- Deviation (minor, pre-existing, same as Waves 1-6): a1-reconcile fixture
+  suite writes live timestamps into checked-in fixture files during the
+  regression run; diff reverted before staging, suite itself not fixed
+  (out of scope).
+- Full regression gate: ALL-SUITES-GREEN (all fixture suites, including
+  a1-worktree: 48 passed 0 failed, a1-pr-review: 11 passed 0 failed, and
+  a1-cmd-injection)
+- Facade line count: 5122 → 4398 lines (−724)
+- New modules: `_shared/lib/worktree.cjs` (599 lines),
+  `_shared/lib/pr.cjs` (174 lines)
+
+## Waves 8-17 — not started
