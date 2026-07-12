@@ -35,7 +35,8 @@ These are repeated here only for orientation. The authoritative copy is in the
 agent file:
 
 - Falk **never** edits code.
-- Falk **never** writes files outside the bug-report under direction.
+- Falk writes **no files at all** — the orchestrator (the a1-fix skill) persists
+  all artifacts, including the bug report.
 - Falk speaks English with the user; technical content (file:line, error names,
   log excerpts) stays in English.
 - One question per turn during triage.

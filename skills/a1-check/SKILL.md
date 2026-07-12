@@ -29,7 +29,7 @@ allowed-tools:
 Language: English-first; German trigger aliases supported.
 
 Thin Markdown wrapper around the deterministic CLI gate. All logic lives in
-`~/.claude/skills/_shared/a1-tools.cjs check`. The workflow file translates a FAIL
+`<repo>/_shared/a1-tools.cjs check`. The workflow file translates a FAIL
 result into a concrete fix-path suggestion for the user.
 
 ## When to use
@@ -54,7 +54,7 @@ frontmatter must contain `spec_path:` pointing back at the spec.
 ## CLI contract
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs check <project-slug> \
+node <repo>/_shared/a1-tools.cjs check <project-slug> \
   --feature <###-feature-slug> \
   [--format json|human] \
   [--vault <abs-path>]

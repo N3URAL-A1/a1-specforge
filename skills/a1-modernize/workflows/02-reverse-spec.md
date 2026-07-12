@@ -35,7 +35,7 @@ Wave brief: Extract all observable behavior — routes, screens, models,
 ## Step 3 — Update status
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs modernize update-status \
+node <repo>/_shared/a1-tools.cjs modernize update-status \
   "<master-path>" spec-drafted \
   --phase-data '{"reverse_spec_path": "<master-file-dir>/reverse-spec.md", "open_question_count": <N>}'
 ```
@@ -65,13 +65,11 @@ Approval for Phase 3 (Gap Analysis)?
 If Robert requests changes to the spec: spawn Rafael again with correction notes.
 Update the file, show the changed sections, ask for re-approval.
 
-## Step 5 — If spec-only mode
+## Step 5 — Route by mode
 
-After G1 approval, if mode is `spec-only`:
-- Update status to `gap-analyzed` (spec-only end state)
+Phase 2 is identical for both modes. After G1 approval:
 
-Wait — spec-only ends at gap-analyzed, but we haven't done gap analysis yet. For spec-only, we stop at spec-drafted and mark it as the final state. Let me reconsider.
-
-Actually: `spec-only` mode ends after Phase 3 (Gap-Analysis). Phase 2 is the same for both modes. After G1 approval:
-- `full` mode → proceed to `03-gap-analysis.md`
-- `spec-only` mode → proceed to `03-gap-analysis.md` (same — spec-only just stops after Phase 3)
+- `full` mode → proceed to `03-gap-analysis.md`.
+- `spec-only` mode → also proceed to `03-gap-analysis.md`. Spec-only does not
+  end here: it ends after Phase 3 (Gap-Analysis), whose `gap-analyzed` status
+  is the terminal state for spec-only runs.

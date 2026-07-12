@@ -65,7 +65,7 @@ Wait for confirmation. Do not publish without explicit approval.
 If Notion-MCP is available:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs modernize publish-notion \
+node <repo>/_shared/a1-tools.cjs modernize publish-notion \
   "<master-path>" \
   --notion-parent "<parent-page-id>"
 ```
@@ -78,7 +78,7 @@ The command creates:
 On success, update status:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs modernize update-status \
+node <repo>/_shared/a1-tools.cjs modernize update-status \
   "<master-path>" published \
   --phase-data '{"notion_page_id": "<id>", "exported_at": "<iso8601>"}'
 ```
@@ -96,7 +96,7 @@ Write the compiled report to that path. Update status to `published` with
 `fallback_path` set.
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs modernize update-status \
+node <repo>/_shared/a1-tools.cjs modernize update-status \
   "<master-path>" published \
   --phase-data '{"fallback_path": "projects/<slug>/modernize/<date>/modernize-export/report.md"}'
 ```

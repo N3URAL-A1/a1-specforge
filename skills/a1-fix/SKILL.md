@@ -30,7 +30,7 @@ allowed-tools:
 Language: English-first; German trigger aliases supported.
 
 This skill is a thin orchestrator. The phase logic lives in `workflows/`. The
-shared CLI helper (`~/.claude/skills/_shared/a1-tools.cjs`) handles deterministic
+shared CLI helper (`<repo>/_shared/a1-tools.cjs`) handles deterministic
 file ops. Sub-agents do the actual thinking.
 
 ## Phases
@@ -92,7 +92,7 @@ scope — a production bug does not care that Feature X has reserved
 and always proceeds:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs code-scope check \
+node <repo>/_shared/a1-tools.cjs code-scope check \
   --by fix-<bug-slug> --scope <target-file-paths-comma-separated>
 ```
 
@@ -150,7 +150,7 @@ session may be using it.
 State is persisted in the bug-report frontmatter. Update via the shared CLI:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs fix update-status \
+node <repo>/_shared/a1-tools.cjs fix update-status \
   "projects/<slug>/fixes/<YYYY-MM-DD>-<bug-slug>.md" <new-status> [flags]
 ```
 

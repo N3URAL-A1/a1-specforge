@@ -54,7 +54,7 @@ If reproduction confirms symptom is gone (and a1-tobi-tester is green or skipped
 2. Run:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs fix update-status \
+node <repo>/_shared/a1-tools.cjs fix update-status \
   "<bug-path>" fixed \
   --verify-result "<verify_result_string>"
 ```
@@ -84,7 +84,7 @@ If the user reports the symptom remains, OR a1-tobi-tester finds a regression:
 3. Set verify_result and reset status:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs fix update-status \
+node <repo>/_shared/a1-tools.cjs fix update-status \
   "<bug-path>" diagnosed \
   --verify-result "<YYYY-MM-DD>: fix incomplete — <one-line>"
 ```
@@ -118,7 +118,7 @@ The `_learning.md` cache is updated as a fast-access mirror.
 ### Step 1 — Create the Postmortem file
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs fix init-postmortem \
+node <repo>/_shared/a1-tools.cjs fix init-postmortem \
   "<bug-slug>" "<project-slug>" \
   --date "$(date +%F)" \
   --severity "<blocker|major|minor|nit>" \
@@ -172,7 +172,7 @@ The `_learning.md` is a fast-access cache. The Vault postmortem is canonical.
 # Learning store: defaults to repo-local .a1/learnings/; set A1_VAULT_ROOT for an external vault (e.g. Obsidian)
 VAULT="${A1_VAULT_ROOT:-$(git rev-parse --show-toplevel)/.a1/learnings}"
 # Get last promote timestamp
-LAST_PROMOTE=$(node ~/.claude/skills/_shared/a1-tools.cjs fix count-postmortems-since \
+LAST_PROMOTE=$(node <repo>/_shared/a1-tools.cjs fix count-postmortems-since \
   --since "$(cat "$VAULT/wiki/_state/last_promote.json" | grep -o '"last_promote_at":"[^"]*"' | cut -d'"' -f4)")
 ```
 
@@ -192,7 +192,7 @@ If no: proceed. Counter accumulates until next run.
 3. For each group with ≥3 occurrences: identify the agent most relevant
 4. Write a suggestion via:
    ```bash
-   node ~/.claude/skills/_shared/a1-tools.cjs fix write-suggestion \
+   node <repo>/_shared/a1-tools.cjs fix write-suggestion \
      "<agent-name>" \
      --title "<lesson title>" \
      --body "<actionable rule text>" \
@@ -222,7 +222,7 @@ If no: proceed. Counter accumulates until next run.
    ```
 6. Update promote state:
    ```bash
-   node ~/.claude/skills/_shared/a1-tools.cjs fix update-promote-state
+   node <repo>/_shared/a1-tools.cjs fix update-promote-state
    ```
 7. Tell the user:
    > "promote-lessons complete. New suggestions in:

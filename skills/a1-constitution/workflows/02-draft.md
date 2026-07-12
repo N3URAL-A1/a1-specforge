@@ -70,7 +70,7 @@ Write Alex's validated Markdown to a tmp file:
 
 Then push it into the vault file via the helper:
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs constitution set-body \
+node <repo>/_shared/a1-tools.cjs constitution set-body \
   "<CONST_PATH>" \
   --body-file "/tmp/a1-const-body-<slug>-<timestamp>.md"
 ```
@@ -80,7 +80,7 @@ node ~/.claude/skills/_shared/a1-tools.cjs constitution set-body \
 ## Step 5 — Transition status to `drafted`
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs constitution update-status \
+node <repo>/_shared/a1-tools.cjs constitution update-status \
   "<CONST_PATH>" drafted
 ```
 
@@ -108,6 +108,6 @@ If yes: proceed to `03-review.md`.
 
 - **User cancels in Phase 2:**
   ```bash
-  node ~/.claude/skills/_shared/a1-tools.cjs constitution update-status \
+  node <repo>/_shared/a1-tools.cjs constitution update-status \
     "<CONST_PATH>" cancelled
   ```

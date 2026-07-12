@@ -84,9 +84,9 @@ mirrors its stage transition through the CLI — never a hand-edited
 node <repo>/_shared/a1-tools.cjs product stage --by <spec-id> --set <stage>
 ```
 
-Call this at the same points `a1-erik-executor` would otherwise only touch
-`code-scope stage` (see `workflows/02-execute.md`) — it keeps
-`reservations.json` / `feature.md` / `ROADMAP.md` in sync in one invocation.
+Call this at each wave checkpoint (`workflows/02-execute.md`, Step 2c) — it
+keeps `reservations.json` / `feature.md` / `ROADMAP.md` in sync in one
+invocation.
 Skip it entirely for legacy-only projects (no `docs/product/` directory).
 
 ## On-touch Migration Rule (HARD RULE — never big-bang)

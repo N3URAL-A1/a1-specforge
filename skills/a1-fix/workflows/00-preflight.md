@@ -9,7 +9,7 @@ Total time: ~30 seconds. Do not skip.
 Verify that agent and skill files have not drifted from the canonical lock file:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs fix integrity-check
+node <repo>/_shared/a1-tools.cjs fix integrity-check
 ```
 
 **If status is `"bootstrapped"`:** Lock file was just created from the current state.
@@ -29,7 +29,7 @@ Tell the user:
 > I will not write anything until this state is resolved.
 >
 > Options:
-> 1. Run `node ~/.claude/skills/_shared/a1-tools.cjs fix integrity-check` after every
+> 1. Run `node <repo>/_shared/a1-tools.cjs fix integrity-check` after every
 >    intentional agent edit — but NOT automatically; you must confirm it.
 > 2. Re-bootstrap the lock manually (delete `wiki/_canonical/agents.lock.json`) if
 >    the changes were intentional.
@@ -64,7 +64,7 @@ Add to Falk's brief:
 Search for similar past bugs:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs fix find-duplicates <project-slug> <kw1> <kw2> [<kw3>]
+node <repo>/_shared/a1-tools.cjs fix find-duplicates <project-slug> <kw1> <kw2> [<kw3>]
 ```
 
 Also search postmortems directly:
@@ -90,7 +90,7 @@ narrows the file list), compare them against every in-flight feature's
 declared code scope:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs code-scope check \
+node <repo>/_shared/a1-tools.cjs code-scope check \
   --by fix-<bug-slug> --scope <target-file-paths-comma-separated>
 ```
 

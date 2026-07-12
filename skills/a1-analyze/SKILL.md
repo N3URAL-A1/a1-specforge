@@ -20,7 +20,8 @@ description: >
   Orchestrates read-only sub-agents (a1-reinhard-reviewer, a1-alex-architekt,
   a1-marco-mapper, a1-walter-web-developer, a1-aik-ai-engineer, a1-ludwig-legal)
   in parallel during Phase 3, plus two always-on read-only lanes on every run:
-  the code-simplifier agent (report-only) and the security-review skill. Writes a
+  the code-simplifier agent (report-only) and the security-review lane owned by
+  the a1-samuel-security agent. Writes a
   mandatory self-learning Retro to the Obsidian Vault after every run (feeds
   a1-evolve). Never modifies project code; findings only.
   Do NOT activate for: bug reports (→ a1-fix), new feature work (→ a1-new-feature),
@@ -41,7 +42,7 @@ allowed-tools:
 Language: English-first; German trigger aliases supported.
 
 This skill is a thin orchestrator. The phase logic lives in `workflows/`. The
-shared CLI helper (`~/.claude/skills/_shared/a1-tools.cjs`) handles deterministic
+shared CLI helper (`<repo>/_shared/a1-tools.cjs`) handles deterministic
 file ops (slot calculation, frontmatter updates, tech-stack discovery, findings
 append, listing). Sub-agents do the actual thinking in Phase 3.
 
@@ -98,7 +99,7 @@ State is persisted in the analysis file's YAML frontmatter. Update it via the
 shared CLI helper, never with raw string-replace on the file:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs analyze update-status \
+node <repo>/_shared/a1-tools.cjs analyze update-status \
   "projects/<slug>/analyses/<YYYY-MM-DD>-<focus>.md" <new-status> \
   [--phase-data '<json>']
 ```
@@ -109,7 +110,7 @@ rename) and appends a `phase_history` entry with completion timestamp.
 Findings are appended one at a time via:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs analyze add-finding \
+node <repo>/_shared/a1-tools.cjs analyze add-finding \
   "<analysis-path>" <BLOCKER|MAJOR|MINOR> <category> <location> <description> \
   [--recommendation "<text>"]
 ```
@@ -132,7 +133,7 @@ Override via env var `A1_VAULT_ROOT` if testing.
 |---|---|---|
 | 1 Scope | — (the skill itself) | — |
 | 2 Discover | — (CLI helper only) | `_shared/a1-tools.cjs analyze discover` |
-| 3 Analyze | a1-reinhard-reviewer, a1-alex-architekt, a1-ludwig-legal, a1-walter-web-developer, a1-aik-ai-engineer, a1-marco-mapper + **always-on lanes:** `code-simplifier` (read-only), `security-review` skill | `~/.claude/agents/*.md` (see `agents/*-link.md`); `code-simplifier` plugin; built-in `security-review` |
+| 3 Analyze | a1-reinhard-reviewer, a1-alex-architekt, a1-ludwig-legal, a1-walter-web-developer, a1-aik-ai-engineer, a1-marco-mapper + **always-on lanes:** `code-simplifier` (read-only), security lane owned by `a1-samuel-security` | `~/.claude/agents/*.md` (see `agents/*-link.md`); `code-simplifier` plugin; `a1-samuel-security` (fallback: built-in `security-review` skill) |
 | 4 Synthesize | — (the skill itself) | — |
 | 5 Report | — (the skill itself) | — |
 
@@ -161,8 +162,10 @@ into code.
   `subagent_type` of the named a1 agent).
 - Phase 3 ALWAYS runs two standing read-only lanes in addition to the
   focus-specific agents, for every focus mode: the `code-simplifier` **agent**
-  (parallel Task, report-only) and the `security-review` **skill**
-  (in-conversation, serial — a skill cannot be a `subagent_type`). They emit
+  (parallel Task, report-only) and the security-review lane owned by the
+  `a1-samuel-security` **agent** (parallel Task, report-only; if the agent is
+  unavailable, fall back to the built-in `security-review` skill —
+  in-conversation, serial, since a skill cannot be a `subagent_type`). They emit
   findings into the same contract; they never edit code. If a lane's
   agent/command is unavailable, record a Notes entry and continue — never block
   the phase.

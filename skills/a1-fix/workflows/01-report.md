@@ -23,7 +23,7 @@ Extract 2–4 candidate keywords from the symptom (nouns + error terms, lowercas
 ≥ 3 chars). Run:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs fix find-duplicates <project-slug> <kw1> <kw2> [<kw3> ...]
+node <repo>/_shared/a1-tools.cjs fix find-duplicates <project-slug> <kw1> <kw2> [<kw3> ...]
 ```
 
 The helper greps the last 30 days of bug reports in the project. If matches come
@@ -76,7 +76,7 @@ Once Falk returns the structured info:
 
 ```bash
 DATE=$(date +%F)   # YYYY-MM-DD
-node ~/.claude/skills/_shared/a1-tools.cjs fix next-suffix <project-slug> $DATE
+node <repo>/_shared/a1-tools.cjs fix next-suffix <project-slug> $DATE
 ```
 
 The helper returns `{ suffix: "" | "-2" | "-3" | ... }`. Final filename:

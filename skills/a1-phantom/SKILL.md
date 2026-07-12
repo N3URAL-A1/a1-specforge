@@ -44,12 +44,14 @@ Do NOT use as a hard quality gate. It is a heuristic. False positives are
 possible (very abstract task wording, refactors that touch unrelated
 identifiers); false negatives are possible (a task that name-drops a file
 that was touched for unrelated reasons). The signal is "look at this human",
-not "block the merge".
+not "block the merge". Exception: when called through a1-victor-verifier's
+enforcing contract, strong phantom verdicts on non-`# no-code` tasks become
+BLOCKERs — see "Caller integration" below.
 
 ## CLI contract
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs phantom check <plan-path> \
+node <repo>/_shared/a1-tools.cjs phantom check <plan-path> \
   [--repo-path <abs>] \
   [--since <git-ref>] \
   [--format json|human]
@@ -148,13 +150,24 @@ Detection step between Requirements Coverage (Step 6) and Anti-Pattern Scan
 (Step 7) by shelling out:
 
 ```bash
-PHANTOM_JSON=$(node ~/.claude/skills/_shared/a1-tools.cjs phantom check \
+PHANTOM_JSON=$(node <repo>/_shared/a1-tools.cjs phantom check \
   "$PHASE_DIR"/*-PLAN.md --format json)
 echo "$PHANTOM_JSON" | jq '.phantoms | length'
 ```
 
-The phantom array can be folded into the verifier's anti-pattern table as a
-new "Phantom Task" severity ⚠️ Warning (never 🛑 Blocker — heuristic).
+The CLI itself always exits 0 — **enforcement lives in the verifier contract**
+(`a1-execute` `workflows/03-verify.md`, Step 6.5), which the verifier translates
+into VERIFICATION.md findings as follows:
+
+- **PHANTOM verdict on a task NOT tagged `# no-code`** → 🛑 **BLOCKER** finding;
+  the overall verdict cannot be PASS while it is unresolved.
+- **PHANTOM verdict on a `# no-code` task** → informational only, no finding.
+- **Weak/heuristic match (2-weak-token match)** → ⚠️ Warning, listed as a
+  "Verify manually" item so a human confirms the artifact is the real one.
+
+Standalone/manual invocations of this skill remain warning-level (see "Do NOT
+use as a hard quality gate" above) — the BLOCKER semantics apply only inside
+the verifier contract.
 
 ## Workflow
 

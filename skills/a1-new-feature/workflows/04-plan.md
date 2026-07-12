@@ -26,6 +26,10 @@ create it (use Bash with the absolute vault root).
 Use the **Agent** tool with `subagent_type: "a1-vincente-vibe-optimizer"` and
 `model: "opus"` to spawn Vincente with this brief:
 
+> Scope note: Vincente owns FEATURE-level wave plans (vault
+> `projects/<slug>/plans/`); PHASE-level PLAN.md files under `.a1/phases/` are
+> planned by a1-pablo-planner via the a1-plan skill instead.
+
 > You are Vincente. The spec is at `<spec-path>` with status `clarified`. Your task:
 > build a wave plan and save it under `<plan-path>`.
 >
@@ -107,6 +111,7 @@ Use the **Agent** tool with `subagent_type: "a1-vincente-vibe-optimizer"` and
 > - AI/ML/RAG/LLM: Aik
 > - Flutter Mobile: Felix (or project-specific flutter agent)
 > - System design / ADRs (needed before a wave?): Alex
+> - Security-sensitive wave/fix (auth, secrets, RLS, input validation): a1-samuel-security reviews the fix
 >
 > You **suggest** the agents; the user dispatches in Phase 5.
 >
@@ -180,7 +185,7 @@ Use the **Agent** tool with `subagent_type: "a1-vincente-vibe-optimizer"` and
 After Vincente reports completion, link the wave-plan back into the spec:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs spec update-status \
+node <repo>/_shared/a1-tools.cjs spec update-status \
   <spec-path> planned --wave-plan-path "<plan-path>"
 ```
 

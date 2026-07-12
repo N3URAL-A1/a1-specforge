@@ -53,8 +53,11 @@ Use the `Task` tool to spawn Falk (`~/.claude/agents/a1-falk-fault-finder.md`) w
 >    - **Root Cause** (one statement of what is actually broken)
 >    - **Evidence** (file:line references, log excerpts, commit hashes)
 >    - **Confidence** (low / medium / high) — explicitly justified
->    - **Recommended code agent** (a1-walter-web-developer / bernd / aik / toni / felix / alex),
->      based on the stack of the affected repo
+>    - **Recommended code agent** (web → a1-walter-web-developer, AI/ML →
+>      a1-aik-ai-engineer, architecture-level → a1-alex-architekt, otherwise the
+>      project's code agent per its CLAUDE.md), based on the stack of the affected repo.
+>      Security-sensitive fix (auth, secrets, RLS, input validation) → a1-samuel-security
+>      reviews the fix.
 >    - **Suggested fix approach** (one paragraph, no code)
 >
 > **Hard Rules:**
@@ -76,7 +79,7 @@ When Falk returns:
 2. Run the CLI to flip status and set the recommended agent:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs fix update-status \
+node <repo>/_shared/a1-tools.cjs fix update-status \
   "<bug-path>" diagnosed \
   --recommended-code-agent <agent-name>
 ```

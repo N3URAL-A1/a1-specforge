@@ -71,7 +71,7 @@ Fix any BLOCKER audit findings before proceeding. Ask Robert about MAJOR gaps.
 For each wave in the plan:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs modernize add-wave \
+node <repo>/_shared/a1-tools.cjs modernize add-wave \
   "<master-path>" \
   --title "<title>" \
   [--depends-on "W-01,W-02"]
@@ -80,7 +80,7 @@ node ~/.claude/skills/_shared/a1-tools.cjs modernize add-wave \
 ## Step 5 — Update status
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs modernize update-status \
+node <repo>/_shared/a1-tools.cjs modernize update-status \
   "<master-path>" planned \
   --phase-data '{"plan_path": ".a1/phases/<slug>/PLAN.md", "wave_count": <N>}'
 ```

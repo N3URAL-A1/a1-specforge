@@ -61,7 +61,7 @@ Collect all findings from Reinhard, Alex, and the reconcile check. Deduplicate
 Append each finding to master file:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs modernize update-status \
+node <repo>/_shared/a1-tools.cjs modernize update-status \
   "<master-path>" gap-analyzed \
   --phase-data '{"findings_count": {"blocker": <N>, "major": <N>, "minor": <N>}}'
 ```

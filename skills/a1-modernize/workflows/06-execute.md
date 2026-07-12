@@ -47,7 +47,7 @@ cd "<analyzed_path>"
 If no tests exist:
 ```bash
 # Document manual smoke steps
-node ~/.claude/skills/_shared/a1-tools.cjs modernize snapshot-behavior \
+node <repo>/_shared/a1-tools.cjs modernize snapshot-behavior \
   "<master-path>" \
   --manual-smoke ".a1/phases/<slug>/waves/<wave-id>/smoke-steps.md"
 ```
@@ -56,7 +56,7 @@ Write smoke steps document listing: which screens/routes to visit, what to
 check, expected outcomes. Robert confirms the steps are correct before proceeding.
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs modernize start-wave "<master-path>" <wave-id>
+node <repo>/_shared/a1-tools.cjs modernize start-wave "<master-path>" <wave-id>
 ```
 
 ---
@@ -110,12 +110,29 @@ If any test is red: ask Erik to fix the implementation, not the test.
 
 ---
 
+### Step 4b: Test Review (optional — Theo in review mode)
+
+Optionally spawn `a1-theo-test-engineer` in review mode on the wave's filled tests:
+
+```
+Mode: review
+Test file(s): <test-file-path(s)>
+Wave brief: <wave goal + FRs>
+```
+
+Theo returns read-only findings — he never edits the tests. BLOCKER-class
+findings (e.g. parity assertions removed or weakened, tests asserting the wrong
+behavior, mocked-away real paths) loop back to `a1-erik-executor` for a fix
+before proceeding to Step 5.
+
+---
+
 ### Step 5: Parity Verification
 
 Run the parity check:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs modernize verify-parity "<master-path>"
+node <repo>/_shared/a1-tools.cjs modernize verify-parity "<master-path>"
 ```
 
 Exit-1 = behavior drift detected. Stop wave, ask Robert how to proceed.
@@ -161,7 +178,7 @@ Shall I continue with Wave <W-NN+1>?
 Complete the wave in CLI:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs modernize complete-wave \
+node <repo>/_shared/a1-tools.cjs modernize complete-wave \
   "<master-path>" <wave-id> \
   --snapshot-replay pass \
   --fr-ac-checks '[{"id": "FR-001", "passed": true, "evidence": "..."}]'
@@ -174,7 +191,7 @@ node ~/.claude/skills/_shared/a1-tools.cjs modernize complete-wave \
 Update status:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs modernize update-status \
+node <repo>/_shared/a1-tools.cjs modernize update-status \
   "<master-path>" executed \
   --phase-data '{"waves_completed": <N>, "commits": ["<hash1>", "..."]}'
 ```

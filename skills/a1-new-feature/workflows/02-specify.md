@@ -64,7 +64,7 @@ Use the **Agent** tool with `subagent_type: "a1-rene-requirement-engineer"` and 
 After Rene reports completion:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs spec update-status \
+node <repo>/_shared/a1-tools.cjs spec update-status \
   <spec-path> draft
 ```
 

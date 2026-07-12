@@ -32,7 +32,7 @@ Language: English-first; German trigger aliases supported.
 
 This skill is a thin orchestrator. The lifecycle logic lives in
 `workflows/`. The shared CLI helper
-(`~/.claude/skills/_shared/a1-tools.cjs pr`) handles registry scans,
+(`<repo>/_shared/a1-tools.cjs pr`) handles registry scans,
 findings serialization, and status updates. The `gh` CLI is invoked
 directly from the workflows — there is no wrapper.
 
@@ -88,9 +88,9 @@ State is split across two locations:
 Update via CLI only — never write the registry directly:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs pr list-handoff
-node ~/.claude/skills/_shared/a1-tools.cjs pr findings-summary <slug>
-node ~/.claude/skills/_shared/a1-tools.cjs pr mark-pr-open <slug> <pr-url>
+node <repo>/_shared/a1-tools.cjs pr list-handoff
+node <repo>/_shared/a1-tools.cjs pr findings-summary <slug>
+node <repo>/_shared/a1-tools.cjs pr mark-pr-open <slug> <pr-url>
 ```
 
 ## Agent integration

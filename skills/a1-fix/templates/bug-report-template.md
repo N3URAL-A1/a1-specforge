@@ -65,7 +65,7 @@ Actual: <what happens instead>
 **Hypothesis:** <root cause>
 **Evidence:** <file:line references, git log entries, log excerpts>
 **Confidence:** <low | medium | high>
-**Recommended code agent:** <a1-walter-web-developer | bernd | a1-aik-ai-engineer | toni | felix | a1-alex-architekt>
+**Recommended code agent:** <a1-walter-web-developer (web) | a1-aik-ai-engineer (AI/ML) | a1-alex-architekt (architecture-level) | the project's code agent per its CLAUDE.md>
 **Suggested fix approach:** <one paragraph, no code>
 
 ## Fix Plan (Phase 03 — filled by code agent)

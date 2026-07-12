@@ -45,7 +45,7 @@ allowed-tools:
 Language: English-first; German trigger aliases supported.
 
 This skill is a thin orchestrator. Phase logic lives in `workflows/`. The CLI
-helper (`~/.claude/skills/_shared/a1-tools.cjs`) handles deterministic file ops.
+helper (`<repo>/_shared/a1-tools.cjs`) handles deterministic file ops.
 Sub-agents do the thinking. Robert approves at every stop-gate.
 
 ## When to use
@@ -118,7 +118,7 @@ In Phase 1 (Scope), confirm the mode:
 All state is in YAML frontmatter of the master file. Update via CLI only:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs modernize update-status \
+node <repo>/_shared/a1-tools.cjs modernize update-status \
   "projects/<slug>/modernize/<YYYY-MM-DD>-<focus>.md" <new-status> \
   [--phase-data '<json>']
 ```
@@ -127,25 +127,25 @@ Proposals and waves have dedicated commands:
 
 ```bash
 # Add a tech proposal
-node ~/.claude/skills/_shared/a1-tools.cjs modernize add-proposal \
+node <repo>/_shared/a1-tools.cjs modernize add-proposal \
   "<master-path>" --title "<t>" --rationale "<r>" --risk low|medium|high \
   --effort "<e>" --rollback "<rb>"
 
 # Approve/reject/defer a proposal
-node ~/.claude/skills/_shared/a1-tools.cjs modernize approve-proposal \
+node <repo>/_shared/a1-tools.cjs modernize approve-proposal \
   "<master-path>" P-001 approved|rejected|deferred [--reason "<text>"]
 
 # Add a wave
-node ~/.claude/skills/_shared/a1-tools.cjs modernize add-wave \
+node <repo>/_shared/a1-tools.cjs modernize add-wave \
   "<master-path>" --title "<t>" [--depends-on W-01,W-02]
 
 # Start / complete a wave
-node ~/.claude/skills/_shared/a1-tools.cjs modernize start-wave "<master-path>" W-01
-node ~/.claude/skills/_shared/a1-tools.cjs modernize complete-wave "<master-path>" W-01 \
+node <repo>/_shared/a1-tools.cjs modernize start-wave "<master-path>" W-01
+node <repo>/_shared/a1-tools.cjs modernize complete-wave "<master-path>" W-01 \
   --snapshot-replay pass|fail --fr-ac-checks '<json>'
 
 # Verify parity (exit-1 on drift)
-node ~/.claude/skills/_shared/a1-tools.cjs modernize verify-parity "<master-path>"
+node <repo>/_shared/a1-tools.cjs modernize verify-parity "<master-path>"
 ```
 
 ## Storage

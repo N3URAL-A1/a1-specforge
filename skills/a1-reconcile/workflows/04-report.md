@@ -45,7 +45,7 @@ frontmatter `suggested_next[]` so other skills can read them. Use this CLI
 call (via update-status with phase-data) to set them:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs reconcile update-status \
+node <repo>/_shared/a1-tools.cjs reconcile update-status \
   "<drift-path>" reported \
   --phase-data '{"suggested_next": [{"skill": "a1-fix", "reason": "...", "targets": ["FR-002", "FR-005"]}]}'
 ```
@@ -70,7 +70,7 @@ If Step 3's `update-status reported` call already ran, Step 5 is a no-op.
 Otherwise:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs reconcile update-status \
+node <repo>/_shared/a1-tools.cjs reconcile update-status \
   "<drift-path>" reported
 ```
 

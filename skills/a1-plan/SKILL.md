@@ -71,6 +71,9 @@ The phase directory is created automatically. Phase names are kebab-case from th
 ## Hard rules
 
 - Never skip phases — research and mapping take minutes and prevent rework
-- Never edit PLAN.md directly — always go through a1-pablo-planner
+- Never edit PLAN.md directly — always go through a1-pablo-planner. Pablo owns
+  PHASE-level PLAN.md files under `.a1/phases/`; FEATURE-level wave plans (vault
+  `projects/<slug>/plans/`) are planned by a1-vincente-vibe-optimizer via
+  a1-new-feature Phase 4.
 - If the user provides a spec file, pass its path to a1-rico-researcher and a1-pablo-planner
 - Present the PLAN.md summary to the user after audit passes — they should confirm before executing

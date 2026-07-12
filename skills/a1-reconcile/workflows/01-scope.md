@@ -31,7 +31,7 @@ If the user can't supply a repo path, skip that target and record it in
 ## Step 3 — Reserve slot + create the report file
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs reconcile next-slot \
+node <repo>/_shared/a1-tools.cjs reconcile next-slot \
   <project-slug-or-_vault-sync> [--date YYYY-MM-DD]
 ```
 
@@ -41,7 +41,7 @@ Returns the relative path (e.g. `projects/<slug>/drift-2026-05-13.md` or
 Then init the report:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs reconcile init \
+node <repo>/_shared/a1-tools.cjs reconcile init \
   <project-slug-or-_vault-sync> \
   --scope <single|project|vault-sync> \
   [--spec <###-feature-slug>] \

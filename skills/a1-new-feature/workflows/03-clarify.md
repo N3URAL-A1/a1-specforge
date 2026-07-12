@@ -228,7 +228,7 @@ The gate **PASSES** only when every AC line reads `PASS`. Do not proceed to Step
 ## Step 4 — Status update
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs spec update-status \
+node <repo>/_shared/a1-tools.cjs spec update-status \
   <spec-path> clarified
 ```
 

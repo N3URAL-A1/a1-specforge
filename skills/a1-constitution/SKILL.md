@@ -40,7 +40,7 @@ allowed-tools:
 Language: English-first; German trigger aliases supported.
 
 This skill is a thin orchestrator. The phase logic lives in `workflows/`. The
-shared CLI helper (`~/.claude/skills/_shared/a1-tools.cjs`) handles deterministic
+shared CLI helper (`<repo>/_shared/a1-tools.cjs`) handles deterministic
 file ops (vault file init, discovery, status updates, body writes, history
 snapshots, repo mirror, CLAUDE.md cross-link). Alex (a1-alex-architekt) does
 the drafting in Phase 2.
@@ -89,7 +89,7 @@ State is persisted in the vault constitution file's YAML frontmatter. Update
 it via the shared CLI helper, never with raw string-replace on the file:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs constitution update-status \
+node <repo>/_shared/a1-tools.cjs constitution update-status \
   "projects/<slug>/constitution/constitution.md" <new-status>
 ```
 
@@ -100,7 +100,7 @@ status `written` additionally sets `last_written_at` to the current ISO timestam
 The body is written in Phase 2 via:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs constitution set-body \
+node <repo>/_shared/a1-tools.cjs constitution set-body \
   "<constitution-path>" --body-file "<tmp-file-from-alex>"
 ```
 

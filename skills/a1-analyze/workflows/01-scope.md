@@ -55,7 +55,7 @@ If the path does not exist or is ambiguous, ask the user:
 
 Run:
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs analyze init <project-slug> <focus> \
+node <repo>/_shared/a1-tools.cjs analyze init <project-slug> <focus> \
   --project-path "<absolute-code-path>" \
   --title "<focus> analysis of <project-slug>"
 ```

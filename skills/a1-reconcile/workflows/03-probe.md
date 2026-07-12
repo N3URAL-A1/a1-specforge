@@ -92,7 +92,7 @@ Cross-check against Phase 2's STALE candidates:
 For each non-IN_SYNC drift:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs reconcile add-drift \
+node <repo>/_shared/a1-tools.cjs reconcile add-drift \
   "<drift-path>" \
   <CLASS> \
   "<artifact>" \
@@ -140,7 +140,7 @@ his DIVERGED findings from that run already cover this — skip Step 6b.
 After all agents complete:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs reconcile update-status \
+node <repo>/_shared/a1-tools.cjs reconcile update-status \
   "<drift-path>" probed \
   --phase-data '{
     "agents_dispatched": [

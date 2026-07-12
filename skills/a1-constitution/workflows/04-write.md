@@ -30,7 +30,7 @@ snapshot the current draft, which is not what audit-history is for.)
 ## Step 2 — Write the repo mirror
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs constitution write-mirror \
+node <repo>/_shared/a1-tools.cjs constitution write-mirror \
   <project-slug> \
   --repo-root "<REPO_ROOT>"
 ```
@@ -40,7 +40,7 @@ Parse JSON. Capture `mirror_path` and `bytes`.
 ## Step 3 — Ensure CLAUDE.md cross-link
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs constitution link-claudemd \
+node <repo>/_shared/a1-tools.cjs constitution link-claudemd \
   <project-slug> \
   --repo-root "<REPO_ROOT>"
 ```
@@ -54,7 +54,7 @@ WITHOUT setting status to `written`. The vault constitution remains at
 ## Step 4 — Transition status to `written`
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs constitution update-status \
+node <repo>/_shared/a1-tools.cjs constitution update-status \
   "<CONST_PATH>" written
 ```
 

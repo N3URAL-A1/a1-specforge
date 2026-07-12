@@ -32,6 +32,8 @@ After a1-erik-executor returns:
 git log --oneline -<task_count+2>
 ```
 Show commit list to user.
+Note: if the plan declares a one-commit-per-wave ground rule, the expected
+commit count is per-wave, not per-task — expect one commit for the whole wave.
 
 **If PARTIAL (some tasks blocked):**
 Show which tasks are blocked and why.

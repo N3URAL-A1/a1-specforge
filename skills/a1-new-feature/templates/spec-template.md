@@ -28,11 +28,11 @@ verify_failures: []
 
 - <bullet>
 
-## Discovery — Akzeptanzkriterien
+## Discovery — Acceptance Criteria
 
 - <bullet>
 
-## Discovery — Erfolgsmetriken
+## Discovery — Success Metrics
 
 - <bullet>
 
@@ -52,7 +52,7 @@ verify_failures: []
 
 - <bullet>
 
-## Discovery — Priorität
+## Discovery — Priority
 
 - <bullet>
 

@@ -44,7 +44,7 @@ Limit: max 5 proposals per agent. Quality over quantity.
 For each proposal returned by agents:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs modernize add-proposal \
+node <repo>/_shared/a1-tools.cjs modernize add-proposal \
   "<master-path>" \
   --title "<title>" \
   --rationale "<rationale>" \
@@ -56,7 +56,7 @@ node ~/.claude/skills/_shared/a1-tools.cjs modernize add-proposal \
 ## Step 4 — Update status
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs modernize update-status \
+node <repo>/_shared/a1-tools.cjs modernize update-status \
   "<master-path>" proposals-pending
 ```
 
@@ -79,7 +79,7 @@ P-002: ...
 
 For each decision:
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs modernize approve-proposal \
+node <repo>/_shared/a1-tools.cjs modernize approve-proposal \
   "<master-path>" P-001 approved|rejected|deferred [--reason "<text>"]
 ```
 

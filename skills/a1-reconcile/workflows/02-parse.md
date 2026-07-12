@@ -9,7 +9,7 @@ drift report's frontmatter as `parsed_targets[]`. Status moves to `parsed`.
 For each entry in `scope_targets[]`:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs reconcile parse-spec "<drift-path>"
+node <repo>/_shared/a1-tools.cjs reconcile parse-spec "<drift-path>"
 ```
 
 The CLI reads each target spec from disk and extracts:
@@ -55,7 +55,7 @@ reported as MISSING — the more specific class wins).
 The CLI does this atomically as part of `parse-spec`. After the run:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs reconcile update-status \
+node <repo>/_shared/a1-tools.cjs reconcile update-status \
   "<drift-path>" parsed \
   --phase-data '{"target_count": <n>, "stale_candidates": <m>}'
 ```

@@ -38,7 +38,7 @@ Directly after the verdict line in VERIFICATION.md, the verifier writes a `**Cos
 Compute it with:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs cost run --project ~/.claude/projects/<project-dir> --since <phase-start-ISO>
+node <repo>/_shared/a1-tools.cjs cost run --project ~/.claude/projects/<project-dir> --since <phase-start-ISO>
 ```
 
 Summary-line format:

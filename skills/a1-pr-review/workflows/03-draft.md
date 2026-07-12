@@ -64,7 +64,7 @@ of the PR body.
 ### 3.3 Use CLI to assemble
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs pr findings-summary <id>
+node <repo>/_shared/a1-tools.cjs pr findings-summary <id>
 ```
 
 The CLI returns a structured JSON with `{ counts, major_md,

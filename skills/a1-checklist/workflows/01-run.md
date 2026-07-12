@@ -25,7 +25,7 @@ Do not enumerate features from disk unless the user explicitly asks.
 Use the **Bash** tool to call the CLI in human format:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs checklist run <target> --format human
+node <repo>/_shared/a1-tools.cjs checklist run <target> --format human
 ```
 
 Capture stdout AND the exit code. Stdout already contains the report;
@@ -34,7 +34,7 @@ the exit code drives what comes next.
 If the user explicitly asked you to save the audit trail, add `--save`:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs checklist run <target> --format human --save
+node <repo>/_shared/a1-tools.cjs checklist run <target> --format human --save
 ```
 
 If a vault override is needed (`$A1_VAULT_ROOT` not set, or user gave
@@ -48,7 +48,7 @@ Show the user the stdout verbatim. Then re-run the CLI with
 `--format json` to read the structured `status` field:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs checklist run <target> --format json
+node <repo>/_shared/a1-tools.cjs checklist run <target> --format json
 ```
 
 Parse the JSON.

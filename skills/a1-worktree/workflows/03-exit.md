@@ -19,7 +19,7 @@ entry).
 If ambiguous, list candidates:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs worktree list --status=active
+node <repo>/_shared/a1-tools.cjs worktree list --status=active
 ```
 
 Ask the user:
@@ -39,7 +39,7 @@ If the user did not specify, ask:
 ## Step 3 — Status snapshot before action
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs worktree status <id>
+node <repo>/_shared/a1-tools.cjs worktree status <id>
 ```
 
 Show the user:
@@ -57,7 +57,7 @@ If `has_uncommitted=true`:
 ## Step 4 — Run exit
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs worktree exit <id> --mode <keep|discard|handoff>
+node <repo>/_shared/a1-tools.cjs worktree exit <id> --mode <keep|discard|handoff>
 ```
 
 The CLI:

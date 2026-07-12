@@ -68,7 +68,7 @@ Write the parsed JSON to `<worktree_path>/.a1-review/findings.json`
 ### 2.5 Update registry status
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs pr mark-status <id> reviewed
+node <repo>/_shared/a1-tools.cjs pr mark-status <id> reviewed
 ```
 
 ### 2.6 Report to user

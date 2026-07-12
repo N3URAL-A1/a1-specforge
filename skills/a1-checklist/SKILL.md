@@ -32,7 +32,7 @@ allowed-tools:
 Language: English-first; German trigger aliases supported.
 
 Thin Markdown wrapper around the deterministic CLI gate. All logic lives in
-`~/.claude/skills/_shared/a1-tools.cjs checklist run`. The workflow file
+`<repo>/_shared/a1-tools.cjs checklist run`. The workflow file
 translates the structured result into German user-facing guidance.
 
 ## When to use

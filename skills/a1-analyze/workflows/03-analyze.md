@@ -142,13 +142,16 @@ If `code-simplifier` is not installed: record a Notes entry
 ("simplify lane skipped — code-simplifier agent unavailable") and continue. Never
 block the phase on it.
 
-### Security lane — `security-review` skill (in-conversation, serial)
+### Security lane — owned by the `a1-samuel-security` agent
 
-`security-review` is a built-in **skill**, not an agent — it cannot be fanned out
-as a parallel `Task`/`subagent_type`. Run it in-conversation as a distinct serial
-step (before or after the Step 3 Task fan-out, not inside it). It is read-only by
-nature (it reports vulns on the current branch; it does not fix). Point it at the
-analyzed scope and map its output into the findings contract:
+The security lane is owned by the `a1-samuel-security` **agent**: dispatch it as
+a parallel Task (report-only, read-only) inside Step 3's fan-out, with the brief
+below. Fallback: if the agent is unavailable, run the built-in `security-review`
+**skill** instead — a skill cannot be a `subagent_type`, so run it
+in-conversation as a distinct serial step (before or after the Step 3 Task
+fan-out, not inside it). Either way the lane is read-only (it reports vulns on
+the current branch; it does not fix). Point it at the analyzed scope and map its
+output into the findings contract:
 
 > Run a security review over `<ANALYZED_PATH>`. Cover the standard vuln classes
 > (injection, authz/tenant-isolation, secrets, unsafe deserialization, SSRF,
@@ -186,7 +189,7 @@ Each finding object must have: `severity`, `category`, `location`, `description`
 For each valid finding from each agent:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs analyze add-finding \
+node <repo>/_shared/a1-tools.cjs analyze add-finding \
   "<analysis-path>" \
   <SEVERITY> \
   "<category>" \
@@ -203,7 +206,7 @@ the frontmatter `findings[]`.
 After all agents have completed:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs analyze update-status \
+node <repo>/_shared/a1-tools.cjs analyze update-status \
   "<analysis-path>" analyzed \
   --phase-data '{
     "agents_dispatched": [

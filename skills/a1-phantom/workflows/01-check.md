@@ -31,7 +31,7 @@ Run with `--format human` for direct user output, or `--format json` when
 embedded in another workflow (e.g. a1-victor-verifier).
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs phantom check "<plan_path>" \
+node <repo>/_shared/a1-tools.cjs phantom check "<plan_path>" \
   [--repo-path "<repo_path>"] \
   [--since "<git-ref>"] \
   --format human

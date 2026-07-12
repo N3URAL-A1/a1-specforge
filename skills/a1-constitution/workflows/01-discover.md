@@ -45,7 +45,7 @@ If ambiguous or missing, ask the user:
 
 Run the CLI discover command:
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs constitution discover <project-slug> \
+node <repo>/_shared/a1-tools.cjs constitution discover <project-slug> \
   --project-path "<repo-root>"
 ```
 
@@ -69,7 +69,7 @@ Parse the JSON. Check three things:
      and continue with init. Note: re-init will fail if the live file still
      exists, so we delete the live file after archiving:
      ```bash
-     node ~/.claude/skills/_shared/a1-tools.cjs constitution archive-current <slug>
+     node <repo>/_shared/a1-tools.cjs constitution archive-current <slug>
      rm "<vault-root>/projects/<slug>/constitution/constitution.md"
      ```
      Then proceed to Step 4.
@@ -87,7 +87,7 @@ Parse the JSON. Check three things:
 ## Step 4 — Initialize the vault file
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs constitution init <project-slug> \
+node <repo>/_shared/a1-tools.cjs constitution init <project-slug> \
   --title "Constitution for <project-slug>"
 ```
 
@@ -155,7 +155,7 @@ to `drafted` only AFTER Alex returns successfully in Phase 2.
 
 - **User cancels in Phase 1:**
   ```bash
-  node ~/.claude/skills/_shared/a1-tools.cjs constitution update-status \
+  node <repo>/_shared/a1-tools.cjs constitution update-status \
     "<CONST_PATH>" cancelled
   ```
   Tell the user: "Constitution cancelled before Draft. Status set to cancelled.

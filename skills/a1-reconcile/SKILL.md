@@ -39,7 +39,7 @@ allowed-tools:
 Language: English-first; German trigger aliases supported.
 
 This skill is a thin orchestrator. The phase logic lives in `workflows/`. The
-shared CLI helper (`~/.claude/skills/_shared/a1-tools.cjs reconcile`) handles
+shared CLI helper (`<repo>/_shared/a1-tools.cjs reconcile`) handles
 deterministic file ops (slot calculation, spec parsing, frontmatter updates,
 drift append, listing). Sub-agents do the probing in Phase 3.
 
@@ -107,7 +107,7 @@ State is persisted in the drift-report's YAML frontmatter. Update it via the
 shared CLI helper, never with raw string-replace on the file:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs reconcile update-status \
+node <repo>/_shared/a1-tools.cjs reconcile update-status \
   "projects/<slug>/drift-<YYYY-MM-DD>.md" <new-status> \
   [--phase-data '<json>']
 ```
@@ -118,7 +118,7 @@ The helper performs an atomic frontmatter rewrite (read → modify → write-tem
 Drifts are appended one at a time via:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs reconcile add-drift \
+node <repo>/_shared/a1-tools.cjs reconcile add-drift \
   "<drift-path>" <MISSING|EXTRA|DIVERGED|STALE> "<artifact>" "<description>" \
   [--recommendation "<text>"] [--spec-ref "<FR-###>"] [--code-ref "<path:line>"]
 ```

@@ -30,7 +30,7 @@ allowed-tools:
 Language: English-first; German trigger aliases supported.
 
 This skill is a thin orchestrator. The phase logic lives in `workflows/`. The shared CLI
-helper (`~/.claude/skills/_shared/a1-tools.cjs`) handles deterministic file ops (sequence
+helper (`<repo>/_shared/a1-tools.cjs`) handles deterministic file ops (sequence
 numbers, status updates, listing) under the `spec` subcommand group. Sub-agents do the
 actual thinking.
 
@@ -159,7 +159,7 @@ Before the first wave of Phase 5, the feature MUST claim its declared code
 scope so parallel features cannot silently collide on the same files:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs code-scope claim \
+node <repo>/_shared/a1-tools.cjs code-scope claim \
   --by <spec-id> --scope <code_scope from wave-plan frontmatter>
 ```
 
@@ -262,7 +262,7 @@ State is persisted in the spec frontmatter. Update it via the CLI helper, never 
 string-replace on the file:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs spec update-status \
+node <repo>/_shared/a1-tools.cjs spec update-status \
   "projects/<slug>/spec/<###>-<feature-slug>.md" <new-status>
 ```
 
@@ -320,4 +320,5 @@ The skill **proposes** code agents in Phase 5 based on the wave-plan brief; the 
 
 - Bug fixes: `a1-fix` skill.
 - Cross-feature roadmap planning: Frank or Vincente directly.
-- Production deployment: Dirk / Dennis after Phase 6 done.
+- Deployment execution: `a1-dario-devops` (preview deploys per Gate 2; production
+  deploys only on explicit user instruction, after Phase 6 done).

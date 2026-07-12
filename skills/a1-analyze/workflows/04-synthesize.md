@@ -74,7 +74,7 @@ If nothing notable: write "none."
 ## Step 7 — Persist findings_count to frontmatter
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs analyze update-status \
+node <repo>/_shared/a1-tools.cjs analyze update-status \
   "<analysis-path>" synthesized \
   --phase-data '{"findings_count": {"blocker": <n>, "major": <n>, "minor": <n>}}'
 ```

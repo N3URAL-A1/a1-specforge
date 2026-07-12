@@ -75,7 +75,7 @@ Flip status to `fixing` BEFORE spawning, so the bug-report reflects the active
 work:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs fix update-status \
+node <repo>/_shared/a1-tools.cjs fix update-status \
   "<bug-path>" fixing
 ```
 
@@ -107,7 +107,7 @@ Spawn the code agent via the `Task` tool with this brief:
 When the agent (or the user) returns with a commit hash:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs fix update-status \
+node <repo>/_shared/a1-tools.cjs fix update-status \
   "<bug-path>" fixing \
   --fix-commit <commit-hash>
 ```

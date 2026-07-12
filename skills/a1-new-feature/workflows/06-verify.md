@@ -158,7 +158,7 @@ Directly after the verdict line in VERIFICATION.md, write a `**Cost:**` line.
 Compute it with:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs cost run --project ~/.claude/projects/<project-dir> --since <phase-start-ISO>
+node <repo>/_shared/a1-tools.cjs cost run --project ~/.claude/projects/<project-dir> --since <phase-start-ISO>
 ```
 
 Summary-line format:
@@ -182,16 +182,16 @@ Completion Gate), each after its own confirmation:
 1. **Review** — once code review (Reinhard or equivalent) has confirmed the
    implementation:
    ```bash
-   node ~/.claude/skills/_shared/a1-tools.cjs code-scope stage --by <spec-id> --set review
+   node <repo>/_shared/a1-tools.cjs code-scope stage --by <spec-id> --set review
    ```
 2. **Verify** — once this Phase 6 walkthrough is all-green (this step):
    ```bash
-   node ~/.claude/skills/_shared/a1-tools.cjs code-scope stage --by <spec-id> --set verify
+   node <repo>/_shared/a1-tools.cjs code-scope stage --by <spec-id> --set verify
    ```
 3. **Merge** — after the pre-merge check below and a clean `git merge` to
    `main` with a green post-merge build:
    ```bash
-   node ~/.claude/skills/_shared/a1-tools.cjs code-scope stage --by <spec-id> --set merge
+   node <repo>/_shared/a1-tools.cjs code-scope stage --by <spec-id> --set merge
    ```
 4. **Origin cleanup** — after the feature branch's remote copy is deleted
    (via `a1-worktree`'s Exit workflow, Step 4.5). **Hard gate — verify the
@@ -203,13 +203,13 @@ Completion Gate), each after its own confirmation:
    `origin-cleanup` or `done`. Go run `a1-worktree` exit (discard mode) to
    delete the remote branch, then re-check. Only once empty:
    ```bash
-   node ~/.claude/skills/_shared/a1-tools.cjs code-scope stage --by <spec-id> --set origin-cleanup
+   node <repo>/_shared/a1-tools.cjs code-scope stage --by <spec-id> --set origin-cleanup
    ```
 5. **Done** — only after all four transitions above are confirmed, release
    the scope reservation (frees it for other features) and close the spec:
    ```bash
-   node ~/.claude/skills/_shared/a1-tools.cjs code-scope release --by <spec-id>
-   node ~/.claude/skills/_shared/a1-tools.cjs spec update-status <spec-path> done
+   node <repo>/_shared/a1-tools.cjs code-scope release --by <spec-id>
+   node <repo>/_shared/a1-tools.cjs spec update-status <spec-path> done
    ```
 
 The helper:
@@ -260,7 +260,7 @@ cat > /tmp/verify-failures.json <<EOF
 EOF
 
 # 2. Pass the file path to the helper:
-node ~/.claude/skills/_shared/a1-tools.cjs spec update-status \
+node <repo>/_shared/a1-tools.cjs spec update-status \
   <spec-path> implementing --verify-failures-file /tmp/verify-failures.json
 ```
 

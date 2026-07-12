@@ -19,7 +19,7 @@ the next step.
 
 ```bash
 # Get next sequence number for the project
-node ~/.claude/skills/_shared/a1-tools.cjs spec next-number <project-slug>
+node <repo>/_shared/a1-tools.cjs spec next-number <project-slug>
 ```
 
 Then `Read` the template `~/.claude/skills/a1-new-feature/templates/spec-template.md`, fill in:

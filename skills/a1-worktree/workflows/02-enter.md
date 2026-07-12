@@ -22,7 +22,7 @@ Wait for explicit yes before proceeding.
 ## Step 2 — Run enter
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs worktree enter <id>
+node <repo>/_shared/a1-tools.cjs worktree enter <id>
 ```
 
 The CLI:

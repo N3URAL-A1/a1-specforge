@@ -6,27 +6,27 @@ This is **not** a new agent definition. The authoritative agent file lives at:
 ~/.claude/agents/a1-rene-requirement-engineer.md
 ```
 
-Rene wird in Phasen 1–3 als Sub-Agent gespawnt. Identity, Hard Rules, Tone of Voice und
-Erfahrung kommen aus dem zentralen Agent-File — die Workflows in diesem Skill liefern nur
-den **Brief** (Auftrag, Inputs, erwartetes Output-Format).
+Rene is spawned as a sub-agent in Phases 1–3. Identity, hard rules, tone of voice, and
+experience come from the central agent file — the workflows in this skill only provide
+the **brief** (task, inputs, expected output format).
 
-## Spawn-Pattern (innerhalb der Workflows)
+## Spawn pattern (inside the workflows)
 
-Use the `Task` tool with `subagent_type: a1-rene-requirement-engineer` and pass the phase brief
+Use the `Agent` tool with `subagent_type: a1-rene-requirement-engineer` and pass the phase brief
 verbatim. The phase briefs live in:
 
 - Phase 1 — `workflows/01-discover.md`, Step 3
 - Phase 2 — `workflows/02-specify.md`, Step 1
 - Phase 3 — `workflows/03-clarify.md`, Step 2
 
-## Wenn Rene global nicht verfügbar ist
+## If Rene is not available globally
 
-Falls der Agent in einer Session nicht aufgelöst werden kann (z.B. neue Maschine ohne
-synchronisierte `~/.claude/agents/`), fällt der Skill auf `general-purpose` zurück und
-fügt den Persona-Brief manuell vorne an:
+If the agent cannot be resolved in a session (e.g. a new machine without a synchronized
+`~/.claude/agents/`), the skill falls back to `general-purpose` and manually prepends
+the persona brief:
 
-> "Du arbeitest als Rene (Requirement Engineer). Identität: präzise, testbar-orientiert,
-> kein Schönreden. Folge dem unten stehenden Auftrag strikt."
+> "You are working as Rene (Requirement Engineer). Identity: precise, testability-oriented,
+> no sugarcoating. Follow the brief below strictly."
 
-Diese Fallback-Konvention gilt für alle drei Phasen. Vincente und Tobi haben analoge
-Fallbacks — siehe deren globale Agent-Files für die Persona-Briefs.
+This fallback convention applies to all three phases. Vincente and Tobi have analogous
+fallbacks — see their global agent files for the persona briefs.

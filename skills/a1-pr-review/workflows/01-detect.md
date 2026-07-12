@@ -13,7 +13,7 @@ slug, worktree path, branch, repo root.
 ### 1.1 Scan registry
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs pr list-handoff
+node <repo>/_shared/a1-tools.cjs pr list-handoff
 ```
 
 Returns a JSON array of registry entries with `status: handoff`. Each
@@ -45,7 +45,7 @@ mkdir -p "<worktree_path>/.a1-review"
 ### 1.5 Update registry
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs pr mark-status <id> in-review
+node <repo>/_shared/a1-tools.cjs pr mark-status <id> in-review
 ```
 
 ### 1.6 Hand-off to Phase 2
@@ -61,15 +61,15 @@ one of these two fallbacks instead of failing outright:
 
 - **(a) Preferred — adopt first, then continue the normal flow:**
   ```bash
-  node ~/.claude/skills/_shared/a1-tools.cjs worktree adopt <repo-root> <slug> --worktree-path <path>
-  node ~/.claude/skills/_shared/a1-tools.cjs worktree exit <id> --mode handoff
+  node <repo>/_shared/a1-tools.cjs worktree adopt <repo-root> <slug> --worktree-path <path>
+  node <repo>/_shared/a1-tools.cjs worktree exit <id> --mode handoff
   ```
   This registers the worktree (from git truth) and immediately hands it off,
   after which it appears in `pr list-handoff` and the rest of Phase 1
   (1.3–1.6) proceeds unchanged.
 - **(b) Read-only alternative, findings only:**
   ```bash
-  node ~/.claude/skills/_shared/a1-tools.cjs pr findings-summary --worktree-path <path>
+  node <repo>/_shared/a1-tools.cjs pr findings-summary --worktree-path <path>
   ```
   Works without any registry entry, but is read-only — it only returns the
   findings summary for a worktree that already has

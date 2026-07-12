@@ -27,7 +27,7 @@ real cost.
 Use the **Bash** tool to call the CLI in human-format mode:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs check <project-slug> \
+node <repo>/_shared/a1-tools.cjs check <project-slug> \
   --feature <feature> --format human
 ```
 
@@ -50,7 +50,7 @@ Show the user the stdout verbatim. Then re-run the CLI with
 `--format json` to read the structured diff:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs check <project-slug> \
+node <repo>/_shared/a1-tools.cjs check <project-slug> \
   --feature <feature> --format json
 ```
 

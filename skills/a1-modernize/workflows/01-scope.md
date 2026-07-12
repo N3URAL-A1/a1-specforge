@@ -40,7 +40,7 @@ If the path does not exist, ask:
 ## Step 4 — Initialize the master file
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs modernize init \
+node <repo>/_shared/a1-tools.cjs modernize init \
   <project-slug> <mode> \
   --project-path "<absolute-code-path>"
 ```
@@ -50,7 +50,7 @@ Parse the returned JSON, capture the master file path.
 ## Step 5 — Run stack discovery
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs modernize discover-stack \
+node <repo>/_shared/a1-tools.cjs modernize discover-stack \
   "<absolute-code-path>"
 ```
 

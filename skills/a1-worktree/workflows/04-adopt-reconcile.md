@@ -22,7 +22,7 @@ a1-worktree registry, without losing work.
 Call the CLI:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs worktree adopt <repo-root> <slug> [--worktree-path <abs>] [--branch <name>] [--base <branch>]
+node <repo>/_shared/a1-tools.cjs worktree adopt <repo-root> <slug> [--worktree-path <abs>] [--branch <name>] [--base <branch>]
 ```
 
 Candidate matching priority (first that applies wins):
@@ -70,7 +70,7 @@ Use `reconcile` to see, in one shot, both directions of drift before
 deciding what to adopt or clean up:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs worktree reconcile <repo-root> [--prune]
+node <repo>/_shared/a1-tools.cjs worktree reconcile <repo-root> [--prune]
 ```
 
 JSON shape:

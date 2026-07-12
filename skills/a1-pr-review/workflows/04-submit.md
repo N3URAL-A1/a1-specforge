@@ -46,7 +46,7 @@ Capture the returned PR URL.
 ### 4.5 Update registry
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs pr mark-pr-open <id> "<pr-url>"
+node <repo>/_shared/a1-tools.cjs pr mark-pr-open <id> "<pr-url>"
 ```
 
 This sets `status: pr-open` and appends to `phase_history`.

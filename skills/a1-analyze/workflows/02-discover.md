@@ -9,7 +9,7 @@ This phase runs WITHOUT sub-agents. Speed and reproducibility are the priority.
 ## Step 1 — Run the discover helper
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs analyze discover <absolute-project-path>
+node <repo>/_shared/a1-tools.cjs analyze discover <absolute-project-path>
 ```
 
 The helper returns JSON:
@@ -32,7 +32,7 @@ A discover step with no stack signals fail-fast.
 ## Step 2 — Persist into frontmatter
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs analyze update-status \
+node <repo>/_shared/a1-tools.cjs analyze update-status \
   "<analysis-path>" discovered \
   --phase-data '<the JSON object from Step 1, stringified>'
 ```

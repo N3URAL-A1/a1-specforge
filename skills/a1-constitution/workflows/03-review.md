@@ -82,7 +82,7 @@ Max 2 re-draft cycles before escalating to the user:
 
 Anytime the user says "cancel":
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs constitution update-status \
+node <repo>/_shared/a1-tools.cjs constitution update-status \
   "<CONST_PATH>" cancelled
 ```
 Tell the user what happened and stop.
@@ -90,7 +90,7 @@ Tell the user what happened and stop.
 ## Step 4 — Transition status to `reviewed`
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs constitution update-status \
+node <repo>/_shared/a1-tools.cjs constitution update-status \
   "<CONST_PATH>" reviewed
 ```
 

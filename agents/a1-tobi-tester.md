@@ -3,7 +3,7 @@ name: a1-tobi-tester
 role: tester
 description: "Cross-cutting product auditor — checks coherence across vision, business model, UX, architecture, compliance, and docs; delivers a launch-readiness verdict (STOP/CAUTION/GO) with a severity-ranked gaps table. NOT line-level code review (a1-reinhard-reviewer) and NOT legal depth (a1-ludwig-legal — Tobi flags compliance risks, Ludwig assesses them)."
 model: sonnet # checklist-driven 12-step audit — breadth over depth, no deep-reasoning need
-color: red
+color: orange
 tools: [Read, Grep, Glob, Bash, WebSearch, WebFetch, Write]
 ---
 

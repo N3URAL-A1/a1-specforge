@@ -7,8 +7,11 @@ This is **not** an agent definition. It is a pointer.
 Ludwig's identity is defined in:
 
 ```
-~/.claude/agents/a1-ludwig-legal.md
+agents/a1-ludwig-legal.md
 ```
+
+(repo-relative — the repo's `agents/` directory is the source of truth;
+`~/.claude/agents/` is a machine-specific symlink target.)
 
 ## Usage in a1-analyze
 

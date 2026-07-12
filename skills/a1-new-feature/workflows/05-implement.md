@@ -22,7 +22,7 @@ Spec status is `planned` and frontmatter `wave_plan_path` is set. Wave-plan file
 **Consistency Gate must be PASS before Wave 1 starts.** If it hasn't run yet:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs consistency-check <plan-path> <spec-path>
+node <repo>/_shared/a1-tools.cjs consistency-check <plan-path> <spec-path>
 ```
 
 Do NOT start Wave 1 if the gate returns FAIL. Orphaned FRs (FRs not mapped to any wave) produced 44% of historical post-deploy bugs — the gate costs 30 seconds and prevents hours of fixes.
@@ -39,7 +39,7 @@ its entries with commas (no spaces) to build the `--scope` CSV value:
 #   - app/api/widgets/
 #   - components/widgets/
 # → --scope "app/api/widgets/,components/widgets/"
-node ~/.claude/skills/_shared/a1-tools.cjs code-scope claim \
+node <repo>/_shared/a1-tools.cjs code-scope claim \
   --by <spec-id> --scope <code_scope-paths-comma-separated>
 ```
 
@@ -53,7 +53,7 @@ node ~/.claude/skills/_shared/a1-tools.cjs code-scope claim \
 If status is still `planned`:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs spec update-status \
+node <repo>/_shared/a1-tools.cjs spec update-status \
   <spec-path> implementing
 ```
 
@@ -188,7 +188,7 @@ sites at once. Three identical data-corrections in a row means you skipped this 
 **Gate 0.6 — Schema check (waves with DB migrations only)**
 
 For waves that add or change migrations, run the deterministic pre-gate before wave
-sign-off: `node ~/.claude/skills/_shared/a1-tools.cjs schema-check run --migrations <dir>`
+sign-off: `node <repo>/_shared/a1-tools.cjs schema-check run --migrations <dir>`
 (checks: audit trigger per table, RLS enabled, FK type match — exit 1 = wave not signed
 off). Semantic checks (enum completeness, expand→migrate→contract) stay in the 04-plan.md
 migration checklist.
@@ -200,7 +200,7 @@ are not evidence — they routinely color broken code green. Before wave sign-of
 deterministic real-path check:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs realpath-check run \
+node <repo>/_shared/a1-tools.cjs realpath-check run \
   --diff-base <wave-start-ref> --project <dir>
 ```
 
@@ -224,6 +224,8 @@ vercel   # creates preview URL
 ```
 
 Record the preview URL for Gate 3 and for Phase 6. Never skip, even for "just a small fix".
+Deploy executor: `a1-dario-devops` (preview deploys here; production deploys only on
+explicit user instruction).
 
 **Gate 3 — Smoke test: FR-ACs + wave goal**
 
@@ -266,7 +268,7 @@ Once every wave in the plan is marked `⟶ status: done` (before moving to
 Phase 6), advance the lifecycle stage:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs code-scope stage \
+node <repo>/_shared/a1-tools.cjs code-scope stage \
   --by <spec-id> --set complete
 ```
 

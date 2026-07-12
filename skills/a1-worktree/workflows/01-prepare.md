@@ -24,7 +24,7 @@ You need:
 Call the CLI:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs worktree prepare <repo-root> <slug> [--branch <name>] [--base <branch>]
+node <repo>/_shared/a1-tools.cjs worktree prepare <repo-root> <slug> [--branch <name>] [--base <branch>]
 ```
 
 The CLI performs these Pre-Flight checks:

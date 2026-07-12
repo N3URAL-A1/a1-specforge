@@ -28,7 +28,7 @@ allowed-tools:
 Language: English-first; German trigger aliases supported.
 
 This skill is a thin orchestrator. The lifecycle logic lives in `workflows/`.
-The shared CLI helper (`~/.claude/skills/_shared/a1-tools.cjs worktree`)
+The shared CLI helper (`<repo>/_shared/a1-tools.cjs worktree`)
 handles all deterministic git + registry operations.
 
 ## When to use
@@ -73,9 +73,9 @@ State is persisted in a user-global registry at `~/.a1-worktrees-registry.json`.
 Update it via the CLI helper only — never write the file directly:
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs worktree prepare <repo-root> <slug>
-node ~/.claude/skills/_shared/a1-tools.cjs worktree enter <id>
-node ~/.claude/skills/_shared/a1-tools.cjs worktree exit <id> --mode <keep|discard|handoff>
+node <repo>/_shared/a1-tools.cjs worktree prepare <repo-root> <slug>
+node <repo>/_shared/a1-tools.cjs worktree enter <id>
+node <repo>/_shared/a1-tools.cjs worktree exit <id> --mode <keep|discard|handoff>
 ```
 
 Registry writes are atomic (read → modify → write-tmp → rename).

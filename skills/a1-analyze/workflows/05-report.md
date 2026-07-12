@@ -28,7 +28,7 @@ Examples:
 ## Step 2 — Persist suggested_next to frontmatter
 
 ```bash
-node ~/.claude/skills/_shared/a1-tools.cjs analyze update-status \
+node <repo>/_shared/a1-tools.cjs analyze update-status \
   "<analysis-path>" reported \
   --phase-data '{
     "suggested_next": [
