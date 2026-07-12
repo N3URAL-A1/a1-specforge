@@ -21,21 +21,16 @@ const {
   loadReservations,
 } = locks;
 
-// usage() and CODE_SCOPE_STAGES live in the facade (a1-tools.cjs) — usage()
-// depends on the facade-only HELP constant (full CLI doc string), and
+const { usage } = require('./help.cjs');
+
 // CODE_SCOPE_STAGES is shared with the facade-resident code-scope commands.
 // Lib modules must never require('../a1-tools.cjs') (circular require), so
-// the facade injects both once via init() right after the lazy require of
-// this module in the dispatcher's product branch. Every cmdProduct* function
-// below is byte-identical to its pre-move body and keeps calling usage(...)
-// / CODE_SCOPE_STAGES exactly as before — only the binding source changed.
-let usage = () => {
-  throw new Error('lib/product.cjs: usage() not initialized — call product.init({ usage, CODE_SCOPE_STAGES }) before invoking any cmdProduct* function');
-};
+// the facade still injects it once via init() right after the lazy require of
+// this module in the dispatcher's product branch, until code-scope itself
+// extracts (Wave 8) and this module can import it directly instead.
 let CODE_SCOPE_STAGES = null;
 
 function init(deps) {
-  usage = deps.usage;
   CODE_SCOPE_STAGES = deps.CODE_SCOPE_STAGES;
 }
 
