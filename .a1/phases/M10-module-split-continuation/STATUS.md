@@ -284,4 +284,96 @@ faster than estimated is not a STOP-gate condition.
 - New modules: `_shared/lib/worktree.cjs` (599 lines),
   `_shared/lib/pr.cjs` (174 lines)
 
-## Waves 8-17 — not started
+## Wave 8 — `check-reservations` + `code-scope` pair (incl. `product.cjs` fix) — ✅ COMPLETE
+
+- Commit: `c5bf97b`
+- Task: 8.1 (extract `check-reservations` to `_shared/lib/check-reservations.cjs`,
+  `code-scope` to `_shared/lib/code-scope.cjs`, retire `product.cjs`'s
+  `CODE_SCOPE_STAGES` injection) — done, all three files in one commit per the
+  same-commit coordination requirement (facade + code-scope.cjs +
+  check-reservations.cjs + product.cjs).
+- Moved byte-identical to `check-reservations.cjs`: `cmdCheckReservations`.
+  Imports `parseFlags`/`nowIso` from `io.cjs`, `usage` from `help.cjs`,
+  `reservationsFile`/`loadReservations`/`acquireReservationsLock`/
+  `exitWithLock`/`writeJsonAtomic` from `locks.cjs` — verified the exact set
+  by reading the function body first; `failWithLock` is NOT called by this
+  function (only by `code-scope`'s stage transition), so it was correctly
+  omitted here, narrower than the plan's suggested superset.
+- Moved byte-identical to `code-scope.cjs`: `normalizeScopePath`,
+  `scopeSegments`, `isGlobSegment`, `segmentsMatchGlob`, `isSegmentPrefix`,
+  `nonGlobPrefix`, `scopePathsOverlap`, `findScopeOverlaps`, `parseScopeList`,
+  `CODE_SCOPE_STAGES` (module-level const, NOT a function), `cmdCodeScopeClaim`,
+  `cmdCodeScopeStage`, `cmdCodeScopeRelease`, `cmdCodeScopeList`,
+  `cmdCodeScopeCheck`, plus the doc-comment block explaining the code-scope
+  contract (path-list overlap gate, FR-004..007/017). Imports
+  `parseFlags`/`nowIso` from `io.cjs`, `usage` from `help.cjs`,
+  `reservationsFile`/`loadReservations`/`acquireReservationsLock`/
+  `exitWithLock`/`failWithLock`/`writeJsonAtomic` from `locks.cjs` (this group
+  DOES use `failWithLock`, unlike check-reservations). Exports
+  `CODE_SCOPE_STAGES` alongside the 5 dispatcher-facing functions — this is
+  the load-bearing export `product.cjs` depends on.
+- Const-sweep (mandatory per Executor ground rules): ran
+  `grep -n "^const [A-Z_]* = "` restricted to the wave's line range
+  (3730-4176 pre-move) — found exactly the one constant already named in
+  the plan (`CODE_SCOPE_STAGES`). No additional undocumented module-level
+  const/RegExp found this wave (clean outcome, same as Waves 3, 6, 7).
+- **Same-commit `product.cjs` fix (per plan Step 7, the coordinated part of
+  this wave):** replaced `let CODE_SCOPE_STAGES = null;` + the `init(deps)`
+  function (which only ever set `CODE_SCOPE_STAGES = deps.CODE_SCOPE_STAGES`,
+  since Wave 1 had already dropped `usage` from its injected fields) with a
+  plain top-level `const { CODE_SCOPE_STAGES } = require('./code-scope.cjs');`.
+  Removed `init` entirely from `product.cjs` (function body + `module.exports`
+  entry) — confirmed via grep no other reference to `init` remained in the
+  file (the string `init` still appears, but only inside command names like
+  `cmdProductInit`/`product init`/`feature-init`, not the removed function).
+  Facade's dispatcher `product` branch: removed the
+  `product.init({ CODE_SCOPE_STAGES })` line entirely, kept the lazy
+  `const product = require(...)` line unchanged (still paid only when
+  `product ...` is invoked). No circular require introduced:
+  `code-scope.cjs` does not require `product.cjs` or the facade.
+- Facade: replaced both moved blocks with two `require(...)` lines near the
+  other static Pattern-A imports; dispatcher branches for `check reservations`
+  and `code-scope` unchanged in shape (still call the same function names,
+  now resolved via import instead of local definition).
+- Doc-comment cleanup: updated the two comment blocks (facade lines ~219-227
+  documenting the `product` group, and ~3911-3915 at the dispatcher's
+  `product` branch) that explicitly named `CODE_SCOPE_STAGES` as a live
+  facade identifier — since `grep -c "CODE_SCOPE_STAGES" _shared/a1-tools.cjs`
+  is a mandatory zero-check per the plan's Step 9 (facade must not reference
+  the identifier AT ALL, not even in a comment), reworded both comments to
+  describe it generically ("the stage-name constant") instead of naming it
+  verbatim. This is a stricter reading than a functional necessity (comments
+  don't affect runtime), but it's what the plan's own verification command
+  literally checks, so it was honored precisely rather than left as a
+  near-miss.
+- Verification: `grep -c "^function cmdCheckReservations" _shared/a1-tools.cjs`
+  → 0; `grep -c "^function cmdCodeScopeClaim" _shared/a1-tools.cjs` → 0;
+  `grep -c "CODE_SCOPE_STAGES" _shared/a1-tools.cjs` → 0 (all three exactly
+  as required).
+- Smoke test (per plan's Done-when, proving `product.cjs`'s new direct
+  `require('./code-scope.cjs')` resolves at runtime): ran
+  `node _shared/a1-tools.cjs product stage --dir /tmp/m10-w8-smoke --set started`
+  — exits 1 with a clean `usage error: product stage requires --by
+  <feature-id> --set <stage>` (expected: no `--by` flag given, no dir/roadmap
+  set up), critically NOT a `ReferenceError`. Additionally ran a fuller
+  end-to-end smoke (`product init` → `add-milestone` → `add-feature` →
+  `product stage --by 001-smoke --set started`) against a real scaffolded
+  roadmap in `/tmp/m10-w8-smoke2`: succeeded (exit 0, JSON `{"status":"OK",
+  "stage":"started",...}`), then confirmed the imported `CODE_SCOPE_STAGES`
+  is genuinely live by testing an invalid stage name (`--set bogus-stage`)
+  and getting the exact `CODE_SCOPE_STAGES.join('|')`-interpolated usage
+  error message (`started|complete|review|verify|merge|origin-cleanup|done`)
+  — proves the constant's actual values flow correctly through the new
+  direct require, not just that the require doesn't throw.
+- Deviation (minor, pre-existing, same as Waves 1-7): a1-reconcile fixture
+  suite writes live timestamps into checked-in fixture files during the
+  regression run; diff reverted before staging, suite itself not fixed
+  (out of scope).
+- Full regression gate: ALL-SUITES-GREEN (all fixture suites, including
+  a1-reservations: 22 passed 0 failed, a1-code-scope: 72 passed 0 failed,
+  product-docs: 68 passed 0 failed, product-adopt: 33 passed 0 failed)
+- Facade line count: 4398 → 3975 lines (−423)
+- New modules: `_shared/lib/check-reservations.cjs` (127 lines),
+  `_shared/lib/code-scope.cjs` (336 lines)
+
+## Waves 9-17 — not started
