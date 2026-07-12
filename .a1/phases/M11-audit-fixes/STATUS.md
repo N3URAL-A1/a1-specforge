@@ -609,12 +609,140 @@ e024148 docs(agents): add opus justification comment for Alex
 817b3f2 fix(agents): unify tools: frontmatter to bracketed YAML array
 ```
 
+## Wave 6 — Learning-loop honesty
+
+**Status: DONE** (both tasks complete)
+
+### Pre-execution note
+
+No Wave-6-scoped uncommitted work was found in the working tree at the
+start of this run (working tree clean except the pre-existing,
+out-of-scope `a1-reconcile` fixture timestamp-drift files, and the
+untracked `.a1/phases/M11-audit-fixes/{AUDIT,MAP,PLAN,RESEARCH}.md`
+planning artifacts — both left untouched). All Wave 6 edits below are
+fresh, not recovered partial work.
+
+### Task 6.1 — Retro mechanism for the 5 heavy pipeline skills
+
+- **Finding before editing:** all 5 target skills (a1-plan, a1-roadmap,
+  a1-reconcile, a1-modernize, a1-constitution) already had a fully
+  wired, mandatory Retro step in their final workflow phase (committed
+  in `1360d0e`, before this phase started) — contrary to the plan's
+  basis text which said these "mention Retro only in passing, with no
+  structured, self-contained write commitment." Live inspection showed
+  otherwise: each already has a complete `_learning.md` append block.
+  The actual gap was narrower than the basis text implied: none of the
+  5 named `_shared/learning-schema.md` by name, and none of the 5
+  SKILL.md phase tables pointed at the Retro step — both required by
+  the task's own Done-when grep checks.
+- **Fix applied:** added a `_shared/learning-schema.md` reference
+  sentence inside each of the 5 Retro sections; added a one-line
+  "Retro:" pointer near each SKILL.md's phase table (matching
+  a1-execute's existing pattern). Renamed a1-modernize's
+  `## Step 5 — Retro (mandatory, every run)` heading to `## Retro
+  (Step 5, mandatory, every run)` so it matches the literal `## Retro`
+  grep pattern used by the task's own Done-when check and the other 4
+  skills' heading convention (kept the step numbering, just moved it).
+- **Done-when verified:**
+  `grep -rln '## Retro\|Retro:' skills/{a1-plan,a1-roadmap,a1-reconcile,a1-modernize,a1-constitution}/workflows/*.md`
+  → all 5 files. `grep -l learning-schema` on the same 5 files → all 5
+  files. Both match exactly, no false positives/negatives.
+- Regression gate: not strictly required (no `bin/`, `.github/`, or
+  `_test-fixtures/` files touched) — ran anyway: `node --check` OK,
+  all 23 fixture suites green.
+- Commit: `431176c` — `docs(skills): make Retro mechanism discoverable
+  for 5 pipeline skills`
+
+### Task 6.2 — Honest source list in a1-evolve
+
+- **Finding before editing (material deviation from the plan's basis
+  text):** cross-checked the plan's claim that 5 skills (a1-check,
+  a1-phantom, a1-checklist, a1-progress, a1-pr-review, a1-worktree —
+  note: plan text actually names a1-checklist as *present*, and lists
+  a1-check/a1-phantom/a1-progress/a1-pr-review/a1-worktree as the "5
+  gates/reporters ... correctly excluded by design ... no LLM judgment
+  produced") against the live tree. Ground-truth grep for a `## Retro`
+  heading across every `skills/*/SKILL.md` + `workflows/*.md` file
+  found that **4 of those 5 "excluded" skills already have a fully
+  wired, mandatory Retro block**: a1-check
+  (`workflows/01-run-check.md:100`), a1-phantom
+  (`workflows/01-check.md:85`), a1-pr-review
+  (`workflows/04-submit.md:73`), a1-worktree (`workflows/03-exit.md:157`)
+  — each with a complete local-cache-append + learning-store-append
+  mechanism, not a passing mention. Only `a1-progress` is genuinely
+  retro-free (confirmed: no `_learning.md` learning mechanism anywhere
+  in its files; its own `_learning.md` placeholder note says so
+  explicitly).
+- **Resolution:** since this task's entire purpose is learning-loop
+  *honesty*, the plan's stale premise was not copied verbatim into
+  a1-evolve's SKILL.md — that would recreate exactly the kind of
+  inaccuracy this wave exists to close. Instead, wrote the list to
+  match live ground truth: 16 learning-enabled skills total (the
+  6-skill originally-documented group minus a1-fix's distinct
+  postmortem mechanism called out separately, plus the 5 Task-6.1
+  additions, plus a1-check/a1-phantom/a1-pr-review/a1-worktree/a1-evolve
+  — all 5 already retro on inspection), with `a1-progress` named as
+  the sole genuine exclusion and a note that earlier planning drafts
+  had misclassified the 4 gate/reporter skills as retro-free.
+- **Done-when verified:** re-ran the grep independently after writing
+  the note — the named set (16 skills) matches the live Retro-heading
+  scan exactly (15 skills with a `## Retro` heading + `a1-fix`'s
+  separate postmortem mechanism = 16); `a1-progress` is the only
+  skill with neither.
+- Regression gate: not strictly required (SKILL.md prose only, no
+  `bin/`, `.github/`, or `_test-fixtures/` touched) — ran anyway:
+  `node --check` OK, all 23 fixture suites green.
+- Commit: `1e4b824` — `docs(evolve): name the honest learning-enabled
+  skill set near Input sources`
+
+## Deviations from plan (Wave 6)
+
+- **Task 6.1:** basis text's characterization of the 5 skills' existing
+  Retro state ("mention Retro only in passing") did not match the live
+  tree (all 5 already had complete, working Retro blocks pre-dating
+  this phase). The actual work needed was narrower — add the
+  learning-schema.md reference + SKILL.md phase-table pointer, not
+  build the Retro mechanism from scratch. Executed the narrower,
+  correct scope; Done-when criteria (which are grep-based, not
+  narrative) are satisfied exactly as specified.
+- **Task 6.2 (material):** the plan's basis text misclassified 4 of
+  the 5 "excluded by design" skills (a1-check, a1-phantom,
+  a1-pr-review, a1-worktree) — they are not retro-free; they already
+  have a wired mandatory Retro block. Wrote a1-evolve's honesty note
+  to reflect the verified live state (16 learning-enabled skills,
+  `a1-progress` the sole exclusion) rather than the plan's stale
+  5-skill exclusion list, since doing otherwise would have re-introduced
+  a false claim in the very file meant to fix false claims. This is a
+  content correction, not a scope change — the task ("write an honest
+  list matching reality") is satisfied more precisely by this
+  deviation, not less.
+- No other deviations.
+
+## Regression gate results (Wave 6)
+
+Not strictly required by the ground rules (no `bin/`, `.github/`, or
+`_test-fixtures/` files touched by either Wave 6 task), ran anyway
+after each task for safety:
+```
+node --check _shared/a1-tools.cjs   → OK
+23 fixture suites (_test-fixtures/*/run*.sh) → ALL-SUITES-GREEN
+```
+Green after Task 6.1 and Task 6.2.
+
+## Commit log (Wave 6)
+
+```
+1e4b824 docs(evolve): name the honest learning-enabled skill set near Input sources
+431176c docs(skills): make Retro mechanism discoverable for 5 pipeline skills
+```
+
 ## Next wave
 
-Wave 6 (Learning-loop honesty) remains independent and ready — no
-Wave-6-scoped uncommitted work was observed in the working tree during
-Wave 5's pre-execution check. The 2 harmless `a1-reconcile` fixture
-timestamp-drift files remain present and out of scope; still untouched.
-Wave 7 depends on notes from Task 4.3 (already landed, Wave 4) and Task
-5.4 (this wave, note-only, see above) — both inputs are now available for
-Wave 7's Task 7.4 decision doc whenever Wave 7 runs.
+Wave 7 (Structural decisions) remains, STOP-gated per task — each task
+produces a decision doc under `.a1/phases/M11-audit-fixes/decisions/`
+only, never applies structural change. Depends on notes from Task 4.3
+(landed, Wave 4) and Task 5.4 (landed, Wave 5, note-only) — both inputs
+are available. Wave 7's Task 7.4 should also be made aware of this
+wave's Task 6.2 finding (4 skills misclassified as retro-free in
+earlier planning) in case it's relevant context for the consolidation
+review, though it is not one of Task 7.4's named candidates.
