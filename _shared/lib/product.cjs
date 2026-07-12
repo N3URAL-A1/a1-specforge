@@ -22,17 +22,7 @@ const {
 } = locks;
 
 const { usage } = require('./help.cjs');
-
-// CODE_SCOPE_STAGES is shared with the facade-resident code-scope commands.
-// Lib modules must never require('../a1-tools.cjs') (circular require), so
-// the facade still injects it once via init() right after the lazy require of
-// this module in the dispatcher's product branch, until code-scope itself
-// extracts (Wave 8) and this module can import it directly instead.
-let CODE_SCOPE_STAGES = null;
-
-function init(deps) {
-  CODE_SCOPE_STAGES = deps.CODE_SCOPE_STAGES;
-}
+const { CODE_SCOPE_STAGES } = require('./code-scope.cjs');
 
 const PRODUCT_ROADMAP_KEY_ORDER = [
   'schema_version', 'type', 'project', 'title', 'status', 'updated', 'source',
@@ -1547,7 +1537,6 @@ function cmdProductImport(args) {
 }
 
 module.exports = {
-  init,
   cmdProductStatus,
   cmdProductStage,
   cmdProductMarkers,
