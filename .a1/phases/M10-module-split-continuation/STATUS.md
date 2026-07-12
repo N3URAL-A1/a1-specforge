@@ -659,4 +659,71 @@ faster than estimated is not a STOP-gate condition.
 - Facade line count: 2946 → 2490 lines (−456)
 - New module: `_shared/lib/analyze.cjs` (496 lines)
 
-## Waves 13-17 — not started
+## Wave 13 — `modernize` group — ✅ COMPLETE
+
+- Commit: `711fcef`
+- Task: 13.1 (extract `modernize` to `_shared/lib/modernize.cjs`) — done
+- Moved byte-identical: `modernizeDir`, `cmdModernizeNextSlot`, `cmdModernizeInit`,
+  `cmdModernizeUpdateStatus`, `cmdModernizeDiscoverStack`, `cmdModernizeAddProposal`,
+  `cmdModernizeApproveProposal`, `parityBaselineToMap`, `normalizeJsonEntries`,
+  `cmdModernizeAddWave`, `cmdModernizeSnapshotBehavior`, `cmdModernizeStartWave`,
+  `cmdModernizeCompleteWave`, `cmdModernizeVerifyParity`, `cmdModernizePublishNotion`,
+  `cmdModernizeList`, plus the doc-comment block explaining the modernize
+  pipeline contract (FMEA-2 computed parity, FMEA-5 approval audit trail).
+  Exports only the 13 dispatcher-facing `cmdModernize*` functions;
+  `modernizeDir` (internal helper, only called by `cmdModernizeNextSlot`),
+  `parityBaselineToMap`, and `normalizeJsonEntries` stay module-private
+  (verified no external callers via grep before and after the move).
+- Const-sweep (mandatory per Executor ground rules): ran
+  `grep -n "^const [A-Z_]* = "` restricted to the wave's line range
+  (1128-1702 pre-move) — found **`MODERNIZE_STATUS_TO_PHASE`**, a
+  module-level phase-lookup object (not a `Set`, analogous to Wave 11's
+  `SPEC_STATUS_TO_PHASE` and Wave 12's `ANALYSIS_STATUS_TO_PHASE`), sitting
+  between `cmdModernizeInit` and `cmdModernizeUpdateStatus`, not named
+  anywhere in the plan's own Wave 13 MOVE list. Consumed via bracket lookup
+  (`MODERNIZE_STATUS_TO_PHASE[newStatus]`) inside `cmdModernizeUpdateStatus`,
+  not `.has()`/`.match()`/`.test()` — same detection-blind-spot pattern as
+  Wave 2's `SQL_TYPE_ALIASES`, Wave 11's `SPEC_STATUS_TO_PHASE`, and Wave
+  12's `ANALYSIS_STATUS_TO_PHASE`. Moved it alongside the 13 named
+  functions; leaving it in the facade would have stranded
+  `cmdModernizeUpdateStatus` with a `ReferenceError` on its very first
+  status-transition call. Logged in observations.jsonl (pattern:
+  `missing_wiring`).
+- `MODERNIZE_STATUSES`/`MODERNIZE_MODES`/`MODERNIZE_PROPOSAL_DECISIONS`
+  `.has(` call sites verified live at extraction time (`cmdModernizeInit`
+  via `MODERNIZE_MODES.has(mode)`, `cmdModernizeUpdateStatus` via
+  `MODERNIZE_STATUSES.has(newStatus)`, `cmdModernizeApproveProposal` via
+  `MODERNIZE_PROPOSAL_DECISIONS.has(decision)`). `MODERNIZE_WAVE_STATUSES`
+  has no live `.has()` call site in this group (confirmed via grep across
+  the whole facade before the move) but was imported anyway per the plan's
+  explicit instruction ("import all 4 regardless since they moved as one
+  logical block in Wave 1") — harmless unused destructure, kept for
+  consistency with the shared status-constants.cjs contract.
+- `appendPhaseHistory` cross-import (per plan Step 3): confirmed live usage
+  at 3 call sites (`cmdModernizeUpdateStatus`, `cmdModernizeStartWave`,
+  `cmdModernizeCompleteWave`) and imported it from `lib/spec.cjs`
+  (`const { appendPhaseHistory } = require('./spec.cjs');`) rather than
+  duplicating the function body — `lib/spec.cjs` already exports it since
+  Wave 11, same pattern as Wave 12's `analyze` group.
+- Determined deps by reading the full moved block: `usage` (from
+  `help.cjs`), `vaultRoot`, `resolveVaultPath`, `parseFlags`, `readMd`,
+  `writeMdAtomic`, `nowIso`, `fail` (all from `io.cjs`). No `gitSafe`/git
+  dependency in this group (confirmed via grep — modernize is pure
+  vault-file + `find`/`execFileSync` filesystem-scan logic, no git calls).
+- Export verification: confirmed via grep that only the facade's
+  dispatcher (`group === 'modernize'` branch, 13 call sites) calls the
+  `cmdModernize*` functions — no other group referenced them before the
+  move.
+- HELP text re-check (per plan Step 6): `node _shared/a1-tools.cjs --help
+  | grep -qi "modernize"` passes — HELP already lives in `lib/help.cjs`
+  since Wave 1 and required no change for this move.
+- Deviation (minor, pre-existing, same as Waves 1-12): a1-reconcile
+  fixture suite writes live timestamps into checked-in fixture files
+  during the regression run; diff reverted before staging, suite itself
+  not fixed (out of scope).
+- Full regression gate: ALL-SUITES-GREEN (all fixture suites, including
+  a1-modernize-roundtrip: 13 passed, 0 failed)
+- Facade line count: 2490 → 1942 lines (−548)
+- New module: `_shared/lib/modernize.cjs` (603 lines)
+
+## Waves 14-17 — not started
