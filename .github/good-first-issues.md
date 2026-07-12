@@ -111,14 +111,14 @@ actionable.
 
 ## Publish (Robert)
 
-> The active `gh` account (`n3urala1-rob`) is **read-only** on
-> `N3URAL-A1/a1-specforge`. Switch to the write-capable account first, then
-> create one issue per draft. This pipeline must NOT run `gh issue create`
-> itself — these commands are for you to run manually after review.
+> The `n3urala1-rob` account has **ADMIN** on `N3URAL-A1/a1-specforge`
+> (verified 2026-07-12) and is the only account in use. Create one issue per
+> draft. This pipeline must NOT run `gh issue create` itself — these commands
+> are for you to run manually after review.
 
 ```bash
-# 1. Switch to the account with write access
-gh auth switch --user mellow-rob
+# 1. Ensure the org account is active
+gh auth switch --user n3urala1-rob
 
 # 2. Create one issue per draft (bodies are the sections above; save each to a
 #    file first, or paste the body inline). Example using --body-file:
