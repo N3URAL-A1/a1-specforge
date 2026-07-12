@@ -298,4 +298,7 @@ function emitCheckReport(report, format) {
   process.exit(report.exit_code);
 }
 
-module.exports = { cmdCheckRun };
+// extract/diff primitives are shared with checklist.cjs (check #9 — the
+// a1-check gate merged into a1-checklist per M12 decision doc 7.1; the
+// standalone `check run` CLI stays as a working alias for Gate 4.5).
+module.exports = { cmdCheckRun, extractSpecFRs, extractWaveFRs, diffFRCoverage };

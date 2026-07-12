@@ -77,6 +77,7 @@ Map each failed BLOCKER to a fix-path suggestion:
 | `spec_status_clarified` | "The spec is not yet in status `clarified`. Should I trigger `a1-rene-requirement-engineer` to clarify it?" |
 | `wave_plan_exists` | "There is no wave plan under `projects/<slug>/plans/`. Should I trigger `a1-vincente-vibe-optimizer` to create the plan — or start `a1-new-feature` Phase 4?" |
 | `wave_dependencies_dag` | "The wave dependencies contain a cycle. This must be resolved manually — would you like me to trigger `a1-vincente-vibe-optimizer` for a plan revision?" |
+| `fr_coverage_bijective` | FRs missing from every wave → "Should I re-enter `a1-new-feature` Phase 4 (Plan) to redistribute the FRs?" · phantom FRs → "Re-enter Phase 3 (Clarify) to add them to the spec, or edit the wave-plan to drop them?" · FR in multiple waves → "Plan revision via `a1-vincente-vibe-optimizer`?" |
 
 Then stop. Do not auto-trigger the suggested agent — wait for user consent.
 

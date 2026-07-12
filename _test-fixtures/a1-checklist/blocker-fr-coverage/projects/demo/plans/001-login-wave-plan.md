@@ -21,5 +21,6 @@ Implement the email+password endpoint.
 
 **Suggested agent(s):** a1-walter-web-developer
 **Depends on:** Wave 1
+**Stories advanced:** FR-002
 
-Implement the password reset flow (FR-002) on top of Wave 1.
+Implement the password reset flow on top of Wave 1.

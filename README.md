@@ -69,8 +69,8 @@ All 17 skills below match the `SKILLS` array in `bin/install.sh` exactly.
 | `a1-analyze` | Insight | Read-only codebase analysis in five phases (parallel sub-agents): general, security, architecture, quality, onboarding. |
 | `a1-modernize` | Insight | Understand, fix, or modernize an undocumented codebase. Two modes: `spec-only` (derive spec, read-only) and `full` (spec + gaps + wave-based fix plan). |
 | `a1-progress` | Insight | Read-only project snapshot — scans `.a1/` state plus git/test/build state and recommends the next skill to run. |
-| `a1-check` | Gate | Deterministic, no-LLM consistency gate verifying structural invariants between a feature's spec and its wave-plan (bijective FR coverage). |
-| `a1-checklist` | Gate | Pre-flight readiness gate — 8 deterministic checks on a wave-plan (BLOCKER / MAJOR / MINOR) before execution starts. |
+| `a1-check` | Gate | **Deprecated alias** (merged into `a1-checklist` as check #9). The CLI (`check run`, exit 0/1/2) keeps working and still serves the Phase-4.5 gate during the deprecation window. |
+| `a1-checklist` | Gate | Pre-flight readiness gate — 9 deterministic checks on a wave-plan (BLOCKER / MAJOR / MINOR) before execution starts, incl. bijective spec↔plan FR coverage (check #9). |
 | `a1-constitution` | Setup | Generate/update a project's `constitution.md` — behavioral rules separated from CLAUDE.md's project facts, with 4-layer override precedence. |
 | `a1-phantom` | Verify | Phantom-task detection — flags `[X]` tasks in `PLAN.md` with no matching git change. Warning-level, never blocks (always exits 0). |
 | `a1-reconcile` | Verify | Spec-vs-implementation drift detection — classifies findings as MISSING / EXTRA / DIVERGED / STALE. |

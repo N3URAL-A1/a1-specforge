@@ -1,119 +1,69 @@
 ---
 name: a1-check
 description: >
-  Use PROACTIVELY whenever a wave-plan needs to be validated against its spec.
-  Narrow, deterministic, no-LLM consistency gate verifying three structural
-  invariants between a feature's spec and its wave-plan: (1) the wave-plan
-  frontmatter `spec_path` resolves to the expected spec, (2) every FR-### from
-  the spec appears in exactly one Wave, (3) no FR-### in the plan is absent
-  from the spec. Primary caller is a1-new-feature's Phase 4.5 gate between
-  Plan and Implement; can also be invoked manually. Exit semantics: 0=PASS,
-  1=FAIL (content inconsistency), 2=ERROR (missing file / bad frontmatter).
-  MUST trigger on: "consistency check for <feature>" (alias: "konsistenz-check
-  für <feature>"), "check consistency between spec and plan", "check the plan
-  matches the spec" (alias: "prüfe ob plan zur spec passt"), "verify wave plan",
-  "fr-coverage check", "does the plan cover the spec" (alias: "deckt der plan
-  die spec ab"), "a1-check", or any request to validate that a wave-plan covers
-  all spec FRs. Do NOT activate for: broader
-  pre-flight readiness (→ a1-checklist, covers 8 structural+metadata checks),
-  bug consistency (→ a1-fix), generic project audits (→ a1-analyze), semantic
-  spec review (→ a1-rene-requirement-engineer), or spec-vs-implementation drift
-  (→ a1-reconcile). This gate is purely structural FR-coverage.
+  DEPRECATED — merged into a1-checklist as check #9 (M12, decision doc 7.1).
+  The spec ↔ wave-plan FR-coverage gate (frontmatter link resolves, every spec
+  FR-### in exactly one wave, no phantom FRs) now runs as part of
+  a1-checklist's 9 pre-flight checks; route "consistency check for <feature>"
+  (alias: "konsistenz-check für <feature>"), "check the plan matches the spec"
+  (alias: "prüfe ob plan zur spec passt"), "fr-coverage check", "does the plan
+  cover the spec" (alias: "deckt der plan die spec ab"), and "a1-check" to
+  a1-checklist. This alias remains for one release so existing callers keep
+  working: the underlying CLI (`a1-tools check run`, exit 0=PASS / 1=FAIL /
+  2=ERROR) is still fully functional and is still called directly by
+  a1-new-feature's Phase 4.5 gate. Do NOT use this skill for new routing —
+  use a1-checklist.
 allowed-tools:
   - Bash
   - Read
 ---
 
-# a1-check — Spec ↔ Wave-Plan Consistency Gate
+# a1-check — DEPRECATED (alias for a1-checklist check #9)
 
-User-facing output language: see `_shared/language-policy.md` (artifacts English,
-conversation in the user's language). German trigger aliases supported.
+**Status: deprecated since M12 (2026-07-12), removal after one release.**
 
-Thin Markdown wrapper around the deterministic CLI gate. All logic lives in
-`<repo>/_shared/a1-tools.cjs check`. The workflow file translates a FAIL
-result into a concrete fix-path suggestion for the user.
+The FR-coverage consistency gate that lived here is now **check #9 of
+`a1-checklist`** — same three invariants (frontmatter `spec_path` link,
+bijective FR coverage, no phantom FRs), severity BLOCKER, absorbed per
+decision doc `.a1/phases/M11-audit-fixes/decisions/check-checklist-merge.md`.
 
-## When to use
+## If this skill was activated
 
-Activate when the user wants a structural check between an existing spec and its
-wave-plan. Both files must already exist on disk under the repo-local storage paths
-(external vault via `A1_VAULT_ROOT`, e.g. Obsidian).
+Tell the user a1-check is deprecated, then run the merged gate instead:
 
-- Manual invocation: user names the project slug and the feature id.
-- Programmatic invocation by `a1-new-feature` Phase 4.5: that workflow shells out to
-  the CLI directly with `--format json`; this skill is **not** routed through.
+```bash
+node <repo>/_shared/a1-tools.cjs checklist run <project-slug>/<###-feature-slug> --format json
+```
 
-## Storage (repo-local layout; external vault via `A1_VAULT_ROOT`)
+FR-coverage failures appear as check `fr_coverage_bijective` (BLOCKER).
+Interpret results per `a1-checklist/workflows/01-run.md`.
 
-| Artifact | Path |
-|---|---|
-| Spec | `projects/<project-slug>/spec/<###>-<feature-slug>.md` |
-| Wave-Plan | `projects/<project-slug>/plans/<###>-<feature-slug>-wave-plan.md` |
+## What is NOT deprecated
 
-`<###>` is a zero-padded sequence assigned by `a1-new-feature`. The plan's YAML
-frontmatter must contain `spec_path:` pointing back at the spec.
-
-## CLI contract
+The **CLI subcommand keeps working unchanged** — `a1-new-feature` Phase 4.5
+(`workflows/04.5-consistency-gate.md`) still calls it directly and branches on
+its 3-way exit code:
 
 ```bash
 node <repo>/_shared/a1-tools.cjs check <project-slug> \
-  --feature <###-feature-slug> \
-  [--format json|human] \
-  [--vault <abs-path>]
+  --feature <###-feature-slug> --format json
+# exit 0=PASS · 1=FAIL (content inconsistency) · 2=ERROR (setup)
 ```
 
-Exit codes:
+Phase 4.5 will switch to the checklist invocation when the deprecation window
+ends; until then the exit-code contract here is frozen (decision doc 7.1,
+migration step 5).
 
-| Code | Meaning |
-|---|---|
-| 0 | PASS — spec and wave-plan are consistent |
-| 1 | FAIL — content inconsistency (diff in output) |
-| 2 | ERROR — setup problem (file missing, frontmatter unparseable) |
+## Fix-path suggestions (unchanged, used by Phase 4.5)
 
-Learning store defaults to repo-local `.a1/learnings/`; set `A1_VAULT_ROOT` to use an external vault (e.g. Obsidian). Override per-call via `--vault`.
-
-## Three check classes (all structural)
-
-| Class | What it asserts | FAIL trigger |
-|---|---|---|
-| `frontmatter_link` | Plan's `spec_path` resolves to the expected spec | spec_path empty, wrong filename, or pointing elsewhere |
-| `fr_coverage` | Every spec FR-### appears in exactly one Wave heading section | missing FR or FR present in two waves |
-| `fr_phantoms` | Every plan FR-### exists in the spec | plan references an FR-### the spec does not define |
-
-## Phases
-
-| # | Phase | What happens |
-|---|---|---|
-| 1 | Run | Invoke the CLI with `--format human`, capture exit code and stdout |
-| 1 | Report | If PASS: short confirmation. If FAIL/ERROR: show output + propose fix path |
-
-Phases are CLI-internal (Load → Compare → Report) — the skill itself has a single
-workflow file because the heavy lifting belongs in the CLI.
+- FAIL with FRs missing from waves → re-run `a1-new-feature` Phase 4 (Plan).
+- FAIL with phantom FRs → re-run Phase 3 (Clarify) to add the FRs, or edit the
+  wave-plan to drop them.
+- FAIL with frontmatter-link mismatch → targeted edit of the plan's
+  `spec_path`.
+- ERROR → create the missing file / repair the frontmatter, re-run.
 
 ## Workflow
 
-See `workflows/01-run-check.md`.
-
-## Hard rules
-
-- Never edit spec or wave-plan files from this skill. The gate is read-only.
-- Never invoke an LLM sub-agent for the consistency check itself — the CLI is
-  authoritative.
-- User-facing output language: see `_shared/language-policy.md` (artifacts English,
-  conversation in the user's language). The CLI's `--format human` output should be
-  passed through verbatim, with only the fix-path suggestion added on top in the
-  user's language.
-- Do not auto-trigger other skills after a FAIL. Always ask the user before
-  invoking `a1-new-feature` to re-enter a phase.
-
-## Hand-offs
-
-- On FAIL with missing FRs in waves → suggest re-running `a1-new-feature` Phase 4 (Plan)
-  via a1-pablo-planner.
-- On FAIL with phantom FRs → suggest re-running `a1-new-feature` Phase 3 (Spec/Clarify)
-  via a1-rene-requirement-engineer to add the FRs, or editing the wave-plan to drop
-  the phantoms.
-- On FAIL with frontmatter-link mismatch → suggest a targeted edit of the plan's
-  YAML frontmatter (`spec_path`).
-- On ERROR (setup) → ask the user to create the missing file or repair the
-  frontmatter, then re-run.
+See `workflows/01-run-check.md` (kept for the CLI contract during the alias
+period).

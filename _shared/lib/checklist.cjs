@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { vaultRoot, readMd, parseFlags, projectsPath } = require('./io.cjs');
+const { extractSpecFRs, extractWaveFRs, diffFRCoverage } = require('./check.cjs');
 const { usage } = require('./help.cjs');
 
 // ---------- checklist subcommands ----------
@@ -462,12 +463,52 @@ function evaluateChecklistRules(slug, paths, spec, plan, planExists) {
       result: 'FAIL',
       detail: 'Skipped: no wave-plan to inspect.',
     });
+    checks.push({
+      id: 9,
+      name: 'fr_coverage_bijective',
+      severity: 'BLOCKER',
+      result: 'FAIL',
+      detail: 'Skipped: no wave-plan to inspect.',
+    });
     return { checks, errors };
   }
 
   // --- Body-driven checks 3-8: delegated to the plan-body sub-evaluator ---
   const bodyChecks = evaluateChecklistPlanBodyRules(slug, paths, plan);
   checks.push(...bodyChecks);
+
+  // --- Check 9: FR coverage spec↔plan is bijective (BLOCKER) ---
+  // The former a1-check gate, merged here as check #9 (M12 decision doc 7.1).
+  // Reuses check.cjs primitives; the standalone `check run` CLI keeps its
+  // exact 0/1/2 contract as an alias for Gate 4.5 during the deprecation
+  // window.
+  {
+    const specFRs = extractSpecFRs(spec.body || '');
+    const waveMap = extractWaveFRs(plan.body || '');
+    const diff = diffFRCoverage(specFRs, waveMap);
+    const ok =
+      diff.missingInPlan.length === 0 &&
+      diff.phantomInPlan.length === 0 &&
+      diff.duplicatedInPlan.length === 0;
+    const parts = [];
+    if (diff.missingInPlan.length > 0)
+      parts.push(`missing from every wave: ${diff.missingInPlan.join(', ')}`);
+    if (diff.duplicatedInPlan.length > 0)
+      parts.push(
+        `assigned to multiple waves: ${diff.duplicatedInPlan.map((d) => d.fr).join(', ')}`
+      );
+    if (diff.phantomInPlan.length > 0)
+      parts.push(`phantom in plan (not in spec): ${diff.phantomInPlan.join(', ')}`);
+    checks.push({
+      id: 9,
+      name: 'fr_coverage_bijective',
+      severity: 'BLOCKER',
+      result: ok ? 'PASS' : 'FAIL',
+      detail: ok
+        ? `Every spec FR maps to exactly one wave (${specFRs.size} FRs).`
+        : `FR coverage broken: ${parts.join('; ')}.`,
+    });
+  }
 
   return { checks, errors };
 }
