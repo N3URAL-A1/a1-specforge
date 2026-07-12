@@ -151,4 +151,59 @@
 - Facade line count: 5831 → 5561 lines (−270)
 - New module: `_shared/lib/phantom.cjs` (279 lines)
 
-## Waves 6-17 — not started
+## Wave 6 — `pack` group — ✅ COMPLETE
+
+- Commit: `f653a6e`
+- Task: 6.1 (extract `pack` to `_shared/lib/pack.cjs`) — done
+- Moved byte-identical: `PACK_ANON_LEVELS`, `PACK_TARGET_KINDS`,
+  `PACK_DENY_REGEX`, `parsePackYaml`, `unquotePackScalar`,
+  `parsePackInlineValue`, `parsePatternFile`, `packValidateDir`,
+  `cmdPackValidate`, `copyDirRecursive`, `rmDirRecursive`, `cmdPackImport`,
+  `parseVaultPatternsTable`, `cmdPackExport`, plus the doc-comment block
+  explaining the Gate-Pack ADR contract (validate/import/export exit
+  codes, deny-regex anonymization). Exports only the three dispatcher-
+  facing functions (`cmdPackValidate`, `cmdPackImport`, `cmdPackExport`);
+  the 8 internal helpers + 3 constants stay module-private (verified no
+  external callers via grep before and after the move).
+- Dependency correction (minor, logged in observations.jsonl): the plan's
+  Task 6.1 Step 2 assumed this group reuses `io.cjs`'s `parseFrontmatter`
+  ("pack.yaml (flat parser, reuses the frontmatter grammar...)"). Read the
+  full moved block before writing the module and confirmed `parseFrontmatter`
+  is never actually called — `parsePackYaml`/`parsePatternFile` only reuse
+  the grammar *conceptually* (own from-scratch line parser), not the
+  function itself. Imported what the code actually calls instead:
+  `parseFlags` (used by `cmdPackImport`/`cmdPackExport` for flag parsing)
+  and `vaultRoot` (used by `cmdPackExport` to locate patterns.md) from
+  `io.cjs`. No dead import shipped.
+- Const-sweep (mandatory per Executor ground rules): ran
+  `grep -n "^const [A-Z_]* = "` restricted to the wave's line range —
+  found exactly the 3 constants already named in the plan text
+  (`PACK_ANON_LEVELS`, `PACK_TARGET_KINDS`, `PACK_DENY_REGEX`), confirmed
+  against the pre-move file via `git show HEAD:_shared/a1-tools.cjs`. No
+  additional undocumented module-level const/RegExp found this wave
+  (unlike Waves 2 and 4) — this is the first wave since the round-2 audit
+  fix where the plan's own MOVE list was already complete.
+- Deviation (minor, pre-existing, same as Waves 1-5): a1-reconcile fixture
+  suite writes live timestamps into checked-in fixture files during the
+  regression run; diff reverted before staging, suite itself not fixed
+  (out of scope).
+- Full regression gate: ALL-SUITES-GREEN (20 suites, including
+  a1-pack: 13 passed 0 failed, and a1-cmd-injection)
+- Facade line count: 5561 → 5122 lines (−439)
+- New module: `_shared/lib/pack.cjs` (448 lines)
+
+### Wave 6 checkpoint (per plan)
+
+All 5 pure/self-contained groups (schema-check, cost, realpath-check,
+phantom, pack) are now extracted. Plan estimated the facade "should have
+shrunk by roughly 1400-1500 lines from the 7196 baseline" by this
+checkpoint. **Actual shrinkage: 2074 lines (7196 → 5122)** — exceeds the
+estimate by ~575-675 lines. Likely explanation: the 1400-1500 estimate
+may have been based on moved-code-only line counts, while actual facade
+deltas also drop each group's in-place section-comment doc blocks and
+whitespace, and Wave 1's constant/help relocations (not counted as one
+of the "5 pure groups") already contributed some of the reduction before
+this checkpoint. No discrepancy investigation needed — a facade shrinking
+faster than estimated is not a STOP-gate condition.
+
+## Waves 7-17 — not started
