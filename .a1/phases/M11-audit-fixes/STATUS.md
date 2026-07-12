@@ -487,16 +487,134 @@ Green after Task 4.1, Task 4.2, and Task 4.3.
 e422198 docs(skills): correct storage prose from Obsidian-Vault-primary to repo-local-default
 ```
 
+## Wave 5 — Agent frontmatter consistency
+
+**Status: DONE** (Tasks 5.1–5.3 complete; Task 5.4 is note-only by design,
+already satisfied — see below. No `bin/`, `.github/`, or `_test-fixtures/`
+files touched by this wave, so the regression gate was optional per the
+ground rules — ran it anyway after every task, green throughout)
+
+### Pre-execution note
+
+Checked the working tree before starting, per the orchestrator's
+instruction to look for partial uncommitted work from the earlier
+concurrent-wave bug. Found exactly what Wave 4's "Next wave" note
+predicted:
+- 4 agent frontmatter files (`a1-alex-architekt.md`, `a1-pablo-planner.md`,
+  `a1-rafael-reverse-spec.md`, `a1-rico-researcher.md`) had uncommitted
+  `tools:` CSV → bracketed-array conversions already applied, verified
+  correct against the current PLAN.md Task 5.1 text (no permission-set
+  change, format only) and folded into this wave's Task 5.1 sweep commit
+  as-is rather than redone.
+- `agents/a1-marco-mapper.md`'s `tools:` line was **already bracketed**
+  but already **committed** — via Wave 4's `40a6bdb` (a git-hygiene
+  deviation documented in that wave's own notes: `git add` on Marco's
+  body-prose edit inadvertently staged the pre-existing frontmatter change
+  too). Verified and left alone; Task 5.1's own commit covers the other 20
+  files, not 21, and says so explicitly.
+- 2 harmless `a1-reconcile` fixture timestamp-drift files remained present
+  and out of scope throughout — never staged or committed by this run.
+
+### Task 5.1 — Unify `tools:` to bracketed YAML array across all 21 agents
+- **Done.** Converted the 8 remaining bare-CSV files not already handled
+  by the pre-existing working-tree state or Wave 4's Marco commit: Adam,
+  Erik, Ludwig, Rene, Theo, Uwe, Vincente, Victor.
+- Aik and Walter had no `tools:` field at all (silently inheriting every
+  tool). Added an explicit bracketed list to both — `[Read, Write, Edit,
+  Bash, Grep, Glob]`, the same standard implementation-agent set already
+  declared by Alex/Uwe/Vincente (Aik's only other tool-relevant behavior,
+  `gh` CLI calls, runs via Bash and needs no separate tool grant; neither
+  agent's prompt mentions WebSearch/WebFetch). Flagged explicitly in the
+  commit body for Robert's review, per the plan's instruction to propose
+  rather than silently narrow/widen.
+- **Verified:** `grep -c "^tools:" agents/*.md` → 21/21; every file's
+  `tools:` line matches `^tools: \[` (bracketed array, no stragglers);
+  fresh `HOME=$(mktemp -d) bash bin/install.sh` still creates 21 agent
+  symlinks, exit 0.
+- Commit: `817b3f2` — `fix(agents): unify tools: frontmatter to bracketed YAML array`
+
+### Task 5.2 — Opus justification comment for Alex
+- **Done.** Added `model: opus # system-wide architecture trade-offs IS
+  the job — decisions here are expensive to reverse once code is built on
+  them` to `agents/a1-alex-architekt.md`, matching the `# rationale IS the
+  job — ...` style already used by Falk/Reinhard/Samuel.
+- **Verified:** `grep "^model: opus" agents/*.md` → all 4 pins
+  (Alex/Falk/Reinhard/Samuel) carry a trailing `#` justification comment;
+  none bare.
+- Commit: `e024148` — `docs(agents): add opus justification comment for Alex`
+
+### Task 5.3 (MINOR) — Delegation-table format
+- **Done.** Confirmed Rafael was already compliant (`| Task | Owner |`
+  table, line ~175) per the plan's correction. Converted the remaining 3
+  bullet-list holdouts — Rico, Marco, Pablo — to Rafael's exact table
+  shape, content unchanged (each row's task description and owner
+  preserved verbatim, only the `- text → owner` bullet syntax became a
+  `| text | owner |` table row).
+- **Verified:** swept all 21 agent files for bullet-style delegation lines
+  (`^\s*-\s.*→` inside/near a not-in-scope section) — the only 4 remaining
+  hits (Aik, Walter, Rene, Victor) were confirmed false positives on
+  unrelated body prose (e.g. Victor's phantom-classification rules,
+  Rene's requirement-inference examples), not delegation tables; all 4
+  of those agents' actual `not_in_scope`/`NOT IN SCOPE` sections already
+  use tables. All 21 agents present not-in-scope delegation as a table.
+- Commit: `09a9e6c` — `docs(agents): convert Rico/Marco/Pablo delegation lists to table format`
+
+### Task 5.4 (MINOR, note-only — do not fix in this wave)
+- **No action taken, as instructed.** This task's own text says explicitly
+  not to fix the two format axes (description: frontmatter style;
+  prompt-body dialect) mechanically here — they are carried into Wave 7's
+  Task 7.4 decision doc as a named open question. Verified this wave did
+  not silently pick a style for either axis anywhere in the 3 edited
+  files or the 8+2 Task-5.1 conversions (frontmatter `description:` style
+  and prompt-body `<role>` vs Markdown-heading dialect were both left
+  exactly as found on every file touched this wave). Nothing further
+  required from Wave 5; Wave 7 (out of this run's scope) owns the
+  decision doc.
+
+## Deviations from plan (Wave 5)
+
+- Task 5.1: Aik and Walter's new `tools:` lists are a judgment call (the
+  plan says "propose the list in the commit body for Robert's review
+  rather than silently narrowing" if scoping down from "all tools") —
+  chosen set documented above and in the commit body; not yet
+  Robert-confirmed.
+- Task 5.1 accounting: commit covers 20 files (8 fresh CSV conversions +
+  4 pre-existing-in-working-tree conversions + Aik/Walter additions -
+  overlap), not 21 — Marco's conversion was already committed in Wave 4
+  (`40a6bdb`) per that wave's own documented git-hygiene deviation, and is
+  intentionally not re-touched or re-committed here.
+- No other deviations. Tasks 5.1–5.3 match the plan's task text and
+  Done-when criteria; Task 5.4 correctly took no action per its own
+  explicit instruction.
+
+## Regression gate results (Wave 5)
+
+Not strictly required by the ground rules (no `bin/`, `.github/`, or
+`_test-fixtures/` files touched by any Wave 5 task), ran anyway after
+every task for safety:
+```
+node --check _shared/a1-tools.cjs   → OK
+23 fixture suites (_test-fixtures/*/run*.sh) → ALL-SUITES-GREEN
+```
+Green after Task 5.1, Task 5.2, and Task 5.3. Also confirmed a fresh
+`HOME=$(mktemp -d) bash bin/install.sh` still creates 21 agent symlinks
+after Task 5.1 (frontmatter-only changes, no install.sh behavior change
+expected or observed).
+
+## Commit log (Wave 5)
+
+```
+09a9e6c docs(agents): convert Rico/Marco/Pablo delegation lists to table format
+e024148 docs(agents): add opus justification comment for Alex
+817b3f2 fix(agents): unify tools: frontmatter to bracketed YAML array
+```
+
 ## Next wave
 
-Wave 5 (Agent frontmatter consistency) and Wave 6 (Learning-loop honesty)
-remain independent and ready. Note: uncommitted, out-of-scope Wave 5
-partial work still sits in the working tree (5 agent frontmatter files:
-alex, marco, pablo, rafael, rico — CSV→bracketed-array `tools:`
-conversions) plus 2 harmless `a1-reconcile` fixture timestamp-drift files —
-a future Wave 5 execution should verify and reuse the partial frontmatter
-work per the same protocol used in Waves 1, 3, and 4, not redo it from
-scratch. `agents/a1-marco-mapper.md` now carries both the pre-existing
-uncommitted Wave 5 `tools:` frontmatter edit and this run's committed
-Wave 4 body-prose edits — a future Wave 5 run should verify its frontmatter
-diff still applies cleanly against the current file body.
+Wave 6 (Learning-loop honesty) remains independent and ready — no
+Wave-6-scoped uncommitted work was observed in the working tree during
+Wave 5's pre-execution check. The 2 harmless `a1-reconcile` fixture
+timestamp-drift files remain present and out of scope; still untouched.
+Wave 7 depends on notes from Task 4.3 (already landed, Wave 4) and Task
+5.4 (this wave, note-only, see above) — both inputs are now available for
+Wave 7's Task 7.4 decision doc whenever Wave 7 runs.
