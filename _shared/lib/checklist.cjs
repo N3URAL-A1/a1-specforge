@@ -2,7 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { vaultRoot, readMd, parseFlags } = require('./io.cjs');
+const { vaultRoot, readMd, parseFlags, projectsPath } = require('./io.cjs');
 const { usage } = require('./help.cjs');
 
 // ---------- checklist subcommands ----------
@@ -30,7 +30,7 @@ function resolveChecklistTarget(input) {
   const parts = input.split('/');
   const slug = parts[0];
   if (!slug) throw new Error('checklist target: empty project slug');
-  const specDir = path.join(vaultRoot(), 'projects', slug, 'spec');
+  const specDir = projectsPath(slug, 'spec');
   if (!fs.existsSync(specDir)) {
     throw new Error(`spec directory not found: projects/${slug}/spec/`);
   }
@@ -311,7 +311,7 @@ function evaluateChecklistProjectMetaRules(slug, paths, plan) {
   // The expected wave-plan lives under projects/<slug>/plans/. Stray plan files
   // outside that directory (e.g. under projects/<slug>/ root) are a smell.
   {
-    const projectRoot = path.join(vaultRoot(), 'projects', slug);
+    const projectRoot = projectsPath(slug);
     const strays = [];
     if (fs.existsSync(projectRoot)) {
       try {
@@ -521,27 +521,27 @@ function formatChecklistHumanReport(report) {
     report.status === 'PASS'
       ? 'PASS'
       : report.status === 'PASS_WITH_WARNINGS'
-      ? 'PASS (mit Hinweisen)'
+      ? 'PASS (with warnings)'
       : report.status === 'FAIL'
       ? 'FAIL'
       : 'ERROR';
-  lines.push(`Pre-Flight Checkliste: ${label}`);
+  lines.push(`Pre-flight checklist: ${label}`);
   lines.push('');
-  lines.push(`Feature: ${report.feature} (Projekt: ${report.project})`);
+  lines.push(`Feature: ${report.feature} (project: ${report.project})`);
   lines.push('');
 
   if (report.status === 'ERROR') {
-    lines.push('Setup-Fehler:');
+    lines.push('Setup errors:');
     for (const err of report.errors || []) lines.push(`  - ${err}`);
     lines.push('');
-    lines.push('Empfehlung:');
-    lines.push('  Pfade pruefen, fehlende Dateien anlegen oder Frontmatter reparieren.');
+    lines.push('Recommendation:');
+    lines.push('  Check the paths, create missing files, or repair the frontmatter.');
     return lines.join('\n');
   }
 
   const tick = (r) => (r === 'PASS' ? '[ok]' : '[x]');
   const sevTag = { BLOCKER: '[BLOCKER]', MAJOR: '[MAJOR]', MINOR: '[MINOR]' };
-  lines.push('Pruefungen:');
+  lines.push('Checks:');
   for (const c of report.checks) {
     lines.push(`  ${tick(c.result)} ${sevTag[c.severity]} ${c.name}`);
     lines.push(`        ${c.detail}`);
@@ -550,20 +550,20 @@ function formatChecklistHumanReport(report) {
 
   const s = report.summary;
   lines.push(
-    `Befund: ${s.blockers} BLOCKER, ${s.majors} MAJOR, ${s.minors} MINOR offen.`
+    `Result: ${s.blockers} BLOCKER, ${s.majors} MAJOR, ${s.minors} MINOR open.`
   );
 
   if (report.status === 'PASS') {
     lines.push('');
-    lines.push('Empfehlung: Implementation kann starten.');
+    lines.push('Recommendation: implementation can start.');
   } else if (report.status === 'PASS_WITH_WARNINGS') {
     lines.push('');
     lines.push(
-      'Empfehlung: Implementation moeglich, aber MAJOR/MINOR Punkte vor Start adressieren.'
+      'Recommendation: implementation is possible, but address the MAJOR/MINOR items before starting.'
     );
   } else {
     lines.push('');
-    lines.push('Empfehlung: BLOCKER beheben — Plan ist nicht implementierungsbereit.');
+    lines.push('Recommendation: fix the BLOCKERs — the plan is not implementation-ready.');
   }
   return lines.join('\n');
 }
@@ -681,7 +681,7 @@ function cmdChecklistList(args) {
   }
   const flags = parseFlags(args.slice(1), { vault: 'value' });
   if (flags.vault) process.env.A1_VAULT_ROOT = flags.vault;
-  const dir = path.join(vaultRoot(), 'projects', slug, 'checklist');
+  const dir = projectsPath(slug, 'checklist');
   if (!fs.existsSync(dir)) {
     return { project: slug, reports: [] };
   }

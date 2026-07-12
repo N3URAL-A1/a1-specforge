@@ -13,6 +13,7 @@ const {
   writeMdAtomic,
   nowIso,
   fail,
+  projectsPath,
 } = require('./io.cjs');
 
 function appendPhaseHistory(fm, phaseName) {
@@ -29,7 +30,7 @@ function appendPhaseHistory(fm, phaseName) {
 function cmdSpecNextNumber(args) {
   const projectSlug = args[0];
   if (!projectSlug) usage('spec next-number requires <project-slug>');
-  const dir = path.join(vaultRoot(), 'projects', projectSlug, 'spec');
+  const dir = projectsPath(projectSlug, 'spec');
   let max = 0;
   if (fs.existsSync(dir)) {
     for (const entry of fs.readdirSync(dir)) {
@@ -119,7 +120,7 @@ function cmdSpecList(args) {
   const projectSlug = args[0];
   if (!projectSlug) usage('spec list requires <project-slug>');
   const flags = parseFlags(args.slice(1), { status: 'value' });
-  const dir = path.join(vaultRoot(), 'projects', projectSlug, 'spec');
+  const dir = projectsPath(projectSlug, 'spec');
   if (!fs.existsSync(dir)) {
     return { project: projectSlug, count: 0, specs: [] };
   }

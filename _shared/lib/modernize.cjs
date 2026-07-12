@@ -12,6 +12,7 @@ const {
   writeMdAtomic,
   nowIso,
   fail,
+  projectsPath,
 } = require('./io.cjs');
 const { appendPhaseHistory } = require('./spec.cjs');
 const {
@@ -39,7 +40,7 @@ const {
 // phase_history entry; approve-proposal/start-wave set approved_by on the object.
 
 function modernizeDir(projectSlug) {
-  return path.join(vaultRoot(), 'projects', projectSlug, 'modernize');
+  return projectsPath(projectSlug, 'modernize');
 }
 
 function cmdModernizeNextSlot(args) {
@@ -565,7 +566,7 @@ function cmdModernizeList(args) {
     ? [projectSlug]
     : fs.readdirSync(projectsRoot).filter((e) => !e.startsWith('_'));
   for (const slug of slugs) {
-    const dir = path.join(projectsRoot, slug, 'modernize');
+    const dir = projectsPath(slug, 'modernize');
     if (!fs.existsSync(dir)) continue;
     for (const entry of fs.readdirSync(dir).sort().reverse()) {
       if (!entry.match(/^\d{4}-\d{2}-\d{2}-.+\.md$/)) continue;

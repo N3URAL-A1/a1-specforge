@@ -11,6 +11,7 @@ const {
   nowIso,
   parseFlags,
   fail,
+  projectsPath,
 } = require('./io.cjs');
 const { usage } = require('./help.cjs');
 const { appendPhaseHistory } = require('./spec.cjs');
@@ -36,7 +37,7 @@ function cmdAnalyzeNextSlot(args) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     usage(`invalid date "${date}", expected YYYY-MM-DD`);
   }
-  const dir = path.join(vaultRoot(), 'projects', projectSlug, 'analyses');
+  const dir = projectsPath(projectSlug, 'analyses');
   let used = new Set();
   if (fs.existsSync(dir)) {
     const re = new RegExp(`^${date}-${focus}(-(\\d+))?\\.md$`);
@@ -457,7 +458,7 @@ function cmdAnalyzeList(args) {
     status: 'value',
     focus: 'value',
   });
-  const dir = path.join(vaultRoot(), 'projects', projectSlug, 'analyses');
+  const dir = projectsPath(projectSlug, 'analyses');
   if (!fs.existsSync(dir)) {
     return { project: projectSlug, count: 0, analyses: [] };
   }

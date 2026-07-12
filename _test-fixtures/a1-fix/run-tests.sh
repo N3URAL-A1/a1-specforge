@@ -336,15 +336,20 @@ run_hostile_path_traversal() {
   local out exit_code
   out=$(A1_VAULT_ROOT="$VAULT" node "$TOOLS" fix list "../../etc/passwd" 2>&1)
   exit_code=$?
-  # Expected: either a clean non-crash result (count 0 / not-found) because
-  # the resulting path lands outside the vault and has no fixes/ dir, or a
-  # non-zero rejection — NOT a crash, and NOT actual traversal into /etc.
+  # Expected since M12: deterministic loud rejection (exit 2, clear message)
+  # from the central projectsPath() traversal guard — NOT a crash, NOT a
+  # silent empty result, and NOT actual traversal into /etc.
   if printf '%s' "$out" | grep -q 'passwd:x:'; then
     assert "fix list path-traversal does not leak /etc/passwd contents" "0"
   else
     assert "fix list path-traversal does not leak /etc/passwd contents" "1"
   fi
-  assert_rc "fix list path-traversal handled gracefully (exit=0, empty result)" 0 "$exit_code" "$out"
+  assert_rc "fix list path-traversal rejected loudly (exit=2, guard message)" 2 "$exit_code" "$out"
+  if printf '%s' "$out" | grep -q 'plain identifier without path separators'; then
+    assert "fix list path-traversal rejection names the guard rule" "1"
+  else
+    assert "fix list path-traversal rejection names the guard rule" "0"
+  fi
 
   # find-duplicates on a traversal-shaped project slug should behave the same
   # way (no crash, no traversal read of arbitrary system files).

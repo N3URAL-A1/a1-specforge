@@ -18,6 +18,7 @@ const {
   writeMdAtomic,
   nowIso,
   fail,
+  projectsPath,
 } = require('./io.cjs');
 const { appendPhaseHistory } = require('./spec.cjs');
 
@@ -32,7 +33,7 @@ const { appendPhaseHistory } = require('./spec.cjs');
 
 function reconcileDir(projectSlug) {
   // For vault-sync we use a synthetic slug "_vault-sync".
-  return path.join(vaultRoot(), 'projects', projectSlug);
+  return projectsPath(projectSlug);
 }
 
 function cmdReconcileNextSlot(args) {
@@ -71,7 +72,7 @@ function cmdReconcileNextSlot(args) {
 function listProjectSpecs(projectSlug) {
   // Returns array of { feature_id, abs, rel, fm } for every spec under
   // projects/<slug>/spec/. feature_id is the filename without .md.
-  const dir = path.join(vaultRoot(), 'projects', projectSlug, 'spec');
+  const dir = projectsPath(projectSlug, 'spec');
   const out = [];
   if (!fs.existsSync(dir)) return out;
   for (const entry of fs.readdirSync(dir).sort()) {

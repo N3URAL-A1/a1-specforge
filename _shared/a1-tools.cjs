@@ -550,7 +550,10 @@ function main() {
       usage(`unknown command group: ${group} (expected "spec", "fix", "analyze", "check", "checklist", "constitution", "worktree", "pr", "phantom", "reconcile", "modernize", "schema-check", "cost", "pack", "product", or "realpath-check"). fix supports: next-suffix, update-status, list, find-duplicates, integrity-check, init-postmortem, count-postmortems-since, update-promote-state, write-suggestion`);
     }
   } catch (e) {
-    process.stderr.write(`internal error: ${e.message}\n`);
+    // Input-validation errors (e.g. path-traversal guard) are user errors,
+    // not internal faults — same exit 2, honest prefix.
+    const prefix = e && e.code === 'A1_INPUT' ? 'error' : 'internal error';
+    process.stderr.write(`${prefix}: ${e.message}\n`);
     if (process.env.A1_DEBUG) process.stderr.write(`${e.stack}\n`);
     process.exit(2);
   }

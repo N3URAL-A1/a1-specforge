@@ -600,4 +600,37 @@ function fail(msg) {
   process.exit(1);
 }
 
-module.exports = { vaultRoot, resolveVaultPath, parseFrontmatter, serializeScalar, detectKeyOrder, serializeFrontmatter, readMd, writeMdAtomic, nowIso, writeTextAtomic, parseScalarToken, parseNestedFrontmatter, serializeNestedFrontmatter, writeNestedMdAtomic, parseFlags, fail };
+// ---------- path-traversal guard ----------
+
+// User-supplied identifiers (project slugs, feature/analysis ids) become path
+// segments under <vault>/projects/. A hostile value like `../../etc` or an
+// absolute path must fail loud instead of resolving outside the vault.
+function assertSafeSegment(value, label) {
+  const v = String(value == null ? '' : value);
+  if (
+    v === '' ||
+    v === '.' ||
+    v === '..' ||
+    v.includes('/') ||
+    v.includes('\\') ||
+    v.includes('\0')
+  ) {
+    const err = new Error(
+      `${label || 'path segment'} must be a plain identifier without path separators (got: ${JSON.stringify(v)})`
+    );
+    err.code = 'A1_INPUT'; // facade prints these as user errors, not internal
+    throw err;
+  }
+  return v;
+}
+
+// Central join for everything under <vault>/projects/. Every segment is
+// validated — literals ('spec', 'fixes') pass trivially, user input cannot
+// escape. Multi-segment literals ('a/b') are rejected by design: pass
+// segments individually.
+function projectsPath(...segments) {
+  const safe = segments.map((s) => assertSafeSegment(s, 'projects path segment'));
+  return path.join(vaultRoot(), 'projects', ...safe);
+}
+
+module.exports = { vaultRoot, resolveVaultPath, parseFrontmatter, serializeScalar, detectKeyOrder, serializeFrontmatter, readMd, writeMdAtomic, nowIso, writeTextAtomic, parseScalarToken, parseNestedFrontmatter, serializeNestedFrontmatter, writeNestedMdAtomic, parseFlags, fail, assertSafeSegment, projectsPath };

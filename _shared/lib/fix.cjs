@@ -14,6 +14,7 @@ const {
   writeMdAtomic,
   nowIso,
   fail,
+  projectsPath,
 } = require('./io.cjs');
 const { appendPhaseHistory } = require('./spec.cjs');
 
@@ -28,7 +29,7 @@ function cmdFixNextSuffix(args) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     usage(`invalid date "${date}", expected YYYY-MM-DD`);
   }
-  const dir = path.join(vaultRoot(), 'projects', projectSlug, 'fixes');
+  const dir = projectsPath(projectSlug, 'fixes');
   let used = new Set(); // suffixes used today, "" + "-2" + "-3" ...
   if (fs.existsSync(dir)) {
     const re = new RegExp(`^${date}-.+?(-(\\d+))?\\.md$`);
@@ -120,7 +121,7 @@ function cmdFixList(args) {
     status: 'value',
     severity: 'value',
   });
-  const dir = path.join(vaultRoot(), 'projects', projectSlug, 'fixes');
+  const dir = projectsPath(projectSlug, 'fixes');
   if (!fs.existsSync(dir)) {
     return { project: projectSlug, count: 0, bugs: [] };
   }
@@ -155,7 +156,7 @@ function cmdFixFindDuplicates(args) {
   if (keywords.length === 0) {
     usage('fix find-duplicates requires at least one keyword (>=3 chars)');
   }
-  const dir = path.join(vaultRoot(), 'projects', projectSlug, 'fixes');
+  const dir = projectsPath(projectSlug, 'fixes');
   if (!fs.existsSync(dir)) {
     return { project: projectSlug, window_days: 30, matches: [] };
   }

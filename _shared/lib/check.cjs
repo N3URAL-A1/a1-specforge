@@ -2,7 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { vaultRoot, readMd, parseFlags } = require('./io.cjs');
+const { vaultRoot, readMd, parseFlags, projectsPath } = require('./io.cjs');
 const { usage } = require('./help.cjs');
 
 // ---------- check subcommand (consistency gate) ----------
@@ -82,7 +82,7 @@ function diffFRCoverage(specFRs, waveMap) {
 
 function buildExpectedPaths(projectSlug, feature) {
   // feature = "<###>-<feature-slug>" (e.g. "001-login")
-  const specAbs = path.join(vaultRoot(), 'projects', projectSlug, 'spec', `${feature}.md`);
+  const specAbs = projectsPath(projectSlug, 'spec', `${feature}.md`);
   const planAbs = path.join(
     vaultRoot(),
     'projects',
@@ -103,55 +103,55 @@ function formatHumanReport(report) {
       : report.status === 'FAIL'
       ? 'FAIL'
       : 'ERROR';
-  lines.push(`Konsistenz-Check: ${statusLabel}`);
+  lines.push(`Consistency check: ${statusLabel}`);
   lines.push('');
-  lines.push(`Feature: ${report.feature} (Projekt: ${report.project})`);
+  lines.push(`Feature: ${report.feature} (project: ${report.project})`);
   lines.push('');
 
   if (report.status === 'ERROR') {
-    lines.push('Setup-Fehler:');
+    lines.push('Setup errors:');
     for (const err of report.errors || []) lines.push(`  - ${err}`);
     lines.push('');
-    lines.push('Empfehlung:');
-    lines.push('  Artifacts pruefen — fehlende Datei anlegen oder Frontmatter reparieren.');
+    lines.push('Recommendation:');
+    lines.push('  Check the artifacts — create the missing file or repair the frontmatter.');
     return lines.join('\n');
   }
 
   const tick = (s) => (s === 'PASS' ? '[ok]' : '[x]');
-  lines.push('Pruefungen:');
-  lines.push(`  Frontmatter-Link    ${tick(report.checks.frontmatter_link)} ${report.checks.frontmatter_link}`);
-  lines.push(`  FR-Coverage         ${tick(report.checks.fr_coverage)} ${report.checks.fr_coverage}`);
-  lines.push(`  FR-Phantome         ${tick(report.checks.fr_phantoms)} ${report.checks.fr_phantoms}`);
+  lines.push('Checks:');
+  lines.push(`  Frontmatter link    ${tick(report.checks.frontmatter_link)} ${report.checks.frontmatter_link}`);
+  lines.push(`  FR coverage         ${tick(report.checks.fr_coverage)} ${report.checks.fr_coverage}`);
+  lines.push(`  FR phantoms         ${tick(report.checks.fr_phantoms)} ${report.checks.fr_phantoms}`);
   lines.push('');
 
   if (report.status === 'PASS') {
-    lines.push(`Befund: Spec und Wave-Plan sind synchron (${report.counts.spec_frs} FRs ueber ${report.counts.waves} Waves verteilt).`);
+    lines.push(`Result: spec and wave plan are in sync (${report.counts.spec_frs} FRs across ${report.counts.waves} waves).`);
     return lines.join('\n');
   }
 
-  lines.push('Befund:');
+  lines.push('Findings:');
   const d = report.diffs;
   if (report.checks.frontmatter_link === 'FAIL') {
-    lines.push(`  Plan-Frontmatter zeigt auf falsche Spec:`);
-    lines.push(`    spec_path im Plan: ${d.frontmatter_link.actual || '(fehlt)'}`);
-    lines.push(`    erwartet:          ${d.frontmatter_link.expected}`);
+    lines.push(`  Plan frontmatter points at the wrong spec:`);
+    lines.push(`    spec_path in plan: ${d.frontmatter_link.actual || '(missing)'}`);
+    lines.push(`    expected:          ${d.frontmatter_link.expected}`);
   }
   if (d.missing_in_plan.length > 0) {
-    lines.push(`  FRs aus der Spec, die in keiner Wave vorkommen:`);
+    lines.push(`  Spec FRs missing from every wave:`);
     for (const fr of d.missing_in_plan) lines.push(`    - ${fr}`);
   }
   if (d.duplicated_in_plan.length > 0) {
-    lines.push(`  FRs, die in mehreren Waves vorkommen:`);
+    lines.push(`  FRs assigned to multiple waves:`);
     for (const dup of d.duplicated_in_plan) {
       lines.push(`    - ${dup.fr} in ${dup.waves.join(', ')}`);
     }
   }
   if (d.phantom_in_plan.length > 0) {
-    lines.push(`  Phantom-FRs im Plan (nicht in der Spec definiert):`);
+    lines.push(`  Phantom FRs in the plan (not defined in the spec):`);
     for (const fr of d.phantom_in_plan) lines.push(`    - ${fr}`);
   }
   lines.push('');
-  lines.push('Empfehlung:');
+  lines.push('Recommendation:');
   lines.push(`  ${report.summary}`);
   return lines.join('\n');
 }
