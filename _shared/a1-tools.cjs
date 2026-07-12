@@ -155,7 +155,8 @@
  *       held by ANOTHER spec → exit 1 (holder info). Same spec re-claim → exit 0
  *       (idempotent). Atomic tmp+rename write.
  *
- * Vault root: env A1_VAULT_ROOT, default "~/N3URAL-Vault".
+ * Learning store root: repo-local ".a1/learnings/" by default; env
+ * A1_VAULT_ROOT overrides this to point at an external vault (e.g. Obsidian).
  * All writes are atomic: read → modify → write to <path>.tmp.<pid> → rename.
  *
  * Exit codes: 0 success, 1 user/usage error, 2 internal error.
@@ -6024,6 +6025,49 @@ Usage:
                   List drift reports for a project. Use slug "_vault-sync" for
                   the cross-project sweep folder.
 
+  a1-tools modernize next-slot <project-slug> [<focus>] [--date YYYY-MM-DD]
+                  Compute next free modernize run slot for the project.
+  a1-tools modernize init <project-slug> <mode> [--project-path /abs]
+                          [--date YYYY-MM-DD]
+                  Create a modernize master file (mode: spec-only|full) with
+                  frontmatter and empty body skeleton.
+  a1-tools modernize update-status <master-path> <new-status>
+                          [--phase-data <json>] [--approved-by <human|harness:reason>]
+                  Atomic frontmatter status transition. Appends phase_history.
+  a1-tools modernize discover-stack <project-path>
+                  Deterministic tech-stack + LOC + file-count scan of a
+                  project on disk, for Phase 1 (Discover) context.
+  a1-tools modernize add-proposal <master-path> --title <t> --rationale <r>
+                          --risk low|medium|high --effort <e> --rollback <rb>
+                  Append one modernization proposal to proposals[]. Auto-IDs.
+  a1-tools modernize approve-proposal <master-path> <proposal-id>
+                          approved|rejected|deferred [--reason <text>]
+                          [--approved-by <human|harness:reason>]
+                  Record a human decision on a proposal.
+  a1-tools modernize add-wave <master-path> --title <t>
+                          [--depends-on W-01,W-02]
+                  Append one execution wave to waves[]. Auto-IDs (W-01, …).
+  a1-tools modernize snapshot-behavior <master-path>
+                          [--baseline-tests <path>] [--manual-smoke <path>]
+                  Record the pre-modernization behavior snapshot used later
+                  for parity verification.
+  a1-tools modernize start-wave <master-path> <wave-id>
+                          [--approved-by <human|harness:reason>]
+                  Mark a wave as started. Requires prior human approval gate.
+  a1-tools modernize complete-wave <master-path> <wave-id>
+                          --snapshot-replay pass|fail [--replay-file <path>]
+                          --fr-ac-checks <json>
+                  Mark a wave complete with replay + FR/AC evidence.
+  a1-tools modernize verify-parity <master-path>
+                  Goal-backward check: does the modernized codebase still do
+                  what the behavior snapshot says it did?
+  a1-tools modernize publish-notion <master-path> [--notion-parent <page-id>]
+                  Export the master file to Notion, or to a local
+                  modernize-export/ fallback dir if no Notion parent is set.
+  a1-tools modernize list [<project-slug>] [--status=<s>] [--slug=<s>]
+                  List modernize runs for a project, or all projects if no
+                  slug is given.
+
   a1-tools schema-check run --migrations <dir> [--tables t1,t2]
                             [--trigger-pattern 'audit|log'] [--json]
                   Deterministic schema pre-gate: (A) audit trigger exists per
@@ -6213,7 +6257,8 @@ Reconcile statuses: ${[...RECONCILE_STATUSES].join(', ')}
 Reconcile scope modes: ${[...RECONCILE_SCOPE_MODES].join(', ')}
 Reconcile drift classes: ${[...RECONCILE_DRIFT_CLASSES].join(', ')}
 
-Vault root: env A1_VAULT_ROOT, default "~/N3URAL-Vault".
+Learning store root: repo-local ".a1/learnings/" by default; env A1_VAULT_ROOT
+overrides this to point at an external vault (e.g. Obsidian).
 Exit codes: 0 success, 1 user/usage error, 2 internal error.`;
 
 // ---------------------------------------------------------------------------
