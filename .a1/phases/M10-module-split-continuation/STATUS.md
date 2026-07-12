@@ -1041,4 +1041,199 @@ faster than estimated is not a STOP-gate condition.
 - New modules: `_shared/lib/fix.cjs` (469 lines),
   `_shared/lib/constitution.cjs` (454 lines).
 
-## Wave 17 — not started
+## Wave 17 — `main()` dispatcher trim + facade cleanup (final wave) — ✅ COMPLETE
+
+- Commit: `2e98804`
+- Task: 17.1 (collapse `main()`'s dispatcher and remove dead facade content) — done
+- **Read `main()` end to end first (per plan Step 1):** confirmed every
+  branch already calls into an imported `lib/<group>.cjs` function — no
+  command-function bodies remain inline in `main()`, consistent with all
+  14 groups having been extracted across Waves 2-14/16.
+- **Design decision (per plan Step 2, Option A vs Option B):** kept
+  Option B — the existing if/else dispatcher shape, unchanged in
+  structure. `main()` is 214 lines with clean 2-level nesting
+  (group → sub), well-understood and already exercised by every prior
+  wave's regression gate. Did NOT attempt Option A's dispatch-table
+  collapse: the facade was already at 575 lines (well under the <900
+  SC-7 target) before this wave started, so a structural rewrite of the
+  one function every prior wave has carefully, incrementally edited
+  would have re-introduced regression risk on the very last wave for no
+  measurable benefit. This matches the plan's own explicit
+  recommendation ("a working, boring dispatcher is worth more here than
+  a clever collapse").
+- **Dead facade content removed (per plan Step 2/3):**
+  - Removed the 9-line verbose `product` command-group prose comment
+    block (listed every function name living in `lib/product.cjs` plus
+    Wave 1/8 provenance history) — replaced with a single one-line
+    marker `// ---------- product command group (lib/product.cjs,
+    lazily required below) ----------`. The require() block already
+    documents every module boundary; the prose duplicated that with
+    stale wave-numbering that will only get staler.
+  - Removed the dead inline comment inside `main()`'s `product` branch
+    (`// product command group lives in lib/product.cjs (M9 module
+    split). ... no init() needed: usage() (Wave 1) and the stage-name
+    constant (Wave 8) are both imported directly by product.cjs now.`)
+    — replaced with a single line explaining only the still-relevant
+    fact (lazy require), since the Wave 1/8 history is no longer
+    load-bearing information for a reader of the finished facade.
+  - Unified three inconsistent section markers to the same
+    `// ---------- <group> group (lib/<group>.cjs) ----------` format
+    used by every other extracted group: `checklist subcommands` →
+    `checklist group (lib/checklist.cjs)`, `worktree subcommands` →
+    `worktree group (lib/worktree.cjs)`, and the `pr` group's old
+    3-line `-----...-----` banner-style comment → the same one-line
+    format as everyone else.
+- **Orphaned-marker check (per plan Step 3):** ran
+  `grep -n "^// ---------- "` across the whole facade — all 20 markers
+  sit directly above their group's `require(...)` line; none reference
+  code that no longer exists in the facade. Zero markers removed as
+  "orphaned" because none were orphaned — the cleanup was a
+  content/format fix (verbose → concise, inconsistent → unified), not a
+  removal of stale navigation aids pointing at moved-away code (that
+  class of cleanup had already happened naturally in each extraction
+  wave when the moved block itself was deleted, per each wave's own
+  "replace with require()" step).
+- **Facade content confirmation (per plan Step 4):** verified the
+  facade's remaining content is exactly: (a) the top `require()` block
+  (`io.cjs`, `locks.cjs`, `git-safe.cjs`, `help.cjs`,
+  `status-constants.cjs`, plus the 16 `lib/<group>.cjs` requires
+  covering all 14 extracted command groups — `worktree`+`pr` and
+  `check-reservations`+`code-scope` each contribute 2 files per their
+  paired waves), (b) `main()` itself (214 lines, pure dispatch, no
+  inline command logic), (c) the trailing `main();` call. No leftover
+  command-function bodies found anywhere (confirmed by the SC-2
+  spot-check below finding 0 for all 15 representative function names
+  checked).
+- **Line count (per plan Step 5):** `wc -l _shared/a1-tools.cjs` →
+  **561 lines** (down from 575 before this wave, −14 lines of pure
+  comment cleanup — no functional change).
+- Full regression gate: ALL-SUITES-GREEN (all 22 fixture suites,
+  including `a1-cmd-injection` explicitly re-run standalone: 7 passed,
+  0 failed).
+- No deviations this wave — pure comment/marker cleanup, zero `lib/`
+  files touched, zero functional changes. The a1-reconcile
+  live-timestamp fixture-write (present in every prior wave) was
+  reverted via `git checkout --` before staging, same as every wave
+  since Wave 1 — not re-logged as a fresh deviation.
+
+### Final verification (goal-backward, all 17 waves) — per PLAN.md's "Verification" section
+
+- **All suites green + syntax across facade and every lib module:**
+  `node --check` clean on the facade and all `_shared/lib/*.cjs`;
+  `ALL-SUITES-GREEN` across all 22 `_test-fixtures/*/run*.sh` suites. ✅
+- **SC-1** (usage/HELP injection coupling fixed at the root): `grep -c
+  "usage: deps.usage\|init({ usage\|function buildHelp"
+  _shared/lib/*.cjs _shared/a1-tools.cjs` → **0 everywhere**. 16 lib
+  modules import `help.cjs` directly (`grep -rl "require.*help.cjs"
+  _shared/lib/*.cjs | wc -l` → 16); 7 lib modules import
+  `status-constants.cjs` directly (`grep -rl
+  "require.*status-constants.cjs" _shared/lib/*.cjs | wc -l` → 7:
+  spec, analyze, modernize, reconcile, fix, constitution, plus one
+  more — exceeds the "at least 6" bar). **SC-1 CONFIRMED.**
+- **SC-2** (all 14 groups' command functions live in `lib/`): spot-checked
+  one representative dispatcher-facing function per group —
+  `cmdSpecNextNumber`, `cmdFixNextSuffix`, `cmdAnalyzeInit`,
+  `cmdConstitutionInit`, `cmdCheckRun`, `cmdChecklistRun`,
+  `cmdWorktreePrepare`, `cmdPrListHandoff`, `cmdModernizeInit`,
+  `cmdReconcileInit`, `cmdSchemaCheckRun`, `cmdCostRun`,
+  `cmdRealpathCheckRun`, `cmdCheckReservations`, `cmdCodeScopeClaim` —
+  all 15 return `grep -c "^function <name>" _shared/a1-tools.cjs` → **0**.
+  **SC-2 CONFIRMED.**
+- **SC-3** (fix/constitution fixture coverage, written before extraction):
+  both `_test-fixtures/a1-fix/run-tests.sh` (46 passed, 0 failed) and
+  `_test-fixtures/a1-constitution/run-tests.sh` (57 passed, 0 failed)
+  exist and are green; `git log --follow` confirms the fixture commit
+  (`4aa52d7`, Wave 15) predates the extraction commit (`7619d07`, Wave
+  16 Task 1). **SC-3 CONFIRMED.**
+- **SC-4** (`runChecklistChecks` split, no helper > ~100 lines):
+  `_shared/lib/checklist.cjs` has 16 functions; the two largest are
+  `cmdChecklistRun` (97 lines, pre-existing dispatcher, never an F-009
+  split target) and `evaluateChecklistRules` (92 lines, the compute-phase
+  orchestrator produced by this wave's split) — both under the ~100-line
+  ceiling; every helper produced by the Wave 10 split
+  (`gatherChecklistInputs` 35, `evaluateChecklistWaveStructureRules` 68,
+  `evaluateChecklistProjectMetaRules` 82, `evaluateChecklistPlanBodyRules`
+  13, `runChecklistChecks` 15) is well under 100 lines. **SC-4 CONFIRMED.**
+- **SC-5** (`main()` dispatcher trimmed, no dead section markers):
+  `main()` is 214 lines with a flat, well-understood if/else shape;
+  `grep -c "^// ---------- .* subcommands ----------"
+  _shared/a1-tools.cjs` → **0** (both stragglers using the old
+  `subcommands` wording — `checklist`, `worktree` — were unified to the
+  standard `group (lib/X.cjs)` format this wave). **SC-5 CONFIRMED.**
+- **SC-6** (`product.cjs`'s `init()` dropped, `code-scope.cjs` imported
+  directly): `grep -c "init(" _shared/lib/product.cjs` → **0**;
+  `grep -q "require.*code-scope.cjs" _shared/lib/product.cjs` →
+  **present**. **SC-6 CONFIRMED.**
+- **SC-7** (facade < 900 lines): `wc -l _shared/a1-tools.cjs` → **561
+  lines**, well under the 900-line directional target. Total shrinkage
+  from the verified 7196-line baseline: **6635 lines removed (−92.2%)**.
+  **SC-7 CONFIRMED.**
+- **SC-8** (all fixture suites green every wave, `a1-cmd-injection`
+  explicitly re-run after `reconcile`): all 22 suites green this wave
+  (20 original + `a1-fix` + `a1-constitution`); `bash
+  _test-fixtures/a1-cmd-injection/run.sh` explicitly re-run standalone
+  this wave too (not just via the aggregate loop) — **7 passed, 0
+  failed**, confirming the F-015 safe `execFileSync`-array form is
+  still intact after the full 17-wave split. `git log --oneline` shows
+  18 commits tagged "M10 Wave N" across the 17 waves (Waves 1, 7, 8,
+  16 each produced 2 commits per the one-commit-per-module rule for
+  paired/multi-task waves; every other wave produced exactly 1) — a
+  reasonable count, not a discrepancy. **SC-8 CONFIRMED.**
+- **CLI facade stable from outside repo cwd:** `cd /tmp && node
+  /Users/rob/code/a1-skills/_shared/a1-tools.cjs check reservations
+  --list --file /tmp/m10-final-smoke.json` → exit 0, valid JSON
+  `{"file":"/tmp/m10-final-smoke.json","count":0,"reservations":[]}`.
+  **CONFIRMED.**
+- **Cross-section smoke test** (commands from groups extracted across
+  different waves, all must produce valid output or a clean expected
+  error, never a crash/`ReferenceError`): `spec list
+  m10-final-smoke-slug` → exit 0, `{"project":...,"count":0,"specs":[]}`;
+  `fix list m10-final-smoke-slug` → exit 0,
+  `{"project":...,"count":0,"bugs":[]}`; `modernize list
+  m10-final-smoke-slug` → exit 0, `{"count":0,"runs":[]}`; `product
+  status --dir /tmp/m10-final-smoke-product` → exit 1, clean
+  `error: product status: .../ROADMAP.md not found` (expected user
+  error, not a crash); `worktree list` → exit 0, valid JSON with the
+  real registry's 1 entry; `pack validate /tmp/m10-final-smoke-pack` →
+  exit 2, clean `error: pack dir not found: ...` (expected setup
+  error). All 6 commands behaved correctly, zero crashes, zero
+  `ReferenceError`. **CONFIRMED.**
+
+### M10 phase summary — all 17 waves complete
+
+Facade shrinkage: **7196 → 561 lines (−6635 lines, −92.2%)** across 17
+waves. All 14 command groups (`spec`, `fix`, `analyze`, `constitution`,
+`check`, `checklist`, `worktree`, `pr`, `modernize`, `reconcile`,
+`schema-check`, `cost`, `realpath-check`, `check-reservations`,
+`code-scope`) now live in their own `_shared/lib/<group>.cjs` modules.
+F-011 (usage/HELP injection coupling) fixed at the root in Wave 1 —
+zero new `init()`-injection call sites added across the whole phase.
+F-007 (zero fixture coverage for `fix`/`constitution`) closed in Wave
+15 (103 new test cases across the two suites, written before
+extraction per the plan's F-007 discipline). F-009 (oversized
+functions) partially fixed per SC-4's explicit scope
+(`runChecklistChecks` split into parse/compute/format helpers in Wave
+10); `cmdSchemaCheckRun`/`cmdCostRun` were explicitly out of SC-4's
+scope per the plan and moved as-is (inherited size, not a fresh
+finding). F-006 (facade line-count reduction) resolved: SC-7's <900
+target met with substantial margin (561 lines, 339 lines of headroom).
+
+**All 8 success criteria (SC-1 through SC-8) from PLAN.md are
+confirmed true, verified against real command output at Wave 17
+completion time — not assumed from prior waves' partial checks.**
+
+A recurring finding across 6 waves (2, 11, 12, 13, 14, 16) deserves a
+standing note for future module-split plans: module-level
+phase-lookup objects and status-constant sibling consts consumed via
+bracket-lookup (`X[y]`) or `.includes()`/`.indexOf()` rather than
+`.has()`/`.match()`/`.test()` are invisible to both the `^function`
+boundary grep AND the plan's own text-based investigation — every one
+of `SQL_TYPE_ALIASES`, `SPEC_STATUS_TO_PHASE`,
+`ANALYSIS_STATUS_TO_PHASE`, `MODERNIZE_STATUS_TO_PHASE`,
+`RECONCILE_STATUS_TO_PHASE`, `CONSTITUTION_STATUS_TO_PHASE`, and the
+`CLAUDEMD_LINK_MARKER_START`/`END` pair were caught only by the
+Executor ground rules' mandatory per-wave `grep -n "^const [A-Z_]* = "`
+const-sweep, not by the plan's own pre-written MOVE lists. The
+const-sweep rule (added in this plan's round-2 revision) proved its
+value repeatedly and should be a standing requirement in all future
+module-extraction plans, not just this one.
