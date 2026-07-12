@@ -726,4 +726,93 @@ faster than estimated is not a STOP-gate condition.
 - Facade line count: 2490 → 1942 lines (−548)
 - New module: `_shared/lib/modernize.cjs` (603 lines)
 
-## Waves 14-17 — not started
+## Wave 14 — `reconcile` group (F-015 security-sensitive) — ✅ COMPLETE
+
+- Commit: `151506d`
+- Task: 14.1 (extract `reconcile` to `_shared/lib/reconcile.cjs`) — done
+- **gitLastTouchIso byte-diff (mandatory, security-sensitive per plan framing):**
+  saved the exact pre-move body via `git show HEAD:_shared/a1-tools.cjs | sed -n
+  '/^function gitLastTouchIso/,/^}/p'` BEFORE any edit, then after the move ran
+  the same `sed` extraction against `_shared/lib/reconcile.cjs` and diffed the
+  two files. **Result: IDENTICAL, zero diff output.** The F-015-patched
+  `execFileSync`-array form (`gitSafe(repoPath, args, {...})`, no shell string,
+  hostile path/ref values passed as literal argv entries) survived the move
+  byte-for-byte.
+- Moved byte-identical: `INLINE_CODE_RE`, `FILE_EXT_RE`, `ENDPOINT_RE`,
+  `FUNC_CALL_RE` (four module-level `RegExp` literal consts, NOT functions —
+  correctly anticipated by the plan's own Wave 14 text, no fresh
+  undocumented-constant surprise for these four), `reconcileDir`,
+  `cmdReconcileNextSlot`, `listProjectSpecs`, `cmdReconcileInit`,
+  `parseKvEntry`, `classifyAnchor`, `extractAnchorsFromSpec`,
+  `gitLastTouchIso`, `cmdReconcileParseSpec`, `cmdReconcileUpdateStatus`,
+  `cmdReconcileAddDrift`, `cmdReconcileList`, plus the doc-comment block
+  explaining the reconcile-group contract (drift-report scoping, anchor
+  extraction, STALE pre-filter via `gitLastTouchIso`). Exports only the 6
+  dispatcher-facing `cmdReconcile*` functions; the 6 internal helpers stay
+  module-private (verified no external callers via grep before and after the
+  move — `reconcileDir`/`listProjectSpecs`/`parseKvEntry`/`classifyAnchor`/
+  `extractAnchorsFromSpec`/`gitLastTouchIso` are called only from within this
+  same block).
+- `appendPhaseHistory` cross-import (per plan Step 3): confirmed live usage at
+  1 call site (`cmdReconcileUpdateStatus`, bracket-mapped via
+  `RECONCILE_STATUS_TO_PHASE[newStatus]`, see below) and imported it from
+  `lib/spec.cjs` (`const { appendPhaseHistory } = require('./spec.cjs');`)
+  rather than duplicating the function body — same pattern as Waves 12/13.
+- Import chain verified by reading the moved code first (per plan Step 3's
+  explicit instruction to confirm the real import chain, not assume):
+  `vaultRoot`/`resolveVaultPath`/`parseFlags`/`readMd`/`writeMdAtomic`/
+  `nowIso`/`fail` all come from `io.cjs` (not `worktree-registry.cjs` — this
+  group has no registry dependency at all, confirmed via grep; the plan's
+  suggested `const wtreg = require('./worktree-registry.cjs');` was
+  conditional on actual usage and was correctly OMITTED since nothing in the
+  moved block references it), `gitSafe` from `git-safe.cjs`,
+  `RECONCILE_STATUSES`/`RECONCILE_SCOPE_MODES`/`RECONCILE_DRIFT_CLASSES` from
+  `status-constants.cjs`, `usage` from `help.cjs`.
+- Const-sweep (mandatory per Executor ground rules): ran
+  `grep -n "^const [A-Z_]* = "` restricted to the wave's line range
+  (1155-1694 pre-move) plus a broader `^const |^let |^var ` sweep over the
+  same window — found **`RECONCILE_STATUS_TO_PHASE`**, a module-level
+  phase-lookup object (not a `Set`, analogous to Wave 11's
+  `SPEC_STATUS_TO_PHASE`, Wave 12's `ANALYSIS_STATUS_TO_PHASE`, and Wave 13's
+  `MODERNIZE_STATUS_TO_PHASE`), sitting between `cmdReconcileParseSpec` and
+  `cmdReconcileUpdateStatus`, not named anywhere in the plan's own Wave 14
+  MOVE list (the plan text explicitly anticipated the 4 RegExp consts but not
+  this bracket-lookup object). Consumed via bracket lookup
+  (`RECONCILE_STATUS_TO_PHASE[newStatus]`) inside `cmdReconcileUpdateStatus`,
+  not `.has()`/`.match()`/`.test()` — same detection-blind-spot pattern as
+  Waves 2, 11, 12, 13. Moved it alongside the 12 named functions/consts;
+  leaving it in the facade would have stranded `cmdReconcileUpdateStatus`
+  with a `ReferenceError` on its very first status-transition call. Logged in
+  observations.jsonl (pattern: `missing_wiring`).
+- Export verification: confirmed via grep that only the facade's dispatcher
+  (`group === 'reconcile'` branch, 6 call sites) calls the `cmdReconcile*`
+  functions — no other group referenced them before the move.
+- **Explicit `a1-cmd-injection` re-run (mandatory, not just as part of the
+  aggregate loop, per plan's explicit framing for this security-sensitive
+  wave):** confirmed the fixture file is `_test-fixtures/a1-cmd-injection/run.sh`
+  (NOT `run-tests.sh` — verified via `ls`, matches revision 1's correction).
+  Ran it explicitly: **7 passed, 0 failed** (hostile `$(...)` payloads in
+  anchor text, `--repo-path`, and `--since` all rejected/inert at the CLI
+  boundary or the `.git`-dir-existence check, no shell ever invoked, no
+  marker file created; one legit `--since` ref still resolves correctly).
+- `a1-reconcile` suite (the group's own regression net, 38 test cases): **38
+  passed, 0 failed** — covers next-slot/init/parse-spec/update-status/
+  add-drift/list end to end, slot collision handling, anchor extraction
+  (file + endpoint kinds), and validation rejection paths (bogus scope, bad
+  drift class).
+- Deviation (minor, pre-existing, same as Waves 1-13): a1-reconcile fixture
+  suite writes live timestamps into checked-in fixture files during the
+  regression run; diff reverted before staging, suite itself not fixed
+  (out of scope).
+- Full regression gate: ALL-SUITES-GREEN (all fixture suites, including
+  a1-reconcile: 38 passed 0 failed, and the explicit a1-cmd-injection
+  re-run: 7 passed 0 failed)
+- Facade line count: 1942 → 1412 lines (−530)
+- New module: `_shared/lib/reconcile.cjs` (571 lines)
+- **SC-8 confirmation (explicit):** `_test-fixtures/a1-cmd-injection/run.sh`
+  was re-run standalone (not only via the aggregate `_test-fixtures/*/run*.sh`
+  glob) immediately after the reconcile wave's move, per SC-8's specific
+  requirement — confirmed green, confirming the F-015 safe
+  `execFileSync`-array form survived the move unchanged.
+
+## Waves 15-17 — not started
