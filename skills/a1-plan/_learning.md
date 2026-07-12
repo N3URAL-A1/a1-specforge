@@ -137,3 +137,14 @@ audit_findings: 0
 finding_classes: []
 phase_that_produced_issues: []
 one_line_learning: Competitor-Analyse → gezielte Plan-Extension via Pablo mit grep-Verifikation des Bestands (Spend-Cap existierte als Konstante!) verhindert Doppel-Implementierung; fokussiertes Extension-Audit (nur neue Teile) reicht bei stabilem Rest-Plan.
+---
+date: 2026-07-12
+phase: M10-module-split-continuation
+project: a1-specforge
+spec: none (inline, quality-analysis-driven)
+result: pass-after-revision
+revisions: 2
+audit_findings: 4
+finding_classes: [missing_dependency, vague_tasks]
+phase_that_produced_issues: [plan]
+one_line_learning: A "locate by function name" boundary grep (grep -n "^function <name>") is structurally blind to module-level const/RegExp literals sitting next to the functions that consume them — this produced 3 audit rounds of BLOCKER findings in a 17-wave module-split plan (found at increasing scope each round: cross-wave constants, then single-wave constants missed by a narrow search, then a full sweep). Any future module-split/extraction plan must mandate a full `grep -n "^const [A-Z_]* = "` sweep against every wave's MOVE list as a standing planning step, not just verify function boundaries.
