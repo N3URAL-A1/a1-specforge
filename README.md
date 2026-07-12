@@ -25,7 +25,7 @@ Claude Code is powerful, but without structure every session restarts from scrat
 No environment variables required. From a clean machine:
 
 ```bash
-git clone https://github.com/mellow-rob/a1-specforge.git
+git clone https://github.com/N3URAL-A1/a1-specforge.git
 cd a1-specforge
 ./bin/install.sh
 ```
@@ -37,7 +37,7 @@ cd a1-specforge
 If you just want to use a1-specforge (no local edits), install it as a Claude Code plugin from the self-hosted marketplace — three commands:
 
 ```bash
-claude plugin marketplace add mellow-rob/a1-specforge
+claude plugin marketplace add N3URAL-A1/a1-specforge
 claude plugin install a1-specforge@a1-specforge
 claude plugin list        # confirm a1-specforge@a1-specforge is installed
 ```

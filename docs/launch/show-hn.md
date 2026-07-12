@@ -9,7 +9,7 @@
 Show HN: A1-Specforge – a self-improving spec-driven pipeline for Claude Code
 ```
 
-**URL:** https://github.com/mellow-rob/a1-specforge
+**URL:** https://github.com/N3URAL-A1/a1-specforge
 
 ---
 

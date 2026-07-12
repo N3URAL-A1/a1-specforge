@@ -112,7 +112,7 @@ actionable.
 ## Publish (Robert)
 
 > The active `gh` account (`n3urala1-rob`) is **read-only** on
-> `mellow-rob/a1-specforge`. Switch to the write-capable account first, then
+> `N3URAL-A1/a1-specforge`. Switch to the write-capable account first, then
 > create one issue per draft. This pipeline must NOT run `gh issue create`
 > itself — these commands are for you to run manually after review.
 
@@ -123,22 +123,22 @@ gh auth switch --user mellow-rob
 # 2. Create one issue per draft (bodies are the sections above; save each to a
 #    file first, or paste the body inline). Example using --body-file:
 
-gh issue create --repo mellow-rob/a1-specforge \
+gh issue create --repo N3URAL-A1/a1-specforge \
   --title "Add a fixture test for the constitution CLI subcommands" \
   --body-file issue-1.md \
   --label "good first issue"
 
-gh issue create --repo mellow-rob/a1-specforge \
+gh issue create --repo N3URAL-A1/a1-specforge \
   --title "Contribute a Gate-Pack from your own project's learnings" \
   --body-file issue-2.md \
   --label "good first issue"
 
-gh issue create --repo mellow-rob/a1-specforge \
+gh issue create --repo N3URAL-A1/a1-specforge \
   --title "Add a missing edge-case section to a1-worktree/workflows/03-exit.md" \
   --body-file issue-3.md \
   --label "good first issue"
 
-gh issue create --repo mellow-rob/a1-specforge \
+gh issue create --repo N3URAL-A1/a1-specforge \
   --title "Improve install.sh error message when Node is older than 18" \
   --body-file issue-4.md \
   --label "good first issue"
@@ -149,4 +149,4 @@ gh auth switch --user n3urala1-rob
 
 > Note: if the `good first issue` label does not yet exist on the repo, create
 > it once with:
-> `gh label create "good first issue" --repo mellow-rob/a1-specforge --color 7057ff --description "Good for newcomers"`
+> `gh label create "good first issue" --repo N3URAL-A1/a1-specforge --color 7057ff --description "Good for newcomers"`

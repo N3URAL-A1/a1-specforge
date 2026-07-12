@@ -11,7 +11,7 @@ Thanks for your interest. a1-specforge is a Claude Code skill suite — contribu
 ## Local setup
 
 ```bash
-git clone https://github.com/mellow-rob/a1-specforge.git ~/code/a1-specforge
+git clone https://github.com/N3URAL-A1/a1-specforge.git ~/code/a1-specforge
 cd ~/code/a1-specforge
 ./bin/install.sh
 ```

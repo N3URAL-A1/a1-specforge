@@ -61,7 +61,7 @@ representative at an online or offline event.
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
 reported to the community leaders responsible for enforcement by opening an
 issue on the project's GitHub repository at
-<https://github.com/mellow-rob/a1-specforge/issues>. For sensitive reports, open
+<https://github.com/N3URAL-A1/a1-specforge/issues>. For sensitive reports, open
 an issue requesting a private channel and a maintainer will follow up.
 All complaints will be reviewed and investigated promptly and fairly.
 

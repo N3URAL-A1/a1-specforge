@@ -3,7 +3,7 @@
   "description": "Self-hosted marketplace for a1-specforge — a spec-driven development pipeline for Claude Code with a self-learning quality-gate loop.",
   "owner": {
     "name": "Robert Heine",
-    "url": "https://github.com/mellow-rob"
+    "url": "https://github.com/N3URAL-A1"
   },
   "plugins": [
     {

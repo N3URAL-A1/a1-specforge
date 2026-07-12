@@ -22,7 +22,7 @@ Author disclosure up front: I built this, it's my project, and I'm posting it he
 
 **Demo** (real commands against the repo's own test fixtures — no faked output):
 
-![a1-specforge gate demo](https://raw.githubusercontent.com/mellow-rob/a1-specforge/main/docs/assets/demo.gif)
+![a1-specforge gate demo](https://raw.githubusercontent.com/N3URAL-A1/a1-specforge/main/docs/assets/demo.gif)
 
 The GIF shows the schema gate failing a migration that's missing RLS (exit 1), the corrected migration passing the same gate, and validating a shareable "gate-pack."
 
@@ -35,6 +35,6 @@ The GIF shows the schema gate failing a migration that's missing RLS (exit 1), t
 
 **Honest caveats:** single maintainer, and the learned patterns come from one production project (multi-tenant SaaS + Postgres), so they skew backend/DB. It started life in German — a few cache files still are. I'm not selling a speed multiplier; what it does is stop a known list of mistakes from recurring and keep a paper trail of *why* each gate exists.
 
-**If you want to poke at it:** there are a handful of good-first-issues (add a fixture for an uncovered subcommand, contribute a gate-pack from your own stack using `packs/postgres-rls/` as a template, improve an install error message). Repo: https://github.com/mellow-rob/a1-specforge
+**If you want to poke at it:** there are a handful of good-first-issues (add a fixture for an uncovered subcommand, contribute a gate-pack from your own stack using `packs/postgres-rls/` as a template, improve an install error message). Repo: https://github.com/N3URAL-A1/a1-specforge
 
 Genuinely after critique on the pattern-clustering and the gate-pack format — happy to answer anything about the mechanism in the comments.

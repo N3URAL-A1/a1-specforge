@@ -35,7 +35,7 @@ The marketplace `name` in `.claude-plugin/marketplace.json` is canonically **`a1
 - One commit per task, exact message given per task. Suggested agent per wave noted in the wave header.
 - All commands run from `/Users/rob/code/a1-skills` unless stated.
 - "Done when" = command(s) with expected exit code / output. Do not proceed to the next wave with a red gate.
-- gh-account gotcha: active `gh` account (`n3urala1-rob`) has READ-only on `mellow-rob/a1-specforge`. Anything requiring write via `gh` (issue creation) is drafted as files + a command list for Robert instead.
+- gh-account gotcha: active `gh` account (`n3urala1-rob`) has READ-only on `N3URAL-A1/a1-specforge`. Anything requiring write via `gh` (issue creation) is drafted as files + a command list for Robert instead.
 - Fixture loop convention (used in Tasks 1.2 and 2.1): CI runs the nested parser runner as an extra step, so the local gate must too:
   ```bash
   fail=0; for r in _test-fixtures/*/run*.sh _test-fixtures/a1-schema-check/parser/run-parser.sh; do echo "== $r"; bash "$r" || fail=1; done; echo "FIXTURES_EXIT=$fail"; exit $fail
@@ -105,13 +105,13 @@ The marketplace `name` in `.claude-plugin/marketplace.json` is canonically **`a1
 ### Task 1.3: Add plugin.json + marketplace.json and validate plugin install locally
 **Goal:** Repo is a self-hosted marketplace with a validated (or manually-verifiable, documented) plugin.
 **Actions:**
-1. Create `.claude-plugin/plugin.json` per the template in MAP.md ("Schema & Plugin Manifest Template" section): `name: "a1-specforge"` (frozen — immutable slug), version `1.0.0`, `skills: "skills"`, `agents: "agents"`, author Robert Heine, MIT, repo URL `https://github.com/mellow-rob/a1-specforge`. Omit the `commands`/`hooks`/`mcpServers` null fields entirely (cleaner than explicit nulls).
+1. Create `.claude-plugin/plugin.json` per the template in MAP.md ("Schema & Plugin Manifest Template" section): `name: "a1-specforge"` (frozen — immutable slug), version `1.0.0`, `skills: "skills"`, `agents: "agents"`, author Robert Heine, MIT, repo URL `https://github.com/N3URAL-A1/a1-specforge`. Omit the `commands`/`hooks`/`mcpServers` null fields entirely (cleaner than explicit nulls).
 2. Create `.claude-plugin/marketplace.json`: marketplace `name: "a1-specforge"` — **MAP template's `"a1-specforge-marketplace"` is superseded, do not copy it** (see "Frozen naming decision" above); one plugin entry `name: "a1-specforge"`, `source: "./"`.
 3. Confirm agent-frontmatter audit still holds (MAP found 0, re-verify): `grep -l 'hooks:\|mcpServers:\|permissionMode:' agents/*.md || echo AGENTS_CLEAN` — must print `AGENTS_CLEAN`.
 4. `python3 -c "import json;[json.load(open(f)) for f in ['.claude-plugin/plugin.json','.claude-plugin/marketplace.json']];print('JSON_OK')"`
 5. Local plugin-install validation, attempt in this order (per research: [plugin-marketplaces](https://code.claude.com/docs/en/plugin-marketplaces), [plugins-reference](https://code.claude.com/docs/en/plugins-reference)):
    a. Headless CLI: `claude plugin marketplace add /Users/rob/code/a1-skills && claude plugin install a1-specforge@a1-specforge --scope local` — then verify the plugin's skills are listed/loadable; afterwards uninstall + remove marketplace to avoid clobbering Robert's symlink setup (`claude plugin uninstall a1-specforge` / `claude plugin marketplace remove a1-specforge`). Use `--scope local` (project) precisely so user-scope symlinks stay untouched.
-   b. If the `claude plugin` CLI subcommand is unavailable headless or errors non-actionably: install Anthropic's `plugin-dev` toolkit validation if reachable, else SKIP execution and instead write `docs/plugin-install-verification.md` — a step-by-step manual verification for Robert (`/plugin marketplace add mellow-rob/a1-specforge`, `/plugin install a1-specforge@a1-specforge`, `/reload-plugins`, check `@a1-specforge:` typeahead namespace, then uninstall). Record which path was taken in STATUS.md.
+   b. If the `claude plugin` CLI subcommand is unavailable headless or errors non-actionably: install Anthropic's `plugin-dev` toolkit validation if reachable, else SKIP execution and instead write `docs/plugin-install-verification.md` — a step-by-step manual verification for Robert (`/plugin marketplace add N3URAL-A1/a1-specforge`, `/plugin install a1-specforge@a1-specforge`, `/reload-plugins`, check `@a1-specforge:` typeahead namespace, then uninstall). Record which path was taken in STATUS.md.
 6. Add a "Install via plugin marketplace (users)" subsection to `README.md` install section with the 3-command flow, keeping `./bin/install.sh` documented as the contributor/dev path (live-edit symlinks).
 7. Commit: `feat(plugin): add plugin.json + marketplace.json (self-hosted marketplace) + README plugin-install docs`
 8. Push now (single Wave-1 push, per wave push policy), then run Task 1.2 step 4's CI check.
@@ -147,7 +147,7 @@ The marketplace `name` in `.claude-plugin/marketplace.json` is canonically **`a1
 ### Task 3.1: CODE_OF_CONDUCT + CONTRIBUTING additions
 **Goal:** Standard OSS trust signals and the two CONTRIBUTING gaps from RESEARCH.md closed.
 **Actions:**
-1. Create `CODE_OF_CONDUCT.md` at repo root: Contributor Covenant v2.1 verbatim, enforcement contact = GitHub issues on `mellow-rob/a1-specforge` (no personal email hardcode — M7 hardcode-sweep rule).
+1. Create `CODE_OF_CONDUCT.md` at repo root: Contributor Covenant v2.1 verbatim, enforcement contact = GitHub issues on `N3URAL-A1/a1-specforge` (no personal email hardcode — M7 hardcode-sweep rule).
 2. Append to `CONTRIBUTING.md`:
    - In the gate-pack section: "See `packs/postgres-rls/` for a complete worked example (pack.yaml + 3 patterns) — read it before authoring your first pack."
    - New short section "Using vs. contributing": plugin marketplace install for users; clone + `./bin/install.sh` symlinks for contributors (live-edit).
@@ -160,7 +160,7 @@ The marketplace `name` in `.claude-plugin/marketplace.json` is canonically **`a1
 **Goal:** 3-5 concrete, well-scoped starter tasks ready to publish as labeled issues.
 **Actions:**
 1. Create `.github/good-first-issues.md` containing 4 fully-written issue drafts, each with: title, body (context, exact files, done-criteria, pointer to CONTRIBUTING), and label line `good first issue`. Candidates (adjust to post-Wave-2 reality — do NOT include German translation if Wave 2 finished it): (a) add a fixture test for an uncovered CLI subcommand, (b) contribute a gate-pack from your own project's learnings (using postgres-rls as template), (c) add a missing edge-case section to a named workflow file, (d) improve install.sh error message when Node <18.
-2. At the bottom, add a "Publish (Robert)" section with ready-to-paste commands — note the gh-account gotcha explicitly: run `gh auth switch --user mellow-rob` first (active account `n3urala1-rob` is read-only), then one `gh issue create --repo mellow-rob/a1-specforge --title "..." --body-file ... --label "good first issue"` per draft. Do NOT attempt `gh issue create` in this task.
+2. At the bottom, add a "Publish (Robert)" section with ready-to-paste commands — note the gh-account gotcha explicitly: run `gh auth switch --user mellow-rob` first (active account `n3urala1-rob` is read-only), then one `gh issue create --repo N3URAL-A1/a1-specforge --title "..." --body-file ... --label "good first issue"` per draft. Do NOT attempt `gh issue create` in this task.
 3. Commit: `docs(community): seed 4 good-first-issue drafts + publish command list`
 **Done when:** `grep -c '^## Issue' .github/good-first-issues.md` (or equivalent heading count) ≥ 3; file contains `gh issue create` and `gh auth switch`.
 **Covers:** SC-4

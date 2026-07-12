@@ -7,7 +7,7 @@ generated: 2026-07-05
 
 ## Tech Stack
 
-- Repo: `a1-specforge` (public, `mellow-rob/a1-specforge` on GitHub). No app runtime — pure Markdown skill/agent definitions + a Node.js CLI (`_shared/a1-tools.cjs`, ~6.8k LOC, no external deps beyond Node ≥18 built-ins).
+- Repo: `a1-specforge` (public, `N3URAL-A1/a1-specforge` on GitHub). No app runtime — pure Markdown skill/agent definitions + a Node.js CLI (`_shared/a1-tools.cjs`, ~6.8k LOC, no external deps beyond Node ≥18 built-ins).
 - Current distribution: `bin/install.sh` — symlinks 17 skill dirs + `_shared/` into `~/.claude/skills/`, and 18 agent `.md` files into `~/.claude/agents/`.
 - CI: GitHub Actions runs fixture suites (`_test-fixtures/*/run*.sh`), `node --check`, and an `install.sh` smoke test on a clean `$HOME` (confirmed green per M7 VERIFICATION.md).
 - Existing scaffolding already present (found during this research, not yet in roadmap text): `.github/ISSUE_TEMPLATE/bug_report.md`, `.github/ISSUE_TEMPLATE/feature_request.md`, `.github/PULL_REQUEST_TEMPLATE.md` — CONTRIBUTING gap is smaller than the roadmap scope implies.
@@ -37,7 +37,7 @@ The current repo has 17 skill directories **at repo root** (`a1-new-feature/`, `
 
 **Install flow (user-facing):**
 ```
-/plugin marketplace add mellow-rob/a1-specforge     # or: claude plugin marketplace add ...
+/plugin marketplace add N3URAL-A1/a1-specforge     # or: claude plugin marketplace add ...
 /plugin install a1-specforge@a1-specforge            # or: claude plugin install a1-specforge@a1-specforge --scope user
 /reload-plugins
 ```
