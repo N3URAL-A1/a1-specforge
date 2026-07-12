@@ -234,12 +234,121 @@ dc41bc6 test(install-sync): add fixture suite for the drift checker
 18fff6d ci(install): add deterministic install/README sync checker
 ```
 
+## Wave 3 — One language policy
+
+**Status: DONE** (both tasks complete; no `bin/`, `.github/`, or
+`_test-fixtures/` files touched by this wave, so the regression gate was
+optional per the ground rules — ran it anyway, green)
+
+### Pre-execution note
+
+The working tree at Wave 3 start already contained, uncommitted:
+- Task 3.1's exact deliverable, but already **committed** on `main` from an
+  earlier concurrent-wave run before this execution started: commit
+  `038f5ed` (`docs(shared): add single language-policy source of truth`)
+  had already created `_shared/language-policy.md` (19 lines, two rules,
+  matches the plan's spec exactly) and linked it from `CONTRIBUTING.md`.
+  STATUS.md had not yet recorded this (an artifact of the earlier
+  concurrent-wave bug). Verified content against current PLAN.md Task 3.1
+  text — correct, no changes needed, nothing to (re-)commit.
+- Two partially-correct, uncommitted Task 3.2 edits: `a1-analyze/SKILL.md`
+  and `a1-constitution/SKILL.md` already had their local language rule
+  replaced with the exact pointer sentence the plan specifies. Verified
+  correct against current PLAN.md Task 3.2 text and kept as-is; folded into
+  this wave's single sweep commit rather than redone.
+- Unrelated, out-of-scope leftovers also present (untouched, not staged):
+  5 agent frontmatter files (Wave 5 CSV→bracketed-array conversions:
+  alex, marco, pablo, rafael, rico) and 2 harmless `a1-reconcile` fixture
+  timestamp-drift files.
+
+### Task 3.1 — `_shared/language-policy.md`
+- **Done** (pre-existing, verified, no new commit needed). File exists,
+  under 20 lines, exactly two rules (file artifacts always English;
+  user-facing conversation output in the user's language), links to the
+  README's German-trigger-alias note, and is itself linked from
+  `CONTRIBUTING.md`. Confirmed absent-before via git history (did not exist
+  before `038f5ed`), so the plan's "Done when" (file exists, confirmed
+  absent today, linked from CONTRIBUTING.md) is satisfied.
+- Commit (pre-existing, from earlier run): `038f5ed` — `docs(shared): add single language-policy source of truth`
+
+### Task 3.2 — Sweep all SKILL.md + workflows
+- **Done.** Replaced every local user-output language rule with the
+  standard pointer line (`User-facing output language: see
+  _shared/language-policy.md (artifacts English, conversation in the
+  user's language).`) at all 9 explicit fix-list sites plus the a1-check
+  self-contradiction:
+  - `a1-analyze/SKILL.md:187` — already correct in working tree (verified, kept).
+  - `a1-constitution/SKILL.md:154` — already correct in working tree (verified, kept).
+  - `a1-fix/SKILL.md:216` — dual-marker line replaced with single pointer.
+  - `a1-modernize/SKILL.md:186` — dual-marker line replaced with single pointer.
+  - `a1-new-project/SKILL.md:159` — replaced (was two sentences: file-artifact
+    rule + a German-specific conversation rule; both folded into the single
+    pointer line, since the pointer already covers both cases).
+  - `a1-reconcile/SKILL.md:176` — replaced.
+  - `a1-worktree/SKILL.md:126` — replaced (kept the adjacent CLI-output-stays-English
+    clause's intent implicitly covered by "artifacts English").
+  - `a1-new-project/workflows/02-scope.md:12` — replaced.
+  - `a1-check/SKILL.md:29` vs `:100` contradiction — **both** sites fixed:
+    line 29's standalone "Language: English-first..." sentence and line
+    100's "in German" Hard Rule both now point at the shared file; the
+    factual note about `--format human` output was preserved (reworded to
+    say the fix-path suggestion on top is in the user's language, not
+    hardcoded German), so no CLI-behavior information was lost.
+  - `a1-new-feature/workflows/02-specify.md:24` — left artifact-scoped
+    ("in English") per the plan's explicit exception, but the sentence now
+    also references `_shared/language-policy.md` so it's traceable to the
+    single source of truth rather than reading as a third, disconnected rule.
+- **Completion-gate grep verified:**
+  `grep -rn "in German\|auf Deutsch\|in English" skills/*/SKILL.md skills/*/workflows/*.md`
+  returns exactly one hit — the intentionally-kept
+  `a1-new-feature/workflows/02-specify.md:24` artifact-scoped line. No other
+  user-output language mandates remain anywhere in `skills/`.
+- Regression gate: not required by the ground rules (task touches only
+  `skills/`), ran anyway — green (`node --check` + all 23 fixture suites).
+- Commit: `e8c77bc` — `docs(skills): sweep local language rules to shared policy pointer`
+  (single sweep commit per the ground rules' "one commit per sweep, not per
+  file" rule for tasks 3.2/4.1; covers all 8 newly-edited files plus folds
+  in the 2 pre-existing correct edits from the working tree).
+
+## Deviations from plan (Wave 3)
+
+- Task 3.1 required no new commit: it was already correctly implemented and
+  committed (`038f5ed`) before this wave's execution started, from the
+  earlier concurrent-wave run. STATUS.md simply hadn't caught up — verified
+  and recorded here rather than re-done.
+- Task 3.2: `a1-new-project/SKILL.md:159` was originally two sentences (a
+  file-artifact clause and a separate "German for Robert" conversation
+  clause); both were collapsed into the single standard pointer line rather
+  than only replacing the second sentence, since the pointer line already
+  fully covers both the artifact and conversation cases the two original
+  sentences addressed. Judged in-scope (same defect class: hardcoded
+  language mandate) and lower-risk than leaving a redundant half-sentence.
+- No other deviations. All other 7 sweep sites match the plan's fix list
+  and replacement text exactly.
+
+## Regression gate results (Wave 3)
+
+Not required (no `bin/`, `.github/`, or `_test-fixtures/` files touched),
+ran anyway for safety:
+```
+node --check _shared/a1-tools.cjs   → OK
+23 fixture suites (_test-fixtures/*/run*.sh) → ALL-SUITES-GREEN
+```
+
+## Commit log (Wave 3)
+
+```
+e8c77bc docs(skills): sweep local language rules to shared policy pointer
+038f5ed docs(shared): add single language-policy source of truth   (pre-existing, from earlier run)
+```
+
 ## Next wave
 
-Wave 3 (One language policy) is independent of Wave 2 and only depends on
-Wave 1 (per the plan's Dependencies section) — ready to start. Note:
-uncommitted partial Wave 3 work already exists in the working tree
-(`a1-analyze/SKILL.md`, `a1-constitution/SKILL.md`) from the earlier
-concurrent-wave run — a future Wave 3 execution should verify and reuse
-this partial work per the same protocol used in Wave 1, not redo it from
-scratch.
+Wave 4 (Storage prose + hardcoded paths) is independent of Wave 3 and only
+depends on Wave 1 — ready to start. Wave 5 and Wave 6 remain similarly
+ready and independent. Note: uncommitted, out-of-scope Wave 5 partial work
+still sits in the working tree (5 agent frontmatter files: alex, marco,
+pablo, rafael, rico — CSV→bracketed-array `tools:` conversions) plus 2
+harmless `a1-reconcile` fixture timestamp-drift files — a future Wave 5
+execution should verify and reuse the partial frontmatter work per the same
+protocol used in Waves 1 and 3, not redo it from scratch.
