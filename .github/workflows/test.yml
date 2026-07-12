@@ -33,6 +33,7 @@ jobs:
           test -L "$HOME/.claude/skills/a1-new-feature"
           test -L "$HOME/.claude/skills/_shared"
           test ! -e "$HOME/.claude/skills/checkpoint"
+          test -L "$HOME/.claude/agents/a1-samuel-security.md"
 
       - name: Install/README sync check
         run: bash bin/verify-install-sync.sh
