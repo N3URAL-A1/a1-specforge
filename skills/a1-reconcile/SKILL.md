@@ -68,6 +68,9 @@ use `a1-check`. If they want to fix the drift, hand off to `a1-fix` or
 
 Terminal non-completion status: `cancelled`. Cancelled reports keep their slot.
 
+**Retro:** Phase 4 (Report) closes with a mandatory Retro — see
+`workflows/04-report.md` — feeding `a1-evolve`'s pattern clustering.
+
 ## Trigger modes
 
 | Mode | What gets reconciled | Typical caller |

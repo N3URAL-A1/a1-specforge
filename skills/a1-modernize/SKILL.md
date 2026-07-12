@@ -78,6 +78,9 @@ read-only forensic analysis, use `a1-analyze`.
 
 Terminal non-completion status: `cancelled`.
 
+**Retro:** Phase 7 (Publish) closes with a mandatory Retro — see
+`workflows/07-publish.md` — feeding `a1-evolve`'s pattern clustering.
+
 ## Stop-and-Ask Gates
 
 Robert must approve before these phase transitions:

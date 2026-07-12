@@ -44,6 +44,9 @@ The output is a PLAN.md that's ready for `a1-execute`.
 
 **Audit loop:** If AUDIT.md verdict is FAIL, route back to Phase 3 (a1-pablo-planner in revision mode) with the AUDIT.md findings. Maximum 2 revision cycles.
 
+**Retro:** Phase 4 (Audit) closes with a mandatory Retro — see
+`workflows/04-audit.md` — feeding `a1-evolve`'s pattern clustering.
+
 ## Storage
 
 All artifacts live in `.a1/phases/<phase-name>/` in the project directory:

@@ -49,7 +49,8 @@ Options:
 ## Retro (mandatory, every run)
 
 After every a1-plan run — PASS or revision-limit-reached — write one structured entry.
-Takes ~2 minutes. Do not skip. Used by `a1-evolve` for pattern clustering.
+Takes ~2 minutes. Do not skip. Used by `a1-evolve` for pattern clustering. Entry
+format follows `_shared/learning-schema.md` (the `_learning.md` schema).
 
 **Append to local cache:**
 

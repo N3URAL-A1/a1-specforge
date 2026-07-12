@@ -70,6 +70,9 @@ Terminal non-completion status: `cancelled`. A cancelled constitution keeps
 its file in the vault for audit; the next run will refuse `init` until the
 user removes or archives it manually.
 
+**Retro:** Phase 4 (Write) closes with a mandatory Retro — see
+`workflows/04-write.md` — feeding `a1-evolve`'s pattern clustering.
+
 ## Routing — pick the right phase
 
 1. If the user provides a constitution path: read frontmatter `status`.

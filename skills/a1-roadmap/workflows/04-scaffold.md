@@ -118,7 +118,8 @@ If user says yes: hand off to `a1-plan` with the phase goal from GOAL.md.
 
 ## Retro (mandatory, every run)
 
-After every run — pass or fail — write one structured entry. Takes 2 minutes. Do not skip.
+After every run — pass or fail — write one structured entry. Takes 2 minutes. Do not
+skip. Entry format follows `_shared/learning-schema.md` (the `_learning.md` schema).
 
 **To local cache:**
 ```bash

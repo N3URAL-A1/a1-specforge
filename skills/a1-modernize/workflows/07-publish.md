@@ -120,10 +120,11 @@ Summary:
 - Open questions: <N> (documented in the Vault)
 ```
 
-## Step 5 — Retro (mandatory, every run)
+## Retro (Step 5, mandatory, every run)
 
 After the final summary, write one structured entry. Takes ~2 minutes. Do not
-skip. Used by `a1-evolve` for pattern clustering.
+skip. Used by `a1-evolve` for pattern clustering. Entry format follows
+`_shared/learning-schema.md` (the `_learning.md` schema).
 
 ```bash
 PROJECT_NAME="<project-slug>"

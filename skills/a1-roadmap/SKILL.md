@@ -181,6 +181,9 @@ discoverable later from `## Changelog` alone.
 | 3 | Structure | `workflows/03-structure.md` | — (orchestrator) | Milestone/phase breakdown |
 | 4 | Scaffold | `workflows/04-scaffold.md` | — (orchestrator) | .a1/ structure + roadmap.md |
 
+**Retro:** Phase 4 (Scaffold) closes with a mandatory Retro — see
+`workflows/04-scaffold.md` — feeding `a1-evolve`'s pattern clustering.
+
 ## Storage
 
 New projects scaffold **both** the `docs/product/` layer (schema v1, human +
