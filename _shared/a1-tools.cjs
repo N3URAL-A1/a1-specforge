@@ -216,16 +216,7 @@ const {
 const { gitSafe, assertNoShellMetachar } = require(path.join(__dirname, 'lib', 'git-safe.cjs'));
 
 
-// ---------- product command group (lib/product.cjs) ----------
-// readProductRoadmap/readProductFeature/regenerateDerived/appendChangelogEntry/
-// assertSlug/productDirFromFlags/buildRoadmapWritesWithChangelog + every cmdProduct*
-// (status/stage/markers/changelog/init/add-milestone/add-feature/feature-init/import/
-// validate) + the legacy-roadmap-import parser helpers + PRODUCT_ROADMAP_KEY_ORDER/
-// PRODUCT_FEATURE_KEY_ORDER all live in lib/product.cjs now. The dispatcher's product
-// branch lazily requires it (no init() call needed anymore — usage() moved to
-// lib/help.cjs in M10 Wave 1 and the stage-name constant moved to
-// lib/code-scope.cjs in M10 Wave 8; product.cjs imports both directly, no
-// injection needed at all).
+// ---------- product command group (lib/product.cjs, lazily required below) ----------
 
 
 // ---------- spec group (lib/spec.cjs) ----------
@@ -273,10 +264,10 @@ const {
   cmdConstitutionList,
 } = require(path.join(__dirname, 'lib', 'constitution.cjs'));
 
-// ---------- checklist subcommands ----------
+// ---------- checklist group (lib/checklist.cjs) ----------
 const { cmdChecklistRun, cmdChecklistList } = require(path.join(__dirname, 'lib', 'checklist.cjs'));
 
-// ---------- worktree subcommands ----------
+// ---------- worktree group (lib/worktree.cjs) ----------
 const {
   cmdWorktreePrepare,
   cmdWorktreeEnter,
@@ -288,9 +279,7 @@ const {
   cmdWorktreeReconcile,
 } = require(path.join(__dirname, 'lib', 'worktree.cjs'));
 
-// ---------------------------------------------------------------------------
-// pr — a1-pr-review CLI helpers (registry filter, findings summary, status)
-// ---------------------------------------------------------------------------
+// ---------- pr group (lib/pr.cjs) ----------
 const {
   cmdPrListHandoff,
   cmdPrMarkStatus,
@@ -509,10 +498,7 @@ function main() {
         return; // unreachable — cmdCostRun calls process.exit()
       } else usage(`unknown cost subcommand: ${sub}`);
     } else if (group === 'product') {
-      // product command group lives in lib/product.cjs (M9 module split).
-      // Lazy require (only paid when `product ...` is actually invoked) — no
-      // init() needed: usage() (Wave 1) and the stage-name constant (Wave 8)
-      // are both imported directly by product.cjs now.
+      // Lazy require — only paid when `product ...` is actually invoked.
       const product = require(path.join(__dirname, 'lib', 'product.cjs'));
       // product status/stage own their exit code (0/1) and JSON output.
       if (sub === 'status') {
