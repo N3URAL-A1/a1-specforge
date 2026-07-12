@@ -224,6 +224,7 @@ const {
   appendPhaseHistory,
   cmdSpecNextNumber,
   cmdSpecUpdateStatus,
+  cmdSpecSetSize,
   cmdSpecList,
 } = require(path.join(__dirname, 'lib', 'spec.cjs'));
 
@@ -355,6 +356,7 @@ function main() {
     if (group === 'spec') {
       if (sub === 'next-number') result = cmdSpecNextNumber(rest);
       else if (sub === 'update-status') result = cmdSpecUpdateStatus(rest);
+      else if (sub === 'set-size') result = cmdSpecSetSize(rest);
       else if (sub === 'list') result = cmdSpecList(rest);
       else usage(`unknown spec subcommand: ${sub}`);
     } else if (group === 'fix') {

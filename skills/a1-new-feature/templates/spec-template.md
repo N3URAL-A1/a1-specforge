@@ -4,6 +4,7 @@ project: <project-slug>
 feature_slug: <feature-slug>
 title: <Working Title>
 status: discovering
+size: null
 created: YYYY-MM-DD
 phase_history: []
 wave_plan_path: null

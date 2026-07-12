@@ -116,6 +116,28 @@ function cmdSpecUpdateStatus(args) {
   };
 }
 
+const SPEC_SIZES = new Set(['S', 'M', 'L']);
+
+// Writes the size-triage class (M12 fast path) into the spec frontmatter —
+// the CLI is the only sanctioned frontmatter mutator (same rule as
+// update-status; skills never Edit frontmatter directly).
+function cmdSpecSetSize(args) {
+  const specPathInput = args[0];
+  const size = args[1];
+  if (!specPathInput || !size) {
+    usage('spec set-size requires <spec-path> <S|M|L>');
+  }
+  if (!SPEC_SIZES.has(size)) {
+    usage(`invalid spec size "${size}". valid: S, M, L`);
+  }
+  const specPath = resolveVaultPath(specPathInput);
+  if (!fs.existsSync(specPath)) fail(`spec file not found: ${specPath}`);
+  const { fm, body } = readMd(specPath);
+  fm.size = size;
+  writeMdAtomic(specPath, fm, body);
+  return { spec_path: specPath, size: fm.size };
+}
+
 function cmdSpecList(args) {
   const projectSlug = args[0];
   if (!projectSlug) usage('spec list requires <project-slug>');
@@ -147,5 +169,6 @@ module.exports = {
   appendPhaseHistory,
   cmdSpecNextNumber,
   cmdSpecUpdateStatus,
+  cmdSpecSetSize,
   cmdSpecList,
 };

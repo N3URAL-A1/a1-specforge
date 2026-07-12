@@ -4,6 +4,19 @@
 (P1/P2/P3), Functional Requirements (FR-###), Success Criteria (SC-###), Acceptance Scenarios,
 Edge Cases, Review Checklist. Mark anything ambiguous with `[NEEDS CLARIFICATION]`.
 
+**Size class:** before spawning Rene, persist the Phase-1 triage result
+(Step 3b of `01-discover.md`) into the spec frontmatter via the CLI — never
+by editing frontmatter directly:
+
+```bash
+node <repo>/_shared/a1-tools.cjs spec set-size \
+  "projects/<slug>/spec/<###>-<feature-slug>.md" <S|M|L>
+```
+
+On `size: S`, Rene's brief below shrinks accordingly (mini-spec: 1–2 FRs with
+ACs, compressed sections) — see SKILL.md "Size triage & fast path". FR/SC/AC
+formality is never dropped.
+
 **Sub-agent:** Rene (`~/.claude/agents/a1-rene-requirement-engineer.md`).
 
 **Status transition:** `discovering` → `draft`.

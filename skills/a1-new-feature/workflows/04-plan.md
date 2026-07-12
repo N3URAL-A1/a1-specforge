@@ -21,6 +21,12 @@ plan_path = projects/<project-slug>/plans/<###>-<feature-slug>-wave-plan.md
 `<###>` is the same sequence number as the spec. If `projects/<slug>/plans/` does not exist,
 create it (use Bash with the absolute vault root).
 
+**Size-S fast path:** when the spec frontmatter says `size: S`, instruct
+Vincente (in the brief below) to produce a **single-wave plan** — one wave
+carrying all FRs, one Suggested-agent line, no dependency graph. Everything
+else about the plan format is unchanged so Gate 4.5 and a1-checklist parse it
+identically.
+
 ## Step 2 — Spawn Vincente with the Plan brief (model: the pinned reasoning-tier model)
 
 Use the **Agent** tool with `subagent_type: "a1-vincente-vibe-optimizer"` and

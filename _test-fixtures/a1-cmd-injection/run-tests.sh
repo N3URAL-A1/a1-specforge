@@ -191,10 +191,48 @@ test_legit_since_still_works() {
   rm -rf "$work"
 }
 
+# spec set-size (M12): hostile size value must be rejected as a usage error
+# (exit 1 per CLI convention: 0 success, 1 user/usage, 2 internal) without
+# touching the file; a valid value round-trips into the frontmatter.
+test_set_size() {
+  local work
+  work="$(mktemp -d)"
+  local vault="$work/vault"
+  mkdir -p "$vault/projects/demo/spec"
+  printf -- '---\nid: 001-demo\nstatus: draft\nsize: null\n---\n\n# Demo\n' \
+    > "$vault/projects/demo/spec/001-demo.md"
+
+  local out rc
+  out=$(A1_VAULT_ROOT="$vault" node "$TOOLS" spec set-size \
+    "projects/demo/spec/001-demo.md" 'S; touch '"$work"'/pwned' 2>&1)
+  rc=$?
+  if [[ $rc -eq 1 && ! -e "$work/pwned" ]] && ! grep -q '^size: S;' "$vault/projects/demo/spec/001-demo.md"; then
+    results+=("PASS  [set-size-hostile] injection-shaped size rejected (exit 1, file untouched)")
+    pass=$((pass + 1))
+  else
+    results+=("FAIL  [set-size-hostile] expected exit 1 + untouched file, got exit $rc: $out")
+    fail=$((fail + 1))
+  fi
+
+  out=$(A1_VAULT_ROOT="$vault" node "$TOOLS" spec set-size \
+    "projects/demo/spec/001-demo.md" S 2>&1)
+  rc=$?
+  if [[ $rc -eq 0 ]] && grep -q '^size: S$' "$vault/projects/demo/spec/001-demo.md"; then
+    results+=("PASS  [set-size-valid] size S written to frontmatter (exit 0)")
+    pass=$((pass + 1))
+  else
+    results+=("FAIL  [set-size-valid] expected exit 0 + size: S in frontmatter, got exit $rc: $out")
+    fail=$((fail + 1))
+  fi
+
+  rm -rf "$work"
+}
+
 test_hostile_anchor
 test_hostile_repo_path
 test_hostile_since
 test_legit_since_still_works
+test_set_size
 
 printf '\n--- a1-cmd-injection fixture results ---\n'
 for r in "${results[@]}"; do printf '%s\n' "$r"; done

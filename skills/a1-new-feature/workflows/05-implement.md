@@ -63,6 +63,11 @@ Read `<plan-path>`. Identify the next wave whose dependencies are satisfied (all
 waves marked complete in the plan, or "none"). If multiple waves are unblocked **and**
 marked `Parallelizable: ja`, you may propose them as a parallel batch.
 
+**Size-S fast path:** a `size: S` spec has a single-wave plan, so this phase
+naturally collapses to one dispatch and **one** closing checkpoint (the
+wave's own Build+Deploy+Smoke gate). Do not add intermediate check-ins beyond
+that — the gates are the checkpoints.
+
 Track wave completion **inline in the wave-plan file** by appending a status line to each
 wave heading after dispatch:
 

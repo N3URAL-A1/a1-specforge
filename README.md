@@ -60,7 +60,7 @@ All 17 skills below match the `SKILLS` array in `bin/install.sh` exactly.
 
 | Skill | Phase | Purpose |
 |---|---|---|
-| `a1-new-feature` | Build | End-to-end feature pipeline: Discover → Specify → Clarify → Plan → Consistency Gate → Implement → Verify. |
+| `a1-new-feature` | Build | End-to-end feature pipeline: Discover → Specify → Clarify → Plan → Consistency Gate → Implement → Verify. Size-triaged (S/M/L): small features run every phase and gate in compact form. |
 | `a1-new-project` | Build | Bootstrap a brand-new project from zero to a working feature backlog: Bootstrap → Scope-Interview → Roadmap → Backlog → first feature. |
 | `a1-fix` | Build | End-to-end bug pipeline with a project-scoped learning loop: Pre-Flight → Report → Diagnose → Fix → Verify → Postmortem. |
 | `a1-plan` | Plan | Full phase-planning pipeline: Research → Map → Plan → Audit, producing an executor-ready `PLAN.md` with waves and verifiable success criteria. |

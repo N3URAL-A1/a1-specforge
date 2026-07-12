@@ -61,11 +61,29 @@ Use the **Agent** tool with `subagent_type: "a1-rene-requirement-engineer"` and 
 
 Rene appends to the spec file directly while the interview runs.
 
+## Step 3b — Size triage (S/M/L)
+
+Classify the feature using the criteria in SKILL.md ("Size triage & fast
+path"). **ALL** S-criteria must hold — any doubt → M. Tell the user the class
+and its consequence in one sentence, e.g.:
+
+> "This looks like Size S (2 FRs, existing screen, no migration): compact
+> clarify, single-wave plan, all gates still run. Override if you disagree."
+
+Accept an override in either direction without discussion. Phase 2 writes the
+final class to the spec frontmatter (`size:`) via the template fill-in.
+
+**Size-S shortcut for Steps 3–4:** on S, Rene's Discovery + Specify briefs
+may be combined into one pass producing the mini-spec directly (1–2 FRs with
+ACs) — the ten Discovery sections may be compressed to the ones with content,
+but FR/AC formality is never dropped (Gate 4.5 and Gate C depend on it).
+
 ## Step 4 — Confirm completion
 
 When Rene reports "Discovery complete":
 
-1. Verify all ten Discovery sections in the spec have at least one bullet.
+1. Verify all ten Discovery sections in the spec have at least one bullet
+   (Size S: the compressed section set from Step 3b is acceptable).
 2. Ask the user: "Discovery looks like this — does it look right, or is anything important missing?"
 3. On confirmation, do **not** advance status yet. Phase 2 (Specify) updates status to `draft`
    when Rene writes the formal spec.

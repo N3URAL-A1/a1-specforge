@@ -144,6 +144,11 @@ After the User Stories, walk through the `## Edge Cases` list. For each edge cas
 This is a softer check; flag edge cases that don't have explicit handling and add them as
 verify_failures with `kind: edge-case`.
 
+**Size-S fast path:** verify every AC once (Step 2 is never reduced) and run
+the project's regression suite, but limit this edge-case walk to the **single
+riskiest** edge case instead of the full list. Steps 1, 2, 4, 5 and the Retro
+run unchanged.
+
 ## Step 4 — Success Criteria sanity
 
 Read the SC-### list. Ask the user whether each SC is met (some are quantitative — request

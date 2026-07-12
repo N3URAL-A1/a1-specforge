@@ -41,6 +41,14 @@ gets added to the question queue alongside the explicit markers:
 Add any discovered gaps as `[NEEDS CLARIFICATION: <question>]` inline in the spec before
 spawning Rene, so Rene has a complete list in one pass.
 
+**Size-S fast path:** when the spec frontmatter says `size: S`, do not run
+all 12 categories — pick the **3 sharpest for this feature** (for a
+UI-touching change typically: UI elements in/out, state after action,
+navigation context carry) and scan only those. Skip Step 2b (UX mockups)
+unless the user asks for variants. Steps 3, 3.5 (Gate C) and 4 run
+**unchanged** — Gate C is cheap and catches the nav/context bug class
+regardless of size.
+
 ## Step 2 — Spawn Rene with the Clarify brief (model: the pinned reasoning-tier model)
 
 Use the **Agent** tool with `subagent_type: "a1-rene-requirement-engineer"` and

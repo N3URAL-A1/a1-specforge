@@ -4,7 +4,11 @@ description: >
   End-to-end pipeline for taking a new feature idea from raw concept to verified implementation.
   Seven phases: Discover → Specify → Clarify → Plan → Consistency Gate → Implement → Verify. State lives in the spec
   file's YAML frontmatter and progresses through: discovering → draft → clarified → planned →
-  implementing → done (or cancelled). Specs are stored repo-local (external vault via
+  implementing → done (or cancelled). Every feature is size-triaged (S/M/L,
+  spec frontmatter `size:`) at Discover: Size-S features run the same phases
+  and ALL deterministic gates in compact form (mini-spec, 3-question clarify,
+  single-wave plan, one checkpoint) — small changes stay cheap without
+  skipping the pipeline. Specs are stored repo-local (external vault via
   `A1_VAULT_ROOT`, e.g. Obsidian) under projects/<slug>/spec/<###>-<feature-slug>.md,
   wave plans under projects/<slug>/plans/.
   MUST trigger when the user says: "new feature for <project>" (alias: "neues Feature für
@@ -75,6 +79,41 @@ delegate directly to the relevant agent (Rene / Vincente / code agents) and skip
 
 A spec abandoned at any phase is moved to status `cancelled`; its sequence number is **not**
 recycled.
+
+## Size triage & fast path (S/M/L)
+
+Every feature gets a size class at the end of Discover (Phase 1), written to
+the spec frontmatter as `size: S|M|L` (Phase 2 writes it). **Phases are never
+skipped — depth scales inside them.** Deterministic gates (Roadmap Gate,
+Gate C, Gate 4.5, Scope-Claim, Isolation) run at every size: they are cheap
+and they catch the bug classes this corpus actually shipped.
+
+**S (small) — ALL criteria must hold; any doubt → M:**
+
+- ≤ 2 FRs expected
+- No new data model, no migration
+- No new route/screen (changes to existing surfaces only)
+- No auth / payment / tenant-boundary surface touched
+- Expected change ≤ ~3 files
+
+The user can override the triage in either direction at any point ("treat as
+small" / "run the full pipeline") — say the class and its consequence out
+loud when triaging.
+
+**What shrinks on the S path:**
+
+| Phase | Full run (M/L) | Size-S run |
+|---|---|---|
+| 1+2 Discover/Specify | Rene interview + full spec | Combined mini-spec: 1–2 FRs with ACs (FRs stay mandatory — Gate 4.5 checks them) |
+| 3 Clarify | 12-category proactive scan, UX mockups, Gate C | The 3 sharpest categories for this feature; mockups only on request; **Gate C runs unchanged** |
+| 4 Plan | Multi-wave plan | Single-wave plan (one wave, all FRs) |
+| 4.5 Consistency Gate | runs | **runs unchanged** |
+| 5 Implement | Checkpoint per wave | One wave → one closing checkpoint |
+| 6 Verify | Full scenario matrix + edge-case spot checks | Every AC once + project regression suite; edge-case spot check reduced to the single riskiest case. Retro stays mandatory |
+
+M and L both run the full structure; the distinction only calibrates the
+Clarify question budget (M: focus on the categories the feature plausibly
+touches; L: all 12).
 
 ## Roadmap Gate (HARD RULE — before Phase 1 Discover)
 
@@ -308,8 +347,9 @@ The skill **proposes** code agents in Phase 5 based on the wave-plan brief; the 
   The Isolation Gate runs before Phase 5. Merge to `main` only when build + tests
   are GREEN. Never cherry-pick as a merge workaround. Never push a build-red `main`.
 - Never edit the spec frontmatter directly with Edit/Write — always use `a1-tools spec update-status`.
-- Never skip a phase. If a feature seems trivial enough to skip Discover/Clarify, do them
-  anyway — they take seconds and prevent rework.
+- Never skip a phase. Depth scales with the spec's `size` class instead (see
+  "Size triage & fast path") — a Size-S feature runs every phase in compact
+  form, never zero phases, and every deterministic gate still runs.
 - Never recycle sequence numbers. Cancelled specs keep their slot.
 - Never modify a spec while it is in `implementing` without surfacing the change to the user
   first; spec drift mid-implementation breaks Phase 6 verify.

@@ -18,6 +18,7 @@ const HELP = `a1-tools — file-ops helper for a1-* skills
 Usage:
   a1-tools spec next-number <project-slug>
   a1-tools spec update-status <spec-path> <new-status> [flags]
+  a1-tools spec set-size <spec-path> <S|M|L>
   a1-tools spec list <project-slug> [--status=<s>]
 
   a1-tools fix next-suffix <project-slug> <YYYY-MM-DD>
