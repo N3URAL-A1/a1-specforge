@@ -34,6 +34,9 @@ jobs:
           test -L "$HOME/.claude/skills/_shared"
           test ! -e "$HOME/.claude/skills/checkpoint"
 
+      - name: Install/README sync check
+        run: bash bin/verify-install-sync.sh
+
       - name: Vault-free CLI check
         run: |
           set -e
