@@ -49,6 +49,11 @@ file ops. Sub-agents do the actual thinking.
 buttons, forms, layouts), ask up to 3 targeted scope questions **before** dispatching
 the code agent. Model: the pinned reasoning-tier model. Skip for pure logic/crash bugs.
 
+**Audit auto-close (Phase 3, Step 4.5):** when the project has `docs/product/audits/*.md`
+and the fix commit message uses the explicit `Closes F-0NN` / `Fixes F-0NN` convention
+(not a bare mention), the skill auto-calls `product audit-set --status fixed` to close
+the tracked finding — see `workflows/03-fix.md` Step 4.5 (FR-022).
+
 Terminal non-fix statuses: `cant-reproduce`, `wont-fix`, `duplicate`, `cancelled`.
 Bugs in these states stay on disk; slots are NOT recycled.
 

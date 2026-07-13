@@ -90,6 +90,18 @@ keeps `reservations.json` / `feature.md` / `ROADMAP.md` in sync in one
 invocation.
 Skip it entirely for legacy-only projects (no `docs/product/` directory).
 
+## Audit Auto-Close (HARD RULE — explicit convention only, FR-022)
+
+When the project has `docs/product/audits/*.md`, every wave commit message is
+checked for the explicit closing convention (`Closes F-0NN` / `Fixes F-0NN`,
+case-insensitive on the keyword, exact `F-0NN` id) before the wave's Step 2c
+checkpoint — see `workflows/02-execute.md` "Audit Auto-Close" for the full
+detection regex and the `product audit-set` auto-call. A bare mention of an
+`F-0NN` id without one of those keywords immediately before it MUST NOT
+auto-close the finding. This mirrors `a1-fix`'s identical Step 4.5 hook
+(`skills/a1-fix/workflows/03-fix.md`) — same trigger, same non-blocking
+failure handling.
+
 ## On-touch Migration Rule (HARD RULE — never big-bang)
 
 If this skill encounters a project that has only the legacy `.a1/roadmap.md`

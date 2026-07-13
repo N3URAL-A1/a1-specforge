@@ -79,6 +79,14 @@
 #   FR-019 (Wave 4 twin): the same mid-write fault-injection seam proves
 #     audit-publish/audit-set share the identical lock + tmp/rename
 #     transaction guarantee as vision-init/vision-touch.
+#
+# Wave 6c addition (spec 003, a1-fix/a1-execute skill wiring — FR-022):
+#   FR-022: the explicit-closing-convention regex documented in
+#     skills/a1-fix/workflows/03-fix.md Step 4.5 and
+#     skills/a1-execute/workflows/02-execute.md "Audit Auto-Close"
+#     (`/\b(closes?|fix(?:es|ed)?)\s+F-(\d{3})\b/i`) matches `Closes F-007` /
+#     `Fixes F-007` (case-insensitive keyword) and does NOT match a bare
+#     `F-007` mention with no closing keyword immediately before it.
 set -u
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -1306,6 +1314,46 @@ if find "$PDIR22" -name '*.tmp.*' | grep -q .; then
 else
   assert_true "fr019-audit-set-fault-no-leftover-tmp-files" "true"
 fi
+
+# ===========================================================================
+# Scenario 23 (FR-022, Wave 6c): the explicit-closing-convention regex used by
+# a1-fix (skills/a1-fix/workflows/03-fix.md Step 4.5) and a1-execute
+# (skills/a1-execute/workflows/02-execute.md "Audit Auto-Close") to decide
+# whether to auto-call `product audit-set` matches "Closes F-0NN"/"Fixes
+# F-0NN" (case-insensitive keyword) but NOT a bare "F-0NN" mention with no
+# closing keyword immediately before it. This is a pure regex assertion —
+# no CLI invocation involved, since FR-022 is skill-prose wiring, not a new
+# CLI subcommand.
+# ===========================================================================
+FR022_REGEX_CHECK="$(node -e '
+  const RE = /\b(closes?|fix(?:es|ed)?)\s+F-(\d{3})\b/i;
+  const cases = [
+    { msg: "Closes F-007", expectMatch: true, expectId: "007" },
+    { msg: "fix(auth): resolve token bug\n\nFixes F-012", expectMatch: true, expectId: "012" },
+    { msg: "close F-042 - session leak", expectMatch: true, expectId: "042" },
+    { msg: "FIXED F-099", expectMatch: true, expectId: "099" },
+    { msg: "mentions F-007 in passing, no keyword", expectMatch: false },
+    { msg: "See F-007 for context; unrelated commit", expectMatch: false },
+    { msg: "prefixes F-007 (not a whole-word keyword match)", expectMatch: false },
+  ];
+  let ok = true;
+  for (const c of cases) {
+    const m = c.msg.match(RE);
+    const matched = m !== null;
+    if (matched !== c.expectMatch) {
+      console.error(`MISMATCH for "${c.msg}": expected match=${c.expectMatch}, got ${matched}`);
+      ok = false;
+      continue;
+    }
+    if (c.expectMatch && m[2] !== c.expectId) {
+      console.error(`MISMATCH for "${c.msg}": expected id=${c.expectId}, got ${m[2]}`);
+      ok = false;
+    }
+  }
+  process.exit(ok ? 0 : 1);
+' 2>&1)"
+FR022_REGEX_RC=$?
+assert_rc "fr022-closing-convention-regex-cases" 0 "$FR022_REGEX_RC" "$FR022_REGEX_CHECK"
 
 echo "product-schema-v11 fixtures: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]
