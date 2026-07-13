@@ -176,7 +176,7 @@ discoverable later from `## Changelog` alone.
 
 | # | Phase | Workflow | Agent | Output |
 |---|---|---|---|---|
-| 1 | Discover | `workflows/01-discover.md` | — (conversation) | Vision doc |
+| 1 | Discover | `workflows/01-discover.md` | — (conversation) | Vision doc (narrative + 2-4 pillars) |
 | 2 | Research | `workflows/02-research.md` | a1-rico-researcher | RESEARCH.md |
 | 3 | Structure | `workflows/03-structure.md` | — (orchestrator) | Milestone/phase breakdown |
 | 4 | Scaffold | `workflows/04-scaffold.md` | — (orchestrator) | .a1/ structure + roadmap.md |
@@ -192,10 +192,17 @@ machine contract — see `docs/product/SCHEMA.md`) and the `.a1/` layer
 never overwritten by hand; the Scaffold phase writes it exclusively via
 `node <repo>/_shared/a1-tools.cjs product ...`.
 
+Schema v1.1 (FR-021): Discover now also captures the product vision
+narrative and 2-4 pillars during the interview, and Scaffold calls `product
+vision-init --title <mission> --pillar id:title:summary ...` right after
+`product init`, so every new project has `docs/product/VISION.md` from day
+one instead of the vision living only as free-text in `ROADMAP.md` prose.
+
 ```
 docs/product/
 ├── ROADMAP.md              ← schema v1: ALL milestones + ALL features named
 │                              upfront with 1-sentence goals (rolling wave)
+├── VISION.md               ← schema v1.1: mission + pillars (from Discover)
 ├── NEXT.md                 ← generated — do not hand-edit (Wave 3 CLI output)
 └── index.json               ← generated — do not hand-edit (Wave 3 CLI output)
 
