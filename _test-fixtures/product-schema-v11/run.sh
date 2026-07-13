@@ -53,6 +53,32 @@
 #     affected file in its PRIOR consistent state for both vision-init (no
 #     VISION.md created) and vision-touch (VISION.md/index.json/NEXT.md all
 #     reverted to their pre-call content).
+#
+# Wave 4 additions (spec 003, audit-publish/audit-set CLI writers —
+# FR-007, FR-008, FR-009, FR-010, FR-011):
+#   FR-007: `product audit-publish --analysis <path>` parses a synthetic
+#     a1-analyze result's frontmatter findings[] into a new
+#     audits/<date>-<focus>.md, every finding at status: open, and
+#     index.json's audits[] gains a matching entry.
+#   FR-008: re-publishing the SAME date+focus refuses (non-zero exit, no
+#     write); publishing a DIFFERENT date+focus succeeds and produces a
+#     SECOND file (append-only history, first file untouched).
+#   FR-007 edge case: a zero-findings analysis still produces a valid audit
+#     file with an empty findings: [] array (not an error).
+#   FR-009: `audit-set` mutates EXACTLY the named finding's status/
+#     fixed_commit/feature, leaves every other finding byte-unchanged,
+#     appends a one-line changelog entry, and index.json's derived
+#     open/fixed counts update.
+#   FR-010: `audit-set --finding` naming an id absent from the target file
+#     fails (non-zero exit, no write).
+#   FR-011: `audit-set --feature` naming an id absent from ROADMAP.md fails
+#     (non-zero exit, clear error, no write) — reuses the FR-018 cross-check
+#     helper (roadmapFeatureIdSet()).
+#   edge case: a transition FROM 'fixed' back TO 'open' (regression re-open)
+#     is a LEGAL transition, not blocked.
+#   FR-019 (Wave 4 twin): the same mid-write fault-injection seam proves
+#     audit-publish/audit-set share the identical lock + tmp/rename
+#     transaction guarantee as vision-init/vision-touch.
 set -u
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -925,6 +951,360 @@ if find "$PDIR14B" -name '*.tmp.*' | grep -q .; then
   assert_true "fr019-vision-touch-fault-no-leftover-tmp-files" "false"
 else
   assert_true "fr019-vision-touch-fault-no-leftover-tmp-files" "true"
+fi
+
+# ===========================================================================
+# Wave 4 additions (spec 003, audit-publish/audit-set CLI writers — FR-007,
+# FR-008, FR-009, FR-010, FR-011).
+#
+# write_analysis_fixture <path> <focus> <createdAt> <findingsHeredoc> — a
+# minimal, self-contained a1-analyze result file (the SIMPLE frontmatter
+# shape lib/io.cjs's parseFrontmatter()/ANALYSIS_KEY_ORDER produces: findings
+# is a flat list of quoted "key=value; key=value; ..." strings, NOT the
+# nested-object-list shape ROADMAP.md/VISION.md/audits use).
+# ===========================================================================
+write_analysis_fixture() {
+  local path="$1" focus="$2" created_at="$3"
+  shift 3
+  {
+    echo "---"
+    echo "type: project-analysis"
+    echo "project: schema-v11-audit-publish"
+    echo "focus: ${focus}"
+    echo "title: \"${focus} analysis of schema-v11-audit-publish\""
+    echo "status: reported"
+    echo "created_at: ${created_at}"
+    echo "findings:"
+    for f in "$@"; do
+      echo "  - \"${f}\""
+    done
+    echo "findings_count:"
+    echo "  - \"blocker=0\""
+    echo "tags:"
+    echo "  - analysis"
+    echo "---"
+    echo ""
+    echo "# Analysis"
+  } > "$path"
+}
+
+# ===========================================================================
+# Scenario 15 (FR-007): `product audit-publish --analysis <path>` creates
+# exactly one new audits/<date>-<focus>.md with every finding at status:
+# open, and index.json's audits[] gains a matching entry.
+# ===========================================================================
+WORK15="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-schema-v11-audit-publish.XXXXXX")"
+PDIR15="$WORK15/docs/product"
+write_base_roadmap "$PDIR15" "schema-v11-audit-publish"
+write_analysis_fixture "$WORK15/analysis-general.md" "general" "2026-07-13T09:00:00.000Z" \
+  "id=F-001; severity=MAJOR; category=ADR drift; location=foo.js:10; description=some description; with a semicolon; recommendation=fix it" \
+  "id=F-002; severity=MINOR; category=stale help; location=bar.js:5; description=another one; recommendation=fix it too"
+
+test -f "$PDIR15/audits/2026-07-13-general.md" && echo "FAIL  audit-publish-precondition: audit file should not exist yet" && fail=$((fail + 1))
+
+OUT="$(node "$TOOLS" product audit-publish --analysis "$WORK15/analysis-general.md" --dir "$PDIR15" 2>&1)"
+RC=$?
+assert_rc "fr007-audit-publish-exit-0" 0 "$RC" "$OUT"
+
+if [[ -f "$PDIR15/audits/2026-07-13-general.md" ]]; then
+  assert_true "fr007-audit-publish-file-created" "true"
+else
+  assert_true "fr007-audit-publish-file-created" "false"
+fi
+
+OUT="$(node "$TOOLS" product validate --dir "$PDIR15" 2>&1)"
+RC=$?
+assert_rc "fr007-audit-publish-validate-exit-0" 0 "$RC" "$OUT"
+
+if node -e '
+  const fs = require("fs");
+  const io = require(process.argv[2]);
+  const { fm } = io.parseNestedFrontmatter(fs.readFileSync(process.argv[1], "utf8"));
+  if (!Array.isArray(fm.findings) || fm.findings.length !== 2) process.exit(1);
+  if (!fm.findings.every((f) => f.status === "open" && f.fixed_commit === null && f.feature === null)) process.exit(1);
+  if (fm.findings[0].id !== "F-001" || fm.findings[1].id !== "F-002") process.exit(1);
+  process.exit(0);
+' "$PDIR15/audits/2026-07-13-general.md" "$REPO_ROOT/_shared/lib/io.cjs"; then
+  assert_true "fr007-audit-publish-all-findings-open" "true"
+else
+  assert_true "fr007-audit-publish-all-findings-open" "false"
+fi
+
+if node -e '
+  const data = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+  if (!Array.isArray(data.audits) || data.audits.length !== 1) process.exit(1);
+  const a = data.audits[0];
+  if (a.path !== "docs/product/audits/2026-07-13-general.md") process.exit(1);
+  if (a.open !== 2 || a.fixed !== 0) process.exit(1);
+  process.exit(0);
+' "$PDIR15/index.json"; then
+  assert_true "fr007-audit-publish-index-json-audits-entry" "true"
+else
+  assert_true "fr007-audit-publish-index-json-audits-entry" "false"
+fi
+
+# ===========================================================================
+# Scenario 16 (FR-008): re-publishing the SAME date+focus refuses (non-zero
+# exit) and leaves the original file untouched; publishing a DIFFERENT
+# date+focus succeeds and produces a SECOND file (append-only history).
+# ===========================================================================
+AUDIT15_BEFORE_HASH="$(hash_file "$PDIR15/audits/2026-07-13-general.md")"
+OUT="$(node "$TOOLS" product audit-publish --analysis "$WORK15/analysis-general.md" --dir "$PDIR15" 2>&1)"
+RC=$?
+assert_rc "fr008-audit-publish-duplicate-refuses-nonzero-exit" 1 "$RC" "$OUT"
+AUDIT15_AFTER_HASH="$(hash_file "$PDIR15/audits/2026-07-13-general.md")"
+if [[ "$AUDIT15_BEFORE_HASH" == "$AUDIT15_AFTER_HASH" ]]; then
+  assert_true "fr008-audit-publish-duplicate-original-untouched" "true"
+else
+  assert_true "fr008-audit-publish-duplicate-original-untouched" "false"
+fi
+
+write_analysis_fixture "$WORK15/analysis-security.md" "security" "2026-07-14T09:00:00.000Z" \
+  "id=F-003; severity=BLOCKER; category=secrets in repo; location=config.js:1; description=hardcoded key; recommendation=use env var"
+OUT="$(node "$TOOLS" product audit-publish --analysis "$WORK15/analysis-security.md" --dir "$PDIR15" 2>&1)"
+RC=$?
+assert_rc "fr007-audit-publish-second-different-focus-exit-0" 0 "$RC" "$OUT"
+
+if [[ -f "$PDIR15/audits/2026-07-14-security.md" ]]; then
+  assert_true "fr007-audit-publish-second-file-created" "true"
+else
+  assert_true "fr007-audit-publish-second-file-created" "false"
+fi
+AUDIT15_STILL_HASH="$(hash_file "$PDIR15/audits/2026-07-13-general.md")"
+if [[ "$AUDIT15_BEFORE_HASH" == "$AUDIT15_STILL_HASH" ]]; then
+  assert_true "fr007-audit-publish-append-only-first-file-untouched" "true"
+else
+  assert_true "fr007-audit-publish-append-only-first-file-untouched" "false"
+fi
+
+if node -e '
+  const data = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+  process.exit(Array.isArray(data.audits) && data.audits.length === 2 ? 0 : 1);
+' "$PDIR15/index.json"; then
+  assert_true "fr007-audit-publish-index-json-two-entries" "true"
+else
+  assert_true "fr007-audit-publish-index-json-two-entries" "false"
+fi
+
+# ===========================================================================
+# Scenario 17 (FR-007 edge case): a zero-findings analysis still produces a
+# valid audit file with an empty findings: [] array (not an error).
+# ===========================================================================
+WORK17="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-schema-v11-audit-publish-zero.XXXXXX")"
+PDIR17="$WORK17/docs/product"
+write_base_roadmap "$PDIR17" "schema-v11-audit-publish-zero"
+cat > "$WORK17/analysis-zero.md" <<'EOF'
+---
+type: project-analysis
+project: schema-v11-audit-publish-zero
+focus: quality
+title: "quality analysis of schema-v11-audit-publish-zero"
+status: reported
+created_at: 2026-07-13T09:00:00.000Z
+findings: []
+findings_count:
+  - "blocker=0"
+tags:
+  - analysis
+---
+
+# Analysis
+EOF
+
+OUT="$(node "$TOOLS" product audit-publish --analysis "$WORK17/analysis-zero.md" --dir "$PDIR17" 2>&1)"
+RC=$?
+assert_rc "fr007-audit-publish-zero-findings-exit-0" 0 "$RC" "$OUT"
+
+OUT="$(node "$TOOLS" product validate --dir "$PDIR17" 2>&1)"
+RC=$?
+assert_rc "fr007-audit-publish-zero-findings-validate-exit-0" 0 "$RC" "$OUT"
+
+if node -e '
+  const fs = require("fs");
+  const io = require(process.argv[2]);
+  const { fm } = io.parseNestedFrontmatter(fs.readFileSync(process.argv[1], "utf8"));
+  process.exit(Array.isArray(fm.findings) && fm.findings.length === 0 ? 0 : 1);
+' "$PDIR17/audits/2026-07-13-quality.md" "$REPO_ROOT/_shared/lib/io.cjs"; then
+  assert_true "fr007-audit-publish-zero-findings-empty-array" "true"
+else
+  assert_true "fr007-audit-publish-zero-findings-empty-array" "false"
+fi
+
+# ===========================================================================
+# Scenario 18 (FR-009): `audit-set` mutates EXACTLY the named finding's
+# status/fixed_commit/feature, appends a changelog line, leaves other
+# findings byte-unchanged, and index.json's derived open/fixed counts update.
+# ===========================================================================
+WORK18="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-schema-v11-audit-set.XXXXXX")"
+PDIR18="$WORK18/docs/product"
+write_base_roadmap "$PDIR18" "schema-v11-audit-set"
+write_analysis_fixture "$WORK18/analysis.md" "general" "2026-07-13T09:00:00.000Z" \
+  "id=F-001; severity=MAJOR; category=first finding; location=a.js:1; description=d1; recommendation=r1" \
+  "id=F-002; severity=MINOR; category=second finding; location=b.js:2; description=d2; recommendation=r2"
+node "$TOOLS" product audit-publish --analysis "$WORK18/analysis.md" --dir "$PDIR18" >/dev/null 2>&1
+
+AUDIT18="$PDIR18/audits/2026-07-13-general.md"
+
+extract_finding_block() {
+  # Print only the F-002 finding's 6-line block, so we can assert it is
+  # byte-unchanged after audit-set touches F-001 only.
+  awk '/^  - id: F-002/{p=1} p{print; if(/^    feature:/) exit}' "$1"
+}
+FINDING_F002_BEFORE="$(extract_finding_block "$AUDIT18" | md5 -q 2>/dev/null || extract_finding_block "$AUDIT18" | md5sum | awk '{print $1}')"
+
+OUT="$(node "$TOOLS" product audit-set --audit "$AUDIT18" --finding F-001 --status fixed --commit deadbeef1 --feature 001-first-feature --dir "$PDIR18" 2>&1)"
+RC=$?
+assert_rc "fr009-audit-set-exit-0" 0 "$RC" "$OUT"
+
+FINDING_F002_AFTER="$(extract_finding_block "$AUDIT18" | md5 -q 2>/dev/null || extract_finding_block "$AUDIT18" | md5sum | awk '{print $1}')"
+if [[ "$FINDING_F002_BEFORE" == "$FINDING_F002_AFTER" ]]; then
+  assert_true "fr009-audit-set-other-finding-byte-unchanged" "true"
+else
+  assert_true "fr009-audit-set-other-finding-byte-unchanged" "false"
+fi
+
+if node -e '
+  const fs = require("fs");
+  const io = require(process.argv[2]);
+  const { fm } = io.parseNestedFrontmatter(fs.readFileSync(process.argv[1], "utf8"));
+  const f1 = fm.findings.find((f) => f.id === "F-001");
+  if (!f1 || f1.status !== "fixed" || f1.fixed_commit !== "deadbeef1" || f1.feature !== "001-first-feature") process.exit(1);
+  const f2 = fm.findings.find((f) => f.id === "F-002");
+  if (!f2 || f2.status !== "open" || f2.fixed_commit !== null || f2.feature !== null) process.exit(1);
+  process.exit(0);
+' "$AUDIT18" "$REPO_ROOT/_shared/lib/io.cjs"; then
+  assert_true "fr009-audit-set-only-target-finding-mutated" "true"
+else
+  assert_true "fr009-audit-set-only-target-finding-mutated" "false"
+fi
+
+if grep -q "F-001 fixed" "$AUDIT18" && grep -q "deadbeef1" "$AUDIT18"; then
+  assert_true "fr009-audit-set-changelog-line-appended" "true"
+else
+  assert_true "fr009-audit-set-changelog-line-appended" "false"
+fi
+
+OUT="$(node "$TOOLS" product validate --dir "$PDIR18" 2>&1)"
+RC=$?
+assert_rc "fr009-audit-set-validate-exit-0" 0 "$RC" "$OUT"
+
+if node -e '
+  const data = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+  const a = data.audits.find((x) => x.path === "docs/product/audits/2026-07-13-general.md");
+  process.exit(a && a.open === 1 && a.fixed === 1 ? 0 : 1);
+' "$PDIR18/index.json"; then
+  assert_true "fr009-audit-set-index-json-counts-updated" "true"
+else
+  assert_true "fr009-audit-set-index-json-counts-updated" "false"
+fi
+
+# ===========================================================================
+# Scenario 19 (FR-010): `audit-set --finding` naming an id absent from the
+# target file fails (non-zero exit) and modifies nothing.
+# ===========================================================================
+AUDIT18_BEFORE_UNKNOWN_FINDING_HASH="$(hash_file "$AUDIT18")"
+OUT="$(node "$TOOLS" product audit-set --audit "$AUDIT18" --finding F-999 --status fixed --dir "$PDIR18" 2>&1)"
+RC=$?
+assert_rc "fr010-audit-set-unknown-finding-nonzero-exit" 1 "$RC" "$OUT"
+assert_contains "fr010-audit-set-unknown-finding-error-mentions-finding" "$OUT" "F-999"
+AUDIT18_AFTER_UNKNOWN_FINDING_HASH="$(hash_file "$AUDIT18")"
+if [[ "$AUDIT18_BEFORE_UNKNOWN_FINDING_HASH" == "$AUDIT18_AFTER_UNKNOWN_FINDING_HASH" ]]; then
+  assert_true "fr010-audit-set-unknown-finding-no-write" "true"
+else
+  assert_true "fr010-audit-set-unknown-finding-no-write" "false"
+fi
+
+# ===========================================================================
+# Scenario 20 (FR-011): `audit-set --feature` naming an id absent from
+# ROADMAP.md fails (non-zero exit, clear error) and modifies nothing.
+# ===========================================================================
+AUDIT18_BEFORE_UNKNOWN_FEATURE_HASH="$(hash_file "$AUDIT18")"
+OUT="$(node "$TOOLS" product audit-set --audit "$AUDIT18" --finding F-002 --status fixed --feature 999-does-not-exist --dir "$PDIR18" 2>&1)"
+RC=$?
+assert_rc "fr011-audit-set-unknown-feature-nonzero-exit" 1 "$RC" "$OUT"
+assert_contains "fr011-audit-set-unknown-feature-error-mentions-feature-id" "$OUT" "999-does-not-exist"
+AUDIT18_AFTER_UNKNOWN_FEATURE_HASH="$(hash_file "$AUDIT18")"
+if [[ "$AUDIT18_BEFORE_UNKNOWN_FEATURE_HASH" == "$AUDIT18_AFTER_UNKNOWN_FEATURE_HASH" ]]; then
+  assert_true "fr011-audit-set-unknown-feature-no-write" "true"
+else
+  assert_true "fr011-audit-set-unknown-feature-no-write" "false"
+fi
+
+# ===========================================================================
+# Scenario 21 (edge case): a transition FROM 'fixed' back TO 'open'
+# (regression re-open) must be a LEGAL transition, not blocked.
+# ===========================================================================
+OUT="$(node "$TOOLS" product audit-set --audit "$AUDIT18" --finding F-001 --status open --dir "$PDIR18" 2>&1)"
+RC=$?
+assert_rc "edge-audit-set-fixed-to-open-regression-allowed-exit-0" 0 "$RC" "$OUT"
+
+if node -e '
+  const fs = require("fs");
+  const io = require(process.argv[2]);
+  const { fm } = io.parseNestedFrontmatter(fs.readFileSync(process.argv[1], "utf8"));
+  const f1 = fm.findings.find((f) => f.id === "F-001");
+  process.exit(f1 && f1.status === "open" ? 0 : 1);
+' "$AUDIT18" "$REPO_ROOT/_shared/lib/io.cjs"; then
+  assert_true "edge-audit-set-fixed-to-open-status-updated" "true"
+else
+  assert_true "edge-audit-set-fixed-to-open-status-updated" "false"
+fi
+
+OUT="$(node "$TOOLS" product validate --dir "$PDIR18" 2>&1)"
+RC=$?
+assert_rc "edge-audit-set-fixed-to-open-validate-exit-0" 0 "$RC" "$OUT"
+
+# ===========================================================================
+# Scenario 22 (FR-019, Wave 4 twin of Wave 3's mid-write fault injection):
+# audit-publish/audit-set reuse the SAME lock + tmp/rename transaction — a
+# fault forced between tmp-write and rename must leave all affected files in
+# their prior consistent state for both writers.
+# ===========================================================================
+WORK22="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-schema-v11-audit-fault.XXXXXX")"
+PDIR22="$WORK22/docs/product"
+write_base_roadmap "$PDIR22" "schema-v11-audit-fault"
+write_analysis_fixture "$WORK22/analysis.md" "general" "2026-07-13T09:00:00.000Z" \
+  "id=F-001; severity=MAJOR; category=x; location=x; description=d; recommendation=r"
+
+OUT="$(A1_TEST_FAIL_RENAME_AT_INDEX=0 node "$TOOLS" product audit-publish --analysis "$WORK22/analysis.md" --dir "$PDIR22" 2>&1)"
+RC=$?
+assert_rc "fr019-audit-publish-fault-nonzero-exit" 1 "$RC" "$OUT"
+if [[ -f "$PDIR22/audits/2026-07-13-general.md" ]]; then
+  assert_true "fr019-audit-publish-fault-no-partial-file" "false"
+else
+  assert_true "fr019-audit-publish-fault-no-partial-file" "true"
+fi
+if find "$PDIR22" -name '*.tmp.*' | grep -q .; then
+  assert_true "fr019-audit-publish-fault-no-leftover-tmp-files" "false"
+else
+  assert_true "fr019-audit-publish-fault-no-leftover-tmp-files" "true"
+fi
+
+node "$TOOLS" product audit-publish --analysis "$WORK22/analysis.md" --dir "$PDIR22" >/dev/null 2>&1
+AUDIT22="$PDIR22/audits/2026-07-13-general.md"
+AUDIT22_BEFORE_HASH="$(hash_file "$AUDIT22")"
+INDEX22_BEFORE_HASH="$(hash_file "$PDIR22/index.json")"
+
+OUT="$(A1_TEST_FAIL_RENAME_AT_INDEX=1 node "$TOOLS" product audit-set --audit "$AUDIT22" --finding F-001 --status fixed --commit deadbeef2 --dir "$PDIR22" 2>&1)"
+RC=$?
+assert_rc "fr019-audit-set-fault-nonzero-exit" 1 "$RC" "$OUT"
+
+AUDIT22_AFTER_HASH="$(hash_file "$AUDIT22")"
+INDEX22_AFTER_HASH="$(hash_file "$PDIR22/index.json")"
+if [[ "$AUDIT22_BEFORE_HASH" == "$AUDIT22_AFTER_HASH" ]]; then
+  assert_true "fr019-audit-set-fault-audit-file-reverted" "true"
+else
+  assert_true "fr019-audit-set-fault-audit-file-reverted" "false"
+fi
+if [[ "$INDEX22_BEFORE_HASH" == "$INDEX22_AFTER_HASH" ]]; then
+  assert_true "fr019-audit-set-fault-index-json-reverted" "true"
+else
+  assert_true "fr019-audit-set-fault-index-json-reverted" "false"
+fi
+if find "$PDIR22" -name '*.tmp.*' | grep -q .; then
+  assert_true "fr019-audit-set-fault-no-leftover-tmp-files" "false"
+else
+  assert_true "fr019-audit-set-fault-no-leftover-tmp-files" "true"
 fi
 
 echo "product-schema-v11 fixtures: $pass passed, $fail failed"

@@ -533,6 +533,12 @@ function main() {
       } else if (sub === 'vision-touch') {
         product.cmdProductVisionTouch(rest);
         return; // unreachable — cmdProductVisionTouch calls process.exit()
+      } else if (sub === 'audit-publish') {
+        product.cmdProductAuditPublish(rest);
+        return; // unreachable — cmdProductAuditPublish calls process.exit()
+      } else if (sub === 'audit-set') {
+        product.cmdProductAuditSet(rest);
+        return; // unreachable — cmdProductAuditSet calls process.exit()
       } else if (sub === 'import') {
         product.cmdProductImport(rest);
         return; // unreachable — cmdProductImport calls process.exit()
