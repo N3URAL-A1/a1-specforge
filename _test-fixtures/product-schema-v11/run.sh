@@ -37,6 +37,22 @@
 #     vision/audits also validates against the same contract
 #   FR-018: an audit referencing a nonexistent ROADMAP.md feature id fails
 #     `product validate`; an audit referencing an existing feature id passes
+#
+# Wave 3 additions (spec 003, vision-init/vision-touch CLI writers —
+# FR-003, FR-004, FR-019):
+#   FR-003: `product vision-init --title ... --pillar ...` in a project with
+#     no VISION.md creates it, index.json's vision block becomes non-null,
+#     and `product validate` passes; running vision-init again refuses
+#     (non-zero exit) and leaves the existing VISION.md byte-unchanged.
+#   FR-004: `product vision-touch` on a hand-edited VISION.md bumps
+#     `updated` to today and regenerates index.json's vision.updated,
+#     while the prose body AND pillars[] stay byte-for-byte unchanged.
+#   FR-019: a mid-write fault injected between tmp-write and rename (via the
+#     A1_TEST_FAIL_RENAME_AT_INDEX seam in lib/locks.cjs, the same mechanism
+#     product-docs/run-tests.sh uses for `product stage`) leaves every
+#     affected file in its PRIOR consistent state for both vision-init (no
+#     VISION.md created) and vision-touch (VISION.md/index.json/NEXT.md all
+#     reverted to their pre-call content).
 set -u
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -636,6 +652,280 @@ EOF
 OUT="$(node "$TOOLS" product validate --dir "$PDIR11" 2>&1)"
 RC=$?
 assert_rc "fr018-known-feature-id-exit-0" 0 "$RC" "$OUT"
+
+# write_base_roadmap_no_vision_no_audits helper already exists via
+# write_base_roadmap (Scenario 8's PDIR8 pattern) — reused below for the
+# Wave 3 scenarios by scaffolding a fresh work dir per scenario, same style.
+
+hash_file() {
+  if [[ -f "$1" ]]; then
+    md5 -q "$1" 2>/dev/null || md5sum "$1" | awk '{print $1}'
+  else
+    echo "MISSING"
+  fi
+}
+
+# ===========================================================================
+# Scenario 12 (FR-003): `product vision-init` in a project with no VISION.md
+# creates it, index.json's vision block becomes non-null, and `product
+# validate` passes. Running vision-init again refuses (non-zero exit) and
+# leaves the existing VISION.md byte-unchanged.
+# ===========================================================================
+WORK12="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-schema-v11-vision-init.XXXXXX")"
+PDIR12="$WORK12/docs/product"
+write_base_roadmap "$PDIR12" "schema-v11-vision-init"
+
+test -f "$PDIR12/VISION.md" && echo "FAIL  vision-init-precondition: VISION.md should not exist yet" && fail=$((fail + 1))
+
+OUT="$(node "$TOOLS" product vision-init --title "Schema V11 Vision Init" --pillar reliability:Reliability:"The product never loses user data." --dir "$PDIR12" 2>&1)"
+RC=$?
+assert_rc "vision-init-creates-file-exit-0" 0 "$RC" "$OUT"
+
+if [[ -f "$PDIR12/VISION.md" ]]; then
+  assert_true "vision-init-file-exists" "true"
+else
+  assert_true "vision-init-file-exists" "false"
+fi
+
+OUT="$(node "$TOOLS" product validate --dir "$PDIR12" 2>&1)"
+RC=$?
+assert_rc "vision-init-validate-exit-0" 0 "$RC" "$OUT"
+
+if node -e '
+  const data = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+  process.exit(data.vision !== null ? 0 : 1);
+' "$PDIR12/index.json"; then
+  assert_true "vision-init-index-json-vision-non-null" "true"
+else
+  assert_true "vision-init-index-json-vision-non-null" "false"
+fi
+
+# Re-init refuses: non-zero exit, existing file byte-untouched.
+VISION_INIT_BEFORE_HASH="$(hash_file "$PDIR12/VISION.md")"
+OUT="$(node "$TOOLS" product vision-init --title "Different Title" --pillar other:Other:"Different summary." --dir "$PDIR12" 2>&1)"
+RC=$?
+assert_rc "vision-init-reinit-refuses-nonzero-exit" 1 "$RC" "$OUT"
+VISION_INIT_AFTER_HASH="$(hash_file "$PDIR12/VISION.md")"
+if [[ "$VISION_INIT_BEFORE_HASH" == "$VISION_INIT_AFTER_HASH" ]]; then
+  assert_true "vision-init-reinit-file-untouched" "true"
+else
+  assert_true "vision-init-reinit-file-untouched" "false"
+fi
+
+# vision-init with zero --pillar flags must also refuse (schema v1.1's
+# non-empty pillars[] rule, FR-001) — reject at the CLI boundary rather than
+# writing a VISION.md that immediately fails `product validate`.
+WORK12B="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-schema-v11-vision-init-nopillar.XXXXXX")"
+PDIR12B="$WORK12B/docs/product"
+write_base_roadmap "$PDIR12B" "schema-v11-vision-init-nopillar"
+OUT="$(node "$TOOLS" product vision-init --title "No Pillars" --dir "$PDIR12B" 2>&1)"
+RC=$?
+assert_rc "vision-init-zero-pillars-refuses-nonzero-exit" 1 "$RC" "$OUT"
+if [[ -f "$PDIR12B/VISION.md" ]]; then
+  assert_true "vision-init-zero-pillars-no-file-written" "false"
+else
+  assert_true "vision-init-zero-pillars-no-file-written" "true"
+fi
+
+# ===========================================================================
+# Scenario 13 (FR-004): a user hand-edits VISION.md's prose body, then runs
+# `product vision-touch` — `updated` is bumped to today, index.json is
+# regenerated (vision.updated reflects the bump), and the prose body AND
+# pillars[] stay byte-for-byte unchanged.
+# ===========================================================================
+WORK13="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-schema-v11-vision-touch.XXXXXX")"
+PDIR13="$WORK13/docs/product"
+write_base_roadmap "$PDIR13" "schema-v11-vision-touch"
+mkdir -p "$PDIR13"
+cat > "$PDIR13/VISION.md" <<'EOF'
+---
+schema_version: 1
+type: vision
+project: schema-v11-vision-touch
+title: Schema V11 Vision Touch — Vision
+updated: 2020-01-01
+pillars:
+  - id: reliability
+    title: Reliability
+    summary: The product never loses user data.
+  - id: speed
+    title: Speed
+    summary: Common workflows complete in under a second.
+---
+
+# Schema V11 Vision Touch — Vision
+
+> Hand-edited prose body — must survive `vision-touch` byte-unchanged.
+
+Some additional hand-written narrative text goes here.
+EOF
+
+# Capture the prose body (everything after the closing "---" of frontmatter)
+# and the pillars[] YAML block specifically, so the assertion is precise
+# about WHAT must stay unchanged (FR-004's explicit contract), not just "the
+# whole file changed only in one place by luck".
+extract_prose_body() {
+  # Second "---" onward, skipping the leading blank line the same way
+  # parseNestedFrontmatter does.
+  awk 'BEGIN{c=0} /^---$/{c++; next} c>=2{print}' "$1"
+}
+extract_pillars_block() {
+  awk '/^pillars:/{p=1} p{print} /^---$/{if(p) exit}' "$1"
+}
+
+VISION_TOUCH_BODY_BEFORE="$(extract_prose_body "$PDIR13/VISION.md" | md5 -q 2>/dev/null || extract_prose_body "$PDIR13/VISION.md" | md5sum | awk '{print $1}')"
+VISION_TOUCH_PILLARS_BEFORE="$(extract_pillars_block "$PDIR13/VISION.md" | md5 -q 2>/dev/null || extract_pillars_block "$PDIR13/VISION.md" | md5sum | awk '{print $1}')"
+
+OUT="$(node "$TOOLS" product vision-touch --dir "$PDIR13" 2>&1)"
+RC=$?
+assert_rc "vision-touch-exit-0" 0 "$RC" "$OUT"
+
+VISION_TOUCH_BODY_AFTER="$(extract_prose_body "$PDIR13/VISION.md" | md5 -q 2>/dev/null || extract_prose_body "$PDIR13/VISION.md" | md5sum | awk '{print $1}')"
+VISION_TOUCH_PILLARS_AFTER="$(extract_pillars_block "$PDIR13/VISION.md" | md5 -q 2>/dev/null || extract_pillars_block "$PDIR13/VISION.md" | md5sum | awk '{print $1}')"
+
+if [[ "$VISION_TOUCH_BODY_BEFORE" == "$VISION_TOUCH_BODY_AFTER" ]]; then
+  assert_true "vision-touch-prose-body-byte-unchanged" "true"
+else
+  assert_true "vision-touch-prose-body-byte-unchanged" "false"
+fi
+if [[ "$VISION_TOUCH_PILLARS_BEFORE" == "$VISION_TOUCH_PILLARS_AFTER" ]]; then
+  assert_true "vision-touch-pillars-byte-unchanged" "true"
+else
+  assert_true "vision-touch-pillars-byte-unchanged" "false"
+fi
+
+TODAY="$(date +%Y-%m-%d)"
+if grep -q "^updated: ${TODAY}$" "$PDIR13/VISION.md"; then
+  assert_true "vision-touch-updated-bumped-to-today" "true"
+else
+  assert_true "vision-touch-updated-bumped-to-today" "false"
+fi
+
+if node -e '
+  const data = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+  process.exit(data.vision !== null && data.vision.updated === process.argv[2] ? 0 : 1);
+' "$PDIR13/index.json" "$TODAY"; then
+  assert_true "vision-touch-index-json-vision-updated-bumped" "true"
+else
+  assert_true "vision-touch-index-json-vision-updated-bumped" "false"
+fi
+
+# vision-touch against a project with no VISION.md must refuse, not create one.
+WORK13B="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-schema-v11-vision-touch-missing.XXXXXX")"
+PDIR13B="$WORK13B/docs/product"
+write_base_roadmap "$PDIR13B" "schema-v11-vision-touch-missing"
+OUT="$(node "$TOOLS" product vision-touch --dir "$PDIR13B" 2>&1)"
+RC=$?
+assert_rc "vision-touch-missing-vision-refuses-nonzero-exit" 1 "$RC" "$OUT"
+if [[ -f "$PDIR13B/VISION.md" ]]; then
+  assert_true "vision-touch-missing-vision-no-file-created" "false"
+else
+  assert_true "vision-touch-missing-vision-no-file-created" "true"
+fi
+
+# ===========================================================================
+# Scenario 14 (FR-019): mid-write fault injection — a failure forced between
+# tmp-write and rename must leave ALL affected files in their prior
+# consistent state. Uses the same A1_TEST_FAIL_RENAME_AT_INDEX seam in
+# lib/locks.cjs's writeAllOrNothing() that product-docs/run-tests.sh already
+# exercises for `product stage` — this is the transaction guarantee shared
+# by every new writer in this feature (vision-init/vision-touch here, the
+# Wave 4 audit writers reuse the identical primitive).
+# ===========================================================================
+
+# --- 14a: vision-init, fault at index 1 (index.json) — VISION.md (index 0)
+# has already been renamed into place on disk when the injected throw fires;
+# the rollback must remove it again (it did not pre-exist), leaving
+# docs/product/ exactly as it was before the call (no VISION.md at all).
+WORK14A="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-schema-v11-vision-init-fault.XXXXXX")"
+PDIR14A="$WORK14A/docs/product"
+write_base_roadmap "$PDIR14A" "schema-v11-vision-init-fault"
+
+ROADMAP_14A_BEFORE="$(hash_file "$PDIR14A/ROADMAP.md")"
+NEXT_14A_BEFORE="$(hash_file "$PDIR14A/NEXT.md")"
+
+OUT="$(A1_TEST_FAIL_RENAME_AT_INDEX=1 node "$TOOLS" product vision-init --title "Fault Vision" --pillar reliability:Reliability:"Never lose data." --dir "$PDIR14A" 2>&1)"
+RC=$?
+assert_rc "fr019-vision-init-fault-nonzero-exit" 1 "$RC" "$OUT"
+
+if echo "$OUT" | grep -q "A1_TEST_FAIL_RENAME_AT_INDEX injected failure at index 1" && \
+   echo "$OUT" | grep -q "all changes rolled back"; then
+  assert_true "fr019-vision-init-fault-injected-fault-confirmed" "true"
+else
+  assert_true "fr019-vision-init-fault-injected-fault-confirmed" "false"
+fi
+
+if [[ -f "$PDIR14A/VISION.md" ]]; then
+  assert_true "fr019-vision-init-fault-no-partial-vision-file" "false"
+else
+  assert_true "fr019-vision-init-fault-no-partial-vision-file" "true"
+fi
+
+ROADMAP_14A_AFTER="$(hash_file "$PDIR14A/ROADMAP.md")"
+NEXT_14A_AFTER="$(hash_file "$PDIR14A/NEXT.md")"
+if [[ "$ROADMAP_14A_BEFORE" == "$ROADMAP_14A_AFTER" && "$NEXT_14A_BEFORE" == "$NEXT_14A_AFTER" ]]; then
+  assert_true "fr019-vision-init-fault-other-files-unchanged" "true"
+else
+  assert_true "fr019-vision-init-fault-other-files-unchanged" "false"
+fi
+
+# No leftover .tmp files from the aborted write.
+if find "$PDIR14A" -name '*.tmp.*' | grep -q .; then
+  assert_true "fr019-vision-init-fault-no-leftover-tmp-files" "false"
+else
+  assert_true "fr019-vision-init-fault-no-leftover-tmp-files" "true"
+fi
+
+# --- 14b: vision-touch, fault at index 2 (NEXT.md) — VISION.md (index 0) and
+# index.json (index 1) have already been renamed into place when the
+# injected throw fires; the rollback must restore BOTH to their exact prior
+# content (not just the file that "failed"), proving the all-or-nothing
+# guarantee covers every file in the write set, not only the last one.
+WORK14B="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-schema-v11-vision-touch-fault.XXXXXX")"
+PDIR14B="$WORK14B/docs/product"
+write_base_roadmap "$PDIR14B" "schema-v11-vision-touch-fault"
+node "$TOOLS" product vision-init --title "Pre-fault Vision" --pillar reliability:Reliability:"Never lose data." --dir "$PDIR14B" >/dev/null 2>&1
+
+VISION_14B_BEFORE="$(hash_file "$PDIR14B/VISION.md")"
+INDEX_14B_BEFORE="$(hash_file "$PDIR14B/index.json")"
+NEXT_14B_BEFORE="$(hash_file "$PDIR14B/NEXT.md")"
+
+OUT="$(A1_TEST_FAIL_RENAME_AT_INDEX=2 node "$TOOLS" product vision-touch --dir "$PDIR14B" 2>&1)"
+RC=$?
+assert_rc "fr019-vision-touch-fault-nonzero-exit" 1 "$RC" "$OUT"
+
+if echo "$OUT" | grep -q "A1_TEST_FAIL_RENAME_AT_INDEX injected failure at index 2" && \
+   echo "$OUT" | grep -q "all changes rolled back"; then
+  assert_true "fr019-vision-touch-fault-injected-fault-confirmed" "true"
+else
+  assert_true "fr019-vision-touch-fault-injected-fault-confirmed" "false"
+fi
+
+VISION_14B_AFTER="$(hash_file "$PDIR14B/VISION.md")"
+INDEX_14B_AFTER="$(hash_file "$PDIR14B/index.json")"
+NEXT_14B_AFTER="$(hash_file "$PDIR14B/NEXT.md")"
+
+if [[ "$VISION_14B_BEFORE" == "$VISION_14B_AFTER" ]]; then
+  assert_true "fr019-vision-touch-fault-vision-md-reverted" "true"
+else
+  assert_true "fr019-vision-touch-fault-vision-md-reverted" "false"
+fi
+if [[ "$INDEX_14B_BEFORE" == "$INDEX_14B_AFTER" ]]; then
+  assert_true "fr019-vision-touch-fault-index-json-reverted" "true"
+else
+  assert_true "fr019-vision-touch-fault-index-json-reverted" "false"
+fi
+if [[ "$NEXT_14B_BEFORE" == "$NEXT_14B_AFTER" ]]; then
+  assert_true "fr019-vision-touch-fault-next-md-unchanged" "true"
+else
+  assert_true "fr019-vision-touch-fault-next-md-unchanged" "false"
+fi
+
+if find "$PDIR14B" -name '*.tmp.*' | grep -q .; then
+  assert_true "fr019-vision-touch-fault-no-leftover-tmp-files" "false"
+else
+  assert_true "fr019-vision-touch-fault-no-leftover-tmp-files" "true"
+fi
 
 echo "product-schema-v11 fixtures: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

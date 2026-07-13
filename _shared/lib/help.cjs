@@ -338,6 +338,28 @@ Usage:
                   Auto-appends a changelog line and regenerates
                   index.json/NEXT.md. Exit: 0 ok, 1 usage/missing-feature/
                   already-exists/write error.
+  a1-tools product vision-init --title <text>
+                  --pillar id:title:summary [--pillar ...] [--dir docs/product]
+                  Scaffolds docs/product/VISION.md (schema v1.1: schema_
+                  version/type/project/title/updated/pillars[]). At least
+                  one --pillar is required (empty/omitted pillars[] is
+                  invalid per schema v1.1 — see 'product validate').
+                  Refuses (exit 1, no write) if VISION.md already exists —
+                  use 'product vision-touch' to bump 'updated' instead.
+                  Regenerates index.json (vision block becomes non-null)
+                  under the same lock/tmp/rename transaction as every other
+                  product-mutating command. Exit: 0 ok, 1 usage/already-
+                  exists/write error.
+  a1-tools product vision-touch [--dir docs/product]
+                  Bumps VISION.md's frontmatter 'updated' field to today's
+                  date and regenerates index.json — a targeted textual
+                  replace of ONLY the 'updated:' line, so the prose body
+                  and every other frontmatter field (including pillars[])
+                  stay byte-for-byte unchanged. Refuses (exit 1) if
+                  VISION.md does not exist yet — run 'product vision-init'
+                  first. Same lock/tmp/rename transaction as every other
+                  product-mutating command. Exit: 0 ok, 1 usage/missing-
+                  file/write error.
   a1-tools product validate [--dir docs/product]
                   Read-only. Validates <dir>/ROADMAP.md frontmatter against
                   the schema-v1 contract (docs/product/SCHEMA.md section 1 /

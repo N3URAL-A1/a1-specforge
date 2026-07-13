@@ -527,6 +527,12 @@ function main() {
       } else if (sub === 'feature-init') {
         product.cmdProductFeatureInit(rest);
         return; // unreachable — cmdProductFeatureInit calls process.exit()
+      } else if (sub === 'vision-init') {
+        product.cmdProductVisionInit(rest);
+        return; // unreachable — cmdProductVisionInit calls process.exit()
+      } else if (sub === 'vision-touch') {
+        product.cmdProductVisionTouch(rest);
+        return; // unreachable — cmdProductVisionTouch calls process.exit()
       } else if (sub === 'import') {
         product.cmdProductImport(rest);
         return; // unreachable — cmdProductImport calls process.exit()
