@@ -950,6 +950,131 @@ const MILESTONE_STATUSES = new Set(['done', 'in-progress', 'planned']);
 const FEATURE_STATUSES = new Set(['done', 'in-flight', 'planned', 'cancelled']);
 const FEATURE_STAGES = new Set([null, 'started', 'complete', 'review', 'verify', 'merge', 'origin-cleanup', 'done']);
 
+// ---------------------------------------------------------------------------
+// Schema v1.1 additions (spec 003-product-schema-v1.1-vision-audits, Wave 1):
+// VISION.md + docs/product/audits/<date>-<focus>.md. Both file types are
+// OPTIONAL — absence is valid under schema v1.1 (FR-002) and MUST NOT affect
+// validation of a v1-only project. See docs/product/SCHEMA.md sections 6/7
+// for the authoritative prose contract; field names/checks here mirror it.
+// ---------------------------------------------------------------------------
+
+const AUDIT_FOCUS_VALUES = new Set(['general', 'security', 'architecture', 'quality', 'onboarding']);
+const AUDIT_SEVERITIES = new Set(['BLOCKER', 'MAJOR', 'MINOR']);
+const FINDING_STATUSES = new Set(['open', 'fixed', 'obsolete', 'accepted']);
+
+/** Parse a single-line inline YAML flow-mapping like
+ * `{ blocker: 5, major: 11, minor: 15 }` into a plain object of scalars.
+ * `parseNestedFrontmatter` (lib/io.cjs) has no general nested-object
+ * support — it only handles scalars, scalar arrays, and arrays of flat
+ * objects — so a top-level flow-mapping value comes back as the raw
+ * un-parsed string. This is a small, deliberately narrow helper (only the
+ * `counts` field in an audit file uses this shape) rather than a rewrite
+ * of the shared parser, which is out of this wave's scope. Returns null if
+ * `raw` is not a string or does not look like `{ ... }`. Pure. */
+function parseInlineFlowObject(raw) {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) return null;
+  const inner = trimmed.slice(1, -1).trim();
+  if (inner === '') return {};
+  const obj = {};
+  for (const pair of inner.split(',')) {
+    const idx = pair.indexOf(':');
+    if (idx === -1) continue;
+    const key = pair.slice(0, idx).trim();
+    const valueRaw = pair.slice(idx + 1).trim();
+    if (/^-?[0-9]+$/.test(valueRaw)) {
+      obj[key] = parseInt(valueRaw, 10);
+    } else if (valueRaw === 'true') {
+      obj[key] = true;
+    } else if (valueRaw === 'false') {
+      obj[key] = false;
+    } else if (valueRaw === 'null') {
+      obj[key] = null;
+    } else {
+      obj[key] = valueRaw.replace(/^["']|["']$/g, '');
+    }
+  }
+  return obj;
+}
+
+/** Validate a parsed VISION.md frontmatter object against the schema-v1.1
+ * contract (docs/product/SCHEMA.md section 6). Pure — no I/O. Returns
+ * { valid, errors }. Enforces FR-001's clarified rule: `pillars[]` MUST be
+ * present and non-empty (empty array OR omitted key are both INVALID). */
+function validateVisionFm(fm) {
+  const errors = [];
+  const req = (key, ok, msg) => {
+    if (!ok) errors.push(`${key}: ${msg}`);
+  };
+
+  if (fm.schema_version !== 1) errors.push(`schema_version: must be integer 1, got ${JSON.stringify(fm.schema_version)}`);
+  if (fm.type !== 'vision') errors.push(`type: must be "vision", got ${JSON.stringify(fm.type)}`);
+  req('project', typeof fm.project === 'string' && PRODUCT_SLUG_RE.test(fm.project), `must be kebab-case slug, got ${JSON.stringify(fm.project)}`);
+  req('title', typeof fm.title === 'string' && fm.title.length > 0, 'must be a non-empty string');
+  req('updated', typeof fm.updated === 'string' && YYYY_MM_DD_RE.test(fm.updated), `must be YYYY-MM-DD, got ${JSON.stringify(fm.updated)}`);
+
+  const pillars = Array.isArray(fm.pillars) ? fm.pillars : null;
+  req('pillars', pillars !== null && pillars.length > 0, 'must be a non-empty array — at least one pillar is required whenever VISION.md exists (empty or omitted pillars[] is invalid)');
+  if (pillars) {
+    pillars.forEach((p, i) => {
+      const prefix = `pillars[${i}]`;
+      req(`${prefix}.id`, typeof p.id === 'string' && PRODUCT_SLUG_RE.test(p.id), `must be kebab-case slug, got ${JSON.stringify(p.id)}`);
+      req(`${prefix}.title`, typeof p.title === 'string' && p.title.length > 0, 'must be a non-empty string');
+      req(`${prefix}.summary`, typeof p.summary === 'string' && p.summary.length > 0, 'must be a non-empty string');
+    });
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+/** Validate a parsed audits/<date>-<focus>.md frontmatter object against the
+ * schema-v1.1 contract (docs/product/SCHEMA.md section 7). Pure — no I/O.
+ * Returns { valid, errors }. Enforces FR-005 (required fields), FR-006
+ * (findings[].status enum). Does NOT cross-check findings[].feature against
+ * ROADMAP.md — that referential check is FR-018 (Wave 2), a read-time
+ * concern layered on top of this shape validation. */
+function validateAuditFm(fm) {
+  const errors = [];
+  const req = (key, ok, msg) => {
+    if (!ok) errors.push(`${key}: ${msg}`);
+  };
+
+  if (fm.schema_version !== 1) errors.push(`schema_version: must be integer 1, got ${JSON.stringify(fm.schema_version)}`);
+  if (fm.type !== 'audit') errors.push(`type: must be "audit", got ${JSON.stringify(fm.type)}`);
+  req('project', typeof fm.project === 'string' && PRODUCT_SLUG_RE.test(fm.project), `must be kebab-case slug, got ${JSON.stringify(fm.project)}`);
+  req('focus', AUDIT_FOCUS_VALUES.has(fm.focus), `must be one of ${[...AUDIT_FOCUS_VALUES].join('|')}, got ${JSON.stringify(fm.focus)}`);
+  req('date', typeof fm.date === 'string' && YYYY_MM_DD_RE.test(fm.date), `must be YYYY-MM-DD, got ${JSON.stringify(fm.date)}`);
+  req('source', typeof fm.source === 'string' && fm.source.length > 0, 'must be a non-empty provenance string');
+  req('verdict', typeof fm.verdict === 'string' && fm.verdict.length > 0, 'must be a non-empty string');
+
+  const counts = parseInlineFlowObject(fm.counts);
+  req('counts', counts !== null, 'must be an inline flow-mapping, e.g. { blocker: 0, major: 0, minor: 0 }');
+  if (counts) {
+    ['blocker', 'major', 'minor'].forEach((k) => {
+      req(`counts.${k}`, typeof counts[k] === 'number' && Number.isInteger(counts[k]), `must be an integer, got ${JSON.stringify(counts[k])}`);
+    });
+  }
+
+  const findings = Array.isArray(fm.findings) ? fm.findings : null;
+  req('findings', findings !== null, 'must be an array (may be empty)');
+  if (findings) {
+    findings.forEach((f, i) => {
+      const prefix = `findings[${i}]`;
+      req(`${prefix}.id`, typeof f.id === 'string' && f.id.length > 0, 'must be a non-empty finding id, e.g. F-001');
+      req(`${prefix}.severity`, AUDIT_SEVERITIES.has(f.severity), `must be one of ${[...AUDIT_SEVERITIES].join('|')}, got ${JSON.stringify(f.severity)}`);
+      req(`${prefix}.category`, typeof f.category === 'string' && f.category.length > 0, 'must be a non-empty string');
+      req(`${prefix}.status`, FINDING_STATUSES.has(f.status), `must be one of ${[...FINDING_STATUSES].join('|')}, got ${JSON.stringify(f.status)}`);
+      req(`${prefix}.fixed_commit`, f.fixed_commit === null || (typeof f.fixed_commit === 'string' && f.fixed_commit.length > 0), `must be a non-empty commit sha or null, got ${JSON.stringify(f.fixed_commit)}`);
+      req(`${prefix}.feature`, f.feature === null || (typeof f.feature === 'string' && FEATURE_ID_RE.test(f.feature)), `must be null or a ###-kebab-slug feature id, got ${JSON.stringify(f.feature)}`);
+    });
+  }
+
+  req('last_validated', typeof fm.last_validated === 'string' && YYYY_MM_DD_RE.test(fm.last_validated), `must be YYYY-MM-DD, got ${JSON.stringify(fm.last_validated)}`);
+
+  return { valid: errors.length === 0, errors };
+}
+
 /** Validate a parsed ROADMAP.md frontmatter object against the schema-v1
  * contract (docs/product/SCHEMA.md section 1). Pure — no I/O. Returns
  * { valid, errors } where errors is a flat array of human-readable strings
@@ -1042,15 +1167,17 @@ function detectGermanMarkers(content, label) {
   return `${label}: contains German-language markers (umlauts/ß or common German function words) — docs/product/ artifacts must be authored in English (FR-016). Best-effort lint; review for accidental German prose.`;
 }
 
-/** product validate [--dir docs/product]: read-only schema-v1 check of
+/** product validate [--dir docs/product]: read-only schema check of
  * <dir>/ROADMAP.md frontmatter against docs/product/SCHEMA.md section 1 /
- * index.schema.json, plus a best-effort FR-016 English-only lint (warning
- * only, never affects `valid`/exit code). The FR-016 lint covers ALL
- * docs/product/ artifact types named by the FR — ROADMAP.md, NEXT.md,
- * index.json (scanned as raw text; a German string value still trips the
- * marker regex), and every features/<###>-<slug>/feature.md — not just
- * ROADMAP.md. Never writes any file. Exit: 0 valid, 1 invalid or
- * ROADMAP.md missing. */
+ * index.schema.json, plus (schema v1.1, Wave 1) VISION.md (section 6) and
+ * every docs/product/audits/*.md file (section 7) WHEN PRESENT — both are
+ * optional; their absence is valid and adds no error (FR-002). Also runs a
+ * best-effort FR-016 English-only lint (warning only, never affects
+ * `valid`/exit code). The FR-016 lint covers ALL docs/product/ artifact
+ * types named by the FR — ROADMAP.md, NEXT.md, index.json (scanned as raw
+ * text; a German string value still trips the marker regex), every
+ * features/<###>-<slug>/feature.md, VISION.md, and every audits/*.md.
+ * Never writes any file. Exit: 0 valid, 1 invalid or ROADMAP.md missing. */
 function cmdProductValidate(args) {
   const flags = parseFlags(args, { dir: 'value' });
   const dir = productDirFromFlags(flags);
@@ -1061,7 +1188,8 @@ function cmdProductValidate(args) {
   }
   const content = fs.readFileSync(roadmapFile, 'utf8');
   const { fm } = parseNestedFrontmatter(content);
-  const { valid, errors } = validateRoadmapFm(fm);
+  const roadmapResult = validateRoadmapFm(fm);
+  const errors = [...roadmapResult.errors];
   const warnings = [];
   const germanWarning = detectGermanMarkers(content, path.basename(roadmapFile));
   if (germanWarning) warnings.push(germanWarning);
@@ -1088,6 +1216,39 @@ function cmdProductValidate(args) {
     }
   }
 
+  // Schema v1.1 (Wave 1) — VISION.md, WHEN PRESENT (FR-001/FR-002). Absence
+  // is a no-op: no error, no entry in the output at all.
+  const visionFile = path.join(dir, 'VISION.md');
+  if (fs.existsSync(visionFile)) {
+    const visionContent = fs.readFileSync(visionFile, 'utf8');
+    const { fm: visionFm } = parseNestedFrontmatter(visionContent);
+    const visionResult = validateVisionFm(visionFm);
+    for (const e of visionResult.errors) errors.push(`VISION.md ${e}`);
+    const w = detectGermanMarkers(visionContent, 'VISION.md');
+    if (w) warnings.push(w);
+  }
+
+  // Schema v1.1 (Wave 1) — docs/product/audits/*.md, WHEN PRESENT
+  // (FR-005/FR-006/FR-017). An absent or empty audits/ directory is a
+  // no-op: no error, no entries in the output at all (FR-002 parity).
+  const auditsDir = path.join(dir, 'audits');
+  if (fs.existsSync(auditsDir)) {
+    const auditFiles = fs.readdirSync(auditsDir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.md'))
+      .map((entry) => entry.name)
+      .sort();
+    for (const name of auditFiles) {
+      const auditFile = path.join(auditsDir, name);
+      const auditContent = fs.readFileSync(auditFile, 'utf8');
+      const { fm: auditFm } = parseNestedFrontmatter(auditContent);
+      const auditResult = validateAuditFm(auditFm);
+      for (const e of auditResult.errors) errors.push(`audits/${name} ${e}`);
+      const w = detectGermanMarkers(auditContent, `audits/${name}`);
+      if (w) warnings.push(w);
+    }
+  }
+
+  const valid = errors.length === 0;
   process.stdout.write(JSON.stringify({ valid, errors, warnings, file: roadmapFile }, null, 2) + '\n');
   process.exit(valid ? 0 : 1);
 }
