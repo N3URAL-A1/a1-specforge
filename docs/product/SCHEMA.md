@@ -189,14 +189,33 @@ to that schema.
     }
   ],
   "next": "<feature-id>",                 // recommended next feature id, or null
-  "cursor": "<feature-id>"                // pagination/resume cursor for consumers walking the
+  "cursor": "<feature-id>",               // pagination/resume cursor for consumers walking the
                                            // feature list incrementally; same id space as `next`,
                                            // may differ from it (next = recommendation, cursor =
                                            // resume position); null when there is nothing to resume.
+  "vision": {                              // v1.1, OPTIONAL (FR-014): null when VISION.md is absent
+    "path": "docs/product/VISION.md",
+    "updated": "2026-07-13",
+    "pillars": [
+      { "id": "reliability", "title": "Reliability", "summary": "The product never loses user data." }
+    ]
+  },
+  "audits": [                              // v1.1, OPTIONAL (FR-015): [] when no audits/*.md exist
+    {
+      "path": "docs/product/audits/2026-07-13-general.md",
+      "date": "2026-07-13",
+      "focus": "general",
+      "verdict": "beta-ready, 1 open finding",
+      "counts": { "blocker": 0, "major": 1, "minor": 0 },
+      "open": 1,                           // derived: count of findings[] with status "open"
+      "fixed": 0,                          // derived: count of findings[] with status "fixed"
+      "last_validated": "2026-07-13"
+    }
+  ]
 }
 ```
 
-Field-by-field mapping to §1/§2:
+Field-by-field mapping to §1/§2/§6/§7:
 - `project.*` ← `ROADMAP.md` frontmatter `project`/`title`/`status`.
 - `milestones[]` ← `ROADMAP.md` frontmatter `milestones[]`, verbatim.
 - `features[]` ← `ROADMAP.md` frontmatter `features[]`, verbatim, with `spec_path`/`plan_path`
@@ -205,6 +224,16 @@ Field-by-field mapping to §1/§2:
 - `cursor` ← generator-owned; not stored in `ROADMAP.md` frontmatter (derived at generation
   time from the in-flight feature list — first not-yet-`done` feature in dependency order).
 - `generated` / `schema_version` ← generator-owned metadata, not mirrored from ROADMAP.md.
+- `vision` ← `VISION.md` frontmatter `path`/`updated`/`pillars[]` (§6), or `null` when the file
+  is absent (FR-014). This key is OPTIONAL in `index.schema.json` — it is always emitted by the
+  CLI (null or populated), but a hand-authored/legacy v1-only document that omits it entirely
+  is still schema-valid (FR-016).
+- `audits[]` ← one entry per `docs/product/audits/<date>-<focus>.md` file (§7), or `[]` when
+  none exist (FR-015). `open`/`fixed` are derived counts computed from that file's
+  `findings[].status` — only `open` and `fixed` findings count toward this split; `obsolete`/
+  `accepted` findings count toward neither (they still contribute to the file's own `counts`
+  severity totals, which are mirrored verbatim, not derived). This key is likewise OPTIONAL in
+  `index.schema.json` for the same v1-only-document reason as `vision` above.
 
 ## 4. Appendix convention (FR-022)
 
@@ -320,8 +349,8 @@ Rules:
   (`product validate` reports an invalid-status error, FR-006).
 - `findings[].feature`, when non-null, is the join to `ROADMAP.md` `features[].id` — this is
   the machine-readable twin of the niimo 023-053 manual mirroring (Wave 5's `audit-mirror`
-  reproduces it via CLI); `product validate` cross-checks this reference exists (Wave 2,
-  FR-018 — out of scope for this section, which defines the shape only).
+  reproduces it via CLI); `product validate` cross-checks this reference exists and fails
+  validation if it does not (Wave 2, FR-018 — implemented in `cmdProductValidate`).
 - A missing required field (`verdict`, `counts`, `findings`, `last_validated`, etc.) is
   INVALID — `product validate` reports the same class of error (missing required field, wrong
   type) for audit files as it already does for `ROADMAP.md`/`feature.md` (FR-017).

@@ -50,6 +50,68 @@ function readProductFeature(dir, id) {
   return { file, content, ...parsed };
 }
 
+/** Read `docs/product/VISION.md` (if present) and return the `vision` block
+ * for `index.json` (FR-014): `{ path, updated, pillars }` mirrored from
+ * frontmatter, or `null` when the file is absent. Pure read, no writes.
+ * Deliberately tolerant of a still-invalid VISION.md (e.g. mid-edit) — index
+ * regeneration must not throw; `product validate` is the place that enforces
+ * the pillars-non-empty rule (FR-001), not this derivation. */
+function readVisionBlock(productDir) {
+  const visionFile = path.join(productDir, 'VISION.md');
+  if (!fs.existsSync(visionFile)) return null;
+  const content = fs.readFileSync(visionFile, 'utf8');
+  const { fm } = parseNestedFrontmatter(content);
+  return {
+    path: 'docs/product/VISION.md',
+    updated: fm.updated !== undefined ? fm.updated : null,
+    pillars: Array.isArray(fm.pillars)
+      ? fm.pillars.map((p) => ({ id: p.id, title: p.title, summary: p.summary }))
+      : [],
+  };
+}
+
+/** Read every `docs/product/audits/*.md` file (if the directory exists) and
+ * return the `audits[]` array for `index.json` (FR-015): one entry per file
+ * with `path`/`date`/`focus`/`verdict`/`counts`/derived `open`+`fixed`
+ * (computed from `findings[].status` — only `open` and `fixed` count toward
+ * this derived split; `obsolete`/`accepted` findings are excluded from both,
+ * per the spec's index.json shape)/`last_validated`. Returns `[]` when the
+ * directory is absent or empty. Sorted by filename (= date+focus) for a
+ * deterministic, diffable index.json. Pure read, no writes. */
+function readAuditsBlock(productDir) {
+  const auditsDir = path.join(productDir, 'audits');
+  if (!fs.existsSync(auditsDir)) return [];
+  const files = fs.readdirSync(auditsDir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.md'))
+    .map((entry) => entry.name)
+    .sort();
+
+  return files.map((name) => {
+    const auditFile = path.join(auditsDir, name);
+    const content = fs.readFileSync(auditFile, 'utf8');
+    const { fm } = parseNestedFrontmatter(content);
+    const findings = Array.isArray(fm.findings) ? fm.findings : [];
+    const open = findings.filter((f) => f.status === 'open').length;
+    const fixed = findings.filter((f) => f.status === 'fixed').length;
+    const counts = parseInlineFlowObject(fm.counts) || { blocker: 0, major: 0, minor: 0 };
+
+    return {
+      path: `docs/product/audits/${name}`,
+      date: fm.date !== undefined ? fm.date : null,
+      focus: fm.focus !== undefined ? fm.focus : null,
+      verdict: fm.verdict !== undefined ? fm.verdict : null,
+      counts: {
+        blocker: typeof counts.blocker === 'number' ? counts.blocker : 0,
+        major: typeof counts.major === 'number' ? counts.major : 0,
+        minor: typeof counts.minor === 'number' ? counts.minor : 0,
+      },
+      open,
+      fixed,
+      last_validated: fm.last_validated !== undefined ? fm.last_validated : null,
+    };
+  });
+}
+
 /** Pure/side-effect-free: compute regenerated index.json and NEXT.md content
  * strings from the ROADMAP frontmatter (source of truth) and productDir (only
  * read to fill spec_path/plan_path from feature.md when present — never
@@ -114,6 +176,13 @@ function regenerateDerived(productDir, roadmapFm) {
     features,
     next: roadmapFm.next !== undefined ? roadmapFm.next : null,
     cursor,
+    // Schema v1.1 additions (spec 003-product-schema-v1.1-vision-audits,
+    // Wave 2, FR-014/FR-015): both degrade gracefully (null / []) when the
+    // corresponding optional file/directory is absent — see readVisionBlock/
+    // readAuditsBlock above and index.schema.json's optional-property
+    // extension (FR-016) for the byte-identical-when-absent contract.
+    vision: readVisionBlock(productDir),
+    audits: readAuditsBlock(productDir),
   };
 
   const inFlight = features.filter((f) => f.status === 'in-flight');
@@ -1228,6 +1297,16 @@ function cmdProductValidate(args) {
     if (w) warnings.push(w);
   }
 
+  // Schema v1.1 (Wave 2, FR-018) — the set of known ROADMAP.md feature ids,
+  // used below to cross-check every audit finding's `feature` reference.
+  // Built from the same `fm.features[]` already parsed above (roadmapResult
+  // reads the same `fm`), so this adds no extra file read.
+  const roadmapFeatureIds = new Set(
+    (Array.isArray(fm.features) ? fm.features : [])
+      .map((f) => f.id)
+      .filter((id) => typeof id === 'string')
+  );
+
   // Schema v1.1 (Wave 1) — docs/product/audits/*.md, WHEN PRESENT
   // (FR-005/FR-006/FR-017). An absent or empty audits/ directory is a
   // no-op: no error, no entries in the output at all (FR-002 parity).
@@ -1243,6 +1322,25 @@ function cmdProductValidate(args) {
       const { fm: auditFm } = parseNestedFrontmatter(auditContent);
       const auditResult = validateAuditFm(auditFm);
       for (const e of auditResult.errors) errors.push(`audits/${name} ${e}`);
+
+      // FR-018: cross-check every non-null findings[].feature against
+      // ROADMAP.md features[].id — the read-time twin of the write-time
+      // guard `audit-set --feature` enforces (Wave 4). Only run this check
+      // when the shape validation above already found `findings` to be a
+      // well-formed array — an audit whose `findings` itself is malformed
+      // already fails via auditResult.errors, so this avoids a confusing
+      // second error class on the same root cause.
+      if (Array.isArray(auditFm.findings)) {
+        auditFm.findings.forEach((finding, i) => {
+          const featureId = finding && finding.feature;
+          if (featureId !== null && featureId !== undefined && !roadmapFeatureIds.has(featureId)) {
+            errors.push(
+              `audits/${name} findings[${i}].feature: references unknown ROADMAP.md feature id ${JSON.stringify(featureId)}`
+            );
+          }
+        });
+      }
+
       const w = detectGermanMarkers(auditContent, `audits/${name}`);
       if (w) warnings.push(w);
     }

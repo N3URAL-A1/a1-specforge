@@ -26,6 +26,17 @@
 #   SC-004: docs/product/ with a v1 ROADMAP.md but NO VISION.md and NO
 #     audits/ directory -> validate exits 0, no vision/audit errors
 #     (backward-compat degrade-to-no-op)
+#
+# Wave 2 additions (spec 003, index.json vision/audits blocks + schema.json +
+# feature cross-check — FR-014, FR-015, FR-016, FR-018):
+#   SC-005: a consumer reading only the regenerated index.json can read
+#     vision !== null plus each audit's verdict/counts/open+fixed split
+#   FR-016 / SC-004: a v1-only index.json (no VISION.md, no audits/) still
+#     validates against index.schema.json's required[]/additionalProperties
+#     contract, matching the documented v1 null/[] defaults; a document WITH
+#     vision/audits also validates against the same contract
+#   FR-018: an audit referencing a nonexistent ROADMAP.md feature id fails
+#     `product validate`; an audit referencing an existing feature id passes
 set -u
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -421,6 +432,210 @@ if echo "$OUT" | node -e '
 else
   assert_true "no-vision-no-audits-no-errors" "false"
 fi
+
+# ===========================================================================
+# Scenario 9 (SC-005): a consumer reading only the regenerated index.json can
+# read vision !== null plus the published audit's verdict/counts/open+fixed
+# split — no markdown parsing required. Uses `product changelog` (any
+# state-changing product command regenerates index.json via the shared
+# regenerateDerived() path Wave 2 extended) to force a fresh regeneration.
+# ===========================================================================
+WORK9="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-schema-v11-index-vision-audits.XXXXXX")"
+PDIR9="$WORK9/docs/product"
+write_base_roadmap "$PDIR9" "schema-v11-index-va"
+write_valid_vision "$PDIR9" "schema-v11-index-va"
+mkdir -p "$PDIR9/audits"
+cat > "$PDIR9/audits/2026-07-13-general.md" <<EOF
+---
+schema_version: 1
+type: audit
+project: schema-v11-index-va
+focus: general
+date: 2026-07-13
+source: "test analysis fixture"
+verdict: "beta-ready, 1 open, 1 fixed"
+counts: { blocker: 0, major: 2, minor: 0 }
+findings:
+  - id: F-001
+    severity: MAJOR
+    category: "ADR drift"
+    status: open
+    fixed_commit: null
+    feature: null
+  - id: F-002
+    severity: MAJOR
+    category: "stale config"
+    status: fixed
+    fixed_commit: abc123def
+    feature: 001-first-feature
+last_validated: 2026-07-13
+---
+
+# Audit — general (2026-07-13)
+EOF
+
+OUT="$(node "$TOOLS" product changelog --entry "wave2 fixture regen" --why "force index.json regeneration for SC-005 assertions" --dir "$PDIR9" 2>&1)"
+RC=$?
+assert_rc "index-vision-audits-changelog-regen-exit-0" 0 "$RC" "$OUT"
+
+if node -e '
+  const data = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+  if (data.vision === null) process.exit(1);
+  if (data.vision.path !== "docs/product/VISION.md") process.exit(1);
+  if (!Array.isArray(data.vision.pillars) || data.vision.pillars.length === 0) process.exit(1);
+  if (!Array.isArray(data.audits) || data.audits.length !== 1) process.exit(1);
+  const a = data.audits[0];
+  if (a.verdict !== "beta-ready, 1 open, 1 fixed") process.exit(1);
+  if (a.counts.blocker !== 0 || a.counts.major !== 2 || a.counts.minor !== 0) process.exit(1);
+  if (a.open !== 1 || a.fixed !== 1) process.exit(1);
+  if (a.last_validated !== "2026-07-13") process.exit(1);
+' "$PDIR9/index.json"; then
+  assert_true "sc005-index-json-exposes-vision-and-audit-derived-counts" "true"
+else
+  assert_true "sc005-index-json-exposes-vision-and-audit-derived-counts" "false"
+fi
+
+# ===========================================================================
+# Scenario 10 (FR-016 / SC-004): a v1-only index.json (no VISION.md, no
+# audits/) still validates against index.schema.json's own required[]/
+# additionalProperties contract, matching the documented v1 null/[] defaults;
+# a document WITH vision/audits (from Scenario 9 above) also validates
+# against the same contract. Uses a small hand-rolled checker (this repo has
+# no npm/ajv dependency) that reads index.schema.json's own `required` list
+# + $defs, mirroring the checked-in-source-of-truth approach already used by
+# _test-fixtures/product-adopt/run-tests.sh (grep for "index.schema.json"
+# there).
+# ===========================================================================
+WORK10="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-schema-v11-v1only-index.XXXXXX")"
+PDIR10="$WORK10/docs/product"
+write_base_roadmap "$PDIR10" "schema-v11-v1only"
+
+OUT="$(node "$TOOLS" product changelog --entry "wave2 v1-only regen" --why "force index.json regeneration for FR-016/SC-004 assertion" --dir "$PDIR10" 2>&1)"
+RC=$?
+assert_rc "v1only-changelog-regen-exit-0" 0 "$RC" "$OUT"
+
+check_index_against_schema() {
+  local index_file="$1" schema_file="$2"
+  node -e '
+    const fs = require("fs");
+    const data = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const schema = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+
+    for (const k of schema.required) {
+      if (!(k in data)) { console.error("missing required key: " + k); process.exit(1); }
+    }
+    const allowedTop = new Set(Object.keys(schema.properties));
+    for (const k of Object.keys(data)) {
+      if (!allowedTop.has(k)) { console.error("unexpected top-level key: " + k); process.exit(1); }
+    }
+    // vision/audits are OPTIONAL — only type-check when present.
+    if ("vision" in data && data.vision !== null) {
+      const visionDef = schema.$defs.vision;
+      for (const k of visionDef.required) {
+        if (!(k in data.vision)) { console.error("vision missing required key: " + k); process.exit(1); }
+      }
+    }
+    if ("audits" in data) {
+      if (!Array.isArray(data.audits)) { console.error("audits must be an array"); process.exit(1); }
+      const auditDef = schema.$defs.audit;
+      for (const entry of data.audits) {
+        for (const k of auditDef.required) {
+          if (!(k in entry)) { console.error("audits[] entry missing required key: " + k); process.exit(1); }
+        }
+      }
+    }
+    process.exit(0);
+  ' "$index_file" "$schema_file"
+}
+
+if check_index_against_schema "$PDIR10/index.json" "$REPO_ROOT/docs/product/index.schema.json"; then
+  assert_true "fr016-v1-only-index-json-validates-against-schema" "true"
+else
+  assert_true "fr016-v1-only-index-json-validates-against-schema" "false"
+fi
+
+if node -e '
+  const data = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+  process.exit(data.vision === null && Array.isArray(data.audits) && data.audits.length === 0 ? 0 : 1);
+' "$PDIR10/index.json"; then
+  assert_true "sc004-v1-only-index-json-vision-null-audits-empty" "true"
+else
+  assert_true "sc004-v1-only-index-json-vision-null-audits-empty" "false"
+fi
+
+if check_index_against_schema "$PDIR9/index.json" "$REPO_ROOT/docs/product/index.schema.json"; then
+  assert_true "fr016-populated-vision-and-audits-index-json-validates-against-schema" "true"
+else
+  assert_true "fr016-populated-vision-and-audits-index-json-validates-against-schema" "false"
+fi
+
+# ===========================================================================
+# Scenario 11 (FR-018): an audit whose findings[].feature names a ROADMAP.md
+# feature id that does not exist must fail `product validate`; the same
+# audit with every findings[].feature id pointing at an existing feature
+# must pass.
+# ===========================================================================
+WORK11="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-schema-v11-feature-crosscheck.XXXXXX")"
+PDIR11="$WORK11/docs/product"
+write_base_roadmap "$PDIR11" "schema-v11-crosscheck"
+mkdir -p "$PDIR11/audits"
+cat > "$PDIR11/audits/2026-07-13-general.md" <<EOF
+---
+schema_version: 1
+type: audit
+project: schema-v11-crosscheck
+focus: general
+date: 2026-07-13
+source: "test analysis fixture"
+verdict: "beta-ready, 1 open finding"
+counts: { blocker: 0, major: 1, minor: 0 }
+findings:
+  - id: F-001
+    severity: MAJOR
+    category: "ADR drift"
+    status: fixed
+    fixed_commit: abc123
+    feature: 999-does-not-exist
+last_validated: 2026-07-13
+---
+
+# Audit referencing an unknown feature id — should be rejected (FR-018).
+EOF
+
+OUT="$(node "$TOOLS" product validate --dir "$PDIR11" 2>&1)"
+RC=$?
+assert_rc "fr018-unknown-feature-id-exit-1" 1 "$RC" "$OUT"
+assert_contains "fr018-unknown-feature-id-error-mentions-feature" "$OUT" "feature"
+assert_contains "fr018-unknown-feature-id-error-mentions-the-id" "$OUT" "999-does-not-exist"
+
+# Same audit, but pointing at the real feature id from write_base_roadmap
+# ("001-first-feature") -> validate must pass.
+cat > "$PDIR11/audits/2026-07-13-general.md" <<EOF
+---
+schema_version: 1
+type: audit
+project: schema-v11-crosscheck
+focus: general
+date: 2026-07-13
+source: "test analysis fixture"
+verdict: "beta-ready, 1 open finding"
+counts: { blocker: 0, major: 1, minor: 0 }
+findings:
+  - id: F-001
+    severity: MAJOR
+    category: "ADR drift"
+    status: fixed
+    fixed_commit: abc123
+    feature: 001-first-feature
+last_validated: 2026-07-13
+---
+
+# Audit referencing an existing feature id — should pass (FR-018).
+EOF
+
+OUT="$(node "$TOOLS" product validate --dir "$PDIR11" 2>&1)"
+RC=$?
+assert_rc "fr018-known-feature-id-exit-0" 0 "$RC" "$OUT"
 
 echo "product-schema-v11 fixtures: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

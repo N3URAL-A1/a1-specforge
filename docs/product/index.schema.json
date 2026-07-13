@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://a1-specforge.dev/schemas/docs-product-index.schema.json",
-  "title": "docs/product/index.json — schema v1",
-  "description": "Machine-owned manifest generated from docs/product/ROADMAP.md and docs/product/features/<###>-<slug>/feature.md. See docs/product/SCHEMA.md section 3 for the authoritative prose contract; field names here are identical.",
+  "title": "docs/product/index.json — schema v1.1",
+  "description": "Machine-owned manifest generated from docs/product/ROADMAP.md and docs/product/features/<###>-<slug>/feature.md, plus (v1.1, optional) docs/product/VISION.md and docs/product/audits/<date>-<focus>.md. See docs/product/SCHEMA.md section 3 for the authoritative prose contract; field names here are identical. `vision`/`audits` are OPTIONAL properties (not in `required`) so a v1-only document (no VISION.md, no audits/) that omits them entirely still validates (FR-016) — when present, they follow the shapes in $defs/vision and $defs/audit.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "generated", "project", "milestones", "features", "next", "cursor"],
@@ -53,6 +53,15 @@
     "cursor": {
       "type": ["string", "null"],
       "description": "Pagination/resume cursor for consumers walking the feature list incrementally. Same id space as `next`, may differ from it. Null when there is nothing to resume."
+    },
+    "vision": {
+      "$ref": "#/$defs/vision",
+      "description": "v1.1, OPTIONAL: null when docs/product/VISION.md is absent; otherwise mirrors its frontmatter (FR-014). Absent entirely from a strict v1-only document is also valid (this property is not in `required`)."
+    },
+    "audits": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/audit" },
+      "description": "v1.1, OPTIONAL: one entry per docs/product/audits/<date>-<focus>.md file, [] when none exist (FR-015). Absent entirely from a strict v1-only document is also valid (this property is not in `required`)."
     }
   },
   "$defs": {
@@ -133,6 +142,87 @@
         "plan_path": {
           "type": ["string", "null"],
           "description": "Repo-relative path to the feature's wave-plan doc, or null."
+        }
+      }
+    },
+    "vision": {
+      "type": ["object", "null"],
+      "description": "v1.1: null when docs/product/VISION.md is absent (FR-014).",
+      "additionalProperties": false,
+      "required": ["path", "updated", "pillars"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Repo-relative path to VISION.md, e.g. \"docs/product/VISION.md\"."
+        },
+        "updated": {
+          "type": ["string", "null"],
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+          "description": "Mirrors VISION.md frontmatter `updated`, YYYY-MM-DD."
+        },
+        "pillars": {
+          "type": "array",
+          "description": "Mirrors VISION.md frontmatter `pillars[]` verbatim.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "title", "summary"],
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" },
+              "summary": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "audit": {
+      "type": "object",
+      "description": "v1.1: one entry per docs/product/audits/<date>-<focus>.md file (FR-015).",
+      "additionalProperties": false,
+      "required": ["path", "date", "focus", "verdict", "counts", "open", "fixed", "last_validated"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Repo-relative path to the audit file, e.g. \"docs/product/audits/2026-07-13-general.md\"."
+        },
+        "date": {
+          "type": ["string", "null"],
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+          "description": "Mirrors the audit's frontmatter `date`."
+        },
+        "focus": {
+          "type": ["string", "null"],
+          "enum": ["general", "security", "architecture", "quality", "onboarding", null],
+          "description": "Mirrors the audit's frontmatter `focus`."
+        },
+        "verdict": {
+          "type": ["string", "null"],
+          "description": "Mirrors the audit's frontmatter `verdict`."
+        },
+        "counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["blocker", "major", "minor"],
+          "description": "Mirrors the audit's frontmatter `counts` (blocker/major/minor, all findings regardless of status).",
+          "properties": {
+            "blocker": { "type": "integer" },
+            "major": { "type": "integer" },
+            "minor": { "type": "integer" }
+          }
+        },
+        "open": {
+          "type": "integer",
+          "description": "Derived: count of findings[] with status \"open\"."
+        },
+        "fixed": {
+          "type": "integer",
+          "description": "Derived: count of findings[] with status \"fixed\". Findings with status \"obsolete\"/\"accepted\" count toward neither open nor fixed."
+        },
+        "last_validated": {
+          "type": ["string", "null"],
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+          "description": "Mirrors the audit's frontmatter `last_validated`."
         }
       }
     }
