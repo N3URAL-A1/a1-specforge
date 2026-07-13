@@ -539,6 +539,9 @@ function main() {
       } else if (sub === 'audit-set') {
         product.cmdProductAuditSet(rest);
         return; // unreachable — cmdProductAuditSet calls process.exit()
+      } else if (sub === 'audit-mirror') {
+        product.cmdProductAuditMirror(rest);
+        return; // unreachable — cmdProductAuditMirror calls process.exit()
       } else if (sub === 'import') {
         product.cmdProductImport(rest);
         return; // unreachable — cmdProductImport calls process.exit()
