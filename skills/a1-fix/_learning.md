@@ -158,3 +158,23 @@ root_cause_class: [schema_flaw]
 fix_wave_count: 1
 one_line_learning: JSON.stringify is not a shell-escaping function — any exec call that builds a shell command string from JSON.stringify-quoted args is command-injection-vulnerable; only execFileSync's argv-array form is safe
 postmortem: wiki/postmortems/a1-specforge/2026-07-12-cmd-injection-git-helper.md
+---
+date: 2026-07-13
+bug_id: analysis-findings-2026-07-13
+project: pro-orc
+verdict: fixed
+root_cause_class: [ui_state_bug, security_vuln, convention_drift]
+fix_wave_count: 4
+one_line_learning: Retrofit hardening helpers (escaping/logging/tests/immutability) to older siblings sharing the same call pattern — old-vs-new drift is the recurring root cause.
+postmortem: wiki/postmortems/pro-orc/2026-07-13-analysis-findings-2026-07-13.md
+---
+---
+date: 2026-07-13
+bug_id: gruppen-flackern
+project: pro-orc
+verdict: fixed
+root_cause_class: [race_condition, ui_state_bug]
+fix_wave_count: 1
+one_line_learning: Inside a Riverpod Notifier, a "wait for X once" gate is ref.read(provider.future), not ref.watch — watching a watcher-driven provider resubscribes and resets state on every tick (flicker).
+postmortem: wiki/postmortems/pro-orc/2026-07-13-gruppen-flackern.md
+---
