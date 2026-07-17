@@ -1,4 +1,4 @@
-# Learning Index (cache — canonical is pattern/a1-learnings/patterns.md, repo-local .a1/learnings/ by default)
+# Learning Index (cache — canonical is the learning store's pattern/a1-learnings/patterns.md, repo-local by default with A1_VAULT_ROOT for an optional external sink, e.g. Obsidian)
 
-Last synthesis: 2026-07-12
-Applied: 2 | Skipped: 0 | Monitoring: 2 (regression, vague_tasks) | Already-addressed: 6 (wrong_behavior_vs_spec, spec_omission, missing_dependency, deployment_incomplete, missing_wiring, parallel_collision)
+Last synthesis: 2026-07-17
+Applied: 5 | Skipped: 0 | Monitoring: 4 (dead_code_claims, phantom_format_gap, repo_layout_confusion, retro_missing)

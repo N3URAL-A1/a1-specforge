@@ -33,3 +33,9 @@ result: pass
 issues: []
 what_worked: cross-checking each high-impact cluster against current agent/skill files before proposing prevented 6 redundant proposals (patterns already structurally addressed by Consistency Gate, goal-backward verify, Clarify phase); kept the diff surgical (2 targeted proposals from 47 observations instead of a blanket rewrite)
 one_line_learning: on a first-ever synthesis run with no watermark, always verify each candidate pattern against the CURRENT file content before proposing — historical retro volume often reflects the events that already motivated a fix, not a live gap
+
+---
+date: 2026-07-17
+task: 2nd synthesis run — 16 retros + 25 observations (2026-07-12..17), 5 proposals applied (a9326f4)
+result: pass
+one_line_learning: repo-local stores require cross-repo collect globs; single-$VAULT read would have missed 13/16 retros — fixed in 01-collect.md + SKILL.md same commit (invariant 4)
