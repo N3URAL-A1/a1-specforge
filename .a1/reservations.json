@@ -1,0 +1,28 @@
+{
+  "reservations": [
+    {
+      "type": "code_scope",
+      "paths": [
+        "_shared/lib/product.cjs",
+        "_shared/a1-tools.cjs",
+        "docs/product/SCHEMA.md",
+        "docs/product/index.schema.json",
+        "docs/product/VISION.md",
+        "docs/product/audits/",
+        "_test-fixtures/product-schema-v11/run.sh",
+        "_test-fixtures/product-audit-mirror/run.sh",
+        "skills/a1-analyze/SKILL.md",
+        "skills/a1-analyze/workflows/05-report.md",
+        "skills/a1-roadmap/SKILL.md",
+        "skills/a1-roadmap/workflows/01-discover.md",
+        "skills/a1-roadmap/workflows/04-scaffold.md",
+        "skills/a1-fix/SKILL.md",
+        "skills/a1-fix/workflows/03-fix.md",
+        "skills/a1-execute/SKILL.md"
+      ],
+      "by": "003-product-schema-v1.1-vision-audits",
+      "at": "2026-07-13T16:18:49.969Z",
+      "stage": "complete"
+    }
+  ]
+}
