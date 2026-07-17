@@ -14,7 +14,22 @@ All waves in the wave-plan are marked `⟶ status: done`. Spec status is `implem
 The E2E test from Step 5b (Phase 5) is green. The production URL or preview URL from the last
 deploy is known — if not, run `vercel ls` and note the URL.
 
-## Step 0 — Live-URL Reachability Check
+## Step 0 — Full-diff code review BEFORE the walkthrough
+
+Spawn `a1-reinhard-reviewer` over the full feature diff (all waves,
+`git diff main...<feature-branch>`) BEFORE starting the scenario walkthrough.
+Fix MAJOR+ findings (as a rework commit) before proceeding.
+
+Why this order: in three consecutive features (pro-orc 001/003/004, 2026-07)
+the review caught real functional bugs — broken path resolution, a
+section-parsing loop swallowing the next section, cross-feature palette
+duplication — that hundreds of green per-wave tests and the walkthrough itself
+missed; where the review ran only AFTER a PASS verdict, the fix cost a full
+verify-rework round. This review satisfies the Lifecycle Completion Gate's
+`review` stage — do not run a second full review after the walkthrough unless
+the walkthrough forced code changes.
+
+## Step 0.5 — Live-URL Reachability Check
 
 Before the scenario walkthrough, confirm every feature route is reachable. This takes 2 minutes and prevents false-negatives from a silent deployment gap.
 
@@ -184,7 +199,8 @@ The spec does not move to `done` on Phase 6 passing alone. Drive the
 remaining lifecycle-stage transitions in order (see SKILL.md's Lifecycle
 Completion Gate), each after its own confirmation:
 
-1. **Review** — once code review (Reinhard or equivalent) has confirmed the
+1. **Review** — normally already done in Step 0 above (pre-walkthrough
+   review); record the stage transition once it has confirmed the
    implementation:
    ```bash
    node <repo>/_shared/a1-tools.cjs code-scope stage --by <spec-id> --set review

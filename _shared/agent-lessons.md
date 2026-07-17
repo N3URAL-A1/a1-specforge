@@ -48,3 +48,40 @@ Always call the DB layer directly via `withTenantContext`. Multi-query server
 components get one `withTenantContext` call per query, each with its own
 `.catch()` — a shared `.catch()` around a `Promise.all` turns one failed
 query into a silent all-zero render.
+
+## Pablo — extraction MOVE lists miss module-level consts {#pablo-const-sweep}
+
+Added 2026-07-17 (const_sweep_blindspot planning-side, M10 module split:
+7+ undocumented constants across 17 waves, 3 audit rounds of BLOCKER
+findings; verifier plan_quality observation demanded the sweep "from round 1,
+not via audit iteration").
+
+A "locate by function name" boundary grep (`grep -n "^function <name>"`) is
+structurally blind to module-level `const`/`let`/RegExp literals sitting next
+to the functions that consume them — especially values consumed via
+bracket-lookup (`STATUS_TO_PHASE[x]`), `.test()`, or `.includes()` rather
+than function calls. In M10 every wave's MOVE list missed at least one such
+declaration (SQL_TYPE_ALIASES, REALPATH_DEFAULT_REAL_MARKERS, five separate
+`*_STATUS_TO_PHASE` lookup objects, marker-string pairs); each miss is a
+latent ReferenceError. Erik's execution-time sweep (rule 3c-quater,
+{#erik-const-sweep}) caught all of them — but only as unplanned deviations.
+The plan must front-load the sweep: build every MOVE list from a
+`grep -n "^const \|^let \|^var "` sweep over the source range, naming every
+declaration the moved code consumes.
+
+## Pablo — read-path features must verify the writer {#pablo-writer-check}
+
+Added 2026-07-17 (writer_read_asymmetry: n3ural hotfix PR #73 + spec 041,
+plus the earlier billed_invoice_item_id dead-column incident).
+
+When a feature starts READING an existing column or keys logic on a DB
+enum/status value, plans and reviews habitually verify only the read side.
+In PR #73 the OAuth callback (the column's ONLY writer) stored a hardcoded
+stale scope literal, so re-consent could never grant the new scope — three
+independent reviews (Samuel/Reinhard/Victor) all checked the read side and
+none looked at the writer. In spec 041, cooldown-SELECT and click-gate both
+keyed on `kind='briefing'` while the real writer stored `kind='work_done'` —
+1350 green tests had cemented the wrong expectation. A plausible column name
+is not evidence it is ever populated with the expected value: name the
+writer, and verify it produces that value under realistic (non-empty)
+conditions.

@@ -4,16 +4,25 @@ Gather all learning data from all sources.
 
 ## Steps
 
-### 1a. Read the learning store (repo-local `.a1/learnings/` by default; `A1_VAULT_ROOT` for an optional external sink, e.g. Obsidian)
+### 1a. Read ALL learning stores (repo-local per project — collect every one, not just the current repo's)
+
+Since M7, canonical stores are REPO-LOCAL: each project keeps its own
+`.a1/learnings/`. A single-`$VAULT` read misses every sibling project's
+retros (proven 2026-07-17: 13 of 16 new retros lived in OTHER repos' stores).
+Collect across all of them, plus `A1_VAULT_ROOT` if set:
+
 ```bash
-VAULT="${A1_VAULT_ROOT:-$(git rev-parse --show-toplevel)/.a1/learnings}"
-ls "$VAULT/pattern/a1-learnings/"
+STORES=$(ls -d ~/code/*/.a1/learnings/pattern/a1-learnings 2>/dev/null)
+[ -n "$A1_VAULT_ROOT" ] && STORES="$STORES $A1_VAULT_ROOT/pattern/a1-learnings"
+for S in $STORES; do echo "== $S"; ls "$S"; done
 ```
 
-Read in this order:
-1. `$VAULT/pattern/a1-learnings/index.md` — overview, entry counts, last synthesis date
-2. `$VAULT/pattern/a1-learnings/patterns.md` — existing pattern history (avoid re-proposing already-applied fixes)
-3. Per-skill files: `a1-execute.md`, `a1-plan.md`, `a1-new-feature.md`, `a1-fix.md`, `a1-analyze.md`, etc.
+The SKILLS-REPO store (`~/code/a1-skills/.a1/learnings`) is the primary one —
+its `index.md`/`patterns.md` hold the cross-project synthesis state. Read in
+this order:
+1. Skills-repo `pattern/a1-learnings/index.md` — overview, entry counts, last synthesis date
+2. Skills-repo `pattern/a1-learnings/patterns.md` — existing pattern history (avoid re-proposing already-applied fixes)
+3. Per-skill files from EVERY store found above: `a1-execute.md`, `a1-plan.md`, `a1-new-feature.md`, `a1-fix.md`, `a1-analyze.md`, etc.
 
 Extract from each entry:
 - Date and project (follow `[[projects/<slug>]]` wikilinks for context if needed)
@@ -38,8 +47,9 @@ a1-fix keeps detail in `wiki/`-style stores AND appends normalized retros to the
 primary `pattern/a1-learnings/a1-fix.md` glob (read in 1a). Also collect the
 detail stores so the optimizer sees the full bug corpus:
 ```bash
-find "$VAULT/wiki/postmortems" -name "*.md" 2>/dev/null | sort
-find "$VAULT/wiki/lessons" -path "*_active.md" 2>/dev/null | sort
+find ~/code/*/.a1/learnings/wiki/postmortems -name "*.md" 2>/dev/null | sort
+find ~/code/*/.a1/learnings/wiki/lessons -path "*_active.md" 2>/dev/null | sort
+[ -n "$A1_VAULT_ROOT" ] && find "$A1_VAULT_ROOT/wiki" -name "*.md" 2>/dev/null | sort
 ```
 Extract `root_cause_class`, `one_line_learning`, and terminal verdict per postmortem.
 These cluster alongside the pattern-tagged retros in Phase 2.

@@ -107,6 +107,19 @@ this brief:
 >
 > File ownership: <from wave brief>.
 > Tests: write or extend the tests that correspond to the FR-### of this wave.
+> **Discriminating tests per AC (mandatory):** for every AC that states a styling or
+> content property, a language, an ORDER ("A then B then C"), or a success-path side
+> effect ("clicking X launches Y"), write a test IN THIS WAVE that fails specifically
+> when that property breaks — position comparison for order, call-capture for
+> launches, a style/content assertion with a negative control for styling/language.
+> "All pieces present" (findsOneWidget per element) and "failure path handled"
+> (empty-state, missing-path) do NOT verify these ACs. If the wave resolves or
+> constructs a filesystem path from external data (config, JSON, frontmatter), at
+> least one test must assert the resolved path points at a REAL existing file —
+> "missing file handled gracefully" and "path resolution broken" are two DISTINCT
+> scenarios, never one no-crash test. If components key on a DB enum/status value,
+> one test must prove the WRITER produces that exact value under realistic
+> (non-empty) conditions.
 >
 > When done: report "Wave N done. <short summary of changes>."
 
