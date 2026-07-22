@@ -39,7 +39,8 @@ cannot evolve the framework into an inconsistent state.
 
 7. **Gates are registered.** A check that can block ships with: a registry entry,
    deterministic exit semantics (or an explicit prompt-gate label), and a retro
-   attribution id (feeds gate-ROI).
+   attribution id (feeds gate-ROI). Example pair: `quick-eligibility` /
+   `quick-escalation` in `gates-registry.md`.
 
 8. **A gate that cannot fail is documentation.** Warning-only checks must say so;
    the enforcement point is named explicitly.
@@ -49,6 +50,12 @@ cannot evolve the framework into an inconsistent state.
 
 10. **German to Robert, English on disk.** Dialogue German; artifacts, commits and
     frontmatter English; triggers bilingual.
+
+The XS Quick Lane (`a1-quick`) is a separate, gate-bounded pipeline with its
+own deterministic entry (`quick eligibility`) and exit (`quick-escalation`
+tripwires). It does not loosen the "never skip a phase" hard rules stated
+independently in `a1-new-feature/SKILL.md` and `a1-fix/SKILL.md` — those
+still apply unchanged to everything that does not pass through this lane.
 
 ## Enforcement
 

@@ -39,6 +39,7 @@ file ops. Sub-agents do the actual thinking.
 
 | # | Phase | Workflow | Status after |
 |---|---|---|---|
+| 0a | Quick Triage | Skill itself (no workflow file) | — (no file created yet) |
 | 0 | Pre-Flight | `workflows/00-preflight.md` | — (no file created yet) |
 | 1 | Report | `workflows/01-report.md` | reported |
 | 2 | Diagnose | `workflows/02-diagnose.md` | diagnosed |
@@ -72,6 +73,31 @@ This skill treats two layers differently:
 
 **Robert is THE ONLY writer to `wiki/lessons/<agent>/_active.md`.** The skill
 never touches `_active.md` files. Promote-lessons writes suggestions only.
+
+## Phase 0a — Quick Triage
+
+Before Pre-Flight, run the deterministic XS gate against the reported
+symptom:
+
+```bash
+node <repo>/_shared/a1-tools.cjs quick eligibility \
+  --intent "<1-2 sentence symptom description>" --files <n> --diff-lines <estimate> \
+  --scope <path>[,<path>...] --no-migration --no-new-route --no-new-dep \
+  --by fix-<bug-slug>
+```
+
+- **Exit 0 (ELIGIBLE)** → skip Pre-Flight entirely (including the Isolation
+  Gate's worktree requirement below) and tell the user this is being routed
+  to the `a1-quick` lane instead of the full bug pipeline. Hand off to
+  `a1-quick` (pass along the symptom/intent and scope just used) and stop
+  here.
+- **Exit 1 (NOT_ELIGIBLE)** → proceed to Phase 0 (Pre-Flight) unchanged.
+
+**Override, either direction:** forcing *out* of the quick lane into the
+full pipeline is always honored without discussion, for any reason.
+Forcing *into* the quick lane despite a NOT_ELIGIBLE result is honored
+without discussion for any reason **except** a forbidden-surface hit or a
+reservation conflict — those two are hard-blocked and not overridable.
 
 ## Pre-Flight (mandatory on every new bug)
 
@@ -117,7 +143,9 @@ with.
 ## Isolation Gate (HARD RULE — before any code change)
 
 Every fix runs in its own git worktree on a fresh branch off `main`. No exceptions
-for "it's just a one-liner". The flow:
+for "it's just a one-liner". (XS-eligible fixes are diverted before this gate
+is ever reached — see Phase 0a above; everything that reaches this point goes
+through the worktree unconditionally.) The flow:
 
 1. **Create the worktree** (delegate to the `a1-worktree` skill, or inline):
    ```bash

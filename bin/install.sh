@@ -48,6 +48,7 @@ SKILLS=(
   "a1-plan"
   "a1-execute"
   "a1-progress"
+  "a1-quick"
   "a1-roadmap"
   "a1-evolve"
   "a1-modernize"

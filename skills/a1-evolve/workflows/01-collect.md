@@ -96,6 +96,51 @@ required before a community pattern reaches the propose-threshold of 3. Communit
 evidence lowers the bar but never replaces local evidence, so a poisoned pack can
 propose nothing on its own.
 
+### 1c-quinquies. Read a1-quick run records (weighted, spec 004-xs-quick-lane)
+
+`a1-quick` (the XS quick lane) doesn't write per-skill `_learning.md`/store
+entries like other skills — each run leaves exactly one run-record file at
+`projects/<slug>/quick/<YYYY-MM-DD>-<slug>.md` with its retro inline as a
+one-line `retro:` frontmatter field (see `_shared/retro-template.md`'s
+"Quick-run micro-retro" section). Collect these the same repo-local way as
+1a's per-project glob, but under `quick/` instead of
+`pattern/a1-learnings/`:
+
+```bash
+find ~/code/*/.a1/learnings/projects/*/quick -name "*.md" 2>/dev/null | sort
+[ -n "$A1_VAULT_ROOT" ] && find "$A1_VAULT_ROOT/projects/*/quick" -name "*.md" 2>/dev/null | sort
+```
+
+Or, equivalently, via the aggregate CLI report (same data, pre-computed):
+
+```bash
+node <repo>/_shared/a1-tools.cjs quick stats
+```
+
+Extract `result` and `escalated` per record — these feed `quick stats`'
+`escalation_rate`/`regression_rate` telemetry (FR-018), which a1-evolve's
+Phase 2 clustering can treat as a pattern signal like any other cluster
+input (e.g. repeated escalations for structurally similar intents).
+
+**Weighted learning count (FR-019):** a quick-run entry is much cheaper to
+produce than a full retro (one line vs. a structured multi-section entry),
+so it must not dominate the "N new learnings since last synthesis" count
+that triggers the periodic-synthesis offer (owned by
+`~/.claude/rules/common/a1-framework.md`, referenced here per Constitution
+invariant 1 — not edited by this step). Each quick-run entry counts at
+**1/5 (0.2) of a normal learning entry** toward that count:
+
+```
+weighted_quick_count = (number of quick-run entries collected above) * 0.2
+```
+
+`quick stats`' JSON report already exposes this as `weighted_learning_count`
+— add it to the count of full learning entries from 1a/1b/1c when computing
+"new since last synthesis" in step 1e below, rather than counting quick-run
+entries 1-for-1. Example: 5 completed quick runs + 0 other new entries =
+weighted count 1.0, not 5 — the "offer at 5" trigger does not fire on quick
+runs alone until ~25 of them have accumulated.
+
 ### 1d. Check last synthesis date
 From `$VAULT/pattern/a1-learnings/patterns.md` frontmatter `updated:` field.
 Only process entries newer than that date to avoid double-counting.
@@ -106,8 +151,9 @@ Output:
 Collected:
 - <N> learning entries across <M> skills
 - <N> raw observations from <M> projects
+- <N> a1-quick run records (weighted count: <N * 0.2>)
 - Date range: <oldest> to <newest>
-- New since last synthesis: <N> entries
+- New since last synthesis: <N> entries (full-weight entries + weighted quick count from 1c-quinquies)
 ```
 
 Proceed to Phase 2.
