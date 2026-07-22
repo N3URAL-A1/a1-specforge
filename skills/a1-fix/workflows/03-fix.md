@@ -120,6 +120,50 @@ Also use the Edit tool to fill the `## Fix Plan (Phase 03 — filled by code age
 section in the bug report with the agent's summary (approach, files, regression
 test path, risk).
 
+## Step 4.5 — Auto-close a tracked audit finding (FR-022, opt-in-free by design)
+
+If the project has `docs/product/audits/*.md` (schema v1.1), check whether the
+fix commit's message uses the **explicit closing convention** for a tracked
+finding id. This is a deliberate, narrow trigger — a bare mention of a finding
+id must NOT auto-close it (too false-positive-prone; see spec
+`003-product-schema-v1.1-vision-audits` FR-022/Clarifications).
+
+**Detection logic:** match the commit message against:
+
+```
+/\b(closes?|fix(?:es|ed)?)\s+F-(\d{3})\b/i
+```
+
+- The keyword (`Closes`/`Close`/`Fixes`/`Fix`/`Fixed`, case-insensitive) MUST
+  immediately precede the `F-0NN` token — e.g. `Closes F-007` or
+  `Fixes F-012` both match; a commit message that merely contains `F-007`
+  somewhere without one of these keywords right before it does NOT match and
+  MUST NOT trigger this step.
+- Extract the matched `F-0NN` as `<finding-id>`.
+
+**If no match:** skip this step silently — no CLI call, no note needed.
+
+**If matched:** resolve which audit file contains `<finding-id>` by searching
+`docs/product/audits/*.md` for a `findings[]` entry with that `id`. Then:
+
+```bash
+node <repo>/_shared/a1-tools.cjs product audit-set \
+  --audit <resolved-audit-path> \
+  --finding <finding-id> \
+  --status fixed \
+  --commit <fix-commit-hash>
+```
+
+- Since the explicit convention itself is the deliberate signal, this call
+  runs **without** an additional interactive confirmation step.
+- If no audit file contains `<finding-id>` (or the project has no
+  `docs/product/` at all): skip silently and add a one-line note in the bug
+  report `## Notes` section, e.g. "Commit used `Closes F-007` but no audit
+  file declares finding F-007 — skipped auto-close."
+- If `audit-set` itself fails (e.g. finding already `fixed`, feature id
+  invalid): do not retry; surface the CLI error to the user as a note, the
+  bug fix pipeline itself is not blocked by this step.
+
 ## Step 5 — Hand off
 
 Tell the user:

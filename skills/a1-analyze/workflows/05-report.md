@@ -101,6 +101,31 @@ The skill ends here. Status `reported` is terminal for `a1-analyze`. The file
 persists. Suggestions in `suggested_next[]` are machine-readable for future
 orchestrators.
 
+## Step 7 — Optional: offer to publish into the product-docs audit surface
+
+After the report is written (Step 4/5 delivered), check whether the target
+project has a `docs/product/` directory. This is opt-in only — never automatic:
+
+```bash
+test -d "<project-root>/docs/product" && echo present || echo absent
+```
+
+- **`docs/product/` absent:** skip silently. Do not mention this step to the
+  user at all — no prompt, no notice.
+- **`docs/product/` present:** ask the user, in the same turn as the summary
+  in Step 4 (or immediately after, if the user already responded to the
+  `suggested_next` prompt): "Publish this analysis into the product-docs audit
+  surface? (`product audit-publish --analysis <path>`)". Only run the command
+  on explicit confirmation ("yes" / "1" / equivalent) — never invoke it
+  without the user saying so first.
+
+```bash
+node <repo>/_shared/a1-tools.cjs product audit-publish --analysis "<analysis-path>"
+```
+
+If the user declines or ignores the prompt, do nothing further — this is not
+a hard rule violation, it's simply skipped like any other opt-in offer.
+
 ## Edge cases
 
 - **No BLOCKER, no MAJOR (only MINOR or none):** suggested_next has only a

@@ -338,6 +338,61 @@ Usage:
                   Auto-appends a changelog line and regenerates
                   index.json/NEXT.md. Exit: 0 ok, 1 usage/missing-feature/
                   already-exists/write error.
+  a1-tools product vision-init --title <text>
+                  --pillar id:title:summary [--pillar ...] [--dir docs/product]
+                  Scaffolds docs/product/VISION.md (schema v1.1: schema_
+                  version/type/project/title/updated/pillars[]). At least
+                  one --pillar is required (empty/omitted pillars[] is
+                  invalid per schema v1.1 — see 'product validate').
+                  Refuses (exit 1, no write) if VISION.md already exists —
+                  use 'product vision-touch' to bump 'updated' instead.
+                  Regenerates index.json (vision block becomes non-null)
+                  under the same lock/tmp/rename transaction as every other
+                  product-mutating command. Exit: 0 ok, 1 usage/already-
+                  exists/write error.
+  a1-tools product vision-touch [--dir docs/product]
+                  Bumps VISION.md's frontmatter 'updated' field to today's
+                  date and regenerates index.json — a targeted textual
+                  replace of ONLY the 'updated:' line, so the prose body
+                  and every other frontmatter field (including pillars[])
+                  stay byte-for-byte unchanged. Refuses (exit 1) if
+                  VISION.md does not exist yet — run 'product vision-init'
+                  first. Same lock/tmp/rename transaction as every other
+                  product-mutating command. Exit: 0 ok, 1 usage/missing-
+                  file/write error.
+  a1-tools product audit-publish --analysis <path> [--project <slug>]
+                  [--dir docs/product]
+                  Parses an a1-analyze result's frontmatter findings[] into a
+                  new docs/product/audits/<date>-<focus>.md (schema v1.1:
+                  schema_version/type/project/focus/date/source/verdict/
+                  counts/findings[]/last_validated). Every finding starts at
+                  status: open / fixed_commit: null / feature: null. Refuses
+                  (exit 1, no write) if a file for the same date+focus
+                  already exists — audits are append-only history, one file
+                  per analyze-run, never overwritten. A zero-findings
+                  analysis still produces a valid empty-findings[] audit
+                  file. Regenerates index.json (audits[] gains an entry)
+                  under the same lock/tmp/rename transaction as every other
+                  product-mutating command. Exit: 0 ok, 1 usage/analysis-
+                  unreadable/already-exists/write error.
+  a1-tools product audit-set --audit <path> --finding F-0NN
+                  --status <open|fixed|obsolete|accepted> [--commit <sha>]
+                  [--feature <id>] [--dir docs/product]
+                  Mutates EXACTLY the named finding's status/fixed_commit/
+                  feature fields (every other finding, and every other
+                  frontmatter field, stay byte-unchanged — a targeted
+                  textual replace, not a full re-serialize) and appends a
+                  one-line changelog entry to the audit file's body. Fails
+                  (exit 1, no write) if --finding doesn't match any finding
+                  id in the target file, or if --feature names an id absent
+                  from ROADMAP.md (hard validation, no warning-only mode —
+                  same cross-check 'product validate' runs). A transition
+                  FROM 'fixed' back TO 'open' (regression re-open) is a
+                  legal transition, not blocked. Regenerates index.json
+                  (derived open/fixed counts) under the same lock/tmp/rename
+                  transaction as every other product-mutating command.
+                  Exit: 0 ok, 1 usage/not-found/unknown-finding/unknown-
+                  feature/write error.
   a1-tools product validate [--dir docs/product]
                   Read-only. Validates <dir>/ROADMAP.md frontmatter against
                   the schema-v1 contract (docs/product/SCHEMA.md section 1 /

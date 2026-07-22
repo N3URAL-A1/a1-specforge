@@ -27,6 +27,24 @@ milestones and **ALL** features known from Phase 3 upfront — each with its
 `regenerateDerived` path Wave 2/3 use for `product stage`). Do not hand-write
 any of the three files.
 
+Immediately after `product init` succeeds, call `vision-init` using the
+mission statement and pillars confirmed in Phase 1 (Discover) so the new
+project has `docs/product/VISION.md` from day one (schema v1.1, FR-021):
+
+```bash
+node <repo>/_shared/a1-tools.cjs product vision-init \
+  --title "<mission statement from Discover>" \
+  --pillar "<id-1>:<title-1>:<summary-1>" \
+  --pillar "<id-2>:<title-2>:<summary-2>"
+  # repeat --pillar for every pillar confirmed in Discover (2-4 total)
+```
+
+This regenerates `index.json`'s `vision` block the same way `product init`
+regenerates the rest — do not hand-write `VISION.md`. Skip this call only for
+the **New Milestone** path below (an existing project already has its
+`VISION.md`, if any — Scaffold never re-runs `vision-init` on a project that
+already went through New Project mode).
+
 For a **New Milestone** run on a project that already has `docs/product/`,
 extend the existing `ROADMAP.md` instead of re-initializing:
 
@@ -89,6 +107,7 @@ Project scaffolded ✓
 
 docs/product/
 ├── ROADMAP.md    (schema v1 — ALL milestones + ALL features named upfront)
+├── VISION.md     (schema v1.1 — mission + pillars from Discover)
 ├── NEXT.md       (generated)
 └── index.json    (generated)
 
@@ -123,5 +142,5 @@ Write one retro entry exactly as defined in `_shared/retro-template.md`
 with skill = `a1-roadmap`.
 
 - task wording: <short description: new project or new milestone>
-- issue tags: [<relevant tags: vision_unclear, stack_mismatch, milestone_too_big, phase_split_wrong, research_skipped_wrongly, scaffold_collision, ...>]
+- issue tags: [<relevant tags: vision_unclear, pillars_missing, stack_mismatch, milestone_too_big, phase_split_wrong, research_skipped_wrongly, scaffold_collision, ...>]
 

@@ -1,8 +1,17 @@
-# docs/product/ — Schema v1 (binding contract)
+# docs/product/ — Schema v1.1 (binding contract)
 
-Status: **binding** (promoted from draft 2026-07-10). Any writer (human, skill, or CLI) MUST
-conform to this document. `docs/product/index.schema.json` is the machine-checkable twin of the
-`index.json` section below — field names are identical in both.
+Status: **binding** (promoted from draft 2026-07-10; extended to v1.1 2026-07-13 — see §6/§7).
+Any writer (human, skill, or CLI) MUST conform to this document. `docs/product/index.schema.json`
+is the machine-checkable twin of the `index.json` section below — field names are identical in
+both.
+
+`docs/product` uses a single, lockstep `schema_version` across every file type in this
+directory (`ROADMAP.md`, `feature.md`, `VISION.md`, `audits/*.md`) — there is no independent
+per-document-type versioning. This document currently describes **schema v1.1**: v1's
+`ROADMAP.md`/`feature.md`/`index.json` contract (§1-§4, unchanged) plus the v1.1 additions in
+§6 (`VISION.md`) and §7 (`audits/<date>-<focus>.md`). Both v1.1 additions are **optional
+files** — a project with only v1 content (no `VISION.md`, no `audits/`) remains fully valid;
+see §6/§7 and the Edge Cases note at the end of each section.
 
 This directory is the single source of truth for a project's roadmap, milestones, and
 in-flight features, readable by ProOrg and by every a1 skill. It replaces ad-hoc
@@ -180,14 +189,33 @@ to that schema.
     }
   ],
   "next": "<feature-id>",                 // recommended next feature id, or null
-  "cursor": "<feature-id>"                // pagination/resume cursor for consumers walking the
+  "cursor": "<feature-id>",               // pagination/resume cursor for consumers walking the
                                            // feature list incrementally; same id space as `next`,
                                            // may differ from it (next = recommendation, cursor =
                                            // resume position); null when there is nothing to resume.
+  "vision": {                              // v1.1, OPTIONAL (FR-014): null when VISION.md is absent
+    "path": "docs/product/VISION.md",
+    "updated": "2026-07-13",
+    "pillars": [
+      { "id": "reliability", "title": "Reliability", "summary": "The product never loses user data." }
+    ]
+  },
+  "audits": [                              // v1.1, OPTIONAL (FR-015): [] when no audits/*.md exist
+    {
+      "path": "docs/product/audits/2026-07-13-general.md",
+      "date": "2026-07-13",
+      "focus": "general",
+      "verdict": "beta-ready, 1 open finding",
+      "counts": { "blocker": 0, "major": 1, "minor": 0 },
+      "open": 1,                           // derived: count of findings[] with status "open"
+      "fixed": 0,                          // derived: count of findings[] with status "fixed"
+      "last_validated": "2026-07-13"
+    }
+  ]
 }
 ```
 
-Field-by-field mapping to §1/§2:
+Field-by-field mapping to §1/§2/§6/§7:
 - `project.*` ← `ROADMAP.md` frontmatter `project`/`title`/`status`.
 - `milestones[]` ← `ROADMAP.md` frontmatter `milestones[]`, verbatim.
 - `features[]` ← `ROADMAP.md` frontmatter `features[]`, verbatim, with `spec_path`/`plan_path`
@@ -196,6 +224,16 @@ Field-by-field mapping to §1/§2:
 - `cursor` ← generator-owned; not stored in `ROADMAP.md` frontmatter (derived at generation
   time from the in-flight feature list — first not-yet-`done` feature in dependency order).
 - `generated` / `schema_version` ← generator-owned metadata, not mirrored from ROADMAP.md.
+- `vision` ← `VISION.md` frontmatter `path`/`updated`/`pillars[]` (§6), or `null` when the file
+  is absent (FR-014). This key is OPTIONAL in `index.schema.json` — it is always emitted by the
+  CLI (null or populated), but a hand-authored/legacy v1-only document that omits it entirely
+  is still schema-valid (FR-016).
+- `audits[]` ← one entry per `docs/product/audits/<date>-<focus>.md` file (§7), or `[]` when
+  none exist (FR-015). `open`/`fixed` are derived counts computed from that file's
+  `findings[].status` — only `open` and `fixed` findings count toward this split; `obsolete`/
+  `accepted` findings count toward neither (they still contribute to the file's own `counts`
+  severity totals, which are mirrored verbatim, not derived). This key is likewise OPTIONAL in
+  `index.schema.json` for the same v1-only-document reason as `vision` above.
 
 ## 4. Appendix convention (FR-022)
 
@@ -228,3 +266,97 @@ No field drift found — all three fixtures already carry `schema_version`, `typ
 exactly. None of the three yet has a `features/<###>-<slug>/` directory or `spec_path`/
 `plan_path` populated in frontmatter — both are optional per §1/§2, so this is not drift; it is
 expected until a feature gets a formal spec/plan (Wave 4, FR-015, on-touch creation).
+
+## 6. `docs/product/VISION.md` — frontmatter contract (v1.1, FR-001/FR-002)
+
+File: `docs/product/VISION.md` in the project repo (optional — see Edge Cases below).
+Frontmatter = machine contract (mission + machine-readable pillars), body = free-form vision
+narrative. Every frontmatter field below is required whenever the file exists.
+
+```yaml
+---
+schema_version: 1                # int, single lockstep docs/product schema version, current: 1
+type: vision                     # const "vision"
+project: <slug>                  # kebab-case, matches ROADMAP.md frontmatter `project`
+title: <Product name — Vision>   # human title, English
+updated: YYYY-MM-DD               # last-write date, ISO 8601
+pillars:                          # REQUIRED non-empty array — at least one pillar
+  - id: <slug>                    # stable kebab-case slug
+    title: <short>                # human title, English
+    summary: <one sentence>       # human summary, English
+---
+
+<body — free-form vision narrative, English (FR-016)>
+```
+
+Rules:
+- `pillars[]` is the machine-readable part a consumer (e.g. Pro Orc) renders as cards without
+  parsing the body prose. **`pillars[]` MUST be present and non-empty whenever `VISION.md`
+  exists** — an empty array (`pillars: []`) or an omitted `pillars` key is INVALID (FR-001).
+  A vision without at least one structured pillar isn't machine-renderable, which is the whole
+  point of the field (see the spec's 2026-07-13 clarification overriding the original
+  "optional pillars" proposal).
+- Frontmatter is machine-owned (CLI writers: `vision-init`/`vision-touch`, Wave 3); the body is
+  human-owned prose, same split as `ROADMAP.md`.
+- `schema_version` here is the SAME single version space as `ROADMAP.md`'s `schema_version`
+  (see the top of this document) — not an independently-versioned vision-schema.
+
+**Edge case (FR-002):** `VISION.md` is entirely optional. Its absence is valid under schema
+v1.1 and MUST NOT cause `product validate` or any other CLI command to fail for a project that
+has not created one — `docs/product/` with only a v1 `ROADMAP.md` (no `VISION.md`, no
+`audits/`) remains fully valid.
+
+## 7. `docs/product/audits/<YYYY-MM-DD>-<focus>.md` — frontmatter contract (v1.1, FR-005/FR-006)
+
+Directory: `docs/product/audits/` (optional — see Edge Cases below). One file per completed
+a1-analyze run that a project owner chooses to publish into the product layer (append-only
+history — a second analyze-run creates a second file, never overwrites the first; see Wave 4,
+FR-007/FR-008). Filename encodes the analysis date and focus: `<YYYY-MM-DD>-<focus>.md`.
+
+```yaml
+---
+schema_version: 1                # int, single lockstep docs/product schema version, current: 1
+type: audit                      # const "audit"
+project: <slug>                  # kebab-case, matches ROADMAP.md frontmatter `project`
+focus: general|security|architecture|quality|onboarding   # analysis focus/lane
+date: YYYY-MM-DD                  # date the source analysis was produced
+source: <string>                  # provenance, e.g. path to the canonical analysis in the
+                                   # learning store / vault
+verdict: <string>                  # one line, e.g. "beta-ready, 5 launch blockers"
+counts: { blocker: <int>, major: <int>, minor: <int> }   # inline flow mapping, all 3 keys required
+findings:                          # REQUIRED array; MAY be empty (a zero-findings analysis is
+                                    # still a valid, publishable audit — FR-007 edge case)
+  - id: F-0NN                      # stable finding id, matches the source analysis
+    severity: BLOCKER|MAJOR|MINOR  # matches the source analysis severity vocabulary
+    category: <short>              # human category label, English
+    status: open|fixed|obsolete|accepted   # finding lifecycle, see below
+    fixed_commit: <sha> | null     # commit that resolved the finding, or null
+    feature: <roadmap-feature-id> | null   # join to ROADMAP.md features[].id, or null
+last_validated: YYYY-MM-DD         # date findings were last re-checked against the codebase
+---
+
+<body — executive summary, cross-cutting patterns, validation notes; English (FR-016)>
+```
+
+Rules:
+- `counts` is an inline flow-mapping (single YAML line, `{ blocker: N, major: N, minor: N }`)
+  — all three keys (`blocker`/`major`/`minor`) are required integers; this is the one field in
+  the whole `docs/product/` contract that uses inline-flow syntax instead of a block list,
+  because it is always a fixed 3-key summary, never a growable collection.
+- `findings[].status` MUST be exactly one of `open`, `fixed`, `obsolete`, `accepted` — all four
+  values ship in v1.1 from the start (the spec's 2026-07-13 clarification: `accepted`
+  represents a real, common won't-fix triage outcome). Any other value is INVALID
+  (`product validate` reports an invalid-status error, FR-006).
+- `findings[].feature`, when non-null, is the join to `ROADMAP.md` `features[].id` — this is
+  the machine-readable twin of the niimo 023-053 manual mirroring (Wave 5's `audit-mirror`
+  reproduces it via CLI); `product validate` cross-checks this reference exists and fails
+  validation if it does not (Wave 2, FR-018 — implemented in `cmdProductValidate`).
+- A missing required field (`verdict`, `counts`, `findings`, `last_validated`, etc.) is
+  INVALID — `product validate` reports the same class of error (missing required field, wrong
+  type) for audit files as it already does for `ROADMAP.md`/`feature.md` (FR-017).
+- `schema_version` here is the SAME single version space as `ROADMAP.md`'s `schema_version`
+  (see the top of this document) — not an independently-versioned audit-schema.
+
+**Edge case (FR-002 parity):** the `audits/` directory is entirely optional. Its absence (or
+presence with zero files) is valid under schema v1.1 and MUST NOT cause `product validate` or
+any other CLI command to fail for a project that has not published an audit yet.

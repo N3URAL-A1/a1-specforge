@@ -70,6 +70,12 @@ If the user reports a bug, use `a1-fix`. If they want to add functionality, use
 
 Terminal non-completion status: `cancelled`. Cancelled analyses keep their slot.
 
+If the analyzed project has a `docs/product/` directory, Phase 5 (Report)
+offers an opt-in prompt to publish the finished analysis into the product-docs
+audit surface via `product audit-publish --analysis <path>` — never automatic,
+and never shown for projects without `docs/product/`. See
+`workflows/05-report.md` Step 7.
+
 ## Focus modes
 
 The skill operates in one of five focus modes, set in Phase 1:

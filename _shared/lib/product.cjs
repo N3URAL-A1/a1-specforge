@@ -50,11 +50,138 @@ function readProductFeature(dir, id) {
   return { file, content, ...parsed };
 }
 
+/** Build the set of known ROADMAP.md feature ids from an already-parsed
+ * roadmap frontmatter object (FR-018/FR-011). Shared by the `product
+ * validate` read-time cross-check (Wave 2) and the `audit-set --feature`
+ * write-time guard (Wave 4) — one source of truth for "does this feature id
+ * exist", per the Wave 4 brief's "reuse the Wave 2 helper" instruction. Pure. */
+function roadmapFeatureIdSet(roadmapFm) {
+  return new Set(
+    (Array.isArray(roadmapFm.features) ? roadmapFm.features : [])
+      .map((f) => f.id)
+      .filter((id) => typeof id === 'string')
+  );
+}
+
+/** Read `docs/product/VISION.md` (if present) and return the `vision` block
+ * for `index.json` (FR-014): `{ path, updated, pillars }` mirrored from
+ * frontmatter, or `null` when the file is absent. Pure read, no writes.
+ * Deliberately tolerant of a still-invalid VISION.md (e.g. mid-edit) — index
+ * regeneration must not throw; `product validate` is the place that enforces
+ * the pillars-non-empty rule (FR-001), not this derivation.
+ *
+ * `fmOverride` (optional): when a caller is mutating VISION.md's frontmatter
+ * IN THE SAME transaction (`vision-init`/`vision-touch`, Wave 3), the file on
+ * disk is still the OLD content at the point `regenerateDerived` runs (the
+ * write only lands after `writeAllOrNothing`'s tmp/rename phase). Passing the
+ * already-updated in-memory frontmatter here avoids index.json reflecting a
+ * stale `vision` block for one command's own write — the same reason
+ * `roadmapFm` itself is passed as an argument rather than re-read from disk. */
+function readVisionBlock(productDir, fmOverride) {
+  if (fmOverride !== undefined) {
+    const fm = fmOverride;
+    return {
+      path: 'docs/product/VISION.md',
+      updated: fm.updated !== undefined ? fm.updated : null,
+      pillars: Array.isArray(fm.pillars)
+        ? fm.pillars.map((p) => ({ id: p.id, title: p.title, summary: p.summary }))
+        : [],
+    };
+  }
+  const visionFile = path.join(productDir, 'VISION.md');
+  if (!fs.existsSync(visionFile)) return null;
+  const content = fs.readFileSync(visionFile, 'utf8');
+  const { fm } = parseNestedFrontmatter(content);
+  return {
+    path: 'docs/product/VISION.md',
+    updated: fm.updated !== undefined ? fm.updated : null,
+    pillars: Array.isArray(fm.pillars)
+      ? fm.pillars.map((p) => ({ id: p.id, title: p.title, summary: p.summary }))
+      : [],
+  };
+}
+
+/** Build one `audits[]` entry (the derived shape index.json exposes, FR-015)
+ * from an already-parsed audit frontmatter object + its filename. Pure. Split
+ * out of readAuditsBlock so both the on-disk read path AND an in-memory
+ * override (auditFmOverride below) can share the exact same derivation. */
+function auditFmToIndexEntry(name, fm) {
+  const findings = Array.isArray(fm.findings) ? fm.findings : [];
+  const open = findings.filter((f) => f.status === 'open').length;
+  const fixed = findings.filter((f) => f.status === 'fixed').length;
+  const counts = parseInlineFlowObject(fm.counts) || fm.counts || { blocker: 0, major: 0, minor: 0 };
+
+  return {
+    path: `docs/product/audits/${name}`,
+    date: fm.date !== undefined ? fm.date : null,
+    focus: fm.focus !== undefined ? fm.focus : null,
+    verdict: fm.verdict !== undefined ? fm.verdict : null,
+    counts: {
+      blocker: typeof counts.blocker === 'number' ? counts.blocker : 0,
+      major: typeof counts.major === 'number' ? counts.major : 0,
+      minor: typeof counts.minor === 'number' ? counts.minor : 0,
+    },
+    open,
+    fixed,
+    last_validated: fm.last_validated !== undefined ? fm.last_validated : null,
+  };
+}
+
+/** Read every `docs/product/audits/*.md` file (if the directory exists) and
+ * return the `audits[]` array for `index.json` (FR-015): one entry per file
+ * with `path`/`date`/`focus`/`verdict`/`counts`/derived `open`+`fixed`
+ * (computed from `findings[].status` — only `open` and `fixed` count toward
+ * this derived split; `obsolete`/`accepted` findings are excluded from both,
+ * per the spec's index.json shape)/`last_validated`. Returns `[]` when the
+ * directory is absent or empty. Sorted by filename (= date+focus) for a
+ * deterministic, diffable index.json. Pure read, no writes.
+ *
+ * `auditFmOverride` (optional, Wave 4): `{ name, fm }` for ONE audit file a
+ * caller is mutating IN THE SAME transaction (`audit-publish`'s new file,
+ * `audit-set`'s targeted-replace) — the file on disk is still in its PRIOR
+ * state at the point `regenerateDerived` runs (the write only lands after
+ * `writeAllOrNothing`'s tmp/rename phase), same reasoning as
+ * `readVisionBlock`'s `fmOverride` parameter (Wave 3). Without this, an
+ * `audit-set` call's own index.json regeneration would reflect the finding's
+ * PREVIOUS status/counts, one call behind reality. When `name` matches an
+ * on-disk file, the override REPLACES that entry; when it doesn't (a brand
+ * new file from `audit-publish`), the override is APPENDED, keeping the
+ * same sorted-by-filename order the on-disk read already produces. */
+function readAuditsBlock(productDir, auditFmOverride) {
+  const auditsDir = path.join(productDir, 'audits');
+  const files = fs.existsSync(auditsDir)
+    ? fs.readdirSync(auditsDir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.md'))
+      .map((entry) => entry.name)
+      .sort()
+    : [];
+
+  const entries = files.map((name) => {
+    if (auditFmOverride && auditFmOverride.name === name) {
+      return auditFmToIndexEntry(name, auditFmOverride.fm);
+    }
+    const auditFile = path.join(auditsDir, name);
+    const content = fs.readFileSync(auditFile, 'utf8');
+    const { fm } = parseNestedFrontmatter(content);
+    return auditFmToIndexEntry(name, fm);
+  });
+
+  if (auditFmOverride && !files.includes(auditFmOverride.name)) {
+    entries.push(auditFmToIndexEntry(auditFmOverride.name, auditFmOverride.fm));
+    entries.sort((a, b) => a.path.localeCompare(b.path));
+  }
+
+  return entries;
+}
+
 /** Pure/side-effect-free: compute regenerated index.json and NEXT.md content
  * strings from the ROADMAP frontmatter (source of truth) and productDir (only
  * read to fill spec_path/plan_path from feature.md when present — never
- * written to). Returns { indexJson, nextMd }. */
-function regenerateDerived(productDir, roadmapFm) {
+ * written to). Returns { indexJson, nextMd }. `auditFmOverride` (Wave 4,
+ * optional): see readAuditsBlock's own doc comment — passed through
+ * unchanged so audit-publish/audit-set's OWN in-flight write is reflected in
+ * the index.json this same call regenerates. */
+function regenerateDerived(productDir, roadmapFm, visionFmOverride, auditFmOverride) {
   const milestones = Array.isArray(roadmapFm.milestones) ? roadmapFm.milestones : [];
   const featuresIn = Array.isArray(roadmapFm.features) ? roadmapFm.features : [];
 
@@ -114,6 +241,13 @@ function regenerateDerived(productDir, roadmapFm) {
     features,
     next: roadmapFm.next !== undefined ? roadmapFm.next : null,
     cursor,
+    // Schema v1.1 additions (spec 003-product-schema-v1.1-vision-audits,
+    // Wave 2, FR-014/FR-015): both degrade gracefully (null / []) when the
+    // corresponding optional file/directory is absent — see readVisionBlock/
+    // readAuditsBlock above and index.schema.json's optional-property
+    // extension (FR-016) for the byte-identical-when-absent contract.
+    vision: readVisionBlock(productDir, visionFmOverride),
+    audits: readAuditsBlock(productDir, auditFmOverride),
   };
 
   const inFlight = features.filter((f) => f.status === 'in-flight');
@@ -930,6 +1064,889 @@ function cmdProductFeatureInit(args) {
   exitWithLock(lockPath, 0);
 }
 
+const PRODUCT_VISION_KEY_ORDER = ['schema_version', 'type', 'project', 'title', 'updated', 'pillars'];
+
+/** Collect every occurrence of a repeatable `--<name> <value>` /
+ * `--<name>=<value>` flag from the raw args array. `parseFlags` (lib/io.cjs)
+ * has no 'multi' flag kind — it overwrites flags[name] on each match — so a
+ * repeatable flag like `--pillar` (0 or more times per FR-003) needs this
+ * small dedicated scan instead. Pure; does not mutate `args`. */
+function collectRepeatableFlag(args, name) {
+  const values = [];
+  const eqPrefix = `--${name}=`;
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === `--${name}`) {
+      values.push(args[i + 1]);
+      i++;
+    } else if (a.startsWith(eqPrefix)) {
+      values.push(a.slice(eqPrefix.length));
+    }
+  }
+  return values;
+}
+
+/** Parse one `--pillar id:title:summary` flag value into a pillar object.
+ * Pure. Throws (via fail()/failWithLock() at the call site) when the shape
+ * is wrong — callers pass the raw flag value and a lockPath (or null before
+ * any lock is held) for the error path. Splits on ':' with a max of 3 parts
+ * so a summary containing ':' is preserved verbatim (only id/title must be
+ * colon-free by construction — a kebab-slug and a short title rarely need
+ * one, but a summary sentence often does, e.g. "id:Title:note: detail"). */
+function parsePillarFlag(raw) {
+  const parts = raw.split(':');
+  if (parts.length < 3) return null;
+  const id = parts[0].trim();
+  const title = parts[1].trim();
+  const summary = parts.slice(2).join(':').trim();
+  if (!id || !title || !summary) return null;
+  return { id, title, summary };
+}
+
+/** product vision-init --title <t> [--pillar id:title:summary ...] [--dir]:
+ * scaffold docs/product/VISION.md (schema v1.1, FR-003). Refuses (non-zero
+ * exit, no write) if VISION.md already exists — mirrors cmdProductFeatureInit's
+ * duplicate-refusal contract (existence check performed INSIDE the locked
+ * section, same TOCTOU-safe pattern as cmdProductInit). Requires at least
+ * one --pillar flag: validateVisionFm (Wave 1, FR-001) rejects an empty/
+ * omitted pillars[] outright, so accepting zero --pillar flags here would
+ * only produce a VISION.md that immediately fails `product validate` —
+ * reject at the CLI boundary instead, with a clear error, rather than
+ * writing a file that's DOA. Each pillar id is validated via assertSlug
+ * (kebab-case) before any path/lock work, consistent with every other
+ * product-command entry point. After writing, regenerates index.json (via
+ * buildRoadmapWritesWithChangelog's shared regenerateDerived call) so its
+ * `vision` block becomes non-null (FR-014). */
+function cmdProductVisionInit(args) {
+  const flags = parseFlags(args, { title: 'value', dir: 'value' });
+  if (!flags.title) {
+    usage('product vision-init requires --title <title> [--pillar id:title:summary ...]');
+  }
+  const pillarFlags = collectRepeatableFlag(args, 'pillar');
+  if (pillarFlags.length === 0) {
+    usage('product vision-init requires at least one --pillar id:title:summary (VISION.md must have a non-empty pillars[] per schema v1.1)');
+  }
+  const pillars = pillarFlags.map((raw) => {
+    const p = parsePillarFlag(raw);
+    if (!p) {
+      usage(`product vision-init: invalid --pillar value ${JSON.stringify(raw)} — expected id:title:summary (all three parts non-empty)`);
+    }
+    return p;
+  });
+  for (const p of pillars) {
+    assertSlug(p.id, 'pillar');
+  }
+  const pillarIds = new Set();
+  for (const p of pillars) {
+    if (pillarIds.has(p.id)) {
+      usage(`product vision-init: duplicate --pillar id ${JSON.stringify(p.id)}`);
+    }
+    pillarIds.add(p.id);
+  }
+
+  const dir = productDirFromFlags(flags);
+  const visionFile = path.join(dir, 'VISION.md');
+
+  const lockFile = path.join(dir, '.product-stage.lock.json');
+  const lockPath = acquireReservationsLock(lockFile);
+
+  // Overwrite guard runs INSIDE the locked section (TOCTOU fix, same pattern
+  // as cmdProductInit/cmdProductImport) — otherwise two concurrent
+  // `vision-init` runs could both pass this check before either held the
+  // lock, and the second one to write would silently clobber the first.
+  if (fs.existsSync(visionFile)) {
+    failWithLock(lockPath, `product vision-init: ${visionFile} already exists — refusing to overwrite (use \`product vision-touch\` to bump 'updated', or edit the file by hand)`);
+  }
+
+  const roadmapFile = path.join(dir, 'ROADMAP.md');
+  if (!fs.existsSync(roadmapFile)) {
+    failWithLock(lockPath, `product vision-init: ${roadmapFile} not found (run \`product init\` first)`);
+  }
+
+  const roadmapContent = fs.readFileSync(roadmapFile, 'utf8');
+  const { fm: roadmapFm } = parseNestedFrontmatter(roadmapContent);
+
+  const today = nowIso().slice(0, 10);
+  const visionFm = {
+    schema_version: 1,
+    type: 'vision',
+    project: roadmapFm.project,
+    title: flags.title,
+    updated: today,
+    pillars,
+  };
+  const visionFmStr = serializeNestedFrontmatter(visionFm, PRODUCT_VISION_KEY_ORDER);
+  const visionContent = `---\n${visionFmStr}\n---\n\n# ${flags.title}\n\n(fill in the vision narrative here.)\n`;
+
+  const { indexJson, nextMd } = regenerateDerived(dir, roadmapFm, visionFm);
+  const writes = [
+    { target: visionFile, content: visionContent },
+    { target: path.join(dir, 'index.json'), content: JSON.stringify(indexJson, null, 2) + '\n' },
+    { target: path.join(dir, 'NEXT.md'), content: nextMd },
+  ];
+  writeAllOrNothing(lockPath, writes, 'product vision-init');
+
+  const out = { status: 'OK', title: flags.title, pillars: pillars.map((p) => p.id), files_written: writes.map((w) => w.target) };
+  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+  exitWithLock(lockPath, 0);
+}
+
+/** product vision-touch [--dir]: bump VISION.md's frontmatter `updated`
+ * field to today's date and regenerate index.json (FR-004) — the prose
+ * body and `pillars[]` (indeed every other frontmatter field) are left
+ * byte-for-byte unchanged. Fails (non-zero exit, no write) if VISION.md
+ * does not exist yet — there is nothing to touch (use `vision-init`
+ * first). Reuses the same lock + tmp/rename transaction as every other
+ * product writer (FR-019). */
+function cmdProductVisionTouch(args) {
+  const flags = parseFlags(args, { dir: 'value' });
+  const dir = productDirFromFlags(flags);
+  const visionFile = path.join(dir, 'VISION.md');
+
+  const lockFile = path.join(dir, '.product-stage.lock.json');
+  const lockPath = acquireReservationsLock(lockFile);
+
+  if (!fs.existsSync(visionFile)) {
+    failWithLock(lockPath, `product vision-touch: ${visionFile} not found — run \`product vision-init\` first`);
+  }
+  const roadmapFile = path.join(dir, 'ROADMAP.md');
+  if (!fs.existsSync(roadmapFile)) {
+    failWithLock(lockPath, `product vision-touch: ${roadmapFile} not found`);
+  }
+
+  const visionContentBefore = fs.readFileSync(visionFile, 'utf8');
+  const { fm: visionFm } = parseNestedFrontmatter(visionContentBefore);
+  if (typeof visionFm.updated !== 'string' || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(visionFm.updated)) {
+    failWithLock(lockPath, `product vision-touch: ${visionFile} has no valid 'updated: YYYY-MM-DD' frontmatter line to bump — run \`product validate\` to diagnose the file first`);
+  }
+
+  const today = nowIso().slice(0, 10);
+  const updatedVisionFm = { ...visionFm, updated: today };
+
+  // Deliberately NOT re-serializing the whole frontmatter object here (unlike
+  // every other product writer): serializeNestedFrontmatter/serializeScalar
+  // re-quotes any string containing punctuation (e.g. an em dash in `title`,
+  // a period in a pillar `summary`) even when its VALUE is unchanged, which
+  // would violate FR-004's explicit "prose body AND pillars[] are byte-
+  // unchanged" contract for every hand-authored VISION.md that doesn't
+  // happen to already use this serializer's exact quoting conventions.
+  // Instead, do a targeted textual replace of ONLY the `updated:` line
+  // WITHIN THE FRONTMATTER BLOCK (bounded to the text between the first two
+  // "---" markers, so a coincidental "updated:"-looking line inside the
+  // prose body below is never touched), leaving every other line —
+  // including whatever whitespace/quoting the user or vision-init originally
+  // wrote — untouched.
+  if (!visionContentBefore.startsWith('---\n')) {
+    failWithLock(lockPath, `product vision-touch: ${visionFile} does not start with a '---' frontmatter block`);
+  }
+  const fmEnd = visionContentBefore.indexOf('\n---', 4);
+  if (fmEnd === -1) {
+    failWithLock(lockPath, `product vision-touch: ${visionFile} frontmatter has no closing '---'`);
+  }
+  const fmBlockBefore = visionContentBefore.slice(0, fmEnd);
+  const restAfterFm = visionContentBefore.slice(fmEnd);
+  const updatedLineRe = /^updated:.*$/m;
+  if (!updatedLineRe.test(fmBlockBefore)) {
+    failWithLock(lockPath, `product vision-touch: ${visionFile} frontmatter has no 'updated:' line to replace`);
+  }
+  const fmBlockAfter = fmBlockBefore.replace(updatedLineRe, `updated: ${today}`);
+  const visionContentAfter = `${fmBlockAfter}${restAfterFm}`;
+
+  const roadmapContent = fs.readFileSync(roadmapFile, 'utf8');
+  const { fm: roadmapFm } = parseNestedFrontmatter(roadmapContent);
+  const { indexJson, nextMd } = regenerateDerived(dir, roadmapFm, updatedVisionFm);
+
+  const writes = [
+    { target: visionFile, content: visionContentAfter },
+    { target: path.join(dir, 'index.json'), content: JSON.stringify(indexJson, null, 2) + '\n' },
+    { target: path.join(dir, 'NEXT.md'), content: nextMd },
+  ];
+  writeAllOrNothing(lockPath, writes, 'product vision-touch');
+
+  const out = { status: 'OK', updated: today, files_written: writes.map((w) => w.target) };
+  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+  exitWithLock(lockPath, 0);
+}
+
+const PRODUCT_AUDIT_KEY_ORDER = [
+  'schema_version', 'type', 'project', 'focus', 'date', 'source', 'verdict',
+  'counts', 'findings', 'last_validated',
+];
+
+/** Serialize an inline YAML flow-mapping `{ blocker: N, major: N, minor: N }`
+ * (the twin of parseInlineFlowObject, near the validate section below).
+ * Pure. Always emits all three keys as bare (unquoted) integers, matching
+ * the exact shape docs/product/SCHEMA.md section 7 and every hand-authored
+ * audit fixture use. */
+function serializeCountsInline(counts) {
+  return `{ blocker: ${counts.blocker}, major: ${counts.major}, minor: ${counts.minor} }`;
+}
+
+/** Build the full audits/<date>-<focus>.md text (frontmatter + body) from an
+ * already-shaped audit frontmatter object. Pure — no I/O. `serializeNested
+ * Frontmatter` has no inline-flow-mapping support (see serializeScalar), so
+ * `counts` is serialized separately here and spliced into the `counts:` line
+ * via a targeted textual replace of the placeholder line the generic
+ * serializer emits — the same "serialize generically, then fix up the one
+ * field the shared serializer can't express" approach Wave 3's vision-touch
+ * fix established for targeted single-field edits. */
+function serializeAuditContent(auditFm, body) {
+  const fmStr = serializeNestedFrontmatter(auditFm, PRODUCT_AUDIT_KEY_ORDER);
+  const countsLineRe = /^counts:.*$/m;
+  const fixedFmStr = fmStr.replace(countsLineRe, `counts: ${serializeCountsInline(auditFm.counts)}`);
+  return `---\n${fixedFmStr}\n---\n${body.startsWith('\n') ? '' : '\n'}${body}`;
+}
+
+/** Parse one a1-analyze finding string of the shape
+ * `id=F-001; severity=MAJOR; category=...; location=...; description=...;
+ * recommendation=...` (the flat `key=value; key=value` frontmatter-list-item
+ * format `lib/io.cjs`'s `parseFrontmatter`/ANALYSIS_KEY_ORDER produces for
+ * analysis `findings[]` — see .a1/learnings/projects/&lt;name&gt;/analyses/ .
+ * Pure. Returns { id, severity, category } (the three fields the v1.1 audit
+ * finding shape needs from the source) or null if `id`/`severity` are
+ * missing — a finding lacking those two is not usable as an audit entry.
+ * Deliberately tolerant of ';' appearing inside a value (e.g. inside
+ * `description`): splits on '; ' then re-joins any trailing fragment whose
+ * key doesn't look like a known field back onto the previous field's value,
+ * mirroring parsePillarFlag's "cap the split, keep the remainder" approach
+ * for a value that itself may contain the separator character. */
+function parseAnalysisFindingString(raw) {
+  if (typeof raw !== 'string') return null;
+  const fields = {};
+  let currentKey = null;
+  for (const part of raw.split(';')) {
+    const trimmed = part.trim();
+    const m = /^([a-z_]+)=([\s\S]*)$/.exec(trimmed);
+    if (m && ['id', 'severity', 'category', 'location', 'description', 'recommendation'].includes(m[1])) {
+      currentKey = m[1];
+      fields[currentKey] = m[2];
+    } else if (currentKey) {
+      // Continuation of the previous field's value (it contained a ';').
+      fields[currentKey] = `${fields[currentKey]};${part}`;
+    }
+  }
+  if (!fields.id || !fields.severity) return null;
+  return {
+    id: fields.id.trim(),
+    severity: fields.severity.trim(),
+    category: (fields.category || 'uncategorized').trim(),
+  };
+}
+
+/** Read an a1-analyze result file's frontmatter (`lib/io.cjs`'s
+ * `parseFrontmatter` — the flat/simple parser, NOT `parseNestedFrontmatter`:
+ * analysis `findings[]` is a flat list of quoted `key=value; ...` strings,
+ * not the nested-object-list shape ROADMAP.md/VISION.md/audits use — see
+ * ANALYSIS_KEY_ORDER in lib/io.cjs) and derive everything `audit-publish`
+ * needs: `{ project, focus, date, source, verdict, findings }`. Pure — no
+ * writes. Throws (via fail()) on a structurally unusable analysis file
+ * (missing focus/date, or a findings[] that isn't an array) — the caller is
+ * responsible for translating that into the locked failWithLock() path once
+ * a lock is held. */
+function readAnalysisForPublish(analysisPath) {
+  if (!fs.existsSync(analysisPath)) {
+    fail(`product audit-publish: --analysis file not found: ${analysisPath}`);
+  }
+  const content = fs.readFileSync(analysisPath, 'utf8');
+  const { fm } = io.parseFrontmatter(content);
+
+  if (typeof fm.focus !== 'string' || fm.focus.length === 0) {
+    fail(`product audit-publish: ${analysisPath} has no usable 'focus' in frontmatter`);
+  }
+  const dateRaw = typeof fm.created_at === 'string' ? fm.created_at.slice(0, 10) : null;
+  if (!dateRaw || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(dateRaw)) {
+    fail(`product audit-publish: ${analysisPath} has no usable 'created_at' date in frontmatter`);
+  }
+
+  const rawFindings = Array.isArray(fm.findings) ? fm.findings : [];
+  const findings = rawFindings
+    .map((raw) => parseAnalysisFindingString(raw))
+    .filter((f) => f !== null);
+
+  return {
+    project: typeof fm.project === 'string' ? fm.project : null,
+    focus: fm.focus,
+    date: dateRaw,
+    source: analysisPath,
+    verdict: typeof fm.title === 'string' && fm.title.length > 0 ? fm.title : `${fm.focus} analysis`,
+    findings,
+  };
+}
+
+/** product audit-publish --analysis <path> [--project <slug>] [--dir]:
+ * parse an a1-analyze result's frontmatter findings and create exactly one
+ * new docs/product/audits/<date>-<focus>.md (FR-007), every finding
+ * initialized to status: open / fixed_commit: null / feature: null.
+ * Refuses (non-zero exit, no write) if a file for the same date+focus
+ * already exists (FR-008) — audits are append-only history, one file per
+ * analyze-run, never a rolling per-focus file that gets overwritten.
+ * Zero-findings analyses still produce a valid, empty-findings[] audit file
+ * (explicit spec edge case) rather than erroring. Regenerates index.json
+ * (audits[] gains a matching entry) under the same lock + tmp/rename
+ * transaction as every other product writer (FR-019). --project overrides
+ * the analysis frontmatter's own `project` field (useful when publishing an
+ * externally-authored analysis, e.g. the niimo reference fixture, into a
+ * DIFFERENT project's docs/product/ — Wave 5 reuses this). */
+function cmdProductAuditPublish(args) {
+  const flags = parseFlags(args, { analysis: 'value', project: 'value', dir: 'value' });
+  if (!flags.analysis) {
+    usage('product audit-publish requires --analysis <path>');
+  }
+  const dir = productDirFromFlags(flags);
+  const lockFile = path.join(dir, '.product-stage.lock.json');
+  const lockPath = acquireReservationsLock(lockFile);
+
+  const roadmapFile = path.join(dir, 'ROADMAP.md');
+  if (!fs.existsSync(roadmapFile)) {
+    failWithLock(lockPath, `product audit-publish: ${roadmapFile} not found (run \`product init\` first)`);
+  }
+  const roadmapContent = fs.readFileSync(roadmapFile, 'utf8');
+  const { fm: roadmapFm } = parseNestedFrontmatter(roadmapContent);
+
+  let parsed;
+  try {
+    parsed = readAnalysisForPublish(path.resolve(flags.analysis));
+  } catch (e) {
+    failWithLock(lockPath, e.message);
+  }
+
+  const project = flags.project || parsed.project || roadmapFm.project;
+  if (!project) {
+    failWithLock(lockPath, 'product audit-publish: could not determine --project (not in analysis frontmatter, no --project flag, no ROADMAP.md project)');
+  }
+
+  const auditsDir = path.join(dir, 'audits');
+  const fileName = `${parsed.date}-${parsed.focus}.md`;
+  const auditFile = path.join(auditsDir, fileName);
+
+  // Duplicate-date+focus refusal (FR-008) — checked INSIDE the locked
+  // section (TOCTOU-safe, same pattern as every other product writer's
+  // overwrite guard) so two concurrent publishes of the same analysis can
+  // never both pass the check before either holds the lock.
+  if (fs.existsSync(auditFile)) {
+    failWithLock(
+      lockPath,
+      `product audit-publish: ${auditFile} already exists — refusing to overwrite (audits are append-only ` +
+        'history; publish a differently-dated or differently-focused analysis, or use `product audit-set` ' +
+        'to update an existing finding)'
+    );
+  }
+
+  const counts = { blocker: 0, major: 0, minor: 0 };
+  const findings = parsed.findings.map((f) => {
+    const severityKey = f.severity === 'BLOCKER' ? 'blocker' : f.severity === 'MAJOR' ? 'major' : f.severity === 'MINOR' ? 'minor' : null;
+    if (severityKey) counts[severityKey] += 1;
+    return {
+      id: f.id,
+      severity: f.severity,
+      category: f.category,
+      status: 'open',
+      fixed_commit: null,
+      feature: null,
+    };
+  });
+
+  const today = nowIso().slice(0, 10);
+  const auditFm = {
+    schema_version: 1,
+    type: 'audit',
+    project,
+    focus: parsed.focus,
+    date: parsed.date,
+    source: parsed.source,
+    verdict: parsed.verdict,
+    counts,
+    findings,
+    last_validated: today,
+  };
+  const auditBody = `\n# Audit — ${parsed.focus} (${parsed.date})\n\n> Published from \`${parsed.source}\` via ` +
+    '`product audit-publish`.\n\n## Changelog\n\n' +
+    `- **${today}** — audit published — ${findings.length} finding(s) imported from a1-analyze result\n`;
+  const auditContent = serializeAuditContent(auditFm, auditBody);
+
+  // auditFmOverride: the new audit file hasn't landed on disk yet (write
+  // happens below, via writeAllOrNothing) — pass the in-memory frontmatter
+  // so THIS SAME index.json regeneration already reflects it (FR-007's own
+  // "index.json's audits[] gains a matching entry" AC), not one call behind.
+  const { indexJson, nextMd } = regenerateDerived(dir, roadmapFm, undefined, { name: fileName, fm: auditFm });
+  const writes = [
+    { target: auditFile, content: auditContent },
+    { target: path.join(dir, 'index.json'), content: JSON.stringify(indexJson, null, 2) + '\n' },
+    { target: path.join(dir, 'NEXT.md'), content: nextMd },
+  ];
+  writeAllOrNothing(lockPath, writes, 'product audit-publish');
+
+  const out = {
+    status: 'OK',
+    audit_file: auditFile,
+    focus: parsed.focus,
+    date: parsed.date,
+    findings_count: findings.length,
+    files_written: writes.map((w) => w.target),
+  };
+  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+  exitWithLock(lockPath, 0);
+}
+
+const AUDIT_SET_STATUS_VALUES = ['open', 'fixed', 'obsolete', 'accepted'];
+
+/** product audit-set --audit <path> --finding F-0NN --status <status>
+ * [--commit <sha>] [--feature <id>] [--dir]: mutate EXACTLY the named
+ * finding's status/fixed_commit/feature fields, leaving every other finding
+ * (and every other frontmatter field, and the prose body) byte-unchanged
+ * (FR-009). Appends a one-line changelog entry to the audit body. Fails
+ * (non-zero exit, no write) if --finding doesn't match any finding id in the
+ * target file (FR-010), if --status is out of the FR-006 enum, or if
+ * --feature names an id absent from ROADMAP.md (FR-011, hard validation —
+ * reuses roadmapFeatureIdSet(), the same helper `product validate`'s FR-018
+ * cross-check uses). A transition FROM 'fixed' back TO 'open' (regression
+ * re-open) is explicitly a LEGAL transition — no forward-only guard here,
+ * unlike `product stage`'s CODE_SCOPE_STAGES ordering. Regenerates
+ * index.json (derived open/fixed counts) under the same lock + tmp/rename
+ * transaction as every other product writer (FR-019).
+ *
+ * Uses a targeted textual replace of ONLY the one finding's 3 fields within
+ * the frontmatter block (bounded to the file's `findings:` block, working
+ * line-by-line inside the matched finding's `  - id: ...` … next `  - id:`
+ * span), NOT a full re-serialize via serializeNestedFrontmatter — the exact
+ * same reason Wave 3's vision-touch fix gives: the shared serializer
+ * re-quotes every unchanged string value (a category with a comma/colon, a
+ * source path with a slash already unquoted by hand, …), which would violate
+ * this FR's "other findings are byte-unchanged" contract for any
+ * hand-authored or audit-publish-written file that doesn't happen to already
+ * match the serializer's exact quoting conventions. */
+function cmdProductAuditSet(args) {
+  const flags = parseFlags(args, { audit: 'value', finding: 'value', status: 'value', commit: 'value', feature: 'value', dir: 'value' });
+  if (!flags.audit || !flags.finding || !flags.status) {
+    usage('product audit-set requires --audit <path> --finding F-0NN --status <open|fixed|obsolete|accepted> [--commit <sha>] [--feature <id>]');
+  }
+  if (!AUDIT_SET_STATUS_VALUES.includes(flags.status)) {
+    usage(`product audit-set --status must be one of: ${AUDIT_SET_STATUS_VALUES.join('|')} (got: ${flags.status})`);
+  }
+
+  const dir = productDirFromFlags(flags);
+  const lockFile = path.join(dir, '.product-stage.lock.json');
+  const lockPath = acquireReservationsLock(lockFile);
+
+  const auditFile = path.resolve(flags.audit);
+  if (!fs.existsSync(auditFile)) {
+    failWithLock(lockPath, `product audit-set: ${auditFile} not found`);
+  }
+
+  if (flags.feature) {
+    const roadmapFile = path.join(dir, 'ROADMAP.md');
+    if (!fs.existsSync(roadmapFile)) {
+      failWithLock(lockPath, `product audit-set: ${roadmapFile} not found (cannot validate --feature ${flags.feature})`);
+    }
+    const roadmapContent = fs.readFileSync(roadmapFile, 'utf8');
+    const { fm: roadmapFm } = parseNestedFrontmatter(roadmapContent);
+    const knownFeatureIds = roadmapFeatureIdSet(roadmapFm);
+    if (!knownFeatureIds.has(flags.feature)) {
+      failWithLock(
+        lockPath,
+        `product audit-set: --feature '${flags.feature}' does not exist in ${roadmapFile} — ` +
+          'no dangling findings[].feature references are allowed (FR-011; add the feature first via `product add-feature`)'
+      );
+    }
+  }
+
+  const auditContentBefore = fs.readFileSync(auditFile, 'utf8');
+  const { fm: auditFm } = parseNestedFrontmatter(auditContentBefore);
+  const findings = Array.isArray(auditFm.findings) ? auditFm.findings : [];
+  const findingIdx = findings.findIndex((f) => f.id === flags.finding);
+  if (findingIdx === -1) {
+    failWithLock(
+      lockPath,
+      `product audit-set: finding '${flags.finding}' not found in ${auditFile} ` +
+        `(known ids: ${findings.map((f) => f.id).join(', ') || '(none)'})`
+    );
+  }
+
+  // Targeted textual replace: locate the matched finding's block within the
+  // FRONTMATTER ONLY (bounded to the text between the first two '---'
+  // markers, same bounding discipline as vision-touch), so a coincidental
+  // "- id: F-0NN" string inside the prose body is never touched.
+  if (!auditContentBefore.startsWith('---\n')) {
+    failWithLock(lockPath, `product audit-set: ${auditFile} does not start with a '---' frontmatter block`);
+  }
+  const fmEnd = auditContentBefore.indexOf('\n---', 4);
+  if (fmEnd === -1) {
+    failWithLock(lockPath, `product audit-set: ${auditFile} frontmatter has no closing '---'`);
+  }
+  const fmBlockBefore = auditContentBefore.slice(0, fmEnd);
+  const restAfterFm = auditContentBefore.slice(fmEnd);
+  const fmLines = fmBlockBefore.split('\n');
+
+  const findingStartRe = new RegExp(`^  - id:\\s*${flags.finding.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`);
+  const startIdx = fmLines.findIndex((l) => findingStartRe.test(l));
+  if (startIdx === -1) {
+    failWithLock(lockPath, `product audit-set: could not locate finding '${flags.finding}' block in ${auditFile} frontmatter for a targeted replace`);
+  }
+  let endIdx = fmLines.length;
+  for (let i = startIdx + 1; i < fmLines.length; i++) {
+    if (/^  - id:/.test(fmLines[i]) || /^[A-Za-z_][A-Za-z0-9_]*:/.test(fmLines[i])) {
+      endIdx = i;
+      break;
+    }
+  }
+  const blockLines = fmLines.slice(startIdx, endIdx);
+
+  const commitValue = flags.commit || null;
+  const featureValue = flags.feature || null;
+  // `fixed_commit` is a commit sha and MUST always round-trip as a STRING
+  // (validateAuditFm/FR-005 requires typeof === 'string'), but a git sha can
+  // be entirely decimal digits (e.g. an abbreviated sha like '4730838' — hex
+  // digits 0-9 are valid, unabbreviated shas are even more likely to look
+  // "numeric" over 7-8 hex chars). io.serializeScalar()'s generic
+  // alphanumeric-bare-word rule (shared with every other field) would emit
+  // such a value UNQUOTED, and the YAML-subset parser then reads it back as
+  // a JS `number`, silently violating the schema on the very next
+  // `product validate` — force-quote `fixed_commit` specifically so this
+  // field's serialization is schema-safe regardless of the sha's shape.
+  const replaceField = (lines, field, value) => {
+    const re = new RegExp(`^(    ${field}:).*$`);
+    const serialized = value === null
+      ? 'null'
+      : field === 'fixed_commit'
+        ? JSON.stringify(value)
+        : io.serializeScalar(value);
+    let replaced = false;
+    const out = lines.map((l) => {
+      if (re.test(l)) { replaced = true; return `    ${field}: ${serialized}`; }
+      return l;
+    });
+    if (!replaced) {
+      out.push(`    ${field}: ${serialized}`);
+    }
+    return out;
+  };
+  let updatedBlockLines = replaceField(blockLines, 'status', flags.status);
+  // Only touch fixed_commit/feature when the caller actually supplied them —
+  // an audit-set call that only changes --status (e.g. the fixed -> open
+  // regression re-open case) must not clobber a previously-recorded
+  // fixed_commit/feature with null.
+  if (flags.commit !== undefined) {
+    updatedBlockLines = replaceField(updatedBlockLines, 'fixed_commit', commitValue);
+  }
+  if (flags.feature !== undefined) {
+    updatedBlockLines = replaceField(updatedBlockLines, 'feature', featureValue);
+  }
+
+  const updatedFmLines = [
+    ...fmLines.slice(0, startIdx),
+    ...updatedBlockLines,
+    ...fmLines.slice(endIdx),
+  ];
+  const fmBlockAfter = updatedFmLines.join('\n');
+
+  const today = nowIso().slice(0, 10);
+  const changelogLine = `- **${today}** — ${flags.finding} ${flags.status}` +
+    (commitValue ? ` — commit ${commitValue}` : '') +
+    (featureValue ? ` — feature ${featureValue}` : '') + '\n';
+
+  // Append the changelog line to the body's "## Changelog" section (create
+  // one if absent) — same section-bounding approach appendChangelogEntry()
+  // uses for ROADMAP.md, but audit files don't share ROADMAP.md's >100-entry
+  // rotation contract (audit history is already bounded by one changelog
+  // per audit-set call on a naturally small per-file findings[] set), so
+  // this is a simple append rather than a reuse of appendChangelogEntry().
+  // `restAfterFm` (from the frontmatter-bounding scan above) starts with the
+  // closing '\n---' marker line itself — strip exactly that (and the single
+  // blank line the source always has right after it, same convention
+  // parseNestedFrontmatter's own `body` extraction uses) to get the pure
+  // prose body, so re-composing `---\n${fmBlockAfter}\n---\n${bodyAfter}`
+  // below produces exactly ONE frontmatter block, not a duplicated one.
+  const bodyBefore = restAfterFm.replace(/^\n---\n?/, '');
+  const changelogHeadingRe = /^## Changelog\s*$/m;
+  let bodyAfter;
+  if (changelogHeadingRe.test(bodyBefore)) {
+    const match = changelogHeadingRe.exec(bodyBefore);
+    const insertAt = match.index + match[0].length;
+    bodyAfter = `${bodyBefore.slice(0, insertAt)}\n\n${changelogLine}${bodyBefore.slice(insertAt).replace(/^\n\n/, '')}`;
+  } else {
+    const sep = bodyBefore.endsWith('\n') ? '' : '\n';
+    bodyAfter = `${bodyBefore}${sep}\n## Changelog\n\n${changelogLine}`;
+  }
+  // fmBlockAfter already carries the opening '---' as its own first line
+  // (fmLines[0], since fmBlockBefore = content.slice(0, fmEnd) starts at
+  // offset 0) — do NOT prepend another '---\n' here, or the file ends up
+  // with a duplicated marker ('---\n---\n...').
+  const auditContentAfter = `${fmBlockAfter}\n---\n${bodyAfter}`;
+
+  // In-memory mirror of the ONE finding's mutation (immutable update — new
+  // array, new finding object), used ONLY as regenerateDerived's
+  // auditFmOverride below so index.json's derived open/fixed split reflects
+  // THIS call's change immediately (the on-disk file is still in its PRIOR
+  // state until writeAllOrNothing's tmp/rename phase runs) — the textual
+  // auditContentAfter string above remains the actual bytes written to disk.
+  const updatedFinding = {
+    ...findings[findingIdx],
+    status: flags.status,
+    fixed_commit: flags.commit !== undefined ? commitValue : findings[findingIdx].fixed_commit,
+    feature: flags.feature !== undefined ? featureValue : findings[findingIdx].feature,
+  };
+  const updatedAuditFm = {
+    ...auditFm,
+    findings: findings.map((f, idx) => (idx === findingIdx ? updatedFinding : f)),
+  };
+
+  const roadmapFile = path.join(dir, 'ROADMAP.md');
+  const roadmapContent = fs.readFileSync(roadmapFile, 'utf8');
+  const { fm: roadmapFm } = parseNestedFrontmatter(roadmapContent);
+  const { indexJson, nextMd } = regenerateDerived(
+    dir,
+    roadmapFm,
+    undefined,
+    { name: path.basename(auditFile), fm: updatedAuditFm }
+  );
+
+  const writes = [
+    { target: auditFile, content: auditContentAfter },
+    { target: path.join(dir, 'index.json'), content: JSON.stringify(indexJson, null, 2) + '\n' },
+    { target: path.join(dir, 'NEXT.md'), content: nextMd },
+  ];
+  writeAllOrNothing(lockPath, writes, 'product audit-set');
+
+  const out = {
+    status: 'OK',
+    audit_file: auditFile,
+    finding: flags.finding,
+    new_status: flags.status,
+    commit: commitValue,
+    feature: featureValue,
+    files_written: writes.map((w) => w.target),
+  };
+  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+  exitWithLock(lockPath, 0);
+}
+
+/** Zero-padded finding-number fragment ('F-007' -> 'f007', 'F-31' -> 'f031')
+ * for the mirrored feature id `<###>-f<NNN>-<slug>` (FR-012). Pure. Falls
+ * back to the raw digits (no re-padding) when the finding id doesn't carry
+ * exactly the `F-\d+` shape validateAuditFm already enforces, so a malformed
+ * finding id surfaces as an assertSlug rejection downstream rather than a
+ * silent NaN here. */
+function findingNumberSlug(findingId) {
+  const m = /^F-(\d+)$/.exec(String(findingId || ''));
+  if (!m) return String(findingId || '').toLowerCase();
+  return `f${m[1].padStart(3, '0')}`;
+}
+
+/** Turn a finding's free-text `category` into a kebab-case slug fragment for
+ * the mirrored feature id (FR-012's `<###>-f<NNN>-<slug>`). Pure. Lower-cases,
+ * replaces every run of non-alphanumeric characters with a single '-', and
+ * trims leading/trailing '-' — the same normalization shape `assertSlug`'s
+ * PRODUCT_SLUG_RE accepts, so a mirrored id always passes the existing
+ * feature-id validation without a special case. Falls back to 'finding' when
+ * the category has no alphanumeric content at all (defensive; audit-publish
+ * already defaults an unusable category to 'uncategorized' upstream). */
+function categoryToSlug(category) {
+  const slug = String(category || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return slug || 'finding';
+}
+
+/** Compute the next available roadmap feature sequence number ('###') from
+ * an already-parsed roadmap frontmatter's features[] — one past the highest
+ * existing 3-digit prefix, zero-padded, matching the `<###>-slug` convention
+ * every other feature id in ROADMAP.md already follows. Pure. Returns '001'
+ * for an empty features[] (mirrors cmdProductInit's own first-feature
+ * numbering intent, though init itself doesn't call this helper). */
+function nextFeatureSequence(features) {
+  let maxSeq = 0;
+  for (const f of features) {
+    const m = /^(\d{3})-/.exec(String(f.id || ''));
+    if (m) maxSeq = Math.max(maxSeq, parseInt(m[1], 10));
+  }
+  return String(maxSeq + 1).padStart(3, '0');
+}
+
+/** product audit-mirror --audit <path> --milestone <slug> [--only open]
+ * [--all] [--dir]: generate one ROADMAP.md feature per SELECTED finding in
+ * the target audit file (FR-012) — the automated form of the niimo 023-053
+ * hand-loop. Composes the exact feature shape `cmdProductAddFeature` writes
+ * (same field set/defaults), batched into ONE atomic write (one changelog
+ * line for the whole mirror run) rather than N separate locked invocations,
+ * since `cmdProductAddFeature` owns its own process.exit() and cannot be
+ * called in a loop.
+ *
+ * Selection scope (FR-012): default (neither flag) is OPEN-ONLY
+ * (`status === 'open'`); `--all` mirrors every finding regardless of status;
+ * `--only open` is the explicit spelling of the same default, accepted for
+ * symmetry with the brief's flag name but not required to get open-only
+ * behavior. `--only` accepts only the literal value 'open' today (no other
+ * scope keyword is defined by FR-012) — any other --only value is a usage
+ * error, not a silent no-op.
+ *
+ * Per selected finding: feature id `<###>-f<NNN>-<slug>` (### = next
+ * available roadmap sequence number, computed ONCE against the roadmap's
+ * CURRENT features[] and then incremented per new feature so a multi-finding
+ * run never reuses a sequence number across its own batch); title
+ * `F-0NN: <category>`; status/dates derived from `fixed_commit` — non-null
+ * `fixed_commit` -> status 'done', started/finished both set to the audit's
+ * `date` field (the finding shape has no per-finding fixed-date field, and
+ * `last_validated` is unsuitable — it is rewritten to "today" on EVERY
+ * `audit-publish`/`audit-set` call, so a mirror run any time after the audit
+ * was triaged would otherwise stamp every done feature with the mirror
+ * run's own date rather than a stable historical one; `date` is set once at
+ * publish time and never changes, matching how the niimo reference
+ * migration used the audit's own analysis date for every fixed finding's
+ * started/finished); null `fixed_commit` -> status 'planned', started/
+ * finished both null. depends_on is always [] — audit-mirror does not infer
+ * dependencies between mirrored findings.
+ *
+ * Idempotency (FR-013): a finding whose derived feature id ALREADY EXISTS in
+ * ROADMAP.md's features[] is skipped (reported, not an error) rather than
+ * re-added — a second full run against the same audit is a no-op with zero
+ * duplicate ids.
+ *
+ * `--milestone <slug>` MUST already exist in ROADMAP.md's milestones[] —
+ * hard-fails (non-zero exit, no feature written) before any write if it
+ * doesn't, mirroring cmdProductAddFeature's own milestone-existence guard.
+ * Milestone creation stays a deliberate `product add-milestone`/`a1-roadmap`
+ * action, never a side effect of this command. */
+function cmdProductAuditMirror(args) {
+  const flags = parseFlags(args, { audit: 'value', milestone: 'value', only: 'value', all: 'bool', dir: 'value' });
+  if (!flags.audit || !flags.milestone) {
+    usage('product audit-mirror requires --audit <path> --milestone <milestone-slug> [--only open] [--all]');
+  }
+  if (flags.only !== undefined && flags.only !== 'open') {
+    usage(`product audit-mirror --only must be 'open' (got: ${flags.only})`);
+  }
+  const mirrorAll = flags.all === true;
+
+  const dir = productDirFromFlags(flags);
+  const lockFile = path.join(dir, '.product-stage.lock.json');
+  const lockPath = acquireReservationsLock(lockFile);
+
+  const auditFile = path.resolve(flags.audit);
+  if (!fs.existsSync(auditFile)) {
+    failWithLock(lockPath, `product audit-mirror: ${auditFile} not found`);
+  }
+  const auditContent = fs.readFileSync(auditFile, 'utf8');
+  const { fm: auditFm } = parseNestedFrontmatter(auditContent);
+  const allFindings = Array.isArray(auditFm.findings) ? auditFm.findings : [];
+
+  const roadmapFile = path.join(dir, 'ROADMAP.md');
+  if (!fs.existsSync(roadmapFile)) {
+    failWithLock(lockPath, `product audit-mirror: ${roadmapFile} not found (run \`product init\` first)`);
+  }
+  const roadmapContent = fs.readFileSync(roadmapFile, 'utf8');
+  const { fm: roadmapFm, body: roadmapBody } = parseNestedFrontmatter(roadmapContent);
+  const milestones = Array.isArray(roadmapFm.milestones) ? roadmapFm.milestones : [];
+  const existingFeatures = Array.isArray(roadmapFm.features) ? roadmapFm.features : [];
+
+  // Hard-fail on an unknown --milestone BEFORE any feature is derived or
+  // written (Edge Case / FR-012) — milestone creation is never a side effect
+  // of audit-mirror.
+  if (!milestones.some((m) => m.id === flags.milestone)) {
+    failWithLock(
+      lockPath,
+      `product audit-mirror: milestone '${flags.milestone}' does not exist in ${roadmapFile} — ` +
+        'add it first via `product add-milestone` (audit-mirror never creates milestones)'
+    );
+  }
+
+  const selectedFindings = mirrorAll
+    ? allFindings
+    : allFindings.filter((f) => f.status === 'open');
+
+  // Idempotency (FR-013) keys on the `f<NNN>-<slug>` SUFFIX of the mirrored
+  // id, not the full `<###>-f<NNN>-<slug>` id — the leading `###` sequence
+  // number is assigned fresh on every run (next available slot at the time
+  // of the call) and would therefore never collide with a prior run's ids
+  // even for the SAME finding, defeating the duplicate check entirely if the
+  // full id were used as the dedupe key. Every already-existing feature id
+  // that CONTAINS an `f<NNN>-` fragment is indexed by that fragment so a
+  // second full run recognizes "this finding was already mirrored" and skips
+  // it, regardless of which sequence number it originally landed on.
+  const mirroredSuffixSeen = new Set();
+  for (const f of existingFeatures) {
+    const m = /^\d{3}-(f\d+-.+)$/.exec(String(f.id || ''));
+    if (m) mirroredSuffixSeen.add(m[1]);
+  }
+
+  let nextSeq = parseInt(nextFeatureSequence(existingFeatures), 10);
+
+  const newFeatures = [];
+  const mirrored = [];
+  const skipped = [];
+  for (const finding of selectedFindings) {
+    const slug = `${findingNumberSlug(finding.id)}-${categoryToSlug(finding.category)}`;
+
+    if (mirroredSuffixSeen.has(slug)) {
+      skipped.push({ finding: finding.id, feature: `*-${slug}`, reason: 'already mirrored' });
+      continue;
+    }
+
+    const candidateId = `${String(nextSeq).padStart(3, '0')}-${slug}`;
+    const isFixed = finding.fixed_commit !== null && finding.fixed_commit !== undefined;
+    const derivedDate = auditFm.date !== undefined ? auditFm.date : null;
+
+    const newFeature = {
+      id: candidateId,
+      milestone: flags.milestone,
+      title: `${finding.id}: ${finding.category}`,
+      status: isFixed ? 'done' : 'planned',
+      stage: null,
+      depends_on: [],
+      started: isFixed ? derivedDate : null,
+      finished: isFixed ? derivedDate : null,
+      spec_path: null,
+      plan_path: null,
+    };
+
+    newFeatures.push(newFeature);
+    mirroredSuffixSeen.add(slug);
+    mirrored.push({ finding: finding.id, feature: candidateId });
+    nextSeq += 1;
+  }
+
+  if (newFeatures.length === 0) {
+    // Nothing to write — still a successful (idempotent) run, not an error
+    // (FR-013: a fully-already-mirrored re-run must be a no-op, exit 0).
+    const out = {
+      status: 'OK',
+      audit_file: auditFile,
+      milestone: flags.milestone,
+      mirrored: [],
+      skipped,
+      files_written: [],
+    };
+    process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+    exitWithLock(lockPath, 0);
+    return;
+  }
+
+  const updatedRoadmapFm = {
+    ...roadmapFm,
+    updated: nowIso().slice(0, 10),
+    features: [...existingFeatures, ...newFeatures],
+  };
+
+  const { writes } = buildRoadmapWritesWithChangelog(
+    dir,
+    updatedRoadmapFm,
+    roadmapBody,
+    `audit-mirror: ${newFeatures.length} feature(s) mirrored from ${path.basename(auditFile)}`,
+    `finding(s) ${mirrored.map((m) => m.finding).join(', ')} mirrored into milestone '${flags.milestone}' via \`product audit-mirror\``
+  );
+  writeAllOrNothing(lockPath, writes, 'product audit-mirror');
+
+  const out = {
+    status: 'OK',
+    audit_file: auditFile,
+    milestone: flags.milestone,
+    mirrored,
+    skipped,
+    files_written: writes.map((w) => w.target),
+  };
+  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+  exitWithLock(lockPath, 0);
+}
+
 // ---------------------------------------------------------------------------
 // product validate — schema-v1 frontmatter validation (FR-021 round-trip
 // oracle; also usable standalone). Hand-rolled against the contract in
@@ -949,6 +1966,131 @@ const PROJECT_STATUSES = new Set(['active', 'paused', 'done']);
 const MILESTONE_STATUSES = new Set(['done', 'in-progress', 'planned']);
 const FEATURE_STATUSES = new Set(['done', 'in-flight', 'planned', 'cancelled']);
 const FEATURE_STAGES = new Set([null, 'started', 'complete', 'review', 'verify', 'merge', 'origin-cleanup', 'done']);
+
+// ---------------------------------------------------------------------------
+// Schema v1.1 additions (spec 003-product-schema-v1.1-vision-audits, Wave 1):
+// VISION.md + docs/product/audits/<date>-<focus>.md. Both file types are
+// OPTIONAL — absence is valid under schema v1.1 (FR-002) and MUST NOT affect
+// validation of a v1-only project. See docs/product/SCHEMA.md sections 6/7
+// for the authoritative prose contract; field names/checks here mirror it.
+// ---------------------------------------------------------------------------
+
+const AUDIT_FOCUS_VALUES = new Set(['general', 'security', 'architecture', 'quality', 'onboarding']);
+const AUDIT_SEVERITIES = new Set(['BLOCKER', 'MAJOR', 'MINOR']);
+const FINDING_STATUSES = new Set(['open', 'fixed', 'obsolete', 'accepted']);
+
+/** Parse a single-line inline YAML flow-mapping like
+ * `{ blocker: 5, major: 11, minor: 15 }` into a plain object of scalars.
+ * `parseNestedFrontmatter` (lib/io.cjs) has no general nested-object
+ * support — it only handles scalars, scalar arrays, and arrays of flat
+ * objects — so a top-level flow-mapping value comes back as the raw
+ * un-parsed string. This is a small, deliberately narrow helper (only the
+ * `counts` field in an audit file uses this shape) rather than a rewrite
+ * of the shared parser, which is out of this wave's scope. Returns null if
+ * `raw` is not a string or does not look like `{ ... }`. Pure. */
+function parseInlineFlowObject(raw) {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) return null;
+  const inner = trimmed.slice(1, -1).trim();
+  if (inner === '') return {};
+  const obj = {};
+  for (const pair of inner.split(',')) {
+    const idx = pair.indexOf(':');
+    if (idx === -1) continue;
+    const key = pair.slice(0, idx).trim();
+    const valueRaw = pair.slice(idx + 1).trim();
+    if (/^-?[0-9]+$/.test(valueRaw)) {
+      obj[key] = parseInt(valueRaw, 10);
+    } else if (valueRaw === 'true') {
+      obj[key] = true;
+    } else if (valueRaw === 'false') {
+      obj[key] = false;
+    } else if (valueRaw === 'null') {
+      obj[key] = null;
+    } else {
+      obj[key] = valueRaw.replace(/^["']|["']$/g, '');
+    }
+  }
+  return obj;
+}
+
+/** Validate a parsed VISION.md frontmatter object against the schema-v1.1
+ * contract (docs/product/SCHEMA.md section 6). Pure — no I/O. Returns
+ * { valid, errors }. Enforces FR-001's clarified rule: `pillars[]` MUST be
+ * present and non-empty (empty array OR omitted key are both INVALID). */
+function validateVisionFm(fm) {
+  const errors = [];
+  const req = (key, ok, msg) => {
+    if (!ok) errors.push(`${key}: ${msg}`);
+  };
+
+  if (fm.schema_version !== 1) errors.push(`schema_version: must be integer 1, got ${JSON.stringify(fm.schema_version)}`);
+  if (fm.type !== 'vision') errors.push(`type: must be "vision", got ${JSON.stringify(fm.type)}`);
+  req('project', typeof fm.project === 'string' && PRODUCT_SLUG_RE.test(fm.project), `must be kebab-case slug, got ${JSON.stringify(fm.project)}`);
+  req('title', typeof fm.title === 'string' && fm.title.length > 0, 'must be a non-empty string');
+  req('updated', typeof fm.updated === 'string' && YYYY_MM_DD_RE.test(fm.updated), `must be YYYY-MM-DD, got ${JSON.stringify(fm.updated)}`);
+
+  const pillars = Array.isArray(fm.pillars) ? fm.pillars : null;
+  req('pillars', pillars !== null && pillars.length > 0, 'must be a non-empty array — at least one pillar is required whenever VISION.md exists (empty or omitted pillars[] is invalid)');
+  if (pillars) {
+    pillars.forEach((p, i) => {
+      const prefix = `pillars[${i}]`;
+      req(`${prefix}.id`, typeof p.id === 'string' && PRODUCT_SLUG_RE.test(p.id), `must be kebab-case slug, got ${JSON.stringify(p.id)}`);
+      req(`${prefix}.title`, typeof p.title === 'string' && p.title.length > 0, 'must be a non-empty string');
+      req(`${prefix}.summary`, typeof p.summary === 'string' && p.summary.length > 0, 'must be a non-empty string');
+    });
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+/** Validate a parsed audits/<date>-<focus>.md frontmatter object against the
+ * schema-v1.1 contract (docs/product/SCHEMA.md section 7). Pure — no I/O.
+ * Returns { valid, errors }. Enforces FR-005 (required fields), FR-006
+ * (findings[].status enum). Does NOT cross-check findings[].feature against
+ * ROADMAP.md — that referential check is FR-018 (Wave 2), a read-time
+ * concern layered on top of this shape validation. */
+function validateAuditFm(fm) {
+  const errors = [];
+  const req = (key, ok, msg) => {
+    if (!ok) errors.push(`${key}: ${msg}`);
+  };
+
+  if (fm.schema_version !== 1) errors.push(`schema_version: must be integer 1, got ${JSON.stringify(fm.schema_version)}`);
+  if (fm.type !== 'audit') errors.push(`type: must be "audit", got ${JSON.stringify(fm.type)}`);
+  req('project', typeof fm.project === 'string' && PRODUCT_SLUG_RE.test(fm.project), `must be kebab-case slug, got ${JSON.stringify(fm.project)}`);
+  req('focus', AUDIT_FOCUS_VALUES.has(fm.focus), `must be one of ${[...AUDIT_FOCUS_VALUES].join('|')}, got ${JSON.stringify(fm.focus)}`);
+  req('date', typeof fm.date === 'string' && YYYY_MM_DD_RE.test(fm.date), `must be YYYY-MM-DD, got ${JSON.stringify(fm.date)}`);
+  req('source', typeof fm.source === 'string' && fm.source.length > 0, 'must be a non-empty provenance string');
+  req('verdict', typeof fm.verdict === 'string' && fm.verdict.length > 0, 'must be a non-empty string');
+
+  const counts = parseInlineFlowObject(fm.counts);
+  req('counts', counts !== null, 'must be an inline flow-mapping, e.g. { blocker: 0, major: 0, minor: 0 }');
+  if (counts) {
+    ['blocker', 'major', 'minor'].forEach((k) => {
+      req(`counts.${k}`, typeof counts[k] === 'number' && Number.isInteger(counts[k]), `must be an integer, got ${JSON.stringify(counts[k])}`);
+    });
+  }
+
+  const findings = Array.isArray(fm.findings) ? fm.findings : null;
+  req('findings', findings !== null, 'must be an array (may be empty)');
+  if (findings) {
+    findings.forEach((f, i) => {
+      const prefix = `findings[${i}]`;
+      req(`${prefix}.id`, typeof f.id === 'string' && f.id.length > 0, 'must be a non-empty finding id, e.g. F-001');
+      req(`${prefix}.severity`, AUDIT_SEVERITIES.has(f.severity), `must be one of ${[...AUDIT_SEVERITIES].join('|')}, got ${JSON.stringify(f.severity)}`);
+      req(`${prefix}.category`, typeof f.category === 'string' && f.category.length > 0, 'must be a non-empty string');
+      req(`${prefix}.status`, FINDING_STATUSES.has(f.status), `must be one of ${[...FINDING_STATUSES].join('|')}, got ${JSON.stringify(f.status)}`);
+      req(`${prefix}.fixed_commit`, f.fixed_commit === null || (typeof f.fixed_commit === 'string' && f.fixed_commit.length > 0), `must be a non-empty commit sha or null, got ${JSON.stringify(f.fixed_commit)}`);
+      req(`${prefix}.feature`, f.feature === null || (typeof f.feature === 'string' && FEATURE_ID_RE.test(f.feature)), `must be null or a ###-kebab-slug feature id, got ${JSON.stringify(f.feature)}`);
+    });
+  }
+
+  req('last_validated', typeof fm.last_validated === 'string' && YYYY_MM_DD_RE.test(fm.last_validated), `must be YYYY-MM-DD, got ${JSON.stringify(fm.last_validated)}`);
+
+  return { valid: errors.length === 0, errors };
+}
 
 /** Validate a parsed ROADMAP.md frontmatter object against the schema-v1
  * contract (docs/product/SCHEMA.md section 1). Pure — no I/O. Returns
@@ -1042,15 +2184,17 @@ function detectGermanMarkers(content, label) {
   return `${label}: contains German-language markers (umlauts/ß or common German function words) — docs/product/ artifacts must be authored in English (FR-016). Best-effort lint; review for accidental German prose.`;
 }
 
-/** product validate [--dir docs/product]: read-only schema-v1 check of
+/** product validate [--dir docs/product]: read-only schema check of
  * <dir>/ROADMAP.md frontmatter against docs/product/SCHEMA.md section 1 /
- * index.schema.json, plus a best-effort FR-016 English-only lint (warning
- * only, never affects `valid`/exit code). The FR-016 lint covers ALL
- * docs/product/ artifact types named by the FR — ROADMAP.md, NEXT.md,
- * index.json (scanned as raw text; a German string value still trips the
- * marker regex), and every features/<###>-<slug>/feature.md — not just
- * ROADMAP.md. Never writes any file. Exit: 0 valid, 1 invalid or
- * ROADMAP.md missing. */
+ * index.schema.json, plus (schema v1.1, Wave 1) VISION.md (section 6) and
+ * every docs/product/audits/*.md file (section 7) WHEN PRESENT — both are
+ * optional; their absence is valid and adds no error (FR-002). Also runs a
+ * best-effort FR-016 English-only lint (warning only, never affects
+ * `valid`/exit code). The FR-016 lint covers ALL docs/product/ artifact
+ * types named by the FR — ROADMAP.md, NEXT.md, index.json (scanned as raw
+ * text; a German string value still trips the marker regex), every
+ * features/<###>-<slug>/feature.md, VISION.md, and every audits/*.md.
+ * Never writes any file. Exit: 0 valid, 1 invalid or ROADMAP.md missing. */
 function cmdProductValidate(args) {
   const flags = parseFlags(args, { dir: 'value' });
   const dir = productDirFromFlags(flags);
@@ -1061,7 +2205,8 @@ function cmdProductValidate(args) {
   }
   const content = fs.readFileSync(roadmapFile, 'utf8');
   const { fm } = parseNestedFrontmatter(content);
-  const { valid, errors } = validateRoadmapFm(fm);
+  const roadmapResult = validateRoadmapFm(fm);
+  const errors = [...roadmapResult.errors];
   const warnings = [];
   const germanWarning = detectGermanMarkers(content, path.basename(roadmapFile));
   if (germanWarning) warnings.push(germanWarning);
@@ -1088,6 +2233,65 @@ function cmdProductValidate(args) {
     }
   }
 
+  // Schema v1.1 (Wave 1) — VISION.md, WHEN PRESENT (FR-001/FR-002). Absence
+  // is a no-op: no error, no entry in the output at all.
+  const visionFile = path.join(dir, 'VISION.md');
+  if (fs.existsSync(visionFile)) {
+    const visionContent = fs.readFileSync(visionFile, 'utf8');
+    const { fm: visionFm } = parseNestedFrontmatter(visionContent);
+    const visionResult = validateVisionFm(visionFm);
+    for (const e of visionResult.errors) errors.push(`VISION.md ${e}`);
+    const w = detectGermanMarkers(visionContent, 'VISION.md');
+    if (w) warnings.push(w);
+  }
+
+  // Schema v1.1 (Wave 2, FR-018) — the set of known ROADMAP.md feature ids,
+  // used below to cross-check every audit finding's `feature` reference.
+  // Built from the same `fm.features[]` already parsed above (roadmapResult
+  // reads the same `fm`), so this adds no extra file read. Shared with the
+  // Wave 4 write-time guard (`audit-set --feature`) via roadmapFeatureIdSet().
+  const roadmapFeatureIds = roadmapFeatureIdSet(fm);
+
+  // Schema v1.1 (Wave 1) — docs/product/audits/*.md, WHEN PRESENT
+  // (FR-005/FR-006/FR-017). An absent or empty audits/ directory is a
+  // no-op: no error, no entries in the output at all (FR-002 parity).
+  const auditsDir = path.join(dir, 'audits');
+  if (fs.existsSync(auditsDir)) {
+    const auditFiles = fs.readdirSync(auditsDir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.md'))
+      .map((entry) => entry.name)
+      .sort();
+    for (const name of auditFiles) {
+      const auditFile = path.join(auditsDir, name);
+      const auditContent = fs.readFileSync(auditFile, 'utf8');
+      const { fm: auditFm } = parseNestedFrontmatter(auditContent);
+      const auditResult = validateAuditFm(auditFm);
+      for (const e of auditResult.errors) errors.push(`audits/${name} ${e}`);
+
+      // FR-018: cross-check every non-null findings[].feature against
+      // ROADMAP.md features[].id — the read-time twin of the write-time
+      // guard `audit-set --feature` enforces (Wave 4). Only run this check
+      // when the shape validation above already found `findings` to be a
+      // well-formed array — an audit whose `findings` itself is malformed
+      // already fails via auditResult.errors, so this avoids a confusing
+      // second error class on the same root cause.
+      if (Array.isArray(auditFm.findings)) {
+        auditFm.findings.forEach((finding, i) => {
+          const featureId = finding && finding.feature;
+          if (featureId !== null && featureId !== undefined && !roadmapFeatureIds.has(featureId)) {
+            errors.push(
+              `audits/${name} findings[${i}].feature: references unknown ROADMAP.md feature id ${JSON.stringify(featureId)}`
+            );
+          }
+        });
+      }
+
+      const w = detectGermanMarkers(auditContent, `audits/${name}`);
+      if (w) warnings.push(w);
+    }
+  }
+
+  const valid = errors.length === 0;
   process.stdout.write(JSON.stringify({ valid, errors, warnings, file: roadmapFile }, null, 2) + '\n');
   process.exit(valid ? 0 : 1);
 }
@@ -1547,4 +2751,9 @@ module.exports = {
   cmdProductFeatureInit,
   cmdProductImport,
   cmdProductValidate,
+  cmdProductVisionInit,
+  cmdProductVisionTouch,
+  cmdProductAuditPublish,
+  cmdProductAuditSet,
+  cmdProductAuditMirror,
 };
