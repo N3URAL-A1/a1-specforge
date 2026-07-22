@@ -729,5 +729,200 @@ else
   fail=$((fail + 1))
 fi
 
+# =============================================================================
+# Wave 5 — Learning-loop wiring: `quick stats` CLI report (FR-018) + weighted
+# learning count math (FR-019). Case class: `quick stats` reads
+# `projects/*/quick/*.md` run-record frontmatter under an isolated
+# A1_VAULT_ROOT (mktemp, never the live repo store) and reports
+# escalation_rate/regression_rate; the weighted-count math is checked as a
+# standalone node -e case.
+# =============================================================================
+
+STATS_VAULT="$WORK/quick-stats-vault"
+mkdir -p "$STATS_VAULT"
+
+# --- (1) zero quick-run records -> escalation_rate/regression_rate null,
+# total 0 runs, no crash / no divide-by-zero.
+OUT="$(A1_VAULT_ROOT="$STATS_VAULT" node "$TOOLS" quick stats 2>&1)"
+RC=$?
+assert_rc "quick-stats-empty-store" 0 "$RC" "$OUT"
+EMPTY_CHECK_RC=0
+node -e '
+  const data = JSON.parse(process.argv[1]);
+  if (data.total !== 0) { console.error("expected total 0, got " + data.total); process.exit(1); }
+  if (data.escalation_rate !== null) { console.error("expected escalation_rate null, got " + data.escalation_rate); process.exit(1); }
+  if (data.regression_rate !== null) { console.error("expected regression_rate null, got " + data.regression_rate); process.exit(1); }
+  process.exit(0);
+' "$(sed -n '/^{/,$p' <<<"$OUT")" || EMPTY_CHECK_RC=$?
+assert_rc "quick-stats-empty-store-null-rates" 0 "$EMPTY_CHECK_RC" "$OUT"
+
+# --- (2) seed a mix of completed/escalated quick-run records -> correct
+# escalation_rate, plus one fix report matching one run's file inside the
+# 14-day window -> regression_rate reflects that one match.
+mkdir -p "$STATS_VAULT/projects/demo/quick" "$STATS_VAULT/projects/demo/fixes"
+
+cat > "$STATS_VAULT/projects/demo/quick/2026-07-01-fix-footer.md" <<'MDEOF'
+---
+type: quick-run
+kind: fix
+slug: fix-footer
+project: demo
+created: 2026-07-01
+result: completed
+escalated: false
+branch: quick/fix-footer
+files:
+  - src/components/Footer.tsx
+diff_lines: 4
+verify: "pass: 1/1 AC, tests green"
+retro: "clean XS run"
+---
+
+# Quick Run — fix-footer
+MDEOF
+
+cat > "$STATS_VAULT/projects/demo/quick/2026-07-03-fix-util.md" <<'MDEOF'
+---
+type: quick-run
+kind: fix
+slug: fix-util
+project: demo
+created: 2026-07-03
+result: completed
+escalated: false
+branch: quick/fix-util
+files:
+  - src/lib/util.ts
+diff_lines: 8
+verify: "pass: 1/1 AC, tests green"
+retro: "clean XS run, no regressions seen"
+---
+
+# Quick Run — fix-util
+MDEOF
+
+cat > "$STATS_VAULT/projects/demo/quick/2026-07-05-add-toggle.md" <<'MDEOF'
+---
+type: quick-run
+kind: feature
+slug: add-toggle
+project: demo
+created: 2026-07-05
+result: escalated
+escalated: true
+branch: quick/add-toggle
+files:
+  - src/components/Toggle.tsx
+diff_lines: 12
+verify: pending
+retro: "escalated: 3rd file discovered mid-implementation"
+---
+
+# Quick Run — add-toggle (escalated)
+MDEOF
+
+# Fix report filed 3 days after fix-footer's quick run, mentioning the same
+# file -> counts as a regression match for fix-footer (inside the 14-day
+# window). fix-util and add-toggle have no matching fix report.
+cat > "$STATS_VAULT/projects/demo/fixes/2026-07-04-footer-regressed.md" <<'MDEOF'
+---
+type: bug-report
+project: demo
+bug_slug: footer-regressed
+title: Footer copyright year wrong again
+status: reported
+severity: minor
+reported_at: 2026-07-04T09:00
+reporter: robert
+affected_repos:
+  - demo
+related_deploy: unknown
+duplicate_of: null
+phase_history: []
+recommended_code_agent: null
+fix_commit: null
+verify_result: null
+tags: []
+---
+
+## Affected Components
+
+- Suspected files / routes / services: src/components/Footer.tsx
+MDEOF
+
+OUT="$(A1_VAULT_ROOT="$STATS_VAULT" node "$TOOLS" quick stats 2>&1)"
+RC=$?
+assert_rc "quick-stats-seeded-store" 0 "$RC" "$OUT"
+SEEDED_CHECK_RC=0
+node -e '
+  const data = JSON.parse(process.argv[1]);
+  if (data.total !== 3) { console.error("expected total 3, got " + data.total); process.exit(1); }
+  if (data.escalated !== 1) { console.error("expected escalated 1, got " + data.escalated); process.exit(1); }
+  const expectedEscRate = 1 / 3;
+  if (Math.abs(data.escalation_rate - expectedEscRate) > 1e-9) {
+    console.error("expected escalation_rate " + expectedEscRate + ", got " + data.escalation_rate); process.exit(1);
+  }
+  if (data.regression_matches !== 1) { console.error("expected regression_matches 1, got " + data.regression_matches); process.exit(1); }
+  const expectedRegRate = 1 / 3;
+  if (Math.abs(data.regression_rate - expectedRegRate) > 1e-9) {
+    console.error("expected regression_rate " + expectedRegRate + ", got " + data.regression_rate); process.exit(1);
+  }
+  process.exit(0);
+' "$(sed -n '/^{/,$p' <<<"$OUT")" || SEEDED_CHECK_RC=$?
+assert_rc "quick-stats-seeded-store-rates-correct" 0 "$SEEDED_CHECK_RC" "$OUT"
+
+# --- (3) weighted-count math: 5 quick-run records -> weighted count 1.0, not 5.
+WEIGHT_VAULT="$WORK/quick-weight-vault"
+mkdir -p "$WEIGHT_VAULT/projects/demo/quick"
+for i in 1 2 3 4 5; do
+  cat > "$WEIGHT_VAULT/projects/demo/quick/2026-07-0${i}-run-${i}.md" <<MDEOF
+---
+type: quick-run
+kind: fix
+slug: run-${i}
+project: demo
+created: 2026-07-0${i}
+result: completed
+escalated: false
+branch: quick/run-${i}
+files:
+  - src/file-${i}.ts
+diff_lines: 2
+verify: "pass"
+retro: "clean"
+---
+
+# Quick Run — run-${i}
+MDEOF
+done
+OUT="$(A1_VAULT_ROOT="$WEIGHT_VAULT" node "$TOOLS" quick stats 2>&1)"
+RC=$?
+assert_rc "quick-stats-weighted-count-store" 0 "$RC" "$OUT"
+WEIGHT_CHECK_RC=0
+node -e '
+  const data = JSON.parse(process.argv[1]);
+  if (data.total !== 5) { console.error("expected total 5, got " + data.total); process.exit(1); }
+  if (Math.abs(data.weighted_learning_count - 1.0) > 1e-9) {
+    console.error("expected weighted_learning_count 1.0, got " + data.weighted_learning_count); process.exit(1);
+  }
+  process.exit(0);
+' "$(sed -n '/^{/,$p' <<<"$OUT")" || WEIGHT_CHECK_RC=$?
+assert_rc "quick-stats-weighted-count-is-one-fifth" 0 "$WEIGHT_CHECK_RC" "$OUT"
+
+# --- (3b) standalone node -e weighted-count math case, independent of the
+# CLI, per the wave-plan brief's explicit ask for a small node -e case.
+node -e '
+  const recordCount = 5;
+  const weight = 0.2;
+  const weighted = recordCount * weight;
+  if (Math.abs(weighted - 1.0) > 1e-9) {
+    console.error("expected 5 * 0.2 = 1.0, got " + weighted);
+    process.exit(1);
+  }
+  process.exit(0);
+'
+NODE_WEIGHT_RC=$?
+assert_rc "quick-weighted-count-math-standalone" 0 "$NODE_WEIGHT_RC" "(5 quick-run records * 0.2 weight)"
+
 echo "a1-quick: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

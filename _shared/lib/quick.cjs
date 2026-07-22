@@ -16,8 +16,9 @@
 // gate never guesses permissively.
 // ---------------------------------------------------------------------------
 
+const fs = require('fs');
 const path = require('path');
-const { parseFlags } = require('./io.cjs');
+const { parseFlags, vaultRoot, readMd } = require('./io.cjs');
 const {
   reservationsFile,
   loadReservations,
@@ -361,8 +362,179 @@ function cmdQuickEligibility(args) {
   process.exit(0);
 }
 
+// ---------------------------------------------------------------------------
+// quick stats — a1-evolve telemetry report (FR-018, spec 004-xs-quick-lane
+// Wave 5). Reads every `projects/*/quick/*.md` run-record under the resolved
+// learnings root and reports `escalation_rate` (escalated / total) plus a
+// BEST-EFFORT `regression_rate` heuristic: any `projects/*/fixes/*.md` bug
+// report filed within 14 days of a quick run whose prose mentions one of
+// that run's `files:` is counted as a possible regression. This is a
+// file-path + date-window match, NOT a precise causal attribution — a fix
+// report matching by coincidence (same file touched for an unrelated reason)
+// is still counted. Same JSON-report shape convention as `cost run`/
+// `checklist list`: an object with per-record detail, a `totals` block, and
+// a one-line `summary` string. No `--json` toggle (unlike `cost run`) —
+// this command's stdout is always the JSON report, matching `quick
+// eligibility`'s always-JSON contract in this same module.
+// ---------------------------------------------------------------------------
+
+const REGRESSION_WINDOW_DAYS = 14;
+const REGRESSION_WINDOW_MS = REGRESSION_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+
+/** List every `projects/<slug>/quick/*.md` run-record under the resolved
+ * learnings root, across every project — mirrors the glob convention used
+ * elsewhere in this codebase for per-project directories (e.g.
+ * `checklistPaths`/`projectsPath` in io.cjs), except this walks ALL project
+ * slugs rather than one, since a1-evolve aggregates across the whole store. */
+function listQuickRunFiles(root) {
+  const projectsDir = path.join(root, 'projects');
+  if (!fs.existsSync(projectsDir)) return [];
+  const slugs = fs
+    .readdirSync(projectsDir)
+    .filter((s) => fs.statSync(path.join(projectsDir, s)).isDirectory());
+  const files = [];
+  for (const slug of slugs) {
+    const quickDir = path.join(projectsDir, slug, 'quick');
+    if (!fs.existsSync(quickDir)) continue;
+    for (const f of fs.readdirSync(quickDir)) {
+      if (f.endsWith('.md')) {
+        files.push({ slug, abs: path.join(quickDir, f), rel: `projects/${slug}/quick/${f}` });
+      }
+    }
+  }
+  return files;
+}
+
+/** List every `projects/<slug>/fixes/*.md` bug report under the resolved
+ * learnings root, across every project — same per-project glob shape as
+ * listQuickRunFiles, used only for the regression_rate cross-reference. */
+function listFixReportFiles(root) {
+  const projectsDir = path.join(root, 'projects');
+  if (!fs.existsSync(projectsDir)) return [];
+  const slugs = fs
+    .readdirSync(projectsDir)
+    .filter((s) => fs.statSync(path.join(projectsDir, s)).isDirectory());
+  const files = [];
+  for (const slug of slugs) {
+    const fixesDir = path.join(projectsDir, slug, 'fixes');
+    if (!fs.existsSync(fixesDir)) continue;
+    for (const f of fs.readdirSync(fixesDir)) {
+      if (f.endsWith('.md')) {
+        files.push({ slug, abs: path.join(fixesDir, f), rel: `projects/${slug}/fixes/${f}` });
+      }
+    }
+  }
+  return files;
+}
+
+/** Parse one quick-run record's frontmatter into the fields this report
+ * needs. Tolerant of records the flat frontmatter parser can't fully round-
+ * trip (e.g. Wave 3's `handoff_seed:` nested block) — only the fields this
+ * report reads are required; anything else is ignored. */
+function parseQuickRunRecord(entry) {
+  const { fm } = readMd(entry.abs);
+  const filesRaw = fm.files;
+  const files = Array.isArray(filesRaw) ? filesRaw : [];
+  return {
+    file: entry.rel,
+    slug: entry.slug,
+    kind: fm.kind || null,
+    result: fm.result || null,
+    escalated: String(fm.escalated) === 'true',
+    files,
+    created: fm.created || null,
+  };
+}
+
+/** Best-effort: does this fix report's prose (frontmatter title/body) mention
+ * `filePath`? Plain substring match on the basename — deliberately loose,
+ * documented as a heuristic in the CLI's own report output (see
+ * cmdQuickStats below), not a precise causal link. */
+function fixReportMentionsFile(content, filePath) {
+  const base = path.basename(filePath);
+  return content.includes(filePath) || content.includes(base);
+}
+
+function parseDateOnly(v) {
+  if (!v) return null;
+  const ms = Date.parse(v);
+  return Number.isNaN(ms) ? null : ms;
+}
+
+/** Best-effort regression check for one quick run: true if any fix report is
+ * dated within REGRESSION_WINDOW_DAYS after the run AND its prose mentions
+ * one of the run's declared files. */
+function quickRunHasRegressionMatch(run, fixReports) {
+  const runMs = parseDateOnly(run.created);
+  if (runMs === null || run.files.length === 0) return false;
+  for (const fr of fixReports) {
+    const frMs = parseDateOnly(fr.reportedAt);
+    if (frMs === null) continue;
+    const delta = frMs - runMs;
+    if (delta < 0 || delta > REGRESSION_WINDOW_MS) continue;
+    if (run.files.some((f) => fixReportMentionsFile(fr.content, f))) return true;
+  }
+  return false;
+}
+
+function cmdQuickStats(args) {
+  parseFlags(args, {});
+
+  const root = vaultRoot();
+  const runFiles = listQuickRunFiles(root);
+  const runs = runFiles.map(parseQuickRunRecord);
+
+  const fixFiles = listFixReportFiles(root);
+  const fixReports = fixFiles.map((entry) => {
+    const { fm, content } = readMd(entry.abs);
+    return { reportedAt: fm.reported_at || null, content };
+  });
+
+  const total = runs.length;
+  const escalatedCount = runs.filter((r) => r.escalated).length;
+  const escalationRate = total === 0 ? null : escalatedCount / total;
+
+  const regressionMatches = runs.filter((r) => quickRunHasRegressionMatch(r, fixReports));
+  const regressionRate = total === 0 ? null : regressionMatches.length / total;
+
+  // Weighted learning count (FR-019): each quick-run entry contributes 0.2
+  // toward a1-evolve's "N new learnings since last synthesis" count. This
+  // report exposes the number so a1-evolve's collect step (01-collect.md)
+  // can read it rather than recomputing the glob itself.
+  const weightedLearningCount = total * 0.2;
+
+  const summary =
+    total === 0
+      ? 'quick stats: 0 runs (escalation_rate: null, regression_rate: null)'
+      : `quick stats: ${total} runs, escalation_rate ${(escalationRate * 100).toFixed(1)}%, regression_rate ${(regressionRate * 100).toFixed(1)}% (best-effort heuristic)`;
+
+  const out = {
+    total,
+    escalated: escalatedCount,
+    escalation_rate: escalationRate,
+    regression_matches: regressionMatches.length,
+    regression_rate: regressionRate,
+    regression_rate_note:
+      'best-effort heuristic: file-path + 14-day window match against projects/*/fixes/*.md prose, not precise causal attribution',
+    weighted_learning_count: weightedLearningCount,
+    runs: runs.map((r) => ({
+      file: r.file,
+      slug: r.slug,
+      kind: r.kind,
+      result: r.result,
+      escalated: r.escalated,
+      files: r.files,
+    })),
+    summary,
+  };
+
+  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+  process.exit(0);
+}
+
 module.exports = {
   cmdQuickEligibility,
+  cmdQuickStats,
   matchesForbiddenSurface,
   isSuspiciousScopePath,
   countIntentSentences,
@@ -371,4 +543,5 @@ module.exports = {
   MAX_DIFF_LINES,
   MAX_INTENT_SENTENCES,
   MAX_INTENT_CHARS,
+  REGRESSION_WINDOW_DAYS,
 };

@@ -571,6 +571,11 @@ function main() {
       if (sub === 'eligibility') {
         quick.cmdQuickEligibility(rest);
         return; // unreachable — cmdQuickEligibility calls process.exit()
+      } else if (sub === 'stats') {
+        // quick stats owns its own exit code (always 0 — a report, not a
+        // gate) and JSON output (spec 004-xs-quick-lane, Wave 5, FR-018).
+        quick.cmdQuickStats(rest);
+        return; // unreachable — cmdQuickStats calls process.exit()
       } else {
         usage(`unknown quick subcommand: ${sub}`);
       }

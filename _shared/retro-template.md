@@ -47,3 +47,26 @@ one_line_learning: <what would have prevented the main issue, or "no issues">
   verdicts (`retro_integrity`).
 - Every 5th entry for a skill: offer `a1-evolve` to the user (pattern
   synthesis threshold).
+
+## Quick-run micro-retro (`kind: quick-run` entries only)
+
+`a1-quick` (spec `004-xs-quick-lane`, FR-020) does NOT write a separate
+`_learning.md`/store entry in the format above. Its run-record file
+(`projects/<slug>/quick/<YYYY-MM-DD>-<slug>.md`, FR-015) already carries a
+one-line `retro:` frontmatter field, written as part of the same run that
+produces the rest of the record. For `kind: quick-run` entries, that single
+field **is** the complete retro contract — not a summary of a fuller entry
+kept elsewhere, and not required to expand into the multi-section format
+above.
+
+```yaml
+retro: <one line — what worked or what friction occurred, or "no issues">
+```
+
+`a1-evolve`'s collect phase reads this field directly off the run-record
+frontmatter (see `skills/a1-evolve/workflows/01-collect.md`) instead of
+looking for a per-skill `_learning.md`/store file — there isn't one for
+quick runs. This is deliberately distinct from every other learning-enabled
+skill's contract in this file: a quick run's low structural cost (one
+session, no sub-agent spawns) extends to its retro, so the lane's own
+telemetry loop stays as lean as the lane itself.
