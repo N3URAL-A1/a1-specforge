@@ -600,6 +600,21 @@ function fail(msg) {
   process.exit(1);
 }
 
+// ---------- recursive copy ----------
+
+// Recursively copies src into dest (creates dest, overwrites existing files).
+// Used to mirror gitignored directory trees (e.g. pack staging, worktree
+// learning-store mirroring) where a plain git checkout would not carry them.
+function copyDirRecursive(src, dest) {
+  fs.mkdirSync(dest, { recursive: true });
+  for (const entry of fs.readdirSync(src)) {
+    const s = path.join(src, entry);
+    const d = path.join(dest, entry);
+    if (fs.statSync(s).isDirectory()) copyDirRecursive(s, d);
+    else fs.copyFileSync(s, d);
+  }
+}
+
 // ---------- path-traversal guard ----------
 
 // User-supplied identifiers (project slugs, feature/analysis ids) become path
@@ -633,4 +648,4 @@ function projectsPath(...segments) {
   return path.join(vaultRoot(), 'projects', ...safe);
 }
 
-module.exports = { vaultRoot, resolveVaultPath, parseFrontmatter, serializeScalar, detectKeyOrder, serializeFrontmatter, readMd, writeMdAtomic, nowIso, writeTextAtomic, parseScalarToken, parseNestedFrontmatter, serializeNestedFrontmatter, writeNestedMdAtomic, parseFlags, fail, assertSafeSegment, projectsPath };
+module.exports = { vaultRoot, resolveVaultPath, parseFrontmatter, serializeScalar, detectKeyOrder, serializeFrontmatter, readMd, writeMdAtomic, nowIso, writeTextAtomic, parseScalarToken, parseNestedFrontmatter, serializeNestedFrontmatter, writeNestedMdAtomic, parseFlags, fail, assertSafeSegment, projectsPath, copyDirRecursive };

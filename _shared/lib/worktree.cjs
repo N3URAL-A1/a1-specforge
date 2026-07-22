@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const { usage } = require('./help.cjs');
-const { parseFlags, nowIso } = require('./io.cjs');
+const { parseFlags, nowIso, copyDirRecursive } = require('./io.cjs');
 
 // worktree registry + git helpers live in lib/worktree-registry.cjs
 const {
@@ -171,6 +171,21 @@ function cmdWorktreeEnter(args) {
   if (res && typeof res === 'object' && res.__error) {
     process.stderr.write(`error: git worktree add failed: ${res.__error}\n`);
     process.exit(1);
+  }
+
+  // .a1/learnings/ is gitignored (repo-local learning store, since M7) — a
+  // plain `git worktree add` never carries it over. Mirror it explicitly so
+  // isolated agents can read their own spec/wave-plan. Source must come from
+  // the primary checkout (entry.repo_root), not CWD/vaultRoot() — vaultRoot()
+  // resolves via CWD-based `git rev-parse --show-toplevel` and would resolve
+  // against the (still-empty) worktree here. Mirror the whole tree rather
+  // than a single projects/<slug>/ subtree: the learning-store project slug
+  // does not match the worktree/branch slug. Best-effort: not every worktree
+  // corresponds to a learning-store feature.
+  const learningsSrc = path.join(entry.repo_root, '.a1', 'learnings');
+  const learningsDest = path.join(entry.worktree_path, '.a1', 'learnings');
+  if (fs.existsSync(learningsSrc)) {
+    copyDirRecursive(learningsSrc, learningsDest);
   }
 
   entry.status = 'active';
