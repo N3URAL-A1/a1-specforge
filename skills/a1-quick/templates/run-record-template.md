@@ -57,4 +57,12 @@ Confirmation: <yes/no + timestamp>
 **Result**: `completed` | `escalated`
 **Commit**: <short-hash, if completed>
 
-<!-- If escalated (Wave 3), a `handoff_seed:` block and kind-specific handoff note go here. -->
+<!--
+If escalated: add a `handoff_seed:` block to the frontmatter above (see
+SKILL.md "Escalation handoff") with tripwire/intent/acceptance_checks/files/
+diff_lines/notes, and note here which kind-specific handoff message was given
+to the user (a1-new-feature Phase 1 for kind: feature, a1-fix Phase 1 for
+kind: fix). If a commit already existed on quick/<slug>, note that it was
+adopted via `worktree adopt` rather than discarded.
+-->
+

@@ -481,5 +481,145 @@ process.exit(missing.length > 0 ? 1 : 0);
 ' "$RUN_RECORD_BAD" || BAD_SCHEMA_CHECK_RC=$?
 assert_rc "run-record-schema-rejects-missing-field" 1 "$BAD_SCHEMA_CHECK_RC" "(expected rejection: missing 'verify' field)"
 
+# =============================================================================
+# Wave 3 — Escalation tripwires + handoff to the full pipeline (FR-013/FR-014
+# — spec 004-xs-quick-lane). Case class: tripwire-simulation. Not a full
+# agent-flow test (the handoff dialogue itself isn't bash-scriptable, same
+# caveat as Wave 2) — proves two things at the git-mechanics level:
+#   (1) a simulated T1 (3rd file) tripwire produces a handoff run-record with
+#       escalated: true and a non-empty handoff_seed.files list.
+#   (2) a commit already on quick/<slug> at the time of escalation remains
+#       reachable from the branch afterward (nothing force-discarded) —
+#       SC-004's "partial commit intact" assertion.
+# =============================================================================
+
+# --- seed a temp repo with a quick/<slug> branch holding one commit, as if
+# Step 3 had already committed partial work before the tripwire fired ---
+TRIPWIRE_WORK="$WORK/quick-tripwire"
+mkdir -p "$TRIPWIRE_WORK"
+git -C "$TRIPWIRE_WORK" init -q -b main
+git -C "$TRIPWIRE_WORK" config user.email "test@example.com"
+git -C "$TRIPWIRE_WORK" config user.name "Test"
+echo "seed" > "$TRIPWIRE_WORK/seed.txt"
+git -C "$TRIPWIRE_WORK" add seed.txt
+git -C "$TRIPWIRE_WORK" commit -q -m "seed"
+
+TRIPWIRE_SLUG="fix-two-files"
+git -C "$TRIPWIRE_WORK" checkout -q -b "quick/$TRIPWIRE_SLUG" main
+mkdir -p "$TRIPWIRE_WORK/src/components"
+echo "file-a" > "$TRIPWIRE_WORK/src/components/A.tsx"
+echo "file-b" > "$TRIPWIRE_WORK/src/components/B.tsx"
+git -C "$TRIPWIRE_WORK" add src/components/A.tsx src/components/B.tsx
+git -C "$TRIPWIRE_WORK" commit -q -m "wip: partial quick run before escalation"
+PARTIAL_COMMIT_SHA="$(git -C "$TRIPWIRE_WORK" rev-parse HEAD)"
+
+# --- simulate discovering a 3rd file mid-implementation (T1) and write the
+# escalation handoff run-record the skill's "Escalation handoff" step
+# produces ---
+TRIPWIRE_RECORD="$WORK/tripwire-handoff-run-record.md"
+cat > "$TRIPWIRE_RECORD" <<MDEOF
+---
+type: quick-run
+kind: fix
+slug: $TRIPWIRE_SLUG
+project: demo
+created: 2026-07-22
+result: escalated
+escalated: true
+branch: quick/$TRIPWIRE_SLUG
+files:
+  - src/components/A.tsx
+  - src/components/B.tsx
+diff_lines: 2
+verify: pending
+retro: "escalated before verify: T1 fired"
+handoff_seed:
+  tripwire: T1
+  intent: "Fix the two related layout bugs in the footer components."
+  acceptance_checks:
+    - "Footer renders without overlap on mobile"
+  files:
+    - src/components/A.tsx
+    - src/components/B.tsx
+    - src/components/C.tsx
+  diff_lines: 2
+  notes: "3rd file (C.tsx) became necessary mid-implementation"
+---
+
+# Quick Run — $TRIPWIRE_SLUG (escalated)
+MDEOF
+
+# Assert: the handoff run-record has escalated: true and a non-empty
+# handoff_seed.files list.
+TRIPWIRE_CHECK_RC=0
+node -e '
+const fs = require("fs");
+const content = fs.readFileSync(process.argv[1], "utf8");
+const match = content.match(/^---\n([\s\S]*?)\n---\n/);
+if (!match) { console.error("no frontmatter block found"); process.exit(1); }
+const raw = match[1];
+const lines = raw.split("\n");
+const fm = {};
+let currentKey = null;
+let inHandoffSeed = false;
+let handoffFiles = [];
+let handoffAcceptanceChecks = [];
+for (const line of lines) {
+  if (/^handoff_seed:\s*$/.test(line)) { inHandoffSeed = true; continue; }
+  if (inHandoffSeed) {
+    const nestedList = line.match(/^\s{4}-\s+(.*)$/);
+    const nestedKv = line.match(/^\s{2}([a-z_]+):\s*(.*)$/);
+    if (nestedList) {
+      if (currentKey === "files") handoffFiles.push(nestedList[1].trim().replace(/^"|"$/g, ""));
+      if (currentKey === "acceptance_checks") handoffAcceptanceChecks.push(nestedList[1].trim());
+      continue;
+    }
+    if (nestedKv) { currentKey = nestedKv[1]; continue; }
+    if (!/^\s/.test(line) && line.trim() !== "") { inHandoffSeed = false; }
+  }
+  if (inHandoffSeed) continue;
+  const listItem = line.match(/^\s+-\s+(.*)$/);
+  if (listItem && currentKey) {
+    if (!Array.isArray(fm[currentKey])) fm[currentKey] = [];
+    fm[currentKey].push(listItem[1].trim());
+    continue;
+  }
+  const kv = line.match(/^([A-Za-z_]+):\s*(.*)$/);
+  if (kv) {
+    currentKey = kv[1];
+    let val = kv[2].trim();
+    if (val === "") { fm[currentKey] = undefined; continue; }
+    if (val.startsWith("\"") && val.endsWith("\"")) val = val.slice(1, -1);
+    fm[currentKey] = val;
+  }
+}
+if (String(fm.escalated) !== "true") { console.error("expected escalated: true, got " + fm.escalated); process.exit(1); }
+if (fm.result !== "escalated") { console.error("expected result: escalated, got " + fm.result); process.exit(1); }
+if (handoffFiles.length === 0) { console.error("expected non-empty handoff_seed.files, got none"); process.exit(1); }
+if (handoffFiles.length < 3) { console.error("expected handoff_seed.files to include the 3rd discovered file, got " + handoffFiles.length); process.exit(1); }
+process.exit(0);
+' "$TRIPWIRE_RECORD" || TRIPWIRE_CHECK_RC=$?
+assert_rc "tripwire-handoff-record-escalated-nonempty-seed" 0 "$TRIPWIRE_CHECK_RC" "(see node -e stderr above)"
+
+# Assert: the partial commit made before escalation is still reachable from
+# quick/<slug> after the simulated handoff — nothing force-discarded (SC-004).
+if git -C "$TRIPWIRE_WORK" merge-base --is-ancestor "$PARTIAL_COMMIT_SHA" "quick/$TRIPWIRE_SLUG" 2>/dev/null; then
+  echo "PASS  tripwire-partial-commit-still-reachable (commit $PARTIAL_COMMIT_SHA reachable from quick/$TRIPWIRE_SLUG)"
+  pass=$((pass + 1))
+else
+  echo "FAIL  tripwire-partial-commit-still-reachable: commit $PARTIAL_COMMIT_SHA is no longer reachable from quick/$TRIPWIRE_SLUG"
+  fail=$((fail + 1))
+fi
+
+# Assert: quick/<slug> branch itself still exists (not deleted/force-discarded
+# as part of escalation).
+if git -C "$TRIPWIRE_WORK" show-ref --verify --quiet "refs/heads/quick/$TRIPWIRE_SLUG"; then
+  echo "PASS  tripwire-branch-not-discarded (quick/$TRIPWIRE_SLUG still exists)"
+  pass=$((pass + 1))
+else
+  echo "FAIL  tripwire-branch-not-discarded: quick/$TRIPWIRE_SLUG branch is gone"
+  fail=$((fail + 1))
+fi
+
 echo "a1-quick: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

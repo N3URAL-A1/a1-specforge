@@ -90,8 +90,26 @@ precondition is already guaranteed by Step 1's eligibility check (or the
 caller's), so no separate isolation step is needed here. All edits happen in
 the primary checkout on this branch.
 
-Implement only the expected files listed in Step 2's spec-lite. See
-"Tripwires" below for what to do if scope grows mid-implementation.
+Implement only the expected files listed in Step 2's spec-lite, and run these
+three tripwire checks inline as you go (full definitions in "Tripwires"
+below):
+
+1. **Before touching any file not already in the spec-lite's expected-files
+   list**, stop and check: does this make a 3rd distinct file? → tripwire
+   T1.
+2. **After every edit**, run `git -C <repo> diff --stat` and check the total
+   changed-line count against the ~50-line budget → tripwire T2.
+3. **While implementing**, self-check whether the change you're making still
+   serves the single stated intent from Step 2, or whether a second,
+   independent intent has crept in → tripwire T4.
+
+If a change touches a path outside the declared scope, re-run the
+forbidden-surface check from Step 1 (`quick eligibility`'s forbidden-surface
+glob list) against the actual changed path, not just the originally declared
+`--scope` → tripwire T3.
+
+Any tripwire hit during this step → stop implementing immediately and go to
+"Escalation handoff" below. Do not finish the edit in progress first.
 
 ## Step 4 — Verify
 
@@ -109,9 +127,14 @@ Implement only the expected files listed in Step 2's spec-lite. See
    - No hardcoded secrets
    - No scope creep — change matches the stated intent and expected files
      exactly
+4. **(Fixes only) Root-cause check.** If `kind: fix`, confirm the verify
+   result actually explains the reported symptom (not just "tests pass").
+   If, after this one focused look, the root cause is still unclear → check
+   this once and record the outcome — a second unclear pass is tripwire T6.
 
-If verify fails: fix and re-run once. A second consecutive verify failure is
-a tripwire (see below) — do not loop indefinitely.
+Keep a run-scoped verify-failure counter, starting at 0. If verify fails:
+fix and re-run once (counter → 1). If the 2nd consecutive run also fails
+(counter → 2), that is tripwire T5 — stop, do not loop a third time.
 
 ## Step 5 — Checkpoint (single, before commit)
 
@@ -148,39 +171,77 @@ return to Step 3 (or 4), or abandon the run (run record stays with
 Update the run record's `## Outcome` section and frontmatter:
 - **Completed**: `result: completed`, `escalated: false`, the commit's
   short-hash, and a one-line `retro:` field.
-- **Escalated**: see "Tripwires" below (Wave 3 extends this skill with the
-  full escalation procedure) — for now, note in the run record that a
-  tripwire fired and which one.
+- **Escalated**: follow "Escalation handoff" below — set `result: escalated`,
+  `escalated: true`, and fill the `handoff_seed:` block before handing off.
 
 ## Tripwires (checked during Implement / Verify)
 
 `a1-quick` hard-stops and hands off to the full pipeline the moment any of
-these fire — see the Escalation handoff below for what happens next:
+these fire. Each has a stable ID (referenced from the run record's
+`handoff_seed.tripwire` field) and an exact checkpoint — no tripwire is
+checked "eventually", each one is checked at a named point in Step 3 or 4:
 
-- A 3rd file becomes necessary (check before each new file edit).
-- The diff exceeds the ~50-line budget (check after each edit via
-  `git diff --stat`).
-- A forbidden surface turns out to be touched (re-run the eligibility check's
-  forbidden-surface logic against the actual changed paths, not just the
-  declared scope).
-- A second, distinct intent emerges during implementation (self-check).
-- Verify fails twice in a row.
-- (Fixes only) Root cause stays unclear after one focused investigation pass.
+| ID | Condition | Checked where |
+|---|---|---|
+| T1 | A 3rd file becomes necessary | Step 3, before every new file edit — compare the file about to be touched against the expected-files list from Step 2's spec-lite; a 3rd distinct entry fires T1 |
+| T2 | The diff exceeds the ~50-line budget | Step 3, after every edit — `git -C <repo> diff --stat` against `main`, sum of changed lines compared to the 50-line cap |
+| T3 | A forbidden surface turns out to be touched | Step 3, whenever a path outside the declared `--scope` is touched, and again at the start of Step 4 — re-run the Wave-1 forbidden-surface check (the same glob list `quick eligibility` uses) against the actual changed paths from `git diff --name-only`, not just the originally declared scope |
+| T4 | A second, distinct intent emerges | Step 3, ongoing self-check — does every edit still serve the single intent statement from Step 2? |
+| T5 | Verify fails twice in a row | Step 4 — the verify-failure counter described there; fires when the counter reaches 2 |
+| T6 | (Fixes only) Root cause stays unclear after one focused investigation pass | Step 4's root-cause check, `kind: fix` only — self-assessed once, fires if still unclear after that single pass |
 
 ## Escalation handoff
 
-On any tripwire: STOP implementation immediately. Set the run record's
-`result: escalated`, `escalated: true`, and add a `handoff_seed:` block with
-the intent/ACs/files gathered so far.
+On any tripwire (T1–T6): STOP implementation immediately — do not finish the
+edit or verify pass in progress. Then:
 
-- **Kind `feature`**: tell the user this run record is being handed to
-  `a1-new-feature` Phase 1 (Discover) as the mini-spec starting point.
-- **Kind `fix`**: tell the user this run record is being handed to `a1-fix`
-  Phase 1 (Report) as the bug-report draft starting point.
+1. Set the run record's frontmatter: `result: escalated`, `escalated: true`.
+2. Add a `handoff_seed:` block to the run record, filled from whatever was
+   gathered in Steps 2–4 so far (never left empty — this is what SC-004
+   calls a "non-empty seed artifact"):
 
-If a commit already exists on `quick/<slug>`: it is carried forward, never
-discarded — adopt the branch into the full pipeline's worktree flow (same
-mechanism as `a1-worktree adopt`; see `skills/a1-worktree/SKILL.md`).
+   ```yaml
+   handoff_seed:
+     tripwire: T1              # the ID from the table above that fired
+     intent: "<the Step 2 intent statement, verbatim>"
+     acceptance_checks:
+       - "<AC 1>"
+       - "<AC 2, if present>"
+     files:
+       - "<files actually touched so far, from git diff --name-only>"
+     diff_lines: <n>            # from the last git diff --stat check
+     notes: "<one line: what was learned before the tripwire fired>"
+   ```
+
+3. Tell the user, based on `kind`:
+   - **`kind: feature`**: "hand this run record to `a1-new-feature` Phase 1
+     as the Discovery starting point" — the `handoff_seed` block pre-fills
+     Rene's mini-spec interview (intent, ACs, and files already known, no
+     need to re-ask from scratch).
+   - **`kind: fix`**: "hand this run record to `a1-fix` Phase 1 as the
+     bug-report draft starting point" — the `handoff_seed` block pre-fills
+     the bug report (symptom/intent, expected files, and — for T6 — the
+     partial root-cause notes already gathered).
+
+4. **If a commit already exists on `quick/<slug>`** (i.e. Step 3 reached a
+   point where work was committed before the tripwire fired — not the
+   common case, since Step 6's commit only happens after the Step 5
+   checkpoint, but possible if a partial commit was made deliberately mid-
+   implementation): do not discard it. Instruct adopting the branch into the
+   full pipeline's worktree flow using the exact same mechanism
+   `a1-worktree adopt` uses — `cmdWorktreeAdopt` in
+   `_shared/lib/worktree.cjs`, invoked as:
+
+   ```bash
+   node <repo>/_shared/a1-tools.cjs worktree adopt <repo-root> <slug> --branch quick/<slug>
+   ```
+
+   This is the same adopt path documented in
+   `skills/a1-worktree/SKILL.md` (Phase 4, `workflows/04-adopt-reconcile.md`)
+   for out-of-band branches — reuse it as-is, do not build a second
+   adoption mechanism. Once adopted, the branch behaves like any worktree
+   entry: the full pipeline's implementing agent continues on it, and the
+   original `quick/<slug>` commit stays reachable, never force-discarded.
 
 ## Run-record schema (FR-015)
 
