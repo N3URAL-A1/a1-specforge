@@ -33,6 +33,44 @@ Then `Read` the template `~/.claude/skills/a1-new-feature/templates/spec-templat
 
 Write to `projects/<project-slug>/spec/<###>-<feature-slug>.md` (relative to vault root).
 
+## Step 2b — XS eligibility check
+
+Before spawning Rene, run the deterministic XS gate against what is already
+known from Step 1 (project + slug) and whatever intent/scope the user has
+already stated in this conversation:
+
+```bash
+node <repo>/_shared/a1-tools.cjs quick eligibility \
+  --intent "<1-2 sentence intent as stated so far>" --files <n> --diff-lines <estimate> \
+  --scope <path>[,<path>...] --no-migration --no-new-route --no-new-dep \
+  --by <project-slug>-<feature-slug>
+```
+
+Do **not** run an extra interview turn just to fill in eligibility flags —
+if intent or scope are not yet known confidently enough to state real
+values, that uncertainty itself fails the gate closed (see the "ambiguous →
+fail closed" behavior in `quick eligibility`'s own contract), and this step
+simply proceeds to Step 3 as normal.
+
+- **Exit 0 (ELIGIBLE)** → do **not** run Step 3. Tell the user this looks
+  like a tiny, low-risk change and it is being routed to the `a1-quick`
+  lane instead of the full Discovery interview. Hand off to `a1-quick`
+  (pass along the project/slug and the intent/scope just used) and stop —
+  this workflow ends here.
+- **Exit 1 (NOT_ELIGIBLE)** → proceed to Step 3 unchanged. The `reasons[]`
+  are informational only at this point; no need to recite them unless the
+  user asks.
+
+**Override, either direction:** same house rule as the S/M/L triage in
+Step 3b — the user can force a switch in either direction at any point
+("treat as quick" / "run the full pipeline"), and forcing *out* of the
+quick lane into the full pipeline is always honored without discussion.
+Forcing *into* the quick lane despite a NOT_ELIGIBLE result is honored
+without discussion for any reason **except** a forbidden-surface hit or a
+reservation conflict — those two are hard-blocked and not overridable,
+because they encode safety/consistency invariants the quick lane cannot
+soundly skip.
+
 ## Step 3 — Spawn Rene with the Discovery brief
 
 Use the **Agent** tool with `subagent_type: "a1-rene-requirement-engineer"` and this brief:

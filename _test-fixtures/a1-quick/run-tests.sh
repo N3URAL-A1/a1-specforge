@@ -621,5 +621,113 @@ else
   fail=$((fail + 1))
 fi
 
+# =============================================================================
+# Wave 4 — Triage hooks in a1-new-feature / a1-fix + constitution amendment
+# (FR-004/FR-005/FR-006/FR-017 — spec 004-xs-quick-lane). Doc-consistency
+# assertions only (grep + line-number ordering), same style as other
+# doc-consistency fixtures in this repo (e.g. _test-fixtures/a1-checklist).
+# =============================================================================
+
+DISCOVER_MD="$REPO_ROOT/skills/a1-new-feature/workflows/01-discover.md"
+FIX_SKILL_MD="$REPO_ROOT/skills/a1-fix/SKILL.md"
+CONSTITUTION_MD="$REPO_ROOT/docs/CONSTITUTION.md"
+
+# --- Assert: 01-discover.md has the new "Step 2b — XS eligibility check"
+# heading, and it appears BEFORE the "Spawn Rene" heading (line-number order).
+STEP2B_LINE="$(grep -n '^## Step 2b — XS eligibility check' "$DISCOVER_MD" | head -1 | cut -d: -f1)"
+SPAWN_RENE_LINE="$(grep -n '^## Step 3 — Spawn Rene with the Discovery brief' "$DISCOVER_MD" | head -1 | cut -d: -f1)"
+if [[ -z "$STEP2B_LINE" ]]; then
+  echo "FAIL  discover-step2b-exists: '## Step 2b — XS eligibility check' heading not found in $DISCOVER_MD"
+  fail=$((fail + 1))
+elif [[ -z "$SPAWN_RENE_LINE" ]]; then
+  echo "FAIL  discover-step2b-before-rene: 'Spawn Rene' heading not found in $DISCOVER_MD"
+  fail=$((fail + 1))
+elif [[ "$STEP2B_LINE" -lt "$SPAWN_RENE_LINE" ]]; then
+  echo "PASS  discover-step2b-before-rene (Step 2b at line $STEP2B_LINE, Spawn Rene at line $SPAWN_RENE_LINE)"
+  pass=$((pass + 1))
+else
+  echo "FAIL  discover-step2b-before-rene: Step 2b (line $STEP2B_LINE) is not before Spawn Rene (line $SPAWN_RENE_LINE)"
+  fail=$((fail + 1))
+fi
+
+# --- Assert: 01-discover.md's Step 2b references the quick eligibility CLI.
+if grep -q 'quick eligibility' "$DISCOVER_MD"; then
+  echo "PASS  discover-step2b-calls-quick-eligibility"
+  pass=$((pass + 1))
+else
+  echo "FAIL  discover-step2b-calls-quick-eligibility: no 'quick eligibility' reference found in $DISCOVER_MD"
+  fail=$((fail + 1))
+fi
+
+# --- Assert: a1-fix/SKILL.md's phase table lists "Phase 0a" BEFORE "Phase 0"
+# (i.e. the quick-triage row precedes the pre-flight row in table order).
+PHASE0A_LINE="$(grep -n '| 0a | Quick Triage' "$FIX_SKILL_MD" | head -1 | cut -d: -f1)"
+PHASE0_LINE="$(grep -n '^| 0 | Pre-Flight' "$FIX_SKILL_MD" | head -1 | cut -d: -f1)"
+if [[ -z "$PHASE0A_LINE" ]]; then
+  echo "FAIL  fix-phase0a-table-row-exists: '| 0a | Quick Triage' row not found in $FIX_SKILL_MD"
+  fail=$((fail + 1))
+elif [[ -z "$PHASE0_LINE" ]]; then
+  echo "FAIL  fix-phase0a-before-phase0: '| 0 | Pre-Flight' row not found in $FIX_SKILL_MD"
+  fail=$((fail + 1))
+elif [[ "$PHASE0A_LINE" -lt "$PHASE0_LINE" ]]; then
+  echo "PASS  fix-phase0a-before-phase0 (Phase 0a at line $PHASE0A_LINE, Phase 0 at line $PHASE0_LINE)"
+  pass=$((pass + 1))
+else
+  echo "FAIL  fix-phase0a-before-phase0: Phase 0a (line $PHASE0A_LINE) is not before Phase 0 (line $PHASE0_LINE)"
+  fail=$((fail + 1))
+fi
+
+# --- Assert: a1-fix/SKILL.md has a "## Phase 0a — Quick Triage" section
+# BEFORE the existing "## Pre-Flight (mandatory on every new bug)" section.
+PHASE0A_SECTION_LINE="$(grep -n '^## Phase 0a — Quick Triage' "$FIX_SKILL_MD" | head -1 | cut -d: -f1)"
+PREFLIGHT_SECTION_LINE="$(grep -n '^## Pre-Flight (mandatory on every new bug)' "$FIX_SKILL_MD" | head -1 | cut -d: -f1)"
+if [[ -z "$PHASE0A_SECTION_LINE" ]]; then
+  echo "FAIL  fix-phase0a-section-exists: '## Phase 0a — Quick Triage' section not found in $FIX_SKILL_MD"
+  fail=$((fail + 1))
+elif [[ -z "$PREFLIGHT_SECTION_LINE" ]]; then
+  echo "FAIL  fix-phase0a-section-before-preflight: '## Pre-Flight' section not found in $FIX_SKILL_MD"
+  fail=$((fail + 1))
+elif [[ "$PHASE0A_SECTION_LINE" -lt "$PREFLIGHT_SECTION_LINE" ]]; then
+  echo "PASS  fix-phase0a-section-before-preflight (Phase 0a at line $PHASE0A_SECTION_LINE, Pre-Flight at line $PREFLIGHT_SECTION_LINE)"
+  pass=$((pass + 1))
+else
+  echo "FAIL  fix-phase0a-section-before-preflight: Phase 0a section (line $PHASE0A_SECTION_LINE) is not before Pre-Flight (line $PREFLIGHT_SECTION_LINE)"
+  fail=$((fail + 1))
+fi
+
+# --- Assert: the isolation-gate "no exceptions" wording is unchanged
+# (verbatim substring still present, tolerant of the existing line wrap) —
+# Wave 4 must not weaken it.
+if tr '\n' ' ' < "$FIX_SKILL_MD" | grep -q 'No exceptions for "it'"'"'s just a one-liner"\.'; then
+  echo "PASS  fix-isolation-gate-wording-unchanged"
+  pass=$((pass + 1))
+else
+  echo "FAIL  fix-isolation-gate-wording-unchanged: verbatim 'No exceptions for \"it's just a one-liner\".' string not found in $FIX_SKILL_MD"
+  fail=$((fail + 1))
+fi
+
+# --- Assert: docs/CONSTITUTION.md still has EXACTLY 10 numbered invariants
+# after the Wave 4 amendment (regression guard against accidental
+# re-numbering or an 11th invariant being added).
+INVARIANT_COUNT="$(grep -c '^[0-9]\+\. \*\*' "$CONSTITUTION_MD")"
+if [[ "$INVARIANT_COUNT" -eq 10 ]]; then
+  echo "PASS  constitution-still-has-exactly-10-invariants ($INVARIANT_COUNT)"
+  pass=$((pass + 1))
+else
+  echo "FAIL  constitution-still-has-exactly-10-invariants: expected 10, got $INVARIANT_COUNT"
+  fail=$((fail + 1))
+fi
+
+# --- Assert: docs/CONSTITUTION.md mentions the quick-eligibility/
+# quick-escalation gate pair as an example under invariant 7 ("Gates are
+# registered").
+if grep -q 'quick-eligibility' "$CONSTITUTION_MD" && grep -q 'quick-escalation' "$CONSTITUTION_MD"; then
+  echo "PASS  constitution-mentions-quick-gate-pair"
+  pass=$((pass + 1))
+else
+  echo "FAIL  constitution-mentions-quick-gate-pair: 'quick-eligibility' and/or 'quick-escalation' not found in $CONSTITUTION_MD"
+  fail=$((fail + 1))
+fi
+
 echo "a1-quick: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]
