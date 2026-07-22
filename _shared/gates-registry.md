@@ -38,3 +38,5 @@ Constitution rules this table enforces:
 | `pr-reinhard` | Pre-merge | prompt | high | a1-pr-review (reinhard) | blocking | Diff-level review, pre-merge only (P6 scope). |
 | `modernize-parity` | Modernize | deterministic | med | a1-modernize | blocking | Behaviour-parity check. |
 | `modernize-g1..g6` | Modernize | human | high | a1-modernize | blocking | Six human approval gates (collapsed). Keep; auto-approval precedent needs an audit trail (FMEA-5). |
+| `quick-eligibility` | entry (pre-Discover / pre-Pre-Flight) | deterministic | cheap | a1-quick / a1-new-feature+a1-fix | blocking | NEW (spec 004-xs-quick-lane, Wave 1). `quick eligibility` decides XS-lane admission (intent/file/diff budget, forbidden surface, clean tree, no reservation conflict) — no LLM, no network. |
+| `quick-escalation` | exit (mid-run tripwire) | deterministic | cheap | a1-quick | blocking | NEW (spec 004-xs-quick-lane). Mid-run tripwire hard-stop that hands an in-progress quick run off to the full pipeline as a seed artifact. |

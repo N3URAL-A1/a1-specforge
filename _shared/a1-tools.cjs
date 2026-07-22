@@ -563,8 +563,19 @@ function main() {
         cmdPackExport(rest);
         return; // unreachable — cmdPackExport calls process.exit()
       } else usage(`unknown pack subcommand: ${sub}`);
+    } else if (group === 'quick') {
+      // Lazy require — only paid when `quick ...` is actually invoked.
+      const quick = require(path.join(__dirname, 'lib', 'quick.cjs'));
+      // quick eligibility owns its own exit code (0 eligible / 1 not
+      // eligible) and JSON output (spec 004-xs-quick-lane, Wave 1).
+      if (sub === 'eligibility') {
+        quick.cmdQuickEligibility(rest);
+        return; // unreachable — cmdQuickEligibility calls process.exit()
+      } else {
+        usage(`unknown quick subcommand: ${sub}`);
+      }
     } else {
-      usage(`unknown command group: ${group} (expected "spec", "fix", "analyze", "check", "checklist", "constitution", "worktree", "pr", "phantom", "reconcile", "modernize", "schema-check", "cost", "pack", "product", or "realpath-check"). fix supports: next-suffix, update-status, list, find-duplicates, integrity-check, init-postmortem, count-postmortems-since, update-promote-state, write-suggestion`);
+      usage(`unknown command group: ${group} (expected "spec", "fix", "analyze", "check", "checklist", "constitution", "worktree", "pr", "phantom", "reconcile", "modernize", "schema-check", "cost", "pack", "product", "quick", or "realpath-check"). fix supports: next-suffix, update-status, list, find-duplicates, integrity-check, init-postmortem, count-postmortems-since, update-promote-state, write-suggestion`);
     }
   } catch (e) {
     // Input-validation errors (e.g. path-traversal guard) are user errors,

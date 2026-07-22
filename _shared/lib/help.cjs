@@ -429,6 +429,23 @@ Usage:
                   NEXT.md regenerate correctly. Exit: 0 ok, 1 usage/
                   unrecognized-shape/already-exists/validation/write error.
 
+  a1-tools quick eligibility --intent <text> --files <n> --diff-lines <n>
+                              --scope <path>[,<path>...] --no-migration
+                              --no-new-route --no-new-dep [--by <spec-id>]
+                              [--repo-root <abs>] [--file <path>]
+                  Spec 004-xs-quick-lane, Wave 1 (FR-001/002/003). Deterministic
+                  (no LLM, no network) XS-lane eligibility gate: ALL of intent
+                  <= 2 sentences, --files <= 2, --diff-lines <= 50, no forbidden-
+                  surface path in --scope (auth/payment/tenant/security/
+                  migration), --no-migration/--no-new-route/--no-new-dep all
+                  asserted, clean working tree at --repo-root (default cwd),
+                  and no conflicting code_scope reservation (same registry as
+                  'code-scope claim', checked in-process). Missing/unparseable
+                  flags or an unclassifiable intent fail closed (exit 1).
+                  Prints {status: "ELIGIBLE"|"NOT_ELIGIBLE", reasons: [...]} —
+                  reasons[] lists every failing criterion, not just the first.
+                  Exit: 0 eligible, 1 not eligible.
+
 Spec statuses: ${[...SPEC_STATUSES].join(', ')}
 Bug statuses:  ${[...BUG_STATUSES].join(', ')}
 Bug severities: ${[...BUG_SEVERITIES].join(', ')}
