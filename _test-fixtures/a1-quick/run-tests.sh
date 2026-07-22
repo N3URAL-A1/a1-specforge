@@ -299,5 +299,187 @@ else
 fi
 assert_rc "hostile-oversized-intent-rc" 1 "$RC" "$OUT"
 
+# =============================================================================
+# Wave 2 — a1-quick skill core flow (FR-007..012, FR-015 — spec
+# 004-xs-quick-lane). Two case classes:
+#   (1) git-mechanics: a scripted simulation of the branch-create -> commit ->
+#       merge sequence SKILL.md Step 3/6 documents. Not a full agent-flow
+#       test (that isn't bash-scriptable) — it proves the git mechanics the
+#       skill's steps describe are sound and leave no worktree behind
+#       (SC-003's "no worktree created" half).
+#   (2) run-record-schema: a hand-written fixture instance is validated
+#       against the frontmatter shape from SKILL.md's "Run-record schema"
+#       section (FR-015) via node -e YAML/JSON-ish parsing.
+# =============================================================================
+
+# --- (1) git-mechanics: branch -> commit -> merge, no worktree ---
+GIT_WORK="$WORK/quick-git-mechanics"
+mkdir -p "$GIT_WORK"
+git -C "$GIT_WORK" init -q -b main
+git -C "$GIT_WORK" config user.email "test@example.com"
+git -C "$GIT_WORK" config user.name "Test"
+echo "seed" > "$GIT_WORK/seed.txt"
+git -C "$GIT_WORK" add seed.txt
+git -C "$GIT_WORK" commit -q -m "seed"
+
+SLUG="fix-footer-typo"
+# Step 3 — Implement: create quick/<slug> branch off main, no worktree add.
+git -C "$GIT_WORK" checkout -q -b "quick/$SLUG" main
+echo "2027" > "$GIT_WORK/seed.txt"
+git -C "$GIT_WORK" add seed.txt
+# Step 6 — Commit + merge: exactly one commit on quick/<slug> before merge.
+git -C "$GIT_WORK" commit -q -m "fix(footer): correct copyright year"
+git -C "$GIT_WORK" checkout -q main
+git -C "$GIT_WORK" merge -q --no-ff "quick/$SLUG" -m "merge quick/$SLUG"
+
+# Assert: exactly one commit landed on quick/<slug> ahead of the seed commit
+# (i.e. exactly one commit made ON the quick branch before merge).
+SEED_COMMIT="$(git -C "$GIT_WORK" rev-list --max-parents=0 HEAD | tail -1)"
+COMMITS_ON_BRANCH="$(git -C "$GIT_WORK" rev-list --count "quick/$SLUG" "^$SEED_COMMIT" 2>/dev/null || echo -1)"
+if [[ "$COMMITS_ON_BRANCH" -eq 1 ]]; then
+  echo "PASS  quick-git-mechanics-one-commit (exactly 1 commit on quick/$SLUG)"
+  pass=$((pass + 1))
+else
+  echo "FAIL  quick-git-mechanics-one-commit: expected exactly 1 commit on quick/$SLUG, got $COMMITS_ON_BRANCH"
+  fail=$((fail + 1))
+fi
+
+# Assert: no git worktree entries exist beyond the primary checkout — proves
+# no `git worktree add` occurred anywhere in the simulated flow.
+WORKTREE_COUNT="$(git -C "$GIT_WORK" worktree list | wc -l | tr -d ' ')"
+if [[ "$WORKTREE_COUNT" -eq 1 ]]; then
+  echo "PASS  quick-git-mechanics-no-worktree (worktree list has only the primary checkout)"
+  pass=$((pass + 1))
+else
+  echo "FAIL  quick-git-mechanics-no-worktree: expected 1 worktree list entry (primary only), got $WORKTREE_COUNT"
+  fail=$((fail + 1))
+fi
+
+# Assert: main now contains the merged change (merge actually landed).
+if grep -q "2027" "$GIT_WORK/seed.txt"; then
+  echo "PASS  quick-git-mechanics-merge-landed (main has the merged change)"
+  pass=$((pass + 1))
+else
+  echo "FAIL  quick-git-mechanics-merge-landed: main does not contain the merged change"
+  fail=$((fail + 1))
+fi
+
+# --- (2) run-record-schema: hand-written fixture validated against the
+# frontmatter shape from SKILL.md's "Run-record schema" section (FR-015) ---
+FIXTURE_DIR="$DIR/fixtures"
+mkdir -p "$FIXTURE_DIR"
+RUN_RECORD_FIXTURE="$FIXTURE_DIR/sample-run-record.md"
+cat > "$RUN_RECORD_FIXTURE" <<'MDEOF'
+---
+type: quick-run
+kind: fix
+slug: fix-footer-typo
+project: demo
+created: 2026-07-22
+result: completed
+escalated: false
+branch: quick/fix-footer-typo
+files:
+  - src/components/Footer.tsx
+diff_lines: 4
+verify: "pass: 1/1 AC, tests green, 5-point self-review clean"
+retro: "clean XS run, no friction"
+---
+
+# Quick Run — fix-footer-typo
+MDEOF
+
+SCHEMA_CHECK_RC=0
+node -e '
+const fs = require("fs");
+const path = process.argv[1];
+const content = fs.readFileSync(path, "utf8");
+const match = content.match(/^---\n([\s\S]*?)\n---\n/);
+if (!match) { console.error("no frontmatter block found"); process.exit(1); }
+const raw = match[1];
+const lines = raw.split("\n");
+const fm = {};
+let currentKey = null;
+for (const line of lines) {
+  const listItem = line.match(/^\s+-\s+(.*)$/);
+  if (listItem && currentKey) {
+    if (!Array.isArray(fm[currentKey])) fm[currentKey] = [];
+    fm[currentKey].push(listItem[1].trim());
+    continue;
+  }
+  const kv = line.match(/^([A-Za-z_]+):\s*(.*)$/);
+  if (kv) {
+    currentKey = kv[1];
+    let val = kv[2].trim();
+    if (val === "") { fm[currentKey] = undefined; continue; }
+    if (val.startsWith("\"") && val.endsWith("\"")) val = val.slice(1, -1);
+    fm[currentKey] = val;
+  }
+}
+const required = ["type", "kind", "result", "escalated", "files", "diff_lines", "verify", "retro"];
+const missing = required.filter((k) => fm[k] === undefined);
+if (missing.length > 0) {
+  console.error("missing required frontmatter fields: " + missing.join(", "));
+  process.exit(1);
+}
+if (fm.type !== "quick-run") { console.error("type must be quick-run, got: " + fm.type); process.exit(1); }
+if (!["feature", "fix"].includes(fm.kind)) { console.error("kind must be feature|fix, got: " + fm.kind); process.exit(1); }
+if (!["in-progress", "completed", "escalated"].includes(fm.result)) { console.error("result must be in-progress|completed|escalated, got: " + fm.result); process.exit(1); }
+if (!["true", "false"].includes(String(fm.escalated))) { console.error("escalated must be true|false, got: " + fm.escalated); process.exit(1); }
+if (!Array.isArray(fm.files)) { console.error("files must be a list, got: " + JSON.stringify(fm.files)); process.exit(1); }
+if (!/^[0-9]+$/.test(String(fm.diff_lines))) { console.error("diff_lines must be an integer, got: " + fm.diff_lines); process.exit(1); }
+process.exit(0);
+' "$RUN_RECORD_FIXTURE" || SCHEMA_CHECK_RC=$?
+assert_rc "run-record-schema-valid" 0 "$SCHEMA_CHECK_RC" "(see node -e stderr above)"
+
+# --- (2b) reject a malformed run-record fixture (missing required field) to
+# prove the schema check is not a rubber stamp ---
+RUN_RECORD_BAD="$WORK/bad-run-record.md"
+cat > "$RUN_RECORD_BAD" <<'MDEOF'
+---
+type: quick-run
+kind: fix
+result: completed
+escalated: false
+files:
+  - src/components/Footer.tsx
+diff_lines: 4
+retro: "missing verify field"
+---
+
+# Bad Quick Run
+MDEOF
+BAD_SCHEMA_CHECK_RC=0
+node -e '
+const fs = require("fs");
+const path = process.argv[1];
+const content = fs.readFileSync(path, "utf8");
+const match = content.match(/^---\n([\s\S]*?)\n---\n/);
+if (!match) { process.exit(1); }
+const raw = match[1];
+const lines = raw.split("\n");
+const fm = {};
+let currentKey = null;
+for (const line of lines) {
+  const listItem = line.match(/^\s+-\s+(.*)$/);
+  if (listItem && currentKey) {
+    if (!Array.isArray(fm[currentKey])) fm[currentKey] = [];
+    fm[currentKey].push(listItem[1].trim());
+    continue;
+  }
+  const kv = line.match(/^([A-Za-z_]+):\s*(.*)$/);
+  if (kv) {
+    currentKey = kv[1];
+    let val = kv[2].trim();
+    if (val === "") { fm[currentKey] = undefined; continue; }
+    fm[currentKey] = val;
+  }
+}
+const required = ["type", "kind", "result", "escalated", "files", "diff_lines", "verify", "retro"];
+const missing = required.filter((k) => fm[k] === undefined);
+process.exit(missing.length > 0 ? 1 : 0);
+' "$RUN_RECORD_BAD" || BAD_SCHEMA_CHECK_RC=$?
+assert_rc "run-record-schema-rejects-missing-field" 1 "$BAD_SCHEMA_CHECK_RC" "(expected rejection: missing 'verify' field)"
+
 echo "a1-quick: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]
