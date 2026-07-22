@@ -420,6 +420,86 @@ EX=$?
 assert_eq "reconcile-hostile-missing-arg-exit" "1" "$EX"
 
 # ----------------------------------------------------------------------------
+# CASE 19: enter mirrors the gitignored .a1/learnings/ store into the worktree
+# ----------------------------------------------------------------------------
+REPO="$WORK/repo11"
+make_repo "$REPO"
+echo ".a1/learnings/" >> "$REPO/.gitignore"
+git -C "$REPO" add .gitignore
+git -C "$REPO" -c commit.gpgsign=false commit -q -m "add gitignore"
+mkdir -p "$REPO/.a1/learnings/projects/demo-slug/spec"
+echo "spec content" > "$REPO/.a1/learnings/projects/demo-slug/spec/x.md"
+
+OUT=$(node "$TOOLS" worktree prepare "$REPO" feat-learnings 2>&1)
+ID=$(extract_field id "$OUT")
+OUT=$(node "$TOOLS" worktree enter "$ID" 2>&1)
+EX=$?
+assert_eq "learnings-mirror-enter-exit" "0" "$EX"
+
+WT="$WORK/a1-worktrees/feat-learnings"
+MIRRORED="$WT/.a1/learnings/projects/demo-slug/spec/x.md"
+if [[ -f "$MIRRORED" ]]; then
+  results+=("PASS  learnings-mirror-file-exists")
+  pass=$((pass + 1))
+else
+  results+=("FAIL  learnings-mirror-file-exists  $MIRRORED missing")
+  fail=$((fail + 1))
+fi
+if diff -q "$REPO/.a1/learnings/projects/demo-slug/spec/x.md" "$MIRRORED" >/dev/null 2>&1; then
+  results+=("PASS  learnings-mirror-content-identical")
+  pass=$((pass + 1))
+else
+  results+=("FAIL  learnings-mirror-content-identical  content differs")
+  fail=$((fail + 1))
+fi
+
+# ----------------------------------------------------------------------------
+# CASE 20: enter is a no-op (not a crash) when the repo has no learning store
+# ----------------------------------------------------------------------------
+REPO="$WORK/repo12"
+make_repo "$REPO"
+
+OUT=$(node "$TOOLS" worktree prepare "$REPO" feat-nolearnings 2>&1)
+ID=$(extract_field id "$OUT")
+OUT=$(node "$TOOLS" worktree enter "$ID" 2>&1)
+EX=$?
+assert_eq "learnings-noop-enter-exit" "0" "$EX"
+if [[ ! -d "$WORK/a1-worktrees/feat-nolearnings/.a1/learnings" ]]; then
+  results+=("PASS  learnings-noop-no-dir-created")
+  pass=$((pass + 1))
+else
+  results+=("FAIL  learnings-noop-no-dir-created  .a1/learnings unexpectedly present")
+  fail=$((fail + 1))
+fi
+
+# ----------------------------------------------------------------------------
+# CASE 21: re-entering an already-active worktree overwrites the mirror
+# cleanly (idempotency) rather than crashing
+# ----------------------------------------------------------------------------
+REPO="$WORK/repo13"
+make_repo "$REPO"
+mkdir -p "$REPO/.a1/learnings/projects/demo-slug/spec"
+echo "v1" > "$REPO/.a1/learnings/projects/demo-slug/spec/x.md"
+
+OUT=$(node "$TOOLS" worktree prepare "$REPO" feat-idempotent 2>&1)
+ID=$(extract_field id "$OUT")
+node "$TOOLS" worktree enter "$ID" >/dev/null 2>&1
+
+# Simulate a changed source file, then re-run the same mirroring logic
+# directly (worktree enter itself refuses a non-"prepared" entry by design —
+# the idempotency guarantee under test is copyDirRecursive's overwrite
+# behavior, exercised the same way cmdWorktreeEnter invokes it).
+echo "v2" > "$REPO/.a1/learnings/projects/demo-slug/spec/x.md"
+node -e "
+const { copyDirRecursive } = require('$REPO_ROOT/_shared/lib/io.cjs');
+copyDirRecursive('$REPO/.a1/learnings', '$WORK/a1-worktrees/feat-idempotent/.a1/learnings');
+"
+EX=$?
+assert_eq "learnings-idempotent-rerun-exit" "0" "$EX"
+CONTENT=$(cat "$WORK/a1-worktrees/feat-idempotent/.a1/learnings/projects/demo-slug/spec/x.md")
+assert_eq "learnings-idempotent-overwritten" "v2" "$CONTENT"
+
+# ----------------------------------------------------------------------------
 # Report
 # ----------------------------------------------------------------------------
 echo ""

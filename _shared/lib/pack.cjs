@@ -2,7 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { parseFlags, vaultRoot } = require('./io.cjs');
+const { parseFlags, vaultRoot, copyDirRecursive } = require('./io.cjs');
 
 // ---------------------------------------------------------------------------
 // pack — Gate-Pack system (ADR 2026-07-05-gate-pack-format).
@@ -246,16 +246,6 @@ function cmdPackValidate(rest) {
   process.stderr.write(`pack: INVALID — ${res.errors.length} problem(s):\n`);
   for (const e of res.errors) process.stderr.write(`  - ${e}\n`);
   process.exit(1);
-}
-
-function copyDirRecursive(src, dest) {
-  fs.mkdirSync(dest, { recursive: true });
-  for (const entry of fs.readdirSync(src)) {
-    const s = path.join(src, entry);
-    const d = path.join(dest, entry);
-    if (fs.statSync(s).isDirectory()) copyDirRecursive(s, d);
-    else fs.copyFileSync(s, d);
-  }
 }
 
 function rmDirRecursive(p) {
