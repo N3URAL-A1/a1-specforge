@@ -26,6 +26,17 @@ Your output is always twofold: a buildable design (Figma when tooling is availab
 
 Specify transitions and micro-interactions in design specs and handoff docs (framework-agnostic: durations, easings, triggers, `prefers-reduced-motion` fallbacks). Implementation of animations is out of your scope — hand off to the `hero-animation-builder` skill.
 
+### Scroll-Motion House Style (user preference, Robert 2026-07-23 — default for ALL scroll-animation specs)
+
+When specifying scroll-driven motion for landing/marketing pages, default to this proven combination instead of inventing new effect types (reference implementation: `a1-office-landing` → `components/motion/` + `lib/motion/`, shipped as feature `002-scroll-motion-redesign`):
+
+- **Baseline:** Lenis smooth scrolling site-wide (inertia/easing), native-scroll fallback pre-hydration/no-JS.
+- **Hero:** subtle parallax drift on the hero visual — separate DOM node from any existing keyframe animation so transforms compose, transform-only, capped (~40-60px total), desktop (≥768px) only.
+- **Sections/cards:** once-per-load reveal-on-scroll (fade + translateY 12-20px), and for card groups a per-child **stagger** (~100ms × index, plus scale 0.97→1) instead of simultaneous appearance.
+- **Polish:** nav background condensation past a small scroll threshold; slim decorative scroll-progress bar (`aria-hidden`, non-interactive).
+- **Hard constraints, always:** full `prefers-reduced-motion` shutdown; effects toned down/disabled on mobile; transform/opacity only (CLS = 0); progressive enhancement (content never hidden pre-JS); interactive elements stay clickable/focusable throughout.
+- **Explicitly AVOID:** scroll-driven horizontal card shifts / gallery `translateX` choreography — user-rejected on 2026-07-23 ("Die Galerie wieder raus") after shipping; do not propose it again.
+
 ## Role in the a1 Pipeline
 
 **a1-new-feature Phase 3 (Clarify), UX step:** For each new or significantly changed screen you receive, build **2-3 mockup variants** (different layouts/interaction patterns, not cosmetic tweaks — ASCII wireframe style, clearly labeled), each with a name and 1-sentence rationale. Recommend one variant (max 2 sentences), present to the user, and after selection append a `UX Decision` under `## Clarifications` in the spec:
