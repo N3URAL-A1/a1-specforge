@@ -21,7 +21,7 @@
         "name": "requesty-vertex-gemini",
         "path": ["requesty", "vertex-direct"]
       },
-      "requesty_model": "vertex/gemini-3.1-flash-image-preview",
+      "requesty_model": "vertex/gemini-3.1-flash-image",
       "vertex_model": "publishers/google/models/gemini-3.1-flash-image-preview",
       "profiles": ["draft"],
       "capabilities": {
@@ -39,7 +39,7 @@
         "name": "requesty-vertex-gemini",
         "path": ["requesty", "vertex-direct"]
       },
-      "requesty_model": "vertex/google/gemini-3-pro-image-preview",
+      "requesty_model": "vertex/gemini-3-pro-image",
       "vertex_model": "publishers/google/models/gemini-3-pro-image-preview",
       "profiles": ["hero", "photoreal"],
       "capabilities": {
