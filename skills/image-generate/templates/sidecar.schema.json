@@ -1,0 +1,92 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://a1-skills.local/skills/image-generate/templates/sidecar.schema.json",
+  "title": "image-generate provenance sidecar",
+  "description": "Mandatory provenance sidecar written alongside every generated asset (FR-011). One sidecar per promoted final asset, same basename, written to assets-meta/generated/ in the target project (outside public/, which Vercel serves publicly — prompts may contain internal brand-strategy wording that must not be publicly servable).",
+  "type": "object",
+  "required": [
+    "prompt",
+    "model_id",
+    "image_config",
+    "generated_at",
+    "project_slot_ref",
+    "profile",
+    "provider_path",
+    "skill_version"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "prompt": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Full prompt text submitted to the model, verbatim. Must never contain confidential client material (FR-015) — enforced at prompt-construction time before this sidecar is written."
+    },
+    "model_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The resolved model id from model-registry.json's entries[].id — the literal id actually used for this run, e.g. \"gemini-3-pro-image\". This is provenance data, not a hardcoded instruction — recording the resolved value here does not violate FR-002."
+    },
+    "image_config": {
+      "type": "object",
+      "required": ["aspect_ratio", "image_size"],
+      "additionalProperties": false,
+      "properties": {
+        "aspect_ratio": {
+          "type": "string",
+          "description": "Aspect ratio actually requested, e.g. \"21:9\"."
+        },
+        "image_size": {
+          "type": "string",
+          "enum": ["1K", "2K", "4K"],
+          "description": "Resolution tier actually requested."
+        },
+        "honored": {
+          "type": "boolean",
+          "description": "Result of the mandatory image_config verification step (FR-014) — true only if the response was inspected and the actual returned dimensions/aspect ratio match what was requested. Must be present and true before a final asset is promoted; false or missing means the run is treated as a failure, not silently accepted."
+        }
+      }
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of generation, e.g. \"2026-07-24T15:42:00Z\"."
+    },
+    "project_slot_ref": {
+      "type": "object",
+      "required": ["project", "slot_id"],
+      "additionalProperties": false,
+      "properties": {
+        "project": {
+          "type": "string",
+          "description": "Target project/repo name, e.g. \"maison-muelhens\"."
+        },
+        "slot_id": {
+          "type": "string",
+          "description": "Stable slot identifier within the project, e.g. \"mm-hero\"."
+        },
+        "component_path": {
+          "type": "string",
+          "description": "Optional: path to the component rendering this slot, e.g. \"components/mm/hero.tsx\"."
+        }
+      }
+    },
+    "profile": {
+      "type": "string",
+      "enum": ["draft", "hero", "photoreal"],
+      "description": "Which of the three registry profiles this run used."
+    },
+    "provider_path": {
+      "type": "string",
+      "enum": ["requesty", "vertex-direct"],
+      "description": "Which invocation path actually served this generation — the Requesty primary path, or the direct-Vertex fallback (FR-008)."
+    },
+    "source_draft_ref": {
+      "type": ["string", "null"],
+      "description": "Optional. If this final asset was promoted from a selected draft variant, the path to that draft under .imagegen/drafts/. null if generated directly (e.g. hero/photoreal runs that do not go through draft exploration)."
+    },
+    "skill_version": {
+      "type": "string",
+      "description": "Version/identifier of the image-generate skill that produced this asset, for future schema-migration traceability. Free-form (e.g. a git short-hash or semver string chosen by the skill maintainer)."
+    }
+  }
+}

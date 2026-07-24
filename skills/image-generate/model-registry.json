@@ -1,0 +1,94 @@
+{
+  "_schema": {
+    "description": "Single source of truth for image-generation model IDs and their capabilities. No model ID literal may appear anywhere else in this skill's instructions (SKILL.md, presets/, reference/) — always resolve through this file. Analogous in principle (not storage mechanism) to n3ural-platform's api.model_registry / lib/agent/model-registry.ts (spec 017): same data-driven, no-hardcoding intent, deliberately translated from a DB table to a flat JSON file because this skill has no persistent runtime/DB of its own.",
+    "fields": {
+      "id": "Canonical model identifier used as the registry lookup key. Never write this string literally in SKILL.md or presets/ — always reference it as e.g. `registry.profiles.hero.model_id`.",
+      "provider": "Structured object identifying the routing provider. Kept as an object (not a bare string) specifically so a second provider can be added as a sibling entry later without any change to skill logic or SKILL.md instructions (FR-004). `name` is a stable provider key; `path` distinguishes the two invocation routes this skill supports for the same underlying model.",
+      "requesty_model": "The exact model string to send to Requesty's OpenAI-compatible chat/completions endpoint (primary path). null for entries that are not routed to (e.g. the retired reference entry).",
+      "vertex_model": "The direct-Vertex-AI equivalent model resource path, used only by the Vertex-direct fallback path (region europe-west3, Service Account/ADC auth) when Requesty is unavailable. null for entries that are not routed to.",
+      "profiles": "Which of the three skill profiles (draft, hero, photoreal) resolve to this model entry. Empty array = not routed to by any active profile (reference-only entry).",
+      "capabilities": "Object describing supported aspect_ratios and resolution_tiers for this model, used to validate image_config requests before they are sent.",
+      "default_resolution": "The resolution tier a profile falls back to when the invoking agent does not specify one explicitly. Present only on entries that serve as a profile default (draft).",
+      "retirement_date": "ISO 8601 date (YYYY-MM-DD) or null. SKILL.md instructs the agent to compare this against the current date on every registry load and warn if a model is within 30 days of retirement or already past it (instruction-level check, no automated tooling).",
+      "status": "active | retired-reference. retired-reference entries exist for audit/documentation purposes only and MUST NOT be routed to by any profile — profiles array MUST be empty for these.",
+      "note": "Free-text human-readable annotation, e.g. explaining why a retired-reference entry is kept."
+    }
+  },
+  "entries": [
+    {
+      "id": "gemini-3.1-flash-image",
+      "provider": {
+        "name": "requesty-vertex-gemini",
+        "path": ["requesty", "vertex-direct"]
+      },
+      "requesty_model": "vertex/gemini-3.1-flash-image-preview",
+      "vertex_model": "publishers/google/models/gemini-3.1-flash-image-preview",
+      "profiles": ["draft"],
+      "capabilities": {
+        "aspect_ratios": ["1:1", "16:9", "21:9", "4:5", "9:16"],
+        "resolution_tiers": ["1K", "2K"]
+      },
+      "default_resolution": "1K",
+      "retirement_date": null,
+      "status": "active",
+      "note": "Draft profile default — fast, cheap composition exploration (10-20 variants). @1K unless the agent explicitly requests otherwise for a draft run."
+    },
+    {
+      "id": "gemini-3-pro-image",
+      "provider": {
+        "name": "requesty-vertex-gemini",
+        "path": ["requesty", "vertex-direct"]
+      },
+      "requesty_model": "vertex/google/gemini-3-pro-image-preview",
+      "vertex_model": "publishers/google/models/gemini-3-pro-image-preview",
+      "profiles": ["hero", "photoreal"],
+      "capabilities": {
+        "aspect_ratios": ["16:9", "21:9"],
+        "resolution_tiers": ["2K", "4K"]
+      },
+      "retirement_date": null,
+      "status": "active",
+      "note": "Shared by hero and photoreal profiles. photoreal applies presets/photoreal.md on top of the same model/config — no separate model entry needed per FR-005."
+    },
+    {
+      "id": "gemini-2.5-flash-image",
+      "provider": {
+        "name": "requesty-vertex-gemini",
+        "path": []
+      },
+      "requesty_model": null,
+      "vertex_model": null,
+      "profiles": [],
+      "capabilities": {
+        "aspect_ratios": [],
+        "resolution_tiers": []
+      },
+      "retirement_date": "2026-10-02",
+      "status": "retired-reference",
+      "note": "Reference-only entry (FR-003). Retires 2026-10-02. Not routed to by any active profile in this skill — do not use. Also referenced (out of scope for this skill) in the Niimo repo's imagenClient.ts / generateRecipeImage.ts / imageStyle.ts / tokenTracker.ts and ADR-042; that migration is tracked on the Niimo roadmap, not here."
+    }
+  ],
+  "profiles": {
+    "draft": {
+      "model_id": "gemini-3.1-flash-image",
+      "default_resolution": "1K",
+      "is_default_profile": true,
+      "description": "Fast, cheap composition exploration — 10-20 variants at 1K before a final asset is committed to."
+    },
+    "hero": {
+      "model_id": "gemini-3-pro-image",
+      "supported_resolutions": ["2K", "4K"],
+      "supported_aspect_ratios": ["16:9", "21:9"],
+      "is_default_profile": false,
+      "description": "Final production-ready asset at 2K or 4K, 16:9 or 21:9."
+    },
+    "photoreal": {
+      "model_id": "gemini-3-pro-image",
+      "supported_resolutions": ["2K", "4K"],
+      "supported_aspect_ratios": ["16:9", "21:9"],
+      "is_default_profile": false,
+      "preset_ref": "presets/photoreal.md",
+      "description": "Same model and config surface as hero, with the photorealism prompt preset applied on top."
+    }
+  }
+}

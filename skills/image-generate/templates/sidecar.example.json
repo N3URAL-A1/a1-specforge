@@ -1,0 +1,19 @@
+{
+  "prompt": "Editorial hero photograph for Maison Muelhens, 7th-generation Cologne fragrance house since 1792. A single, unlabeled perfume bottle rendered in dramatic chiaroscuro lighting against a deep near-black background (#1D1D1B), a thin ribbon of gold (#C5A55A) light tracing the bottle's silhouette. Composition leaves generous negative space on the right third of the frame for wordmark and headline overlay. Mood: quiet luxury, heritage, restraint — no visible text, no logos, no people.",
+  "model_id": "gemini-3-pro-image",
+  "image_config": {
+    "aspect_ratio": "21:9",
+    "image_size": "2K",
+    "honored": true
+  },
+  "generated_at": "2026-07-24T16:12:00Z",
+  "project_slot_ref": {
+    "project": "maison-muelhens",
+    "slot_id": "mm-hero",
+    "component_path": "components/mm/hero.tsx"
+  },
+  "profile": "hero",
+  "provider_path": "requesty",
+  "source_draft_ref": null,
+  "skill_version": "image-generate@wave1"
+}

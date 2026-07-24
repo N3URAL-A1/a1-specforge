@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="Image pending — placeholder">
+  <title>Image pending</title>
+  <defs>
+    <linearGradient id="mm-placeholder-ground" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1D1D1B" />
+      <stop offset="100%" stop-color="#131313" />
+    </linearGradient>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#mm-placeholder-ground)" />
+
+  <!-- Hairline frame, inset — reads as intentional composition, not a broken box -->
+  <rect x="64" y="64" width="1472" height="772" fill="none" stroke="#C5A55A" stroke-opacity="0.35" stroke-width="1" />
+
+  <!-- Centered mark: a single thin diamond, quiet luxury motif, no literal "broken image" iconography -->
+  <g transform="translate(800 450)">
+    <path d="M 0 -34 L 34 0 L 0 34 L -34 0 Z" fill="none" stroke="#C5A55A" stroke-width="1.5" />
+    <circle cx="0" cy="0" r="3" fill="#C5A55A" />
+  </g>
+
+  <!-- Understated status label, small caps feel via letter-spacing, gold at low emphasis -->
+  <text x="800" y="546" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="15" letter-spacing="4" fill="#C5A55A" fill-opacity="0.75">
+    IMAGE PENDING
+  </text>
+</svg>
