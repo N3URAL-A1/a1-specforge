@@ -22,6 +22,12 @@ is a confirmation dialog rather than a numeric cap.
   reports this by name (which env var is missing) and — if Vertex fallback is
   configured — falls through to that path; if neither is available, the run
   fails gracefully per `SKILL.md` Step 12 / FR-013.
+- **Canonical local storage:** `~/.config/requesty/imagegen.env` (mode 600,
+  outside every repo), containing a single
+  `export REQUESTY_IMAGEGEN_API_KEY=...` line. A run sources this file first
+  (`source ~/.config/requesty/imagegen.env`) if the variable is not already
+  set in the shell. Create it in a private terminal — never paste the key
+  into an agent conversation.
 
 ### Vertex AI fallback (no dedicated env var — uses ADC)
 
