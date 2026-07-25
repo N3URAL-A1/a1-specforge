@@ -75,6 +75,15 @@ Content-Type: application/json
 }
 ```
 
+> **Field-verified pitfall (2026-07-25, first production draft run):** the
+> draft model IGNORES `image_config.aspect_ratio` when the prompt text itself
+> contains no framing language — 16/17 images came back 16:9 despite a correct
+> `"aspect_ratio": "21:9"`. Reproducible. Fix: state the ratio textually at the
+> START of every prompt (e.g. "Ultrawide 21:9 cinematic panoramic
+> photograph.") IN ADDITION to `image_config`. With that prefix, 17/17 were
+> honored. `image_config` alone is NOT sufficient — always pair both, and let
+> the Step-6 dimension check catch any drift.
+
 ### 2.3 Response shape and payload extraction
 
 Requesty returns an OpenAI-compatible chat completion. The generated image is
