@@ -142,7 +142,8 @@ with.
 
 ## Isolation Gate (HARD RULE — before any code change)
 
-Every fix runs in its own git worktree on a fresh branch off `main`. No exceptions
+Every fix runs in its own git worktree on a fresh branch off `main` (cross-skill
+convention incl. shared-state + scope-claim rules: `_shared/parallel-spec-isolation.md`). No exceptions
 for "it's just a one-liner". (XS-eligible fixes are diverted before this gate
 is ever reached — see Phase 0a above; everything that reaches this point goes
 through the worktree unconditionally.) The flow:

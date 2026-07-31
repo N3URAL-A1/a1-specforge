@@ -277,6 +277,11 @@ the same working tree overwrite each other's files and push half-finished work
 **Never** push a build-red `main`. **Never** edit the primary checkout mid-feature
 while another session may hold it.
 
+Shared-state files (`docs/product/**`, `.a1/reservations.json`) are mutated ONLY
+in the primary checkout and committed + pushed IMMEDIATELY — never left dirty
+(parallel sessions read stale reservations otherwise). Full cross-skill
+convention incl. scope-claim order: `_shared/parallel-spec-isolation.md`.
+
 ## Routing — pick the right phase
 
 0. **Always run the Roadmap Gate first** (`workflows/00-roadmap-gate.md`) —

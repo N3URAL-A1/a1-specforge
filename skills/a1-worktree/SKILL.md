@@ -115,6 +115,10 @@ None. This skill is pure lifecycle management. Other skills (notably
 
 ## Hard rules
 
+- This skill implements the project-wide parallel-spec convention — see
+  `_shared/parallel-spec-isolation.md` (one worktree per spec/phase/fix,
+  shared-state only in the primary checkout, scope claim before entry).
+
 - Never run `git worktree add/remove` or `git branch -D` outside the CLI.
   The registry must stay in sync.
 - Never modify `~/.a1-worktrees-registry.json` directly with Edit/Write.

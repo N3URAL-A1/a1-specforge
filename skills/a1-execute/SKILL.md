@@ -117,6 +117,26 @@ Accept → hand off to `a1-roadmap` in `adopt` mode, then resume execution.
 Decline/defer → continue wave execution on the legacy path; do not force
 migration mid-run.
 
+## Isolation Gate (HARD RULE — before any wave execution)
+
+No wave code is written in the primary checkout. Before Wave 1, the phase MUST
+be moved into its own git worktree on a fresh branch off `main` — full
+convention (worktree naming, shared-state rule, scope claim, merge discipline,
+gotchas): `_shared/parallel-spec-isolation.md`. Short form:
+
+1. Claim the phase's `code_scope` via `a1-tools.cjs code-scope` (STOP on overlap
+   with an active reservation of another spec).
+2. `git worktree add ../a1-worktrees/<phase-slug> -b feature/<phase-slug> origin/main`
+   (delegate to `a1-worktree`, or inline). Every erik wave runs inside that path.
+3. Shared-state mutations (`docs/product/**`, `.a1/reservations.json`) happen
+   ONLY in the primary checkout and are committed + pushed IMMEDIATELY (small
+   `chore(product):` PR under branch protection) — never left dirty for
+   parallel sessions to trip over.
+4. Merge only when the final wave is GREEN; tear the worktree down afterwards.
+
+This enables parallel specs on one project: N phases = N worktrees = N branches,
+zero shared-working-tree conflicts.
+
 ## Routing
 
 0. **Roadmap Gate first** (`workflows/01-load.md` Step 0) — no wave loads or
@@ -130,6 +150,7 @@ migration mid-run.
 
 ## Hard rules
 
+- Never execute a wave in the primary checkout — Isolation Gate first (`_shared/parallel-spec-isolation.md`)
 - Never skip the checkpoint between waves
 - Always show the diff summary after each wave (`git log --oneline -5`)
 - If a wave is BLOCKED (a1-erik-executor reports blocked tasks), surface to user before continuing
