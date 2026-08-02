@@ -178,3 +178,81 @@ fix_wave_count: 1
 one_line_learning: Inside a Riverpod Notifier, a "wait for X once" gate is ref.read(provider.future), not ref.watch — watching a watcher-driven provider resubscribes and resets state on every tick (flicker).
 postmortem: wiki/postmortems/pro-orc/2026-07-13-gruppen-flackern.md
 ---
+---
+date: 2026-07-19
+bug_id: ignore-list-plus-button-dead
+project: pro-orc
+verdict: fixed
+root_cause_class: [ui_state_bug]
+fix_wave_count: 2
+one_line_learning: UI add-affordances must never silently no-op and must match the user's mental model — confirm the intended interaction (picker vs. text entry) with the user BEFORE choosing a fix variant
+postmortem: wiki/postmortems/pro-orc/2026-07-19-ignore-list-plus-button-dead.md
+---
+---
+date: 2026-07-20
+bug_id: og-image-favicon-wrong
+project: niimo-web
+verdict: fixed
+root_cause_class: [missing_wiring]
+fix_wave_count: 1
+one_line_learning: A launch checklist item 'replace all scaffold default assets (favicon, icons, manifest)' would have prevented shipping the create-next-app favicon
+postmortem: wiki/postmortems/niimo-web/2026-07-20-og-image-favicon-wrong.md
+---
+---
+date: 2026-07-20
+bug_id: favicon-design-not-brand
+project: niimo-web
+verdict: fixed
+root_cause_class: [spec_omission]
+fix_wave_count: 1
+one_line_learning: Autonomous design defaults on brand-visible assets should ship with a preview to the owner; prefer existing brand artwork as-is over invented compositions
+postmortem: wiki/postmortems/niimo-web/2026-07-20-favicon-design-not-brand.md
+---
+---
+date: 2026-07-20
+bug_id: delete-dialog-resource-over-detection
+project: pro-orc
+verdict: fixed
+root_cause_class: [spec_omission]
+fix_wave_count: 1
+one_line_learning: URL/resource detection built directly from a feature spec needs an explicit allowlist of known services, not a growing noise-domain blacklist — the spec's happy-path acceptance criteria (real dashboard URL) never exercised the realistic scaffold-README case with dozens of doc links and a boilerplate template URL on the same host.
+postmortem: wiki/postmortems/pro-orc/2026-07-20-delete-dialog-resource-over-detection.md
+---
+---
+date: 2026-07-20
+bug_id: osascript-path-injection
+project: pro-orc
+verdict: duplicate
+root_cause_class: [spec_omission]
+fix_wave_count: 0
+one_line_learning: A bug-report write can be interrupted mid-file (crash, kill, disk issue) and leave a truncated YAML frontmatter with no body — these orphaned reports sit invisible in 'reported' status indefinitely since a1-progress/routing tools don't flag malformed bug-report files as anomalies.
+postmortem: wiki/postmortems/pro-orc/2026-07-20-osascript-path-injection.md
+---
+---
+date: 2026-07-21
+bug_id: vercel-detection-requires-md-link
+project: pro-orc
+verdict: fixed
+root_cause_class: [spec_omission]
+fix_wave_count: 1
+one_line_learning: Resource detection that infers structured facts (a linked Vercel project, an org/project ID) from free-text prose (README links) will systematically miss the common case where the project never self-documents that fact — always check first whether the tool itself already writes a structured ground-truth file (here: .vercel/project.json from 'vercel link') before building a text-scraping heuristic.
+postmortem: wiki/postmortems/pro-orc/2026-07-21-vercel-detection-requires-md-link.md
+---
+date: 2026-07-22
+bug_id: gh-auth-refresh-wrong-account
+project: pro-orc
+verdict: fixed
+root_cause_class: [spec_omission]
+fix_wave_count: 1
+one_line_learning: When a feature's UX guidance depends on an external CLI tool's exact account/session semantics (here: which account gh auth refresh operates on), verify that mechanic hands-on against the real CLI during spec/clarify — a plausible-sounding instruction ('sign in as the repo owner') can be structurally impossible for the chosen command to fulfill, and only a live multi-account test run surfaces that.
+postmortem: wiki/postmortems/pro-orc/2026-07-22-gh-auth-refresh-wrong-account.md
+---
+date: 2026-07-24
+bug_id: tenant-invite-access-denied
+project: n3ural-platform
+verdict: fixed
+root_cause_class: [auth_tenant]
+fix_wave_count: 3
+one_line_learning: MS consumer (MSA) tokens under common issuer often omit the email claim — resolve via preferred_username but ONLY for tid=MSA, and never trust an unverified email claim for account merge/creation (nOAuth). Route all auth-email fixes through a1-samuel-security.
+postmortem: wiki/postmortems/n3ural-platform/2026-07-24-tenant-invite-access-denied.md
+---
