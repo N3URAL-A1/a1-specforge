@@ -91,6 +91,12 @@ Read the spec file. Confirm:
 - Every P1 story has at least one Acceptance Scenario.
 - FR-### and SC-### are zero-padded and contiguous (FR-001, FR-002, …).
 - The Review Checklist is present (boxes unchecked is fine at this stage).
+- **No `FR-###` token refers to another feature's requirement.** The Phase 4.5
+  coverage gate reads every `FR-###` token in this file as a requirement of
+  THIS spec, so a prose cross-reference ("see Feature 008's FR-010") in
+  Discovery or Out of Scope becomes a phantom-FR BLOCKER. Refer to other
+  features' requirements by description instead ("documented there as a
+  deferred requirement").
 
 If anything is missing, ask Rene to fix it before proceeding.
 

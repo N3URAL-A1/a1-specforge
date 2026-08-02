@@ -8,6 +8,12 @@ For each wave in PLAN.md (skipping already-completed waves per STATUS.md):
 
 ### 2a. Spawn a1-erik-executor
 
+Record the pre-wave HEAD first — step 2b compares against it:
+
+```bash
+PRE_WAVE_HEAD=$(git -C <project_path> rev-parse HEAD)
+```
+
 ```
 Execute Wave <N> of the plan.
 
@@ -29,11 +35,30 @@ After a1-erik-executor returns:
 
 **If COMPLETE:**
 ```bash
-git log --oneline -<task_count+2>
+git -C <project_path> log --oneline "$PRE_WAVE_HEAD"..HEAD
+git -C <project_path> status --porcelain
 ```
 Show commit list to user.
 Note: if the plan declares a one-commit-per-wave ground rule, the expected
 commit count is per-wave, not per-task — expect one commit for the whole wave.
+
+**Commit-landed gate (blocking).** A "COMPLETE" report is a claim; HEAD is the
+evidence. Treat the wave as NOT complete if either holds:
+
+- `"$PRE_WAVE_HEAD"..HEAD` is **empty** → the executor changed nothing, or its
+  work sits uncommitted. Do not advance to the next wave. Show
+  `git status --porcelain` to the user: dirty tree → have the executor commit
+  its own work (never commit it for them — the commit message and task
+  attribution are theirs); clean tree → the wave did nothing, re-dispatch or
+  escalate.
+- `git status --porcelain` is **non-empty** after a COMPLETE report → part of
+  the wave is uncommitted. Same handling: back to the executor before the
+  checkpoint.
+
+Observed 2026-07-22 (pro-orc 008): a fully implemented, 705-tests-green Wave 1
+sat uncommitted in a worktree and was only noticed by Wave 2's agent — one
+discarded worktree away from silent total loss. The next run (009) explicitly
+demanded commit proof and was clean, so this gate is cheap and it works.
 
 **Audit auto-close (FR-022):** if the project has `docs/product/audits/*.md`,
 check each new wave commit message for the explicit closing convention before

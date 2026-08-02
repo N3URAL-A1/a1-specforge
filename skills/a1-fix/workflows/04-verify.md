@@ -166,6 +166,36 @@ EOF
 
 The `_learning.md` is a fast-access cache. The Vault postmortem is canonical.
 
+### Step 2b — Append the optimizer-visible retro (MANDATORY, every terminal verdict)
+
+**Not optional, not batched, not deferred to promote-lessons.** a1-evolve's
+primary collect glob is `pattern/a1-learnings/*.md` (framework invariant 4);
+a postmortem that exists only under `wiki/` is invisible to the optimizer.
+Because promote-lessons is an opt-in offer that only fires at ≥5 postmortems,
+relying on it silently strands whole bug corpora — observed 2026-08-02: niimo
+had 16 postmortems and niimo-web 2, with zero entries in the optimizer-visible
+glob. Append one normalized entry per terminal verdict, right here:
+
+```bash
+VAULT="${A1_VAULT_ROOT:-$(git rev-parse --show-toplevel)/.a1/learnings}"
+mkdir -p "$VAULT/pattern/a1-learnings"
+cat >> "$VAULT/pattern/a1-learnings/a1-fix.md" <<EOF
+
+---
+date: $(date +%F)
+task: <bug-slug> — <one-line what was fixed>
+project: <project-slug>
+result: <fixed|wont-fix|cant-reproduce|duplicate>
+bug_classes: [<root-cause-tag>]
+evidence: wiki/postmortems/<project>/<date>-<bug-slug>.md; fix_commit <short-hash>
+one_line_learning: <from postmortem>
+EOF
+```
+
+`evidence:` is required (invariant 3) — it is what the retro-integrity
+cross-check reads. If promote-lessons later runs, it does NOT re-append these
+entries; it only writes suggestions.
+
 ### Step 3 — Check promote-lessons threshold
 
 ```bash
@@ -199,27 +229,12 @@ If no: proceed. Counter accumulates until next run.
      --source-postmortem "<path>" \
      --skill "a1-fix"
    ```
-5. **Bridge to a1-evolve's primary glob (framework invariant 4).** For each
-   promoted lesson, ALSO append a normalized entry in the standard YAML retro
-   format to the Vault file `pattern/a1-learnings/a1-fix.md`, so a1-evolve's
-   primary collect glob (`pattern/a1-learnings/*.md`) sees the bug corpus. The
-   `wiki/` postmortem stays the canonical detail; this is the optimizer-visible
-   summary:
-   ```bash
-   cat >> "$VAULT/pattern/a1-learnings/a1-fix.md" <<EOF
-
-   ## $(date +%F) — <project-slug> / <bug-slug>
-
-   **Skill:** a1-fix
-   **Outcome:** <fixed|wont-fix|cant-reproduce|duplicate>
-   **root_cause_class:** [<tag>]
-   **evidence:** wiki/postmortems/<project>/<date>-<bug-slug>.md; fix_commit <short-hash>
-
-   ### Retro
-   ⚠️ <one_line_learning — what would have prevented the bug>
-   💡 <the promoted lesson / actionable rule>
-   EOF
-   ```
+5. **Do NOT re-append per-bug retros here.** The optimizer-visible entries are
+   written per terminal verdict in Step 2b above (framework invariant 4, one
+   owner per fact — invariant 1). Appending again here would double-count every
+   bug in a1-evolve's frequency scoring. Backfill is the only exception: if
+   `pattern/a1-learnings/a1-fix.md` is missing entries for postmortems written
+   before Step 2b existed, append those once, using Step 2b's format.
 6. Update promote state:
    ```bash
    node <repo>/_shared/a1-tools.cjs fix update-promote-state

@@ -85,3 +85,27 @@ keyed on `kind='briefing'` while the real writer stored `kind='work_done'` —
 is not evidence it is ever populated with the expected value: name the
 writer, and verify it produces that value under realistic (non-empty)
 conditions.
+
+## Verify — a local QA server can serve a stale build {#verify-stale-server}
+
+Added 2026-08-02 (stale_local_server_qa: a1-office-landing specs 001 and 002
+on the same day, plus a maison-muelhens quick run).
+
+`pkill -f "next start"` never matches the process it is aimed at: the running
+process is named `next-server (vX.Y.Z)`, and the parentheses break the regex
+silently — pkill exits 0 having killed nothing. The old server keeps the port,
+the "restarted" QA session serves the PREVIOUS build, and the resulting
+screenshots become manufactured bug evidence. In spec 001 this produced a
+false FR-010 regression report; in spec 002 the same trap recurred hours later.
+
+Two rules, both cheap:
+- Kill by port, never by name pattern: `kill $(lsof -ti :PORT)`.
+- Before trusting any local-server result, verify the serving process identity:
+  `lsof -p <pid> | grep cwd` must point at the checkout you think you are
+  testing (a worktree QA run pointing at the primary checkout is the same class
+  of error).
+
+Related environment trap from the same corpus: a `.env.local` present only in
+the primary checkout (e.g. a `SITE_PASSWORD` gate) makes an e2e suite fail
+everywhere with "element not found" while the identical suite is green in a
+worktree. The tell is 307 redirects plus a runtime far above the usual.

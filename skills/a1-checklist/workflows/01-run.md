@@ -82,6 +82,17 @@ Map each failed BLOCKER to a fix-path suggestion:
 
 Then stop. Do not auto-trigger the suggested agent — wait for user consent.
 
+**Before treating a phantom FR as a real gap, check whether it is a prose
+cross-reference.** The coverage check matches `FR-\d{3,}` as a bare token
+anywhere in the spec — including narrative mentions of ANOTHER feature's
+requirement ("see Feature 008's FR-010") in Discovery or Out-of-Scope
+sections. Those produce a phantom-FR BLOCKER that no plan edit can legitimately
+resolve (observed 3× — pro-orc 009, n3ural 043, maison 009). If the token
+belongs to a different feature, the fix is in the spec's prose: name the other
+requirement without the `FR-NNN` token (e.g. "documented there as a deferred
+requirement"), then re-run. Only tokens that genuinely belong to THIS spec are
+real coverage gaps.
+
 ### Exit 2 — ERROR (setup)
 
 Show the user the stdout verbatim. Then:

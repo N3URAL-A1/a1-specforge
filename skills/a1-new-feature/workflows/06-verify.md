@@ -44,6 +44,12 @@ done
 
 If any route returns 4xx/5xx: do NOT proceed to the scenario walkthrough. Run `vercel ls` to confirm the active deployment, trigger a fresh deploy if needed, and re-check before continuing. A 404 here means the feature was not deployed — not that it's broken.
 
+**If you verify against a LOCAL server instead of a deployment:** restart it by
+port (`kill $(lsof -ti :PORT)`), never by name pattern, and confirm the serving
+process's `cwd` matches the checkout under test before trusting any result — a
+stale server manufactures false bug evidence.
+See `_shared/agent-lessons.md#verify-stale-server`.
+
 ## Step 1 — Extract Acceptance Scenarios
 
 Read the spec. Collect every Given/When/Then block under `## Acceptance Scenarios`, grouped
