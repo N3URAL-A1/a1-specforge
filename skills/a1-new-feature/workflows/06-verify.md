@@ -343,7 +343,26 @@ bugs_found_in_verify: <N>
 bug_classes: [<from: missing_wiring, wrong_behavior_vs_spec, deployment_incomplete, schema_flaw, regression, spec_omission, gate_friction, agent_self_report_false, parallel_collision>]
 gate_that_caught_most: <Gate 0|Gate 1|Gate 2|Gate 3|Phase 6|none>
 phase_that_produced_most_bugs: <discover|specify|clarify|plan|implement|verify>
+gates_fired:
+  - {id: <slug>, verdict: <pass|fail>, caught: <true|false>}
 ```
+
+**`gates_fired` is required** (not the free-text `gate_that_caught_most` alone —
+that one stays for continuity but a1-evolve cannot score it). List every gate
+this run actually passed through, using ids verbatim from
+`_shared/gates-registry.md`. For a standard feature run that is typically:
+
+```yaml
+gates_fired:
+  - {id: gate-c-ac-dryrun,        verdict: pass, caught: false}
+  - {id: gate-4.5-fr-consistency, verdict: pass, caught: false}
+  - {id: check-reservations,      verdict: pass, caught: false}
+  - {id: phase-6-verify,          verdict: pass, caught: true}
+```
+
+`caught: true` marks the gate that surfaced a real problem — at most a few per
+run, often none. This is what lets a1-evolve tell a gate that earns its cost
+from one that has never caught anything in 10+ runs.
 
 Use the `bug_classes` tags consistently — they feed `patterns.md` clustering.
 A run with zero bugs is still useful data — write the entry with

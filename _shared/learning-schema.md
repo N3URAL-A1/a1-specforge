@@ -60,8 +60,11 @@ Append-only. One entry per execution run.
 a1-pablo-planner should add "wire to router/index" as a standard Wave 3 task for API phases.
 ```
 
-**`gates_fired:` field (recommended — feeds gate-ROI).** Replaces free-text gate
-attribution. Optional list, one entry per gate that ran this run:
+**`gates_fired:` field (REQUIRED for gated runs — feeds gate-ROI).** Replaces
+free-text gate attribution. One entry per gate that ran this run; omit the field
+only when the skill has no registered gates (read-only reporters). Required for
+every a1-execute wave, a1-new-feature phase gate, and a1-fix verify run — see
+`_shared/retro-template.md`, which owns the canonical entry format:
 
 ```yaml
 gates_fired:

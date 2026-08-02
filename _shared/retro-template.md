@@ -17,9 +17,26 @@ task: <one line — what this run did>
 project: <project-slug>
 result: <pass|fail|partial|error>
 issues: [<skill-specific tags, or empty>]
+evidence: <VERIFICATION.md path / commit hash / postmortem path>
+gates_fired:
+  - {id: <slug from _shared/gates-registry.md>, verdict: <pass|fail>, caught: <true|false>}
 what_worked: <one sentence>
 one_line_learning: <what would have prevented the main issue, or "no issues">
 ```
+
+**`gates_fired` is required for any run that passed through a registered
+gate** — that is every a1-execute wave, every a1-new-feature phase gate, and
+a1-fix's verify step. One line per gate that actually ran, `id` taken verbatim
+from `_shared/gates-registry.md`; `caught: true` only if that gate is what
+surfaced a real problem this run. Skills with no gates (read-only reporters)
+omit the field.
+
+Why this is not optional: a1-evolve's gate-ROI step computes which gates earn
+their cost and which are dead weight, and it needs ≥5 retros carrying the
+field. It has now been skipped **three synthesis runs in a row** (2026-07-12,
+07-17, 08-02) because the whole corpus contained exactly one `gates_fired`
+entry — the framework has been unable to answer "is this gate worth its cost"
+for its entire existence. Twenty seconds per retro fixes that.
 
 ## Write targets (in this order)
 

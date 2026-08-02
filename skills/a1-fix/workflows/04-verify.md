@@ -188,6 +188,8 @@ project: <project-slug>
 result: <fixed|wont-fix|cant-reproduce|duplicate>
 bug_classes: [<root-cause-tag>]
 evidence: wiki/postmortems/<project>/<date>-<bug-slug>.md; fix_commit <short-hash>
+gates_fired:
+  - {id: fix-integrity, verdict: <pass|fail>, caught: <true|false>}
 one_line_learning: <from postmortem>
 EOF
 ```

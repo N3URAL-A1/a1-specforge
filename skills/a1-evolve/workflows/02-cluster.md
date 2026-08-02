@@ -65,7 +65,18 @@ Only patterns with impact score ≥ 6 proceed to Phase 3.
 ## 2e. Gate-ROI (gate retirement candidates)
 
 When **≥5 retros carry a `gates_fired` field** (see `_shared/learning-schema.md`),
-compute per-gate return-on-investment. IDs come from `_shared/gates-registry.md` —
+compute per-gate return-on-investment.
+
+**If fewer than 5 carry it, say so out loud in the Phase 3 report** — do not
+skip silently. Report the actual count and which gated skills wrote retros
+without the field, e.g. "gate-ROI skipped: 2 of 14 retros carried
+`gates_fired`; a1-execute wrote 3 gated runs without it." Three consecutive
+runs (2026-07-12, 07-17, 08-02) skipped this step in silence, so nobody
+noticed the framework could not answer "is this gate worth its cost" at all.
+The field was made required for gated runs on 2026-08-02; if the count is
+still low two runs later, that is itself the finding — either the requirement
+is not reaching the skills, or the gate-ROI machinery should be retired
+(constitution invariant 8 applies to a1-evolve's own steps too). IDs come from `_shared/gates-registry.md` —
 ids not in the registry are ignored.
 
 For each registered gate, across all `gates_fired` entries:

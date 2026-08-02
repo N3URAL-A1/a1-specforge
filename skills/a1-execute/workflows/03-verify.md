@@ -154,6 +154,25 @@ Use the `issue_classes` tags consistently — they feed `patterns.md`
 clustering. A run with zero issues still gets an entry
 (`observations_total: 0`).
 
+**`gates_fired` is required** — a1-execute is the framework's main gate
+consumer, so its retros are the primary source of gate-ROI data. Add one line
+per gate that actually ran across this phase's waves, ids verbatim from
+`_shared/gates-registry.md`:
+
+```yaml
+gates_fired:
+  - {id: gate-0-self-report, verdict: pass, caught: false}
+  - {id: gate-0.6-schema,    verdict: pass, caught: false}
+  - {id: gate-1-build,       verdict: fail, caught: true}
+  - {id: gate-2-deploy,      verdict: pass, caught: false}
+```
+
+Set `caught: true` only where that gate surfaced a real problem (a wave that
+had to be reworked because of it). A gate that fired and found nothing is
+`caught: false` — that is the normal case and exactly the datapoint gate-ROI
+needs; without those the framework cannot tell a cheap useful gate from an
+expensive gate that has never caught anything.
+
 ### Step 3 — Threshold check
 
 Count entries in the **learning store** (not the dev cache — plugin installs
