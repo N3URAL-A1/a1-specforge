@@ -54,6 +54,14 @@ find ~/code/*/.a1/learnings/wiki/lessons -path "*_active.md" 2>/dev/null | sort
 Extract `root_cause_class`, `one_line_learning`, and terminal verdict per postmortem.
 These cluster alongside the pattern-tagged retros in Phase 2.
 
+**Read `type:` before counting.** `wiki/postmortems/` is not homogeneous: some
+projects file `type: feature-note` entries (shipped features, no defect) in the
+same directory. Counting files instead of reading their type inflates bug
+clusters — on 2026-08-02 this turned 7 real niimo bugs into a reported 19-strong
+cluster until the backfill read each file. Count only entries whose `type:` is
+absent (legacy postmortem) or `postmortem`/`bugfix`, and note excluded
+feature-notes rather than silently dropping them.
+
 ### 1c-ter. Retro-integrity cross-check (FMEA-3)
 For every retro entry collected in 1a/1b whose `result:` (or Outcome) claims a
 pass AND which names a referenced verification artifact (a VERIFICATION.md path,
