@@ -222,6 +222,13 @@ Usage:
                   "Cost: N tokens (in X, out Y, cache Z)"; --json for machines.
                   Exit: 0 ok, 2 error (dir missing / no JSONL files).
 
+  a1-tools lane-split check --plan <path/to/PLAN.md>
+                  Validate a PLAN.md lanes block before waves run in parallel:
+                  pairwise owns-overlap, wave coverage, cross-lane dependency,
+                  and cutover waves sitting inside a lane.
+                  Plans with no lanes (or "lanes: none") pass untouched.
+                  Exit: 0 pass, 1 blockers found, 2 usage/parse error.
+
   a1-tools realpath-check run --diff-base <git-ref> [--project <dir>]
                               [--evidence <file>] [--real-markers <pattern>] [--json]
                   Gate 0.7: scan the diff <base>..HEAD for real-backend surfaces

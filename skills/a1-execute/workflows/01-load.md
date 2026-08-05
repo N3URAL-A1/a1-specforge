@@ -50,9 +50,12 @@ grep -q "<!-- entry: <slug> -->" "$ROADMAP_FILE" && echo "FOUND" || echo "MISMAT
    - Success criteria
    - Total task count
 
-3. Check STATUS.md for already-completed waves:
+3. Check STATUS for already-completed waves. Multi-lane phases write one file
+   per lane (`STATUS-<lane-id>.md`), so read the whole set — reading only the
+   plain file during a lane run makes completed waves look untouched and
+   re-executes them:
    ```bash
-   cat .a1/phases/<phase_name>/STATUS.md 2>/dev/null
+   cat .a1/phases/<phase_name>/STATUS*.md 2>/dev/null
    ```
 
 4. Check git status:

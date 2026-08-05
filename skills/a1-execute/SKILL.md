@@ -163,8 +163,9 @@ N lanes = N worktrees, same rules as N phases, no new convention.
    calling `product stage` concurrently is the R2 collision class by another
    name. Lane checkpoints are stage-neutral.
 7. **Merge lanes one at a time**, each green, before any wave in
-   `sequential_after_lanes:` starts. Consolidate the per-lane STATUS files into
-   STATUS.md at that point.
+   `sequential_after_lanes:` starts. Then consolidate the per-lane STATUS files
+   into STATUS.md — before the remaining waves run and before Victor is
+   spawned, since both read the consolidated file.
 
 Lanes are for independent subsystems. A wave that switches DNS, cuts over the
 production database, or flips a live ENV is single-lane by nature — the check

@@ -37,6 +37,10 @@ Brief:
 ```
 Input: <planning brief above>
 Output: PLAN.md written to .a1/phases/<modernize-slug>/PLAN.md
+Lanes: set `lanes: none` in the frontmatter. Modernize plans use the `W-NN`
+wave format, which the `lane-split` gate does not parse, and a modernization
+sequence is inherently ordered (parity before cutover) — there is nothing to
+split. Do not emit a lane block on this path.
 Wave format per wave:
   - Wave ID: W-NN
   - Title

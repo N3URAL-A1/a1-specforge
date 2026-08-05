@@ -22,7 +22,6 @@
 const fs = require('fs');
 const path = require('path');
 const { parseFlags } = require('./io.cjs');
-const { usage } = require('./help.cjs');
 const { scopePathsOverlap } = require('./code-scope.cjs');
 
 /** Wave-level markers that make a wave ineligible for a lane. Matched
@@ -95,6 +94,19 @@ function parseLanes(fm) {
         .filter((n) => Number.isFinite(n));
       continue;
     }
+    // Block-sequence form of `waves:` — also legal YAML, and reporting it as
+    // "declares no waves" would blame the author for the wrong thing.
+    const wavesBlock = line.match(/^(\s+)waves:\s*$/);
+    if (wavesBlock) {
+      const keyIndent = wavesBlock[1].length;
+      for (let j = i + 1; j < lines.length; j++) {
+        const item = lines[j].match(/^(\s+)-\s*(\d+)\s*$/);
+        if (!item || item[1].length <= keyIndent) break;
+        current.waves.push(Number(item[2]));
+        i = j;
+      }
+      continue;
+    }
     const agentMatch = line.match(/^\s+agent:\s*(.+?)\s*$/);
     if (agentMatch) {
       current.agent = agentMatch[1].replace(/['"]/g, '');
@@ -109,7 +121,12 @@ function parseLanes(fm) {
       const ownsIndent = ownsBlock[1].length;
       for (let j = i + 1; j < lines.length; j++) {
         const ownLine = lines[j].match(/^(\s+)-\s*(.+?)\s*$/);
-        if (!ownLine || ownLine[1].length <= ownsIndent) break;
+        if (!ownLine) break;
+        // Same-indent items are legal YAML too, so depth alone cannot end the
+        // list — but `- id: <next>` sits at that very indent. Stop on a new
+        // lane item explicitly; otherwise two lanes silently merge into one.
+        if (/^id:\s*/.test(ownLine[2])) break;
+        if (ownLine[1].length < ownsIndent) break;
         current.owns.push(ownLine[2].replace(/['"]/g, ''));
         i = j;
       }
@@ -144,11 +161,16 @@ function parseLanes(fm) {
  * text up to the next wave heading (used for cutover/dependency detection). */
 function parseWaves(text) {
   const waves = [];
-  const re = /^#{2,3}\s+Wave\s+(\d+)\s*[—\-:]?\s*(.*)$/gim;
+  // Tolerant of heading depth (## to ####) and of inline emphasis around the
+  // token (`## **Wave 2** — name`). A heading this misses is not merely
+  // skipped: its body is absorbed into the previous wave, which silently moves
+  // findings to the wrong wave — or drops them, when the absorbing wave sits
+  // in sequential_after_lanes where the lane checks do not apply.
+  const re = /^#{2,4}\s+\**\s*Wave\s+(\d+)\s*\**\s*[—\-:]?\s*(.*)$/gim;
   const marks = [];
   let m;
   while ((m = re.exec(text)) !== null) {
-    marks.push({ num: Number(m[1]), title: m[2].trim(), start: m.index });
+    marks.push({ num: Number(m[1]), title: m[2].replace(/\**/g, '').trim(), start: m.index });
   }
   for (let i = 0; i < marks.length; i++) {
     const end = i + 1 < marks.length ? marks[i + 1].start : text.length;
@@ -161,24 +183,41 @@ function parseWaves(text) {
  * `Depends on:` field; `Vorbedingung:` is NOT a field in this framework. */
 function declaredDeps(waveBody) {
   const deps = new Set();
-  const re = /\*\*Depends on:\*\*\s*(.+)/gi;
+  // Accepts bold and plain form, singular and plural, and comma lists:
+  //   **Depends on:** Wave 2 · Depends on: Waves 2, 3 · **Depends on:** Wave 3, 2
+  // Every integer on the line counts — matching only `Wave <n>` tokens drops
+  // each entry after the first, which disables the cross-lane check silently.
+  const re = /\**Depends on:\**\s*(.+)/gi;
   let m;
   while ((m = re.exec(waveBody)) !== null) {
-    const nums = m[1].match(/Wave\s+(\d+)/gi) || [];
-    nums.forEach((n) => deps.add(Number(n.replace(/\D/g, ''))));
+    const nums = m[1].match(/\d+/g) || [];
+    nums.forEach((n) => deps.add(Number(n)));
   }
   return [...deps];
 }
 
+/** Cutover detection is lexical and therefore fallible in both directions —
+ * a1-adam-auditor owns the judgement call for waves that touch a shared
+ * production resource without saying so. To keep false positives low, only the
+ * heading, task titles, and the Goal/Actions lines are searched: prose such as
+ * "this wave is explicitly not part of the cutover" lives in the body and
+ * should not trip the gate. */
 function isCutoverWave(wave) {
-  const hay = wave.body.toLowerCase();
-  return CUTOVER_MARKERS.some((marker) => hay.includes(marker));
+  const signal = [wave.title]
+    .concat(wave.body.split('\n').filter((l) => /^###\s|^\*\*(Goal|Actions):\*\*|^\d+\.\s/.test(l.trim())))
+    .join('\n')
+    .toLowerCase();
+  return CUTOVER_MARKERS.some((marker) => signal.includes(marker));
 }
 
 function cmdLaneSplitCheck(args) {
-  const flags = parseFlags(args, { plan: 'value', json: 'bool' });
+  const flags = parseFlags(args, { plan: 'value' });
   if (!flags.plan) {
-    usage('lane-split check --plan <path/to/PLAN.md> [--json]');
+    // Deliberately not usage() — that exits 1, which is the "blockers found"
+    // branch. An orchestrator would route a typo into a plan-revision loop
+    // with no findings to act on. Usage errors are exit 2.
+    process.stderr.write('usage: a1-tools lane-split check --plan <path/to/PLAN.md>\n');
+    process.exit(2);
   }
   const planPath = path.resolve(flags.plan);
   if (!fs.existsSync(planPath)) {
@@ -257,6 +296,20 @@ function cmdLaneSplitCheck(args) {
         check: 'wave-coverage',
         severity: 'BLOCKER',
         msg: `wave ${wave.num} belongs to no lane and is not in sequential_after_lanes`,
+      });
+    }
+  }
+  // A wave a lane claims but that no heading in the body matches means the
+  // parser and the author disagree about the plan's shape. Never treat that as
+  // "nothing to check" — an unparsed wave takes its cutover and dependency
+  // markers out of scope with it.
+  const foundNums = new Set(planWaves.map((w) => w.num));
+  for (const [num, ids] of claimants) {
+    if (!foundNums.has(num)) {
+      findings.push({
+        check: 'schema',
+        severity: 'BLOCKER',
+        msg: `lane '${ids.join("'/'")}' claims wave ${num}, but no matching wave heading was found in the plan body`,
       });
     }
   }
