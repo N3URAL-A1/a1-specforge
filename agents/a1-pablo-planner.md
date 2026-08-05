@@ -78,8 +78,49 @@ Rules:
 - Tasks within a wave MUST be truly parallel (no task depends on another in the same wave)
 - Maximum 4 tasks per wave — more than that means hidden dependencies
 - Each task should take 15-45 minutes to execute (scope guideline)
+- A wave that depends on an earlier wave says so explicitly: `**Depends on:** Wave <N>` under the wave heading. This is the only dependency field — the lane check parses it.
+
+## Step 4.5: Decide lanes (default: none)
+
+Waves run sequentially. That is right for almost every phase, and `lanes: none`
+is a perfectly good answer — write it and move on.
+
+The exception: a phase that rebuilds several *independent* subsystems — separate
+provider families behind separate ports, a container build, an unrelated service
+— can run those wave chains concurrently on separate agents. Group waves into a
+lane ONLY if all four hold:
+
+1. **Disjoint write set.** No path is written by two lanes. Derive it from the
+   task actions, not from intuition. A *read* of another lane's files (a `grep`,
+   an import) is fine — only writes conflict.
+2. **No cross-lane `Depends on:`.** A lane may depend on a [HUMAN] task or an
+   earlier wave of its own; never on another lane's wave.
+3. **No shared production resource.** One database, one DNS record, one live ENV
+   switch is single-lane by definition. Cutover waves are never lanes.
+4. **Contract/cleanup waves run last.** A wave that removes code across several
+   lanes' files belongs in `sequential_after_lanes:`, not in a lane.
+
+Every wave must appear in exactly one lane or in `sequential_after_lanes:` —
+the check rejects unassigned waves.
+
+State the yield honestly: how many SP actually parallelize, how many stay
+serialized. A phase whose bulk is cutover work gains little; say that instead of
+implying a speedup the plan cannot deliver.
+
+**Verify before writing** (deterministic, not judgement):
+
+```bash
+node <repo>/_shared/a1-tools.cjs lane-split check --plan <path>/PLAN.md
+```
+
+Exit 0 = split is sound · 1 = blockers (fix them, do not ship the plan) ·
+2 = usage error. Run it after writing PLAN.md; if it exits 1, correct the split
+or fall back to `lanes: none`.
 
 ## Step 5: Write PLAN.md
+
+Frontmatter carries the lane decision from Step 4.5. `lanes: none` is required
+when no split applies — an absent field reads as "never considered".
 
 ````markdown
 ---
@@ -87,6 +128,7 @@ phase: <name>
 goal: <one sentence>
 spec: <path or inline description>
 waves: <count>
+lanes: none
 status: planned
 created: <ISO date>
 ---
@@ -104,6 +146,7 @@ Derived from spec acceptance criteria. Binary and measurable.
 ---
 
 ## Wave 1 — <descriptive name>
+<optional, only when this wave needs an earlier one: **Depends on:** Wave <N>>
 
 ### Task 1.1: <name>
 **Goal:** <one sentence — the specific outcome of this task>
@@ -130,6 +173,19 @@ After all waves complete, verify the goal was achieved:
 - [ ] <concrete check 2>
 ````
 
+When Step 4.5 DID find a split, `lanes: none` is replaced by the block form:
+
+```yaml
+lanes:
+  - id: storage                      # kebab-case, unique
+    waves: [3, 4]                    # every wave in exactly one lane
+    owns:                            # write set — globs, checked pairwise
+      - "lib/storage/**"
+      - "scripts/migrate-storage.ts"
+    agent: a1-erik-executor
+sequential_after_lanes: [6, 7, 9]    # cutover + contract waves
+```
+
 ## Step 6: Self-check before writing
 
 - [ ] Every SC maps to at least one task
@@ -138,6 +194,7 @@ After all waves complete, verify the goal was achieved:
 - [ ] Every wave builds on the previous wave's outputs
 - [ ] The "Done when" condition for each task is binary and checkable
 - [ ] No tasks are out of scope
+- [ ] `lanes:` is present — either `none` with a one-line reason, or a block that `lane-split check` exits 0 on
 
 # Revision mode
 If an existing PLAN.md is provided with an AUDIT.md containing BLOCKER findings:

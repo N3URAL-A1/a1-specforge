@@ -2,6 +2,21 @@
 
 Execute each wave via a1-erik-executor, with checkpoints between waves.
 
+## Work path (`$WORK_PATH`)
+
+Every git command below runs against `$WORK_PATH` — the worktree the wave
+actually executes in, never the primary checkout:
+
+```bash
+WORK_PATH=<phase worktree path>        # sequential phase (Isolation Gate)
+WORK_PATH=<lane worktree path>         # multi-lane: one per lane
+```
+
+Getting this wrong is silent: `git -C <primary checkout> rev-parse HEAD` in a
+lane run measures a tree the executor never touched, so the commit-landed gate
+below either reports a false "empty" or counts another lane's commits as this
+one's.
+
 ## Per-wave loop
 
 For each wave in PLAN.md (skipping already-completed waves per STATUS.md):
@@ -11,7 +26,7 @@ For each wave in PLAN.md (skipping already-completed waves per STATUS.md):
 Record the pre-wave HEAD first — step 2b compares against it:
 
 ```bash
-PRE_WAVE_HEAD=$(git -C <project_path> rev-parse HEAD)
+PRE_WAVE_HEAD=$(git -C "$WORK_PATH" rev-parse HEAD)
 ```
 
 ```
@@ -20,13 +35,17 @@ Execute Wave <N> of the plan.
 <files_to_read>
 - .a1/phases/<phase_name>/PLAN.md
 - .a1/phases/<phase_name>/RESEARCH.md
-- .a1/phases/<phase_name>/STATUS.md
+- .a1/phases/<phase_name>/STATUS.md        (lane run: STATUS-<lane-id>.md)
 - ./CLAUDE.md (if exists)
 </files_to_read>
 
 **Wave:** <N>
 **Phase dir:** .a1/phases/<phase_name>/
-**Project path:** <project_path>
+**Project path:** $WORK_PATH
+<lane runs only>
+**Lane:** <lane-id> — write status to STATUS-<lane-id>.md, and expect only this
+lane's earlier waves in the git history.
+</lane runs only>
 ```
 
 ### 2b. Process wave result
@@ -35,8 +54,8 @@ After a1-erik-executor returns:
 
 **If COMPLETE:**
 ```bash
-git -C <project_path> log --oneline "$PRE_WAVE_HEAD"..HEAD
-git -C <project_path> status --porcelain
+git -C "$WORK_PATH" log --oneline "$PRE_WAVE_HEAD"..HEAD
+git -C "$WORK_PATH" status --porcelain
 ```
 Show commit list to user.
 Note: if the plan declares a one-commit-per-wave ground rule, the expected

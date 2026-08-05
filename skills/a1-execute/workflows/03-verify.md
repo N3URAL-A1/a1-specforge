@@ -9,7 +9,9 @@ Verify that the phase goal was achieved.
 
 <files_to_read>
 - .a1/phases/<phase_name>/PLAN.md
-- .a1/phases/<phase_name>/STATUS.md
+- .a1/phases/<phase_name>/STATUS.md — multi-lane phases: consolidate the
+  per-lane STATUS-<lane-id>.md files into it BEFORE spawning Victor, otherwise
+  he verifies against a file the lane executors never wrote
 - <spec_path> (if available)
 </files_to_read>
 
