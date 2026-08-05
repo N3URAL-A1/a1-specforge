@@ -125,7 +125,7 @@ function parseLanes(fm) {
         // Same-indent items are legal YAML too, so depth alone cannot end the
         // list — but `- id: <next>` sits at that very indent. Stop on a new
         // lane item explicitly; otherwise two lanes silently merge into one.
-        if (/^id:\s*/.test(ownLine[2])) break;
+        if (/^id:\s*/.test(ownLine[2].replace(/^['"]/, ''))) break;
         if (ownLine[1].length < ownsIndent) break;
         current.owns.push(ownLine[2].replace(/['"]/g, ''));
         i = j;
@@ -204,7 +204,11 @@ function declaredDeps(waveBody) {
  * should not trip the gate. */
 function isCutoverWave(wave) {
   const signal = [wave.title]
-    .concat(wave.body.split('\n').filter((l) => /^###\s|^\*\*(Goal|Actions):\*\*|^\d+\.\s/.test(l.trim())))
+    .concat(
+      wave.body
+        .split('\n')
+        .filter((l) => /^###\s|^\*\*(Goal|Actions|Done when):\*\*|^\d+\.\s|^-\s/.test(l.trim()))
+    )
     .join('\n')
     .toLowerCase();
   return CUTOVER_MARKERS.some((marker) => signal.includes(marker));
