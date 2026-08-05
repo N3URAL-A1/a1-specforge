@@ -73,6 +73,27 @@ Verify each wave's tasks can actually run in parallel:
 
 Flag wave ordering issues as MAJOR.
 
+**If PLAN.md declares a `lanes:` block**, run the deterministic check first —
+do not re-derive by reading:
+
+```bash
+node <repo>/_shared/a1-tools.cjs lane-split check --plan <plan path>
+```
+
+It decides overlapping write sets, wave coverage, cross-lane `Depends on:`, and
+cutover-waves-inside-lanes by exit code. Exit 1 → every reported finding is a
+BLOCKER in your AUDIT.md, quoted verbatim. Exit 0 → the mechanical split holds;
+your remaining job is the judgement the CLI cannot make:
+
+- Does a lane's task write a path outside its own `owns:`? The check compares
+  declared globs; only reading the actions catches an undeclared write.
+- Does a wave touch a shared production resource without saying "cutover" in
+  its heading? The marker list is lexical — a wave that flips a live ENV under
+  a harmless title slips through. **BLOCKER** if you find one.
+- Is the stated parallel yield honest? Overstating it is **MINOR**, but name it.
+
+`lanes: none` needs no lane audit — note it and move on.
+
 ## Step 5: Check integration gaps
 
 Look for:
@@ -101,6 +122,8 @@ verdict: PASS | FAIL
 blockers: <count>
 majors: <count>
 minors: <count>
+lanes_audited: <count — 0 when the plan declares `lanes: none`>
+lane_split_check: PASS | FAIL | n/a
 generated: <ISO date>
 ---
 

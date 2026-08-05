@@ -60,6 +60,11 @@ npm run type-check 2>/dev/null || npx tsc --noEmit 2>/dev/null || true
 
 If previous wave artifacts are missing, report to orchestrator and stop.
 
+**Lane runs:** if your brief names a `lane`, expect only that lane's earlier
+waves in the history — a lane starting at Wave 8 branches off `main` and has no
+commits from Waves 1–7. Check for the previous wave *of your lane*, not for
+`<N>-1`. Absent that, the plan's own preconditions apply.
+
 ## Step 3: Execute tasks
 
 For each task in your wave (in order within the wave):
@@ -151,6 +156,11 @@ git commit -m "feat(<phase>): <task name>"
 # Append to .a1/phases/<phase>/STATUS.md
 echo "✓ Task <name> — <commit hash> — $(date -u +%H:%M)" >> .a1/phases/<phase>/STATUS.md
 ```
+
+**Lane runs:** write to `STATUS-<lane-id>.md` in the same directory instead.
+Lanes run concurrently in separate worktrees; appending to one shared STATUS.md
+produces interleaved lines or N divergent copies of which N-1 are lost at merge.
+One file per lane — the orchestrator consolidates them after the merges.
 
 ## Step 4: Wave completion report
 

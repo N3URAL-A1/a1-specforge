@@ -416,6 +416,14 @@ function main() {
         cmdRealpathCheckRun(rest);
         return; // unreachable — cmdRealpathCheckRun calls process.exit()
       } else usage(`unknown realpath-check subcommand: ${sub}`);
+    } else if (group === 'lane-split') {
+      if (sub === 'check') {
+        // Lazy require — only paid when `lane-split ...` is actually invoked.
+        const { cmdLaneSplitCheck } = require(path.join(__dirname, 'lib', 'lane-split.cjs'));
+        // owns its own exit code (0 pass / 1 blockers / 2 error) and stdout
+        cmdLaneSplitCheck(rest);
+        return; // unreachable — cmdLaneSplitCheck calls process.exit()
+      } else usage(`unknown lane-split subcommand: ${sub}`);
     } else if (group === 'checklist') {
       if (sub === 'run') {
         // checklist run owns its own exit code (0/1/2) and report format.

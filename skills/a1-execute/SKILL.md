@@ -137,6 +137,39 @@ gotchas): `_shared/parallel-spec-isolation.md`. Short form:
 This enables parallel specs on one project: N phases = N worktrees = N branches,
 zero shared-working-tree conflicts.
 
+## Multi-lane phases (PLAN.md declares a `lanes:` block)
+
+Waves run sequentially unless PLAN.md's frontmatter declares lanes (written by
+a1-pablo-planner Step 4.5, verified by `lane-split check` in `a1-plan`). A lane
+is an arbeitseinheit under R1 above — one worktree, one branch, one executor.
+N lanes = N worktrees, same rules as N phases, no new convention.
+
+1. **Re-run the check before trusting the plan.** A stale PLAN.md is likelier
+   than a wrong one:
+   ```bash
+   node <repo>/_shared/a1-tools.cjs lane-split check --plan <plan path>
+   ```
+   Exit 1 → do not start any lane; back to `a1-plan`.
+2. **Claim each lane's scope separately** (`a1-tools.cjs code-scope`), branch
+   `feature/<phase-slug>-<lane-id>`. STOP on overlap — never "just this once".
+3. **One executor per lane**, spawned concurrently, each with `$WORK_PATH` set
+   to its own worktree and a `**Lane:**` line in its brief.
+4. **Status per lane** — `STATUS-<lane-id>.md`. Never one shared STATUS.md:
+   concurrent appends interleave, or produce N copies of which N-1 die at merge.
+5. **Checkpoint per lane**, not one global checkpoint — a blocked storage lane
+   must not hold up a green runtime lane.
+6. **Stage transitions exactly once, in the primary checkout, after the last
+   lane merges.** The docs/product HARD RULE above mutates shared state; N lanes
+   calling `product stage` concurrently is the R2 collision class by another
+   name. Lane checkpoints are stage-neutral.
+7. **Merge lanes one at a time**, each green, before any wave in
+   `sequential_after_lanes:` starts. Consolidate the per-lane STATUS files into
+   STATUS.md at that point.
+
+Lanes are for independent subsystems. A wave that switches DNS, cuts over the
+production database, or flips a live ENV is single-lane by nature — the check
+rejects it inside a lane, and that rejection is not to be worked around.
+
 ## Routing
 
 0. **Roadmap Gate first** (`workflows/01-load.md` Step 0) — no wave loads or
@@ -151,7 +184,8 @@ zero shared-working-tree conflicts.
 ## Hard rules
 
 - Never execute a wave in the primary checkout — Isolation Gate first (`_shared/parallel-spec-isolation.md`)
-- Never skip the checkpoint between waves
+- Never skip the checkpoint between waves (multi-lane: per lane, not one global checkpoint)
+- Never start a lane whose `lane-split check` exits non-zero; never run a cutover or contract wave as a lane
 - Always show the diff summary after each wave (`git log --oneline -5`)
 - If a wave is BLOCKED (a1-erik-executor reports blocked tasks), surface to user before continuing
 - Never re-execute already-committed tasks — check STATUS.md first

@@ -333,4 +333,7 @@ module.exports = {
   cmdCodeScopeList,
   cmdCodeScopeCheck,
   CODE_SCOPE_STAGES,
+  // Reused by lib/lane-split.cjs — a lane's `owns:` globs need exactly the same
+  // overlap semantics as scope reservations. One owner for this math.
+  scopePathsOverlap,
 };

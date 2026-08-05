@@ -13,6 +13,12 @@ One JSON object per line. Written to `.a1/phases/<name>/observations.jsonl`.
 {"ts":"...","agent":"a1-pablo-planner","skill":"a1-plan","phase":"M1-P2-auth","wave":null,"type":"plan_quality","severity":"minor","msg":"Wave 2 had implicit dependency on Wave 1 output — should have been Wave 3","pattern":"wave_ordering"}
 ```
 
+### Optional fields
+- `lane` — lane id, on phases that ran multi-lane (a1-pablo-planner Step 4.5).
+  Omit for sequential phases; absent and `null` mean the same. Without it,
+  observations from concurrent lanes are indistinguishable during synthesis, and
+  a pattern local to one lane reads as phase-wide.
+
 ### Observation types
 - `deviation` — executor had to do work outside the plan
 - `blocker` — task couldn't complete without unplanned work
