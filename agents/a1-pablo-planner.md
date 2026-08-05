@@ -79,6 +79,49 @@ Rules:
 - Maximum 4 tasks per wave — more than that means hidden dependencies
 - Each task should take 15-45 minutes to execute (scope guideline)
 
+## Step 4.5: Mark parallel lanes (only when waves are genuinely independent)
+
+Waves default to sequential. In most phases that is correct and this step ends
+here. But a phase that rebuilds several independent subsystems — separate
+provider families behind separate ports, a container build, an unrelated
+service — can run those wave chains concurrently on separate agents.
+
+Group waves into a lane ONLY if all four hold:
+
+1. **Disjoint write set.** No file is written by two lanes. Derive this from the
+   task actions, not from intuition, and record the owned paths per lane.
+2. **No cross-lane `Vorbedingung:`.** A lane may depend on a [HUMAN] task or on
+   an earlier wave, never on another lane's wave.
+3. **No shared production resource in flight.** One database, one DNS record,
+   one live ENV switch is a single-lane resource by definition. Cutover waves are
+   never lanes.
+4. **No shared migration number.** Each lane draws its number at execution time
+   via `automation/db/migrations/MIGRATIONS-RESERVED.md` (why: parallel plans
+   collided on exactly this — `a1-plan/_learning.md`).
+
+If a "contract"/cleanup wave removes code across several lanes' files, it is by
+construction not a lane: it runs after all lanes have merged. Say so explicitly.
+
+Write the result into PLAN.md frontmatter and a short `## Lanes` section:
+
+```yaml
+lanes:
+  - id: storage
+    waves: [3, 4]
+    owns: ["lib/storage/**", "scripts/migrate-storage-to-s3.ts"]
+    agent: a1-erik-executor
+  - id: runtime
+    waves: [8]
+    owns: ["Dockerfile", "infra/app/**"]
+    agent: a1-dario-devops
+sequential_after_lanes: [9]
+```
+
+Be honest about the yield: state how many SP actually parallelize and how many
+stay serialized. A phase whose bulk is cutover work gains little — say that
+rather than implying a speedup the plan cannot deliver. If no wave group passes
+all four conditions, write `lanes: none` and one sentence why.
+
 ## Step 5: Write PLAN.md
 
 ````markdown

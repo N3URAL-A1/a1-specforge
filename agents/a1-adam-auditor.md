@@ -73,6 +73,27 @@ Verify each wave's tasks can actually run in parallel:
 
 Flag wave ordering issues as MAJOR.
 
+**If PLAN.md declares `lanes:`** (a1-pablo-planner Step 4.5), audit the split
+itself — a wrong lane boundary surfaces as a merge conflict or a corrupted
+production resource, not as a failing test:
+
+- Do any two lanes' `owns:` globs overlap? Check the actual task actions, not
+  just the declared globs — a task writing a file outside its lane's `owns:` is
+  the defect. **BLOCKER.**
+- Does any lane's wave carry a `Vorbedingung:` on another lane's wave? **BLOCKER.**
+- Does more than one lane touch the same database, DNS record, or live ENV
+  switch? Cutover work is single-lane by definition. **BLOCKER.**
+- Is a contract/cleanup wave (one that removes code across several lanes' files)
+  listed as a lane instead of in `sequential_after_lanes:`? **BLOCKER.**
+- Do two lanes draw a migration number without going through
+  `MIGRATIONS-RESERVED.md`? **MAJOR.**
+- Does the stated parallel yield match the plan? A phase whose bulk is cutover
+  work gains little; an overstated speedup is **MINOR** but worth naming.
+
+Two independently planned tracks for the same infrastructure once ran unnoticed
+side by side and were caught only in a second audit cycle, via a migration-number
+collision. Verify lane independence against the code, never assume it.
+
 ## Step 5: Check integration gaps
 
 Look for:

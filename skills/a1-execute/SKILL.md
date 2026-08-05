@@ -137,6 +137,31 @@ gotchas): `_shared/parallel-spec-isolation.md`. Short form:
 This enables parallel specs on one project: N phases = N worktrees = N branches,
 zero shared-working-tree conflicts.
 
+### Multi-lane phases (PLAN.md declares `lanes:`)
+
+Waves run sequentially unless PLAN.md's frontmatter declares `lanes:` (written by
+a1-pablo-planner Step 4.5). Then each lane is its own arbeitseinheit under R1:
+one worktree, one branch, one executor — N lanes = N worktrees, same rules as
+N phases, no new convention.
+
+1. **Verify the lane split before trusting it.** For each pair of lanes, confirm
+   the `owns:` globs do not overlap and that no lane's waves list a
+   `Vorbedingung:` on another lane. A stale PLAN.md is the likelier failure than
+   a wrong one — re-check against the current code, do not assume.
+2. **Claim each lane's scope separately** (`a1-tools.cjs code-scope`), branch
+   `feature/<phase-slug>-<lane-id>`. STOP on overlap — never "just this once".
+3. **One executor per lane**, spawned concurrently. Each gets its own STATUS
+   section; observations carry the lane id.
+4. **Checkpoint per lane**, not one global checkpoint — a blocked storage lane
+   must not hold up a green runtime lane.
+5. **Merge lanes one at a time**, each green, before any wave in
+   `sequential_after_lanes:` starts. Contract/cleanup waves touch several lanes'
+   files and MUST run last, in the primary flow, after every lane has merged.
+
+Lanes are for independent subsystems. A wave that switches DNS, cuts over the
+production database, or flips a live ENV is single-lane by nature — running
+those concurrently buys risk, not speed.
+
 ## Routing
 
 0. **Roadmap Gate first** (`workflows/01-load.md` Step 0) — no wave loads or
@@ -151,7 +176,8 @@ zero shared-working-tree conflicts.
 ## Hard rules
 
 - Never execute a wave in the primary checkout — Isolation Gate first (`_shared/parallel-spec-isolation.md`)
-- Never skip the checkpoint between waves
+- Never skip the checkpoint between waves (in multi-lane phases: per lane, not one global checkpoint)
+- Never run a cutover wave (DB, DNS, live ENV) or a contract/cleanup wave as a lane — single-lane by nature, after all lanes merged
 - Always show the diff summary after each wave (`git log --oneline -5`)
 - If a wave is BLOCKED (a1-erik-executor reports blocked tasks), surface to user before continuing
 - Never re-execute already-committed tasks — check STATUS.md first
