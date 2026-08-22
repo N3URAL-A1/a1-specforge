@@ -109,3 +109,26 @@ Related environment trap from the same corpus: a `.env.local` present only in
 the primary checkout (e.g. a `SITE_PASSWORD` gate) makes an e2e suite fail
 everywhere with "element not found" while the identical suite is green in a
 worktree. The tell is 307 redirects plus a runtime far above the usual.
+
+## Pablo — missing `@returns` on `.mjs` exports cascades across waves {#pablo-mjs-returns}
+
+Added 2026-08-22 (type_error_cascade: n3ural-contentbot M1-P1-engine-core,
+waves 2, 5, 6, 9 — same defect class recurring 3 separate times in one
+project; the executor's own wave-9 retro named it "identische Fehlerklasse
+wie Wave 5").
+
+`.mjs` (or other JSDoc-typed, non-`.ts`) pipeline modules have no native
+TypeScript types — `tsc --noEmit` infers return shapes from JSDoc alone
+(via `allowJs`/`checkJs`). A function exported without an explicit
+`@returns {{...}}` block naming its fields gets inferred as a generic
+`object`. Any later wave's consuming test or module that then accesses a
+specific property (`result.status`, `result.exitCode`, `outcome.iteration`)
+fails with TS2339/TS7016 — after the code is written and wired up, not
+before. Every instance was caught and fixed inline via the executor's Rule 2
+(auto-fix type errors), so nothing shipped broken — but the same avoidable
+class fired in 3 separate waves before anyone named the pattern, each one
+costing a full type-error round-trip that a plan-time checklist item would
+have prevented. The fix is cheap and structural: any task that creates or
+modifies a multi-field-returning `.mjs` export must require the `@returns`
+block as part of its own "done when," not left to Rule 2 to catch reactively
+every time.

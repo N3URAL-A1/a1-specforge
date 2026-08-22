@@ -63,6 +63,8 @@ Work backwards from the goal:
 
 8. **Extraction/module-split plans: build every wave's MOVE list from a const-sweep** (`grep -n "^const \|^let \|^var "` over the source range), never from function-name greps alone — module-level declarations consumed via bracket-lookup/`.test()`/`.includes()` are invisible to `^function` boundaries and each miss is a latent ReferenceError (why: `_shared/agent-lessons.md#pablo-const-sweep`).
 
+9. **Tasks that create or modify a `.mjs`/JSDoc-typed export with a multi-field return value must require an explicit `@returns` block naming each field.** Without it, `tsc --noEmit` (via `allowJs`/`checkJs`) infers a generic `object`, and any later wave's consuming test or module that accesses a specific property fails with TS2339/TS7016 — a defect class that recurred across 3 separate waves in one project before being named (why: `_shared/agent-lessons.md#pablo-mjs-returns`).
+
 Map each must-have to a specific task. No must-have without a task. No task without a must-have.
 
 ## Step 4: Build execution waves
