@@ -346,6 +346,9 @@ const { cmdPhantomCheck, cmdPhantomListTasks } = require(path.join(__dirname, 'l
 
 const { cmdPackValidate, cmdPackImport, cmdPackExport } = require(path.join(__dirname, 'lib', 'pack.cjs'));
 
+// ---------- learnings group (lib/learnings.cjs) ----------
+const { cmdLearningsCountSinceWatermark } = require(path.join(__dirname, 'lib', 'learnings.cjs'));
+
 function main() {
   const argv = process.argv.slice(2);
   if (argv.length === 0 || argv[0] === '--help' || argv[0] === '-h') {
@@ -587,8 +590,15 @@ function main() {
       } else {
         usage(`unknown quick subcommand: ${sub}`);
       }
+    } else if (group === 'learnings') {
+      if (sub === 'count-since-watermark') {
+        // owns its own exit code (0 ok / 2 malformed watermark field / 3
+        // watermark source missing/unreadable) and JSON stdout
+        cmdLearningsCountSinceWatermark(rest);
+        return; // unreachable — cmdLearningsCountSinceWatermark calls process.exit()
+      } else usage(`unknown learnings subcommand: ${sub}`);
     } else {
-      usage(`unknown command group: ${group} (expected "spec", "fix", "analyze", "check", "checklist", "constitution", "worktree", "pr", "phantom", "reconcile", "modernize", "schema-check", "cost", "pack", "product", "quick", or "realpath-check"). fix supports: next-suffix, update-status, list, find-duplicates, integrity-check, init-postmortem, count-postmortems-since, update-promote-state, write-suggestion`);
+      usage(`unknown command group: ${group} (expected "spec", "fix", "analyze", "check", "checklist", "constitution", "worktree", "pr", "phantom", "reconcile", "modernize", "schema-check", "cost", "pack", "product", "quick", "learnings", or "realpath-check"). fix supports: next-suffix, update-status, list, find-duplicates, integrity-check, init-postmortem, count-postmortems-since, update-promote-state, write-suggestion`);
     }
   } catch (e) {
     // Input-validation errors (e.g. path-traversal guard) are user errors,

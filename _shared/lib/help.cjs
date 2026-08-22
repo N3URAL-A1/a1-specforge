@@ -453,6 +453,28 @@ Usage:
                   reasons[] lists every failing criterion, not just the first.
                   Exit: 0 eligible, 1 not eligible.
 
+  a1-tools learnings count-since-watermark [--projects-root <path>] [--json]
+                  M11-P4 learning-loop counter. Counts new learning entries
+                  since the watermark recorded in patterns.md's frontmatter
+                  ('updated: YYYY-MM-DD'), across all three entry formats:
+                  retro 'date:' frontmatter/body blocks (repeatable per
+                  file), a1-fix.md '## YYYY-MM-DD' H2 headers, and postmortem
+                  'date:' frontmatter fields. --projects-root defaults to
+                  ~/code; watermark source is
+                  <projects-root>/a1-skills/.a1/learnings/pattern/a1-learnings/patterns.md.
+                  Watermark comparison is DATE-ONLY (YYYY-MM-DD string
+                  compare) with strict '>' (exclusive) — deliberate, not a
+                  bug: this matches a1-evolve's own double-count-avoidance
+                  logic, and same-day promptness isn't goal-critical for a
+                  weekly/session-cadence check. Consequence: an entry dated
+                  today is invisible to this counter until the calendar date
+                  advances past today — a guaranteed one-day lag for
+                  same-day entries.
+                  Prints { count, new_since_date, watermark, sources:
+                  { date_blocks, h2_blocks, postmortems } } as JSON to stdout.
+                  Exit: 0 ok, 2 watermark file found but 'updated:' field
+                  missing/malformed, 3 watermark source missing or unreadable.
+
 Spec statuses: ${[...SPEC_STATUSES].join(', ')}
 Bug statuses:  ${[...BUG_STATUSES].join(', ')}
 Bug severities: ${[...BUG_SEVERITIES].join(', ')}
