@@ -256,3 +256,13 @@ fix_wave_count: 3
 one_line_learning: MS consumer (MSA) tokens under common issuer often omit the email claim — resolve via preferred_username but ONLY for tid=MSA, and never trust an unverified email claim for account merge/creation (nOAuth). Route all auth-email fixes through a1-samuel-security.
 postmortem: wiki/postmortems/n3ural-platform/2026-07-24-tenant-invite-access-denied.md
 ---
+---
+date: 2026-08-20
+bug_id: process-storm-burst
+project: pro-orc
+verdict: fixed
+root_cause_class: [missing_wiring]
+fix_wave_count: 4
+one_line_learning: A concurrency cap must live inside the shared runner (structural), not as a helper each call site must remember — dead readAllGitData proved convention-based hardening drifts
+postmortem: wiki/postmortems/pro-orc/2026-08-20-process-storm-burst.md
+---
