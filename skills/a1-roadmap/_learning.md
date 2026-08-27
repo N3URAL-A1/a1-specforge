@@ -26,3 +26,13 @@ issues: []
 what_worked: a1-[firstname]-[role] Convention klar definiert; Repo-Struktur mit Symlinks funktioniert
 one_line_learning: Naming-Convention-Änderungen (GSD→a1, Bulk-sed) müssen mit Dry-Run verifiziert werden — Double-Prefix-Bug durch Bulk-sed hätte Tests benötigt
 ---
+
+---
+date: 2026-08-25
+task: Adopt-Lauf captrader-consulting — Consulting-Repo ohne .a1/docs-product in schema-v1-Roadmap überführt (5 Milestones, 20 Features, 20 Specs mit User Stories) für Pro-Orc-Anzeige
+project: captrader-consulting
+result: pass
+issues: []
+evidence: docs/product/ROADMAP.md Changelog (adopt-Eintrag 2026-08-25) + git status (uncommitted)
+what_worked: Evidenzableitung aus committeten Deliverables + Git-Log statt Interview; Pro-Orc-Renderer-Headings (Problem/User Journey/Acceptance Criteria) vorab im Quellcode verifiziert, dadurch Specs sofort drill-down-tauglich
+one_line_learning: Bei Consulting-Repos (Deliverables statt Code) ersetzt die Deliverable-Dateiliste + Commit-Historie die VERIFICATION-Rungs der Evidenzleiter — done-Klassifikation vorher explizit im Changelog begründen, inkl. Hinweis dass finished-Datum = Adopt-Datum ist

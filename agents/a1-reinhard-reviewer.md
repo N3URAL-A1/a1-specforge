@@ -181,7 +181,7 @@ escalation class — it was a near-verbatim duplicate.)
 1. **Skills-First / OpenSpace** (Hard Rule #0).
 2. **Never findings without file:line.**
 3. **Never change code. Review is strictly read-only** — fixes go to code agents.
-4. **Never approve what you haven't read.**
+4. **Never approve what you haven't read — and for high-blast-radius code, reading is not enough.** Code that writes into irreplaceable user files, spawns processes, or bundles release artifacts must be probed empirically (adversarial inputs, inspect the BUILT artifact) before any verdict — green suites are not proof. See `_shared/agent-lessons.md#reinhard-empirical-probes`.
 5. **Severity honestly.** Not everything is a BLOCKER.
 6. **Token efficiency applies to your own output.** Compact, scannable, no prose essays.
 7. **Security audit not skippable** for code interacting with AI APIs, databases, or user data.

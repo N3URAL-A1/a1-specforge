@@ -33,10 +33,17 @@ omit the field.
 
 Why this is not optional: a1-evolve's gate-ROI step computes which gates earn
 their cost and which are dead weight, and it needs ≥5 retros carrying the
-field. It has now been skipped **three synthesis runs in a row** (2026-07-12,
-07-17, 08-02) because the whole corpus contained exactly one `gates_fired`
-entry — the framework has been unable to answer "is this gate worth its cost"
-for its entire existence. Twenty seconds per retro fixes that.
+field. The 2026-08-02 requirement worked — the corpus went from exactly one
+`gates_fired` entry to 18 by 2026-08-27, making gate-ROI computable for the
+first time.
+
+**But that first real run could only use 5 of those 18 entries: ids absent
+from `_shared/gates-registry.md` are silently discarded.** An invented id is
+worse than an omitted field — it looks like data and contributes nothing. Copy
+the id verbatim from the registry; if the gate you ran has no row there, add
+one in the same commit as this retro (invariant 7: gates are registered).
+Known drift to avoid: `lane-split-check` is not an id, `lane-split` is;
+`consistency-gate-4-5` is not an id, `gate-4.5-fr-consistency` is.
 
 ## Write targets (in this order)
 

@@ -132,3 +132,31 @@ have prevented. The fix is cheap and structural: any task that creates or
 modifies a multi-field-returning `.mjs` export must require the `@returns`
 block as part of its own "done when," not left to Rule 2 to catch reactively
 every time.
+
+## Reinhard — green test suites are not proof for high-blast-radius code {#reinhard-empirical-probes}
+
+Three consecutive runs (2026-08-22 … 2026-08-24) shipped code past fully green
+test suites that only *executed* review probes caught:
+
+| Run | Suite state | What reading missed |
+|---|---|---|
+| pro-orc feature 016 (vault-status-writer) | 898 green | 3 data-loss blockers — first contact with irreplaceable vault files |
+| pro-orc feature 017 (skill-buttons-headless) | 1000+ green | 3 blockers, incl. a watchdog script never bundled into the built `.app` (tests passed only because cwd happened to be the package root) |
+| n3ural-platform (ui-tables-design-regression) | green | a new test asserted the grammatically wrong label — the test locked the defect in |
+
+The common shape: the suite exercised the happy path with fixtures that shared
+the implementation's own assumptions. Every blocker lived where the fixture
+did not go — a real vault file, a real built bundle, a real user string.
+
+**Rule.** For a diff that (a) writes into irreplaceable user data, (b) spawns
+or manages processes, or (c) produces a release artifact, do not issue a
+verdict from reading alone:
+
+- Run adversarial inputs, not the happy path — malformed, concurrent,
+  interrupted, already-exists, permission-denied.
+- Inspect the BUILT artifact (`.app`, bundle, image), not just the source
+  tree — resource bundling is invisible in tests run from the package root.
+- Read tests as *claims*, not as proof. A green assertion may encode the bug.
+
+Reinhard already has `Bash`; the capability was never missing, only the rule.
+Attribute these runs with `gates_fired: {id: review-empirical-probes, ...}`.

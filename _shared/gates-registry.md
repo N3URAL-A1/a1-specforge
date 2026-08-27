@@ -44,3 +44,25 @@ Constitution rules this table enforces:
 | `pre-flight-github-scope` | Phase 1 (pre-build) | deterministic | cheap | proorc-release | blocking | NEW (M11-P3, 2026-08-22). Checks `gh auth status` active account matches the repo owner (`n3urala1-rob`) and that `.github/workflows/release.yml` declares `permissions: contents: write` — **not** a `delete_repo`-scope check (that belongs to ProOrc's unrelated in-app repo-deletion feature). No catch data yet. |
 | `version-consistency-gate` | Phase 2 (post-extraction) | deterministic | cheap | proorc-release | blocking | NEW (M11-P3, 2026-08-22). Validates `pubspec.yaml`-extracted version matches semver `X.Y.Z` before it is used for any build/tag/DMG-naming step. No catch data yet. |
 | `tag-milestone-confirmation` | Phase 1 (pre-build) | human | cheap | proorc-release | blocking | NEW (M11-P3, 2026-08-22). Confirms with the user that a tag is milestone-worthy before tagging, per the "only tag bundled milestones" convention (CLAUDE.md). Declining routes to `proorc-quick-install` instead. No catch data yet. |
+| `roadmap-gate` | Phase 0 (pre-Discover) | deterministic | cheap | a1-new-feature (`workflows/00-roadmap-gate.md`) | blocking | Registry backfill 2026-08-27: active since the skill's introduction and referenced in retros, but never registered (invariant 7). |
+| `scope-claim` | Phase 4.5 / a1-fix Pre-Flight | deterministic | cheap | `_shared/parallel-spec-isolation.md` (a1-new-feature, a1-fix) | blocking | Registry backfill 2026-08-27. Scope-claim ordering of the parallel-spec-isolation convention. |
+| `stop-gate-human` | Execute (plan-declared) | human | cheap | a1-execute | blocking | Registry backfill 2026-08-27. Generic pattern: a plan-declared STOP point for a decision the executor must not make alone. 1 catch (M11-P1 RETIRE decision). |
+| `backup-gate-human` | Execute (Wave 0) | human | cheap | a1-execute | blocking | Registry backfill 2026-08-27. Backup confirmation before writing into live targets with no VCS safety net. |
+| `settings-json-diff-gate-human` | Execute (config-touching wave) | human | cheap | a1-execute | blocking | Registry backfill 2026-08-27. Diff approval before edits to session-critical config (settings.json hooks). |
+| `review-empirical-probes` | Pre-merge review | prompt | med | a1-reinhard-reviewer | blocking | Registry backfill 2026-08-27. Empirical probe requirement for high-blast-radius code — 3 catches in 3 runs, see `agent-lessons.md#reinhard-empirical-probes`. |
+
+
+**Alias warning — ids are copied verbatim, never paraphrased.** a1-evolve's
+gate-ROI step silently discards any `gates_fired[].id` absent from the table
+above, so an invented id looks like data and counts as nothing. Observed
+drifts (2026-08-27 synthesis, 8 of 12 ids in the corpus were unregistered):
+
+- written `lane-split-check` → correct id is `lane-split`
+- written `consistency-gate-4-5` → correct id is `gate-4.5-fr-consistency`
+
+(Deliberately a bullet list, not a table: a markdown table here would share the
+id-table's row shape, and any parser scraping `^| \`id\`` would then accept the
+wrong-hand column as a valid id — the exact drift this section exists to stop.)
+
+If the gate you ran has no row here, add one in the same commit as the retro
+(invariant 7) rather than inventing a slug.

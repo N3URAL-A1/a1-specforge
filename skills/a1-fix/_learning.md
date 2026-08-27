@@ -266,3 +266,13 @@ fix_wave_count: 4
 one_line_learning: A concurrency cap must live inside the shared runner (structural), not as a helper each call site must remember — dead readAllGitData proved convention-based hardening drifts
 postmortem: wiki/postmortems/pro-orc/2026-08-20-process-storm-burst.md
 ---
+---
+date: 2026-08-24
+bug_id: process-storm-round3
+project: pro-orc
+verdict: fixed
+root_cause_class: [third_party_change]
+fix_wave_count: 3
+one_line_learning: Recurring symptom after verified fix had a DIFFERENT mechanism (watcher tree memory, not process spawning) — verify mechanism class, ship resource fixes with runtime telemetry
+postmortem: wiki/postmortems/pro-orc/2026-08-24-process-storm-round3.md
+---
