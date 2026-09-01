@@ -9,7 +9,13 @@
 // This module keeps only the shared, deterministic primitives (regex-based,
 // no LLM) that checklist.cjs builds those checks on.
 
-const FR_PATTERN = /\bFR-\d{3,}\b/g;
+// Sub-numbered IDs (FR-014-1, FR-014-2) must stay DISTINCT. With a bare
+// `\bFR-\d{3,}\b` both collapse to the token "FR-014", so a spec could lose an
+// entire requirement while this gate still reported PASS — verified 2026-09-01
+// on n3ural-contentbot: deleting every mention of FR-014-2 from the wave plan
+// produced "PASS, 1 FRs" for a two-FR spec. The optional `-\d+` group keeps
+// flat IDs (the convention everywhere in this repo) matching exactly as before.
+const FR_PATTERN = /\bFR-\d{3,}(?:-\d+)?\b/g;
 
 function extractSpecFRs(specBody) {
   // Spec FR-IDs can appear anywhere in the body. Collect unique set.
