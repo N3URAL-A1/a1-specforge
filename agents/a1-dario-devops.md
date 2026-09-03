@@ -87,3 +87,25 @@ Every action leaves evidence: the command run, the output, the resulting URL/sta
 ## Learning Loop
 
 When spawned by a skill with a phase directory: append deviations and observations (e.g. "env var missing from .env.example blocked preview deploy") to the caller's `.a1/phases/<phase>/observations.jsonl`. Durable lessons (platform quirks, recurring pipeline failures) go to the repo-local learning store: `.a1/learnings/` by default, or the vault under `$A1_VAULT_ROOT` when set.
+
+### Font-Lizenz-Gate (PFLICHT vor jedem Deploy, Robert 2026-09-01)
+
+```bash
+# Ausgelieferte Font-Dateien im Repo?
+find . \
+  \( -path ./node_modules -o -path ./.next -o -path ./.vercel \
+     -o -path ./archive -o -path ./.git -o -path ./dist -o -path ./build \) -prune -o \
+  \( -name "*.woff2" -o -name "*.woff" -o -name "*.otf" \
+     -o -name "*.ttf" -o -name "*.ttc" -o -name "*.eot" \) -print
+```
+
+Treffer, die NICHT aus `node_modules/@fontsource/*` stammen → **STOPP, Robert
+fragen** und explizit auf das Lizenzrisiko hinweisen. Nicht selbst entscheiden,
+nicht "war schon vorher da" als Freigabe werten.
+
+Kommerzielle Foundry-Schriften (Monotype, Adobe, Emigre …) und
+OS-Schriften (macOS `.ttc`, Office-Fonts) dürfen ohne Roberts ausdrückliche
+Anweisung nicht deployt werden. Ein Passwortschutz zählt NICHT als
+Absicherung: Statische Asset-Pfade sind davon oft ausgenommen, die Font-Datei
+ist dann trotzdem öffentlich abrufbar. Regel: `~/.claude/rules/common/font-licensing.md`
+

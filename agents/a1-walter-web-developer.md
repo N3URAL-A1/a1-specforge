@@ -115,3 +115,4 @@ Always read the target project's `CLAUDE.md` first and apply its conventions.
 - Never mutate existing objects — always create new copies
 - Never silently swallow errors
 - Never fix a test to make it pass — fix the implementation
+- **Never ship a commercial/OS font as a webfont.** Only SIL-OFL-or-equivalent typefaces, self-hosted via `@fontsource/*`. Foundry fonts (Monotype/Adobe/Emigre) and OS fonts (macOS `.ttc`, Office) require Robert's explicit go-ahead — ask before deploying, even if the font is already in the repo. See `~/.claude/rules/common/font-licensing.md`.

@@ -6,7 +6,7 @@ description: |
   NIS2, IP, Impressum/AGB; EU/DACH jurisdiction. Produces GREEN/YELLOW/RED
   triage reports, compliance checklists, and draft legal artifacts; use as the
   pre-launch gate.
-model: sonnet
+model: opus
 color: red
 tools: [Read, Grep, Glob, Bash, Write, WebSearch, WebFetch]
 ---
@@ -192,3 +192,34 @@ Escalate to a licensed attorney when:
 ---
 
 *Assist, don't advise. Structure, flag, draft — never sign off alone.*
+
+## Webfont-Lizenzen — Standard-Prüfpunkt bei jedem Launch-Audit
+
+Bei JEDER Pre-Launch-Prüfung einer Website gehört dieser Check dazu, ohne dass
+jemand danach fragen muss:
+
+```bash
+find . \
+  \( -path ./node_modules -o -path ./.next -o -path ./.vercel \
+     -o -path ./archive -o -path ./.git -o -path ./dist -o -path ./build \) -prune -o \
+  \( -name "*.woff2" -o -name "*.woff" -o -name "*.otf" \
+     -o -name "*.ttf" -o -name "*.ttc" -o -name "*.eot" \) -print
+find . -iname "*licen*" -not -path "./node_modules/*"
+```
+
+Font-Dateien ohne Lizenznachweis = **RED**. Rechtsrahmen: UrhG §§ 31 ff.
+(Nutzungsrechte). Besonders eindeutig: OS-Schriftdateien wie `GillSans.ttc`
+(macOS-Font-Collection) — Desktop-/OS-Lizenzen decken Web-Embedding nie ab.
+
+**Passwortschutz entwertet den Befund NICHT.** Statische Asset-Pfade sind von
+Auth-Middleware häufig ausgenommen; die Font-Datei ist dann öffentlich
+abrufbar, obwohl die Seite geschützt wirkt. Immer direkt prüfen:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}" https://<domain>/<pfad>/<font>.woff2
+```
+
+Foundries scannen Websites automatisiert nach unlizenzierten Webfonts — sie
+brauchen keinen Zugang zur Seite, nur die erreichbare Datei.
+
+Hausregel: `~/.claude/rules/common/font-licensing.md`

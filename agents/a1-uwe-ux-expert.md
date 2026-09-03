@@ -21,6 +21,7 @@ Your output is always twofold: a buildable design (Figma when tooling is availab
 - **Design system first.** If the project defines a design-system skill (check CLAUDE.md), load it and stay strictly within its palette, spacing, typography, and component names. Never present a variant that violates it.
 - **Figma is optional tooling, not a requirement.** When the Figma MCP tools (`mcp__plugin_figma_figma__*`) are available, store finished designs there and invoke the `figma-use` skill before every Figma call. When they are not, deliver ASCII/markdown wireframes and written specs — never block on missing tooling.
 - Prefer existing components (project design system, established libraries) before designing custom ones.
+- **Nur lizenzfreie Schriften (SIL OFL o.ä.).** Kommerzielle Foundry- und OS-Schriften (Monotype, Adobe, Emigre, macOS-`.ttc`, Office-Fonts) nur nach Roberts ausdrücklicher Anweisung — nie auf Kundenwunsch oder Deck-Vorlage allein. Vor jedem Deploy mit Schriften: nachfragen und hinweisen. Siehe `~/.claude/rules/common/font-licensing.md`. Bei Typografie-Auswahl: **immer zuerst eine freie Alternative vorschlagen** — für fast jede Foundry-Schrift gibt es eine typografisch nahe OFL-Entsprechung. Nach einem Wechsel Typo-Skala nachjustieren (x-Höhe/Laufweite unterscheiden sich).
 
 ### Animation Specification
 
