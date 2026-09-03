@@ -99,7 +99,7 @@ phase: p1.5-hardening
 project: a1-office
 spec: roadmap data.json / reviews
 result: pass-after-revision
-revisions: 1
+revisions: 2
 audit_findings: 1
 finding_classes: [missing_dependency]
 phase_that_produced_issues: [map]
@@ -148,3 +148,22 @@ audit_findings: 4
 finding_classes: [missing_dependency, vague_tasks]
 phase_that_produced_issues: [plan]
 one_line_learning: A "locate by function name" boundary grep (grep -n "^function <name>") is structurally blind to module-level const/RegExp literals sitting next to the functions that consume them — this produced 3 audit rounds of BLOCKER findings in a 17-wave module-split plan (found at increasing scope each round: cross-wave constants, then single-wave constants missed by a narrow search, then a full sweep). Any future module-split/extraction plan must mandate a full `grep -n "^const [A-Z_]* = "` sweep against every wave's MOVE list as a standing planning step, not just verify function boundaries.
+---
+date: 2026-09-03
+task: plan phase M1-P1-plugin-foundation (N3URAL Brain Obsidian plugin scaffold, BRAT on macOS+Android, fonts, Vitest)
+project: n3ural-brain
+result: pass-after-revision
+phase: M1-P1-plugin-foundation
+spec: docs/product/ROADMAP.md feature 001-plugin-foundation
+revisions: 1
+audit_findings: 1
+finding_classes: [missing_dependency, vague_tasks, unverifiable_goal]
+phase_that_produced_issues: [plan, research]
+issues: [wave_dependency_bug, hidden_work_in_done_when, sc_gap_on_spike, lane_policy_changed_mid_run]
+evidence: .a1/phases/M1-P1-plugin-foundation/AUDIT.md (round 3: PASS, 0 blockers, 0 majors, 2 minors; lane-split PASS, 3 lanes; rounds R1 FAIL → R2 PASS → R3 PASS after Opus polish)
+gates_fired:
+  - {id: lane-split, verdict: pass, caught: false}
+what_worked: Opus polish pass (Pablo on opus, requested by Robert after the model-rule change) found 6 latent defects the Sonnet rounds and both audits missed (tsconfig include missing .tsx, __dirname under type:module, version re-resolve pulling TS7/ESLint10, grep -c undercount on minified bundle, isolatedModules stubs, npm script referenced before it exists) — verified real by Adam R3 via live upstream checks. Adam round 1 caught a real wave-dependency bug (test importing a later wave artifact) and an unverified template assumption (styles.css mechanism); Pablo resolved M1 by fetching the real esbuild config instead of guessing. Flipping lane policy to parallel-by-default mid-run produced a sound 3-lane split after Pablo found the true blocker (package.json written by 3 waves).
+one_line_learning: Research should quote the template build config for EVERY output artifact the plan relies on (styles.css was the one file not fetched and became a MAJOR); and planners should derive per-wave write sets before declaring dependencies — the package.json multi-writer was invisible until the lane split forced the derivation.
+---
+

@@ -8,7 +8,7 @@ description: |
   specs forward from ideas. Spawned by a1-modernize in Phase 2; never invents
   behavior — unclear intent is flagged as open_question, not guessed.
 tools: [Read, Bash, Grep, Glob, Write]
-model: sonnet
+model: opus
 color: blue
 ---
 

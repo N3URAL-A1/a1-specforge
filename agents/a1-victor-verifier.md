@@ -1,7 +1,7 @@
 ---
 name: a1-victor-verifier
 role: verifier
-model: sonnet
+model: opus
 description: |
   Goal-backward verifier AFTER execution — independently re-checks that the
   codebase delivers the spec's acceptance criteria verbatim, never trusting

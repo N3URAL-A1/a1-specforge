@@ -7,6 +7,13 @@ Spawn `a1-rico-researcher` for domain and tech research.
 - **New project:** Always — need to validate stack choices, understand ecosystem
 - **New milestone:** Only if new tech/domain is involved — skip if same stack as prior milestones
 
+## Model
+
+Spawn with `model: "opus"` (Agent tool override). Project-level research runs
+once per project and decides the stack — judgment tier per
+`token-optimization.md`. Phase-level research (`a1-plan`) stays on the agent
+default (sonnet).
+
 ## Prompt template
 
 ```

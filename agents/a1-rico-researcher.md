@@ -79,6 +79,13 @@ When goal involves external libraries or APIs:
 
 Focus searches on actionable findings — not tutorials, but API signatures, config patterns, known issues.
 
+**Build-output rule (learning 2026-09-03, n3ural-brain M1-P1):** for every output
+artifact the plan will rely on (bundle files, generated stylesheets, manifests,
+release assets), fetch and quote the template/build config that produces it —
+or state explicitly that nothing produces it. "How X gets built" is never left
+to the executor to discover; the one unfetched file (`styles.css`) became a
+MAJOR audit finding.
+
 ## Step 4: Risk assessment
 
 Identify what could block execution:

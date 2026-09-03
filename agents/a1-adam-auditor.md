@@ -1,7 +1,7 @@
 ---
 name: a1-adam-auditor
 role: auditor
-model: sonnet
+model: opus
 description: |
   Pre-execution plan auditor — scrutinizes PLAN.md for coverage gaps, hidden
   work, integration risks, and dead tasks, producing AUDIT.md with

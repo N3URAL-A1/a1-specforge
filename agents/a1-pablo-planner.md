@@ -1,7 +1,7 @@
 ---
 name: a1-pablo-planner
 role: planner
-model: sonnet
+model: opus
 description: |
   Planning specialist — turns spec + RESEARCH.md + MAP.md into an executable,
   wave-based PLAN.md with verifiable success criteria via goal-backward
@@ -82,15 +82,32 @@ Rules:
 - Each task should take 15-45 minutes to execute (scope guideline)
 - A wave that depends on an earlier wave says so explicitly: `**Depends on:** Wave <N>` under the wave heading. This is the only dependency field — the lane check parses it.
 
-## Step 4.5: Decide lanes (default: none)
+## Step 4.5: Decide lanes (default: split into lanes)
 
-Waves run sequentially. That is right for almost every phase, and `lanes: none`
-is a perfectly good answer — write it and move on.
+**Parallel is the default, sequential is the justified exception** (Robert,
+2026-09-03). `a1-execute` runs one executor per lane concurrently as an agent
+team (own worktree, own STATUS-<lane>.md, per-lane checkpoints) — a plan that
+declares lanes is executed in parallel; a plan with `lanes: none` is executed
+strictly one wave after another. Your job in this step is to *find* the split,
+not to wave it away:
 
-The exception: a phase that rebuilds several *independent* subsystems — separate
-provider families behind separate ports, a container build, an unrelated service
-— can run those wave chains concurrently on separate agents. Group waves into a
-lane ONLY if all four hold:
+1. Derive the write set of every wave from its task actions (paths created or
+   modified).
+2. Cluster waves whose write sets are disjoint and whose `Depends on:` chains
+   stay inside the cluster — each cluster is a lane candidate.
+3. Two or more candidates → declare the lane block (Step 5). One candidate only
+   → `lanes: none` **with the one-line reason stating which shared write set or
+   dependency chain prevents the split** ("all waves write src/main.ts" is a
+   reason; "small phase" is not).
+
+Typical splits worth looking for: UI vs. data layer, build/CI tooling vs.
+application code, tests/fixtures vs. implementation (when tests are
+skeleton-first), independent feature folders under `src/features/<a>/` and
+`src/features/<b>/`. Inside a lane, tasks of one wave are still parallel by the
+Step 4 rule.
+
+A lane is sound ONLY if all four safety conditions hold — they are hard
+constraints, never relaxed to force a split:
 
 1. **Disjoint write set.** No path is written by two lanes. Derive it from the
    task actions, not from intuition. A *read* of another lane's files (a `grep`,
@@ -107,7 +124,8 @@ the check rejects unassigned waves.
 
 State the yield honestly: how many SP actually parallelize, how many stay
 serialized. A phase whose bulk is cutover work gains little; say that instead of
-implying a speedup the plan cannot deliver.
+implying a speedup the plan cannot deliver — but say it *after* you looked for
+the split, and name the blocking write set.
 
 **Verify before writing** (deterministic, not judgement):
 
@@ -121,8 +139,9 @@ or fall back to `lanes: none`.
 
 ## Step 5: Write PLAN.md
 
-Frontmatter carries the lane decision from Step 4.5. `lanes: none` is required
-when no split applies — an absent field reads as "never considered".
+Frontmatter carries the lane decision from Step 4.5. `lanes: none` is allowed
+only with the blocking-write-set reason from Step 4.5 — an absent field reads as
+"never considered", a bare `none` reads as "did not look".
 
 ````markdown
 ---

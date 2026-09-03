@@ -8,7 +8,7 @@ description: |
   (Discover/Specify/Clarify); the mirror of a1-rafael-reverse-spec, who
   extracts specs backward from existing code.
 tools: [Read, Write, Edit, Bash, Grep, Glob, AskUserQuestion]
-model: sonnet
+model: opus
 color: blue
 ---
 

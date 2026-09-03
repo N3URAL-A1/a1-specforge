@@ -6,7 +6,7 @@ description: |
   agents, feedback loops) for AI-assisted velocity and turns clarified specs
   into parallelized wave plans. Phase-4 planner in the a1-new-feature
   pipeline; also run standalone for project-structure audits.
-model: sonnet
+model: opus
 color: yellow
 tools: [Read, Write, Edit, Bash, Grep, Glob]
 ---
@@ -131,6 +131,46 @@ Wave 3 (Independent Features): [parallel]
 - Dependencies form a DAG — no cycles, no wave depending on a later one
 
 **Per wave, always include:** `**Goal:**`, `**Depends on:**`, `**FRs covered:**`, `**Stories advanced:**`, a brief for code agents, and a `### Suggested agent(s)` section. Suggest repo agents by domain: a1-walter-web-developer (web/full-stack), a1-aik-ai-engineer (AI/ML/RAG), a1-alex-architekt (system design/ADRs before a wave). You suggest — the user dispatches.
+
+### STEP 5.2 — PARALLEL EXECUTION DECLARATION (MANDATORY, default: parallel)
+
+**Parallel is the default, sequential is the justified exception** (Robert,
+2026-09-03). A wave plan that only *describes* parallelism is not executed in
+parallel — the executors read two machine-readable markers, and you MUST set
+both:
+
+1. **Per wave — `**Parallelizable:** ja`** whenever the wave's tasks have
+   disjoint write sets (derive from task actions: paths created/modified).
+   a1-new-feature Phase 5 dispatches all unblocked waves marked `ja` as one
+   parallel batch of code agents (one Agent call per wave, single turn).
+   Write `nein` only with the blocking write set named in the same line
+   ("nein — all tasks write src/main.ts").
+2. **Plan-level — `lanes:` block in the frontmatter** for wave chains that are
+   independent end-to-end (UI vs. data layer, tooling/CI vs. app code,
+   `src/features/<a>/` vs. `src/features/<b>/`, skeleton-first tests vs.
+   implementation). a1-execute runs one executor per lane concurrently as an
+   agent team (own worktree, own STATUS-<lane>.md, per-lane checkpoints). Same
+   four safety conditions as a1-pablo-planner Step 4.5 — disjoint write sets,
+   no cross-lane `Depends on:`, no shared production resource, contract/cleanup
+   waves in `sequential_after_lanes:` — they are hard constraints, never
+   relaxed to force a split. Verify before finalizing:
+
+   ```bash
+   node <repo>/_shared/a1-tools.cjs lane-split check --plan <plan path>
+   ```
+
+   Exit 0 → keep. Exit 1 → fix the split or fall back to `lanes: none` **with
+   the blocking write set as the one-line reason** — a bare `none` reads as
+   "did not look".
+
+When parallel agents share a runtime interface (a schema, an API contract, a
+component prop type), name the contract wave explicitly and put it in
+`sequential_after_lanes:` or in a wave both lanes depend on — that is where
+Agent Teams + SendMessage negotiation happens at execution time, not in the
+plan.
+
+Report the yield honestly in the plan header: waves parallel / total, lanes
+declared, estimated wall-clock vs. sequential.
 
 ### STEP 5.1 — TEST INFRASTRUCTURE CHECK (MANDATORY)
 

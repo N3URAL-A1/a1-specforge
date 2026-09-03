@@ -9,6 +9,12 @@ status `spec-drafted`.
 
 ## Step 1 — Spawn Marco (structure map)
 
+> **Model override (2026-09-03):** a1-marco-mapper defaults to haiku, which is
+> right for small/greenfield repos. For brownfield mapping pass
+> `model: "sonnet"` to the Agent tool when the repo has more than 200 tracked
+> files — check first: `git ls-files | wc -l` (or `find . -type f -not -path
+> './node_modules/*' -not -path './.git/*' | wc -l` outside git).
+
 Spawn `a1-marco-mapper` with:
 
 ```

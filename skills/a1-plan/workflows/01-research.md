@@ -2,6 +2,11 @@
 
 Spawn `a1-rico-researcher` to gather context for this phase.
 
+## Model
+
+Agent default (sonnet) — phase-level research is scoped and volume-heavy.
+Do not override to opus here; that is reserved for `a1-roadmap` project research.
+
 ## Prompt template
 
 ```

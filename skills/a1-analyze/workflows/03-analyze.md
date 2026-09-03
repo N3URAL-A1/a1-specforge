@@ -16,6 +16,12 @@ Read the focus from frontmatter. Use this mapping:
 | `quality` | a1-reinhard-reviewer, a1-marco-mapper |
 | `onboarding` | a1-marco-mapper, a1-alex-architekt, plus stack-specialist: a1-aik-ai-engineer for AI-heavy, a1-walter-web-developer for web-heavy, felix-flutter-engineer (global) for Flutter |
 
+> **Model override (2026-09-03):** a1-marco-mapper defaults to haiku, which is
+> right for small/greenfield repos. For brownfield mapping pass
+> `model: "sonnet"` to the Agent tool when the repo has more than 200 tracked
+> files — check first: `git ls-files | wc -l` (or `find . -type f -not -path
+> './node_modules/*' -not -path './.git/*' | wc -l` outside git).
+
 The stack-specialist for `onboarding` is chosen from the discover `tech_stack`:
 - If `tech_stack` contains `flutter`/`dart` → felix-flutter-engineer
 - If `tech_stack` contains AI/ML markers (langchain, transformers, vector DBs) → a1-aik-ai-engineer

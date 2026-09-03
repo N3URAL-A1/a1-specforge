@@ -36,3 +36,14 @@ issues: []
 evidence: docs/product/ROADMAP.md Changelog (adopt-Eintrag 2026-08-25) + git status (uncommitted)
 what_worked: Evidenzableitung aus committeten Deliverables + Git-Log statt Interview; Pro-Orc-Renderer-Headings (Problem/User Journey/Acceptance Criteria) vorab im Quellcode verifiziert, dadurch Specs sofort drill-down-tauglich
 one_line_learning: Bei Consulting-Repos (Deliverables statt Code) ersetzt die Deliverable-Dateiliste + Commit-Historie die VERIFICATION-Rungs der Evidenzleiter — done-Klassifikation vorher explizit im Changelog begründen, inkl. Hinweis dass finished-Datum = Adopt-Datum ist
+---
+date: 2026-09-03
+task: new project — N3URAL Brain (Obsidian plugin, Notion-style vault UI) roadmap v3 with 6 milestones / 17 features + 2 follow-up specs in a1-skills
+project: n3ural-brain
+result: pass
+issues: [scope_grew_in_discover, vision_reframed_mid_structure, cross_repo_spec_needed]
+evidence: docs/product/ROADMAP.md (validate: valid, 0 errors), .a1/phases/M1-P*/GOAL.md, ~/code/a1-skills/.a1/learnings/projects/a1-specforge/spec/005-vault-first-artifacts.md + 006-specforge-kritis-profile.md
+what_worked: Research (Rico) before Structure surfaced 3 expectation corrections (no Android widget, embeds gap, Bases too young) that reshaped M2 before scaffolding; asking the user for a PM-level gap review after v2 produced two whole milestones (Cockpit, Remote Trigger) that the pitch had only implied.
+one_line_learning: Discover should ask "what other tools/systems already cover parts of this?" explicitly — Pro Orc and SpecForge overlap surfaced only after Structure, costing a roadmap v2→v3 rewrite; a one-question landscape check in Discover would have caught it.
+---
+
