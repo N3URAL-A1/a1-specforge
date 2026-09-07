@@ -236,7 +236,7 @@ run_init_postmortem() {
     --one-line-learning "Always validate session tokens" 2>&1)
   exit_code=$?
   assert_rc "init-postmortem exit=0" 0 "$exit_code" "$out"
-  local expected_file="$VAULT/wiki/postmortems/demo/2026-05-13-login-crash.md"
+  local expected_file="$VAULT/project/demo/postmortems/2026-05-13-login-crash.md"
   assert "init-postmortem creates expected file" "$([[ -f "$expected_file" ]] && echo 1 || echo 0)"
   if grep -q '^one_line_learning: "Always validate session tokens"$' "$expected_file" 2>/dev/null; then
     assert "init-postmortem writes one_line_learning to frontmatter" "1"
@@ -296,7 +296,7 @@ run_update_promote_state() {
   else
     assert "update-promote-state records the given timestamp" "0"
   fi
-  local state_file="$VAULT/wiki/_state/last_promote.json"
+  local state_file="$VAULT/pattern/a1-learnings/_state/last_promote.json"
   assert "update-promote-state writes expected state file" "$([[ -f "$state_file" ]] && echo 1 || echo 0)"
 
   # Second call with a later timestamp -> state overwritten (transition).
@@ -316,11 +316,11 @@ run_write_suggestion() {
   local out exit_code
   out=$(A1_VAULT_ROOT="$VAULT" node "$TOOLS" fix write-suggestion walter \
     --title "Always check null" --body "Add a null check before dereferencing." \
-    --source-postmortem "wiki/postmortems/demo/2026-05-13-login-crash.md" \
+    --source-postmortem "project/demo/postmortems/2026-05-13-login-crash.md" \
     --skill "a1-fix" 2>&1)
   exit_code=$?
   assert_rc "write-suggestion exit=0" 0 "$exit_code" "$out"
-  local suggestions_dir="$VAULT/wiki/lessons/walter/_suggestions"
+  local suggestions_dir="$VAULT/pattern/a1-learnings/lessons/walter/_suggestions"
   assert "write-suggestion creates suggestions dir" "$([[ -d "$suggestions_dir" ]] && echo 1 || echo 0)"
   local file_count
   file_count=$(find "$suggestions_dir" -name '*.md' 2>/dev/null | wc -l | tr -d ' ')
@@ -375,7 +375,7 @@ run_hostile_injection() {
   assert "injection payload never executed (no marker file created)" "$([[ ! -f "$marker_file" ]] && echo 1 || echo 0)"
 
   local suggestion_file
-  suggestion_file=$(find "$VAULT/wiki/lessons/injection-test/_suggestions" -name '*.md' 2>/dev/null | head -1)
+  suggestion_file=$(find "$VAULT/pattern/a1-learnings/lessons/injection-test/_suggestions" -name '*.md' 2>/dev/null | head -1)
   if [[ -n "${suggestion_file:-}" ]] && grep -qF '$(touch' "$suggestion_file" 2>/dev/null; then
     assert "injection payload stored inertly as literal text in suggestion file" "1"
   else

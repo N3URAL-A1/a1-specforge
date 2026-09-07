@@ -135,15 +135,15 @@ function countH2Blocks(root, watermark) {
 }
 
 /** Count postmortem files (frontmatter `date:`) under
- * <project>/.a1/learnings/wiki/postmortems/**, strictly after `watermark`. */
+ * <project>/.a1/learnings/project/<slug>/postmortems/**, strictly after `watermark`. */
 function countPostmortems(root, watermark) {
   let count = 0;
   const projectDirs = listSubdirs(root);
   for (const projName of projectDirs) {
     const postmortemsDir = path.join(
-      root, projName, '.a1', 'learnings', 'wiki', 'postmortems'
+      root, projName, '.a1', 'learnings', 'project'
     );
-    const files = walkFiles(postmortemsDir, (full, name) => name.endsWith('.md'));
+    const files = walkFiles(postmortemsDir, (full, name) => name.endsWith('.md') && full.includes(path.sep + 'postmortems' + path.sep));
     for (const f of files) {
       const content = readFileSafe(f);
       if (!content) continue;

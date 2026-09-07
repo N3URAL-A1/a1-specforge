@@ -112,7 +112,7 @@ If yes: proceed to `02-diagnose.md`. Falk should read `## Notes` plus the new
 ## Postmortem (hard gate after every terminal verdict)
 
 Run this after every terminal status (`fixed`, `wont-fix`, `cant-reproduce`, `duplicate`).
-**Not optional.** Canonical source: `wiki/postmortems/<project>/<date>-<bug-slug>.md`.
+**Not optional.** Canonical source: `project/<project>/postmortems/<date>-<bug-slug>.md`.
 The `_learning.md` cache is updated as a fast-access mirror.
 
 ### Step 1 — Create the Postmortem file
@@ -159,7 +159,7 @@ verdict: <fixed|wont-fix|cant-reproduce|duplicate>
 root_cause_class: [<tag>]
 fix_wave_count: <N>
 one_line_learning: <from postmortem>
-postmortem: wiki/postmortems/<project>/<date>-<bug-slug>.md
+postmortem: project/<project>/postmortems/<date>-<bug-slug>.md
 ---
 EOF
 ```
@@ -170,7 +170,7 @@ The `_learning.md` is a fast-access cache. The Vault postmortem is canonical.
 
 **Not optional, not batched, not deferred to promote-lessons.** a1-evolve's
 primary collect glob is `pattern/a1-learnings/*.md` (framework invariant 4);
-a postmortem that exists only under `wiki/` is invisible to the optimizer.
+a postmortem that exists only under `project/*/postmortems/` is invisible to the optimizer.
 Because promote-lessons is an opt-in offer that only fires at ≥5 postmortems,
 relying on it silently strands whole bug corpora — observed 2026-08-02: niimo
 had 16 postmortems and niimo-web 2, with zero entries in the optimizer-visible
@@ -187,7 +187,7 @@ task: <bug-slug> — <one-line what was fixed>
 project: <project-slug>
 result: <fixed|wont-fix|cant-reproduce|duplicate>
 bug_classes: [<root-cause-tag>]
-evidence: wiki/postmortems/<project>/<date>-<bug-slug>.md; fix_commit <short-hash>
+evidence: project/<project>/postmortems/<date>-<bug-slug>.md; fix_commit <short-hash>
 gates_fired:
   - {id: fix-integrity, verdict: <pass|fail>, caught: <true|false>}
 one_line_learning: <from postmortem>
@@ -205,13 +205,13 @@ entries; it only writes suggestions.
 VAULT="${A1_VAULT_ROOT:-$(git rev-parse --show-toplevel)/.a1/learnings}"
 # Get last promote timestamp
 LAST_PROMOTE=$(node <repo>/_shared/a1-tools.cjs fix count-postmortems-since \
-  --since "$(cat "$VAULT/wiki/_state/last_promote.json" | grep -o '"last_promote_at":"[^"]*"' | cut -d'"' -f4)")
+  --since "$(cat "$VAULT/pattern/a1-learnings/_state/last_promote.json" | grep -o '"last_promote_at":"[^"]*"' | cut -d'"' -f4)")
 ```
 
 If the count is ≥5, tell the user:
 > "5 new postmortems since the last promote-lessons run. Shall I start promote-lessons?
 > It evaluates all new postmortems and writes suggestions to
-> `wiki/lessons/<agent>/_suggestions/`. You then decide which suggestions
+> `pattern/a1-learnings/lessons/<agent>/_suggestions/`. You then decide which suggestions
 > move to `_active.md`."
 
 If yes: run promote-lessons (see below).
@@ -219,7 +219,7 @@ If no: proceed. Counter accumulates until next run.
 
 ### promote-lessons procedure
 
-1. Read all postmortems in `wiki/postmortems/` created since `last_promote.json`
+1. Read all postmortems in `project/*/postmortems/` created since `last_promote.json`
 2. Group by `root_cause_class`
 3. For each group with ≥3 occurrences: identify the agent most relevant
 4. Write a suggestion via:
@@ -243,7 +243,7 @@ If no: proceed. Counter accumulates until next run.
    ```
 7. Tell the user:
    > "promote-lessons complete. New suggestions in:
-   > - `wiki/lessons/<agent>/_suggestions/` (N suggestions)
+   > - `pattern/a1-learnings/lessons/<agent>/_suggestions/` (N suggestions)
    >
    > Please review the suggestions and manually promote the useful ones to `_active.md`."
 

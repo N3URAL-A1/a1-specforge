@@ -120,7 +120,7 @@ caseE() {
 
 # ---------- Case F: wiki subcommand proves the choke point ----------
 # fresh git repo, unset env, run a wiki/-writing subcommand (fix write-suggestion)
-# → write lands under <repo>/.a1/learnings/wiki/..., exit 0, source: repo-local.
+# → write lands under <repo>/.a1/learnings/pattern/a1-learnings/..., exit 0, source: repo-local.
 caseF() {
   local home repo out err rc wrote
   home="$(mktemp -d)"
@@ -131,7 +131,7 @@ caseF() {
   rc=$?
   err="$(cat /tmp/a1vf.errF)"
   wrote=""
-  [[ -d "$repo/.a1/learnings/wiki/lessons/demo-agent/_suggestions" ]] && wrote="yes"
+  [[ -d "$repo/.a1/learnings/pattern/a1-learnings/lessons/demo-agent/_suggestions" ]] && wrote="yes"
   if [[ $rc -eq 0 ]] \
      && [[ -n "$wrote" ]] \
      && printf '%s' "$err" | grep -q 'source: repo-local'; then

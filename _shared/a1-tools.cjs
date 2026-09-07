@@ -38,7 +38,7 @@
  *
  *   a1-tools fix integrity-check [--agents-dir <abs>] [--skills-dir <abs>]
  *       → JSON { status: "ok"|"mismatch"|"bootstrapped", mismatches: [], files_checked }
- *         On first run: bootstraps wiki/_canonical/agents.lock.json from current state.
+ *         On first run: bootstraps pattern/a1-learnings/_canonical/agents.lock.json from current state.
  *         On subsequent runs: compares SHA256 hashes. status="mismatch" means skill STOPS.
  *
  *   a1-tools fix init-postmortem <bug-slug> <project-slug> [flags]
@@ -46,20 +46,20 @@
  *              --fix-wave-count --diagnosis-rounds --phase-friction --quak-regression
  *              --fix-required-test-first
  *       → JSON { path, project, bug_slug, date, filename }
- *         Creates wiki/postmortems/<project>/<date>-<bug-slug>.md with YAML frontmatter.
+ *         Creates project/<project>/postmortems/<date>-<bug-slug>.md with YAML frontmatter.
  *
  *   a1-tools fix count-postmortems-since --since <ISO-timestamp>
  *       → JSON { count, since, files: [...] }
- *         Counts postmortem files in wiki/postmortems/ modified after the given timestamp.
+ *         Counts postmortem files in project/<slug>/postmortems/ modified after the given timestamp.
  *
  *   a1-tools fix update-promote-state [--at <ISO-timestamp>]
  *       → JSON { last_promote_at, path }
- *         Writes wiki/_state/last_promote.json with promote timestamp.
+ *         Writes pattern/a1-learnings/_state/last_promote.json with promote timestamp.
  *
  *   a1-tools fix write-suggestion <agent-name> [--title <t>] [--body-file <path>|--body <text>]
  *                                              [--source-postmortem <path>] [--skill <name>]
  *       → JSON { path, agent, title, date, filename }
- *         Creates wiki/lessons/<agent>/_suggestions/<date>-<slug>.md. NEVER writes _active.md.
+ *         Creates pattern/a1-learnings/lessons/<agent>/_suggestions/<date>-<slug>.md. NEVER writes _active.md.
  *
  *   a1-tools analyze next-slot <project-slug> <focus> [--date YYYY-MM-DD]
  *       → JSON { project, focus, date, suffix, filename, path, dir }

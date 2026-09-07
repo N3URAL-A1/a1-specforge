@@ -67,11 +67,11 @@ This skill treats two layers differently:
 - `skills/*.md` — skill definitions
 
 **MUTABLE KNOWLEDGE LAYER** (written by the skill, always append-only):
-- `wiki/postmortems/<project>/<date>-<bug-slug>.md` — raw learning artifacts
-- `wiki/bug-patterns/<project>.md` — pattern proposals section only (append)
-- `wiki/lessons/<agent>/_suggestions/<date>-<slug>.md` — candidate lessons
+- `project/<project>/postmortems/<date>-<bug-slug>.md` — raw learning artifacts
+- `project/<project>/bug-patterns.md` — pattern proposals section only (append)
+- `pattern/a1-learnings/lessons/<agent>/_suggestions/<date>-<slug>.md` — candidate lessons
 
-**Robert is THE ONLY writer to `wiki/lessons/<agent>/_active.md`.** The skill
+**Robert is THE ONLY writer to `pattern/a1-learnings/lessons/<agent>/_active.md`.** The skill
 never touches `_active.md` files. Promote-lessons writes suggestions only.
 
 ## Phase 0a — Quick Triage
@@ -110,9 +110,9 @@ Before Phase 1, run `00-preflight.md`. Five checks:
    **Isolation Gate** below. If the gate cannot be satisfied: STOP and ask Robert.
 1. **integrity-check** — verifies agents and skills have not drifted from the lock
    file. If mismatch detected: STOP, report to Robert, write nothing.
-2. **bug-patterns lookup** — reads `wiki/bug-patterns/<project>.md` and surfaces
+2. **bug-patterns lookup** — reads `project/<project>/bug-patterns.md` and surfaces
    relevant patterns to Falk's context before triage.
-3. **postmortem search** — searches `wiki/postmortems/<project>/` for similar bugs.
+3. **postmortem search** — searches `project/<project>/postmortems/` for similar bugs.
 4. **scope-overlap check (non-blocking)** — compares the fix's target files
    against every in-flight feature's declared `code_scope`. Never blocks the
    fix; see **Scope Overlap Bypass** below.
@@ -200,16 +200,16 @@ The skill may ONLY write to these paths inside the Vault:
 | Path | What |
 |------|------|
 | `project/<slug>/fixes/<date>-<slug>.md` | Bug reports |
-| `wiki/postmortems/<project>/<date>-<slug>.md` | Postmortems |
-| `wiki/bug-patterns/<project>.md` | Proposals section only (append) |
-| `wiki/lessons/<agent>/_suggestions/<date>-<slug>.md` | Lesson candidates |
-| `wiki/_canonical/agents.lock.json` | Lock file (bootstrap only) |
-| `wiki/_state/last_promote.json` | Promote state |
+| `project/<project>/postmortems/<date>-<slug>.md` | Postmortems |
+| `project/<project>/bug-patterns.md` | Proposals section only (append) |
+| `pattern/a1-learnings/lessons/<agent>/_suggestions/<date>-<slug>.md` | Lesson candidates |
+| `pattern/a1-learnings/_canonical/agents.lock.json` | Lock file (bootstrap only) |
+| `pattern/a1-learnings/_state/last_promote.json` | Promote state |
 
 **NEVER WRITE:**
 - `agents/*.md` (agent definitions)
 - Any `skills/*.md` file
-- `wiki/lessons/<agent>/_active.md`
+- `pattern/a1-learnings/lessons/<agent>/_active.md`
 
 ## Learning Loop (4 stages)
 
@@ -223,7 +223,7 @@ write a structured postmortem via `fix init-postmortem`. Not optional.
 **Stage 4 — promote-lessons (auto-trigger):** After Phase 4, count postmortems
 since last promote. If ≥5 new postmortems: offer Robert to run promote-lessons.
 Promote-lessons reads all postmortems, clusters patterns, writes suggestions to
-`wiki/lessons/<agent>/_suggestions/` only. Robert manually promotes to `_active.md`.
+`pattern/a1-learnings/lessons/<agent>/_suggestions/` only. Robert manually promotes to `_active.md`.
 
 ## Agent integration
 

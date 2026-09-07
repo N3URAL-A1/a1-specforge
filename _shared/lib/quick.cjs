@@ -364,9 +364,9 @@ function cmdQuickEligibility(args) {
 
 // ---------------------------------------------------------------------------
 // quick stats — a1-evolve telemetry report (FR-018, spec 004-xs-quick-lane
-// Wave 5). Reads every `project/*/quick/*.md` run-record under the resolved
+// Wave 5). Reads every `project/<slug>/quick/*.md` run-record under the resolved
 // learnings root and reports `escalation_rate` (escalated / total) plus a
-// BEST-EFFORT `regression_rate` heuristic: any `project/*/fixes/*.md` bug
+// BEST-EFFORT `regression_rate` heuristic: any `project/<slug>/fixes/*.md` bug
 // report filed within 14 days of a quick run whose prose mentions one of
 // that run's `files:` is counted as a possible regression. This is a
 // file-path + date-window match, NOT a precise causal attribution — a fix
@@ -515,7 +515,7 @@ function cmdQuickStats(args) {
     regression_matches: regressionMatches.length,
     regression_rate: regressionRate,
     regression_rate_note:
-      'best-effort heuristic: file-path + 14-day window match against project/*/fixes/*.md prose, not precise causal attribution',
+      'best-effort heuristic: file-path + 14-day window match against project/<slug>/fixes/*.md prose, not precise causal attribution',
     weighted_learning_count: weightedLearningCount,
     runs: runs.map((r) => ({
       file: r.file,

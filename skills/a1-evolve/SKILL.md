@@ -51,7 +51,7 @@ globs in `workflows/01-collect.md` in the same commit (framework invariant 4).
 | 1 | `~/.claude/skills/<skill>/_learning.md` | Per-skill _learning.md caches — per-run retros with structured observations |
 | 2 | `.a1/phases/*/observations.jsonl` | Raw inline observations from agents during execution |
 | 3 | Learning stores `~/code/*/.a1/learnings/pattern/a1-learnings/*.md` | **Canonical learning stores** — synthesized per-skill retros, repo-local ONE PER PROJECT; collect reads ALL of them (glob over `~/code/*`), not just the current repo's. `A1_VAULT_ROOT` adds an optional external vault (e.g. Obsidian) |
-| 4 | a1-fix postmortems | Learning store `wiki/postmortems/` (detail) + promoted lessons in `wiki/lessons/`, plus the normalized retros a1-fix appends to `pattern/a1-learnings/a1-fix.md` |
+| 4 | a1-fix postmortems | Learning store `project/*/postmortems/` (detail) + promoted lessons in `pattern/a1-learnings/lessons/`, plus the normalized retros a1-fix appends to `pattern/a1-learnings/a1-fix.md` |
 
 **Not an input:** `~/.claude/skills/_shared/learnings-index.md` is an OUTPUT cache
 written by this skill after synthesis — it is never read as an input source.

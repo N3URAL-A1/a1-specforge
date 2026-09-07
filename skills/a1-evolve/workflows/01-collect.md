@@ -43,18 +43,18 @@ find ~/code -path "*/.a1/phases/*/observations.jsonl" 2>/dev/null | head -30
 Parse JSONL for granular pattern data not yet summarized in retros.
 
 ### 1c-bis. Read a1-fix postmortems (richest bug evidence — invariant 4)
-a1-fix keeps detail in `wiki/`-style stores AND appends normalized retros to the
+a1-fix keeps detail in the vault (project/*/postmortems/) AND appends normalized retros to the
 primary `pattern/a1-learnings/a1-fix.md` glob (read in 1a). Also collect the
 detail stores so the optimizer sees the full bug corpus:
 ```bash
-find ~/code/*/.a1/learnings/wiki/postmortems -name "*.md" 2>/dev/null | sort
-find ~/code/*/.a1/learnings/wiki/lessons -path "*_active.md" 2>/dev/null | sort
+find "$A1_VAULT_ROOT"/project/*/postmortems -name "*.md" 2>/dev/null | sort
+find "$A1_VAULT_ROOT"/pattern/a1-learnings/lessons -path "*_active.md" 2>/dev/null | sort
 [ -n "$A1_VAULT_ROOT" ] && find "$A1_VAULT_ROOT/wiki" -name "*.md" 2>/dev/null | sort
 ```
 Extract `root_cause_class`, `one_line_learning`, and terminal verdict per postmortem.
 These cluster alongside the pattern-tagged retros in Phase 2.
 
-**Read `type:` before counting.** `wiki/postmortems/` is not homogeneous: some
+**Read `type:` before counting.** `project/*/postmortems/` is not homogeneous: some
 projects file `type: feature-note` entries (shipped features, no defect) in the
 same directory. Counting files instead of reading their type inflates bug
 clusters — on 2026-08-02 this turned 7 real niimo bugs into a reported 19-strong

@@ -198,19 +198,26 @@ function cmdFixFindDuplicates(args) {
 
 // ---------- fix learning-loop subcommands ----------
 
+// Layout (7-Typen-IA der Vault, seit 2026-09-07): Postmortems liegen beim Projekt
+// unter project/<slug>/postmortems/, alles Lern-Maschinerie (Lock, Promote-State,
+// Lesson-Suggestions) unter pattern/a1-learnings/. Kein wiki/-Top-Level mehr.
 function postmortemsDir(projectSlug) {
   if (projectSlug) {
-    return path.join(vaultRoot(), 'wiki', 'postmortems', projectSlug);
+    return path.join(vaultRoot(), 'project', projectSlug, 'postmortems');
   }
-  return path.join(vaultRoot(), 'wiki', 'postmortems');
+  return path.join(vaultRoot(), 'project');
+}
+
+function learningsMachineryDir(...segments) {
+  return path.join(vaultRoot(), 'pattern', 'a1-learnings', ...segments);
 }
 
 function agentsLockPath() {
-  return path.join(vaultRoot(), 'wiki', '_canonical', 'agents.lock.json');
+  return learningsMachineryDir('_canonical', 'agents.lock.json');
 }
 
 function lastPromotePath() {
-  return path.join(vaultRoot(), 'wiki', '_state', 'last_promote.json');
+  return learningsMachineryDir('_state', 'last_promote.json');
 }
 
 function cmdFixIntegrityCheck(args) {
@@ -381,14 +388,14 @@ function cmdFixCountPostmortemsSince(args) {
   const sinceMs = new Date(sinceStr).getTime();
   if (isNaN(sinceMs)) usage(`invalid timestamp: ${sinceStr}`);
 
-  const root = path.join(vaultRoot(), 'wiki', 'postmortems');
+  const root = postmortemsDir();
   if (!fs.existsSync(root)) return { count: 0, since: sinceStr };
 
   let count = 0;
   const found = [];
   for (const projectDir of fs.readdirSync(root)) {
-    const pDir = path.join(root, projectDir);
-    if (!fs.statSync(pDir).isDirectory()) continue;
+    const pDir = path.join(root, projectDir, 'postmortems');
+    if (!fs.existsSync(pDir) || !fs.statSync(pDir).isDirectory()) continue;
     for (const entry of fs.readdirSync(pDir)) {
       if (!entry.endsWith('.md')) continue;
       const full = path.join(pDir, entry);
@@ -407,7 +414,7 @@ function cmdFixCountPostmortemsSince(args) {
 function cmdFixUpdatePromoteState(args) {
   const flags = parseFlags(args, { 'at': 'value' });
   const at = flags['at'] || nowIso();
-  const stateDir = path.join(vaultRoot(), 'wiki', '_state');
+  const stateDir = learningsMachineryDir('_state');
   if (!fs.existsSync(stateDir)) fs.mkdirSync(stateDir, { recursive: true });
   const p = lastPromotePath();
   const data = { last_promote_at: at, updated_at: nowIso() };
@@ -435,7 +442,7 @@ function cmdFixWriteSuggestion(args) {
   const date = new Date().toISOString().slice(0, 10);
   const slugTitle = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
   const filename = `${date}-${slugTitle}.md`;
-  const dir = path.join(vaultRoot(), 'wiki', 'lessons', agentName, '_suggestions');
+  const dir = learningsMachineryDir('lessons', agentName, '_suggestions');
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   const filePath = path.join(dir, filename);
   const content = `---

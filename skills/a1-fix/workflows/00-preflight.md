@@ -31,7 +31,7 @@ Tell the user:
 > Options:
 > 1. Run `node <repo>/_shared/a1-tools.cjs fix integrity-check` after every
 >    intentional agent edit — but NOT automatically; you must confirm it.
-> 2. Re-bootstrap the lock manually (delete `wiki/_canonical/agents.lock.json`) if
+> 2. Re-bootstrap the lock manually (delete `pattern/a1-learnings/_canonical/agents.lock.json`) if
 >    the changes were intentional.
 >
 > What should I do?"
@@ -46,8 +46,8 @@ Load project-specific patterns into context for Falk:
 # Learning store: defaults to repo-local .a1/learnings/; set A1_VAULT_ROOT for an external vault (e.g. Obsidian)
 VAULT="${A1_VAULT_ROOT:-$(git rev-parse --show-toplevel)/.a1/learnings}"
 # Read the project's pattern file if it exists
-cat "$VAULT/wiki/bug-patterns/<project-slug>.md"
-cat "$VAULT/wiki/bug-patterns/_cross-cutting.md"
+cat "$VAULT/project/<project-slug>/bug-patterns.md"
+cat "$VAULT/pattern/a1-learnings/bug-patterns/_cross-cutting.md"
 ```
 
 If either file doesn't exist: skip silently. Do not create it here.
@@ -70,7 +70,7 @@ node <repo>/_shared/a1-tools.cjs fix find-duplicates <project-slug> <kw1> <kw2> 
 Also search postmortems directly:
 
 ```bash
-grep -l "<symptom-keyword>" "$VAULT/wiki/postmortems/<project-slug>/"
+grep -l "<symptom-keyword>" "$VAULT/project/<project-slug>/postmortems/"
 ```
 
 If postmortems found with the same keyword: tell the user:
