@@ -82,7 +82,7 @@ node <repo>/_shared/a1-tools.cjs fix next-suffix <project-slug> $DATE
 The helper returns `{ suffix: "" | "-2" | "-3" | ... }`. Final filename:
 
 ```
-projects/<project-slug>/fixes/<YYYY-MM-DD>-<bug-slug><suffix>.md
+project/<project-slug>/fixes/<YYYY-MM-DD>-<bug-slug><suffix>.md
 ```
 
 ## Step 4 — Render the bug report
@@ -100,13 +100,13 @@ Read `~/.claude/skills/a1-fix/templates/bug-report-template.md` and substitute:
 If a duplicate-of relation was confirmed in Step 1, set `duplicate_of: <vault-path>`.
 
 Write the file via the Write tool to the absolute path
-`<vault-root>/projects/<project-slug>/fixes/<file>`.
+`<vault-root>/project/<project-slug>/fixes/<file>`.
 
 ## Step 5 — Confirm and hand off
 
 Tell the user:
 
-> "Bug report created: `projects/<slug>/fixes/<file>`. Status: reported,
+> "Bug report created: `project/<slug>/fixes/<file>`. Status: reported,
 > Severity: <severity>. Should I start Phase 2 (Diagnose with Falk)?"
 
 If yes: proceed to `02-diagnose.md`.

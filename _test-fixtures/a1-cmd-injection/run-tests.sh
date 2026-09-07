@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Regression fixture for the command-injection fix in _shared/a1-tools.cjs
-# (see .a1/learnings/projects/a1-specforge/fixes/2026-07-12-cmd-injection-git-helper.md).
+# (see .a1/learnings/project/a1-specforge/fixes/2026-07-12-cmd-injection-git-helper.md).
 #
 # All git exec sites now use execFileSync with an argv array (no shell), so
 # shell metacharacters in a hostile value are inert literal bytes. These
@@ -53,7 +53,7 @@ test_hostile_anchor() {
   marker="$work/pwned-anchor"
   vault="$work/vault"
   repo="$work/repo"
-  mkdir -p "$vault/projects/demo/spec" "$repo/src/auth"
+  mkdir -p "$vault/project/demo/spec" "$repo/src/auth"
 
   git -C "$repo" init -q
   printf 'export {};\n' > "$repo/src/auth/LoginForm.tsx"
@@ -63,7 +63,7 @@ test_hostile_anchor() {
   # Inline-code anchor with a command-substitution payload. It ends in a
   # known extension and contains a '/', so classifyAnchor() treats it as a
   # `kind: file` ref — this is exactly the shape from the bug report.
-  cat > "$vault/projects/demo/spec/001-login.md" <<EOF
+  cat > "$vault/project/demo/spec/001-login.md" <<EOF
 ---
 id: 001-login
 project: demo
@@ -85,7 +85,7 @@ EOF
 
   local out
   out=$(A1_VAULT_ROOT="$vault" node "$TOOLS" reconcile parse-spec \
-    "projects/demo/drift-2026-05-13.md" 2>&1)
+    "project/demo/drift-2026-05-13.md" 2>&1)
   local rc=$?
 
   # The command must not create the marker file (no RCE), regardless of
@@ -198,15 +198,15 @@ test_set_size() {
   local work
   work="$(mktemp -d)"
   local vault="$work/vault"
-  mkdir -p "$vault/projects/demo/spec"
+  mkdir -p "$vault/project/demo/spec"
   printf -- '---\nid: 001-demo\nstatus: draft\nsize: null\n---\n\n# Demo\n' \
-    > "$vault/projects/demo/spec/001-demo.md"
+    > "$vault/project/demo/spec/001-demo.md"
 
   local out rc
   out=$(A1_VAULT_ROOT="$vault" node "$TOOLS" spec set-size \
-    "projects/demo/spec/001-demo.md" 'S; touch '"$work"'/pwned' 2>&1)
+    "project/demo/spec/001-demo.md" 'S; touch '"$work"'/pwned' 2>&1)
   rc=$?
-  if [[ $rc -eq 1 && ! -e "$work/pwned" ]] && ! grep -q '^size: S;' "$vault/projects/demo/spec/001-demo.md"; then
+  if [[ $rc -eq 1 && ! -e "$work/pwned" ]] && ! grep -q '^size: S;' "$vault/project/demo/spec/001-demo.md"; then
     results+=("PASS  [set-size-hostile] injection-shaped size rejected (exit 1, file untouched)")
     pass=$((pass + 1))
   else
@@ -215,9 +215,9 @@ test_set_size() {
   fi
 
   out=$(A1_VAULT_ROOT="$vault" node "$TOOLS" spec set-size \
-    "projects/demo/spec/001-demo.md" S 2>&1)
+    "project/demo/spec/001-demo.md" S 2>&1)
   rc=$?
-  if [[ $rc -eq 0 ]] && grep -q '^size: S$' "$vault/projects/demo/spec/001-demo.md"; then
+  if [[ $rc -eq 0 ]] && grep -q '^size: S$' "$vault/project/demo/spec/001-demo.md"; then
     results+=("PASS  [set-size-valid] size S written to frontmatter (exit 0)")
     pass=$((pass + 1))
   else

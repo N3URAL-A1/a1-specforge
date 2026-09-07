@@ -427,8 +427,8 @@ make_repo "$REPO"
 echo ".a1/learnings/" >> "$REPO/.gitignore"
 git -C "$REPO" add .gitignore
 git -C "$REPO" -c commit.gpgsign=false commit -q -m "add gitignore"
-mkdir -p "$REPO/.a1/learnings/projects/demo-slug/spec"
-echo "spec content" > "$REPO/.a1/learnings/projects/demo-slug/spec/x.md"
+mkdir -p "$REPO/.a1/learnings/project/demo-slug/spec"
+echo "spec content" > "$REPO/.a1/learnings/project/demo-slug/spec/x.md"
 
 OUT=$(node "$TOOLS" worktree prepare "$REPO" feat-learnings 2>&1)
 ID=$(extract_field id "$OUT")
@@ -437,7 +437,7 @@ EX=$?
 assert_eq "learnings-mirror-enter-exit" "0" "$EX"
 
 WT="$WORK/a1-worktrees/feat-learnings"
-MIRRORED="$WT/.a1/learnings/projects/demo-slug/spec/x.md"
+MIRRORED="$WT/.a1/learnings/project/demo-slug/spec/x.md"
 if [[ -f "$MIRRORED" ]]; then
   results+=("PASS  learnings-mirror-file-exists")
   pass=$((pass + 1))
@@ -445,7 +445,7 @@ else
   results+=("FAIL  learnings-mirror-file-exists  $MIRRORED missing")
   fail=$((fail + 1))
 fi
-if diff -q "$REPO/.a1/learnings/projects/demo-slug/spec/x.md" "$MIRRORED" >/dev/null 2>&1; then
+if diff -q "$REPO/.a1/learnings/project/demo-slug/spec/x.md" "$MIRRORED" >/dev/null 2>&1; then
   results+=("PASS  learnings-mirror-content-identical")
   pass=$((pass + 1))
 else
@@ -478,8 +478,8 @@ fi
 # ----------------------------------------------------------------------------
 REPO="$WORK/repo13"
 make_repo "$REPO"
-mkdir -p "$REPO/.a1/learnings/projects/demo-slug/spec"
-echo "v1" > "$REPO/.a1/learnings/projects/demo-slug/spec/x.md"
+mkdir -p "$REPO/.a1/learnings/project/demo-slug/spec"
+echo "v1" > "$REPO/.a1/learnings/project/demo-slug/spec/x.md"
 
 OUT=$(node "$TOOLS" worktree prepare "$REPO" feat-idempotent 2>&1)
 ID=$(extract_field id "$OUT")
@@ -489,14 +489,14 @@ node "$TOOLS" worktree enter "$ID" >/dev/null 2>&1
 # directly (worktree enter itself refuses a non-"prepared" entry by design —
 # the idempotency guarantee under test is copyDirRecursive's overwrite
 # behavior, exercised the same way cmdWorktreeEnter invokes it).
-echo "v2" > "$REPO/.a1/learnings/projects/demo-slug/spec/x.md"
+echo "v2" > "$REPO/.a1/learnings/project/demo-slug/spec/x.md"
 node -e "
 const { copyDirRecursive } = require('$REPO_ROOT/_shared/lib/io.cjs');
 copyDirRecursive('$REPO/.a1/learnings', '$WORK/a1-worktrees/feat-idempotent/.a1/learnings');
 "
 EX=$?
 assert_eq "learnings-idempotent-rerun-exit" "0" "$EX"
-CONTENT=$(cat "$WORK/a1-worktrees/feat-idempotent/.a1/learnings/projects/demo-slug/spec/x.md")
+CONTENT=$(cat "$WORK/a1-worktrees/feat-idempotent/.a1/learnings/project/demo-slug/spec/x.md")
 assert_eq "learnings-idempotent-overwritten" "v2" "$CONTENT"
 
 # ----------------------------------------------------------------------------

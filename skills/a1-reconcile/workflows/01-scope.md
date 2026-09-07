@@ -17,7 +17,7 @@ If the user didn't say it explicitly, ask (one question per turn):
 | Mode | Required inputs | How to resolve |
 |---|---|---|
 | `single` | project slug + spec id (`<###>-<slug>`) | Ask if missing; verify spec file exists |
-| `project` | project slug | List `projects/<slug>/spec/*.md`, filter `status: clarified` or `status: shipped` |
+| `project` | project slug | List `project/<slug>/spec/*.md`, filter `status: clarified` or `status: shipped` |
 | `vault-sync` | — | Scan `$A1_VAULT_ROOT/projects/*/spec/` (default: repo-local `.a1/learnings/`) |
 
 For `single`/`project`, confirm the absolute repo path of the project (where
@@ -35,8 +35,8 @@ node <repo>/_shared/a1-tools.cjs reconcile next-slot \
   <project-slug-or-_vault-sync> [--date YYYY-MM-DD]
 ```
 
-Returns the relative path (e.g. `projects/<slug>/drift-2026-05-13.md` or
-`projects/<slug>/drift-2026-05-13-2.md`).
+Returns the relative path (e.g. `project/<slug>/drift-2026-05-13.md` or
+`project/<slug>/drift-2026-05-13-2.md`).
 
 Then init the report:
 

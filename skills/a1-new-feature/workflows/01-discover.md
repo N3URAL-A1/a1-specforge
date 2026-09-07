@@ -12,7 +12,7 @@ spec file with bullet-point answers to ten mandatory topics. No formal spec yet.
 Ask the user which project this feature belongs to and a short kebab-case slug
 for the feature. Example: project `my-project`, slug `meal-swap-history`.
 
-If the project has no `projects/<slug>/spec/` directory yet, create it via the helper before
+If the project has no `project/<slug>/spec/` directory yet, create it via the helper before
 the next step.
 
 ## Step 2 — Create spec file from template
@@ -31,7 +31,7 @@ Then `Read` the template `~/.claude/skills/a1-new-feature/templates/spec-templat
 - `created`: today's date (YYYY-MM-DD)
 - Title: working title from the user
 
-Write to `projects/<project-slug>/spec/<###>-<feature-slug>.md` (relative to vault root).
+Write to `project/<project-slug>/spec/<###>-<feature-slug>.md` (relative to vault root).
 
 ## Step 2b — XS eligibility check
 

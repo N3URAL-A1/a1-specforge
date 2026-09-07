@@ -76,7 +76,7 @@ Known drift to avoid: `lane-split-check` is not an id, `lane-split` is;
 
 `a1-quick` (spec `004-xs-quick-lane`, FR-020) does NOT write a separate
 `_learning.md`/store entry in the format above. Its run-record file
-(`projects/<slug>/quick/<YYYY-MM-DD>-<slug>.md`, FR-015) already carries a
+(`project/<slug>/quick/<YYYY-MM-DD>-<slug>.md`, FR-015) already carries a
 one-line `retro:` frontmatter field, written as part of the same run that
 produces the rest of the record. For `kind: quick-run` entries, that single
 field **is** the complete retro contract — not a summary of a fuller entry

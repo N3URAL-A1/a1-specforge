@@ -25,7 +25,7 @@ const { appendPhaseHistory } = require('./spec.cjs');
 // ---------- reconcile subcommands ----------
 //
 // Spec-vs-code drift detection. Owns drift reports in the vault under
-// projects/<slug>/drift-<YYYY-MM-DD>[-N].md (or projects/_vault-sync/... for
+// project/<slug>/drift-<YYYY-MM-DD>[-N].md (or project/_vault-sync/... for
 // vault-sync mode). The CLI handles deterministic operations: slot
 // calculation, spec parsing (Acceptance-Criteria anchor extraction),
 // frontmatter updates, drift append, listing. Sub-agent probing happens in
@@ -71,7 +71,7 @@ function cmdReconcileNextSlot(args) {
 
 function listProjectSpecs(projectSlug) {
   // Returns array of { feature_id, abs, rel, fm } for every spec under
-  // projects/<slug>/spec/. feature_id is the filename without .md.
+  // project/<slug>/spec/. feature_id is the filename without .md.
   const dir = projectsPath(projectSlug, 'spec');
   const out = [];
   if (!fs.existsSync(dir)) return out;
@@ -79,7 +79,7 @@ function listProjectSpecs(projectSlug) {
     if (!entry.endsWith('.md')) continue;
     const featureId = entry.slice(0, -3);
     const abs = path.join(dir, entry);
-    const rel = `projects/${projectSlug}/spec/${entry}`;
+    const rel = `project/${projectSlug}/spec/${entry}`;
     let fm = {};
     try {
       const parsed = readMd(abs);
@@ -126,7 +126,7 @@ function cmdReconcileInit(args) {
   // Resolve scope_targets.
   const scopeTargets = [];
   if (scope === 'single') {
-    const specRel = `projects/${projectSlug}/spec/${flags.spec}.md`;
+    const specRel = `project/${projectSlug}/spec/${flags.spec}.md`;
     const specAbs = path.join(vaultRoot(), specRel);
     scopeTargets.push(
       `project=${projectSlug}; spec=${flags.spec}; spec_path=${specRel}; repo_path=${flags['project-path'] || ''}`
@@ -144,8 +144,8 @@ function cmdReconcileInit(args) {
       );
     }
   } else {
-    // vault-sync: list every projects/<slug>/spec/ in the vault.
-    const projectsRoot = path.join(vaultRoot(), 'projects');
+    // vault-sync: list every project/<slug>/spec/ in the vault.
+    const projectsRoot = path.join(vaultRoot(), 'project');
     if (fs.existsSync(projectsRoot)) {
       for (const entry of fs.readdirSync(projectsRoot).sort()) {
         if (entry.startsWith('_')) continue;

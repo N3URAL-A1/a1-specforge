@@ -81,7 +81,7 @@ Spec-Drift:
 - EXTRA:   <N> behaviors in code not in spec
 - DIVERGED: <N> behaviors that differ
 
-Full gap list: `projects/<slug>/modernize/<date>/reverse-spec.md`
+Full gap list: `project/<slug>/modernize/<date>/reverse-spec.md`
 ```
 
 ## Step 4 — spec-only end state
@@ -92,7 +92,7 @@ If mode is `spec-only`:
 Spec-only run complete.
 
 The reverse-spec and gap analysis are in the Vault:
-→ `projects/<slug>/modernize/<date>/reverse-spec.md`
+→ `project/<slug>/modernize/<date>/reverse-spec.md`
 
 Recommendations for next steps:
 ```

@@ -9,8 +9,8 @@ description: >
   and ALL deterministic gates in compact form (mini-spec, 3-question clarify,
   single-wave plan, one checkpoint) — small changes stay cheap without
   skipping the pipeline. Specs are stored repo-local (external vault via
-  `A1_VAULT_ROOT`, e.g. Obsidian) under projects/<slug>/spec/<###>-<feature-slug>.md,
-  wave plans under projects/<slug>/plans/.
+  `A1_VAULT_ROOT`, e.g. Obsidian) under project/<slug>/spec/<###>-<feature-slug>.md,
+  wave plans under project/<slug>/plans/.
   MUST trigger when the user says: "new feature for <project>" (alias: "neues Feature für
   <projekt>"), "spec for <project>" (alias: "spec für <projekt>"), "feature pipeline",
   "a1-new-feature", "create a new feature" (alias: "neues Feature anlegen"), "feature from
@@ -155,8 +155,8 @@ product-docs layer). Concrete insertion points in this skill:
   node <repo>/_shared/a1-tools.cjs product feature-init \
     --project <slug> --id <###-feature-slug> --milestone <m-slug> \
     --title "<short title>" \
-    [--spec-path "projects/<slug>/spec/<###>-<feature-slug>.md"] \
-    [--plan-path "projects/<slug>/plans/<###>-<feature-slug>-wave-plan.md"]
+    [--spec-path "project/<slug>/spec/<###>-<feature-slug>.md"] \
+    [--plan-path "project/<slug>/plans/<###>-<feature-slug>-wave-plan.md"]
   ```
 
   Skip this call entirely if the project has no `docs/product/` directory yet
@@ -308,7 +308,7 @@ string-replace on the file:
 
 ```bash
 node <repo>/_shared/a1-tools.cjs spec update-status \
-  "projects/<slug>/spec/<###>-<feature-slug>.md" <new-status>
+  "project/<slug>/spec/<###>-<feature-slug>.md" <new-status>
 ```
 
 The helper performs an atomic frontmatter rewrite (read → modify → write-temp → rename) and
@@ -318,8 +318,8 @@ appends a `phase_history` entry with the completion timestamp.
 
 All artifacts default repo-local; external vault via `A1_VAULT_ROOT` (e.g. Obsidian):
 
-- Specs: `projects/<slug>/spec/<###>-<feature-slug>.md`
-- Wave plans: `projects/<slug>/plans/<###>-<feature-slug>-wave-plan.md`
+- Specs: `project/<slug>/spec/<###>-<feature-slug>.md`
+- Wave plans: `project/<slug>/plans/<###>-<feature-slug>-wave-plan.md`
 
 The `<###>` sequence is per-project, zero-padded to 3 digits, monotonically increasing.
 Cancelled specs keep their number; the helper picks the next unused number via glob.

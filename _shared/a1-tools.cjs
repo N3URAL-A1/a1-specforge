@@ -34,7 +34,7 @@
  *
  *   a1-tools fix find-duplicates <project-slug> <symptom-keywords...>
  *       → JSON { project, window_days: 30, matches: [...] }
- *         grep over projects/<slug>/fixes/*.md within 30 days, case-insensitive.
+ *         grep over project/<slug>/fixes/*.md within 30 days, case-insensitive.
  *
  *   a1-tools fix integrity-check [--agents-dir <abs>] [--skills-dir <abs>]
  *       → JSON { status: "ok"|"mismatch"|"bootstrapped", mismatches: [], files_checked }

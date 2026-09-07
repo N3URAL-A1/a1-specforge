@@ -90,8 +90,8 @@ a1b2c3d feat(payments): ship stripe checkout (002-payments)
 EOF
 
 # --- rung (c): spec frontmatter status=done ---
-mkdir -p "$A_ROOT/.a1/learnings/projects/synthetic-project/spec"
-cat > "$A_ROOT/.a1/learnings/projects/synthetic-project/spec/003-notifications.md" <<'EOF'
+mkdir -p "$A_ROOT/.a1/learnings/project/synthetic-project/spec"
+cat > "$A_ROOT/.a1/learnings/project/synthetic-project/spec/003-notifications.md" <<'EOF'
 ---
 id: 003-notifications
 project: synthetic-project
@@ -116,7 +116,7 @@ EOF
 # ladder would read them (proxy for "the ladder rungs are queryable").
 assert_true "rung-a-verification-present" "$([[ -f "$A_ROOT/.a1/phases/M1-P1-auth/VERIFICATION.md" ]] && grep -q 'PASS' "$A_ROOT/.a1/phases/M1-P1-auth/VERIFICATION.md" && echo true || echo false)"
 assert_true "rung-b-merged-commit-evidence-present" "$(grep -q '002-payments' "$A_ROOT/.git-sim/log.txt" && echo true || echo false)"
-assert_true "rung-c-spec-status-done-present" "$(grep -q 'status: done' "$A_ROOT/.a1/learnings/projects/synthetic-project/spec/003-notifications.md" && echo true || echo false)"
+assert_true "rung-c-spec-status-done-present" "$(grep -q 'status: done' "$A_ROOT/.a1/learnings/project/synthetic-project/spec/003-notifications.md" && echo true || echo false)"
 assert_true "weaker-evidence-not-auto-derivable" "$(grep -q 'TODO' "$A_ROOT/.a1/phases/M1-P2-reporting/GOAL.md" && echo true || echo false)"
 
 # --- Adopt-style CLI sequence: derived-done features get `product stage

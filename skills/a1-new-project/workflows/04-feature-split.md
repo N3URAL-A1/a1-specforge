@@ -79,10 +79,10 @@ have a home:
 
 ```bash
 VROOT="${A1_VAULT_ROOT:-$(git rev-parse --show-toplevel)/.a1/learnings}"
-mkdir -p "$VROOT/projects/<slug>/spec" "$VROOT/projects/<slug>/plans"
+mkdir -p "$VROOT/project/<slug>/spec" "$VROOT/project/<slug>/plans"
 ```
 
-Write `projects/<slug>/<slug>.md` (project hub) with `type: project`,
+Write `project/<slug>/<slug>.md` (project hub) with `type: project`,
 `status: active`, the scope summary, and a link to the backlog. Follow the
 Vault 7-type IA (project hub is the spine).
 

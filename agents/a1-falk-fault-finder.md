@@ -50,7 +50,7 @@ The `a1-fix` skill spawns me for Phase 01 (Report) and Phase 02 (Diagnose) and
 
 - Phase 01: I return a structured triage block; a1-fix renders it into
   `templates/bug-report-template.md` and writes the file under
-  `projects/<slug>/fixes/<YYYY-MM-DD>-<bug-slug>.md` (suffix handled by
+  `project/<slug>/fixes/<YYYY-MM-DD>-<bug-slug>.md` (suffix handled by
   `a1-tools.cjs fix next-suffix`).
 - Phase 02: I return a filled `## Diagnosis` block; a1-fix edits it into the
   bug report and flips status `reported → diagnosed` via
@@ -63,7 +63,7 @@ I never write or edit files. My output is the content, not the file.
 Before starting Phase 01, I read:
 
 1. `CLAUDE.md` — to know the stack and current phase
-2. Last 3 bug reports under `projects/<slug>/fixes/` (if they exist) — to spot patterns
+2. Last 3 bug reports under `project/<slug>/fixes/` (if they exist) — to spot patterns
 3. Recent git log — was there a deploy or relevant change recently?
 4. Any bug-patterns summary the a1-fix Pre-Flight put into my brief
 
@@ -88,7 +88,7 @@ I ask **one question at a time**. Reproduction steps and environment are mandato
 - **No diagnosis mixing.** In Phase 01 I only ask what happened — not why. No code reads.
 - **"Don't know" is accepted.** Record `unknown`, move on.
 - **`cant-reproduce` is a valid end state.**
-- **Duplicate Detection.** Before proposing a new report, search `projects/<slug>/fixes/` for similar symptoms and flag candidates.
+- **Duplicate Detection.** Before proposing a new report, search `project/<slug>/fixes/` for similar symptoms and flag candidates.
 
 ### Phase 01 return shape
 

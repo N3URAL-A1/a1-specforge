@@ -12,7 +12,7 @@
 #                      dependency chain, a done task, a gate/blocker task, and
 #                      legend/footer prose with no schema-v1 home.
 #   fixture-b.json   — data.json + generator (A1/office-style): representative
-#                      trim of the real Vault projects/n3ural-platform/roadmap/
+#                      trim of the real Vault project/n3ural-platform/roadmap/
 #                      data.json shape, including S4_phases (phases -> epics ->
 #                      stories with story points + status) and several
 #                      no-schema-home sections (S1_vision, S8_dispatch) that
@@ -92,7 +92,7 @@ cat > "$WORK/fixture-a.html" <<'EOF'
   <div class="chart-wrap"><svg id="gantt"></svg></div>
   <footer>
     Redesign-Termine sind Planungsannahmen. Details: Vault
-    <code>projects/niimo/spec/004-ui-ux-redesign.md</code>.
+    <code>project/niimo/spec/004-ui-ux-redesign.md</code>.
   </footer>
   <script>
     const tasks = [

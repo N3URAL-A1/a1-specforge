@@ -10,7 +10,7 @@ description: >
   (scoped → spec-drafted → gap-analyzed → proposals-pending → planned →
   executing → published). Output stored repo-local (external vault via
   `A1_VAULT_ROOT`, e.g. Obsidian):
-  projects/<slug>/modernize/<YYYY-MM-DD>-<focus>[-N].md.
+  project/<slug>/modernize/<YYYY-MM-DD>-<focus>[-N].md.
   MUST trigger on: "modernize <project>", "clean up an old codebase" (alias:
   "alte Codebase aufräumen"), "derive specs" (alias: "specs ableiten"),
   "reverse-spec", "what does this app do" (alias: "was tut diese App"), "code
@@ -123,7 +123,7 @@ All state is in YAML frontmatter of the master file. Update via CLI only:
 
 ```bash
 node <repo>/_shared/a1-tools.cjs modernize update-status \
-  "projects/<slug>/modernize/<YYYY-MM-DD>-<focus>.md" <new-status> \
+  "project/<slug>/modernize/<YYYY-MM-DD>-<focus>.md" <new-status> \
   [--phase-data '<json>']
 ```
 
@@ -155,7 +155,7 @@ node <repo>/_shared/a1-tools.cjs modernize verify-parity "<master-path>"
 ## Storage
 
 All artifacts default repo-local; external vault via `A1_VAULT_ROOT` (e.g. Obsidian):
-- Master file: `projects/<slug>/modernize/<YYYY-MM-DD>-<focus>[-N].md`
+- Master file: `project/<slug>/modernize/<YYYY-MM-DD>-<focus>[-N].md`
 - Wave artifacts in repo: `.a1/phases/<modernize-slug>/waves/wave-NN.md`
 
 Learning store defaults to repo-local `.a1/learnings/`; set `A1_VAULT_ROOT` to use an external vault (e.g. Obsidian).

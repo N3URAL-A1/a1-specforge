@@ -62,7 +62,7 @@ Follow the shape from `~/.claude/skills/a1-analyze/templates/report-sections.md`
 This is the user-facing handoff. Strict format:
 
 ```
-Analysis complete: projects/<slug>/analyses/<file>
+Analysis complete: project/<slug>/analyses/<file>
 
 Findings:
 • <n> BLOCKER — <one-line summary of biggest BLOCKER>
@@ -80,8 +80,8 @@ What would you like to do? (1 / 2 / 3 / nothing)
 ## Step 5 — Wait for the user's decision
 
 Do NOT auto-activate any follow-up skill. The hard rule applies:
-- Skill writes nothing in `projects/<slug>/fixes/`
-- Skill writes nothing in `projects/<slug>/features/`
+- Skill writes nothing in `project/<slug>/fixes/`
+- Skill writes nothing in `project/<slug>/features/`
 - Skill does not invoke `a1-fix` or `a1-new-feature`
 
 When the user picks an option, formulate the next prompt:

@@ -6,7 +6,7 @@ description: >
   Scope → Discover → Analyze → Synthesize → Report. State in the analysis file
   frontmatter (scoped → discovered → analyzed → synthesized → reported). Output
   is stored repo-local (external vault via `A1_VAULT_ROOT`, e.g. Obsidian):
-  projects/<slug>/analyses/<YYYY-MM-DD>-<focus>[-N].md.
+  project/<slug>/analyses/<YYYY-MM-DD>-<focus>[-N].md.
   Five focus modes: general, security, architecture, quality, onboarding. MUST
   trigger on: "analyze <project>" (alias: "analysiere <projekt>"),
   "project audit" (alias: "projekt-audit"), "codebase overview" (alias:
@@ -108,7 +108,7 @@ shared CLI helper, never with raw string-replace on the file:
 
 ```bash
 node <repo>/_shared/a1-tools.cjs analyze update-status \
-  "projects/<slug>/analyses/<YYYY-MM-DD>-<focus>.md" <new-status> \
+  "project/<slug>/analyses/<YYYY-MM-DD>-<focus>.md" <new-status> \
   [--phase-data '<json>']
 ```
 
@@ -127,7 +127,7 @@ node <repo>/_shared/a1-tools.cjs analyze add-finding \
 
 All artifacts default repo-local; external vault via `A1_VAULT_ROOT` (e.g. Obsidian):
 
-- Analyses: `projects/<slug>/analyses/<YYYY-MM-DD>-<focus>[-N].md`
+- Analyses: `project/<slug>/analyses/<YYYY-MM-DD>-<focus>[-N].md`
 
 Suffixes `-2`, `-3` are appended for second, third, ... analyses of the same
 focus on the same day. The helper `analyze next-slot` returns the next free slot.
@@ -188,7 +188,7 @@ into code.
   Self-learning loop section for the canonical statement — do not skip it.
 - Auto-dispatch in Phase 3 is allowed because sub-agents are read-only. No user
   approval needed before each dispatch.
-- The skill NEVER writes into `projects/<slug>/fixes/` or `projects/<slug>/features/`.
+- The skill NEVER writes into `project/<slug>/fixes/` or `project/<slug>/features/`.
 - The skill NEVER auto-activates `a1-fix` or `a1-new-feature`. It proposes;
   the user decides.
 - User-facing output language: see `_shared/language-policy.md` (artifacts English,

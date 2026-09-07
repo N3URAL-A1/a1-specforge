@@ -10,7 +10,7 @@ by editing frontmatter directly:
 
 ```bash
 node <repo>/_shared/a1-tools.cjs spec set-size \
-  "projects/<slug>/spec/<###>-<feature-slug>.md" <S|M|L>
+  "project/<slug>/spec/<###>-<feature-slug>.md" <S|M|L>
 ```
 
 On `size: S`, Rene's brief below shrinks accordingly (mini-spec: 1–2 FRs with

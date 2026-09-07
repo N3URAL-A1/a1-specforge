@@ -62,7 +62,7 @@ node <repo>/_shared/a1-tools.cjs analyze init <project-slug> <focus> \
 
 The helper:
 - Computes the next free slot (`<YYYY-MM-DD>-<focus>[-N].md`) under
-  `projects/<slug>/analyses/`
+  `project/<slug>/analyses/`
 - Creates the directory if needed
 - Writes the file atomically with initial frontmatter and body scaffolding
 - Returns JSON with the absolute path
@@ -73,7 +73,7 @@ Parse the JSON, capture the path.
 
 Tell the user:
 
-> "Analysis created: `projects/<slug>/analyses/<file>`.
+> "Analysis created: `project/<slug>/analyses/<file>`.
 >  Focus: `<focus>`. Local path: `<analyzed_path>`.
 >  
 >  Should I start Phase 2 (Discover — scan tech stack, deterministic, fast)?"

@@ -25,7 +25,7 @@ const {
 // ---------- modernize subcommands ----------
 //
 // Brownfield modernization pipeline. Owns master files in the vault under
-// projects/<slug>/modernize/<YYYY-MM-DD>-<mode>[-N].md. The CLI handles
+// project/<slug>/modernize/<YYYY-MM-DD>-<mode>[-N].md. The CLI handles
 // deterministic operations: slot calculation, frontmatter updates, proposal
 // management, wave lifecycle, parity snapshot, listing. Sub-agents do the
 // thinking in the skill phases.
@@ -560,7 +560,7 @@ function cmdModernizeList(args) {
   const flags = parseFlags(args, { status: 'value', slug: 'value' });
   const projectSlug = flags.slug || flags._[0];
   const results = [];
-  const projectsRoot = path.join(vaultRoot(), 'projects');
+  const projectsRoot = path.join(vaultRoot(), 'project');
   if (!fs.existsSync(projectsRoot)) return { count: 0, runs: [] };
   const slugs = projectSlug
     ? [projectSlug]

@@ -8,7 +8,7 @@
 #
 # Fixture strategy for the niimo reproduction (documented per task
 # instructions): the real niimo repo and its Vault analysis file
-# (`~/N3URAL-Vault/projects/niimo/analyses/2026-07-05-general.md`) are NEVER
+# (`~/N3URAL-Vault/project/niimo/analyses/2026-07-05-general.md`) are NEVER
 # read or written by this script. A trimmed, self-contained VENDORED copy of
 # the 31 findings' `id`/`severity`/`category` fields (the only three fields
 # `readAnalysisForPublish` consumes) lives at

@@ -364,9 +364,9 @@ function cmdQuickEligibility(args) {
 
 // ---------------------------------------------------------------------------
 // quick stats — a1-evolve telemetry report (FR-018, spec 004-xs-quick-lane
-// Wave 5). Reads every `projects/*/quick/*.md` run-record under the resolved
+// Wave 5). Reads every `project/*/quick/*.md` run-record under the resolved
 // learnings root and reports `escalation_rate` (escalated / total) plus a
-// BEST-EFFORT `regression_rate` heuristic: any `projects/*/fixes/*.md` bug
+// BEST-EFFORT `regression_rate` heuristic: any `project/*/fixes/*.md` bug
 // report filed within 14 days of a quick run whose prose mentions one of
 // that run's `files:` is counted as a possible regression. This is a
 // file-path + date-window match, NOT a precise causal attribution — a fix
@@ -381,13 +381,13 @@ function cmdQuickEligibility(args) {
 const REGRESSION_WINDOW_DAYS = 14;
 const REGRESSION_WINDOW_MS = REGRESSION_WINDOW_DAYS * 24 * 60 * 60 * 1000;
 
-/** List every `projects/<slug>/quick/*.md` run-record under the resolved
+/** List every `project/<slug>/quick/*.md` run-record under the resolved
  * learnings root, across every project — mirrors the glob convention used
  * elsewhere in this codebase for per-project directories (e.g.
  * `checklistPaths`/`projectsPath` in io.cjs), except this walks ALL project
  * slugs rather than one, since a1-evolve aggregates across the whole store. */
 function listQuickRunFiles(root) {
-  const projectsDir = path.join(root, 'projects');
+  const projectsDir = path.join(root, 'project');
   if (!fs.existsSync(projectsDir)) return [];
   const slugs = fs
     .readdirSync(projectsDir)
@@ -398,18 +398,18 @@ function listQuickRunFiles(root) {
     if (!fs.existsSync(quickDir)) continue;
     for (const f of fs.readdirSync(quickDir)) {
       if (f.endsWith('.md')) {
-        files.push({ slug, abs: path.join(quickDir, f), rel: `projects/${slug}/quick/${f}` });
+        files.push({ slug, abs: path.join(quickDir, f), rel: `project/${slug}/quick/${f}` });
       }
     }
   }
   return files;
 }
 
-/** List every `projects/<slug>/fixes/*.md` bug report under the resolved
+/** List every `project/<slug>/fixes/*.md` bug report under the resolved
  * learnings root, across every project — same per-project glob shape as
  * listQuickRunFiles, used only for the regression_rate cross-reference. */
 function listFixReportFiles(root) {
-  const projectsDir = path.join(root, 'projects');
+  const projectsDir = path.join(root, 'project');
   if (!fs.existsSync(projectsDir)) return [];
   const slugs = fs
     .readdirSync(projectsDir)
@@ -420,7 +420,7 @@ function listFixReportFiles(root) {
     if (!fs.existsSync(fixesDir)) continue;
     for (const f of fs.readdirSync(fixesDir)) {
       if (f.endsWith('.md')) {
-        files.push({ slug, abs: path.join(fixesDir, f), rel: `projects/${slug}/fixes/${f}` });
+        files.push({ slug, abs: path.join(fixesDir, f), rel: `project/${slug}/fixes/${f}` });
       }
     }
   }
@@ -515,7 +515,7 @@ function cmdQuickStats(args) {
     regression_matches: regressionMatches.length,
     regression_rate: regressionRate,
     regression_rate_note:
-      'best-effort heuristic: file-path + 14-day window match against projects/*/fixes/*.md prose, not precise causal attribution',
+      'best-effort heuristic: file-path + 14-day window match against project/*/fixes/*.md prose, not precise causal attribution',
     weighted_learning_count: weightedLearningCount,
     runs: runs.map((r) => ({
       file: r.file,

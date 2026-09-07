@@ -732,7 +732,7 @@ fi
 # =============================================================================
 # Wave 5 — Learning-loop wiring: `quick stats` CLI report (FR-018) + weighted
 # learning count math (FR-019). Case class: `quick stats` reads
-# `projects/*/quick/*.md` run-record frontmatter under an isolated
+# `project/*/quick/*.md` run-record frontmatter under an isolated
 # A1_VAULT_ROOT (mktemp, never the live repo store) and reports
 # escalation_rate/regression_rate; the weighted-count math is checked as a
 # standalone node -e case.
@@ -759,9 +759,9 @@ assert_rc "quick-stats-empty-store-null-rates" 0 "$EMPTY_CHECK_RC" "$OUT"
 # --- (2) seed a mix of completed/escalated quick-run records -> correct
 # escalation_rate, plus one fix report matching one run's file inside the
 # 14-day window -> regression_rate reflects that one match.
-mkdir -p "$STATS_VAULT/projects/demo/quick" "$STATS_VAULT/projects/demo/fixes"
+mkdir -p "$STATS_VAULT/project/demo/quick" "$STATS_VAULT/project/demo/fixes"
 
-cat > "$STATS_VAULT/projects/demo/quick/2026-07-01-fix-footer.md" <<'MDEOF'
+cat > "$STATS_VAULT/project/demo/quick/2026-07-01-fix-footer.md" <<'MDEOF'
 ---
 type: quick-run
 kind: fix
@@ -781,7 +781,7 @@ retro: "clean XS run"
 # Quick Run — fix-footer
 MDEOF
 
-cat > "$STATS_VAULT/projects/demo/quick/2026-07-03-fix-util.md" <<'MDEOF'
+cat > "$STATS_VAULT/project/demo/quick/2026-07-03-fix-util.md" <<'MDEOF'
 ---
 type: quick-run
 kind: fix
@@ -801,7 +801,7 @@ retro: "clean XS run, no regressions seen"
 # Quick Run — fix-util
 MDEOF
 
-cat > "$STATS_VAULT/projects/demo/quick/2026-07-05-add-toggle.md" <<'MDEOF'
+cat > "$STATS_VAULT/project/demo/quick/2026-07-05-add-toggle.md" <<'MDEOF'
 ---
 type: quick-run
 kind: feature
@@ -824,7 +824,7 @@ MDEOF
 # Fix report filed 3 days after fix-footer's quick run, mentioning the same
 # file -> counts as a regression match for fix-footer (inside the 14-day
 # window). fix-util and add-toggle have no matching fix report.
-cat > "$STATS_VAULT/projects/demo/fixes/2026-07-04-footer-regressed.md" <<'MDEOF'
+cat > "$STATS_VAULT/project/demo/fixes/2026-07-04-footer-regressed.md" <<'MDEOF'
 ---
 type: bug-report
 project: demo
@@ -873,9 +873,9 @@ assert_rc "quick-stats-seeded-store-rates-correct" 0 "$SEEDED_CHECK_RC" "$OUT"
 
 # --- (3) weighted-count math: 5 quick-run records -> weighted count 1.0, not 5.
 WEIGHT_VAULT="$WORK/quick-weight-vault"
-mkdir -p "$WEIGHT_VAULT/projects/demo/quick"
+mkdir -p "$WEIGHT_VAULT/project/demo/quick"
 for i in 1 2 3 4 5; do
-  cat > "$WEIGHT_VAULT/projects/demo/quick/2026-07-0${i}-run-${i}.md" <<MDEOF
+  cat > "$WEIGHT_VAULT/project/demo/quick/2026-07-0${i}-run-${i}.md" <<MDEOF
 ---
 type: quick-run
 kind: fix

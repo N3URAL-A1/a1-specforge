@@ -4,7 +4,7 @@ description: >
   End-to-end bug pipeline with project-scoped learning loop: Pre-Flight → Report →
   Diagnose → Fix → Verify → Postmortem. State persists in bug-report YAML frontmatter
   (reported → diagnosed → fixing → fixed). Bug reports live under
-  `projects/<slug>/fixes/<YYYY-MM-DD>-<bug-slug>.md`, repo-local by default
+  `project/<slug>/fixes/<YYYY-MM-DD>-<bug-slug>.md`, repo-local by default
   (external vault via `A1_VAULT_ROOT`, e.g. Obsidian).
   MUST trigger when the user says: "bug in <X>" (alias: "fehler in <X>"),
   "<X> crashes" (alias: "<X> crasht"), "<feature> doesn't work" (alias:
@@ -187,7 +187,7 @@ State is persisted in the bug-report frontmatter. Update via the shared CLI:
 
 ```bash
 node <repo>/_shared/a1-tools.cjs fix update-status \
-  "projects/<slug>/fixes/<YYYY-MM-DD>-<bug-slug>.md" <new-status> [flags]
+  "project/<slug>/fixes/<YYYY-MM-DD>-<bug-slug>.md" <new-status> [flags]
 ```
 
 Flags: `--recommended-code-agent <name>`, `--fix-commit <hash>`,
@@ -199,7 +199,7 @@ The skill may ONLY write to these paths inside the Vault:
 
 | Path | What |
 |------|------|
-| `projects/<slug>/fixes/<date>-<slug>.md` | Bug reports |
+| `project/<slug>/fixes/<date>-<slug>.md` | Bug reports |
 | `wiki/postmortems/<project>/<date>-<slug>.md` | Postmortems |
 | `wiki/bug-patterns/<project>.md` | Proposals section only (append) |
 | `wiki/lessons/<agent>/_suggestions/<date>-<slug>.md` | Lesson candidates |

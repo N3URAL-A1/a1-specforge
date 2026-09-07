@@ -60,7 +60,7 @@ which agents will be relevant in Phase 4.
 
 ## Step 6 — Confirm with the user
 
-> "Modernize run created: `projects/<slug>/modernize/<file>`.
+> "Modernize run created: `project/<slug>/modernize/<file>`.
 > Mode: `<mode>`. Code path: `<analyzed_path>`.
 > Stack detected: <tech_stack list>.
 >

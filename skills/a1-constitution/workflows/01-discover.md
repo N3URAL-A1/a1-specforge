@@ -59,7 +59,7 @@ Parse the JSON. Check three things:
    Stop. Do not init the vault file.
 
 2. **Vault constitution already exists?** Check
-   `ls "<vault-root>/projects/<slug>/constitution/constitution.md"`. If yes:
+   `ls "<vault-root>/project/<slug>/constitution/constitution.md"`. If yes:
    - Read its frontmatter (via Read tool, just to inspect — do NOT modify).
    - If `status` is `written`: ask the user:
      > "A constitution for `<slug>` already exists (version <N>, last written <date>).
@@ -70,7 +70,7 @@ Parse the JSON. Check three things:
      exists, so we delete the live file after archiving:
      ```bash
      node <repo>/_shared/a1-tools.cjs constitution archive-current <slug>
-     rm "<vault-root>/projects/<slug>/constitution/constitution.md"
+     rm "<vault-root>/project/<slug>/constitution/constitution.md"
      ```
      Then proceed to Step 4.
    - If `status` is `discovering`, `drafted`, or `reviewed`: do NOT init. Tell
@@ -142,7 +142,7 @@ Capture the tmp path as `DISCOVERY_PAYLOAD_PATH`.
 ## Step 7 — Confirm and route to Phase 2
 
 Tell the user:
-> "Discovery complete. Vault file: `projects/<slug>/constitution/constitution.md`
+> "Discovery complete. Vault file: `project/<slug>/constitution/constitution.md`
 >  (status: discovering). Global rules captured: <N>, CLAUDE.md read, interview done.
 >
 >  Should I start Phase 2? Alex (a1-alex-architekt) will receive the discovery output

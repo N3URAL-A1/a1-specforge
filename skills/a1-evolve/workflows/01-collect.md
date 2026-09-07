@@ -25,7 +25,7 @@ this order:
 3. Per-skill files from EVERY store found above: `a1-execute.md`, `a1-plan.md`, `a1-new-feature.md`, `a1-fix.md`, `a1-analyze.md`, etc.
 
 Extract from each entry:
-- Date and project (follow `[[projects/<slug>]]` wikilinks for context if needed)
+- Date and project (follow `[[project/<slug>]]` wikilinks for context if needed)
 - Outcome (PASS/PARTIAL/FAIL)
 - Observations with pattern tags
 - Retro bullets and 💡 suggestions
@@ -108,7 +108,7 @@ propose nothing on its own.
 
 `a1-quick` (the XS quick lane) doesn't write per-skill `_learning.md`/store
 entries like other skills — each run leaves exactly one run-record file at
-`projects/<slug>/quick/<YYYY-MM-DD>-<slug>.md` with its retro inline as a
+`project/<slug>/quick/<YYYY-MM-DD>-<slug>.md` with its retro inline as a
 one-line `retro:` frontmatter field (see `_shared/retro-template.md`'s
 "Quick-run micro-retro" section). Collect these the same repo-local way as
 1a's per-project glob, but under `quick/` instead of

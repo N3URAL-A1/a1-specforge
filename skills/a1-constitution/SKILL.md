@@ -8,10 +8,10 @@ description: >
   Agent Frontmatter < Session Instruction). Four phases: Discover → Draft (via
   a1-alex-architekt) → Review → Write. State lives in the vault constitution's
   YAML frontmatter (discovering → drafted → reviewed → written). Vault is the
-  single source of truth at projects/<slug>/constitution/constitution.md; the
+  single source of truth at project/<slug>/constitution/constitution.md; the
   repo file at <project-root>/constitution.md is a derived mirror written in
   Phase 4. Old versions are snapshotted under
-  projects/<slug>/constitution/history/ before each rewrite. MUST trigger
+  project/<slug>/constitution/history/ before each rewrite. MUST trigger
   when the user says: "constitution for <project>" (alias: "constitution für
   <projekt>"), "generate constitution" (alias: "constitution erzeugen"),
   "behavioral rules for <project>" (alias: "verhaltensregeln für <projekt>"),
@@ -76,7 +76,7 @@ user removes or archives it manually.
 ## Routing — pick the right phase
 
 1. If the user provides a constitution path: read frontmatter `status`.
-2. If no vault constitution exists for the project yet (`projects/<slug>/constitution/constitution.md` missing):
+2. If no vault constitution exists for the project yet (`project/<slug>/constitution/constitution.md` missing):
    start Phase 1 (Discover) — clarify project slug + repo-root, then init the file.
 3. Otherwise route by status:
    - `discovering` → resume Phase 1 (gather missing inputs, re-confirm) → Phase 2
@@ -93,7 +93,7 @@ it via the shared CLI helper, never with raw string-replace on the file:
 
 ```bash
 node <repo>/_shared/a1-tools.cjs constitution update-status \
-  "projects/<slug>/constitution/constitution.md" <new-status>
+  "project/<slug>/constitution/constitution.md" <new-status>
 ```
 
 The helper performs an atomic frontmatter rewrite (read → modify → write-temp
@@ -111,8 +111,8 @@ node <repo>/_shared/a1-tools.cjs constitution set-body \
 
 | Artifact | Path |
 |---|---|
-| Canonical (vault) | `projects/<slug>/constitution/constitution.md` |
-| History snapshots | `projects/<slug>/constitution/history/<YYYY-MM-DD>-v<N>.md` |
+| Canonical (vault) | `project/<slug>/constitution/constitution.md` |
+| History snapshots | `project/<slug>/constitution/history/<YYYY-MM-DD>-v<N>.md` |
 | Repo mirror | `<repo-root>/constitution.md` |
 | Cross-link in CLAUDE.md | Managed block in `<repo-root>/CLAUDE.md` (HTML comment delimiters) |
 

@@ -44,9 +44,9 @@ see `_shared/language-policy.md`).
 Activate when the user wants to know whether a feature's wave-plan is
 implementation-ready. The check runs across:
 
-1. The feature's spec (`projects/<slug>/spec/<###>-<feature-slug>.md`)
-2. The feature's wave-plan (`projects/<slug>/plans/<###>-<feature-slug>-wave-plan.md`)
-3. The project root metadata (`projects/<slug>/CLAUDE.md`, `plans/` layout)
+1. The feature's spec (`project/<slug>/spec/<###>-<feature-slug>.md`)
+2. The feature's wave-plan (`project/<slug>/plans/<###>-<feature-slug>-wave-plan.md`)
+3. The project root metadata (`project/<slug>/CLAUDE.md`, `plans/` layout)
 
 ## When NOT to use
 

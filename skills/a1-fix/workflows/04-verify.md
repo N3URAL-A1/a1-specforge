@@ -65,7 +65,7 @@ node <repo>/_shared/a1-tools.cjs fix update-status \
 4. Tell the user:
 
 > "Fix verified. Status: fixed. Bug report:
-> `projects/<slug>/fixes/<file>`. Audit trail complete in `phase_history`."
+> `project/<slug>/fixes/<file>`. Audit trail complete in `phase_history`."
 
 ## Step 4 — Symptom still present → back to Phase 2
 

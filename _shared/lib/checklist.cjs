@@ -33,14 +33,14 @@ function resolveChecklistTarget(input) {
   if (!slug) throw new Error('checklist target: empty project slug');
   const specDir = projectsPath(slug, 'spec');
   if (!fs.existsSync(specDir)) {
-    throw new Error(`spec directory not found: projects/${slug}/spec/`);
+    throw new Error(`spec directory not found: project/${slug}/spec/`);
   }
   const specFiles = fs
     .readdirSync(specDir)
     .filter((f) => /^\d{3,}-.+\.md$/.test(f))
     .sort();
   if (specFiles.length === 0) {
-    throw new Error(`no specs found under projects/${slug}/spec/`);
+    throw new Error(`no specs found under project/${slug}/spec/`);
   }
 
   if (parts.length === 1) {
@@ -58,27 +58,27 @@ function resolveChecklistTarget(input) {
     const prefix = `${numMatch[1]}-`;
     const hit = specFiles.find((f) => f.startsWith(prefix));
     if (hit) return { slug, feature: hit.replace(/\.md$/, '') };
-    throw new Error(`no spec found under projects/${slug}/spec/ matching prefix "${prefix}"`);
+    throw new Error(`no spec found under project/${slug}/spec/ matching prefix "${prefix}"`);
   }
   // Case C: partial slug-style "003-log"
   const partial = specFiles.find((f) => f.startsWith(ref) && f.endsWith('.md'));
   if (partial) return { slug, feature: partial.replace(/\.md$/, '') };
-  throw new Error(`no spec found under projects/${slug}/spec/ matching "${ref}"`);
+  throw new Error(`no spec found under project/${slug}/spec/ matching "${ref}"`);
 }
 
 function checklistPaths(slug, feature) {
   const root = vaultRoot();
   return {
-    specAbs: path.join(root, 'projects', slug, 'spec', `${feature}.md`),
-    specRel: `projects/${slug}/spec/${feature}.md`,
-    planAbs: path.join(root, 'projects', slug, 'plans', `${feature}-wave-plan.md`),
-    planRel: `projects/${slug}/plans/${feature}-wave-plan.md`,
-    plansDirAbs: path.join(root, 'projects', slug, 'plans'),
-    plansDirRel: `projects/${slug}/plans`,
-    claudemdAbs: path.join(root, 'projects', slug, 'CLAUDE.md'),
-    claudemdRel: `projects/${slug}/CLAUDE.md`,
-    checklistDirAbs: path.join(root, 'projects', slug, 'checklist'),
-    checklistDirRel: `projects/${slug}/checklist`,
+    specAbs: path.join(root, 'project', slug, 'spec', `${feature}.md`),
+    specRel: `project/${slug}/spec/${feature}.md`,
+    planAbs: path.join(root, 'project', slug, 'plans', `${feature}-wave-plan.md`),
+    planRel: `project/${slug}/plans/${feature}-wave-plan.md`,
+    plansDirAbs: path.join(root, 'project', slug, 'plans'),
+    plansDirRel: `project/${slug}/plans`,
+    claudemdAbs: path.join(root, 'project', slug, 'CLAUDE.md'),
+    claudemdRel: `project/${slug}/CLAUDE.md`,
+    checklistDirAbs: path.join(root, 'project', slug, 'checklist'),
+    checklistDirRel: `project/${slug}/checklist`,
   };
 }
 
@@ -309,8 +309,8 @@ function evaluateChecklistProjectMetaRules(slug, paths, plan) {
 
   // --- Check 7: plans/ directory convention (MINOR) ---
   //
-  // The expected wave-plan lives under projects/<slug>/plans/. Stray plan files
-  // outside that directory (e.g. under projects/<slug>/ root) are a smell.
+  // The expected wave-plan lives under project/<slug>/plans/. Stray plan files
+  // outside that directory (e.g. under project/<slug>/ root) are a smell.
   {
     const projectRoot = projectsPath(slug);
     const strays = [];
@@ -319,7 +319,7 @@ function evaluateChecklistProjectMetaRules(slug, paths, plan) {
         const entries = fs.readdirSync(projectRoot);
         for (const e of entries) {
           if (/wave-plan\.md$/i.test(e)) {
-            strays.push(`projects/${slug}/${e}`);
+            strays.push(`project/${slug}/${e}`);
           }
         }
       } catch (_) {
@@ -752,7 +752,7 @@ function cmdChecklistRun(args) {
       const tmp = `${out}.tmp.${process.pid}`;
       fs.writeFileSync(tmp, body, 'utf8');
       fs.renameSync(tmp, out);
-      report.saved_to = `projects/${slug}/checklist/${numStr}-${date}.md`;
+      report.saved_to = `project/${slug}/checklist/${numStr}-${date}.md`;
     } catch (e) {
       report.errors.push(`save failed: ${e.message}`);
     }
@@ -794,7 +794,7 @@ function cmdChecklistList(args) {
       fm = parsed.fm || {};
     } catch (_) {}
     return {
-      file: `projects/${slug}/checklist/${f}`,
+      file: `project/${slug}/checklist/${f}`,
       feature: fm.feature || null,
       status: fm.status || null,
       created: fm.created || null,

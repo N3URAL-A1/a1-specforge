@@ -179,7 +179,7 @@ function cmdWorktreeEnter(args) {
   // the primary checkout (entry.repo_root), not CWD/vaultRoot() — vaultRoot()
   // resolves via CWD-based `git rev-parse --show-toplevel` and would resolve
   // against the (still-empty) worktree here. Mirror the whole tree rather
-  // than a single projects/<slug>/ subtree: the learning-store project slug
+  // than a single project/<slug>/ subtree: the learning-store project slug
   // does not match the worktree/branch slug. Best-effort: not every worktree
   // corresponds to a learning-store feature.
   const learningsSrc = path.join(entry.repo_root, '.a1', 'learnings');

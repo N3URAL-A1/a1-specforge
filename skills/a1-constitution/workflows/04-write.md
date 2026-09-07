@@ -70,7 +70,7 @@ Constitution written.
 
   Project:           <slug>
   Version:           v<N> (from vault frontmatter)
-  Vault file:        projects/<slug>/constitution/constitution.md
+  Vault file:        project/<slug>/constitution/constitution.md
   Repo mirror:       <REPO_ROOT>/constitution.md (<bytes> bytes)
   CLAUDE.md link:    <action> (appended | updated)
 

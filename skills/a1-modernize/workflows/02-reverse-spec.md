@@ -61,7 +61,7 @@ Top open questions:
 2. ...
 
 Want to read the full spec?
-→ `projects/<slug>/modernize/<date>/reverse-spec.md`
+→ `project/<slug>/modernize/<date>/reverse-spec.md`
 
 Approval for Phase 3 (Gap Analysis)?
 ```

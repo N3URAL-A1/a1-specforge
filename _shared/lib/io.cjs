@@ -618,7 +618,7 @@ function copyDirRecursive(src, dest) {
 // ---------- path-traversal guard ----------
 
 // User-supplied identifiers (project slugs, feature/analysis ids) become path
-// segments under <vault>/projects/. A hostile value like `../../etc` or an
+// segments under <vault>/project/. A hostile value like `../../etc` or an
 // absolute path must fail loud instead of resolving outside the vault.
 function assertSafeSegment(value, label) {
   const v = String(value == null ? '' : value);
@@ -639,13 +639,13 @@ function assertSafeSegment(value, label) {
   return v;
 }
 
-// Central join for everything under <vault>/projects/. Every segment is
+// Central join for everything under <vault>/project/. Every segment is
 // validated — literals ('spec', 'fixes') pass trivially, user input cannot
 // escape. Multi-segment literals ('a/b') are rejected by design: pass
 // segments individually.
 function projectsPath(...segments) {
   const safe = segments.map((s) => assertSafeSegment(s, 'projects path segment'));
-  return path.join(vaultRoot(), 'projects', ...safe);
+  return path.join(vaultRoot(), 'project', ...safe);
 }
 
 module.exports = { vaultRoot, resolveVaultPath, parseFrontmatter, serializeScalar, detectKeyOrder, serializeFrontmatter, readMd, writeMdAtomic, nowIso, writeTextAtomic, parseScalarToken, parseNestedFrontmatter, serializeNestedFrontmatter, writeNestedMdAtomic, parseFlags, fail, assertSafeSegment, projectsPath, copyDirRecursive };

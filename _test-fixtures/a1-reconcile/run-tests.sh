@@ -42,7 +42,7 @@ run_lifecycle() {
   local repo="$FIX/$fixture/repo"
 
   # Clean previous run
-  rm -rf "$vault/projects/demo/drift-"*.md 2>/dev/null
+  rm -rf "$vault/project/demo/drift-"*.md 2>/dev/null
 
   # --- init ---
   local init_out
@@ -51,7 +51,7 @@ run_lifecycle() {
     --project-path "$repo" --date 2026-05-13 2>&1)
   local init_exit=$?
   assert "[$fixture] init exit=0" "$([[ $init_exit -eq 0 ]] && echo 1 || echo 0)"
-  local drift_file="$vault/projects/demo/drift-2026-05-13.md"
+  local drift_file="$vault/project/demo/drift-2026-05-13.md"
   assert "[$fixture] init created drift file" "$([[ -f "$drift_file" ]] && echo 1 || echo 0)"
 
   # Check frontmatter has type=drift-report and status=scoped
@@ -65,7 +65,7 @@ run_lifecycle() {
   # --- parse-spec ---
   local parse_out
   parse_out=$(A1_VAULT_ROOT="$vault" node "$TOOLS" reconcile parse-spec \
-    "projects/demo/drift-2026-05-13.md" 2>&1)
+    "project/demo/drift-2026-05-13.md" 2>&1)
   local parse_exit=$?
   assert "[$fixture] parse-spec exit=0" "$([[ $parse_exit -eq 0 ]] && echo 1 || echo 0)"
   local anchor_count
@@ -85,7 +85,7 @@ run_lifecycle() {
 
   # --- update-status: scoped -> parsed ---
   A1_VAULT_ROOT="$vault" node "$TOOLS" reconcile update-status \
-    "projects/demo/drift-2026-05-13.md" parsed >/dev/null 2>&1
+    "project/demo/drift-2026-05-13.md" parsed >/dev/null 2>&1
   local us_exit=$?
   assert "[$fixture] update-status parsed exit=0" "$([[ $us_exit -eq 0 ]] && echo 1 || echo 0)"
   if grep -q '^status: parsed$' "$drift_file" 2>/dev/null; then
@@ -96,7 +96,7 @@ run_lifecycle() {
 
   # --- add-drift (simulate sub-agent output) ---
   A1_VAULT_ROOT="$vault" node "$TOOLS" reconcile add-drift \
-    "projects/demo/drift-2026-05-13.md" \
+    "project/demo/drift-2026-05-13.md" \
     MISSING "src/auth/MissingFile.tsx" "File referenced by FR-001 not found" \
     --recommendation "Implement the login form component" \
     --spec-ref "FR-001" >/dev/null 2>&1
@@ -104,7 +104,7 @@ run_lifecycle() {
   assert "[$fixture] add-drift MISSING exit=0" "$([[ $ad_exit -eq 0 ]] && echo 1 || echo 0)"
 
   A1_VAULT_ROOT="$vault" node "$TOOLS" reconcile add-drift \
-    "projects/demo/drift-2026-05-13.md" \
+    "project/demo/drift-2026-05-13.md" \
     DIVERGED "src/auth/credentials.ts" "Function signature differs from spec" \
     --spec-ref "FR-002" --code-ref "src/auth/credentials.ts:1" >/dev/null 2>&1
   local ad2_exit=$?
@@ -126,7 +126,7 @@ run_lifecycle() {
 
   # --- final transition: probed -> reported ---
   A1_VAULT_ROOT="$vault" node "$TOOLS" reconcile update-status \
-    "projects/demo/drift-2026-05-13.md" probed \
+    "project/demo/drift-2026-05-13.md" probed \
     --phase-data '{"agents_dispatched":[{"name":"gsd-a1-marco-mapper","completed_at":"2026-05-13T12:00:00Z","drift_count":2}],"in_sync_count":3}' \
     >/dev/null 2>&1
   local up_exit=$?
@@ -138,7 +138,7 @@ run_lifecycle() {
   fi
 
   A1_VAULT_ROOT="$vault" node "$TOOLS" reconcile update-status \
-    "projects/demo/drift-2026-05-13.md" reported \
+    "project/demo/drift-2026-05-13.md" reported \
     --phase-data '{"suggested_next":[{"skill":"a1-fix","reason":"Fix MISSING","targets":["FR-001"]}]}' \
     >/dev/null 2>&1
   if grep -q 'skill=a1-fix' "$drift_file"; then
@@ -189,7 +189,7 @@ run_slot_collision() {
 # ---------------------------------------------------------------------------
 run_anchor_extraction() {
   local vault="$FIX/single-pass/vault"
-  local drift_file="$vault/projects/demo/drift-2026-05-13.md"
+  local drift_file="$vault/project/demo/drift-2026-05-13.md"
   # Spec has: LoginForm.tsx, credentials.ts, POST /api/login
   # Expect parsed_targets to mention all three.
   if grep -q 'kind=file' "$drift_file" 2>/dev/null && \
@@ -210,7 +210,7 @@ run_validation() {
   assert "[validation] init rejects bogus scope (exit=1)" "$([[ $exit_code -eq 1 ]] && echo 1 || echo 0)"
 
   A1_VAULT_ROOT="$FIX/single-pass/vault" node "$TOOLS" reconcile add-drift \
-    "projects/demo/drift-2026-05-13.md" \
+    "project/demo/drift-2026-05-13.md" \
     INVALIDCLASS "x" "y" >/dev/null 2>&1
   local exit2=$?
   assert "[validation] add-drift rejects bad class (exit=1)" "$([[ $exit2 -eq 1 ]] && echo 1 || echo 0)"

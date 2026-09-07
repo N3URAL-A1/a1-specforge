@@ -105,7 +105,7 @@ status: confirmed
 ```
 
 Also mirror the scope into the Vault project hub (created/extended in Phase 4):
-hold it in context now; Phase 4 writes `projects/<slug>/` and can embed the
+hold it in context now; Phase 4 writes `project/<slug>/` and can embed the
 scope summary there.
 
 ## Output

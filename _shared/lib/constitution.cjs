@@ -23,8 +23,8 @@ const { appendPhaseHistory } = require('./spec.cjs');
 // constitution.md is a stripped-down mirror derived from the vault file.
 //
 // Vault layout:
-//   projects/<slug>/constitution/constitution.md         (canonical)
-//   projects/<slug>/constitution/history/YYYY-MM-DD-vN.md (snapshots)
+//   project/<slug>/constitution/constitution.md         (canonical)
+//   project/<slug>/constitution/history/YYYY-MM-DD-vN.md (snapshots)
 //
 // Repo mirror: <repo-root>/constitution.md
 
@@ -39,7 +39,7 @@ const CONSTITUTION_STATUS_TO_PHASE = {
 function constitutionVaultPath(projectSlug) {
   return path.join(
     vaultRoot(),
-    'projects',
+    'project',
     projectSlug,
     'constitution',
     'constitution.md'
@@ -49,7 +49,7 @@ function constitutionVaultPath(projectSlug) {
 function constitutionHistoryDir(projectSlug) {
   return path.join(
     vaultRoot(),
-    'projects',
+    'project',
     projectSlug,
     'constitution',
     'history'
@@ -402,7 +402,7 @@ function cmdConstitutionLinkClaudemd(args) {
 
 function cmdConstitutionList(args) {
   const flags = parseFlags(args, { status: 'value' });
-  const projectsRoot = path.join(vaultRoot(), 'projects');
+  const projectsRoot = path.join(vaultRoot(), 'project');
   const constitutions = [];
   if (!fs.existsSync(projectsRoot)) {
     return { count: 0, constitutions };

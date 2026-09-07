@@ -80,7 +80,7 @@ Usage:
                   Pre-flight checklist: 8 structural checks before implementation.
                   Severities: BLOCKER (exit 1), MAJOR/MINOR (exit 0, warnings).
                   Exit: 0 PASS or PASS_WITH_WARNINGS, 1 FAIL (blocker), 2 ERROR (setup).
-                  With --save: writes report to projects/<slug>/checklist/<###>-<date>.md.
+                  With --save: writes report to project/<slug>/checklist/<###>-<date>.md.
   a1-tools checklist list <project-slug> [--vault <path>]
                   List recent saved checklist reports for a project.
 

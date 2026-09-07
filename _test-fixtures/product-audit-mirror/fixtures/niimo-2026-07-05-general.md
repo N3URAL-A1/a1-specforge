@@ -6,7 +6,7 @@ title: "Full analysis (general + architecture + security) of niimo"
 status: reported
 created_at: "2026-07-05 18:13:45.078000+00:00"
 findings:
-  - "id=F-001; severity=MAJOR; category=ADR drift; location=docs/ + repo root; description=vendored (trimmed) copy of niimo analysis 2026-07-05-general for the SC-001 zero-diff acceptance fixture — see .a1/learnings/projects/a1-specforge for provenance; recommendation=see full report in the Vault"
+  - "id=F-001; severity=MAJOR; category=ADR drift; location=docs/ + repo root; description=vendored (trimmed) copy of niimo analysis 2026-07-05-general for the SC-001 zero-diff acceptance fixture — see .a1/learnings/project/a1-specforge for provenance; recommendation=see full report in the Vault"
   - "id=F-002; severity=MAJOR; category=abstraction leak; location=functions/src/cookbook/recipeExtractionService.ts; description=vendored (trimmed); recommendation=see full report"
   - "id=F-003; severity=MINOR; category=god file; location=functions/src/cookbook/recipeExtractionService.ts; description=vendored (trimmed); recommendation=see full report"
   - "id=F-004; severity=MINOR; category=index drift; location=CLAUDE.md; description=vendored (trimmed); recommendation=see full report"
@@ -45,13 +45,13 @@ tags:
   - analysis
   - project/niimo
   - focus/general
-permalink: vault/projects/niimo/analyses/2026-07-05-general
+permalink: vault/project/niimo/analyses/2026-07-05-general
 ---
 
 # Analysis: Full analysis (general + architecture + security) of niimo (VENDORED, TRIMMED)
 
 > This is a trimmed, self-contained copy of the frontmatter `findings[]` from the real
-> niimo reference analysis (`projects/niimo/analyses/2026-07-05-general.md`, external to
+> niimo reference analysis (`project/niimo/analyses/2026-07-05-general.md`, external to
 > this repo, Vault-only). Vendored here (spec 003, Wave 5) so the
 > `_test-fixtures/product-audit-mirror/run.sh` acceptance harness does not depend on an
 > external filesystem path that may not exist in a clean CI checkout. Only the three

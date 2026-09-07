@@ -89,7 +89,7 @@ If Notion-MCP fails or is not connected:
 
 ```
 Notion-MCP not reachable. Creating local Markdown export.
-→ projects/<slug>/modernize/<date>/modernize-export/report.md
+→ project/<slug>/modernize/<date>/modernize-export/report.md
 ```
 
 Write the compiled report to that path. Update status to `published` with
@@ -98,7 +98,7 @@ Write the compiled report to that path. Update status to `published` with
 ```bash
 node <repo>/_shared/a1-tools.cjs modernize update-status \
   "<master-path>" published \
-  --phase-data '{"fallback_path": "projects/<slug>/modernize/<date>/modernize-export/report.md"}'
+  --phase-data '{"fallback_path": "project/<slug>/modernize/<date>/modernize-export/report.md"}'
 ```
 
 **Never silently skip publishing.** Always show the user where the report ended up.
@@ -109,7 +109,7 @@ node <repo>/_shared/a1-tools.cjs modernize update-status \
 Modernize run complete for <project-slug>.
 
 📄 Report: <Notion URL or local path>
-🔗 Obsidian: projects/<slug>/modernize/<date>-<focus>.md
+🔗 Obsidian: project/<slug>/modernize/<date>-<focus>.md
 
 Summary:
 - FRs extracted: <N>

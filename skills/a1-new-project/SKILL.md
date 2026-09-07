@@ -7,7 +7,7 @@ description: >
   (set the initial project scope CLEARLY and unambiguously — the most important
   step) → Roadmap (calls the a1-roadmap skill internally to turn scope into
   milestones + .a1/ scaffold) → Feature-Split (decompose scope/milestones into a
-  prioritized feature backlog in .a1/features-backlog.md + Vault projects/<slug>/)
+  prioritized feature backlog in .a1/features-backlog.md + Vault project/<slug>/)
   → Feature-Loop (run every feature through a1-new-feature, with a checkpoint +
   context reset between features so the loop is resumable from file state).
   MUST trigger when the user says: "new project from scratch" (alias: "neues
@@ -125,7 +125,7 @@ scaffolds `docs/product/` fresh (never migrates an existing legacy
 actually encounter an existing legacy-only project mid-run.
 
 Vault mirror (single source of truth for cross-project memory):
-- Project hub: `projects/<slug>/` (created in Phase 4)
+- Project hub: `project/<slug>/` (created in Phase 4)
 - Specs/plans per feature: written by `a1-new-feature` in Phase 5
 - Learnings: `<learning-store>/pattern/a1-learnings/a1-new-project.md`
 

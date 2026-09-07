@@ -8,7 +8,7 @@ description: >
   verify, and one checkpoint all happen in the current session. Isolation is a
   short-lived `quick/<slug>` branch in the primary checkout, not a git
   worktree. Writes exactly one run-record artifact per run to
-  `projects/<slug>/quick/<YYYY-MM-DD>-<slug>.md`. Invoke directly with
+  `project/<slug>/quick/<YYYY-MM-DD>-<slug>.md`. Invoke directly with
   "a1-quick", "run the quick lane", "quick fix" (alias: "quick-fix",
   "kleinigkeit"), "tiny feature", or "one-liner" once eligibility is known.
   Do NOT activate for anything that fails `quick eligibility` (auth, payment,
@@ -69,7 +69,7 @@ node <repo>/_shared/a1-tools.cjs quick eligibility \
 Write the run-record file from `templates/run-record-template.md` to:
 
 ```
-projects/<slug>/quick/<YYYY-MM-DD>-<slug>.md
+project/<slug>/quick/<YYYY-MM-DD>-<slug>.md
 ```
 
 Fill in inline — no separate spec file is created:
@@ -246,7 +246,7 @@ edit or verify pass in progress. Then:
 ## Run-record schema (FR-015)
 
 Every run (completed or escalated) writes exactly one file at
-`projects/<slug>/quick/<YYYY-MM-DD>-<slug>.md` with frontmatter:
+`project/<slug>/quick/<YYYY-MM-DD>-<slug>.md` with frontmatter:
 
 | Field | Values |
 |---|---|

@@ -15,10 +15,10 @@ to Phase 3.
 ## Step 1 — Determine wave-plan path
 
 ```
-plan_path = projects/<project-slug>/plans/<###>-<feature-slug>-wave-plan.md
+plan_path = project/<project-slug>/plans/<###>-<feature-slug>-wave-plan.md
 ```
 
-`<###>` is the same sequence number as the spec. If `projects/<slug>/plans/` does not exist,
+`<###>` is the same sequence number as the spec. If `project/<slug>/plans/` does not exist,
 create it (use Bash with the absolute vault root).
 
 **Size-S fast path:** when the spec frontmatter says `size: S`, instruct
@@ -33,7 +33,7 @@ Use the **Agent** tool with `subagent_type: "a1-vincente-vibe-optimizer"` and
 `model: "opus"` to spawn Vincente with this brief:
 
 > Scope note: Vincente owns FEATURE-level wave plans (vault
-> `projects/<slug>/plans/`); PHASE-level PLAN.md files under `.a1/phases/` are
+> `project/<slug>/plans/`); PHASE-level PLAN.md files under `.a1/phases/` are
 > planned by a1-pablo-planner via the a1-plan skill instead.
 
 > You are Vincente. The spec is at `<spec-path>` with status `clarified`. Your task:

@@ -62,7 +62,7 @@ run_next_suffix() {
   fi
 
   # Create a bug file for that date, then next-suffix should return "-2"
-  local fixes_dir="$VAULT/projects/demo/fixes"
+  local fixes_dir="$VAULT/project/demo/fixes"
   mkdir -p "$fixes_dir"
   cat > "$fixes_dir/2026-05-13-login-crash.md" <<'EOF'
 ---
@@ -91,7 +91,7 @@ EOF
 # update-status — valid transition + invalid-status rejection
 # ---------------------------------------------------------------------------
 run_update_status() {
-  local fixes_dir="$VAULT/projects/demo/fixes"
+  local fixes_dir="$VAULT/project/demo/fixes"
   mkdir -p "$fixes_dir"
   cat > "$fixes_dir/2026-05-14-auth-bug.md" <<'EOF'
 ---
@@ -103,7 +103,7 @@ severity: major
 EOF
   local out exit_code
   out=$(A1_VAULT_ROOT="$VAULT" node "$TOOLS" fix update-status \
-    "projects/demo/fixes/2026-05-14-auth-bug.md" diagnosed 2>&1)
+    "project/demo/fixes/2026-05-14-auth-bug.md" diagnosed 2>&1)
   exit_code=$?
   assert_rc "update-status valid transition exit=0" 0 "$exit_code" "$out"
   if printf '%s' "$out" | grep -q '"status": "diagnosed"'; then
@@ -124,13 +124,13 @@ EOF
 
   # Invalid status rejected
   out=$(A1_VAULT_ROOT="$VAULT" node "$TOOLS" fix update-status \
-    "projects/demo/fixes/2026-05-14-auth-bug.md" bogus-status 2>&1)
+    "project/demo/fixes/2026-05-14-auth-bug.md" bogus-status 2>&1)
   exit_code=$?
   assert_rc "update-status rejects invalid status" 1 "$exit_code" "$out"
 
   # Missing bug file
   out=$(A1_VAULT_ROOT="$VAULT" node "$TOOLS" fix update-status \
-    "projects/demo/fixes/does-not-exist.md" diagnosed 2>&1)
+    "project/demo/fixes/does-not-exist.md" diagnosed 2>&1)
   exit_code=$?
   assert_rc "update-status rejects missing bug file" 1 "$exit_code" "$out"
 }
@@ -139,7 +139,7 @@ EOF
 # find-duplicates — no dupes / has dupes
 # ---------------------------------------------------------------------------
 run_find_duplicates() {
-  local fixes_dir="$VAULT/projects/demo/fixes"
+  local fixes_dir="$VAULT/project/demo/fixes"
   mkdir -p "$fixes_dir"
   cat > "$fixes_dir/2026-05-15-timeout-issue.md" <<'EOF'
 ---

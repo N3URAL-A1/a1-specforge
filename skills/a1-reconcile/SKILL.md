@@ -8,7 +8,7 @@ description: >
   Four phases: Scope → Parse → Probe → Report. State persisted in the drift
   report's YAML frontmatter (scoped → parsed → probed → reported). Reports stored
   repo-local (external vault via `A1_VAULT_ROOT`, e.g. Obsidian) at
-  projects/<slug>/drift-<YYYY-MM-DD>[-N].md. Three
+  project/<slug>/drift-<YYYY-MM-DD>[-N].md. Three
   modes: single (one spec), project (all specs), vault-sync (weekly cron).
   MUST trigger when the user says: "drift check", "spec vs implementation",
   "spec vs code", "reconcile <project>" (alias: "reconcile <projekt>"),
@@ -112,7 +112,7 @@ shared CLI helper, never with raw string-replace on the file:
 
 ```bash
 node <repo>/_shared/a1-tools.cjs reconcile update-status \
-  "projects/<slug>/drift-<YYYY-MM-DD>.md" <new-status> \
+  "project/<slug>/drift-<YYYY-MM-DD>.md" <new-status> \
   [--phase-data '<json>']
 ```
 
@@ -131,7 +131,7 @@ node <repo>/_shared/a1-tools.cjs reconcile add-drift \
 
 All artifacts default repo-local; external vault via `A1_VAULT_ROOT` (e.g. Obsidian):
 
-- Drift reports: `projects/<slug>/drift-<YYYY-MM-DD>[-N].md`
+- Drift reports: `project/<slug>/drift-<YYYY-MM-DD>[-N].md`
 
 Suffixes `-2`, `-3` are appended for second, third, ... reports on the same
 day. The helper `reconcile next-slot` returns the next free slot.
@@ -181,7 +181,7 @@ spec, never touch the drift report. If they want a change, it goes into
 - One question per turn in Phase 1. Max 2 clarifying questions.
 - Reports in `cancelled` status keep their date+suffix slot.
 - For `vault-sync` mode, the skill is allowed to skip projects that have no
-  spec under `projects/<slug>/spec/` — record them in the report's
+  spec under `project/<slug>/spec/` — record them in the report's
   `skipped_projects[]` with a reason.
 
 ## Hand-offs (out of scope for this skill)

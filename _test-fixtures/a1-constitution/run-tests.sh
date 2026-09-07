@@ -57,7 +57,7 @@ run_init() {
     --title "Demo Constitution" 2>&1)
   exit_code=$?
   assert_rc "init exit=0" 0 "$exit_code" "$out"
-  local const_file="$VAULT/projects/demo/constitution/constitution.md"
+  local const_file="$VAULT/project/demo/constitution/constitution.md"
   assert "init creates constitution.md" "$([[ -f "$const_file" ]] && echo 1 || echo 0)"
   if grep -q '^status: discovering$' "$const_file" 2>/dev/null && \
      grep -q '^version: 1$' "$const_file" 2>/dev/null; then
@@ -115,10 +115,10 @@ EOF
 # update-status — valid transition + invalid-status rejection
 # ---------------------------------------------------------------------------
 run_update_status() {
-  local const_file="$VAULT/projects/demo/constitution/constitution.md"
+  local const_file="$VAULT/project/demo/constitution/constitution.md"
   local out exit_code
   out=$(A1_VAULT_ROOT="$VAULT" node "$TOOLS" constitution update-status \
-    "projects/demo/constitution/constitution.md" drafted 2>&1)
+    "project/demo/constitution/constitution.md" drafted 2>&1)
   exit_code=$?
   assert_rc "update-status valid transition exit=0" 0 "$exit_code" "$out"
   if printf '%s' "$out" | grep -q '"status": "drafted"'; then
@@ -134,7 +134,7 @@ run_update_status() {
 
   # written status also stamps last_written_at.
   out=$(A1_VAULT_ROOT="$VAULT" node "$TOOLS" constitution update-status \
-    "projects/demo/constitution/constitution.md" written 2>&1)
+    "project/demo/constitution/constitution.md" written 2>&1)
   if printf '%s' "$out" | grep -q '"last_written_at": null'; then
     assert "update-status stamps last_written_at on 'written' transition" "0"
   else
@@ -143,13 +143,13 @@ run_update_status() {
 
   # Invalid status rejected.
   out=$(A1_VAULT_ROOT="$VAULT" node "$TOOLS" constitution update-status \
-    "projects/demo/constitution/constitution.md" bogus-status 2>&1)
+    "project/demo/constitution/constitution.md" bogus-status 2>&1)
   exit_code=$?
   assert_rc "update-status rejects invalid status" 1 "$exit_code" "$out"
 
   # Missing constitution file.
   out=$(A1_VAULT_ROOT="$VAULT" node "$TOOLS" constitution update-status \
-    "projects/demo/constitution/does-not-exist.md" drafted 2>&1)
+    "project/demo/constitution/does-not-exist.md" drafted 2>&1)
   exit_code=$?
   assert_rc "update-status rejects missing constitution file" 1 "$exit_code" "$out"
 }
@@ -172,10 +172,10 @@ Always validate input at system boundaries.
 EOF
   local out exit_code
   out=$(A1_VAULT_ROOT="$VAULT" node "$TOOLS" constitution set-body \
-    "projects/demo/constitution/constitution.md" --body-file "$body_file" 2>&1)
+    "project/demo/constitution/constitution.md" --body-file "$body_file" 2>&1)
   exit_code=$?
   assert_rc "set-body exit=0" 0 "$exit_code" "$out"
-  local const_file="$VAULT/projects/demo/constitution/constitution.md"
+  local const_file="$VAULT/project/demo/constitution/constitution.md"
   if grep -q "Always validate input at system boundaries." "$const_file" 2>/dev/null; then
     assert "set-body writes new body content" "1"
   else
@@ -190,7 +190,7 @@ EOF
 
   # Missing body-file rejected.
   out=$(A1_VAULT_ROOT="$VAULT" node "$TOOLS" constitution set-body \
-    "projects/demo/constitution/constitution.md" --body-file "$WORK/no-such-file.md" 2>&1)
+    "project/demo/constitution/constitution.md" --body-file "$WORK/no-such-file.md" 2>&1)
   exit_code=$?
   assert_rc "set-body rejects missing body-file" 1 "$exit_code" "$out"
 }
@@ -211,7 +211,7 @@ run_next_version() {
   fi
 
   # Create history entries v1..v3 (out of numeric order on disk) -> next is 4.
-  local hist_dir="$VAULT/projects/versioned-project/constitution/history"
+  local hist_dir="$VAULT/project/versioned-project/constitution/history"
   mkdir -p "$hist_dir"
   touch "$hist_dir/2026-01-01-v1.md"
   touch "$hist_dir/2026-02-01-v3.md"
@@ -226,7 +226,7 @@ run_next_version() {
   fi
 
   # Double-digit version numbers parse correctly (v9 -> next 10, not lexical-max).
-  local hist2_dir="$VAULT/projects/double-digit-project/constitution/history"
+  local hist2_dir="$VAULT/project/double-digit-project/constitution/history"
   mkdir -p "$hist2_dir"
   touch "$hist2_dir/2026-01-01-v2.md"
   touch "$hist2_dir/2026-01-02-v9.md"
@@ -264,7 +264,7 @@ run_archive_current() {
     --date 2026-05-20 2>&1)
   exit_code=$?
   assert_rc "archive-current exit=0" 0 "$exit_code" "$out"
-  local snapshot_file="$VAULT/projects/archive-demo/constitution/history/2026-05-20-v${direct_next}.md"
+  local snapshot_file="$VAULT/project/archive-demo/constitution/history/2026-05-20-v${direct_next}.md"
   assert "archive-current writes snapshot named v${direct_next} (matches direct next-version call)" \
     "$([[ -f "$snapshot_file" ]] && echo 1 || echo 0)"
   if printf '%s' "$out" | grep -q "\"new_version\": $((direct_next + 1))"; then
@@ -431,12 +431,12 @@ run_hostile_injection() {
     "$marker_file" "$marker_file" "$marker_file" > "$payload_file"
 
   out=$(A1_VAULT_ROOT="$VAULT" node "$TOOLS" constitution set-body \
-    "projects/injection-test/constitution/constitution.md" --body-file "$payload_file" 2>&1)
+    "project/injection-test/constitution/constitution.md" --body-file "$payload_file" 2>&1)
   exit_code=$?
   assert_rc "set-body accepts injection-shaped body (exit=0)" 0 "$exit_code" "$out"
   assert "injection payload never executed (no marker file created)" "$([[ ! -f "$marker_file" ]] && echo 1 || echo 0)"
 
-  local const_file="$VAULT/projects/injection-test/constitution/constitution.md"
+  local const_file="$VAULT/project/injection-test/constitution/constitution.md"
   if grep -qF '$(touch' "$const_file" 2>/dev/null; then
     assert "injection payload stored inertly as literal text in constitution body" "1"
   else
@@ -461,7 +461,7 @@ run_hostile_oversized() {
   { printf '# Oversized\n\n'; printf 'A%.0s' $(seq 1 10000); printf '\n'; } > "$big_body_file"
 
   out=$(A1_VAULT_ROOT="$VAULT" node "$TOOLS" constitution set-body \
-    "projects/oversize-test/constitution/constitution.md" --body-file "$big_body_file" 2>&1)
+    "project/oversize-test/constitution/constitution.md" --body-file "$big_body_file" 2>&1)
   exit_code=$?
   if [[ "$exit_code" -eq 0 || "$exit_code" -eq 1 ]]; then
     assert "set-body oversized body (10000+ chars) handled gracefully (exit=$exit_code)" "1"

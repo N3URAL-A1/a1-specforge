@@ -8,7 +8,7 @@ phase — direct dialogue + targeted edits only.
 
 - Vault file exists with `status: drafted`.
 - `CONST_PATH` is set (or recompute from project slug:
-  `<vault-root>/projects/<slug>/constitution/constitution.md`).
+  `<vault-root>/project/<slug>/constitution/constitution.md`).
 
 If status ≠ `drafted`, route to the matching phase based on the routing table
 in `SKILL.md`.

@@ -39,7 +39,7 @@ Consistency Gate → Implement → Verify), including its own Isolation Gate /
 worktree handling. Do NOT bypass any of a1-new-feature's phases or gates.
 
 When `a1-new-feature` creates the spec, capture its Vault path
-(`projects/<slug>/spec/<###>-<feature-slug>.md`) and write it into the `Spec`
+(`project/<slug>/spec/<###>-<feature-slug>.md`) and write it into the `Spec`
 column of the backlog row — so a resumed loop can locate prior work.
 
 ### 3. Mark done
