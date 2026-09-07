@@ -1,0 +1,25 @@
+# .claudeignore — Filter für Claude Code Exploration (Universal-Block)
+.DS_Store
+*.log
+.env
+.env.local
+.env.*.local
+.git/
+.vscode/
+.idea/
+node_modules/
+.next/
+.turbo/
+dist/
+build/
+out/
+coverage/
+.vercel/
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.dart_tool/
+*.g.dart
+*.freezed.dart
