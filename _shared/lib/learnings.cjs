@@ -160,8 +160,97 @@ function countPostmortems(root, watermark) {
   return count;
 }
 
+
+// ---------- Vault mode (A1_VAULT_ROOT set, seit 2026-09-07) ----------
+// Learning store = <vault>/pattern/a1-learnings/ (retros, patterns.md as
+// watermark source) + <vault>/project/<slug>/postmortems/. Only top-level
+// retro files count — lessons/, _state/, _canonical/ are machinery.
+
+function readWatermark(watermarkPath) {
+  let watermarkContent;
+  try {
+    if (!fs.existsSync(watermarkPath)) {
+      process.stderr.write(
+        `error: watermark source missing: ${watermarkPath} (has a1-evolve ever run? see M11-P1)\n`
+      );
+      process.exit(3);
+    }
+    watermarkContent = fs.readFileSync(watermarkPath, 'utf8');
+  } catch (e) {
+    process.stderr.write(`error: watermark source unreadable: ${watermarkPath}: ${e.message}\n`);
+    process.exit(3);
+  }
+  const wmMatch = watermarkContent.match(/^updated:\s*(\S+)/m);
+  if (!wmMatch) {
+    process.stderr.write(
+      `error: watermark field missing in ${watermarkPath} (expected 'updated: YYYY-MM-DD' in frontmatter)\n`
+    );
+    process.exit(2);
+  }
+  return wmMatch[1];
+}
+
+function countVaultRetros(patternDir, watermark) {
+  let dateBlocks = 0;
+  let h2Blocks = 0;
+  let names = [];
+  try { names = fs.readdirSync(patternDir); } catch (_e) { return { dateBlocks, h2Blocks }; }
+  for (const name of names) {
+    if (!name.endsWith('.md') || name === 'patterns.md' || name === 'index.md') continue;
+    const content = readFileSafe(path.join(patternDir, name));
+    if (!content) continue;
+    let m;
+    const reDate = /^date:\s*(\S+)/gm;
+    while ((m = reDate.exec(content)) !== null) if (m[1] > watermark) dateBlocks++;
+    if (name === 'a1-fix.md') {
+      const reH2 = /^## (\d{4}-\d{2}-\d{2})/gm;
+      while ((m = reH2.exec(content)) !== null) if (m[1] > watermark) h2Blocks++;
+    }
+  }
+  return { dateBlocks, h2Blocks };
+}
+
+function countVaultPostmortems(vault, watermark) {
+  let count = 0;
+  const projectRoot = path.join(vault, 'project');
+  for (const slug of listSubdirs(projectRoot)) {
+    const dir = path.join(projectRoot, slug, 'postmortems');
+    const files = walkFiles(dir, (full, name) => name.endsWith('.md'));
+    for (const f of files) {
+      const content = readFileSafe(f);
+      if (!content) continue;
+      const fmEnd = content.indexOf('\n---', 4);
+      const fmBlock = content.startsWith('---\n') && fmEnd !== -1 ? content.slice(0, fmEnd) : content;
+      const m = fmBlock.match(/^date:\s*(\S+)/m);
+      if (m && m[1] > watermark) count++;
+    }
+  }
+  return count;
+}
+
+function cmdLearningsCountSinceWatermarkVault(vault, json) {
+  const patternDir = path.join(vault, 'pattern', 'a1-learnings');
+  const watermark = readWatermark(path.join(patternDir, 'patterns.md'));
+  const { dateBlocks, h2Blocks } = countVaultRetros(patternDir, watermark);
+  const postmortems = countVaultPostmortems(vault, watermark);
+  const output = {
+    count: dateBlocks + h2Blocks + postmortems,
+    new_since_date: watermark,
+    watermark,
+    source: 'vault',
+    root: vault,
+    sources: { date_blocks: dateBlocks, h2_blocks: h2Blocks, postmortems },
+  };
+  process.stdout.write(JSON.stringify(output, null, 2) + '\n');
+  process.exit(0);
+}
+
 function cmdLearningsCountSinceWatermark(argv) {
   const flags = parseLearningsFlags(argv);
+  const explicitRoot = argv.some((a) => a === '--projects-root' || a.startsWith('--projects-root='));
+  if (process.env.A1_VAULT_ROOT && !explicitRoot) {
+    return cmdLearningsCountSinceWatermarkVault(process.env.A1_VAULT_ROOT, flags.json);
+  }
   const root = flags.projectsRoot;
 
   const watermarkPath = path.join(
