@@ -108,7 +108,13 @@ JSON which the workflow then writes to `findings.json` via the CLI.
 - MINOR findings are not in the PR body — they go into a separate
   `inline-comments.md` for optional manual posting.
 - Never invoke `git push` or `gh pr create` without explicit user
-  confirmation in Phase 4.
+  confirmation in Phase 4. **Merging is different**: once the review is
+  clean, merge without asking (see Hand-offs). The user has standing
+  instruction not to review PRs.
+- **Never end a run by asking the user to review or merge.** A PR that
+  passed review and whose BLOCKER/MAJOR findings are fixed gets merged in
+  the same run. Reporting "ready for your review" is a failure mode, not a
+  hand-off.
 - Never write `~/.a1-worktrees-registry.json` directly. CLI only.
 - User-facing prompts follow `_shared/language-policy.md` (user's language,
   never hardcoded). CLI output (JSON, log lines) and file contents (PR body,
@@ -116,6 +122,13 @@ JSON which the workflow then writes to `findings.json` via the CLI.
 
 ## Hand-offs
 
-- After `pr-open`: terminal. Registry stays at `pr-open` until the user
-  merges or closes the PR manually (no further skill in this chain).
+- After `pr-open`: **the assistant merges — never the user.** The user does
+  not review PRs (standing instruction, 2026-09-09). Sequence: Reinhard
+  reviews the diff as a subagent → fix every BLOCKER and MAJOR → then merge
+  with `gh pr merge --squash --delete-branch`, verify it landed
+  (`gh pr view --json state,mergedAt`), pull `main`, and advance the registry.
+  Do not ask the user to review, and do not hand the PR back as "ready for
+  your review". Report what was merged, not what awaits them.
+  The one thing that still needs the user's word is a **production deploy or
+  a migration applied to a production database** — merging is not that.
 - BLOCKER halt → user fixes in worktree, then re-runs Phase 2 (review).

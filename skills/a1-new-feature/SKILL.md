@@ -273,9 +273,9 @@ customer-visible in this sense — do not even ask the user.
     Args: --spec "project/<slug>/spec/<###>-<feature-slug>.md" --phase "<phase-dir>"
 
 `a1-landing-feature` owns the landing repo end to end (register via `product` CLI, bilingual
-copy, Bertram voice review, `pnpm build`, branch + PR). This skill neither edits
-`a1-office-landing` nor merges anything. Report the returned PR link to the user in German and
-finish.
+copy, Bertram voice review, `pnpm build`, branch + PR, subagent review, merge). This skill does
+not edit `a1-office-landing` itself. Report in German what was merged — the user does not
+review PRs (see `a1-pr-review` hand-offs).
 
 ## Isolation Gate (HARD RULE — before Phase 5 Implement)
 
