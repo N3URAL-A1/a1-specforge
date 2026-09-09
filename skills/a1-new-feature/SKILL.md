@@ -247,6 +247,36 @@ the next step is probably fine." See `workflows/05-implement.md` and
 `workflows/06-verify.md` for exactly where each `code-scope stage` call sits
 in the phase flow.
 
+## Marketing Gate (after `done` — customer-visible features only)
+
+A feature that reached `done` is not automatically known to the public landing. Before the run
+ends, decide once whether it belongs there. Applies **only** to projects whose product is
+A1//office (`n3ural-platform`); skip silently for every other project.
+
+Ask these five questions (do not delegate the judgement, answer them from the spec and
+the acceptance record — VERIFICATION.md when a phase folder exists, otherwise the spec
+frontmatter: `status: done` + `verify_failures: []`):
+
+1. Would a customer notice this **without an explanation**?
+2. Is it usable **at no extra cost** in the customer's existing tier?
+3. Is it **live in production** — not merely merged? (Deployed image contains the merge commit.)
+4. Does it change **what the customer can delegate**, or how reliably?
+5. Is the claim true **without an asterisk** (no "planned", "in preparation", "provided that")?
+
+**Any "no" → stop here.** Note the failing criterion in one line and end the run. Internal
+refactorings, migrations, test infrastructure, bug fixes and compliance work are never
+customer-visible in this sense — do not even ask the user.
+
+**All five "yes" → hand off** (do not write landing files from this skill):
+
+    Skill: a1-landing-feature
+    Args: --spec "project/<slug>/spec/<###>-<feature-slug>.md" --phase "<phase-dir>"
+
+`a1-landing-feature` owns the landing repo end to end (register via `product` CLI, bilingual
+copy, Bertram voice review, `pnpm build`, branch + PR). This skill neither edits
+`a1-office-landing` nor merges anything. Report the returned PR link to the user in German and
+finish.
+
 ## Isolation Gate (HARD RULE — before Phase 5 Implement)
 
 No feature code is written in the primary checkout. Before the first wave of
