@@ -347,7 +347,7 @@ const { cmdPhantomCheck, cmdPhantomListTasks } = require(path.join(__dirname, 'l
 const { cmdPackValidate, cmdPackImport, cmdPackExport } = require(path.join(__dirname, 'lib', 'pack.cjs'));
 
 // ---------- learnings group (lib/learnings.cjs) ----------
-const { cmdLearningsCountSinceWatermark } = require(path.join(__dirname, 'lib', 'learnings.cjs'));
+const { cmdLearningsCountSinceWatermark, cmdLearningsRoots } = require(path.join(__dirname, 'lib', 'learnings.cjs'));
 
 function main() {
   const argv = process.argv.slice(2);
@@ -596,6 +596,11 @@ function main() {
         // watermark source missing/unreadable) and JSON stdout
         cmdLearningsCountSinceWatermark(rest);
         return; // unreachable — cmdLearningsCountSinceWatermark calls process.exit()
+      } else if (sub === 'roots') {
+        // owns its own exit code (0 roots found / 3 nothing resolved) and JSON
+        // stdout — a1-evolve's collect phase asks instead of hardcoding a path.
+        cmdLearningsRoots(rest);
+        return; // unreachable — cmdLearningsRoots calls process.exit()
       } else usage(`unknown learnings subcommand: ${sub}`);
     } else {
       usage(`unknown command group: ${group} (expected "spec", "fix", "analyze", "check", "checklist", "constitution", "worktree", "pr", "phantom", "reconcile", "modernize", "schema-check", "cost", "pack", "product", "quick", "learnings", or "realpath-check"). fix supports: next-suffix, update-status, list, find-duplicates, integrity-check, init-postmortem, count-postmortems-since, update-promote-state, write-suggestion`);

@@ -11,13 +11,33 @@ Since M7, canonical stores are REPO-LOCAL: each project keeps its own
 retros (proven 2026-07-17: 13 of 16 new retros lived in OTHER repos' stores).
 Collect across all of them, plus `A1_VAULT_ROOT` if set:
 
+**Never hardcode the checkout path.** Ask for it — the roots differ per machine
+(`~/claude-projects` here, `~/code` elsewhere), and a glob that matches nothing
+reports "no learnings" instead of failing. `learnings roots` resolves them via
+`A1_CODE_ROOTS` → autodetect → the current repo's parent, and exits 3 (loudly)
+when nothing resolves. **Exit 3 aborts the run; it is never "0 new entries".**
+
 ```bash
-STORES=$(ls -d ~/code/*/.a1/learnings/pattern/a1-learnings 2>/dev/null)
+ROOTS=$(node <repo>/_shared/a1-tools.cjs learnings roots \
+        | python3 -c 'import json,sys; print(" ".join(json.load(sys.stdin)["roots"]))') \
+  || { echo "no project roots — fix A1_CODE_ROOTS before synthesizing"; exit 3; }
+
+STORES=""
+for R in $ROOTS; do
+  STORES="$STORES $(ls -d "$R"/*/.a1/learnings/pattern/a1-learnings 2>/dev/null)"
+done
 [ -n "$A1_VAULT_ROOT" ] && STORES="$STORES $A1_VAULT_ROOT/pattern/a1-learnings"
 for S in $STORES; do echo "== $S"; ls "$S"; done
 ```
 
-The SKILLS-REPO store (`~/code/a1-skills/.a1/learnings`) is the primary one —
+Reuse `$ROOTS` for every glob in this phase (1c, 1c-quater, 1c-quinquies) rather
+than re-deriving a path. Historical note: this step read `~/code/*` until
+2026-09-11, a directory that does not exist on Rob's machine — the 6th synthesis
+run would have collected nothing while reporting success. Third collect-scope
+defect in six runs (2026-07-17 single-repo read, 2026-08-02 write-side omission,
+this one), hence the CLI owner instead of a fourth hardcode.
+
+The SKILLS-REPO store (`<repo>/.a1/learnings`) is the primary one —
 its `index.md`/`patterns.md` hold the cross-project synthesis state. Read in
 this order:
 1. Skills-repo `pattern/a1-learnings/index.md` — overview, entry counts, last synthesis date
@@ -38,7 +58,9 @@ Use to cross-check against Vault. If local has entries not in Vault, those are m
 
 ### 1c. Read raw observations from projects
 ```bash
-find ~/code -path "*/.a1/phases/*/observations.jsonl" 2>/dev/null | head -30
+for R in $ROOTS; do
+  find "$R" -path "*/.a1/phases/*/observations.jsonl" 2>/dev/null
+done | head -30
 ```
 Parse JSONL for granular pattern data not yet summarized in retros.
 
@@ -87,7 +109,7 @@ patterns under `.a1/packs/*/patterns/*.md`. Packs are staged via
 `packs/README.md`). Before ingesting, re-validate every staged pack — a
 manifest that no longer validates (hand-edited, partially copied) is excluded:
 ```bash
-for m in $(find ~/code -path "*/.a1/packs/*" -name pack.yaml 2>/dev/null); do
+for m in $(for R in $ROOTS; do find "$R" -path "*/.a1/packs/*" -name pack.yaml 2>/dev/null; done); do
   node <repo>/_shared/a1-tools.cjs pack validate "$(dirname "$m")" \
     || echo "SKIP invalid pack: $(dirname "$m")"
 done
@@ -95,7 +117,7 @@ done
 Then collect patterns from the packs that validated, so community-contributed
 gates enter clustering:
 ```bash
-find ~/code -path "*/.a1/packs/*/patterns/*.md" 2>/dev/null | sort
+for R in $ROOTS; do find "$R" -path "*/.a1/packs/*/patterns/*.md" 2>/dev/null; done | sort
 ```
 (Exclude pattern files under any pack directory that failed validation above.)
 Each such pattern enters Phase 2 clustering as `source: community` with its
@@ -115,7 +137,7 @@ one-line `retro:` frontmatter field (see `_shared/retro-template.md`'s
 `pattern/a1-learnings/`:
 
 ```bash
-find ~/code/*/.a1/learnings/projects/*/quick -name "*.md" 2>/dev/null | sort
+for R in $ROOTS; do find "$R"/*/.a1/learnings/projects/*/quick -name "*.md" 2>/dev/null; done | sort
 [ -n "$A1_VAULT_ROOT" ] && find "$A1_VAULT_ROOT/projects/*/quick" -name "*.md" 2>/dev/null | sort
 ```
 

@@ -88,6 +88,109 @@ function vaultRoot() {
   return root;
 }
 
+// ---------- code roots resolution ----------
+
+// Same choke-point idea as vaultRoot(), for a different question. vaultRoot()
+// answers "where do learning artifacts get WRITTEN"; codeRoots() answers "where
+// do the project CHECKOUTS live" — the directories a1-evolve's collect phase
+// globs for `*/.a1/learnings/`, `*/.a1/phases/*/observations.jsonl` and
+// `*/.a1/packs/`. They are unrelated paths: on Rob's machine the store is
+// ~/N3URAL-Vault (via A1_VAULT_ROOT) while the checkouts are ~/claude-projects.
+let _codeRootsAnnounced = false;
+
+/**
+ * Resolve the directories that hold project checkouts, as an array of absolute
+ * paths (most specific first). No silent degradation: the chosen tier is
+ * announced once per process to stderr, like vaultRoot().
+ *
+ * Precedence:
+ *   Tier 1  A1_CODE_ROOTS env var  → colon-separated list, used as-is.
+ *           Only existing directories are kept; if none exist, that is an
+ *           error, not a silent fall-through to autodetect.
+ *   Tier 2  autodetect             → the first of ~/claude-projects, ~/code,
+ *           ~/projects, ~/src, ~/repos, ~/dev that exists. All matches are
+ *           returned, not just the first, so a split setup still works.
+ *   Tier 3  the current git repo's parent directory — a sibling layout is the
+ *           common case for a single-checkout machine.
+ *   none    nothing resolves → empty array plus a loud stderr warning. The
+ *           caller decides whether that is fatal; a collect phase that finds
+ *           no roots must say so rather than report "0 learnings".
+ *
+ * Why this exists (2026-09-11): a1-evolve's collect globs were hardcoded to
+ * ~/code, which does not exist on this machine — taken literally the 6th
+ * synthesis run would have collected nothing while reporting success. Third
+ * collect-scope defect in six runs, so the path got an owner instead of a
+ * fourth hardcode.
+ */
+function codeRoots() {
+  let roots = [];
+  let source;
+
+  if (process.env.A1_CODE_ROOTS) {
+    const declared = process.env.A1_CODE_ROOTS.split(':').filter(Boolean);
+    roots = declared.filter((d) => {
+      try {
+        return fs.statSync(d).isDirectory();
+      } catch (_e) {
+        return false;
+      }
+    });
+    source = 'env';
+    if (roots.length === 0) {
+      process.stderr.write(
+        `[a1-tools] error: A1_CODE_ROOTS is set but none of its paths exist: ${declared.join(', ')}\n`
+      );
+      process.exit(2);
+    }
+  } else {
+    const candidates = ['claude-projects', 'code', 'projects', 'src', 'repos', 'dev'];
+    roots = candidates
+      .map((c) => path.join(os.homedir(), c))
+      .filter((d) => {
+        try {
+          return fs.statSync(d).isDirectory();
+        } catch (_e) {
+          return false;
+        }
+      });
+    source = 'autodetect';
+
+    if (roots.length === 0) {
+      // Tier 3 — sibling layout relative to the current repo.
+      try {
+        const { execSync } = require('child_process');
+        const top = execSync('git rev-parse --show-toplevel', {
+          stdio: ['ignore', 'pipe', 'ignore'],
+        })
+          .toString()
+          .trim();
+        if (top) {
+          roots = [path.dirname(top)];
+          source = 'repo-parent';
+        }
+      } catch (_e) {
+        /* not in a repo — fall through to the empty case */
+      }
+    }
+  }
+
+  if (!_codeRootsAnnounced) {
+    _codeRootsAnnounced = true;
+    if (roots.length === 0) {
+      process.stderr.write(
+        '[a1-tools] warning: no project roots resolved. Set A1_CODE_ROOTS\n' +
+          '  (colon-separated) so cross-project collection can find checkouts.\n'
+      );
+    } else {
+      process.stderr.write(
+        `[a1-tools] code roots: ${roots.join(', ')} (source: ${source})\n`
+      );
+    }
+  }
+
+  return roots;
+}
+
 function resolveVaultPath(input) {
   if (path.isAbsolute(input)) return input;
   return path.join(vaultRoot(), input);
@@ -648,4 +751,4 @@ function projectsPath(...segments) {
   return path.join(vaultRoot(), 'project', ...safe);
 }
 
-module.exports = { vaultRoot, resolveVaultPath, parseFrontmatter, serializeScalar, detectKeyOrder, serializeFrontmatter, readMd, writeMdAtomic, nowIso, writeTextAtomic, parseScalarToken, parseNestedFrontmatter, serializeNestedFrontmatter, writeNestedMdAtomic, parseFlags, fail, assertSafeSegment, projectsPath, copyDirRecursive };
+module.exports = { vaultRoot, codeRoots, resolveVaultPath, parseFrontmatter, serializeScalar, detectKeyOrder, serializeFrontmatter, readMd, writeMdAtomic, nowIso, writeTextAtomic, parseScalarToken, parseNestedFrontmatter, serializeNestedFrontmatter, writeNestedMdAtomic, parseFlags, fail, assertSafeSegment, projectsPath, copyDirRecursive };

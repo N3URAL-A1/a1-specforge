@@ -5,6 +5,7 @@ const path = require('path');
 const os = require('os');
 
 const { usage } = require('./help.cjs');
+const { codeRoots } = require('./io.cjs');
 
 // ---------- learnings subcommands ----------
 //
@@ -136,8 +137,26 @@ function countH2Blocks(root, watermark) {
 
 /** Count postmortem files (frontmatter `date:`) under
  * <project>/.a1/learnings/project/<slug>/postmortems/**, strictly after `watermark`. */
+// A postmortems/ directory is not homogeneous: some projects file
+// `type: feature-note` (shipped features, no defect) or `type: record`
+// (decision records) alongside real postmortems. Counting files instead of
+// reading their type inflates bug clusters — on 2026-08-02 this turned 7 real
+// niimo bugs into a reported 19, and on 2026-09-11 it reported 6 postmortems
+// where only 4 were defects. The rule ("read `type:` before counting") had
+// lived in a1-evolve's collect workflow since 08-02 but never reached this
+// code, so every automated count repeated the error the workflow warned about.
+// Counted: `type:` absent (legacy postmortem) or postmortem/bugfix. Excluded
+// and reported separately: anything else.
+function isCountablePostmortem(fmBlock) {
+  const t = fmBlock.match(/^type:\s*(\S+)/m);
+  if (!t) return true; // legacy entry, predates the type: field
+  const v = t[1].toLowerCase();
+  return v === 'postmortem' || v === 'bugfix';
+}
+
 function countPostmortems(root, watermark) {
   let count = 0;
+  let excluded = 0;
   const projectDirs = listSubdirs(root);
   for (const projName of projectDirs) {
     const postmortemsDir = path.join(
@@ -154,10 +173,12 @@ function countPostmortems(root, watermark) {
         ? content.slice(0, fmEnd)
         : content;
       const m = fmBlock.match(/^date:\s*(\S+)/m);
-      if (m && m[1] > watermark) count++;
+      if (!m || !(m[1] > watermark)) continue;
+      if (isCountablePostmortem(fmBlock)) count++;
+      else excluded++;
     }
   }
-  return count;
+  return { count, excluded };
 }
 
 
@@ -212,6 +233,7 @@ function countVaultRetros(patternDir, watermark) {
 
 function countVaultPostmortems(vault, watermark) {
   let count = 0;
+  let excluded = 0;
   const projectRoot = path.join(vault, 'project');
   for (const slug of listSubdirs(projectRoot)) {
     const dir = path.join(projectRoot, slug, 'postmortems');
@@ -222,17 +244,19 @@ function countVaultPostmortems(vault, watermark) {
       const fmEnd = content.indexOf('\n---', 4);
       const fmBlock = content.startsWith('---\n') && fmEnd !== -1 ? content.slice(0, fmEnd) : content;
       const m = fmBlock.match(/^date:\s*(\S+)/m);
-      if (m && m[1] > watermark) count++;
+      if (!m || !(m[1] > watermark)) continue;
+      if (isCountablePostmortem(fmBlock)) count++;
+      else excluded++;
     }
   }
-  return count;
+  return { count, excluded };
 }
 
 function cmdLearningsCountSinceWatermarkVault(vault, json) {
   const patternDir = path.join(vault, 'pattern', 'a1-learnings');
   const watermark = readWatermark(path.join(patternDir, 'patterns.md'));
   const { dateBlocks, h2Blocks } = countVaultRetros(patternDir, watermark);
-  const postmortems = countVaultPostmortems(vault, watermark);
+  const { count: postmortems, excluded: nonDefects } = countVaultPostmortems(vault, watermark);
   const output = {
     count: dateBlocks + h2Blocks + postmortems,
     new_since_date: watermark,
@@ -240,6 +264,9 @@ function cmdLearningsCountSinceWatermarkVault(vault, json) {
     source: 'vault',
     root: vault,
     sources: { date_blocks: dateBlocks, h2_blocks: h2Blocks, postmortems },
+    // Files under postmortems/ whose type: is neither postmortem nor bugfix
+    // (feature-note, record). Reported, never silently dropped.
+    excluded_non_defect_entries: nonDefects,
   };
   process.stdout.write(JSON.stringify(output, null, 2) + '\n');
   process.exit(0);
@@ -285,7 +312,7 @@ function cmdLearningsCountSinceWatermark(argv) {
 
   const dateBlocks = countDateBlocks(root, watermark);
   const h2Blocks = countH2Blocks(root, watermark);
-  const postmortems = countPostmortems(root, watermark);
+  const { count: postmortems, excluded: nonDefects } = countPostmortems(root, watermark);
   const count = dateBlocks + h2Blocks + postmortems;
 
   const output = {
@@ -297,10 +324,47 @@ function cmdLearningsCountSinceWatermark(argv) {
       h2_blocks: h2Blocks,
       postmortems,
     },
+    // See countVaultPostmortems: non-defect entries filed under postmortems/.
+    excluded_non_defect_entries: nonDefects,
   };
 
   process.stdout.write(JSON.stringify(output, null, 2) + '\n');
   process.exit(0);
 }
 
-module.exports = { cmdLearningsCountSinceWatermark };
+/**
+ * `learnings roots` — print the resolved project-checkout roots and the store
+ * globs derived from them, as JSON. Exists so a1-evolve's collect phase can ASK
+ * where the checkouts are instead of hardcoding a path: the workflow had
+ * `~/code/*` baked in, which does not exist on every machine, and a glob that
+ * matches nothing reports "no learnings" rather than an error (2026-09-11, 3rd
+ * collect-scope defect in six synthesis runs).
+ *
+ * Exit 0 with roots, exit 3 when nothing resolves — a collect phase must fail
+ * loudly rather than synthesize from an empty corpus.
+ */
+function cmdLearningsRoots(argv) {
+  const flags = parseLearningsFlags(argv);
+  const roots = codeRoots();
+
+  const output = {
+    roots,
+    vault_root: process.env.A1_VAULT_ROOT || null,
+    globs: {
+      stores: roots.map((r) => path.join(r, '*', '.a1', 'learnings', 'pattern', 'a1-learnings')),
+      observations: roots.map((r) => path.join(r, '*', '.a1', 'phases', '*', 'observations.jsonl')),
+      packs: roots.map((r) => path.join(r, '*', '.a1', 'packs', '*', 'pack.yaml')),
+      quick: roots.map((r) => path.join(r, '*', '.a1', 'learnings', 'projects', '*', 'quick')),
+    },
+  };
+
+  if (roots.length === 0) {
+    process.stdout.write(JSON.stringify({ ...output, error: 'no project roots resolved' }, null, 2) + '\n');
+    process.exit(3);
+  }
+
+  process.stdout.write(JSON.stringify(output, null, 2) + '\n');
+  process.exit(0);
+}
+
+module.exports = { cmdLearningsCountSinceWatermark, cmdLearningsRoots };

@@ -453,14 +453,30 @@ Usage:
                   reasons[] lists every failing criterion, not just the first.
                   Exit: 0 eligible, 1 not eligible.
 
+  a1-tools learnings roots [--json]
+                  Print the resolved project-checkout roots and the collect
+                  globs derived from them. Resolution: A1_CODE_ROOTS
+                  (colon-separated, hard-fails if none of its paths exist) >
+                  autodetect (~/claude-projects, ~/code, ~/projects, ~/src,
+                  ~/repos, ~/dev — all that exist) > the current git repo's
+                  parent. Exit: 0 with roots, 3 when nothing resolves, 2 on a
+                  bad A1_CODE_ROOTS. a1-evolve's collect phase calls this
+                  instead of hardcoding a path: exit 3 must abort the run,
+                  never be read as "0 new entries".
+
   a1-tools learnings count-since-watermark [--projects-root <path>] [--json]
                   M11-P4 learning-loop counter. Counts new learning entries
                   since the watermark recorded in patterns.md's frontmatter
                   ('updated: YYYY-MM-DD'), across all three entry formats:
                   retro 'date:' frontmatter/body blocks (repeatable per
                   file), a1-fix.md '## YYYY-MM-DD' H2 headers, and postmortem
-                  'date:' frontmatter fields. --projects-root defaults to
-                  ~/code; watermark source is
+                  'date:' frontmatter fields. Files under postmortems/ are
+                  counted only when their 'type:' is absent (legacy) or
+                  postmortem/bugfix; feature-note and record entries are
+                  excluded and reported as excluded_non_defect_entries (the
+                  2026-08-02 rule finally reached the code 2026-09-11).
+                  --projects-root defaults to the first resolved code root
+                  (see 'learnings roots'); watermark source is
                   <projects-root>/a1-skills/.a1/learnings/pattern/a1-learnings/patterns.md.
                   Watermark comparison is DATE-ONLY (YYYY-MM-DD string
                   compare) with strict '>' (exclusive) — deliberate, not a
