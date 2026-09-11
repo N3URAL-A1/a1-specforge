@@ -472,9 +472,12 @@ Usage:
                   file), a1-fix.md '## YYYY-MM-DD' H2 headers, and postmortem
                   'date:' frontmatter fields. Files under postmortems/ are
                   counted only when their 'type:' is absent (legacy) or
-                  postmortem/bugfix; feature-note and record entries are
-                  excluded and reported as excluded_non_defect_entries (the
-                  2026-08-02 rule finally reached the code 2026-09-11).
+                  postmortem/bugfix. EVERY other type (record, feature-note,
+                  note, anything new) is excluded and reported as
+                  excluded_non_defect_entries — never silently dropped. A file
+                  without frontmatter counts as undated and is skipped, so
+                  prose can neither date nor disqualify an entry. (The
+                  2026-08-02 rule finally reached the code 2026-09-11.)
                   --projects-root defaults to the first resolved code root
                   (see 'learnings roots'); watermark source is
                   <projects-root>/a1-skills/.a1/learnings/pattern/a1-learnings/patterns.md.

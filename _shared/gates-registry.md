@@ -33,7 +33,7 @@ Constitution rules this table enforces:
 | `gate-4.5-fr-consistency` | Execute / standalone | deterministic | cheap | a1-checklist (checks #9/#10) | blocking | FR-consistency gate: `checklist run <slug>/<feature> --only 9,10` (former a1-check, retired M13 — same engine, exit 0/1/2 unchanged). |
 | `phase-6-verify` | Verify | prompt | high | a1-execute (a1-victor-verifier) | blocking | Goal-backward verification vs **spec** ACs. Re-runs only failed/re-touched ACs + cross-wave + edge/SC (P3). |
 | `phantom` | Verify (Victor Step 6.5) | deterministic | cheap | a1-phantom | warning | CLI always exits 0 (standalone). Enforcement point (P4): PHANTOM verdicts on non-`# no-code` tasks become BLOCKER findings inside Victor's VERIFICATION.md. |
-| `collect-roots` | a1-evolve Phase 1 (Collect) | deterministic | cheap | a1-evolve (`01-collect.md` §1a) | blocking | NEW (2026-09-11). `a1-tools learnings roots` — exit 0 roots / 2 bad `A1_CODE_ROOTS` / 3 nothing resolved. Guards the precondition of every synthesis: a collect phase whose globs match nothing must abort, not report "0 new entries". Added after the hardcoded `~/code` glob would have made the 6th run collect nothing while reporting success. |
+| `collect-roots` | a1-evolve Phase 1 (Collect) | deterministic | cheap | a1-evolve (`01-collect.md` §1a) | blocking | NEW (2026-09-11). `a1-tools learnings roots` — exit 0 roots / 2 bad `A1_CODE_ROOTS` / 3 nothing resolved. Guards the precondition of every synthesis: a collect phase whose globs match nothing must abort, not report "0 new entries". Added after the hardcoded `~/code` glob would have made the 6th run collect nothing while reporting success. Retro attribution: `{id: collect-roots, ...}` per `skills/a1-evolve/workflows/04-apply.md` Retro block. |
 | `fix-integrity` | a1-fix | deterministic | cheap | a1-fix | blocking | Integrity-check / postmortem retro-integrity. Cheap, deterministic, keep as-is. |
 | `checklist-preflight` | Pre-feature | prompt | med | a1-checklist | blocking | Launch/pre-feature readiness gate. |
 | `reconcile-probe` | Post-hoc | deterministic | med | a1-reconcile | warning | Spec-drift / incomplete surface wiring, post-hoc (vs gate-0.5 in-flight). |
@@ -70,7 +70,9 @@ that exact misspelling was written **seven more times**, plus
 firings instead of 14, which is the difference between "not enough data" and a
 retirement-candidate verdict. Prose in three places (here, `retro-template.md`,
 and `02-cluster.md`) has now failed twice, so the fix has to be machine-checked
-— tracked as spec `007-retro-gate-id-validator`, not as another paragraph.
+— tracked as spec `007-retro-gate-id-validator` in the learning store
+(`$A1_VAULT_ROOT/project/a1-specforge/spec/`, alongside specs 001–006), not as
+another paragraph here.
 
 (Deliberately a bullet list, not a table: a markdown table here would share the
 id-table's row shape, and any parser scraping `^| \`id\`` would then accept the

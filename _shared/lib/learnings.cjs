@@ -5,7 +5,7 @@ const path = require('path');
 const os = require('os');
 
 const { usage } = require('./help.cjs');
-const { codeRoots } = require('./io.cjs');
+const { codeRoots, parseFrontmatter } = require('./io.cjs');
 
 // ---------- learnings subcommands ----------
 //
@@ -33,7 +33,12 @@ const { codeRoots } = require('./io.cjs');
 
 /** Minimal flag parser for this subcommand: --projects-root <path>, --json. */
 function parseLearningsFlags(argv) {
-  const flags = { projectsRoot: path.join(os.homedir(), 'code'), json: false };
+  // Default comes from codeRoots(), not a hardcoded ~/code — that hardcode was
+  // the 2026-09-11 defect this module's `roots` subcommand exists to end, and
+  // leaving it here gave the same fact two owners with different answers
+  // (constitution invariant 1). Lazy: only resolved when no --projects-root was
+  // passed, so the tier announcement stays off the path that does not need it.
+  const flags = { projectsRoot: null, json: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--projects-root') {
@@ -43,6 +48,17 @@ function parseLearningsFlags(argv) {
     } else if (a === '--json') {
       flags.json = true;
     }
+  }
+  if (flags.projectsRoot === null) {
+    const roots = codeRoots();
+    if (roots.length === 0) {
+      process.stderr.write(
+        '[a1-tools] error: no project roots resolved and no --projects-root given.\n' +
+          '  Set A1_CODE_ROOTS (see `a1-tools learnings roots`) or pass --projects-root.\n'
+      );
+      process.exit(3);
+    }
+    flags.projectsRoot = roots[0];
   }
   return flags;
 }
@@ -138,20 +154,52 @@ function countH2Blocks(root, watermark) {
 /** Count postmortem files (frontmatter `date:`) under
  * <project>/.a1/learnings/project/<slug>/postmortems/**, strictly after `watermark`. */
 // A postmortems/ directory is not homogeneous: some projects file
-// `type: feature-note` (shipped features, no defect) or `type: record`
-// (decision records) alongside real postmortems. Counting files instead of
+// `type: feature-note` (shipped features, no defect), `type: record` (decision
+// records) or `type: note` alongside real postmortems. Counting files instead of
 // reading their type inflates bug clusters — on 2026-08-02 this turned 7 real
 // niimo bugs into a reported 19, and on 2026-09-11 it reported 6 postmortems
-// where only 4 were defects. The rule ("read `type:` before counting") had
-// lived in a1-evolve's collect workflow since 08-02 but never reached this
-// code, so every automated count repeated the error the workflow warned about.
-// Counted: `type:` absent (legacy postmortem) or postmortem/bugfix. Excluded
-// and reported separately: anything else.
-function isCountablePostmortem(fmBlock) {
-  const t = fmBlock.match(/^type:\s*(\S+)/m);
-  if (!t) return true; // legacy entry, predates the type: field
-  const v = t[1].toLowerCase();
-  return v === 'postmortem' || v === 'bugfix';
+// where only 4 were defects. The rule ("read `type:` before counting") had lived
+// in a1-evolve's collect workflow since 08-02 but never reached this code, so
+// every automated count repeated the error the workflow warned about.
+//
+// Parsing goes through io.cjs's parseFrontmatter, never a local regex: a
+// hand-rolled /^type:\s*(\S+)/ captures quotes (`type: "postmortem"` → excluded
+// as a non-defect, a real defect lost) and, on a file with no frontmatter at
+// all, scans the BODY — so prose lines could both date and disqualify an entry.
+// Both were live defects in the first cut of this filter (found in review
+// 2026-09-11).
+//
+// COUNTED:   `type:` absent (legacy entry, predates the field), postmortem, bugfix.
+// EXCLUDED:  every other value — record, feature-note, note, anything new.
+//            Reported as excluded_non_defect_entries, never silently dropped.
+const COUNTABLE_POSTMORTEM_TYPES = new Set(['postmortem', 'bugfix']);
+
+/**
+ * Classify one postmortems/ file from its PARSED frontmatter.
+ * @param {object|null} fm parsed frontmatter object, or null when absent
+ * @returns {boolean} true when the entry counts as a defect
+ */
+function isCountablePostmortem(fm) {
+  if (!fm || fm.type === undefined || fm.type === null || fm.type === '') return true;
+  return COUNTABLE_POSTMORTEM_TYPES.has(String(fm.type).trim().toLowerCase());
+}
+
+/**
+ * Read a postmortem file's frontmatter date + defect classification.
+ * A file with NO frontmatter is not dated — skipped entirely rather than
+ * body-scanned, so prose can never date or disqualify an entry.
+ * @returns {{dated: string|null, countable: boolean}}
+ */
+function classifyPostmortemFile(content) {
+  if (!content || !content.startsWith('---')) return { dated: null, countable: false };
+  let fm;
+  try {
+    ({ fm } = parseFrontmatter(content));
+  } catch (_e) {
+    return { dated: null, countable: false };
+  }
+  if (!fm || !fm.date) return { dated: null, countable: false };
+  return { dated: String(fm.date).trim(), countable: isCountablePostmortem(fm) };
 }
 
 function countPostmortems(root, watermark) {
@@ -164,17 +212,9 @@ function countPostmortems(root, watermark) {
     );
     const files = walkFiles(postmortemsDir, (full, name) => name.endsWith('.md') && full.includes(path.sep + 'postmortems' + path.sep));
     for (const f of files) {
-      const content = readFileSafe(f);
-      if (!content) continue;
-      // Only the frontmatter block's date: field — match the first
-      // "date:" line inside a leading "---\n ... \n---" block.
-      const fmEnd = content.indexOf('\n---', 4);
-      const fmBlock = content.startsWith('---\n') && fmEnd !== -1
-        ? content.slice(0, fmEnd)
-        : content;
-      const m = fmBlock.match(/^date:\s*(\S+)/m);
-      if (!m || !(m[1] > watermark)) continue;
-      if (isCountablePostmortem(fmBlock)) count++;
+      const { dated, countable } = classifyPostmortemFile(readFileSafe(f));
+      if (!dated || !(dated > watermark)) continue;
+      if (countable) count++;
       else excluded++;
     }
   }
@@ -239,13 +279,9 @@ function countVaultPostmortems(vault, watermark) {
     const dir = path.join(projectRoot, slug, 'postmortems');
     const files = walkFiles(dir, (full, name) => name.endsWith('.md'));
     for (const f of files) {
-      const content = readFileSafe(f);
-      if (!content) continue;
-      const fmEnd = content.indexOf('\n---', 4);
-      const fmBlock = content.startsWith('---\n') && fmEnd !== -1 ? content.slice(0, fmEnd) : content;
-      const m = fmBlock.match(/^date:\s*(\S+)/m);
-      if (!m || !(m[1] > watermark)) continue;
-      if (isCountablePostmortem(fmBlock)) count++;
+      const { dated, countable } = classifyPostmortemFile(readFileSafe(f));
+      if (!dated || !(dated > watermark)) continue;
+      if (countable) count++;
       else excluded++;
     }
   }
@@ -344,7 +380,9 @@ function cmdLearningsCountSinceWatermark(argv) {
  * loudly rather than synthesize from an empty corpus.
  */
 function cmdLearningsRoots(argv) {
-  const flags = parseLearningsFlags(argv);
+  // Deliberately NOT parseLearningsFlags: that resolver exits 3 when nothing
+  // resolves, and THIS command's job is to report that state as data.
+  const compact = argv.includes('--json');
   const roots = codeRoots();
 
   const output = {
@@ -354,16 +392,20 @@ function cmdLearningsRoots(argv) {
       stores: roots.map((r) => path.join(r, '*', '.a1', 'learnings', 'pattern', 'a1-learnings')),
       observations: roots.map((r) => path.join(r, '*', '.a1', 'phases', '*', 'observations.jsonl')),
       packs: roots.map((r) => path.join(r, '*', '.a1', 'packs', '*', 'pack.yaml')),
-      quick: roots.map((r) => path.join(r, '*', '.a1', 'learnings', 'projects', '*', 'quick')),
+      // `project` SINGULAR — a1-quick writes project/<slug>/quick/ (quick.cjs:390).
+      // The plural spelling shipped 2026-09-11 and could never match: the same
+      // dead-glob class this command exists to prevent, one line below the fix.
+      quick: roots.map((r) => path.join(r, '*', '.a1', 'learnings', 'project', '*', 'quick')),
     },
   };
 
   if (roots.length === 0) {
-    process.stdout.write(JSON.stringify({ ...output, error: 'no project roots resolved' }, null, 2) + '\n');
+    const err = { ...output, error: 'no project roots resolved' };
+    process.stdout.write(JSON.stringify(err, ...(compact ? [] : [null, 2])) + '\n');
     process.exit(3);
   }
 
-  process.stdout.write(JSON.stringify(output, null, 2) + '\n');
+  process.stdout.write(JSON.stringify(output, ...(compact ? [] : [null, 2])) + '\n');
   process.exit(0);
 }
 

@@ -17,10 +17,26 @@ reports "no learnings" instead of failing. `learnings roots` resolves them via
 `A1_CODE_ROOTS` → autodetect → the current repo's parent, and exits 3 (loudly)
 when nothing resolves. **Exit 3 aborts the run; it is never "0 new entries".**
 
+**Capture node's exit code, then parse.** `$?` of a pipeline is the LAST
+command's status, so `node ... | python3 ... || abort` reads python's success and
+the abort never fires — the tool exits 3 with a valid `{"roots": []}` payload
+that python parses happily. That bug shipped in this very step on 2026-09-11
+and was caught in review: the guard against "collect silently found nothing" was
+itself a guard that guarded nothing. Two separate statuses matter (2 = bad
+`A1_CODE_ROOTS`, 3 = nothing resolved), so do not collapse them.
+
 ```bash
-ROOTS=$(node <repo>/_shared/a1-tools.cjs learnings roots \
-        | python3 -c 'import json,sys; print(" ".join(json.load(sys.stdin)["roots"]))') \
-  || { echo "no project roots — fix A1_CODE_ROOTS before synthesizing"; exit 3; }
+ROOTS_JSON=$(node <repo>/_shared/a1-tools.cjs learnings roots); RC=$?
+if [ $RC -ne 0 ]; then
+  case $RC in
+    2) echo "A1_CODE_ROOTS is set but points nowhere — fix it before synthesizing" ;;
+    3) echo "no project roots resolved — set A1_CODE_ROOTS before synthesizing" ;;
+    *) echo "learnings roots failed (exit $RC)" ;;
+  esac
+  exit $RC
+fi
+ROOTS=$(printf '%s' "$ROOTS_JSON" \
+        | python3 -c 'import json,sys; print(" ".join(json.load(sys.stdin)["roots"]))')
 
 STORES=""
 for R in $ROOTS; do
@@ -137,7 +153,7 @@ one-line `retro:` frontmatter field (see `_shared/retro-template.md`'s
 `pattern/a1-learnings/`:
 
 ```bash
-for R in $ROOTS; do find "$R"/*/.a1/learnings/projects/*/quick -name "*.md" 2>/dev/null; done | sort
+for R in $ROOTS; do find "$R"/*/.a1/learnings/project/*/quick -name "*.md" 2>/dev/null; done | sort
 [ -n "$A1_VAULT_ROOT" ] && find "$A1_VAULT_ROOT/projects/*/quick" -name "*.md" 2>/dev/null | sort
 ```
 

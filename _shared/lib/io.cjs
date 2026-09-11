@@ -127,7 +127,21 @@ function codeRoots() {
   let source;
 
   if (process.env.A1_CODE_ROOTS) {
-    const declared = process.env.A1_CODE_ROOTS.split(':').filter(Boolean);
+    // Absolute only. A relative entry passes statSync (resolved against the
+    // CURRENT cwd) and then poisons every emitted glob, because a1-evolve's
+    // collect phase changes directory between steps — the glob would silently
+    // mean something different per step. The JSDoc promises absolute paths, so
+    // deliver them: resolve first, and reject anything that was not absolute.
+    const declared = process.env.A1_CODE_ROOTS.split(':')
+      .map((d) => d.trim())
+      .filter(Boolean);
+    const relative = declared.filter((d) => !path.isAbsolute(d));
+    if (relative.length > 0) {
+      process.stderr.write(
+        `[a1-tools] error: A1_CODE_ROOTS entries must be absolute paths: ${relative.join(', ')}\n`
+      );
+      process.exit(2);
+    }
     roots = declared.filter((d) => {
       try {
         return fs.statSync(d).isDirectory();
@@ -201,6 +215,13 @@ function resolveVaultPath(input) {
 // Does NOT support nested objects.
 
 function parseFrontmatter(content) {
+  // Normalize CRLF first. Without this, a file saved on Windows starts with
+  // '---\r\n', fails the startsWith check, and is reported as HAVING NO
+  // FRONTMATTER — every field silently undefined, which reads downstream as
+  // "undated entry" rather than as a parse error. Found 2026-09-11 while
+  // testing the postmortem type filter; no CRLF file exists in the current
+  // corpus, so this closes a latent blind spot rather than a live defect.
+  if (content.indexOf('\r\n') !== -1) content = content.replace(/\r\n/g, '\n');
   if (!content.startsWith('---\n')) {
     return { fm: {}, body: content, raw: '' };
   }

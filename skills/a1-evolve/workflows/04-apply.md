@@ -100,4 +100,11 @@ with skill = `a1-evolve`.
 
 - task wording: synthesize learnings → propose+apply improvements
 - issue tags: [<relevant tags: low_signal, false_pattern, diff_too_big, vault_index_stale, threshold_too_loose, threshold_too_tight, ...>]
+- `gates_fired`: always attribute the Collect precondition gate —
+  `{id: collect-roots, verdict: pass|fail, caught: <true if it stopped a run
+  that would have synthesized from an empty corpus>}`. Add
+  `{id: evolve-proposal-confirm, ...}` for the Phase-4 per-proposal
+  confirmation. Invariant 7: a registered gate without an attribution id
+  produces no ROI data, which is the exact failure this skill reported about
+  other skills on 2026-08-27.
 
