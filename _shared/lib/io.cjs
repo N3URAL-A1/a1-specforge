@@ -221,6 +221,15 @@ function parseFrontmatter(content) {
   // "undated entry" rather than as a parse error. Found 2026-09-11 while
   // testing the postmortem type filter; no CRLF file exists in the current
   // corpus, so this closes a latent blind spot rather than a live defect.
+  // Normalizing the WHOLE document (body included) is deliberate, not a side
+  // effect: writeMdAtomic and serializeFrontmatter hardcode '\n' and have never
+  // been able to emit CRLF, so a CRLF file was already rewritten with LF on any
+  // round-trip — before this fix it was rewritten WITH A SECOND, EMPTY
+  // frontmatter wrapped around the original (measured in review 2026-09-11).
+  // Nothing in the repo depends on byte-preserving round-trips through here:
+  // `.raw` has no consumer outside this file, and the two places that do need
+  // exact bytes (fix.cjs's agents.lock hashing, constitution.cjs's archive copy)
+  // read with fs.readFileSync and bypass this parser entirely.
   if (content.indexOf('\r\n') !== -1) content = content.replace(/\r\n/g, '\n');
   if (!content.startsWith('---\n')) {
     return { fm: {}, body: content, raw: '' };
@@ -512,6 +521,12 @@ function parseScalarToken(raw) {
  * shape). Returns { fm, body } where fm is a plain object whose values are
  * scalars, arrays of scalars, or arrays of flat objects. */
 function parseNestedFrontmatter(content) {
+  // Same CRLF normalization as parseFrontmatter (see the note there). Applied
+  // here too so the fix is not half-done: this parser has 10+ call sites in
+  // product.cjs (roadmap + phase frontmatter), where a CRLF file would have
+  // parsed as {} — silently empty frontmatter, the exact latent class the flat
+  // parser's fix closed.
+  if (content.indexOf('\r\n') !== -1) content = content.replace(/\r\n/g, '\n');
   if (!content.startsWith('---\n')) {
     return { fm: {}, body: content };
   }

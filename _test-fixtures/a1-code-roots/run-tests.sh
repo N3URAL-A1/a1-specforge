@@ -174,9 +174,35 @@ caseG() {
     printf "%s" "$ROOTS_JSON" | python3 -c "import json,sys; print(\" \".join(json.load(sys.stdin)[\"roots\"]))"
   ' "$TOOLS")" || rc=$?
   if [[ $rc -eq 3 ]] && [[ -z "$roots" ]]; then
-    ok "G documented snippet ABORTS on exit 3 (rc=$rc)"
+    ok "G exit-3 IS consumable by the documented shape (rc=$rc)"
   else
-    bad "G documented snippet aborts on exit 3 (rc=$rc, roots='$roots')"
+    bad "G exit-3 consumable by documented shape (rc=$rc, roots='$roots')"
+  fi
+}
+
+# ---------- Case K: the workflow doc has not drifted back ----------
+# Case G proves the CLI's exit-3 contract is consumable, but it embeds its OWN
+# copy of the snippet — deleting 01-collect.md entirely leaves G green (proved
+# in review 2026-09-11). So G does not guard the place the BLOCKER actually
+# lived. This case does, by grep rather than by eval: executing a fenced block
+# extracted from markdown would trade a narrow blind spot for an injection-
+# shaped one. Two spellings must stay absent from §1a:
+#   - piping the tool into a parser and testing the PIPELINE status ($? is the
+#     parser's, so the abort never fires)
+#   - any `projects/` path under .a1/learnings (the store is `project/`)
+caseK() {
+  local doc bad_pipe bad_plural
+  doc="$REPO_ROOT/skills/a1-evolve/workflows/01-collect.md"
+  if [[ ! -f "$doc" ]]; then
+    bad "K workflow doc missing: $doc"; return
+  fi
+  # A `learnings roots` invocation piped onward on the SAME line = the old bug.
+  bad_pipe="$(grep -c 'learnings roots.*|' "$doc" || true)"
+  bad_plural="$(grep -c '\.a1/learnings/projects/' "$doc" || true)"
+  if [[ "$bad_pipe" -eq 0 && "$bad_plural" -eq 0 ]]; then
+    ok "K 01-collect.md free of pipeline-status and projects/ drift"
+  else
+    bad "K 01-collect.md drift (piped-roots=$bad_pipe, plural-store=$bad_plural)"
   fi
 }
 
@@ -239,7 +265,7 @@ caseI() {
   fi
 }
 
-caseA; caseB; caseC; caseD; caseE; caseF; caseG; caseH; caseI; caseJ
+caseA; caseB; caseC; caseD; caseE; caseF; caseG; caseH; caseI; caseJ; caseK
 
 printf '%s\n' "${results[@]}"
 echo "----"

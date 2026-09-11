@@ -154,7 +154,12 @@ one-line `retro:` frontmatter field (see `_shared/retro-template.md`'s
 
 ```bash
 for R in $ROOTS; do find "$R"/*/.a1/learnings/project/*/quick -name "*.md" 2>/dev/null; done | sort
-[ -n "$A1_VAULT_ROOT" ] && find "$A1_VAULT_ROOT/projects/*/quick" -name "*.md" 2>/dev/null | sort
+# `project` SINGULAR, and the glob OUTSIDE the quotes — quoted, find receives a
+# literal `*` as a path component and errors out. Both bugs were on this one
+# line until 2026-09-11 and hid 9 real quick records (1.8 weighted entries) from
+# every synthesis: an existing store with no working glob is an invariant-4
+# breach, not a typo. Verify with `| wc -l`, never by reading the line.
+[ -n "$A1_VAULT_ROOT" ] && find "$A1_VAULT_ROOT/project/"*"/quick" -name "*.md" 2>/dev/null | sort
 ```
 
 Or, equivalently, via the aggregate CLI report (same data, pre-computed):
