@@ -292,6 +292,19 @@ function parseFrontmatter(content) {
       i++;
       continue;
     }
+    // Non-empty inline array. This parser has its own value handling (it does
+    // not route through parseScalarToken), so the `[]`-only gap existed here
+    // too and had to be closed in both places — see the note in
+    // parseScalarToken for the two measured consequences.
+    if (valueRaw.startsWith('[') && valueRaw.endsWith(']')
+        && valueRaw.indexOf('[', 1) === -1) {
+      const inner = valueRaw.slice(1, -1).trim();
+      fm[key] = inner === ''
+        ? []
+        : inner.split(',').map((x) => parseScalarToken(x.trim()));
+      i++;
+      continue;
+    }
     if (valueRaw === 'null') {
       fm[key] = null;
       i++;
@@ -500,6 +513,22 @@ function parseScalarToken(raw) {
   if (raw === '' || raw === undefined) return null;
   if (raw === 'null') return null;
   if (raw === '[]') return [];
+  // Non-empty inline arrays. Only `[]` was handled until 2026-09-11, so
+  // `[a, b]` came back as the STRING "[a, b]" — silently, since a string is a
+  // plausible-looking value. Two measured consequences: docs/product/ROADMAP.md
+  // failed `product validate` with "features[1].depends_on: must be an array"
+  // for two months, and every retro's `issues:`/`finding_classes:` field was
+  // unreadable as a list, which is why a1-evolve's clustering had to re-parse
+  // them out of the raw text with a regex instead of using the parser.
+  // Quoted items are unwrapped via the same scalar rules (recursion depth 1 —
+  // nested inline arrays are not YAML we emit, so `[[a]]` stays a string).
+  if (raw.startsWith('[') && raw.endsWith(']')) {
+    const inner = raw.slice(1, -1).trim();
+    if (inner === '') return [];
+    if (inner.indexOf('[') === -1 && inner.indexOf(']') === -1) {
+      return inner.split(',').map((x) => parseScalarToken(x.trim()));
+    }
+  }
   if (raw === 'true') return true;
   if (raw === 'false') return false;
   if (/^-?[0-9]+$/.test(raw)) return parseInt(raw, 10);
