@@ -59,6 +59,17 @@ drifts (2026-08-27 synthesis, 8 of 12 ids in the corpus were unregistered):
 
 - written `lane-split-check` → correct id is `lane-split`
 - written `consistency-gate-4-5` → correct id is `gate-4.5-fr-consistency`
+- written `full-regression-gate` → correct id is `gate-1-build` (full-suite variant)
+
+**This warning demonstrably does not hold on its own.** It was written on
+2026-08-27 naming `lane-split-check` explicitly; between then and 2026-09-11
+that exact misspelling was written **seven more times**, plus
+`consistency-gate-4-5` once and `full-regression-gate` once — 9 of 33
+`gates_fired` entries in the corpus. Measured effect: `lane-split` counted 7
+firings instead of 14, which is the difference between "not enough data" and a
+retirement-candidate verdict. Prose in three places (here, `retro-template.md`,
+and `02-cluster.md`) has now failed twice, so the fix has to be machine-checked
+— tracked as spec `007-retro-gate-id-validator`, not as another paragraph.
 
 (Deliberately a bullet list, not a table: a markdown table here would share the
 id-table's row shape, and any parser scraping `^| \`id\`` would then accept the

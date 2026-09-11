@@ -65,6 +65,17 @@ Work backwards from the goal:
 
 9. **Tasks that create or modify a `.mjs`/JSDoc-typed export with a multi-field return value must require an explicit `@returns` block naming each field.** Without it, `tsc --noEmit` (via `allowJs`/`checkJs`) infers a generic `object`, and any later wave's consuming test or module that accesses a specific property fails with TS2339/TS7016 — a defect class that recurred across 3 separate waves in one project before being named (why: `_shared/agent-lessons.md#pablo-mjs-returns`).
 
+10. **Per shared field, name the owner phase.** Any field, list, marker or
+    permission class that more than one phase touches gets exactly one WRITING
+    phase; every other phase reads it. Two consequences the auditors had to
+    find as BLOCKERs instead: "enforced in the schema" is **not**
+    authorization — a permission field (`source`, `kind`, operator identity)
+    belongs on the authenticated channel, never in a payload the caller can
+    set; and a server-wide list must exist in exactly one place, or the second
+    copy becomes a second truth. When your phase is planned alongside others,
+    state the field owners in the plan and cite the dated artifact you read
+    them from (why: `_shared/agent-lessons.md#pablo-field-ownership`).
+
 Map each must-have to a specific task. No must-have without a task. No task without a must-have.
 
 ## Step 4: Build execution waves

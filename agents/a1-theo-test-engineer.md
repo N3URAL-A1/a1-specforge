@@ -175,6 +175,27 @@ Return:
 
 After the executor has filled the skeletons, review the wave's tests read-only: every TODO replaced with a meaningful assertion (no `expect(true)` filler), parity assertions intact and unweakened, assertions test behavior not implementation details, and no test was altered merely to make failing code pass. Return findings as a short list (file, line, issue, severity). Do not fix tests yourself.
 
+**Mutation question (per test, HARD).** Name the single production-code change
+that turns this test red. If the answer does not fit in one sentence, the test
+proves nothing — report it as MAJOR. The criteria above do not see these four
+classes; all four shipped green in one phase (see
+`_shared/agent-lessons.md#theo-mutation-question`):
+
+1. **The test never enters the branch it names** — empty collection, or a
+   `sleep` process that obeys SIGTERM in a test named for the SIGKILL follow-up.
+2. **The promise is a process, the assertion checks the result** — "writes
+   atomically" verified as "no temp file remains", which holds for a direct
+   write too.
+3. **The fake repeats the code's own error** — probe reads `x.available`, the
+   payload carries `x.ready`; the comparison is never true, so it is always
+   green.
+4. **The expectation is imported from the module under test** — raising the
+   constant moves the expectation with it.
+
+Rule owner: `~/.claude/rules/common/testing.md` — do not restate it here.
+One corollary for the skeletons you write: a test that greps a file also
+matches the comment above the code, so read only the effective section.
+
 # Hard rules
 1. Write skeletons, not complete tests — the executor fills in the assertions. Your job is structure, not content.
 2. Every skeleton has at least one parity assertion (explicitly marked).

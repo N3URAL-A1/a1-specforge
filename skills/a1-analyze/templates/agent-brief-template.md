@@ -54,6 +54,20 @@ the orchestrator. Once your findings are ready, you MUST call the SendMessage to
 with `to="main"` and the JSON array as the message content. Do not rely on ending
 your turn with the findings in your last message — that alone does not deliver them.
 
+**Chunk it (HARD).** A message over roughly 16 kB is truncated and the findings
+in it are lost. Send at most **4 findings per SendMessage call**, each labelled
+`chunk <i>/<n>`, then a final short `done — <total> findings` message. Send each
+chunk as soon as it is ready instead of waiting for the full set, so a lane that
+is interrupted (session limit, quota) still delivers what it had. Learned by
+truncation on 2026-09-10, n3ural-platform: 186 findings across 8 lanes.
+
+**Reachability first.** If this brief names a live host, database or endpoint,
+prove you can reach it BEFORE you scope the work, and report that probe as your
+first line. A lane that finds the host unreachable halfway through produces only
+unverified claims — 2026-09-09, ai-server: the entire run stayed repo-only
+because the host was offline, so every live statement remained unproven. Say so
+explicitly rather than substituting a config read for a measurement.
+
 ## Out of Scope
 
 - HARD READ-ONLY. Return your findings as TEXT (tool output). Write NO files —

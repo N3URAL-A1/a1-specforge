@@ -2,6 +2,32 @@
 
 Spawn `a1-pablo-planner` to create the PLAN.md.
 
+## Shared-interface contract (HARD, only when >1 phase is planned in one run)
+
+Fix the shared surface BEFORE the first planner spawns, and hand every planner
+the same block verbatim inside its prompt:
+
+- field names of every shared schema or payload, spelled out
+- **the owner phase per field** — exactly one phase writes it, the rest read it
+- server-wide lists (operator ids, allow-lists): one location, named
+- token / permission classes that cross a phase boundary
+
+Left unfixed, each planner invents its own spelling and the auditors find the
+same second truth once per phase. 2026-09-10, n3ural-contentbot M4-P1…P6: three
+separate BLOCKERs, one per phase, all this one root cause.
+
+**Dated facts line per neighbour phase (HARD).** Every plan records, for each
+neighbour phase it depends on, which artifact it was planned against and when:
+
+```
+Neighbour M4-P2 — PLAN.md rev 4, read 2026-09-10
+```
+
+When phases are planned concurrently the facts go stale within hours. Planning
+against a neighbour's RESEARCH while its PLAN was already final produced a
+duplicate build of five modules (M4-P4). Auditors check this line against the
+neighbour's current state, not against its research.
+
 ## Prompt template
 
 ```

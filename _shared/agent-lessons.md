@@ -160,3 +160,71 @@ verdict from reading alone:
 
 Reinhard already has `Bash`; the capability was never missing, only the rule.
 Attribute these runs with `gates_fired: {id: review-empirical-probes, ...}`.
+
+## Theo — green tests written from the code prove nothing {#theo-mutation-question}
+
+2026-09-10/11, n3ural-contentbot `M4-P1-heartbeat-operator-alarm`. **Eleven
+green tests in one phase proved nothing** — five found while executing, five in
+code review, one in the security review. Every one of them asserted real
+behaviour on real code, which is why none of the Step-7 criteria (no
+`expect(true)`, parity intact, behaviour-not-implementation) saw them.
+
+**Root cause: the tests were written from the CODE, not from the PROMISE.**
+Whoever has the implementation in front of them builds the input state the way
+the function currently processes it, then asserts what it currently returns. The
+test confirms that the code does what the code does — always green, therefore
+worthless.
+
+**Why a discipline rule alone does not carry.** In the follow-up round the same
+class hit three different roles within one round:
+
+- the existing tests — Reinhard found the class five times;
+- the author fixing them — a test searching the script text matched the author's
+  own justifying comment above the loop, so the documentation kept it green
+  (the better the comment, the likelier the false green);
+- the counter-checker measuring the fix — his probe file was untracked, the gate
+  reads `git ls-files`, so a correct gate looked permeable.
+
+Three people, three roles, one trap. It does not hang on anyone's care; it hangs
+on the shape of the test.
+
+The most expensive instance: probe `pipeline.claude` read `claude.available`
+while the payload carried `claude.ready`. It reported green for exactly the
+failure mode of the 7-day outage the phase existed to detect.
+
+**Rule.** Ask per test: which single production-code change turns this red? No
+one-sentence answer ⇒ MAJOR finding. The rule itself is owned by
+`~/.claude/rules/common/testing.md` ("Grüne Tests, die nichts belegen"); this
+entry is the incident record behind it.
+
+Two machine guards were recommended in that phase and deliberately NOT built
+there (a new gate does not belong in a branch awaiting rollout): a lint rule for
+class 4 (an assertion must not take its expected value from the same module as
+the function under test) and branch coverage over the critical modules (catches
+class 1). Classes 2 and 3 stay discipline — hence the review question above.
+
+## Pablo — shared fields need one named owner phase {#pablo-field-ownership}
+
+2026-09-10, n3ural-contentbot M4: five phase plans (P1…P5) were planned
+concurrently by five planners. The auditors found **the same second truth three
+times**, once per phase, each as a BLOCKER:
+
+- **P2** — two phases touched the same schema with different field names,
+  because nobody had fixed the names before the planners spawned.
+- **P3** — an authorization field (`source`/`kind`) was "enforced in the
+  schema", i.e. validated but caller-settable; and the server-wide operator-id
+  list existed in two places. A right that a payload can assert is not a right.
+- **P4** — the plan was written against the neighbours' RESEARCH.md while their
+  PLANs were already final, so it planned a **duplicate build of five modules**
+  that P2 was already building.
+
+Two distinct mechanisms, one symptom: (a) shared interfaces were not fixed
+before the parallel spawn, and (b) the fact base goes stale within hours when
+phases are planned in parallel, so an undated reference is worthless.
+
+**Rule.** Exactly one writing phase per shared field; permission fields live on
+the authenticated channel; every cross-phase fact carries the artifact and the
+date it was read (`Neighbour M4-P2 — PLAN.md rev 4, read 2026-09-10`).
+
+The orchestrator side of this rule (fix the surface before the first spawn) is
+owned by `skills/a1-plan/workflows/03-plan.md`, "Shared-interface contract".
