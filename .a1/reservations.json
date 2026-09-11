@@ -1,3 +1,32 @@
 {
-  "reservations": []
+  "reservations": [
+    {
+      "type": "code_scope",
+      "paths": [
+        "_shared/lib/gate-ids.cjs",
+        "_shared/lib/retro-validate.cjs",
+        "_shared/lib/workflow-lint.cjs",
+        "_shared/lib/glob-liveness.cjs",
+        "_shared/a1-tools.cjs",
+        "_shared/lib/help.cjs",
+        "_shared/gates-registry.md",
+        "_shared/retro-template.md",
+        "skills/a1-evolve/workflows/02-cluster.md",
+        "skills/a1-evolve/workflows/04-apply.md",
+        "skills/a1-execute/workflows/03-verify.md",
+        "skills/a1-fix/workflows/04-verify.md",
+        "skills/a1-new-feature/workflows/06-verify.md",
+        "_test-fixtures/a1-retro-validate/run-tests.sh",
+        "_test-fixtures/a1-retro-validate/corpus/*",
+        "_test-fixtures/a1-glob-liveness/run-tests.sh",
+        "_test-fixtures/a1-glob-liveness/planted/*",
+        "_test-fixtures/a1-workflow-lint/run-tests.sh",
+        "_test-fixtures/a1-workflow-lint/snippets/*",
+        "_test-fixtures/CONVENTIONS.md"
+      ],
+      "by": "007-retro-gate-id-validator",
+      "at": "2026-09-11T10:58:20.597Z",
+      "stage": "started"
+    }
+  ]
 }
