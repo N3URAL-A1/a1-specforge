@@ -209,7 +209,36 @@ caseW8() {
   fi
 }
 
-caseW1; caseW2; caseW3; caseW4; caseW5; caseW6; caseW7; caseW8
+# ---------- W9: the REAL 2026-09-11 snippet, taken from git ----------
+# SC-006 says the linter must flag "the exact snippet as committed on
+# 2026-09-11". W1 used a RECONSTRUCTION built from the plan's prose
+# ($?-after-pipe) and passed — while the linter did NOT flag the real thing,
+# because the real pipeline spans three physical lines joined by backslash
+# continuations: `| python3` on one line, `||` on the next. Line-local matching
+# never saw both halves. Found by a1-victor-verifier on 2026-09-12, which
+# fetched the file from git instead of trusting the fixture.
+#
+# This case uses the verbatim git extract. Red-making change: removing the
+# joinContinuations() call in scanFileForFindings — the form the guard exists
+# for goes unflagged again.
+caseW9() {
+  local work out rc found
+  work="$(mktemp -d)"
+  mkdir -p "$work/skills/a1-evolve/workflows"
+  cp "$SNIPPETS/w9-real-2026-09-11-from-git.md" "$work/skills/a1-evolve/workflows/01-collect.md"
+  out="$(node "$TOOLS" workflow lint --root "$work" 2>/dev/null)"; rc=$?
+  found="$(node -e "
+    const j=JSON.parse(process.argv[1]);
+    process.stdout.write(String(j.findings.length));
+  " "$out" 2>&1)"
+  if [[ $rc -eq 1 && "$found" == "1" ]]; then
+    ok "W9 the real backslash-continued 2026-09-11 snippet is flagged"
+  else
+    bad "W9 real 2026-09-11 snippet flagged (rc=$rc found=$found out=$out)"
+  fi
+}
+
+caseW1; caseW2; caseW3; caseW4; caseW5; caseW6; caseW7; caseW8; caseW9
 
 printf '%s\n' "${results[@]}"
 echo "----"

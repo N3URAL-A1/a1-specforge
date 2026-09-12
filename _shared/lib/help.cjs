@@ -504,6 +504,10 @@ Usage:
                   Prints {file, entries: [{id, status, canonical?, line}],
                   valid, drift, unknown} as JSON to stdout; every fix
                   instruction and diagnostic goes to stderr only.
+                  Exit 1 also covers a bad/missing ARGUMENT (shared
+                  usage() convention across all subcommands) — tell the two
+                  apart by stdout: a real run emits the JSON report there, a
+                  usage error does not.
                   ASYMMETRY: a MISSING gates_fired field is exit 0 (read-only
                   reporter skills legitimately omit it, per
                   retro-template.md) — but a PRESENT-and-unparseable one is

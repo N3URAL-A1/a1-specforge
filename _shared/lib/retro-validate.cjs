@@ -20,8 +20,21 @@ const { parseRegistryIds, expandRangeIds, resolveGateId } = require('./gate-ids.
 //   0  every gates_fired[].id in the file is registered (literal or range).
 //   1  at least one id is drift (known alias) or unknown (neither table nor
 //      alias) — the file has something to fix before its entry counts.
-//   2  usage error, missing file, unreadable registry, OR a `gates_fired`
-//      field that is PRESENT but unparseable.
+//   2  missing file, unreadable registry, OR a `gates_fired` field that is
+//      PRESENT but unparseable.
+//
+// NOT 2: a missing/unknown ARGUMENT exits 1, via the facade's shared `usage()`
+// helper — every a1-tools subcommand behaves that way (`learnings roots`,
+// `workflow lint`, `quick eligibility` all exit 1 on a bad flag), so this
+// module follows the repo convention rather than breaking it. The header used
+// to promise 2 for "usage error"; a1-victor-verifier measured 1 on
+// 2026-09-12 and was right. Documentation corrected to the measured behaviour,
+// because the convention is the more valuable of the two things to keep
+// consistent.
+//
+// Consequence a caller must know: exit 1 means EITHER "drift found" OR "you
+// called me wrong". Distinguish them by stdout — a real run always emits the
+// JSON report on stdout, a usage error emits nothing there.
 //
 // THE ASYMMETRY THAT MATTERS (do not "fix" this by treating both alike): a
 // MISSING gates_fired field is exit 0 — read-only reporter skills legitimately

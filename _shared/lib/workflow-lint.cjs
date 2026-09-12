@@ -128,10 +128,46 @@ function extractBashFenceLines(content) {
   return out;
 }
 
+// Join backslash-continued lines into ONE logical line before matching.
+//
+// Why this exists: the linter shipped line-local, and a1-victor-verifier proved
+// on 2026-09-12 that it therefore did NOT flag the very defect it was built for.
+// The real 2026-09-11 snippet spreads the pipeline across three physical lines:
+//
+//     ROOTS=$(node ... learnings roots \
+//             | python3 -c '...') \
+//       || { echo "no project roots"; exit 3; }
+//
+// `| python3` sits on line 2 and `||` on line 3, joined only by continuations,
+// so neither `text` nor its immediate `next` ever contained both halves. The
+// fixture passed because it had been reconstructed from the plan's prose
+// ("$?-after-pipe") instead of taken from git history — a green test over a
+// guard that could not fire, which is the exact class this whole spec exists to
+// remove. Reported by the verifier, not by any suite.
+//
+// Line numbers stay those of the FIRST physical line, so findings remain
+// greppable. Returns a new array; never mutates its input.
+function joinContinuations(fenceLines) {
+  const out = [];
+  let i = 0;
+  while (i < fenceLines.length) {
+    let { lineNo, text } = fenceLines[i];
+    // A trailing backslash continues onto the next line. Strip the backslash
+    // and splice in the follower, repeating while the result still continues.
+    while (/\\\s*$/.test(text) && i + 1 < fenceLines.length) {
+      text = text.replace(/\\\s*$/, ' ') + fenceLines[i + 1].text.trim();
+      i += 1;
+    }
+    out.push({ lineNo, text });
+    i += 1;
+  }
+  return out;
+}
+
 // Scan a single file's fenced-bash lines for swallowed-exit pipes. Returns
 // [{file, line, snippet}] — one entry per matching line.
 function scanFileForFindings(filePath, content) {
-  const fenceLines = extractBashFenceLines(content);
+  const fenceLines = joinContinuations(extractBashFenceLines(content));
   const findings = [];
   for (let i = 0; i < fenceLines.length; i++) {
     const { lineNo, text } = fenceLines[i];
