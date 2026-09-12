@@ -2,37 +2,37 @@
 schema_version: 1
 type: roadmap
 project: a1-specforge
-title: a1-specforge — Roadmap
+title: "a1-specforge — Roadmap"
 status: active
-updated: 2026-07-10
+updated: 2026-09-12
 source: "migrated from docs/roadmap.md v3.0 (2026-07-10)"
 milestones:
   - id: m0-repo-extract
-    title: Repo Extract
+    title: "Repo Extract"
     status: done
     target: 2026-05
   - id: m1-integrity-gates
-    title: Integrity Gates
+    title: "Integrity Gates"
     status: done
     target: 2026-05
   - id: m2-phantom-proof-execution
-    title: Phantom-Proof Execution
+    title: "Phantom-Proof Execution"
     status: done
     target: 2026-05
   - id: m3-quality-surface-expansion
-    title: Quality Surface Expansion
+    title: "Quality Surface Expansion"
     status: done
     target: 2026-05
   - id: m4-self-learning-loop
-    title: Self-Learning Loop
+    title: "Self-Learning Loop"
     status: done
     target: 2026-05
   - id: m5-brownfield-modernization
-    title: Brownfield Modernization
+    title: "Brownfield Modernization"
     status: done
     target: 2026-05
   - id: m6-works-for-rob
-    title: Works for Rob
+    title: "Works for Rob"
     status: done
     target: 2026-07
   - id: m7-oss-ready
@@ -40,17 +40,17 @@ milestones:
     status: done
     target: 2026-08
   - id: m8-launch-community
-    title: Launch & Community
+    title: "Launch & Community"
     status: in-progress
     target: 2026-09
   - id: continuous
-    title: Continuous / Unscheduled
+    title: "Continuous / Unscheduled"
     status: in-progress
     target: null
 features:
   - id: 001-roadmap-gate-parallel-features
     milestone: continuous
-    title: Roadmap Gate + Parallel Feature Lifecycle
+    title: "Roadmap Gate + Parallel Feature Lifecycle"
     status: done
     stage: null
     depends_on: []
@@ -61,9 +61,20 @@ features:
     title: "Project Product Docs: docs/product layer + adopt mode"
     status: in-flight
     stage: started
-    depends_on: [001-roadmap-gate-parallel-features]
+    depends_on:
+      - 001-roadmap-gate-parallel-features
     started: 2026-07-10
     finished: null
+  - id: 007-retro-gate-id-validator
+    milestone: continuous
+    title: "Machine guards for false-green evidence: gate-id validator, workflow lint, glob liveness"
+    status: in-flight
+    stage: complete
+    depends_on: []
+    started: 2026-09-12
+    finished: null
+    spec_path: project/a1-specforge/spec/007-retro-gate-id-validator.md
+    plan_path: project/a1-specforge/plans/007-retro-gate-id-validator-wave-plan.md
 next: 002-product-docs-layer
 ---
 
@@ -151,11 +162,11 @@ None.
 ## Changelog
 
 - **2026-07-10** — added 002-product-docs-layer (in-flight, next) — combined feature from brainstorm: docs/product layer + adopt mode + HTML import.
-
 - **2026-07-10** — Migrated from `docs/roadmap.md` v3.0 (markdown) to `docs/product/ROADMAP.md` schema v1 — new machine-readable roadmap contract; source file left untouched.
 - **2026-07-10** — Added **001-roadmap-gate-parallel-features** (shipped) — first feature under the schema-v1 feature index; roadmap gate + parallel feature lifecycle merged (56e0fa4/e55addf).
-
----
+- **2026-09-12** — feature '007-retro-gate-id-validator' added — new feature via `product add-feature`
+- **2026-09-12** — feature.md created for '007-retro-gate-id-validator' — formal spec/plan attached via `product feature-init`
+- **2026-09-12** — 007-retro-gate-id-validator -> complete — stage transition via `product stage`
 
 ## Appendix — migrated details
 

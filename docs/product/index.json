@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "generated": "2026-09-12T09:23:14.440Z",
+  "project": {
+    "id": "a1-specforge",
+    "title": "a1-specforge — Roadmap",
+    "status": "active"
+  },
+  "milestones": [
+    {
+      "id": "m0-repo-extract",
+      "title": "Repo Extract",
+      "status": "done",
+      "target": "2026-05"
+    },
+    {
+      "id": "m1-integrity-gates",
+      "title": "Integrity Gates",
+      "status": "done",
+      "target": "2026-05"
+    },
+    {
+      "id": "m2-phantom-proof-execution",
+      "title": "Phantom-Proof Execution",
+      "status": "done",
+      "target": "2026-05"
+    },
+    {
+      "id": "m3-quality-surface-expansion",
+      "title": "Quality Surface Expansion",
+      "status": "done",
+      "target": "2026-05"
+    },
+    {
+      "id": "m4-self-learning-loop",
+      "title": "Self-Learning Loop",
+      "status": "done",
+      "target": "2026-05"
+    },
+    {
+      "id": "m5-brownfield-modernization",
+      "title": "Brownfield Modernization",
+      "status": "done",
+      "target": "2026-05"
+    },
+    {
+      "id": "m6-works-for-rob",
+      "title": "Works for Rob",
+      "status": "done",
+      "target": "2026-07"
+    },
+    {
+      "id": "m7-oss-ready",
+      "title": "OSS-Ready",
+      "status": "done",
+      "target": "2026-08"
+    },
+    {
+      "id": "m8-launch-community",
+      "title": "Launch & Community",
+      "status": "in-progress",
+      "target": "2026-09"
+    },
+    {
+      "id": "continuous",
+      "title": "Continuous / Unscheduled",
+      "status": "in-progress",
+      "target": null
+    }
+  ],
+  "features": [
+    {
+      "id": "001-roadmap-gate-parallel-features",
+      "milestone": "continuous",
+      "title": "Roadmap Gate + Parallel Feature Lifecycle",
+      "status": "done",
+      "stage": null,
+      "depends_on": [],
+      "started": "2026-07-10",
+      "finished": "2026-07-10",
+      "spec_path": null,
+      "plan_path": null
+    },
+    {
+      "id": "002-product-docs-layer",
+      "milestone": "continuous",
+      "title": "Project Product Docs: docs/product layer + adopt mode",
+      "status": "in-flight",
+      "stage": "started",
+      "depends_on": [
+        "001-roadmap-gate-parallel-features"
+      ],
+      "started": "2026-07-10",
+      "finished": null,
+      "spec_path": null,
+      "plan_path": null
+    },
+    {
+      "id": "007-retro-gate-id-validator",
+      "milestone": "continuous",
+      "title": "Machine guards for false-green evidence: gate-id validator, workflow lint, glob liveness",
+      "status": "in-flight",
+      "stage": "complete",
+      "depends_on": [],
+      "started": "2026-09-12",
+      "finished": null,
+      "spec_path": "project/a1-specforge/spec/007-retro-gate-id-validator.md",
+      "plan_path": "project/a1-specforge/plans/007-retro-gate-id-validator-wave-plan.md"
+    }
+  ],
+  "next": "002-product-docs-layer",
+  "cursor": "002-product-docs-layer",
+  "vision": null,
+  "audits": []
+}
