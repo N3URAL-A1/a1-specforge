@@ -4,7 +4,7 @@ project: a1-specforge
 milestone: continuous
 title: "Machine guards for false-green evidence: gate-id validator, workflow lint, glob liveness"
 status: in-flight
-stage: complete
+stage: verify
 depends_on: []
 started: 2026-09-12
 finished: null

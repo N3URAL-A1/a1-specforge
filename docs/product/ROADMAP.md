@@ -69,7 +69,7 @@ features:
     milestone: continuous
     title: "Machine guards for false-green evidence: gate-id validator, workflow lint, glob liveness"
     status: in-flight
-    stage: complete
+    stage: verify
     depends_on: []
     started: 2026-09-12
     finished: null
@@ -167,6 +167,7 @@ None.
 - **2026-09-12** — feature '007-retro-gate-id-validator' added — new feature via `product add-feature`
 - **2026-09-12** — feature.md created for '007-retro-gate-id-validator' — formal spec/plan attached via `product feature-init`
 - **2026-09-12** — 007-retro-gate-id-validator -> complete — stage transition via `product stage`
+- **2026-09-12** — 007-retro-gate-id-validator -> verify — stage transition via `product stage`
 
 ## Appendix — migrated details
 
