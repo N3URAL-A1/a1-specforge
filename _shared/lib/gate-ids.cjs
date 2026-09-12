@@ -173,15 +173,24 @@ const KNOWN_ALIASES = Object.freeze({
  *                 rather than being folded into `drift`, which would imply a
  *                 canonical id that does not exist.
  *
+ * Delegates the `ok` check to isRegisteredId() rather than testing a
+ * literal-only Set itself, so there is exactly ONE definition of "is this id
+ * registered" in this module. Before this fix the two functions disagreed:
+ * resolveGateId took a literal-only Set and never consulted ranges, so
+ * `resolveGateId('modernize-g3', ...)` reported `unknown` while
+ * `isRegisteredId('modernize-g3', expanded)` correctly reported true for the
+ * exact same id — a retro citing a real, range-registered gate would have
+ * been told to add a row that already exists (found 2026-09-11 while
+ * registering `isolation-gate`, before Wave 2 shipped this contradiction).
+ *
  * @param {string} id - the id as written in a retro.
- * @param {Set<string>} registered - literal registered ids (e.g.
- *   expandRangeIds(parseRegistryIds(text)).literal — callers that need range
- *   membership too should check isRegisteredId() before falling through
- *   here, since this function only sees the literal set).
+ * @param {{literal: Set<string>, ranges: {prefix: string, from: number, to: number}[]}} expanded
+ *   - the SAME shape isRegisteredId() takes (expandRangeIds(parseRegistryIds(text))),
+ *   not a bare Set — that was the mismatch this signature change fixes.
  * @returns {{status: 'ok'|'drift'|'unknown', id: string, canonical?: string}}
  */
-function resolveGateId(id, registered) {
-  if (registered.has(id)) {
+function resolveGateId(id, expanded) {
+  if (isRegisteredId(id, expanded)) {
     return { status: 'ok', id };
   }
   if (Object.prototype.hasOwnProperty.call(KNOWN_ALIASES, id)) {

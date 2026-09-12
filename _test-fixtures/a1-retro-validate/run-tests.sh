@@ -126,13 +126,18 @@ caseR3() {
   fi
 }
 
+# resolveGateId takes the SAME {literal, ranges} shape isRegisteredId does
+# (post-fix contract — see R8). A minimal expanded fixture for R4/R5, which
+# only care about literal membership: no ranges needed for those two ids.
+EXPANDED_LANE_SPLIT='{literal: new Set(["lane-split"]), ranges: []}'
+
 # ---------- R4: drift carries canonical ----------
 # Red-making change: returning {status:'drift'} without the canonical field.
 caseR4() {
   local got
   got="$(node -e "
     const gi=require('$LIB');
-    const r=gi.resolveGateId('lane-split-check', new Set(['lane-split']));
+    const r=gi.resolveGateId('lane-split-check', $EXPANDED_LANE_SPLIT);
     process.stdout.write(JSON.stringify({status:r.status, canonical:r.canonical}));
   " 2>&1)"
   if [[ "$got" == '{"status":"drift","canonical":"lane-split"}' ]]; then
@@ -150,7 +155,7 @@ caseR5() {
   local got
   got="$(node -e "
     const gi=require('$LIB');
-    const r=gi.resolveGateId('isolation-gate', new Set(['lane-split']));
+    const r=gi.resolveGateId('isolation-gate', $EXPANDED_LANE_SPLIT);
     process.stdout.write(JSON.stringify({status:r.status, hasCanonical:('canonical' in r)}));
   " 2>&1)"
   if [[ "$got" == '{"status":"unknown","hasCanonical":false}' ]]; then
@@ -197,7 +202,41 @@ caseR7() {
   fi
 }
 
-caseR1; caseR2; caseR3; caseR4; caseR5; caseR6; caseR7
+# ---------- R8: resolveGateId agrees with isRegisteredId on ranges ----------
+# Found 2026-09-11 while registering `isolation-gate`: resolveGateId took a
+# literal-only Set and never consulted ranges, so a real range-registered id
+# like `modernize-g3` came back `unknown` from resolveGateId while
+# isRegisteredId correctly said true for the exact same id and expanded
+# input — a retro citing a real gate would have been told to add a row that
+# already exists. R3 alone cannot see this: it only calls isRegisteredId, so
+# a resolveGateId that silently ignores ranges left R3 green.
+# Uses the FIXTURE registry's own range row (`range-gate1..gate3`) rather
+# than the live registry's `modernize-g1..g6`, so this case does not depend
+# on what Robert has or has not registered live.
+# Red-making change: reverting resolveGateId's `ok` branch to test
+# `expanded.literal.has(id)` directly instead of delegating to
+# isRegisteredId(id, expanded) — range-registered ids report `unknown` again
+# while out-of-range ids still correctly report `unknown`, so only the
+# in-range half (range-gate3) flips.
+caseR8() {
+  local got
+  got="$(node -e "
+    const gi=require('$LIB');
+    const fs=require('fs');
+    const text=fs.readFileSync('$FIXTURE_REG','utf8');
+    const expanded=gi.expandRangeIds(gi.parseRegistryIds(text));
+    const inRange=gi.resolveGateId('range-gate3', expanded);
+    const outOfRange=gi.resolveGateId('range-gate9', expanded);
+    process.stdout.write(JSON.stringify({inRange: inRange.status, outOfRange: outOfRange.status}));
+  " 2>&1)"
+  if [[ "$got" == '{"inRange":"ok","outOfRange":"unknown"}' ]]; then
+    ok "R8 resolveGateId agrees with isRegisteredId: range id is ok, out-of-range is unknown"
+  else
+    bad "R8 resolveGateId/isRegisteredId agreement on ranges ($got)"
+  fi
+}
+
+caseR1; caseR2; caseR3; caseR4; caseR5; caseR6; caseR7; caseR8
 
 printf '%s\n' "${results[@]}"
 echo "----"
