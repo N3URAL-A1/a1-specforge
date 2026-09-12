@@ -5,7 +5,7 @@ plan: project/a1-specforge/plans/007-retro-gate-id-validator-wave-plan.md
 worktree: /Users/rob/claude-projects/a1-worktrees/spec-007-gate-validator
 branch: feature/spec-007-gate-validator
 waves_total: 4
-waves_done: 3
+waves_done: 4
 updated: 2026-09-12
 ---
 
@@ -168,7 +168,53 @@ never reached the predicate it was meant to test — the "test cannot enter the
 branch it names" class, fourth instance this week. Fixed by putting a real
 `cat … | grep -c … || echo 0` in the fixture.
 
-## Wave 4 — Glob-liveness fixture helper + RED-proof convention ⟶ in progress
+## Wave 4 — Glob-liveness fixture helper + RED-proof convention ⟶ done
+
+Commit `b6a8d4a`. New suite `a1-glob-liveness` 6/6; `a1-code-roots` 11/11 with
+the retrofit; retro-validate 19/19 and workflow-lint 8/8 unregressed.
+
+### The test that justifies the whole wave, run by the orchestrator
+
+Reverting the `quick` glob in `_shared/lib/learnings.cjs` from `project` to
+`projects` (the actual defect that shipped this week and hid 9 real quick
+records, 1.8 weighted entries):
+
+    FAIL  F all 4 globs derived+live (verdict=yes, live=dead:…/projects/*/quick)
+    10 passed, 1 failed
+
+Note `verdict=yes` in that output: **the old shape check still passed.** The
+plural glob was correctly shaped and correctly derived from the resolved root —
+shape was never the defect. Only the new liveness arm catches it. Reverted, 11/11
+green again.
+
+### The executor caught the self-adapting-fixture trap in its own work
+
+Its first `caseF` retrofit let `plantFor` build a tree matching whichever glob
+was emitted, then measured against it — so the test adapted itself to the
+mutation and could never go red, singular or plural. Class-1 false green,
+found by its own G6 mutation probe and fixed with `liveness(…, {skipPlant:true})`
+against a fixed planted layout.
+
+Verified experimentally rather than taken on report: with planting, both
+spellings report `matches: 1`; against a fixed singular layout with
+`skipPlant`, singular reports 1 and plural reports 0. The distinction is real
+and the fixture depends on it.
+
+### Two further honest findings from the wave
+
+- **G5 (expansion parity) was initially too weak.** With a single planted root, a
+  wrong `fs.readdir(parent).length` implementation coincidentally agreed with
+  `ls -d` (both 1). Hardened with a second, partially-matching sibling directory;
+  it now catches the divergence (`helper=2` vs `shell=1`).
+- **G1 cannot kill the plural/singular mutation and was left that way
+  deliberately** — G1 is a unit test of the helper over four arbitrary correct
+  patterns; G6 carries the regression probe against the real production code.
+  A documented deviation from the plan's G1 row, stated in the code rather than
+  quietly absorbed.
+
+No fifth plan error found in this wave.
+
+## Phase 6 — Verify ⟶ in progress (a1-victor-verifier)
 
 
 ## Notes for Victor (Phase 6)
