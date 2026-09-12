@@ -14,7 +14,6 @@ updated: 2026-09-12
 ## In-flight features
 
 - **002-product-docs-layer** — Project Product Docs: docs/product layer + adopt mode (milestone: continuous, stage: started)
-- **007-retro-gate-id-validator** — Machine guards for false-green evidence: gate-id validator, workflow lint, glob liveness (milestone: continuous, stage: verify) — scope: project/a1-specforge/spec/007-retro-gate-id-validator.md, project/a1-specforge/plans/007-retro-gate-id-validator-wave-plan.md
 
 ## Next cursor
 

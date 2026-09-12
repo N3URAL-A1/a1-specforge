@@ -274,7 +274,31 @@ other path — it reports which layer held ("closed at the boundary" vs "closed
 at the sink"). Removing BOTH turns it red with a canary. The only case in the
 branch whose green state is ambiguous by design, and deliberately so.
 
-## Next: merge, worktree exit, spec done
+## Merged and closed ⟶ done
+
+`ca7dfbd` merged to main (41 files, 3753 insertions), pushed as `7e0231f`,
+CI green on GitHub. Worktree exited via `a1-worktree` (mode keep), reservation
+released (0 remaining), spec `done`, roadmap `status: done` / `stage: done`.
+Plugin 1.3.0 → 1.4.0 so the cache picks the changes up.
+
+Lifecycle: complete → verify → merge → origin-cleanup → done. The `review`
+transition was refused by the CLI as a backward move (`verify` was already
+ahead) — correct behaviour, noted rather than forced.
+
+### What the gates actually earned, in one place
+
+| gate | verdict | what it caught |
+|---|---|---|
+| roadmap-gate | fail→pass | a two-month-old parser gap; fixing it made 22 of 22 retros machine-readable |
+| gate-4.5 | fail→pass ×2 | FR mentions in prose; two FRs not buildable here → spec 008 |
+| scope-claim | pass, caught | my own space-vs-comma scope list (the overlap check was inert) |
+| isolation-gate | fail→pass | an uncommitted reservations.json |
+| phase-6-verify | fail→pass | the linter missing the defect it was built for |
+| pr-reinhard | fail→pass | 1 BLOCKER, 3 MAJOR, 5 MINOR, 3 NIT — every one real |
+
+Six instances of "a guard that guards nothing" in a feature against guards that
+guard nothing. Three were caught by the executors in their OWN work before any
+review saw them — in the preceding a1-evolve run that number was zero.
 
 
 ## Notes for Victor (Phase 6)

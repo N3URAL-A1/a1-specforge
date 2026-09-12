@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated": "2026-09-12T09:39:21.318Z",
+  "generated": "2026-09-12T10:52:29.086Z",
   "project": {
     "id": "a1-specforge",
     "title": "a1-specforge — Roadmap",
@@ -99,11 +99,11 @@
       "id": "007-retro-gate-id-validator",
       "milestone": "continuous",
       "title": "Machine guards for false-green evidence: gate-id validator, workflow lint, glob liveness",
-      "status": "in-flight",
-      "stage": "verify",
+      "status": "done",
+      "stage": "done",
       "depends_on": [],
       "started": "2026-09-12",
-      "finished": null,
+      "finished": "2026-09-12",
       "spec_path": "project/a1-specforge/spec/007-retro-gate-id-validator.md",
       "plan_path": "project/a1-specforge/plans/007-retro-gate-id-validator-wave-plan.md"
     }

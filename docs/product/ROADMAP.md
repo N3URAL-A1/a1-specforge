@@ -68,11 +68,11 @@ features:
   - id: 007-retro-gate-id-validator
     milestone: continuous
     title: "Machine guards for false-green evidence: gate-id validator, workflow lint, glob liveness"
-    status: in-flight
-    stage: verify
+    status: done
+    stage: done
     depends_on: []
     started: 2026-09-12
-    finished: null
+    finished: 2026-09-12
     spec_path: project/a1-specforge/spec/007-retro-gate-id-validator.md
     plan_path: project/a1-specforge/plans/007-retro-gate-id-validator-wave-plan.md
 next: 002-product-docs-layer
@@ -168,6 +168,9 @@ None.
 - **2026-09-12** — feature.md created for '007-retro-gate-id-validator' — formal spec/plan attached via `product feature-init`
 - **2026-09-12** — 007-retro-gate-id-validator -> complete — stage transition via `product stage`
 - **2026-09-12** — 007-retro-gate-id-validator -> verify — stage transition via `product stage`
+- **2026-09-12** — 007-retro-gate-id-validator -> merge — stage transition via `product stage`
+- **2026-09-12** — 007-retro-gate-id-validator -> origin-cleanup — stage transition via `product stage`
+- **2026-09-12** — 007-retro-gate-id-validator -> done — stage transition via `product stage`
 
 ## Appendix — migrated details
 
