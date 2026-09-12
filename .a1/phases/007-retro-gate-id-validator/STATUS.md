@@ -5,7 +5,7 @@ plan: project/a1-specforge/plans/007-retro-gate-id-validator-wave-plan.md
 worktree: /Users/rob/claude-projects/a1-worktrees/spec-007-gate-validator
 branch: feature/spec-007-gate-validator
 waves_total: 4
-waves_done: 1
+waves_done: 2
 updated: 2026-09-12
 ---
 
@@ -59,9 +59,58 @@ lines. Both the plan and SC-001 were rewritten to assert SETS against frozen
 fixtures instead of counts against the live store — class-4 false-green per
 `_shared/agent-lessons.md#theo-mutation-question`.
 
-## Wave 2 — `retro validate` CLI + registry row + write-time wiring ⟶ in progress
+## Wave 2 — `retro validate` CLI + registry row + write-time wiring ⟶ done
 
-## Wave 3 — `workflow lint` for pipeline exit propagation ⟶ pending
+Commits: `3b65fc2` (CLI + registry row + wiring + 9 fixture cases), `74ed424`
+(corpus provenance).
+
+Suite grew 9 → 19 cases (R1–R8 + V1–V9). Live probe against a synthetic retro
+carrying one drift, one valid and one invented id: exit 1, and the two stderr
+lines are genuine fix instructions — the canonical id for the drift, the
+invariant-7 row instruction for the unknown. JSON on stdout, prose on stderr,
+verified by writing both streams to separate files (my first check used
+`2>&1 >/dev/null`, whose order redirects stderr to the OLD stdout and made the
+streams look mixed — my error, not the tool's).
+
+Five call sites wired (`retro-template.md` owns the full instruction, four
+workflow files link to it), all capture-then-check, zero pipe forms.
+
+### The executor found a false-green in its OWN test and fixed it
+
+V2's original assertion was `grep -q 'lane-split'` — a SUBSTRING of the written
+id `lane-split-check`. A mutation that deleted the canonical from the message
+entirely would have left it green. Corrected to a backtick-delimited match and
+re-probed. Proven independently: against the mutated message
+`use \`REMOVED\` instead`, the weak grep matches and the corrected one does not.
+
+This is the same substring class as fixture case D yesterday (an expected path
+that was a prefix of the wrong one). Third instance this week — and the first
+time an executor caught it in its own work before review.
+
+### Three plan errors reported rather than built around
+
+1. **Corpus count 58 vs 59** — both right, different scopes. 58 is the vault
+   store alone; 59 adds the repo-local stores, whose one extra entry
+   (`{id: lane-split, …}` in obsidian-lumen) is VALID, which is why only the
+   valid count differed (47 vs 48) and the drift set was identical. The same
+   scope trap that has hit a1-evolve three times.
+2. **The plan's `unknown`-branch example was no longer valid** — `isolation-gate`
+   was registered in `26c398a` (my own change, earlier the same day), so it now
+   resolves `ok` and could not exercise the branch V3 names. The executor
+   switched to a synthetic `never-registered-gate`. Exactly the "test cannot
+   enter the branch it names" class, caught before it shipped.
+3. **The CLI's single-document scope was unstated** — real vault files are many
+   `---`-delimited entries concatenated, and `parseFrontmatter` reads only the
+   first block. Implemented as validating one standalone retro document
+   (matching the write-time use case: validate before append), with the frozen
+   V4 snapshot a synthetic single-document replay. Documented in the module
+   header.
+
+Scope addition, declared: a test-only `--registry <path>` override so SC-002's
+registry-mutation case does not mutate the real repo registry. Verified absent
+from all five production call sites.
+
+## Wave 3 — `workflow lint` for pipeline exit propagation ⟶ in progress
 
 ## Wave 4 — Glob-liveness fixture helper + RED-proof convention ⟶ pending
 
