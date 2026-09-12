@@ -517,6 +517,32 @@ Usage:
                   _shared/gates-registry.md — test-only escape hatch (SC-002),
                   production call sites never pass it.
 
+  a1-tools workflow lint [--root <path>]
+                  Spec 007-retro-gate-id-validator, Wave 3. Scans
+                  <root>/skills/*/workflows/*.md (fenced \`\`\`bash blocks
+                  only — prose is immune) for a pipeline whose STATUS is
+                  tested where \$?/|| actually reads the PARSER's exit code,
+                  not the piped command's. Two predicates, not one regex:
+                  status-testing (\$? read after a pipe, || exit/abort/return)
+                  vs value-defaulting (|| echo <literal>, || true, || :) — a
+                  naive "pipe near ||" matcher would false-positive on
+                  03-verify.md's legitimate \`grep -c ... || echo 0\`.
+                  Prints {root, scanned, findings: [{file, line, snippet}]}
+                  as JSON to stdout; every finding line goes to stderr only.
+                  \`scanned\` is the file count actually walked — assert it,
+                  not just exit 0: a glob typo returns 0 files and also
+                  exits 0 (the dead-glob class, self-applied to this scan).
+                  --root defaults to the repo root (git rev-parse
+                  --show-toplevel); test suites override it to point at a
+                  planted fixture tree.
+                  Exit: 0 no findings, 1 at least one finding, 2 usage error
+                  / --root not found or not a directory / hostile --root
+                  value (oversized, NUL byte).
+                  No live true positive today (the 2026-09-11 defect this
+                  guard exists to prevent the return of was fixed the same
+                  morning) — RED proof is fixture-based under
+                  _test-fixtures/a1-workflow-lint/snippets/, not a live catch.
+
 Spec statuses: ${[...SPEC_STATUSES].join(', ')}
 Bug statuses:  ${[...BUG_STATUSES].join(', ')}
 Bug severities: ${[...BUG_SEVERITIES].join(', ')}
