@@ -530,7 +530,9 @@ Usage:
                   status-testing (\$? read after a pipe, || exit/abort/return)
                   vs value-defaulting (|| echo <literal>, || true, || :) — a
                   naive "pipe near ||" matcher would false-positive on
-                  03-verify.md's legitimate \`grep -c ... || echo 0\`.
+                  the value-default idiom \`grep -c ... || echo 0\`. That
+                  predicate has no live true positive today — it is
+                  forward-looking, not currently load-bearing.
                   Prints {root, scanned, findings: [{file, line, snippet}]}
                   as JSON to stdout; every finding line goes to stderr only.
                   \`scanned\` is the file count actually walked — assert it,

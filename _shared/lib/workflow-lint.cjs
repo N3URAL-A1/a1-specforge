@@ -17,7 +17,7 @@ const { parseFlags } = require('./io.cjs');
 // 2026-09-11/12): the live repo has ZERO true positives. The defect this
 // guard exists to catch was fixed the same morning it was found
 // (01-collect.md), and the only remaining pipe-with-`||` line in the repo
-// (03-verify.md:140, `grep -c ... || echo 0`) is a legitimate
+// (a `grep -c ... || echo 0` shape) is a legitimate
 // value-defaulting idiom, not a swallowed exit status. A naive matcher that
 // flags "any pipe on a line with ||" produces exactly one finding against the
 // real repo and it is a FALSE POSITIVE — worse than no guard, because it
@@ -33,7 +33,18 @@ const { parseFlags } = require('./io.cjs');
 //     LITERAL VALUE for a command that legitimately exits non-zero on "no
 //     match" (`|| echo <literal>`, `|| true`, `|| :`) — no exit status is
 //     being tested here, only a value is being defaulted. `grep -c` exiting 1
-//     on zero matches is the textbook case (03-verify.md:140).
+//     on zero matches is the textbook case.
+//
+//     HONESTY NOTE (2026-09-12, a1-reinhard-reviewer): this predicate has NO
+//     live true positive in this repo, and the line first cited as its
+//     motivation — `03-verify.md:140` — does not even reach it. That line's
+//     `\|` is grep's escaped alternation INSIDE a quoted pattern, not a shell
+//     pipe, so `PARSER_STAGE_RE` never matches it (measured: false). Disabling
+//     this predicate entirely leaves the live scan at 0 findings and kills only
+//     the synthetic W3 fixture. It is therefore a FORWARD-LOOKING guard, kept
+//     because the value-default idiom is common in shell and will appear, not
+//     because it currently saves a real line. Same honest framing as the
+//     zero-catch disclosure in the registry row.
 //
 // A pipe is flagged only when it contains a parser stage (python3, `node
 // -e`, jq, awk, sed, grep) AND isStatusTesting() matches AND
@@ -239,8 +250,8 @@ function rejectHostileRoot(raw) {
     err.code = 'A1_INPUT';
     throw err;
   }
-  if (raw.indexOf('\0') !== -1) {
-    const err = new Error('--root contains a NUL byte');
+  if (/[\x00-\x1f\x7f]/.test(raw)) {
+    const err = new Error('--root contains a control character');
     err.code = 'A1_INPUT';
     throw err;
   }

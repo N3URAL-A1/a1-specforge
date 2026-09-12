@@ -2,7 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 
 // ---------------------------------------------------------------------------
 // glob-liveness — Wave 4 of spec 007-retro-gate-id-validator.
@@ -59,6 +59,23 @@ function plantFor(globPattern, baseDir) {
   const concreteSegments = segments.map((seg) => (seg === '*' ? 'planted' : seg));
   const concretePath = path.join(baseDir, ...concreteSegments);
 
+  // Containment. `path.join` silently absorbs `..`, and an absolute segment
+  // ignores baseDir entirely, so the JSDoc's promise ("rooted under baseDir")
+  // did not hold: measured 2026-09-12 (a1-samuel-security, SEC-3),
+  // plantFor('<base>/../ESCAPED/x', base) created a directory TWO levels
+  // outside base. Only fixtures call this today, with `mktemp -d` bases, so it
+  // was a robustness gap rather than an exploit — but a planting helper that
+  // can write anywhere is the wrong thing to hand a future caller.
+  const resolvedBase = path.resolve(baseDir);
+  if (path.resolve(concretePath) !== resolvedBase
+      && !path.resolve(concretePath).startsWith(resolvedBase + path.sep)) {
+    const err = new Error(
+      `plantFor refuses to write outside baseDir: ${concretePath} escapes ${resolvedBase}`
+    );
+    err.code = 'A1_INPUT';
+    throw err;
+  }
+
   const lastSegment = concreteSegments[concreteSegments.length - 1];
   const isFileShaped = /\.[a-zA-Z0-9]+$/.test(lastSegment);
 
@@ -92,10 +109,36 @@ function countLiveMatches(globPattern) {
     // `ls`, which then fails with "No such file or directory" — exit
     // non-zero, stdout empty. That failure IS the "zero matches" case, not
     // an error to propagate.
-    out = execSync(`ls -d ${globPattern}`, {
-      shell: '/bin/bash',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).toString();
+    // The pattern crosses as an ARGV ENTRY, never as shell source text.
+    // bash still performs PATHNAME EXPANSION on the unquoted `$1` — the
+    // consumer's own mechanism from `01-collect.md` §1a, which G5 pins — but it
+    // does not re-parse that value for command substitution, `;`, `|`, `&`,
+    // backticks or newlines. `IFS=` disables word splitting so a path
+    // containing a space stays ONE pattern; `--` guards a leading dash.
+    //
+    // Two defects this replaced, both measured (a1-samuel-security, 2026-09-12,
+    // escalated by a1-reinhard-reviewer):
+    //   SEC-1 injection — `execSync(\`ls -d ${globPattern}\`)` ran arbitrary
+    //     commands. Reachable, not theoretical: a directory whose NAME contains
+    //     `$(...)` passes `codeRoots()` (it exists, it is absolute), so
+    //     `learnings roots` emits globs carrying the substitution and fixtures
+    //     feed them straight in here. The old header claimed these strings were
+    //     "CLI-emitted or test-authored, never raw external input" — false, they
+    //     carry `A1_CODE_ROOTS` content unchanged.
+    //   SEC-2 wrong answer — word splitting made a glob under `My Projects/`
+    //     report `matches: 0` with two live targets planted. A glob-liveness
+    //     guard declaring a LIVE glob dead is precisely the false negative this
+    //     module exists to prevent.
+    //
+    // An allowlist was considered and rejected: it would have blessed the space
+    // that causes SEC-2, and it rejects real macOS paths (`Müller-Projekte`,
+    // `c++tools`, `foo@bar`) that `codeRoots()` accepts. The problem was that
+    // the string was parsed as code, not which characters it held.
+    out = execFileSync(
+      '/bin/bash',
+      ['-c', 'IFS=; ls -d -- $1', 'a1-glob-liveness', globPattern],
+      { stdio: ['ignore', 'pipe', 'ignore'] }
+    ).toString();
   } catch (_e) {
     return 0;
   }

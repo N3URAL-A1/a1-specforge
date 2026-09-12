@@ -23,14 +23,20 @@ const { parseRegistryIds, expandRangeIds, resolveGateId } = require('./gate-ids.
 //   2  missing file, unreadable registry, OR a `gates_fired` field that is
 //      PRESENT but unparseable.
 //
-// NOT 2: a missing/unknown ARGUMENT exits 1, via the facade's shared `usage()`
-// helper — every a1-tools subcommand behaves that way (`learnings roots`,
-// `workflow lint`, `quick eligibility` all exit 1 on a bad flag), so this
-// module follows the repo convention rather than breaking it. The header used
-// to promise 2 for "usage error"; a1-victor-verifier measured 1 on
-// 2026-09-12 and was right. Documentation corrected to the measured behaviour,
-// because the convention is the more valuable of the two things to keep
-// consistent.
+// NOT 2: a bad ARGUMENT exits 1. The header used to promise 2 for "usage
+// error"; a1-victor-verifier measured 1 on 2026-09-12 and was right, so the
+// documentation was corrected to the measured behaviour.
+//
+// CORRECTION (2026-09-12, a1-reinhard-reviewer): the justification I first
+// wrote here claimed the facade consistently exits 1 on an unknown flag and
+// that this command was the only offender. That was WRONG — measured cleanly,
+// `learnings roots --bogus`, `quick stats --bogus` and `retro validate <file>
+// --bogus` all exit **0**. My original measurement used an unquoted `$c` in a
+// shell loop, which split the arguments differently from what I thought I was
+// testing. So the silent-ignore behaviour was facade-wide, not unique to
+// anything; `workflow lint` (abde955) and this command are now the two that
+// reject leftovers, and the others still do not. An unverified claim, written
+// into a commit, inside a feature built against unverified claims.
 //
 // Consequence a caller must know: exit 1 means EITHER "drift found" OR "you
 // called me wrong". Distinguish them by stdout — a real run always emits the
@@ -68,8 +74,8 @@ function rejectHostilePath(raw) {
     err.code = 'A1_INPUT';
     throw err;
   }
-  if (raw.indexOf('\0') !== -1) {
-    const err = new Error('retro-path contains a NUL byte');
+  if (/[\x00-\x1f\x7f]/.test(raw)) {
+    const err = new Error('retro-path contains a control character');
     err.code = 'A1_INPUT';
     throw err;
   }
@@ -156,6 +162,23 @@ function parseGatesFired(fm) {
  */
 function cmdRetroValidate(argv) {
   const flags = parseFlags(argv, { registry: 'value' });
+  // Reject leftovers. `parseFlags` parks unrecognised tokens in `_` without
+  // complaining, so `--registr <path>` (one character short) was silently
+  // dropped and the run validated against the REAL registry while reporting
+  // success — a green run over the wrong input, the class this command exists
+  // to remove. Found by a1-reinhard-reviewer 2026-09-12: Wave 3 fixed exactly
+  // this in `workflow lint` and did not apply it to its sibling.
+  const leftovers = flags._.slice(1).concat(
+    flags._.slice(0, 1).filter((t) => String(t).startsWith('--'))
+  );
+  if (leftovers.length > 0) {
+    process.stderr.write(
+      `usage error: unrecognised argument(s): ${leftovers.join(' ')}\n` +
+        '  usage: retro validate <retro-path> [--registry <path>]\n'
+    );
+    process.exit(1);
+  }
+
   const retroPathRaw = flags._[0];
   rejectHostilePath(retroPathRaw);
 

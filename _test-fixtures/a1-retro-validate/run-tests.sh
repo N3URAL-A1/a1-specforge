@@ -236,7 +236,34 @@ caseR8() {
   fi
 }
 
-caseR1; caseR2; caseR3; caseR4; caseR5; caseR6; caseR7; caseR8
+# ---------- R9: code alias map vs registry prose must not drift ----------
+# Invariant 1: the registry's bullet list is the human-owned copy, KNOWN_ALIASES
+# is the machine copy. R7 pins the machine copy against a hardcoded literal, but
+# nothing asserted the two copies AGREE — edit the registry bullets and every
+# test stayed green (a1-reinhard-reviewer, 2026-09-12). Both are the same three
+# pairs today; this case keeps them that way.
+#
+# Red-making change: adding, removing or re-targeting an entry on either side.
+caseR9() {
+  local got
+  got="$(node -e "
+    const fs=require('fs');
+    const gi=require('$LIB');
+    const txt=fs.readFileSync('$REPO_ROOT/_shared/gates-registry.md','utf8');
+    const prose={};
+    for (const m of txt.matchAll(/written \\\`([^\\\`]+)\\\` → correct id is \\\`([^\\\`]+)\\\`/g)) prose[m[1]]=m[2];
+    const norm=(o)=>JSON.stringify(Object.keys(o).sort().map((k)=>[k,o[k]]));
+    if (Object.keys(prose).length === 0) { process.stdout.write('no-prose-parsed'); }
+    else { process.stdout.write(norm(prose)===norm(gi.KNOWN_ALIASES) ? 'agree' : 'DRIFT'); }
+  " 2>&1)"
+  if [[ "$got" == "agree" ]]; then
+    ok "R9 KNOWN_ALIASES agrees with the registry's alias prose"
+  else
+    bad "R9 alias map vs registry prose ($got)"
+  fi
+}
+
+caseR1; caseR2; caseR3; caseR4; caseR5; caseR6; caseR7; caseR8; caseR9
 
 # ===========================================================================
 # Wave 2 — `retro validate` CLI cases (V1-V9). These call the CLI, not the
@@ -423,22 +450,30 @@ caseV6() {
   fi
 }
 
-# ---------- V7: own row exists in the real registry ----------
-# Red-making change: forgetting the row, or adding it outside the parsed
-# table span (a blank line before it would end the header-anchored span).
+# ---------- V7: all three new registry rows are inside the parsed span ----------
+# The parser is header-anchored and stops at the first blank line, so a row
+# placed outside that span is invisible to the very tool that reads it. V7 first
+# checked only `retro-gate-ids`; a1-reinhard-reviewer pointed out that
+# `workflow-pipeline-exit` and `isolation-gate` had no equivalent coverage, so
+# the named red-making change (a blank line ending the span early) was only
+# guarded for one of three rows.
+#
+# Red-making change: inserting a blank line above any of the three rows, or
+# moving a row below the table.
 caseV7() {
-  local grepped resolved
-  grepped="$(grep -c 'retro-gate-ids' "$FIXTURE_LIVE_REGISTRY")"
-  resolved="$(node -e "
-    const gi=require('$REPO_ROOT/_shared/lib/gate-ids.cjs');
+  local got
+  got="$(node -e "
     const fs=require('fs');
-    const ids=gi.parseRegistryIds(fs.readFileSync('$FIXTURE_LIVE_REGISTRY','utf8'));
-    process.stdout.write(String(ids.includes('retro-gate-ids')));
-  ")"
-  if [[ "$grepped" -ge 1 && "$resolved" == "true" ]]; then
-    ok "V7 retro-gate-ids row exists and is inside the parsed table span"
+    const gi=require('$LIB');
+    const ids=gi.parseRegistryIds(fs.readFileSync('$REPO_ROOT/_shared/gates-registry.md','utf8'));
+    const need=['retro-gate-ids','workflow-pipeline-exit','isolation-gate'];
+    const missing=need.filter((i)=>!ids.includes(i));
+    process.stdout.write(missing.length ? 'missing:'+missing.join(',') : 'all-in-span');
+  " 2>&1)"
+  if [[ "$got" == "all-in-span" ]]; then
+    ok "V7 all three new registry rows are inside the parsed table span"
   else
-    bad "V7 own row exists (grepped=$grepped resolved=$resolved)"
+    bad "V7 registry rows in span ($got)"
   fi
 }
 

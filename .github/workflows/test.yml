@@ -35,6 +35,15 @@ jobs:
           test ! -e "$HOME/.claude/skills/checkpoint"
           test -L "$HOME/.claude/agents/a1-samuel-security.md"
 
+      - name: Workflow pipeline-exit lint
+        # Gate `workflow-pipeline-exit` (spec 007). The registry row declares
+        # "CI / pre-merge" as its enforcement point, and invariant 8 requires
+        # that point to be real — it was not until this step existed
+        # (a1-reinhard-reviewer, 2026-09-12: nothing outside the fixtures ever
+        # invoked the command). Exit 1 = a documented snippet tests a
+        # pipeline's status where `$?` belongs to the parser.
+        run: node _shared/a1-tools.cjs workflow lint
+
       - name: Install/README sync check
         run: bash bin/verify-install-sync.sh
 

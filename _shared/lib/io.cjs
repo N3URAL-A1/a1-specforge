@@ -135,6 +135,24 @@ function codeRoots() {
     const declared = process.env.A1_CODE_ROOTS.split(':')
       .map((d) => d.trim())
       .filter(Boolean);
+    // Shell-hazardous characters. A DENYLIST, deliberately, not an allowlist:
+    // no real project root contains `$`, a backtick, `;`, `|`, `&`, `<`, `>` or
+    // a newline, while an allowlist would reject paths that are perfectly
+    // legitimate on this machine (`Müller-Projekte`, `c++tools`, `foo@bar`) and
+    // would then be disabled by whoever hits it. Defence in depth after SEC-1:
+    // the primary control is that `glob-liveness.cjs` passes patterns as argv
+    // rather than shell source, so nothing here is load-bearing for safety —
+    // this is a legibility guard that says "your root looks like a command,
+    // that is a config error" instead of letting it travel silently.
+    // (a1-samuel-security SEC-5, 2026-09-12: "exists as a directory" was not a
+    // sufficient boundary check for a value flowing into globs and mkdirSync.)
+    const hazardous = declared.filter((d) => /[$`;|&<>\n\r]/.test(d));
+    if (hazardous.length > 0) {
+      process.stderr.write(
+        `[a1-tools] error: A1_CODE_ROOTS entries must not contain shell metacharacters: ${hazardous.join(', ')}\n`
+      );
+      process.exit(2);
+    }
     const relative = declared.filter((d) => !path.isAbsolute(d));
     if (relative.length > 0) {
       process.stderr.write(

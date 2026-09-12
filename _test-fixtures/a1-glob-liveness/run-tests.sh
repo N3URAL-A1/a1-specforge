@@ -208,25 +208,51 @@ caseG5() {
   fi
 }
 
-# ---------- G6: caseF retrofit is live (mutation probe, committed) ----------
-# This is the case that makes Wave 4 worth its cost: mutating the `quick`
-# glob back to the historical plural spelling must turn `a1-code-roots`'s
-# caseF red. Applying and reverting the mutation IN PLACE proves the retrofit
-# is actually wired, not an unused import (the wave brief's stated risk).
+# ---------- G6: caseF retrofit is live (mutation probe, on a COPY) ----------
+# This is the case that makes Wave 4 worth its cost: mutating the `quick` glob
+# back to the historical plural spelling must turn `a1-code-roots`'s caseF red.
+#
+# SAFETY (rewritten 2026-09-12 after a1-reinhard-reviewer): the first version
+# mutated `_shared/lib/learnings.cjs` IN PLACE with no `trap`. Reinhard killed a
+# run mid-G6 and measured the result — the production file was left carrying the
+# plural dead-glob defect this spec exists to eliminate, plus an untracked
+# `.g6-bak`. A developer who interrupts the sweep and then commits would have
+# silently reintroduced the 2026-09-11 bug. It also violated CONVENTIONS.md
+# ("never write into the repo tree").
+#
+# Now the probe runs against a COPY of the repo in `mktemp -d`. Nothing under
+# $REPO_ROOT is ever written, so an interrupted run leaves no trace — a `trap`
+# would have been the smaller fix, but a probe that cannot touch the source tree
+# needs no unwinding at all.
 caseG6() {
-  local suite target rc_before rc_after
-  suite="$REPO_ROOT/_test-fixtures/a1-code-roots/run-tests.sh"
-  target="$REPO_ROOT/_shared/lib/learnings.cjs"
+  local work target suite rc_before rc_after
+  work="$(mktemp -d)"
+
+  # Copy only what the a1-code-roots suite needs: the shared libs, the facade,
+  # and the suite itself. `cp -R` of the whole repo would drag .git along.
+  mkdir -p "$work/_shared/lib" "$work/_test-fixtures/a1-code-roots" \
+           "$work/skills/a1-evolve/workflows"
+  cp "$REPO_ROOT/_shared/a1-tools.cjs" "$work/_shared/"
+  cp "$REPO_ROOT"/_shared/lib/*.cjs "$work/_shared/lib/"
+  cp "$REPO_ROOT/_test-fixtures/a1-code-roots/run-tests.sh" "$work/_test-fixtures/a1-code-roots/"
+  # a1-code-roots' case K greps this workflow doc for drift, so the copy needs
+  # it too — without it K fails for a missing file and G6's "before" run is
+  # already red, which would make G6 report a retrofit failure that is really a
+  # copy-completeness failure. Found while rewriting G6: the first copy omitted
+  # it and G6 reported before=1.
+  cp "$REPO_ROOT/skills/a1-evolve/workflows/01-collect.md" \
+     "$work/skills/a1-evolve/workflows/"
+
+  suite="$work/_test-fixtures/a1-code-roots/run-tests.sh"
+  target="$work/_shared/lib/learnings.cjs"
 
   bash "$suite" >/dev/null 2>&1; rc_before=$?
 
-  cp "$target" "$target.g6-bak"
+  # Mutate the COPY. No backup needed; the temp dir is discarded either way.
   sed -i.tmp "s#'.a1', 'learnings', 'project', '\*', 'quick'#'.a1', 'learnings', 'projects', '*', 'quick'#" "$target"
   rm -f "$target.tmp"
 
   bash "$suite" >/dev/null 2>&1; rc_after=$?
-
-  mv "$target.g6-bak" "$target"
 
   if [[ $rc_before -eq 0 ]] && [[ $rc_after -ne 0 ]]; then
     ok "G6 caseF retrofit is live: plural mutation turns a1-code-roots red (before=$rc_before after=$rc_after)"
@@ -235,7 +261,136 @@ caseG6() {
   fi
 }
 
-caseG1; caseG2; caseG3; caseG4; caseG5; caseG6
+# ---------- G7: hostile input — injection shapes are inert ----------
+# MANDATORY per CONVENTIONS.md: this module executes a shell, and it had NO
+# hostile-input case at all (a1-samuel-security SEC-4, 2026-09-12). The sink was
+# `execSync(`ls -d ${pattern}`)` and every shape below ran real commands.
+# Red-making change: revert countLiveMatches to execSync with the pattern
+# interpolated into the command string — a canary appears.
+caseG7() {
+  local base canary fired r
+  base="$(mktemp -d)"; canary="$base/CANARY_G7"
+  fired=no
+  for pat in "$base/*; touch $canary" \
+             "$base/*\$(touch $canary)" \
+             "$base/*\`touch $canary\`" \
+             "$base/* | touch $canary" \
+             "$base/* && touch $canary"; do
+    r="$(node -e "
+      const gl=require('$LIB');
+      const out=gl.liveness([process.argv[1]], process.argv[2], {skipPlant:true});
+      process.stdout.write(String(out[0].matches));
+    " "$pat" "$base" 2>/dev/null)"
+    [[ "$r" != "0" ]] && fired="matches=$r"
+  done
+  if [[ -e "$canary" ]]; then fired="canary-created"; fi
+  if [[ "$fired" == "no" ]]; then
+    ok "G7 injection-shaped globs are inert: matches:0, nothing executed"
+  else
+    bad "G7 injection shapes inert ($fired)"
+  fi
+}
+
+# ---------- G8: the env-var chain is closed end to end ----------
+# G7 pins the unit; this pins the REAL finding. A directory whose NAME contains
+# a substitution passes codeRoots() (absolute, exists), so `learnings roots`
+# emitted globs carrying it and fixtures fed them straight into liveness().
+# Red-making change: revert either the execFileSync argv passing OR the
+# A1_CODE_ROOTS denylist — the canary appears again.
+caseG8() {
+  local host canary globs rc
+  host="$(mktemp -d)"; canary="$host/CANARY_G8"
+  mkdir -p "$host/a1probe\$(touch $canary)"
+  rc=0
+  globs="$(A1_CODE_ROOTS="$host/a1probe\$(touch $canary)" \
+           node "$REPO_ROOT/_shared/a1-tools.cjs" learnings roots 2>/dev/null)" || rc=$?
+  # Either the env guard rejects it (rc=2, no globs) or the globs are inert.
+  if [[ $rc -ne 0 ]]; then
+    [[ ! -e "$canary" ]] && ok "G8 env-var chain closed at the boundary (rc=$rc, no canary)" \
+                         || bad "G8 env chain: canary fired despite rc=$rc"
+    return
+  fi
+  node -e "
+    const gl=require('$LIB');
+    const j=JSON.parse(process.argv[1]);
+    for (const g of j.globs.stores) gl.liveness([g], process.argv[2], {skipPlant:true});
+  " "$globs" "$host" 2>/dev/null
+  [[ ! -e "$canary" ]] && ok "G8 env-var chain closed at the sink (globs inert)" \
+                       || bad "G8 env chain: canary fired via emitted globs"
+}
+
+# ---------- G9: expansion parity for a path containing a space ----------
+# Pins SEC-2, and guards against anyone "fixing" injection with a
+# space-rejecting allowlist: word splitting made a LIVE glob report matches:0,
+# which is the false negative this module exists to prevent.
+# Red-making change: drop `IFS=` from the bash snippet — the count becomes 0.
+caseG9() {
+  local base dir got
+  base="$(mktemp -d)"; dir="$base/My Projects"
+  mkdir -p "$dir/r1/.a1/learnings/project/x/quick" "$dir/r2/.a1/learnings/project/x/quick"
+  got="$(node -e "
+    const gl=require('$LIB');
+    const path=require('path');
+    const pat=path.join(process.argv[1],'*','.a1','learnings','project','*','quick');
+    process.stdout.write(String(gl.liveness([pat], process.argv[2], {skipPlant:true})[0].matches));
+  " "$dir" "$base" 2>/dev/null)"
+  if [[ "$got" == "2" ]]; then
+    ok "G9 expansion parity holds for a path with a space (matches=2)"
+  else
+    bad "G9 space-path parity (matches=$got, expected 2)"
+  fi
+}
+
+# ---------- G10: oversized pattern fails closed, no hang ----------
+# Red-making change: remove the catch returning 0 — E2BIG/ENAMETOOLONG escapes.
+caseG10() {
+  local base got
+  base="$(mktemp -d)"
+  got="$(node -e "
+    const gl=require('$LIB');
+    const pat='/'+'a'.repeat(10000)+'/*';
+    try { process.stdout.write(String(gl.liveness([pat], process.argv[1], {skipPlant:true})[0].matches)); }
+    catch (e) { process.stdout.write('THREW'); }
+  " "$base" 2>/dev/null)"
+  if [[ "$got" == "0" ]]; then
+    ok "G10 oversized pattern reports matches:0 without throwing"
+  else
+    bad "G10 oversized pattern ($got)"
+  fi
+}
+
+# ---------- G11: plantFor refuses to escape baseDir ----------
+# Measured before the fix: plantFor('<base>/../ESCAPED/x', base) created a
+# directory TWO levels outside base, against its own JSDoc promise.
+# Red-making change: remove the containment check — the directory appears.
+caseG11() {
+  local base got target
+  base="$(mktemp -d)"
+  # A UNIQUE escape target per run, cleaned up unconditionally. The first
+  # version used a fixed name and asserted its absence — so once a mutation
+  # probe had legitimately created it, the case failed on the leftover artefact
+  # instead of on a defect (observed while mutation-probing this very case).
+  # A fixture that is not self-cleaning reports the wrong thing on the second
+  # run, which is its own small false signal.
+  target="ESCAPED_G11_$$_${RANDOM}"
+  got="$(node -e "
+    const gl=require('$LIB');
+    const path=require('path');
+    try { gl.plantFor(path.join(process.argv[1],'..',process.argv[2],'x'), process.argv[1]);
+          process.stdout.write('no-throw'); }
+    catch (e) { process.stdout.write(e.code || 'throw-no-code'); }
+  " "$base" "$target" 2>/dev/null)"
+  local escaped=no
+  [[ -d "$base/../$target" ]] && escaped=yes
+  rm -rf "$base/../$target" 2>/dev/null
+  if [[ "$got" == "A1_INPUT" ]] && [[ "$escaped" == "no" ]]; then
+    ok "G11 plantFor refuses to write outside baseDir (A1_INPUT)"
+  else
+    bad "G11 plantFor containment (code=$got escaped=$escaped)"
+  fi
+}
+
+caseG1; caseG2; caseG3; caseG4; caseG5; caseG6; caseG7; caseG8; caseG9; caseG10; caseG11
 
 printf '%s\n' "${results[@]}"
 echo "----"
