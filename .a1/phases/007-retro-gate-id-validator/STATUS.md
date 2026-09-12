@@ -214,7 +214,67 @@ and the fixture depends on it.
 
 No fifth plan error found in this wave.
 
-## Phase 6 — Verify ⟶ in progress (a1-victor-verifier)
+## Phase 6 — Verify ⟶ PASS (a1-victor-verifier, round 2, 13/13)
+
+Round 1 PARTIAL on one MAJOR: the pipeline linter did not flag the very
+2026-09-11 snippet it was built for, because the matcher was line-local while
+the real snippet spreads one pipeline across three backslash-continued lines.
+Found because the verifier fetched the file from git instead of trusting the
+fixture. Fixed (`joinContinuations`), new case W9 uses the byte-identical git
+extract. Round 2: PASS, both requested mutations reproduced independently.
+
+The instructive measurement: with the fix mutated back out, the live repo scan
+STILL reports `scanned: 64, findings: 0`. W6's green scan was honest and proved
+nothing about this capability, because the repo no longer contains the form.
+Fixture-based RED proof was the only possible evidence.
+
+## Pre-merge review ⟶ all findings closed (a1-reinhard-reviewer + a1-samuel-security)
+
+Reinhard: REQUEST CHANGES — 1 BLOCKER, 3 MAJOR, 5 MINOR, 3 NITs. Every one
+real; every one fixed (commits `defb53b`, `ca0fb23`). He also verified the
+things that were sound rather than only hunting: both critical fixtures are
+byte-faithful recoveries (from git and from the live vault), `skipPlant` is
+decisively load-bearing (removing it makes caseF go GREEN under the plural
+mutation), and the zero-catch disclosure is correct.
+
+### The BLOCKER, and why it went to Samuel
+
+`glob-liveness.cjs` interpolated the glob into `execSync`. Reinhard measured a
+canary firing and recommended escalation because the naive fix conflicts with
+the module's expansion-parity constraint. Samuel rated it MAJOR rather than
+BLOCKER on the threat model (nothing in the repo sets `A1_CODE_ROOTS`; the only
+writer is the developer's own shell profile) but said fix before merge, because
+the module header asserted a safety premise that was false.
+
+**Samuel argued against Reinhard's allowlist and I followed him.** It would have
+blessed the space that causes the second defect, and it rejects real macOS paths
+(`Müller-Projekte`, `c++tools`, `foo@bar`) that `codeRoots()` accepts — a
+blocking guard with false positives gets disabled by whoever hits it. The fix
+passes the pattern as an argv entry; bash still expands `*` (G5 pins parity) but
+does not re-parse the value.
+
+**Samuel found a second defect at the same line that neither Reinhard nor I
+saw:** the sink gave WRONG ANSWERS. Word splitting made a glob under
+`My Projects/` report `matches: 0` with two live targets planted — a
+glob-liveness guard declaring a live glob dead, the exact false negative the
+module exists to prevent. Measured 0 before, 2 after.
+
+### The MAJOR that was mine
+
+My claim in `abde955` — "the other commands exit 1 on an unknown flag" — was
+false; all three exit 0. I re-measured, got rc=1, and contradicted Reinhard —
+then found my own error: an unquoted `$c` in a shell loop split the arguments
+differently from what I thought I was testing. A measurement inside a loop over
+unquoted variables is not a measurement. Corrected in both places it appeared.
+
+### Layering worth knowing about (G8)
+
+Removing EITHER the argv passing OR the env denylist leaves G8 green via the
+other path — it reports which layer held ("closed at the boundary" vs "closed
+at the sink"). Removing BOTH turns it red with a canary. The only case in the
+branch whose green state is ambiguous by design, and deliberately so.
+
+## Next: merge, worktree exit, spec done
 
 
 ## Notes for Victor (Phase 6)
