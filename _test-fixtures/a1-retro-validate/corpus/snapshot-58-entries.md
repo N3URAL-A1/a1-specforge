@@ -89,7 +89,21 @@ grep -oh '^  - {id: [a-zA-Z0-9._-]*' "$A1_VAULT_ROOT"/pattern/a1-learnings/*.md 
 ```
 
 **58 entries total** (this run's own count — NOT the 59 named in the wave
-dispatch, see the discrepancy note below): 47 valid, 11 drift, 0 unknown.
+dispatch): 47 valid, 11 drift, 0 unknown.
+
+**Discrepancy resolved by the orchestrator 2026-09-12: both counts were right,
+measured over different scopes.** 58 is the vault store alone
+(`$A1_VAULT_ROOT/pattern/a1-learnings/*.md`); 59 adds the repo-local stores
+(`~/claude-projects/*/.a1/learnings/pattern/a1-learnings/*.md`), which hold one
+further entry — `{id: lane-split, verdict: pass, caught: false}` in
+`obsidian-lumen/a1-plan.md`. It is a VALID id, which is why only the valid count
+differed (47 vs 48) and the drift set was identical in both measurements.
+
+This is the same scope trap that has hit a1-evolve three times (2026-07-17
+single-repo read, 2026-08-02 write-side omission, 2026-09-11 wrong glob root):
+the vault is not the whole corpus. Neither number belongs in an assertion — the
+snapshot below is frozen and self-contained precisely so this class cannot
+affect the test.
 
 Drift breakdown (3 spellings, matching the task brief):
 - `lane-split-check` x7  -> canonical `lane-split`
