@@ -45,6 +45,31 @@ one in the same commit as this retro (invariant 7: gates are registered).
 Known drift to avoid: `lane-split-check` is not an id, `lane-split` is;
 `consistency-gate-4-5` is not an id, `gate-4.5-fr-consistency` is.
 
+**This is now machine-checked, not just prose (spec `007-retro-gate-id-validator`,
+Wave 2) — prose failed twice (2026-08-27, then again by 2026-09-11, 11 more
+drift entries across 3 spellings).** Before appending a `gates_fired` block
+to the store, validate it with `a1-tools retro validate`:
+
+```bash
+node <repo>/_shared/a1-tools.cjs retro validate "$RETRO_FILE"; RC=$?
+if [ $RC -ne 0 ]; then echo "fix the gate ids above before the entry counts"; exit $RC; fi
+```
+
+Capture-then-check, **never a pipe** (`... | RC=$?` makes `$?` belong to the
+parser, not `retro validate` — this exact mistake shipped in `01-collect.md`
+on 2026-09-11 and made an abort guard unable to fire; caught in review, not
+before). Exit codes: `0` every `gates_fired[].id` is registered (or the field
+is absent, which is fine — read-only reporter skills legitimately omit it);
+`1` at least one id is a documented drift (message names the canonical id) or
+truly unregistered (message points at invariant 7); `2` usage error, the
+retro file is missing, the registry is unreadable, or `gates_fired` is
+present but its block does not parse — that last case is deliberately NOT
+treated as "no gates" (an unparseable block silently read as absent would
+reproduce the exact silent-discard defect this validator exists to kill, one
+layer earlier). `$RETRO_FILE` is the standalone retro document being
+prepared for this run — a single `gates_fired` block, not the accumulated
+per-skill store file it is about to be appended into.
+
 ## Write targets (in this order)
 
 1. **Learning store — required, canonical source:**

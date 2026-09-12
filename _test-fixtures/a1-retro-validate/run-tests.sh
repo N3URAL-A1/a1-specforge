@@ -238,6 +238,308 @@ caseR8() {
 
 caseR1; caseR2; caseR3; caseR4; caseR5; caseR6; caseR7; caseR8
 
+# ===========================================================================
+# Wave 2 — `retro validate` CLI cases (V1-V9). These call the CLI, not the
+# module directly, so they also exercise a1-tools.cjs dispatch wiring.
+# Checked-in retro/registry fixture data is COPIED into mktemp -d before use
+# (CONVENTIONS.md — original fixture files stay immutable).
+# ===========================================================================
+
+TOOLS="$REPO_ROOT/_shared/a1-tools.cjs"
+FIXTURE_LIVE_REGISTRY="$REPO_ROOT/_shared/gates-registry.md"
+
+# ---------- V1: clean retro -> 0 ----------
+# Red-making change: making membership fuzzy, or inverting the exit.
+caseV1() {
+  local work rc out drift
+  work="$(mktemp -d)"
+  cp "$CORPUS/retro-clean.md" "$work/retro.md"
+  out="$(node "$TOOLS" retro validate "$work/retro.md" 2>/dev/null)"; rc=$?
+  drift="$(node -e "console.log(JSON.parse(process.argv[1]).drift)" "$out" 2>/dev/null)"
+  if [[ $rc -eq 0 && "$drift" == "0" ]]; then
+    ok "V1 clean retro exits 0, drift:0"
+  else
+    bad "V1 clean retro (rc=$rc out=$out)"
+  fi
+}
+
+# ---------- V2: lane-split-check -> 1 + canonical in stderr ----------
+# Red-making change: dropping the canonical field from the message template.
+# NOTE: the written id `lane-split-check` itself CONTAINS the substring
+# `lane-split` — a `grep -q 'lane-split'` assertion would pass even if the
+# canonical id were stripped from the message entirely (found while
+# mutation-testing this very case: a mutation dropping ${r.canonical} left a
+# naive substring check green). The exact word-boundary pattern below only
+# matches the bare canonical id, never the id-as-written.
+caseV2() {
+  local work rc err
+  work="$(mktemp -d)"
+  cp "$CORPUS/retro-drift.md" "$work/retro.md"
+  err="$(node "$TOOLS" retro validate "$work/retro.md" 2>&1 1>/dev/null)"; rc=$?
+  if [[ $rc -eq 1 ]] && printf '%s' "$err" | grep -qE '`lane-split`'; then
+    ok "V2 lane-split-check exits 1, stderr names canonical"
+  else
+    bad "V2 lane-split-check drift (rc=$rc err=$err)"
+  fi
+}
+
+# ---------- V3: unregistered, no canonical -> 1 + invariant-7 text, no canonical ----------
+# Uses `never-registered-gate` rather than the wave plan's original
+# `isolation-gate` example: isolation-gate was registered in commit 26c398a
+# before this wave started, so it now resolves `ok`, not `unknown` — reusing
+# it here would make the case pass without ever entering the branch it names.
+# Red-making change: collapsing unknown into drift (V2 stays green, V3 alone fails).
+caseV3() {
+  local work rc out err has_canonical
+  work="$(mktemp -d)"
+  cp "$CORPUS/retro-unknown.md" "$work/retro.md"
+  out="$(node "$TOOLS" retro validate "$work/retro.md" 2>"$work/stderr.txt")"; rc=$?
+  err="$(cat "$work/stderr.txt")"
+  has_canonical="$(node -e "
+    const j=JSON.parse(process.argv[1]);
+    const e=j.entries.find(x=>x.id==='never-registered-gate');
+    process.stdout.write(String(!!(e && 'canonical' in e)));
+  " "$out")"
+  if [[ $rc -eq 1 ]] && printf '%s' "$err" | grep -qi 'invariant 7' && [[ "$has_canonical" == "false" ]]; then
+    ok "V3 unregistered-no-canonical exits 1, names invariant 7, no canonical field"
+  else
+    bad "V3 unregistered-no-canonical (rc=$rc has_canonical=$has_canonical err=$err)"
+  fi
+}
+
+# ---------- V4: corpus replay (SC-001), FROZEN SNAPSHOT ----------
+# Never assert a live-corpus count (numbers moved 4x while this plan was
+# written — see corpus/snapshot-58-entries.md's provenance note for a 5th
+# discrepancy found and reported during this wave). Assert the SET of
+# flagged ids against the checked-in snapshot.
+# Red-making change: any narrowing of the parser that misses the 2nd+ list
+# item in a block (e.g. only reading the first `- {id: ...}` line).
+caseV4() {
+  local work out check
+  work="$(mktemp -d)"
+  cp "$CORPUS/snapshot-58-entries.md" "$work/snapshot.md"
+  out="$(node "$TOOLS" retro validate "$work/snapshot.md" 2>/dev/null)"
+  check="$(node -e "
+    const j=JSON.parse(process.argv[1]);
+    const expectedDrift=['lane-split-check','consistency-gate-4-5','full-regression-gate'];
+    const flagged=j.entries.filter(e=>e.status!=='ok').map(e=>e.id);
+    const flaggedSet=new Set(flagged);
+    const onlyExpected=[...flaggedSet].every(id=>expectedDrift.includes(id));
+    const allExpectedPresent=expectedDrift.every(id=>flaggedSet.has(id));
+    const noValidFlagged=j.entries.every(e=>e.status==='ok' || expectedDrift.includes(e.id));
+    process.stdout.write(JSON.stringify({
+      valid: j.valid, drift: j.drift, unknown: j.unknown,
+      onlyExpected, allExpectedPresent, noValidFlagged
+    }));
+  " "$out")"
+  if [[ "$check" == '{"valid":47,"drift":11,"unknown":0,"onlyExpected":true,"allExpectedPresent":true,"noValidFlagged":true}' ]]; then
+    ok "V4 corpus replay: flagged-id set matches frozen snapshot (47 valid / 11 drift / 0 unknown)"
+  else
+    bad "V4 corpus replay ($check)"
+  fi
+
+  # Property-only assertion against the LIVE store (never a count — the
+  # numbers moved 42->47->48 while this plan was being written). Uses the
+  # real vault if resolvable; skips gracefully if A1_VAULT_ROOT/the legacy
+  # vault does not exist (e.g. a bare CI checkout with no vault).
+  local vault liveCheck
+  vault="${A1_VAULT_ROOT:-$HOME/N3URAL-Vault}/pattern/a1-learnings"
+  if [[ -d "$vault" ]]; then
+    liveCheck="$(node -e "
+      const gi=require('$REPO_ROOT/_shared/lib/gate-ids.cjs');
+      const fs=require('fs');
+      const path=require('path');
+      const text=fs.readFileSync('$FIXTURE_LIVE_REGISTRY','utf8');
+      const expanded=gi.expandRangeIds(gi.parseRegistryIds(text));
+      const dir='$vault';
+      const files=fs.readdirSync(dir).filter(f=>f.endsWith('.md'));
+      let everyFlaggedAbsent=true, everyUnflaggedPresent=true;
+      for (const f of files) {
+        const t=fs.readFileSync(path.join(dir,f),'utf8');
+        const m=t.match(/^  - \{id: [a-zA-Z0-9._-]+/gm) || [];
+        for (const line of m) {
+          const id=line.replace(/^  - \{id: /,'');
+          const registered=gi.isRegisteredId(id, expanded);
+          const r=gi.resolveGateId(id, expanded);
+          // property 1: every flagged (non-ok) id is absent from the registry
+          if (r.status!=='ok' && registered) everyFlaggedAbsent=false;
+          // property 2: every unflagged (ok) id is present in the registry
+          if (r.status==='ok' && !registered) everyUnflaggedPresent=false;
+        }
+      }
+      process.stdout.write(JSON.stringify({everyFlaggedAbsent, everyUnflaggedPresent}));
+    " 2>&1)"
+    if [[ "$liveCheck" == '{"everyFlaggedAbsent":true,"everyUnflaggedPresent":true}' ]]; then
+      ok "V4b live store property: flagged<=>unregistered agreement holds (no count asserted)"
+    else
+      bad "V4b live store property ($liveCheck)"
+    fi
+  else
+    ok "V4b live store property: skipped (no vault at $vault)"
+  fi
+}
+
+# ---------- V5: registry mutation (SC-002) ----------
+# Mutating `lane-split` -> `lane-split-x` in a COPIED registry must turn a
+# previously-green retro red. Uses --registry to point at the mutated copy
+# (see retro-validate.cjs header comment on why this flag exists).
+# Red-making change: hardcoding any id list in the validator instead of
+# reading the registry file.
+caseV5() {
+  local work rc_before rc_after out_before out_after
+  work="$(mktemp -d)"
+  cp "$FIXTURE_LIVE_REGISTRY" "$work/registry.md"
+  cp "$CORPUS/retro-clean.md" "$work/retro.md"   # cites `lane-split`, among others
+
+  out_before="$(node "$TOOLS" retro validate "$work/retro.md" --registry "$work/registry.md" 2>/dev/null)"
+  rc_before=$?
+
+  sed -i.bak 's/`lane-split`/`lane-split-x`/' "$work/registry.md"
+  out_after="$(node "$TOOLS" retro validate "$work/retro.md" --registry "$work/registry.md" 2>/dev/null)"
+  rc_after=$?
+
+  if [[ $rc_before -eq 0 && $rc_after -eq 1 ]]; then
+    ok "V5 registry mutation turns a green retro red (before=$rc_before after=$rc_after)"
+  else
+    bad "V5 registry mutation (before=$rc_before after=$rc_after out_before=$out_before out_after=$out_after)"
+  fi
+}
+
+# ---------- V6: missing field -> 0, malformed -> 2 ----------
+# Red-making change: treating unparseable as empty (the silent-discard defect).
+caseV6() {
+  local work rc_missing rc_malformed
+  work="$(mktemp -d)"
+  cp "$CORPUS/retro-missing-field.md" "$work/missing.md"
+  cp "$CORPUS/retro-malformed.md" "$work/malformed.md"
+
+  node "$TOOLS" retro validate "$work/missing.md" >/dev/null 2>&1; rc_missing=$?
+  node "$TOOLS" retro validate "$work/malformed.md" >/dev/null 2>&1; rc_malformed=$?
+
+  if [[ $rc_missing -eq 0 && $rc_malformed -eq 2 ]]; then
+    ok "V6 missing field exits 0, malformed block exits 2 (asymmetry holds)"
+  else
+    bad "V6 missing/malformed asymmetry (missing_rc=$rc_missing malformed_rc=$rc_malformed)"
+  fi
+}
+
+# ---------- V7: own row exists in the real registry ----------
+# Red-making change: forgetting the row, or adding it outside the parsed
+# table span (a blank line before it would end the header-anchored span).
+caseV7() {
+  local grepped resolved
+  grepped="$(grep -c 'retro-gate-ids' "$FIXTURE_LIVE_REGISTRY")"
+  resolved="$(node -e "
+    const gi=require('$REPO_ROOT/_shared/lib/gate-ids.cjs');
+    const fs=require('fs');
+    const ids=gi.parseRegistryIds(fs.readFileSync('$FIXTURE_LIVE_REGISTRY','utf8'));
+    process.stdout.write(String(ids.includes('retro-gate-ids')));
+  ")"
+  if [[ "$grepped" -ge 1 && "$resolved" == "true" ]]; then
+    ok "V7 retro-gate-ids row exists and is inside the parsed table span"
+  else
+    bad "V7 own row exists (grepped=$grepped resolved=$resolved)"
+  fi
+}
+
+# ---------- V8: workflow call sites are capture-then-check ----------
+# Red-making change: re-introducing a piped invocation in any of the 5 files.
+caseV8() {
+  local files=(
+    "$REPO_ROOT/_shared/retro-template.md"
+    "$REPO_ROOT/skills/a1-execute/workflows/03-verify.md"
+    "$REPO_ROOT/skills/a1-fix/workflows/04-verify.md"
+    "$REPO_ROOT/skills/a1-new-feature/workflows/06-verify.md"
+    "$REPO_ROOT/skills/a1-evolve/workflows/04-apply.md"
+  )
+  local all_have_invocation=true
+  local none_piped=true
+  local missing=()
+  local piped=()
+  for f in "${files[@]}"; do
+    if ! grep -q 'retro validate' "$f" 2>/dev/null; then
+      all_have_invocation=false
+      missing+=("$f")
+    fi
+    if grep -E 'retro validate.*\|' "$f" >/dev/null 2>&1; then
+      none_piped=false
+      piped+=("$f")
+    fi
+  done
+  if [[ "$all_have_invocation" == "true" && "$none_piped" == "true" ]]; then
+    ok "V8 all 5 touched files invoke retro validate, none piped"
+  else
+    bad "V8 workflow wiring (missing=${missing[*]:-none} piped=${piped[*]:-none})"
+  fi
+}
+
+# ---------- V9: hostile input (mandatory) ----------
+# Traversal, injection-shaped, and oversized retro-paths must each produce a
+# REAL, checkable rejection — never just "did not crash". Learned this week:
+# `../../etc` does not EXIST relative to a plain cwd, so a statSync-based
+# existence check rejects it for the WRONG reason (not-found, not the guard
+# under test) and an exit-code-only assertion cannot tell the difference —
+# and separately, `[]` was once absorbed by an exact-match line above the new
+# branch, so only whitespace-padded input actually exercised that guard. This
+# case avoids both traps: the traversal sub-case targets a path that DOES
+# resolve (mirroring caseJ's "real-but-relative" construction) but resolves
+# to a DIRECTORY, not a file — reaching a distinct, real branch
+# (`stat.isFile()`) rather than the not-found branch — and the assertion
+# checks THAT specific stderr message, not a bare exit code.
+caseV9() {
+  local home canary rc1 rc2 rc3 err1 big work traversal_ok sub rc_file timed_out child_pid
+  home="$(mktemp -d)"; canary="$home/pwned"
+  work="$(mktemp -d)"
+
+  # (a) path traversal reaching a REAL, EXISTING directory (not a file) via
+  # a traversal-shaped relative path, run with cwd = a subdirectory so the
+  # ".." segments are genuine and resolve on disk.
+  mkdir -p "$work/sub/deeper" "$work/a-directory"
+  rc1=0
+  err1="$(cd "$work/sub/deeper" && node "$TOOLS" retro validate "../../a-directory" \
+    2>&1 1>/dev/null)" || rc1=$?
+  traversal_ok=false
+  if [[ $rc1 -eq 2 ]] && printf '%s' "$err1" | grep -q 'not a regular file'; then
+    traversal_ok=true
+  fi
+
+  # (b) injection-shaped input — must be treated as an inert string, never
+  # evaluated. If it were ever passed to a shell, $canary would exist.
+  rc2=0
+  node "$TOOLS" retro validate "; touch $canary" >/dev/null 2>&1 || rc2=$?
+
+  # (c) oversized value (>= 10000 chars) — must fail fast, not hang. No
+  # portable timeout/gtimeout on stock macOS — bash watchdog (same pattern as
+  # a1-quick's hostile-oversized-intent case): background + poll + kill.
+  big="$(head -c 10005 /dev/zero | tr '\0' 'a')"
+  rc_file="$work/oversized-rc.txt"
+  (
+    node "$TOOLS" retro validate "/$big" >/dev/null 2>&1
+    echo $? > "$rc_file"
+  ) &
+  child_pid=$!
+  timed_out=0
+  for _ in $(seq 1 50); do
+    kill -0 "$child_pid" 2>/dev/null || break
+    sleep 0.1
+  done
+  if kill -0 "$child_pid" 2>/dev/null; then
+    timed_out=1
+    kill -9 "$child_pid" 2>/dev/null
+  fi
+  wait "$child_pid" 2>/dev/null
+  rc3="$(cat "$rc_file" 2>/dev/null || echo 124)"
+
+  if [[ "$traversal_ok" == "true" && $rc2 -eq 2 && "$timed_out" -eq 0 && "$rc3" -eq 2 ]] && [[ ! -e "$canary" ]]; then
+    ok "V9 hostile input: traversal/injection/oversized all rejected, nothing executed"
+  else
+    sub="rc1=$rc1(traversal_ok=$traversal_ok) rc2=$rc2 rc3=$rc3 canary=$([[ -e $canary ]] && echo CREATED || echo absent)"
+    bad "V9 hostile input ($sub)"
+  fi
+}
+
+caseV1; caseV2; caseV3; caseV4; caseV5; caseV6; caseV7; caseV8; caseV9
+
 printf '%s\n' "${results[@]}"
 echo "----"
 echo "a1-retro-validate: $pass passed, $fail failed"

@@ -349,6 +349,10 @@ const { cmdPackValidate, cmdPackImport, cmdPackExport } = require(path.join(__di
 // ---------- learnings group (lib/learnings.cjs) ----------
 const { cmdLearningsCountSinceWatermark, cmdLearningsRoots } = require(path.join(__dirname, 'lib', 'learnings.cjs'));
 
+// ---------- retro group (lib/retro-validate.cjs) ----------
+// Spec 007-retro-gate-id-validator, Wave 2.
+const { cmdRetroValidate } = require(path.join(__dirname, 'lib', 'retro-validate.cjs'));
+
 function main() {
   const argv = process.argv.slice(2);
   if (argv.length === 0 || argv[0] === '--help' || argv[0] === '-h') {
@@ -602,8 +606,16 @@ function main() {
         cmdLearningsRoots(rest);
         return; // unreachable — cmdLearningsRoots calls process.exit()
       } else usage(`unknown learnings subcommand: ${sub}`);
+    } else if (group === 'retro') {
+      if (sub === 'validate') {
+        // owns its own exit code (0 all registered / 1 drift-or-unknown /
+        // 2 usage-or-unreadable-or-malformed) and JSON stdout — spec
+        // 007-retro-gate-id-validator, Wave 2.
+        cmdRetroValidate(rest);
+        return; // unreachable — cmdRetroValidate calls process.exit()
+      } else usage(`unknown retro subcommand: ${sub}`);
     } else {
-      usage(`unknown command group: ${group} (expected "spec", "fix", "analyze", "check", "checklist", "constitution", "worktree", "pr", "phantom", "reconcile", "modernize", "schema-check", "cost", "pack", "product", "quick", "learnings", or "realpath-check"). fix supports: next-suffix, update-status, list, find-duplicates, integrity-check, init-postmortem, count-postmortems-since, update-promote-state, write-suggestion`);
+      usage(`unknown command group: ${group} (expected "spec", "fix", "analyze", "check", "checklist", "constitution", "worktree", "pr", "phantom", "reconcile", "modernize", "schema-check", "cost", "pack", "product", "quick", "learnings", "retro", or "realpath-check"). fix supports: next-suffix, update-status, list, find-duplicates, integrity-check, init-postmortem, count-postmortems-since, update-promote-state, write-suggestion`);
     }
   } catch (e) {
     // Input-validation errors (e.g. path-traversal guard) are user errors,

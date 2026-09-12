@@ -52,6 +52,7 @@ Constitution rules this table enforces:
 | `backup-gate-human` | Execute (Wave 0) | human | cheap | a1-execute | blocking | Registry backfill 2026-08-27. Backup confirmation before writing into live targets with no VCS safety net. |
 | `settings-json-diff-gate-human` | Execute (config-touching wave) | human | cheap | a1-execute | blocking | Registry backfill 2026-08-27. Diff approval before edits to session-critical config (settings.json hooks). |
 | `review-empirical-probes` | Pre-merge review | prompt | med | a1-reinhard-reviewer | blocking | Registry backfill 2026-08-27. Empirical probe requirement for high-blast-radius code — 3 catches in 3 runs, see `agent-lessons.md#reinhard-empirical-probes`. |
+| `retro-gate-ids` | Retro (write time, all learning-enabled skills) | deterministic | cheap | `_shared/retro-template.md` (validator: `_shared/lib/retro-validate.cjs`) | blocking | NEW (2026-09-12, spec 007-retro-gate-id-validator, Wave 2). `a1-tools retro validate <retro-path>` — exit 0 all `gates_fired[].id` registered (or field absent, legitimate for read-only reporters), 1 at least one drift/unknown id, 2 usage/missing-file/unreadable-registry/malformed-block. Measured 2026-09-12: 11 of 58 corpus entries were drift across 3 spellings before this gate existed. Retro attribution: `{id: retro-gate-ids, verdict: pass, caught: <true|false>}`. |
 
 
 **Alias warning — ids are copied verbatim, never paraphrased.** a1-evolve's

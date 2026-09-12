@@ -107,4 +107,12 @@ with skill = `a1-evolve`.
   confirmation. Invariant 7: a registered gate without an attribution id
   produces no ROI data, which is the exact failure this skill reported about
   other skills on 2026-08-27.
+- Before appending this retro, validate the `gates_fired` block — full
+  contract and exit codes in `_shared/retro-template.md`, which is the owner
+  of this instruction:
+
+  ```bash
+  node <repo>/_shared/a1-tools.cjs retro validate "$RETRO_FILE"; RC=$?
+  if [ $RC -ne 0 ]; then echo "fix the gate ids above before the entry counts"; exit $RC; fi
+  ```
 

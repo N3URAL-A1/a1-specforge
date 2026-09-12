@@ -494,6 +494,29 @@ Usage:
                   Exit: 0 ok, 2 watermark file found but 'updated:' field
                   missing/malformed, 3 watermark source missing or unreadable.
 
+  a1-tools retro validate <retro-path> [--registry <path>]
+                  Spec 007-retro-gate-id-validator, Wave 2. Parses every
+                  gates_fired[].id in <retro-path> and checks it against
+                  _shared/gates-registry.md's id table (gate-ids.cjs, Wave 1):
+                  ok (registered, literal or range), drift (known misspelling
+                  — stderr names the canonical id), or unknown (neither —
+                  stderr instructs adding a registry row per invariant 7).
+                  Prints {file, entries: [{id, status, canonical?, line}],
+                  valid, drift, unknown} as JSON to stdout; every fix
+                  instruction and diagnostic goes to stderr only.
+                  ASYMMETRY: a MISSING gates_fired field is exit 0 (read-only
+                  reporter skills legitimately omit it, per
+                  retro-template.md) — but a PRESENT-and-unparseable one is
+                  exit 2, never silently treated as "no gates" (that would
+                  reproduce the exact silent-discard defect this command
+                  exists to kill).
+                  Exit: 0 all ids registered (or field absent), 1 at least
+                  one drift/unknown id, 2 usage error / retro file not found /
+                  registry unreadable / gates_fired present but unparseable.
+                  --registry overrides the repo-resolved
+                  _shared/gates-registry.md — test-only escape hatch (SC-002),
+                  production call sites never pass it.
+
 Spec statuses: ${[...SPEC_STATUSES].join(', ')}
 Bug statuses:  ${[...BUG_STATUSES].join(', ')}
 Bug severities: ${[...BUG_SEVERITIES].join(', ')}
