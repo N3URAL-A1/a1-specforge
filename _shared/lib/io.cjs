@@ -223,6 +223,33 @@ function codeRoots() {
   return roots;
 }
 
+/**
+ * Absolute path of the repository root.
+ *
+ * Hoisted here 2026-09-12 (a1-reinhard-reviewer NIT): spec 007 added a
+ * byte-identical copy to both `retro-validate.cjs` and `workflow-lint.cjs`,
+ * and the facade had its own. One owner per fact (invariant 1) applies to
+ * helpers too — three copies of "where is the repo root" is three places to
+ * drift.
+ *
+ * `git rev-parse` first (correct inside a worktree, which is where feature
+ * work happens), falling back to two levels up from this file
+ * (`_shared/lib/` → root), matching the fixture suites' own REPO_ROOT.
+ * @returns {string}
+ */
+function repoRoot() {
+  const { execSync } = require('child_process');
+  try {
+    return execSync('git rev-parse --show-toplevel', {
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+      .toString()
+      .trim();
+  } catch (_e) {
+    return path.resolve(__dirname, '..', '..');
+  }
+}
+
 function resolveVaultPath(input) {
   if (path.isAbsolute(input)) return input;
   return path.join(vaultRoot(), input);
@@ -834,4 +861,4 @@ function projectsPath(...segments) {
   return path.join(vaultRoot(), 'project', ...safe);
 }
 
-module.exports = { vaultRoot, codeRoots, resolveVaultPath, parseFrontmatter, serializeScalar, detectKeyOrder, serializeFrontmatter, readMd, writeMdAtomic, nowIso, writeTextAtomic, parseScalarToken, parseNestedFrontmatter, serializeNestedFrontmatter, writeNestedMdAtomic, parseFlags, fail, assertSafeSegment, projectsPath, copyDirRecursive };
+module.exports = { vaultRoot, codeRoots, repoRoot, resolveVaultPath, parseFrontmatter, serializeScalar, detectKeyOrder, serializeFrontmatter, readMd, writeMdAtomic, nowIso, writeTextAtomic, parseScalarToken, parseNestedFrontmatter, serializeNestedFrontmatter, writeNestedMdAtomic, parseFlags, fail, assertSafeSegment, projectsPath, copyDirRecursive };

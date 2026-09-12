@@ -160,8 +160,7 @@ function parseGatesFired(fm) {
  * it.
  * @param {string[]} argv
  */
-function cmdRetroValidate(argv) {
-  const flags = parseFlags(argv, { registry: 'value' });
+function resolveRetroPath(flags) {
   // Reject leftovers. `parseFlags` parks unrecognised tokens in `_` without
   // complaining, so `--registr <path>` (one character short) was silently
   // dropped and the run validated against the REAL registry while reporting
@@ -195,7 +194,18 @@ function cmdRetroValidate(argv) {
     process.stderr.write(`error: retro path is not a regular file: ${retroPath}\n`);
     process.exit(2);
   }
+  return retroPath;
+}
 
+/**
+ * Read the registry text, honouring the test-only `--registry` override.
+ * Exits 2 when it cannot be read: an unreadable registry must never be
+ * mistaken for "no ids are registered", which would turn every drift entry
+ * into a silent pass.
+ * @param {object} flags parsed flags
+ * @returns {string} raw registry markdown
+ */
+function loadRegistryText(flags) {
   const regPath = flags.registry ? path.resolve(process.cwd(), flags.registry) : registryPath();
   let registryText;
   try {
@@ -204,7 +214,22 @@ function cmdRetroValidate(argv) {
     process.stderr.write(`error: registry unreadable: ${regPath}\n`);
     process.exit(2);
   }
-  const expanded = expandRangeIds(parseRegistryIds(registryText));
+  return registryText;
+}
+
+/**
+ * `retro validate <retro-path> [--registry <path>]` — see module header for
+ * the full contract and the exit-code semantics.
+ *
+ * Argument resolution and registry loading were split into their own
+ * functions on 2026-09-12 (a1-reinhard-reviewer NIT, coding-style.md's
+ * 50-line rule): this was 94 logic lines and read as three unrelated phases.
+ * @param {string[]} argv
+ */
+function cmdRetroValidate(argv) {
+  const flags = parseFlags(argv, { registry: 'value' });
+  const retroPath = resolveRetroPath(flags);
+  const expanded = expandRangeIds(parseRegistryIds(loadRegistryText(flags)));
 
   const retroText = fs.readFileSync(retroPath, 'utf8');
   let fm;
@@ -242,20 +267,33 @@ function cmdRetroValidate(argv) {
     return { id: entry.id, status: r.status, canonical: r.canonical, line: idx + 1 };
   });
 
+  reportAndExit(retroPath, results);
+}
+
+/**
+ * Emit the JSON report on stdout, the fix instructions on stderr, and own the
+ * exit code (0 all registered / 1 at least one drift or unknown). Split out
+ * with the two resolvers on 2026-09-12 — see `cmdRetroValidate`.
+ *
+ * The stream split is part of the contract, not formatting: a caller
+ * distinguishes "drift found" from "you called me wrong" — both exit 1 — by
+ * whether stdout carries the report.
+ * @param {string} retroPath
+ * @param {{id: string, status: string, canonical?: string, line: number}[]} results
+ */
+function reportAndExit(retroPath, results) {
   const valid = results.filter((r) => r.status === 'ok').length;
   const drift = results.filter((r) => r.status === 'drift').length;
   const unknown = results.filter((r) => r.status === 'unknown').length;
 
-  const out = {
-    file: retroPath,
-    entries: results.map((r) =>
-      r.canonical ? { id: r.id, status: r.status, canonical: r.canonical, line: r.line } : { id: r.id, status: r.status, line: r.line }
-    ),
-    valid,
-    drift,
-    unknown,
-  };
-  process.stdout.write(JSON.stringify(out) + '\n');
+  const toEntry = (r) =>
+    r.canonical
+      ? { id: r.id, status: r.status, canonical: r.canonical, line: r.line }
+      : { id: r.id, status: r.status, line: r.line };
+
+  process.stdout.write(
+    JSON.stringify({ file: retroPath, entries: results.map(toEntry), valid, drift, unknown }) + '\n'
+  );
 
   if (drift === 0 && unknown === 0) {
     process.exit(0);

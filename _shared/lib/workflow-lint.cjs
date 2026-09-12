@@ -2,7 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { parseFlags } = require('./io.cjs');
+const { parseFlags, repoRoot } = require('./io.cjs');
 
 // ---------------------------------------------------------------------------
 // workflow lint — Wave 3 of spec 007-retro-gate-id-validator.
@@ -225,18 +225,6 @@ function listWorkflowFiles(root) {
   return files;
 }
 
-function repoRoot() {
-  const { execSync } = require('child_process');
-  try {
-    return execSync('git rev-parse --show-toplevel', {
-      stdio: ['ignore', 'pipe', 'ignore'],
-    })
-      .toString()
-      .trim();
-  } catch (_e) {
-    return path.resolve(__dirname, '..', '..');
-  }
-}
 
 // Hostile-input guard on --root (CONVENTIONS.md, mandatory for every new CLI
 // subcommand). Same shape as retro-validate.cjs's rejectHostilePath: reject
@@ -258,10 +246,14 @@ function rejectHostileRoot(raw) {
 }
 
 /**
- * `workflow lint [--root <path>]` — see module header for the full contract.
+ * Resolve and validate the scan root from argv. Owns the usage/hostile exits
+ * (1 for a bad argument, 2 for an unusable --root) so `cmdWorkflowLint` reads
+ * as scan-then-report. Split out 2026-09-12 per the 50-line rule in
+ * coding-style.md (a1-reinhard-reviewer NIT).
  * @param {string[]} argv
+ * @returns {string} absolute, existing directory
  */
-function cmdWorkflowLint(argv) {
+function resolveScanRoot(argv) {
   const flags = parseFlags(argv, { root: 'value' });
 
   // Reject anything left over. `parseFlags` collects unrecognised tokens in
@@ -270,9 +262,15 @@ function cmdWorkflowLint(argv) {
   // 2026-09-12, `workflow lint --roo /tmp/x` ignored the flag, scanned the
   // real repo's 64 files instead of the intended target, and exited 0. A green
   // run over the wrong input is the same "silently do the wrong thing and
-  // report success" class this whole spec exists to remove — and this command
-  // was the only one in the facade that did it (`learnings roots`,
-  // `retro validate` and `quick stats` all exit 1 on an unknown flag).
+  // report success" class this whole spec exists to remove.
+  //
+  // CORRECTION (a1-reinhard-reviewer, 2026-09-12): this comment first claimed
+  // this was the only command in the facade behaving that way. Measured
+  // cleanly, `learnings roots --bogus`, `quick stats --bogus` and
+  // `retro validate <file> --bogus` ALL exit 0 — my original measurement used
+  // an unquoted `$c` in a shell loop and tested something other than what I
+  // thought. The silent-ignore was facade-wide; this command and
+  // `retro validate` are now the two that reject leftovers.
   if (flags._.length > 0) {
     process.stderr.write(
       `usage error: workflow lint takes no positional arguments; unrecognised: ${flags._.join(' ')}\n` +
@@ -290,7 +288,15 @@ function cmdWorkflowLint(argv) {
     process.exit(2);
   }
 
-  const root = path.resolve(process.cwd(), rootRaw);
+  return path.resolve(process.cwd(), rootRaw);
+}
+
+/**
+ * `workflow lint [--root <path>]` — see module header for the full contract.
+ * @param {string[]} argv
+ */
+function cmdWorkflowLint(argv) {
+  const root = resolveScanRoot(argv);
 
   let stat;
   try {
