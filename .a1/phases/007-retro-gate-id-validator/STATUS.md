@@ -5,7 +5,7 @@ plan: project/a1-specforge/plans/007-retro-gate-id-validator-wave-plan.md
 worktree: /Users/rob/claude-projects/a1-worktrees/spec-007-gate-validator
 branch: feature/spec-007-gate-validator
 waves_total: 4
-waves_done: 2
+waves_done: 3
 updated: 2026-09-12
 ---
 
@@ -110,9 +110,66 @@ Scope addition, declared: a test-only `--registry <path>` override so SC-002's
 registry-mutation case does not mutate the real repo registry. Verified absent
 from all five production call sites.
 
-## Wave 3 — `workflow lint` for pipeline exit propagation ⟶ in progress
+## Wave 3 — `workflow lint` for pipeline exit propagation ⟶ done
 
-## Wave 4 — Glob-liveness fixture helper + RED-proof convention ⟶ pending
+Commit `59705a7`. New suite `a1-workflow-lint` 8/8; `a1-retro-validate` still
+19/19 (shared facade untouched in effect). Live scan: `scanned: 64,
+findings: []`, exit 0.
+
+Two predicates instead of one regex, as the plan required: `isValueDefaulting`
+(`|| echo`, `|| true`, `|| :`) runs FIRST and excludes the legitimate idioms;
+`isStatusTesting` then matches naively (`$?` on this or the next line, or any
+`||`). The executor restructured its own first attempt after noticing the two
+predicates were disjoint by construction — so the value-defaulting one could
+never actually prevent a finding. That correction is what makes the pair real.
+
+**No exemption marker was implemented**, per SC-004: the two predicates separate
+every live case on their own, and the plan says to leave the mechanism out
+entirely rather than ship an unused exception list.
+
+### Mutation probes — re-run independently by the orchestrator
+
+| mutation | cases killed |
+|---|---|
+| `isValueDefaulting` → `false` | W3 alone |
+| generic `\|\|` arm removed (only `$?` form) | W4 alone |
+| fence restriction lifted (whole-file scan) | W5 **+ W6 + W7** |
+| glob typo `workflows` → `workflow` | W7 **+ W1 + W4** |
+
+Both overlapping kills are informative, not defects:
+
+- Lifting the fence restriction makes the linter flag **the prose line I wrote
+  yesterday** in `01-collect.md:21`, which describes this very bug and contains
+  `| python3 ... || abort` as illustration. So prose immunity is not cosmetic —
+  it prevents a concrete false positive in the live repo.
+- The glob typo yields `scanned: 0` with **exit 0**: a green scan that scanned
+  nothing. That is exactly the dead-glob class that shipped three times this
+  week, and W7 catches it by asserting the `scanned` count. The linter applies
+  glob-liveness to itself.
+
+Note on method: my first two mutation attempts hit the wrong lines (a regex
+replacement that matched elsewhere, and an `if (!inFence) continue;` that does
+not exist in the file). Both produced misleading results until I mutated the
+real statements at lines 92 and 124. A mutation probe is only evidence when you
+confirm it changed what you intended.
+
+### Plan error #4 — and I had repeated it
+
+The plan named `skills/a1-execute/workflows/03-verify.md:140` as "the only
+remaining pipe-with-`||` line". It is not a pipe at all: in
+`grep -c '"severity":"major\|critical"' … || echo 0` the `|` sits INSIDE the
+single-quoted grep pattern as a BRE alternation (offset 41, within the quotes);
+the real `||` at 77/78 has no pipeline before it. The plan's `grep -rn '|.*||'`
+matched any `|` regardless of context — and I repeated that exact mistake when I
+"verified" the claim before dispatching the wave. Corrected in the plan.
+
+Consequence the executor caught: its first W3 fixture had no pipe either, so it
+never reached the predicate it was meant to test — the "test cannot enter the
+branch it names" class, fourth instance this week. Fixed by putting a real
+`cat … | grep -c … || echo 0` in the fixture.
+
+## Wave 4 — Glob-liveness fixture helper + RED-proof convention ⟶ in progress
+
 
 ## Notes for Victor (Phase 6)
 
