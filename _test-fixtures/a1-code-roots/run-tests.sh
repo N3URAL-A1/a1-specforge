@@ -151,10 +151,43 @@ caseF() {
         process.stdout.write(bad.length?"not-derived:"+bad.join(","):"yes");
       } catch(e){ process.stdout.write("parse-error"); }
     });' "$declared")"
-  if [[ $rc -eq 0 ]] && [[ "$verdict" == "yes" ]]; then
-    ok "F all 4 globs present and derived from resolved root (exit=$rc)"
+  # LIVENESS ARM (Wave 4, spec 007): shape was never the defect — the `quick`
+  # glob was correctly shaped AND correctly derived from the resolved root,
+  # and still matched ZERO files (2026-09-11, plural `projects/` vs the real
+  # singular `project/` store). Planting a target FOR the glob the code just
+  # emitted (skipPlant absent) is worthless here: plantFor() would happily
+  # build a `projects/` tree to satisfy a plural glob, so the arm could never
+  # go red no matter what the code emits — the exact trap this wave exists to
+  # avoid. Instead: plant the REAL, FIXED store layout once (independent of
+  # whatever the code emitted), then measure the EMITTED globs against that
+  # fixed layout with skipPlant. Red-making change: reverting the `quick`
+  # glob to the plural spelling (see G6 in
+  # _test-fixtures/a1-glob-liveness/run-tests.sh, which pins this exact
+  # mutation as a committed probe).
+  local repo_slug="realrepo"
+  mkdir -p "$declared/$repo_slug/.a1/learnings/pattern/a1-learnings"
+  mkdir -p "$declared/$repo_slug/.a1/phases/somephase"
+  : > "$declared/$repo_slug/.a1/phases/somephase/observations.jsonl"
+  mkdir -p "$declared/$repo_slug/.a1/packs/somepack"
+  : > "$declared/$repo_slug/.a1/packs/somepack/pack.yaml"
+  mkdir -p "$declared/$repo_slug/.a1/learnings/project/someslug/quick"
+  local live_verdict
+  live_verdict="$(printf '%s' "$out" | node -e '
+    let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{
+      const root=process.argv[1];
+      const { liveness } = require(process.argv[2]);
+      try {
+        const g=JSON.parse(s).globs;
+        const all=Object.values(g).flat();
+        const results=liveness(all, root, { skipPlant: true });
+        const dead=results.filter(r=>r.matches<1).map(r=>r.glob);
+        process.stdout.write(dead.length?"dead:"+dead.join(","):"yes");
+      } catch(e){ process.stdout.write("error:"+e.message); }
+    });' "$declared" "$REPO_ROOT/_shared/lib/glob-liveness.cjs")"
+  if [[ $rc -eq 0 ]] && [[ "$verdict" == "yes" ]] && [[ "$live_verdict" == "yes" ]]; then
+    ok "F all 4 globs present, derived from resolved root, AND live (exit=$rc)"
   else
-    bad "F all 4 globs derived (exit=$rc, verdict=$verdict)"; results+=("      out: $out")
+    bad "F all 4 globs derived+live (exit=$rc, verdict=$verdict, live=$live_verdict)"; results+=("      out: $out")
   fi
 }
 

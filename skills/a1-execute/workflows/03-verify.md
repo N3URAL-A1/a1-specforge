@@ -175,6 +175,15 @@ had to be reworked because of it). A gate that fired and found nothing is
 needs; without those the framework cannot tell a cheap useful gate from an
 expensive gate that has never caught anything.
 
+Before appending this retro, validate the `gates_fired` block — full
+contract and exit codes in `_shared/retro-template.md`, which is the owner
+of this instruction:
+
+```bash
+node <repo>/_shared/a1-tools.cjs retro validate "$RETRO_FILE"; RC=$?
+if [ $RC -ne 0 ]; then echo "fix the gate ids above before the entry counts"; exit $RC; fi
+```
+
 ### Step 3 — Threshold check
 
 Count entries in the **learning store** (not the dev cache — plugin installs

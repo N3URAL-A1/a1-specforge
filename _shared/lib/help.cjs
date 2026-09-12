@@ -494,6 +494,63 @@ Usage:
                   Exit: 0 ok, 2 watermark file found but 'updated:' field
                   missing/malformed, 3 watermark source missing or unreadable.
 
+  a1-tools retro validate <retro-path> [--registry <path>]
+                  Spec 007-retro-gate-id-validator, Wave 2. Parses every
+                  gates_fired[].id in <retro-path> and checks it against
+                  _shared/gates-registry.md's id table (gate-ids.cjs, Wave 1):
+                  ok (registered, literal or range), drift (known misspelling
+                  — stderr names the canonical id), or unknown (neither —
+                  stderr instructs adding a registry row per invariant 7).
+                  Prints {file, entries: [{id, status, canonical?, line}],
+                  valid, drift, unknown} as JSON to stdout; every fix
+                  instruction and diagnostic goes to stderr only.
+                  Exit 1 also covers a bad/missing ARGUMENT (shared
+                  usage() convention across all subcommands) — tell the two
+                  apart by stdout: a real run emits the JSON report there, a
+                  usage error does not.
+                  ASYMMETRY: a MISSING gates_fired field is exit 0 (read-only
+                  reporter skills legitimately omit it, per
+                  retro-template.md) — but a PRESENT-and-unparseable one is
+                  exit 2, never silently treated as "no gates" (that would
+                  reproduce the exact silent-discard defect this command
+                  exists to kill).
+                  Exit: 0 all ids registered (or field absent), 1 at least
+                  one drift/unknown id, 2 retro file not found /
+                  registry unreadable / gates_fired present but unparseable.
+                  --registry overrides the repo-resolved
+                  _shared/gates-registry.md — test-only escape hatch (SC-002),
+                  production call sites never pass it.
+
+  a1-tools workflow lint [--root <path>]
+                  Spec 007-retro-gate-id-validator, Wave 3. Scans
+                  <root>/skills/*/workflows/*.md (fenced \`\`\`bash blocks
+                  only — prose is immune) for a pipeline whose STATUS is
+                  tested where \$?/|| actually reads the PARSER's exit code,
+                  not the piped command's. Two predicates, not one regex:
+                  status-testing (\$? read after a pipe, || exit/abort/return)
+                  vs value-defaulting (|| echo <literal>, || true, || :) — a
+                  naive "pipe near ||" matcher would false-positive on
+                  the value-default idiom \`grep -c ... || echo 0\`. That
+                  predicate has no live true positive today — it is
+                  forward-looking, not currently load-bearing.
+                  Prints {root, scanned, findings: [{file, line, snippet}]}
+                  as JSON to stdout; every finding line goes to stderr only.
+                  \`scanned\` is the file count actually walked — assert it,
+                  not just exit 0: a glob typo returns 0 files and also
+                  exits 0 (the dead-glob class, self-applied to this scan).
+                  --root defaults to the repo root (git rev-parse
+                  --show-toplevel); test suites override it to point at a
+                  planted fixture tree.
+                  Exit: 0 no findings, 1 at least one finding OR an
+                  unrecognised flag (a typo like --roo must not silently
+                  scan the repo instead of the intended --root)
+                  / 2 --root not found or not a directory / hostile --root
+                  value (oversized, NUL byte).
+                  No live true positive today (the 2026-09-11 defect this
+                  guard exists to prevent the return of was fixed the same
+                  morning) — RED proof is fixture-based under
+                  _test-fixtures/a1-workflow-lint/snippets/, not a live catch.
+
 Spec statuses: ${[...SPEC_STATUSES].join(', ')}
 Bug statuses:  ${[...BUG_STATUSES].join(', ')}
 Bug severities: ${[...BUG_SEVERITIES].join(', ')}

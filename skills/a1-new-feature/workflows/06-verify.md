@@ -368,6 +368,15 @@ Use the `bug_classes` tags consistently — they feed `patterns.md` clustering.
 A run with zero bugs is still useful data — write the entry with
 `bugs_found_in_verify: 0` and `one_line_learning: no failures`.
 
+Before appending this retro, validate the `gates_fired` block — full
+contract and exit codes in `_shared/retro-template.md`, which is the owner
+of this instruction:
+
+```bash
+node <repo>/_shared/a1-tools.cjs retro validate "$RETRO_FILE"; RC=$?
+if [ $RC -ne 0 ]; then echo "fix the gate ids above before the entry counts"; exit $RC; fi
+```
+
 ### Step 6b — Threshold check
 
 Count entries in the **learning store** (not the dev cache — plugin installs

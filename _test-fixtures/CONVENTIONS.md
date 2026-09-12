@@ -78,3 +78,60 @@ show the house style for this kind of edge-case coverage.
 Context note: the historical path-traversal findings in this codebase were fixed in
 commit `d639b8e`. This section exists so regressions are caught going forward, not to fix
 anything that is currently broken.
+
+## RED proof (mandatory for every new guard)
+
+**Every new guard ships with a fixture case the guard actually rejects, committed
+alongside it, and the case's fixture-file header (or its commit message) names the single
+production-code change that turns it red.** A case without that line proves nothing and is
+not a RED-proof instance — it is a case the guard happens to pass, which is not the same
+claim.
+
+This exists because a guard's correctness is *measured*, not *read*. A session that had
+just documented the four false-green test classes (see `~/.claude/rules/common/testing.md`)
+then shipped six guards-that-guard-nothing in three commits (2026-09-11, found by
+Reinhard, 18 mutations). The fix is structural, not a reminder: pair every guard with a
+case proven to die under a named mutation, before the guard is considered done.
+
+**Practical test:** for each case, ask "which single line of production code, changed,
+makes this red?" If the answer does not fit in one sentence, the case is not RED-proof yet
+— either it never reaches the branch it names (Class 1, `testing.md`), or the assertion is
+checking a result where the guarantee is about a process (Class 2), or the expectation
+moves with the thing it measures (Class 4). Run the mutation for real before committing;
+do not trust the one-sentence answer alone — two of Wave 4's own cases (below) needed a
+second pass after the first mutation attempt did not kill them.
+
+### Instances that satisfy this rule (spec 007-retro-gate-id-validator)
+
+| Guard | Case(s) | Named red-making change |
+|---|---|---|
+| `retro validate` (Wave 2) | V2, V3 | V2: dropping the `canonical` field from the drift message template. V3: collapsing `unknown` into `drift` (V2 stays green, V3 alone fails — proving the two statuses are independently guarded). |
+| `workflow lint` (Wave 3) | W1, W4 | W1: removing the `$?`-after-pipe predicate. W4: implementing only the `$?` form (misses the `\|\| exit`/`\|\| abort`/`\|\| return` status-testing shape). |
+| `glob-liveness` (Wave 4) | G2 | Making `liveness()` return 1 (or throw) on zero matches instead of reporting `matches: 0` — verified live: this mutation kills G2 and, as a side effect, G3 (both assert a zero-match case), which is the expected overlap, not a weakness. |
+
+### A worked lesson from Wave 4: a case that could not enter its own branch
+
+Wave 4's first draft of the `a1-code-roots` `caseF` retrofit (the liveness arm added to
+prove a glob is live, not just correctly shaped) **planted a fixture directory for
+whichever glob pattern the code under test had just emitted**, then measured matches
+against that same self-planted tree. Reverting the `quick` glob to the historical plural
+spelling (`.a1/learnings/projects/*/quick`) left the case green: `plantFor` happily built a
+`projects/` tree to satisfy the mutated glob, so the arm always found what it had just
+planted for itself, regardless of whether the emitted glob name matched the real store
+layout. This is Class 1 from `testing.md` — the case could not enter the branch it named,
+because its own setup adapted to whatever the mutation produced.
+
+The fix: plant the **real, fixed store layout** once (`project/` singular, independent of
+whatever the code emits), then measure the **emitted** globs against that fixed layout with
+`liveness(..., { skipPlant: true })`. Only then did reverting the glob to plural reliably
+turn the case red — see `_test-fixtures/a1-glob-liveness/run-tests.sh`'s G6, which commits
+this exact mutation as a probe against the real `_shared/lib/learnings.cjs` glob, applied
+and reverted in place on every run.
+
+A second, narrower instance of the same lesson: G5 (expansion parity) initially planted
+only a single matching root. A native `fs.readdir(parent).length` reimplementation that
+diverges from `ls -d` on multi-child directories happened to agree with `ls -d`'s count
+(both `1`) under that single-root layout — the mutation did not turn G5 red on the first
+attempt. G5 now plants a second, non-matching sibling directory specifically so an
+overcounting reimplementation and the shell's exact-pattern match diverge, which a
+mutation run confirmed.

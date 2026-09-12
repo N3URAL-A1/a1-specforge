@@ -174,13 +174,15 @@ a postmortem that exists only under `project/*/postmortems/` is invisible to the
 Because promote-lessons is an opt-in offer that only fires at ≥5 postmortems,
 relying on it silently strands whole bug corpora — observed 2026-08-02: niimo
 had 16 postmortems and niimo-web 2, with zero entries in the optimizer-visible
-glob. Append one normalized entry per terminal verdict, right here:
+glob. Write the entry to a standalone file first, validate it, then append
+per terminal verdict — full contract and exit codes in
+`_shared/retro-template.md`, which is the owner of this instruction:
 
 ```bash
 VAULT="${A1_VAULT_ROOT:-$(git rev-parse --show-toplevel)/.a1/learnings}"
 mkdir -p "$VAULT/pattern/a1-learnings"
-cat >> "$VAULT/pattern/a1-learnings/a1-fix.md" <<EOF
-
+RETRO_FILE="$(mktemp)"
+cat > "$RETRO_FILE" <<EOF
 ---
 date: $(date +%F)
 task: <bug-slug> — <one-line what was fixed>
@@ -191,7 +193,11 @@ evidence: project/<project>/postmortems/<date>-<bug-slug>.md; fix_commit <short-
 gates_fired:
   - {id: fix-integrity, verdict: <pass|fail>, caught: <true|false>}
 one_line_learning: <from postmortem>
+---
 EOF
+node <repo>/_shared/a1-tools.cjs retro validate "$RETRO_FILE"; RC=$?
+if [ $RC -ne 0 ]; then echo "fix the gate ids above before the entry counts"; exit $RC; fi
+cat "$RETRO_FILE" >> "$VAULT/pattern/a1-learnings/a1-fix.md"
 ```
 
 `evidence:` is required (invariant 3) — it is what the retro-integrity
