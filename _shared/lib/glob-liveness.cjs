@@ -26,13 +26,17 @@ const { execFileSync } = require('child_process');
 // filtering) that could disagree with the shell's own `*` semantics. A
 // helper that expands globs differently from its consumer can report matches
 // while the consumer starves. `liveness()` therefore shells out to `ls -d`
-// rather than walking directories itself. This is a deliberate, reviewed
-// exception to the project's usual "no execSync with interpolated paths"
-// rule (see learnings.cjs's header comment): the glob patterns handed to
-// this helper are CLI-emitted or test-authored strings, never raw external
-// input, and the whole point of this module is to measure the exact string
-// the shell would receive — reimplementing it natively would defeat the
-// purpose (see G5's expansion-parity fixture case).
+// rather than walking directories itself: the whole point of this module is to
+// measure the exact string the shell would receive, so reimplementing the
+// expansion natively would defeat the purpose (see G5's expansion-parity case).
+//
+// The pattern reaches bash as an ARGV ENTRY, never as shell source text — see
+// the SEC-1/SEC-2 note at `countLiveMatches`. This header previously justified
+// an `execSync` with the pattern interpolated, on the premise that these
+// strings are "CLI-emitted or test-authored, never raw external input". That
+// premise was FALSE: they carry `A1_CODE_ROOTS` content unchanged, and the
+// wrong premise is what let both defects ship. Treat any glob handed to this
+// module as external input.
 // ---------------------------------------------------------------------------
 
 /**

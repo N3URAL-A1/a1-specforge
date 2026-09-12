@@ -2,7 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { parseFrontmatter, fail, parseFlags } = require('./io.cjs');
+const { parseFrontmatter, fail, parseFlags, repoRoot } = require('./io.cjs');
 const { parseRegistryIds, expandRangeIds, resolveGateId } = require('./gate-ids.cjs');
 
 // ---------------------------------------------------------------------------
@@ -81,23 +81,10 @@ function rejectHostilePath(raw) {
   }
 }
 
-// Locate the repo root the same way the rest of the facade does (git, not a
-// hardcoded relative path from __dirname, so this works whether a1-tools.cjs
-// is invoked from a worktree or the primary checkout).
-function repoRoot() {
-  const { execSync } = require('child_process');
-  try {
-    return execSync('git rev-parse --show-toplevel', {
-      stdio: ['ignore', 'pipe', 'ignore'],
-    })
-      .toString()
-      .trim();
-  } catch (_e) {
-    // Fall back to two levels up from this file (_shared/lib/ -> repo root),
-    // matching the fixture suites' own REPO_ROOT computation.
-    return path.resolve(__dirname, '..', '..');
-  }
-}
+// `repoRoot` comes from io.cjs — see the note there. The hoist landed in
+// workflow-lint.cjs first and missed this file, which is the same
+// one-place-not-its-neighbour shape as the two header corrections above
+// (a1-reinhard-reviewer's re-review NIT, 2026-09-12).
 
 function registryPath() {
   return path.join(repoRoot(), '_shared', 'gates-registry.md');

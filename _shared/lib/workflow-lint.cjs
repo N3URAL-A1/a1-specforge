@@ -16,13 +16,13 @@ const { parseFlags, repoRoot } = require('./io.cjs');
 // THE CONSTRAINT THAT DECIDES WHETHER THIS GUARD IS REAL (measured
 // 2026-09-11/12): the live repo has ZERO true positives. The defect this
 // guard exists to catch was fixed the same morning it was found
-// (01-collect.md), and the only remaining pipe-with-`||` line in the repo
-// (a `grep -c ... || echo 0` shape) is a legitimate
-// value-defaulting idiom, not a swallowed exit status. A naive matcher that
-// flags "any pipe on a line with ||" produces exactly one finding against the
-// real repo and it is a FALSE POSITIVE — worse than no guard, because it
-// fires only wrongly. So the matcher is deliberately built as TWO small
-// predicates, not one regex:
+// (01-collect.md), and the one line a naive matcher flags is a `grep -c`
+// invocation whose `\|` is an escaped BRE alternation INSIDE a quoted pattern,
+// not a shell pipe at all — a FALSE POSITIVE, worse than no guard, because
+// such a matcher fires only wrongly. (The `grep -c ... || echo 0` shape is
+// also a legitimate value-defaulting idiom where it does follow a real pipe;
+// see the honesty note below for how little that predicate currently earns.)
+// So the matcher is deliberately built as TWO small predicates, not one regex:
 //
 //   - isStatusTesting(line): the RIGHT-HAND SIDE of a pipeline's exit status
 //     is being inspected — `$?` read on this or the next line, or `|| exit`,
