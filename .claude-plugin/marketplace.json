@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "a1-specforge",
-      "version": "1.3.0",
+      "version": "1.4.0",
       "description": "Spec-driven development pipeline for Claude Code",
       "source": "./",
       "author": { "name": "Robert Heine" }
