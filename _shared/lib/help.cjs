@@ -515,7 +515,7 @@ Usage:
                   reproduce the exact silent-discard defect this command
                   exists to kill).
                   Exit: 0 all ids registered (or field absent), 1 at least
-                  one drift/unknown id, 2 usage error / retro file not found /
+                  one drift/unknown id, 2 retro file not found /
                   registry unreadable / gates_fired present but unparseable.
                   --registry overrides the repo-resolved
                   _shared/gates-registry.md — test-only escape hatch (SC-002),
@@ -539,8 +539,10 @@ Usage:
                   --root defaults to the repo root (git rev-parse
                   --show-toplevel); test suites override it to point at a
                   planted fixture tree.
-                  Exit: 0 no findings, 1 at least one finding, 2 usage error
-                  / --root not found or not a directory / hostile --root
+                  Exit: 0 no findings, 1 at least one finding OR an
+                  unrecognised flag (a typo like --roo must not silently
+                  scan the repo instead of the intended --root)
+                  / 2 --root not found or not a directory / hostile --root
                   value (oversized, NUL byte).
                   No live true positive today (the 2026-09-11 defect this
                   guard exists to prevent the return of was fixed the same

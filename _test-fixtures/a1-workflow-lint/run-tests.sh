@@ -238,7 +238,40 @@ caseW9() {
   fi
 }
 
-caseW1; caseW2; caseW3; caseW4; caseW5; caseW6; caseW7; caseW8; caseW9
+# ---------- W10: a flag typo must not silently change the scan target ----------
+# Measured 2026-09-12: `workflow lint --roo <path>` ignored the unrecognised
+# flag, scanned the REAL repo's 64 files instead of the intended target, and
+# exited 0 — a green run over the wrong input. parseFlags collects unknown
+# tokens in `_` without complaining, and this command takes no positionals, so
+# nothing caught it. It was the only command in the facade behaving that way
+# (learnings roots / retro validate / quick stats all exit 1).
+#
+# Red-making change: removing the `flags._.length > 0` guard in cmdWorkflowLint.
+caseW10() {
+  local work rc_typo rc_ok scanned
+  work="$(mktemp -d)"
+  mkdir -p "$work/skills/a-fake/workflows"
+  printf '# no bash fence here\n' > "$work/skills/a-fake/workflows/01-x.md"
+
+  # A typo'd flag must fail, not fall back to the repo root.
+  rc_typo=0
+  node "$TOOLS" workflow lint --roo "$work" >/dev/null 2>&1 || rc_typo=$?
+  # The correct flag must still work and scan the FIXTURE, not the repo.
+  scanned="$(node "$TOOLS" workflow lint --root "$work" 2>/dev/null | node -e "
+    let s=''; process.stdin.on('data',d=>s+=d).on('end',()=>{
+      try { process.stdout.write(String(JSON.parse(s).scanned)); }
+      catch(e){ process.stdout.write('parse-error'); }
+    });")"
+  rc_ok=$?
+
+  if [[ $rc_typo -eq 1 && "$scanned" == "1" ]]; then
+    ok "W10 flag typo exits 1 instead of silently scanning the repo"
+  else
+    bad "W10 flag typo rejected (rc_typo=$rc_typo scanned=$scanned)"
+  fi
+}
+
+caseW1; caseW2; caseW3; caseW4; caseW5; caseW6; caseW7; caseW8; caseW9; caseW10
 
 printf '%s\n' "${results[@]}"
 echo "----"

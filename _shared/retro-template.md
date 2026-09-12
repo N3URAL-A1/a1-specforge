@@ -61,7 +61,7 @@ on 2026-09-11 and made an abort guard unable to fire; caught in review, not
 before). Exit codes: `0` every `gates_fired[].id` is registered (or the field
 is absent, which is fine — read-only reporter skills legitimately omit it);
 `1` at least one id is a documented drift (message names the canonical id) or
-truly unregistered (message points at invariant 7); `2` usage error, the
+truly unregistered (message points at invariant 7); `2` the
 retro file is missing, the registry is unreadable, or `gates_fired` is
 present but its block does not parse — that last case is deliberately NOT
 treated as "no gates" (an unparseable block silently read as absent would

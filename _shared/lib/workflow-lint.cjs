@@ -252,6 +252,24 @@ function rejectHostileRoot(raw) {
  */
 function cmdWorkflowLint(argv) {
   const flags = parseFlags(argv, { root: 'value' });
+
+  // Reject anything left over. `parseFlags` collects unrecognised tokens in
+  // `_` without complaining, and this command takes no positional arguments —
+  // so without this check a typo silently changes WHAT IS SCANNED: measured
+  // 2026-09-12, `workflow lint --roo /tmp/x` ignored the flag, scanned the
+  // real repo's 64 files instead of the intended target, and exited 0. A green
+  // run over the wrong input is the same "silently do the wrong thing and
+  // report success" class this whole spec exists to remove — and this command
+  // was the only one in the facade that did it (`learnings roots`,
+  // `retro validate` and `quick stats` all exit 1 on an unknown flag).
+  if (flags._.length > 0) {
+    process.stderr.write(
+      `usage error: workflow lint takes no positional arguments; unrecognised: ${flags._.join(' ')}\n` +
+        '  did you mean --root <path>?\n'
+    );
+    process.exit(1);
+  }
+
   const rootRaw = flags.root || repoRoot();
 
   try {
