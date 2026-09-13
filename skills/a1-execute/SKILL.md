@@ -144,12 +144,22 @@ a1-pablo-planner Step 4.5, verified by `lane-split check` in `a1-plan`). A lane
 is an arbeitseinheit under R1 above — one worktree, one branch, one executor.
 N lanes = N worktrees, same rules as N phases, no new convention.
 
-1. **Re-run the check before trusting the plan.** A stale PLAN.md is likelier
-   than a wrong one:
+1. **Re-run the check before trusting the plan, WITH `--imports`.** A stale
+   PLAN.md is likelier than a wrong one — and here, unlike at plan time, the
+   completed waves' code exists, so the import check can actually run:
    ```bash
-   node <repo>/_shared/a1-tools.cjs lane-split check --plan <plan path>
+   node <repo>/_shared/a1-tools.cjs lane-split check \
+     --plan <plan path> --imports <repo root>
    ```
    Exit 1 → do not start any lane; back to `a1-plan`.
+
+   **Pass `--imports`, always.** Without it the JSON reports
+   `imports_checked: false` and the run only compared declared path sets. Two
+   lanes can own disjoint files and still depend on each other by importing
+   across them — no overlap, real dependency, and they cannot run concurrently.
+   That gap is why this gate fired 15 times with zero catches: at plan time
+   there is no code to read, so it was only ever asked the question it could not
+   answer. Check `imports_checked` in the output before trusting a PASS.
 2. **Claim each lane's scope separately** (`a1-tools.cjs code-scope`), branch
    `feature/<phase-slug>-<lane-id>`. STOP on overlap — never "just this once".
 3. **One executor per lane**, spawned concurrently, each with `$WORK_PATH` set
