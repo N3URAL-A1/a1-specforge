@@ -4,7 +4,7 @@
 
 # a1-specforge — Roadmap
 
-updated: 2026-09-12
+updated: 2026-09-13
 
 ## You are here
 
@@ -14,6 +14,7 @@ updated: 2026-09-12
 ## In-flight features
 
 - **002-product-docs-layer** — Project Product Docs: docs/product layer + adopt mode (milestone: continuous, stage: started)
+- **008-false-green-test-guards** — Machine guards against false-green tests in the project repos (milestone: continuous, stage: none) — scope: project/a1-specforge/spec/008-false-green-test-guards.md
 
 ## Next cursor
 

@@ -4,7 +4,7 @@ type: roadmap
 project: a1-specforge
 title: "a1-specforge — Roadmap"
 status: active
-updated: 2026-09-12
+updated: 2026-09-13
 source: "migrated from docs/roadmap.md v3.0 (2026-07-10)"
 milestones:
   - id: m0-repo-extract
@@ -75,6 +75,56 @@ features:
     finished: 2026-09-12
     spec_path: project/a1-specforge/spec/007-retro-gate-id-validator.md
     plan_path: project/a1-specforge/plans/007-retro-gate-id-validator-wave-plan.md
+  - id: 008-false-green-test-guards
+    milestone: continuous
+    title: "Machine guards against false-green tests in the project repos"
+    status: in-flight
+    stage: null
+    depends_on: []
+    started: null
+    finished: null
+    spec_path: project/a1-specforge/spec/008-false-green-test-guards.md
+    plan_path: null
+  - id: 005-vault-first-artifacts
+    milestone: continuous
+    title: "Vault-first artifacts"
+    status: planned
+    stage: null
+    depends_on: []
+    started: null
+    finished: null
+    spec_path: project/a1-specforge/spec/005-vault-first-artifacts.md
+    plan_path: null
+  - id: 006-specforge-kritis-profile
+    milestone: continuous
+    title: "SpecForge into a1 as an optional --profile kritis lane"
+    status: planned
+    stage: null
+    depends_on: []
+    started: null
+    finished: null
+    spec_path: project/a1-specforge/spec/006-specforge-kritis-profile.md
+    plan_path: null
+  - id: 004-xs-quick-lane
+    milestone: continuous
+    title: "XS Quick Lane (a1-quick)"
+    status: done
+    stage: null
+    depends_on: []
+    started: null
+    finished: null
+    spec_path: project/a1-specforge/spec/004-xs-quick-lane.md
+    plan_path: null
+  - id: 003-product-schema-v11-vision-audits
+    milestone: continuous
+    title: "Product schema v1.1: vision + audits (spec id contains a dot: 003-product-schema-v1.1-…)"
+    status: done
+    stage: null
+    depends_on: []
+    started: null
+    finished: null
+    spec_path: project/a1-specforge/spec/003-product-schema-v1.1-vision-audits.md
+    plan_path: null
 next: 002-product-docs-layer
 ---
 
@@ -171,6 +221,16 @@ None.
 - **2026-09-12** — 007-retro-gate-id-validator -> merge — stage transition via `product stage`
 - **2026-09-12** — 007-retro-gate-id-validator -> origin-cleanup — stage transition via `product stage`
 - **2026-09-12** — 007-retro-gate-id-validator -> done — stage transition via `product stage`
+- **2026-09-13** — feature '008-false-green-test-guards' added — new feature via `product add-feature`
+- **2026-09-13** — feature.md created for '008-false-green-test-guards' — formal spec/plan attached via `product feature-init`
+- **2026-09-13** — feature '005-vault-first-artifacts' added — new feature via `product add-feature`
+- **2026-09-13** — feature '006-specforge-kritis-profile' added — new feature via `product add-feature`
+- **2026-09-13** — feature.md created for '005-vault-first-artifacts' — formal spec/plan attached via `product feature-init`
+- **2026-09-13** — feature.md created for '006-specforge-kritis-profile' — formal spec/plan attached via `product feature-init`
+- **2026-09-13** — feature '004-xs-quick-lane' added — new feature via `product add-feature`
+- **2026-09-13** — feature.md created for '004-xs-quick-lane' — formal spec/plan attached via `product feature-init`
+- **2026-09-13** — feature '003-product-schema-v11-vision-audits' added — new feature via `product add-feature`
+- **2026-09-13** — feature.md created for '003-product-schema-v11-vision-audits' — formal spec/plan attached via `product feature-init`
 
 ## Appendix — migrated details
 
