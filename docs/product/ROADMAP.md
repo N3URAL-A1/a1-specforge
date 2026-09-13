@@ -78,11 +78,11 @@ features:
   - id: 008-false-green-test-guards
     milestone: continuous
     title: "Machine guards against false-green tests in the project repos"
-    status: in-flight
-    stage: null
+    status: done
+    stage: done
     depends_on: []
-    started: null
-    finished: null
+    started: 2026-09-13
+    finished: 2026-09-13
     spec_path: project/a1-specforge/spec/008-false-green-test-guards.md
     plan_path: null
   - id: 005-vault-first-artifacts
@@ -231,6 +231,7 @@ None.
 - **2026-09-13** — feature.md created for '004-xs-quick-lane' — formal spec/plan attached via `product feature-init`
 - **2026-09-13** — feature '003-product-schema-v11-vision-audits' added — new feature via `product add-feature`
 - **2026-09-13** — feature.md created for '003-product-schema-v11-vision-audits' — formal spec/plan attached via `product feature-init`
+- **2026-09-13** — 008-false-green-test-guards -> done — stage transition via `product stage`
 
 ## Appendix — migrated details
 

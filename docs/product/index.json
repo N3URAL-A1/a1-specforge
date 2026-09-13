@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated": "2026-09-13T07:11:20.549Z",
+  "generated": "2026-09-13T19:07:37.433Z",
   "project": {
     "id": "a1-specforge",
     "title": "a1-specforge — Roadmap",
@@ -111,11 +111,11 @@
       "id": "008-false-green-test-guards",
       "milestone": "continuous",
       "title": "Machine guards against false-green tests in the project repos",
-      "status": "in-flight",
-      "stage": null,
+      "status": "done",
+      "stage": "done",
       "depends_on": [],
-      "started": null,
-      "finished": null,
+      "started": "2026-09-13",
+      "finished": "2026-09-13",
       "spec_path": "project/a1-specforge/spec/008-false-green-test-guards.md",
       "plan_path": null
     },
