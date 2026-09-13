@@ -13,11 +13,11 @@ updated: 2026-09-13
 
 ## In-flight features
 
-- **002-product-docs-layer** — Project Product Docs: docs/product layer + adopt mode (milestone: continuous, stage: started)
+None.
 
 ## Next cursor
 
-**002-product-docs-layer** — recommended next feature (all dependencies (001-roadmap-gate-parallel-features) are done).
+**005-vault-first-artifacts** — recommended next feature (no unmet dependencies, first eligible feature in roadmap order).
 
 ## How to continue
 

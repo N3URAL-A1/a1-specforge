@@ -59,12 +59,12 @@ features:
   - id: 002-product-docs-layer
     milestone: continuous
     title: "Project Product Docs: docs/product layer + adopt mode"
-    status: in-flight
-    stage: started
+    status: done
+    stage: done
     depends_on:
       - 001-roadmap-gate-parallel-features
     started: 2026-07-10
-    finished: null
+    finished: 2026-09-13
   - id: 007-retro-gate-id-validator
     milestone: continuous
     title: "Machine guards for false-green evidence: gate-id validator, workflow lint, glob liveness"
@@ -232,6 +232,7 @@ None.
 - **2026-09-13** — feature '003-product-schema-v11-vision-audits' added — new feature via `product add-feature`
 - **2026-09-13** — feature.md created for '003-product-schema-v11-vision-audits' — formal spec/plan attached via `product feature-init`
 - **2026-09-13** — 008-false-green-test-guards -> done — stage transition via `product stage`
+- **2026-09-13** — 002-product-docs-layer -> done — stage transition via `product stage`
 
 ## Appendix — migrated details
 
