@@ -214,8 +214,93 @@ function isCutoverWave(wave) {
   return CUTOVER_MARKERS.some((marker) => signal.includes(marker));
 }
 
+/**
+ * Check 6 — cross-lane IMPORT dependencies. Opt-in via `--imports <repo-root>`.
+ *
+ * Why this is separate from check 1 (owns-overlap): owns-overlap compares
+ * DECLARED PATH SETS, which is all a plan can offer. But a lane can own a
+ * disjoint set of files and still depend on another lane's file by importing
+ * from it — no overlap, real dependency, and the two lanes cannot run
+ * concurrently. Two independent retros named exactly this gap ("lane-split
+ * check sieht keine Import-Abhängigkeiten, nur Schreibmengen"), and the
+ * auditors found the dependency instead of the gate.
+ *
+ * Why opt-in, and why it lives at EXECUTE time: measured 2026-09-13 against
+ * the historical case (n3ural-contentbot M4-P2) — the phase was PLANNED and
+ * never executed, so its lane files do not exist. At plan time there is no code
+ * to read, which is also why `lane-split` had fired 15 times with zero catches:
+ * it was only ever asked the question it could not answer. a1-execute re-runs
+ * the check before the first lane (SKILL.md §Multi-lane step 1); THERE the
+ * completed waves' files exist. Without `--imports` the behaviour is unchanged,
+ * so no existing caller is affected.
+ *
+ * Deliberately shallow: static `from '...'` / `require('...')` specifiers,
+ * resolved relative to the importing file, matched against the other lanes'
+ * owns globs with the same glob math as owns-overlap. No transitive closure —
+ * a direct import is already a blocker, and a dependency graph nobody can read
+ * would not be trusted.
+ *
+ * @param {{id: string, owns: string[]}[]} lanes
+ * @param {string} repoRootArg
+ * @returns {{check: string, severity: string, msg: string}[]}
+ */
+function crossLaneImportFindings(lanes, repoRootArg) {
+  const root = path.resolve(repoRootArg);
+  const findings = [];
+  const IMPORT_RE = /(?:from\s*|require\(\s*)['"]([^'"]+)['"]/g;
+
+  // Which lane owns a given repo-relative path? First match wins; owns-overlap
+  // (check 1) already guarantees no two lanes claim the same path.
+  const ownerOf = (rel) => {
+    for (const lane of lanes) {
+      if (lane.owns.some((pattern) => scopePathsOverlap([pattern], [rel]))) return lane.id;
+    }
+    return null;
+  };
+
+  for (const lane of lanes) {
+    // Only concrete files can be read; a glob like `tests/unit/**` is expanded
+    // by listing what exists under it.
+    const files = [];
+    for (const pattern of lane.owns) {
+      const abs = path.join(root, pattern);
+      if (!pattern.includes('*') && fs.existsSync(abs) && fs.statSync(abs).isFile()) {
+        files.push({ rel: pattern, abs });
+      }
+    }
+    for (const { rel, abs } of files) {
+      let src;
+      try {
+        src = fs.readFileSync(abs, 'utf8');
+      } catch (_e) {
+        continue;
+      }
+      for (const m of src.matchAll(IMPORT_RE)) {
+        const spec = m[1];
+        if (!spec.startsWith('.')) continue; // package import, not a lane file
+        const targetRel = path.relative(root, path.resolve(path.dirname(abs), spec));
+        // Try the specifier as written and with the extensions this repo uses.
+        const candidates = [targetRel, `${targetRel}.mjs`, `${targetRel}.js`, `${targetRel}.ts`];
+        for (const cand of candidates) {
+          const owner = ownerOf(cand);
+          if (owner && owner !== lane.id) {
+            findings.push({
+              check: 'cross-lane-import',
+              severity: 'BLOCKER',
+              msg: `lane '${lane.id}' file ${rel} imports '${spec}' → ${cand}, owned by lane '${owner}'. `
+                + 'No path overlap, but a real dependency: these lanes cannot run concurrently.',
+            });
+            break;
+          }
+        }
+      }
+    }
+  }
+  return findings;
+}
+
 function cmdLaneSplitCheck(args) {
-  const flags = parseFlags(args, { plan: 'value' });
+  const flags = parseFlags(args, { plan: 'value', imports: 'value' });
   if (!flags.plan) {
     // Deliberately not usage() — that exits 1, which is the "blockers found"
     // branch. An orchestrator would route a typo into a plan-revision loop
@@ -349,6 +434,17 @@ function cmdLaneSplitCheck(args) {
     }
   }
 
+  // 6. cross-lane-import — only when a repo root was handed in (execute time).
+  let importsChecked = false;
+  if (flags.imports) {
+    if (!fs.existsSync(path.resolve(flags.imports))) {
+      process.stderr.write(`lane-split: --imports path not found: ${flags.imports}\n`);
+      process.exit(2);
+    }
+    findings.push(...crossLaneImportFindings(lanes, flags.imports));
+    importsChecked = true;
+  }
+
   const blockers = findings.filter((f) => f.severity === 'BLOCKER').length;
   const out = {
     status: blockers === 0 ? 'PASS' : 'FAIL',
@@ -356,6 +452,10 @@ function cmdLaneSplitCheck(args) {
     lanes: lanes.length,
     waves_in_lanes: laneOf.size,
     sequential_after_lanes: sequentialAfter,
+    // Explicit, so a PASS cannot be mistaken for "imports were checked and are
+    // clean" when no repo root was given. That conflation is how this gate
+    // fired 15 times looking clean while its blind spot was never examined.
+    imports_checked: importsChecked,
     blockers,
     findings,
   };
