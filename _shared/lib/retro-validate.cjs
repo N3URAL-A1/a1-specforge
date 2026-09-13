@@ -104,6 +104,50 @@ function registryPath() {
 // does not match the `{id: ..., ...}` shape at all. Distinguishing "field
 // absent" (undefined) from "field present but garbage" (malformed: true) is
 // the whole point of the exit-0-vs-exit-2 asymmetry above.
+// ---------------------------------------------------------------------------
+// A learning-store file is NOT one frontmatter block. Measured 2026-09-13
+// against the real store: every `pattern/a1-learnings/a1-*.md` file opens
+// with a `type: pattern` header that has no `gates_fired`, and the retro
+// entries are APPENDED below it as further `---`-delimited blocks. The
+// original implementation called `parseFrontmatter` on the whole file, read
+// only that header, found no `gates_fired`, and took the legitimate
+// "read-only reporter skill" exit-0 path — on all 34 `gates_fired` blocks
+// across the five store files that had them. A gate that cannot fail on any
+// real input is documentation (invariant 8), so this splits the file into
+// blocks first and validates every one.
+//
+// Every fixture in `_test-fixtures/a1-retro-validate/corpus/` had the
+// single-block shape, including the "frozen corpus snapshot" that was
+// supposed to stand in for the real 58 entries — it had been rewritten into
+// the parser's shape instead of copied from the store. `retro-appended-entries.md`
+// (case V10) is the shape that actually occurs.
+//
+// The split is deliberately textual and not a YAML-document parser: entries
+// are appended by skills using a plain heredoc, so a block is "a line that
+// is exactly `---`, up to the next such line". Content outside blocks (the
+// file's prose) is ignored, exactly as before.
+function frontmatterBlocks(text) {
+  // Split on standalone `---` lines and treat each SEGMENT as a candidate
+  // block, rather than pairing opening/closing delimiters. Pairing was the
+  // first attempt and was wrong: an appended entry's closing `---` is also
+  // the next entry's opening one, so from the second entry onward the pairs
+  // shift by one and every other entry is skipped. Measured on the V10
+  // fixture: 2 blocks found where 3 ids live, 1 id reported.
+  //
+  // Segments are cheap to over-produce — a segment with no `gates_fired:`
+  // costs one `parseGatesFired` call that returns `present: false` and is
+  // skipped by the caller. Over-producing is therefore safe; under-producing
+  // silently drops retro entries, which is the defect being fixed.
+  const segments = text.split(/^---[ \t]*$/m);
+  const blocks = [];
+  for (const seg of segments) {
+    if (seg.trim() === '') continue;
+    // parseFrontmatter expects the delimiters, so re-wrap each segment.
+    blocks.push('---\n' + seg.replace(/^\n+|\n+$/g, '') + '\n---\n');
+  }
+  return blocks;
+}
+
 const GATES_ITEM_RE = /^\{\s*id:\s*([^,}]+?)\s*(?:,\s*verdict:\s*([^,}]+?)\s*)?(?:,\s*caught:\s*([^,}]+?)\s*)?\}$/;
 
 function parseGatesFired(fm) {
@@ -219,15 +263,29 @@ function cmdRetroValidate(argv) {
   const expanded = expandRangeIds(parseRegistryIds(loadRegistryText(flags)));
 
   const retroText = fs.readFileSync(retroPath, 'utf8');
-  let fm;
-  try {
-    ({ fm } = parseFrontmatter(retroText));
-  } catch (e) {
-    process.stderr.write(`error: retro file frontmatter unreadable: ${e.message}\n`);
-    process.exit(2);
-  }
+  const blocks = frontmatterBlocks(retroText);
+  // No `---` delimiters at all: fall back to treating the whole text as one
+  // block so a bare single-entry file (the shape every pre-2026-09-13
+  // fixture had) keeps working unchanged.
+  const candidates = blocks.length > 0 ? blocks : [retroText];
 
-  const { present, entries: rawEntries, malformed } = parseGatesFired(fm);
+  let present = false;
+  let malformed = false;
+  const rawEntries = [];
+  for (const block of candidates) {
+    let fm;
+    try {
+      ({ fm } = parseFrontmatter(block));
+    } catch (e) {
+      process.stderr.write(`error: retro file frontmatter unreadable: ${e.message}\n`);
+      process.exit(2);
+    }
+    const got = parseGatesFired(fm);
+    if (!got.present) continue;
+    present = true;
+    if (got.malformed) malformed = true;
+    rawEntries.push(...got.entries);
+  }
 
   if (present && malformed) {
     process.stderr.write(

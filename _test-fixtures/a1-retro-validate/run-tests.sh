@@ -573,7 +573,63 @@ caseV9() {
   fi
 }
 
-caseV1; caseV2; caseV3; caseV4; caseV5; caseV6; caseV7; caseV8; caseV9
+
+# ---------- V10: appended-entry files (the shape the real store has) ----------
+# Regression case for the defect measured 2026-09-13: every fixture above has
+# ONE frontmatter block with gates_fired inside it, so the validator's
+# whole-file parseFrontmatter call was never asked to look past the first
+# block. Real store files open with a `type: pattern` header that has NO
+# gates_fired and append entries below as further `---` blocks -> the
+# validator read the header, found nothing, took the legitimate exit-0 path,
+# and reported success on all 34 gates_fired blocks in the live store.
+#
+# Red-making change: reading only candidates[0] instead of every block
+# (the pre-fix behaviour) -> entries=[] and rc=0 instead of the 3 ids below.
+caseV10() {
+  local work rc out valid drift ids
+  work="$(mktemp -d)"
+  cp "$CORPUS/retro-appended-entries.md" "$work/retro.md"
+  out="$(node "$TOOLS" retro validate "$work/retro.md" 2>/dev/null)"; rc=$?
+  valid="$(node -e "console.log(JSON.parse(process.argv[1]).valid)" "$out" 2>/dev/null)"
+  drift="$(node -e "console.log(JSON.parse(process.argv[1]).drift)" "$out" 2>/dev/null)"
+  ids="$(node -e "console.log(JSON.parse(process.argv[1]).entries.map(e=>e.id).join(','))" "$out" 2>/dev/null)"
+  if [[ $rc -eq 1 && "$valid" == "2" && "$drift" == "1" \
+        && "$ids" == "plan-audit,gate-1-build,lane-split-check" ]]; then
+    ok "V10 appended entries: all blocks parsed (valid=2 drift=1, ids in order)"
+  else
+    bad "V10 appended entries (rc=$rc valid=$valid drift=$drift ids=$ids)"
+  fi
+}
+
+# ---------- V11: the live store is drift-free ----------
+# Counterpart to V4b, which asserted an agreement property that held
+# trivially while the validator saw zero entries. This one asserts a COUNT:
+# the store must parse to >0 entries and 0 drift. It fails both if the
+# validator goes blind again (entries drop to 0) and if a new retro writes an
+# unregistered id.
+caseV11() {
+  local store total_entries total_drift out
+  store="${A1_VAULT_ROOT:-$HOME/N3URAL-Vault}/pattern/a1-learnings"
+  if [[ ! -d "$store" ]]; then
+    ok "V11 live store drift-free (skipped: no store at $store)"
+    return
+  fi
+  total_entries=0
+  total_drift=0
+  for f in "$store"/a1-*.md; do
+    [[ -f "$f" ]] || continue
+    out="$(node "$TOOLS" retro validate "$f" 2>/dev/null)"
+    total_entries=$((total_entries + $(node -e "const d=JSON.parse(process.argv[1]);console.log(d.entries.length)" "$out" 2>/dev/null || echo 0)))
+    total_drift=$((total_drift + $(node -e "console.log(JSON.parse(process.argv[1]).drift)" "$out" 2>/dev/null || echo 0)))
+  done
+  if [[ $total_entries -gt 0 && $total_drift -eq 0 ]]; then
+    ok "V11 live store: $total_entries entries parsed, 0 drift"
+  else
+    bad "V11 live store (entries=$total_entries drift=$total_drift — 0 entries means the validator went blind)"
+  fi
+}
+
+caseV1; caseV2; caseV3; caseV4; caseV5; caseV6; caseV7; caseV8; caseV9; caseV10; caseV11
 
 printf '%s\n' "${results[@]}"
 echo "----"
