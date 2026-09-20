@@ -285,10 +285,15 @@ features:
 ### Milestone One <!-- entry: m1-legacy-comment -->
 ROADMAP_F
 
-check_member() {  # $1 = slug, $2 = file
-  grep -q "<!-- entry: $1 -->" "$2" \
-    || grep -qE "^[[:space:]]*- id: $1([[:space:]]|$)" "$2" \
-    && echo "FOUND" || echo "MISMATCH"
+check_member() {  # $1 = slug, $2 = file  (copy of owner §3; re-copy on change)
+  local slug_re
+  slug_re=$(printf '%s' "$1" | sed 's/[^a-zA-Z0-9]/\\&/g')
+  if grep -q "<!-- entry: $1 -->" "$2" \
+     || grep -qE "^[[:space:]]*- id: ${slug_re}([[:space:]]|$)" "$2"; then
+    echo "FOUND"
+  else
+    echo "MISMATCH"
+  fi
 }
 
 M_FRONTMATTER="$(check_member '004-eu-badge-prominent' "$WORK_F/ROADMAP.md")"
@@ -318,6 +323,13 @@ if [[ "$M_PREFIX" == "MISMATCH" ]]; then
   ok "f-membership-rejects-prefix-of-a-real-id"
 else
   bad "f-membership-rejects-prefix-of-a-real-id (got: $M_PREFIX)"
+fi
+M_REGEX="$(check_member '004.eu.badge.prominent' "$WORK_F/ROADMAP.md")"
+
+if [[ "$M_REGEX" == "MISMATCH" ]]; then
+  ok "f-membership-treats-the-slug-literally-not-as-a-pattern"
+else
+  bad "f-membership-treats-the-slug-literally-not-as-a-pattern (got: $M_REGEX)"
 fi
 rm -rf "$WORK_F"
 

@@ -58,8 +58,9 @@ Applies once the spec/phase declares `roadmap_entry: <slug>` in frontmatter;
 with no linkage field yet, skip this check.
 
 ```bash
+SLUG_RE=$(printf '%s' "<slug>" | sed 's/[^a-zA-Z0-9]/\\&/g')   # literal, not a pattern
 if grep -q "<!-- entry: <slug> -->" "$ROADMAP_FILE" \
-   || grep -qE "^[[:space:]]*- id: <slug>([[:space:]]|$)" "$ROADMAP_FILE"; then
+   || grep -qE "^[[:space:]]*- id: ${SLUG_RE}([[:space:]]|$)" "$ROADMAP_FILE"; then
   echo "FOUND"
 else
   echo "MISMATCH"
@@ -76,6 +77,13 @@ across the real corpus before this line existed: **74 of 85 specs carrying a
 the very roadmap being checked** (e.g. a1-office-landing `004-eu-badge-prominent`:
 comment matches 0, frontmatter matches 1). Those 74 were invisible until §2 was
 fixed, because the same projects had already been halted one step earlier.
+
+**The slug is escaped before it reaches `grep -qE`** — `roadmap_entry:` is
+hand-written spec frontmatter and passes through no `assertSlug`, so an
+unescaped value is read as a pattern: measured 2026-09-20, the typo
+`004.eu.badge.prominent` matched the real entry `004-eu-badge-prominent` and
+returned FOUND. A membership check exists to catch exactly that typo, so it
+must compare literally.
 
 ## Canonical outcomes + user-facing prompts
 
