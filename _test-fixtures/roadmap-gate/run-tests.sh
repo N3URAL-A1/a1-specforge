@@ -267,6 +267,59 @@ else
 fi
 rm -rf "$WORK_E"
 
+# --- (f) membership accepts BOTH encodings: comment and frontmatter id ---
+# §3 regression, same root cause as (e) one level down. Measured 2026-09-20
+# over the real corpus: 74 of 85 specs carrying a `roadmap_entry:` reported
+# MISMATCH while their slug sat in the frontmatter of the very roadmap being
+# checked. Body copied from a1-office-landing's real roadmap shape.
+WORK_F="$(mktemp -d)"
+cat > "$WORK_F/ROADMAP.md" <<'ROADMAP_F'
+---
+schema_version: 1
+features:
+  - id: 004-eu-badge-prominent
+    milestone: m1
+---
+
+### Milestone One <!-- entry: m1-legacy-comment -->
+ROADMAP_F
+
+check_member() {  # $1 = slug, $2 = file
+  grep -q "<!-- entry: $1 -->" "$2" \
+    || grep -qE "^[[:space:]]*- id: $1([[:space:]]|$)" "$2" \
+    && echo "FOUND" || echo "MISMATCH"
+}
+
+M_FRONTMATTER="$(check_member '004-eu-badge-prominent' "$WORK_F/ROADMAP.md")"
+M_COMMENT="$(check_member 'm1-legacy-comment' "$WORK_F/ROADMAP.md")"
+M_ABSENT="$(check_member '999-not-there' "$WORK_F/ROADMAP.md")"
+M_PREFIX="$(check_member '004-eu' "$WORK_F/ROADMAP.md")"
+
+if [[ "$M_FRONTMATTER" == "FOUND" ]]; then
+  ok "f-membership-accepts-frontmatter-id"
+else
+  bad "f-membership-accepts-frontmatter-id (got: $M_FRONTMATTER)"
+fi
+
+if [[ "$M_COMMENT" == "FOUND" ]]; then
+  ok "f-membership-still-accepts-entry-comment"
+else
+  bad "f-membership-still-accepts-entry-comment (got: $M_COMMENT)"
+fi
+
+if [[ "$M_ABSENT" == "MISMATCH" ]]; then
+  ok "f-membership-still-reports-absent-slug"
+else
+  bad "f-membership-still-reports-absent-slug (got: $M_ABSENT)"
+fi
+
+if [[ "$M_PREFIX" == "MISMATCH" ]]; then
+  ok "f-membership-rejects-prefix-of-a-real-id"
+else
+  bad "f-membership-rejects-prefix-of-a-real-id (got: $M_PREFIX)"
+fi
+rm -rf "$WORK_F"
+
 printf '\n--- roadmap-gate fixture results ---\n'
 for r in "${results[@]}"; do printf '%s\n' "$r"; done
 printf '\nTotal: %d passed, %d failed\n' "$pass" "$fail"

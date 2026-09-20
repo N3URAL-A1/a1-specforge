@@ -55,8 +55,20 @@ Applies once the spec/phase declares `roadmap_entry: <slug>` in frontmatter;
 with no linkage field yet, skip this check.
 
 ```bash
-grep -q "<!-- entry: <slug> -->" "$ROADMAP_FILE" && echo "FOUND" || echo "MISMATCH"
+grep -q "<!-- entry: <slug> -->" "$ROADMAP_FILE" \
+  || grep -qE "^[[:space:]]*- id: <slug>([[:space:]]|$)" "$ROADMAP_FILE" \
+  && echo "FOUND" || echo "MISMATCH"
 ```
+
+**Both encodings count as membership** (added 2026-09-20 with the §2 fix, same
+root cause one level down). An entry is written either as the adopt path's
+`<!-- entry: <slug> -->` comment or as a frontmatter `- id: <slug>` under
+`milestones:` / `features:` — `product init` emits only the latter. Measured
+across the real corpus before this line existed: **74 of 85 specs carrying a
+`roadmap_entry:` reported MISMATCH while their slug sat in the frontmatter of
+the very roadmap being checked** (e.g. a1-office-landing `004-eu-badge-prominent`:
+comment matches 0, frontmatter matches 1). Those 74 were invisible until §2 was
+fixed, because the same projects had already been halted one step earlier.
 
 ## Canonical outcomes + user-facing prompts
 
