@@ -2,20 +2,20 @@
 # Fixture: SC-005 — roadmap-gate check on docs/product/ROADMAP.md preference
 # with .a1/roadmap.md backward-compat fallback.
 #
-# The gate logic under test lives ONLY as prose + embedded bash in two
-# workflow markdown files (no standalone script exists):
-#   - skills/a1-new-feature/workflows/00-roadmap-gate.md  (Step 1 + Step 2)
-#   - skills/a1-execute/workflows/01-load.md              (Step 0 + inline)
+# The gate logic under test lives ONLY as prose + embedded bash — no standalone
+# script exists. Its single owner since M13 is:
+#   - _shared/roadmap-gate-check.md   (§1 existence, §2 parseability, §3 membership)
+# Both callers delegate to it: skills/a1-new-feature/workflows/00-roadmap-gate.md
+# and skills/a1-execute/workflows/01-load.md.
 #
-# Both files contain the IDENTICAL existence-check snippet (Step 1 /
-# Step 0) and an equivalent parseability-check snippet (Step 2). To make
-# fixture/doc drift impossible, the snippets below are copy-pasted
-# VERBATIM from the current workflow files (see the line-range comment
-# above each block). If a future edit changes the gate logic in the docs
-# without updating this file, the verbatim comment below will visibly
-# stop matching the doc on the next manual diff, and — more importantly —
-# any behavioral drift (e.g. a changed grep pattern) will show up as a
-# real fixture failure once someone re-pastes the new snippet in here.
+# The snippets below are COPIES of the owner's, not reads of it — bash embedded
+# in Markdown cannot be sourced. That copy relationship is a real drift risk and
+# is NOT self-enforcing: this header previously claimed the copies made "drift
+# impossible", and on 2026-09-20 the owner's §2 and §3 both changed while every
+# case here stayed green. Treat the NOTE above each copied function as the
+# reminder to re-copy, and keep each case's mutation proof current: a case that
+# cannot turn red when the contract it names is reverted is documentation, not
+# a test (see ~/.claude/rules/common/testing.md).
 #
 # Scenarios (SC-005):
 #   (a) only docs/product/ROADMAP.md present -> gate passes preferring it
@@ -227,10 +227,11 @@ fi
 rm -rf "$WORK_D"
 
 # --- (e) product-init roadmap: schema_version, NO entry marker -> PARSEABLE ---
-# Regression for the 2026-09-20 false alarm. Body copied from the real
-# n3ural-socialmedia/docs/product/ROADMAP.md as `product init` wrote it
-# (frontmatter-encoded entries, zero HTML comments) — NOT reconstructed from
-# the check being tested. Under the old two-conjunct rule this returned
+# Regression for the 2026-09-20 false alarm. Body copied 2026-09-20 from
+# ~/claude-projects/n3ural-socialmedia/docs/product/ROADMAP.md (frontmatter
+# `updated: 2026-09-17`, written by `product init`: frontmatter-encoded
+# entries, zero HTML comments) — NOT reconstructed from the check being
+# tested. Under the old two-conjunct rule this returned
 # UNPARSEABLE and halted the skill in 11 of 14 projects.
 WORK_E="$(mktemp -d)"
 mkdir -p "$WORK_E/docs/product"
@@ -319,6 +320,36 @@ else
   bad "f-membership-rejects-prefix-of-a-real-id (got: $M_PREFIX)"
 fi
 rm -rf "$WORK_F"
+
+# --- (g) legacy .a1/roadmap.md WITHOUT an entry marker -> PARSEABLE ---
+# Covers the else-branch of check_parseable, which no other case exercises:
+# case (b) uses $VALID_ROADMAP_LEGACY, which happens to carry a marker, so
+# re-adding the `<!-- entry:` conjunct to the legacy branch alone left all 12
+# tests green (measured 2026-09-20, found in review). Class 1 of testing.md --
+# the suite did not enter the path it claimed to cover.
+WORK_G="$(mktemp -d)"
+mkdir -p "$WORK_G/.a1"
+cat > "$WORK_G/.a1/roadmap.md" <<'ROADMAP_G'
+---
+project: demo
+status: active
+---
+
+# Roadmap
+
+## M1 — First milestone
+- [ ] 001-first-feature
+ROADMAP_G
+
+RESULT_G="$(run_gate "$WORK_G")"
+PARSE_G="${RESULT_G##*|}"
+
+if [[ "$PARSE_G" == "PARSEABLE" ]]; then
+  ok "g-legacy-roadmap-without-entry-marker-is-parseable"
+else
+  bad "g-legacy-roadmap-without-entry-marker-is-parseable (got: $PARSE_G)"
+fi
+rm -rf "$WORK_G"
 
 printf '\n--- roadmap-gate fixture results ---\n'
 for r in "${results[@]}"; do printf '%s\n' "$r"; done

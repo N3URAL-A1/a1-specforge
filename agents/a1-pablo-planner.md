@@ -163,8 +163,19 @@ waves: <count>
 lanes: none
 status: planned
 created: <ISO date>
+phase_kind: <code | no-code>
 first_user_event: <ISO date + weekday + time, or omit if the phase has no deadline>
 ---
+
+**`phase_kind` (required).** `no-code` means every write target of this phase
+lies outside the repo — vault notes, docs prose, external channels — so there is
+nothing a build or type-check could green-light. It switches two gates: the
+isolation gate is waived (`_shared/parallel-spec-isolation.md` R1 exception 2,
+the owner of that rule) and `gate-1-build` is replaced by
+`phase-artifacts-exist`. A `no-code` phase therefore MUST name, per wave, the
+artifact paths it produces and one content assertion per path — existence alone
+is a gate that cannot fail. Anything that writes into the repo is `code`, even
+when it writes only Markdown.
 
 **`first_user_event` (required whenever the phase names any date a human or the
 public will act on** — a launch, a first post, a recording session, a migration
