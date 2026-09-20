@@ -31,7 +31,14 @@ actually built" evidence — everything else in this workflow is unchanged.
 
 A `no-code` phase writes only outside the repo (vault notes, docs prose,
 external channels), so a build cannot speak to it — and a missing
-`phase_kind` reads as `code`, never as a waiver. **Existence alone is not the
+`phase_kind` reads as `code`, never as a waiver.
+
+**Not to be confused with the `# no-code` task tag** used by the phantom
+integration in Step 6.5 below. That tag marks a SINGLE task inside an ordinary
+code phase as legitimately producing no artifact; `phase_kind: no-code` is a
+property of the WHOLE phase and is what swaps the build gate. They are
+independent: a `code` phase may contain `# no-code` tasks, and in a `no-code`
+phase the phantom rules of Step 6.5 apply unchanged per task. **Existence alone is not the
 gate**: `test -f` on a file the wave just created cannot fail, so each path
 needs the plan's named content assertion beside it (invariant 8). Attribute the
 gate that actually ran, not both:
