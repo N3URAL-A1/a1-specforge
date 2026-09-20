@@ -295,13 +295,16 @@ status: draft
 
 ### Deterministic membership check (grep, no LLM)
 
-```bash
-# Does .a1/roadmap.md contain this entry slug?
-grep -q "<!-- entry: m1-p1-auth-setup -->" .a1/roadmap.md && echo "FOUND" || echo "MISSING"
-```
+Run it **exactly as `_shared/roadmap-gate-check.md` §3 defines it** — that file
+is the owner; do not restate the snippet here. It accepts BOTH encodings of an
+entry (the `product import` HTML comment and the frontmatter `- id:` that
+`product init` writes) and compares the slug literally.
 
-This is the exact check `a1-new-feature` Phase 0 and `a1-execute` Phase 1 run
-before proceeding — read-only, deterministic, no parsing beyond a grep.
+A single-grep copy of this check used to live here, in `a1-execute` and in the
+gate fixture. Measured 2026-09-20: it reported MISMATCH for 74 of 85 real specs
+whose slug was present in the roadmap being checked, because it only ever looked
+for the comment. That is the same copy-without-sync class three times over
+(invariant 1) — hence the delegation.
 
 ## In-flight features (roadmap view)
 
@@ -316,9 +319,11 @@ node _shared/a1-tools.cjs code-scope list --stale-days 7
 For each `code_scope` reservation, render feature id (`by`), lifecycle
 `stage`, and declared scope (`paths`). Group entries under their roadmap
 entry when the feature's spec/wave-plan carries a matching `roadmap_entry:`
-slug (see "Feature → Roadmap Linkage" above) — resolve the grouping by
-matching the feature's `roadmap_entry` frontmatter value against the
-`<!-- entry: <slug> --> ` markers in `.a1/roadmap.md`. Features with no
+slug (see "Feature → Roadmap Linkage" above) — resolve the grouping with the
+canonical membership check (`_shared/roadmap-gate-check.md` §3), which matches
+the feature's `roadmap_entry` value against EITHER the `<!-- entry: <slug> -->`
+marker or the frontmatter `- id: <slug>` entry — matching only the marker drops
+every project scaffolded by `product init`. Features with no
 resolvable linkage are listed under an "Unlinked" group, not dropped.
 
 ```

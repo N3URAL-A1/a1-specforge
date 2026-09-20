@@ -29,11 +29,28 @@ fi
 
 ```bash
 if [ "$ROADMAP_FILE" = "docs/product/ROADMAP.md" ]; then
-  grep -q '^schema_version:' "$ROADMAP_FILE" && grep -q '<!-- entry:' "$ROADMAP_FILE" && echo "PARSEABLE" || echo "UNPARSEABLE"
+  grep -q '^schema_version:' "$ROADMAP_FILE" && echo "PARSEABLE" || echo "UNPARSEABLE"
 else
-  grep -q '^---' "$ROADMAP_FILE" && grep -q '<!-- entry:' "$ROADMAP_FILE" && echo "PARSEABLE" || echo "UNPARSEABLE"
+  grep -q '^---' "$ROADMAP_FILE" && echo "PARSEABLE" || echo "UNPARSEABLE"
 fi
 ```
+
+**Parseability is the schema contract, NOT the `<!-- entry:` marker** (fixed
+2026-09-20, 7th a1-evolve run). Those HTML comments are written by exactly one
+code path — `_shared/lib/product.cjs:2658` in `parseLegacyRoadmap()`, reachable
+only from `cmdProductImport` (the `product import` legacy-migration command) —
+while `product init`, `product add-milestone` and `product add-feature` encode
+entries structurally in the frontmatter (`milestones:` / `features:` with
+`- id:`) and emit no comment at all. (`adopt` is an a1-roadmap prose mode, not a
+CLI subcommand: `grep -c adopt _shared/lib/product.cjs` → 0.) Requiring the marker here
+made the gate contradict the CLI that writes the file: measured 2026-09-20,
+**11 of 14 project roadmaps were `valid: true` under `product validate` and
+simultaneously `UNPARSEABLE` under this gate** — a halt before Discover or wave
+loading, in every project scaffolded rather than migrated. A gate that rejects
+its own writer's valid output is not strict, it is wrong (invariant 1: one owner
+per fact — the schema owns parseability). §3 below still accepts the marker as
+one of two valid encodings: membership is only ever checked once a caller
+supplies a slug, and a MISMATCH there is a soft stop, never a halt.
 
 ## 3. Entry membership (only when a linkage slug is known)
 
@@ -41,8 +58,32 @@ Applies once the spec/phase declares `roadmap_entry: <slug>` in frontmatter;
 with no linkage field yet, skip this check.
 
 ```bash
-grep -q "<!-- entry: <slug> -->" "$ROADMAP_FILE" && echo "FOUND" || echo "MISMATCH"
+SLUG_RE=$(printf '%s' "<slug>" | sed 's/[^a-zA-Z0-9]/\\&/g')   # literal, not a pattern
+if grep -q "<!-- entry: <slug> -->" "$ROADMAP_FILE" \
+   || grep -qE "^[[:space:]]*- id: ${SLUG_RE}([[:space:]]|$)" "$ROADMAP_FILE"; then
+  echo "FOUND"
+else
+  echo "MISMATCH"
+fi
 ```
+
+**Both encodings count as membership** (added 2026-09-20 with the §2 fix, same
+root cause one level down). An entry is written either as the `product import`
+path's `<!-- entry: <slug> -->` comment (`product.cjs:2658`) or as a frontmatter
+`- id: <slug>` under `milestones:` / `features:` — `product init` and the
+`add-*` commands emit only the latter. Measured
+across the real corpus before this line existed: **74 of 85 specs carrying a
+`roadmap_entry:` reported MISMATCH while their slug sat in the frontmatter of
+the very roadmap being checked** (e.g. a1-office-landing `004-eu-badge-prominent`:
+comment matches 0, frontmatter matches 1). Those 74 were invisible until §2 was
+fixed, because the same projects had already been halted one step earlier.
+
+**The slug is escaped before it reaches `grep -qE`** — `roadmap_entry:` is
+hand-written spec frontmatter and passes through no `assertSlug`, so an
+unescaped value is read as a pattern: measured 2026-09-20, the typo
+`004.eu.badge.prominent` matched the real entry `004-eu-badge-prominent` and
+returned FOUND. A membership check exists to catch exactly that typo, so it
+must compare literally.
 
 ## Canonical outcomes + user-facing prompts
 

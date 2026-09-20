@@ -23,11 +23,12 @@ the `roadmap_entry:` (or equivalent linkage) field from `GOAL.md` / `PLAN.md`
 frontmatter in `.a1/phases/<phase_name>/`. If no such field exists yet, skip this
 check and proceed to Step 1.
 
-If a `roadmap_entry: <slug>` value exists:
-
-```bash
-grep -q "<!-- entry: <slug> -->" "$ROADMAP_FILE" && echo "FOUND" || echo "MISMATCH"
-```
+If a `roadmap_entry: <slug>` value exists, run the membership check **exactly as
+`_shared/roadmap-gate-check.md` §3 defines it** — do not restate the snippet here.
+It accepts both encodings (the `product import` comment and the frontmatter
+`- id:` that `product init` writes); a copy of the older single-grep form in this
+file reported MISMATCH for 74 of 85 real specs whose slug was present (measured
+2026-09-20, invariant 1).
 
 - **FOUND** → proceed to Step 1.
 - **MISMATCH** → **soft stop.** Do not halt outright — surface a notice and let

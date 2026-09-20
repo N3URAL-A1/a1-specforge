@@ -18,6 +18,39 @@ Verify that the phase goal was achieved.
 **Output path:** .a1/phases/<phase_name>/VERIFICATION.md
 ```
 
+## Step 0 — Read `phase_kind` before choosing the build evidence
+
+PLAN.md frontmatter carries `phase_kind: <code | no-code>` (owner:
+`agents/a1-pablo-planner.md`). It selects which gate supplies the "is it
+actually built" evidence — everything else in this workflow is unchanged.
+
+| `phase_kind` | Gate | Evidence Victor must produce |
+|---|---|---|
+| `code` (default) | `gate-1-build` | build / type-check / test output, green |
+| `no-code` | `phase-artifacts-exist` | per wave: every plan-declared artifact path exists AND satisfies the content assertion the plan names for it |
+
+A `no-code` phase writes only outside the repo (vault notes, docs prose,
+external channels), so a build cannot speak to it — and a missing
+`phase_kind` reads as `code`, never as a waiver.
+
+**Not to be confused with the `# no-code` task tag** used by the phantom
+integration in Step 6.5 below. That tag marks a SINGLE task inside an ordinary
+code phase as legitimately producing no artifact; `phase_kind: no-code` is a
+property of the WHOLE phase and is what swaps the build gate. They are
+independent: a `code` phase may contain `# no-code` tasks, and in a `no-code`
+phase the phantom rules of Step 6.5 apply unchanged per task. **Existence alone is not the
+gate**: `test -f` on a file the wave just created cannot fail, so each path
+needs the plan's named content assertion beside it (invariant 8). Attribute the
+gate that actually ran, not both:
+
+```yaml
+gates_fired:
+  - {id: phase-artifacts-exist, verdict: pass, caught: false}
+```
+
+Motivated by 4 measured phases (n3ural-socialmedia M1-P1..P3, ai-server,
+2026-09-16/17) verified against a build gate that could never go green.
+
 ## Per-AC verification table in VERIFICATION.md (mandatory — never omit)
 
 The verification target is the SPEC's acceptance criteria, quoted VERBATIM — **not** the plan's

@@ -196,6 +196,11 @@ Rule owner: `~/.claude/rules/common/testing.md` — do not restate it here.
 One corollary for the skeletons you write: a test that greps a file also
 matches the comment above the code, so read only the effective section.
 
+**When the thing under test is itself a guard**, the same four classes apply to
+it: measure it once against the real store/repo and report the count it found,
+and justify any exclusion by the property it actually uses — see
+`_shared/agent-lessons.md#guard-self-proof`.
+
 # Hard rules
 1. Write skeletons, not complete tests — the executor fills in the assertions. Your job is structure, not content.
 2. Every skeleton has at least one parity assertion (explicitly marked).

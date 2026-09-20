@@ -228,3 +228,49 @@ date it was read (`Neighbour M4-P2 — PLAN.md rev 4, read 2026-09-10`).
 
 The orchestrator side of this rule (fix the surface before the first spawn) is
 owned by `skills/a1-plan/workflows/03-plan.md`, "Shared-interface contract".
+
+## Any guard author — a guard that never measured the real source proves nothing {#guard-self-proof}
+
+2026-09-12/13, four guards in three repos (a1-specforge spec 007,
+n3ural-contentbot spec 008 + its follow-up fix). Each one shipped green, and
+each one was later measured to have checked **nothing**:
+
+- **The retro-gate-id validator read 0 of 34 `gates_fired` blocks.** It parsed
+  only the first frontmatter block per file, so in production it never
+  validated a single id. Its fixtures passed because their shape had been
+  derived from the parser. One run against the real store: 0 → 73 valid, 0
+  drift (commit `6f992b4`).
+- **A CI gate reported success after its dependency was absent.** It loaded the
+  coverage package dynamically and treated "not installed" as "nothing to
+  report" instead of a usage error (exit 2).
+- **A pipeline linter did not flag the defect it was built for.** The 2026-09-11
+  snippet spans three backslash-continued lines; the matcher was line-local.
+  Its live scan stayed at `scanned:64, findings:0` either way — a green scan
+  indistinguishable from a repaired one.
+- **An exclusion generalised from 3 samples to 125 cases.** Enum comparisons
+  were excluded from the false-green check on three spot checks that all
+  happened to be covered by a literal counter-check; `PROBE_KIND` was not, and
+  mutating it left all 1875 tests green.
+
+**Root cause: the guard was validated against material derived from the guard's
+own assumptions** — fixtures shaped like the parser, samples chosen by the
+property the author believed was in play. That is class 3 of
+`#theo-mutation-question` applied to the guard itself.
+
+**Rule, two parts, both cheap.**
+
+1. **Measure once against the real source before claiming a guard works.** Not
+   the fixtures — the actual store, repo or corpus it will run on. Report the
+   count it found (`0 → 73`, `14 pre-existing findings`). A guard that reports
+   zero on its first real run has either nothing to catch or nothing that works,
+   and only the count distinguishes them.
+2. **An exclusion must be justified by the property it actually uses.** When an
+   exclusion generalises from a handful of samples to a whole class, name that
+   property and mutate one case that has it — not one that merely travels with
+   it. The measured precedent is in `_shared/gates-registry.md`
+   (`no-imported-expectations`): enum comparisons were *measured* not to be the
+   class, and the exception list holds exactly one named entry with its reason.
+
+Related failure at the same site: a gate whose dependency is missing must exit
+2 (usage error), never 0 — see invariant 8, "a gate that cannot fail is
+documentation".

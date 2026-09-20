@@ -54,6 +54,25 @@ Extract:
 
 ## Step 2: Structural scan
 
+**Absence is a measurement, never an inference.** Before writing that something
+is missing, empty or nonexistent, run the command that would disprove it and
+put its output in the map. Two shapes cost a map its credibility:
+
+```bash
+# "Artifact X from the previous phase is missing" — list before you claim
+ls -la "<expected/path>" 2>&1 | head -5          # vault notes, templates, docs
+# "There is no repo / no history here" — a repo with 0 commits is still a repo
+git -C "<path>" rev-parse --is-inside-work-tree 2>&1
+git -C "<path>" rev-list --count HEAD 2>&1       # 0 = initialised, never committed
+```
+
+Measured 2026-09-16/17 (n3ural-socialmedia M1-P1/M1-P3): a map reported a
+template as missing that had existed since the previous phase, and read a
+freshly initialised repository as "no repository". A false premise in MAP.md
+does not stay in MAP.md — it travels into the plan and out into an executor
+instruction. Where a claim cannot be measured, write it as an open question,
+not as a finding.
+
 ```bash
 # Project shape
 find . -maxdepth 2 -type d | grep -v node_modules | grep -v ".git" | grep -v dist | grep -v ".next"
