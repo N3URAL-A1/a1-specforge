@@ -18,6 +18,29 @@ Der Haupt-Checkout bleibt auf `main` und clean. KEIN Feature-/Fix-/Wave-Code im
 Haupt-Checkout — niemals, auch nicht "nur eine kleine Datei". Lifecycle
 (Registry, Exit-Modi, Origin-Cleanup) über den `a1-worktree`-Skill.
 
+### Benannte Ausnahmen von R1 (abschließend)
+
+Ein Worktree isoliert **Code im Repo**. Wo eine Phase keinen schreibt, isoliert
+er nichts und kostet nur Schritte. Zwei Fälle, beide am Plan-Zeitpunkt zu
+deklarieren und beim Ausführen nicht nachträglich zu erweitern:
+
+1. **Externe live-symlinkte Repos** als Schreibziel — eine Worktree-Kopie würde
+   die Symlinks verfehlen (bestehende Ausnahme, siehe `gates-registry.md`
+   `isolation-gate`).
+2. **No-Code-Phasen**: alle Schreibziele der Phase liegen außerhalb des Repos
+   (Vault-Notizen, `docs/`-Prosa, externe Kanäle) und die Phase deklariert
+   `phase_kind: no-code` im PLAN-Frontmatter. Beleg 2026-09-16/17
+   (n3ural-socialmedia M1-P1…P3, ai-server): drei Strategie-Phasen mussten
+   durch ein Isolation-Gate, das nichts zu isolieren hatte, während
+   `gate-1-build` mangels Code unerfüllbar blieb.
+
+**Ersatz-Abnahme für Fall 2 statt „Build grün":** Die Phase benennt im Plan je
+Wave die erwarteten Artefakt-Pfade; abgenommen wird über deren Existenz und
+Inhalt (`test -f` plus eine inhaltliche Zusicherung pro Datei — eine reine
+Existenzprüfung ist ein Gate, das nicht fehlschlagen kann, siehe Invariante 8).
+Shared-State (R2) bleibt unberührt: `docs/product/**` und `.a1/reservations.json`
+werden auch hier ausschließlich im Haupt-Checkout mutiert und sofort committet.
+
 ## R2 — Shared-State nur im Haupt-Checkout, sofort committen (HARD RULE)
 
 Die projektweiten Koordinations-Dateien

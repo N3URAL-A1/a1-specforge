@@ -70,29 +70,31 @@ check_existence() {
 }
 
 # ---------------------------------------------------------------------
-# VERBATIM from skills/a1-new-feature/workflows/00-roadmap-gate.md
-# Step 2 — Parseability check (lines 50-57):
-#
-#   if [ -f docs/product/ROADMAP.md ]; then
-#     grep -q '^schema_version:' docs/product/ROADMAP.md && grep -q '<!-- entry:' docs/product/ROADMAP.md && echo "PARSEABLE" || echo "UNPARSEABLE"
-#   else
-#     grep -q '^---' .a1/roadmap.md && grep -q '<!-- entry:' .a1/roadmap.md && echo "PARSEABLE" || echo "UNPARSEABLE"
-#   fi
-#
-# Equivalent $ROADMAP_FILE-parameterized form in
-# skills/a1-execute/workflows/01-load.md Step 0 (lines 47-51):
+# VERBATIM from _shared/roadmap-gate-check.md §2 (the canonical owner; the
+# two callers, a1-new-feature/workflows/00-roadmap-gate.md and
+# a1-execute/workflows/01-load.md Step 0, delegate to it):
 #
 #   if [ "$ROADMAP_FILE" = "docs/product/ROADMAP.md" ]; then
-#     grep -q '^schema_version:' "$ROADMAP_FILE" && grep -q '<!-- entry:' "$ROADMAP_FILE" && echo "PARSEABLE" || echo "UNPARSEABLE"
+#     grep -q '^schema_version:' "$ROADMAP_FILE" && echo "PARSEABLE" || echo "UNPARSEABLE"
 #   else
-#     grep -q '^---' "$ROADMAP_FILE" && grep -q '<!-- entry:' "$ROADMAP_FILE" && echo "PARSEABLE" || echo "UNPARSEABLE"
+#     grep -q '^---' "$ROADMAP_FILE" && echo "PARSEABLE" || echo "UNPARSEABLE"
 #   fi
+#
+# Updated 2026-09-20 (7th a1-evolve run): the `<!-- entry:` conjunct was
+# REMOVED from parseability. Those markers are emitted by exactly one code
+# path (`_shared/lib/product.cjs`, adopt/migration branch); `product init`
+# encodes entries in the frontmatter instead. Requiring the marker made the
+# gate halt on 11 of 14 real project roadmaps that `product validate` called
+# valid. Case (e) below is that measured false alarm, kept as a regression.
+#
+# NOTE this function is a COPY of the owner's snippet, not a read of it — if
+# §2 changes again, case (e)'s comment is the reminder to re-copy it here.
 # ---------------------------------------------------------------------
 check_parseable() {
   if [ -f docs/product/ROADMAP.md ]; then
-    grep -q '^schema_version:' docs/product/ROADMAP.md && grep -q '<!-- entry:' docs/product/ROADMAP.md && echo "PARSEABLE" || echo "UNPARSEABLE"
+    grep -q '^schema_version:' docs/product/ROADMAP.md && echo "PARSEABLE" || echo "UNPARSEABLE"
   else
-    grep -q '^---' .a1/roadmap.md && grep -q '<!-- entry:' .a1/roadmap.md && echo "PARSEABLE" || echo "UNPARSEABLE"
+    grep -q '^---' .a1/roadmap.md && echo "PARSEABLE" || echo "UNPARSEABLE"
   fi
 }
 
@@ -223,6 +225,47 @@ else
   bad "d-unparseable-docs-product-treated-as-missing (got: $EXIST_D | $PARSE_D)"
 fi
 rm -rf "$WORK_D"
+
+# --- (e) product-init roadmap: schema_version, NO entry marker -> PARSEABLE ---
+# Regression for the 2026-09-20 false alarm. Body copied from the real
+# n3ural-socialmedia/docs/product/ROADMAP.md as `product init` wrote it
+# (frontmatter-encoded entries, zero HTML comments) — NOT reconstructed from
+# the check being tested. Under the old two-conjunct rule this returned
+# UNPARSEABLE and halted the skill in 11 of 14 projects.
+WORK_E="$(mktemp -d)"
+mkdir -p "$WORK_E/docs/product"
+cat > "$WORK_E/docs/product/ROADMAP.md" <<'ROADMAP_E'
+---
+schema_version: 1
+type: roadmap
+project: n3ural-socialmedia
+title: n3ural-socialmedia
+status: active
+updated: 2026-09-17
+source: "scaffolded by a1-tools product init"
+milestones:
+  - id: m1-strategie
+    title: Strategie
+    status: in-progress
+    target: 2026-09
+features:
+  - id: 001-positionierung-story
+    milestone: m1-strategie
+    status: done
+---
+
+# Roadmap
+ROADMAP_E
+
+RESULT_E="$(run_gate "$WORK_E")"
+PARSE_E="${RESULT_E##*|}"
+
+if [[ "$PARSE_E" == "PARSEABLE" ]]; then
+  ok "e-product-init-roadmap-without-entry-marker-is-parseable"
+else
+  bad "e-product-init-roadmap-without-entry-marker-is-parseable (got: $PARSE_E)"
+fi
+rm -rf "$WORK_E"
 
 printf '\n--- roadmap-gate fixture results ---\n'
 for r in "${results[@]}"; do printf '%s\n' "$r"; done

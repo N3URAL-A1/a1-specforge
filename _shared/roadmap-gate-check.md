@@ -29,11 +29,25 @@ fi
 
 ```bash
 if [ "$ROADMAP_FILE" = "docs/product/ROADMAP.md" ]; then
-  grep -q '^schema_version:' "$ROADMAP_FILE" && grep -q '<!-- entry:' "$ROADMAP_FILE" && echo "PARSEABLE" || echo "UNPARSEABLE"
+  grep -q '^schema_version:' "$ROADMAP_FILE" && echo "PARSEABLE" || echo "UNPARSEABLE"
 else
-  grep -q '^---' "$ROADMAP_FILE" && grep -q '<!-- entry:' "$ROADMAP_FILE" && echo "PARSEABLE" || echo "UNPARSEABLE"
+  grep -q '^---' "$ROADMAP_FILE" && echo "PARSEABLE" || echo "UNPARSEABLE"
 fi
 ```
+
+**Parseability is the schema contract, NOT the `<!-- entry:` marker** (fixed
+2026-09-20, 7th a1-evolve run). Those HTML comments are written by exactly one
+code path — `_shared/lib/product.cjs` in the **adopt/migration** branch — while
+`product init` encodes entries structurally in the frontmatter (`milestones:` /
+`features:` with `- id:`) and emits no comment at all. Requiring the marker here
+made the gate contradict the CLI that writes the file: measured 2026-09-20,
+**11 of 14 project roadmaps were `valid: true` under `product validate` and
+simultaneously `UNPARSEABLE` under this gate** — a halt before Discover or wave
+loading, in every project scaffolded rather than migrated. A gate that rejects
+its own writer's valid output is not strict, it is wrong (invariant 1: one owner
+per fact — the schema owns parseability). §3 below still greps the marker, that
+is correct: membership is only ever checked once a caller supplies a slug, and
+a MISMATCH there is a soft stop, never a halt.
 
 ## 3. Entry membership (only when a linkage slug is known)
 

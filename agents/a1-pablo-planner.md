@@ -163,7 +163,21 @@ waves: <count>
 lanes: none
 status: planned
 created: <ISO date>
+first_user_event: <ISO date + weekday + time, or omit if the phase has no deadline>
 ---
+
+**`first_user_event` (required whenever the phase names any date a human or the
+public will act on** — a launch, a first post, a recording session, a migration
+window). Write it resolved, not as a bare date: `2026-09-22 (Tuesday) 07:30`.
+Then check the plan against it — does the phase still hold *after* that moment,
+and does every prerequisite task sit *before* it?
+
+Measured 2026-09-16/17, n3ural-socialmedia M1-P1/P2/P3: three consecutive
+deadline-driven phases, three BLOCKERs, all of the same shape and all found by
+a1-adam-auditor rather than at planning time. One plan would have ended the
+phase after its first post; another put the fallback (carousel instead of reel)
+*after* the human recording session it was supposed to protect. The calendar
+was never an input, so the auditor had to do the arithmetic each time.
 
 # Plan: <phase name>
 
