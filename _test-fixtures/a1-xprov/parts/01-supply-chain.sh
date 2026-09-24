@@ -226,9 +226,12 @@ caseR29() {
 # 10 000-char subcommand name must exit 2 fast without being echoed whole.
 caseF1() {
   local out err rc
-  out="$(node "$TOOLS" xprov normalize x.json --phase p --gate g 2>"$TMPDIR_F1/err.txt")"; rc=$?
+  # Own the tree: a copy of _shared/ with the Wave 6 module removed stays a
+  # valid "not shipped yet" probe no matter how many waves have landed.
+  make_tree; rm -f "$TREE/_shared/lib/xprov-gate.cjs"
+  out="$(node "$TREE_TOOLS" xprov gate --phase p --gate g 2>"$TMPDIR_F1/err.txt")"; rc=$?
   err="$(cat "$TMPDIR_F1/err.txt")"
-  if [[ $rc -eq 2 && -z "$out" && "$err" == *"xprov normalize: not implemented yet (planned wave 2)"* ]]; then
+  if [[ $rc -eq 2 && -z "$out" && "$err" == *"xprov gate: not implemented yet (planned wave 6)"* ]]; then
     ok "F1a not-yet-shipped subcommand → exit 2, no stdout JSON, names the planned wave"
   else bad "F1a not-yet-shipped subcommand (rc=$rc out=$out err=$err)"; fi
 
@@ -271,10 +274,41 @@ caseF1() {
     process.stdout.write(JSON.stringify({ subs, reasons, ghp, akia, assign, clean, markers, gates, home }));
   " "$XPROV_LIB" 2>&1)"
   assert_json "F1f dispatch table has 13 entries" "$out" "j.subs" "13"
-  assert_json "F1g REASON_LIST is the spec's thirteen reason codes" "$out" "j.reasons" \
-    "runner_failed,malformed,wrong_mode,blocked,plan_changed,tripwire,secret_in_snapshot,secret_in_output,quarantined,round_cap,external_review_not_permitted,snapshot_failed,not_logged_in"
+  assert_json "F1g REASON_LIST is the spec's thirteen reason codes plus preflight_failed (Wave 4 exception, documented in the facade header)" "$out" "j.reasons" \
+    "runner_failed,malformed,wrong_mode,blocked,plan_changed,tripwire,secret_in_snapshot,secret_in_output,quarantined,round_cap,external_review_not_permitted,snapshot_failed,not_logged_in,preflight_failed"
   assert_json "F1h SECRET_PATTERNS hit ghp_/AKIA/assignment shapes and not plain text" "$out" \
     "[j.ghp, j.akia, j.assign, j.clean].join('/')" "true/true/true/false"
+
+  # Samuel W3 review: eight additional shapes (spec FR-018 amended 2026-09-24),
+  # one positive per pattern, named by the FIRST pattern that matches, plus a
+  # ReDoS probe: every pattern over three 10 000-char adversarial inputs.
+  # Red-making change: dropping any one of the eight patterns, or a pattern
+  # whose worst case is super-linear.
+  local out2; out2="$(node -e "
+    const x = require(process.argv[1]);
+    const first = (s) => { const p = x.SECRET_PATTERNS.find(p => p.re.test(s)); return p ? p.name : 'none'; };
+    const names = {
+      sk_ext: first('key sk-proj-' + 'a1B2'.repeat(6) + ' end'),
+      gho: first('gho_' + 'A'.repeat(36)),
+      fine: first('github_pat_' + 'A1_'.repeat(10)),
+      xoxa: first('xoxa-1-2-3'),
+      url: first('see https://deploy:s3cretPW@host.example/x'),
+      pwd: first('password = hunter2xyz9'),
+      bearer: first('Authorization: Bearer ' + 'abcDEF123'.repeat(4)),
+      gkey: first('AIza' + 'a'.repeat(35)),
+      ghp_still_classic: first('ghp_' + 'A'.repeat(36)),
+      xoxb_still_slack: first('xoxb-1'),
+    };
+    const inputs = ['a'.repeat(10000), 'https://' + 'u'.repeat(10000), 'password = ' + 'x'.repeat(10000), 'sk-' + '-'.repeat(10000), 'Bearer ' + ' '.repeat(10000)];
+    let worst = 0, worstName = '';
+    for (const p of x.SECRET_PATTERNS) for (const s of inputs) { const t0 = process.hrtime.bigint(); p.re.test(s); const ms = Number(process.hrtime.bigint() - t0) / 1e6; if (ms > worst) { worst = ms; worstName = p.name; } }
+    process.stdout.write(JSON.stringify({ names, count: x.SECRET_PATTERNS.length, worst: Math.round(worst * 100) / 100, worstName }));
+  " "$XPROV_LIB" 2>&1)"
+  assert_json "F1h2 the eight Samuel shapes each hit their own pattern; ghp_/xoxb keep their original names" "$out2" \
+    "Object.entries(j.names).map(([k, v]) => k + '=' + v).join(' ')" \
+    "sk_ext=sk_prefixed_key_ext gho=github_token_family fine=github_pat_fine_grained xoxa=slack_token_family url=url_credentials pwd=password_assignment bearer=bearer_token gkey=google_api_key ghp_still_classic=github_pat_classic xoxb_still_slack=slack_token"
+  assert_json "F1h3 pattern list has 16 entries (8 spec + 8 amended)" "$out2" "j.count" "16"
+  assert_json "F1h4 ReDoS probe: worst single test over a 10 000-char input stays under 20 ms" "$out2" "j.worst < 20 ? 'ok' : 'slow ' + j.worstName + ' ' + j.worst + 'ms'" "ok"
   assert_json "F1i INSTRUCTION_MARKERS carry the multi-word markers" "$out" "j.markers" "true"
   assert_json "F1j GATE_ID_LIST is the two registered ids" "$out" "j.gates" "$GATE_PLAN,$GATE_WAVE"
   assert_json "F1k codexHome() honours A1_XPROV_CODEX_HOME and defaults to .codex-a1-review" "$out" "j.home" "/x/override .codex-a1-review"

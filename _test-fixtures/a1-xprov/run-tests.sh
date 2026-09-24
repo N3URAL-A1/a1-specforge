@@ -36,15 +36,22 @@ EXPECTED_UPSTREAM_COMMIT="8cf5e2c1771c5151d90c12642391d0ba8fa71b0e"
 EXPECTED_CLI_VERSION="codex-cli 0.155.1"
 GATE_PLAN="plan-review-xprov"
 GATE_WAVE="wave-inspect-xprov"
-# The five-line compliant config measured in ~/.codex-a1-review/config.toml
-# (2026-09-24) plus its comment header; make_home() writes exactly this.
+# The compliant config measured in ~/.codex-a1-review/config.toml (2026-09-24):
+# comment header, the two runtime keys, and — added the same day after Wave 4
+# measured that Codex auto-installs remote plugins unless `features.plugins`
+# and `features.remote_plugin` are off (`codex features disable <f>` writes
+# exactly this table) — the [features] switch. make_home() writes exactly this.
 COMPLIANT_CONFIG='# a1-specforge — dedicated Codex home for cross-provider REVIEW runs only.
 # Created 2026-09-24 (analysis finding F-049, spec 009-cross-provider-review-gate).
 # Invariants: read-only sandbox, on-request approvals, NO MCP servers, NO plugins.
 # The claudex-loop runner overrides approval_policy per call; the sandbox and the
 # absence of MCP servers are what this file guarantees.
 sandbox_mode = "read-only"
-approval_policy = "on-request"'
+approval_policy = "on-request"
+
+[features]
+plugins = false
+remote_plugin = false'
 
 pass=0; fail=0; results=()
 ok()  { results+=("PASS  $1"); pass=$((pass + 1)); }

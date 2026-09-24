@@ -19,6 +19,9 @@
 //      whether the vendored `runner.py` still matches `SHA256SUMS`. Fails
 //      closed: an unreadable pin file is a mismatch, never a skip.
 //
+// Documented exception to the freeze (main, 2026-09-24): Wave 4 added the reason
+// code `preflight_failed` to REASON_LIST — a constant, not a dispatch change.
+//
 // Pure at module load: no file I/O, no process I/O until a function is called.
 // ---------------------------------------------------------------------------
 
@@ -58,6 +61,7 @@ const REASON_LIST = Object.freeze([
   'runner_failed', 'malformed', 'wrong_mode', 'blocked', 'plan_changed', 'tripwire',
   'secret_in_snapshot', 'secret_in_output', 'quarantined', 'round_cap',
   'external_review_not_permitted', 'snapshot_failed', 'not_logged_in',
+  'preflight_failed', // added Wave 4: preflight exit-1 without not_logged_in
 ]);
 const REASONS = Object.freeze(Object.fromEntries(REASON_LIST.map((r) => [r, r])));
 
@@ -83,8 +87,14 @@ const TITLE_MAX_CHARS = 120; // FR-012
 const MODEL_REQUESTED_DEFAULT = 'CLI default (unresolved)'; // FR-013
 const MODEL_OBSERVED_UNKNOWN = 'unknown'; // FR-013
 
-// ---------- secret patterns (verbatim from the spec's hardening section, FR-018) ----------
-// Consumers report `name` only — never the matched text.
+// ---------- secret patterns (FR-018) ----------
+// The first eight are verbatim from the spec's hardening section; the list was
+// extended 2026-09-24 per a1-samuel-security W3 review (spec FR-018 amended):
+// sk- keys with `_`/`-` (sk-proj-, sk-ant-), the whole gh*_ token family and
+// fine-grained PATs, all Slack prefixes, URL-embedded credentials, password
+// assignments, bearer tokens and Google API keys. Order matters only for the
+// reported NAME (first match wins); consumers report `name` only — never the
+// matched text. Every pattern is linear on a 10 000-char input (F1h4 probe).
 const SECRET_PATTERNS = Object.freeze([
   Object.freeze({ name: 'private_key_header', re: /-----BEGIN [A-Z ]*PRIVATE KEY-----/ }),
   Object.freeze({ name: 'aws_access_key_id', re: /AKIA[0-9A-Z]{16}/ }),
@@ -94,12 +104,28 @@ const SECRET_PATTERNS = Object.freeze([
   Object.freeze({ name: 'jwt', re: /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/ }),
   Object.freeze({ name: 'pem_begin', re: /-----BEGIN/ }),
   Object.freeze({ name: 'secret_assignment', re: /(api[_-]?key|secret|token)\s*[:=]\s*['"][^'"]{12,}/i }),
+  // --- amended 2026-09-24 (Samuel W3) ---
+  Object.freeze({ name: 'sk_prefixed_key_ext', re: /sk-[A-Za-z0-9_-]{20,}/ }),
+  Object.freeze({ name: 'github_token_family', re: /gh[pousr]_[A-Za-z0-9]{36}/ }),
+  Object.freeze({ name: 'github_pat_fine_grained', re: /github_pat_[A-Za-z0-9_]{22,}/ }),
+  Object.freeze({ name: 'slack_token_family', re: /xox[abprs]-/ }),
+  // The lookbehind pins the scheme to a token start: without it every position
+  // inside a long letter run is a candidate start and the scan goes quadratic
+  // (measured 159 ms on 10 000 chars; F1h4 probe).
+  Object.freeze({ name: 'url_credentials', re: /(?<![a-z0-9+.-])[a-z][a-z0-9+.-]*:\/\/[^/\s:@]+:[^@\s]{6,}@/i }),
+  Object.freeze({ name: 'password_assignment', re: /(password|passwd|pwd)\s*[:=]\s*['"]?[^\s'"]{8,}/i }),
+  Object.freeze({ name: 'bearer_token', re: /Bearer\s+[A-Za-z0-9._-]{20,}/ }),
+  Object.freeze({ name: 'google_api_key', re: /AIza[0-9A-Za-z_-]{35}/ }),
 ]);
 
-// ---------- instruction markers (FR-019; compared against lowercased text) ----------
+// ---------- instruction markers (FR-019; compared against NFKC-normalised, space-collapsed, lowercased text) ----------
+// The first eleven are verbatim from the spec; `eval(`, `npm install`,
+// `pip install`, `system:` were added 2026-09-24 per Samuel's W3 review
+// (spec FR-019 amended).
 const INSTRUCTION_MARKERS = Object.freeze([
   'run ', 'curl ', 'wget ', 'rm ', 'delete ', 'chmod ', 'git push',
   'ignore previous', 'disregard', 'you must now', 'execute ',
+  'eval(', 'npm install', 'pip install', 'system:',
 ]);
 
 // ---------- path helpers (pure path math; nothing is created here) ----------

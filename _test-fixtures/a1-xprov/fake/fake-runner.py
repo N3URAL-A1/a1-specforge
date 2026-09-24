@@ -18,6 +18,10 @@ without editing this file:
   FAKE_RUNNER_SIDE_EFFECT `write-into-repo` writes one file into --repo
                           (the tripwire probe of Wave 5)
   FAKE_RUNNER_EXIT        exit code (default 0)
+  FAKE_RUNNER_REFUSE=1    mimic a pre-run_dir refusal: one `claudex-loop: <msg>`
+                          line on stderr, NO run dir, NO JSON, exit 1
+  FAKE_RUNNER_ENV_FILE    write the child's CODEX_HOME (or "unset") here — proves
+                          what environment the runner really received
 
 Mirrors the two measured runner behaviours a1 depends on: the run directory
 is `mkdtemp(prefix="claudex-", dir=<artifacts>)`, and an --artifacts path
@@ -87,6 +91,12 @@ def main(argv: list[str]) -> int:
     argv_file = env.get("FAKE_RUNNER_ARGV_FILE")
     if argv_file:
         Path(argv_file).write_text(json.dumps(argv) + "\n", encoding="utf-8")
+    env_file = env.get("FAKE_RUNNER_ENV_FILE")
+    if env_file:
+        Path(env_file).write_text(env.get("CODEX_HOME", "unset") + "\n", encoding="utf-8")
+    if env.get("FAKE_RUNNER_REFUSE") == "1":
+        sys.stderr.write("claudex-loop: Keep run artifacts outside the target checkout so they do not contaminate its diff.\n")
+        return EXIT_REFUSED
     mode = argv[1] if len(argv) > 1 else None
     artifacts = flag(argv, "--artifacts")
     repo = flag(argv, "--repo")
