@@ -259,6 +259,30 @@ function resolveVaultPath(input) {
 // Supports: scalars (quoted/unquoted), null, [], block lists with "- ".
 // Does NOT support nested objects.
 
+// A vault-wide foreign writer (Basic-Memory daemon) folds long quoted values at
+// ~80 columns onto an indented continuation line. Measured 2026-09-24: reading
+// only the first line let `spec update-status` persist truncated title/consumer/
+// phase_history values in three specs. Join continuation lines with one space
+// (YAML folding semantics) until the closing quote.
+function joinFoldedScalar(lines, i, first) {
+  const q = first[0];
+  let v = first;
+  let j = i;
+  while ((q === '"' || q === "'") && !(v.length > 1 && v.endsWith(q))
+      && j + 1 < lines.length && /^\s+\S/.test(lines[j + 1]) && !/^\s*-\s/.test(lines[j + 1])) {
+    j += 1;
+    v = `${v} ${lines[j].trim()}`;
+  }
+  return { value: v, index: j };
+}
+
+// Split an inline array on top-level commas only — a quoted element may
+// itself contain a comma ("phase=discover (…, non-interactive)").
+function splitInlineArray(inner) {
+  return (inner.match(/"(?:[^"\\]|\\.)*"|'[^']*'|[^,]+/g) || [])
+    .map((x) => x.trim()).filter((x) => x !== '');
+}
+
 function parseFrontmatter(content) {
   // Normalize CRLF first. Without this, a file saved on Windows starts with
   // '---\r\n', fails the startsWith check, and is reported as HAVING NO
@@ -309,6 +333,7 @@ function parseFrontmatter(content) {
         (lines[j].startsWith('  - ') || lines[j].startsWith('- '))
       ) {
         let item = lines[j].replace(/^\s*-\s*/, '');
+        ({ value: item, index: j } = joinFoldedScalar(lines, j, item));
         if (
           (item.startsWith('"') && item.endsWith('"')) ||
           (item.startsWith("'") && item.endsWith("'"))
@@ -346,7 +371,7 @@ function parseFrontmatter(content) {
       const inner = valueRaw.slice(1, -1).trim();
       fm[key] = inner === ''
         ? []
-        : inner.split(',').map((x) => parseScalarToken(x.trim()));
+        : splitInlineArray(inner).map((x) => parseScalarToken(x));
       i++;
       continue;
     }
@@ -356,6 +381,7 @@ function parseFrontmatter(content) {
       continue;
     }
     let v = valueRaw;
+    ({ value: v, index: i } = joinFoldedScalar(lines, i, v));
     if (
       (v.startsWith('"') && v.endsWith('"')) ||
       (v.startsWith("'") && v.endsWith("'"))
@@ -571,7 +597,7 @@ function parseScalarToken(raw) {
     const inner = raw.slice(1, -1).trim();
     if (inner === '') return [];
     if (inner.indexOf('[') === -1 && inner.indexOf(']') === -1) {
-      return inner.split(',').map((x) => parseScalarToken(x.trim()));
+      return splitInlineArray(inner).map((x) => parseScalarToken(x));
     }
   }
   if (raw === 'true') return true;
