@@ -1,3 +1,46 @@
 {
-  "reservations": []
+  "reservations": [
+    {
+      "type": "code_scope",
+      "paths": [
+        "_shared/a1-tools.cjs",
+        "_shared/lib/help.cjs",
+        "_shared/lib/xprov.cjs",
+        "_shared/lib/xprov-normalize.cjs",
+        "_shared/lib/xprov-filter.cjs",
+        "_shared/lib/xprov-artifacts.cjs",
+        "_shared/lib/xprov-preflight.cjs",
+        "_shared/lib/xprov-permit.cjs",
+        "_shared/lib/xprov-observe.cjs",
+        "_shared/lib/xprov-snapshot.cjs",
+        "_shared/lib/xprov-run.cjs",
+        "_shared/lib/xprov-gate.cjs",
+        "_shared/vendor/claudex-loop/runner.py",
+        "_shared/vendor/claudex-loop/LICENSE",
+        "_shared/vendor/claudex-loop/VENDORED.md",
+        "_shared/vendor/claudex-loop/SHA256SUMS",
+        "_shared/gates-registry.md",
+        "_shared/learning-schema.md",
+        "docs/CONSTITUTION.md",
+        "docs/adr/2026-09-24-cross-provider-review-gate.md",
+        "skills/a1-plan/SKILL.md",
+        "skills/a1-plan/workflows/04-audit.md",
+        "skills/a1-plan/workflows/04b-xprov-review.md",
+        "skills/a1-execute/SKILL.md",
+        "skills/a1-execute/workflows/01-load.md",
+        "skills/a1-execute/workflows/02-execute.md",
+        "skills/a1-execute/workflows/03-verify.md",
+        "_test-fixtures/a1-xprov/run-tests.sh",
+        "_test-fixtures/a1-xprov/parts/*",
+        "_test-fixtures/a1-xprov/cases/*",
+        "_test-fixtures/a1-xprov/fake/*",
+        "_test-fixtures/a1-xprov/check-enforcement.sh",
+        "_test-fixtures/CONVENTIONS.md",
+        ".github/workflows/test.yml"
+      ],
+      "by": "009-cross-provider-review-gate",
+      "at": "2026-09-24T15:27:23.799Z",
+      "stage": "started"
+    }
+  ]
 }
