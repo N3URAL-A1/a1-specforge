@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated": "2026-09-13T19:30:29.048Z",
+  "generated": "2026-09-24T13:35:13.291Z",
   "project": {
     "id": "a1-specforge",
     "title": "a1-specforge — Roadmap",
@@ -165,6 +165,44 @@
       "started": null,
       "finished": null,
       "spec_path": "project/a1-specforge/spec/003-product-schema-v1.1-vision-audits.md",
+      "plan_path": null
+    },
+    {
+      "id": "009-cross-provider-review-gate",
+      "milestone": "continuous",
+      "title": "Cross-provider review gate — Codex as a registered, read-only plan and wave reviewer",
+      "status": "planned",
+      "stage": null,
+      "depends_on": [],
+      "started": null,
+      "finished": null,
+      "spec_path": null,
+      "plan_path": null
+    },
+    {
+      "id": "010-vault-cockpit-contract",
+      "milestone": "continuous",
+      "title": "Vault cockpit contract — every a1 status readable in Obsidian on Mac, server and phone",
+      "status": "planned",
+      "stage": null,
+      "depends_on": [],
+      "started": null,
+      "finished": null,
+      "spec_path": null,
+      "plan_path": null
+    },
+    {
+      "id": "011-intent-queue-consumer",
+      "milestone": "continuous",
+      "title": "Intent queue consumer — the a1 half of triggering skills from the phone via the vault",
+      "status": "planned",
+      "stage": null,
+      "depends_on": [
+        "010-vault-cockpit-contract"
+      ],
+      "started": null,
+      "finished": null,
+      "spec_path": null,
       "plan_path": null
     }
   ],

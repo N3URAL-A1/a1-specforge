@@ -4,7 +4,7 @@ type: roadmap
 project: a1-specforge
 title: "a1-specforge — Roadmap"
 status: active
-updated: 2026-09-13
+updated: 2026-09-24
 source: "migrated from docs/roadmap.md v3.0 (2026-07-10)"
 milestones:
   - id: m0-repo-extract
@@ -125,6 +125,37 @@ features:
     finished: null
     spec_path: project/a1-specforge/spec/003-product-schema-v1.1-vision-audits.md
     plan_path: null
+  - id: 009-cross-provider-review-gate
+    milestone: continuous
+    title: "Cross-provider review gate — Codex as a registered, read-only plan and wave reviewer"
+    status: planned
+    stage: null
+    depends_on: []
+    started: null
+    finished: null
+    spec_path: null
+    plan_path: null
+  - id: 010-vault-cockpit-contract
+    milestone: continuous
+    title: "Vault cockpit contract — every a1 status readable in Obsidian on Mac, server and phone"
+    status: planned
+    stage: null
+    depends_on: []
+    started: null
+    finished: null
+    spec_path: null
+    plan_path: null
+  - id: 011-intent-queue-consumer
+    milestone: continuous
+    title: "Intent queue consumer — the a1 half of triggering skills from the phone via the vault"
+    status: planned
+    stage: null
+    depends_on:
+      - 010-vault-cockpit-contract
+    started: null
+    finished: null
+    spec_path: null
+    plan_path: null
 next: 002-product-docs-layer
 ---
 
@@ -233,6 +264,9 @@ None.
 - **2026-09-13** — feature.md created for '003-product-schema-v11-vision-audits' — formal spec/plan attached via `product feature-init`
 - **2026-09-13** — 008-false-green-test-guards -> done — stage transition via `product stage`
 - **2026-09-13** — 002-product-docs-layer -> done — stage transition via `product stage`
+- **2026-09-24** — feature '009-cross-provider-review-gate' added — Codex (claudex-loop) becomes a registered a1 gate at PLAN.md and per wave with findings adapter, retro attribution, hardened CODEX_HOME and git tripwire — per Option D decision 2026-09-03
+- **2026-09-24** — feature '010-vault-cockpit-contract' added — One-way mirror of docs/product and phase state into project/<slug>/, CLI-stamped type:, vault lint, hub spec links, host-aware locks; supersedes 005
+- **2026-09-24** — feature '011-intent-queue-consumer' added — Signed, default-deny intent notes in inbox/intents/ consumed by a1-owned CLI on the Mac; closed action enum, single-flight, ledger outside the vault
 
 ## Appendix — migrated details
 
