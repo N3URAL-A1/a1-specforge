@@ -127,6 +127,23 @@ roundtrip_type() {
 roundtrip
 roundtrip_type
 
+# ---------- Folded scalars + quoted commas (2026-09-24, quick/frontmatter-folded-scalars) ----------
+# The vault's foreign writer folds long quoted values onto an indented line; reading
+# only the first line truncated title/consumer/phase_history in three real specs.
+FOLDED='---\ntitle: "Vault cockpit contract — every a1 status readable in Obsidian on Mac, server\n  and phone"\nphase_history:\n  - "phase=discover completed=2026-09-24 (drafted from analysis,\n    non-interactive)"\n  - "phase=specify completed=2026-09-24"\nstatus: draft\n---\nbody\n'
+expect_json "F1 frontmatter: folded quoted scalar joins continuation line" \
+  "process.stdout.write(io.parseFrontmatter('$FOLDED').fm.title)" \
+  'Vault cockpit contract — every a1 status readable in Obsidian on Mac, server and phone'
+expect_json "F2 frontmatter: folded list item joins, next item and key unaffected" \
+  "const f=io.parseFrontmatter('$FOLDED').fm; process.stdout.write(JSON.stringify([f.phase_history, f.status]))" \
+  '[["phase=discover completed=2026-09-24 (drafted from analysis, non-interactive)","phase=specify completed=2026-09-24"],"draft"]'
+expect_json "F3 frontmatter: inline array keeps a quoted comma inside one element" \
+  "process.stdout.write(JSON.stringify(io.parseFrontmatter('---\\nph: [\"a (x, y)\", b]\\n---\\n').fm.ph))" \
+  '["a (x, y)","b"]'
+expect_json "F4 scalar: parseScalarToken keeps a quoted comma inside one element" \
+  'process.stdout.write(JSON.stringify(io.parseScalarToken("[\"a, b\", c]")))' \
+  '["a, b","c"]'
+
 # ---------- The real corpus: the defect this fix was found through ----------
 # The repo's own ROADMAP.md must validate. It failed for two months on exactly
 # this parser gap, so a regression here is directly observable.
