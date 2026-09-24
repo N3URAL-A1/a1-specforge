@@ -625,6 +625,15 @@ function main() {
         cmdWorkflowLint(rest);
         return; // unreachable — cmdWorkflowLint calls process.exit()
       } else usage(`unknown workflow subcommand: ${sub}`);
+    } else if (group === 'xprov') {
+      // Spec 009-cross-provider-review-gate, Wave 1 — the facade's ONLY edit
+      // for that spec. lib/xprov.cjs owns the full dispatch table; every
+      // subcommand owns its exit code (0 pass / 1 fail with stdout JSON
+      // `reason` / 2 usage or not-yet-implemented, no stdout JSON). Lazy
+      // require: unrelated commands never load the adapter modules.
+      const { cmdXprov } = require(path.join(__dirname, 'lib', 'xprov.cjs'));
+      cmdXprov(sub, rest);
+      return; // unreachable — every xprov subcommand calls process.exit()
     } else {
       usage(`unknown command group: ${group} (expected "spec", "fix", "analyze", "check", "checklist", "constitution", "worktree", "pr", "phantom", "reconcile", "modernize", "schema-check", "cost", "pack", "product", "quick", "learnings", "retro", "workflow", or "realpath-check"). fix supports: next-suffix, update-status, list, find-duplicates, integrity-check, init-postmortem, count-postmortems-since, update-promote-state, write-suggestion`);
     }

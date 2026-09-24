@@ -1,0 +1,28 @@
+{
+  "status": "failed",
+  "mode": "review",
+  "provider": "codex",
+  "roles": {
+    "host": "claude",
+    "planner": "claude",
+    "reviewer": "codex",
+    "builder": "claude",
+    "inspector": "codex"
+  },
+  "repo": "/private/tmp/claude-501/-Users-rob-claude-projects-a1-specforge/7f8c5316-0b17-41e9-89e9-5a294e76f041/scratchpad/xprov-probe-repo",
+  "plan": "/private/tmp/claude-501/-Users-rob-claude-projects-a1-specforge/7f8c5316-0b17-41e9-89e9-5a294e76f041/scratchpad/xprov-probe-repo/PLAN.md",
+  "plan_sha256": "b80b66fddbc4d15c63bddb6b1092a5135749543ccc5dfe86695b3d57ad266ec1",
+  "requested_model": null,
+  "requested_effort": null,
+  "base": null,
+  "snapshot": null,
+  "previous": null,
+  "started_at": 1790263969.794913,
+  "artifacts": "/private/tmp/claude-501/-Users-rob-claude-projects-a1-specforge/7f8c5316-0b17-41e9-89e9-5a294e76f041/scratchpad/xprov-capture-PIQgpj/failed/claudex-k_5xv3nq",
+  "cli_version": "codex-cli 0.155.1",
+  "executable": [
+    "/opt/homebrew/bin/codex"
+  ],
+  "error": "Run timed out or was interrupted; no approval recorded.",
+  "elapsed_seconds": 1.1
+}

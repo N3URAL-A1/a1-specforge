@@ -1,0 +1,15 @@
+# Sibling of failed.result.json — provenance record (spec 009, FR-027).
+case: failed
+origin: captured
+captured_on: 2026-09-24
+cli_version: codex-cli 0.155.1
+runner_version: 2.1.0
+runner_sha256: 962dfdfe5d67b75eb73ec7c38b9186e6e6e0ca96a68d4ec82595305d8f737c8c
+codex_home: ~/.codex-a1-review (read-only sandbox, zero mcp_servers tables)
+plan: approved.PLAN.md
+plan_sha256: b80b66fddbc4d15c63bddb6b1092a5135749543ccc5dfe86695b3d57ad266ec1
+attempts: 1
+provocation: runner --timeout 1 against the probe repo; the runner killed the Codex process group and recorded status failed with error 'Run timed out or was interrupted; no approval recorded.'
+elapsed_seconds: 1.1
+note: no reply.txt exists for this case (Codex never answered); status failed is the total-mapping branch runner_failed
+paths: verbatim capture output (local absolute paths, no secret; never compared by normalize)

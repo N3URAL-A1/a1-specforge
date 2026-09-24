@@ -1,0 +1,55 @@
+{
+  "status": "completed",
+  "mode": "review",
+  "provider": "codex",
+  "roles": {
+    "host": "claude",
+    "planner": "claude",
+    "reviewer": "codex",
+    "builder": "claude",
+    "inspector": "codex"
+  },
+  "repo": "/private/tmp/claude-501/-Users-rob-claude-projects-a1-specforge/7f8c5316-0b17-41e9-89e9-5a294e76f041/scratchpad/xprov-probe-repo",
+  "plan": "/private/tmp/claude-501/-Users-rob-claude-projects-a1-specforge/7f8c5316-0b17-41e9-89e9-5a294e76f041/scratchpad/xprov-capture-PIQgpj/blocked-plan-2.md",
+  "plan_sha256": "970983392ab055b6e8956e1bcc1b10be53ceb4a3930272986a90b77055421be5",
+  "requested_model": null,
+  "requested_effort": "low",
+  "base": null,
+  "snapshot": null,
+  "previous": null,
+  "started_at": 1790264074.597455,
+  "artifacts": "/private/tmp/claude-501/-Users-rob-claude-projects-a1-specforge/7f8c5316-0b17-41e9-89e9-5a294e76f041/scratchpad/xprov-capture-PIQgpj/blocked2/claudex-vg2dj_5o",
+  "cli_version": "codex-cli 0.155.1",
+  "executable": [
+    "/opt/homebrew/bin/codex"
+  ],
+  "exit_code": 0,
+  "session_id": "01a0d40d-e29c-7f10-88bc-214a4938387e",
+  "response": {
+    "verdict": "BLOCKED",
+    "summary": "The required contract and acceptance cases could not be inspected, so spec fidelity cannot be assessed.",
+    "findings": [],
+    "coverage": [
+      "Read the supplied plan and verified its SHA256 matches the provided hash.",
+      "Inspected src/add.js and repository PLAN.md.",
+      "Searched the repository for related implementations, callers, exports, and shared state; only the stateless add function exists.",
+      "Attempted to access both external specification sources."
+    ],
+    "limitations": [
+      "https://spec.example.invalid/arith/v3/subtract.md was inaccessible.",
+      "/Volumes/legal-spec/arith-v3.pdf does not exist at the supplied path.",
+      "Argument order, overflow handling, error cases, and appendix-B tests remain unverified. Provide readable copies of both specifications to unblock review.",
+      "Repository PLAN.md proposes a - b but cannot establish the external contract.",
+      "No files were edited, tests run, or work delegated."
+    ]
+  },
+  "usage": {
+    "input_tokens": 51300,
+    "cached_input_tokens": 33024,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 550,
+    "reasoning_output_tokens": 0
+  },
+  "observed_models": [],
+  "elapsed_seconds": 28.82
+}

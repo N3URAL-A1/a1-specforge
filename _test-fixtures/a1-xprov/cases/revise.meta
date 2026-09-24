@@ -1,0 +1,16 @@
+# Sibling of revise.result.json — provenance record (spec 009, FR-027).
+case: revise
+origin: captured
+captured_on: 2026-09-24
+cli_version: codex-cli 0.155.1
+runner_version: 2.1.0
+runner_sha256: 962dfdfe5d67b75eb73ec7c38b9186e6e6e0ca96a68d4ec82595305d8f737c8c
+codex_home: ~/.codex-a1-review (read-only sandbox, zero mcp_servers tables)
+plan: revise.PLAN.md
+plan_sha256: 8cdc5f45d378793626101e0c1fb0f3101f324c6e34d1ae3a16b3286539fc8aeb
+reply: revise.reply.txt
+attempts: 1
+provocation: a clone of the probe repo with test/add.test.js importing add, and a plan that removes the add export while forbidding changes to other files; runner mode review, --effort low
+elapsed_seconds: 25.17
+note: one finding, severity high, path test/add.test.js:3 (the path:line shape FR-012 maps to file + line)
+paths: verbatim capture output (local absolute paths, no secret; never compared by normalize)

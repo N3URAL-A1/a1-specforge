@@ -551,6 +551,93 @@ Usage:
                   morning) — RED proof is fixture-based under
                   _test-fixtures/a1-workflow-lint/snippets/, not a live catch.
 
+  a1-tools xprov <sub> [flags]
+                  Spec 009-cross-provider-review-gate. Cross-provider review
+                  gate: sends a phase's PLAN.md (gate plan-review-xprov, a1-plan
+                  Phase 4b) or a wave diff (gate wave-inspect-xprov, a1-execute
+                  step 2b-x) to Codex through the VENDORED claudex-loop runner
+                  (_shared/vendor/claudex-loop/runner.py, sha-pinned in
+                  SHA256SUMS next to it, resolved relative to lib/xprov.cjs —
+                  never from a plugin cache) and maps the result fail-closed
+                  onto exactly one of pass | fail-with-findings | fail/<reason>.
+                  Runner modes a1 uses: review, inspect, check — never build.
+                  Codex runs under a DEDICATED, tool-less CODEX_HOME: default
+                  ~/.codex-a1-review, env A1_XPROV_CODEX_HOME overrides it;
+                  ~/.codex itself is always refused by preflight.
+                  Exit contract shared by EVERY subcommand (house rule, differs
+                  from the facade default below): 0 pass/ok · 1 fail, stdout
+                  JSON names \`reason\` · 2 usage error OR subcommand whose
+                  module has not shipped yet ("xprov <sub>: not implemented
+                  yet (planned wave N)") — no stdout JSON on 2. Human text
+                  goes to stderr only; stdout is the machine contract.
+                  Subcommands (module → wave it ships in):
+    normalize <result.json> --phase <name> --gate <id> [--wave N] [--round N]
+                  (xprov-normalize.cjs, wave 2) total mapping of a runner
+                  record: status!=completed → runner_failed; mode not
+                  review|inspect → wrong_mode; APPROVED → pass (only after
+                  plan sha, secret filter and quarantine agree), REVISE →
+                  fail-with-findings, BLOCKED → blocked, else malformed.
+                  Writes .a1/phases/<name>/XREVIEW.md, xreview/*.findings.json,
+                  xreview/index.json atomically; exit 0 only on pass.
+    gc            (xprov-artifacts.cjs, wave 3) remove runner run dirs under
+                  ~/.a1-xprov/artifacts/<repo-slug>/ older than 14 days.
+    preflight     (xprov-preflight.cjs, wave 4) proves the dedicated home is
+                  tool-less BEFORE any runner call: not ~/.codex, 0700,
+                  sandbox_mode = "read-only", no [mcp_servers.*] table at all,
+                  no enabled [plugins.*], auth.json present, runner pin
+                  matches SHA256SUMS, python3 >= 3.10, codex --version ok.
+                  Lists EVERY check with its measured value; exit 1 if any fails.
+    init-home     (xprov-preflight.cjs, wave 4) create the dedicated home
+                  idempotently; never overwrites an existing config.toml.
+    permit-check  (xprov-permit.cjs, wave 4) reads .a1/xprov.json; anything
+                  but external_review: allowed → external_review_not_permitted.
+                  Customer repositories need an a1-ludwig-legal decision.
+    permit --by <name> --record <vault-path>
+                  (xprov-permit.cjs, wave 4) the ONLY writer of .a1/xprov.json.
+    observe --agent xprov-codex|a1-<first>-<role> --skill <s> --phase <name>
+            --type gap|blocker --severity <sev> --msg "<text>" [--provider codex]
+                  (xprov-observe.cjs, wave 4) one observations.jsonl line with
+                  pattern xprov_finding, model_requested, model_observed.
+    snapshot --repo <path> --commit <sha>
+                  (xprov-snapshot.cjs, wave 5) fresh git clone --no-local
+                  --no-hardlinks under ~/.a1-xprov/snapshots/, secret-scanned
+                  (shared pattern list + gitleaks when on PATH) before dispatch.
+    run --mode review|inspect --snapshot <dir> --plan <abs PLAN.md> --phase <name>
+        --gate <id> [--wave N] [--base <sha>] [--resume <result.json> --feedback <file>]
+                  (xprov-run.cjs, wave 5) exact runner argv, CODEX_HOME set to
+                  the dedicated home, tripwire (git status baseline of checkout,
+                  work path and snapshot + config sha) — any delta → tripwire.
+    gate --phase <name> --gate <id> [--wave N --base <sha> --work-path <p>]
+         [--lane <id>] [--round N]
+                  (xprov-gate.cjs, wave 6) the driver the workflows call once:
+                  permit-check → preflight → snapshot → run → normalize →
+                  observe → cleanup, stopping at the first non-zero step;
+                  round > 2 → round_cap. Enforcement (warning|blocking) is READ
+                  from the registry row and echoed in stdout, never applied here.
+    load-check --phase <name>
+                  (xprov-gate.cjs, wave 6) newest plan-review-xprov pass entry
+                  must match the current PLAN.md sha256 → else plan_review_missing.
+    wave-status --phase <name> [--waves 1,2,3]
+                  (xprov-gate.cjs, wave 6) every completed wave needs a
+                  wave-inspect-xprov entry with verdict pass or waived: true.
+    waive --phase <name> --gate <id> --wave <N> --reason "<text>"
+                  (xprov-gate.cjs, wave 6) HUMAN-only: appends {waived: true,
+                  by: human} — never verdict: pass. Skills print the command
+                  for the human; no skill bash block executes it.
+                  Reasons (stdout \`reason\` on exit 1): runner_failed,
+                  malformed, wrong_mode, blocked, plan_changed, tripwire,
+                  secret_in_snapshot, secret_in_output, quarantined, round_cap,
+                  external_review_not_permitted, snapshot_failed, not_logged_in.
+                  Paths a1 owns: ~/.a1-xprov/artifacts/<repo-slug>/ (0700,
+                  runner --artifacts, never inside a checkout or under
+                  A1_VAULT_ROOT), ~/.a1-xprov/snapshots/ (clones, removed after
+                  normalize), .a1/phases/<name>/XREVIEW.md + xreview/*.json +
+                  PLAN-REVIEW-LOG.md, .a1/xprov.json (permit record).
+                  ENV: A1_XPROV_CODEX_HOME (optional; default ~/.codex-a1-review).
+                  Fixture suite: _test-fixtures/a1-xprov/run-tests.sh (harness)
+                  + parts/NN-<wave>.sh; runner fakes live in fake/, captured
+                  runner records in cases/ (each with a .meta provenance file).
+
 Spec statuses: ${[...SPEC_STATUSES].join(', ')}
 Bug statuses:  ${[...BUG_STATUSES].join(', ')}
 Bug severities: ${[...BUG_SEVERITIES].join(', ')}

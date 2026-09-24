@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Fake `codex` for the a1-xprov fixture PATH. Answers `--version` with the
+# string the real CLI printed on 2026-09-24 (measured: `codex-cli 0.155.1`)
+# and refuses every other invocation loudly, so a production path that shells
+# out to codex for anything beyond the version probe fails the suite instead
+# of reaching a real provider. CI has no codex; this is what preflight sees.
+case "${1:-}" in
+  --version) echo "codex-cli 0.155.1"; exit 0 ;;
+  *) echo "fake codex: refused unexpected argv: $*" >&2; exit 97 ;;
+esac

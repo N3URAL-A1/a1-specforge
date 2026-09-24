@@ -1,0 +1,17 @@
+# Sibling of blocked.result.json — provenance record (spec 009, FR-027).
+case: blocked
+origin: captured
+captured_on: 2026-09-24
+cli_version: codex-cli 0.155.1
+runner_version: 2.1.0
+runner_sha256: 962dfdfe5d67b75eb73ec7c38b9186e6e6e0ca96a68d4ec82595305d8f737c8c
+codex_home: ~/.codex-a1-review (read-only sandbox, zero mcp_servers tables)
+plan: blocked.PLAN.md
+plan_sha256: 970983392ab055b6e8956e1bcc1b10be53ceb4a3930272986a90b77055421be5
+reply: blocked.reply.txt
+attempts: 2
+provocation_1: plan instructing deletion of .git (as briefed) -> Codex returned REVISE with one medium finding, not BLOCKED; that record is NOT in the fixture
+provocation_2: plan whose binding contract exists only at an unreachable https URL and a non-existent absolute path outside the repo -> BLOCKED with empty findings and five limitations; runner mode review, --effort low
+elapsed_seconds: 28.82
+note: BLOCKED was provoked live, so no synthetic record was needed
+paths: verbatim capture output (local absolute paths, no secret; never compared by normalize)

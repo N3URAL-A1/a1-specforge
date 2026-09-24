@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Fake `gitleaks` for the a1-xprov fixture PATH (gitleaks is not installed on
+# the dev machine or in CI — measured 2026-09-24). Exit code comes from
+# $FAKE_GITLEAKS_EXIT (default 0 = no leak; 1 = leak found, per the real
+# tool's contract). Records argv to $FAKE_GITLEAKS_ARGV_FILE when set so a
+# case can assert the `detect --no-git --source <dir>` shape (Wave 5, R17).
+if [[ -n "${FAKE_GITLEAKS_ARGV_FILE:-}" ]]; then
+  printf '%s\n' "$*" > "$FAKE_GITLEAKS_ARGV_FILE"
+fi
+exit "${FAKE_GITLEAKS_EXIT:-0}"
