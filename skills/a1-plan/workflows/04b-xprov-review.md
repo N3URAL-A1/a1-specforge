@@ -128,8 +128,9 @@ gates_fired:
 
 `verdict: fail` for every non-pass outcome, including `round_cap` and a
 `warning`-enforced continue. If a waiver exists for this gate (Step 5), add
-`xprov_waived` to `issues`. Validate with `retro validate` before appending, as
-`04-audit.md` describes.
+`xprov_waived` to `issues` — the base field of `_shared/retro-template.md`
+(a1-execute uses its own `issue_classes` instead; a1-evolve reads both).
+Validate with `retro validate` before appending, as `04-audit.md` describes.
 
 ## Step 5 — Waiver (human only — never executed by this skill)
 
@@ -154,3 +155,12 @@ R7 greps for exactly that.
   `plan_review_missing`. Re-run Step 1 — do not hand-edit `index.json`.
 - **Multi-lane plans.** One review of the whole PLAN.md; lanes are inspected
   per wave by `wave-inspect-xprov` in a1-execute, not here.
+- **Preflight FAIL `plugins_cache_empty`.** Codex has installed plugins into
+  `$CODEX_HOME/plugins/cache/` on its own (measured 2026-09-24: the
+  `openai-curated-remote` set); `init-home` never deletes anything, so the home
+  stays non-compliant until a human acts. Remedy: `rm -rf ~/.codex-a1-review/plugins`
+  — ONLY the dedicated review home, never `~/.codex` — then check
+  `codex features disable plugins` and the `remote_plugin` feature flag so it
+  does not come back. Alternative: pass `--allow-plugins <name>` on the gate
+  call to allowlist a plugin you have read; the driver hands the flag through to
+  `preflight`. Then re-run Step 1 — a failed attempt consumed no round.

@@ -249,6 +249,18 @@ caseR20() {
     "claudex-edge-old,claudex-old | claudex-edge-young,claudex-young"
   [[ ! -d "$art/claudex-old" && -d "$art/claudex-young" && -d "$art/not-a-run" ]] && ok "R20i filesystem matches: old run gone, young run and non-run dir present" \
                                                                                     || bad "R20i filesystem state wrong"
+  # Reinhard PR review: orphaned snapshots (a gate killed between snapshot and its
+  # cleanup) are swept by the same age rule. Red-making change: sweeping only claudex-*.
+  local snaps="$home/.a1-xprov/snapshots"; mkdir -p "$snaps/snap-old" "$snaps/snap-young" "$snaps/other-dir"
+  node -e "
+    const fs = require('fs'); const now = Number(process.argv[2]); const d = 86400;
+    const set = (n, ago) => fs.utimesSync(process.argv[1] + '/' + n, now - ago, now - ago);
+    set('snap-old', 15 * d); set('snap-young', 13 * d); set('other-dir', 40 * d);
+  " "$snaps" "$now"
+  out="$(cd "$PHASE_REPO" && HOME="$home" node "$TREE_TOOLS" xprov gc 2>/dev/null)"
+  assert_json "R20i2 gc also removes a 15-day snap-* clone and keeps the 13-day one" "$out" \
+    "j.snapshots_removed.map(p => require('path').basename(p)).join(',') + ' | ' + j.snapshots_kept.map(p => require('path').basename(p)).join(',')" "snap-old | snap-young"
+  [[ ! -d "$snaps/snap-old" && -d "$snaps/snap-young" && -d "$snaps/other-dir" ]] && ok "R20i3 snapshots dir: old clone gone, young clone and unrelated dir present" || bad "R20i3 snapshots dir state wrong"
   # normalize calls gc at the end of a real run (the note about a missing module is gone)
   run_n3 "$CASES/approved.result.json" p20
   [[ "$N_ERR" != *"gc skipped"* ]] && ok "R20j normalize no longer reports gc as skipped" || bad "R20j normalize still skips gc: $N_ERR"
@@ -265,12 +277,13 @@ caseR20() {
     const a = require(process.argv[1]);
     try { a.ensureArtifactsDir(); process.stdout.write('created'); } catch (e) { process.stdout.write('ERR:' + e.reason + '/' + e.code); }
   " "$TREE/_shared/lib/xprov-artifacts.cjs" 2>&1)"
-  assert_eq "R20l a regular file where ~/.a1-xprov should be → typed artifacts_path_is_file" "$out" "ERR:artifacts_path_is_file/A1_INPUT"
+  # reasons are the shared mkdir0700's generic ones since the xprov-common extraction (2026-09-25)
+  assert_eq "R20l a regular file where ~/.a1-xprov should be → typed path_is_file" "$out" "ERR:path_is_file/A1_INPUT"
   out="$(cd "$PHASE_REPO" && HOME="$home" node -e "
     const a = require(process.argv[1]);
     try { a.ensureArtifactsDir('x'.repeat(300)); process.stdout.write('created'); } catch (e) { process.stdout.write('ERR:' + e.reason + '/' + e.code); }
   " "$TREE/_shared/lib/xprov-artifacts.cjs" 2>&1)"
-  assert_eq "R20m a 300-char slug → typed artifacts_path_too_long" "$out" "ERR:artifacts_path_too_long/A1_INPUT"
+  assert_eq "R20m a 300-char slug → typed path_too_long" "$out" "ERR:path_too_long/A1_INPUT"
   out="$(cd "$PHASE_REPO" && HOME="$home" node -e "
     const a = require(process.argv[1]);
     const probe = (root) => { try { a.gc({ root }); return 'ran'; } catch (e) { return 'ERR:' + e.reason; } };

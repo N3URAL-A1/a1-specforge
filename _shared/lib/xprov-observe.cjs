@@ -21,14 +21,18 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('child_process');
 const io = require('./io.cjs');
 const xprov = require('./xprov.cjs');
+const C = require('./xprov-common.cjs');
+// Shared helpers — one definition each, in xprov-common.cjs.
+const { LANE_RE, inputError, parsePositive } = C;
+const usageExit = (msg) => C.usageExit('', msg);
+const finish = (report, code) => C.emitJson(report, code, false);
+const resolveRepoFlag = (flag) => (flag === undefined ? undefined : C.resolveRepoFlag(flag));
 
 const AGENT_RE = /^a1-[a-z]+-[a-z-]+$/;
 const EXTERNAL_AGENT = 'xprov-codex';
 const SKILL_RE = /^a1-[a-z][a-z-]*$/;
-const LANE_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const PROVIDER_RE = /^[a-z][a-z0-9-]{0,31}$/;
 const MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9 ._()\/:-]{0,79}$/;
 const TYPES = Object.freeze(['gap', 'blocker']);
@@ -37,13 +41,6 @@ const PATTERNS = Object.freeze(['xprov_finding', 'xprov_waived']);
 const DEFAULT_PROVIDER = 'codex';
 const REQUIRED_FLAGS = Object.freeze(['agent', 'skill', 'phase', 'type', 'severity', 'msg']);
 const OBSERVATIONS_FILE = 'observations.jsonl';
-
-function inputError(msg, reason) {
-  const err = new Error(msg);
-  err.code = 'A1_INPUT';
-  err.reason = reason || 'invalid_input';
-  return err;
-}
 
 function validateAgent(agent) {
   const a = String(agent == null ? '' : agent);
@@ -65,7 +62,7 @@ function matching(value, re, flag) {
 
 function validateWave(wave) {
   if (wave === undefined || wave === null || wave === '') return null;
-  if (!/^[1-9]\d{0,2}$/.test(String(wave))) throw inputError(`--wave must be a positive integer, got ${JSON.stringify(String(wave).slice(0, 80))}`);
+  parsePositive(wave, 'wave'); // shared bound 1–9999 (was 1–999 here: --wave 1000 passed the gate and failed in observe)
   return Number(wave);
 }
 
@@ -116,39 +113,7 @@ function observe(opts) {
 
 // ---------- CLI ----------
 
-// No `process.exit()` after a stdout write: on macOS a piped stdout is
-// asynchronous and `process.exit()` truncates at 64 KiB (Samuel, measured).
-// Set `process.exitCode` and return; the dispatcher returns right after us.
-
-function usageExit(msg) {
-  process.stderr.write(`usage error: xprov ${msg}\n`);
-  process.exitCode = xprov.EXIT_USAGE;
-  return null;
-}
-
-function finish(report, code) {
-  process.stdout.write(`${JSON.stringify(report)}\n`);
-  process.exitCode = code;
-  return null;
-}
-
-/** `--repo` must be a git TOPLEVEL (measured via `git rev-parse`, compared by
- * realpath). The gate (Wave 6) calls observe({repoRoot: repoRoot()}) and never
- * passes the flag; it exists for fixtures and humans, so a subdirectory or a
- * non-repo directory is a usage error (exit 2), never a silent fallback. */
-function resolveRepoFlag(repoFlag) {
-  if (repoFlag === undefined) return undefined; // observe() falls back to io.repoRoot()
-  const dir = path.resolve(String(repoFlag));
-  let top;
-  try {
-    top = execFileSync('git', ['-C', dir, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-  } catch (_e) {
-    throw inputError(`--repo is not inside a git repository: ${dir}`);
-  }
-  const same = (() => { try { return fs.realpathSync(top) === fs.realpathSync(dir); } catch (_e) { return false; } })();
-  if (!same) throw inputError(`--repo must be the git toplevel (${top}), got ${dir}`);
-  return dir;
-}
+// stdout/exitCode plumbing and --repo resolution come from xprov-common.cjs.
 
 function cmdXprovObserve(args) {
   const flags = io.parseFlags(args || [], {

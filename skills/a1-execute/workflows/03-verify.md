@@ -232,7 +232,9 @@ gates_fired:
 `wave-inspect-xprov` gets **one line per wave** (per lane wave in multi-lane
 phases), `verdict: fail` for every non-pass outcome including a
 `warning`-enforced continue, a `round_cap` and a waived wave (a waiver is
-never a pass — it additionally puts `xprov_waived` into `issue_classes`).
+never a pass — it additionally puts `xprov_waived` into `issue_classes`,
+a1-execute's own tag field; a1-plan records the same waiver in the base
+`issues` field of `_shared/retro-template.md`, and a1-evolve reads both).
 `caught: true` only where the inspection forced a fix round that changed code.
 
 Set `caught: true` only where that gate surfaced a real problem (a wave that

@@ -15,9 +15,14 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('child_process');
 const io = require('./io.cjs');
 const xprov = require('./xprov.cjs');
+const C = require('./xprov-common.cjs');
+// Shared helpers — one definition each, in xprov-common.cjs.
+const { inputError } = C;
+const usageExit = (msg) => C.usageExit('', msg);
+const finish = (report, code) => C.emitJson(report, code, false);
+const resolveRoot = (flags) => C.resolveRepoFlag(flags.repo);
 
 const PERMIT_FILE = path.join('.a1', 'xprov.json');
 const ALLOWED = 'allowed';
@@ -28,12 +33,6 @@ const BY_RE = /^[A-Za-z][A-Za-z0-9._-]{0,63}$/;
 const DENY_MESSAGE = 'External review not permitted for this repository. '
   + 'N3URAL-owned repo: `a1-tools xprov permit --by robert --record <vault-note>`. '
   + 'Customer repo: needs an a1-ludwig-legal decision as `--record`.';
-
-function inputError(msg) {
-  const err = new Error(msg);
-  err.code = 'A1_INPUT';
-  return err;
-}
 
 function permitPath(repoRoot) {
   return path.join(repoRoot, PERMIT_FILE);
@@ -86,39 +85,7 @@ function permit(opts) {
 
 // ---------- CLI ----------
 
-// No `process.exit()` after a stdout write: on macOS a piped stdout is
-// asynchronous and `process.exit()` truncates at 64 KiB (Samuel, measured).
-// Set `process.exitCode` and return; the dispatcher returns right after us.
-
-function usageExit(msg) {
-  process.stderr.write(`usage error: xprov ${msg}\n`);
-  process.exitCode = xprov.EXIT_USAGE;
-  return null;
-}
-
-function finish(report, code) {
-  process.stdout.write(`${JSON.stringify(report)}\n`);
-  process.exitCode = code;
-  return null;
-}
-
-/** `--repo` must be a git TOPLEVEL (measured via `git rev-parse`, compared by
- * realpath). Wave 5 `run` calls permitCheck({repoRoot: repoRoot()}) and never
- * passes the flag; it exists for fixtures and humans, so a subdirectory or a
- * non-repo directory is a usage error (exit 2), never a silent fallback. */
-function resolveRoot(flags) {
-  if (flags.repo === undefined) return io.repoRoot();
-  const dir = path.resolve(String(flags.repo));
-  let top;
-  try {
-    top = execFileSync('git', ['-C', dir, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-  } catch (_e) {
-    throw inputError(`--repo is not inside a git repository: ${dir}`);
-  }
-  const same = (() => { try { return fs.realpathSync(top) === fs.realpathSync(dir); } catch (_e) { return false; } })();
-  if (!same) throw inputError(`--repo must be the git toplevel (${top}), got ${dir}`);
-  return dir;
-}
+// stdout/exitCode plumbing and --repo resolution come from xprov-common.cjs.
 
 function cmdXprovPermitCheck(args) {
   const flags = io.parseFlags(args || [], { repo: 'string' });

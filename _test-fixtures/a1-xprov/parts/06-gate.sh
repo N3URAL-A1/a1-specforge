@@ -62,12 +62,21 @@ caseR2() {
   [[ -f "$log" ]] && grep -q "step: preflight" "$log" && grep -q "reason: preflight_failed" "$log" \
     && ok "R2a PLAN-REVIEW-LOG.md names the failing step and reason" || bad "R2a log entry missing step/reason"
 
-  # missing permit record → stops at permit-check, before preflight and snapshot
-  rm -f "$PHASE_REPO/.a1/xprov.json"; make_home; ln -s "$HOME/.codex/auth.json" "$XHOME/auth.json"; export A1_XPROV_CODEX_HOME="$XHOME"
+  # missing permit record → stops at permit-check, before preflight and snapshot;
+  # a repository without permission gets NO a1 write (no log, no xreview/) —
+  # Reinhard PR-review MAJOR 1. Red-making change: logging the permit-check fail.
+  prep6; rm -f "$PHASE_REPO/.a1/xprov.json"
   gate6 --gate "$GATE_PLAN"
   assert_rc "R2b gate exits 1 without .a1/xprov.json" 1 "$G_RC"
   assert_json "R2b step permit-check, reason external_review_not_permitted" "$G_OUT" "[j.step, j.reason].join('/')" "permit-check/external_review_not_permitted"
   assert_eq "R2b still no snapshot" "$(snapshots_left)" "0"
+  [[ ! -e "$PHASE_DIR/PLAN-REVIEW-LOG.md" && ! -e "$PHASE_DIR/xreview" ]] && ok "R2b no PLAN-REVIEW-LOG.md and no xreview/ in an unpermitted repo" || bad "R2b a1 wrote into an unpermitted repo: $(ls "$PHASE_DIR")"
+  # usage error out of preflight (hostile A1_XPROV_CODEX_HOME) → exit 2, nothing written.
+  # Red-making change: logging in the finally block whether or not a step produced a result.
+  prep6
+  A1_XPROV_CODEX_HOME=".codex-a1-review" gate6 --gate "$GATE_PLAN"
+  assert_rc "R2g a relative A1_XPROV_CODEX_HOME is a usage error" 2 "$G_RC"
+  [[ ! -e "$PHASE_DIR/PLAN-REVIEW-LOG.md" && ! -e "$PHASE_DIR/xreview" && "$(snapshots_left)" == "0" ]] && ok "R2g exit 2 wrote nothing (no log, no xreview/, no snapshot)" || bad "R2g exit 2 left writes behind: $(ls "$PHASE_DIR")"
 
   # everything compliant, approved case → pass, all Diana keys present, log + index + observation written
   prep6
@@ -260,6 +269,27 @@ caseR7() {
   [[ -n "$(grep -rl "xprov waive" "$REPO_ROOT/skills")" ]] && ok "R7e skills mention xprov waive in prose (the human instruction exists)" || bad "R7e no skill tells the human how to waive"
   sub6 waive --phase p6 --gate "$GATE_PLAN" --reason "$(printf 'line one\nline two')"; assert_rc "R7f a reason with a newline is a usage error" 2 "$G_RC"
   assert_json "R7f nothing written for the rejected reason" "$(cat "$PHASE_DIR/xreview/index.json")" "j.length" "2"
+  # Reinhard PR review MINOR (b): every waiver is ALSO an observation with pattern
+  # xprov_waived (the learning loop must see waivers). Two waivers above → two lines.
+  # Red-making change: waive() not calling observe().
+  local obs="$PHASE_DIR/observations.jsonl"
+  [[ -f "$obs" ]] && assert_eq "R7g exactly one xprov_waived observation per waiver (2 waivers → 2 lines)" "$(grep -c '"pattern":"xprov_waived"' "$obs")" "2" || bad "R7g no observations.jsonl after waive"
+  [[ -f "$obs" ]] && assert_json "R7g the waiver observation carries agent xprov-codex, type gap, severity major and the reason" "$(tail -1 "$obs")" \
+    "[j.agent, j.type, j.severity, j.pattern, j.msg.includes('accepted risk'), j.wave].join('/')" "xprov-codex/gap/major/xprov_waived/true/2"
+}
+
+# ---------- R9 (Reinhard PR review MINOR c): --allow-plugins reaches preflight ----------
+# Red-making change: gate calling preflight({}) without the allowlist.
+caseR9g() {
+  prep6
+  mkdir -p "$XHOME/plugins/cache/openai-curated-remote/x/1.0"
+  gate6 --gate "$GATE_PLAN"
+  assert_json "R9g1 a plugin dir in the home's cache fails the gate at preflight (plugins_cache_empty)" "$G_OUT" \
+    "[j.step, j.reason, /plugins_cache_empty/.test(j.reason_detail)].join('/')" "preflight/preflight_failed/true"
+  # allowlist entries are paths under plugins/cache/ — <marketplace>/<plugin>/<version> (preflight's scan depth 3)
+  gate6 --gate "$GATE_PLAN" --allow-plugins openai-curated-remote/x/1.0
+  assert_rc "R9g2 the same gate with --allow-plugins <marketplace>/x/1.0 passes preflight and completes (exit 0)" 0 "$G_RC" "$G_ERR"
+  assert_json "R9g2 verdict pass at step normalize" "$G_OUT" "[j.verdict, j.step].join('/')" "pass/normalize"
 }
 
 # ---------- R8 (Reinhard, Wave 6 review): the steps the first fixture pass never reached ----------
@@ -364,5 +394,5 @@ caseR8() {
   assert_rc "R8j both lane waves covered → exit 0" 0 "$G_RC" "$G_ERR"
 }
 
-caseR2; caseR3; caseR4; caseR6; caseR7; caseR8
+caseR2; caseR3; caseR4; caseR6; caseR7; caseR8; caseR9g
 export HOME="$SAVED_HOME_06"; unset A1_XPROV_CODEX_HOME

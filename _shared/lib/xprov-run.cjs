@@ -49,11 +49,15 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { parseFlags, repoRoot, assertSafeSegment, writeTextAtomic, nowIso } = require('./io.cjs');
 const { parseRegistryIds } = require('./gate-ids.cjs');
 const X = require('./xprov.cjs');
+const C = require('./xprov-common.cjs');
+// Shared helpers — one definition each, in xprov-common.cjs.
+const { REGISTRY_PATH, LANE_RE, sha256, isDir, isFile, gitOut, writeStdoutSync, parsePositive } = C;
+const tail = C.stderrTail;
+const none = C.oneLine;
 const { ensureArtifactsDir, isUnder } = require('./xprov-artifacts.cjs');
 const { appendXreviewNote } = require('./xprov-normalize.cjs');
 const { filterOutput } = require('./xprov-filter.cjs');
@@ -65,16 +69,13 @@ const FLAGS = Object.freeze({
   mode: 'str', snapshot: 'str', plan: 'str', phase: 'str', gate: 'str', wave: 'str', round: 'str', lane: 'str',
   base: 'str', resume: 'str', feedback: 'str', timeout: 'str', 'work-path': 'str', [NO_LOG_FLAG]: 'bool',
 });
-const REGISTRY_PATH = path.join(__dirname, '..', 'gates-registry.md');
 const DEFAULT_TIMEOUT_SECONDS = 600; // the runner's own default
 const SPAWN_GRACE_SECONDS = 60; // the runner kills its child at --timeout; a1 kills the runner a minute later
 const RUNNER_MAX_BUFFER = 64 * 1024 * 1024;
-const STDERR_TAIL_CHARS = 500;
 const LOG_FILE = 'PLAN-REVIEW-LOG.md';
 // Shared with xprov-gate.cjs (it imports this constant) — one header text, one owner.
 const LOG_HEADER = '# PLAN-REVIEW-LOG — cross-provider runner calls\n\nWritten by `a1-tools xprov run` and `a1-tools xprov gate`; one entry per call, newest last.\n';
 const RUNNER_MODES = new Set(X.RUNNER_MODES);
-const LANE_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/; // same shape as xprov-gate.cjs
 const RUN_DIR_PREFIX = 'claudex-';
 // Environment the runner gets — nothing else (Samuel W5 MAJOR 2: OPENAI_BASE_URL
 // would redirect the review, PYTHONPATH would bypass the pin, *_PROXY, GIT_*, …).
@@ -97,36 +98,9 @@ const REPO_LOCAL_TRACKED = Object.freeze({ repo_local_codex_config: '.codex/conf
 
 // ---------- helpers ----------
 
-function usage(msg) {
-  process.stderr.write(`usage error: xprov run ${msg}\n`);
-  process.stderr.write('  usage: xprov run --mode review|inspect --snapshot <dir> --plan <abs PLAN.md> --phase <name> --gate <id> [--wave N] [--round N] [--lane <id>] [--base <sha>] [--resume <result.json> --feedback <file>] [--timeout N] [--work-path <dir>] [--no-log]\n');
-  process.exit(X.EXIT_USAGE);
-}
-
-function writeStdoutSync(text) {
-  const buf = Buffer.from(text, 'utf8');
-  let off = 0;
-  while (off < buf.length) {
-    try { off += fs.writeSync(1, buf, off, buf.length - off); } catch (e) { if (e.code !== 'EAGAIN') throw e; }
-  }
-}
-
-const sha256 = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
-const tail = (s) => { const t = String(s || '').trim(); return t.length > STDERR_TAIL_CHARS ? `…${t.slice(-STDERR_TAIL_CHARS)}` : t; };
-const none = (v) => (v == null ? 'none' : String(v).replace(/[\r\n\t]+/g, ' ').slice(0, STDERR_TAIL_CHARS));
-const isDir = (p) => { try { return fs.statSync(p).isDirectory(); } catch (_e) { return false; } };
-const isFile = (p) => { try { return fs.statSync(p).isFile(); } catch (_e) { return false; } };
+// Usage errors are thrown as typed A1_INPUT errors; the facade prints `error: …` and exits 2.
+const usage = (msg) => C.usageThrow('run', msg);
 const fileSize = (p) => { try { return fs.statSync(p).size; } catch (_e) { return -1; } };
-
-function parsePositive(value, name) {
-  if (!/^[1-9]\d*$/.test(String(value))) usage(`--${name} must be an integer >= 1`);
-  return Number(value);
-}
-
-function gitOut(args) {
-  const r = spawnSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-  return r.status === 0 ? r.stdout : null;
-}
 
 function porcelain(repo) {
   const out = gitOut(['-C', repo, 'status', '--porcelain', '--untracked-files=all']);
@@ -367,10 +341,13 @@ function emit(ctx, extra, exitCode) {
 function runWithBaseline(ctx, artifactsDir, argv, notes) {
   const before = takeBaseline(ctx);
   const baselinePath = writeBaseline(before);
-  const common = { argv, baseline_path: baselinePath, snapshot_notes: notes };
+  // `ok` like preflight/permit/observe/snapshot; `baseline_path` only on a
+  // tripwire (the file is gone in `finally` — on success only `baseline_delta`
+  // is meaningful, on a tripwire the mktemp path documents where the baseline was).
+  const common = { argv, snapshot_notes: notes };
   const finish = (extra, verdict, code) => {
     appendLog(ctx, { roles: extra.result_path ? rolesOf(extra.result_path) : 'unknown', result_path: extra.result_path, verdict, notes });
-    return emit(ctx, { ...common, ...extra }, code);
+    return emit(ctx, { ok: code === X.EXIT_PASS, ...common, ...extra }, code);
   };
   const failWith = (reason, detail, runDir, keepRunDir) => {
     if (!keepRunDir) removeRunDir(runDir, artifactsDir);
@@ -383,7 +360,7 @@ function runWithBaseline(ctx, artifactsDir, argv, notes) {
       revertSnapshot(ctx.snapshot);
       appendXreviewNote(ctx.phaseDir, `BLOCKER tripwire (${ctx.gate}, ${ctx.mode})`, ['the reviewer changed files during the run; its result was discarded', ...delta]);
       removeRunDir(run.runDir, artifactsDir);
-      return finish({ reason: X.REASONS.tripwire, baseline_delta: delta, result_path: null, artifacts_run_dir: null }, `fail/${X.REASONS.tripwire}`, X.EXIT_FAIL);
+      return finish({ reason: X.REASONS.tripwire, baseline_delta: delta, baseline_path: baselinePath, result_path: null, artifacts_run_dir: null }, `fail/${X.REASONS.tripwire}`, X.EXIT_FAIL);
     }
     if (run.status !== 0) {
       process.stderr.write(`xprov run: runner failed: ${tail(run.stderr)}\n`);
@@ -412,14 +389,14 @@ function cmdXprovRun(args) {
   const permit = permitCheck({ repoRoot: ctx.root });
   if (!permit.ok) {
     process.stderr.write(`xprov run: ${permit.detail || permit.reason}\n`);
-    return emit(ctx, { reason: permit.reason, reason_detail: permit.detail || null, result_path: null, artifacts_run_dir: null, baseline_delta: [] }, X.EXIT_FAIL);
+    return emit(ctx, { ok: false, reason: permit.reason, reason_detail: permit.detail || null, result_path: null, artifacts_run_dir: null, baseline_delta: [] }, X.EXIT_FAIL);
   }
   const notes = snapshotNotes(ctx.snapshot);
   const pin = X.checkRunnerPin();
   if (!pin.ok) {
     process.stderr.write(`xprov run: runner pin check failed (${pin.reason}); refusing to spawn an unverified runner\n`);
     appendLog(ctx, { roles: 'unknown', result_path: null, verdict: `fail/${X.REASONS.runner_failed}`, notes });
-    return emit(ctx, { reason: X.REASONS.runner_failed, reason_detail: `runner pin ${pin.reason}: ${pin.runnerPath} vs ${pin.sumsPath}`, result_path: null, artifacts_run_dir: null, baseline_delta: [] }, X.EXIT_FAIL);
+    return emit(ctx, { ok: false, reason: X.REASONS.runner_failed, reason_detail: `runner pin ${pin.reason}: ${pin.runnerPath} vs ${pin.sumsPath}`, result_path: null, artifacts_run_dir: null, baseline_delta: [] }, X.EXIT_FAIL);
   }
   const present = Object.entries(REPO_LOCAL_TRACKED).filter(([k]) => notes[k]).map(([, rel]) => rel);
   if (present.length) {

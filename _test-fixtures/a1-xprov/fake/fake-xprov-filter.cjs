@@ -34,10 +34,11 @@ function quarantineFindings(findings, ctx) {
   const list = Array.isArray(findings) ? findings : [];
   note('quarantineFindings', `findings=${list.length} lsFiles=${ctx && ctx.lsFiles ? ctx.lsFiles.size : 'none'} planPath=${ctx ? ctx.planPath : 'none'}`);
   if (process.env.FAKE_FILTER_BROKEN === '1') return undefined;
+  const notes = process.env.FAKE_FILTER_NOTES ? [process.env.FAKE_FILTER_NOTES] : [];
   if (process.env.FAKE_FILTER_QUARANTINE === '1') {
-    return { kept: [], quarantined: list.map((f) => ({ ...f, reason: 'fake_quarantine' })) };
+    return { kept: [], quarantined: list.map((f) => ({ ...f, reason: 'fake_quarantine' })), notes };
   }
-  return { kept: [...list], quarantined: [] };
+  return { kept: [...list], quarantined: [], notes };
 }
 
 module.exports = { filterOutput, quarantineFindings };

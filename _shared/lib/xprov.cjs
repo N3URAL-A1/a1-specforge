@@ -22,6 +22,12 @@
 // Documented exception to the freeze (main, 2026-09-24): Wave 4 added the reason
 // code `preflight_failed` to REASON_LIST — a constant, not a dispatch change.
 //
+// The "not implemented yet (planned wave N)" branch below — like normalize's
+// "filter module missing" and "gc skipped" branches — is kept ON PURPOSE after
+// every wave shipped: it is the guard against a partial plugin installation (a
+// missing or half-copied module must fail closed, never `pass`). The fixture
+// suite exercises these branches on tree COPIES with the module removed.
+//
 // Pure at module load: no file I/O, no process I/O until a function is called.
 // ---------------------------------------------------------------------------
 
@@ -76,8 +82,7 @@ const GATE_IDS = Object.freeze({ PLAN_REVIEW: 'plan-review-xprov', WAVE_INSPECT:
 const GATE_ID_LIST = Object.freeze(Object.values(GATE_IDS));
 
 // ---------- runner usage limits (FR-024) ----------
-const RUNNER_MODES = Object.freeze(['review', 'inspect']);
-const RUNNER_MODES_ALLOWED = Object.freeze(['review', 'inspect', 'check']);
+const RUNNER_MODES = Object.freeze(['review', 'inspect']); // `check` is the runner's own consistency mode; a1 has no caller for it
 const FORBIDDEN_RUNNER_TOKENS = Object.freeze(['build', '--unreviewed-spec', '--proof']);
 const RUNNER_HOST = 'claude';
 
@@ -293,7 +298,7 @@ module.exports = {
   SUBCOMMANDS, SUBCOMMAND_NAMES,
   REASONS, REASON_LIST, VERDICTS,
   GATE_IDS, GATE_ID_LIST,
-  RUNNER_MODES, RUNNER_MODES_ALLOWED, FORBIDDEN_RUNNER_TOKENS, RUNNER_HOST,
+  RUNNER_MODES, FORBIDDEN_RUNNER_TOKENS, RUNNER_HOST,
   ARTIFACT_MAX_AGE_DAYS, ROUND_CAP, MAX_FIELD_CHARS, MAX_RESULT_BYTES, TITLE_MAX_CHARS,
   MODEL_REQUESTED_DEFAULT, MODEL_OBSERVED_UNKNOWN,
   SECRET_PATTERNS, INSTRUCTION_MARKERS, INSTRUCTION_MARKER_PATTERNS,

@@ -43,38 +43,21 @@ const { spawnSync } = require('child_process');
 const { parseFlags, repoRoot } = require('./io.cjs');
 const { isUnder } = require('./xprov-artifacts.cjs');
 const X = require('./xprov.cjs');
+const C = require('./xprov-common.cjs');
+// Shared helpers — one definition each, in xprov-common.cjs.
+const { DIR_MODE, mkdir0700, writeStdoutSync, gitSpawn: git } = C;
+const tail = C.stderrTail;
 
-const DIR_MODE = 0o700;
 const SNAP_PREFIX = 'snap-';
 const SCAN_WINDOW = X.MAX_RESULT_BYTES; // 5 MB windows …
 const SCAN_OVERLAP = 512; // … with overlap so a token on a window edge is still seen
 const UTF16_SNIFF_BYTES = 8000;
-const GIT_MAX_BUFFER = 64 * 1024 * 1024;
 // No leading `-`: `--commit --force` must never become a git option.
 const REF_RE = /^[A-Za-z0-9._][A-Za-z0-9._/@^~-]{0,199}$/;
-const STDERR_TAIL_CHARS = 500;
 const REPO_LOCAL_STRIP = Object.freeze(['.codex', 'AGENTS.md', 'AGENTS.override.md']);
 const GITLEAKS_CONFIG = path.join(__dirname, 'xprov-gitleaks.toml');
 const UPLOAD_PACK_FALLBACK = 'git -c uploadpack.allowAnySHA1InWant=true upload-pack'; // literal, ours — not user input
 
-function inputError(reason, message) {
-  const err = new Error(message);
-  err.code = 'A1_INPUT';
-  err.reason = reason;
-  return err;
-}
-
-function git(args, opts) {
-  const r = spawnSync('git', args, { encoding: 'utf8', maxBuffer: GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'], ...(opts || {}) });
-  return { status: r.status, stdout: r.stdout || '', stderr: (r.stderr || '').trim(), error: r.error || null };
-}
-
-const tail = (s) => (s.length > STDERR_TAIL_CHARS ? `…${s.slice(-STDERR_TAIL_CHARS)}` : s);
-
-function mkdir0700(dir) {
-  fs.mkdirSync(dir, { recursive: true, mode: DIR_MODE });
-  fs.chmodSync(dir, DIR_MODE);
-}
 
 /** ~/.a1-xprov/snapshots/, 0700, never inside the checkout or the vault. */
 function ensureSnapshotsRoot() {
@@ -82,7 +65,7 @@ function ensureSnapshotsRoot() {
   const forbidden = [repoRoot()];
   if (process.env.A1_VAULT_ROOT && process.env.A1_VAULT_ROOT.trim() !== '') forbidden.push(process.env.A1_VAULT_ROOT);
   for (const f of forbidden) {
-    if (isUnder(root, f)) throw inputError('snapshots_inside_checkout_or_vault', `snapshots root ${root} would lie under ${f}`);
+    if (isUnder(root, f)) throw C.inputError(`snapshots root ${root} would lie under ${f}`, 'snapshots_inside_checkout_or_vault');
   }
   mkdir0700(X.xprovHome());
   mkdir0700(root);
@@ -204,8 +187,8 @@ function snapshot(opts) {
   const sourceRepo = path.resolve(opts.sourceRepo);
   const commit = String(opts.commit);
   const base = opts.base === undefined || opts.base === null ? null : String(opts.base);
-  if (!REF_RE.test(commit)) throw inputError('bad_commit', `--commit must be a git revision (no leading dash, no whitespace; got ${JSON.stringify(commit.slice(0, 80))})`);
-  if (base !== null && !REF_RE.test(base)) throw inputError('bad_base', `--base must be a git revision (no leading dash, no whitespace; got ${JSON.stringify(base.slice(0, 80))})`);
+  if (!REF_RE.test(commit)) throw C.inputError(`--commit must be a git revision (no leading dash, no whitespace; got ${JSON.stringify(commit.slice(0, 80))})`, 'bad_commit');
+  if (base !== null && !REF_RE.test(base)) throw C.inputError(`--base must be a git revision (no leading dash, no whitespace; got ${JSON.stringify(base.slice(0, 80))})`, 'bad_base');
   const root = ensureSnapshotsRoot();
   const dir = fs.mkdtempSync(path.join(root, SNAP_PREFIX));
   fs.chmodSync(dir, DIR_MODE);
@@ -239,10 +222,10 @@ function cleanupSnapshot(dir) {
   const rel = path.relative(root, target);
   const direct = rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel) && !rel.includes(path.sep);
   if (!direct || !path.basename(target).startsWith(SNAP_PREFIX)) {
-    throw inputError('not_a_snapshot', `${target} is not a snapshot under ${root}; refusing to remove it`);
+    throw C.inputError(`${target} is not a snapshot under ${root}; refusing to remove it`, 'not_a_snapshot');
   }
   if (fs.existsSync(target) && fs.realpathSync(path.dirname(target)) !== fs.realpathSync(root)) {
-    throw inputError('not_a_snapshot', `${target} does not resolve under ${root}; refusing to remove it`);
+    throw C.inputError(`${target} does not resolve under ${root}; refusing to remove it`, 'not_a_snapshot');
   }
   removeDir(target);
   return target;
@@ -250,19 +233,8 @@ function cleanupSnapshot(dir) {
 
 // ---------- CLI ----------
 
-function writeStdoutSync(text) {
-  const buf = Buffer.from(text, 'utf8');
-  let off = 0;
-  while (off < buf.length) {
-    try { off += fs.writeSync(1, buf, off, buf.length - off); } catch (e) { if (e.code !== 'EAGAIN') throw e; }
-  }
-}
-
-function usage(msg) {
-  process.stderr.write(`usage error: xprov snapshot ${msg}\n`);
-  process.stderr.write('  usage: xprov snapshot --repo <path> --commit <rev> [--base <rev>] | xprov snapshot --remove <dir>\n');
-  process.exit(X.EXIT_USAGE);
-}
+// Usage errors are thrown as typed A1_INPUT errors; the facade prints `error: …` and exits 2.
+const usage = (msg) => C.usageThrow('snapshot', msg);
 
 function cmdXprovSnapshot(args) {
   const flags = parseFlags(args, { repo: 'str', commit: 'str', base: 'str', remove: 'str' });

@@ -294,6 +294,13 @@ caseR25() {
   assert_rc "R25d --agent a1-victor-verifier exits 0" 0 "$rc" "$out"
   assert_eq "R25d exactly two lines were appended (rejections write nothing)" "$(wc -l < "$obs" | tr -d ' ')" "2"
   assert_json "R25d wave is an integer" "$(tail -n 1 "$obs")" "j.wave" "2"
+  # shared positive-int bound 1–9999 (xprov-common, PR review): observe used to stop at
+  # 999 while the gate accepted 1000 — the same --wave must pass or fail in both.
+  out="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov observe --agent a1-victor-verifier --skill a1-execute --phase r25-phase --wave 1000 --type gap --severity minor --msg "wave 1000" 2>&1)"; rc=$?
+  assert_rc "R25d2 --wave 1000 is accepted (shared bound, was rejected at 999)" 0 "$rc" "$out"
+  out="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov observe --agent a1-victor-verifier --skill a1-execute --phase r25-phase --wave 10000 --type gap --severity minor --msg "wave 10000" 2>&1)"; rc=$?
+  # observe reports validation errors inside observe() as exit 1 with a `reason` (its existing contract), not as usage exit 2
+  assert_rc "R25d3 --wave 10000 is refused (shared bound 1–9999)" 1 "$rc"
 
   out="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov observe --agent xprov-codex --skill a1-plan --phase ../r25-phase --type gap --severity major --msg x 2>&1)"; rc=$?
   [[ $rc -ne 0 && "$out" == *"--phase must be a plain identifier"* ]] && ok "R25e hostile --phase ../ is refused by the segment guard (named message)" || bad "R25e hostile phase accepted (rc=$rc): $out"

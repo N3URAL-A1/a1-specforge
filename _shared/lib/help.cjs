@@ -572,6 +572,7 @@ Usage:
                   goes to stderr only; stdout is the machine contract.
                   Subcommands (module → wave it ships in):
     normalize <result.json> --phase <name> --gate <id> [--wave N] [--round N]
+              [--lane <id>] [--work-path <dir>]
                   (xprov-normalize.cjs, wave 2) total mapping of a runner
                   record: status!=completed → runner_failed; mode not
                   review|inspect → wrong_mode; APPROVED → pass (only after
@@ -579,36 +580,50 @@ Usage:
                   fail-with-findings, BLOCKED → blocked, else malformed.
                   Writes .a1/phases/<name>/XREVIEW.md, xreview/*.findings.json,
                   xreview/index.json atomically; exit 0 only on pass.
-    gc            (xprov-artifacts.cjs, wave 3) remove runner run dirs under
-                  ~/.a1-xprov/artifacts/<repo-slug>/ older than 14 days.
-    preflight     (xprov-preflight.cjs, wave 4) proves the dedicated home is
+    gc [--slug <repo-slug>] [--max-age-days N]
+                  (xprov-artifacts.cjs, wave 3) remove runner run dirs under
+                  ~/.a1-xprov/artifacts/<repo-slug>/ and orphaned snap-* clones
+                  under ~/.a1-xprov/snapshots/ older than 14 days.
+    preflight [--allow-plugins <name>[,<name>…]]
+                  (xprov-preflight.cjs, wave 4) proves the dedicated home is
                   tool-less BEFORE any runner call: not ~/.codex, 0700,
                   sandbox_mode = "read-only", no [mcp_servers.*] table at all,
                   no enabled [plugins.*], auth.json present, runner pin
                   matches SHA256SUMS, python3 >= 3.10, codex --version ok.
                   Lists EVERY check with its measured value; exit 1 if any fails.
-    init-home     (xprov-preflight.cjs, wave 4) create the dedicated home
+    init-home [--prune-marketplaces]
+                  (xprov-preflight.cjs, wave 4) create the dedicated home
                   idempotently; never overwrites an existing config.toml.
-    permit-check  (xprov-permit.cjs, wave 4) reads .a1/xprov.json; anything
+    permit-check [--repo <git-toplevel>]
+                  (xprov-permit.cjs, wave 4) reads .a1/xprov.json; anything
                   but external_review: allowed → external_review_not_permitted.
                   Customer repositories need an a1-ludwig-legal decision.
-    permit --by <name> --record <vault-path>
+    permit --by <name> --record <vault-path> [--repo <git-toplevel>]
                   (xprov-permit.cjs, wave 4) the ONLY writer of .a1/xprov.json.
     observe --agent xprov-codex|a1-<first>-<role> --skill <s> --phase <name>
-            --type gap|blocker --severity <sev> --msg "<text>" [--provider codex]
+            --type gap|blocker --severity <sev> --msg "<text>" [--wave N] [--lane <id>]
+            [--pattern xprov_finding|xprov_waived] [--provider codex]
+            [--model-requested <m>] [--model-observed <m>] [--repo <git-toplevel>]
                   (xprov-observe.cjs, wave 4) one observations.jsonl line with
                   pattern xprov_finding, model_requested, model_observed.
-    snapshot --repo <path> --commit <sha>
-                  (xprov-snapshot.cjs, wave 5) fresh git clone --no-local
-                  --no-hardlinks under ~/.a1-xprov/snapshots/, secret-scanned
-                  (shared pattern list + gitleaks when on PATH) before dispatch.
+    snapshot --repo <path> --commit <sha> [--base <sha>] | --remove <dir>
+                  (xprov-snapshot.cjs, wave 5) fresh depth-limited fetch under
+                  ~/.a1-xprov/snapshots/ (git init + fetch --depth N + checkout
+                  FETCH_HEAD; N = 1 for review, rev-list --count base..commit + 1
+                  with --base for inspect — a parent commit's secret is never in
+                  the snapshot history); .codex/, AGENTS.md, AGENTS.override.md
+                  are removed from the working tree; every tracked file is
+                  secret-scanned (shared pattern list, windowed, UTF-16 aware,
+                  + gitleaks with a1's own config when on PATH) before dispatch.
     run --mode review|inspect --snapshot <dir> --plan <abs PLAN.md> --phase <name>
-        --gate <id> [--wave N] [--base <sha>] [--resume <result.json> --feedback <file>]
-                  (xprov-run.cjs, wave 5) exact runner argv, CODEX_HOME set to
-                  the dedicated home, tripwire (git status baseline of checkout,
-                  work path and snapshot + config sha) — any delta → tripwire.
+        --gate <id> [--wave N] [--round N] [--lane <id>] [--base <sha>]
+        [--resume <result.json> --feedback <file>] [--timeout N] [--work-path <dir>] [--no-log]
+                  (xprov-run.cjs, wave 5) exact runner argv, allowlisted env with
+                  CODEX_HOME set to the dedicated home, tripwire (git status
+                  baseline of checkout, work path and snapshot, .git/ metadata,
+                  the whole dedicated home) — any delta → tripwire.
     gate --phase <name> --gate <id> [--wave N --base <sha> --work-path <p>]
-         [--lane <id>] [--round N]
+         [--lane <id>] [--round N] [--timeout N] [--resume <result.json> --feedback <file>]
                   (xprov-gate.cjs, wave 6) the driver the workflows call once:
                   permit-check → preflight → snapshot → run → normalize →
                   observe → cleanup, stopping at the first non-zero step;
@@ -620,14 +635,15 @@ Usage:
     wave-status --phase <name> [--waves 1,2,3]
                   (xprov-gate.cjs, wave 6) every completed wave needs a
                   wave-inspect-xprov entry with verdict pass or waived: true.
-    waive --phase <name> --gate <id> --wave <N> --reason "<text>"
+    waive --phase <name> --gate <id> [--wave <N> [--lane <id>]] --reason "<text>"
                   (xprov-gate.cjs, wave 6) HUMAN-only: appends {waived: true,
                   by: human} — never verdict: pass. Skills print the command
                   for the human; no skill bash block executes it.
                   Reasons (stdout \`reason\` on exit 1): runner_failed,
                   malformed, wrong_mode, blocked, plan_changed, tripwire,
                   secret_in_snapshot, secret_in_output, quarantined, round_cap,
-                  external_review_not_permitted, snapshot_failed, not_logged_in.
+                  external_review_not_permitted, snapshot_failed, not_logged_in,
+                  preflight_failed, plan_review_missing, wave_inspect_missing.
                   Paths a1 owns: ~/.a1-xprov/artifacts/<repo-slug>/ (0700,
                   runner --artifacts, never inside a checkout or under
                   A1_VAULT_ROOT), ~/.a1-xprov/snapshots/ (clones, removed after

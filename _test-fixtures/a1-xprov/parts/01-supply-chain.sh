@@ -259,6 +259,37 @@ caseF1() {
   grep -q "a1-tools xprov <sub>" <<<"$help" || missing_help="$missing_help header"
   [[ -z "$missing_help" ]] && ok "F1e --help names all 13 xprov subcommands and A1_XPROV_CODEX_HOME" \
                             || bad "F1e --help is missing:$missing_help"
+  # Reinhard PR review: every flag a module declares in a parseFlags table (or a
+  # frozen FLAGS object) must appear as `--<flag>` in the xprov help block —
+  # measured generically from the sources so the help cannot drift again.
+  # Red-making change: declaring a new flag in any module without documenting it.
+  local flagcheck; flagcheck="$(node -e "
+    const fs = require('fs'); const path = require('path'); const lib = path.dirname(process.argv[1]);
+    const help = fs.readFileSync(process.argv[2], 'utf8');
+    const block = help.slice(help.indexOf('a1-tools xprov <sub>'), help.indexOf('Spec statuses:'));
+    const files = fs.readdirSync(lib).filter((f) => /^xprov-.*\.cjs$/.test(f) && f !== 'xprov-common.cjs');
+    const missing = []; let total = 0;
+    for (const f of files) {
+      const src = fs.readFileSync(path.join(lib, f), 'utf8');
+      const tables = [...src.matchAll(/(?:parseFlags\([^{]*\{|FLAGS = Object\.freeze\(\{)([^}]*)\}/g)].map((m) => m[1]);
+      for (const t of tables) for (const k of t.matchAll(/(?:^|[,{\s])(?:'([A-Za-z][\w-]*)'|([A-Za-z][\w-]*))\s*:\s*'(?:str|string|bool)'/g)) {
+        const flag = k[1] || k[2]; total++;
+        if (!block.includes('--' + flag)) missing.push(f.replace('xprov-', '').replace('.cjs', '') + ':--' + flag);
+      }
+      if (/\[NO_LOG_FLAG\]: 'bool'/.test(src)) { total++; if (!block.includes('--no-log')) missing.push('run:--no-log'); }
+    }
+    process.stdout.write(JSON.stringify({ total, missing }));
+  " "$XPROV_LIB" "$REPO_ROOT/_shared/lib/help.cjs" 2>&1)"
+  assert_json "F1e2 every flag declared in a module's flag table is documented in the xprov help block" "$flagcheck" "j.missing.join(' ') || 'none (' + j.total + ' flags checked)'" "$(node -e "process.stdout.write('none (' + process.argv[1] + ' flags checked)')" "$(node -e "
+    const fs = require('fs'); const path = require('path'); const lib = path.dirname(process.argv[1]); let total = 0;
+    for (const f of fs.readdirSync(lib).filter((f) => /^xprov-.*\.cjs$/.test(f) && f !== 'xprov-common.cjs')) {
+      const src = fs.readFileSync(path.join(lib, f), 'utf8');
+      for (const t of [...src.matchAll(/(?:parseFlags\([^{]*\{|FLAGS = Object\.freeze\(\{)([^}]*)\}/g)].map((m) => m[1])) total += [...t.matchAll(/(?:^|[,{\s])(?:'([A-Za-z][\w-]*)'|([A-Za-z][\w-]*))\s*:\s*'(?:str|string|bool)'/g)].length;
+      if (/\[NO_LOG_FLAG\]: 'bool'/.test(src)) total++;
+    }
+    process.stdout.write(String(total));
+  " "$XPROV_LIB")")"
+  assert_json "F1e3 the generic flag scan actually found flags (guards against a dead regex)" "$flagcheck" "j.total >= 30" "true"
 
   out="$(node -e "
     const x = require(process.argv[1]);

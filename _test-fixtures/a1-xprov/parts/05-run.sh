@@ -121,9 +121,13 @@ caseR15() {
   local bp1; bp1="$(jget "$U_OUT" 'j.baseline_path')"
   [[ "$bp1" == "$(node -e "process.stdout.write(require('os').tmpdir())")"* || "$bp1" == /private/var/* || "$bp1" == /tmp/* ]] && ok "R15g baseline file is a mktemp path under the temp dir" || bad "R15g baseline path: $bp1"
   assert_eq "R15h run dir of a tripwire run was removed (claudex-* count unchanged)" "$(rundirs_count)" "$n0"
-  run5 review
+  # baseline_path is reported on a tripwire only (the file is gone in finally); a
+  # second tripwire run proves the path is fresh every time
+  FAKE_RUNNER_SIDE_EFFECT=write-into-repo run5 review
   local bp2; bp2="$(jget "$U_OUT" 'j.baseline_path')"
-  [[ "$bp1" != "$bp2" ]] && ok "R15i two runs use two different baseline paths (never a fixed /tmp file)" || bad "R15i baseline path reused: $bp1"
+  [[ "$bp1" != "$bp2" && "$bp2" != "undefined" && "$bp2" != "null" ]] && ok "R15i two tripwire runs report two different baseline paths (never a fixed /tmp file)" || bad "R15i baseline path reused or missing: $bp1 / $bp2"
+  run5 review
+  assert_json "R15i2 a successful run reports ok:true, baseline_delta [] and no baseline_path" "$U_OUT" "j.ok + '/' + j.baseline_delta.length + '/' + ('baseline_path' in j)" "true/0/false"
   grep -q 'FAKE_RUNNER_WROTE_THIS' "$U_OUT" && bad "R15j the follow-up run still sees the tripwire file" || ok "R15j follow-up run on the reverted snapshot is clean"
   # --untracked-files=all: scratch/ is already untracked; a NEW file inside it is
   # invisible to plain `git status --porcelain` (which prints `?? scratch/` before and after).

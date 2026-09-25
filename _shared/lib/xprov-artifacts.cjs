@@ -31,18 +31,15 @@ const fs = require('fs');
 const path = require('path');
 const { repoRoot, assertSafeSegment, parseFlags } = require('./io.cjs');
 const X = require('./xprov.cjs');
+const C = require('./xprov-common.cjs');
+// Shared helpers — one definition each, in xprov-common.cjs (mkdir0700's typed
+// errors are the generic path_is_file / path_too_long reasons).
+const { mkdir0700 } = C;
 
-const DIR_MODE = 0o700;
 const RUN_DIR_PREFIX = 'claudex-';
+const SNAPSHOT_PREFIX = 'snap-'; // xprov-snapshot.cjs' SNAP_PREFIX (not imported: snapshot requires this module)
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const REASON_INSIDE = 'artifacts_inside_checkout_or_vault';
-
-function inputError(reason, message) {
-  const err = new Error(message);
-  err.code = 'A1_INPUT';
-  err.reason = reason;
-  return err;
-}
 
 function repoSlug() {
   return assertSafeSegment(path.basename(repoRoot()), 'repo slug');
@@ -76,31 +73,17 @@ function forbiddenRoots() {
   return roots;
 }
 
-/** mkdir + chmod 0700. Filesystem refusals become typed A1_INPUT errors so
- * the facade reports them as user errors (exit 2), not internal faults. */
-function mkdir0700(dir) {
-  try {
-    fs.mkdirSync(dir, { recursive: true, mode: DIR_MODE });
-    fs.chmodSync(dir, DIR_MODE);
-  } catch (e) {
-    if (e && e.code === 'EEXIST') throw inputError('artifacts_path_is_file', `${dir} exists but is not a directory`);
-    if (e && e.code === 'ENOTDIR') throw inputError('artifacts_path_is_file', `a component of ${dir} is a regular file`);
-    if (e && e.code === 'ENAMETOOLONG') throw inputError('artifacts_path_too_long', `${dir} exceeds the filesystem's path length limit`);
-    throw e;
-  }
-}
-
 /** The one rule for every artifacts path a1 touches: under ~/.a1-xprov/artifacts/,
  * never under the checkout or the vault. Applied to ensureArtifactsDir() and to
  * gc()'s `root` alike. */
 function assertArtifactsRoot(dir) {
   for (const root of forbiddenRoots()) {
     if (isUnder(dir, root)) {
-      throw inputError(REASON_INSIDE, `artifacts dir ${dir} would lie under ${root}; runner artifacts must never sit inside a checkout or the vault`);
+      throw C.inputError(`artifacts dir ${dir} would lie under ${root}; runner artifacts must never sit inside a checkout or the vault`, REASON_INSIDE);
     }
   }
   if (!isUnder(dir, path.join(X.xprovHome(), 'artifacts'))) {
-    throw inputError('artifacts_outside_xprov_home', `${dir} is not under ${path.join(X.xprovHome(), 'artifacts')}`);
+    throw C.inputError(`${dir} is not under ${path.join(X.xprovHome(), 'artifacts')}`, 'artifacts_outside_xprov_home');
   }
   return dir;
 }
@@ -125,23 +108,26 @@ function gc(opts) {
   const maxAgeDays = typeof o.maxAgeDays === 'number' ? o.maxAgeDays : X.ARTIFACT_MAX_AGE_DAYS;
   const root = assertArtifactsRoot(path.resolve(o.root || X.artifactsDir(o.slug === undefined ? repoSlug() : assertSafeSegment(o.slug, 'artifacts slug'))));
   const cutoff = now - maxAgeDays * MS_PER_DAY;
-  if (!fs.existsSync(root)) return { root, removed: [], kept: [] };
-  const removed = [];
-  const kept = [];
-  for (const name of fs.readdirSync(root)) {
-    if (!name.startsWith(RUN_DIR_PREFIX)) continue;
-    const full = path.join(root, name);
+  const runs = sweepDirs(root, RUN_DIR_PREFIX, cutoff);
+  // Orphaned snapshots (Reinhard PR review): a gate process killed between
+  // `snapshot` and its cleanup leaves the clone forever — same age rule.
+  const snaps = sweepDirs(path.resolve(X.snapshotsDir()), SNAPSHOT_PREFIX, cutoff);
+  return { root, removed: runs.removed, kept: runs.kept, snapshots_root: snaps.root, snapshots_removed: snaps.removed, snapshots_kept: snaps.kept };
+}
+
+/** Remove `<prefix>*` directories under `dir` whose mtime is older than cutoff. */
+function sweepDirs(dir, prefix, cutoff) {
+  const out = { root: dir, removed: [], kept: [] };
+  if (!fs.existsSync(dir)) return out;
+  for (const name of fs.readdirSync(dir)) {
+    if (!name.startsWith(prefix)) continue;
+    const full = path.join(dir, name);
     let st;
     try { st = fs.lstatSync(full); } catch (_e) { continue; }
     if (!st.isDirectory()) continue;
-    if (st.mtimeMs < cutoff) {
-      fs.rmSync(full, { recursive: true, force: true });
-      removed.push(full);
-    } else {
-      kept.push(full);
-    }
+    if (st.mtimeMs < cutoff) { fs.rmSync(full, { recursive: true, force: true }); out.removed.push(full); } else out.kept.push(full);
   }
-  return { root, removed, kept };
+  return out;
 }
 
 // ---------- CLI: a1-tools xprov gc [--slug <slug>] [--max-age-days N] ----------
@@ -149,26 +135,18 @@ function gc(opts) {
 function cmdXprovGc(args) {
   const flags = parseFlags(args, { slug: 'str', 'max-age-days': 'str' });
   if (flags._.length) {
-    process.stderr.write(`usage error: xprov gc takes no positional arguments (got ${JSON.stringify(String(flags._[0]).slice(0, 80))})\n`);
-    process.exit(X.EXIT_USAGE);
+    return C.usageExit('gc', `takes no positional arguments (got ${JSON.stringify(String(flags._[0]).slice(0, 80))})`);
   }
   let maxAgeDays = X.ARTIFACT_MAX_AGE_DAYS;
   if (flags['max-age-days'] !== undefined) {
     if (!/^\d+$/.test(String(flags['max-age-days']))) {
-      process.stderr.write('usage error: xprov gc --max-age-days must be a non-negative integer\n');
-      process.exit(X.EXIT_USAGE);
+      return C.usageExit('gc', '--max-age-days must be a non-negative integer');
     }
     maxAgeDays = Number(flags['max-age-days']);
   }
   const result = gc({ now: Date.now(), maxAgeDays, slug: flags.slug }); // a hostile --slug throws A1_INPUT → facade exit 2
-  process.stderr.write(`xprov gc: removed ${result.removed.length}, kept ${result.kept.length} under ${result.root}\n`);
-  // fs.writeSync + exitCode, never stdout.write + exit: a pipe truncates at 64 KiB (house rule since Samuel W3).
-  const buf = Buffer.from(`${JSON.stringify(result, null, 2)}\n`, 'utf8');
-  let off = 0;
-  while (off < buf.length) {
-    try { off += fs.writeSync(1, buf, off, buf.length - off); } catch (e) { if (e.code !== 'EAGAIN') throw e; }
-  }
-  process.exitCode = X.EXIT_PASS;
+  process.stderr.write(`xprov gc: removed ${result.removed.length}, kept ${result.kept.length} under ${result.root}; snapshots removed ${result.snapshots_removed.length}, kept ${result.snapshots_kept.length}\n`);
+  return C.emitJson(result, X.EXIT_PASS);
 }
 
 module.exports = { ensureArtifactsDir, gc, cmdXprovGc, repoSlug, isUnder, REASON_INSIDE };

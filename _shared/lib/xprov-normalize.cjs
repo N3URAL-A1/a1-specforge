@@ -34,14 +34,14 @@
 
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
-const { execFileSync } = require('child_process');
 const { parseFlags, repoRoot, assertSafeSegment, writeTextAtomic, nowIso } = require('./io.cjs');
 const { parseRegistryIds } = require('./gate-ids.cjs');
 const X = require('./xprov.cjs');
+const C = require('./xprov-common.cjs');
+// Shared helpers — one definition each, in xprov-common.cjs.
+const { REGISTRY_PATH, sha256, isPlainObject, parsePositive, parseLane, writeStdoutSync, readIndex, sameWave, sameLane, DETAIL_MAX_CHARS } = C;
 
 const FLAGS = Object.freeze({ phase: 'str', gate: 'str', wave: 'str', round: 'str', lane: 'str', 'work-path': 'str' });
-const REGISTRY_PATH = path.join(__dirname, '..', 'gates-registry.md');
 const FILTER_MODULE = path.join(__dirname, 'xprov-filter.cjs');
 const ARTIFACTS_MODULE = path.join(__dirname, 'xprov-artifacts.cjs');
 const SEVERITY_BUCKET = Object.freeze({ high: 'blocker', medium: 'major', low: 'minor' });
@@ -57,21 +57,10 @@ const XREVIEW_HEADER = '# XREVIEW — cross-provider review log\n\nWritten by `a
 
 // ---------- small helpers ----------
 
-function usage(msg) {
-  process.stderr.write(`usage error: xprov normalize ${msg}\n`);
-  process.stderr.write('  usage: xprov normalize <result.json> --phase <name> --gate <id> [--wave N] [--round N] [--work-path <dir>]\n');
-  process.exit(X.EXIT_USAGE);
-}
-
-const sha256 = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
-const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+// Usage errors are thrown as typed A1_INPUT errors; the facade prints `error: …` and exits 2.
+const usage = (msg) => C.usageThrow('normalize', msg);
 const own = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
 const fail = (reason, extra) => ({ verdict: X.VERDICTS.FAIL, reason, ...(extra || {}) });
-
-function parsePositive(value, name) {
-  if (!/^[1-9]\d*$/.test(String(value))) usage(`--${name} must be an integer >= 1`);
-  return Number(value);
-}
 
 /** Markdown sanitiser: one line, pipes escaped, bounded length. */
 function cell(value, max) {
@@ -193,13 +182,12 @@ function loadFilter() {
 }
 
 function lsFilesSet(repo) {
-  try {
-    const out = execFileSync('git', ['-C', repo, 'ls-files', '-z'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-    return new Set(out.split('\0').filter(Boolean));
-  } catch (_e) {
+  const out = C.gitOut(['-C', repo, 'ls-files', '-z']);
+  if (out === null) {
     process.stderr.write(`xprov normalize: git ls-files failed in ${repo}; quarantine sees an empty file set\n`);
     return new Set();
   }
+  return new Set(out.split('\0').filter(Boolean));
 }
 
 /** reply.txt sibling, bounded like result.json (Samuel re-check): a reply above
@@ -238,8 +226,9 @@ function quarantine(filter, outcome, ctx) {
     q = filter.quarantineFindings(outcome.findings || [], { lsFiles: lsFilesSet(ctx.workPath), planPath: ctx.planRel, repoRoot: ctx.workPath });
   } catch (_e) { return contractFail(); }
   if (!isPlainObject(q) || !Array.isArray(q.kept) || !Array.isArray(q.quarantined)) return contractFail();
-  if (outcome.verdict === X.VERDICTS.PASS && q.quarantined.length > 0) return { ...fail(X.REASONS.quarantined), findings: q.kept, quarantined: q.quarantined };
-  return { ...outcome, findings: q.kept, quarantined: q.quarantined };
+  const notes = Array.isArray(q.notes) ? q.notes.filter((n) => typeof n === 'string') : [];
+  if (outcome.verdict === X.VERDICTS.PASS && q.quarantined.length > 0) return { ...fail(X.REASONS.quarantined), findings: q.kept, quarantined: q.quarantined, notes };
+  return { ...outcome, findings: q.kept, quarantined: q.quarantined, notes };
 }
 
 // ---------- writers ----------
@@ -268,19 +257,8 @@ function renderList(items) {
   return items.length > LIST_MAX_ITEMS ? [...shown, `- …and ${items.length - LIST_MAX_ITEMS} more`] : shown;
 }
 
-/** stdout is a pipe more often than not: process.stdout.write + process.exit
- * truncates at 64 KiB (measured by Samuel, 3 MB → 65 536 bytes). Write the
- * whole buffer synchronously on fd 1 and let the process end by itself. */
-function writeStdoutSync(text) {
-  const buf = Buffer.from(text, 'utf8');
-  let off = 0;
-  while (off < buf.length) {
-    try { off += fs.writeSync(1, buf, off, buf.length - off); } catch (e) { if (e.code !== 'EAGAIN') throw e; }
-  }
-}
-
-const DETAIL_MAX_CHARS = 500;
-const clip = (v, max) => (typeof v === 'string' && v.length > max ? `${v.slice(0, max - 1)}…` : v); // total length ≤ max
+// clip only strings; null/undefined pass through untouched (reason_detail stays null).
+const clip = (v, max) => (typeof v === 'string' ? C.clip(v, max) : v);
 const echoQuarantined = (q) => ({ id: q.id, file: q.file, line: q.line === undefined ? null : q.line, reason: q.reason, marker: q.marker === undefined ? null : q.marker, title: clip(q.title, X.TITLE_MAX_CHARS) });
 
 function renderSection(ctx, outcome, model, runnerSha) {
@@ -297,6 +275,7 @@ function renderSection(ctx, outcome, model, runnerSha) {
     ...(ctx.findingsPath ? [`- findings: ${path.relative(ctx.phaseDir, ctx.findingsPath)}`] : []), '',
     '### Findings', renderTable(outcome.findings || []),
     '### Quarantined', renderTable(outcome.quarantined || []),
+    ...(outcome.notes && outcome.notes.length ? ['### Notes', ...renderList(outcome.notes), ''] : []),
     '### Limitations', ...renderList(resp.limitations), '',
     '### Coverage', ...renderList(resp.coverage), '',
   ];
@@ -315,18 +294,6 @@ function appendXreviewNote(phaseDir, title, lines) {
   return appendToXreview(phaseDir, `## ${cell(title, X.TITLE_MAX_CHARS)} · ${nowIso()}\n\n${lines.map((l) => `- ${bullet(l)}`).join('\n')}\n`);
 }
 
-/** [] when absent, the array when every entry is a plain object, else null. */
-function readIndex(file) {
-  if (!fs.existsSync(file)) return [];
-  try {
-    const arr = JSON.parse(fs.readFileSync(file, 'utf8'));
-    return Array.isArray(arr) && arr.every(isPlainObject) ? arr : null;
-  } catch (_e) {
-    return null;
-  }
-}
-
-const sameWave = (entry, wave) => (wave === null ? entry.wave === null || entry.wave === undefined : Number(entry.wave) === wave);
 
 function runGcIfPresent() {
   if (!fs.existsSync(ARTIFACTS_MODULE)) {
@@ -364,12 +331,11 @@ function resolveArgs(args) {
   const existing = readIndex(indexPath);
   if (existing === null) usage(`index.json unparseable or not an array of objects: ${indexPath} — repair or move it before re-running`);
   // Round key = gate + wave + lane: two lanes of one wave each get their own round 1.
-  const lane = flags.lane === undefined ? null : assertSafeSegment(flags.lane, '--lane');
-  const sameLane = (e) => (lane === null ? e.lane === null || e.lane === undefined : e.lane === lane);
+  const lane = parseLane(flags.lane); // LANE_RE like gate and run (was assertSafeSegment: `foo bar` slipped into the index)
   // Rounds vs attempts (Reinhard W6): only pass | fail-with-findings consume a
   // round (FR-006 caps REVISE rounds); every other fail is an `attempt` — a
   // provider outage must never drive a wave into round_cap.
-  const sameKey = existing.filter((e) => e.gate === flags.gate && sameWave(e, wave) && sameLane(e));
+  const sameKey = existing.filter((e) => e.gate === flags.gate && sameWave(e, wave) && sameLane(e, lane));
   const priorRounds = sameKey.filter((e) => Number.isInteger(e.round));
   const priorAttempts = sameKey.filter((e) => !Number.isInteger(e.round));
   const round = flags.round === undefined ? 1 + priorRounds.length : parsePositive(flags.round, 'round');
@@ -402,23 +368,24 @@ function evaluate(ctx, read) {
 }
 
 function cmdXprovNormalize(args) {
-  const ctx = resolveArgs(args);
-  const read = readRecord(ctx.resultPath);
+  const args0 = resolveArgs(args);
+  const read = readRecord(args0.resultPath);
   const record = read.ok ? read.record : {};
-  const outcome = evaluate(ctx, read);
+  const outcome = evaluate(args0, read);
   // After a secret hit the WHOLE record is tainted (Samuel W3 BLOCKER): no
   // field of it is rendered or copied — model fields fall back to the argv
   // sibling or the literals, cli_version to null, response to nothing.
   const tainted = outcome.reason === X.REASONS.secret_in_output;
-  ctx.response = !tainted && isPlainObject(record.response) ? record.response : null;
-  const model = modelFields(tainted ? {} : record, ctx.resultPath);
   const writesFindings = outcome.verdict === X.VERDICTS.PASS || outcome.verdict === X.VERDICTS.FAIL_WITH_FINDINGS;
   // A round is consumed only now that the verdict is known; collisions are usage
-  // errors and nothing has been written yet.
-  ctx.isRound = writesFindings;
-  if (ctx.isRound && ctx.roundTaken) usage(`index.json already holds ${ctx.roundKey}`);
-  if (ctx.isRound && fs.existsSync(ctx.findingsPath)) usage(`findings file already exists for this round: ${ctx.findingsPath}`);
-  if (!writesFindings) ctx.findingsPath = null;
+  // errors and nothing has been written yet. ctx is rebuilt, never mutated.
+  if (writesFindings && args0.roundTaken) usage(`index.json already holds ${args0.roundKey}`);
+  if (writesFindings && fs.existsSync(args0.findingsPath)) usage(`findings file already exists for this round: ${args0.findingsPath}`);
+  const ctx = {
+    ...args0, isRound: writesFindings, findingsPath: writesFindings ? args0.findingsPath : null,
+    response: !tainted && isPlainObject(record.response) ? record.response : null,
+  };
+  const model = modelFields(tainted ? {} : record, ctx.resultPath);
   if (writesFindings) writeFindingsFile(ctx.findingsPath, ctx.response ? bullet(ctx.response.summary) : '', outcome.findings || []);
   const pin = X.checkRunnerPin();
   const xreviewPath = appendToXreview(ctx.phaseDir, renderSection(ctx, outcome, model, pin.actual || `unverified (${pin.reason})`));

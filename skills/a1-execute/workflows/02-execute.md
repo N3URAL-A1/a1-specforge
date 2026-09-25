@@ -142,12 +142,31 @@ risk, tell the user the command and wait; the human runs
 in their own shell. It writes `{waived: true, reason, by: human, ts}` — never
 `verdict: pass` — and satisfies `wave-status`. This skill never executes it
 (fixture R7 greps every `bash` block for it). Record `xprov_waived` in the
-retro's `issue_classes` when a waiver exists.
+retro's `issue_classes` when a waiver exists — a1-execute's own tag field
+(a1-plan uses the base `issues` field of `_shared/retro-template.md`; a1-evolve
+reads both).
 
 The driver already wrote the observation (`agent: xprov-codex`) and the
 XREVIEW.md section; do not duplicate them. Per wave, the retro's `gates_fired`
 gets `{id: wave-inspect-xprov, verdict: <pass|fail>, caught: <true if a finding forced a fix round>}`
 (`03-verify.md` Retro block).
+
+**Edge cases (2b-x):**
+
+- **Exit 2 (usage / module not shipped).** No stdout JSON. Do not route; fix
+  the call — the most common cause is a missing `--phase <phase_name>`.
+- **Preflight FAIL `plugins_cache_empty`.** Codex has installed plugins into
+  `$CODEX_HOME/plugins/cache/` on its own (measured 2026-09-24: the
+  `openai-curated-remote` set); `init-home` never deletes anything, so the home
+  stays non-compliant until a human acts. Remedy: `rm -rf ~/.codex-a1-review/plugins`
+  — ONLY the dedicated review home, never `~/.codex` — then check
+  `codex features disable plugins` and the `remote_plugin` feature flag so it
+  does not come back. Alternative: pass `--allow-plugins <name>` on the gate
+  call to allowlist a plugin you have read; the driver hands the flag through to
+  `preflight`. Then re-run this step — a failed attempt consumed no fix round.
+- **`tripwire`, `secret_in_snapshot`, `secret_in_output`, `quarantined`.** The
+  result was discarded by design; XREVIEW.md carries a BLOCKER note naming the
+  cause in the worktree. Read it before re-running.
 
 ### 2c. Checkpoint
 

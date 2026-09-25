@@ -72,8 +72,10 @@ clustering. A run with zero findings still gets an entry (`audit_findings: 0`).
 `plan-review-xprov`, and `lane-split` on plans with a `lanes:` block). One
 line per gate that ran, ids verbatim from `_shared/gates-registry.md`;
 `04b-xprov-review.md` Step 4 defines the `plan-review-xprov` line. Add
-`xprov_waived` to `issues` when a waiver exists for this phase. Validate before
-appending — capture-then-check, never a pipe:
+`xprov_waived` to `issues` (the base field of `_shared/retro-template.md`;
+a1-execute's retro uses its own `issue_classes` — a1-evolve reads both) when a
+waiver exists for this phase. Validate before appending — capture-then-check,
+never a pipe:
 
 ```bash
 node <repo>/_shared/a1-tools.cjs retro validate "$RETRO_FILE"; RC=$?

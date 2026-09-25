@@ -403,6 +403,14 @@ caseRL() {
   assert_json "RL1e a run without --lane on the same wave is its own key (round 1, lane null)" "$N_OUT" "j.index_entry.round + '/' + j.index_entry.lane" "1/null"
   run_normalize "$CASES/approved.result.json" rl1 "$GATE_WAVE" --wave 2 --lane "../x"
   [[ $N_RC -eq 2 && -z "$N_OUT" ]] && ok "RL1f hostile --lane ../x → exit 2" || bad "RL1f hostile lane (rc=$N_RC)"
+  # shared LANE_RE (xprov-common): a lane with a space is refused here exactly as the gate refuses it
+  run_normalize "$CASES/approved.result.json" rl1 "$GATE_WAVE" --wave 2 --lane "foo bar"
+  [[ $N_RC -eq 2 && -z "$N_OUT" ]] && ok "RL1g --lane 'foo bar' → exit 2 (LANE_RE, same as the gate; assertSafeSegment let it through)" || bad "RL1g lane with space (rc=$N_RC)"
+  # shared positive-int bound 1–9999 (xprov-common): the same limit in every module
+  run_normalize "$CASES/approved.result.json" rl1 "$GATE_WAVE" --wave 10000
+  [[ $N_RC -eq 2 && -z "$N_OUT" ]] && ok "RL1h --wave 10000 → exit 2 (bound 1–9999)" || bad "RL1h wave 10000 (rc=$N_RC)"
+  run_normalize "$CASES/approved.result.json" rl1 "$GATE_WAVE" --wave 9999
+  assert_rc "RL1i --wave 9999 is accepted" 0 "$N_RC" "$N_ERR"
 
   # Samuel re-check MAJOR: reply.txt is bounded like result.json. Choice: an
   # oversized reply is `malformed` (reason_detail names reply.txt) — it cannot be
@@ -439,4 +447,16 @@ caseRA() {
   grep -q '· attempt 1 ·' "$PHASE_DIR/XREVIEW.md" && grep -q '· round 1 ·' "$PHASE_DIR/XREVIEW.md" && ok "RA5 XREVIEW headings say attempt for fails and round for verdicts" || bad "RA5 XREVIEW headings: $(grep '^## ' "$PHASE_DIR/XREVIEW.md" | tr '\n' ' ')"
 }
 
-caseR8; caseR9; caseR10; caseR12; caseR13; caseRH; caseRS; caseRL; caseRA
+# ---------- RN: filter notes are rendered (Reinhard PR review) ----------
+# Red-making change: dropping `notes` from the quarantine outcome / the section.
+caseRN() {
+  prep_tree; make_phase rn1 "$CASES/approved.PLAN.md"
+  FAKE_FILTER_NOTES="fake note: a field was scanned up to the guard" run_normalize "$CASES/approved.result.json" rn1 "$GATE_PLAN"
+  assert_rc "RN1 notes do not change the verdict (pass)" 0 "$N_RC" "$N_ERR"
+  grep -q '^### Notes' "$PHASE_DIR/XREVIEW.md" && grep -q 'fake note: a field was scanned up to the guard' "$PHASE_DIR/XREVIEW.md" \
+    && ok "RN2 XREVIEW.md renders the filter's notes under ### Notes" || bad "RN2 notes missing from XREVIEW.md"
+  make_phase rn2 "$CASES/approved.PLAN.md"; run_normalize "$CASES/approved.result.json" rn2 "$GATE_PLAN"
+  grep -q '^### Notes' "$PHASE_DIR/XREVIEW.md" && bad "RN3 a Notes section appears without notes" || ok "RN3 no Notes section when the filter reports none"
+}
+
+caseR8; caseR9; caseR10; caseR12; caseR13; caseRH; caseRS; caseRL; caseRA; caseRN

@@ -45,6 +45,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const io = require('./io.cjs');
 const xprov = require('./xprov.cjs');
+const C = require('./xprov-common.cjs');
 
 const HOME_MODE = 0o700;
 const CONFIG_MODE = 0o600;
@@ -518,23 +519,12 @@ function octal(mode) {
   return (mode & 0o777).toString(8);
 }
 
-// No `process.exit()` after a stdout write anywhere below: on macOS a piped
-// stdout is asynchronous and `process.exit()` truncates it at 64 KiB (Samuel,
-// measured). Set `process.exitCode` and return; the a1-tools dispatcher
-// returns right after `cmdXprov()` and the event loop drains the pipe.
+const usageExit = (msg) => C.usageExit('', msg);
 
-function usageExit(msg) {
-  process.stderr.write(`usage error: xprov ${msg}\n`);
-  process.exitCode = xprov.EXIT_USAGE;
-  return null;
-}
-
-/** stdout: the JSON contract; stderr: the human lines; exit code via exitCode. */
+/** stdout: the JSON contract (shared writer); stderr: the human lines. */
 function emit(report, humanLines, code) {
   for (const l of humanLines) process.stderr.write(`${l}\n`);
-  process.stdout.write(`${JSON.stringify(report)}\n`);
-  process.exitCode = code;
-  return null;
+  return C.emitJson(report, code, false);
 }
 
 /** The dedicated home, or `null` after a usage error (callers return). */

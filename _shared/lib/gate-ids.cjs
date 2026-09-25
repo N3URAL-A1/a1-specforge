@@ -199,8 +199,42 @@ function resolveGateId(id, expanded) {
   return { status: 'unknown', id };
 }
 
+/**
+ * Cells of the id-table row for `id`, keyed by the header's column names
+ * (lower-cased, e.g. `id`, `phase`, `class`, `cost`, `enforcement`), or null
+ * when the row does not exist. Same header-anchored span as parseRegistryIds()
+ * — never a whole-file scrape — so the alias section can never answer. Added
+ * 2026-09-25 (spec 009): the xprov gate reads its enforcement cell here instead
+ * of carrying a second registry parser.
+ *
+ * @param {string} text - full contents of a gates-registry.md-shaped file.
+ * @param {string} id - registered id, without backticks.
+ * @returns {Object<string,string>|null}
+ */
+function parseRegistryRow(text, id) {
+  const lines = String(text).split('\n');
+  const headerLine = lines.findIndex((l) => TABLE_HEADER_RE.test(l));
+  if (headerLine === -1) return null;
+  const cells = (l) => l.split('|').slice(1, -1).map((c) => c.trim());
+  const columns = cells(lines[headerLine]).map((c) => c.toLowerCase());
+  for (let i = headerLine + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.trim() === '') break;
+    if (TABLE_SEPARATOR_RE.test(line)) continue;
+    const m = line.match(TABLE_ROW_ID_RE);
+    if (!m || m[1] !== id) continue;
+    const row = cells(line);
+    const out = {};
+    columns.forEach((name, idx) => { out[name] = row[idx] === undefined ? '' : row[idx]; });
+    out.id = id;
+    return out;
+  }
+  return null;
+}
+
 module.exports = {
   parseRegistryIds,
+  parseRegistryRow,
   expandRangeIds,
   isRegisteredId,
   KNOWN_ALIASES,
