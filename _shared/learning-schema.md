@@ -19,6 +19,30 @@ One JSON object per line. Written to `.a1/phases/<name>/observations.jsonl`.
   observations from concurrent lanes are indistinguishable during synthesis, and
   a pattern local to one lane reads as phase-wide.
 
+### External reviewer attribution
+
+`agent:` names an a1 agent by full name (constitution invariant 5:
+`a1-<vorname>-<rolle>`). **One documented exception: `xprov-codex`** — the single
+allowed non-`a1-*` value, written by `a1-tools xprov observe` when the cross-provider
+review gate relays what an external reviewer found (registry ids `plan-review-xprov` /
+`wave-inspect-xprov` in `gates-registry.md`; spec `009-cross-provider-review-gate`,
+FR-025 / FR-026). This file OWNS the exception; `docs/CONSTITUTION.md` only links here
+(invariant 1). Any other non-`a1-*` value is rejected by the writer (exit 1) and would be
+invisible to a1-evolve. `skill`, `phase`, `wave` (`null` at Plan), `type`
+(`gap` | `blocker`), `severity` and `msg` keep their meaning from above.
+
+| Field | With `xprov-codex` | Value |
+|---|---|---|
+| `agent` | required | `xprov-codex` |
+| `pattern` | required | `xprov_finding` — one relayed reviewer finding; `xprov_waived` — a gate result set aside by a recorded waiver (FR-007) |
+| `provider` | optional | `codex` — the provider CLI the runner drove. No fallback provider is ever recorded. |
+| `model_requested` | optional | the `--model` value passed to the runner, or the literal `CLI default (unresolved)` when none was passed (a1 passes none — ADR 2026-09-24) |
+| `model_observed` | optional | ONLY a value measured from the runner record or a captured CLI event stream; otherwise the literal `unknown`. Never copied from `model_requested`. Runner 2.1.0 reports `observed_models: []` for Codex, so today this is always `unknown` — the parser follows a captured fixture, never precedes it. |
+
+```jsonl
+{"ts":"...","agent":"xprov-codex","skill":"a1-plan","phase":"M1-P2-auth","wave":null,"type":"gap","severity":"major","msg":"PLAN.md Wave 2 writes the migration but no task registers it in the router","pattern":"xprov_finding","provider":"codex","model_requested":"CLI default (unresolved)","model_observed":"unknown"}
+```
+
 ### Observation types
 - `deviation` — executor had to do work outside the plan
 - `blocker` — task couldn't complete without unplanned work
@@ -33,7 +57,7 @@ One JSON object per line. Written to `.a1/phases/<name>/observations.jsonl`.
 - `critical` — caused wave to block
 
 ### Pattern field (standardized tags — use these for clustering)
-`missing_import` | `missing_wiring` | `wiring_gap` | `wave_ordering` | `vague_action` | `missing_migration` | `env_var_undocumented` | `test_gap` | `scope_creep` | `research_stale` | `router_not_updated` | `type_error_cascade` | `retro_integrity`
+`missing_import` | `missing_wiring` | `wiring_gap` | `wave_ordering` | `vague_action` | `missing_migration` | `env_var_undocumented` | `test_gap` | `scope_creep` | `research_stale` | `router_not_updated` | `type_error_cascade` | `retro_integrity` | `xprov_finding` | `xprov_waived`
 
 ---
 

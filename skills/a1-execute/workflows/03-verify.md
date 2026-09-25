@@ -2,6 +2,31 @@
 
 Spawn a1-victor-verifier to validate the completed work.
 
+## Precondition — every completed wave inspected (`wave-status`)
+
+Victor is not spawned while any completed wave lacks a `wave-inspect-xprov`
+entry in `.a1/phases/<phase_name>/xreview/index.json` with `verdict: pass` or
+`waived: true` (spec 009, FR-004). The completed waves come from
+`STATUS*.md` — consolidate the per-lane files first (see the prompt template
+below); pass `--waves 1,2,3` only when STATUS is not yet consolidated.
+
+```bash
+mkdir -p .a1/phases/<phase_name>/xreview
+node <repo>/_shared/a1-tools.cjs xprov wave-status --phase <phase_name> > .a1/phases/<phase_name>/xreview/wave-status.last-run.json; RC=$?
+echo "xprov wave-status exit=$RC"
+```
+
+- **Exit 0** → continue to the prompt template.
+- **Exit 1** → the stdout JSON lists the lacking waves. For each: go back to
+  `02-execute.md` step 2b-x for that wave (re-run the inspection with that
+  wave's `--base`), or the user waives it — the human runs
+  `a1-tools xprov waive --phase <phase_name> --gate wave-inspect-xprov --wave <N> --reason "<text>"`
+  themselves; this skill never does. While the registry row says `warning`,
+  an exit 1 here is the same warning block as in step 2b-x and Victor is
+  spawned anyway (record `verdict: fail` in the retro); once `blocking`, stop
+  here.
+- **Exit 2** → usage error / module not shipped; no JSON. Fix the call.
+
 ## Prompt template
 
 ```
@@ -181,7 +206,7 @@ result: <pass|partial|fail>
 waves_executed: <N>
 observations_total: $OBS_COUNT
 observations_major_plus: $MAJOR_COUNT
-issue_classes: [<from: plan_drift, missing_dependency, wave_too_large, flaky_test, env_issue, spec_omission, unverifiable_criterion, blocker_unforeseen>]
+issue_classes: [<from: plan_drift, missing_dependency, wave_too_large, flaky_test, env_issue, spec_omission, unverifiable_criterion, blocker_unforeseen, xprov_waived>]
 phase_that_produced_most_issues: <plan|implement|verify>
 ```
 
@@ -196,11 +221,21 @@ per gate that actually ran across this phase's waves, ids verbatim from
 
 ```yaml
 gates_fired:
-  - {id: gate-0-self-report, verdict: pass, caught: false}
-  - {id: gate-0.6-schema,    verdict: pass, caught: false}
-  - {id: gate-1-build,       verdict: fail, caught: true}
-  - {id: gate-2-deploy,      verdict: pass, caught: false}
+  - {id: gate-0-self-report,  verdict: pass, caught: false}
+  - {id: gate-0.6-schema,     verdict: pass, caught: false}
+  - {id: gate-1-build,        verdict: fail, caught: true}
+  - {id: gate-2-deploy,       verdict: pass, caught: false}
+  - {id: wave-inspect-xprov,  verdict: pass, caught: false}   # wave 1
+  - {id: wave-inspect-xprov,  verdict: fail, caught: true}    # wave 2 — fix round forced
 ```
+
+`wave-inspect-xprov` gets **one line per wave** (per lane wave in multi-lane
+phases), `verdict: fail` for every non-pass outcome including a
+`warning`-enforced continue, a `round_cap` and a waived wave (a waiver is
+never a pass — it additionally puts `xprov_waived` into `issue_classes`,
+a1-execute's own tag field; a1-plan records the same waiver in the base
+`issues` field of `_shared/retro-template.md`, and a1-evolve reads both).
+`caught: true` only where the inspection forced a fix round that changed code.
 
 Set `caught: true` only where that gate surfaced a real problem (a wave that
 had to be reworked because of it). A gate that fired and found nothing is

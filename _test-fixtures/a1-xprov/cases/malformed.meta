@@ -1,0 +1,11 @@
+# Sibling of malformed.result.json — provenance record (spec 009, FR-027).
+case: malformed
+origin: synthetic
+captured_on: 2026-09-24
+cli_version: codex-cli 0.155.1
+runner_version: 2.1.0
+runner_sha256: 962dfdfe5d67b75eb73ec7c38b9186e6e6e0ca96a68d4ec82595305d8f737c8c
+codex_home: ~/.codex-a1-review (read-only sandbox, zero mcp_servers tables)
+built_from: approved.result.json cut at byte 900 (head -c 900) — a truncated write; not derived from any reader
+note: JSON.parse fails; normalize must read it as fail/malformed
+paths: verbatim capture output (local absolute paths, no secret; never compared by normalize)

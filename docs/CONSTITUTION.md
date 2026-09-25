@@ -32,7 +32,8 @@ cannot evolve the framework into an inconsistent state.
    collect globs. A new store ⇒ a new glob, in the same commit.
 
 5. **Agents are addressed by full name.** `a1-<vorname>-<rolle>` everywhere; no
-   first-name shorthand in prompts; link-files follow one naming scheme.
+   first-name shorthand in prompts; link-files follow one naming scheme. One
+   documented exception, `xprov-codex`, is owned by `_shared/learning-schema.md`.
 
 6. **Model pins are aliases or absent.** `haiku | sonnet | opus` or inherit;
    versioned model IDs never appear in skills/agents/rules.

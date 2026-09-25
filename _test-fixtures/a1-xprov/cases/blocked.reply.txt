@@ -1,0 +1,18 @@
+{
+  "verdict": "BLOCKED",
+  "summary": "The required contract and acceptance cases could not be inspected, so spec fidelity cannot be assessed.",
+  "findings": [],
+  "coverage": [
+    "Read the supplied plan and verified its SHA256 matches the provided hash.",
+    "Inspected src/add.js and repository PLAN.md.",
+    "Searched the repository for related implementations, callers, exports, and shared state; only the stateless add function exists.",
+    "Attempted to access both external specification sources."
+  ],
+  "limitations": [
+    "https://spec.example.invalid/arith/v3/subtract.md was inaccessible.",
+    "/Volumes/legal-spec/arith-v3.pdf does not exist at the supplied path.",
+    "Argument order, overflow handling, error cases, and appendix-B tests remain unverified. Provide readable copies of both specifications to unblock review.",
+    "Repository PLAN.md proposes a - b but cannot establish the external contract.",
+    "No files were edited, tests run, or work delegated."
+  ]
+}

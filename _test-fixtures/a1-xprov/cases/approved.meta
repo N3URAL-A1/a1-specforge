@@ -1,0 +1,16 @@
+# Sibling of approved.result.json — provenance record (spec 009, FR-027).
+case: approved
+origin: captured
+captured_on: 2026-09-24
+cli_version: codex-cli 0.155.1
+runner_version: 2.1.0
+runner_sha256: 962dfdfe5d67b75eb73ec7c38b9186e6e6e0ca96a68d4ec82595305d8f737c8c
+codex_home: ~/.codex-a1-review (read-only sandbox, zero mcp_servers tables)
+plan: approved.PLAN.md
+plan_sha256: b80b66fddbc4d15c63bddb6b1092a5135749543ccc5dfe86695b3d57ad266ec1
+reply: approved.reply.txt
+attempts: 1
+provocation: the probe plan (add subtract() next to add) against the probe repo; runner mode review, --effort low
+elapsed_seconds: 26.77
+note: the real probe output from 2026-09-24 17:09 — the reader (xprov-normalize.cjs) is written against this file, never the other way round
+paths: verbatim capture output (local absolute paths, no secret; never compared by normalize)
