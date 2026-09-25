@@ -4,7 +4,7 @@ type: roadmap
 project: a1-specforge
 title: "a1-specforge — Roadmap"
 status: active
-updated: 2026-09-24
+updated: 2026-09-25
 source: "migrated from docs/roadmap.md v3.0 (2026-07-10)"
 milestones:
   - id: m0-repo-extract
@@ -267,6 +267,7 @@ None.
 - **2026-09-24** — feature '009-cross-provider-review-gate' added — Codex (claudex-loop) becomes a registered a1 gate at PLAN.md and per wave with findings adapter, retro attribution, hardened CODEX_HOME and git tripwire — per Option D decision 2026-09-03
 - **2026-09-24** — feature '010-vault-cockpit-contract' added — One-way mirror of docs/product and phase state into project/<slug>/, CLI-stamped type:, vault lint, hub spec links, host-aware locks; supersedes 005
 - **2026-09-24** — feature '011-intent-queue-consumer' added — Signed, default-deny intent notes in inbox/intents/ consumed by a1-owned CLI on the Mac; closed action enum, single-flight, ledger outside the vault
+- **2026-09-25** — spec 009 waves 1–6 merged (#10, 4ee46d9): xprov modules, Phase 4b / step 2b-x wiring, gates at warning — Codex becomes a registered read-only reviewer; Wave 7 (live smoke + blocking flip) awaits Robert's xprov permit
 
 ## Appendix — migrated details
 
