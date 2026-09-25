@@ -66,11 +66,8 @@ xprov_w4() {
 
 # check_result <json> <check-name> — prints the check's result string.
 check_result() {
-  node -e "
-    let j; try { j = JSON.parse(process.argv[1]); } catch (e) { process.stdout.write('UNPARSEABLE'); process.exit(0); }
-    const c = (j.checks || []).find((x) => x.name === process.argv[2]);
-    process.stdout.write(c ? c.result + '|' + String(c.measured) : 'ABSENT');
-  " "$1" "$2"
+  # JSON via json_get's temp file (never argv — Linux ARG_MAX); the check name is a short literal
+  json_get "$1" "(() => { const c = (j.checks || []).find((x) => x.name === '$2'); return c ? c.result + '|' + String(c.measured) : 'ABSENT'; })()"
 }
 
 # ---------- R14: preflight refuses MCP tables, the global home; passes a compliant home ----------
@@ -119,7 +116,7 @@ caseR14() {
   xprov_w4 init-home
   assert_rc "R14e init-home exits 0 creating a fresh home" 0 "$W4_RC" "$W4_ERR"
   assert_json "R14e init-home reports changed:true" "$W4_OUT" "j.changed" "true"
-  local mode; mode="$(stat -f '%Lp' "$XHOME" 2>/dev/null || stat -c '%a' "$XHOME")"
+  local mode; mode="$(mode_of "$XHOME")"
   assert_eq "R14e fresh home is 0700" "$mode" "700"
   assert_eq "R14e config.toml is byte-identical to the frozen compliant file" "$(cat "$XHOME/config.toml")" "$COMPLIANT_CONFIG_W4"
   [[ -L "$XHOME/auth.json" && "$(readlink "$XHOME/auth.json")" == "$FAKE_HOME/.codex/auth.json" ]] \

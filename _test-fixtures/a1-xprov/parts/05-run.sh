@@ -37,7 +37,7 @@ snap5() {
   local extra=(); [[ -n "$base" ]] && extra=(--base "$base")
   S_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov snapshot --repo "$PHASE_REPO" --commit "$commit" ${extra[@]+"${extra[@]}"} 2>"$TMP05/snap-err.txt")"; S_RC=$?
   S_ERR="$(cat "$TMP05/snap-err.txt")"
-  SNAP="$(node -e "try { process.stdout.write(JSON.parse(process.argv[1]).snapshot || ''); } catch (e) {}" "$S_OUT")"
+  SNAP="$(json_get "$S_OUT" "j.snapshot || ''")"; [[ "$SNAP" == "UNPARSEABLE" ]] && SNAP=""
 }
 
 # run5 <mode> [more flags] — `xprov run` from inside $PHASE_REPO. Knobs come
@@ -57,7 +57,7 @@ porcelain() { ( cd "$1" && git status --porcelain --untracked-files=all ); }
 porcelain_without_phase() { porcelain "$1" | grep -v ' .a1/phases/' || true; }
 snapshots_count() { ls "$HOME/.a1-xprov/snapshots" 2>/dev/null | wc -l | tr -d ' '; }
 rundirs_count() { ls "$HOME/.a1-xprov/artifacts/$(basename "$PHASE_REPO")" 2>/dev/null | grep -c '^claudex-' || true; }
-jget() { node -e "try { const j = JSON.parse(process.argv[1]); const v = ($2); process.stdout.write(v === undefined ? 'undefined' : String(v)); } catch (e) { process.stdout.write('UNPARSEABLE'); }" "$1"; }
+jget() { json_get "$1" "$2"; }   # harness helper: JSON via temp file, never argv
 
 # ---------- R11: exact runner argv, no --log, absolute plan, log entry ----------
 # Red-making change: passing `--plan PLAN.md` (relative), or adding any argv token.
@@ -74,7 +74,7 @@ caseR11() {
   assert_json "R11e the child received CODEX_HOME = the dedicated home" "$(cat "$ENV_FILE" 2>/dev/null || echo null)" "j.CODEX_HOME" "$XHOME"
   assert_json "R11f stdout names result_path, artifacts_run_dir under the artifacts dir, snapshot, empty baseline_delta" "$U_OUT" \
     "[j.result_path.endsWith('/result.json'), j.artifacts_run_dir.startsWith(require('fs').realpathSync(process.env.HOME) + '/.a1-xprov/artifacts/'), j.snapshot === '$SNAP', j.baseline_delta.length].join('/')" "true/true/true/0"
-  local mode; mode="$(stat -f '%Lp' "$art" 2>/dev/null || stat -c '%a' "$art")"
+  local mode; mode="$(mode_of "$art")"
   assert_eq "R11g artifacts root was pre-created 0700 by a1" "$mode" "700"
   run5 inspect --base "$PHASE_HEAD"
   assert_rc "R11h run --mode inspect --base <sha> exits 0" 0 "$U_RC" "$U_ERR"
@@ -194,7 +194,7 @@ caseR16() {
   assert_eq "R16e snapshot HEAD is the requested commit" "$(cd "$SNAP" && git rev-parse HEAD)" "$PHASE_HEAD"
   [[ "$SNAP" == "$HOME/.a1-xprov/snapshots/"* ]] && ok "R16f snapshot lives under \$HOME/.a1-xprov/snapshots/" || bad "R16f snapshot path: $SNAP"
   assert_json "R16g stdout JSON carries snapshot, commit, files_scanned" "$S_OUT" "j.commit + '/' + (j.files_scanned >= 2)" "$PHASE_HEAD/true"
-  local mode; mode="$(stat -f '%Lp' "$HOME/.a1-xprov/snapshots" 2>/dev/null || stat -c '%a' "$HOME/.a1-xprov/snapshots")"
+  local mode; mode="$(mode_of "$HOME/.a1-xprov/snapshots")"
   assert_eq "R16h snapshots parent is 0700" "$mode" "700"
   ( cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov snapshot --remove "$SNAP" >/dev/null 2>&1 ); local rc=$?
   [[ $rc -eq 0 && ! -e "$SNAP" ]] && ok "R16i snapshot --remove deletes the clone" || bad "R16i remove (rc=$rc exists=$([[ -e "$SNAP" ]] && echo yes || echo no))"

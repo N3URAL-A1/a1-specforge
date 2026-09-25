@@ -98,7 +98,7 @@ caseR9() {
     make_phase "p9-$name" "$CASES/$plan"
     run_normalize "$CASES/$name.result.json" "p9-$name" "$GATE_PLAN"
     [[ $N_RC -eq 0 ]] && zero=$((zero + 1))
-    local got; got="$(node -e "const j=JSON.parse(process.argv[1]); process.stdout.write(j.verdict === 'fail-with-findings' ? j.verdict : String(j.reason));" "$N_OUT" 2>/dev/null || echo "UNPARSEABLE")"
+    local got; got="$(json_get "$N_OUT" "j.verdict === 'fail-with-findings' ? j.verdict : String(j.reason)")"
     if [[ $N_RC -eq $want_rc && "$got" == "$want_reason" ]]; then ok "R9a $name → exit $want_rc, $want_reason"
     else bad "R9a $name (rc=$N_RC got=$got err=$N_ERR)"; fi
     case "$name" in

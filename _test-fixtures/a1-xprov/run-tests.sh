@@ -64,18 +64,34 @@ assert_rc() {
   else bad "$name: expected exit $expected, got $actual${detail:+ — $detail}"; fi
 }
 
+# json_get <json-text> <node-expression over j> — evaluates the expression with
+# `j` bound to the parsed JSON and prints the result (strings verbatim, else
+# JSON). The JSON travels through a TEMP FILE, never as an argv element: a
+# > 64 KiB stdout blew Linux ARG_MAX ("Argument list too long") in CI.
+# Unparseable JSON prints UNPARSEABLE (never a silent pass).
+JSON_TMP="$(mktemp -d)"
+json_get() {
+  local file="$JSON_TMP/json.$$.$RANDOM"
+  printf '%s' "$1" > "$file"
+  JSON_FILE="$file" node -e "
+    let j; try { j = JSON.parse(require('fs').readFileSync(process.env.JSON_FILE, 'utf8')); } catch (e) { process.stdout.write('UNPARSEABLE'); process.exit(0); }
+    const v = ($2); process.stdout.write(v === undefined ? 'undefined' : typeof v === 'string' ? v : JSON.stringify(v));
+  " 2>&1
+  rm -f "$file"
+}
+
 # assert_json <name> <json-text> <node-expression over j> <expected-string>
-# The expression is evaluated with `j` bound to the parsed JSON; its result is
-# stringified and compared exactly. Unparseable JSON fails the case (never a
-# silent pass).
 assert_json() {
   local name="$1" json="$2" expr="$3" want="$4" got
-  got="$(node -e "
-    let j; try { j = JSON.parse(process.argv[1]); } catch (e) { process.stdout.write('UNPARSEABLE'); process.exit(0); }
-    const v = ($expr); process.stdout.write(typeof v === 'string' ? v : JSON.stringify(v));
-  " "$json" 2>&1)"
+  got="$(json_get "$json" "$expr")"
   if [[ "$got" == "$want" ]]; then ok "$name"
   else bad "$name (want=$want got=$got)"; fi
+}
+
+# mode_of <path> — permission bits as octal (e.g. 700). GNU stat has no -f %Lp and
+# BSD stat has no -c %a; python3 is on every machine that runs the fake runner.
+mode_of() {
+  python3 -c "import os, sys; print(oct(os.stat(sys.argv[1]).st_mode & 0o777)[2:])" "$1"
 }
 
 # assert_eq <name> <got> <want>

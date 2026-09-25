@@ -402,7 +402,7 @@ caseH1() {
   [[ -f "$PHASE_REPO/FAKE_RUNNER_WROTE_THIS.txt" ]] && ok "H1j write-into-repo side effect lands in --repo" || bad "H1j side effect missing"
 
   make_home
-  local mode; mode="$(stat -f '%Lp' "$XHOME" 2>/dev/null || stat -c '%a' "$XHOME")"
+  local mode; mode="$(mode_of "$XHOME")"
   [[ "$mode" == "700" ]] && grep -q 'sandbox_mode = "read-only"' "$XHOME/config.toml" && ! grep -q 'mcp_servers' "$XHOME/config.toml" \
     && ok "H1k make_home builds a 0700 home with the compliant config" || bad "H1k make_home (mode=$mode)"
 }

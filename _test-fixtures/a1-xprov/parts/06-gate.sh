@@ -85,7 +85,7 @@ caseR2() {
   assert_json "R2c verdict pass, reason null, step normalize, enforcement warning (registry row)" "$G_OUT" "[j.verdict, String(j.reason), j.step, j.enforcement].join('/')" "pass/null/normalize/warning"
   assert_json "R2c stdout carries every key the skills read" "$G_OUT" "['verdict','enforcement','reason','findings_path','xreview_path','result_path','next'].every((k) => k in j)" "true"
   assert_json "R2c next is null on pass" "$G_OUT" "String(j.next)" "null"
-  local fp xp rp; fp="$(node -e "process.stdout.write(JSON.parse(process.argv[1]).findings_path)" "$G_OUT")"; xp="$(node -e "process.stdout.write(JSON.parse(process.argv[1]).xreview_path)" "$G_OUT")"; rp="$(node -e "process.stdout.write(JSON.parse(process.argv[1]).result_path)" "$G_OUT")"
+  local fp xp rp; fp="$(json_get "$G_OUT" "j.findings_path")"; xp="$(json_get "$G_OUT" "j.xreview_path")"; rp="$(json_get "$G_OUT" "j.result_path")"
   [[ -f "$fp" && -f "$xp" && -f "$rp" ]] && ok "R2c findings, XREVIEW.md and result.json exist" || bad "R2c paths missing: $fp / $xp / $rp"
   log="$PHASE_DIR/PLAN-REVIEW-LOG.md"
   grep -q "verdict: pass" "$log" && grep -q "xreview: " "$log" && grep -q "result: " "$log" \
@@ -196,13 +196,13 @@ caseR6() {
     "[j.next.resume_cmd.includes('--round 2'), j.next.resume_cmd.includes('--resume ' + j.result_path), j.next.resume_cmd.includes('--feedback ' + j.next.dispositions_path)].join('/')" "true/true/true"
   assert_json "R6a the argv of round 1 has no --resume" "$(cat "$ARGV6_FILE")" "j.includes('--resume')" "false"
   assert_json "R6a observation type blocker on fail" "$(tail -n 1 "$PHASE_DIR/observations.jsonl")" "j.type + '/' + j.severity" "blocker/major"
-  local disp; disp="$(node -e "process.stdout.write(JSON.parse(process.argv[1]).next.dispositions_path)" "$G_OUT")"
+  local disp; disp="$(json_get "$G_OUT" "j.next.dispositions_path")"
   # round 2 without the host-authored dispositions file is a usage error, no runner call
   FAKE_RUNNER_CASE=revise gate6 --gate "$GATE_PLAN" --round 2
   assert_rc "R6b round 2 without a dispositions file is a usage error" 2 "$G_RC"
   [[ ! -f "$ARGV6_FILE" ]] && ok "R6b runner not called without dispositions" || bad "R6b runner called"
   printf 'F1: accepted — will fix in wave 2\n' > "$disp"
-  local prev; prev="$(node -e "process.stdout.write(JSON.parse(process.argv[1]).result_path)" "$G_OUT" 2>/dev/null || true)"
+  local prev; prev="$(json_get "$G_OUT" "j.result_path")"
   FAKE_RUNNER_CASE=revise gate6 --gate "$GATE_PLAN" --round 2
   assert_rc "R6c REVISE again at round 2 exits 1" 1 "$G_RC" "$G_ERR"
   assert_json "R6c reported as fail/round_cap (no round 3), next null" "$G_OUT" "[j.verdict, j.reason, j.round, String(j.next)].join('/')" "fail/round_cap/2/null"
