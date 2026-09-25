@@ -634,6 +634,14 @@ function main() {
       const { cmdXprov } = require(path.join(__dirname, 'lib', 'xprov.cjs'));
       cmdXprov(sub, rest);
       return; // unreachable — every xprov subcommand calls process.exit()
+    } else if (group === 'vault') {
+      // Spec 010-vault-cockpit-contract, Wave 1 — the facade's ONLY edits for
+      // that spec are this branch and the next. lib/vault-cli.cjs owns both
+      // dispatch tables; later waves add one line THERE, never here. Lazy
+      // require: unrelated commands never load the vault modules.
+      result = require(path.join(__dirname, 'lib', 'vault-cli.cjs')).dispatchVault(sub, rest);
+    } else if (group === 'schema') {
+      result = require(path.join(__dirname, 'lib', 'vault-cli.cjs')).dispatchSchema(sub, rest);
     } else {
       usage(`unknown command group: ${group} (expected "spec", "fix", "analyze", "check", "checklist", "constitution", "worktree", "pr", "phantom", "reconcile", "modernize", "schema-check", "cost", "pack", "product", "quick", "learnings", "retro", "workflow", or "realpath-check"). fix supports: next-suffix, update-status, list, find-duplicates, integrity-check, init-postmortem, count-postmortems-since, update-promote-state, write-suggestion`);
     }

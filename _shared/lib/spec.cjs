@@ -3,7 +3,8 @@
 const fs = require('fs');
 const path = require('path');
 
-const { SPEC_STATUSES } = require('./status-constants.cjs');
+// SPEC_SIZES moved to status-constants.cjs (spec 010 W1): `schema export` exports it as size_values.
+const { SPEC_STATUSES, SPEC_SIZES } = require('./status-constants.cjs');
 const { usage } = require('./help.cjs');
 const {
   vaultRoot,
@@ -115,8 +116,6 @@ function cmdSpecUpdateStatus(args) {
     verify_failures: fm.verify_failures ?? [],
   };
 }
-
-const SPEC_SIZES = new Set(['S', 'M', 'L']);
 
 // Writes the size-triage class (M12 fast path) into the spec frontmatter —
 // the CLI is the only sanctioned frontmatter mutator (same rule as

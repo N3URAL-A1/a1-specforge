@@ -23,6 +23,8 @@ const {
 
 const { usage } = require('./help.cjs');
 const { CODE_SCOPE_STAGES } = require('./code-scope.cjs');
+// Roadmap enums moved to status-constants.cjs (spec 010 W1): `schema export` reads what `product validate` enforces.
+const { PROJECT_STATUSES, MILESTONE_STATUSES, FEATURE_STATUSES, FEATURE_STAGES } = require('./status-constants.cjs');
 
 const PRODUCT_ROADMAP_KEY_ORDER = [
   'schema_version', 'type', 'project', 'title', 'status', 'updated', 'source',
@@ -1962,10 +1964,6 @@ function cmdProductAuditMirror(args) {
 // use them ahead of this validate section.
 const YYYY_MM_RE = /^[0-9]{4}-[0-9]{2}$/;
 const YYYY_MM_DD_RE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
-const PROJECT_STATUSES = new Set(['active', 'paused', 'done']);
-const MILESTONE_STATUSES = new Set(['done', 'in-progress', 'planned']);
-const FEATURE_STATUSES = new Set(['done', 'in-flight', 'planned', 'cancelled']);
-const FEATURE_STAGES = new Set([null, 'started', 'complete', 'review', 'verify', 'merge', 'origin-cleanup', 'done']);
 
 // ---------------------------------------------------------------------------
 // Schema v1.1 additions (spec 003-product-schema-v1.1-vision-audits, Wave 1):

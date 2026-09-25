@@ -654,6 +654,29 @@ Usage:
                   + parts/NN-<wave>.sh; runner fakes live in fake/, captured
                   runner records in cases/ (each with a .meta provenance file).
 
+  a1-tools schema export --json
+                  Spec 010-vault-cockpit-contract, Wave 1 (FR-020/FR-021). Prints
+                  the versioned read contract for the vault cockpit
+                  (obsidian-lumen): one JSON document with sorted top-level keys
+                  contract_version, schema_version (alias, same integer),
+                  artifact_types, spec_statuses, size_values, bug_statuses,
+                  analysis_statuses, quick_results, roadmap_feature_statuses,
+                  roadmap_stages, milestone_statuses, project_statuses,
+                  spec_to_roadmap_status, mirror {product, phases, excluded},
+                  hub_relation_line. Built only from lib/status-constants.cjs
+                  and lib/vault-contract.cjs — no timestamps, paths or env, so
+                  two runs are byte-identical and the fixture golden
+                  (_test-fixtures/a1-vault-cockpit/golden/schema-export.v<N>.json)
+                  pins it. Any value or shape change bumps
+                  VAULT_CONTRACT_VERSION in the same commit. --json is
+                  mandatory; any other argument -> exit 1.
+  a1-tools vault <sub> [flags]
+                  Spec 010-vault-cockpit-contract. Vault mirror and frontmatter
+                  guards for the external vault (A1_VAULT_ROOT). Subcommands
+                  ship per wave and register in lib/vault-cli.cjs:
+                  sync, status (wave 3) · lint, link-hub (wave 6). Unknown
+                  subcommand -> exit 1.
+
 Spec statuses: ${[...SPEC_STATUSES].join(', ')}
 Bug statuses:  ${[...BUG_STATUSES].join(', ')}
 Bug severities: ${[...BUG_SEVERITIES].join(', ')}
