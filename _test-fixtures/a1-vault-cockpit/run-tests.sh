@@ -30,6 +30,12 @@
 # regression halves that must flip TOGETHER with their export half under the
 # named mutation (M9a/M10 in the Wave 1 report did exactly that). Everything
 # that reads the export was red.
+#
+# RED record, Wave 2 (2026-09-25, section M run before vault-mirror.cjs and
+# vaultRootInfo() existed): 28 of 35 assertions red. Green before the code
+# existed, by construction: the pure absence / "nothing changed" checks
+# (M1b ×2, M2b, M6 "dir not created", M7 ×3) — each is the negative half of
+# a positive assertion in the same case that was red.
 
 set -u
 

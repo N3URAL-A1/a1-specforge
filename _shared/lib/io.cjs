@@ -29,6 +29,22 @@ let _vaultRootAnnounced = false;
  * All stderr; never stdout (stdout is the JSON contract of the CLI).
  */
 function vaultRoot() {
+  return resolveVaultRoot().root;
+}
+
+/**
+ * Same resolution, same one-time announcement, but the caller also learns the
+ * TIER: `{ root, source }` with source ∈ env | repo-local | legacy. Spec 010
+ * (vault mirror) needs it — the mirror is active only for tier `env`. Fresh
+ * object per call; vaultRoot() is a thin wrapper, so the tier is announced
+ * exactly once per process whichever of the two is called first.
+ */
+function vaultRootInfo() {
+  const { root, source } = resolveVaultRoot();
+  return { root, source };
+}
+
+function resolveVaultRoot() {
   let root;
   let source;
 
@@ -85,7 +101,7 @@ function vaultRoot() {
     );
   }
 
-  return root;
+  return { root, source };
 }
 
 // ---------- code roots resolution ----------
@@ -887,4 +903,4 @@ function projectsPath(...segments) {
   return path.join(vaultRoot(), 'project', ...safe);
 }
 
-module.exports = { vaultRoot, codeRoots, repoRoot, resolveVaultPath, parseFrontmatter, serializeScalar, detectKeyOrder, serializeFrontmatter, readMd, writeMdAtomic, nowIso, writeTextAtomic, parseScalarToken, parseNestedFrontmatter, serializeNestedFrontmatter, writeNestedMdAtomic, parseFlags, fail, assertSafeSegment, projectsPath, copyDirRecursive };
+module.exports = { vaultRoot, vaultRootInfo, codeRoots, repoRoot, resolveVaultPath, parseFrontmatter, serializeScalar, detectKeyOrder, serializeFrontmatter, readMd, writeMdAtomic, nowIso, writeTextAtomic, parseScalarToken, parseNestedFrontmatter, serializeNestedFrontmatter, writeNestedMdAtomic, parseFlags, fail, assertSafeSegment, projectsPath, copyDirRecursive };
