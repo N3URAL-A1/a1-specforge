@@ -385,4 +385,58 @@ caseRS() {
   assert_json "RS5 non-string coverage entry → malformed (response.coverage)" "$N_OUT" "j.reason + '/' + j.reason_detail" "malformed/response.coverage"
 }
 
-caseR8; caseR9; caseR10; caseR12; caseR13; caseRH; caseRS
+# ---------- RL: --lane (multi-lane waves) and reply.txt bounds ----------
+# Red-making change: round key gate+wave without lane (two lanes collide), or
+# reading reply.txt without a size bound.
+caseRL() {
+  prep_tree; make_phase rl1 "$CASES/approved.PLAN.md"
+  run_normalize "$CASES/approved.result.json" rl1 "$GATE_WAVE" --wave 2 --lane lane-a; local a="$N_OUT" rca=$N_RC
+  run_normalize "$CASES/approved.result.json" rl1 "$GATE_WAVE" --wave 2 --lane lane-b; local b="$N_OUT" rcb=$N_RC
+  [[ $rca -eq 0 && $rcb -eq 0 ]] && ok "RL1a two lanes of the same wave both normalize at round 1 (no collision)" || bad "RL1a lanes collide (rc a=$rca b=$rcb err=$N_ERR)"
+  assert_json "RL1b index entries carry lane and round 1 each" "$(cat "$PHASE_DIR/xreview/index.json")" \
+    "j.map(e => e.lane + ':' + e.round + ':' + e.wave).join(' ')" "lane-a:1:2 lane-b:1:2"
+  assert_json "RL1c findings file names carry -<lane> before -r<round>" "[$a,$b]" \
+    "j.map(o => require('path').basename(o.findings_path)).join(' ')" "wave-inspect-xprov-wave-2-lane-a-r1.findings.json wave-inspect-xprov-wave-2-lane-b-r1.findings.json"
+  run_normalize "$CASES/approved.result.json" rl1 "$GATE_WAVE" --wave 2 --lane lane-a
+  assert_json "RL1d a second run for lane-a is round 2 (rounds count per gate+wave+lane)" "$N_OUT" "j.index_entry.round + '/' + j.index_entry.lane" "2/lane-a"
+  run_normalize "$CASES/approved.result.json" rl1 "$GATE_WAVE" --wave 2
+  assert_json "RL1e a run without --lane on the same wave is its own key (round 1, lane null)" "$N_OUT" "j.index_entry.round + '/' + j.index_entry.lane" "1/null"
+  run_normalize "$CASES/approved.result.json" rl1 "$GATE_WAVE" --wave 2 --lane "../x"
+  [[ $N_RC -eq 2 && -z "$N_OUT" ]] && ok "RL1f hostile --lane ../x → exit 2" || bad "RL1f hostile lane (rc=$N_RC)"
+
+  # Samuel re-check MAJOR: reply.txt is bounded like result.json. Choice: an
+  # oversized reply is `malformed` (reason_detail names reply.txt) — it cannot be
+  # scanned, so it is not cleared; it is not `secret_in_output`, which would
+  # claim a pattern hit that never happened and keep the run dir on that ground.
+  local run="$TMP02/rl-bigreply"; mkdir -p "$run"; cp "$CASES/approved.result.json" "$run/result.json"
+  head -c 5242881 /dev/zero | tr '\0' 'r' > "$run/reply.txt"
+  make_phase rl2 "$CASES/approved.PLAN.md"; run_normalize "$run/result.json" rl2 "$GATE_PLAN"
+  assert_json "RL2a reply.txt of 5 242 881 bytes → fail/malformed naming reply.txt" "$N_OUT" "j.verdict + '/' + j.reason + '/' + /reply\.txt/.test(j.reason_detail)" "fail/malformed/true"
+  local run2="$TMP02/rl-abc"; mkdir -p "$run2"; cp "$CASES/approved.result.json" "$run2/result.json"
+  node -e "require('fs').writeFileSync(process.argv[1], 'abc://'.repeat(50000))" "$run2/reply.txt"
+  make_phase rl3 "$CASES/approved.PLAN.md"
+  local t0 t1; t0="$(perl -MTime::HiRes=time -e 'printf "%.3f", time')"; run_normalize "$run2/result.json" rl3 "$GATE_PLAN"; t1="$(perl -MTime::HiRes=time -e 'printf "%.3f", time')"
+  local secs; secs="$(node -e "process.stdout.write((Number(process.argv[2]) - Number(process.argv[1])).toFixed(2))" "$t0" "$t1")"
+  if [[ $N_RC -eq 0 ]] && node -e "process.exit(Number(process.argv[1]) < 1.0 ? 0 : 1)" "$secs"; then ok "RL2b 300 000-char abc:// reply.txt → pass in ${secs}s (< 1 s)"
+  else bad "RL2b abc:// reply (rc=$N_RC secs=$secs)"; fi
+}
+
+# ---------- RA: round vs attempt (Reinhard W6) ----------
+# `round` only on pass | fail-with-findings; every other fail writes `attempt: N`
+# and no `round` key, so a provider outage never drives a wave into round_cap.
+# Red-making change: writing `round` on every entry.
+caseRA() {
+  prep_tree; make_phase ra1 "$CASES/blocked.PLAN.md"
+  run_normalize "$CASES/blocked.result.json" ra1 "$GATE_PLAN"
+  assert_json "RA1 blocked → index entry has attempt 1 and no round key" "$N_OUT" "j.index_entry.attempt + '/' + ('round' in j.index_entry)" "1/false"
+  run_normalize "$CASES/blocked.result.json" ra1 "$GATE_PLAN"
+  assert_json "RA2 second blocked → attempt 2" "$N_OUT" "j.index_entry.attempt" "2"
+  cp "$CASES/approved.PLAN.md" "$PHASE_PLAN"
+  run_normalize "$CASES/approved.result.json" ra1 "$GATE_PLAN"
+  assert_json "RA3 approved after two attempts → round 1 (rounds count only real rounds)" "$N_OUT" "j.index_entry.round + '/' + ('attempt' in j.index_entry)" "1/false"
+  assert_json "RA4 index holds two attempt entries and one round entry" "$(cat "$PHASE_DIR/xreview/index.json")" \
+    "j.map(e => ('round' in e ? 'r' + e.round : 'a' + e.attempt)).join(',')" "a1,a2,r1"
+  grep -q '· attempt 1 ·' "$PHASE_DIR/XREVIEW.md" && grep -q '· round 1 ·' "$PHASE_DIR/XREVIEW.md" && ok "RA5 XREVIEW headings say attempt for fails and round for verdicts" || bad "RA5 XREVIEW headings: $(grep '^## ' "$PHASE_DIR/XREVIEW.md" | tr '\n' ' ')"
+}
+
+caseR8; caseR9; caseR10; caseR12; caseR13; caseRH; caseRS; caseRL; caseRA

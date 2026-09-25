@@ -39,9 +39,32 @@ If no plan exists, route the user to `a1-plan` first.
 
 | # | Phase | Workflow | Agent | Trigger |
 |---|---|---|---|---|
-| 1 | Load (incl. Roadmap Gate) | `workflows/01-load.md` | — (orchestrator) | Always |
+| 1 | Load (incl. Roadmap Gate + plan-review check `load-check`) | `workflows/01-load.md` | — (orchestrator) | Always |
 | 2 | Execute | `workflows/02-execute.md` | a1-erik-executor (per wave) | Per wave |
-| 3 | Verify | `workflows/03-verify.md` | a1-victor-verifier | After all waves |
+| 2b-x | Cross-provider wave inspection (gate `wave-inspect-xprov`) | `workflows/02-execute.md` step 2b-x | — (orchestrator; `a1-tools xprov gate`, Codex via vendored runner) | Per wave, after the commit-landed gate, before the checkpoint |
+| 3 | Verify (precondition `wave-status`) | `workflows/03-verify.md` | a1-victor-verifier | After all waves |
+
+## Cross-provider review gates (spec 009, HARD RULE — enforcement lives in the registry)
+
+Two gates send work to a second provider (Codex, through the vendored
+claudex-loop runner) via one deterministic driver, `a1-tools xprov gate`:
+
+- **Load precondition** (`workflows/01-load.md` Step 0c): `xprov load-check`
+  — the current PLAN.md sha256 must match the newest `plan-review-xprov` pass
+  entry from a1-plan Phase 4b. No match → `plan_review_missing`.
+- **Per wave** (`workflows/02-execute.md` step 2b-x): `xprov gate --phase
+  <phase_name> --gate wave-inspect-xprov --wave <N> --base <pre-wave HEAD>
+  --work-path <worktree>` on the wave diff; `fail-with-findings` → one Erik fix
+  round in the same wave, then a fresh inspection; a second REVISE is `round_cap`.
+- **Before Victor** (`workflows/03-verify.md` precondition): `xprov wave-status`
+  — every completed wave has a pass or a human waiver.
+
+The workflows read `enforcement` from the driver's stdout JSON (it echoes the
+gate's row in `_shared/gates-registry.md`): `warning` → warning block and
+continue, `blocking` → halt. The code never applies enforcement, so the Wave 7
+flip changes one registry cell. A waiver exists only as a human action
+(`xprov waive`, described in the workflows, never inside a skill's `bash`
+block) and never yields `verdict: pass`.
 
 ## Checkpoint protocol
 
@@ -200,3 +223,5 @@ rejects it inside a lane, and that rejection is not to be worked around.
 - Always show the diff summary after each wave (`git log --oneline -5`)
 - If a wave is BLOCKED (a1-erik-executor reports blocked tasks), surface to user before continuing
 - Never re-execute already-committed tasks — check STATUS.md first
+- Never start Wave 1 while `xprov load-check` reports `plan_review_missing` under `blocking`; never spawn Victor while `xprov wave-status` exits 1 under `blocking`
+- Never run `xprov waive` from this skill — the human runs it, the skill only prints the command

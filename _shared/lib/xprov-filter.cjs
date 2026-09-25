@@ -83,9 +83,13 @@ function clipField(value) {
 // cannot slip past a space-terminated marker.
 const SPACE_LIKE_RE = new RegExp('[\\s\\u00a0\\u1680\\u2000-\\u200d\\u2028\\u2029\\u202f\\u205f\\u2060\\u3000\\ufeff]+', 'g');
 
-/** NFKC (fullwidth → ASCII), unicode spaces → one space, lowercase. */
+/** NFKC (fullwidth → ASCII), unicode spaces → one space, lowercase. Line
+ * breaks survive as a single `\n` so the anchored markers (`system:` at a line
+ * start) keep their boundary; everything else space-like collapses. */
 function normalizeHaystack(text) {
-  return String(text).normalize('NFKC').replace(SPACE_LIKE_RE, ' ').toLowerCase();
+  return String(text).normalize('NFKC').replace(/\r\n?/g, '\n')
+    .split('\n').map((line) => line.replace(SPACE_LIKE_RE, ' ')).join('\n')
+    .toLowerCase();
 }
 
 /** The first INSTRUCTION_MARKER found in the normalised evidence + fix, or null. */
@@ -98,6 +102,9 @@ function instructionMarker(finding, notes) {
   const haystack = normalizeHaystack(`${ev.text}\n${fx.text}`);
   for (const marker of X.INSTRUCTION_MARKERS) {
     if (haystack.includes(marker)) return marker;
+  }
+  for (const { name, re } of X.INSTRUCTION_MARKER_PATTERNS || []) {
+    if (re.test(haystack)) return name;
   }
   return null;
 }

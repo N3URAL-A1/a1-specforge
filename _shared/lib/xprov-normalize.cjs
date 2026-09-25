@@ -40,7 +40,7 @@ const { parseFlags, repoRoot, assertSafeSegment, writeTextAtomic, nowIso } = req
 const { parseRegistryIds } = require('./gate-ids.cjs');
 const X = require('./xprov.cjs');
 
-const FLAGS = Object.freeze({ phase: 'str', gate: 'str', wave: 'str', round: 'str', 'work-path': 'str' });
+const FLAGS = Object.freeze({ phase: 'str', gate: 'str', wave: 'str', round: 'str', lane: 'str', 'work-path': 'str' });
 const REGISTRY_PATH = path.join(__dirname, '..', 'gates-registry.md');
 const FILTER_MODULE = path.join(__dirname, 'xprov-filter.cjs');
 const ARTIFACTS_MODULE = path.join(__dirname, 'xprov-artifacts.cjs');
@@ -202,16 +202,30 @@ function lsFilesSet(repo) {
   }
 }
 
+/** reply.txt sibling, bounded like result.json (Samuel re-check): a reply above
+ * MAX_RESULT_BYTES is `{ ok: false }` and the run fails closed as `malformed` —
+ * it cannot be scanned, so it is not cleared; it is NOT `secret_in_output`,
+ * which would claim a pattern hit that never happened. Absent file → ''. */
 function readReply(resultPath) {
-  try { return fs.readFileSync(path.join(path.dirname(resultPath), 'reply.txt'), 'utf8'); } catch (_e) { return ''; }
+  const file = path.join(path.dirname(resultPath), 'reply.txt');
+  try {
+    const st = fs.statSync(file);
+    if (!st.isFile()) return { ok: true, text: '' };
+    if (st.size > X.MAX_RESULT_BYTES) return { ok: false, text: '' };
+    return { ok: true, text: fs.readFileSync(file, 'utf8') };
+  } catch (_e) {
+    return { ok: true, text: '' };
+  }
 }
 
 const contractFail = () => fail(X.REASONS.malformed, { reason_detail: 'filter contract' });
 
 /** Secret filter over the raw texts. Returns null when clean, else the fail outcome. */
 function secretScan(filter, ctx) {
+  const reply = readReply(ctx.resultPath);
+  if (!reply.ok) return fail(X.REASONS.malformed, { reason_detail: `reply.txt exceeds ${X.MAX_RESULT_BYTES} bytes and cannot be scanned` });
   let hit;
-  try { hit = filter.filterOutput([ctx.raw, readReply(ctx.resultPath)]); } catch (_e) { return contractFail(); }
+  try { hit = filter.filterOutput([ctx.raw, reply.text]); } catch (_e) { return contractFail(); }
   if (!isPlainObject(hit) || typeof hit.hit !== 'boolean') return contractFail();
   if (hit.hit === false) return null;
   return fail(X.REASONS.secret_in_output, { secret_pattern: typeof hit.pattern_name === 'string' ? hit.pattern_name : 'unnamed' });
@@ -273,7 +287,7 @@ function renderSection(ctx, outcome, model, runnerSha) {
   const scope = ctx.wave === null ? 'plan' : `wave ${ctx.wave}`;
   const resp = outcome.reason === X.REASONS.secret_in_output ? {} : (ctx.response || {});
   const lines = [
-    `## ${ctx.gate} · ${scope} · round ${ctx.round} · ${ctx.ts}`, '',
+    `## ${ctx.gate} · ${scope} · ${ctx.isRound ? `round ${ctx.round}` : `attempt ${ctx.attempt}`} · ${ctx.ts}`, '',
     `- verdict: ${outcome.verdict}`, `- reason: ${outcome.reason === null ? 'none' : outcome.reason}`,
     ...(outcome.reason_detail ? [`- reason_detail: ${bullet(outcome.reason_detail)}`] : []),
     ...(outcome.secret_pattern ? [`- secret_pattern: ${bullet(outcome.secret_pattern)}`] : []),
@@ -349,16 +363,25 @@ function resolveArgs(args) {
   const indexPath = path.join(phaseDir, 'xreview', 'index.json');
   const existing = readIndex(indexPath);
   if (existing === null) usage(`index.json unparseable or not an array of objects: ${indexPath} — repair or move it before re-running`);
-  const priorRounds = existing.filter((e) => e.gate === flags.gate && sameWave(e, wave));
+  // Round key = gate + wave + lane: two lanes of one wave each get their own round 1.
+  const lane = flags.lane === undefined ? null : assertSafeSegment(flags.lane, '--lane');
+  const sameLane = (e) => (lane === null ? e.lane === null || e.lane === undefined : e.lane === lane);
+  // Rounds vs attempts (Reinhard W6): only pass | fail-with-findings consume a
+  // round (FR-006 caps REVISE rounds); every other fail is an `attempt` — a
+  // provider outage must never drive a wave into round_cap.
+  const sameKey = existing.filter((e) => e.gate === flags.gate && sameWave(e, wave) && sameLane(e));
+  const priorRounds = sameKey.filter((e) => Number.isInteger(e.round));
+  const priorAttempts = sameKey.filter((e) => !Number.isInteger(e.round));
   const round = flags.round === undefined ? 1 + priorRounds.length : parsePositive(flags.round, 'round');
-  if (priorRounds.some((e) => Number(e.round) === round)) usage(`index.json already holds ${flags.gate} ${wave === null ? 'plan' : `wave ${wave}`} round ${round}`);
-  const scope = wave === null ? 'plan' : `wave-${wave}`;
+  const attempt = 1 + priorAttempts.length;
+  const roundTaken = priorRounds.some((e) => Number(e.round) === round);
+  const scope = `${wave === null ? 'plan' : `wave-${wave}`}${lane ? `-${lane}` : ''}`;
   const findingsPath = path.join(phaseDir, 'xreview', `${flags.gate}-${scope}-r${round}.findings.json`);
-  if (fs.existsSync(findingsPath)) usage(`findings file already exists for this round: ${findingsPath}`);
+  const roundKey = `${flags.gate} ${wave === null ? 'plan' : `wave ${wave}`}${lane ? ` lane ${lane}` : ''} round ${round}`;
   const planPath = path.join(phaseDir, 'PLAN.md');
   if (!fs.existsSync(planPath)) usage(`PLAN.md not found in ${phaseDir}`);
   return {
-    resultPath: path.resolve(flags._[0]), phase, phaseDir, gate: flags.gate, wave, round, workPath, indexPath, findingsPath,
+    resultPath: path.resolve(flags._[0]), phase, phaseDir, gate: flags.gate, wave, lane, round, attempt, roundTaken, roundKey, workPath, indexPath, findingsPath,
     planPath, planRel: path.relative(root, planPath), planSha: sha256(fs.readFileSync(planPath)), ts: nowIso(),
   };
 }
@@ -390,12 +413,17 @@ function cmdXprovNormalize(args) {
   ctx.response = !tainted && isPlainObject(record.response) ? record.response : null;
   const model = modelFields(tainted ? {} : record, ctx.resultPath);
   const writesFindings = outcome.verdict === X.VERDICTS.PASS || outcome.verdict === X.VERDICTS.FAIL_WITH_FINDINGS;
+  // A round is consumed only now that the verdict is known; collisions are usage
+  // errors and nothing has been written yet.
+  ctx.isRound = writesFindings;
+  if (ctx.isRound && ctx.roundTaken) usage(`index.json already holds ${ctx.roundKey}`);
+  if (ctx.isRound && fs.existsSync(ctx.findingsPath)) usage(`findings file already exists for this round: ${ctx.findingsPath}`);
   if (!writesFindings) ctx.findingsPath = null;
   if (writesFindings) writeFindingsFile(ctx.findingsPath, ctx.response ? bullet(ctx.response.summary) : '', outcome.findings || []);
   const pin = X.checkRunnerPin();
   const xreviewPath = appendToXreview(ctx.phaseDir, renderSection(ctx, outcome, model, pin.actual || `unverified (${pin.reason})`));
   const entry = {
-    gate: ctx.gate, wave: ctx.wave, lane: null, round: ctx.round, verdict: outcome.verdict, reason: outcome.reason,
+    gate: ctx.gate, wave: ctx.wave, lane: ctx.lane, ...(ctx.isRound ? { round: ctx.round } : { attempt: ctx.attempt }), verdict: outcome.verdict, reason: outcome.reason,
     plan_sha256: ctx.planSha, result_path: ctx.resultPath, ts: ctx.ts,
     model_requested: model.model_requested, model_observed: model.model_observed, cli_version: model.cli_version,
   };

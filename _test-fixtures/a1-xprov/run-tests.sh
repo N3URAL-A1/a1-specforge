@@ -142,6 +142,20 @@ make_phase() {
   PHASE_HEAD="$(cd "$PHASE_REPO" && git rev-parse HEAD)"
 }
 
+# fake_runner_env — production `xprov run` hands the runner an ALLOWLISTED
+# environment (Samuel W5 MAJOR 2), so FAKE_RUNNER_* knobs cannot travel as env
+# vars through `run`. This writes every FAKE_RUNNER_* variable of the CURRENT
+# environment into <TREE_VENDOR>/fake-runner.env.json, which the fake reads
+# next to itself. Usage: `FAKE_RUNNER_CASE=revise fake_runner_env` right before
+# the `xprov run`/`xprov gate` call. Direct `python3 fake-runner.py` calls
+# still read the environment when no file exists.
+fake_runner_env() {
+  node -e "
+    const o = {}; for (const [k, v] of Object.entries(process.env)) if (k.startsWith('FAKE_RUNNER_')) o[k] = v;
+    require('fs').writeFileSync(process.argv[1], JSON.stringify(o, null, 1) + '\n');
+  " "$TREE_VENDOR/fake-runner.env.json"
+}
+
 # make_home — builds a 0700 dedicated Codex home with the compliant
 # config.toml (0600). Sets XHOME. Callers set A1_XPROV_CODEX_HOME=$XHOME.
 make_home() {

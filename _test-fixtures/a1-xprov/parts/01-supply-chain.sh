@@ -274,8 +274,8 @@ caseF1() {
     process.stdout.write(JSON.stringify({ subs, reasons, ghp, akia, assign, clean, markers, gates, home }));
   " "$XPROV_LIB" 2>&1)"
   assert_json "F1f dispatch table has 13 entries" "$out" "j.subs" "13"
-  assert_json "F1g REASON_LIST is the spec's thirteen reason codes plus preflight_failed (Wave 4 exception, documented in the facade header)" "$out" "j.reasons" \
-    "runner_failed,malformed,wrong_mode,blocked,plan_changed,tripwire,secret_in_snapshot,secret_in_output,quarantined,round_cap,external_review_not_permitted,snapshot_failed,not_logged_in,preflight_failed"
+  assert_json "F1g REASON_LIST is the spec's thirteen reason codes plus the three documented freeze exceptions (preflight_failed W4, plan_review_missing + wave_inspect_missing W6)" "$out" "j.reasons" \
+    "runner_failed,malformed,wrong_mode,blocked,plan_changed,tripwire,secret_in_snapshot,secret_in_output,quarantined,round_cap,external_review_not_permitted,snapshot_failed,not_logged_in,preflight_failed,plan_review_missing,wave_inspect_missing"
   assert_json "F1h SECRET_PATTERNS hit ghp_/AKIA/assignment shapes and not plain text" "$out" \
     "[j.ghp, j.akia, j.assign, j.clean].join('/')" "true/true/true/false"
 
@@ -291,24 +291,28 @@ caseF1() {
       sk_ext: first('key sk-proj-' + 'a1B2'.repeat(6) + ' end'),
       gho: first('gho_' + 'A'.repeat(36)),
       fine: first('github_pat_' + 'A1_'.repeat(10)),
-      xoxa: first('xoxa-1-2-3'),
+      xoxa: first('xoxa-1234567890-abc'),
       url: first('see https://deploy:s3cretPW@host.example/x'),
       pwd: first('password = hunter2xyz9'),
       bearer: first('Authorization: Bearer ' + 'abcDEF123'.repeat(4)),
       gkey: first('AIza' + 'a'.repeat(35)),
       ghp_still_classic: first('ghp_' + 'A'.repeat(36)),
       xoxb_still_slack: first('xoxb-1'),
+      // Samuel re-check (noise): the working-directory idiom and a too-short Slack prefix are NOT secrets
+      pwd_cwd: first('pwd = os.getcwd()'),
+      xoxa_short: first('xoxa-1-2-3'),
     };
-    const inputs = ['a'.repeat(10000), 'https://' + 'u'.repeat(10000), 'password = ' + 'x'.repeat(10000), 'sk-' + '-'.repeat(10000), 'Bearer ' + ' '.repeat(10000)];
+    // Samuel re-check: the 300 000-char abc:// repetition took 21.6 s with the unbounded url pattern
+    const inputs = ['a'.repeat(10000), 'https://' + 'u'.repeat(10000), 'password = ' + 'x'.repeat(10000), 'sk-' + '-'.repeat(10000), 'Bearer ' + ' '.repeat(10000), 'abc://'.repeat(50000)];
     let worst = 0, worstName = '';
     for (const p of x.SECRET_PATTERNS) for (const s of inputs) { const t0 = process.hrtime.bigint(); p.re.test(s); const ms = Number(process.hrtime.bigint() - t0) / 1e6; if (ms > worst) { worst = ms; worstName = p.name; } }
     process.stdout.write(JSON.stringify({ names, count: x.SECRET_PATTERNS.length, worst: Math.round(worst * 100) / 100, worstName }));
   " "$XPROV_LIB" 2>&1)"
   assert_json "F1h2 the eight Samuel shapes each hit their own pattern; ghp_/xoxb keep their original names" "$out2" \
     "Object.entries(j.names).map(([k, v]) => k + '=' + v).join(' ')" \
-    "sk_ext=sk_prefixed_key_ext gho=github_token_family fine=github_pat_fine_grained xoxa=slack_token_family url=url_credentials pwd=password_assignment bearer=bearer_token gkey=google_api_key ghp_still_classic=github_pat_classic xoxb_still_slack=slack_token"
+    "sk_ext=sk_prefixed_key_ext gho=github_token_family fine=github_pat_fine_grained xoxa=slack_token_family url=url_credentials pwd=password_assignment bearer=bearer_token gkey=google_api_key ghp_still_classic=github_pat_classic xoxb_still_slack=slack_token pwd_cwd=none xoxa_short=none"
   assert_json "F1h3 pattern list has 16 entries (8 spec + 8 amended)" "$out2" "j.count" "16"
-  assert_json "F1h4 ReDoS probe: worst single test over a 10 000-char input stays under 20 ms" "$out2" "j.worst < 20 ? 'ok' : 'slow ' + j.worstName + ' ' + j.worst + 'ms'" "ok"
+  assert_json "F1h4 ReDoS probe: worst single test over the adversarial inputs (incl. 300 000-char abc://) stays under 100 ms" "$out2" "j.worst < 100 ? 'ok' : 'slow ' + j.worstName + ' ' + j.worst + 'ms'" "ok"
   assert_json "F1i INSTRUCTION_MARKERS carry the multi-word markers" "$out" "j.markers" "true"
   assert_json "F1j GATE_ID_LIST is the two registered ids" "$out" "j.gates" "$GATE_PLAN,$GATE_WAVE"
   assert_json "F1k codexHome() honours A1_XPROV_CODEX_HOME and defaults to .codex-a1-review" "$out" "j.home" "/x/override .codex-a1-review"

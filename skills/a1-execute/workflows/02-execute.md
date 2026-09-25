@@ -90,6 +90,65 @@ Ask: "Wave <N> is partially complete. <N> tasks blocked. Continue to next wave o
 **If BLOCKED (wave couldn't start):**
 Surface error to user. Do not continue.
 
+### 2b-x. Cross-provider wave inspection (gate `wave-inspect-xprov`)
+
+Runs once per wave in the COMPLETE branch — **after** the commit-landed gate
+has passed (HEAD is the evidence the inspector reads) and **before** the 2c
+checkpoint. Sends the wave diff `$PRE_WAVE_HEAD..HEAD` of `$WORK_PATH` to Codex
+through the vendored runner in `inspect` mode (spec 009, FR-004). The driver
+snapshots `$WORK_PATH` at wave HEAD itself — never point it at the primary
+checkout (same silent failure as the commit-landed gate above).
+
+```bash
+XREVIEW_DIR=".a1/phases/<phase_name>/xreview"
+mkdir -p "$XREVIEW_DIR"
+INSPECT_OUT="$XREVIEW_DIR/wave-inspect-xprov.wave-<N>.last-run.json"
+node <repo>/_shared/a1-tools.cjs xprov gate --phase <phase_name> --gate wave-inspect-xprov --wave <N> --base $PRE_WAVE_HEAD --work-path $WORK_PATH > "$INSPECT_OUT"; RC=$?
+echo "xprov gate wave <N> exit=$RC"
+```
+
+**Multi-lane form:** one call per lane wave, with the lane's own `$WORK_PATH`
+and `$PRE_WAVE_HEAD`, plus `--lane <lane-id>` so the `index.json` entry carries
+the lane. Lane inspections are independent — a blocked storage lane must not
+hold up a green runtime lane, exactly as the per-lane checkpoint rule says.
+
+```bash
+node <repo>/_shared/a1-tools.cjs xprov gate --phase <phase_name> --gate wave-inspect-xprov --wave <N> --base $PRE_WAVE_HEAD --work-path $WORK_PATH --lane <lane-id> > "$INSPECT_OUT"; RC=$?
+echo "xprov gate wave <N> lane <lane-id> exit=$RC"
+```
+
+Read `verdict`, `enforcement`, `reason`, `findings_path` and `next` from
+`$INSPECT_OUT` (exit 0 = pass · 1 = fail, JSON names `reason` · 2 = usage, no
+JSON — fix the call). `enforcement` echoes the `wave-inspect-xprov` row of
+`_shared/gates-registry.md`; this step applies it, the driver never does.
+
+| `verdict` | `enforcement` | Action |
+|---|---|---|
+| `pass` | any | Note "cross-provider inspected ✓" in the 2c summary. Proceed to 2c. |
+| `fail-with-findings` | any | **Fix round in the same wave.** Re-dispatch a1-erik-executor with `<findings_path>` (Reinhard schema) and the instruction to fix every blocker/major or record why not, commit, then re-run the commit-landed gate and this step again — same `--base $PRE_WAVE_HEAD` (the whole wave diff is re-inspected), **fresh session**: the driver never passes `--resume` for inspect. One fix round per wave (`next.fix_round` is always 1); a second REVISE comes back as `fail` with `reason: round_cap`. Only `pass` and `fail-with-findings` count as rounds — a failed attempt (`blocked`, `runner_failed`, `tripwire`, `secret_*`) does not consume one, so fixing its cause and re-running this step is not a second round. |
+| `fail` (any `reason`) | `warning` | Print the block below, proceed to 2c with the warning in the summary. Retro: `verdict: fail`. |
+| `fail` (any `reason`) | `blocking` | **Do not show the 2c checkpoint as passable.** Print the block with the first line `❌ … enforcement: blocking`. Ways out: fix the cause and re-run this step, or a human waiver (below). Phase 3 will refuse to start while this wave lacks a pass or waiver (`wave-status`). |
+
+```
+⚠ Cross-provider wave inspection did not pass (gate wave-inspect-xprov, wave <N>, enforcement: warning)
+   reason:   <reason>
+   details:  .a1/phases/<phase_name>/XREVIEW.md (section for wave <N>)
+   Continuing to the checkpoint because the registry row is still `warning`.
+```
+
+**Waiver — human only.** When the provider is down or the user accepts the
+risk, tell the user the command and wait; the human runs
+`a1-tools xprov waive --phase <phase_name> --gate wave-inspect-xprov --wave <N> --reason "<text>"`
+in their own shell. It writes `{waived: true, reason, by: human, ts}` — never
+`verdict: pass` — and satisfies `wave-status`. This skill never executes it
+(fixture R7 greps every `bash` block for it). Record `xprov_waived` in the
+retro's `issue_classes` when a waiver exists.
+
+The driver already wrote the observation (`agent: xprov-codex`) and the
+XREVIEW.md section; do not duplicate them. Per wave, the retro's `gates_fired`
+gets `{id: wave-inspect-xprov, verdict: <pass|fail>, caught: <true if a finding forced a fix round>}`
+(`03-verify.md` Retro block).
+
 ### 2c. Checkpoint
 
 Present wave summary:
@@ -98,6 +157,7 @@ Wave <N> — <name> ✓ Complete
 Tasks done: <N>/<N>
 Commits: <list>
 Deviations: <list or "none">
+Cross-provider inspection: <✓ pass | ⚠ fail/<reason> (warning) | waived by human>
 
 → Next: Wave <N+1> — <name> (<N> tasks)
 Continue? [y to proceed / n to stop]

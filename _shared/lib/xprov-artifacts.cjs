@@ -162,8 +162,13 @@ function cmdXprovGc(args) {
   }
   const result = gc({ now: Date.now(), maxAgeDays, slug: flags.slug }); // a hostile --slug throws A1_INPUT → facade exit 2
   process.stderr.write(`xprov gc: removed ${result.removed.length}, kept ${result.kept.length} under ${result.root}\n`);
-  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-  process.exit(X.EXIT_PASS);
+  // fs.writeSync + exitCode, never stdout.write + exit: a pipe truncates at 64 KiB (house rule since Samuel W3).
+  const buf = Buffer.from(`${JSON.stringify(result, null, 2)}\n`, 'utf8');
+  let off = 0;
+  while (off < buf.length) {
+    try { off += fs.writeSync(1, buf, off, buf.length - off); } catch (e) { if (e.code !== 'EAGAIN') throw e; }
+  }
+  process.exitCode = X.EXIT_PASS;
 }
 
 module.exports = { ensureArtifactsDir, gc, cmdXprovGc, repoSlug, isUnder, REASON_INSIDE };

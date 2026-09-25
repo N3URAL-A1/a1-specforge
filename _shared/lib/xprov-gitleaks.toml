@@ -1,0 +1,13 @@
+# a1 xprov — gitleaks configuration passed explicitly by `xprov snapshot`
+# (spec 009-cross-provider-review-gate, Samuel W5 MINOR c).
+#
+# Why this file exists: `gitleaks detect --source <snapshot>` would otherwise
+# load `<snapshot>/.gitleaks.toml` — a file the REVIEWED repository controls,
+# which could allowlist its own secrets or disable rules. a1 always passes
+# `--config <this file>` so the reviewed commit cannot configure its own scan.
+# The content is deliberately minimal: gitleaks' built-in default ruleset,
+# nothing extended, nothing allowlisted.
+title = "a1-xprov snapshot scan"
+
+[extend]
+useDefault = true

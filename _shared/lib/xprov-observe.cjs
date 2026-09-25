@@ -183,4 +183,4 @@ function cmdXprovObserve(args) {
   return finish(r, xprov.EXIT_PASS);
 }
 
-module.exports = { EXTERNAL_AGENT, AGENT_RE, TYPES, SEVERITIES, PATTERNS, validateAgent, buildObservation, observe, cmdXprovObserve };
+module.exports = { EXTERNAL_AGENT, AGENT_RE, MODEL_RE, TYPES, SEVERITIES, PATTERNS, validateAgent, buildObservation, observe, cmdXprovObserve };

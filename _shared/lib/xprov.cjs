@@ -62,6 +62,9 @@ const REASON_LIST = Object.freeze([
   'secret_in_snapshot', 'secret_in_output', 'quarantined', 'round_cap',
   'external_review_not_permitted', 'snapshot_failed', 'not_logged_in',
   'preflight_failed', // added Wave 4: preflight exit-1 without not_logged_in
+  // Documented freeze exceptions (main, 2026-09-24), Wave 6 — constants, not dispatch changes:
+  'plan_review_missing', // load-check: no plan-review-xprov pass entry matches the current PLAN.md sha (FR-003)
+  'wave_inspect_missing', // wave-status: a completed wave lacks a wave-inspect-xprov pass or waiver (FR-004)
 ]);
 const REASONS = Object.freeze(Object.fromEntries(REASON_LIST.map((r) => [r, r])));
 
@@ -108,24 +111,35 @@ const SECRET_PATTERNS = Object.freeze([
   Object.freeze({ name: 'sk_prefixed_key_ext', re: /sk-[A-Za-z0-9_-]{20,}/ }),
   Object.freeze({ name: 'github_token_family', re: /gh[pousr]_[A-Za-z0-9]{36}/ }),
   Object.freeze({ name: 'github_pat_fine_grained', re: /github_pat_[A-Za-z0-9_]{22,}/ }),
-  Object.freeze({ name: 'slack_token_family', re: /xox[abprs]-/ }),
-  // The lookbehind pins the scheme to a token start: without it every position
-  // inside a long letter run is a candidate start and the scan goes quadratic
-  // (measured 159 ms on 10 000 chars; F1h4 probe).
-  Object.freeze({ name: 'url_credentials', re: /(?<![a-z0-9+.-])[a-z][a-z0-9+.-]*:\/\/[^/\s:@]+:[^@\s]{6,}@/i }),
-  Object.freeze({ name: 'password_assignment', re: /(password|passwd|pwd)\s*[:=]\s*['"]?[^\s'"]{8,}/i }),
+  // Samuel re-check: a bare prefix (`xoxa-1`) is noise; real Slack tokens carry ≥ 8 token chars.
+  Object.freeze({ name: 'slack_token_family', re: /xox[abprs]-[A-Za-z0-9-]{8,}/ }),
+  // The lookbehind pins the scheme to a token start (else every position in a
+  // letter run is a candidate: 159 ms on 10 000 chars); the bounded quantifiers
+  // {1,128} / {6,256} kill the remaining quadratic case on `abc://` repetitions
+  // (unbounded: 2.4 s at 100 000 chars, 21.6 s at 300 000; bounded: 13 / 40 ms —
+  // Samuel re-check + F1h4 probe). All positives still hit.
+  Object.freeze({ name: 'url_credentials', re: /(?<![a-z0-9+.-])[a-z][a-z0-9+.-]*:\/\/[^/\s:@]{1,128}:[^@\s]{6,256}@/i }),
+  // `pwd` dropped (Samuel re-check): `pwd = os.getcwd()` is the working-directory idiom, not a password.
+  Object.freeze({ name: 'password_assignment', re: /(password|passwd)\s*[:=]\s*['"]?[^\s'"]{8,}/i }),
   Object.freeze({ name: 'bearer_token', re: /Bearer\s+[A-Za-z0-9._-]{20,}/ }),
   Object.freeze({ name: 'google_api_key', re: /AIza[0-9A-Za-z_-]{35}/ }),
 ]);
 
 // ---------- instruction markers (FR-019; compared against NFKC-normalised, space-collapsed, lowercased text) ----------
 // The first eleven are verbatim from the spec; `eval(`, `npm install`,
-// `pip install`, `system:` were added 2026-09-24 per Samuel's W3 review
-// (spec FR-019 amended).
+// `pip install` were added 2026-09-24 per Samuel's W3 review (spec FR-019
+// amended). Substring markers — the filter tests `haystack.includes(marker)`.
 const INSTRUCTION_MARKERS = Object.freeze([
   'run ', 'curl ', 'wget ', 'rm ', 'delete ', 'chmod ', 'git push',
   'ignore previous', 'disregard', 'you must now', 'execute ',
-  'eval(', 'npm install', 'pip install', 'system:',
+  'eval(', 'npm install', 'pip install',
+]);
+// Anchored markers (Samuel re-check, noise): `system:` is a role prefix only at
+// a line start, after an HTML comment opener or after `[` — "file system: ext4"
+// is prose. Tested as regexes against the same normalised haystack; the
+// reported marker is `name`.
+const INSTRUCTION_MARKER_PATTERNS = Object.freeze([
+  Object.freeze({ name: 'system:', re: /(?:^|\n|<!--\s*|\[)\s*system:/ }),
 ]);
 
 // ---------- path helpers (pure path math; nothing is created here) ----------
@@ -282,7 +296,7 @@ module.exports = {
   RUNNER_MODES, RUNNER_MODES_ALLOWED, FORBIDDEN_RUNNER_TOKENS, RUNNER_HOST,
   ARTIFACT_MAX_AGE_DAYS, ROUND_CAP, MAX_FIELD_CHARS, MAX_RESULT_BYTES, TITLE_MAX_CHARS,
   MODEL_REQUESTED_DEFAULT, MODEL_OBSERVED_UNKNOWN,
-  SECRET_PATTERNS, INSTRUCTION_MARKERS,
+  SECRET_PATTERNS, INSTRUCTION_MARKERS, INSTRUCTION_MARKER_PATTERNS,
   CODEX_HOME_ENV, RUNNER_FILE, SUMS_FILE,
   xprovHome, artifactsDir, snapshotsDir, vendorDir, vendoredRunnerPath, vendoredSumsPath, codexHome,
   parseSha256Sums, sha256File, checkRunnerPin,
