@@ -82,10 +82,13 @@ Usage:
                   "release via a1-tools code-scope release --by <id>".
 
   a1-tools checklist run <project-slug>[/<feature-id>] [--format json|human] [--save] [--vault <path>] [--only <ids>]
-                  --only 9,10 = spec<->plan consistency gate subset (former
-                  "check run"): FR coverage + frontmatter link. Exit: 0 PASS,
+                  --only 9,10,11 = a1-new-feature Gate 4.5 subset: #9 FR
+                  coverage + #10 frontmatter link (former "check run") + #11
+                  spec_roadmap_status_coherent (spec status vs roadmap feature
+                  status; BLOCKER on a terminal disagreement, warning otherwise;
+                  no roadmap for the project -> PASS). Exit: 0 PASS,
                   1 FAIL (BLOCKER), 2 ERROR (setup).
-                  Pre-flight checklist: 8 structural checks before implementation.
+                  Pre-flight checklist: 11 structural checks before implementation.
                   Severities: BLOCKER (exit 1), MAJOR/MINOR (exit 0, warnings).
                   Exit: 0 PASS or PASS_WITH_WARNINGS, 1 FAIL (blocker), 2 ERROR (setup).
                   With --save: writes report to project/<slug>/checklist/<###>-<date>.md.
@@ -408,7 +411,13 @@ Usage:
                   transaction as every other product-mutating command.
                   Exit: 0 ok, 1 usage/not-found/unknown-finding/unknown-
                   feature/write error.
-  a1-tools product validate [--dir docs/product]
+  a1-tools product validate [--dir docs/product] [--spec-status]
+                  --spec-status: also compares every roadmap feature with its
+                  spec (spec_path, else project/<slug>/spec/<id>*.md in the
+                  vault) and adds a spec_status section {violations, warnings,
+                  unlinked}. Terminal disagreement (one side done/cancelled)
+                  = violation naming the reconciling command, exit 1;
+                  non-terminal = warning; no resolvable spec = unlinked (info).
                   Read-only. Validates <dir>/ROADMAP.md frontmatter against
                   the schema-v1 contract (docs/product/SCHEMA.md section 1 /
                   index.schema.json): required fields, enums, id/date

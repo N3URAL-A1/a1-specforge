@@ -25,6 +25,22 @@ Audit this PLAN.md for quality and coverage gaps. Write AUDIT.md.
   gate `plan-review-xprov`). The PLAN.md summary and the "Run `a1-execute`"
   suggestion are given there, after the second provider has spoken — a PASS
   audit alone no longer ends the pipeline.
+- **Before loading 04b, mirror the phase into the vault** (spec 010, FR-008):
+  PLAN.md and AUDIT.md are final at this point, and the cockpit reads
+  `project/<slug>/phases/` from the vault, never the repo. `<project-slug>` is
+  the `project:` of `docs/product/ROADMAP.md`; a repo without a roadmap passes
+  `--slug <slug>` instead of the positional slug (phases only). Anything 04b
+  writes into the phase directory is picked up by the next sync (a1-execute
+  step 2b-v). The step is skipped silently when `A1_VAULT_ROOT` is not set
+  (tier repo-local), and a failed sync never blocks the pipeline:
+
+  ```bash
+  if [ -n "${A1_VAULT_ROOT:-}" ]; then
+    VSYNC_OUT="$(mktemp)"
+    node <repo>/_shared/a1-tools.cjs vault sync <project-slug> --phases > "$VSYNC_OUT"; RC=$?
+    if [ $RC -ne 0 ]; then echo "⚠ vault sync --phases exit=$RC — vault mirror not updated, continuing (stderr above, JSON in $VSYNC_OUT)"; fi
+  fi
+  ```
 
 ### If verdict is FAIL
 - Inform user: "Plan has <N> blocker(s):"

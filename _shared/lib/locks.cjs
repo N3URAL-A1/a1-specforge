@@ -198,7 +198,7 @@ function failWithLock(lockPath, msg) {
  * never renamed and the one that failed mid-rename) are best-effort
  * unlinked. Mirrors cmdProductStage's proven all-or-nothing pattern so every
  * product-mutating command shares one transaction implementation. */
-function writeAllOrNothing(lockPath, writes, errPrefix) {
+function writeAllOrNothing(lockPath, writes, errPrefix, opts) {
   const staged = [];
   const renamed = [];
   try {
@@ -267,6 +267,22 @@ function writeAllOrNothing(lockPath, writes, errPrefix) {
       msg = `${errPrefix}: write failed AND rollback incomplete — PARTIAL ROLLBACK, manual check needed: ${detail}. Original error: ${e.message}`;
     }
     failWithLock(lockPath, msg);
+  }
+  return runAfterCommit(opts, errPrefix);
+}
+
+/** Optional `{afterCommit}` (spec 010 FR-007): runs once the rename phase has
+ * committed and while the caller still holds the lock; its return value is
+ * writeAllOrNothing's. It runs OUTSIDE the rollback try, so a failing hook can
+ * never revert the committed write, and an exception is reported on stderr and
+ * swallowed — the command's exit code stays the vault-free one. */
+function runAfterCommit(opts, errPrefix) {
+  if (!opts || typeof opts.afterCommit !== 'function') return undefined;
+  try {
+    return opts.afterCommit();
+  } catch (e) {
+    process.stderr.write(`[a1-tools] ${errPrefix}: after-commit hook failed (write kept): ${e.message}\n`);
+    return undefined;
   }
 }
 

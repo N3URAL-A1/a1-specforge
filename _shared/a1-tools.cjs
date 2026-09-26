@@ -330,7 +330,7 @@ const { cmdCheckReservations } = require(path.join(__dirname, 'lib', 'check-rese
 
 // ---------- check group ----------
 // `check run` retired in M13 — the spec↔plan consistency gate lives in
-// `checklist run --only 9,10` (lib/checklist.cjs reuses lib/check.cjs
+// `checklist run --only 9,10,11` (lib/checklist.cjs reuses lib/check.cjs
 // primitives). Only `check reservations` remains in this group.
 
 // ---------- code-scope group (lib/code-scope.cjs) ----------
@@ -401,7 +401,7 @@ function main() {
         return; // unreachable — cmdCheckReservations calls process.exit()
       }
       usage(
-        `unknown check subcommand: ${sub} (the spec↔plan gate moved to "checklist run <slug>/<feature> --only 9,10" in M13)`
+        `unknown check subcommand: ${sub} (the spec↔plan gate moved to "checklist run <slug>/<feature> --only 9,10,11" in M13)`
       );
     } else if (group === 'code-scope') {
       // code-scope claim/check own their exit code (0/1) and JSON output.

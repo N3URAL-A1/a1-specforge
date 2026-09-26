@@ -178,6 +178,27 @@ const SPEC_STATUS_TO_PHASE = {
   cancelled: 'cancelled',
 };
 
+// FR-030 (spec 010 W7): the blockquote directly under the H1 carries a
+// human-readable "Status: `…`" line (spec template, measured in 005). Only
+// its FIRST line matching the OLD status is rewritten; a missing H1, a missing
+// blockquote, or a header showing another status leaves the body untouched.
+function rewriteBodyStatusHeader(body, oldStatus, newStatus) {
+  if (typeof oldStatus !== 'string' || oldStatus === '' || oldStatus === newStatus) return body;
+  const lines = body.split('\n');
+  const h1 = lines.findIndex((l) => /^# /.test(l));
+  if (h1 === -1) return body;
+  let i = h1 + 1;
+  while (i < lines.length && lines[i].trim() === '') i++;
+  const needle = 'Status: `' + oldStatus + '`';
+  for (; i < lines.length && lines[i].startsWith('>'); i++) {
+    if (lines[i].includes(needle)) {
+      const updated = lines[i].replace(needle, 'Status: `' + newStatus + '`');
+      return [...lines.slice(0, i), updated, ...lines.slice(i + 1)].join('\n');
+    }
+  }
+  return body;
+}
+
 function cmdSpecUpdateStatus(args) {
   const specPathInput = args[0];
   const newStatus = args[1];
@@ -196,7 +217,8 @@ function cmdSpecUpdateStatus(args) {
   });
   const specPath = resolveVaultPath(specPathInput);
   if (!fs.existsSync(specPath)) fail(`spec file not found: ${specPath}`);
-  const { fm, body } = readMd(specPath);
+  const { fm, body: originalBody } = readMd(specPath);
+  const body = rewriteBodyStatusHeader(originalBody, fm.status, newStatus);
   fm.status = newStatus;
 
   const completedPhase = SPEC_STATUS_TO_PHASE[newStatus];
@@ -225,6 +247,9 @@ function cmdSpecUpdateStatus(args) {
   }
 
   writeMdAtomic(specPath, fm, body);
+  // FR-031: name the reconciling command, never run it (the roadmap is not ours to write here).
+  const hint = require('./spec-coherence.cjs').roadmapHint({ specAbs: specPath, fm, newStatus, vaultRoot: vaultRoot() });
+  if (hint) process.stderr.write(`${hint}\n`);
   return {
     spec_path: specPath,
     status: fm.status,

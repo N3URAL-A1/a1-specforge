@@ -5,7 +5,8 @@
 // The former `check run` gate retired in M13: its three invariants live on as
 // a1-checklist checks #9 (fr_coverage_bijective — coverage + phantoms) and
 // #10 (plan_spec_path_link), invoked by a1-new-feature's Gate 4.5 via
-// `checklist run <slug>/<feature> --only 9,10` (same 0/1/2 exit contract).
+// `checklist run <slug>/<feature> --only 9,10,11` (same 0/1/2 exit contract;
+// #11 is the spec↔roadmap status check added by spec 010).
 // This module keeps only the shared, deterministic primitives (regex-based,
 // no LLM) that checklist.cjs builds those checks on.
 

@@ -69,7 +69,7 @@ All 17 skills below match the `SKILLS` array in `bin/install.sh` exactly.
 | `a1-analyze` | Insight | Read-only codebase analysis in five phases (parallel sub-agents): general, security, architecture, quality, onboarding. |
 | `a1-modernize` | Insight | Understand, fix, or modernize an undocumented codebase. Two modes: `spec-only` (derive spec, read-only) and `full` (spec + gaps + wave-based fix plan). |
 | `a1-progress` | Insight | Read-only project snapshot — scans `.a1/` state plus git/test/build state and recommends the next skill to run. |
-| `a1-checklist` | Gate | Pre-flight readiness gate — 10 deterministic checks on a wave-plan (BLOCKER / MAJOR / MINOR), incl. the spec↔plan consistency gate (checks #9/#10: bijective FR coverage + frontmatter link) that `a1-new-feature`'s Phase 4.5 runs via `--only 9,10`. |
+| `a1-checklist` | Gate | Pre-flight readiness gate — 11 deterministic checks on a wave-plan (BLOCKER / MAJOR / MINOR), incl. the spec↔plan consistency gate (checks #9/#10: bijective FR coverage + frontmatter link) and the spec↔roadmap status check (#11) that `a1-new-feature`'s Phase 4.5 runs via `--only 9,10,11`. |
 | `a1-quick` | Build | XS quick lane for tiny, low-risk features/fixes — single session, zero mandatory sub-agent spawns, branch-based isolation, one run-record artifact, one checkpoint. Reachable via a deterministic eligibility gate from `a1-new-feature` Discover and `a1-fix` Phase 0. |
 | `a1-constitution` | Setup | Generate/update a project's `constitution.md` — behavioral rules separated from CLAUDE.md's project facts, with 4-layer override precedence. |
 | `a1-phantom` | Verify | Phantom-task detection — flags `[X]` tasks in `PLAN.md` with no matching git change. Warning-level, never blocks (always exits 0). |

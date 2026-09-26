@@ -543,6 +543,30 @@ function evaluateChecklistRules(slug, paths, spec, plan, planExists) {
   return { checks, errors };
 }
 
+// --- Check 11: spec status coheres with the roadmap feature (BLOCKER) ---
+// Spec 010 W7 (FR-029): runs the FR-028 comparison for THIS feature only.
+// Independent of the wave-plan, so it is appended on both the plan and the
+// no-plan path. Roadmap lookup: current directory, code-root checkouts, then
+// the vault mirror (project/<slug>/product/ROADMAP.md). No roadmap for the
+// project, or the feature not on it → PASS with the reason (FR-028 "unlinked"
+// is info, never a failure); only a terminal disagreement FAILs.
+function evaluateSpecRoadmapCoherenceCheck(slug, feature) {
+  const { findProjectRoadmap, checkSpecRoadmapCoherence } = require('./spec-coherence.cjs');
+  const root = vaultRoot();
+  const check = (ok, detail) => ({
+    id: 11, name: 'spec_roadmap_status_coherent', severity: 'BLOCKER', result: ok ? 'PASS' : 'FAIL', detail,
+  });
+  const rm = findProjectRoadmap(slug, { vaultRoot: root });
+  if (!rm) return check(true, `No roadmap with project "${slug}" found — nothing to compare.`);
+  const entry = (Array.isArray(rm.fm.features) ? rm.fm.features : []).find((f) => f && f.id === feature);
+  if (!entry) return check(true, `Feature ${feature} is not on the roadmap (${rm.file}) — nothing to compare.`);
+  const r = checkSpecRoadmapCoherence({ roadmapFm: { ...rm.fm, features: [entry] }, vaultRoot: root, slug });
+  if (r.violations.length > 0) return check(false, `${r.violations[0].message} (roadmap: ${rm.file})`);
+  if (r.warnings.length > 0) return check(true, `Warning only: ${r.warnings[0].message} (roadmap: ${rm.file})`);
+  if (r.unlinked.length > 0) return check(true, `Unlinked: ${r.unlinked[0].reason} (roadmap: ${rm.file})`);
+  return check(true, `Spec and roadmap agree on \`${entry.status}\` (roadmap: ${rm.file}).`);
+}
+
 // Phase 3 / thin orchestrator: kept under the original name so
 // cmdChecklistRun's call site needs no change. Calls gather then evaluate
 // in sequence, returning the exact same { checks, errors, fatal } shape the
@@ -559,7 +583,7 @@ function runChecklistChecks(slug, feature, paths) {
     gathered.plan,
     gathered.planExists
   );
-  return { checks, errors, fatal: false };
+  return { checks: [...checks, evaluateSpecRoadmapCoherenceCheck(slug, feature)], errors, fatal: false };
 }
 
 function classifyChecklistResult(checks) {
@@ -655,8 +679,8 @@ function cmdChecklistRun(args) {
   if (format !== 'json' && format !== 'human') {
     usage(`checklist run --format must be "json" or "human" (got: ${format})`);
   }
-  // --only 9,10 runs a subset of checks — used by a1-new-feature's Gate 4.5,
-  // which gates ONLY spec↔plan consistency (the spec is in status `planned`
+  // --only 9,10,11 runs a subset of checks — used by a1-new-feature's Gate 4.5,
+  // which gates spec↔plan consistency plus spec↔roadmap status (#11) (the spec is in status `planned`
   // there, so full-run check #1 `spec_status_clarified` would always fail).
   // Exit contract is unchanged: 0 pass, 1 BLOCKER fail, 2 setup error.
   let onlyIds = null;

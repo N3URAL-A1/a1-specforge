@@ -182,6 +182,23 @@ I recommend targeted re-execution. Which gaps should I fix first?
 
 For FAIL/PARTIAL re-execution: spawn a1-erik-executor with a targeted prompt listing only the missing work, not the full plan.
 
+## Vault phase mirror (spec 010, FR-008)
+
+After VERIFICATION.md is written and the verdict is presented — PASS,
+PARTIAL or FAIL — and before the retro, mirror the phase into the vault so the
+cockpit shows the verdict. `<project-slug>` is the `project:` of
+`docs/product/ROADMAP.md`; a repo without a roadmap passes `--slug <slug>`
+instead (phases only). Skipped silently when `A1_VAULT_ROOT` is not set (tier
+repo-local). A failed sync is a warning, never a change of verdict:
+
+```bash
+if [ -n "${A1_VAULT_ROOT:-}" ]; then
+  VSYNC_OUT="$(mktemp)"
+  node <repo>/_shared/a1-tools.cjs vault sync <project-slug> --phases > "$VSYNC_OUT"; RC=$?
+  if [ $RC -ne 0 ]; then echo "⚠ vault sync --phases exit=$RC — vault mirror not updated, continuing (stderr above, JSON in $VSYNC_OUT)"; fi
+fi
+```
+
 ---
 
 ## Retro (mandatory, every run)

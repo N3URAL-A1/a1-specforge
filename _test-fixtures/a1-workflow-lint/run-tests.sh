@@ -271,7 +271,107 @@ caseW10() {
   fi
 }
 
+# ---------- W11-W14: rule vault-sync-step (spec 010, Wave 4, FR-008) ----------
+# The plan names these W8-W10; W8-W10 were already taken by spec 007, so they
+# are numbered W11-W14 here (W14 adds the third required file, 04-audit.md,
+# which FR-008 lists alongside the other two).
+#
+# Each case copies the repo's real skills/ tree into a temp root, so the
+# fixture tracks the live workflow text instead of a reconstruction of it.
+# stripVaultSyncFence removes ONLY the ```bash fence that holds the vault sync
+# call and puts a PROSE line in its place that spells the full call — so a rule
+# that matched any line of the file instead of fenced lines would stay green on
+# W12-W14, and is caught.
+
+copySkills() {
+  local work
+  work="$(mktemp -d)"
+  cp -R "$REPO_ROOT/skills" "$work/skills"
+  printf '%s' "$work"
+}
+
+# Remove the fenced ```bash block containing `vault sync` from one file.
+# Prints the number of fences removed (the cases require exactly 1, so a
+# no-op strip cannot pass as a red case).
+stripVaultSyncFence() {
+  node -e '
+    const fs = require("fs");
+    const f = process.argv[1];
+    const lines = fs.readFileSync(f, "utf8").split("\n");
+    const out = []; let buf = null; let removed = 0;
+    for (const l of lines) {
+      const t = l.trim();
+      if (buf === null && t === "```bash") { buf = [l]; continue; }
+      if (buf !== null) {
+        buf.push(l);
+        if (t === "```") {
+          if (buf.some((x) => /vault sync/.test(x))) {
+            removed += 1;
+            out.push("Prose only: `node <repo>/_shared/a1-tools.cjs vault sync <project-slug> --phases`");
+          } else out.push(...buf);
+          buf = null;
+        }
+        continue;
+      }
+      out.push(l);
+    }
+    if (buf !== null) out.push(...buf);
+    fs.writeFileSync(f, out.join("\n"));
+    process.stdout.write(String(removed));
+  ' "$1"
+}
+
+# Prints "<vault_sync_checked> <n vault-sync-step findings> <basenames,...>".
+vaultSyncSummary() {
+  node -e "
+    const j=JSON.parse(process.argv[1]);
+    const v=j.findings.filter(f=>f.rule==='vault-sync-step');
+    process.stdout.write(j.vault_sync_checked+' '+v.length+' '+v.map(f=>require('path').basename(f.file)).join(','));
+  " "$1" 2>&1
+}
+
+# W11: unmodified skills copy -> exit 0, vault_sync_checked 3, no finding.
+# Red-making change: an isSkillsTree() scope test that matches nothing
+# (vault_sync_checked 0), or deleting the step from any one workflow file.
+caseW11() {
+  local work out rc sum
+  work="$(copySkills)"
+  out="$(node "$TOOLS" workflow lint --root "$work" 2>/dev/null)"; rc=$?
+  sum="$(vaultSyncSummary "$out")"
+  if [[ $rc -eq 0 && "$sum" == "3 0 " ]]; then
+    ok "W11 repo skills copy: exit 0, vault_sync_checked 3, no vault-sync-step finding"
+  else
+    bad "W11 repo skills copy (rc=$rc summary='$sum')"
+  fi
+}
+
+# W12-W14: fence removed from exactly one required file -> exit 1, exactly one
+# vault-sync-step finding, naming that file. Red-making change (per case):
+# dropping that file from REQUIRED_VAULT_SYNC_FILES turns exactly this case red
+# while the other two stay green (W11 goes red too, on its count). Matching VAULT_SYNC_CALL_RE against every
+# line instead of fenced lines turns all three red (the prose line matches).
+vaultSyncCase() {
+  local id="$1" rel="$2" work out rc removed sum base
+  base="$(basename "$rel")"
+  work="$(copySkills)"
+  removed="$(stripVaultSyncFence "$work/$rel")"
+  out="$(node "$TOOLS" workflow lint --root "$work" 2>/dev/null)"; rc=$?
+  sum="$(vaultSyncSummary "$out")"
+  # ${sum#* } drops vault_sync_checked: the count belongs to W11 alone, so a
+  # shortened REQUIRED list turns only W11 and the case for the dropped file red.
+  if [[ "$removed" == "1" && $rc -eq 1 && "${sum#* }" == "1 $base" ]]; then
+    ok "$id fence removed from $base: exit 1, one vault-sync-step finding naming it"
+  else
+    bad "$id fence removed from $base (removed=$removed rc=$rc summary='$sum')"
+  fi
+}
+
+caseW12() { vaultSyncCase W12 skills/a1-execute/workflows/02-execute.md; }
+caseW13() { vaultSyncCase W13 skills/a1-execute/workflows/03-verify.md; }
+caseW14() { vaultSyncCase W14 skills/a1-plan/workflows/04-audit.md; }
+
 caseW1; caseW2; caseW3; caseW4; caseW5; caseW6; caseW7; caseW8; caseW9; caseW10
+caseW11; caseW12; caseW13; caseW14
 
 printf '%s\n' "${results[@]}"
 echo "----"
