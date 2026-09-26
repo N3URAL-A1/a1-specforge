@@ -1,0 +1,12 @@
+# golden: commit 475382a, captured by: bash _test-fixtures/a1-vault-fallback/golden/capture.sh
+## spec update-status <REPO>/specs/001-demo.md clarified rc=0
+{
+  "spec_path": "<REPO>/specs/001-demo.md",
+  "status": "clarified",
+  "phase_history": [
+    "phase=specify completed=<ISO>",
+    "phase=clarify completed=<ISO>"
+  ],
+  "wave_plan_path": null,
+  "verify_failures": []
+}

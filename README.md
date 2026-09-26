@@ -125,10 +125,13 @@ If none resolve (not in a git repo, no env, no legacy vault), the CLI hard-fails
 | Variable | Default | Description |
 |---|---|---|
 | `A1_VAULT_ROOT` | *(unset)* → repo-local `.a1/learnings/` | Optional. Point the learning store at an external vault (e.g. an Obsidian notes directory). |
+| `A1_VAULT_WRITER_HOST` | *(unset)* → every host may write the vault mirror | Optional, for two machines sharing one synced vault. Only the host whose `os.hostname()` equals this value (exact match) writes `project/<slug>/product/` and `phases/`; any other host skips with one stderr line and an unchanged exit code. `a1-tools vault status --json` reports `host`, `writer_host` (`undeclared` when unset) and `may_write`. Print a machine's name with `node -e 'console.log(require("os").hostname())'`. |
 
 ```bash
 # Optional — only if you want an external vault instead of repo-local .a1/learnings/
 export A1_VAULT_ROOT="/path/to/your/notes"
+# Optional — two hosts, one synced vault: name the single host that writes the mirror
+export A1_VAULT_WRITER_HOST="my-laptop.local"
 ```
 
 ## Language policy

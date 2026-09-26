@@ -190,9 +190,9 @@ function readRoadmapAt(file) {
 /** codeRoots() exits the process on a malformed A1_CODE_ROOTS. A hint or a
  * checklist lookup must never do that, so the env tier is filtered here with
  * the same rules instead of being handed to codeRoots(). */
-function lookupCodeRoots() {
+function lookupCodeRoots({ quiet = false } = {}) {
   const env = process.env.A1_CODE_ROOTS;
-  if (!env) return codeRoots();
+  if (!env) return codeRoots({ quiet });
   return env.split(':')
     .map((d) => d.trim())
     .filter((d) => d && path.isAbsolute(d) && !HAZARDOUS_ROOT_RE.test(d))
@@ -213,10 +213,10 @@ function childDirs(root) {
  * (the repo being worked in is the truth), then every checkout under the code
  * roots, then — only with `vaultRoot` — the vault mirror
  * `project/<slug>/product/ROADMAP.md`. Returns { file, fm, source } or null. */
-function findProjectRoadmap(slug, { vaultRoot: mirrorRoot = null } = {}) {
+function findProjectRoadmap(slug, { vaultRoot: mirrorRoot = null, quiet = false } = {}) {
   const tiers = [
     ['cwd', [path.join(process.cwd(), ...ROADMAP_REL)]],
-    ['code-root', lookupCodeRoots().flatMap(childDirs).map((d) => path.join(d, ...ROADMAP_REL))],
+    ['code-root', lookupCodeRoots({ quiet }).flatMap(childDirs).map((d) => path.join(d, ...ROADMAP_REL))],
   ];
   if (mirrorRoot && SAFE_SEGMENT_RE.test(String(slug))) {
     tiers.push(['vault-mirror', [path.join(mirrorRoot, 'project', slug, 'product', 'ROADMAP.md')]]);
@@ -234,16 +234,17 @@ function findProjectRoadmap(slug, { vaultRoot: mirrorRoot = null } = {}) {
  * or null. Never writes; the caller prints. */
 function roadmapHint({ specAbs, fm, newStatus, vaultRoot }) {
   if (!TERMINAL_STATUSES.has(newStatus)) return null;
-  const relParts = path.relative(vaultRoot, specAbs).split(path.sep);
+  const specRel = vaultRoot ? path.relative(vaultRoot, specAbs) : specAbs;
+  const relParts = vaultRoot ? specRel.split(path.sep) : [];
   const slug = typeof fm.project === 'string' && fm.project !== ''
     ? fm.project
     : relParts[0] === 'project' ? relParts[1] : null;
   if (!slug) return null;
   const id = typeof fm.id === 'string' && fm.id !== '' ? fm.id : path.basename(specAbs, '.md');
-  const rm = findProjectRoadmap(slug);
+  const rm = findProjectRoadmap(slug, { quiet: true });
   const feature = rm && Array.isArray(rm.fm.features) ? rm.fm.features.find((f) => f && f.id === id) : null;
   if (!feature || feature.status === SPEC_TO_ROADMAP_STATUS[newStatus]) return null;
-  const cmd = reconcileCommand({ id, specRel: path.relative(vaultRoot, specAbs), specStatus: newStatus,
+  const cmd = reconcileCommand({ id, specRel, specStatus: newStatus,
     roadmapStatus: feature.status, preferSpec: true });
   return `hint: ${rm.file} lists ${id} as \`${feature.status}\`, the spec is now \`${newStatus}\`. ` +
     `Reconcile in that repo: ${cmd.startsWith('product ') ? `a1-tools ${cmd}` : cmd}`;

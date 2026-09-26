@@ -20,7 +20,7 @@ function argValue(argv, flag) {
 function recordingOps(events) {
   return {
     mkdirSync: (p, o) => { events.push({ op: 'mkdir', path: p }); return fs.mkdirSync(p, o); },
-    writeFileSync: (p, data) => { events.push({ op: 'write', path: p }); return fs.writeFileSync(p, data); },
+    writeFileSync: (p, data, o) => { events.push({ op: 'write', path: p, flag: (o && o.flag) || null }); return fs.writeFileSync(p, data, o); },
     renameSync: (from, to) => { events.push({ op: 'rename', from, to }); return fs.renameSync(from, to); },
     unlinkSync: (p) => { events.push({ op: 'unlink', path: p }); return fs.unlinkSync(p); },
   };

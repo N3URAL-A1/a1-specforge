@@ -14,31 +14,43 @@
 # Measured 2026-09-26 on throwaway copies: red for product-docs,
 # product-schema-v11, product-adopt and product-audit-mirror. Green without the
 # line, and therefore precautionary: product-import (`product import` is not a
-# FR-007 hooked command) and a1-checklist (runs no product writer). Their arms
-# guard the day either starts to.
+# FR-007 hooked command), a1-checklist, a1-vault-fallback, roadmap-gate and
+# a1-quick (no product writer reaches a docs/product dir there today, or every
+# call already sets its own vault). Their arms guard the day that changes.
 
-I_SUITES=(
-  product-docs/run-tests.sh
-  product-schema-v11/run.sh
-  product-adopt/run-tests.sh
-  product-import/run-tests.sh
-  product-audit-mirror/run.sh
-  a1-checklist/run-tests.sh
-  a1-vault-fallback/run-tests.sh
-  roadmap-gate/run-tests.sh
-  a1-quick/run-tests.sh
-)
+# Wave 5 (security review MINOR 2): generic — every suite runner
+# _test-fixtures/*/run-tests.sh and */run.sh except this suite, found by glob,
+# so a new suite is covered the day it lands (no list to forget). Each runs
+# with A1_VAULT_WRITER_HOST unset (a declared other host would hide a leak).
+# Runtime measured 2026-09-26: 121 s for 33 suites, a1-xprov 78 s of it.
+# Red-making changes: deleting `unset A1_VAULT_ROOT` from product-docs (red,
+# as before), or adding a suite that runs `product init` without it (red —
+# the fixed list could not see it).
+
+I_OWN_SUITE="a1-vault-cockpit"
+
+i_suites() {
+  local r
+  for r in "$REPO_ROOT"/_test-fixtures/*/run-tests.sh "$REPO_ROOT"/_test-fixtures/*/run.sh; do
+    [[ -f "$r" ]] || continue
+    [[ "$(basename "$(dirname "$r")")" == "$I_OWN_SUITE" ]] && continue
+    printf '%s\n' "${r#"$REPO_ROOT/_test-fixtures/"}"
+  done
+}
 
 caseI1() {
-  local s sentinel home leaked
-  for s in "${I_SUITES[@]}"; do
+  local s sentinel home leaked n=0 t0=$SECONDS
+  while IFS= read -r s; do
+    n=$((n + 1))
     sentinel="$(mktemp -d)"; home="$(mktemp -d)"
-    A1_VAULT_ROOT="$sentinel" HOME="$home" bash "$REPO_ROOT/_test-fixtures/$s" >/dev/null 2>&1
+    env -u A1_VAULT_WRITER_HOST A1_VAULT_ROOT="$sentinel" HOME="$home" bash "$REPO_ROOT/_test-fixtures/$s" >/dev/null 2>&1
     leaked="$(cd "$sentinel" && find . -mindepth 1 | sed 's#^\./##' | LC_ALL=C sort | head -3 | tr '\n' ' ' | sed 's/ $//')"
     if [[ -e "$sentinel/project" ]]; then bad "I1 $s created project/ in the sentinel vault ($leaked)"
     else ok "I1 $s: no project/ in the sentinel vault"; fi
     assert_eq "I1 $s leaves the sentinel vault empty" "$leaked" ""
     rm -rf "$sentinel" "$home"
-  done
+  done < <(i_suites)
+  # the glob must see at least the nine suites the fixed list named before Wave 5
+  if [[ $n -ge 9 ]]; then ok "I1 glob found $n suites ($((SECONDS - t0)) s)"; else bad "I1 glob found only $n suites"; fi
 }
 caseI1

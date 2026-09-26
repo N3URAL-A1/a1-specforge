@@ -1,0 +1,8 @@
+# Allowed differences from the 475382a golden for G2 — a DOCUMENTED exception to SC-002
+# (team-lead decision 2026-09-26): spec lifecycle, not vault behaviour. Nothing else may differ.
+# Format: <ext><TAB><op><TAB><text>
+#   replace: the golden line <text> must occur exactly once and is swapped for the next "with" line (FR-030).
+#   drop-prefix: exactly one current line starting with <text> is removed before the compare (FR-031).
+files	replace	> Spec ID: `001-demo` · Project: `demo` · Status: `implementing`
+files	with	> Spec ID: `001-demo` · Project: `demo` · Status: `done`
+err	drop-prefix	hint: 

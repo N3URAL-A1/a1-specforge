@@ -22,6 +22,7 @@ const {
   vaultRoot, projectsPath, writeTextAtomic, parseFlags, assertSafeSegment, fail,
 } = require('./io.cjs');
 const { usage } = require('./help.cjs');
+const { notWriterSkip } = require('./vault-mirror.cjs');
 
 const RELATIONS_HEADING = '## Relations';
 const RELATIONS_HEADING_RE = /^## Relations\r?$/;
@@ -88,6 +89,26 @@ function hubPathFor(slug) {
   return projectsPath(`${safeSegmentOrFail(slug, 'project slug')}.md`);
 }
 
+// Wave 5 (security review MINOR 1c): a hub note or project folder that is a
+// symlink is refused with one stderr line — the hub is read and rewritten,
+// so a link would pull outside content into the vault (or write outside it).
+function isLink(p) {
+  try { return fs.lstatSync(p).isSymbolicLink(); } catch (_e) { return false; }
+}
+
+/** null, or the refusal reason for a linked hub note / project folder. */
+function linkRefusal(slug) {
+  if (isLink(hubPathFor(slug))) return `hub note is a symbolic link: project/${slug}.md`;
+  if (isLink(path.join(vaultRoot(), 'project', slug))) return `project folder is a symbolic link: project/${slug}/`;
+  return null;
+}
+
+function refuseLinked(slug) {
+  const reason = linkRefusal(slug);
+  if (reason) process.stderr.write(`[a1-tools] vault link-hub: refused (${reason})\n`);
+  return reason;
+}
+
 /** Link ONE artifact into the hub. Library entry point used by `spec init`;
  * never exits, never creates the hub. Result `hub` is one of
  * linked | unchanged | would-link (dry run) | missing. */
@@ -95,6 +116,7 @@ function linkHub(slug, subfolder, basename, opts = {}) {
   const hubPath = hubPathFor(slug);
   const line = relationLine(slug, subfolder, basename);
   const base = { hub_path: hubPath, line };
+  if (refuseLinked(slug)) return { ...base, hub: 'refused-link' };
   if (!fs.existsSync(hubPath)) return { ...base, hub: 'missing' };
   const next = insertRelationLine(fs.readFileSync(hubPath, 'utf8'), line);
   if (next === null) return { ...base, hub: 'unchanged' };
@@ -106,6 +128,7 @@ function linkHub(slug, subfolder, basename, opts = {}) {
 /** Link every spec basename of one slug in a single read/write of its hub. */
 function linkSpecsIntoHub(slug, basenames, dryRun) {
   const hubPath = hubPathFor(slug);
+  if (refuseLinked(slug)) return { slug, hub: 'refused-link', hub_path: hubPath, added: [], unchanged: 0 };
   if (!fs.existsSync(hubPath)) {
     return { slug, hub: 'missing', hub_path: hubPath, added: [], unchanged: 0 };
   }
@@ -132,7 +155,10 @@ function listSpecBasenames(slug) {
 function allSlugsWithSpecs() {
   const projectDir = path.join(vaultRoot(), 'project');
   if (!fs.existsSync(projectDir)) return [];
-  return fs.readdirSync(projectDir, { withFileTypes: true })
+  const entries = fs.readdirSync(projectDir, { withFileTypes: true });
+  entries.filter((d) => d.isSymbolicLink() && fs.existsSync(path.join(projectDir, d.name, 'spec')))
+    .forEach((d) => process.stderr.write(`[a1-tools] vault link-hub: refused (project folder is a symbolic link: project/${d.name}/)\n`));
+  return entries
     .filter((d) => d.isDirectory() && fs.existsSync(path.join(projectDir, d.name, 'spec')))
     .map((d) => d.name)
     .sort();
@@ -187,10 +213,13 @@ function resolveArtifactRef(slug, positional, specId) {
 
 function linkAllSpecs(slugArg, dryRun) {
   const slugs = slugArg ? [safeSegmentOrFail(slugArg, 'project slug')] : allSlugsWithSpecs();
-  const projects = slugs.map((s) => linkSpecsIntoHub(s, listSpecBasenames(s), dryRun));
+  const projects = slugs.map((s) => (linkRefusal(s)
+    ? linkSpecsIntoHub(s, [], dryRun) // prints the refusal; lists nothing through the link
+    : linkSpecsIntoHub(s, listSpecBasenames(s), dryRun)));
   const linked = projects.reduce((n, p) => n + p.added.length, 0);
   const unchanged = projects.reduce((n, p) => n + p.unchanged, 0);
   const missingHub = projects.filter((p) => p.hub === 'missing').map((p) => p.slug);
+  const refusedLink = projects.filter((p) => p.hub === 'refused-link').map((p) => p.slug);
   if (dryRun) {
     const lines = projects.flatMap((p) => p.added.map((l) => `  ${p.hub_path}: ${l}`));
     process.stderr.write(`[a1-tools] vault link-hub --dry-run: would add ${linked} line(s)\n${lines.map((l) => `${l}\n`).join('')}`);
@@ -198,7 +227,8 @@ function linkAllSpecs(slugArg, dryRun) {
   if (slugArg && missingHub.length > 0) {
     fail(`hub note missing: ${projects[0].hub_path} — link-hub never creates hubs (create it first)`);
   }
-  return { mode: 'all-specs', dry_run: dryRun, linked, unchanged, missing_hub: missingHub, projects };
+  if (slugArg && refusedLink.length > 0) process.exit(1); // the refusal line is already on stderr
+  return { mode: 'all-specs', dry_run: dryRun, linked, unchanged, missing_hub: missingHub, refused_link: refusedLink, projects };
 }
 
 /** `vault link-hub <slug> <artifact-path> | --spec <id> [--dry-run]`
@@ -207,12 +237,17 @@ function cmdVaultLinkHub(args) {
   requireExternalVaultRoot('link-hub');
   const flags = parseFlags(args, { spec: 'value', 'all-specs': 'bool', 'dry-run': 'bool' });
   const dryRun = Boolean(flags['dry-run']);
+  // Wave 5 (FR-034, security review MAJOR 2): the hub note is a vault write —
+  // a non-writer host skips (one stderr line, exit 0), dry run included.
+  const notWriter = notWriterSkip();
+  if (notWriter) return { status: 'skipped', reason: notWriter, dry_run: dryRun, mode: flags['all-specs'] ? 'all-specs' : 'single' };
   if (flags['all-specs']) return linkAllSpecs(flags._[0], dryRun);
   const slug = flags._[0];
   if (!slug) usage('vault link-hub requires <slug> (<artifact-path> | --spec <id>) or --all-specs');
   safeSegmentOrFail(slug, 'project slug');
   const ref = resolveArtifactRef(slug, flags._[1], flags.spec);
   const result = linkHub(slug, ref.subfolder, ref.basename, { dryRun });
+  if (result.hub === 'refused-link') process.exit(1); // the refusal line is already on stderr
   if (result.hub === 'missing') {
     fail(`hub note missing: ${result.hub_path} — link-hub never creates hubs (create it first)`);
   }

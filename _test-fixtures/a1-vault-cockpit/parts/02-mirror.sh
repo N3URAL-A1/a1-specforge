@@ -122,13 +122,20 @@ caseM4() {
 
 # ---------- M5 tmp then rename (process assertion on the recorded events) ----------
 # Red-making change: calling writeFileSync(dst) directly (or renaming from a
-# path that was never written).
+# path that was never written). Wave 5 (security review MINOR 1): the tmp name
+# is `<dst>.tmp.<12 hex>` (random) opened with 'wx' — red-making changes:
+# going back to `.tmp.<pid>` (name and distinct-names asserts) or dropping
+# the 'wx' flag (flag assert).
 caseM5() {
   assert_json "M5 recorded 14 writes" "$M_OUT" "j.events.filter(e => e.op === 'write').length" "14"
-  assert_json "M5 every write path ends in .tmp.<pid> and lies in its target dir" "$M_OUT" \
-    "(() => { const re = new RegExp('\\\\.tmp\\\\.' + j.pid + '\$'); const finals = new Set(j.plan.entries.map(e => e.dst)); const dirs = new Set(j.plan.entries.map(e => require('path').dirname(e.dst))); return j.events.filter(e => e.op === 'write').every(e => re.test(e.path) && dirs.has(require('path').dirname(e.path)) && !finals.has(e.path)); })()" "true"
+  assert_json "M5 every write path ends in .tmp.<12 hex> and lies in its target dir" "$M_OUT" \
+    "(() => { const re = /\.tmp\.[0-9a-f]{12}$/; const finals = new Set(j.plan.entries.map(e => e.dst)); const dirs = new Set(j.plan.entries.map(e => require('path').dirname(e.dst))); return j.events.filter(e => e.op === 'write').every(e => re.test(e.path) && dirs.has(require('path').dirname(e.path)) && !finals.has(e.path)); })()" "true"
   assert_json "M5 every rename maps a recorded tmp write onto a planned final dst" "$M_OUT" \
-    "(() => { const writes = new Set(j.events.filter(e => e.op === 'write').map(e => e.path)); const finals = new Set(j.plan.entries.filter(e => e.action !== 'extra').map(e => e.dst)); const rs = j.events.filter(e => e.op === 'rename'); return rs.length === 14 && rs.every(r => writes.has(r.from) && finals.has(r.to) && r.from === r.to + '.tmp.' + j.pid); })()" "true"
+    "(() => { const writes = new Set(j.events.filter(e => e.op === 'write').map(e => e.path)); const finals = new Set(j.plan.entries.filter(e => e.action !== 'extra').map(e => e.dst)); const rs = j.events.filter(e => e.op === 'rename'); return rs.length === 14 && rs.every(r => writes.has(r.from) && finals.has(r.to) && r.from.startsWith(r.to + '.tmp.')); })()" "true"
+  assert_json "M5 every tmp is opened with flag wx" "$M_OUT" \
+    "j.events.filter(e => e.op === 'write').every(e => e.flag === 'wx')" "true"
+  assert_json "M5 the 14 tmp names are distinct" "$M_OUT" \
+    "new Set(j.events.filter(e => e.op === 'write').map(e => e.path.slice(e.path.lastIndexOf('.tmp.')))).size" "14"
   assert_json "M5 no write targets a final path" "$M_OUT" \
     "(() => { const finals = new Set(j.plan.entries.map(e => e.dst)); return j.events.filter(e => e.op === 'write').some(e => finals.has(e.path)); })()" "false"
 }

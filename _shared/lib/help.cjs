@@ -24,8 +24,14 @@ Usage:
                   created filled; then links it from project/<slug>.md (JSON
                   hub: linked|unchanged|missing — a missing hub is never
                   created). Refuses an existing file, a non-kebab-case slug
-                  and a title > 200 chars (exit 1).
+                  and a title > 200 chars (exit 1). The spec file is written
+                  on every host; on a host that is not A1_VAULT_WRITER_HOST
+                  the hub link is left out (hub: skipped-non-writer, one
+                  stderr line, exit unchanged).
   a1-tools spec update-status <spec-path> <new-status> [flags]
+                  Host-agnostic: writes only the one spec file, on any host,
+                  whatever A1_VAULT_WRITER_HOST says (skill work, not a
+                  mirror or hub write).
   a1-tools spec set-size <spec-path> <S|M|L>
   a1-tools spec list <project-slug> [--status=<s>]
 
@@ -709,7 +715,10 @@ Usage:
                   repo source are reported as extra and kept; --prune deletes
                   them, only inside product/ and phases/, never a conflict
                   copy. Vault root missing or read-only -> one stderr line,
-                  status: skipped, exit 0. Unsafe slug or unknown flag ->
+                  status: skipped, exit 0. A1_VAULT_WRITER_HOST set and not
+                  this host's os.hostname() -> the same (Wave 5, FR-034):
+                  "this host is not the vault writer (<host> ≠ <writer>)",
+                  nothing written, exit 0. Unsafe slug or unknown flag ->
                   exit 1. No A1_VAULT_ROOT (tier repo-local) -> exit 2.
   a1-tools vault status [<slug>] [--slug <s>] [--json]
                   Spec 010 Wave 3 (FR-013/FR-014). Read-only drift report,
@@ -718,7 +727,9 @@ Usage:
                   mirror folders only), conflict (Obsidian conflict copies
                   "* (conflict*" or "*.sync-conflict-*" anywhere under
                   project/<slug>/). --json prints {findings, counts, in_sync,
-                  drift, skipped}. Exit 0 no drift, 1 drift, 2 cannot run
+                  drift, skipped, host, writer_host, may_write}; writer_host
+                  is A1_VAULT_WRITER_HOST or "undeclared" (FR-035), also as
+                  one stderr line "vault writer: ...". Exit 0 no drift, 1 drift, 2 cannot run
                   (no A1_VAULT_ROOT, vault root missing, unsafe slug, slug
                   mismatch, unknown flag).
   a1-tools vault lint [<slug>] [--json] [--fix-type [--dry-run]]
@@ -743,7 +754,10 @@ Usage:
                   unparseable files are listed as skipped. --dry-run (with
                   --fix-type) writes nothing and lists would_fix. Exit 0 clean,
                   1 findings, 2 cannot run (usage, hostile or unknown slug,
-                  repo-local tier without A1_VAULT_ROOT).
+                  repo-local tier without A1_VAULT_ROOT). --fix-type (also
+                  with --dry-run) on a host that is not A1_VAULT_WRITER_HOST:
+                  one "vault mirror skipped" stderr line, nothing stamped,
+                  fix_type: skipped-non-writer, exit code from the findings.
   a1-tools vault link-hub <slug> (<artifact-path> | --spec <id>) [--dry-run]
   a1-tools vault link-hub [<slug>] --all-specs [--dry-run]
                   Spec 010 Wave 6 (FR-024/FR-025/FR-026). Appends the line
@@ -762,7 +776,9 @@ Usage:
                   would add (JSON + stderr). Missing hub: single slug -> exit 1,
                   never created; --all-specs without slug -> listed under
                   missing_hub, exit 0. Repo-local tier (no A1_VAULT_ROOT) ->
-                  exit 2.
+                  exit 2. On a host that is not A1_VAULT_WRITER_HOST (also
+                  --dry-run): one "vault mirror skipped" stderr line, no hub
+                  read or written, {status: skipped}, exit 0.
 
 Spec statuses: ${[...SPEC_STATUSES].join(', ')}
 Bug statuses:  ${[...BUG_STATUSES].join(', ')}

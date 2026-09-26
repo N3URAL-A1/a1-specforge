@@ -35,7 +35,7 @@ const {
   parseFrontmatter, writeTextAtomic, assertSafeSegment, vaultRootInfo, parseFlags,
 } = require('./io.cjs');
 const { emitJson, writeStdoutSync } = require('./xprov-common.cjs');
-const { isConflictCopy } = require('./vault-mirror.cjs');
+const { isConflictCopy, notWriterSkip } = require('./vault-mirror.cjs');
 
 const EXIT_CLEAN = 0;
 const EXIT_FINDINGS = 1;
@@ -206,10 +206,27 @@ function lintProject(root, slug) {
   return { findings, files, ignored, companions };
 }
 
+/** True for a symlink (lstat). A linked project folder is never walked or
+ * written: --fix-type would otherwise stamp files outside the vault. */
+function isLink(p) {
+  try { return fs.lstatSync(p).isSymbolicLink(); } catch (_e) { return false; }
+}
+
+function warnLinkedProject(slug) {
+  process.stderr.write(`[a1-tools] vault lint: skipped project/${slug}/ (symbolic link, refused)\n`);
+}
+
 function allSlugs(root) {
   const dir = path.join(root, 'project');
   if (!fs.existsSync(dir)) return [];
-  return listDir(dir).filter((d) => d.isDirectory()).map((d) => d.name);
+  const entries = listDir(dir);
+  // a link to a folder is reported (never silently dropped, never walked)
+  entries.filter((d) => d.isSymbolicLink() && isDirTarget(path.join(dir, d.name))).forEach((d) => warnLinkedProject(d.name));
+  return entries.filter((d) => d.isDirectory()).map((d) => d.name);
+}
+
+function isDirTarget(p) {
+  try { return fs.statSync(p).isDirectory(); } catch (_e) { return false; }
 }
 
 // ---------- fix ----------
@@ -245,6 +262,9 @@ function resolveTargets(root, slugArg) {
   }
   if (!fs.existsSync(path.join(root, 'project', slug))) {
     return cannotRun(`project folder not found: project/${slug}/`);
+  }
+  if (isLink(path.join(root, 'project', slug))) {
+    return cannotRun(`project folder is a symbolic link (refused): project/${slug}/`);
   }
   return [slug];
 }
@@ -283,7 +303,11 @@ function cmdVaultLint(args) {
   const results = resolveTargets(root, flags._[0]).map((s) => lintProject(root, s));
   const scanned = results.flatMap((r) => r.findings);
   const dryRun = Boolean(flags['dry-run']);
-  const fix = flags['fix-type']
+  // Wave 5 (FR-034, security review MAJOR 2): the backfill writes vault files,
+  // so only the writer host runs it; elsewhere the lint still reports and the
+  // exit code stays the findings one.
+  const notWriter = flags['fix-type'] ? notWriterSkip() : null;
+  const fix = flags['fix-type'] && !notWriter
     ? applyFixType(results.flatMap((r) => r.files), dryRun)
     : { fixed: [], skipped: [] };
   const fixedNow = new Set(dryRun ? [] : fix.fixed);
@@ -297,6 +321,7 @@ function cmdVaultLint(args) {
     fixed: dryRun ? [] : fix.fixed,
     skipped: fix.skipped,
     ...(dryRun ? { would_fix: fix.fixed } : {}),
+    ...(notWriter ? { fix_type: 'skipped-non-writer', fix_type_reason: notWriter } : {}),
   };
   const code = findings.length > 0 ? EXIT_FINDINGS : EXIT_CLEAN;
   if (flags.json) {

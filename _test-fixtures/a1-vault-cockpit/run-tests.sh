@@ -44,6 +44,10 @@ set -u
 # are the vault-free ones (SC-002) — so the suite runs without a vault root.
 # Cases that need a vault set A1_VAULT_ROOT per call to a mktemp -d directory.
 unset A1_VAULT_ROOT
+# Spec 010 Wave 5: a declared writer host (FR-034) would make every mirroring
+# case in parts/ depend on the machine the suite runs on. Cases that need one set
+# A1_VAULT_WRITER_HOST per call (parts/05-hosts.sh).
+unset A1_VAULT_WRITER_HOST
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SUITE="$REPO_ROOT/_test-fixtures/a1-vault-cockpit"

@@ -19,8 +19,9 @@
 // ---------------------------------------------------------------------------
 
 const realFs = require('fs');
+const os = require('os');
 const path = require('path');
-const { assertSafeSegment, parseFrontmatter } = require('./io.cjs');
+const { assertSafeSegment, parseFrontmatter, tmpPathFor, assertAncestorInside } = require('./io.cjs');
 const { PRODUCT_MIRROR_SET, PHASES_MIRROR_SET, MIRROR_EXCLUDES } = require('./vault-contract.cjs');
 
 // Source base per set, and the source prefix that is DROPPED on the way into
@@ -58,28 +59,35 @@ function listDir(fs, dir) {
   try { return fs.readdirSync(dir, { withFileTypes: true }); } catch (_e) { return []; }
 }
 
-function isFile(fs, p) {
-  try { return fs.statSync(p).isFile(); } catch (_e) { return false; }
-}
-
-/** All files under `dir`, as rel paths (posix-joined with `prefix`). */
-function walkFiles(fs, dir, prefix) {
+/** All files under `dir`, as rel paths (posix-joined with `prefix`).
+ * `withLinks` (source side only): also every non-directory entry that is not
+ * a regular file — a symlink, fifo, socket — so planSet can refuse it with a
+ * stderr line instead of dropping it silently. Never descends into a link. */
+function walkFiles(fs, dir, prefix, withLinks = false) {
   return listDir(fs, dir).flatMap((d) => {
     const rel = prefix ? `${prefix}/${d.name}` : d.name;
-    if (d.isDirectory()) return walkFiles(fs, path.join(dir, d.name), rel);
-    return d.isFile() ? [rel] : [];
+    if (d.isDirectory()) return walkFiles(fs, path.join(dir, d.name), rel, withLinks);
+    return d.isFile() || withLinks ? [rel] : [];
   });
+}
+
+/** lstat-based existence: true for anything that is not a directory,
+ * including a dangling symlink (so it is reported, not silently absent). */
+function existsNonDir(fs, p) {
+  try { return !fs.lstatSync(p).isDirectory(); } catch (_e) { return false; }
 }
 
 /** Expand one set pattern (segments: literal, `*` = one dir, `**` = subtree)
  * against `base`; returns the rel paths of EXISTING files, sorted. Absent
  * sources simply yield nothing (FR-003: missing files are skipped, no error). */
 function expandPattern(fs, base, segments, prefix) {
-  if (segments.length === 0) return isFile(fs, base) ? [prefix] : [];
+  if (segments.length === 0) return existsNonDir(fs, base) ? [prefix] : [];
   const [head, ...tail] = segments;
-  if (head === '**') return walkFiles(fs, base, prefix).sort();
+  if (head === '**') return walkFiles(fs, base, prefix, true).sort();
   if (head === '*') {
-    return listDir(fs, base).filter((d) => d.isDirectory()).map((d) => d.name).sort()
+    // a linked directory is expanded too — every file under it then fails the
+    // realpath containment in planSet and is reported, never mirrored
+    return listDir(fs, base).filter((d) => d.isDirectory() || d.isSymbolicLink()).map((d) => d.name).sort()
       .flatMap((name) => expandPattern(fs, path.join(base, name), tail, prefix ? `${prefix}/${name}` : name));
   }
   return expandPattern(fs, path.join(base, head), tail, prefix ? `${prefix}/${head}` : head);
@@ -87,6 +95,18 @@ function expandPattern(fs, base, segments, prefix) {
 
 function readBytes(fs, p) {
   try { return fs.readFileSync(p); } catch (_e) { return null; }
+}
+
+/** Source bytes without following a final-component symlink (O_NOFOLLOW):
+ * a source swapped for a link between plan and write fails with ELOOP
+ * instead of carrying the link target into the vault. */
+function readSourceNoFollow(src) {
+  const fd = realFs.openSync(src, realFs.constants.O_RDONLY | realFs.constants.O_NOFOLLOW);
+  try { return realFs.readFileSync(fd); } finally { realFs.closeSync(fd); }
+}
+
+function readSourceOrNull(src) {
+  try { return readSourceNoFollow(src); } catch (_e) { return null; }
 }
 
 function setRoot(vaultRoot, slug, set) {
@@ -106,31 +126,72 @@ function targetFor(vaultRoot, slug, set, rel) {
 }
 
 function classify(fs, src, dst) {
-  const a = readBytes(fs, src);
+  const a = readSourceOrNull(src);
   const b = readBytes(fs, dst);
   if (b === null) return 'add';
   return a !== null && a.equals(b) ? 'unchanged' : 'update';
 }
 
-/** Entries for one set: whitelist ∖ excludes, with actions; skipped unsafe segments. */
+// ---------- source guards (Wave 5, security review MAJOR 1) ----------
+//
+// Only regular files are mirrored. A source that is a symlink (or fifo,
+// socket, …) is skipped with one stderr line, and so is every source whose
+// realpath leaves realpath(<repo>)/docs/product resp. realpath(<repo>)/.a1 —
+// which also refuses a linked intermediate folder. A set base that is itself
+// a link out of the repo refuses the whole set (one line); a refused set
+// reports no extras, so `--prune` can never delete the vault copy because
+// the repo side was replaced by a link.
+
+/** realpath(<repo>) joined with the set's source dirs; null if unresolvable. */
+function realSourceBase(fs, repoRoot, set) {
+  try { return path.join(fs.realpathSync(repoRoot), ...SET_SOURCE_DIRS[set]); } catch (_e) { return null; }
+}
+
+/** null when the set base is absent or real; else the refusal reason. */
+function baseProblem(fs, base, realBase) {
+  let real;
+  try { real = fs.realpathSync(base); } catch (_e) { return null; }
+  return realBase && real === realBase ? null : `source folder resolves outside the repo via a link: ${real}`;
+}
+
+/** null when `src` is a regular file inside `realBase`; else the reason. */
+function sourceProblem(fs, src, realBase) {
+  let st;
+  try { st = fs.lstatSync(src); } catch (e) { return `source not readable (${e.code})`; }
+  if (st.isSymbolicLink()) return 'source is a symbolic link';
+  if (!st.isFile()) return 'source is not a regular file';
+  let real;
+  try { real = fs.realpathSync(src); } catch (e) { return `source not resolvable (${e.code})`; }
+  return insideRoot(real, realBase) ? null : `source resolves outside the repo set folder via a link: ${real}`;
+}
+
+/** Entries for one set: whitelist ∖ excludes, with actions; skipped unsafe
+ * segments and refused sources. `refused` marks a set whose base is a link. */
 function planSet({ fs, repoRoot, vaultRoot, slug, set, patterns, excludes, warn }) {
   const base = path.join(repoRoot, ...SET_SOURCE_DIRS[set]);
+  const realBase = realSourceBase(fs, repoRoot, set);
+  const refusal = baseProblem(fs, base, realBase);
+  if (refusal) {
+    warn(`[a1-tools] vault mirror: skipped ${set}/ (${refusal})\n`);
+    return { entries: [], skipped: [{ rel: '', set, reason: refusal }], refused: true };
+  }
   const rels = [...new Set(patterns.flatMap((p) => expandPattern(fs, base, p.split('/'), '')))]
     .filter((rel) => !isExcluded(rel, excludes));
   const entries = [];
   const skipped = [];
   for (const srcRel of rels) {
     const rel = targetRel(set, srcRel);
+    const src = path.join(base, srcRel);
     const t = targetFor(vaultRoot, slug, set, rel);
-    if (t.reason) {
-      skipped.push({ rel, set, reason: t.reason });
-      warn(`[a1-tools] vault mirror: skipped ${set}/${rel} (${t.reason})\n`);
+    const reason = t.reason || sourceProblem(fs, src, realBase);
+    if (reason) {
+      skipped.push({ rel, set, reason });
+      warn(`[a1-tools] vault mirror: skipped ${set}/${rel} (${reason})\n`);
       continue;
     }
-    const src = path.join(base, srcRel);
     entries.push({ rel, set, action: classify(fs, src, t.dst), src, dst: t.dst });
   }
-  return { entries, skipped };
+  return { entries, skipped, refused: false };
 }
 
 /** Files under the vault set folder that no entry produces → `extra`. */
@@ -158,7 +219,9 @@ function planMirror(opts) {
     fs, repoRoot, vaultRoot, slug, set, patterns: sets[set], excludes: sets.excludes, warn,
   }));
   const planned = parts.flatMap((p) => p.entries);
-  const extras = ['product', 'phases'].flatMap((set) => extrasFor({ fs, vaultRoot, slug, set, planned }));
+  const extras = ['product', 'phases']
+    .filter((set, i) => !parts[i].refused)
+    .flatMap((set) => extrasFor({ fs, vaultRoot, slug, set, planned }));
   return {
     repoRoot, vaultRoot, slug,
     entries: [...planned, ...extras],
@@ -170,7 +233,7 @@ function planMirror(opts) {
 
 const DEFAULT_OPS = Object.freeze({
   mkdirSync: (p, o) => realFs.mkdirSync(p, o),
-  writeFileSync: (p, d) => realFs.writeFileSync(p, d),
+  writeFileSync: (p, d, o) => realFs.writeFileSync(p, d, o),
   renameSync: (a, b) => realFs.renameSync(a, b),
   unlinkSync: (p) => realFs.unlinkSync(p),
 });
@@ -211,6 +274,11 @@ function assertSetRootsReal(plan, sets) {
   }
 }
 
+/** realpath of the vault root; null when it cannot be resolved. */
+function realVaultRoot(vaultRoot) {
+  try { return realFs.realpathSync(vaultRoot); } catch (_e) { return null; }
+}
+
 function assertRealInside(dstDir, realRoot) {
   const real = realFs.realpathSync(dstDir);
   if (!realRoot || !insideRoot(real, realRoot)) throw new Error(`vault mirror: target dir escapes the set folder via a link: ${dstDir}`);
@@ -218,12 +286,14 @@ function assertRealInside(dstDir, realRoot) {
 
 function writeAtomic(ops, entry, realRoot) {
   const dir = path.dirname(entry.dst);
+  assertAncestorInside(dir, realRoot); // before mkdir: no folder created through a link
   ops.mkdirSync(dir, { recursive: true });
   assertRealInside(dir, realRoot);
-  const tmp = `${entry.dst}.tmp.${process.pid}`;
-  const bytes = realFs.readFileSync(entry.src);
+  // random name + 'wx': a link planted at a guessable tmp name cannot catch the bytes
+  const tmp = tmpPathFor(entry.dst);
+  const bytes = readSourceNoFollow(entry.src);
   try {
-    ops.writeFileSync(tmp, bytes);
+    ops.writeFileSync(tmp, bytes, { flag: 'wx' });
     ops.renameSync(tmp, entry.dst);
   } catch (e) {
     try { ops.unlinkSync(tmp); } catch (_e) { /* tmp may not exist */ }
@@ -246,7 +316,12 @@ function applyMirror(plan, opts) {
   assertSetRootsReal(plan, touched);
   // plan.sets (optional, Wave 3 `vault sync --product|--phases`) limits the
   // set folders created; a deselected set must not appear in the vault.
-  for (const set of plan.sets || ['product', 'phases']) ops.mkdirSync(setRoot(plan.vaultRoot, plan.slug, set), { recursive: true });
+  const realVault = realVaultRoot(plan.vaultRoot);
+  for (const set of plan.sets || ['product', 'phases']) {
+    const root = setRoot(plan.vaultRoot, plan.slug, set);
+    assertAncestorInside(root, realVault); // project/<slug> linked out of the vault → refused, nothing created
+    ops.mkdirSync(root, { recursive: true });
+  }
   const counts = { added: 0, updated: 0, unchanged: 0, extra: 0, pruned: 0, skipped: plan.skipped.length };
   for (const e of plan.entries) {
     if (e.action === 'add' || e.action === 'update') {
@@ -260,6 +335,44 @@ function applyMirror(plan, opts) {
     }
   }
   return counts;
+}
+
+// ---------- single vault writer (Wave 5, FR-034 / FR-035) ----------
+//
+// Exactly one host writes the mirror: the one whose os.hostname() equals
+// A1_VAULT_WRITER_HOST (exact string match after trimming — the value must be
+// what `node -e 'console.log(require("os").hostname())'` prints there). Unset
+// or empty → undeclared, every host may write (the pre-Wave-5 behaviour). A
+// non-writer host skips with one stderr line; no exit code changes (Clarify
+// 2026-09-24: tightening to exit 2 is reconsidered after four weeks without
+// conflict copies). The gate only decides WHETHER to write; the realpath and
+// segment guards decide WHERE, on every host.
+
+const WRITER_HOST_ENV = 'A1_VAULT_WRITER_HOST';
+const UNDECLARED_WRITER = 'undeclared';
+
+/** writerHostGate(env?, host?) → fresh frozen { host, writerHost, mayWrite }. */
+function writerHostGate(env = process.env, host = os.hostname()) {
+  const raw = env[WRITER_HOST_ENV];
+  const declared = typeof raw === 'string' ? raw.trim() : '';
+  const writerHost = declared === '' ? UNDECLARED_WRITER : declared;
+  return Object.freeze({ host, writerHost, mayWrite: declared === '' || declared === host });
+}
+
+/** The reason text after "vault mirror skipped: " for a non-writer host. */
+function notWriterReason(gate) {
+  return `this host is not the vault writer (${gate.host} ≠ ${gate.writerHost})`;
+}
+
+/** The non-writer skip every vault WRITE path shares (mirror hook, `vault
+ * sync`, `vault lint --fix-type`, `vault link-hub`, the hub link of `spec
+ * init`): null when this host may write; otherwise prints the one skip line
+ * and returns the reason. Exit codes are the caller's and never change. */
+function notWriterSkip(gate = writerHostGate()) {
+  if (gate.mayWrite) return null;
+  const reason = notWriterReason(gate);
+  process.stderr.write(`[a1-tools] vault mirror skipped: ${reason}\n`);
+  return reason;
 }
 
 // ---------- product transaction hook (Wave 4, FR-007 / FR-010) ----------
@@ -312,6 +425,8 @@ function committedSlug(dir) {
 /** Mirror the product set of the repo owning `dir`. Returns a fresh result;
  * throws only for the caller to turn into `skipped`. */
 function mirrorProductNow(dir) {
+  const gate = writerHostGate();
+  if (!gate.mayWrite) throw new Error(notWriterReason(gate));
   const repoRoot = repoRootOfProductDir(dir);
   if (!repoRoot) throw new Error(`product dir is not <repo>/docs/product: ${path.resolve(dir)}`);
   const vaultRoot = path.resolve(process.env.A1_VAULT_ROOT);
@@ -344,4 +459,7 @@ function productMirrorHook(dir) {
   return Object.freeze({ afterCommit });
 }
 
-module.exports = { planMirror, applyMirror, isConflictCopy, isExcluded, expandPattern, productMirrorHook };
+module.exports = {
+  planMirror, applyMirror, isConflictCopy, isExcluded, expandPattern, productMirrorHook,
+  writerHostGate, notWriterReason, notWriterSkip, UNDECLARED_WRITER,
+};

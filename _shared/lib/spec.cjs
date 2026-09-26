@@ -7,7 +7,6 @@ const path = require('path');
 const { SPEC_STATUSES, SPEC_SIZES } = require('./status-constants.cjs');
 const { usage } = require('./help.cjs');
 const {
-  vaultRoot,
   resolveVaultPath,
   parseFlags,
   readMd,
@@ -126,7 +125,12 @@ function cmdSpecInit(args) {
   assertSpecInitContent(content, values);
   writeTextAtomic(specPath, content);
 
-  const hub = require('./vault-hub.cjs').linkHub(projectSlug, 'spec', id);
+  // Spec authorship is host-agnostic (the file above is written on every
+  // host); the hub note is not — a non-writer host leaves it alone (Wave 5).
+  const notWriter = require('./vault-mirror.cjs').notWriterSkip();
+  const hub = notWriter
+    ? { hub: 'skipped-non-writer', hub_path: null, line: null }
+    : require('./vault-hub.cjs').linkHub(projectSlug, 'spec', id);
   return {
     spec_path: specPath, id, project: projectSlug, feature_slug: featureSlug, title,
     status: 'discovering', size, created,
@@ -248,7 +252,13 @@ function cmdSpecUpdateStatus(args) {
 
   writeMdAtomic(specPath, fm, body);
   // FR-031: name the reconciling command, never run it (the roadmap is not ours to write here).
-  const hint = require('./spec-coherence.cjs').roadmapHint({ specAbs: specPath, fm, newStatus, vaultRoot: vaultRoot() });
+  // Side-effect free (SC-002): only terminal targets look anything up, and the
+  // vault root comes from the env var alone — vaultRoot() would create
+  // .a1/learnings/ and announce itself on stderr in a vault-less repo.
+  const coherence = require('./spec-coherence.cjs');
+  const hint = coherence.TERMINAL_STATUSES.has(newStatus)
+    ? coherence.roadmapHint({ specAbs: specPath, fm, newStatus, vaultRoot: process.env.A1_VAULT_ROOT || null })
+    : null;
   if (hint) process.stderr.write(`${hint}\n`);
   return {
     spec_path: specPath,

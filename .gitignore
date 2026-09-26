@@ -3,3 +3,7 @@
 .skill_id
 checkpoint/
 .a1/learnings/
+
+# a1-tools lock and atomic-write leftovers (spec 010 Wave 5)
+*.lock*
+*.tmp.*

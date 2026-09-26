@@ -1,0 +1,5 @@
+# golden: commit 475382a, captured by: bash _test-fixtures/a1-vault-fallback/golden/capture.sh
+## product init --project demo --title Demo project rc=0
+## product add-milestone --id m1 --title Milestone one rc=0
+## product add-feature --id 001-demo --milestone m1 --title Demo feature rc=0
+## product stage --by 001-demo --set started rc=0

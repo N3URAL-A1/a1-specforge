@@ -1,0 +1,8 @@
+# golden: commit 475382a, captured by: bash _test-fixtures/a1-vault-fallback/golden/capture.sh
+## analyze init demo general --date <DATE> --title Demo analysis rc=0
+{
+  "path": "<REPO>/.a1/learnings/project/demo/analyses/<DATE>-general.md",
+  "project": "demo",
+  "focus": "general",
+  "status": "scoped"
+}
