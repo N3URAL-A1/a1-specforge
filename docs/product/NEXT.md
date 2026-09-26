@@ -4,7 +4,7 @@
 
 # a1-specforge — Roadmap
 
-updated: 2026-09-25
+updated: 2026-09-26
 
 ## You are here
 
@@ -13,7 +13,7 @@ updated: 2026-09-25
 
 ## In-flight features
 
-None.
+- **011-intent-queue-consumer** — Intent queue consumer — the a1 half of triggering skills from the phone via the vault (milestone: continuous, stage: started)
 
 ## Next cursor
 

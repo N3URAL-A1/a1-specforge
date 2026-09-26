@@ -10,6 +10,38 @@
       "by": "009-cross-provider-review-gate",
       "at": "2026-09-25T14:24:02.694Z",
       "stage": "started"
+    },
+    {
+      "type": "code_scope",
+      "paths": [
+        "_shared/lib/intent.cjs",
+        "_shared/lib/intent-constants.cjs",
+        "_shared/lib/intent-validate.cjs",
+        "_shared/lib/intent-sign.cjs",
+        "_shared/lib/intent-devices.cjs",
+        "_shared/lib/intent-ledger.cjs",
+        "_shared/lib/intent-log.cjs",
+        "_shared/lib/intent-lifecycle.cjs",
+        "_shared/lib/intent-run.cjs",
+        "_shared/lib/intent-result.cjs",
+        "_shared/lib/intent-tick.cjs",
+        "_shared/lib/intent-schema.cjs",
+        "_shared/lib/intent-doctor.cjs",
+        "_shared/lib/intent-approve.cjs",
+        "_shared/lib/intent-cli.cjs",
+        "_shared/lib/status-constants.cjs",
+        "_shared/a1-tools.cjs",
+        "_shared/lib/help.cjs",
+        "_shared/intent-contract.md",
+        "_shared/templates/ai.n3ural.a1-intent-tick.plist",
+        "bin/a1-intent-agent.sh",
+        "_test-fixtures/a1-intent/",
+        "_test-fixtures/CONVENTIONS.md",
+        ".github/workflows/test.yml"
+      ],
+      "by": "011-intent-queue-consumer",
+      "at": "2026-09-26T09:44:42.379Z",
+      "stage": "started"
     }
   ]
 }

@@ -4,7 +4,7 @@ type: roadmap
 project: a1-specforge
 title: "a1-specforge — Roadmap"
 status: active
-updated: 2026-09-25
+updated: 2026-09-26
 source: "migrated from docs/roadmap.md v3.0 (2026-07-10)"
 milestones:
   - id: m0-repo-extract
@@ -148,11 +148,11 @@ features:
   - id: 011-intent-queue-consumer
     milestone: continuous
     title: "Intent queue consumer — the a1 half of triggering skills from the phone via the vault"
-    status: planned
-    stage: null
+    status: in-flight
+    stage: started
     depends_on:
       - 010-vault-cockpit-contract
-    started: null
+    started: 2026-09-26
     finished: null
     spec_path: null
     plan_path: null
@@ -268,6 +268,7 @@ None.
 - **2026-09-24** — feature '010-vault-cockpit-contract' added — One-way mirror of docs/product and phase state into project/<slug>/, CLI-stamped type:, vault lint, hub spec links, host-aware locks; supersedes 005
 - **2026-09-24** — feature '011-intent-queue-consumer' added — Signed, default-deny intent notes in inbox/intents/ consumed by a1-owned CLI on the Mac; closed action enum, single-flight, ledger outside the vault
 - **2026-09-25** — spec 009 waves 1–6 merged (#10, 4ee46d9): xprov modules, Phase 4b / step 2b-x wiring, gates at warning — Codex becomes a registered read-only reviewer; Wave 7 (live smoke + blocking flip) awaits Robert's xprov permit
+- **2026-09-26** — 011-intent-queue-consumer -> started — stage transition via `product stage`
 
 ## Appendix — migrated details
 

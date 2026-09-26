@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated": "2026-09-25T14:22:59.364Z",
+  "generated": "2026-09-26T09:44:52.045Z",
   "project": {
     "id": "a1-specforge",
     "title": "a1-specforge — Roadmap",
@@ -195,12 +195,12 @@
       "id": "011-intent-queue-consumer",
       "milestone": "continuous",
       "title": "Intent queue consumer — the a1 half of triggering skills from the phone via the vault",
-      "status": "planned",
-      "stage": null,
+      "status": "in-flight",
+      "stage": "started",
       "depends_on": [
         "010-vault-cockpit-contract"
       ],
-      "started": null,
+      "started": "2026-09-26",
       "finished": null,
       "spec_path": null,
       "plan_path": null
