@@ -1,0 +1,53 @@
+# golden: commit 475382a, captured by: bash _test-fixtures/a1-vault-fallback/golden/capture.sh
+== repo/.a1/
+== repo/.a1/learnings/
+== repo/.a1/learnings/project/
+== repo/.a1/learnings/project/demo/
+== repo/.a1/learnings/project/demo/CLAUDE.md
+# Demo project
+
+Test fixture for a1-checklist pass case.
+== repo/.a1/learnings/project/demo/plans/
+== repo/.a1/learnings/project/demo/plans/001-login-wave-plan.md
+---
+type: wave-plan
+spec_path: project/demo/spec/001-login.md
+spec_id: "001"
+project: demo
+created: <DATE>
+waves: 2
+---
+
+# Wave Plan: Login
+
+## Wave 1: Auth backend
+
+**Suggested agent(s):** a1-walter-web-developer, backend-bernd
+**Depends on:** none
+**Stories advanced:** FR-001
+
+Implement the email+password endpoint.
+
+## Wave 2: Forgot-password flow
+
+**Suggested agent(s):** a1-walter-web-developer
+**Depends on:** Wave 1
+**Stories advanced:** FR-002
+
+Implement the password reset flow on top of Wave 1.
+== repo/.a1/learnings/project/demo/spec/
+== repo/.a1/learnings/project/demo/spec/001-login.md
+---
+type: spec
+spec_id: "001"
+project: demo
+status: clarified
+created: <DATE>
+---
+
+# Login Feature
+
+## Functional Requirements
+
+- FR-001: Email + password login
+- FR-002: Forgot-password flow

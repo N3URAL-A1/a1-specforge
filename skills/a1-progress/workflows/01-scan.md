@@ -53,6 +53,45 @@ For each `code_scope` entry in the JSON, render: `by` (feature id), `stage`,
 If there are zero entries or the file is missing, show "No in-flight
 features" and skip the section.
 
+### 7. Vault cockpit (spec 010, FR-022)
+
+Read-only: `vault status` and `vault lint` never write. The vault is active
+only when `A1_VAULT_ROOT` names an external vault; `vault status` then
+compares the repo's `docs/product/` and `.a1/phases/` with their vault
+mirror, and `vault lint` checks the frontmatter of the project's vault
+folder. Each exit code is read from the command itself — output goes to a
+file first, never through a pipe (`vault status` exits 1 on drift, 2 when
+it cannot run; `vault lint` exits 1 on findings, 2 when it cannot run).
+
+```bash
+A1_TOOLS="${A1_TOOLS:-_shared/a1-tools.cjs}"
+VC_DIR="$(mktemp -d)"
+node "$A1_TOOLS" vault status --json >"$VC_DIR/status.json" 2>"$VC_DIR/status.err"; VS_RC=$?
+if [ "$VS_RC" -eq 2 ] && [ -z "${A1_VAULT_ROOT:-}" ]; then
+  echo 'vault: not configured'
+elif [ "$VS_RC" -eq 2 ] && grep -q 'no external vault root' "$VC_DIR/status.err"; then
+  echo 'vault: not configured'
+elif [ "$VS_RC" -eq 2 ]; then
+  echo "vault status: cannot run ($(head -n 1 "$VC_DIR/status.err"))"
+else
+  node -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const c=r.counts;console.log(`vault status: ${c.missing} missing, ${c.stale} stale, ${c.extra} extra, ${c.conflict} conflict`)' "$VC_DIR/status.json"
+  VC_SLUG="$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).slug)' "$VC_DIR/status.json")"
+  node "$A1_TOOLS" vault lint "$VC_SLUG" --json >"$VC_DIR/lint.json" 2>"$VC_DIR/lint.err"; VL_RC=$?
+  if [ "$VL_RC" -eq 2 ]; then
+    echo "vault lint: cannot run ($(head -n 1 "$VC_DIR/lint.err"))"
+  else
+    node -e 'const c=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).counts;const k=Object.keys(c).sort();console.log(k.length?`vault lint: ${k.map((x)=>`${c[x]} ${x}`).join(", ")}`:"vault lint: 0 findings")' "$VC_DIR/lint.json"
+  fi
+fi
+rm -rf "$VC_DIR"
+```
+
+Print the resulting line(s) verbatim in the report. `vault: not configured`
+is a normal state (vault-free installs), not a warning. Drift counts above 0
+route to `a1-tools vault sync`; lint `type_missing` routes to
+`a1-tools vault lint <slug> --fix-type`; a `conflict` count means Obsidian
+conflict copies that a human resolves in the vault.
+
 ## Output format
 
 ```
@@ -80,6 +119,10 @@ In-flight features:
   <feature-id>        stage: <stage>    scope: <paths>
   <feature-id>        stage: <stage>    scope: <paths>   ⚠ stale
                         → <hint from JSON>
+
+Vault:
+  vault status: <n> missing, <n> stale, <n> extra, <n> conflict
+  vault lint: <n> <class>, …            (or: vault: not configured)
 
 ━━━ Next Action ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

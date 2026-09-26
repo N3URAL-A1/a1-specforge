@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { nowIso, fail } = require('./io.cjs');
 
@@ -47,6 +48,12 @@ const RESERVATIONS_LOCK_RETRY_DELAY_MS = 50;
 // got reused, however unlikely; the timeout bounds that edge case too). Five
 // minutes is generously above any real product-command runtime.
 const RESERVATIONS_LOCK_STALE_MS = 5 * 60 * 1000;
+// Clock skew tolerated between the two hosts of a synced checkout. A lock
+// dated further ahead than this is invalid (a foreign lock is judged by age
+// alone, so a future date would otherwise keep it live forever) → stale.
+const RESERVATIONS_LOCK_FUTURE_SKEW_MS = 60 * 1000;
+// A real payload is ~100 bytes; anything this large is not a lock we wrote.
+const RESERVATIONS_LOCK_MAX_BYTES = 4096;
 
 /** Best-effort synchronous sleep (busy-wait via Atomics) — no external deps,
  * bounded by the caller's retry count so it can never hang. */
@@ -70,18 +77,50 @@ function isPidDead(pid) {
   }
 }
 
+/** The lock file content (spec 010 FR-032): a fresh {pid, createdAt,
+ * hostname} object. `hostname` lets a reader on the OTHER machine of a synced
+ * checkout tell that the pid is not one of its own processes. */
+function lockPayload() {
+  return JSON.stringify({ pid: process.pid, createdAt: nowIso(), hostname: os.hostname() });
+}
+
+/** True when the payload names a host other than this one (FR-033). A payload
+ * without `hostname` (pre-feature format) is treated as same-host, so its
+ * pid test keeps today's behaviour. A synced lock that claims THIS host's
+ * name is same-host by design: a hostname is a label, not a credential — two
+ * machines sharing a name is a configuration error the pid test then sees. */
+function isForeignHost(payload) {
+  const host = payload && payload.hostname;
+  return typeof host === 'string' && host !== '' && host !== os.hostname();
+}
+
+/** The lock file as utf8 when it is at most RESERVATIONS_LOCK_MAX_BYTES, else
+ * '' (fails JSON.parse → stale); never reads more than MAX+1 bytes. Throws
+ * like readFileSync when the file is gone. */
+function readLockBounded(lockPath) {
+  const fd = fs.openSync(lockPath, 'r');
+  try {
+    const buf = Buffer.alloc(RESERVATIONS_LOCK_MAX_BYTES + 1);
+    const n = fs.readSync(fd, buf, 0, buf.length, 0);
+    return n > RESERVATIONS_LOCK_MAX_BYTES ? '' : buf.subarray(0, n).toString('utf8');
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 /** Decide whether an existing `<file>.lock` is stale (safe to reclaim)
- * rather than actively held. Reads the {pid, createdAt} JSON payload written
- * by acquireReservationsLock. A lock is stale if: the file can't be parsed
- * (pre-fix lock format, or corrupted — never block forever on either), the
- * owning pid is no longer running, or the lock is older than
+ * rather than actively held. Reads the {pid, createdAt, hostname} JSON payload
+ * written by acquireReservationsLock. A lock is stale if: the file can't be
+ * parsed (pre-fix lock format, or corrupted — never block forever on either),
+ * the owning pid is no longer running (own host only — a foreign host's pid
+ * says nothing about processes here, FR-033), or the lock is older than
  * RESERVATIONS_LOCK_STALE_MS. Never throws — any error while inspecting the
  * lock is treated as "stale" so a broken lock file can never wedge the
  * product-command family permanently. */
 function isLockStale(lockPath) {
   let raw;
   try {
-    raw = fs.readFileSync(lockPath, 'utf8');
+    raw = readLockBounded(lockPath);
   } catch (_e) {
     // Lock disappeared between EEXIST and this read (another process beat
     // us to reclaiming it, or released it normally) — not our lock to
@@ -98,15 +137,17 @@ function isLockStale(lockPath) {
     return true;
   }
   const { pid, createdAt } = payload || {};
-  if (isPidDead(pid)) return true;
+  if (!isForeignHost(payload) && isPidDead(pid)) return true;
   const createdMs = typeof createdAt === 'string' ? Date.parse(createdAt) : NaN;
   if (!Number.isFinite(createdMs)) return true;
-  return Date.now() - createdMs > RESERVATIONS_LOCK_STALE_MS;
+  const ageMs = Date.now() - createdMs;
+  if (ageMs < -RESERVATIONS_LOCK_FUTURE_SKEW_MS) return true;
+  return ageMs > RESERVATIONS_LOCK_STALE_MS;
 }
 
 /** Acquire an exclusive lock for read-check-write sequences on `file` by
  * creating `<file>.lock` with the 'wx' flag (fails if it already exists).
- * The lock file content is `{pid, createdAt}` JSON so a stale lock left
+ * The lock file content is `{pid, createdAt, hostname}` JSON so a stale lock left
  * behind by a crashed process (SIGKILL, OOM — anything that skips
  * try/finally) can be detected and reclaimed instead of wedging every future
  * product-command invocation until a human runs `rm`. On EEXIST, inspects
@@ -125,7 +166,7 @@ function acquireReservationsLock(file) {
   for (let attempt = 0; attempt < RESERVATIONS_LOCK_RETRIES; attempt++) {
     try {
       const fd = fs.openSync(lockPath, 'wx');
-      fs.writeFileSync(fd, JSON.stringify({ pid: process.pid, createdAt: nowIso() }));
+      fs.writeFileSync(fd, lockPayload());
       fs.closeSync(fd);
       return lockPath;
     } catch (e) {
@@ -138,7 +179,7 @@ function acquireReservationsLock(file) {
         // is in place and we lost — retry instead of proceeding.
         const tmpLock = `${lockPath}.reclaim.${process.pid}.${attempt}`;
         try {
-          fs.writeFileSync(tmpLock, JSON.stringify({ pid: process.pid, createdAt: nowIso() }));
+          fs.writeFileSync(tmpLock, lockPayload());
           fs.renameSync(tmpLock, lockPath);
         } catch (_e2) {
           try { fs.unlinkSync(tmpLock); } catch (_e3) { /* best effort */ }
@@ -198,7 +239,7 @@ function failWithLock(lockPath, msg) {
  * never renamed and the one that failed mid-rename) are best-effort
  * unlinked. Mirrors cmdProductStage's proven all-or-nothing pattern so every
  * product-mutating command shares one transaction implementation. */
-function writeAllOrNothing(lockPath, writes, errPrefix) {
+function writeAllOrNothing(lockPath, writes, errPrefix, opts) {
   const staged = [];
   const renamed = [];
   try {
@@ -268,6 +309,22 @@ function writeAllOrNothing(lockPath, writes, errPrefix) {
     }
     failWithLock(lockPath, msg);
   }
+  return runAfterCommit(opts, errPrefix);
+}
+
+/** Optional `{afterCommit}` (spec 010 FR-007): runs once the rename phase has
+ * committed and while the caller still holds the lock; its return value is
+ * writeAllOrNothing's. It runs OUTSIDE the rollback try, so a failing hook can
+ * never revert the committed write, and an exception is reported on stderr and
+ * swallowed — the command's exit code stays the vault-free one. */
+function runAfterCommit(opts, errPrefix) {
+  if (!opts || typeof opts.afterCommit !== 'function') return undefined;
+  try {
+    return opts.afterCommit();
+  } catch (e) {
+    process.stderr.write(`[a1-tools] ${errPrefix}: after-commit hook failed (write kept): ${e.message}\n`);
+    return undefined;
+  }
 }
 
 module.exports = {
@@ -279,6 +336,7 @@ module.exports = {
   reservationsFile,
   loadReservations,
   isLockStale,
+  isForeignHost,
   isPidDead,
   sleepSyncMs,
   writeAllOrNothing,

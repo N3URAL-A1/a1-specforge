@@ -6,6 +6,7 @@ const {
   CONSTITUTION_STATUSES,
   RECONCILE_STATUSES, RECONCILE_SCOPE_MODES, RECONCILE_DRIFT_CLASSES,
 } = require('./status-constants.cjs');
+const { SPEC_INIT_HELP, VAULT_HELP } = require('./help-vault.cjs');
 
 function usage(msg) {
   process.stderr.write(`usage error: ${msg}\n`);
@@ -17,7 +18,11 @@ const HELP = `a1-tools — file-ops helper for a1-* skills
 
 Usage:
   a1-tools spec next-number <project-slug>
+${SPEC_INIT_HELP}
   a1-tools spec update-status <spec-path> <new-status> [flags]
+                  Writes only the spec file given as <spec-path>, on any
+                  host, whatever A1_VAULT_WRITER_HOST says (spec lifecycle,
+                  not a mirror or hub write — unlike spec init above).
   a1-tools spec set-size <spec-path> <S|M|L>
   a1-tools spec list <project-slug> [--status=<s>]
 
@@ -74,10 +79,23 @@ Usage:
                   "release via a1-tools code-scope release --by <id>".
 
   a1-tools checklist run <project-slug>[/<feature-id>] [--format json|human] [--save] [--vault <path>] [--only <ids>]
-                  --only 9,10 = spec<->plan consistency gate subset (former
-                  "check run"): FR coverage + frontmatter link. Exit: 0 PASS,
-                  1 FAIL (BLOCKER), 2 ERROR (setup).
-                  Pre-flight checklist: 8 structural checks before implementation.
+                  --only 9,10,11 = a1-new-feature Gate 4.5 subset: #9 FR
+                  coverage + #10 frontmatter link (former "check run") + #11
+                  spec_roadmap_status_coherent (spec status vs roadmap feature
+                  status; BLOCKER on a terminal disagreement, warning otherwise).
+                  No roadmap for the project, or the feature not on it ->
+                  PASS. A roadmap of this project that exists but cannot be
+                  read or parsed -> FAIL, naming the file and the parse
+                  error. A broken roadmap counts as this project's when it
+                  is in the current directory or the vault mirror (unless its
+                  text names another project), or in a code-root checkout
+                  whose text names this project. --only without 11 does not
+                  evaluate check #11 at all (no roadmap lookup, no code-roots
+                  scan). Exit: 0 PASS,
+                  1 FAIL (BLOCKER), 2 ERROR (setup). #11 is new with spec
+                  010 (FR-029): its entry in the JSON output is a documented
+                  FR-037 exception to "no vault, no change".
+                  Pre-flight checklist: 11 structural checks before implementation.
                   Severities: BLOCKER (exit 1), MAJOR/MINOR (exit 0, warnings).
                   Exit: 0 PASS or PASS_WITH_WARNINGS, 1 FAIL (blocker), 2 ERROR (setup).
                   With --save: writes report to project/<slug>/checklist/<###>-<date>.md.
@@ -400,7 +418,7 @@ Usage:
                   transaction as every other product-mutating command.
                   Exit: 0 ok, 1 usage/not-found/unknown-finding/unknown-
                   feature/write error.
-  a1-tools product validate [--dir docs/product]
+  a1-tools product validate [--dir docs/product] [--spec-status]
                   Read-only. Validates <dir>/ROADMAP.md frontmatter against
                   the schema-v1 contract (docs/product/SCHEMA.md section 1 /
                   index.schema.json): required fields, enums, id/date
@@ -410,7 +428,19 @@ Usage:
                   over the file content, surfaced as warnings[] — never
                   affects valid/exit code (flag, not a hard block). Prints
                   { valid, errors[], warnings[], file }. Never writes any
-                  file. Exit: 0 valid, 1 invalid or ROADMAP.md missing.
+                  file. Exit: 0 valid,
+                  1 invalid or ROADMAP.md missing.
+                  --spec-status (spec 010 Wave 7, FR-028): also compares every
+                  roadmap feature with its spec (spec_path, else
+                  project/<slug>/spec/<id>*.md under the learnings root) and
+                  adds spec_status {vault_root, violations, warnings,
+                  unlinked}. Terminal disagreement (one side done/cancelled)
+                  = violation naming the reconciling command, exit 1;
+                  non-terminal = warning; no resolvable spec = unlinked
+                  (info, exit unchanged). Without A1_VAULT_ROOT the root is
+                  the repo-local tier, resolved read-only (nothing is
+                  created, nothing announced on stderr). Without the flag
+                  the output is unchanged.
   a1-tools product import --file <path> --project <slug>
                   [--title <text>] [--dir docs/product]
                   Migrate a legacy hand-rolled roadmap into a fresh
@@ -533,8 +563,21 @@ Usage:
                   the value-default idiom \`grep -c ... || echo 0\`. That
                   predicate has no live true positive today — it is
                   forward-looking, not currently load-bearing.
-                  Prints {root, scanned, findings: [{file, line, snippet}]}
-                  as JSON to stdout; every finding line goes to stderr only.
+                  Rule vault-sync-step (spec 010 Wave 4, FR-008): when <root>
+                  is an a1 skills tree (skills/a1-plan/ or skills/a1-execute/
+                  exists), each of skills/a1-plan/workflows/04-audit.md,
+                  skills/a1-execute/workflows/02-execute.md and
+                  skills/a1-execute/workflows/03-verify.md must exist and hold
+                  a line INSIDE a \`\`\`bash fence matching
+                  "a1-tools.cjs vault sync .* --phases" (a prose mention does
+                  not count). Missing file or fence -> finding {file, rule:
+                  "vault-sync-step", reason}, exit 1.
+                  Prints {root, scanned, vault_sync_checked, findings:
+                  [{file, line, snippet} | {file, rule, reason}]} as JSON to
+                  stdout; every finding line goes to stderr only.
+                  vault_sync_checked is 3 on a skills tree and 0 otherwise;
+                  the key is new with spec 010 (FR-008) and a documented
+                  FR-037 exception to "no vault, no change".
                   \`scanned\` is the file count actually walked — assert it,
                   not just exit 0: a glob typo returns 0 files and also
                   exits 0 (the dead-glob class, self-applied to this scan).
@@ -653,6 +696,8 @@ Usage:
                   Fixture suite: _test-fixtures/a1-xprov/run-tests.sh (harness)
                   + parts/NN-<wave>.sh; runner fakes live in fake/, captured
                   runner records in cases/ (each with a .meta provenance file).
+
+${VAULT_HELP}
 
 Spec statuses: ${[...SPEC_STATUSES].join(', ')}
 Bug statuses:  ${[...BUG_STATUSES].join(', ')}

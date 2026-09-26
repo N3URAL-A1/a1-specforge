@@ -29,6 +29,44 @@ let _vaultRootAnnounced = false;
  * All stderr; never stdout (stdout is the JSON contract of the CLI).
  */
 function vaultRoot() {
+  return resolveVaultRoot().root;
+}
+
+/**
+ * Same resolution, same one-time announcement, but the caller also learns the
+ * TIER: `{ root, source }` with source ∈ env | repo-local | legacy. Spec 010
+ * (vault mirror) needs it — the mirror is active only for tier `env`. Fresh
+ * object per call; vaultRoot() is a thin wrapper, so the tier is announced
+ * exactly once per process whichever of the two is called first.
+ */
+function vaultRootInfo() {
+  const { root, source } = resolveVaultRoot();
+  return { root, source };
+}
+
+/**
+ * Read-only twin of vaultRoot() for lookups that must not change anything
+ * (spec 010 SC-002): same tier order, but it never creates `.a1/learnings/`,
+ * never announces on stderr and never exits. Returns { root, source } or null
+ * when nothing resolves. The repo-local path is returned even if it does not
+ * exist yet — a lookup there simply finds nothing.
+ */
+function peekVaultRoot() {
+  if (process.env.A1_VAULT_ROOT) return { root: process.env.A1_VAULT_ROOT, source: 'env' };
+  try {
+    const { execSync } = require('child_process');
+    const top = execSync('git rev-parse --show-toplevel', { stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString()
+      .trim();
+    if (top) return { root: path.join(top, '.a1', 'learnings'), source: 'repo-local' };
+  } catch (_e) {
+    /* not in a repo — fall through to legacy */
+  }
+  const legacy = path.join(os.homedir(), 'N3URAL-Vault');
+  return fs.existsSync(legacy) ? { root: legacy, source: 'legacy' } : null;
+}
+
+function resolveVaultRoot() {
   let root;
   let source;
 
@@ -85,7 +123,7 @@ function vaultRoot() {
     );
   }
 
-  return root;
+  return { root, source };
 }
 
 // ---------- code roots resolution ----------
@@ -122,7 +160,7 @@ let _codeRootsAnnounced = false;
  * collect-scope defect in six runs, so the path got an owner instead of a
  * fourth hardcode.
  */
-function codeRoots() {
+function codeRoots({ quiet = false } = {}) {
   let roots = [];
   let source;
 
@@ -206,7 +244,9 @@ function codeRoots() {
     }
   }
 
-  if (!_codeRootsAnnounced) {
+  // quiet: a read-only lookup (spec update-status hint, SC-002) must not
+  // change stderr; it neither announces nor consumes the one-time announcement.
+  if (!quiet && !_codeRootsAnnounced) {
     _codeRootsAnnounced = true;
     if (roots.length === 0) {
       process.stderr.write(
@@ -527,12 +567,15 @@ function readMd(p) {
   return { content, ...parsed };
 }
 
+// Atomic-write and containment helpers live in fs-safe.cjs (split out to keep
+// io.cjs under the file-size cap); re-exported below so callers do not change.
+const { tmpPathFor, nearestExistingAncestor, assertAncestorInside, assertVaultWriteContained, writeViaTmp } = require('./fs-safe.cjs');
+
 function writeMdAtomic(p, fm, body) {
   const fmStr = serializeFrontmatter(fm);
   const out = `---\n${fmStr}\n---\n${body.startsWith('\n') ? '' : '\n'}${body}`;
-  const tmp = `${p}.tmp.${process.pid}`;
-  fs.writeFileSync(tmp, out, 'utf8');
-  fs.renameSync(tmp, p);
+  assertVaultWriteContained(p);
+  writeViaTmp(p, out);
 }
 
 function nowIso() {
@@ -544,10 +587,9 @@ function nowIso() {
  * feature.md). Creates the parent dir if missing. */
 function writeTextAtomic(file, content) {
   const dir = path.dirname(file);
+  assertVaultWriteContained(file);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  const tmp = `${file}.tmp.${process.pid}`;
-  fs.writeFileSync(tmp, content, 'utf8');
-  fs.renameSync(tmp, file);
+  writeViaTmp(file, content);
 }
 
 // ---------------------------------------------------------------------------
@@ -887,4 +929,4 @@ function projectsPath(...segments) {
   return path.join(vaultRoot(), 'project', ...safe);
 }
 
-module.exports = { vaultRoot, codeRoots, repoRoot, resolveVaultPath, parseFrontmatter, serializeScalar, detectKeyOrder, serializeFrontmatter, readMd, writeMdAtomic, nowIso, writeTextAtomic, parseScalarToken, parseNestedFrontmatter, serializeNestedFrontmatter, writeNestedMdAtomic, parseFlags, fail, assertSafeSegment, projectsPath, copyDirRecursive };
+module.exports = { vaultRoot, vaultRootInfo, peekVaultRoot, codeRoots, repoRoot, resolveVaultPath, parseFrontmatter, serializeScalar, detectKeyOrder, serializeFrontmatter, readMd, writeMdAtomic, nowIso, writeTextAtomic, parseScalarToken, parseNestedFrontmatter, serializeNestedFrontmatter, writeNestedMdAtomic, parseFlags, fail, assertSafeSegment, projectsPath, copyDirRecursive, tmpPathFor, nearestExistingAncestor, assertAncestorInside };

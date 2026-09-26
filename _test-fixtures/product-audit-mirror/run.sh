@@ -66,6 +66,13 @@
 #     findings are mirrored.
 set -u
 
+# Spec 010 Wave 4: every product writer mirrors docs/product into A1_VAULT_ROOT.
+# A fixture must never reach the developer's real vault, and its expectations
+# are the vault-free ones (SC-002) — so the suite runs without a vault root.
+# Cases that need a vault set A1_VAULT_ROOT per call to a mktemp -d directory.
+unset A1_VAULT_ROOT
+unset A1_VAULT_WRITER_HOST  # spec 010 Wave 5: writer-host gate must not depend on the machine
+
 DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$DIR/../.." && pwd)"
 TOOLS="$REPO_ROOT/_shared/a1-tools.cjs"

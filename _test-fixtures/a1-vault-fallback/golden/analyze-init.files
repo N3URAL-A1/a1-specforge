@@ -1,0 +1,58 @@
+# golden: commit 475382a, captured by: bash _test-fixtures/a1-vault-fallback/golden/capture.sh
+== repo/.a1/
+== repo/.a1/learnings/
+== repo/.a1/learnings/project/
+== repo/.a1/learnings/project/demo/
+== repo/.a1/learnings/project/demo/analyses/
+== repo/.a1/learnings/project/demo/analyses/2026-01-01-general.md
+---
+type: project-analysis
+project: demo
+focus: general
+title: "Demo analysis"
+status: scoped
+created_at: <ISO>
+analyzed_path: ""
+phase_history:
+  - "phase=scope completed=<ISO>"
+discover: []
+agents_dispatched: []
+findings: []
+findings_count:
+  - "blocker=0"
+  - "major=0"
+  - "minor=0"
+suggested_next: []
+tags:
+  - analysis
+  - project/demo
+  - focus/general
+---
+
+# Analysis: Demo analysis
+
+## Scope
+
+- Project: demo
+- Focus: general
+- Analyzed path: <not set>
+
+## Discover (Phase 2 — filled by CLI)
+
+<filled by 'analyze update-status ... discovered --phase-data ...'>
+
+## Findings (Phase 3 — appended by sub-agents)
+
+<filled incrementally by 'analyze add-finding'>
+
+## Synthesis (Phase 4 — LLM)
+
+<filled by skill in synthesize phase>
+
+## Recommendations (Phase 5 — LLM)
+
+<filled by skill in report phase>
+
+## Notes
+
+<anything else>

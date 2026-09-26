@@ -1,0 +1,111 @@
+{
+  "analysis_statuses": [
+    "scoped",
+    "discovered",
+    "analyzed",
+    "synthesized",
+    "reported",
+    "cancelled"
+  ],
+  "artifact_types": {
+    "spec": "spec",
+    "plans": "wave-plan",
+    "fixes": "bug-report",
+    "postmortems": "postmortem",
+    "analyses": "project-analysis",
+    "quick": "quick-run"
+  },
+  "bug_statuses": [
+    "reported",
+    "diagnosed",
+    "fixing",
+    "fixed",
+    "cant-reproduce",
+    "wont-fix",
+    "duplicate",
+    "cancelled"
+  ],
+  "contract_version": 1,
+  "hub_relation_line": "- references [[project/<slug>/<subfolder>/<basename>]]",
+  "milestone_statuses": [
+    "done",
+    "in-progress",
+    "planned"
+  ],
+  "mirror": {
+    "product": [
+      "ROADMAP.md",
+      "VISION.md",
+      "NEXT.md",
+      "index.json",
+      "features/**",
+      "audits/**"
+    ],
+    "phases": [
+      "phases/*/GOAL.md",
+      "phases/*/PLAN.md",
+      "phases/*/STATUS.md",
+      "phases/*/VERIFICATION.md",
+      "RESEARCH.md"
+    ],
+    "excluded": [
+      "reservations.json",
+      ".product-stage.lock.json",
+      "*.lock*",
+      "*.tmp*",
+      "observations.jsonl"
+    ]
+  },
+  "project_statuses": [
+    "active",
+    "paused",
+    "done"
+  ],
+  "quick_results": [
+    "in-progress",
+    "completed",
+    "escalated"
+  ],
+  "roadmap_feature_statuses": [
+    "done",
+    "in-flight",
+    "planned",
+    "cancelled"
+  ],
+  "roadmap_stages": [
+    null,
+    "started",
+    "complete",
+    "review",
+    "verify",
+    "merge",
+    "origin-cleanup",
+    "done"
+  ],
+  "schema_version": 1,
+  "size_values": [
+    "S",
+    "M",
+    "L"
+  ],
+  "spec_statuses": [
+    "discovering",
+    "draft",
+    "clarified",
+    "planned",
+    "awaiting-consistency-fix",
+    "implementing",
+    "done",
+    "cancelled"
+  ],
+  "spec_to_roadmap_status": {
+    "discovering": "planned",
+    "draft": "planned",
+    "clarified": "planned",
+    "planned": "planned",
+    "awaiting-consistency-fix": "in-flight",
+    "implementing": "in-flight",
+    "done": "done",
+    "cancelled": "cancelled"
+  }
+}

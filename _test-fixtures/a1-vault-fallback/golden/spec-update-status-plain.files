@@ -1,0 +1,15 @@
+# golden: commit 475382a, captured by: bash _test-fixtures/a1-vault-fallback/golden/capture.sh
+== repo/specs/
+== repo/specs/001-demo.md
+---
+id: 001-demo
+project: demo
+status: clarified
+phase_history:
+  - "phase=specify completed=<ISO>"
+  - "phase=clarify completed=<ISO>"
+---
+
+# Demo feature
+
+Body.

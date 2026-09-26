@@ -63,8 +63,9 @@ const { parseFlags, repoRoot } = require('./io.cjs');
 //   1  at least one finding.
 //   2  usage error, or a hostile/unreadable --root value.
 //
-// Stdout is the JSON machine contract: { root, scanned, findings: [...],
-// markers }. All diagnostics go to stderr only.
+// Stdout is the JSON machine contract: { root, scanned, vault_sync_checked,
+// findings: [...] } (vault-sync-step findings carry {file, rule, reason}).
+// All diagnostics go to stderr only.
 // ---------------------------------------------------------------------------
 
 const MAX_ROOT_LEN = 4096;
@@ -226,6 +227,74 @@ function listWorkflowFiles(root) {
 }
 
 
+// ---------------------------------------------------------------------------
+// Rule `vault-sync-step` — spec 010-vault-cockpit-contract, Wave 4 (FR-008).
+//
+// The three skill steps that write `.a1/phases/<phase>/` must each call
+// `a1-tools.cjs vault sync <slug> --phases` so the vault cockpit sees the
+// phase artifacts. The promise is "a phase-writing step without the call
+// fails the lint", so the check is a presence test per named file: the file
+// must exist under --root AND one line INSIDE a ```bash fence must match
+// VAULT_SYNC_CALL_RE. A prose mention of the command does not count — the
+// workflow text can describe the step and still have lost the step itself
+// (fixture W12 keeps that prose and removes only the fence).
+//
+// Scope: the rule applies only when --root is an a1 skills tree, i.e. when
+// `skills/a1-plan/` or `skills/a1-execute/` exists. The pipeline-exit fixtures
+// (W1-W5, W9, W10) scan synthetic roots holding a single fake skill; demanding
+// the three files there would turn every one of them red for a reason that
+// has nothing to do with what they test. Deleting a whole required file (or
+// its fence) inside a real skills tree is still caught — the owning skill
+// directory is present. `vault_sync_checked` reports how many files the rule
+// examined (3 on a skills tree, 0 otherwise), so a scope check that silently
+// matches nothing is visible in the JSON (fixture W11 asserts 3).
+// ---------------------------------------------------------------------------
+
+const REQUIRED_VAULT_SYNC_FILES = Object.freeze([
+  'skills/a1-plan/workflows/04-audit.md',
+  'skills/a1-execute/workflows/02-execute.md',
+  'skills/a1-execute/workflows/03-verify.md',
+]);
+
+const VAULT_SYNC_CALL_RE = /a1-tools\.cjs vault sync .* --phases/;
+
+const VAULT_SYNC_SCOPE_DIRS = Object.freeze(['skills/a1-plan', 'skills/a1-execute']);
+
+function isSkillsTree(root) {
+  return VAULT_SYNC_SCOPE_DIRS.some((rel) => {
+    try {
+      return fs.statSync(path.join(root, rel)).isDirectory();
+    } catch (_e) {
+      return false;
+    }
+  });
+}
+
+function hasVaultSyncFence(content) {
+  return extractBashFenceLines(content).some(({ text }) => VAULT_SYNC_CALL_RE.test(text));
+}
+
+/**
+ * Check every REQUIRED_VAULT_SYNC_FILES entry under root.
+ * @param {string} root absolute scan root
+ * @returns {{checked: number, findings: Array<{file: string, rule: string, reason: string}>}}
+ */
+function checkVaultSyncSteps(root) {
+  if (!isSkillsTree(root)) return { checked: 0, findings: [] };
+  const findings = REQUIRED_VAULT_SYNC_FILES.flatMap((rel) => {
+    const file = path.join(root, rel);
+    let content;
+    try {
+      content = fs.readFileSync(file, 'utf8');
+    } catch (_e) {
+      return [{ file, rule: 'vault-sync-step', reason: 'file missing or unreadable' }];
+    }
+    if (hasVaultSyncFence(content)) return [];
+    return [{ file, rule: 'vault-sync-step', reason: 'no ```bash fence calls a1-tools.cjs vault sync … --phases' }];
+  });
+  return { checked: REQUIRED_VAULT_SYNC_FILES.length, findings };
+}
+
 // Hostile-input guard on --root (CONVENTIONS.md, mandatory for every new CLI
 // subcommand). Same shape as retro-validate.cjs's rejectHostilePath: reject
 // control-character/NUL/oversized shapes up front, before any fs call
@@ -291,6 +360,13 @@ function resolveScanRoot(argv) {
   return path.resolve(process.cwd(), rootRaw);
 }
 
+function formatFinding(f) {
+  if (f.rule === 'vault-sync-step') {
+    return `finding: ${f.file} — vault-sync-step: ${f.reason}`;
+  }
+  return `finding: ${f.file}:${f.line} — pipeline exit status swallowed: ${f.snippet}`;
+}
+
 /**
  * `workflow lint [--root <path>]` — see module header for the full contract.
  * @param {string[]} argv
@@ -322,19 +398,19 @@ function cmdWorkflowLint(argv) {
     findings = findings.concat(scanFileForFindings(file, content));
   }
 
+  const vaultSync = checkVaultSyncSteps(root);
+  findings = findings.concat(vaultSync.findings);
+
   const out = {
     root,
     scanned: files.length,
+    vault_sync_checked: vaultSync.checked,
     findings,
   };
   process.stdout.write(JSON.stringify(out) + '\n');
 
   if (findings.length > 0) {
-    for (const f of findings) {
-      process.stderr.write(
-        `finding: ${f.file}:${f.line} — pipeline exit status swallowed: ${f.snippet}\n`
-      );
-    }
+    for (const f of findings) process.stderr.write(formatFinding(f) + '\n');
     process.exit(1);
   }
   process.exit(0);
@@ -347,4 +423,6 @@ module.exports = {
   isSwallowedExitPipe,
   extractBashFenceLines,
   listWorkflowFiles,
+  checkVaultSyncSteps,
+  REQUIRED_VAULT_SYNC_FILES,
 };

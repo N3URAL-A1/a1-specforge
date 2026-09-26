@@ -1,0 +1,14 @@
+# Allowed differences from the 475382a golden for G4b (checklist run, full) — a DOCUMENTED
+# exception to SC-002: FR-029 adds check #11 to every full run (review 010 m10). Nothing else
+# may differ; `--only 9,10` (G4) has no allowance at all.
+# Format: <ext><TAB><op><TAB><text>
+#   insert-after: the golden line <text> must occur exactly once; the following "line" rules
+#   are inserted after it, so the current output must carry exactly those lines there.
+out	insert-after	      "detail": "Plan frontmatter spec_path resolves to project/demo/spec/001-login.md."
+out	line	    },
+out	line	    {
+out	line	      "id": 11,
+out	line	      "name": "spec_roadmap_status_coherent",
+out	line	      "severity": "BLOCKER",
+out	line	      "result": "PASS",
+out	line	      "detail": "No roadmap with project \"demo\" found — nothing to compare."

@@ -12,26 +12,43 @@ spec file with bullet-point answers to ten mandatory topics. No formal spec yet.
 Ask the user which project this feature belongs to and a short kebab-case slug
 for the feature. Example: project `my-project`, slug `meal-swap-history`.
 
-If the project has no `project/<slug>/spec/` directory yet, create it via the helper before
-the next step.
+The `project/<slug>/spec/` directory does not need to exist yet — `spec init` in Step 2
+creates it.
 
-## Step 2 — Create spec file from template
+## Step 2 — Create spec file via `spec init`
+
+The CLI is the only writer of a fresh spec file (spec 010, FR-017). Never `Read` the template
+and `Write` it by hand — the command picks the next number, stamps the frontmatter
+(`type: spec` first, then `id`, `project`, `feature_slug`, `title`, `status: discovering`,
+`size`, `created`) and links the spec from the project hub note:
 
 ```bash
-# Get next sequence number for the project
-node <repo>/_shared/a1-tools.cjs spec next-number <project-slug>
+node <repo>/_shared/a1-tools.cjs spec init <project-slug> <feature-slug> \
+  --title "<working title from the user>"
 ```
 
-Then `Read` the template `~/.claude/skills/a1-new-feature/templates/spec-template.md`, fill in:
+Read the JSON result:
 
-- `id`: `<###>-<feature-slug>` (use the number returned by the helper)
-- `project`: `<project-slug>`
-- `feature_slug`: `<feature-slug>`
-- `status: discovering`
-- `created`: today's date (YYYY-MM-DD)
-- Title: working title from the user
+- `spec_path` — the file Rene appends to in Step 3. Discovery answers go under the
+  `## Discovery — <Topic>` headers via `Edit`; the frontmatter is never edited by hand.
+- `hub: "linked"` — `project/<project-slug>.md` gained one
+  `- references [[project/<project-slug>/spec/<###>-<feature-slug>]]` line under `## Relations`.
+- `hub: "missing"` — the project has no hub note yet. The spec is still created; tell the user
+  in one sentence that the hub is missing (hubs are created by Otto/humans, never by the CLI)
+  and continue. Once a hub exists, `a1-tools vault link-hub <project-slug> --spec <id>` adds
+  the line idempotently.
+- `hub: "unchanged"` — the hub already held that exact line; nothing was written. Continue.
+- `hub: "skipped-non-writer"` — this host is not `A1_VAULT_WRITER_HOST` (e.g. the AI server),
+  so the hub note is left to the writer host; stderr carries one
+  `spec init hub link skipped: …` line. The spec is created. Tell the user in one sentence that
+  the writer host links it later with `a1-tools vault link-hub <project-slug> --spec <id>`, and
+  continue.
+- `hub: "refused-link"` — the hub note or the project folder is a symbolic link, which the
+  CLI refuses to write through (stderr names which). The spec is created. Report the refusal
+  to the user in one sentence and continue; never edit the hub by hand.
 
-Write to `project/<project-slug>/spec/<###>-<feature-slug>.md` (relative to vault root).
+The command refuses a feature slug that is not kebab-case and a title over 200 characters
+(exit 1) — fix the input, do not work around the CLI.
 
 ## Step 2b — XS eligibility check
 

@@ -79,6 +79,7 @@ Map each failed BLOCKER to a fix-path suggestion:
 | `wave_dependencies_dag` | "The wave dependencies contain a cycle. This must be resolved manually — would you like me to trigger `a1-vincente-vibe-optimizer` for a plan revision?" |
 | `fr_coverage_bijective` | FRs missing from every wave → "Should I re-enter `a1-new-feature` Phase 4 (Plan) to redistribute the FRs?" · phantom FRs → "Re-enter Phase 3 (Clarify) to add them to the spec, or edit the wave-plan to drop them?" · FR in multiple waves → "Plan revision via `a1-vincente-vibe-optimizer`?" |
 | `plan_spec_path_link` | "The plan frontmatter's `spec_path` does not point at the spec — a targeted edit of that one field fixes it (no phase re-run needed)." |
+| `spec_roadmap_status_coherent` | "The spec and its roadmap feature disagree terminally (the detail names both statuses). Should I run the reconciling command the detail names (`product stage --by <id> --set done` in the project repo, or `spec update-status <path> <status>`)?" |
 
 Then stop. Do not auto-trigger the suggested agent — wait for user consent.
 

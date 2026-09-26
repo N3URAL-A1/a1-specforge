@@ -22,7 +22,10 @@ const {
 } = locks;
 
 const { usage } = require('./help.cjs');
+const { productMirrorHook } = require('./vault-product-hook.cjs'); // spec 010 W4: product mirror after commit
 const { CODE_SCOPE_STAGES } = require('./code-scope.cjs');
+// Roadmap enums moved to status-constants.cjs (spec 010 W1): `schema export` reads what `product validate` enforces.
+const { PROJECT_STATUSES, MILESTONE_STATUSES, FEATURE_STATUSES, FEATURE_STAGES } = require('./status-constants.cjs');
 
 const PRODUCT_ROADMAP_KEY_ORDER = [
   'schema_version', 'type', 'project', 'title', 'status', 'updated', 'source',
@@ -589,7 +592,7 @@ function cmdProductStage(args) {
     });
   }
 
-  writeAllOrNothing(lockPath, writes, 'product stage');
+  const vaultMirror = writeAllOrNothing(lockPath, writes, 'product stage', productMirrorHook(dir));
   void updatedRoadmapContent;
 
   const out = {
@@ -599,6 +602,7 @@ function cmdProductStage(args) {
     derived_status: derivedStatus,
     skipped,
     files_written: writes.map((w) => w.target),
+    vault_mirror: vaultMirror,
   };
   process.stdout.write(JSON.stringify(out, null, 2) + '\n');
   exitWithLock(lockPath, 0);
@@ -773,7 +777,7 @@ function cmdProductMarkersSet(flags) {
     changelogWhat,
     'marker set via `product markers --set`'
   );
-  writeAllOrNothing(lockPath, writes, 'product markers');
+  const vaultMirror = writeAllOrNothing(lockPath, writes, 'product markers', productMirrorHook(dir));
 
   const out = {
     status: 'OK',
@@ -781,6 +785,7 @@ function cmdProductMarkersSet(flags) {
     id: flags.id || null,
     set: flags.set,
     files_written: writes.map((w) => w.target),
+    vault_mirror: vaultMirror,
   };
   process.stdout.write(JSON.stringify(out, null, 2) + '\n');
   exitWithLock(lockPath, 0);
@@ -810,9 +815,9 @@ function cmdProductChangelog(args) {
   const updatedRoadmapFm = { ...roadmapFm, updated: today };
 
   const { writes } = buildRoadmapWritesWithChangelog(dir, updatedRoadmapFm, roadmapBody, flags.entry, flags.why);
-  writeAllOrNothing(lockPath, writes, 'product changelog');
+  const vaultMirror = writeAllOrNothing(lockPath, writes, 'product changelog', productMirrorHook(dir));
 
-  const out = { status: 'OK', entry: flags.entry, why: flags.why, files_written: writes.map((w) => w.target) };
+  const out = { status: 'OK', entry: flags.entry, why: flags.why, files_written: writes.map((w) => w.target), vault_mirror: vaultMirror };
   process.stdout.write(JSON.stringify(out, null, 2) + '\n');
   exitWithLock(lockPath, 0);
 }
@@ -864,9 +869,9 @@ function cmdProductInit(args) {
     { target: path.join(dir, 'index.json'), content: JSON.stringify(indexJson, null, 2) + '\n' },
     { target: path.join(dir, 'NEXT.md'), content: nextMd },
   ];
-  writeAllOrNothing(lockPath, writes, 'product init');
+  const vaultMirror = writeAllOrNothing(lockPath, writes, 'product init', productMirrorHook(dir));
 
-  const out = { status: 'OK', project: flags.project, files_written: writes.map((w) => w.target) };
+  const out = { status: 'OK', project: flags.project, files_written: writes.map((w) => w.target), vault_mirror: vaultMirror };
   process.stdout.write(JSON.stringify(out, null, 2) + '\n');
   exitWithLock(lockPath, 0);
 }
@@ -913,9 +918,9 @@ function cmdProductAddMilestone(args) {
     `milestone '${flags.id}' added`,
     flags.goal || 'new milestone via `product add-milestone`'
   );
-  writeAllOrNothing(lockPath, writes, 'product add-milestone');
+  const vaultMirror = writeAllOrNothing(lockPath, writes, 'product add-milestone', productMirrorHook(dir));
 
-  const out = { status: 'OK', milestone: flags.id, files_written: writes.map((w) => w.target) };
+  const out = { status: 'OK', milestone: flags.id, files_written: writes.map((w) => w.target), vault_mirror: vaultMirror };
   process.stdout.write(JSON.stringify(out, null, 2) + '\n');
   exitWithLock(lockPath, 0);
 }
@@ -982,9 +987,9 @@ function cmdProductAddFeature(args) {
     `feature '${flags.id}' added`,
     flags.goal || 'new feature via `product add-feature`'
   );
-  writeAllOrNothing(lockPath, writes, 'product add-feature');
+  const vaultMirror = writeAllOrNothing(lockPath, writes, 'product add-feature', productMirrorHook(dir));
 
-  const out = { status: 'OK', feature: flags.id, files_written: writes.map((w) => w.target) };
+  const out = { status: 'OK', feature: flags.id, files_written: writes.map((w) => w.target), vault_mirror: vaultMirror };
   process.stdout.write(JSON.stringify(out, null, 2) + '\n');
   exitWithLock(lockPath, 0);
 }
@@ -1057,9 +1062,9 @@ function cmdProductFeatureInit(args) {
     'formal spec/plan attached via `product feature-init`'
   );
   writes.push({ target: featureFile, content: featureContent });
-  writeAllOrNothing(lockPath, writes, 'product feature-init');
+  const vaultMirror = writeAllOrNothing(lockPath, writes, 'product feature-init', productMirrorHook(dir));
 
-  const out = { status: 'OK', feature: flags.id, files_written: writes.map((w) => w.target) };
+  const out = { status: 'OK', feature: flags.id, files_written: writes.map((w) => w.target), vault_mirror: vaultMirror };
   process.stdout.write(JSON.stringify(out, null, 2) + '\n');
   exitWithLock(lockPath, 0);
 }
@@ -1184,9 +1189,9 @@ function cmdProductVisionInit(args) {
     { target: path.join(dir, 'index.json'), content: JSON.stringify(indexJson, null, 2) + '\n' },
     { target: path.join(dir, 'NEXT.md'), content: nextMd },
   ];
-  writeAllOrNothing(lockPath, writes, 'product vision-init');
+  const vaultMirror = writeAllOrNothing(lockPath, writes, 'product vision-init', productMirrorHook(dir));
 
-  const out = { status: 'OK', title: flags.title, pillars: pillars.map((p) => p.id), files_written: writes.map((w) => w.target) };
+  const out = { status: 'OK', title: flags.title, pillars: pillars.map((p) => p.id), files_written: writes.map((w) => w.target), vault_mirror: vaultMirror };
   process.stdout.write(JSON.stringify(out, null, 2) + '\n');
   exitWithLock(lockPath, 0);
 }
@@ -1261,9 +1266,9 @@ function cmdProductVisionTouch(args) {
     { target: path.join(dir, 'index.json'), content: JSON.stringify(indexJson, null, 2) + '\n' },
     { target: path.join(dir, 'NEXT.md'), content: nextMd },
   ];
-  writeAllOrNothing(lockPath, writes, 'product vision-touch');
+  const vaultMirror = writeAllOrNothing(lockPath, writes, 'product vision-touch', productMirrorHook(dir));
 
-  const out = { status: 'OK', updated: today, files_written: writes.map((w) => w.target) };
+  const out = { status: 'OK', updated: today, files_written: writes.map((w) => w.target), vault_mirror: vaultMirror };
   process.stdout.write(JSON.stringify(out, null, 2) + '\n');
   exitWithLock(lockPath, 0);
 }
@@ -1474,7 +1479,7 @@ function cmdProductAuditPublish(args) {
     { target: path.join(dir, 'index.json'), content: JSON.stringify(indexJson, null, 2) + '\n' },
     { target: path.join(dir, 'NEXT.md'), content: nextMd },
   ];
-  writeAllOrNothing(lockPath, writes, 'product audit-publish');
+  const vaultMirror = writeAllOrNothing(lockPath, writes, 'product audit-publish', productMirrorHook(dir));
 
   const out = {
     status: 'OK',
@@ -1483,6 +1488,7 @@ function cmdProductAuditPublish(args) {
     date: parsed.date,
     findings_count: findings.length,
     files_written: writes.map((w) => w.target),
+    vault_mirror: vaultMirror,
   };
   process.stdout.write(JSON.stringify(out, null, 2) + '\n');
   exitWithLock(lockPath, 0);
@@ -1705,7 +1711,7 @@ function cmdProductAuditSet(args) {
     { target: path.join(dir, 'index.json'), content: JSON.stringify(indexJson, null, 2) + '\n' },
     { target: path.join(dir, 'NEXT.md'), content: nextMd },
   ];
-  writeAllOrNothing(lockPath, writes, 'product audit-set');
+  const vaultMirror = writeAllOrNothing(lockPath, writes, 'product audit-set', productMirrorHook(dir));
 
   const out = {
     status: 'OK',
@@ -1715,6 +1721,7 @@ function cmdProductAuditSet(args) {
     commit: commitValue,
     feature: featureValue,
     files_written: writes.map((w) => w.target),
+    vault_mirror: vaultMirror,
   };
   process.stdout.write(JSON.stringify(out, null, 2) + '\n');
   exitWithLock(lockPath, 0);
@@ -1914,6 +1921,7 @@ function cmdProductAuditMirror(args) {
       mirrored: [],
       skipped,
       files_written: [],
+      vault_mirror: productMirrorHook(dir).afterCommit(),
     };
     process.stdout.write(JSON.stringify(out, null, 2) + '\n');
     exitWithLock(lockPath, 0);
@@ -1933,7 +1941,7 @@ function cmdProductAuditMirror(args) {
     `audit-mirror: ${newFeatures.length} feature(s) mirrored from ${path.basename(auditFile)}`,
     `finding(s) ${mirrored.map((m) => m.finding).join(', ')} mirrored into milestone '${flags.milestone}' via \`product audit-mirror\``
   );
-  writeAllOrNothing(lockPath, writes, 'product audit-mirror');
+  const vaultMirror = writeAllOrNothing(lockPath, writes, 'product audit-mirror', productMirrorHook(dir));
 
   const out = {
     status: 'OK',
@@ -1942,6 +1950,7 @@ function cmdProductAuditMirror(args) {
     mirrored,
     skipped,
     files_written: writes.map((w) => w.target),
+    vault_mirror: vaultMirror,
   };
   process.stdout.write(JSON.stringify(out, null, 2) + '\n');
   exitWithLock(lockPath, 0);
@@ -1962,10 +1971,6 @@ function cmdProductAuditMirror(args) {
 // use them ahead of this validate section.
 const YYYY_MM_RE = /^[0-9]{4}-[0-9]{2}$/;
 const YYYY_MM_DD_RE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
-const PROJECT_STATUSES = new Set(['active', 'paused', 'done']);
-const MILESTONE_STATUSES = new Set(['done', 'in-progress', 'planned']);
-const FEATURE_STATUSES = new Set(['done', 'in-flight', 'planned', 'cancelled']);
-const FEATURE_STAGES = new Set([null, 'started', 'complete', 'review', 'verify', 'merge', 'origin-cleanup', 'done']);
 
 // ---------------------------------------------------------------------------
 // Schema v1.1 additions (spec 003-product-schema-v1.1-vision-audits, Wave 1):
@@ -2196,7 +2201,7 @@ function detectGermanMarkers(content, label) {
  * features/<###>-<slug>/feature.md, VISION.md, and every audits/*.md.
  * Never writes any file. Exit: 0 valid, 1 invalid or ROADMAP.md missing. */
 function cmdProductValidate(args) {
-  const flags = parseFlags(args, { dir: 'value' });
+  const flags = parseFlags(args, { dir: 'value', 'spec-status': 'bool' });
   const dir = productDirFromFlags(flags);
   const roadmapFile = path.join(dir, 'ROADMAP.md');
   if (!fs.existsSync(roadmapFile)) {
@@ -2292,8 +2297,10 @@ function cmdProductValidate(args) {
   }
 
   const valid = errors.length === 0;
-  process.stdout.write(JSON.stringify({ valid, errors, warnings, file: roadmapFile }, null, 2) + '\n');
-  process.exit(valid ? 0 : 1);
+  // Spec 010 W7 (FR-028): `--spec-status` adds the spec↔roadmap coherence section; without it the output is unchanged.
+  const coherence = flags['spec-status'] ? { spec_status: require('./spec-coherence.cjs').specStatusSection(fm) } : {};
+  process.stdout.write(JSON.stringify({ valid, errors, warnings, file: roadmapFile, ...coherence }, null, 2) + '\n');
+  process.exit(valid && !(coherence.spec_status && coherence.spec_status.violations.length > 0) ? 0 : 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -2741,6 +2748,7 @@ function cmdProductImport(args) {
 }
 
 module.exports = {
+  PRODUCT_SLUG_RE, // vault-sync.cjs validates CLI slugs with the same shape
   cmdProductStatus,
   cmdProductStage,
   cmdProductMarkers,

@@ -1,4 +1,5 @@
 ---
+type: spec
 id: <###>-<feature-slug>
 project: <project-slug>
 feature_slug: <feature-slug>

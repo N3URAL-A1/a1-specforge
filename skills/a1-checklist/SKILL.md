@@ -2,16 +2,19 @@
 name: a1-checklist
 description: >
   Use PROACTIVELY as the pre-flight readiness gate before ANY feature
-  implementation starts. Runs 10 deterministic structural checks on a feature's
+  implementation starts. Runs 11 deterministic structural checks on a feature's
   wave-plan: spec status is `clarified`, wave-plan exists, every wave has a
   Suggested agent line, dependencies form a DAG (no cycles), every wave
   references advanced stories, project CLAUDE.md is present, plans/ directory
   convention is honored, plan frontmatter has all required fields, FR coverage
   between spec and plan is bijective (check #9: every spec FR in exactly one
   wave, no phantom FRs), and the plan's spec_path links back to the spec
-  (check #10). Checks #9/#10 are the spec↔plan consistency gate (the former
-  a1-check skill, retired M13) — a1-new-feature's Phase 4.5 runs exactly this
-  subset via `--only 9,10` (exit 0/1/2). Severity maps to BLOCKER (stops the
+  (check #10), and the spec's status agrees with its roadmap feature's status
+  (check #11: BLOCKER on a terminal disagreement, i.e. one side `done` or
+  `cancelled`; a non-terminal difference only warns). Checks #9/#10 are the
+  spec↔plan consistency gate (the former a1-check skill, retired M13) —
+  a1-new-feature's Phase 4.5 runs them together with #11 via `--only 9,10,11`
+  (exit 0/1/2). Severity maps to BLOCKER (stops the
   gate), MAJOR (warns), MINOR (info). MUST trigger on: "checklist for <feature>" (alias: "checkliste für
   <feature>"), "pre-flight check", "is the plan implementation-ready" (alias:
   "ist der plan implementierungs-bereit"), "ready for implementation" (alias:

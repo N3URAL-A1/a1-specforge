@@ -168,6 +168,30 @@ gets `{id: wave-inspect-xprov, verdict: <pass|fail>, caught: <true if a finding 
   result was discarded by design; XREVIEW.md carries a BLOCKER note naming the
   cause in the worktree. Read it before re-running.
 
+### 2b-v. Vault phase mirror (spec 010, FR-008)
+
+Runs once per wave in the COMPLETE branch — after 2b-x has written its
+`xreview/` files, whatever its verdict, and before the 2c checkpoint. The
+executor has updated STATUS.md for this wave; the vault cockpit reads
+`project/<slug>/phases/` from the vault, never the repo, so without this step
+it shows the state before the wave. Run it from `$WORK_PATH` — `vault sync`
+mirrors the checkout it is started in, and the primary checkout does not
+carry this wave's STATUS.md (same silent failure as the commit-landed gate).
+Multi-lane runs: once per lane wave, from that lane's `$WORK_PATH`.
+
+`<project-slug>` is the `project:` of `docs/product/ROADMAP.md`; a repo
+without a roadmap passes `--slug <slug>` instead (phases only). Skipped
+silently when `A1_VAULT_ROOT` is not set (tier repo-local). A failed sync is a
+warning in the 2c summary, never a reason to stop the wave:
+
+```bash
+if [ -n "${A1_VAULT_ROOT:-}" ]; then
+  VSYNC_OUT="$(mktemp)"
+  (cd "$WORK_PATH" && node <repo>/_shared/a1-tools.cjs vault sync <project-slug> --phases) > "$VSYNC_OUT"; RC=$?
+  if [ $RC -ne 0 ]; then echo "⚠ vault sync --phases exit=$RC — vault mirror not updated, continuing (stderr above, JSON in $VSYNC_OUT)"; fi
+fi
+```
+
 ### 2c. Checkpoint
 
 Present wave summary:
@@ -177,6 +201,7 @@ Tasks done: <N>/<N>
 Commits: <list>
 Deviations: <list or "none">
 Cross-provider inspection: <✓ pass | ⚠ fail/<reason> (warning) | waived by human>
+Vault mirror: <✓ synced | ⚠ sync exit <RC> | – no vault root>
 
 → Next: Wave <N+1> — <name> (<N> tasks)
 Continue? [y to proceed / n to stop]

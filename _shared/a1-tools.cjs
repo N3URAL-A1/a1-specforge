@@ -222,6 +222,7 @@ const { gitSafe, assertNoShellMetachar } = require(path.join(__dirname, 'lib', '
 // ---------- spec group (lib/spec.cjs) ----------
 const {
   appendPhaseHistory,
+  cmdSpecInit,
   cmdSpecNextNumber,
   cmdSpecUpdateStatus,
   cmdSpecSetSize,
@@ -329,7 +330,7 @@ const { cmdCheckReservations } = require(path.join(__dirname, 'lib', 'check-rese
 
 // ---------- check group ----------
 // `check run` retired in M13 — the spec↔plan consistency gate lives in
-// `checklist run --only 9,10` (lib/checklist.cjs reuses lib/check.cjs
+// `checklist run --only 9,10,11` (lib/checklist.cjs reuses lib/check.cjs
 // primitives). Only `check reservations` remains in this group.
 
 // ---------- code-scope group (lib/code-scope.cjs) ----------
@@ -368,6 +369,7 @@ function main() {
   try {
     if (group === 'spec') {
       if (sub === 'next-number') result = cmdSpecNextNumber(rest);
+      else if (sub === 'init') result = cmdSpecInit(rest);
       else if (sub === 'update-status') result = cmdSpecUpdateStatus(rest);
       else if (sub === 'set-size') result = cmdSpecSetSize(rest);
       else if (sub === 'list') result = cmdSpecList(rest);
@@ -399,7 +401,7 @@ function main() {
         return; // unreachable — cmdCheckReservations calls process.exit()
       }
       usage(
-        `unknown check subcommand: ${sub} (the spec↔plan gate moved to "checklist run <slug>/<feature> --only 9,10" in M13)`
+        `unknown check subcommand: ${sub} (the spec↔plan gate moved to "checklist run <slug>/<feature> --only 9,10,11" in M13)`
       );
     } else if (group === 'code-scope') {
       // code-scope claim/check own their exit code (0/1) and JSON output.
@@ -634,6 +636,14 @@ function main() {
       const { cmdXprov } = require(path.join(__dirname, 'lib', 'xprov.cjs'));
       cmdXprov(sub, rest);
       return; // unreachable — every xprov subcommand calls process.exit()
+    } else if (group === 'vault') {
+      // Spec 010-vault-cockpit-contract, Wave 1 — the facade's ONLY edits for
+      // that spec are this branch and the next. lib/vault-cli.cjs owns both
+      // dispatch tables; later waves add one line THERE, never here. Lazy
+      // require: unrelated commands never load the vault modules.
+      result = require(path.join(__dirname, 'lib', 'vault-cli.cjs')).dispatchVault(sub, rest);
+    } else if (group === 'schema') {
+      result = require(path.join(__dirname, 'lib', 'vault-cli.cjs')).dispatchSchema(sub, rest);
     } else {
       usage(`unknown command group: ${group} (expected "spec", "fix", "analyze", "check", "checklist", "constitution", "worktree", "pr", "phantom", "reconcile", "modernize", "schema-check", "cost", "pack", "product", "quick", "learnings", "retro", "workflow", or "realpath-check"). fix supports: next-suffix, update-status, list, find-duplicates, integrity-check, init-postmortem, count-postmortems-since, update-promote-state, write-suggestion`);
     }

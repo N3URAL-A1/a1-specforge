@@ -123,6 +123,24 @@ JSON exactly; no summarization or reinterpretation.
 If `.a1/reservations.json` does not exist or has zero `code_scope` entries,
 show "No in-flight features" and skip the section — this is not an error.
 
+## Vault cockpit (spec 010, FR-022)
+
+When an external vault is active (`A1_VAULT_ROOT` set), every run also
+reports whether the vault mirror is current and its frontmatter is clean —
+two summary lines, from `a1-tools vault status --json` and
+`a1-tools vault lint <slug> --json`:
+
+```
+vault status: 0 missing, 2 stale, 0 extra, 1 conflict
+vault lint: 3 type_missing, 1 conflict
+```
+
+Without an external vault the section is exactly one line:
+`vault: not configured`. The documented block (exit codes read from each
+command, never behind a pipe) is step 7 of `workflows/01-scan.md`. Both
+commands are read-only; this skill never runs `vault sync` or `--fix-type`
+itself — it only names them as the next action.
+
 ## Implementation
 
 1. Detect project root (look for `.a1/`, `docs/product/`, `CLAUDE.md`, `.git`)
@@ -135,4 +153,5 @@ show "No in-flight features" and skip the section — this is not an error.
 5. Run git log for recent commits
 6. Run test suite briefly (`npm test -- --passWithNoTests 2>/dev/null | tail -5`)
 7. Read in-flight features via `node _shared/a1-tools.cjs code-scope list --stale-days 7` (see above)
-8. Present status and route
+8. Vault cockpit: `vault status` + `vault lint` summary lines, or `vault: not configured` (see above)
+9. Present status and route

@@ -1,0 +1,92 @@
+# golden: commit 475382a, captured by: bash _test-fixtures/a1-vault-fallback/golden/capture.sh
+## checklist run demo/001-login --format json rc=0
+{
+  "status": "PASS",
+  "exit_code": 0,
+  "project": "demo",
+  "feature": "001-login",
+  "only": null,
+  "paths": {
+    "spec": "project/demo/spec/001-login.md",
+    "plan": "project/demo/plans/001-login-wave-plan.md",
+    "claudemd": "project/demo/CLAUDE.md"
+  },
+  "checks": [
+    {
+      "id": 1,
+      "name": "spec_status_clarified",
+      "severity": "BLOCKER",
+      "result": "PASS",
+      "detail": "Spec status is \"clarified\"."
+    },
+    {
+      "id": 2,
+      "name": "wave_plan_exists",
+      "severity": "BLOCKER",
+      "result": "PASS",
+      "detail": "Wave-plan present at project/demo/plans/001-login-wave-plan.md."
+    },
+    {
+      "id": 3,
+      "name": "waves_have_suggested_agents",
+      "severity": "MAJOR",
+      "result": "PASS",
+      "detail": "All 2 waves declare Suggested agent(s)."
+    },
+    {
+      "id": 4,
+      "name": "wave_dependencies_dag",
+      "severity": "BLOCKER",
+      "result": "PASS",
+      "detail": "No cycles in wave dependencies (2 waves inspected)."
+    },
+    {
+      "id": 5,
+      "name": "waves_have_stories_advanced",
+      "severity": "MAJOR",
+      "result": "PASS",
+      "detail": "All 2 waves reference Stories advanced."
+    },
+    {
+      "id": 6,
+      "name": "project_claudemd_exists",
+      "severity": "MINOR",
+      "result": "PASS",
+      "detail": "Project CLAUDE.md found at project/demo/CLAUDE.md."
+    },
+    {
+      "id": 7,
+      "name": "plans_directory_convention",
+      "severity": "MINOR",
+      "result": "PASS",
+      "detail": "plans/ directory present, no stray wave-plans."
+    },
+    {
+      "id": 8,
+      "name": "plan_frontmatter_complete",
+      "severity": "MAJOR",
+      "result": "PASS",
+      "detail": "All required frontmatter fields present: spec_path, spec_id, project, created, waves."
+    },
+    {
+      "id": 9,
+      "name": "fr_coverage_bijective",
+      "severity": "BLOCKER",
+      "result": "PASS",
+      "detail": "Every spec FR maps to exactly one wave (2 FRs)."
+    },
+    {
+      "id": 10,
+      "name": "plan_spec_path_link",
+      "severity": "BLOCKER",
+      "result": "PASS",
+      "detail": "Plan frontmatter spec_path resolves to project/demo/spec/001-login.md."
+    }
+  ],
+  "summary": {
+    "blockers": 0,
+    "majors": 0,
+    "minors": 0
+  },
+  "errors": []
+}

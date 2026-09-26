@@ -360,3 +360,60 @@ Rules:
 **Edge case (FR-002 parity):** the `audits/` directory is entirely optional. Its absence (or
 presence with zero files) is valid under schema v1.1 and MUST NOT cause `product validate` or
 any other CLI command to fail for a project that has not published an audit yet.
+
+## 8. Vault mirror (spec 010)
+
+> Prose only — no schema change. Section 7 already holds the audits contract, so the mirror
+> section is numbered 8. The sets below are defined in `_shared/lib/vault-contract.cjs`
+> (`PRODUCT_MIRROR_SET`, `PHASES_MIRROR_SET`, `MIRROR_EXCLUDES`) and nowhere else;
+> `a1-tools schema export --json` prints them under `mirror`.
+
+When an external vault is configured (`A1_VAULT_ROOT`), the files of this directory are copied
+**one-way, verbatim** into `<vault>/project/<slug>/product/`. `<slug>` is the `project:` field
+of `ROADMAP.md`. The repo stays canonical: nothing reads the copy back, and an edit made in the
+vault is overwritten by the next mirror. Each file is written to a random temp name and renamed
+over the target, so a reader never sees a half-written file.
+
+**Mirrored path set.**
+
+| Source (repo) | Target (vault) |
+|---|---|
+| `docs/product/ROADMAP.md`, `VISION.md`, `NEXT.md`, `index.json` | `project/<slug>/product/<same name>` |
+| `docs/product/features/**`, `docs/product/audits/**` | `project/<slug>/product/features/**`, `…/audits/**` |
+| `.a1/phases/<phase>/GOAL.md`, `PLAN.md`, `STATUS.md`, `VERIFICATION.md` | `project/<slug>/phases/<phase>/<same name>` |
+| `.a1/RESEARCH.md` | `project/<slug>/phases/RESEARCH.md` |
+
+**Exclusions**, matched by basename wherever they occur: `reservations.json`,
+`.product-stage.lock.json`, `*.lock*`, `*.tmp*`, `observations.jsonl`. Anything else under
+`docs/product/` or `.a1/` that the set does not name (for example a phase's `MAP.md` or
+`AUDIT.md`) is not mirrored either. Sources absent from the repo are skipped, not reported
+as errors. A source that is a symbolic link, or that resolves outside `docs/product/` or `.a1/`, is
+refused with one stderr line and never copied. The hub note `project/<slug>.md` and
+sync-conflict copies are never written or deleted.
+
+**The `vault_mirror` result key.** Twelve product-mutating commands mirror the **product set
+only**, after their repo write and before their lock is released: `init`, `add-milestone`,
+`add-feature`, `stage`, `markers --set`, `changelog`, `feature-init`, `vision-init`,
+`vision-touch`, `audit-publish`, `audit-set` and `audit-mirror`. (`product import` does not
+mirror; run `vault sync` afterwards.) Each adds one key to its JSON result:
+
+```json
+"vault_mirror": { "status": "ok", "files": 3 }
+"vault_mirror": { "status": "skipped", "files": 0, "reason": "vault root does not exist: /path" }
+```
+
+- `status: "ok"`: the mirror ran. `files` counts files added or updated; unchanged files are
+  not counted.
+- `status: "skipped"`: the mirror did not run. `reason` names why: the vault root is missing,
+  not a directory or not writable; this host is not `A1_VAULT_WRITER_HOST`; `ROADMAP.md` has no
+  usable `project:`; `--dir` is not a `<repo>/docs/product` folder. The command also prints
+  exactly one `[a1-tools] vault mirror skipped: <reason>` line to stderr. Neither the repo
+  write nor the exit code changes.
+- **Key absent**: `A1_VAULT_ROOT` is unset. Without a configured vault the output is
+  byte-identical to the release before spec 010, so no `inactive` value is emitted
+  (`EMIT_INACTIVE_RESULT = false` in `vault-mirror.cjs`).
+
+The phases set is not mirrored by product commands. It is written by `a1-tools vault sync
+<slug> --phases`, which the `a1-plan` audit and the `a1-execute` execute and verify workflows
+call after writing `.a1/phases/`. `vault sync` without a set flag mirrors both sets, and
+`vault status` reports drift between repo and vault.
