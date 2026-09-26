@@ -418,12 +418,6 @@ Usage:
                   Exit: 0 ok, 1 usage/not-found/unknown-finding/unknown-
                   feature/write error.
   a1-tools product validate [--dir docs/product] [--spec-status]
-                  --spec-status: also compares every roadmap feature with its
-                  spec (spec_path, else project/<slug>/spec/<id>*.md in the
-                  vault) and adds a spec_status section {violations, warnings,
-                  unlinked}. Terminal disagreement (one side done/cancelled)
-                  = violation naming the reconciling command, exit 1;
-                  non-terminal = warning; no resolvable spec = unlinked (info).
                   Read-only. Validates <dir>/ROADMAP.md frontmatter against
                   the schema-v1 contract (docs/product/SCHEMA.md section 1 /
                   index.schema.json): required fields, enums, id/date
@@ -433,7 +427,19 @@ Usage:
                   over the file content, surfaced as warnings[] — never
                   affects valid/exit code (flag, not a hard block). Prints
                   { valid, errors[], warnings[], file }. Never writes any
-                  file. Exit: 0 valid, 1 invalid or ROADMAP.md missing.
+                  file. Exit: 0 valid,
+                  1 invalid or ROADMAP.md missing.
+                  --spec-status (spec 010 Wave 7, FR-028): also compares every
+                  roadmap feature with its spec (spec_path, else
+                  project/<slug>/spec/<id>*.md under the learnings root) and
+                  adds spec_status {vault_root, violations, warnings,
+                  unlinked}. Terminal disagreement (one side done/cancelled)
+                  = violation naming the reconciling command, exit 1;
+                  non-terminal = warning; no resolvable spec = unlinked
+                  (info, exit unchanged). Without A1_VAULT_ROOT the root is
+                  the repo-local tier, resolved read-only (nothing is
+                  created, nothing announced on stderr). Without the flag
+                  the output is unchanged.
   a1-tools product import --file <path> --project <slug>
                   [--title <text>] [--dir docs/product]
                   Migrate a legacy hand-rolled roadmap into a fresh
@@ -556,8 +562,19 @@ Usage:
                   the value-default idiom \`grep -c ... || echo 0\`. That
                   predicate has no live true positive today — it is
                   forward-looking, not currently load-bearing.
-                  Prints {root, scanned, findings: [{file, line, snippet}]}
-                  as JSON to stdout; every finding line goes to stderr only.
+                  Rule vault-sync-step (spec 010 Wave 4, FR-008): when <root>
+                  is an a1 skills tree (skills/a1-plan/ or skills/a1-execute/
+                  exists), each of skills/a1-plan/workflows/04-audit.md,
+                  skills/a1-execute/workflows/02-execute.md and
+                  skills/a1-execute/workflows/03-verify.md must exist and hold
+                  a line INSIDE a \`\`\`bash fence matching
+                  "a1-tools.cjs vault sync .* --phases" (a prose mention does
+                  not count). Missing file or fence -> finding {file, rule:
+                  "vault-sync-step", reason}, exit 1.
+                  Prints {root, scanned, vault_sync_checked, findings:
+                  [{file, line, snippet} | {file, rule, reason}]} as JSON to
+                  stdout; every finding line goes to stderr only.
+                  vault_sync_checked is 3 on a skills tree and 0 otherwise.
                   \`scanned\` is the file count actually walked — assert it,
                   not just exit 0: a glob typo returns 0 files and also
                   exits 0 (the dead-glob class, self-applied to this scan).

@@ -166,8 +166,10 @@ function checkSpecRoadmapCoherence({ roadmapFm, vaultRoot, slug }) {
 /** The `product validate --spec-status` section: the three lists for the
  * roadmap already parsed by `validate`, plus the vault it was resolved in. */
 function specStatusSection(roadmapFm) {
-  const { vaultRoot } = require('./io.cjs');
-  const root = vaultRoot();
+  // Read-only (FR-028 "never writes"): peek, never vaultRoot() — that would
+  // create .a1/learnings/ and announce itself in a vault-less repo.
+  const peeked = require('./io.cjs').peekVaultRoot();
+  const root = peeked ? peeked.root : null;
   return { vault_root: root, ...checkSpecRoadmapCoherence({ roadmapFm, vaultRoot: root, slug: roadmapFm.project }) };
 }
 

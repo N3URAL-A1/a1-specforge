@@ -25,6 +25,21 @@ jobs:
           echo "== _test-fixtures/a1-schema-check/parser/run-parser.sh"
           bash _test-fixtures/a1-schema-check/parser/run-parser.sh
 
+      - name: Vault cockpit validators
+        # Spec 010: `vault lint` must exit 1 on planted defects and `vault
+        # status` 0 on a synced fixture, both asserted explicitly (each with
+        # its counter-check). The vault is a fresh mktemp -d directory; the
+        # helper refuses anything else, so this step never reaches a real vault.
+        run: |
+          set -e
+          unset A1_VAULT_WRITER_HOST
+          export A1_VAULT_ROOT="$(mktemp -d)"
+          set +e
+          bash _test-fixtures/a1-vault-cockpit/ci/vault-validators.sh
+          rc=$?
+          set -e
+          [ "$rc" = 0 ] || exit 1
+
       - name: Install smoke test
         run: |
           set -e

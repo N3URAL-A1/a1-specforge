@@ -45,6 +45,28 @@ function vaultRootInfo() {
   return { root, source };
 }
 
+/**
+ * Read-only twin of vaultRoot() for lookups that must not change anything
+ * (spec 010 SC-002): same tier order, but it never creates `.a1/learnings/`,
+ * never announces on stderr and never exits. Returns { root, source } or null
+ * when nothing resolves. The repo-local path is returned even if it does not
+ * exist yet — a lookup there simply finds nothing.
+ */
+function peekVaultRoot() {
+  if (process.env.A1_VAULT_ROOT) return { root: process.env.A1_VAULT_ROOT, source: 'env' };
+  try {
+    const { execSync } = require('child_process');
+    const top = execSync('git rev-parse --show-toplevel', { stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString()
+      .trim();
+    if (top) return { root: path.join(top, '.a1', 'learnings'), source: 'repo-local' };
+  } catch (_e) {
+    /* not in a repo — fall through to legacy */
+  }
+  const legacy = path.join(os.homedir(), 'N3URAL-Vault');
+  return fs.existsSync(legacy) ? { root: legacy, source: 'legacy' } : null;
+}
+
 function resolveVaultRoot() {
   let root;
   let source;
@@ -974,4 +996,4 @@ function projectsPath(...segments) {
   return path.join(vaultRoot(), 'project', ...safe);
 }
 
-module.exports = { vaultRoot, vaultRootInfo, codeRoots, repoRoot, resolveVaultPath, parseFrontmatter, serializeScalar, detectKeyOrder, serializeFrontmatter, readMd, writeMdAtomic, nowIso, writeTextAtomic, parseScalarToken, parseNestedFrontmatter, serializeNestedFrontmatter, writeNestedMdAtomic, parseFlags, fail, assertSafeSegment, projectsPath, copyDirRecursive, tmpPathFor, nearestExistingAncestor, assertAncestorInside };
+module.exports = { vaultRoot, vaultRootInfo, peekVaultRoot, codeRoots, repoRoot, resolveVaultPath, parseFrontmatter, serializeScalar, detectKeyOrder, serializeFrontmatter, readMd, writeMdAtomic, nowIso, writeTextAtomic, parseScalarToken, parseNestedFrontmatter, serializeNestedFrontmatter, writeNestedMdAtomic, parseFlags, fail, assertSafeSegment, projectsPath, copyDirRecursive, tmpPathFor, nearestExistingAncestor, assertAncestorInside };

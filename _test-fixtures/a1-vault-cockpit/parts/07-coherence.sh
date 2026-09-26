@@ -254,9 +254,27 @@ caseK0() {
     "005-vault-first-artifacts|product stage --by 005-vault-first-artifacts --set done"
 }
 
+# ---------- K10 vault-less run writes nothing (FR-028 "never writes") ----------
+# In a git repo WITHOUT A1_VAULT_ROOT the section resolves the repo-local tier
+# read-only. Red-making change: specStatusSection calling vaultRoot() instead
+# of peekVaultRoot() → `.a1/learnings/` appears and stderr announces it.
+caseK10() {
+  local base="$C_WORK/k10"
+  c_case k10 done planned path
+  git -C "$base/repo" init -q
+  C_OUT="$(cd "$base/repo" && env -u A1_VAULT_ROOT HOME="$C_WORK/home" A1_CODE_ROOTS="$C_WORK/noroots" \
+    node "$TOOLS" product validate --spec-status 2>"$C_WORK/stderr")"
+  C_RC=$?
+  assert_eq "K10 vault-less --spec-status creates no .a1/learnings/" \
+    "$([[ -e "$base/repo/.a1/learnings" ]] && echo created || echo absent)" "absent"
+  assert_eq "K10 vault-less --spec-status prints nothing on stderr" "$(wc -c < "$C_WORK/stderr" | tr -d ' ')" "0"
+  assert_json "K10 section still present, vault_root is the repo-local path" "$C_OUT" \
+    "/[.]a1[/]learnings$/.test(j.spec_status.vault_root)" "true"
+}
+
 caseK1
 C_K1_OUT="$C_OUT"
-caseK2; caseK3; caseK4; caseK5; caseK6; caseK7; caseK8; caseK9; caseK0
+caseK2; caseK3; caseK4; caseK5; caseK6; caseK7; caseK8; caseK9; caseK0; caseK10
 
 # ====================== Section B — spec update-status ======================
 

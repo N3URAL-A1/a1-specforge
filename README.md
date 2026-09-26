@@ -110,6 +110,28 @@ All 17 skills below match the `SKILLS` array in `bin/install.sh` exactly.
 
 Deterministic helpers for all pipelines live under `_shared/` (`~6.8k` LOC): atomic frontmatter writes, number/suffix reservations, spec/fix/analyze scaffolding, phantom and schema checks, cost tracking, and the learning-store resolver. Skills call it; you rarely invoke it directly.
 
+### Vault mirror and cockpit (spec 010)
+
+When an external vault is configured (`A1_VAULT_ROOT`), the CLI keeps a read-only copy of each project's product and phase state there, so a notes app such as Obsidian can show it next to the specs. The direction is **one-way: repo → vault, verbatim, never back.** The repo stays canonical. Nothing reads the mirror back, an edit made in the vault is overwritten by the next mirror, and hub notes and sync-conflict copies are never written or deleted. The decision is recorded in [`docs/adr/2026-09-24-vault-mirror-single-writer.md`](docs/adr/2026-09-24-vault-mirror-single-writer.md). The mirrored paths are listed in [`docs/product/SCHEMA.md`](docs/product/SCHEMA.md) §8.
+
+Every product-mutating command (`product init`, `add-milestone`, `add-feature`, `stage`, …) mirrors `docs/product/` after its repo write and reports the outcome as `vault_mirror: {status: "ok"|"skipped", files}`. A failed mirror never fails the command. It prints one `[a1-tools] vault mirror skipped: <reason>` line and the exit code is unchanged. The phase skills (`a1-plan` audit, `a1-execute` execute and verify) call `vault sync <slug> --phases` after they write `.a1/phases/`.
+
+| Command | What it does | Exit |
+|---|---|---|
+| `a1-tools vault sync [<slug>] [--product] [--phases] [--dry-run] [--prune] [--json]` | Rebuilds the mirror. The slug comes from the `docs/product/ROADMAP.md` frontmatter `project:`; a different `<slug>` is refused. `--prune` deletes vault files without a repo source, only inside `product/` and `phases/`. | 0 ok or skipped, 1 usage/slug mismatch, 2 no `A1_VAULT_ROOT` |
+| `a1-tools vault status [<slug>] [--json]` | Read-only drift report: `missing`, `stale`, `extra` and `conflict` findings, plus `host`, `writer_host` and `may_write`. | 0 in sync, 1 drift, 2 cannot run |
+| `a1-tools vault lint [<slug>] [--json] [--fix-type [--dry-run]]` | Frontmatter check of `project/<slug>/{spec,plans,fixes,postmortems,analyses,quick}/`: missing, unknown or misplaced `type:`, invalid status, folded scalars, conflict copies. `--fix-type` stamps `type:` on files whose only finding is `type_missing`. | 0 clean, 1 findings, 2 cannot run |
+| `a1-tools vault link-hub <slug> (<artifact-path> \| --spec <id>)` · `--all-specs` | Appends `- references [[project/<slug>/<subfolder>/<name>]]` under `## Relations` in `project/<slug>.md`. Idempotent, and never creates a missing hub. | 0 ok, 1 missing hub, 2 no `A1_VAULT_ROOT` |
+| `a1-tools schema export --json` | Prints the versioned read contract for vault readers: artifact types, every status vocabulary, the mirror sets and the hub relation line. Output is byte-stable; `contract_version` is bumped on any change. | 0 |
+| `a1-tools spec init <slug> <feature-slug> --title <t> [--size S\|M\|L]` | Writes a new spec at the next number with `type: spec` as the first key and `status: discovering`, then links it from the hub (`hub: linked\|unchanged\|missing`). | 0 ok, 1 refused |
+| `a1-tools product validate --spec-status` | Also compares each roadmap feature with its spec. A terminal disagreement (one side `done`/`cancelled`) is a violation that names the reconciling command and exits 1; other differences are warnings. | 0 valid, 1 invalid or violation |
+
+`a1-checklist` check **#11** (`spec_roadmap_status_coherent`) runs the same spec↔roadmap comparison per feature. It raises a BLOCKER on a terminal disagreement and passes when the project has no roadmap. `a1-new-feature`'s consistency gate (Phase 4.5) runs `a1-tools checklist run <slug>/<id> --only 9,10,11`.
+
+**Two hosts, one vault.** When two machines share one synced vault, set `A1_VAULT_WRITER_HOST` on both to the name of the one machine that may write the mirror (see [Configuration](#configuration)). On every other host, `vault sync`, the product mirror hook, `vault lint --fix-type`, `vault link-hub` and the hub link of `spec init` each print `[a1-tools] vault mirror skipped: this host is not the vault writer (<host> ≠ <writer>)`, write nothing to the vault and keep their exit code. Repo writes and spec files are written on every host. When the variable is unset, every host may write.
+
+**No vault configured.** With `A1_VAULT_ROOT` unset, nothing is mirrored and nothing extra is printed. Product commands emit no `vault_mirror` key. The stdout, stderr and written files of `product stage` and `analyze init` are byte-identical to the release before spec 010 (commit `475382a`). `spec update-status` to a terminal status, on a spec whose feature the roadmap lists, differs in two lines only, both spec-lifecycle changes: the updated body status header and one `hint:` line. The fixture `a1-vault-fallback` (cases G1–G3, with `golden/spec-update-status.allowed-diff`) pins this. The `vault` commands need an external vault and exit 2 with `no external vault root (tier repo-local); set A1_VAULT_ROOT`. A configured root that is missing or read-only is not an error. Mirroring is skipped with one stderr line and the exit code is 0.
+
 ## Configuration
 
 **No configuration is required.** The learning store resolves automatically via a 3-tier fallback chain (precedence: env > repo-local > legacy):
