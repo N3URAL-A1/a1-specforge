@@ -2739,6 +2739,7 @@ function cmdProductImport(args) {
 }
 
 module.exports = {
+  PRODUCT_SLUG_RE, // vault-sync.cjs validates CLI slugs with the same shape
   cmdProductStatus,
   cmdProductStage,
   cmdProductMarkers,

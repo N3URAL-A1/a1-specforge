@@ -19,6 +19,10 @@ const lib = (name) => require(path.join(__dirname, name));
 
 function dispatchVault(sub, rest) {
   // Wave 3: sync, status · Wave 6: lint, link-hub — one line each, added here.
+  if (sub === 'link-hub') return lib('vault-hub.cjs').cmdVaultLinkHub(rest);
+  if (sub === 'lint') return lib('vault-lint.cjs').cmdVaultLint(rest);
+  if (sub === 'sync') return lib('vault-sync.cjs').cmdVaultSync(rest);
+  if (sub === 'status') return lib('vault-sync.cjs').cmdVaultStatus(rest);
   usage(`unknown vault subcommand: ${sub}`);
   return undefined; // unreachable — usage() exits 1
 }

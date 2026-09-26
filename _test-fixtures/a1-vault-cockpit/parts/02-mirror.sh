@@ -24,6 +24,11 @@ make_mirror_repo() {
   printf '{}\n' > "$r/docs/product/reservations.json"
   printf '{"pid":1}\n' > "$r/docs/product/.product-stage.lock.json"
   printf 'x\n' > "$r/docs/product/features/001-login/feature.lock.json"
+  # excluded names INSIDE the features/** whitelist glob: here the exclude list
+  # alone keeps them out (at the product root the whitelist already does)
+  printf '{}\n' > "$r/docs/product/features/001-login/reservations.json"
+  printf '{"pid":1}\n' > "$r/docs/product/features/001-login/.product-stage.lock.json"
+  printf '{"a":1}\n' > "$r/docs/product/features/001-login/observations.jsonl"
   for f in GOAL PLAN STATUS VERIFICATION MAP AUDIT; do printf '# %s P1\n' "$f" > "$r/.a1/phases/M1-P1/$f.md"; done
   printf '{"a":1}\n' > "$r/.a1/phases/M1-P1/observations.jsonl"
   printf 'half\n' > "$r/.a1/phases/M1-P1/STATUS.md.tmp.4242"
@@ -54,7 +59,14 @@ M_PRODUCT="$M_VAULT/project/$M_SLUG/product"; M_PHASES="$M_VAULT/project/$M_SLUG
 
 # ---------- M1 product whitelist + M1b excludes ----------
 # Red-making change: adding `**` to PRODUCT_MIRROR_SET (notes.md appears);
-# M1b: removing reservations.json from MIRROR_EXCLUDES.
+# M1b: removing reservations.json (or .product-stage.lock.json, or
+# observations.jsonl) from MIRROR_EXCLUDES — the copies planted INSIDE
+# features/** then land in the mirror. At the product root the whitelist alone
+# keeps them out, so the exclude list is defence in depth there; inside a
+# `**` glob it is the only guard. Measured: removing `.product-stage.lock.json`
+# alone flips nothing here because `*.lock*` still matches it — that entry is
+# shadowed by design (a reader-facing name next to the glob), pinned by the
+# golden only.
 caseM1() {
   assert_rc "M1 harness apply exits 0" 0 "$M_RC" "$(head -c 300 "$M_WORK/stderr")"
   assert_eq "M1 vault product/ holds exactly the FR-002 whitelist" "$(rel_files "$M_PRODUCT")" \
@@ -64,11 +76,19 @@ caseM1() {
     || bad "M1b an excluded lock/reservation file was mirrored"
   [[ ! -e "$M_PRODUCT/features/001-login/feature.lock.json" ]] \
     && ok "M1b *.lock* absent inside features/**" || bad "M1b feature.lock.json was mirrored"
+  [[ ! -e "$M_PRODUCT/features/001-login/reservations.json" ]] \
+    && ok "M1b reservations.json absent inside features/** (exclude alone guards it)" || bad "M1b features/001-login/reservations.json was mirrored"
+  [[ ! -e "$M_PRODUCT/features/001-login/.product-stage.lock.json" ]] \
+    && ok "M1b .product-stage.lock.json absent inside features/** (exclude alone guards it)" || bad "M1b features/001-login/.product-stage.lock.json was mirrored"
+  [[ ! -e "$M_PRODUCT/features/001-login/observations.jsonl" ]] \
+    && ok "M1b observations.jsonl absent inside features/** (exclude alone guards it)" || bad "M1b features/001-login/observations.jsonl was mirrored"
 }
 
 # ---------- M2 phases set ----------
-# Red-making change: adding MAP.md to PHASES_MIRROR_SET; separately, removing
-# observations.jsonl from MIRROR_EXCLUDES (M2b).
+# Red-making change: adding MAP.md to PHASES_MIRROR_SET. M2b: PHASES_MIRROR_SET
+# holds literal file names only (no `**`), so the whitelist already keeps
+# observations.jsonl and *.tmp* out — M2b documents that the exclude list is
+# defence in depth here; the exclude-alone arm lives in M1b (features/**).
 caseM2() {
   assert_eq "M2 vault phases/ holds four files per phase + RESEARCH.md, P2 without VERIFICATION" "$(rel_files "$M_PHASES")" \
     "M1-P1/GOAL.md M1-P1/PLAN.md M1-P1/STATUS.md M1-P1/VERIFICATION.md M1-P2/GOAL.md M1-P2/PLAN.md M1-P2/STATUS.md RESEARCH.md"

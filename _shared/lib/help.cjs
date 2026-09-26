@@ -17,6 +17,14 @@ const HELP = `a1-tools — file-ops helper for a1-* skills
 
 Usage:
   a1-tools spec next-number <project-slug>
+  a1-tools spec init <project-slug> <feature-slug> --title <t> [--size S|M|L]
+                  Spec 010 Wave 6 (FR-017/FR-025). Writes the spec template at
+                  the next number with type: spec as the FIRST key, id,
+                  project, feature_slug, title, status: discovering, size,
+                  created filled; then links it from project/<slug>.md (JSON
+                  hub: linked|unchanged|missing — a missing hub is never
+                  created). Refuses an existing file, a non-kebab-case slug
+                  and a title > 200 chars (exit 1).
   a1-tools spec update-status <spec-path> <new-status> [flags]
   a1-tools spec set-size <spec-path> <S|M|L>
   a1-tools spec list <project-slug> [--status=<s>]
@@ -676,6 +684,76 @@ Usage:
                   ship per wave and register in lib/vault-cli.cjs:
                   sync, status (wave 3) · lint, link-hub (wave 6). Unknown
                   subcommand -> exit 1.
+  a1-tools vault sync [<slug>] [--product] [--phases] [--dry-run] [--prune]
+                  [--slug <s>] [--json]
+                  Spec 010 Wave 3 (FR-011/FR-012). Rebuilds the one-way mirror
+                  docs/product/ -> project/<slug>/product/ and .a1/phases/ ->
+                  project/<slug>/phases/ (default both sets). The slug is the
+                  docs/product/ROADMAP.md frontmatter project:; a different
+                  <slug> -> exit 1 naming both; without a roadmap --slug is
+                  required and only phases are mirrored. Another checkout
+                  under the code roots claiming the same project (git
+                  worktrees of this repo excepted) -> exit 1 naming both
+                  paths. JSON: added, updated, unchanged, extra, pruned,
+                  skipped, planned[{action, path}]. --dry-run writes nothing
+                  and lists add|update|delete|extra. Vault files without a
+                  repo source are reported as extra and kept; --prune deletes
+                  them, only inside product/ and phases/, never a conflict
+                  copy. Vault root missing or read-only -> one stderr line,
+                  status: skipped, exit 0. Unsafe slug or unknown flag ->
+                  exit 1. No A1_VAULT_ROOT (tier repo-local) -> exit 2.
+  a1-tools vault status [<slug>] [--slug <s>] [--json]
+                  Spec 010 Wave 3 (FR-013/FR-014). Read-only drift report,
+                  one line per finding "<class>  <path>": missing (in repo,
+                  not in vault), stale (bytes differ), extra (in the vault
+                  mirror folders only), conflict (Obsidian conflict copies
+                  "* (conflict*" or "*.sync-conflict-*" anywhere under
+                  project/<slug>/). --json prints {findings, counts, in_sync,
+                  drift, skipped}. Exit 0 no drift, 1 drift, 2 cannot run
+                  (no A1_VAULT_ROOT, vault root missing, unsafe slug, slug
+                  mismatch, unknown flag).
+  a1-tools vault lint [<slug>] [--json] [--fix-type [--dry-run]]
+                  Spec 010 Wave 6 (FR-018/FR-019, FR-014). Walks the a1
+                  subfolders of project/<slug>/ (every slug when omitted):
+                  spec/ plans/ fixes/ postmortems/ analyses/ quick/, expected
+                  type from ARTIFACT_TYPES. Classes: frontmatter_unparseable,
+                  type_missing, type_unknown, type_folder_mismatch,
+                  status_missing, status_invalid (spec/bug-report/
+                  project-analysis on status:, quick-run on result:;
+                  wave-plan and postmortem are never status-checked),
+                  frontmatter_folded (a scalar continued on an indented line,
+                  found by scanning raw lines), conflict (Obsidian conflict
+                  copies anywhere under project/<slug>/). Other subfolders
+                  count as ignored. *-STATUS.md / *-VERIFICATION.md companions
+                  are only checked for unparseable/folded/conflict and counted.
+                  JSON: {findings[{path,class,key,detail}], counts, ignored,
+                  companions, fixed[], skipped[]}. --fix-type inserts
+                  "type: <folder type>" as the first key into every file whose
+                  ONLY finding is type_missing (string insert, rest of the file
+                  byte-identical, atomic write) and prints each rewritten path;
+                  unparseable files are listed as skipped. --dry-run (with
+                  --fix-type) writes nothing and lists would_fix. Exit 0 clean,
+                  1 findings, 2 cannot run (usage, hostile or unknown slug,
+                  repo-local tier without A1_VAULT_ROOT).
+  a1-tools vault link-hub <slug> (<artifact-path> | --spec <id>) [--dry-run]
+  a1-tools vault link-hub [<slug>] --all-specs [--dry-run]
+                  Spec 010 Wave 6 (FR-024/FR-025/FR-026). Appends the line
+                  "- references [[project/<slug>/<subfolder>/<name>]]" as the
+                  last bullet of the ## Relations block of project/<slug>.md
+                  (block appended at the end when missing). Text-only edit:
+                  the byte diff is the inserted line(s), nothing else;
+                  idempotent (exact line present -> no write, hub: unchanged).
+                  <artifact-path> is project/<slug>/<subfolder>/<name>.md and
+                  must exist; --spec <id> is shorthand for spec/<id>.md.
+                  --all-specs links every project/<slug>/spec/###-*.md (minus
+                  *-VERIFICATION.md, conflict copies, tmp files) with one write
+                  per hub; without <slug> every project folder with spec/
+                  (Wave 9 backfill). JSON: {linked, unchanged, missing_hub,
+                  projects[]}. --dry-run writes nothing and lists the lines it
+                  would add (JSON + stderr). Missing hub: single slug -> exit 1,
+                  never created; --all-specs without slug -> listed under
+                  missing_hub, exit 0. Repo-local tier (no A1_VAULT_ROOT) ->
+                  exit 2.
 
 Spec statuses: ${[...SPEC_STATUSES].join(', ')}
 Bug statuses:  ${[...BUG_STATUSES].join(', ')}

@@ -190,16 +190,36 @@ function assertPlanContained(plan) {
 }
 
 /** Realpath containment of the (now existing) target dir — catches symlinks. */
-function assertRealInside(dstDir, root) {
-  const real = realFs.realpathSync(dstDir);
-  const realRoot = realFs.realpathSync(root);
-  if (!insideRoot(real, realRoot)) throw new Error(`vault mirror: target dir escapes the set folder via a link: ${dstDir}`);
+/** The REAL set folder: the set name joined to the realpath of
+ * project/<slug>/, never realpath(setRoot) — a set folder that is itself a
+ * link out of the vault resolves elsewhere and would pass a comparison with
+ * its own realpath. null while project/<slug>/ does not exist yet. */
+function realSetRoot(vaultRoot, slug, set) {
+  const projectDir = path.join(vaultRoot, 'project', assertSafeSegment(slug, 'slug'));
+  try { return path.join(realFs.realpathSync(projectDir), set); } catch (_e) { return null; }
 }
 
-function writeAtomic(ops, entry, root) {
+/** Before the first write: every EXISTING set folder must resolve to its real
+ * set root. Throws, nothing written. */
+function assertSetRootsReal(plan, sets) {
+  for (const set of sets) {
+    let real;
+    try { real = realFs.realpathSync(setRoot(plan.vaultRoot, plan.slug, set)); } catch (_e) { continue; }
+    if (real !== realSetRoot(plan.vaultRoot, plan.slug, set)) {
+      throw new Error(`vault mirror: project/${plan.slug}/${set}/ resolves outside the project folder via a link: ${real}`);
+    }
+  }
+}
+
+function assertRealInside(dstDir, realRoot) {
+  const real = realFs.realpathSync(dstDir);
+  if (!realRoot || !insideRoot(real, realRoot)) throw new Error(`vault mirror: target dir escapes the set folder via a link: ${dstDir}`);
+}
+
+function writeAtomic(ops, entry, realRoot) {
   const dir = path.dirname(entry.dst);
   ops.mkdirSync(dir, { recursive: true });
-  assertRealInside(dir, root);
+  assertRealInside(dir, realRoot);
   const tmp = `${entry.dst}.tmp.${process.pid}`;
   const bytes = realFs.readFileSync(entry.src);
   try {
@@ -222,12 +242,15 @@ function applyMirror(plan, opts) {
   const ops = { ...DEFAULT_OPS, ...(o.fsOps || {}) };
   const prune = o.prune === true;
   assertPlanContained(plan);
-  for (const set of ['product', 'phases']) ops.mkdirSync(setRoot(plan.vaultRoot, plan.slug, set), { recursive: true });
+  const touched = [...new Set([...(plan.sets || ['product', 'phases']), ...plan.entries.map((e) => e.set)])];
+  assertSetRootsReal(plan, touched);
+  // plan.sets (optional, Wave 3 `vault sync --product|--phases`) limits the
+  // set folders created; a deselected set must not appear in the vault.
+  for (const set of plan.sets || ['product', 'phases']) ops.mkdirSync(setRoot(plan.vaultRoot, plan.slug, set), { recursive: true });
   const counts = { added: 0, updated: 0, unchanged: 0, extra: 0, pruned: 0, skipped: plan.skipped.length };
   for (const e of plan.entries) {
-    const root = setRoot(plan.vaultRoot, plan.slug, e.set);
     if (e.action === 'add' || e.action === 'update') {
-      writeAtomic(ops, e, root);
+      writeAtomic(ops, e, realSetRoot(plan.vaultRoot, plan.slug, e.set));
       counts[e.action === 'add' ? 'added' : 'updated'] += 1;
     } else if (e.action === 'extra') {
       counts.extra += 1;

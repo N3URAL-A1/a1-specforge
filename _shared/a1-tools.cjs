@@ -222,6 +222,7 @@ const { gitSafe, assertNoShellMetachar } = require(path.join(__dirname, 'lib', '
 // ---------- spec group (lib/spec.cjs) ----------
 const {
   appendPhaseHistory,
+  cmdSpecInit,
   cmdSpecNextNumber,
   cmdSpecUpdateStatus,
   cmdSpecSetSize,
@@ -368,6 +369,7 @@ function main() {
   try {
     if (group === 'spec') {
       if (sub === 'next-number') result = cmdSpecNextNumber(rest);
+      else if (sub === 'init') result = cmdSpecInit(rest);
       else if (sub === 'update-status') result = cmdSpecUpdateStatus(rest);
       else if (sub === 'set-size') result = cmdSpecSetSize(rest);
       else if (sub === 'list') result = cmdSpecList(rest);

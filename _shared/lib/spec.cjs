@@ -12,10 +12,127 @@ const {
   parseFlags,
   readMd,
   writeMdAtomic,
+  writeTextAtomic,
+  parseFrontmatter,
+  serializeScalar,
+  assertSafeSegment,
   nowIso,
   fail,
   projectsPath,
 } = require('./io.cjs');
+
+// ---------- spec init (spec 010, Wave 6, FR-017/FR-025) ----------
+
+// The template the skill used to hand-fill; `spec init` is now its only writer.
+const SPEC_TEMPLATE_PATH = path.join(
+  __dirname, '..', '..', 'skills', 'a1-new-feature', 'templates', 'spec-template.md'
+);
+const SPEC_TITLE_MAX_CHARS = 200;
+const FEATURE_SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+// Frontmatter lines the template carries as placeholders, filled by key so
+// `type: spec` (and every other line) stays exactly where the template puts it.
+const SPEC_INIT_FILL = Object.freeze({
+  id: (v) => v.id,
+  project: (v) => v.projectSlug,
+  feature_slug: (v) => v.featureSlug,
+  title: (v) => serializeScalar(v.title),
+  status: () => 'discovering',
+  size: (v) => serializeScalar(v.size),
+  created: (v) => v.created,
+});
+
+function validateSpecTitle(title) {
+  if (typeof title !== 'string' || title.trim() === '') usage('spec init requires --title <t>');
+  if (title.length > SPEC_TITLE_MAX_CHARS) {
+    fail(`--title is longer than ${SPEC_TITLE_MAX_CHARS} characters (${title.length})`);
+  }
+  if (/[\r\n]/.test(title)) fail('--title must be a single line');
+  return title;
+}
+
+function fillFrontmatterLine(line, v) {
+  const m = line.match(/^([a-z_]+):/);
+  const filler = m && SPEC_INIT_FILL[m[1]];
+  return filler ? `${m[1]}: ${filler(v)}` : line;
+}
+
+/** Plain string substitution: frontmatter by key, body by placeholder token. */
+function fillSpecTemplate(template, v) {
+  const m = template.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+  if (!m) throw new Error(`spec template has no frontmatter block: ${SPEC_TEMPLATE_PATH}`);
+  const fm = m[1].split('\n').map((line) => fillFrontmatterLine(line, v)).join('\n');
+  const body = m[2]
+    .split('<###>').join(v.padded)
+    .split('<feature-slug>').join(v.featureSlug)
+    .split('<project-slug>').join(v.projectSlug)
+    .split('<Working Title>').join(v.title);
+  return `---\n${fm}\n---\n${body}`;
+}
+
+/** The FR-017 invariant, checked on the bytes about to be written: `type: spec`
+ * is the first key and the file parses back to what was asked for. */
+function assertSpecInitContent(content, v) {
+  if (!content.startsWith('---\ntype: spec\n')) {
+    throw new Error('spec template drift: `type: spec` is not the first frontmatter key');
+  }
+  const { fm } = parseFrontmatter(content);
+  const want = { type: 'spec', id: v.id, project: v.projectSlug, status: 'discovering', title: v.title };
+  for (const [k, expected] of Object.entries(want)) {
+    if (fm[k] !== expected) {
+      throw new Error(`spec init self-check failed: ${k}=${JSON.stringify(fm[k])}, want ${JSON.stringify(expected)}`);
+    }
+  }
+}
+
+/** A feature slug gets one spec: `spec init` refuses when any
+ * `<###>-<feature-slug>.md` already exists, instead of silently taking the
+ * next number and leaving two specs for one feature. */
+function refuseExistingFeatureSlug(projectSlug, featureSlug) {
+  const dir = projectsPath(projectSlug, 'spec');
+  if (!fs.existsSync(dir)) return;
+  const existing = fs.readdirSync(dir).find((f) => /^\d{3}-/.test(f) && f.slice(4) === `${featureSlug}.md`);
+  if (existing) fail(`spec file already exists for feature slug "${featureSlug}": ${path.join(dir, existing)}`);
+}
+
+/** `spec init <project-slug> <feature-slug> --title <t> [--size S|M|L]` —
+ * writes the template at the next number and links it from the hub (FR-025;
+ * a missing hub is reported as `hub: "missing"`, never created). */
+function cmdSpecInit(args) {
+  const projectSlug = args[0];
+  const featureSlug = args[1];
+  if (!projectSlug || !featureSlug) usage('spec init requires <project-slug> <feature-slug> --title <t>');
+  try {
+    assertSafeSegment(projectSlug, 'project slug');
+  } catch (e) {
+    fail(e.message);
+  }
+  const flags = parseFlags(args.slice(2), { title: 'value', size: 'value' });
+  if (!FEATURE_SLUG_RE.test(featureSlug)) {
+    fail(`feature slug must be kebab-case [a-z0-9-] (got: ${JSON.stringify(featureSlug)})`);
+  }
+  const title = validateSpecTitle(flags.title);
+  const size = flags.size === undefined ? null : flags.size;
+  if (size !== null && !SPEC_SIZES.has(size)) usage(`invalid spec size "${size}". valid: S, M, L`);
+
+  refuseExistingFeatureSlug(projectSlug, featureSlug);
+  const { padded } = cmdSpecNextNumber([projectSlug]);
+  const id = `${padded}-${featureSlug}`;
+  const specPath = projectsPath(projectSlug, 'spec', `${id}.md`);
+  if (fs.existsSync(specPath)) fail(`spec file already exists: ${specPath}`);
+  const created = nowIso().slice(0, 10);
+  const values = { id, padded, projectSlug, featureSlug, title, size, created };
+  const content = fillSpecTemplate(fs.readFileSync(SPEC_TEMPLATE_PATH, 'utf8'), values);
+  assertSpecInitContent(content, values);
+  writeTextAtomic(specPath, content);
+
+  const hub = require('./vault-hub.cjs').linkHub(projectSlug, 'spec', id);
+  return {
+    spec_path: specPath, id, project: projectSlug, feature_slug: featureSlug, title,
+    status: 'discovering', size, created,
+    hub: hub.hub, hub_path: hub.hub_path, relation_line: hub.line,
+  };
+}
 
 function appendPhaseHistory(fm, phaseName) {
   if (!Array.isArray(fm.phase_history)) fm.phase_history = [];
@@ -166,6 +283,7 @@ function cmdSpecList(args) {
 
 module.exports = {
   appendPhaseHistory,
+  cmdSpecInit,
   cmdSpecNextNumber,
   cmdSpecUpdateStatus,
   cmdSpecSetSize,
