@@ -16,14 +16,21 @@
 // (a strict --fix-type would write a false `type: wave-plan` into them).
 //
 // --fix-type is the ONE sanctioned backfill for legacy files without `type:`.
-// It touches a file only when `type_missing` is its sole finding and inserts
-// the line as a STRING after the opening `---` — never through
-// serializeFrontmatter, which would reorder keys and requote titles — so the
-// file is byte-identical except for the one inserted line.
+// It stamps every file with a `type_missing` finding whose frontmatter parses
+// and is not folded, whatever else is reported for it (status outliers —
+// review decision M4, 2026-09-26, FR-019/SC-004). Unparseable files and
+// type_missing files with a folded scalar are left byte-identical and listed
+// under `skipped` for manual repair; companions never carry type_missing. The line is edited as a STRING — never through
+// serializeFrontmatter, which would reorder keys and requote titles: an empty
+// `type:` line is replaced in place, otherwise `type: <t>` is inserted after
+// the opening `---`. The file is byte-identical except for that one line, and
+// a second run finds nothing to stamp (review M3).
 //
-// Exit codes: 0 clean · 1 findings · 2 cannot run (usage, hostile slug,
-// missing project folder, repo-local vault tier). The command owns its exit
-// code (vault-cli.cjs contract) and never returns to the facade.
+// Exit codes: 0 clean, or skipped because the configured root is missing or
+// lacks the needed access (FR-010, one stderr warning) · 1 findings ·
+// 2 cannot run (usage, hostile slug, missing project folder, no external
+// vault root). The command owns its exit code (vault-cli.cjs contract) and
+// never returns to the facade.
 // ---------------------------------------------------------------------------
 
 const fs = require('fs');
@@ -32,10 +39,12 @@ const {
   ARTIFACT_TYPES, SPEC_STATUSES, BUG_STATUSES, ANALYSIS_STATUSES, QUICK_RESULTS,
 } = require('./status-constants.cjs');
 const {
-  parseFrontmatter, writeTextAtomic, assertSafeSegment, vaultRootInfo, parseFlags,
+  parseFrontmatter, writeTextAtomic, assertSafeSegment, parseFlags,
 } = require('./io.cjs');
 const { emitJson, writeStdoutSync } = require('./xprov-common.cjs');
-const { isConflictCopy, notWriterSkip } = require('./vault-mirror.cjs');
+const {
+  isConflictCopy, isLink, externalVaultRoot, rootProblem, warnSkipped, notWriterSkip,
+} = require('./vault-common.cjs');
 
 const EXIT_CLEAN = 0;
 const EXIT_FINDINGS = 1;
@@ -60,6 +69,8 @@ const KEY_LINE_RE = /^([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$/;
 const LIST_ITEM_RE = /^\s*-\s+(.*)$/;
 const CONTINUATION_RE = /^\s+\S/;
 const OBJECT_ITEM_RE = /^[A-Za-z_][A-Za-z0-9_]*:(\s|$)/;
+// A `type:` line the parser reads as missing: empty, "" / '' or null.
+const EMPTY_TYPE_LINE_RE = /^type:[ \t]*(?:""|''|null)?[ \t]*$/;
 const KNOWN_TYPES = new Set(Object.values(ARTIFACT_TYPES));
 
 const FLAGS = { json: 'bool', 'fix-type': 'bool', 'dry-run': 'bool' };
@@ -148,17 +159,34 @@ function lintContent(content, expectedType, companion) {
     .filter(Boolean);
 }
 
-/** FR-019: the file with `type: <t>` inserted as the first frontmatter key.
- * Everything after the opening `---` line stays byte-identical (the EOL of
- * that line is reused). A file without a frontmatter block gains a minimal
- * block in front of its unchanged content. */
+/** Offset and length (without EOL) of the empty `type:` line inside the
+ * frontmatter block that starts after `start`, or null. */
+function emptyTypeLine(content, start) {
+  let pos = start;
+  while (pos < content.length) {
+    const nl = content.indexOf('\n', pos);
+    const next = nl === -1 ? content.length : nl + 1;
+    const line = content.slice(pos, nl === -1 ? content.length : nl).replace(/\r$/, '');
+    if (line === '---') return null;
+    if (EMPTY_TYPE_LINE_RE.test(line)) return { at: pos, length: line.length };
+    pos = next;
+  }
+  return null;
+}
+
+/** FR-019: the file with `type: <t>` as a frontmatter key. An empty `type:`
+ * line is replaced in place (never duplicated — review M3); otherwise the key
+ * is inserted as the first line after the opening `---`, reusing that line's
+ * EOL. Every other byte stays identical. A file without a frontmatter block
+ * gains a minimal block in front of its unchanged content. */
 function withTypeStamped(content, type) {
   const crlf = content.startsWith('---\r\n');
-  if (crlf || content.startsWith('---\n')) {
-    const eol = crlf ? '\r\n' : '\n';
-    return `---${eol}type: ${type}${eol}${content.slice(3 + eol.length)}`;
-  }
-  return `---\ntype: ${type}\n---\n${content}`;
+  if (!crlf && !content.startsWith('---\n')) return `---\ntype: ${type}\n---\n${content}`;
+  const eol = crlf ? '\r\n' : '\n';
+  const bodyStart = 3 + eol.length;
+  const empty = emptyTypeLine(content, bodyStart);
+  if (empty) return `${content.slice(0, empty.at)}type: ${type}${content.slice(empty.at + empty.length)}`;
+  return `---${eol}type: ${type}${eol}${content.slice(bodyStart)}`;
 }
 
 // ---------- vault walk ----------
@@ -206,11 +234,8 @@ function lintProject(root, slug) {
   return { findings, files, ignored, companions };
 }
 
-/** True for a symlink (lstat). A linked project folder is never walked or
- * written: --fix-type would otherwise stamp files outside the vault. */
-function isLink(p) {
-  try { return fs.lstatSync(p).isSymbolicLink(); } catch (_e) { return false; }
-}
+// A linked project folder is never walked or written (isLink, lstat):
+// --fix-type would otherwise stamp files outside the vault.
 
 function warnLinkedProject(slug) {
   process.stderr.write(`[a1-tools] vault lint: skipped project/${slug}/ (symbolic link, refused)\n`);
@@ -231,14 +256,18 @@ function isDirTarget(p) {
 
 // ---------- fix ----------
 
-/** Rewrites (or, dry-run, only selects) the files whose sole finding is
- * type_missing. Unparseable files are listed as skipped. */
+/** Rewrites (or, dry-run, only selects) every file with a type_missing
+ * finding, whatever else it reports (M4) — except a broken frontmatter:
+ * unparseable files and folded type_missing files are listed as skipped and
+ * never touched (SC-004). Companions never carry type_missing. */
 function applyFixType(files, dryRun) {
   const fixed = [];
   const skipped = [];
+  const has = (f, c) => f.own.some((x) => x.class === c);
   for (const f of files) {
-    if (f.own.some((x) => x.class === 'frontmatter_unparseable')) { skipped.push(f.rel); continue; }
-    if (f.own.length !== 1 || f.own[0].class !== 'type_missing') continue;
+    if (has(f, 'frontmatter_unparseable')) { skipped.push(f.rel); continue; }
+    if (!has(f, 'type_missing')) continue;
+    if (has(f, 'frontmatter_folded')) { skipped.push(f.rel); continue; }
     if (!dryRun) writeTextAtomic(f.abs, withTypeStamped(f.content, f.expectedType));
     fixed.push(f.rel);
   }
@@ -247,19 +276,28 @@ function applyFixType(files, dryRun) {
 
 // ---------- CLI ----------
 
-function cannotRun(msg) {
+function usageError(msg) {
   process.stderr.write(`usage error: vault lint ${msg}\n`);
   process.exit(EXIT_CANNOT_RUN);
 }
 
-function resolveTargets(root, slugArg) {
-  if (slugArg === undefined) return allSlugs(root);
-  let slug;
+function cannotRun(msg) {
+  process.stderr.write(`[a1-tools] vault lint: ${msg}\n`);
+  process.exit(EXIT_CANNOT_RUN);
+}
+
+/** The <slug> argument checked before any filesystem access (hostile → exit 2). */
+function checkedSlug(slugArg) {
+  if (slugArg === undefined) return undefined;
   try {
-    slug = assertSafeSegment(slugArg, 'project slug');
+    return assertSafeSegment(slugArg, 'project slug');
   } catch (e) {
-    return cannotRun(e.message);
+    return usageError(e.message);
   }
+}
+
+function resolveTargets(root, slug) {
+  if (slug === undefined) return allSlugs(root);
   if (!fs.existsSync(path.join(root, 'project', slug))) {
     return cannotRun(`project folder not found: project/${slug}/`);
   }
@@ -289,24 +327,38 @@ function humanReport(report, dryRun) {
   return [...fixLines, ...skipLines, ...lines, summary].map((l) => `${l}\n`).join('');
 }
 
+/** FR-010: a configured root that is missing (or lacks the access this run
+ * needs: write for --fix-type, read otherwise) is one warning and exit 0. */
+function exitIfRootUnusable(root, flags) {
+  const writes = Boolean(flags['fix-type']) && !flags['dry-run'];
+  const problem = rootProblem(root, writes ? fs.constants.W_OK : fs.constants.R_OK);
+  if (!problem) return;
+  warnSkipped('vault lint', problem);
+  if (flags.json) emitJson({ status: 'skipped', reason: problem, vault_root: root }, EXIT_CLEAN);
+  process.exit(EXIT_CLEAN);
+}
+
 function cmdVaultLint(args) {
   const flags = parseFlags(args, FLAGS);
   const unknown = flags._.filter((a) => a.startsWith('--'));
-  if (unknown.length > 0) cannotRun(`unknown flag: ${unknown[0]}`);
-  if (flags._.length > 1) cannotRun(`takes at most one <slug> (got: ${flags._.join(' ')})`);
-  if (flags['dry-run'] && !flags['fix-type']) cannotRun('--dry-run requires --fix-type');
+  if (unknown.length > 0) usageError(`unknown flag: ${unknown[0]}`);
+  if (flags._.length > 1) usageError(`takes at most one <slug> (got: ${flags._.join(' ')})`);
+  if (flags['dry-run'] && !flags['fix-type']) usageError('--dry-run requires --fix-type');
+  const slug = checkedSlug(flags._[0]);
 
-  const { root, source } = vaultRootInfo();
-  if (source === 'repo-local') {
-    cannotRun('needs an external vault root (tier repo-local); set A1_VAULT_ROOT');
-  }
-  const results = resolveTargets(root, flags._[0]).map((s) => lintProject(root, s));
+  // FR-001 (review m1): the tier is looked up read-only, so a refusal in a
+  // repo creates no .a1/learnings/ and prints no resolver line.
+  const ext = externalVaultRoot();
+  if (ext.refusal) cannotRun(ext.refusal);
+  const { root } = ext;
+  exitIfRootUnusable(root, flags);
+  const results = resolveTargets(root, slug).map((s) => lintProject(root, s));
   const scanned = results.flatMap((r) => r.findings);
   const dryRun = Boolean(flags['dry-run']);
   // Wave 5 (FR-034, security review MAJOR 2): the backfill writes vault files,
   // so only the writer host runs it; elsewhere the lint still reports and the
   // exit code stays the findings one.
-  const notWriter = flags['fix-type'] ? notWriterSkip() : null;
+  const notWriter = flags['fix-type'] ? notWriterSkip('vault lint --fix-type') : null;
   const fix = flags['fix-type'] && !notWriter
     ? applyFixType(results.flatMap((r) => r.files), dryRun)
     : { fixed: [], skipped: [] };

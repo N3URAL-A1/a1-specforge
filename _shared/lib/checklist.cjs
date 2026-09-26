@@ -549,15 +549,18 @@ function evaluateChecklistRules(slug, paths, spec, plan, planExists) {
 // no-plan path. Roadmap lookup: current directory, code-root checkouts, then
 // the vault mirror (project/<slug>/product/ROADMAP.md). No roadmap for the
 // project, or the feature not on it → PASS with the reason (FR-028 "unlinked"
-// is info, never a failure); only a terminal disagreement FAILs.
+// is info, never a failure); a terminal disagreement FAILs, and so does a
+// roadmap of this project that exists but does not parse (review 010 m8).
+// The lookup is quiet: no `code roots:` stderr line (SC-002, review 010 M2).
 function evaluateSpecRoadmapCoherenceCheck(slug, feature) {
   const { findProjectRoadmap, checkSpecRoadmapCoherence } = require('./spec-coherence.cjs');
   const root = vaultRoot();
   const check = (ok, detail) => ({
     id: 11, name: 'spec_roadmap_status_coherent', severity: 'BLOCKER', result: ok ? 'PASS' : 'FAIL', detail,
   });
-  const rm = findProjectRoadmap(slug, { vaultRoot: root });
+  const rm = findProjectRoadmap(slug, { vaultRoot: root, quiet: true });
   if (!rm) return check(true, `No roadmap with project "${slug}" found — nothing to compare.`);
+  if (rm.fm === null) return check(false, `Roadmap ${rm.file} cannot be parsed (${rm.error}) — fix it, then re-run the check.`);
   const entry = (Array.isArray(rm.fm.features) ? rm.fm.features : []).find((f) => f && f.id === feature);
   if (!entry) return check(true, `Feature ${feature} is not on the roadmap (${rm.file}) — nothing to compare.`);
   const r = checkSpecRoadmapCoherence({ roadmapFm: { ...rm.fm, features: [entry] }, vaultRoot: root, slug });
@@ -570,8 +573,10 @@ function evaluateSpecRoadmapCoherenceCheck(slug, feature) {
 // Phase 3 / thin orchestrator: kept under the original name so
 // cmdChecklistRun's call site needs no change. Calls gather then evaluate
 // in sequence, returning the exact same { checks, errors, fatal } shape the
-// pre-split single function returned.
-function runChecklistChecks(slug, feature, paths) {
+// pre-split single function returned. Check #11 scans the cwd, the code roots
+// and the vault, so it runs only when `wants(11)` — `--only 9,10` must not
+// touch sibling repos (review 010 M2).
+function runChecklistChecks(slug, feature, paths, wants = () => true) {
   const gathered = gatherChecklistInputs(paths);
   if (gathered.fatal) {
     return { checks: [], errors: gathered.errors, fatal: true };
@@ -583,7 +588,8 @@ function runChecklistChecks(slug, feature, paths) {
     gathered.plan,
     gathered.planExists
   );
-  return { checks: [...checks, evaluateSpecRoadmapCoherenceCheck(slug, feature)], errors, fatal: false };
+  const check11 = wants(11) ? [evaluateSpecRoadmapCoherenceCheck(slug, feature)] : [];
+  return { checks: [...checks, ...check11], errors, fatal: false };
 }
 
 function classifyChecklistResult(checks) {
@@ -717,7 +723,8 @@ function cmdChecklistRun(args) {
   }
 
   const paths = checklistPaths(slug, feature);
-  const { checks, errors, fatal } = runChecklistChecks(slug, feature, paths);
+  const wants = (id) => onlyIds === null || onlyIds.has(id);
+  const { checks, errors, fatal } = runChecklistChecks(slug, feature, paths, wants);
 
   if (fatal) {
     const report = {

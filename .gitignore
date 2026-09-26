@@ -4,6 +4,10 @@
 checkpoint/
 .a1/learnings/
 
-# a1-tools lock and atomic-write leftovers (spec 010 Wave 5)
-*.lock*
+# a1-tools lock and atomic-write leftovers (spec 010 Wave 5; narrowed in the
+# review fix n6 to the names locks.cjs / product.cjs / io.cjs write, so a
+# package manager lockfile such as yarn.lock is never hidden)
+*.json.lock
+*.lock.reclaim.*
+.product-stage.lock.json
 *.tmp.*

@@ -127,7 +127,7 @@ function cmdSpecInit(args) {
 
   // Spec authorship is host-agnostic (the file above is written on every
   // host); the hub note is not — a non-writer host leaves it alone (Wave 5).
-  const notWriter = require('./vault-mirror.cjs').notWriterSkip();
+  const notWriter = require('./vault-common.cjs').notWriterSkip('spec init hub link');
   const hub = notWriter
     ? { hub: 'skipped-non-writer', hub_path: null, line: null }
     : require('./vault-hub.cjs').linkHub(projectSlug, 'spec', id);

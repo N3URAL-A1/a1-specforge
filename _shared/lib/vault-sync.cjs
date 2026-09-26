@@ -8,30 +8,35 @@
 // adds argument handling, slug resolution, activation and the drift report.
 //
 // Exit codes (each command owns its own and calls process.exit):
-//   sync    0 applied / dry-run / skipped (root missing FR-010, non-writer host FR-034)
+//   sync    0 applied / dry-run / skipped (root missing or read-only FR-010,
+//             non-writer host FR-034)
 //           1 input error (unknown flag, unsafe slug, slug mismatch, duplicate claim)
 //           2 cannot run (no external vault root, not a git repo, apply refused)
-//   status  0 no drift · 1 drift · 2 cannot run — including every input error,
-//           so that 1 always means "drift" (FR-013).
+//   status  0 no drift, or skipped (root missing or unreadable, FR-010) ·
+//           1 drift · 2 cannot run — including every input error, so that 1
+//           always means "drift" (FR-013).
 //
 // Activation (FR-001): only an explicit A1_VAULT_ROOT activates. Both commands
 // require a git repo, and inside a git repo the only other tier vaultRoot()
-// can resolve is repo-local — which is refused here BEFORE vaultRootInfo()
-// runs, because resolving that tier creates <repo>/.a1/learnings/ as a side
-// effect and a refusal must write nothing.
+// can resolve is repo-local — refused by vault-common's externalVaultRoot()
+// with a read-only lookup, because resolving that tier creates
+// <repo>/.a1/learnings/ as a side effect and a refusal must write nothing.
 // ---------------------------------------------------------------------------
 
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { vaultRootInfo, codeRoots, parseFlags, parseFrontmatter, assertSafeSegment } = require('./io.cjs');
-const { planMirror, applyMirror, isConflictCopy, writerHostGate, notWriterReason } = require('./vault-mirror.cjs');
+const { codeRoots, parseFlags, parseFrontmatter, assertSafeSegment } = require('./io.cjs');
+const { planMirror, applyMirror } = require('./vault-mirror.cjs');
+const {
+  MAX_SLUG_LENGTH, isConflictCopy, isInside, childDirs, externalVaultRoot, rootProblem, warnSkipped,
+  writerHostGate, notWriterReason,
+} = require('./vault-common.cjs');
 const { PRODUCT_MIRROR_SET, PHASES_MIRROR_SET, MIRROR_EXCLUDES } = require('./vault-contract.cjs');
 const { emitJson, writeStdoutSync } = require('./xprov-common.cjs');
 
 const SETS = Object.freeze(['product', 'phases']);
 const SET_PATTERNS = Object.freeze({ product: PRODUCT_MIRROR_SET, phases: PHASES_MIRROR_SET });
-const MAX_SLUG_LENGTH = 100;
 const ROADMAP_REL = Object.freeze(['docs', 'product', 'ROADMAP.md']);
 const SYNC_FLAGS = Object.freeze({ product: 'bool', phases: 'bool', 'dry-run': 'bool', prune: 'bool', json: 'bool', slug: 'value' });
 const STATUS_FLAGS = Object.freeze({ json: 'bool', slug: 'value' });
@@ -149,22 +154,9 @@ function selectSets(flags, roadmapExists) {
 // ---------- activation ----------
 
 function requireExternalRoot() {
-  const refusal = 'no external vault root (tier repo-local); set A1_VAULT_ROOT';
-  if (!process.env.A1_VAULT_ROOT) throw vaultError('cannot_run', refusal);
-  const { root, source } = vaultRootInfo();
-  if (source !== 'env' && source !== 'legacy') throw vaultError('cannot_run', refusal);
-  return path.resolve(root);
-}
-
-/** null when usable, else the reason (FR-010: missing, not a dir, not writable). */
-function rootProblem(root, mode) {
-  try {
-    if (!fs.statSync(root).isDirectory()) return `vault root is not a directory: ${root}`;
-    fs.accessSync(root, mode);
-    return null;
-  } catch (e) {
-    return e.code === 'ENOENT' ? `vault root does not exist: ${root}` : `vault root not accessible: ${root} (${e.code})`;
-  }
+  const ext = externalVaultRoot();
+  if (ext.refusal) throw vaultError('cannot_run', ext.refusal);
+  return ext.root;
 }
 
 // ---------- duplicate-claim scan (FR-015) ----------
@@ -181,14 +173,6 @@ function sameRepository(a, b) {
   };
   const ca = common(a);
   return ca !== null && ca === common(b);
-}
-
-function childDirs(root) {
-  try {
-    return fs.readdirSync(root, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => path.join(root, d.name));
-  } catch (_e) {
-    return [];
-  }
 }
 
 function findDuplicateClaims(repoRoot, slug) {
@@ -243,7 +227,7 @@ function guardedUnlink(vaultRoot, slug) {
   const roots = SETS.map((s) => path.join(projectReal, s));
   return (p) => {
     const parent = realOrSelf(path.dirname(p));
-    const inside = roots.some((r) => parent === r || parent.startsWith(r + path.sep));
+    const inside = roots.some((r) => isInside(parent, r));
     if (!inside || isConflictCopy(path.basename(p)) || !fs.lstatSync(p).isFile()) {
       throw new Error(`vault sync: refusing to delete ${p} (outside the mirror folders, a conflict copy or not a regular file)`);
     }
@@ -307,7 +291,7 @@ function runSync(args) {
   const gate = writerHostGate();
   const problem = gate.mayWrite ? rootProblem(ctx.vaultRoot, fs.constants.W_OK) : notWriterReason(gate);
   if (problem) {
-    process.stderr.write(`[a1-tools] vault mirror skipped: ${problem}\n`);
+    warnSkipped('vault mirror', problem);
     return { ...header('sync', ctx), status: 'skipped', reason: problem, dry_run: dryRun, prune };
   }
   const plan = buildPlan(ctx);
@@ -328,8 +312,13 @@ function applyWithGuard(plan, ctx, prune) {
 function runStatus(args) {
   const parsed = parseArgs(args, STATUS_FLAGS, 'status');
   const ctx = resolveContext(parsed);
+  // FR-010: a configured root that is missing or unreadable is transient
+  // (vault not mounted yet) — one warning, exit 0, never exit 2.
   const problem = rootProblem(ctx.vaultRoot, fs.constants.R_OK);
-  if (problem) throw vaultError('cannot_run', problem);
+  if (problem) {
+    warnSkipped('vault status', problem);
+    return { json: parsed.flags.json === true, skipped: true, report: { ...header('status', ctx), status: 'skipped', reason: problem } };
+  }
   const plan = buildPlan(ctx);
   const findings = driftFindings(plan, findConflictCopies(ctx.vaultRoot, ctx.slug));
   const count = (c) => findings.filter((f) => f.class === c).length;
@@ -369,6 +358,10 @@ function cmdVaultStatus(args) {
     out = runStatus(args);
   } catch (e) {
     exitWith('status', e);
+  }
+  if (out.skipped) {
+    if (out.json) emitJson(out.report, 0);
+    process.exit(0);
   }
   const code = out.report.drift > 0 ? 1 : 0;
   if (out.json) {

@@ -20,8 +20,27 @@
 # Every command runs vault-free: the real vault on this Mac must never be reached.
 unset A1_VAULT_ROOT A1_VAULT_WRITER_HOST
 
+G_BASE=""
 G_REPO=""
 G_HOME=""
+
+# g_mktemp <name> — a fresh temp dir, portable across BSD and GNU mktemp.
+# (`mktemp -d -t <name>` is a prefix on macOS but a template on GNU, which
+# refuses it without trailing X's — CI run 36229485863.) Prints the path.
+g_mktemp() {
+  local base="${TMPDIR:-/tmp}"
+  mktemp -d "${base%/}/$1.XXXXXX"
+}
+
+# g_need_dir <label> <path> — hard guard after every g_mktemp: an empty or
+# missing temp dir aborts the WHOLE run (exit 97). Without it `cd ""` is a
+# no-op and the scenario writes into the checkout (review 010 B1).
+g_need_dir() {
+  if [[ -z "$2" || ! -d "$2" ]]; then
+    printf 'FATAL: temp dir %s is empty or not a directory (%s) — aborting, nothing runs in the checkout\n' "$1" "$2" >&2
+    exit 97
+  fi
+}
 
 # Temp paths appear both as /var/... and as their realpath /private/var/...;
 # ISO stamps and calendar dates change per run. Longest pattern first.
@@ -36,9 +55,14 @@ g_normalise() {
     -e 's#[0-9]{4}-[0-9]{2}-[0-9]{2}#<DATE>#g'
 }
 
+# Repo and HOME share a private parent: without code roots, a1-tools falls
+# back to the repo's parent dir (codeRoots tier "repo-parent"), and a shared
+# $TMPDIR would expose every other run's leftovers to the roadmap lookup.
 g_setup() {
-  G_REPO="$(mktemp -d -t w8a-grepo)"
-  G_HOME="$(mktemp -d -t w8a-ghome)"
+  G_BASE="$(g_mktemp w8a-gbase)"; g_need_dir G_BASE "$G_BASE"
+  G_REPO="$G_BASE/repo"; G_HOME="$G_BASE/home"
+  mkdir "$G_REPO" "$G_HOME"
+  g_need_dir G_REPO "$G_REPO"; g_need_dir G_HOME "$G_HOME"
   git -C "$G_REPO" init -q
 }
 
@@ -46,6 +70,7 @@ g_setup() {
 g_run() {
   local tools="$1" prefix="$2" rc
   shift 2
+  g_need_dir G_REPO "$G_REPO"; g_need_dir G_HOME "$G_HOME"
   (cd "$G_REPO" && env -u A1_VAULT_ROOT -u A1_VAULT_WRITER_HOST HOME="$G_HOME" \
       node "$tools" "$@" >"$prefix.raw.out" 2>"$prefix.raw.err")
   rc=$?
@@ -60,6 +85,7 @@ g_run() {
 # (SC-002: nothing is written outside the repo).
 g_files() {
   local prefix="$1" f
+  g_need_dir G_REPO "$G_REPO"; g_need_dir G_HOME "$G_HOME"
   : >"$prefix.files"
   while IFS= read -r f; do
     if [[ -d "$G_REPO/$f" ]]; then
@@ -149,10 +175,27 @@ run_analyze_init() {
   g_files "$prefix"
 }
 
-G_SCENARIOS=(product-stage:run_product_stage spec-update-status:run_spec_update_status spec-update-status-plain:run_spec_update_status_plain analyze-init:run_analyze_init)
+# G4/G4b — checklist run, vault-less: spec + plan of the a1-checklist "pass"
+# fixture in the repo-local learnings root. HOME has no code roots.
+#   G4  the Gate 4.5 subset `--only 9,10`
+#   G4b the default full run (gains check #11 — FR-029, documented exception)
+G_CHECKLIST_FIXTURE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../a1-checklist/pass" && pwd)"
+g_checklist() {
+  local tools="$1" prefix="$2"
+  shift 2
+  : >"$prefix.out"; : >"$prefix.err"
+  g_setup
+  mkdir -p "$G_REPO/.a1/learnings"
+  cp -R "$G_CHECKLIST_FIXTURE/project" "$G_REPO/.a1/learnings/"
+  g_run "$tools" "$prefix" checklist run demo/001-login "$@" --format json
+  g_files "$prefix"
+}
+run_checklist_gate() { g_checklist "$1" "$2" --only 9,10; }
+run_checklist_full() { g_checklist "$1" "$2"; }
+
+G_SCENARIOS=(product-stage:run_product_stage spec-update-status:run_spec_update_status spec-update-status-plain:run_spec_update_status_plain analyze-init:run_analyze_init checklist-gate:run_checklist_gate checklist-full:run_checklist_full)
 
 g_cleanup() {
-  [[ -n "$G_REPO" && -d "$G_REPO" ]] && rm -rf "$G_REPO"
-  [[ -n "$G_HOME" && -d "$G_HOME" ]] && rm -rf "$G_HOME"
-  G_REPO=""; G_HOME=""
+  [[ -n "$G_BASE" && -d "$G_BASE" ]] && rm -rf "$G_BASE"
+  G_BASE=""; G_REPO=""; G_HOME=""
 }

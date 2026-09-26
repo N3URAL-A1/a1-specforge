@@ -37,6 +37,15 @@ Read the JSON result:
   in one sentence that the hub is missing (hubs are created by Otto/humans, never by the CLI)
   and continue. Once a hub exists, `a1-tools vault link-hub <project-slug> --spec <id>` adds
   the line idempotently.
+- `hub: "unchanged"` — the hub already held that exact line; nothing was written. Continue.
+- `hub: "skipped-non-writer"` — this host is not `A1_VAULT_WRITER_HOST` (e.g. the AI server),
+  so the hub note is left to the writer host; stderr carries one
+  `spec init hub link skipped: …` line. The spec is created. Tell the user in one sentence that
+  the writer host links it later with `a1-tools vault link-hub <project-slug> --spec <id>`, and
+  continue.
+- `hub: "refused-link"` — the hub note or the project folder is a symbolic link, which the
+  CLI refuses to write through (stderr names which). The spec is created. Report the refusal
+  to the user in one sentence and continue; never edit the hub by hand.
 
 The command refuses a feature slug that is not kebab-case and a title over 200 characters
 (exit 1) — fix the input, do not work around the CLI.

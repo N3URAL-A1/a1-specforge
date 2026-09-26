@@ -24,12 +24,12 @@ const fs = require('fs');
 const path = require('path');
 const { parseFrontmatter, parseNestedFrontmatter, codeRoots } = require('./io.cjs');
 const { SPEC_TO_ROADMAP_STATUS } = require('./status-constants.cjs');
+const { isConflictCopy } = require('./vault-common.cjs');
 
 const TERMINAL_STATUSES = new Set(['done', 'cancelled']);
 const ROADMAP_REL = ['docs', 'product', 'ROADMAP.md'];
 // A glob segment built from roadmap data must stay one plain path segment.
 const SAFE_SEGMENT_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-const CONFLICT_COPY_RE = /\((?:conflict|conflicted copy)|\.sync-conflict-/;
 // Same denylist io.codeRoots() applies before it exits the process.
 const HAZARDOUS_ROOT_RE = /[$`;|&<>\n\r]/;
 const MANUAL_CANCEL_NOTE =
@@ -89,7 +89,7 @@ function resolveSpecFile(feature, vaultRoot, slug) {
     return { unlinkedReason: `no spec_path and no spec directory project/${slug}/spec/` };
   }
   const candidates = names
-    .filter((n) => n.startsWith(id) && n.endsWith('.md') && !CONFLICT_COPY_RE.test(n))
+    .filter((n) => n.startsWith(id) && n.endsWith('.md') && !isConflictCopy(n))
     .sort();
   const hit = candidates.includes(`${id}.md`) ? `${id}.md` : candidates[0];
   if (!hit) return { unlinkedReason: `no spec_path and no project/${slug}/spec/${id}*.md` };
@@ -175,18 +175,35 @@ function specStatusSection(roadmapFm) {
 
 // ---------- roadmap lookup (checklist #11, update-status hint) ----------
 
+// The `project:` value a roadmap names in its raw text — used only to
+// attribute a file whose frontmatter does NOT parse. null when none is found.
+const RAW_PROJECT_RE = /^project:[ \t]*["']?([^"'\s#]+)["']?[ \t]*$/m;
+
+/** A missing file is `null`; a file that exists but cannot be read or parsed
+ * is `{ file, fm: null, error, claimed }` (review 010 m8: a broken roadmap
+ * must not look like "no roadmap"). */
 function readRoadmapAt(file) {
   let text;
   try {
     text = fs.readFileSync(file, 'utf8');
-  } catch (_e) {
-    return null;
+  } catch (e) {
+    if (e.code === 'ENOENT' || e.code === 'ENOTDIR') return null;
+    return { file, fm: null, error: e.message, claimed: null };
   }
   try {
     return { file, fm: parseNestedFrontmatter(text).fm };
-  } catch (_e) {
-    return null;
+  } catch (e) {
+    const m = RAW_PROJECT_RE.exec(text);
+    return { file, fm: null, error: e.message, claimed: m ? m[1] : null };
   }
+}
+
+/** Does an unparseable roadmap belong to `slug`? The cwd file and the vault
+ * mirror path are this project's unless the raw text names another project;
+ * a sibling checkout under a code root only when it names `slug`. */
+function brokenBelongsTo(rm, source, slug) {
+  if (source === 'code-root') return rm.claimed === slug;
+  return rm.claimed === null || rm.claimed === slug;
 }
 
 /** codeRoots() exits the process on a malformed A1_CODE_ROOTS. A hint or a
@@ -214,7 +231,9 @@ function childDirs(root) {
 /** Find the roadmap whose `project:` is `slug`: the current directory first
  * (the repo being worked in is the truth), then every checkout under the code
  * roots, then — only with `vaultRoot` — the vault mirror
- * `project/<slug>/product/ROADMAP.md`. Returns { file, fm, source } or null. */
+ * `project/<slug>/product/ROADMAP.md`. Returns { file, fm, source } or null.
+ * A broken roadmap that belongs to `slug` (brokenBelongsTo) is returned as
+ * { file, fm: null, error, source } — callers must not treat it as absent. */
 function findProjectRoadmap(slug, { vaultRoot: mirrorRoot = null, quiet = false } = {}) {
   const tiers = [
     ['cwd', [path.join(process.cwd(), ...ROADMAP_REL)]],
@@ -226,7 +245,10 @@ function findProjectRoadmap(slug, { vaultRoot: mirrorRoot = null, quiet = false 
   for (const [source, files] of tiers) {
     for (const file of files) {
       const rm = readRoadmapAt(file);
-      if (rm && rm.fm.project === slug) return { ...rm, source };
+      if (rm && rm.fm === null && brokenBelongsTo(rm, source, slug)) {
+        return { file: rm.file, fm: null, error: rm.error, source };
+      }
+      if (rm && rm.fm !== null && rm.fm.project === slug) return { ...rm, source };
     }
   }
   return null;
@@ -244,7 +266,7 @@ function roadmapHint({ specAbs, fm, newStatus, vaultRoot }) {
   if (!slug) return null;
   const id = typeof fm.id === 'string' && fm.id !== '' ? fm.id : path.basename(specAbs, '.md');
   const rm = findProjectRoadmap(slug, { quiet: true });
-  const feature = rm && Array.isArray(rm.fm.features) ? rm.fm.features.find((f) => f && f.id === id) : null;
+  const feature = rm && rm.fm && Array.isArray(rm.fm.features) ? rm.fm.features.find((f) => f && f.id === id) : null;
   if (!feature || feature.status === SPEC_TO_ROADMAP_STATUS[newStatus]) return null;
   const cmd = reconcileCommand({ id, specRel, specStatus: newStatus,
     roadmapStatus: feature.status, preferSpec: true });

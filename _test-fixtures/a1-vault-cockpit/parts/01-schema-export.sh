@@ -138,4 +138,36 @@ caseS11() {
     '- references [[project/<slug>/<subfolder>/<basename>]]'
 }
 
-caseS1; caseS2; caseS3; caseS4; caseS5; caseS6; caseS7; caseS8; caseS9; caseS10; caseS11
+# ---------- S12 released goldens are frozen (FR-021, review 010 m6) ----------
+# S1 compares the export with golden/schema-export.v1.json, so changing e.g.
+# BUG_STATUSES and regenerating v1 IN PLACE kept the suite green. A released
+# version's golden never changes: every golden/schema-export.v<N>.json is
+# pinned here by the sha256 of its bytes (typed literal, not computed from the
+# file under test), and a golden without a pin is red too — a new contract
+# version adds its file AND its line below in the same commit.
+# Red-making change: regenerating schema-export.v1.json from a changed export
+# without a contract_version bump (S1 green, S12a red), or adding
+# schema-export.v2.json without a pin line (S12b red).
+S_GOLDEN_PINS=(
+  "schema-export.v1.json 41fcf4231e5c76251a93be14a8550879a6e43343c8b4820c711d88ce5755c4b2"
+)
+s_sha256() {
+  if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'
+  else sha256sum "$1" | awk '{print $1}'; fi
+}
+caseS12() {
+  local pin name want f pinned
+  for pin in "${S_GOLDEN_PINS[@]}"; do
+    name="${pin%% *}"; want="${pin#* }"
+    assert_eq "S12a released golden $name is byte-frozen (sha256)" "$(s_sha256 "$SUITE/golden/$name" 2>/dev/null)" "$want"
+  done
+  for f in "$SUITE"/golden/schema-export.v*.json; do
+    [[ -f "$f" ]] || continue
+    pinned=""
+    for pin in "${S_GOLDEN_PINS[@]}"; do [[ "${pin%% *}" == "$(basename "$f")" ]] && pinned=yes; done
+    if [[ -n "$pinned" ]]; then ok "S12b $(basename "$f") has a sha256 pin"
+    else bad "S12b $(basename "$f") has no sha256 pin in parts/01-schema-export.sh"; fi
+  done
+}
+
+caseS1; caseS2; caseS3; caseS4; caseS5; caseS6; caseS7; caseS8; caseS9; caseS10; caseS11; caseS12

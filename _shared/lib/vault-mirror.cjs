@@ -5,7 +5,8 @@
 // sets into <vault>/project/<slug>/{product,phases}/ (spec
 // 010-vault-cockpit-contract, Wave 2). LIBRARY ONLY: no CLI, no module-level
 // state, no process.exit. Wave 3 (`vault sync` / `vault status`) and Wave 4
-// (product transaction hook) call planMirror/applyMirror.
+// (the product transaction hook, vault-product-hook.cjs) call
+// planMirror/applyMirror.
 //
 // Guarantees, each pinned by a fixture case in parts/02-mirror.sh:
 //   FR-002/003  the sets come from vault-contract.cjs and nothing else;
@@ -14,14 +15,17 @@
 //               segment is SKIPPED with one stderr line, never aborts; apply
 //               refuses (throws, before any write) a dst outside the two set
 //               folders; the hub note is never touched;
-//   FR-006      write <dst>.tmp.<pid>, then rename over <dst>; bytes verbatim.
+//   FR-006      write <dst>.tmp.<12 hex> ('wx'), then rename over <dst>;
+//               bytes verbatim.
 // Immutability: inputs are never mutated; every return is a fresh object.
 // ---------------------------------------------------------------------------
 
 const realFs = require('fs');
-const os = require('os');
 const path = require('path');
-const { assertSafeSegment, parseFrontmatter, tmpPathFor, assertAncestorInside } = require('./io.cjs');
+const { assertSafeSegment, tmpPathFor, assertAncestorInside } = require('./io.cjs');
+const {
+  isConflictCopy, isInside, writerHostGate, notWriterReason, notWriterSkip, UNDECLARED_WRITER,
+} = require('./vault-common.cjs');
 const { PRODUCT_MIRROR_SET, PHASES_MIRROR_SET, MIRROR_EXCLUDES } = require('./vault-contract.cjs');
 
 // Source base per set, and the source prefix that is DROPPED on the way into
@@ -35,7 +39,6 @@ function targetRel(set, srcRel) {
   const strip = SET_STRIP_PREFIX[set];
   return strip && srcRel.startsWith(strip) ? srcRel.slice(strip.length) : srcRel;
 }
-const CONFLICT_COPY_RES = Object.freeze([/ \(conflict/i, /\.sync-conflict-/]);
 
 // ---------- small pure helpers ----------
 
@@ -48,11 +51,6 @@ function globToRegExp(glob) {
 function isExcluded(rel, excludes) {
   const base = path.basename(rel);
   return excludes.some((g) => globToRegExp(g).test(base));
-}
-
-/** Obsidian/Dropbox/Syncthing conflict copies: reported as extra, never pruned. */
-function isConflictCopy(basename) {
-  return CONFLICT_COPY_RES.some((re) => re.test(basename));
 }
 
 function listDir(fs, dir) {
@@ -147,11 +145,13 @@ function realSourceBase(fs, repoRoot, set) {
   try { return path.join(fs.realpathSync(repoRoot), ...SET_SOURCE_DIRS[set]); } catch (_e) { return null; }
 }
 
-/** null when the set base is absent or real; else the refusal reason. */
-function baseProblem(fs, base, realBase) {
+/** null when the set base is absent or real; else the FR-005 refusal reason. */
+function baseProblem(fs, set, base, realBase) {
   let real;
   try { real = fs.realpathSync(base); } catch (_e) { return null; }
-  return realBase && real === realBase ? null : `source folder resolves outside the repo via a link: ${real}`;
+  if (realBase && real === realBase) return null;
+  const root = SET_SOURCE_DIRS[set].join('/');
+  return `set root ${root} is a symbolic link resolving to ${real}; FR-005 refuses the whole set, nothing mirrored or pruned`;
 }
 
 /** null when `src` is a regular file inside `realBase`; else the reason. */
@@ -162,17 +162,20 @@ function sourceProblem(fs, src, realBase) {
   if (!st.isFile()) return 'source is not a regular file';
   let real;
   try { real = fs.realpathSync(src); } catch (e) { return `source not resolvable (${e.code})`; }
-  return insideRoot(real, realBase) ? null : `source resolves outside the repo set folder via a link: ${real}`;
+  return isInside(real, realBase) ? null : `source resolves outside the repo set folder via a link: ${real}`;
 }
 
 /** Entries for one set: whitelist ∖ excludes, with actions; skipped unsafe
- * segments and refused sources. `refused` marks a set whose base is a link. */
+ * segments and refused sources. `refused` marks a set whose base is a link.
+ * A set with no patterns is not planned at all — the product hook passes
+ * `phases: []` and must not judge (or warn about) a set it never mirrors. */
 function planSet({ fs, repoRoot, vaultRoot, slug, set, patterns, excludes, warn }) {
+  if (patterns.length === 0) return { entries: [], skipped: [], refused: false };
   const base = path.join(repoRoot, ...SET_SOURCE_DIRS[set]);
   const realBase = realSourceBase(fs, repoRoot, set);
-  const refusal = baseProblem(fs, base, realBase);
+  const refusal = baseProblem(fs, set, base, realBase);
   if (refusal) {
-    warn(`[a1-tools] vault mirror: skipped ${set}/ (${refusal})\n`);
+    warn(`[a1-tools] vault mirror: refused ${set}/ (${refusal})\n`);
     return { entries: [], skipped: [{ rel: '', set, reason: refusal }], refused: true };
   }
   const rels = [...new Set(patterns.flatMap((p) => expandPattern(fs, base, p.split('/'), '')))]
@@ -238,21 +241,16 @@ const DEFAULT_OPS = Object.freeze({
   unlinkSync: (p) => realFs.unlinkSync(p),
 });
 
-function insideRoot(candidate, root) {
-  return candidate === root || candidate.startsWith(root + path.sep);
-}
-
 /** Lexical containment for EVERY entry before any write (defence in depth). */
 function assertPlanContained(plan) {
   const roots = { product: path.resolve(setRoot(plan.vaultRoot, plan.slug, 'product')), phases: path.resolve(setRoot(plan.vaultRoot, plan.slug, 'phases')) };
   for (const e of plan.entries) {
-    if (!roots[e.set] || !insideRoot(path.resolve(e.dst), roots[e.set])) {
+    if (!roots[e.set] || !isInside(path.resolve(e.dst), roots[e.set])) {
       throw new Error(`vault mirror: refusing target outside project/${plan.slug}/${e.set}/: ${e.dst}`);
     }
   }
 }
 
-/** Realpath containment of the (now existing) target dir — catches symlinks. */
 /** The REAL set folder: the set name joined to the realpath of
  * project/<slug>/, never realpath(setRoot) — a set folder that is itself a
  * link out of the vault resolves elsewhere and would pass a comparison with
@@ -281,7 +279,7 @@ function realVaultRoot(vaultRoot) {
 
 function assertRealInside(dstDir, realRoot) {
   const real = realFs.realpathSync(dstDir);
-  if (!realRoot || !insideRoot(real, realRoot)) throw new Error(`vault mirror: target dir escapes the set folder via a link: ${dstDir}`);
+  if (!realRoot || !isInside(real, realRoot)) throw new Error(`vault mirror: target dir escapes the set folder via a link: ${dstDir}`);
 }
 
 function writeAtomic(ops, entry, realRoot) {
@@ -337,129 +335,11 @@ function applyMirror(plan, opts) {
   return counts;
 }
 
-// ---------- single vault writer (Wave 5, FR-034 / FR-035) ----------
-//
-// Exactly one host writes the mirror: the one whose os.hostname() equals
-// A1_VAULT_WRITER_HOST (exact string match after trimming — the value must be
-// what `node -e 'console.log(require("os").hostname())'` prints there). Unset
-// or empty → undeclared, every host may write (the pre-Wave-5 behaviour). A
-// non-writer host skips with one stderr line; no exit code changes (Clarify
-// 2026-09-24: tightening to exit 2 is reconsidered after four weeks without
-// conflict copies). The gate only decides WHETHER to write; the realpath and
-// segment guards decide WHERE, on every host.
-
-const WRITER_HOST_ENV = 'A1_VAULT_WRITER_HOST';
-const UNDECLARED_WRITER = 'undeclared';
-
-/** writerHostGate(env?, host?) → fresh frozen { host, writerHost, mayWrite }. */
-function writerHostGate(env = process.env, host = os.hostname()) {
-  const raw = env[WRITER_HOST_ENV];
-  const declared = typeof raw === 'string' ? raw.trim() : '';
-  const writerHost = declared === '' ? UNDECLARED_WRITER : declared;
-  return Object.freeze({ host, writerHost, mayWrite: declared === '' || declared === host });
-}
-
-/** The reason text after "vault mirror skipped: " for a non-writer host. */
-function notWriterReason(gate) {
-  return `this host is not the vault writer (${gate.host} ≠ ${gate.writerHost})`;
-}
-
-/** The non-writer skip every vault WRITE path shares (mirror hook, `vault
- * sync`, `vault lint --fix-type`, `vault link-hub`, the hub link of `spec
- * init`): null when this host may write; otherwise prints the one skip line
- * and returns the reason. Exit codes are the caller's and never change. */
-function notWriterSkip(gate = writerHostGate()) {
-  if (gate.mayWrite) return null;
-  const reason = notWriterReason(gate);
-  process.stderr.write(`[a1-tools] vault mirror skipped: ${reason}\n`);
-  return reason;
-}
-
-// ---------- product transaction hook (Wave 4, FR-007 / FR-010) ----------
-//
-// Every product-mutating command passes productMirrorHook(dir) as the
-// `afterCommit` option of locks.writeAllOrNothing: it runs after the rename
-// phase, before the lock is released, and its return value becomes the
-// command's `vault_mirror` result key. It NEVER throws and never changes the
-// exit code or the repo write; a failure is one stderr line per hook.
-//
-// Activation: only an explicit A1_VAULT_ROOT (tier env). Without it the hook
-// touches nothing and prints nothing — no vaultRootInfo() call, because
-// resolving the repo-local tier creates <repo>/.a1/learnings/ as a side effect.
-
-// Without a configured vault SC-002/FR-037 win over FR-007's "inactive" value
-// (team-lead decision 2026-09-26): stdout stays byte-identical to the
-// pre-feature release, so the hook returns undefined and JSON.stringify
-// drops the `vault_mirror` key.
-const EMIT_INACTIVE_RESULT = false;
-const PRODUCT_DIR_TAIL = Object.freeze(['docs', 'product']);
-const MAX_HOOK_SLUG_LENGTH = 100;
-
-/** <repo> for <repo>/docs/product, else null (a free --dir has no repo set). */
-function repoRootOfProductDir(dir) {
-  const abs = path.resolve(dir);
-  const [docs, product] = PRODUCT_DIR_TAIL;
-  const parent = path.dirname(abs);
-  return path.basename(abs) === product && path.basename(parent) === docs ? path.dirname(parent) : null;
-}
-
-/** null when the root is an existing writable directory, else the reason. */
-function vaultRootProblem(root) {
-  try {
-    if (!realFs.statSync(root).isDirectory()) return `vault root is not a directory: ${root}`;
-    realFs.accessSync(root, realFs.constants.W_OK);
-    return null;
-  } catch (e) {
-    return e.code === 'ENOENT' ? `vault root does not exist: ${root}` : `vault root not accessible: ${root} (${e.code})`;
-  }
-}
-
-/** The roadmap `project:` of the committed ROADMAP.md (FR-009), or throws. */
-function committedSlug(dir) {
-  const { project } = parseFrontmatter(realFs.readFileSync(path.join(dir, 'ROADMAP.md'), 'utf8')).fm;
-  if (typeof project !== 'string' || project === '') throw new Error('ROADMAP.md has no frontmatter project:');
-  if (project.length > MAX_HOOK_SLUG_LENGTH) throw new Error(`ROADMAP.md project: longer than ${MAX_HOOK_SLUG_LENGTH} characters`);
-  return assertSafeSegment(project, 'ROADMAP.md project');
-}
-
-/** Mirror the product set of the repo owning `dir`. Returns a fresh result;
- * throws only for the caller to turn into `skipped`. */
-function mirrorProductNow(dir) {
-  const gate = writerHostGate();
-  if (!gate.mayWrite) throw new Error(notWriterReason(gate));
-  const repoRoot = repoRootOfProductDir(dir);
-  if (!repoRoot) throw new Error(`product dir is not <repo>/docs/product: ${path.resolve(dir)}`);
-  const vaultRoot = path.resolve(process.env.A1_VAULT_ROOT);
-  const problem = vaultRootProblem(vaultRoot);
-  if (problem) throw new Error(problem);
-  const slug = committedSlug(dir);
-  const plan = planMirror({ repoRoot, vaultRoot, slug, sets: { product: PRODUCT_MIRROR_SET, phases: [], excludes: MIRROR_EXCLUDES } });
-  const productOnly = { ...plan, sets: ['product'], entries: plan.entries.filter((e) => e.set === 'product') };
-  const counts = applyMirror(productOnly);
-  return { status: 'ok', files: counts.added + counts.updated };
-}
-
-/**
- * productMirrorHook(dir) → { afterCommit } for writeAllOrNothing. One closure
- * per command invocation: the skipped line is printed at most once for it,
- * however often afterCommit runs (FR-010).
- */
-function productMirrorHook(dir) {
-  let warned = false;
-  const afterCommit = () => {
-    if (!process.env.A1_VAULT_ROOT) return EMIT_INACTIVE_RESULT ? { status: 'inactive', files: 0 } : undefined;
-    try {
-      return mirrorProductNow(dir);
-    } catch (e) {
-      if (!warned) process.stderr.write(`[a1-tools] vault mirror skipped: ${e.message}\n`);
-      warned = true;
-      return { status: 'skipped', files: 0, reason: e.message };
-    }
-  };
-  return Object.freeze({ afterCommit });
-}
+// The single-writer gate (FR-034/FR-035) lives in vault-common.cjs and the
+// product transaction hook (FR-007) in vault-product-hook.cjs; the gate names
+// are re-exported here for existing callers.
 
 module.exports = {
-  planMirror, applyMirror, isConflictCopy, isExcluded, expandPattern, productMirrorHook,
+  planMirror, applyMirror, isConflictCopy, isExcluded, expandPattern,
   writerHostGate, notWriterReason, notWriterSkip, UNDECLARED_WRITER,
 };

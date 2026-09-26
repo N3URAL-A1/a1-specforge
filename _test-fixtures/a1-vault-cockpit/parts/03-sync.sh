@@ -3,7 +3,8 @@
 # (_shared/lib/vault-sync.cjs), driven through the real CLI. Sourced by
 # run-tests.sh. Cases C1–C11 from the wave plan's Wave 3 fixture table, plus
 # C12–C17 for the slug rules (FR-009/FR-015), flag hygiene, the FR-010 skip
-# and the prune boundary against a linked set folder. Every case names the
+# (C16/C16b: sync, status, lint and link-hub — review M1) and the prune
+# boundary against a linked set folder. Every case names the
 # single production change that turns it red. Counts and paths are literals
 # typed here from the planted tree, never read from the module under test.
 #
@@ -311,18 +312,75 @@ caseC15() {
   assert_rc "C15 status --bogus exits 2 (1 is reserved for drift)" 2 "$C_RC"
 }
 
-# ---------- C16 configured root missing (FR-010) ----------
-# Red-making change: creating the missing vault root (or failing) instead of
-# one warning + skip.
+# ---------- C16 configured root missing or read-only (FR-010) ----------
+# FR-010, verbatim: "a configured but missing or read-only root MUST yield
+# exit 0 plus that one warning, never exit 2" — for vault sync, status, lint
+# and link-hub. Each arm checks the three parts separately: exit 0, exactly one
+# `skipped:` line naming the root, and the root not created. Rewritten from
+# the spec (review M1, 2026-09-26); the old arm pinned status at exit 2.
+# Red-making changes, one per arm:
+#   sync      creating the missing root instead of warning + skip;
+#   status    throwing cannot_run on rootProblem (exit 2, the old code);
+#   lint demo dropping exitIfRootUnusable (exit 2 "project folder not found");
+#   lint      the same (exit 0 but no warning — the silent `[]` of the review);
+#   link-hub  dropping its rootProblem check (single: exit 1 "artifact not
+#             found"; demo --all-specs: exit 1 "hub note missing"; --all-specs
+#             without slug: exit 0 but no warning);
+#   read-only (C16b) checking R_OK instead of W_OK for the writing commands —
+#             the write then fails with EACCES and the command crashes.
+c16_arm() {
+  local label="$1" v="$2" warn="$3"; shift 3
+  c_run "$C_REPO" "$v" "$@"
+  assert_rc "C16 $label exits 0" 0 "$C_RC" "$(head -c 300 "$C_ERR")"
+  assert_eq "C16 $label: exactly one skipped line" "$(grep -c '^\[a1-tools\] .*skipped: ' "$C_ERR" | tr -d ' ')" "1"
+  assert_eq "C16 $label: the warning names the root" \
+    "$(grep -cF "[a1-tools] $warn skipped: vault root does not exist: $v" "$C_ERR" | tr -d ' ')" "1"
+  [[ ! -e "$v" ]] && ok "C16 $label: the missing root was not created" || bad "C16 $label: vault root was created"
+}
 caseC16() {
   local v="$C_WORK/c16/absent-vault"
-  c_run "$C_REPO" "$v" sync demo
-  assert_rc "C16 sync with a missing vault root exits 0" 0 "$C_RC"
-  assert_eq "C16 exactly one 'vault mirror skipped' stderr line" "$(grep -c 'vault mirror skipped' "$C_ERR")" "1"
-  assert_json "C16 JSON status skipped" "$C_OUT" "j.status" "skipped"
-  [[ ! -e "$v" ]] && ok "C16 the missing root was not created" || bad "C16 vault root was created"
-  c_run "$C_REPO" "$v" status demo
-  assert_rc "C16 status with a missing vault root exits 2" 2 "$C_RC"
+  c16_arm "sync demo" "$v" "vault mirror" sync demo
+  assert_json "C16 sync JSON status skipped" "$C_OUT" "j.status" "skipped"
+  c16_arm "status demo" "$v" "vault status" status demo
+  c16_arm "status demo --json" "$v" "vault status" status demo --json
+  assert_json "C16 status JSON status skipped" "$C_OUT" "j.status" "skipped"
+  c16_arm "lint demo" "$v" "vault lint" lint demo
+  if grep -q 'project folder' "$C_ERR"; then bad "C16 lint demo blames the project folder: $(cat "$C_ERR")"
+  else ok "C16 lint demo does not blame the project folder"; fi
+  c16_arm "lint (all slugs)" "$v" "vault lint" lint
+  c16_arm "lint --fix-type" "$v" "vault lint" lint demo --fix-type
+  c16_arm "link-hub demo --spec 001-x" "$v" "vault link-hub" link-hub demo --spec 001-x
+  assert_json "C16 link-hub JSON status skipped" "$C_OUT" "j.status" "skipped"
+  c16_arm "link-hub demo --all-specs" "$v" "vault link-hub" link-hub demo --all-specs
+  c16_arm "link-hub --all-specs" "$v" "vault link-hub" link-hub --all-specs
+}
+
+# C16b — a configured root that exists but is read-only (chmod -R a-w):
+# every command that WRITES (sync, lint --fix-type, link-hub) warns once and
+# exits 0; nothing in the vault changes. Skipped as root (chmod is not
+# enforced for uid 0).
+c16b_arm() {
+  local label="$1" v="$2" warn="$3"; shift 3
+  c_run "$C_REPO" "$v" "$@"
+  assert_rc "C16b $label on a read-only root exits 0" 0 "$C_RC" "$(head -c 300 "$C_ERR")"
+  assert_eq "C16b $label: exactly one skipped line naming the root" \
+    "$(grep -cF "[a1-tools] $warn skipped: vault root not accessible: $v (EACCES)" "$C_ERR" | tr -d ' ')/$(grep -c '^\[a1-tools\] .*skipped: ' "$C_ERR" | tr -d ' ')" "1/1"
+}
+caseC16b() {
+  if [[ "$(id -u)" -eq 0 ]]; then ok "C16b skipped (running as root: chmod is not enforced)"; return; fi
+  local v="$C_WORK/c16b/ro-vault"
+  make_sync_vault "$v"
+  mkdir -p "$v/project/demo/spec"
+  printf -- '---\nstatus: draft\n---\n# no type\n' > "$v/project/demo/spec/001-x.md"
+  cp -R "$v" "$C_WORK/c16b/before"
+  chmod -R a-w "$v"
+  c16b_arm "sync demo" "$v" "vault mirror" sync demo
+  c16b_arm "lint demo --fix-type" "$v" "vault lint" lint demo --fix-type
+  c16b_arm "link-hub demo --spec 001-x" "$v" "vault link-hub" link-hub demo --spec 001-x
+  c16b_arm "link-hub --all-specs" "$v" "vault link-hub" link-hub --all-specs
+  chmod -R u+w "$v"
+  if diff -r "$v" "$C_WORK/c16b/before" >/dev/null; then ok "C16b the read-only vault is unchanged"
+  else bad "C16b a command wrote into the read-only vault"; fi
 }
 
 # ---------- C17 a set folder linked out of the vault: no write, no delete ----------
@@ -354,5 +412,5 @@ caseC17() {
 }
 
 caseC1; caseC2C7; caseC3; caseC4; caseC5; caseC6; caseC8; caseC9; caseC10; caseC11
-caseC12; caseC13; caseC14; caseC15; caseC16; caseC17
+caseC12; caseC13; caseC14; caseC15; caseC16; caseC16b; caseC17
 rm -rf "$C_WORK"

@@ -22,7 +22,7 @@ const {
 } = locks;
 
 const { usage } = require('./help.cjs');
-const { productMirrorHook } = require('./vault-mirror.cjs'); // spec 010 W4: product mirror after commit
+const { productMirrorHook } = require('./vault-product-hook.cjs'); // spec 010 W4: product mirror after commit
 const { CODE_SCOPE_STAGES } = require('./code-scope.cjs');
 // Roadmap enums moved to status-constants.cjs (spec 010 W1): `schema export` reads what `product validate` enforces.
 const { PROJECT_STATUSES, MILESTONE_STATUSES, FEATURE_STATUSES, FEATURE_STAGES } = require('./status-constants.cjs');

@@ -251,4 +251,47 @@ caseT1() {
   assert_eq "T1 'type: spec' is line 2" "$(sed -n 2p "$HB_TEMPLATE")" "type: spec"
 }
 
-caseHB1; caseHB2; caseHB3; caseHB4; caseHB5; caseHB6; caseHB7; caseHB8; caseHB9; caseHB10; caseT1
+# ---------- HB11 --all-specs never links a conflict copy (review m2) ----------
+# One predicate for every vault command (vault-common isConflictCopy): the
+# Obsidian forms `(conflict 2)` / `(conflict 2026-09-25)`, Dropbox's
+# `(Conflicted copy …)` in any case and Syncthing's `.sync-conflict-` are
+# never linked, and vault lint reports the same four files as `conflict`.
+# Red-making change: dropping `&& !isConflictCopy(f)` in listSpecBasenames
+# (the old SPEC_EXCLUDE_RE missed `(conflict 2)` and `(Conflicted copy`).
+caseHB11() {
+  local w rc f; w="$(mktemp -d)"; hb_vault "$w"
+  for f in "003-x (conflict 2).md" "003-x (conflict 2026-09-25).md" "003-x (Conflicted copy 2026-09-25).md" \
+           "003-x.sync-conflict-20260925-101010-ABCDEFG.md"; do
+    printf -- '---\ntype: spec\nid: 003-x\n---\n# x\n' > "$w/v/project/demo/spec/$f"
+  done
+  hb_run "$w" vault link-hub demo --all-specs; rc=$?
+  assert_rc "HB11 link-hub demo --all-specs exits 0" 0 "$rc" "$(head -c 300 "$w/err")"
+  assert_eq "HB11 only the real spec is linked" "$(grep -c 'references \[\[project/demo/spec/' "$w/v/project/demo.md" | tr -d ' ')" "1"
+  assert_eq "HB11 no conflict copy linked" "$(grep -ci 'conflict' "$w/v/project/demo.md" | tr -d ' ')" "0"
+  hb_run "$w" vault lint demo --json
+  assert_json "HB11 vault lint reports the same four files as conflict" "$(cat "$w/out")" "j.counts.conflict" "4"
+  rm -rf "$w"
+}
+
+# ---------- HB12 a CRLF hub keeps CRLF on every line it gains (review n7) ----------
+# Red-making change: dropping the `cr` suffix in insertRelationLine (the
+# inserted line ends in a bare LF: mixed line endings).
+caseHB12() {
+  local w rc; w="$(mktemp -d)"; hb_vault "$w"
+  printf -- '---\r\ntype: project\r\n---\r\n# demo\r\n\r\n## Relations\r\n\r\n- uses [[y]]\r\n\r\n## Notes\r\n' > "$w/v/project/demo.md"
+  cp "$w/v/project/demo.md" "$w/hub.before"
+  hb_run "$w" vault link-hub demo --spec 003-x; rc=$?
+  assert_rc "HB12 link-hub on a CRLF hub exits 0" 0 "$rc" "$(head -c 300 "$w/err")"
+  assert_eq "HB12 the inserted line ends in CRLF" "$(grep -c $'^- references \\[\\[project/demo/spec/003-x\\]\\]\r$' "$w/v/project/demo.md" | tr -d ' ')" "1"
+  assert_eq "HB12 no bare-LF line in the hub" "$(grep -vc $'\r$' "$w/v/project/demo.md" | tr -d ' ')" "0"
+  grep -vxF -- $'- references [[project/demo/spec/003-x]]\r' "$w/v/project/demo.md" > "$w/hub.minus"
+  if cmp -s "$w/hub.minus" "$w/hub.before"; then ok "HB12 hub minus the added line is byte-identical"
+  else bad "HB12 other hub bytes changed"; fi
+  # heading missing: the appended block is CRLF too
+  printf -- '---\r\ntype: project\r\n---\r\n# demo\r\n' > "$w/v/project/demo.md"
+  hb_run "$w" vault link-hub demo --spec 003-x
+  assert_eq "HB12 appended ## Relations block is CRLF throughout" "$(grep -vc $'\r$' "$w/v/project/demo.md" | tr -d ' ')" "0"
+  rm -rf "$w"
+}
+
+caseHB1; caseHB2; caseHB3; caseHB4; caseHB5; caseHB6; caseHB7; caseHB8; caseHB9; caseHB10; caseHB11; caseHB12; caseT1

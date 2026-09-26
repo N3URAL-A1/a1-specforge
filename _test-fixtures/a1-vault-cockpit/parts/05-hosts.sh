@@ -42,6 +42,12 @@
 # existing ancestor checked before every recursive mkdir (V2), linked project
 # folders and hub notes refused by vault lint and vault link-hub (V3, V4).
 # RED proof again by mutation (review-fix report, round 2).
+#
+# PR review round (2026-09-26, Reinhard): per-write skip labels in H6–H8
+# (n2), H7c argument checks before the gate (n5), S3 reworded and S5 for a
+# symlinked `.a1` under the product hook (m3). The writer gate now lives in
+# vault-common.cjs (re-exported by vault-mirror.cjs). RED proof by mutation on
+# a `cp -R` copy, one per arm, each measured red (fix-agent B report).
 
 H_WORK="$(mktemp -d)"
 H_HOME="$H_WORK/home"; H_ERR="$H_WORK/stderr"
@@ -50,6 +56,9 @@ H_OUT=""; H_RC=0
 H_LOCKS="$REPO_ROOT/_shared/lib/locks.cjs"
 H_HOST="$(node -e 'process.stdout.write(require("os").hostname())')"
 H_SKIP_LINE="[a1-tools] vault mirror skipped: this host is not the vault writer ($H_HOST ≠ other-host)"
+# h_skip_line_for <what> — the non-writer line of one write path (review n2:
+# lint --fix-type, link-hub and the spec init hub link are not a mirror).
+h_skip_line_for() { printf '[a1-tools] %s skipped: this host is not the vault writer (%s ≠ other-host)' "$1" "$H_HOST"; }
 
 # ---------- L: lock payload and staleness ----------
 
@@ -154,7 +163,7 @@ h_run() {
 }
 
 h_listing() { (cd "$1" 2>/dev/null && find . -type f | sed 's#^\./##' | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//'); }
-h_has_skip_line() { grep -Fxc "$H_SKIP_LINE" "$H_ERR" | tr -d ' '; }
+h_has_skip_line() { grep -Fxc "${1:-$H_SKIP_LINE}" "$H_ERR" | tr -d ' '; }
 
 # h_setup <name> — a git repo with a product roadmap (project demo, one
 # feature) written vault-free, and a vault holding only the hub note.
@@ -323,7 +332,8 @@ caseS3() {
   h_run "$H_REPO" "$H_VAULT" - vault sync --prune --json
   assert_rc "S3 sync exit" 0 "$H_RC" "$(cat "$H_ERR")"
   assert_eq "S3 secret not in the vault" "$(h_secret_hits "$H_VAULT")" "0"
-  assert_eq "S3 one line refuses the product set" "$(grep -cF 'vault mirror: skipped product/ (source folder resolves outside the repo via a link' "$H_ERR" | tr -d ' ')" "1"
+  assert_eq "S3 one line refuses the product set as a linked set root (FR-005)" \
+    "$(grep -cF 'vault mirror: refused product/ (set root docs/product is a symbolic link resolving to ' "$H_ERR" | tr -d ' ')" "1"
   assert_eq "S3 prune keeps the earlier vault copy" "$(cat "$H_VAULT/project/demo/product/NEXT.md" 2>/dev/null)" "earlier honest copy"
   assert_eq "S3 phases set still mirrored" "$(h_listing "$H_VAULT/project/demo/phases")" "M1-P1/GOAL.md"
 }
@@ -344,6 +354,30 @@ caseS4() {
 }
 caseS4
 
+# S5 — review m3: `.a1` is a symlink out of the repo. The product hook mirrors
+# only the product set, so it says nothing about phases; `vault sync` does
+# plan phases and refuses that set in one line that names the linked set root.
+# Red-making changes: dropping the `patterns.length === 0` early return in
+# planSet (the hook prints a phases line, S5 hook red); the old reason text
+# (S5 sync line red).
+caseS5() {
+  h_setup s5
+  mkdir -p "$H_WORK/s5/outside-a1/phases/M1-P1"
+  printf '# goal\n' > "$H_WORK/s5/outside-a1/phases/M1-P1/GOAL.md"
+  rm -rf "$H_REPO/.a1"
+  ln -s "$H_WORK/s5/outside-a1" "$H_REPO/.a1"
+  h_run "$H_REPO" "$H_VAULT" - product stage --by 001-login --set started
+  assert_rc "S5 stage exit" 0 "$H_RC" "$(cat "$H_ERR")"
+  assert_json "S5 hook vault_mirror.status ok" "$H_OUT" "j.vault_mirror && j.vault_mirror.status" "ok"
+  assert_eq "S5 hook prints no phases line" "$(grep -c 'phases/' "$H_ERR" | tr -d ' ')" "0"
+  h_run "$H_REPO" "$H_VAULT" - vault sync --json
+  assert_rc "S5 sync exit" 0 "$H_RC" "$(cat "$H_ERR")"
+  assert_eq "S5 sync refuses phases/ as a linked set root, once" \
+    "$(grep -cF "vault mirror: refused phases/ (set root .a1 is a symbolic link resolving to $(cd "$H_WORK/s5/outside-a1" && pwd -P); FR-005 refuses the whole set, nothing mirrored or pruned)" "$H_ERR" | tr -d ' ')" "1"
+  [[ ! -e "$H_VAULT/project/demo/phases/M1-P1" ]] && ok "S5 nothing from the linked .a1 mirrored" || bad "S5 phases mirrored through the link"
+}
+caseS5
+
 # ---------- H6–H8: every hub / backfill write is a writer-host write ----------
 # (security review MAJOR 2, team-lead decision 2026-09-26).
 
@@ -360,12 +394,13 @@ h_vault_unchanged() { diff -r "$H_W/vault.before" "$H_VAULT" >/dev/null 2>&1 && 
 
 # H6 — vault lint --fix-type on a non-writer: nothing stamped, the skip line,
 # the lint still reports (exit 1 = findings, unchanged by the gate).
-# Red-making change: removing the gate from vault lint (the spec is stamped).
+# Red-making changes: removing the gate from vault lint (the spec is stamped);
+# passing the generic 'vault mirror' label to notWriterSkip (skip line, n2).
 caseH6() {
   h_hub_vault h6
   h_run "$H_W" "$H_VAULT" other-host vault lint demo --json --fix-type
   assert_rc "H6 lint --fix-type exit (findings)" 1 "$H_RC" "$(cat "$H_ERR")"
-  assert_eq "H6 exact skip line" "$(h_has_skip_line)" "1"
+  assert_eq "H6 exact skip line names lint --fix-type" "$(h_has_skip_line "$(h_skip_line_for 'vault lint --fix-type')")" "1"
   assert_eq "H6 vault byte-identical (no type stamped)" "$(h_vault_unchanged)" "same"
   assert_json "H6 fix_type skipped-non-writer" "$H_OUT" "j.fix_type" "skipped-non-writer"
   assert_json "H6 type_missing still reported" "$H_OUT" "j.counts.type_missing" "1"
@@ -376,17 +411,24 @@ caseH6() {
 caseH6
 
 # H7 — vault link-hub on a non-writer, single and --all-specs: no hub write,
-# the skip line, exit 0 (same as vault sync).
-# Red-making change: removing the gate from cmdVaultLinkHub.
+# the skip line, exit 0 (same as vault sync). H7c (review n5): arguments are
+# validated before the gate, so a bare `vault link-hub` is a usage error
+# (exit 1) on every host, never a silent `skipped`.
+# Red-making changes: removing the gate from cmdVaultLinkHub; the generic
+# 'vault mirror' label (skip line, n2); running the gate before the argument
+# checks (H7c exits 0).
 caseH7() {
   h_hub_vault h7
   h_run "$H_W" "$H_VAULT" other-host vault link-hub demo --spec 003-x
   assert_rc "H7a link-hub --spec exit" 0 "$H_RC" "$(cat "$H_ERR")"
-  assert_eq "H7a exact skip line" "$(h_has_skip_line)" "1"
+  assert_eq "H7a exact skip line names link-hub" "$(h_has_skip_line "$(h_skip_line_for 'vault link-hub')")" "1"
   assert_json "H7a status skipped" "$H_OUT" "j.status" "skipped"
   h_run "$H_W" "$H_VAULT" other-host vault link-hub --all-specs
   assert_rc "H7b link-hub --all-specs exit" 0 "$H_RC" "$(cat "$H_ERR")"
-  assert_eq "H7b exact skip line" "$(h_has_skip_line)" "1"
+  assert_eq "H7b exact skip line names link-hub" "$(h_has_skip_line "$(h_skip_line_for 'vault link-hub')")" "1"
+  h_run "$H_W" "$H_VAULT" other-host vault link-hub
+  assert_rc "H7c bare link-hub on a non-writer is a usage error" 1 "$H_RC" "$(head -c 200 "$H_ERR")"
+  assert_eq "H7c no skip line before the usage error" "$(grep -c '^\[a1-tools\] .*skipped: ' "$H_ERR" | tr -d ' ')" "0"
   assert_eq "H7 hub byte-identical" "$(h_vault_unchanged)" "same"
   h_run "$H_W" "$H_VAULT" "$H_HOST" vault link-hub demo --spec 003-x
   assert_eq "H7 writer links the spec" "$(grep -cxF -- '- references [[project/demo/spec/003-x]]' "$H_VAULT/project/demo.md" | tr -d ' ')" "1"
@@ -396,13 +438,14 @@ caseH7
 # H8 — spec init on a non-writer: the spec FILE is written (authorship is
 # host-agnostic), the hub is not linked (hub: skipped-non-writer).
 # Red-making changes: removing the gate from spec init (hub linked, H8 hub
-# red); gating the whole command (no spec file, H8 file red).
+# red); gating the whole command (no spec file, H8 file red); the generic
+# 'vault mirror' label (skip line, n2).
 caseH8() {
   h_hub_vault h8
   h_run "$H_W" "$H_VAULT" other-host spec init demo w5-feat --title "W5 feature"
   assert_rc "H8 spec init exit" 0 "$H_RC" "$(cat "$H_ERR")"
   assert_json "H8 hub skipped-non-writer" "$H_OUT" "j.hub" "skipped-non-writer"
-  assert_eq "H8 exact skip line" "$(h_has_skip_line)" "1"
+  assert_eq "H8 exact skip line names the spec init hub link" "$(h_has_skip_line "$(h_skip_line_for 'spec init hub link')")" "1"
   assert_eq "H8 spec file written" "$(ls "$H_VAULT/project/demo/spec" | grep -c 'w5-feat\.md$' | tr -d ' ')" "1"
   assert_eq "H8 hub byte-identical" "$(cmp -s "$H_W/vault.before/project/demo.md" "$H_VAULT/project/demo.md"; echo $?)" "0"
   h_run "$H_W" "$H_VAULT" - spec init demo w5-feat2 --title "W5 feature two"

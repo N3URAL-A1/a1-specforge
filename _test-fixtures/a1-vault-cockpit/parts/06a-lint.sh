@@ -132,10 +132,12 @@ caseL4() {
 }
 
 # ---------- L5 fix-type scope; second run reports seven (SC-004) ----------
-# Red-making change: fixing files that carry another finding too (dropping
-# the `own.length !== 1` guard) — 003/004 lose nothing but 007-style files
-# with type_missing + folded would be stamped (L5b), and the second run count
-# changes.
+# Only type_missing files are stamped: files that HAVE a type (valid,
+# unknown, mismatch, no-status, ux-draft, folded), the companion and the
+# conflict copy stay byte-identical.
+# Red-making change: stamping on any finding instead of on type_missing
+# (applyFixType's `x.class === 'type_missing'` test → `true`) — 003-unknown
+# and the others gain a second `type:` line.
 caseL5() {
   local f same=1
   for f in 001-valid 003-unknown 004-mismatch 005-no-status 006-ux-draft 007-folded 008-broken \
@@ -150,8 +152,12 @@ caseL5() {
   assert_rc "L5 second run still exits 1" 1 "$L_RC"
 }
 
-# ---------- L5b folded + type_missing on one file: never touched ----------
-# Red-making change: dropping the "type_missing is the ONLY finding" guard.
+# ---------- L5b folded + type_missing on one file: untouched, listed as skipped ----------
+# FR-019 / SC-004 as amended 2026-09-26: a folded frontmatter counts as broken
+# like an unparseable one — --fix-type leaves it byte-identical, lists its path
+# under `skipped` for manual repair, and both findings stay reported.
+# Red-making change: dropping the `frontmatter_folded` skip in applyFixType
+# (the file is stamped: L5b bytes and skipped list red).
 # ---------- L5c no frontmatter block · L5d CRLF ----------
 # Red-making change (L5c): inserting `type:` after line 1 of a file without a
 # frontmatter block (would eat the heading). (L5d): hardcoding '\n' after the
@@ -164,13 +170,15 @@ caseL5bcd() {
   printf -- '---\r\nstatus: draft\r\ntitle: CRLF spec\r\n---\r\n# C\r\n' > "$p/spec/002-crlf.md"
   cp -R "$v" "$L_WORK/v5.orig"
   lint_run "$v" fx --json --fix-type
+  local want="$L_WORK/l5c.expected"
   if cmp -s "$p/spec/001-folded-no-type.md" "$L_WORK/v5.orig/project/fx/spec/001-folded-no-type.md"; then
-    ok "L5b folded file without type: untouched by --fix-type"
+    ok "L5b folded file byte-identical after --fix-type (cmp)"
   else bad "L5b --fix-type rewrote a frontmatter_folded file"; fi
+  assert_json "L5b folded file listed under skipped, not fixed" "$L_OUT" \
+    "[j.skipped.includes('project/fx/spec/001-folded-no-type.md'), j.fixed.includes('project/fx/spec/001-folded-no-type.md')].join(',')" "true,false"
   assert_json "L5b folded file still reported as type_missing + frontmatter_folded" "$L_OUT" \
     "j.findings.filter(f => f.path.endsWith('001-folded-no-type.md')).map(f => f.class).sort().join(',')" \
     "frontmatter_folded,type_missing"
-  local want="$L_WORK/l5c.expected"
   { printf -- '---\ntype: wave-plan\n---\n'; cat "$L_WORK/v5.orig/project/fx/plans/raw.md"; } > "$want"
   if cmp -s "$p/plans/raw.md" "$want"; then ok "L5c no-frontmatter file gains a block in front, content unchanged"
   else bad "L5c no-frontmatter file bytes wrong after --fix-type"; fi
@@ -222,8 +230,14 @@ caseL8() {
   assert_rc "L8 --dry-run without --fix-type exits 2" 2 "$L_RC"
   local repo="$L_WORK/repo" rc
   mkdir -p "$repo" && git -C "$repo" init -q
-  (cd "$repo" && env -u A1_VAULT_ROOT HOME="$L_WORK/home" node "$TOOLS" vault lint --json >/dev/null 2>&1); rc=$?
+  (cd "$repo" && env -u A1_VAULT_ROOT HOME="$L_WORK/home" node "$TOOLS" vault lint --json >/dev/null 2>"$L_WORK/stderr.l8"); rc=$?
   assert_rc "L8 repo-local tier (no A1_VAULT_ROOT, inside a git repo) exits 2" 2 "$rc"
+  # Review m1: the refusal writes nothing and announces no tier.
+  # Red-making change: resolving the tier with vaultRootInfo() before the
+  # refusal (creates .a1/learnings/, prints "learnings root:").
+  [[ ! -e "$repo/.a1" ]] && ok "L8 the refusal creates no .a1/ in the repo" || bad "L8 the refusal created $(cd "$repo" && find .a1 2>/dev/null | tr '\n' ' ')"
+  assert_eq "L8 the refusal is exactly one stderr line naming A1_VAULT_ROOT" \
+    "$(wc -l < "$L_WORK/stderr.l8" | tr -d ' ')/$(grep -c 'vault lint: no external vault root (tier repo-local); set A1_VAULT_ROOT' "$L_WORK/stderr.l8" | tr -d ' ')" "1/1"
 }
 
 # ---------- L9 clean vault → exit 0; dry-run writes nothing ----------
@@ -244,5 +258,64 @@ caseL9() {
     "[j.would_fix.join(','), j.fixed.length].join('|')" "project/demo/spec/002-no-type.md|0"
 }
 
-caseL1; caseL2; caseL3; caseL4; caseL5; caseL5bcd; caseL6; caseL7; caseL8; caseL9
+# ---------- L10 --fix-type is idempotent; an empty type: is replaced (review M3) ----------
+# FR-019 "preserving all other keys" + review M3: a present-but-empty `type:`
+# (also `type: ""`) is REPLACED in place, never duplicated, and a second run
+# is byte-identical and fixes nothing.
+# Red-making change: dropping the emptyTypeLine() replacement in
+# withTypeStamped (the line is inserted in front of the empty one: two type:
+# keys, the parser keeps the empty last one, and every run adds another).
+caseL10() {
+  local v="$L_WORK/v10" p="$L_WORK/v10/project/idem"
+  mkdir -p "$p/spec"
+  printf -- '---\ntype:\nid: 001-x\nstatus: draft\n---\n# x\n' > "$p/spec/001-empty.md"
+  printf -- '---\nid: 002-y\ntype: ""\nstatus: draft\n---\n# y\n' > "$p/spec/002-quoted-empty.md"
+  printf -- '---\nid: 003-z\nstatus: draft\n---\n# z\n' > "$p/spec/003-absent.md"
+  lint_run "$v" idem --json --fix-type
+  assert_json "L10 first run fixes all three" "$L_OUT" "j.fixed.length" "3"
+  assert_eq "L10 empty type: replaced in place" "$(cat "$p/spec/001-empty.md")" "$(printf -- '---\ntype: spec\nid: 001-x\nstatus: draft\n---\n# x')"
+  assert_eq "L10 type: \"\" replaced in place (key order kept)" "$(cat "$p/spec/002-quoted-empty.md")" "$(printf -- '---\nid: 002-y\ntype: spec\nstatus: draft\n---\n# y')"
+  local f
+  for f in 001-empty 002-quoted-empty 003-absent; do
+    assert_eq "L10 $f has exactly one type: line" "$(grep -c '^type:' "$p/spec/$f.md" | tr -d ' ')" "1"
+  done
+  cp -R "$v" "$L_WORK/v10.after1"
+  lint_run "$v" idem --json --fix-type
+  assert_json "L10 second run fixes nothing" "$L_OUT" "j.fixed.length" "0"
+  assert_rc "L10 second run is clean" 0 "$L_RC"
+  local same=1
+  for f in 001-empty 002-quoted-empty 003-absent; do
+    cmp -s "$p/spec/$f.md" "$L_WORK/v10.after1/project/idem/spec/$f.md" || same=0
+  done
+  assert_eq "L10 second run is byte-identical (cmp)" "$same" "1"
+}
+
+# ---------- L11 status outlier without type: stamped, outlier still reported (M4) ----------
+# The 11+4 legacy outliers (status_invalid / status_missing) get `type: spec`
+# too — type is independent of status — and keep their status finding.
+# A broken frontmatter file next to them is never touched (listed as skipped).
+# Red-making change: restoring the "type_missing is the ONLY finding" guard
+# (both outliers keep type_missing, L11 bytes red).
+caseL11() {
+  local v="$L_WORK/v11" p="$L_WORK/v11/project/out"
+  mkdir -p "$p/spec"
+  printf -- '---\nid: 001-ux\nstatus: ux-draft\n---\n# u\n' > "$p/spec/001-ux.md"
+  printf -- '---\nid: 002-none\ntitle: No status\n---\n# n\n' > "$p/spec/002-none.md"
+  printf -- '---\nid: 003-broken\nstatus: draft\n# fence lost\n' > "$p/spec/003-broken.md"
+  cp -R "$v" "$L_WORK/v11.orig"
+  lint_run "$v" out --json --fix-type
+  local f want="$L_WORK/l11.expected"
+  for f in 001-ux 002-none; do
+    { printf -- '---\ntype: spec\n'; tail -n +2 "$L_WORK/v11.orig/project/out/spec/$f.md"; } > "$want"
+    if cmp -s "$p/spec/$f.md" "$want"; then ok "L11 $f stamped: inserted line + every original byte"
+    else bad "L11 $f bytes wrong after --fix-type"; fi
+  done
+  if cmp -s "$p/spec/003-broken.md" "$L_WORK/v11.orig/project/out/spec/003-broken.md"; then ok "L11 broken frontmatter untouched"
+  else bad "L11 --fix-type modified a broken file"; fi
+  assert_json "L11 remaining findings: the two status outliers and the broken file" "$L_OUT" \
+    "j.findings.map(f => f.class + '@' + f.path.split('/').pop()).sort().join(' ') + '|' + j.skipped.join(',')" \
+    "frontmatter_unparseable@003-broken.md status_invalid@001-ux.md status_missing@002-none.md|project/out/spec/003-broken.md"
+}
+
+caseL1; caseL2; caseL3; caseL4; caseL5; caseL5bcd; caseL6; caseL7; caseL8; caseL9; caseL10; caseL11
 rm -rf "$L_WORK"

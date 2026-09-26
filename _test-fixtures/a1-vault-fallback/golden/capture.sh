@@ -15,17 +15,17 @@ unset A1_VAULT_ROOT A1_VAULT_WRITER_HOST
 GOLDEN_COMMIT=475382a
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$HERE/../../.." && pwd)"
-PRE="$(mktemp -d -t w8a-pre)"
+# shellcheck source=scenarios.sh
+source "$HERE/scenarios.sh"
+PRE="$(g_mktemp w8a-pre)"; g_need_dir PRE "$PRE"
 trap 'rm -rf "$PRE"' EXIT
 
 git -C "$REPO_ROOT" archive "$GOLDEN_COMMIT" | tar -x -C "$PRE"
-# shellcheck source=scenarios.sh
-source "$HERE/scenarios.sh"
 
 HEADER="# golden: commit $GOLDEN_COMMIT, captured by: bash _test-fixtures/a1-vault-fallback/golden/capture.sh"
 for entry in "${G_SCENARIOS[@]}"; do
   name="${entry%%:*}"; fn="${entry#*:}"
-  work="$(mktemp -d -t w8a-cap)"
+  work="$(g_mktemp w8a-cap)"; g_need_dir work "$work"
   "$fn" "$PRE/_shared/a1-tools.cjs" "$work/$name"
   g_cleanup
   for ext in out err files; do

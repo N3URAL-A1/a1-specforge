@@ -1,0 +1,3 @@
+# golden: commit 475382a, captured by: bash _test-fixtures/a1-vault-fallback/golden/capture.sh
+## checklist run demo/001-login --only 9,10 --format json rc=0
+[a1-tools] learnings root: <REPO>/.a1/learnings (source: repo-local)
