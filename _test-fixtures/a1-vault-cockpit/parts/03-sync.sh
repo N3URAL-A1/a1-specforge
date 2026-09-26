@@ -383,6 +383,23 @@ caseC16b() {
   else bad "C16b a command wrote into the read-only vault"; fi
 }
 
+# ---------- C18 an unreadable source folder is reported, not swallowed ----------
+# Re-review r1. Red-making change: vault-mirror.cjs listDir (or readBytes)
+# returning []/null for every error again instead of reporting non-ENOENT
+# errors — the sync then mirrors nothing of features/ with an empty stderr.
+caseC18() {
+  if [[ "$(id -u)" -eq 0 ]]; then ok "C18 skipped (running as root: chmod is not enforced)"; return; fi
+  local r="$C_WORK/c18/repo" v="$C_WORK/c18/vault"
+  make_sync_repo "$r" demo; make_sync_vault "$v"
+  chmod a-r "$r/docs/product/features"
+  c_run "$r" "$v" sync demo
+  chmod u+r "$r/docs/product/features"
+  assert_eq "C18 the unreadable features/ folder is named on stderr" \
+    "$(grep -cE '^\[a1-tools\] vault mirror: cannot read directory .*/c18/repo/docs/product/features \(EACCES\), skipped$' "$C_ERR" | tr -d ' ')" "1"
+  [[ ! -e "$v/project/demo/product/features/001-login/feature.md" ]] \
+    && ok "C18 nothing of the unreadable folder was mirrored" || bad "C18 an unreadable file reached the vault"
+}
+
 # ---------- C17 a set folder linked out of the vault: no write, no delete ----------
 # Red-making changes: (a) resolving the real set root as realpath(setRoot)
 # instead of path.join(realpath(project/<slug>), set) — the linked product/
@@ -412,5 +429,5 @@ caseC17() {
 }
 
 caseC1; caseC2C7; caseC3; caseC4; caseC5; caseC6; caseC8; caseC9; caseC10; caseC11
-caseC12; caseC13; caseC14; caseC15; caseC16; caseC16b; caseC17
+caseC12; caseC13; caseC14; caseC15; caseC16; caseC16b; caseC17; caseC18
 rm -rf "$C_WORK"

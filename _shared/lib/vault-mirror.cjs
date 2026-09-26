@@ -53,8 +53,18 @@ function isExcluded(rel, excludes) {
   return excludes.some((g) => globToRegExp(g).test(base));
 }
 
+/** Absent paths are normal (FR-003: missing sources are skipped). Anything
+ * else — EACCES, EIO, … — is reported once on stderr, never swallowed: an
+ * unreadable source must not look like an empty one. */
+const ABSENT_CODES = new Set(['ENOENT', 'ENOTDIR']);
+function reportUnreadable(what, p, e) {
+  if (!ABSENT_CODES.has(e && e.code)) {
+    process.stderr.write(`[a1-tools] vault mirror: cannot read ${what} ${p} (${(e && e.code) || e}), skipped\n`);
+  }
+}
+
 function listDir(fs, dir) {
-  try { return fs.readdirSync(dir, { withFileTypes: true }); } catch (_e) { return []; }
+  try { return fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { reportUnreadable('directory', dir, e); return []; }
 }
 
 /** All files under `dir`, as rel paths (posix-joined with `prefix`).
@@ -92,7 +102,7 @@ function expandPattern(fs, base, segments, prefix) {
 }
 
 function readBytes(fs, p) {
-  try { return fs.readFileSync(p); } catch (_e) { return null; }
+  try { return fs.readFileSync(p); } catch (e) { reportUnreadable('file', p, e); return null; }
 }
 
 /** Source bytes without following a final-component symlink (O_NOFOLLOW):

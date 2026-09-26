@@ -243,7 +243,15 @@ function findConflictCopies(vaultRoot, slug) {
   const base = path.join(vaultRoot, 'project', assertSafeSegment(slug, 'slug'));
   const walk = (dir, prefix) => {
     let dirents;
-    try { dirents = fs.readdirSync(dir, { withFileTypes: true }); } catch (_e) { return []; }
+    try {
+      dirents = fs.readdirSync(dir, { withFileTypes: true });
+    } catch (e) {
+      // absent is normal; anything else must not look like "no conflicts"
+      if (e.code !== 'ENOENT' && e.code !== 'ENOTDIR') {
+        process.stderr.write(`[a1-tools] vault: cannot read directory ${dir} (${e.code || e}), conflict scan skipped there\n`);
+      }
+      return [];
+    }
     return dirents.flatMap((d) => {
       const rel = prefix ? `${prefix}/${d.name}` : d.name;
       if (d.isDirectory()) return walk(path.join(dir, d.name), rel);
