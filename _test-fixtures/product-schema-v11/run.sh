@@ -835,7 +835,7 @@ else
   assert_true "vision-touch-pillars-byte-unchanged" "false"
 fi
 
-TODAY="$(date +%Y-%m-%d)"
+TODAY="$(date -u +%Y-%m-%d)"  # UTC, like the code (toISOString) — local time failed daily 00:00–02:00 CEST
 if grep -q "^updated: ${TODAY}$" "$PDIR13/VISION.md"; then
   assert_true "vision-touch-updated-bumped-to-today" "true"
 else
