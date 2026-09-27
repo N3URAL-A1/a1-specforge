@@ -246,6 +246,56 @@ run_init_postmortem() {
 }
 
 # ---------------------------------------------------------------------------
+# init-postmortem — hostile slugs, date and flag values (Samuel MINOR-6,
+# 2026-09-28). Red-making changes: (a) postmortemsDir joining the raw project
+# slug again (traversal cases write under $WORK/escaped*); (b) dropping the
+# date check (the --date case writes outside); (c) dropping the line-break
+# check (the --severity case injects a second frontmatter key); (d) writing
+# one_line_learning without escaping (the quote case breaks the frontmatter).
+# ---------------------------------------------------------------------------
+run_init_postmortem_hostile() {
+  local out exit_code
+  out=$(A1_VAULT_ROOT="$VAULT" node "$TOOLS" fix init-postmortem bug-a "../../escaped" --date 2026-05-14 2>&1)
+  exit_code=$?
+  assert_rc "init-postmortem traversal project slug rejected (exit=2)" 2 "$exit_code" "$out"
+  assert "init-postmortem traversal project slug writes nothing outside the vault" \
+    "$([[ -e "$WORK/escaped" || -e "$(dirname "$WORK")/escaped" ]] && echo 0 || echo 1)"
+
+  out=$(A1_VAULT_ROOT="$VAULT" node "$TOOLS" fix init-postmortem "../escaped-bug" demo --date 2026-05-14 2>&1)
+  exit_code=$?
+  assert_rc "init-postmortem traversal bug slug rejected (exit=2)" 2 "$exit_code" "$out"
+
+  out=$(A1_VAULT_ROOT="$VAULT" node "$TOOLS" fix init-postmortem bug-b demo --date "../../../escaped-date/d" 2>&1)
+  exit_code=$?
+  assert_rc "init-postmortem non-date --date rejected (exit=1)" 1 "$exit_code" "$out"
+  assert "init-postmortem bad --date writes nothing outside the vault" \
+    "$([[ -e "$(dirname "$WORK")/escaped-date" || -e "$WORK/escaped-date" ]] && echo 0 || echo 1)"
+
+  out=$(A1_VAULT_ROOT="$VAULT" node "$TOOLS" fix init-postmortem bug-c demo --date 2026-05-14 \
+    --severity "$(printf 'major\ntype: injected')" 2>&1)
+  exit_code=$?
+  assert_rc "init-postmortem line break in a flag value rejected (exit=1)" 1 "$exit_code" "$out"
+  assert "init-postmortem line-break case writes no file" \
+    "$([[ -e "$VAULT/project/demo/postmortems/2026-05-14-bug-c.md" ]] && echo 0 || echo 1)"
+
+  out=$(A1_VAULT_ROOT="$VAULT" node "$TOOLS" fix init-postmortem bug-d demo --date 2026-05-14 \
+    --one-line-learning 'say "hi" and \ back' 2>&1)
+  exit_code=$?
+  assert_rc "init-postmortem quoted learning accepted (exit=0)" 0 "$exit_code" "$out"
+  local f="$VAULT/project/demo/postmortems/2026-05-14-bug-d.md"
+  # Checked with an independent YAML parser (PyYAML), as Obsidian reads it —
+  # the repo's own parser is lenient and would accept the unescaped form too.
+  if ! python3 -c 'import yaml' 2>/dev/null; then
+    assert "init-postmortem quoted learning is valid YAML (PyYAML missing — skipped)" "1"
+  elif python3 -c 'import sys,yaml; t=open(sys.argv[1]).read().split("---")[1]; sys.exit(0 if yaml.safe_load(t)["one_line_learning"]==sys.argv[2] else 1)' \
+       "$f" 'say "hi" and \ back' 2>/dev/null; then
+    assert "init-postmortem quoted learning round-trips through a YAML parser" "1"
+  else
+    assert "init-postmortem quoted learning round-trips through a YAML parser" "0"
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # count-postmortems-since — date-boundary correctness
 # ---------------------------------------------------------------------------
 run_count_postmortems_since() {
@@ -418,6 +468,7 @@ run_update_status
 run_find_duplicates
 run_integrity_check
 run_init_postmortem
+run_init_postmortem_hostile
 run_count_postmortems_since
 run_update_promote_state
 run_write_suggestion
