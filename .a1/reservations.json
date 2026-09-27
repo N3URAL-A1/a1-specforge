@@ -43,10 +43,11 @@
         "_test-fixtures/CONVENTIONS.md",
         ".github/workflows/test.yml",
         "_shared/lib/intent-parse.cjs",
-        "_shared/lib/intent-redact.cjs"
+        "_shared/lib/intent-redact.cjs",
+        "_shared/lib/spec.cjs"
       ],
       "by": "011-intent-queue-consumer",
-      "at": "2026-09-27T19:46:18.189Z",
+      "at": "2026-09-27T19:56:36.291Z",
       "stage": "started"
     }
   ]
