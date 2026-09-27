@@ -15,6 +15,8 @@ const {
   nowIso,
   fail,
   projectsPath,
+  assertSafeSegment,
+  serializeScalar,
 } = require('./io.cjs');
 const { appendPhaseHistory } = require('./spec.cjs');
 
@@ -202,9 +204,9 @@ function cmdFixFindDuplicates(args) {
 // unter project/<slug>/postmortems/, alles Lern-Maschinerie (Lock, Promote-State,
 // Lesson-Suggestions) unter pattern/a1-learnings/. Kein wiki/-Top-Level mehr.
 function postmortemsDir(projectSlug) {
-  if (projectSlug) {
-    return path.join(vaultRoot(), 'project', projectSlug, 'postmortems');
-  }
+  // projectsPath() runs every segment through assertSafeSegment: a slug with a
+  // separator or `..` exits 2 instead of joining its way out of the vault.
+  if (projectSlug) return projectsPath(projectSlug, 'postmortems');
   return path.join(vaultRoot(), 'project');
 }
 
@@ -295,7 +297,16 @@ function cmdFixInitPostmortem(args) {
   if (!bugSlug || !projectSlug) {
     usage('fix init-postmortem <bug-slug> <project-slug> [flags]');
   }
+  assertSafeSegment(bugSlug, 'bug slug');
   const date = flags['date'] || new Date().toISOString().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) fail(`fix init-postmortem: --date must be YYYY-MM-DD, got ${JSON.stringify(date)}`);
+  // Every flag value lands on its own frontmatter line: a line break would
+  // inject extra keys, so it is refused rather than escaped.
+  for (const [key, value] of Object.entries(flags)) {
+    if (key !== '_' && typeof value === 'string' && /[\r\n]/.test(value)) {
+      fail(`fix init-postmortem: --${key} must not contain a line break`);
+    }
+  }
   const dir = postmortemsDir(projectSlug);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
@@ -325,7 +336,7 @@ diagnosis_rounds: ${diagnosisRounds}
 phase_that_produced_most_friction: ${phaseFriction}
 quak_regression: ${quakRegression}
 fix_required_test_first: ${fixRequiredTestFirst}
-one_line_learning: "${oneLineLearning}"
+one_line_learning: ${serializeScalar(oneLineLearning)}
 created_at: ${nowIso()}
 ---
 
