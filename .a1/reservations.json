@@ -44,10 +44,11 @@
         ".github/workflows/test.yml",
         "_shared/lib/intent-parse.cjs",
         "_shared/lib/intent-redact.cjs",
-        "_shared/lib/spec.cjs"
+        "_shared/lib/spec.cjs",
+        "_shared/lib/vault-product-hook.cjs"
       ],
       "by": "011-intent-queue-consumer",
-      "at": "2026-09-27T19:56:36.291Z",
+      "at": "2026-09-27T21:39:11.001Z",
       "stage": "started"
     }
   ]
