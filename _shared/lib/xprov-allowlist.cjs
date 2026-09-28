@@ -68,54 +68,37 @@ const LITERAL_RE = /true|false|null/y;
 function parseStrictJson(text) {
   let i = 0;
   const fail = (msg) => { throw new Error(`${msg} at offset ${i}`); };
-  const ws = () => { WS_RE.lastIndex = i; WS_RE.exec(text); i = WS_RE.lastIndex; };
-  const token = (re) => { re.lastIndex = i; const m = re.exec(text); if (!m) return null; i = re.lastIndex; return m[0]; };
+  const token = (re) => { re.lastIndex = i; const m = re.exec(text); if (m) i = re.lastIndex; return m ? m[0] : null; };
+  const ws = () => token(WS_RE);
+  const expect = (ch) => { ws(); if (text[i++] !== ch) fail(`expected "${ch}"`); };
+  // One loop for objects and arrays: `close` ends it, `,` continues; objects read `"key":` first.
+  function collection(isObject, depth) {
+    i++;
+    const items = [];
+    const seen = new Set();
+    ws();
+    if (text[i] === (isObject ? '}' : ']')) { i++; return isObject ? Object.fromEntries(items) : items; }
+    for (;;) {
+      if (isObject) {
+        ws();
+        const key = JSON.parse(token(STRING_RE) || fail('expected a key'));
+        if (seen.has(key)) fail(`duplicate key ${JSON.stringify(C.clip(key, 40))}`);
+        seen.add(key);
+        expect(':');
+        items.push([key, value(depth + 1)]);
+      } else items.push(value(depth + 1));
+      ws();
+      const sep = text[i++];
+      if (sep === (isObject ? '}' : ']')) return isObject ? Object.fromEntries(items) : items;
+      if (sep !== ',') fail(`expected "," or "${isObject ? '}' : ']'}"`);
+    }
+  }
   function value(depth) {
     if (depth > MAX_JSON_DEPTH) fail('nesting too deep');
     ws();
-    const c = text[i];
-    if (c === '{') return object(depth);
-    if (c === '[') return array(depth);
-    if (c === '"') return JSON.parse(token(STRING_RE) || fail('bad string'));
-    const lit = token(LITERAL_RE);
-    if (lit !== null) return JSON.parse(lit);
-    const num = token(NUMBER_RE);
-    if (num !== null) return JSON.parse(num);
-    return fail('unexpected token');
-  }
-  function object(depth) {
-    i++;
-    const entries = [];
-    const seen = new Set();
-    ws();
-    if (text[i] === '}') { i++; return Object.fromEntries(entries); }
-    for (;;) {
-      ws();
-      if (text[i] !== '"') fail('expected a key');
-      const key = JSON.parse(token(STRING_RE) || fail('bad key'));
-      if (seen.has(key)) fail(`duplicate key ${JSON.stringify(C.clip(key, 40))}`);
-      seen.add(key);
-      ws();
-      if (text[i++] !== ':') fail('expected ":"');
-      entries.push([key, value(depth + 1)]);
-      ws();
-      const sep = text[i++];
-      if (sep === '}') return Object.fromEntries(entries);
-      if (sep !== ',') fail('expected "," or "}"');
-    }
-  }
-  function array(depth) {
-    i++;
-    const out = [];
-    ws();
-    if (text[i] === ']') { i++; return out; }
-    for (;;) {
-      out.push(value(depth + 1));
-      ws();
-      const sep = text[i++];
-      if (sep === ']') return out;
-      if (sep !== ',') fail('expected "," or "]"');
-    }
+    if (text[i] === '{' || text[i] === '[') return collection(text[i] === '{', depth);
+    const t = text[i] === '"' ? token(STRING_RE) : token(LITERAL_RE) || token(NUMBER_RE);
+    return t === null ? fail('unexpected token') : JSON.parse(t);
   }
   const v = value(0);
   ws();
@@ -195,12 +178,15 @@ function typeAt(root, rev, p) {
   return hit ? hit.split(' ')[1] : null;
 }
 
+/** { decidedBy } — null when the record or the field is absent — or { error }
+ * when the record at <rev> exists but is not valid JSON. */
 function decidedByAt(root, rev) {
-  try {
-    const buf = blobAt(root, rev, PERMIT_FILE);
-    const rec = buf === null ? null : JSON.parse(buf.toString('utf8'));
-    return isPlainObject(rec) && typeof rec.decided_by === 'string' ? rec.decided_by : null;
-  } catch (_e) { return null; }
+  let buf;
+  try { buf = blobAt(root, rev, PERMIT_FILE); } catch (e) { return { error: e.message }; }
+  if (buf === null) return { decidedBy: null };
+  let rec;
+  try { rec = JSON.parse(buf.toString('utf8')); } catch (_e) { return { error: `${PERMIT_FILE} at the anchor is not valid JSON` }; }
+  return { decidedBy: isPlainObject(rec) && typeof rec.decided_by === 'string' ? rec.decided_by : null };
 }
 
 /** The permit record of the primary checkout's WORKING TREE (FR-021 reads the same file). */
@@ -298,13 +284,16 @@ const ownedByMe = (st) => typeof process.getuid !== 'function' || st.uid === pro
  * all count as an ABSENT store. The file is opened with O_NOFOLLOW and checked
  * on the open descriptor, so a swap between check and read changes nothing. */
 function readApprovals() {
-  const absent = (why) => ({ ok: false, why, repos: {} });
+  // `missing` = nothing there yet (approve may create it); every other absence is a broken store.
+  const absent = (why, missing) => ({ ok: false, missing: Boolean(missing), why, repos: {} });
   let d;
-  try { d = fs.lstatSync(X.xprovHome()); } catch (_e) { return absent('~/.a1-xprov does not exist'); }
+  try { d = fs.lstatSync(X.xprovHome()); } catch (_e) { return absent('~/.a1-xprov does not exist', true); }
   if (d.isSymbolicLink() || !d.isDirectory()) return absent('~/.a1-xprov is not a real directory');
   if ((d.mode & 0o777) !== STORE_DIR_MODE || !ownedByMe(d)) return absent('~/.a1-xprov is not 0700 and owned by the current user');
   let fd;
-  try { fd = fs.openSync(storePath(), fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW); } catch (_e) { return absent('no approval store (or it is a symlink)'); }
+  try { fd = fs.openSync(storePath(), fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW); } catch (e) {
+    return e.code === 'ENOENT' ? absent('no approval store yet', true) : absent('the approval store is a symlink or cannot be opened');
+  }
   try {
     const st = fs.fstatSync(fd);
     if (!st.isFile() || (st.mode & 0o777) !== STORE_MODE || !ownedByMe(st)) return absent('approval store is not a 0600 regular file owned by the current user');
@@ -338,6 +327,32 @@ function groupPairs(matches) {
   return pairs;
 }
 
+/** (d) The newest commit that touched the allowlist in the anchor's history
+ * touches nothing else — keeps allowlist changes reviewable. Problem text or null. */
+function separateCommitProblem(root, anchor) {
+  const last = gitOut(['-C', root, 'log', '-1', '--format=%H', '--full-history', '--no-merges', anchor, '--', X.ALLOWLIST_FILE]);
+  const touched = last && last.trim() ? gitOut(['-C', root, 'diff-tree', '--root', '--no-commit-id', '--name-only', '-r', '--no-renames', '-z', last.trim()]) : null;
+  const names = touched === null ? [] : touched.split('\0').filter(Boolean);
+  return names.length === 1 && names[0] === X.ALLOWLIST_FILE ? null : `the last commit that changed ${X.ALLOWLIST_FILE} also changed other paths`;
+}
+
+/** (h) owner = decided_by at the anchor = decided_by in the working tree, and
+ * every reviewed_by = owner. { detail, reasonDetail } or null. An unparsable
+ * permit record is its own problem, not an owner mismatch. */
+function ownerProblem(root, anchor, doc) {
+  const at = decidedByAt(root, anchor);
+  if (at.error) return { detail: at.error, reasonDetail: null };
+  let inTree = null;
+  try {
+    const rec = JSON.parse(fs.readFileSync(path.join(root, PERMIT_FILE), 'utf8'));
+    inTree = isPlainObject(rec) && typeof rec.decided_by === 'string' ? rec.decided_by : null;
+  } catch (e) {
+    if (e.code !== 'ENOENT') return { detail: `${PERMIT_FILE} in the working tree is not valid JSON`, reasonDetail: null };
+  }
+  if (doc.owner === at.decidedBy && doc.owner === inTree && doc.entries.every((e) => e.reviewed_by === doc.owner)) return null;
+  return { detail: `owner ${JSON.stringify(doc.owner)} must equal decided_by at the anchor (${JSON.stringify(at.decidedBy)}) and in the working tree (${JSON.stringify(inTree)}), and every reviewed_by`, reasonDetail: DETAIL.owner_mismatch };
+}
+
 /** The allowlist document at the anchor after every check of (a), (d), (h),
  * (j): { doc, blobSha } | { fail } | { absent: true }. */
 function loadAtAnchor(root, anchor, commitSha, approvals) {
@@ -352,18 +367,10 @@ function loadAtAnchor(root, anchor, commitSha, approvals) {
   for (const e of doc.entries) {
     if (typeAt(root, anchor, e.path) === 'tree' || typeAt(root, commitSha, e.path) === 'tree') return invalid(`${e.path} is a directory, not a file`);
   }
-  // (d) the newest commit that touched the allowlist in the anchor's history touches nothing else
-  const last = gitOut(['-C', root, 'log', '-1', '--format=%H', '--full-history', '--no-merges', anchor, '--', X.ALLOWLIST_FILE]);
-  const touched = last && last.trim() ? gitOut(['-C', root, 'diff-tree', '--root', '--no-commit-id', '--name-only', '-r', '--no-renames', '-z', last.trim()]) : null;
-  const names = touched === null ? [] : touched.split('\0').filter(Boolean);
-  if (names.length !== 1 || names[0] !== X.ALLOWLIST_FILE) return invalid(`the last commit that changed ${X.ALLOWLIST_FILE} also changed other paths`, DETAIL.not_separate_commit);
-  // (h) owner = decided_by at the anchor = decided_by in the working tree; every reviewed_by = owner
-  const atAnchor = decidedByAt(root, anchor);
-  const wt = permitRecord(root);
-  const inTree = wt && typeof wt.decided_by === 'string' ? wt.decided_by : null;
-  if (doc.owner !== atAnchor || doc.owner !== inTree || doc.entries.some((e) => e.reviewed_by !== doc.owner)) {
-    return invalid(`owner ${JSON.stringify(doc.owner)} must equal decided_by at the anchor (${JSON.stringify(atAnchor)}) and in the working tree (${JSON.stringify(inTree)}), and every reviewed_by`, DETAIL.owner_mismatch);
-  }
+  const sep = separateCommitProblem(root, anchor);
+  if (sep) return invalid(sep, DETAIL.not_separate_commit);
+  const owner = ownerProblem(root, anchor, doc);
+  if (owner) return invalid(owner.detail, owner.reasonDetail);
   // (j) the blob must be approved for this repository
   const blobSha = C.sha256(blob);
   const approved = (approvals && approvals.repos[C.commonDirOf(root)]) || [];
@@ -408,6 +415,6 @@ function evaluate(o) {
 
 module.exports = {
   NO_ALLOWLIST, STORE_MODE, STORE_DIR_MODE, SHA256_RE,
-  parseStrictJson, parseAllowlist, pathProblem, blobAt, verifiedTip, resolveAnchor, defaultBranch, lsRemote,
+  parseStrictJson, parseAllowlist, pathProblem, blobAt, separateCommitProblem, ownerProblem, verifiedTip, resolveAnchor, defaultBranch, lsRemote,
   readApprovals, storePath, groupPairs, evaluate, permitRecord,
 };

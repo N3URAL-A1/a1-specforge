@@ -608,6 +608,8 @@ fakeparent8() {
   else cp /bin/sh "$1"; fi
   chmod +x "$1"
 }
+# said8 <name> <file> <text> — the refusal names its reason (rc 2 alone is also the usage exit).
+said8() { grep -qF -- "$3" "$2" && ok "$1: output says '$3'" || bad "$1: output lacks '$3': $(tr -d '\r' < "$2" | tail -n 2)"; }
 store_absent8() { [[ ! -e "$HOME/.a1-xprov/$STORE_NAME" ]] && ok "$1: no store written" || bad "$1: a store was written"; }
 
 caseR30j2() {
@@ -616,25 +618,38 @@ caseR30j2() {
   scen8; rm -f "$HOME/.a1-xprov/$STORE_NAME"
   printf '1\n' | "${NOCLAUDE8[@]}" node "$tools" xprov allowlist approve --repo "$R8" > "$TMP08/j2.out" 2>&1; rc=$?
   assert_rc "R30j2-1 stdin not a TTY → exit 2" 2 "$rc"; store_absent8 "R30j2-1"
+  said8 "R30j2-1" "$TMP08/j2.out" "must both be a terminal"
   # 2: under script with CLAUDECODE=1
   scen8; rm -f "$HOME/.a1-xprov/$STORE_NAME"
   PTY_TYPED=1 pty8 env CLAUDECODE=1 node "$tools" xprov allowlist approve --repo "$R8"; rc=$?
   assert_rc "R30j2-2 CLAUDECODE=1 under a pseudo-TTY → exit 2" 2 "$rc"; store_absent8 "R30j2-2"
+  said8 "R30j2-2" "$TMP08/pty-out.txt" "CLAUDECODE"
   # 3: fake parent: a shell copy named `claude`, all CLAUDE* unset
   scen8; rm -f "$HOME/.a1-xprov/$STORE_NAME"
   local fp3="$A8/bin/claude"; fakeparent8 "$fp3"
   PTY_TYPED=1 pty8 "${NOCLAUDE8[@]}" "$fp3" -c 'node "$0" xprov allowlist approve --repo "$1"; exit $?' "$tools" "$R8"; rc=$?
   assert_rc "R30j2-3 launched from a parent whose start name is claude → exit 2" 2 "$rc"; store_absent8 "R30j2-3"
+  said8 "R30j2-3" "$TMP08/pty-out.txt" "started as claude"
+  # 3b: a Claude Desktop-style start name "Claude" (Samuel): compared case-insensitively; the
+  # message names the exact start name, so the real (lower-case) Claude Code ancestor above
+  # this suite cannot stand in for it
+  scen8; rm -f "$HOME/.a1-xprov/$STORE_NAME"
+  local fp3b="$A8/binC/Claude"; fakeparent8 "$fp3b"
+  PTY_TYPED=1 pty8 "${NOCLAUDE8[@]}" "$fp3b" -c 'node "$0" xprov allowlist approve --repo "$1"; exit $?' "$tools" "$R8"; rc=$?
+  assert_rc "R30j2-3b launched from a parent whose start name is Claude → exit 2" 2 "$rc"; store_absent8 "R30j2-3b"
+  said8 "R30j2-3b" "$TMP08/pty-out.txt" "started as Claude"
   # 4: fake parent at <tmp>/claude/versions/9.9.9, launched through a symlink with another name
   scen8; rm -f "$HOME/.a1-xprov/$STORE_NAME"
   local fp4="$A8/share/claude/versions/9.9.9"; fakeparent8 "$fp4"; ln -s "$fp4" "$A8/runner-shell"
   PTY_TYPED=1 pty8 "${NOCLAUDE8[@]}" "$A8/runner-shell" -c 'node "$0" xprov allowlist approve --repo "$1"; exit $?' "$tools" "$R8"; rc=$?
   assert_rc "R30j2-4 parent executable under claude/versions/ (started through another name) → exit 2" 2 "$rc"; store_absent8 "R30j2-4"
+  said8 "R30j2-4" "$TMP08/pty-out.txt" "claude/versions/"
   # 5: fake parent whose argv holds the npm package path
   scen8; rm -f "$HOME/.a1-xprov/$STORE_NAME"
   local npm="$A8/node_modules/@anthropic-ai/claude-code/cli.js"; mkdir -p "$(dirname "$npm")"; : > "$npm"
   PTY_TYPED=1 pty8 "${NOCLAUDE8[@]}" /bin/sh -c 'node "$1" xprov allowlist approve --repo "$2"; exit $?' "$npm" "$tools" "$R8"; rc=$?
   assert_rc "R30j2-5 parent argv holds @anthropic-ai/claude-code → exit 2" 2 "$rc"; store_absent8 "R30j2-5"
+  said8 "R30j2-5" "$TMP08/pty-out.txt" "@anthropic-ai/claude-code"
   # 6: the project's PreToolUse hook
   local hook="$REPO_ROOT/.claude/hooks/xprov-deny-allowlist-approve.sh" h
   local p1 p2 p3
@@ -647,12 +662,25 @@ caseR30j2() {
   assert_json "R30j2-6b hook denies a Bash command containing 'allowlist-approvals'" "$h" "j.hookSpecificOutput.permissionDecision" "deny"
   h="$(printf '%s' "$p3" | bash "$hook" 2>/dev/null)"; rc=$?
   [[ "$rc" -eq 0 && "$h" != *deny* ]] && ok "R30j2-6c hook lets an unrelated Bash command through" || bad "R30j2-6c hook denied git status (rc $rc)"
+  local p hv; local -a hook_payloads=(
+    'allowlist \\\napprove --repo .'
+    'allowlist  approve --repo .'
+    'allowlist\tapprove --repo .'
+    'allowlist \"approve\" --repo .'
+    "allowlist 'approve' --repo ."
+    'cat allowlist-approval.json')
+  for p in "${hook_payloads[@]}"; do
+    hv="$(printf '{"tool_name":"Bash","tool_input":{"command":"%s"}}' "$p" | bash "$hook" 2>/dev/null)"
+    assert_json "R30j2-6e hook denies the obfuscated command ${p}" "$hv" "j.hookSpecificOutput.permissionDecision" "deny"
+  done
   assert_json "R30j2-6d .claude/settings.json wires the hook as a Bash PreToolUse hook and denies Edit/Write on both paths" "$(cat "$REPO_ROOT/.claude/settings.json")" \
-    "[j.hooks.PreToolUse.some((m) => m.matcher === 'Bash' && m.hooks.some((h) => /xprov-deny-allowlist-approve\.sh/.test(h.command))), ['Edit', 'Write'].every((t) => j.permissions.deny.some((r) => r.startsWith(t + '(') && r.includes('xprov-secret-allowlist.json')) && j.permissions.deny.some((r) => r.startsWith(t + '(') && r.includes('allowlist-approvals.json')))].join('/')" "true/true"
+    "[j.hooks.PreToolUse.some((m) => m.matcher === 'Bash' && m.hooks.some((h) => /xprov-deny-allowlist-approve\.sh/.test(h.command))), ['Edit', 'Write'].every((t) => ['xprov-secret-allowlist.json', 'allowlist-approvals.json', '.a1/xprov.json'].every((f) => j.permissions.deny.some((r) => r.startsWith(t + '(') && r.includes(f))))].join('/')" "true/true"
   # 8: wrong typed count
   scen8; rm -f "$HOME/.a1-xprov/$STORE_NAME"
   PTY_TYPED=2 pty8 "${NOCLAUDE8[@]}" node "$tools" xprov allowlist approve --repo "$R8"; rc=$?
   assert_rc "R30j2-8 wrong typed count → exit 2" 2 "$rc"; store_absent8 "R30j2-8"
+  if claude_ancestor8; then said8 "R30j2-8 (refused earlier under Claude Code)" "$TMP08/pty-out.txt" "Nothing written"
+  else said8 "R30j2-8" "$TMP08/pty-out.txt" "expected 1; nothing written"; fi
   # 7: positive arm — correct count, temp file + rename, 0600
   if claude_ancestor8; then skip8 "R30j2-7 approve with the correct typed count writes the store 0600 via temp file + rename"; else
     scen8; local want; want="$(blobsha8)"
@@ -668,6 +696,31 @@ caseR30j2() {
     assert_eq "R30j2-7 no temp file left in ~/.a1-xprov" "$(ls -A "$HOME/.a1-xprov" | grep -v -e "^$STORE_NAME\$" -e '^snapshots$' -e '^artifacts$' | wc -l | tr -d ' ')" "0"
     plan8; pass8 "R30j2-7 the gate passes with the approval approve wrote"
   fi
+  # 9 (S-m5): an existing store that is not valid is never replaced silently
+  if claude_ancestor8; then skip8 "R30j2-9 approve refuses an invalid existing store (exit 1, reason on stderr)"; else
+    scen8; chmod 644 "$HOME/.a1-xprov/$STORE_NAME"; local before9; before9="$(cat "$HOME/.a1-xprov/$STORE_NAME")"
+    PTY_TYPED=1 pty8 "${NOCLAUDE8[@]}" node "$tools" xprov allowlist approve --repo "$R8"; rc=$?
+    assert_rc "R30j2-9 invalid existing store (0644) → exit 1" 1 "$rc" "$(tail -n 3 "$TMP08/pty-out.txt")"
+    said8 "R30j2-9" "$TMP08/pty-out.txt" "not a 0600 regular file"
+    assert_eq "R30j2-9 the store is unchanged (content and mode 644)" "$(cat "$HOME/.a1-xprov/$STORE_NAME")/$(mode_of "$HOME/.a1-xprov/$STORE_NAME")" "$before9/644"
+  fi
+  # 10 (R-M4): a git failure inside approve is a one-line [a1-tools] error, exit 1, no stack trace
+  if claude_ancestor8; then skip8 "R30j2-10 approve reports an internal failure as [a1-tools] exit 1"; else
+    new8; mkdir -p "$R8/$AL_FILE"; printf 'x\n' > "$R8/$AL_FILE/inner"; c8 "allowlist path is a directory"; push8
+    PTY_TYPED=1 pty8 "${NOCLAUDE8[@]}" node "$tools" xprov allowlist approve --repo "$R8"; rc=$?
+    assert_rc "R30j2-10 blob read failure → exit 1" 1 "$rc" "$(tail -n 3 "$TMP08/pty-out.txt")"
+    said8 "R30j2-10" "$TMP08/pty-out.txt" "[a1-tools] xprov allowlist approve"
+    grep -qE '^[[:space:]]+at .*\(.*:[0-9]+:[0-9]+\)' "$TMP08/pty-out.txt" && bad "R30j2-10 a stack trace was printed" || ok "R30j2-10 no stack trace"
+    store_absent8 "R30j2-10"
+  fi
+  # 11: approve warns (does not block) when the gate would reject the blob anyway
+  if claude_ancestor8; then skip8 "R30j2-11 approve warns about an owner mismatch"; else
+    new8; plant8 f.sh "id: $FAKE_AK1"; c8 "fake"
+    al_commit8 "$(al_doc "$(REVIEWER8=mallory al_ent f.sh aws_access_key_id 1 fixture_fake "$(fp8 "id: $FAKE_AK1")")" mallory)"; push8
+    PTY_TYPED=1 pty8 "${NOCLAUDE8[@]}" node "$tools" xprov allowlist approve --repo "$R8"; rc=$?
+    assert_rc "R30j2-11 owner mismatch → approve still exits 0" 0 "$rc" "$(tail -n 3 "$TMP08/pty-out.txt")"
+    said8 "R30j2-11" "$TMP08/pty-out.txt" "warning: owner"
+  fi
 }
 
 # ---------- regression: no allowlist → the scan behaves as before ----------
@@ -682,5 +735,99 @@ caseR30reg() {
   assert_json "R30reg secret_pattern / uncovered name the pair" "$G_OUT" "j.uncovered.map((u) => u.path + ':' + u.pattern).join(',')" "f.sh:aws_access_key_id"
 }
 
-for c in ${XPROV08_CASES:-caseR30reg caseR30a caseR30b caseR30b2 caseR30b3 caseR30c caseR30c2 caseR30c3 caseR30d caseR30e caseR30f caseR30g caseR30h caseR30i caseR30j caseR30j2}; do "$c"; done
+
+# ---------- review fixes (Samuel S-m1/S-m2/S-m3/S-m7, Reinhard R-M1, NITs) ----------
+
+# fpctx8 <line> <match-index> <match-length> — spec (c) fingerprint for a line
+# longer than 4096 characters: match plus 256 characters on each side, clipped.
+fpctx8() { node -e '
+  const [l, i, n] = [process.argv[1], Number(process.argv[2]), Number(process.argv[3])];
+  const t = l.length <= 4096 ? l : l.slice(Math.max(0, i - 256), Math.min(l.length, i + n + 256));
+  process.stdout.write(require("crypto").createHash("sha256").update(Buffer.from(t, "utf8")).digest("hex"));' "$1" "$2" "$3"; }
+
+# R30c4 (S-m1): line > 4096 chars, allowlisted pem_begin; an edit within 256
+# characters after the match changes the fingerprint.
+# Mutation: LINE_CONTEXT_CHARS 256 → 0 (R30c4a turns red).
+# R30c5 (S-m7): line > 4096 chars in a > 5 MB file whose match crosses the end of
+# the first window buffer; the context uses the TRUE match length.
+# Mutation: fingerprint with the window-truncated match length (R30c5 turns red).
+# R30c3c (R-M1): a url_credentials match starting at W-3 is also seen by the
+# second window as a match starting at W (`ps://…`); it counts once.
+# Mutation: drop the overlapping-hit merge (R30c3c turns red).
+caseR30c4() {
+  new8
+  local xs ys; xs="$(printf 'x%.0s' $(seq 1 4200))"; ys="$(printf 'y%.0s' $(seq 1 300))"
+  local LL="${xs}${D5}BEGIN${ys}"
+  plant8 long.txt "$LL"; c8 "long line"
+  al_commit8 "$(al_doc "$(al_ent long.txt pem_begin 1 code_pattern "$(fpctx8 "$LL" 4200 10)")")"; push8; store8 "$(blobsha8)"
+  git -C "$R8" checkout -q -b feat; printf '// feature\n' >> "$R8/src/add.js"; c8 "feature"
+  plan8; pass8 "R30c4a long line: fingerprint = match + 256 characters each side"
+  local yz; yz="$(printf 'y%.0s' $(seq 1 100))z$(printf 'y%.0s' $(seq 1 199))"
+  plant8 long.txt "${xs}${D5}BEGIN${yz}"; c8 "edit 101 chars after the match"
+  plan8; expect8 "R30c4b long line edited within 256 characters after the match" "secret_in_snapshot"
+
+  local W=5242880
+  new8
+  local ps ks qs; ps="$(printf 'p%.0s' $(seq 1 1900))"; ks="$(printf 'K%.0s' $(seq 1 997))"; qs="$(printf 'q%.0s' $(seq 1 2000))"
+  local L5="${ps}${SKP}-${ks} ${qs}"     # key of 1000 chars at W-100 (space ends it), crosses W+512
+  big8 big5.txt $((W - 2000)) "$L5"; c8 "big5"
+  local f5; f5="$(fpctx8 "$L5" 1900 1000)"
+  al_commit8 "$(al_doc "$(al_ent big5.txt sk_prefixed_key 1 fixture_fake "$f5"),$(al_ent big5.txt sk_prefixed_key_ext 1 fixture_fake "$f5")")"; push8; store8 "$(blobsha8)"
+  git -C "$R8" checkout -q -b feat; printf '// feature\n' >> "$R8/src/add.js"; c8 "feature"
+  plan8; pass8 "R30c5 window-truncated match on a long line uses its true length for the context"
+
+  new8
+  local SCH="https:" SL="//"; local LU="${SCH}${SL}fixture:pw123456@host.example"
+  big8 big3.txt $((W - 3)) "$LU"; c8 "url at W-3"
+  al_commit8 "$(al_doc "$(al_ent big3.txt url_credentials 1 fixture_fake "$(fp8 "$LU")")")"; push8; store8 "$(blobsha8)"
+  git -C "$R8" checkout -q -b feat; printf '// feature\n' >> "$R8/src/add.js"; c8 "feature"
+  plan8; pass8 "R30c3c a match straddling the window start counts once (max_count 1)"
+  assert_json "R30c3c allowlisted_hits 1" "$G_OUT" "j.allowlisted_hits" "1"
+}
+
+# R30j8 (S-m2): the store approves the blob only under ANOTHER repository key.
+# Mutation: look the sha up across all repositories.
+caseR30j8() {
+  scen8; local sha; sha="$(blobsha8)"
+  node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify({ version: 1, repos: { "/some/other/repo/.git": [process.argv[2]] } }) + "\n")' "$HOME/.a1-xprov/$STORE_NAME" "$sha"
+  chmod 600 "$HOME/.a1-xprov/$STORE_NAME"
+  plan8; expect8 "R30j8 blob approved only for another repository" "allowlist_invalid/allowlist_unapproved"
+}
+
+# R30b3-6 (S-m3): ls-remote over a fake ssh transport that serves the bare
+# origin ONLY when called with `-o BatchMode=yes` and GIT_TERMINAL_PROMPT=0,
+# and hangs otherwise. Mutations: drop BatchMode from GIT_SSH_COMMAND; drop
+# GIT_TERMINAL_PROMPT=0 (each turns the pass into a 30 s unresolved fail).
+caseR30b3ssh() {
+  scen8
+  local bin="$A8/sshserve"; mkdir -p "$bin"
+  cat > "$bin/ssh" <<'SSH'
+#!/bin/sh
+[ "$1" = "-G" ] && exit 0
+batch=0; last=""
+for a in "$@"; do [ "$a" = "BatchMode=yes" ] && batch=1; last="$a"; done
+if [ "$batch" = 1 ] && [ "${GIT_TERMINAL_PROMPT:-}" = "0" ]; then exec sh -c "$last"; fi
+sleep 60
+SSH
+  chmod +x "$bin/ssh"
+  git -C "$R8" remote set-url origin "ssh://fixture.invalid$O8"
+  PATH="$bin:$PATH" plan8; pass8 "R30b3-6 ls-remote runs non-interactively (BatchMode=yes, GIT_TERMINAL_PROMPT=0)"
+}
+
+# R30h7: HIGH_CONFIDENCE_PATTERNS names only existing SECRET_PATTERNS.
+# R30h8: an unparsable .a1/xprov.json at the anchor has its own detail, not owner_mismatch.
+# Mutation (h8): read an unparsable permit record as "no decided_by".
+caseR30h78() {
+  assert_json "R30h7 every HIGH_CONFIDENCE_PATTERNS name is a SECRET_PATTERNS name" \
+    "$(node -e 'const x = require(process.argv[1]); const n = new Set(x.SECRET_PATTERNS.map((p) => p.name)); process.stdout.write(JSON.stringify(x.HIGH_CONFIDENCE_PATTERNS.filter((h) => !n.has(h))))' "$TREE/_shared/lib/xprov.cjs")" "j.length" "0"
+  new8
+  L_AK1="id: $FAKE_AK1"; plant8 f.sh "$L_AK1"; printf '{broken\n' > "$R8/.a1/xprov.json"; c8 "fake, broken permit record"
+  al_commit8 "$(al_doc "$(al_ent f.sh aws_access_key_id 1 fixture_fake "$(fp8 "$L_AK1")")")"; push8; store8 "$(blobsha8)"
+  git -C "$R8" checkout -q -b feat
+  ( cd "$R8" && node "$TREE_TOOLS" xprov permit --by robert --record record/2026-09-28-fixture.md >/dev/null 2>&1 ); c8 "valid permit record"
+  plan8; expect8 "R30h8 unparsable .a1/xprov.json at the anchor" "allowlist_invalid"
+  assert_json "R30h8 the detail names the unreadable permit record, not owner_mismatch" "$G_OUT" "/xprov\.json at the anchor is not valid JSON/.test(j.reason_detail) && j.reason_detail !== 'allowlist_owner_mismatch'" "true"
+}
+
+for c in ${XPROV08_CASES:-caseR30reg caseR30a caseR30b caseR30b2 caseR30b3 caseR30c caseR30c2 caseR30c3 caseR30d caseR30e caseR30f caseR30g caseR30h caseR30i caseR30j caseR30j2 caseR30c4 caseR30j8 caseR30b3ssh caseR30h78}; do "$c"; done
 export HOME="$SAVED_HOME_08"; unset A1_XPROV_CODEX_HOME

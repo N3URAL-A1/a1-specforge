@@ -188,6 +188,31 @@ function scanWindow(buf, view, offset, seen) {
   }
 }
 
+/** Keeps one hit per stretch of text: a hit whose start lies inside a kept hit
+ * of the same view and pattern is the same match seen again by the next
+ * window (e.g. `https://…` at W-3 re-matched as `ps://…` at W). Input must be
+ * sorted by (view, pattern, offset). */
+function mergeOverlaps(sorted) {
+  const kept = [];
+  for (const m of sorted) {
+    const last = kept[kept.length - 1];
+    const same = last && last.view === m.view && last.pattern === m.pattern;
+    if (same && m.abs < last.abs + last.chars * VIEW_UNIT[m.view]) continue;
+    kept.push(m);
+  }
+  return kept;
+}
+
+/** The match's TRUE length in characters: a window can cut a long match at its
+ * buffer end, so the pattern is re-run on the file from the match start. */
+function trueChars(src, m) {
+  const unit = VIEW_UNIT[m.view];
+  const p = X.SECRET_PATTERNS.find((x) => x.name === m.pattern);
+  const re = new RegExp(p.re.source, `${p.re.flags}y`);
+  const hit = re.exec(decodeView(src.read(m.abs, m.abs + LINE_MAX_CHARS * unit), m.view));
+  return hit ? Math.max(hit[0].length, m.chars) : m.chars;
+}
+
 /** Every match in one source, in (pattern order, view, offset) order. */
 function scanSource(src, rel, withPositions) {
   const head = src.read(0, Math.min(src.size, SCAN_WINDOW + SCAN_OVERLAP));
@@ -201,11 +226,11 @@ function scanSource(src, rel, withPositions) {
     if (end >= src.size) break;
   }
   const order = (name) => X.SECRET_PATTERNS.findIndex((p) => p.name === name);
-  return [...seen.values()]
-    .sort((a, b) => order(a.pattern) - order(b.pattern) || a.view.localeCompare(b.view) || a.abs - b.abs)
+  const sorted = [...seen.values()].sort((a, b) => order(a.pattern) - order(b.pattern) || a.view.localeCompare(b.view) || a.abs - b.abs);
+  return mergeOverlaps(sorted)
     .map((m) => Object.freeze({
       path: rel, pattern: m.pattern, view: m.view, offset: m.abs,
-      fingerprint: C.sha256(Buffer.from(lineText(src, m.view, m.abs, m.chars), 'utf8')),
+      fingerprint: C.sha256(Buffer.from(lineText(src, m.view, m.abs, trueChars(src, m)), 'utf8')),
       excerpt: `${m.head}… (${m.chars} chars)`,
       ...(withPositions ? positionOf(src, m.view, m.abs) : {}),
     }));

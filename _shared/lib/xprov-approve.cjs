@@ -153,7 +153,8 @@ function ancestryRefusal() {
     try { info = processInfo(pid); } catch (e) { return `cannot read the process tree (${e.message})`; }
     if (!info) return `cannot read process ${pid} of the ancestry`;
     if (pid === claudePid) return `ancestor ${pid} is CLAUDE_PID`;
-    if (path.basename(info.name) === 'claude') return `ancestor ${pid} started as claude`;
+    // case-insensitive: a Claude Desktop-style start name "Claude" counts too (Samuel)
+    if (path.basename(info.name).toLowerCase() === 'claude') return `ancestor ${pid} started as ${path.basename(info.name)}`;
     if (CLAUDE_VERSIONS_RE.test(info.exe)) return `ancestor ${pid} runs an executable under claude/versions/`;
     if (info.args.includes(CLAUDE_NPM_PACKAGE)) return `ancestor ${pid} runs ${CLAUDE_NPM_PACKAGE}`;
     if (!Number.isInteger(info.ppid) || info.ppid === pid) return `cannot read the parent of process ${pid}`;
@@ -171,13 +172,16 @@ function guardRefusal() {
 
 // ---------- store writer ----------
 
-/** One line from the terminal (blocking reads on fd 0). */
+const EAGAIN_WAIT_MS = 50;
+const sleepMs = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+/** One line from the terminal (blocking reads on fd 0; a non-blocking fd waits, never spins). */
 function readTypedLine() {
   const buf = Buffer.alloc(TYPED_MAX_BYTES);
   let s = '';
   while (s.length < TYPED_MAX_BYTES && !/[\r\n]/.test(s)) {
     let n;
-    try { n = fs.readSync(0, buf, 0, buf.length, null); } catch (e) { if (e.code === 'EAGAIN') continue; throw e; }
+    try { n = fs.readSync(0, buf, 0, buf.length, null); } catch (e) { if (e.code === 'EAGAIN') { sleepMs(EAGAIN_WAIT_MS); continue; } throw e; }
     if (n === 0) break;
     s += buf.toString('utf8', 0, n);
   }
@@ -195,6 +199,7 @@ function writeStore(repos) {
   const tmp = path.join(home, `.${X.ALLOWLIST_APPROVALS_FILE}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`);
   const fd = fs.openSync(tmp, 'wx', AL.STORE_MODE);
   try {
+    fs.fchmodSync(fd, AL.STORE_MODE); // umask-proof
     fs.writeSync(fd, `${JSON.stringify({ version: 1, repos }, null, 2)}\n`);
     fs.fsyncSync(fd);
   } finally {
@@ -206,7 +211,18 @@ function writeStore(repos) {
 
 // ---------- approve / revoke ----------
 
+/** The store as it is now: { repos } to extend, or { refusal } — an existing
+ * store that fails the checks is never silently replaced (Samuel S-m5). */
+function currentStore() {
+  const current = AL.readApprovals();
+  if (current.ok) return { repos: current.repos };
+  if (current.missing) return { repos: {} };
+  return { refusal: `the existing approval store is not usable (${current.why}); fix or remove ${AL.storePath()} yourself, then run approve again` };
+}
+
 function approve(root) {
+  const store = currentStore();
+  if (store.refusal) return { code: X.EXIT_FAIL, msg: store.refusal };
   const t = AL.verifiedTip(root); // the same verification the gate's anchor needs
   if (!t.ok) return { code: X.EXIT_FAIL, msg: t.note };
   const blob = AL.blobAt(root, t.tip, X.ALLOWLIST_FILE);
@@ -218,6 +234,11 @@ function approve(root) {
   const sha = C.sha256(blob);
   const rows = listing(r.matches);
   const err = (line) => process.stderr.write(`${line}\n`);
+  // Warn, never block: a blob the gate will reject anyway is not worth approving.
+  const sep = AL.separateCommitProblem(root, t.tip);
+  if (sep) err(`warning: ${sep} — the gate reports allowlist_not_separate_commit for this blob`);
+  const owner = AL.ownerProblem(root, t.tip, parsed.doc);
+  if (owner) err(`warning: owner check fails — ${owner.detail}`);
   err(`Allowlist ${X.ALLOWLIST_FILE} at ${t.tip.slice(0, 12)} — owner ${parsed.doc.owner}, blob sha256 ${sha}`);
   for (const e of parsed.doc.entries) {
     err(`- ${e.path} · ${e.pattern} · max_count ${e.max_count} · ${e.class} · ${e.reason}`);
@@ -230,9 +251,7 @@ function approve(root) {
   const typed = readTypedLine();
   if (typed !== String(n)) return { code: EXIT_REFUSED, msg: `typed ${JSON.stringify(C.clip(typed, 16))}, expected ${n}; nothing written` };
   const key = C.commonDirOf(root);
-  const current = AL.readApprovals();
-  const repos = { ...(current.ok ? current.repos : {}) };
-  repos[key] = [...new Set([...(repos[key] || []), sha])];
+  const repos = { ...store.repos, [key]: [...new Set([...(store.repos[key] || []), sha])] };
   const file = writeStore(repos);
   return { code: X.EXIT_PASS, msg: `approved ${sha} for ${key} in ${file}`, out: { ok: true, repo: key, approved: sha, store: file } };
 }
@@ -259,7 +278,16 @@ function cmdApprove(args) {
     return null;
   }
   const root = C.resolveRepoFlag(flags.repo);
-  const r = flags.revoke !== undefined ? revoke(root, flags.revoke) : approve(root);
+  let r;
+  try {
+    r = flags.revoke !== undefined ? revoke(root, flags.revoke) : approve(root);
+  } catch (e) {
+    if (e && e.code === 'A1_INPUT') throw e;
+    // git, blob, clone and write failures: one line, exit 1, nothing half-written (Reinhard R-M4)
+    process.stderr.write(`[a1-tools] xprov allowlist approve: failed — ${C.clip(String(e && e.message ? e.message : e).replace(/\s+/g, ' '), C.DETAIL_MAX_CHARS)}; nothing written\n`);
+    process.exitCode = X.EXIT_FAIL;
+    return null;
+  }
   process.stderr.write(`xprov allowlist approve: ${r.msg}\n`);
   if (r.out) return C.emitJson(r.out, r.code);
   process.exitCode = r.code;
