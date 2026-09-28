@@ -44,6 +44,7 @@ const { parseFlags, repoRoot } = require('./io.cjs');
 const { isUnder } = require('./xprov-artifacts.cjs');
 const X = require('./xprov.cjs');
 const C = require('./xprov-common.cjs');
+const AL = require('./xprov-allowlist.cjs');
 // Shared helpers — one definition each, in xprov-common.cjs.
 const { DIR_MODE, mkdir0700, writeStdoutSync, gitSpawn: git } = C;
 const tail = C.stderrTail;
@@ -76,12 +77,26 @@ function removeDir(dir) {
   try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_e) { /* best effort; reported by the caller's state */ }
 }
 
-// ---------- complete secret scan ----------
+// ---------- complete, counting secret scan (FR-017, FR-030 c) ----------
+// Every non-overlapping match of every pattern is counted per file and view
+// (latin1, plus UTF-16 when the file sniffs as UTF-16), deduplicated by
+// (view, pattern, absolute byte offset of the match start) so a match inside a
+// window overlap counts once. Each match carries the fingerprint of its line:
+// sha256 over the UTF-8 of the whole decoded line, LF (and a CR before it)
+// stripped; a line longer than LINE_MAX_CHARS is fingerprinted over the match
+// plus LINE_CONTEXT_CHARS on each side, clipped to the line. Lines are read
+// from the FILE, not from the window, so a line crossing a window end is read
+// whole. A match never leaves this module as text: only its pattern name, its
+// fingerprint and a masked excerpt (first EXCERPT_CHARS characters + length).
 
-function firstPattern(text) {
-  const p = X.SECRET_PATTERNS.find((entry) => entry.re.test(text));
-  return p ? p.name : null;
-}
+const LINE_MAX_CHARS = 4096;
+const LINE_CONTEXT_CHARS = 256;
+const EXCERPT_CHARS = 4;
+const POSITION_CHUNK = 1024 * 1024;
+const VIEW_UNIT = Object.freeze({ latin1: 1, utf16le: 2, utf16be: 2 });
+const GLOBAL_PATTERNS = Object.freeze(X.SECRET_PATTERNS.map((p) => Object.freeze({
+  name: p.name, re: new RegExp(p.re.source, p.re.flags.includes('g') ? p.re.flags : `${p.re.flags}g`),
+})));
 
 /** UTF-16 candidate: BOM, or NULs in every other byte of the first bytes. */
 function utf16Mode(head) {
@@ -103,51 +118,124 @@ function swapBytes(buf) {
   return out;
 }
 
-/** Scan one buffer window as latin1 and, when asked, as UTF-16. */
-function scanChunk(chunk, mode) {
-  const hit = firstPattern(chunk.toString('latin1'));
-  if (hit) return hit;
-  if (mode === 'le') return firstPattern(chunk.toString('utf16le'));
-  if (mode === 'be') return firstPattern(swapBytes(chunk).toString('utf16le'));
-  return null;
+function decodeView(buf, view) {
+  if (view === 'latin1') return buf.toString('latin1');
+  return (view === 'utf16be' ? swapBytes(buf) : buf).toString('utf16le');
 }
 
-/** Windowed scan of one regular file; never skips, whatever the size. */
-function scanFile(full, size) {
-  const fd = fs.openSync(full, 'r');
-  try {
-    let mode = null;
-    let offset = 0;
-    let first = true;
-    while (offset < size || first) {
-      const len = Math.max(Math.min(SCAN_WINDOW + SCAN_OVERLAP, size - offset), 0);
+/** Random-access byte source: a regular file (fd) or a buffer (symlink text). */
+function fdSource(fd, size) {
+  return {
+    size,
+    read(start, end) {
+      const s = Math.max(0, start);
+      const len = Math.max(0, Math.min(end, size) - s);
       const buf = Buffer.alloc(len);
-      if (len > 0) fs.readSync(fd, buf, 0, len, offset);
-      if (first) { mode = utf16Mode(buf); first = false; }
-      const hit = scanChunk(buf, mode);
-      if (hit) return hit;
-      offset += SCAN_WINDOW;
+      if (len > 0) fs.readSync(fd, buf, 0, len, s);
+      return buf;
+    },
+  };
+}
+const bufferSource = (buf) => ({ size: buf.length, read: (start, end) => buf.subarray(Math.max(0, start), Math.min(end, buf.length)) });
+
+/** The fingerprinted text of the line holding the match at byte `abs`. */
+function lineText(src, view, abs, matchChars) {
+  const unit = VIEW_UNIT[view];
+  const span = (LINE_MAX_CHARS + 1) * unit;
+  const backStart = Math.max(0, abs - span);
+  const back = decodeView(src.read(backStart, abs), view);
+  const nl = back.lastIndexOf('\n');
+  const lineStart = nl >= 0 ? backStart + (nl + 1) * unit : backStart === 0 ? 0 : null;
+  const fwdEnd = Math.min(src.size, abs + span);
+  const fwd = decodeView(src.read(abs, fwdEnd), view);
+  const lf = fwd.indexOf('\n');
+  const lineEnd = lf >= 0 ? abs + lf * unit : fwdEnd === src.size ? src.size : null;
+  const stripCr = (t, atEnd) => (atEnd && t.endsWith('\r') ? t.slice(0, -1) : t);
+  if (lineStart !== null && lineEnd !== null) {
+    const whole = stripCr(decodeView(src.read(lineStart, lineEnd), view), true);
+    if (whole.length <= LINE_MAX_CHARS) return whole;
+  }
+  const from = Math.max(lineStart === null ? 0 : lineStart, abs - LINE_CONTEXT_CHARS * unit);
+  const want = abs + (matchChars + LINE_CONTEXT_CHARS) * unit;
+  const to = lineEnd === null ? want : Math.min(lineEnd, want);
+  return stripCr(decodeView(src.read(from, to), view), to === lineEnd);
+}
+
+/** 1-based line and column of byte `abs` in `view` (propose only). */
+function positionOf(src, view, abs) {
+  const unit = VIEW_UNIT[view];
+  let line = 1;
+  let col = 1;
+  for (let s = 0; s < abs; s += POSITION_CHUNK * unit) {
+    const text = decodeView(src.read(s, Math.min(abs, s + POSITION_CHUNK * unit)), view);
+    for (const ch of text) { if (ch === '\n') { line++; col = 1; } else col++; }
+  }
+  return { line, column: col };
+}
+
+function scanWindow(buf, view, offset, seen) {
+  const unit = VIEW_UNIT[view];
+  const text = decodeView(buf, view);
+  for (const p of GLOBAL_PATTERNS) {
+    p.re.lastIndex = 0;
+    for (let m = p.re.exec(text); m !== null; m = p.re.exec(text)) {
+      if (m[0].length === 0) { p.re.lastIndex++; continue; }
+      const abs = offset + m.index * unit;
+      const key = `${view}\0${p.name}\0${abs}`;
+      const prev = seen.get(key);
+      if (!prev || prev.chars < m[0].length) seen.set(key, { view, pattern: p.name, abs, chars: m[0].length, head: m[0].slice(0, EXCERPT_CHARS) });
     }
-    return null;
-  } finally {
-    fs.closeSync(fd);
   }
 }
 
-/** Scan every tracked entry; returns { hit: name|null, files_scanned, skipped: 0 }. */
-function scanTrackedFiles(dir) {
+/** Every match in one source, in (pattern order, view, offset) order. */
+function scanSource(src, rel, withPositions) {
+  const head = src.read(0, Math.min(src.size, SCAN_WINDOW + SCAN_OVERLAP));
+  const mode = utf16Mode(head);
+  const views = mode ? ['latin1', mode === 'le' ? 'utf16le' : 'utf16be'] : ['latin1'];
+  const seen = new Map();
+  for (let offset = 0; ; offset += SCAN_WINDOW) {
+    const end = Math.min(src.size, offset + SCAN_WINDOW + SCAN_OVERLAP);
+    const buf = src.read(offset, end);
+    for (const view of views) scanWindow(buf, view, offset, seen);
+    if (end >= src.size) break;
+  }
+  const order = (name) => X.SECRET_PATTERNS.findIndex((p) => p.name === name);
+  return [...seen.values()]
+    .sort((a, b) => order(a.pattern) - order(b.pattern) || a.view.localeCompare(b.view) || a.abs - b.abs)
+    .map((m) => Object.freeze({
+      path: rel, pattern: m.pattern, view: m.view, offset: m.abs,
+      fingerprint: C.sha256(Buffer.from(lineText(src, m.view, m.abs, m.chars), 'utf8')),
+      excerpt: `${m.head}… (${m.chars} chars)`,
+      ...(withPositions ? positionOf(src, m.view, m.abs) : {}),
+    }));
+}
+
+/** Windowed, counting scan of one tracked entry; never skips, whatever the size. */
+function scanEntry(full, st, rel, withPositions) {
+  if (st.isSymbolicLink()) return scanSource(bufferSource(fs.readlinkSync(full, { encoding: 'buffer' })), rel, withPositions);
+  if (!st.isFile()) return [];
+  const fd = fs.openSync(full, 'r');
+  try { return scanSource(fdSource(fd, st.size), rel, withPositions); } finally { fs.closeSync(fd); }
+}
+
+/** Scan every tracked entry of a clone. Returns { files_scanned, skipped: 0,
+ * tracked: [paths], matches: [{path, pattern, view, offset, fingerprint, excerpt}] }. */
+function scanTrackedFiles(dir, opts) {
+  const withPositions = Boolean(opts && opts.positions);
   const ls = git(['-C', dir, 'ls-files', '-z']);
-  if (ls.status !== 0) return { hit: null, files_scanned: 0, skipped: 0, error: tail(ls.stderr) };
+  if (ls.status !== 0) return { files_scanned: 0, skipped: 0, tracked: [], matches: [], error: tail(ls.stderr) };
+  const tracked = ls.stdout.split('\0').filter(Boolean);
   let scanned = 0;
-  for (const rel of ls.stdout.split('\0').filter(Boolean)) {
+  const matches = [];
+  for (const rel of tracked) {
     const full = path.join(dir, rel);
     let st;
     try { st = fs.lstatSync(full); } catch (_e) { continue; } // stripped repo-local file (MAJOR 7), nothing to scan
     scanned++;
-    const hit = st.isSymbolicLink() ? firstPattern(fs.readlinkSync(full)) : st.isFile() ? scanFile(full, st.size) : null;
-    if (hit) return { hit, files_scanned: scanned, skipped: 0 };
+    matches.push(...scanEntry(full, st, rel, withPositions));
   }
-  return { hit: null, files_scanned: scanned, skipped: 0 };
+  return { files_scanned: scanned, skipped: 0, tracked, matches };
 }
 
 /** gitleaks when on PATH, with a1's own config (never the reviewed repo's). */
@@ -183,35 +271,75 @@ function stripRepoLocal(dir) {
   return removed;
 }
 
+function validateRefs(commit, base) {
+  if (!REF_RE.test(commit)) throw C.inputError(`--commit must be a git revision (no leading dash, no whitespace; got ${JSON.stringify(commit.slice(0, 80))})`, 'bad_commit');
+  if (base !== null && !REF_RE.test(base)) throw C.inputError(`--base must be a git revision (no leading dash, no whitespace; got ${JSON.stringify(base.slice(0, 80))})`, 'bad_base');
+}
+
+/** The depth-limited clone alone (no scan): { ok, dir, commit, depth,
+ * repo_local_removed } or { ok: false, reason: snapshot_failed, detail }.
+ * Used by snapshot() and by `allowlist propose|approve` (listing only). */
+function cloneSnapshot(sourceRepo, commit, base) {
+  const root = ensureSnapshotsRoot();
+  const dir = fs.mkdtempSync(path.join(root, SNAP_PREFIX));
+  fs.chmodSync(dir, DIR_MODE);
+  const failed = (detail) => { removeDir(dir); return { ok: false, reason: X.REASONS.snapshot_failed, dir: null, detail }; };
+  const depth = fetchDepth(sourceRepo, commit, base);
+  if (!depth.ok) return failed(depth.detail);
+  const init = git(['init', '--quiet', dir]);
+  if (init.status !== 0) return failed(`init: ${tail(init.stderr || String(init.error))}`);
+  const fetch = fetchInto(dir, sourceRepo, commit, depth.depth);
+  if (fetch.status !== 0) return failed(`fetch ${commit} (depth ${depth.depth}): ${tail(fetch.stderr || String(fetch.error))}`);
+  const co = git(['-C', dir, 'checkout', '--quiet', 'FETCH_HEAD']);
+  if (co.status !== 0) return failed(`checkout: ${tail(co.stderr)}`);
+  const head = git(['-C', dir, 'rev-parse', 'HEAD']);
+  if (head.status !== 0) return failed(`rev-parse: ${tail(head.stderr)}`);
+  return { ok: true, dir, commit: head.stdout.trim(), depth: depth.depth, repo_local_removed: stripRepoLocal(dir) };
+}
+
+/** The allowlist fields every snapshot result carries (FR-030 g). */
+function allowlistReport(al) {
+  return {
+    allowlisted_hits: al.allowlisted_hits, allowlist_anchor: al.anchor, allowlist_approved_blob: al.approved_blob,
+    allowlist_stale: al.stale, allowlisted: al.allowlisted, uncovered: al.uncovered, allowlist_note: al.note,
+  };
+}
+
+/** Review target + scan. `primaryRoot` is the checkout every FR-030 git read
+ * runs against (default: sourceRepo); `gateKind` is 'plan' or 'inspect'
+ * (default: inspect when `base` is given). */
 function snapshot(opts) {
   const sourceRepo = path.resolve(opts.sourceRepo);
   const commit = String(opts.commit);
   const base = opts.base === undefined || opts.base === null ? null : String(opts.base);
-  if (!REF_RE.test(commit)) throw C.inputError(`--commit must be a git revision (no leading dash, no whitespace; got ${JSON.stringify(commit.slice(0, 80))})`, 'bad_commit');
-  if (base !== null && !REF_RE.test(base)) throw C.inputError(`--base must be a git revision (no leading dash, no whitespace; got ${JSON.stringify(base.slice(0, 80))})`, 'bad_base');
-  const root = ensureSnapshotsRoot();
-  const dir = fs.mkdtempSync(path.join(root, SNAP_PREFIX));
-  fs.chmodSync(dir, DIR_MODE);
+  validateRefs(commit, base);
+  const primaryRoot = opts.primaryRoot ? path.resolve(opts.primaryRoot) : sourceRepo;
+  const gateKind = opts.gateKind || (base === null ? 'plan' : 'inspect');
+  const none = allowlistReport(AL.NO_ALLOWLIST);
+  // FR-030 (b): the reviewed checkout must share the primary checkout's object store.
+  const primaryCommon = C.commonDirOf(primaryRoot);
+  if (primaryCommon === null || primaryCommon !== C.commonDirOf(sourceRepo)) {
+    return { ok: false, reason: X.REASONS.snapshot_failed, snapshot: null, commit, detail: `${sourceRepo} does not share the git-common-dir of the primary checkout ${primaryRoot}`, ...none };
+  }
+  // Read before ensureSnapshotsRoot() tightens ~/.a1-xprov: a 0755 directory must count as "no store" (FR-030 j).
+  const approvals = AL.readApprovals();
+  const cl = cloneSnapshot(sourceRepo, commit, base);
+  if (!cl.ok) return { ok: false, reason: cl.reason, snapshot: null, commit, detail: cl.detail, ...none };
+  const dir = cl.dir;
   const failed = (reason, extra) => { removeDir(dir); return { ok: false, reason, snapshot: null, commit, ...extra }; };
-  const depth = fetchDepth(sourceRepo, commit, base);
-  if (!depth.ok) return failed(X.REASONS.snapshot_failed, { detail: depth.detail });
-  const init = git(['init', '--quiet', dir]);
-  if (init.status !== 0) return failed(X.REASONS.snapshot_failed, { detail: `init: ${tail(init.stderr || String(init.error))}` });
-  const fetch = fetchInto(dir, sourceRepo, commit, depth.depth);
-  if (fetch.status !== 0) return failed(X.REASONS.snapshot_failed, { detail: `fetch ${commit} (depth ${depth.depth}): ${tail(fetch.stderr || String(fetch.error))}` });
-  const co = git(['-C', dir, 'checkout', '--quiet', 'FETCH_HEAD']);
-  if (co.status !== 0) return failed(X.REASONS.snapshot_failed, { detail: `checkout: ${tail(co.stderr)}` });
-  const head = git(['-C', dir, 'rev-parse', 'HEAD']);
-  if (head.status !== 0) return failed(X.REASONS.snapshot_failed, { detail: `rev-parse: ${tail(head.stderr)}` });
-  const repoLocalRemoved = stripRepoLocal(dir);
   const scan = scanTrackedFiles(dir);
-  if (scan.error) return failed(X.REASONS.snapshot_failed, { detail: `ls-files: ${scan.error}` });
-  if (scan.hit) return failed(X.REASONS.secret_in_snapshot, { secret_pattern: scan.hit, files_scanned: scan.files_scanned });
-  const gl = gitleaksScan(dir);
-  if (gl.hit) return failed(X.REASONS.secret_in_snapshot, { secret_pattern: 'gitleaks', files_scanned: scan.files_scanned });
+  if (scan.error) return failed(X.REASONS.snapshot_failed, { detail: `ls-files: ${scan.error}`, ...none });
+  const al = AL.evaluate({ root: primaryRoot, commitSha: cl.commit, gateKind, matches: scan.matches, tracked: scan.tracked, approvals });
+  const report = allowlistReport(al);
+  if (al.fail) return failed(al.fail.reason, { reason_detail: al.fail.reason_detail || null, detail: al.fail.detail || null, files_scanned: scan.files_scanned, ...report });
+  if (al.uncovered.length) {
+    return failed(X.REASONS.secret_in_snapshot, { secret_pattern: al.uncovered[0].pattern, reason_detail: al.unresolved ? X.ALLOWLIST_DETAILS.anchor_unresolved : null, files_scanned: scan.files_scanned, ...report });
+  }
+  const gl = gitleaksScan(dir); // FR-030 (e): gitleaks hits are never allowlisted
+  if (gl.hit) return failed(X.REASONS.secret_in_snapshot, { secret_pattern: 'gitleaks', reason_detail: 'gitleaks', files_scanned: scan.files_scanned, ...report });
   return {
-    ok: true, snapshot: dir, commit: head.stdout.trim(), depth: depth.depth, files_scanned: scan.files_scanned,
-    files_skipped: 0, repo_local_removed: repoLocalRemoved, gitleaks: gl.available,
+    ok: true, snapshot: dir, commit: cl.commit, depth: cl.depth, files_scanned: scan.files_scanned,
+    files_skipped: 0, repo_local_removed: cl.repo_local_removed, gitleaks: gl.available, ...report,
   };
 }
 
@@ -250,15 +378,19 @@ function cmdXprovSnapshot(args) {
   if (flags.base !== undefined && !REF_RE.test(String(flags.base))) usage('--base must be a git revision without a leading dash or whitespace');
   const repo = path.resolve(flags.repo);
   if (!fs.existsSync(path.join(repo, '.git'))) usage(`--repo is not a git checkout: ${repo}`);
-  const r = snapshot({ sourceRepo: repo, commit: flags.commit, base: flags.base });
+  const top = C.gitOut(['rev-parse', '--show-toplevel']); // FR-030 (b): the primary checkout is the cwd's
+  const r = snapshot({ sourceRepo: repo, commit: flags.commit, base: flags.base, primaryRoot: top === null ? repo : top.trim() });
   if (!r.ok) {
-    process.stderr.write(`xprov snapshot: ${r.reason}${r.secret_pattern ? ` (pattern ${r.secret_pattern})` : ''}${r.detail ? ` — ${r.detail}` : ''}\n`);
+    process.stderr.write(`xprov snapshot: ${r.reason}${r.reason_detail ? `/${r.reason_detail}` : ''}${r.secret_pattern ? ` (pattern ${r.secret_pattern})` : ''}${r.detail ? ` — ${r.detail}` : ''}\n`);
+    for (const u of r.uncovered || []) process.stderr.write(`  uncovered: ${u.path} · ${u.pattern}\n`);
   }
+  if (r.allowlist_note) process.stderr.write(`xprov snapshot: allowlist: ${r.allowlist_note}\n`);
+  for (const s of r.allowlist_stale || []) process.stderr.write(`xprov snapshot: allowlist_stale: ${s.path} · ${s.pattern}\n`);
   writeStdoutSync(`${JSON.stringify(r, null, 2)}\n`);
   process.exitCode = r.ok ? X.EXIT_PASS : X.EXIT_FAIL;
 }
 
 module.exports = {
-  snapshot, cleanupSnapshot, scanTrackedFiles, scanFile, utf16Mode, gitleaksScan, ensureSnapshotsRoot, cmdXprovSnapshot,
-  SNAP_PREFIX, REPO_LOCAL_STRIP, GITLEAKS_CONFIG, REF_RE,
+  snapshot, cloneSnapshot, cleanupSnapshot, removeDir, scanTrackedFiles, utf16Mode, gitleaksScan, ensureSnapshotsRoot, cmdXprovSnapshot,
+  SNAP_PREFIX, REPO_LOCAL_STRIP, GITLEAKS_CONFIG, REF_RE, LINE_MAX_CHARS, LINE_CONTEXT_CHARS,
 };
