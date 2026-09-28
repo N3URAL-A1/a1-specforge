@@ -23,9 +23,7 @@
 const realFs = require('fs');
 const path = require('path');
 const { assertSafeSegment, tmpPathFor, assertAncestorInside } = require('./io.cjs');
-const {
-  isConflictCopy, isInside, writerHostGate, notWriterReason, notWriterSkip, UNDECLARED_WRITER,
-} = require('./vault-common.cjs');
+const { isConflictCopy, isInside } = require('./vault-common.cjs');
 const { PRODUCT_MIRROR_SET, PHASES_MIRROR_SET, MIRROR_EXCLUDES } = require('./vault-contract.cjs');
 
 // Source base per set, and the source prefix that is DROPPED on the way into
@@ -345,11 +343,10 @@ function applyMirror(plan, opts) {
   return counts;
 }
 
-// The single-writer gate (FR-034/FR-035) lives in vault-common.cjs and the
-// product transaction hook (FR-007) in vault-product-hook.cjs; the gate names
-// are re-exported here for existing callers.
+// The per-project writer gate (FR-034, FR-038..FR-040) lives in
+// vault-writer.cjs and the product transaction hook (FR-007) in
+// vault-product-hook.cjs.
 
 module.exports = {
   planMirror, applyMirror, isConflictCopy, isExcluded, expandPattern,
-  writerHostGate, notWriterReason, notWriterSkip, UNDECLARED_WRITER,
 };
