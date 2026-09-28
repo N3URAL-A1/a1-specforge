@@ -11,10 +11,16 @@
 // only writer of the file; the human runs it once per repository with the
 // vault note that records the decision (customer repositories need an
 // a1-ludwig-legal decision as that record).
+//
+// Wave 6b (FR-030 b): `permit --default-branch <name>` records the branch whose
+// `refs/remotes/origin/<name>` anchors the snapshot allowlist (`main` when the
+// field is absent). The name is validated with `git check-ref-format --branch`
+// here and again on every read; an invalid name exits 1 and writes nothing.
 // ---------------------------------------------------------------------------
 
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
 const io = require('./io.cjs');
 const xprov = require('./xprov.cjs');
 const C = require('./xprov-common.cjs');
@@ -68,15 +74,27 @@ function validateRecord(record) {
   return r;
 }
 
-/** Writes the record atomically. Returns a fresh {ok, file, record}. */
+/** `git check-ref-format --branch` accepts the name unchanged (no `@{-1}` expansion). */
+function isValidBranchName(root, name) {
+  if (typeof name !== 'string' || name === '') return false;
+  const r = spawnSync('git', ['-C', root, 'check-ref-format', '--branch', name], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  return r.status === 0 && String(r.stdout).trim() === name;
+}
+
+/** Writes the record atomically. Returns a fresh {ok, file, record}, or
+ * {ok: false, reason: 'invalid_default_branch'} with nothing written. */
 function permit(opts) {
   const o = opts || {};
   const root = o.repoRoot || io.repoRoot();
+  if (o.defaultBranch !== undefined && !isValidBranchName(root, o.defaultBranch)) {
+    return Object.freeze({ ok: false, reason: 'invalid_default_branch', file: permitPath(root), detail: `--default-branch ${JSON.stringify(String(o.defaultBranch).slice(0, 80))} is not a valid branch name (git check-ref-format --branch)` });
+  }
   const record = Object.freeze({
     external_review: ALLOWED,
     decided_by: validateBy(o.by),
     decided_on: (o.today || io.nowIso()).slice(0, 10),
     record: validateRecord(o.record),
+    ...(o.defaultBranch !== undefined ? { default_branch: o.defaultBranch } : {}),
   });
   const file = permitPath(root);
   io.writeTextAtomic(file, `${JSON.stringify(record, null, 2)}\n`);
@@ -102,16 +120,20 @@ function cmdXprovPermitCheck(args) {
 }
 
 function cmdXprovPermit(args) {
-  const flags = io.parseFlags(args || [], { by: 'string', record: 'string', repo: 'string' });
+  const flags = io.parseFlags(args || [], { by: 'string', record: 'string', repo: 'string', 'default-branch': 'string' });
   if (flags._.length) return usageExit(`permit: unexpected argument ${JSON.stringify(String(flags._[0]).slice(0, 80))}`);
-  if (!flags.by || !flags.record) return usageExit('permit requires --by <name> --record <vault-path>');
+  if (!flags.by || !flags.record) return usageExit('permit requires --by <name> --record <vault-path> [--default-branch <name>]');
   let r;
-  try { r = permit({ repoRoot: resolveRoot(flags), by: flags.by, record: flags.record }); } catch (e) {
+  try { r = permit({ repoRoot: resolveRoot(flags), by: flags.by, record: flags.record, defaultBranch: flags['default-branch'] }); } catch (e) {
     if (e && e.code === 'A1_INPUT') return usageExit(`permit: ${e.message}`);
     throw e;
+  }
+  if (!r.ok) {
+    process.stderr.write(`permit: ${r.detail}; nothing written\n`);
+    return finish(r, xprov.EXIT_FAIL);
   }
   process.stderr.write(`permit: wrote ${r.file}\n`);
   return finish(r, xprov.EXIT_PASS);
 }
 
-module.exports = { PERMIT_FILE, DENY_MESSAGE, permitPath, permitCheck, permit, cmdXprovPermitCheck, cmdXprovPermit };
+module.exports = { PERMIT_FILE, DENY_MESSAGE, permitPath, permitCheck, permit, isValidBranchName, cmdXprovPermitCheck, cmdXprovPermit };

@@ -41,7 +41,15 @@ const C = require('./xprov-common.cjs');
 // Shared helpers — one definition each, in xprov-common.cjs.
 const { REGISTRY_PATH, sha256, isPlainObject, parsePositive, parseLane, writeStdoutSync, readIndex, sameWave, sameLane, DETAIL_MAX_CHARS } = C;
 
-const FLAGS = Object.freeze({ phase: 'str', gate: 'str', wave: 'str', round: 'str', lane: 'str', 'work-path': 'str' });
+const FLAGS = Object.freeze({
+  phase: 'str', gate: 'str', wave: 'str', round: 'str', lane: 'str', 'work-path': 'str',
+  // Wave 6b (FR-030 g): the gate hands over the snapshot's allowlist result so
+  // that this ONE index write carries it; absent flags leave the entry as before.
+  'allowlisted-hits': 'str', 'allowlist-anchor': 'str', 'allowlist-approved-blob': 'str',
+});
+const ALLOWLISTED_HITS_RE = /^\d{1,6}$/;
+const ANCHOR_RE = /^[0-9a-f]{40,64}$/;
+const BLOB_SHA_RE = /^[0-9a-f]{64}$/;
 const FILTER_MODULE = path.join(__dirname, 'xprov-filter.cjs');
 const ARTIFACTS_MODULE = path.join(__dirname, 'xprov-artifacts.cjs');
 const SEVERITY_BUCKET = Object.freeze({ high: 'blocker', medium: 'major', low: 'minor' });
@@ -310,6 +318,23 @@ function runGcIfPresent() {
 
 // ---------- argument resolution (usage errors exit 2, no stdout JSON, nothing written) ----------
 
+/** null when none of the three allowlist flags is given (entry unchanged), else
+ * all three fields — a flag not given is null. */
+function allowlistFlags(flags) {
+  const hits = flags['allowlisted-hits'];
+  const anchor = flags['allowlist-anchor'];
+  const blob = flags['allowlist-approved-blob'];
+  if (hits === undefined && anchor === undefined && blob === undefined) return null;
+  if (hits !== undefined && !ALLOWLISTED_HITS_RE.test(String(hits))) usage('--allowlisted-hits must be a non-negative integer');
+  if (anchor !== undefined && !ANCHOR_RE.test(String(anchor))) usage('--allowlist-anchor must be a full commit sha');
+  if (blob !== undefined && !BLOB_SHA_RE.test(String(blob))) usage('--allowlist-approved-blob must be a sha256');
+  return Object.freeze({
+    allowlisted_hits: hits === undefined ? 0 : Number(hits),
+    allowlist_anchor: anchor === undefined ? null : String(anchor),
+    allowlist_approved_blob: blob === undefined ? null : String(blob),
+  });
+}
+
 function resolveArgs(args) {
   const flags = parseFlags(args, FLAGS);
   const stray = flags._.filter((a) => a.startsWith('--'));
@@ -346,7 +371,9 @@ function resolveArgs(args) {
   const roundKey = `${flags.gate} ${wave === null ? 'plan' : `wave ${wave}`}${lane ? ` lane ${lane}` : ''} round ${round}`;
   const planPath = path.join(phaseDir, 'PLAN.md');
   if (!fs.existsSync(planPath)) usage(`PLAN.md not found in ${phaseDir}`);
+  const allowlist = allowlistFlags(flags);
   return {
+    allowlist,
     resultPath: path.resolve(flags._[0]), phase, phaseDir, gate: flags.gate, wave, lane, round, attempt, roundTaken, roundKey, workPath, indexPath, findingsPath,
     planPath, planRel: path.relative(root, planPath), planSha: sha256(fs.readFileSync(planPath)), ts: nowIso(),
   };
@@ -393,6 +420,7 @@ function cmdXprovNormalize(args) {
     gate: ctx.gate, wave: ctx.wave, lane: ctx.lane, ...(ctx.isRound ? { round: ctx.round } : { attempt: ctx.attempt }), verdict: outcome.verdict, reason: outcome.reason,
     plan_sha256: ctx.planSha, result_path: ctx.resultPath, ts: ctx.ts,
     model_requested: model.model_requested, model_observed: model.model_observed, cli_version: model.cli_version,
+    ...(ctx.allowlist || {}),
   };
   const index = readIndex(ctx.indexPath);
   if (index === null) usage(`index.json changed underneath the run: ${ctx.indexPath}`);

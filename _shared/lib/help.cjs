@@ -615,7 +615,8 @@ ${SPEC_INIT_HELP}
                   goes to stderr only; stdout is the machine contract.
                   Subcommands (module → wave it ships in):
     normalize <result.json> --phase <name> --gate <id> [--wave N] [--round N]
-              [--lane <id>] [--work-path <dir>]
+              [--lane <id>] [--work-path <dir>] [--allowlisted-hits N]
+              [--allowlist-anchor <sha>] [--allowlist-approved-blob <sha256>]
                   (xprov-normalize.cjs, wave 2) total mapping of a runner
                   record: status!=completed → runner_failed; mode not
                   review|inspect → wrong_mode; APPROVED → pass (only after
@@ -623,6 +624,9 @@ ${SPEC_INIT_HELP}
                   fail-with-findings, BLOCKED → blocked, else malformed.
                   Writes .a1/phases/<name>/XREVIEW.md, xreview/*.findings.json,
                   xreview/index.json atomically; exit 0 only on pass.
+                  The allowlist flags (wave 6b, passed by gate) put the
+                  snapshot's allowlist result into that one index entry;
+                  without them the entry is unchanged.
     gc [--slug <repo-slug>] [--max-age-days N]
                   (xprov-artifacts.cjs, wave 3) remove runner run dirs under
                   ~/.a1-xprov/artifacts/<repo-slug>/ and orphaned snap-* clones
@@ -642,7 +646,12 @@ ${SPEC_INIT_HELP}
                   but external_review: allowed → external_review_not_permitted.
                   Customer repositories need an a1-ludwig-legal decision.
     permit --by <name> --record <vault-path> [--repo <git-toplevel>]
+           [--default-branch <name>]
                   (xprov-permit.cjs, wave 4) the ONLY writer of .a1/xprov.json.
+                  --default-branch (wave 6b) names the branch whose
+                  refs/remotes/origin/<name> anchors the snapshot allowlist
+                  (default main); checked with git check-ref-format --branch
+                  on write (invalid → exit 1, nothing written) and on read.
     observe --agent xprov-codex|a1-<first>-<role> --skill <s> --phase <name>
             --type gap|blocker --severity <sev> --msg "<text>" [--wave N] [--lane <id>]
             [--pattern xprov_finding|xprov_waived] [--provider codex]
@@ -658,6 +667,12 @@ ${SPEC_INIT_HELP}
                   are removed from the working tree; every tracked file is
                   secret-scanned (shared pattern list, windowed, UTF-16 aware,
                   + gitleaks with a1's own config when on PATH) before dispatch.
+                  Wave 6b: the scan COUNTS every match and fingerprints its
+                  line; a hit passes only when the approved allowlist at the
+                  trust anchor covers it (see allowlist below). --repo must
+                  share the git-common-dir of the cwd's checkout. stdout adds
+                  allowlisted_hits, allowlist_anchor, allowlist_approved_blob,
+                  allowlist_stale, allowlisted, uncovered, allowlist_note.
     run --mode review|inspect --snapshot <dir> --plan <abs PLAN.md> --phase <name>
         --gate <id> [--wave N] [--round N] [--lane <id>] [--base <sha>]
         [--resume <result.json> --feedback <file>] [--timeout N] [--work-path <dir>] [--no-log]
@@ -678,6 +693,38 @@ ${SPEC_INIT_HELP}
     wave-status --phase <name> [--waves 1,2,3]
                   (xprov-gate.cjs, wave 6) every completed wave needs a
                   wave-inspect-xprov entry with verdict pass or waived: true.
+    allowlist propose --commit <rev> [--json] [--repo <git-toplevel>]
+                  (xprov-approve.cjs, wave 6b) every secret-pattern match at
+                  <rev> as path:line:column, pattern, proposed class, masked
+                  excerpt (first 4 characters + length), high_confidence —
+                  never the matched text. --json prints a DRAFT allowlist with
+                  empty reason fields. Never writes a file.
+    allowlist approve --repo <path> [--revoke <sha256>]
+                  (xprov-approve.cjs, wave 6b) HUMAN ONLY, in a separate
+                  terminal: exit 2 and nothing written unless stdin and stdout
+                  are TTYs, no CLAUDECODE / CLAUDE_PID / CLAUDE_CODE_* variable
+                  is set and no ancestor process is Claude Code (start name
+                  claude, an executable under claude/versions/, or
+                  @anthropic-ai/claude-code in argv). Shows the listing, asks
+                  for the entry count, then records the sha256 of the allowlist
+                  blob at the verified origin/<default_branch> tip.
+                  Allowlist (FR-030): .a1/xprov-secret-allowlist.json, read
+                  only at the anchor = merge-base(reviewed commit,
+                  refs/remotes/origin/<default_branch>) verified by git
+                  ls-remote origin (30 s timeout); never origin/HEAD, a local
+                  branch, the snapshot or a working tree. Schema: exactly
+                  {version: 1, owner, entries: [{path, pattern, max_count 1–8,
+                  fingerprints, class, reason, reviewed_by, added_on}]}, at most
+                  32 entries, duplicate JSON keys rejected. A reviewed range
+                  that touches the file → allowlist_modified; the file's last
+                  commit must touch nothing else; owner = decided_by. Approval
+                  store ~/.a1-xprov/allowlist-approvals.json (0600, dir 0700,
+                  no symlinks): {"version":1,"repos":{"<realpath of
+                  git-common-dir>":["<sha256 of the blob>", …]}}.
+                  reason_detail: allowlist_anchor_unresolved,
+                  allowlist_not_separate_commit, allowlist_owner_mismatch,
+                  allowlist_unapproved. gitleaks hits and reviewer output are
+                  never allowlisted.
     waive --phase <name> --gate <id> [--wave <N> [--lane <id>]] --reason "<text>"
                   (xprov-gate.cjs, wave 6) HUMAN-only: appends {waived: true,
                   by: human} — never verdict: pass. Skills print the command
@@ -686,12 +733,15 @@ ${SPEC_INIT_HELP}
                   malformed, wrong_mode, blocked, plan_changed, tripwire,
                   secret_in_snapshot, secret_in_output, quarantined, round_cap,
                   external_review_not_permitted, snapshot_failed, not_logged_in,
-                  preflight_failed, plan_review_missing, wave_inspect_missing.
+                  preflight_failed, plan_review_missing, wave_inspect_missing,
+                  allowlist_invalid, allowlist_modified.
                   Paths a1 owns: ~/.a1-xprov/artifacts/<repo-slug>/ (0700,
                   runner --artifacts, never inside a checkout or under
                   A1_VAULT_ROOT), ~/.a1-xprov/snapshots/ (clones, removed after
                   normalize), .a1/phases/<name>/XREVIEW.md + xreview/*.json +
-                  PLAN-REVIEW-LOG.md, .a1/xprov.json (permit record).
+                  PLAN-REVIEW-LOG.md, .a1/xprov.json (permit record),
+                  ~/.a1-xprov/allowlist-approvals.json (written only by
+                  allowlist approve).
                   ENV: A1_XPROV_CODEX_HOME (optional; default ~/.codex-a1-review).
                   Fixture suite: _test-fixtures/a1-xprov/run-tests.sh (harness)
                   + parts/NN-<wave>.sh; runner fakes live in fake/, captured

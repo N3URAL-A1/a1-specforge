@@ -160,6 +160,16 @@ function gitOut(args) {
   return r.status === 0 ? r.stdout : null;
 }
 
+/** realpath of a checkout's `git rev-parse --git-common-dir`, or null. Two
+ * checkouts with the same value share one object store and one set of refs
+ * (a linked worktree and its main checkout); FR-030 (b) compares these, and
+ * the approval store (FR-030 j) is keyed by it. */
+function commonDirOf(repo) {
+  const out = gitOut(['-C', repo, 'rev-parse', '--git-common-dir']);
+  if (out === null) return null;
+  try { return fs.realpathSync(path.resolve(repo, out.trim())); } catch (_e) { return null; }
+}
+
 /** `--repo` must be a git TOPLEVEL (compared by realpath). Undefined → the
  * primary checkout (io.repoRoot()). A subdirectory or a non-repo directory is
  * a usage error, never a silent fallback. */
@@ -178,5 +188,5 @@ module.exports = {
   REGISTRY_PATH, LANE_RE, POSITIVE_INT_RE, POSITIVE_INT_MAX, DETAIL_MAX_CHARS, GIT_MAX_BUFFER, DIR_MODE,
   inputError, writeStdoutSync, emitJson, usageExit, usageThrow,
   clip, stderrTail, oneLine, parsePositive, parseLane, sha256, isPlainObject, isDir, isFile,
-  mkdir0700, readIndex, sameWave, sameLane, gitSpawn, gitOut, resolveRepoFlag,
+  mkdir0700, readIndex, sameWave, sameLane, gitSpawn, gitOut, commonDirOf, resolveRepoFlag,
 };

@@ -69,3 +69,26 @@ jobs:
           env -u A1_VAULT_ROOT HOME="$(mktemp -d)" node _shared/a1-tools.cjs spec next-number ci-demo
           env -u A1_VAULT_ROOT HOME="$(mktemp -d)" node _shared/a1-tools.cjs analyze init ci-demo general
           test -d .a1/learnings/project/ci-demo
+
+      - name: xprov allowlist approve guard (committed wiring)
+        # Spec 009 FR-030 (j). The fixture part a1-xprov/parts/08-allowlist.sh
+        # proves the guards on tree copies and fails on any
+        # `SKIP (claude-code ancestor)` line when CI=true; this step checks
+        # the COMMITTED tree: `allowlist approve` without a terminal exits 2
+        # and writes no store, and the project's PreToolUse hook denies both
+        # guarded strings.
+        run: |
+          set -e
+          export HOME="$(mktemp -d)"
+          set +e
+          node _shared/a1-tools.cjs xprov allowlist approve --repo . </dev/null 2>"$HOME/approve.err"
+          rc=$?
+          set -e
+          [ "$rc" = 2 ]
+          # rc 2 is also the usage / not-implemented exit: the refusal must name its reason
+          grep -q 'must both be a terminal' "$HOME/approve.err"
+          test ! -e "$HOME/.a1-xprov/allowlist-approvals.json"
+          for cmd in "node _shared/a1-tools.cjs xprov allowlist approve --repo ." "cat ~/.a1-xprov/allowlist-approvals.json"; do
+            printf '{"tool_name":"Bash","tool_input":{"command":"%s"}}' "$cmd" \
+              | bash .claude/hooks/xprov-deny-allowlist-approve.sh | grep -q '"permissionDecision":"deny"'
+          done

@@ -252,12 +252,12 @@ caseF1() {
 
   local help; help="$(node "$TOOLS" --help 2>/dev/null)"
   local sub missing_help=""
-  for sub in normalize gc preflight init-home permit-check permit observe snapshot run gate load-check wave-status waive; do
+  for sub in normalize gc preflight init-home permit-check permit observe snapshot run gate load-check wave-status waive allowlist; do
     grep -qE "^    $sub( |$)" <<<"$help" || missing_help="$missing_help $sub"
   done
   grep -q "A1_XPROV_CODEX_HOME" <<<"$help" || missing_help="$missing_help A1_XPROV_CODEX_HOME"
   grep -q "a1-tools xprov <sub>" <<<"$help" || missing_help="$missing_help header"
-  [[ -z "$missing_help" ]] && ok "F1e --help names all 13 xprov subcommands and A1_XPROV_CODEX_HOME" \
+  [[ -z "$missing_help" ]] && ok "F1e --help names all 14 xprov subcommands and A1_XPROV_CODEX_HOME" \
                             || bad "F1e --help is missing:$missing_help"
   # Reinhard PR review: every flag a module declares in a parseFlags table (or a
   # frozen FLAGS object) must appear as `--<flag>` in the xprov help block —
@@ -304,9 +304,9 @@ caseF1() {
     const home = x.codexHome({ A1_XPROV_CODEX_HOME: '/x/override' }) + ' ' + require('path').basename(x.codexHome({}));
     process.stdout.write(JSON.stringify({ subs, reasons, ghp, akia, assign, clean, markers, gates, home }));
   " "$XPROV_LIB" 2>&1)"
-  assert_json "F1f dispatch table has 13 entries" "$out" "j.subs" "13"
-  assert_json "F1g REASON_LIST is the spec's thirteen reason codes plus the three documented freeze exceptions (preflight_failed W4, plan_review_missing + wave_inspect_missing W6)" "$out" "j.reasons" \
-    "runner_failed,malformed,wrong_mode,blocked,plan_changed,tripwire,secret_in_snapshot,secret_in_output,quarantined,round_cap,external_review_not_permitted,snapshot_failed,not_logged_in,preflight_failed,plan_review_missing,wave_inspect_missing"
+  assert_json "F1f dispatch table has 14 entries (allowlist added in Wave 6b)" "$out" "j.subs" "14"
+  assert_json "F1g REASON_LIST is the spec's thirteen reason codes plus the documented freeze exceptions (preflight_failed W4, plan_review_missing + wave_inspect_missing W6, allowlist_invalid + allowlist_modified W6b)" "$out" "j.reasons" \
+    "runner_failed,malformed,wrong_mode,blocked,plan_changed,tripwire,secret_in_snapshot,secret_in_output,quarantined,round_cap,external_review_not_permitted,snapshot_failed,not_logged_in,preflight_failed,plan_review_missing,wave_inspect_missing,allowlist_invalid,allowlist_modified"
   assert_json "F1h SECRET_PATTERNS hit ghp_/AKIA/assignment shapes and not plain text" "$out" \
     "[j.ghp, j.akia, j.assign, j.clean].join('/')" "true/true/true/false"
 

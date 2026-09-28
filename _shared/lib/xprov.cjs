@@ -5,7 +5,7 @@
 // Wave 1; frozen afterwards).
 //
 // This module owns exactly four things and nothing else:
-//   1. the dispatch table for all thirteen subcommands (lazy `require` per
+//   1. the dispatch table for all fourteen subcommands (lazy `require` per
 //      module — a subcommand whose module has not shipped yet exits 2 with
 //      `not implemented yet (planned wave N)`, which is what makes every later
 //      wave's fixture part RED on its first run without touching the facade);
@@ -21,6 +21,9 @@
 //
 // Documented exception to the freeze (main, 2026-09-24): Wave 4 added the reason
 // code `preflight_failed` to REASON_LIST — a constant, not a dispatch change.
+// Wave 6b (FR-030, 2026-09-28) added the `allowlist` subcommand (propose and the
+// human-only approve), two reasons, the reason_detail values and the allowlist
+// constants — spec amendment, same kind of exception.
 //
 // The "not implemented yet (planned wave N)" branch below — like normalize's
 // "filter module missing" and "gc skipped" branches — is kept ON PURPOSE after
@@ -59,6 +62,7 @@ const SUBCOMMANDS = Object.freeze({
   'load-check': Object.freeze({ module: 'xprov-gate.cjs', fn: 'cmdXprovLoadCheck', wave: 6 }),
   'wave-status': Object.freeze({ module: 'xprov-gate.cjs', fn: 'cmdXprovWaveStatus', wave: 6 }),
   waive: Object.freeze({ module: 'xprov-gate.cjs', fn: 'cmdXprovWaive', wave: 6 }),
+  allowlist: Object.freeze({ module: 'xprov-approve.cjs', fn: 'cmdXprovAllowlist', wave: '6b' }),
 });
 const SUBCOMMAND_NAMES = Object.freeze(Object.keys(SUBCOMMANDS));
 
@@ -71,6 +75,9 @@ const REASON_LIST = Object.freeze([
   // Documented freeze exceptions (main, 2026-09-24), Wave 6 — constants, not dispatch changes:
   'plan_review_missing', // load-check: no plan-review-xprov pass entry matches the current PLAN.md sha (FR-003)
   'wave_inspect_missing', // wave-status: a completed wave lacks a wave-inspect-xprov pass or waiver (FR-004)
+  // Wave 6b (FR-030): both map to `fail` before dispatch.
+  'allowlist_invalid', // the anchor's allowlist is unreadable, off-schema, over the cap, owner-mismatched, not a separate commit or unapproved
+  'allowlist_modified', // the reviewed range adds, changes, deletes or renames the allowlist
 ]);
 const REASONS = Object.freeze(Object.fromEntries(REASON_LIST.map((r) => [r, r])));
 
@@ -94,6 +101,28 @@ const MAX_RESULT_BYTES = 5 * 1024 * 1024; // FR-028 bound on the JSON read
 const TITLE_MAX_CHARS = 120; // FR-012
 const MODEL_REQUESTED_DEFAULT = 'CLI default (unresolved)'; // FR-013
 const MODEL_OBSERVED_UNKNOWN = 'unknown'; // FR-013
+
+// ---------- snapshot secret-scan allowlist (FR-030) ----------
+// Raising the cap is a spec change (FR-030 h). The file is read ONLY from the
+// trust anchor in the primary checkout, never from a snapshot or working tree.
+const ALLOWLIST_FILE = '.a1/xprov-secret-allowlist.json';
+const ALLOWLIST_MAX_ENTRIES = 32;
+const ALLOWLIST_MAX_COUNT = 8; // per (path, pattern) entry
+const ALLOWLIST_CLASSES = Object.freeze(['fixture_fake', 'doc_example', 'code_pattern']);
+// Human approval store (FR-030 j), outside every repository; written only by
+// the TTY-only `xprov allowlist approve`.
+const ALLOWLIST_APPROVALS_FILE = 'allowlist-approvals.json';
+const ALLOWLIST_DETAILS = Object.freeze({
+  anchor_unresolved: 'allowlist_anchor_unresolved',
+  not_separate_commit: 'allowlist_not_separate_commit',
+  owner_mismatch: 'allowlist_owner_mismatch',
+  unapproved: 'allowlist_unapproved',
+});
+// `propose` marks matches of these patterns `high_confidence: true` (FR-030 h).
+const HIGH_CONFIDENCE_PATTERNS = Object.freeze([
+  'aws_access_key_id', 'github_pat_classic', 'github_token_family', 'github_pat_fine_grained',
+  'google_api_key', 'private_key_header', 'jwt', 'sk_prefixed_key', 'sk_prefixed_key_ext',
+]);
 
 // ---------- secret patterns (FR-018) ----------
 // The first eight are verbatim from the spec's hardening section; the list was
@@ -301,6 +330,8 @@ module.exports = {
   RUNNER_MODES, FORBIDDEN_RUNNER_TOKENS, RUNNER_HOST,
   ARTIFACT_MAX_AGE_DAYS, ROUND_CAP, MAX_FIELD_CHARS, MAX_RESULT_BYTES, TITLE_MAX_CHARS,
   MODEL_REQUESTED_DEFAULT, MODEL_OBSERVED_UNKNOWN,
+  ALLOWLIST_FILE, ALLOWLIST_MAX_ENTRIES, ALLOWLIST_MAX_COUNT, ALLOWLIST_CLASSES, ALLOWLIST_APPROVALS_FILE,
+  ALLOWLIST_DETAILS, HIGH_CONFIDENCE_PATTERNS,
   SECRET_PATTERNS, INSTRUCTION_MARKERS, INSTRUCTION_MARKER_PATTERNS,
   CODEX_HOME_ENV, RUNNER_FILE, SUMS_FILE,
   xprovHome, artifactsDir, snapshotsDir, vendorDir, vendoredRunnerPath, vendoredSumsPath, codexHome,

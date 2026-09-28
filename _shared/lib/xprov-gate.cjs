@@ -189,8 +189,40 @@ function stepSnapshot(ctx) {
   // without it an inspect snapshot holds ONE commit and the runner's
   // `git diff <base>` fails. The fake runner never diffs, so no fixture arm can
   // measure this line — contract from xprov-snapshot.cjs (Samuel W5 MAJOR 6).
-  const s = snapshot({ sourceRepo: source, commit, base: ctx.base });
-  return s.ok ? { ok: true, snapshot: s.snapshot, commit: s.commit } : { ok: false, reason: s.reason, detail: s.detail || s.secret_pattern || null };
+  // FR-030 (b): every allowlist read runs against the PRIMARY checkout; the
+  // gate kind decides the first-parent step (plan review only).
+  const s = snapshot({ sourceRepo: source, commit, base: ctx.base, primaryRoot: ctx.root, gateKind: ctx.isPlan ? 'plan' : 'inspect' });
+  const allowlist = allowlistFields(s);
+  return s.ok ? { ok: true, snapshot: s.snapshot, commit: s.commit, allowlist } : { ok: false, reason: s.reason, detail: s.reason_detail || s.detail || s.secret_pattern || null, allowlist };
+}
+
+// ---------- allowlist reporting (FR-030 f, g) ----------
+
+/** The allowlist fields of a snapshot result, with the no-allowlist defaults. */
+function allowlistFields(s) {
+  return Object.freeze({
+    allowlisted_hits: Number.isInteger(s.allowlisted_hits) ? s.allowlisted_hits : 0,
+    allowlist_anchor: s.allowlist_anchor || null,
+    allowlist_approved_blob: s.allowlist_approved_blob || null,
+    allowlist_stale: Array.isArray(s.allowlist_stale) ? s.allowlist_stale : [],
+    allowlisted: Array.isArray(s.allowlisted) ? s.allowlisted : [],
+    uncovered: Array.isArray(s.uncovered) ? s.uncovered : [],
+    allowlist_note: s.allowlist_note || null,
+  });
+}
+
+/** XREVIEW.md "Allowlisted snapshot hits", on pass AND fail, whenever an
+ * allowlist was applied: path, pattern NAME, count and class per pair — never
+ * the matched text or a fingerprint — plus stale and uncovered pairs. */
+function noteAllowlist(ctx, al) {
+  if (!al || !al.allowlist_anchor) return;
+  const lines = [
+    `anchor: ${al.allowlist_anchor}`, `approved blob: ${al.allowlist_approved_blob}`, `allowlisted_hits: ${al.allowlisted_hits}`,
+    ...al.allowlisted.map((a) => `${a.path} · ${a.pattern} · count ${a.count} · ${a.class}`),
+    ...al.allowlist_stale.map((x) => `allowlist_stale: ${x.path} · ${x.pattern}`),
+    ...al.uncovered.map((u) => `uncovered: ${u.path} · ${u.pattern}`),
+  ];
+  appendXreviewNote(ctx.phaseDir, `Allowlisted snapshot hits · ${ctx.gate} · ${scopeOf(ctx.wave)}`, lines);
 }
 
 function stepRun(ctx, snap) {
@@ -209,8 +241,12 @@ function stepRun(ctx, snap) {
   return { ok: true, resultPath: r.json.result_path };
 }
 
-function stepNormalize(ctx, resultPath) {
-  const argv = ['normalize', resultPath, '--phase', ctx.phase, '--gate', ctx.gate, '--round', String(ctx.round)];
+/** normalize writes the ONE index entry; the snapshot's allowlist result
+ * travels as flags so no second write of index.json is needed (Reinhard R-M5). */
+function stepNormalize(ctx, resultPath, al) {
+  const argv = ['normalize', resultPath, '--phase', ctx.phase, '--gate', ctx.gate, '--round', String(ctx.round), '--allowlisted-hits', String(al.allowlisted_hits)];
+  if (al.allowlist_anchor) argv.push('--allowlist-anchor', al.allowlist_anchor);
+  if (al.allowlist_approved_blob) argv.push('--allowlist-approved-blob', al.allowlist_approved_blob);
   if (ctx.wave !== null) argv.push('--wave', String(ctx.wave));
   if (ctx.lane !== null) argv.push('--lane', ctx.lane);
   if (ctx.workPath !== ctx.root) argv.push('--work-path', ctx.workPath);
@@ -268,7 +304,7 @@ function appendLog(ctx, out, snapState) {
  * step — only usage errors throw A1_INPUT before anything is created). */
 function gate(o) {
   const ctx = resolveGateArgs(o);
-  const base = Object.freeze({ verdict: X.VERDICTS.FAIL, reason: null, reason_detail: null, step: null, gate: ctx.gate, phase: ctx.phase, wave: ctx.wave, lane: ctx.lane, round: ctx.round, mode: ctx.mode, enforcement: ctx.enforcement, findings_path: null, xreview_path: null, result_path: null, next: null });
+  const base = Object.freeze({ verdict: X.VERDICTS.FAIL, reason: null, reason_detail: null, step: null, gate: ctx.gate, phase: ctx.phase, wave: ctx.wave, lane: ctx.lane, round: ctx.round, mode: ctx.mode, enforcement: ctx.enforcement, findings_path: null, xreview_path: null, result_path: null, next: null, ...allowlistFields({}) });
   // A failing step is a FAIL whatever was reached so far — after normalize
   // produced a pass, a broken observe step must not leave `pass` in stdout.
   // `extra` carries the fields already known at that step (e.g. result_path).
@@ -286,20 +322,22 @@ function gate(o) {
     const pre = preflight({ pluginAllowlist: ctx.pluginAllowlist });
     if (!pre.ok) return (result = fail('preflight', pre.reason, pre.failed.join(', ')));
     const snapped = stepSnapshot(ctx);
-    if (!snapped.ok) return (result = fail('snapshot', snapped.reason, snapped.detail));
+    const al = snapped.allowlist;
+    noteAllowlist(ctx, al);
+    if (!snapped.ok) return (result = fail('snapshot', snapped.reason, snapped.detail, al));
     snap = snapped.snapshot;
     const ran = stepRun(ctx, snap);
-    if (!ran.ok) return (result = fail('run', ran.reason, ran.detail));
-    const norm = stepNormalize(ctx, ran.resultPath);
-    if (!norm.ok) return (result = fail('normalize', norm.reason, norm.detail, { result_path: ran.resultPath }));
+    if (!ran.ok) return (result = fail('run', ran.reason, ran.detail, al));
+    const norm = stepNormalize(ctx, ran.resultPath, al);
+    if (!norm.ok) return (result = fail('normalize', norm.reason, norm.detail, { ...al, result_path: ran.resultPath }));
     const reviewed = Object.freeze({
-      ...base, result_path: ran.resultPath, findings_path: norm.findingsPath, xreview_path: norm.xreviewPath, step: 'normalize',
+      ...base, ...al, result_path: ran.resultPath, findings_path: norm.findingsPath, xreview_path: norm.xreviewPath, step: 'normalize',
       verdict: norm.verdict, reason: norm.reason, reason_detail: norm.detail, next: nextFor(ctx, norm.verdict, ran.resultPath),
     });
     const capped = norm.verdict === X.VERDICTS.FAIL_WITH_FINDINGS && ctx.round >= X.ROUND_CAP
       ? Object.freeze({ ...reviewed, verdict: X.VERDICTS.FAIL, reason: X.REASONS.round_cap, reason_detail: `REVISE at round ${ctx.round} = cap`, next: null })
       : reviewed;
-    try { stepObserve(ctx, capped, norm.entry); } catch (e) { return (result = fail('observe', X.REASONS.malformed, e.message, { result_path: ran.resultPath, findings_path: norm.findingsPath, xreview_path: norm.xreviewPath })); }
+    try { stepObserve(ctx, capped, norm.entry); } catch (e) { return (result = fail('observe', X.REASONS.malformed, e.message, { ...al, result_path: ran.resultPath, findings_path: norm.findingsPath, xreview_path: norm.xreviewPath })); }
     return (result = capped);
   } finally {
     // MINOR (a): a failed cleanup is logged by path, never disguised as 'none'.
@@ -426,6 +464,9 @@ function cmdXprovGate(args) {
     if (!f.phase || !f.gate) return usageExit('gate requires --phase <name> --gate <id>');
     const r = gate({ phase: f.phase, gate: f.gate, wave: f.wave, lane: f.lane, base: f.base, workPath: f['work-path'], round: f.round, timeout: f.timeout, resume: f.resume, feedback: f.feedback, allowPlugins: f['allow-plugins'] });
     process.stderr.write(`xprov gate ${r.gate} ${scopeOf(r.wave)} round ${r.round}: ${r.verdict}${r.reason ? ` (${r.reason} at ${r.step})` : ''} — enforcement ${r.enforcement}\n`);
+    if (r.allowlist_note) process.stderr.write(`xprov gate: allowlist not applied: ${r.allowlist_note}\n`);
+    for (const x of r.allowlist_stale) process.stderr.write(`xprov gate: warning allowlist_stale: ${x.path} · ${x.pattern}\n`);
+    for (const u of r.uncovered) process.stderr.write(`xprov gate: uncovered secret-pattern hit: ${u.path} · ${u.pattern}\n`);
     return finish(r, r.verdict === X.VERDICTS.PASS ? X.EXIT_PASS : X.EXIT_FAIL);
   });
 }

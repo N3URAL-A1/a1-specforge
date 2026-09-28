@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "deny": [
+      "Edit(**/.a1/xprov-secret-allowlist.json)",
+      "Write(**/.a1/xprov-secret-allowlist.json)",
+      "Edit(~/.a1-xprov/allowlist-approvals.json)",
+      "Write(~/.a1-xprov/allowlist-approvals.json)",
+      "Edit(**/.a1/xprov.json)",
+      "Write(**/.a1/xprov.json)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/xprov-deny-allowlist-approve.sh\""
+          }
+        ]
+      }
+    ]
+  }
+}
