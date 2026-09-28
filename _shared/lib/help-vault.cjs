@@ -51,7 +51,10 @@ const VAULT_HELP = `  a1-tools schema export --json
                   unreadable declaration (duplicate key, near-miss spelling,
                   folded or invalid value, unterminated frontmatter, empty or
                   linked hub, folder without hub, read error) blocks every
-                  host. Spec authoring is never gated.
+                  host; an invalid A1_VAULT_WRITER_HOST blocks the hubs that
+                  fall back to it ("A1_VAULT_WRITER_HOST is not a valid host
+                  id"). "undeclared" and "unreadable" are reserved, never ids.
+                  Spec authoring is never gated.
   a1-tools vault sync [<slug>] [--product] [--phases] [--dry-run] [--prune]
                   [--slug <s>] [--json]
                   Spec 010 Wave 3 (FR-011/FR-012). Rebuilds the one-way mirror
@@ -85,7 +88,8 @@ const VAULT_HELP = `  a1-tools schema export --json
                   one predicate lint and link-hub use too). --json prints {findings, counts, in_sync,
                   drift, skipped, host, host_source (env|os|invalid),
                   writer_host (id|undeclared|unreadable), writer_source
-                  (hub|env|none), may_write, hub_conflict} for <slug>
+                  (hub|env|none), writer_class (unreadable only), may_write,
+                  hub_conflict} for <slug>
                   (FR-035; an invalid host id shows as "<invalid>"), also as
                   one stderr line "vault writer: ...". No --all: the
                   cross-project overview is vault writer. Exit 0 no drift, 1 drift, 2 cannot run
@@ -169,7 +173,7 @@ const VAULT_HELP = `  a1-tools schema export --json
                   Spec 010 Wave 10 (FR-041/FR-043). Without <slug>: read-only
                   list of every hub project/<slug>.md and every project folder
                   without hub, sorted: {slug, writer_host, writer_source,
-                  class (unreadable only), may_write, hub_conflict}, plus
+                  writer_class (unreadable only), may_write, hub_conflict}, plus
                   host, host_source and ignored_names once; exit 0. With
                   <slug>: the hand-over. A hub that already declares <host
                   id> (or nothing, for --clear) -> exit 0, nothing written.

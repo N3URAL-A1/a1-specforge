@@ -108,13 +108,16 @@ const HOST_ID_ENV = 'A1_HOST_ID';
 const HOST_ID_RE = /^[a-z0-9]([a-z0-9.-]{0,61}[a-z0-9])?$/;
 const YAML_SPECIALS = new Set(['true', 'false', 'yes', 'no', 'on', 'off', 'null', '~']);
 const NUMERIC_RE = /^[0-9]+$/;
+// The gate's own sentinel values (vault-writer.cjs writer_host) are never ids:
+// a hub or env naming one would otherwise read as a declared writer.
+const RESERVED_IDS = new Set(['undeclared', 'unreadable']);
 const INVALID_HOST = '<invalid>';
 
 /** The normalised id, or null when `raw` is not a valid host id. */
 function normalizeHostId(raw) {
   if (typeof raw !== 'string') return null;
   const id = raw.trim().toLowerCase();
-  if (!HOST_ID_RE.test(id) || YAML_SPECIALS.has(id) || NUMERIC_RE.test(id)) return null;
+  if (!HOST_ID_RE.test(id) || YAML_SPECIALS.has(id) || NUMERIC_RE.test(id) || RESERVED_IDS.has(id)) return null;
   return id;
 }
 

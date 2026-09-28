@@ -100,7 +100,11 @@ the DHCP-derived hostname, which changes by itself, and with `invalid` it is
 [ "$HOST_SOURCE" = "env" ] || { echo "STOP: set A1_HOST_ID (host_source is $HOST_SOURCE)"; exit 1; }
 ```
 
-**Step 2 — write the hub, then the folders.** Write `project/<slug>.md` with
+**Step 2 — write the hub, then the folders.** If `project/<slug>.md` already
+exists (the project was set up by hand, or on another host), never rewrite it:
+when it lacks the key, stamp it with the one command that edits only that line,
+`node <repo>/_shared/a1-tools.cjs vault writer <slug> --set "$WRITER_ID"`, and
+go on with the folders. Only when no hub exists, write `project/<slug>.md` with
 `type: project`, `status: active`, `a1_writer_host: <WRITER_ID>` (the `.host`
 value from step 1, as one plain frontmatter line), the scope summary and a link
 to the backlog. Follow the Vault 7-type IA (project hub is the spine). Only

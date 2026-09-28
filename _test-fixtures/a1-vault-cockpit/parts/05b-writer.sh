@@ -429,6 +429,122 @@ caseW26() {
 }
 caseW26
 
+# ---------- review round 2026-09-28 (Samuel + Reinhard) ----------
+
+# W27–W30 restore the Wave 5 rows H6–H8 (deleted with H1–H4 in 977c6c0, which
+# the plan did not retire) with a hub declaration instead of the env writer.
+
+# W27 (was H6) — single-slug lint --fix-type on a non-writer: nothing stamped,
+# fix_type skipped-non-writer, the exact skip line, findings exit code kept.
+# Red-making change: `const notWriter = null;` in fixTypeTargets' slug branch.
+caseW27() {
+  local v="$W_WORK/w27"; w_hub "$v" alpha 'a1_writer_host: host-b'; w_spec "$v" alpha 001-alpha
+  cp "$v/project/alpha/spec/001-alpha.md" "$W_WORK/w27.before"
+  w_run "$W_WORK" "$v" - host-a vault lint alpha --json --fix-type
+  assert_rc "W27 exit 1 (findings)" 1 "$W_RC" "$(cat "$W_ERR")"
+  assert_json "W27 fix_type" "$W_OUT" "j.fix_type" "skipped-non-writer"
+  assert_eq "W27 exact skip line" "$(w_line_count '[a1-tools] vault lint --fix-type skipped: this host is not the vault writer of alpha (host-a ≠ host-b)')" "1"
+  assert_eq "W27 spec bytes unchanged" "$(cmp -s "$W_WORK/w27.before" "$v/project/alpha/spec/001-alpha.md"; echo $?)" "0"
+}
+caseW27
+
+# W28 (was H7a) — single link-hub --spec on a non-writer: status skipped,
+# exit 0, the exact skip line, hub byte-identical.
+# Red-making change: cmdVaultLinkHub calling linkHub instead of linkHubGated.
+caseW28() {
+  local v="$W_WORK/w28"; w_hub "$v" alpha 'a1_writer_host: host-b'; w_spec "$v" alpha 001-alpha
+  cp "$v/project/alpha.md" "$W_WORK/w28.before"
+  w_run "$W_WORK" "$v" - host-a vault link-hub alpha --spec 001-alpha
+  assert_rc "W28 exit" 0 "$W_RC" "$(cat "$W_ERR")"
+  assert_json "W28 status" "$W_OUT" "j.status" "skipped"
+  assert_eq "W28 exact skip line" "$(w_line_count '[a1-tools] vault link-hub skipped: this host is not the vault writer of alpha (host-a ≠ host-b)')" "1"
+  assert_eq "W28 hub byte-identical" "$(cmp -s "$W_WORK/w28.before" "$v/project/alpha.md"; echo $?)" "0"
+}
+caseW28
+
+# W29 (was H7c) — a bare link-hub is a usage error (exit 1) on a non-writer
+# too, with no skip line: the argument checks run before the gate.
+# Red-making change: gating before the argument checks (exit 0 + skip line).
+caseW29() {
+  local v="$W_WORK/w29"; w_hub "$v" alpha 'a1_writer_host: host-b'
+  w_run "$W_WORK" "$v" - host-a vault link-hub
+  assert_rc "W29 bare link-hub" 1 "$W_RC" "$(head -c 200 "$W_ERR")"
+  assert_eq "W29 no skip line" "$(grep -c '^\[a1-tools\] .*skipped' "$W_ERR" | tr -d ' ')" "0"
+}
+caseW29
+
+# W30 (was H8) — spec init on a non-writer: the hub-link skip line verbatim.
+# Red-making change: the generic 'vault mirror' label in linkHubGated's caller.
+caseW30() {
+  local v="$W_WORK/w30"; w_hub "$v" alpha 'a1_writer_host: host-b'
+  w_run "$W_WORK" "$v" - host-a spec init alpha w30-feat --title "W30 feature"
+  assert_json "W30 hub" "$W_OUT" "j.hub" "skipped-non-writer"
+  assert_eq "W30 exact skip line" "$(w_line_count '[a1-tools] spec init hub link skipped: this host is not the vault writer of alpha (host-a ≠ host-b)')" "1"
+}
+caseW30
+
+# W31 (Samuel M1) — the gate's sentinel values are no ids: a hub declaring
+# `undeclared` or `unreadable` is unreadable (invalid_value) and closed on
+# BOTH hosts; the class is named, never "undefined".
+# Red-making changes: dropping the reserved-value check in normalizeHostId;
+# deciding mayWrite on the value (=== 'undeclared') instead of the source.
+caseW31() {
+  local v val h
+  for val in undeclared unreadable; do
+    v="$W_WORK/w31-$val"; w_hub "$v" alpha "a1_writer_host: $val"; touch "$W_WORK/w31.marker"
+    for h in host-a host-b; do
+      w_run "$W_REPO_A" "$v" - "$h" vault status --json
+      assert_json "W31 hub '$val' as $h: may_write" "$W_OUT" "j.may_write" "false"
+      assert_json "W31 hub '$val' as $h: writer_host/class" "$W_OUT" "j.writer_host + '/' + j.writer_class" "unreadable/invalid_value"
+    done
+    w_run "$W_REPO_A" "$v" - host-a vault sync --json
+    assert_eq "W31 hub '$val': sync skip line names invalid_value" "$(w_line_count '[a1-tools] vault mirror skipped: writer declaration of alpha unreadable (invalid_value) — create or repair project/alpha.md')" "1"
+    assert_eq "W31 hub '$val': nothing mirrored" "$(find "$v/project" -path '*/product/*' | wc -l | tr -d ' ')" "0"
+  done
+}
+caseW31
+
+# W31b (Samuel M1, second fix) — mayWrite is decided on the writer SOURCE: even
+# a declaration whose value is the sentinel `undeclared` (reachable only if a
+# future reader path skipped normalizeHostId) stays closed. In-process, because
+# with the reserved-value check in place no hub or env can produce it (the CLI
+# rows W31/W33 cannot see this mutation — defence in depth).
+# Red-making change: mayWrite on the value (`writerHost === 'undeclared'`).
+caseW31b() {
+  local out
+  out="$(env -u A1_HOST_ID WRITER="$W_WRITER" node -e '
+    const w = require(process.env.WRITER);
+    const g = w.gateFromDeclaration("alpha", { state: "declared", value: "undeclared" }, { A1_HOST_ID: "host-a" }, "os-host");
+    process.stdout.write(JSON.stringify({ may: g.mayWrite, src: g.writerSource }));' 2>&1)"
+  assert_json "W31b declared 'undeclared' value: may_write false (source hub)" "$out" "j.may + ',' + j.src" "false,hub"
+}
+caseW31b
+
+# W33 (Samuel M1 env side, Reinhard MINOR 1) — A1_VAULT_WRITER_HOST=undeclared
+# for a hub without the key: no open write, and the reason names the variable.
+# Red-making changes: dropping the reserved-value check (the env value then
+# declares "undeclared"); mayWrite on the value (every host writes).
+caseW33() {
+  local v="$W_WORK/w33"; w_hub "$v" alpha
+  w_run "$W_REPO_A" "$v" undeclared host-a product stage --by 001-login --set started
+  assert_json "W33 vault_mirror.status" "$W_OUT" "j.vault_mirror && j.vault_mirror.status" "skipped"
+  assert_eq "W33 reason names the variable" "$(w_line_count '[a1-tools] vault mirror skipped: fallback writer of alpha unreadable: A1_VAULT_WRITER_HOST is not a valid host id')" "1"
+  [[ ! -e "$v/project/alpha/product" ]] && ok "W33 nothing mirrored" || bad "W33 mirror written"
+  w_run "$W_REPO_A" "$v" undeclared host-a vault status --json
+  assert_json "W33 status" "$W_OUT" "[j.writer_source, j.writer_host, j.may_write].join(',')" "env,unreadable,false"
+}
+caseW33
+
+# W34 (Samuel m2) — YAML folds across blank lines: key, blank line, `  -b`.
+# Red-making change: testing only the line right after the key.
+caseW34() {
+  local v="$W_WORK/w34"; w_hub "$v" alpha 'a1_writer_host: host-a' '' '  -b'
+  w_run "$W_REPO_A" "$v" - host-a vault status --json
+  assert_json "W34 unreadable/folded" "$W_OUT" "j.writer_host + '/' + j.writer_class" "unreadable/folded"
+  assert_json "W34 may_write" "$W_OUT" "j.may_write" "false"
+}
+caseW34
+
 # X2 — the export contract is unchanged by Wave 10 (no version bump).
 # Red-making change: adding writer fields to the export without a bump.
 caseX2() {

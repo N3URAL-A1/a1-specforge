@@ -106,7 +106,7 @@ caseW15() {
   assert_rc "W15 exit" 0 "$X_RC" "$(cat "$X_ERR")"
   assert_json "W15 rows sorted with writer_source" "$X_OUT" "j.projects.map((p) => p.slug + ':' + p.writer_host + ':' + p.writer_source + ':' + p.may_write).join(',')" \
     "alpha:host-a:hub:true,beta:host-b:hub:false,delta:unreadable:hub:false,gamma:undeclared:none:true"
-  assert_json "W15 delta class hub_missing" "$X_OUT" "j.projects.find((p) => p.slug === 'delta').class" "hub_missing"
+  assert_json "W15 delta writer_class hub_missing" "$X_OUT" "j.projects.find((p) => p.slug === 'delta').writer_class" "hub_missing"
   assert_json "W15 host and host_source once" "$X_OUT" "[j.host, j.host_source, j.ignored_names].join(',')" "host-a,env,0"
   assert_eq "W15 nothing under the vault changed" "$(find "$v" -newer "$X_WORK/w15.marker" | wc -l | tr -d ' ')" "0"
 }
@@ -196,6 +196,51 @@ caseW24() {
 }
 caseW24
 
+# W32 (Samuel M1) — the sentinel `undeclared` is no host id: --set exits 2
+# and the hub stays byte-identical.
+# Red-making change: dropping the reserved-value check in normalizeHostId.
+caseW32() {
+  local v="$X_WORK/w32"; x_hub "$v" alpha 'a1_writer_host: host-a'; cp "$v/project/alpha.md" "$X_WORK/w32.before"
+  x_run "$X_WORK" "$v" - host-a vault writer alpha --set undeclared
+  assert_rc "W32 --set undeclared" 2 "$X_RC" "$(cat "$X_ERR")"
+  assert_eq "W32 hub byte-identical" "$(cmp -s "$X_WORK/w32.before" "$v/project/alpha.md"; echo $?)" "0"
+}
+caseW32
+
+# W35 (Samuel m3, Reinhard MINOR 2) — the hand-over write: a failing rename is
+# a clean refusal (exit code 1, message, no stack) and leaves no tmp file; the
+# hub keeps its file mode.
+# Red-making changes: no finally-unlink (tmp left); no try/catch in
+# setWriterHost (the error escapes); no chmod of the tmp file (mode 0644).
+caseW35() {
+  local v="$X_WORK/w35" out
+  x_hub "$v" alpha 'a1_writer_host: host-a'
+  out="$(env -u A1_VAULT_ROOT -u A1_VAULT_WRITER_HOST -u A1_HOST_ID WRITER="$X_WRITER" ROOT="$v" HOME="$X_HOME" node -e '
+    const fs = require("fs"), path = require("path");
+    const w = require(process.env.WRITER), root = process.env.ROOT;
+    const ops = { ...fs, renameSync: () => { const e = new Error("boom"); e.code = "EIO"; throw e; } };
+    let r; try { r = w.setWriterHost({ root, slug: "alpha", target: "host-b", dryRun: false, env: { A1_HOST_ID: "host-a", A1_VAULT_WRITER_HOST: "host-b" }, osHost: "os-host", ops }); } catch (e) { r = { threw: e.message }; }
+    const left = fs.readdirSync(path.join(root, "project")).filter((n) => n.includes(".tmp.")).length;
+    process.stdout.write(JSON.stringify({ code: r.code, msg: r.message, threw: r.threw || null, left }));' 2>"$X_ERR")"
+  assert_json "W35 refusal, not an exception" "$out" "[j.threw, j.code, j.msg].join('|')" "|1|could not write project/alpha.md (EIO) — nothing written"
+  assert_json "W35 no tmp file left" "$out" "j.left" "0"
+  chmod 600 "$v/project/alpha.md"
+  x_run "$X_WORK" "$v" host-b host-a vault writer alpha --set host-b
+  assert_rc "W35 --set on a 0600 hub" 0 "$X_RC" "$(cat "$X_ERR")"
+  assert_eq "W35 hub mode kept" "$(node -e 'process.stdout.write((require("fs").statSync(process.argv[1]).mode & 0o777).toString(8))' "$v/project/alpha.md")" "600"
+}
+caseW35
+
+# WB (Reinhard NIT) — writer_host_before is the EFFECTIVE writer: a hub
+# without the key resolved through the rollout aid reports that id.
+# Red-making change: reporting the hub value only ("undeclared").
+caseWB() {
+  local v="$X_WORK/wb"; x_hub "$v" alpha
+  x_run "$X_WORK" "$v" host-a host-a vault writer alpha --set host-a --json
+  assert_json "WB writer_host_before from the env" "$X_OUT" "[j.writer_host_before, j.writer_host_after, j.action].join(',')" "host-a,host-a,set"
+}
+caseWB
+
 # WX — exit codes: no external root → 2; a configured root that is missing →
 # one warning, exit 0 (FR-043, FR-010); usage errors → 2.
 # Red-making change: exiting 0 without a root, or 2 on a missing one.
@@ -220,10 +265,12 @@ caseWX
 caseWF() {
   local f="$REPO_ROOT/skills/a1-new-project/workflows/04-feature-split.md" hub_at mkdir_at
   assert_eq "WF old hub path project/<slug>/<slug>.md gone" "$(grep -c 'project/<slug>/<slug>\.md' "$f" | tr -d ' ')" "0"
-  assert_eq "WF hub written at project/<slug>.md with a1_writer_host" "$(grep -c 'Write `project/<slug>.md` with' "$f" | tr -d ' ')/$(grep -c 'a1_writer_host: <WRITER_ID>' "$f" | tr -d ' ')" "1/1"
+  assert_eq "WF hub written at project/<slug>.md with a1_writer_host" "$(grep -ci 'write `project/<slug>.md` with' "$f" | tr -d ' ')/$(grep -c 'a1_writer_host: <WRITER_ID>' "$f" | tr -d ' ')" "1/1"
   assert_eq "WF id taken from vault writer --json .host" "$(grep -c 'vault writer --json' "$f" | tr -d ' ')/$(grep -c 'JSON.parse(s).host)' "$f" | tr -d ' ')" "1/1"
+  assert_eq "WF an existing hub is never rewritten; a keyless one gets vault writer --set" \
+    "$(grep -c 'already$' "$f" | tr -d ' ')/$(grep -c 'never rewrite it' "$f" | tr -d ' ')/$(grep -c 'vault writer <slug> --set "\$WRITER_ID"' "$f" | tr -d ' ')" "1/1/1"
   assert_eq "WF stamps only with host_source env" "$(grep -c '\[ "\$HOST_SOURCE" = "env" \] ||' "$f" | tr -d ' ')" "1"
-  hub_at="$(grep -n 'Write `project/<slug>.md` with' "$f" | head -1 | cut -d: -f1)"
+  hub_at="$(grep -ni 'write `project/<slug>.md` with' "$f" | head -1 | cut -d: -f1)"
   mkdir_at="$(grep -n 'mkdir -p "\$VROOT/project/<slug>/' "$f" | head -1 | cut -d: -f1)"
   if [[ -n "$hub_at" && -n "$mkdir_at" && "$hub_at" -lt "$mkdir_at" ]]; then ok "WF hub write ($hub_at) precedes the project folder mkdir ($mkdir_at)"
   else bad "WF hub write ($hub_at) does not precede the mkdir ($mkdir_at)"; fi

@@ -39,7 +39,7 @@ const WRITER_KEY_ANYWHERE_RE = /a1_writer_host/i;
 const WRITER_FALLBACK_ENV = 'A1_VAULT_WRITER_HOST';
 const UNDECLARED = 'undeclared';
 const UNREADABLE = 'unreadable';
-const BOM = '﻿';
+const BOM = '\uFEFF';
 const FENCE = '---';
 const CONTINUATION_RE = /^[ \t]+\S/;
 const INLINE_COMMENT_RE = /(^|\s)#/;
@@ -102,7 +102,8 @@ function parseDeclaration(text) {
   const at = block.map((l, i) => (l.startsWith(WRITER_KEY_PREFIX) ? i : -1)).filter((i) => i !== -1);
   if (at.length === 0) return { state: 'none' };
   if (at.length > 1) return { state: UNREADABLE, cls: 'duplicate_key' };
-  if (CONTINUATION_RE.test(block[at[0] + 1] || '')) return { state: UNREADABLE, cls: 'folded' };
+  const next = block.slice(at[0] + 1).find((l) => l.trim() !== ''); // YAML folds across blank lines
+  if (CONTINUATION_RE.test(next || '')) return { state: UNREADABLE, cls: 'folded' };
   const value = block[at[0]].slice(WRITER_KEY_PREFIX.length).trim();
   if (value === '' || INLINE_COMMENT_RE.test(value)) return { state: UNREADABLE, cls: 'invalid_value' };
   const unquoted = /^(["']).*\1$/.test(value) && value.length >= 2 ? value.slice(1, -1) : value;
@@ -167,8 +168,10 @@ function gateFromDeclaration(slug, decl, env = process.env, osHost = os.hostname
   const writer = decl.state === 'declared' ? { writerHost: decl.value, writerSource: 'hub' }
     : decl.state === UNREADABLE ? { writerHost: UNREADABLE, writerSource: 'hub', cls: decl.cls }
       : fallbackWriter(env);
-  const mayWrite = writer.writerHost === UNDECLARED
-    || (writer.writerHost !== UNREADABLE && id.source !== 'invalid' && id.host === writer.writerHost);
+  // Decided on the SOURCE, never on the value: only `none` is open to every
+  // host, and a declaration with a class is unreadable (fail-closed).
+  const mayWrite = writer.writerSource === 'none'
+    || (!writer.cls && id.source !== 'invalid' && id.host === writer.writerHost);
   return Object.freeze({ slug, host: id.host, hostSource: id.source, ...writer, mayWrite });
 }
 
@@ -176,7 +179,10 @@ function gateFromDeclaration(slug, decl, env = process.env, osHost = os.hostname
 function notWriterReason(gate) {
   if (gate.mayWrite) return null;
   const slug = displaySlug(gate.slug);
-  if (gate.writerHost === UNREADABLE) {
+  if (gate.cls && gate.writerSource === 'env') {
+    return `fallback writer of ${slug} unreadable: ${WRITER_FALLBACK_ENV} is not a valid host id`;
+  }
+  if (gate.cls) {
     return `writer declaration of ${slug} unreadable (${gate.cls}) — create or repair project/${slug}.md`;
   }
   return `this host is not the vault writer of ${slug} (${gate.host} ≠ ${gate.writerHost})`;
@@ -195,7 +201,7 @@ function skippedProject(command, gate) {
   process.stderr.write(`[a1-tools] ${command} skipped for ${displaySlug(gate.slug)}: ${notWriterReason(gate)}\n`);
   return Object.freeze({
     slug: gate.slug,
-    reason: gate.writerHost === UNREADABLE ? 'writer-unreadable' : 'not-writer',
+    reason: gate.cls ? 'writer-unreadable' : 'not-writer',
     writer_host: gate.writerHost,
   });
 }
@@ -213,7 +219,6 @@ function gateFields(gate, root) {
   };
 }
 
-
 // ---------- `a1-tools vault writer` (FR-041 / FR-043) ----------
 
 const WRITER_FLAGS = Object.freeze({ set: 'value', clear: 'bool', 'dry-run': 'bool', json: 'bool' });
@@ -221,12 +226,12 @@ const WRITER_FLAGS = Object.freeze({ set: 'value', clear: 'bool', 'dry-run': 'bo
 /** A refusal of the command: message for stderr, exit code. Never echoes raw input. */
 const refusal = (code, message) => ({ code, message });
 
-/** FR-043 row for one project; `class` only for an unreadable declaration. */
+/** FR-043 row for one project; `writer_class` only for an unreadable declaration. */
 function listRow(root, slug, env, osHost) {
   const gate = writerGateFor(slug, root, env, osHost);
   return {
     slug, writer_host: gate.writerHost, writer_source: gate.writerSource,
-    ...(gate.cls ? { class: gate.cls } : {}),
+    ...(gate.cls ? { writer_class: gate.cls } : {}),
     may_write: gate.mayWrite, hub_conflict: hubConflict(root, slug),
   };
 }
@@ -262,26 +267,35 @@ function withWriterLine(raw, id) {
 }
 
 /** Writes `next` over the hub via tmp + rename, re-reading the hub right before
- * the rename: bytes that differ from `expected` → nothing written (W23). */
+ * the rename: bytes that differ from `expected` → false, nothing written (W23).
+ * The tmp file gets the hub's mode and is removed on every path that does not
+ * rename it; an fs error propagates to the caller (refusal, no stack). */
 function renameIfUnchanged(hub, next, expected, ops) {
   assertVaultWriteContained(hub);
+  const mode = ops.statSync(hub).mode & 0o7777;
   const tmp = tmpPathFor(hub);
-  ops.writeFileSync(tmp, next, { encoding: 'utf8', flag: 'wx' });
-  let now = null;
-  try { now = ops.lstatSync(hub).isSymbolicLink() ? null : ops.readFileSync(hub); } catch (_e) { now = null; }
-  if (now === null || !now.equals(expected)) {
-    ops.unlinkSync(tmp);
-    return false;
+  let renamed = false;
+  try {
+    ops.writeFileSync(tmp, next, { encoding: 'utf8', flag: 'wx', mode });
+    ops.chmodSync(tmp, mode); // the umask may have narrowed it
+    let now = null;
+    try { now = ops.lstatSync(hub).isSymbolicLink() ? null : ops.readFileSync(hub); } catch (_e) { now = null; }
+    if (now === null || !now.equals(expected)) return false;
+    ops.renameSync(tmp, hub);
+    renamed = true;
+    return true;
+  } finally {
+    if (!renamed) { try { ops.unlinkSync(tmp); } catch (_e) { /* never created */ } }
   }
-  ops.renameSync(tmp, hub);
-  return true;
 }
 
 /**
  * setWriterHost({root, slug, target, dryRun, env?, osHost?, ops?}) — the
  * FR-041 hand-over; `target` is a normalised id or null for --clear. Returns
  * { code, result } or { code, message } (refusal). `ops` is the fs adapter
- * for the write (writeFileSync, lstatSync, readFileSync, renameSync, unlinkSync).
+ * for the write (statSync, writeFileSync, chmodSync, lstatSync, readFileSync,
+ * renameSync, unlinkSync) — io.writeTextAtomic has no re-read hook, hence the
+ * own tmp + rename here.
  */
 function setWriterHost({ root, slug, target, dryRun, env = process.env, osHost = os.hostname(), ops = realFs }) {
   const hubRel = `project/${slug}.md`;
@@ -289,24 +303,31 @@ function setWriterHost({ root, slug, target, dryRun, env = process.env, osHost =
   const manual = `nothing written; ${MANUAL_PATH} (${hubRel})`;
   if (decl.state === UNREADABLE) return refusal(EXIT.refused, `writer declaration of ${slug} unreadable (${decl.cls}) — ${manual}`);
   if (!decl.bytes) return refusal(EXIT.refused, `hub note missing: ${hubRel} — ${manual}`);
-  const before = decl.state === 'declared' ? decl.value : UNDECLARED;
-  const base = { slug, hub_path: hubRel, writer_host_before: before, dry_run: dryRun };
-  if ((target === null && decl.state === 'none') || (target !== null && before === target)) {
-    return { code: EXIT.ok, result: { ...base, action: 'unchanged', writer_host_after: before } };
+  const gate = gateFromDeclaration(slug, decl, env, osHost);
+  // before = the EFFECTIVE writer (hub, else the rollout aid); the no-op check
+  // compares the hub alone, so a hub resolved through the env still gets its key.
+  const base = { slug, hub_path: hubRel, writer_host_before: gate.writerHost, dry_run: dryRun };
+  const hubValue = decl.state === 'declared' ? decl.value : null;
+  if ((target === null && decl.state === 'none') || (target !== null && hubValue === target)) {
+    return { code: EXIT.ok, result: { ...base, action: 'unchanged', writer_host_after: gate.writerHost } };
   }
   const raw = decl.bytes.toString('utf8');
-  if (!/^(﻿)?---\r?$/.test(raw.split('\n')[0])) return refusal(EXIT.refused, `hub note ${hubRel} has no frontmatter block — ${manual}`);
-  const reason = notWriterReason(gateFromDeclaration(slug, decl, env, osHost));
+  if (!/^(\uFEFF)?---\r?$/.test(raw.split('\n')[0])) return refusal(EXIT.refused, `hub note ${hubRel} has no frontmatter block — ${manual}`);
+  const reason = notWriterReason(gate);
   if (reason) return refusal(EXIT.refused, `${reason} — ${manual}`);
   if (target !== null && !knownWriterIds(root, slug, env, osHost).has(target)) {
     process.stderr.write(`warning: ${target} is not a known writer id\n`);
   }
-  const after = target === null ? UNDECLARED : target;
+  const after = target === null ? fallbackWriter(env).writerHost : target;
   if (dryRun) return { code: EXIT.ok, result: { ...base, action: target === null ? 'would-clear' : 'would-set', writer_host_after: after } };
   const hub = path.join(root, 'project', `${slug}.md`);
-  if (!renameIfUnchanged(hub, withWriterLine(raw, target), decl.bytes, ops)) {
-    return refusal(EXIT.refused, `${hubRel} changed since it was read — nothing written; run the command again`);
+  let written;
+  try {
+    written = renameIfUnchanged(hub, withWriterLine(raw, target), decl.bytes, ops);
+  } catch (e) {
+    return refusal(EXIT.refused, `could not write ${hubRel} (${e.code || 'error'}) — nothing written`);
   }
+  if (!written) return refusal(EXIT.refused, `${hubRel} changed since it was read — nothing written; run the command again`);
   return { code: EXIT.ok, result: { ...base, action: target === null ? 'cleared' : 'set', writer_host_after: after } };
 }
 
@@ -366,7 +387,7 @@ function cmdVaultWriter(args) {
 
 module.exports = {
   WRITER_KEY, UNDECLARED, UNREADABLE, MANUAL_PATH, EXIT,
-  readWriterDeclaration, writerGateFor, notWriterReason, notWriterSkip, skippedProject,
+  readWriterDeclaration, writerGateFor, gateFromDeclaration, notWriterReason, notWriterSkip, skippedProject,
   gateFields, hubConflict, projectNames, isProjectName, displaySlug,
   listWriters, setWriterHost, cmdVaultWriter,
 };
