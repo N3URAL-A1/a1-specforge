@@ -9,7 +9,7 @@
 //
 // Exit codes (each command owns its own and calls process.exit):
 //   sync    0 applied / dry-run / skipped (root missing or read-only FR-010,
-//             non-writer host FR-034)
+//             this host may not write the slug FR-034/FR-040)
 //           1 input error (unknown flag, unsafe slug, slug mismatch, duplicate claim)
 //           2 cannot run (no external vault root, not a git repo, apply refused)
 //   status  0 no drift, or skipped (root missing or unreadable, FR-010) ·
@@ -30,8 +30,8 @@ const { codeRoots, parseFlags, parseFrontmatter, assertSafeSegment } = require('
 const { planMirror, applyMirror } = require('./vault-mirror.cjs');
 const {
   MAX_SLUG_LENGTH, isConflictCopy, isInside, childDirs, externalVaultRoot, rootProblem, warnSkipped,
-  writerHostGate, notWriterReason,
 } = require('./vault-common.cjs');
+const { writerGateFor, notWriterReason, gateFields } = require('./vault-writer.cjs');
 const { PRODUCT_MIRROR_SET, PHASES_MIRROR_SET, MIRROR_EXCLUDES } = require('./vault-contract.cjs');
 const { emitJson, writeStdoutSync } = require('./xprov-common.cjs');
 
@@ -296,8 +296,8 @@ function runSync(args) {
   }
   const dryRun = parsed.flags['dry-run'] === true;
   const prune = parsed.flags.prune === true;
-  const gate = writerHostGate();
-  const problem = gate.mayWrite ? rootProblem(ctx.vaultRoot, fs.constants.W_OK) : notWriterReason(gate);
+  // FR-034/FR-040: the writer of THIS slug, resolved for this call.
+  const problem = notWriterReason(writerGateFor(ctx.slug, ctx.vaultRoot)) || rootProblem(ctx.vaultRoot, fs.constants.W_OK);
   if (problem) {
     warnSkipped('vault mirror', problem);
     return { ...header('sync', ctx), status: 'skipped', reason: problem, dry_run: dryRun, prune };
@@ -330,14 +330,11 @@ function runStatus(args) {
   const plan = buildPlan(ctx);
   const findings = driftFindings(plan, findConflictCopies(ctx.vaultRoot, ctx.slug));
   const count = (c) => findings.filter((f) => f.class === c).length;
-  const gate = writerHostGate();
   return {
     json: parsed.flags.json === true,
     report: {
       ...header('status', ctx),
-      host: gate.host,
-      writer_host: gate.writerHost,
-      may_write: gate.mayWrite,
+      ...gateFields(writerGateFor(ctx.slug, ctx.vaultRoot), ctx.vaultRoot),
       in_sync: plan.entries.filter((e) => e.action === 'unchanged').length,
       drift: findings.length,
       counts: { missing: count('missing'), stale: count('stale'), extra: count('extra'), conflict: count('conflict') },
@@ -378,7 +375,7 @@ function cmdVaultStatus(args) {
     writeStdoutSync(out.report.findings.map((f) => `${f.class}  ${f.path}\n`).join(''));
     const r = out.report;
     process.stderr.write(`[a1-tools] vault status: ${r.drift} drift, ${r.in_sync} in sync\n`);
-    process.stderr.write(`[a1-tools] vault writer: host ${r.host}, writer_host ${r.writer_host}, may_write ${r.may_write}\n`);
+    process.stderr.write(`[a1-tools] vault writer: host ${r.host} (${r.host_source}), writer_host ${r.writer_host} (${r.writer_source}), may_write ${r.may_write}, hub_conflict ${r.hub_conflict}\n`);
   }
   process.exit(code);
 }

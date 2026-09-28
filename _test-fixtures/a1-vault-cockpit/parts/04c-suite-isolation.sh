@@ -61,7 +61,7 @@ caseI1() {
     if [[ -z "$sentinel" || ! -d "$sentinel" || -z "$home" || ! -d "$home" ]]; then
       bad "I1 $s: mktemp gave no directory — suite not run"; continue
     fi
-    env -u A1_VAULT_WRITER_HOST A1_VAULT_ROOT="$sentinel" HOME="$home" bash "$REPO_ROOT/_test-fixtures/$s" >/dev/null 2>&1
+    env -u A1_VAULT_WRITER_HOST A1_HOST_ID=leak A1_VAULT_ROOT="$sentinel" HOME="$home" bash "$REPO_ROOT/_test-fixtures/$s" >/dev/null 2>&1
     rc=$?
     assert_rc "I1 $s exits 0 under the sentinel vault" 0 "$rc" "run it on its own to see the failures"
     leaked="$(cd "$sentinel" && find . -mindepth 1 | sed 's#^\./##' | LC_ALL=C sort | head -3 | tr '\n' ' ' | sed 's/ $//')"
@@ -81,3 +81,32 @@ caseI1() {
   fi
 }
 caseI1
+
+# X1 — Wave 10 (spec 010 edge case "Test isolation"): the host id A1_HOST_ID
+# (FR-039) must not reach a suite's child processes either. The I1 arm above
+# exports A1_HOST_ID=leak into every suite; this arm proves the suites drop it:
+# every runner line that unsets A1_VAULT_WRITER_HOST also unsets A1_HOST_ID
+# (`unset …` or `env -u …`), and a child started the way the runners start it
+# reports host_source "os", not the leaked id.
+# Red-making change: removing one `A1_HOST_ID` from such a line (static half),
+# or dropping the unset in this suite's run-tests.sh (dynamic half: the child
+# then reports host_source "env").
+caseX1() {
+  local f line missing="" n=0 w out
+  for f in "$REPO_ROOT"/_test-fixtures/*/run-tests.sh "$REPO_ROOT"/_test-fixtures/*/run.sh \
+           "$REPO_ROOT"/_test-fixtures/*/golden/*.sh "$REPO_ROOT"/_test-fixtures/a1-vault-cockpit/parts/*.sh; do
+    [[ -f "$f" ]] || continue
+    while IFS= read -r line; do
+      n=$((n + 1))
+      [[ "$line" == *A1_HOST_ID* ]] || missing+="${f#"$REPO_ROOT/_test-fixtures/"}: $line"$'\n'
+    done < <(grep -E '^[[:space:]]*unset [^#]*A1_VAULT_WRITER_HOST|env -u [^#]*-u A1_VAULT_WRITER_HOST|env -u A1_VAULT_WRITER_HOST' "$f")
+  done
+  assert_eq "X1 every A1_VAULT_WRITER_HOST unset line also drops A1_HOST_ID ($n lines)" "$missing" ""
+  w="$(mktemp -d)"; mkdir -p "$w/vault/project" "$w/repo/docs/product"
+  git -C "$w/repo" init -q 2>/dev/null || git init -q "$w/repo"
+  printf -- '---\nproject: demo\nstatus: active\n---\n# Roadmap\n' > "$w/repo/docs/product/ROADMAP.md"
+  out="$(cd "$w/repo" && A1_VAULT_ROOT="$w/vault" HOME="$w" A1_CODE_ROOTS="$w" node "$TOOLS" vault status --json 2>/dev/null)"
+  assert_json "X1 inherited suite env: child host_source is os (A1_HOST_ID not leaked)" "$out" "j.host_source" "os"
+  rm -rf "$w"
+}
+caseX1
