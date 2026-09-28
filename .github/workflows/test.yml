@@ -81,10 +81,12 @@ jobs:
           set -e
           export HOME="$(mktemp -d)"
           set +e
-          node _shared/a1-tools.cjs xprov allowlist approve --repo . </dev/null
+          node _shared/a1-tools.cjs xprov allowlist approve --repo . </dev/null 2>"$HOME/approve.err"
           rc=$?
           set -e
           [ "$rc" = 2 ]
+          # rc 2 is also the usage / not-implemented exit: the refusal must name its reason
+          grep -q 'must both be a terminal' "$HOME/approve.err"
           test ! -e "$HOME/.a1-xprov/allowlist-approvals.json"
           for cmd in "node _shared/a1-tools.cjs xprov allowlist approve --repo ." "cat ~/.a1-xprov/allowlist-approvals.json"; do
             printf '{"tool_name":"Bash","tool_input":{"command":"%s"}}' "$cmd" \

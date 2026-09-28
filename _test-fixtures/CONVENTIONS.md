@@ -161,9 +161,12 @@ mutation run confirmed.
 
 Part `_test-fixtures/a1-xprov/parts/08-allowlist.sh`. Every mutation was run once on a
 `git archive` copy (never the live tree), with only the named cases selected
-(`XPROV08_CASES`), on 2026-09-28: 53 production mutations on macOS, 8 in `node:20` (the
-`approve` guards need a process tree without Claude Code), plus the n2 fixture mutation.
-All 62 turned their arm red. Fail arms also assert that the fake runner was never
+(`XPROV08_CASES`), on 2026-09-28, rerun in full after the review fixes: 66 production
+mutations on macOS, 11 in `node:20` (the `approve` guards need a process tree without
+Claude Code), plus the n2 fixture mutation. 76 of the 77 production mutations turned their
+arm red. The remaining one ("count per window without offset dedup") has been an equivalent
+mutant since the overlap merge (R-M1) drops a re-seen start as well; R30c3a dies when both
+are removed. Fail arms also assert that the fake runner was never
 invoked, so a mutation that lets the snapshot through shows up as a runner call.
 
 | Guard | Case(s) | Named red-making change |
@@ -179,6 +182,7 @@ invoked, so a mutation that lets the snapshot through shows up as a runner call.
 | Approval store (FR-030 j) | R30j1–R30j7b | skip the approval lookup (j1, j2); skip the file mode (j3); follow a symlinked store (j4); `stat` the directory (j5); skip the directory mode (j6); `allowlist_approved_blob` null (j7a); ignore `--revoke` (j7b, node:20) |
 | `approve` guards (FR-030 j) | R30j2-1…8 | drop the TTY check (1), the env check (2), the start-name check (3), the `claude/versions/` check (4), the argv check (5) — all node:20; drop either string from the hook (6a, 6b); write the store in place instead of temp file + rename (7, inode unchanged, node:20); accept any count (8, node:20) |
 | No allowlist = old behaviour | R30reg | fail when the anchor holds no allowlist |
+| Review fixes (Samuel, Reinhard, 2026-09-28) | R30c4a/b, R30c5, R30c3c, R30j8, R30b3-6, R30h7, R30h8, R30j2-1…5 text, R30j2-3b, R30j2-6e, R30j2-9…11 | `LINE_CONTEXT_CHARS` 256 → 0 (c4a); fingerprint with the window-truncated match length (c5); drop the overlap merge (c3c); approval looked up across all repositories (j8); `GIT_SSH_COMMAND` without `BatchMode=yes`, or no `GIT_TERMINAL_PROMPT=0` (b3-6, the fake ssh serves only a non-interactive call); a HIGH_CONFIDENCE name that is no pattern (h7); an unparsable permit record read as "no decided_by" (h8); the subcommand module missing, which is also exit 2 (refusal texts); case-sensitive start name (3b); no hook normalisation, plural-only store name (6e); an invalid store silently replaced (9, node:20); no error wrapper (10, node:20); no owner warning (11, node:20) |
 | CI never skips (n2) | R30j2-7, R30j7b | with `CI=true` a `SKIP (claude-code ancestor)` line is a FAIL; removing that check from `skip8` turns the same `CI=true` run under Claude Code green (measured) |
 
 RED against the pre-wave code (`git archive 687f4b9` plus this part): 71 of 146
