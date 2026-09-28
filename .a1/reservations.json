@@ -3,32 +3,6 @@
     {
       "type": "code_scope",
       "paths": [
-        "docs/adr/2026-09-24-cross-provider-review-gate.md",
-        "_shared/gates-registry.md",
-        ".github/workflows/test.yml",
-        "_test-fixtures/CONVENTIONS.md",
-        "_test-fixtures/a1-xprov/",
-        "_shared/lib/xprov.cjs",
-        "_shared/lib/xprov-common.cjs",
-        "_shared/lib/xprov-snapshot.cjs",
-        "_shared/lib/xprov-gate.cjs",
-        "_shared/lib/xprov-permit.cjs",
-        "_shared/lib/xprov-run.cjs",
-        "_shared/lib/help.cjs",
-        ".claude/settings.json",
-        ".claude/hooks/xprov-deny-allowlist-approve.sh",
-        ".a1/xprov-secret-allowlist.json",
-        "_shared/lib/xprov-allowlist.cjs",
-        "_shared/lib/xprov-approve.cjs",
-        "_shared/lib/xprov-normalize.cjs"
-      ],
-      "by": "009-cross-provider-review-gate",
-      "at": "2026-09-28T18:06:53.899Z",
-      "stage": "started"
-    },
-    {
-      "type": "code_scope",
-      "paths": [
         "_shared/lib/intent.cjs",
         "_shared/lib/intent-constants.cjs",
         "_shared/lib/intent-validate.cjs",
@@ -66,6 +40,40 @@
       ],
       "by": "011-intent-queue-consumer",
       "at": "2026-09-28T18:27:35.396Z",
+      "stage": "started"
+    },
+    {
+      "type": "code_scope",
+      "paths": [
+        "docs/adr/2026-09-24-cross-provider-review-gate.md",
+        "_shared/gates-registry.md",
+        "_test-fixtures/a1-xprov/",
+        "_shared/lib/xprov.cjs",
+        "_shared/lib/xprov-common.cjs",
+        "_shared/lib/xprov-snapshot.cjs",
+        "_shared/lib/xprov-gate.cjs",
+        "_shared/lib/xprov-permit.cjs",
+        "_shared/lib/xprov-run.cjs",
+        ".claude/settings.json",
+        ".claude/hooks/xprov-deny-allowlist-approve.sh",
+        ".a1/xprov-secret-allowlist.json",
+        "_shared/lib/xprov-allowlist.cjs",
+        "_shared/lib/xprov-approve.cjs",
+        "_shared/lib/xprov-normalize.cjs"
+      ],
+      "by": "009-cross-provider-review-gate",
+      "at": "2026-09-28T21:08:32.409Z",
+      "stage": "started"
+    },
+    {
+      "type": "code_scope",
+      "paths": [
+        "_shared/lib/help.cjs",
+        ".github/workflows/test.yml",
+        "_test-fixtures/CONVENTIONS.md"
+      ],
+      "by": "chore-ci-followups",
+      "at": "2026-09-28T21:08:32.467Z",
       "stage": "started"
     }
   ]
