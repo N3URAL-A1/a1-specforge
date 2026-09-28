@@ -168,7 +168,9 @@ through the worktree unconditionally.) The flow:
 **Never** cherry-pick a commit from a feature branch onto a fresh main branch as a
 workaround — that is the anti-pattern this gate exists to eliminate. **Never** push
 a build-red `main`. **Never** edit files in the primary checkout while another
-session may be using it.
+session may be using it. **Never** push the fix branch per commit: it is pushed
+when its PR opens, then once per review-fix round, local suite green first
+(`_shared/push-cadence.md`).
 
 ## Routing — pick the right phase
 

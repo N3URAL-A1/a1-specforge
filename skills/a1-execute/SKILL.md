@@ -152,10 +152,14 @@ gotchas): `_shared/parallel-spec-isolation.md`. Short form:
 2. `git worktree add ../a1-worktrees/<phase-slug> -b feature/<phase-slug> origin/main`
    (delegate to `a1-worktree`, or inline). Every erik wave runs inside that path.
 3. Shared-state mutations (`docs/product/**`, `.a1/reservations.json`) happen
-   ONLY in the primary checkout and are committed + pushed IMMEDIATELY (small
-   `chore(product):` PR under branch protection) — never left dirty for
-   parallel sessions to trip over.
+   ONLY in the primary checkout and are committed IMMEDIATELY, then pushed
+   once per session step (one small `chore(product):` PR, not one per
+   mutation) — never left dirty or unpushed for parallel sessions to trip
+   over.
 4. Merge only when the final wave is GREEN; tear the worktree down afterwards.
+   Waves commit, they never push: the branch is pushed when its PR opens and
+   then once per review-fix round, local suite green first
+   (`_shared/push-cadence.md`).
 
 This enables parallel specs on one project: N phases = N worktrees = N branches,
 zero shared-working-tree conflicts.

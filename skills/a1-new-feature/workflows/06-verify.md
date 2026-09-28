@@ -266,7 +266,8 @@ git -C <repo> ls-tree origin/main automation/db/migrations/ | grep -E '<your-new
 - "main looks build-red after pull": first rebuild gitignored package `dist/` (`pnpm --filter <pkg> build`)
   before concluding main is broken — a stale local build masquerades as a red main.
 
-Only after a clean rebase + no number collision + green build on the merged tree do you push.
+Only after a clean rebase + no number collision + green build on the merged tree do you push
+(one push, not one per fix commit — `_shared/push-cadence.md`).
 
 Tell the user:
 

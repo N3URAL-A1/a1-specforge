@@ -124,7 +124,9 @@ JSON which the workflow then writes to `findings.json` via the CLI.
 
 - After `pr-open`: **the assistant merges — never the user.** The user does
   not review PRs (standing instruction, 2026-09-09). Sequence: Reinhard
-  reviews the diff as a subagent → fix every BLOCKER and MAJOR → then merge
+  reviews the diff as a subagent → fix every BLOCKER and MAJOR (commit each
+  fix locally, push once per completed round with the local suite green —
+  never one push per finding, see `_shared/push-cadence.md`) → then merge
   with `gh pr merge --squash --delete-branch`, verify it landed
   (`gh pr view --json state,mergedAt`), pull `main`, and advance the registry.
   Do not ask the user to review, and do not hand the PR back as "ready for

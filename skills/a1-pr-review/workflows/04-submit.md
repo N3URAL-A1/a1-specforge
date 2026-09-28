@@ -18,6 +18,9 @@ If not authenticated: tell the user to run `gh auth login`, abort.
 
 ### 4.2 Push branch (if needed)
 
+This is the branch's first push (`_shared/push-cadence.md` P1). Run the
+project's local suite in the worktree first and push only on green (P2).
+
 ```bash
 git -C "<worktree_path>" push -u origin "<branch>"
 ```

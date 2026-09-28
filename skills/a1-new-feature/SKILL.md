@@ -305,11 +305,14 @@ the same working tree overwrite each other's files and push half-finished work
 
 **Never** cherry-pick commits onto a fresh main branch as a merge workaround.
 **Never** push a build-red `main`. **Never** edit the primary checkout mid-feature
-while another session may hold it.
+while another session may hold it. **Never** push the feature branch per commit
+or per wave: it is pushed when its PR opens, then once per review-fix round,
+local suite green first (`_shared/push-cadence.md`).
 
 Shared-state files (`docs/product/**`, `.a1/reservations.json`) are mutated ONLY
-in the primary checkout and committed + pushed IMMEDIATELY — never left dirty
-(parallel sessions read stale reservations otherwise). Full cross-skill
+in the primary checkout and committed IMMEDIATELY, then pushed as one chore PR
+per session step — never left dirty or unpushed across sessions (parallel
+sessions read stale reservations otherwise). Full cross-skill
 convention incl. scope-claim order: `_shared/parallel-spec-isolation.md`.
 
 ## Routing — pick the right phase

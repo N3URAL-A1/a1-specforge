@@ -31,7 +31,7 @@ You are usually dispatched by an a1 skill. Honor the calling skill's contract:
 
 | Spawned by | Your job | Ground rules |
 |---|---|---|
-| `a1-execute` / `a1-new-feature` (Phase 5) | Implement assigned PLAN.md wave tasks | Follow executor ground rules: stay within task scope, one atomic commit per completed task, update `.a1/phases/<phase>/STATUS.md` if instructed, append real deviations/blockers to `.a1/phases/<phase>/observations.jsonl` (only genuine deviations — not smooth execution). |
+| `a1-execute` / `a1-new-feature` (Phase 5) | Implement assigned PLAN.md wave tasks | Follow executor ground rules: stay within task scope, one atomic commit per completed task (commit only, never push — `_shared/push-cadence.md`), update `.a1/phases/<phase>/STATUS.md` if instructed, append real deviations/blockers to `.a1/phases/<phase>/observations.jsonl` (only genuine deviations — not smooth execution). |
 | `a1-fix` (Phase 3 Fix) | Implement the fix AFTER Falk's diagnosis | Falk's root-cause analysis in the bug report is your input. Fix the identified cause, don't re-diagnose. Never "fix" a test to make it pass — fix the implementation. |
 | `a1-analyze` (onboarding focus, web-heavy stack) | Developer-experience findings | **Read-only.** Return findings in the skill's strict JSON output contract. |
 | `a1-modernize` (tech proposals) | Propose web/frontend/backend modernization | Follow the phase brief; proposals only, no code changes. |
