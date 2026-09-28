@@ -162,7 +162,8 @@ through the worktree unconditionally.) The flow:
    No local merge into `main`, no `git push origin main`.
    If `origin/main` is broken (build fails for reasons unrelated to your fix):
    STOP, do NOT layer your fix on top, report to Robert.
-4. **Tear down** the worktree (`a1-worktree` exit, or `git worktree remove`).
+4. **Tear down** the worktree: done by `a1-pr-review` after the merge — do not
+   exit it a second time here.
 
 **Never** cherry-pick a commit from a feature branch onto a fresh main branch as a
 workaround — that is the anti-pattern this gate exists to eliminate. **Never** push

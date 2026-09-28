@@ -22,7 +22,9 @@ branches had 21–23 CI runs because review fixes were pushed one at a time.
 2. **Then one push per completed review-fix round.** A round is all
    BLOCKER/MAJOR findings of one review pass. Findings from reviewers that ran
    in parallel on the same pass (e.g. Reinhard and Samuel) are one round.
-   Commit each fix locally; push once when the whole round is fixed.
+   Commit each fix locally; push once when the whole round is fixed. If the
+   round rebased the branch onto `origin/main`, that push is
+   `--force-with-lease`, never plain `--force`.
 3. **Never per commit, per wave, or per single finding.** Executors (Erik,
    Walter, any code agent) commit; they do not push.
 4. **Push without a PR** only if the repo's CI does not trigger on branch
@@ -30,7 +32,8 @@ branches had 21–23 CI runs because review fixes were pushed one at a time.
 
 **The one exception: `a1-quick`.** The XS lane merges its `quick/<slug>`
 branch into `main` locally, without a PR. It then pushes `main` exactly once,
-after P2.
+after P2. If `main` is protected (see P3, "Protected or not"), a1-quick opens a
+PR too and takes the same squash path.
 
 ## P2 — Local suite green before every push
 
@@ -62,11 +65,33 @@ Pushing it is batched: **one push, or one `chore(...)` PR, per session step,
 not per mutation.** A session step is one lifecycle transition of one work
 unit.
 
-**Start step: hard sync point.** `code-scope` reads only the local
-`.a1/reservations.json`, so a claim is only as fresh as the last pull.
+The `a1-tools.cjs` CLI mutates these files but never commits; the skill
+commits them on the primary checkout's `main`.
 
-1. Run `git -C <repo> pull --ff-only origin main` in the primary checkout
-   before every `code-scope list` or `code-scope claim`.
+**Protected or not.** Measure it once per session, do not assume it:
+`gh api repos/<owner>/<repo>/branches/main/protection` answers 404 **and**
+`gh api repos/<owner>/<repo>/rules/branches/main` (the rules active on `main`)
+lists no rule of type `pull_request` → unprotected. Anything else → protected.
+
+**How a step is pushed.**
+
+- Unprotected `main`: push the step's shared-state commits directly to
+  `origin main` at the step boundary.
+- Protected `main`: create a branch `chore/<unit>-<step>` from the local
+  shared-state commits, push it, open the chore PR, and squash-merge it. Once
+  the merge is proven (`gh pr view --json state,mergedAt`), run
+  `git -C <repo> reset --keep origin/main` in the primary checkout, so local
+  `main` carries origin's squash commit instead of the originals.
+
+**Start step: hard sync point.** `code-scope` reads only the local
+`.a1/reservations.json`, so a claim is only as fresh as the last sync.
+
+1. Run `git -C <repo> pull --rebase origin main` in the primary checkout
+   before every `code-scope list` or `code-scope claim`. `--rebase`, not
+   `--ff-only`: unpushed shared-state commits on local `main` are normal under
+   this rule, and `--ff-only` aborts as soon as `origin/main` has moved. On a
+   rebase conflict in `.a1/reservations.json` or `docs/product/**`: STOP,
+   `git rebase --abort`, do not resolve it yourself; Robert decides.
 2. The claim commit is pushed (or its chore PR merged) as the **last action of
    the start step**, before `worktree add` and before Wave 1. A product status
    change of the same step may ride in that push.
@@ -87,6 +112,7 @@ unit.
 
 - Skills: `a1-pr-review` (`SKILL.md`, `workflows/04-submit.md`),
   `a1-new-feature` (`SKILL.md`, `workflows/06-verify.md`), `a1-fix`,
-  `a1-execute`, `a1-quick` (the exception above).
+  `a1-execute`, `a1-quick` (the exception above). The sync and push commands
+  of P3 live only here; the skills point to them.
 - Agents: `agents/a1-erik-executor.md`, `agents/a1-walter-web-developer.md`.
 - Conventions: `parallel-spec-isolation.md` R2, R3, R4.

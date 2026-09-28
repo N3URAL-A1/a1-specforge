@@ -148,9 +148,10 @@ be moved into its own git worktree on a fresh branch off `main` — full
 convention (worktree naming, shared-state rule, scope claim, merge discipline,
 gotchas): `_shared/parallel-spec-isolation.md`. Short form:
 
-1. Pull `main` in the primary checkout, then claim the phase's `code_scope`
-   via `a1-tools.cjs code-scope` (STOP on overlap with an active reservation
-   of another spec). Push the claim before step 2 (`_shared/push-cadence.md` P3).
+1. Sync the primary checkout, then claim the phase's `code_scope` via
+   `a1-tools.cjs code-scope` (STOP on overlap with an active reservation of
+   another spec); push the claim before step 2. Commands:
+   `_shared/push-cadence.md` P3, start step.
 2. `git worktree add ../a1-worktrees/<phase-slug> -b feature/<phase-slug> origin/main`
    (delegate to `a1-worktree`, or inline). Every erik wave runs inside that path.
 3. Shared-state mutations (`docs/product/**`, `.a1/reservations.json`,

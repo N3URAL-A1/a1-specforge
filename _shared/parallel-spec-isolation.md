@@ -61,10 +61,10 @@ claimen kollidierende Scopes/Migrationsnummern.
 
 ## R3 — Scope claimen VOR Worktree-Anlage
 
-Vor dem Worktree: im Haupt-Checkout `git pull --ff-only origin main`, dann
-`a1-tools.cjs code-scope list` prüfen und eigenen Scope claimen — `code-scope`
-liest nur die lokale Datei. Der Claim-Commit wird gepusht, bevor der Worktree
-entsteht (`push-cadence.md` P3, Start-Schritt). Überlappt der geplante Scope mit einer aktiven (nicht-stale)
+Vor dem Worktree: Haupt-Checkout synchronisieren, dann `a1-tools.cjs
+code-scope list` prüfen und eigenen Scope claimen; der Claim wird gepusht,
+bevor der Worktree entsteht. Befehle: `push-cadence.md` P3, Start-Schritt.
+Überlappt der geplante Scope mit einer aktiven (nicht-stale)
 Reservierung einer anderen Spec → STOP, Robert entscheidet (nie still
 "dazwischenarbeiten"). Migrationsnummern zusätzlich über
 `automation/db/migrations/MIGRATIONS-RESERVED.md` bzw. `code-scope`-Reservierung.

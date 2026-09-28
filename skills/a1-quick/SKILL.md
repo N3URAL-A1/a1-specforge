@@ -158,7 +158,8 @@ git -C <repo> merge --no-ff quick/<slug>
 ```
 
 Then push `main` exactly once, local suite green first — the one allowed
-exception to the PR path (`_shared/push-cadence.md`).
+exception to the PR path. If `main` is protected, open a PR instead and take
+the same squash path (`_shared/push-cadence.md`).
 
 One atomic commit — not one commit per file. No 5-stage `code-scope stage`
 sequence (`complete` / `review` / `verify` / `merge` / `origin-cleanup`) —

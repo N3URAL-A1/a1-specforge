@@ -197,11 +197,11 @@ Never migrate without asking. Never do a partial/silent conversion.
 
 Before the first wave of Phase 5, the feature MUST claim its declared code
 scope so parallel features cannot silently collide on the same files. The
-claim runs in the primary checkout, right after a pull, because `code-scope`
-reads only the local reservations file:
+claim runs in the primary checkout, right after the sync point of
+`_shared/push-cadence.md` P3 (start step), because `code-scope` reads only
+the local reservations file:
 
 ```bash
-git -C <repo> pull --ff-only origin main
 node <repo>/_shared/a1-tools.cjs code-scope claim \
   --by <spec-id> --scope <code_scope from wave-plan frontmatter>
 ```
@@ -305,7 +305,8 @@ the same working tree overwrite each other's files and push half-finished work
    local merge into `main`, no `git push origin main`.
    If `origin/main` no longer builds for reasons unrelated to this feature:
    STOP, do NOT layer on top, report to Robert.
-4. **Tear down** the worktree (`a1-worktree` exit, or `git worktree remove`).
+4. **Tear down** the worktree: done by `a1-pr-review` after the merge — do not
+   exit it a second time here.
 
 **Never** cherry-pick commits onto a fresh main branch as a merge workaround.
 **Never** push a build-red `main`. **Never** edit the primary checkout mid-feature
