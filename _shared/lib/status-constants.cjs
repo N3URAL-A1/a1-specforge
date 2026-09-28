@@ -140,7 +140,8 @@ const INTENT_REJECT_REASONS = new Set([
   'ledger_unreadable',
   'tampered',
   'cancelled_by_user',
-  'workspace_not_isolated', // FR-043, Wave 5b
+  'workspace_not_isolated', // FR-043, Wave 5b: the intent worktree could not be created
+  'intent_worktree_limit', // FR-043 (c), spec round 8: INTENT_MAX_OPEN_WORKTREES open intent worktrees of the project
 ]);
 
 // FR-016 — `failure_reason` codes for `status: failed`. sandbox_invalid

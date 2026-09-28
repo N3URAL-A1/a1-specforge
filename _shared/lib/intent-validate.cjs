@@ -103,8 +103,8 @@ const QUEUE_TARGET_FOLDERS = Object.freeze({
 // between the fstat gate and the read never reaches memory whole; one byte
 // over the cap is enough for checkContentSize to refuse it. Same call shape as
 // readFileSync (fd, 'utf8') so fixtures can inject a counting reader.
-function readFdBounded(fd) {
-  const cap = INTENT_MAX_BYTES + 1;
+function readFdBounded(fd, _encoding, maxBytes = INTENT_MAX_BYTES) {
+  const cap = maxBytes + 1;
   const buf = Buffer.alloc(cap);
   let got = 0;
   let n = 1;
@@ -206,16 +206,16 @@ function folderOf(filePath) {
 
 // FR-005 — the size gate on the fstat of the open descriptor; runs before
 // any byte is read, so an oversized file never reaches memory or the parser.
-function checkSizeBeforeParse(st) {
-  return st.size > INTENT_MAX_BYTES ? 'oversized' : null;
+function checkSizeBeforeParse(st, maxBytes = INTENT_MAX_BYTES) {
+  return st.size > maxBytes ? 'oversized' : null;
 }
 
 // FR-005 — the same cap on the bytes that were read (the file may have grown
 // after the stat; the default reader stops one byte past the cap). A
 // multibyte character cut at the cap decodes to U+FFFD, which is never
 // shorter than the bytes it replaces, so the refusal still holds.
-function checkContentSize(content) {
-  return Buffer.byteLength(content, 'utf8') > INTENT_MAX_BYTES ? 'oversized' : null;
+function checkContentSize(content, maxBytes = INTENT_MAX_BYTES) {
+  return Buffer.byteLength(content, 'utf8') > maxBytes ? 'oversized' : null;
 }
 
 // FR-005 — payload is a string of at most INTENT_PAYLOAD_MAX_BYTES UTF-8 bytes.
@@ -390,9 +390,12 @@ function readIntentFile(filePath, deps = {}) {
   try {
     const st = d.fstat(fd);
     if (!st.isFile()) return NOT_REGULAR;
-    if (checkSizeBeforeParse(st)) return OVERSIZED;
-    const content = d.readFile(fd, 'utf8');
-    if (checkContentSize(content)) return OVERSIZED;
+    // `run` re-validates a claimed file with INTENT_CLAIMED_MAX_BYTES (FR-020);
+    // every other caller keeps INTENT_MAX_BYTES.
+    const max = d.maxBytes === undefined ? INTENT_MAX_BYTES : d.maxBytes;
+    if (checkSizeBeforeParse(st, max)) return OVERSIZED;
+    const content = d.readFile(fd, 'utf8', max);
+    if (checkContentSize(content, max)) return OVERSIZED;
     return Object.freeze({ ok: true, content });
   } finally {
     fs.closeSync(fd);

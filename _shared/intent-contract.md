@@ -15,12 +15,14 @@ Two sources, one truth:
   checked against the code by `_test-fixtures/a1-intent/cases/09-schema.sh` (K5, K6), so a
   catalog change that does not update this file fails the suite.
 
-Versions: the schema carries `x-contract-version` (this contract, currently `2`) and
+Versions: the schema carries `x-contract-version` (this contract, currently `3`) and
 `x-vault-contract-version` (spec 010's `VAULT_CONTRACT_VERSION`, currently `1`). a1 bumps
 `x-contract-version` whenever the exported shape or a value changes. A Lumen build should
 compare the number with the one it was built against and show "Schema-Version weicht ab" on a
 mismatch instead of guessing. Version 2 (spec 011 round 6) added `target_sha256` for `approve`
 intents, the value forms of a1's lifecycle keys, and the eighth refusal code `display_unsafe`.
+Version 3 (spec 011 round 8) added the reject reason `intent_worktree_limit`, the result
+keys `branch` and `worktree_path`, and the limit `INTENT_MAX_OPEN_WORKTREES` (3) in `x-limits`.
 
 ## Folders
 
@@ -329,7 +331,7 @@ A processed intent carries its reason in the frontmatter: `rejected_reason` in `
 code with the hint below. A code outside the catalog renders as "unbekannt" and is never
 hidden. The hints are also in the schema as `x-render-hints`.
 
-`rejected_reason`, 17 codes:
+`rejected_reason`, 18 codes:
 
 <!-- contract:rejected-reasons -->
 ```json
@@ -350,7 +352,8 @@ hidden. The hints are also in the schema as `x-render-hints`.
   "ledger_unreadable": "Auftragsbuch am Mac nicht lesbar; am Mac prüfen",
   "tampered": "nach dem Übernehmen verändert; am Mac prüfen",
   "cancelled_by_user": "abgebrochen",
-  "workspace_not_isolated": "am Mac aufräumen: offene Änderungen oder Branch `main`, dann erneut senden"
+  "workspace_not_isolated": "Intent-Worktree am Mac konnte nicht angelegt werden; Protokoll am Mac ansehen, dann erneut senden",
+  "intent_worktree_limit": "zu viele offene Intent-Worktrees; am Mac prüfen und mit a1-worktree exit aufräumen, dann erneut senden"
 }
 ```
 
@@ -384,7 +387,7 @@ catalogs):
 ["already_claimed", "already_moved", "ledger_busy", "project_busy", "executor_busy", "rate_limited", "result_path_unsafe", "display_unsafe"]
 ```
 
-So Lumen renders exactly 17 `rejected_reason` and 7 `failure_reason` values.
+So Lumen renders exactly 18 `rejected_reason` and 7 `failure_reason` values.
 
 ## Result note
 
@@ -404,10 +407,20 @@ intents (`approve`, `cancel`) never get one. The frontmatter keys, all always pr
 | `started_at`, `finished_at` | ISO-8601 UTC (`started_at` may be `null`) |
 | `duration_s`, `exit_code` | integer or `null` |
 | `executor_host` | the Mac's host name |
+| `branch` | for a write action (`new-feature`, `continue-feature`, `plan`, `execute`, `fix`) the intent worktree's branch `intent/<id>`; `null` for `progress` and `stage` and when no worktree was created |
+| `worktree_path` | that worktree's folder, home-relative: `~/claude-projects/a1-worktrees/<project>-intent-<id>`; `null` where `branch` is |
 | `artifacts` | list of vault-relative paths the run created or changed under `project/<slug>/` |
 | `truncated` | `true` when output or artifacts were cut to fit the 16384-byte cap |
 
-The body has a `## Summary` (last lines of the filtered stdout) and a `## Stderr` section, each
+A write intent never runs in the owner's checkout: a1 creates a worktree of its own for it and
+the child works there. The result note of a write intent names `branch` and `worktree_path`; the
+work waits there for the owner's review. a1 never merges, pushes or removes that worktree or its
+branch on its own; the owner cleans it up on the Mac with `a1-worktree exit`. While three
+intent worktrees of a project are still open, the next write intent is rejected with
+`intent_worktree_limit`.
+
+The body has a `## Summary` (the child's final answer: for a Claude Code action the `result` text
+of its JSON output, else the last lines of the filtered stdout) and a `## Stderr` section, each
 in a fenced block. a1 filters known secret formats before writing, but the text is still the
 child's output. Render it as text, never as HTML (see below).
 
@@ -492,7 +505,7 @@ Clarify:
 |---|---|---|
 | D1 | free text in the note **body** | The body is **empty**. The request text is the `payload` frontmatter string, written as a block scalar (`payload: \|`). Size and signature are defined over `payload`, not over a body. |
 | D2 | six lifecycle folders (`running/`, `failed/` as folders) | Four folders (`queued/`, `claimed/`, `done/`, `rejected/`). `running` is a status inside `claimed/`, `failed` a status inside `done/`. Lumen renders state from `status`, not from the folder name alone. |
-| D3 | `approve` and `cancel` as actions | Adopted (nine actions), with the rules in [Approval and cancel](#approval-and-cancel): `approve` only from the Mac's device, `cancel` from any paired device, no result note, and the catalogs above (17 reject reasons incl. `workspace_not_isolated`, 7 failure reasons incl. `cancelled`, `sandbox_invalid`, `parent_step_failed`). |
+| D3 | `approve` and `cancel` as actions | Adopted (nine actions), with the rules in [Approval and cancel](#approval-and-cancel): `approve` only from the Mac's device, `cancel` from any paired device, no result note, and the catalogs above (18 reject reasons incl. `workspace_not_isolated` and `intent_worktree_limit`, 7 failure reasons incl. `cancelled`, `sandbox_invalid`, `parent_step_failed`). |
 | D4 | `target` as a plain required field | `target` is optional and per action: required with the action's pattern, or absent (`new-feature`, `fix`, `progress`). |
 
 ## Treat everything you read as untrusted input

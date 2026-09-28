@@ -25,9 +25,13 @@
 // but does not parse or names no pid proves no ancestry: it switches child
 // mode on only together with A1_INTENT_CHILD=1 (and is then invalid).
 //
-// Scope: the anchor realpath(<passwd home>/claude-projects/<project>), which
-// must lie under realpath(<passwd home>/claude-projects/) and equal the lock's
-// `anchor`, and realpath(<vault_root>/project/<project>). The cwd must lie
+// Scope: the anchor — for a write action the intent worktree
+// realpath(<passwd home>/claude-projects/a1-worktrees/<project>-intent-<id>)
+// (FR-043, Wave 6 part B), else realpath(<passwd home>/claude-projects/
+// <project>) — which must lie under realpath(<passwd home>/claude-projects/)
+// and equal the lock's `anchor`, and realpath(<vault_root>/project/
+// <project>). The owner's primary checkout is outside a write action's
+// scope. The cwd must lie
 // inside the anchor: a cwd anchor alone would let `cd / && node <T> …` widen
 // the scope. Paths are resolved physically: realpath of the longest existing
 // prefix of the raw string (no lexical `..` folding first, so `lnk/../x`
@@ -59,6 +63,7 @@ const LOCK_READ_MAX_BYTES = 4096;
 const PRIVATE_BITS = 0o077;
 const PS_BIN = '/bin/ps';
 const PROJECTS_DIR = 'claude-projects';
+const WORKTREES_DIR = 'a1-worktrees'; // FR-043: <project>-intent-<id> of a write action
 const MAX_ANCESTRY = 64;
 const DETAIL_MAX_CHARS = 200;
 const INACTIVE = Object.freeze({ active: false });
@@ -230,26 +235,82 @@ function lockDetail(lock, d) {
   return null;
 }
 
-// -> { active, ok, action, project, roots, cwd } or an invalid context.
+const GITFILE_MAX_BYTES = 4096;
+
+// The `.git` FILE of an intent worktree must name exactly <primary>/.git/
+// worktrees/<slug> (read through one O_NOFOLLOW fd). -> true | false.
+function gitfileNames(dir, want, d) {
+  let fd;
+  try {
+    fd = fs.openSync(path.join(dir, '.git'), O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
+  } catch (_e) {
+    return false; // missing, a link, or not openable
+  }
+  try {
+    if (!fs.fstatSync(fd).isFile()) return false;
+    const buf = Buffer.alloc(GITFILE_MAX_BYTES);
+    const n = fs.readSync(fd, buf, 0, buf.length, 0);
+    const m = /^gitdir: (.+)\n?$/.exec(buf.subarray(0, n).toString('utf8'));
+    if (!m) return false;
+    return d.realpath(path.resolve(dir, m[1])) === want;
+  } catch (_e) {
+    return false;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+// FR-041 (a), FR-047 — the anchor the action requires, recomputed from the
+// lock: for a write action the intent worktree
+// <passwd home>/claude-projects/a1-worktrees/<project>-intent-<intent_id>
+// (FR-043), otherwise the project; realpath, under claude-projects/. The
+// intent worktree must be a real directory (lstat: no link to the project,
+// part B review m6) whose `.git` file names <primary>/.git/worktrees/<slug>.
+// -> { anchor, primary, write } | null.
+function expectedAnchor(doc, projects, d) {
+  const { INTENT_WRITE_ACTIONS } = require('./intent-sandbox.cjs');
+  const { INTENT_ID_RE } = require('./intent-constants.cjs');
+  const write = INTENT_WRITE_ACTIONS.includes(doc.action);
+  const primary = d.realpath(path.join(projects, doc.project));
+  if (!primary.startsWith(projects + path.sep)) return null;
+  if (!write) return { anchor: primary, primary, write };
+  if (!INTENT_ID_RE.test(String(doc.intent_id))) return null;
+  const slug = `${doc.project}-intent-${doc.intent_id}`;
+  const folder = path.join(projects, WORKTREES_DIR, slug);
+  const st = fs.lstatSync(folder, { throwIfNoEntry: false });
+  if (!st || !st.isDirectory()) return null;
+  const anchor = d.realpath(folder);
+  if (anchor !== folder) return null; // a link on the way
+  const admin = path.join(d.realpath(path.join(primary, '.git')), 'worktrees', slug);
+  return gitfileNames(anchor, admin, d) ? { anchor, primary, write } : null;
+}
+
+// -> { active, ok, action, project, roots, cwd, primary, vaultRoot, write } or an invalid context.
 function buildContext(d, lock, ancestry) {
   const detail = ancestry === null ? 'the ancestry of the lock cannot be decided' : lockDetail(lock, d); // null: undecidable walk
   if (detail !== null) return invalid(detail);
   const { action, project, vault_root: vaultRoot, anchor } = lock.doc;
-  let repo;
+  let want;
   let cwd;
   try {
     const projects = d.realpath(path.join(d.passwdHome(), PROJECTS_DIR));
-    repo = d.realpath(path.join(projects, project));
-    if (!repo.startsWith(projects + path.sep)) return invalid('the project resolves outside ~/claude-projects/');
+    want = expectedAnchor(lock.doc, projects, d);
+    if (want === null) return invalid('the anchor the action requires does not exist as such (intent worktree: a real directory whose .git file names the project)');
     cwd = d.realpath(d.cwd());
   } catch (_e) {
-    return invalid('the project directory or the cwd does not resolve');
+    return invalid('the anchor directory or the cwd does not resolve');
   }
-  if (!sameReal(anchor, repo, d)) return invalid('the lock anchor is not the project realpath');
-  if (!inside(cwd, repo)) return invalid('the cwd is outside the project directory');
+  if (!sameReal(anchor, want.anchor, d)) return invalid('the lock anchor is not the anchor the action requires (intent worktree or project realpath)');
+  if (!inside(cwd, want.anchor)) return invalid('the cwd is outside the anchor directory');
   const vaultProject = resolvePhysical(path.join(vaultRoot, 'project', project), cwd, d);
-  const roots = Object.freeze([repo, vaultProject].filter(Boolean));
-  return Object.freeze({ active: true, ok: true, action, project, roots, cwd });
+  const roots = Object.freeze([want.anchor, vaultProject].filter(Boolean));
+  let vaultReal = null;
+  try {
+    vaultReal = d.realpath(vaultRoot);
+  } catch (_e) {
+    vaultReal = null;
+  }
+  return Object.freeze({ active: true, ok: true, action, project, roots, cwd, primary: want.primary, vaultRoot: vaultReal, write: want.write });
 }
 
 function contextFor(d) {

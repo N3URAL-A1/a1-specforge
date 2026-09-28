@@ -11,6 +11,9 @@
 //                    refuse the file before a byte is read
 //   write <path>     fs.openSync / writeFileSync / appendFileSync / renameSync …
 //   spawn <command>  any child_process entry point
+//   spawnopts <json> child_process.spawn only (Wave 6B): { cmd, args, cwd,
+//                    shell, detached, stdio, env_names, intent_env } where
+//                    intent_env holds the A1_INTENT_* values
 // Cases assert on these lines ("0 spawns", "no read outside the vault") so
 // both claims are measured. Patched before any module under test loads, so
 // destructured imports (`const { execFileSync } = require(...)`) see the
@@ -71,4 +74,14 @@ if (out) {
   for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execFileSync', 'fork']) {
     wrap(childProcess, name, () => 'spawn');
   }
+  const tracedSpawn = childProcess.spawn;
+  childProcess.spawn = function spawnWithOpts(cmd, args, opts) {
+    const o = opts || {};
+    const env = o.env || {};
+    const intentEnv = Object.fromEntries(Object.keys(env).filter((k) => k.startsWith('A1_INTENT_')).map((k) => [k, env[k]]));
+    log('spawnopts', JSON.stringify({
+      cmd, args, cwd: o.cwd, shell: o.shell, detached: o.detached, stdio: o.stdio, env_names: Object.keys(env), intent_env: intentEnv,
+    }));
+    return tracedSpawn.apply(this, [cmd, args, opts]);
+  };
 }

@@ -21,6 +21,13 @@
 // (FR-049) --stdout/--stderr are read only from private files: the outputs
 // directly in ~/.a1-intents/runs/<id>/ of the intent's own id. A planted
 // done/<id>.md moves to rejected/; an unsafe result path is result_path_unsafe.
+// Wave 6 part B (FR-030, FR-043): for a write action the note names the
+// intent worktree's `branch` and home-relative `worktree_path` (null
+// otherwise), and the registry entry is finished (done -> handoff; failed ->
+// stays active with the reason). A registry problem never undoes a completed
+// intent; it is named in the log detail. Review M2: for a claude row whose
+// stdout is the measured `--output-format json` object, the Summary is its
+// `result` text, and is_error true fails the intent (nonzero_exit).
 // ---------------------------------------------------------------------------
 
 const crypto = require('crypto');
@@ -31,7 +38,7 @@ const path = require('path');
 const { writeTextAtomic, serializeScalar, projectsPath, assertSafeSegment } = require('./io.cjs');
 const { assertVaultWriteContained } = require('./fs-safe.cjs');
 const { INTENT_FAILURE_REASONS } = require('./status-constants.cjs');
-const { INTENT_MAX_BYTES, INTENT_RESULT_MAX_BYTES, INTENT_ID_RE, ACTION_TABLE } = require('./intent-constants.cjs');
+const { INTENT_CLAIMED_MAX_BYTES, INTENT_RESULT_MAX_BYTES, INTENT_ID_RE, ACTION_TABLE, INTENT_WRITE_ACTIONS } = require('./intent-constants.cjs');
 const { knownSecrets, redact, filterOutput, tailLines, prepareOutput, fitSections, fenceFor } = require('./intent-redact.cjs');
 const { loadDevices, openPrivate, devicesDir } = require('./intent-devices.cjs');
 const { parseIntentFrontmatter } = require('./intent-validate.cjs');
@@ -42,7 +49,6 @@ const { requireExecutorHost, locateLifecycleFile, rewriteFrontmatter, decide, de
 const [EXIT_OK, EXIT_REFUSED, EXIT_OPERATOR] = [0, 1, 2];
 const [SUMMARY_LINES, STDERR_LINES] = [40, 20];
 const OUTPUT_READ_MAX_BYTES = 4 * 1024 * 1024; // tail of stdout/stderr that is read at all
-const CLAIMED_READ_MAX_BYTES = INTENT_MAX_BYTES + 1024; // the claim keys come on top of the validated bytes
 const SNAPSHOT_READ_MAX_BYTES = 16 * 1024 * 1024;
 const SNAPSHOT_HASH_MAX_BYTES = 1024 * 1024; // larger files compare by size + mtime only
 const SNAPSHOT_MAX_FILES = 20000;
@@ -50,7 +56,7 @@ const ARTIFACTS_PRETRIM = 400;
 const OPEN_FLAGS = fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK;
 const [EXIT_CODE_RE, EXIT_CODE_MAX] = [/^(0|[1-9][0-9]{0,2})$/, 255];
 const RESULT_KEYS = Object.freeze(['type', 'schema_version', 'intent_id', 'action', 'project', 'target', 'status',
-  'failure_reason', 'started_at', 'finished_at', 'duration_s', 'exit_code', 'executor_host', 'artifacts', 'truncated']);
+  'failure_reason', 'started_at', 'finished_at', 'duration_s', 'exit_code', 'executor_host', 'branch', 'worktree_path', 'artifacts', 'truncated']);
 const FLAGS = Object.freeze({
   '--exit-code': 'exitCode', '--stdout': 'stdoutFile', '--stderr': 'stderrFile',
   '--snapshot': 'snapshotFile', '--failure-reason': 'failureReason',
@@ -87,7 +93,7 @@ function readOutputFd(fd, maxBytes = OUTPUT_READ_MAX_BYTES) {
 
 // The claimed file's bytes, or null when it is too large to be one a1 wrote.
 function readClaimed(file) {
-  const r = readOutput(file, CLAIMED_READ_MAX_BYTES);
+  const r = readOutput(file, INTENT_CLAIMED_MAX_BYTES);
   return r.cut ? null : r.text;
 }
 
@@ -208,14 +214,15 @@ function capArtifacts(fm) {
 }
 
 function resultFrontmatter(input) {
-  const { fm, row, outcome, exitCode, artifacts, finishedAt, hostname } = input;
+  const { fm, row, outcome, exitCode, artifacts, finishedAt, hostname, worktree = null } = input;
   const startedAt = row.started_at || row.claimed_at || null;
   const ms = Date.parse(finishedAt) - Date.parse(startedAt);
   return Object.freeze({
     type: 'intent-result', schema_version: 1, intent_id: fm.id, action: fm.action, project: fm.project,
     target: fm.target === undefined ? null : fm.target, status: outcome.status, failure_reason: outcome.failure_reason,
     started_at: startedAt, finished_at: finishedAt, duration_s: Number.isFinite(ms) ? Math.max(0, Math.round(ms / 1000)) : null,
-    exit_code: exitCode, executor_host: hostname, artifacts, truncated: false,
+    exit_code: exitCode, executor_host: hostname, branch: worktree ? worktree.branch : null,
+    worktree_path: worktree ? worktree.worktree_path : null, artifacts, truncated: false,
   });
 }
 
@@ -263,6 +270,28 @@ function clearDoneSlot(dest, loc, d) {
   return 'done_conflict_moved';
 }
 
+// FR-043 (e) — the intent worktree of a write action: its branch and path for
+// the note before, the registry update after the ledger closed. A registry
+// problem never undoes a completed intent; it is named in the log detail.
+function worktreeOf(fm) {
+  if (!INTENT_WRITE_ACTIONS.includes(fm.action)) return { info: null, problem: null };
+  try {
+    return { info: require('./intent-worktree.cjs').intentWorktreeInfo(fm.id), problem: null };
+  } catch (e) {
+    return { info: null, problem: `registry_unreadable: ${String(e && e.message).slice(0, 120)}` };
+  }
+}
+
+function finishWorktree(fm, outcome) {
+  if (!INTENT_WRITE_ACTIONS.includes(fm.action)) return null;
+  try {
+    require('./intent-worktree.cjs').finishIntentWorktree(fm.id, outcome.status, outcome.failure_reason);
+    return null;
+  } catch (e) {
+    return `registry_update_failed: ${String(e && e.message).slice(0, 120)}`;
+  }
+}
+
 function finishIntent(ctx, d) {
   const { loc, fm, row, rows, opts, inputs, content } = ctx;
   const dest = path.join(loc.root, 'done', path.basename(loc.path));
@@ -275,8 +304,12 @@ function finishIntent(ctx, d) {
   const moved = clearDoneSlot(dest, loc, d);
   const finishedAt = new Date(d.now()).toISOString();
   const artifacts = inputs.snapshot ? diffSnapshots(inputs.snapshot, snapshotProject(fm.project, d)) : [];
-  const outcome = outcomeOf(opts.exitCode, opts.failureReason);
-  const note = buildResultNote({ fm, row, outcome, exitCode: opts.exitCode, stdout: inputs.stdout, stderr: inputs.stderr, artifacts, finishedAt, hostname: d.hostname });
+  const claude = ACTION_TABLE[fm.action].kind === 'claude' ? inputs.claude : null;
+  const outcome = outcomeOf(opts.exitCode, opts.failureReason || (claude && claude.isError ? CLAUDE_ERROR_REASON : undefined));
+  const worktree = worktreeOf(fm);
+  const note = buildResultNote({
+    fm, row, outcome, exitCode: opts.exitCode, stdout: claude ? claude.summary : inputs.stdout, stderr: inputs.stderr, artifacts, finishedAt, hostname: d.hostname, worktree: worktree.info,
+  });
   const resultPath = `project/${fm.project}/intents/${fm.id}.md`;
   d.writeText(notePath, note);
   try {
@@ -288,8 +321,9 @@ function finishIntent(ctx, d) {
   d.writeText(dest, rewriteFrontmatter(content, intentPatch(outcome, finishedAt, opts.exitCode)));
   const closing = { finished_at: finishedAt, outcome: outcome.status, result_path: resultPath, result_sha256: sha256(note) };
   writeLedger(updateRow(rows, fm.id, closing), { homedir: d.homedir });
+  const detail = [moved, worktree.problem, finishWorktree(fm, outcome)].filter(Boolean).join('; ') || undefined;
   const out = { completed: true, id: fm.id, status: outcome.status, failure_reason: outcome.failure_reason, result_path: resultPath, path: dest };
-  return decide(d, 'complete', EXIT_OK, out, { intentId: fm.id, outcome: outcome.status, reason: outcome.failure_reason, detail: moved || undefined });
+  return decide(d, 'complete', EXIT_OK, out, { intentId: fm.id, outcome: outcome.status, reason: outcome.failure_reason, detail });
 }
 
 function completeLocked(loc, opts, inputs, d) {
@@ -320,6 +354,27 @@ function readOutputFile(flag, file, id, d) {
   }
 }
 
+// FR-030 (part B review M2, measured in RESEARCH.md round 1, P1-P8): a
+// `claude -p --output-format json` child prints ONE JSON object with
+// subtype, is_error, num_turns, result, permission_denials, session_id.
+// When stdout (not cut) is exactly such an object, the Summary is its
+// `result` text; is_error true marks the intent failed (P12: exit 1 with
+// is_error true). -> { text, isError } | null.
+const CLAUDE_ERROR_REASON = 'nonzero_exit'; // the closest existing failure reason: the child reported an error
+function claudeResult(read) {
+  const text = read.cut ? '' : read.text.trim();
+  if (!text.startsWith('{') || !text.endsWith('}')) return null;
+  let o;
+  try {
+    o = JSON.parse(text);
+  } catch (_e) {
+    return null;
+  }
+  const shaped = o && typeof o === 'object' && !Array.isArray(o) && typeof o.subtype === 'string' && typeof o.is_error === 'boolean'
+    && typeof o.result === 'string' && typeof o.session_id === 'string';
+  return shaped ? { text: o.result, isError: o.is_error } : null;
+}
+
 // stdout, stderr and the snapshot, read after the host check and filtered
 // with the device secrets (fail closed: A1_DEVICES_UNREADABLE) before the lock.
 function readInputs(opts, id, d) {
@@ -329,7 +384,9 @@ function readInputs(opts, id, d) {
   if (failed) return failed;
   if (snapshot && snapshot.error) return { ok: false, why: `intent complete: ${snapshot.error}` };
   const secrets = knownSecrets(loadDevices({ homedir: d.homedir }), d.envSecrets); // FR-049: run passes spawnEnvSecrets(env)
-  return { ok: true, stdout: prepareOutput(stdout.value, secrets, SUMMARY_LINES), stderr: prepareOutput(stderr.value, secrets, STDERR_LINES), snapshot };
+  const cr = claudeResult(stdout.value);
+  const claude = cr ? { summary: prepareOutput({ text: cr.text, cut: false }, secrets, SUMMARY_LINES), isError: cr.isError } : null;
+  return { ok: true, stdout: prepareOutput(stdout.value, secrets, SUMMARY_LINES), stderr: prepareOutput(stderr.value, secrets, STDERR_LINES), claude, snapshot };
 }
 
 // Ledger errors refuse (1); a corrupt executor.json or devices.json and an

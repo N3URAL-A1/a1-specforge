@@ -49,9 +49,11 @@ const ENTRY_KEYS = Object.freeze({
   payloadSha256: 'payload_sha256',
   argv: 'argv',
   envNames: 'env_names',
+  promptVersion: 'prompt_version', //    FR-020: the spawn line of `run` (Wave 6 part B)
+  sealRootSha256: 'seal_root_sha256',
 });
 const REQUIRED_KEYS = Object.freeze(['command', 'intentId', 'outcome', 'reason', 'hostname']);
-const OPTIONAL_KEYS = Object.freeze(['nameSha256', 'detail', 'payloadSha256', 'argv', 'envNames']);
+const OPTIONAL_KEYS = Object.freeze(['nameSha256', 'detail', 'payloadSha256', 'argv', 'envNames', 'promptVersion', 'sealRootSha256']);
 const CALLER_KEYS = Object.freeze(Object.keys(ENTRY_KEYS).filter((k) => k !== 'nameSha256'));
 
 function fieldError(message) {

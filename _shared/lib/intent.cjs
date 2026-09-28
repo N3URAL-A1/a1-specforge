@@ -25,4 +25,7 @@ module.exports = {
   ...require('./intent-approval.cjs'), // Wave 10: approval audit group rules (FR-045)
   ...require('./intent-approve.cjs'), // Wave 10: readApprovalTarget, reapproveIntent, cmdIntentApprove (FR-015)
   ...require('./intent-doctor.cjs'), // Wave 10: runDoctor, cmdIntentDoctor, injectDoctorDeps (FR-037)
+  ...require('./intent-argv.cjs'), // Wave 6B: buildArgv, buildStageArgv, buildEnv, guardArgv, guardStageArgv (FR-021, FR-022, FR-039)
+  ...require('./intent-worktree.cjs'), // Wave 6B: createIntentWorktree, finishIntentWorktree (FR-043)
+  runIntent: require('./intent-run.cjs').runIntent, // Wave 6B: FR-020
 };

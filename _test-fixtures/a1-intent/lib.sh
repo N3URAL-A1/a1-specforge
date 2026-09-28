@@ -120,6 +120,23 @@ mk_project() {
   git init -q "$dir" >/dev/null 2>&1
 }
 
+# mk_intent_worktree <slug> — the intent worktree of the fixture intent id of
+# stub/a1-tools-as.cjs: since Wave 6 part B the anchor of a write action
+# (new-feature, plan, fix, ...) is <home>/claude-projects/a1-worktrees/
+# <slug>-intent-<id>, a REAL linked worktree whose `.git` file names
+# <project>/.git/worktrees/<slug>-intent-<id> (FR-041 (a), FR-043; review
+# m6: no link to the project). One empty base commit is made when the
+# project has none. Prints the worktree path; docs/product/ is created in it.
+MK_PROJECT_FIXTURE_ID="3f2b8c1e-5d4a-4e6f-9a7b-1c2d3e4f5a6b"
+mk_intent_worktree() {
+  local dir="$FHOME/claude-projects/$1" wt="$FHOME/claude-projects/a1-worktrees/$1-intent-$MK_PROJECT_FIXTURE_ID"
+  git -C "$dir" rev-parse -q --verify HEAD >/dev/null 2>&1 \
+    || git -C "$dir" -c user.name=f -c user.email=f@invalid -c core.hooksPath=/dev/null commit -q --allow-empty -m fixture-base
+  git -C "$dir" -c core.hooksPath=/dev/null worktree add -q -b "intent/$MK_PROJECT_FIXTURE_ID" "$wt" HEAD >/dev/null 2>&1
+  mkdir -p "$wt/docs/product"
+  printf '%s' "$wt"
+}
+
 # stub_mode <ok|fail|leak|hang> — read by stub/claude from a file under HOME,
 # because the spawn contract's env allowlist strips every fixture variable.
 stub_mode() {

@@ -68,6 +68,7 @@ const LOCK_RETRY_DELAY_MS = 20;
 // reclaimed; a younger one may still be in the middle of being written.
 const LOCK_UNPARSABLE_STALE_MS = 10 * 1000;
 const LOCK_MAX_BYTES = 4096;
+const PROJECT_LOCKS_DIR = 'locks';
 
 function ledgerUnreadable(why) {
   const e = new Error(`~/${LEDGER_FILE} is unreadable (${why}); claim and run refuse until it is repaired by hand`);
@@ -193,8 +194,9 @@ function reclaim(file, judged) {
   return true;
 }
 
-// -> this process's token, or null when the lock exists.
-function tryCreateLock(file, hostname, now) {
+// -> this process's token, or null when the lock exists. The content is
+// `fields` plus { pid, hostname } and a 16-byte random token.
+function tryCreateLock(file, fields, d) {
   let fd;
   try {
     fd = fs.openSync(file, LOCK_CREATE_FLAGS, 0o600);
@@ -204,18 +206,30 @@ function tryCreateLock(file, hostname, now) {
   }
   const token = crypto.randomBytes(16).toString('hex');
   try {
-    fs.writeSync(fd, JSON.stringify({ pid: process.pid, hostname, acquired_at: new Date(now).toISOString(), token }));
+    fs.writeSync(fd, JSON.stringify({ pid: d.pid || process.pid, hostname: d.hostname, ...fields, token }));
     return token;
   } finally {
     fs.closeSync(fd);
   }
 }
 
+// One attempt, plus a reclaim of a stale lock (a dead holder on this host,
+// or an unparsable lock older than LOCK_UNPARSABLE_STALE_MS); a live or
+// foreign holder keeps it. -> { file, token } | null (held).
+function tryOwnedLock(file, fields, d) {
+  const token = tryCreateLock(file, fields, d);
+  if (token) return { file, token };
+  const stale = reclaimable(file, d.hostname, d.now());
+  if (!stale || !reclaim(file, stale)) return null;
+  const again = tryCreateLock(file, fields, d);
+  return again ? { file, token: again } : null;
+}
+
 function acquireLedgerLock(deps) {
   const file = path.join(assertPrivateDir(deps), LOCK_FILE);
   for (let i = 0; i < LOCK_RETRIES; i += 1) {
     const now = deps.now();
-    const token = tryCreateLock(file, deps.hostname, now);
+    const token = tryCreateLock(file, { acquired_at: new Date(now).toISOString() }, deps);
     if (token) return { file, token };
     const stale = reclaimable(file, deps.hostname, now);
     if (stale && reclaim(file, stale)) continue;
@@ -243,6 +257,29 @@ function withLedgerLock(fn, deps = {}) {
   }
 }
 
+// FR-024 — the per-project lock ~/.a1-intents/locks/<project>.lock of `run`,
+// with the ledger lock's identity rules: content { pid, hostname, createdAt,
+// intent_id, token }, a foreign hostname is never reclaimed, a dead holder
+// on this host is, through the hard-link takeover above. One attempt: a held
+// lock is project_busy at once. -> { file, token } | null.
+function acquireProjectLock(project, intentId, deps = {}) {
+  const d = { homedir: os.homedir, hostname: os.hostname(), now: Date.now, ...deps };
+  const dir = path.join(assertPrivateDir(d), PROJECT_LOCKS_DIR);
+  try {
+    fs.mkdirSync(dir, { mode: 0o700 });
+  } catch (e) {
+    if (!e || e.code !== 'EEXIST') throw e;
+  }
+  assertPrivateDirAtLocks(dir, d);
+  return tryOwnedLock(path.join(dir, `${project}.lock`), { createdAt: new Date(d.now()).toISOString(), intent_id: intentId }, d);
+}
+
+// ~/.a1-intents/locks must itself be a private directory (never a link).
+function assertPrivateDirAtLocks(dir, d) {
+  const fd = openPrivate(dir, 'directory', d, (why) => Object.assign(new Error(`~/${LOCK_DIR}/${PROJECT_LOCKS_DIR} is unsafe (${why})`), { code: 'A1_INTENTS_DIR_UNSAFE' }));
+  if (fd !== null) fs.closeSync(fd);
+}
+
 module.exports = {
   ledgerPath,
   loadLedger,
@@ -252,4 +289,6 @@ module.exports = {
   updateRow,
   writeLedger,
   withLedgerLock,
+  acquireProjectLock,
+  releaseOwnedLock: releaseLedgerLock,
 };

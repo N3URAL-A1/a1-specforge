@@ -16,7 +16,8 @@ const run = require(path.join(lib, 'intent-run.cjs'));
 child.injectChildDeps({ passwdHome: () => home, gitBin });
 const r = run.writeChildContextLock({
   intent_id: '3f2b8c1e-5d4a-4e6f-9a7b-1c2d3e4f5a6b', action: 'execute', project: 'real-proj',
-  vault_root: vault, anchor: require('fs').realpathSync(path.join(home, 'claude-projects', 'real-proj')), pid: process.ppid,
+  // execute is a write action: its anchor is the intent worktree (Wave 6 part B, lib.sh mk_intent_worktree)
+  vault_root: vault, anchor: require('fs').realpathSync(path.join(home, 'claude-projects', 'a1-worktrees', 'real-proj-intent-3f2b8c1e-5d4a-4e6f-9a7b-1c2d3e4f5a6b')), pid: process.ppid,
 }, { passwdHome: () => home });
 process.on('exit', () => run.removeChildContextLock(r.lock, { passwdHome: () => home }));
 child.guardDispatch(['lane-split', 'check', '--plan', 'docs/PLAN.md']);

@@ -17,6 +17,7 @@ const fs = require('fs');
 const path = require('path');
 
 const FIXTURE_INTENT_ID = '3f2b8c1e-5d4a-4e6f-9a7b-1c2d3e4f5a6b';
+const WRITE_ACTIONS = ['new-feature', 'continue-feature', 'plan', 'execute', 'fix']; // typed here, not imported (testing.md class 4)
 
 const [home, specText, tools, ...args] = process.argv.slice(2);
 const spec = specText === '-' ? {} : JSON.parse(specText);
@@ -39,7 +40,10 @@ if (spec.lock) {
     action: l.action,
     project: l.project,
     vault_root: real(l.vault_root || path.join(home, 'no-vault')),
-    anchor: l.anchor || real(path.join(home, 'claude-projects', l.project)),
+    // Wave 6 part B: a write action's anchor is its intent worktree (lib.sh mk_intent_worktree).
+    anchor: l.anchor || real(WRITE_ACTIONS.includes(l.action)
+      ? path.join(home, 'claude-projects', 'a1-worktrees', `${l.project}-intent-${l.intent_id || FIXTURE_INTENT_ID}`)
+      : path.join(home, 'claude-projects', l.project)),
     pid: process.ppid,
   }, { passwdHome: () => home });
   if (!r.ok) {

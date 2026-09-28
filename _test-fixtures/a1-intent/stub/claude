@@ -6,8 +6,19 @@
 #   $HOME/.a1-intents/tmp/stub/env.txt          the environment it received
 #   $HOME/.a1-intents/tmp/stub/invocations.log  one line per invocation
 #   $HOME/.a1-intents/tmp/stub/stub.pid         its own pid
+#   $HOME/.a1-intents/tmp/stub/pwd.txt          its physical cwd (pwd -P)
+#   $HOME/.a1-intents/tmp/stub/bash-env.txt     what a `bash -c env` it runs sees
 # and then behaves per $HOME/.a1-intents/tmp/stub-mode (default ok):
-#   ok    print a short summary, exit 0
+#   ok    print the MEASURED `--output-format json` shape (RESEARCH.md round
+#         1, P1-P8: one JSON object on one line with subtype, is_error,
+#         num_turns, result, permission_denials, session_id), exit 0
+#   big   as ok, with a result text of about 20 KB (230 lines)
+#   error the measured P12 shape: is_error true, result "Not logged in …", exit 1
+#   json0 is_error true with exit 0 — NOT measured (P12 had exit 1); only for
+#         the defensive is_error mapping of complete
+#   slow  sleep 1 (a case looks at the intent meanwhile), then as ok
+#   script  run $HOME/.a1-intents/tmp/stub-script with bash (output appended
+#         to script.out), then as ok — the child's own commands (Wave 6B)
 #   fail  exit 3
 #   leak  print an sk-ant token and a PEM private key block, exit 0
 #   hang  ignore SIGTERM, fork a grandchild (pid in grandchild.pid), sleep 600
@@ -24,13 +35,44 @@ cat >"$dir/stdin.txt"
 env >"$dir/env.txt"
 echo "$$ $(date -u +%Y-%m-%dT%H:%M:%SZ) $#" >>"$dir/invocations.log"
 echo "$$" >"$dir/stub.pid"
+pwd -P >"$dir/pwd.txt"
+bash -c env >"$dir/bash-env.txt"
 
 mode="ok"
 if [[ -f "$HOME/.a1-intents/tmp/stub-mode" ]]; then mode="$(tr -d '[:space:]' <"$HOME/.a1-intents/tmp/stub-mode")"; fi
 
+# result_json <is_error> <result text> — the measured one-line object.
+result_json() {
+  # only the measured fields; subtype "success" is the only measured value
+  node -e 'process.stdout.write(JSON.stringify({ subtype: "success", is_error: process.argv[1] === "true", num_turns: 3, result: process.argv[2], permission_denials: [],
+    session_id: "5b1f6c0e-2d7a-4c1e-9f3b-8a6d2e4c1b70" }) + "\n")' "$1" "$2"
+}
+
 case "$mode" in
   ok)
-    echo "stub claude: done"
+    result_json false "stub claude: done"
+    exit 0
+    ;;
+  big)
+    result_json false "$(for i in $(seq 1 230); do printf 'Zeile %03d: Die Push-Benachrichtigung ist geplant, Spec 012 angelegt, nichts committet.\n' "$i"; done)"
+    exit 0
+    ;;
+  error)
+    result_json true "Not logged in · Please run /login"
+    exit 1
+    ;;
+  json0)
+    result_json true "stub claude: the skill stopped with an error"
+    exit 0
+    ;;
+  slow)
+    sleep 1
+    result_json false "stub claude: done"
+    exit 0
+    ;;
+  script)
+    bash "$HOME/.a1-intents/tmp/stub-script" >>"$dir/script.out" 2>&1
+    result_json false "stub claude: done"
     exit 0
     ;;
   fail)

@@ -102,10 +102,17 @@ const INTENT_HELP = `  a1-tools intent <sub> [flags]
                   nonzero_exit. approve/cancel intents: exit 2, no note.
   a1-tools intent run <path>
                   (wave 6, executor host only) re-validates a claimed/ intent
-                  and spawns its action: claude -p with the action table's
-                  --allowedTools and --permission-mode, payload on stdin only;
-                  stage runs a1-tools product stage. Per-project and global
-                  lock, hourly cap, hard timeout with process-group kill.
+                  (ledger row, sha256, signature, freshness) and spawns its
+                  action from the sealed plugin copy: claude -p with the
+                  measured sandbox argv (argv guard before every spawn),
+                  env built from nothing, payload on stdin only; stage runs
+                  the sealed a1-tools product stage. Write actions run in
+                  their own worktree ~/claude-projects/a1-worktrees/
+                  <project>-intent-<id> on branch intent/<id>, kept for
+                  review (at most 3 open per project: intent_worktree_limit).
+                  Global and per-project lock; exit 0 spawned, 1 nothing
+                  spawned, 2 usage. Wave 7 adds the hourly cap and the hard
+                  timeout with process-group kill.
   a1-tools intent tick
                   (wave 8, executor host only) one executor pass: reject or
                   claim every queued/ intent oldest-first, apply approve and
@@ -160,8 +167,9 @@ const INTENT_HELP = `  a1-tools intent <sub> [flags]
                   (files 0444, dirs 0555) to ~/.a1-intents-seal/<version>-
                   <12 hex>/ with a sha256 manifest and writes
                   ~/.a1-intents-seal/empty-mcp.json; run verifies it before every
-                  spawn. Refuses (exit 1 b1_unmeasured) until the B1
-                  measurement is recorded. Re-run after every plugin update.
+                  spawn. B1 measured WIDENS (2026-09-28): every skill's
+                  allowed-tools is rewritten to its row list. Re-run after
+                  every plugin update.
   a1-tools git status|diff|add|commit|log [args]
                   (wave 6, intent child mode only; exit 2 outside it) git for
                   the child of a write intent, per action allowlist. Fixed

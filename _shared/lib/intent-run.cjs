@@ -2,26 +2,28 @@
 
 // ---------------------------------------------------------------------------
 // intent-run — `a1-tools intent run` (spec 011, Wave 6). Part A (entry
-// conditions, 2026-09-28) builds the executor-side pieces the spawn stands
-// on; this file spawns nothing yet (Part B adds runIntent and the spawn):
+// conditions, 2026-09-28) built the executor-side pieces the spawn stands on;
+// part B (after the owner measurements B1/B4/B5/B6, 2026-09-28) adds
+// runIntent, the spawn and the CLI:
 //
 //   writeChildContextLock / removeChildContextLock (FR-047, FR-025)
 //     ~/.a1-intents/executor.lock of the passwd home, O_WRONLY|O_CREAT|O_EXCL|
 //     O_NOFOLLOW at 0600, exactly the eight LOCK_KEYS; `run` takes it as its
-//     first lock, before the project lock, and removes it in `finally`.
-//     Wave 7 adds the busy semantics (stale reclaim) of the global lock.
+//     first lock, before the project lock, and removes it in `finally` and
+//     on process exit. Wave 7 adds the busy semantics (stale reclaim).
 //   createRunDir / openRunOutputs / removeRunDir (FR-049)
-//     ~/.a1-intents/runs/<id>/ (0700) with stdout.txt and stderr.txt (0600,
-//     O_EXCL|O_NOFOLLOW); `complete` accepts --stdout/--stderr only there.
+//     ~/.a1-intents/runs/<id>/ (0700) with stdout.txt, stderr.txt and the
+//     before-snapshot (0600, O_EXCL|O_NOFOLLOW); `complete` accepts
+//     --stdout/--stderr only there.
 //   spawnEnvSecrets (FR-049): every spawn-env value beyond the fixed names
 //     of FR-021, for the exact-value redaction of FR-031 (none in v1).
-//   guardArgv / guardStageArgv (FR-039): pure checks over a built argv; Part
-//     B builds the argv (buildArgv) and calls them before every spawn. The
-//     values the owner measurements may still change (the deny rules: B5;
-//     the env names: B4) come in as arguments, so the guard itself does not
-//     depend on a measurement outcome.
+//   guardArgv / guardStageArgv (FR-039), buildArgv, buildEnv: intent-argv.cjs
+//     (moved there in part B; the guards are re-exported here unchanged).
+//   runIntent / cmdIntentRun (FR-020 to FR-025, FR-043): see the run section.
 // ---------------------------------------------------------------------------
 
+const childProcess = require('child_process');
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -29,7 +31,8 @@ const path = require('path');
 const { LOCK_KEYS, readLock, lockPath, childDeps } = require('./intent-child.cjs');
 const { assertPrivateDir, openPrivate } = require('./intent-devices.cjs');
 const { INTENT_ACTIONS } = require('./status-constants.cjs');
-const { INTENT_ID_RE, INTENT_CHILD_ENV_NAMES, INTENT_ROW_TOOLS, rowAllow, readDenyRules, workTreeDenyRules } = require('./intent-constants.cjs');
+const { INTENT_ID_RE, INTENT_CHILD_ENV_NAMES, INTENT_CLAIMED_MAX_BYTES, ACTION_TABLE } = require('./intent-constants.cjs');
+const ARGV = require('./intent-argv.cjs');
 const { INTENT_PROJECT_SLUG_RE: SLUG_RE } = require('./intent-sandbox.cjs'); // not worktree-registry: it takes execFileSync at load
 
 const LOCK_MODE = 0o600;
@@ -37,6 +40,7 @@ const RUNS_DIR = 'runs';
 const RUN_DIR_MODE = 0o700;
 const RUN_FILE_MODE = 0o600;
 const RUN_OUTPUTS = Object.freeze(['stdout.txt', 'stderr.txt']);
+const RUN_SNAPSHOT = 'snapshot.json'; // FR-030 before-snapshot, private like the outputs
 const { O_WRONLY, O_CREAT, O_EXCL, O_NOFOLLOW } = fs.constants;
 
 const defaultDeps = () => ({
@@ -202,12 +206,13 @@ function openRunOutput(file, id, deps = {}) {
   }
 }
 
-// `run` removes the dir after `complete` succeeded; only the two outputs.
+// `run` removes the dir after `complete` succeeded; only the two outputs
+// and the snapshot.
 function removeRunDir(id, deps = {}) {
   const d = { ...defaultDeps(), ...deps };
   if (!INTENT_ID_RE.test(String(id))) throw inputError('intent id');
   const dir = path.join(runsRoot(d), id);
-  for (const name of RUN_OUTPUTS) fs.rmSync(path.join(dir, name), { force: true });
+  for (const name of [...RUN_OUTPUTS, RUN_SNAPSHOT]) fs.rmSync(path.join(dir, name), { force: true });
   fs.rmdirSync(dir);
 }
 
@@ -220,140 +225,478 @@ function spawnEnvSecrets(env) {
     .map(([, v]) => v));
 }
 
-// ---------- argv guard (FR-039) ----------
+// ---------- run (FR-020 to FR-025, FR-043; spec 011 Wave 6 part B) ----------
+//
+// runIntent(path) -> Promise<{ exitCode, out, usage?, stderr? }>. Order
+// (FR-020): executor host -> claimed/ file (one O_NOFOLLOW read, at most
+// INTENT_CLAIMED_MAX_BYTES) -> open ledger row whose claimed_sha256 equals
+// those bytes (else `tampered`) -> claimed_by is this host, status claimed
+// and no started_at yet -> re-validation (signature, freshness, project) ->
+// executor.lock with the child context (FR-025, FR-047) -> project lock
+// (FR-024) -> intent worktree for a write action (FR-043) -> private run dir
+// (FR-049) -> seal, rewritten skill lists (FR-040, FR-044) -> argv and env ->
+// guard (FR-039) -> snapshot -> `running` rewrite + ledger row under one
+// ledger lock -> spawn -> await exit -> `complete` (FR-029) in-process.
+// A seal or guard failure spawns nothing, leaves started_at unset and
+// completes the intent `failed: sandbox_invalid`; a missing binary, an exec
+// failure of the spawn (the child's `error` event) or a failed capture of
+// its output completes it `failed: spawn_error`. No decision rests on the
+// unsigned a1-only keys before the claimed_sha256 check has passed.
+// Cleanup (part B review M1): every stop between the worktree creation and
+// the spawn that does not complete the intent (a ledger_busy, a tampered
+// file, an unsafe run dir, any thrown error) removes the run dir and rolls
+// the worktree back, so a retry of the same id starts clean and no entry
+// eats the cap. SIGTERM/SIGINT during the run end the child's process group
+// and release both locks (review m5); the intent stays claimed with
+// started_at set, which a later `run` refuses (already_started) until Wave 7
+// expires it.
+// Exit: 0 a child ran and `complete` succeeded (whatever the outcome); 1
+// nothing ran (refused, rejected, failed before or at the spawn, incl. every
+// spawn_error); 2 usage or operator error.
+// Wave 7 adds the timeout, the busy semantics of the global lock (stale
+// reclaim), the hourly cap and the executor steps.
 
-// Every flag of the FR-022 template -> its number of values (the deny list
-// takes every following element that does not start with `-`).
-const CLAUDE_TEMPLATE_FLAGS = Object.freeze({
-  '-p': 1, '--restricted': 0, '--strict-mcp-config': 0, '--mcp-config': 1, '--tools': 1, '--allowedTools': 1,
-  '--disallowedTools': Infinity, '--plugin-dir': 1, '--add-dir': 1, '--permission-mode': 1, '--permission-prompts': 1,
-  '--no-session-persistence': 0, '--append-system-prompt': 1, '--output-format': 1,
-});
-const FIXED_VALUES = Object.freeze({ '--permission-mode': 'dontAsk', '--permission-prompts': 'none', '--output-format': 'json' });
-const NODE_OPTION_RE = /^(?:-e|--eval|-p|--print|-r|--require|--import|--loader|--experimental-loader|--env-file|--inspect(?:-brk|-port|-wait|-publish-uid)?)(?:=|$)/;
-const ENV_ASSIGNMENT_RE = /^[A-Za-z_][A-Za-z0-9_]*=/;
-const SAFE_PATH_RE = /^\/[A-Za-z0-9._@+/-]+$/; // executor-resolved paths; `Bash(node <T> *)` must match them literally
-const PAYLOAD_SUBSTRING_MIN = 16;
+const RUN_EXIT = Object.freeze({ spawned: 0, notSpawned: 1, operator: 2 });
+const OUTPUT_FLAGS = O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW;
+const STOP_SIGNALS = Object.freeze(['SIGTERM', 'SIGINT']);
+const SEAL_REWRITE = 'row-lists'; // FR-044: B1 WIDENS, a seal without the rewrite is refused
 
-const fail = (rule) => Object.freeze({ ok: false, rule });
-const safePath = (p) => typeof p === 'string' && SAFE_PATH_RE.test(p) && path.normalize(p) === p;
+const runDeps = () => {
+  const c = childDeps();
+  return {
+    pid: process.pid, hostname: os.hostname(), now: Date.now, homedir: os.homedir, passwdHome: c.passwdHome,
+    realpath: fs.realpathSync.native, env: process.env, vault: process.env.A1_VAULT_ROOT || null,
+    user: () => os.userInfo().username, execPath: process.execPath, spawn: childProcess.spawn,
+    buildArgv: ARGV.buildArgv, buildStageArgv: ARGV.buildStageArgv, buildEnv: ARGV.buildEnv,
+    verifySeal: (o) => require('./intent-seal.cjs').verifySeal(o),
+    beforeMarkRunning: () => {}, // fixture seam (library calls only): between the snapshot and the running rewrite
+  };
+};
 
-// Forbidden anywhere, whatever the flag: bypass spellings, settings, payload.
-function forbiddenElement(argv, payload) {
-  for (const el of argv.map(String)) {
-    if (/dangerously/i.test(el)) return 'forbidden_dangerously';
-    if (/bypassPermissions/i.test(el)) return 'forbidden_bypass_permissions';
-    if (el === '--settings' || el.startsWith('--settings=')) return 'forbidden_settings';
-    if (el === '--setting-sources' || el.startsWith('--setting-sources=')) return 'forbidden_setting_sources';
-    if (typeof payload === 'string' && payload.length > 0 && (el === payload || (payload.length >= PAYLOAD_SUBSTRING_MIN && el.includes(payload)))) return 'payload_in_argv';
+const sha256 = (t) => crypto.createHash('sha256').update(t, 'utf8').digest('hex');
+const runOut = (exitCode, out, extra = {}) => Object.freeze({ exitCode, out, ...extra });
+const stemOf = (p) => path.basename(String(p), '.md');
+
+// One log line of `run` (FR-033); the decision helpers of intent-lifecycle.
+function logRun(d, intentId, outcome, reason, extra = {}) {
+  const { logDecision } = require('./intent-log.cjs');
+  logDecision({ command: 'run', intentId, outcome, reason, hostname: d.hostname, ...extra }, { homedir: d.homedir, now: d.now });
+}
+
+function refuseRun(d, intentId, reason, detail) {
+  logRun(d, intentId, 'refused', reason, { detail });
+  return runOut(RUN_EXIT.notSpawned, { run: false, reasons: [reason], ...(detail ? { detail } : {}) });
+}
+
+// FR-019 via `intent reject`, with the run's own log line naming the part.
+function rejectRun(d, loc, intentId, reason, detail) {
+  logRun(d, intentId, 'rejected', reason, { detail });
+  const r = require('./intent-lifecycle.cjs').rejectIntent(loc.path, reason, { hostname: d.hostname, homedir: d.homedir, now: d.now, vault: d.vault });
+  return runOut(r.exitCode === 0 ? RUN_EXIT.notSpawned : r.exitCode, { ...(r.out || {}), run: false, rejected: r.exitCode === 0, reason, ...(detail ? { detail } : {}) });
+}
+
+// The claimed file's bytes through one O_NOFOLLOW descriptor, or null when
+// it is larger than INTENT_CLAIMED_MAX_BYTES or not a regular file.
+function readClaimedFile(file) {
+  let fd;
+  try {
+    fd = fs.openSync(file, fs.constants.O_RDONLY | O_NOFOLLOW | fs.constants.O_NONBLOCK);
+  } catch (e) {
+    if (e && ['ELOOP', 'EMLINK', 'ENOENT'].includes(e.code)) return null;
+    throw e;
+  }
+  try {
+    const st = fs.fstatSync(fd);
+    if (!st.isFile() || st.size > INTENT_CLAIMED_MAX_BYTES) return null;
+    const buf = Buffer.alloc(INTENT_CLAIMED_MAX_BYTES + 1);
+    let got = 0;
+    for (let n = 1; n > 0 && got < buf.length;) {
+      n = fs.readSync(fd, buf, got, buf.length - got, null);
+      got += n;
+    }
+    return got > INTENT_CLAIMED_MAX_BYTES ? null : buf.subarray(0, got).toString('utf8');
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+// null when the bytes are the ones recorded at claim time (FR-020).
+function tamperDetail(content, row) {
+  if (row === null) return 'no_ledger_row';
+  if (row.finished_at !== null && row.finished_at !== undefined) return 'row_closed';
+  if (content === null) return 'not_readable';
+  return sha256(content) === row.claimed_sha256 ? null : 'sha_mismatch';
+}
+
+// Host, file, ledger row, hash, claimed_by, not started, re-validation.
+// -> { ok: true, … } | { ok: false, result }.
+function checkClaimed(filePath, d) {
+  const L = require('./intent-lifecycle.cjs');
+  const stem = stemOf(filePath);
+  const config = L.requireExecutorHost(d);
+  if (config === null) return { ok: false, result: refuseRun(d, stem, 'not_executor_host') };
+  const loc = L.locateLifecycleFile(filePath, ['claimed'], d.vault);
+  if (!loc.ok || loc.missing) return { ok: false, result: runOut(RUN_EXIT.operator, null, { usage: `intent run: ${loc.ok ? 'no such file' : loc.why}` }) };
+  const content = readClaimedFile(loc.path);
+  const { loadLedger, findRow } = require('./intent-ledger.cjs');
+  const row = INTENT_ID_RE.test(stem) ? findRow(loadLedger({ homedir: d.homedir }).rows, stem) : null;
+  const tampered = tamperDetail(content, row);
+  if (tampered) return { ok: false, result: rejectRun(d, loc, stem, 'tampered', tampered) };
+  const { parseIntentFrontmatter, validateIntentFile } = require('./intent-validate.cjs');
+  const parsed = parseIntentFrontmatter(content);
+  if (!parsed.ok || parsed.fm.id !== stem) return { ok: false, result: rejectRun(d, loc, stem, 'tampered', 'unparsable') };
+  const { fm } = parsed;
+  if (fm.claimed_by !== d.hostname) return { ok: false, result: refuseRun(d, stem, 'already_claimed', 'claimed_by_other_host') };
+  // Review m1 (Samuel): a run that crashed after its running rewrite never runs twice.
+  if (fm.status !== 'claimed' || (row.started_at !== null && row.started_at !== undefined)) {
+    return { ok: false, result: refuseRun(d, stem, 'already_claimed', 'already_started') };
+  }
+  const action = ACTION_TABLE[fm.action];
+  if (!action || action.kind === 'queue-control') {
+    return { ok: false, result: runOut(RUN_EXIT.operator, null, { usage: `intent run: ${fm.action} intents are not run; tick finishes them` }) };
+  }
+  const v = validateIntentFile(loc.path, {
+    readFile: () => content, maxBytes: INTENT_CLAIMED_MAX_BYTES, homedir: d.homedir, now: d.now, executorDevice: config.executor_device,
+  });
+  if (!v.valid) return { ok: false, result: rejectRun(d, loc, stem, v.reasons[0], v.detail || undefined) };
+  return { ok: true, value: Object.freeze({ loc, fm, row: action, content, projectReal: v.realpath, payloadSha256: v.payloadSha256 }) };
+}
+
+// First executable `name` on the parent PATH (absolute dirs only), or null.
+function which(name, pathVar) {
+  for (const dir of String(pathVar || '').split(':').filter((p) => p.startsWith('/'))) {
+    const p = path.join(dir, name);
+    try {
+      fs.accessSync(p, fs.constants.X_OK);
+      if (fs.statSync(p).isFile()) return p;
+    } catch (_e) {
+      // not here: the next PATH entry
+    }
   }
   return null;
 }
 
-// -> { flags: { flag: [values…] per occurrence } } or { rule }.
-function parseTemplateArgv(argv) {
-  if (argv[0] !== '-p') return { rule: 'first_element_not_p' };
-  const flags = {};
-  for (let i = 0; i < argv.length;) {
-    const el = String(argv[i]);
-    if (!Object.prototype.hasOwnProperty.call(CLAUDE_TEMPLATE_FLAGS, el)) return { rule: el.startsWith('-') ? 'unknown_flag' : 'stray_element' };
-    const arity = CLAUDE_TEMPLATE_FLAGS[el];
-    let j = i + 1;
-    if (arity === Infinity) while (j < argv.length && !String(argv[j]).startsWith('-')) j += 1;
-    else j += arity;
-    if (j > argv.length) return { rule: `missing_value:${el}` };
-    flags[el] = [...(flags[el] || []), argv.slice(i + 1, j).map(String)];
-    i = j;
+// Empty stdout/stderr in the run dir when nothing ran (complete needs both).
+function ensureOutputs(dir) {
+  for (const name of RUN_OUTPUTS) {
+    try {
+      fs.closeSync(fs.openSync(path.join(dir, name), OUTPUT_FLAGS, RUN_FILE_MODE));
+    } catch (e) {
+      if (!e || e.code !== 'EEXIST') throw e;
+    }
   }
-  return { flags };
 }
 
-// FR-039 pins on the allow list: exactly one Bash rule for row W, and none
-// that names raw git, a node option or an env assignment before `node`.
-function allowEntriesRule(value, row, a1Tools) {
-  const bash = value.split(',').filter((e) => /^Bash\(/.test(e));
-  for (const e of bash) {
-    const tokens = e.slice('Bash('.length, -1).trim().split(/\s+/);
-    const nodeAt = tokens.indexOf('node');
-    if (tokens.slice(0, nodeAt < 0 ? tokens.length : nodeAt).some((t) => ENV_ASSIGNMENT_RE.test(t))) return 'allow_env_assignment';
-    if (nodeAt !== 0 && tokens.includes('git')) return 'allow_raw_git';
-    if (nodeAt === 0 && tokens.slice(1).some((t) => NODE_OPTION_RE.test(t))) return 'allow_node_option';
+// The run dir goes, whatever is (still) in it: the outputs, the snapshot.
+function dropRunDir(ctx, d) {
+  if (!ctx.runDir) return;
+  try {
+    removeRunDir(ctx.fm.id, { homedir: d.homedir });
+  } catch (e) {
+    if (!e || e.code !== 'ENOENT') throw e;
   }
-  const want = row === 'W' ? [`Bash(node ${a1Tools} *)`] : [];
-  return bash.join('\n') === want.join('\n') ? null : 'bash_rule';
 }
 
-// Exact values of the flags that must appear exactly once.
-function valueRule(flags, o, a1Tools) {
-  const one = (f) => flags[f][0][0];
-  const want = {
-    '--mcp-config': o.emptyMcpPath, '--tools': INTENT_ROW_TOOLS[o.row].join(','), '--allowedTools': rowAllow(o.row, a1Tools).join(','),
-    '--plugin-dir': o.sealDir, '--add-dir': o.sealDir, '--append-system-prompt': o.systemPrompt, ...FIXED_VALUES,
-    '-p': o.prompt,
+// Review M1 — a stop before the spawn that leaves the intent in claimed/:
+// run dir and the worktree this run created go again.
+function rollback(ctx, d) {
+  dropRunDir(ctx, d);
+  if (!ctx.createdWorktree) return;
+  const failed = require('./intent-worktree.cjs').rollbackIntentWorktree(
+    { project: ctx.fm.project, projectReal: ctx.projectReal, id: ctx.fm.id }, { passwdHome: d.passwdHome, env: d.env },
+  );
+  if (failed.length > 0) logRun(d, ctx.fm.id, 'error', null, { detail: `worktree rollback incomplete: ${failed.join(',')}` });
+}
+
+// `complete` in-process; the run dir goes once it succeeded (FR-049).
+function completeRun(ctx, opts, d) {
+  const { completeIntent } = require('./intent-result.cjs');
+  const [stdoutFile, stderrFile] = RUN_OUTPUTS.map((n) => path.join(ctx.runDir, n));
+  const snapshot = path.join(ctx.runDir, RUN_SNAPSHOT);
+  const r = completeIntent(ctx.loc.path, {
+    stdoutFile, stderrFile, exitCode: opts.exitCode, ...(fs.existsSync(snapshot) ? { snapshotFile: snapshot } : {}),
+    ...(opts.failureReason ? { failureReason: opts.failureReason } : {}),
+  }, { hostname: d.hostname, homedir: d.homedir, now: d.now, vault: d.vault, envSecrets: opts.env ? spawnEnvSecrets(opts.env) : [] });
+  if (r.exitCode === 0) dropRunDir(ctx, d);
+  return r;
+}
+
+// A seal, guard or binary failure: nothing spawned, started_at unset. When
+// `complete` itself refuses (e.g. ledger_busy), the intent stays claimed and
+// the run rolls back like any other stop before the spawn.
+function failBeforeSpawn(ctx, failure, d) {
+  logRun(d, ctx.fm.id, 'failed', failure.reason, { detail: failure.detail, ...(failure.argv ? { argv: failure.argv } : {}) });
+  ensureOutputs(ctx.runDir);
+  const r = completeRun(ctx, { exitCode: null, failureReason: failure.reason }, d);
+  if (r.exitCode !== 0) rollback(ctx, d);
+  const out = r.out ? { ...r.out, run: false, detail: failure.detail } : { run: false, failure_reason: failure.reason, detail: failure.detail };
+  return runOut(r.exitCode === 0 ? RUN_EXIT.notSpawned : r.exitCode, out, r.usage ? { usage: r.usage } : {});
+}
+
+// FR-030 before-snapshot of project/<slug>/ into the private run dir.
+function writeSnapshot(ctx, d) {
+  const { snapshotProject } = require('./intent-result.cjs');
+  const text = JSON.stringify(snapshotProject(ctx.fm.project, { vault: d.vault }));
+  const fd = fs.openSync(path.join(ctx.runDir, RUN_SNAPSHOT), OUTPUT_FLAGS, RUN_FILE_MODE);
+  try {
+    fs.writeSync(fd, text);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+// FR-020 — status running + started_at, and the row's started_at and
+// claimed_sha256 of the rewritten bytes, under ONE ledger lock. -> null or a detail.
+function markRunning(ctx, d) {
+  const { withLedgerLock, loadLedger, findRow, updateRow, writeLedger } = require('./intent-ledger.cjs');
+  const { rewriteFrontmatter } = require('./intent-lifecycle.cjs');
+  const { writeTextAtomic } = require('./io.cjs');
+  return withLedgerLock(() => {
+    const { rows } = loadLedger({ homedir: d.homedir });
+    const detail = tamperDetail(readClaimedFile(ctx.loc.path), findRow(rows, ctx.fm.id));
+    if (detail) return detail;
+    const startedAt = new Date(d.now()).toISOString();
+    const text = rewriteFrontmatter(ctx.content, { status: 'running', started_at: startedAt });
+    writeTextAtomic(ctx.loc.path, text);
+    writeLedger(updateRow(rows, ctx.fm.id, { started_at: startedAt, claimed_sha256: sha256(text) }), { homedir: d.homedir });
+    return null;
+  }, { homedir: d.homedir, hostname: d.hostname, now: d.now });
+}
+
+// argv + env for the row, then the guard. -> { ok: true, cmd, argv, env }
+// | { ok: false, reason, detail, argv }. `stage` needs no git on PATH (m7).
+function prepareSpawn(ctx, seal, d) {
+  const home = d.realpath(d.passwdHome());
+  const claude = ctx.row.kind === 'claude';
+  const bins = { node: d.execPath, claude: claude ? which('claude', d.env.PATH) : null, git: claude ? which('git', d.env.PATH) : null };
+  const env = d.buildEnv(d.env, {
+    home, user: d.user(), vaultRoot: d.realpath(d.vault), action: ctx.fm.action, project: ctx.fm.project, id: ctx.fm.id,
+  }, [bins.node, bins.claude, bins.git]);
+  if (!claude) {
+    const built = d.buildStageArgv(ctx.fm.target, seal);
+    const at = ctx.fm.target.lastIndexOf(':');
+    const guard = ARGV.guardStageArgv(built.argv, {
+      sealDir: built.sealDir, featureId: ctx.fm.target.slice(0, at), stage: ctx.fm.target.slice(at + 1), env, realpath: d.realpath,
+    });
+    if (!guard.ok) return { ok: false, reason: 'sandbox_invalid', detail: `guard: ${guard.rule}`, argv: built.argv };
+    return { ok: true, cmd: d.execPath, argv: built.argv, env };
+  }
+  const primary = ctx.write ? ctx.projectReal : null;
+  const built = d.buildArgv(ctx.row, ctx.fm.target, seal, { cwd: ctx.cwd, passwdHome: home, primary });
+  const prompt = ctx.row.prompt.replace('{target}', ctx.fm.target === undefined ? '' : ctx.fm.target);
+  const guard = ARGV.guardArgv(built.argv, {
+    row: ctx.row.row, sealDir: built.sealDir, emptyMcpPath: built.emptyMcpPath, payload: ctx.fm.payload, prompt,
+    denyRules: built.denyRules, env, cwd: ctx.cwd, passwdHome: home, primary, realpath: d.realpath,
+  });
+  if (!guard.ok) return { ok: false, reason: 'sandbox_invalid', detail: `guard: ${guard.rule}`, argv: built.argv };
+  const missing = [['claude', bins.claude], ['git', bins.git]].find(([, p]) => !p);
+  if (missing) return { ok: false, reason: 'spawn_error', detail: `${missing[0]} not found on PATH`, argv: built.argv };
+  return { ok: true, cmd: bins.claude, argv: built.argv, env };
+}
+
+// Writes into a run-dir output; a failure is recorded, never thrown out of
+// an event handler (review m5).
+function capture(fd, state) {
+  return (b) => {
+    try {
+      fs.writeSync(fd, b);
+    } catch (e) {
+      state.outputError = state.outputError || (e && e.code) || 'write_failed';
+    }
   };
-  const bad = Object.keys(want).find((f) => one(f) !== want[f]);
-  if (bad) return `value:${bad}`;
-  const deny = flags['--disallowedTools'][0];
-  return JSON.stringify(deny) === JSON.stringify([...o.denyRules]) ? null : 'deny_rules';
 }
 
-// Review MINOR-5: what the guard pins itself; the caller may only add. The
-// deny list must hold the seal, work-tree (FR-042) and private-state
-// (FR-049) rules, the MCP config is the seal dir's empty-mcp.json, and the
-// prompt is always given.
-function pinnedRule(o) {
-  if (typeof o.prompt !== 'string' || o.prompt.length === 0) return 'prompt_unpinned';
-  if (o.emptyMcpPath !== path.join(path.dirname(o.sealDir), 'empty-mcp.json')) return 'empty_mcp_path';
-  if (typeof o.cwd !== 'string' || !safePath(o.cwd) || typeof o.passwdHome !== 'string' || !safePath(o.passwdHome)) return 'path_charset';
-  const required = ['Bash(git *--output*)', `Edit(/${o.sealDir}/**)`, `Write(/${o.sealDir}/**)`, ...workTreeDenyRules(o.cwd), ...readDenyRules(o.passwdHome)];
-  const given = new Set(o.denyRules || []);
-  return required.every((r) => given.has(r)) ? null : 'deny_rules_incomplete';
+// FR-021 — spawn, payload on stdin, outputs into the run dir; resolves on
+// close (or on the error event). `live.child` names the child for the stop
+// signals. -> { code, signal } | { error } (+ outputError).
+function spawnChild(ctx, sp, live, d) {
+  const fds = openRunOutputs(ctx.runDir);
+  const state = { outputError: null };
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (r) => {
+      if (settled) return;
+      settled = true;
+      live.child = null;
+      [fds.stdout, fds.stderr].forEach((fd) => fs.closeSync(fd));
+      resolve({ ...r, outputError: state.outputError });
+    };
+    let child;
+    try {
+      child = d.spawn(sp.cmd, [...sp.argv], { cwd: ctx.cwd, shell: false, detached: true, stdio: ['pipe', 'pipe', 'pipe'], env: { ...sp.env } });
+    } catch (e) {
+      done({ error: e });
+      return;
+    }
+    live.child = child;
+    child.on('error', (e) => done({ error: e }));
+    child.stdout.on('data', capture(fds.stdout, state));
+    child.stderr.on('data', capture(fds.stderr, state));
+    child.stdin.on('error', () => {}); // a child that never reads stdin closes it early (EPIPE)
+    child.stdin.end(String(ctx.fm.payload));
+    child.on('close', (code, signal) => done({ code, signal }));
+  });
 }
 
-// Caller env names may only narrow the FR-021 set.
-function envRule(env, envNames) {
-  const names = Object.keys(env || {});
-  if (names.includes('NODE_OPTIONS')) return 'env_node_options';
-  const allowed = INTENT_CHILD_ENV_NAMES.filter((n) => !envNames || envNames.includes(n));
-  return names.every((n) => allowed.includes(n)) ? null : 'env_name';
+const exitCodeOf = (r) => {
+  if (Number.isInteger(r.code)) return r.code;
+  const n = r.signal ? os.constants.signals[r.signal] : undefined;
+  return Number.isInteger(n) ? 128 + n : 1;
+};
+
+// Everything from the run dir to the running rewrite; any stop that does
+// not complete the intent rolls back. -> { ctx, sp, seal } | { result }.
+function prepareRun(ctx0, d) {
+  let ctx = ctx0;
+  try {
+    const dir = createRunDir(ctx.fm.id, { homedir: d.homedir });
+    if (!dir.ok) {
+      rollback(ctx, d);
+      logRun(d, ctx.fm.id, 'error', 'sandbox_invalid', { detail: dir.detail });
+      return { result: runOut(RUN_EXIT.operator, null, { stderr: `intent run: ${dir.detail}` }) };
+    }
+    ctx = Object.freeze({ ...ctx, runDir: dir.dir });
+    const seal = d.verifySeal({ homedir: d.homedir });
+    if (!seal.ok) return { result: failBeforeSpawn(ctx, { reason: 'sandbox_invalid', detail: seal.detail }, d) };
+    if (seal.skillRewrite !== SEAL_REWRITE) return { result: failBeforeSpawn(ctx, { reason: 'sandbox_invalid', detail: 'seal_rewrite_off' }, d) };
+    let sp;
+    try {
+      sp = prepareSpawn(ctx, seal, d);
+    } catch (e) {
+      sp = { ok: false, reason: 'sandbox_invalid', detail: `build: ${String(e && e.message).slice(0, 120)}` };
+    }
+    if (!sp.ok) return { result: failBeforeSpawn(ctx, sp, d) };
+    writeSnapshot(ctx, d);
+    d.beforeMarkRunning(ctx);
+    const tampered = markRunning(ctx, d);
+    if (tampered) {
+      rollback(ctx, d);
+      return { result: rejectRun(d, ctx.loc, ctx.fm.id, 'tampered', tampered) };
+    }
+    return { ctx, sp, seal };
+  } catch (e) {
+    rollback(ctx, d);
+    throw e;
+  }
 }
 
-// FR-039 -> { ok: true } | { ok: false, rule }. o: { row: 'R'|'W', sealDir,
-// emptyMcpPath, payload, prompt, denyRules, systemPrompt, env, cwd,
-// passwdHome, envNames? }.
-function guardArgv(argv, o) {
-  if (!Array.isArray(argv) || !Object.prototype.hasOwnProperty.call(INTENT_ROW_TOOLS, o.row)) return fail('row_or_argv_invalid');
-  const forbidden = forbiddenElement(argv, o.payload);
-  if (forbidden) return fail(forbidden);
-  if (!safePath(o.sealDir) || !safePath(o.emptyMcpPath)) return fail('path_charset');
-  const pinned = pinnedRule(o);
-  if (pinned) return fail(pinned);
-  const parsed = parseTemplateArgv(argv);
-  if (parsed.rule) return fail(parsed.rule);
-  const missing = Object.keys(CLAUDE_TEMPLATE_FLAGS).find((f) => !parsed.flags[f] || parsed.flags[f].length !== 1);
-  if (missing) return fail(`flag_count:${missing}`);
-  const a1Tools = path.join(o.sealDir, '_shared', 'a1-tools.cjs');
-  const rule = allowEntriesRule(parsed.flags['--allowedTools'][0][0], o.row, a1Tools) || valueRule(parsed.flags, o, a1Tools)
-    || envRule(o.env, o.envNames);
-  return rule ? fail(rule) : Object.freeze({ ok: true });
+// Everything under the two locks.
+async function runLocked(ctx0, live, d) {
+  let ctx = ctx0;
+  if (ctx.write) {
+    const { createIntentWorktree } = require('./intent-worktree.cjs');
+    const wt = createIntentWorktree({ project: ctx.fm.project, projectReal: ctx.projectReal, id: ctx.fm.id, action: ctx.fm.action },
+      { passwdHome: d.passwdHome, env: d.env, now: d.now });
+    if (!wt.ok) return rejectRun(d, ctx.loc, ctx.fm.id, wt.reason, wt.detail);
+    ctx = Object.freeze({ ...ctx, createdWorktree: true });
+  }
+  const p = prepareRun(ctx, d);
+  if (p.result) return p.result;
+  const { INTENT_CHILD_SYSTEM_PROMPT_VERSION } = require('./intent-constants.cjs');
+  logRun(d, p.ctx.fm.id, 'spawned', null, {
+    argv: [p.sp.cmd, ...p.sp.argv], envNames: Object.keys(p.sp.env), payloadSha256: p.ctx.payloadSha256,
+    promptVersion: INTENT_CHILD_SYSTEM_PROMPT_VERSION, sealRootSha256: p.seal.rootSha,
+  });
+  const r = await spawnChild(p.ctx, p.sp, live, d);
+  if (r.outputError) logRun(d, p.ctx.fm.id, 'failed', 'spawn_error', { detail: `output_capture_failed: ${r.outputError}` });
+  const failed = r.error || r.outputError;
+  const result = completeRun(p.ctx, failed ? { exitCode: null, failureReason: 'spawn_error', env: p.sp.env } : { exitCode: exitCodeOf(r), env: p.sp.env }, d);
+  const code = r.error ? RUN_EXIT.notSpawned : RUN_EXIT.spawned; // review m2: an exec failure ran nothing, like a missing binary
+  return runOut(result.exitCode === 0 ? code : result.exitCode, result.out ? { ...result.out, run: !r.error } : null,
+    result.usage ? { usage: result.usage } : {});
 }
 
-// FR-039 for `stage` (kind cli): argv exactly [<T>, product, stage, --by <id>,
-// --set <stage>, --dir docs/product], spawned as process.execPath, so no node
-// option precedes <T>. -> { ok: true } | { ok: false, rule }.
-function guardStageArgv(argv, { sealDir, featureId, stage, env, envNames }) {
-  if (!safePath(sealDir)) return fail('path_charset');
-  const want = [path.join(sealDir, '_shared', 'a1-tools.cjs'), 'product', 'stage', '--by', featureId, '--set', stage, '--dir', 'docs/product'];
-  if (!Array.isArray(argv) || JSON.stringify(argv) !== JSON.stringify(want)) return fail('stage_argv');
-  const rule = envRule(env, envNames);
-  return rule ? fail(rule) : Object.freeze({ ok: true });
+// Review m5 — SIGTERM/SIGINT while `run` holds its locks: the child's
+// process group gets SIGTERM, both locks go, the process exits 128+signo.
+function onStopSignals(release, live) {
+  const handlers = STOP_SIGNALS.map((sig) => {
+    const h = () => {
+      if (live.child && live.child.pid) {
+        try {
+          process.kill(-live.child.pid, 'SIGTERM');
+        } catch (_e) {
+          // the group is gone already
+        }
+      }
+      release();
+      process.exit(128 + os.constants.signals[sig]);
+    };
+    process.once(sig, h);
+    return [sig, h];
+  });
+  return () => handlers.forEach(([sig, h]) => process.removeListener(sig, h));
+}
+
+// Executor lock (child context) -> project lock -> runLocked; both released
+// on every path, the executor lock also on process exit and on the stop
+// signals (FR-025, FR-047).
+async function runWithLocks(pre, d) {
+  const { INTENT_WRITE_ACTIONS } = require('./intent-constants.cjs');
+  const { expectedIntentWorktree } = require('./intent-worktree.cjs');
+  const write = INTENT_WRITE_ACTIONS.includes(pre.fm.action);
+  const cwd = write ? expectedIntentWorktree(pre.fm.project, pre.fm.id, { passwdHome: d.passwdHome }) : pre.projectReal;
+  const ctx = Object.freeze({ ...pre, write, cwd });
+  const exec = writeChildContextLock({
+    intent_id: ctx.fm.id, action: ctx.fm.action, project: ctx.fm.project, vault_root: d.realpath(d.vault), anchor: ctx.cwd,
+  }, { pid: d.pid, hostname: () => d.hostname, now: d.now, passwdHome: d.passwdHome });
+  if (!exec.ok) return refuseRun(d, ctx.fm.id, 'executor_busy');
+  const { acquireProjectLock, releaseOwnedLock } = require('./intent-ledger.cjs');
+  const locks = { project: null };
+  const release = () => {
+    if (locks.project) releaseOwnedLock(locks.project);
+    locks.project = null;
+    removeChildContextLock(exec.lock, { passwdHome: d.passwdHome, hostname: () => d.hostname });
+  };
+  const live = { child: null };
+  const unhook = onStopSignals(release, live);
+  process.once('exit', release);
+  try {
+    locks.project = acquireProjectLock(ctx.fm.project, ctx.fm.id, { homedir: d.homedir, hostname: d.hostname, now: d.now, pid: d.pid });
+    if (locks.project === null) return refuseRun(d, ctx.fm.id, 'project_busy');
+    return await runLocked(ctx, live, d);
+  } finally {
+    unhook();
+    process.removeListener('exit', release);
+    release();
+  }
+}
+
+// FR-020 -> Promise<{ exitCode, out, usage?, stderr? }>.
+async function runIntent(filePath, deps = {}) {
+  const d = { ...runDeps(), ...deps };
+  const L = require('./intent-lifecycle.cjs');
+  const stem = stemOf(filePath);
+  try {
+    if (!d.vault) return runOut(RUN_EXIT.operator, null, { usage: 'intent run: A1_VAULT_ROOT is not set' });
+    const pre = checkClaimed(filePath, d);
+    if (!pre.ok) return pre.result;
+    return await runWithLocks(pre.value, d);
+  } catch (e) {
+    if (e && e.code === 'A1_LEDGER_BUSY') return refuseRun(d, stem, 'ledger_busy');
+    if (e && e.code === 'A1_LEDGER_UNREADABLE') return refuseRun(d, stem, 'ledger_unreadable');
+    return L.decideError(d, 'run', stem, e);
+  }
+}
+
+// `a1-tools intent run <path>`
+function cmdIntentRun(args) {
+  const { emit } = require('./intent-lifecycle.cjs');
+  if (args.length !== 1 || String(args[0]).startsWith('-')) {
+    return emit(runOut(RUN_EXIT.operator, null, { usage: 'intent run <path> (exactly one claimed/ intent file)' }));
+  }
+  return runIntent(args[0]).then(emit, (e) => {
+    process.stderr.write(`internal error: ${e && e.message}\n`);
+    process.exitCode = RUN_EXIT.operator;
+  });
 }
 
 module.exports = {
   assertHomeConsistent,
-  CLAUDE_TEMPLATE_FLAGS,
-  guardArgv,
-  guardStageArgv,
+  CLAUDE_TEMPLATE_FLAGS: ARGV.CLAUDE_TEMPLATE_FLAGS, // moved to intent-argv.cjs in part B; re-exported unchanged
+  guardArgv: ARGV.guardArgv,
+  guardStageArgv: ARGV.guardStageArgv,
+  runIntent,
+  cmdIntentRun,
   writeChildContextLock,
   removeChildContextLock,
   createRunDir,

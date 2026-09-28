@@ -21,7 +21,7 @@
 # reaches the environment stage (no realpath project_invalid can leak in).
 #
 # Golden: cases/09-schema.golden.v<N>.json is the frozen `intent schema --json`
-# at x-contract-version N; G2 compares with the newest (v2, spec round 6),
+# at x-contract-version N; G2 compares with the newest (v3, spec round 8),
 # G3 keeps every released golden byte-frozen (v1 included). Regenerate it ONLY together with a bump of
 # INTENT_CONTRACT_VERSION in _shared/lib/intent-schema.cjs, into a NEW file
 # 09-schema.golden.v<N>.json, and add its sha256 pin to G3_PINS below in the
@@ -117,11 +117,12 @@ w9_expect_eq "G1b intent schema spawns no child process [FR-035]" "$g1_tr" "0"
 G3_PINS=(
   "09-schema.golden.v1.json d37415d302af143573c98e78f88c0bba98db33578191167de672173214c00b09"
   "09-schema.golden.v2.json 9b38059ab0f51700de73a42894196a57e3a33c123ef10aba511916014a547440"
+  "09-schema.golden.v3.json 3ff97e41f80276ecd3d22e6da715b761af601f678bfafb1bfe480634ffb4df76"
 )
-if cmp -s "$SB/.out" "$W9_GOLDEN_DIR/09-schema.golden.v2.json" 2>/dev/null; then
-  ok "G2 intent schema --json equals cases/09-schema.golden.v2.json byte for byte [FR-035]"
-else bad "G2 intent schema --json equals cases/09-schema.golden.v2.json byte for byte [FR-035]" \
-  "$(diff "$W9_GOLDEN_DIR/09-schema.golden.v2.json" "$SB/.out" 2>&1 | head -8)"; fi
+if cmp -s "$SB/.out" "$W9_GOLDEN_DIR/09-schema.golden.v3.json" 2>/dev/null; then
+  ok "G2 intent schema --json equals cases/09-schema.golden.v3.json byte for byte [FR-035]"
+else bad "G2 intent schema --json equals cases/09-schema.golden.v3.json byte for byte [FR-035]" \
+  "$(diff "$W9_GOLDEN_DIR/09-schema.golden.v3.json" "$SB/.out" 2>&1 | head -8)"; fi
 for pin in "${G3_PINS[@]}"; do
   w9_expect_eq "G3a released golden ${pin%% *} is byte-frozen (sha256) [FR-035]" "$(w9_sha256 "$W9_GOLDEN_DIR/${pin%% *}" 2>/dev/null)" "${pin#* }"
 done
@@ -133,9 +134,9 @@ for f in "$W9_GOLDEN_DIR"/09-schema.golden.v*.json; do
   [[ -n "$g3_hit" ]] || g3_unpinned="$g3_unpinned $(basename "$f")"
 done
 w9_expect_eq "G3b every intent-schema golden has a sha256 pin in cases/09-schema.sh [FR-035]" "${g3_unpinned:-none}" "none"
-w9_expect_eq "G3c x-contract-version is 2 (spec round 6) and x-vault-contract-version is spec 010's 1 [FR-035]" \
+w9_expect_eq "G3c x-contract-version is 3 (spec round 8) and x-vault-contract-version is spec 010's 1 [FR-035]" \
   "$(w9_q "$W9_SCHEMA" '[s["x-contract-version"], s["x-vault-contract-version"], s["$schema"]]')" \
-  '[2,1,"https://json-schema.org/draft/2020-12/schema"]'
+  '[3,1,"https://json-schema.org/draft/2020-12/schema"]'
 
 # ---------- K1: key parity ----------
 K1_KEYS='["action","approved_at","approved_by_intent","approved_from_device","approved_via","created_at","created_by","id","nonce","payload","project","schema_version","signature","status","target","target_sha256","type"]'
@@ -162,28 +163,28 @@ w9_expect_eq "K1g \$defs.processed_intent adds exactly the 10 a1-only keys; stat
   "$(w9_q "$W9_SCHEMA" '(() => { const p = s.$defs.processed_intent; const extra = Object.keys(p.properties).filter((k) => !(k in s.properties)).sort(); return [extra, [...p.properties.status.enum].sort(), s.properties.status.const]; })()')" \
   "[$K1_A1_ONLY,[\"claimed\",\"done\",\"failed\",\"queued\",\"rejected\",\"running\"],\"queued\"]"
 
-w9_expect_eq "K1h x-limits = the 11 default limits (never this process's overrides); x-file-rules caps and body [FR-035, FR-005]" \
+w9_expect_eq "K1h x-limits = the 12 default limits (never this process's overrides); x-file-rules caps and body [FR-035, FR-005]" \
   "$(w9_q "$W9_SCHEMA" '[s["x-limits"], s["x-file-rules"].max_bytes, s["x-file-rules"].payload_max_bytes, s["x-file-rules"].body, s["x-file-rules"].filename]')" \
-  '[{"INTENT_MAX_BYTES":8192,"INTENT_PAYLOAD_MAX_BYTES":6144,"INTENT_FRESHNESS_MS":900000,"INTENT_CLOCK_SKEW_MS":120000,"INTENT_TIMEOUT_MS":1800000,"INTENT_KILL_GRACE_MS":10000,"INTENT_MAX_RUNS_PER_HOUR":6,"INTENT_CLAIMED_MAX_AGE_MS":21600000,"INTENT_RESULT_MAX_BYTES":16384,"INTENT_TICK_INTERVAL_S":30,"INTENT_CANCEL_POLL_MS":5000},8192,6144,"empty","<id>.md"]'
+  '[{"INTENT_MAX_BYTES":8192,"INTENT_PAYLOAD_MAX_BYTES":6144,"INTENT_FRESHNESS_MS":900000,"INTENT_CLOCK_SKEW_MS":120000,"INTENT_TIMEOUT_MS":1800000,"INTENT_KILL_GRACE_MS":10000,"INTENT_MAX_RUNS_PER_HOUR":6,"INTENT_CLAIMED_MAX_AGE_MS":21600000,"INTENT_RESULT_MAX_BYTES":16384,"INTENT_TICK_INTERVAL_S":30,"INTENT_CANCEL_POLL_MS":5000,"INTENT_MAX_OPEN_WORKTREES":3},8192,6144,"empty","<id>.md"]'
 k1i_out="$(HOME="$FHOME" A1_INTENT_MAX_BYTES=4096 node "$A1_AS" "$FHOME" - "$A1_TOOLS" intent schema --json 2>/dev/null | node -e 'let s="";process.stdin.on("data",(d)=>s+=d).on("end",()=>{try{process.stdout.write(String(JSON.parse(s)["x-limits"].INTENT_MAX_BYTES));}catch(e){process.stdout.write("no-json");}})')"
 w9_expect_eq "K1i with A1_INTENT_MAX_BYTES=4096 set, the export still publishes the default 8192 (pure function of the source) [FR-035, FR-046]" "$k1i_out" "8192"
 
 # ---------- K2: enum parity + render hints ----------
 K2_ACTIONS='["approve","cancel","continue-feature","execute","fix","new-feature","plan","progress","stage"]'
-K2_REJECT='["action_unknown","approve_from_non_executor_device","cancelled_by_user","device_unknown","id_mismatch","ledger_unreadable","not_executor_host","oversized","project_invalid","replay","schema_invalid","signature_invalid","stale","tampered","target_invalid","target_not_found","workspace_not_isolated"]'
+K2_REJECT='["action_unknown","approve_from_non_executor_device","cancelled_by_user","device_unknown","id_mismatch","intent_worktree_limit","ledger_unreadable","not_executor_host","oversized","project_invalid","replay","schema_invalid","signature_invalid","stale","tampered","target_invalid","target_not_found","workspace_not_isolated"]'
 K2_FAILURE='["cancelled","expired","nonzero_exit","parent_step_failed","sandbox_invalid","spawn_error","timeout"]'
 w9_expect_eq "K2a action enum = the 9 actions incl. approve, cancel; x-action-table names the same 9 [FR-035, FR-003]" \
   "$(w9_q "$W9_SCHEMA" '[[...s.properties.action.enum].sort(), Object.keys(s["x-action-table"]).sort()]')" "[$K2_ACTIONS,$K2_ACTIONS]"
-w9_expect_eq "K2b rejected_reason enum = the 17 reject reasons [FR-035, FR-016]" \
-  "$(w9_q "$W9_SCHEMA" '[[...s.$defs.rejected_reason.enum].sort(), s.$defs.rejected_reason.enum.length]')" "[$K2_REJECT,17]"
+w9_expect_eq "K2b rejected_reason enum = the 18 reject reasons [FR-035, FR-016]" \
+  "$(w9_q "$W9_SCHEMA" '[[...s.$defs.rejected_reason.enum].sort(), s.$defs.rejected_reason.enum.length]')" "[$K2_REJECT,18]"
 w9_expect_eq "K2c failure_reason enum = the 7 failure reasons [FR-035, FR-016]" \
   "$(w9_q "$W9_SCHEMA" '[[...s.$defs.failure_reason.enum].sort(), s.$defs.failure_reason.enum.length]')" "[$K2_FAILURE,7]"
 w9_expect_eq "K2d every reject and failure code has a non-empty render hint, and no other code has one [FR-035, FR-036]" \
   "$(w9_q "$W9_SCHEMA" '["rejected_reason", "failure_reason"].map((d) => { const x = s.$defs[d]; const h = x["x-render-hints"]; return [Object.keys(h).sort().join(",") === [...x.enum].sort().join(","), x.enum.every((c) => typeof h[c] === "string" && h[c].trim() !== "")]; })')" \
   '[[true,true],[true,true]]'
-w9_expect_eq "K2e the spec's render hints: device_unknown, signature_invalid, stale, workspace_not_isolated, sandbox_invalid, parent_step_failed [FR-036]" \
-  "$(w9_q "$W9_SCHEMA" '[s.$defs.rejected_reason["x-render-hints"].device_unknown, s.$defs.rejected_reason["x-render-hints"].signature_invalid, s.$defs.rejected_reason["x-render-hints"].stale, s.$defs.rejected_reason["x-render-hints"].workspace_not_isolated, s.$defs.failure_reason["x-render-hints"].sandbox_invalid, s.$defs.failure_reason["x-render-hints"].parent_step_failed].join(" | ")')" \
-  'wartet auf Freigabe | wartet auf Freigabe | erneut senden | am Mac aufräumen: offene Änderungen oder Branch `main`, dann erneut senden | Sandbox-Prüfung am Mac fehlgeschlagen, `intent seal` prüfen | Prüfschritt am Mac fehlgeschlagen: Integritätsprüfung, xprov-Gate oder Postmortem; Protokoll am Mac ansehen'
+w9_expect_eq "K2e the spec's render hints: device_unknown, signature_invalid, stale, workspace_not_isolated, intent_worktree_limit, sandbox_invalid, parent_step_failed [FR-036]" \
+  "$(w9_q "$W9_SCHEMA" '[s.$defs.rejected_reason["x-render-hints"].device_unknown, s.$defs.rejected_reason["x-render-hints"].signature_invalid, s.$defs.rejected_reason["x-render-hints"].stale, s.$defs.rejected_reason["x-render-hints"].workspace_not_isolated, s.$defs.rejected_reason["x-render-hints"].intent_worktree_limit, s.$defs.failure_reason["x-render-hints"].sandbox_invalid, s.$defs.failure_reason["x-render-hints"].parent_step_failed].join(" | ")')" \
+  'wartet auf Freigabe | wartet auf Freigabe | erneut senden | Intent-Worktree am Mac konnte nicht angelegt werden; Protokoll am Mac ansehen, dann erneut senden | zu viele offene Intent-Worktrees; am Mac prüfen und mit a1-worktree exit aufräumen, dann erneut senden | Sandbox-Prüfung am Mac fehlgeschlagen, `intent seal` prüfen | Prüfschritt am Mac fehlgeschlagen: Integritätsprüfung, xprov-Gate oder Postmortem; Protokoll am Mac ansehen'
 w9_expect_eq "K2f processed_intent and result reference the same two catalogs [FR-035]" \
   "$(w9_q "$W9_SCHEMA" '[s.$defs.processed_intent.properties.rejected_reason, s.$defs.processed_intent.properties.failure_reason, s.$defs.result.properties.failure_reason]')" \
   '[{"$ref":"#/$defs/rejected_reason"},{"$ref":"#/$defs/failure_reason"},{"anyOf":[{"$ref":"#/$defs/failure_reason"},{"type":"null"}]}]'
@@ -277,15 +278,16 @@ k3_unsup="$(node -e '
 w9_expect_eq "K3c control: a keyword the mini validator does not implement fails loudly, never passes unchecked [SC-009]" "$k3_unsup" "refused"
 
 # ---------- K4: result-note schema ----------
-K4_KEYS='["action","artifacts","duration_s","executor_host","exit_code","failure_reason","finished_at","intent_id","project","schema_version","started_at","status","target","truncated","type"]'
-w9_expect_eq "K4a \$defs.result.properties = the 15 result-note keys, all required, additionalProperties false [FR-035, FR-030]" \
+K4_KEYS='["action","artifacts","branch","duration_s","executor_host","exit_code","failure_reason","finished_at","intent_id","project","schema_version","started_at","status","target","truncated","type","worktree_path"]'
+w9_expect_eq "K4a \$defs.result.properties = the 17 result-note keys, all required, additionalProperties false [FR-035, FR-030]" \
   "$(w9_q "$W9_SCHEMA" '[Object.keys(s.$defs.result.properties).sort(), [...s.$defs.result.required].sort(), s.$defs.result.additionalProperties]')" \
   "[$K4_KEYS,$K4_KEYS,false]"
 new_sandbox w9k4
 k4_note="$SB/result.md"
 printf '%s\n' '---' 'type: intent-result' 'schema_version: 1' "intent_id: $W9_ID" 'action: new-feature' 'project: real-proj' \
   'target: null' 'status: failed' 'failure_reason: timeout' 'started_at: 2026-09-24T12:01:00.000Z' 'finished_at: 2026-09-24T12:31:00.000Z' \
-  'duration_s: 1800' 'exit_code: null' 'executor_host: mac-host' 'artifacts: []' 'truncated: false' '---' >"$k4_note"
+  'duration_s: 1800' 'exit_code: null' 'executor_host: mac-host' 'branch: intent/0e4f7f0a-0000-4000-8000-000000000000' \
+  'worktree_path: "~/claude-projects/a1-worktrees/real-proj-intent-0e4f7f0a-0000-4000-8000-000000000000"' 'artifacts: []' 'truncated: false' '---' >"$k4_note"
 k4_got="$(node -e '
   const m = require(process.argv[1]);
   const s = JSON.parse(require("fs").readFileSync(process.argv[2], "utf8"));

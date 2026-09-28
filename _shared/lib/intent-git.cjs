@@ -185,7 +185,8 @@ function parseGitArgs(sub, args) {
 }
 
 // The env git runs with: built from nothing (never a filtered process.env).
-function gitEnv(ctx, home, parentEnv) {
+// `ceiling` stops the repository search above the project (FR-048).
+function runnerEnv(home, parentEnv, ceiling) {
   const lang = SAFE_LANG_RE.test(parentEnv.LANG || '') ? { LANG: parentEnv.LANG } : {};
   return {
     HOME: home,
@@ -193,11 +194,13 @@ function gitEnv(ctx, home, parentEnv) {
     ...lang,
     GIT_CONFIG_NOSYSTEM: '1',
     GIT_CONFIG_GLOBAL: '/dev/null',
-    GIT_CEILING_DIRECTORIES: path.dirname(ctx.roots[0]),
+    GIT_CEILING_DIRECTORIES: ceiling,
     GIT_LITERAL_PATHSPECS: '1',
     ...GIT_CONFIG_ENV,
   };
 }
+
+const gitEnv = (ctx, home, parentEnv) => runnerEnv(home, parentEnv, path.dirname(ctx.roots[0]));
 
 // A value passed on as `-c key=value`: one line, not option-shaped.
 const safeIdentity = (v) => v.length > 0 && !/[\r\n]/.test(v) && !v.startsWith('-');
@@ -215,14 +218,27 @@ function identityArgs(gitBin, home) {
   });
 }
 
-// Why the repository around `dir` may not meet git, or null. Cached per dir.
-const configCache = new Map();
+const realOrSelf = (p) => {
+  try {
+    return fs.realpathSync.native(p);
+  } catch (_e) {
+    return p;
+  }
+};
+
+// Why the repository around `dir` may not meet git, or null, under `env`.
+// `expect` ({ gitDir, common }, child mode only): the git dir and common dir
+// that follow from the LOCK, never from the repository (part B security
+// review BLOCKER: a child that rewrites the worktree's `.git` file to
+// `gitdir: <primary>/.git` or to a planted `./evil` repository would
+// otherwise commit onto the owner's branch or meet an unchecked config).
 // The scan always runs GIT_BIN (never the fixture's gitBin spy, which
-// records only the call being made).
-function repoConfigProblem(dir, ctx, d) {
-  if (configCache.has(dir)) return configCache.get(dir);
-  const env = gitEnv(ctx, d.passwdHome(), d.env);
-  const run = (args) => spawnSync(GIT_BIN, args, { cwd: dir, env, encoding: 'utf8', shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
+// records only the call being made); `bin` is a fixture seam (library calls
+// only) for a git whose rev-parse fails or prints one line.
+// Re-verify n1: with `expect` set, a rev-parse that fails or does not print
+// exactly the two dirs is a problem (fail closed), never a silent skip.
+function repoConfigProblemAt(dir, env, expect = null, bin = GIT_BIN) {
+  const run = (args) => spawnSync(bin, args, { cwd: dir, env, encoding: 'utf8', shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
   const list = run(['config', '--list', '--show-scope', '--name-only']);
   let problem = list.status === 0 ? null : 'the repository config cannot be listed';
   for (const line of problem ? [] : String(list.stdout).split('\n')) {
@@ -235,8 +251,38 @@ function repoConfigProblem(dir, ctx, d) {
   const dirs = run(['rev-parse', '--git-dir', '--git-common-dir']);
   const gitDirs = dirs.status === 0 ? String(dirs.stdout).split('\n').filter(Boolean).map((g) => path.resolve(dir, g)) : [];
   if (!problem && gitDirs.some((g) => fs.existsSync(path.join(g, 'info', 'attributes')))) problem = 'the repository has info/attributes';
-  configCache.set(dir, problem);
+  if (!problem && expect && gitDirs.length !== 2) problem = 'the repository\'s git dirs cannot be determined';
+  if (!problem && expect) {
+    const [gitDir, common] = gitDirs.map(realOrSelf);
+    if (gitDir !== realOrSelf(expect.gitDir) || common !== realOrSelf(expect.common)) {
+      problem = `the repository's git dir is not the one the lock names (${String(gitDir).slice(0, 120)})`;
+    }
+  }
   return problem;
+}
+
+const insideDir = (p, root) => p === root || p.startsWith(root + path.sep);
+
+// The git dirs a child's repository must have, from the lock (ctx), or null
+// for a directory outside both scope roots' repositories: in the anchor the
+// project's (write action: <primary>/.git/worktrees/<slug>, common
+// <primary>/.git; progress/stage: <primary>/.git for both), in the vault
+// project the vault's own <vault>/.git.
+function expectedGitDirs(dir, ctx) {
+  const real = realOrSelf(path.resolve(dir));
+  if (ctx.primary && insideDir(real, ctx.roots[0])) {
+    const common = path.join(ctx.primary, '.git');
+    return { gitDir: ctx.write ? path.join(common, 'worktrees', path.basename(ctx.roots[0])) : common, common };
+  }
+  if (ctx.vaultRoot) return { gitDir: path.join(ctx.vaultRoot, '.git'), common: path.join(ctx.vaultRoot, '.git') };
+  return null;
+}
+
+// The child's check, cached per dir for the life of the a1-tools process.
+const configCache = new Map();
+function repoConfigProblem(dir, ctx, d) {
+  if (!configCache.has(dir)) configCache.set(dir, repoConfigProblemAt(dir, gitEnv(ctx, d.passwdHome(), d.env), expectedGitDirs(dir, ctx)));
+  return configCache.get(dir);
 }
 
 function refuse(r) {
@@ -354,4 +400,7 @@ function enterChildGit(ctx) {
   if (problem !== null) refuseExit({ reason: 'child_context_invalid', detail: problem });
 }
 
-module.exports = { GIT_BIN, GIT_LEADING, GIT_CONFIG_ENV, REPO_CONFIG_ALLOW, parseGitArgs, safeIdentity, cmdGit, enterChildGit };
+module.exports = {
+  GIT_BIN, GIT_LEADING, GIT_CONFIG_ENV, REPO_CONFIG_ALLOW, parseGitArgs, safeIdentity, cmdGit, enterChildGit,
+  runnerEnv, repoConfigProblemAt, // FR-043: the executor's own git calls (intent-worktree.cjs) use the same runner
+};

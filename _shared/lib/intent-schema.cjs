@@ -52,7 +52,9 @@ const { SLUG_RE } = require('./worktree-registry.cjs');
 
 // Bump together with a new golden (see the header). 2: target_sha256 (spec
 // round 6), a1-only value forms, the 8th refusal code display_unsafe.
-const INTENT_CONTRACT_VERSION = 2;
+// 3 (spec round 8, Wave 6 part B): reject reason intent_worktree_limit,
+// result keys branch and worktree_path.
+const INTENT_CONTRACT_VERSION = 3;
 
 const DRAFT = 'https://json-schema.org/draft/2020-12/schema';
 const PROCESSED_DEF = 'processed_intent';
@@ -131,6 +133,8 @@ const RESULT_FORMS = Object.freeze({
   duration_s: () => ({ type: ['integer', 'null'] }),
   exit_code: () => ({ type: ['integer', 'null'] }),
   executor_host: str,
+  branch: () => ({ type: ['string', 'null'] }), //        FR-030, FR-043: intent/<id> of a write action
+  worktree_path: () => ({ type: ['string', 'null'] }), // ~/claude-projects/a1-worktrees/<project>-intent-<id>
   artifacts: () => ({ type: 'array', items: { type: 'string' } }),
   truncated: () => ({ type: 'boolean' }),
 });
@@ -154,7 +158,8 @@ const REJECT_HINTS = Object.freeze({
   ledger_unreadable: 'Auftragsbuch am Mac nicht lesbar; am Mac prüfen',
   tampered: 'nach dem Übernehmen verändert; am Mac prüfen',
   cancelled_by_user: 'abgebrochen',
-  workspace_not_isolated: 'am Mac aufräumen: offene Änderungen oder Branch `main`, dann erneut senden',
+  workspace_not_isolated: 'Intent-Worktree am Mac konnte nicht angelegt werden; Protokoll am Mac ansehen, dann erneut senden',
+  intent_worktree_limit: 'zu viele offene Intent-Worktrees; am Mac prüfen und mit a1-worktree exit aufräumen, dann erneut senden',
 });
 const FAILURE_HINTS = Object.freeze({
   timeout: 'Zeitlimit überschritten',

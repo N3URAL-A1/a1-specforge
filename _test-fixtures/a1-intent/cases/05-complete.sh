@@ -102,6 +102,9 @@ w5_lib() {
   HOME="$FHOME" A1_VAULT_ROOT="$VAULT" node -e "
     const lib = process.argv[1];
     const fs = require('fs');
+    // Wave 6 part B: complete of a write action reads the worktree registry
+    // of the passwd home; the seam keeps it in the sandbox home.
+    require(lib + '/intent-child.cjs').injectChildDeps({ passwdHome: () => process.env.HOME });
     const R = require(lib + '/intent-result.cjs');
     const argv = process.argv.slice(2);
     $js" "$INTENT_LIB" "$@" 2>&1
@@ -199,12 +202,12 @@ run_outputs "$W5_ID"
 r3_rc="$(w5_lib 'const r = R.completeIntent(argv[0], { exitCode: 0, stdoutFile: argv[1], stderrFile: argv[2] },
   { hostname: "mac-w5", now: () => Date.parse("2026-09-27T10:05:30.000Z") }); console.log(r.exitCode)' "$W5_F" "$RUN_OUT" "$RUN_ERR" | tail -1)"
 r3_note="$W5_P/intents/$W5_ID.md"
-r3_want="type,schema_version,intent_id,action,project,target,status,failure_reason,started_at,finished_at,duration_s,exit_code,executor_host,artifacts,truncated"
-r3_vals="$(w5_field "$r3_note" type)|$(w5_field "$r3_note" schema_version)|$(w5_field "$r3_note" intent_id)|$(w5_field "$r3_note" action)|$(w5_field "$r3_note" project)|$(w5_field "$r3_note" target)|$(w5_field "$r3_note" status)|$(w5_field "$r3_note" failure_reason)|$(w5_field "$r3_note" started_at)|$(w5_field "$r3_note" finished_at)|$(w5_field "$r3_note" duration_s)|$(w5_field "$r3_note" exit_code)|$(w5_field "$r3_note" executor_host)|$(w5_field "$r3_note" artifacts)|$(w5_field "$r3_note" truncated)"
+r3_want="type,schema_version,intent_id,action,project,target,status,failure_reason,started_at,finished_at,duration_s,exit_code,executor_host,branch,worktree_path,artifacts,truncated"
+r3_vals="$(w5_field "$r3_note" type)|$(w5_field "$r3_note" schema_version)|$(w5_field "$r3_note" intent_id)|$(w5_field "$r3_note" action)|$(w5_field "$r3_note" project)|$(w5_field "$r3_note" target)|$(w5_field "$r3_note" status)|$(w5_field "$r3_note" failure_reason)|$(w5_field "$r3_note" started_at)|$(w5_field "$r3_note" finished_at)|$(w5_field "$r3_note" duration_s)|$(w5_field "$r3_note" exit_code)|$(w5_field "$r3_note" executor_host)|$(w5_field "$r3_note" branch)|$(w5_field "$r3_note" worktree_path)|$(w5_field "$r3_note" artifacts)|$(w5_field "$r3_note" truncated)"
 if [[ "$r3_rc" == "0" && "$(w5_keys "$r3_note")" == "$r3_want" \
-  && "$r3_vals" == "intent-result|1|$W5_ID|new-feature|real-proj|null|done|null|2026-09-27T10:00:00.000Z|2026-09-27T10:05:30.000Z|330|0|mac-w5|[]|false" ]]; then
-  ok "R3a note frontmatter: exactly the 15 keys in order; duration_s 330 = finished - started; executor_host = injected host [FR-030]"
-else bad "R3a note frontmatter: exactly the 15 keys in order; duration_s 330 = finished - started; executor_host = injected host [FR-030]" "rc $r3_rc keys $(w5_keys "$r3_note")" "vals $r3_vals"; fi
+  && "$r3_vals" == "intent-result|1|$W5_ID|new-feature|real-proj|null|done|null|2026-09-27T10:00:00.000Z|2026-09-27T10:05:30.000Z|330|0|mac-w5|null|null|[]|false" ]]; then
+  ok "R3a note frontmatter: exactly the 17 keys in order (branch, worktree_path null without an intent worktree); duration_s 330 = finished - started; executor_host = injected host [FR-030]"
+else bad "R3a note frontmatter: exactly the 17 keys in order (branch, worktree_path null without an intent worktree); duration_s 330 = finished - started; executor_host = injected host [FR-030]" "rc $r3_rc keys $(w5_keys "$r3_note")" "vals $r3_vals"; fi
 
 r3_body="$(node -e 'const t = require("fs").readFileSync(process.argv[1], "utf8"); const b = t.slice(t.indexOf("\n---\n", 4) + 5);
   const sec = (h) => { const i = b.indexOf(h); const j = b.indexOf("\n## ", i + 1); return b.slice(i, j === -1 ? undefined : j); };

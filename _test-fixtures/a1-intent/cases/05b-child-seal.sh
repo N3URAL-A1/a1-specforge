@@ -8,9 +8,10 @@
 # real file: {version, plugins: {"a1-specforge@a1-specforge": [{installPath,
 # version, ...}]}}), the SKILL.md files are copies of this repo's real ones.
 # The real ~/.a1-intents and the real plugin cache are never touched.
-# The B1 constant stays `null` in the repo; the seal cases run against two
-# copies of _shared/ under $WORK whose one constant line is set to false or
-# true (w5b_tools), so no runtime switch for the gate exists.
+# The B1 constant ships `true` since Wave 6 part B (RESEARCH.md rounds 4–5,
+# B1: WIDENS); the seal cases run against copies of _shared/ under $WORK whose
+# one constant line is set to null, false or true (w5b_tools), so no runtime
+# switch for the gate exists.
 #
 # RED proof (CONVENTIONS.md): the single production change that turns each
 # case red, each measured on a `git archive HEAD` copy before commit.
@@ -85,8 +86,9 @@ W5B_HOST="$(node -e 'process.stdout.write(require("os").hostname())')"
 W5B_FALSE_TOOLS="$WORK/w5b-tools-false/_shared/a1-tools.cjs"
 W5B_TRUE_TOOLS="$WORK/w5b-tools-true/_shared/a1-tools.cjs"
 W5B_NOGUARD_TOOLS="$WORK/w5b-tools-noguard/_shared/a1-tools.cjs"
+W5B_NULL_TOOLS="$WORK/w5b-tools-null/_shared/a1-tools.cjs" # the pre-measurement constant (G5a)
 
-# w5b_tools <name> <false|true|noguard> — a copy of _shared/ under $WORK with
+# w5b_tools <name> <null|false|true|noguard> — a copy of _shared/ under $WORK with
 # the B1 constant set, or with intent-child.cjs replaced by a pass-through
 # (the dispatcher "without the guard" of SC-011). Prints "ok" when the
 # patch applied exactly once.
@@ -105,7 +107,7 @@ if (mode === 'noguard') {
 }
 const file = `${lib}/intent-sandbox.cjs`; // the B1 constant lives there since the Wave 6A split
 const text = fs.readFileSync(file, 'utf8');
-const line = 'const INTENT_SEAL_SKILL_REWRITE = null;';
+const line = 'const INTENT_SEAL_SKILL_REWRITE = true;'; // shipped value since Wave 6 part B (B1: WIDENS)
 if (text.split(line).length !== 2) { process.stdout.write('constant line not found exactly once'); process.exit(0); }
 fs.writeFileSync(file, text.replace(line, `const INTENT_SEAL_SKILL_REWRITE = ${mode};`));
 process.stdout.write('ok');
@@ -186,10 +188,12 @@ w5b_spy() {
 # `run` sets it up: the lock of <action>/<project>, and A1_INTENT_CHILD=1,
 # A1_INTENT_ACTION, A1_INTENT_PROJECT equal to it.
 child() {
-  local action="$1" project="$2"
+  local action="$1" project="$2" dir="$CWD"
   shift 2
+  case "$action" in new-feature | continue-feature | plan | execute | fix) ;; *) dir="$W5B_PRIMARY" ;; esac # the others' anchor is the project itself
+  W5B_ANCHOR="$dir" # the scope root of w5b_scope_diff for this call
   W5B_SPEC="$(w5b_lockspec "$action" "$project")"
-  w5b_run "$CWD" "$A1_TOOLS" A1_INTENT_CHILD=1 "A1_INTENT_ACTION=$action" "A1_INTENT_PROJECT=$project" \
+  w5b_run "$dir" "$A1_TOOLS" A1_INTENT_CHILD=1 "A1_INTENT_ACTION=$action" "A1_INTENT_PROJECT=$project" \
     A1_INTENT_ID=3f2b8c1e-5d4a-4e6f-9a7b-1c2d3e4f5a6b A1_FIXTURE_CANARY=leak "GIT_CONFIG_PARAMETERS='core.x=y'" -- "$@"
   W5B_SPEC=-
 }
@@ -204,7 +208,8 @@ w5b_rawlock() {
     const fs = require("fs"); const [file, pid, host, patch, home, vault] = process.argv.slice(1);
     const real = (p) => { try { return fs.realpathSync(p); } catch (e) { return p; } };
     const doc = { pid: Number(pid), hostname: host, createdAt: new Date().toISOString(), intent_id: "3f2b8c1e-5d4a-4e6f-9a7b-1c2d3e4f5a6b",
-      action: "fix", project: "real-proj", vault_root: real(vault), anchor: real(home + "/claude-projects/real-proj") };
+      action: "fix", project: "real-proj", vault_root: real(vault),
+      anchor: real(home + "/claude-projects/a1-worktrees/real-proj-intent-3f2b8c1e-5d4a-4e6f-9a7b-1c2d3e4f5a6b") }; // fix: its intent worktree
     for (const [k, v] of Object.entries(eval(`(${patch})`))) { if (v === null) delete doc[k]; else doc[k] = v; }
     fs.rmSync(file, { force: true }); fs.writeFileSync(file, JSON.stringify(doc), { mode: 0o600 });' \
     "$FHOME/.a1-intents/executor.lock" "$1" "$2" "$patch" "$FHOME" "$VAULT"
@@ -231,10 +236,13 @@ expect_not_refused() {
   else bad "$1" "expected the command to run, got exit $RC" "stdout: ${OUT:0:200}" "stderr: ${ERR:0:200}"; fi
 }
 
+# Since Wave 6 part B: CWD is the fixture intent worktree (anchor of every
+# write action), W5B_PRIMARY the project itself (anchor of progress/stage).
 w5b_project_sandbox() {
   new_sandbox "$1"
   mk_project real-proj
-  CWD="$FHOME/claude-projects/real-proj"
+  W5B_PRIMARY="$FHOME/claude-projects/real-proj"
+  CWD="$(mk_intent_worktree real-proj)"
 }
 
 # ---------- H1: subcommand allowlist ----------
@@ -257,7 +265,7 @@ expect_refused "5b-H1e child mode: progress allows nothing (code-scope list -> 7
 # ---------- H2: path scope ----------
 w5b_project_sandbox w5b-h2
 mkdir -p "$FHOME/claude-projects/other/docs/product"
-ln -s ../other "$CWD/lnk"
+ln -s ../other "$W5B_PRIMARY/lnk" # the stage calls below run in the project (their anchor)
 h2_before="$(tree_listing "$FHOME/claude-projects" "$VAULT")"
 child stage real-proj product stage --by 011-x --set started --dir ../other/docs/product
 if [[ "$(tree_listing "$FHOME/claude-projects" "$VAULT")" == "$h2_before" ]]; then
@@ -439,13 +447,13 @@ h7_b="$(node -e '
     A.stage.length === 1 && A.stage[0] === "product stage",
     C.INTENT_CHILD_EXIT_CODE === 77,
     ["--file", "--dir", "--repo-root"].every((f) => C.INTENT_CHILD_PATH_FLAGS.includes(f)),
-    C.INTENT_SEAL_SKILL_REWRITE === null,
+    C.INTENT_SEAL_SKILL_REWRITE === true, // shipped since Wave 6 part B (06-run.sh X31)
     C.INTENT_CHILD_REFUSAL_REASONS.join(",") === "child_context_invalid,subcommand_not_allowed,path_outside_scope"
       && C.INTENT_CHILD_REFUSAL_REASONS.every((r) => !require(process.argv[1] + "/status-constants.cjs").INTENT_REFUSAL_CODES.has(r)),
   ];
   console.log(checks.map((c) => (c ? 1 : 0)).join(""));' "$INTENT_LIB" 2>&1)"
-if [[ "$h7_b" == "111111111111" ]]; then ok "5b-H7b no allowlist entry starts with intent; progress/approve/cancel empty; stage = product stage; exit 77; B1 constant null; 3 child refusal reasons outside INTENT_REFUSAL_CODES [FR-041]"
-else bad "5b-H7b no allowlist entry starts with intent; progress/approve/cancel empty; stage = product stage; exit 77; B1 constant null; 3 child refusal reasons outside INTENT_REFUSAL_CODES [FR-041]" "checks: $h7_b"; fi
+if [[ "$h7_b" == "111111111111" ]]; then ok "5b-H7b no allowlist entry starts with intent; progress/approve/cancel empty; stage = product stage; exit 77; B1 constant true; 3 child refusal reasons outside INTENT_REFUSAL_CODES [FR-041]"
+else bad "5b-H7b no allowlist entry starts with intent; progress/approve/cancel empty; stage = product stage; exit 77; B1 constant true; 3 child refusal reasons outside INTENT_REFUSAL_CODES [FR-041]" "checks: $h7_b"; fi
 w5b_project_sandbox w5b-h7d
 h7d_bad=""
 for h7d_action in new-feature continue-feature plan execute fix stage progress approve cancel; do
@@ -508,20 +516,27 @@ else bad "5b-H7e every raw git call of an action's skill (and its executor agent
 
 W5B_ANALYSIS="$REPO_ROOT/_test-fixtures/product-audit-mirror/fixtures/niimo-2026-07-05-general.md"
 
+# The project is built and committed first, then the fixture intent
+# worktree is branched from it (Wave 6 part B): both hold the same tree, so
+# a write action probes in CWD (the worktree) and stage in W5B_PRIMARY.
 w5b_probe_sandbox() {
-  w5b_project_sandbox "w5b-p-$1"
-  mkdir -p "$CWD/src" "$CWD/db/migrations" "$CWD/docs" "$FHOME/claude-projects/other/docs/product" "$SB/outside"
-  ln -s "$SB/outside" "$CWD/lnk"
-  printf 'x\n' >"$CWD/src/a.js"
-  printf '# Plan\n' >"$CWD/docs/PLAN.md"
-  printf 'create table t (id int);\n' >"$CWD/db/migrations/001.sql"
-  w5b_run "$CWD" "$A1_TOOLS" -- product init --project real-proj --title "Real" --dir docs/product
-  w5b_run "$CWD" "$A1_TOOLS" -- product add-milestone --id m1 --title M1 --dir docs/product
-  w5b_run "$CWD" "$A1_TOOLS" -- product add-feature --id 011-x --milestone m1 --title X --dir docs/product
-  w5b_run "$CWD" "$A1_TOOLS" -- product add-feature --id 012-f --milestone m1 --title F --dir docs/product
-  w5b_run "$CWD" "$A1_TOOLS" -- product audit-publish --analysis "$W5B_ANALYSIS" --dir docs/product
-  git -C "$CWD" add -A >/dev/null 2>&1
-  git -C "$CWD" -c user.name=fixture -c user.email=fixture@invalid commit -q -m init >/dev/null 2>&1
+  new_sandbox "w5b-p-$1"
+  mk_project real-proj
+  W5B_PRIMARY="$FHOME/claude-projects/real-proj"
+  local p="$W5B_PRIMARY"
+  mkdir -p "$p/src" "$p/db/migrations" "$p/docs" "$FHOME/claude-projects/other/docs/product" "$SB/outside"
+  ln -s "$SB/outside" "$p/lnk"
+  printf 'x\n' >"$p/src/a.js"
+  printf '# Plan\n' >"$p/docs/PLAN.md"
+  printf 'create table t (id int);\n' >"$p/db/migrations/001.sql"
+  w5b_run "$p" "$A1_TOOLS" -- product init --project real-proj --title "Real" --dir docs/product
+  w5b_run "$p" "$A1_TOOLS" -- product add-milestone --id m1 --title M1 --dir docs/product
+  w5b_run "$p" "$A1_TOOLS" -- product add-feature --id 011-x --milestone m1 --title X --dir docs/product
+  w5b_run "$p" "$A1_TOOLS" -- product add-feature --id 012-f --milestone m1 --title F --dir docs/product
+  w5b_run "$p" "$A1_TOOLS" -- product audit-publish --analysis "$W5B_ANALYSIS" --dir docs/product
+  git -C "$p" add -A >/dev/null 2>&1
+  git -C "$p" -c user.name=fixture -c user.email=fixture@invalid commit -q -m init >/dev/null 2>&1
+  CWD="$(mk_intent_worktree real-proj)"
   local slug
   for slug in real-proj other; do
     mkdir -p "$VAULT/project/$slug/spec" "$VAULT/project/$slug/fixes"
@@ -647,18 +662,27 @@ w5b_pargs() {
 # The line of ~/.a1-intents itself is left out: the child-context lock that
 # `run` (here: stub/a1-tools-as.cjs) writes before and removes after the call
 # changes that directory's mtime; a file the command left inside it still shows.
+# Scope root: the anchor of the last child() call (W5B_ANCHOR). A write
+# action's git add/commit also writes the parts of <primary>/.git its
+# intent worktree owns (FR-043): objects/, worktrees/<slug>/, the ref and
+# reflog of intent/<id>, and the mtimes of the dirs on the way; the
+# primary's HEAD, index and config are NOT among them.
 w5b_scope_diff() {
-  node - "$1" "$2" "$RC" "$FHOME/.a1-intents" "$CWD" "$VAULT/project/real-proj" <<'JS'
+  node - "$1" "$2" "$RC" "$FHOME/.a1-intents" "$W5B_PRIMARY" "${W5B_ANCHOR:-$CWD}" "$VAULT/project/real-proj" <<'JS'
 const fs = require('fs');
 const path = require('path');
-const [before, after, rc, intents, ...raw] = process.argv.slice(2);
+const [before, after, rc, intents, primaryRaw, ...raw] = process.argv.slice(2);
+const slug = 'real-proj-intent-3f2b8c1e-5d4a-4e6f-9a7b-1c2d3e4f5a6b';
+const g = path.join(path.normalize(primaryRaw), '.git');
+const gitOwned = (p) => [path.join(g, 'objects'), path.join(g, 'worktrees', slug), path.join(g, 'refs', 'heads', 'intent'), path.join(g, 'logs', 'refs', 'heads', 'intent')]
+  .some((r) => p === r || p.startsWith(`${r}/`)) || [g, path.join(g, 'refs'), path.join(g, 'refs', 'heads'), path.join(g, 'logs'), path.join(g, 'logs', 'refs'), path.join(g, 'logs', 'refs', 'heads'), path.join(g, 'worktrees')].includes(p);
 const roots = raw.map((r) => path.normalize(r)); // $TMPDIR ends in "/": $WORK holds a "//"; tree_listing prints joined paths
 const lockDir = `${path.normalize(intents)} d `;
 const set = (f) => new Set(fs.readFileSync(f, 'utf8').split('\n').filter((l) => l && !l.startsWith(lockDir)));
 const a = set(before);
 const b = set(after);
 const changed = [...new Set([...a].filter((l) => !b.has(l)).concat([...b].filter((l) => !a.has(l))).map((l) => l.replace(/ [dfl] \d+ [\d.]+$/, '')))];
-const inside = (p) => roots.some((r) => p === r || p.startsWith(`${r}/`));
+const inside = (p) => roots.some((r) => p === r || p.startsWith(`${r}/`)) || gitOwned(p);
 if (Number(rc) === 77 && changed.length) console.log(`refused after writing: ${changed.slice(0, 3).join(', ')}`);
 else if (changed.some((p) => !inside(p))) console.log(`outside the scope: ${changed.filter((p) => !inside(p)).slice(0, 3).join(', ')}`);
 else console.log(`ok ${changed.length}`);
@@ -811,7 +835,7 @@ p2a_mirror="$(node -e 'try { const o = JSON.parse(process.argv[1]); console.log(
 if [[ "$RC" -eq 0 && "$p2a_scope" == ok* && "$p2a_mirror" == "ok 3" && -f "$VAULT/project/real-proj/product/ROADMAP.md" ]]; then
   ok "5b-P2a child product stage mirrors into project/real-proj/product/ only (in scope) [FR-041]"
 else bad "5b-P2a child product stage mirrors into project/real-proj/product/ only (in scope) [FR-041]" "exit $RC scope: $p2a_scope mirror: $p2a_mirror" "stderr: ${ERR:0:300}"; fi
-node -e 'const fs = require("fs"); const f = process.argv[1]; fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace(/^project: real-proj$/m, "project: other"))' "$CWD/docs/product/ROADMAP.md"
+node -e 'const fs = require("fs"); const f = process.argv[1]; fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace(/^project: real-proj$/m, "project: other"))' "$W5B_PRIMARY/docs/product/ROADMAP.md"
 tree_listing "$FHOME" "$VAULT" >"$SB/p.before"
 child stage real-proj product stage --by 011-x --set complete --dir docs/product
 tree_listing "$FHOME" "$VAULT" >"$SB/p.after"
@@ -821,7 +845,7 @@ if [[ "$RC" -eq 0 && "$p2b_scope" == ok* && "$p2b_mirror" == "skipped" && ! -e "
   ok "5b-P2b ROADMAP project: other in the child -> mirror skipped, nothing under project/other/, exit unchanged [FR-041]"
 else bad "5b-P2b ROADMAP project: other in the child -> mirror skipped, nothing under project/other/, exit unchanged [FR-041]" "exit $RC scope: $p2b_scope mirror: $p2b_mirror" "stderr: ${ERR:0:300}"; fi
 ln -s real-proj "$VAULT/project/alias"
-node -e 'const fs = require("fs"); const f = process.argv[1]; fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace(/^project: other$/m, "project: alias"))' "$CWD/docs/product/ROADMAP.md"
+node -e 'const fs = require("fs"); const f = process.argv[1]; fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace(/^project: other$/m, "project: alias"))' "$W5B_PRIMARY/docs/product/ROADMAP.md"
 tree_listing "$FHOME" "$VAULT" >"$SB/p.before"
 child stage real-proj product stage --by 011-x --set review --dir docs/product
 tree_listing "$FHOME" "$VAULT" >"$SB/p.after"
@@ -1021,22 +1045,24 @@ g4="$(node -e '
   const eq = (set, list) => set instanceof Set && set.size === list.length && list.every((x) => set.has(x));
   const R = ["schema_invalid", "id_mismatch", "action_unknown", "project_invalid", "oversized", "target_invalid",
     "target_not_found", "approve_from_non_executor_device", "device_unknown", "signature_invalid", "stale", "replay",
-    "not_executor_host", "ledger_unreadable", "tampered", "cancelled_by_user", "workspace_not_isolated"];
+    "not_executor_host", "ledger_unreadable", "tampered", "cancelled_by_user", "workspace_not_isolated",
+    "intent_worktree_limit"]; // spec round 8 (Wave 6 part B)
   const F = ["timeout", "expired", "spawn_error", "nonzero_exit", "cancelled", "sandbox_invalid", "parent_step_failed"];
   const X = ["already_claimed", "already_moved", "ledger_busy", "project_busy", "executor_busy", "rate_limited", "result_path_unsafe", "display_unsafe"];
   const K = ["approved_from_device", "approved_at", "approved_via", "approved_by_intent"];
   const disjoint = X.every((x) => !s.INTENT_REJECT_REASONS.has(x) && !s.INTENT_FAILURE_REASONS.has(x));
-  console.log([R.length === 17 && eq(s.INTENT_REJECT_REASONS, R), F.length === 7 && eq(s.INTENT_FAILURE_REASONS, F),
+  console.log([R.length === 18 && eq(s.INTENT_REJECT_REASONS, R), F.length === 7 && eq(s.INTENT_FAILURE_REASONS, F),
     X.length === 8 && eq(s.INTENT_REFUSAL_CODES, X), disjoint,
     Array.isArray(c.INTENT_APPROVAL_KEYS) && Object.isFrozen(c.INTENT_APPROVAL_KEYS) && c.INTENT_APPROVAL_KEYS.join(",") === K.join(","),
     f.INTENT_REFUSAL_CODES === s.INTENT_REFUSAL_CODES && f.INTENT_APPROVAL_KEYS === c.INTENT_APPROVAL_KEYS].join(" "));' "$INTENT_LIB" 2>&1)"
-if [[ "$g4" == "true true true true true true" ]]; then ok "5b-G4 catalogs: 17 reject reasons incl. workspace_not_isolated, 7 failure reasons incl. sandbox_invalid and parent_step_failed, 8 refusal codes incl. result_path_unsafe and display_unsafe outside both, 4 approval keys [FR-040]"
-else bad "5b-G4 catalogs: 17 reject reasons incl. workspace_not_isolated, 7 failure reasons incl. sandbox_invalid and parent_step_failed, 8 refusal codes incl. result_path_unsafe and display_unsafe outside both, 4 approval keys [FR-040]" "reject failure refusal disjoint approval facade: $g4"; fi
+if [[ "$g4" == "true true true true true true" ]]; then ok "5b-G4 catalogs: 18 reject reasons incl. workspace_not_isolated and intent_worktree_limit, 7 failure reasons incl. sandbox_invalid and parent_step_failed, 8 refusal codes incl. result_path_unsafe and display_unsafe outside both, 4 approval keys [FR-040]"
+else bad "5b-G4 catalogs: 18 reject reasons incl. workspace_not_isolated and intent_worktree_limit, 7 failure reasons incl. sandbox_invalid and parent_step_failed, 8 refusal codes incl. result_path_unsafe and display_unsafe outside both, 4 approval keys [FR-040]" "reject failure refusal disjoint approval facade: $g4"; fi
 
 # ---------- G5: the B1 rewrite gate ----------
+g5a_patch="$(w5b_tools null null)"
 w5b_seal_sandbox w5b-g5a
-seal_pty "$A1_TOOLS" yes
-if [[ "$PTY_RC" -eq 1 && "$SEAL_JSON" == *'"b1_unmeasured"'* ]] && w5b_nothing_sealed; then ok "5b-G5a B1 constant null -> seal exit 1 b1_unmeasured, nothing written [FR-044]"
+seal_pty "$W5B_NULL_TOOLS" yes
+if [[ "$g5a_patch" == ok && "$PTY_RC" -eq 1 && "$SEAL_JSON" == *'"b1_unmeasured"'* ]] && w5b_nothing_sealed; then ok "5b-G5a B1 constant null -> seal exit 1 b1_unmeasured, nothing written [FR-044]"
 else bad "5b-G5a B1 constant null -> seal exit 1 b1_unmeasured, nothing written [FR-044]" "exit $PTY_RC json: $SEAL_JSON" "pty: ${PTY_OUT:0:300}"; fi
 
 g5_patch="$(w5b_tools true true)"
