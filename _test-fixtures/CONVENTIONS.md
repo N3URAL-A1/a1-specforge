@@ -156,3 +156,32 @@ diverges from `ls -d` on multi-child directories happened to agree with `ls -d`'
 attempt. G5 now plants a second, non-matching sibling directory specifically so an
 overcounting reimplementation and the shell's exact-pattern match diverge, which a
 mutation run confirmed.
+
+### Instances that satisfy this rule (spec 009-cross-provider-review-gate, Wave 6b — snapshot allowlist)
+
+Part `_test-fixtures/a1-xprov/parts/08-allowlist.sh`. Every mutation was run once on a
+`git archive` copy (never the live tree), with only the named cases selected
+(`XPROV08_CASES`), on 2026-09-28: 53 production mutations on macOS, 8 in `node:20` (the
+`approve` guards need a process tree without Claude Code), plus the n2 fixture mutation.
+All 62 turned their arm red. Fail arms also assert that the fake runner was never
+invoked, so a mutation that lets the snapshot through shows up as a runner call.
+
+| Guard | Case(s) | Named red-making change |
+|---|---|---|
+| Schema, fail-closed parse (FR-030 a) | R30a1–R30a8, R30e3 | skip the pattern-name lookup (a1); drop the `max_count` upper bound (a2); treat unparsable JSON as "no allowlist" (a3); skip the tree check on `path` (a4, a8); skip the glob-character check (a5); accept unknown keys (a6); plain `JSON.parse`, last duplicate wins (a7); drop the self-path check (e3) |
+| Trust anchor (FR-030 b) | R30b1, R30b2', R30b2-1…5, R30b3-1b…5 | read at `--base` (b1); no first-parent step for plan review on the tip (b2'); resolve via `origin/HEAD` (b2-1); fall back to local `main`, or read the allowlist from the reviewed commit/snapshot when unresolved (b2-2, two mutations); skip the ls-remote comparison (b2-3, b3-5); first-parent step for wave-inspect (b2-4); skip the git-common-dir check (b2-5); skip `check-ref-format` on read (b3-1b) / on write (b3-2); ignore an ls-remote failure (b3-3); drop the timeout (b3-4: 61 s) or kill only the child instead of its process group (b3-4: 50 s) |
+| Line fingerprints, counting (FR-030 c) | R30c1–R30c3, R30c2a/b, R30c3a/b | skip the fingerprint comparison (c1); stop at the first match (c2); fingerprint the matched text (c3, entries from `propose --json`); drop the UTF-16 view (c2a/b); count per window without offset dedup (c3a); fingerprint only the first window's bytes (c3b) |
+| Self-approval (FR-030 d) | R30d1–R30d5 | drop the `git diff --name-only` check (d1, d2); drop `--no-renames` (d3); read the working tree (d4); drop the separate-commit check (d5) |
+| Scope (FR-030 e) | R30e1, R30e2 | exempt the allowlisted pattern in the output filter (e1, emulated in `xprov-filter.cjs`); skip gitleaks when hits are allowlisted (e2) |
+| Stale, reporting (FR-030 f, g) | R30f1, R30g1, R30g2 | drop the stale list / fail on stale (f1); fingerprint in XREVIEW.md, `allowlist_anchor` null (g1); omit allowlisted pairs on fail (g2) |
+| Cap, owner, propose (FR-030 h) | R30h1–R30h6 | skip the owner comparison (h1–h3); drop the cap (h4); constant 32 → 33 against the literal (h5); full matched text in `propose` (h6) |
+| Pattern binding (FR-030 i) | R30i | match entries on `path` only |
+| Approval store (FR-030 j) | R30j1–R30j7b | skip the approval lookup (j1, j2); skip the file mode (j3); follow a symlinked store (j4); `stat` the directory (j5); skip the directory mode (j6); `allowlist_approved_blob` null (j7a); ignore `--revoke` (j7b, node:20) |
+| `approve` guards (FR-030 j) | R30j2-1…8 | drop the TTY check (1), the env check (2), the start-name check (3), the `claude/versions/` check (4), the argv check (5) — all node:20; drop either string from the hook (6a, 6b); write the store in place instead of temp file + rename (7, inode unchanged, node:20); accept any count (8, node:20) |
+| No allowlist = old behaviour | R30reg | fail when the anchor holds no allowlist |
+| CI never skips (n2) | R30j2-7, R30j7b | with `CI=true` a `SKIP (claude-code ancestor)` line is a FAIL; removing that check from `skip8` turns the same `CI=true` run under Claude Code green (measured) |
+
+RED against the pre-wave code (`git archive 687f4b9` plus this part): 71 of 146
+assertions fail. The pure fail arms (R30c1/c2/c3, R30c2b, R30d4, R30f2, R30j2-1…5, R30j2-8)
+are green there by construction, because without an allowlist every hit fails. What proves them is the
+mutation column.
