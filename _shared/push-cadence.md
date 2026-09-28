@@ -30,10 +30,11 @@ branches had 21–23 CI runs because review fixes were pushed one at a time.
 4. **Push without a PR** only if the repo's CI does not trigger on branch
    pushes (e.g. a backup or a hand-over to another machine).
 
-**The one exception: `a1-quick`.** The XS lane merges its `quick/<slug>`
-branch into `main` locally, without a PR. It then pushes `main` exactly once,
-after P2. If `main` is protected (see P3, "Protected or not"), a1-quick opens a
-PR too and takes the same squash path.
+**The one exception: `a1-quick`.** The protection question (P3, "Protected
+or not") is answered BEFORE its merge. Unprotected: P3 sync, merge
+`quick/<slug>` into `main` locally, then push `main` exactly once, after P2.
+Protected: no local merge; push `quick/<slug>` and open a PR (same squash
+path).
 
 ## P2 — Local suite green before every push
 
@@ -68,20 +69,31 @@ unit.
 The `a1-tools.cjs` CLI mutates these files but never commits; the skill
 commits them on the primary checkout's `main`.
 
+**No `origin` remote → no push at all.** The commits stay local; skip the
+rest of this section. A failing `gh` call there does not mean "protected".
+
 **Protected or not.** Measure it once per session, do not assume it:
 `gh api repos/<owner>/<repo>/branches/main/protection` answers 404 **and**
 `gh api repos/<owner>/<repo>/rules/branches/main` (the rules active on `main`)
-lists no rule of type `pull_request` → unprotected. Anything else → protected.
+returns an empty list → unprotected. Anything else → protected: any active
+rule counts, not only `pull_request` (`required_status_checks`, `update` and
+`non_fast_forward` reject a direct push too).
 
 **How a step is pushed.**
 
 - Unprotected `main`: push the step's shared-state commits directly to
   `origin main` at the step boundary.
-- Protected `main`: create a branch `chore/<unit>-<step>` from the local
-  shared-state commits, push it, open the chore PR, and squash-merge it. Once
-  the merge is proven (`gh pr view --json state,mergedAt`), run
-  `git -C <repo> reset --keep origin/main` in the primary checkout, so local
-  `main` carries origin's squash commit instead of the originals.
+- Protected `main`: record `T` = local `main`'s tip, create a branch
+  `chore/<unit>-<step>` at `T`, push it, open the chore PR, and squash-merge
+  it. Once the merge is proven (`gh pr view --json state,mergedAt`),
+  `git -C <repo> fetch origin main`, then replace the originals with origin's
+  squash commit without losing anything another session committed on `main`
+  while the PR waited:
+  - `main` still at `T` → `git -C <repo> reset --keep origin/main`;
+  - `main` moved past `T` → `git -C <repo> rebase --onto origin/main T main`
+    (keeps the newer commits, e.g. another session's claim).
+  - On a rebase conflict: STOP, `git rebase --abort`, as in the start step
+    below; Robert decides.
 
 **Start step: hard sync point.** `code-scope` reads only the local
 `.a1/reservations.json`, so a claim is only as fresh as the last sync.
