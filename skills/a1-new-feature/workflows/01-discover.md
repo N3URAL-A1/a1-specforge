@@ -38,7 +38,8 @@ Read the JSON result:
   and continue. Once a hub exists, `a1-tools vault link-hub <project-slug> --spec <id>` adds
   the line idempotently.
 - `hub: "unchanged"` — the hub already held that exact line; nothing was written. Continue.
-- `hub: "skipped-non-writer"` — this host is not `A1_VAULT_WRITER_HOST` (e.g. the AI server),
+- `hub: "skipped-non-writer"` — this host is not the project's writer host (the hub's
+  `a1_writer_host:` key, or the `A1_VAULT_WRITER_HOST` fallback; see `a1-tools vault writer`),
   so the hub note is left to the writer host; stderr carries one
   `spec init hub link skipped: …` line. The spec is created. Tell the user in one sentence that
   the writer host links it later with `a1-tools vault link-hub <project-slug> --spec <id>`, and
