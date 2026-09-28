@@ -87,7 +87,9 @@ lists no rule of type `pull_request` → unprotected. Anything else → protecte
 `.a1/reservations.json`, so a claim is only as fresh as the last sync.
 
 1. Run `git -C <repo> pull --rebase origin main` in the primary checkout
-   before every `code-scope list` or `code-scope claim`. `--rebase`, not
+   before every `code-scope list` or `code-scope claim`, and after every
+   merge into `main` (`a1-pr-review` Hand-offs). This is the only way the
+   primary checkout's `main` is synced; never a bare `git pull`. `--rebase`, not
    `--ff-only`: unpushed shared-state commits on local `main` are normal under
    this rule, and `--ff-only` aborts as soon as `origin/main` has moved. On a
    rebase conflict in `.a1/reservations.json` or `docs/product/**`: STOP,

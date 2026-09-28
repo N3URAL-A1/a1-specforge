@@ -130,7 +130,9 @@ JSON which the workflow then writes to `findings.json` via the CLI.
   reviews the diff as a subagent → fix every BLOCKER and MAJOR, one push per
   round (`_shared/push-cadence.md`) → then merge
   with `gh pr merge --squash --delete-branch`, verify it landed
-  (`gh pr view --json state,mergedAt`), pull `main`, and advance the registry.
+  (`gh pr view --json state,mergedAt`), sync the primary checkout's `main`
+  via `_shared/push-cadence.md` P3 (never a bare `git pull`), and advance the
+  registry.
   Do not ask the user to review, and do not hand the PR back as "ready for
   your review". Report what was merged, not what awaits them.
   The one thing that still needs the user's word is a **production deploy or
