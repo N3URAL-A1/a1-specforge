@@ -3,17 +3,6 @@
     {
       "type": "code_scope",
       "paths": [
-        "docs/adr/2026-09-24-cross-provider-review-gate.md",
-        "_test-fixtures/a1-xprov/check-enforcement.sh",
-        "_test-fixtures/a1-xprov/parts/07-enforcement.sh"
-      ],
-      "by": "009-cross-provider-review-gate",
-      "at": "2026-09-25T14:24:02.694Z",
-      "stage": "started"
-    },
-    {
-      "type": "code_scope",
-      "paths": [
         "_shared/lib/intent.cjs",
         "_shared/lib/intent-constants.cjs",
         "_shared/lib/intent-validate.cjs",
@@ -40,8 +29,6 @@
         "_shared/templates/ai.n3ural.a1-intent-tick.plist",
         "bin/a1-intent-agent.sh",
         "_test-fixtures/a1-intent/",
-        "_test-fixtures/CONVENTIONS.md",
-        ".github/workflows/test.yml",
         "_shared/lib/intent-parse.cjs",
         "_shared/lib/intent-redact.cjs",
         "_shared/lib/spec.cjs",
@@ -52,7 +39,21 @@
         "_shared/lib/intent-worktree.cjs"
       ],
       "by": "011-intent-queue-consumer",
-      "at": "2026-09-28T10:30:58.671Z",
+      "at": "2026-09-28T10:33:17.883Z",
+      "stage": "started"
+    },
+    {
+      "type": "code_scope",
+      "paths": [
+        "docs/adr/2026-09-24-cross-provider-review-gate.md",
+        "_test-fixtures/a1-xprov/check-enforcement.sh",
+        "_test-fixtures/a1-xprov/parts/07-enforcement.sh",
+        "_shared/gates-registry.md",
+        ".github/workflows/test.yml",
+        "_test-fixtures/CONVENTIONS.md"
+      ],
+      "by": "009-cross-provider-review-gate",
+      "at": "2026-09-28T10:33:17.965Z",
       "stage": "started"
     }
   ]
