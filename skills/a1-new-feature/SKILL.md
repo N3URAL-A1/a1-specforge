@@ -196,9 +196,12 @@ Never migrate without asking. Never do a partial/silent conversion.
 ## Scope Claim Gate (HARD RULE — before Phase 5 Implement)
 
 Before the first wave of Phase 5, the feature MUST claim its declared code
-scope so parallel features cannot silently collide on the same files:
+scope so parallel features cannot silently collide on the same files. The
+claim runs in the primary checkout, right after a pull, because `code-scope`
+reads only the local reservations file:
 
 ```bash
+git -C <repo> pull --ff-only origin main
 node <repo>/_shared/a1-tools.cjs code-scope claim \
   --by <spec-id> --scope <code_scope from wave-plan frontmatter>
 ```
@@ -207,7 +210,9 @@ node <repo>/_shared/a1-tools.cjs code-scope claim \
   the in-flight feature(s) holding the overlapping path(s) — surface that to
   the user verbatim and ask how to proceed (wait for the holder to release,
   narrow this feature's scope, or escalate).
-- **OK (exit 0)** → proceed to Wave 1. The claim is idempotent if this feature
+- **OK (exit 0)** → commit the claim and push it (or merge its chore PR) as
+  the last action before the worktree is created and Wave 1 starts
+  (`_shared/push-cadence.md` P3). The claim is idempotent if this feature
   re-claims the same scope after a restart.
 
 `<spec-id>` is the feature's stable id (e.g. `<###>-<feature-slug>`) — the
@@ -293,27 +298,22 @@ the same working tree overwrite each other's files and push half-finished work
    Every wave's edits, builds, and tests happen inside that worktree path.
 2. **Implement wave by wave** there. After each wave, build + tests must be GREEN
    in the worktree before the next wave.
-3. **Merge + push** only after the final wave is GREEN (typically after Phase 6
-   Verify passes):
-   ```bash
-   git -C <repo> checkout main && git -C <repo> pull --ff-only origin main
-   git -C <repo> merge --no-ff feature/<feature-slug> && git -C <repo> push origin main
-   ```
-   If `git pull` brings in a `main` that no longer builds for reasons unrelated to
-   this feature: STOP, do NOT layer on top, report to Robert.
+3. **Merge via PR** only after the final wave is GREEN (typically after Phase 6
+   Verify passes): hand the worktree to `a1-pr-review`
+   (`a1-worktree exit --mode handoff`). It pushes the branch, opens the PR, runs
+   the review, and squash-merges (`gh pr merge --squash --delete-branch`). No
+   local merge into `main`, no `git push origin main`.
+   If `origin/main` no longer builds for reasons unrelated to this feature:
+   STOP, do NOT layer on top, report to Robert.
 4. **Tear down** the worktree (`a1-worktree` exit, or `git worktree remove`).
 
 **Never** cherry-pick commits onto a fresh main branch as a merge workaround.
 **Never** push a build-red `main`. **Never** edit the primary checkout mid-feature
-while another session may hold it. **Never** push the feature branch per commit
-or per wave: it is pushed when its PR opens, then once per review-fix round,
-local suite green first (`_shared/push-cadence.md`).
+while another session may hold it.
 
-Shared-state files (`docs/product/**`, `.a1/reservations.json`) are mutated ONLY
-in the primary checkout and committed IMMEDIATELY, then pushed as one chore PR
-per session step — never left dirty or unpushed across sessions (parallel
-sessions read stale reservations otherwise). Full cross-skill
-convention incl. scope-claim order: `_shared/parallel-spec-isolation.md`.
+When the branch and the shared-state files are pushed:
+`_shared/push-cadence.md`. Full cross-skill convention incl. scope-claim order:
+`_shared/parallel-spec-isolation.md`.
 
 ## Routing — pick the right phase
 

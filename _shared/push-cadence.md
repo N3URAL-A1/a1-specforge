@@ -16,38 +16,77 @@ branches had 21–23 CI runs because review fixes were pushed one at a time.
 
 1. **First push = PR opening.** The branch is pushed once, directly before
    `gh pr create` (`a1-pr-review` Phase 4.2). Until then it stays local.
+   Changes reach `main` only through that PR and its squash merge
+   (`gh pr merge --squash --delete-branch`), never through a local merge plus
+   `git push origin main`.
 2. **Then one push per completed review-fix round.** A round is all
-   BLOCKER/MAJOR findings of one review pass (Reinhard, Samuel, or any other
-   reviewer). Commit each fix locally; push once when the whole round is fixed.
+   BLOCKER/MAJOR findings of one review pass. Findings from reviewers that ran
+   in parallel on the same pass (e.g. Reinhard and Samuel) are one round.
+   Commit each fix locally; push once when the whole round is fixed.
 3. **Never per commit, per wave, or per single finding.** Executors (Erik,
    Walter, any code agent) commit; they do not push.
+4. **Push without a PR** only if the repo's CI does not trigger on branch
+   pushes (e.g. a backup or a hand-over to another machine).
+
+**The one exception: `a1-quick`.** The XS lane merges its `quick/<slug>`
+branch into `main` locally, without a PR. It then pushes `main` exactly once,
+after P2.
 
 ## P2 — Local suite green before every push
 
-Before any push (branch or `main`), run the project's local suite in the
-worktree: the same test, lint and build commands CI runs. Push only on green.
-A red suite is fixed locally first. Never push "to see what CI says".
+Before any push, run the project's local suite and push only on green. A red
+suite is fixed locally first. Never push "to see what CI says".
 
-## P3 — Shared-state chore PRs batch per session step
+"The suite" means the commands CI runs, taken from the first source that
+exists:
 
-Shared-state files (`docs/product/**`, `.a1/reservations.json`,
-`.a1/roadmap.md`, see `parallel-spec-isolation.md` R2) are still mutated only
-in the primary checkout and **committed immediately**, so the working tree is
-never dirty. Pushing is batched:
+1. the commands declared in the project's `CLAUDE.md` or CONVENTIONS;
+2. otherwise the `run:` steps of `.github/workflows/*`;
+3. otherwise build plus test from `package.json` / `pubspec.yaml`.
 
-- **One push / one `chore(...)` PR per session step, not per mutation.** A
-  session step is one lifecycle transition of one work unit, e.g. "start"
-  (scope claim plus product status) or "finish" (scope release, product
-  status, NEXT.md). Collect all of that step's commits, then push once.
-- **Never left behind across sessions.** The step's chore PR is merged (or,
-  without branch protection, the commits pushed to `main`) before the step is
-  left, and at the latest before the session ends. A session that ends with
-  unpushed shared-state commits breaks R2: sessions on other machines read
-  `origin` and would claim colliding scopes.
-- Local suite green before this push too (P2).
+- A project without GitHub CI: its deploy build (e.g. `next build`,
+  `vercel build`) is the CI.
+- Local green does not cover CI's OS matrix; run the portability check where
+  one exists.
+- A chore PR that touches only `docs/product/**` or `.a1/*` shared state needs
+  only the lint/validator for those files (e.g. `product validate`).
+- Exempt from P2: the one-time bootstrap push of a new repo (`a1-new-project`)
+  and `git push origin --delete <branch>` (`a1-worktree` origin cleanup).
+
+## P3 — Shared-state pushes, batched per session step
+
+Shared state is `docs/product/**`, `.a1/reservations.json` and
+`.a1/roadmap.md` (`parallel-spec-isolation.md` R2). It is mutated only in the
+primary checkout and **committed immediately**, so the tree is never dirty.
+Pushing it is batched: **one push, or one `chore(...)` PR, per session step,
+not per mutation.** A session step is one lifecycle transition of one work
+unit.
+
+**Start step: hard sync point.** `code-scope` reads only the local
+`.a1/reservations.json`, so a claim is only as fresh as the last pull.
+
+1. Run `git -C <repo> pull --ff-only origin main` in the primary checkout
+   before every `code-scope list` or `code-scope claim`.
+2. The claim commit is pushed (or its chore PR merged) as the **last action of
+   the start step**, before `worktree add` and before Wave 1. A product status
+   change of the same step may ride in that push.
+
+**Later steps: batched.**
+
+- Wave-checkpoint `product stage --set` commits are not pushed per wave. They
+  ride in the next start or finish push.
+- Finish step (scope release, product status, NEXT.md): one push or chore PR.
+  Release may be batched like this, because a late release only blocks
+  another claim; it never lets two claims collide.
+- **Never left behind across sessions.** A step's push happens before the
+  step is left, and at the latest before the session ends. A session that
+  ends with unpushed shared-state commits breaks R2: sessions on other
+  machines read `origin` and would claim colliding scopes.
 
 ## Where this applies
 
-`a1-pr-review` (Submit, review-fix rounds), `a1-new-feature` and `a1-fix`
-(Isolation Gate, merge), `a1-execute` (Isolation Gate item 3),
-`parallel-spec-isolation.md` (R2, R4).
+- Skills: `a1-pr-review` (`SKILL.md`, `workflows/04-submit.md`),
+  `a1-new-feature` (`SKILL.md`, `workflows/06-verify.md`), `a1-fix`,
+  `a1-execute`, `a1-quick` (the exception above).
+- Agents: `agents/a1-erik-executor.md`, `agents/a1-walter-web-developer.md`.
+- Conventions: `parallel-spec-isolation.md` R2, R3, R4.

@@ -156,21 +156,18 @@ through the worktree unconditionally.) The flow:
    All subsequent edits, builds, and tests happen inside that worktree path —
    never in the primary checkout.
 2. **Work the fix** there (Phases 1–4). Build + test must be GREEN in the worktree.
-3. **Merge + push** only after GREEN:
-   ```bash
-   git -C <repo> checkout main && git -C <repo> pull --ff-only origin main
-   git -C <repo> merge --no-ff fix/<bug-slug> && git -C <repo> push origin main
-   ```
-   If `git pull` brings in a broken `main` (build fails for reasons unrelated to
-   your fix): STOP, do NOT layer your fix on top, report to Robert.
+3. **Merge via PR** only after GREEN: hand the worktree to `a1-pr-review`
+   (`a1-worktree exit --mode handoff`). It pushes the branch, opens the PR,
+   runs the review, and squash-merges (`gh pr merge --squash --delete-branch`).
+   No local merge into `main`, no `git push origin main`.
+   If `origin/main` is broken (build fails for reasons unrelated to your fix):
+   STOP, do NOT layer your fix on top, report to Robert.
 4. **Tear down** the worktree (`a1-worktree` exit, or `git worktree remove`).
 
 **Never** cherry-pick a commit from a feature branch onto a fresh main branch as a
 workaround — that is the anti-pattern this gate exists to eliminate. **Never** push
 a build-red `main`. **Never** edit files in the primary checkout while another
-session may be using it. **Never** push the fix branch per commit: it is pushed
-when its PR opens, then once per review-fix round, local suite green first
-(`_shared/push-cadence.md`).
+session may be using it. When the fix branch is pushed: `_shared/push-cadence.md`.
 
 ## Routing — pick the right phase
 

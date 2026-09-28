@@ -50,12 +50,10 @@ Die projektweiten Koordinations-Dateien
 - `.a1/roadmap.md`
 
 werden AUSSCHLIESSLICH im Haupt-Checkout mutiert (via `a1-tools.cjs product …` /
-`code-scope …`) und die Mutation wird SOFORT committet. Gepusht wird gebündelt:
-ein Push bzw. ein `chore(product):`-PR pro Session-Schritt, nicht pro Mutation,
-gemergt bevor der Schritt verlassen wird, spätestens vor Session-Ende
-(`push-cadence.md` P3). Niemals dirty und niemals ungepusht über Sessions hinweg
-liegen lassen: parallele Sessions lesen sonst stale Reservierungen und claimen
-kollidierende Scopes/Migrationsnummern.
+`code-scope …`) und die Mutation wird SOFORT committet; wann gepusht wird,
+regelt `push-cadence.md` P3. Niemals dirty und niemals ungepusht über Sessions
+hinweg liegen lassen: parallele Sessions lesen sonst stale Reservierungen und
+claimen kollidierende Scopes/Migrationsnummern.
 
 > Incident-Beleg 2026-07-31: Eine 049-Session ließ Reservierungen (Migr. 119/120)
 > uncommitted im Haupt-Checkout, während eine zweite Session dort arbeitete —
@@ -63,8 +61,10 @@ kollidierende Scopes/Migrationsnummern.
 
 ## R3 — Scope claimen VOR Worktree-Anlage
 
-Vor dem Worktree: `a1-tools.cjs code-scope list` prüfen und eigenen Scope
-claimen. Überlappt der geplante Scope mit einer aktiven (nicht-stale)
+Vor dem Worktree: im Haupt-Checkout `git pull --ff-only origin main`, dann
+`a1-tools.cjs code-scope list` prüfen und eigenen Scope claimen — `code-scope`
+liest nur die lokale Datei. Der Claim-Commit wird gepusht, bevor der Worktree
+entsteht (`push-cadence.md` P3, Start-Schritt). Überlappt der geplante Scope mit einer aktiven (nicht-stale)
 Reservierung einer anderen Spec → STOP, Robert entscheidet (nie still
 "dazwischenarbeiten"). Migrationsnummern zusätzlich über
 `automation/db/migrations/MIGRATIONS-RESERVED.md` bzw. `code-scope`-Reservierung.
@@ -72,9 +72,8 @@ Reservierung einer anderen Spec → STOP, Robert entscheidet (nie still
 ## R4 — Merge-Disziplin
 
 Merge nur bei grünem Build/Tests im Worktree; kein Cherry-Pick als
-Merge-Workaround; niemals build-rotes `main` pushen. Wann ein Branch gepusht
-wird (PR-Öffnung, dann einmal pro Review-Fix-Runde, nie pro Commit oder Wave):
-`push-cadence.md` P1/P2. Nach Merge: Worktree
+Merge-Workaround; niemals build-rotes `main` pushen. Gemergt wird per PR und
+Squash; wann gepusht wird: `push-cadence.md` P1/P2. Nach Merge: Worktree
 abbauen (`a1-worktree` Exit), Remote-Branch aufräumen (Step 4.5).
 
 ## R5 — Worktree-Gotchas (Pflicht-Check beim Betreten)
