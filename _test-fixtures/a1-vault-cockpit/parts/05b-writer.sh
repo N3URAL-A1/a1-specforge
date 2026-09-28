@@ -269,6 +269,7 @@ caseW11() {
   w_hub "$v" alpha 'a1_writer_host: host-a'; w_hub "$v" beta 'a1_writer_host: host-b'
   w_hub "$v" gamma 'a1_writer_host: host-a' 'a1_writer_host: host-a'
   for s in alpha beta gamma; do w_spec "$v" "$s" "001-$s"; done
+  w_spec "$v" "Bad Name" 001-bad   # fails PRODUCT_SLUG_RE: counted, never gated, never stamped
   cp -R "$v" "$W_WORK/w11.before"
   w_run "$W_WORK" "$v" - host-a vault lint --fix-type --json
   assert_rc "W11 exit 1 (findings kept)" 1 "$W_RC" "$(cat "$W_ERR")"
@@ -276,7 +277,10 @@ caseW11() {
   assert_eq "W11 beta bytes unchanged" "$(cmp -s "$W_WORK/w11.before/project/beta/spec/001-beta.md" "$v/project/beta/spec/001-beta.md"; echo $?)" "0"
   assert_eq "W11 gamma bytes unchanged" "$(cmp -s "$W_WORK/w11.before/project/gamma/spec/001-gamma.md" "$v/project/gamma/spec/001-gamma.md"; echo $?)" "0"
   assert_json "W11 skipped_projects" "$W_OUT" "j.skipped_projects.map((p) => p.slug + ':' + p.reason + ':' + p.writer_host).join(',')" "beta:not-writer:host-b,gamma:writer-unreadable:unreadable"
-  assert_json "W11 type_missing still reported for beta and gamma" "$W_OUT" "j.findings.filter((f) => f.class === 'type_missing').map((f) => f.path).join(',')" "project/beta/spec/001-beta.md,project/gamma/spec/001-gamma.md"
+  assert_json "W11 type_missing still reported for beta and gamma" "$W_OUT" "j.findings.filter((f) => f.class === 'type_missing').map((f) => f.path).join(',')" "project/Bad Name/spec/001-bad.md,project/beta/spec/001-beta.md,project/gamma/spec/001-gamma.md"
+  assert_eq "W11 Bad Name bytes unchanged" "$(cmp -s "$W_WORK/w11.before/project/Bad Name/spec/001-bad.md" "$v/project/Bad Name/spec/001-bad.md"; echo $?)" "0"
+  assert_json "W11 ignored_names counts the bad name" "$W_OUT" "j.ignored_names" "1"
+  assert_eq "W11 bad name never on stderr" "$(grep -c 'Bad Name' "$W_ERR" | tr -d ' ')" "0"
   assert_eq "W11 skip line for beta" "$(w_line_count '[a1-tools] vault lint --fix-type skipped for beta: this host is not the vault writer of beta (host-a ≠ host-b)')" "1"
   assert_eq "W11 skip line for gamma" "$(w_line_count '[a1-tools] vault lint --fix-type skipped for gamma: writer declaration of gamma unreadable (duplicate_key) — create or repair project/gamma.md')" "1"
 }
@@ -288,13 +292,18 @@ caseW12() {
   local v="$W_WORK/w12"
   w_hub "$v" alpha 'a1_writer_host: host-a'; w_hub "$v" beta 'a1_writer_host: host-b'
   w_spec "$v" alpha 001-alpha; w_spec "$v" beta 001-beta
+  w_hub "$v" "Bad Name"; w_spec "$v" "Bad Name" 001-bad
   cp "$v/project/beta.md" "$W_WORK/w12.beta.before"
+  cp "$v/project/Bad Name.md" "$W_WORK/w12.bad.before"
   w_run "$W_WORK" "$v" - host-a vault link-hub --all-specs
   assert_rc "W12 exit" 0 "$W_RC" "$(cat "$W_ERR")"
   assert_eq "W12 alpha hub linked" "$(grep -cxF -- '- references [[project/alpha/spec/001-alpha]]' "$v/project/alpha.md" | tr -d ' ')" "1"
   assert_eq "W12 beta hub unchanged" "$(cmp -s "$W_WORK/w12.beta.before" "$v/project/beta.md"; echo $?)" "0"
   assert_json "W12 skipped_projects lists beta" "$W_OUT" "j.skipped_projects.map((p) => p.slug + ':' + p.reason).join(',')" "beta:not-writer"
   assert_eq "W12 skip line for beta" "$(w_line_count '[a1-tools] vault link-hub skipped for beta: this host is not the vault writer of beta (host-a ≠ host-b)')" "1"
+  assert_json "W12 ignored_names counts the bad name (hub + folder = one name)" "$W_OUT" "j.ignored_names" "1"
+  assert_eq "W12 bad-name hub unchanged" "$(cmp -s "$W_WORK/w12.bad.before" "$v/project/Bad Name.md"; echo $?)" "0"
+  assert_eq "W12 bad name never on stderr" "$(grep -c 'Bad Name' "$W_ERR" | tr -d ' ')" "0"
 }
 caseW12
 
@@ -329,6 +338,23 @@ caseW17() {
   assert_eq "W17 skip line names slug alpha" "$(w_line_count "$W_SKIP_A_B")" "1"
 }
 caseW17
+
+# N5 — FR-034 (review n5): the product hook's slug must pass PRODUCT_SLUG_RE
+# before the gate runs; the refused value is never echoed.
+# Red-making change: dropping the PRODUCT_SLUG_RE check in committedSlug()
+# (the mirror then writes project/Alpha_Beta/).
+caseN5() {
+  local v="$W_WORK/n5" r="$W_WORK/n5-code/n5repo"
+  mkdir -p "$v/project" "$W_WORK/n5-code"; cp -R "$W_REPO_A" "$r"
+  sed -i.bak 's/^project: alpha$/project: Alpha_Beta/' "$r/docs/product/ROADMAP.md" && rm -f "$r/docs/product/ROADMAP.md.bak"
+  local roots="$W_CODE_ROOTS"; W_CODE_ROOTS="$W_WORK/n5-code"
+  w_run "$r" "$v" - host-a product stage --by 001-login --set started
+  W_CODE_ROOTS="$roots"
+  assert_json "N5 vault_mirror.status" "$W_OUT" "j.vault_mirror && j.vault_mirror.status" "skipped"
+  assert_eq "N5 nothing under project/" "$(find "$v/project" -mindepth 1 | wc -l | tr -d ' ')" "0"
+  assert_eq "N5 skip line without the value" "$(w_line_count '[a1-tools] vault mirror skipped: ROADMAP.md project: is not a valid project slug')" "1"
+}
+caseN5
 
 # W19 — an invalid A1_HOST_ID: the lock carries os.hostname(), status shows
 # `<invalid>` in JSON and in the text line, never the raw value.
