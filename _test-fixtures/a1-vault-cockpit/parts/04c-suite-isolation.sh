@@ -97,6 +97,7 @@ caseX1() {
            "$REPO_ROOT"/_test-fixtures/*/golden/*.sh "$REPO_ROOT"/_test-fixtures/a1-vault-cockpit/parts/*.sh; do
     [[ -f "$f" ]] || continue
     while IFS= read -r line; do
+      [[ "$line" == *"grep -E"* ]] && continue   # this arm's own pattern line
       n=$((n + 1))
       [[ "$line" == *A1_HOST_ID* ]] || missing+="${f#"$REPO_ROOT/_test-fixtures/"}: $line"$'\n'
     done < <(grep -E '^[[:space:]]*unset [^#]*A1_VAULT_WRITER_HOST|env -u [^#]*-u A1_VAULT_WRITER_HOST|env -u A1_VAULT_WRITER_HOST' "$f")
