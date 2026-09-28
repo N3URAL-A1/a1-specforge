@@ -496,6 +496,8 @@ caseW31() {
       w_run "$W_REPO_A" "$v" - "$h" vault status --json
       assert_json "W31 hub '$val' as $h: may_write" "$W_OUT" "j.may_write" "false"
       assert_json "W31 hub '$val' as $h: writer_host/class" "$W_OUT" "j.writer_host + '/' + j.writer_class" "unreadable/invalid_value"
+      w_run "$W_REPO_A" "$v" - "$h" vault sync --json
+      assert_eq "W31 hub '$val' as $h: no '(undefined)' on stderr" "$(grep -c '(undefined)' "$W_ERR" | tr -d ' ')" "0"
     done
     w_run "$W_REPO_A" "$v" - host-a vault sync --json
     assert_eq "W31 hub '$val': sync skip line names invalid_value" "$(w_line_count '[a1-tools] vault mirror skipped: writer declaration of alpha unreadable (invalid_value) — create or repair project/alpha.md')" "1"

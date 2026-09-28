@@ -179,10 +179,11 @@ function gateFromDeclaration(slug, decl, env = process.env, osHost = os.hostname
 function notWriterReason(gate) {
   if (gate.mayWrite) return null;
   const slug = displaySlug(gate.slug);
-  if (gate.cls && gate.writerSource === 'env') {
+  const unreadableWriter = gate.writerHost === UNREADABLE && Boolean(gate.cls);
+  if (unreadableWriter && gate.writerSource === 'env') {
     return `fallback writer of ${slug} unreadable: ${WRITER_FALLBACK_ENV} is not a valid host id`;
   }
-  if (gate.cls) {
+  if (unreadableWriter) {
     return `writer declaration of ${slug} unreadable (${gate.cls}) — create or repair project/${slug}.md`;
   }
   return `this host is not the vault writer of ${slug} (${gate.host} ≠ ${gate.writerHost})`;
@@ -201,7 +202,7 @@ function skippedProject(command, gate) {
   process.stderr.write(`[a1-tools] ${command} skipped for ${displaySlug(gate.slug)}: ${notWriterReason(gate)}\n`);
   return Object.freeze({
     slug: gate.slug,
-    reason: gate.cls ? 'writer-unreadable' : 'not-writer',
+    reason: gate.writerHost === UNREADABLE && gate.cls ? 'writer-unreadable' : 'not-writer',
     writer_host: gate.writerHost,
   });
 }
