@@ -13,8 +13,8 @@ set -u
 # A fixture must never reach the developer's real vault, and its expectations
 # are the vault-free ones (SC-002) — so the suite runs without a vault root.
 # Cases that need a vault set A1_VAULT_ROOT per call to a mktemp -d directory.
-# A1_VAULT_WRITER_HOST (Wave 5) is unset for the same reason.
-unset A1_VAULT_ROOT A1_VAULT_WRITER_HOST
+# A1_VAULT_WRITER_HOST (Wave 5) and A1_HOST_ID (Wave 10) are unset for the same reason.
+unset A1_VAULT_ROOT A1_VAULT_WRITER_HOST A1_HOST_ID
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TOOLS="$REPO_ROOT/_shared/a1-tools.cjs"
@@ -232,7 +232,7 @@ caseP1() {
   repo="$(g_mktemp w8a-p1repo)"; g_need_dir repo "$repo"
   git -C "$repo" init -q
   block="$(vault_block)"
-  out="$(cd "$repo" && env -u A1_VAULT_ROOT -u A1_VAULT_WRITER_HOST HOME="$home" A1_TOOLS="$TOOLS" \
+  out="$(cd "$repo" && env -u A1_VAULT_ROOT -u A1_VAULT_WRITER_HOST -u A1_HOST_ID HOME="$home" A1_TOOLS="$TOOLS" \
         bash -c "$block" 2>/dev/null)"
   entries="$(cd "$repo" && find . -mindepth 1 -path ./.git -prune -o -print)"
   if [[ -n "$block" && "$out" == "vault: not configured" && -z "$entries" ]]; then
@@ -256,7 +256,7 @@ caseP2() {
   mkdir -p "$vault/project/demo/spec"
   printf -- '---\nid: 001-x\nstatus: draft\n---\n\n# X\n' >"$vault/project/demo/spec/001-x.md"
   block="$(vault_block)"
-  out="$(cd "$repo" && env -u A1_VAULT_WRITER_HOST HOME="$home" A1_VAULT_ROOT="$vault" A1_TOOLS="$TOOLS" \
+  out="$(cd "$repo" && env -u A1_VAULT_WRITER_HOST -u A1_HOST_ID HOME="$home" A1_VAULT_ROOT="$vault" A1_TOOLS="$TOOLS" \
         bash -c "$block" 2>/dev/null)"
   expected="$(printf 'vault status: 3 missing, 0 stale, 0 extra, 0 conflict\nvault lint: 1 type_missing')"
   if [[ "$out" == "$expected" ]]; then

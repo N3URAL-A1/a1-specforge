@@ -10,7 +10,7 @@
 # and this command. Re-running it must reproduce the committed goldens
 # byte for byte; a diff means the capture itself is not deterministic.
 set -euo pipefail
-unset A1_VAULT_ROOT A1_VAULT_WRITER_HOST
+unset A1_VAULT_ROOT A1_VAULT_WRITER_HOST A1_HOST_ID
 
 GOLDEN_COMMIT=475382a
 HERE="$(cd "$(dirname "$0")" && pwd)"

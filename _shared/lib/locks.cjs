@@ -4,6 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { nowIso, fail } = require('./io.cjs');
+const { hostIdentity } = require('./vault-common.cjs');
 
 // ---------------------------------------------------------------------------
 // check reservations — P7 cross-run coordination registry.
@@ -77,11 +78,20 @@ function isPidDead(pid) {
   }
 }
 
+/** The host name locks carry and compare (spec 010 FR-032/FR-033, amended
+ * 2026-09-28): ONE function for payload and staleness — the FR-039 host
+ * identity when it is valid, else os.hostname(), so a configuration error
+ * never blocks the lock. */
+function lockHostIdentity(env = process.env, osHost = os.hostname()) {
+  const id = hostIdentity(env, osHost);
+  return id.source === 'invalid' ? osHost : id.host;
+}
+
 /** The lock file content (spec 010 FR-032): a fresh {pid, createdAt,
  * hostname} object. `hostname` lets a reader on the OTHER machine of a synced
  * checkout tell that the pid is not one of its own processes. */
 function lockPayload() {
-  return JSON.stringify({ pid: process.pid, createdAt: nowIso(), hostname: os.hostname() });
+  return JSON.stringify({ pid: process.pid, createdAt: nowIso(), hostname: lockHostIdentity() });
 }
 
 /** True when the payload names a host other than this one (FR-033). A payload
@@ -91,7 +101,7 @@ function lockPayload() {
  * machines sharing a name is a configuration error the pid test then sees. */
 function isForeignHost(payload) {
   const host = payload && payload.hostname;
-  return typeof host === 'string' && host !== '' && host !== os.hostname();
+  return typeof host === 'string' && host !== '' && host !== lockHostIdentity();
 }
 
 /** The lock file as utf8 when it is at most RESERVATIONS_LOCK_MAX_BYTES, else
@@ -336,6 +346,7 @@ module.exports = {
   reservationsFile,
   loadReservations,
   isLockStale,
+  lockHostIdentity,
   isForeignHost,
   isPidDead,
   sleepSyncMs,

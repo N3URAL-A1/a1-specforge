@@ -21,7 +21,8 @@ const path = require('path');
 const { assertSafeSegment, parseFrontmatter } = require('./io.cjs');
 const { planMirror, applyMirror } = require('./vault-mirror.cjs');
 const { PRODUCT_MIRROR_SET, MIRROR_EXCLUDES } = require('./vault-contract.cjs');
-const { MAX_SLUG_LENGTH, rootProblem, writerHostGate, notWriterReason } = require('./vault-common.cjs');
+const { MAX_SLUG_LENGTH, rootProblem } = require('./vault-common.cjs');
+const { writerGateFor, notWriterReason } = require('./vault-writer.cjs');
 
 // Without a configured vault SC-002/FR-037 win over FR-007's "inactive" value
 // (team-lead decision 2026-09-26): stdout stays byte-identical to the
@@ -43,20 +44,26 @@ function committedSlug(dir) {
   const { project } = parseFrontmatter(fs.readFileSync(path.join(dir, 'ROADMAP.md'), 'utf8')).fm;
   if (typeof project !== 'string' || project === '') throw new Error('ROADMAP.md has no frontmatter project:');
   if (project.length > MAX_SLUG_LENGTH) throw new Error(`ROADMAP.md project: longer than ${MAX_SLUG_LENGTH} characters`);
-  return assertSafeSegment(project, 'ROADMAP.md project');
+  assertSafeSegment(project, 'ROADMAP.md project');
+  // FR-034 (review n5): the slug reaches the gate and the skip line, so it
+  // must have the CLI slug shape too; the value itself is never echoed.
+  if (!require('./product.cjs').PRODUCT_SLUG_RE.test(project)) throw new Error('ROADMAP.md project: is not a valid project slug');
+  return project;
 }
 
 /** Mirror the product set of the repo owning `dir`. Returns a fresh result;
  * throws only for the caller to turn into `skipped`. */
 function mirrorProductNow(dir) {
-  const gate = writerHostGate();
-  if (!gate.mayWrite) throw new Error(notWriterReason(gate));
   const repoRoot = repoRootOfProductDir(dir);
   if (!repoRoot) throw new Error(`product dir is not <repo>/docs/product: ${path.resolve(dir)}`);
   const vaultRoot = path.resolve(process.env.A1_VAULT_ROOT);
   const problem = rootProblem(vaultRoot, fs.constants.W_OK);
   if (problem) throw new Error(problem);
   const slug = committedSlug(dir);
+  // FR-034 (amended 2026-09-28): the gate is evaluated for the roadmap
+  // `project:` being written, never for the repo directory name.
+  const notWriter = notWriterReason(writerGateFor(slug, vaultRoot));
+  if (notWriter) throw new Error(notWriter);
   const plan = planMirror({ repoRoot, vaultRoot, slug, sets: { product: PRODUCT_MIRROR_SET, phases: [], excludes: MIRROR_EXCLUDES } });
   const productOnly = { ...plan, sets: ['product'], entries: plan.entries.filter((e) => e.set === 'product') };
   const counts = applyMirror(productOnly);

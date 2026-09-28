@@ -46,8 +46,9 @@ set -u
 unset A1_VAULT_ROOT
 # Spec 010 Wave 5: a declared writer host (FR-034) would make every mirroring
 # case in parts/ depend on the machine the suite runs on. Cases that need one set
-# A1_VAULT_WRITER_HOST per call (parts/05-hosts.sh).
-unset A1_VAULT_WRITER_HOST
+# A1_VAULT_WRITER_HOST per call (parts/05-hosts.sh). Wave 10: the same for the
+# host id A1_HOST_ID (FR-039) — per call only, never inherited.
+unset A1_VAULT_WRITER_HOST A1_HOST_ID
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SUITE="$REPO_ROOT/_test-fixtures/a1-vault-cockpit"

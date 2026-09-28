@@ -126,11 +126,9 @@ function cmdSpecInit(args) {
   writeTextAtomic(specPath, content);
 
   // Spec authorship is host-agnostic (the file above is written on every
-  // host); the hub note is not — a non-writer host leaves it alone (Wave 5).
-  const notWriter = require('./vault-common.cjs').notWriterSkip('spec init hub link');
-  const hub = notWriter
-    ? { hub: 'skipped-non-writer', hub_path: null, line: null }
-    : require('./vault-hub.cjs').linkHub(projectSlug, 'spec', id);
+  // host); the hub note is not — gated for the spec's project, never for the
+  // cwd repo (FR-034, W13).
+  const hub = require('./vault-hub.cjs').linkHubGated('spec init hub link', projectSlug, 'spec', id);
   return {
     spec_path: specPath, id, project: projectSlug, feature_slug: featureSlug, title,
     status: 'discovering', size, created,

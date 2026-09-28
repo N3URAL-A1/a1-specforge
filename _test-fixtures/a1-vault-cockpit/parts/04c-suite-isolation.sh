@@ -61,7 +61,7 @@ caseI1() {
     if [[ -z "$sentinel" || ! -d "$sentinel" || -z "$home" || ! -d "$home" ]]; then
       bad "I1 $s: mktemp gave no directory — suite not run"; continue
     fi
-    env -u A1_VAULT_WRITER_HOST A1_VAULT_ROOT="$sentinel" HOME="$home" bash "$REPO_ROOT/_test-fixtures/$s" >/dev/null 2>&1
+    env -u A1_VAULT_WRITER_HOST A1_HOST_ID=leak A1_VAULT_ROOT="$sentinel" HOME="$home" bash "$REPO_ROOT/_test-fixtures/$s" >/dev/null 2>&1
     rc=$?
     assert_rc "I1 $s exits 0 under the sentinel vault" 0 "$rc" "run it on its own to see the failures"
     leaked="$(cd "$sentinel" && find . -mindepth 1 | sed 's#^\./##' | LC_ALL=C sort | head -3 | tr '\n' ' ' | sed 's/ $//')"
@@ -81,3 +81,44 @@ caseI1() {
   fi
 }
 caseI1
+
+# X1 — Wave 10 (spec 010 edge case "Test isolation"): the host id A1_HOST_ID
+# (FR-039) must not reach a suite's child processes either. The I1 arm above
+# exports A1_HOST_ID=leak into every suite. This arm proves the suites drop it:
+#   static  — every runner line that unsets A1_VAULT_WRITER_HOST (`unset …` or
+#             `env -u …`) also names A1_HOST_ID;
+#   dynamic — every top-level `unset …A1_VAULT_WRITER_HOST…` line of every
+#             runner is EXECUTED in a subshell that starts with A1_HOST_ID=leak,
+#             and a node child started after it must not see the variable; for
+#             this suite's own runner the child is a real `vault status --json`,
+#             which must report host_source "os".
+# Red-making change: removing one `A1_HOST_ID` from such a line (static half;
+# for an `unset` line also the dynamic half: the child then sees "leak").
+caseX1() {
+  local f line missing="" n=0 w out leaks="" m=0 own
+  for f in "$REPO_ROOT"/_test-fixtures/*/run-tests.sh "$REPO_ROOT"/_test-fixtures/*/run.sh \
+           "$REPO_ROOT"/_test-fixtures/*/golden/*.sh "$REPO_ROOT"/_test-fixtures/a1-vault-cockpit/parts/*.sh; do
+    [[ -f "$f" ]] || continue
+    while IFS= read -r line; do
+      [[ "$line" == *"grep -E"* ]] && continue   # this arm's own pattern line
+      n=$((n + 1))
+      [[ "$line" == *A1_HOST_ID* ]] || missing+="${f#"$REPO_ROOT/_test-fixtures/"}: $line"$'\n'
+    done < <(grep -E '^[[:space:]]*unset [^#]*A1_VAULT_WRITER_HOST|env -u [^#]*-u A1_VAULT_WRITER_HOST|env -u A1_VAULT_WRITER_HOST' "$f")
+    while IFS= read -r line; do
+      m=$((m + 1))
+      out="$(A1_HOST_ID=leak bash -c "$line"$'\n''node -e "process.stdout.write(process.env.A1_HOST_ID || \"-\")"' 2>&1)"
+      [[ "$out" == "-" ]] || leaks+="${f#"$REPO_ROOT/_test-fixtures/"}: $line -> $out"$'\n'
+    done < <(grep -E '^unset [^#]*A1_VAULT_WRITER_HOST' "$f")
+  done
+  assert_eq "X1 static: every A1_VAULT_WRITER_HOST unset line also drops A1_HOST_ID ($n lines)" "$missing" ""
+  assert_eq "X1 dynamic: A1_HOST_ID=leak does not survive any runner's unset line ($m lines run)" "$leaks" ""
+  own="$(grep -E '^unset [^#]*A1_VAULT_WRITER_HOST' "$SUITE/run-tests.sh" | head -1)"
+  w="$(mktemp -d)"; mkdir -p "$w/vault/project" "$w/repo/docs/product"
+  git -C "$w/repo" init -q 2>/dev/null || git init -q "$w/repo"
+  printf -- '---\nproject: demo\nstatus: active\n---\n# Roadmap\n' > "$w/repo/docs/product/ROADMAP.md"
+  out="$(cd "$w/repo" && A1_HOST_ID=leak A1_VAULT_ROOT="$w/vault" HOME="$w" A1_CODE_ROOTS="$w" TOOLS="$TOOLS" \
+    bash -c "$own"$'\n''node "$TOOLS" vault status --json' 2>/dev/null)"
+  assert_json "X1 dynamic: this runner's unset line + real vault status under A1_HOST_ID=leak → host_source os" "$out" "j.host_source" "os"
+  rm -rf "$w"
+}
+caseX1

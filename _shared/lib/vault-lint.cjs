@@ -43,8 +43,11 @@ const {
 } = require('./io.cjs');
 const { emitJson, writeStdoutSync } = require('./xprov-common.cjs');
 const {
-  isConflictCopy, isLink, externalVaultRoot, rootProblem, warnSkipped, notWriterSkip,
+  isConflictCopy, isLink, externalVaultRoot, rootProblem, warnSkipped,
 } = require('./vault-common.cjs');
+const {
+  writerGateFor, notWriterSkip, skippedProject, isProjectName,
+} = require('./vault-writer.cjs');
 
 const EXIT_CLEAN = 0;
 const EXIT_FINDINGS = 1;
@@ -274,6 +277,27 @@ function applyFixType(files, dryRun) {
   return { fixed, skipped };
 }
 
+// ---------- writer gate per project (FR-034 / FR-042) ----------
+
+/** The files --fix-type may stamp. With a slug: that slug's gate, reported as
+ * `fix_type: skipped-non-writer` (Wave 5 shape). Without: per project — a
+ * name failing the FR-042 filter is counted, never gated or printed; every
+ * refused project gets one skip line and one `skipped_projects` entry. */
+function fixTypeTargets(root, slug, results) {
+  if (slug !== undefined) {
+    const notWriter = notWriterSkip('vault lint --fix-type', writerGateFor(slug, root));
+    return { files: notWriter ? [] : results.flatMap((r) => r.files), skippedProjects: [], ignored: 0, notWriter };
+  }
+  const named = results.filter((r) => isProjectName(r.slug));
+  const gates = named.map((r) => ({ r, gate: writerGateFor(r.slug, root) }));
+  return {
+    files: gates.filter((g) => g.gate.mayWrite).flatMap((g) => g.r.files),
+    skippedProjects: gates.filter((g) => !g.gate.mayWrite).map((g) => skippedProject('vault lint --fix-type', g.gate)),
+    ignored: results.length - named.length,
+    notWriter: null,
+  };
+}
+
 // ---------- CLI ----------
 
 function usageError(msg) {
@@ -352,16 +376,15 @@ function cmdVaultLint(args) {
   if (ext.refusal) cannotRun(ext.refusal);
   const { root } = ext;
   exitIfRootUnusable(root, flags);
-  const results = resolveTargets(root, slug).map((s) => lintProject(root, s));
+  const results = resolveTargets(root, slug).map((s) => ({ slug: s, ...lintProject(root, s) }));
   const scanned = results.flatMap((r) => r.findings);
   const dryRun = Boolean(flags['dry-run']);
-  // Wave 5 (FR-034, security review MAJOR 2): the backfill writes vault files,
-  // so only the writer host runs it; elsewhere the lint still reports and the
-  // exit code stays the findings one.
-  const notWriter = flags['fix-type'] ? notWriterSkip('vault lint --fix-type') : null;
-  const fix = flags['fix-type'] && !notWriter
-    ? applyFixType(results.flatMap((r) => r.files), dryRun)
-    : { fixed: [], skipped: [] };
+  // FR-034/FR-042: the backfill writes vault files, so it stamps only the
+  // projects this host may write; every project is still linted and the exit
+  // code stays the findings one.
+  const gated = flags['fix-type'] ? fixTypeTargets(root, slug, results) : { files: [], skippedProjects: [], ignored: 0 };
+  const fix = flags['fix-type'] ? applyFixType(gated.files, dryRun) : { fixed: [], skipped: [] };
+  const notWriter = gated.notWriter;
   const fixedNow = new Set(dryRun ? [] : fix.fixed);
   const findings = sortFindings(scanned.filter((f) => !(f.class === 'type_missing' && fixedNow.has(f.path))));
 
@@ -374,6 +397,7 @@ function cmdVaultLint(args) {
     skipped: fix.skipped,
     ...(dryRun ? { would_fix: fix.fixed } : {}),
     ...(notWriter ? { fix_type: 'skipped-non-writer', fix_type_reason: notWriter } : {}),
+    ...(flags['fix-type'] && slug === undefined ? { skipped_projects: gated.skippedProjects, ignored_names: gated.ignored } : {}),
   };
   const code = findings.length > 0 ? EXIT_FINDINGS : EXIT_CLEAN;
   if (flags.json) {

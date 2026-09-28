@@ -18,7 +18,7 @@
 # so a changed exit code is a golden mismatch, not a silent pass.
 
 # Every command runs vault-free: the real vault on this Mac must never be reached.
-unset A1_VAULT_ROOT A1_VAULT_WRITER_HOST
+unset A1_VAULT_ROOT A1_VAULT_WRITER_HOST A1_HOST_ID
 
 G_BASE=""
 G_REPO=""
@@ -71,7 +71,7 @@ g_run() {
   local tools="$1" prefix="$2" rc
   shift 2
   g_need_dir G_REPO "$G_REPO"; g_need_dir G_HOME "$G_HOME"
-  (cd "$G_REPO" && env -u A1_VAULT_ROOT -u A1_VAULT_WRITER_HOST HOME="$G_HOME" \
+  (cd "$G_REPO" && env -u A1_VAULT_ROOT -u A1_VAULT_WRITER_HOST -u A1_HOST_ID HOME="$G_HOME" \
       node "$tools" "$@" >"$prefix.raw.out" 2>"$prefix.raw.err")
   rc=$?
   { printf '## %s rc=%d\n' "$*" "$rc" | g_normalise; g_normalise <"$prefix.raw.out"; } >>"$prefix.out"

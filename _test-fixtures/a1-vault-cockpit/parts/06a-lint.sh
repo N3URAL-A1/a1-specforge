@@ -22,6 +22,13 @@
 L_WORK="$(mktemp -d)"
 mkdir -p "$L_WORK/home"
 
+# Wave 10 (FR-038, review N2): a project folder without a hub note is
+# `unreadable (hub_missing)` and --fix-type stamps nothing in it (fail-closed).
+# Every vault that --fix-type writes therefore gets its hub, undeclared, in the
+# frontmatter shape measured on the real vault — before any `.orig` copy.
+# l_hub <vault> <slug>
+l_hub() { mkdir -p "$1/project"; printf -- '---\ntype: project\ntitle: %s\nstatus: active\npermalink: vault/project/%s\n---\n\n# %s\n' "$2" "$2" "$2" > "$1/project/$2.md"; }
+
 # lint_run <vault> <args…> — sets L_OUT (stdout), L_RC, stderr in $L_WORK/stderr.
 lint_run() {
   local vault="$1"; shift
@@ -34,6 +41,7 @@ lint_run() {
 make_sc004_vault() {
   local p="$1/project/demo"
   mkdir -p "$p/spec" "$p/plans" "$p/fixes" "$p/postmortems" "$p/analyses" "$p/quick" "$p/kpi"
+  l_hub "$1" demo
   # valid, one per artifact type (wave-plan/postmortem without status:, quick-run on result:)
   printf -- '---\ntype: spec\nid: 001-valid\nstatus: draft\n---\n# Valid\n' > "$p/spec/001-valid.md"
   printf -- '---\ntype: wave-plan\nproject: demo\nspec: 001-valid\n---\n# Plan\n' > "$p/plans/001-valid-wave-plan.md"
@@ -165,6 +173,7 @@ caseL5() {
 caseL5bcd() {
   local v="$L_WORK/v5" p="$L_WORK/v5/project/fx"
   mkdir -p "$p/spec" "$p/plans"
+  l_hub "$v" fx
   printf -- '---\nstatus: draft\ntitle: "A long quoted title folded by the foreign writer at\n  eighty columns"\n---\n# B\n' > "$p/spec/001-folded-no-type.md"
   printf '# Plan without frontmatter\n\nbody\n' > "$p/plans/raw.md"
   printf -- '---\r\nstatus: draft\r\ntitle: CRLF spec\r\n---\r\n# C\r\n' > "$p/spec/002-crlf.md"
@@ -268,6 +277,7 @@ caseL9() {
 caseL10() {
   local v="$L_WORK/v10" p="$L_WORK/v10/project/idem"
   mkdir -p "$p/spec"
+  l_hub "$v" idem
   printf -- '---\ntype:\nid: 001-x\nstatus: draft\n---\n# x\n' > "$p/spec/001-empty.md"
   printf -- '---\nid: 002-y\ntype: ""\nstatus: draft\n---\n# y\n' > "$p/spec/002-quoted-empty.md"
   printf -- '---\nid: 003-z\nstatus: draft\n---\n# z\n' > "$p/spec/003-absent.md"
@@ -299,6 +309,7 @@ caseL10() {
 caseL11() {
   local v="$L_WORK/v11" p="$L_WORK/v11/project/out"
   mkdir -p "$p/spec"
+  l_hub "$v" out
   printf -- '---\nid: 001-ux\nstatus: ux-draft\n---\n# u\n' > "$p/spec/001-ux.md"
   printf -- '---\nid: 002-none\ntitle: No status\n---\n# n\n' > "$p/spec/002-none.md"
   printf -- '---\nid: 003-broken\nstatus: draft\n# fence lost\n' > "$p/spec/003-broken.md"

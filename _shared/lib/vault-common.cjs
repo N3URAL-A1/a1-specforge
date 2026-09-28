@@ -11,7 +11,8 @@
 //                       repo-local tier would create .a1/learnings/);
 //   rootProblem         FR-010: a configured root that is missing, not a
 //                       directory or lacks the access the command needs;
-//   writerHostGate …    FR-034/FR-035: the single vault writer host.
+//   hostIdentity        FR-039: the id this host goes by (writer gate in
+//                       vault-writer.cjs, lock payloads in locks.cjs).
 //
 // Library only: no process.exit, no module-level state.
 // ---------------------------------------------------------------------------
@@ -94,44 +95,44 @@ function warnSkipped(what, reason) {
   process.stderr.write(`[a1-tools] ${what} skipped: ${reason}\n`);
 }
 
-// ---------- single vault writer (FR-034 / FR-035) ----------
+// ---------- host identity (FR-039) ----------
 //
-// Exactly one host writes the vault: the one whose os.hostname() equals
-// A1_VAULT_WRITER_HOST (exact string match after trimming — the value must be
-// what `node -e 'console.log(require("os").hostname())'` prints there). Unset
-// or empty → undeclared, every host may write. A non-writer host skips with
-// one stderr line; no exit code changes. The gate only decides WHETHER to
-// write; the realpath and segment guards decide WHERE, on every host.
+// The id this host goes by for the per-project writer (FR-038..FR-040) and
+// for lock payloads (FR-032/FR-033): A1_HOST_ID when set and non-empty, else
+// os.hostname(); trimmed and lowercased. A value that fails HOST_ID_RE, is a
+// YAML special or is purely numeric gives source `invalid` and the display
+// host INVALID_HOST — the raw value is never echoed. The writer gate itself
+// lives in vault-writer.cjs.
 
-const WRITER_HOST_ENV = 'A1_VAULT_WRITER_HOST';
-const UNDECLARED_WRITER = 'undeclared';
+const HOST_ID_ENV = 'A1_HOST_ID';
+const HOST_ID_RE = /^[a-z0-9]([a-z0-9.-]{0,61}[a-z0-9])?$/;
+const YAML_SPECIALS = new Set(['true', 'false', 'yes', 'no', 'on', 'off', 'null', '~']);
+const NUMERIC_RE = /^[0-9]+$/;
+// The gate's own sentinel values (vault-writer.cjs writer_host) are never ids:
+// a hub or env naming one would otherwise read as a declared writer.
+const RESERVED_IDS = new Set(['undeclared', 'unreadable']);
+const INVALID_HOST = '<invalid>';
 
-/** writerHostGate(env?, host?) → fresh frozen { host, writerHost, mayWrite }. */
-function writerHostGate(env = process.env, host = os.hostname()) {
-  const raw = env[WRITER_HOST_ENV];
-  const declared = typeof raw === 'string' ? raw.trim() : '';
-  const writerHost = declared === '' ? UNDECLARED_WRITER : declared;
-  return Object.freeze({ host, writerHost, mayWrite: declared === '' || declared === host });
+/** The normalised id, or null when `raw` is not a valid host id. */
+function normalizeHostId(raw) {
+  if (typeof raw !== 'string') return null;
+  const id = raw.trim().toLowerCase();
+  if (!HOST_ID_RE.test(id) || YAML_SPECIALS.has(id) || NUMERIC_RE.test(id) || RESERVED_IDS.has(id)) return null;
+  return id;
 }
 
-/** The reason text for a non-writer host. */
-function notWriterReason(gate) {
-  return `this host is not the vault writer (${gate.host} ≠ ${gate.writerHost})`;
-}
-
-/** The non-writer skip every vault WRITE path shares: null when this host may
- * write; otherwise prints `[a1-tools] <what> skipped: <reason>` — `what`
- * names the write that is skipped (`vault mirror`, `vault lint --fix-type`,
- * `vault link-hub`, `spec init hub link`) — and returns the reason. */
-function notWriterSkip(what = 'vault mirror', gate = writerHostGate()) {
-  if (gate.mayWrite) return null;
-  const reason = notWriterReason(gate);
-  warnSkipped(what, reason);
-  return reason;
+/** hostIdentity(env?, osHost?) → fresh frozen { host, source }; source ∈
+ * env | os | invalid, host is INVALID_HOST when the source is invalid. */
+function hostIdentity(env = process.env, osHost = os.hostname()) {
+  const raw = env[HOST_ID_ENV];
+  const fromEnv = typeof raw === 'string' && raw.trim() !== '';
+  const id = normalizeHostId(fromEnv ? raw : String(osHost));
+  if (id === null) return Object.freeze({ host: INVALID_HOST, source: 'invalid' });
+  return Object.freeze({ host: id, source: fromEnv ? 'env' : 'os' });
 }
 
 module.exports = {
   MAX_SLUG_LENGTH, isConflictCopy, isLink, isInside, childDirs,
   externalVaultRoot, rootProblem, warnSkipped,
-  writerHostGate, notWriterReason, notWriterSkip, UNDECLARED_WRITER,
+  HOST_ID_ENV, INVALID_HOST, normalizeHostId, hostIdentity,
 };

@@ -29,6 +29,7 @@ pass() { echo "PASS  $1"; }
 
 [[ -n "${A1_VAULT_ROOT:-}" ]] || fail "A1_VAULT_ROOT is not set (the caller passes a mktemp -d directory)"
 [[ -z "${A1_VAULT_WRITER_HOST:-}" ]] || fail "A1_VAULT_WRITER_HOST must be unset"
+[[ -z "${A1_HOST_ID:-}" ]] || fail "A1_HOST_ID must be unset"
 VAULT="$(cd "$A1_VAULT_ROOT" 2>/dev/null && pwd -P)" || fail "A1_VAULT_ROOT does not exist: $A1_VAULT_ROOT"
 case "$VAULT" in
   *N3URAL-Vault*) fail "A1_VAULT_ROOT points at a real vault: $VAULT" ;;

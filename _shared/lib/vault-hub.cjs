@@ -27,8 +27,11 @@ const {
 } = require('./io.cjs');
 const { usage } = require('./help.cjs');
 const {
-  isConflictCopy, isLink, externalVaultRoot, rootProblem, warnSkipped, notWriterSkip,
+  isConflictCopy, isLink, externalVaultRoot, rootProblem, warnSkipped,
 } = require('./vault-common.cjs');
+const {
+  writerGateFor, notWriterSkip, skippedProject, projectNames,
+} = require('./vault-writer.cjs');
 
 const RELATIONS_HEADING = '## Relations';
 const RELATIONS_HEADING_RE = /^## Relations\r?$/;
@@ -138,6 +141,27 @@ function linkHub(slug, subfolder, basename, opts = {}) {
   return { ...base, hub: 'linked' };
 }
 
+/** True when the writer gate decides for this hub: a linked or missing hub is
+ * refused / reported by linkHub itself (exit codes unchanged since Wave 6),
+ * so the gate only runs for a hub that exists as a regular file. */
+function gateApplies(slug) {
+  return !linkRefusal(slug) && fs.existsSync(hubPathFor(slug));
+}
+
+/**
+ * linkHub behind the FR-034 writer gate of `slug` — the entry point for
+ * `spec init` and single `vault link-hub`. A refusing gate prints one
+ * `[a1-tools] <what> skipped: <reason>` line and returns
+ * `{hub: 'skipped-non-writer', reason}` without touching the hub.
+ */
+function linkHubGated(what, slug, subfolder, basename, opts = {}) {
+  if (gateApplies(slug)) {
+    const reason = notWriterSkip(what, writerGateFor(slug, vaultRoot()));
+    if (reason) return { hub: 'skipped-non-writer', hub_path: null, line: null, reason };
+  }
+  return linkHub(slug, subfolder, basename, opts);
+}
+
 /** Link every spec basename of one slug in a single read/write of its hub. */
 function linkSpecsIntoHub(slug, basenames, dryRun) {
   const hubPath = hubPathFor(slug);
@@ -165,16 +189,16 @@ function listSpecBasenames(slug) {
     .map((f) => f.slice(0, -3));
 }
 
+/** { slugs, ignored }: the project folders with a spec/ folder, through the
+ * FR-042 name filter (rejected names are counted, never printed). */
 function allSlugsWithSpecs() {
-  const projectDir = path.join(vaultRoot(), 'project');
-  if (!fs.existsSync(projectDir)) return [];
-  const entries = fs.readdirSync(projectDir, { withFileTypes: true });
-  entries.filter((d) => d.isSymbolicLink() && fs.existsSync(path.join(projectDir, d.name, 'spec')))
-    .forEach((d) => process.stderr.write(`[a1-tools] vault link-hub: refused (project folder is a symbolic link: project/${d.name}/)\n`));
-  return entries
-    .filter((d) => d.isDirectory() && fs.existsSync(path.join(projectDir, d.name, 'spec')))
-    .map((d) => d.name)
-    .sort();
+  const root = vaultRoot();
+  const projectDir = path.join(root, 'project');
+  const { names, ignored } = projectNames(root);
+  const withSpecs = names.filter((n) => fs.existsSync(path.join(projectDir, n, 'spec')));
+  withSpecs.filter((n) => isLink(path.join(projectDir, n)))
+    .forEach((n) => process.stderr.write(`[a1-tools] vault link-hub: refused (project folder is a symbolic link: project/${n}/)\n`));
+  return { slugs: withSpecs.filter((n) => !isLink(path.join(projectDir, n))), ignored };
 }
 
 // FR-001: `vault *` refuses a missing external root (exit 2) with the shared
@@ -213,11 +237,22 @@ function parseArtifactRef(slug, positional, specId, root) {
   return { subfolder, basename };
 }
 
+/** One project of the cross-project walk (FR-042): a linked hub/folder is
+ * refused first (security, Wave 5), then the writer of THIS slug decides. */
+function linkOneProject(s, dryRun, skippedProjects) {
+  if (!gateApplies(s)) return linkSpecsIntoHub(s, linkRefusal(s) ? [] : listSpecBasenames(s), dryRun); // refused / missing, as before
+  const gate = writerGateFor(s, vaultRoot());
+  if (!gate.mayWrite) {
+    skippedProjects.push(skippedProject('vault link-hub', gate));
+    return null;
+  }
+  return linkSpecsIntoHub(s, listSpecBasenames(s), dryRun);
+}
+
 function linkAllSpecs(slugArg, dryRun) {
-  const slugs = slugArg ? [safeSegmentOrFail(slugArg, 'project slug')] : allSlugsWithSpecs();
-  const projects = slugs.map((s) => (linkRefusal(s)
-    ? linkSpecsIntoHub(s, [], dryRun) // prints the refusal; lists nothing through the link
-    : linkSpecsIntoHub(s, listSpecBasenames(s), dryRun)));
+  const walk = slugArg ? { slugs: [safeSegmentOrFail(slugArg, 'project slug')], ignored: 0 } : allSlugsWithSpecs();
+  const skippedProjects = [];
+  const projects = walk.slugs.map((s) => linkOneProject(s, dryRun, skippedProjects)).filter((p) => p !== null);
   const linked = projects.reduce((n, p) => n + p.added.length, 0);
   const unchanged = projects.reduce((n, p) => n + p.unchanged, 0);
   const missingHub = projects.filter((p) => p.hub === 'missing').map((p) => p.slug);
@@ -230,7 +265,10 @@ function linkAllSpecs(slugArg, dryRun) {
     fail(`hub note missing: ${projects[0].hub_path} — link-hub never creates hubs (create it first)`);
   }
   if (slugArg && refusedLink.length > 0) process.exit(1); // the refusal line is already on stderr
-  return { mode: 'all-specs', dry_run: dryRun, linked, unchanged, missing_hub: missingHub, refused_link: refusedLink, projects };
+  return {
+    mode: 'all-specs', dry_run: dryRun, linked, unchanged, missing_hub: missingHub, refused_link: refusedLink,
+    skipped_projects: skippedProjects, ignored_names: walk.ignored, projects,
+  };
 }
 
 /** The FR-010 / FR-034 skip: one warning line, `{status: skipped}`, exit 0. */
@@ -256,13 +294,14 @@ function cmdVaultLinkHub(args) {
     warnSkipped('vault link-hub', problem);
     return skipped(problem, dryRun, mode);
   }
-  // Wave 5 (FR-034, security review MAJOR 2): the hub note is a vault write —
-  // a non-writer host skips (one stderr line, exit 0), dry run included.
-  const notWriter = notWriterSkip('vault link-hub');
-  if (notWriter) return skipped(notWriter, dryRun, mode);
+  // FR-034/FR-042: the hub note is a vault write — gated per project, dry run
+  // included (linkHubGated / linkOneProject: one stderr line, exit 0). A
+  // linked hub (exit 1) and a missing hub (exit 1, or missing_hub) are
+  // reported before the gate, as before Wave 10 — neither writes.
   if (allSpecs) return linkAllSpecs(slug, dryRun);
   ensureArtifactExists(slug, ref.subfolder, ref.basename);
-  const result = linkHub(slug, ref.subfolder, ref.basename, { dryRun });
+  const result = linkHubGated('vault link-hub', slug, ref.subfolder, ref.basename, { dryRun });
+  if (result.hub === 'skipped-non-writer') return skipped(result.reason, dryRun, mode);
   if (result.hub === 'refused-link') process.exit(1); // the refusal line is already on stderr
   if (result.hub === 'missing') {
     fail(`hub note missing: ${result.hub_path} — link-hub never creates hubs (create it first)`);
@@ -270,4 +309,4 @@ function cmdVaultLinkHub(args) {
   return { slug, dry_run: dryRun, ...result };
 }
 
-module.exports = { relationLine, insertRelationLine, linkHub, cmdVaultLinkHub };
+module.exports = { relationLine, insertRelationLine, linkHub, linkHubGated, cmdVaultLinkHub };
