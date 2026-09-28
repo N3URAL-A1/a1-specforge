@@ -3,6 +3,32 @@
     {
       "type": "code_scope",
       "paths": [
+        "docs/adr/2026-09-24-cross-provider-review-gate.md",
+        "_shared/gates-registry.md",
+        ".github/workflows/test.yml",
+        "_test-fixtures/CONVENTIONS.md",
+        "_test-fixtures/a1-xprov/",
+        "_shared/lib/xprov.cjs",
+        "_shared/lib/xprov-common.cjs",
+        "_shared/lib/xprov-snapshot.cjs",
+        "_shared/lib/xprov-gate.cjs",
+        "_shared/lib/xprov-permit.cjs",
+        "_shared/lib/xprov-run.cjs",
+        "_shared/lib/help.cjs",
+        ".claude/settings.json",
+        ".claude/hooks/xprov-deny-allowlist-approve.sh",
+        ".a1/xprov-secret-allowlist.json",
+        "_shared/lib/xprov-allowlist.cjs",
+        "_shared/lib/xprov-approve.cjs",
+        "_shared/lib/xprov-normalize.cjs"
+      ],
+      "by": "009-cross-provider-review-gate",
+      "at": "2026-09-28T18:06:53.899Z",
+      "stage": "started"
+    },
+    {
+      "type": "code_scope",
+      "paths": [
         "_shared/lib/intent.cjs",
         "_shared/lib/intent-constants.cjs",
         "_shared/lib/intent-validate.cjs",
@@ -34,70 +60,12 @@
         "_shared/lib/intent-sandbox.cjs",
         "_shared/lib/intent-approval.cjs",
         "_shared/lib/intent-worktree.cjs",
-        "_shared/lib/intent-argv.cjs"
+        "_shared/lib/intent-argv.cjs",
+        "_shared/lib/spec.cjs",
+        "_shared/lib/vault-product-hook.cjs"
       ],
       "by": "011-intent-queue-consumer",
-      "at": "2026-09-28T16:55:30.064Z",
-      "stage": "started"
-    },
-    {
-      "type": "code_scope",
-      "paths": [
-        "docs/adr/2026-09-24-cross-provider-review-gate.md",
-        "_shared/gates-registry.md",
-        ".github/workflows/test.yml",
-        "_test-fixtures/CONVENTIONS.md",
-        "_test-fixtures/a1-xprov/",
-        "_shared/lib/xprov.cjs",
-        "_shared/lib/xprov-common.cjs",
-        "_shared/lib/xprov-snapshot.cjs",
-        "_shared/lib/xprov-gate.cjs",
-        "_shared/lib/xprov-permit.cjs",
-        "_shared/lib/xprov-run.cjs",
-        "_shared/lib/help.cjs",
-        ".claude/settings.json",
-        ".claude/hooks/xprov-deny-allowlist-approve.sh",
-        ".a1/xprov-secret-allowlist.json",
-        "_shared/lib/xprov-allowlist.cjs",
-        "_shared/lib/xprov-approve.cjs",
-        "_shared/lib/xprov-normalize.cjs"
-      ],
-      "by": "009-cross-provider-review-gate",
-      "at": "2026-09-28T18:06:53.899Z",
-      "stage": "started"
-    },
-    {
-      "type": "code_scope",
-      "paths": [
-        "_shared/lib/vault-common.cjs",
-        "_shared/lib/vault-sync.cjs",
-        "_shared/lib/vault-product-hook.cjs",
-        "_shared/lib/vault-writer.cjs",
-        "_shared/lib/vault-hub.cjs",
-        "_shared/lib/vault-lint.cjs",
-        "_shared/lib/vault-cli.cjs",
-        "_shared/lib/help-vault.cjs",
-        "_shared/lib/spec.cjs",
-        "_shared/lib/locks.cjs",
-        "skills/a1-new-project/workflows/04-feature-split.md",
-        "docs/adr/2026-09-24-vault-mirror-single-writer.md",
-        "docs/product/SCHEMA.md",
-        "README.md",
-        "_test-fixtures/a1-vault-cockpit/",
-        "_test-fixtures/a1-vault-fallback/",
-        "_test-fixtures/a1-checklist/",
-        "_test-fixtures/a1-quick/",
-        "_test-fixtures/product-adopt/",
-        "_test-fixtures/product-audit-mirror/",
-        "_test-fixtures/product-docs/",
-        "_test-fixtures/product-import/",
-        "_test-fixtures/product-schema-v11/",
-        "_test-fixtures/roadmap-gate/",
-        "_shared/lib/vault-mirror.cjs",
-        "skills/a1-new-feature/workflows/01-discover.md"
-      ],
-      "by": "010-vault-cockpit-contract",
-      "at": "2026-09-28T18:21:33.802Z",
+      "at": "2026-09-28T18:27:35.396Z",
       "stage": "started"
     }
   ]
