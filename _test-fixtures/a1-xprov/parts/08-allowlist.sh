@@ -829,5 +829,37 @@ caseR30h78() {
   assert_json "R30h8 the detail names the unreadable permit record, not owner_mismatch" "$G_OUT" "/xprov\.json at the anchor is not valid JSON/.test(j.reason_detail) && j.reason_detail !== 'allowlist_owner_mismatch'" "true"
 }
 
-for c in ${XPROV08_CASES:-caseR30reg caseR30a caseR30b caseR30b2 caseR30b3 caseR30c caseR30c2 caseR30c3 caseR30d caseR30e caseR30f caseR30g caseR30h caseR30i caseR30j caseR30j2 caseR30c4 caseR30j8 caseR30b3ssh caseR30h78}; do "$c"; done
+
+# ---------- R-M5: normalize writes the allowlist fields; one index write per gate call ----------
+# R30m1 mutation: the gate re-adds a second read-modify-write of index.json
+# (the removed annotateIndexEntry). R30m2 mutation: normalize writes the three
+# keys although no flag was given. R30m3 mutation: accept any value.
+NORM_KEYS_PRE_6B="gate,wave,lane,round,verdict,reason,plan_sha256,result_path,ts,model_requested,model_observed,cli_version"  # measured 2026-09-28 at 297090d
+caseR30m() {
+  scen8
+  local wl="$A8/index-writes.log"; : > "$wl"
+  NODE_OPTIONS="--require $FAKE/count-index-writes.cjs" XPROV_INDEX_WRITES_LOG="$wl" plan8
+  pass8 "R30m1 gate with an applied allowlist"
+  assert_eq "R30m1 index.json is written exactly once per gate call (normalize's write)" "$(wc -l < "$wl" | tr -d ' ')" "1"
+  assert_json "R30m1 that single entry carries allowlisted_hits, allowlist_anchor, allowlist_approved_blob" "$(cat "$P8DIR/xreview/index.json")" \
+    "[j.length, j[0].allowlisted_hits, j[0].allowlist_anchor === '$(head8 origin/main)', j[0].allowlist_approved_blob === '$(blobsha8)'].join('/')" "1/1/true/true"
+  # R30m2/m3: normalize directly (no gate), on a copy of the approved case
+  make_phase pm8
+  local res="$A8/approved.result.json"; cp "$CASES/approved.result.json" "$res"
+  local out; out="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov normalize "$res" --phase pm8 --gate "$GATE_PLAN" 2>/dev/null)"
+  assert_json "R30m2 without the new flags the index entry has exactly the pre-6b keys" "$out" "Object.keys(j.index_entry).join(',')" "$NORM_KEYS_PRE_6B"
+  assert_json "R30m2 …and the written entry matches stdout" "$(cat "$PHASE_REPO/.a1/phases/pm8/xreview/index.json")" "Object.keys(j[0]).join(',')" "$NORM_KEYS_PRE_6B"
+  out="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov normalize "$res" --phase pm8 --gate "$GATE_PLAN" --round 2 --allowlisted-hits 3 --allowlist-anchor "$PHASE_HEAD" --allowlist-approved-blob "$(printf 'b%.0s' $(seq 1 64))" 2>/dev/null)"
+  assert_json "R30m3 with the flags the entry ends with the three allowlist fields" "$out" "Object.keys(j.index_entry).slice(-3).join(',') + '/' + j.index_entry.allowlisted_hits + '/' + (j.index_entry.allowlist_anchor === '$PHASE_HEAD')" "allowlisted_hits,allowlist_anchor,allowlist_approved_blob/3/true"
+  out="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov normalize "$res" --phase pm8 --gate "$GATE_PLAN" --round 3 --allowlisted-hits 0 2>/dev/null)"
+  assert_json "R30m3 --allowlisted-hits alone writes null anchor and blob" "$out" "[j.index_entry.allowlisted_hits, String(j.index_entry.allowlist_anchor), String(j.index_entry.allowlist_approved_blob)].join('/')" "0/null/null"
+  local bad8 rc
+  for bad8 in "--allowlisted-hits -1" "--allowlisted-hits x" "--allowlist-anchor HEAD" "--allowlist-approved-blob abc"; do
+    ( cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov normalize "$res" --phase pm8 --gate "$GATE_PLAN" --round 4 $bad8 >/dev/null 2>&1 ); rc=$?
+    assert_rc "R30m3 normalize refuses $bad8 (usage, nothing written)" 2 "$rc"
+  done
+  assert_json "R30m3 the refused calls wrote no entry" "$(cat "$PHASE_REPO/.a1/phases/pm8/xreview/index.json")" "j.length" "3"
+}
+
+for c in ${XPROV08_CASES:-caseR30reg caseR30a caseR30b caseR30b2 caseR30b3 caseR30c caseR30c2 caseR30c3 caseR30d caseR30e caseR30f caseR30g caseR30h caseR30i caseR30j caseR30j2 caseR30c4 caseR30j8 caseR30b3ssh caseR30h78 caseR30m}; do "$c"; done
 export HOME="$SAVED_HOME_08"; unset A1_XPROV_CODEX_HOME

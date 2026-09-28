@@ -225,18 +225,6 @@ function noteAllowlist(ctx, al) {
   appendXreviewNote(ctx.phaseDir, `Allowlisted snapshot hits · ${ctx.gate} · ${scopeOf(ctx.wave)}`, lines);
 }
 
-/** Adds allowlisted_hits / allowlist_anchor / allowlist_approved_blob to the
- * index.json entry normalize just appended (matched by gate, scope and ts). */
-function annotateIndexEntry(ctx, entry, al) {
-  if (!entry || !entry.ts) return;
-  const index = readIndex(ctx.indexPath);
-  if (!index) return;
-  const at = index.map((e, n) => (e.gate === entry.gate && e.ts === entry.ts && sameWave(e, ctx.wave) && sameLane(e, ctx.lane) ? n : -1)).filter((n) => n >= 0).pop();
-  if (at === undefined) return;
-  const next = index.map((e, n) => (n === at ? { ...e, allowlisted_hits: al.allowlisted_hits, allowlist_anchor: al.allowlist_anchor, allowlist_approved_blob: al.allowlist_approved_blob } : e));
-  writeTextAtomic(ctx.indexPath, `${JSON.stringify(next, null, 2)}\n`);
-}
-
 function stepRun(ctx, snap) {
   const argv = ['run', '--mode', ctx.mode, '--snapshot', snap, '--plan', ctx.planPath, '--phase', ctx.phase, '--gate', ctx.gate, '--round', String(ctx.round)];
   if (ctx.wave !== null) argv.push('--wave', String(ctx.wave));
@@ -253,8 +241,12 @@ function stepRun(ctx, snap) {
   return { ok: true, resultPath: r.json.result_path };
 }
 
-function stepNormalize(ctx, resultPath) {
-  const argv = ['normalize', resultPath, '--phase', ctx.phase, '--gate', ctx.gate, '--round', String(ctx.round)];
+/** normalize writes the ONE index entry; the snapshot's allowlist result
+ * travels as flags so no second write of index.json is needed (Reinhard R-M5). */
+function stepNormalize(ctx, resultPath, al) {
+  const argv = ['normalize', resultPath, '--phase', ctx.phase, '--gate', ctx.gate, '--round', String(ctx.round), '--allowlisted-hits', String(al.allowlisted_hits)];
+  if (al.allowlist_anchor) argv.push('--allowlist-anchor', al.allowlist_anchor);
+  if (al.allowlist_approved_blob) argv.push('--allowlist-approved-blob', al.allowlist_approved_blob);
   if (ctx.wave !== null) argv.push('--wave', String(ctx.wave));
   if (ctx.lane !== null) argv.push('--lane', ctx.lane);
   if (ctx.workPath !== ctx.root) argv.push('--work-path', ctx.workPath);
@@ -336,9 +328,8 @@ function gate(o) {
     snap = snapped.snapshot;
     const ran = stepRun(ctx, snap);
     if (!ran.ok) return (result = fail('run', ran.reason, ran.detail, al));
-    const norm = stepNormalize(ctx, ran.resultPath);
+    const norm = stepNormalize(ctx, ran.resultPath, al);
     if (!norm.ok) return (result = fail('normalize', norm.reason, norm.detail, { ...al, result_path: ran.resultPath }));
-    annotateIndexEntry(ctx, norm.entry, al);
     const reviewed = Object.freeze({
       ...base, ...al, result_path: ran.resultPath, findings_path: norm.findingsPath, xreview_path: norm.xreviewPath, step: 'normalize',
       verdict: norm.verdict, reason: norm.reason, reason_detail: norm.detail, next: nextFor(ctx, norm.verdict, ran.resultPath),

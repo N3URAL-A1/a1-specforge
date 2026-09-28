@@ -615,7 +615,8 @@ ${SPEC_INIT_HELP}
                   goes to stderr only; stdout is the machine contract.
                   Subcommands (module → wave it ships in):
     normalize <result.json> --phase <name> --gate <id> [--wave N] [--round N]
-              [--lane <id>] [--work-path <dir>]
+              [--lane <id>] [--work-path <dir>] [--allowlisted-hits N]
+              [--allowlist-anchor <sha>] [--allowlist-approved-blob <sha256>]
                   (xprov-normalize.cjs, wave 2) total mapping of a runner
                   record: status!=completed → runner_failed; mode not
                   review|inspect → wrong_mode; APPROVED → pass (only after
@@ -623,6 +624,9 @@ ${SPEC_INIT_HELP}
                   fail-with-findings, BLOCKED → blocked, else malformed.
                   Writes .a1/phases/<name>/XREVIEW.md, xreview/*.findings.json,
                   xreview/index.json atomically; exit 0 only on pass.
+                  The allowlist flags (wave 6b, passed by gate) put the
+                  snapshot's allowlist result into that one index entry;
+                  without them the entry is unchanged.
     gc [--slug <repo-slug>] [--max-age-days N]
                   (xprov-artifacts.cjs, wave 3) remove runner run dirs under
                   ~/.a1-xprov/artifacts/<repo-slug>/ and orphaned snap-* clones
