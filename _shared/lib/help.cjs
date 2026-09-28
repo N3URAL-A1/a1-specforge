@@ -21,7 +21,7 @@ Usage:
 ${SPEC_INIT_HELP}
   a1-tools spec update-status <spec-path> <new-status> [flags]
                   Writes only the spec file given as <spec-path>, on any
-                  host, whatever A1_VAULT_WRITER_HOST says (spec lifecycle,
+                  host, whatever its per-project writer is (spec lifecycle,
                   not a mirror or hub write — unlike spec init above).
   a1-tools spec set-size <spec-path> <S|M|L>
   a1-tools spec list <project-slug> [--status=<s>]
