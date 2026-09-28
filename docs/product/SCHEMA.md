@@ -405,8 +405,11 @@ mirror; run `vault sync` afterwards.) Each adds one key to its JSON result:
 - `status: "ok"`: the mirror ran. `files` counts files added or updated; unchanged files are
   not counted.
 - `status: "skipped"`: the mirror did not run. `reason` names why: the vault root is missing,
-  not a directory or not writable; this host is not `A1_VAULT_WRITER_HOST`; `ROADMAP.md` has no
-  usable `project:`; `--dir` is not a `<repo>/docs/product` folder. The command also prints
+  not a directory or not writable; this host may not write the project (its hub note
+  `project/<slug>.md` declares another `a1_writer_host`, or — for a hub without the key —
+  `A1_VAULT_WRITER_HOST` names another host; this host's id is `A1_HOST_ID`, else the lowercased
+  `os.hostname()`), or the declaration is unreadable; `ROADMAP.md` has no usable `project:` (or
+  one that is not a valid project slug); `--dir` is not a `<repo>/docs/product` folder. The command also prints
   exactly one `[a1-tools] vault mirror skipped: <reason>` line to stderr. Neither the repo
   write nor the exit code changes.
 - **Key absent**: `A1_VAULT_ROOT` is unset. Without a configured vault the output is
@@ -417,3 +420,13 @@ The phases set is not mirrored by product commands. It is written by `a1-tools v
 <slug> --phases`, which the `a1-plan` audit and the `a1-execute` execute and verify workflows
 call after writing `.a1/phases/`. `vault sync` without a set flag mirrors both sets, and
 `vault status` reports drift between repo and vault.
+
+**Writer host (environment).** With two hosts on one synced vault, only a project's writer host
+mirrors it (spec 010, amended 2026-09-28). The writer is the frontmatter key
+`a1_writer_host: <host id>` of the vault hub note `project/<slug>.md` — never a file in this
+directory, so no branch can change it. A host's id is `A1_HOST_ID` (set in a host-local file,
+permanent), else the lowercased `os.hostname()`. Fallback rule: a hub without the key uses
+`A1_VAULT_WRITER_HOST` as a rollout aid; with neither, the project is `undeclared` and every host
+mirrors; a hub whose key cannot be read (or a project folder without a hub) blocks every host.
+`a1-tools vault writer --json` lists the resolved writer of every project, and
+`a1-tools vault writer <slug> --set <id>` on the current writer hands a project over.

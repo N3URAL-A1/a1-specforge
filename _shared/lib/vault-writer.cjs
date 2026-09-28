@@ -13,7 +13,8 @@
 //                          undeclared, computed per slug per call, no cache.
 //   notWriterSkip …        FR-034/FR-042: the skip lines and JSON entries.
 //   projectNames           FR-042/FR-043: the name filter (`ignored_names`).
-//   cmdVaultWriter         FR-041/FR-043: `a1-tools vault writer`.
+//   cmdVaultWriter         FR-041/FR-043: `a1-tools vault writer` (list,
+//                          --set/--clear via tmp + rename after a re-read).
 //
 // The hub key is a coordination declaration against mirror conflicts, not an
 // authorisation control; any vault writer can change it. Echo rule (FR-034):
@@ -156,8 +157,13 @@ function fallbackWriter(env) {
  * Evaluated for exactly this slug on every call — never cached (FR-040).
  */
 function writerGateFor(slug, root, env = process.env, osHost = os.hostname(), fs = realFs) {
+  return gateFromDeclaration(slug, readWriterDeclaration(root, slug, fs), env, osHost);
+}
+
+/** The gate for a declaration already read (`vault writer --set` decides and
+ * later re-compares on the SAME bytes, FR-041). */
+function gateFromDeclaration(slug, decl, env = process.env, osHost = os.hostname()) {
   const id = hostIdentity(env, osHost);
-  const decl = readWriterDeclaration(root, slug, fs);
   const writer = decl.state === 'declared' ? { writerHost: decl.value, writerSource: 'hub' }
     : decl.state === UNREADABLE ? { writerHost: UNREADABLE, writerSource: 'hub', cls: decl.cls }
       : fallbackWriter(env);
@@ -207,8 +213,160 @@ function gateFields(gate, root) {
   };
 }
 
+
+// ---------- `a1-tools vault writer` (FR-041 / FR-043) ----------
+
+const WRITER_FLAGS = Object.freeze({ set: 'value', clear: 'bool', 'dry-run': 'bool', json: 'bool' });
+
+/** A refusal of the command: message for stderr, exit code. Never echoes raw input. */
+const refusal = (code, message) => ({ code, message });
+
+/** FR-043 row for one project; `class` only for an unreadable declaration. */
+function listRow(root, slug, env, osHost) {
+  const gate = writerGateFor(slug, root, env, osHost);
+  return {
+    slug, writer_host: gate.writerHost, writer_source: gate.writerSource,
+    ...(gate.cls ? { class: gate.cls } : {}),
+    may_write: gate.mayWrite, hub_conflict: hubConflict(root, slug),
+  };
+}
+
+/** `vault writer` without a slug: read-only overview of every hub and hubless folder. */
+function listWriters(root, env = process.env, osHost = os.hostname()) {
+  const id = hostIdentity(env, osHost);
+  const { names, ignored } = projectNames(root);
+  return { host: id.host, host_source: id.source, projects: names.map((n) => listRow(root, n, env, osHost)), ignored_names: ignored };
+}
+
+/** Every id some hub declares, besides `except` — plus the rollout aid and this host (typo guard, FR-041). */
+function knownWriterIds(root, except, env, osHost) {
+  const ids = new Set(projectNames(root).names.filter((n) => n !== except)
+    .map((n) => readWriterDeclaration(root, n)).filter((d) => d.state === 'declared').map((d) => d.value));
+  const fallback = normalizeHostId(env[WRITER_FALLBACK_ENV] || '');
+  if (fallback) ids.add(fallback);
+  const own = hostIdentity(env, osHost);
+  if (own.source !== 'invalid') ids.add(own.host);
+  return ids;
+}
+
+/** The hub text with the key line set to `id` (null: removed) — every other byte kept. */
+function withWriterLine(raw, id) {
+  const lines = raw.split('\n');
+  const bare = (l) => (l.endsWith('\r') ? l.slice(0, -1) : l);
+  const cr = lines[0].endsWith('\r') ? '\r' : '';
+  const close = lines.findIndex((l, i) => i > 0 && bare(l) === FENCE);
+  const at = lines.findIndex((l, i) => i > 0 && i < close && bare(l).startsWith(WRITER_KEY_PREFIX));
+  const keyLine = id === null ? [] : [`${WRITER_KEY_PREFIX} ${id}${cr}`];
+  if (at === -1) return [lines[0], ...keyLine, ...lines.slice(1)].join('\n');
+  return [...lines.slice(0, at), ...keyLine, ...lines.slice(at + 1)].join('\n');
+}
+
+/** Writes `next` over the hub via tmp + rename, re-reading the hub right before
+ * the rename: bytes that differ from `expected` → nothing written (W23). */
+function renameIfUnchanged(hub, next, expected, ops) {
+  assertVaultWriteContained(hub);
+  const tmp = tmpPathFor(hub);
+  ops.writeFileSync(tmp, next, { encoding: 'utf8', flag: 'wx' });
+  let now = null;
+  try { now = ops.lstatSync(hub).isSymbolicLink() ? null : ops.readFileSync(hub); } catch (_e) { now = null; }
+  if (now === null || !now.equals(expected)) {
+    ops.unlinkSync(tmp);
+    return false;
+  }
+  ops.renameSync(tmp, hub);
+  return true;
+}
+
+/**
+ * setWriterHost({root, slug, target, dryRun, env?, osHost?, ops?}) — the
+ * FR-041 hand-over; `target` is a normalised id or null for --clear. Returns
+ * { code, result } or { code, message } (refusal). `ops` is the fs adapter
+ * for the write (writeFileSync, lstatSync, readFileSync, renameSync, unlinkSync).
+ */
+function setWriterHost({ root, slug, target, dryRun, env = process.env, osHost = os.hostname(), ops = realFs }) {
+  const hubRel = `project/${slug}.md`;
+  const decl = readWriterDeclaration(root, slug);
+  const manual = `nothing written; ${MANUAL_PATH} (${hubRel})`;
+  if (decl.state === UNREADABLE) return refusal(EXIT.refused, `writer declaration of ${slug} unreadable (${decl.cls}) — ${manual}`);
+  if (!decl.bytes) return refusal(EXIT.refused, `hub note missing: ${hubRel} — ${manual}`);
+  const before = decl.state === 'declared' ? decl.value : UNDECLARED;
+  const base = { slug, hub_path: hubRel, writer_host_before: before, dry_run: dryRun };
+  if ((target === null && decl.state === 'none') || (target !== null && before === target)) {
+    return { code: EXIT.ok, result: { ...base, action: 'unchanged', writer_host_after: before } };
+  }
+  const raw = decl.bytes.toString('utf8');
+  if (!/^(﻿)?---\r?$/.test(raw.split('\n')[0])) return refusal(EXIT.refused, `hub note ${hubRel} has no frontmatter block — ${manual}`);
+  const reason = notWriterReason(gateFromDeclaration(slug, decl, env, osHost));
+  if (reason) return refusal(EXIT.refused, `${reason} — ${manual}`);
+  if (target !== null && !knownWriterIds(root, slug, env, osHost).has(target)) {
+    process.stderr.write(`warning: ${target} is not a known writer id\n`);
+  }
+  const after = target === null ? UNDECLARED : target;
+  if (dryRun) return { code: EXIT.ok, result: { ...base, action: target === null ? 'would-clear' : 'would-set', writer_host_after: after } };
+  const hub = path.join(root, 'project', `${slug}.md`);
+  if (!renameIfUnchanged(hub, withWriterLine(raw, target), decl.bytes, ops)) {
+    return refusal(EXIT.refused, `${hubRel} changed since it was read — nothing written; run the command again`);
+  }
+  return { code: EXIT.ok, result: { ...base, action: target === null ? 'cleared' : 'set', writer_host_after: after } };
+}
+
+function writerUsage(msg) {
+  process.stderr.write(`usage error: vault writer ${msg}\n`);
+  process.exit(EXIT.usage);
+}
+
+/** The parsed call, or a usage exit (2). Slug and id are validated here; the raw values are never echoed. */
+function parseWriterArgs(args) {
+  const flags = parseFlags(args, WRITER_FLAGS);
+  if (flags._.some((a) => a.startsWith('--'))) writerUsage('unknown flag');
+  if (flags._.length > 1) writerUsage('takes at most one <slug>');
+  const slug = flags._[0];
+  const change = flags.set !== undefined || flags.clear === true;
+  if (slug === undefined) {
+    if (change || flags['dry-run']) writerUsage('--set, --clear and --dry-run need a <slug>');
+    return { list: true, json: flags.json === true };
+  }
+  if (!isProjectName(slug)) writerUsage('<slug> is not a valid project slug');
+  if (!change || (flags.set !== undefined && flags.clear === true)) writerUsage('<slug> takes exactly one of --set <host id> | --clear');
+  const target = flags.set === undefined ? null : normalizeHostId(flags.set);
+  if (flags.set !== undefined && target === null) writerUsage('--set: not a valid host id');
+  return { list: false, slug, target, dryRun: flags['dry-run'] === true, json: flags.json === true };
+}
+
+/** `a1-tools vault writer [--json]` · `vault writer <slug> (--set <id> | --clear) [--dry-run] [--json]` */
+function cmdVaultWriter(args) {
+  const call = parseWriterArgs(args);
+  const ext = externalVaultRoot();
+  if (ext.refusal) {
+    process.stderr.write(`[a1-tools] vault writer: ${ext.refusal}\n`);
+    process.exit(EXIT.usage);
+  }
+  const problem = rootProblem(ext.root, call.list || call.dryRun ? realFs.constants.R_OK : realFs.constants.W_OK);
+  if (problem) {
+    warnSkipped('vault writer', problem);
+    if (call.json) emitJson({ status: 'skipped', reason: problem }, EXIT.ok);
+    process.exit(EXIT.ok);
+  }
+  if (call.list) {
+    const report = listWriters(ext.root);
+    if (call.json) emitJson(report, EXIT.ok);
+    else writeStdoutSync(report.projects.map((r) => `${r.slug}\t${r.writer_host}\t${r.writer_source}\tmay_write ${r.may_write}${r.class ? `\t${r.class}` : ''}\n`).join('')
+      + `host ${report.host} (${report.host_source}), ${report.projects.length} project(s), ignored_names ${report.ignored_names}\n`);
+    process.exit(EXIT.ok);
+  }
+  const out = setWriterHost({ root: ext.root, slug: call.slug, target: call.target, dryRun: call.dryRun });
+  if (out.message) {
+    process.stderr.write(`[a1-tools] vault writer: ${out.message}\n`);
+    process.exit(out.code);
+  }
+  if (call.json) emitJson(out.result, out.code);
+  else writeStdoutSync(`vault writer: ${out.result.slug} ${out.result.writer_host_before} -> ${out.result.writer_host_after} (${out.result.action})\n`);
+  process.exit(out.code);
+}
+
 module.exports = {
   WRITER_KEY, UNDECLARED, UNREADABLE, MANUAL_PATH, EXIT,
   readWriterDeclaration, writerGateFor, notWriterReason, notWriterSkip, skippedProject,
   gateFields, hubConflict, projectNames, isProjectName, displaySlug,
+  listWriters, setWriterHost, cmdVaultWriter,
 };
