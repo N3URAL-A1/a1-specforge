@@ -1,6 +1,17 @@
 name: test
 
-on: [push, pull_request]
+# Push runs only for main; PR branches are covered by pull_request (before
+# this, every push to a PR branch ran the whole suite twice). PR runs of the
+# same ref cancel their predecessor; main pushes get one group per commit so
+# every main commit keeps its own result.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: test-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
@@ -32,7 +43,7 @@ jobs:
         # helper refuses anything else, so this step never reaches a real vault.
         run: |
           set -e
-          unset A1_VAULT_WRITER_HOST
+          unset A1_VAULT_WRITER_HOST A1_HOST_ID
           export A1_VAULT_ROOT="$(mktemp -d)"
           set +e
           bash _test-fixtures/a1-vault-cockpit/ci/vault-validators.sh
