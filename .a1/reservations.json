@@ -47,10 +47,11 @@
         "_shared/lib/spec.cjs",
         "_shared/lib/vault-product-hook.cjs",
         "_shared/lib/intent-git.cjs",
-        "_shared/lib/intent-sandbox.cjs"
+        "_shared/lib/intent-sandbox.cjs",
+        "_shared/lib/intent-approval.cjs"
       ],
       "by": "011-intent-queue-consumer",
-      "at": "2026-09-27T23:43:51.599Z",
+      "at": "2026-09-28T02:52:17.502Z",
       "stage": "started"
     }
   ]
