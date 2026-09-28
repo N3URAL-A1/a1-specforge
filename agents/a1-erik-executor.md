@@ -192,7 +192,7 @@ project CONVENTIONS declare a one-commit-per-wave ground rule (typical for
 refactor/module-split waves whose tasks touch the same file), commit the whole
 wave atomically instead — the ground rule wins over per-task splitting. Either
 way, every commit passes the type-check and regression gates, and STATUS.md maps
-each task to its commit hash.
+each task to its commit hash. Commit only, never push (`_shared/push-cadence.md`).
 
 Follow conventional commits:
 - `feat(<phase>): <task>` — new functionality

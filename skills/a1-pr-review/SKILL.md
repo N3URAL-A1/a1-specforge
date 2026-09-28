@@ -108,7 +108,10 @@ JSON which the workflow then writes to `findings.json` via the CLI.
 - MINOR findings are not in the PR body — they go into a separate
   `inline-comments.md` for optional manual posting.
 - Never invoke `git push` or `gh pr create` without explicit user
-  confirmation in Phase 4. **Merging is different**: once the review is
+  confirmation in Phase 4. This covers the first push only: pushes of
+  review-fix rounds after the PR is open follow the standing instruction
+  (the assistant reviews and merges without asking) and need no extra
+  confirmation. **Merging is different**: once the review is
   clean, merge without asking (see Hand-offs). The user has standing
   instruction not to review PRs.
 - **Never end a run by asking the user to review or merge.** A PR that
@@ -124,9 +127,12 @@ JSON which the workflow then writes to `findings.json` via the CLI.
 
 - After `pr-open`: **the assistant merges — never the user.** The user does
   not review PRs (standing instruction, 2026-09-09). Sequence: Reinhard
-  reviews the diff as a subagent → fix every BLOCKER and MAJOR → then merge
+  reviews the diff as a subagent → fix every BLOCKER and MAJOR, one push per
+  round (`_shared/push-cadence.md`) → then merge
   with `gh pr merge --squash --delete-branch`, verify it landed
-  (`gh pr view --json state,mergedAt`), pull `main`, and advance the registry.
+  (`gh pr view --json state,mergedAt`), sync the primary checkout's `main`
+  via `_shared/push-cadence.md` P3 (never a bare `git pull`), and advance the
+  registry.
   Do not ask the user to review, and do not hand the PR back as "ready for
   your review". Report what was merged, not what awaits them.
   The one thing that still needs the user's word is a **production deploy or

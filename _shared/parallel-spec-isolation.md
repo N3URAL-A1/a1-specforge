@@ -50,10 +50,10 @@ Die projektweiten Koordinations-Dateien
 - `.a1/roadmap.md`
 
 werden AUSSCHLIESSLICH im Haupt-Checkout mutiert (via `a1-tools.cjs product …` /
-`code-scope …`) und die Mutation wird SOFORT committet und gepusht (bei
-Branch-Protection als kleiner `chore(product):`-PR, der direkt gemergt wird).
-Niemals dirty liegen lassen: parallele Sessions lesen sonst stale Reservierungen
-und claimen kollidierende Scopes/Migrationsnummern.
+`code-scope …`) und die Mutation wird SOFORT committet; wann gepusht wird,
+regelt `push-cadence.md` P3. Niemals dirty und niemals ungepusht über Sessions
+hinweg liegen lassen: parallele Sessions lesen sonst stale Reservierungen und
+claimen kollidierende Scopes/Migrationsnummern.
 
 > Incident-Beleg 2026-07-31: Eine 049-Session ließ Reservierungen (Migr. 119/120)
 > uncommitted im Haupt-Checkout, während eine zweite Session dort arbeitete —
@@ -61,8 +61,10 @@ und claimen kollidierende Scopes/Migrationsnummern.
 
 ## R3 — Scope claimen VOR Worktree-Anlage
 
-Vor dem Worktree: `a1-tools.cjs code-scope list` prüfen und eigenen Scope
-claimen. Überlappt der geplante Scope mit einer aktiven (nicht-stale)
+Vor dem Worktree: Haupt-Checkout synchronisieren, dann `a1-tools.cjs
+code-scope list` prüfen und eigenen Scope claimen; der Claim wird gepusht,
+bevor der Worktree entsteht. Befehle: `push-cadence.md` P3, Start-Schritt.
+Überlappt der geplante Scope mit einer aktiven (nicht-stale)
 Reservierung einer anderen Spec → STOP, Robert entscheidet (nie still
 "dazwischenarbeiten"). Migrationsnummern zusätzlich über
 `automation/db/migrations/MIGRATIONS-RESERVED.md` bzw. `code-scope`-Reservierung.
@@ -70,7 +72,8 @@ Reservierung einer anderen Spec → STOP, Robert entscheidet (nie still
 ## R4 — Merge-Disziplin
 
 Merge nur bei grünem Build/Tests im Worktree; kein Cherry-Pick als
-Merge-Workaround; niemals build-rotes `main` pushen. Nach Merge: Worktree
+Merge-Workaround; niemals build-rotes `main` pushen. Gemergt wird per PR und
+Squash; wann gepusht wird: `push-cadence.md` P1/P2. Nach Merge: Worktree
 abbauen (`a1-worktree` Exit), Remote-Branch aufräumen (Step 4.5).
 
 ## R5 — Worktree-Gotchas (Pflicht-Check beim Betreten)

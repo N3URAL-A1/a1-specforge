@@ -215,8 +215,8 @@ Completion Gate), each after its own confirmation:
    ```bash
    node <repo>/_shared/a1-tools.cjs code-scope stage --by <spec-id> --set verify
    ```
-3. **Merge** — after the pre-merge check below and a clean `git merge` to
-   `main` with a green post-merge build:
+3. **Merge** — after the pre-merge check below and the PR's squash merge into
+   `main` (`a1-pr-review`, verified via `gh pr view --json state,mergedAt`):
    ```bash
    node <repo>/_shared/a1-tools.cjs code-scope stage --by <spec-id> --set merge
    ```
@@ -249,7 +249,7 @@ The helper:
 The feature branch was cut from `origin/main` at the START of Phase 5. By the time Verify
 passes, a PARALLEL feature may have merged to `main` and claimed the same migration numbers
 or touched the same shared files. Merging naively then either reverts their work or ships two
-migrations with the same number (runner breaks). Before `git merge`:
+migrations with the same number (runner breaks). Before the PR is opened:
 
 ```bash
 git -C <repo> fetch origin main
@@ -266,7 +266,8 @@ git -C <repo> ls-tree origin/main automation/db/migrations/ | grep -E '<your-new
 - "main looks build-red after pull": first rebuild gitignored package `dist/` (`pnpm --filter <pkg> build`)
   before concluding main is broken — a stale local build masquerades as a red main.
 
-Only after a clean rebase + no number collision + green build on the merged tree do you push.
+Only after a clean rebase + no number collision + green build on the rebased tree do you hand
+the branch to `a1-pr-review`, which makes its first push (`_shared/push-cadence.md` P1).
 
 Tell the user:
 

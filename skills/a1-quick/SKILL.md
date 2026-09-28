@@ -148,12 +148,24 @@ made, not after** — review the diff, then commit, never the reverse.
 
 ## Step 6 — Commit + merge (on confirmation)
 
-Exactly one commit, then merge to `main`:
+Exactly one commit:
 
 ```bash
 git -C <repo> add <expected files>
 git -C <repo> commit -m "<type>(<scope>): <one-line summary>"
+```
+
+Before merging, answer whether `main` is protected
+(`_shared/push-cadence.md` P1 exception and P3):
+
+- **Protected:** no local merge. Push `quick/<slug>` and open a PR (squash path).
+- **Unprotected:** check out `main` first, then P3 sync, then merge, then
+  push `main` exactly once, local suite green first:
+
+```bash
 git -C <repo> checkout main
+# P3 sync of main here (_shared/push-cadence.md) — never before the checkout,
+# or it rebases quick/<slug> instead of syncing main
 git -C <repo> merge --no-ff quick/<slug>
 ```
 

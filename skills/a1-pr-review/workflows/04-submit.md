@@ -16,14 +16,18 @@ gh auth status
 
 If not authenticated: tell the user to run `gh auth login`, abort.
 
-### 4.2 Push branch (if needed)
+### 4.2 Push branch (first push)
+
+This is the branch's first push (`_shared/push-cadence.md` P1); run the local
+suite first (P2).
 
 ```bash
 git -C "<worktree_path>" push -u origin "<branch>"
 ```
 
-If push fails (e.g. branch already pushed, non-fast-forward): show the
-git error, ask the user before retrying with `--force-with-lease`.
+If push fails (e.g. the branch already exists on origin, which P1 rules
+out, or non-fast-forward): show the git error, ask the user before retrying
+with `--force-with-lease`.
 Never force-push to `main`.
 
 ### 4.3 Read draft

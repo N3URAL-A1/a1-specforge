@@ -110,7 +110,8 @@ node <repo>/_shared/a1-tools.cjs product stage --by <spec-id> --set <stage>
 
 Call this at each wave checkpoint (`workflows/02-execute.md`, Step 2c) — it
 keeps `reservations.json` / `feature.md` / `ROADMAP.md` in sync in one
-invocation.
+invocation. Commit the result, but do not push or open a chore PR per wave: it
+rides in the next start or finish push (`_shared/push-cadence.md` P3).
 Skip it entirely for legacy-only projects (no `docs/product/` directory).
 
 ## Audit Auto-Close (HARD RULE — explicit convention only, FR-022)
@@ -147,15 +148,17 @@ be moved into its own git worktree on a fresh branch off `main` — full
 convention (worktree naming, shared-state rule, scope claim, merge discipline,
 gotchas): `_shared/parallel-spec-isolation.md`. Short form:
 
-1. Claim the phase's `code_scope` via `a1-tools.cjs code-scope` (STOP on overlap
-   with an active reservation of another spec).
+1. Sync the primary checkout, then claim the phase's `code_scope` via
+   `a1-tools.cjs code-scope` (STOP on overlap with an active reservation of
+   another spec); push the claim before step 2. Commands:
+   `_shared/push-cadence.md` P3, start step.
 2. `git worktree add ../a1-worktrees/<phase-slug> -b feature/<phase-slug> origin/main`
    (delegate to `a1-worktree`, or inline). Every erik wave runs inside that path.
-3. Shared-state mutations (`docs/product/**`, `.a1/reservations.json`) happen
-   ONLY in the primary checkout and are committed + pushed IMMEDIATELY (small
-   `chore(product):` PR under branch protection) — never left dirty for
-   parallel sessions to trip over.
+3. Shared-state mutations (`docs/product/**`, `.a1/reservations.json`,
+   `.a1/roadmap.md`) happen ONLY in the primary checkout and are committed
+   immediately; when they are pushed: `_shared/push-cadence.md` P3.
 4. Merge only when the final wave is GREEN; tear the worktree down afterwards.
+   Waves commit, they never push (`_shared/push-cadence.md` P1).
 
 This enables parallel specs on one project: N phases = N worktrees = N branches,
 zero shared-working-tree conflicts.
