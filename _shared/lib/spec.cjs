@@ -126,10 +126,15 @@ function cmdSpecInit(args) {
   writeTextAtomic(specPath, content);
 
   // Spec authorship is host-agnostic (the file above is written on every
-  // host); the hub note is not — a non-writer host leaves it alone (Wave 5).
-  const notWriter = require('./vault-common.cjs').notWriterSkip('spec init hub link');
-  const hub = notWriter
-    ? { hub: 'skipped-non-writer', hub_path: null, line: null }
+  // host); the hub note is not — a non-writer host leaves it alone (Wave 5),
+  // and so does an intent child (spec 011 FR-041): hub notes are for humans,
+  // and the hub lies outside the child's project/<slug>/ scope.
+  const vaultCommon = require('./vault-common.cjs');
+  const inChild = require('./intent-child.cjs').inChildMode();
+  if (inChild) vaultCommon.warnSkipped('spec init hub link', 'intent child mode');
+  const notWriter = !inChild && vaultCommon.notWriterSkip('spec init hub link');
+  const hub = inChild || notWriter
+    ? { hub: inChild ? 'skipped-child' : 'skipped-non-writer', hub_path: null, line: null }
     : require('./vault-hub.cjs').linkHub(projectSlug, 'spec', id);
   return {
     spec_path: specPath, id, project: projectSlug, feature_slug: featureSlug, title,

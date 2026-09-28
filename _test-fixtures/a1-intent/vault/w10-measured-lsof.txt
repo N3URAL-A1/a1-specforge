@@ -1,0 +1,4 @@
+COMMAND    PID USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+Obsidian  2779  user  26u  IPv6 0x53f7577b8ac106a1      0t0  TCP *:58589 (LISTEN)
+Obsidian  2779  user  27u  IPv4 0x8f571e12700690be      0t0  TCP 127.0.0.1:22360 (LISTEN)
+Obsidian  2779  user  28u  IPv4 0x114b70a2c33df5c6      0t0  TCP 127.0.0.1:27124 (LISTEN)

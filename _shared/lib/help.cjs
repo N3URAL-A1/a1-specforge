@@ -7,6 +7,7 @@ const {
   RECONCILE_STATUSES, RECONCILE_SCOPE_MODES, RECONCILE_DRIFT_CLASSES,
 } = require('./status-constants.cjs');
 const { SPEC_INIT_HELP, VAULT_HELP } = require('./help-vault.cjs');
+const { INTENT_HELP } = require('./help-intent.cjs');
 
 function usage(msg) {
   process.stderr.write(`usage error: ${msg}\n`);
@@ -698,6 +699,8 @@ ${SPEC_INIT_HELP}
                   runner records in cases/ (each with a .meta provenance file).
 
 ${VAULT_HELP}
+
+${INTENT_HELP}
 
 Spec statuses: ${[...SPEC_STATUSES].join(', ')}
 Bug statuses:  ${[...BUG_STATUSES].join(', ')}

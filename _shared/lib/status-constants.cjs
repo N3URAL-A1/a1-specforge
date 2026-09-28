@@ -99,6 +99,68 @@ const MODERNIZE_WAVE_STATUSES = new Set([
 ]);
 
 // ---------------------------------------------------------------------------
+// Intent queue (spec 011-intent-queue-consumer, Wave 1). Closed vocabularies
+// shared by the executor and obsidian-lumen; published through
+// `a1-tools intent schema --json` (Wave 9), not through `schema export`, so
+// they sit above the cockpit block and do not bump VAULT_CONTRACT_VERSION.
+// ---------------------------------------------------------------------------
+
+// FR-003 — nine actions: six launch Claude Code, `stage` runs the product CLI,
+// `approve` and `cancel` are queue-control actions that never spawn a skill.
+const INTENT_ACTIONS = new Set([
+  'new-feature',
+  'continue-feature',
+  'plan',
+  'execute',
+  'fix',
+  'stage',
+  'progress',
+  'approve',
+  'cancel',
+]);
+
+// FR-008 — `running` lives inside claimed/, `failed` inside done/.
+const INTENT_STATUSES = new Set(['queued', 'claimed', 'running', 'done', 'failed', 'rejected']);
+
+// FR-016 — the closed set of `reasons[]` / `rejected_reason` codes.
+const INTENT_REJECT_REASONS = new Set([
+  'schema_invalid',
+  'id_mismatch',
+  'action_unknown',
+  'project_invalid',
+  'oversized',
+  'target_invalid',
+  'target_not_found',
+  'approve_from_non_executor_device',
+  'device_unknown',
+  'signature_invalid',
+  'stale',
+  'replay',
+  'not_executor_host',
+  'ledger_unreadable',
+  'tampered',
+  'cancelled_by_user',
+  'workspace_not_isolated', // FR-043, Wave 5b
+]);
+
+// FR-016 — `failure_reason` codes for `status: failed`. sandbox_invalid
+// (FR-039, FR-040): argv guard or seal verification failed, nothing spawned.
+// parent_step_failed (FR-051, spec round 4): an executor step outside the
+// child (integrity check, xprov gate, postmortem) failed.
+const INTENT_FAILURE_REASONS = new Set([
+  'timeout', 'expired', 'spawn_error', 'nonzero_exit', 'cancelled', 'sandbox_invalid', 'parent_step_failed',
+]);
+
+// FR-016 — refusal codes: only in a refused command's stdout `reasons` and
+// its log line, never in an intent file, so in neither catalog above and not
+// in Lumen's render list. `intent reject --reason` refuses each of them.
+const INTENT_REFUSAL_CODES = new Set([
+  'already_claimed', 'already_moved', 'ledger_busy', 'project_busy', 'executor_busy', 'rate_limited',
+  'result_path_unsafe', // FR-029: project/<slug>/intents/ leaves the vault (spec round 4)
+  'display_unsafe', // FR-015: approve shows only what the owner can see (spec round 6)
+]);
+
+// ---------------------------------------------------------------------------
 // Vault cockpit contract (spec 010-vault-cockpit-contract, Wave 1). This file
 // is the ONE owner of every vocabulary the cockpit (obsidian-lumen) reads
 // through `a1-tools schema export --json`. Any change to a value or shape
@@ -151,6 +213,7 @@ module.exports = {
   CONSTITUTION_STATUSES,
   RECONCILE_STATUSES, RECONCILE_SCOPE_MODES, RECONCILE_DRIFT_CLASSES,
   MODERNIZE_STATUSES, MODERNIZE_MODES, MODERNIZE_PROPOSAL_DECISIONS, MODERNIZE_WAVE_STATUSES,
+  INTENT_ACTIONS, INTENT_STATUSES, INTENT_REJECT_REASONS, INTENT_FAILURE_REASONS, INTENT_REFUSAL_CODES,
   VAULT_CONTRACT_VERSION, ARTIFACT_TYPES, SPEC_TO_ROADMAP_STATUS,
   SPEC_SIZES, QUICK_RESULTS,
   PROJECT_STATUSES, MILESTONE_STATUSES, FEATURE_STATUSES, FEATURE_STAGES,

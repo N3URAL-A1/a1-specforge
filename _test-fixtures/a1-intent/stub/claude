@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# stub/claude — stands in for the real `claude` CLI, first on PATH in every
+# a1-intent case. It never contacts anything. It records what it was given:
+#   $HOME/.a1-intents/tmp/stub/argv.json        argv as a JSON array
+#   $HOME/.a1-intents/tmp/stub/stdin.txt        stdin, byte for byte
+#   $HOME/.a1-intents/tmp/stub/env.txt          the environment it received
+#   $HOME/.a1-intents/tmp/stub/invocations.log  one line per invocation
+#   $HOME/.a1-intents/tmp/stub/stub.pid         its own pid
+# and then behaves per $HOME/.a1-intents/tmp/stub-mode (default ok):
+#   ok    print a short summary, exit 0
+#   fail  exit 3
+#   leak  print an sk-ant token and a PEM private key block, exit 0
+#   hang  ignore SIGTERM, fork a grandchild (pid in grandchild.pid), sleep 600
+# The mode is a FILE under HOME, not an env var: the spawn contract's env
+# allowlist strips every fixture variable, so an env-configured stub would
+# silently run in default mode (testing.md class 1). spawn-error is produced by
+# the runner removing this directory from PATH, not by a mode.
+set -u
+
+dir="$HOME/.a1-intents/tmp/stub"
+mkdir -p "$dir"
+node -e 'process.stdout.write(JSON.stringify(process.argv.slice(1)))' -- "$@" >"$dir/argv.json"
+cat >"$dir/stdin.txt"
+env >"$dir/env.txt"
+echo "$$ $(date -u +%Y-%m-%dT%H:%M:%SZ) $#" >>"$dir/invocations.log"
+echo "$$" >"$dir/stub.pid"
+
+mode="ok"
+if [[ -f "$HOME/.a1-intents/tmp/stub-mode" ]]; then mode="$(tr -d '[:space:]' <"$HOME/.a1-intents/tmp/stub-mode")"; fi
+
+case "$mode" in
+  ok)
+    echo "stub claude: done"
+    exit 0
+    ;;
+  fail)
+    echo "stub claude: failing on purpose" >&2
+    exit 3
+    ;;
+  leak)
+    echo "key sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    echo "-----BEGIN OPENSSH PRIVATE KEY-----"
+    echo "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAAB"
+    echo "-----END OPENSSH PRIVATE KEY-----"
+    exit 0
+    ;;
+  hang)
+    trap '' TERM
+    sleep 600 &
+    echo "$!" >"$dir/grandchild.pid"
+    sleep 600
+    ;;
+  *)
+    echo "stub claude: unknown mode $mode" >&2
+    exit 64
+    ;;
+esac

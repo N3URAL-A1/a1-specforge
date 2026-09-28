@@ -1,0 +1,15 @@
+    1     0     0 /sbin/launchd
+  433     1   501 /System/Applications/Utilities/Print Center.app/Contents/PlugIns/PrintCenterWidgetExtension.macOS.appex/Contents/MacOS/PrintCenterWidgetExtension.macOS
+  481     1     0 /usr/libexec/logd
+ 1411     1   501 /System/Library/PrivateFrameworks/AppStoreComponents.framework/Support/appstorecomponentsd
+ 1457  1330   501 gh
+ 1628     1   501 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+ 1952     1   501 /Users/user/.bun/bin/bun
+ 2776     1   501 /Applications/Obsidian.app/Contents/MacOS/Obsidian
+ 2777  2776   501 /Applications/Obsidian.app/Contents/Frameworks/Obsidian Helper (GPU).app/Contents/MacOS/Obsidian Helper (GPU)
+ 2778  2776   501 /Applications/Obsidian.app/Contents/Frameworks/Obsidian Helper.app/Contents/MacOS/Obsidian Helper
+ 2779  2776   501 /Applications/Obsidian.app/Contents/Frameworks/Obsidian Helper (Renderer).app/Contents/MacOS/Obsidian Helper (Renderer)
+ 2781  2776   501 /Applications/Obsidian.app/Contents/Frameworks/Obsidian Helper (Renderer).app/Contents/MacOS/Obsidian Helper (Renderer)
+ 2782     1   501 /System/Library/PrivateFrameworks/SafariPlatformSupport.framework/Versions/A/XPCServices/com.apple.SafariPlatformSupport.Helper.xpc/Contents/MacOS/com.apple.SafariPlatformSupport.Helper
+ 4085     1     0 aslmanager
+ 4365     1   200 /usr/sbin/cfprefsd
