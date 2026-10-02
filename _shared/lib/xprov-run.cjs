@@ -84,7 +84,7 @@ const tail = C.stderrTail;
 const none = C.oneLine;
 const { ensureArtifactsDir, isUnder } = require('./xprov-artifacts.cjs');
 const { appendXreviewNote } = require('./xprov-normalize.cjs');
-const { filterOutput } = require('./xprov-filter.cjs');
+const { filterOutput, instructionMarker } = require('./xprov-filter.cjs');
 const { permitCheck } = require('./xprov-permit.cjs');
 const { SNAP_PREFIX, REPO_LOCAL_STRIP } = require('./xprov-snapshot.cjs');
 
@@ -398,6 +398,18 @@ function runHomeManifest(dir) {
   return out;
 }
 
+/** The manifest as it may leave a1's private artifacts dir: a name the runner
+ * chose is data — secret-shaped or instruction-shaped names are withheld and
+ * only the pattern is named (Codex R1, hardened live inspect 2026-10-02). */
+function emittableManifest(manifest) {
+  return manifest.map((e) => {
+    const hit = filterOutput([e.path]);
+    if (hit && hit.hit) return { ...e, path: `<withheld: ${hit.pattern_name}>` };
+    if (instructionMarker({ id: '', evidence: e.path, fix: '' }, []) !== null) return { ...e, path: '<withheld: instruction_shaped>' };
+    return e;
+  });
+}
+
 function writeRunHomeManifest(runDir, artifactsDir, manifest) {
   if (!runDir || !isDir(runDir) || !isUnder(runDir, artifactsDir)) return;
   const body = { entries: manifest.length, manifest: manifest.slice(0, RUN_HOME_MANIFEST_MAX) };
@@ -492,8 +504,9 @@ function runWithBaseline(ctx, artifactsDir, argv, notes) {
     }
     runHome = home.dir;
     const run = spawnRunner(argv, ctx, artifactsDir, runHome);
-    homeManifest = runHomeManifest(runHome);
-    writeRunHomeManifest(run.runDir, artifactsDir, homeManifest);
+    const rawManifest = runHomeManifest(runHome);
+    writeRunHomeManifest(run.runDir, artifactsDir, rawManifest); // a1's 0700 artifacts dir, like result.json
+    homeManifest = emittableManifest(rawManifest);
     const delta = baselineDelta(before, takeBaseline(ctx));
     if (delta.length > 0) {
       revertSnapshot(ctx.snapshot);
