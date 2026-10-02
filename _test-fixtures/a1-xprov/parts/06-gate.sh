@@ -18,10 +18,26 @@ export HOME="$TMP06/home"; mkdir -p "$HOME/.codex"; printf '{"fixture":true}\n' 
 ARGV6_DIR="$TMP06/argv"; mkdir -p "$ARGV6_DIR"; ARGV6_N=0
 SNAPS6="$HOME/.a1-xprov/snapshots"
 
-# prep6 [plan] — fresh tree, phase repo p6, permit record, compliant home with
-# auth symlink. Sets TREE*, PHASE_*, XHOME, exports A1_XPROV_CODEX_HOME.
+# pin_warning6 — sets both xprov rows of the TREE copy's registry to `warning`,
+# whatever the real registry says. Without it R2c/R3a/R4a expected the real
+# rollout state (class 4: the expectation moved with the Wave 7 flip) and R2d's
+# flip proved nothing once the real rows were `blocking` (found by the Wave 7
+# live inspect, Codex R1, 2026-10-02; 3 FAIL on a flipped copy).
+pin_warning6() {
+  node -e '
+    const fs = require("fs"); const file = process.argv[1];
+    const ids = ["plan-review-xprov", "wave-inspect-xprov"];
+    const lines = fs.readFileSync(file, "utf8").split("\n").map((l) =>
+      ids.some((id) => l.startsWith("| `" + id + "` |")) ? l.replace(/\| (warning|blocking) \|/, "| warning |") : l);
+    fs.writeFileSync(file, lines.join("\n"));
+  ' "$TREE/_shared/gates-registry.md" || bad "pin_warning6: could not reset the registry copy"
+}
+
+# prep6 [plan] — fresh tree (registry copy pinned to warning), phase repo p6,
+# permit record, compliant home with auth symlink. Sets TREE*, PHASE_*, XHOME,
+# exports A1_XPROV_CODEX_HOME.
 prep6() {
-  make_tree; make_phase p6 "${1:-$CASES/approved.PLAN.md}"
+  make_tree; pin_warning6; make_phase p6 "${1:-$CASES/approved.PLAN.md}"
   ( cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov permit --by fixture --record record/2026-09-24-fixture.md >/dev/null 2>&1 ) || echo "WARN prep6: permit failed" >&2
   make_home; ln -s "$HOME/.codex/auth.json" "$XHOME/auth.json"; export A1_XPROV_CODEX_HOME="$XHOME"
 }

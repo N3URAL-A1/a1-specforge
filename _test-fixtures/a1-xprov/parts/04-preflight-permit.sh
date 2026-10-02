@@ -28,7 +28,9 @@
 
 # The exact file init-home writes into a fresh home — byte-identical to the real
 # ~/.codex-a1-review/config.toml after `codex features disable plugins` and
-# `… remote_plugin` (2026-09-24). Frozen literal, compared byte-for-byte in R14e.
+# `… remote_plugin` (2026-09-24), plus the six Wave 7 pins (2026-10-02: what
+# `codex features disable` appends, and a1's explicit `memories = false`).
+# Frozen literal, compared byte-for-byte in R14e.
 COMPLIANT_CONFIG_W4='# a1-specforge — dedicated Codex home for cross-provider REVIEW runs only.
 # Created 2026-09-24 (analysis finding F-049, spec 009-cross-provider-review-gate).
 # Invariants: read-only sandbox, on-request approvals, NO MCP servers, NO plugins.
@@ -39,9 +41,15 @@ approval_policy = "on-request"
 
 [features]
 plugins = false
-remote_plugin = false'
+remote_plugin = false
+apps = false
+browser_use = false
+computer_use = false
+hooks = false
+skill_mcp_dependency_install = false
+memories = false'
 
-EXPECTED_PREFLIGHT_CHECKS="codex_home_is_global home_exists config_exists config_is_symlink home_mode_0700 sandbox_read_only mcp_servers_absent plugins_disabled remote_plugin_switch unexpected_config_key plugins_cache_empty session_tools_exec_only auth_present runner_pin python_version codex_cli"
+EXPECTED_PREFLIGHT_CHECKS="codex_home_is_global home_exists config_exists config_is_symlink home_mode_0700 sandbox_read_only mcp_servers_absent plugins_disabled remote_plugin_switch features_pinned_off unexpected_config_key plugins_cache_empty skills_system_only session_tools_exec_only etc_codex_absent auth_present runner_pin python_version codex_cli"
 
 # make_home_w4 — alias of the harness make_home (whose COMPLIANT_CONFIG carries
 # the [features] switch since the Wave 4 measurement). Kept so no arm breaks.
@@ -409,7 +417,7 @@ experimental_use_unified_exec_tool = true|keys: shell_environment_policy, shell_
   xprov_w4 preflight
   assert_eq "R14x[compliant] unexpected_config_key PASSes on the measured config" "$(check_result "$W4_OUT" unexpected_config_key)" "PASS|all keys allowlisted"
   # allowed optional keys stay allowed (root position, before [features])
-  printf '%s\nmodel = "gpt-5-codex"\nmodel_reasoning_effort = "high"\n\n[features]\nplugins = false\nremote_plugin = false\n' "$head" > "$XHOME/config.toml"
+  printf '%s\nmodel = "gpt-5-codex"\nmodel_reasoning_effort = "high"\n\n[features]\nplugins = false\nremote_plugin = false\napps = false\nbrowser_use = false\ncomputer_use = false\nhooks = false\nskill_mcp_dependency_install = false\nmemories = false\n' "$head" > "$XHOME/config.toml"
   xprov_w4 preflight
   assert_rc "R14x[model keys] preflight still exits 0 with model + model_reasoning_effort" 0 "$W4_RC" "$W4_ERR"
 }
@@ -430,7 +438,7 @@ caseS3() {
   xprov_w4 preflight
   assert_rc "S3a preflight exits 1 (6000 disallowed tools)" 1 "$W4_RC"
   [[ ${#W4_OUT} -gt 65536 ]] && ok "S3b stdout is larger than 64 KiB (${#W4_OUT} bytes)" || bad "S3b stdout only ${#W4_OUT} bytes — arm does not exercise the truncation"
-  assert_json "S3c stdout JSON is complete and parseable (all checks present)" "$W4_OUT" "(j.checks||[]).length" "16"
+  assert_json "S3c stdout JSON is complete and parseable (all checks present)" "$W4_OUT" "(j.checks||[]).length" "19"
   assert_json "S3d the last check survived the pipe" "$W4_OUT" "j.checks[j.checks.length-1].name" "codex_cli"
 }
 

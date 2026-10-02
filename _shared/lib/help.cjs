@@ -637,10 +637,18 @@ ${SPEC_INIT_HELP}
                   sandbox_mode = "read-only", no [mcp_servers.*] table at all,
                   no enabled [plugins.*], auth.json present, runner pin
                   matches SHA256SUMS, python3 >= 3.10, codex --version ok.
+                  Wave 7: all eight [features] pins false (plugins,
+                  remote_plugin, apps, browser_use, computer_use, hooks,
+                  skill_mcp_dependency_install, memories), skills/ holds only
+                  .system (skills/<x> is a user skill root), no
+                  /etc/codex/{config,requirements}.toml.
                   Lists EVERY check with its measured value; exit 1 if any fails.
-    init-home [--prune-marketplaces]
+    init-home [--prune-marketplaces] [--pin-features]
                   (xprov-preflight.cjs, wave 4) create the dedicated home
                   idempotently; never overwrites an existing config.toml.
+                  --pin-features (wave 7) appends the missing '<pin> = false'
+                  lines to [features] of an existing home — additive only; a
+                  pin a human set to true is refused (exit 1, file unchanged).
     permit-check [--repo <git-toplevel>]
                   (xprov-permit.cjs, wave 4) reads .a1/xprov.json; anything
                   but external_review: allowed → external_review_not_permitted.
@@ -664,7 +672,9 @@ ${SPEC_INIT_HELP}
                   FETCH_HEAD; N = 1 for review, rev-list --count base..commit + 1
                   with --base for inspect — a parent commit's secret is never in
                   the snapshot history); .codex/, AGENTS.md, AGENTS.override.md
-                  are removed from the working tree; every tracked file is
+                  and (wave 7) .agents/ are removed from the working tree,
+                  because Codex reads .agents/skills at the git root of its
+                  cwd as skill instructions; every tracked file is
                   secret-scanned (shared pattern list, windowed, UTF-16 aware,
                   + gitleaks with a1's own config when on PATH) before dispatch.
                   Wave 6b: the scan COUNTS every match and fingerprints its
@@ -679,7 +689,14 @@ ${SPEC_INIT_HELP}
                   (xprov-run.cjs, wave 5) exact runner argv, allowlisted env with
                   CODEX_HOME set to the dedicated home, tripwire (git status
                   baseline of checkout, work path and snapshot, .git/ metadata,
-                  the whole dedicated home) — any delta → tripwire.
+                  the whole dedicated home except its runtime dirs; skills/
+                  only .system) — any delta → tripwire. Wave 7: HOME is a fresh
+                  ~/.a1-xprov/run-home-* per run (mkdtemp, 0700, verified empty
+                  before the spawn → else run_home_unsafe), removed afterwards;
+                  what Codex wrote there is reported as run_home_manifest and
+                  kept as run-home.manifest.json in the run dir. The cwd is the
+                  snapshot root; a root still holding .agents/.codex/AGENTS.md
+                  → snapshot_failed, no spawn.
     gate --phase <name> --gate <id> [--wave N --base <sha> --work-path <p>]
          [--lane <id>] [--round N] [--timeout N] [--resume <result.json> --feedback <file>]
                   (xprov-gate.cjs, wave 6) the driver the workflows call once:

@@ -55,7 +55,11 @@ const SCAN_OVERLAP = 512; // … with overlap so a token on a window edge is sti
 const UTF16_SNIFF_BYTES = 8000;
 // No leading `-`: `--commit --force` must never become a git option.
 const REF_RE = /^[A-Za-z0-9._][A-Za-z0-9._/@^~-]{0,199}$/;
-const REPO_LOCAL_STRIP = Object.freeze(['.codex', 'AGENTS.md', 'AGENTS.override.md']);
+// `.agents` (Wave 7, measured): `.agents/skills` at the git root of Codex's cwd is
+// a skill root whose text lands in a developer message — the reviewed repo must
+// not steer its own reviewer. Only the root counts (nothing above the git root,
+// measured), and the snapshot root is the runner's cwd.
+const REPO_LOCAL_STRIP = Object.freeze(['.codex', 'AGENTS.md', 'AGENTS.override.md', '.agents']);
 const GITLEAKS_CONFIG = path.join(__dirname, 'xprov-gitleaks.toml');
 const UPLOAD_PACK_FALLBACK = 'git -c uploadpack.allowAnySHA1InWant=true upload-pack'; // literal, ours — not user input
 

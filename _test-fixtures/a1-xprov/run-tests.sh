@@ -40,7 +40,11 @@ GATE_WAVE="wave-inspect-xprov"
 # comment header, the two runtime keys, and — added the same day after Wave 4
 # measured that Codex auto-installs remote plugins unless `features.plugins`
 # and `features.remote_plugin` are off (`codex features disable <f>` writes
-# exactly this table) — the [features] switch. make_home() writes exactly this.
+# exactly this table) — the [features] switch. Wave 7 (2026-10-02, after the
+# live smoke) pins six more features, measured the same way: `codex features
+# disable` writes apps … skill_mcp_dependency_install in this order and omits
+# the default-off `memories`, which a1 pins explicitly. make_home() writes
+# exactly this.
 COMPLIANT_CONFIG='# a1-specforge — dedicated Codex home for cross-provider REVIEW runs only.
 # Created 2026-09-24 (analysis finding F-049, spec 009-cross-provider-review-gate).
 # Invariants: read-only sandbox, on-request approvals, NO MCP servers, NO plugins.
@@ -51,7 +55,13 @@ approval_policy = "on-request"
 
 [features]
 plugins = false
-remote_plugin = false'
+remote_plugin = false
+apps = false
+browser_use = false
+computer_use = false
+hooks = false
+skill_mcp_dependency_install = false
+memories = false'
 
 pass=0; fail=0; results=()
 ok()  { results+=("PASS  $1"); pass=$((pass + 1)); }

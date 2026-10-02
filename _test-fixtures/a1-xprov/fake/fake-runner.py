@@ -15,6 +15,9 @@ environment when the file is absent (direct `python3 fake-runner.py` calls).
 
   FAKE_RUNNER_ARGV_FILE        write sys.argv (JSON array, one line) here
   FAKE_RUNNER_ENV_FILE         write the child's WHOLE environment as JSON here
+  FAKE_RUNNER_CWD_FILE         write os.getcwd() (realpath) here
+  FAKE_RUNNER_HOME_WRITE       write one file at $HOME/<this relative path> — what
+                               Codex leaves in the per-run HOME (Wave 7)
   FAKE_RUNNER_CASE             case to copy into <artifacts>/<run>/result.json —
                                a file path, or a name resolved as
                                $FAKE_RUNNER_CASES_DIR/<name>.result.json
@@ -126,6 +129,14 @@ def main(argv: list[str]) -> int:
     env_file = k.get("FAKE_RUNNER_ENV_FILE")
     if env_file:
         Path(env_file).write_text(json.dumps(dict(os.environ), indent=1) + "\n", encoding="utf-8")
+    cwd_file = k.get("FAKE_RUNNER_CWD_FILE")
+    if cwd_file:
+        Path(cwd_file).write_text(os.path.realpath(os.getcwd()), encoding="utf-8")
+    home_write = k.get("FAKE_RUNNER_HOME_WRITE")
+    if home_write:
+        target = Path(os.environ["HOME"]) / home_write
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("runtime probe\n", encoding="utf-8")
     if k.get("FAKE_RUNNER_REFUSE") == "1":
         sys.stderr.write("claudex-loop: Keep run artifacts outside the target checkout so they do not contaminate its diff.\n")
         return EXIT_REFUSED

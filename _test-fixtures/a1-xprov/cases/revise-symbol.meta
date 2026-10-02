@@ -1,0 +1,15 @@
+# Sibling of revise-symbol.result.json — provenance record (spec 009, FR-027; Wave 7 finding 2).
+case: revise-symbol
+origin: captured
+captured_on: 2026-10-02
+cli_version: codex-cli 0.155.1
+runner_version: 2.1.0
+runner_sha256: 962dfdfe5d67b75eb73ec7c38b9186e6e6e0ca96a68d4ec82595305d8f737c8c
+codex_home: ~/.codex-a1-review (read-only sandbox, zero mcp_servers tables)
+plan: revise-symbol.PLAN.md (.a1/phases/M13-residuals/PLAN.md at 2741abe)
+plan_sha256: 903b53b7881ec4cfa7300130d060e2e149d35d4351817dd3151b746702c9e693
+attempts: 1
+provocation: none — the first live Wave 7 smoke, `xprov gate --phase M13-residuals --gate plan-review-xprov` on a1-specforge 2741abe; copied verbatim from the run dir claudex-odyufqme
+elapsed_seconds: 103 (gate call, 06:56:38Z–06:58:21Z)
+note: three medium findings whose `path` is `<file>: <symbol>` (`_shared/lib/checklist.cjs: evaluateChecklistRules, check 10`, `_shared/lib/checklist.cjs: cmdChecklistRun`, `_shared/roadmap-gate-check.md: section 2`) — the shape that quarantined all three as path_not_in_repo before the Wave 7 fix
+paths: verbatim capture output (local absolute paths, no secret; never compared by normalize)

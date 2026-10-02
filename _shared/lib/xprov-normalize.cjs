@@ -61,6 +61,13 @@ const FIX_MARKER = 'Fix (reviewer proposal, not applied): ';
 // greedy `(.*)` keeps `a.js:42:7` as file `a.js:42` line 7; an empty file part
 // (`:42`) is rejected by mapFinding, a > 7-digit suffix is not a line number.
 const LINE_RE = /^(.*):(\d{1,7})$/;
+// Measured shape (live smoke 2026-10-02, case revise-symbol): Codex writes `path`
+// as `<file>: <symbol>` (`_shared/lib/checklist.cjs: cmdChecklistRun`). One such
+// suffix is stripped ONLY when the part before the first SYMBOL_SEP is a tracked
+// file at the reviewed commit; everything else stays as written and the
+// quarantine decides (path_not_in_repo, fail-closed).
+const SYMBOL_SEP = ': ';
+const SYMBOL_MAX_CHARS = 120;
 const XREVIEW_HEADER = '# XREVIEW — cross-provider review log\n\nWritten by `a1-tools xprov normalize`; one section per run, newest last.\n';
 
 // ---------- small helpers ----------
@@ -227,11 +234,27 @@ function secretScan(filter, ctx) {
   return fail(X.REASONS.secret_in_output, { secret_pattern: typeof hit.pattern_name === 'string' ? hit.pattern_name : 'unnamed' });
 }
 
+/** `<tracked file>: <symbol>` → file + the symbol carried in evidence and detail
+ * (evidence, so the instruction-marker scan covers the symbol too). New objects. */
+function stripSymbolSuffix(findings, lsFiles, planRel) {
+  return findings.map((f) => {
+    if (!f || typeof f.file !== 'string' || lsFiles.has(f.file) || f.file === planRel) return f;
+    const i = f.file.indexOf(SYMBOL_SEP);
+    if (i <= 0) return f;
+    const file = f.file.slice(0, i);
+    const symbol = f.file.slice(i + SYMBOL_SEP.length).replace(/[\r\n\t]+/g, ' ').trim().slice(0, SYMBOL_MAX_CHARS);
+    if (!symbol || !lsFiles.has(file)) return f;
+    return { ...f, file, evidence: `Symbol: ${symbol}\n${f.evidence}`, detail: `Symbol: ${symbol}\n${f.detail}` };
+  });
+}
+
 /** Quarantine hook over a non-fail outcome. Returns a NEW outcome. */
 function quarantine(filter, outcome, ctx) {
   let q;
   try {
-    q = filter.quarantineFindings(outcome.findings || [], { lsFiles: lsFilesSet(ctx.workPath), planPath: ctx.planRel, repoRoot: ctx.workPath });
+    const lsFiles = lsFilesSet(ctx.workPath);
+    const findings = stripSymbolSuffix(outcome.findings || [], lsFiles, ctx.planRel);
+    q = filter.quarantineFindings(findings, { lsFiles, planPath: ctx.planRel, repoRoot: ctx.workPath });
   } catch (_e) { return contractFail(); }
   if (!isPlainObject(q) || !Array.isArray(q.kept) || !Array.isArray(q.quarantined)) return contractFail();
   const notes = Array.isArray(q.notes) ? q.notes.filter((n) => typeof n === 'string') : [];

@@ -1,0 +1,77 @@
+{
+  "status": "completed",
+  "mode": "review",
+  "provider": "codex",
+  "roles": {
+    "host": "claude",
+    "planner": "claude",
+    "reviewer": "codex",
+    "builder": "claude",
+    "inspector": "codex"
+  },
+  "repo": "/Users/rob/.a1-xprov/snapshots/snap-NkXVbv",
+  "plan": "/Users/rob/claude-projects/a1-worktrees/009-wave7-live-smoke/.a1/phases/M13-residuals/PLAN.md",
+  "plan_sha256": "903b53b7881ec4cfa7300130d060e2e149d35d4351817dd3151b746702c9e693",
+  "requested_model": null,
+  "requested_effort": null,
+  "base": null,
+  "snapshot": null,
+  "previous": null,
+  "started_at": 1790924200.800896,
+  "artifacts": "/Users/rob/.a1-xprov/artifacts/009-wave7-live-smoke/claudex-odyufqme",
+  "cli_version": "codex-cli 0.155.1",
+  "executable": [
+    "/opt/homebrew/bin/codex"
+  ],
+  "exit_code": 0,
+  "session_id": "01a0fb66-9e6a-73c3-b258-f6ed0ffc9594",
+  "response": {
+    "verdict": "REVISE",
+    "summary": "The migration is present, but the consistency gate can accept an incorrect spec link and silently omit mistyped checks. The shared roadmap gate also does not actually verify parseability.",
+    "findings": [
+      {
+        "id": "R1",
+        "severity": "medium",
+        "path": "_shared/lib/checklist.cjs: evaluateChecklistRules, check 10",
+        "evidence": "For target alpha/001-login, spec_path: project/beta/spec/001-login.md passes because endsWith('spec/001-login.md') is accepted. Coverage is then checked against alpha's spec, while the plan links to beta's spec. Gate 4.5 can therefore approve an inconsistent plan.",
+        "fix": "Resolve supported relative and absolute path forms against explicit bases and compare the resulting path with the target spec. Reject paths identifying another project; add a same-filename/different-project fixture."
+      },
+      {
+        "id": "R2",
+        "severity": "medium",
+        "path": "_shared/lib/checklist.cjs: cmdChecklistRun",
+        "evidence": "--only uses parseInt and rejects unknown IDs only when none match. Consequently --only 9,100 silently runs only check 9 and can return PASS despite a broken spec link; --only 9,10oops is also accepted. This undermines the subset gate's setup-error contract.",
+        "fix": "Require complete integer tokens and validate every requested ID against the supported check registry before evaluation. Reject missing, empty, malformed, and unknown selections with exit 2."
+      },
+      {
+        "id": "R3",
+        "severity": "medium",
+        "path": "_shared/roadmap-gate-check.md: section 2",
+        "evidence": "The preferred roadmap is deemed PARSEABLE solely when any line starts with schema_version:. A file containing 'schema_version: 1' and malformed YAML such as 'features: [' passes. Both a1-new-feature Phase 0 and a1-execute Step 0 explicitly use this result to allow work past their parseability gate.",
+        "fix": "Use the actual roadmap parser or a read-only validation command, check its exit status, and preserve the documented halt behavior for malformed files. Apply equivalent real parsing to the legacy fallback."
+      }
+    ],
+    "coverage": [
+      "Read the supplied plan and verified its SHA256 matches the requested hash.",
+      "Inspected checklist evaluation, subset selection, reporting and save paths, shared FR primitives, CLI routing/help, and gate fixture definitions.",
+      "Traced Gate 4.5 callers, planning status updates, spec writer references, and feature re-entry routing.",
+      "Inspected shared roadmap gate and its new-feature/execute callers; searched fix and modernize lifecycle references.",
+      "Inspected M13 status and verification artifacts, Ludwig comparison document, Erik lesson pointers, agent tag search results, and installation references."
+    ],
+    "limitations": [
+      "No files were edited, tests run, or work delegated. Recorded verification claims were not independently reproduced.",
+      "The snapshot contains changes after M13; findings describe the inspected current state rather than proving when each defect originated.",
+      "Did not independently inspect the installed legal plugin or verify CI/push status.",
+      "Agent conversion and installation coverage was static and partial; no exhaustive frontmatter parsing or installation smoke test was performed."
+    ]
+  },
+  "usage": {
+    "input_tokens": 218974,
+    "cached_input_tokens": 172160,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 1726,
+    "reasoning_output_tokens": 29
+  },
+  "observed_models": [],
+  "elapsed_seconds": 100.62
+}

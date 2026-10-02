@@ -78,6 +78,9 @@ const REASON_LIST = Object.freeze([
   // Wave 6b (FR-030): both map to `fail` before dispatch.
   'allowlist_invalid', // the anchor's allowlist is unreadable, off-schema, over the cap, owner-mismatched, not a separate commit or unapproved
   'allowlist_modified', // the reviewed range adds, changes, deletes or renames the allowlist
+  // Wave 7 (2026-10-02, after the live smoke): the fresh per-run HOME is not a
+  // 0700, user-owned, non-symlink, EMPTY dir right before the spawn — no spawn.
+  'run_home_unsafe',
 ]);
 const REASONS = Object.freeze(Object.fromEntries(REASON_LIST.map((r) => [r, r])));
 
