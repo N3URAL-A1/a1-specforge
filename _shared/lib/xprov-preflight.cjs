@@ -26,6 +26,11 @@
 //     cannot switch one back on silently. `init-home --pin-features` appends
 //     the missing pins to an existing home — additive only, a human's `true`
 //     is refused, never overwritten.
+//   * Auth store (Wave 7, Samuel): `cli_auth_credentials_store = "file"` keeps
+//     the credentials in the auth.json symlink a1 manages, never in a keyring
+//     the tripwire cannot see. codex-cli 0.155.1 validates the value itself
+//     (unknown variant → config error naming file|keyring|auto|ephemeral);
+//     `auth_store_file` asserts it, `init-home --pin-features` pins it.
 //   * Skill roots (Wave 7, canaries under a network block): `$CODEX_HOME/skills`
 //     is a USER skill root next to the built-in `skills/.system`, so
 //     `skills_system_only` requires `skills/` to hold `.system` and nothing
@@ -72,6 +77,8 @@ const REQUIRED_FEATURES_OFF = Object.freeze(['plugins', 'remote_plugin']);
 // Wave 7 pins, in the order `codex features disable` writes them (memories last: a1's own line).
 const FEATURE_PINS = Object.freeze(['apps', 'browser_use', 'computer_use', 'hooks', 'skill_mcp_dependency_install', 'memories']);
 const ALL_FEATURE_PINS = Object.freeze([...REQUIRED_FEATURES_OFF, ...FEATURE_PINS]);
+// Root keys a1 pins (key → required value), inserted after the last root entry.
+const ROOT_PINS = Object.freeze({ cli_auth_credentials_store: 'file' });
 const SKILLS_DIR = 'skills';
 const SKILLS_SYSTEM = '.system';
 const ETC_CODEX_DIR = '/etc/codex';
@@ -96,6 +103,7 @@ const COMPLIANT_CONFIG = `# a1-specforge — dedicated Codex home for cross-prov
 # absence of MCP servers are what this file guarantees.
 sandbox_mode = "read-only"
 approval_policy = "on-request"
+cli_auth_credentials_store = "file"
 
 [features]
 plugins = false
@@ -207,7 +215,7 @@ function isGlobalHome(home, homedir) {
 // `[tools]`, `experimental_*` and anything Codex adds tomorrow all land here.
 const ALLOWED_TABLES = Object.freeze(['', 'features']);
 const ALLOWED_KEYS = Object.freeze([
-  'sandbox_mode', 'approval_policy', 'model', 'model_reasoning_effort',
+  'sandbox_mode', 'approval_policy', 'model', 'model_reasoning_effort', ...Object.keys(ROOT_PINS),
   ...ALL_FEATURE_PINS.map((k) => `features.${k}`),
 ]);
 const UNEXPECTED_LIST_MAX = 20;
@@ -233,6 +241,7 @@ function configChecks(text) {
   const { tables, entries } = parsed;
   const root = (k) => entries.find((e) => e.table === '' && e.key === k);
   const sandbox = root('sandbox_mode');
+  const authStore = entries.filter((e) => e.table === '' && e.key === 'cli_auth_credentials_store').map((e) => e.value);
   // Any table OR root key whose first dotted segment is `mcp_servers` counts:
   // `[mcp_servers.x]`, `["mcp_servers".x]`, `mcp_servers = {…}`, `mcp_servers.x.command = …`.
   const mcp = [
@@ -255,6 +264,8 @@ function configChecks(text) {
   return [
     check('sandbox_read_only', Boolean(sandbox) && sandbox.value === 'read-only',
       sandbox ? `sandbox_mode = "${sandbox.value}"` : 'sandbox_mode absent'),
+    check('auth_store_file', authStore.length > 0 && authStore.every((v) => v === ROOT_PINS.cli_auth_credentials_store),
+      authStore.length ? `cli_auth_credentials_store = "${authStore.join('/')}"` : 'cli_auth_credentials_store absent (Codex default may use a keyring)'),
     check('mcp_servers_absent', mcp.length === 0, mcp.length ? mcp.join(', ') : 'no mcp_servers table or key'),
     check('plugins_disabled', enabledPlugins.length === 0,
       enabledPlugins.length ? enabledPlugins.map((t) => `[${t.name}] enabled = true`).join(', ')
@@ -493,23 +504,42 @@ function createFreshHome(home, homedir) {
   return { created: [home, configPath].concat(auth.linked ? [path.join(home, AUTH_FILE)] : []), auth };
 }
 
-/** Appends the missing `<pin> = false` lines to [features] (or a new [features]
- * table at the end). Returns { text, added, conflicts }; never edits an existing line. */
+/** Appends the missing pins: root keys (ROOT_PINS) after the last root entry,
+ * `<pin> = false` to [features] (or a new [features] table at the end).
+ * Returns { text, added, conflicts }; never edits an existing line. */
 function pinFeaturesText(text) {
   const parsed = parseTomlLines(text);
   const featureTables = parsed.tables.filter((t) => t.name === 'features');
   if (featureTables.length > 1) return { text, added: [], conflicts: ['more than one [features] table'] };
-  const valuesOf = (k) => parsed.entries.filter((e) => e.path === `features.${k}`).map((e) => e.value);
-  const conflicts = ALL_FEATURE_PINS.filter((k) => valuesOf(k).some((v) => v !== 'false')).map((k) => `features.${k} = ${valuesOf(k).join('/')}`);
+  const valuesOf = (p) => parsed.entries.filter((e) => e.path === p).map((e) => e.value);
+  const rootKeys = Object.keys(ROOT_PINS);
+  const conflicts = [
+    ...rootKeys.filter((k) => valuesOf(k).some((v) => v !== ROOT_PINS[k])).map((k) => `${k} = ${valuesOf(k).join('/')}`),
+    ...ALL_FEATURE_PINS.filter((k) => valuesOf(`features.${k}`).some((v) => v !== 'false')).map((k) => `features.${k} = ${valuesOf(`features.${k}`).join('/')}`),
+  ];
   if (conflicts.length) return { text, added: [], conflicts };
-  const added = ALL_FEATURE_PINS.filter((k) => valuesOf(k).length === 0);
+  const rootAdd = rootKeys.filter((k) => valuesOf(k).length === 0);
+  const featAdd = ALL_FEATURE_PINS.filter((k) => valuesOf(`features.${k}`).length === 0);
+  const added = [...rootAdd, ...featAdd];
   if (added.length === 0) return { text, added, conflicts };
-  const newLines = added.map((k) => `${k} = false`);
   const lines = String(text).replace(/\n$/, '').split('\n');
-  if (featureTables.length === 0) return { text: `${[...lines, '', '[features]', ...newLines].join('\n')}\n`, added, conflicts };
-  const header = featureTables[0].line;
-  const last = Math.max(header, ...parsed.entries.filter((e) => e.table === 'features').map((e) => e.line));
-  return { text: `${[...lines.slice(0, last), ...newLines, ...lines.slice(last)].join('\n')}\n`, added, conflicts };
+  const featLines = featAdd.map((k) => `${k} = false`);
+  if (featLines.length) {
+    if (featureTables.length === 0) lines.push('', '[features]', ...featLines);
+    else {
+      const header = featureTables[0].line;
+      const last = Math.max(header, ...parsed.entries.filter((e) => e.table === 'features').map((e) => e.line));
+      lines.splice(last, 0, ...featLines);
+    }
+  }
+  if (rootAdd.length) {
+    // after the last root entry; with none, before the first table (or at the end)
+    const rootEntries = parsed.entries.filter((e) => e.table === '').map((e) => e.line);
+    const firstTable = parsed.tables.length ? parsed.tables[0].line - 1 : lines.length;
+    const at = rootEntries.length ? Math.max(...rootEntries) : firstTable;
+    lines.splice(at, 0, ...rootAdd.map((k) => `${k} = "${ROOT_PINS[k]}"`));
+  }
+  return { text: `${lines.join('\n')}\n`, added, conflicts };
 }
 
 /** `init-home --pin-features` on an existing home: additive, atomic, 0600 kept. */
@@ -550,7 +580,8 @@ function initHome(opts) {
     const refused = pinFeatures(home, configPath);
     if (refused) return refused;
     const after = parseTomlLines(fs.readFileSync(configPath, 'utf8'));
-    pinned = ALL_FEATURE_PINS.filter((k) => !before.entries.some((e) => e.path === `features.${k}`) && after.entries.some((e) => e.path === `features.${k}`));
+    const paths = [...Object.keys(ROOT_PINS), ...ALL_FEATURE_PINS.map((k) => `features.${k}`)];
+    pinned = paths.filter((p) => !before.entries.some((e) => e.path === p) && after.entries.some((e) => e.path === p)).map((p) => p.replace(/^features\./, ''));
   }
   const configExists = fs.existsSync(configPath);
   const checks = [
@@ -590,7 +621,7 @@ function cmdXprovInitHome(args) {
   if (r.reason === 'codex_home_is_global') lines.push(`init-home: refused — ${home} is the global ~/.codex`);
   else if (r.reason === 'pin_conflict') lines.push(`init-home: --pin-features refused — ${r.conflicts.join(', ')}; a human set it, a1 does not overwrite it`);
   else if (r.reason === 'pin_refused') lines.push(`init-home: --pin-features refused — ${r.detail}`);
-  else if (r.pinned && r.pinned.length) lines.push(`init-home: pinned ${r.pinned.join(', ')} = false in ${home}/config.toml${r.ok ? '' : ` — still failing: ${r.failed.join(', ')}`}`);
+  else if (r.pinned && r.pinned.length) lines.push(`init-home: pinned ${r.pinned.join(', ')} in ${home}/config.toml${r.ok ? '' : ` — still failing: ${r.failed.join(', ')}`}`);
   else if (r.changed) lines.push(`init-home: created ${home} (0700) with the compliant config.toml${r.auth.linked ? ' and auth.json symlink' : ' — no ~/.codex/auth.json to link (not_logged_in)'}`);
   else if (r.ok) lines.push(`init-home: ${home} already compliant, nothing written`);
   else {

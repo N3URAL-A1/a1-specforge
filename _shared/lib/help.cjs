@@ -639,16 +639,19 @@ ${SPEC_INIT_HELP}
                   matches SHA256SUMS, python3 >= 3.10, codex --version ok.
                   Wave 7: all eight [features] pins false (plugins,
                   remote_plugin, apps, browser_use, computer_use, hooks,
-                  skill_mcp_dependency_install, memories), skills/ holds only
+                  skill_mcp_dependency_install, memories),
+                  cli_auth_credentials_store = "file", skills/ holds only
                   .system (skills/<x> is a user skill root), no
                   /etc/codex/{config,requirements}.toml.
                   Lists EVERY check with its measured value; exit 1 if any fails.
     init-home [--prune-marketplaces] [--pin-features]
                   (xprov-preflight.cjs, wave 4) create the dedicated home
                   idempotently; never overwrites an existing config.toml.
-                  --pin-features (wave 7) appends the missing '<pin> = false'
-                  lines to [features] of an existing home — additive only; a
-                  pin a human set to true is refused (exit 1, file unchanged).
+                  --pin-features (wave 7) appends the missing pins to an
+                  existing home — cli_auth_credentials_store = "file" after the
+                  last root key, '<pin> = false' lines to [features]; additive
+                  only, a value a human set differently is refused (exit 1,
+                  file unchanged).
     permit-check [--repo <git-toplevel>]
                   (xprov-permit.cjs, wave 4) reads .a1/xprov.json; anything
                   but external_review: allowed → external_review_not_permitted.
@@ -693,8 +696,12 @@ ${SPEC_INIT_HELP}
                   only .system) — any delta → tripwire. Wave 7: HOME is a fresh
                   ~/.a1-xprov/run-home-* per run (mkdtemp, 0700, verified empty
                   before the spawn → else run_home_unsafe), removed afterwards;
-                  what Codex wrote there is reported as run_home_manifest and
-                  kept as run-home.manifest.json in the run dir. The cwd is the
+                  what Codex wrote there (names and sizes, never contents) is
+                  reported as run_home_manifest, kept as run-home.manifest.json
+                  in the run dir and noted in XREVIEW.md when non-empty (a
+                  note, not a fail). run-home-* dirs older than 24 h (left by a
+                  SIGKILL) are swept first: lstat, same owner, symlinks never
+                  followed. XDG_* is not passed; TMPDIR is. The cwd is the
                   snapshot root; a root still holding .agents/.codex/AGENTS.md
                   → snapshot_failed, no spawn.
     gate --phase <name> --gate <id> [--wave N --base <sha> --work-path <p>]

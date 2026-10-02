@@ -244,7 +244,11 @@ function stripSymbolSuffix(findings, lsFiles, planRel) {
     const file = f.file.slice(0, i);
     const symbol = f.file.slice(i + SYMBOL_SEP.length).replace(/[\r\n\t]+/g, ' ').trim().slice(0, SYMBOL_MAX_CHARS);
     if (!symbol || !lsFiles.has(file)) return f;
-    return { ...f, file, evidence: `Symbol: ${symbol}\n${f.evidence}`, detail: `Symbol: ${symbol}\n${f.detail}` };
+    const evidence = `Symbol: ${symbol}\n${f.evidence}`;
+    // The filter scans MAX_FIELD_CHARS per field: a prefix must never push a marker
+    // out of that window (Codex R2, live inspect 2026-10-02) — too long → unchanged.
+    if (evidence.length > X.MAX_FIELD_CHARS) return f;
+    return { ...f, file, evidence, detail: `Symbol: ${symbol}\n${f.detail}` };
   });
 }
 

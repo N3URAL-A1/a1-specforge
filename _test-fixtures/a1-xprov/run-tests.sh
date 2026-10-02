@@ -43,8 +43,9 @@ GATE_WAVE="wave-inspect-xprov"
 # exactly this table) — the [features] switch. Wave 7 (2026-10-02, after the
 # live smoke) pins six more features, measured the same way: `codex features
 # disable` writes apps … skill_mcp_dependency_install in this order and omits
-# the default-off `memories`, which a1 pins explicitly. make_home() writes
-# exactly this.
+# the default-off `memories`, which a1 pins explicitly — plus Samuel's
+# `cli_auth_credentials_store = "file"` (credentials stay in the auth.json
+# symlink, never in a keyring). make_home() writes exactly this.
 COMPLIANT_CONFIG='# a1-specforge — dedicated Codex home for cross-provider REVIEW runs only.
 # Created 2026-09-24 (analysis finding F-049, spec 009-cross-provider-review-gate).
 # Invariants: read-only sandbox, on-request approvals, NO MCP servers, NO plugins.
@@ -52,6 +53,7 @@ COMPLIANT_CONFIG='# a1-specforge — dedicated Codex home for cross-provider REV
 # absence of MCP servers are what this file guarantees.
 sandbox_mode = "read-only"
 approval_policy = "on-request"
+cli_auth_credentials_store = "file"
 
 [features]
 plugins = false

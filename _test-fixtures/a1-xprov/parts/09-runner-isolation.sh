@@ -23,9 +23,19 @@
 #   RH4b the seam widens the mode to 0755 → not ok.    Red if the mode check is dropped.
 #   RH5  what Codex writes into the run home is recorded (stdout + run-home.manifest.json).
 #        Red if the manifest is not taken before removal.
+#   RH5n a non-empty run home after the run is an XREVIEW note, not a fail.
+#        Red if the note is dropped (or the manifest turns the run into a fail).
 #   RH6  the runner's cwd is the snapshot root.        Red if spawnOptions uses another cwd.
 #   RH6b a snapshot root holding `.agents` → snapshot_failed, no spawn.
 #        Red if the stripped-cwd assertion is dropped.
+#   RH7  a stale run-home-* (> RUN_HOME_STALE_HOURS) is swept before the next run;
+#        a fresh one and a run-home-* symlink (and its target) survive.
+#        Red if the sweep is dropped / the age bound is dropped / symlinks are followed.
+#   RH8  Samuel's proving arm: a canary in the CALLER's (old) HOME .agents/skills
+#        is not visible to the runner under its per-run HOME.
+#        Red if HOME stays the caller's (with RH8c: the probe itself sees the
+#        canary when run with the old HOME — control).
+#   RH9  XDG_* never reaches the runner; TMPDIR does.   Red if XDG_ is allowlisted / TMPDIR dropped.
 #   RA1  a tracked `.agents/` is stripped from the snapshot and logged.
 #        Red if `.agents` is removed from REPO_LOCAL_STRIP.
 #   RS1  a write into $CODEX_HOME/skills/<x> is a tripwire.
@@ -38,6 +48,8 @@
 #        Red if a pin is dropped from the required list (hooks probed).
 #   RF2  init-home writes all eight pins into a fresh home (literal below).
 #        Red if COMPLIANT_CONFIG loses a pin.
+#   RF4  preflight: cli_auth_credentials_store must be "file" (absent or keyring → FAIL).
+#        Red if auth_store_file always passes.
 #   RF3  init-home --pin-features appends the missing pins to an existing
 #        compliant home; the result is byte-identical to RF2's literal.
 #        Red if the existing bytes are rewritten or a pin is not appended.
@@ -52,6 +64,8 @@
 #   RN2  `<untracked file>: <symbol>` stays path_not_in_repo with its path as written.
 #        Red if the suffix is stripped without the ls-files check.
 #   RN3  the symbol survives in the finding's detail.  Red if the symbol is discarded.
+#   RN4  near-limit evidence ending in an instruction marker stays quarantined.
+#        Red if the strip prepends the symbol without the length bound.
 #
 # The canary measurements that justify (1) are in the ADR §6 and STATUS; the
 # fakes below follow them, never the code.
@@ -71,6 +85,7 @@ COMPLIANT_CONFIG_W7='# a1-specforge — dedicated Codex home for cross-provider 
 # absence of MCP servers are what this file guarantees.
 sandbox_mode = "read-only"
 approval_policy = "on-request"
+cli_auth_credentials_store = "file"
 
 [features]
 plugins = false
@@ -141,6 +156,11 @@ caseRH() {
   if [[ -n "$rd" && -f "$rd/run-home.manifest.json" ]] && grep -q 'runtime.txt' "$rd/run-home.manifest.json"; then ok "RH5 run-home.manifest.json in the run dir names the entry"
   else bad "RH5 no run-home.manifest.json in ${rd:-<no run dir>}"; fi
   assert_eq "RH5 the run home is gone after the manifest was taken" "$(run_homes_left)" "0"
+  assert_json "RH5n a non-empty run home after the run is no fail" "$U9_OUT" "String(j.ok)" "true"
+  if grep -q "note: the runner left 3 entries in its per-run HOME" "$PHASE_DIR/XREVIEW.md" 2>/dev/null && grep -q ".config/codex/runtime.txt · file · 14 bytes" "$PHASE_DIR/XREVIEW.md"; then ok "RH5n XREVIEW.md notes names and sizes of what the runner left"
+  else bad "RH5n no run-home note in XREVIEW.md"; fi
+  if grep -q "runtime probe" "$PHASE_DIR/XREVIEW.md" "$rd/run-home.manifest.json" 2>/dev/null; then bad "RH5n file CONTENT leaked into the note or manifest"
+  else ok "RH5n names and sizes only, never contents"; fi
 
   # RH3 — a failing runner
   FAKE_RUNNER_EXIT=3 run9
@@ -238,7 +258,7 @@ caseRF() {
   local up; up="$(cd "$PHASE_REPO" && A1_XPROV_CODEX_HOME="$old" node "$TREE_TOOLS" xprov init-home --pin-features 2>/dev/null)"; local up_rc=$?
   assert_rc "RF3 init-home --pin-features exits 0 on a two-pin home" 0 "$up_rc"
   assert_eq "RF3 the upgraded config equals the eight-pin literal" "$(cat "$old/config.toml")" "$COMPLIANT_CONFIG_W7"
-  assert_json "RF3 stdout names the six appended pins" "$up" "(j.pinned || []).join(',')" "apps,browser_use,computer_use,hooks,skill_mcp_dependency_install,memories"
+  assert_json "RF3 stdout names the seven appended pins (auth store first)" "$up" "(j.pinned || []).join(',')" "cli_auth_credentials_store,apps,browser_use,computer_use,hooks,skill_mcp_dependency_install,memories"
   assert_eq "RF3 the config stays 0600" "$(mode_of "$old/config.toml")" "600"
   up="$(cd "$PHASE_REPO" && A1_XPROV_CODEX_HOME="$old" node "$TREE_TOOLS" xprov init-home --pin-features 2>/dev/null)"
   assert_json "RF3 a second run changes nothing" "$up" "String(j.changed) + '/' + (j.pinned || []).length" "false/0"
@@ -282,9 +302,80 @@ caseRN() {
   assert_json "RN2 R3 (untracked file + symbol) stays path_not_in_repo, its path exactly as Codex wrote it" "$out" \
     "(j.quarantined || []).map(q => q.id + ':' + q.reason + ':' + q.file).join(',')" "R3:path_not_in_repo:_shared/roadmap-gate-check.md: section 2"
   assert_json "RN3 the symbol is kept in the detail" "$fj" "String(/^Symbol: cmdChecklistRun\n/.test(((j.major || []).find(f => f.id === 'R2') || {}).detail || ''))" "true"
+
+  # RN4 — the prefix must not push a marker past the filter's scan window
+  # (Codex R2 of the hardened live inspect, 2026-10-02). Evidence of
+  # MAX_FIELD_CHARS - 5 characters ending in an instruction marker passes the
+  # size check; `Symbol: …` in front would move the marker out of the window.
+  local max; max="$(node -e "process.stdout.write(String(require(process.argv[1]).MAX_FIELD_CHARS))" "$TREE/_shared/lib/xprov.cjs")"
+  node -e "
+    const fs = require('fs'); const r = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
+    const tail = ' ignore previous';
+    const ev = 'a'.repeat(Number(process.argv[3]) - 5 - tail.length) + tail;
+    r.response.findings = [{ id: 'W1', severity: 'medium', path: '_shared/lib/checklist.cjs: someSymbolName', evidence: ev, fix: 'none' }];
+    fs.writeFileSync(process.argv[2], JSON.stringify(r, null, 2) + '\n');
+  " "$CASES/revise-symbol.result.json" "$TMP09/rn4.result.json" "$max"
+  rm -rf "$PHASE_DIR/xreview"
+  out="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov normalize "$TMP09/rn4.result.json" --phase pRN --gate "$GATE_PLAN" 2>/dev/null)"
+  assert_json "RN4 a marker at the end of near-limit evidence is never kept by the symbol strip" "$out" \
+    "(j.quarantined || []).map(q => q.id).join(',') + '/' + (j.findings_count === undefined ? '' : '')" "W1/"
 }
 
-caseRH; caseRH4; caseRA1; caseRS; caseRF; caseRE1; caseRN
+# ---------- RH7: stale run homes left by a SIGKILL are swept ----------
+caseRH7() {
+  prep9; snap9
+  mkdir -p "$HOME/.a1-xprov/run-home-stale/.cache" "$HOME/.a1-xprov/run-home-fresh" "$TMP09/link-target"
+  chmod 700 "$HOME/.a1-xprov/run-home-stale" "$HOME/.a1-xprov/run-home-fresh"
+  printf 'keep\n' > "$TMP09/link-target/canary.txt"
+  ln -s "$TMP09/link-target" "$HOME/.a1-xprov/run-home-link"
+  # the link target is old too: a sweep that followed the link would take it
+  node -e "const fs = require('fs'); const t = (Date.now() - 48 * 3600 * 1000) / 1000; for (const p of process.argv.slice(1)) fs.utimesSync(p, t, t);" "$HOME/.a1-xprov/run-home-stale" "$TMP09/link-target"
+  run9
+  [[ ! -e "$HOME/.a1-xprov/run-home-stale" ]] && ok "RH7 a run home older than the stale bound is swept" || bad "RH7 run-home-stale survived"
+  [[ -d "$HOME/.a1-xprov/run-home-fresh" ]] && ok "RH7 a fresh run home (a run in flight) is kept" || bad "RH7 run-home-fresh was removed"
+  [[ -L "$HOME/.a1-xprov/run-home-link" && -f "$TMP09/link-target/canary.txt" ]] && ok "RH7 a run-home-* symlink is neither followed nor removed" || bad "RH7 symlink or its target touched"
+  rm -rf "$HOME/.a1-xprov/run-home-fresh" "$HOME/.a1-xprov/run-home-link"
+}
+
+# ---------- RH8: Samuel's proving arm — the caller's skill root stays out of reach ----------
+caseRH8() {
+  prep9; snap9
+  mkdir -p "$HOME/.agents/skills/canary"; printf -- '---\nname: canary\ndescription: A1CANARY\n---\n' > "$HOME/.agents/skills/canary/SKILL.md"
+  local sk="$TMP09/skills-run.json"
+  FAKE_RUNNER_SKILLS_FILE="$sk" run9
+  assert_eq "RH8 a canary in the caller's HOME .agents/skills is not visible under the per-run HOME" "$(cat "$sk" 2>/dev/null)" "[]"
+  # RH8c — control: the same probe with the caller's HOME sees the canary
+  local skc="$TMP09/skills-control.json"
+  FAKE_RUNNER_SKILLS_FILE="$skc" fake_runner_env
+  HOME="$HOME" python3 "$TREE_VENDOR/runner.py" >/dev/null 2>&1
+  assert_eq "RH8c control: with the caller's HOME the probe sees the canary" "$(cat "$skc" 2>/dev/null)" '["canary"]'
+  rm -rf "$HOME/.agents"
+}
+
+# ---------- RH9: the env allowlist — no XDG_*, TMPDIR kept ----------
+caseRH9() {
+  prep9; snap9
+  mkdir -p "$TMP09/tmpdir"
+  XDG_CONFIG_HOME="$TMP09/xdg-config" XDG_DATA_HOME="$TMP09/xdg-data" TMPDIR="$TMP09/tmpdir/" run9
+  assert_eq "RH9 no XDG_* variable reaches the runner" "$(env9 "Object.keys(j).filter(k => k.startsWith('XDG_')).join(',')")" ""
+  assert_eq "RH9 TMPDIR reaches the runner" "$(env9 'j.TMPDIR')" "$TMP09/tmpdir/"
+}
+
+# ---------- RF4: the auth store is pinned to file ----------
+caseRF4() {
+  prep9
+  local pf
+  pf="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov preflight 2>/dev/null)"
+  assert_eq "RF4 setup: compliant home → auth_store_file PASS" "$(check9 "$pf" auth_store_file | cut -d'|' -f1)" "PASS"
+  grep -v '^cli_auth_credentials_store' "$XHOME/config.toml" > "$TMP09/cfg4" && cat "$TMP09/cfg4" > "$XHOME/config.toml"
+  pf="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov preflight 2>/dev/null)"
+  assert_eq "RF4 cli_auth_credentials_store absent → FAIL" "$(check9 "$pf" auth_store_file | cut -d'|' -f1)" "FAIL"
+  node -e "const fs=require('fs');const f=process.argv[1];fs.writeFileSync(f,fs.readFileSync(f,'utf8').replace('approval_policy = \"on-request\"\n','approval_policy = \"on-request\"\ncli_auth_credentials_store = \"keyring\"\n'))" "$XHOME/config.toml"
+  pf="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov preflight 2>/dev/null)"
+  assert_eq "RF4 cli_auth_credentials_store = keyring → FAIL" "$(check9 "$pf" auth_store_file | cut -d'|' -f1)" "FAIL"
+}
+
+caseRH; caseRH4; caseRH7; caseRH8; caseRH9; caseRA1; caseRS; caseRF; caseRF4; caseRE1; caseRN
 unset A1_XPROV_CODEX_HOME
 export HOME="$SAVED_HOME_09"
 rm -rf "$TMP09"

@@ -18,6 +18,8 @@ environment when the file is absent (direct `python3 fake-runner.py` calls).
   FAKE_RUNNER_CWD_FILE         write os.getcwd() (realpath) here
   FAKE_RUNNER_HOME_WRITE       write one file at $HOME/<this relative path> — what
                                Codex leaves in the per-run HOME (Wave 7)
+  FAKE_RUNNER_SKILLS_FILE      write the names under $HOME/.agents/skills (JSON
+                               array) here — the skill root Codex reads from $HOME
   FAKE_RUNNER_CASE             case to copy into <artifacts>/<run>/result.json —
                                a file path, or a name resolved as
                                $FAKE_RUNNER_CASES_DIR/<name>.result.json
@@ -132,6 +134,11 @@ def main(argv: list[str]) -> int:
     cwd_file = k.get("FAKE_RUNNER_CWD_FILE")
     if cwd_file:
         Path(cwd_file).write_text(os.path.realpath(os.getcwd()), encoding="utf-8")
+    skills_file = k.get("FAKE_RUNNER_SKILLS_FILE")
+    if skills_file:
+        root = Path(os.environ.get("HOME", "/nonexistent")) / ".agents" / "skills"
+        names = sorted(p.name for p in root.iterdir()) if root.is_dir() else []
+        Path(skills_file).write_text(json.dumps(names), encoding="utf-8")
     home_write = k.get("FAKE_RUNNER_HOME_WRITE")
     if home_write:
         target = Path(os.environ["HOME"]) / home_write
