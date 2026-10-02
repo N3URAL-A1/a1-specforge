@@ -69,16 +69,6 @@
       "by": "011-intent-queue-consumer",
       "at": "2026-09-28T23:39:02.910Z",
       "stage": "started"
-    },
-    {
-      "type": "code_scope",
-      "paths": [
-        ".claude-plugin/plugin.json",
-        ".claude-plugin/marketplace.json"
-      ],
-      "by": "release-1.8.0",
-      "at": "2026-10-02T06:33:21.776Z",
-      "stage": "started"
     }
   ]
 }
