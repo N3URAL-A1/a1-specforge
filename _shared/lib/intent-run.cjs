@@ -28,19 +28,21 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { LOCK_KEYS, readLock, lockPath, childDeps } = require('./intent-child.cjs');
+const { childDeps, writeChildContextLock, removeChildContextLock } = require('./intent-child.cjs');
 const { assertPrivateDir, openPrivate } = require('./intent-devices.cjs');
-const { INTENT_ACTIONS } = require('./status-constants.cjs');
-const { INTENT_ID_RE, INTENT_CHILD_ENV_NAMES, INTENT_CLAIMED_MAX_BYTES, ACTION_TABLE } = require('./intent-constants.cjs');
+const {
+  INTENT_ID_RE, INTENT_CHILD_ENV_NAMES, INTENT_CLAIMED_MAX_BYTES, ACTION_TABLE, INTENT_TIMEOUT_MS, INTENT_KILL_GRACE_MS, INTENT_MAX_RUNS_PER_HOUR,
+} = require('./intent-constants.cjs');
 const ARGV = require('./intent-argv.cjs');
-const { INTENT_PROJECT_SLUG_RE: SLUG_RE } = require('./intent-sandbox.cjs'); // not worktree-registry: it takes execFileSync at load
+const { createBudget, withinBudget, spawnChild, exitCodeOf, onStopSignals, killGroupSync } = require('./intent-spawn.cjs');
+const { runPreSteps, runPostSteps } = require('./intent-steps.cjs');
 
-const LOCK_MODE = 0o600;
 const RUNS_DIR = 'runs';
 const RUN_DIR_MODE = 0o700;
 const RUN_FILE_MODE = 0o600;
 const RUN_OUTPUTS = Object.freeze(['stdout.txt', 'stderr.txt']);
 const RUN_SNAPSHOT = 'snapshot.json'; // FR-030 before-snapshot, private like the outputs
+const RUN_MARKERS = Object.freeze(['child.json']); // Wave 7: the child's group (intent-spawn); a cancel request lies beside the dir (runs/<id>.cancel)
 const { O_WRONLY, O_CREAT, O_EXCL, O_NOFOLLOW } = fs.constants;
 
 const defaultDeps = () => ({
@@ -74,56 +76,9 @@ function assertHomeConsistent(deps = {}) {
   return passwd;
 }
 
-// ---------- child-context lock (FR-047) ----------
-
-// -> the frozen lock document in LOCK_KEYS order. Throws on a bad context.
-function lockDocument(ctx, d) {
-  const pid = ctx.pid === undefined ? d.pid : ctx.pid;
-  const checks = [
-    [Number.isSafeInteger(pid) && pid > 1, 'pid'], [INTENT_ID_RE.test(String(ctx.intent_id)), 'intent_id'],
-    [INTENT_ACTIONS.has(ctx.action), 'action'], [SLUG_RE.test(String(ctx.project)), 'project'],
-    [typeof ctx.vault_root === 'string' && path.isAbsolute(ctx.vault_root), 'vault_root'],
-    [typeof ctx.anchor === 'string' && path.isAbsolute(ctx.anchor), 'anchor'],
-  ];
-  const bad = checks.find(([ok]) => !ok);
-  if (bad) throw inputError(bad[1]);
-  const values = [pid, d.hostname(), new Date(d.now()).toISOString(), ctx.intent_id, ctx.action, ctx.project, ctx.vault_root, ctx.anchor];
-  return Object.freeze(Object.fromEntries(LOCK_KEYS.map((k, i) => [k, values[i]])));
-}
-
-// -> { ok: true, lock, file } | { ok: false, reason: 'executor_busy' } when a
-// lock (or a link in its place) already exists.
-function writeChildContextLock(ctx, deps = {}) {
-  const d = { ...defaultDeps(), ...deps };
-  const doc = lockDocument(ctx, d);
-  const file = path.join(assertPrivateDir({ homedir: d.passwdHome }), path.basename(lockPath(d)));
-  let fd;
-  try {
-    fd = fs.openSync(file, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, LOCK_MODE);
-  } catch (e) {
-    if (e && (e.code === 'EEXIST' || e.code === 'ELOOP')) return { ok: false, reason: 'executor_busy' };
-    throw e;
-  }
-  try {
-    fs.fchmodSync(fd, LOCK_MODE);
-    fs.writeSync(fd, `${JSON.stringify(doc)}\n`);
-    fs.fsyncSync(fd);
-  } finally {
-    fs.closeSync(fd);
-  }
-  return { ok: true, lock: doc, file };
-}
-
-// Removes the lock only while it still holds exactly `lock` (identity by
-// content, never by inode: Linux reuses inode numbers at once).
-function removeChildContextLock(lock, deps = {}) {
-  const d = { ...defaultDeps(), ...deps, execArgv: [] };
-  const now = readLock(d);
-  if (!now.present) return { removed: false, why: 'absent' };
-  if (now.doc === null || JSON.stringify(now.doc) !== JSON.stringify(lock)) return { removed: false, why: 'not_own_lock' };
-  fs.unlinkSync(lockPath(d));
-  return { removed: true };
-}
+// ---------- child-context lock (FR-047): intent-child.cjs ----------
+// writeChildContextLock / removeChildContextLock moved to intent-child.cjs
+// (Wave 7 review n2: the lock's writer next to its reader); re-exported below.
 
 // ---------- private run directory (FR-049) ----------
 
@@ -206,13 +161,13 @@ function openRunOutput(file, id, deps = {}) {
   }
 }
 
-// `run` removes the dir after `complete` succeeded; only the two outputs
-// and the snapshot.
+// `run` removes the dir after `complete` succeeded; only the two outputs,
+// the snapshot and the Wave 7 markers.
 function removeRunDir(id, deps = {}) {
   const d = { ...defaultDeps(), ...deps };
   if (!INTENT_ID_RE.test(String(id))) throw inputError('intent id');
   const dir = path.join(runsRoot(d), id);
-  for (const name of [...RUN_OUTPUTS, RUN_SNAPSHOT]) fs.rmSync(path.join(dir, name), { force: true });
+  for (const name of [...RUN_OUTPUTS, RUN_SNAPSHOT, ...RUN_MARKERS]) fs.rmSync(path.join(dir, name), { force: true });
   fs.rmdirSync(dir);
 }
 
@@ -225,41 +180,47 @@ function spawnEnvSecrets(env) {
     .map(([, v]) => v));
 }
 
-// ---------- run (FR-020 to FR-025, FR-043; spec 011 Wave 6 part B) ----------
+// ---------- run (FR-020 to FR-028, FR-043, FR-051; spec 011 Waves 6B and 7) ----------
 //
 // runIntent(path) -> Promise<{ exitCode, out, usage?, stderr? }>. Order
 // (FR-020): executor host -> claimed/ file (one O_NOFOLLOW read, at most
 // INTENT_CLAIMED_MAX_BYTES) -> open ledger row whose claimed_sha256 equals
 // those bytes (else `tampered`) -> claimed_by is this host, status claimed
-// and no started_at yet -> re-validation (signature, freshness, project) ->
-// executor.lock with the child context (FR-025, FR-047) -> project lock
-// (FR-024) -> intent worktree for a write action (FR-043) -> private run dir
-// (FR-049) -> seal, rewritten skill lists (FR-040, FR-044) -> argv and env ->
-// guard (FR-039) -> snapshot -> `running` rewrite + ledger row under one
-// ledger lock -> spawn -> await exit -> `complete` (FR-029) in-process.
-// A seal or guard failure spawns nothing, leaves started_at unset and
-// completes the intent `failed: sandbox_invalid`; a missing binary, an exec
-// failure of the spawn (the child's `error` event) or a failed capture of
-// its output completes it `failed: spawn_error`. No decision rests on the
+// and no started_at yet -> expiry (FR-028: claimed more than
+// INTENT_CLAIMED_MAX_AGE_MS ago -> failed: expired, never run) ->
+// re-validation (signature, project; freshness was judged at claim time) ->
+// executor.lock with the child context (FR-025, FR-047; always first, then
+// the project lock: one fixed order, no lock-order inversion) -> hourly cap
+// (FR-026: rows started in the trailing hour >= INTENT_MAX_RUNS_PER_HOUR ->
+// rate_limited, nothing moves) -> project lock (FR-024) -> intent worktree
+// for a write action (FR-043) -> private run dir (FR-049) -> seal,
+// rewritten skill lists (FR-040, FR-044) -> argv and env -> guard (FR-039)
+// -> the fix pre-step (FR-051) -> snapshot -> `running` rewrite + ledger row
+// under one ledger lock -> spawn inside the time budget (FR-027) -> post-
+// steps inside the same budget (FR-051) -> `complete` (FR-029) in-process.
+// A seal or guard failure spawns nothing, leaves started_at unset (so it
+// never counts toward the cap) and completes the intent `failed:
+// sandbox_invalid`; a failed pre-step likewise with parent_step_failed. A
+// missing binary, an exec failure of the spawn or a failed capture of its
+// output completes it `failed: spawn_error`. First failure wins: timeout,
+// cancelled (a cancel marker in the run dir, FR-028) or nonzero_exit of the
+// child is never overwritten by a post-step. No decision rests on the
 // unsigned a1-only keys before the claimed_sha256 check has passed.
 // Cleanup (part B review M1): every stop between the worktree creation and
 // the spawn that does not complete the intent (a ledger_busy, a tampered
-// file, an unsafe run dir, any thrown error) removes the run dir and rolls
-// the worktree back, so a retry of the same id starts clean and no entry
-// eats the cap. SIGTERM/SIGINT during the run end the child's process group
-// and release both locks (review m5); the intent stays claimed with
-// started_at set, which a later `run` refuses (already_started) until Wave 7
-// expires it.
+// file, an unsafe run dir, any thrown error, a stop signal) removes the run
+// dir and rolls the worktree back; a rollback that fails is named in the
+// detail and never replaces the original error. SIGTERM/SIGINT during the
+// run end the child's process group with the FR-027 sequence before both
+// locks are released.
 // Exit: 0 a child ran and `complete` succeeded (whatever the outcome); 1
-// nothing ran (refused, rejected, failed before or at the spawn, incl. every
-// spawn_error); 2 usage or operator error.
-// Wave 7 adds the timeout, the busy semantics of the global lock (stale
-// reclaim), the hourly cap and the executor steps.
+// nothing ran (refused, rejected, expired, failed before or at the spawn,
+// incl. every spawn_error); 2 usage or operator error.
 
 const RUN_EXIT = Object.freeze({ spawned: 0, notSpawned: 1, operator: 2 });
 const OUTPUT_FLAGS = O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW;
-const STOP_SIGNALS = Object.freeze(['SIGTERM', 'SIGINT']);
 const SEAL_REWRITE = 'row-lists'; // FR-044: B1 WIDENS, a seal without the rewrite is refused
+const HOUR_MS = 3600 * 1000;
 
 const runDeps = () => {
   const c = childDeps();
@@ -269,7 +230,11 @@ const runDeps = () => {
     user: () => os.userInfo().username, execPath: process.execPath, spawn: childProcess.spawn,
     buildArgv: ARGV.buildArgv, buildStageArgv: ARGV.buildStageArgv, buildEnv: ARGV.buildEnv,
     verifySeal: (o) => require('./intent-seal.cjs').verifySeal(o),
+    kill: (target, sig) => process.kill(target, sig), // FR-027 group signals (fixture seam)
+    // Executor steps (FR-051): undefined -> the defaults of intent-steps.cjs.
+    integrityCheck: undefined, xprovGate: undefined, writePostmortem: undefined,
     beforeMarkRunning: () => {}, // fixture seam (library calls only): between the snapshot and the running rewrite
+    beforeSpawn: () => {}, // fixture seam (library calls only): between the running rewrite and the spawn
   };
 };
 
@@ -289,9 +254,9 @@ function refuseRun(d, intentId, reason, detail) {
 }
 
 // FR-019 via `intent reject`, with the run's own log line naming the part.
-function rejectRun(d, loc, intentId, reason, detail) {
+function rejectRun(d, loc, intentId, reason, detail, cancelledBy = null) {
   logRun(d, intentId, 'rejected', reason, { detail });
-  const r = require('./intent-lifecycle.cjs').rejectIntent(loc.path, reason, { hostname: d.hostname, homedir: d.homedir, now: d.now, vault: d.vault });
+  const r = require('./intent-lifecycle.cjs').rejectIntent(loc.path, reason, { hostname: d.hostname, homedir: d.homedir, now: d.now, vault: d.vault }, cancelledBy);
   return runOut(r.exitCode === 0 ? RUN_EXIT.notSpawned : r.exitCode, { ...(r.out || {}), run: false, rejected: r.exitCode === 0, reason, ...(detail ? { detail } : {}) });
 }
 
@@ -320,6 +285,19 @@ function readClaimedFile(file) {
   }
 }
 
+// FR-028 cancel marker ~/.a1-intents/runs/<id>.cancel (intent-lifecycle
+// cancelRunning): the cancel intent's id, or null.
+const cancelPath = (id, d) => path.join(d.homedir(), '.a1-intents', RUNS_DIR, `${id}.cancel`);
+function readCancel(id, d) {
+  try {
+    const text = fs.readFileSync(cancelPath(id, d), 'utf8').trim();
+    return INTENT_ID_RE.test(text) ? text : '';
+  } catch (_e) {
+    return null;
+  }
+}
+const dropCancel = (id, d) => fs.rmSync(cancelPath(id, d), { force: true });
+
 // null when the bytes are the ones recorded at claim time (FR-020).
 function tamperDetail(content, row) {
   if (row === null) return 'no_ledger_row';
@@ -328,8 +306,27 @@ function tamperDetail(content, row) {
   return sha256(content) === row.claimed_sha256 ? null : 'sha_mismatch';
 }
 
-// Host, file, ledger row, hash, claimed_by, not started, re-validation.
-// -> { ok: true, … } | { ok: false, result }.
+// FR-028 — never run (again): complete it failed: expired. A run dir left by
+// a run that stopped after its running rewrite is taken over: its known
+// files go first (review W7-M1); an unknown file keeps it refused.
+function expireRun(loc, stem, d) {
+  logRun(d, stem, 'failed', 'expired');
+  dropCancel(stem, d);
+  try {
+    removeRunDir(stem, { homedir: d.homedir });
+  } catch (e) {
+    if (!e || (e.code !== 'ENOENT' && e.code !== 'ENOTEMPTY')) throw e;
+  }
+  const dir = createRunDir(stem, { homedir: d.homedir });
+  if (!dir.ok) return runOut(RUN_EXIT.operator, null, { stderr: `intent run: ${dir.detail}` });
+  const ctx = Object.freeze({ loc, runDir: dir.dir, fm: { id: stem } });
+  ensureOutputs(dir.dir);
+  const r = completeRun(ctx, { exitCode: null, failureReason: 'expired' }, d);
+  return runOut(r.exitCode === 0 ? RUN_EXIT.notSpawned : r.exitCode, r.out ? { ...r.out, run: false } : null, r.usage ? { usage: r.usage } : {});
+}
+
+// Host, file, ledger row, hash, claimed_by, not started, expiry, re-validation.
+// -> { ok: true, value } | { ok: false, result }.
 function checkClaimed(filePath, d) {
   const L = require('./intent-lifecycle.cjs');
   const stem = stemOf(filePath);
@@ -347,19 +344,29 @@ function checkClaimed(filePath, d) {
   if (!parsed.ok || parsed.fm.id !== stem) return { ok: false, result: rejectRun(d, loc, stem, 'tampered', 'unparsable') };
   const { fm } = parsed;
   if (fm.claimed_by !== d.hostname) return { ok: false, result: refuseRun(d, stem, 'already_claimed', 'claimed_by_other_host') };
-  // Review m1 (Samuel): a run that crashed after its running rewrite never runs twice.
-  if (fm.status !== 'claimed' || (row.started_at !== null && row.started_at !== undefined)) {
-    return { ok: false, result: refuseRun(d, stem, 'already_claimed', 'already_started') };
-  }
+  // Review m1 (Samuel): a run that crashed after its running rewrite never
+  // runs twice; review W7-M1/n1: it still expires. Both are judged under the
+  // executor lock (runWithLocks), so a run in progress is never expired.
+  const started = fm.status !== 'claimed' || (row.started_at !== null && row.started_at !== undefined);
   const action = ACTION_TABLE[fm.action];
   if (!action || action.kind === 'queue-control') {
     return { ok: false, result: runOut(RUN_EXIT.operator, null, { usage: `intent run: ${fm.action} intents are not run; tick finishes them` }) };
   }
+  if (started) return { ok: true, value: Object.freeze({ loc, fm, row: action, started, claimedAt: row.claimed_at }) };
   const v = validateIntentFile(loc.path, {
-    readFile: () => content, maxBytes: INTENT_CLAIMED_MAX_BYTES, homedir: d.homedir, now: d.now, executorDevice: config.executor_device,
+    readFile: () => content, maxBytes: INTENT_CLAIMED_MAX_BYTES, homedir: d.homedir, now: d.now, executorDevice: config.executor_device, skipFreshness: true,
   });
   if (!v.valid) return { ok: false, result: rejectRun(d, loc, stem, v.reasons[0], v.detail || undefined) };
-  return { ok: true, value: Object.freeze({ loc, fm, row: action, content, projectReal: v.realpath, payloadSha256: v.payloadSha256 }) };
+  return { ok: true, value: Object.freeze({ loc, fm, row: action, content, projectReal: v.realpath, payloadSha256: v.payloadSha256, started, claimedAt: row.claimed_at }) };
+}
+
+// FR-026 — ledger rows whose started_at lies in the trailing hour, or in
+// the future (a clock set back must not reopen the cap; W7 security). Pure.
+function countRunsInWindow(rows, nowMs) {
+  return rows.filter((r) => {
+    const t = Date.parse(String(r && r.started_at));
+    return Number.isFinite(t) && nowMs - t < HOUR_MS;
+  }).length;
 }
 
 // First executable `name` on the parent PATH (absolute dirs only), or null.
@@ -494,60 +501,14 @@ function prepareSpawn(ctx, seal, d) {
   return { ok: true, cmd: bins.claude, argv: built.argv, env };
 }
 
-// Writes into a run-dir output; a failure is recorded, never thrown out of
-// an event handler (review m5).
-function capture(fd, state) {
-  return (b) => {
-    try {
-      fs.writeSync(fd, b);
-    } catch (e) {
-      state.outputError = state.outputError || (e && e.code) || 'write_failed';
-    }
-  };
-}
-
-// FR-021 — spawn, payload on stdin, outputs into the run dir; resolves on
-// close (or on the error event). `live.child` names the child for the stop
-// signals. -> { code, signal } | { error } (+ outputError).
-function spawnChild(ctx, sp, live, d) {
-  const fds = openRunOutputs(ctx.runDir);
-  const state = { outputError: null };
-  return new Promise((resolve) => {
-    let settled = false;
-    const done = (r) => {
-      if (settled) return;
-      settled = true;
-      live.child = null;
-      [fds.stdout, fds.stderr].forEach((fd) => fs.closeSync(fd));
-      resolve({ ...r, outputError: state.outputError });
-    };
-    let child;
-    try {
-      child = d.spawn(sp.cmd, [...sp.argv], { cwd: ctx.cwd, shell: false, detached: true, stdio: ['pipe', 'pipe', 'pipe'], env: { ...sp.env } });
-    } catch (e) {
-      done({ error: e });
-      return;
-    }
-    live.child = child;
-    child.on('error', (e) => done({ error: e }));
-    child.stdout.on('data', capture(fds.stdout, state));
-    child.stderr.on('data', capture(fds.stderr, state));
-    child.stdin.on('error', () => {}); // a child that never reads stdin closes it early (EPIPE)
-    child.stdin.end(String(ctx.fm.payload));
-    child.on('close', (code, signal) => done({ code, signal }));
-  });
-}
-
-const exitCodeOf = (r) => {
-  if (Number.isInteger(r.code)) return r.code;
-  const n = r.signal ? os.constants.signals[r.signal] : undefined;
-  return Number.isInteger(n) ? 128 + n : 1;
-};
-
 // Everything from the run dir to the running rewrite; any stop that does
-// not complete the intent rolls back. -> { ctx, sp, seal } | { result }.
-function prepareRun(ctx0, d) {
+// not complete the intent rolls back, and a rollback that fails is named in
+// the detail, never in place of the original error. live.rollback covers a
+// stop signal that arrives while this runs (review r1).
+// -> { ctx, sp, seal } | { result }.
+async function prepareRun(ctx0, live, d) {
   let ctx = ctx0;
+  live.rollback = () => rollback(ctx, d);
   try {
     const dir = createRunDir(ctx.fm.id, { homedir: d.homedir });
     if (!dir.ok) {
@@ -566,18 +527,83 @@ function prepareRun(ctx0, d) {
       sp = { ok: false, reason: 'sandbox_invalid', detail: `build: ${String(e && e.message).slice(0, 120)}` };
     }
     if (!sp.ok) return { result: failBeforeSpawn(ctx, sp, d) };
+    const pre = await runPreSteps(ctx, d, (detail, reason) => logRun(d, ctx.fm.id, 'step', null, { detail: reason ? `${detail} (${reason})` : detail }));
+    if (pre) return { result: failBeforeSpawn(ctx, { ...pre, argv: sp.argv }, d) };
     writeSnapshot(ctx, d);
-    d.beforeMarkRunning(ctx);
+    await d.beforeMarkRunning(ctx);
+    const cancelId = readCancel(ctx.fm.id, d); // review m2: a cancel before started_at rejects
+    if (cancelId !== null) {
+      rollback(ctx, d);
+      dropCancel(ctx.fm.id, d);
+      return { result: rejectRun(d, ctx.loc, ctx.fm.id, 'cancelled_by_user', 'cancelled_before_start', cancelId || null) };
+    }
     const tampered = markRunning(ctx, d);
     if (tampered) {
       rollback(ctx, d);
       return { result: rejectRun(d, ctx.loc, ctx.fm.id, 'tampered', tampered) };
     }
+    // Review W7-M1: from here on a stop signal completes the intent.
+    live.complete = () => completeRun(ctx, { exitCode: null, failureReason: 'cancelled' }, d);
     return { ctx, sp, seal };
   } catch (e) {
-    rollback(ctx, d);
-    throw e;
+    throw withRollback(e, ctx, d);
+  } finally {
+    live.rollback = null;
   }
+}
+
+// Review NIT: the original error stays; a rollback failure becomes its detail.
+function withRollback(e, ctx, d) {
+  try {
+    rollback(ctx, d);
+  } catch (re) {
+    if (e && typeof e === 'object') e.rollbackDetail = `rollback failed: ${String(re && (re.code || re.message)).slice(0, 80)}`;
+  }
+  return e;
+}
+
+// The child's own failure reason (FR-027, FR-028, FR-021), or null.
+function childFailureOf(r, ctx, d) {
+  if (r.timedOut) return 'timeout';
+  if (readCancel(ctx.fm.id, d) !== null) return 'cancelled';
+  if (r.error || r.outputError) return 'spawn_error';
+  return exitCodeOf(r) === 0 ? null : 'nonzero_exit';
+}
+
+// Review m1, S-MAJOR-1: a pending timeout kill ends first, then every
+// tracked group still alive gets the sequence; nothing of them outlives run.
+async function reapGroups(ctx, budget, d) {
+  await budget.settle();
+  budget.reapSync((pgid) => logRun(d, ctx.fm.id, 'step', null, { detail: `leftover group -${pgid} killed` }));
+}
+
+// Spawn inside the budget, then the post-steps inside the same budget;
+// first failure wins (FR-051). -> { failure, exitCode, r }.
+async function spawnAndSteps(ctx, sp, live, budget, d) {
+  // review m2: a cancel that came between the marker check and the spawn ends the child at once
+  const afterSpawn = (pid) => { if (readCancel(ctx.fm.id, d) !== null) killGroupSync(pid, INTENT_KILL_GRACE_MS, { kill: d.kill }); };
+  const r = await spawnChild(ctx, sp, live, budget, d, afterSpawn);
+  await reapGroups(ctx, budget, d);
+  if (r.outputError) logRun(d, ctx.fm.id, 'failed', 'spawn_error', { detail: `output_capture_failed: ${r.outputError}` });
+  const childFailure = childFailureOf(r, ctx, d);
+  const exitCode = r.error ? null : exitCodeOf(r);
+  if (childFailure === 'timeout' || childFailure === 'cancelled' || r.error) return { failure: childFailure, exitCode, r };
+  const log = (detail, reason) => logRun(d, ctx.fm.id, 'step', null, { detail: reason ? `${detail} (${reason})` : detail });
+  const post = await withinBudget(budget, runPostSteps(ctx, childFailure, budget, d, log));
+  if (post.timedOut) return { failure: childFailure || 'timeout', exitCode, r };
+  if (post.value && !childFailure) logRun(d, ctx.fm.id, 'failed', 'parent_step_failed', { detail: post.value.detail });
+  return { failure: childFailure || (post.value ? post.value.reason : null), exitCode, r };
+}
+
+// S-MAJOR-2 — a cancel marker found after the running rewrite but before
+// the spawn: completed failed: cancelled, nothing spawned.
+function cancelBeforeSpawn(ctx, sp, live, d) {
+  live.complete = null;
+  logRun(d, ctx.fm.id, 'failed', 'cancelled', { detail: 'cancelled_before_spawn' });
+  ensureOutputs(ctx.runDir);
+  const r = completeRun(ctx, { exitCode: null, failureReason: 'cancelled', env: sp.env }, d);
+  dropCancel(ctx.fm.id, d);
+  return runOut(r.exitCode === 0 ? RUN_EXIT.notSpawned : r.exitCode, r.out ? { ...r.out, run: false } : null, r.usage ? { usage: r.usage } : {});
 }
 
 // Everything under the two locks.
@@ -590,67 +616,67 @@ async function runLocked(ctx0, live, d) {
     if (!wt.ok) return rejectRun(d, ctx.loc, ctx.fm.id, wt.reason, wt.detail);
     ctx = Object.freeze({ ...ctx, createdWorktree: true });
   }
-  const p = prepareRun(ctx, d);
+  const p = await prepareRun(ctx, live, d);
   if (p.result) return p.result;
+  await d.beforeSpawn(p.ctx);
+  if (readCancel(p.ctx.fm.id, d) !== null) return cancelBeforeSpawn(p.ctx, p.sp, live, d); // S-MAJOR-2
   const { INTENT_CHILD_SYSTEM_PROMPT_VERSION } = require('./intent-constants.cjs');
   logRun(d, p.ctx.fm.id, 'spawned', null, {
     argv: [p.sp.cmd, ...p.sp.argv], envNames: Object.keys(p.sp.env), payloadSha256: p.ctx.payloadSha256,
     promptVersion: INTENT_CHILD_SYSTEM_PROMPT_VERSION, sealRootSha256: p.seal.rootSha,
   });
-  const r = await spawnChild(p.ctx, p.sp, live, d);
-  if (r.outputError) logRun(d, p.ctx.fm.id, 'failed', 'spawn_error', { detail: `output_capture_failed: ${r.outputError}` });
-  const failed = r.error || r.outputError;
-  const result = completeRun(p.ctx, failed ? { exitCode: null, failureReason: 'spawn_error', env: p.sp.env } : { exitCode: exitCodeOf(r), env: p.sp.env }, d);
-  const code = r.error ? RUN_EXIT.notSpawned : RUN_EXIT.spawned; // review m2: an exec failure ran nothing, like a missing binary
-  return runOut(result.exitCode === 0 ? code : result.exitCode, result.out ? { ...result.out, run: !r.error } : null,
+  const budget = createBudget({
+    timeoutMs: INTENT_TIMEOUT_MS, graceMs: INTENT_KILL_GRACE_MS, now: d.now, kill: d.kill,
+    onSignal: (sig, target) => logRun(d, p.ctx.fm.id, 'timeout', null, { detail: `kill ${sig} ${target}` }),
+  });
+  live.budget = budget; // S-MAJOR-4: the stop signals reap the post-steps' groups too
+  const o = await spawnAndSteps(p.ctx, p.sp, live, budget, d);
+  await reapGroups(p.ctx, budget, d); // S-MAJOR-1: every path, before complete and release
+  live.complete = null; // the normal path completes below
+  dropCancel(p.ctx.fm.id, d);
+  const opts = o.failure === null || (o.failure === 'nonzero_exit' && o.exitCode !== null)
+    ? { exitCode: o.exitCode, env: p.sp.env } : { exitCode: o.exitCode, failureReason: o.failure, env: p.sp.env };
+  const result = completeRun(p.ctx, opts, d);
+  const code = o.r.error ? RUN_EXIT.notSpawned : RUN_EXIT.spawned; // review m2: an exec failure ran nothing, like a missing binary
+  return runOut(result.exitCode === 0 ? code : result.exitCode, result.out ? { ...result.out, run: !o.r.error } : null,
     result.usage ? { usage: result.usage } : {});
 }
 
-// Review m5 — SIGTERM/SIGINT while `run` holds its locks: the child's
-// process group gets SIGTERM, both locks go, the process exits 128+signo.
-function onStopSignals(release, live) {
-  const handlers = STOP_SIGNALS.map((sig) => {
-    const h = () => {
-      if (live.child && live.child.pid) {
-        try {
-          process.kill(-live.child.pid, 'SIGTERM');
-        } catch (_e) {
-          // the group is gone already
-        }
-      }
-      release();
-      process.exit(128 + os.constants.signals[sig]);
-    };
-    process.once(sig, h);
-    return [sig, h];
-  });
-  return () => handlers.forEach(([sig, h]) => process.removeListener(sig, h));
-}
-
-// Executor lock (child context) -> project lock -> runLocked; both released
-// on every path, the executor lock also on process exit and on the stop
-// signals (FR-025, FR-047).
+// Executor lock (child context) -> hourly cap -> project lock -> runLocked;
+// both locks released on every path, also on process exit and on the stop
+// signals, which first end the child's group (FR-025, FR-027, FR-047).
 async function runWithLocks(pre, d) {
   const { INTENT_WRITE_ACTIONS } = require('./intent-constants.cjs');
   const { expectedIntentWorktree } = require('./intent-worktree.cjs');
   const write = INTENT_WRITE_ACTIONS.includes(pre.fm.action);
-  const cwd = write ? expectedIntentWorktree(pre.fm.project, pre.fm.id, { passwdHome: d.passwdHome }) : pre.projectReal;
+  // A started intent skipped the re-validation (it is only expired or
+  // refused here), so it has no projectReal: its lock names the plain path.
+  const project = pre.projectReal || path.join(d.realpath(d.passwdHome()), 'claude-projects', pre.fm.project);
+  const cwd = write ? expectedIntentWorktree(pre.fm.project, pre.fm.id, { passwdHome: d.passwdHome }) : project;
   const ctx = Object.freeze({ ...pre, write, cwd });
   const exec = writeChildContextLock({
     intent_id: ctx.fm.id, action: ctx.fm.action, project: ctx.fm.project, vault_root: d.realpath(d.vault), anchor: ctx.cwd,
   }, { pid: d.pid, hostname: () => d.hostname, now: d.now, passwdHome: d.passwdHome });
   if (!exec.ok) return refuseRun(d, ctx.fm.id, 'executor_busy');
-  const { acquireProjectLock, releaseOwnedLock } = require('./intent-ledger.cjs');
+  const { acquireProjectLock, releaseOwnedLock, loadLedger } = require('./intent-ledger.cjs');
   const locks = { project: null };
   const release = () => {
     if (locks.project) releaseOwnedLock(locks.project);
     locks.project = null;
     removeChildContextLock(exec.lock, { passwdHome: d.passwdHome, hostname: () => d.hostname });
   };
-  const live = { child: null };
-  const unhook = onStopSignals(release, live);
+  // Deliberate shared state (review n3): the stop-signal handler reads what
+  // the run has reached (its child, a rollback before the running rewrite, a
+  // completion after it).
+  const live = { child: null, rollback: null, complete: null, budget: null };
+  const unhook = onStopSignals(release, live, INTENT_KILL_GRACE_MS, d.kill);
   process.once('exit', release);
   try {
+    const L = require('./intent-lifecycle.cjs');
+    if (L.isExpired(ctx.claimedAt, d.now())) return expireRun(ctx.loc, ctx.fm.id, d); // review n1: under the lock
+    if (ctx.started) return refuseRun(d, ctx.fm.id, 'already_claimed', 'already_started');
+    const started = countRunsInWindow(loadLedger({ homedir: d.homedir }).rows, d.now());
+    if (started >= INTENT_MAX_RUNS_PER_HOUR) return refuseRun(d, ctx.fm.id, 'rate_limited', `${started} runs in the last hour`);
     locks.project = acquireProjectLock(ctx.fm.project, ctx.fm.id, { homedir: d.homedir, hostname: d.hostname, now: d.now, pid: d.pid });
     if (locks.project === null) return refuseRun(d, ctx.fm.id, 'project_busy');
     return await runLocked(ctx, live, d);
@@ -672,8 +698,10 @@ async function runIntent(filePath, deps = {}) {
     if (!pre.ok) return pre.result;
     return await runWithLocks(pre.value, d);
   } catch (e) {
-    if (e && e.code === 'A1_LEDGER_BUSY') return refuseRun(d, stem, 'ledger_busy');
-    if (e && e.code === 'A1_LEDGER_UNREADABLE') return refuseRun(d, stem, 'ledger_unreadable');
+    const code = e && e.code;
+    if (code === 'A1_LEDGER_BUSY' || code === 'A1_LEDGER_UNREADABLE') {
+      return refuseRun(d, stem, code === 'A1_LEDGER_BUSY' ? 'ledger_busy' : 'ledger_unreadable', e.rollbackDetail);
+    }
     return L.decideError(d, 'run', stem, e);
   }
 }
@@ -697,6 +725,7 @@ module.exports = {
   guardStageArgv: ARGV.guardStageArgv,
   runIntent,
   cmdIntentRun,
+  countRunsInWindow, // FR-026, pure
   writeChildContextLock,
   removeChildContextLock,
   createRunDir,

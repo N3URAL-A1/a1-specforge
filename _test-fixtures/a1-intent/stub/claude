@@ -17,11 +17,17 @@
 #   json0 is_error true with exit 0 — NOT measured (P12 had exit 1); only for
 #         the defensive is_error mapping of complete
 #   slow  sleep 1 (a case looks at the intent meanwhile), then as ok
+#   bg    as ok, but leaves `sleep 30` running in its process group (pid in bg.pid)
 #   script  run $HOME/.a1-intents/tmp/stub-script with bash (output appended
 #         to script.out), then as ok — the child's own commands (Wave 6B)
 #   fail  exit 3
 #   leak  print an sk-ant token and a PEM private key block, exit 0
+#   script-fail  as script, then exit 3
 #   hang  ignore SIGTERM, fork a grandchild (pid in grandchild.pid), sleep 600
+#         UNMEASURED as a model of the real claude: it assumes the child's
+#         process tree stays in the child's process group (probe-7.sh,
+#         P7-GROUPKILL, asks Robert to measure it); the kill sequence it
+#         exercises is a1's own (FR-027)
 # The mode is a FILE under HOME, not an env var: the spawn contract's env
 # allowlist strips every fixture variable, so an env-configured stub would
 # silently run in default mode (testing.md class 1). spawn-error is produced by
@@ -65,6 +71,13 @@ case "$mode" in
     result_json true "stub claude: the skill stopped with an error"
     exit 0
     ;;
+  bg)
+    # leaves a background process in its own process group, stdio detached
+    sleep 30 >/dev/null 2>&1 </dev/null &
+    echo "$!" >"$dir/bg.pid"
+    result_json false "stub claude: done"
+    exit 0
+    ;;
   slow)
     sleep 1
     result_json false "stub claude: done"
@@ -76,6 +89,11 @@ case "$mode" in
     exit 0
     ;;
   fail)
+    echo "stub claude: failing on purpose" >&2
+    exit 3
+    ;;
+  script-fail)
+    bash "$HOME/.a1-intents/tmp/stub-script" >>"$dir/script.out" 2>&1
     echo "stub claude: failing on purpose" >&2
     exit 3
     ;;

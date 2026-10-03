@@ -373,6 +373,97 @@ function refuseExit(r) {
   process.exit(INTENT_CHILD_EXIT_CODE);
 }
 
+// ---------- writing the child-context lock (FR-047, `intent run`) ----------
+const LOCK_MODE = 0o600;
+// The writer's own deps (the process that holds the lock, never a child).
+const writerDeps = () => ({ ...defaultDeps(), pid: process.pid, now: Date.now, homedir: os.homedir });
+
+// Moved here from intent-run.cjs (Wave 7 review n2). Every dependency is
+// loaded lazily: this module runs first in every a1-tools child process.
+
+// -> the frozen lock document in LOCK_KEYS order. Throws on a bad context.
+function lockDocument(ctx, d) {
+  const { INTENT_ACTIONS } = require('./status-constants.cjs');
+  const { INTENT_ID_RE } = require('./intent-constants.cjs');
+  const { INTENT_PROJECT_SLUG_RE: SLUG_RE } = require('./intent-sandbox.cjs');
+  const pid = ctx.pid === undefined ? d.pid : ctx.pid;
+  const checks = [
+    [Number.isSafeInteger(pid) && pid > 1, 'pid'], [INTENT_ID_RE.test(String(ctx.intent_id)), 'intent_id'],
+    [INTENT_ACTIONS.has(ctx.action), 'action'], [SLUG_RE.test(String(ctx.project)), 'project'],
+    [typeof ctx.vault_root === 'string' && path.isAbsolute(ctx.vault_root), 'vault_root'],
+    [typeof ctx.anchor === 'string' && path.isAbsolute(ctx.anchor), 'anchor'],
+  ];
+  const bad = checks.find(([ok]) => !ok);
+  if (bad) throw Object.assign(new Error(`intent run: invalid ${bad[1]}`), { code: 'A1_INPUT' });
+  const values = [pid, d.hostname(), new Date(d.now()).toISOString(), ctx.intent_id, ctx.action, ctx.project, ctx.vault_root, ctx.anchor];
+  return Object.freeze(Object.fromEntries(LOCK_KEYS.map((k, i) => [k, values[i]])));
+}
+
+// -> { ok: true, lock, file } | { ok: false, reason: 'executor_busy' } when a
+// live lock (or a link in its place) exists. Wave 7 (FR-025): a lock left by
+// a dead run on this host, or an unparsable one older than the stale bound
+// (a crash between create and write), is reclaimed through the ledger lock's
+// hard-link takeover; a surviving child of that run is killed through its
+// process group first (runs/<intent_id>/child.json).
+function writeChildContextLock(ctx, deps = {}) {
+  const { assertPrivateDir } = require('./intent-devices.cjs');
+  const d = { ...writerDeps(), ...deps };
+  const doc = lockDocument(ctx, d);
+  const file = path.join(assertPrivateDir({ homedir: d.passwdHome }), path.basename(lockPath(d)));
+  let fd = createLockFile(file);
+  if (fd === null && reclaimExecutorLock(file, d)) fd = createLockFile(file);
+  if (fd === null) return { ok: false, reason: 'executor_busy' };
+  try {
+    fs.fchmodSync(fd, LOCK_MODE);
+    fs.writeSync(fd, `${JSON.stringify(doc)}\n`);
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+  return { ok: true, lock: doc, file };
+}
+
+// -> the fd of a new lock file, or null when the path is taken (or a link).
+function createLockFile(file) {
+  try {
+    return fs.openSync(file, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | O_NOFOLLOW, LOCK_MODE);
+  } catch (e) {
+    if (e && (e.code === 'EEXIST' || e.code === 'ELOOP')) return null;
+    throw e;
+  }
+}
+
+// The dead run's child group goes first, then the lock (same judgement as
+// the ledger lock: never a live or a foreign-host holder).
+function reclaimExecutorLock(file, d) {
+  const { reclaimStaleLock } = require('./intent-ledger.cjs');
+  const { killGroupSync, recordedGroup } = require('./intent-spawn.cjs');
+  const { INTENT_KILL_GRACE_MS } = require('./intent-constants.cjs');
+  const held = readLock({ ...defaultDeps(), passwdHome: d.passwdHome, hostname: d.hostname });
+  const doc = held.present ? held.doc : null;
+  const { holderAlive } = require('./intent-spawn.cjs');
+  // Review M2: dead = gone, from before the boot, or the pid was reused; the
+  // child group is killed only when recordedGroup confirms its identity.
+  const deadHere = doc && doc.hostname === d.hostname() && Number.isSafeInteger(doc.pid) && !holderAlive(doc.pid, Date.parse(String(doc.createdAt)));
+  const preBoot = doc && require('./intent-spawn.cjs').beforeBoot(Date.parse(String(doc.createdAt)));
+  if (deadHere && !preBoot && /^[0-9a-f-]{36}$/.test(String(doc.intent_id))) { // a pre-boot lock's pgid is never signalled
+    const pgid = recordedGroup(path.join(d.homedir(), INTENTS_DIR, 'runs', doc.intent_id));
+    if (pgid !== null) killGroupSync(pgid, INTENT_KILL_GRACE_MS);
+  }
+  return reclaimStaleLock(file, d.hostname(), d.now());
+}
+
+// Removes the lock only while it still holds exactly `lock` (identity by
+// content, never by inode: Linux reuses inode numbers at once).
+function removeChildContextLock(lock, deps = {}) {
+  const d = { ...writerDeps(), ...deps, execArgv: [] };
+  const now = readLock(d);
+  if (!now.present) return { removed: false, why: 'absent' };
+  if (now.doc === null || JSON.stringify(now.doc) !== JSON.stringify(lock)) return { removed: false, why: 'not_own_lock' };
+  fs.unlinkSync(lockPath(d));
+  return { removed: true };
+}
+
 // One decision per process: child mode cannot change while a1-tools runs.
 let processContext = null;
 
@@ -437,6 +528,8 @@ function guardChildPath(p) {
 
 module.exports = {
   LOCK_KEYS,
+  writeChildContextLock,
+  removeChildContextLock,
   isChildMode,
   isAncestor,
   resolvePhysical,

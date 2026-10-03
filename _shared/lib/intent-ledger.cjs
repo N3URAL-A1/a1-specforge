@@ -169,7 +169,11 @@ function reclaimable(file, hostname, now) {
   if (info === null || info.raw === null) return null;
   const h = info.holder;
   if (h === null || typeof h !== 'object') return now - info.st.mtimeMs > LOCK_UNPARSABLE_STALE_MS ? info : null;
-  const dead = h.hostname === hostname && Number.isSafeInteger(h.pid) && h.pid > 0 && isPidDead(h.pid);
+  // Wave 7 review M2: a live pid alone is no live holder (a reboot or a
+  // reused pid); holderAlive also checks the lock's time against the boot and
+  // the process start (intent-spawn.cjs).
+  const since = Date.parse(String(h.acquired_at || h.createdAt));
+  const dead = h.hostname === hostname && Number.isSafeInteger(h.pid) && h.pid > 0 && !require('./intent-spawn.cjs').holderAlive(h.pid, since);
   return dead ? info : null;
 }
 
@@ -280,7 +284,16 @@ function assertPrivateDirAtLocks(dir, d) {
   if (fd !== null) fs.closeSync(fd);
 }
 
+// Wave 7 (FR-025) — the executor.lock of a dead run: the same judgement
+// (dead holder on this host, or unparsable and older than the stale bound)
+// and the same hard-link takeover as the ledger lock. -> true when removed.
+function reclaimStaleLock(file, hostname, now) {
+  const judged = reclaimable(file, hostname, now);
+  return judged ? reclaim(file, judged) : false;
+}
+
 module.exports = {
+  reclaimStaleLock,
   ledgerPath,
   loadLedger,
   hasReplay,

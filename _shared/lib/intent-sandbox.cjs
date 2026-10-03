@@ -85,9 +85,14 @@ const INTENT_CHILD_OPTIONAL_ENV_NAMES = Object.freeze(['A1_HOST_ID', 'A1_VAULT_W
 // `Bash(node <T> *)` (RESEARCH.md rounds 3–4, B6: `nohup node <T> …` and
 // `nice node <T> …` ran; with these four rules both were denied and a plain
 // `node <T> …` still ran; `timeout` was not installed on the owner's Mac and
-// stays for hosts that have it). One --disallowedTools element each, both
-// rows; the argv guard requires each exactly once (wrapper_deny_missing).
-const INTENT_WRAPPER_DENY = Object.freeze(['Bash(nohup *)', 'Bash(nice *)', 'Bash(timeout *)', 'Bash(time *)']);
+// stays for hosts that have it). `stdbuf` measured the same way by the owner
+// (probe-6b v2, P6B-STDBUF: RUNS — `stdbuf -o0 node <T> git status` was
+// auto-allowed). gstdbuf: unmeasured, precautionary (GNU coreutils name). One
+// --disallowedTools element each, both rows; the argv guard requires each
+// exactly once (wrapper_deny_missing).
+const INTENT_WRAPPER_DENY = Object.freeze([
+  'Bash(nohup *)', 'Bash(nice *)', 'Bash(timeout *)', 'Bash(time *)', 'Bash(stdbuf *)', 'Bash(gstdbuf *)',
+]);
 
 // FR-043 — the actions whose child runs in its own intent worktree (row W);
 // `progress` and `stage` run in the project realpath.

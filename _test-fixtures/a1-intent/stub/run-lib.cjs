@@ -35,7 +35,7 @@ function mutateArgv(a) {
     case 'add': return [...argv, ...arg.split('|')];
     case 'set': { const [flag, value] = arg.split('='); argv[at(flag) + 1] = value.replace('@T', argv[at('--plugin-dir') + 1] + '/_shared/a1-tools.cjs'); return argv; }
     case 'allow': argv[at('--allowedTools') + 1] = `${argv[at('--allowedTools') + 1]},${arg.replace('@T', argv[at('--plugin-dir') + 1] + '/_shared/a1-tools.cjs')}`; return argv;
-    case 'denydrop': argv.splice(argv.indexOf(arg), 1); return argv;
+    case 'denydrop': { const i = argv.indexOf(arg); if (i < 0) throw new Error(`run-lib: ${arg} is not in the argv`); argv.splice(i, 1); return argv; }
     case 'tdouble': {
       const t = `${argv[at('--plugin-dir') + 1]}/_shared/a1-tools.cjs`;
       const d = t.replace('/_shared/', '//_shared/');

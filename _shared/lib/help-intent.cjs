@@ -78,13 +78,15 @@ const INTENT_HELP = `  a1-tools intent <sub> [flags]
                   (corrupt ledger, fail closed), ledger_busy or
                   not_executor_host. Exit 2 when devices.json or
                   executor.json is corrupt (operator error, nothing moved).
-  a1-tools intent reject <path> --reason <code>
+  a1-tools intent reject <path> --reason <code> [--cancelled-by <uuid>]
                   (wave 4, executor host only) queued/ or claimed/ ->
                   rejected/<filename> with status: rejected, rejected_reason,
                   rejected_by, rejected_at; a file that does not parse gets
                   that header prepended. Only catalog codes (else exit 2,
-                  nothing moved). validate, claim and reject each append one
-                  line to ~/.a1-intents/log.jsonl (never the payload).
+                  nothing moved). --cancelled-by <cancel id> (wave 7) only
+                  with cancelled_by_user: adds cancelled_by_intent. validate,
+                  claim and reject each append one line to
+                  ~/.a1-intents/log.jsonl (never the payload).
   a1-tools intent complete <path> --exit-code <n> --stdout <file> --stderr <file>
                   [--snapshot <file>] [--failure-reason <code>]
                   (wave 5, executor host only) --stdout and --stderr must be
@@ -110,9 +112,14 @@ const INTENT_HELP = `  a1-tools intent <sub> [flags]
                   their own worktree ~/claude-projects/a1-worktrees/
                   <project>-intent-<id> on branch intent/<id>, kept for
                   review (at most 3 open per project: intent_worktree_limit).
-                  Global and per-project lock; exit 0 spawned, 1 nothing
-                  spawned, 2 usage. Wave 7 adds the hourly cap and the hard
-                  timeout with process-group kill.
+                  Global and per-project lock (an orphaned lock of a dead
+                  run is reclaimed), at most 6 starts per hour
+                  (rate_limited), hard timeout with SIGTERM -> grace ->
+                  SIGKILL to the child's process group; a claimed intent
+                  older than 6 h ends failed: expired. fix: the integrity
+                  check runs before the child, the postmortem after it (in
+                  the run process). exit 0 spawned, 1 nothing spawned, 2
+                  usage.
   a1-tools intent tick
                   (wave 8, executor host only) one executor pass: reject or
                   claim every queued/ intent oldest-first, apply approve and

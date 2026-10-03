@@ -412,7 +412,11 @@ const AUTH_SKIPPED = Object.freeze({ reason: null, detail: null });
 function authenticate(fm, d) {
   const devices = d.loadDevices({ homedir: d.homedir });
   const lookupSecret = (id) => lookupDevice(devices, id);
-  const limits = { freshnessMs: INTENT_FRESHNESS_MS, skewMs: INTENT_CLOCK_SKEW_MS };
+  // Wave 7: `run` re-validates a claimed intent that may wait for hours
+  // (rate_limited, project_busy; FR-026, FR-028): freshness was judged at
+  // claim time, the ledger row binds the bytes since, and expiry
+  // (INTENT_CLAIMED_MAX_AGE_MS) replaces it. The signature is still checked.
+  const limits = d.skipFreshness ? { freshnessMs: Infinity, skewMs: Infinity } : { freshnessMs: INTENT_FRESHNESS_MS, skewMs: INTENT_CLOCK_SKEW_MS };
   return checkAuthenticity(fm, lookupSecret, d.now(), limits, { timingSafeEqual: d.timingSafeEqual });
 }
 

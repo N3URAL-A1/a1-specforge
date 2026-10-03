@@ -281,14 +281,20 @@ function claimIntent(filePath, deps = {}) {
     if (config === null) return refuseClaim(d, name, ['not_executor_host']);
     const loc = locateLifecycleFile(filePath, ['queued'], d.vault);
     if (!loc.ok) return Object.freeze({ exitCode: EXIT_OPERATOR, out: null, usage: `intent claim: ${loc.why}` });
+    if (loc.missing && !fs.existsSync(path.join(loc.root, 'claimed', name))) {
+      // FR-028: a queued file that vanished is tolerated by not seeing it
+      // (never a cancellation path); another claimer's win stays already_claimed.
+      return decide(d, 'claim', EXIT_OK, { claimed: false, vanished: true }, { intentId: name, outcome: 'vanished', reason: null });
+    }
     return withLedgerLock(() => claimLocked(loc, config, d), { homedir: d.homedir, hostname: d.hostname, now: d.now });
   } catch (e) {
     return decideError(d, 'claim', name, e);
   }
 }
 
-function rejectPatch(reason, d) {
-  return { status: 'rejected', rejected_reason: reason, rejected_by: d.hostname, rejected_at: isoNow(d) };
+function rejectPatch(reason, d, cancelledBy) {
+  const cancel = cancelledBy ? { cancelled_by_intent: cancelledBy } : {};
+  return { status: 'rejected', rejected_reason: reason, rejected_by: d.hostname, rejected_at: isoNow(d), ...cancel };
 }
 
 // Reads through the validator's reader, so an oversized or non-regular file
@@ -299,13 +305,13 @@ function readForReject(file) {
   return parsed.ok ? { content: read.content, parsed } : null;
 }
 
-function rejectMoved(loc, reason, d) {
+function rejectMoved(loc, reason, d, cancelledBy) {
   const name = path.basename(loc.path);
   const read = readForReject(loc.path);
   const idOk = read && typeof read.parsed.fm.id === 'string' && INTENT_ID_RE.test(read.parsed.fm.id);
   const intentId = idOk ? read.parsed.fm.id : name;
   const dest = freeRejectedPath(loc.root, name, d);
-  const patch = rejectPatch(reason, d);
+  const patch = rejectPatch(reason, d, cancelledBy);
   try {
     d.rename(loc.path, dest);
   } catch (e) {
@@ -320,10 +326,14 @@ function rejectMoved(loc, reason, d) {
 }
 
 // FR-019 -> { exitCode, out, usage?, stderr? }. `reason` is checked first.
-function rejectIntent(filePath, reason, deps = {}) {
+// FR-028: `cancelledBy` (the cancel intent's id) only with cancelled_by_user.
+function rejectIntent(filePath, reason, deps = {}, cancelledBy = null) {
   const d = { ...defaultDeps(), ...deps };
   if (!INTENT_REJECT_REASONS.has(reason)) {
     return Object.freeze({ exitCode: EXIT_OPERATOR, out: null, usage: `intent reject: --reason must be one of ${[...INTENT_REJECT_REASONS].join(', ')}` });
+  }
+  if (cancelledBy !== null && (reason !== 'cancelled_by_user' || !INTENT_ID_RE.test(String(cancelledBy)))) {
+    return Object.freeze({ exitCode: EXIT_OPERATOR, out: null, usage: 'intent reject: --cancelled-by <uuid> goes only with --reason cancelled_by_user' });
   }
   const name = path.basename(String(filePath));
   try {
@@ -332,7 +342,7 @@ function rejectIntent(filePath, reason, deps = {}) {
     }
     const loc = locateLifecycleFile(filePath, ['queued', 'claimed'], d.vault);
     if (!loc.ok || loc.missing) return Object.freeze({ exitCode: EXIT_OPERATOR, out: null, usage: `intent reject: ${loc.ok ? 'no such file' : loc.why}` });
-    return rejectMoved(loc, reason, d);
+    return rejectMoved(loc, reason, d, cancelledBy);
   } catch (e) {
     return decideError(d, 'reject', name, e);
   }
@@ -357,14 +367,18 @@ function cmdIntentClaim(args) {
   return emit(claimIntent(args[0]));
 }
 
-// `a1-tools intent reject <path> --reason <code>`
+// `a1-tools intent reject <path> --reason <code> [--cancelled-by <uuid>]`
 function cmdIntentReject(args) {
-  const i = args.indexOf('--reason');
-  const rest = args.filter((_a, j) => j !== i && j !== i + 1);
-  if (i === -1 || args[i + 1] === undefined || rest.length !== 1 || rest[0].startsWith('-')) {
-    return usage('intent reject <path> --reason <code>');
+  const flag = (name) => {
+    const i = args.indexOf(name);
+    return i === -1 ? { at: [], value: undefined } : { at: [i, i + 1], value: args[i + 1] };
+  };
+  const [reason, by] = [flag('--reason'), flag('--cancelled-by')];
+  const rest = args.filter((_a, j) => ![...reason.at, ...by.at].includes(j));
+  if (reason.value === undefined || (by.at.length > 0 && by.value === undefined) || rest.length !== 1 || rest[0].startsWith('-')) {
+    return usage('intent reject <path> --reason <code> [--cancelled-by <uuid>]');
   }
-  return emit(rejectIntent(rest[0], args[i + 1]));
+  return emit(rejectIntent(rest[0], reason.value, {}, by.value === undefined ? null : by.value));
 }
 
 // For `intent validate` (intent-cli): the executor device, when configured.
@@ -382,7 +396,71 @@ function validateDeps(deps = {}) {
   }
 }
 
+// ---------- cancel and expiry (FR-028, Wave 7) ----------
+
+// FR-028 — the transition a `cancel` intent applies to its target (Wave 8
+// wires it into tick and the cancel poll): queued/ or claimed/ -> rejected/
+// with cancelled_by_user and cancelled_by_intent; the running intent (its id
+// is executor.lock's intent_id) -> a cancel marker in its run dir, then the
+// FR-027 group kill of its child; `run` sees the marker and completes it
+// failed: cancelled (first failure wins). done/ or rejected/ ->
+// target_not_found. -> { ok, state, reason?, … }.
+function cancelTarget(targetPath, cancelId, deps = {}) {
+  const d = { ...defaultDeps(), ...deps };
+  const loc = locateLifecycleFile(targetPath, ['queued', 'claimed', 'done', 'rejected'], d.vault);
+  if (!loc.ok || loc.missing || loc.folder === 'done' || loc.folder === 'rejected') return Object.freeze({ ok: false, reason: 'target_not_found' });
+  const stem = path.basename(loc.path, '.md');
+  if (loc.folder === 'claimed' && runningIntentId() === stem) return cancelRunning(stem, cancelId, d);
+  const r = rejectIntent(loc.path, 'cancelled_by_user', deps, cancelId);
+  return Object.freeze({ ok: r.exitCode === EXIT_OK, state: loc.folder, ...(r.out || {}) });
+}
+
+// The intent_id of executor.lock (the passwd home's), or null.
+function runningIntentId() {
+  const { readLock, childDeps } = require('./intent-child.cjs');
+  const lock = readLock(childDeps());
+  return lock.present && lock.doc && typeof lock.doc.intent_id === 'string' ? lock.doc.intent_id : null;
+}
+
+// Review m2: the marker runs/<id>.cancel lies BESIDE the run dir, so it can be
+// written in the prepare window too (before the run dir exists); it holds
+// the cancel intent's id. `run` checks it right before the running rewrite
+// (cancelled before started_at -> rejected cancelled_by_user), right before
+// the spawn (-> failed: cancelled, nothing spawned; S-MAJOR-2) and right after
+// the spawn; a recorded child group is killed only after its identity check
+// (recordedGroup, review M2).
+function cancelRunning(id, cancelId, d) {
+  const { INTENT_KILL_GRACE_MS } = require('./intent-constants.cjs');
+  const { killGroupSync, recordedGroup } = require('./intent-spawn.cjs');
+  const runs = path.join(assertPrivateDir(d), 'runs');
+  try {
+    fs.mkdirSync(runs, { mode: 0o700 });
+  } catch (e) {
+    if (!e || e.code !== 'EEXIST') throw e;
+  }
+  const fd = fs.openSync(path.join(runs, `${id}.cancel`), fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | fs.constants.O_NOFOLLOW, 0o600);
+  try {
+    fs.writeSync(fd, String(cancelId));
+  } finally {
+    fs.closeSync(fd);
+  }
+  const pgid = recordedGroup(path.join(runs, id));
+  const sent = pgid === null ? [] : killGroupSync(pgid, d.graceMs === undefined ? INTENT_KILL_GRACE_MS : d.graceMs, { kill: d.kill });
+  return Object.freeze({ ok: true, state: 'running', signals: sent });
+}
+
+// FR-028 — a claimed intent whose ledger row was claimed more than
+// INTENT_CLAIMED_MAX_AGE_MS ago is completed failed: expired and never run.
+// -> true when `claimedAt` (ISO) is past the bound at `nowMs`, and when it
+// cannot be read at all (fail closed, W7 security).
+function isExpired(claimedAt, nowMs) {
+  const { INTENT_CLAIMED_MAX_AGE_MS } = require('./intent-constants.cjs');
+  const t = Date.parse(String(claimedAt));
+  return !Number.isFinite(t) || nowMs - t > INTENT_CLAIMED_MAX_AGE_MS;
+}
+
 module.exports = {
+  cancelTarget, isExpired,
   executorConfig, rewriteFrontmatter, claimIntent, rejectIntent, cmdIntentClaim, cmdIntentReject, validateDeps,
   requireExecutorHost, locateLifecycleFile, decide, decideError, emit, freeRejectedPath, // for intent-result (complete)
 };
