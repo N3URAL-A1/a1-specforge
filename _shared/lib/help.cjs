@@ -721,7 +721,11 @@ ${SPEC_INIT_HELP}
                   (xprov-gate.cjs, wave 6) the driver the workflows call once:
                   permit-check → preflight → snapshot → run → normalize →
                   observe → cleanup, stopping at the first non-zero step;
-                  round > 2 → round_cap. Enforcement (warning|blocking) is READ
+                  round > 2 → round_cap. A resumed plan-review round rebuilds
+                  round 1's snapshot at the path the runner recorded (the
+                  runner refuses a resume whose repo/plan differ); the path
+                  must be a snap-XXXXXX child of the snapshots root, no
+                  symlink, absent or empty. Enforcement (warning|blocking) is READ
                   from the registry row and echoed in stdout, never applied here.
     load-check --phase <name>
                   (xprov-gate.cjs, wave 6) newest plan-review-xprov pass entry

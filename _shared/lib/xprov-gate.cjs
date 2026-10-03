@@ -48,7 +48,7 @@ const C = require('./xprov-common.cjs');
 const { REGISTRY_PATH, LANE_RE, DETAIL_MAX_CHARS, inputError, clip, parsePositive, sha256, isPlainObject, readIndex, sameWave, sameLane, writeStdoutSync, gitOut } = C;
 const { permitCheck } = require('./xprov-permit.cjs');
 const { preflight } = require('./xprov-preflight.cjs');
-const { snapshot, cleanupSnapshot } = require('./xprov-snapshot.cjs');
+const { snapshot, cleanupSnapshot, INPUTS_SUFFIX, INPUT_FILES } = require('./xprov-snapshot.cjs');
 const { observe, MODEL_RE } = require('./xprov-observe.cjs');
 const { appendXreviewNote } = require('./xprov-normalize.cjs');
 // Owned by run (one header text, one flag name): the `--no-log` flag keeps `run`
@@ -193,17 +193,33 @@ function headOf(repo) {
   return out === null ? null : out.trim();
 }
 
+/** Plan-review resume (decision (b), Wave 7): the runner refuses a resume whose
+ * record.repo / record.plan differ from the new run (runner.py:257-264), so
+ * round 2 rebuilds the snapshot at the path round 1 recorded. The path itself
+ * is validated by cloneSnapshot (snap-XXXXXX child of the snapshots root, no
+ * symlink, absent or empty); the plan must be that snapshot's input copy. */
+function resumeTarget(resume) {
+  let record;
+  try { record = JSON.parse(fs.readFileSync(resume.resume, 'utf8')); } catch (_e) { return { problem: `round-1 result.json unreadable: ${resume.resume}` }; }
+  if (!isPlainObject(record) || typeof record.repo !== 'string' || typeof record.plan !== 'string') return { problem: 'round-1 record has no repo/plan path' };
+  const expectedPlan = path.join(`${record.repo}${INPUTS_SUFFIX}`, INPUT_FILES.plan);
+  if (record.plan !== expectedPlan) return { problem: `round-1 plan ${clip(record.plan, 120)} is not the snapshot's input copy ${expectedPlan}` };
+  return { targetDir: record.repo };
+}
+
 function stepSnapshot(ctx, resume) {
   const source = ctx.isPlan ? ctx.root : ctx.workPath;
   const commit = headOf(source);
   if (!commit) return { ok: false, reason: X.REASONS.snapshot_failed, detail: `git rev-parse HEAD failed in ${source}` };
+  const target = resume ? resumeTarget(resume) : {};
+  if (target.problem) return { ok: false, reason: X.REASONS.snapshot_failed, detail: `resume snapshot path refused — ${target.problem}`, allowlist: {} };
   // `base` (null for plan review) sizes the depth-limited fetch in snapshot():
   // without it an inspect snapshot holds ONE commit and the runner's
   // `git diff <base>` fails. The fake runner never diffs, so no fixture arm can
   // measure this line — contract from xprov-snapshot.cjs (Samuel W5 MAJOR 6).
   // FR-030 (b): every allowlist read runs against the PRIMARY checkout; the
   // gate kind decides the first-parent step (plan review only).
-  const s = snapshot({ sourceRepo: source, commit, base: ctx.base, primaryRoot: ctx.root, gateKind: ctx.isPlan ? 'plan' : 'inspect', inputs: snapshotInputs(ctx, resume) });
+  const s = snapshot({ sourceRepo: source, commit, base: ctx.base, primaryRoot: ctx.root, gateKind: ctx.isPlan ? 'plan' : 'inspect', inputs: snapshotInputs(ctx, resume), targetDir: target.targetDir });
   const allowlist = allowlistFields(s);
   return s.ok ? { ok: true, snapshot: s.snapshot, commit: s.commit, inputs: s.inputs, allowlist } : { ok: false, reason: s.reason, detail: s.reason_detail || s.detail || s.secret_pattern || null, allowlist };
 }

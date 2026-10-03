@@ -40,6 +40,20 @@
 #       file's base blob → secret_in_snapshot/gitleaks). Red if that run is dropped.
 #   O12b gitleaks runs over the input copies (a marker only in an uncommitted
 #       PLAN.md). Red if that run is dropped.
+#
+# Plan-review resume (team-lead decision (b), 2026-10-02): the runner refuses a
+# resume whose record.repo/plan differ from the new run (runner.py:257-264; the
+# fake now ports that check). Round 2 rebuilds round 1's snapshot at the path
+# the runner recorded, after strict validation.
+#   RR3 a round-2 resume runs at the same snapshot path (and its plan copy).
+#       Red if round 2 builds a fresh mktemp snapshot (the live defect).
+#   RR1 a record path outside the snapshots dir → refused before dispatch.
+#       Red if the parent-directory check is dropped.
+#   RR2 a record path that is a symlink → refused.   Red if stat (following) replaces lstat.
+#   RR4 a record path that exists and is not empty → refused.
+#       Red if a non-empty dir is reused.
+#   RR5 a record plan that is not <record.repo>.inputs/PLAN.md → refused.
+#       Red if resumeTarget drops the plan-path check.
 
 if ! declare -F new8 >/dev/null; then
   bad "part 10: part 08 helpers (new8 …) are not loaded"
@@ -164,7 +178,51 @@ caseO12() {
   expect8 "O12b a gitleaks finding only in the PLAN.md copy" "secret_in_snapshot/gitleaks"
 }
 
-caseO1; caseO2; caseO3; caseO4; caseO5; caseO6; caseO7; caseO8; caseO9; caseO10O11; caseO12
+# rr10 — phase with the revise plan, round 1 REVISE, dispositions written.
+# Sets RR_PREV (round-1 result.json) and RR_REPO (its recorded snapshot path).
+rr10() {
+  new8; cp "$CASES/revise.PLAN.md" "$P8DIR/PLAN.md"; c8 "revise plan"
+  FAKE_RUNNER_CASE=revise gate8 --gate "$GATE_PLAN"
+  RR_PREV="$(json_get "$G_OUT" "j.result_path")"
+  RR_REPO="$(json_get "$(cat "$RR_PREV" 2>/dev/null || echo '{}')" "j.repo || ''")"
+  printf -- '- F1: accepted — fixed in the plan\n' > "$P8DIR/xreview/plan-review-xprov-plan-r1.dispositions.md"
+}
+# rr_set_repo <path> — rewrites record.repo AND record.plan (= <path>.inputs/PLAN.md)
+# in the round-1 result.json: a self-consistent hostile record, so the path
+# checks alone have to refuse it (RR5 covers an inconsistent plan).
+rr_set_repo() { node -e 'const fs=require("fs");const [f,v]=process.argv.slice(1);const j=JSON.parse(fs.readFileSync(f,"utf8"));j.repo=v;j.plan=v+".inputs/PLAN.md";fs.writeFileSync(f,JSON.stringify(j,null,2)+"\n");' "$RR_PREV" "$1"; }
+refused10() { # <name> — round 2 refused at step snapshot (snapshot_failed), runner never invoked
+  local got; got="$(json_get "$G_OUT" "j.step + ':' + j.reason + ':' + /resume snapshot path refused/.test(String(j.reason_detail))")"
+  [[ "$got" == "snapshot:snapshot_failed:true" ]] && ok "$1 → refused before dispatch" || bad "$1: want snapshot:snapshot_failed:true, got $got — $(printf '%s' "$G_ERR" | tail -n 1)"
+  never_ran8 "$1"
+}
+
+caseRR() {
+  rr10
+  [[ "$RR_REPO" == "$HOME/.a1-xprov/snapshots/snap-"* || "$RR_REPO" == *"/.a1-xprov/snapshots/snap-"* ]] && ok "RR setup: round 1 recorded its snapshot path" || bad "RR setup: record.repo = $RR_REPO"
+  FAKE_RUNNER_CASE=revise gate8 --gate "$GATE_PLAN" --round 2
+  assert_json "RR3 round 2 resumed and ran (REVISE again → round_cap, not runner_failed)" "$G_OUT" "j.step + ':' + j.reason" "normalize:round_cap"
+  assert_json "RR3 round 2 ran on the round-1 snapshot path" "$(cat "$ARGV8_FILE" 2>/dev/null || echo '[]')" \
+    "require('fs').realpathSync(require('path').dirname(j[j.indexOf('--repo') + 1])) + '/' + require('path').basename(j[j.indexOf('--repo') + 1]) === require('fs').realpathSync(require('path').dirname('$RR_REPO')) + '/' + require('path').basename('$RR_REPO')" "true"
+  [[ ! -e "$RR_REPO" && ! -e "$RR_REPO.inputs" ]] && ok "RR3 the rebuilt snapshot and its inputs are removed after round 2" || bad "RR3 leftovers at $RR_REPO"
+
+  rr10; rr_set_repo "$TMP10/snap-OutSid"   # a valid snap-XXXXXX name, outside the snapshots dir
+  FAKE_RUNNER_CASE=revise gate8 --gate "$GATE_PLAN" --round 2; refused10 "RR1 a record path outside the snapshots dir"
+
+  rr10; local other="$TMP10/elsewhere"; mkdir -p "$other"
+  local link; link="$(dirname "$RR_REPO")/snap-LnkAbc"; ln -s "$other" "$link"; rr_set_repo "$link"
+  FAKE_RUNNER_CASE=revise gate8 --gate "$GATE_PLAN" --round 2; refused10 "RR2 a record path that is a symlink"
+  rm -f "$link"
+
+  rr10; mkdir -p "$RR_REPO"; printf 'planted\n' > "$RR_REPO/x.txt"
+  FAKE_RUNNER_CASE=revise gate8 --gate "$GATE_PLAN" --round 2; refused10 "RR4 a record path that exists and is not empty"
+  [[ -f "$RR_REPO/x.txt" ]] && ok "RR4 the existing dir is left untouched" || bad "RR4 the existing dir was modified"
+
+  rr10; node -e 'const fs=require("fs");const f=process.argv[1];const j=JSON.parse(fs.readFileSync(f,"utf8"));j.plan="/tmp/other/PLAN.md";fs.writeFileSync(f,JSON.stringify(j,null,2)+"\n");' "$RR_PREV"
+  FAKE_RUNNER_CASE=revise gate8 --gate "$GATE_PLAN" --round 2; refused10 "RR5 a record plan that is not the snapshot's input copy"
+}
+
+caseO1; caseO2; caseO3; caseO4; caseO5; caseO6; caseO7; caseO8; caseO9; caseO10O11; caseO12; caseRR
 unset A1_XPROV_CODEX_HOME
 export HOME="$SAVED_HOME_10"
 rm -rf "$TMP10"

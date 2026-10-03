@@ -544,11 +544,15 @@ function cleanupSnapshot(dir) {
   const root = path.resolve(X.snapshotsDir());
   const target = path.resolve(dir);
   const rel = path.relative(root, target);
-  const direct = rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel) && !rel.includes(path.sep);
-  if (!direct || !path.basename(target).startsWith(SNAP_PREFIX)) {
+  const lexical = rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel) && !rel.includes(path.sep);
+  // A resumed snapshot carries the runner's realpath (runner.py resolves --repo):
+  // /private/var/… for a root spelled /var/… — same directory, other spelling.
+  let realParent = false;
+  try { realParent = fs.realpathSync(path.dirname(target)) === fs.realpathSync(root); } catch (_e) { realParent = false; }
+  if (!(lexical || realParent) || !path.basename(target).startsWith(SNAP_PREFIX)) {
     throw C.inputError(`${target} is not a snapshot under ${root}; refusing to remove it`, 'not_a_snapshot');
   }
-  if (fs.existsSync(target) && fs.realpathSync(path.dirname(target)) !== fs.realpathSync(root)) {
+  if (fs.existsSync(target) && !realParent) {
     throw C.inputError(`${target} does not resolve under ${root}; refusing to remove it`, 'not_a_snapshot');
   }
   removeSnapshotDirs(target);

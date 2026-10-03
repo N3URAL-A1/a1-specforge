@@ -35,6 +35,10 @@ environment when the file is absent (direct `python3 fake-runner.py` calls).
                                line on stderr, NO run dir, NO JSON, exit 1
   FAKE_RUNNER_EXIT             exit code (default 0)
 
+A resume is checked like runner.py:257-269 (same repo, plan, provider, mode,
+model, effort; status completed; a session UUID) — the check whose absence
+let a1's resumed plan review pass every fixture while it could never run live.
+
 Mirrors the measured runner behaviours a1 depends on (Wave 7 adds two, ported
 from runner.py 2.1.0, never from a1's code): the record carries the resolved
 `repo` and `plan` the run used (runner.py:301-304), and in inspect mode
@@ -57,6 +61,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import uuid
 from pathlib import Path
 
 EXIT_REFUSED = 1
@@ -154,8 +159,10 @@ def runner_snapshot(repo: str, base: str) -> dict:
     return value
 
 
-def stamp_record(run_dir: Path, mode: str | None, repo: str | None, plan: str | None, base: str | None) -> None:
-    """repo/plan as the real runner records them; snapshot in inspect mode."""
+def stamp_record(run_dir: Path, mode: str | None, repo: str | None, plan: str | None, base: str | None,
+                 model: str | None = None, effort: str | None = None) -> None:
+    """repo/plan/requested_model/requested_effort as the real runner records
+    them from its own argv (runner.py:301-304); snapshot in inspect mode."""
     target = run_dir / "result.json"
     if target.stat().st_size > SIZE_PROBE_BYTES:
         return  # a padded size-probe case (R18d3c) keeps its exact bytes
@@ -169,9 +176,31 @@ def stamp_record(run_dir: Path, mode: str | None, repo: str | None, plan: str | 
         record["repo"] = str(Path(repo).resolve())
     if plan:
         record["plan"] = str(Path(plan).resolve())
+    record["requested_model"] = model
+    record["requested_effort"] = effort
     if mode == "inspect" and repo and base:
         record["snapshot"] = runner_snapshot(repo, base)
     target.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+
+
+def previous_record_problem(resume: str, repo: str | None, plan: str | None, mode: str | None,
+                            model: str | None, effort: str | None) -> str | None:
+    """Port of runner.py 2.1.0 previous_record() (lines 257-269): a resume must
+    name the same repo, plan, provider, mode, model and effort, and a completed
+    record with a valid session UUID — else the runner refuses."""
+    record = json.loads(Path(resume).read_text(encoding="utf-8"))
+    expected = {"repo": str(Path(repo).resolve()) if repo else None,
+                "plan": str(Path(plan).resolve()) if plan else None,
+                "provider": "codex", "mode": mode, "requested_model": model,
+                "requested_effort": effort, "status": "completed"}
+    for key, value in expected.items():
+        if record.get(key) != value:
+            return f"Resume {key} does not match this run. Start fresh instead."
+    try:
+        uuid.UUID(record["session_id"])
+    except (ValueError, KeyError, TypeError, AttributeError):
+        return "Resume record has no valid session UUID."
+    return None
 
 
 def base_resolves(repo: str | None, base: str | None) -> bool:
@@ -210,6 +239,12 @@ def main(argv: list[str]) -> int:
     mode = argv[1] if len(argv) > 1 else None
     artifacts = flag(argv, "--artifacts")
     repo = flag(argv, "--repo")
+    resume = flag(argv, "--resume")
+    if resume:
+        problem = previous_record_problem(resume, repo, flag(argv, "--plan"), mode, flag(argv, "--model"), flag(argv, "--effort"))
+        if problem:
+            sys.stderr.write(f"claudex-loop: {problem}\n")
+            return EXIT_REFUSED
     if mode == "inspect" and not base_resolves(repo, flag(argv, "--base")):
         sys.stderr.write("claudex-loop: fatal: bad revision — --base is not reachable in the snapshot (too shallow?)\n")
         return EXIT_REFUSED
@@ -218,7 +253,7 @@ def main(argv: list[str]) -> int:
         case = resolve_case(k.get("FAKE_RUNNER_CASE"), k.get("FAKE_RUNNER_CASES_DIR"))
         if case is not None:
             shutil.copyfile(case, run_dir / "result.json")
-            stamp_record(run_dir, mode, repo, flag(argv, "--plan"), flag(argv, "--base"))
+            stamp_record(run_dir, mode, repo, flag(argv, "--plan"), flag(argv, "--base"), flag(argv, "--model"), flag(argv, "--effort"))
         write_reply(run_dir, k.get("FAKE_RUNNER_REPLY"))
         (run_dir / "command.json").write_text(json.dumps(argv, indent=2) + "\n", encoding="utf-8")
     if k.get("FAKE_RUNNER_SIDE_EFFECT") == "write-into-repo" and repo:
