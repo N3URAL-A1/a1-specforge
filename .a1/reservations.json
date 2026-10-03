@@ -66,10 +66,12 @@
         ".github/workflows/test.yml",
         "_test-fixtures/CONVENTIONS.md",
         "_shared/lib/xprov-preflight.cjs",
-        "_shared/lib/xprov-artifacts.cjs"
+        "_shared/lib/xprov-artifacts.cjs",
+        "skills/a1-plan/workflows/04b-xprov-review.md",
+        "_shared/lib/help-xprov.cjs"
       ],
       "by": "009-cross-provider-review-gate",
-      "at": "2026-10-02T09:16:13.676Z",
+      "at": "2026-10-03T10:40:47.887Z",
       "stage": "started"
     }
   ]
