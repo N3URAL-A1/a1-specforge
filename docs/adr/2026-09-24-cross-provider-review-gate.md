@@ -26,7 +26,7 @@ a1 uses the claudex-loop `runner.py` in modes `review`, `inspect` and `check` an
 The runner never sees the live checkout. `xprov snapshot` builds the review target as a fresh, depth-limited repository in `mktemp -d` under the 0700 parent `~/.a1-xprov/snapshots/`: `git init` + `git fetch --depth 1 <source checkout> <commit>` + `git checkout FETCH_HEAD`, argv arrays, never a shell. A plan review fetches HEAD only; an inspect additionally fetches `<base>` with `--depth 1` (Wave 7, replacing the earlier `rev-list --count <base>..<commit>` + 1), so the runner's `--base` diff resolves inside the snapshot while no commit between base and head — and no secret from an earlier commit — is in its object store. Only tracked files exist in the clone — no untracked or ignored file, no worktree gitdir, no alternates — and it is removed after `normalize`; never a worktree, shared-object clone or directory copy (FR-016, hardened 2026-09-24). After checkout the repo-local Codex inputs `.codex/` (including hooks), `AGENTS.md`, `AGENTS.override.md` and (Wave 7) `.agents/` are removed from the snapshot's working tree and their presence is logged in XREVIEW.md, because Codex reads `AGENTS.md` from its cwd as instructions and the reviewed repo must not steer its own reviewer. Before dispatch every `git ls-files` entry is scanned with the shared secret-pattern list, nothing skipped: latin1 decoding for binary or NUL content, 5 MB windows with a 512-byte overlap, UTF-16LE/BE decoding on a BOM or alternating NULs, symlinks by their link text; a tracked path missing from the working tree (a stripped file) is scanned as its `HEAD:<path>` blob, because the reviewer can still read it from the object store; `files_skipped` must be 0. Wave 7 extends the scan to everything that leaves (see §6 and the `xprov-snapshot.cjs` header): the base-side blobs of every path the outbound diff touches, the PLAN.md and dispositions copies the runner receives, every outbound path name (never allowlisted, never echoed), plus a diff hash compared with the runner's `snapshot.diff_sha256`. `gitleaks detect --no-git` runs additionally when on PATH, with a1's own config, never the reviewed repo's. Any hit removes the snapshot and reports `fail/secret_in_snapshot` with the pattern name only (FR-017); runner output is filtered with the same list (`fail/secret_in_output`, no findings file, FR-018). Sending a repo to OpenAI needs a recorded permission via `xprov permit`: N3URAL repos by Robert, customer repos only with an a1-ludwig-legal record (FR-021, closes F-050). Artifacts live in a 0700 directory, `xprov gc` deletes runs older than 14 days, nothing is committed or synced to the vault (F-057).
 
 ### 4. Fail-closed mapping
-The mapping is total and only one path yields `pass`: `status != "completed"` → `fail/runner_failed`; missing, empty or non-object file → `fail/malformed`; `mode` ∉ {`review`, `inspect`} → `fail/wrong_mode`; `APPROVED` → `pass`; `REVISE` → `fail-with-findings`; `BLOCKED` → `fail/blocked` (limitations verbatim); anything else → `fail/malformed` (FR-009). `pass` also requires the PLAN.md sha to equal `result.json.plan_sha256` (FR-010), a clean output filter and validated finding paths. Findings land in the Reinhard schema `{summary, blocker[], major[], minor[]}` (FR-008, FR-012; closes F-017). Provider outage is a `fail` that stops at the checkpoint — no retry beyond the runner timeout, no fallback. Caps: 2 plan-review rounds, 2 fix rounds per wave; a cap is a `fail`. The only way past a `fail` is a human waiver, which never yields `verdict: pass` and tags the retro `xprov_waived` (FR-006, FR-007). **Waiver (amended 2026-10-03, Samuel MAJOR).** `xprov waive … --reason <text> --by <name>` runs only behind the guards of the allowlist owner approval (`guardRefusal` of `xprov-approve.cjs`: TTY on stdin and stdout, no `CLAUDECODE`/`CLAUDE_PID`/`CLAUDE_CODE_*`, no Claude Code ancestor; else exit 2, nothing written) and the PreToolUse hook denies any Bash command containing it or the store path. It computes the key itself — realpath of the primary checkout's git-common-dir, phase, gate, sha256 of the raw PLAN.md; for a wave also lane, HEAD of `--work-path` (same git-common-dir) and the full base sha — shows it, wants the gate id typed back, and appends one record to `~/.a1-xprov/waivers.json` under the approval store's rules (lstat, 0700/0600, own uid, O_NOFOLLOW read, temp file + rename). load-check and wave-status accept a waiver only from that store and only for the key they compute; a `waived: true` row in `index.json` is a mirror without authority. A changed PLAN.md invalidates the waiver; a wave waiver counts while its head stays in the work path's history. a1-execute re-runs `load-check --expect-sha <sha accepted at Load>` before every wave (`plan_changed` on a mid-phase edit). Attribution: `xprov-codex` is the single allowed non-`a1-*` agent id (exception to invariant 5, owner `_shared/learning-schema.md`); retros carry `gates_fired` with the two registry ids so a1-evolve counts catches instead of discarding them (FR-025, FR-026).
+The mapping is total and only one path yields `pass`: `status != "completed"` → `fail/runner_failed`; missing, empty or non-object file → `fail/malformed`; `mode` ∉ {`review`, `inspect`} → `fail/wrong_mode`; `APPROVED` → `pass`; `REVISE` → `fail-with-findings`; `BLOCKED` → `fail/blocked` (limitations verbatim); anything else → `fail/malformed` (FR-009). `pass` also requires the PLAN.md sha to equal `result.json.plan_sha256` (FR-010), a clean output filter and validated finding paths. Findings land in the Reinhard schema `{summary, blocker[], major[], minor[]}` (FR-008, FR-012; closes F-017). Provider outage is a `fail` that stops at the checkpoint — no retry beyond the runner timeout, no fallback. Caps: 2 plan-review rounds, 2 fix rounds per wave; a cap is a `fail`. The only way past a `fail` is a human waiver, which never yields `verdict: pass` and tags the retro `xprov_waived` (FR-006, FR-007). **Waiver (amended 2026-10-03, Samuel MAJOR).** `xprov waive … --reason <text> --by <name>` runs only behind the guards of the allowlist owner approval (`guardRefusal` of `xprov-approve.cjs`: TTY on stdin and stdout, no `CLAUDECODE`/`CLAUDE_PID`/`CLAUDE_CODE_*`, no Claude Code ancestor; else exit 2, nothing written) and the PreToolUse hook denies any Bash command containing it or the store path. It computes the key itself — realpath of the primary checkout's git-common-dir, phase, gate, sha256 of the raw PLAN.md; for a wave also lane, HEAD of `--work-path` (same git-common-dir) and the full base sha — shows it, wants the gate id typed back, and appends one record to `~/.a1-xprov/waivers.json` under the approval store's rules (lstat, 0700/0600, own uid, O_NOFOLLOW read, temp file + rename). load-check and wave-status accept a waiver only from that store and only for the key they compute; a `waived: true` row in `index.json` is a mirror without authority. A changed PLAN.md invalidates the waiver. Wave passes and wave waivers are bound alike and chained per lane (since `28dc4db`): base ⊑ head, head of wave N = base of the next completed wave, the last wave's head = the lane work path's HEAD up to commits under `.a1/phases/<phase>/`; a pass's head/base come only from `a1-reviewed.json`, which `xprov run` writes into its own run dir after a clean inspect, and a run dir is normalized once. **Residual (Samuel MINOR 1, accepted, not built):** `X.xprovHome()` follows `$HOME`, so an agent that deliberately runs `HOME=/tmp/x … load-check` against a self-built 0700/0600 store gets a waiver counted, past the hook literal and the settings deny; the allowlist approval store has the same exposure. Under this threat model that is deliberate forgery — the guards, hook and deny stop accidental or helpful use, not a determined agent — and resolving the home through `os.userInfo()` would only be cosmetic. a1-execute re-runs `load-check --expect-sha <sha accepted at Load>` before every wave (`plan_changed` on a mid-phase edit). Attribution: `xprov-codex` is the single allowed non-`a1-*` agent id (exception to invariant 5, owner `_shared/learning-schema.md`); retros carry `gates_fired` with the two registry ids so a1-evolve counts catches instead of discarding them (FR-025, FR-026).
 
 ### 5. Vendoring decision
 `runner.py` is vendored at `_shared/vendor/claudex-loop/` with the MIT `LICENSE`, `VENDORED.md` (upstream, version 2.1.0, commit `8cf5e2c1771c5151d90c12642391d0ba8fa71b0e`, sha256, capture date, F-052 audit: stdlib only, no network, argv arrays, prompt via stdin) and a `SHA256SUMS` pin checked by `xprov preflight` and the fixture suite (FR-022, FR-023). a1 never resolves the runner from the plugin cache; a pin bump needs a `VENDORED.md` entry with the upstream diff summary in the same commit. Rejected: a fork into the N3URAL-A1 org — one file with a hash is cheaper than a second marketplace and equally removes the unreviewed-`plugin update` path (decided 2026-09-24).
@@ -58,6 +58,169 @@ Measured 2026-10-02 and 2026-10-03 on branch `feature/009-wave7-live-smoke` of t
 - `result.json`: `status: completed`, `mode: inspect`, `base: 2741abe`, `snapshot.diff_sha256: 89a57180…` = the hash `xprov snapshot` stored at scan time (no tripwire), `previous: null`.
 - Findings, open and routed to the team lead: **R1 (high): `.claude/settings.json` denies Edit/Write for the approval store and `.a1/xprov.json` but not for `~/.a1-xprov/waivers.json`**, so an agent's Edit tool could add a store record (the hook covers Bash only) — closing it is a change to `.claude/settings.json`, which goes through Robert. **R2 (high, `xprov-gate.cjs:498`): wave-status accepts any recorded pass for a wave/lane without plan sha, head or base**, so an amended wave keeps its old pass (normalize records no reviewed head/base). R4–R6: M13 `checklist.cjs` (a1-fix candidates). Quarantined `instruction_shaped`: R3 (consolidated lane STATUS headings create a lane-null wave).
 - Session log (`rollout-2026-10-03T17-47-55-01a10273-…jsonl`): `custom_tool_call:exec` ×4 only; `r0 = .system` only; `grep -c '"mcp'` → 12, all in the prompt (this wave's diff) or exec output — zero MCP tool calls. Run-home `entries: 0`.
+
+**Final live set — HEAD `28dc4db` (chain binding, a1-reviewed.json, suite isolation).** Review round 1 and 2 ran; the inspect stopped at preflight.
+- Review round 1, 20:26:33Z–20:28:02Z, exit 1: `fail-with-findings` (3 M13 findings), `allowlisted_hits: 21`, session `01a10372-7ace-…`, `previous: null`, exec ×4 only, `"mcp` → 0, `r0 = .system` only, run-home 0.
+- Review round 2, 20:28:50Z–20:33:39Z, exit 1: `fail/round_cap` (REVISE again) — a fresh session `01a10374-9330-…` on a new snapshot, `previous: null`, no `resume` in `command.json`, the prompt carries a1's sha-bound round-1 findings, the QUARANTINED block and the dispositions. Tools: exec ×4 and **`wait` ×2** (Codex polling a still-running exec cell: `{"cell_id":"1","yield_time_ms":1000}`), `"mcp` → 0, run-home 0.
+- Inspect, 20:34:13Z–20:34:23Z, exit 1: **`fail/preflight_failed`, `session_tools_exec_only: disallowed: wait`** — the newest session log now names a tool outside the allowlist (`exec`, `shell`, `local_shell`), so the gate refused before any snapshot or runner call: fail-closed, observed. Whether `wait` (a read-only companion of `exec`, measured here for the first time) joins the allowlist is open and routed to the team lead.
+- All three: primary checkout porcelain empty before and after, `~/.a1-xprov/snapshots/` unchanged.
+
+stdout of review round 1 on `28dc4db`:
+```json
+{
+  "verdict": "fail-with-findings",
+  "reason": null,
+  "reason_detail": null,
+  "step": "normalize",
+  "gate": "plan-review-xprov",
+  "phase": "M13-residuals",
+  "wave": null,
+  "lane": null,
+  "round": 1,
+  "mode": "review",
+  "enforcement": "blocking",
+  "findings_path": "~/claude-projects/a1-worktrees/009-wave7-live-smoke/.a1/phases/M13-residuals/xreview/plan-review-xprov-plan-r1.findings.json",
+  "xreview_path": "~/claude-projects/a1-worktrees/009-wave7-live-smoke/.a1/phases/M13-residuals/XREVIEW.md",
+  "result_path": "~/.a1-xprov/artifacts/009-wave7-live-smoke/claudex-8cz72xey/result.json",
+  "next": {
+    "round_cmd": "node ~/claude-projects/a1-worktrees/009-wave7-live-smoke/_shared/a1-tools.cjs xprov gate --phase M13-residuals --gate plan-review-xprov --round 2",
+    "dispositions_path": "~/claude-projects/a1-worktrees/009-wave7-live-smoke/.a1/phases/M13-residuals/xreview/plan-review-xprov-plan-r1.dispositions.md"
+  },
+  "allowlisted_hits": 21,
+  "allowlist_anchor": "2741abe4c7d5a26e2f9d7c359e1ca55495f633d6",
+  "allowlist_approved_blob": "d21e526d3448512f59c3593c4b6df8186c8bcd46963708094e7008599d762479",
+  "allowlist_stale": [],
+  "allowlisted": [
+    {"path": ".a1/phases/M7-oss-ready/MAP.md", "pattern": "secret_assignment", "count": 1, "class": "doc_example"},
+    {"path": ".a1/phases/M7-oss-ready/RESEARCH.md", "pattern": "secret_assignment", "count": 1, "class": "doc_example"},
+    {"path": ".a1/phases/M9-robustness/RESEARCH.md", "pattern": "sk_prefixed_key_ext", "count": 1, "class": "doc_example"},
+    {"path": "_shared/lib/xprov.cjs", "pattern": "pem_begin", "count": 2, "class": "code_pattern"},
+    {"path": "_test-fixtures/a1-vault-cockpit/parts/05-hosts.sh", "pattern": "secret_assignment", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/01-supply-chain.sh", "pattern": "slack_token", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/01-supply-chain.sh", "pattern": "slack_token_family", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/01-supply-chain.sh", "pattern": "url_credentials", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/01-supply-chain.sh", "pattern": "password_assignment", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/02-normalize.sh", "pattern": "secret_assignment", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "slack_token", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "secret_assignment", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "sk_prefixed_key_ext", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "github_pat_fine_grained", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "slack_token_family", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "url_credentials", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "password_assignment", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "bearer_token", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/05-run.sh", "pattern": "secret_assignment", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/06-gate.sh", "pattern": "aws_access_key_id", "count": 1, "class": "fixture_fake"}
+  ],
+  "uncovered": [],
+  "allowlist_note": null,
+  "run_porcelain": {
+    "checkout": {
+      "before": "?? .a1/phases/M13-residuals/XREVIEW.md\n",
+      "after": "?? .a1/phases/M13-residuals/XREVIEW.md\n"
+    },
+    "snapshot": {
+      "before": "",
+      "after": ""
+    },
+    "work": {
+      "before": null,
+      "after": null
+    }
+  }
+}
+```
+
+stdout of review round 2 on `28dc4db`:
+```json
+{
+  "verdict": "fail",
+  "reason": "round_cap",
+  "reason_detail": "REVISE at round 2 = cap",
+  "step": "normalize",
+  "gate": "plan-review-xprov",
+  "phase": "M13-residuals",
+  "wave": null,
+  "lane": null,
+  "round": 2,
+  "mode": "review",
+  "enforcement": "blocking",
+  "findings_path": "~/claude-projects/a1-worktrees/009-wave7-live-smoke/.a1/phases/M13-residuals/xreview/plan-review-xprov-plan-r2.findings.json",
+  "xreview_path": "~/claude-projects/a1-worktrees/009-wave7-live-smoke/.a1/phases/M13-residuals/XREVIEW.md",
+  "result_path": "~/.a1-xprov/artifacts/009-wave7-live-smoke/claudex-b59jjc86/result.json",
+  "next": null,
+  "allowlisted_hits": 21,
+  "allowlist_anchor": "2741abe4c7d5a26e2f9d7c359e1ca55495f633d6",
+  "allowlist_approved_blob": "d21e526d3448512f59c3593c4b6df8186c8bcd46963708094e7008599d762479",
+  "allowlist_stale": [],
+  "allowlisted": [
+    {"path": ".a1/phases/M7-oss-ready/MAP.md", "pattern": "secret_assignment", "count": 1, "class": "doc_example"},
+    {"path": ".a1/phases/M7-oss-ready/RESEARCH.md", "pattern": "secret_assignment", "count": 1, "class": "doc_example"},
+    {"path": ".a1/phases/M9-robustness/RESEARCH.md", "pattern": "sk_prefixed_key_ext", "count": 1, "class": "doc_example"},
+    {"path": "_shared/lib/xprov.cjs", "pattern": "pem_begin", "count": 2, "class": "code_pattern"},
+    {"path": "_test-fixtures/a1-vault-cockpit/parts/05-hosts.sh", "pattern": "secret_assignment", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/01-supply-chain.sh", "pattern": "slack_token", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/01-supply-chain.sh", "pattern": "slack_token_family", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/01-supply-chain.sh", "pattern": "url_credentials", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/01-supply-chain.sh", "pattern": "password_assignment", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/02-normalize.sh", "pattern": "secret_assignment", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "slack_token", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "secret_assignment", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "sk_prefixed_key_ext", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "github_pat_fine_grained", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "slack_token_family", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "url_credentials", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "password_assignment", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "bearer_token", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/05-run.sh", "pattern": "secret_assignment", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/06-gate.sh", "pattern": "aws_access_key_id", "count": 1, "class": "fixture_fake"}
+  ],
+  "uncovered": [],
+  "allowlist_note": null,
+  "run_porcelain": {
+    "checkout": {
+      "before": " M .a1/phases/M13-residuals/observations.jsonl\n?? .a1/phases/M13-residuals/PLAN-REVIEW-LOG.md\n?? .a1/phases/M13-residuals/XREVIEW.md\n?? .a1/phases/M13-residuals/xreview/index.json\n?? .a1/phases/M13-residuals/xreview/plan-review-xprov-plan-r1.dispositions.md\n?? .a1/phases/M13-residuals/xreview/plan-review-xprov-plan-r1.findings.json\n",
+      "after": " M .a1/phases/M13-residuals/observations.jsonl\n?? .a1/phases/M13-residuals/PLAN-REVIEW-LOG.md\n?? .a1/phases/M13-residuals/XREVIEW.md\n?? .a1/phases/M13-residuals/xreview/index.json\n?? .a1/phases/M13-residuals/xreview/plan-review-xprov-plan-r1.dispositions.md\n?? .a1/phases/M13-residuals/xreview/plan-review-xprov-plan-r1.findings.json\n"
+    },
+    "snapshot": {
+      "before": "",
+      "after": ""
+    },
+    "work": {
+      "before": null,
+      "after": null
+    }
+  }
+}
+```
+
+stdout of the inspect on `28dc4db`:
+```json
+{
+  "verdict": "fail",
+  "reason": "preflight_failed",
+  "reason_detail": "session_tools_exec_only",
+  "step": "preflight",
+  "gate": "wave-inspect-xprov",
+  "phase": "M13-residuals",
+  "wave": 7,
+  "lane": null,
+  "round": 1,
+  "mode": "inspect",
+  "enforcement": "blocking",
+  "findings_path": null,
+  "xreview_path": null,
+  "result_path": null,
+  "next": null,
+  "allowlisted_hits": 0,
+  "allowlist_anchor": null,
+  "allowlist_approved_blob": null,
+  "allowlist_stale": [],
+  "allowlisted": [],
+  "uncovered": [],
+  "allowlist_note": null
+}
+```
 
 **Final live inspect — HEAD `cf5a86e`, base `2741abe` (after the quota reset).** `cf5a86e` = `da103f3` (passes bound like waivers; the current wave needs its exact head) plus the owner-approved Edit/Write deny for `~/.a1-xprov/waivers.json` in `.claude/settings.json` (closes the `1638616` inspect's R1). Command as above (`--wave 7 --base 2741abe --work-path <this worktree>`); no review rerun (the plan-review path is unchanged since `6672c87`, whose round-2 delta is covered by FR6/FR7).
 - 18:48:15Z–18:49:53Z, exit 1. stdout (full JSON below): `verdict: fail-with-findings`, `step: normalize`, `enforcement: blocking`, `allowlisted_hits: 29`, `uncovered: []`.
