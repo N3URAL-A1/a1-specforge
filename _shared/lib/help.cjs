@@ -630,7 +630,9 @@ ${SPEC_INIT_HELP}
     gc [--slug <repo-slug>] [--max-age-days N]
                   (xprov-artifacts.cjs, wave 3) remove runner run dirs under
                   ~/.a1-xprov/artifacts/<repo-slug>/ and orphaned snap-* clones
-                  under ~/.a1-xprov/snapshots/ older than 14 days.
+                  under ~/.a1-xprov/snapshots/ older than 14 days; per-run HOMEs
+                  ~/.a1-xprov/run-home-* left by a killed run older than 24 h
+                  (lstat, same owner, symlinks never followed).
     preflight [--allow-plugins <name>[,<name>…]]
                   (xprov-preflight.cjs, wave 4) proves the dedicated home is
                   tool-less BEFORE any runner call: not ~/.codex, 0700,
@@ -708,9 +710,8 @@ ${SPEC_INIT_HELP}
                   what Codex wrote there (names and sizes, never contents) is
                   reported as run_home_manifest, kept as run-home.manifest.json
                   in the run dir and noted in XREVIEW.md when non-empty (a
-                  note, not a fail). run-home-* dirs older than 24 h (left by a
-                  SIGKILL) are swept first: lstat, same owner, symlinks never
-                  followed. XDG_* is not passed; TMPDIR is. The cwd is the
+                  note, not a fail). run-home-* dirs a SIGKILL left behind are
+                  swept by xprov gc. XDG_* is not passed; TMPDIR is. The cwd is the
                   snapshot root; a root still holding .agents/.codex/AGENTS.md
                   → snapshot_failed, no spawn. Inspect needs the scanned diff
                   hash next to the snapshot (else snapshot_failed, no spawn)

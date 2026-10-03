@@ -32,8 +32,9 @@
 #   RH6  the runner's cwd is the snapshot root.        Red if spawnOptions uses another cwd.
 #   RH6b a snapshot root holding `.agents` → snapshot_failed, no spawn.
 #        Red if the stripped-cwd assertion is dropped.
-#   RH7  a stale run-home-* (> RUN_HOME_STALE_HOURS) is swept before the next run;
-#        a fresh one and a run-home-* symlink (and its target) survive.
+#   RH7  `xprov gc` sweeps a stale run-home-* (> 24 h, left by a SIGKILL); a
+#        fresh one and a run-home-* symlink (and its target) survive.
+#        (Moved from xprov-run into gc, xprov-artifacts.cjs, team lead 2026-10-02.)
 #        Red if the sweep is dropped / the age bound is dropped / symlinks are followed.
 #   RH8  Samuel's proving arm: a canary in the CALLER's (old) HOME .agents/skills
 #        is not visible to the runner under its per-run HOME.
@@ -325,7 +326,7 @@ caseRN() {
     "(j.quarantined || []).map(q => q.id).join(',') + '/' + (j.findings_count === undefined ? '' : '')" "W1/"
 }
 
-# ---------- RH7: stale run homes left by a SIGKILL are swept ----------
+# ---------- RH7: stale run homes left by a SIGKILL are swept by gc ----------
 caseRH7() {
   prep9; snap9
   mkdir -p "$HOME/.a1-xprov/run-home-stale/.cache" "$HOME/.a1-xprov/run-home-fresh" "$TMP09/link-target"
@@ -334,7 +335,8 @@ caseRH7() {
   ln -s "$TMP09/link-target" "$HOME/.a1-xprov/run-home-link"
   # the link target is old too: a sweep that followed the link would take it
   node -e "const fs = require('fs'); const t = (Date.now() - 48 * 3600 * 1000) / 1000; for (const p of process.argv.slice(1)) fs.utimesSync(p, t, t);" "$HOME/.a1-xprov/run-home-stale" "$TMP09/link-target"
-  run9
+  local gco; gco="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov gc 2>/dev/null)"
+  assert_json "RH7 gc reports the swept run home" "$gco" "(j.run_homes_removed || []).map(p => require('path').basename(p)).join(',')" "run-home-stale"
   [[ ! -e "$HOME/.a1-xprov/run-home-stale" ]] && ok "RH7 a run home older than the stale bound is swept" || bad "RH7 run-home-stale survived"
   [[ -d "$HOME/.a1-xprov/run-home-fresh" ]] && ok "RH7 a fresh run home (a run in flight) is kept" || bad "RH7 run-home-fresh was removed"
   [[ -L "$HOME/.a1-xprov/run-home-link" && -f "$TMP09/link-target/canary.txt" ]] && ok "RH7 a run-home-* symlink is neither followed nor removed" || bad "RH7 symlink or its target touched"

@@ -38,6 +38,14 @@ const { mkdir0700 } = C;
 
 const RUN_DIR_PREFIX = 'claudex-';
 const SNAPSHOT_PREFIX = 'snap-'; // xprov-snapshot.cjs' SNAP_PREFIX (not imported: snapshot requires this module)
+// Per-run HOMEs (Wave 7): xprov-run removes its `run-home-*` in `finally`; a
+// SIGKILL skips that, so gc sweeps leftovers older than RUN_HOME_STALE_HOURS —
+// far above timeout + grace of any run (default 600 s + 60 s), whatever
+// --max-age-days says, because a run home holds nothing worth keeping.
+// Literal, not imported: xprov-run requires this module.
+const RUN_HOME_PREFIX = 'run-home-';
+const RUN_HOME_STALE_HOURS = 24;
+const MS_PER_HOUR = 60 * 60 * 1000;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const REASON_INSIDE = 'artifacts_inside_checkout_or_vault';
 
@@ -112,11 +120,17 @@ function gc(opts) {
   // Orphaned snapshots (Reinhard PR review): a gate process killed between
   // `snapshot` and its cleanup leaves the clone forever — same age rule.
   const snaps = sweepDirs(path.resolve(X.snapshotsDir()), SNAPSHOT_PREFIX, cutoff);
-  return { root, removed: runs.removed, kept: runs.kept, snapshots_root: snaps.root, snapshots_removed: snaps.removed, snapshots_kept: snaps.kept };
+  const homes = sweepDirs(path.resolve(X.xprovHome()), RUN_HOME_PREFIX, now - RUN_HOME_STALE_HOURS * MS_PER_HOUR, { sameOwner: true });
+  return {
+    root, removed: runs.removed, kept: runs.kept, snapshots_root: snaps.root, snapshots_removed: snaps.removed, snapshots_kept: snaps.kept,
+    run_homes_removed: homes.removed, run_homes_kept: homes.kept,
+  };
 }
 
-/** Remove `<prefix>*` directories under `dir` whose mtime is older than cutoff. */
-function sweepDirs(dir, prefix, cutoff) {
+/** Remove `<prefix>*` directories under `dir` whose mtime is older than cutoff.
+ * lstat: a symlink is never followed nor removed. `sameOwner` skips entries
+ * not owned by the current user. */
+function sweepDirs(dir, prefix, cutoff, opts) {
   const out = { root: dir, removed: [], kept: [] };
   if (!fs.existsSync(dir)) return out;
   for (const name of fs.readdirSync(dir)) {
@@ -125,6 +139,7 @@ function sweepDirs(dir, prefix, cutoff) {
     let st;
     try { st = fs.lstatSync(full); } catch (_e) { continue; }
     if (!st.isDirectory()) continue;
+    if (opts && opts.sameOwner && typeof process.getuid === 'function' && st.uid !== process.getuid()) continue;
     if (st.mtimeMs < cutoff) { fs.rmSync(full, { recursive: true, force: true }); out.removed.push(full); } else out.kept.push(full);
   }
   return out;

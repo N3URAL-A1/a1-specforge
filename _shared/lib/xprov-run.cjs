@@ -33,8 +33,8 @@
 //     `run-home.manifest.json` and into stdout; a non-empty manifest AFTER the
 //     run is an XREVIEW note, not a fail (measured 2026-10-02: 0 entries after a
 //     live inspect). The dir is removed in `finally`, pass or fail; a SIGKILL
-//     skips `finally`, so every run first sweeps `run-home-*` siblings older
-//     than RUN_HOME_STALE_HOURS (lstat, same owner, never following a symlink).
+//     skips `finally`, so `xprov gc` (xprov-artifacts.cjs) sweeps `run-home-*`
+//     dirs older than 24 h (lstat, same owner, never following a symlink).
 //     Shell start under the empty HOME was measured (zsh, no newuser prompt,
 //     first exec 0.4 s vs 5.9 s with the real HOME), so no .zshrc is planted and
 //     SHELL stays as allowlisted. XDG_* is not on the env allowlist; TMPDIR is.
@@ -106,8 +106,6 @@ const RUN_HOME_MANIFEST_FILE = 'run-home.manifest.json';
 const RUN_HOME_MANIFEST_MAX = 500; // entries recorded; the count is always exact
 const RUN_HOME_NOTE_MAX = 20; // entries listed in the XREVIEW note
 const MANIFEST_FILE_MODE = 0o600;
-const RUN_HOME_STALE_HOURS = 24; // far above timeout + grace of any run (default 600 s + 60 s)
-const MS_PER_HOUR = 60 * 60 * 1000;
 // Environment the runner gets — nothing else (Samuel W5 MAJOR 2: OPENAI_BASE_URL
 // would redirect the review, PYTHONPATH would bypass the pin, *_PROXY, GIT_*, …).
 const ALLOWED_ENV = Object.freeze(['PATH', 'HOME', 'TMPDIR', 'LANG', 'TERM', 'USER', 'SHELL']);
@@ -341,35 +339,11 @@ function removeRunHome(dir) {
   if (dir && path.basename(dir).startsWith(RUN_HOME_PREFIX) && isUnder(dir, X.xprovHome())) fs.rmSync(dir, { recursive: true, force: true });
 }
 
-/** Removes `run-home-*` dirs a killed run left behind: direct children of
- * ~/.a1-xprov, lstat (a symlink is never followed or removed), owned by the
- * current user, older than RUN_HOME_STALE_HOURS. Returns the removed names. */
-function sweepStaleRunHomes(nowMs) {
-  const root = X.xprovHome();
-  const now = nowMs === undefined ? Date.now() : nowMs;
-  const swept = [];
-  let names = [];
-  try { names = fs.readdirSync(root); } catch (_e) { return swept; }
-  for (const name of names) {
-    if (!name.startsWith(RUN_HOME_PREFIX)) continue;
-    const full = path.join(root, name);
-    let st;
-    try { st = fs.lstatSync(full); } catch (_e) { continue; }
-    if (st.isSymbolicLink() || !st.isDirectory()) continue;
-    if (typeof process.getuid === 'function' && st.uid !== process.getuid()) continue;
-    if (now - st.mtimeMs <= RUN_HOME_STALE_HOURS * MS_PER_HOUR) continue;
-    fs.rmSync(full, { recursive: true, force: true }); // rm never follows symlinks inside the tree
-    swept.push(name);
-  }
-  return swept;
-}
-
 /** A fresh run home: mkdtemp under ~/.a1-xprov, 0700, verified empty. The
  * `afterCreate` seam (fixtures only) runs between mkdtemp and the check. */
 function prepareRunHome(opts) {
   const o = opts || {};
   C.mkdir0700(X.xprovHome());
-  sweepStaleRunHomes();
   const dir = fs.mkdtempSync(path.join(X.xprovHome(), RUN_HOME_PREFIX));
   fs.chmodSync(dir, C.DIR_MODE); // umask-proof
   if (typeof o.afterCreate === 'function') o.afterCreate(dir);
@@ -597,6 +571,6 @@ function cmdXprovRun(args) {
 
 module.exports = {
   cmdXprovRun, buildArgv, buildEnv, spawnOptions, baselineDelta, takeBaseline, gitMeta, fileHashes, snapshotNotes, runDirFromStdout,
-  prepareRunHome, removeRunHome, runHomeManifest, sweepStaleRunHomes, RUN_HOME_STALE_HOURS,
+  prepareRunHome, removeRunHome, runHomeManifest,
   LOG_HEADER, NO_LOG_FLAG, ALLOWED_ENV, CODEX_RUNTIME_DIRS, CODEX_RUNTIME_FILES, RUN_HOME_PREFIX,
 };
