@@ -32,6 +32,15 @@
 // reviewing the intent branch (the plan/execute prompt says so). The hook
 // deps.xprovGate stays, with the first-failure rule and the budget; it is
 // null in production (log xprov_gate_unwired) and injected by fixtures only.
+//
+// exitAsThrow convention (Samuel MINOR-3): fix.cjs and io.cjs end the process
+// through fail() / process.exit. Inside a step that exit becomes a thrown
+// A1_STEP_EXIT, which reaches the step's own catch only because nothing in
+// between catches it: a try/catch around vaultRoot(), fail() or a whole
+// cmdFix* body in fix.cjs would swallow it and let the step go on (an
+// integrity check "passing" without a vault). Keep such catches narrow
+// (around a single readFileSync, as today); fixture B32 runs the real
+// integrity check without a learning-store root and pins this.
 // ---------------------------------------------------------------------------
 
 const fs = require('fs');

@@ -451,7 +451,7 @@ wait "$b19_dead2"
 b19_bad=""
 # g: child.json names a live group whose leader started at another time than the recorded one (pid reuse) -> left alone
 b19g_id="$(node -e 'process.stdout.write(require("crypto").randomUUID())')"; b19g_grp="$(b19_live_group)"
-w7_record "$b19g_id" "$b19g_grp" 'o.start_ms -= 60000'
+w7_record "$b19g_id" "$b19g_grp" 'o.start = o.start + "0"'
 w7_exlock "$(w7_ctxlock "$b19_dead2" "$W5B_HOST" "$b19g_id")"; b19_try "dead run, reused group" runs
 [[ "$(w7_alive "$b19g_grp")" == alive ]] || b19_bad="$b19_bad | g: the reused group was killed"
 kill -9 "$b19g_grp" 2>/dev/null

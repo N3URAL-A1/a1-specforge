@@ -318,8 +318,10 @@ function finishIntent(ctx, d) {
     if (e && e.code === 'ENOENT') return refuse(d, fm.id, 'already_moved');
     throw e;
   }
-  d.writeText(dest, rewriteFrontmatter(content, intentPatch(outcome, finishedAt, opts.exitCode)));
-  const closing = { finished_at: finishedAt, outcome: outcome.status, result_path: resultPath, result_sha256: sha256(note) };
+  const doneText = rewriteFrontmatter(content, intentPatch(outcome, finishedAt, opts.exitCode));
+  d.writeText(dest, doneText);
+  // FR-034 (Wave 8): file_sha256 = the bytes a1 wrote last, for list's tamper state
+  const closing = { finished_at: finishedAt, outcome: outcome.status, result_path: resultPath, result_sha256: sha256(note), file_sha256: sha256(doneText) };
   writeLedger(updateRow(rows, fm.id, closing), { homedir: d.homedir });
   const detail = [moved, worktree.problem, finishWorktree(fm, outcome)].filter(Boolean).join('; ') || undefined;
   const out = { completed: true, id: fm.id, status: outcome.status, failure_reason: outcome.failure_reason, result_path: resultPath, path: dest };

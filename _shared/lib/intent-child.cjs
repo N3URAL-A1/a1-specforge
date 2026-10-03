@@ -438,7 +438,7 @@ function createLockFile(file) {
 function reclaimExecutorLock(file, d) {
   const { reclaimStaleLock } = require('./intent-ledger.cjs');
   const { killGroupSync, recordedGroup } = require('./intent-spawn.cjs');
-  const { INTENT_KILL_GRACE_MS } = require('./intent-constants.cjs');
+  const { INTENT_KILL_GRACE_MS, INTENT_ID_RE } = require('./intent-constants.cjs');
   const held = readLock({ ...defaultDeps(), passwdHome: d.passwdHome, hostname: d.hostname });
   const doc = held.present ? held.doc : null;
   const { holderAlive } = require('./intent-spawn.cjs');
@@ -446,7 +446,7 @@ function reclaimExecutorLock(file, d) {
   // child group is killed only when recordedGroup confirms its identity.
   const deadHere = doc && doc.hostname === d.hostname() && Number.isSafeInteger(doc.pid) && !holderAlive(doc.pid, Date.parse(String(doc.createdAt)));
   const preBoot = doc && require('./intent-spawn.cjs').beforeBoot(Date.parse(String(doc.createdAt)));
-  if (deadHere && !preBoot && /^[0-9a-f-]{36}$/.test(String(doc.intent_id))) { // a pre-boot lock's pgid is never signalled
+  if (deadHere && !preBoot && INTENT_ID_RE.test(String(doc.intent_id))) { // a pre-boot lock's pgid is never signalled
     const pgid = recordedGroup(path.join(d.homedir(), INTENTS_DIR, 'runs', doc.intent_id));
     if (pgid !== null) killGroupSync(pgid, INTENT_KILL_GRACE_MS);
   }

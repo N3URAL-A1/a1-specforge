@@ -395,14 +395,20 @@ else bad "V8c invalid overrides (2000ms, abc, -5, 1e3, empty) keep the default a
 # ---------- V9: dispatcher and help ----------
 new_sandbox v9
 v9_bad=""
-for pair in tick:8 watch:8 list:8 install-agent:11; do
+for pair in install-agent:11; do
   sub="${pair%%:*}"
   wave="${pair##*:}"
   run_intent "$sub"
   [[ $RC -eq 2 && -z "$OUT" && "$ERR" == *"intent $sub: not implemented yet (wave $wave)"* ]] || v9_bad="$v9_bad $sub:$RC"
 done
-if [[ -z "$v9_bad" ]]; then ok "V9a the 4 not-yet-shipped subcommands are registered and exit 2 'not implemented yet (wave N)' [FR-016]"
-else bad "V9a the 4 not-yet-shipped subcommands are registered and exit 2 'not implemented yet (wave N)' [FR-016]" "$v9_bad"; fi
+# Wave 8 shipped tick, watch and list: routed, and a bad argument is a usage error
+for args in "tick extra" "watch" "watch --interval 0" "list --state bogus"; do
+  # shellcheck disable=SC2086
+  run_intent $args
+  [[ $RC -eq 2 && "$ERR" == *"usage error: intent ${args%% *}"* && "$ERR" != *"not implemented"* ]] || v9_bad="$v9_bad [$args]:$RC"
+done
+if [[ -z "$v9_bad" ]]; then ok "V9a the one not-yet-shipped subcommand (install-agent) exits 2 'not implemented yet (wave 11)'; tick, watch and list are routed (a bad argument is a usage error) [FR-016]"
+else bad "V9a the one not-yet-shipped subcommand (install-agent) exits 2 'not implemented yet (wave 11)'; tick, watch and list are routed (a bad argument is a usage error) [FR-016]" "$v9_bad"; fi
 run_intent bogus
 expect_usage "V9b unknown intent subcommand -> exit 2 [FR-016]"
 run_intent

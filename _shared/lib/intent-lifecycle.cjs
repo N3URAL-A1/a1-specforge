@@ -39,7 +39,7 @@ const { INTENT_REJECT_REASONS } = require('./status-constants.cjs');
 const { INTENT_ID_RE } = require('./intent-constants.cjs');
 const { parseIntentFrontmatter, readIntentFile, validateIntentFile } = require('./intent-validate.cjs');
 const { DEVICE_ID_RE, openPrivate, assertPrivateDir } = require('./intent-devices.cjs');
-const { loadLedger, hasReplay, appendRow, writeLedger, withLedgerLock } = require('./intent-ledger.cjs');
+const { loadLedger, hasReplay, appendRow, writeLedger, withLedgerLock, findRow, updateRow } = require('./intent-ledger.cjs');
 const { logDecision, assertLogSafe } = require('./intent-log.cjs');
 
 const EXIT_OK = 0;
@@ -322,7 +322,27 @@ function rejectMoved(loc, reason, d, cancelledBy) {
   }
   if (read) d.writeText(dest, rewriteFrontmatter(read.content, patch));
   else prependHeader(dest, patch);
-  return decide(d, 'reject', EXIT_OK, { rejected: true, reason, path: dest }, { intentId, outcome: 'rejected', reason });
+  const detail = loc.folder === 'claimed' && idOk ? recordFileSha(intentId, dest, d) : null;
+  return decide(d, 'reject', EXIT_OK, { rejected: true, reason, path: dest }, { intentId, outcome: 'rejected', reason, ...(detail ? { detail } : {}) });
+}
+
+// FR-034 (Wave 8) — the row of a claimed intent that a1 just rewrote outside
+// `complete` records the new bytes' sha256 (file_sha256), so `list` can tell
+// a later edit (tampered). Under the ledger lock; never called with it held.
+// The move already happened, so a failure here is named (-> log detail),
+// never thrown: the file then simply cannot be judged.
+function recordFileSha(intentId, file, d) {
+  try {
+    const bytes = fs.readFileSync(file, 'utf8');
+    withLedgerLock(() => {
+      const { rows } = loadLedger({ homedir: d.homedir });
+      if (findRow(rows, intentId) === null) return;
+      writeLedger(updateRow(rows, intentId, { file_sha256: sha256(bytes) }), { homedir: d.homedir });
+    }, { homedir: d.homedir, hostname: d.hostname, now: d.now });
+    return null;
+  } catch (e) {
+    return `file_sha256_unrecorded: ${String(e && (e.code || e.message)).slice(0, 80)}`;
+  }
 }
 
 // FR-019 -> { exitCode, out, usage?, stderr? }. `reason` is checked first.
@@ -444,6 +464,10 @@ function cancelRunning(id, cancelId, d) {
   } finally {
     fs.closeSync(fd);
   }
+  // Wave 8 (Samuel MINOR-2): `run` polls the marker and ends its OWN tracked
+  // groups; its cancel poll passes markOnly. Another process (a second tick)
+  // also kills the identity-checked group at once, as a fallback.
+  if (d.markOnly) return Object.freeze({ ok: true, state: 'running', signals: [] });
   const pgid = recordedGroup(path.join(runs, id));
   const sent = pgid === null ? [] : killGroupSync(pgid, d.graceMs === undefined ? INTENT_KILL_GRACE_MS : d.graceMs, { kill: d.kill });
   return Object.freeze({ ok: true, state: 'running', signals: sent });
@@ -460,7 +484,7 @@ function isExpired(claimedAt, nowMs) {
 }
 
 module.exports = {
-  cancelTarget, isExpired,
+  cancelTarget, isExpired, recordFileSha,
   executorConfig, rewriteFrontmatter, claimIntent, rejectIntent, cmdIntentClaim, cmdIntentReject, validateDeps,
   requireExecutorHost, locateLifecycleFile, decide, decideError, emit, freeRejectedPath, // for intent-result (complete)
 };

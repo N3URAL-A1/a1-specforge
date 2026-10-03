@@ -32,6 +32,10 @@
 //                    $HOME/.a1-intents/tmp/k3-gc.pid is alive when it runs
 //   gate-leftover    deps.xprovGate starts `sleep 30` through the budget's
 //                    tracked spawn and returns ok without waiting for it
+//   integrity-real-novault  the REAL integrity check (intent-steps' default,
+//                    fix.cjs) run with no learning-store root: for the call
+//                    only, A1_VAULT_ROOT is removed and cwd is outside any
+//                    repository (HOME has no N3URAL-Vault) (Samuel MINOR-3)
 //   integrity-exit   deps.integrityCheck ends the process through io.cjs fail()
 //   postmortem-exit  deps.writePostmortem ends the process through io.cjs fail()
 
@@ -97,6 +101,20 @@ if (mode === 'gate-leftover') {
     const child = budget.spawn('/bin/sleep', ['30']);
     note({ event: 'gate', pid: child.pid });
     return { ok: true };
+  };
+}
+if (mode === 'integrity-real-novault') {
+  const real = require(path.join(lib, 'intent-steps.cjs')).integrityCheck;
+  deps.integrityCheck = () => {
+    const [vault, cwd] = [process.env.A1_VAULT_ROOT, process.cwd()];
+    delete process.env.A1_VAULT_ROOT;
+    process.chdir(path.dirname(spy));
+    try {
+      return real();
+    } finally {
+      process.env.A1_VAULT_ROOT = vault;
+      process.chdir(cwd);
+    }
   };
 }
 if (mode === 'integrity-exit') deps.integrityCheck = () => { note({ event: 'integrity', pid: process.pid }); require(path.join(lib, 'io.cjs')).fail('fixture: no learning-store root'); };

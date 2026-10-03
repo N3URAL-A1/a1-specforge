@@ -94,13 +94,13 @@ w7_exlock "$(w7_ctxlock "$b29_holder" "$W5B_HOST" "$b29a_id")"; b19_try "live ho
 kill "$b29_holder" 2>/dev/null; wait "$b29_holder" 2>/dev/null; kill -9 "$b29a_grp" 2>/dev/null
 # b: a dead holder whose child.json was written in another boot -> reclaimed, no kill
 b29b_id="$(w7b_uuid)"; b29b_grp="$(b19_live_group)"
-w7_record "$b29b_id" "$b29b_grp" 'o.boot_ms -= 3600000'
+w7_record "$b29b_id" "$b29b_grp" 'o.boot_id = "00000000-0000-4000-8000-000000000000"'
 w7_exlock "$(w7_ctxlock "$b29_dead" "$W5B_HOST" "$b29b_id")"; b19_try "dead holder, child.json of another boot" runs
 [[ "$(w7_alive "$b29b_grp")" == alive ]] || b19_bad="$b19_bad | b: a group of another boot was killed"
 kill -9 "$b29b_grp" 2>/dev/null
 # c: a dead holder whose child.json lacks the binding (the pre-review { pgid }) -> reclaimed, no kill
 b29c_id="$(w7b_uuid)"; b29c_grp="$(b19_live_group)"
-w7_record "$b29c_id" "$b29c_grp" 'delete o.start_ms; delete o.boot_ms'
+w7_record "$b29c_id" "$b29c_grp" 'delete o.start; delete o.boot_id'
 w7_exlock "$(w7_ctxlock "$b29_dead" "$W5B_HOST" "$b29c_id")"; b19_try "dead holder, unbound child.json" runs
 [[ "$(w7_alive "$b29c_grp")" == alive ]] || b19_bad="$b19_bad | c: an unbound pgid was killed"
 kill -9 "$b29c_grp" 2>/dev/null
@@ -121,7 +121,7 @@ b29e="$(node -e '
   const cp = require("child_process"); const S = require(process.argv[1] + "/intent-spawn.cjs");
   const b = S.createBudget({ timeoutMs: 60000, graceMs: 200 });
   const reused = cp.spawn("/bin/sleep", ["30"], { detached: true, stdio: "ignore" }); const own = b.spawn("/bin/sleep", ["30"]);
-  b.track(reused.pid, Date.now() - 60000);
+  b.track(reused.pid, "t:1"); // the start token recorded for another process
   setTimeout(() => {
     const before = [S.groupAlive(reused.pid), S.groupAlive(own.pid)].join(",");
     b.reapSync();
@@ -191,5 +191,40 @@ b31d="$RS_RC $(w6_where "$W6_ID") $(w6_fm "$VAULT/inbox/intents/done/$W6_ID.md" 
 if [[ "$b31d" == "0 done parent_step_failed 0 1" ]]; then
   ok "B31d a postmortem writer that calls io fail() -> run does not exit: failed parent_step_failed, both locks gone [FR-051, W7 security minor]"
 else bad "B31d a postmortem writer that calls io fail() -> run does not exit: failed parent_step_failed, both locks gone [FR-051, W7 security minor]" "$b31d" "rs: ${RS:0:200}"; fi
+
+# ---------- B32: the exitAsThrow convention on the REAL integrity check (Samuel MINOR-3) ----------
+w6_claim action=fix
+b32_pre="$( (cd "$SB" && git rev-parse --show-toplevel >/dev/null 2>&1) && echo in-repo) $( [[ -e "$FHOME/N3URAL-Vault" ]] && echo legacy-vault)"
+if [[ -z "${b32_pre// /}" ]]; then
+  w7_steps integrity-real-novault
+  b32="$RS_RC $(w6_where "$W6_ID") $(w6_fm "$VAULT/inbox/intents/done/$W6_ID.md" failure_reason) $W6_SPAWNS $(w7_locks) $(grep "\"intent_id\":\"$W6_ID\"" "$FHOME/.a1-intents/log.jsonl" | grep -c 'integrity_check: threw') $(grep -c 'cannot resolve a learning-store root' "$SB/.rs-err")"
+else b32="precondition: $b32_pre"; fi
+if [[ "$b32" == "0 done parent_step_failed 0 0 1 1" ]]; then
+  ok "B32 the real fix.cjs integrity check with no learning-store root exits through io's process.exit -> caught as a throw (no swallowing catch in between): failed parent_step_failed, 0 spawns, both locks gone [FR-051, Samuel MINOR-3]"
+else bad "B32 the real fix.cjs integrity check with no learning-store root exits through io's process.exit -> caught as a throw (no swallowing catch in between): failed parent_step_failed, 0 spawns, both locks gone [FR-051, Samuel MINOR-3]" "$b32" "rs: ${RS:0:200} err: $(head -c 300 "$SB/.rs-err")"; fi
+
+# ---------- B33: boot-relative identity parsing (Samuel MINOR-1), from the measured outputs ----------
+b33="$(node -e '
+  const S = require(process.argv[1] + "/intent-spawn.cjs");
+  const measured = "9 (sleep) R 1 1 1 0 -1 4194560 102 0 0 0 0 0 0 0 20 0 1 0 93403079 2162688 64 18446744073709551615 187650374762496";
+  const tricky = "9 (a) b c) R 1 1 1 0 -1 4194560 102 0 0 0 0 0 0 0 20 0 1 0 93403079 2162688 64";
+  const boot = S.bootId(); const me = S.processInfo(process.pid);
+  console.log([S.parseStatStart(measured), S.parseStatStart(tricky), S.parseStatStart("9 (x) R 1"), /^[0-9A-Fa-f-]{36}$/.test(String(boot)), typeof (me && me.start)].join(" "));' "$INTENT_LIB" 2>&1)"
+if [[ "$b33" == "t:93403079 t:93403079  true string" ]]; then
+  ok "B33 identity parsing: /proc/<pid>/stat field 22 from the measured node:20 line and from a comm holding ') ', none from a short line; the boot id is a uuid on this host; every live pid has a start token [FR-025, Samuel MINOR-1]"
+else bad "B33 identity parsing: /proc/<pid>/stat field 22 from the measured node:20 line and from a comm holding ') ', none from a short line; the boot id is a uuid on this host; every live pid has a start token [FR-025, Samuel MINOR-1]" "$b33"; fi
+
+# ---------- B34: reclaim kills only for a well-formed intent id (Reinhard NIT) ----------
+sleep 0 & b34_dead=$!
+wait "$b34_dead"
+b34_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" # 36 hex/dash characters, not an intent id (no v4 nibbles)
+b34_grp="$(b19_live_group)"
+w7_record "$b34_id" "$b34_grp"
+b19_bad=""
+w7_exlock "$(w7_ctxlock "$b34_dead" "$W5B_HOST" "$b34_id")"; b19_try "dead holder, malformed intent id" runs
+b34="$(w7_alive "$b34_grp") ${b19_bad:-ok}"
+kill -9 "$b34_grp" 2>/dev/null; rm -rf "$FHOME/.a1-intents/runs/$b34_id"
+if [[ "$b34" == "alive ok" ]]; then ok "B34 a dead holder whose lock names a malformed intent id (36 hex/dash characters, not INTENT_ID_RE) -> reclaimed without touching the group its run dir names [FR-025, Reinhard NIT]"
+else bad "B34 a dead holder whose lock names a malformed intent id (36 hex/dash characters, not INTENT_ID_RE) -> reclaimed without touching the group its run dir names [FR-025, Reinhard NIT]" "$b34"; fi
 
 chmod -R u+w "$WORK"

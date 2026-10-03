@@ -126,9 +126,10 @@ const INTENT_HELP = `  a1-tools intent <sub> [flags]
                   cancel, run at most one claimed intent.
   a1-tools intent watch --interval <s>
                   (wave 8, executor host only) loops tick.
-  a1-tools intent list [--state queued|claimed|done|rejected|ignored|all]
+  a1-tools intent list [--state queued|claimed|done|rejected|ignored|tampered|all]
                   (wave 8, any host) JSON rows per intent file; Sync conflict
-                  copies are listed as ignored, edited a1 files as tampered.
+                  copies are listed as ignored, edited a1 files as tampered
+                  (judged on the executor host only, against its ledger).
   a1-tools intent schema --json
                   (wave 9, any host) JSON Schema (draft 2020-12) of the intent
                   frontmatter ($defs.processed_intent for claimed/, done/,
