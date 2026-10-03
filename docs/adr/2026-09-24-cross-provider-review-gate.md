@@ -59,6 +59,93 @@ Measured 2026-10-02 and 2026-10-03 on branch `feature/009-wave7-live-smoke` of t
 - Findings, open and routed to the team lead: **R1 (high): `.claude/settings.json` denies Edit/Write for the approval store and `.a1/xprov.json` but not for `~/.a1-xprov/waivers.json`**, so an agent's Edit tool could add a store record (the hook covers Bash only) — closing it is a change to `.claude/settings.json`, which goes through Robert. **R2 (high, `xprov-gate.cjs:498`): wave-status accepts any recorded pass for a wave/lane without plan sha, head or base**, so an amended wave keeps its old pass (normalize records no reviewed head/base). R4–R6: M13 `checklist.cjs` (a1-fix candidates). Quarantined `instruction_shaped`: R3 (consolidated lane STATUS headings create a lane-null wave).
 - Session log (`rollout-2026-10-03T17-47-55-01a10273-…jsonl`): `custom_tool_call:exec` ×4 only; `r0 = .system` only; `grep -c '"mcp'` → 12, all in the prompt (this wave's diff) or exec output — zero MCP tool calls. Run-home `entries: 0`.
 
+**Final live inspect — HEAD `cf5a86e`, base `2741abe` (after the quota reset).** `cf5a86e` = `da103f3` (passes bound like waivers; the current wave needs its exact head) plus the owner-approved Edit/Write deny for `~/.a1-xprov/waivers.json` in `.claude/settings.json` (closes the `1638616` inspect's R1). Command as above (`--wave 7 --base 2741abe --work-path <this worktree>`); no review rerun (the plan-review path is unchanged since `6672c87`, whose round-2 delta is covered by FR6/FR7).
+- 18:48:15Z–18:49:53Z, exit 1. stdout (full JSON below): `verdict: fail-with-findings`, `step: normalize`, `enforcement: blocking`, `allowlisted_hits: 29`, `uncovered: []`.
+- `result.json`: `status: completed`, `mode: inspect`, `previous: null`, session `01a10318-805d-…`, `snapshot.diff_sha256: 6fc10dbc…` = the stored scan-time hash (no tripwire). The index entry carries `head: cf5a86e7…` (= the snapshotted HEAD) and `base: 2741abe4…` (full sha) — the new pass/waiver binding, live.
+- Session log (`rollout-2026-10-03T20-48-19-01a10318-…jsonl`): `custom_tool_call:exec` ×3 only; `r0 = .system` only; `grep -c '"mcp'` → 8, prompt and exec output only — zero MCP tool calls. Run-home `entries: 0`.
+- Porcelain: primary checkout empty before and after; `~/.a1-xprov/snapshots/` unchanged (`snap-jZtQHt` only); snapshot porcelain empty (`run_porcelain.snapshot`). This worktree, after:
+```
+ M .a1/phases/M13-residuals/observations.jsonl
+?? .a1/phases/M13-residuals/PLAN-REVIEW-LOG.md
+?? .a1/phases/M13-residuals/XREVIEW.md
+?? .a1/phases/M13-residuals/xreview/index.json
+?? .a1/phases/M13-residuals/xreview/wave-inspect-xprov-wave-7-r1.findings.json
+```
+- Findings, open and routed to the team lead: **R1 (high, `xprov-normalize.cjs:439`): normalize derives head/base from the checkout and its flags, not from `result.json`, and accepts a `review` result for the wave gate** — an old APPROVED plan-review result normalized by hand as `wave-inspect-xprov` would name the current HEAD and satisfy wave-status. **R2 (medium, `xprov-gate.cjs:484`): `wave-status --waves N --current-wave N --lane L` checks the pair (N, null)** — `--waves` builds lane-null pairs, so the documented lane checkpoint does not cover a lane pass. R4–R6: M13 `checklist.cjs` (a1-fix candidates). Quarantined `instruction_shaped`: R3 (lane STATUS consolidation; follow-up).
+
+stdout of the final inspect on `cf5a86e`:
+```json
+{
+  "verdict": "fail-with-findings",
+  "reason": null,
+  "reason_detail": null,
+  "step": "normalize",
+  "gate": "wave-inspect-xprov",
+  "phase": "M13-residuals",
+  "wave": 7,
+  "lane": null,
+  "round": 1,
+  "mode": "inspect",
+  "enforcement": "blocking",
+  "findings_path": "~/claude-projects/a1-worktrees/009-wave7-live-smoke/.a1/phases/M13-residuals/xreview/wave-inspect-xprov-wave-7-r1.findings.json",
+  "xreview_path": "~/claude-projects/a1-worktrees/009-wave7-live-smoke/.a1/phases/M13-residuals/XREVIEW.md",
+  "result_path": "~/.a1-xprov/artifacts/009-wave7-live-smoke/claudex-kph597lm/result.json",
+  "next": {
+    "fix_round": 1,
+    "dispositions_path": "~/claude-projects/a1-worktrees/009-wave7-live-smoke/.a1/phases/M13-residuals/xreview/wave-inspect-xprov-wave-7-r1.dispositions.md"
+  },
+  "allowlisted_hits": 29,
+  "allowlist_anchor": "2741abe4c7d5a26e2f9d7c359e1ca55495f633d6",
+  "allowlist_approved_blob": "d21e526d3448512f59c3593c4b6df8186c8bcd46963708094e7008599d762479",
+  "allowlist_stale": [],
+  "allowlisted": [
+    {"path": ".a1/phases/M7-oss-ready/MAP.md", "pattern": "secret_assignment", "count": 1, "class": "doc_example"},
+    {"path": ".a1/phases/M7-oss-ready/RESEARCH.md", "pattern": "secret_assignment", "count": 1, "class": "doc_example"},
+    {"path": ".a1/phases/M9-robustness/RESEARCH.md", "pattern": "sk_prefixed_key_ext", "count": 1, "class": "doc_example"},
+    {"path": "_shared/lib/xprov.cjs", "pattern": "pem_begin", "count": 2, "class": "code_pattern"},
+    {"path": "_test-fixtures/a1-vault-cockpit/parts/05-hosts.sh", "pattern": "secret_assignment", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/01-supply-chain.sh", "pattern": "slack_token", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/01-supply-chain.sh", "pattern": "slack_token_family", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/01-supply-chain.sh", "pattern": "url_credentials", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/01-supply-chain.sh", "pattern": "password_assignment", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/02-normalize.sh", "pattern": "secret_assignment", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "slack_token", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "secret_assignment", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "sk_prefixed_key_ext", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "github_pat_fine_grained", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "slack_token_family", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "url_credentials", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "password_assignment", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "bearer_token", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/05-run.sh", "pattern": "secret_assignment", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/06-gate.sh", "pattern": "aws_access_key_id", "count": 1, "class": "fixture_fake"},
+    {"path": "_shared/lib/xprov.cjs", "pattern": "pem_begin", "count": 2, "class": "code_pattern", "side": "base"},
+    {"path": "_test-fixtures/a1-xprov/parts/01-supply-chain.sh", "pattern": "slack_token", "count": 1, "class": "fixture_fake", "side": "base"},
+    {"path": "_test-fixtures/a1-xprov/parts/01-supply-chain.sh", "pattern": "slack_token_family", "count": 1, "class": "fixture_fake", "side": "base"},
+    {"path": "_test-fixtures/a1-xprov/parts/01-supply-chain.sh", "pattern": "url_credentials", "count": 1, "class": "fixture_fake", "side": "base"},
+    {"path": "_test-fixtures/a1-xprov/parts/01-supply-chain.sh", "pattern": "password_assignment", "count": 1, "class": "fixture_fake", "side": "base"},
+    {"path": "_test-fixtures/a1-xprov/parts/05-run.sh", "pattern": "secret_assignment", "count": 1, "class": "fixture_fake", "side": "base"},
+    {"path": "_test-fixtures/a1-xprov/parts/06-gate.sh", "pattern": "aws_access_key_id", "count": 1, "class": "fixture_fake", "side": "base"}
+  ],
+  "uncovered": [],
+  "allowlist_note": null,
+  "run_porcelain": {
+    "checkout": {
+      "before": "?? .a1/phases/M13-residuals/XREVIEW.md\n",
+      "after": "?? .a1/phases/M13-residuals/XREVIEW.md\n"
+    },
+    "snapshot": {
+      "before": "",
+      "after": ""
+    },
+    "work": {
+      "before": null,
+      "after": null
+    }
+  }
+}
+```
+
 **Re-run on `6672c87` blocked by quota (16:13Z) — observed fail-closed.** `6672c87` (round N−1 findings bound by sha256 in the index entry, O_NOFOLLOW reads, fake runner stamps `mode`) touches the round-2 feedback path, so review round 1, round 2 and the inspect were started again at 16:13:13Z–16:13:31Z. All three stopped at step `run` with `fail/runner_failed` and exit 1 within seconds; `reason_detail` now carried the provider's own reason live: `runner exited 1: You’ve hit your usage limit. … try again at 8:47 PM.` No findings, no snapshot left (`~/.a1-xprov/snapshots/` unchanged), primary checkout and snapshot porcelain empty before and after, the worktree delta only PLAN-REVIEW-LOG.md and XREVIEW.md. The `1638616` runs above remain the last completed live set; the delta to `6672c87` is covered by fixture arms FR6/FR7 (part 10) and R6r (part 06), each killed by its mutation. A completed live run on `6672c87` needs the quota back (after 18:47Z).
 
 **Earlier final runs on `4abccf3` (14:37Z–14:42Z).** Review round 1 REVISE (three M13 findings), round 2 a fresh session (`previous: null`, new session `01a10234-…` and snapshot) → `round_cap`, inspect REVISE with R1 (waivers ignored by load-check, high — closed in `1638616`) and R2 (`<file>:<symbol>` without the space, quarantined — closed in `1638616`). Same isolation evidence (exec only, 0 MCP calls, `.system` only, run-home empty, porcelain unchanged).
