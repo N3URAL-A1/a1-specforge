@@ -202,6 +202,11 @@ the named part selected.
 | Guard | Case(s) | Named red-making change |
 |---|---|---|
 | Enforcement flip guard (`_test-fixtures/a1-xprov/check-enforcement.sh`, CI step after Fixtures; `a1-xprov/parts/07-enforcement.sh`) | R5a–R5j | R5a: the check never reads the ADR when a row is blocking. R5b: dropping the "pending Wave 7" test. R5c: requiring only one gate's command. R5d: failing whenever a row is blocking. R5e: failing on the placeholder without a blocking row. R5f: reading only plan-review-xprov's cell. R5g: treating a missing row as `warning`. R5h: flipping the real registry before the ADR holds the evidence. R5i: reporting a bad root as pass or fail. R5j: removing the CI step, merging it into Fixtures, or moving it before Fixtures (all three run). root07's baseline: dropping the reset turns R5a/R5e/R5f red on a flipped tree (found by the live inspect, Codex R1). RED before the script and the CI step existed: 16 of 17 asserts. |
+| Fail-closed mapping (`a1-xprov/parts/02-normalize.sh`) | R9 | Mapping BLOCKED to pass (R9a, R9b, R9d red), or treating `status: failed` as completed (R9a red). Both run on 2026-10-03. |
+| Tripwire baseline (`a1-xprov/parts/05-run.sh`) | R15 | Dropping the snapshot porcelain from the baseline (R15a–d, R15e2, R15g–i red), run on 2026-10-03; the header's other arms (R15k `--untracked-files=all`, S3 `.git/` metadata, S4 whole-home hash) name their own changes. |
+| Findings are data (`a1-xprov/parts/03-hardening.sh`) | R19 | Dropping the whole path check — `pathIsInRepo` always true (R19c, R19e–h red) — or the instruction-marker scan (R19c, R19e–j, R19l red); run on 2026-10-03. Dropping only the `..`/absolute check, or only the ls-files lookup, leaves R19 green: the two back each other up (`../x` misses ls-files; an absolute path fails the `..` check). The ls-files lookup alone is proven by RN2 in part 09 (an untracked `<file>: <symbol>` path stays `path_not_in_repo`), which dies under that mutation. |
+| Runner pin (`a1-xprov/parts/01-supply-chain.sh`) | R23 | `checkRunnerPin()` tolerating a mismatch (R23b red), run on 2026-10-03. |
+
 
 The Wave 7 hardening guards after the live smoke (runner isolation, outbound payload scan,
 resume, input boundary, path names) carry their arm → mutation map in the headers of

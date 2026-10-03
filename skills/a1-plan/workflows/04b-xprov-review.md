@@ -7,7 +7,7 @@ agent until the driver has spoken.
 
 Spec `009-cross-provider-review-gate` (FR-002, FR-006, FR-007). Registry row:
 `plan-review-xprov` in `_shared/gates-registry.md` — that row's `enforcement`
-cell (`warning` today, `blocking` after the Wave 7 flip) is read by the driver
+cell (`blocking` since the Wave 7 flip on 2026-10-03; `warning` before) is read by the driver
 and echoed as `enforcement` in its stdout JSON. This workflow applies it; the
 driver never does (the flip changes one registry cell and no code).
 
