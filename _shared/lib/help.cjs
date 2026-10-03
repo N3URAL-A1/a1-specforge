@@ -671,10 +671,10 @@ ${SPEC_INIT_HELP}
                   pattern xprov_finding, model_requested, model_observed.
     snapshot --repo <path> --commit <sha> [--base <sha>] | --remove <dir>
                   (xprov-snapshot.cjs, wave 5) fresh depth-limited fetch under
-                  ~/.a1-xprov/snapshots/ (git init + fetch --depth N + checkout
-                  FETCH_HEAD; N = 1 for review, rev-list --count base..commit + 1
-                  with --base for inspect — a parent commit's secret is never in
-                  the snapshot history); .codex/, AGENTS.md, AGENTS.override.md
+                  ~/.a1-xprov/snapshots/ (git init + fetch --depth 1 + checkout
+                  FETCH_HEAD; with --base (inspect) base is fetched --depth 1
+                  too — nothing between them, no parent commit's secret, is in
+                  the snapshot); .codex/, AGENTS.md, AGENTS.override.md
                   and (wave 7) .agents/ are removed from the working tree,
                   because Codex reads .agents/skills at the git root of its
                   cwd as skill instructions; every tracked file is
@@ -686,6 +686,15 @@ ${SPEC_INIT_HELP}
                   share the git-common-dir of the cwd's checkout. stdout adds
                   allowlisted_hits, allowlist_anchor, allowlist_approved_blob,
                   allowlist_stale, allowlisted, uncovered, allowlist_note.
+                  Wave 7: everything that LEAVES is scanned — with --base the
+                  base-side blob of every path the outbound diff touches
+                  (git diff --name-only --no-renames <base> of the stripped
+                  working tree: deletions, removed lines, stripped files), and
+                  the PLAN.md / dispositions COPIES the gate places in
+                  <snapshot>.inputs/ (0700); same allowlist per side (entries
+                  carry side: base|input), gitleaks over all of them. The diff
+                  the runner will hash is hashed here and kept as
+                  <snapshot>.inputs/diff.sha256.
     run --mode review|inspect --snapshot <dir> --plan <abs PLAN.md> --phase <name>
         --gate <id> [--wave N] [--round N] [--lane <id>] [--base <sha>]
         [--resume <result.json> --feedback <file>] [--timeout N] [--work-path <dir>] [--no-log]
@@ -703,7 +712,10 @@ ${SPEC_INIT_HELP}
                   SIGKILL) are swept first: lstat, same owner, symlinks never
                   followed. XDG_* is not passed; TMPDIR is. The cwd is the
                   snapshot root; a root still holding .agents/.codex/AGENTS.md
-                  → snapshot_failed, no spawn.
+                  → snapshot_failed, no spawn. Inspect needs the scanned diff
+                  hash next to the snapshot (else snapshot_failed, no spawn)
+                  and compares it with the runner's snapshot.diff_sha256 after
+                  the run — a mismatch is a tripwire. GIT_CONFIG_NOSYSTEM=1.
     gate --phase <name> --gate <id> [--wave N --base <sha> --work-path <p>]
          [--lane <id>] [--round N] [--timeout N] [--resume <result.json> --feedback <file>]
                   (xprov-gate.cjs, wave 6) the driver the workflows call once:

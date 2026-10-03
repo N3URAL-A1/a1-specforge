@@ -5,15 +5,16 @@
 // live tree (spec 009-cross-provider-review-gate, Wave 5; FR-016, FR-017;
 // amended 2026-09-24 after a1-samuel-security's W5 review).
 //
-//   snapshot({ sourceRepo, commit, base }) → { ok, snapshot, commit, depth,
-//     files_scanned, files_skipped (always 0), repo_local_removed, gitleaks }
-//     `git init` + `git fetch --depth N <sourceRepo> <commit>` + `checkout
-//     FETCH_HEAD` (argv arrays via spawnSync, never a shell). N = 1 for a plan
-//     review; N = `rev-list --count base..commit` + 1 when `base` is given
-//     (inspect mode: the runner runs `git diff <base>` INSIDE the snapshot, so
-//     base must be reachable — one commit too shallow and the runner fails).
-//     A parent commit's secret is therefore never in the snapshot's history
-//     (MAJOR 6). Only tracked files exist in the clone (no untracked, no
+//   snapshot({ sourceRepo, commit, base, inputs, targetDir }) → { ok, snapshot,
+//     commit, base, depth, files_scanned, base_files_scanned, inputs_scanned,
+//     files_skipped (always 0), repo_local_removed, gitleaks, inputs,
+//     diff_sha256 }
+//     `git init` + `git fetch --depth 1 <sourceRepo> <commit>` + `checkout
+//     FETCH_HEAD` (argv arrays via spawnSync, never a shell); with `base`
+//     (inspect) base is fetched `--depth 1` as well, so the runner's `git diff
+//     <base>` resolves INSIDE the snapshot while no commit between them — and
+//     no parent commit's secret — is ever in its object store (MAJOR 6; Wave 7
+//     replaced the earlier `rev-list --count base..commit` + 1 depth). Only tracked files exist in the clone (no untracked, no
 //     ignored, no worktree gitdir file, no objects/info/alternates).
 //     After the checkout the repo-local Codex inputs `.codex/`, `AGENTS.md`,
 //     `AGENTS.override.md` are removed from the WORKING TREE (rm, not git rm:
@@ -32,12 +33,41 @@
 //     of the snapshots root (realpath compared). CLI: `a1-tools xprov snapshot
 //     --repo <path> --commit <rev> [--base <rev>]` or `--remove <dir>`.
 //
+// Wave 7 (a1-samuel-security, 2 MAJOR, 2026-10-02): EVERYTHING that leaves for
+// the provider is scanned, not only the reviewed tree. Measured in the pinned
+// runner.py 2.1.0: inspect sends `git diff --no-ext-diff --no-textconv <base>
+// --` of the snapshot working tree (runner.py:345) — removed lines, deleted
+// files and the base content of stripped repo-local files; the plan from the
+// --plan path (:323); the --feedback file verbatim (:349). Hence:
+//   * inspect fetches exactly base and head, depth 1 each — intermediate
+//     commits' objects are never in the snapshot (plan review: head only);
+//   * base side: every path of `git diff --name-only --no-renames -z <base>
+//     --` (stripped working tree vs base, so deletions and stripped files are
+//     included) is scanned as the `<base>:<path>` blob, side `base`;
+//   * inputs: PLAN.md and the dispositions are COPIED into `<snapshot>.inputs/`
+//     (0700, a1-owned, outside the snapshot so the runner's untracked-file
+//     manifest never sees them), the copies are scanned (side `input`, labelled
+//     with their repo path) and the gate passes the copies to the runner;
+//   * every side meets the same anchored allowlist (xprov-allowlist evaluate,
+//     `extra`); gitleaks runs over the base blobs and the inputs as well and is
+//     never allowlisted;
+//   * the diff the runner will hash is hashed HERE, right after the scan, with
+//     a runner-like git environment (empty HOME, GIT_CONFIG_NOSYSTEM=1), and
+//     written to `<snapshot>.inputs/diff.sha256`; `xprov run` compares it with
+//     the runner's own snapshot.diff_sha256 (runner.py:106-107) — a mismatch
+//     is a tripwire (detective TOCTOU check).
+//   * `targetDir` rebuilds a snapshot at a given path (plan-review resume: the
+//     runner refuses a resume whose record.repo differs, runner.py:257-264);
+//     the path must be a `snap-XXXXXX` child of the snapshots root, no
+//     symlink, absent or empty — and so must its `.inputs` sibling.
+//
 // Measured 2026-09-24: codex-cli 0.155.1 `features list` is byte-identical
 // with and without a repo-local `.codex/config.toml` in the cwd — that proves
 // non-reading for [features] only, which is why the files are stripped anyway.
 // ---------------------------------------------------------------------------
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { parseFlags, repoRoot } = require('./io.cjs');
@@ -62,6 +92,11 @@ const REF_RE = /^[A-Za-z0-9._][A-Za-z0-9._/@^~-]{0,199}$/;
 const REPO_LOCAL_STRIP = Object.freeze(['.codex', 'AGENTS.md', 'AGENTS.override.md', '.agents']);
 const GITLEAKS_CONFIG = path.join(__dirname, 'xprov-gitleaks.toml');
 const UPLOAD_PACK_FALLBACK = 'git -c uploadpack.allowAnySHA1InWant=true upload-pack'; // literal, ours — not user input
+const INPUTS_SUFFIX = '.inputs';
+const DIFF_SHA_FILE = 'diff.sha256';
+const INPUT_FILES = Object.freeze({ plan: 'PLAN.md', feedback: 'feedback.md' });
+const SNAP_NAME_RE = /^snap-[A-Za-z0-9]{6}$/; // mkdtemp's six-character suffix
+const FILE_MODE = 0o600;
 
 
 /** ~/.a1-xprov/snapshots/, 0700, never inside the checkout or the vault. */
@@ -277,13 +312,6 @@ function gitleaksScan(dir) {
 
 // ---------- snapshot ----------
 
-function fetchDepth(sourceRepo, commit, base) {
-  if (!base) return { ok: true, depth: 1 };
-  const r = git(['-C', sourceRepo, 'rev-list', '--count', `${base}..${commit}`]);
-  if (r.status !== 0 || !/^\d+$/.test(r.stdout.trim())) return { ok: false, detail: `rev-list ${base}..${commit}: ${tail(r.stderr)}` };
-  return { ok: true, depth: Number(r.stdout.trim()) + 1 };
-}
-
 function fetchInto(dir, sourceRepo, commit, depth) {
   const plain = git(['-C', dir, 'fetch', '--quiet', '--depth', String(depth), sourceRepo, commit]);
   if (plain.status === 0) return plain;
@@ -305,25 +333,130 @@ function validateRefs(commit, base) {
   if (base !== null && !REF_RE.test(base)) throw C.inputError(`--base must be a git revision (no leading dash, no whitespace; got ${JSON.stringify(base.slice(0, 80))})`, 'bad_base');
 }
 
-/** The depth-limited clone alone (no scan): { ok, dir, commit, depth,
- * repo_local_removed } or { ok: false, reason: snapshot_failed, detail }.
- * Used by snapshot() and by `allowlist propose|approve` (listing only). */
-function cloneSnapshot(sourceRepo, commit, base) {
+/** Why `target` cannot be (re)built as a snapshot: not a `snap-XXXXXX` child
+ * of the snapshots root, a symlink, or present and non-empty — or null. The
+ * `.inputs` sibling must pass the same checks. */
+function snapshotPathProblem(target, root) {
+  const t = path.resolve(String(target));
+  if (!SNAP_NAME_RE.test(path.basename(t))) return `${t}: not a snap-XXXXXX name`;
+  let parent;
+  try { parent = fs.realpathSync(path.dirname(t)); } catch (_e) { return `${t}: parent does not resolve`; }
+  if (parent !== fs.realpathSync(root)) return `${t}: not a direct child of ${root}`;
+  for (const p of [t, `${t}${INPUTS_SUFFIX}`]) {
+    let st = null;
+    try { st = fs.lstatSync(p); } catch (_e) { st = null; }
+    if (st === null) continue;
+    if (st.isSymbolicLink()) return `${p}: is a symlink`;
+    if (!st.isDirectory()) return `${p}: is not a directory`;
+    if (fs.readdirSync(p).length > 0) return `${p}: exists and is not empty`;
+  }
+  return null;
+}
+
+/** The clone alone (no scan): { ok, dir, commit, base, depth, repo_local_removed }
+ * or { ok: false, reason: snapshot_failed, detail }. Head is fetched depth 1;
+ * with `base`, base is fetched depth 1 too — nothing between them. `targetDir`
+ * (resume) rebuilds at that validated path. Used by snapshot() and by
+ * `allowlist propose|approve` (listing only). */
+function cloneSnapshot(sourceRepo, commit, base, targetDir) {
   const root = ensureSnapshotsRoot();
-  const dir = fs.mkdtempSync(path.join(root, SNAP_PREFIX));
+  let dir;
+  if (targetDir) {
+    const problem = snapshotPathProblem(targetDir, root);
+    if (problem) return { ok: false, reason: X.REASONS.snapshot_failed, dir: null, detail: `resume snapshot path refused — ${problem}` };
+    dir = path.resolve(targetDir);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { mode: DIR_MODE });
+  } else {
+    dir = fs.mkdtempSync(path.join(root, SNAP_PREFIX));
+  }
   fs.chmodSync(dir, DIR_MODE);
   const failed = (detail) => { removeDir(dir); return { ok: false, reason: X.REASONS.snapshot_failed, dir: null, detail }; };
-  const depth = fetchDepth(sourceRepo, commit, base);
-  if (!depth.ok) return failed(depth.detail);
+  let baseSha = null;
+  if (base) {
+    const rb = git(['-C', sourceRepo, 'rev-parse', '--verify', '--quiet', `${base}^{commit}`]);
+    if (rb.status !== 0) return failed(`base ${base} does not resolve in ${sourceRepo}`);
+    baseSha = rb.stdout.trim();
+  }
   const init = git(['init', '--quiet', dir]);
   if (init.status !== 0) return failed(`init: ${tail(init.stderr || String(init.error))}`);
-  const fetch = fetchInto(dir, sourceRepo, commit, depth.depth);
-  if (fetch.status !== 0) return failed(`fetch ${commit} (depth ${depth.depth}): ${tail(fetch.stderr || String(fetch.error))}`);
+  const fetch = fetchInto(dir, sourceRepo, commit, 1);
+  if (fetch.status !== 0) return failed(`fetch ${commit} (depth 1): ${tail(fetch.stderr || String(fetch.error))}`);
   const co = git(['-C', dir, 'checkout', '--quiet', 'FETCH_HEAD']);
   if (co.status !== 0) return failed(`checkout: ${tail(co.stderr)}`);
   const head = git(['-C', dir, 'rev-parse', 'HEAD']);
   if (head.status !== 0) return failed(`rev-parse: ${tail(head.stderr)}`);
-  return { ok: true, dir, commit: head.stdout.trim(), depth: depth.depth, repo_local_removed: stripRepoLocal(dir) };
+  if (baseSha !== null && baseSha !== head.stdout.trim()) {
+    const fb = fetchInto(dir, sourceRepo, baseSha, 1);
+    if (fb.status !== 0) return failed(`fetch base ${baseSha.slice(0, 12)} (depth 1): ${tail(fb.stderr || String(fb.error))}`);
+  }
+  return { ok: true, dir, commit: head.stdout.trim(), base: baseSha, depth: 1, repo_local_removed: stripRepoLocal(dir) };
+}
+
+// ---------- outbound sides: base blobs, input copies, the diff hash (Wave 7) ----------
+
+/** git with the environment the runner's own git runs under: an empty HOME (no
+ * global config), GIT_CONFIG_NOSYSTEM=1, the caller's PATH and locale. Buffer stdout. */
+function runnerLikeGit(dir, args) {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'a1-xprov-githome-'));
+  try {
+    const env = { PATH: process.env.PATH, HOME: home, GIT_CONFIG_NOSYSTEM: '1' };
+    for (const [k, v] of Object.entries(process.env)) if (k === 'LANG' || k.startsWith('LC_')) env[k] = v;
+    return spawnSync('git', ['-C', dir, ...args], { env, maxBuffer: C.GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] });
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+}
+
+/** Base-side blobs of every path the outbound diff touches: [{ path, buf }]. */
+function baseSideBlobs(dir, baseSha) {
+  const names = runnerLikeGit(dir, ['diff', '--no-ext-diff', '--name-only', '--no-renames', '-z', baseSha, '--']);
+  if (names.status !== 0) return { error: `diff --name-only ${baseSha.slice(0, 12)}: ${tail(String(names.stderr))}` };
+  const blobs = [];
+  for (const rel of names.stdout.toString('utf8').split('\0').filter(Boolean)) {
+    const spec = `${baseSha}:${rel}`;
+    const type = git(['-C', dir, 'cat-file', '-t', spec]);
+    if (type.status !== 0 || type.stdout.trim() !== 'blob') continue; // added in the wave, or a gitlink (the runner refuses those)
+    const b = spawnSync('git', ['-C', dir, 'cat-file', 'blob', spec], { maxBuffer: C.GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] });
+    if (b.status !== 0) return { error: `cat-file ${rel}: ${tail(String(b.stderr))}` };
+    blobs.push({ path: rel, buf: b.stdout });
+  }
+  return { blobs };
+}
+
+/** Copies the inputs into `<dir>.inputs/` (0700, files 0600). `inputs` =
+ * [{ key: 'plan'|'feedback', source, label }]. Returns { inputsDir, copies,
+ * labels } — never reads through a symlinked source. */
+function copyInputs(dir, inputs) {
+  const inputsDir = `${dir}${INPUTS_SUFFIX}`;
+  if (!fs.existsSync(inputsDir)) fs.mkdirSync(inputsDir, { mode: DIR_MODE });
+  fs.chmodSync(inputsDir, DIR_MODE);
+  const copies = {};
+  const labels = [];
+  for (const i of inputs || []) {
+    const st = fs.lstatSync(i.source);
+    if (!st.isFile()) throw C.inputError(`${i.source}: not a regular file`, 'input_not_a_file');
+    const dest = path.join(inputsDir, INPUT_FILES[i.key]);
+    fs.writeFileSync(dest, fs.readFileSync(i.source), { mode: FILE_MODE });
+    copies[i.key] = dest;
+    labels.push({ dest, label: i.label });
+  }
+  return { inputsDir, copies, labels };
+}
+
+/** gitleaks over in-memory blobs, written to a 0700 temp dir that is removed. */
+function gitleaksBlobs(blobs) {
+  if (blobs.length === 0) return { available: true, hit: false };
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'a1-xprov-base-'));
+  try {
+    blobs.forEach((b, n) => {
+      const dest = path.join(tmp, String(n), b.path);
+      fs.mkdirSync(path.dirname(dest), { recursive: true, mode: DIR_MODE });
+      fs.writeFileSync(dest, b.buf, { mode: FILE_MODE });
+    });
+    return gitleaksScan(tmp);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 }
 
 /** The allowlist fields every snapshot result carries (FR-030 g). */
@@ -352,24 +485,58 @@ function snapshot(opts) {
   }
   // Read before ensureSnapshotsRoot() tightens ~/.a1-xprov: a 0755 directory must count as "no store" (FR-030 j).
   const approvals = AL.readApprovals();
-  const cl = cloneSnapshot(sourceRepo, commit, base);
+  const cl = cloneSnapshot(sourceRepo, commit, base, opts.targetDir);
   if (!cl.ok) return { ok: false, reason: cl.reason, snapshot: null, commit, detail: cl.detail, ...none };
   const dir = cl.dir;
-  const failed = (reason, extra) => { removeDir(dir); return { ok: false, reason, snapshot: null, commit, ...extra }; };
+  const failed = (reason, extra) => { removeSnapshotDirs(dir); return { ok: false, reason, snapshot: null, commit, ...extra }; };
   const scan = scanTrackedFiles(dir);
   if (scan.error) return failed(X.REASONS.snapshot_failed, { detail: `ls-files: ${scan.error}`, ...none });
-  const al = AL.evaluate({ root: primaryRoot, commitSha: cl.commit, gateKind, matches: scan.matches, tracked: scan.tracked, approvals });
+  // Base side: what the outbound diff carries from <base>.
+  const base_ = cl.base === null ? { blobs: [] } : baseSideBlobs(dir, cl.base);
+  if (base_.error) return failed(X.REASONS.snapshot_failed, { detail: base_.error, ...none });
+  const baseMatches = base_.blobs.flatMap((b) => scanSource(bufferSource(b.buf), b.path, false));
+  // Inputs: the copies the runner will read, scanned under their repo labels.
+  let ins;
+  try { ins = copyInputs(dir, opts.inputs); } catch (e) { return failed(X.REASONS.snapshot_failed, { detail: e.message, ...none }); }
+  const inputMatches = ins.labels.flatMap((l) => scanEntry(l.dest, fs.lstatSync(l.dest), l.label, false));
+  const al = AL.evaluate({
+    root: primaryRoot, commitSha: cl.commit, gateKind, matches: scan.matches, tracked: scan.tracked, approvals,
+    extra: [{ side: 'base', matches: baseMatches }, { side: 'input', matches: inputMatches }],
+  });
   const report = allowlistReport(al);
-  if (al.fail) return failed(al.fail.reason, { reason_detail: al.fail.reason_detail || null, detail: al.fail.detail || null, files_scanned: scan.files_scanned, ...report });
+  const counts = { files_scanned: scan.files_scanned, base_files_scanned: base_.blobs.length, inputs_scanned: ins.labels.length };
+  if (al.fail) return failed(al.fail.reason, { reason_detail: al.fail.reason_detail || null, detail: al.fail.detail || null, ...counts, ...report });
   if (al.uncovered.length) {
-    return failed(X.REASONS.secret_in_snapshot, { secret_pattern: al.uncovered[0].pattern, reason_detail: al.unresolved ? X.ALLOWLIST_DETAILS.anchor_unresolved : null, files_scanned: scan.files_scanned, ...report });
+    return failed(X.REASONS.secret_in_snapshot, { secret_pattern: al.uncovered[0].pattern, secret_side: al.uncovered[0].side || 'head', reason_detail: al.unresolved ? X.ALLOWLIST_DETAILS.anchor_unresolved : null, ...counts, ...report });
   }
-  const gl = gitleaksScan(dir); // FR-030 (e): gitleaks hits are never allowlisted
-  if (gl.hit) return failed(X.REASONS.secret_in_snapshot, { secret_pattern: 'gitleaks', reason_detail: 'gitleaks', files_scanned: scan.files_scanned, ...report });
+  // FR-030 (e): gitleaks hits are never allowlisted — tree, base blobs and inputs alike.
+  const gl = gitleaksScan(dir);
+  const glBase = gitleaksBlobs(base_.blobs);
+  const glIn = ins.labels.length ? gitleaksScan(ins.inputsDir) : { hit: false };
+  if (gl.hit || glBase.hit || glIn.hit) return failed(X.REASONS.secret_in_snapshot, { secret_pattern: 'gitleaks', reason_detail: 'gitleaks', ...counts, ...report });
+  // Detective TOCTOU anchor: the diff the runner will hash, hashed now.
+  let diffSha = null;
+  if (cl.base !== null) {
+    const d = runnerLikeGit(dir, ['diff', '--no-ext-diff', '--no-textconv', '--binary', cl.base, '--']);
+    if (d.status !== 0) return failed(X.REASONS.snapshot_failed, { detail: `diff --binary: ${tail(String(d.stderr))}`, ...none });
+    diffSha = C.sha256(d.stdout);
+    fs.writeFileSync(path.join(ins.inputsDir, DIFF_SHA_FILE), `${diffSha}\n`, { mode: FILE_MODE });
+  }
   return {
-    ok: true, snapshot: dir, commit: cl.commit, depth: cl.depth, files_scanned: scan.files_scanned,
-    files_skipped: 0, repo_local_removed: cl.repo_local_removed, gitleaks: gl.available, ...report,
+    ok: true, snapshot: dir, commit: cl.commit, base: cl.base, depth: cl.depth, ...counts,
+    files_skipped: 0, repo_local_removed: cl.repo_local_removed, gitleaks: gl.available,
+    inputs: ins.copies, diff_sha256: diffSha, ...report,
   };
+}
+
+/** The diff hash `snapshot()` stored next to the snapshot, or null. */
+function storedDiffSha(dir) {
+  try { return fs.readFileSync(path.join(`${dir}${INPUTS_SUFFIX}`, DIFF_SHA_FILE), 'utf8').trim(); } catch (_e) { return null; }
+}
+
+function removeSnapshotDirs(dir) {
+  removeDir(dir);
+  removeDir(`${dir}${INPUTS_SUFFIX}`);
 }
 
 /** Remove one snapshot; only a direct `snap-*` child of the snapshots root qualifies. */
@@ -384,7 +551,7 @@ function cleanupSnapshot(dir) {
   if (fs.existsSync(target) && fs.realpathSync(path.dirname(target)) !== fs.realpathSync(root)) {
     throw C.inputError(`${target} does not resolve under ${root}; refusing to remove it`, 'not_a_snapshot');
   }
-  removeDir(target);
+  removeSnapshotDirs(target);
   return target;
 }
 
@@ -422,4 +589,5 @@ function cmdXprovSnapshot(args) {
 module.exports = {
   snapshot, cloneSnapshot, cleanupSnapshot, removeDir, scanTrackedFiles, utf16Mode, gitleaksScan, ensureSnapshotsRoot, cmdXprovSnapshot,
   SNAP_PREFIX, REPO_LOCAL_STRIP, GITLEAKS_CONFIG, REF_RE, LINE_MAX_CHARS, LINE_CONTEXT_CHARS,
+  INPUTS_SUFFIX, INPUT_FILES, storedDiffSha, snapshotPathProblem,
 };

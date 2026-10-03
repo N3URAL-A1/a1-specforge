@@ -154,18 +154,30 @@ function dispositionsPath(ctx, round) {
  * fail-with-findings (a REVISE the host answered with dispositions); both the
  * result.json and the dispositions file must exist BEFORE the runner is
  * called. A previous pass, or no previous round, is a fresh session. */
-function resumeArgs(ctx) {
-  if (!ctx.isPlan || ctx.round < 2) return [];
+function resumeInfo(ctx) {
+  if (!ctx.isPlan || ctx.round < 2) return null;
   const prev = ctx.prior.find((e) => Number(e.round) === ctx.round - 1);
   if (!prev || prev.verdict !== X.VERDICTS.FAIL_WITH_FINDINGS) {
     if (ctx.resume || ctx.feedback) throw inputError(`--resume/--feedback need a round-${ctx.round - 1} entry with verdict fail-with-findings to resume; round ${ctx.round} is a fresh session`);
-    return [];
+    return null;
   }
   const resume = ctx.resume || (typeof prev.result_path === 'string' ? prev.result_path : null);
   const feedback = ctx.feedback || dispositionsPath(ctx, ctx.round - 1);
   if (!resume || !fs.existsSync(resume)) throw inputError(`round ${ctx.round} needs the round-${ctx.round - 1} result.json to resume (${resume || 'no such index entry'})`);
   if (!fs.existsSync(feedback)) throw inputError(`round ${ctx.round} needs the host-authored dispositions file ${feedback} (finding id → accepted|rejected + reason) — write it first`);
-  return ['--resume', resume, '--feedback', feedback];
+  return Object.freeze({ resume, feedback });
+}
+
+/** What the snapshot copies and scans besides the tree (Wave 7, Samuel): the
+ * PLAN.md the runner will read and, when resuming, the dispositions. The
+ * runner only ever gets these COPIES (`snapshot().inputs`). */
+function snapshotInputs(ctx, resume) {
+  const inputs = [{ key: 'plan', source: ctx.planPath, label: `.a1/phases/${ctx.phase}/PLAN.md` }];
+  if (resume) {
+    const rel = path.relative(ctx.root, resume.feedback);
+    inputs.push({ key: 'feedback', source: resume.feedback, label: rel.startsWith('..') || path.isAbsolute(rel) ? path.basename(resume.feedback) : rel });
+  }
+  return inputs;
 }
 
 /** One a1-tools xprov subcommand as a child (argv array, cwd = repo root). */
@@ -181,7 +193,7 @@ function headOf(repo) {
   return out === null ? null : out.trim();
 }
 
-function stepSnapshot(ctx) {
+function stepSnapshot(ctx, resume) {
   const source = ctx.isPlan ? ctx.root : ctx.workPath;
   const commit = headOf(source);
   if (!commit) return { ok: false, reason: X.REASONS.snapshot_failed, detail: `git rev-parse HEAD failed in ${source}` };
@@ -191,9 +203,9 @@ function stepSnapshot(ctx) {
   // measure this line — contract from xprov-snapshot.cjs (Samuel W5 MAJOR 6).
   // FR-030 (b): every allowlist read runs against the PRIMARY checkout; the
   // gate kind decides the first-parent step (plan review only).
-  const s = snapshot({ sourceRepo: source, commit, base: ctx.base, primaryRoot: ctx.root, gateKind: ctx.isPlan ? 'plan' : 'inspect' });
+  const s = snapshot({ sourceRepo: source, commit, base: ctx.base, primaryRoot: ctx.root, gateKind: ctx.isPlan ? 'plan' : 'inspect', inputs: snapshotInputs(ctx, resume) });
   const allowlist = allowlistFields(s);
-  return s.ok ? { ok: true, snapshot: s.snapshot, commit: s.commit, allowlist } : { ok: false, reason: s.reason, detail: s.reason_detail || s.detail || s.secret_pattern || null, allowlist };
+  return s.ok ? { ok: true, snapshot: s.snapshot, commit: s.commit, inputs: s.inputs, allowlist } : { ok: false, reason: s.reason, detail: s.reason_detail || s.detail || s.secret_pattern || null, allowlist };
 }
 
 // ---------- allowlist reporting (FR-030 f, g) ----------
@@ -225,15 +237,15 @@ function noteAllowlist(ctx, al) {
   appendXreviewNote(ctx.phaseDir, `Allowlisted snapshot hits · ${ctx.gate} · ${scopeOf(ctx.wave)}`, lines);
 }
 
-function stepRun(ctx, snap) {
-  const argv = ['run', '--mode', ctx.mode, '--snapshot', snap, '--plan', ctx.planPath, '--phase', ctx.phase, '--gate', ctx.gate, '--round', String(ctx.round)];
+function stepRun(ctx, snap, inputs, resume) {
+  const argv = ['run', '--mode', ctx.mode, '--snapshot', snap, '--plan', inputs.plan, '--phase', ctx.phase, '--gate', ctx.gate, '--round', String(ctx.round)];
   if (ctx.wave !== null) argv.push('--wave', String(ctx.wave));
   if (ctx.lane !== null) argv.push('--lane', ctx.lane);
   if (ctx.base !== null) argv.push('--base', ctx.base);
   if (ctx.workPath !== ctx.root) argv.push('--work-path', ctx.workPath);
   if (ctx.timeout !== null) argv.push('--timeout', String(ctx.timeout));
   if (NO_LOG_FLAG) argv.push(`--${NO_LOG_FLAG}`); // one log entry per gate call: the driver's
-  argv.push(...resumeArgs(ctx));
+  if (resume) argv.push('--resume', resume.resume, '--feedback', inputs.feedback);
   const r = runSub(ctx, argv);
   if (r.status !== 0 || !r.json || typeof r.json.result_path !== 'string') {
     return { ok: false, reason: (r.json && r.json.reason) || X.REASONS.runner_failed, detail: (r.json && r.json.reason_detail) || r.stderr || `run exited ${r.status}` };
@@ -315,18 +327,18 @@ function gate(o) {
   const permit = permitCheck({ repoRoot: ctx.root });
   if (!permit.ok) return fail('permit-check', permit.reason, permit.detail);
   if (ctx.round > X.ROUND_CAP) { const r = fail('round', X.REASONS.round_cap, `round ${ctx.round} > cap ${X.ROUND_CAP}`); appendLog(ctx, r, 'none'); return r; }
-  resumeArgs(ctx); // usage errors surface before any side effect (exit 2 writes nothing)
+  const resume = resumeInfo(ctx); // usage errors surface before any side effect (exit 2 writes nothing)
   let snap = null;
   let result;
   try {
     const pre = preflight({ pluginAllowlist: ctx.pluginAllowlist });
     if (!pre.ok) return (result = fail('preflight', pre.reason, pre.failed.join(', ')));
-    const snapped = stepSnapshot(ctx);
+    const snapped = stepSnapshot(ctx, resume);
     const al = snapped.allowlist;
     noteAllowlist(ctx, al);
     if (!snapped.ok) return (result = fail('snapshot', snapped.reason, snapped.detail, al));
     snap = snapped.snapshot;
-    const ran = stepRun(ctx, snap);
+    const ran = stepRun(ctx, snap, snapped.inputs, resume);
     if (!ran.ok) return (result = fail('run', ran.reason, ran.detail, al));
     const norm = stepNormalize(ctx, ran.resultPath, al);
     if (!norm.ok) return (result = fail('normalize', norm.reason, norm.detail, { ...al, result_path: ran.resultPath }));

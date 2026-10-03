@@ -35,7 +35,12 @@ environment when the file is absent (direct `python3 fake-runner.py` calls).
                                line on stderr, NO run dir, NO JSON, exit 1
   FAKE_RUNNER_EXIT             exit code (default 0)
 
-Mirrors the measured runner behaviours a1 depends on: the run directory is
+Mirrors the measured runner behaviours a1 depends on (Wave 7 adds two, ported
+from runner.py 2.1.0, never from a1's code): the record carries the resolved
+`repo` and `plan` the run used (runner.py:301-304), and in inspect mode
+`snapshot` = {base, files, diff_sha256, sha256} computed exactly like
+runner.py:86-108 (`git diff --no-ext-diff --no-textconv --binary <base> --`);
+ the run directory is
 `mkdtemp(prefix="claudex-", dir=<artifacts>)`; an --artifacts path inside
 --repo is refused; in inspect mode `--base` must resolve INSIDE --repo (the
 real runner runs `git rev-parse <base>^{commit}` + `git diff <base>` there — a
@@ -45,6 +50,7 @@ line and exit 1). stdout mirrors the real shape: one header line
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -54,6 +60,7 @@ import tempfile
 from pathlib import Path
 
 EXIT_REFUSED = 1
+SIZE_PROBE_BYTES = 1024 * 1024  # no real record comes near; only padded size probes
 EXIT_BAD_CASE = 98
 ENV_FILE_NAME = "fake-runner.env.json"
 
@@ -114,6 +121,59 @@ def make_run_dir(artifacts: str, repo: str | None) -> Path:
     return Path(tempfile.mkdtemp(prefix="claudex-", dir=root))
 
 
+def git_bytes(repo: str, *args: str) -> bytes:
+    r = subprocess.run(["git", *args], cwd=repo, capture_output=True, timeout=30)
+    if r.returncode:
+        raise SystemExit(f"fake-runner: git {' '.join(args)}: {r.stderr.decode('utf-8', 'replace').strip()}")
+    return r.stdout
+
+
+def digest(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def runner_snapshot(repo: str, base: str) -> dict:
+    """Port of runner.py 2.1.0 snapshot() (lines 86-108)."""
+    base_id = git_bytes(repo, "rev-parse", "--verify", base + "^{commit}").decode().strip()
+    tracked = git_bytes(repo, "diff", "--no-ext-diff", "--name-only", "-z", base_id, "--")
+    untracked = git_bytes(repo, "ls-files", "--others", "--exclude-standard", "-z")
+    names = sorted(set(os.fsdecode(n) for n in (tracked + untracked).split(b"\0") if n))
+    files = []
+    for name in names:
+        path = Path(repo) / name
+        if path.is_symlink():
+            body, kind = os.fsencode(os.readlink(path)), "symlink"
+        elif path.is_file():
+            body, kind = path.read_bytes(), "file"
+        else:
+            body, kind = b"", "deleted"
+        files.append({"path": name, "kind": kind, "sha256": digest(body)})
+    diff = git_bytes(repo, "diff", "--no-ext-diff", "--no-textconv", "--binary", base_id, "--")
+    value = {"base": base_id, "files": files, "diff_sha256": digest(diff)}
+    value["sha256"] = digest(json.dumps(value, sort_keys=True).encode())
+    return value
+
+
+def stamp_record(run_dir: Path, mode: str | None, repo: str | None, plan: str | None, base: str | None) -> None:
+    """repo/plan as the real runner records them; snapshot in inspect mode."""
+    target = run_dir / "result.json"
+    if target.stat().st_size > SIZE_PROBE_BYTES:
+        return  # a padded size-probe case (R18d3c) keeps its exact bytes
+    try:
+        record = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return  # malformed/empty cases stay byte-identical
+    if not isinstance(record, dict):
+        return
+    if repo:
+        record["repo"] = str(Path(repo).resolve())
+    if plan:
+        record["plan"] = str(Path(plan).resolve())
+    if mode == "inspect" and repo and base:
+        record["snapshot"] = runner_snapshot(repo, base)
+    target.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+
+
 def base_resolves(repo: str | None, base: str | None) -> bool:
     """The real runner's snapshot(repo, base) runs git rev-parse <base>^{commit} in --repo."""
     if not repo or not base:
@@ -158,6 +218,7 @@ def main(argv: list[str]) -> int:
         case = resolve_case(k.get("FAKE_RUNNER_CASE"), k.get("FAKE_RUNNER_CASES_DIR"))
         if case is not None:
             shutil.copyfile(case, run_dir / "result.json")
+            stamp_record(run_dir, mode, repo, flag(argv, "--plan"), flag(argv, "--base"))
         write_reply(run_dir, k.get("FAKE_RUNNER_REPLY"))
         (run_dir / "command.json").write_text(json.dumps(argv, indent=2) + "\n", encoding="utf-8")
     if k.get("FAKE_RUNNER_SIDE_EFFECT") == "write-into-repo" and repo:

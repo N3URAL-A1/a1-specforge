@@ -386,8 +386,16 @@ caseH1() {
   FAKE_RUNNER_ARGV_FILE="$art/argv.json" FAKE_RUNNER_CASE=approved \
     python3 "$TREE_VENDOR/runner.py" review --host claude --repo "$PHASE_REPO" --plan "$PHASE_PLAN" --artifacts "$art" --timeout 5 >/dev/null 2>&1; rc=$?
   local run_dir; run_dir="$(ls -d "$art"/claudex-* 2>/dev/null | head -1)"
-  if [[ $rc -eq 0 && -f "$art/argv.json" && -n "$run_dir" ]] && cmp -s "$run_dir/result.json" "$CASES/approved.result.json"; then
-    ok "H1f fake runner records argv and copies the named case into <artifacts>/claudex-*/result.json"
+  # Wave 7: like the real runner (runner.py:301-304) the fake records the resolved
+  # repo and plan of the run; every other field is the named case, unchanged.
+  local same; same="$(node -e '
+    const fs = require("fs"); const [got, want, repo, plan] = process.argv.slice(1);
+    const g = JSON.parse(fs.readFileSync(got, "utf8")); const w = JSON.parse(fs.readFileSync(want, "utf8"));
+    const strip = (o) => { const c = { ...o }; delete c.repo; delete c.plan; return JSON.stringify(c); };
+    process.stdout.write(String(strip(g) === strip(w) && g.repo === fs.realpathSync(repo) && g.plan === fs.realpathSync(plan)));
+  ' "$run_dir/result.json" "$CASES/approved.result.json" "$PHASE_REPO" "$PHASE_PLAN" 2>/dev/null)"
+  if [[ $rc -eq 0 && -f "$art/argv.json" && -n "$run_dir" && "$same" == "true" ]]; then
+    ok "H1f fake runner records argv and copies the named case (repo/plan stamped as the real runner records them) into <artifacts>/claudex-*/result.json"
   else bad "H1f fake runner (rc=$rc run_dir=$run_dir)"; fi
   argv="$(cat "$art/argv.json" 2>/dev/null)"
   assert_json "H1g recorded argv[1] is the copy's vendored runner path" "$argv" "j[0]" "$TREE_VENDOR/runner.py"

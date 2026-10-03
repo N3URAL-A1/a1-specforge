@@ -382,9 +382,20 @@ function loadAtAnchor(root, anchor, commitSha, approvals) {
 
 /** Applies the anchor's allowlist to the scan. Returns the NO_ALLOWLIST shape
  * with the fields filled in; `fail` set means stop before dispatch. */
+/** `o.matches` is the reviewed tree (side head). `o.extra` (Wave 7, Samuel:
+ * everything that leaves is scanned) adds sides — `base` (base-side blobs of
+ * every path the outbound diff touches) and `input` (the PLAN.md and
+ * dispositions copies) — judged against the SAME anchored allowlist and the
+ * same (path, pattern) entries, each side counted on its own against
+ * max_count. A non-head entry carries `side`; `stale` reads the head side only. */
 function evaluate(o) {
   const pairs = groupPairs(o.matches);
-  const all = [...pairs.values()].map((p) => Object.freeze({ path: p.path, pattern: p.pattern }));
+  const sides = (o.extra || []).map((s) => ({ side: s.side, pairs: groupPairs(s.matches) }));
+  const tag = (side, obj) => Object.freeze(side ? { ...obj, side } : obj);
+  const all = [
+    ...[...pairs.values()].map((p) => tag(null, { path: p.path, pattern: p.pattern })),
+    ...sides.flatMap((s) => [...s.pairs.values()].map((p) => tag(s.side, { path: p.path, pattern: p.pattern }))),
+  ];
   const result = (fields) => Object.freeze({ ...NO_ALLOWLIST, uncovered: all, ...fields });
   const anc = resolveAnchor(o.root, o.commitSha, o.gateKind);
   if (!anc.ok) return result({ unresolved: true, note: anc.note });
@@ -399,12 +410,16 @@ function evaluate(o) {
   const { doc, blobSha } = loaded;
   const allowlisted = [];
   const uncovered = [];
-  for (const p of pairs.values()) {
-    const e = doc.entries.find((x) => x.path === p.path && x.pattern === p.pattern);
-    const covered = e && p.count <= e.max_count && [...p.fingerprints].every((fp) => e.fingerprints.includes(fp));
-    if (covered) allowlisted.push(Object.freeze({ path: p.path, pattern: p.pattern, count: p.count, class: e.class }));
-    else uncovered.push(Object.freeze({ path: p.path, pattern: p.pattern }));
-  }
+  const judge = (pairMap, side) => {
+    for (const p of pairMap.values()) {
+      const e = doc.entries.find((x) => x.path === p.path && x.pattern === p.pattern);
+      const covered = e && p.count <= e.max_count && [...p.fingerprints].every((fp) => e.fingerprints.includes(fp));
+      if (covered) allowlisted.push(tag(side, { path: p.path, pattern: p.pattern, count: p.count, class: e.class }));
+      else uncovered.push(tag(side, { path: p.path, pattern: p.pattern }));
+    }
+  };
+  judge(pairs, null);
+  for (const s of sides) judge(s.pairs, s.side);
   const tracked = new Set(o.tracked);
   const stale = doc.entries.filter((e) => !tracked.has(e.path) || !pairs.has(`${e.path}\0${e.pattern}`)).map((e) => Object.freeze({ path: e.path, pattern: e.pattern }));
   return result({

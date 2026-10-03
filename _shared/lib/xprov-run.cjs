@@ -86,7 +86,7 @@ const { ensureArtifactsDir, isUnder } = require('./xprov-artifacts.cjs');
 const { appendXreviewNote } = require('./xprov-normalize.cjs');
 const { filterOutput, instructionMarker } = require('./xprov-filter.cjs');
 const { permitCheck } = require('./xprov-permit.cjs');
-const { SNAP_PREFIX, REPO_LOCAL_STRIP } = require('./xprov-snapshot.cjs');
+const { SNAP_PREFIX, REPO_LOCAL_STRIP, storedDiffSha } = require('./xprov-snapshot.cjs');
 
 const NO_LOG_FLAG = 'no-log';
 const FLAGS = Object.freeze({
@@ -209,6 +209,7 @@ function buildEnv(source, runHome) {
   delete env.HOME;
   if (runHome) env.HOME = runHome;
   env.CODEX_HOME = X.codexHome();
+  env.GIT_CONFIG_NOSYSTEM = '1'; // the runner's git reads no /etc/gitconfig (Wave 7, Samuel)
   return env;
 }
 
@@ -527,6 +528,18 @@ function runWithBaseline(ctx, artifactsDir, argv, notes) {
     const resultPath = run.runDir ? path.join(run.runDir, 'result.json') : null;
     if (!resultPath || !isFile(resultPath)) return failWith(X.REASONS.runner_failed, 'runner exited 0 without a result.json in a claudex-* run dir under the artifacts dir', run.runDir, false);
     if (fileSize(resultPath) > X.MAX_RESULT_BYTES) return failWith(X.REASONS.malformed, `result.json exceeds ${X.MAX_RESULT_BYTES} bytes and cannot be scanned`, run.runDir, true);
+    // Detective TOCTOU check (Wave 7, Samuel): the diff the runner hashed must be
+    // the diff the snapshot scan hashed (runner.py:106-107 vs snapshot()).
+    if (ctx.mode === 'inspect') {
+      let recorded = null;
+      try { const rec = JSON.parse(readIfFile(resultPath)); recorded = rec && rec.snapshot && typeof rec.snapshot.diff_sha256 === 'string' ? rec.snapshot.diff_sha256 : null; } catch (_e) { recorded = null; }
+      if (recorded !== ctx.diffSha) {
+        const detail = `snapshot diff changed between the scan and the runner (scanned ${String(ctx.diffSha).slice(0, 12)}, runner ${String(recorded).slice(0, 12)})`;
+        appendXreviewNote(ctx.phaseDir, `BLOCKER tripwire (${ctx.gate}, ${ctx.mode})`, ['the outbound diff differs from the scanned one; the result was discarded', detail]);
+        removeRunDir(run.runDir, artifactsDir);
+        return finish({ reason: X.REASONS.tripwire, reason_detail: detail, baseline_delta: [detail], result_path: null, artifacts_run_dir: null }, `fail/${X.REASONS.tripwire}`, X.EXIT_FAIL);
+      }
+    }
     const replyPath = path.join(run.runDir, 'reply.txt');
     if (isFile(replyPath) && fileSize(replyPath) > X.MAX_RESULT_BYTES) return failWith(X.REASONS.malformed, `reply.txt exceeds ${X.MAX_RESULT_BYTES} bytes and cannot be scanned`, run.runDir, true);
     const hit = filterOutput([readIfFile(resultPath), readIfFile(replyPath)]);
@@ -564,6 +577,14 @@ function cmdXprovRun(args) {
     appendLog(ctx, { roles: 'unknown', result_path: null, verdict: `fail/${X.REASONS.snapshot_failed}`, notes });
     return emit(ctx, { ok: false, reason: X.REASONS.snapshot_failed, reason_detail: detail, result_path: null, artifacts_run_dir: null, baseline_delta: [] }, X.EXIT_FAIL);
   }
+  const diffSha = ctx.mode === 'inspect' ? storedDiffSha(ctx.snapshot) : null;
+  if (ctx.mode === 'inspect') {
+    if (!diffSha) {
+      const detail = 'no scanned diff hash next to the snapshot (<snapshot>.inputs/diff.sha256) — build it with xprov snapshot --base';
+      process.stderr.write(`xprov run: ${detail}; refusing to spawn\n`);
+      return emit(ctx, { ok: false, reason: X.REASONS.snapshot_failed, reason_detail: detail, result_path: null, artifacts_run_dir: null, baseline_delta: [] }, X.EXIT_FAIL);
+    }
+  }
   const present = Object.entries(REPO_LOCAL_TRACKED).filter(([k]) => notes[k]).map(([, rel]) => rel);
   if (present.length) {
     process.stderr.write(`xprov run: the reviewed commit tracks repo-local Codex inputs (${present.join(', ')}); they were removed from the snapshot working tree and are logged\n`);
@@ -571,7 +592,7 @@ function cmdXprovRun(args) {
   }
   const artifactsDir = ensureArtifactsDir(); // 0700, outside checkout and vault (A1_INPUT → facade exit 2)
   const argv = buildArgv(ctx, artifactsDir);
-  return runWithBaseline(ctx, artifactsDir, argv, notes);
+  return runWithBaseline(Object.freeze({ ...ctx, diffSha }), artifactsDir, argv, notes);
 }
 
 module.exports = {

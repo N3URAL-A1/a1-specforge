@@ -76,6 +76,8 @@ caseR11() {
     "[j.result_path.endsWith('/result.json'), j.artifacts_run_dir.startsWith(require('fs').realpathSync(process.env.HOME) + '/.a1-xprov/artifacts/'), j.snapshot === '$SNAP', j.baseline_delta.length].join('/')" "true/true/true/0"
   local mode; mode="$(mode_of "$art")"
   assert_eq "R11g artifacts root was pre-created 0700 by a1" "$mode" "700"
+  # Wave 7: inspect needs a snapshot built WITH --base (its scanned diff hash sits next to it)
+  snap5 "$PHASE_HEAD" "$PHASE_HEAD"
   run5 inspect --base "$PHASE_HEAD"
   assert_rc "R11h run --mode inspect --base <sha> exits 0" 0 "$U_RC" "$U_ERR"
   assert_json "R11i inspect argv appends --base <sha> and carries no --resume/--log" "$(cat "$ARGV_FILE")" \
@@ -85,6 +87,8 @@ caseR11() {
   grep -q "model_requested: CLI default (unresolved)" "$log" && grep -q "gate: $GATE_PLAN" "$log" && grep -q "result: " "$log" \
     && ok "R11k log entry carries gate, model_requested and the result path" || bad "R11k log entry incomplete"
   printf 'accepted: R1\n' > "$TMP05/dispositions.md"
+  # a resume continues a REVIEW of the same repo and plan (runner.py:257-264)
+  run5 review
   local prev; prev="$(jget "$U_OUT" 'j.result_path')"
   run5 review --resume "$prev" --feedback "$TMP05/dispositions.md"
   assert_json "R11l review resume appends --resume <result.json> --feedback <file>" "$(cat "$ARGV_FILE")" \
@@ -177,7 +181,8 @@ caseR15() {
 
 # ---------- R16: the snapshot is a fresh, depth-limited fetch, never a copy ----------
 # Red-making changes: R16b `cp -R` instead of a git fetch; S6b/c fetching the full
-# history (a parent's secret becomes readable); S6d/f depth one short for inspect.
+# history (a parent's secret becomes readable); S6e not scanning the base side;
+# S6f fetching base..head history instead of base and head (Wave 7).
 # `--no-hardlinks`/alternates (R16c/d) stay as regression guards but are
 # untested by design: no fake reproduces a shared-object clone.
 caseR16() {
@@ -218,14 +223,21 @@ caseR16() {
   assert_eq "S6b review snapshot holds exactly one commit" "$(cd "$SNAP" && git rev-list --count HEAD)" "1"
   assert_eq "S6c the parent commit's secret is not readable from the snapshot history" "$(cd "$SNAP" && git log -p --all 2>/dev/null | grep -c 'AKIAHHHH')" "0"
   FAKE_RUNNER_CASE=approved run5 inspect --base "$base2"
-  assert_json "S6d inspect against a review-depth snapshot → runner_failed (base unreachable), never a crash" "$U_OUT" "j.reason + '/' + String($U_RC)" "runner_failed/1"
+  assert_json "S6d inspect on a review snapshot (no scanned diff) → refused before the spawn, never a crash" "$U_OUT" "j.reason + '/' + String($U_RC)" "snapshot_failed/1"
+  # Wave 7 (Samuel): base = c1 holds the secret that the wave deletes — its content
+  # would leave as the deletion in `git diff <base>`, so the BASE side fails.
   snap5 "$PHASE_HEAD" "$base2"
-  assert_rc "S6e inspect snapshot with --base HEAD~2 exits 0" 0 "$S_RC" "$S_ERR"
-  assert_eq "S6f inspect snapshot depth = rev-list --count base..commit + 1 = 3 commits" "$(cd "$SNAP" && git rev-list --count HEAD)" "3"
-  ( cd "$SNAP" && git diff --quiet "$base2" HEAD ); rc=$?
+  assert_json "S6e inspect with --base = the commit holding the secret → secret_in_snapshot on the base side" "$S_OUT" "j.reason + '/' + j.secret_side + '/' + String($S_RC)" "secret_in_snapshot/base/1"
+  # depth (Wave 7: base and head only, depth 1 each): base = c2 (clean)
+  local base1 c1; base1="$(cd "$PHASE_REPO" && git rev-parse HEAD~1)"; c1="$base2"
+  snap5 "$PHASE_HEAD" "$base1"
+  assert_rc "S6f inspect snapshot with --base HEAD~1 exits 0" 0 "$S_RC" "$S_ERR"
+  ( cd "$SNAP" && git cat-file -e "$base1^{commit}" && ! git cat-file -e "$c1^{commit}" 2>/dev/null ) \
+    && ok "S6f the inspect snapshot holds base and head, nothing older" || bad "S6f snapshot objects wrong (base present? c1 absent?)"
+  ( cd "$SNAP" && git diff --quiet "$base1" HEAD ); rc=$?
   [[ $rc -eq 0 || $rc -eq 1 ]] && ok "S6g git diff <base> HEAD works inside the inspect snapshot (rc=$rc)" || bad "S6g base not resolvable in the inspect snapshot (rc=$rc)"
-  FAKE_RUNNER_CASE=approved run5 inspect --base "$base2"
-  assert_rc "S6h run --mode inspect on the depth-correct snapshot exits 0" 0 "$U_RC" "$U_ERR"
+  FAKE_RUNNER_CASE=approved run5 inspect --base "$base1"
+  assert_rc "S6h run --mode inspect on the base+head snapshot exits 0" 0 "$U_RC" "$U_ERR"
 }
 
 # ---------- R17: no snapshot with a secret ever reaches the runner ----------

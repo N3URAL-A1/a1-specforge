@@ -213,17 +213,18 @@ caseR6() {
   assert_json "R6a the argv of round 1 has no --resume" "$(cat "$ARGV6_FILE")" "j.includes('--resume')" "false"
   assert_json "R6a observation type blocker on fail" "$(tail -n 1 "$PHASE_DIR/observations.jsonl")" "j.type + '/' + j.severity" "blocker/major"
   local disp; disp="$(json_get "$G_OUT" "j.next.dispositions_path")"
+  local prev; prev="$(json_get "$G_OUT" "j.result_path")"
   # round 2 without the host-authored dispositions file is a usage error, no runner call
   FAKE_RUNNER_CASE=revise gate6 --gate "$GATE_PLAN" --round 2
   assert_rc "R6b round 2 without a dispositions file is a usage error" 2 "$G_RC"
   [[ ! -f "$ARGV6_FILE" ]] && ok "R6b runner not called without dispositions" || bad "R6b runner called"
   printf 'F1: accepted — will fix in wave 2\n' > "$disp"
-  local prev; prev="$(json_get "$G_OUT" "j.result_path")"
   FAKE_RUNNER_CASE=revise gate6 --gate "$GATE_PLAN" --round 2
   assert_rc "R6c REVISE again at round 2 exits 1" 1 "$G_RC" "$G_ERR"
   assert_json "R6c reported as fail/round_cap (no round 3), next null" "$G_OUT" "[j.verdict, j.reason, j.round, String(j.next)].join('/')" "fail/round_cap/2/null"
-  assert_json "R6c round 2 argv resumed the round-1 result with the dispositions file" "$(cat "$ARGV6_FILE")" \
-    "j.includes('--resume') + '/' + j.includes('--feedback') + '/' + j[j.indexOf('--feedback') + 1]" "true/true/$disp"
+  # Wave 7 (Samuel): the runner gets the scanned COPY of the dispositions, next to the snapshot
+  assert_json "R6c round 2 argv resumed the round-1 result with the scanned copy of the dispositions" "$(cat "$ARGV6_FILE")" \
+    "j.includes('--resume') + '/' + (require('fs').realpathSync(j[j.indexOf('--resume') + 1]) === require('fs').realpathSync('$prev')) + '/' + /\/snap-[A-Za-z0-9]{6}\.inputs\/feedback\.md$/.test(j[j.indexOf('--feedback') + 1] || '')" "true/true/true"
   assert_json "R6c index.json holds two plan rounds" "$(cat "$PHASE_DIR/xreview/index.json")" "j.filter((e) => e.gate === '$GATE_PLAN').map((e) => e.round).join(',')" "1,2"
   FAKE_RUNNER_CASE=revise gate6 --gate "$GATE_PLAN" --round 3
   assert_rc "R6d --round 3 is round_cap before any runner call" 1 "$G_RC"
