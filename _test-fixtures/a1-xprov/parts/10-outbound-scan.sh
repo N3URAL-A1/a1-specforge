@@ -63,6 +63,23 @@
 #       Red if inputProblem drops the hash comparison.
 #   RI3 --feedback outside <snapshot>.inputs → refused.
 #       Red if only --plan is checked.
+#
+# Path NAMES leave too (Codex R1, live inspect 2026-10-03): the runner's change
+# manifest and diff headers carry every outbound path. A path hit is never
+# allowlisted and the name is never echoed (it may be the secret itself).
+#   P1 a tracked, empty file with a secret-shaped name in a PLAN review (no diff:
+#      Codex lists the snapshot itself) → secret_in_snapshot (side path).
+#      Red if the snapshot's tracked paths are not name-scanned.
+#   P1b the same name added in an inspected wave → same (either list catches it).
+#   P2 a deleted, empty file with a secret-shaped name → same.
+#      Red if base-side paths are not name-scanned.
+#   P3 a secret-shaped name renamed to a benign one → same.
+#      Red if the base-side path list uses rename detection.
+#   P0 control: a benign added name passes.
+#   P4 `xprov snapshot` itself (stdout JSON, stderr) never echoes the name.
+#      Red if the path text is put into the snapshot result.
+#   Every failing P arm also asserts the name appears in none of stdout, stderr,
+#   PLAN-REVIEW-LOG.md, XREVIEW.md. Red if the path text is put in a detail.
 #   (The second, late re-hash right before the spawn closes the window between
 #   that check and the spawn; no CLI arm can reach it — it shares inputProblem.)
 
@@ -269,7 +286,42 @@ caseRI() {
   ri_run "$RI_SNAP.inputs/PLAN.md" "$RI_DISP"; ri_refused "RI3 --feedback outside <snapshot>.inputs" "feedback must be the snapshot"
 }
 
-caseO1; caseO2; caseO3; caseO4; caseO5; caseO6; caseO7; caseO8; caseO9; caseO10O11; caseO12; caseRR; caseRI
+# pname10 — a secret-shaped file NAME, assembled at runtime (no source line matches).
+pname10() { printf 'ghp_%s.txt' "$(head -c 36 /dev/zero | tr '\0' 'P')"; }
+noecho10() { # <name> <secret-name>
+  local where=""
+  printf '%s%s' "$G_OUT" "$G_ERR" | grep -qF -- "$2" && where="$where stdout/stderr"
+  grep -qrF -- "$2" "$P8DIR/PLAN-REVIEW-LOG.md" "$P8DIR/XREVIEW.md" 2>/dev/null && where="$where phase-files"
+  [[ -z "$where" ]] && ok "$1: the name is echoed nowhere" || bad "$1: the secret-shaped name leaked into$where"
+}
+pathfail10() { # <name> <secret-name>
+  local got; got="$(json_get "$G_OUT" "j.step + ':' + j.reason + ':' + j.reason_detail")"
+  [[ "$G_RC" -eq 1 && "$got" == "snapshot:secret_in_snapshot:path_name" ]] && ok "$1 → secret_in_snapshot (path name)" || bad "$1: want snapshot:secret_in_snapshot:path_name, got $got (exit $G_RC)"
+  never_ran8 "$1"; noecho10 "$1" "$2"
+}
+
+caseP() {
+  local nm; nm="$(pname10)"
+  new8; : > "$R8/$nm"; c8 "tracked empty secret-named file"
+  gate8 --gate "$GATE_PLAN"; pathfail10 "P1 a tracked secret-shaped name in a plan review" "$nm"
+  new8; feat10; : > "$R8/$nm"; c8 "add empty secret-named file"
+  inspect10; pathfail10 "P1b an added, empty file with a secret-shaped name" "$nm"
+  new8; : > "$R8/$nm"; c8 "secret-named file at base"; feat10
+  git -C "$R8" rm -q -- "$nm"; c8 "delete it"
+  inspect10; pathfail10 "P2 a deleted, empty file with a secret-shaped name" "$nm"
+  new8; printf 'stable content\n' > "$R8/$nm"; c8 "secret-named file at base"; feat10
+  git -C "$R8" mv -- "$nm" benign.txt; c8 "rename to a benign name"
+  inspect10; pathfail10 "P3 a secret-shaped name renamed to a benign one" "$nm"
+  new8; feat10; : > "$R8/benign-empty.txt"; c8 "add a benign empty file"
+  inspect10; pass8 "P0 control: a benign added name passes"
+  new8; : > "$R8/$nm"; c8 "tracked empty secret-named file"
+  local so; so="$(cd "$R8" && node "$TREE_TOOLS" xprov snapshot --repo "$R8" --commit HEAD 2>"$TMP10/p4-err.txt")"
+  assert_json "P4 snapshot CLI → secret_in_snapshot (path name)" "$so" "j.reason + ':' + j.reason_detail" "secret_in_snapshot:path_name"
+  if printf '%s' "$so" | grep -qF -- "$nm" || grep -qF -- "$nm" "$TMP10/p4-err.txt"; then bad "P4 the snapshot CLI echoed the secret-shaped name"
+  else ok "P4 the snapshot CLI echoes the name nowhere (stdout, stderr)"; fi
+}
+
+caseO1; caseO2; caseO3; caseO4; caseO5; caseO6; caseO7; caseO8; caseO9; caseO10O11; caseO12; caseRR; caseRI; caseP
 unset A1_XPROV_CODEX_HOME
 export HOME="$SAVED_HOME_10"
 rm -rf "$TMP10"

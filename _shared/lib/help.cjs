@@ -696,7 +696,11 @@ ${SPEC_INIT_HELP}
                   <snapshot>.inputs/ (0700); same allowlist per side (entries
                   carry side: base|input), gitleaks over all of them. The diff
                   the runner will hash is hashed here and kept as
-                  <snapshot>.inputs/diff.sha256. --plan/--feedback copy and
+                  <snapshot>.inputs/diff.sha256. Path NAMES (tracked paths and
+                  every base-side path, deletions and both rename sides) are
+                  scanned first; a hit is never allowlisted and is reported as
+                  pattern + a 12-character sha256 of the path, never the path.
+                  --plan/--feedback copy and
                   scan those files into <snapshot>.inputs/ and record their
                   sha256 (inputs.json) — the only inputs xprov run accepts.
     run --mode review|inspect --snapshot <dir> --plan <abs PLAN.md> --phase <name>

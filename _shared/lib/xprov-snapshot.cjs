@@ -48,6 +48,9 @@
 //     (0700, a1-owned, outside the snapshot so the runner's untracked-file
 //     manifest never sees them), the copies are scanned (side `input`, labelled
 //     with their repo path) and the gate passes the copies to the runner;
+//   * path NAMES of the snapshot and of every base-side path (deletions, both
+//     rename sides) are scanned too, first; a hit is never allowlisted and is
+//     reported by pattern and a 12-character sha256 of the path only;
 //   * every side meets the same anchored allowlist (xprov-allowlist evaluate,
 //     `extra`); gitleaks runs over the base blobs and the inputs as well and is
 //     never allowlisted;
@@ -408,12 +411,14 @@ function runnerLikeGit(dir, args) {
   }
 }
 
-/** Base-side blobs of every path the outbound diff touches: [{ path, buf }]. */
+/** Base-side blobs of every path the outbound diff touches: { blobs: [{ path,
+ * buf }], paths: [every path of the diff, deletions and both rename sides] }. */
 function baseSideBlobs(dir, baseSha) {
   const names = runnerLikeGit(dir, ['diff', '--no-ext-diff', '--name-only', '--no-renames', '-z', baseSha, '--']);
   if (names.status !== 0) return { error: `diff --name-only ${baseSha.slice(0, 12)}: ${tail(String(names.stderr))}` };
   const blobs = [];
-  for (const rel of names.stdout.toString('utf8').split('\0').filter(Boolean)) {
+  const paths = names.stdout.toString('utf8').split('\0').filter(Boolean);
+  for (const rel of paths) {
     const spec = `${baseSha}:${rel}`;
     const type = git(['-C', dir, 'cat-file', '-t', spec]);
     if (type.status !== 0 || type.stdout.trim() !== 'blob') continue; // added in the wave, or a gitlink (the runner refuses those)
@@ -421,7 +426,20 @@ function baseSideBlobs(dir, baseSha) {
     if (b.status !== 0) return { error: `cat-file ${rel}: ${tail(String(b.stderr))}` };
     blobs.push({ path: rel, buf: b.stdout });
   }
-  return { blobs };
+  return { blobs, paths };
+}
+
+/** Path NAMES leave too (the runner's change manifest and diff headers): the
+ * first outbound path that matches a secret pattern, as { pattern, ref } —
+ * `ref` is a 12-character sha256 of the path, never the path itself, because
+ * the name can be the secret (Codex R1, live inspect 2026-10-03). Path hits
+ * are never allowlisted. */
+function pathNameHit(paths) {
+  for (const p of paths) {
+    const hit = X.SECRET_PATTERNS.find((s) => new RegExp(s.re.source, s.re.flags.replace('g', '')).test(p));
+    if (hit) return { pattern: hit.name, ref: C.sha256(Buffer.from(p, 'utf8')).slice(0, 12) };
+  }
+  return null;
 }
 
 /** Copies the inputs into `<dir>.inputs/` (0700, files 0600). `inputs` =
@@ -499,6 +517,11 @@ function snapshot(opts) {
   // Base side: what the outbound diff carries from <base>.
   const base_ = cl.base === null ? { blobs: [] } : baseSideBlobs(dir, cl.base);
   if (base_.error) return failed(X.REASONS.snapshot_failed, { detail: base_.error, ...none });
+  // Path names first — before any report could list a path (side `path`, never allowlisted).
+  const nameHit = pathNameHit([...new Set([...scan.tracked, ...(base_.paths || [])])]);
+  if (nameHit) {
+    return failed(X.REASONS.secret_in_snapshot, { secret_pattern: nameHit.pattern, secret_side: 'path', reason_detail: 'path_name', detail: `path #${nameHit.ref}`, files_scanned: scan.files_scanned, ...none });
+  }
   const baseMatches = base_.blobs.flatMap((b) => scanSource(bufferSource(b.buf), b.path, false));
   // Inputs: the copies the runner will read, scanned under their repo labels.
   let ins;
