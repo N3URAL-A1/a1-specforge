@@ -158,7 +158,6 @@ function resolveArgs(args) {
   if (flags._.length) usage(`unexpected argument ${JSON.stringify(String(flags._[0]).slice(0, 80))}`);
   if (!RUNNER_MODES.has(flags.mode)) usage(`--mode must be one of ${X.RUNNER_MODES.join('|')} (got ${JSON.stringify(String(flags.mode).slice(0, 40))}); build is never used`);
   if (flags.mode === 'inspect' && !flags.base) usage('--mode inspect requires --base <sha>');
-  if (flags.feedback && flags.mode !== 'review') usage('--feedback is plan-review only (--mode review)');
   if (flags.base && !/^[0-9a-fA-F]{7,40}$/.test(flags.base)) usage('--base must be a commit sha (7-40 hex chars)');
   if (!flags.plan) usage('--plan <abs PLAN.md> is required');
   if (!path.isAbsolute(flags.plan)) usage(`--plan must be an absolute path (got ${JSON.stringify(flags.plan.slice(0, 80))})`);
@@ -196,7 +195,7 @@ function buildArgv(ctx, artifactsDir) {
   const argv = ['python3', X.vendoredRunnerPath(), ctx.mode, '--host', X.RUNNER_HOST, '--repo', ctx.snapshot,
     '--plan', ctx.plan, '--artifacts', artifactsDir, '--timeout', String(ctx.timeout)];
   if (ctx.mode === 'inspect') argv.push('--base', ctx.base);
-  if (ctx.mode === 'review' && ctx.feedback) argv.push('--feedback', ctx.feedback);
+  if (ctx.feedback) argv.push('--feedback', ctx.feedback); // every mode: runner.py:348-349 appends it unconditionally
   const forbidden = argv.find((a) => X.FORBIDDEN_RUNNER_TOKENS.includes(a));
   if (forbidden) throw new Error(`refusing to spawn: argv contains ${forbidden}`);
   return argv;

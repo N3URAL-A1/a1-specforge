@@ -78,6 +78,10 @@
 #   RFR5 the runner's own refusal with interpolated text that is instruction-
 #        shaped → withheld (only exact fixed messages are exempt).
 #        Red if the check is limited to provider text again.
+#   RN5  `<file>:<symbol>` without the space (measured 2026-10-03) on a tracked
+#        file is kept, symbol in the detail.  Red if only ': ' is a separator.
+#   RN6  the same on an untracked file part stays path_not_in_repo.
+#        Red if the tracked-file check is dropped for the no-space form.
 #   RA1  a tracked `.agents/` is stripped from the snapshot and logged.
 #        Red if `.agents` is removed from REPO_LOCAL_STRIP.
 #   RS1  a write into $CODEX_HOME/skills/<x> is a tripwire.
@@ -372,6 +376,25 @@ caseRN() {
   out="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov normalize "$TMP09/rn4.result.json" --phase pRN --gate "$GATE_PLAN" 2>/dev/null)"
   assert_json "RN4 a marker at the end of near-limit evidence is never kept by the symbol strip" "$out" \
     "(j.quarantined || []).map(q => q.id).join(',') + '/' + (j.findings_count === undefined ? '' : '')" "W1/"
+
+  # RN5 — the measured `<file>:<symbol>` WITHOUT the space (live review on
+  # ae6c281, case revise-symbol-nospace, verbatim): tracked file → kept.
+  rm -rf "$PHASE_DIR/xreview"
+  out="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov normalize "$CASES/revise-symbol-nospace.result.json" --phase pRN --gate "$GATE_PLAN" 2>/dev/null)"
+  ff="$(ls "$PHASE_DIR/xreview/"*.findings.json 2>/dev/null | head -1)"; fj="$(cat "$ff" 2>/dev/null || echo '{}')"
+  assert_json "RN5 all three no-space findings are kept on the tracked file" "$fj" \
+    "[...(j.blocker || []), ...(j.major || [])].map(f => f.id + ':' + f.file).sort().join(',')" "M13-01:_shared/lib/checklist.cjs,M13-02:_shared/lib/checklist.cjs,M13-03:_shared/lib/checklist.cjs"
+  assert_json "RN5 the symbol is kept in the detail" "$fj" "String(/^Symbol: gatherChecklistInputs\n/.test(((j.major || []).find(f => f.id === 'M13-01') || {}).detail || ''))" "true"
+  # RN6 — the same shape on an UNTRACKED file part stays path_not_in_repo, as written
+  node -e '
+    const fs = require("fs"); const r = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    r.response.findings[0].path = "_shared/roadmap-gate-check.md:section2";
+    fs.writeFileSync(process.argv[2], JSON.stringify(r, null, 2) + "\n");
+  ' "$CASES/revise-symbol-nospace.result.json" "$TMP09/rn6.result.json"
+  rm -rf "$PHASE_DIR/xreview"
+  out="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov normalize "$TMP09/rn6.result.json" --phase pRN --gate "$GATE_PLAN" 2>/dev/null)"
+  assert_json "RN6 an untracked file part stays path_not_in_repo, path as Codex wrote it" "$out" \
+    "(j.quarantined || []).map(q => q.id + ':' + q.reason + ':' + q.file).join(',')" "M13-01:path_not_in_repo:_shared/roadmap-gate-check.md:section2"
 }
 
 # ---------- RH7: stale run homes left by a SIGKILL are swept by gc ----------

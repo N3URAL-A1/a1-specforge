@@ -60,7 +60,9 @@ exist, the redirect itself would fail with RC=1 and no JSON — indistinguishabl
 in the routing below from a real `plan_review_missing`. With the directory in
 place the check fails with that reason, which is the correct answer.)
 
-- **Exit 0** → proceed to Step 1.
+- **Exit 0** → proceed to Step 1. Keep `plan_sha256` from the stdout JSON as
+  `$LOADED_PLAN_SHA` (and `accepted`: `pass` or `waiver`): every wave re-checks
+  against it (`02-execute.md`, before 2a).
 - **Exit 1, `reason: plan_review_missing`** → read `enforcement` from the
   stdout JSON (it echoes the `plan-review-xprov` row of
   `_shared/gates-registry.md`; the workflow applies it, the CLI never does):
@@ -70,7 +72,10 @@ place the check fails with that reason, which is the correct answer.)
     first line `❌ … enforcement: blocking`; route the user to `a1-plan`
     Phase 4b (re-run the review on the current PLAN.md). The only other way
     forward is a human waiver — tell the user the command, do not run it:
-    `a1-tools xprov waive --phase <phase_name> --gate plan-review-xprov --reason "<text>"`.
+    `a1-tools xprov waive --phase <phase_name> --gate plan-review-xprov --reason "<text>" --by <name>`.
+    It runs only in the owner's own terminal — never through an agent's Bash tool or the `!` prefix: like the allowlist owner approval it refuses without a TTY, under Claude Code's environment or with a Claude Code ancestor, and the project's PreToolUse hook denies any Bash command containing it. It shows the key it computed itself (the PLAN.md sha256), asks for the gate id typed back and records the waiver in the guarded store
+    `~/.a1-xprov/waivers.json`; load-check accepts it only while PLAN.md still has that sha256. A
+    `waived: true` row in `index.json` is a mirror and unblocks nothing (spec 009 FR-003, FR-007).
 - **Exit 2** → usage error or `xprov-gate.cjs` not shipped in this plugin
   version; no stdout JSON. Fix the call, do not treat it as a pass.
 

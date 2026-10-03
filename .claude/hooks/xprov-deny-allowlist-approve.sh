@@ -10,6 +10,9 @@
 # space — so `allowlist \<newline>approve`, `allowlist  approve`, a tab or
 # `allowlist "approve"` are caught. `allowlist-approval` also covers the
 # singular spelling of the store name.
+# Spec 009 FR-007 (Wave 7, Samuel MAJOR): the same for the human waiver —
+# `xprov waive` and the waiver store path `a1-xprov/waivers`, same
+# normalisation. The script keeps its name: .claude/settings.json wires it.
 # Input: the hook JSON on stdin. Output: a deny decision as JSON, or nothing.
 input="$(cat)"
 command_text="$(printf '%s' "$input" | node -e '
@@ -22,6 +25,9 @@ command_text="$(printf '%s' "$input" | node -e '
 case "$command_text" in
   *"allowlist approve"*|*"allowlist-approval"*)
     printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"The allowlist approval is the owner'"'"'s step: run `a1-tools xprov allowlist approve` yourself in a separate terminal (spec 009 FR-030 j). Agents never run it or read the approval store."}}'
+    ;;
+  *"xprov waive"*|*"a1-xprov/waivers"*)
+    printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"A waiver is the owner'"'"'s step: run `a1-tools xprov waive` yourself in a separate terminal (spec 009 FR-007). Agents never run it or touch the waiver store."}}'
     ;;
 esac
 exit 0

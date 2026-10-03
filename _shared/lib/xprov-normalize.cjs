@@ -66,10 +66,12 @@ const PRIOR_FINDINGS_FILE = 'a1-findings.json';
 const LINE_RE = /^(.*):(\d{1,7})$/;
 // Measured shape (live smoke 2026-10-02, case revise-symbol): Codex writes `path`
 // as `<file>: <symbol>` (`_shared/lib/checklist.cjs: cmdChecklistRun`). One such
-// suffix is stripped ONLY when the part before the first SYMBOL_SEP is a tracked
+// suffix is stripped ONLY when the part before the separator is a tracked
 // file at the reviewed commit; everything else stays as written and the
 // quarantine decides (path_not_in_repo, fail-closed).
-const SYMBOL_SEP = ': ';
+// Measured both ways: `<file>: <symbol>` (2026-10-02, case revise-symbol) and
+// `<file>:<symbol>` (2026-10-03, case revise-symbol-nospace); the first wins.
+const SYMBOL_SEPS = Object.freeze([': ', ':']);
 const SYMBOL_MAX_CHARS = 120;
 const XREVIEW_HEADER = '# XREVIEW — cross-provider review log\n\nWritten by `a1-tools xprov normalize`; one section per run, newest last.\n';
 
@@ -237,15 +239,16 @@ function secretScan(filter, ctx) {
   return fail(X.REASONS.secret_in_output, { secret_pattern: typeof hit.pattern_name === 'string' ? hit.pattern_name : 'unnamed' });
 }
 
-/** `<tracked file>: <symbol>` → file + the symbol carried in evidence and detail
+/** `<tracked file>: <symbol>` or `<tracked file>:<symbol>` → file + the symbol carried in evidence and detail
  * (evidence, so the instruction-marker scan covers the symbol too). New objects. */
 function stripSymbolSuffix(findings, lsFiles, planRel) {
   return findings.map((f) => {
     if (!f || typeof f.file !== 'string' || lsFiles.has(f.file) || f.file === planRel) return f;
-    const i = f.file.indexOf(SYMBOL_SEP);
-    if (i <= 0) return f;
+    const sep = SYMBOL_SEPS.find((s) => f.file.indexOf(s) > 0);
+    if (!sep) return f;
+    const i = f.file.indexOf(sep);
     const file = f.file.slice(0, i);
-    const symbol = f.file.slice(i + SYMBOL_SEP.length).replace(/[\r\n\t]+/g, ' ').trim().slice(0, SYMBOL_MAX_CHARS);
+    const symbol = f.file.slice(i + sep.length).replace(/[\r\n\t]+/g, ' ').trim().slice(0, SYMBOL_MAX_CHARS);
     if (!symbol || !lsFiles.has(file)) return f;
     const evidence = `Symbol: ${symbol}\n${f.evidence}`;
     // The filter scans MAX_FIELD_CHARS per field: a prefix must never push a marker
@@ -284,12 +287,13 @@ function writeFindingsFile(file, summary, findings) {
 /** The findings file again in the run dir of `resultPath`, but only when that
  * dir lies in this repository's artifacts dir (a standalone normalize of a
  * foreign result.json writes nothing next to it). */
-function writeRunDirFindings(resultPath, summary, findings) {
+function writeRunDirFindings(resultPath, summary, findings, quarantined) {
   const runDir = path.dirname(resultPath);
   const A = require(ARTIFACTS_MODULE);
   if (!A.isUnder(runDir, A.ensureArtifactsDir()) || path.resolve(runDir) === path.resolve(A.ensureArtifactsDir())) return null;
   const file = path.join(runDir, PRIOR_FINDINGS_FILE);
-  writeFindingsFile(file, summary, findings);
+  const held = (quarantined || []).map((q) => ({ id: q.id, reason: q.reason })); // never their text (FR-006)
+  writeTextAtomic(file, JSON.stringify({ summary, ...bucketize(findings), quarantined: held }, null, 2) + '\n');
   return file;
 }
 
@@ -458,7 +462,7 @@ function cmdXprovNormalize(args) {
   if (writesFindings) {
     const summary = ctx.response ? bullet(ctx.response.summary) : '';
     writeFindingsFile(ctx.findingsPath, summary, outcome.findings || []);
-    writeRunDirFindings(ctx.resultPath, summary, outcome.findings || []);
+    writeRunDirFindings(ctx.resultPath, summary, outcome.findings || [], outcome.quarantined);
   }
   const pin = X.checkRunnerPin();
   const xreviewPath = appendToXreview(ctx.phaseDir, renderSection(ctx, outcome, model, pin.actual || `unverified (${pin.reason})`));

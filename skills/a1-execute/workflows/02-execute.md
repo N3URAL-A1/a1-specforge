@@ -21,6 +21,18 @@ one's.
 
 For each wave in PLAN.md (skipping already-completed waves per STATUS.md):
 
+**Plan unchanged since Load (spec 009 FR-003, time-of-check/time-of-use).**
+Before every wave — not only at Load — re-run load-check against the sha
+accepted in `01-load.md` Step 0c:
+```bash
+node <repo>/_shared/a1-tools.cjs xprov load-check --phase <phase_name> --expect-sha "$LOADED_PLAN_SHA" > .a1/phases/<phase_name>/xreview/load-check.last-run.json; RC=$?
+echo "xprov load-check (pre-wave) exit=$RC"
+```
+Exit 0 → continue to 2a. Exit 1 with `reason: plan_changed` (PLAN.md edited
+since Load) or `plan_review_missing` → under `blocking` **halt before this
+wave** and route the user to `a1-plan` Phase 4b; under `warning` print the
+warning block of Step 0c and continue.
+
 ### 2a. Spawn a1-erik-executor
 
 Record the pre-wave HEAD first — step 2b compares against it:
@@ -125,7 +137,12 @@ JSON — fix the call). `enforcement` echoes the `wave-inspect-xprov` row of
 | `verdict` | `enforcement` | Action |
 |---|---|---|
 | `pass` | any | Note "cross-provider inspected ✓" in the 2c summary. Proceed to 2c. |
-| `fail-with-findings` | any | **Fix round in the same wave.** Re-dispatch a1-erik-executor with `<findings_path>` (Reinhard schema) and the instruction to fix every blocker/major or record why not, commit, then re-run the commit-landed gate and this step again — same `--base $PRE_WAVE_HEAD` (the whole wave diff is re-inspected), **fresh session**: the driver never resumes a Codex session. One fix round per wave (`next.fix_round` is always 1); a second REVISE comes back as `fail` with `reason: round_cap`. Only `pass` and `fail-with-findings` count as rounds — a failed attempt (`blocked`, `runner_failed`, `tripwire`, `secret_*`) does not consume one, so fixing its cause and re-running this step is not a second round. |
+| `fail-with-findings` | any | **Fix round in the same wave.** Re-dispatch a1-erik-executor with `<findings_path>` (Reinhard schema) and the instruction to fix every blocker/major or record why not, commit, then re-run the commit-landed gate and this step again — same `--base $PRE_WAVE_HEAD` (the whole wave diff is re-inspected), **fresh session**: the driver never resumes a Codex session. Before the
+re-run, write Erik's fix summary to the `next.dispositions_path` of the first
+inspect (`xreview/wave-inspect-xprov-wave-<N>[-<lane>]-r1.dispositions.md`, one
+line per finding id: fixed / not fixed + why); the driver refuses the fix round
+without it and builds the reviewer's `--feedback` from round 1's normalized
+findings plus that summary. One fix round per wave (`next.fix_round` is always 1); a second REVISE comes back as `fail` with `reason: round_cap`. Only `pass` and `fail-with-findings` count as rounds — a failed attempt (`blocked`, `runner_failed`, `tripwire`, `secret_*`) does not consume one, so fixing its cause and re-running this step is not a second round. |
 | `fail` (any `reason`) | `warning` | Print the block below, proceed to 2c with the warning in the summary. Retro: `verdict: fail`. |
 | `fail` (any `reason`) | `blocking` | **Do not show the 2c checkpoint as passable.** Print the block with the first line `❌ … enforcement: blocking`. Ways out: fix the cause and re-run this step, or a human waiver (below). Phase 3 will refuse to start while this wave lacks a pass or waiver (`wave-status`). |
 
@@ -138,10 +155,13 @@ JSON — fix the call). `enforcement` echoes the `wave-inspect-xprov` row of
 
 **Waiver — human only.** When the provider is down or the user accepts the
 risk, tell the user the command and wait; the human runs
-`a1-tools xprov waive --phase <phase_name> --gate wave-inspect-xprov --wave <N> --reason "<text>"`
-in their own shell. It writes `{waived: true, reason, by: human, ts}` — never
-`verdict: pass` — and satisfies `wave-status`. This skill never executes it
-(fixture R7 greps every `bash` block for it). Record `xprov_waived` in the
+`a1-tools xprov waive --phase <phase_name> --gate wave-inspect-xprov --wave <N> --base $PRE_WAVE_HEAD --work-path $WORK_PATH --reason "<text>" --by <name>`
+in a separate terminal. It runs only in the owner's own terminal — never through an agent's Bash tool or the `!` prefix: like the allowlist owner approval it refuses without a TTY, under Claude Code's environment or with a Claude Code ancestor, and the project's PreToolUse hook denies any Bash command containing it. It shows the key it computed itself (the PLAN.md sha256, the work path's HEAD and the full
+base sha), asks for the gate id typed back and records the waiver in
+`~/.a1-xprov/waivers.json`; `index.json` gets a mirror row without authority.
+It is never `verdict: pass`. `wave-status` counts it only while PLAN.md keeps
+that sha and the waived head stays in the work path's history. This skill
+never executes it (fixture R7 greps every `bash` block for it). Record `xprov_waived` in the
 retro's `issue_classes` when a waiver exists — a1-execute's own tag field
 (a1-plan uses the base `issues` field of `_shared/retro-template.md`; a1-evolve
 reads both).

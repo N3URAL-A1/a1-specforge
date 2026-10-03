@@ -163,12 +163,19 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   artifacts dir) + the dispositions file, scanned and copied
                   like the PLAN.md; next.round_cmd shows the call. Enforcement (warning|blocking) is READ
                   from the registry row and echoed in stdout, never applied here.
-    load-check --phase <name>
+    load-check --phase <name> [--expect-sha <sha256>]
                   (xprov-gate.cjs, wave 6) newest plan-review-xprov pass entry
-                  must match the current PLAN.md sha256 → else plan_review_missing.
-    wave-status --phase <name> [--waves 1,2,3]
+                  must match the current PLAN.md sha256, or a waiver in the
+                  guarded store ~/.a1-xprov/waivers.json must be bound to it
+                  (accepted: pass|waiver) → else plan_review_missing.
+                  --expect-sha: the sha accepted at Load; a different PLAN.md
+                  now → plan_changed (a1-execute runs it before every wave).
+    wave-status --phase <name> [--waves 1,2,3] [--work-path <dir>]
                   (xprov-gate.cjs, wave 6) every completed wave needs a
-                  wave-inspect-xprov entry with verdict pass or waived: true.
+                  wave-inspect-xprov entry with verdict pass, or a store
+                  waiver for that wave and lane, this PLAN.md's sha and a head
+                  still in --work-path's history. index.json waived: true rows
+                  are a mirror and count for nothing.
     allowlist propose --commit <rev> [--json] [--repo <git-toplevel>]
                   (xprov-approve.cjs, wave 6b) every secret-pattern match at
                   <rev> as path:line:column, pattern, proposed class, masked
@@ -201,10 +208,18 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   allowlist_not_separate_commit, allowlist_owner_mismatch,
                   allowlist_unapproved. gitleaks hits and reviewer output are
                   never allowlisted.
-    waive --phase <name> --gate <id> [--wave <N> [--lane <id>]] --reason "<text>"
-                  (xprov-gate.cjs, wave 6) HUMAN-only: appends {waived: true,
-                  by: human} — never verdict: pass. Skills print the command
-                  for the human; no skill bash block executes it.
+    waive --phase <name> --gate <id> [--wave <N> [--lane <id>] --base <sha>
+          [--work-path <dir>]] --reason "<text>" --by <name>
+                  (xprov-gate.cjs + xprov-waivers.cjs, wave 7) HUMAN-only, in a
+                  separate terminal: the owner-approval guards (TTY on stdin
+                  and stdout, no CLAUDECODE/CLAUDE_PID/CLAUDE_CODE_*, no Claude
+                  Code ancestor; else exit 2, nothing written), the key
+                  computed here (git-common-dir, phase, gate, PLAN.md sha256;
+                  for a wave also lane, head of --work-path and full base),
+                  the gate id typed back, then one record in
+                  ~/.a1-xprov/waivers.json (0600, atomic) plus an index.json /
+                  XREVIEW.md mirror without authority — never verdict: pass.
+                  Skills print the command; no skill bash block executes it.
                   Reasons (stdout \`reason\` on exit 1): runner_failed,
                   malformed, wrong_mode, blocked, plan_changed, tripwire,
                   secret_in_snapshot, secret_in_output, quarantined, round_cap,

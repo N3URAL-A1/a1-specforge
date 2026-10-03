@@ -301,8 +301,8 @@ caseR24() {
   run5 inspect
   [[ $U_RC -eq 2 ]] && ok "R24c inspect without --base → exit 2" || bad "R24c inspect without base (rc=$U_RC)"
   printf 'x\n' > "$TMP05/x.json"
-  run5 inspect --base "$PHASE_HEAD" --feedback "$TMP05/x.json"
-  [[ $U_RC -eq 2 ]] && ok "R24d inspect with --feedback → exit 2 (plan-review only)" || bad "R24d inspect feedback (rc=$U_RC)"
+  run5 inspect --base "$PHASE_HEAD" --resume "$TMP05/x.json"
+  [[ $U_RC -eq 2 ]] && ok "R24d inspect with --resume → exit 2 (no session is ever resumed)" || bad "R24d inspect resume (rc=$U_RC)"
   local bad_tokens=0 f
   for f in "$ARGV_DIR"/argv-*.json; do
     node -e "const j=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')); process.exit(j.some(a => a === 'build' || a === '--unreviewed-spec' || a === '--proof') ? 1 : 0)" "$f" || bad_tokens=$((bad_tokens + 1))

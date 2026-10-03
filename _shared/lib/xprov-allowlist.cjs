@@ -279,37 +279,50 @@ function resolveAnchor(root, commitSha, gateKind) {
 const storePath = () => path.join(X.xprovHome(), X.ALLOWLIST_APPROVALS_FILE);
 const ownedByMe = (st) => typeof process.getuid !== 'function' || st.uid === process.getuid();
 
-/** { ok: true, repos } or { ok: false, why, repos: {} }. A symlink at either
- * place, a mode other than 0700/0600, a foreign owner or an off-format file
- * all count as an ABSENT store. The file is opened with O_NOFOLLOW and checked
- * on the open descriptor, so a swap between check and read changes nothing. */
-function readApprovals() {
-  // `missing` = nothing there yet (approve may create it); every other absence is a broken store.
-  const absent = (why, missing) => ({ ok: false, missing: Boolean(missing), why, repos: {} });
+/** One guarded store under ~/.a1-xprov (the approval store, FR-030 j, and
+ * the waiver store, FR-007): { ok: true, value } or { ok: false, missing, why }.
+ * A symlink at either place, a mode other than 0700/0600, a foreign owner or an
+ * off-format file (`parse` returns null) all count as an ABSENT store. The
+ * file is opened with O_NOFOLLOW and checked on the open descriptor, so a swap
+ * between check and read changes nothing. */
+function readGuardedStore(file, label, parse) {
+  // `missing` = nothing there yet (the writer may create it); every other absence is a broken store.
+  const absent = (why, missing) => ({ ok: false, missing: Boolean(missing), why });
   let d;
   try { d = fs.lstatSync(X.xprovHome()); } catch (_e) { return absent('~/.a1-xprov does not exist', true); }
   if (d.isSymbolicLink() || !d.isDirectory()) return absent('~/.a1-xprov is not a real directory');
   if ((d.mode & 0o777) !== STORE_DIR_MODE || !ownedByMe(d)) return absent('~/.a1-xprov is not 0700 and owned by the current user');
   let fd;
-  try { fd = fs.openSync(storePath(), fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW); } catch (e) {
-    return e.code === 'ENOENT' ? absent('no approval store yet', true) : absent('the approval store is a symlink or cannot be opened');
+  try { fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW); } catch (e) {
+    return e.code === 'ENOENT' ? absent(`no ${label} yet`, true) : absent(`the ${label} is a symlink or cannot be opened`);
   }
   try {
     const st = fs.fstatSync(fd);
-    if (!st.isFile() || (st.mode & 0o777) !== STORE_MODE || !ownedByMe(st)) return absent('approval store is not a 0600 regular file owned by the current user');
-    const doc = parseStrictJson(fs.readFileSync(fd, 'utf8'));
-    if (!exactKeys(doc, ['version', 'repos']) || doc.version !== 1 || !isPlainObject(doc.repos)) return absent('approval store has an unknown format');
-    const repos = {};
-    for (const [k, v] of Object.entries(doc.repos)) {
-      if (!Array.isArray(v) || !v.every((s) => typeof s === 'string' && SHA256_RE.test(s))) return absent('approval store has an unknown format');
-      repos[k] = [...v];
-    }
-    return { ok: true, repos };
+    if (!st.isFile() || (st.mode & 0o777) !== STORE_MODE || !ownedByMe(st)) return absent(`${label} is not a 0600 regular file owned by the current user`);
+    const value = parse(parseStrictJson(fs.readFileSync(fd, 'utf8')));
+    return value === null ? absent(`${label} has an unknown format`) : { ok: true, value };
   } catch (_e) {
-    return absent('approval store is unreadable');
+    return absent(`${label} is unreadable`);
   } finally {
     fs.closeSync(fd);
   }
+}
+
+/** The approval store's repos map, or null when off-format. */
+function parseApprovalsDoc(doc) {
+  if (!exactKeys(doc, ['version', 'repos']) || doc.version !== 1 || !isPlainObject(doc.repos)) return null;
+  const repos = {};
+  for (const [k, v] of Object.entries(doc.repos)) {
+    if (!Array.isArray(v) || !v.every((s) => typeof s === 'string' && SHA256_RE.test(s))) return null;
+    repos[k] = [...v];
+  }
+  return repos;
+}
+
+/** { ok: true, repos } or { ok: false, missing, why, repos: {} } (readGuardedStore). */
+function readApprovals() {
+  const r = readGuardedStore(storePath(), 'approval store', parseApprovalsDoc);
+  return r.ok ? { ok: true, repos: r.value } : { ...r, repos: {} };
 }
 
 // ---------- evaluation (called by xprov snapshot after the scan) ----------
@@ -431,5 +444,5 @@ function evaluate(o) {
 module.exports = {
   NO_ALLOWLIST, STORE_MODE, STORE_DIR_MODE, SHA256_RE,
   parseStrictJson, parseAllowlist, pathProblem, blobAt, separateCommitProblem, ownerProblem, verifiedTip, resolveAnchor, defaultBranch, lsRemote,
-  readApprovals, storePath, groupPairs, evaluate, permitRecord,
+  readApprovals, readGuardedStore, exactKeys, storePath, groupPairs, evaluate, permitRecord,
 };

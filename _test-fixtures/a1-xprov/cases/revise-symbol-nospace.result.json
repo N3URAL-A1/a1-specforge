@@ -1,0 +1,77 @@
+{
+  "status": "completed",
+  "mode": "review",
+  "provider": "codex",
+  "roles": {
+    "host": "claude",
+    "planner": "claude",
+    "reviewer": "codex",
+    "builder": "claude",
+    "inspector": "codex"
+  },
+  "repo": "/Users/rob/.a1-xprov/snapshots/snap-LI5KDk",
+  "plan": "/Users/rob/.a1-xprov/snapshots/snap-LI5KDk.inputs/PLAN.md",
+  "plan_sha256": "903b53b7881ec4cfa7300130d060e2e149d35d4351817dd3151b746702c9e693",
+  "requested_model": null,
+  "requested_effort": null,
+  "base": null,
+  "snapshot": null,
+  "previous": null,
+  "started_at": 1791035222.919133,
+  "artifacts": "/Users/rob/.a1-xprov/artifacts/009-wave7-live-smoke/claudex-c8kuwayx",
+  "cli_version": "codex-cli 0.155.1",
+  "executable": [
+    "/opt/homebrew/bin/codex"
+  ],
+  "exit_code": 0,
+  "session_id": "01a10204-af48-7b13-a2df-80f897ae39de",
+  "response": {
+    "verdict": "REVISE",
+    "summary": "The migration is implemented, but the gate retains a false-pass path and does not fully enforce the promised subset/error contract.",
+    "findings": [
+      {
+        "id": "M13-01",
+        "severity": "medium",
+        "path": "_shared/lib/checklist.cjs:gatherChecklistInputs",
+        "evidence": "A valid spec with no wave-plan is not fatal. Checks 9 and 10 become FAIL, so --only 9,10 returns exit 1 instead of the promised setup ERROR/exit 2. Gate 4.5's exit-1 branch then writes awaiting-consistency-fix rather than preserving planned. The migrated fixtures cover missing spec, but not missing plan.",
+        "fix": "Return ERROR/2 for a missing required plan in consistency-gate mode while preserving the full checklist's intended missing-plan behavior. Add a missing-plan gate fixture."
+      },
+      {
+        "id": "M13-02",
+        "severity": "high",
+        "path": "_shared/lib/checklist.cjs:evaluateChecklistRules, check 10",
+        "evidence": "The suffix comparison accepts project/other/spec/001-login.md when checking project/demo/spec/001-login.md. With matching FR identifiers, both consistency checks pass although the plan links to another project's spec. The same branch also accepts nonexistent paths ending in spec/001-login.md.",
+        "fix": "Resolve supported absolute and vault-relative links and compare their normalized target with the actual spec path. Reject unrelated project paths and add a same-filename/different-project fixture."
+      },
+      {
+        "id": "M13-03",
+        "severity": "medium",
+        "path": "_shared/lib/checklist.cjs:cmdChecklistRun",
+        "evidence": "--only parses tokens with parseInt and rejects unknown IDs only when no checks match. Thus --only 9,100 silently executes only check 9 and can report PASS without validating the spec link; --only 9,10typo is also accepted. This allows configuration mistakes to weaken a blocking gate silently.",
+        "fix": "Validate every token as a complete integer and require every requested ID to exist before evaluating checks. Return setup ERROR/2 for malformed or unknown IDs, including mixed valid/invalid lists."
+      }
+    ],
+    "coverage": [
+      "Read the supplied plan and M13 STATUS/VERIFICATION artifacts.",
+      "Inspected checklist input loading, rule evaluation, subset selection, reporting, saved-report writing and fixture expectations.",
+      "Traced Gate 4.5 callers, planning handoff, re-entry routing and spec status writes.",
+      "Inspected FR extraction primitives, CLI references, installer lists and install-sync references.",
+      "Reviewed agent structural-tag search results, Erik lesson pointers and Ludwig comparison document."
+    ],
+    "limitations": [
+      "No tests were run and no files were edited.",
+      "Historical verification claims, CI status and clean-HOME installation were not independently reproduced.",
+      "The external legal plugin was not inspected; its comparison document was reviewed as repository evidence only.",
+      "Agent conversion fidelity and lifecycle-workflow equivalence were not exhaustively compared against historical versions."
+    ]
+  },
+  "usage": {
+    "input_tokens": 165289,
+    "cached_input_tokens": 124672,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 1492,
+    "reasoning_output_tokens": 43
+  },
+  "observed_models": [],
+  "elapsed_seconds": 52.18
+}
