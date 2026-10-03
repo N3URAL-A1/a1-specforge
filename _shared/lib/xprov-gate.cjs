@@ -170,9 +170,15 @@ function dispositionsPath(ctx, round) {
 }
 
 /** A regular file, never a symlink (lstat) — or null. */
-function regularFile(p) {
-  try { const st = fs.lstatSync(p); return st.isFile() && !st.isSymbolicLink() ? p : null; } catch (_e) { return null; }
+/** Bytes of a regular file opened with O_NOFOLLOW and checked on the open
+ * descriptor (no lstat-then-read window), or null (Samuel NIT). */
+function readNoFollow(p) {
+  let fd;
+  try { fd = fs.openSync(p, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW); } catch (_e) { return null; }
+  try { return fs.fstatSync(fd).isFile() ? fs.readFileSync(fd) : null; } catch (_e) { return null; } finally { fs.closeSync(fd); }
 }
+
+const parseOrNull = (buf) => { try { const v = JSON.parse(buf.toString('utf8')); return isPlainObject(v) ? v : null; } catch (_e) { return null; } };
 
 /** Round ≥ 2 after a REVISE (plan review AND wave inspect, FR-006): where its feedback comes from. The round
  * N−1 findings are read from a1's own run dir (the dir of the index entry's
@@ -185,11 +191,18 @@ function priorRound(ctx) {
   if (!prev || prev.verdict !== X.VERDICTS.FAIL_WITH_FINDINGS) return null;
   const runDir = typeof prev.result_path === 'string' ? path.dirname(path.resolve(prev.result_path)) : null;
   if (!runDir || !isUnder(runDir, ensureArtifactsDir())) throw inputError(`round ${ctx.round} needs the round-${ctx.round - 1} run dir under a1's artifacts dir (index entry result_path: ${clip(String(prev.result_path), 120)})`);
-  const findings = regularFile(path.join(runDir, PRIOR_FINDINGS_FILE));
-  if (!findings) throw inputError(`round ${ctx.round} needs the round-${ctx.round - 1} findings ${path.join(runDir, PRIOR_FINDINGS_FILE)} (a regular file normalize wrote)`);
-  const dispositions = regularFile(dispositionsPath(ctx, ctx.round - 1));
-  if (!dispositions) throw inputError(`round ${ctx.round} needs the host-authored dispositions file ${dispositionsPath(ctx, ctx.round - 1)} (finding id → accepted|rejected + reason) — write it first`);
-  return Object.freeze({ round: ctx.round - 1, findings, dispositions });
+  const file = path.join(runDir, PRIOR_FINDINGS_FILE);
+  const bytes = readNoFollow(file);
+  if (!bytes) throw inputError(`round ${ctx.round} needs the round-${ctx.round - 1} findings ${file} (a regular file normalize wrote)`);
+  // The index row is agent-writable: it must carry the sha normalize recorded, and the file must name this round (Samuel MINOR a).
+  if (typeof prev.findings_sha256 !== 'string' || sha256(bytes) !== prev.findings_sha256) throw inputError(`round-${ctx.round - 1} findings ${file} do not match the sha256 the index entry recorded`);
+  const doc = parseOrNull(bytes);
+  if (!doc || doc.phase !== ctx.phase || doc.gate !== ctx.gate || doc.wave !== ctx.wave || doc.lane !== ctx.lane || doc.round !== ctx.round - 1) throw inputError(`round-${ctx.round - 1} findings ${file} belong to another phase, gate, wave, lane or round`);
+  const rec = parseOrNull(readNoFollow(path.join(runDir, 'result.json')) || Buffer.from(''));
+  if (!rec || rec.mode !== ctx.mode) throw inputError(`round-${ctx.round - 1} run dir ${runDir} holds no ${ctx.mode} result.json`);
+  const disp = readNoFollow(dispositionsPath(ctx, ctx.round - 1));
+  if (!disp) throw inputError(`round ${ctx.round} needs the host-authored dispositions file ${dispositionsPath(ctx, ctx.round - 1)} (finding id → accepted|rejected + reason) — write it first`);
+  return Object.freeze({ round: ctx.round - 1, doc, dispositions: disp.toString('utf8') });
 }
 
 /** One finding as a feedback line: id, severity, place, then its detail. */
@@ -201,9 +214,7 @@ function feedbackFinding(f) {
 /** The feedback text of round N: round N−1's normalized findings, quarantined
  * ones as id + reason only (never their text), and the dispositions verbatim. */
 function feedbackText(prior) {
-  let parsed;
-  try { parsed = JSON.parse(fs.readFileSync(prior.findings, 'utf8')); } catch (_e) { throw inputError(`round-${prior.round} findings unreadable: ${prior.findings}`); }
-  if (!isPlainObject(parsed)) throw inputError(`round-${prior.round} findings are not an object: ${prior.findings}`);
+  const parsed = prior.doc;
   const list = ['blocker', 'major', 'minor'].flatMap((b) => (Array.isArray(parsed[b]) ? parsed[b] : [])).filter(isPlainObject);
   const held = (Array.isArray(parsed.quarantined) ? parsed.quarantined : []).filter(isPlainObject)
     .map((q) => `- ${C.oneLine(clip(String(q.id), X.TITLE_MAX_CHARS))}: ${C.oneLine(clip(String(q.reason), 40))}`);
@@ -211,16 +222,18 @@ function feedbackText(prior) {
     `PRIOR FINDINGS (round ${prior.round}, normalized by a1; this is a fresh session):`,
     ...(list.length ? list.map(feedbackFinding) : ['- none']), '',
     `QUARANTINED IN ROUND ${prior.round} (id and reason only):`, ...(held.length ? held : ['- none']), '',
-    `HOST DISPOSITIONS (round ${prior.round}):`, fs.readFileSync(prior.dispositions, 'utf8'),
+    `HOST DISPOSITIONS (round ${prior.round}):`, prior.dispositions,
   ].join('\n');
 }
 
-/** The feedback file in a fresh 0700 mktemp dir (removed by the caller). */
+/** The feedback file in a fresh 0700 mktemp dir (removed by the caller); the
+ * text is built first, so a failure leaves no empty dir behind (Samuel NIT). */
 function writeFeedback(prior) {
+  const text = feedbackText(prior);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'a1-xprov-feedback-'));
   fs.chmodSync(dir, C.DIR_MODE);
   const file = path.join(dir, 'feedback.md');
-  fs.writeFileSync(file, feedbackText(prior), { mode: 0o600 });
+  fs.writeFileSync(file, text, { mode: 0o600 });
   return file;
 }
 

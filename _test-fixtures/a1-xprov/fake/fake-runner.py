@@ -180,7 +180,7 @@ def runner_snapshot(repo: str, base: str) -> dict:
 
 def stamp_record(run_dir: Path, mode: str | None, repo: str | None, plan: str | None, base: str | None,
                  model: str | None = None, effort: str | None = None) -> None:
-    """repo/plan/requested_model/requested_effort as the real runner records
+    """mode/repo/plan/requested_model/requested_effort as the real runner records
     them from its own argv (runner.py:301-304); snapshot in inspect mode."""
     target = run_dir / "result.json"
     if target.stat().st_size > SIZE_PROBE_BYTES:
@@ -191,6 +191,8 @@ def stamp_record(run_dir: Path, mode: str | None, repo: str | None, plan: str | 
         return  # malformed/empty cases stay byte-identical
     if not isinstance(record, dict):
         return
+    if mode:
+        record["mode"] = mode  # runner.py:313 records args.mode (a review case replayed as an inspect says inspect)
     if repo:
         record["repo"] = str(Path(repo).resolve())
     if plan:

@@ -286,15 +286,18 @@ function writeFindingsFile(file, summary, findings) {
 
 /** The findings file again in the run dir of `resultPath`, but only when that
  * dir lies in this repository's artifacts dir (a standalone normalize of a
- * foreign result.json writes nothing next to it). */
-function writeRunDirFindings(resultPath, summary, findings, quarantined) {
-  const runDir = path.dirname(resultPath);
+ * foreign result.json writes nothing next to it). It names its own phase,
+ * gate, wave, lane and round, and its sha256 goes into the index entry, so the
+ * next round can check that an index row really points at this round's file
+ * (Samuel MINOR a). → sha256 of the bytes written, or null. */
+function writeRunDirFindings(ctx, summary, findings, quarantined) {
+  const runDir = path.dirname(ctx.resultPath);
   const A = require(ARTIFACTS_MODULE);
   if (!A.isUnder(runDir, A.ensureArtifactsDir()) || path.resolve(runDir) === path.resolve(A.ensureArtifactsDir())) return null;
-  const file = path.join(runDir, PRIOR_FINDINGS_FILE);
   const held = (quarantined || []).map((q) => ({ id: q.id, reason: q.reason })); // never their text (FR-006)
-  writeTextAtomic(file, JSON.stringify({ summary, ...bucketize(findings), quarantined: held }, null, 2) + '\n');
-  return file;
+  const body = JSON.stringify({ phase: ctx.phase, gate: ctx.gate, wave: ctx.wave, lane: ctx.lane, round: ctx.round, summary, ...bucketize(findings), quarantined: held }, null, 2) + '\n';
+  writeTextAtomic(path.join(runDir, PRIOR_FINDINGS_FILE), body);
+  return sha256(body);
 }
 
 function renderTable(rows) {
@@ -459,16 +462,17 @@ function cmdXprovNormalize(args) {
     response: !tainted && isPlainObject(record.response) ? record.response : null,
   };
   const model = modelFields(tainted ? {} : record, ctx.resultPath);
+  let findingsSha = null;
   if (writesFindings) {
     const summary = ctx.response ? bullet(ctx.response.summary) : '';
     writeFindingsFile(ctx.findingsPath, summary, outcome.findings || []);
-    writeRunDirFindings(ctx.resultPath, summary, outcome.findings || [], outcome.quarantined);
+    findingsSha = writeRunDirFindings(ctx, summary, outcome.findings || [], outcome.quarantined);
   }
   const pin = X.checkRunnerPin();
   const xreviewPath = appendToXreview(ctx.phaseDir, renderSection(ctx, outcome, model, pin.actual || `unverified (${pin.reason})`));
   const entry = {
     gate: ctx.gate, wave: ctx.wave, lane: ctx.lane, ...(ctx.isRound ? { round: ctx.round } : { attempt: ctx.attempt }), verdict: outcome.verdict, reason: outcome.reason,
-    plan_sha256: ctx.planSha, result_path: ctx.resultPath, ts: ctx.ts,
+    plan_sha256: ctx.planSha, result_path: ctx.resultPath, ...(findingsSha ? { findings_sha256: findingsSha } : {}), ts: ctx.ts,
     model_requested: model.model_requested, model_observed: model.model_observed, cli_version: model.cli_version,
     ...(ctx.allowlist || {}),
   };
