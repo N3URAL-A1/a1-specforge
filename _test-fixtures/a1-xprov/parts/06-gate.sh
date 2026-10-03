@@ -311,6 +311,9 @@ caseR6() {
   assert_rc "R6g a lane inspection runs (exit 1 on REVISE)" 1 "$G_RC" "$G_ERR"
   assert_json "R6g stdout and observation carry the lane" "$G_OUT" "j.lane + '/' + j.wave" "storage/3"
   assert_json "R6g observation carries lane" "$(tail -n 1 "$PHASE_DIR/observations.jsonl")" "j.lane + '/' + j.wave" "storage/3"
+  FAKE_RUNNER_CASE=revise gate6 --gate "$GATE_WAVE" --wave 3 --base "$PHASE_HEAD" --lane storage
+  assert_rc "R6f2 a lane fix round without its fix summary (wave-3-storage-r1.dispositions.md) is a usage error" 2 "$G_RC"
+  [[ ! -f "$ARGV6_FILE" ]] && ok "R6f2 runner not called without the lane's fix summary" || bad "R6f2 runner called"
   # normalize gained --lane on 2026-09-24 (Walter-1); the driver passes it through.
   # Red-making change: dropping `--lane` from the normalize argv.
   assert_json "R6g index entry carries the lane" "$(cat "$PHASE_DIR/xreview/index.json")" "j.filter((e) => e.wave === 3).map((e) => String(e.lane)).join(',')" "storage"
@@ -533,6 +536,8 @@ caseR8() {
 #   WS7 the same rules for a store waiver (chain clean / extra commit).
 #   WS8 the gate's inspect entry carries head/base from a1-reviewed.json; wave-status counts it.
 #       Red if normalize takes head/base from anywhere else.
+#   WS10 an APPROVED review result normalized for the wave gate → wrong_mode.  Red if normalize skips the mode check.
+#   WS11 --waves N --lane L checks (N, L): control exit 0, stale lane head exit 1.  Red if the lane is dropped from the pairs.
 #   WS9 re-normalizing the old run dir after a new commit → usage error (no replay), and a
 #       copy of it without a1-reviewed.json binds nothing → wave-status exit 1.
 #       Red if normalize derives head from the work path.
@@ -594,6 +599,19 @@ caseWS() {
   sub6 wave-status --phase p6 --waves 1
   assert_rc "WS9 …so the unreviewed commit is not covered → exit 1" 1 "$G_RC"
   grep -q "wave-status --phase <phase_name> --work-path \$WORK_PATH > " "$REPO_ROOT/skills/a1-execute/workflows/02-execute.md" && ok "WS8 02-execute.md checks the chain at 2c" || bad "WS8 02-execute.md lacks the 2c chain check"
+  # WS10 — an APPROVED plan-review result normalized as wave-inspect → wrong_mode, no pass (Codex R1 on cf5a86e)
+  prep6
+  sub6 normalize "$CASES/approved.result.json" --phase p6 --gate "$GATE_WAVE" --wave 1
+  assert_json "WS10 an APPROVED review result normalized for the wave gate → fail/wrong_mode" "$G_OUT" "j.verdict + '/' + j.reason" "fail/wrong_mode"
+  assert_json "WS10 …and no pass row" "$(cat "$PHASE_DIR/xreview/index.json" 2>/dev/null || echo '[]')" "String(j.some((e) => e.verdict === 'pass'))" "false"
+  # WS11 — lanes are first-class: --waves N --lane L checks (N, L) against that lane's HEAD
+  local hl; hl="$(c6 src/add.js '// lane storage wave 1')"
+  printf '[{"gate":"%s","wave":1,"lane":"storage","round":1,"verdict":"pass","reason":null,"plan_sha256":"%s","head":"%s","base":"%s","result_path":"/x","ts":"2026-10-03T00:00:00.000Z"}]\n' "$GATE_WAVE" "$(plansha6)" "$hl" "$PHASE_HEAD" > "$PHASE_DIR/xreview/index.json"
+  sub6 wave-status --phase p6 --waves 1 --lane storage --lane-work-path "storage=$PHASE_REPO"
+  assert_rc "WS11 control: the lane pass at the lane HEAD → exit 0" 0 "$G_RC" "$G_ERR"
+  c6 src/add.js '// stale lane head' >/dev/null
+  sub6 wave-status --phase p6 --waves 1 --lane storage --lane-work-path "storage=$PHASE_REPO"
+  assert_rc "WS11 a lane checkpoint with a stale head → exit 1" 1 "$G_RC"
 }
 
 caseR2; caseR3; caseR4; caseR6; caseR7; caseR8; caseR9g; caseWS

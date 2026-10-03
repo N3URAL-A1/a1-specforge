@@ -470,6 +470,12 @@ function evaluate(ctx, read) {
   }
   const secret = secretScan(filter, { ...ctx, raw: read.raw });
   if (secret) return secret;
+  // The record's mode must be the gate's (Codex R1 on cf5a86e): an APPROVED plan
+  // review normalized as wave-inspect-xprov would otherwise become a wave pass.
+  const want = ctx.gate === X.GATE_IDS.PLAN_REVIEW ? 'review' : 'inspect';
+  if (read.record.status === 'completed' && RUNNER_MODES.has(read.record.mode) && read.record.mode !== want) {
+    return fail(X.REASONS.wrong_mode, { reason_detail: `mode=${read.record.mode} for ${ctx.gate} (needs ${want})` });
+  }
   const outcome = classify(read.record, ctx.planSha);
   return outcome.verdict === X.VERDICTS.FAIL ? outcome : quarantine(filter, outcome, ctx);
 }

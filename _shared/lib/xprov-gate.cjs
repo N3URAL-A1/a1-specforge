@@ -483,10 +483,11 @@ function completedWavesFromStatus(phaseDir) {
   return pairs.sort((a, b) => a.wave - b.wave || String(a.lane).localeCompare(String(b.lane)));
 }
 
-function parseWavesFlag(value) {
+/** --waves 1,2 [--lane L] → (wave, lane) pairs; lanes are first-class keys. */
+function parseWavesFlag(value, lane) {
   const waves = String(value).split(',').map((s) => s.trim()).filter(Boolean).map((s) => parsePositive(s, 'waves'));
   if (!waves.length) throw inputError('--waves must list at least one wave number');
-  return [...new Set(waves)].sort((a, b) => a - b).map((wave) => ({ wave, lane: null }));
+  return [...new Set(waves)].sort((a, b) => a - b).map((wave) => ({ wave, lane: lane || null }));
 }
 
 /** Coverage key is (wave, lane): a lane wave needs its own pass or a store
@@ -500,7 +501,8 @@ function waveStatus(o) {
   const ctx = phaseContext(o.phase);
   const gate = X.GATE_IDS.WAVE_INSPECT;
   const enforcement = enforcementFor(gate);
-  const completed = o.waves === undefined ? completedWavesFromStatus(ctx.phaseDir) : parseWavesFlag(o.waves);
+  if (o.lane !== undefined && o.waves === undefined) throw inputError('--lane qualifies --waves');
+  const completed = o.waves === undefined ? completedWavesFromStatus(ctx.phaseDir) : parseWavesFlag(o.waves, C.parseLane(o.lane));
   if (!completed.length) throw inputError(`no completed waves: no \`## Wave N\` heading in ${ctx.phaseDir}/STATUS*.md and no --waves given`);
   const index = readIndex(ctx.indexPath);
   if (index === null) throw inputError(`index.json unparseable or not an array of objects: ${ctx.indexPath}`);
@@ -657,9 +659,9 @@ function cmdXprovLoadCheck(args) {
 }
 
 function cmdXprovWaveStatus(args) {
-  return withFlags(args, { phase: 'str', waves: 'str', 'work-path': 'str', 'lane-work-path': 'str' }, 'wave-status', (f) => {
-    if (!f.phase) return usageExit('wave-status requires --phase <name> [--waves 1,2] [--work-path <dir>] [--lane-work-path <lane>=<dir>[,…]]');
-    const r = waveStatus({ phase: f.phase, waves: f.waves, workPath: f['work-path'], laneWorkPaths: f['lane-work-path'] });
+  return withFlags(args, { phase: 'str', waves: 'str', lane: 'str', 'work-path': 'str', 'lane-work-path': 'str' }, 'wave-status', (f) => {
+    if (!f.phase) return usageExit('wave-status requires --phase <name> [--waves 1,2 [--lane <id>]] [--work-path <dir>] [--lane-work-path <lane>=<dir>[,…]]');
+    const r = waveStatus({ phase: f.phase, waves: f.waves, lane: f.lane, workPath: f['work-path'], laneWorkPaths: f['lane-work-path'] });
     process.stderr.write(r.ok ? `xprov wave-status: waves ${r.completed_waves.join(', ')} inspected or waived\n` : `xprov wave-status: waves lacking a ${r.gate} pass or waiver: ${r.lacking.join(', ')} (enforcement ${r.enforcement})\n`);
     return finish(r, r.ok ? X.EXIT_PASS : X.EXIT_FAIL);
   });

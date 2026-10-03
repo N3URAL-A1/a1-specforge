@@ -170,7 +170,7 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   (accepted: pass|waiver) → else plan_review_missing.
                   --expect-sha: the sha accepted at Load; a different PLAN.md
                   now → plan_changed (a1-execute runs it before every wave).
-    wave-status --phase <name> [--waves 1,2,3] [--work-path <dir>]
+    wave-status --phase <name> [--waves 1,2,3 [--lane <id>]] [--work-path <dir>]
                 [--lane-work-path <lane>=<dir>[,…]]
                   (xprov-gate.cjs, wave 6) every completed wave needs a
                   wave-inspect-xprov pass or a store waiver, both bound to this

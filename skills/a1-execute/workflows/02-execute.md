@@ -221,8 +221,8 @@ it is now:
 node <repo>/_shared/a1-tools.cjs xprov wave-status --phase <phase_name> --work-path $WORK_PATH > .a1/phases/<phase_name>/xreview/wave-status.last-run.json; RC=$?
 echo "xprov wave-status (after wave <N>) exit=$RC"
 ```
-(multi-lane: add `--lane-work-path <lane-id>=$WORK_PATH`, one entry per lane,
-comma-separated). The covered waves must form a chain: each wave's recorded
+(multi-lane, per lane checkpoint: `--waves <N> --lane <lane-id> --lane-work-path <lane-id>=$WORK_PATH`
+checks that lane's pair (N, lane-id) against that lane's HEAD). The covered waves must form a chain: each wave's recorded
 head equals the next wave's base, and the last completed wave's head equals
 `$WORK_PATH`'s HEAD — only commits touching `.a1/phases/<phase_name>/` alone
 (STATUS, observations) may follow it. A commit added after the inspection is
