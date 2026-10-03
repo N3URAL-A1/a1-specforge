@@ -91,14 +91,18 @@ caseR11() {
   grep -q "model_requested: CLI default (unresolved)" "$log" && grep -q "gate: $GATE_PLAN" "$log" && grep -q "result: " "$log" \
     && ok "R11k log entry carries gate, model_requested and the result path" || bad "R11k log entry incomplete"
   printf 'accepted: R1\n' > "$TMP05/dispositions.md"
-  # a resume continues a REVIEW of the same repo and plan (runner.py:257-264);
-  # the feedback is the snapshot's scanned copy (Wave 7)
+  # Wave 7 (Samuel MAJOR): no session is resumed; a later round is a fresh
+  # review whose --feedback is the snapshot's scanned copy
   SNAP_FEEDBACK="$TMP05/dispositions.md" snap5
   run5 review
   local prev; prev="$(jget "$U_OUT" 'j.result_path')"
+  run5 review --feedback "$FEEDCOPY"
+  assert_json "R11l a fresh review appends --feedback <the scanned copy> and no --resume" "$(cat "$ARGV_FILE")" \
+    "j.includes('--resume') + '/' + j[j.indexOf('--feedback') + 1]" "false/$FEEDCOPY"
+  local n_resume; n_resume="$(ls "$ARGV_DIR" | wc -l | tr -d ' ')"
   run5 review --resume "$prev" --feedback "$FEEDCOPY"
-  assert_json "R11l review resume appends --resume <result.json> --feedback <the scanned copy>" "$(cat "$ARGV_FILE")" \
-    "j.includes('--resume') + '/' + j[j.indexOf('--resume') + 1] + '/' + j[j.indexOf('--feedback') + 1]" "true/$prev/$FEEDCOPY"
+  [[ $U_RC -eq 2 ]] && ok "R11m run refuses --resume (exit 2)" || bad "R11m run --resume (rc=$U_RC)"
+  assert_eq "R11m …and spawned nothing" "$(ls "$ARGV_DIR" | wc -l | tr -d ' ')" "$n_resume"
   # Reinhard W6: --no-log leaves the log untouched (the gate driver writes exactly one entry per call)
   local lines_before; lines_before="$(wc -l < "$log" | tr -d ' ')"
   run5 review --no-log
@@ -296,8 +300,9 @@ caseR24() {
   assert_eq "R24b --mode build spawned nothing (no argv file)" "$(ls "$ARGV_DIR" | wc -l | tr -d ' ')" "$before"
   run5 inspect
   [[ $U_RC -eq 2 ]] && ok "R24c inspect without --base → exit 2" || bad "R24c inspect without base (rc=$U_RC)"
-  run5 inspect --base "$PHASE_HEAD" --resume "$TMP05/x.json"
-  [[ $U_RC -eq 2 ]] && ok "R24d inspect with --resume → exit 2 (always a fresh session)" || bad "R24d inspect resume (rc=$U_RC)"
+  printf 'x\n' > "$TMP05/x.json"
+  run5 inspect --base "$PHASE_HEAD" --feedback "$TMP05/x.json"
+  [[ $U_RC -eq 2 ]] && ok "R24d inspect with --feedback → exit 2 (plan-review only)" || bad "R24d inspect feedback (rc=$U_RC)"
   local bad_tokens=0 f
   for f in "$ARGV_DIR"/argv-*.json; do
     node -e "const j=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')); process.exit(j.some(a => a === 'build' || a === '--unreviewed-spec' || a === '--proof') ? 1 : 0)" "$f" || bad_tokens=$((bad_tokens + 1))

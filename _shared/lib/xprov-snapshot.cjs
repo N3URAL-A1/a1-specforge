@@ -5,7 +5,7 @@
 // live tree (spec 009-cross-provider-review-gate, Wave 5; FR-016, FR-017;
 // amended 2026-09-24 after a1-samuel-security's W5 review).
 //
-//   snapshot({ sourceRepo, commit, base, inputs, targetDir }) → { ok, snapshot,
+//   snapshot({ sourceRepo, commit, base, inputs }) → { ok, snapshot,
 //     commit, base, depth, files_scanned, base_files_scanned, inputs_scanned,
 //     files_skipped (always 0), repo_local_removed, gitleaks, inputs,
 //     diff_sha256 }
@@ -59,10 +59,6 @@
 //     written to `<snapshot>.inputs/diff.sha256`; `xprov run` compares it with
 //     the runner's own snapshot.diff_sha256 (runner.py:106-107) — a mismatch
 //     is a tripwire (detective TOCTOU check).
-//   * `targetDir` rebuilds a snapshot at a given path (plan-review resume: the
-//     runner refuses a resume whose record.repo differs, runner.py:257-264);
-//     the path must be a `snap-XXXXXX` child of the snapshots root, no
-//     symlink, absent or empty — and so must its `.inputs` sibling.
 //
 // Measured 2026-09-24: codex-cli 0.155.1 `features list` is byte-identical
 // with and without a repo-local `.codex/config.toml` in the cwd — that proves
@@ -99,7 +95,6 @@ const INPUTS_SUFFIX = '.inputs';
 const DIFF_SHA_FILE = 'diff.sha256';
 const INPUTS_RECORD_FILE = 'inputs.json'; // { plan: sha256, feedback: sha256 } of the scanned copies
 const INPUT_FILES = Object.freeze({ plan: 'PLAN.md', feedback: 'feedback.md' });
-const SNAP_NAME_RE = /^snap-[A-Za-z0-9]{6}$/; // mkdtemp's six-character suffix
 const FILE_MODE = 0o600;
 
 
@@ -354,42 +349,13 @@ function validateRefs(commit, base) {
   if (base !== null && !REF_RE.test(base)) throw C.inputError(`--base must be a git revision (no leading dash, no whitespace; got ${JSON.stringify(base.slice(0, 80))})`, 'bad_base');
 }
 
-/** Why `target` cannot be (re)built as a snapshot: not a `snap-XXXXXX` child
- * of the snapshots root, a symlink, or present and non-empty — or null. The
- * `.inputs` sibling must pass the same checks. */
-function snapshotPathProblem(target, root) {
-  const t = path.resolve(String(target));
-  if (!SNAP_NAME_RE.test(path.basename(t))) return `${t}: not a snap-XXXXXX name`;
-  let parent;
-  try { parent = fs.realpathSync(path.dirname(t)); } catch (_e) { return `${t}: parent does not resolve`; }
-  if (parent !== fs.realpathSync(root)) return `${t}: not a direct child of ${root}`;
-  for (const p of [t, `${t}${INPUTS_SUFFIX}`]) {
-    let st = null;
-    try { st = fs.lstatSync(p); } catch (_e) { st = null; }
-    if (st === null) continue;
-    if (st.isSymbolicLink()) return `${p}: is a symlink`;
-    if (!st.isDirectory()) return `${p}: is not a directory`;
-    if (fs.readdirSync(p).length > 0) return `${p}: exists and is not empty`;
-  }
-  return null;
-}
-
 /** The clone alone (no scan): { ok, dir, commit, base, depth, repo_local_removed }
  * or { ok: false, reason: snapshot_failed, detail }. Head is fetched depth 1;
- * with `base`, base is fetched depth 1 too — nothing between them. `targetDir`
- * (resume) rebuilds at that validated path. Used by snapshot() and by
+ * with `base`, base is fetched depth 1 too — nothing between them. Used by snapshot() and by
  * `allowlist propose|approve` (listing only). */
-function cloneSnapshot(sourceRepo, commit, base, targetDir) {
+function cloneSnapshot(sourceRepo, commit, base) {
   const root = ensureSnapshotsRoot();
-  let dir;
-  if (targetDir) {
-    const problem = snapshotPathProblem(targetDir, root);
-    if (problem) return { ok: false, reason: X.REASONS.snapshot_failed, dir: null, detail: `resume snapshot path refused — ${problem}` };
-    dir = path.resolve(targetDir);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { mode: DIR_MODE });
-  } else {
-    dir = fs.mkdtempSync(path.join(root, SNAP_PREFIX));
-  }
+  const dir = fs.mkdtempSync(path.join(root, SNAP_PREFIX));
   fs.chmodSync(dir, DIR_MODE);
   const failed = (detail) => { removeDir(dir); return { ok: false, reason: X.REASONS.snapshot_failed, dir: null, detail }; };
   let baseSha = null;
@@ -567,7 +533,7 @@ function snapshot(opts) {
   }
   // Read before ensureSnapshotsRoot() tightens ~/.a1-xprov: a 0755 directory must count as "no store" (FR-030 j).
   const approvals = AL.readApprovals();
-  const cl = cloneSnapshot(sourceRepo, commit, base, opts.targetDir);
+  const cl = cloneSnapshot(sourceRepo, commit, base);
   if (!cl.ok) return { ok: false, reason: cl.reason, snapshot: null, commit, detail: cl.detail, ...none };
   const dir = cl.dir;
   const failed = (extra) => { removeSnapshotDirs(dir); return { ok: false, snapshot: null, commit, ...extra }; };
@@ -617,15 +583,11 @@ function cleanupSnapshot(dir) {
   const root = path.resolve(X.snapshotsDir());
   const target = path.resolve(dir);
   const rel = path.relative(root, target);
-  const lexical = rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel) && !rel.includes(path.sep);
-  // A resumed snapshot carries the runner's realpath (runner.py resolves --repo):
-  // /private/var/… for a root spelled /var/… — same directory, other spelling.
-  let realParent = false;
-  try { realParent = fs.realpathSync(path.dirname(target)) === fs.realpathSync(root); } catch (_e) { realParent = false; }
-  if (!(lexical || realParent) || !path.basename(target).startsWith(SNAP_PREFIX)) {
+  const direct = rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel) && !rel.includes(path.sep);
+  if (!direct || !path.basename(target).startsWith(SNAP_PREFIX)) {
     throw C.inputError(`${target} is not a snapshot under ${root}; refusing to remove it`, 'not_a_snapshot');
   }
-  if (fs.existsSync(target) && !realParent) {
+  if (fs.existsSync(target) && fs.realpathSync(path.dirname(target)) !== fs.realpathSync(root)) {
     throw C.inputError(`${target} does not resolve under ${root}; refusing to remove it`, 'not_a_snapshot');
   }
   removeSnapshotDirs(target);
@@ -675,5 +637,5 @@ function cmdXprovSnapshot(args) {
 module.exports = {
   snapshot, cloneSnapshot, cleanupSnapshot, removeDir, scanTrackedFiles, utf16Mode, gitleaksScan, ensureSnapshotsRoot, cmdXprovSnapshot,
   SNAP_PREFIX, REPO_LOCAL_STRIP, GITLEAKS_CONFIG, REF_RE, LINE_MAX_CHARS, LINE_CONTEXT_CHARS,
-  INPUTS_SUFFIX, INPUT_FILES, storedDiffSha, storedInputHashes, snapshotPathProblem,
+  INPUTS_SUFFIX, INPUT_FILES, storedDiffSha, storedInputHashes,
 };

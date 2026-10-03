@@ -58,6 +58,9 @@ const FINDING_FIELDS = Object.freeze(['id', 'severity', 'path', 'evidence', 'fix
 const RESPONSE_VERDICTS = new Set(['APPROVED', 'REVISE', 'BLOCKED']);
 const RUNNER_MODES = new Set(X.RUNNER_MODES);
 const FIX_MARKER = 'Fix (reviewer proposal, not applied): ';
+// The findings again, in a1's own 0700 run dir: the only source of the next
+// round's feedback (xprov-gate priorRound — rounds never resume a session).
+const PRIOR_FINDINGS_FILE = 'a1-findings.json';
 // greedy `(.*)` keeps `a.js:42:7` as file `a.js:42` line 7; an empty file part
 // (`:42`) is rejected by mapFinding, a > 7-digit suffix is not a line number.
 const LINE_RE = /^(.*):(\d{1,7})$/;
@@ -278,6 +281,18 @@ function writeFindingsFile(file, summary, findings) {
   writeTextAtomic(file, JSON.stringify({ summary, ...bucketize(findings) }, null, 2) + '\n');
 }
 
+/** The findings file again in the run dir of `resultPath`, but only when that
+ * dir lies in this repository's artifacts dir (a standalone normalize of a
+ * foreign result.json writes nothing next to it). */
+function writeRunDirFindings(resultPath, summary, findings) {
+  const runDir = path.dirname(resultPath);
+  const A = require(ARTIFACTS_MODULE);
+  if (!A.isUnder(runDir, A.ensureArtifactsDir()) || path.resolve(runDir) === path.resolve(A.ensureArtifactsDir())) return null;
+  const file = path.join(runDir, PRIOR_FINDINGS_FILE);
+  writeFindingsFile(file, summary, findings);
+  return file;
+}
+
 function renderTable(rows) {
   if (rows.length === 0) return '_none_\n';
   const line = (f) => `| ${cell(f.id, X.TITLE_MAX_CHARS)} | ${cell(f.severity, 20)} | ${cell(f.file, X.TITLE_MAX_CHARS)} | ${f.line === null || f.line === undefined ? '' : cell(f.line, 10)} | ${cell(f.title, X.TITLE_MAX_CHARS)} |${f.reason ? ` ${cell(f.reason, 40)} |` : ''}`;
@@ -440,7 +455,11 @@ function cmdXprovNormalize(args) {
     response: !tainted && isPlainObject(record.response) ? record.response : null,
   };
   const model = modelFields(tainted ? {} : record, ctx.resultPath);
-  if (writesFindings) writeFindingsFile(ctx.findingsPath, ctx.response ? bullet(ctx.response.summary) : '', outcome.findings || []);
+  if (writesFindings) {
+    const summary = ctx.response ? bullet(ctx.response.summary) : '';
+    writeFindingsFile(ctx.findingsPath, summary, outcome.findings || []);
+    writeRunDirFindings(ctx.resultPath, summary, outcome.findings || []);
+  }
   const pin = X.checkRunnerPin();
   const xreviewPath = appendToXreview(ctx.phaseDir, renderSection(ctx, outcome, model, pin.actual || `unverified (${pin.reason})`));
   const entry = {
@@ -462,4 +481,4 @@ function cmdXprovNormalize(args) {
   process.exitCode = outcome.verdict === X.VERDICTS.PASS ? X.EXIT_PASS : X.EXIT_FAIL;
 }
 
-module.exports = { cmdXprovNormalize, appendXreviewNote, classify, mapFinding, splitPath, firstSentence, modelFields, cell };
+module.exports = { cmdXprovNormalize, appendXreviewNote, PRIOR_FINDINGS_FILE, classify, mapFinding, splitPath, firstSentence, modelFields, cell };

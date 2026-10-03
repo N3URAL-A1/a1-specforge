@@ -41,19 +41,20 @@
 #   O12b gitleaks runs over the input copies (a marker only in an uncommitted
 #       PLAN.md). Red if that run is dropped.
 #
-# Plan-review resume (team-lead decision (b), 2026-10-02): the runner refuses a
-# resume whose record.repo/plan differ from the new run (runner.py:257-264; the
-# fake now ports that check). Round 2 rebuilds round 1's snapshot at the path
-# the runner recorded, after strict validation.
-#   RR3 a round-2 resume runs at the same snapshot path (and its plan copy).
-#       Red if round 2 builds a fresh mktemp snapshot (the live defect).
-#   RR1 a record path outside the snapshots dir → refused before dispatch.
-#       Red if the parent-directory check is dropped.
-#   RR2 a record path that is a symlink → refused.   Red if stat (following) replaces lstat.
-#   RR4 a record path that exists and is not empty → refused.
-#       Red if a non-empty dir is reused.
-#   RR5 a record plan that is not <record.repo>.inputs/PLAN.md → refused.
-#       Red if resumeTarget drops the plan-path check.
+# Plan-review round 2 is a FRESH session (Samuel MAJOR, Wave 7; replaces the
+# resume of decision (b)): `codex exec resume` would replay round 1 from the
+# home's rollout files, which no check covers. a1 builds round 2's --feedback
+# from round 1's findings in ITS OWN run dir (a1-findings.json) + dispositions.
+#   FR1 round 2 runs on a NEW snapshot, no --resume, --feedback = scanned copy;
+#       snapshot, inputs and the feedback temp dir are removed afterwards.
+#       Red if the gate resumes (FORBIDDEN token / run refusal → runner_failed).
+#   FR2 a1-findings.json missing in the run dir → exit 2, runner never invoked.
+#       Red if the gate builds feedback without round 1's findings.
+#   FR3 a1-findings.json is a symlink → exit 2.   Red if stat replaces lstat.
+#   FR4 the index entry's result_path points outside a1's artifacts dir → exit 2.
+#       Red if the isUnder check is dropped.
+#   FR5 a secret in the dispositions → secret_in_snapshot, runner never invoked
+#       (the feedback is a scanned input).   Red if the feedback is not scanned.
 #
 # `xprov run` takes only the snapshot's scanned copies (Codex R1, live inspect
 # 2026-10-03: the input scan sat in the gate alone, `run` passed any file):
@@ -217,48 +218,48 @@ caseO12() {
   expect8 "O12b a gitleaks finding only in the PLAN.md copy" "secret_in_snapshot/gitleaks"
 }
 
-# rr10 — phase with the revise plan, round 1 REVISE, dispositions written.
-# Sets RR_PREV (round-1 result.json) and RR_REPO (its recorded snapshot path).
-rr10() {
+# fr10 — phase with the revise plan, round 1 REVISE, dispositions written.
+# Sets FR_PREV (round-1 result.json) and FR_SNAP1 (round 1's snapshot path).
+fr10() {
   new8; cp "$CASES/revise.PLAN.md" "$P8DIR/PLAN.md"; c8 "revise plan"
   FAKE_RUNNER_CASE=revise gate8 --gate "$GATE_PLAN"
-  RR_PREV="$(json_get "$G_OUT" "j.result_path")"
-  RR_REPO="$(json_get "$(cat "$RR_PREV" 2>/dev/null || echo '{}')" "j.repo || ''")"
-  printf -- '- F1: accepted — fixed in the plan\n' > "$P8DIR/xreview/plan-review-xprov-plan-r1.dispositions.md"
+  FR_PREV="$(json_get "$G_OUT" "j.result_path")"
+  FR_SNAP1="$(json_get "$(cat "$FR_PREV" 2>/dev/null || echo '{}')" "j.repo || ''")"
+  printf -- '- R1: accepted — fixed in the plan\n' > "$P8DIR/xreview/plan-review-xprov-plan-r1.dispositions.md"
 }
-# rr_set_repo <path> — rewrites record.repo AND record.plan (= <path>.inputs/PLAN.md)
-# in the round-1 result.json: a self-consistent hostile record, so the path
-# checks alone have to refuse it (RR5 covers an inconsistent plan).
-rr_set_repo() { node -e 'const fs=require("fs");const [f,v]=process.argv.slice(1);const j=JSON.parse(fs.readFileSync(f,"utf8"));j.repo=v;j.plan=v+".inputs/PLAN.md";fs.writeFileSync(f,JSON.stringify(j,null,2)+"\n");' "$RR_PREV" "$1"; }
-refused10() { # <name> — round 2 refused at step snapshot (snapshot_failed), runner never invoked
-  local got; got="$(json_get "$G_OUT" "j.step + ':' + j.reason + ':' + /resume snapshot path refused/.test(String(j.reason_detail))")"
-  [[ "$got" == "snapshot:snapshot_failed:true" ]] && ok "$1 → refused before dispatch" || bad "$1: want snapshot:snapshot_failed:true, got $got — $(printf '%s' "$G_ERR" | tail -n 1)"
+usage10() { # <name> — round 2 is a usage error (exit 2), runner never invoked
+  [[ "$G_RC" -eq 2 ]] && ok "$1 → usage error (exit 2)" || bad "$1: want exit 2, got $G_RC — $(printf '%s' "$G_ERR" | tail -n 1)"
   never_ran8 "$1"
 }
+fb_left() { find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'a1-xprov-feedback-*' 2>/dev/null | wc -l | tr -d ' '; }
 
-caseRR() {
-  rr10
-  [[ "$RR_REPO" == "$HOME/.a1-xprov/snapshots/snap-"* || "$RR_REPO" == *"/.a1-xprov/snapshots/snap-"* ]] && ok "RR setup: round 1 recorded its snapshot path" || bad "RR setup: record.repo = $RR_REPO"
+caseFR() {
+  fr10
+  [[ -f "$(dirname "$FR_PREV")/a1-findings.json" ]] && ok "FR setup: round 1's findings are in a1's run dir" || bad "FR setup: no a1-findings.json next to $FR_PREV"
+  local fb_before; fb_before="$(fb_left)"
   FAKE_RUNNER_CASE=revise gate8 --gate "$GATE_PLAN" --round 2
-  assert_json "RR3 round 2 resumed and ran (REVISE again → round_cap, not runner_failed)" "$G_OUT" "j.step + ':' + j.reason" "normalize:round_cap"
-  assert_json "RR3 round 2 ran on the round-1 snapshot path" "$(cat "$ARGV8_FILE" 2>/dev/null || echo '[]')" \
-    "require('fs').realpathSync(require('path').dirname(j[j.indexOf('--repo') + 1])) + '/' + require('path').basename(j[j.indexOf('--repo') + 1]) === require('fs').realpathSync(require('path').dirname('$RR_REPO')) + '/' + require('path').basename('$RR_REPO')" "true"
-  [[ ! -e "$RR_REPO" && ! -e "$RR_REPO.inputs" ]] && ok "RR3 the rebuilt snapshot and its inputs are removed after round 2" || bad "RR3 leftovers at $RR_REPO"
+  assert_json "FR1 round 2 ran (REVISE again → round_cap, not runner_failed)" "$G_OUT" "j.step + ':' + j.reason" "normalize:round_cap"
+  local argv; argv="$(cat "$ARGV8_FILE" 2>/dev/null || echo '[]')"
+  assert_json "FR1 round 2: fresh session (no --resume), --feedback is the scanned copy" "$argv" \
+    "j.includes('--resume') + '/' + (j[j.indexOf('--feedback') + 1] === j[j.indexOf('--repo') + 1] + '.inputs/feedback.md')" "false/true"
+  local snap2; snap2="$(json_get "$argv" "j[j.indexOf('--repo') + 1]")"
+  [[ -n "$snap2" && "$snap2" != "$FR_SNAP1" ]] && ok "FR1 round 2 uses a new snapshot" || bad "FR1 round 2 reused $FR_SNAP1"
+  [[ ! -e "$snap2" && ! -e "$snap2.inputs" ]] && ok "FR1 snapshot and inputs removed after round 2" || bad "FR1 leftovers at $snap2"
+  assert_eq "FR1 the feedback temp dir is removed" "$(fb_left)" "$fb_before"
 
-  rr10; rr_set_repo "$TMP10/snap-OutSid"   # a valid snap-XXXXXX name, outside the snapshots dir
-  FAKE_RUNNER_CASE=revise gate8 --gate "$GATE_PLAN" --round 2; refused10 "RR1 a record path outside the snapshots dir"
+  fr10; rm -f "$(dirname "$FR_PREV")/a1-findings.json"
+  FAKE_RUNNER_CASE=revise gate8 --gate "$GATE_PLAN" --round 2; usage10 "FR2 round 1's findings missing from a1's run dir"
 
-  rr10; local other="$TMP10/elsewhere"; mkdir -p "$other"
-  local link; link="$(dirname "$RR_REPO")/snap-LnkAbc"; ln -s "$other" "$link"; rr_set_repo "$link"
-  FAKE_RUNNER_CASE=revise gate8 --gate "$GATE_PLAN" --round 2; refused10 "RR2 a record path that is a symlink"
-  rm -f "$link"
+  fr10; local f="$(dirname "$FR_PREV")/a1-findings.json"; mv "$f" "$TMP10/elsewhere-findings.json"; ln -s "$TMP10/elsewhere-findings.json" "$f"
+  FAKE_RUNNER_CASE=revise gate8 --gate "$GATE_PLAN" --round 2; usage10 "FR3 a1-findings.json is a symlink"
 
-  rr10; mkdir -p "$RR_REPO"; printf 'planted\n' > "$RR_REPO/x.txt"
-  FAKE_RUNNER_CASE=revise gate8 --gate "$GATE_PLAN" --round 2; refused10 "RR4 a record path that exists and is not empty"
-  [[ -f "$RR_REPO/x.txt" ]] && ok "RR4 the existing dir is left untouched" || bad "RR4 the existing dir was modified"
+  fr10; local outside="$TMP10/outside-run"; mkdir -p "$outside"; cp "$(dirname "$FR_PREV")"/* "$outside"/
+  node -e 'const fs=require("fs");const [f,v]=process.argv.slice(1);const j=JSON.parse(fs.readFileSync(f,"utf8"));for(const e of j)if(e.round===1)e.result_path=v;fs.writeFileSync(f,JSON.stringify(j,null,2)+"\n");' "$P8DIR/xreview/index.json" "$outside/result.json"
+  FAKE_RUNNER_CASE=revise gate8 --gate "$GATE_PLAN" --round 2; usage10 "FR4 result_path outside a1's artifacts dir"
 
-  rr10; node -e 'const fs=require("fs");const f=process.argv[1];const j=JSON.parse(fs.readFileSync(f,"utf8"));j.plan="/tmp/other/PLAN.md";fs.writeFileSync(f,JSON.stringify(j,null,2)+"\n");' "$RR_PREV"
-  FAKE_RUNNER_CASE=revise gate8 --gate "$GATE_PLAN" --round 2; refused10 "RR5 a record plan that is not the snapshot's input copy"
+  fr10; printf -- '- R1: rejected — key %s\n' "AKIA$(head -c 16 /dev/zero | tr '\0' 'Q')" >> "$P8DIR/xreview/plan-review-xprov-plan-r1.dispositions.md"
+  FAKE_RUNNER_CASE=revise gate8 --gate "$GATE_PLAN" --round 2
+  expect8 "FR5 a secret in the dispositions" "secret_in_snapshot"
 }
 
 # ri10 — direct-run setup: phase repo with permit and home, snapshot with the
@@ -275,8 +276,7 @@ ri10() {
 ri_run() {
   RI_ARGV="$TMP10/ri-argv-$RANDOM.json"
   FAKE_RUNNER_ARGV_FILE="$RI_ARGV" FAKE_RUNNER_CASE=approved fake_runner_env
-  # --feedback needs --resume (usage rule); the input check refuses before the resume is ever read
-  local fb=(); [[ -n "${2:-}" ]] && fb=(--resume "$RI_DISP" --feedback "$2")
+  local fb=(); [[ -n "${2:-}" ]] && fb=(--feedback "$2")
   RI_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov run --mode review --snapshot "$RI_SNAP" --plan "$1" ${fb[@]+"${fb[@]}"} --phase pri --gate "$GATE_PLAN" --timeout 7 2>/dev/null)"
 }
 ri_refused() { # <name> <detail-regex>
@@ -349,7 +349,7 @@ caseS() {
   expect8 "S2 a gitleaks finding only in a stripped AGENTS.md" "secret_in_snapshot/gitleaks"
 }
 
-caseO1; caseO2; caseO3; caseO4; caseO5; caseO6; caseO7; caseO8; caseO9; caseO10O11; caseO12; caseRR; caseRI; caseP; caseS
+caseO1; caseO2; caseO3; caseO4; caseO5; caseO6; caseO7; caseO8; caseO9; caseO10O11; caseO12; caseFR; caseRI; caseP; caseS
 unset A1_XPROV_CODEX_HOME
 export HOME="$SAVED_HOME_10"
 rm -rf "$TMP10"

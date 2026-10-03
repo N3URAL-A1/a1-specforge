@@ -93,7 +93,7 @@ const GATE_ID_LIST = Object.freeze(Object.values(GATE_IDS));
 
 // ---------- runner usage limits (FR-024) ----------
 const RUNNER_MODES = Object.freeze(['review', 'inspect']); // `check` is the runner's own consistency mode; a1 has no caller for it
-const FORBIDDEN_RUNNER_TOKENS = Object.freeze(['build', '--unreviewed-spec', '--proof']);
+const FORBIDDEN_RUNNER_TOKENS = Object.freeze(['build', '--unreviewed-spec', '--proof', '--resume']); // --resume: Wave 7, a resumed session replays an unchecked rollout
 const RUNNER_HOST = 'claude';
 
 // ---------- numeric limits shared by later waves ----------

@@ -95,8 +95,12 @@ function stderrTail(text) {
 }
 
 /** One-line, bounded rendering for log cells; null/undefined → 'none'. */
+// Everything that can break a line or reorder it on display: C0 (incl. \t \v \f
+// ESC), DEL, C1 (incl. U+0085), U+2028/2029 and the bidi controls (Samuel W7).
+const LINE_BREAKERS_RE = /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]+/g;
+
 function oneLine(value) {
-  return value == null ? 'none' : clip(String(value).replace(/[\r\n\t]+/g, ' '), DETAIL_MAX_CHARS);
+  return value == null ? 'none' : clip(String(value).replace(LINE_BREAKERS_RE, ' '), DETAIL_MAX_CHARS);
 }
 
 function parsePositive(value, name) {
@@ -187,6 +191,6 @@ function resolveRepoFlag(repoFlag) {
 module.exports = {
   REGISTRY_PATH, LANE_RE, POSITIVE_INT_RE, POSITIVE_INT_MAX, DETAIL_MAX_CHARS, GIT_MAX_BUFFER, DIR_MODE,
   inputError, writeStdoutSync, emitJson, usageExit, usageThrow,
-  clip, stderrTail, oneLine, parsePositive, parseLane, sha256, isPlainObject, isDir, isFile,
+  clip, stderrTail, oneLine, LINE_BREAKERS_RE, parsePositive, parseLane, sha256, isPlainObject, isDir, isFile,
   mkdir0700, readIndex, sameWave, sameLane, gitSpawn, gitOut, commonDirOf, resolveRepoFlag,
 };

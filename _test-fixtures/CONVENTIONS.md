@@ -209,7 +209,7 @@ the named part selected.
 
 
 The Wave 7 hardening guards after the live smoke (runner isolation, outbound payload scan,
-resume, input boundary, path names) carry their arm → mutation map in the headers of
+fresh plan-review rounds, input boundary, path names) carry their arm → mutation map in the headers of
 `a1-xprov/parts/09-runner-isolation.sh` and `a1-xprov/parts/10-outbound-scan.sh`; each
 mutation there was run on a tar copy and killed its named arm (control runs without an
 edit stayed green).

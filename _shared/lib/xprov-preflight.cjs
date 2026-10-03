@@ -80,8 +80,10 @@ const ALL_FEATURE_PINS = Object.freeze([...REQUIRED_FEATURES_OFF, ...FEATURE_PIN
 // Root keys a1 pins (key → required value), inserted after the last root entry.
 const ROOT_PINS = Object.freeze({ cli_auth_credentials_store: 'file' });
 const SKILLS_DIR = 'skills';
-// Codex runtime dirs (xprov-run CODEX_RUNTIME_DIRS without skills/.system): content never hashed nor trusted.
-const RUNTIME_DIRS_NOT_DESCENDED = Object.freeze(['cache', 'sessions', 'plugins', 'tmp', 'shell_snapshots', 'thread-writer-locks', 'log']);
+// The one measured place Codex itself puts symlinks (2026-10-03, codex-cli
+// 0.155.1): tmp/arg0/codex-arg0<random>/{apply_patch,applypatch,
+// codex-execve-wrapper} → its own native binary.
+const ARG0_SHIM_RE = /^tmp\/arg0\/codex-arg0[A-Za-z0-9]+\/[^/]+$/;
 const SKILLS_SYSTEM = '.system';
 const ETC_CODEX_DIR = '/etc/codex';
 const ETC_CODEX_FILES = Object.freeze(['config.toml', 'requirements.toml']);
@@ -287,15 +289,27 @@ function listDirs(dir) {
   } catch (_e) { return []; }
 }
 
+/** Directories AND symlinks in `dir` (a link is a leaf: never followed). */
+function listDirsAndLinks(dir) {
+  try {
+    return fs.readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory() || d.isSymbolicLink()).map((d) => ({ name: d.name, link: d.isSymbolicLink() })).sort((a, b) => a.name.localeCompare(b.name));
+  } catch (_e) { return []; }
+}
+
 /** Leaf directories under plugins/cache (depth ≤ 3, `marketplace/plugin/version`)
- * plus the staging dir. Fresh sorted array of relative paths. */
+ * plus the staging dir; a symlinked entry at any depth is a leaf too (Samuel
+ * W7: a Dirent of a link is no directory, so a linked plugin was invisible).
+ * Fresh sorted array of relative paths. */
 function scanPluginCache(home) {
   const cache = path.join(home, 'plugins', 'cache');
   const found = [];
   const walk = (dir, rel, depth) => {
-    const subs = listDirs(dir);
+    const subs = listDirsAndLinks(dir);
     if (subs.length === 0 || depth === PLUGIN_CACHE_DEPTH) { if (rel) found.push(rel); return; }
-    for (const s of subs) walk(path.join(dir, s), rel ? `${rel}/${s}` : s, depth + 1);
+    for (const s of subs) {
+      const r = rel ? `${rel}/${s.name}` : s.name;
+      if (s.link) found.push(r); else walk(path.join(dir, s.name), r, depth + 1);
+    }
   };
   walk(cache, '', 0);
   if (fs.existsSync(path.join(home, 'plugins', PLUGIN_STAGING_DIR))) found.push(PLUGIN_STAGING_DIR);
@@ -312,15 +326,44 @@ function pluginCacheCheck(home, allowlist) {
   return check('plugins_cache_empty', true, allowed.length ? `allowlisted: ${allowed.join(', ')}` : 'empty');
 }
 
+/** The first executable `name` on env.PATH, or null. */
+function onPath(name, env) {
+  for (const dir of String((env || process.env).PATH || '').split(path.delimiter).filter(Boolean)) {
+    const p = path.join(dir, name);
+    try { const st = fs.statSync(p); if (st.isFile() && (st.mode & 0o111)) return p; } catch (_e) { /* not here */ }
+  }
+  return null;
+}
+
+/** Realpaths an arg0 shim may point at: the `codex` on PATH and, for the npm
+ * layout (measured, Homebrew 2026-10-03: bin/codex.js starts the native
+ * node_modules/@openai/codex-<platform>/vendor/<triple>/bin/codex), the native
+ * binaries of that package. */
+function codexBinaries(env) {
+  const found = onPath('codex', env);
+  if (!found) return [];
+  const real = fs.realpathSync(found);
+  const scope = path.join(path.dirname(path.dirname(real)), 'node_modules', '@openai');
+  const native = listDirs(scope).filter((n) => n.startsWith('codex-')).flatMap((pkg) =>
+    listDirs(path.join(scope, pkg, 'vendor')).map((triple) => path.join(scope, pkg, 'vendor', triple, 'bin', 'codex')));
+  return [real, ...native.filter((b) => fs.existsSync(b)).map((b) => fs.realpathSync(b))];
+}
+
+/** A symlink Codex itself makes: an arg0 shim whose target IS the codex binary. */
+function isCodexShim(full, rel, binaries) {
+  if (!ARG0_SHIM_RE.test(rel)) return false;
+  try { return binaries.includes(fs.realpathSync(full)); } catch (_e) { return false; }
+}
+
 /** Every symlink in the dedicated home except the top-level auth.json (the one
- * link a1 creates itself): lstat walk, links never followed (Samuel m7 — a
- * linked `skills` or `skills/.system` hid its content from fileHashes and from
- * a readdirSync that follows links). Codex's runtime dirs are checked only as
- * entries, never descended: measured 2026-10-03, every run leaves arg0 shims
- * `tmp/arg0/codex-arg0<random>/{apply_patch,applypatch,codex-execve-wrapper}` →
- * its own binary. `skills/` (incl. `.system`) IS descended. Returns relative paths. */
-function homeSymlinks(home) {
+ * link a1 creates itself) and Codex's own arg0 shims: lstat walk over EVERY
+ * directory, links never followed (Samuel m7 — a linked `skills` or
+ * `skills/.system` hid its content from fileHashes and from a readdirSync that
+ * follows links; W7 MINOR — no runtime dir is exempt, only what was measured).
+ * Returns relative paths. */
+function homeSymlinks(home, env) {
   const found = [];
+  let binaries = null; // resolved once, only when a candidate shim is seen
   const walk = (dir, rel) => {
     let names = [];
     try { names = fs.readdirSync(dir); } catch (_e) { return; }
@@ -329,8 +372,13 @@ function homeSymlinks(home) {
       const r = rel ? `${rel}/${n}` : n;
       let st;
       try { st = fs.lstatSync(full); } catch (_e) { continue; }
-      if (st.isSymbolicLink()) { if (r !== AUTH_FILE) found.push(r); continue; }
-      if (st.isDirectory() && !(rel === '' && RUNTIME_DIRS_NOT_DESCENDED.includes(n))) walk(full, r);
+      if (st.isSymbolicLink()) {
+        if (r === AUTH_FILE) continue;
+        if (ARG0_SHIM_RE.test(r) && isCodexShim(full, r, binaries || (binaries = codexBinaries(env)))) continue;
+        found.push(r);
+        continue;
+      }
+      if (st.isDirectory()) walk(full, r);
     }
   };
   walk(home, '');
@@ -355,9 +403,9 @@ function skillsRealDirsCheck(home) {
   return check('skills_real_dirs', p === null, p || 'skills/ and skills/.system are real, own directories (or absent)');
 }
 
-function homeNoSymlinksCheck(home) {
-  const links = homeSymlinks(home);
-  return check('home_no_symlinks', links.length === 0, links.length ? `symlinks: ${links.slice(0, 10).join(', ')}` : 'no symlink besides auth.json');
+function homeNoSymlinksCheck(home, env) {
+  const links = homeSymlinks(home, env);
+  return check('home_no_symlinks', links.length === 0, links.length ? `symlinks: ${links.slice(0, 10).join(', ')}` : 'no symlink besides auth.json and Codex\'s arg0 shims');
 }
 
 /** `$CODEX_HOME/skills` is a user skill root (measured): only `.system` may live there. */
@@ -517,7 +565,7 @@ function preflight(opts) {
     pluginCacheCheck(home, o.pluginAllowlist),
     skillsSystemOnlyCheck(home),
     skillsRealDirsCheck(home),
-    homeNoSymlinksCheck(home),
+    homeNoSymlinksCheck(home, env),
     sessionToolsCheck(home),
     etcCodexCheck(o.etcCodexDir || ETC_CODEX_DIR),
     authCheck(home),

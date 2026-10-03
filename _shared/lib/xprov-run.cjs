@@ -10,7 +10,7 @@
 //
 //   a1-tools xprov run --mode review|inspect --snapshot <dir> --plan <abs PLAN.md>
 //     --phase <name> --gate <id> [--wave N] [--round N] [--lane <id>]
-//     [--base <sha>] [--resume <result.json> [--feedback <file>]]
+//     [--base <sha>] [--feedback <file>]
 //     [--timeout N] [--work-path <dir>] [--no-log]
 //
 // Order: usage checks → permitCheck (never a flag) → runner pin check
@@ -97,7 +97,7 @@ const { SNAP_PREFIX, REPO_LOCAL_STRIP, storedDiffSha, storedInputHashes, INPUTS_
 const NO_LOG_FLAG = 'no-log';
 const FLAGS = Object.freeze({
   mode: 'str', snapshot: 'str', plan: 'str', phase: 'str', gate: 'str', wave: 'str', round: 'str', lane: 'str',
-  base: 'str', resume: 'str', feedback: 'str', timeout: 'str', 'work-path': 'str', [NO_LOG_FLAG]: 'bool',
+  base: 'str', feedback: 'str', timeout: 'str', 'work-path': 'str', [NO_LOG_FLAG]: 'bool',
 });
 const DEFAULT_TIMEOUT_SECONDS = 600; // the runner's own default
 const SPAWN_GRACE_SECONDS = 60; // the runner kills its child at --timeout; a1 kills the runner a minute later
@@ -149,14 +149,16 @@ function porcelain(repo) {
 // ---------- argument resolution ----------
 
 function resolveArgs(args) {
+  // No session is ever resumed (Samuel, Wave 7 MAJOR): `codex exec resume`
+  // replays a rollout file in the dedicated home that no check covers.
+  if ((args || []).some((a) => /^--resume(=|$)/.test(String(a)))) usage('--resume is not accepted: every review is a fresh session (a resumed session replays a rollout file outside the tripwire)');
   const flags = parseFlags(args, FLAGS);
   const stray = flags._.filter((a) => String(a).startsWith('--'));
   if (stray.length) usage(`unknown flag ${stray[0]}`);
   if (flags._.length) usage(`unexpected argument ${JSON.stringify(String(flags._[0]).slice(0, 80))}`);
   if (!RUNNER_MODES.has(flags.mode)) usage(`--mode must be one of ${X.RUNNER_MODES.join('|')} (got ${JSON.stringify(String(flags.mode).slice(0, 40))}); build is never used`);
   if (flags.mode === 'inspect' && !flags.base) usage('--mode inspect requires --base <sha>');
-  if (flags.mode === 'inspect' && flags.resume) usage('--mode inspect is always a fresh session: --resume is not allowed');
-  if (flags.feedback && !flags.resume) usage('--feedback requires --resume');
+  if (flags.feedback && flags.mode !== 'review') usage('--feedback is plan-review only (--mode review)');
   if (flags.base && !/^[0-9a-fA-F]{7,40}$/.test(flags.base)) usage('--base must be a commit sha (7-40 hex chars)');
   if (!flags.plan) usage('--plan <abs PLAN.md> is required');
   if (!path.isAbsolute(flags.plan)) usage(`--plan must be an absolute path (got ${JSON.stringify(flags.plan.slice(0, 80))})`);
@@ -174,7 +176,6 @@ function resolveArgs(args) {
   try { ids = parseRegistryIds(fs.readFileSync(REGISTRY_PATH, 'utf8')); } catch (_e) { usage(`registry unreadable: ${REGISTRY_PATH}`); }
   if (!ids.includes(flags.gate)) usage(`--gate ${JSON.stringify(String(flags.gate).slice(0, 80))} is not a registered gate id`);
   if (flags.lane !== undefined && !LANE_RE.test(String(flags.lane))) usage(`--lane must match ${LANE_RE} (got ${JSON.stringify(String(flags.lane).slice(0, 80))})`);
-  if (flags.resume && !isFile(flags.resume)) usage(`--resume not found: ${flags.resume}`);
   if (flags.feedback && !isFile(flags.feedback)) usage(`--feedback not found: ${flags.feedback}`);
   const workPath = flags['work-path'] ? path.resolve(flags['work-path']) : root;
   if (!isDir(workPath)) usage(`--work-path is not a directory: ${workPath}`);
@@ -183,7 +184,7 @@ function resolveArgs(args) {
     wave: flags.wave === undefined ? null : parsePositive(flags.wave, 'wave'),
     round: flags.round === undefined ? 1 : parsePositive(flags.round, 'round'),
     lane: flags.lane === undefined ? null : flags.lane, base: flags.base || null,
-    resume: flags.resume ? path.resolve(flags.resume) : null, feedback: flags.feedback ? path.resolve(flags.feedback) : null,
+    feedback: flags.feedback ? path.resolve(flags.feedback) : null,
     timeout: flags.timeout === undefined ? DEFAULT_TIMEOUT_SECONDS : parsePositive(flags.timeout, 'timeout'),
     noLog: flags[NO_LOG_FLAG] === true, ts: nowIso(),
   };
@@ -195,10 +196,7 @@ function buildArgv(ctx, artifactsDir) {
   const argv = ['python3', X.vendoredRunnerPath(), ctx.mode, '--host', X.RUNNER_HOST, '--repo', ctx.snapshot,
     '--plan', ctx.plan, '--artifacts', artifactsDir, '--timeout', String(ctx.timeout)];
   if (ctx.mode === 'inspect') argv.push('--base', ctx.base);
-  if (ctx.mode === 'review' && ctx.resume) {
-    argv.push('--resume', ctx.resume);
-    if (ctx.feedback) argv.push('--feedback', ctx.feedback);
-  }
+  if (ctx.mode === 'review' && ctx.feedback) argv.push('--feedback', ctx.feedback);
   const forbidden = argv.find((a) => X.FORBIDDEN_RUNNER_TOKENS.includes(a));
   if (forbidden) throw new Error(`refusing to spawn: argv contains ${forbidden}`);
   return argv;
@@ -437,29 +435,52 @@ function resetSystemSkills() {
   return null;
 }
 
+/** runner.py 2.1.0 RunError messages WITHOUT interpolated parts (f-strings
+ * excluded: line 102 carries repo path names, `error` carries str(exc)). Only
+ * an exact match is exempt from the instruction check (Samuel W7: invert it).
+ * The claude-provider, build, check and resume messages are left out: a1 never
+ * reaches those paths, so they are checked like any other text. */
+const RUNNER_FIXED_MESSAGES = Object.freeze([
+  'The plan reviewer must be the other provider. Change the host to swap roles.',
+  '--cli must be an absolute path to an installed CLI executable.',
+  'Review must contain exactly verdict, summary, findings, coverage and limitations.',
+  'Invalid review verdict.', 'Missing review summary.', 'A completed review must identify what was inspected.',
+  'Invalid findings list.', 'Invalid finding fields.', 'Every finding needs an id, severity, path, evidence and fix.',
+  'Finding IDs must be unique; severity must be high, medium or low.', 'APPROVED cannot contain unresolved high/medium findings.',
+  'REVISE must explain at least one concrete finding.', 'BLOCKED must explain the limitation.',
+  'Run timed out or was interrupted; no approval recorded.', 'Codex event stream contains a non-object event.',
+  'Codex reported a failed turn; inspect the captured diagnostics.', 'Missing or ambiguous Codex session/completion event.',
+  'CLI did not return a valid session UUID.', 'CLI resumed a different session; refusing its result.',
+  'Plan review must use the provider opposite the planner/host.', 'Inspection requires --base and a fresh session (no --resume).',
+  'Keep run artifacts outside the target checkout so they do not contaminate its diff.',
+  'CLI version probe failed. Check the resolved executable before retrying.',
+  'Plan changed during the run; result cannot approve the current plan.', 'Code changed during inspection; inspect the final code again.',
+  'Timeout must be positive.',
+]);
+const RUNNER_STDERR_PREFIX = 'claudex-loop: '; // runner.py:415
+
 /** The runner's own failure reason, display-safe (Wave 7 review): the last
  * `{"type":"error","message":…}` event of the run dir's stdout.txt (measured:
  * the usage-limit case), else result.json `error`, else the stderr tail — one
- * line, capped, never a secret (pattern withheld). Text from the provider's
- * event stream is additionally withheld when instruction-shaped; the pinned
- * runner's own text (record error, stderr) is not — "Keep run artifacts…" is
- * a runner refusal, not a reviewer instruction. */
+ * line (every line breaker and bidi control → space), capped. Secret patterns
+ * are withheld by name; anything that is not an exact fixed runner message is
+ * withheld when instruction-shaped. */
 function runnerFailureDetail(run) {
   let msg = null;
-  let fromProvider = false;
   if (run.runDir) {
     for (const line of readIfFile(path.join(run.runDir, 'stdout.txt')).split('\n')) {
-      try { const ev = JSON.parse(line); if (ev && ev.type === 'error' && typeof ev.message === 'string') { msg = ev.message; fromProvider = true; } } catch (_e) { /* not a JSON event */ }
+      try { const ev = JSON.parse(line); if (ev && ev.type === 'error' && typeof ev.message === 'string') msg = ev.message; } catch (_e) { /* not a JSON event */ }
     }
     if (msg === null) {
       try { const rec = JSON.parse(readIfFile(path.join(run.runDir, 'result.json'))); if (rec && typeof rec.error === 'string') msg = rec.error; } catch (_e) { /* no record */ }
     }
   }
   if (msg === null) msg = tail(run.stderr) || '';
+  const bare = msg.trim().startsWith(RUNNER_STDERR_PREFIX) ? msg.trim().slice(RUNNER_STDERR_PREFIX.length) : msg.trim();
   const hit = filterOutput([msg]);
   if (hit && hit.hit) msg = `<withheld: ${hit.pattern_name}>`;
-  else if (fromProvider && instructionMarker({ id: '', evidence: msg, fix: '' }, []) !== null) msg = '<withheld: instruction_shaped>';
-  const line = msg.replace(/[\r\n\t]+/g, ' ').trim().slice(0, FAILURE_DETAIL_MAX);
+  else if (!RUNNER_FIXED_MESSAGES.includes(bare) && instructionMarker({ id: '', evidence: msg, fix: '' }, []) !== null) msg = '<withheld: instruction_shaped>';
+  const line = msg.replace(C.LINE_BREAKERS_RE, ' ').replace(/ {2,}/g, ' ').trim().slice(0, FAILURE_DETAIL_MAX);
   return `runner exited ${run.status}${line ? `: ${line}` : ''}`;
 }
 

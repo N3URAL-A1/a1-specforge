@@ -24,6 +24,13 @@ environment when the file is absent (direct `python3 fake-runner.py` calls).
                                $CODEX_HOME/skills/.system when absent (marker
                                8bcfb84cfbe4722a + one skill), then write the names
                                it would load from .system (JSON array) here
+  FAKE_RUNNER_PROMPT_FILE      write the prompt the runner would hand Codex here:
+                               the plan body (runner.py:337-338), on --resume the
+                               session Codex would REPLAY — every file under
+                               $CODEX_HOME/sessions, like `codex exec resume`
+                               reads its rollout — and on --feedback the
+                               "HOST DISPOSITIONS / FIX REQUEST" block
+                               (runner.py:348-349)
   FAKE_RUNNER_CODEX_STDOUT     a captured codex stdout (file path or case name
                                <name>.codex-stdout.txt): copied to <run>/stdout.txt,
                                result.json status failed + the runner's own error
@@ -41,6 +48,8 @@ environment when the file is absent (direct `python3 fake-runner.py` calls).
                                a1 delete that directory)
   FAKE_RUNNER_REFUSE=1         mimic a pre-run_dir refusal: one `claudex-loop: <msg>`
                                line on stderr, NO run dir, NO JSON, exit 1
+  FAKE_RUNNER_REFUSE_MSG       like REFUSE, but `claudex-loop: <this text>` — the
+                               runner's interpolated refusals (runner.py:102, :415)
   FAKE_RUNNER_EXIT             exit code (default 0)
 
 A resume is checked like runner.py:257-269 (same repo, plan, provider, mode,
@@ -213,6 +222,23 @@ def previous_record_problem(resume: str, repo: str | None, plan: str | None, mod
     return None
 
 
+def build_prompt(argv: list[str]) -> str:
+    """What reaches the reviewer: plan, replayed session (resume only), feedback."""
+    prompt = ""
+    plan = flag(argv, "--plan")
+    if plan and Path(plan).is_file():
+        prompt += "<plan>\n" + Path(plan).read_text(encoding="utf-8") + "\n</plan>\n"
+    if flag(argv, "--resume"):
+        sessions = Path(os.environ.get("CODEX_HOME", "/nonexistent")) / "sessions"
+        for f in sorted(sessions.rglob("*")) if sessions.is_dir() else []:
+            if f.is_file():
+                prompt += "REPLAYED SESSION ITEM:\n" + f.read_text(encoding="utf-8", errors="replace")
+    feedback = flag(argv, "--feedback")
+    if feedback:
+        prompt += "\nHOST DISPOSITIONS / FIX REQUEST:\n" + Path(feedback).read_text(encoding="utf-8")
+    return prompt
+
+
 def base_resolves(repo: str | None, base: str | None) -> bool:
     """The real runner's snapshot(repo, base) runs git rev-parse <base>^{commit} in --repo."""
     if not repo or not base:
@@ -254,6 +280,9 @@ def main(argv: list[str]) -> int:
     if k.get("FAKE_RUNNER_REFUSE") == "1":
         sys.stderr.write("claudex-loop: Keep run artifacts outside the target checkout so they do not contaminate its diff.\n")
         return EXIT_REFUSED
+    if k.get("FAKE_RUNNER_REFUSE_MSG"):
+        sys.stderr.write(f"claudex-loop: {k['FAKE_RUNNER_REFUSE_MSG']}\n")
+        return EXIT_REFUSED
     mode = argv[1] if len(argv) > 1 else None
     artifacts = flag(argv, "--artifacts")
     repo = flag(argv, "--repo")
@@ -267,6 +296,9 @@ def main(argv: list[str]) -> int:
         sys.stderr.write("claudex-loop: fatal: bad revision — --base is not reachable in the snapshot (too shallow?)\n")
         return EXIT_REFUSED
     run_dir = make_run_dir(artifacts, repo) if artifacts else None
+    prompt_file = k.get("FAKE_RUNNER_PROMPT_FILE")
+    if prompt_file:
+        Path(prompt_file).write_text(build_prompt(argv), encoding="utf-8")
     if run_dir is not None:
         case = resolve_case(k.get("FAKE_RUNNER_CASE"), k.get("FAKE_RUNNER_CASES_DIR"))
         if case is not None:

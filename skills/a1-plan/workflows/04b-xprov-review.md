@@ -101,10 +101,13 @@ without APPROVED — surface it to the user, never start a third round.
    one line per finding id from `<findings_path>` — `accepted` (what changed in
    the plan) or `rejected` (why, in one sentence). Every id appears; an id
    without a disposition is a gap Codex will re-raise.
-4. **Round 2.** Same driver, `--round 2`; the driver adds
-   `--resume <previous result.json> --feedback <dispositions>` itself (the
-   `next.resume_cmd` field of round 1 shows the exact resumed invocation — read
-   it, do not hand-build it):
+4. **Round 2.** Same driver, `--round 2` (round 1's `next.round_cmd` shows the
+   exact call). Round 2 is a fresh Codex session, never a resumed one (a resumed
+   session replays round 1 from files in the dedicated home that no check
+   covers); the driver itself builds its `--feedback` from round 1's findings,
+   as normalize kept them in a1's own run dir, plus the dispositions file above,
+   and scans it like the PLAN.md. Pass no `--resume`/`--feedback` — the driver
+   refuses both:
    ```bash
    node <repo>/_shared/a1-tools.cjs xprov gate --phase <phase_name> --gate plan-review-xprov --round 2 > "$GATE_OUT"; RC=$?
    echo "xprov gate round 2 exit=$RC"

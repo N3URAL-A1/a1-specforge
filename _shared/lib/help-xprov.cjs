@@ -119,7 +119,7 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   sha256 (inputs.json) — the only inputs xprov run accepts.
     run --mode review|inspect --snapshot <dir> --plan <abs PLAN.md> --phase <name>
         --gate <id> [--wave N] [--round N] [--lane <id>] [--base <sha>]
-        [--resume <result.json> --feedback <file>] [--timeout N] [--work-path <dir>] [--no-log]
+        [--feedback <file>] [--timeout N] [--work-path <dir>] [--no-log]
                   (xprov-run.cjs, wave 5) exact runner argv, allowlisted env with
                   CODEX_HOME set to the dedicated home, tripwire (git status
                   baseline of checkout, work path and snapshot, .git/ metadata,
@@ -137,6 +137,9 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   hash next to the snapshot (else snapshot_failed, no spawn)
                   and compares it with the runner's snapshot.diff_sha256 after
                   the run — a mismatch is a tripwire. GIT_CONFIG_NOSYSTEM=1.
+                  --resume is refused (exit 2): no session is ever resumed, a
+                  resumed one replays rollout files the tripwire does not
+                  cover; --feedback is review-only.
                   --plan/--feedback must be the snapshot's copies
                   <snapshot>.inputs/{PLAN.md,feedback.md}, re-hashed against
                   inputs.json before the spawn (else snapshot_failed, no
@@ -149,15 +152,16 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   own reason (the codex error event, else result.json error,
                   else stderr), secret- or instruction-shaped text withheld.
     gate --phase <name> --gate <id> [--wave N --base <sha> --work-path <p>]
-         [--lane <id>] [--round N] [--timeout N] [--resume <result.json> --feedback <file>]
+         [--lane <id>] [--round N] [--timeout N]
                   (xprov-gate.cjs, wave 6) the driver the workflows call once:
                   permit-check → preflight → snapshot → run → normalize →
                   observe → cleanup, stopping at the first non-zero step;
-                  round > 2 → round_cap. A resumed plan-review round rebuilds
-                  round 1's snapshot at the path the runner recorded (the
-                  runner refuses a resume whose repo/plan differ); the path
-                  must be a snap-XXXXXX child of the snapshots root, no
-                  symlink, absent or empty. Enforcement (warning|blocking) is READ
+                  round > 2 → round_cap. Every round is a fresh Codex session
+                  (--resume/--feedback refused, exit 2). Plan round N ≥ 2 after
+                  a REVISE gets a1-built feedback: round N−1's findings from
+                  a1's run dir (a1-findings.json, regular file, under the
+                  artifacts dir) + the dispositions file, scanned and copied
+                  like the PLAN.md; next.round_cmd shows the call. Enforcement (warning|blocking) is READ
                   from the registry row and echoed in stdout, never applied here.
     load-check --phase <name>
                   (xprov-gate.cjs, wave 6) newest plan-review-xprov pass entry
