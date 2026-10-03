@@ -192,3 +192,19 @@ RED against the pre-wave code (`git archive 687f4b9` plus this part): 71 of 146
 assertions fail. The pure fail arms (R30c1/c2/c3, R30c2b, R30d4, R30f2, R30j2-1…5, R30j2-8)
 are green there by construction, because without an allowlist every hit fails. What proves them is the
 mutation column.
+
+### Instances that satisfy this rule (spec 009-cross-provider-review-gate, Wave 7 — enforcement flip)
+
+Each red-making change below is quoted from the case's header comment in the named
+fixture file and was run once on a tar copy of the tree (never the live tree), with only
+the named part selected.
+
+| Guard | Case(s) | Named red-making change |
+|---|---|---|
+| Enforcement flip guard (`_test-fixtures/a1-xprov/check-enforcement.sh`, CI step after Fixtures; `a1-xprov/parts/07-enforcement.sh`) | R5a–R5j | R5a: the check never reads the ADR when a row is blocking. R5b: dropping the "pending Wave 7" test. R5c: requiring only one gate's command. R5d: failing whenever a row is blocking. R5e: failing on the placeholder without a blocking row. R5f: reading only plan-review-xprov's cell. R5g: treating a missing row as `warning`. R5h: flipping the real registry before the ADR holds the evidence. R5i: reporting a bad root as pass or fail. R5j: removing the CI step, merging it into Fixtures, or moving it before Fixtures (all three run). root07's baseline: dropping the reset turns R5a/R5e/R5f red on a flipped tree (found by the live inspect, Codex R1). RED before the script and the CI step existed: 16 of 17 asserts. |
+
+The Wave 7 hardening guards after the live smoke (runner isolation, outbound payload scan,
+resume, input boundary, path names) carry their arm → mutation map in the headers of
+`a1-xprov/parts/09-runner-isolation.sh` and `a1-xprov/parts/10-outbound-scan.sh`; each
+mutation there was run on a tar copy and killed its named arm (control runs without an
+edit stayed green).

@@ -201,7 +201,7 @@ MD
   assert_eq "R1c both ids sit inside the registry's anchored id table (not an alias)" "$rows" "true"
 
   local enf; enf="$(grep -E "^\| \`($GATE_PLAN|$GATE_WAVE)\` " "$REGISTRY" | awk -F'|' '{gsub(/ /,"",$7); print $7}' | sort -u | tr '\n' ',')"
-  assert_eq "R1d both rows carry enforcement warning until the Wave 7 flip" "$enf" "warning,"
+  assert_eq "R1d both rows carry enforcement blocking since the Wave 7 flip (ADR §6, 2026-10-03)" "$enf" "blocking,"
 }
 
 # ---------- R29: the ADR exists with the six decision headings ----------
@@ -212,8 +212,12 @@ caseR29() {
   # number is optional here, the heading text is verbatim from the plan.
   local n; n="$(grep -cE '^#{2,3} ([0-9]+\. )?(Runner-only use|Dedicated CODEX_HOME|Snapshot, not checkout|Fail-closed mapping|Vendoring decision|Live smoke)$' "$ADR")"
   assert_eq "R29a ADR has the six decision headings" "$n" "6"
-  if grep -qiE 'pending Wave 7' "$ADR"; then ok "R29b Live smoke section is the placeholder (no live claim before Wave 7)"
-  else bad "R29b Live smoke section does not say 'pending Wave 7'"; fi
+  # post-flip (Wave 7, 2026-10-03): the placeholder is gone and §6 holds both live commands
+  if ! grep -qiE 'pending Wave 7' "$ADR" \
+     && grep -q 'xprov gate --phase M13-residuals --gate plan-review-xprov' "$ADR" \
+     && grep -q 'xprov gate --phase M13-residuals --gate wave-inspect-xprov' "$ADR"; then
+    ok "R29b Live smoke section records both live gate commands, no placeholder left"
+  else bad "R29b Live smoke section is still the placeholder or lacks a live gate command"; fi
   # The repo has no .env.example, so the ADR is where the ENV var is documented
   # (wave plan, deployment chain).
   if grep -q "A1_XPROV_CODEX_HOME" "$ADR"; then ok "R29c ADR documents the A1_XPROV_CODEX_HOME env var"
