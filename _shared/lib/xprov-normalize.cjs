@@ -43,6 +43,9 @@ const { REGISTRY_PATH, sha256, isPlainObject, parsePositive, parseLane, writeStd
 
 const FLAGS = Object.freeze({
   phase: 'str', gate: 'str', wave: 'str', round: 'str', lane: 'str', 'work-path': 'str',
+  // Wave 7 (R2 of the 1638616 inspect): the reviewed head and base of a wave
+  // inspection, so wave-status can bind a pass like a waiver.
+  head: 'str', base: 'str',
   // Wave 6b (FR-030 g): the gate hands over the snapshot's allowlist result so
   // that this ONE index write carries it; absent flags leave the entry as before.
   'allowlisted-hits': 'str', 'allowlist-anchor': 'str', 'allowlist-approved-blob': 'str',
@@ -422,10 +425,25 @@ function resolveArgs(args) {
   if (!fs.existsSync(planPath)) usage(`PLAN.md not found in ${phaseDir}`);
   const allowlist = allowlistFlags(flags);
   return {
-    allowlist,
+    allowlist, reviewed: reviewedHeadBase(flags, root, workPath),
     resultPath: path.resolve(flags._[0]), phase, phaseDir, gate: flags.gate, wave, lane, round, attempt, roundTaken, roundKey, workPath, indexPath, findingsPath,
     planPath, planRel: path.relative(root, planPath), planSha: sha256(fs.readFileSync(planPath)), ts: nowIso(),
   };
+}
+
+/** { head, base } of a wave inspection: head = HEAD of --work-path (same
+ * git-common-dir as the checkout) and only when it equals the --head the gate
+ * snapshotted; base = --base as a full sha. Anything else → nulls: the entry
+ * then binds nothing and wave-status does not count it. */
+function reviewedHeadBase(flags, root, workPath) {
+  const none = { head: null, base: null };
+  if (flags.base === undefined) return none;
+  if (C.commonDirOf(workPath) === null || C.commonDirOf(workPath) !== C.commonDirOf(root)) return none;
+  const head = C.gitOut(['-C', workPath, 'rev-parse', '--verify', '--quiet', 'HEAD^{commit}']);
+  const base = C.gitOut(['-C', workPath, 'rev-parse', '--verify', '--quiet', `${String(flags.base)}^{commit}`]);
+  if (head === null || base === null || /^-/.test(String(flags.base))) return none;
+  if (flags.head !== undefined && head.trim() !== String(flags.head)) return none; // HEAD moved since the snapshot
+  return { head: head.trim(), base: base.trim() };
 }
 
 // ---------- command ----------
@@ -472,7 +490,8 @@ function cmdXprovNormalize(args) {
   const xreviewPath = appendToXreview(ctx.phaseDir, renderSection(ctx, outcome, model, pin.actual || `unverified (${pin.reason})`));
   const entry = {
     gate: ctx.gate, wave: ctx.wave, lane: ctx.lane, ...(ctx.isRound ? { round: ctx.round } : { attempt: ctx.attempt }), verdict: outcome.verdict, reason: outcome.reason,
-    plan_sha256: ctx.planSha, result_path: ctx.resultPath, ...(findingsSha ? { findings_sha256: findingsSha } : {}), ts: ctx.ts,
+    plan_sha256: ctx.planSha, result_path: ctx.resultPath, ...(findingsSha ? { findings_sha256: findingsSha } : {}),
+    ...(ctx.wave !== null ? { head: ctx.reviewed.head, base: ctx.reviewed.base } : {}), ts: ctx.ts,
     model_requested: model.model_requested, model_observed: model.model_observed, cli_version: model.cli_version,
     ...(ctx.allowlist || {}),
   };

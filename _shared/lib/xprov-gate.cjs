@@ -321,8 +321,9 @@ function stepRun(ctx, snap, inputs) {
 
 /** normalize writes the ONE index entry; the snapshot's allowlist result
  * travels as flags so no second write of index.json is needed (Reinhard R-M5). */
-function stepNormalize(ctx, resultPath, al) {
+function stepNormalize(ctx, resultPath, al, commit) {
   const argv = ['normalize', resultPath, '--phase', ctx.phase, '--gate', ctx.gate, '--round', String(ctx.round), '--allowlisted-hits', String(al.allowlisted_hits)];
+  if (ctx.base !== null) argv.push('--base', ctx.base, '--head', String(commit)); // the reviewed state, for wave-status
   if (al.allowlist_anchor) argv.push('--allowlist-anchor', al.allowlist_anchor);
   if (al.allowlist_approved_blob) argv.push('--allowlist-approved-blob', al.allowlist_approved_blob);
   if (ctx.wave !== null) argv.push('--wave', String(ctx.wave));
@@ -408,7 +409,7 @@ function gate(o) {
     snap = snapped.snapshot;
     const ran = stepRun(ctx, snap, snapped.inputs);
     if (!ran.ok) return (result = fail('run', ran.reason, ran.detail, { ...al, run_porcelain: ran.porcelain || null }));
-    const norm = stepNormalize(ctx, ran.resultPath, al);
+    const norm = stepNormalize(ctx, ran.resultPath, al, snapped.commit);
     if (!norm.ok) return (result = fail('normalize', norm.reason, norm.detail, { ...al, result_path: ran.resultPath }));
     const reviewed = Object.freeze({
       ...base, ...al, run_porcelain: ran.porcelain, result_path: ran.resultPath, findings_path: norm.findingsPath, xreview_path: norm.xreviewPath, step: 'normalize',
@@ -490,8 +491,12 @@ function parseWavesFlag(value) {
 }
 
 /** Coverage key is (wave, lane): a lane wave needs its own pass or a store
- * waiver bound to this phase's PLAN.md and to a head still in --work-path's
- * history (FR-004, FR-007); an index.json `waived: true` row counts for nothing. */
+ * waiver (FR-004, FR-007), and BOTH are bound the same way: this phase's
+ * PLAN.md sha, a base that is an ancestor of the entry's head, and the head
+ * itself — EQUAL to --work-path's HEAD for the wave being checked at its own
+ * checkpoint (--current-wave N [--lane L], 02-execute 2c), an ancestor of it
+ * for every earlier wave (later waves build on top; an amended head drops
+ * out). An index.json `waived: true` row counts for nothing. */
 function waveStatus(o) {
   const ctx = phaseContext(o.phase);
   const gate = X.GATE_IDS.WAVE_INSPECT;
@@ -506,13 +511,20 @@ function waveStatus(o) {
   if (h.problem) throw inputError(h.problem);
   const store = WV.readWaivers();
   const planSha = fs.existsSync(ctx.planPath) ? sha256(fs.readFileSync(ctx.planPath)) : null;
-  const waived = (p) => planSha !== null && WV.waveWaiver(store, { repo, phase: ctx.phase, plan_sha256: planSha, wave: p.wave, lane: p.lane }, workPath, h.head) !== null;
-  const covered = (p) => index.some((e) => e.gate === gate && Number(e.wave) === p.wave && sameLane(e, p.lane) && e.verdict === X.VERDICTS.PASS && e.waived !== true) || waived(p);
+  const current = o.currentWave === undefined ? null : parsePositive(o.currentWave, 'current-wave');
+  const currentLane = C.parseLane(o.lane);
+  const isCurrent = (p) => current !== null && p.wave === current && p.lane === currentLane;
+  const headOk = (p) => (head) => (isCurrent(p) ? head === h.head : WV.inHistory(workPath, head, h.head));
+  const waived = (p) => planSha !== null && WV.waveWaiver(store, { repo, phase: ctx.phase, plan_sha256: planSha, wave: p.wave, lane: p.lane }, workPath, headOk(p)) !== null;
+  const passed = (p) => planSha !== null && index.some((e) => e.gate === gate && Number(e.wave) === p.wave && sameLane(e, p.lane) && e.verdict === X.VERDICTS.PASS && e.waived !== true
+    && e.plan_sha256 === planSha && WV.boundHead(workPath, e.head, e.base, headOk(p)));
+  const covered = (p) => passed(p) || waived(p);
   const lackingDetail = completed.filter((p) => !covered(p));
   const lacking = [...new Set(lackingDetail.map((p) => p.wave))];
   return Object.freeze({
     ok: lacking.length === 0, gate, enforcement, phase: ctx.phase,
     completed_waves: [...new Set(completed.map((p) => p.wave))], completed_detail: completed, lacking, lacking_detail: lackingDetail,
+    current_wave: current, current_lane: current === null ? null : currentLane, head: h.head,
     reason: lacking.length ? X.REASONS.wave_inspect_missing : null,
   });
 }
@@ -629,9 +641,10 @@ function cmdXprovLoadCheck(args) {
 }
 
 function cmdXprovWaveStatus(args) {
-  return withFlags(args, { phase: 'str', waves: 'str', 'work-path': 'str' }, 'wave-status', (f) => {
-    if (!f.phase) return usageExit('wave-status requires --phase <name> [--waves 1,2] [--work-path <dir>]');
-    const r = waveStatus({ phase: f.phase, waves: f.waves, workPath: f['work-path'] });
+  return withFlags(args, { phase: 'str', waves: 'str', 'work-path': 'str', 'current-wave': 'str', lane: 'str' }, 'wave-status', (f) => {
+    if (!f.phase) return usageExit('wave-status requires --phase <name> [--waves 1,2] [--work-path <dir>] [--current-wave N [--lane <id>]]');
+    if (f.lane !== undefined && f['current-wave'] === undefined) return usageExit('wave-status: --lane only qualifies --current-wave');
+    const r = waveStatus({ phase: f.phase, waves: f.waves, workPath: f['work-path'], currentWave: f['current-wave'], lane: f.lane });
     process.stderr.write(r.ok ? `xprov wave-status: waves ${r.completed_waves.join(', ')} inspected or waived\n` : `xprov wave-status: waves lacking a ${r.gate} pass or waiver: ${r.lacking.join(', ')} (enforcement ${r.enforcement})\n`);
     return finish(r, r.ok ? X.EXIT_PASS : X.EXIT_FAIL);
   });

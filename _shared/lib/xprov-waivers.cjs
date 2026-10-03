@@ -20,9 +20,11 @@
 // Authority: load-check and wave-status accept a waiver ONLY from this store
 // and only when the key equals what they compute at check time. The
 // `waived: true` row in index.json and the XREVIEW.md section are a mirror.
-// A wave waiver counts while its head is still in the work path's history
-// (HEAD itself or an ancestor): later waves add commits on top; an amended or
-// rebased head drops out and the waiver with it.
+// A wave waiver (and, the same rule, a wave pass) counts for the wave being
+// checked at its own checkpoint only while its head EQUALS the work path's
+// HEAD (a commit added to that wave after the waiver is unreviewed); for an
+// earlier wave it counts while its head is an ancestor of HEAD (later waves
+// build on top). An amended or rebased head drops out.
 // ---------------------------------------------------------------------------
 
 const fs = require('fs');
@@ -85,12 +87,19 @@ function planWaiver(store, key) {
   return hits.length ? hits[hits.length - 1] : null;
 }
 
-/** The wave waiver for (repo, phase, plan sha, wave, lane) whose head is in the
- * work path's history and whose base is an ancestor of that head — or null. */
-function waveWaiver(store, key, workPath, currentHead) {
+/** head/base of an entry (pass or waiver) are full shas, base is an ancestor of
+ * head, and `headOk(head)` holds (wave-status: equal for the current wave, an
+ * ancestor of HEAD for earlier ones). */
+function boundHead(workPath, head, base, headOk) {
+  if (!SHA_RE.test(String(head)) || !SHA_RE.test(String(base))) return false;
+  return headOk(head) && inHistory(workPath, base, head);
+}
+
+/** The wave waiver for (repo, phase, plan sha, wave, lane) whose head/base pass boundHead — or null. */
+function waveWaiver(store, key, workPath, headOk) {
   const hits = store.waivers.filter((w) => w.gate === X.GATE_IDS.WAVE_INSPECT && w.repo === key.repo && w.phase === key.phase
     && w.plan_sha256 === key.plan_sha256 && w.wave === key.wave && w.lane === (key.lane || null)
-    && inHistory(workPath, w.head, currentHead) && inHistory(workPath, w.base, w.head));
+    && boundHead(workPath, w.head, w.base, headOk));
   return hits.length ? hits[hits.length - 1] : null;
 }
 
@@ -103,4 +112,4 @@ function appendWaiver(record, writeGuardedStore) {
   return writeGuardedStore(WAIVERS_FILE, { version: 1, waivers: [...current.waivers, rec] });
 }
 
-module.exports = { WAIVERS_FILE, RECORD_KEYS, waiversPath, readWaivers, planShaOf, headIn, inHistory, planWaiver, waveWaiver, appendWaiver, validRecord };
+module.exports = { WAIVERS_FILE, RECORD_KEYS, waiversPath, readWaivers, planShaOf, headIn, inHistory, boundHead, planWaiver, waveWaiver, appendWaiver, validRecord };

@@ -43,6 +43,8 @@ prep6() {
   rm -f "$HOME/.a1-xprov/waivers.json" # the part shares one HOME: no waiver survives into the next case
 }
 
+plansha6() { (shasum -a 256 "$PHASE_PLAN" 2>/dev/null || sha256sum "$PHASE_PLAN") | cut -d' ' -f1; }
+
 # waiver6 <gate> [wave lane head base] [phase] — one record in the guarded waiver
 # store, written directly in the documented format (spec FR-007), like part 08's
 # store8 for approvals. The key parts are computed HERE from the spec's
@@ -196,12 +198,14 @@ Completed: 2026-09-24
 ## Wave 3 — api
 Completed: 2026-09-24
 EOF
+  # wave passes bound like the gate records them (Wave 7): this PLAN.md's sha, head and base
+  local ps; ps="$(plansha6)"
   cat > "$PHASE_DIR/xreview/index.json" <<EOF
 [
-  {"gate":"$GATE_PLAN","wave":null,"lane":null,"round":1,"verdict":"pass","reason":null,"plan_sha256":"x","result_path":"/x","ts":"2026-09-24T10:00:00.000Z"},
-  {"gate":"$GATE_WAVE","wave":1,"lane":null,"round":1,"verdict":"pass","reason":null,"plan_sha256":"x","result_path":"/x","ts":"2026-09-24T11:00:00.000Z"},
-  {"gate":"$GATE_WAVE","wave":2,"lane":null,"round":1,"verdict":"fail-with-findings","reason":null,"plan_sha256":"x","result_path":"/x","ts":"2026-09-24T12:00:00.000Z"},
-  {"gate":"$GATE_WAVE","wave":3,"lane":null,"round":1,"verdict":"pass","reason":null,"plan_sha256":"x","result_path":"/x","ts":"2026-09-24T13:00:00.000Z"}
+  {"gate":"$GATE_PLAN","wave":null,"lane":null,"round":1,"verdict":"pass","reason":null,"plan_sha256":"$ps","result_path":"/x","ts":"2026-09-24T10:00:00.000Z"},
+  {"gate":"$GATE_WAVE","wave":1,"lane":null,"round":1,"verdict":"pass","reason":null,"plan_sha256":"$ps","head":"$PHASE_HEAD","base":"$PHASE_HEAD","result_path":"/x","ts":"2026-09-24T11:00:00.000Z"},
+  {"gate":"$GATE_WAVE","wave":2,"lane":null,"round":1,"verdict":"fail-with-findings","reason":null,"plan_sha256":"$ps","head":"$PHASE_HEAD","base":"$PHASE_HEAD","result_path":"/x","ts":"2026-09-24T12:00:00.000Z"},
+  {"gate":"$GATE_WAVE","wave":3,"lane":null,"round":1,"verdict":"pass","reason":null,"plan_sha256":"$ps","head":"$PHASE_HEAD","base":"$PHASE_HEAD","result_path":"/x","ts":"2026-09-24T13:00:00.000Z"}
 ]
 EOF
   sub6 wave-status --phase p6
@@ -500,7 +504,7 @@ caseR8() {
   mkdir -p "$PHASE_DIR/xreview"
   printf '## Wave 1 — runtime\n' > "$PHASE_DIR/STATUS-runtime.md"
   printf '## Wave 1 — storage\n' > "$PHASE_DIR/STATUS-storage.md"
-  printf '[{"gate":"%s","wave":1,"lane":"runtime","round":1,"verdict":"pass","reason":null,"plan_sha256":"x","result_path":"/x","ts":"2026-09-24T11:00:00.000Z"}]\n' "$GATE_WAVE" > "$PHASE_DIR/xreview/index.json"
+  printf '[{"gate":"%s","wave":1,"lane":"runtime","round":1,"verdict":"pass","reason":null,"plan_sha256":"%s","head":"%s","base":"%s","result_path":"/x","ts":"2026-09-24T11:00:00.000Z"}]\n' "$GATE_WAVE" "$(plansha6)" "$PHASE_HEAD" "$PHASE_HEAD" > "$PHASE_DIR/xreview/index.json"
   sub6 wave-status --phase p6
   assert_rc "R8j lane storage lacks its inspection → exit 1" 1 "$G_RC"
   assert_json "R8j lacking_detail names wave 1 lane storage, completed_detail both lanes" "$G_OUT" "j.lacking_detail.map((p) => p.wave + ':' + p.lane).join(',') + '|' + j.completed_detail.map((p) => p.wave + ':' + p.lane).join(',')" "1:storage|1:runtime,1:storage"
@@ -509,5 +513,61 @@ caseR8() {
   assert_rc "R8j both lane waves covered → exit 0" 0 "$G_RC" "$G_ERR"
 }
 
-caseR2; caseR3; caseR4; caseR6; caseR7; caseR8; caseR9g
+# ---------- WS: passes and waivers bound alike; current wave = exact head ----------
+# (team-lead decision, 2026-10-03, R2 of the 1638616 inspect)
+#   WS1 a pass at H, then one more commit in the SAME wave: --current-wave N → not counted.
+#       Red if the current wave accepts an ancestor head.
+#   WS2 the same pass as an EARLIER wave (no --current-wave, or another current wave) → counted.
+#       Red if earlier waves need an exact head.
+#   WS3 the pass's head amended away → not counted.   Red if passes ignore head.
+#   WS4 a pass for an older PLAN.md → not counted.     Red if passes ignore plan_sha256.
+#   WS5 the same three for a store waiver (extra commit, earlier wave, amended).
+#   WS6 the gate records head = the snapshotted commit and the full base in the inspect entry.
+#       Red if normalize drops --head/--base.
+caseWS() {
+  prep6
+  mkdir -p "$PHASE_DIR/xreview"; printf '## Wave 1 — one\n## Wave 2 — two\n' > "$PHASE_DIR/STATUS.md"
+  ( cd "$PHASE_REPO" && git add -A && git commit -qm "status" ); local h="$(git -C "$PHASE_REPO" rev-parse HEAD)"
+  local ps; ps="$(plansha6)"
+  printf '[{"gate":"%s","wave":2,"lane":null,"round":1,"verdict":"pass","reason":null,"plan_sha256":"%s","head":"%s","base":"%s","result_path":"/x","ts":"2026-10-03T00:00:00.000Z"}]\n' "$GATE_WAVE" "$ps" "$h" "$PHASE_HEAD" > "$PHASE_DIR/xreview/index.json"
+  sub6 wave-status --phase p6 --waves 2 --current-wave 2
+  assert_rc "WS setup: the pass at HEAD counts for the current wave" 0 "$G_RC" "$G_ERR"
+  ( cd "$PHASE_REPO" && printf '// unreviewed\n' >> src/add.js && git commit -qam "late commit in wave 2" )
+  sub6 wave-status --phase p6 --waves 2 --current-wave 2
+  assert_rc "WS1 one more commit in the same wave → the pass does not count" 1 "$G_RC"
+  sub6 wave-status --phase p6 --waves 2
+  assert_rc "WS2 the same pass as an earlier wave (descendant commits) → counted" 0 "$G_RC" "$G_ERR"
+  sub6 wave-status --phase p6 --waves 2 --current-wave 3
+  assert_rc "WS2 …also while another wave is current" 0 "$G_RC" "$G_ERR"
+  ( cd "$PHASE_REPO" && git reset -q --hard "$h" && git commit -q --amend -m "amended status" )
+  sub6 wave-status --phase p6 --waves 2
+  assert_rc "WS3 the pass's head amended away → not counted" 1 "$G_RC"
+  printf '[{"gate":"%s","wave":2,"lane":null,"round":1,"verdict":"pass","reason":null,"plan_sha256":"%s","head":"%s","base":"%s","result_path":"/x","ts":"2026-10-03T00:00:00.000Z"}]\n' "$GATE_WAVE" "0000000000000000000000000000000000000000000000000000000000000000" "$(git -C "$PHASE_REPO" rev-parse HEAD)" "$PHASE_HEAD" > "$PHASE_DIR/xreview/index.json"
+  sub6 wave-status --phase p6 --waves 2 --current-wave 2
+  assert_rc "WS4 a pass for another PLAN.md sha → not counted" 1 "$G_RC"
+  # WS5 — the waiver, same rule
+  printf '[]\n' > "$PHASE_DIR/xreview/index.json"; local h2; h2="$(git -C "$PHASE_REPO" rev-parse HEAD)"
+  waiver6 "$GATE_WAVE" 2 "" "$h2" "$PHASE_HEAD"
+  sub6 wave-status --phase p6 --waves 2 --current-wave 2
+  assert_rc "WS5 setup: the waiver at HEAD counts for the current wave" 0 "$G_RC" "$G_ERR"
+  ( cd "$PHASE_REPO" && printf '// unreviewed 2\n' >> src/add.js && git commit -qam "late commit after the waiver" )
+  sub6 wave-status --phase p6 --waves 2 --current-wave 2
+  assert_rc "WS5 one more commit after the waiver in the same wave → not counted" 1 "$G_RC"
+  sub6 wave-status --phase p6 --waves 2
+  assert_rc "WS5 the waiver as an earlier wave → counted" 0 "$G_RC" "$G_ERR"
+  ( cd "$PHASE_REPO" && git reset -q --hard "$h2" && git commit -q --amend -m "amended again" )
+  sub6 wave-status --phase p6 --waves 2
+  assert_rc "WS5 the waiver's head amended away → not counted" 1 "$G_RC"
+  # WS6 — what the gate writes
+  prep6
+  local hb; hb="$(git -C "$PHASE_REPO" rev-parse HEAD)"
+  gate6 --gate "$GATE_WAVE" --wave 1 --base "$PHASE_HEAD"
+  assert_json "WS6 the inspect entry carries head = the snapshotted HEAD and the full base" "$(cat "$PHASE_DIR/xreview/index.json")" \
+    "(j.find((e) => e.gate === '$GATE_WAVE') || {}).head + '/' + (j.find((e) => e.gate === '$GATE_WAVE') || {}).base" "$hb/$PHASE_HEAD"
+  sub6 wave-status --phase p6 --waves 1 --current-wave 1
+  assert_rc "WS6 …and wave-status counts it at its own checkpoint" 0 "$G_RC" "$G_ERR"
+  grep -q "wave-status --phase <phase_name> --waves <N> --current-wave <N> --work-path" "$REPO_ROOT/skills/a1-execute/workflows/02-execute.md" && ok "WS6 02-execute.md checks the current wave at 2c" || bad "WS6 02-execute.md lacks the 2c current-wave check"
+}
+
+caseR2; caseR3; caseR4; caseR6; caseR7; caseR8; caseR9g; caseWS
 export HOME="$SAVED_HOME_06"; unset A1_XPROV_CODEX_HOME

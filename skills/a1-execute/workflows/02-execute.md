@@ -214,6 +214,21 @@ fi
 
 ### 2c. Checkpoint
 
+**This wave is covered at its own HEAD (spec 009 FR-004).** Before the
+summary, check the wave just inspected — or waived — against the work path as
+it is now:
+```bash
+node <repo>/_shared/a1-tools.cjs xprov wave-status --phase <phase_name> --waves <N> --current-wave <N> --work-path $WORK_PATH > .a1/phases/<phase_name>/xreview/wave-status.last-run.json; RC=$?
+echo "xprov wave-status (wave <N>) exit=$RC"
+```
+(multi-lane: add `--lane <lane-id>` and that lane's `$WORK_PATH`). For the
+current wave a pass or waiver counts only when its recorded head EQUALS
+`$WORK_PATH`'s HEAD — a commit added after the inspection is unreviewed. Exit 1
+under `blocking` → back to 2b-x (re-inspect at the new HEAD) or the human
+waiver; under `warning` show the checkpoint with the warning line. Earlier
+waves are checked by `03-verify.md` with the ancestor rule (later waves build
+on them).
+
 Present wave summary:
 ```
 Wave <N> — <name> ✓ Complete
