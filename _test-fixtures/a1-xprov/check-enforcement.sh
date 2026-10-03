@@ -42,7 +42,7 @@ const GATES = ["plan-review-xprov", "wave-inspect-xprov"];
 const ENFORCEMENTS = ["warning", "blocking"];
 const SECTION_RE = /^#{2,3}\s+(?:\d+\.\s+)?Live smoke\b/i;
 const NEXT_HEADING_RE = /^#{1,3}\s/;
-const PLACEHOLDER_RE = /pending wave 7/i;
+const PLACEHOLDER_RE = /pending\W*wave\W*7/i; // also "Pending: Wave 7", "pending — wave-7" 
 
 const registry = fs.readFileSync(process.env.REGISTRY, "utf8");
 const problems = [];

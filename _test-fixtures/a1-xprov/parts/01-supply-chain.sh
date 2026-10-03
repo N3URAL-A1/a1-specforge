@@ -269,7 +269,7 @@ caseF1() {
   # Red-making change: declaring a new flag in any module without documenting it.
   local flagcheck; flagcheck="$(node -e "
     const fs = require('fs'); const path = require('path'); const lib = path.dirname(process.argv[1]);
-    const help = fs.readFileSync(process.argv[2], 'utf8');
+    const help = require(process.argv[2]).HELP; // the rendered text: robust to help-*.cjs splits
     const block = help.slice(help.indexOf('a1-tools xprov <sub>'), help.indexOf('Spec statuses:'));
     const files = fs.readdirSync(lib).filter((f) => /^xprov-.*\.cjs$/.test(f) && f !== 'xprov-common.cjs');
     const missing = []; let total = 0;

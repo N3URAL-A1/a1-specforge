@@ -381,8 +381,8 @@ function loadAtAnchor(root, anchor, commitSha, approvals) {
 }
 
 /** Applies the anchor's allowlist to the scan. Returns the NO_ALLOWLIST shape
- * with the fields filled in; `fail` set means stop before dispatch. */
-/** `o.matches` is the reviewed tree (side head). `o.extra` (Wave 7, Samuel:
+ * with the fields filled in; `fail` set means stop before dispatch.
+ * `o.matches` is the reviewed tree (side head). `o.extra` (Wave 7, Samuel:
  * everything that leaves is scanned) adds sides — `base` (base-side blobs of
  * every path the outbound diff touches) and `input` (the PLAN.md and
  * dispositions copies) — judged against the SAME anchored allowlist and the

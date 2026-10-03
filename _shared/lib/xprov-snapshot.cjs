@@ -510,6 +510,48 @@ function allowlistReport(al) {
 /** Review target + scan. `primaryRoot` is the checkout every FR-030 git read
  * runs against (default: sourceRepo); `gateKind` is 'plan' or 'inspect'
  * (default: inspect when `base` is given). */
+/** Every side that leaves: the tree (incl. stripped HEAD blobs), the base side,
+ * path names, the input copies. Returns the pieces, or { fail: { reason, … } }. */
+function scanOutbound(dir, cl, inputs, none) {
+  const scan = scanTrackedFiles(dir);
+  if (scan.error) return { fail: { reason: X.REASONS.snapshot_failed, detail: `ls-files: ${scan.error}`, ...none } };
+  // Base side: what the outbound diff carries from <base>.
+  const base_ = cl.base === null ? { blobs: [], paths: [] } : baseSideBlobs(dir, cl.base);
+  if (base_.error) return { fail: { reason: X.REASONS.snapshot_failed, detail: base_.error, ...none } };
+  // Path names first — before any report could list a path (side `path`, never allowlisted).
+  const nameHit = pathNameHit([...new Set([...scan.tracked, ...base_.paths])]);
+  if (nameHit) {
+    return { fail: { reason: X.REASONS.secret_in_snapshot, secret_pattern: nameHit.pattern, secret_side: 'path', reason_detail: 'path_name', detail: `path #${nameHit.ref}`, files_scanned: scan.files_scanned, ...none } };
+  }
+  // Inputs: the copies the runner will read, scanned under their repo labels.
+  let ins;
+  try { ins = copyInputs(dir, inputs); } catch (e) { return { fail: { reason: X.REASONS.snapshot_failed, detail: e.message, ...none } }; }
+  return {
+    scan, base_, ins,
+    baseMatches: base_.blobs.flatMap((b) => scanSource(bufferSource(b.buf), b.path, false)),
+    inputMatches: ins.labels.flatMap((l) => scanEntry(l.dest, fs.lstatSync(l.dest), l.label, false)),
+  };
+}
+
+/** FR-030 (e): gitleaks over the tree, the base blobs, the stripped HEAD blobs and
+ * the input copies (only the copies — not inputs.json); never allowlisted. */
+function gitleaksAll(dir, out) {
+  const gl = gitleaksScan(dir);
+  const inputBlobs = out.ins.labels.map((l) => ({ path: path.basename(l.dest), buf: fs.readFileSync(l.dest) }));
+  const blobs = gitleaksBlobs([...out.base_.blobs, ...out.scan.missingBlobs, ...inputBlobs]);
+  return { available: gl.available, hit: gl.hit || blobs.hit };
+}
+
+/** Detective TOCTOU anchor: the diff the runner will hash, hashed now. */
+function storeDiffHash(dir, cl, inputsDir) {
+  if (cl.base === null) return { sha: null };
+  const d = runnerLikeGit(dir, ['diff', '--no-ext-diff', '--no-textconv', '--binary', cl.base, '--']);
+  if (d.status !== 0) return { error: `diff --binary: ${tail(String(d.stderr))}` };
+  const sha = C.sha256(d.stdout);
+  fs.writeFileSync(path.join(inputsDir, DIFF_SHA_FILE), `${sha}\n`, { mode: FILE_MODE });
+  return { sha };
+}
+
 function snapshot(opts) {
   const sourceRepo = path.resolve(opts.sourceRepo);
   const commit = String(opts.commit);
@@ -528,49 +570,27 @@ function snapshot(opts) {
   const cl = cloneSnapshot(sourceRepo, commit, base, opts.targetDir);
   if (!cl.ok) return { ok: false, reason: cl.reason, snapshot: null, commit, detail: cl.detail, ...none };
   const dir = cl.dir;
-  const failed = (reason, extra) => { removeSnapshotDirs(dir); return { ok: false, reason, snapshot: null, commit, ...extra }; };
-  const scan = scanTrackedFiles(dir);
-  if (scan.error) return failed(X.REASONS.snapshot_failed, { detail: `ls-files: ${scan.error}`, ...none });
-  // Base side: what the outbound diff carries from <base>.
-  const base_ = cl.base === null ? { blobs: [] } : baseSideBlobs(dir, cl.base);
-  if (base_.error) return failed(X.REASONS.snapshot_failed, { detail: base_.error, ...none });
-  // Path names first — before any report could list a path (side `path`, never allowlisted).
-  const nameHit = pathNameHit([...new Set([...scan.tracked, ...(base_.paths || [])])]);
-  if (nameHit) {
-    return failed(X.REASONS.secret_in_snapshot, { secret_pattern: nameHit.pattern, secret_side: 'path', reason_detail: 'path_name', detail: `path #${nameHit.ref}`, files_scanned: scan.files_scanned, ...none });
-  }
-  const baseMatches = base_.blobs.flatMap((b) => scanSource(bufferSource(b.buf), b.path, false));
-  // Inputs: the copies the runner will read, scanned under their repo labels.
-  let ins;
-  try { ins = copyInputs(dir, opts.inputs); } catch (e) { return failed(X.REASONS.snapshot_failed, { detail: e.message, ...none }); }
-  const inputMatches = ins.labels.flatMap((l) => scanEntry(l.dest, fs.lstatSync(l.dest), l.label, false));
+  const failed = (extra) => { removeSnapshotDirs(dir); return { ok: false, snapshot: null, commit, ...extra }; };
+  const out = scanOutbound(dir, cl, opts.inputs, none);
+  if (out.fail) return failed(out.fail);
   const al = AL.evaluate({
-    root: primaryRoot, commitSha: cl.commit, gateKind, matches: scan.matches, tracked: scan.tracked, approvals,
-    extra: [{ side: 'base', matches: baseMatches }, { side: 'input', matches: inputMatches }],
+    root: primaryRoot, commitSha: cl.commit, gateKind, matches: out.scan.matches, tracked: out.scan.tracked, approvals,
+    extra: [{ side: 'base', matches: out.baseMatches }, { side: 'input', matches: out.inputMatches }],
   });
   const report = allowlistReport(al);
-  const counts = { files_scanned: scan.files_scanned, base_files_scanned: base_.blobs.length, inputs_scanned: ins.labels.length };
-  if (al.fail) return failed(al.fail.reason, { reason_detail: al.fail.reason_detail || null, detail: al.fail.detail || null, ...counts, ...report });
+  const counts = { files_scanned: out.scan.files_scanned, base_files_scanned: out.base_.blobs.length, inputs_scanned: out.ins.labels.length };
+  if (al.fail) return failed({ reason: al.fail.reason, reason_detail: al.fail.reason_detail || null, detail: al.fail.detail || null, ...counts, ...report });
   if (al.uncovered.length) {
-    return failed(X.REASONS.secret_in_snapshot, { secret_pattern: al.uncovered[0].pattern, secret_side: al.uncovered[0].side || 'head', reason_detail: al.unresolved ? X.ALLOWLIST_DETAILS.anchor_unresolved : null, ...counts, ...report });
+    return failed({ reason: X.REASONS.secret_in_snapshot, secret_pattern: al.uncovered[0].pattern, secret_side: al.uncovered[0].side || 'head', reason_detail: al.unresolved ? X.ALLOWLIST_DETAILS.anchor_unresolved : null, ...counts, ...report });
   }
-  // FR-030 (e): gitleaks hits are never allowlisted — tree, base blobs and inputs alike.
-  const gl = gitleaksScan(dir);
-  const glBase = gitleaksBlobs([...base_.blobs, ...scan.missingBlobs]); // stripped HEAD blobs too
-  const glIn = ins.labels.length ? gitleaksScan(ins.inputsDir) : { hit: false };
-  if (gl.hit || glBase.hit || glIn.hit) return failed(X.REASONS.secret_in_snapshot, { secret_pattern: 'gitleaks', reason_detail: 'gitleaks', ...counts, ...report });
-  // Detective TOCTOU anchor: the diff the runner will hash, hashed now.
-  let diffSha = null;
-  if (cl.base !== null) {
-    const d = runnerLikeGit(dir, ['diff', '--no-ext-diff', '--no-textconv', '--binary', cl.base, '--']);
-    if (d.status !== 0) return failed(X.REASONS.snapshot_failed, { detail: `diff --binary: ${tail(String(d.stderr))}`, ...none });
-    diffSha = C.sha256(d.stdout);
-    fs.writeFileSync(path.join(ins.inputsDir, DIFF_SHA_FILE), `${diffSha}\n`, { mode: FILE_MODE });
-  }
+  const gl = gitleaksAll(dir, out);
+  if (gl.hit) return failed({ reason: X.REASONS.secret_in_snapshot, secret_pattern: 'gitleaks', reason_detail: 'gitleaks', ...counts, ...report });
+  const hash = storeDiffHash(dir, cl, out.ins.inputsDir);
+  if (hash.error) return failed({ reason: X.REASONS.snapshot_failed, detail: hash.error, ...none });
   return {
     ok: true, snapshot: dir, commit: cl.commit, base: cl.base, depth: cl.depth, ...counts,
     files_skipped: 0, repo_local_removed: cl.repo_local_removed, gitleaks: gl.available,
-    inputs: ins.copies, diff_sha256: diffSha, ...report,
+    inputs: out.ins.copies, diff_sha256: hash.sha, ...report,
   };
 }
 

@@ -511,6 +511,14 @@ function pinFeaturesText(text) {
   const parsed = parseTomlLines(text);
   const featureTables = parsed.tables.filter((t) => t.name === 'features');
   if (featureTables.length > 1) return { text, added: [], conflicts: ['more than one [features] table'] };
+  if (featureTables.length === 1) {
+    // A multi-line value inside [features] (continuation lines parse as `unparsed`)
+    // has no safe insertion point after its last entry: refuse, never guess.
+    const start = featureTables[0].line;
+    const next = parsed.tables.find((tb) => tb.line > start);
+    const end = next ? next.line : Infinity;
+    if (parsed.unparsed.some((n) => n > start && n < end)) return { text, added: [], conflicts: ['[features] holds a multi-line value'] };
+  }
   const valuesOf = (p) => parsed.entries.filter((e) => e.path === p).map((e) => e.value);
   const rootKeys = Object.keys(ROOT_PINS);
   const conflicts = [

@@ -479,81 +479,114 @@ function emit(ctx, extra, exitCode) {
   process.exitCode = exitCode;
 }
 
-/** Everything after the pre-spawn checks; the baseline temp dir is always removed. */
+/** finish / failWith for one run: log entry + stdout JSON. `extra.run_home_manifest`
+ * and `extra.porcelain` are set by the caller once the spawn happened. */
+function makeOutcomes(ctx, artifactsDir, common, notes) {
+  const finish = (extra, verdict, code) => {
+    appendLog(ctx, { roles: extra.result_path ? rolesOf(extra.result_path) : 'unknown', result_path: extra.result_path, verdict, notes });
+    return emit(ctx, { ok: code === X.EXIT_PASS, ...common, run_home_manifest: null, ...extra }, code);
+  };
+  const failWith = (reason, detail, runDir, keepRunDir, extra) => {
+    if (!keepRunDir) removeRunDir(runDir, artifactsDir);
+    return finish({ reason, reason_detail: detail, baseline_delta: [], result_path: null, artifacts_run_dir: keepRunDir ? runDir : null, ...(extra || {}) }, `fail/${reason}`, X.EXIT_FAIL);
+  };
+  return { finish, failWith };
+}
+
+/** `git status --porcelain` before and after the run, raw (SC-004 evidence). */
+function porcelainEvidence(before, after) {
+  const pair = (k) => ({ before: before[k] === undefined ? null : before[k], after: after[k] === undefined ? null : after[k] });
+  return { checkout: pair('checkout'), snapshot: pair('snapshot'), work: pair('work') };
+}
+
+/** XREVIEW note when the runner left entries in its per-run HOME (names + sizes only). */
+function noteRunHome(ctx, manifest) {
+  if (manifest.length === 0) return;
+  appendXreviewNote(ctx.phaseDir, `note: the runner left ${manifest.length} entries in its per-run HOME (${ctx.gate}, ${ctx.mode})`,
+    manifest.slice(0, RUN_HOME_NOTE_MAX).map((e) => `${e.path} · ${e.type}${e.size === null ? '' : ` · ${e.size} bytes`}`));
+}
+
+/** The run dir's result.json is present and scannable, else { reason, detail, keep }. */
+function resultFileProblem(run) {
+  const resultPath = run.runDir ? path.join(run.runDir, 'result.json') : null;
+  if (!resultPath || !isFile(resultPath)) return { reason: X.REASONS.runner_failed, detail: 'runner exited 0 without a result.json in a claudex-* run dir under the artifacts dir', keep: false };
+  if (fileSize(resultPath) > X.MAX_RESULT_BYTES) return { reason: X.REASONS.malformed, detail: `result.json exceeds ${X.MAX_RESULT_BYTES} bytes and cannot be scanned`, keep: true };
+  return null;
+}
+
+/** Detective TOCTOU check (Wave 7, Samuel): the diff the runner hashed must be
+ * the diff the snapshot scan hashed (runner.py:106-107 vs snapshot()). */
+function diffHashProblem(ctx, resultPath) {
+  if (ctx.mode !== 'inspect') return null;
+  let recorded = null;
+  try { const rec = JSON.parse(readIfFile(resultPath)); recorded = rec && rec.snapshot && typeof rec.snapshot.diff_sha256 === 'string' ? rec.snapshot.diff_sha256 : null; } catch (_e) { recorded = null; }
+  if (recorded === ctx.diffSha) return null;
+  return `snapshot diff changed between the scan and the runner (scanned ${String(ctx.diffSha).slice(0, 12)}, runner ${String(recorded).slice(0, 12)})`;
+}
+
+/** Everything after the spawn, in order: tripwire, run-home note, exit, files, diff hash, secret filter. */
+function judgeRun(ctx, o, run, artifactsDir, delta, baselinePath, seen) {
+  if (delta.length > 0) {
+    revertSnapshot(ctx.snapshot);
+    appendXreviewNote(ctx.phaseDir, `BLOCKER tripwire (${ctx.gate}, ${ctx.mode})`, ['the reviewer changed files during the run; its result was discarded', ...delta]);
+    removeRunDir(run.runDir, artifactsDir);
+    return o.finish({ reason: X.REASONS.tripwire, baseline_delta: delta, baseline_path: baselinePath, result_path: null, artifacts_run_dir: null, ...seen }, `fail/${X.REASONS.tripwire}`, X.EXIT_FAIL);
+  }
+  // The note goes in AFTER the tripwire baseline was retaken: a1's own write into
+  // the phase dir must never read as a reviewer write.
+  noteRunHome(ctx, seen.run_home_manifest);
+  if (run.status !== 0) {
+    process.stderr.write(`xprov run: runner failed: ${tail(run.stderr)}\n`);
+    return o.failWith(X.REASONS.runner_failed, tail(run.stderr) || `runner exited ${run.status}`, run.runDir, false, seen);
+  }
+  const bad = resultFileProblem(run);
+  if (bad) return o.failWith(bad.reason, bad.detail, run.runDir, bad.keep, seen);
+  const resultPath = path.join(run.runDir, 'result.json');
+  const tamper = diffHashProblem(ctx, resultPath);
+  if (tamper) {
+    appendXreviewNote(ctx.phaseDir, `BLOCKER tripwire (${ctx.gate}, ${ctx.mode})`, ['the outbound diff differs from the scanned one; the result was discarded', tamper]);
+    removeRunDir(run.runDir, artifactsDir);
+    return o.finish({ reason: X.REASONS.tripwire, reason_detail: tamper, baseline_delta: [tamper], result_path: null, artifacts_run_dir: null, ...seen }, `fail/${X.REASONS.tripwire}`, X.EXIT_FAIL);
+  }
+  const replyPath = path.join(run.runDir, 'reply.txt');
+  if (isFile(replyPath) && fileSize(replyPath) > X.MAX_RESULT_BYTES) return o.failWith(X.REASONS.malformed, `reply.txt exceeds ${X.MAX_RESULT_BYTES} bytes and cannot be scanned`, run.runDir, true, seen);
+  const hit = filterOutput([readIfFile(resultPath), readIfFile(replyPath)]);
+  if (hit && hit.hit) {
+    process.stderr.write(`xprov run: secret_in_output (pattern ${hit.pattern_name}); run dir kept for inspection: ${run.runDir}\n`);
+    return o.finish({ reason: X.REASONS.secret_in_output, secret_pattern: hit.pattern_name, baseline_delta: [], result_path: null, artifacts_run_dir: run.runDir, ...seen }, `fail/${X.REASONS.secret_in_output}`, X.EXIT_FAIL);
+  }
+  return o.finish({ reason: null, baseline_delta: [], result_path: resultPath, artifacts_run_dir: run.runDir, ...seen }, 'pending', X.EXIT_PASS);
+}
+
+/** Pre-spawn run home + late input re-hash, spawn, post-run judgement; the
+ * baseline temp dir and the run home are always removed. */
 function runWithBaseline(ctx, artifactsDir, argv, notes) {
   const before = takeBaseline(ctx);
   const baselinePath = writeBaseline(before);
   // `ok` like preflight/permit/observe/snapshot; `baseline_path` only on a
   // tripwire (the file is gone in `finally` — on success only `baseline_delta`
   // is meaningful, on a tripwire the mktemp path documents where the baseline was).
-  const common = { argv, snapshot_notes: notes };
+  const o = makeOutcomes(ctx, artifactsDir, { argv, snapshot_notes: notes }, notes);
   let runHome = null;
-  let homeManifest = null; // set right after the spawn; every later outcome reports it
-  const finish = (extra, verdict, code) => {
-    appendLog(ctx, { roles: extra.result_path ? rolesOf(extra.result_path) : 'unknown', result_path: extra.result_path, verdict, notes });
-    return emit(ctx, { ok: code === X.EXIT_PASS, ...common, run_home_manifest: homeManifest, ...extra }, code);
-  };
-  const failWith = (reason, detail, runDir, keepRunDir) => {
-    if (!keepRunDir) removeRunDir(runDir, artifactsDir);
-    return finish({ reason, reason_detail: detail, baseline_delta: [], result_path: null, artifacts_run_dir: keepRunDir ? runDir : null }, `fail/${reason}`, X.EXIT_FAIL);
-  };
   try {
     const home = prepareRunHome();
     if (!home.ok) {
       process.stderr.write(`xprov run: ${home.problem}; refusing to spawn\n`);
-      return failWith(X.REASONS.run_home_unsafe, home.problem, null, false);
+      return o.failWith(X.REASONS.run_home_unsafe, home.problem, null, false);
     }
     runHome = home.dir;
     // Re-hash the input copies right before the spawn (TOCTOU since the check in cmdXprovRun).
     const late = inputProblem(ctx);
     if (late) {
       process.stderr.write(`xprov run: ${late}; refusing to spawn\n`);
-      return failWith(X.REASONS.snapshot_failed, late, null, false);
+      return o.failWith(X.REASONS.snapshot_failed, late, null, false);
     }
     const run = spawnRunner(argv, ctx, artifactsDir, runHome);
     const rawManifest = runHomeManifest(runHome);
     writeRunHomeManifest(run.runDir, artifactsDir, rawManifest); // a1's 0700 artifacts dir, like result.json
-    homeManifest = emittableManifest(rawManifest);
-    const delta = baselineDelta(before, takeBaseline(ctx));
-    if (delta.length > 0) {
-      revertSnapshot(ctx.snapshot);
-      appendXreviewNote(ctx.phaseDir, `BLOCKER tripwire (${ctx.gate}, ${ctx.mode})`, ['the reviewer changed files during the run; its result was discarded', ...delta]);
-      removeRunDir(run.runDir, artifactsDir);
-      return finish({ reason: X.REASONS.tripwire, baseline_delta: delta, baseline_path: baselinePath, result_path: null, artifacts_run_dir: null }, `fail/${X.REASONS.tripwire}`, X.EXIT_FAIL);
-    }
-    // The note goes in AFTER the tripwire baseline was retaken: a1's own write into
-    // the phase dir must never read as a reviewer write.
-    if (homeManifest.length > 0) {
-      appendXreviewNote(ctx.phaseDir, `note: the runner left ${homeManifest.length} entries in its per-run HOME (${ctx.gate}, ${ctx.mode})`,
-        homeManifest.slice(0, RUN_HOME_NOTE_MAX).map((e) => `${e.path} · ${e.type}${e.size === null ? '' : ` · ${e.size} bytes`}`));
-    }
-    if (run.status !== 0) {
-      process.stderr.write(`xprov run: runner failed: ${tail(run.stderr)}\n`);
-      return failWith(X.REASONS.runner_failed, tail(run.stderr) || `runner exited ${run.status}`, run.runDir, false);
-    }
-    const resultPath = run.runDir ? path.join(run.runDir, 'result.json') : null;
-    if (!resultPath || !isFile(resultPath)) return failWith(X.REASONS.runner_failed, 'runner exited 0 without a result.json in a claudex-* run dir under the artifacts dir', run.runDir, false);
-    if (fileSize(resultPath) > X.MAX_RESULT_BYTES) return failWith(X.REASONS.malformed, `result.json exceeds ${X.MAX_RESULT_BYTES} bytes and cannot be scanned`, run.runDir, true);
-    // Detective TOCTOU check (Wave 7, Samuel): the diff the runner hashed must be
-    // the diff the snapshot scan hashed (runner.py:106-107 vs snapshot()).
-    if (ctx.mode === 'inspect') {
-      let recorded = null;
-      try { const rec = JSON.parse(readIfFile(resultPath)); recorded = rec && rec.snapshot && typeof rec.snapshot.diff_sha256 === 'string' ? rec.snapshot.diff_sha256 : null; } catch (_e) { recorded = null; }
-      if (recorded !== ctx.diffSha) {
-        const detail = `snapshot diff changed between the scan and the runner (scanned ${String(ctx.diffSha).slice(0, 12)}, runner ${String(recorded).slice(0, 12)})`;
-        appendXreviewNote(ctx.phaseDir, `BLOCKER tripwire (${ctx.gate}, ${ctx.mode})`, ['the outbound diff differs from the scanned one; the result was discarded', detail]);
-        removeRunDir(run.runDir, artifactsDir);
-        return finish({ reason: X.REASONS.tripwire, reason_detail: detail, baseline_delta: [detail], result_path: null, artifacts_run_dir: null }, `fail/${X.REASONS.tripwire}`, X.EXIT_FAIL);
-      }
-    }
-    const replyPath = path.join(run.runDir, 'reply.txt');
-    if (isFile(replyPath) && fileSize(replyPath) > X.MAX_RESULT_BYTES) return failWith(X.REASONS.malformed, `reply.txt exceeds ${X.MAX_RESULT_BYTES} bytes and cannot be scanned`, run.runDir, true);
-    const hit = filterOutput([readIfFile(resultPath), readIfFile(replyPath)]);
-    if (hit && hit.hit) {
-      process.stderr.write(`xprov run: secret_in_output (pattern ${hit.pattern_name}); run dir kept for inspection: ${run.runDir}\n`);
-      return finish({ reason: X.REASONS.secret_in_output, secret_pattern: hit.pattern_name, baseline_delta: [], result_path: null, artifacts_run_dir: run.runDir }, `fail/${X.REASONS.secret_in_output}`, X.EXIT_FAIL);
-    }
-    return finish({ reason: null, baseline_delta: [], result_path: resultPath, artifacts_run_dir: run.runDir }, 'pending', X.EXIT_PASS);
+    const after = takeBaseline(ctx);
+    const seen = { run_home_manifest: emittableManifest(rawManifest), porcelain: porcelainEvidence(before, after) };
+    return judgeRun(ctx, o, run, artifactsDir, baselineDelta(before, after), baselinePath, seen);
   } finally {
     removeRunHome(runHome);
     fs.rmSync(path.dirname(baselinePath), { recursive: true, force: true });
@@ -596,6 +629,7 @@ function cmdXprovRun(args) {
     if (!diffSha) {
       const detail = 'no scanned diff hash next to the snapshot (<snapshot>.inputs/diff.sha256) — build it with xprov snapshot --base';
       process.stderr.write(`xprov run: ${detail}; refusing to spawn\n`);
+      appendLog(ctx, { roles: 'unknown', result_path: null, verdict: `fail/${X.REASONS.snapshot_failed}`, notes });
       return emit(ctx, { ok: false, reason: X.REASONS.snapshot_failed, reason_detail: detail, result_path: null, artifacts_run_dir: null, baseline_delta: [] }, X.EXIT_FAIL);
     }
   }

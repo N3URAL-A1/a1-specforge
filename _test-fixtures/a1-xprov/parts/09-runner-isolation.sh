@@ -64,6 +64,8 @@
 #        byte-identical. Red if pinFeatures drops its refusal. (Dropping only the
 #        early return in pinFeaturesText is an equivalent mutant: pinFeatures
 #        still refuses on the conflicts it returns.)
+#   RF3c [features] ending in a multi-line value → refused (pin_conflict), file unchanged.
+#        Red if pinFeaturesText inserts after the last parsed entry anyway.
 #   RE1  preflight: /etc/codex/config.toml present → FAIL with its sha256.
 #        Red if the etc_codex_absent check is dropped.
 #   RN1  measured `<tracked file>: <symbol>` paths are kept as findings.
@@ -279,6 +281,14 @@ caseRF() {
   assert_rc "RF3b a pin set to true → exit 1" 1 "$up_rc"
   assert_json "RF3b stdout names the refusal and the conflicting pin" "$up" "j.reason + '/' + (j.conflicts || []).join(',')" "pin_conflict/features.hooks = true"
   assert_eq "RF3b the config stays byte-identical" "$(sha256_of "$conflict/config.toml")" "$before"
+
+  # RF3c — a multi-line value at the end of [features]: no safe insertion point
+  local multi="$TMP09/multi-home"; mkdir -p "$multi"; chmod 700 "$multi"
+  printf '%s\nexperimental = [\n  "x",\n]\n' "$OLD_CONFIG_W7" > "$multi/config.toml"; chmod 600 "$multi/config.toml"
+  before="$(sha256_of "$multi/config.toml")"
+  up="$(cd "$PHASE_REPO" && A1_XPROV_CODEX_HOME="$multi" node "$TREE_TOOLS" xprov init-home --pin-features 2>/dev/null)"; up_rc=$?
+  assert_json "RF3c a multi-line value inside [features] → pin_conflict" "$up" "j.reason + '/' + String($up_rc)" "pin_conflict/1"
+  assert_eq "RF3c the config stays byte-identical" "$(sha256_of "$multi/config.toml")" "$before"
 }
 
 # ---------- RE1: no system-wide Codex config ----------

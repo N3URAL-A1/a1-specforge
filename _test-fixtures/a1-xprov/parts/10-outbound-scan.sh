@@ -63,6 +63,9 @@
 #       Red if inputProblem drops the hash comparison.
 #   RI3 --feedback outside <snapshot>.inputs → refused.
 #       Red if only --plan is checked.
+#   RI4 an inspect run on a snapshot without a scanned diff hash is refused AND
+#       logged in PLAN-REVIEW-LOG.md like its sibling refusals (Reinhard m8).
+#       Red if that refusal skips appendLog.
 #
 # Path NAMES leave too (Codex R1, live inspect 2026-10-03): the runner's change
 # manifest and diff headers carry every outbound path. A path hit is never
@@ -292,6 +295,14 @@ caseRI() {
   ri_run "$RI_SNAP.inputs/PLAN.md"; ri_refused "RI2 the PLAN.md copy changed after the snapshot" "changed after the snapshot"
   ri10
   ri_run "$RI_SNAP.inputs/PLAN.md" "$RI_DISP"; ri_refused "RI3 --feedback outside <snapshot>.inputs" "feedback must be the snapshot"
+
+  # RI4 — the review snapshot from ri10 has no diff hash; an inspect on it is refused and logged
+  ri10
+  local log="$PHASE_REPO/.a1/phases/pri/PLAN-REVIEW-LOG.md"; local n0; n0="$(grep -c 'verdict: fail/snapshot_failed' "$log" 2>/dev/null || true)"; n0="${n0:-0}"
+  RI_ARGV="$TMP10/ri-argv-$RANDOM.json"; FAKE_RUNNER_ARGV_FILE="$RI_ARGV" FAKE_RUNNER_CASE=approved fake_runner_env
+  RI_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov run --mode inspect --snapshot "$RI_SNAP" --plan "$RI_SNAP.inputs/PLAN.md" --base "$(git -C "$PHASE_REPO" rev-parse HEAD)" --phase pri --gate "$GATE_WAVE" --wave 1 --timeout 7 2>/dev/null)"
+  ri_refused "RI4 inspect without a scanned diff hash" "no scanned diff hash"
+  assert_eq "RI4 the refusal is logged in PLAN-REVIEW-LOG.md" "$(grep -c 'verdict: fail/snapshot_failed' "$log" 2>/dev/null || true)" "$((n0 + 1))"
 }
 
 # pname10 — a secret-shaped file NAME, assembled at runtime (no source line matches).

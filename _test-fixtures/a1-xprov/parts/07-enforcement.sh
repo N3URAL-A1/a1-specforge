@@ -23,6 +23,8 @@
 #   R5g  a row missing from the registry → exit 1.      Red if a missing row is treated as `warning`.
 #   R5h  the real tree → exit 0.                        Red if the real registry flips before the ADR holds the evidence.
 #   R5i  root without registry/ADR → exit 2, no stdout. Red if a bad root is reported as a pass or a fail.
+#   R5k  a placeholder spelled "Pending: Wave 7" next to both commands → exit 1.
+#        Red if PLACEHOLDER_RE only matches the literal "pending wave 7".
 #   R5j  test.yml runs the check as its own step AFTER `Fixtures`.
 #        Red if the step is removed, merged into Fixtures, or moved before it.
 #   root07 baseline: on a tree whose real rows are `blocking` with complete
@@ -125,6 +127,12 @@ assert_json "R5a stdout names the blocking row" "$C_OUT" 'j.rows["plan-review-xp
 root07; flip07 plan-review-xprov; flip07 wave-inspect-xprov; smoke07 "$PENDING_BOTH07"; check07
 assert_rc "R5b both commands present but still pending Wave 7 → exit 1" 1 "$C_RC"
 assert_json "R5b the only problem is the placeholder" "$C_OUT" 'j.problems.length + ":" + /pending Wave 7/.test(j.problems[0])' "1:true"
+
+# R5k — the placeholder in another spelling
+PENDING_ALT07="$TMP07/pending-alt.md"
+{ cat "$EVIDENCE07"; printf 'Pending: Wave 7 (inspect half).\n'; } > "$PENDING_ALT07"
+root07; flip07 plan-review-xprov; flip07 wave-inspect-xprov; smoke07 "$PENDING_ALT07"; check07
+assert_rc "R5k \"Pending: Wave 7\" next to both commands → exit 1" 1 "$C_RC"
 
 # R5c
 root07; flip07 plan-review-xprov; flip07 wave-inspect-xprov; smoke07 "$PLAN_ONLY07"; check07

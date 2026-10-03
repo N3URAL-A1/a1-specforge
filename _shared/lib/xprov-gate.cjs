@@ -264,9 +264,9 @@ function stepRun(ctx, snap, inputs, resume) {
   if (resume) argv.push('--resume', resume.resume, '--feedback', inputs.feedback);
   const r = runSub(ctx, argv);
   if (r.status !== 0 || !r.json || typeof r.json.result_path !== 'string') {
-    return { ok: false, reason: (r.json && r.json.reason) || X.REASONS.runner_failed, detail: (r.json && r.json.reason_detail) || r.stderr || `run exited ${r.status}` };
+    return { ok: false, reason: (r.json && r.json.reason) || X.REASONS.runner_failed, detail: (r.json && r.json.reason_detail) || r.stderr || `run exited ${r.status}`, porcelain: (r.json && r.json.porcelain) || null };
   }
-  return { ok: true, resultPath: r.json.result_path };
+  return { ok: true, resultPath: r.json.result_path, porcelain: r.json.porcelain || null };
 }
 
 /** normalize writes the ONE index entry; the snapshot's allowlist result
@@ -355,11 +355,11 @@ function gate(o) {
     if (!snapped.ok) return (result = fail('snapshot', snapped.reason, snapped.detail, al));
     snap = snapped.snapshot;
     const ran = stepRun(ctx, snap, snapped.inputs, resume);
-    if (!ran.ok) return (result = fail('run', ran.reason, ran.detail, al));
+    if (!ran.ok) return (result = fail('run', ran.reason, ran.detail, { ...al, run_porcelain: ran.porcelain || null }));
     const norm = stepNormalize(ctx, ran.resultPath, al);
     if (!norm.ok) return (result = fail('normalize', norm.reason, norm.detail, { ...al, result_path: ran.resultPath }));
     const reviewed = Object.freeze({
-      ...base, ...al, result_path: ran.resultPath, findings_path: norm.findingsPath, xreview_path: norm.xreviewPath, step: 'normalize',
+      ...base, ...al, run_porcelain: ran.porcelain, result_path: ran.resultPath, findings_path: norm.findingsPath, xreview_path: norm.xreviewPath, step: 'normalize',
       verdict: norm.verdict, reason: norm.reason, reason_detail: norm.detail, next: nextFor(ctx, norm.verdict, ran.resultPath),
     });
     const capped = norm.verdict === X.VERDICTS.FAIL_WITH_FINDINGS && ctx.round >= X.ROUND_CAP
