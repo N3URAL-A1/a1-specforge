@@ -288,22 +288,39 @@ function scanEntry(full, st, rel, withPositions) {
 }
 
 /** Scan every tracked entry of a clone. Returns { files_scanned, skipped: 0,
- * tracked: [paths], matches: [{path, pattern, view, offset, fingerprint, excerpt}] }. */
+ * tracked: [paths], matches: [{path, pattern, view, offset, fingerprint,
+ * excerpt}], missingBlobs: [{path, buf}] }. A tracked path missing from the
+ * working tree (a stripped repo-local file — `.codex/config.toml` is a
+ * realistic secret carrier) is still readable as `git show HEAD:<path>` from
+ * the snapshot's object store, so its HEAD blob is scanned as side head
+ * (Codex R1, live inspect 2026-10-03; Samuel: take the fix, keep the blobs). */
 function scanTrackedFiles(dir, opts) {
   const withPositions = Boolean(opts && opts.positions);
   const ls = git(['-C', dir, 'ls-files', '-z']);
-  if (ls.status !== 0) return { files_scanned: 0, skipped: 0, tracked: [], matches: [], error: tail(ls.stderr) };
+  if (ls.status !== 0) return { files_scanned: 0, skipped: 0, tracked: [], matches: [], missingBlobs: [], error: tail(ls.stderr) };
   const tracked = ls.stdout.split('\0').filter(Boolean);
   let scanned = 0;
   const matches = [];
+  const missingBlobs = [];
   for (const rel of tracked) {
     const full = path.join(dir, rel);
-    let st;
-    try { st = fs.lstatSync(full); } catch (_e) { continue; } // stripped repo-local file (MAJOR 7), nothing to scan
+    let st = null;
+    try { st = fs.lstatSync(full); } catch (_e) { st = null; }
+    if (st === null) {
+      const spec = `HEAD:${rel}`;
+      const type = git(['-C', dir, 'cat-file', '-t', spec]);
+      if (type.status !== 0 || type.stdout.trim() !== 'blob') continue; // a gitlink: no content in this object store
+      const b = spawnSync('git', ['-C', dir, 'cat-file', 'blob', spec], { maxBuffer: C.GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] });
+      if (b.status !== 0) return { files_scanned: scanned, skipped: 0, tracked, matches, missingBlobs, error: `cat-file ${rel}: ${tail(String(b.stderr))}` };
+      scanned++;
+      missingBlobs.push({ path: rel, buf: b.stdout });
+      matches.push(...scanSource(bufferSource(b.stdout), rel, withPositions));
+      continue;
+    }
     scanned++;
     matches.push(...scanEntry(full, st, rel, withPositions));
   }
-  return { files_scanned: scanned, skipped: 0, tracked, matches };
+  return { files_scanned: scanned, skipped: 0, tracked, matches, missingBlobs };
 }
 
 /** gitleaks when on PATH, with a1's own config (never the reviewed repo's). */
@@ -539,7 +556,7 @@ function snapshot(opts) {
   }
   // FR-030 (e): gitleaks hits are never allowlisted — tree, base blobs and inputs alike.
   const gl = gitleaksScan(dir);
-  const glBase = gitleaksBlobs(base_.blobs);
+  const glBase = gitleaksBlobs([...base_.blobs, ...scan.missingBlobs]); // stripped HEAD blobs too
   const glIn = ins.labels.length ? gitleaksScan(ins.inputsDir) : { hit: false };
   if (gl.hit || glBase.hit || glIn.hit) return failed(X.REASONS.secret_in_snapshot, { secret_pattern: 'gitleaks', reason_detail: 'gitleaks', ...counts, ...report });
   // Detective TOCTOU anchor: the diff the runner will hash, hashed now.

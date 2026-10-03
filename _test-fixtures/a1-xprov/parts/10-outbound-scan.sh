@@ -77,6 +77,14 @@
 #      Red if the base-side path list uses rename detection.
 #   P0 control: a benign added name passes.
 #   P4 `xprov snapshot` itself (stdout JSON, stderr) never echoes the name.
+#
+# Stripped repo-local files stay readable as `git show HEAD:<path>` in the
+# snapshot (Codex R1, live inspect 2026-10-03; Samuel MINOR, fix taken):
+#   S1 a plan review whose commit tracks .codex/config.toml with a fake key →
+#      secret_in_snapshot, runner never invoked. Red if the scan keeps `continue`
+#      on tracked paths missing from the working tree.
+#   S2 a gitleaks finding only in a stripped AGENTS.md → secret_in_snapshot/
+#      gitleaks. Red if those HEAD blobs are left out of the gitleaks blob pass.
 #      Red if the path text is put into the snapshot result.
 #   Every failing P arm also asserts the name appears in none of stdout, stderr,
 #   PLAN-REVIEW-LOG.md, XREVIEW.md. Red if the path text is put in a detail.
@@ -321,7 +329,16 @@ caseP() {
   else ok "P4 the snapshot CLI echoes the name nowhere (stdout, stderr)"; fi
 }
 
-caseO1; caseO2; caseO3; caseO4; caseO5; caseO6; caseO7; caseO8; caseO9; caseO10O11; caseO12; caseRR; caseRI; caseP
+caseS() {
+  new8; mkdir -p "$R8/.codex"; printf 'model = "x"\nid: %s\n' "$FAKE_AK1" > "$R8/.codex/config.toml"; c8 "repo-local codex config with a key"
+  gate8 --gate "$GATE_PLAN"; expect8 "S1 a stripped .codex/config.toml with a fake key (plan review)" secret_in_snapshot
+  local needle="GITLEAKS-STRIPPED-MARKER-W7"
+  new8; printf '# agents\n%s\n' "$needle" > "$R8/AGENTS.md"; c8 "AGENTS.md with a marker"
+  FAKE_GITLEAKS_NEEDLE="$needle" gate8 --gate "$GATE_PLAN"
+  expect8 "S2 a gitleaks finding only in a stripped AGENTS.md" "secret_in_snapshot/gitleaks"
+}
+
+caseO1; caseO2; caseO3; caseO4; caseO5; caseO6; caseO7; caseO8; caseO9; caseO10O11; caseO12; caseRR; caseRI; caseP; caseS
 unset A1_XPROV_CODEX_HOME
 export HOME="$SAVED_HOME_10"
 rm -rf "$TMP10"
