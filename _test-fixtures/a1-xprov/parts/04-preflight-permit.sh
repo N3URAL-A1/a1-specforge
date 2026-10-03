@@ -50,7 +50,7 @@ hooks = false
 skill_mcp_dependency_install = false
 memories = false'
 
-EXPECTED_PREFLIGHT_CHECKS="codex_home_is_global home_exists config_exists config_is_symlink home_mode_0700 sandbox_read_only auth_store_file mcp_servers_absent plugins_disabled remote_plugin_switch features_pinned_off unexpected_config_key plugins_cache_empty skills_system_only session_tools_exec_only etc_codex_absent auth_present runner_pin python_version codex_cli"
+EXPECTED_PREFLIGHT_CHECKS="codex_home_is_global home_exists config_exists config_is_symlink home_mode_0700 sandbox_read_only auth_store_file mcp_servers_absent plugins_disabled remote_plugin_switch features_pinned_off unexpected_config_key plugins_cache_empty skills_system_only skills_real_dirs home_no_symlinks session_tools_exec_only etc_codex_absent auth_present runner_pin python_version codex_cli"
 
 # make_home_w4 — alias of the harness make_home (whose COMPLIANT_CONFIG carries
 # the [features] switch since the Wave 4 measurement). Kept so no arm breaks.
@@ -441,7 +441,7 @@ caseS3() {
   xprov_w4 preflight
   assert_rc "S3a preflight exits 1 (6000 disallowed tools)" 1 "$W4_RC"
   [[ ${#W4_OUT} -gt 65536 ]] && ok "S3b stdout is larger than 64 KiB (${#W4_OUT} bytes)" || bad "S3b stdout only ${#W4_OUT} bytes — arm does not exercise the truncation"
-  assert_json "S3c stdout JSON is complete and parseable (all checks present)" "$W4_OUT" "(j.checks||[]).length" "20"
+  assert_json "S3c stdout JSON is complete and parseable (all checks present)" "$W4_OUT" "(j.checks||[]).length" "22"
   assert_json "S3d the last check survived the pipe" "$W4_OUT" "j.checks[j.checks.length-1].name" "codex_cli"
 }
 

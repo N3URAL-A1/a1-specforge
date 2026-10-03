@@ -91,6 +91,7 @@ const { ensureArtifactsDir, isUnder, sweepRunHomes } = require('./xprov-artifact
 const { appendXreviewNote } = require('./xprov-normalize.cjs');
 const { filterOutput, instructionMarker } = require('./xprov-filter.cjs');
 const { permitCheck } = require('./xprov-permit.cjs');
+const { homeSymlinks, skillsDirsProblem } = require('./xprov-preflight.cjs');
 const { SNAP_PREFIX, REPO_LOCAL_STRIP, storedDiffSha, storedInputHashes, INPUTS_SUFFIX, INPUT_FILES } = require('./xprov-snapshot.cjs');
 
 const NO_LOG_FLAG = 'no-log';
@@ -110,6 +111,8 @@ const RUN_HOME_PREFIX = 'run-home-';
 const RUN_HOME_MANIFEST_FILE = 'run-home.manifest.json';
 const RUN_HOME_MANIFEST_MAX = 500; // entries recorded; the count is always exact
 const RUN_HOME_NOTE_MAX = 20; // entries listed in the XREVIEW note
+const FAILURE_DETAIL_MAX = 300; // characters of the runner's own failure reason kept in reason_detail
+const SYSTEM_SKILLS_REL = path.join('skills', '.system');
 const MANIFEST_FILE_MODE = 0o600;
 // Environment the runner gets — nothing else (Samuel W5 MAJOR 2: OPENAI_BASE_URL
 // would redirect the review, PYTHONPATH would bypass the pin, *_PROXY, GIT_*, …).
@@ -417,6 +420,49 @@ function inputProblem(ctx) {
   return null;
 }
 
+/** Right before the spawn (Samuel m7, measured 2026-10-03 on a home copy with
+ * `codex debug prompt-input` under a network block): a SKILL.md planted in
+ * `skills/.system` is loaded while its marker matches (m1), and Codex re-extracts
+ * the identical `.system` (6 skills + marker 8bcfb84cfbe4722a) when it is absent
+ * (m2) or when the marker is gone (m3). So the dedicated home must hold no
+ * symlink besides auth.json, `skills/` and `skills/.system` must be real, own
+ * directories, and `.system` is removed before every spawn. → reason or null. */
+function resetSystemSkills() {
+  const home = X.codexHome();
+  const links = homeSymlinks(home);
+  if (links.length) return `the dedicated Codex home holds symlinks (${links.slice(0, 5).join(', ')}) — refusing to spawn`;
+  const bad = skillsDirsProblem(home);
+  if (bad) return `${bad} in the dedicated Codex home — refusing to spawn`;
+  fs.rmSync(path.join(home, SYSTEM_SKILLS_REL), { recursive: true, force: true });
+  return null;
+}
+
+/** The runner's own failure reason, display-safe (Wave 7 review): the last
+ * `{"type":"error","message":…}` event of the run dir's stdout.txt (measured:
+ * the usage-limit case), else result.json `error`, else the stderr tail — one
+ * line, capped, never a secret (pattern withheld). Text from the provider's
+ * event stream is additionally withheld when instruction-shaped; the pinned
+ * runner's own text (record error, stderr) is not — "Keep run artifacts…" is
+ * a runner refusal, not a reviewer instruction. */
+function runnerFailureDetail(run) {
+  let msg = null;
+  let fromProvider = false;
+  if (run.runDir) {
+    for (const line of readIfFile(path.join(run.runDir, 'stdout.txt')).split('\n')) {
+      try { const ev = JSON.parse(line); if (ev && ev.type === 'error' && typeof ev.message === 'string') { msg = ev.message; fromProvider = true; } } catch (_e) { /* not a JSON event */ }
+    }
+    if (msg === null) {
+      try { const rec = JSON.parse(readIfFile(path.join(run.runDir, 'result.json'))); if (rec && typeof rec.error === 'string') msg = rec.error; } catch (_e) { /* no record */ }
+    }
+  }
+  if (msg === null) msg = tail(run.stderr) || '';
+  const hit = filterOutput([msg]);
+  if (hit && hit.hit) msg = `<withheld: ${hit.pattern_name}>`;
+  else if (fromProvider && instructionMarker({ id: '', evidence: msg, fix: '' }, []) !== null) msg = '<withheld: instruction_shaped>';
+  const line = msg.replace(/[\r\n\t]+/g, ' ').trim().slice(0, FAILURE_DETAIL_MAX);
+  return `runner exited ${run.status}${line ? `: ${line}` : ''}`;
+}
+
 /** The snapshot root must be stripped: its own `.agents/skills` would be a skill root. */
 function unstrippedEntries(snapshot) {
   return REPO_LOCAL_STRIP.filter((name) => fs.existsSync(path.join(snapshot, name)));
@@ -536,8 +582,9 @@ function judgeRun(ctx, o, run, artifactsDir, delta, baselinePath, seen) {
   // the phase dir must never read as a reviewer write.
   noteRunHome(ctx, seen.run_home_manifest);
   if (run.status !== 0) {
-    process.stderr.write(`xprov run: runner failed: ${tail(run.stderr)}\n`);
-    return o.failWith(X.REASONS.runner_failed, tail(run.stderr) || `runner exited ${run.status}`, run.runDir, false, seen);
+    const why = runnerFailureDetail(run);
+    process.stderr.write(`xprov run: runner failed: ${why}\n`);
+    return o.failWith(X.REASONS.runner_failed, why, run.runDir, false, seen);
   }
   const bad = resultFileProblem(run);
   if (bad) return o.failWith(bad.reason, bad.detail, run.runDir, bad.keep, seen);
@@ -580,6 +627,11 @@ function runWithBaseline(ctx, artifactsDir, argv, notes) {
     if (late) {
       process.stderr.write(`xprov run: ${late}; refusing to spawn\n`);
       return o.failWith(X.REASONS.snapshot_failed, late, null, false);
+    }
+    const homeIssue = resetSystemSkills();
+    if (homeIssue) {
+      process.stderr.write(`xprov run: ${homeIssue}\n`);
+      return o.failWith(X.REASONS.preflight_failed, homeIssue, null, false);
     }
     const run = spawnRunner(argv, ctx, artifactsDir, runHome);
     const rawManifest = runHomeManifest(runHome);

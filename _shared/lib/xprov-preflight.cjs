@@ -80,6 +80,8 @@ const ALL_FEATURE_PINS = Object.freeze([...REQUIRED_FEATURES_OFF, ...FEATURE_PIN
 // Root keys a1 pins (key → required value), inserted after the last root entry.
 const ROOT_PINS = Object.freeze({ cli_auth_credentials_store: 'file' });
 const SKILLS_DIR = 'skills';
+// Codex runtime dirs (xprov-run CODEX_RUNTIME_DIRS without skills/.system): content never hashed nor trusted.
+const RUNTIME_DIRS_NOT_DESCENDED = Object.freeze(['cache', 'sessions', 'plugins', 'tmp', 'shell_snapshots', 'thread-writer-locks', 'log']);
 const SKILLS_SYSTEM = '.system';
 const ETC_CODEX_DIR = '/etc/codex';
 const ETC_CODEX_FILES = Object.freeze(['config.toml', 'requirements.toml']);
@@ -310,10 +312,62 @@ function pluginCacheCheck(home, allowlist) {
   return check('plugins_cache_empty', true, allowed.length ? `allowlisted: ${allowed.join(', ')}` : 'empty');
 }
 
+/** Every symlink in the dedicated home except the top-level auth.json (the one
+ * link a1 creates itself): lstat walk, links never followed (Samuel m7 — a
+ * linked `skills` or `skills/.system` hid its content from fileHashes and from
+ * a readdirSync that follows links). Codex's runtime dirs are checked only as
+ * entries, never descended: measured 2026-10-03, every run leaves arg0 shims
+ * `tmp/arg0/codex-arg0<random>/{apply_patch,applypatch,codex-execve-wrapper}` →
+ * its own binary. `skills/` (incl. `.system`) IS descended. Returns relative paths. */
+function homeSymlinks(home) {
+  const found = [];
+  const walk = (dir, rel) => {
+    let names = [];
+    try { names = fs.readdirSync(dir); } catch (_e) { return; }
+    for (const n of names.sort()) {
+      const full = path.join(dir, n);
+      const r = rel ? `${rel}/${n}` : n;
+      let st;
+      try { st = fs.lstatSync(full); } catch (_e) { continue; }
+      if (st.isSymbolicLink()) { if (r !== AUTH_FILE) found.push(r); continue; }
+      if (st.isDirectory() && !(rel === '' && RUNTIME_DIRS_NOT_DESCENDED.includes(n))) walk(full, r);
+    }
+  };
+  walk(home, '');
+  return found;
+}
+
+/** `skills/` and `skills/.system` are real directories owned by this user (or
+ * absent): a symlink or a foreign owner → the reason, else null. */
+function skillsDirsProblem(home) {
+  for (const rel of [SKILLS_DIR, path.join(SKILLS_DIR, SKILLS_SYSTEM)]) {
+    let st;
+    try { st = fs.lstatSync(path.join(home, rel)); } catch (_e) { continue; }
+    if (st.isSymbolicLink()) return `${rel} is a symlink`;
+    if (!st.isDirectory()) return `${rel} is not a directory`;
+    if (typeof process.getuid === 'function' && st.uid !== process.getuid()) return `${rel} is owned by uid ${st.uid}`;
+  }
+  return null;
+}
+
+function skillsRealDirsCheck(home) {
+  const p = skillsDirsProblem(home);
+  return check('skills_real_dirs', p === null, p || 'skills/ and skills/.system are real, own directories (or absent)');
+}
+
+function homeNoSymlinksCheck(home) {
+  const links = homeSymlinks(home);
+  return check('home_no_symlinks', links.length === 0, links.length ? `symlinks: ${links.slice(0, 10).join(', ')}` : 'no symlink besides auth.json');
+}
+
 /** `$CODEX_HOME/skills` is a user skill root (measured): only `.system` may live there. */
 function skillsSystemOnlyCheck(home) {
   let names;
-  try { names = fs.readdirSync(path.join(home, SKILLS_DIR)); } catch (_e) { return check('skills_system_only', true, 'no skills/ dir'); }
+  let st = null;
+  try { st = fs.lstatSync(path.join(home, SKILLS_DIR)); } catch (_e) { st = null; }
+  if (st === null) return check('skills_system_only', true, 'no skills/ dir');
+  if (!st.isDirectory()) return check('skills_system_only', false, 'skills/ is not a real directory (symlink?)');
+  try { names = fs.readdirSync(path.join(home, SKILLS_DIR)); } catch (_e) { return check('skills_system_only', false, 'skills/ unreadable'); }
   const others = names.filter((n) => n !== SKILLS_SYSTEM).sort();
   return check('skills_system_only', others.length === 0, others.length ? `skills/ also holds: ${others.join(', ')}` : 'skills/ holds only .system');
 }
@@ -462,6 +516,8 @@ function preflight(opts) {
     ...configChecks(configText),
     pluginCacheCheck(home, o.pluginAllowlist),
     skillsSystemOnlyCheck(home),
+    skillsRealDirsCheck(home),
+    homeNoSymlinksCheck(home),
     sessionToolsCheck(home),
     etcCodexCheck(o.etcCodexDir || ETC_CODEX_DIR),
     authCheck(home),
@@ -671,7 +727,7 @@ function resolveHomeOrExit(sub) {
 
 module.exports = {
   COMPLIANT_CONFIG, ALLOWED_SESSION_TOOLS, REQUIRED_FEATURES_OFF, FEATURE_PINS, CURATED_MARKETPLACE,
-  parseTomlLines, configChecks, pinFeaturesText, scanPluginCache, sessionToolNames, isGlobalHome,
+  parseTomlLines, configChecks, pinFeaturesText, homeSymlinks, skillsDirsProblem, scanPluginCache, sessionToolNames, isGlobalHome,
   preflight, initHome,
   cmdXprovPreflight, cmdXprovInitHome,
 };

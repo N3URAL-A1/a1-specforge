@@ -54,7 +54,10 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   remote_plugin, apps, browser_use, computer_use, hooks,
                   skill_mcp_dependency_install, memories),
                   cli_auth_credentials_store = "file", skills/ holds only
-                  .system (skills/<x> is a user skill root), no
+                  .system (skills/<x> is a user skill root), skills/ and
+                  skills/.system real own dirs (skills_real_dirs), no symlink
+                  in the home besides auth.json (home_no_symlinks; Codex's
+                  runtime dirs are not descended), no
                   /etc/codex/{config,requirements}.toml.
                   Lists EVERY check with its measured value; exit 1 if any fails.
     init-home [--prune-marketplaces] [--pin-features]
@@ -138,6 +141,13 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   <snapshot>.inputs/{PLAN.md,feedback.md}, re-hashed against
                   inputs.json before the spawn (else snapshot_failed, no
                   spawn). Every run first sweeps stale run-home-* (gc's sweep).
+                  Right before the spawn the dedicated home must hold no symlink
+                  besides auth.json and skills/, skills/.system must be real
+                  dirs (else preflight_failed); skills/.system is then removed —
+                  Codex re-extracts it (measured), so nothing planted there is
+                  loaded. On runner_failed, reason_detail carries the runner's
+                  own reason (the codex error event, else result.json error,
+                  else stderr), secret- or instruction-shaped text withheld.
     gate --phase <name> --gate <id> [--wave N --base <sha> --work-path <p>]
          [--lane <id>] [--round N] [--timeout N] [--resume <result.json> --feedback <file>]
                   (xprov-gate.cjs, wave 6) the driver the workflows call once:

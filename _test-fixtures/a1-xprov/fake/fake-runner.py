@@ -20,6 +20,14 @@ environment when the file is absent (direct `python3 fake-runner.py` calls).
                                Codex leaves in the per-run HOME (Wave 7)
   FAKE_RUNNER_SKILLS_FILE      write the names under $HOME/.agents/skills (JSON
                                array) here — the skill root Codex reads from $HOME
+  FAKE_RUNNER_SYSTEM_PROBE     like Codex (measured m2, 2026-10-03): re-extract
+                               $CODEX_HOME/skills/.system when absent (marker
+                               8bcfb84cfbe4722a + one skill), then write the names
+                               it would load from .system (JSON array) here
+  FAKE_RUNNER_CODEX_STDOUT     a captured codex stdout (file path or case name
+                               <name>.codex-stdout.txt): copied to <run>/stdout.txt,
+                               result.json status failed + the runner's own error
+                               text (runner.py:366), exit 1
   FAKE_RUNNER_CASE             case to copy into <artifacts>/<run>/result.json —
                                a file path, or a name resolved as
                                $FAKE_RUNNER_CASES_DIR/<name>.result.json
@@ -65,6 +73,8 @@ import uuid
 from pathlib import Path
 
 EXIT_REFUSED = 1
+SYSTEM_MARKER = "8bcfb84cfbe4722a\n"  # measured content of .codex-system-skills.marker (codex-cli 0.155.1)
+RUNNER_CODEX_FAILED = "codex exited 1; inspect stdout.txt and stderr.txt."  # runner.py:366
 SIZE_PROBE_BYTES = 1024 * 1024  # no real record comes near; only padded size probes
 EXIT_BAD_CASE = 98
 ENV_FILE_NAME = "fake-runner.env.json"
@@ -228,6 +238,14 @@ def main(argv: list[str]) -> int:
         root = Path(os.environ.get("HOME", "/nonexistent")) / ".agents" / "skills"
         names = sorted(p.name for p in root.iterdir()) if root.is_dir() else []
         Path(skills_file).write_text(json.dumps(names), encoding="utf-8")
+    system_probe = k.get("FAKE_RUNNER_SYSTEM_PROBE")
+    if system_probe:
+        sysdir = Path(os.environ["CODEX_HOME"]) / "skills" / ".system"
+        if not sysdir.is_dir():
+            (sysdir / "imagegen").mkdir(parents=True, exist_ok=True)
+            (sysdir / ".codex-system-skills.marker").write_text(SYSTEM_MARKER, encoding="utf-8")
+            (sysdir / "imagegen" / "SKILL.md").write_text("---\nname: imagegen\n---\n", encoding="utf-8")
+        Path(system_probe).write_text(json.dumps(sorted(p.name for p in sysdir.iterdir()), separators=(",", ":")), encoding="utf-8")
     home_write = k.get("FAKE_RUNNER_HOME_WRITE")
     if home_write:
         target = Path(os.environ["HOME"]) / home_write
@@ -263,6 +281,19 @@ def main(argv: list[str]) -> int:
         target = Path(write_path)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text("tripwire probe\n", encoding="utf-8")
+    codex_stdout = k.get("FAKE_RUNNER_CODEX_STDOUT")
+    if codex_stdout and run_dir is not None:
+        src = Path(codex_stdout)
+        if not src.is_file() and k.get("FAKE_RUNNER_CASES_DIR"):
+            src = Path(k["FAKE_RUNNER_CASES_DIR"]) / f"{codex_stdout}.codex-stdout.txt"
+        shutil.copyfile(src, run_dir / "stdout.txt")
+        (run_dir / "stderr.txt").write_text("", encoding="utf-8")
+        failed = {"status": "failed", "mode": mode, "provider": "codex", "repo": str(Path(repo).resolve()) if repo else None,
+                  "error": RUNNER_CODEX_FAILED, "exit_code": 1}
+        (run_dir / "result.json").write_text(json.dumps(failed, indent=2) + "\n", encoding="utf-8")
+        print(json.dumps({"provider": "codex", "model": "CLI default (unresolved)", "mode": mode, "artifacts": str(run_dir)}), flush=True)
+        print(json.dumps(failed, indent=2))
+        return 1
     header_artifacts = k.get("FAKE_RUNNER_HEADER_ARTIFACTS") or (str(run_dir) if run_dir else None)
     header = {"provider": "codex", "model": flag(argv, "--model") or "CLI default (unresolved)",
               "mode": mode, "artifacts": header_artifacts}
