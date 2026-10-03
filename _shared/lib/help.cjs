@@ -671,7 +671,7 @@ ${SPEC_INIT_HELP}
             [--model-requested <m>] [--model-observed <m>] [--repo <git-toplevel>]
                   (xprov-observe.cjs, wave 4) one observations.jsonl line with
                   pattern xprov_finding, model_requested, model_observed.
-    snapshot --repo <path> --commit <sha> [--base <sha>] | --remove <dir>
+    snapshot --repo <path> --commit <sha> [--base <sha>] [--plan <file>] [--feedback <file>] | --remove <dir>
                   (xprov-snapshot.cjs, wave 5) fresh depth-limited fetch under
                   ~/.a1-xprov/snapshots/ (git init + fetch --depth 1 + checkout
                   FETCH_HEAD; with --base (inspect) base is fetched --depth 1
@@ -696,7 +696,9 @@ ${SPEC_INIT_HELP}
                   <snapshot>.inputs/ (0700); same allowlist per side (entries
                   carry side: base|input), gitleaks over all of them. The diff
                   the runner will hash is hashed here and kept as
-                  <snapshot>.inputs/diff.sha256.
+                  <snapshot>.inputs/diff.sha256. --plan/--feedback copy and
+                  scan those files into <snapshot>.inputs/ and record their
+                  sha256 (inputs.json) — the only inputs xprov run accepts.
     run --mode review|inspect --snapshot <dir> --plan <abs PLAN.md> --phase <name>
         --gate <id> [--wave N] [--round N] [--lane <id>] [--base <sha>]
         [--resume <result.json> --feedback <file>] [--timeout N] [--work-path <dir>] [--no-log]
@@ -717,6 +719,10 @@ ${SPEC_INIT_HELP}
                   hash next to the snapshot (else snapshot_failed, no spawn)
                   and compares it with the runner's snapshot.diff_sha256 after
                   the run — a mismatch is a tripwire. GIT_CONFIG_NOSYSTEM=1.
+                  --plan/--feedback must be the snapshot's copies
+                  <snapshot>.inputs/{PLAN.md,feedback.md}, re-hashed against
+                  inputs.json before the spawn (else snapshot_failed, no
+                  spawn). Every run first sweeps stale run-home-* (gc's sweep).
     gate --phase <name> --gate <id> [--wave N --base <sha> --work-path <p>]
          [--lane <id>] [--round N] [--timeout N] [--resume <result.json> --feedback <file>]
                   (xprov-gate.cjs, wave 6) the driver the workflows call once:

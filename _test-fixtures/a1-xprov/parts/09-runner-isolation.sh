@@ -35,6 +35,8 @@
 #   RH7  `xprov gc` sweeps a stale run-home-* (> 24 h, left by a SIGKILL); a
 #        fresh one and a run-home-* symlink (and its target) survive.
 #        (Moved from xprov-run into gc, xprov-artifacts.cjs, team lead 2026-10-02.)
+#   RH7b every `xprov run` calls gc's run-home sweep first.
+#        Red if run drops the opportunistic sweepRunHomes() call.
 #        Red if the sweep is dropped / the age bound is dropped / symlinks are followed.
 #   RH8  Samuel's proving arm: a canary in the CALLER's (old) HOME .agents/skills
 #        is not visible to the runner under its per-run HOME.
@@ -124,15 +126,16 @@ prep9() {
 
 # snap9 — snapshot of $PHASE_REPO at HEAD. Sets SNAP, S9_OUT, S9_RC.
 snap9() {
-  S9_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov snapshot --repo "$PHASE_REPO" --commit HEAD 2>"$TMP09/snap-err.txt")"; S9_RC=$?
+  S9_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov snapshot --repo "$PHASE_REPO" --commit HEAD --plan "$PHASE_PLAN" 2>"$TMP09/snap-err.txt")"; S9_RC=$?
   SNAP="$(json_get "$S9_OUT" "j.snapshot || ''")"; [[ "$SNAP" == "UNPARSEABLE" ]] && SNAP=""
+  PLANCOPY9="$SNAP.inputs/PLAN.md"
 }
 
 # run9 — `xprov run --mode review` on $SNAP. Sets U9_OUT, U9_RC, ARGV9_FILE, ENV9_FILE, CWD9_FILE.
 run9() {
   ARGV9_N=$((ARGV9_N + 1)); ARGV9_FILE="$ARGV9_DIR/argv-$ARGV9_N.json"; ENV9_FILE="$ARGV9_DIR/env-$ARGV9_N.json"; CWD9_FILE="$ARGV9_DIR/cwd-$ARGV9_N.txt"
   FAKE_RUNNER_ARGV_FILE="$ARGV9_FILE" FAKE_RUNNER_ENV_FILE="$ENV9_FILE" FAKE_RUNNER_CWD_FILE="$CWD9_FILE" FAKE_RUNNER_CASE="${FAKE_RUNNER_CASE:-approved}" fake_runner_env
-  U9_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov run --mode review --snapshot "$SNAP" --plan "$PHASE_PLAN" --phase p9 --gate "$GATE_PLAN" --timeout 7 2>"$TMP09/run-err.txt")"; U9_RC=$?
+  U9_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov run --mode review --snapshot "$SNAP" --plan "$PLANCOPY9" --phase p9 --gate "$GATE_PLAN" --timeout 7 2>"$TMP09/run-err.txt")"; U9_RC=$?
 }
 
 # check9 <json> <check-name> — the check's result string (own helper: this part
@@ -341,6 +344,12 @@ caseRH7() {
   [[ -d "$HOME/.a1-xprov/run-home-fresh" ]] && ok "RH7 a fresh run home (a run in flight) is kept" || bad "RH7 run-home-fresh was removed"
   [[ -L "$HOME/.a1-xprov/run-home-link" && -f "$TMP09/link-target/canary.txt" ]] && ok "RH7 a run-home-* symlink is neither followed nor removed" || bad "RH7 symlink or its target touched"
   rm -rf "$HOME/.a1-xprov/run-home-fresh" "$HOME/.a1-xprov/run-home-link"
+
+  # RH7b — every `xprov run` calls the same sweep first (team lead 2026-10-03)
+  mkdir -p "$HOME/.a1-xprov/run-home-stale2"; chmod 700 "$HOME/.a1-xprov/run-home-stale2"
+  node -e "const fs = require('fs'); const t = (Date.now() - 48 * 3600 * 1000) / 1000; fs.utimesSync(process.argv[1], t, t);" "$HOME/.a1-xprov/run-home-stale2"
+  snap9; run9
+  [[ ! -e "$HOME/.a1-xprov/run-home-stale2" ]] && ok "RH7b xprov run sweeps a stale run home before its own spawn" || bad "RH7b run-home-stale2 survived a run"
 }
 
 # ---------- RH10: names the runner leaves in its HOME are filtered before emission ----------

@@ -30,14 +30,18 @@ prep5() {
 # commit5 <msg> — stage everything in $PHASE_REPO and commit; updates PHASE_HEAD.
 commit5() { ( cd "$PHASE_REPO" && git add -A && git commit -qm "$1" ); PHASE_HEAD="$(cd "$PHASE_REPO" && git rev-parse HEAD)"; }
 
-# snap5 [commit] [base] — snapshot of $PHASE_REPO. Sets S_OUT, S_ERR, S_RC, SNAP.
+# snap5 [commit] [base] — snapshot of $PHASE_REPO with the PLAN.md copy (and,
+# when SNAP_FEEDBACK is set, the feedback copy). Sets S_OUT, S_ERR, S_RC, SNAP,
+# PLANCOPY, FEEDCOPY. Wave 7: `xprov run` accepts only these scanned copies.
 snap5() {
   local commit="${1:-$PHASE_HEAD}"; local base="${2:-}"
   # bash 3.2 + set -u: an empty array expands as "unbound variable" — use the ${a[@]+"${a[@]}"} idiom
-  local extra=(); [[ -n "$base" ]] && extra=(--base "$base")
+  local extra=(--plan "$PHASE_PLAN"); [[ -n "$base" ]] && extra+=(--base "$base")
+  [[ -n "${SNAP_FEEDBACK:-}" ]] && extra+=(--feedback "$SNAP_FEEDBACK")
   S_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov snapshot --repo "$PHASE_REPO" --commit "$commit" ${extra[@]+"${extra[@]}"} 2>"$TMP05/snap-err.txt")"; S_RC=$?
   S_ERR="$(cat "$TMP05/snap-err.txt")"
   SNAP="$(json_get "$S_OUT" "j.snapshot || ''")"; [[ "$SNAP" == "UNPARSEABLE" ]] && SNAP=""
+  PLANCOPY="$SNAP.inputs/PLAN.md"; FEEDCOPY="$SNAP.inputs/feedback.md"
 }
 
 # run5 <mode> [more flags] — `xprov run` from inside $PHASE_REPO. Knobs come
@@ -47,7 +51,7 @@ run5() {
   local mode="$1"; shift
   ARGV_N=$((ARGV_N + 1)); ARGV_FILE="$ARGV_DIR/argv-$ARGV_N.json"; ENV_FILE="$ARGV_DIR/env-$ARGV_N.json"
   FAKE_RUNNER_ARGV_FILE="$ARGV_FILE" FAKE_RUNNER_ENV_FILE="$ENV_FILE" FAKE_RUNNER_CASE="${FAKE_RUNNER_CASE:-approved}" fake_runner_env
-  U_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov run --mode "$mode" --snapshot "$SNAP" --plan "$PHASE_PLAN" --phase p5 --gate "$GATE_PLAN" --timeout 7 "$@" 2>"$TMP05/run-err.txt")"; U_RC=$?
+  U_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov run --mode "$mode" --snapshot "$SNAP" --plan "$PLANCOPY" --phase p5 --gate "$GATE_PLAN" --timeout 7 "$@" 2>"$TMP05/run-err.txt")"; U_RC=$?
   U_ERR="$(cat "$TMP05/run-err.txt")"
 }
 
@@ -69,7 +73,7 @@ caseR11() {
   run5 review
   assert_rc "R11b run --mode review with the fake runner exits 0" 0 "$U_RC" "$U_ERR"
   assert_json "R11c recorded runner argv is exactly review --host claude --repo <snapshot> --plan <abs> --artifacts <dir> --timeout 7" "$(cat "$ARGV_FILE" 2>/dev/null || echo null)" \
-    "JSON.stringify(j)" "$(node -e "process.stdout.write(JSON.stringify([process.argv[1], 'review', '--host', 'claude', '--repo', process.argv[2], '--plan', process.argv[3], '--artifacts', process.argv[4], '--timeout', '7']))" "$runner_real" "$SNAP" "$PHASE_PLAN" "$art")"
+    "JSON.stringify(j)" "$(node -e "process.stdout.write(JSON.stringify([process.argv[1], 'review', '--host', 'claude', '--repo', process.argv[2], '--plan', process.argv[3], '--artifacts', process.argv[4], '--timeout', '7']))" "$runner_real" "$SNAP" "$PLANCOPY" "$art")"
   assert_json "R11d stdout argv[0..1] is python3 + the copy's vendored runner (R22 argv arm)" "$U_OUT" "j.argv[0] + ' ' + j.argv[1]" "python3 $runner_real"
   assert_json "R11e the child received CODEX_HOME = the dedicated home" "$(cat "$ENV_FILE" 2>/dev/null || echo null)" "j.CODEX_HOME" "$XHOME"
   assert_json "R11f stdout names result_path, artifacts_run_dir under the artifacts dir, snapshot, empty baseline_delta" "$U_OUT" \
@@ -87,12 +91,14 @@ caseR11() {
   grep -q "model_requested: CLI default (unresolved)" "$log" && grep -q "gate: $GATE_PLAN" "$log" && grep -q "result: " "$log" \
     && ok "R11k log entry carries gate, model_requested and the result path" || bad "R11k log entry incomplete"
   printf 'accepted: R1\n' > "$TMP05/dispositions.md"
-  # a resume continues a REVIEW of the same repo and plan (runner.py:257-264)
+  # a resume continues a REVIEW of the same repo and plan (runner.py:257-264);
+  # the feedback is the snapshot's scanned copy (Wave 7)
+  SNAP_FEEDBACK="$TMP05/dispositions.md" snap5
   run5 review
   local prev; prev="$(jget "$U_OUT" 'j.result_path')"
-  run5 review --resume "$prev" --feedback "$TMP05/dispositions.md"
-  assert_json "R11l review resume appends --resume <result.json> --feedback <file>" "$(cat "$ARGV_FILE")" \
-    "j.includes('--resume') + '/' + j[j.indexOf('--resume') + 1] + '/' + j[j.indexOf('--feedback') + 1]" "true/$prev/$TMP05/dispositions.md"
+  run5 review --resume "$prev" --feedback "$FEEDCOPY"
+  assert_json "R11l review resume appends --resume <result.json> --feedback <the scanned copy>" "$(cat "$ARGV_FILE")" \
+    "j.includes('--resume') + '/' + j[j.indexOf('--resume') + 1] + '/' + j[j.indexOf('--feedback') + 1]" "true/$prev/$FEEDCOPY"
   # Reinhard W6: --no-log leaves the log untouched (the gate driver writes exactly one entry per call)
   local lines_before; lines_before="$(wc -l < "$log" | tr -d ' ')"
   run5 review --no-log

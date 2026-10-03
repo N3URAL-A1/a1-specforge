@@ -120,11 +120,18 @@ function gc(opts) {
   // Orphaned snapshots (Reinhard PR review): a gate process killed between
   // `snapshot` and its cleanup leaves the clone forever — same age rule.
   const snaps = sweepDirs(path.resolve(X.snapshotsDir()), SNAPSHOT_PREFIX, cutoff);
-  const homes = sweepDirs(path.resolve(X.xprovHome()), RUN_HOME_PREFIX, now - RUN_HOME_STALE_HOURS * MS_PER_HOUR, { sameOwner: true });
+  const homes = sweepRunHomes(now);
   return {
     root, removed: runs.removed, kept: runs.kept, snapshots_root: snaps.root, snapshots_removed: snaps.removed, snapshots_kept: snaps.kept,
     run_homes_removed: homes.removed, run_homes_kept: homes.kept,
   };
+}
+
+/** The stale run-home sweep, shared by gc and (opportunistically) every
+ * `xprov run`, so SIGKILL leftovers never accumulate. */
+function sweepRunHomes(nowMs) {
+  const now = typeof nowMs === 'number' ? nowMs : Date.now();
+  return sweepDirs(path.resolve(X.xprovHome()), RUN_HOME_PREFIX, now - RUN_HOME_STALE_HOURS * MS_PER_HOUR, { sameOwner: true });
 }
 
 /** Remove `<prefix>*` directories under `dir` whose mtime is older than cutoff.
@@ -164,4 +171,4 @@ function cmdXprovGc(args) {
   return C.emitJson(result, X.EXIT_PASS);
 }
 
-module.exports = { ensureArtifactsDir, gc, cmdXprovGc, repoSlug, isUnder, REASON_INSIDE };
+module.exports = { ensureArtifactsDir, gc, sweepRunHomes, cmdXprovGc, repoSlug, isUnder, REASON_INSIDE };

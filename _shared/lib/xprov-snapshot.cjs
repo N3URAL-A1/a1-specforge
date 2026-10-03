@@ -94,6 +94,7 @@ const GITLEAKS_CONFIG = path.join(__dirname, 'xprov-gitleaks.toml');
 const UPLOAD_PACK_FALLBACK = 'git -c uploadpack.allowAnySHA1InWant=true upload-pack'; // literal, ours — not user input
 const INPUTS_SUFFIX = '.inputs';
 const DIFF_SHA_FILE = 'diff.sha256';
+const INPUTS_RECORD_FILE = 'inputs.json'; // { plan: sha256, feedback: sha256 } of the scanned copies
 const INPUT_FILES = Object.freeze({ plan: 'PLAN.md', feedback: 'feedback.md' });
 const SNAP_NAME_RE = /^snap-[A-Za-z0-9]{6}$/; // mkdtemp's six-character suffix
 const FILE_MODE = 0o600;
@@ -440,6 +441,10 @@ function copyInputs(dir, inputs) {
     copies[i.key] = dest;
     labels.push({ dest, label: i.label });
   }
+  // `xprov run` accepts only these copies and re-hashes them right before the
+  // spawn against this record (Codex R1, live inspect 2026-10-03).
+  const record = Object.fromEntries(Object.entries(copies).map(([k, p]) => [k, C.sha256(fs.readFileSync(p))]));
+  fs.writeFileSync(path.join(inputsDir, INPUTS_RECORD_FILE), `${JSON.stringify(record)}\n`, { mode: FILE_MODE });
   return { inputsDir, copies, labels };
 }
 
@@ -529,6 +534,14 @@ function snapshot(opts) {
   };
 }
 
+/** The input-copy hashes `snapshot()` recorded next to the snapshot, or null. */
+function storedInputHashes(dir) {
+  try {
+    const j = JSON.parse(fs.readFileSync(path.join(`${dir}${INPUTS_SUFFIX}`, INPUTS_RECORD_FILE), 'utf8'));
+    return j && typeof j === 'object' && !Array.isArray(j) ? j : null;
+  } catch (_e) { return null; }
+}
+
 /** The diff hash `snapshot()` stored next to the snapshot, or null. */
 function storedDiffSha(dir) {
   try { return fs.readFileSync(path.join(`${dir}${INPUTS_SUFFIX}`, DIFF_SHA_FILE), 'utf8').trim(); } catch (_e) { return null; }
@@ -565,7 +578,7 @@ function cleanupSnapshot(dir) {
 const usage = (msg) => C.usageThrow('snapshot', msg);
 
 function cmdXprovSnapshot(args) {
-  const flags = parseFlags(args, { repo: 'str', commit: 'str', base: 'str', remove: 'str' });
+  const flags = parseFlags(args, { repo: 'str', commit: 'str', base: 'str', remove: 'str', plan: 'str', feedback: 'str' });
   if (flags._.length) usage(`unexpected argument ${JSON.stringify(String(flags._[0]).slice(0, 80))}`);
   if (flags.remove !== undefined) {
     const removed = cleanupSnapshot(flags.remove); // A1_INPUT → facade exit 2
@@ -579,7 +592,16 @@ function cmdXprovSnapshot(args) {
   const repo = path.resolve(flags.repo);
   if (!fs.existsSync(path.join(repo, '.git'))) usage(`--repo is not a git checkout: ${repo}`);
   const top = C.gitOut(['rev-parse', '--show-toplevel']); // FR-030 (b): the primary checkout is the cwd's
-  const r = snapshot({ sourceRepo: repo, commit: flags.commit, base: flags.base, primaryRoot: top === null ? repo : top.trim() });
+  const primaryRoot = top === null ? repo : top.trim();
+  // Wave 7: the inputs `xprov run` will send are copied and scanned here.
+  const label = (p) => { const rel = path.relative(primaryRoot, path.resolve(p)); return rel.startsWith('..') || path.isAbsolute(rel) ? path.basename(p) : rel; };
+  const inputs = [];
+  for (const key of ['plan', 'feedback']) {
+    if (flags[key] === undefined) continue;
+    if (!fs.existsSync(String(flags[key]))) usage(`--${key} not found: ${flags[key]}`);
+    inputs.push({ key, source: path.resolve(String(flags[key])), label: label(String(flags[key])) });
+  }
+  const r = snapshot({ sourceRepo: repo, commit: flags.commit, base: flags.base, primaryRoot, inputs });
   if (!r.ok) {
     process.stderr.write(`xprov snapshot: ${r.reason}${r.reason_detail ? `/${r.reason_detail}` : ''}${r.secret_pattern ? ` (pattern ${r.secret_pattern})` : ''}${r.detail ? ` — ${r.detail}` : ''}\n`);
     for (const u of r.uncovered || []) process.stderr.write(`  uncovered: ${u.path} · ${u.pattern}\n`);
@@ -593,5 +615,5 @@ function cmdXprovSnapshot(args) {
 module.exports = {
   snapshot, cloneSnapshot, cleanupSnapshot, removeDir, scanTrackedFiles, utf16Mode, gitleaksScan, ensureSnapshotsRoot, cmdXprovSnapshot,
   SNAP_PREFIX, REPO_LOCAL_STRIP, GITLEAKS_CONFIG, REF_RE, LINE_MAX_CHARS, LINE_CONTEXT_CHARS,
-  INPUTS_SUFFIX, INPUT_FILES, storedDiffSha, snapshotPathProblem,
+  INPUTS_SUFFIX, INPUT_FILES, storedDiffSha, storedInputHashes, snapshotPathProblem,
 };

@@ -34,7 +34,12 @@
 //     run is an XREVIEW note, not a fail (measured 2026-10-02: 0 entries after a
 //     live inspect). The dir is removed in `finally`, pass or fail; a SIGKILL
 //     skips `finally`, so `xprov gc` (xprov-artifacts.cjs) sweeps `run-home-*`
-//     dirs older than 24 h (lstat, same owner, never following a symlink).
+//     dirs older than 24 h (lstat, same owner, never following a symlink) — and
+//     every `xprov run` calls that same sweep first.
+//   * --plan / --feedback are accepted ONLY as the snapshot's scanned copies
+//     (`<snapshot>.inputs/{PLAN.md,feedback.md}`) whose sha256 snapshot()
+//     recorded; checked after the pin check and re-hashed right before the
+//     spawn — a foreign path, a missing record or a changed byte → refused.
 //     Shell start under the empty HOME was measured (zsh, no newuser prompt,
 //     first exec 0.4 s vs 5.9 s with the real HOME), so no .zshrc is planted and
 //     SHELL stays as allowlisted. XDG_* is not on the env allowlist; TMPDIR is.
@@ -82,11 +87,11 @@ const C = require('./xprov-common.cjs');
 const { REGISTRY_PATH, LANE_RE, sha256, isDir, isFile, gitOut, writeStdoutSync, parsePositive } = C;
 const tail = C.stderrTail;
 const none = C.oneLine;
-const { ensureArtifactsDir, isUnder } = require('./xprov-artifacts.cjs');
+const { ensureArtifactsDir, isUnder, sweepRunHomes } = require('./xprov-artifacts.cjs');
 const { appendXreviewNote } = require('./xprov-normalize.cjs');
 const { filterOutput, instructionMarker } = require('./xprov-filter.cjs');
 const { permitCheck } = require('./xprov-permit.cjs');
-const { SNAP_PREFIX, REPO_LOCAL_STRIP, storedDiffSha } = require('./xprov-snapshot.cjs');
+const { SNAP_PREFIX, REPO_LOCAL_STRIP, storedDiffSha, storedInputHashes, INPUTS_SUFFIX, INPUT_FILES } = require('./xprov-snapshot.cjs');
 
 const NO_LOG_FLAG = 'no-log';
 const FLAGS = Object.freeze({
@@ -391,6 +396,27 @@ function writeRunHomeManifest(runDir, artifactsDir, manifest) {
   fs.writeFileSync(path.join(runDir, RUN_HOME_MANIFEST_FILE), `${JSON.stringify(body, null, 2)}\n`, { mode: MANIFEST_FILE_MODE });
 }
 
+/** --plan / --feedback must be the snapshot's own scanned copies, unchanged
+ * since snapshot() hashed them (Codex R1, live inspect 2026-10-03): a foreign
+ * path, a missing record, a symlink or a changed byte → the reason, else null. */
+function inputProblem(ctx) {
+  const record = storedInputHashes(ctx.snapshot);
+  if (!record) return `no input record next to the snapshot (${ctx.snapshot}${INPUTS_SUFFIX}/inputs.json) — build it with xprov snapshot --plan`;
+  const given = [['plan', ctx.plan], ...(ctx.feedback ? [['feedback', ctx.feedback]] : [])];
+  for (const [key, p] of given) {
+    const expected = path.join(`${ctx.snapshot}${INPUTS_SUFFIX}`, INPUT_FILES[key]);
+    let st;
+    try { st = fs.lstatSync(p); } catch (_e) { return `--${key} ${p} is missing`; }
+    if (st.isSymbolicLink() || !st.isFile()) return `--${key} ${p} is not a regular file`;
+    let same = false;
+    try { same = fs.realpathSync(p) === fs.realpathSync(expected); } catch (_e) { same = false; }
+    if (!same) return `--${key} must be the snapshot's scanned copy ${expected}, got ${p}`;
+    if (typeof record[key] !== 'string') return `the snapshot recorded no ${key} copy`;
+    if (sha256(fs.readFileSync(p)) !== record[key]) return `--${key} copy changed after the snapshot scanned it`;
+  }
+  return null;
+}
+
 /** The snapshot root must be stripped: its own `.agents/skills` would be a skill root. */
 function unstrippedEntries(snapshot) {
   return REPO_LOCAL_STRIP.filter((name) => fs.existsSync(path.join(snapshot, name)));
@@ -478,6 +504,12 @@ function runWithBaseline(ctx, artifactsDir, argv, notes) {
       return failWith(X.REASONS.run_home_unsafe, home.problem, null, false);
     }
     runHome = home.dir;
+    // Re-hash the input copies right before the spawn (TOCTOU since the check in cmdXprovRun).
+    const late = inputProblem(ctx);
+    if (late) {
+      process.stderr.write(`xprov run: ${late}; refusing to spawn\n`);
+      return failWith(X.REASONS.snapshot_failed, late, null, false);
+    }
     const run = spawnRunner(argv, ctx, artifactsDir, runHome);
     const rawManifest = runHomeManifest(runHome);
     writeRunHomeManifest(run.runDir, artifactsDir, rawManifest); // a1's 0700 artifacts dir, like result.json
@@ -537,6 +569,8 @@ function cmdXprovRun(args) {
     process.stderr.write(`xprov run: ${permit.detail || permit.reason}\n`);
     return emit(ctx, { ok: false, reason: permit.reason, reason_detail: permit.detail || null, result_path: null, artifacts_run_dir: null, baseline_delta: [] }, X.EXIT_FAIL);
   }
+  // Opportunistic: run-homes a SIGKILL left behind never accumulate (gc's own sweep, not a copy).
+  sweepRunHomes();
   const notes = snapshotNotes(ctx.snapshot);
   const pin = X.checkRunnerPin();
   if (!pin.ok) {
@@ -550,6 +584,12 @@ function cmdXprovRun(args) {
     process.stderr.write(`xprov run: ${detail}; refusing to spawn\n`);
     appendLog(ctx, { roles: 'unknown', result_path: null, verdict: `fail/${X.REASONS.snapshot_failed}`, notes });
     return emit(ctx, { ok: false, reason: X.REASONS.snapshot_failed, reason_detail: detail, result_path: null, artifacts_run_dir: null, baseline_delta: [] }, X.EXIT_FAIL);
+  }
+  const inputs = inputProblem(ctx);
+  if (inputs) {
+    process.stderr.write(`xprov run: ${inputs}; refusing to spawn\n`);
+    appendLog(ctx, { roles: 'unknown', result_path: null, verdict: `fail/${X.REASONS.snapshot_failed}`, notes });
+    return emit(ctx, { ok: false, reason: X.REASONS.snapshot_failed, reason_detail: inputs, result_path: null, artifacts_run_dir: null, baseline_delta: [] }, X.EXIT_FAIL);
   }
   const diffSha = ctx.mode === 'inspect' ? storedDiffSha(ctx.snapshot) : null;
   if (ctx.mode === 'inspect') {

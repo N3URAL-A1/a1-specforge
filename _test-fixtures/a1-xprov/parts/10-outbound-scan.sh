@@ -54,6 +54,17 @@
 #       Red if a non-empty dir is reused.
 #   RR5 a record plan that is not <record.repo>.inputs/PLAN.md → refused.
 #       Red if resumeTarget drops the plan-path check.
+#
+# `xprov run` takes only the snapshot's scanned copies (Codex R1, live inspect
+# 2026-10-03: the input scan sat in the gate alone, `run` passed any file):
+#   RI1 a foreign --plan (the working-tree PLAN.md) → refused, runner never invoked.
+#       Red if inputProblem drops the path-equality check.
+#   RI2 the PLAN.md copy changed after the snapshot → refused.
+#       Red if inputProblem drops the hash comparison.
+#   RI3 --feedback outside <snapshot>.inputs → refused.
+#       Red if only --plan is checked.
+#   (The second, late re-hash right before the spawn closes the window between
+#   that check and the spawn; no CLI arm can reach it — it shares inputProblem.)
 
 if ! declare -F new8 >/dev/null; then
   bad "part 10: part 08 helpers (new8 …) are not loaded"
@@ -128,13 +139,13 @@ caseO8() {
   make_home; ln -s "$HOME/.codex/auth.json" "$XHOME/auth.json" 2>/dev/null; export A1_XPROV_CODEX_HOME="$XHOME"
   local base; base="$(git -C "$PHASE_REPO" rev-parse HEAD)"
   printf '// wave change\n' >> "$PHASE_REPO/src/add.js"; ( cd "$PHASE_REPO" && git add -A && git commit -qm wave )
-  local out; out="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov snapshot --repo "$PHASE_REPO" --commit HEAD --base "$base" 2>/dev/null)"
+  local out; out="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov snapshot --repo "$PHASE_REPO" --commit HEAD --base "$base" --plan "$PHASE_PLAN" 2>/dev/null)"
   local snap; snap="$(json_get "$out" "j.snapshot || ''")"
   [[ -n "$snap" && -d "$snap" ]] || { bad "O8 setup: snapshot failed: $(json_get "$out" "j.reason")"; return; }
   printf '// changed after the scan\n' >> "$snap/src/add.js"
   local argv="$TMP10/o8-argv.json"
   FAKE_RUNNER_ARGV_FILE="$argv" FAKE_RUNNER_CASE=approved fake_runner_env
-  local u; u="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov run --mode inspect --snapshot "$snap" --plan "$PHASE_PLAN" --phase p10 --gate "$GATE_WAVE" --wave 1 --base "$base" --timeout 7 2>/dev/null)"
+  local u; u="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov run --mode inspect --snapshot "$snap" --plan "$snap.inputs/PLAN.md" --phase p10 --gate "$GATE_WAVE" --wave 1 --base "$base" --timeout 7 2>/dev/null)"
   assert_json "O8 a snapshot diff changed after the scan → tripwire, result discarded" "$u" "j.reason + '/' + String(j.result_path)" "tripwire/null"
   [[ -f "$argv" ]] && ok "O8 (detective) the runner ran; its result was discarded" || bad "O8 the runner never ran — the arm did not reach the comparison"
 }
@@ -222,7 +233,43 @@ caseRR() {
   FAKE_RUNNER_CASE=revise gate8 --gate "$GATE_PLAN" --round 2; refused10 "RR5 a record plan that is not the snapshot's input copy"
 }
 
-caseO1; caseO2; caseO3; caseO4; caseO5; caseO6; caseO7; caseO8; caseO9; caseO10O11; caseO12; caseRR
+# ri10 — direct-run setup: phase repo with permit and home, snapshot with the
+# PLAN.md and feedback copies. Sets PHASE_*, RI_SNAP, RI_DISP.
+ri10() {
+  make_tree; make_phase pri "$CASES/approved.PLAN.md"
+  ( cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov permit --by fixture --record record/2026-09-24-fixture.md >/dev/null 2>&1 )
+  make_home; ln -s "$HOME/.codex/auth.json" "$XHOME/auth.json" 2>/dev/null; export A1_XPROV_CODEX_HOME="$XHOME"
+  RI_DISP="$TMP10/ri-dispositions.md"; printf -- '- F1: accepted\n' > "$RI_DISP"
+  local out; out="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov snapshot --repo "$PHASE_REPO" --commit HEAD --plan "$PHASE_PLAN" --feedback "$RI_DISP" 2>/dev/null)"
+  RI_SNAP="$(json_get "$out" "j.snapshot || ''")"
+}
+# ri_run <plan> [feedback] — `xprov run --mode review` on RI_SNAP. Sets RI_OUT, RI_ARGV.
+ri_run() {
+  RI_ARGV="$TMP10/ri-argv-$RANDOM.json"
+  FAKE_RUNNER_ARGV_FILE="$RI_ARGV" FAKE_RUNNER_CASE=approved fake_runner_env
+  # --feedback needs --resume (usage rule); the input check refuses before the resume is ever read
+  local fb=(); [[ -n "${2:-}" ]] && fb=(--resume "$RI_DISP" --feedback "$2")
+  RI_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov run --mode review --snapshot "$RI_SNAP" --plan "$1" ${fb[@]+"${fb[@]}"} --phase pri --gate "$GATE_PLAN" --timeout 7 2>/dev/null)"
+}
+ri_refused() { # <name> <detail-regex>
+  local got; got="$(json_get "$RI_OUT" "j.reason + ':' + new RegExp('$2').test(String(j.reason_detail))")"
+  [[ "$got" == "snapshot_failed:true" ]] && ok "$1 → refused" || bad "$1: want snapshot_failed:true, got $got"
+  [[ ! -f "$RI_ARGV" ]] && ok "$1: runner never invoked" || bad "$1: runner WAS invoked"
+}
+
+caseRI() {
+  ri10
+  [[ -n "$RI_SNAP" && -f "$RI_SNAP.inputs/PLAN.md" ]] || { bad "RI setup: snapshot with copies failed"; return; }
+  ri_run "$RI_SNAP.inputs/PLAN.md"
+  assert_json "RI setup: the scanned copy runs" "$RI_OUT" "String(j.ok)" "true"
+  ri_run "$PHASE_PLAN"; ri_refused "RI1 a foreign --plan (the working-tree PLAN.md)" "plan must be the snapshot"
+  printf 'appended after the scan\n' >> "$RI_SNAP.inputs/PLAN.md"
+  ri_run "$RI_SNAP.inputs/PLAN.md"; ri_refused "RI2 the PLAN.md copy changed after the snapshot" "changed after the snapshot"
+  ri10
+  ri_run "$RI_SNAP.inputs/PLAN.md" "$RI_DISP"; ri_refused "RI3 --feedback outside <snapshot>.inputs" "feedback must be the snapshot"
+}
+
+caseO1; caseO2; caseO3; caseO4; caseO5; caseO6; caseO7; caseO8; caseO9; caseO10O11; caseO12; caseRR; caseRI
 unset A1_XPROV_CODEX_HOME
 export HOME="$SAVED_HOME_10"
 rm -rf "$TMP10"
