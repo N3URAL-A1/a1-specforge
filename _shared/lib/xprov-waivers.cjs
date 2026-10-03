@@ -20,11 +20,12 @@
 // Authority: load-check and wave-status accept a waiver ONLY from this store
 // and only when the key equals what they compute at check time. The
 // `waived: true` row in index.json and the XREVIEW.md section are a mirror.
-// A wave waiver (and, the same rule, a wave pass) counts for the wave being
-// checked at its own checkpoint only while its head EQUALS the work path's
-// HEAD (a commit added to that wave after the waiver is unreviewed); for an
-// earlier wave it counts while its head is an ancestor of HEAD (later waves
-// build on top). An amended or rebased head drops out.
+// Wave coverage (passes and waivers alike, chainCoverage below; Samuel MAJOR 2
+// on da103f3): per lane the covered waves form a CHAIN — base is an ancestor
+// of head, head of wave N EQUALS base of the next completed wave, and the last
+// completed wave's head EQUALS the lane's work-path HEAD, except for commits
+// that touch only `.a1/phases/<phase>/` (STATUS consolidation, observations;
+// measured from 02-execute/03-verify). No caller-chosen "current wave".
 // ---------------------------------------------------------------------------
 
 const fs = require('fs');
@@ -87,20 +88,53 @@ function planWaiver(store, key) {
   return hits.length ? hits[hits.length - 1] : null;
 }
 
-/** head/base of an entry (pass or waiver) are full shas, base is an ancestor of
- * head, and `headOk(head)` holds (wave-status: equal for the current wave, an
- * ancestor of HEAD for earlier ones). */
-function boundHead(workPath, head, base, headOk) {
-  if (!SHA_RE.test(String(head)) || !SHA_RE.test(String(base))) return false;
-  return headOk(head) && inHistory(workPath, base, head);
+/** Store waivers for (repo, phase, plan sha, wave, lane), oldest first. */
+function waveWaivers(store, key) {
+  return store.waivers.filter((w) => w.gate === X.GATE_IDS.WAVE_INSPECT && w.repo === key.repo && w.phase === key.phase
+    && w.plan_sha256 === key.plan_sha256 && w.wave === key.wave && w.lane === (key.lane || null));
 }
 
-/** The wave waiver for (repo, phase, plan sha, wave, lane) whose head/base pass boundHead — or null. */
-function waveWaiver(store, key, workPath, headOk) {
-  const hits = store.waivers.filter((w) => w.gate === X.GATE_IDS.WAVE_INSPECT && w.repo === key.repo && w.phase === key.phase
-    && w.plan_sha256 === key.plan_sha256 && w.wave === key.wave && w.lane === (key.lane || null)
-    && boundHead(workPath, w.head, w.base, headOk));
-  return hits.length ? hits[hits.length - 1] : null;
+/** Paths changed between two commits, or null when git cannot say. */
+function changedPaths(workPath, from, to) {
+  const out = C.gitOut(['-C', workPath, 'diff', '--name-only', '--no-renames', from, to, '--']);
+  return out === null ? null : out.split('\n').filter(Boolean);
+}
+
+/** The last wave's head is the lane's tip: equal, or an ancestor whose later
+ * commits touch only `exempt` (a path prefix, e.g. `.a1/phases/<phase>/`). */
+function atTip(workPath, head, tip, exempt) {
+  if (head === tip) return true;
+  if (!inHistory(workPath, head, tip)) return false;
+  const changed = changedPaths(workPath, head, tip);
+  return changed !== null && changed.every((p) => p.startsWith(exempt));
+}
+
+/** Coverage of completed (wave, lane) pairs by candidate entries.
+ * candidates(p) → [{ kind, head, base }] oldest first; tips[lane|''] →
+ * { workPath, head } or undefined (no work path for that lane → fail closed).
+ * Returns a Map pair-key → chosen entry or null. Walks each lane from its last
+ * completed wave down: the last must sit at the tip (atTip), every earlier one
+ * must end exactly where the next one's base starts; a lacking successor makes
+ * every earlier wave of the lane lack too (fail closed). */
+function chainCoverage(pairs, candidates, tips, exempt) {
+  const chosen = new Map();
+  const key = (p) => `${p.wave}|${p.lane || ''}`;
+  const lanes = [...new Set(pairs.map((p) => p.lane || ''))];
+  for (const lane of lanes) {
+    const waves = pairs.filter((p) => (p.lane || '') === lane).sort((a, b) => a.wave - b.wave);
+    const tip = tips[lane];
+    let next = null;
+    for (let i = waves.length - 1; i >= 0; i--) {
+      const p = waves[i];
+      const isLast = i === waves.length - 1;
+      const ok = (c) => SHA_RE.test(String(c.head)) && SHA_RE.test(String(c.base)) && inHistory(tip.workPath, c.base, c.head)
+        && (isLast ? atTip(tip.workPath, c.head, tip.head, exempt) : next !== null && c.head === next.base);
+      const pick = tip ? [...candidates(p)].reverse().find(ok) || null : null;
+      chosen.set(key(p), pick);
+      next = pick;
+    }
+  }
+  return chosen;
 }
 
 /** Appends one record; a broken existing store is never replaced (Samuel S-m5 for approvals). */
@@ -112,4 +146,4 @@ function appendWaiver(record, writeGuardedStore) {
   return writeGuardedStore(WAIVERS_FILE, { version: 1, waivers: [...current.waivers, rec] });
 }
 
-module.exports = { WAIVERS_FILE, RECORD_KEYS, waiversPath, readWaivers, planShaOf, headIn, inHistory, boundHead, planWaiver, waveWaiver, appendWaiver, validRecord };
+module.exports = { WAIVERS_FILE, RECORD_KEYS, waiversPath, readWaivers, planShaOf, headIn, inHistory, planWaiver, waveWaivers, chainCoverage, atTip, appendWaiver, validRecord };

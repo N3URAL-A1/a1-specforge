@@ -30,6 +30,21 @@ VENDOR="$REPO_ROOT/_shared/vendor/claudex-loop"
 REGISTRY="$REPO_ROOT/_shared/gates-registry.md"
 ADR="$REPO_ROOT/docs/adr/2026-09-24-cross-provider-review-gate.md"
 
+# Suite isolation (team lead, 2026-10-03: 88 empty ~/.a1-xprov/artifacts/tmp.*
+# dirs and their $TMPDIR fixture repos piled up). Every part runs under a suite
+# HOME and a suite TMPDIR inside one mktemp root that the EXIT trap removes; the
+# real ~/.a1-xprov is listed (two levels: stores, artifacts/<slug>,
+# snapshots/snap-*) before the parts and compared after — any change is a FAIL.
+REAL_XPROV_HOME="$HOME/.a1-xprov"
+xprov_listing() { if [[ -d "$REAL_XPROV_HOME" ]]; then (cd "$REAL_XPROV_HOME" && find . -mindepth 1 -maxdepth 2 | LC_ALL=C sort); else echo "(absent)"; fi; }
+XPROV_BEFORE="$(xprov_listing)"
+SUITE_TMP_PARENT="${TMPDIR:-/tmp}"; SUITE_ROOT="$(mktemp -d "${SUITE_TMP_PARENT%/}/a1-xprov-suite.XXXXXX")"
+[[ -n "$SUITE_ROOT" && -d "$SUITE_ROOT" ]] || { echo "FAIL  harness: mktemp for the suite root failed" >&2; exit 1; }
+trap 'rm -rf "$SUITE_ROOT"' EXIT
+export TMPDIR="$SUITE_ROOT/tmp"; mkdir -p "$TMPDIR"
+export HOME="$SUITE_ROOT/home"; mkdir -p "$HOME/.codex"
+printf '{"fixture":true}\n' > "$HOME/.codex/auth.json"; chmod 600 "$HOME/.codex/auth.json"
+
 EXPECTED_RUNNER_SHA256="962dfdfe5d67b75eb73ec7c38b9186e6e6e0ca96a68d4ec82595305d8f737c8c"
 EXPECTED_RUNNER_VERSION="2.1.0"
 EXPECTED_UPSTREAM_COMMIT="8cf5e2c1771c5151d90c12642391d0ba8fa71b0e"
@@ -205,6 +220,9 @@ for p in "${parts[@]}"; do
   # shellcheck disable=SC1090
   source "$p"
 done
+
+if [[ "$(xprov_listing)" == "$XPROV_BEFORE" ]]; then ok "harness: the real ~/.a1-xprov is unchanged by the suite"
+else bad "harness: the suite changed the real ~/.a1-xprov: $(diff <(printf '%s\n' "$XPROV_BEFORE") <(xprov_listing) | head -5 | tr '\n' ' ')"; fi
 
 printf '%s\n' "${results[@]}"
 echo "----"

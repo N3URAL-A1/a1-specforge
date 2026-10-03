@@ -171,14 +171,16 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   --expect-sha: the sha accepted at Load; a different PLAN.md
                   now → plan_changed (a1-execute runs it before every wave).
     wave-status --phase <name> [--waves 1,2,3] [--work-path <dir>]
-                [--current-wave N [--lane <id>]]
+                [--lane-work-path <lane>=<dir>[,…]]
                   (xprov-gate.cjs, wave 6) every completed wave needs a
-                  wave-inspect-xprov pass or a store waiver, both bound alike:
-                  this PLAN.md's sha, base an ancestor of head, and head EQUAL
-                  to --work-path's HEAD for --current-wave (the wave at its own
-                  checkpoint), an ancestor of HEAD for earlier waves. Passes
-                  carry head/base since Wave 7 (normalize --head/--base);
-                  index.json waived: true rows count for nothing.
+                  wave-inspect-xprov pass or a store waiver, both bound to this
+                  PLAN.md's sha and chained per lane: base an ancestor of head,
+                  head of wave N = base of the next completed wave, the last
+                  wave's head = the lane work path's HEAD (only commits under
+                  .a1/phases/<name>/ may follow). Passes carry head/base from
+                  the run dir's a1-reviewed.json (written by xprov run); a lane
+                  without --lane-work-path lacks. index.json waived: true rows
+                  count for nothing.
     allowlist propose --commit <rev> [--json] [--repo <git-toplevel>]
                   (xprov-approve.cjs, wave 6b) every secret-pattern match at
                   <rev> as path:line:column, pattern, proposed class, masked

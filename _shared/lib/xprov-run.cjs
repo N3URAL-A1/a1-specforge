@@ -109,6 +109,7 @@ const RUNNER_MODES = new Set(X.RUNNER_MODES);
 const RUN_DIR_PREFIX = 'claudex-';
 const RUN_HOME_PREFIX = 'run-home-';
 const RUN_HOME_MANIFEST_FILE = 'run-home.manifest.json';
+const REVIEWED_FILE = 'a1-reviewed.json'; // what an inspection reviewed (normalize binds head/base from it)
 const RUN_HOME_MANIFEST_MAX = 500; // entries recorded; the count is always exact
 const RUN_HOME_NOTE_MAX = 20; // entries listed in the XREVIEW note
 const FAILURE_DETAIL_MAX = 300; // characters of the runner's own failure reason kept in reason_detail
@@ -622,7 +623,20 @@ function judgeRun(ctx, o, run, artifactsDir, delta, baselinePath, seen) {
     process.stderr.write(`xprov run: secret_in_output (pattern ${hit.pattern_name}); run dir kept for inspection: ${run.runDir}\n`);
     return o.finish({ reason: X.REASONS.secret_in_output, secret_pattern: hit.pattern_name, baseline_delta: [], result_path: null, artifacts_run_dir: run.runDir, ...seen }, `fail/${X.REASONS.secret_in_output}`, X.EXIT_FAIL);
   }
+  if (ctx.mode === 'inspect') writeReviewedRecord(ctx, run.runDir);
   return o.finish({ reason: null, baseline_delta: [], result_path: resultPath, artifacts_run_dir: run.runDir, ...seen }, 'pending', X.EXIT_PASS);
+}
+
+/** a1's own record of what an inspection reviewed, in the 0700 run dir (Samuel
+ * MAJOR 1, da103f3): the snapshot's commit, the full base and the scanned diff
+ * hash. normalize takes head/base ONLY from here (checked against the runner's
+ * snapshot.base and diff_sha256) — never from flags or the live work path. */
+function writeReviewedRecord(ctx, runDir) {
+  const commit = C.gitOut(['-C', ctx.snapshot, 'rev-parse', '--verify', '--quiet', 'HEAD^{commit}']);
+  const base = C.gitOut(['-C', ctx.snapshot, 'rev-parse', '--verify', '--quiet', `${ctx.base}^{commit}`]);
+  const diffSha = storedDiffSha(ctx.snapshot);
+  if (commit === null || base === null || !diffSha) return;
+  fs.writeFileSync(path.join(runDir, REVIEWED_FILE), `${JSON.stringify({ commit: commit.trim(), base: base.trim(), diff_sha256: diffSha }, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
 }
 
 /** Pre-spawn run home + late input re-hash, spawn, post-run judgement; the
@@ -718,5 +732,5 @@ function cmdXprovRun(args) {
 module.exports = {
   cmdXprovRun, buildArgv, buildEnv, spawnOptions, baselineDelta, takeBaseline, gitMeta, fileHashes, snapshotNotes, runDirFromStdout,
   prepareRunHome, removeRunHome, runHomeManifest,
-  LOG_HEADER, NO_LOG_FLAG, ALLOWED_ENV, CODEX_RUNTIME_DIRS, CODEX_RUNTIME_FILES, RUN_HOME_PREFIX,
+  LOG_HEADER, NO_LOG_FLAG, REVIEWED_FILE, ALLOWED_ENV, CODEX_RUNTIME_DIRS, CODEX_RUNTIME_FILES, RUN_HOME_PREFIX,
 };

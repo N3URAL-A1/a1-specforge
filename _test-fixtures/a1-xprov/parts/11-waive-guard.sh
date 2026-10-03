@@ -13,6 +13,8 @@
 #   W4  the PreToolUse hook denies a Bash command containing `xprov waive`
 #       (also obfuscated) or the store path `a1-xprov/waivers`; `git status`
 #       passes.                                            Red if the hook pattern is dropped.
+#   W4b the same without node on PATH (raw-JSON fallback): escaped quotes / \n.
+#       Red if the fallback keeps backslashes.
 #   W5  (owner path, pseudo-TTY outside Claude Code) the gate id typed back →
 #       exit 0; the store record's key equals what THIS file computes from the
 #       spec (realpath of git-common-dir, sha256 of the raw PLAN.md); index.json
@@ -115,6 +117,15 @@ caseW() {
   done
   hv="$(printf '{"tool_name":"Bash","tool_input":{"command":"git status"}}' | bash "$hook" 2>/dev/null)"
   [[ "$hv" != *deny* ]] && ok "W4 hook lets git status through" || bad "W4 hook denied git status"
+  # W4b — the fallback without node judges the raw JSON (Samuel NIT): escaped quotes and \n
+  local nonode="$TMP11/nonode-bin"; mkdir -p "$nonode"
+  for tool in cat sed tr printf; do [[ -x "/usr/bin/$tool" ]] && ln -sf "/usr/bin/$tool" "$nonode/$tool"; [[ -x "/bin/$tool" ]] && ln -sf "/bin/$tool" "$nonode/$tool"; done
+  for p in 'xprov \"waive\" --phase p' 'xprov \\\nwaive --phase p' 'xprov  waive --phase p'; do
+    hv="$(printf '{"tool_name":"Bash","tool_input":{"command":"%s"}}' "$p" | PATH="$nonode" /bin/bash "$hook" 2>/dev/null)"
+    [[ "$hv" == *'"deny"'* ]] && ok "W4b hook without node denies ${p}" || bad "W4b hook without node let ${p} through"
+  done
+  hv="$(printf '{"tool_name":"Bash","tool_input":{"command":"git status"}}' | PATH="$nonode" /bin/bash "$hook" 2>/dev/null)"
+  [[ "$hv" != *deny* ]] && ok "W4b hook without node lets git status through" || bad "W4b hook without node denied git status"
 
   if claude_ancestor11; then
     skip11 "W5 owner waiver for the plan gate"; skip11 "W6 wrong typed gate id"; skip11 "W7 owner waiver for a wave"; skip11 "W8 atomic second write"

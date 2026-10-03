@@ -210,7 +210,8 @@ EOF
 EOF
   sub6 wave-status --phase p6
   assert_rc "R4a waves 1–3 completed, wave 2 without pass → exit 1" 1 "$G_RC"
-  assert_json "R4a stdout lists wave 2 as lacking, completed waves from STATUS.md, enforcement echoed" "$G_OUT" "[j.lacking.join(','), j.completed_waves.join(','), j.enforcement, j.reason].join('/')" "2/1,2,3/warning/wave_inspect_missing"
+  # wave 1 lacks too: the chain is fail-closed behind a lacking wave (Samuel MAJOR 2)
+  assert_json "R4a stdout lists waves 2 and (behind it) 1 as lacking, completed waves from STATUS.md, enforcement echoed" "$G_OUT" "[j.lacking.join(','), j.completed_waves.join(','), j.enforcement, j.reason].join('/')" "1,2/1,2,3/warning/wave_inspect_missing"
   sub6 wave-status --phase p6 --waves 1,3
   assert_rc "R4b --waves 1,3 overrides STATUS.md → exit 0" 0 "$G_RC" "$G_ERR"
   sub6 wave-status --phase p6 --waves 2
@@ -342,6 +343,10 @@ caseR7() {
   sub6 waive --phase p6 --gate "$GATE_PLAN" --reason "x"; assert_rc "R7c a waiver without --by is a usage error" 2 "$G_RC"
   sub6 waive --phase p6 --gate xprov-review --reason "x" --by fixture; assert_rc "R7c unregistered gate id is a usage error" 2 "$G_RC"
   sub6 waive --phase p6 --gate "$GATE_PLAN" --reason "$(printf 'line one\nline two')" --by fixture; assert_rc "R7f a reason with a newline is a usage error" 2 "$G_RC"
+  sub6 waive --phase p6 --gate "$GATE_PLAN" --reason "$(printf 'one\xe2\x80\xa8two')" --by fixture; assert_rc "R7f2 a reason with U+2028 is a usage error (Samuel MINOR 2)" 2 "$G_RC"
+  printf '%s' "$G_ERR" | grep -q "line-separator or bidi" && ok "R7f2 …refused by the text check, before the guard" || bad "R7f2 not refused by the text check: $G_ERR"
+  sub6 waive --phase p6 --gate "$GATE_PLAN" --reason quota --by "$(printf 'owner\xe2\x80\xaeevil')"; assert_rc "R7f2 a --by with a bidi override is a usage error" 2 "$G_RC"
+  printf '%s' "$G_ERR" | grep -q "line-separator or bidi" && ok "R7f2 --by refused by the text check" || bad "R7f2 --by not refused by the text check: $G_ERR"
   # R7d — an index-only waiver has no authority (SC-011)
   printf '[{"gate":"%s","wave":null,"lane":null,"waived":true,"reason":"hand-written","by":"human","ts":"2026-10-03T00:00:00.000Z"}]\n' "$GATE_PLAN" > "$PHASE_DIR/xreview/index.json"
   sub6 load-check --phase p6
@@ -378,7 +383,7 @@ caseR7() {
   assert_rc "R7k a wave waiver whose head is HEAD → wave-status exit 0" 0 "$G_RC" "$G_ERR"
   ( cd "$PHASE_REPO" && printf '// later wave\n' >> src/add.js && git commit -qam "wave 2" )
   sub6 wave-status --phase p6 --waves 1
-  assert_rc "R7k …and still after a later commit on top (head in history)" 0 "$G_RC" "$G_ERR"
+  assert_rc "R7k a later commit outside .a1/phases/p6/ after the waived last wave → exit 1 (unreviewed)" 1 "$G_RC"
   ( cd "$PHASE_REPO" && git reset -q --hard "$h1" && git commit -q --amend -m "amended wave 1" )
   sub6 wave-status --phase p6
   assert_rc "R7k the waived head amended away → exit 1" 1 "$G_RC"
@@ -506,67 +511,89 @@ caseR8() {
   printf '## Wave 1 — storage\n' > "$PHASE_DIR/STATUS-storage.md"
   printf '[{"gate":"%s","wave":1,"lane":"runtime","round":1,"verdict":"pass","reason":null,"plan_sha256":"%s","head":"%s","base":"%s","result_path":"/x","ts":"2026-09-24T11:00:00.000Z"}]\n' "$GATE_WAVE" "$(plansha6)" "$PHASE_HEAD" "$PHASE_HEAD" > "$PHASE_DIR/xreview/index.json"
   sub6 wave-status --phase p6
+  assert_rc "R8j lanes without --lane-work-path lack (fail closed)" 1 "$G_RC"
+  sub6 wave-status --phase p6 --lane-work-path "runtime=$PHASE_REPO,storage=$PHASE_REPO"
   assert_rc "R8j lane storage lacks its inspection → exit 1" 1 "$G_RC"
   assert_json "R8j lacking_detail names wave 1 lane storage, completed_detail both lanes" "$G_OUT" "j.lacking_detail.map((p) => p.wave + ':' + p.lane).join(',') + '|' + j.completed_detail.map((p) => p.wave + ':' + p.lane).join(',')" "1:storage|1:runtime,1:storage"
   waiver6 "$GATE_WAVE" 1 storage "$PHASE_HEAD" "$PHASE_HEAD"
-  sub6 wave-status --phase p6
+  sub6 wave-status --phase p6 --lane-work-path "runtime=$PHASE_REPO,storage=$PHASE_REPO"
   assert_rc "R8j both lane waves covered → exit 0" 0 "$G_RC" "$G_ERR"
 }
 
-# ---------- WS: passes and waivers bound alike; current wave = exact head ----------
-# (team-lead decision, 2026-10-03, R2 of the 1638616 inspect)
-#   WS1 a pass at H, then one more commit in the SAME wave: --current-wave N → not counted.
-#       Red if the current wave accepts an ancestor head.
-#   WS2 the same pass as an EARLIER wave (no --current-wave, or another current wave) → counted.
-#       Red if earlier waves need an exact head.
-#   WS3 the pass's head amended away → not counted.   Red if passes ignore head.
-#   WS4 a pass for an older PLAN.md → not counted.     Red if passes ignore plan_sha256.
-#   WS5 the same three for a store waiver (extra commit, earlier wave, amended).
-#   WS6 the gate records head = the snapshotted commit and the full base in the inspect entry.
-#       Red if normalize drops --head/--base.
+# ---------- WS: passes and waivers bound alike, chained per lane ----------
+# (team lead + Samuel MAJOR 1/2 on da103f3). Each arm with its red-making change:
+#   WS1 a commit (outside .a1/phases/p6/) after the last wave's pass, no flag → exit 1.
+#       Red if the last wave accepts an ancestor head.
+#   WS2 a clean chain (head_1 = base_2, head_2 = HEAD) → exit 0.   Red if earlier waves need head = HEAD.
+#   WS3 a gap between head_1 and base_2 → exit 1.                   Red if the chain equality is dropped.
+#   WS4 after the last wave only a commit under .a1/phases/p6/ → exit 0; one outside → exit 1.
+#       Red if the path exception is dropped / widened to everything.
+#   WS5 an entry whose base is not an ancestor of its head → exit 1. Red if the base check is dropped.
+#   WS6 a pass for an older PLAN.md → exit 1.                       Red if passes ignore plan_sha256.
+#   WS7 the same rules for a store waiver (chain clean / extra commit).
+#   WS8 the gate's inspect entry carries head/base from a1-reviewed.json; wave-status counts it.
+#       Red if normalize takes head/base from anywhere else.
+#   WS9 re-normalizing the old run dir after a new commit → usage error (no replay), and a
+#       copy of it without a1-reviewed.json binds nothing → wave-status exit 1.
+#       Red if normalize derives head from the work path.
+wpass6() { # <wave> <head> <base> [plan_sha] — one bound pass row (JSON object)
+  printf '{"gate":"%s","wave":%s,"lane":null,"round":1,"verdict":"pass","reason":null,"plan_sha256":"%s","head":"%s","base":"%s","result_path":"/x","ts":"2026-10-03T00:00:00.000Z"}' "$GATE_WAVE" "$1" "${4:-$(plansha6)}" "$2" "$3"
+}
+c6() { ( cd "$PHASE_REPO" && printf '%s\n' "$2" >> "$1" && git add -A && git commit -qm "$2" ); git -C "$PHASE_REPO" rev-parse HEAD; }
 caseWS() {
   prep6
   mkdir -p "$PHASE_DIR/xreview"; printf '## Wave 1 — one\n## Wave 2 — two\n' > "$PHASE_DIR/STATUS.md"
-  ( cd "$PHASE_REPO" && git add -A && git commit -qm "status" ); local h="$(git -C "$PHASE_REPO" rev-parse HEAD)"
-  local ps; ps="$(plansha6)"
-  printf '[{"gate":"%s","wave":2,"lane":null,"round":1,"verdict":"pass","reason":null,"plan_sha256":"%s","head":"%s","base":"%s","result_path":"/x","ts":"2026-10-03T00:00:00.000Z"}]\n' "$GATE_WAVE" "$ps" "$h" "$PHASE_HEAD" > "$PHASE_DIR/xreview/index.json"
-  sub6 wave-status --phase p6 --waves 2 --current-wave 2
-  assert_rc "WS setup: the pass at HEAD counts for the current wave" 0 "$G_RC" "$G_ERR"
-  ( cd "$PHASE_REPO" && printf '// unreviewed\n' >> src/add.js && git commit -qam "late commit in wave 2" )
-  sub6 wave-status --phase p6 --waves 2 --current-wave 2
-  assert_rc "WS1 one more commit in the same wave → the pass does not count" 1 "$G_RC"
-  sub6 wave-status --phase p6 --waves 2
-  assert_rc "WS2 the same pass as an earlier wave (descendant commits) → counted" 0 "$G_RC" "$G_ERR"
-  sub6 wave-status --phase p6 --waves 2 --current-wave 3
-  assert_rc "WS2 …also while another wave is current" 0 "$G_RC" "$G_ERR"
-  ( cd "$PHASE_REPO" && git reset -q --hard "$h" && git commit -q --amend -m "amended status" )
-  sub6 wave-status --phase p6 --waves 2
-  assert_rc "WS3 the pass's head amended away → not counted" 1 "$G_RC"
-  printf '[{"gate":"%s","wave":2,"lane":null,"round":1,"verdict":"pass","reason":null,"plan_sha256":"%s","head":"%s","base":"%s","result_path":"/x","ts":"2026-10-03T00:00:00.000Z"}]\n' "$GATE_WAVE" "0000000000000000000000000000000000000000000000000000000000000000" "$(git -C "$PHASE_REPO" rev-parse HEAD)" "$PHASE_HEAD" > "$PHASE_DIR/xreview/index.json"
-  sub6 wave-status --phase p6 --waves 2 --current-wave 2
-  assert_rc "WS4 a pass for another PLAN.md sha → not counted" 1 "$G_RC"
-  # WS5 — the waiver, same rule
-  printf '[]\n' > "$PHASE_DIR/xreview/index.json"; local h2; h2="$(git -C "$PHASE_REPO" rev-parse HEAD)"
-  waiver6 "$GATE_WAVE" 2 "" "$h2" "$PHASE_HEAD"
-  sub6 wave-status --phase p6 --waves 2 --current-wave 2
-  assert_rc "WS5 setup: the waiver at HEAD counts for the current wave" 0 "$G_RC" "$G_ERR"
-  ( cd "$PHASE_REPO" && printf '// unreviewed 2\n' >> src/add.js && git commit -qam "late commit after the waiver" )
-  sub6 wave-status --phase p6 --waves 2 --current-wave 2
-  assert_rc "WS5 one more commit after the waiver in the same wave → not counted" 1 "$G_RC"
-  sub6 wave-status --phase p6 --waves 2
-  assert_rc "WS5 the waiver as an earlier wave → counted" 0 "$G_RC" "$G_ERR"
-  ( cd "$PHASE_REPO" && git reset -q --hard "$h2" && git commit -q --amend -m "amended again" )
-  sub6 wave-status --phase p6 --waves 2
-  assert_rc "WS5 the waiver's head amended away → not counted" 1 "$G_RC"
-  # WS6 — what the gate writes
+  local b1="$PHASE_HEAD" h1 h2
+  h1="$(c6 src/add.js '// wave 1')"; h2="$(c6 src/add.js '// wave 2')"
+  printf '[%s,%s]\n' "$(wpass6 1 "$h1" "$b1")" "$(wpass6 2 "$h2" "$h1")" > "$PHASE_DIR/xreview/index.json"
+  sub6 wave-status --phase p6
+  assert_rc "WS2 a clean chain (head_1 = base_2, head_2 = HEAD) → exit 0" 0 "$G_RC" "$G_ERR"
+  printf '[%s,%s]\n' "$(wpass6 1 "$b1" "$b1")" "$(wpass6 2 "$h2" "$h1")" > "$PHASE_DIR/xreview/index.json"
+  sub6 wave-status --phase p6
+  assert_rc "WS3 a gap between head_1 and base_2 → exit 1" 1 "$G_RC"
+  assert_json "WS3 wave 1 is the lacking one" "$G_OUT" "j.lacking.join(',')" "1"
+  printf '[%s,%s]\n' "$(wpass6 1 "$h1" "$h2")" "$(wpass6 2 "$h2" "$h1")" > "$PHASE_DIR/xreview/index.json"
+  sub6 wave-status --phase p6
+  assert_rc "WS5 a wave-1 entry whose base is not an ancestor of its head → exit 1" 1 "$G_RC"
+  printf '[%s,%s]\n' "$(wpass6 1 "$h1" "$b1")" "$(wpass6 2 "$h2" "$h1" 0000000000000000000000000000000000000000000000000000000000000000)" > "$PHASE_DIR/xreview/index.json"
+  sub6 wave-status --phase p6
+  assert_rc "WS6 a pass for another PLAN.md sha → exit 1" 1 "$G_RC"
+  printf '[%s,%s]\n' "$(wpass6 1 "$h1" "$b1")" "$(wpass6 2 "$h2" "$h1")" > "$PHASE_DIR/xreview/index.json"
+  c6 "$PHASE_DIR/observations.jsonl" '{"note":"phase-dir only"}' >/dev/null
+  sub6 wave-status --phase p6
+  assert_rc "WS4 after the last wave only a commit under .a1/phases/p6/ → exit 0" 0 "$G_RC" "$G_ERR"
+  c6 src/add.js '// unreviewed' >/dev/null
+  sub6 wave-status --phase p6
+  assert_rc "WS1/WS4 a commit outside .a1/phases/p6/ after the last wave (no flag) → exit 1" 1 "$G_RC"
+  assert_json "WS1 wave 2 lacks, and so does wave 1 behind it (fail closed)" "$G_OUT" "j.lacking.join(',')" "1,2"
+  # WS7 — a store waiver in the chain
+  local h3; h3="$(git -C "$PHASE_REPO" rev-parse HEAD)"
+  printf '[%s]\n' "$(wpass6 1 "$h1" "$b1")" > "$PHASE_DIR/xreview/index.json"
+  waiver6 "$GATE_WAVE" 2 "" "$h3" "$h1"
+  sub6 wave-status --phase p6
+  assert_rc "WS7 pass for wave 1 + store waiver for wave 2 chained to HEAD → exit 0" 0 "$G_RC" "$G_ERR"
+  c6 src/add.js '// after the waiver' >/dev/null
+  sub6 wave-status --phase p6
+  assert_rc "WS7 a commit after the waived last wave → exit 1" 1 "$G_RC"
+  # WS8/WS9 — what the gate writes, and no replay
   prep6
-  local hb; hb="$(git -C "$PHASE_REPO" rev-parse HEAD)"
   gate6 --gate "$GATE_WAVE" --wave 1 --base "$PHASE_HEAD"
-  assert_json "WS6 the inspect entry carries head = the snapshotted HEAD and the full base" "$(cat "$PHASE_DIR/xreview/index.json")" \
-    "(j.find((e) => e.gate === '$GATE_WAVE') || {}).head + '/' + (j.find((e) => e.gate === '$GATE_WAVE') || {}).base" "$hb/$PHASE_HEAD"
-  sub6 wave-status --phase p6 --waves 1 --current-wave 1
-  assert_rc "WS6 …and wave-status counts it at its own checkpoint" 0 "$G_RC" "$G_ERR"
-  grep -q "wave-status --phase <phase_name> --waves <N> --current-wave <N> --work-path" "$REPO_ROOT/skills/a1-execute/workflows/02-execute.md" && ok "WS6 02-execute.md checks the current wave at 2c" || bad "WS6 02-execute.md lacks the 2c current-wave check"
+  local rp; rp="$(json_get "$G_OUT" "j.result_path")"
+  [[ -f "$(dirname "$rp")/a1-reviewed.json" ]] && ok "WS8 run wrote a1-reviewed.json into a1's run dir" || bad "WS8 no a1-reviewed.json next to $rp"
+  assert_json "WS8 the inspect entry carries head = the snapshotted HEAD and the full base" "$(cat "$PHASE_DIR/xreview/index.json")" \
+    "(j.find((e) => e.gate === '$GATE_WAVE') || {}).head + '/' + (j.find((e) => e.gate === '$GATE_WAVE') || {}).base" "$PHASE_HEAD/$PHASE_HEAD"
+  printf '## Wave 1 — one\n' > "$PHASE_DIR/STATUS.md"
+  sub6 wave-status --phase p6 --waves 1
+  assert_rc "WS8 …and wave-status counts it" 0 "$G_RC" "$G_ERR"
+  c6 src/add.js '// unreviewed after the pass' >/dev/null
+  sub6 normalize "$rp" --phase p6 --gate "$GATE_WAVE" --wave 1 --round 2 --work-path "$PHASE_REPO"
+  assert_rc "WS9 re-normalizing an indexed run dir → usage error (no replay)" 2 "$G_RC"
+  local copy; copy="$(dirname "$(dirname "$rp")")/claudex-replay1"; mkdir -p "$copy"; cp "$rp" "$copy/result.json"; [[ -f "$(dirname "$rp")/reply.txt" ]] && cp "$(dirname "$rp")/reply.txt" "$copy/"
+  sub6 normalize "$copy/result.json" --phase p6 --gate "$GATE_WAVE" --wave 1 --round 2 --work-path "$PHASE_REPO"
+  assert_json "WS9 a copy without a1-reviewed.json gets no head/base" "$(cat "$PHASE_DIR/xreview/index.json")" "String(j[j.length - 1].head) + '/' + String(j[j.length - 1].base)" "null/null"
+  sub6 wave-status --phase p6 --waves 1
+  assert_rc "WS9 …so the unreviewed commit is not covered → exit 1" 1 "$G_RC"
+  grep -q "wave-status --phase <phase_name> --work-path \$WORK_PATH > " "$REPO_ROOT/skills/a1-execute/workflows/02-execute.md" && ok "WS8 02-execute.md checks the chain at 2c" || bad "WS8 02-execute.md lacks the 2c chain check"
 }
 
 caseR2; caseR3; caseR4; caseR6; caseR7; caseR8; caseR9g; caseWS
