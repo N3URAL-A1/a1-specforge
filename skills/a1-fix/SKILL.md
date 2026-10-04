@@ -35,6 +35,11 @@ This skill is a thin orchestrator. The phase logic lives in `workflows/`. The
 shared CLI helper (`<repo>/_shared/a1-tools.cjs`) handles deterministic
 file ops. Sub-agents do the actual thinking.
 
+## Spawn Policy (HARD RULE)
+
+Spawn a1 agents by `subagent_type` without `name` (else pass `model` explicitly); briefs carry
+paths, not documents. Details + self-check: `_shared/spawn-policy.md`.
+
 ## Phases
 
 | # | Phase | Workflow | Status after |

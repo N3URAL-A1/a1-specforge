@@ -57,6 +57,11 @@ manually or via Alex directly. If the user wants to audit whether code complies
 with a constitution, that is a manual Reinhard/Tobi review with the
 constitution provided as input — not this skill.
 
+## Spawn Policy (HARD RULE)
+
+Spawn a1 agents by `subagent_type` without `name` (else pass `model` explicitly); briefs carry
+paths, not documents. Details + self-check: `_shared/spawn-policy.md`.
+
 ## Phases
 
 | # | Phase | Workflow | Status after |

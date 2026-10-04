@@ -23,6 +23,10 @@ For each wave in PLAN.md (skipping already-completed waves per STATUS.md):
 
 ### 2a. Spawn a1-erik-executor
 
+Dispatch with `subagent_type: "a1-specforge:a1-erik-executor"` and **no `name`**, so the
+executor's frontmatter tier applies (`_shared/spawn-policy.md` S1). A named spawn such as
+`erik-<spec>-w<n>` runs as a teammate on the inherited session model — the measured leak.
+
 Record the pre-wave HEAD first — step 2b compares against it:
 
 ```bash
