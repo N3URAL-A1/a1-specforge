@@ -72,7 +72,7 @@ const CONFIG_FILE = 'config.toml';
 const AUTH_FILE = 'auth.json';
 const GLOBAL_CODEX_DIRNAME = '.codex';
 const PYTHON_MIN = Object.freeze([3, 10]);
-const ALLOWED_SESSION_TOOLS = Object.freeze(['exec', 'shell', 'local_shell']);
+const { ALLOWED_SESSION_TOOLS, sessionTools, sessionToolNames } = require('./xprov-session-tools.cjs');
 const REQUIRED_FEATURES_OFF = Object.freeze(['plugins', 'remote_plugin']);
 // Wave 7 pins, in the order `codex features disable` writes them (memories last: a1's own line).
 const FEATURE_PINS = Object.freeze(['apps', 'browser_use', 'computer_use', 'hooks', 'skill_mcp_dependency_install', 'memories']);
@@ -459,30 +459,11 @@ function newestSessionLog(home) {
  * response_item arm only; the mcp branch is belt-and-braces that may never
  * fire. Measuring a real MCP form is allowed only in a throwaway CODEX_HOME
  * without network — not done (Samuel, Waves 3+4). */
-function sessionToolNames(file) {
-  const names = new Set();
-  for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
-    if (line.trim() === '') continue;
-    let rec;
-    try { rec = JSON.parse(line); } catch (_e) { continue; }
-    const p = rec && rec.payload;
-    if (!p || typeof p.type !== 'string') continue;
-    if (rec.type === 'response_item' && /_call$/.test(p.type)) {
-      names.add(p.name ? String(p.name) : p.type.replace(/_call$/, ''));
-    } else if (rec.type === 'event_msg' && p.type.startsWith('mcp_tool_call')) {
-      const inv = p.invocation || {};
-      names.add(`mcp:${inv.server || '?'}/${inv.tool || '?'}`);
-    }
-  }
-  return [...names].sort();
-}
-
 function sessionToolsCheck(home) {
   const file = newestSessionLog(home);
   if (!file) return skip('session_tools_exec_only', 'no session');
-  const names = sessionToolNames(file);
-  const bad = names.filter((n) => !ALLOWED_SESSION_TOOLS.includes(n));
-  if (bad.length) return check('session_tools_exec_only', false, `disallowed: ${bad.join(', ')}`);
+  const { names, disallowed } = sessionTools(file);
+  if (disallowed.length) return check('session_tools_exec_only', false, `disallowed: ${disallowed.join(', ')}`);
   return check('session_tools_exec_only', true, names.length ? `tools: ${names.join(', ')}` : 'tools: none');
 }
 

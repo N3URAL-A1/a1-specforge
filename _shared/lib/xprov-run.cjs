@@ -99,7 +99,7 @@ const FLAGS = Object.freeze({
   mode: 'str', snapshot: 'str', plan: 'str', phase: 'str', gate: 'str', wave: 'str', round: 'str', lane: 'str',
   base: 'str', feedback: 'str', timeout: 'str', 'work-path': 'str', [NO_LOG_FLAG]: 'bool',
 });
-const DEFAULT_TIMEOUT_SECONDS = 600; // the runner's own default
+const DEFAULT_TIMEOUT_SECONDS = X.RUNNER_DEFAULT_TIMEOUT_SECONDS; // the runner's own default
 const SPAWN_GRACE_SECONDS = 60; // the runner kills its child at --timeout; a1 kills the runner a minute later
 const RUNNER_MAX_BUFFER = 64 * 1024 * 1024;
 const LOG_FILE = 'PLAN-REVIEW-LOG.md';

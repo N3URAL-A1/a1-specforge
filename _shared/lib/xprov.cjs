@@ -95,6 +95,7 @@ const GATE_ID_LIST = Object.freeze(Object.values(GATE_IDS));
 const RUNNER_MODES = Object.freeze(['review', 'inspect']); // `check` is the runner's own consistency mode; a1 has no caller for it
 const FORBIDDEN_RUNNER_TOKENS = Object.freeze(['build', '--unreviewed-spec', '--proof', '--resume']); // --resume: Wave 7, a resumed session replays an unchecked rollout
 const RUNNER_HOST = 'claude';
+const RUNNER_DEFAULT_TIMEOUT_SECONDS = 600; // the runner's own default; also the bound of a session's `wait`
 
 // ---------- numeric limits shared by later waves ----------
 const ARTIFACT_MAX_AGE_DAYS = 14; // decided 2026-09-24 (FR-020)
@@ -330,7 +331,7 @@ module.exports = {
   SUBCOMMANDS, SUBCOMMAND_NAMES,
   REASONS, REASON_LIST, VERDICTS,
   GATE_IDS, GATE_ID_LIST,
-  RUNNER_MODES, FORBIDDEN_RUNNER_TOKENS, RUNNER_HOST,
+  RUNNER_MODES, FORBIDDEN_RUNNER_TOKENS, RUNNER_HOST, RUNNER_DEFAULT_TIMEOUT_SECONDS,
   ARTIFACT_MAX_AGE_DAYS, ROUND_CAP, MAX_FIELD_CHARS, MAX_RESULT_BYTES, TITLE_MAX_CHARS,
   MODEL_REQUESTED_DEFAULT, MODEL_OBSERVED_UNKNOWN,
   ALLOWLIST_FILE, ALLOWLIST_MAX_ENTRIES, ALLOWLIST_MAX_COUNT, ALLOWLIST_CLASSES, ALLOWLIST_APPROVALS_FILE,

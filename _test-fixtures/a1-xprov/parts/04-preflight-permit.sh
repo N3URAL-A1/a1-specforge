@@ -232,6 +232,32 @@ caseS2() {
   assert_rc "S2b newest session with node_repl fails preflight" 1 "$W4_RC"
   assert_eq "S2b session_tools_exec_only FAILs naming node_repl (and only tools, not the add.js decoy)" \
     "$(check_result "$W4_OUT" session_tools_exec_only)" "FAIL|disallowed: node_repl"
+  # SW — the narrow `wait` (Samuel's ruling, measured live 2026-10-03): variants of the
+  # VERBATIM captured lines (cases/session-wait.rollout.jsonl: exec → "cell ID 1" → wait).
+  local n=0 v
+  sw4() { # <name> <node-transform over lines L (array of objects)> <want>
+    n=$((n + 1)); v="$sdir/rollout-2026-09-24T19-00-0${n}-sw.jsonl"
+    node -e '
+      const fs = require("fs"); const [src, dst, expr] = process.argv.slice(1);
+      let L = fs.readFileSync(src, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
+      const wait = (L) => L.find((x) => x.payload.name === "wait");
+      const args = (L) => JSON.parse(wait(L).payload.arguments);
+      const setArgs = (L, a) => { wait(L).payload.arguments = JSON.stringify(a); return L; };
+      L = eval(expr);
+      fs.writeFileSync(dst, L.map((x) => JSON.stringify(x)).join("\n") + "\n");
+    ' "$CASES/session-wait.rollout.jsonl" "$v" "$2"
+    touch -t "2026092419$(printf '%02d' "$n")" "$v"
+    xprov_w4 preflight
+    assert_eq "$1" "$(check_result "$W4_OUT" session_tools_exec_only)" "$3"
+  }
+  sw4 "SW1 the measured wait after its exec cell → PASS" 'L' "PASS|tools: exec, wait"
+  sw4 "SW2 a wait without a preceding exec cell → FAIL" 'L.filter((x) => x.payload.name === "wait")' "FAIL|disallowed: wait (cell 1 was not started by an earlier exec)"
+  sw4 "SW3 a wait with an extra argument → FAIL" 'setArgs(L, { ...args(L), session_id: "x" })' "FAIL|disallowed: wait (extra argument session_id)"
+  sw4 "SW4 a wait whose cell_id is a number → FAIL" 'setArgs(L, { ...args(L), cell_id: 1 })' "FAIL|disallowed: wait (cell_id is not a string)"
+  sw4 "SW5 a wait with yield_time_ms 0 → FAIL" 'setArgs(L, { ...args(L), yield_time_ms: 0 })' "FAIL|disallowed: wait (yield_time_ms out of range)"
+  sw4 "SW5 a wait with yield_time_ms above the runner timeout → FAIL" 'setArgs(L, { ...args(L), yield_time_ms: 600001 })' "FAIL|disallowed: wait (yield_time_ms out of range)"
+  sw4 "SW6 write_stdin (input into a running exec) → FAIL" '(wait(L).payload.name = "write_stdin", L)' "FAIL|disallowed: write_stdin"
+  sw4 "SW7 another unknown tool → still FAIL" '(wait(L).payload.name = "view_image", L)' "FAIL|disallowed: view_image"
 }
 
 # ---------- R21: permission record — default deny, permit is the only writer ----------
