@@ -182,7 +182,8 @@ const ALLOWED_KEYS = Object.freeze([
   'features.plugins', 'features.remote_plugin',
 ]);
 // Keys allowed ONLY with one exact raw value (fix 2026-10-04): codex-cli
-// 0.155.1 writes them into the review home, each switching something off.
+// 0.155.1 writes them into the review home: six feature switches (off) and
+// the credential store location.
 // Compared on the raw text, so `"false"` (a string) is no `false`; every
 // occurrence is checked, so a duplicate with another value FAILs.
 const ALLOWED_KEY_VALUES = Object.freeze({

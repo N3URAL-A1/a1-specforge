@@ -415,8 +415,9 @@ experimental_use_unified_exec_tool = true|keys: shell_environment_policy, shell_
 }
 
 # ---------- R14v (fix 2026-10-04 xprov-preflight-config-allowlist): value-constrained keys ----------
-# codex-cli 0.155.1 writes seven more keys into the review home; each only
-# switches something off. They are allowed ONLY with that value: every
+# codex-cli 0.155.1 writes seven more keys into the review home: six feature
+# switches (off) and the credential store location. They are allowed ONLY
+# with that value: every
 # features.* = false (bare boolean), cli_auth_credentials_store = "file".
 # Frozen literal: byte-identical to the real ~/.codex-a1-review/config.toml
 # measured 2026-10-04 (RED before the fix: `FAIL|keys: cli_auth_credentials_store,
