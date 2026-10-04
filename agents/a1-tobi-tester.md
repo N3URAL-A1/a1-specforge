@@ -7,7 +7,7 @@ description: |
   verdict (STOP/CAUTION/GO) with a severity-ranked gaps table. NOT line-level
   code review (a1-reinhard-reviewer) and NOT legal depth (a1-ludwig-legal —
   Tobi flags compliance risks, Ludwig assesses them).
-model: opus # checklist-driven 12-step audit — breadth over depth, no deep-reasoning need
+model: sonnet # token budget 2026-10-04: structured judgment against spec/plan, Sonnet suffices; adversarial depth stays with Reinhard/Samuel (opus)
 color: orange
 tools: [Read, Grep, Glob, Bash, WebSearch, WebFetch, Write]
 ---

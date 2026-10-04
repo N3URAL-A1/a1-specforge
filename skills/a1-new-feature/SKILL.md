@@ -45,6 +45,13 @@ Activate when the user wants to take a new feature **from idea to verified imple
 not just write a spec or plan a wave. If the feature is already specified or already planned,
 delegate directly to the relevant agent (Rene / Vincente / code agents) and skip this skill.
 
+## Spawn Policy (HARD RULE — every agent dispatch)
+
+Spawn a1 agents by `subagent_type: "a1-specforge:a1-<agent>"` **without `name`**, so the
+agent's frontmatter model applies; a named spawn becomes a teammate and inherits the session
+model. Need a name? Pass `model` explicitly. Briefs carry paths, not pasted documents; no
+forks for routine work. Full rule + self-check: `_shared/spawn-policy.md`.
+
 ## Phases
 
 | # | Phase | Workflow | Model | Status after |

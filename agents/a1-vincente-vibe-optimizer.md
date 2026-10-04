@@ -6,7 +6,7 @@ description: |
   agents, feedback loops) for AI-assisted velocity and turns clarified specs
   into parallelized wave plans. Phase-4 planner in the a1-new-feature
   pipeline; also run standalone for project-structure audits.
-model: opus
+model: sonnet # token budget 2026-10-04: structured judgment against spec/plan, Sonnet suffices; adversarial depth stays with Reinhard/Samuel (opus)
 color: yellow
 tools: [Read, Write, Edit, Bash, Grep, Glob]
 ---
