@@ -59,6 +59,141 @@ Measured 2026-10-02 and 2026-10-03 on branch `feature/009-wave7-live-smoke` of t
 - Findings, open and routed to the team lead: **R1 (high): `.claude/settings.json` denies Edit/Write for the approval store and `.a1/xprov.json` but not for `~/.a1-xprov/waivers.json`**, so an agent's Edit tool could add a store record (the hook covers Bash only) — closing it is a change to `.claude/settings.json`, which goes through Robert. **R2 (high, `xprov-gate.cjs:498`): wave-status accepts any recorded pass for a wave/lane without plan sha, head or base**, so an amended wave keeps its old pass (normalize records no reviewed head/base). R4–R6: M13 `checklist.cjs` (a1-fix candidates). Quarantined `instruction_shaped`: R3 (consolidated lane STATUS headings create a lane-null wave).
 - Session log (`rollout-2026-10-03T17-47-55-01a10273-…jsonl`): `custom_tool_call:exec` ×4 only; `r0 = .system` only; `grep -c '"mcp'` → 12, all in the prompt (this wave's diff) or exec output — zero MCP tool calls. Run-home `entries: 0`.
 
+**Final live reviews — HEAD `5f724a9` (code = `2e72315`).** The team lead asked for the reviews on the final code too, since `98db221` touched normalize for both paths.
+- The real round-2 log of `28dc4db` (`rollout-2026-10-03T22-28-54-01a10374-…jsonl`, exec + two `wait`) judged by the narrow rule: `{"names":["exec","wait"],"disallowed":[]}` — the positive case on the real file; the preflight keeps reading only the newest session log.
+- Review round 1, 00:16:51Z–00:17:56Z, exit 1: `fail-with-findings` (3 M13 findings), `allowlisted_hits: 21`, session `01a10445-7013-…`, `previous: null`, exec ×4 only, zero MCP tool calls, `r0 = .system` only, run-home 0.
+- Review round 2, 00:17:57Z–00:19:12Z, exit 1: `fail/round_cap` — fresh session `01a10446-6b55-…`, new snapshot, `previous: null`, no `resume`, prompt with a1's sha-bound round-1 findings, QUARANTINED block and dispositions; exec ×4 only, run-home 0.
+- Both: primary checkout porcelain empty before and after, `~/.a1-xprov/snapshots/` unchanged.
+
+stdout of review round 1 on `5f724a9`:
+```json
+{
+  "verdict": "fail-with-findings",
+  "reason": null,
+  "reason_detail": null,
+  "step": "normalize",
+  "gate": "plan-review-xprov",
+  "phase": "M13-residuals",
+  "wave": null,
+  "lane": null,
+  "round": 1,
+  "mode": "review",
+  "enforcement": "blocking",
+  "findings_path": "~/claude-projects/a1-worktrees/009-wave7-live-smoke/.a1/phases/M13-residuals/xreview/plan-review-xprov-plan-r1.findings.json",
+  "xreview_path": "~/claude-projects/a1-worktrees/009-wave7-live-smoke/.a1/phases/M13-residuals/XREVIEW.md",
+  "result_path": "~/.a1-xprov/artifacts/009-wave7-live-smoke/claudex-mvbx01qa/result.json",
+  "next": {
+    "round_cmd": "node ~/claude-projects/a1-worktrees/009-wave7-live-smoke/_shared/a1-tools.cjs xprov gate --phase M13-residuals --gate plan-review-xprov --round 2",
+    "dispositions_path": "~/claude-projects/a1-worktrees/009-wave7-live-smoke/.a1/phases/M13-residuals/xreview/plan-review-xprov-plan-r1.dispositions.md"
+  },
+  "allowlisted_hits": 21,
+  "allowlist_anchor": "2741abe4c7d5a26e2f9d7c359e1ca55495f633d6",
+  "allowlist_approved_blob": "d21e526d3448512f59c3593c4b6df8186c8bcd46963708094e7008599d762479",
+  "allowlist_stale": [],
+  "allowlisted": [
+    {"path": ".a1/phases/M7-oss-ready/MAP.md", "pattern": "secret_assignment", "count": 1, "class": "doc_example"},
+    {"path": ".a1/phases/M7-oss-ready/RESEARCH.md", "pattern": "secret_assignment", "count": 1, "class": "doc_example"},
+    {"path": ".a1/phases/M9-robustness/RESEARCH.md", "pattern": "sk_prefixed_key_ext", "count": 1, "class": "doc_example"},
+    {"path": "_shared/lib/xprov.cjs", "pattern": "pem_begin", "count": 2, "class": "code_pattern"},
+    {"path": "_test-fixtures/a1-vault-cockpit/parts/05-hosts.sh", "pattern": "secret_assignment", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/01-supply-chain.sh", "pattern": "slack_token", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/01-supply-chain.sh", "pattern": "slack_token_family", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/01-supply-chain.sh", "pattern": "url_credentials", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/01-supply-chain.sh", "pattern": "password_assignment", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/02-normalize.sh", "pattern": "secret_assignment", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "slack_token", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "secret_assignment", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "sk_prefixed_key_ext", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "github_pat_fine_grained", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "slack_token_family", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "url_credentials", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "password_assignment", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "bearer_token", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/05-run.sh", "pattern": "secret_assignment", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/06-gate.sh", "pattern": "aws_access_key_id", "count": 1, "class": "fixture_fake"}
+  ],
+  "uncovered": [],
+  "allowlist_note": null,
+  "run_porcelain": {
+    "checkout": {
+      "before": "?? .a1/phases/M13-residuals/XREVIEW.md\n",
+      "after": "?? .a1/phases/M13-residuals/XREVIEW.md\n"
+    },
+    "snapshot": {
+      "before": "",
+      "after": ""
+    },
+    "work": {
+      "before": null,
+      "after": null
+    }
+  }
+}
+```
+
+stdout of review round 2 on `5f724a9`:
+```json
+{
+  "verdict": "fail",
+  "reason": "round_cap",
+  "reason_detail": "REVISE at round 2 = cap",
+  "step": "normalize",
+  "gate": "plan-review-xprov",
+  "phase": "M13-residuals",
+  "wave": null,
+  "lane": null,
+  "round": 2,
+  "mode": "review",
+  "enforcement": "blocking",
+  "findings_path": "~/claude-projects/a1-worktrees/009-wave7-live-smoke/.a1/phases/M13-residuals/xreview/plan-review-xprov-plan-r2.findings.json",
+  "xreview_path": "~/claude-projects/a1-worktrees/009-wave7-live-smoke/.a1/phases/M13-residuals/XREVIEW.md",
+  "result_path": "~/.a1-xprov/artifacts/009-wave7-live-smoke/claudex-yh9rw3ul/result.json",
+  "next": null,
+  "allowlisted_hits": 21,
+  "allowlist_anchor": "2741abe4c7d5a26e2f9d7c359e1ca55495f633d6",
+  "allowlist_approved_blob": "d21e526d3448512f59c3593c4b6df8186c8bcd46963708094e7008599d762479",
+  "allowlist_stale": [],
+  "allowlisted": [
+    {"path": ".a1/phases/M7-oss-ready/MAP.md", "pattern": "secret_assignment", "count": 1, "class": "doc_example"},
+    {"path": ".a1/phases/M7-oss-ready/RESEARCH.md", "pattern": "secret_assignment", "count": 1, "class": "doc_example"},
+    {"path": ".a1/phases/M9-robustness/RESEARCH.md", "pattern": "sk_prefixed_key_ext", "count": 1, "class": "doc_example"},
+    {"path": "_shared/lib/xprov.cjs", "pattern": "pem_begin", "count": 2, "class": "code_pattern"},
+    {"path": "_test-fixtures/a1-vault-cockpit/parts/05-hosts.sh", "pattern": "secret_assignment", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/01-supply-chain.sh", "pattern": "slack_token", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/01-supply-chain.sh", "pattern": "slack_token_family", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/01-supply-chain.sh", "pattern": "url_credentials", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/01-supply-chain.sh", "pattern": "password_assignment", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/02-normalize.sh", "pattern": "secret_assignment", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "slack_token", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "secret_assignment", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "sk_prefixed_key_ext", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "github_pat_fine_grained", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "slack_token_family", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "url_credentials", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "password_assignment", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/03-hardening.sh", "pattern": "bearer_token", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/05-run.sh", "pattern": "secret_assignment", "count": 1, "class": "fixture_fake"},
+    {"path": "_test-fixtures/a1-xprov/parts/06-gate.sh", "pattern": "aws_access_key_id", "count": 1, "class": "fixture_fake"}
+  ],
+  "uncovered": [],
+  "allowlist_note": null,
+  "run_porcelain": {
+    "checkout": {
+      "before": " M .a1/phases/M13-residuals/observations.jsonl\n?? .a1/phases/M13-residuals/PLAN-REVIEW-LOG.md\n?? .a1/phases/M13-residuals/XREVIEW.md\n?? .a1/phases/M13-residuals/xreview/index.json\n?? .a1/phases/M13-residuals/xreview/plan-review-xprov-plan-r1.dispositions.md\n?? .a1/phases/M13-residuals/xreview/plan-review-xprov-plan-r1.findings.json\n",
+      "after": " M .a1/phases/M13-residuals/observations.jsonl\n?? .a1/phases/M13-residuals/PLAN-REVIEW-LOG.md\n?? .a1/phases/M13-residuals/XREVIEW.md\n?? .a1/phases/M13-residuals/xreview/index.json\n?? .a1/phases/M13-residuals/xreview/plan-review-xprov-plan-r1.dispositions.md\n?? .a1/phases/M13-residuals/xreview/plan-review-xprov-plan-r1.findings.json\n"
+    },
+    "snapshot": {
+      "before": "",
+      "after": ""
+    },
+    "work": {
+      "before": null,
+      "after": null
+    }
+  }
+}
+```
+
 **Final live inspect — HEAD `2e72315`, base `2741abe`.** `2e72315` = `98db221` (record mode must match the gate; lanes first-class in `--waves`) + `e699933` (narrow `wait`) + the measured exemption list with mode 100644, also at wave boundaries. Reviews were not rerun: both ran on `28dc4db` (above), and the review path is unchanged since (`98db221` adds a refusal for a mismatched mode only). Preflight first: 22/22 PASS, `session_tools_exec_only: tools: exec, wait` — the live `wait` lines of the `28dc4db` round 2 now pass the narrow rule.
 - 00:13:23Z–00:14:41Z, exit 1. stdout (full JSON below): `verdict: fail-with-findings`, `step: normalize`, `enforcement: blocking`, `allowlisted_hits: 30`, `uncovered: []`.
 - `result.json`: `status: completed`, `mode: inspect`, `previous: null`, session `01a10442-3679-…`, `snapshot.diff_sha256: 155e45c3…`. The run dir holds `a1-reviewed.json` = {commit `2e72315b…`, base `2741abe4…`, diff `155e45c3…`}, written by `xprov run`, and the index entry carries exactly that head/base — the binding of MAJOR 1, live.
