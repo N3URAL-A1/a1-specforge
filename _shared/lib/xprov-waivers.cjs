@@ -22,10 +22,13 @@
 // `waived: true` row in index.json and the XREVIEW.md section are a mirror.
 // Wave coverage (passes and waivers alike, chainCoverage below; Samuel MAJOR 2
 // on da103f3): per lane the covered waves form a CHAIN — base is an ancestor
-// of head, head of wave N EQUALS base of the next completed wave, and the last
-// completed wave's head EQUALS the lane's work-path HEAD, except for commits
-// that touch only `.a1/phases/<phase>/` (STATUS consolidation, observations;
-// measured from 02-execute/03-verify). No caller-chosen "current wave".
+// of head, head of wave N leads to base of the next completed wave, and the
+// last completed wave's head leads to the lane's work-path HEAD. "Leads to"
+// is equality, or ancestry where every commit in between only touches the
+// files the workflows write at those points (exemptFiles, measured from
+// 02-execute 2b-x…2c, SKILL.md `product stage`, 03-verify) as regular files
+// (`git diff --raw` mode 100644 — no symlink, no executable, no gitlink).
+// No caller-chosen "current wave".
 // ---------------------------------------------------------------------------
 
 const fs = require('fs');
@@ -94,19 +97,46 @@ function waveWaivers(store, key) {
     && w.plan_sha256 === key.plan_sha256 && w.wave === key.wave && w.lane === (key.lane || null));
 }
 
-/** Paths changed between two commits, or null when git cannot say. */
-function changedPaths(workPath, from, to) {
-  const out = C.gitOut(['-C', workPath, 'diff', '--name-only', '--no-renames', from, to, '--']);
-  return out === null ? null : out.split('\n').filter(Boolean);
+/** The files a1's own workflows write between a wave's inspection and the
+ * next wave's PRE_WAVE_HEAD, or after the last wave (measured 2026-10-04):
+ * the phase's STATUS*.md, VERIFICATION.md, observations.jsonl,
+ * PLAN-REVIEW-LOG.md, XREVIEW.md and xreview/*.json|*.md (02-execute 2b-x,
+ * 2c, lane consolidation, 03-verify), and what `product stage` writes at the
+ * 2c checkpoint (a1-execute SKILL.md "docs/product Wiring", product.cjs):
+ * docs/product/{ROADMAP.md,index.json,NEXT.md,CHANGELOG-archive.md},
+ * docs/product/features/<id>/feature.md and .a1/reservations.json. */
+function exemptFiles(phase) {
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const ph = `\\.a1/phases/${esc(phase)}/`;
+  return [
+    new RegExp(`^${ph}(STATUS(-[A-Za-z0-9_-]+)?\\.md|VERIFICATION\\.md|observations\\.jsonl|PLAN-REVIEW-LOG\\.md|XREVIEW\\.md|xreview/[^/]+\\.(json|md))$`),
+    /^docs\/product\/(ROADMAP\.md|index\.json|NEXT\.md|CHANGELOG-archive\.md|features\/[^/]+\/feature\.md)$/,
+    /^\.a1\/reservations\.json$/,
+  ];
 }
 
-/** The last wave's head is the lane's tip: equal, or an ancestor whose later
- * commits touch only `exempt` (a path prefix, e.g. `.a1/phases/<phase>/`). */
-function atTip(workPath, head, tip, exempt) {
-  if (head === tip) return true;
-  if (!inHistory(workPath, head, tip)) return false;
-  const changed = changedPaths(workPath, head, tip);
-  return changed !== null && changed.every((p) => p.startsWith(exempt));
+/** `git diff --raw -z` entries between two commits: [{ mode, path }], or null. */
+function rawChanges(workPath, from, to) {
+  const r = C.gitSpawn(['-C', workPath, 'diff', '--raw', '-z', '--no-renames', from, to, '--']);
+  if (r.status !== 0) return null;
+  const parts = String(r.stdout).split('\0');
+  const out = [];
+  for (let i = 0; i + 1 < parts.length; i += 2) {
+    const meta = parts[i].replace(/^\n/, '');
+    if (!meta.startsWith(':')) break;
+    out.push({ mode: meta.slice(1).split(' ')[1], path: parts[i + 1] });
+  }
+  return out;
+}
+
+/** `from` leads to `to`: equal, or an ancestor whose later commits only write
+ * exempt files as regular files (mode 100644). */
+function leadsTo(workPath, from, to, phase) {
+  if (from === to) return true;
+  if (!inHistory(workPath, from, to)) return false;
+  const changes = rawChanges(workPath, from, to);
+  const allowed = exemptFiles(phase);
+  return changes !== null && changes.every((c) => c.mode === '100644' && allowed.some((re) => re.test(c.path)));
 }
 
 /** Coverage of completed (wave, lane) pairs by candidate entries.
@@ -116,7 +146,7 @@ function atTip(workPath, head, tip, exempt) {
  * completed wave down: the last must sit at the tip (atTip), every earlier one
  * must end exactly where the next one's base starts; a lacking successor makes
  * every earlier wave of the lane lack too (fail closed). */
-function chainCoverage(pairs, candidates, tips, exempt) {
+function chainCoverage(pairs, candidates, tips, phase) {
   const chosen = new Map();
   const key = (p) => `${p.wave}|${p.lane || ''}`;
   const lanes = [...new Set(pairs.map((p) => p.lane || ''))];
@@ -128,7 +158,7 @@ function chainCoverage(pairs, candidates, tips, exempt) {
       const p = waves[i];
       const isLast = i === waves.length - 1;
       const ok = (c) => SHA_RE.test(String(c.head)) && SHA_RE.test(String(c.base)) && inHistory(tip.workPath, c.base, c.head)
-        && (isLast ? atTip(tip.workPath, c.head, tip.head, exempt) : next !== null && c.head === next.base);
+        && (isLast ? leadsTo(tip.workPath, c.head, tip.head, phase) : next !== null && leadsTo(tip.workPath, c.head, next.base, phase));
       const pick = tip ? [...candidates(p)].reverse().find(ok) || null : null;
       chosen.set(key(p), pick);
       next = pick;
@@ -146,4 +176,4 @@ function appendWaiver(record, writeGuardedStore) {
   return writeGuardedStore(WAIVERS_FILE, { version: 1, waivers: [...current.waivers, rec] });
 }
 
-module.exports = { WAIVERS_FILE, RECORD_KEYS, waiversPath, readWaivers, planShaOf, headIn, inHistory, planWaiver, waveWaivers, chainCoverage, atTip, appendWaiver, validRecord };
+module.exports = { WAIVERS_FILE, RECORD_KEYS, waiversPath, readWaivers, planShaOf, headIn, inHistory, planWaiver, waveWaivers, chainCoverage, leadsTo, exemptFiles, appendWaiver, validRecord };

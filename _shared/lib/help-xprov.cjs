@@ -176,8 +176,11 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   wave-inspect-xprov pass or a store waiver, both bound to this
                   PLAN.md's sha and chained per lane: base an ancestor of head,
                   head of wave N = base of the next completed wave, the last
-                  wave's head = the lane work path's HEAD (only commits under
-                  .a1/phases/<name>/ may follow). Passes carry head/base from
+                  wave's head = the lane work path's HEAD; between waves and
+                  after the last one only commits writing the measured
+                  workflow files (phase STATUS*/VERIFICATION/observations/
+                  XREVIEW/PLAN-REVIEW-LOG/xreview, product-stage files) as
+                  mode 100644 may sit. Passes carry head/base from
                   the run dir's a1-reviewed.json (written by xprov run); a lane
                   without --lane-work-path lacks. index.json waived: true rows
                   count for nothing.

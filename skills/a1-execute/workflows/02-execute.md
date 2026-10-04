@@ -224,8 +224,12 @@ echo "xprov wave-status (after wave <N>) exit=$RC"
 (multi-lane, per lane checkpoint: `--waves <N> --lane <lane-id> --lane-work-path <lane-id>=$WORK_PATH`
 checks that lane's pair (N, lane-id) against that lane's HEAD). The covered waves must form a chain: each wave's recorded
 head equals the next wave's base, and the last completed wave's head equals
-`$WORK_PATH`'s HEAD — only commits touching `.a1/phases/<phase_name>/` alone
-(STATUS, observations) may follow it. A commit added after the inspection is
+`$WORK_PATH`'s HEAD — only commits that write the workflow's own files may
+sit after it or between two waves: the phase's STATUS*.md, VERIFICATION.md,
+observations.jsonl, PLAN-REVIEW-LOG.md, XREVIEW.md, xreview/*.json|*.md and
+what `product stage` writes at 2c (docs/product ROADMAP.md, index.json,
+NEXT.md, CHANGELOG-archive.md, features/<id>/feature.md, .a1/reservations.json),
+each as a plain file. A commit added after the inspection is
 unreviewed and fails the check. Exit 1 under `blocking` → back to 2b-x
 (re-inspect at the new HEAD) or the human waiver; under `warning` show the
 checkpoint with the warning line.

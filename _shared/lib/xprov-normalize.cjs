@@ -484,7 +484,9 @@ function cmdXprovNormalize(args) {
   const args0 = resolveArgs(args);
   // No replay (Samuel MAJOR 1): a run dir of a1's own artifacts is normalized once.
   const indexed = readIndex(args0.indexPath) || [];
-  if (inOwnArtifacts(args0.resultPath) && indexed.some((e) => typeof e.result_path === 'string' && path.resolve(e.result_path) === args0.resultPath)) {
+  const real = (p) => { try { return fs.realpathSync(p); } catch (_e) { return path.resolve(p); } };
+  const mine = real(args0.resultPath);
+  if (inOwnArtifacts(args0.resultPath) && indexed.some((e) => typeof e.result_path === 'string' && real(e.result_path) === mine)) {
     usage(`${args0.resultPath} is already indexed; a run is normalized once`);
   }
   const read = readRecord(args0.resultPath);

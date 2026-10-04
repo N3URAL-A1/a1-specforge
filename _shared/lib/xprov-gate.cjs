@@ -519,7 +519,7 @@ function waveStatus(o) {
       .map((e) => ({ kind: 'pass', head: e.head, base: e.base })),
     ...WV.waveWaivers(store, { repo, phase: ctx.phase, plan_sha256: planSha, wave: p.wave, lane: p.lane }).map((w) => ({ kind: 'waiver', head: w.head, base: w.base })),
   ]);
-  const chosen = WV.chainCoverage(completed, candidates, tips, `.a1/phases/${ctx.phase}/`);
+  const chosen = WV.chainCoverage(completed, candidates, tips, ctx.phase);
   const covered = (p) => chosen.get(`${p.wave}|${p.lane || ''}`) != null;
   const lackingDetail = completed.filter((p) => !covered(p));
   const lacking = [...new Set(lackingDetail.map((p) => p.wave))];

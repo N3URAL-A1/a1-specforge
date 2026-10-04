@@ -536,6 +536,12 @@ caseR8() {
 #   WS7 the same rules for a store waiver (chain clean / extra commit).
 #   WS8 the gate's inspect entry carries head/base from a1-reviewed.json; wave-status counts it.
 #       Red if normalize takes head/base from anywhere else.
+#   WS12 a boundary commit between head_1 and base_2 that only writes STATUS.md and
+#        docs/product/ROADMAP.md (2c, `product stage`) → exit 0; one with src/ → exit 1.
+#        Red if the boundary needs equality / exempts everything.
+#   WS13 after the last wave: an executable STATUS.md, a symlink under xreview/, a file
+#        outside the measured list (.a1/phases/p6/notes.md) → exit 1; docs/product/ROADMAP.md → exit 0.
+#        Red if the mode check / the file list is dropped.
 #   WS10 an APPROVED review result normalized for the wave gate → wrong_mode.  Red if normalize skips the mode check.
 #   WS11 --waves N --lane L checks (N, L): control exit 0, stale lane head exit 1.  Red if the lane is dropped from the pairs.
 #   WS9 re-normalizing the old run dir after a new commit → usage error (no replay), and a
@@ -599,6 +605,39 @@ caseWS() {
   sub6 wave-status --phase p6 --waves 1
   assert_rc "WS9 …so the unreviewed commit is not covered → exit 1" 1 "$G_RC"
   grep -q "wave-status --phase <phase_name> --work-path \$WORK_PATH > " "$REPO_ROOT/skills/a1-execute/workflows/02-execute.md" && ok "WS8 02-execute.md checks the chain at 2c" || bad "WS8 02-execute.md lacks the 2c chain check"
+  # WS12 — the boundary between two waves
+  prep6
+  mkdir -p "$PHASE_DIR/xreview" "$PHASE_REPO/docs/product"; printf '## Wave 1 — one\n## Wave 2 — two\n' > "$PHASE_DIR/STATUS.md"
+  local w1 hs w2
+  w1="$(c6 src/add.js '// wave 1')"
+  ( cd "$PHASE_REPO" && printf 'roadmap\n' > docs/product/ROADMAP.md && printf 'consolidated\n' >> "$PHASE_DIR/STATUS.md" && git add -A && git commit -qm "2c: product stage + STATUS" ); hs="$(git -C "$PHASE_REPO" rev-parse HEAD)"
+  w2="$(c6 src/add.js '// wave 2')"
+  printf '[%s,%s]\n' "$(wpass6 1 "$w1" "$PHASE_HEAD")" "$(wpass6 2 "$w2" "$hs")" > "$PHASE_DIR/xreview/index.json"
+  sub6 wave-status --phase p6
+  assert_rc "WS12 a boundary commit writing only STATUS.md + docs/product/ROADMAP.md → exit 0" 0 "$G_RC" "$G_ERR"
+  ( cd "$PHASE_REPO" && git reset -q --hard "$w1" ); local hx; hx="$(c6 src/other.js '// between the waves')"; w2="$(c6 src/add.js '// wave 2 again')"
+  printf '[%s,%s]\n' "$(wpass6 1 "$w1" "$PHASE_HEAD")" "$(wpass6 2 "$w2" "$hx")" > "$PHASE_DIR/xreview/index.json"
+  sub6 wave-status --phase p6
+  assert_rc "WS12 a boundary commit touching src/ → exit 1" 1 "$G_RC"
+  # WS13 — what may follow the last wave
+  local last; last="$(git -C "$PHASE_REPO" rev-parse HEAD)"
+  printf '[%s]\n' "$(wpass6 1 "$last" "$PHASE_HEAD")" > "$PHASE_DIR/xreview/index.json"
+  printf '## Wave 1 — one\n' > "$PHASE_DIR/STATUS.md"; ( cd "$PHASE_REPO" && git add -A && git commit -qm "status" )
+  sub6 wave-status --phase p6 --waves 1
+  assert_rc "WS13 control: an allowed STATUS.md commit after the last wave → exit 0" 0 "$G_RC" "$G_ERR"
+  ( cd "$PHASE_REPO" && printf 'roadmap 2\n' >> docs/product/ROADMAP.md 2>/dev/null || { mkdir -p docs/product; printf 'r\n' > docs/product/ROADMAP.md; }; git add -A && git commit -qm "product stage" )
+  sub6 wave-status --phase p6 --waves 1
+  assert_rc "WS13 a docs/product/ROADMAP.md commit (product stage) → exit 0" 0 "$G_RC" "$G_ERR"
+  local keep; keep="$(git -C "$PHASE_REPO" rev-parse HEAD)"
+  ( cd "$PHASE_REPO" && chmod +x "$PHASE_DIR/STATUS.md" && git add -A && git commit -qm "exec bit" )
+  sub6 wave-status --phase p6 --waves 1
+  assert_rc "WS13 an executable STATUS.md after the last wave → exit 1" 1 "$G_RC"
+  ( cd "$PHASE_REPO" && git reset -q --hard "$keep" && ln -s ../../../../src/add.js "$PHASE_DIR/xreview/link.json" && git add -A && git commit -qm "symlink" )
+  sub6 wave-status --phase p6 --waves 1
+  assert_rc "WS13 a symlink under xreview/ after the last wave → exit 1" 1 "$G_RC"
+  ( cd "$PHASE_REPO" && git reset -q --hard "$keep" && printf 'x\n' > "$PHASE_DIR/notes.md" && git add -A && git commit -qm "notes" )
+  sub6 wave-status --phase p6 --waves 1
+  assert_rc "WS13 a file outside the measured list (.a1/phases/p6/notes.md) → exit 1" 1 "$G_RC"
   # WS10 — an APPROVED plan-review result normalized as wave-inspect → wrong_mode, no pass (Codex R1 on cf5a86e)
   prep6
   sub6 normalize "$CASES/approved.result.json" --phase p6 --gate "$GATE_WAVE" --wave 1

@@ -8,8 +8,9 @@ Victor is not spawned while any completed wave lacks a `wave-inspect-xprov`
 entry in `.a1/phases/<phase_name>/xreview/index.json` with `verdict: pass` or
 a waiver in the guarded store `~/.a1-xprov/waivers.json`, both bound to this
 PLAN.md, that wave and lane, and chained: each wave's head equals the next
-wave's base, the last wave's head equals `$WORK_PATH`'s HEAD up to commits
-under `.a1/phases/<phase_name>/` (spec 009, FR-004, FR-007); a `waived: true`
+wave's base, the last wave's head equals `$WORK_PATH`'s HEAD — in between
+only commits that write the workflow's own phase files and the `product
+stage` files as plain files (spec 009, FR-004, FR-007); a `waived: true`
 row in `index.json` alone counts for nothing. The completed waves come from
 `STATUS*.md` — consolidate the per-lane files first (see the prompt template
 below); pass `--waves 1,2,3` only when STATUS is not yet consolidated.
