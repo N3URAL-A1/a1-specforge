@@ -10,13 +10,13 @@ Spawn with `subagent_type: "a1-specforge:a1-<agent>"` and **no `name`**. The age
 frontmatter `model:` then applies.
 
 A named spawn becomes a teammate (`taskKind: in_process_teammate`) and **inherits the
-session model** instead — frontmatter is ignored. Measured: executor waves spawned as
+session model** instead — frontmatter is ignored. Measured: a1-erik-executor waves spawned as
 `erik-<spec>-w<n>` ran on the session's 1M-context top tier; one such wave alone consumed
 504M tokens. If a name is genuinely needed (e.g. for SendMessage follow-ups), pass
 `model` explicitly with the tier from the ADR (executor: `sonnet`).
 
-The ADR escape hatch stays: a wave flagged `complexity: high` may dispatch the executor
-with `model: opus` — explicitly, never by inheritance.
+A higher tier for a single dispatch is always explicit `model`, never inheritance. (The ADR's
+`complexity: high` wave flag is intent only — not yet wired into the plan schema or a1-execute.)
 
 ## S2 — Briefs carry paths, not documents
 

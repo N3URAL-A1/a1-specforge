@@ -49,13 +49,14 @@ Severity definitions:
 Free-prose responses are rejected. If you find nothing: return empty JSON array `[]`.
 If you need more context: return `[]` and a brief prose note explaining what you need.
 
-**Delivery (HARD):** your plain-text final response is NOT automatically visible to
-the orchestrator. Once your findings are ready, you MUST call the SendMessage tool
-with `to="main"` and the JSON array as the message content. Do not rely on ending
-your turn with the findings in your last message — that alone does not deliver them.
+**Delivery (HARD):** lanes are spawned unnamed (`_shared/spawn-policy.md` S1), so your
+final report is the delivery path: hand the JSON array back as your final report (via
+`SubagentHandback` when your instructions name it). Only if you were spawned as a
+**named teammate** is your plain-text final response NOT visible to the orchestrator —
+then you MUST call SendMessage with `to="main"` and the JSON array as the content.
 
-**Chunk it (HARD).** A message over roughly 16 kB is truncated and the findings
-in it are lost. Send at most **4 findings per SendMessage call**, each labelled
+**Chunk it (HARD, teammate path).** A SendMessage over roughly 16 kB is truncated and the
+findings in it are lost. Send at most **4 findings per SendMessage call**, each labelled
 `chunk <i>/<n>`, then a final short `done — <total> findings` message. Send each
 chunk as soon as it is ready instead of waiting for the full set, so a lane that
 is interrupted (session limit, quota) still delivers what it had. Learned by

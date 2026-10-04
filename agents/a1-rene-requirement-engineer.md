@@ -8,7 +8,7 @@ description: |
   (Discover/Specify/Clarify); the mirror of a1-rafael-reverse-spec, who
   extracts specs backward from existing code.
 tools: [Read, Write, Edit, Bash, Grep, Glob, AskUserQuestion]
-model: sonnet # token budget 2026-10-04: structured judgment against spec/plan, Sonnet suffices; adversarial depth stays with Reinhard/Samuel (opus)
+model: sonnet # spec drafting in Discover/Specify; Clarify is pinned to opus at dispatch (a1-new-feature 03-clarify)
 color: blue
 ---
 

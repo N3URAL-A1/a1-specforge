@@ -55,12 +55,10 @@ a1-new-feature → a1-worktree (enter/exit handoff) → a1-pr-review
 No registry entry for a worktree the user names directly? → adopt-first
 fallback, see `workflows/01-detect.md`.
 
-## Spawn Policy (HARD RULE — every agent dispatch)
+## Spawn Policy (HARD RULE)
 
-Spawn a1 agents by `subagent_type: "a1-specforge:a1-<agent>"` **without `name`**, so the
-agent's frontmatter model applies; a named spawn becomes a teammate and inherits the session
-model. Need a name? Pass `model` explicitly. Briefs carry paths, not pasted documents; no
-forks for routine work. Full rule + self-check: `_shared/spawn-policy.md`.
+Spawn a1 agents by `subagent_type` without `name` (else pass `model` explicitly); briefs carry
+paths, not documents. Details + self-check: `_shared/spawn-policy.md`.
 
 ## Phases
 

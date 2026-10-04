@@ -35,12 +35,10 @@ This skill is a thin orchestrator. The phase logic lives in `workflows/`. The
 shared CLI helper (`<repo>/_shared/a1-tools.cjs`) handles deterministic
 file ops. Sub-agents do the actual thinking.
 
-## Spawn Policy (HARD RULE — every agent dispatch)
+## Spawn Policy (HARD RULE)
 
-Spawn a1 agents by `subagent_type: "a1-specforge:a1-<agent>"` **without `name`**, so the
-agent's frontmatter model applies; a named spawn becomes a teammate and inherits the session
-model. Need a name? Pass `model` explicitly. Briefs carry paths, not pasted documents; no
-forks for routine work. Full rule + self-check: `_shared/spawn-policy.md`.
+Spawn a1 agents by `subagent_type` without `name` (else pass `model` explicitly); briefs carry
+paths, not documents. Details + self-check: `_shared/spawn-policy.md`.
 
 ## Phases
 

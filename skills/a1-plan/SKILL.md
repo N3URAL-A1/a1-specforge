@@ -33,12 +33,10 @@ Activate when the user wants to **plan a phase** of implementation work — not 
 
 The output is a PLAN.md that's ready for `a1-execute`.
 
-## Spawn Policy (HARD RULE — every agent dispatch)
+## Spawn Policy (HARD RULE)
 
-Spawn a1 agents by `subagent_type: "a1-specforge:a1-<agent>"` **without `name`**, so the
-agent's frontmatter model applies; a named spawn becomes a teammate and inherits the session
-model. Need a name? Pass `model` explicitly. Briefs carry paths, not pasted documents; no
-forks for routine work. Full rule + self-check: `_shared/spawn-policy.md`.
+Spawn a1 agents by `subagent_type` without `name` (else pass `model` explicitly); briefs carry
+paths, not documents. Details + self-check: `_shared/spawn-policy.md`.
 
 ## Phases
 

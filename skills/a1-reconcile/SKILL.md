@@ -57,6 +57,11 @@ If they want the structural spec↔plan check (FR coverage, frontmatter link),
 use `a1-checklist` (checks #9/#10). If they want to fix the drift, hand off to `a1-fix` or
 `a1-new-feature` after the report.
 
+## Spawn Policy (HARD RULE)
+
+Spawn a1 agents by `subagent_type` without `name` (else pass `model` explicitly); briefs carry
+paths, not documents. Details + self-check: `_shared/spawn-policy.md`.
+
 ## Phases
 
 | # | Phase | Workflow | Status after |
