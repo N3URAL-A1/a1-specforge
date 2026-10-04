@@ -95,8 +95,25 @@ function stderrTail(text) {
 }
 
 /** One-line, bounded rendering for log cells; null/undefined → 'none'. */
+// Everything that can break a line or reorder it on display: C0 (incl. \t \v \f
+// ESC), DEL, C1 (incl. U+0085), U+2028/2029 and the bidi controls (Samuel W7).
+const LINE_BREAKERS_RE = /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]+/g;
+
+/** Bytes of a regular file opened with O_NOFOLLOW and checked on the open
+ * descriptor (no lstat-then-read window), or null. One definition (Reinhard m3). */
+function readNoFollow(p, maxBytes) {
+  let fd;
+  // O_NONBLOCK: a FIFO named like the file must not hang the open (Samuel SEC-2); isFile() rejects it.
+  try { fd = fs.openSync(p, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK); } catch (_e) { return null; }
+  try {
+    const st = fs.fstatSync(fd);
+    if (!st.isFile() || (typeof maxBytes === 'number' && st.size > maxBytes)) return null;
+    return fs.readFileSync(fd);
+  } catch (_e) { return null; } finally { fs.closeSync(fd); }
+}
+
 function oneLine(value) {
-  return value == null ? 'none' : clip(String(value).replace(/[\r\n\t]+/g, ' '), DETAIL_MAX_CHARS);
+  return value == null ? 'none' : clip(String(value).replace(LINE_BREAKERS_RE, ' '), DETAIL_MAX_CHARS);
 }
 
 function parsePositive(value, name) {
@@ -187,6 +204,6 @@ function resolveRepoFlag(repoFlag) {
 module.exports = {
   REGISTRY_PATH, LANE_RE, POSITIVE_INT_RE, POSITIVE_INT_MAX, DETAIL_MAX_CHARS, GIT_MAX_BUFFER, DIR_MODE,
   inputError, writeStdoutSync, emitJson, usageExit, usageThrow,
-  clip, stderrTail, oneLine, parsePositive, parseLane, sha256, isPlainObject, isDir, isFile,
+  clip, stderrTail, oneLine, LINE_BREAKERS_RE, readNoFollow, parsePositive, parseLane, sha256, isPlainObject, isDir, isFile,
   mkdir0700, readIndex, sameWave, sameLane, gitSpawn, gitOut, commonDirOf, resolveRepoFlag,
 };

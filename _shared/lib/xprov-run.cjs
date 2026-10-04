@@ -5,11 +5,12 @@
 // home, with an exact argv and a minimal environment, and detect any write it
 // makes (spec 009-cross-provider-review-gate, Wave 5; FR-011, FR-014 env,
 // FR-015, FR-024; amended 2026-09-24 after a1-samuel-security's W5 review and
-// a1-reinhard-reviewer's W6 review).
+// a1-reinhard-reviewer's W6 review; Wave 7 hardening 2026-10-02 after the
+// live smoke, see "Skill roots" below).
 //
 //   a1-tools xprov run --mode review|inspect --snapshot <dir> --plan <abs PLAN.md>
 //     --phase <name> --gate <id> [--wave N] [--round N] [--lane <id>]
-//     [--base <sha>] [--resume <result.json> [--feedback <file>]]
+//     [--base <sha>] [--feedback <file>]
 //     [--timeout N] [--work-path <dir>] [--no-log]
 //
 // Order: usage checks → permitCheck (never a flag) → runner pin check
@@ -18,6 +19,34 @@
 // <vendoredRunnerPath()> … with an ALLOWLISTED environment (PATH, HOME,
 // TMPDIR, LANG, LC_*, TERM, USER, SHELL) plus CODEX_HOME = codexHome(),
 // bounded by timeout + grace and SIGKILL → baseline recomputed.
+//
+// Skill roots (Wave 7, measured with canaries under a network block,
+// `codex debug prompt-input`, codex-cli 0.155.1). Codex reads skills — text
+// that lands verbatim in a developer message — from `$HOME/.agents/skills`
+// (the root follows $HOME), from `.agents/skills` at the git root of its cwd
+// (a non-git cwd's own `.agents/skills` counts too), and from
+// `$CODEX_HOME/skills` next to the built-in `skills/.system`. Hence:
+//   * HOME is a FRESH per-run dir `~/.a1-xprov/run-home-*` (mkdtemp, 0700,
+//     owner, no symlink, verified EMPTY right before the spawn — a persistent
+//     HOME would be the next planting spot). Its manifest — names and sizes of
+//     what Codex wrote there, never contents — goes into the run dir as
+//     `run-home.manifest.json` and into stdout; a non-empty manifest AFTER the
+//     run is an XREVIEW note, not a fail (measured 2026-10-02: 0 entries after a
+//     live inspect). The dir is removed in `finally`, pass or fail; a SIGKILL
+//     skips `finally`, so `xprov gc` (xprov-artifacts.cjs) sweeps `run-home-*`
+//     dirs older than 24 h (lstat, same owner, never following a symlink) — and
+//     every `xprov run` calls that same sweep first.
+//   * --plan / --feedback are accepted ONLY as the snapshot's scanned copies
+//     (`<snapshot>.inputs/{PLAN.md,feedback.md}`) whose sha256 snapshot()
+//     recorded; checked after the pin check and re-hashed right before the
+//     spawn — a foreign path, a missing record or a changed byte → refused.
+//     Shell start under the empty HOME was measured (zsh, no newuser prompt,
+//     first exec 0.4 s vs 5.9 s with the real HOME), so no .zshrc is planted and
+//     SHELL stays as allowlisted. XDG_* is not on the env allowlist; TMPDIR is.
+//   * the cwd is the snapshot root, and the spawn is refused (`snapshot_failed`)
+//     while that root still holds any REPO_LOCAL_STRIP entry (`.agents` incl.).
+//   * only `skills/.system` of the dedicated home is runtime; anything else
+//     under `skills/` is configuration and trips.
 //
 // The baseline covers: `git status --porcelain --untracked-files=all` of the
 // primary checkout, $WORK_PATH and the snapshot; the `.git/` metadata that a
@@ -58,18 +87,19 @@ const C = require('./xprov-common.cjs');
 const { REGISTRY_PATH, LANE_RE, sha256, isDir, isFile, gitOut, writeStdoutSync, parsePositive } = C;
 const tail = C.stderrTail;
 const none = C.oneLine;
-const { ensureArtifactsDir, isUnder } = require('./xprov-artifacts.cjs');
+const { ensureArtifactsDir, isUnder, sweepRunHomes } = require('./xprov-artifacts.cjs');
 const { appendXreviewNote } = require('./xprov-normalize.cjs');
-const { filterOutput } = require('./xprov-filter.cjs');
+const { filterOutput, instructionMarker } = require('./xprov-filter.cjs');
 const { permitCheck } = require('./xprov-permit.cjs');
-const { SNAP_PREFIX } = require('./xprov-snapshot.cjs');
+const { homeSymlinks, skillsDirsProblem } = require('./xprov-preflight.cjs');
+const { SNAP_PREFIX, REPO_LOCAL_STRIP, storedDiffSha, storedInputHashes, INPUTS_SUFFIX, INPUT_FILES } = require('./xprov-snapshot.cjs');
 
 const NO_LOG_FLAG = 'no-log';
 const FLAGS = Object.freeze({
   mode: 'str', snapshot: 'str', plan: 'str', phase: 'str', gate: 'str', wave: 'str', round: 'str', lane: 'str',
-  base: 'str', resume: 'str', feedback: 'str', timeout: 'str', 'work-path': 'str', [NO_LOG_FLAG]: 'bool',
+  base: 'str', feedback: 'str', timeout: 'str', 'work-path': 'str', [NO_LOG_FLAG]: 'bool',
 });
-const DEFAULT_TIMEOUT_SECONDS = 600; // the runner's own default
+const DEFAULT_TIMEOUT_SECONDS = X.RUNNER_DEFAULT_TIMEOUT_SECONDS; // the runner's own default
 const SPAWN_GRACE_SECONDS = 60; // the runner kills its child at --timeout; a1 kills the runner a minute later
 const RUNNER_MAX_BUFFER = 64 * 1024 * 1024;
 const LOG_FILE = 'PLAN-REVIEW-LOG.md';
@@ -77,12 +107,22 @@ const LOG_FILE = 'PLAN-REVIEW-LOG.md';
 const LOG_HEADER = '# PLAN-REVIEW-LOG — cross-provider runner calls\n\nWritten by `a1-tools xprov run` and `a1-tools xprov gate`; one entry per call, newest last.\n';
 const RUNNER_MODES = new Set(X.RUNNER_MODES);
 const RUN_DIR_PREFIX = 'claudex-';
+const RUN_HOME_PREFIX = 'run-home-';
+const RUN_HOME_MANIFEST_FILE = 'run-home.manifest.json';
+const { REVIEWED_FILE } = require('./xprov-runrecord.cjs'); // what an inspection reviewed (normalize binds head/base from it)
+const RUN_HOME_MANIFEST_MAX = 500; // entries recorded; the count is always exact
+const RUN_HOME_NOTE_MAX = 20; // entries listed in the XREVIEW note
+const FAILURE_DETAIL_MAX = 300; // characters of the runner's own failure reason kept in reason_detail
+const SYSTEM_SKILLS_REL = path.join('skills', '.system');
+const MANIFEST_FILE_MODE = 0o600;
 // Environment the runner gets — nothing else (Samuel W5 MAJOR 2: OPENAI_BASE_URL
 // would redirect the review, PYTHONPATH would bypass the pin, *_PROXY, GIT_*, …).
 const ALLOWED_ENV = Object.freeze(['PATH', 'HOME', 'TMPDIR', 'LANG', 'TERM', 'USER', 'SHELL']);
 const ALLOWED_ENV_PREFIX = 'LC_';
 // Codex runtime dirs inside the dedicated home that change on every run and are not part of its configuration.
-const CODEX_RUNTIME_DIRS = Object.freeze(['cache', 'sessions', 'plugins', 'skills', 'tmp', 'shell_snapshots', 'thread-writer-locks', 'log']);
+// `skills/.system` (Codex's built-in skills) is runtime; the rest of `skills/` is
+// a USER skill root (measured, Wave 7) and therefore configuration that trips.
+const CODEX_RUNTIME_DIRS = Object.freeze(['cache', 'sessions', 'plugins', 'skills/.system', 'tmp', 'shell_snapshots', 'thread-writer-locks', 'log']);
 // Runtime FILES Codex writes into the home ROOT on every real run (measured
 // 2026-09-25 in ~/.codex-a1-review after five live runs): state databases and
 // their WAL/SHM siblings, the models cache, the install id, history, version.
@@ -94,7 +134,7 @@ const CODEX_RUNTIME_FILES = Object.freeze(['.sandbox_migration', 'installation_i
 const CODEX_RUNTIME_FILE_RE = /\.sqlite(-shm|-wal)?$/;
 const isCodexRuntimeFile = (name) => CODEX_RUNTIME_FILES.includes(name) || CODEX_RUNTIME_FILE_RE.test(name);
 const GIT_META_DIRS = Object.freeze(['hooks', 'info']);
-const REPO_LOCAL_TRACKED = Object.freeze({ repo_local_codex_config: '.codex/config.toml', agents_md: 'AGENTS.md', agents_override_md: 'AGENTS.override.md', codex_hooks: '.codex/hooks' });
+const REPO_LOCAL_TRACKED = Object.freeze({ repo_local_codex_config: '.codex/config.toml', agents_md: 'AGENTS.md', agents_override_md: 'AGENTS.override.md', codex_hooks: '.codex/hooks', agents_dir: '.agents' });
 
 // ---------- helpers ----------
 
@@ -110,14 +150,15 @@ function porcelain(repo) {
 // ---------- argument resolution ----------
 
 function resolveArgs(args) {
+  // No session is ever resumed (Samuel, Wave 7 MAJOR): `codex exec resume`
+  // replays a rollout file in the dedicated home that no check covers.
+  if ((args || []).some((a) => /^--resume(=|$)/.test(String(a)))) usage('--resume is not accepted: every review is a fresh session (a resumed session replays a rollout file outside the tripwire)');
   const flags = parseFlags(args, FLAGS);
   const stray = flags._.filter((a) => String(a).startsWith('--'));
   if (stray.length) usage(`unknown flag ${stray[0]}`);
   if (flags._.length) usage(`unexpected argument ${JSON.stringify(String(flags._[0]).slice(0, 80))}`);
   if (!RUNNER_MODES.has(flags.mode)) usage(`--mode must be one of ${X.RUNNER_MODES.join('|')} (got ${JSON.stringify(String(flags.mode).slice(0, 40))}); build is never used`);
   if (flags.mode === 'inspect' && !flags.base) usage('--mode inspect requires --base <sha>');
-  if (flags.mode === 'inspect' && flags.resume) usage('--mode inspect is always a fresh session: --resume is not allowed');
-  if (flags.feedback && !flags.resume) usage('--feedback requires --resume');
   if (flags.base && !/^[0-9a-fA-F]{7,40}$/.test(flags.base)) usage('--base must be a commit sha (7-40 hex chars)');
   if (!flags.plan) usage('--plan <abs PLAN.md> is required');
   if (!path.isAbsolute(flags.plan)) usage(`--plan must be an absolute path (got ${JSON.stringify(flags.plan.slice(0, 80))})`);
@@ -135,7 +176,6 @@ function resolveArgs(args) {
   try { ids = parseRegistryIds(fs.readFileSync(REGISTRY_PATH, 'utf8')); } catch (_e) { usage(`registry unreadable: ${REGISTRY_PATH}`); }
   if (!ids.includes(flags.gate)) usage(`--gate ${JSON.stringify(String(flags.gate).slice(0, 80))} is not a registered gate id`);
   if (flags.lane !== undefined && !LANE_RE.test(String(flags.lane))) usage(`--lane must match ${LANE_RE} (got ${JSON.stringify(String(flags.lane).slice(0, 80))})`);
-  if (flags.resume && !isFile(flags.resume)) usage(`--resume not found: ${flags.resume}`);
   if (flags.feedback && !isFile(flags.feedback)) usage(`--feedback not found: ${flags.feedback}`);
   const workPath = flags['work-path'] ? path.resolve(flags['work-path']) : root;
   if (!isDir(workPath)) usage(`--work-path is not a directory: ${workPath}`);
@@ -144,7 +184,7 @@ function resolveArgs(args) {
     wave: flags.wave === undefined ? null : parsePositive(flags.wave, 'wave'),
     round: flags.round === undefined ? 1 : parsePositive(flags.round, 'round'),
     lane: flags.lane === undefined ? null : flags.lane, base: flags.base || null,
-    resume: flags.resume ? path.resolve(flags.resume) : null, feedback: flags.feedback ? path.resolve(flags.feedback) : null,
+    feedback: flags.feedback ? path.resolve(flags.feedback) : null,
     timeout: flags.timeout === undefined ? DEFAULT_TIMEOUT_SECONDS : parsePositive(flags.timeout, 'timeout'),
     noLog: flags[NO_LOG_FLAG] === true, ts: nowIso(),
   };
@@ -156,45 +196,48 @@ function buildArgv(ctx, artifactsDir) {
   const argv = ['python3', X.vendoredRunnerPath(), ctx.mode, '--host', X.RUNNER_HOST, '--repo', ctx.snapshot,
     '--plan', ctx.plan, '--artifacts', artifactsDir, '--timeout', String(ctx.timeout)];
   if (ctx.mode === 'inspect') argv.push('--base', ctx.base);
-  if (ctx.mode === 'review' && ctx.resume) {
-    argv.push('--resume', ctx.resume);
-    if (ctx.feedback) argv.push('--feedback', ctx.feedback);
-  }
+  if (ctx.feedback) argv.push('--feedback', ctx.feedback); // every mode: runner.py:348-349 appends it unconditionally
   const forbidden = argv.find((a) => X.FORBIDDEN_RUNNER_TOKENS.includes(a));
   if (forbidden) throw new Error(`refusing to spawn: argv contains ${forbidden}`);
   return argv;
 }
 
-/** Allowlisted environment for the runner (plus the dedicated CODEX_HOME). */
-function buildEnv(source) {
+/** Allowlisted environment for the runner (plus the dedicated CODEX_HOME). HOME
+ * is the per-run home and never the caller's: without `runHome` it is left out. */
+function buildEnv(source, runHome) {
   const src = source || process.env;
   const env = {};
   for (const [k, v] of Object.entries(src)) {
     if (ALLOWED_ENV.includes(k) || k.startsWith(ALLOWED_ENV_PREFIX)) env[k] = v;
   }
+  delete env.HOME;
+  if (runHome) env.HOME = runHome;
   env.CODEX_HOME = X.codexHome();
+  env.GIT_CONFIG_NOSYSTEM = '1'; // the runner's git reads no /etc/gitconfig (Wave 7, Samuel)
   return env;
 }
 
 /** spawnSync options: minimal env, snapshot cwd, hard timeout with grace, SIGKILL. */
-function spawnOptions(ctx) {
+function spawnOptions(ctx, runHome) {
   return {
-    cwd: ctx.snapshot, env: buildEnv(), encoding: 'utf8', maxBuffer: RUNNER_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'],
+    cwd: ctx.snapshot, env: buildEnv(null, runHome), encoding: 'utf8', maxBuffer: RUNNER_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'],
     timeout: (ctx.timeout + SPAWN_GRACE_SECONDS) * 1000, killSignal: 'SIGKILL',
   };
 }
 
 // ---------- tripwire (FR-015) ----------
 
-/** { relpath: sha256 } for every regular file under dir (recursive), skipping `skip`
- * names (and, when `skipFile` is given, matching file names) at the top level. */
+/** { relpath: sha256 } for every regular file under dir (recursive), skipping the
+ * `skip` relative paths at any depth and, when `skipFile` is given, matching file
+ * names at the top level. */
 function fileHashes(dir, skip, prefix, out, skipFile) {
   const acc = out || {};
   if (!isDir(dir)) return acc;
   for (const name of fs.readdirSync(dir)) {
-    if (!prefix && (skip.includes(name) || (skipFile && skipFile(name)))) continue;
-    const full = path.join(dir, name);
     const rel = prefix ? `${prefix}/${name}` : name;
+    // `skip` holds relative paths (`cache`, `skills/.system`); `skipFile` names at the top level only.
+    if (skip.includes(rel) || (!prefix && skipFile && skipFile(name))) continue;
+    const full = path.join(dir, name);
     let st;
     try { st = fs.lstatSync(full); } catch (_e) { continue; }
     if (st.isDirectory()) fileHashes(full, skip, rel, acc, skipFile);
@@ -280,8 +323,174 @@ function runDirFromStdout(stdout, artifactsDir) {
   }
 }
 
-function spawnRunner(argv, ctx, artifactsDir) {
-  const r = spawnSync(argv[0], argv.slice(1), spawnOptions(ctx));
+// ---------- per-run HOME (Wave 7) ----------
+
+const octal = (mode) => (mode & 0o777).toString(8).padStart(3, '0');
+
+/** Why `dir` is not a safe, empty run home right now — or null. */
+function runHomeProblem(dir) {
+  let st;
+  try { st = fs.lstatSync(dir); } catch (_e) { return `run home vanished: ${dir}`; }
+  if (st.isSymbolicLink()) return `run home is a symlink: ${dir}`;
+  if (!st.isDirectory()) return `run home is not a directory: ${dir}`;
+  if ((st.mode & 0o777) !== C.DIR_MODE) return `run home mode ${octal(st.mode)}, want ${octal(C.DIR_MODE)}: ${dir}`;
+  if (typeof process.getuid === 'function' && st.uid !== process.getuid()) return `run home owned by uid ${st.uid}, not ${process.getuid()}: ${dir}`;
+  if (path.resolve(dir) === path.resolve(os.homedir())) return `run home equals the caller's HOME: ${dir}`;
+  const entries = fs.readdirSync(dir);
+  if (entries.length > 0) return `run home not empty before the spawn: ${entries.slice(0, 5).join(', ')}${entries.length > 5 ? ` (+${entries.length - 5})` : ''}`;
+  return null;
+}
+
+function removeRunHome(dir) {
+  if (dir && path.basename(dir).startsWith(RUN_HOME_PREFIX) && isUnder(dir, X.xprovHome())) fs.rmSync(dir, { recursive: true, force: true });
+}
+
+/** A fresh run home: mkdtemp under ~/.a1-xprov, 0700, verified empty. The
+ * `afterCreate` seam (fixtures only) runs between mkdtemp and the check. */
+function prepareRunHome(opts) {
+  const o = opts || {};
+  C.mkdir0700(X.xprovHome());
+  const dir = fs.mkdtempSync(path.join(X.xprovHome(), RUN_HOME_PREFIX));
+  fs.chmodSync(dir, C.DIR_MODE); // umask-proof
+  if (typeof o.afterCreate === 'function') o.afterCreate(dir);
+  const problem = runHomeProblem(dir);
+  if (problem) {
+    removeRunHome(dir);
+    return Object.freeze({ ok: false, dir: null, problem });
+  }
+  return Object.freeze({ ok: true, dir, problem: null });
+}
+
+/** What the runner left in its HOME: [{path, type, size}], sorted, symlinks not followed. */
+function runHomeManifest(dir) {
+  const out = [];
+  const walk = (abs, rel) => {
+    for (const name of fs.readdirSync(abs).sort()) {
+      const full = path.join(abs, name);
+      const r = rel ? `${rel}/${name}` : name;
+      let st;
+      try { st = fs.lstatSync(full); } catch (_e) { continue; }
+      const type = st.isSymbolicLink() ? 'symlink' : st.isDirectory() ? 'dir' : st.isFile() ? 'file' : 'other';
+      out.push({ path: r, type, size: type === 'file' ? st.size : null });
+      if (type === 'dir') walk(full, r);
+    }
+  };
+  try { walk(dir, ''); } catch (_e) { /* a vanished dir yields what was read */ }
+  return out;
+}
+
+/** The manifest as it may leave a1's private artifacts dir: a name the runner
+ * chose is data — secret-shaped or instruction-shaped names are withheld and
+ * only the pattern is named (Codex R1, hardened live inspect 2026-10-02). */
+function emittableManifest(manifest) {
+  return manifest.map((e) => {
+    const hit = filterOutput([e.path]);
+    if (hit && hit.hit) return { ...e, path: `<withheld: ${hit.pattern_name}>` };
+    if (instructionMarker({ id: '', evidence: e.path, fix: '' }, []) !== null) return { ...e, path: '<withheld: instruction_shaped>' };
+    return e;
+  });
+}
+
+function writeRunHomeManifest(runDir, artifactsDir, manifest) {
+  if (!runDir || !isDir(runDir) || !isUnder(runDir, artifactsDir)) return;
+  const body = { entries: manifest.length, manifest: manifest.slice(0, RUN_HOME_MANIFEST_MAX) };
+  fs.writeFileSync(path.join(runDir, RUN_HOME_MANIFEST_FILE), `${JSON.stringify(body, null, 2)}\n`, { mode: MANIFEST_FILE_MODE });
+}
+
+/** --plan / --feedback must be the snapshot's own scanned copies, unchanged
+ * since snapshot() hashed them (Codex R1, live inspect 2026-10-03): a foreign
+ * path, a missing record, a symlink or a changed byte → the reason, else null. */
+function inputProblem(ctx) {
+  const record = storedInputHashes(ctx.snapshot);
+  if (!record) return `no input record next to the snapshot (${ctx.snapshot}${INPUTS_SUFFIX}/inputs.json) — build it with xprov snapshot --plan`;
+  const given = [['plan', ctx.plan], ...(ctx.feedback ? [['feedback', ctx.feedback]] : [])];
+  for (const [key, p] of given) {
+    const expected = path.join(`${ctx.snapshot}${INPUTS_SUFFIX}`, INPUT_FILES[key]);
+    let st;
+    try { st = fs.lstatSync(p); } catch (_e) { return `--${key} ${p} is missing`; }
+    if (st.isSymbolicLink() || !st.isFile()) return `--${key} ${p} is not a regular file`;
+    let same = false;
+    try { same = fs.realpathSync(p) === fs.realpathSync(expected); } catch (_e) { same = false; }
+    if (!same) return `--${key} must be the snapshot's scanned copy ${expected}, got ${p}`;
+    if (typeof record[key] !== 'string') return `the snapshot recorded no ${key} copy`;
+    if (sha256(fs.readFileSync(p)) !== record[key]) return `--${key} copy changed after the snapshot scanned it`;
+  }
+  return null;
+}
+
+/** Right before the spawn (Samuel m7, measured 2026-10-03 on a home copy with
+ * `codex debug prompt-input` under a network block): a SKILL.md planted in
+ * `skills/.system` is loaded while its marker matches (m1), and Codex re-extracts
+ * the identical `.system` (6 skills + marker 8bcfb84cfbe4722a) when it is absent
+ * (m2) or when the marker is gone (m3). So the dedicated home must hold no
+ * symlink besides auth.json, `skills/` and `skills/.system` must be real, own
+ * directories, and `.system` is removed before every spawn. → reason or null. */
+function resetSystemSkills() {
+  const home = X.codexHome();
+  const links = homeSymlinks(home);
+  if (links.length) return `the dedicated Codex home holds symlinks (${links.slice(0, 5).join(', ')}) — refusing to spawn`;
+  const bad = skillsDirsProblem(home);
+  if (bad) return `${bad} in the dedicated Codex home — refusing to spawn`;
+  fs.rmSync(path.join(home, SYSTEM_SKILLS_REL), { recursive: true, force: true });
+  return null;
+}
+
+/** runner.py 2.1.0 RunError messages WITHOUT interpolated parts (f-strings
+ * excluded: line 102 carries repo path names, `error` carries str(exc)). Only
+ * an exact match is exempt from the instruction check (Samuel W7: invert it).
+ * The claude-provider, build, check and resume messages are left out: a1 never
+ * reaches those paths, so they are checked like any other text. */
+const RUNNER_FIXED_MESSAGES = Object.freeze([
+  'The plan reviewer must be the other provider. Change the host to swap roles.',
+  '--cli must be an absolute path to an installed CLI executable.',
+  'Review must contain exactly verdict, summary, findings, coverage and limitations.',
+  'Invalid review verdict.', 'Missing review summary.', 'A completed review must identify what was inspected.',
+  'Invalid findings list.', 'Invalid finding fields.', 'Every finding needs an id, severity, path, evidence and fix.',
+  'Finding IDs must be unique; severity must be high, medium or low.', 'APPROVED cannot contain unresolved high/medium findings.',
+  'REVISE must explain at least one concrete finding.', 'BLOCKED must explain the limitation.',
+  'Run timed out or was interrupted; no approval recorded.', 'Codex event stream contains a non-object event.',
+  'Codex reported a failed turn; inspect the captured diagnostics.', 'Missing or ambiguous Codex session/completion event.',
+  'CLI did not return a valid session UUID.', 'CLI resumed a different session; refusing its result.',
+  'Plan review must use the provider opposite the planner/host.', 'Inspection requires --base and a fresh session (no --resume).',
+  'Keep run artifacts outside the target checkout so they do not contaminate its diff.',
+  'CLI version probe failed. Check the resolved executable before retrying.',
+  'Plan changed during the run; result cannot approve the current plan.', 'Code changed during inspection; inspect the final code again.',
+  'Timeout must be positive.',
+]);
+const RUNNER_STDERR_PREFIX = 'claudex-loop: '; // runner.py:415
+
+/** The runner's own failure reason, display-safe (Wave 7 review): the last
+ * `{"type":"error","message":…}` event of the run dir's stdout.txt (measured:
+ * the usage-limit case), else result.json `error`, else the stderr tail — one
+ * line (every line breaker and bidi control → space), capped. Secret patterns
+ * are withheld by name; anything that is not an exact fixed runner message is
+ * withheld when instruction-shaped. */
+function runnerFailureDetail(run) {
+  let msg = null;
+  if (run.runDir) {
+    for (const line of readIfFile(path.join(run.runDir, 'stdout.txt')).split('\n')) {
+      try { const ev = JSON.parse(line); if (ev && ev.type === 'error' && typeof ev.message === 'string') msg = ev.message; } catch (_e) { /* not a JSON event */ }
+    }
+    if (msg === null) {
+      try { const rec = JSON.parse(readIfFile(path.join(run.runDir, 'result.json'))); if (rec && typeof rec.error === 'string') msg = rec.error; } catch (_e) { /* no record */ }
+    }
+  }
+  if (msg === null) msg = tail(run.stderr) || '';
+  const bare = msg.trim().startsWith(RUNNER_STDERR_PREFIX) ? msg.trim().slice(RUNNER_STDERR_PREFIX.length) : msg.trim();
+  const hit = filterOutput([msg]);
+  if (hit && hit.hit) msg = `<withheld: ${hit.pattern_name}>`;
+  else if (!RUNNER_FIXED_MESSAGES.includes(bare) && instructionMarker({ id: '', evidence: msg, fix: '' }, []) !== null) msg = '<withheld: instruction_shaped>';
+  const line = msg.replace(C.LINE_BREAKERS_RE, ' ').replace(/ {2,}/g, ' ').trim().slice(0, FAILURE_DETAIL_MAX);
+  return `runner exited ${run.status}${line ? `: ${line}` : ''}`;
+}
+
+/** The snapshot root must be stripped: its own `.agents/skills` would be a skill root. */
+function unstrippedEntries(snapshot) {
+  return REPO_LOCAL_STRIP.filter((name) => fs.existsSync(path.join(snapshot, name)));
+}
+
+function spawnRunner(argv, ctx, artifactsDir, runHome) {
+  const r = spawnSync(argv[0], argv.slice(1), spawnOptions(ctx, runHome));
   if (r.error) return { status: null, stdout: r.stdout || '', stderr: `spawn failed: ${r.error.code || r.error.message}`, runDir: runDirFromStdout(r.stdout, artifactsDir) };
   if (r.signal) return { status: null, stdout: r.stdout || '', stderr: `runner killed by ${r.signal} after ${ctx.timeout + SPAWN_GRACE_SECONDS} s`, runDir: runDirFromStdout(r.stdout, artifactsDir) };
   return { status: r.status, stdout: r.stdout || '', stderr: r.stderr || '', runDir: runDirFromStdout(r.stdout, artifactsDir) };
@@ -337,47 +546,135 @@ function emit(ctx, extra, exitCode) {
   process.exitCode = exitCode;
 }
 
-/** Everything after the pre-spawn checks; the baseline temp dir is always removed. */
+/** finish / failWith for one run: log entry + stdout JSON. `extra.run_home_manifest`
+ * and `extra.porcelain` are set by the caller once the spawn happened. */
+function makeOutcomes(ctx, artifactsDir, common, notes) {
+  const finish = (extra, verdict, code) => {
+    appendLog(ctx, { roles: extra.result_path ? rolesOf(extra.result_path) : 'unknown', result_path: extra.result_path, verdict, notes });
+    return emit(ctx, { ok: code === X.EXIT_PASS, ...common, run_home_manifest: null, ...extra }, code);
+  };
+  const failWith = (reason, detail, runDir, keepRunDir, extra) => {
+    if (!keepRunDir) removeRunDir(runDir, artifactsDir);
+    return finish({ reason, reason_detail: detail, baseline_delta: [], result_path: null, artifacts_run_dir: keepRunDir ? runDir : null, ...(extra || {}) }, `fail/${reason}`, X.EXIT_FAIL);
+  };
+  return { finish, failWith };
+}
+
+/** `git status --porcelain` before and after the run, raw (SC-004 evidence). */
+function porcelainEvidence(before, after) {
+  const pair = (k) => ({ before: before[k] === undefined ? null : before[k], after: after[k] === undefined ? null : after[k] });
+  return { checkout: pair('checkout'), snapshot: pair('snapshot'), work: pair('work') };
+}
+
+/** XREVIEW note when the runner left entries in its per-run HOME (names + sizes only). */
+function noteRunHome(ctx, manifest) {
+  if (manifest.length === 0) return;
+  appendXreviewNote(ctx.phaseDir, `note: the runner left ${manifest.length} entries in its per-run HOME (${ctx.gate}, ${ctx.mode})`,
+    manifest.slice(0, RUN_HOME_NOTE_MAX).map((e) => `${e.path} · ${e.type}${e.size === null ? '' : ` · ${e.size} bytes`}`));
+}
+
+/** The run dir's result.json is present and scannable, else { reason, detail, keep }. */
+function resultFileProblem(run) {
+  const resultPath = run.runDir ? path.join(run.runDir, 'result.json') : null;
+  if (!resultPath || !isFile(resultPath)) return { reason: X.REASONS.runner_failed, detail: 'runner exited 0 without a result.json in a claudex-* run dir under the artifacts dir', keep: false };
+  if (fileSize(resultPath) > X.MAX_RESULT_BYTES) return { reason: X.REASONS.malformed, detail: `result.json exceeds ${X.MAX_RESULT_BYTES} bytes and cannot be scanned`, keep: true };
+  return null;
+}
+
+/** Detective TOCTOU check (Wave 7, Samuel): the diff the runner hashed must be
+ * the diff the snapshot scan hashed (runner.py:106-107 vs snapshot()). */
+function diffHashProblem(ctx, resultPath) {
+  if (ctx.mode !== 'inspect') return null;
+  let recorded = null;
+  try { const rec = JSON.parse(readIfFile(resultPath)); recorded = rec && rec.snapshot && typeof rec.snapshot.diff_sha256 === 'string' ? rec.snapshot.diff_sha256 : null; } catch (_e) { recorded = null; }
+  if (recorded === ctx.diffSha) return null;
+  return `snapshot diff changed between the scan and the runner (scanned ${String(ctx.diffSha).slice(0, 12)}, runner ${String(recorded).slice(0, 12)})`;
+}
+
+/** Everything after the spawn, in order: tripwire, run-home note, exit, files, diff hash, secret filter. */
+function judgeRun(ctx, o, run, artifactsDir, delta, baselinePath, seen) {
+  if (delta.length > 0) {
+    revertSnapshot(ctx.snapshot);
+    appendXreviewNote(ctx.phaseDir, `BLOCKER tripwire (${ctx.gate}, ${ctx.mode})`, ['the reviewer changed files during the run; its result was discarded', ...delta]);
+    removeRunDir(run.runDir, artifactsDir);
+    return o.finish({ reason: X.REASONS.tripwire, baseline_delta: delta, baseline_path: baselinePath, result_path: null, artifacts_run_dir: null, ...seen }, `fail/${X.REASONS.tripwire}`, X.EXIT_FAIL);
+  }
+  // The note goes in AFTER the tripwire baseline was retaken: a1's own write into
+  // the phase dir must never read as a reviewer write.
+  noteRunHome(ctx, seen.run_home_manifest);
+  if (run.status !== 0) {
+    const why = runnerFailureDetail(run);
+    process.stderr.write(`xprov run: runner failed: ${why}\n`);
+    return o.failWith(X.REASONS.runner_failed, why, run.runDir, false, seen);
+  }
+  const bad = resultFileProblem(run);
+  if (bad) return o.failWith(bad.reason, bad.detail, run.runDir, bad.keep, seen);
+  const resultPath = path.join(run.runDir, 'result.json');
+  const tamper = diffHashProblem(ctx, resultPath);
+  if (tamper) {
+    appendXreviewNote(ctx.phaseDir, `BLOCKER tripwire (${ctx.gate}, ${ctx.mode})`, ['the outbound diff differs from the scanned one; the result was discarded', tamper]);
+    removeRunDir(run.runDir, artifactsDir);
+    return o.finish({ reason: X.REASONS.tripwire, reason_detail: tamper, baseline_delta: [tamper], result_path: null, artifacts_run_dir: null, ...seen }, `fail/${X.REASONS.tripwire}`, X.EXIT_FAIL);
+  }
+  const replyPath = path.join(run.runDir, 'reply.txt');
+  if (isFile(replyPath) && fileSize(replyPath) > X.MAX_RESULT_BYTES) return o.failWith(X.REASONS.malformed, `reply.txt exceeds ${X.MAX_RESULT_BYTES} bytes and cannot be scanned`, run.runDir, true, seen);
+  const hit = filterOutput([readIfFile(resultPath), readIfFile(replyPath)]);
+  if (hit && hit.hit) {
+    process.stderr.write(`xprov run: secret_in_output (pattern ${hit.pattern_name}); run dir kept for inspection: ${run.runDir}\n`);
+    return o.finish({ reason: X.REASONS.secret_in_output, secret_pattern: hit.pattern_name, baseline_delta: [], result_path: null, artifacts_run_dir: run.runDir, ...seen }, `fail/${X.REASONS.secret_in_output}`, X.EXIT_FAIL);
+  }
+  if (ctx.mode === 'inspect') writeReviewedRecord(ctx, run.runDir);
+  return o.finish({ reason: null, baseline_delta: [], result_path: resultPath, artifacts_run_dir: run.runDir, ...seen }, 'pending', X.EXIT_PASS);
+}
+
+/** a1's own record of what an inspection reviewed, in the 0700 run dir (Samuel
+ * MAJOR 1, da103f3): the snapshot's commit, the full base and the scanned diff
+ * hash. normalize takes head/base ONLY from here (checked against the runner's
+ * snapshot.base and diff_sha256) — never from flags or the live work path. */
+function writeReviewedRecord(ctx, runDir) {
+  const commit = C.gitOut(['-C', ctx.snapshot, 'rev-parse', '--verify', '--quiet', 'HEAD^{commit}']);
+  const base = C.gitOut(['-C', ctx.snapshot, 'rev-parse', '--verify', '--quiet', `${ctx.base}^{commit}`]);
+  const diffSha = storedDiffSha(ctx.snapshot);
+  if (commit === null || base === null || !diffSha) return;
+  fs.writeFileSync(path.join(runDir, REVIEWED_FILE), `${JSON.stringify({ commit: commit.trim(), base: base.trim(), diff_sha256: diffSha }, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
+}
+
+/** Pre-spawn run home + late input re-hash, spawn, post-run judgement; the
+ * baseline temp dir and the run home are always removed. */
 function runWithBaseline(ctx, artifactsDir, argv, notes) {
   const before = takeBaseline(ctx);
   const baselinePath = writeBaseline(before);
   // `ok` like preflight/permit/observe/snapshot; `baseline_path` only on a
   // tripwire (the file is gone in `finally` — on success only `baseline_delta`
   // is meaningful, on a tripwire the mktemp path documents where the baseline was).
-  const common = { argv, snapshot_notes: notes };
-  const finish = (extra, verdict, code) => {
-    appendLog(ctx, { roles: extra.result_path ? rolesOf(extra.result_path) : 'unknown', result_path: extra.result_path, verdict, notes });
-    return emit(ctx, { ok: code === X.EXIT_PASS, ...common, ...extra }, code);
-  };
-  const failWith = (reason, detail, runDir, keepRunDir) => {
-    if (!keepRunDir) removeRunDir(runDir, artifactsDir);
-    return finish({ reason, reason_detail: detail, baseline_delta: [], result_path: null, artifacts_run_dir: keepRunDir ? runDir : null }, `fail/${reason}`, X.EXIT_FAIL);
-  };
+  const o = makeOutcomes(ctx, artifactsDir, { argv, snapshot_notes: notes }, notes);
+  let runHome = null;
   try {
-    const run = spawnRunner(argv, ctx, artifactsDir);
-    const delta = baselineDelta(before, takeBaseline(ctx));
-    if (delta.length > 0) {
-      revertSnapshot(ctx.snapshot);
-      appendXreviewNote(ctx.phaseDir, `BLOCKER tripwire (${ctx.gate}, ${ctx.mode})`, ['the reviewer changed files during the run; its result was discarded', ...delta]);
-      removeRunDir(run.runDir, artifactsDir);
-      return finish({ reason: X.REASONS.tripwire, baseline_delta: delta, baseline_path: baselinePath, result_path: null, artifacts_run_dir: null }, `fail/${X.REASONS.tripwire}`, X.EXIT_FAIL);
+    const home = prepareRunHome();
+    if (!home.ok) {
+      process.stderr.write(`xprov run: ${home.problem}; refusing to spawn\n`);
+      return o.failWith(X.REASONS.run_home_unsafe, home.problem, null, false);
     }
-    if (run.status !== 0) {
-      process.stderr.write(`xprov run: runner failed: ${tail(run.stderr)}\n`);
-      return failWith(X.REASONS.runner_failed, tail(run.stderr) || `runner exited ${run.status}`, run.runDir, false);
+    runHome = home.dir;
+    // Re-hash the input copies right before the spawn (TOCTOU since the check in cmdXprovRun).
+    const late = inputProblem(ctx);
+    if (late) {
+      process.stderr.write(`xprov run: ${late}; refusing to spawn\n`);
+      return o.failWith(X.REASONS.snapshot_failed, late, null, false);
     }
-    const resultPath = run.runDir ? path.join(run.runDir, 'result.json') : null;
-    if (!resultPath || !isFile(resultPath)) return failWith(X.REASONS.runner_failed, 'runner exited 0 without a result.json in a claudex-* run dir under the artifacts dir', run.runDir, false);
-    if (fileSize(resultPath) > X.MAX_RESULT_BYTES) return failWith(X.REASONS.malformed, `result.json exceeds ${X.MAX_RESULT_BYTES} bytes and cannot be scanned`, run.runDir, true);
-    const replyPath = path.join(run.runDir, 'reply.txt');
-    if (isFile(replyPath) && fileSize(replyPath) > X.MAX_RESULT_BYTES) return failWith(X.REASONS.malformed, `reply.txt exceeds ${X.MAX_RESULT_BYTES} bytes and cannot be scanned`, run.runDir, true);
-    const hit = filterOutput([readIfFile(resultPath), readIfFile(replyPath)]);
-    if (hit && hit.hit) {
-      process.stderr.write(`xprov run: secret_in_output (pattern ${hit.pattern_name}); run dir kept for inspection: ${run.runDir}\n`);
-      return finish({ reason: X.REASONS.secret_in_output, secret_pattern: hit.pattern_name, baseline_delta: [], result_path: null, artifacts_run_dir: run.runDir }, `fail/${X.REASONS.secret_in_output}`, X.EXIT_FAIL);
+    const homeIssue = resetSystemSkills();
+    if (homeIssue) {
+      process.stderr.write(`xprov run: ${homeIssue}\n`);
+      return o.failWith(X.REASONS.preflight_failed, homeIssue, null, false);
     }
-    return finish({ reason: null, baseline_delta: [], result_path: resultPath, artifacts_run_dir: run.runDir }, 'pending', X.EXIT_PASS);
+    const run = spawnRunner(argv, ctx, artifactsDir, runHome);
+    const rawManifest = runHomeManifest(runHome);
+    writeRunHomeManifest(run.runDir, artifactsDir, rawManifest); // a1's 0700 artifacts dir, like result.json
+    const after = takeBaseline(ctx);
+    const seen = { run_home_manifest: emittableManifest(rawManifest), porcelain: porcelainEvidence(before, after) };
+    return judgeRun(ctx, o, run, artifactsDir, baselineDelta(before, after), baselinePath, seen);
   } finally {
+    removeRunHome(runHome);
     fs.rmSync(path.dirname(baselinePath), { recursive: true, force: true });
   }
 }
@@ -391,12 +688,36 @@ function cmdXprovRun(args) {
     process.stderr.write(`xprov run: ${permit.detail || permit.reason}\n`);
     return emit(ctx, { ok: false, reason: permit.reason, reason_detail: permit.detail || null, result_path: null, artifacts_run_dir: null, baseline_delta: [] }, X.EXIT_FAIL);
   }
+  // Opportunistic: run-homes a SIGKILL left behind never accumulate (gc's own sweep, not a copy).
+  sweepRunHomes();
   const notes = snapshotNotes(ctx.snapshot);
   const pin = X.checkRunnerPin();
   if (!pin.ok) {
     process.stderr.write(`xprov run: runner pin check failed (${pin.reason}); refusing to spawn an unverified runner\n`);
     appendLog(ctx, { roles: 'unknown', result_path: null, verdict: `fail/${X.REASONS.runner_failed}`, notes });
     return emit(ctx, { ok: false, reason: X.REASONS.runner_failed, reason_detail: `runner pin ${pin.reason}: ${pin.runnerPath} vs ${pin.sumsPath}`, result_path: null, artifacts_run_dir: null, baseline_delta: [] }, X.EXIT_FAIL);
+  }
+  const unstripped = unstrippedEntries(ctx.snapshot);
+  if (unstripped.length) {
+    const detail = `the snapshot root still holds ${unstripped.join(', ')}; the runner's cwd must be a stripped snapshot root`;
+    process.stderr.write(`xprov run: ${detail}; refusing to spawn\n`);
+    appendLog(ctx, { roles: 'unknown', result_path: null, verdict: `fail/${X.REASONS.snapshot_failed}`, notes });
+    return emit(ctx, { ok: false, reason: X.REASONS.snapshot_failed, reason_detail: detail, result_path: null, artifacts_run_dir: null, baseline_delta: [] }, X.EXIT_FAIL);
+  }
+  const inputs = inputProblem(ctx);
+  if (inputs) {
+    process.stderr.write(`xprov run: ${inputs}; refusing to spawn\n`);
+    appendLog(ctx, { roles: 'unknown', result_path: null, verdict: `fail/${X.REASONS.snapshot_failed}`, notes });
+    return emit(ctx, { ok: false, reason: X.REASONS.snapshot_failed, reason_detail: inputs, result_path: null, artifacts_run_dir: null, baseline_delta: [] }, X.EXIT_FAIL);
+  }
+  const diffSha = ctx.mode === 'inspect' ? storedDiffSha(ctx.snapshot) : null;
+  if (ctx.mode === 'inspect') {
+    if (!diffSha) {
+      const detail = 'no scanned diff hash next to the snapshot (<snapshot>.inputs/diff.sha256) — build it with xprov snapshot --base';
+      process.stderr.write(`xprov run: ${detail}; refusing to spawn\n`);
+      appendLog(ctx, { roles: 'unknown', result_path: null, verdict: `fail/${X.REASONS.snapshot_failed}`, notes });
+      return emit(ctx, { ok: false, reason: X.REASONS.snapshot_failed, reason_detail: detail, result_path: null, artifacts_run_dir: null, baseline_delta: [] }, X.EXIT_FAIL);
+    }
   }
   const present = Object.entries(REPO_LOCAL_TRACKED).filter(([k]) => notes[k]).map(([, rel]) => rel);
   if (present.length) {
@@ -405,10 +726,11 @@ function cmdXprovRun(args) {
   }
   const artifactsDir = ensureArtifactsDir(); // 0700, outside checkout and vault (A1_INPUT → facade exit 2)
   const argv = buildArgv(ctx, artifactsDir);
-  return runWithBaseline(ctx, artifactsDir, argv, notes);
+  return runWithBaseline(Object.freeze({ ...ctx, diffSha }), artifactsDir, argv, notes);
 }
 
 module.exports = {
   cmdXprovRun, buildArgv, buildEnv, spawnOptions, baselineDelta, takeBaseline, gitMeta, fileHashes, snapshotNotes, runDirFromStdout,
-  LOG_HEADER, NO_LOG_FLAG, ALLOWED_ENV, CODEX_RUNTIME_DIRS, CODEX_RUNTIME_FILES,
+  prepareRunHome, removeRunHome, runHomeManifest,
+  LOG_HEADER, NO_LOG_FLAG, REVIEWED_FILE, ALLOWED_ENV, CODEX_RUNTIME_DIRS, CODEX_RUNTIME_FILES, RUN_HOME_PREFIX,
 };

@@ -201,7 +201,7 @@ MD
   assert_eq "R1c both ids sit inside the registry's anchored id table (not an alias)" "$rows" "true"
 
   local enf; enf="$(grep -E "^\| \`($GATE_PLAN|$GATE_WAVE)\` " "$REGISTRY" | awk -F'|' '{gsub(/ /,"",$7); print $7}' | sort -u | tr '\n' ',')"
-  assert_eq "R1d both rows carry enforcement warning until the Wave 7 flip" "$enf" "warning,"
+  assert_eq "R1d both rows carry enforcement blocking since the Wave 7 flip (ADR §6, 2026-10-03)" "$enf" "blocking,"
 }
 
 # ---------- R29: the ADR exists with the six decision headings ----------
@@ -212,8 +212,12 @@ caseR29() {
   # number is optional here, the heading text is verbatim from the plan.
   local n; n="$(grep -cE '^#{2,3} ([0-9]+\. )?(Runner-only use|Dedicated CODEX_HOME|Snapshot, not checkout|Fail-closed mapping|Vendoring decision|Live smoke)$' "$ADR")"
   assert_eq "R29a ADR has the six decision headings" "$n" "6"
-  if grep -qiE 'pending Wave 7' "$ADR"; then ok "R29b Live smoke section is the placeholder (no live claim before Wave 7)"
-  else bad "R29b Live smoke section does not say 'pending Wave 7'"; fi
+  # post-flip (Wave 7, 2026-10-03): the placeholder is gone and §6 holds both live commands
+  if ! grep -qiE 'pending Wave 7' "$ADR" \
+     && grep -q 'xprov gate --phase M13-residuals --gate plan-review-xprov' "$ADR" \
+     && grep -q 'xprov gate --phase M13-residuals --gate wave-inspect-xprov' "$ADR"; then
+    ok "R29b Live smoke section records both live gate commands, no placeholder left"
+  else bad "R29b Live smoke section is still the placeholder or lacks a live gate command"; fi
   # The repo has no .env.example, so the ADR is where the ENV var is documented
   # (wave plan, deployment chain).
   if grep -q "A1_XPROV_CODEX_HOME" "$ADR"; then ok "R29c ADR documents the A1_XPROV_CODEX_HOME env var"
@@ -265,7 +269,7 @@ caseF1() {
   # Red-making change: declaring a new flag in any module without documenting it.
   local flagcheck; flagcheck="$(node -e "
     const fs = require('fs'); const path = require('path'); const lib = path.dirname(process.argv[1]);
-    const help = fs.readFileSync(process.argv[2], 'utf8');
+    const help = require(process.argv[2]).HELP; // the rendered text: robust to help-*.cjs splits
     const block = help.slice(help.indexOf('a1-tools xprov <sub>'), help.indexOf('Spec statuses:'));
     const files = fs.readdirSync(lib).filter((f) => /^xprov-.*\.cjs$/.test(f) && f !== 'xprov-common.cjs');
     const missing = []; let total = 0;
@@ -305,8 +309,8 @@ caseF1() {
     process.stdout.write(JSON.stringify({ subs, reasons, ghp, akia, assign, clean, markers, gates, home }));
   " "$XPROV_LIB" 2>&1)"
   assert_json "F1f dispatch table has 14 entries (allowlist added in Wave 6b)" "$out" "j.subs" "14"
-  assert_json "F1g REASON_LIST is the spec's thirteen reason codes plus the documented freeze exceptions (preflight_failed W4, plan_review_missing + wave_inspect_missing W6, allowlist_invalid + allowlist_modified W6b)" "$out" "j.reasons" \
-    "runner_failed,malformed,wrong_mode,blocked,plan_changed,tripwire,secret_in_snapshot,secret_in_output,quarantined,round_cap,external_review_not_permitted,snapshot_failed,not_logged_in,preflight_failed,plan_review_missing,wave_inspect_missing,allowlist_invalid,allowlist_modified"
+  assert_json "F1g REASON_LIST is the spec's thirteen reason codes plus the documented freeze exceptions (preflight_failed W4, plan_review_missing + wave_inspect_missing W6, allowlist_invalid + allowlist_modified W6b, run_home_unsafe W7)" "$out" "j.reasons" \
+    "runner_failed,malformed,wrong_mode,blocked,plan_changed,tripwire,secret_in_snapshot,secret_in_output,quarantined,round_cap,external_review_not_permitted,snapshot_failed,not_logged_in,preflight_failed,plan_review_missing,wave_inspect_missing,allowlist_invalid,allowlist_modified,run_home_unsafe"
   assert_json "F1h SECRET_PATTERNS hit ghp_/AKIA/assignment shapes and not plain text" "$out" \
     "[j.ghp, j.akia, j.assign, j.clean].join('/')" "true/true/true/false"
 
@@ -335,15 +339,25 @@ caseF1() {
     };
     // Samuel re-check: the 300 000-char abc:// repetition took 21.6 s with the unbounded url pattern
     const inputs = ['a'.repeat(10000), 'https://' + 'u'.repeat(10000), 'password = ' + 'x'.repeat(10000), 'sk-' + '-'.repeat(10000), 'Bearer ' + ' '.repeat(10000), 'abc://'.repeat(50000)];
+    // Load-robust (team lead, 2026-10-04: 108-232 ms seen at load average 52-56):
+    // per (pattern, input) the MINIMUM of three runs, and the bound is 1 s —
+    // linear patterns take a few ms on these inputs, a backtracking one takes
+    // seconds (21.6 s measured for the unbounded url pattern), so the ReDoS
+    // intent stays while scheduler noise no longer decides the verdict.
+    const once = (re, s) => { const t0 = process.hrtime.bigint(); re.test(s); return Number(process.hrtime.bigint() - t0) / 1e6; };
     let worst = 0, worstName = '';
-    for (const p of x.SECRET_PATTERNS) for (const s of inputs) { const t0 = process.hrtime.bigint(); p.re.test(s); const ms = Number(process.hrtime.bigint() - t0) / 1e6; if (ms > worst) { worst = ms; worstName = p.name; } }
+    for (const p of x.SECRET_PATTERNS) for (const s of inputs) {
+      let ms = once(p.re, s);
+      if (ms <= 1000) ms = Math.min(ms, once(p.re, s), once(p.re, s)); // a catastrophic first run is not repeated
+      if (ms > worst) { worst = ms; worstName = p.name; }
+    }
     process.stdout.write(JSON.stringify({ names, count: x.SECRET_PATTERNS.length, worst: Math.round(worst * 100) / 100, worstName }));
   " "$XPROV_LIB" 2>&1)"
   assert_json "F1h2 the eight Samuel shapes each hit their own pattern; ghp_/xoxb keep their original names" "$out2" \
     "Object.entries(j.names).map(([k, v]) => k + '=' + v).join(' ')" \
     "sk_ext=sk_prefixed_key_ext gho=github_token_family fine=github_pat_fine_grained xoxa=slack_token_family url=url_credentials pwd=password_assignment bearer=bearer_token gkey=google_api_key ghp_still_classic=github_pat_classic xoxb_still_slack=slack_token pwd_cwd=none xoxa_short=none"
   assert_json "F1h3 pattern list has 16 entries (8 spec + 8 amended)" "$out2" "j.count" "16"
-  assert_json "F1h4 ReDoS probe: worst single test over the adversarial inputs (incl. 300 000-char abc://) stays under 100 ms" "$out2" "j.worst < 100 ? 'ok' : 'slow ' + j.worstName + ' ' + j.worst + 'ms'" "ok"
+  assert_json "F1h4 ReDoS probe: worst pattern × adversarial input (incl. 300 000-char abc://, min of 3 runs) stays under 1 s" "$out2" "j.worst < 1000 ? 'ok' : 'slow ' + j.worstName + ' ' + j.worst + 'ms'" "ok"
   assert_json "F1i INSTRUCTION_MARKERS carry the multi-word markers" "$out" "j.markers" "true"
   assert_json "F1j GATE_ID_LIST is the two registered ids" "$out" "j.gates" "$GATE_PLAN,$GATE_WAVE"
   assert_json "F1k codexHome() honours A1_XPROV_CODEX_HOME and defaults to .codex-a1-review" "$out" "j.home" "/x/override .codex-a1-review"
@@ -386,8 +400,17 @@ caseH1() {
   FAKE_RUNNER_ARGV_FILE="$art/argv.json" FAKE_RUNNER_CASE=approved \
     python3 "$TREE_VENDOR/runner.py" review --host claude --repo "$PHASE_REPO" --plan "$PHASE_PLAN" --artifacts "$art" --timeout 5 >/dev/null 2>&1; rc=$?
   local run_dir; run_dir="$(ls -d "$art"/claudex-* 2>/dev/null | head -1)"
-  if [[ $rc -eq 0 && -f "$art/argv.json" && -n "$run_dir" ]] && cmp -s "$run_dir/result.json" "$CASES/approved.result.json"; then
-    ok "H1f fake runner records argv and copies the named case into <artifacts>/claudex-*/result.json"
+  # Wave 7: like the real runner (runner.py:301-304) the fake records the resolved
+  # repo and plan and the requested model/effort of the run (null: none passed);
+  # every other field is the named case, unchanged.
+  local same; same="$(node -e '
+    const fs = require("fs"); const [got, want, repo, plan] = process.argv.slice(1);
+    const g = JSON.parse(fs.readFileSync(got, "utf8")); const w = JSON.parse(fs.readFileSync(want, "utf8"));
+    const strip = (o) => { const c = { ...o }; for (const k of ["repo", "plan", "requested_model", "requested_effort"]) delete c[k]; return JSON.stringify(c); };
+    process.stdout.write(String(strip(g) === strip(w) && g.repo === fs.realpathSync(repo) && g.plan === fs.realpathSync(plan) && g.requested_model === null && g.requested_effort === null));
+  ' "$run_dir/result.json" "$CASES/approved.result.json" "$PHASE_REPO" "$PHASE_PLAN" 2>/dev/null)"
+  if [[ $rc -eq 0 && -f "$art/argv.json" && -n "$run_dir" && "$same" == "true" ]]; then
+    ok "H1f fake runner records argv and copies the named case (repo/plan stamped as the real runner records them) into <artifacts>/claudex-*/result.json"
   else bad "H1f fake runner (rc=$rc run_dir=$run_dir)"; fi
   argv="$(cat "$art/argv.json" 2>/dev/null)"
   assert_json "H1g recorded argv[1] is the copy's vendored runner path" "$argv" "j[0]" "$TREE_VENDOR/runner.py"

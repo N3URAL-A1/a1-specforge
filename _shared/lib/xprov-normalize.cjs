@@ -38,6 +38,7 @@ const { parseFlags, repoRoot, assertSafeSegment, writeTextAtomic, nowIso } = req
 const { parseRegistryIds } = require('./gate-ids.cjs');
 const X = require('./xprov.cjs');
 const C = require('./xprov-common.cjs');
+const { inOwnArtifacts, reviewedHeadBase, PASS_MARKER_FILE } = require('./xprov-runrecord.cjs');
 // Shared helpers — one definition each, in xprov-common.cjs.
 const { REGISTRY_PATH, sha256, isPlainObject, parsePositive, parseLane, writeStdoutSync, readIndex, sameWave, sameLane, DETAIL_MAX_CHARS } = C;
 
@@ -58,9 +59,21 @@ const FINDING_FIELDS = Object.freeze(['id', 'severity', 'path', 'evidence', 'fix
 const RESPONSE_VERDICTS = new Set(['APPROVED', 'REVISE', 'BLOCKED']);
 const RUNNER_MODES = new Set(X.RUNNER_MODES);
 const FIX_MARKER = 'Fix (reviewer proposal, not applied): ';
+// The findings again, in a1's own 0700 run dir: the only source of the next
+// round's feedback (xprov-gate priorRound — rounds never resume a session).
+const PRIOR_FINDINGS_FILE = 'a1-findings.json';
 // greedy `(.*)` keeps `a.js:42:7` as file `a.js:42` line 7; an empty file part
 // (`:42`) is rejected by mapFinding, a > 7-digit suffix is not a line number.
 const LINE_RE = /^(.*):(\d{1,7})$/;
+// Measured shape (live smoke 2026-10-02, case revise-symbol): Codex writes `path`
+// as `<file>: <symbol>` (`_shared/lib/checklist.cjs: cmdChecklistRun`). One such
+// suffix is stripped ONLY when the part before the separator is a tracked
+// file at the reviewed commit; everything else stays as written and the
+// quarantine decides (path_not_in_repo, fail-closed).
+// Measured both ways: `<file>: <symbol>` (2026-10-02, case revise-symbol) and
+// `<file>:<symbol>` (2026-10-03, case revise-symbol-nospace); the first wins.
+const SYMBOL_SEPS = Object.freeze([': ', ':']);
+const SYMBOL_MAX_CHARS = 120;
 const XREVIEW_HEADER = '# XREVIEW — cross-provider review log\n\nWritten by `a1-tools xprov normalize`; one section per run, newest last.\n';
 
 // ---------- small helpers ----------
@@ -227,11 +240,32 @@ function secretScan(filter, ctx) {
   return fail(X.REASONS.secret_in_output, { secret_pattern: typeof hit.pattern_name === 'string' ? hit.pattern_name : 'unnamed' });
 }
 
+/** `<tracked file>: <symbol>` or `<tracked file>:<symbol>` → file + the symbol carried in evidence and detail
+ * (evidence, so the instruction-marker scan covers the symbol too). New objects. */
+function stripSymbolSuffix(findings, lsFiles, planRel) {
+  return findings.map((f) => {
+    if (!f || typeof f.file !== 'string' || lsFiles.has(f.file) || f.file === planRel) return f;
+    const sep = SYMBOL_SEPS.find((s) => f.file.indexOf(s) > 0);
+    if (!sep) return f;
+    const i = f.file.indexOf(sep);
+    const file = f.file.slice(0, i);
+    const symbol = f.file.slice(i + sep.length).replace(/[\r\n\t]+/g, ' ').trim().slice(0, SYMBOL_MAX_CHARS);
+    if (!symbol || !lsFiles.has(file)) return f;
+    const evidence = `Symbol: ${symbol}\n${f.evidence}`;
+    // The filter scans MAX_FIELD_CHARS per field: a prefix must never push a marker
+    // out of that window (Codex R2, live inspect 2026-10-02) — too long → unchanged.
+    if (evidence.length > X.MAX_FIELD_CHARS) return f;
+    return { ...f, file, evidence, detail: `Symbol: ${symbol}\n${f.detail}` };
+  });
+}
+
 /** Quarantine hook over a non-fail outcome. Returns a NEW outcome. */
 function quarantine(filter, outcome, ctx) {
   let q;
   try {
-    q = filter.quarantineFindings(outcome.findings || [], { lsFiles: lsFilesSet(ctx.workPath), planPath: ctx.planRel, repoRoot: ctx.workPath });
+    const lsFiles = lsFilesSet(ctx.workPath);
+    const findings = stripSymbolSuffix(outcome.findings || [], lsFiles, ctx.planRel);
+    q = filter.quarantineFindings(findings, { lsFiles, planPath: ctx.planRel, repoRoot: ctx.workPath });
   } catch (_e) { return contractFail(); }
   if (!isPlainObject(q) || !Array.isArray(q.kept) || !Array.isArray(q.quarantined)) return contractFail();
   const notes = Array.isArray(q.notes) ? q.notes.filter((n) => typeof n === 'string') : [];
@@ -249,6 +283,21 @@ function bucketize(findings) {
 
 function writeFindingsFile(file, summary, findings) {
   writeTextAtomic(file, JSON.stringify({ summary, ...bucketize(findings) }, null, 2) + '\n');
+}
+
+/** The findings file again in the run dir of `resultPath`, but only when that
+ * dir lies in this repository's artifacts dir (a standalone normalize of a
+ * foreign result.json writes nothing next to it). It names its own phase,
+ * gate, wave, lane and round, and its sha256 goes into the index entry, so the
+ * next round can check that an index row really points at this round's file
+ * (Samuel MINOR a). → sha256 of the bytes written, or null. */
+function writeRunDirFindings(ctx, summary, findings, quarantined) {
+  const runDir = path.dirname(ctx.resultPath);
+  if (!inOwnArtifacts(ctx.resultPath)) return null;
+  const held = (quarantined || []).map((q) => ({ id: q.id, reason: q.reason })); // never their text (FR-006)
+  const body = JSON.stringify({ phase: ctx.phase, gate: ctx.gate, wave: ctx.wave, lane: ctx.lane, round: ctx.round, summary, ...bucketize(findings), quarantined: held }, null, 2) + '\n';
+  writeTextAtomic(path.join(runDir, PRIOR_FINDINGS_FILE), body);
+  return sha256(body);
 }
 
 function renderTable(rows) {
@@ -390,12 +439,40 @@ function evaluate(ctx, read) {
   }
   const secret = secretScan(filter, { ...ctx, raw: read.raw });
   if (secret) return secret;
+  // The record's mode must be the gate's (Codex R1 on cf5a86e): an APPROVED plan
+  // review normalized as wave-inspect-xprov would otherwise become a wave pass.
+  const want = ctx.gate === X.GATE_IDS.PLAN_REVIEW ? 'review' : 'inspect';
+  if (read.record.status === 'completed' && RUNNER_MODES.has(read.record.mode) && read.record.mode !== want) {
+    return fail(X.REASONS.wrong_mode, { reason_detail: `mode=${read.record.mode} for ${ctx.gate} (needs ${want})` });
+  }
   const outcome = classify(read.record, ctx.planSha);
   return outcome.verdict === X.VERDICTS.FAIL ? outcome : quarantine(filter, outcome, ctx);
 }
 
+/** No replay (Samuel MAJOR 1): a run dir of a1's own artifacts is normalized once (realpath). */
+function refuseReplay(args0) {
+  const indexed = readIndex(args0.indexPath) || [];
+  const real = (p) => { try { return fs.realpathSync(p); } catch (_e) { return path.resolve(p); } };
+  const mine = real(args0.resultPath);
+  if (inOwnArtifacts(args0.resultPath) && indexed.some((e) => typeof e.result_path === 'string' && real(e.result_path) === mine)) {
+    usage(`${args0.resultPath} is already indexed; a run is normalized once`);
+  }
+}
+
+/** The index row: a pointer to the run dir plus what normalize decided. */
+function indexEntry(ctx, outcome, model, findingsSha, record, tainted) {
+  return {
+    gate: ctx.gate, wave: ctx.wave, lane: ctx.lane, ...(ctx.isRound ? { round: ctx.round } : { attempt: ctx.attempt }), verdict: outcome.verdict, reason: outcome.reason,
+    plan_sha256: ctx.planSha, result_path: ctx.resultPath, ...(findingsSha ? { findings_sha256: findingsSha } : {}),
+    ...(ctx.wave !== null ? reviewedHeadBase(ctx.resultPath, tainted ? null : record) : {}), ts: ctx.ts,
+    model_requested: model.model_requested, model_observed: model.model_observed, cli_version: model.cli_version,
+    ...(ctx.allowlist || {}),
+  };
+}
+
 function cmdXprovNormalize(args) {
   const args0 = resolveArgs(args);
+  refuseReplay(args0);
   const read = readRecord(args0.resultPath);
   const record = read.ok ? read.record : {};
   const outcome = evaluate(args0, read);
@@ -406,6 +483,8 @@ function cmdXprovNormalize(args) {
   const writesFindings = outcome.verdict === X.VERDICTS.PASS || outcome.verdict === X.VERDICTS.FAIL_WITH_FINDINGS;
   // A round is consumed only now that the verdict is known; collisions are usage
   // errors and nothing has been written yet. ctx is rebuilt, never mutated.
+  // The pass marker is written with `wx` after the findings/xreview writes: an existing one (only by forgery) must stop the run BEFORE any write (Samuel SEC-N4).
+  if (outcome.verdict === X.VERDICTS.PASS && inOwnArtifacts(args0.resultPath) && fs.existsSync(path.join(path.dirname(args0.resultPath), PASS_MARKER_FILE))) usage(`${args0.resultPath} already carries a pass marker; a run is normalized once`);
   if (writesFindings && args0.roundTaken) usage(`index.json already holds ${args0.roundKey}`);
   if (writesFindings && fs.existsSync(args0.findingsPath)) usage(`findings file already exists for this round: ${args0.findingsPath}`);
   const ctx = {
@@ -413,17 +492,22 @@ function cmdXprovNormalize(args) {
     response: !tainted && isPlainObject(record.response) ? record.response : null,
   };
   const model = modelFields(tainted ? {} : record, ctx.resultPath);
-  if (writesFindings) writeFindingsFile(ctx.findingsPath, ctx.response ? bullet(ctx.response.summary) : '', outcome.findings || []);
+  let findingsSha = null;
+  if (writesFindings) {
+    const summary = ctx.response ? bullet(ctx.response.summary) : '';
+    writeFindingsFile(ctx.findingsPath, summary, outcome.findings || []);
+    findingsSha = writeRunDirFindings(ctx, summary, outcome.findings || [], outcome.quarantined);
+  }
   const pin = X.checkRunnerPin();
   const xreviewPath = appendToXreview(ctx.phaseDir, renderSection(ctx, outcome, model, pin.actual || `unverified (${pin.reason})`));
-  const entry = {
-    gate: ctx.gate, wave: ctx.wave, lane: ctx.lane, ...(ctx.isRound ? { round: ctx.round } : { attempt: ctx.attempt }), verdict: outcome.verdict, reason: outcome.reason,
-    plan_sha256: ctx.planSha, result_path: ctx.resultPath, ts: ctx.ts,
-    model_requested: model.model_requested, model_observed: model.model_observed, cli_version: model.cli_version,
-    ...(ctx.allowlist || {}),
-  };
+  const entry = indexEntry(ctx, outcome, model, findingsSha, record, tainted);
   const index = readIndex(ctx.indexPath);
   if (index === null) usage(`index.json changed underneath the run: ${ctx.indexPath}`);
+  // a1's own proof that THIS run was accepted (after the output filter and every check above):
+  // the pass retention in gc and the row validation in load-check/wave-status need it.
+  if (outcome.verdict === X.VERDICTS.PASS && inOwnArtifacts(ctx.resultPath)) {
+    fs.writeFileSync(path.join(path.dirname(ctx.resultPath), PASS_MARKER_FILE), `${JSON.stringify({ gate: ctx.gate, plan_sha256: ctx.planSha, ts: ctx.ts }, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
+  }
   writeTextAtomic(ctx.indexPath, JSON.stringify([...index, entry], null, 2) + '\n');
   runGcIfPresent();
   const limitations = tainted ? [] : (outcome.limitations || []).map((l) => clip(l, DETAIL_MAX_CHARS));
@@ -435,4 +519,4 @@ function cmdXprovNormalize(args) {
   process.exitCode = outcome.verdict === X.VERDICTS.PASS ? X.EXIT_PASS : X.EXIT_FAIL;
 }
 
-module.exports = { cmdXprovNormalize, appendXreviewNote, classify, mapFinding, splitPath, firstSentence, modelFields, cell };
+module.exports = { cmdXprovNormalize, appendXreviewNote, PRIOR_FINDINGS_FILE, classify, mapFinding, splitPath, firstSentence, modelFields, cell };

@@ -15,6 +15,26 @@ environment when the file is absent (direct `python3 fake-runner.py` calls).
 
   FAKE_RUNNER_ARGV_FILE        write sys.argv (JSON array, one line) here
   FAKE_RUNNER_ENV_FILE         write the child's WHOLE environment as JSON here
+  FAKE_RUNNER_CWD_FILE         write os.getcwd() (realpath) here
+  FAKE_RUNNER_HOME_WRITE       write one file at $HOME/<this relative path> — what
+                               Codex leaves in the per-run HOME (Wave 7)
+  FAKE_RUNNER_SKILLS_FILE      write the names under $HOME/.agents/skills (JSON
+                               array) here — the skill root Codex reads from $HOME
+  FAKE_RUNNER_SYSTEM_PROBE     like Codex (measured m2, 2026-10-03): re-extract
+                               $CODEX_HOME/skills/.system when absent (marker
+                               8bcfb84cfbe4722a + one skill), then write the names
+                               it would load from .system (JSON array) here
+  FAKE_RUNNER_PROMPT_FILE      write the prompt the runner would hand Codex here:
+                               the plan body (runner.py:337-338), on --resume the
+                               session Codex would REPLAY — every file under
+                               $CODEX_HOME/sessions, like `codex exec resume`
+                               reads its rollout — and on --feedback the
+                               "HOST DISPOSITIONS / FIX REQUEST" block
+                               (runner.py:348-349)
+  FAKE_RUNNER_CODEX_STDOUT     a captured codex stdout (file path or case name
+                               <name>.codex-stdout.txt): copied to <run>/stdout.txt,
+                               result.json status failed + the runner's own error
+                               text (runner.py:366), exit 1
   FAKE_RUNNER_CASE             case to copy into <artifacts>/<run>/result.json —
                                a file path, or a name resolved as
                                $FAKE_RUNNER_CASES_DIR/<name>.result.json
@@ -28,9 +48,20 @@ environment when the file is absent (direct `python3 fake-runner.py` calls).
                                a1 delete that directory)
   FAKE_RUNNER_REFUSE=1         mimic a pre-run_dir refusal: one `claudex-loop: <msg>`
                                line on stderr, NO run dir, NO JSON, exit 1
+  FAKE_RUNNER_REFUSE_MSG       like REFUSE, but `claudex-loop: <this text>` — the
+                               runner's interpolated refusals (runner.py:102, :415)
   FAKE_RUNNER_EXIT             exit code (default 0)
 
-Mirrors the measured runner behaviours a1 depends on: the run directory is
+A resume is checked like runner.py:257-269 (same repo, plan, provider, mode,
+model, effort; status completed; a session UUID) — the check whose absence
+let a1's resumed plan review pass every fixture while it could never run live.
+
+Mirrors the measured runner behaviours a1 depends on (Wave 7 adds two, ported
+from runner.py 2.1.0, never from a1's code): the record carries the resolved
+`repo` and `plan` the run used (runner.py:301-304), and in inspect mode
+`snapshot` = {base, files, diff_sha256, sha256} computed exactly like
+runner.py:86-108 (`git diff --no-ext-diff --no-textconv --binary <base> --`);
+ the run directory is
 `mkdtemp(prefix="claudex-", dir=<artifacts>)`; an --artifacts path inside
 --repo is refused; in inspect mode `--base` must resolve INSIDE --repo (the
 real runner runs `git rev-parse <base>^{commit}` + `git diff <base>` there — a
@@ -40,15 +71,20 @@ line and exit 1). stdout mirrors the real shape: one header line
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
+import uuid
 from pathlib import Path
 
 EXIT_REFUSED = 1
+SYSTEM_MARKER = "8bcfb84cfbe4722a\n"  # measured content of .codex-system-skills.marker (codex-cli 0.155.1)
+RUNNER_CODEX_FAILED = "codex exited 1; inspect stdout.txt and stderr.txt."  # runner.py:366
+SIZE_PROBE_BYTES = 1024 * 1024  # no real record comes near; only padded size probes
 EXIT_BAD_CASE = 98
 ENV_FILE_NAME = "fake-runner.env.json"
 
@@ -109,6 +145,102 @@ def make_run_dir(artifacts: str, repo: str | None) -> Path:
     return Path(tempfile.mkdtemp(prefix="claudex-", dir=root))
 
 
+def git_bytes(repo: str, *args: str) -> bytes:
+    r = subprocess.run(["git", *args], cwd=repo, capture_output=True, timeout=30)
+    if r.returncode:
+        raise SystemExit(f"fake-runner: git {' '.join(args)}: {r.stderr.decode('utf-8', 'replace').strip()}")
+    return r.stdout
+
+
+def digest(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def runner_snapshot(repo: str, base: str) -> dict:
+    """Port of runner.py 2.1.0 snapshot() (lines 86-108)."""
+    base_id = git_bytes(repo, "rev-parse", "--verify", base + "^{commit}").decode().strip()
+    tracked = git_bytes(repo, "diff", "--no-ext-diff", "--name-only", "-z", base_id, "--")
+    untracked = git_bytes(repo, "ls-files", "--others", "--exclude-standard", "-z")
+    names = sorted(set(os.fsdecode(n) for n in (tracked + untracked).split(b"\0") if n))
+    files = []
+    for name in names:
+        path = Path(repo) / name
+        if path.is_symlink():
+            body, kind = os.fsencode(os.readlink(path)), "symlink"
+        elif path.is_file():
+            body, kind = path.read_bytes(), "file"
+        else:
+            body, kind = b"", "deleted"
+        files.append({"path": name, "kind": kind, "sha256": digest(body)})
+    diff = git_bytes(repo, "diff", "--no-ext-diff", "--no-textconv", "--binary", base_id, "--")
+    value = {"base": base_id, "files": files, "diff_sha256": digest(diff)}
+    value["sha256"] = digest(json.dumps(value, sort_keys=True).encode())
+    return value
+
+
+def stamp_record(run_dir: Path, mode: str | None, repo: str | None, plan: str | None, base: str | None,
+                 model: str | None = None, effort: str | None = None) -> None:
+    """mode/repo/plan/requested_model/requested_effort as the real runner records
+    them from its own argv (runner.py:301-304); snapshot in inspect mode."""
+    target = run_dir / "result.json"
+    if target.stat().st_size > SIZE_PROBE_BYTES:
+        return  # a padded size-probe case (R18d3c) keeps its exact bytes
+    try:
+        record = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return  # malformed/empty cases stay byte-identical
+    if not isinstance(record, dict):
+        return
+    if mode:
+        record["mode"] = mode  # runner.py:313 records args.mode (a review case replayed as an inspect says inspect)
+    if repo:
+        record["repo"] = str(Path(repo).resolve())
+    if plan:
+        record["plan"] = str(Path(plan).resolve())
+    record["requested_model"] = model
+    record["requested_effort"] = effort
+    if mode == "inspect" and repo and base:
+        record["snapshot"] = runner_snapshot(repo, base)
+    target.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+
+
+def previous_record_problem(resume: str, repo: str | None, plan: str | None, mode: str | None,
+                            model: str | None, effort: str | None) -> str | None:
+    """Port of runner.py 2.1.0 previous_record() (lines 257-269): a resume must
+    name the same repo, plan, provider, mode, model and effort, and a completed
+    record with a valid session UUID — else the runner refuses."""
+    record = json.loads(Path(resume).read_text(encoding="utf-8"))
+    expected = {"repo": str(Path(repo).resolve()) if repo else None,
+                "plan": str(Path(plan).resolve()) if plan else None,
+                "provider": "codex", "mode": mode, "requested_model": model,
+                "requested_effort": effort, "status": "completed"}
+    for key, value in expected.items():
+        if record.get(key) != value:
+            return f"Resume {key} does not match this run. Start fresh instead."
+    try:
+        uuid.UUID(record["session_id"])
+    except (ValueError, KeyError, TypeError, AttributeError):
+        return "Resume record has no valid session UUID."
+    return None
+
+
+def build_prompt(argv: list[str]) -> str:
+    """What reaches the reviewer: plan, replayed session (resume only), feedback."""
+    prompt = ""
+    plan = flag(argv, "--plan")
+    if plan and Path(plan).is_file():
+        prompt += "<plan>\n" + Path(plan).read_text(encoding="utf-8") + "\n</plan>\n"
+    if flag(argv, "--resume"):
+        sessions = Path(os.environ.get("CODEX_HOME", "/nonexistent")) / "sessions"
+        for f in sorted(sessions.rglob("*")) if sessions.is_dir() else []:
+            if f.is_file():
+                prompt += "REPLAYED SESSION ITEM:\n" + f.read_text(encoding="utf-8", errors="replace")
+    feedback = flag(argv, "--feedback")
+    if feedback:
+        prompt += "\nHOST DISPOSITIONS / FIX REQUEST:\n" + Path(feedback).read_text(encoding="utf-8")
+    return prompt
+
+
 def base_resolves(repo: str | None, base: str | None) -> bool:
     """The real runner's snapshot(repo, base) runs git rev-parse <base>^{commit} in --repo."""
     if not repo or not base:
@@ -126,20 +258,54 @@ def main(argv: list[str]) -> int:
     env_file = k.get("FAKE_RUNNER_ENV_FILE")
     if env_file:
         Path(env_file).write_text(json.dumps(dict(os.environ), indent=1) + "\n", encoding="utf-8")
+    cwd_file = k.get("FAKE_RUNNER_CWD_FILE")
+    if cwd_file:
+        Path(cwd_file).write_text(os.path.realpath(os.getcwd()), encoding="utf-8")
+    skills_file = k.get("FAKE_RUNNER_SKILLS_FILE")
+    if skills_file:
+        root = Path(os.environ.get("HOME", "/nonexistent")) / ".agents" / "skills"
+        names = sorted(p.name for p in root.iterdir()) if root.is_dir() else []
+        Path(skills_file).write_text(json.dumps(names), encoding="utf-8")
+    system_probe = k.get("FAKE_RUNNER_SYSTEM_PROBE")
+    if system_probe:
+        sysdir = Path(os.environ["CODEX_HOME"]) / "skills" / ".system"
+        if not sysdir.is_dir():
+            (sysdir / "imagegen").mkdir(parents=True, exist_ok=True)
+            (sysdir / ".codex-system-skills.marker").write_text(SYSTEM_MARKER, encoding="utf-8")
+            (sysdir / "imagegen" / "SKILL.md").write_text("---\nname: imagegen\n---\n", encoding="utf-8")
+        Path(system_probe).write_text(json.dumps(sorted(p.name for p in sysdir.iterdir()), separators=(",", ":")), encoding="utf-8")
+    home_write = k.get("FAKE_RUNNER_HOME_WRITE")
+    if home_write:
+        target = Path(os.environ["HOME"]) / home_write
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("runtime probe\n", encoding="utf-8")
     if k.get("FAKE_RUNNER_REFUSE") == "1":
         sys.stderr.write("claudex-loop: Keep run artifacts outside the target checkout so they do not contaminate its diff.\n")
+        return EXIT_REFUSED
+    if k.get("FAKE_RUNNER_REFUSE_MSG"):
+        sys.stderr.write(f"claudex-loop: {k['FAKE_RUNNER_REFUSE_MSG']}\n")
         return EXIT_REFUSED
     mode = argv[1] if len(argv) > 1 else None
     artifacts = flag(argv, "--artifacts")
     repo = flag(argv, "--repo")
+    resume = flag(argv, "--resume")
+    if resume:
+        problem = previous_record_problem(resume, repo, flag(argv, "--plan"), mode, flag(argv, "--model"), flag(argv, "--effort"))
+        if problem:
+            sys.stderr.write(f"claudex-loop: {problem}\n")
+            return EXIT_REFUSED
     if mode == "inspect" and not base_resolves(repo, flag(argv, "--base")):
         sys.stderr.write("claudex-loop: fatal: bad revision — --base is not reachable in the snapshot (too shallow?)\n")
         return EXIT_REFUSED
     run_dir = make_run_dir(artifacts, repo) if artifacts else None
+    prompt_file = k.get("FAKE_RUNNER_PROMPT_FILE")
+    if prompt_file:
+        Path(prompt_file).write_text(build_prompt(argv), encoding="utf-8")
     if run_dir is not None:
         case = resolve_case(k.get("FAKE_RUNNER_CASE"), k.get("FAKE_RUNNER_CASES_DIR"))
         if case is not None:
             shutil.copyfile(case, run_dir / "result.json")
+            stamp_record(run_dir, mode, repo, flag(argv, "--plan"), flag(argv, "--base"), flag(argv, "--model"), flag(argv, "--effort"))
         write_reply(run_dir, k.get("FAKE_RUNNER_REPLY"))
         (run_dir / "command.json").write_text(json.dumps(argv, indent=2) + "\n", encoding="utf-8")
     if k.get("FAKE_RUNNER_SIDE_EFFECT") == "write-into-repo" and repo:
@@ -149,6 +315,19 @@ def main(argv: list[str]) -> int:
         target = Path(write_path)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text("tripwire probe\n", encoding="utf-8")
+    codex_stdout = k.get("FAKE_RUNNER_CODEX_STDOUT")
+    if codex_stdout and run_dir is not None:
+        src = Path(codex_stdout)
+        if not src.is_file() and k.get("FAKE_RUNNER_CASES_DIR"):
+            src = Path(k["FAKE_RUNNER_CASES_DIR"]) / f"{codex_stdout}.codex-stdout.txt"
+        shutil.copyfile(src, run_dir / "stdout.txt")
+        (run_dir / "stderr.txt").write_text("", encoding="utf-8")
+        failed = {"status": "failed", "mode": mode, "provider": "codex", "repo": str(Path(repo).resolve()) if repo else None,
+                  "error": RUNNER_CODEX_FAILED, "exit_code": 1}
+        (run_dir / "result.json").write_text(json.dumps(failed, indent=2) + "\n", encoding="utf-8")
+        print(json.dumps({"provider": "codex", "model": "CLI default (unresolved)", "mode": mode, "artifacts": str(run_dir)}), flush=True)
+        print(json.dumps(failed, indent=2))
+        return 1
     header_artifacts = k.get("FAKE_RUNNER_HEADER_ARTIFACTS") or (str(run_dir) if run_dir else None)
     header = {"provider": "codex", "model": flag(argv, "--model") or "CLI default (unresolved)",
               "mode": mode, "artifacts": header_artifacts}

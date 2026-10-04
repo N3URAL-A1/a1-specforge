@@ -7,7 +7,7 @@ agent until the driver has spoken.
 
 Spec `009-cross-provider-review-gate` (FR-002, FR-006, FR-007). Registry row:
 `plan-review-xprov` in `_shared/gates-registry.md` — that row's `enforcement`
-cell (`warning` today, `blocking` after the Wave 7 flip) is read by the driver
+cell (`blocking` since the Wave 7 flip on 2026-10-03; `warning` before) is read by the driver
 and echoed as `enforcement` in its stdout JSON. This workflow applies it; the
 driver never does (the flip changes one registry cell and no code).
 
@@ -101,10 +101,13 @@ without APPROVED — surface it to the user, never start a third round.
    one line per finding id from `<findings_path>` — `accepted` (what changed in
    the plan) or `rejected` (why, in one sentence). Every id appears; an id
    without a disposition is a gap Codex will re-raise.
-4. **Round 2.** Same driver, `--round 2`; the driver adds
-   `--resume <previous result.json> --feedback <dispositions>` itself (the
-   `next.resume_cmd` field of round 1 shows the exact resumed invocation — read
-   it, do not hand-build it):
+4. **Round 2.** Same driver, `--round 2` (round 1's `next.round_cmd` shows the
+   exact call). Round 2 is a fresh Codex session, never a resumed one (a resumed
+   session replays round 1 from files in the dedicated home that no check
+   covers); the driver itself builds its `--feedback` from round 1's findings,
+   as normalize kept them in a1's own run dir, plus the dispositions file above,
+   and scans it like the PLAN.md. Pass no `--resume`/`--feedback` — the driver
+   refuses both:
    ```bash
    node <repo>/_shared/a1-tools.cjs xprov gate --phase <phase_name> --gate plan-review-xprov --round 2 > "$GATE_OUT"; RC=$?
    echo "xprov gate round 2 exit=$RC"
@@ -136,9 +139,11 @@ Validate with `retro validate` before appending, as `04-audit.md` describes.
 
 A waiver is a decision, not a step. When the provider is unavailable or the
 user accepts the risk, tell the user the command and stop; the human runs
-`a1-tools xprov waive --phase <phase_name> --gate plan-review-xprov --reason "<text>"`
-in their own shell. It records `{waived: true, reason, by: human, ts}` in
-`xreview/index.json` and a `## Waiver` section in XREVIEW.md, never
+`a1-tools xprov waive --phase <phase_name> --gate plan-review-xprov --reason "<text>" --by <name>`
+in a separate terminal. It runs only in the owner's own terminal — never through an agent's Bash tool or the `!` prefix: like the allowlist owner approval it refuses without a TTY, under Claude Code's environment or with a Claude Code ancestor, and, in a1-specforge itself, the project's PreToolUse hook denies any Bash command containing it (the plugin does not ship the hook to other repositories; there the TTY/ancestor guard is the control). It shows the key it computed itself (the PLAN.md sha256), asks for the gate id typed back and records
+the waiver in `~/.a1-xprov/waivers.json` — the only place load-check reads
+waivers from, and only while PLAN.md keeps that sha256. `xreview/index.json`
+and a `## Waiver` section in XREVIEW.md get a mirror without authority; never
 `verdict: pass`. No `bash` block in any skill contains that command — fixture
 R7 greps for exactly that.
 

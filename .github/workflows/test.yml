@@ -36,6 +36,14 @@ jobs:
           echo "== _test-fixtures/a1-schema-check/parser/run-parser.sh"
           bash _test-fixtures/a1-schema-check/parser/run-parser.sh
 
+      - name: Cross-provider enforcement flip
+        # Spec 009 FR-005. The rows plan-review-xprov and wave-inspect-xprov
+        # may read `blocking` only while the ADR's live-smoke section holds
+        # both `xprov gate` commands and no "pending Wave 7". This step runs
+        # after Fixtures, so a red a1-xprov suite stops the job before it.
+        # Case R5 (parts/07-enforcement.sh) asserts this order.
+        run: bash _test-fixtures/a1-xprov/check-enforcement.sh
+
       - name: Vault cockpit validators
         # Spec 010: `vault lint` must exit 1 on planted defects and `vault
         # status` 0 on a synced fixture, both asserted explicitly (each with

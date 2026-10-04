@@ -188,25 +188,31 @@ function readTypedLine() {
   return s.split(/[\r\n]/)[0].trim();
 }
 
-/** Atomic store write: 0600 temp file in ~/.a1-xprov (0700, never a symlink), then rename. */
-function writeStore(repos) {
+/** Atomic write of one guarded store `name` in ~/.a1-xprov (0700, never a
+ * symlink): 0600 temp file in the same directory, fsync, then rename. */
+function writeGuardedStore(name, doc) {
   const home = X.xprovHome();
   let st = null;
   try { st = fs.lstatSync(home); } catch (_e) { st = null; }
-  if (st && (st.isSymbolicLink() || !st.isDirectory())) throw C.inputError(`${home} is not a real directory; refusing to write the approval store`);
+  if (st && (st.isSymbolicLink() || !st.isDirectory())) throw C.inputError(`${home} is not a real directory; refusing to write ${name}`);
   if (!st) fs.mkdirSync(home, { mode: AL.STORE_DIR_MODE });
   fs.chmodSync(home, AL.STORE_DIR_MODE);
-  const tmp = path.join(home, `.${X.ALLOWLIST_APPROVALS_FILE}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`);
+  const tmp = path.join(home, `.${name}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`);
   const fd = fs.openSync(tmp, 'wx', AL.STORE_MODE);
   try {
     fs.fchmodSync(fd, AL.STORE_MODE); // umask-proof
-    fs.writeSync(fd, `${JSON.stringify({ version: 1, repos }, null, 2)}\n`);
+    fs.writeSync(fd, `${JSON.stringify(doc, null, 2)}\n`);
     fs.fsyncSync(fd);
   } finally {
     fs.closeSync(fd);
   }
-  fs.renameSync(tmp, AL.storePath());
-  return AL.storePath();
+  const target = path.join(home, name);
+  fs.renameSync(tmp, target);
+  return target;
+}
+
+function writeStore(repos) {
+  return writeGuardedStore(X.ALLOWLIST_APPROVALS_FILE, { version: 1, repos });
 }
 
 // ---------- approve / revoke ----------
@@ -309,6 +315,6 @@ function cmdXprovAllowlist(args) {
 }
 
 module.exports = {
-  cmdXprovAllowlist, guardRefusal, ancestryRefusal, processInfo, proposeClass, draft, listing, writeStore, readTypedLine,
+  cmdXprovAllowlist, guardRefusal, ancestryRefusal, processInfo, proposeClass, draft, listing, writeStore, writeGuardedStore, readTypedLine,
   CLAUDE_ENV_RE, CLAUDE_VERSIONS_RE, CLAUDE_NPM_PACKAGE,
 };

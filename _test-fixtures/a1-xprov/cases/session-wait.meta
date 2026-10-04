@@ -1,0 +1,8 @@
+# Sibling of session-wait.rollout.jsonl — provenance record (spec 009 Wave 7, Samuel's `wait` ruling).
+case: session-wait
+origin: captured
+captured_on: 2026-10-03
+cli_version: codex-cli 0.155.1
+what: three verbatim lines of ~/.codex-a1-review/sessions/2026/10/03/rollout-2026-10-03T22-28-54-01a10374-…jsonl (live review round 2 on 28dc4db): the exec custom_tool_call that started a long script, its output "Script running with cell ID 1", and the first `wait` function_call {"cell_id":"1","max_tokens":4000,"yield_time_ms":1000}
+provocation: none — Codex polled a running exec cell on its own; the next preflight failed with session_tools_exec_only: disallowed: wait
+paths: verbatim (snapshot paths, no secret; 0 secret-pattern hits)

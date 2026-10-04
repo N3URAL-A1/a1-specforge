@@ -62,7 +62,10 @@ claudex-loop runner) via one deterministic driver, `a1-tools xprov gate`:
   --work-path <worktree>` on the wave diff; `fail-with-findings` → one Erik fix
   round in the same wave, then a fresh inspection; a second REVISE is `round_cap`.
 - **Before Victor** (`workflows/03-verify.md` precondition): `xprov wave-status`
-  — every completed wave has a pass or a human waiver.
+  — every completed wave has a pass or a human waiver from the guarded store
+  (`~/.a1-xprov/waivers.json`, bound to PLAN.md sha, wave, lane and head).
+- **Before every wave** (`workflows/02-execute.md`): `xprov load-check
+  --expect-sha <sha accepted at Load>` — a PLAN.md edited mid-phase halts.
 
 The workflows read `enforcement` from the driver's stdout JSON (it echoes the
 gate's row in `_shared/gates-registry.md`): `warning` → warning block and

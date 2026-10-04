@@ -28,7 +28,9 @@
 
 # The exact file init-home writes into a fresh home — byte-identical to the real
 # ~/.codex-a1-review/config.toml after `codex features disable plugins` and
-# `… remote_plugin` (2026-09-24). Frozen literal, compared byte-for-byte in R14e.
+# `… remote_plugin` (2026-09-24), plus the six Wave 7 pins (2026-10-02: what
+# `codex features disable` appends, and a1's explicit `memories = false`).
+# Frozen literal, compared byte-for-byte in R14e.
 COMPLIANT_CONFIG_W4='# a1-specforge — dedicated Codex home for cross-provider REVIEW runs only.
 # Created 2026-09-24 (analysis finding F-049, spec 009-cross-provider-review-gate).
 # Invariants: read-only sandbox, on-request approvals, NO MCP servers, NO plugins.
@@ -36,12 +38,19 @@ COMPLIANT_CONFIG_W4='# a1-specforge — dedicated Codex home for cross-provider 
 # absence of MCP servers are what this file guarantees.
 sandbox_mode = "read-only"
 approval_policy = "on-request"
+cli_auth_credentials_store = "file"
 
 [features]
 plugins = false
-remote_plugin = false'
+remote_plugin = false
+apps = false
+browser_use = false
+computer_use = false
+hooks = false
+skill_mcp_dependency_install = false
+memories = false'
 
-EXPECTED_PREFLIGHT_CHECKS="codex_home_is_global home_exists config_exists config_is_symlink home_mode_0700 sandbox_read_only mcp_servers_absent plugins_disabled remote_plugin_switch unexpected_config_key plugins_cache_empty session_tools_exec_only auth_present runner_pin python_version codex_cli"
+EXPECTED_PREFLIGHT_CHECKS="codex_home_is_global home_exists config_exists config_is_symlink home_mode_0700 sandbox_read_only auth_store_file mcp_servers_absent plugins_disabled remote_plugin_switch features_pinned_off unexpected_config_key plugins_cache_empty skills_system_only skills_real_dirs home_no_symlinks session_tools_exec_only etc_codex_absent auth_present runner_pin python_version codex_cli"
 
 # make_home_w4 — alias of the harness make_home (whose COMPLIANT_CONFIG carries
 # the [features] switch since the Wave 4 measurement). Kept so no arm breaks.
@@ -223,6 +232,37 @@ caseS2() {
   assert_rc "S2b newest session with node_repl fails preflight" 1 "$W4_RC"
   assert_eq "S2b session_tools_exec_only FAILs naming node_repl (and only tools, not the add.js decoy)" \
     "$(check_result "$W4_OUT" session_tools_exec_only)" "FAIL|disallowed: node_repl"
+  # SW — the narrow `wait` (Samuel's ruling, measured live 2026-10-03): variants of the
+  # VERBATIM captured lines (cases/session-wait.rollout.jsonl: exec → "cell ID 1" → wait).
+  local n=0 v
+  sw4() { # <name> <node-transform over lines L (array of objects)> <want>
+    n=$((n + 1)); v="$sdir/rollout-2026-09-24T19-00-0${n}-sw.jsonl"
+    node -e '
+      const fs = require("fs"); const [src, dst, expr] = process.argv.slice(1);
+      let L = fs.readFileSync(src, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
+      const wait = (L) => L.find((x) => x.payload.name === "wait");
+      const args = (L) => JSON.parse(wait(L).payload.arguments);
+      const setArgs = (L, a) => { wait(L).payload.arguments = JSON.stringify(a); return L; };
+      L = eval(expr);
+      fs.writeFileSync(dst, L.map((x) => JSON.stringify(x)).join("\n") + "\n");
+    ' "$CASES/session-wait.rollout.jsonl" "$v" "$2"
+    touch -t "2026092419$(printf '%02d' "$n")" "$v"
+    xprov_w4 preflight
+    assert_eq "$1" "$(check_result "$W4_OUT" session_tools_exec_only)" "$3"
+  }
+  sw4 "SW1 the measured wait after its exec cell → PASS" 'L' "PASS|tools: exec, wait"
+  sw4 "SW2 a wait without a preceding exec cell → FAIL" 'L.filter((x) => x.payload.name === "wait")' "FAIL|disallowed: wait (cell 1 was not started by an earlier exec)"
+  sw4 "SW3 a wait with an extra argument → FAIL" 'setArgs(L, { ...args(L), session_id: "x" })' "FAIL|disallowed: wait (extra argument session_id)"
+  sw4 "SW4 a wait whose cell_id is a number → FAIL" 'setArgs(L, { ...args(L), cell_id: 1 })' "FAIL|disallowed: wait (cell_id is not a string)"
+  sw4 "SW5 a wait with yield_time_ms 0 → FAIL" 'setArgs(L, { ...args(L), yield_time_ms: 0 })' "FAIL|disallowed: wait (yield_time_ms out of range)"
+  sw4 "SW5 a wait with yield_time_ms above the runner timeout → FAIL" 'setArgs(L, { ...args(L), yield_time_ms: 600001 })' "FAIL|disallowed: wait (yield_time_ms out of range)"
+  sw4 "SW6 write_stdin (input into a running exec) → FAIL" '(wait(L).payload.name = "write_stdin", L)' "FAIL|disallowed: write_stdin"
+  sw4 "SW7 another unknown tool → still FAIL" '(wait(L).payload.name = "view_image", L)' "FAIL|disallowed: view_image"
+  # SW8 (Samuel NIT a): the cell sentence only counts as the first line of the first
+  # input_text part; here the exec "completed" and the sentence sits later in its stdout
+  sw4 "SW8 the cell sentence later in an exec's stdout registers no cell → the wait FAILs" \
+    '(L[1].payload.output[0].text = "Script completed\nWall time 0.1 seconds\nOutput:\n", L[1].payload.output[1].text += "\nScript running with cell ID 1\n", L)' \
+    "FAIL|disallowed: wait (cell 1 was not started by an earlier exec)"
 }
 
 # ---------- R21: permission record — default deny, permit is the only writer ----------
@@ -383,8 +423,10 @@ web_search = true
 experimental_use_unified_exec_tool = true|keys: shell_environment_policy, shell_environment_policy.inherit, tools, tools.experimental_use_unified_exec_tool, tools.web_search|0'
     'M multi-line inline table|mcp_servers = {
   x = { command = "npx" }
-}|keys: mcp_servers, x; unparsed lines: 10|1'
+}|keys: mcp_servers, x; unparsed lines: 11|1'
   )
+  # Case M's line number is the head length + 3: the head grew by one line in
+  # Wave 7 (cli_auth_credentials_store), so the unparsed `}` moved from 10 to 11.
   # TOML semantics: a `key = value` line after `[features]` belongs to that
   # table, so the shapes are inserted BEFORE the [features] header (root
   # position) — appending them would make even `model = …` a features.* key,
@@ -409,7 +451,7 @@ experimental_use_unified_exec_tool = true|keys: shell_environment_policy, shell_
   xprov_w4 preflight
   assert_eq "R14x[compliant] unexpected_config_key PASSes on the measured config" "$(check_result "$W4_OUT" unexpected_config_key)" "PASS|all keys allowlisted"
   # allowed optional keys stay allowed (root position, before [features])
-  printf '%s\nmodel = "gpt-5-codex"\nmodel_reasoning_effort = "high"\n\n[features]\nplugins = false\nremote_plugin = false\n' "$head" > "$XHOME/config.toml"
+  printf '%s\nmodel = "gpt-5-codex"\nmodel_reasoning_effort = "high"\n\n[features]\nplugins = false\nremote_plugin = false\napps = false\nbrowser_use = false\ncomputer_use = false\nhooks = false\nskill_mcp_dependency_install = false\nmemories = false\n' "$head" > "$XHOME/config.toml"
   xprov_w4 preflight
   assert_rc "R14x[model keys] preflight still exits 0 with model + model_reasoning_effort" 0 "$W4_RC" "$W4_ERR"
 }
@@ -430,7 +472,7 @@ caseS3() {
   xprov_w4 preflight
   assert_rc "S3a preflight exits 1 (6000 disallowed tools)" 1 "$W4_RC"
   [[ ${#W4_OUT} -gt 65536 ]] && ok "S3b stdout is larger than 64 KiB (${#W4_OUT} bytes)" || bad "S3b stdout only ${#W4_OUT} bytes — arm does not exercise the truncation"
-  assert_json "S3c stdout JSON is complete and parseable (all checks present)" "$W4_OUT" "(j.checks||[]).length" "16"
+  assert_json "S3c stdout JSON is complete and parseable (all checks present)" "$W4_OUT" "(j.checks||[]).length" "22"
   assert_json "S3d the last check survived the pipe" "$W4_OUT" "j.checks[j.checks.length-1].name" "codex_cli"
 }
 

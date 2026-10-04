@@ -6,13 +6,19 @@ Spawn a1-victor-verifier to validate the completed work.
 
 Victor is not spawned while any completed wave lacks a `wave-inspect-xprov`
 entry in `.a1/phases/<phase_name>/xreview/index.json` with `verdict: pass` or
-`waived: true` (spec 009, FR-004). The completed waves come from
+a waiver in the guarded store `~/.a1-xprov/waivers.json`, both bound to this
+PLAN.md, that wave and lane, and chained: each wave's head equals the next
+wave's base, the last wave's head equals `$WORK_PATH`'s HEAD — in between
+only commits that write the workflow's own phase files and the `product
+stage` files as plain files (spec 009, FR-004, FR-007); a `waived: true`
+row in `index.json` alone counts for nothing. The completed waves come from
 `STATUS*.md` — consolidate the per-lane files first (see the prompt template
 below); pass `--waves 1,2,3` only when STATUS is not yet consolidated.
 
 ```bash
 mkdir -p .a1/phases/<phase_name>/xreview
-node <repo>/_shared/a1-tools.cjs xprov wave-status --phase <phase_name> > .a1/phases/<phase_name>/xreview/wave-status.last-run.json; RC=$?
+node <repo>/_shared/a1-tools.cjs xprov wave-status --phase <phase_name> --work-path $WORK_PATH > .a1/phases/<phase_name>/xreview/wave-status.last-run.json; RC=$?
+# multi-lane: append --lane-work-path <lane-id>=<that lane's WORK_PATH>[,…] (a lane without one lacks)
 echo "xprov wave-status exit=$RC"
 ```
 
@@ -20,8 +26,8 @@ echo "xprov wave-status exit=$RC"
 - **Exit 1** → the stdout JSON lists the lacking waves. For each: go back to
   `02-execute.md` step 2b-x for that wave (re-run the inspection with that
   wave's `--base`), or the user waives it — the human runs
-  `a1-tools xprov waive --phase <phase_name> --gate wave-inspect-xprov --wave <N> --reason "<text>"`
-  themselves; this skill never does. While the registry row says `warning`,
+  `a1-tools xprov waive --phase <phase_name> --gate wave-inspect-xprov --wave <N> --base <that wave's PRE_WAVE_HEAD> --work-path $WORK_PATH --reason "<text>" --by <name>`
+  themselves, in a separate terminal (it refuses agent process trees); this skill never does. While the registry row says `warning`,
   an exit 1 here is the same warning block as in step 2b-x and Victor is
   spawned anyway (record `verdict: fail` in the retro); once `blocking`, stop
   here.

@@ -30,14 +30,18 @@ prep5() {
 # commit5 <msg> — stage everything in $PHASE_REPO and commit; updates PHASE_HEAD.
 commit5() { ( cd "$PHASE_REPO" && git add -A && git commit -qm "$1" ); PHASE_HEAD="$(cd "$PHASE_REPO" && git rev-parse HEAD)"; }
 
-# snap5 [commit] [base] — snapshot of $PHASE_REPO. Sets S_OUT, S_ERR, S_RC, SNAP.
+# snap5 [commit] [base] — snapshot of $PHASE_REPO with the PLAN.md copy (and,
+# when SNAP_FEEDBACK is set, the feedback copy). Sets S_OUT, S_ERR, S_RC, SNAP,
+# PLANCOPY, FEEDCOPY. Wave 7: `xprov run` accepts only these scanned copies.
 snap5() {
   local commit="${1:-$PHASE_HEAD}"; local base="${2:-}"
   # bash 3.2 + set -u: an empty array expands as "unbound variable" — use the ${a[@]+"${a[@]}"} idiom
-  local extra=(); [[ -n "$base" ]] && extra=(--base "$base")
+  local extra=(--plan "$PHASE_PLAN"); [[ -n "$base" ]] && extra+=(--base "$base")
+  [[ -n "${SNAP_FEEDBACK:-}" ]] && extra+=(--feedback "$SNAP_FEEDBACK")
   S_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov snapshot --repo "$PHASE_REPO" --commit "$commit" ${extra[@]+"${extra[@]}"} 2>"$TMP05/snap-err.txt")"; S_RC=$?
   S_ERR="$(cat "$TMP05/snap-err.txt")"
   SNAP="$(json_get "$S_OUT" "j.snapshot || ''")"; [[ "$SNAP" == "UNPARSEABLE" ]] && SNAP=""
+  PLANCOPY="$SNAP.inputs/PLAN.md"; FEEDCOPY="$SNAP.inputs/feedback.md"
 }
 
 # run5 <mode> [more flags] — `xprov run` from inside $PHASE_REPO. Knobs come
@@ -47,7 +51,7 @@ run5() {
   local mode="$1"; shift
   ARGV_N=$((ARGV_N + 1)); ARGV_FILE="$ARGV_DIR/argv-$ARGV_N.json"; ENV_FILE="$ARGV_DIR/env-$ARGV_N.json"
   FAKE_RUNNER_ARGV_FILE="$ARGV_FILE" FAKE_RUNNER_ENV_FILE="$ENV_FILE" FAKE_RUNNER_CASE="${FAKE_RUNNER_CASE:-approved}" fake_runner_env
-  U_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov run --mode "$mode" --snapshot "$SNAP" --plan "$PHASE_PLAN" --phase p5 --gate "$GATE_PLAN" --timeout 7 "$@" 2>"$TMP05/run-err.txt")"; U_RC=$?
+  U_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov run --mode "$mode" --snapshot "$SNAP" --plan "$PLANCOPY" --phase p5 --gate "$GATE_PLAN" --timeout 7 "$@" 2>"$TMP05/run-err.txt")"; U_RC=$?
   U_ERR="$(cat "$TMP05/run-err.txt")"
 }
 
@@ -69,13 +73,15 @@ caseR11() {
   run5 review
   assert_rc "R11b run --mode review with the fake runner exits 0" 0 "$U_RC" "$U_ERR"
   assert_json "R11c recorded runner argv is exactly review --host claude --repo <snapshot> --plan <abs> --artifacts <dir> --timeout 7" "$(cat "$ARGV_FILE" 2>/dev/null || echo null)" \
-    "JSON.stringify(j)" "$(node -e "process.stdout.write(JSON.stringify([process.argv[1], 'review', '--host', 'claude', '--repo', process.argv[2], '--plan', process.argv[3], '--artifacts', process.argv[4], '--timeout', '7']))" "$runner_real" "$SNAP" "$PHASE_PLAN" "$art")"
+    "JSON.stringify(j)" "$(node -e "process.stdout.write(JSON.stringify([process.argv[1], 'review', '--host', 'claude', '--repo', process.argv[2], '--plan', process.argv[3], '--artifacts', process.argv[4], '--timeout', '7']))" "$runner_real" "$SNAP" "$PLANCOPY" "$art")"
   assert_json "R11d stdout argv[0..1] is python3 + the copy's vendored runner (R22 argv arm)" "$U_OUT" "j.argv[0] + ' ' + j.argv[1]" "python3 $runner_real"
   assert_json "R11e the child received CODEX_HOME = the dedicated home" "$(cat "$ENV_FILE" 2>/dev/null || echo null)" "j.CODEX_HOME" "$XHOME"
   assert_json "R11f stdout names result_path, artifacts_run_dir under the artifacts dir, snapshot, empty baseline_delta" "$U_OUT" \
     "[j.result_path.endsWith('/result.json'), j.artifacts_run_dir.startsWith(require('fs').realpathSync(process.env.HOME) + '/.a1-xprov/artifacts/'), j.snapshot === '$SNAP', j.baseline_delta.length].join('/')" "true/true/true/0"
   local mode; mode="$(mode_of "$art")"
   assert_eq "R11g artifacts root was pre-created 0700 by a1" "$mode" "700"
+  # Wave 7: inspect needs a snapshot built WITH --base (its scanned diff hash sits next to it)
+  snap5 "$PHASE_HEAD" "$PHASE_HEAD"
   run5 inspect --base "$PHASE_HEAD"
   assert_rc "R11h run --mode inspect --base <sha> exits 0" 0 "$U_RC" "$U_ERR"
   assert_json "R11i inspect argv appends --base <sha> and carries no --resume/--log" "$(cat "$ARGV_FILE")" \
@@ -85,10 +91,18 @@ caseR11() {
   grep -q "model_requested: CLI default (unresolved)" "$log" && grep -q "gate: $GATE_PLAN" "$log" && grep -q "result: " "$log" \
     && ok "R11k log entry carries gate, model_requested and the result path" || bad "R11k log entry incomplete"
   printf 'accepted: R1\n' > "$TMP05/dispositions.md"
+  # Wave 7 (Samuel MAJOR): no session is resumed; a later round is a fresh
+  # review whose --feedback is the snapshot's scanned copy
+  SNAP_FEEDBACK="$TMP05/dispositions.md" snap5
+  run5 review
   local prev; prev="$(jget "$U_OUT" 'j.result_path')"
-  run5 review --resume "$prev" --feedback "$TMP05/dispositions.md"
-  assert_json "R11l review resume appends --resume <result.json> --feedback <file>" "$(cat "$ARGV_FILE")" \
-    "j.includes('--resume') + '/' + j[j.indexOf('--resume') + 1] + '/' + j[j.indexOf('--feedback') + 1]" "true/$prev/$TMP05/dispositions.md"
+  run5 review --feedback "$FEEDCOPY"
+  assert_json "R11l a fresh review appends --feedback <the scanned copy> and no --resume" "$(cat "$ARGV_FILE")" \
+    "j.includes('--resume') + '/' + j[j.indexOf('--feedback') + 1]" "false/$FEEDCOPY"
+  local n_resume; n_resume="$(ls "$ARGV_DIR" | wc -l | tr -d ' ')"
+  run5 review --resume "$prev" --feedback "$FEEDCOPY"
+  [[ $U_RC -eq 2 ]] && ok "R11m run refuses --resume (exit 2)" || bad "R11m run --resume (rc=$U_RC)"
+  assert_eq "R11m …and spawned nothing" "$(ls "$ARGV_DIR" | wc -l | tr -d ' ')" "$n_resume"
   # Reinhard W6: --no-log leaves the log untouched (the gate driver writes exactly one entry per call)
   local lines_before; lines_before="$(wc -l < "$log" | tr -d ' ')"
   run5 review --no-log
@@ -177,7 +191,8 @@ caseR15() {
 
 # ---------- R16: the snapshot is a fresh, depth-limited fetch, never a copy ----------
 # Red-making changes: R16b `cp -R` instead of a git fetch; S6b/c fetching the full
-# history (a parent's secret becomes readable); S6d/f depth one short for inspect.
+# history (a parent's secret becomes readable); S6e not scanning the base side;
+# S6f fetching base..head history instead of base and head (Wave 7).
 # `--no-hardlinks`/alternates (R16c/d) stay as regression guards but are
 # untested by design: no fake reproduces a shared-object clone.
 caseR16() {
@@ -218,14 +233,21 @@ caseR16() {
   assert_eq "S6b review snapshot holds exactly one commit" "$(cd "$SNAP" && git rev-list --count HEAD)" "1"
   assert_eq "S6c the parent commit's secret is not readable from the snapshot history" "$(cd "$SNAP" && git log -p --all 2>/dev/null | grep -c 'AKIAHHHH')" "0"
   FAKE_RUNNER_CASE=approved run5 inspect --base "$base2"
-  assert_json "S6d inspect against a review-depth snapshot → runner_failed (base unreachable), never a crash" "$U_OUT" "j.reason + '/' + String($U_RC)" "runner_failed/1"
+  assert_json "S6d inspect on a review snapshot (no scanned diff) → refused before the spawn, never a crash" "$U_OUT" "j.reason + '/' + String($U_RC)" "snapshot_failed/1"
+  # Wave 7 (Samuel): base = c1 holds the secret that the wave deletes — its content
+  # would leave as the deletion in `git diff <base>`, so the BASE side fails.
   snap5 "$PHASE_HEAD" "$base2"
-  assert_rc "S6e inspect snapshot with --base HEAD~2 exits 0" 0 "$S_RC" "$S_ERR"
-  assert_eq "S6f inspect snapshot depth = rev-list --count base..commit + 1 = 3 commits" "$(cd "$SNAP" && git rev-list --count HEAD)" "3"
-  ( cd "$SNAP" && git diff --quiet "$base2" HEAD ); rc=$?
+  assert_json "S6e inspect with --base = the commit holding the secret → secret_in_snapshot on the base side" "$S_OUT" "j.reason + '/' + j.secret_side + '/' + String($S_RC)" "secret_in_snapshot/base/1"
+  # depth (Wave 7: base and head only, depth 1 each): base = c2 (clean)
+  local base1 c1; base1="$(cd "$PHASE_REPO" && git rev-parse HEAD~1)"; c1="$base2"
+  snap5 "$PHASE_HEAD" "$base1"
+  assert_rc "S6f inspect snapshot with --base HEAD~1 exits 0" 0 "$S_RC" "$S_ERR"
+  ( cd "$SNAP" && git cat-file -e "$base1^{commit}" && ! git cat-file -e "$c1^{commit}" 2>/dev/null ) \
+    && ok "S6f the inspect snapshot holds base and head, nothing older" || bad "S6f snapshot objects wrong (base present? c1 absent?)"
+  ( cd "$SNAP" && git diff --quiet "$base1" HEAD ); rc=$?
   [[ $rc -eq 0 || $rc -eq 1 ]] && ok "S6g git diff <base> HEAD works inside the inspect snapshot (rc=$rc)" || bad "S6g base not resolvable in the inspect snapshot (rc=$rc)"
-  FAKE_RUNNER_CASE=approved run5 inspect --base "$base2"
-  assert_rc "S6h run --mode inspect on the depth-correct snapshot exits 0" 0 "$U_RC" "$U_ERR"
+  FAKE_RUNNER_CASE=approved run5 inspect --base "$base1"
+  assert_rc "S6h run --mode inspect on the base+head snapshot exits 0" 0 "$U_RC" "$U_ERR"
 }
 
 # ---------- R17: no snapshot with a secret ever reaches the runner ----------
@@ -278,8 +300,9 @@ caseR24() {
   assert_eq "R24b --mode build spawned nothing (no argv file)" "$(ls "$ARGV_DIR" | wc -l | tr -d ' ')" "$before"
   run5 inspect
   [[ $U_RC -eq 2 ]] && ok "R24c inspect without --base → exit 2" || bad "R24c inspect without base (rc=$U_RC)"
+  printf 'x\n' > "$TMP05/x.json"
   run5 inspect --base "$PHASE_HEAD" --resume "$TMP05/x.json"
-  [[ $U_RC -eq 2 ]] && ok "R24d inspect with --resume → exit 2 (always a fresh session)" || bad "R24d inspect resume (rc=$U_RC)"
+  [[ $U_RC -eq 2 ]] && ok "R24d inspect with --resume → exit 2 (no session is ever resumed)" || bad "R24d inspect resume (rc=$U_RC)"
   local bad_tokens=0 f
   for f in "$ARGV_DIR"/argv-*.json; do
     node -e "const j=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')); process.exit(j.some(a => a === 'build' || a === '--unreviewed-spec' || a === '--proof') ? 1 : 0)" "$f" || bad_tokens=$((bad_tokens + 1))

@@ -17,6 +17,10 @@
 # recomputed from the PLAN.md placed in the phase dir.
 
 TMP02="$(mktemp -d)"
+# The approved case as an INSPECT record (runner.py:313 records the run's mode):
+# normalize refuses a review record for the wave gate (wrong_mode, Codex R1 on cf5a86e).
+INSPECT_APPROVED02="$TMP02/approved-inspect.result.json"
+node -e 'const fs=require("fs");const [a,b]=process.argv.slice(1);const j=JSON.parse(fs.readFileSync(a,"utf8"));j.mode="inspect";fs.writeFileSync(b,JSON.stringify(j,null,2)+"\n");' "$CASES/approved.result.json" "$INSPECT_APPROVED02"
 NORMALIZE_LIB="$REPO_ROOT/_shared/lib/xprov-normalize.cjs"
 
 # prep_tree — make_tree + the fake filter module inside the copy.
@@ -296,8 +300,8 @@ caseRH() {
   [[ $N_RC -eq 2 && -z "$N_OUT" && "$(ls "$PHASE_DIR/xreview" | tr '\n' ',')" == "index.json," && ! -f "$PHASE_DIR/XREVIEW.md" ]] \
     && ok "RHb6 corrupt index.json → exit 2, xreview/ and XREVIEW.md untouched" || bad "RHb6 corrupt index (rc=$N_RC ls=$(ls "$PHASE_DIR/xreview" | tr '\n' ','))"
   make_phase rhb7 "$CASES/approved.PLAN.md"
-  run_normalize "$CASES/approved.result.json" rhb7 "$GATE_WAVE" --wave 2; local r1="$N_OUT"
-  run_normalize "$CASES/approved.result.json" rhb7 "$GATE_WAVE" --wave 2
+  run_normalize "$INSPECT_APPROVED02" rhb7 "$GATE_WAVE" --wave 2; local r1="$N_OUT"
+  run_normalize "$INSPECT_APPROVED02" rhb7 "$GATE_WAVE" --wave 2
   assert_json "RHb7 --wave 2 twice → rounds 1 and 2, file name carries wave-2" "[$r1,$N_OUT]" \
     "j[0].index_entry.round + '/' + j[1].index_entry.round + '/' + require('path').basename(j[1].findings_path)" "1/2/wave-inspect-xprov-wave-2-r2.findings.json"
 
@@ -315,7 +319,7 @@ caseRH() {
   [[ $N_RC -eq 2 && -z "$N_OUT" ]] && ok "RHd2 findings file already present for the round → exit 2" || bad "RHd2 findings collision (rc=$N_RC)"
   make_phase rhd3 "$CASES/approved.PLAN.md"
   run_normalize "$CASES/approved.result.json" rhd3 "$GATE_PLAN" --round 0; local rc0=$N_RC
-  run_normalize "$CASES/approved.result.json" rhd3 "$GATE_WAVE" --wave 0; local rcw=$N_RC
+  run_normalize "$INSPECT_APPROVED02" rhd3 "$GATE_WAVE" --wave 0; local rcw=$N_RC
   [[ $rc0 -eq 2 && $rcw -eq 2 ]] && ok "RHd3 --round 0 and --wave 0 → exit 2" || bad "RHd3 bounds (round0=$rc0 wave0=$rcw)"
 
   # MINOR e — --work-path must be a directory; a field > 10 000 chars is malformed. Red: existsSync only / no field cap.
@@ -390,26 +394,26 @@ caseRS() {
 # reading reply.txt without a size bound.
 caseRL() {
   prep_tree; make_phase rl1 "$CASES/approved.PLAN.md"
-  run_normalize "$CASES/approved.result.json" rl1 "$GATE_WAVE" --wave 2 --lane lane-a; local a="$N_OUT" rca=$N_RC
-  run_normalize "$CASES/approved.result.json" rl1 "$GATE_WAVE" --wave 2 --lane lane-b; local b="$N_OUT" rcb=$N_RC
+  run_normalize "$INSPECT_APPROVED02" rl1 "$GATE_WAVE" --wave 2 --lane lane-a; local a="$N_OUT" rca=$N_RC
+  run_normalize "$INSPECT_APPROVED02" rl1 "$GATE_WAVE" --wave 2 --lane lane-b; local b="$N_OUT" rcb=$N_RC
   [[ $rca -eq 0 && $rcb -eq 0 ]] && ok "RL1a two lanes of the same wave both normalize at round 1 (no collision)" || bad "RL1a lanes collide (rc a=$rca b=$rcb err=$N_ERR)"
   assert_json "RL1b index entries carry lane and round 1 each" "$(cat "$PHASE_DIR/xreview/index.json")" \
     "j.map(e => e.lane + ':' + e.round + ':' + e.wave).join(' ')" "lane-a:1:2 lane-b:1:2"
   assert_json "RL1c findings file names carry -<lane> before -r<round>" "[$a,$b]" \
     "j.map(o => require('path').basename(o.findings_path)).join(' ')" "wave-inspect-xprov-wave-2-lane-a-r1.findings.json wave-inspect-xprov-wave-2-lane-b-r1.findings.json"
-  run_normalize "$CASES/approved.result.json" rl1 "$GATE_WAVE" --wave 2 --lane lane-a
+  run_normalize "$INSPECT_APPROVED02" rl1 "$GATE_WAVE" --wave 2 --lane lane-a
   assert_json "RL1d a second run for lane-a is round 2 (rounds count per gate+wave+lane)" "$N_OUT" "j.index_entry.round + '/' + j.index_entry.lane" "2/lane-a"
-  run_normalize "$CASES/approved.result.json" rl1 "$GATE_WAVE" --wave 2
+  run_normalize "$INSPECT_APPROVED02" rl1 "$GATE_WAVE" --wave 2
   assert_json "RL1e a run without --lane on the same wave is its own key (round 1, lane null)" "$N_OUT" "j.index_entry.round + '/' + j.index_entry.lane" "1/null"
-  run_normalize "$CASES/approved.result.json" rl1 "$GATE_WAVE" --wave 2 --lane "../x"
+  run_normalize "$INSPECT_APPROVED02" rl1 "$GATE_WAVE" --wave 2 --lane "../x"
   [[ $N_RC -eq 2 && -z "$N_OUT" ]] && ok "RL1f hostile --lane ../x → exit 2" || bad "RL1f hostile lane (rc=$N_RC)"
   # shared LANE_RE (xprov-common): a lane with a space is refused here exactly as the gate refuses it
-  run_normalize "$CASES/approved.result.json" rl1 "$GATE_WAVE" --wave 2 --lane "foo bar"
+  run_normalize "$INSPECT_APPROVED02" rl1 "$GATE_WAVE" --wave 2 --lane "foo bar"
   [[ $N_RC -eq 2 && -z "$N_OUT" ]] && ok "RL1g --lane 'foo bar' → exit 2 (LANE_RE, same as the gate; assertSafeSegment let it through)" || bad "RL1g lane with space (rc=$N_RC)"
   # shared positive-int bound 1–9999 (xprov-common): the same limit in every module
-  run_normalize "$CASES/approved.result.json" rl1 "$GATE_WAVE" --wave 10000
+  run_normalize "$INSPECT_APPROVED02" rl1 "$GATE_WAVE" --wave 10000
   [[ $N_RC -eq 2 && -z "$N_OUT" ]] && ok "RL1h --wave 10000 → exit 2 (bound 1–9999)" || bad "RL1h wave 10000 (rc=$N_RC)"
-  run_normalize "$CASES/approved.result.json" rl1 "$GATE_WAVE" --wave 9999
+  run_normalize "$INSPECT_APPROVED02" rl1 "$GATE_WAVE" --wave 9999
   assert_rc "RL1i --wave 9999 is accepted" 0 "$N_RC" "$N_ERR"
 
   # Samuel re-check MAJOR: reply.txt is bounded like result.json. Choice: an

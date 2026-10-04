@@ -18,6 +18,25 @@
 //     stops the remote/curated plugin auto-install Samuel measured — a
 //     `[plugins.*]` table is not involved, which is why the two captured
 //     runs installed plugins although config.toml had no such table.
+//   * Wave 7 (2026-10-02, after the live smoke): `codex features list` shows
+//     apps, browser_use, computer_use, hooks and skill_mcp_dependency_install
+//     as true by default; `codex features disable <f>` appends `<f> = false`
+//     to [features] in that order and omits the default-off `memories`. a1 pins
+//     all eight explicitly (`features_pinned_off`), so a future default flip
+//     cannot switch one back on silently. `init-home --pin-features` appends
+//     the missing pins to an existing home — additive only, a human's `true`
+//     is refused, never overwritten.
+//   * Auth store (Wave 7, Samuel): `cli_auth_credentials_store = "file"` keeps
+//     the credentials in the auth.json symlink a1 manages, never in a keyring
+//     the tripwire cannot see. codex-cli 0.155.1 validates the value itself
+//     (unknown variant → config error naming file|keyring|auto|ephemeral);
+//     `auth_store_file` asserts it, `init-home --pin-features` pins it.
+//   * Skill roots (Wave 7, canaries under a network block): `$CODEX_HOME/skills`
+//     is a USER skill root next to the built-in `skills/.system`, so
+//     `skills_system_only` requires `skills/` to hold `.system` and nothing
+//     else. `/etc/codex/config.toml` and `requirements.toml` would configure
+//     every Codex on the machine: `etc_codex_absent` requires both absent and
+//     reports a present one with its sha256.
 //   * `codex plugin marketplace list` in a fresh home prints "No plugin
 //     marketplaces in scope": `openai-curated-remote` is a built-in remote
 //     source, not a configured marketplace. `--prune-marketplaces` therefore
@@ -53,8 +72,22 @@ const CONFIG_FILE = 'config.toml';
 const AUTH_FILE = 'auth.json';
 const GLOBAL_CODEX_DIRNAME = '.codex';
 const PYTHON_MIN = Object.freeze([3, 10]);
-const ALLOWED_SESSION_TOOLS = Object.freeze(['exec', 'shell', 'local_shell']);
+const { ALLOWED_SESSION_TOOLS, sessionTools, sessionToolNames } = require('./xprov-session-tools.cjs');
 const REQUIRED_FEATURES_OFF = Object.freeze(['plugins', 'remote_plugin']);
+// Wave 7 pins, in the order `codex features disable` writes them (memories last: a1's own line).
+const FEATURE_PINS = Object.freeze(['apps', 'browser_use', 'computer_use', 'hooks', 'skill_mcp_dependency_install', 'memories']);
+const ALL_FEATURE_PINS = Object.freeze([...REQUIRED_FEATURES_OFF, ...FEATURE_PINS]);
+// Root keys a1 pins (key → required value), inserted after the last root entry.
+const ROOT_PINS = Object.freeze({ cli_auth_credentials_store: 'file' });
+const SKILLS_DIR = 'skills';
+// The one measured place Codex itself puts symlinks (2026-10-03, codex-cli
+// 0.155.1): tmp/arg0/codex-arg0<random>/{apply_patch,applypatch,
+// codex-execve-wrapper} → its own native binary.
+const ARG0_SHIM_RE = /^tmp\/arg0\/codex-arg0[A-Za-z0-9]+\/[^/]+$/;
+const SKILLS_SYSTEM = '.system';
+const ETC_CODEX_DIR = '/etc/codex';
+const ETC_CODEX_FILES = Object.freeze(['config.toml', 'requirements.toml']);
+const SHA_SHOWN = 12;
 const PLUGIN_CACHE_DEPTH = 3;
 const PLUGIN_STAGING_DIR = '.remote-plugin-install-staging';
 const CURATED_MARKETPLACE = 'openai-curated-remote';
@@ -64,8 +97,9 @@ const CODEX_IGNORED_DIRS = Object.freeze(['cache', 'sessions', 'plugins', 'skill
 
 // The exact file init-home writes — byte-identical to the real
 // ~/.codex-a1-review/config.toml after `codex features disable plugins` and
-// `… remote_plugin` (measured 2026-09-24; the harness's COMPLIANT_CONFIG
-// carries the same bytes).
+// `… remote_plugin` (measured 2026-09-24), plus the six Wave 7 pins as
+// `codex features disable` appends them and a1's explicit `memories = false`
+// (measured 2026-10-02; the harness's COMPLIANT_CONFIG carries the same bytes).
 const COMPLIANT_CONFIG = `# a1-specforge — dedicated Codex home for cross-provider REVIEW runs only.
 # Created 2026-09-24 (analysis finding F-049, spec 009-cross-provider-review-gate).
 # Invariants: read-only sandbox, on-request approvals, NO MCP servers, NO plugins.
@@ -73,10 +107,17 @@ const COMPLIANT_CONFIG = `# a1-specforge — dedicated Codex home for cross-prov
 # absence of MCP servers are what this file guarantees.
 sandbox_mode = "read-only"
 approval_policy = "on-request"
+cli_auth_credentials_store = "file"
 
 [features]
 plugins = false
 remote_plugin = false
+apps = false
+browser_use = false
+computer_use = false
+hooks = false
+skill_mcp_dependency_install = false
+memories = false
 `;
 
 // ---------- line-based TOML ----------
@@ -178,8 +219,8 @@ function isGlobalHome(home, homedir) {
 // `[tools]`, `experimental_*` and anything Codex adds tomorrow all land here.
 const ALLOWED_TABLES = Object.freeze(['', 'features']);
 const ALLOWED_KEYS = Object.freeze([
-  'sandbox_mode', 'approval_policy', 'model', 'model_reasoning_effort',
-  'features.plugins', 'features.remote_plugin',
+  'sandbox_mode', 'approval_policy', 'model', 'model_reasoning_effort', ...Object.keys(ROOT_PINS),
+  ...ALL_FEATURE_PINS.map((k) => `features.${k}`),
 ]);
 const UNEXPECTED_LIST_MAX = 20;
 
@@ -204,6 +245,7 @@ function configChecks(text) {
   const { tables, entries } = parsed;
   const root = (k) => entries.find((e) => e.table === '' && e.key === k);
   const sandbox = root('sandbox_mode');
+  const authStore = entries.filter((e) => e.table === '' && e.key === 'cli_auth_credentials_store').map((e) => e.value);
   // Any table OR root key whose first dotted segment is `mcp_servers` counts:
   // `[mcp_servers.x]`, `["mcp_servers".x]`, `mcp_servers = {…}`, `mcp_servers.x.command = …`.
   const mcp = [
@@ -215,20 +257,26 @@ function configChecks(text) {
     entries.some((e) => e.table === t.name && e.key === 'enabled' && e.value === 'true'));
   // Fail closed on ambiguity: every occurrence of the key must be `false` — a
   // second [features] table (whichever one Codex would honour) is a FAIL.
-  const features = REQUIRED_FEATURES_OFF.map((k) => {
+  const featureState = (k) => {
     const values = entries.filter((x) => x.table === 'features' && x.key === k).map((x) => x.value);
     return { key: k, value: values.length === 0 ? null : values.join("/"), off: values.length > 0 && values.every((v) => v === 'false') };
-  });
+  };
+  const describe = (list) => list.map((f) => (f.value === null ? `missing: features.${f.key}` : `features.${f.key} = ${f.value}`)).join(', ');
+  const features = REQUIRED_FEATURES_OFF.map(featureState);
   const featuresOff = features.every((f) => f.off);
+  const pins = FEATURE_PINS.map(featureState);
   return [
     check('sandbox_read_only', Boolean(sandbox) && sandbox.value === 'read-only',
       sandbox ? `sandbox_mode = "${sandbox.value}"` : 'sandbox_mode absent'),
+    check('auth_store_file', authStore.length > 0 && authStore.every((v) => v === ROOT_PINS.cli_auth_credentials_store),
+      authStore.length ? `cli_auth_credentials_store = "${authStore.join('/')}"` : 'cli_auth_credentials_store absent (Codex default may use a keyring)'),
     check('mcp_servers_absent', mcp.length === 0, mcp.length ? mcp.join(', ') : 'no mcp_servers table or key'),
     check('plugins_disabled', enabledPlugins.length === 0,
       enabledPlugins.length ? enabledPlugins.map((t) => `[${t.name}] enabled = true`).join(', ')
         : pluginTables.length ? `${pluginTables.map((t) => `[${t.name}]`).join(', ')} present, none enabled` : 'no [plugins.*] table'),
-    check('remote_plugin_switch', featuresOff,
-      features.map((f) => (f.value === null ? `missing: features.${f.key}` : `features.${f.key} = ${f.value}`)).join(', ')),
+    check('remote_plugin_switch', featuresOff, describe(features)),
+    check('features_pinned_off', pins.every((f) => f.off),
+      pins.every((f) => f.off) ? `${FEATURE_PINS.length} pins false` : describe(pins.filter((f) => !f.off))),
     unexpectedConfigCheck(parsed),
   ];
 }
@@ -241,15 +289,27 @@ function listDirs(dir) {
   } catch (_e) { return []; }
 }
 
+/** Directories AND symlinks in `dir` (a link is a leaf: never followed). */
+function listDirsAndLinks(dir) {
+  try {
+    return fs.readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory() || d.isSymbolicLink()).map((d) => ({ name: d.name, link: d.isSymbolicLink() })).sort((a, b) => a.name.localeCompare(b.name));
+  } catch (_e) { return []; }
+}
+
 /** Leaf directories under plugins/cache (depth ≤ 3, `marketplace/plugin/version`)
- * plus the staging dir. Fresh sorted array of relative paths. */
+ * plus the staging dir; a symlinked entry at any depth is a leaf too (Samuel
+ * W7: a Dirent of a link is no directory, so a linked plugin was invisible).
+ * Fresh sorted array of relative paths. */
 function scanPluginCache(home) {
   const cache = path.join(home, 'plugins', 'cache');
   const found = [];
   const walk = (dir, rel, depth) => {
-    const subs = listDirs(dir);
+    const subs = listDirsAndLinks(dir);
     if (subs.length === 0 || depth === PLUGIN_CACHE_DEPTH) { if (rel) found.push(rel); return; }
-    for (const s of subs) walk(path.join(dir, s), rel ? `${rel}/${s}` : s, depth + 1);
+    for (const s of subs) {
+      const r = rel ? `${rel}/${s.name}` : s.name;
+      if (s.link) found.push(r); else walk(path.join(dir, s.name), r, depth + 1);
+    }
   };
   walk(cache, '', 0);
   if (fs.existsSync(path.join(home, 'plugins', PLUGIN_STAGING_DIR))) found.push(PLUGIN_STAGING_DIR);
@@ -264,6 +324,112 @@ function pluginCacheCheck(home, allowlist) {
   const allowed = found.filter(isAllowed);
   if (offenders.length) return check('plugins_cache_empty', false, offenders.join(', '));
   return check('plugins_cache_empty', true, allowed.length ? `allowlisted: ${allowed.join(', ')}` : 'empty');
+}
+
+/** The first executable `name` on env.PATH, or null. */
+function onPath(name, env) {
+  for (const dir of String((env || process.env).PATH || '').split(path.delimiter).filter(Boolean)) {
+    const p = path.join(dir, name);
+    try { const st = fs.statSync(p); if (st.isFile() && (st.mode & 0o111)) return p; } catch (_e) { /* not here */ }
+  }
+  return null;
+}
+
+/** Realpaths an arg0 shim may point at: the `codex` on PATH and, for the npm
+ * layout (measured, Homebrew 2026-10-03: bin/codex.js starts the native
+ * node_modules/@openai/codex-<platform>/vendor/<triple>/bin/codex), the native
+ * binaries of that package. */
+function codexBinaries(env) {
+  const found = onPath('codex', env);
+  if (!found) return [];
+  const real = fs.realpathSync(found);
+  const scope = path.join(path.dirname(path.dirname(real)), 'node_modules', '@openai');
+  const native = listDirs(scope).filter((n) => n.startsWith('codex-')).flatMap((pkg) =>
+    listDirs(path.join(scope, pkg, 'vendor')).map((triple) => path.join(scope, pkg, 'vendor', triple, 'bin', 'codex')));
+  return [real, ...native.filter((b) => fs.existsSync(b)).map((b) => fs.realpathSync(b))];
+}
+
+/** A symlink Codex itself makes: an arg0 shim whose target IS the codex binary. */
+function isCodexShim(full, rel, binaries) {
+  if (!ARG0_SHIM_RE.test(rel)) return false;
+  try { return binaries.includes(fs.realpathSync(full)); } catch (_e) { return false; }
+}
+
+/** Every symlink in the dedicated home except the top-level auth.json (the one
+ * link a1 creates itself) and Codex's own arg0 shims: lstat walk over EVERY
+ * directory, links never followed (Samuel m7 — a linked `skills` or
+ * `skills/.system` hid its content from fileHashes and from a readdirSync that
+ * follows links; W7 MINOR — no runtime dir is exempt, only what was measured).
+ * Returns relative paths. */
+function homeSymlinks(home, env) {
+  const found = [];
+  let binaries = null; // resolved once, only when a candidate shim is seen
+  const walk = (dir, rel) => {
+    let names = [];
+    try { names = fs.readdirSync(dir); } catch (_e) { return; }
+    for (const n of names.sort()) {
+      const full = path.join(dir, n);
+      const r = rel ? `${rel}/${n}` : n;
+      let st;
+      try { st = fs.lstatSync(full); } catch (_e) { continue; }
+      if (st.isSymbolicLink()) {
+        if (r === AUTH_FILE) continue;
+        if (ARG0_SHIM_RE.test(r) && isCodexShim(full, r, binaries || (binaries = codexBinaries(env)))) continue;
+        found.push(r);
+        continue;
+      }
+      if (st.isDirectory()) walk(full, r);
+    }
+  };
+  walk(home, '');
+  return found;
+}
+
+/** `skills/` and `skills/.system` are real directories owned by this user (or
+ * absent): a symlink or a foreign owner → the reason, else null. */
+function skillsDirsProblem(home) {
+  for (const rel of [SKILLS_DIR, path.join(SKILLS_DIR, SKILLS_SYSTEM)]) {
+    let st;
+    try { st = fs.lstatSync(path.join(home, rel)); } catch (_e) { continue; }
+    if (st.isSymbolicLink()) return `${rel} is a symlink`;
+    if (!st.isDirectory()) return `${rel} is not a directory`;
+    if (typeof process.getuid === 'function' && st.uid !== process.getuid()) return `${rel} is owned by uid ${st.uid}`;
+  }
+  return null;
+}
+
+function skillsRealDirsCheck(home) {
+  const p = skillsDirsProblem(home);
+  return check('skills_real_dirs', p === null, p || 'skills/ and skills/.system are real, own directories (or absent)');
+}
+
+function homeNoSymlinksCheck(home, env) {
+  const links = homeSymlinks(home, env);
+  return check('home_no_symlinks', links.length === 0, links.length ? `symlinks: ${links.slice(0, 10).join(', ')}` : 'no symlink besides auth.json and Codex\'s arg0 shims');
+}
+
+/** `$CODEX_HOME/skills` is a user skill root (measured): only `.system` may live there. */
+function skillsSystemOnlyCheck(home) {
+  let names;
+  let st = null;
+  try { st = fs.lstatSync(path.join(home, SKILLS_DIR)); } catch (_e) { st = null; }
+  if (st === null) return check('skills_system_only', true, 'no skills/ dir');
+  if (!st.isDirectory()) return check('skills_system_only', false, 'skills/ is not a real directory (symlink?)');
+  try { names = fs.readdirSync(path.join(home, SKILLS_DIR)); } catch (_e) { return check('skills_system_only', false, 'skills/ unreadable'); }
+  const others = names.filter((n) => n !== SKILLS_SYSTEM).sort();
+  return check('skills_system_only', others.length === 0, others.length ? `skills/ also holds: ${others.join(', ')}` : 'skills/ holds only .system');
+}
+
+/** A system-wide Codex config would apply to every run; absent is the only PASS. */
+function etcCodexCheck(dir) {
+  const present = ETC_CODEX_FILES.filter((f) => fs.existsSync(path.join(dir, f)));
+  if (present.length === 0) return check('etc_codex_absent', true, `absent: ${dir}/{${ETC_CODEX_FILES.join(',')}}`);
+  const shown = present.map((f) => {
+    let h = 'unreadable';
+    try { h = C.sha256(fs.readFileSync(path.join(dir, f))).slice(0, SHA_SHOWN); } catch (_e) { /* reported as unreadable */ }
+    return `${f} sha256 ${h}`;
+  });
+  return check('etc_codex_absent', false, `${dir}: ${shown.join(', ')}`);
 }
 
 function newestSessionLog(home) {
@@ -293,30 +459,11 @@ function newestSessionLog(home) {
  * response_item arm only; the mcp branch is belt-and-braces that may never
  * fire. Measuring a real MCP form is allowed only in a throwaway CODEX_HOME
  * without network — not done (Samuel, Waves 3+4). */
-function sessionToolNames(file) {
-  const names = new Set();
-  for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
-    if (line.trim() === '') continue;
-    let rec;
-    try { rec = JSON.parse(line); } catch (_e) { continue; }
-    const p = rec && rec.payload;
-    if (!p || typeof p.type !== 'string') continue;
-    if (rec.type === 'response_item' && /_call$/.test(p.type)) {
-      names.add(p.name ? String(p.name) : p.type.replace(/_call$/, ''));
-    } else if (rec.type === 'event_msg' && p.type.startsWith('mcp_tool_call')) {
-      const inv = p.invocation || {};
-      names.add(`mcp:${inv.server || '?'}/${inv.tool || '?'}`);
-    }
-  }
-  return [...names].sort();
-}
-
 function sessionToolsCheck(home) {
   const file = newestSessionLog(home);
   if (!file) return skip('session_tools_exec_only', 'no session');
-  const names = sessionToolNames(file);
-  const bad = names.filter((n) => !ALLOWED_SESSION_TOOLS.includes(n));
-  if (bad.length) return check('session_tools_exec_only', false, `disallowed: ${bad.join(', ')}`);
+  const { names, disallowed } = sessionTools(file);
+  if (disallowed.length) return check('session_tools_exec_only', false, `disallowed: ${disallowed.join(', ')}`);
   return check('session_tools_exec_only', true, names.length ? `tools: ${names.join(', ')}` : 'tools: none');
 }
 
@@ -397,7 +544,11 @@ function preflight(opts) {
     homeModeCheck(home),
     ...configChecks(configText),
     pluginCacheCheck(home, o.pluginAllowlist),
+    skillsSystemOnlyCheck(home),
+    skillsRealDirsCheck(home),
+    homeNoSymlinksCheck(home, env),
     sessionToolsCheck(home),
+    etcCodexCheck(o.etcCodexDir || ETC_CODEX_DIR),
     authCheck(home),
     runnerPinCheck(o),
     pythonCheck(env),
@@ -438,6 +589,63 @@ function createFreshHome(home, homedir) {
   return { created: [home, configPath].concat(auth.linked ? [path.join(home, AUTH_FILE)] : []), auth };
 }
 
+/** Appends the missing pins: root keys (ROOT_PINS) after the last root entry,
+ * `<pin> = false` to [features] (or a new [features] table at the end).
+ * Returns { text, added, conflicts }; never edits an existing line. */
+function pinFeaturesText(text) {
+  const parsed = parseTomlLines(text);
+  const featureTables = parsed.tables.filter((t) => t.name === 'features');
+  if (featureTables.length > 1) return { text, added: [], conflicts: ['more than one [features] table'] };
+  if (featureTables.length === 1) {
+    // A multi-line value inside [features] (continuation lines parse as `unparsed`)
+    // has no safe insertion point after its last entry: refuse, never guess.
+    const start = featureTables[0].line;
+    const next = parsed.tables.find((tb) => tb.line > start);
+    const end = next ? next.line : Infinity;
+    if (parsed.unparsed.some((n) => n > start && n < end)) return { text, added: [], conflicts: ['[features] holds a multi-line value'] };
+  }
+  const valuesOf = (p) => parsed.entries.filter((e) => e.path === p).map((e) => e.value);
+  const rootKeys = Object.keys(ROOT_PINS);
+  const conflicts = [
+    ...rootKeys.filter((k) => valuesOf(k).some((v) => v !== ROOT_PINS[k])).map((k) => `${k} = ${valuesOf(k).join('/')}`),
+    ...ALL_FEATURE_PINS.filter((k) => valuesOf(`features.${k}`).some((v) => v !== 'false')).map((k) => `features.${k} = ${valuesOf(`features.${k}`).join('/')}`),
+  ];
+  if (conflicts.length) return { text, added: [], conflicts };
+  const rootAdd = rootKeys.filter((k) => valuesOf(k).length === 0);
+  const featAdd = ALL_FEATURE_PINS.filter((k) => valuesOf(`features.${k}`).length === 0);
+  const added = [...rootAdd, ...featAdd];
+  if (added.length === 0) return { text, added, conflicts };
+  const lines = String(text).replace(/\n$/, '').split('\n');
+  const featLines = featAdd.map((k) => `${k} = false`);
+  if (featLines.length) {
+    if (featureTables.length === 0) lines.push('', '[features]', ...featLines);
+    else {
+      const header = featureTables[0].line;
+      const last = Math.max(header, ...parsed.entries.filter((e) => e.table === 'features').map((e) => e.line));
+      lines.splice(last, 0, ...featLines);
+    }
+  }
+  if (rootAdd.length) {
+    // after the last root entry; with none, before the first table (or at the end)
+    const rootEntries = parsed.entries.filter((e) => e.table === '').map((e) => e.line);
+    const firstTable = parsed.tables.length ? parsed.tables[0].line - 1 : lines.length;
+    const at = rootEntries.length ? Math.max(...rootEntries) : firstTable;
+    lines.splice(at, 0, ...rootAdd.map((k) => `${k} = "${ROOT_PINS[k]}"`));
+  }
+  return { text: `${lines.join('\n')}\n`, added, conflicts };
+}
+
+/** `init-home --pin-features` on an existing home: additive, atomic, 0600 kept. */
+function pinFeatures(home, configPath) {
+  const sym = configSymlinkCheck(configPath);
+  if (sym.result !== 'PASS') return Object.freeze({ ok: false, changed: false, codex_home: home, reason: 'pin_refused', failed: [sym.name], pinned: [], detail: sym.measured });
+  const before = fs.readFileSync(configPath, 'utf8');
+  const r = pinFeaturesText(before);
+  if (r.conflicts.length) return Object.freeze({ ok: false, changed: false, codex_home: home, reason: 'pin_conflict', failed: ['features_pinned_off'], pinned: [], conflicts: r.conflicts });
+  if (r.added.length) { io.writeTextAtomic(configPath, r.text); fs.chmodSync(configPath, CONFIG_MODE); }
+  return null;
+}
+
 function isEffectivelyEmpty(home) {
   return fs.readdirSync(home).filter((n) => !CODEX_IGNORED_DIRS.includes(n)).length === 0;
 }
@@ -459,6 +667,15 @@ function initHome(opts) {
     return Object.freeze({ ok: true, changed: true, codex_home: home, ...made,
       plugins_found: scanPluginCache(home), pruned: o.pruneMarketplaces ? tryPruneMarketplace(home, env) : { attempted: false, reason: 'not requested' } });
   }
+  let pinned = [];
+  if (o.pinFeatures && fs.existsSync(configPath)) {
+    const before = parseTomlLines(fs.readFileSync(configPath, 'utf8'));
+    const refused = pinFeatures(home, configPath);
+    if (refused) return refused;
+    const after = parseTomlLines(fs.readFileSync(configPath, 'utf8'));
+    const paths = [...Object.keys(ROOT_PINS), ...ALL_FEATURE_PINS.map((k) => `features.${k}`)];
+    pinned = paths.filter((p) => !before.entries.some((e) => e.path === p) && after.entries.some((e) => e.path === p)).map((p) => p.replace(/^features\./, ''));
+  }
   const configExists = fs.existsSync(configPath);
   const checks = [
     homeModeCheck(home),
@@ -468,7 +685,7 @@ function initHome(opts) {
   ];
   const failed = checks.filter((c) => c.result === 'FAIL').map((c) => c.name);
   return Object.freeze({
-    ok: failed.length === 0, changed: false, codex_home: home, checks, failed,
+    ok: failed.length === 0, changed: pinned.length > 0, codex_home: home, checks, failed, pinned,
     plugins_found: scanPluginCache(home),
     pruned: o.pruneMarketplaces ? tryPruneMarketplace(home, env) : { attempted: false, reason: 'not requested' },
   });
@@ -488,13 +705,16 @@ function cmdXprovPreflight(args) {
 }
 
 function cmdXprovInitHome(args) {
-  const flags = io.parseFlags(args || [], { 'prune-marketplaces': 'bool' });
+  const flags = io.parseFlags(args || [], { 'prune-marketplaces': 'bool', 'pin-features': 'bool' });
   if (flags._.length) return usageExit(`init-home: unexpected argument ${JSON.stringify(String(flags._[0]).slice(0, 80))}`);
   const home = resolveHomeOrExit('init-home');
   if (home === null) return null;
-  const r = initHome({ codexHome: home, pruneMarketplaces: Boolean(flags['prune-marketplaces']) });
+  const r = initHome({ codexHome: home, pruneMarketplaces: Boolean(flags['prune-marketplaces']), pinFeatures: Boolean(flags['pin-features']) });
   const lines = [];
   if (r.reason === 'codex_home_is_global') lines.push(`init-home: refused — ${home} is the global ~/.codex`);
+  else if (r.reason === 'pin_conflict') lines.push(`init-home: --pin-features refused — ${r.conflicts.join(', ')}; a human set it, a1 does not overwrite it`);
+  else if (r.reason === 'pin_refused') lines.push(`init-home: --pin-features refused — ${r.detail}`);
+  else if (r.pinned && r.pinned.length) lines.push(`init-home: pinned ${r.pinned.join(', ')} in ${home}/config.toml${r.ok ? '' : ` — still failing: ${r.failed.join(', ')}`}`);
   else if (r.changed) lines.push(`init-home: created ${home} (0700) with the compliant config.toml${r.auth.linked ? ' and auth.json symlink' : ' — no ~/.codex/auth.json to link (not_logged_in)'}`);
   else if (r.ok) lines.push(`init-home: ${home} already compliant, nothing written`);
   else {
@@ -535,8 +755,8 @@ function resolveHomeOrExit(sub) {
 }
 
 module.exports = {
-  COMPLIANT_CONFIG, ALLOWED_SESSION_TOOLS, REQUIRED_FEATURES_OFF, CURATED_MARKETPLACE,
-  parseTomlLines, configChecks, scanPluginCache, sessionToolNames, isGlobalHome,
+  COMPLIANT_CONFIG, ALLOWED_SESSION_TOOLS, REQUIRED_FEATURES_OFF, FEATURE_PINS, CURATED_MARKETPLACE,
+  parseTomlLines, configChecks, pinFeaturesText, homeSymlinks, skillsDirsProblem, scanPluginCache, sessionToolNames, isGlobalHome,
   preflight, initHome,
   cmdXprovPreflight, cmdXprovInitHome,
 };

@@ -1,0 +1,10 @@
+# Sibling of usage-limit.codex-stdout.txt — provenance record (spec 009 Wave 7, review follow-up).
+case: usage-limit
+origin: captured
+captured_on: 2026-10-03
+cli_version: codex-cli 0.155.1
+runner_version: 2.1.0
+runner_sha256: 962dfdfe5d67b75eb73ec7c38b9186e6e6e0ca96a68d4ec82595305d8f737c8c
+what: the run dir's stdout.txt (codex --json event stream) of a live inspect that failed on the ChatGPT usage limit; runner.py then recorded status failed, error "codex exited 1; inspect stdout.txt and stderr.txt." (runner.py:366) and exited 1 with an empty stderr
+provocation: none — `xprov gate --gate wave-inspect-xprov` on a1-specforge e07cb01, 2026-10-03T11:13Z, reproduced by calling runner.py directly
+note: the reason is only in the {"type":"error","message":…} event; a1 used to report just "runner exited 1"

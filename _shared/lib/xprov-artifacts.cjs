@@ -32,12 +32,21 @@ const path = require('path');
 const { repoRoot, assertSafeSegment, parseFlags } = require('./io.cjs');
 const X = require('./xprov.cjs');
 const C = require('./xprov-common.cjs');
+const RR = require('./xprov-runrecord.cjs');
 // Shared helpers — one definition each, in xprov-common.cjs (mkdir0700's typed
 // errors are the generic path_is_file / path_too_long reasons).
 const { mkdir0700 } = C;
 
 const RUN_DIR_PREFIX = 'claudex-';
 const SNAPSHOT_PREFIX = 'snap-'; // xprov-snapshot.cjs' SNAP_PREFIX (not imported: snapshot requires this module)
+// Per-run HOMEs (Wave 7): xprov-run removes its `run-home-*` in `finally`; a
+// SIGKILL skips that, so gc sweeps leftovers older than RUN_HOME_STALE_HOURS —
+// far above timeout + grace of any run (default 600 s + 60 s), whatever
+// --max-age-days says, because a run home holds nothing worth keeping.
+// Literal, not imported: xprov-run requires this module.
+const RUN_HOME_PREFIX = 'run-home-';
+const RUN_HOME_STALE_HOURS = 24;
+const MS_PER_HOUR = 60 * 60 * 1000;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const REASON_INSIDE = 'artifacts_inside_checkout_or_vault';
 
@@ -108,15 +117,41 @@ function gc(opts) {
   const maxAgeDays = typeof o.maxAgeDays === 'number' ? o.maxAgeDays : X.ARTIFACT_MAX_AGE_DAYS;
   const root = assertArtifactsRoot(path.resolve(o.root || X.artifactsDir(o.slug === undefined ? repoSlug() : assertSafeSegment(o.slug, 'artifacts slug'))));
   const cutoff = now - maxAgeDays * MS_PER_DAY;
-  const runs = sweepDirs(root, RUN_DIR_PREFIX, cutoff);
+  // A pass run dir is what load-check / wave-status count (rows are pointers):
+  // it stays PASS_RUN_MAX_AGE_DAYS, decided from its OWN result.json, no phase knowledge.
+  const passMax = typeof o.passMaxAgeDays === 'number' ? o.passMaxAgeDays : X.PASS_RUN_MAX_AGE_DAYS;
+  const passCutoff = now - Math.max(maxAgeDays, passMax) * MS_PER_DAY;
+  const runs = sweepDirs(root, RUN_DIR_PREFIX, cutoff, { cutoffFor: (full) => (isPassRun(full) ? passCutoff : cutoff) });
   // Orphaned snapshots (Reinhard PR review): a gate process killed between
   // `snapshot` and its cleanup leaves the clone forever — same age rule.
   const snaps = sweepDirs(path.resolve(X.snapshotsDir()), SNAPSHOT_PREFIX, cutoff);
-  return { root, removed: runs.removed, kept: runs.kept, snapshots_root: snaps.root, snapshots_removed: snaps.removed, snapshots_kept: snaps.kept };
+  const homes = sweepRunHomes(now);
+  return {
+    root, removed: runs.removed, kept: runs.kept, snapshots_root: snaps.root, snapshots_removed: snaps.removed, snapshots_kept: snaps.kept,
+    run_homes_removed: homes.removed, run_homes_kept: homes.kept,
+  };
 }
 
-/** Remove `<prefix>*` directories under `dir` whose mtime is older than cutoff. */
-function sweepDirs(dir, prefix, cutoff) {
+/** a1 accepted this run (its own pass marker) AND result.json is a completed
+ * APPROVED review/inspect. The runner's verdict alone is not enough: a run a1
+ * discarded (secret_in_output, quarantine) keeps the short retention (Samuel SEC-1). */
+function isPassRun(dir) {
+  if (!RR.hasPassMarker(dir)) return false;
+  const r = RR.readJsonNoFollow(path.join(dir, 'result.json'));
+  return r !== null && r.status === 'completed' && X.RUNNER_MODES.includes(r.mode) && C.isPlainObject(r.response) && r.response.verdict === 'APPROVED';
+}
+
+/** The stale run-home sweep, shared by gc and (opportunistically) every
+ * `xprov run`, so SIGKILL leftovers never accumulate. */
+function sweepRunHomes(nowMs) {
+  const now = typeof nowMs === 'number' ? nowMs : Date.now();
+  return sweepDirs(path.resolve(X.xprovHome()), RUN_HOME_PREFIX, now - RUN_HOME_STALE_HOURS * MS_PER_HOUR, { sameOwner: true });
+}
+
+/** Remove `<prefix>*` directories under `dir` whose mtime is older than cutoff.
+ * lstat: a symlink is never followed nor removed. `sameOwner` skips entries
+ * not owned by the current user. */
+function sweepDirs(dir, prefix, cutoff, opts) {
   const out = { root: dir, removed: [], kept: [] };
   if (!fs.existsSync(dir)) return out;
   for (const name of fs.readdirSync(dir)) {
@@ -125,15 +160,17 @@ function sweepDirs(dir, prefix, cutoff) {
     let st;
     try { st = fs.lstatSync(full); } catch (_e) { continue; }
     if (!st.isDirectory()) continue;
-    if (st.mtimeMs < cutoff) { fs.rmSync(full, { recursive: true, force: true }); out.removed.push(full); } else out.kept.push(full);
+    if (opts && opts.sameOwner && typeof process.getuid === 'function' && st.uid !== process.getuid()) continue;
+    const limit = opts && typeof opts.cutoffFor === 'function' ? opts.cutoffFor(full) : cutoff;
+    if (st.mtimeMs < limit) { fs.rmSync(full, { recursive: true, force: true }); out.removed.push(full); } else out.kept.push(full);
   }
   return out;
 }
 
-// ---------- CLI: a1-tools xprov gc [--slug <slug>] [--max-age-days N] ----------
+// ---------- CLI: a1-tools xprov gc [--slug <slug>] [--max-age-days N] [--pass-max-age-days N] ----------
 
 function cmdXprovGc(args) {
-  const flags = parseFlags(args, { slug: 'str', 'max-age-days': 'str' });
+  const flags = parseFlags(args, { slug: 'str', 'max-age-days': 'str', 'pass-max-age-days': 'str' });
   if (flags._.length) {
     return C.usageExit('gc', `takes no positional arguments (got ${JSON.stringify(String(flags._[0]).slice(0, 80))})`);
   }
@@ -144,9 +181,16 @@ function cmdXprovGc(args) {
     }
     maxAgeDays = Number(flags['max-age-days']);
   }
-  const result = gc({ now: Date.now(), maxAgeDays, slug: flags.slug }); // a hostile --slug throws A1_INPUT → facade exit 2
+  let passMaxAgeDays;
+  if (flags['pass-max-age-days'] !== undefined) {
+    if (!/^\d+$/.test(String(flags['pass-max-age-days']))) {
+      return C.usageExit('gc', '--pass-max-age-days must be a non-negative integer');
+    }
+    passMaxAgeDays = Number(flags['pass-max-age-days']);
+  }
+  const result = gc({ now: Date.now(), maxAgeDays, passMaxAgeDays, slug: flags.slug }); // a hostile --slug throws A1_INPUT → facade exit 2
   process.stderr.write(`xprov gc: removed ${result.removed.length}, kept ${result.kept.length} under ${result.root}; snapshots removed ${result.snapshots_removed.length}, kept ${result.snapshots_kept.length}\n`);
   return C.emitJson(result, X.EXIT_PASS);
 }
 
-module.exports = { ensureArtifactsDir, gc, cmdXprovGc, repoSlug, isUnder, REASON_INSIDE };
+module.exports = { ensureArtifactsDir, gc, sweepRunHomes, cmdXprovGc, repoSlug, isUnder, REASON_INSIDE };

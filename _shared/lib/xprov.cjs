@@ -78,6 +78,9 @@ const REASON_LIST = Object.freeze([
   // Wave 6b (FR-030): both map to `fail` before dispatch.
   'allowlist_invalid', // the anchor's allowlist is unreadable, off-schema, over the cap, owner-mismatched, not a separate commit or unapproved
   'allowlist_modified', // the reviewed range adds, changes, deletes or renames the allowlist
+  // Wave 7 (2026-10-02, after the live smoke): the fresh per-run HOME is not a
+  // 0700, user-owned, non-symlink, EMPTY dir right before the spawn — no spawn.
+  'run_home_unsafe',
 ]);
 const REASONS = Object.freeze(Object.fromEntries(REASON_LIST.map((r) => [r, r])));
 
@@ -90,11 +93,15 @@ const GATE_ID_LIST = Object.freeze(Object.values(GATE_IDS));
 
 // ---------- runner usage limits (FR-024) ----------
 const RUNNER_MODES = Object.freeze(['review', 'inspect']); // `check` is the runner's own consistency mode; a1 has no caller for it
-const FORBIDDEN_RUNNER_TOKENS = Object.freeze(['build', '--unreviewed-spec', '--proof']);
+const FORBIDDEN_RUNNER_TOKENS = Object.freeze(['build', '--unreviewed-spec', '--proof', '--resume']); // --resume: Wave 7, a resumed session replays an unchecked rollout
 const RUNNER_HOST = 'claude';
+const RUNNER_DEFAULT_TIMEOUT_SECONDS = 600; // the runner's own default; also the bound of a session's `wait`
 
 // ---------- numeric limits shared by later waves ----------
 const ARTIFACT_MAX_AGE_DAYS = 14; // decided 2026-09-24 (FR-020)
+// A run dir holding a completed APPROVED result is a pass load-check/wave-status
+// read (Wave 7, rows are pointers): kept this long, then a re-review is needed.
+const PASS_RUN_MAX_AGE_DAYS = 180; // team-lead decision 2026-10-04
 const ROUND_CAP = 2; // FR-006
 const MAX_FIELD_CHARS = 10000; // FR-028 size guard for one string field
 const MAX_RESULT_BYTES = 5 * 1024 * 1024; // FR-028 bound on the JSON read
@@ -327,8 +334,8 @@ module.exports = {
   SUBCOMMANDS, SUBCOMMAND_NAMES,
   REASONS, REASON_LIST, VERDICTS,
   GATE_IDS, GATE_ID_LIST,
-  RUNNER_MODES, FORBIDDEN_RUNNER_TOKENS, RUNNER_HOST,
-  ARTIFACT_MAX_AGE_DAYS, ROUND_CAP, MAX_FIELD_CHARS, MAX_RESULT_BYTES, TITLE_MAX_CHARS,
+  RUNNER_MODES, FORBIDDEN_RUNNER_TOKENS, RUNNER_HOST, RUNNER_DEFAULT_TIMEOUT_SECONDS,
+  ARTIFACT_MAX_AGE_DAYS, PASS_RUN_MAX_AGE_DAYS, ROUND_CAP, MAX_FIELD_CHARS, MAX_RESULT_BYTES, TITLE_MAX_CHARS,
   MODEL_REQUESTED_DEFAULT, MODEL_OBSERVED_UNKNOWN,
   ALLOWLIST_FILE, ALLOWLIST_MAX_ENTRIES, ALLOWLIST_MAX_COUNT, ALLOWLIST_CLASSES, ALLOWLIST_APPROVALS_FILE,
   ALLOWLIST_DETAILS, HIGH_CONFIDENCE_PATTERNS,
