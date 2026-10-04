@@ -99,6 +99,9 @@ const RUNNER_DEFAULT_TIMEOUT_SECONDS = 600; // the runner's own default; also th
 
 // ---------- numeric limits shared by later waves ----------
 const ARTIFACT_MAX_AGE_DAYS = 14; // decided 2026-09-24 (FR-020)
+// A run dir holding a completed APPROVED result is a pass load-check/wave-status
+// read (Wave 7, rows are pointers): kept this long, then a re-review is needed.
+const PASS_RUN_MAX_AGE_DAYS = 180; // team-lead decision 2026-10-04
 const ROUND_CAP = 2; // FR-006
 const MAX_FIELD_CHARS = 10000; // FR-028 size guard for one string field
 const MAX_RESULT_BYTES = 5 * 1024 * 1024; // FR-028 bound on the JSON read
@@ -332,7 +335,7 @@ module.exports = {
   REASONS, REASON_LIST, VERDICTS,
   GATE_IDS, GATE_ID_LIST,
   RUNNER_MODES, FORBIDDEN_RUNNER_TOKENS, RUNNER_HOST, RUNNER_DEFAULT_TIMEOUT_SECONDS,
-  ARTIFACT_MAX_AGE_DAYS, ROUND_CAP, MAX_FIELD_CHARS, MAX_RESULT_BYTES, TITLE_MAX_CHARS,
+  ARTIFACT_MAX_AGE_DAYS, PASS_RUN_MAX_AGE_DAYS, ROUND_CAP, MAX_FIELD_CHARS, MAX_RESULT_BYTES, TITLE_MAX_CHARS,
   MODEL_REQUESTED_DEFAULT, MODEL_OBSERVED_UNKNOWN,
   ALLOWLIST_FILE, ALLOWLIST_MAX_ENTRIES, ALLOWLIST_MAX_COUNT, ALLOWLIST_CLASSES, ALLOWLIST_APPROVALS_FILE,
   ALLOWLIST_DETAILS, HIGH_CONFIDENCE_PATTERNS,

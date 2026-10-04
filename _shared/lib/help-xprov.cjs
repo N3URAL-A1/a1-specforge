@@ -43,7 +43,10 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   ~/.a1-xprov/artifacts/<repo-slug>/ and orphaned snap-* clones
                   under ~/.a1-xprov/snapshots/ older than 14 days; per-run HOMEs
                   ~/.a1-xprov/run-home-* left by a killed run older than 24 h
-                  (lstat, same owner, symlinks never followed).
+                  (lstat, same owner, symlinks never followed). A run dir
+                  whose own result.json is a completed APPROVED review or
+                  inspect is a pass load-check/wave-status still read: kept
+                  180 days (then a re-review is needed).
     preflight [--allow-plugins <name>[,<name>…]]
                   (xprov-preflight.cjs, wave 4) proves the dedicated home is
                   tool-less BEFORE any runner call: not ~/.codex, 0700,

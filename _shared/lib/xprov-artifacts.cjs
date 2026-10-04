@@ -116,7 +116,10 @@ function gc(opts) {
   const maxAgeDays = typeof o.maxAgeDays === 'number' ? o.maxAgeDays : X.ARTIFACT_MAX_AGE_DAYS;
   const root = assertArtifactsRoot(path.resolve(o.root || X.artifactsDir(o.slug === undefined ? repoSlug() : assertSafeSegment(o.slug, 'artifacts slug'))));
   const cutoff = now - maxAgeDays * MS_PER_DAY;
-  const runs = sweepDirs(root, RUN_DIR_PREFIX, cutoff);
+  // A pass run dir is what load-check / wave-status count (rows are pointers):
+  // it stays PASS_RUN_MAX_AGE_DAYS, decided from its OWN result.json, no phase knowledge.
+  const passCutoff = now - Math.max(maxAgeDays, X.PASS_RUN_MAX_AGE_DAYS) * MS_PER_DAY;
+  const runs = sweepDirs(root, RUN_DIR_PREFIX, cutoff, { cutoffFor: (full) => (isPassRun(full) ? passCutoff : cutoff) });
   // Orphaned snapshots (Reinhard PR review): a gate process killed between
   // `snapshot` and its cleanup leaves the clone forever — same age rule.
   const snaps = sweepDirs(path.resolve(X.snapshotsDir()), SNAPSHOT_PREFIX, cutoff);
@@ -125,6 +128,16 @@ function gc(opts) {
     root, removed: runs.removed, kept: runs.kept, snapshots_root: snaps.root, snapshots_removed: snaps.removed, snapshots_kept: snaps.kept,
     run_homes_removed: homes.removed, run_homes_kept: homes.kept,
   };
+}
+
+/** The run dir holds a completed APPROVED result (read with O_NOFOLLOW). */
+function isPassRun(dir) {
+  const buf = C.readNoFollow(path.join(dir, 'result.json'));
+  if (!buf) return false;
+  try {
+    const r = JSON.parse(buf.toString('utf8'));
+    return C.isPlainObject(r) && r.status === 'completed' && X.RUNNER_MODES.includes(r.mode) && C.isPlainObject(r.response) && r.response.verdict === 'APPROVED';
+  } catch (_e) { return false; }
 }
 
 /** The stale run-home sweep, shared by gc and (opportunistically) every
@@ -147,7 +160,8 @@ function sweepDirs(dir, prefix, cutoff, opts) {
     try { st = fs.lstatSync(full); } catch (_e) { continue; }
     if (!st.isDirectory()) continue;
     if (opts && opts.sameOwner && typeof process.getuid === 'function' && st.uid !== process.getuid()) continue;
-    if (st.mtimeMs < cutoff) { fs.rmSync(full, { recursive: true, force: true }); out.removed.push(full); } else out.kept.push(full);
+    const limit = opts && typeof opts.cutoffFor === 'function' ? opts.cutoffFor(full) : cutoff;
+    if (st.mtimeMs < limit) { fs.rmSync(full, { recursive: true, force: true }); out.removed.push(full); } else out.kept.push(full);
   }
   return out;
 }

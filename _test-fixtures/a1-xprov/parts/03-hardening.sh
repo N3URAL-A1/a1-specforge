@@ -249,6 +249,23 @@ caseR20() {
     "claudex-edge-old,claudex-old | claudex-edge-young,claudex-young"
   [[ ! -d "$art/claudex-old" && -d "$art/claudex-young" && -d "$art/not-a-run" ]] && ok "R20i filesystem matches: old run gone, young run and non-run dir present" \
                                                                                     || bad "R20i filesystem state wrong"
+  # GC1–GC3 (team-lead decision 2026-10-04): a pass run dir — its OWN result.json is a
+  # completed APPROVED review/inspect — is what load-check / wave-status read; kept 180 days.
+  #   GC1 a pass dir 15 days old → kept.            Red if gc ignores the pass rule.
+  #   GC2 a non-pass dir (REVISE) 15 days old → removed.  Red if every dir with a result.json is kept.
+  #   GC3 a pass dir 181 days old → removed.        Red if passes are kept forever.
+  mkdir -p "$art/claudex-pass15" "$art/claudex-revise15" "$art/claudex-pass181"
+  cp "$CASES/approved.result.json" "$art/claudex-pass15/result.json"; cp "$CASES/approved.result.json" "$art/claudex-pass181/result.json"
+  cp "$CASES/revise.result.json" "$art/claudex-revise15/result.json"
+  node -e "
+    const fs = require('fs'); const now = Number(process.argv[2]); const d = 86400;
+    const set = (n, ago) => fs.utimesSync(process.argv[1] + '/' + n, now - ago, now - ago);
+    set('claudex-pass15', 15 * d); set('claudex-revise15', 15 * d); set('claudex-pass181', 181 * d);
+  " "$art" "$(date +%s)"
+  out="$(cd "$PHASE_REPO" && HOME="$home" node "$TREE_TOOLS" xprov gc 2>/dev/null)"
+  [[ -d "$art/claudex-pass15" ]] && ok "GC1 a 15-day-old pass run dir is kept" || bad "GC1 the pass run dir was removed"
+  [[ ! -d "$art/claudex-revise15" ]] && ok "GC2 a 15-day-old non-pass (REVISE) run dir is removed" || bad "GC2 the REVISE run dir was kept"
+  [[ ! -d "$art/claudex-pass181" ]] && ok "GC3 a 181-day-old pass run dir is removed" || bad "GC3 the 181-day pass run dir was kept"
   # Reinhard PR review: orphaned snapshots (a gate killed between snapshot and its
   # cleanup) are swept by the same age rule. Red-making change: sweeping only claudex-*.
   local snaps="$home/.a1-xprov/snapshots"; mkdir -p "$snaps/snap-old" "$snaps/snap-young" "$snaps/other-dir"
