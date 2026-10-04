@@ -75,33 +75,6 @@
       "by": "011-intent-queue-consumer",
       "at": "2026-10-03T10:46:42.453Z",
       "stage": "started"
-    },
-    {
-      "type": "code_scope",
-      "paths": [
-        "_shared/spawn-policy.md",
-        ".claude-plugin/marketplace.json",
-        ".claude-plugin/plugin.json",
-        "agents/a1-rene-requirement-engineer.md",
-        "agents/a1-tobi-tester.md",
-        "agents/a1-vincente-vibe-optimizer.md",
-        "docs/adr/2026-07-05-model-routing-matrix.md",
-        "skills/a1-analyze/SKILL.md",
-        "skills/a1-analyze/templates/agent-brief-template.md",
-        "skills/a1-constitution/SKILL.md",
-        "skills/a1-execute/SKILL.md",
-        "skills/a1-execute/workflows/02-execute.md",
-        "skills/a1-fix/SKILL.md",
-        "skills/a1-modernize/SKILL.md",
-        "skills/a1-new-feature/SKILL.md",
-        "skills/a1-plan/SKILL.md",
-        "skills/a1-pr-review/SKILL.md",
-        "skills/a1-reconcile/SKILL.md",
-        "skills/a1-roadmap/SKILL.md"
-      ],
-      "by": "token-budget-1.9.0",
-      "at": "2026-10-04T07:47:06.233Z",
-      "stage": "started"
     }
   ]
 }
