@@ -251,10 +251,12 @@ caseFR() {
   [[ ! -e "$snap2" && ! -e "$snap2.inputs" ]] && ok "FR1 snapshot and inputs removed after round 2" || bad "FR1 leftovers at $snap2"
   assert_eq "FR1 the feedback temp dir is removed" "$(fb_left)" "$fb_before"
 
-  fr10; rm -f "$(dirname "$FR_PREV")/a1-findings.json"
+  fr10; [[ -n "$FR_PREV" ]] || { bad "FR2 setup: FR_PREV is empty (would rm in the cwd)"; return; }
+  rm -f "$(dirname "$FR_PREV")/a1-findings.json"
   FAKE_RUNNER_CASE=revise gate8 --gate "$GATE_PLAN" --round 2; usage10 "FR2 round 1's findings missing from a1's run dir"
 
-  fr10; local f="$(dirname "$FR_PREV")/a1-findings.json"; mv "$f" "$TMP10/elsewhere-findings.json"; ln -s "$TMP10/elsewhere-findings.json" "$f"
+  fr10; [[ -n "$FR_PREV" ]] || { bad "FR3 setup: FR_PREV is empty (would write into the cwd)"; return; }
+  local f="$(dirname "$FR_PREV")/a1-findings.json"; mv "$f" "$TMP10/elsewhere-findings.json"; ln -s "$TMP10/elsewhere-findings.json" "$f"
   FAKE_RUNNER_CASE=revise gate8 --gate "$GATE_PLAN" --round 2; usage10 "FR3 a1-findings.json is a symlink"
 
   fr10; local outside="$TMP10/outside-run"; mkdir -p "$outside"; cp "$(dirname "$FR_PREV")"/* "$outside"/

@@ -293,6 +293,7 @@ caseR6() {
   [[ "$wdisp" == */xreview/wave-inspect-xprov-wave-2-r1.dispositions.md ]] && ok "R6e next names the fix-summary file of wave 2" || bad "R6e dispositions_path = $wdisp"
   FAKE_RUNNER_CASE=revise gate6 --gate "$GATE_WAVE" --wave 2 --base "$PHASE_HEAD"
   assert_rc "R6f the fix round without Erik's fix summary is a usage error" 2 "$G_RC"
+  [[ -n "$wdisp" ]] || { bad "R6f setup: dispositions path is empty (would write into the cwd)"; return; }
   printf 'R1: fixed — FIXSUMMARYCANARY\n' > "$wdisp"
   local wprompt="$TMP06/r6f-prompt.txt"; rm -f "$wprompt"
   FAKE_RUNNER_PROMPT_FILE="$wprompt" FAKE_RUNNER_CASE=revise gate6 --gate "$GATE_WAVE" --wave 2 --base "$PHASE_HEAD"
@@ -620,11 +621,22 @@ caseWS() {
   c6 src/add.js '// after the waiver' >/dev/null
   sub6 wave-status --phase p6
   assert_rc "WS7 a commit after the waived last wave → exit 1" 1 "$G_RC"
+  # PM2 (Samuel SEC-N5): a REVISE run is normalized but is no pass → no a1-pass.json.
+  prep6
+  FAKE_RUNNER_CASE=revise gate6 --gate "$GATE_WAVE" --wave 1 --base "$PHASE_HEAD"
+  local rp0; rp0="$(json_get "$G_OUT" "j.result_path")"
+  if [[ -n "$rp0" && -f "$rp0" ]]; then
+    [[ ! -e "$(dirname "$rp0")/a1-pass.json" ]] && ok "PM2 a REVISE run dir carries no a1-pass.json" || bad "PM2 a REVISE run got a pass marker"
+  else bad "PM2 setup: the revise gate run returned no result_path (rc=$G_RC out=$(printf '%s' "$G_OUT" | head -c 200))"; fi
   # WS8/WS9 — what the gate writes, and no replay
   prep6
   gate6 --gate "$GATE_WAVE" --wave 1 --base "$PHASE_HEAD"
   local rp; rp="$(json_get "$G_OUT" "j.result_path")"
   [[ -f "$(dirname "$rp")/a1-reviewed.json" ]] && ok "WS8 run wrote a1-reviewed.json into a1's run dir" || bad "WS8 no a1-reviewed.json next to $rp"
+  # PM1/PM2 (Samuel SEC-N5): the WRITER side of a1-pass.json. A pass writes it (0600); a REVISE does not.
+  # Red if normalize writes the marker for every outcome, or never.
+  [[ -f "$(dirname "$rp")/a1-pass.json" && "$(stat -c %a "$(dirname "$rp")/a1-pass.json" 2>/dev/null || stat -f %Lp "$(dirname "$rp")/a1-pass.json")" = 600 ]] \
+    && ok "PM1 a normalized pass wrote a1-pass.json (0600) into the run dir" || bad "PM1 no 0600 a1-pass.json next to $rp"
   assert_json "WS8 the inspect entry carries head = the snapshotted HEAD and the full base" "$(cat "$PHASE_DIR/xreview/index.json")" \
     "(j.find((e) => e.gate === '$GATE_WAVE') || {}).head + '/' + (j.find((e) => e.gate === '$GATE_WAVE') || {}).base" "$PHASE_HEAD/$PHASE_HEAD"
   printf '## Wave 1 — one\n' > "$PHASE_DIR/STATUS.md"
@@ -633,6 +645,7 @@ caseWS() {
   c6 src/add.js '// unreviewed after the pass' >/dev/null
   sub6 normalize "$rp" --phase p6 --gate "$GATE_WAVE" --wave 1 --round 2 --work-path "$PHASE_REPO"
   assert_rc "WS9 re-normalizing an indexed run dir → usage error (no replay)" 2 "$G_RC"
+  [[ -n "$rp" ]] || { bad "WS9 setup: gate returned no result_path (would write into the cwd)"; return; }
   local copy; copy="$(dirname "$(dirname "$rp")")/claudex-replay1"; mkdir -p "$copy"; cp "$rp" "$copy/result.json"; [[ -f "$(dirname "$rp")/reply.txt" ]] && cp "$(dirname "$rp")/reply.txt" "$copy/"
   sub6 normalize "$copy/result.json" --phase p6 --gate "$GATE_WAVE" --wave 1 --round 2 --work-path "$PHASE_REPO"
   assert_json "WS9 a copy without a1-reviewed.json gets no head/base" "$(cat "$PHASE_DIR/xreview/index.json")" "String(j[j.length - 1].head) + '/' + String(j[j.length - 1].base)" "null/null"

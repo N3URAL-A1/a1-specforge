@@ -186,15 +186,15 @@ function priorRound(ctx) {
   const runDir = typeof prev.result_path === 'string' ? path.dirname(path.resolve(prev.result_path)) : null;
   if (!runDir || !isUnder(runDir, ensureArtifactsDir())) throw inputError(`round ${ctx.round} needs the round-${ctx.round - 1} run dir under a1's artifacts dir (index entry result_path: ${clip(String(prev.result_path), 120)})`);
   const file = path.join(runDir, PRIOR_FINDINGS_FILE);
-  const bytes = readNoFollow(file);
+  const bytes = readNoFollow(file, X.MAX_RESULT_BYTES);
   if (!bytes) throw inputError(`round ${ctx.round} needs the round-${ctx.round - 1} findings ${file} (a regular file normalize wrote)`);
   // The index row is agent-writable: it must carry the sha normalize recorded, and the file must name this round (Samuel MINOR a).
   if (typeof prev.findings_sha256 !== 'string' || sha256(bytes) !== prev.findings_sha256) throw inputError(`round-${ctx.round - 1} findings ${file} do not match the sha256 the index entry recorded`);
   const doc = parseOrNull(bytes);
   if (!doc || doc.phase !== ctx.phase || doc.gate !== ctx.gate || doc.wave !== ctx.wave || doc.lane !== ctx.lane || doc.round !== ctx.round - 1) throw inputError(`round-${ctx.round - 1} findings ${file} belong to another phase, gate, wave, lane or round`);
-  const rec = parseOrNull(readNoFollow(path.join(runDir, 'result.json')) || Buffer.from(''));
+  const rec = parseOrNull(readNoFollow(path.join(runDir, 'result.json'), X.MAX_RESULT_BYTES) || Buffer.from(''));
   if (!rec || rec.mode !== ctx.mode) throw inputError(`round-${ctx.round - 1} run dir ${runDir} holds no ${ctx.mode} result.json`);
-  const disp = readNoFollow(dispositionsPath(ctx, ctx.round - 1));
+  const disp = readNoFollow(dispositionsPath(ctx, ctx.round - 1), X.MAX_RESULT_BYTES);
   if (!disp) throw inputError(`round ${ctx.round} needs the host-authored dispositions file ${dispositionsPath(ctx, ctx.round - 1)} (finding id → accepted|rejected + reason) — write it first`);
   return Object.freeze({ round: ctx.round - 1, doc, dispositions: disp.toString('utf8') });
 }

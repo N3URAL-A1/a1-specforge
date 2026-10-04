@@ -43,9 +43,11 @@ function readJsonNoFollow(p) {
   try { const v = JSON.parse(buf.toString('utf8')); return C.isPlainObject(v) ? v : null; } catch (_e) { return null; }
 }
 
-/** The run dir holds a1's pass marker (regular file, O_NOFOLLOW). */
-function hasPassMarker(runDir) {
-  return readJsonNoFollow(path.join(runDir, PASS_MARKER_FILE)) !== null;
+/** The run dir holds a1's pass marker (regular file, O_NOFOLLOW) — bound to
+ * `planSha` when given: the marker names the PLAN.md the pass was normalized for. */
+function hasPassMarker(runDir, planSha) {
+  const m = readJsonNoFollow(path.join(runDir, PASS_MARKER_FILE));
+  return m !== null && (planSha === undefined || m.plan_sha256 === planSha);
 }
 
 /** result.json of a run dir in our artifacts, or null. */
@@ -72,7 +74,7 @@ const approvedAs = (rec, mode, planSha) => C.isPlainObject(rec) && rec.status ==
  * APPROVED review of exactly this PLAN.md (load-check, FR-003). */
 function planPassValid(resultPath, planSha) {
   const rec = runRecord(resultPath);
-  return approvedAs(rec, 'review', planSha) && hasPassMarker(path.dirname(path.resolve(resultPath)));
+  return approvedAs(rec, 'review', planSha) && hasPassMarker(path.dirname(path.resolve(resultPath)), planSha);
 }
 
 /** A wave pass row counts only through its run dir: a completed, APPROVED
@@ -80,7 +82,7 @@ function planPassValid(resultPath, planSha) {
  * else null (wave-status, FR-004). The row's own head/base are never read. */
 function inspectPass(resultPath, planSha) {
   const rec = runRecord(resultPath);
-  if (!approvedAs(rec, 'inspect', planSha) || !hasPassMarker(path.dirname(path.resolve(resultPath)))) return null;
+  if (!approvedAs(rec, 'inspect', planSha) || !hasPassMarker(path.dirname(path.resolve(resultPath)), planSha)) return null;
   const hb = reviewedHeadBase(resultPath, rec);
   return hb.head === null ? null : hb;
 }

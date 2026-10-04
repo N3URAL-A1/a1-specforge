@@ -483,6 +483,8 @@ function cmdXprovNormalize(args) {
   const writesFindings = outcome.verdict === X.VERDICTS.PASS || outcome.verdict === X.VERDICTS.FAIL_WITH_FINDINGS;
   // A round is consumed only now that the verdict is known; collisions are usage
   // errors and nothing has been written yet. ctx is rebuilt, never mutated.
+  // The pass marker is written with `wx` after the findings/xreview writes: an existing one (only by forgery) must stop the run BEFORE any write (Samuel SEC-N4).
+  if (outcome.verdict === X.VERDICTS.PASS && inOwnArtifacts(args0.resultPath) && fs.existsSync(path.join(path.dirname(args0.resultPath), PASS_MARKER_FILE))) usage(`${args0.resultPath} already carries a pass marker; a run is normalized once`);
   if (writesFindings && args0.roundTaken) usage(`index.json already holds ${args0.roundKey}`);
   if (writesFindings && fs.existsSync(args0.findingsPath)) usage(`findings file already exists for this round: ${args0.findingsPath}`);
   const ctx = {
