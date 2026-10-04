@@ -3,36 +3,6 @@
     {
       "type": "code_scope",
       "paths": [
-        "docs/adr/2026-09-24-cross-provider-review-gate.md",
-        "_shared/gates-registry.md",
-        "_test-fixtures/a1-xprov/",
-        "_shared/lib/xprov.cjs",
-        "_shared/lib/xprov-common.cjs",
-        "_shared/lib/xprov-snapshot.cjs",
-        "_shared/lib/xprov-gate.cjs",
-        "_shared/lib/xprov-permit.cjs",
-        "_shared/lib/xprov-run.cjs",
-        ".claude/settings.json",
-        ".claude/hooks/xprov-deny-allowlist-approve.sh",
-        ".a1/xprov-secret-allowlist.json",
-        "_shared/lib/xprov-allowlist.cjs",
-        "_shared/lib/xprov-approve.cjs",
-        "_shared/lib/xprov-normalize.cjs",
-        "_shared/lib/help.cjs",
-        ".github/workflows/test.yml",
-        "_test-fixtures/CONVENTIONS.md",
-        "_shared/lib/xprov-preflight.cjs",
-        "_shared/lib/xprov-artifacts.cjs",
-        "skills/a1-plan/workflows/04b-xprov-review.md",
-        "_shared/lib/help-xprov.cjs"
-      ],
-      "by": "009-cross-provider-review-gate",
-      "at": "2026-10-03T10:40:47.887Z",
-      "stage": "started"
-    },
-    {
-      "type": "code_scope",
-      "paths": [
         "_shared/lib/intent.cjs",
         "_shared/lib/intent-constants.cjs",
         "_shared/lib/intent-validate.cjs",
