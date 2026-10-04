@@ -121,8 +121,8 @@ const KEY_SEGMENT = String.raw`(?:[A-Za-z0-9_-]+|"[^"]*"|'[^']*')`;
 const KEY_VALUE_RE = new RegExp(`^(${KEY_SEGMENT}(?:\\s*\\.\\s*${KEY_SEGMENT})*)\\s*=\\s*(.*)$`);
 
 /** Returns fresh `{tables: [{name, line}], entries: [{table, key, path, value,
- * line}], unparsed: [lineNo…]}`. `name` and `key` are normalised dotted paths,
- * `path` is table + key. Every non-empty, non-comment line that is neither a
+ * raw, line}], unparsed: [lineNo…]}`. `name` and `key` are normalised dotted paths,
+ * `path` is table + key, `raw` the value text with its quotes. Every non-empty, non-comment line that is neither a
  * header nor `key = value` lands in `unparsed`: the compliant file holds only
  * scalars, so a continuation line of an inline table or array is never
  * legitimate and the allowlist check reports it. */
@@ -143,7 +143,7 @@ function parseTomlLines(text) {
     const kv = line.match(KEY_VALUE_RE);
     if (kv) {
       const key = splitDotted(kv[1]).join('.');
-      entries.push(Object.freeze({ table, key, path: table ? `${table}.${key}` : key, value: unquote(kv[2]), line: idx + 1 }));
+      entries.push(Object.freeze({ table, key, path: table ? `${table}.${key}` : key, value: unquote(kv[2]), raw: kv[2].trim(), line: idx + 1 }));
       return;
     }
     unparsed.push(idx + 1);
@@ -181,7 +181,25 @@ const ALLOWED_KEYS = Object.freeze([
   'sandbox_mode', 'approval_policy', 'model', 'model_reasoning_effort',
   'features.plugins', 'features.remote_plugin',
 ]);
+// Keys allowed ONLY with one exact raw value (fix 2026-10-04): codex-cli
+// 0.155.1 writes them into the review home, each switching something off.
+// Compared on the raw text, so `"false"` (a string) is no `false`; every
+// occurrence is checked, so a duplicate with another value FAILs.
+const ALLOWED_KEY_VALUES = Object.freeze({
+  cli_auth_credentials_store: '"file"',
+  'features.apps': 'false',
+  'features.browser_use': 'false',
+  'features.computer_use': 'false',
+  'features.hooks': 'false',
+  'features.memories': 'false',
+  'features.skill_mcp_dependency_install': 'false',
+});
 const UNEXPECTED_LIST_MAX = 20;
+
+function isAllowedEntry(e) {
+  if (ALLOWED_KEYS.includes(e.path)) return true;
+  return Object.prototype.hasOwnProperty.call(ALLOWED_KEY_VALUES, e.path) && e.raw === ALLOWED_KEY_VALUES[e.path];
+}
 
 function firstSegment(dotted) {
   return String(dotted).split('.')[0];
@@ -189,7 +207,7 @@ function firstSegment(dotted) {
 
 function unexpectedConfigCheck(parsed) {
   const badTables = parsed.tables.filter((t) => !ALLOWED_TABLES.includes(t.name)).map((t) => t.name);
-  const badKeys = parsed.entries.filter((e) => !ALLOWED_KEYS.includes(e.path)).map((e) => e.path);
+  const badKeys = parsed.entries.filter((e) => !isAllowedEntry(e)).map((e) => e.path);
   const unexpected = [...new Set([...badTables, ...badKeys])].sort();
   const shown = unexpected.slice(0, UNEXPECTED_LIST_MAX);
   const more = unexpected.length - shown.length;

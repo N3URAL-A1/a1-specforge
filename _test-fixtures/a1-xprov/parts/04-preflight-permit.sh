@@ -414,6 +414,73 @@ experimental_use_unified_exec_tool = true|keys: shell_environment_policy, shell_
   assert_rc "R14x[model keys] preflight still exits 0 with model + model_reasoning_effort" 0 "$W4_RC" "$W4_ERR"
 }
 
+# ---------- R14v (fix 2026-10-04 xprov-preflight-config-allowlist): value-constrained keys ----------
+# codex-cli 0.155.1 writes seven more keys into the review home; each only
+# switches something off. They are allowed ONLY with that value: every
+# features.* = false (bare boolean), cli_auth_credentials_store = "file".
+# Frozen literal: byte-identical to the real ~/.codex-a1-review/config.toml
+# measured 2026-10-04 (RED before the fix: `FAIL|keys: cli_auth_credentials_store,
+# features.apps, …`). Red-making change: allowing the keys without the value
+# check (every bad-value arm passes), or checking only the first occurrence
+# (the duplicate arms pass).
+CODEX_REVIEW_CONFIG_0155='# a1-specforge — dedicated Codex home for cross-provider REVIEW runs only.
+# Created 2026-09-24 (analysis finding F-049, spec 009-cross-provider-review-gate).
+# Invariants: read-only sandbox, on-request approvals, NO MCP servers, NO plugins.
+# The claudex-loop runner overrides approval_policy per call; the sandbox and the
+# absence of MCP servers are what this file guarantees.
+sandbox_mode = "read-only"
+approval_policy = "on-request"
+cli_auth_credentials_store = "file"
+
+[features]
+plugins = false
+remote_plugin = false
+apps = false
+browser_use = false
+computer_use = false
+hooks = false
+skill_mcp_dependency_install = false
+memories = false'
+
+caseR14v() {
+  make_tree; make_fake_global_home
+  make_home_w4; ln -s "$FAKE_HOME/.codex/auth.json" "$XHOME/auth.json"
+  printf '%s\n' "$CODEX_REVIEW_CONFIG_0155" > "$XHOME/config.toml"
+  xprov_w4 preflight
+  assert_rc "R14v[compliant 0.155.1] preflight exits 0 on the measured review config" 0 "$W4_RC" "$W4_ERR"
+  assert_eq "R14v[compliant 0.155.1] unexpected_config_key PASSes" "$(check_result "$W4_OUT" unexpected_config_key)" "PASS|all keys allowlisted"
+
+  local variant
+  # <label>|<line to replace>|<replacement (may hold \n)>|<key the FAIL must name>
+  local -a variants=(
+    'apps true|apps = false|apps = true|features.apps'
+    'browser_use true|browser_use = false|browser_use = true|features.browser_use'
+    'computer_use true|computer_use = false|computer_use = true|features.computer_use'
+    'hooks true|hooks = false|hooks = true|features.hooks'
+    'memories true|memories = false|memories = true|features.memories'
+    'skill_mcp_dependency_install true|skill_mcp_dependency_install = false|skill_mcp_dependency_install = true|features.skill_mcp_dependency_install'
+    'cli store keyring|cli_auth_credentials_store = "file"|cli_auth_credentials_store = "keyring"|cli_auth_credentials_store'
+    'apps quoted string|apps = false|apps = "false"|features.apps'
+    'hooks duplicate mixed|hooks = false|hooks = false\nhooks = true|features.hooks'
+    'cli store duplicate mixed|cli_auth_credentials_store = "file"|cli_auth_credentials_store = "file"\ncli_auth_credentials_store = "keyring"|cli_auth_credentials_store'
+  )
+  for variant in "${variants[@]}"; do
+    local label="${variant%%|*}" rest="${variant#*|}"
+    local from="${rest%%|*}"; rest="${rest#*|}"
+    local to="${rest%%|*}" key="${rest#*|}"
+    make_home_w4; ln -s "$FAKE_HOME/.codex/auth.json" "$XHOME/auth.json"
+    # whole-line replacement in node (no sed escaping of quotes/backslashes)
+    FROM="$from" TO="$to" node -e '
+      const src = require("fs").readFileSync(0, "utf8").split("\n");
+      const to = process.env.TO.split("\\n");
+      process.stdout.write(src.flatMap((l) => (l === process.env.FROM ? to : [l])).join("\n"));
+    ' <<<"$CODEX_REVIEW_CONFIG_0155" > "$XHOME/config.toml"
+    xprov_w4 preflight
+    assert_rc "R14v[$label] preflight exits 1" 1 "$W4_RC"
+    assert_eq "R14v[$label] unexpected_config_key FAILs naming the key" "$(check_result "$W4_OUT" unexpected_config_key)" "FAIL|keys: $key"
+  done
+}
+
 # ---------- S3 (Samuel): stdout is not truncated at 64 KiB ----------
 # Red-making change: `process.stdout.write(json); process.exit(code)` in the
 # writer (measured: a piped stdout on macOS is asynchronous and exit() cuts
@@ -434,4 +501,4 @@ caseS3() {
   assert_json "S3d the last check survived the pipe" "$W4_OUT" "j.checks[j.checks.length-1].name" "codex_cli"
 }
 
-caseR14; caseR14x; caseS1; caseS2; caseS3; caseR21; caseR25; caseR26
+caseR14; caseR14x; caseR14v; caseS1; caseS2; caseS3; caseR21; caseR25; caseR26
