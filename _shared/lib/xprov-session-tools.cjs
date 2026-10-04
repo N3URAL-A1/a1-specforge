@@ -28,7 +28,10 @@ const WAIT_TOOL = 'wait';
 const WAIT_KEYS_REQUIRED = Object.freeze(['cell_id', 'yield_time_ms']);
 const WAIT_KEYS_OPTIONAL = Object.freeze(['max_tokens']);
 const MAX_TOKENS_CAP = 100000;
-const CELL_RUNNING_RE = /Script running with cell ID (\S+)/g;
+// Anchored as measured (Samuel NIT a): the FIRST input_text part of an exec output
+// starts with this line; the same sentence later in the stdout of a reviewed file
+// registers nothing.
+const CELL_RUNNING_RE = /^Script running with cell ID (\S+)\n/;
 
 const isPosInt = (v, max) => Number.isInteger(v) && v > 0 && v <= max;
 
@@ -47,11 +50,10 @@ function waitProblem(args, cells, timeoutMs) {
   return null;
 }
 
-/** The text of a tool output: a string, or the `text` parts of a content list (measured shape). */
-function outputText(out) {
-  if (typeof out === 'string') return out;
-  if (Array.isArray(out)) return out.map((x) => (x && typeof x.text === 'string' ? x.text : '')).join('\n');
-  return '';
+/** The first `input_text` part of a tool output (measured shape), or ''. */
+function firstText(out) {
+  if (!Array.isArray(out) || !out[0] || out[0].type !== 'input_text' || typeof out[0].text !== 'string') return '';
+  return out[0].text;
 }
 
 /** { names: sorted tool names, disallowed: [name (reason)] } of one session log. */
@@ -76,7 +78,8 @@ function sessionTools(file, timeoutMs) {
         if (why) disallowed.push(`wait (${why})`);
       } else if (!ALLOWED_SESSION_TOOLS.includes(name)) disallowed.push(name);
     } else if (rec.type === 'response_item' && /_call_output$/.test(p.type) && execCalls.has(p.call_id)) {
-      for (const m of outputText(p.output).matchAll(CELL_RUNNING_RE)) cells.add(m[1]);
+      const m = CELL_RUNNING_RE.exec(firstText(p.output));
+      if (m) cells.add(m[1]);
     } else if (rec.type === 'event_msg' && p.type.startsWith('mcp_tool_call')) {
       const inv = p.invocation || {};
       const name = `mcp:${inv.server || '?'}/${inv.tool || '?'}`;

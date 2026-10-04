@@ -542,6 +542,7 @@ caseR8() {
 #   WS13 after the last wave: an executable STATUS.md, a symlink under xreview/, a file
 #        outside the measured list (.a1/phases/p6/notes.md) → exit 1; docs/product/ROADMAP.md → exit 0.
 #        Red if the mode check / the file list is dropped.
+#   WS14 the raw-diff parser returns null on an off-format entry.   Red if it stops early (break).
 #   WS10 an APPROVED review result normalized for the wave gate → wrong_mode.  Red if normalize skips the mode check.
 #   WS11 --waves N --lane L checks (N, L): control exit 0, stale lane head exit 1.  Red if the lane is dropped from the pairs.
 #   WS9 re-normalizing the old run dir after a new commit → usage error (no replay), and a
@@ -638,6 +639,15 @@ caseWS() {
   ( cd "$PHASE_REPO" && git reset -q --hard "$keep" && printf 'x\n' > "$PHASE_DIR/notes.md" && git add -A && git commit -qm "notes" )
   sub6 wave-status --phase p6 --waves 1
   assert_rc "WS13 a file outside the measured list (.a1/phases/p6/notes.md) → exit 1" 1 "$G_RC"
+  # WS14 (Samuel NIT b) — the raw-diff parser fails closed on an off-format entry
+  local raw14; raw14="$(node -e '
+    const W = require(process.argv[1]);
+    const ok = W.parseRawZ(":100644 100644 aaaaaaa bbbbbbb M\0.a1/phases/p6/STATUS.md\0");
+    const bad = W.parseRawZ(":100644 100644 aaaaaaa bbbbbbb M\0.a1/phases/p6/STATUS.md\0not-a-raw-line\0src/x.js\0");
+    process.stdout.write(JSON.stringify({ ok, bad }));
+  ' "$TREE/_shared/lib/xprov-waivers.cjs")"
+  assert_json "WS14 a well-formed raw entry parses (control)" "$raw14" "j.ok.map((c) => c.mode + ' ' + c.path).join(',')" "100644 .a1/phases/p6/STATUS.md"
+  assert_json "WS14 an off-format raw entry → null (fail closed), not the entries before it" "$raw14" "String(j.bad)" "null"
   # WS10 — an APPROVED plan-review result normalized as wave-inspect → wrong_mode, no pass (Codex R1 on cf5a86e)
   prep6
   sub6 normalize "$CASES/approved.result.json" --phase p6 --gate "$GATE_WAVE" --wave 1

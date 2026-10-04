@@ -115,18 +115,26 @@ function exemptFiles(phase) {
   ];
 }
 
-/** `git diff --raw -z` entries between two commits: [{ mode, path }], or null. */
-function rawChanges(workPath, from, to) {
-  const r = C.gitSpawn(['-C', workPath, 'diff', '--raw', '-z', '--no-renames', from, to, '--']);
-  if (r.status !== 0) return null;
-  const parts = String(r.stdout).split('\0');
+const RAW_META_RE = /^:[0-7]{6} [0-7]{6} [0-9a-f]+ [0-9a-f]+ [A-Z][0-9]*$/;
+
+/** Parse `git diff --raw -z` output: [{ mode, path }], or null on ANY entry
+ * off the format (fail closed, Samuel NIT b). */
+function parseRawZ(stdout) {
+  const parts = String(stdout).split('\0');
+  if (parts[parts.length - 1] === '') parts.pop();
+  if (parts.length % 2 !== 0) return null;
   const out = [];
-  for (let i = 0; i + 1 < parts.length; i += 2) {
-    const meta = parts[i].replace(/^\n/, '');
-    if (!meta.startsWith(':')) break;
-    out.push({ mode: meta.slice(1).split(' ')[1], path: parts[i + 1] });
+  for (let i = 0; i < parts.length; i += 2) {
+    if (!RAW_META_RE.test(parts[i]) || parts[i + 1] === '') return null;
+    out.push({ mode: parts[i].slice(1).split(' ')[1], path: parts[i + 1] });
   }
   return out;
+}
+
+/** `git diff --raw -z` entries between two commits, or null. */
+function rawChanges(workPath, from, to) {
+  const r = C.gitSpawn(['-C', workPath, 'diff', '--raw', '-z', '--no-renames', from, to, '--']);
+  return r.status === 0 ? parseRawZ(r.stdout) : null;
 }
 
 /** `from` leads to `to`: equal, or an ancestor whose later commits only write
@@ -176,4 +184,4 @@ function appendWaiver(record, writeGuardedStore) {
   return writeGuardedStore(WAIVERS_FILE, { version: 1, waivers: [...current.waivers, rec] });
 }
 
-module.exports = { WAIVERS_FILE, RECORD_KEYS, waiversPath, readWaivers, planShaOf, headIn, inHistory, planWaiver, waveWaivers, chainCoverage, leadsTo, exemptFiles, appendWaiver, validRecord };
+module.exports = { WAIVERS_FILE, RECORD_KEYS, waiversPath, readWaivers, planShaOf, headIn, inHistory, planWaiver, waveWaivers, chainCoverage, leadsTo, exemptFiles, parseRawZ, appendWaiver, validRecord };

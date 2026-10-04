@@ -339,15 +339,25 @@ caseF1() {
     };
     // Samuel re-check: the 300 000-char abc:// repetition took 21.6 s with the unbounded url pattern
     const inputs = ['a'.repeat(10000), 'https://' + 'u'.repeat(10000), 'password = ' + 'x'.repeat(10000), 'sk-' + '-'.repeat(10000), 'Bearer ' + ' '.repeat(10000), 'abc://'.repeat(50000)];
+    // Load-robust (team lead, 2026-10-04: 108-232 ms seen at load average 52-56):
+    // per (pattern, input) the MINIMUM of three runs, and the bound is 1 s —
+    // linear patterns take a few ms on these inputs, a backtracking one takes
+    // seconds (21.6 s measured for the unbounded url pattern), so the ReDoS
+    // intent stays while scheduler noise no longer decides the verdict.
+    const once = (re, s) => { const t0 = process.hrtime.bigint(); re.test(s); return Number(process.hrtime.bigint() - t0) / 1e6; };
     let worst = 0, worstName = '';
-    for (const p of x.SECRET_PATTERNS) for (const s of inputs) { const t0 = process.hrtime.bigint(); p.re.test(s); const ms = Number(process.hrtime.bigint() - t0) / 1e6; if (ms > worst) { worst = ms; worstName = p.name; } }
+    for (const p of x.SECRET_PATTERNS) for (const s of inputs) {
+      let ms = once(p.re, s);
+      if (ms <= 1000) ms = Math.min(ms, once(p.re, s), once(p.re, s)); // a catastrophic first run is not repeated
+      if (ms > worst) { worst = ms; worstName = p.name; }
+    }
     process.stdout.write(JSON.stringify({ names, count: x.SECRET_PATTERNS.length, worst: Math.round(worst * 100) / 100, worstName }));
   " "$XPROV_LIB" 2>&1)"
   assert_json "F1h2 the eight Samuel shapes each hit their own pattern; ghp_/xoxb keep their original names" "$out2" \
     "Object.entries(j.names).map(([k, v]) => k + '=' + v).join(' ')" \
     "sk_ext=sk_prefixed_key_ext gho=github_token_family fine=github_pat_fine_grained xoxa=slack_token_family url=url_credentials pwd=password_assignment bearer=bearer_token gkey=google_api_key ghp_still_classic=github_pat_classic xoxb_still_slack=slack_token pwd_cwd=none xoxa_short=none"
   assert_json "F1h3 pattern list has 16 entries (8 spec + 8 amended)" "$out2" "j.count" "16"
-  assert_json "F1h4 ReDoS probe: worst single test over the adversarial inputs (incl. 300 000-char abc://) stays under 100 ms" "$out2" "j.worst < 100 ? 'ok' : 'slow ' + j.worstName + ' ' + j.worst + 'ms'" "ok"
+  assert_json "F1h4 ReDoS probe: worst pattern × adversarial input (incl. 300 000-char abc://, min of 3 runs) stays under 1 s" "$out2" "j.worst < 1000 ? 'ok' : 'slow ' + j.worstName + ' ' + j.worst + 'ms'" "ok"
   assert_json "F1i INSTRUCTION_MARKERS carry the multi-word markers" "$out" "j.markers" "true"
   assert_json "F1j GATE_ID_LIST is the two registered ids" "$out" "j.gates" "$GATE_PLAN,$GATE_WAVE"
   assert_json "F1k codexHome() honours A1_XPROV_CODEX_HOME and defaults to .codex-a1-review" "$out" "j.home" "/x/override .codex-a1-review"

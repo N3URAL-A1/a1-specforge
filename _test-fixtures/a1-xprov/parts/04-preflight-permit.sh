@@ -258,6 +258,11 @@ caseS2() {
   sw4 "SW5 a wait with yield_time_ms above the runner timeout → FAIL" 'setArgs(L, { ...args(L), yield_time_ms: 600001 })' "FAIL|disallowed: wait (yield_time_ms out of range)"
   sw4 "SW6 write_stdin (input into a running exec) → FAIL" '(wait(L).payload.name = "write_stdin", L)' "FAIL|disallowed: write_stdin"
   sw4 "SW7 another unknown tool → still FAIL" '(wait(L).payload.name = "view_image", L)' "FAIL|disallowed: view_image"
+  # SW8 (Samuel NIT a): the cell sentence only counts as the first line of the first
+  # input_text part; here the exec "completed" and the sentence sits later in its stdout
+  sw4 "SW8 the cell sentence later in an exec's stdout registers no cell → the wait FAILs" \
+    '(L[1].payload.output[0].text = "Script completed\nWall time 0.1 seconds\nOutput:\n", L[1].payload.output[1].text += "\nScript running with cell ID 1\n", L)' \
+    "FAIL|disallowed: wait (cell 1 was not started by an earlier exec)"
 }
 
 # ---------- R21: permission record — default deny, permit is the only writer ----------

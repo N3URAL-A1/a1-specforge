@@ -139,6 +139,9 @@ caseW() {
   assert_eq "W5 store mode 0600" "$(node -e 'process.stdout.write((require("fs").statSync(process.argv[1]).mode & 0o777).toString(8))' "$STORE11")" "600"
   assert_json "W5 index.json mirror: waived true, no verdict, by the owner" "$(cat "$PHASE_DIR/xreview/index.json" 2>/dev/null || echo '[{}]')" \
     "[j[0].waived, 'verdict' in j[0], j[0].by, j[0].plan_sha256].join('/')" "true/false/owner-fixture/$(plansha11)"
+  # W5by (Rene, spec FR-007 mirror): the mirror's `by` is exactly the --by value typed by the owner,
+  # never the literal 'human'. Mutation MW5by (mirror by: 'human') turns it red — run in node:20.
+  assert_json "W5by the index.json mirror's by equals the --by value (owner-fixture)" "$(cat "$PHASE_DIR/xreview/index.json" 2>/dev/null || echo '[{}]')" "String(j[0].by)" "owner-fixture"
   grep -q "^## Waiver" "$PHASE_DIR/XREVIEW.md" 2>/dev/null && ok "W5 XREVIEW.md has a ## Waiver section" || bad "W5 no ## Waiver section"
   grep -q '"pattern":"xprov_waived"' "$PHASE_DIR/observations.jsonl" 2>/dev/null && ok "W5 one xprov_waived observation" || bad "W5 no xprov_waived observation"
   local lc; lc="$(cd "$PHASE_REPO" && node "$tools" xprov load-check --phase p11 2>/dev/null)"; rc=$?
