@@ -160,7 +160,7 @@ findings plus that summary. One fix round per wave (`next.fix_round` is always 1
 **Waiver — human only.** When the provider is down or the user accepts the
 risk, tell the user the command and wait; the human runs
 `a1-tools xprov waive --phase <phase_name> --gate wave-inspect-xprov --wave <N> --base $PRE_WAVE_HEAD --work-path $WORK_PATH --reason "<text>" --by <name>`
-in a separate terminal. It runs only in the owner's own terminal — never through an agent's Bash tool or the `!` prefix: like the allowlist owner approval it refuses without a TTY, under Claude Code's environment or with a Claude Code ancestor, and the project's PreToolUse hook denies any Bash command containing it. It shows the key it computed itself (the PLAN.md sha256, the work path's HEAD and the full
+in a separate terminal. It runs only in the owner's own terminal — never through an agent's Bash tool or the `!` prefix: like the allowlist owner approval it refuses without a TTY, under Claude Code's environment or with a Claude Code ancestor, and, in a1-specforge itself, the project's PreToolUse hook denies any Bash command containing it (the plugin does not ship the hook to other repositories; there the TTY/ancestor guard is the control). It shows the key it computed itself (the PLAN.md sha256, the work path's HEAD and the full
 base sha), asks for the gate id typed back and records the waiver in
 `~/.a1-xprov/waivers.json`; `index.json` gets a mirror row without authority.
 It is never `verdict: pass`. `wave-status` counts it only while PLAN.md keeps

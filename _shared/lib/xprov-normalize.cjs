@@ -38,7 +38,7 @@ const { parseFlags, repoRoot, assertSafeSegment, writeTextAtomic, nowIso } = req
 const { parseRegistryIds } = require('./gate-ids.cjs');
 const X = require('./xprov.cjs');
 const C = require('./xprov-common.cjs');
-const { inOwnArtifacts, reviewedHeadBase } = require('./xprov-runrecord.cjs');
+const { inOwnArtifacts, reviewedHeadBase, PASS_MARKER_FILE } = require('./xprov-runrecord.cjs');
 // Shared helpers — one definition each, in xprov-common.cjs.
 const { REGISTRY_PATH, sha256, isPlainObject, parsePositive, parseLane, writeStdoutSync, readIndex, sameWave, sameLane, DETAIL_MAX_CHARS } = C;
 
@@ -501,6 +501,11 @@ function cmdXprovNormalize(args) {
   const entry = indexEntry(ctx, outcome, model, findingsSha, record, tainted);
   const index = readIndex(ctx.indexPath);
   if (index === null) usage(`index.json changed underneath the run: ${ctx.indexPath}`);
+  // a1's own proof that THIS run was accepted (after the output filter and every check above):
+  // the pass retention in gc and the row validation in load-check/wave-status need it.
+  if (outcome.verdict === X.VERDICTS.PASS && inOwnArtifacts(ctx.resultPath)) {
+    fs.writeFileSync(path.join(path.dirname(ctx.resultPath), PASS_MARKER_FILE), `${JSON.stringify({ gate: ctx.gate, plan_sha256: ctx.planSha, ts: ctx.ts }, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
+  }
   writeTextAtomic(ctx.indexPath, JSON.stringify([...index, entry], null, 2) + '\n');
   runGcIfPresent();
   const limitations = tainted ? [] : (outcome.limitations || []).map((l) => clip(l, DETAIL_MAX_CHARS));

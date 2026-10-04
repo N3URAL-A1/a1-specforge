@@ -32,6 +32,7 @@ const path = require('path');
 const { repoRoot, assertSafeSegment, parseFlags } = require('./io.cjs');
 const X = require('./xprov.cjs');
 const C = require('./xprov-common.cjs');
+const RR = require('./xprov-runrecord.cjs');
 // Shared helpers — one definition each, in xprov-common.cjs (mkdir0700's typed
 // errors are the generic path_is_file / path_too_long reasons).
 const { mkdir0700 } = C;
@@ -118,7 +119,8 @@ function gc(opts) {
   const cutoff = now - maxAgeDays * MS_PER_DAY;
   // A pass run dir is what load-check / wave-status count (rows are pointers):
   // it stays PASS_RUN_MAX_AGE_DAYS, decided from its OWN result.json, no phase knowledge.
-  const passCutoff = now - Math.max(maxAgeDays, X.PASS_RUN_MAX_AGE_DAYS) * MS_PER_DAY;
+  const passMax = typeof o.passMaxAgeDays === 'number' ? o.passMaxAgeDays : X.PASS_RUN_MAX_AGE_DAYS;
+  const passCutoff = now - Math.max(maxAgeDays, passMax) * MS_PER_DAY;
   const runs = sweepDirs(root, RUN_DIR_PREFIX, cutoff, { cutoffFor: (full) => (isPassRun(full) ? passCutoff : cutoff) });
   // Orphaned snapshots (Reinhard PR review): a gate process killed between
   // `snapshot` and its cleanup leaves the clone forever — same age rule.
@@ -130,14 +132,13 @@ function gc(opts) {
   };
 }
 
-/** The run dir holds a completed APPROVED result (read with O_NOFOLLOW). */
+/** a1 accepted this run (its own pass marker) AND result.json is a completed
+ * APPROVED review/inspect. The runner's verdict alone is not enough: a run a1
+ * discarded (secret_in_output, quarantine) keeps the short retention (Samuel SEC-1). */
 function isPassRun(dir) {
-  const buf = C.readNoFollow(path.join(dir, 'result.json'));
-  if (!buf) return false;
-  try {
-    const r = JSON.parse(buf.toString('utf8'));
-    return C.isPlainObject(r) && r.status === 'completed' && X.RUNNER_MODES.includes(r.mode) && C.isPlainObject(r.response) && r.response.verdict === 'APPROVED';
-  } catch (_e) { return false; }
+  if (!RR.hasPassMarker(dir)) return false;
+  const r = RR.readJsonNoFollow(path.join(dir, 'result.json'));
+  return r !== null && r.status === 'completed' && X.RUNNER_MODES.includes(r.mode) && C.isPlainObject(r.response) && r.response.verdict === 'APPROVED';
 }
 
 /** The stale run-home sweep, shared by gc and (opportunistically) every
@@ -166,10 +167,10 @@ function sweepDirs(dir, prefix, cutoff, opts) {
   return out;
 }
 
-// ---------- CLI: a1-tools xprov gc [--slug <slug>] [--max-age-days N] ----------
+// ---------- CLI: a1-tools xprov gc [--slug <slug>] [--max-age-days N] [--pass-max-age-days N] ----------
 
 function cmdXprovGc(args) {
-  const flags = parseFlags(args, { slug: 'str', 'max-age-days': 'str' });
+  const flags = parseFlags(args, { slug: 'str', 'max-age-days': 'str', 'pass-max-age-days': 'str' });
   if (flags._.length) {
     return C.usageExit('gc', `takes no positional arguments (got ${JSON.stringify(String(flags._[0]).slice(0, 80))})`);
   }
@@ -180,7 +181,14 @@ function cmdXprovGc(args) {
     }
     maxAgeDays = Number(flags['max-age-days']);
   }
-  const result = gc({ now: Date.now(), maxAgeDays, slug: flags.slug }); // a hostile --slug throws A1_INPUT → facade exit 2
+  let passMaxAgeDays;
+  if (flags['pass-max-age-days'] !== undefined) {
+    if (!/^\d+$/.test(String(flags['pass-max-age-days']))) {
+      return C.usageExit('gc', '--pass-max-age-days must be a non-negative integer');
+    }
+    passMaxAgeDays = Number(flags['pass-max-age-days']);
+  }
+  const result = gc({ now: Date.now(), maxAgeDays, passMaxAgeDays, slug: flags.slug }); // a hostile --slug throws A1_INPUT → facade exit 2
   process.stderr.write(`xprov gc: removed ${result.removed.length}, kept ${result.kept.length} under ${result.root}; snapshots removed ${result.snapshots_removed.length}, kept ${result.snapshots_kept.length}\n`);
   return C.emitJson(result, X.EXIT_PASS);
 }

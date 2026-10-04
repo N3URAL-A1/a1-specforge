@@ -21,6 +21,10 @@ const X = require('./xprov.cjs');
 const C = require('./xprov-common.cjs');
 
 const REVIEWED_FILE = 'a1-reviewed.json';
+// a1's own pass marker: written by normalize ONLY when it emits `pass`, so a run
+// dir the runner called APPROVED but a1 discarded (secret_in_output, quarantine)
+// never counts as a pass and never earns the long retention (Samuel SEC-1).
+const PASS_MARKER_FILE = 'a1-pass.json';
 const SHA_RE = /^[0-9a-f]{40,64}$/;
 
 /** The run dir of `resultPath` lies in THIS repository's artifacts dir (realpath). */
@@ -34,9 +38,14 @@ function inOwnArtifacts(resultPath) {
 
 /** A JSON object read with O_NOFOLLOW (C.readNoFollow), or null. */
 function readJsonNoFollow(p) {
-  const buf = C.readNoFollow(p);
+  const buf = C.readNoFollow(p, X.MAX_RESULT_BYTES);
   if (!buf) return null;
   try { const v = JSON.parse(buf.toString('utf8')); return C.isPlainObject(v) ? v : null; } catch (_e) { return null; }
+}
+
+/** The run dir holds a1's pass marker (regular file, O_NOFOLLOW). */
+function hasPassMarker(runDir) {
+  return readJsonNoFollow(path.join(runDir, PASS_MARKER_FILE)) !== null;
 }
 
 /** result.json of a run dir in our artifacts, or null. */
@@ -62,7 +71,8 @@ const approvedAs = (rec, mode, planSha) => C.isPlainObject(rec) && rec.status ==
 /** A plan-review pass row counts only when its run dir holds a completed,
  * APPROVED review of exactly this PLAN.md (load-check, FR-003). */
 function planPassValid(resultPath, planSha) {
-  return approvedAs(runRecord(resultPath), 'review', planSha);
+  const rec = runRecord(resultPath);
+  return approvedAs(rec, 'review', planSha) && hasPassMarker(path.dirname(path.resolve(resultPath)));
 }
 
 /** A wave pass row counts only through its run dir: a completed, APPROVED
@@ -70,9 +80,9 @@ function planPassValid(resultPath, planSha) {
  * else null (wave-status, FR-004). The row's own head/base are never read. */
 function inspectPass(resultPath, planSha) {
   const rec = runRecord(resultPath);
-  if (!approvedAs(rec, 'inspect', planSha)) return null;
+  if (!approvedAs(rec, 'inspect', planSha) || !hasPassMarker(path.dirname(path.resolve(resultPath)))) return null;
   const hb = reviewedHeadBase(resultPath, rec);
   return hb.head === null ? null : hb;
 }
 
-module.exports = { REVIEWED_FILE, inOwnArtifacts, readJsonNoFollow, runRecord, reviewedHeadBase, planPassValid, inspectPass };
+module.exports = { REVIEWED_FILE, PASS_MARKER_FILE, hasPassMarker, inOwnArtifacts, readJsonNoFollow, runRecord, reviewedHeadBase, planPassValid, inspectPass };

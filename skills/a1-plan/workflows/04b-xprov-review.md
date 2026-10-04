@@ -140,7 +140,7 @@ Validate with `retro validate` before appending, as `04-audit.md` describes.
 A waiver is a decision, not a step. When the provider is unavailable or the
 user accepts the risk, tell the user the command and stop; the human runs
 `a1-tools xprov waive --phase <phase_name> --gate plan-review-xprov --reason "<text>" --by <name>`
-in a separate terminal. It runs only in the owner's own terminal — never through an agent's Bash tool or the `!` prefix: like the allowlist owner approval it refuses without a TTY, under Claude Code's environment or with a Claude Code ancestor, and the project's PreToolUse hook denies any Bash command containing it. It shows the key it computed itself (the PLAN.md sha256), asks for the gate id typed back and records
+in a separate terminal. It runs only in the owner's own terminal — never through an agent's Bash tool or the `!` prefix: like the allowlist owner approval it refuses without a TTY, under Claude Code's environment or with a Claude Code ancestor, and, in a1-specforge itself, the project's PreToolUse hook denies any Bash command containing it (the plugin does not ship the hook to other repositories; there the TTY/ancestor guard is the control). It shows the key it computed itself (the PLAN.md sha256), asks for the gate id typed back and records
 the waiver in `~/.a1-xprov/waivers.json` — the only place load-check reads
 waivers from, and only while PLAN.md keeps that sha256. `xreview/index.json`
 and a `## Waiver` section in XREVIEW.md get a mirror without authority; never

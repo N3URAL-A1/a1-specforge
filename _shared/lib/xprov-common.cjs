@@ -101,10 +101,15 @@ const LINE_BREAKERS_RE = /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u
 
 /** Bytes of a regular file opened with O_NOFOLLOW and checked on the open
  * descriptor (no lstat-then-read window), or null. One definition (Reinhard m3). */
-function readNoFollow(p) {
+function readNoFollow(p, maxBytes) {
   let fd;
-  try { fd = fs.openSync(p, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW); } catch (_e) { return null; }
-  try { return fs.fstatSync(fd).isFile() ? fs.readFileSync(fd) : null; } catch (_e) { return null; } finally { fs.closeSync(fd); }
+  // O_NONBLOCK: a FIFO named like the file must not hang the open (Samuel SEC-2); isFile() rejects it.
+  try { fd = fs.openSync(p, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK); } catch (_e) { return null; }
+  try {
+    const st = fs.fstatSync(fd);
+    if (!st.isFile() || (typeof maxBytes === 'number' && st.size > maxBytes)) return null;
+    return fs.readFileSync(fd);
+  } catch (_e) { return null; } finally { fs.closeSync(fd); }
 }
 
 function oneLine(value) {
