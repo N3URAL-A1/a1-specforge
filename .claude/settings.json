@@ -8,7 +8,9 @@
       "Edit(~/.a1-xprov/waivers.json)",
       "Write(~/.a1-xprov/waivers.json)",
       "Edit(**/.a1/xprov.json)",
-      "Write(**/.a1/xprov.json)"
+      "Write(**/.a1/xprov.json)",
+      "Edit(**/.a1/phases/*/xreview/index.json)",
+      "Write(**/.a1/phases/*/xreview/index.json)"
     ]
   },
   "hooks": {
