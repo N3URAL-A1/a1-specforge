@@ -635,7 +635,7 @@ caseWS() {
   [[ -f "$(dirname "$rp")/a1-reviewed.json" ]] && ok "WS8 run wrote a1-reviewed.json into a1's run dir" || bad "WS8 no a1-reviewed.json next to $rp"
   # PM1/PM2 (Samuel SEC-N5): the WRITER side of a1-pass.json. A pass writes it (0600); a REVISE does not.
   # Red if normalize writes the marker for every outcome, or never.
-  [[ -f "$(dirname "$rp")/a1-pass.json" && "$(stat -c %a "$(dirname "$rp")/a1-pass.json" 2>/dev/null || stat -f %Lp "$(dirname "$rp")/a1-pass.json")" = 600 ]] \
+  [[ -f "$(dirname "$rp")/a1-pass.json" ]] && node -e "process.exit((require('fs').statSync(process.argv[1]).mode & 0o777) === 0o600 ? 0 : 1)" "$(dirname "$rp")/a1-pass.json" \
     && ok "PM1 a normalized pass wrote a1-pass.json (0600) into the run dir" || bad "PM1 no 0600 a1-pass.json next to $rp"
   assert_json "WS8 the inspect entry carries head = the snapshotted HEAD and the full base" "$(cat "$PHASE_DIR/xreview/index.json")" \
     "(j.find((e) => e.gate === '$GATE_WAVE') || {}).head + '/' + (j.find((e) => e.gate === '$GATE_WAVE') || {}).base" "$PHASE_HEAD/$PHASE_HEAD"
