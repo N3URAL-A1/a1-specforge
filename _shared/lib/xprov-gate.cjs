@@ -65,6 +65,7 @@ const { preflight } = require('./xprov-preflight.cjs');
 const { snapshot, cleanupSnapshot, INPUTS_SUFFIX, INPUT_FILES } = require('./xprov-snapshot.cjs');
 const { observe, MODEL_RE } = require('./xprov-observe.cjs');
 const WV = require('./xprov-waivers.cjs');
+const RR = require('./xprov-runrecord.cjs');
 const { guardRefusal, readTypedLine, writeGuardedStore } = require('./xprov-approve.cjs');
 const { appendXreviewNote, PRIOR_FINDINGS_FILE } = require('./xprov-normalize.cjs');
 const { ensureArtifactsDir, isUnder } = require('./xprov-artifacts.cjs');
@@ -169,14 +170,7 @@ function dispositionsPath(ctx, round) {
   return path.join(ctx.phaseDir, 'xreview', `${ctx.gate}-${scope}-r${round}.dispositions.md`);
 }
 
-/** A regular file, never a symlink (lstat) — or null. */
-/** Bytes of a regular file opened with O_NOFOLLOW and checked on the open
- * descriptor (no lstat-then-read window), or null (Samuel NIT). */
-function readNoFollow(p) {
-  let fd;
-  try { fd = fs.openSync(p, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW); } catch (_e) { return null; }
-  try { return fs.fstatSync(fd).isFile() ? fs.readFileSync(fd) : null; } catch (_e) { return null; } finally { fs.closeSync(fd); }
-}
+const readNoFollow = C.readNoFollow;
 
 const parseOrNull = (buf) => { try { const v = JSON.parse(buf.toString('utf8')); return isPlainObject(v) ? v : null; } catch (_e) { return null; } };
 
@@ -378,6 +372,17 @@ function appendLog(ctx, out, snapState) {
   writeTextAtomic(file, `${existing}${existing.endsWith('\n') ? '' : '\n'}\n${entry}`);
 }
 
+/** The report after normalize; a REVISE at the cap round is reported as fail/round_cap. */
+function reviewedOutcome(ctx, base, al, ran, norm) {
+  const reviewed = Object.freeze({
+    ...base, ...al, run_porcelain: ran.porcelain, result_path: ran.resultPath, findings_path: norm.findingsPath, xreview_path: norm.xreviewPath, step: 'normalize',
+    verdict: norm.verdict, reason: norm.reason, reason_detail: norm.detail, next: nextFor(ctx, norm.verdict),
+  });
+  return norm.verdict === X.VERDICTS.FAIL_WITH_FINDINGS && ctx.round >= X.ROUND_CAP
+    ? Object.freeze({ ...reviewed, verdict: X.VERDICTS.FAIL, reason: X.REASONS.round_cap, reason_detail: `REVISE at round ${ctx.round} = cap`, next: null })
+    : reviewed;
+}
+
 /** Runs the chain; returns a frozen stdout report (never throws for a failing
  * step — only usage errors throw A1_INPUT before anything is created). */
 function gate(o) {
@@ -410,13 +415,7 @@ function gate(o) {
     if (!ran.ok) return (result = fail('run', ran.reason, ran.detail, { ...al, run_porcelain: ran.porcelain || null }));
     const norm = stepNormalize(ctx, ran.resultPath, al);
     if (!norm.ok) return (result = fail('normalize', norm.reason, norm.detail, { ...al, result_path: ran.resultPath }));
-    const reviewed = Object.freeze({
-      ...base, ...al, run_porcelain: ran.porcelain, result_path: ran.resultPath, findings_path: norm.findingsPath, xreview_path: norm.xreviewPath, step: 'normalize',
-      verdict: norm.verdict, reason: norm.reason, reason_detail: norm.detail, next: nextFor(ctx, norm.verdict),
-    });
-    const capped = norm.verdict === X.VERDICTS.FAIL_WITH_FINDINGS && ctx.round >= X.ROUND_CAP
-      ? Object.freeze({ ...reviewed, verdict: X.VERDICTS.FAIL, reason: X.REASONS.round_cap, reason_detail: `REVISE at round ${ctx.round} = cap`, next: null })
-      : reviewed;
+    const capped = reviewedOutcome(ctx, base, al, ran, norm);
     try { stepObserve(ctx, capped, norm.entry); } catch (e) { return (result = fail('observe', X.REASONS.malformed, e.message, { ...al, result_path: ran.resultPath, findings_path: norm.findingsPath, xreview_path: norm.xreviewPath })); }
     return (result = capped);
   } finally {
@@ -448,8 +447,9 @@ function loadCheck(o) {
   const planSha = sha256(fs.readFileSync(ctx.planPath));
   const index = readIndex(ctx.indexPath);
   if (index === null) throw inputError(`index.json unparseable or not an array of objects: ${ctx.indexPath}`);
-  // index.json `waived: true` rows are a mirror without authority (FR-007): only verdict pass rows count here.
-  const passes = index.filter((e) => e.gate === gate && e.verdict === X.VERDICTS.PASS && e.waived !== true);
+  // index.json rows are pointers (Reinhard M1): a pass row counts only when its run dir in
+  // our artifacts holds a completed APPROVED review of this PLAN.md; `waived: true` never counts.
+  const passes = index.filter((e) => e.gate === gate && e.verdict === X.VERDICTS.PASS && e.waived !== true && RR.planPassValid(e.result_path, planSha));
   const newest = passes.length ? [...passes].sort((a, b) => String(a.ts || '').localeCompare(String(b.ts || '')))[passes.length - 1] : null;
   const store = WV.readWaivers();
   const waiver = newest !== null && newest.plan_sha256 === planSha ? null : WV.planWaiver(store, { repo: C.commonDirOf(ctx.root), phase: ctx.phase, plan_sha256: planSha });
@@ -468,16 +468,21 @@ function loadCheck(o) {
 // ---------- wave-status ----------
 
 /** Completed (wave, lane) pairs from STATUS.md (lane null) and every
- * STATUS-<lane>.md (lane from the file name) — `## Wave N` headings. */
+ * STATUS-<lane>.md (lane from the file name) — `## Wave N` headings. A
+ * STATUS.md heading whose wave number a STATUS-<lane>.md also lists is the
+ * lane consolidation (a1-execute merges lane files into STATUS.md before
+ * Victor), not a lane-null wave: it is skipped (Reinhard M2). Sequential
+ * waves after the lanes carry their own numbers and still count. */
 function completedWavesFromStatus(phaseDir) {
+  const headings = (f) => fs.readFileSync(path.join(phaseDir, f), 'utf8').split('\n').map((l) => l.match(WAVE_HEADING_RE)).filter(Boolean).map((w) => Number(w[1]));
+  const files = fs.readdirSync(phaseDir).sort().map((f) => ({ f, m: f.match(/^STATUS(?:-([A-Za-z0-9_-]+))?\.md$/) })).filter((x) => x.m);
+  const laneWaves = new Set(files.filter((x) => x.m[1]).flatMap((x) => headings(x.f)));
   const pairs = [];
-  for (const f of fs.readdirSync(phaseDir).sort()) {
-    const m = f.match(/^STATUS(?:-([A-Za-z0-9_-]+))?\.md$/);
-    if (!m) continue;
+  for (const { f, m } of files) {
     const lane = m[1] || null;
-    for (const line of fs.readFileSync(path.join(phaseDir, f), 'utf8').split('\n')) {
-      const w = line.match(WAVE_HEADING_RE);
-      if (w && !pairs.some((p) => p.wave === Number(w[1]) && p.lane === lane)) pairs.push({ wave: Number(w[1]), lane });
+    for (const wave of headings(f)) {
+      if (lane === null && laneWaves.has(wave)) continue;
+      if (!pairs.some((p) => p.wave === wave && p.lane === lane)) pairs.push({ wave, lane });
     }
   }
   return pairs.sort((a, b) => a.wave - b.wave || String(a.lane).localeCompare(String(b.lane)));
@@ -515,8 +520,9 @@ function waveStatus(o) {
   const tips = laneTips(o.laneWorkPaths, repo);
   tips[''] = { workPath, head: h.head };
   const candidates = (p) => (planSha === null ? [] : [
+    // head/base come from the run dir (a1-reviewed.json), never from the row (Reinhard M1)
     ...index.filter((e) => e.gate === gate && Number(e.wave) === p.wave && sameLane(e, p.lane) && e.verdict === X.VERDICTS.PASS && e.waived !== true && e.plan_sha256 === planSha)
-      .map((e) => ({ kind: 'pass', head: e.head, base: e.base })),
+      .map((e) => RR.inspectPass(e.result_path, planSha)).filter(Boolean).map((hb) => ({ kind: 'pass', head: hb.head, base: hb.base })),
     ...WV.waveWaivers(store, { repo, phase: ctx.phase, plan_sha256: planSha, wave: p.wave, lane: p.lane }).map((w) => ({ kind: 'waiver', head: w.head, base: w.base })),
   ]);
   const chosen = WV.chainCoverage(completed, candidates, tips, ctx.phase);

@@ -38,6 +38,7 @@ const { parseFlags, repoRoot, assertSafeSegment, writeTextAtomic, nowIso } = req
 const { parseRegistryIds } = require('./gate-ids.cjs');
 const X = require('./xprov.cjs');
 const C = require('./xprov-common.cjs');
+const { inOwnArtifacts, reviewedHeadBase } = require('./xprov-runrecord.cjs');
 // Shared helpers — one definition each, in xprov-common.cjs.
 const { REGISTRY_PATH, sha256, isPlainObject, parsePositive, parseLane, writeStdoutSync, readIndex, sameWave, sameLane, DETAIL_MAX_CHARS } = C;
 
@@ -61,7 +62,6 @@ const FIX_MARKER = 'Fix (reviewer proposal, not applied): ';
 // The findings again, in a1's own 0700 run dir: the only source of the next
 // round's feedback (xprov-gate priorRound — rounds never resume a session).
 const PRIOR_FINDINGS_FILE = 'a1-findings.json';
-const REVIEWED_FILE = 'a1-reviewed.json'; // written by xprov run (REVIEWED_FILE there)
 // greedy `(.*)` keeps `a.js:42:7` as file `a.js:42` line 7; an empty file part
 // (`:42`) is rejected by mapFinding, a > 7-digit suffix is not a line number.
 const LINE_RE = /^(.*):(\d{1,7})$/;
@@ -428,37 +428,6 @@ function resolveArgs(args) {
   };
 }
 
-/** The run dir lies in THIS repository's artifacts dir (never created here:
- * a standalone normalize must not leave an empty artifacts/<slug>). */
-function inOwnArtifacts(resultPath) {
-  const A = require(ARTIFACTS_MODULE);
-  const root = X.artifactsDir(A.repoSlug());
-  const runDir = path.dirname(resultPath);
-  return A.isUnder(runDir, root) && path.resolve(runDir) !== path.resolve(root);
-}
-
-/** Bytes of a regular file via O_NOFOLLOW + fstat, or null. */
-function readNoFollow(p) {
-  let fd;
-  try { fd = fs.openSync(p, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW); } catch (_e) { return null; }
-  try { return fs.fstatSync(fd).isFile() ? fs.readFileSync(fd, 'utf8') : null; } catch (_e) { return null; } finally { fs.closeSync(fd); }
-}
-
-/** { head, base } of a wave inspection, ONLY from a1-reviewed.json, which
- * `xprov run` wrote into a1's own run dir (Samuel MAJOR 1, da103f3), and only
- * when it agrees with the runner's snapshot.base and diff_sha256. No record,
- * a foreign run dir or a mismatch → nulls: the entry binds nothing. */
-function reviewedHeadBase(resultPath, record) {
-  const none = { head: null, base: null };
-  if (!inOwnArtifacts(resultPath) || !isPlainObject(record) || !isPlainObject(record.snapshot)) return none;
-  let rev;
-  try { rev = JSON.parse(readNoFollow(path.join(path.dirname(resultPath), REVIEWED_FILE)) || 'null'); } catch (_e) { rev = null; }
-  const SHA = /^[0-9a-f]{40,64}$/;
-  if (!isPlainObject(rev) || !SHA.test(String(rev.commit)) || !SHA.test(String(rev.base))) return none;
-  if (rev.base !== record.snapshot.base || rev.diff_sha256 !== record.snapshot.diff_sha256) return none;
-  return { head: rev.commit, base: rev.base };
-}
-
 // ---------- command ----------
 
 function evaluate(ctx, read) {
@@ -480,15 +449,30 @@ function evaluate(ctx, read) {
   return outcome.verdict === X.VERDICTS.FAIL ? outcome : quarantine(filter, outcome, ctx);
 }
 
-function cmdXprovNormalize(args) {
-  const args0 = resolveArgs(args);
-  // No replay (Samuel MAJOR 1): a run dir of a1's own artifacts is normalized once.
+/** No replay (Samuel MAJOR 1): a run dir of a1's own artifacts is normalized once (realpath). */
+function refuseReplay(args0) {
   const indexed = readIndex(args0.indexPath) || [];
   const real = (p) => { try { return fs.realpathSync(p); } catch (_e) { return path.resolve(p); } };
   const mine = real(args0.resultPath);
   if (inOwnArtifacts(args0.resultPath) && indexed.some((e) => typeof e.result_path === 'string' && real(e.result_path) === mine)) {
     usage(`${args0.resultPath} is already indexed; a run is normalized once`);
   }
+}
+
+/** The index row: a pointer to the run dir plus what normalize decided. */
+function indexEntry(ctx, outcome, model, findingsSha, record, tainted) {
+  return {
+    gate: ctx.gate, wave: ctx.wave, lane: ctx.lane, ...(ctx.isRound ? { round: ctx.round } : { attempt: ctx.attempt }), verdict: outcome.verdict, reason: outcome.reason,
+    plan_sha256: ctx.planSha, result_path: ctx.resultPath, ...(findingsSha ? { findings_sha256: findingsSha } : {}),
+    ...(ctx.wave !== null ? reviewedHeadBase(ctx.resultPath, tainted ? null : record) : {}), ts: ctx.ts,
+    model_requested: model.model_requested, model_observed: model.model_observed, cli_version: model.cli_version,
+    ...(ctx.allowlist || {}),
+  };
+}
+
+function cmdXprovNormalize(args) {
+  const args0 = resolveArgs(args);
+  refuseReplay(args0);
   const read = readRecord(args0.resultPath);
   const record = read.ok ? read.record : {};
   const outcome = evaluate(args0, read);
@@ -514,13 +498,7 @@ function cmdXprovNormalize(args) {
   }
   const pin = X.checkRunnerPin();
   const xreviewPath = appendToXreview(ctx.phaseDir, renderSection(ctx, outcome, model, pin.actual || `unverified (${pin.reason})`));
-  const entry = {
-    gate: ctx.gate, wave: ctx.wave, lane: ctx.lane, ...(ctx.isRound ? { round: ctx.round } : { attempt: ctx.attempt }), verdict: outcome.verdict, reason: outcome.reason,
-    plan_sha256: ctx.planSha, result_path: ctx.resultPath, ...(findingsSha ? { findings_sha256: findingsSha } : {}),
-    ...(ctx.wave !== null ? reviewedHeadBase(ctx.resultPath, tainted ? null : record) : {}), ts: ctx.ts,
-    model_requested: model.model_requested, model_observed: model.model_observed, cli_version: model.cli_version,
-    ...(ctx.allowlist || {}),
-  };
+  const entry = indexEntry(ctx, outcome, model, findingsSha, record, tainted);
   const index = readIndex(ctx.indexPath);
   if (index === null) usage(`index.json changed underneath the run: ${ctx.indexPath}`);
   writeTextAtomic(ctx.indexPath, JSON.stringify([...index, entry], null, 2) + '\n');

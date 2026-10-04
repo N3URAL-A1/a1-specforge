@@ -165,7 +165,9 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   from the registry row and echoed in stdout, never applied here.
     load-check --phase <name> [--expect-sha <sha256>]
                   (xprov-gate.cjs, wave 6) newest plan-review-xprov pass entry
-                  must match the current PLAN.md sha256, or a waiver in the
+                  — counted only when its run dir in a1's artifacts holds a
+                  completed APPROVED review of this PLAN.md — must match the
+                  current PLAN.md sha256, or a waiver in the
                   guarded store ~/.a1-xprov/waivers.json must be bound to it
                   (accepted: pass|waiver) → else plan_review_missing.
                   --expect-sha: the sha accepted at Load; a different PLAN.md
@@ -180,7 +182,7 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   after the last one only commits writing the measured
                   workflow files (phase STATUS*/VERIFICATION/observations/
                   XREVIEW/PLAN-REVIEW-LOG/xreview, product-stage files) as
-                  mode 100644 may sit. Passes carry head/base from
+                  mode 100644 may sit. Pass rows are pointers: head/base come from
                   the run dir's a1-reviewed.json (written by xprov run); a lane
                   without --lane-work-path lacks. index.json waived: true rows
                   count for nothing.

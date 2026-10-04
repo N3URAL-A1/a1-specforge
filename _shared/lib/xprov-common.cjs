@@ -99,6 +99,14 @@ function stderrTail(text) {
 // ESC), DEL, C1 (incl. U+0085), U+2028/2029 and the bidi controls (Samuel W7).
 const LINE_BREAKERS_RE = /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]+/g;
 
+/** Bytes of a regular file opened with O_NOFOLLOW and checked on the open
+ * descriptor (no lstat-then-read window), or null. One definition (Reinhard m3). */
+function readNoFollow(p) {
+  let fd;
+  try { fd = fs.openSync(p, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW); } catch (_e) { return null; }
+  try { return fs.fstatSync(fd).isFile() ? fs.readFileSync(fd) : null; } catch (_e) { return null; } finally { fs.closeSync(fd); }
+}
+
 function oneLine(value) {
   return value == null ? 'none' : clip(String(value).replace(LINE_BREAKERS_RE, ' '), DETAIL_MAX_CHARS);
 }
@@ -191,6 +199,6 @@ function resolveRepoFlag(repoFlag) {
 module.exports = {
   REGISTRY_PATH, LANE_RE, POSITIVE_INT_RE, POSITIVE_INT_MAX, DETAIL_MAX_CHARS, GIT_MAX_BUFFER, DIR_MODE,
   inputError, writeStdoutSync, emitJson, usageExit, usageThrow,
-  clip, stderrTail, oneLine, LINE_BREAKERS_RE, parsePositive, parseLane, sha256, isPlainObject, isDir, isFile,
+  clip, stderrTail, oneLine, LINE_BREAKERS_RE, readNoFollow, parsePositive, parseLane, sha256, isPlainObject, isDir, isFile,
   mkdir0700, readIndex, sameWave, sameLane, gitSpawn, gitOut, commonDirOf, resolveRepoFlag,
 };

@@ -198,16 +198,11 @@ Completed: 2026-09-24
 ## Wave 3 — api
 Completed: 2026-09-24
 EOF
-  # wave passes bound like the gate records them (Wave 7): this PLAN.md's sha, head and base
-  local ps; ps="$(plansha6)"
-  cat > "$PHASE_DIR/xreview/index.json" <<EOF
-[
-  {"gate":"$GATE_PLAN","wave":null,"lane":null,"round":1,"verdict":"pass","reason":null,"plan_sha256":"$ps","result_path":"/x","ts":"2026-09-24T10:00:00.000Z"},
-  {"gate":"$GATE_WAVE","wave":1,"lane":null,"round":1,"verdict":"pass","reason":null,"plan_sha256":"$ps","head":"$PHASE_HEAD","base":"$PHASE_HEAD","result_path":"/x","ts":"2026-09-24T11:00:00.000Z"},
-  {"gate":"$GATE_WAVE","wave":2,"lane":null,"round":1,"verdict":"fail-with-findings","reason":null,"plan_sha256":"$ps","head":"$PHASE_HEAD","base":"$PHASE_HEAD","result_path":"/x","ts":"2026-09-24T12:00:00.000Z"},
-  {"gate":"$GATE_WAVE","wave":3,"lane":null,"round":1,"verdict":"pass","reason":null,"plan_sha256":"$ps","head":"$PHASE_HEAD","base":"$PHASE_HEAD","result_path":"/x","ts":"2026-09-24T13:00:00.000Z"}
-]
-EOF
+  # REAL gate runs (Reinhard M1: rows are pointers, the run dirs carry the facts):
+  # waves 1 and 3 pass, wave 2 is a REVISE — all at PHASE_HEAD, base PHASE_HEAD
+  wrun6 "R4 setup" 1 "$PHASE_HEAD"
+  FAKE_RUNNER_CASE=revise gate6 --gate "$GATE_WAVE" --wave 2 --base "$PHASE_HEAD"
+  wrun6 "R4 setup" 3 "$PHASE_HEAD"
   sub6 wave-status --phase p6
   assert_rc "R4a waves 1–3 completed, wave 2 without pass → exit 1" 1 "$G_RC"
   # wave 1 lacks too: the chain is fail-closed behind a lacking wave (Samuel MAJOR 2)
@@ -512,7 +507,7 @@ caseR8() {
   mkdir -p "$PHASE_DIR/xreview"
   printf '## Wave 1 — runtime\n' > "$PHASE_DIR/STATUS-runtime.md"
   printf '## Wave 1 — storage\n' > "$PHASE_DIR/STATUS-storage.md"
-  printf '[{"gate":"%s","wave":1,"lane":"runtime","round":1,"verdict":"pass","reason":null,"plan_sha256":"%s","head":"%s","base":"%s","result_path":"/x","ts":"2026-09-24T11:00:00.000Z"}]\n' "$GATE_WAVE" "$(plansha6)" "$PHASE_HEAD" "$PHASE_HEAD" > "$PHASE_DIR/xreview/index.json"
+  wrun6 "R8j setup" 1 "$PHASE_HEAD" runtime
   sub6 wave-status --phase p6
   assert_rc "R8j lanes without --lane-work-path lack (fail closed)" 1 "$G_RC"
   sub6 wave-status --phase p6 --lane-work-path "runtime=$PHASE_REPO,storage=$PHASE_REPO"
@@ -524,66 +519,104 @@ caseR8() {
 }
 
 # ---------- WS: passes and waivers bound alike, chained per lane ----------
-# (team lead + Samuel MAJOR 1/2 on da103f3). Each arm with its red-making change:
-#   WS1 a commit (outside .a1/phases/p6/) after the last wave's pass, no flag → exit 1.
-#       Red if the last wave accepts an ancestor head.
-#   WS2 a clean chain (head_1 = base_2, head_2 = HEAD) → exit 0.   Red if earlier waves need head = HEAD.
-#   WS3 a gap between head_1 and base_2 → exit 1.                   Red if the chain equality is dropped.
-#   WS4 after the last wave only a commit under .a1/phases/p6/ → exit 0; one outside → exit 1.
-#       Red if the path exception is dropped / widened to everything.
-#   WS5 an entry whose base is not an ancestor of its head → exit 1. Red if the base check is dropped.
-#   WS6 a pass for an older PLAN.md → exit 1.                       Red if passes ignore plan_sha256.
-#   WS7 the same rules for a store waiver (chain clean / extra commit).
-#   WS8 the gate's inspect entry carries head/base from a1-reviewed.json; wave-status counts it.
-#       Red if normalize takes head/base from anywhere else.
-#   WS12 a boundary commit between head_1 and base_2 that only writes STATUS.md and
-#        docs/product/ROADMAP.md (2c, `product stage`) → exit 0; one with src/ → exit 1.
-#        Red if the boundary needs equality / exempts everything.
-#   WS13 after the last wave: an executable STATUS.md, a symlink under xreview/, a file
-#        outside the measured list (.a1/phases/p6/notes.md) → exit 1; docs/product/ROADMAP.md → exit 0.
-#        Red if the mode check / the file list is dropped.
-#   WS14 the raw-diff parser returns null on an off-format entry.   Red if it stops early (break).
+# (team lead + Samuel MAJOR 1/2 on da103f3, Reinhard M1/M2 on 5f724a9). Every
+# pass is made by a REAL gate run (fake runner, approved case): its run dir in
+# the suite HOME's artifacts holds result.json and a1-reviewed.json, and
+# wave-status reads head/base from there — never from the index row. Arms,
+# each with its red-making change:
+#   WS0  a hand-forged pass row (head/base right, result_path "/x") → exit 1.
+#        Red if wave-status takes head/base from the row.
+#   LC0  load-check: a hand-forged plan pass row (right plan sha, result_path "/x") → exit 1;
+#        a real plan pass → exit 0.  Red if load-check counts rows without their run dir.
+#   WS1  a commit (outside the measured list) after the last wave's pass, no flag → exit 1.
+#        Red if the last wave accepts an ancestor head.
+#   WS2  a clean chain (head_1 = base_2, head_2 = HEAD) → exit 0.   Red if earlier waves need head = HEAD.
+#   WS3  a gap between head_1 and base_2 → exit 1.                   Red if the chain step is dropped.
+#   WS4  after the last wave only a commit of an exempt file (observations.jsonl) → exit 0.
+#   WS5  a pass whose base is not an ancestor of its head → exit 1. Red if the base check is dropped.
+#   WS6  a pass for an older PLAN.md → exit 1.                       Red if passes ignore plan_sha256.
+#   WS7  pass for wave 1 + store waiver for wave 2 → exit 0; a commit after the waiver → exit 1.
+#   WS8  the gate's inspect entry carries head/base from a1-reviewed.json; wave-status counts it.
+#   WS9  re-normalizing the old run dir → usage error (no replay); a copy without
+#        a1-reviewed.json binds nothing → exit 1.            Red if normalize derives head from the work path.
 #   WS10 an APPROVED review result normalized for the wave gate → wrong_mode.  Red if normalize skips the mode check.
 #   WS11 --waves N --lane L checks (N, L): control exit 0, stale lane head exit 1.  Red if the lane is dropped from the pairs.
-#   WS9 re-normalizing the old run dir after a new commit → usage error (no replay), and a
-#       copy of it without a1-reviewed.json binds nothing → wave-status exit 1.
-#       Red if normalize derives head from the work path.
-wpass6() { # <wave> <head> <base> [plan_sha] — one bound pass row (JSON object)
-  printf '{"gate":"%s","wave":%s,"lane":null,"round":1,"verdict":"pass","reason":null,"plan_sha256":"%s","head":"%s","base":"%s","result_path":"/x","ts":"2026-10-03T00:00:00.000Z"}' "$GATE_WAVE" "$1" "${4:-$(plansha6)}" "$2" "$3"
-}
+#   WS12 a boundary commit writing only STATUS.md + docs/product/ROADMAP.md → exit 0; one with src/ → exit 1.
+#   WS13 after the last wave: an executable STATUS.md, a symlink under xreview/, a file outside the
+#        measured list → exit 1; docs/product/ROADMAP.md → exit 0.  Red if the mode check / the list is dropped.
+#   WS14 the raw-diff parser returns null on an off-format entry.   Red if it stops early (break).
+#   WS15 two lanes through consolidation (STATUS-<lane>.md copied into STATUS.md) → wave-status
+#        exit 0 (Reinhard M2).  Red if STATUS.md headings of lane waves count as lane-null waves.
 c6() { ( cd "$PHASE_REPO" && printf '%s\n' "$2" >> "$1" && git add -A && git commit -qm "$2" ); git -C "$PHASE_REPO" rev-parse HEAD; }
+# wrun6 <name> <wave> <base> [lane] — a REAL inspect pass at the current HEAD
+wrun6() {
+  local lanearg=(); [[ -n "${4:-}" ]] && lanearg=(--lane "$4")
+  FAKE_RUNNER_CASE=approved gate6 --gate "$GATE_WAVE" --wave "$2" --base "$3" ${lanearg[@]+"${lanearg[@]}"}
+  [[ "$G_RC" -eq 0 ]] && ok "$1: real inspect pass for wave $2" || bad "$1: gate for wave $2 exit $G_RC — $(printf '%s' "$G_ERR" | tail -n 1)"
+}
 caseWS() {
+  # WS0 — a hand-forged row counts for nothing
   prep6
-  mkdir -p "$PHASE_DIR/xreview"; printf '## Wave 1 — one\n## Wave 2 — two\n' > "$PHASE_DIR/STATUS.md"
-  local b1="$PHASE_HEAD" h1 h2
-  h1="$(c6 src/add.js '// wave 1')"; h2="$(c6 src/add.js '// wave 2')"
-  printf '[%s,%s]\n' "$(wpass6 1 "$h1" "$b1")" "$(wpass6 2 "$h2" "$h1")" > "$PHASE_DIR/xreview/index.json"
+  mkdir -p "$PHASE_DIR/xreview"; printf '## Wave 1 — one\n' > "$PHASE_DIR/STATUS.md"
+  printf '[{"gate":"%s","wave":1,"lane":null,"round":1,"verdict":"pass","reason":null,"plan_sha256":"%s","head":"%s","base":"%s","result_path":"/x","ts":"2026-10-03T00:00:00.000Z"}]\n' "$GATE_WAVE" "$(plansha6)" "$PHASE_HEAD" "$PHASE_HEAD" > "$PHASE_DIR/xreview/index.json"
   sub6 wave-status --phase p6
-  assert_rc "WS2 a clean chain (head_1 = base_2, head_2 = HEAD) → exit 0" 0 "$G_RC" "$G_ERR"
-  printf '[%s,%s]\n' "$(wpass6 1 "$b1" "$b1")" "$(wpass6 2 "$h2" "$h1")" > "$PHASE_DIR/xreview/index.json"
+  assert_rc "WS0 a hand-forged pass row (no run dir in our artifacts) → exit 1" 1 "$G_RC"
+  rm -f "$PHASE_DIR/xreview/index.json"
+  # LC0 — load-check: a hand-forged plan pass row counts for nothing; a real one does
+  printf '[{"gate":"%s","wave":null,"lane":null,"round":1,"verdict":"pass","reason":null,"plan_sha256":"%s","result_path":"/x","ts":"2026-10-03T00:00:00.000Z"}]\n' "$GATE_PLAN" "$(plansha6)" > "$PHASE_DIR/xreview/index.json"
+  sub6 load-check --phase p6
+  assert_rc "LC0 a hand-forged plan pass row with the right plan sha → load-check exit 1" 1 "$G_RC"
+  rm -f "$PHASE_DIR/xreview/index.json"
+  gate6 --gate "$GATE_PLAN"
+  sub6 load-check --phase p6
+  assert_rc "LC0 control: a real plan-review pass → load-check exit 0" 0 "$G_RC" "$G_ERR"
+  rm -f "$PHASE_DIR/xreview/index.json"
+  # WS2 / WS3 / WS4 / WS1 — one chain of real passes
+  printf '## Wave 1 — one\n## Wave 2 — two\n' > "$PHASE_DIR/STATUS.md"
+  local h1 h2
+  h1="$(c6 src/add.js '// wave 1')"; wrun6 "WS2 setup" 1 "$PHASE_HEAD"
+  h2="$(c6 src/add.js '// wave 2')"; wrun6 "WS2 setup" 2 "$h1"
   sub6 wave-status --phase p6
-  assert_rc "WS3 a gap between head_1 and base_2 → exit 1" 1 "$G_RC"
-  assert_json "WS3 wave 1 is the lacking one" "$G_OUT" "j.lacking.join(',')" "1"
-  printf '[%s,%s]\n' "$(wpass6 1 "$h1" "$h2")" "$(wpass6 2 "$h2" "$h1")" > "$PHASE_DIR/xreview/index.json"
+  assert_rc "WS2 a clean chain of real passes (head_1 = base_2, head_2 = HEAD) → exit 0" 0 "$G_RC" "$G_ERR"
+  c6 "$PHASE_DIR/observations.jsonl" '{"note":"exempt file only"}' >/dev/null
   sub6 wave-status --phase p6
-  assert_rc "WS5 a wave-1 entry whose base is not an ancestor of its head → exit 1" 1 "$G_RC"
-  printf '[%s,%s]\n' "$(wpass6 1 "$h1" "$b1")" "$(wpass6 2 "$h2" "$h1" 0000000000000000000000000000000000000000000000000000000000000000)" > "$PHASE_DIR/xreview/index.json"
-  sub6 wave-status --phase p6
-  assert_rc "WS6 a pass for another PLAN.md sha → exit 1" 1 "$G_RC"
-  printf '[%s,%s]\n' "$(wpass6 1 "$h1" "$b1")" "$(wpass6 2 "$h2" "$h1")" > "$PHASE_DIR/xreview/index.json"
-  c6 "$PHASE_DIR/observations.jsonl" '{"note":"phase-dir only"}' >/dev/null
-  sub6 wave-status --phase p6
-  assert_rc "WS4 after the last wave only a commit under .a1/phases/p6/ → exit 0" 0 "$G_RC" "$G_ERR"
+  assert_rc "WS4 after the last wave only an exempt file (observations.jsonl) → exit 0" 0 "$G_RC" "$G_ERR"
   c6 src/add.js '// unreviewed' >/dev/null
   sub6 wave-status --phase p6
-  assert_rc "WS1/WS4 a commit outside .a1/phases/p6/ after the last wave (no flag) → exit 1" 1 "$G_RC"
-  assert_json "WS1 wave 2 lacks, and so does wave 1 behind it (fail closed)" "$G_OUT" "j.lacking.join(',')" "1,2"
-  # WS7 — a store waiver in the chain
-  local h3; h3="$(git -C "$PHASE_REPO" rev-parse HEAD)"
-  printf '[%s]\n' "$(wpass6 1 "$h1" "$b1")" > "$PHASE_DIR/xreview/index.json"
-  waiver6 "$GATE_WAVE" 2 "" "$h3" "$h1"
+  assert_rc "WS1 a commit outside the list after the last wave (no flag) → exit 1" 1 "$G_RC"
+  assert_json "WS1 wave 2 lacks, and wave 1 behind it (fail closed)" "$G_OUT" "j.lacking.join(',')" "1,2"
+  # WS3 — a gap: wave 2 reviewed from the original base, not from head_1
+  prep6
+  printf '## Wave 1 — one\n## Wave 2 — two\n' > "$PHASE_DIR/STATUS.md"
+  h1="$(c6 src/add.js '// wave 1')"; wrun6 "WS3 setup" 1 "$PHASE_HEAD"
+  local hx; hx="$(c6 src/other.js '// unreviewed between the waves')"
+  h2="$(c6 src/add.js '// wave 2')"; wrun6 "WS3 setup" 2 "$hx"
   sub6 wave-status --phase p6
-  assert_rc "WS7 pass for wave 1 + store waiver for wave 2 chained to HEAD → exit 0" 0 "$G_RC" "$G_ERR"
+  assert_rc "WS3 a gap between head_1 and base_2 (an unreviewed commit) → exit 1" 1 "$G_RC"
+  assert_json "WS3 wave 1 is the lacking one" "$G_OUT" "j.lacking.join(',')" "1"
+  # WS5 — base not an ancestor of head
+  prep6
+  printf '## Wave 1 — one\n' > "$PHASE_DIR/STATUS.md"
+  ( cd "$PHASE_REPO" && git checkout -q -b side && printf 'side\n' > side.txt && git add side.txt && git commit -qm side && git checkout -q - )
+  local side; side="$(git -C "$PHASE_REPO" rev-parse side)"
+  c6 src/add.js '// wave 1' >/dev/null; wrun6 "WS5 setup" 1 "$side"
+  sub6 wave-status --phase p6
+  assert_rc "WS5 a real pass whose base is not an ancestor of its head → exit 1" 1 "$G_RC"
+  # WS6 — the pass is for an older PLAN.md
+  prep6
+  printf '## Wave 1 — one\n' > "$PHASE_DIR/STATUS.md"
+  c6 src/add.js '// wave 1' >/dev/null; wrun6 "WS6 setup" 1 "$PHASE_HEAD"
+  printf '\nedited after the pass\n' >> "$PHASE_PLAN"
+  sub6 wave-status --phase p6
+  assert_rc "WS6 PLAN.md edited after the pass → exit 1" 1 "$G_RC"
+  # WS7 — a store waiver in the chain
+  prep6
+  printf '## Wave 1 — one\n## Wave 2 — two\n' > "$PHASE_DIR/STATUS.md"
+  h1="$(c6 src/add.js '// wave 1')"; wrun6 "WS7 setup" 1 "$PHASE_HEAD"
+  h2="$(c6 src/add.js '// wave 2')"
+  waiver6 "$GATE_WAVE" 2 "" "$h2" "$h1"
+  sub6 wave-status --phase p6
+  assert_rc "WS7 real pass for wave 1 + store waiver for wave 2 chained to HEAD → exit 0" 0 "$G_RC" "$G_ERR"
   c6 src/add.js '// after the waiver' >/dev/null
   sub6 wave-status --phase p6
   assert_rc "WS7 a commit after the waived last wave → exit 1" 1 "$G_RC"
@@ -608,25 +641,28 @@ caseWS() {
   grep -q "wave-status --phase <phase_name> --work-path \$WORK_PATH > " "$REPO_ROOT/skills/a1-execute/workflows/02-execute.md" && ok "WS8 02-execute.md checks the chain at 2c" || bad "WS8 02-execute.md lacks the 2c chain check"
   # WS12 — the boundary between two waves
   prep6
-  mkdir -p "$PHASE_DIR/xreview" "$PHASE_REPO/docs/product"; printf '## Wave 1 — one\n## Wave 2 — two\n' > "$PHASE_DIR/STATUS.md"
+  mkdir -p "$PHASE_REPO/docs/product"; printf '## Wave 1 — one\n## Wave 2 — two\n' > "$PHASE_DIR/STATUS.md"
   local w1 hs w2
-  w1="$(c6 src/add.js '// wave 1')"
+  w1="$(c6 src/add.js '// wave 1')"; wrun6 "WS12 setup" 1 "$PHASE_HEAD"
   ( cd "$PHASE_REPO" && printf 'roadmap\n' > docs/product/ROADMAP.md && printf 'consolidated\n' >> "$PHASE_DIR/STATUS.md" && git add -A && git commit -qm "2c: product stage + STATUS" ); hs="$(git -C "$PHASE_REPO" rev-parse HEAD)"
-  w2="$(c6 src/add.js '// wave 2')"
-  printf '[%s,%s]\n' "$(wpass6 1 "$w1" "$PHASE_HEAD")" "$(wpass6 2 "$w2" "$hs")" > "$PHASE_DIR/xreview/index.json"
+  w2="$(c6 src/add.js '// wave 2')"; wrun6 "WS12 setup" 2 "$hs"
   sub6 wave-status --phase p6
   assert_rc "WS12 a boundary commit writing only STATUS.md + docs/product/ROADMAP.md → exit 0" 0 "$G_RC" "$G_ERR"
-  ( cd "$PHASE_REPO" && git reset -q --hard "$w1" ); local hx; hx="$(c6 src/other.js '// between the waves')"; w2="$(c6 src/add.js '// wave 2 again')"
-  printf '[%s,%s]\n' "$(wpass6 1 "$w1" "$PHASE_HEAD")" "$(wpass6 2 "$w2" "$hx")" > "$PHASE_DIR/xreview/index.json"
+  prep6
+  printf '## Wave 1 — one\n## Wave 2 — two\n' > "$PHASE_DIR/STATUS.md"
+  w1="$(c6 src/add.js '// wave 1')"; wrun6 "WS12 setup" 1 "$PHASE_HEAD"
+  hs="$(c6 src/other.js '// between the waves')"
+  w2="$(c6 src/add.js '// wave 2')"; wrun6 "WS12 setup" 2 "$hs"
   sub6 wave-status --phase p6
   assert_rc "WS12 a boundary commit touching src/ → exit 1" 1 "$G_RC"
   # WS13 — what may follow the last wave
-  local last; last="$(git -C "$PHASE_REPO" rev-parse HEAD)"
-  printf '[%s]\n' "$(wpass6 1 "$last" "$PHASE_HEAD")" > "$PHASE_DIR/xreview/index.json"
-  printf '## Wave 1 — one\n' > "$PHASE_DIR/STATUS.md"; ( cd "$PHASE_REPO" && git add -A && git commit -qm "status" )
+  prep6
+  mkdir -p "$PHASE_REPO/docs/product"; printf '## Wave 1 — one\n' > "$PHASE_DIR/STATUS.md"
+  c6 src/add.js '// wave 1' >/dev/null; wrun6 "WS13 setup" 1 "$PHASE_HEAD"
+  ( cd "$PHASE_REPO" && git add -A && git commit -qm "status" )
   sub6 wave-status --phase p6 --waves 1
   assert_rc "WS13 control: an allowed STATUS.md commit after the last wave → exit 0" 0 "$G_RC" "$G_ERR"
-  ( cd "$PHASE_REPO" && printf 'roadmap 2\n' >> docs/product/ROADMAP.md 2>/dev/null || { mkdir -p docs/product; printf 'r\n' > docs/product/ROADMAP.md; }; git add -A && git commit -qm "product stage" )
+  ( cd "$PHASE_REPO" && printf 'r\n' > docs/product/ROADMAP.md && git add -A && git commit -qm "product stage" )
   sub6 wave-status --phase p6 --waves 1
   assert_rc "WS13 a docs/product/ROADMAP.md commit (product stage) → exit 0" 0 "$G_RC" "$G_ERR"
   local keep; keep="$(git -C "$PHASE_REPO" rev-parse HEAD)"
@@ -654,13 +690,22 @@ caseWS() {
   assert_json "WS10 an APPROVED review result normalized for the wave gate → fail/wrong_mode" "$G_OUT" "j.verdict + '/' + j.reason" "fail/wrong_mode"
   assert_json "WS10 …and no pass row" "$(cat "$PHASE_DIR/xreview/index.json" 2>/dev/null || echo '[]')" "String(j.some((e) => e.verdict === 'pass'))" "false"
   # WS11 — lanes are first-class: --waves N --lane L checks (N, L) against that lane's HEAD
-  local hl; hl="$(c6 src/add.js '// lane storage wave 1')"
-  printf '[{"gate":"%s","wave":1,"lane":"storage","round":1,"verdict":"pass","reason":null,"plan_sha256":"%s","head":"%s","base":"%s","result_path":"/x","ts":"2026-10-03T00:00:00.000Z"}]\n' "$GATE_WAVE" "$(plansha6)" "$hl" "$PHASE_HEAD" > "$PHASE_DIR/xreview/index.json"
+  prep6
+  c6 src/add.js '// lane storage wave 1' >/dev/null; wrun6 "WS11 setup" 1 "$PHASE_HEAD" storage
   sub6 wave-status --phase p6 --waves 1 --lane storage --lane-work-path "storage=$PHASE_REPO"
-  assert_rc "WS11 control: the lane pass at the lane HEAD → exit 0" 0 "$G_RC" "$G_ERR"
+  assert_rc "WS11 control: the real lane pass at the lane HEAD → exit 0" 0 "$G_RC" "$G_ERR"
   c6 src/add.js '// stale lane head' >/dev/null
   sub6 wave-status --phase p6 --waves 1 --lane storage --lane-work-path "storage=$PHASE_REPO"
   assert_rc "WS11 a lane checkpoint with a stale head → exit 1" 1 "$G_RC"
+  # WS15 (Reinhard M2) — two lanes, then the consolidation a1-execute does before Victor
+  prep6
+  c6 src/add.js '// lanes wave 1' >/dev/null
+  wrun6 "WS15 setup" 1 "$PHASE_HEAD" runtime; wrun6 "WS15 setup" 1 "$PHASE_HEAD" storage
+  printf '## Wave 1 — runtime\n' > "$PHASE_DIR/STATUS-runtime.md"; printf '## Wave 1 — storage\n' > "$PHASE_DIR/STATUS-storage.md"
+  cat "$PHASE_DIR/STATUS-runtime.md" "$PHASE_DIR/STATUS-storage.md" > "$PHASE_DIR/STATUS.md"
+  sub6 wave-status --phase p6 --work-path "$PHASE_REPO" --lane-work-path "runtime=$PHASE_REPO,storage=$PHASE_REPO"
+  assert_rc "WS15 two real lane passes, STATUS consolidated → 03-verify wave-status exit 0" 0 "$G_RC" "$G_ERR"
+  assert_json "WS15 the completed pairs are the two lanes only (no lane-null copies)" "$G_OUT" "j.completed_detail.map((p) => p.wave + ':' + p.lane).join(',')" "1:runtime,1:storage"
 }
 
 caseR2; caseR3; caseR4; caseR6; caseR7; caseR8; caseR9g; caseWS
