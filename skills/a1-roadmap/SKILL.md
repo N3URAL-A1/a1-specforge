@@ -172,6 +172,11 @@ discoverable later from `## Changelog` alone.
   per project, not a background migration — see "Hard rules" below.
 - Fixture/regression coverage: `_test-fixtures/product-adopt/run.sh`.
 
+## Spawn Policy (HARD RULE)
+
+Spawn a1 agents by `subagent_type` without `name` (else pass `model` explicitly); briefs carry
+paths, not documents. Details + self-check: `_shared/spawn-policy.md`.
+
 ## Phases
 
 | # | Phase | Workflow | Agent | Output |

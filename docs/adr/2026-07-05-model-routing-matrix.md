@@ -46,3 +46,24 @@ Erik (highest-volume agent) drops from top-tier to sonnet ≈ biggest single sav
 2. Prose sweep: "Opus 4.7"/model names out of a1-new-feature/a1-fix SKILL+workflows.
 3. Wave-brief schema: optional `complexity: high` → executor dispatch overrides to `opus`.
 4. Add the constitution invariant-6 grep to CI lint (M7 Wave 4 already builds the workflow).
+
+## Addendum 2026-10-04 — enforcement, not new tiers
+
+Token analysis (591 session logs, 35 days) found the matrix itself mostly sound but
+**bypassed**: named spawns run as teammates and inherit the session model (1M top tier),
+ignoring frontmatter. a1-erik-executor alone accounted for 15.7 % of all tokens, largely on
+inherited top tier. Fix: `_shared/spawn-policy.md` (spawn by `subagent_type`, no `name`, or
+explicit `model`), referenced as a HARD RULE from the ten agent-spawning skills, and an
+explicitly typed executor dispatch in a1-execute `02-execute.md` step 2a.
+
+Frontmatter back to this matrix: a1-rene-requirement-engineer, a1-vincente-vibe-optimizer,
+a1-tobi-tester → `sonnet`. Saving is limited by design: a1-new-feature still pins Clarify
+(a1-rene-requirement-engineer) and feature wave planning (a1-vincente-vibe-optimizer) to
+`opus` at dispatch; `sonnet` applies to Discover/Specify and standalone use.
+
+Known deviations, kept deliberately and recorded here:
+- a1-pablo-planner, a1-adam-auditor, a1-victor-verifier: matrix says inherit, frontmatter
+  pins `opus`. Kept — inherit would now resolve to the `sonnet` session default; together
+  2.9 % of tokens, and the audit evidence above still holds.
+- a1-rafael-reverse-spec: matrix says `sonnet`, frontmatter pins `opus`. Not changed in this
+  run (low volume); revisit with the next a1-modernize data.

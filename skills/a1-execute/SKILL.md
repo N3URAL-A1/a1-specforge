@@ -35,6 +35,11 @@ Activate when a PLAN.md exists and the user wants to **execute it**.
 A plan must exist at `.a1/phases/<name>/PLAN.md` (created by `a1-plan`).
 If no plan exists, route the user to `a1-plan` first.
 
+## Spawn Policy (HARD RULE)
+
+Spawn a1 agents by `subagent_type` without `name` (else pass `model` explicitly); briefs carry
+paths, not documents. Details + self-check: `_shared/spawn-policy.md`.
+
 ## Phases
 
 | # | Phase | Workflow | Agent | Trigger |

@@ -55,6 +55,11 @@ a1-new-feature → a1-worktree (enter/exit handoff) → a1-pr-review
 No registry entry for a worktree the user names directly? → adopt-first
 fallback, see `workflows/01-detect.md`.
 
+## Spawn Policy (HARD RULE)
+
+Spawn a1 agents by `subagent_type` without `name` (else pass `model` explicitly); briefs carry
+paths, not documents. Details + self-check: `_shared/spawn-policy.md`.
+
 ## Phases
 
 | # | Phase | Workflow | Status after |

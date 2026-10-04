@@ -20,10 +20,14 @@
         "_shared/lib/xprov-normalize.cjs",
         "_shared/lib/help.cjs",
         ".github/workflows/test.yml",
-        "_test-fixtures/CONVENTIONS.md"
+        "_test-fixtures/CONVENTIONS.md",
+        "_shared/lib/xprov-preflight.cjs",
+        "_shared/lib/xprov-artifacts.cjs",
+        "skills/a1-plan/workflows/04b-xprov-review.md",
+        "_shared/lib/help-xprov.cjs"
       ],
       "by": "009-cross-provider-review-gate",
-      "at": "2026-09-28T21:30:36.406Z",
+      "at": "2026-10-03T10:40:47.887Z",
       "stage": "started"
     },
     {
@@ -64,10 +68,12 @@
         "_shared/lib/spec.cjs",
         "_shared/lib/vault-product-hook.cjs",
         "_shared/lib/intent-spawn.cjs",
-        "_shared/lib/intent-steps.cjs"
+        "_shared/lib/intent-steps.cjs",
+        "_shared/lib/intent-prepare.cjs",
+        "_shared/lib/intent-list.cjs"
       ],
       "by": "011-intent-queue-consumer",
-      "at": "2026-09-28T23:39:02.910Z",
+      "at": "2026-10-03T10:46:42.453Z",
       "stage": "started"
     }
   ]

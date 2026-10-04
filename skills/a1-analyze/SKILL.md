@@ -58,6 +58,11 @@ overview before scaling decisions.
 If the user reports a bug, use `a1-fix`. If they want to add functionality, use
 `a1-new-feature`. If they want a focused PR code review, use Reinhard directly.
 
+## Spawn Policy (HARD RULE)
+
+Spawn a1 agents by `subagent_type` without `name` (else pass `model` explicitly); briefs carry
+paths, not documents. Details + self-check: `_shared/spawn-policy.md`.
+
 ## Phases
 
 | # | Phase | Workflow | Status after |

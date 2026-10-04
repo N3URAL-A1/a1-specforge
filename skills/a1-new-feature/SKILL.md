@@ -45,6 +45,11 @@ Activate when the user wants to take a new feature **from idea to verified imple
 not just write a spec or plan a wave. If the feature is already specified or already planned,
 delegate directly to the relevant agent (Rene / Vincente / code agents) and skip this skill.
 
+## Spawn Policy (HARD RULE)
+
+Spawn a1 agents by `subagent_type` without `name` (else pass `model` explicitly); briefs carry
+paths, not documents. Details + self-check: `_shared/spawn-policy.md`.
+
 ## Phases
 
 | # | Phase | Workflow | Model | Status after |
