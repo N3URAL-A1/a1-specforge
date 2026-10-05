@@ -86,6 +86,24 @@
 #   P0 control: a benign added name passes.
 #   P4 `xprov snapshot` itself (stdout JSON, stderr) never echoes the name.
 #
+# Path-name boundary (measured 2026-10-05: sk_prefixed_key_ext matched inside
+# the word `ta|sk-assignment-mail-…` of a test file name in a1-office, 1 of 2565
+# paths, so that repo's gate could never pass). A path-name match counts only
+# if the character before it is not [A-Za-z0-9]; content scans are unchanged.
+# Names below are assembled at runtime (SC-009 clause).
+#   PB1 a tracked `tests/unit/x/ta|sk-assign…-rechtefehler.test.ts`
+#       → pass.   Red if the boundary guard is dropped (the measured bug).
+#   PB2 `docs/sk-<24 alnum>.md` → secret_in_snapshot (path name).
+#   PB3 `config_sk-<24 alnum>.txt` and `a/b/.sk-<24 alnum>` → same.
+#   PB4 `desk-<24 alnum>.md` → pass (documented consequence of the rule).
+#   PB5 a key preceded by `=` (gate) or `/` (pathNameHit) → hit.
+#   PB6 every SECRET_PATTERNS name still hits on a representative path name
+#       (pathNameHit, first-hit name asserted; a new pattern without a sample
+#       fails the arm).   Red if the guard rejects letter-led matches after `/`.
+#   PB7 a CONTENT line `ref: abcsk-<24 alnum>` (alnum before the key) still
+#       fails the content scan → secret_in_snapshot, not path_name.
+#       Red if the boundary guard is applied to the content patterns.
+#
 # Stripped repo-local files stay readable as `git show HEAD:<path>` in the
 # snapshot (Codex R1, live inspect 2026-10-03; Samuel MINOR, fix taken):
 #   S1 a plan review whose commit tracks .codex/config.toml with a fake key →
@@ -356,6 +374,81 @@ caseP() {
   else ok "P4 the snapshot CLI echoes the name nowhere (stdout, stderr)"; fi
 }
 
+# alnum24 — 24 mixed alphanumerics; key10 <prefix> — `<prefix>sk-<alnum24>`.
+alnum24() { printf 'Ab3Cd5Ef7Gh9Ij2Kl4Mn6Op8'; }
+key10() { printf '%ssk-%s' "$1" "$(alnum24)"; }
+
+casePB() {
+  local task; task="tests/unit/x/task-assign""ment-mail-rechtefehler.test.ts"
+  new8; mkdir -p "$R8/tests/unit/x"; : > "$R8/$task"; c8 "word-internal sk- in a test file name"
+  gate8 --gate "$GATE_PLAN"; pass8 "PB1 a test file name with a word-internal sk- run"
+  local nm
+  nm="docs/$(key10 '').md"
+  new8; mkdir -p "$R8/docs"; : > "$R8/$nm"; c8 "sk- key after /"
+  gate8 --gate "$GATE_PLAN"; pathfail10 "PB2 docs/sk-<24 alnum>.md" "$(key10 '')"
+  nm="$(key10 'config_').txt"
+  new8; : > "$R8/$nm"; c8 "sk- key after _"
+  gate8 --gate "$GATE_PLAN"; pathfail10 "PB3 config_sk-<24 alnum>.txt" "$nm"
+  nm="a/b/$(key10 '.')"
+  new8; mkdir -p "$R8/a/b"; : > "$R8/$nm"; c8 "sk- key after ."
+  gate8 --gate "$GATE_PLAN"; pathfail10 "PB3b a/b/.sk-<24 alnum>" "$(key10 '.')"
+  nm="$(key10 'de').md"
+  new8; : > "$R8/$nm"; c8 "sk- run inside the word desk"
+  gate8 --gate "$GATE_PLAN"; pass8 "PB4 desk-<24 alnum>.md (documented consequence)"
+  nm="$(key10 'k=').txt"
+  new8; : > "$R8/$nm"; c8 "sk- key after ="
+  gate8 --gate "$GATE_PLAN"; pathfail10 "PB5 k=sk-<24 alnum>.txt" "$nm"
+
+  local unit
+  unit="$(SNAPLIB="$TREE/_shared/lib/xprov-snapshot.cjs" XLIB="$TREE/_shared/lib/xprov.cjs" A24="$(alnum24)" node -e '
+    const S = require(process.env.SNAPLIB); const X = require(process.env.XLIB);
+    const a = process.env.A24; const r = (n, c) => c.repeat(n);
+    const k = "s" + "k-" + a;
+    const out = [];
+    const want = (label, path, name) => { const h = S.pathNameHit([path]); const got = h ? h.pattern : "none"; out.push(got === name ? `ok ${label}` : `bad ${label}: want ${name} got ${got}`); };
+    want("a word-internal", "tests/unit/x/task-assign" + "ment-mail-rechtefehler.test.ts", "none");
+    want("b after /", "docs/" + k + ".md", "sk_prefixed_key");
+    want("c after _", "config_" + k + ".txt", "sk_prefixed_key");
+    want("c after .", "a/b/." + k, "sk_prefixed_key");
+    want("d desk", "de" + k + ".md", "none");
+    want("e after =", "k=" + k + ".txt", "sk_prefixed_key");
+    want("e after / mid-path", "src/" + k + "/x.ts", "sk_prefixed_key");
+    want("later boundary hit after a word-internal run", "task-assign" + "ment-mail-rechtefehler/" + k, "sk_prefixed_key");
+    const samples = {
+      private_key_header: "d/" + r(5, "-") + "BEGIN RSA PRIVATE KEY" + r(5, "-"),
+      aws_access_key_id: "d/AK" + "IA" + r(16, "Q"),
+      sk_prefixed_key: "d/" + k,
+      github_pat_classic: "d/gh" + "p_" + r(36, "P"),
+      slack_token: "d/xo" + "xb-1",
+      jwt: "d/ey" + "J" + r(10, "a") + "." + r(10, "b") + "." + r(10, "c"),
+      pem_begin: "d/" + r(5, "-") + "BEGIN",
+      secret_assignment: "d/api_" + "key=" + String.fromCharCode(39) + r(12, "z"),
+      sk_prefixed_key_ext: "d/" + "s" + "k-" + r(10, "a") + "_" + r(10, "b"),
+      github_token_family: "d/gh" + "o_" + r(36, "P"),
+      github_pat_fine_grained: "d/github" + "_pat_" + r(22, "F"),
+      slack_token_family: "d/xo" + "xa-" + r(8, "1"),
+      url_credentials: "d/https:/" + "/user:" + r(6, "p") + "@host",
+      password_assignment: "d/pass" + "word=" + r(8, "w"),
+      bearer_token: "d/Bea" + "rer " + r(20, "t"),
+      google_api_key: "d/AI" + "za" + r(35, "G"),
+    };
+    for (const p of X.SECRET_PATTERNS) {
+      if (!(p.name in samples)) { out.push(`bad f ${p.name}: no sample`); continue; }
+      want(`f ${p.name}`, samples[p.name], p.name);
+    }
+    process.stdout.write(out.join("\n"));
+  ' 2>&1)"
+  local line
+  while IFS= read -r line; do
+    case "$line" in ok\ *) ok "PB unit pathNameHit ${line#ok }" ;; *) bad "PB unit pathNameHit ${line#bad }" ;; esac
+  done <<< "$unit"
+
+  new8; plant8 notes.txt "ref: $(key10 'abc')"; c8 "content key after letters"
+  gate8 --gate "$GATE_PLAN"; expect8 "PB7 a content key with an alnum before it" secret_in_snapshot
+  local det; det="$(json_get "$G_OUT" "String(j.reason_detail)")"
+  [[ "$det" != "path_name" ]] && ok "PB7 the content hit is not a path-name hit" || bad "PB7 the content hit was reported as path_name"
+}
+
 caseS() {
   new8; mkdir -p "$R8/.codex"; printf 'model = "x"\nid: %s\n' "$FAKE_AK1" > "$R8/.codex/config.toml"; c8 "repo-local codex config with a key"
   gate8 --gate "$GATE_PLAN"; expect8 "S1 a stripped .codex/config.toml with a fake key (plan review)" secret_in_snapshot
@@ -365,7 +458,7 @@ caseS() {
   expect8 "S2 a gitleaks finding only in a stripped AGENTS.md" "secret_in_snapshot/gitleaks"
 }
 
-caseO1; caseO2; caseO3; caseO4; caseO5; caseO6; caseO7; caseO8; caseO9; caseO10O11; caseO12; caseFR; caseRI; caseP; caseS
+caseO1; caseO2; caseO3; caseO4; caseO5; caseO6; caseO7; caseO8; caseO9; caseO10O11; caseO12; caseFR; caseRI; caseP; casePB; caseS
 unset A1_XPROV_CODEX_HOME
 export HOME="$SAVED_HOME_10"
 rm -rf "$TMP10"
