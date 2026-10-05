@@ -74,19 +74,39 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   only, a value a human set differently is refused (exit 1,
                   file unchanged).
     permit-check [--repo <git-toplevel>]
-                  (xprov-permit.cjs, wave 4) reads .a1/xprov.json; anything
-                  but external_review: allowed → external_review_not_permitted.
+                  (xprov-permit.cjs, wave 4) reads .a1/xprov.json AND the owner's
+                  denial store ~/.a1-xprov/permit-denials.json; stdout \`state\`
+                  is allowed | denied | absent | invalid | denial_mismatch (exit 0
+                  only for allowed). absent/invalid → external_review_not_permitted;
+                  denied (file and store agree on decided_by + decided_on) →
+                  external_review_denied; every other combination (file-only
+                  denied, a store denial next to an allowed file, an unusable
+                  store) → external_review_denial_mismatch, fail closed.
                   Customer repositories need an a1-ludwig-legal decision.
+                  The allowed line prints what leaves: the full tracked tree of
+                  the reviewed commit, the base-side blobs of changed files,
+                  PLAN.md and the dispositions (read-only sandbox).
     permit --by <name> --record <vault-path> [--repo <git-toplevel>]
            [--default-branch <name>]
-                  (xprov-permit.cjs, wave 4) the ONLY writer of .a1/xprov.json.
+    permit --deny --by <name> [--record <vault-path>] [--repo <git-toplevel>]
+           [--default-branch <name>]
+                  (xprov-permit.cjs, wave 4; owner guards spec 012) HUMAN-only,
+                  in a separate terminal, like waive: stdin and stdout a TTY, no
+                  CLAUDECODE/CLAUDE_PID/CLAUDE_CODE_*, no Claude Code ancestor
+                  (else exit 2, nothing written); it shows the repository key
+                  (git-common-dir) and the decision, and asks for the word
+                  \`allowed\` resp. \`denied\` typed back. --deny writes the owner's
+                  store first, then .a1/xprov.json (--record optional); a failing
+                  file step leaves denial_mismatch. permit (allowed) first removes
+                  this repository's denial. An unusable store is never overwritten.
+                  The ONLY writer of .a1/xprov.json and of the denial store.
                   --default-branch (wave 6b) names the branch whose
                   refs/remotes/origin/<name> anchors the snapshot allowlist
                   (default main); checked with git check-ref-format --branch
                   on write (invalid → exit 1, nothing written) and on read.
     observe --agent xprov-codex|a1-<first>-<role> --skill <s> --phase <name>
             --type gap|blocker --severity <sev> --msg "<text>" [--wave N] [--lane <id>]
-            [--pattern xprov_finding|xprov_waived] [--provider codex]
+            [--pattern xprov_finding|xprov_waived|xprov_not_applicable] [--provider codex]
             [--model-requested <m>] [--model-observed <m>] [--repo <git-toplevel>]
                   (xprov-observe.cjs, wave 4) one observations.jsonl line with
                   pattern xprov_finding, model_requested, model_observed.
@@ -168,6 +188,12 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   artifacts dir) + the dispositions file, scanned and copied
                   like the PLAN.md; next.round_cmd shows the call. Enforcement (warning|blocking) is READ
                   from the registry row and echoed in stdout, never applied here.
+                  --wave N counts from 0 (0..9999); --round and --timeout from 1.
+                  A repository whose permit state is denied, on a registry row
+                  with applies_to: permitted-repos, gets verdict not_applicable
+                  (reason external_review_denied, exit 1, one log entry and one
+                  xprov_not_applicable observation, no run); on an applies_to:
+                  all row it fails external_review_not_permitted.
     load-check --phase <name> [--expect-sha <sha256>]
                   (xprov-gate.cjs, wave 6) newest plan-review-xprov pass entry
                   — counted only when its run dir in a1's artifacts holds a
@@ -177,9 +203,15 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   (accepted: pass|waiver) → else plan_review_missing.
                   --expect-sha: the sha accepted at Load; a different PLAN.md
                   now → plan_changed (a1-execute runs it before every wave).
-    wave-status --phase <name> [--waves 1,2,3 [--lane <id>]] [--work-path <dir>]
+                  A denied repository (applies_to: permitted-repos) → exit 0,
+                  accepted: not_applicable (read from the permit state at check
+                  time, never from an index row).
+    wave-status --phase <name> [--waves 0,1,2 [--lane <id>]] [--work-path <dir>]
                 [--lane-work-path <lane>=<dir>[,…]]
-                  (xprov-gate.cjs, wave 6) every completed wave needs a
+                  (xprov-gate.cjs, wave 6) waves are numbered from 0. A denied
+                  repository (applies_to: permitted-repos) → exit 0 with every
+                  completed wave under not_applicable, no chain computed.
+                  Otherwise every completed wave needs a
                   wave-inspect-xprov pass or a store waiver, both bound to this
                   PLAN.md's sha and chained per lane: base an ancestor of head,
                   head of wave N = base of the next completed wave, the last
@@ -225,7 +257,7 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   never allowlisted.
     waive --phase <name> --gate <id> [--wave <N> [--lane <id>] --base <sha>
           [--work-path <dir>]] --reason "<text>" --by <name>
-                  (xprov-gate.cjs + xprov-waivers.cjs, wave 7) HUMAN-only, in a
+                  (xprov-gate.cjs + xprov-waivers.cjs, wave 7; --wave 0 is valid) HUMAN-only, in a
                   separate terminal: the owner-approval guards (TTY on stdin
                   and stdout, no CLAUDECODE/CLAUDE_PID/CLAUDE_CODE_*, no Claude
                   Code ancestor; else exit 2, nothing written), the key
@@ -238,7 +270,8 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   Reasons (stdout \`reason\` on exit 1): runner_failed,
                   malformed, wrong_mode, blocked, plan_changed, tripwire,
                   secret_in_snapshot, secret_in_output, quarantined, round_cap,
-                  external_review_not_permitted, snapshot_failed, not_logged_in,
+                  external_review_not_permitted, external_review_denied,
+                  external_review_denial_mismatch, snapshot_failed, not_logged_in,
                   preflight_failed, plan_review_missing, wave_inspect_missing,
                   allowlist_invalid, allowlist_modified.
                   Paths a1 owns: ~/.a1-xprov/artifacts/<repo-slug>/ (0700,
@@ -247,7 +280,8 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   normalize), .a1/phases/<name>/XREVIEW.md + xreview/*.json +
                   PLAN-REVIEW-LOG.md, .a1/xprov.json (permit record),
                   ~/.a1-xprov/allowlist-approvals.json (written only by
-                  allowlist approve).
+                  allowlist approve), ~/.a1-xprov/permit-denials.json (written
+                  only by permit / permit --deny).
                   ENV: A1_XPROV_CODEX_HOME (optional; default ~/.codex-a1-review).
                   Fixture suite: _test-fixtures/a1-xprov/run-tests.sh (harness)
                   + parts/NN-<wave>.sh; runner fakes live in fake/, captured
