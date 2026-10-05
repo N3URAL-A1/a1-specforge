@@ -40,7 +40,7 @@ const X = require('./xprov.cjs');
 const C = require('./xprov-common.cjs');
 const { inOwnArtifacts, reviewedHeadBase, PASS_MARKER_FILE } = require('./xprov-runrecord.cjs');
 // Shared helpers — one definition each, in xprov-common.cjs.
-const { REGISTRY_PATH, sha256, isPlainObject, parsePositive, parseLane, writeStdoutSync, readIndex, sameWave, sameLane, DETAIL_MAX_CHARS } = C;
+const { REGISTRY_PATH, sha256, isPlainObject, parsePositive, parseWave, parseLane, writeStdoutSync, readIndex, sameWave, sameLane, DETAIL_MAX_CHARS } = C;
 
 const FLAGS = Object.freeze({
   phase: 'str', gate: 'str', wave: 'str', round: 'str', lane: 'str', 'work-path': 'str',
@@ -398,7 +398,7 @@ function resolveArgs(args) {
   let ids;
   try { ids = parseRegistryIds(fs.readFileSync(REGISTRY_PATH, 'utf8')); } catch (_e) { usage(`registry unreadable: ${REGISTRY_PATH}`); }
   if (!ids.includes(flags.gate)) usage(`--gate ${JSON.stringify(String(flags.gate).slice(0, 80))} is not a registered gate id`);
-  const wave = flags.wave === undefined ? null : parsePositive(flags.wave, 'wave');
+  const wave = flags.wave === undefined ? null : parseWave(flags.wave, 'wave');
   const workPath = flags['work-path'] ? path.resolve(flags['work-path']) : root;
   if (!fs.existsSync(workPath) || !fs.statSync(workPath).isDirectory()) usage(`--work-path is not a directory: ${workPath}`);
   const indexPath = path.join(phaseDir, 'xreview', 'index.json');

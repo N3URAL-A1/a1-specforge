@@ -319,8 +319,8 @@ caseRH() {
   [[ $N_RC -eq 2 && -z "$N_OUT" ]] && ok "RHd2 findings file already present for the round → exit 2" || bad "RHd2 findings collision (rc=$N_RC)"
   make_phase rhd3 "$CASES/approved.PLAN.md"
   run_normalize "$CASES/approved.result.json" rhd3 "$GATE_PLAN" --round 0; local rc0=$N_RC
-  run_normalize "$INSPECT_APPROVED02" rhd3 "$GATE_WAVE" --wave 0; local rcw=$N_RC
-  [[ $rc0 -eq 2 && $rcw -eq 2 ]] && ok "RHd3 --round 0 and --wave 0 → exit 2" || bad "RHd3 bounds (round0=$rc0 wave0=$rcw)"
+  run_normalize "$INSPECT_APPROVED02" rhd3 "$GATE_WAVE" --wave -1; local rcw=$N_RC
+  [[ $rc0 -eq 2 && $rcw -eq 2 ]] && ok "RHd3 --round 0 and --wave -1 → exit 2 (waves start at 0 since spec 012)" || bad "RHd3 bounds (round0=$rc0 wave-1=$rcw)"
 
   # MINOR e — --work-path must be a directory; a field > 10 000 chars is malformed. Red: existsSync only / no field cap.
   make_phase rhe "$CASES/approved.PLAN.md"

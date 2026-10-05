@@ -84,7 +84,7 @@ const { parseRegistryIds } = require('./gate-ids.cjs');
 const X = require('./xprov.cjs');
 const C = require('./xprov-common.cjs');
 // Shared helpers — one definition each, in xprov-common.cjs.
-const { REGISTRY_PATH, LANE_RE, sha256, isDir, isFile, gitOut, writeStdoutSync, parsePositive } = C;
+const { REGISTRY_PATH, LANE_RE, sha256, isDir, isFile, gitOut, writeStdoutSync, parsePositive, parseWave } = C;
 const tail = C.stderrTail;
 const none = C.oneLine;
 const { ensureArtifactsDir, isUnder, sweepRunHomes } = require('./xprov-artifacts.cjs');
@@ -181,7 +181,7 @@ function resolveArgs(args) {
   if (!isDir(workPath)) usage(`--work-path is not a directory: ${workPath}`);
   return {
     mode: flags.mode, snapshot, plan: flags.plan, phase, phaseDir, root, workPath, gate: flags.gate,
-    wave: flags.wave === undefined ? null : parsePositive(flags.wave, 'wave'),
+    wave: flags.wave === undefined ? null : parseWave(flags.wave, 'wave'),
     round: flags.round === undefined ? 1 : parsePositive(flags.round, 'round'),
     lane: flags.lane === undefined ? null : flags.lane, base: flags.base || null,
     feedback: flags.feedback ? path.resolve(flags.feedback) : null,

@@ -51,7 +51,7 @@ function validRecord(r) {
   const str = (v) => typeof v === 'string' && v !== '';
   if (![r.repo, r.phase, r.gate, r.reason, r.by, r.ts].every(str) || !SHA256_HEX_RE.test(r.plan_sha256)) return null;
   const isWave = r.gate === X.GATE_IDS.WAVE_INSPECT;
-  if (isWave && !(Number.isInteger(r.wave) && r.wave > 0 && SHA_RE.test(String(r.head)) && SHA_RE.test(String(r.base)))) return null;
+  if (isWave && !(Number.isInteger(r.wave) && r.wave >= 0 && SHA_RE.test(String(r.head)) && SHA_RE.test(String(r.base)))) return null;
   if (isWave && r.lane !== null && !C.LANE_RE.test(String(r.lane))) return null;
   if (!isWave && (r.wave !== null || r.lane !== null || r.head !== null || r.base !== null)) return null;
   return { ...r };

@@ -33,6 +33,9 @@ const LANE_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 // plausible wave count while refusing garbage.
 const POSITIVE_INT_RE = /^[1-9]\d{0,3}$/;
 const POSITIVE_INT_MAX = 9999;
+// Wave numbers start at 0 (spec 012 FR-008: a wave-0 phase exists, e.g. 059).
+// Only `--wave`/`--waves` use this shape; `--round` and `--timeout` stay positive.
+const WAVE_RE = /^(0|[1-9]\d{0,3})$/;
 const DETAIL_MAX_CHARS = 500; // reason_detail, echoed limitations, stderr tails, log cells
 const GIT_MAX_BUFFER = 64 * 1024 * 1024;
 const DIR_MODE = 0o700;
@@ -121,6 +124,12 @@ function parsePositive(value, name) {
   return Number(value);
 }
 
+/** `--wave` value: an integer from 0 to 9999 (an empty value is refused, never read as 0). */
+function parseWave(value, name) {
+  if (!WAVE_RE.test(String(value))) throw inputError(`--${name} must be an integer between 0 and ${POSITIVE_INT_MAX} (got ${JSON.stringify(clip(value, 80))})`);
+  return Number(value);
+}
+
 function parseLane(value) {
   if (value === undefined || value === null) return null;
   if (!LANE_RE.test(String(value))) throw inputError(`--lane must match ${LANE_RE} (got ${JSON.stringify(clip(value, 80))})`);
@@ -160,7 +169,14 @@ function readIndex(file) {
   }
 }
 
-const sameWave = (entry, wave) => (wave === null ? entry.wave === null || entry.wave === undefined : Number(entry.wave) === wave);
+/** The wave number a stored value stands for: a safe integer, or its digit string; else null.
+ * `Number(null) === 0` and `Number('') === 0` must never turn a plan row into wave 0 (spec 012 FR-008). */
+function waveNumber(value) {
+  if (typeof value === 'number') return Number.isInteger(value) ? value : null;
+  return typeof value === 'string' && WAVE_RE.test(value) ? Number(value) : null;
+}
+
+const sameWave = (entry, wave) => (wave === null ? entry.wave === null || entry.wave === undefined : waveNumber(entry.wave) === wave);
 const sameLane = (entry, lane) => (lane === null ? entry.lane === null || entry.lane === undefined : entry.lane === lane);
 
 // ---------- git ----------
@@ -202,8 +218,8 @@ function resolveRepoFlag(repoFlag) {
 }
 
 module.exports = {
-  REGISTRY_PATH, LANE_RE, POSITIVE_INT_RE, POSITIVE_INT_MAX, DETAIL_MAX_CHARS, GIT_MAX_BUFFER, DIR_MODE,
+  REGISTRY_PATH, LANE_RE, POSITIVE_INT_RE, POSITIVE_INT_MAX, WAVE_RE, DETAIL_MAX_CHARS, GIT_MAX_BUFFER, DIR_MODE,
   inputError, writeStdoutSync, emitJson, usageExit, usageThrow,
-  clip, stderrTail, oneLine, LINE_BREAKERS_RE, readNoFollow, parsePositive, parseLane, sha256, isPlainObject, isDir, isFile,
+  clip, stderrTail, oneLine, LINE_BREAKERS_RE, readNoFollow, parsePositive, parseWave, waveNumber, parseLane, sha256, isPlainObject, isDir, isFile,
   mkdir0700, readIndex, sameWave, sameLane, gitSpawn, gitOut, commonDirOf, resolveRepoFlag,
 };
