@@ -186,7 +186,7 @@ caseO7() {
 # the change and only the diff_sha256 comparison can see it.
 caseO8() {
   make_tree; make_phase p10 "$CASES/approved.PLAN.md"
-  ( cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov permit --by fixture --record record/2026-09-24-fixture.md >/dev/null 2>&1 )
+  write_permit "$PHASE_REPO" fixture record/2026-09-24-fixture.md
   make_home; ln -s "$HOME/.codex/auth.json" "$XHOME/auth.json" 2>/dev/null; export A1_XPROV_CODEX_HOME="$XHOME"
   local base; base="$(git -C "$PHASE_REPO" rev-parse HEAD)"
   printf '// wave change\n' >> "$PHASE_REPO/src/add.js"; ( cd "$PHASE_REPO" && git add -A && git commit -qm wave )
@@ -300,7 +300,7 @@ caseFR() {
 # PLAN.md and feedback copies. Sets PHASE_*, RI_SNAP, RI_DISP.
 ri10() {
   make_tree; make_phase pri "$CASES/approved.PLAN.md"
-  ( cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov permit --by fixture --record record/2026-09-24-fixture.md >/dev/null 2>&1 )
+  write_permit "$PHASE_REPO" fixture record/2026-09-24-fixture.md
   make_home; ln -s "$HOME/.codex/auth.json" "$XHOME/auth.json" 2>/dev/null; export A1_XPROV_CODEX_HOME="$XHOME"
   RI_DISP="$TMP10/ri-dispositions.md"; printf -- '- F1: accepted\n' > "$RI_DISP"
   local out; out="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov snapshot --repo "$PHASE_REPO" --commit HEAD --plan "$PHASE_PLAN" --feedback "$RI_DISP" 2>/dev/null)"

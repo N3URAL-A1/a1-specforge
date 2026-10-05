@@ -23,7 +23,7 @@ ARGV_DIR="$TMP05/argv"; mkdir -p "$ARGV_DIR"; ARGV_N=0
 # TREE*, PHASE_*, XHOME; exports A1_XPROV_CODEX_HOME.
 prep5() {
   make_tree; make_phase p5 "${1:-$CASES/approved.PLAN.md}"
-  ( cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov permit --by fixture --record record/2026-09-24-fixture.md >/dev/null 2>&1 ) || echo "WARN prep5: permit failed" >&2
+  write_permit "$PHASE_REPO" fixture record/2026-09-24-fixture.md
   make_home; export A1_XPROV_CODEX_HOME="$XHOME"
 }
 
