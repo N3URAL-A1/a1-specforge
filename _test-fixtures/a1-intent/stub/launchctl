@@ -6,7 +6,9 @@
 # not from the environment" — the same reason, a different anchor):
 #   argv.log    one line per call: <argc> TAB <arg1> TAB <arg2> ...  (appended)
 #   mode        ok (default) | fail (bootstrap/bootout exit 5) | notloaded
-#               (bootout exit 3, print exit 113)
+#               (bootout exit 3, print exit 113) | bootoutfail (only bootout
+#               exit 5) | bootstrapfail (only bootstrap exit 5) | unknown (bootout exit 5 AND print exit 1 with an unclassifiable text) | printfail (print
+#               exits 1 with a text that is neither not-found nor success)
 #   print.txt   what `print` prints on stdout (absent: the job is not loaded)
 # UNMEASURED: the text of print.txt and the exit codes of fail/notloaded are
 # from memory of launchctl's usual output, not from a measurement on the
@@ -17,15 +19,16 @@ mode=ok
 [[ -f "$d/mode" ]] && mode="$(cat "$d/mode")"
 case "$1" in
   print)
+    [[ "$mode" == printfail || "$mode" == unknown ]] && { echo "Operation not permitted" >&2; exit 1; }
     if [[ "$mode" != notloaded && -f "$d/print.txt" ]]; then cat "$d/print.txt"; exit 0; fi
     echo "Could not find service" >&2
     exit 113 ;;
   bootout)
     [[ "$mode" == notloaded ]] && { echo "No such process" >&2; exit 3; }
-    [[ "$mode" == fail ]] && { echo "Boot-out failed: 5: Input/output error" >&2; exit 5; }
+    [[ "$mode" == fail || "$mode" == bootoutfail || "$mode" == unknown ]] && { echo "Boot-out failed: 5: Input/output error" >&2; exit 5; }
     exit 0 ;;
   bootstrap)
-    [[ "$mode" == fail ]] && { echo "Bootstrap failed: 5: Input/output error" >&2; exit 5; }
+    [[ "$mode" == fail || "$mode" == bootstrapfail ]] && { echo "Bootstrap failed: 5: Input/output error" >&2; exit 5; }
     exit 0 ;;
 esac
 exit 64

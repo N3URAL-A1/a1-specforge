@@ -36,7 +36,8 @@
 //
 // verifySeal() is what `run` (Wave 6) calls before every spawn; any failure
 // is { ok: false, reason: 'sandbox_invalid', detail } with detail one of
-// seal_missing, seal_mismatch, seal_writable, seal_stale, mcp_config_mismatch.
+// seal_missing, seal_mismatch, seal_writable, seal_stale, mcp_config_mismatch,
+// agent_points_at_old_seal (Wave 11: the running code is an older seal dir).
 // FR-050: manifest through one private descriptor; seal_dir a normalised
 // direct child named <version>-<12 hex> (else seal_mismatch). `run` never
 // re-seals; after `claude plugin update a1-specforge` the owner seals again.
@@ -300,6 +301,34 @@ function sealPlugin(deps = {}) {
 // ---------- verification (called by `run` before every spawn) ----------
 
 const invalidSeal = (detail) => Object.freeze({ ok: false, reason: 'sandbox_invalid', detail });
+const OLD_SEAL_DETAIL = 'agent_points_at_old_seal';
+
+// Review of Wave 11: the LaunchAgent runs a1-tools from ONE seal dir (named by
+// version and root hash). A re-seal makes a new dir and a new manifest; the
+// agent keeps running the old code until `install-agent --force`. When the
+// root of the running code lies under ~/.a1-intents-seal but is not the
+// manifest's seal_dir, `run` (through verifySeal) and `tick` refuse with
+// agent_points_at_old_seal. Code outside the seal root (the plugin cache, a
+// checkout, a manual tick) is not touched by this rule.
+// -> null (fine or not under the seal root) | the detail string.
+function agentRootSkew(deps = {}) {
+  const homedir = deps.homedir || os.homedir;
+  let rootReal;
+  let codeReal;
+  try {
+    rootReal = fs.realpathSync(sealRoot(homedir));
+    codeReal = fs.realpathSync(deps.codeRoot || path.resolve(__dirname, '..', '..'));
+  } catch (_e) {
+    return null; // no seal root: the code cannot be inside it
+  }
+  if (!codeReal.startsWith(rootReal + path.sep)) return null;
+  try {
+    const m = readManifest(rootReal);
+    return fs.realpathSync(m.seal_dir) === codeReal ? null : OLD_SEAL_DETAIL;
+  } catch (_e) {
+    return OLD_SEAL_DETAIL; // inside the seal root but no manifest names it: it is not the current seal
+  }
+}
 
 // The seal directory: private (FR-011), else seal_mismatch; absent -> seal_missing.
 function verifiedRoot(homedir) {
@@ -389,6 +418,7 @@ function verifySeal(deps = {}) {
     if (bad !== null) return invalidSeal(bad);
     if (installedVersion(homedir) !== m.version) return invalidSeal('seal_stale');
     if (!emptyMcpIntact(root)) return invalidSeal('mcp_config_mismatch');
+    if (agentRootSkew({ homedir, codeRoot: deps.codeRoot }) !== null) return invalidSeal(OLD_SEAL_DETAIL);
     return Object.freeze({ ok: true, sealDir: m.seal_dir, rootSha: m.root_sha256, version: m.version, skillRewrite: m.skill_rewrite });
   } catch (e) {
     if (!(e instanceof SealRefusal)) throw e;
@@ -396,4 +426,4 @@ function verifySeal(deps = {}) {
   }
 }
 
-module.exports = { SealRefusal, rootHash, rewriteAllowedTools, sealPlugin, verifySeal };
+module.exports = { SealRefusal, rootHash, rewriteAllowedTools, sealPlugin, verifySeal, agentRootSkew };

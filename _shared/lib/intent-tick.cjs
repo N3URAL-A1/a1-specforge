@@ -62,6 +62,8 @@ const tickDeps = (deps = {}) => ({
   hostname: os.hostname(), homedir: os.homedir, now: Date.now, vault: process.env.A1_VAULT_ROOT || null,
   runIntent: (file, runDeps) => require('./intent-run.cjs').runIntent(file, runDeps),
   runDeps: {},
+  agentRootSkew: (o) => require('./intent-seal.cjs').agentRootSkew(o),
+  codeRoot: undefined, // fixture seam (library calls only): the root of the running code, default this tree
   beforeApply: () => {}, // fixture seam (library calls only): after the claims, before an approve is applied
   beforeVerify: () => {}, // fixture seam (library calls only): between listing a claimed note and verifying it
   beforeFinish: () => {}, // fixture seam (library calls only): after an applied effect, before the move to done/
@@ -433,6 +435,11 @@ async function tick(deps = {}) {
   try {
     if (!d.vault) return Object.freeze({ exitCode: EXIT_OPERATOR, out: null, usage: 'intent tick: A1_VAULT_ROOT is not set' });
     if (L.requireExecutorHost(d) === null) return L.decide(d, 'tick', EXIT_REFUSED, { ticked: false, reasons: ['not_executor_host'] }, { intentId: null, outcome: 'refused', reason: 'not_executor_host' });
+    const skew = d.agentRootSkew({ homedir: d.homedir, codeRoot: d.codeRoot });
+    if (skew !== null) {
+      // Wave 11 review: a re-seal without `install-agent --force` leaves the agent on the old sealed code.
+      return L.decide(d, 'tick', EXIT_REFUSED, { ticked: false, reasons: ['seal_stale'], detail: skew }, { intentId: null, outcome: 'refused', reason: 'seal_stale', detail: skew });
+    }
     const root = path.join(d.vault, INTENTS_DIR);
     ensureFolders(root);
     const pass = { claimed: [], rejected: [], skipped: [] };

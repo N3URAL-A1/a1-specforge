@@ -95,6 +95,7 @@ function cmdIntentSeal(args, deps = {}) {
     process.stdout.write(`${JSON.stringify(r)}\n`);
     process.exitCode = EXIT_OK;
     process.stderr.write(`intent seal: sealed ${r.files} files into ${r.seal_dir}\n`);
+    process.stderr.write('intent seal: a LaunchAgent installed earlier still runs the previous seal; run `intent install-agent --force` to point it here (intent run and tick refuse until then).\n');
   } catch (e) {
     if (!(e instanceof SealRefusal)) throw e;
     process.stdout.write(`${JSON.stringify({ ok: false, reasons: [e.code], detail: e.message.slice(0, 300) })}\n`);
