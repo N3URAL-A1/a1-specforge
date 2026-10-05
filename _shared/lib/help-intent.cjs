@@ -188,8 +188,23 @@ const INTENT_HELP = `  a1-tools intent <sub> [flags]
                   with fsmonitor, hooks, external diff, pager, credential
                   helper, system and global config switched off; anything
                   else exits 77 subcommand_not_allowed, git never runs.
-  a1-tools intent install-agent
-                  (wave 11, executor host only) installs the launchd agent
-                  ai.n3ural.a1-intent-tick that runs tick every 30 s.`;
+  a1-tools intent install-agent [--uninstall | --status] [--force]
+                  (executor host only; macOS) the launchd agent
+                  ai.n3ural.a1-intent-tick that runs 'intent tick' every 30 s.
+                  Install needs an owner at a terminal (stdin and stdout are
+                  TTYs, no CLAUDECODE / CLAUDE_PID / CLAUDE_CODE_* variable, no
+                  Claude Code ancestor, not in intent child mode; '--yes' exits
+                  2; the owner types "yes" on /dev/tty) and refuses, exit 1
+                  with a reason, unless: 'intent doctor' passes, the seal
+                  verifies (FR-040), node and claude are on PATH, and
+                  A1_VAULT_ROOT is set (A1_HOST_ID is carried when set). The
+                  plist runs the SEALED copy's a1-tools (re-run with --force
+                  after every 'intent seal'). It is written 0600 to
+                  ~/Library/LaunchAgents/ and never replaces a differing file
+                  without --force; then '/bin/launchctl bootstrap gui/<uid>'.
+                  --uninstall: bootout, remove the plist. --status: state and
+                  last exit of the job, whether the plist still points at the
+                  current seal, and the last 5 lines of ~/.a1-intents/log.jsonl.
+                  Never reachable from an intent child.`;
 
 module.exports = { INTENT_HELP };

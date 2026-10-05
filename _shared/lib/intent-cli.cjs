@@ -3,7 +3,8 @@
 // ---------------------------------------------------------------------------
 // intent-cli — router for `a1-tools intent <sub>` (spec 011, Wave 1). The
 // facade _shared/a1-tools.cjs holds one dispatch line for the group; this
-// table pre-registers all 13 subcommands of Wave 1 plus `seal` (Wave 5b). A subcommand whose module has not
+// table pre-registers all 13 subcommands of Wave 1 plus `seal` (Wave 5b); all of them are
+// shipped since Wave 11 (`install-agent`, intent-agent.cjs). A subcommand whose module has not
 // shipped yet (or does not export its command function yet) exits 2 with
 // "intent <sub>: not implemented yet (wave N)". That branch stays after every
 // wave shipped: a missing or half-copied module must fail closed.
@@ -94,6 +95,7 @@ function cmdIntentSeal(args, deps = {}) {
     process.stdout.write(`${JSON.stringify(r)}\n`);
     process.exitCode = EXIT_OK;
     process.stderr.write(`intent seal: sealed ${r.files} files into ${r.seal_dir}\n`);
+    process.stderr.write('intent seal: a LaunchAgent installed earlier still runs the previous seal; run `intent install-agent --force` to point it here (intent run and tick refuse until then).\n');
   } catch (e) {
     if (!(e instanceof SealRefusal)) throw e;
     process.stdout.write(`${JSON.stringify({ ok: false, reasons: [e.code], detail: e.message.slice(0, 300) })}\n`);
