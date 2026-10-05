@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { guardChildPath } = require('./intent-child.cjs');
 
 // ---------- vault root resolution ----------
 
@@ -290,9 +291,10 @@ function repoRoot() {
   }
 }
 
+// Both resolvers pass their result through the intent child-mode scope check
+// (spec 011 FR-041; a no-op outside child mode).
 function resolveVaultPath(input) {
-  if (path.isAbsolute(input)) return input;
-  return path.join(vaultRoot(), input);
+  return guardChildPath(path.isAbsolute(input) ? input : path.join(vaultRoot(), input));
 }
 
 // ---------- frontmatter parser (line-based, minimal) ----------
@@ -926,7 +928,7 @@ function assertSafeSegment(value, label) {
 // segments individually.
 function projectsPath(...segments) {
   const safe = segments.map((s) => assertSafeSegment(s, 'projects path segment'));
-  return path.join(vaultRoot(), 'project', ...safe);
+  return guardChildPath(path.join(vaultRoot(), 'project', ...safe));
 }
 
 module.exports = { vaultRoot, vaultRootInfo, peekVaultRoot, codeRoots, repoRoot, resolveVaultPath, parseFrontmatter, serializeScalar, detectKeyOrder, serializeFrontmatter, readMd, writeMdAtomic, nowIso, writeTextAtomic, parseScalarToken, parseNestedFrontmatter, serializeNestedFrontmatter, writeNestedMdAtomic, parseFlags, fail, assertSafeSegment, projectsPath, copyDirRecursive, tmpPathFor, nearestExistingAncestor, assertAncestorInside };

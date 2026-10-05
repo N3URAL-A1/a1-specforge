@@ -127,8 +127,14 @@ function cmdSpecInit(args) {
 
   // Spec authorship is host-agnostic (the file above is written on every
   // host); the hub note is not — gated for the spec's project, never for the
-  // cwd repo (FR-034, W13).
-  const hub = require('./vault-hub.cjs').linkHubGated('spec init hub link', projectSlug, 'spec', id);
+  // cwd repo (FR-034, W13), and an intent child leaves it alone (spec 011
+  // FR-041): hub notes are for humans, and the hub lies outside the child's
+  // project/<slug>/ scope.
+  const inChild = require('./intent-child.cjs').inChildMode();
+  if (inChild) require('./vault-common.cjs').warnSkipped('spec init hub link', 'intent child mode');
+  const hub = inChild
+    ? { hub: 'skipped-child', hub_path: null, line: null }
+    : require('./vault-hub.cjs').linkHubGated('spec init hub link', projectSlug, 'spec', id);
   return {
     spec_path: specPath, id, project: projectSlug, feature_slug: featureSlug, title,
     status: 'discovering', size, created,

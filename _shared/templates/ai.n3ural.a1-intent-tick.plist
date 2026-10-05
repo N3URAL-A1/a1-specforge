@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  ai.n3ural.a1-intent-tick — the LaunchAgent that runs `a1-tools intent tick`
+  every 30 s on the executor Mac (spec 011, Wave 11). A template: its
+  double-braced placeholders are filled at install time (the ops half of Wave 11) from
+  the installing shell: NODE and A1_TOOLS as absolute paths, HOME (launchd
+  expands no ~), the vault root, and a PATH that holds the directories of
+  node and claude. It carries no A1_INTENT_*
+  variable: doctor fails on any override, here as in the environment (FR-046).
+  Output goes to ~/.a1-intents/agent.log, outside the vault.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.n3ural.a1-intent-tick</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>{{NODE}}</string>
+    <string>{{A1_TOOLS}}</string>
+    <string>intent</string>
+    <string>tick</string>
+  </array>
+  <key>StartInterval</key>
+  <integer>30</integer>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>StandardOutPath</key>
+  <string>{{HOME}}/.a1-intents/agent.log</string>
+  <key>StandardErrorPath</key>
+  <string>{{HOME}}/.a1-intents/agent.log</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>{{PATH}}</string>
+    <key>A1_VAULT_ROOT</key>
+    <string>{{A1_VAULT_ROOT}}</string>
+  </dict>
+</dict>
+</plist>

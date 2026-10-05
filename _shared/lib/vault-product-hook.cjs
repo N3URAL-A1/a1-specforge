@@ -23,6 +23,7 @@ const { planMirror, applyMirror } = require('./vault-mirror.cjs');
 const { PRODUCT_MIRROR_SET, MIRROR_EXCLUDES } = require('./vault-contract.cjs');
 const { MAX_SLUG_LENGTH, rootProblem } = require('./vault-common.cjs');
 const { writerGateFor, notWriterReason } = require('./vault-writer.cjs');
+const { childMirrorAllowed } = require('./intent-child.cjs');
 
 // Without a configured vault SC-002/FR-037 win over FR-007's "inactive" value
 // (team-lead decision 2026-09-26): stdout stays byte-identical to the
@@ -60,6 +61,10 @@ function mirrorProductNow(dir) {
   const problem = rootProblem(vaultRoot, fs.constants.W_OK);
   if (problem) throw new Error(problem);
   const slug = committedSlug(dir);
+  // Spec 011 FR-041: ROADMAP.md is child-writable, so in an intent child the
+  // slug must be the intent's project and the target inside its scope; else
+  // skip (the repo write already happened). Outside child mode: no effect.
+  if (!childMirrorAllowed(slug, path.join(vaultRoot, 'project', slug, 'product'))) throw new Error(`project/${slug}/product/ is outside the intent child's scope`);
   // FR-034 (amended 2026-09-28): the gate is evaluated for the roadmap
   // `project:` being written, never for the repo directory name.
   const notWriter = notWriterReason(writerGateFor(slug, vaultRoot));
