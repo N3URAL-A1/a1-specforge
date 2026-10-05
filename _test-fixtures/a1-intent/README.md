@@ -51,6 +51,12 @@ The defaults above are copied from the constants. The fixture checks keep their 
 
 In production an override is always an operator mistake. `a1-tools intent doctor` fails its `overrides` check when an `A1_INTENT_*` variable is set in its environment, or appears in the `EnvironmentVariables` of `~/Library/LaunchAgents/ai.n3ural.a1-intent-tick.plist` (cases D6 and D10).
 
+## The launchd installer is tested through a library seam, with a stub launchctl (`cases/13-agent.sh`)
+
+`a1-tools intent install-agent` calls `/bin/launchctl` by absolute path, so a `PATH` stub cannot stand in for it, and the suite never runs the real one. `stub/agent-lib.cjs` calls `cmdIntentInstallAgent` with injected dependencies (sandbox home, hostname, platform, uid 4242, the answer to the confirmation, the launchctl path) taken from one JSON argument, never from the environment. Its launchctl is a per-sandbox copy of `stub/launchctl`, which appends its exact argv to `argv.log` and reads its mode (`ok`, `fail`, `notloaded`) and its `print` text from files next to itself, for the reason in the section above: the agent starts it with a fixed environment. The `print` text and the `fail`/`notloaded` exit codes are UNMEASURED.
+
+Only A6b, A7a and A7c call the real CLI (on a real pty for the last two). Each is refused before the first write, and the sandbox holds no valid seal, so none of them can reach launchctl. A8 runs the child-mode refusal (exit 77) with `--yes`, so even a future allowlist row would stop at argument parsing. The shipped guard of `contextRefusal` walks the real process tree; the suite itself may run under Claude Code, so success paths inject `contextRefusal: () => null` and the guard cases use the environment check, which answers before the walk.
+
 ## Measured fakes
 
 Where a stub or a fixture stands in for an outside program (`ps`, `lsof`, `plutil`, the `claude --output-format json` object, `/proc/<pid>/stat`), its shape is copied from a measurement on the owner's Mac or in `node:20`. The case header names the date of that measurement. Anything not measured is marked UNMEASURED; for example, the hang stub as a model of the real `claude` process tree.
