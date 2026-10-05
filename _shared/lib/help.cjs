@@ -7,6 +7,7 @@ const {
   RECONCILE_STATUSES, RECONCILE_SCOPE_MODES, RECONCILE_DRIFT_CLASSES,
 } = require('./status-constants.cjs');
 const { SPEC_INIT_HELP, VAULT_HELP } = require('./help-vault.cjs');
+const { INTENT_HELP } = require('./help-intent.cjs');
 const { XPROV_HELP } = require('./help-xprov.cjs');
 
 function usage(msg) {
@@ -598,6 +599,8 @@ ${SPEC_INIT_HELP}
 ${XPROV_HELP}
 
 ${VAULT_HELP}
+
+${INTENT_HELP}
 
 Spec statuses: ${[...SPEC_STATUSES].join(', ')}
 Bug statuses:  ${[...BUG_STATUSES].join(', ')}

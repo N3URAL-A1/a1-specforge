@@ -1,0 +1,1095 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "a1 intent note frontmatter (inbox/intents/queued/)",
+  "x-contract-version": 1,
+  "x-vault-contract-version": 1,
+  "type": "object",
+  "properties": {
+    "type": {
+      "const": "intent"
+    },
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "action": {
+      "enum": [
+        "new-feature",
+        "continue-feature",
+        "plan",
+        "execute",
+        "fix",
+        "stage",
+        "progress",
+        "approve",
+        "cancel"
+      ]
+    },
+    "project": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$"
+    },
+    "payload": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string",
+      "pattern": "^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,3})?Z$",
+      "format": "date-time"
+    },
+    "created_by": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{1,63}$"
+    },
+    "nonce": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "status": {
+      "const": "queued"
+    },
+    "signature": {
+      "type": "string"
+    },
+    "target": {
+      "type": "string"
+    },
+    "approved_from_device": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{1,63}$"
+    },
+    "approved_at": {
+      "type": "string",
+      "pattern": "^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,3})?Z$",
+      "format": "date-time"
+    },
+    "approved_via": {
+      "enum": [
+        "intent",
+        "tty"
+      ]
+    },
+    "approved_by_intent": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    }
+  },
+  "required": [
+    "type",
+    "schema_version",
+    "id",
+    "action",
+    "project",
+    "payload",
+    "created_at",
+    "created_by",
+    "nonce",
+    "status",
+    "signature"
+  ],
+  "additionalProperties": false,
+  "dependentRequired": {
+    "approved_from_device": [
+      "approved_at",
+      "approved_via",
+      "approved_by_intent"
+    ],
+    "approved_at": [
+      "approved_from_device",
+      "approved_via",
+      "approved_by_intent"
+    ],
+    "approved_via": [
+      "approved_from_device",
+      "approved_at",
+      "approved_by_intent"
+    ],
+    "approved_by_intent": [
+      "approved_from_device",
+      "approved_at",
+      "approved_via"
+    ]
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "action": {
+            "const": "new-feature"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "then": {
+        "not": {
+          "required": [
+            "target"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "action": {
+            "const": "continue-feature"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "then": {
+        "required": [
+          "target"
+        ],
+        "properties": {
+          "target": {
+            "type": "string",
+            "pattern": "^\\d{3}-[a-z0-9][a-z0-9-]*$"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "action": {
+            "const": "plan"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "then": {
+        "required": [
+          "target"
+        ],
+        "properties": {
+          "target": {
+            "type": "string",
+            "pattern": "^M\\d+-P\\d+-[a-z0-9][a-z0-9-]*$"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "action": {
+            "const": "execute"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "then": {
+        "required": [
+          "target"
+        ],
+        "properties": {
+          "target": {
+            "type": "string",
+            "pattern": "^M\\d+-P\\d+-[a-z0-9][a-z0-9-]*$"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "action": {
+            "const": "fix"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "then": {
+        "not": {
+          "required": [
+            "target"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "action": {
+            "const": "stage"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "then": {
+        "required": [
+          "target"
+        ],
+        "properties": {
+          "target": {
+            "type": "string",
+            "pattern": "^\\d{3}-[a-z0-9][a-z0-9-]*:(started|complete|review|verify|merge|origin-cleanup|done)$"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "action": {
+            "const": "progress"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "then": {
+        "not": {
+          "required": [
+            "target"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "action": {
+            "const": "approve"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "then": {
+        "required": [
+          "target"
+        ],
+        "properties": {
+          "target": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "action": {
+            "const": "cancel"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "then": {
+        "required": [
+          "target"
+        ],
+        "properties": {
+          "target": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "approved_via": {
+            "const": "intent"
+          }
+        },
+        "required": [
+          "approved_via"
+        ]
+      },
+      "then": {
+        "properties": {
+          "approved_by_intent": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "approved_via": {
+            "const": "tty"
+          }
+        },
+        "required": [
+          "approved_via"
+        ]
+      },
+      "then": {
+        "properties": {
+          "approved_by_intent": {
+            "type": "null"
+          }
+        }
+      }
+    }
+  ],
+  "x-file-rules": {
+    "folders": [
+      "inbox/intents/queued/",
+      "inbox/intents/claimed/",
+      "inbox/intents/done/",
+      "inbox/intents/rejected/"
+    ],
+    "write_folder": "inbox/intents/queued/",
+    "filename": "<id>.md",
+    "body": "empty",
+    "max_bytes": 8192,
+    "payload_max_bytes": 6144,
+    "processed_schema": "processed_intent",
+    "result_path": "project/<slug>/intents/<id>.md"
+  },
+  "x-limits": {
+    "INTENT_MAX_BYTES": 8192,
+    "INTENT_PAYLOAD_MAX_BYTES": 6144,
+    "INTENT_FRESHNESS_MS": 900000,
+    "INTENT_CLOCK_SKEW_MS": 120000,
+    "INTENT_TIMEOUT_MS": 1800000,
+    "INTENT_KILL_GRACE_MS": 10000,
+    "INTENT_MAX_RUNS_PER_HOUR": 6,
+    "INTENT_CLAIMED_MAX_AGE_MS": 21600000,
+    "INTENT_RESULT_MAX_BYTES": 16384,
+    "INTENT_TICK_INTERVAL_S": 30,
+    "INTENT_CANCEL_POLL_MS": 5000
+  },
+  "x-canonical-signature": [
+    "schema_version",
+    "id",
+    "action",
+    "project",
+    "target",
+    "created_at",
+    "created_by",
+    "nonce",
+    "payload"
+  ],
+  "x-canonical-signature-approval": [
+    "approved_from_device",
+    "approved_at",
+    "approved_via",
+    "approved_by_intent"
+  ],
+  "x-signature": {
+    "prefix": "hmac-sha256:",
+    "algorithm": "HMAC-SHA256",
+    "encoding": "lowercase hex, 64 characters",
+    "join": "\n",
+    "trailing_newline": false,
+    "null_or_absent_field": "",
+    "payload_field": "sha256 hex of the payload"
+  },
+  "x-signing-rules": [
+    {
+      "id": "key_raw_bytes",
+      "rule": "The HMAC-SHA256 key is the device secret's 32 raw bytes (hex-decoded), not its 64-character hex text."
+    },
+    {
+      "id": "target_empty",
+      "rule": "target absent, target: null and target: \"\" give the same empty field."
+    },
+    {
+      "id": "payload_decoded",
+      "rule": "payload is hashed as UTF-8 after YAML decoding, with CRLF normalised to LF; the raw file bytes are never hashed."
+    },
+    {
+      "id": "quote_nonce_created_by",
+      "rule": "nonce and created_by are written as quoted YAML strings; an unquoted value of decimal digits only parses as a number and fails schema_invalid."
+    }
+  ],
+  "x-approval-keys": [
+    "approved_from_device",
+    "approved_at",
+    "approved_via",
+    "approved_by_intent"
+  ],
+  "x-a1-only-keys": [
+    "claimed_by",
+    "claimed_at",
+    "started_at",
+    "finished_at",
+    "exit_code",
+    "rejected_reason",
+    "rejected_by",
+    "rejected_at",
+    "failure_reason",
+    "cancelled_by_intent"
+  ],
+  "x-refusal-codes": [
+    "already_claimed",
+    "already_moved",
+    "ledger_busy",
+    "project_busy",
+    "executor_busy",
+    "rate_limited",
+    "result_path_unsafe"
+  ],
+  "x-action-table": {
+    "new-feature": {
+      "kind": "claude",
+      "target_required": false,
+      "target_pattern": null,
+      "executor_device_only": false
+    },
+    "continue-feature": {
+      "kind": "claude",
+      "target_required": true,
+      "target_pattern": "^\\d{3}-[a-z0-9][a-z0-9-]*$",
+      "executor_device_only": false
+    },
+    "plan": {
+      "kind": "claude",
+      "target_required": true,
+      "target_pattern": "^M\\d+-P\\d+-[a-z0-9][a-z0-9-]*$",
+      "executor_device_only": false
+    },
+    "execute": {
+      "kind": "claude",
+      "target_required": true,
+      "target_pattern": "^M\\d+-P\\d+-[a-z0-9][a-z0-9-]*$",
+      "executor_device_only": false
+    },
+    "fix": {
+      "kind": "claude",
+      "target_required": false,
+      "target_pattern": null,
+      "executor_device_only": false
+    },
+    "stage": {
+      "kind": "cli",
+      "target_required": true,
+      "target_pattern": "^\\d{3}-[a-z0-9][a-z0-9-]*:(started|complete|review|verify|merge|origin-cleanup|done)$",
+      "executor_device_only": false
+    },
+    "progress": {
+      "kind": "claude",
+      "target_required": false,
+      "target_pattern": null,
+      "executor_device_only": false
+    },
+    "approve": {
+      "kind": "queue-control",
+      "target_required": true,
+      "target_pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "executor_device_only": true
+    },
+    "cancel": {
+      "kind": "queue-control",
+      "target_required": true,
+      "target_pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "executor_device_only": false
+    }
+  },
+  "x-not-expressible": [
+    "approval group only under created_by == executor_device of executor.json (FR-045); else schema_invalid after authenticity",
+    "project realpath inside ~/claude-projects/ (FR-004); else project_invalid",
+    "approve/cancel target names an existing intent, never the intent itself (FR-006); else target_not_found",
+    "approve only from the executor device (FR-006); else approve_from_non_executor_device",
+    "device provisioned, signature, freshness window (FR-010..FR-013)"
+  ],
+  "$defs": {
+    "processed_intent": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "intent"
+        },
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "action": {
+          "enum": [
+            "new-feature",
+            "continue-feature",
+            "plan",
+            "execute",
+            "fix",
+            "stage",
+            "progress",
+            "approve",
+            "cancel"
+          ]
+        },
+        "project": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "payload": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string",
+          "pattern": "^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,3})?Z$",
+          "format": "date-time"
+        },
+        "created_by": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{1,63}$"
+        },
+        "nonce": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "status": {
+          "enum": [
+            "queued",
+            "claimed",
+            "running",
+            "done",
+            "failed",
+            "rejected"
+          ]
+        },
+        "signature": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "approved_from_device": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{1,63}$"
+        },
+        "approved_at": {
+          "type": "string",
+          "pattern": "^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,3})?Z$",
+          "format": "date-time"
+        },
+        "approved_via": {
+          "enum": [
+            "intent",
+            "tty"
+          ]
+        },
+        "approved_by_intent": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "claimed_by": {
+          "type": "string"
+        },
+        "claimed_at": {
+          "type": "string",
+          "pattern": "^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,3})?Z$",
+          "format": "date-time"
+        },
+        "started_at": {
+          "type": "string",
+          "pattern": "^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,3})?Z$",
+          "format": "date-time"
+        },
+        "finished_at": {
+          "type": "string",
+          "pattern": "^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,3})?Z$",
+          "format": "date-time"
+        },
+        "exit_code": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "rejected_reason": {
+          "$ref": "#/$defs/rejected_reason"
+        },
+        "rejected_by": {
+          "type": "string"
+        },
+        "rejected_at": {
+          "type": "string",
+          "pattern": "^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,3})?Z$",
+          "format": "date-time"
+        },
+        "failure_reason": {
+          "$ref": "#/$defs/failure_reason"
+        },
+        "cancelled_by_intent": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        }
+      },
+      "required": [
+        "type",
+        "schema_version",
+        "id",
+        "action",
+        "project",
+        "payload",
+        "created_at",
+        "created_by",
+        "nonce",
+        "status",
+        "signature"
+      ],
+      "additionalProperties": false,
+      "dependentRequired": {
+        "approved_from_device": [
+          "approved_at",
+          "approved_via",
+          "approved_by_intent"
+        ],
+        "approved_at": [
+          "approved_from_device",
+          "approved_via",
+          "approved_by_intent"
+        ],
+        "approved_via": [
+          "approved_from_device",
+          "approved_at",
+          "approved_by_intent"
+        ],
+        "approved_by_intent": [
+          "approved_from_device",
+          "approved_at",
+          "approved_via"
+        ]
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "const": "new-feature"
+              }
+            },
+            "required": [
+              "action"
+            ]
+          },
+          "then": {
+            "not": {
+              "required": [
+                "target"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "const": "continue-feature"
+              }
+            },
+            "required": [
+              "action"
+            ]
+          },
+          "then": {
+            "required": [
+              "target"
+            ],
+            "properties": {
+              "target": {
+                "type": "string",
+                "pattern": "^\\d{3}-[a-z0-9][a-z0-9-]*$"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "const": "plan"
+              }
+            },
+            "required": [
+              "action"
+            ]
+          },
+          "then": {
+            "required": [
+              "target"
+            ],
+            "properties": {
+              "target": {
+                "type": "string",
+                "pattern": "^M\\d+-P\\d+-[a-z0-9][a-z0-9-]*$"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "const": "execute"
+              }
+            },
+            "required": [
+              "action"
+            ]
+          },
+          "then": {
+            "required": [
+              "target"
+            ],
+            "properties": {
+              "target": {
+                "type": "string",
+                "pattern": "^M\\d+-P\\d+-[a-z0-9][a-z0-9-]*$"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "const": "fix"
+              }
+            },
+            "required": [
+              "action"
+            ]
+          },
+          "then": {
+            "not": {
+              "required": [
+                "target"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "const": "stage"
+              }
+            },
+            "required": [
+              "action"
+            ]
+          },
+          "then": {
+            "required": [
+              "target"
+            ],
+            "properties": {
+              "target": {
+                "type": "string",
+                "pattern": "^\\d{3}-[a-z0-9][a-z0-9-]*:(started|complete|review|verify|merge|origin-cleanup|done)$"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "const": "progress"
+              }
+            },
+            "required": [
+              "action"
+            ]
+          },
+          "then": {
+            "not": {
+              "required": [
+                "target"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "const": "approve"
+              }
+            },
+            "required": [
+              "action"
+            ]
+          },
+          "then": {
+            "required": [
+              "target"
+            ],
+            "properties": {
+              "target": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "const": "cancel"
+              }
+            },
+            "required": [
+              "action"
+            ]
+          },
+          "then": {
+            "required": [
+              "target"
+            ],
+            "properties": {
+              "target": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "approved_via": {
+                "const": "intent"
+              }
+            },
+            "required": [
+              "approved_via"
+            ]
+          },
+          "then": {
+            "properties": {
+              "approved_by_intent": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "approved_via": {
+                "const": "tty"
+              }
+            },
+            "required": [
+              "approved_via"
+            ]
+          },
+          "then": {
+            "properties": {
+              "approved_by_intent": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "intent-result"
+        },
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "intent_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "action": {
+          "enum": [
+            "new-feature",
+            "continue-feature",
+            "plan",
+            "execute",
+            "fix",
+            "stage",
+            "progress",
+            "approve",
+            "cancel"
+          ]
+        },
+        "project": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "target": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "enum": [
+            "done",
+            "failed"
+          ]
+        },
+        "failure_reason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/failure_reason"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,3})?Z$",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "finished_at": {
+          "type": "string",
+          "pattern": "^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,3})?Z$",
+          "format": "date-time"
+        },
+        "duration_s": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "exit_code": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "executor_host": {
+          "type": "string"
+        },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "type",
+        "schema_version",
+        "intent_id",
+        "action",
+        "project",
+        "target",
+        "status",
+        "failure_reason",
+        "started_at",
+        "finished_at",
+        "duration_s",
+        "exit_code",
+        "executor_host",
+        "artifacts",
+        "truncated"
+      ],
+      "additionalProperties": false
+    },
+    "rejected_reason": {
+      "enum": [
+        "schema_invalid",
+        "id_mismatch",
+        "action_unknown",
+        "project_invalid",
+        "oversized",
+        "target_invalid",
+        "target_not_found",
+        "approve_from_non_executor_device",
+        "device_unknown",
+        "signature_invalid",
+        "stale",
+        "replay",
+        "not_executor_host",
+        "ledger_unreadable",
+        "tampered",
+        "cancelled_by_user",
+        "workspace_not_isolated"
+      ],
+      "x-render-hints": {
+        "schema_invalid": "Notiz passt nicht zum Vertrag (Felder oder Format)",
+        "id_mismatch": "Dateiname passt nicht zur id",
+        "action_unknown": "unbekannte Aktion",
+        "project_invalid": "Projekt nicht gefunden",
+        "oversized": "zu groß: Text kürzen, dann erneut senden",
+        "target_invalid": "Ziel fehlt oder hat die falsche Form",
+        "target_not_found": "Ziel nicht gefunden",
+        "approve_from_non_executor_device": "Freigabe nur am Mac möglich",
+        "device_unknown": "wartet auf Freigabe",
+        "signature_invalid": "wartet auf Freigabe",
+        "stale": "erneut senden",
+        "replay": "bereits verarbeitet (doppelt gesendet)",
+        "not_executor_host": "nur der Mac führt Aufträge aus",
+        "ledger_unreadable": "Auftragsbuch am Mac nicht lesbar; am Mac prüfen",
+        "tampered": "nach dem Übernehmen verändert; am Mac prüfen",
+        "cancelled_by_user": "abgebrochen",
+        "workspace_not_isolated": "am Mac aufräumen: offene Änderungen oder Branch `main`, dann erneut senden"
+      }
+    },
+    "failure_reason": {
+      "enum": [
+        "timeout",
+        "expired",
+        "spawn_error",
+        "nonzero_exit",
+        "cancelled",
+        "sandbox_invalid",
+        "parent_step_failed"
+      ],
+      "x-render-hints": {
+        "timeout": "Zeitlimit überschritten",
+        "expired": "nicht rechtzeitig gestartet; erneut senden",
+        "spawn_error": "Start am Mac fehlgeschlagen",
+        "nonzero_exit": "mit Fehler beendet; Ergebnisnotiz ansehen",
+        "cancelled": "abgebrochen",
+        "sandbox_invalid": "Sandbox-Prüfung am Mac fehlgeschlagen, `intent seal` prüfen",
+        "parent_step_failed": "Prüfschritt am Mac fehlgeschlagen: Integritätsprüfung, xprov-Gate oder Postmortem; Protokoll am Mac ansehen"
+      }
+    }
+  }
+}

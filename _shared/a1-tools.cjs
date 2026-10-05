@@ -168,6 +168,12 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
+// Spec 011 FR-041 — intent child mode. Runs before any other module loads and
+// before any subcommand code: in a child of `intent run` only the action's
+// allowlisted subcommands with in-project paths pass, else exit 77. Outside
+// child mode it returns without effect.
+require(path.join(__dirname, 'lib', 'intent-child.cjs')).guardDispatch(process.argv.slice(2));
+
 // ---------- valid status sets (lib/status-constants.cjs) ----------
 const {
   SPEC_STATUSES, BUG_STATUSES, BUG_SEVERITIES,
@@ -361,8 +367,10 @@ const { cmdWorkflowLint } = require(path.join(__dirname, 'lib', 'workflow-lint.c
 function main() {
   const argv = process.argv.slice(2);
   if (argv.length === 0 || argv[0] === '--help' || argv[0] === '-h') {
+    // No process.exit() here: the help text is larger than a pipe buffer
+    // (64 KiB), and exiting before stdout drains cuts it off.
     process.stdout.write(`${HELP}\n`);
-    process.exit(0);
+    return;
   }
   const [group, sub, ...rest] = argv;
   let result;
@@ -644,8 +652,20 @@ function main() {
       result = require(path.join(__dirname, 'lib', 'vault-cli.cjs')).dispatchVault(sub, rest);
     } else if (group === 'schema') {
       result = require(path.join(__dirname, 'lib', 'vault-cli.cjs')).dispatchSchema(sub, rest);
+    } else if (group === 'intent') {
+      // Spec 011-intent-queue-consumer, Wave 1 — the facade's ONLY edit for
+      // that spec. lib/intent-cli.cjs pre-registers all 13 subcommands; each
+      // owns its exit code (0 ok / 1 invalid, stdout JSON / 2 usage or not
+      // implemented yet) via process.exitCode. Lazy require.
+      require(path.join(__dirname, 'lib', 'intent-cli.cjs')).run(sub, rest);
+      return;
+    } else if (group === 'git') {
+      // Spec 011 Wave 6 (FR-048): git for the intent child only, through a
+      // fixed grammar and hardened options; exit 2 outside child mode.
+      require(path.join(__dirname, 'lib', 'intent-git.cjs')).cmdGit(sub, rest);
+      return;
     } else {
-      usage(`unknown command group: ${group} (expected "spec", "fix", "analyze", "check", "checklist", "constitution", "worktree", "pr", "phantom", "reconcile", "modernize", "schema-check", "cost", "pack", "product", "quick", "learnings", "retro", "workflow", or "realpath-check"). fix supports: next-suffix, update-status, list, find-duplicates, integrity-check, init-postmortem, count-postmortems-since, update-promote-state, write-suggestion`);
+      usage(`unknown command group: ${group} (expected "spec", "fix", "analyze", "check", "checklist", "constitution", "worktree", "pr", "phantom", "reconcile", "modernize", "schema-check", "cost", "pack", "product", "quick", "learnings", "retro", "workflow", "intent", "git", or "realpath-check"). fix supports: next-suffix, update-status, list, find-duplicates, integrity-check, init-postmortem, count-postmortems-since, update-promote-state, write-suggestion`);
     }
   } catch (e) {
     // Input-validation errors (e.g. path-traversal guard) are user errors,
