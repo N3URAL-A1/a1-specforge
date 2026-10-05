@@ -22,7 +22,12 @@ node <repo>/_shared/a1-tools.cjs xprov wave-status --phase <phase_name> --work-p
 echo "xprov wave-status exit=$RC"
 ```
 
-- **Exit 0** → continue to the prompt template.
+- **Exit 0** → continue to the prompt template. A non-empty `not_applicable`
+  list in the stdout JSON means the owner denied external review for this
+  repository (`xprov permit --deny`, confirmed by the owner's store): no wave was
+  inspected and none is lacking. Record `{id: wave-inspect-xprov, verdict:
+  not_applicable, caught: false}` in the retro with the issue tag
+  `xprov_not_applicable`; it is not a pass.
 - **Exit 1** → the stdout JSON lists the lacking waves. For each: go back to
   `02-execute.md` step 2b-x for that wave (re-run the inspection with that
   wave's `--base`), or the user waives it — the human runs
@@ -229,7 +234,7 @@ result: <pass|partial|fail>
 waves_executed: <N>
 observations_total: $OBS_COUNT
 observations_major_plus: $MAJOR_COUNT
-issue_classes: [<from: plan_drift, missing_dependency, wave_too_large, flaky_test, env_issue, spec_omission, unverifiable_criterion, blocker_unforeseen, xprov_waived>]
+issue_classes: [<from: plan_drift, missing_dependency, wave_too_large, flaky_test, env_issue, spec_omission, unverifiable_criterion, blocker_unforeseen, xprov_waived, xprov_not_applicable>]
 phase_that_produced_most_issues: <plan|implement|verify>
 ```
 

@@ -62,7 +62,12 @@ place the check fails with that reason, which is the correct answer.)
 
 - **Exit 0** → proceed to Step 1. Keep `plan_sha256` from the stdout JSON as
   `$LOADED_PLAN_SHA` (and `accepted`: `pass` or `waiver`): every wave re-checks
-  against it (`02-execute.md`, before 2a).
+  against it (`02-execute.md`, before 2a). `accepted: "not_applicable"` (the
+  owner recorded `xprov permit --deny` for this repository and the owner's store
+  confirms it) is also exit 0: **continue**, print the one-line notice
+  `ℹ Plan review not applicable — the owner denied external review for this repository; continuing.`
+  and record `{id: plan-review-xprov, verdict: not_applicable, caught: false}`
+  in the retro (issue tag `xprov_not_applicable`). It is not a pass.
 - **Exit 1, `reason: plan_review_missing`** → read `enforcement` from the
   stdout JSON (it echoes the `plan-review-xprov` row of
   `_shared/gates-registry.md`; the workflow applies it, the CLI never does):

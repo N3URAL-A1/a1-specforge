@@ -160,6 +160,14 @@ expect8() {
   never_ran8 "$name"
 }
 
+# expect_permit8 <name> — an unusable ~/.a1-xprov now fails closed one step EARLIER than the
+# allowlist (spec 012 FR-001: an allowed file next to an unusable store is denial_mismatch).
+expect_permit8() {
+  local got; got="$(json_get "$G_OUT" "j.step + ':' + j.reason")"
+  [[ "$G_RC" -eq 1 && "$got" == "permit-check:external_review_denial_mismatch" ]] && ok "$1 → fails closed at permit-check (denial_mismatch)" || bad "$1: want permit-check:external_review_denial_mismatch (exit 1), got $got (exit $G_RC)"
+  never_ran8 "$1"
+}
+
 # pass8 <name> — gate exit 0, verdict pass.
 pass8() {
   [[ "$G_RC" -eq 0 && "$(json_get "$G_OUT" "j.verdict")" == "pass" ]] && ok "$1 → pass" || bad "$1: want pass, got $(json_get "$G_OUT" "j.step + ':' + j.reason + '/' + j.reason_detail") (exit $G_RC) — $(printf '%s' "$G_ERR" | tail -n 2)"
@@ -546,9 +554,9 @@ caseR30j() {
   scen8; mv "$HOME/.a1-xprov/$STORE_NAME" "$A8/real-store.json"; ln -s "$A8/real-store.json" "$HOME/.a1-xprov/$STORE_NAME"
   plan8; expect8 "R30j4 store that is a symlink to a valid store" "allowlist_invalid/allowlist_unapproved"
   scen8; mv "$HOME/.a1-xprov" "$A8/real-xprov"; ln -s "$A8/real-xprov" "$HOME/.a1-xprov"
-  plan8; expect8 "R30j5 ~/.a1-xprov that is a symlink" "allowlist_invalid/allowlist_unapproved"
+  plan8; expect_permit8 "R30j5 ~/.a1-xprov that is a symlink"
   scen8; chmod 755 "$HOME/.a1-xprov"
-  plan8; expect8 "R30j6 ~/.a1-xprov with mode 0755" "allowlist_invalid/allowlist_unapproved"
+  plan8; expect_permit8 "R30j6 ~/.a1-xprov with mode 0755"
   # j7a: two approved shas; the pass names the one it used
   scen8; local used; used="$(blobsha8)"; local other="0000000000000000000000000000000000000000000000000000000000000001"
   store8 "$other" "$used"

@@ -81,11 +81,19 @@ const REASON_LIST = Object.freeze([
   // Wave 7 (2026-10-02, after the live smoke): the fresh per-run HOME is not a
   // 0700, user-owned, non-symlink, EMPTY dir right before the spawn — no spawn.
   'run_home_unsafe',
+  // Spec 012 (Wave B): the permit record says `denied` (`not_applicable`, gate
+  // verdict) or it and the owner's denial store disagree (fail closed).
+  'external_review_denied',
+  'external_review_denial_mismatch',
 ]);
 const REASONS = Object.freeze(Object.fromEntries(REASON_LIST.map((r) => [r, r])));
 
 // ---------- verdicts the facade hands to the workflows ----------
 const VERDICTS = Object.freeze({ PASS: 'pass', FAIL_WITH_FINDINGS: 'fail-with-findings', FAIL: 'fail' });
+// Spec 012: the gate's verdict for a repository whose owner recorded `denied`.
+// Kept OUT of VERDICTS on purpose: normalize and run only ever produce the
+// three verdicts above, and the driver validates their output against that list.
+const VERDICT_NOT_APPLICABLE = 'not_applicable';
 
 // ---------- gate ids (rows in _shared/gates-registry.md) ----------
 const GATE_IDS = Object.freeze({ PLAN_REVIEW: 'plan-review-xprov', WAVE_INSPECT: 'wave-inspect-xprov' });
@@ -332,7 +340,7 @@ function cmdXprov(sub, args) {
 module.exports = {
   EXIT_PASS, EXIT_FAIL, EXIT_USAGE,
   SUBCOMMANDS, SUBCOMMAND_NAMES,
-  REASONS, REASON_LIST, VERDICTS,
+  REASONS, REASON_LIST, VERDICTS, VERDICT_NOT_APPLICABLE,
   GATE_IDS, GATE_ID_LIST,
   RUNNER_MODES, FORBIDDEN_RUNNER_TOKENS, RUNNER_HOST, RUNNER_DEFAULT_TIMEOUT_SECONDS,
   ARTIFACT_MAX_AGE_DAYS, PASS_RUN_MAX_AGE_DAYS, ROUND_CAP, MAX_FIELD_CHARS, MAX_RESULT_BYTES, TITLE_MAX_CHARS,

@@ -25,7 +25,7 @@ const io = require('./io.cjs');
 const xprov = require('./xprov.cjs');
 const C = require('./xprov-common.cjs');
 // Shared helpers — one definition each, in xprov-common.cjs.
-const { LANE_RE, inputError, parsePositive } = C;
+const { LANE_RE, inputError, parseWave } = C;
 const usageExit = (msg) => C.usageExit('', msg);
 const finish = (report, code) => C.emitJson(report, code, false);
 const resolveRepoFlag = (flag) => (flag === undefined ? undefined : C.resolveRepoFlag(flag));
@@ -37,7 +37,7 @@ const PROVIDER_RE = /^[a-z][a-z0-9-]{0,31}$/;
 const MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9 ._()\/:-]{0,79}$/;
 const TYPES = Object.freeze(['gap', 'blocker']);
 const SEVERITIES = Object.freeze(['minor', 'major', 'critical']);
-const PATTERNS = Object.freeze(['xprov_finding', 'xprov_waived']);
+const PATTERNS = Object.freeze(['xprov_finding', 'xprov_waived', 'xprov_not_applicable']);
 const DEFAULT_PROVIDER = 'codex';
 const REQUIRED_FLAGS = Object.freeze(['agent', 'skill', 'phase', 'type', 'severity', 'msg']);
 const OBSERVATIONS_FILE = 'observations.jsonl';
@@ -62,8 +62,7 @@ function matching(value, re, flag) {
 
 function validateWave(wave) {
   if (wave === undefined || wave === null || wave === '') return null;
-  parsePositive(wave, 'wave'); // shared bound 1–9999 (was 1–999 here: --wave 1000 passed the gate and failed in observe)
-  return Number(wave);
+  return parseWave(wave, 'wave'); // shared bound 0–9999 (spec 012; was 1–999 here: --wave 1000 passed the gate and failed in observe)
 }
 
 function validateMsg(msg) {

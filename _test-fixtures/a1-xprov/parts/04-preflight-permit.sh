@@ -275,8 +275,13 @@ caseR21() {
   assert_json "R21a reason is external_review_not_permitted" "$out" "j.reason" "external_review_not_permitted"
   [[ "$err" == *a1-ludwig-legal* ]] && ok "R21a stderr names a1-ludwig-legal for customer repos" || bad "R21a stderr lacks a1-ludwig-legal: $err"
 
-  out="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov permit --by robert --record project/a1-specforge/record/2026-09-24-xprov.md 2>&1)"; rc=$?
-  assert_rc "R21b permit writes the record" 0 "$rc" "$out"
+  # Since spec 012 FR-014 the CLI is an owner act (TTY + typed word; arms R21x/R21y in part 12):
+  # from this non-interactive run it exits 2 and writes nothing. The record is written by the library function.
+  out="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov permit --by robert --record project/a1-specforge/record/2026-09-24-xprov.md < /dev/null 2>&1)"; rc=$?
+  assert_rc "R21b permit from a non-TTY is refused (spec 012 FR-014)" 2 "$rc" "$out"
+  [[ ! -e "$PHASE_REPO/.a1/xprov.json" ]] && ok "R21b the refused permit wrote nothing" || bad "R21b the refused permit wrote a record"
+  out="$(permit_lib "$TREE" "P.permit({ repoRoot: '$PHASE_REPO', by: 'robert', record: 'project/a1-specforge/record/2026-09-24-xprov.md' }).ok")"
+  assert_eq "R21b permit writes the record (library function)" "$out" "true"
   local rec; rec="$(cat "$PHASE_REPO/.a1/xprov.json" 2>/dev/null)"
   assert_json "R21b record holds external_review: allowed, decided_by, record" "$rec" \
     "[j.external_review, j.decided_by, j.record].join(' ')" "allowed robert project/a1-specforge/record/2026-09-24-xprov.md"
@@ -287,7 +292,8 @@ caseR21() {
   printf '{"external_review":"denied","decided_by":"robert","decided_on":"2026-09-24","record":"record/x.md"}\n' > "$PHASE_REPO/.a1/xprov.json"
   out="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov permit-check 2>/dev/null)"; rc=$?
   assert_rc "R21d external_review: denied exits 1" 1 "$rc"
-  assert_json "R21d reason is external_review_not_permitted" "$out" "j.reason" "external_review_not_permitted"
+  # a file-only denial (no owner store entry) is a denial_mismatch since spec 012 FR-001 (part 12 has the full state table)
+  assert_json "R21d reason is external_review_denial_mismatch" "$out" "j.reason" "external_review_denial_mismatch"
 
   printf '{not json\n' > "$PHASE_REPO/.a1/xprov.json"
   out="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov permit-check 2>/dev/null)"; rc=$?
