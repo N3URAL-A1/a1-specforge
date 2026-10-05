@@ -1012,7 +1012,7 @@ expect_usage "D9 doctor takes no arguments -> exit 2 [FR-037]"
 w10_plist() { # [override-name] — renders the template into the sandbox's LaunchAgents
   local dst="$FHOME/Library/LaunchAgents/ai.n3ural.a1-intent-tick.plist"
   mkdir -p "$(dirname "$dst")"
-  sed -e "s#{{NODE}}#/usr/local/bin/node#; s#{{A1_TOOLS}}#/opt/a1/_shared/a1-tools.cjs#; s#{{HOME}}#$FHOME#g; s#{{PATH}}#/usr/local/bin:/usr/bin:/bin#; s#{{A1_VAULT_ROOT}}#$VAULT#" \
+  sed -e '/<!--A1_HOST_ID-->/,/<!--\/A1_HOST_ID-->/d' -e "s#{{NODE}}#/usr/local/bin/node#; s#{{A1_TOOLS}}#/opt/a1/_shared/a1-tools.cjs#; s#{{HOME}}#$FHOME#g; s#{{PATH}}#/usr/local/bin:/usr/bin:/bin#; s#{{A1_VAULT_ROOT}}#$VAULT#" \
     "$REPO_ROOT/_shared/templates/ai.n3ural.a1-intent-tick.plist" >"$dst"
   if [[ -n "${1:-}" ]]; then
     node -e 'const fs = require("fs"); const [f, k] = process.argv.slice(1); const t = fs.readFileSync(f, "utf8");

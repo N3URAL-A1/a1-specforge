@@ -8,7 +8,12 @@
   expands no ~), the vault root, and a PATH that holds the directories of
   node and claude. It carries no A1_INTENT_*
   variable: doctor fails on any override, here as in the environment (FR-046).
-  Output goes to ~/.a1-intents/agent.log, outside the vault.
+  The A1_HOST_ID block is optional: launchd reads no ~/.zshenv, so without it
+  spec 010's writer gate falls back to the OS hostname and skips the hub and
+  mirror writes of a hub that declares a1_writer_host: <A1_HOST_ID>. Render it
+  with the value when A1_HOST_ID is set; when it is empty, delete every line
+  from the opening marker comment to the closing marker comment (both are named
+  A1_HOST_ID; the sed range is in _test-fixtures/a1-intent/cases/12-plist.sh).
 -->
 <plist version="1.0">
 <dict>
@@ -37,6 +42,10 @@
     <string>{{PATH}}</string>
     <key>A1_VAULT_ROOT</key>
     <string>{{A1_VAULT_ROOT}}</string>
+    <!--A1_HOST_ID-->
+    <key>A1_HOST_ID</key>
+    <string>{{A1_HOST_ID}}</string>
+    <!--/A1_HOST_ID-->
   </dict>
 </dict>
 </plist>
