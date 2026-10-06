@@ -45,6 +45,9 @@ const SHA256_RE = /^[0-9a-f]{64}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const PATH_FORBIDDEN_RE = /[*?[\]{}\\\0-\x1f\x7f]/;
 const TOP_KEYS = Object.freeze(['version', 'owner', 'entries']);
+const TOP_KEYS_V2 = Object.freeze(['version', 'owner', 'entries', 'scopes']); // spec 012 FR-019
+const SCOPE_KEYS = Object.freeze(['prefix', 'pattern', 'class', 'max_count', 'reason', 'reviewed_by', 'added_on']);
+const HIGH_CONFIDENCE = new Set(X.HIGH_CONFIDENCE_PATTERNS);
 const ENTRY_KEYS = Object.freeze(['path', 'pattern', 'max_count', 'fingerprints', 'class', 'reason', 'reviewed_by', 'added_on']);
 const PATTERN_NAMES = new Set(X.SECRET_PATTERNS.map((p) => p.name));
 const STORE_MODE = 0o600;
@@ -140,12 +143,51 @@ function entryProblem(e, n) {
   return null;
 }
 
-/** { ok: true, doc } or { ok: false, detail } — never throws. */
+/** One scope of a v2 document (spec 012 FR-019): exact keys, a directory prefix
+ * ending in `/` (never the root, no glob or escape, no `.`/`..` segment), a
+ * pattern that is known and NOT high-confidence (real key shapes are never
+ * scoped), a max_count of 1..ALLOWLIST_SCOPE_MAX_COUNT. The tree check at the
+ * anchor needs git and lives in scopeTreeProblem. */
+function scopeProblem(sc, n) {
+  const at = `scopes[${n}]`;
+  if (!exactKeys(sc, SCOPE_KEYS)) return `${at}: keys must be exactly ${SCOPE_KEYS.join(', ')}`;
+  if (typeof sc.prefix !== 'string' || !sc.prefix.endsWith('/')) return `${at}.prefix: a directory path ending in /`;
+  const pp = pathProblem(sc.prefix.slice(0, -1));
+  if (pp) return `${at}.prefix: ${pp}`;
+  if (!PATTERN_NAMES.has(sc.pattern)) return `${at}.pattern: unknown pattern name`;
+  if (HIGH_CONFIDENCE.has(sc.pattern)) return `${at}.pattern: ${sc.pattern} is a high-confidence key shape and is never scoped`;
+  if (!Number.isInteger(sc.max_count) || sc.max_count < 1 || sc.max_count > X.ALLOWLIST_SCOPE_MAX_COUNT) return `${at}.max_count: integer 1–${X.ALLOWLIST_SCOPE_MAX_COUNT}`;
+  if (!X.ALLOWLIST_CLASSES.includes(sc.class)) return `${at}.class: one of ${X.ALLOWLIST_CLASSES.join('|')}`;
+  if (!nonEmpty(sc.reason, REASON_MAX_CHARS)) return `${at}.reason: non-empty, ≤ ${REASON_MAX_CHARS} characters`;
+  if (!nonEmpty(sc.reviewed_by, OWNER_MAX_CHARS)) return `${at}.reviewed_by: non-empty name`;
+  if (typeof sc.added_on !== 'string' || !DATE_RE.test(sc.added_on)) return `${at}.added_on: YYYY-MM-DD`;
+  return null;
+}
+
+/** Problem text for the scopes array of a v2 document, or null. */
+function scopesProblem(scopes) {
+  if (!Array.isArray(scopes)) return 'scopes must be an array';
+  if (scopes.length > X.ALLOWLIST_MAX_SCOPES) return `more than ${X.ALLOWLIST_MAX_SCOPES} scopes (${scopes.length})`;
+  const keys = new Set();
+  for (let n = 0; n < scopes.length; n++) {
+    const problem = scopeProblem(scopes[n], n);
+    if (problem) return problem;
+    const key = `${scopes[n].prefix}\0${scopes[n].pattern}`;
+    if (keys.has(key)) return `scopes[${n}]: duplicate (prefix, pattern) pair`;
+    keys.add(key);
+  }
+  return null;
+}
+
+/** { ok: true, doc } or { ok: false, detail } — never throws. A document is
+ * version 1 (keys version, owner, entries) or version 2 (the same plus scopes). */
 function parseAllowlist(text) {
   let doc;
   try { doc = parseStrictJson(String(text)); } catch (e) { return { ok: false, detail: `invalid JSON: ${e.message}` }; }
-  if (!exactKeys(doc, TOP_KEYS)) return { ok: false, detail: `top level must have exactly ${TOP_KEYS.join(', ')}` };
-  if (doc.version !== 1) return { ok: false, detail: 'version must be 1' };
+  const v2 = isPlainObject(doc) && doc.version === 2;
+  const topKeys = v2 ? TOP_KEYS_V2 : TOP_KEYS;
+  if (!exactKeys(doc, topKeys)) return { ok: false, detail: `top level must have exactly ${topKeys.join(', ')}` };
+  if (!v2 && doc.version !== 1) return { ok: false, detail: 'version must be 1 or 2' };
   if (!nonEmpty(doc.owner, OWNER_MAX_CHARS)) return { ok: false, detail: 'owner: non-empty name' };
   if (!Array.isArray(doc.entries)) return { ok: false, detail: 'entries must be an array' };
   if (doc.entries.length > X.ALLOWLIST_MAX_ENTRIES) return { ok: false, detail: `more than ${X.ALLOWLIST_MAX_ENTRIES} entries (${doc.entries.length})` };
@@ -156,6 +198,10 @@ function parseAllowlist(text) {
     const key = `${doc.entries[n].path}\0${doc.entries[n].pattern}`;
     if (pairs.has(key)) return { ok: false, detail: `entries[${n}]: duplicate (path, pattern) pair` };
     pairs.add(key);
+  }
+  if (v2) {
+    const sp = scopesProblem(doc.scopes);
+    if (sp) return { ok: false, detail: sp };
   }
   return { ok: true, doc };
 }
@@ -362,8 +408,19 @@ function ownerProblem(root, anchor, doc) {
   } catch (e) {
     if (e.code !== 'ENOENT') return { detail: `${PERMIT_FILE} in the working tree is not valid JSON`, reasonDetail: null };
   }
-  if (doc.owner === at.decidedBy && doc.owner === inTree && doc.entries.every((e) => e.reviewed_by === doc.owner)) return null;
+  if (doc.owner === at.decidedBy && doc.owner === inTree && [...doc.entries, ...(doc.scopes || [])].every((e) => e.reviewed_by === doc.owner)) return null;
   return { detail: `owner ${JSON.stringify(doc.owner)} must equal decided_by at the anchor (${JSON.stringify(at.decidedBy)}) and in the working tree (${JSON.stringify(inTree)}), and every reviewed_by`, reasonDetail: DETAIL.owner_mismatch };
+}
+
+/** Spec 012 FR-019: every scope prefix is a TREE at the anchor
+ * (`git cat-file -t <anchor>:<prefix>`; a missing path, a blob, a symlink and
+ * a submodule are not). Problem text or null. */
+function scopeTreeProblem(root, anchor, doc) {
+  for (const sc of doc.scopes || []) {
+    const t = git(['-C', root, 'cat-file', '-t', `${anchor}:${sc.prefix.slice(0, -1)}`]);
+    if (t.status !== 0 || t.stdout.trim() !== 'tree') return `scope prefix ${sc.prefix} is not a directory at the anchor`;
+  }
+  return null;
 }
 
 /** The allowlist document at the anchor after every check of (a), (d), (h),
@@ -380,6 +437,8 @@ function loadAtAnchor(root, anchor, commitSha, approvals) {
   for (const e of doc.entries) {
     if (typeAt(root, anchor, e.path) === 'tree' || typeAt(root, commitSha, e.path) === 'tree') return invalid(`${e.path} is a directory, not a file`);
   }
+  const tree = scopeTreeProblem(root, anchor, doc);
+  if (tree) return invalid(tree);
   const sep = separateCommitProblem(root, anchor);
   if (sep) return invalid(sep, DETAIL.not_separate_commit);
   const owner = ownerProblem(root, anchor, doc);
@@ -443,6 +502,6 @@ function evaluate(o) {
 
 module.exports = {
   NO_ALLOWLIST, STORE_MODE, STORE_DIR_MODE, SHA256_RE,
-  parseStrictJson, parseAllowlist, pathProblem, blobAt, separateCommitProblem, ownerProblem, verifiedTip, resolveAnchor, defaultBranch, lsRemote,
+  parseStrictJson, parseAllowlist, scopesProblem, scopeTreeProblem, pathProblem, blobAt, separateCommitProblem, ownerProblem, verifiedTip, resolveAnchor, defaultBranch, lsRemote,
   readApprovals, readGuardedStore, exactKeys, storePath, groupPairs, evaluate, permitRecord,
 };
