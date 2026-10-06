@@ -68,10 +68,15 @@
         "docs/adr/2026-09-24-cross-provider-review-gate.md",
         "_shared/lib/xprov-snapshot.cjs",
         "_shared/lib/xprov-filter.cjs",
-        "_shared/lib/xprov-gitleaks.toml"
+        "_shared/lib/xprov-gitleaks.toml",
+        "_shared/lib/xprov-allowlist.cjs",
+        "_shared/lib/xprov-approve.cjs",
+        "_shared/lib/xprov-artifacts.cjs",
+        "_shared/lib/xprov-runrecord.cjs",
+        "_shared/lib/xprov-session-tools.cjs"
       ],
       "by": "012-xprov-diff-only-inspect-and-wave-zero",
-      "at": "2026-10-06T09:36:33.801Z",
+      "at": "2026-10-06T12:36:56.338Z",
       "stage": "started"
     }
   ]
