@@ -161,6 +161,17 @@ caseP4() {
   assert_json "P4 the store holds the denial (step 1 happened)" "$(cat "$STORE12" 2>/dev/null || echo '{}')" "Object.keys(j.denials || {}).length" "1"
   sub12 permit-check
   assert_json "P4 permit-check reports denial_mismatch (fail closed)" "$G_OUT" "j.state" "denial_mismatch"
+  # P4b (Reinhard MINOR): permit (allowed) removes the store denial first; a failing file step must not throw,
+  # must say what is half written, and leaves denial_mismatch (file still denied, store empty).
+  prep12
+  permit_lib "$TREE" "P.permitDeny({ repoRoot: '$PHASE_REPO', by: 'robert', today: '2026-10-05' })" >/dev/null
+  chmod 555 "$PHASE_REPO/.a1"
+  r="$(permit_lib "$TREE" "(() => { try { return P.permit({ repoRoot: '$PHASE_REPO', by: 'robert', record: 'record/x.md', today: '2026-10-05' }); } catch (e) { return { threw: e.code || e.message }; } })()")"
+  chmod 755 "$PHASE_REPO/.a1"
+  assert_json "P4b permit with a failing file step does not throw: ok:false, denial_mismatch" "$r" "[String(j.threw), j.ok, j.reason].join('/')" "undefined/false/external_review_denial_mismatch"
+  assert_json "P4b the detail names the half-written state (denial removed, file not written)" "$r" "/denial.*removed/i.test(j.detail || '') && /could not be/.test(j.detail || '')" "true"
+  sub12 permit-check
+  assert_json "P4b permit-check reports denial_mismatch (file still denied, store empty)" "$G_OUT" "j.state" "denial_mismatch"
 }
 
 caseP5() {
@@ -308,19 +319,28 @@ caseP12() {
     'xprov \\\npermit --by x'
     'xprov permit-check && xprov permit --by x'
     'cat ~/.a1-xprov/permit-denials.json'
-    'ls ~/.a1-xprov/ | grep a1-xprov/permit-denials')
+    'ls ~/.a1-xprov/ | grep a1-xprov/permit-denials'
+    # Reinhard MAJOR (spec 012 review): obfuscations the normaliser must see through
+    'xprov per\\mit --deny'
+    "xprov \$'permit' --deny"
+    'p=permit; xprov $p --deny'
+    'cat ~/.a1-xprov/permit-den*')
   for p in "${deny[@]}"; do
     hv="$(printf '{"tool_name":"Bash","tool_input":{"command":"%s"}}' "$p" | bash "$hook" 2>/dev/null)"
     assert_json "P12 hook denies ${p}" "$hv" "j.hookSpecificOutput.permissionDecision" "deny"
   done
-  local -a allow=('node _shared/a1-tools.cjs xprov permit-check' 'xprov permit-check --repo .' 'git status' 'cat ~/.a1-xprov/permit-check.txt')
+  # The Edit/Write tools bypass the Bash hook: settings.json must deny them on the denial store too.
+  local sj="${P12_SETTINGS:-$REPO_ROOT/.claude/settings.json}"
+  assert_json "P12 settings.json denies Edit and Write of ~/.a1-xprov/permit-denials.json" "$(cat "$sj")" \
+    "['Edit', 'Write'].every((t) => j.permissions.deny.includes(t + '(~/.a1-xprov/permit-denials.json)'))" "true"
+  local -a allow=('node _shared/a1-tools.cjs xprov permit-check''xprov permit-check --repo .' 'git status' 'cat ~/.a1-xprov/permit-check.txt')
   for p in "${allow[@]}"; do
     hv="$(printf '{"tool_name":"Bash","tool_input":{"command":"%s"}}' "$p" | bash "$hook" 2>/dev/null)"
     [[ "$hv" != *deny* ]] && ok "P12 hook lets ${p} through" || bad "P12 hook denied ${p}"
   done
   local nonode="$TMP12/nonode-bin"; mkdir -p "$nonode"
   for tool in cat sed tr printf; do [[ -x "/usr/bin/$tool" ]] && ln -sf "/usr/bin/$tool" "$nonode/$tool"; [[ -x "/bin/$tool" ]] && ln -sf "/bin/$tool" "$nonode/$tool"; done
-  for p in 'xprov \"permit\" --by x' 'xprov  permit --deny'; do
+  for p in 'xprov \"permit\" --by x' 'xprov  permit --deny' 'xprov per\\mit --deny' "xprov \$'permit' --deny" 'cat ~/.a1-xprov/permit-den*'; do
     hv="$(printf '{"tool_name":"Bash","tool_input":{"command":"%s"}}' "$p" | PATH="$nonode" /bin/bash "$hook" 2>/dev/null)"
     [[ "$hv" == *'"deny"'* ]] && ok "P12 hook without node denies ${p}" || bad "P12 hook without node let ${p} through"
   done
