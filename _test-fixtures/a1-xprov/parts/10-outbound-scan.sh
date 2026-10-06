@@ -443,10 +443,72 @@ casePB() {
     case "$line" in ok\ *) ok "PB unit pathNameHit ${line#ok }" ;; *) bad "PB unit pathNameHit ${line#bad }" ;; esac
   done <<< "$unit"
 
+  # PB7 (wave C): the boundary now also guards the content scan, so a key with an
+  # alnum before it is no hit there either (it was a hit before FR-017).
   new8; plant8 notes.txt "ref: $(key10 'abc')"; c8 "content key after letters"
-  gate8 --gate "$GATE_PLAN"; expect8 "PB7 a content key with an alnum before it" secret_in_snapshot
-  local det; det="$(json_get "$G_OUT" "String(j.reason_detail)")"
-  [[ "$det" != "path_name" ]] && ok "PB7 the content hit is not a path-name hit" || bad "PB7 the content hit was reported as path_name"
+  gate8 --gate "$GATE_PLAN"; pass8 "PB7 a content run with an alnum before sk- (word-internal)"
+
+  # M1 (Reinhard, wave A): the boundary is for prefix-token patterns only; a keyword
+  # pattern keeps matching inside a camelCase path name.
+  local m1
+  m1="$(SNAPLIB="$TREE/_shared/lib/xprov-snapshot.cjs" node -e '
+    const S = require(process.env.SNAPLIB);
+    const h = S.pathNameHit(["src/dbPass" + "word=" + "w".repeat(8)]);
+    process.stdout.write(h ? h.pattern : "none");
+  ' 2>&1)"
+  [[ "$m1" == "password_assignment" ]] && ok "PB8 dbPass+word=… path name → password_assignment (keyword pattern has no boundary)" || bad "PB8 dbPass+word=…: want password_assignment, got $m1"
+}
+
+# Content boundary (spec 012 FR-017/FR-018): the same `(?<![A-Za-z0-9])` guard sits in
+# the sk_prefixed_key / sk_prefixed_key_ext definitions, so path names and content
+# agree. Shapes are assembled at runtime (SC-009 clause).
+#   CB1 `"sk-<24>"` · CB2 `=sk-<24>` · CB3 `Bearer sk-<24>` · CB4 `/sk-<24>` → secret_in_snapshot.
+#   CB5 `task-detail-page-…` and CB6 `desk-<24>` in content → pass.
+#   CB7 an `sk-proj-…` key at a line start and after `-`/`_` → still hits (counter-test).
+#   CB8 unit: path and content definitions agree on the PB cases.
+caseCB() {
+  local k; k="$(key10 '')"
+  new8; plant8 c1.txt "v: \"$k\""; c8 "quoted sk- key"
+  gate8 --gate "$GATE_PLAN"; expect8 "CB1 \"sk-<24>\" in content" secret_in_snapshot
+  new8; plant8 c2.txt "v=$k"; c8 "sk- key after ="
+  gate8 --gate "$GATE_PLAN"; expect8 "CB2 =sk-<24> in content" secret_in_snapshot
+  new8; plant8 c3.txt "Authorization: Bearer $k"; c8 "sk- key after Bearer"
+  gate8 --gate "$GATE_PLAN"; expect8 "CB3 Bearer sk-<24> in content" secret_in_snapshot
+  new8; plant8 c4.txt "see /$k"; c8 "sk- key after /"
+  gate8 --gate "$GATE_PLAN"; expect8 "CB4 /sk-<24> in content" secret_in_snapshot
+  new8; plant8 c5.ts "import x from './task-detail-page-comp""onent-layout-view';"; c8 "word-internal sk- in an import"
+  gate8 --gate "$GATE_PLAN"; pass8 "CB5 task-detail-page-… in content"
+  new8; plant8 c6.txt "ref de$k"; c8 "sk- run inside desk"
+  gate8 --gate "$GATE_PLAN"; pass8 "CB6 desk-<24> in content"
+  new8; plant8 c7.txt "$(printf 's%s' "k-proj-Ab3Cd5Ef7Gh9Ij2Kl4Mn6Op8")"; c8 "sk-proj key at line start"
+  gate8 --gate "$GATE_PLAN"; expect8 "CB7a sk-proj-… at a line start" secret_in_snapshot
+  new8; plant8 c8.txt "k_$k"; c8 "sk- key after _"
+  gate8 --gate "$GATE_PLAN"; expect8 "CB7b _sk-<24> in content" secret_in_snapshot
+  new8; plant8 c9.txt "k-$k"; c8 "sk- key after -"
+  gate8 --gate "$GATE_PLAN"; expect8 "CB7c -sk-<24> in content" secret_in_snapshot
+
+  local unit line
+  unit="$(SNAPLIB="$TREE/_shared/lib/xprov-snapshot.cjs" XLIB="$TREE/_shared/lib/xprov.cjs" A24="$(alnum24)" node -e '
+    const S = require(process.env.SNAPLIB); const X = require(process.env.XLIB);
+    const k = "s" + "k-" + process.env.A24; const out = [];
+    const skContent = (t) => X.SECRET_PATTERNS.some((p) => p.name.startsWith("sk_prefixed_key") && p.re.test(t));
+    const cases = [["word-internal", "task-assign" + "ment-mail-rechtefehler", false], ["desk", "de" + k, false],
+      ["after /", "/" + k, true], ["after =", "=" + k, true], ["after quote", String.fromCharCode(34) + k, true],
+      ["after space", "Bearer " + k, true], ["after _", "_" + k, true], ["line start", k, true]];
+    for (const [label, t, want] of cases) {
+      const c = skContent(t); const p = S.pathNameHit([t]); const pk = !!(p && p.pattern.startsWith("sk_prefixed_key"));
+      out.push(c === want && pk === want ? `ok ${label}` : `bad ${label}: want ${want} content ${c} path ${pk}`);
+    }
+    process.stdout.write(out.join("\n"));
+  ' 2>&1)"
+  while IFS= read -r line; do
+    case "$line" in ok\ *) ok "CB8 unit content/path agree: ${line#ok }" ;; *) bad "CB8 unit ${line#bad }" ;; esac
+  done <<< "$unit"
+  # CB9 (FR-018): a1's gitleaks config adds no rule of its own and keeps the default set.
+  local toml="$TREE/_shared/lib/xprov-gitleaks.toml"
+  if ! grep -Eq '^[[:space:]]*\[\[rules\]\]' "$toml" && grep -Eq '^useDefault[[:space:]]*=[[:space:]]*true' "$toml"; then
+    ok "CB9 xprov-gitleaks.toml has no own rule (nothing to mirror) and extends the default set"
+  else bad "CB9 xprov-gitleaks.toml defines its own rule or drops the default set: align its sk- rule with TOKEN_BOUNDARY"; fi
 }
 
 caseS() {
@@ -458,7 +520,7 @@ caseS() {
   expect8 "S2 a gitleaks finding only in a stripped AGENTS.md" "secret_in_snapshot/gitleaks"
 }
 
-caseO1; caseO2; caseO3; caseO4; caseO5; caseO6; caseO7; caseO8; caseO9; caseO10O11; caseO12; caseFR; caseRI; caseP; casePB; caseS
+caseO1; caseO2; caseO3; caseO4; caseO5; caseO6; caseO7; caseO8; caseO9; caseO10O11; caseO12; caseFR; caseRI; caseP; casePB; caseCB; caseS
 unset A1_XPROV_CODEX_HOME
 export HOME="$SAVED_HOME_10"
 rm -rf "$TMP10"

@@ -7,6 +7,11 @@
 # `--config <this file>` so the reviewed commit cannot configure its own scan.
 # The content is deliberately minimal: gitleaks' built-in default ruleset,
 # nothing extended, nothing allowlisted.
+#
+# Spec 012 FR-018: this file defines no `sk-` rule of its own (and no rule at all),
+# so the `(?<![A-Za-z0-9])` token boundary of `xprov.cjs` has nothing to mirror
+# here; sk- style detection comes from gitleaks' default ruleset (checked
+# 2026-10-06: gitleaks not installed on the build machine, default rules not run).
 title = "a1-xprov snapshot scan"
 
 [extend]
