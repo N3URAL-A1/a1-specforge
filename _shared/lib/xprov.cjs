@@ -147,17 +147,28 @@ const HIGH_CONFIDENCE_PATTERNS = Object.freeze([
 // assignments, bearer tokens and Google API keys. Order matters only for the
 // reported NAME (first match wins); consumers report `name` only — never the
 // matched text. Every pattern is linear on a 10 000-char input (F1h4 probe).
+// Token boundary (spec 012 FR-017): a prefix-token match counts only if the
+// character before it is not [A-Za-z0-9] — `ta|sk-assignment-…` and `de|sk-…` are
+// words, not keys — OR the text right before it ends in a fixed-length escape that
+// stands for a non-word character: `\n \r \t \f \b \v \0`, `\uHHHH`, `\xHH`,
+// `%HH` (URL), or an ANSI colour code (ESC [ … m, at most 16 parameter chars). Without
+// the escape arm `x\nsk-<key>` (a JSON/log string) hides the key behind the `n`.
+// Residual risk, by design: any other alphanumeric directly before `sk-`, digits
+// included, is a word character and no hit. One definition, used by the two `sk-`
+// patterns below (content scan, output filter, path names) and by
+// PATH_NAME_BOUNDARY_PATTERNS (path names only).
+const TOKEN_BOUNDARY = '(?:(?<![A-Za-z0-9])|(?<=\\\\[nrtfbv0]|\\\\u[0-9A-Fa-f]{4}|\\\\x[0-9A-Fa-f]{2}|%[0-9A-Fa-f]{2}|\\x1b\\[[0-9;]{0,16}m))';
 const SECRET_PATTERNS = Object.freeze([
   Object.freeze({ name: 'private_key_header', re: /-----BEGIN [A-Z ]*PRIVATE KEY-----/ }),
   Object.freeze({ name: 'aws_access_key_id', re: /AKIA[0-9A-Z]{16}/ }),
-  Object.freeze({ name: 'sk_prefixed_key', re: /sk-[A-Za-z0-9]{20,}/ }),
+  Object.freeze({ name: 'sk_prefixed_key', re: new RegExp(`${TOKEN_BOUNDARY}sk-[A-Za-z0-9]{20,}`) }),
   Object.freeze({ name: 'github_pat_classic', re: /ghp_[A-Za-z0-9]{36}/ }),
   Object.freeze({ name: 'slack_token', re: /xox[bp]-/ }),
   Object.freeze({ name: 'jwt', re: /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/ }),
   Object.freeze({ name: 'pem_begin', re: /-----BEGIN/ }),
   Object.freeze({ name: 'secret_assignment', re: /(api[_-]?key|secret|token)\s*[:=]\s*['"][^'"]{12,}/i }),
   // --- amended 2026-09-24 (Samuel W3) ---
-  Object.freeze({ name: 'sk_prefixed_key_ext', re: /sk-[A-Za-z0-9_-]{20,}/ }),
+  Object.freeze({ name: 'sk_prefixed_key_ext', re: new RegExp(`${TOKEN_BOUNDARY}sk-[A-Za-z0-9_-]{20,}`) }),
   Object.freeze({ name: 'github_token_family', re: /gh[pousr]_[A-Za-z0-9]{36}/ }),
   Object.freeze({ name: 'github_pat_fine_grained', re: /github_pat_[A-Za-z0-9_]{22,}/ }),
   // Samuel re-check: a bare prefix (`xoxa-1`) is noise; real Slack tokens carry ≥ 8 token chars.
@@ -172,6 +183,17 @@ const SECRET_PATTERNS = Object.freeze([
   Object.freeze({ name: 'password_assignment', re: /(password|passwd)\s*[:=]\s*['"]?[^\s'"]{8,}/i }),
   Object.freeze({ name: 'bearer_token', re: /Bearer\s+[A-Za-z0-9._-]{20,}/ }),
   Object.freeze({ name: 'google_api_key', re: /AIza[0-9A-Za-z_-]{35}/ }),
+]);
+
+// Path NAMES additionally get the boundary on the other prefix-token patterns
+// (spec 012 FR-017, Reinhard M1): `desk-…` or `…ghp_…` inside a word is no key.
+// Keyword patterns (secret_/password_assignment, bearer_token) and url_credentials
+// (own lookbehind) are NOT here: `dbPassword=…` must still hit. The Slack tokens
+// and pem_begin are prefix tokens too and keep the boundary Wave A gave them.
+const PATH_NAME_BOUNDARY_PATTERNS = Object.freeze([
+  'private_key_header', 'aws_access_key_id', 'sk_prefixed_key', 'github_pat_classic', 'slack_token', 'jwt',
+  'pem_begin', 'sk_prefixed_key_ext', 'github_token_family', 'github_pat_fine_grained', 'slack_token_family',
+  'google_api_key',
 ]);
 
 // ---------- instruction markers (FR-019; compared against NFKC-normalised, space-collapsed, lowercased text) ----------
@@ -347,7 +369,7 @@ module.exports = {
   MODEL_REQUESTED_DEFAULT, MODEL_OBSERVED_UNKNOWN,
   ALLOWLIST_FILE, ALLOWLIST_MAX_ENTRIES, ALLOWLIST_MAX_COUNT, ALLOWLIST_CLASSES, ALLOWLIST_APPROVALS_FILE,
   ALLOWLIST_DETAILS, HIGH_CONFIDENCE_PATTERNS,
-  SECRET_PATTERNS, INSTRUCTION_MARKERS, INSTRUCTION_MARKER_PATTERNS,
+  SECRET_PATTERNS, TOKEN_BOUNDARY, PATH_NAME_BOUNDARY_PATTERNS, INSTRUCTION_MARKERS, INSTRUCTION_MARKER_PATTERNS,
   CODEX_HOME_ENV, RUNNER_FILE, SUMS_FILE,
   xprovHome, artifactsDir, snapshotsDir, vendorDir, vendoredRunnerPath, vendoredSumsPath, codexHome,
   parseSha256Sums, sha256File, checkRunnerPin,

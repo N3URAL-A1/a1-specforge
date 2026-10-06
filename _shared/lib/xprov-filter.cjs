@@ -35,16 +35,49 @@ const REASON_INSTRUCTION = 'instruction_shaped';
 
 // ---------- secret filter ----------
 
-/** First pattern that matches any of the texts, by name; never the match. */
-function filterOutput(texts) {
-  const list = Array.isArray(texts) ? texts : [texts];
-  for (const text of list) {
-    if (typeof text !== 'string' || text === '') continue;
-    for (const { name, re } of X.SECRET_PATTERNS) {
-      if (re.test(text)) return { hit: true, pattern_name: name };
+const MAX_PARSED_STRINGS = 20000; // size guard for the parsed-value scan
+const SCAN_CAP_PATTERN = 'scan_cap_reached'; // reported as a hit: reaching the cap fails closed
+
+/** The strings (keys and values) of a parsed JSON text, iteratively and without
+ * argument spreading (a spread throws RangeError from ~124k elements); `{ strings: [],
+ * capped: false }` when the text is not JSON. `capped` is true when strings were left
+ * unvisited. A JSON escape (`\n`, `\u0073`) hides a key from the raw text but not from
+ * the parsed value (Samuel SEC-1, spec 012 FR-017). */
+function parsedStrings(text) {
+  let root;
+  try { root = JSON.parse(text); } catch (_e) { return { strings: [], capped: false }; }
+  const strings = [];
+  const stack = [root];
+  while (stack.length > 0) {
+    if (strings.length >= MAX_PARSED_STRINGS) return { strings, capped: true };
+    const v = stack.pop();
+    if (typeof v === 'string') strings.push(v);
+    else if (Array.isArray(v)) {
+      for (let i = 0; i < v.length; i++) if (v[i] !== null && typeof v[i] !== 'number' && typeof v[i] !== 'boolean') stack.push(v[i]);
+    } else if (v !== null && typeof v === 'object') {
+      for (const key of Object.keys(v)) { strings.push(key); stack.push(v[key]); }
     }
   }
-  return { hit: false, pattern_name: null };
+  return { strings, capped: false };
+}
+
+/** First pattern that matches any of the texts or, for JSON texts, any parsed
+ * string value; by name; never the match. A parsed scan that reached its cap with
+ * no pattern hit is a hit named `scan_cap_reached` (fail closed). */
+function filterOutput(texts) {
+  const list = Array.isArray(texts) ? texts : [texts];
+  let capped = false;
+  for (const text of list) {
+    if (typeof text !== 'string' || text === '') continue;
+    const parsed = parsedStrings(text);
+    capped = capped || parsed.capped;
+    for (const candidate of [text, ...parsed.strings]) {
+      for (const { name, re } of X.SECRET_PATTERNS) {
+        if (re.test(candidate)) return { hit: true, pattern_name: name };
+      }
+    }
+  }
+  return capped ? { hit: true, pattern_name: SCAN_CAP_PATTERN } : { hit: false, pattern_name: null };
 }
 
 // ---------- path validation ----------
