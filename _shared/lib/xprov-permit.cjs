@@ -188,11 +188,17 @@ function permit(opts) {
   const key = repoKey(root);
   const store = storeForWrite();
   if (store.refusal) return store.refusal;
-  if (store.denials[key]) {
+  const hadDenial = Boolean(store.denials[key]);
+  if (hadDenial) {
     const failed = tryWriteDenials(D.withDenial(store.denials, key, null));
     if (failed) return Object.freeze({ ok: false, reason: 'denial_store_unusable', detail: `${failed}; nothing written` });
   }
-  writeRecordFile(root, record);
+  try { writeRecordFile(root, record); } catch (e) {
+    const code = (e && e.code) || 'error';
+    return hadDenial
+      ? Object.freeze({ ok: false, reason: xprov.REASONS.external_review_denial_mismatch, file: permitPath(root), detail: `the denial was removed from the store but ${PERMIT_FILE} could not be written (${code}); the file still says denied, so the state is denial_mismatch until the owner re-runs permit` })
+      : Object.freeze({ ok: false, reason: 'permit_write_failed', file: permitPath(root), detail: `${PERMIT_FILE} could not be written (${code}); nothing changed` });
+  }
   return Object.freeze({ ok: true, file: permitPath(root), record });
 }
 
