@@ -132,7 +132,6 @@ const LINE_CONTEXT_CHARS = 256;
 const EXCERPT_CHARS = 4;
 const POSITION_CHUNK = 1024 * 1024;
 const VIEW_UNIT = Object.freeze({ latin1: 1, utf16le: 2, utf16be: 2 });
-const PATH_NAME_BOUNDARY = '(?<![A-Za-z0-9])'; // path names only (pathNameHit), never content
 const GLOBAL_PATTERNS = Object.freeze(X.SECRET_PATTERNS.map((p) => Object.freeze({
   name: p.name, re: new RegExp(p.re.source, p.re.flags.includes('g') ? p.re.flags : `${p.re.flags}g`),
 })));
@@ -417,12 +416,17 @@ function baseSideBlobs(dir, baseSha) {
  * first outbound path that matches a secret pattern, as { pattern, ref } —
  * `ref` is a 12-character sha256 of the path, never the path itself, because
  * the name can be the secret (Codex R1, live inspect 2026-10-03). Path hits
- * are never allowlisted. A path-name match counts only if the character before
- * it is not [A-Za-z0-9] (start, `/`, `.`, `_`, `-`, `=` … still count): the
- * content patterns otherwise fire inside words — `ta|sk-assignment-…` in a test
- * file name, measured 2026-10-05. Content scans keep the bare patterns. */
+ * are never allowlisted. For the prefix-token patterns
+ * (X.PATH_NAME_BOUNDARY_PATTERNS) a match counts only if the character before
+ * it is not [A-Za-z0-9] (start, `/`, `.`, `_`, `-`, `=` … still count) —
+ * `ta|sk-assignment-…` in a test file name, measured 2026-10-05. Keyword
+ * patterns keep no boundary (`dbPassword=…` hits). The two `sk-` patterns carry
+ * the boundary in their own definition, so the content scan has it as well. */
 const PATH_NAME_PATTERNS = Object.freeze(X.SECRET_PATTERNS.map((s) => Object.freeze({
-  name: s.name, re: new RegExp(`${PATH_NAME_BOUNDARY}(?:${s.re.source})`, s.re.flags.replace('g', '')),
+  name: s.name,
+  re: X.PATH_NAME_BOUNDARY_PATTERNS.includes(s.name)
+    ? new RegExp(`${X.TOKEN_BOUNDARY}(?:${s.re.source})`, s.re.flags.replace('g', ''))
+    : new RegExp(s.re.source, s.re.flags.replace('g', '')),
 })));
 function pathNameHit(paths) {
   for (const p of paths) {
