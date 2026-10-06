@@ -439,6 +439,108 @@ caseD2u() {
   assert_json "D2u raw diff: an empty token in the middle → null" "$out" "j.emptyMiddle" "null"
 }
 
-for c in ${XPROV14_CASES:-caseD1 caseD1b caseD1c caseD2u caseD3 caseD3b caseD3g}; do "$c"; done
+# ---------- D4: propose --scopes and the v2 approve listing (FR-024, FR-022) ----------
+# Mutations: M13 print the matched text in the unclassified list (masking arm); M14 one prefix per
+# first path segment instead of the longest common directory (lib/auto/ arm). Red before D.4:
+# --scopes is an unknown flag and approveListing does not exist.
+claude_ancestor14() {
+  [[ -n "${CLAUDECODE:-}" || -n "${CLAUDE_PID:-}" ]] && return 0
+  local p=$$ c
+  while [[ -n "$p" && "$p" -gt 1 ]]; do
+    c="$(ps -o comm= -p "$p" 2>/dev/null)"
+    [[ "$(basename -- "${c:-x}")" == claude ]] && return 0
+    p="$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')"
+  done
+  return 1
+}
+NOCLAUDE14=(env)
+for v14 in $(env | cut -d= -f1 | grep -E '^(CLAUDECODE|CLAUDE_PID|CLAUDE_CODE_.*)$'); do NOCLAUDE14+=(-u "$v14"); done
+
+# prop14 [flags…] — `xprov allowlist propose --commit HEAD …` in R14. Sets P_OUT P_ERR P_RC.
+prop14() {
+  P_OUT="$(cd "$R14" && node "$TREE_TOOLS" xprov allowlist propose --commit HEAD "$@" 2>"$TMP14/perr.txt")"; P_RC=$?
+  P_ERR="$(cat "$TMP14/perr.txt")"
+}
+casePropose() {
+  new14
+  mkdir -p "$R14/docs" "$R14/lib/auto" "$R14/tests/unit"
+  printf '%s\n' "$(pwline14 '${DB_PASS_VALUE}')" > "$R14/tests/a.txt"
+  printf '%s\n' "$(pwline14 changeme123)" > "$R14/tests/b.txt"
+  printf '%s\n' "$PWK = z.string().min(8)" > "$R14/tests/c.txt"
+  printf '%s\n' "$(pwline14 fixtureval01)" > "$R14/tests/d.txt"
+  printf '%s\n' "$(pwline14 fixtureval02)" > "$R14/tests/unit/e.txt"
+  printf '%s\n' "id: $FAKE_AK14 // process.env.KEY" > "$R14/tests/k.txt"
+  printf '%s\n' "$(pwline14 fixtureval03)" > "$R14/docs/guide.md"
+  printf '%s\n' "$(pwline14 fixtureval04)" > "$R14/lib/auto/x.js"; printf '%s\n' "$(pwline14 fixtureval05)" > "$R14/lib/auto/y.js"
+  printf '%s\n' "$(pwline14 fixtureval06)" > "$R14/rootfile.txt"
+  c14 "matches"
+  prop14 --scopes
+  assert_rc "D4 propose --scopes → exit 0" 0 "$P_RC" "$P_ERR"
+  assert_json "D4 per (prefix, pattern): count and proposed class, sorted by prefix" "$P_OUT" "j.scopes.map((s) => [s.prefix, s.pattern, s.count, s.class].join('|')).join(',')" \
+    "docs/|password_assignment|1|doc_example,lib/auto/|password_assignment|2|code_pattern,tests/|password_assignment|5|fixture_fake"
+  assert_json "D4 tests/ kinds: env reference, placeholder, code expression, unclassified" "$P_OUT" "JSON.stringify(j.scopes.find((s) => s.prefix === 'tests/').kinds)" '{"env_reference":1,"placeholder":1,"code_expression":1,"unclassified":2}'
+  assert_json "D4 the unclassified list is path:line, sorted, with the high-confidence and root-file matches" "$P_OUT" "j.unclassified.map((u) => u.location).join(',')" \
+    "docs/guide.md:1,lib/auto/x.js:1,lib/auto/y.js:1,rootfile.txt:1,tests/d.txt:1,tests/k.txt:1,tests/unit/e.txt:1"
+  assert_json "D4 every unclassified excerpt is masked (4 characters + length)" "$P_OUT" "j.unclassified.every((u) => /^.{0,4}… \\(\\d+ chars\\)\$/.test(u.excerpt))" "true"
+  assert_json "D4 high-confidence matches are not scopable: listed with their count, flagged in the list" "$P_OUT" "j.not_scopable.map((n) => n.pattern + '|' + n.count).join(',') + '/' + j.unclassified.filter((u) => u.high_confidence).length + '/' + j.root_files" "aws_access_key_id|1/1/1"
+  [[ "$P_OUT$P_ERR" != *fixtureval* && "$P_OUT$P_ERR" != *"$FAKE_AK14"* ]] && ok "D4 no matched value in stdout or stderr" || bad "D4 a matched value leaked"
+  [[ "$P_ERR" == *"tests/d.txt:1"* && "$P_ERR" == *"tests/ "* ]] && ok "D4 stderr carries the human listing" || bad "D4 stderr lacks the listing"
+  [[ -z "$(git -C "$R14" status --porcelain)" && ! -e "$R14/$AL14" ]] && ok "D4 nothing written" || bad "D4 propose wrote a file"
+  prop14
+  assert_json "D4 without --scopes the output is the per-match listing (unchanged)" "$P_OUT" "[Array.isArray(j.matches), j.scopes === undefined].join('/')" "true/true"
+  prop14 --scopes --json
+  assert_json "D4 --scopes --json is a DRAFT v2 document: no entries, one scope per pair, empty reasons, max_count = count" "$P_OUT" \
+    "[j.version, j.owner, j.entries.length, j.scopes.length, j.scopes.every((s) => s.reason === ''), j.scopes.map((s) => s.max_count).join('/')].join(',')" "2,robert,0,3,true,1/2/5"
+  local v; v="$(node -e '
+    const AL = require(process.argv[1] + "/_shared/lib/xprov-allowlist.cjs");
+    const doc = JSON.parse(process.argv[2]);
+    const empty = AL.parseAllowlist(JSON.stringify(doc)).ok;
+    const filled = AL.parseAllowlist(JSON.stringify({ ...doc, scopes: doc.scopes.map((s) => ({ ...s, reason: "fixture" })) })).ok;
+    process.stdout.write(empty + "/" + filled);
+  ' "$TREE" "$P_OUT")"
+  assert_eq "D4 the draft is refused by the schema until the reasons are filled in, then valid" "$v" "false/true"
+}
+
+# The pure listing of the owner approval for a v2 document (the TTY command itself is covered below).
+caseApproveListing() {
+  local out; out="$(node -e '
+    const AP = require(process.argv[1] + "/_shared/lib/xprov-approve.cjs");
+    const sc = (prefix, pattern, max) => ({ prefix, pattern, class: "fixture_fake", max_count: max, reason: "r", reviewed_by: "robert", added_on: "2026-10-06" });
+    const doc = { version: 2, owner: "robert", entries: [], scopes: [sc("tests/", "password_assignment", 2), sc("lib/", "secret_assignment", 9)] };
+    const row = (n) => ({ path: "tests/" + n, pattern: "password_assignment", location: "tests/" + n + ":1:1", excerpt: "pass… (20 chars)", high_confidence: false });
+    const l = AP.approveListing(doc, [row("a"), row("b"), row("c")]);
+    const v1 = AP.approveListing({ version: 1, owner: "robert", entries: [] }, []);
+    process.stdout.write(JSON.stringify({ count: l.count, text: l.lines.join("\n"), prompt: l.prompt, v1count: v1.count, v1prompt: v1.prompt }));
+  ' "$TREE" 2>&1)"
+  assert_json "D4 approve listing: typed count = entries + scopes (v1: entries)" "$out" "j.count + '/' + j.v1count" "2/0"
+  assert_json "D4 approve listing: a v2 prompt names entries and scopes, the v1 prompt is unchanged" "$out" "j.prompt + '/' + j.v1prompt" "Type the number of entries and scopes (2) to approve this blob: /Type the number of entries (0) to approve this blob: "
+  assert_json "D4 approve listing: a scope over its max_count at this commit is flagged" "$out" "/scope tests\\/ · password_assignment · max_count 2/.test(j.text) && /observed 3 match\\(es\\) at this commit — exceeds max_count/.test(j.text)" "true"
+  assert_json "D4 approve listing: a scope with no match at this commit is stale" "$out" "/scope lib\\/ · secret_assignment · max_count 9/.test(j.text) && /observed 0 match\\(es\\)/.test(j.text)" "true"
+}
+
+# The owner approval under a pseudo-TTY: a v2 blob, typed count = entries + scopes (skipped under Claude Code, as part 08).
+pty14() {
+  local cmd; cmd="$(printf '%q ' "$@")"
+  if [[ "$(uname)" == Darwin ]]; then ( sleep 1; [[ -n "${PTY_TYPED:-}" ]] && printf '%s\n' "$PTY_TYPED"; sleep 2 ) | script -q /dev/null "$@" > "$TMP14/pty-out.txt" 2>&1
+  else ( sleep 1; [[ -n "${PTY_TYPED:-}" ]] && printf '%s\n' "$PTY_TYPED"; sleep 2 ) | script -qec "$cmd" /dev/null > "$TMP14/pty-out.txt" 2>&1; fi
+}
+caseApproveTty() {
+  if claude_ancestor14; then
+    if [[ "${CI:-}" == "true" ]]; then bad "D4 owner approval of a v2 blob under a TTY: SKIP (claude-code ancestor) is not allowed when CI=true"
+    else results+=("SKIP (claude-code ancestor)  D4 owner approval of a v2 blob under a TTY (typed count = entries + scopes)"); fi
+    return 0
+  fi
+  new14; al14 "$(doc14 "$(sc14 tests/ password_assignment 5),$(sc14 lib/ secret_assignment 5)")" 0
+  local rc
+  PTY_TYPED=1 pty14 "${NOCLAUDE14[@]}" node "$TREE_TOOLS" xprov allowlist approve --repo "$R14"; rc=$?
+  assert_rc "D4 a v2 blob with 2 scopes: typing 1 (entries only) → exit 2" 2 "$rc"
+  [[ ! -e "$HOME/.a1-xprov/$STORE14" ]] && ok "D4 …no store written" || bad "D4 …a store was written"
+  PTY_TYPED=2 pty14 "${NOCLAUDE14[@]}" node "$TREE_TOOLS" xprov allowlist approve --repo "$R14"; rc=$?
+  assert_rc "D4 typing 2 (entries + scopes) → exit 0" 0 "$rc" "$(tail -n 3 "$TMP14/pty-out.txt")"
+  git -C "$R14" show "origin/main:$AL14" > "$A14/blob"
+  assert_json "D4 the store holds the v2 blob's sha" "$(cat "$HOME/.a1-xprov/$STORE14")" "Object.values(j.repos)[0].join(',')" "$(sha256_of "$A14/blob")"
+}
+
+for c in ${XPROV14_CASES:-caseD1 caseD1b caseD1c caseD2u caseD3 caseD3b caseD3g casePropose caseApproveListing caseApproveTty}; do "$c"; done
 export HOME="$SAVED_HOME_14"
 rm -rf "$TMP14"

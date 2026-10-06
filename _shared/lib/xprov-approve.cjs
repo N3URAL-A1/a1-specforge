@@ -4,12 +4,15 @@
 // xprov allowlist propose | approve — spec 009-cross-provider-review-gate,
 // Wave 6b (FR-030 h, j). Sole writer: this wave.
 //
-//   propose --commit <rev> [--json] [--repo <toplevel>]
+//   propose --commit <rev> [--json] [--scopes] [--repo <toplevel>]
 //       Lists every secret-pattern match at <rev> as path:line:column, pattern,
 //       proposed class, masked excerpt (first 4 characters + length) and
 //       high_confidence — never the matched text. `--json` prints a DRAFT
 //       allowlist whose `reason` fields are empty (the schema rejects it until
-//       the owner fills them in). Never writes a file.
+//       the owner fills them in). Never writes a file. `--scopes` (spec 012 FR-024) groups
+//       the matches per (prefix, pattern) for an allowlist v2: count, proposed class, the
+//       heuristic kinds (env reference, placeholder, code expression, unclassified) and the
+//       masked path:line list of what the heuristics could not classify.
 //
 //   approve --repo <path> [--revoke <sha256>]
 //       HUMAN ONLY. Records the sha256 of the allowlist blob at the verified
@@ -62,8 +65,60 @@ function proposeClass(p) {
   return 'code_pattern';
 }
 
-/** Every match at <rev> with its 1-based position; the clone is removed again. */
-function matchesAt(root, rev) {
+// ---------- propose --scopes: heuristic kinds (spec 012 FR-024) ----------
+// The kinds are a review aid for the owner, never a decision: a match is `unclassified`
+// unless the VALUE part is obviously an environment reference, a placeholder or a code
+// expression. High-confidence key shapes are never classified.
+
+const ENV_LINE_RE = /\$\{\{\s*secrets\.|\bprocess\.env\b|\bos\.environ\b|\bgetenv\s*\(/i;
+const ENV_VALUE_RE = /^(?:\$\{?[A-Za-z_]|%[A-Za-z_]+%$|<%=|\{\{)/;
+const PLACEHOLDER_RE = /^(?:change[-_ ]?me\w*|your[-_]?\w*|example\w*|placeholder\w*|dummy\w*|fake\w*|sample\w*|redacted|test\w*|x{4,}|\*{3,}|\.{3,}|todo|secret|password|passwd|123456\w*|<[^>]+>)$/i;
+const CODE_VALUE_RE = /^[A-Za-z_$][\w$.]*\(/;
+const LITERAL_REF_RE = /(['"`/])-----BEGIN/;
+const KIND_ORDER = Object.freeze(['env_reference', 'placeholder', 'code_expression', 'unclassified']);
+const READ_MAX_BYTES = 5 * 1024 * 1024;
+const HIGH_CONFIDENCE = new Set(X.HIGH_CONFIDENCE_PATTERNS);
+
+/** The value part of a matched text: after the first `:` / `=`, quotes stripped; a URL's password. */
+function valueOf(pattern, text) {
+  if (pattern === 'url_credentials') { const m = /:\/\/[^:]*:(.*)@$/.exec(text); return m ? m[1] : ''; }
+  return text.replace(/^[^:=]*[:=]\s*/, '').replace(/^['"]+/, '');
+}
+
+/** env_reference | placeholder | code_expression | null (unclassified) for one match. */
+function kindOf(m, line) {
+  if (HIGH_CONFIDENCE.has(m.pattern) || typeof line !== 'string') return null;
+  const spec = X.SECRET_PATTERNS.find((p) => p.name === m.pattern);
+  const hit = spec ? new RegExp(spec.re.source, `${spec.re.flags.replace('g', '')}y`).exec(line.slice(m.column - 1)) : null;
+  if (!hit) return null;
+  if (m.pattern === 'pem_begin') return LITERAL_REF_RE.test(line) ? 'code_expression' : null;
+  const value = valueOf(m.pattern, hit[0]);
+  if (ENV_LINE_RE.test(line) || ENV_VALUE_RE.test(value)) return 'env_reference';
+  if (PLACEHOLDER_RE.test(value)) return 'placeholder';
+  return CODE_VALUE_RE.test(value) ? 'code_expression' : null;
+}
+
+/** Adds `kind` to every match: the line is read from the clone (never printed). */
+function withKinds(dir, matches) {
+  const cache = new Map();
+  const lines = (rel) => {
+    if (!cache.has(rel)) {
+      let text = null;
+      try {
+        const full = path.join(dir, rel);
+        const st = fs.lstatSync(full);
+        if (st.isFile() && st.size <= READ_MAX_BYTES) text = fs.readFileSync(full, 'latin1').split('\n');
+      } catch (_e) { text = null; }
+      cache.set(rel, text);
+    }
+    return cache.get(rel);
+  };
+  return matches.map((m) => Object.freeze({ ...m, kind: m.view === 'latin1' && lines(m.path) ? kindOf(m, lines(m.path)[m.line - 1]) : null }));
+}
+
+/** Every match at <rev> with its 1-based position; the clone is removed again.
+ * `opts.kinds` also classifies the matches (propose --scopes). */
+function matchesAt(root, rev, opts) {
   if (!REF_RE.test(String(rev))) throw C.inputError(`--commit must be a git revision without a leading dash or whitespace (got ${JSON.stringify(C.clip(rev, 80))})`);
   const sha = C.gitOut(['-C', root, 'rev-parse', '--verify', '--quiet', `${rev}^{commit}`]);
   if (sha === null) throw C.inputError(`--commit ${JSON.stringify(C.clip(rev, 80))} is not a commit in ${root}`);
@@ -72,7 +127,7 @@ function matchesAt(root, rev) {
   try {
     const scan = scanTrackedFiles(cl.dir, { positions: true });
     if (scan.error) return { ok: false, detail: `ls-files: ${scan.error}` };
-    return { ok: true, commit: cl.commit, matches: scan.matches };
+    return { ok: true, commit: cl.commit, matches: opts && opts.kinds ? withKinds(cl.dir, scan.matches) : scan.matches };
   } finally {
     cleanupSnapshot(cl.dir);
   }
@@ -97,11 +152,78 @@ function draft(root, matches) {
   return { version: 1, owner, entries };
 }
 
+const byText = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+
+/** The longest common directory (ending in `/`) of the paths — they share a first segment. */
+function commonDir(paths) {
+  const dirs = paths.map((p) => p.split('/').slice(0, -1));
+  const common = dirs.reduce((acc, d) => { let i = 0; while (i < acc.length && i < d.length && acc[i] === d[i]) i++; return acc.slice(0, i); });
+  return `${common.join('/')}/`;
+}
+
+/** The class most matches of a prefix suggest; a tie goes to the more cautious `code_pattern`. */
+function majorityClass(paths) {
+  const n = {};
+  for (const p of paths) n[proposeClass(p)] = (n[proposeClass(p)] || 0) + 1;
+  return [...X.ALLOWLIST_CLASSES].reverse().sort((a, b) => (n[b] || 0) - (n[a] || 0))[0];
+}
+
+/** Spec 012 FR-024: per (prefix, pattern) counts, proposed class and kinds; the high-confidence
+ * counts that need v1 entries; the matches the heuristics could not classify (masked). */
+function proposeScopes(matches) {
+  const scopable = matches.filter((m) => !HIGH_CONFIDENCE.has(m.pattern) && m.path.includes('/'));
+  const groups = new Map();
+  for (const m of scopable) {
+    const key = `${m.path.split('/')[0]}\0${m.pattern}`;
+    groups.set(key, [...(groups.get(key) || []), m]);
+  }
+  const scopes = [...groups.values()].map((g) => {
+    const kinds = Object.fromEntries(KIND_ORDER.map((k) => [k, g.filter((m) => (m.kind || 'unclassified') === k).length]));
+    return Object.freeze({ prefix: commonDir(g.map((m) => m.path)), pattern: g[0].pattern, count: g.length, class: majorityClass(g.map((m) => m.path)), kinds });
+  }).sort((a, b) => byText(a.prefix, b.prefix) || byText(a.pattern, b.pattern));
+  const hc = new Map();
+  for (const m of matches) if (HIGH_CONFIDENCE.has(m.pattern)) hc.set(m.pattern, (hc.get(m.pattern) || 0) + 1);
+  const unclassified = matches.filter((m) => !m.kind).sort((a, b) => byText(a.path, b.path) || a.line - b.line).map((m) => Object.freeze({
+    location: `${m.path}:${m.line}`, pattern: m.pattern, excerpt: m.excerpt, high_confidence: HIGH_CONFIDENCE.has(m.pattern),
+  }));
+  return {
+    scopes, unclassified,
+    not_scopable: [...hc].map(([pattern, count]) => ({ pattern, count })).sort((a, b) => byText(a.pattern, b.pattern)),
+    root_files: matches.filter((m) => !HIGH_CONFIDENCE.has(m.pattern) && !m.path.includes('/')).length,
+  };
+}
+
+/** Draft v2 document for `--scopes --json`: one scope per proposal, reasons empty. */
+function draftScopes(root, scopes) {
+  const rec = AL.permitRecord(root);
+  const owner = rec && typeof rec.decided_by === 'string' ? rec.decided_by : '';
+  const today = io.nowIso().slice(0, 10);
+  return { version: 2, owner, entries: [], scopes: scopes.map((s) => ({ prefix: s.prefix, pattern: s.pattern, class: s.class, max_count: s.count, reason: '', reviewed_by: owner, added_on: today })) };
+}
+
+function cmdProposeScopes(root, commit, asJson) {
+  const r = matchesAt(root, commit, { kinds: true });
+  if (!r.ok) {
+    process.stderr.write(`xprov allowlist propose: snapshot_failed — ${r.detail}\n`);
+    return C.emitJson({ ok: false, reason: X.REASONS.snapshot_failed, detail: r.detail }, X.EXIT_FAIL);
+  }
+  const p = proposeScopes(r.matches);
+  const err = (line) => process.stderr.write(`${line}\n`);
+  for (const s of p.scopes) err(`${s.prefix}  ${s.pattern}  ${s.count}  ${s.class}  ${KIND_ORDER.map((k) => `${k} ${s.kinds[k]}`).join(' · ')}`);
+  for (const n of p.not_scopable) err(`not scopable (high confidence, needs v1 entries): ${n.pattern} ${n.count}`);
+  if (p.root_files) err(`root-level files (no directory prefix, need v1 entries): ${p.root_files} match(es)`);
+  for (const u of p.unclassified) err(`unclassified: ${u.location}  ${u.pattern}  ${u.excerpt}  high_confidence: ${u.high_confidence}`);
+  err(`xprov allowlist propose --scopes: ${p.scopes.length} scope(s), ${p.unclassified.length} unclassified match(es) at ${r.commit.slice(0, 12)}; nothing written`);
+  if (asJson) return C.emitJson(draftScopes(root, p.scopes), X.EXIT_PASS);
+  return C.emitJson({ ok: true, commit: r.commit, ...p }, X.EXIT_PASS);
+}
+
 function cmdPropose(args) {
-  const flags = io.parseFlags(args, { commit: 'str', json: 'bool', repo: 'str' });
+  const flags = io.parseFlags(args, { commit: 'str', json: 'bool', scopes: 'bool', repo: 'str' });
   if (flags._.length) return usage(`propose: unexpected argument ${JSON.stringify(C.clip(flags._[0], 80))}`);
-  if (!flags.commit) return usage('propose requires --commit <rev> [--json] [--repo <toplevel>]');
+  if (!flags.commit) return usage('propose requires --commit <rev> [--json] [--scopes] [--repo <toplevel>]');
   const root = C.resolveRepoFlag(flags.repo);
+  if (flags.scopes) return cmdProposeScopes(root, flags.commit, Boolean(flags.json));
   const r = matchesAt(root, flags.commit);
   if (!r.ok) {
     process.stderr.write(`xprov allowlist propose: snapshot_failed — ${r.detail}\n`);
@@ -226,6 +348,28 @@ function currentStore() {
   return { refusal: `the existing approval store is not usable (${current.why}); fix or remove ${AL.storePath()} yourself, then run approve again` };
 }
 
+/** What the owner reads before typing the count: one block per entry and per scope
+ * (spec 012 FR-022: a v2 blob is approved like a v1 blob, the typed count is
+ * entries + scopes). { lines, count, prompt } — masked excerpts only, never values. */
+function approveListing(doc, rows) {
+  const lines = [];
+  for (const e of doc.entries) {
+    lines.push(`- ${e.path} · ${e.pattern} · max_count ${e.max_count} · ${e.class} · ${e.reason}`);
+    const hits = rows.filter((m) => m.path === e.path && m.pattern === e.pattern);
+    if (!hits.length) lines.push('    (no match at this commit: stale)');
+    for (const m of hits) lines.push(`    ${m.location}  ${m.excerpt}  high_confidence: ${m.high_confidence}`);
+  }
+  const scopes = doc.scopes || [];
+  for (const sc of scopes) {
+    const seen = rows.filter((m) => m.pattern === sc.pattern && AL.scopeFor(scopes, m) === sc).length;
+    lines.push(`- scope ${sc.prefix} · ${sc.pattern} · max_count ${sc.max_count} · ${sc.class} · ${sc.reason}`);
+    lines.push(`    observed ${seen} match(es) at this commit${seen === 0 ? ' — stale' : seen > sc.max_count ? ' — exceeds max_count' : ''}`);
+  }
+  const count = doc.entries.length + scopes.length;
+  const prompt = doc.version === 2 ? `Type the number of entries and scopes (${count}) to approve this blob: ` : `Type the number of entries (${count}) to approve this blob: `;
+  return { lines, count, prompt };
+}
+
 function approve(root) {
   const store = currentStore();
   if (store.refusal) return { code: X.EXIT_FAIL, msg: store.refusal };
@@ -243,19 +387,16 @@ function approve(root) {
   // Warn, never block: a blob the gate will reject anyway is not worth approving.
   const sep = AL.separateCommitProblem(root, t.tip);
   if (sep) err(`warning: ${sep} — the gate reports allowlist_not_separate_commit for this blob`);
+  const tree = AL.scopeTreeProblem(root, t.tip, parsed.doc);
+  if (tree) err(`warning: ${tree} — the gate reports allowlist_invalid for this blob`);
   const owner = AL.ownerProblem(root, t.tip, parsed.doc);
   if (owner) err(`warning: owner check fails — ${owner.detail}`);
   err(`Allowlist ${X.ALLOWLIST_FILE} at ${t.tip.slice(0, 12)} — owner ${parsed.doc.owner}, blob sha256 ${sha}`);
-  for (const e of parsed.doc.entries) {
-    err(`- ${e.path} · ${e.pattern} · max_count ${e.max_count} · ${e.class} · ${e.reason}`);
-    const hits = rows.filter((m) => m.path === e.path && m.pattern === e.pattern);
-    if (!hits.length) err('    (no match at this commit: stale)');
-    for (const m of hits) err(`    ${m.location}  ${m.excerpt}  high_confidence: ${m.high_confidence}`);
-  }
-  const n = parsed.doc.entries.length;
-  process.stderr.write(`Type the number of entries (${n}) to approve this blob: `);
+  const view = approveListing(parsed.doc, rows);
+  for (const line of view.lines) err(line);
+  process.stderr.write(view.prompt);
   const typed = readTypedLine();
-  if (typed !== String(n)) return { code: EXIT_REFUSED, msg: `typed ${JSON.stringify(C.clip(typed, 16))}, expected ${n}; nothing written` };
+  if (typed !== String(view.count)) return { code: EXIT_REFUSED, msg: `typed ${JSON.stringify(C.clip(typed, 16))}, expected ${view.count}; nothing written` };
   const key = C.commonDirOf(root);
   const repos = { ...store.repos, [key]: [...new Set([...(store.repos[key] || []), sha])] };
   const file = writeStore(repos);
@@ -315,6 +456,6 @@ function cmdXprovAllowlist(args) {
 }
 
 module.exports = {
-  cmdXprovAllowlist, guardRefusal, ancestryRefusal, processInfo, proposeClass, draft, listing, writeStore, writeGuardedStore, readTypedLine,
+  cmdXprovAllowlist, approveListing, proposeScopes, guardRefusal, ancestryRefusal, processInfo, proposeClass, draft, listing, writeStore, writeGuardedStore, readTypedLine,
   CLAUDE_ENV_RE, CLAUDE_VERSIONS_RE, CLAUDE_NPM_PACKAGE,
 };
