@@ -65,10 +65,13 @@
         ".claude/hooks/xprov-deny-allowlist-approve.sh",
         "skills/a1-plan/workflows/04b-xprov-review.md",
         "skills/a1-execute/workflows/",
-        "docs/adr/2026-09-24-cross-provider-review-gate.md"
+        "docs/adr/2026-09-24-cross-provider-review-gate.md",
+        "_shared/lib/xprov-snapshot.cjs",
+        "_shared/lib/xprov-filter.cjs",
+        "_shared/lib/xprov-gitleaks.toml"
       ],
       "by": "012-xprov-diff-only-inspect-and-wave-zero",
-      "at": "2026-10-05T14:40:09.632Z",
+      "at": "2026-10-06T09:36:33.801Z",
       "stage": "started"
     }
   ]
