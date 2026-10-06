@@ -149,9 +149,15 @@ const HIGH_CONFIDENCE_PATTERNS = Object.freeze([
 // matched text. Every pattern is linear on a 10 000-char input (F1h4 probe).
 // Token boundary (spec 012 FR-017): a prefix-token match counts only if the
 // character before it is not [A-Za-z0-9] — `ta|sk-assignment-…` and `de|sk-…` are
-// words, not keys. One definition, used by the two `sk-` patterns below (content
-// scan and path names) and by PATH_NAME_BOUNDARY_PATTERNS (path names only).
-const TOKEN_BOUNDARY = '(?<![A-Za-z0-9])';
+// words, not keys — OR the text right before it ends in a fixed-length escape that
+// stands for a non-word character: `\n \r \t \f \b \v \0`, `\uHHHH`, `\xHH`,
+// `%HH` (URL), or an ANSI colour code (ESC [ … m, at most 16 parameter chars). Without
+// the escape arm `x\nsk-<key>` (a JSON/log string) hides the key behind the `n`.
+// Residual risk, by design: any other alphanumeric directly before `sk-`, digits
+// included, is a word character and no hit. One definition, used by the two `sk-`
+// patterns below (content scan, output filter, path names) and by
+// PATH_NAME_BOUNDARY_PATTERNS (path names only).
+const TOKEN_BOUNDARY = '(?:(?<![A-Za-z0-9])|(?<=\\\\[nrtfbv0]|\\\\u[0-9A-Fa-f]{4}|\\\\x[0-9A-Fa-f]{2}|%[0-9A-Fa-f]{2}|\\x1b\\[[0-9;]{0,16}m))';
 const SECRET_PATTERNS = Object.freeze([
   Object.freeze({ name: 'private_key_header', re: /-----BEGIN [A-Z ]*PRIVATE KEY-----/ }),
   Object.freeze({ name: 'aws_access_key_id', re: /AKIA[0-9A-Z]{16}/ }),

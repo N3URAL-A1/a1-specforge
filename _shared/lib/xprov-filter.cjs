@@ -35,11 +35,37 @@ const REASON_INSTRUCTION = 'instruction_shaped';
 
 // ---------- secret filter ----------
 
-/** First pattern that matches any of the texts, by name; never the match. */
+const MAX_PARSED_STRINGS = 20000; // size guard for the parsed-value scan
+
+/** Every string (keys and values) of a parsed JSON text, iteratively; [] when the
+ * text is not JSON. A JSON escape (`\n`, `\u0073`) hides a key from the raw text
+ * but not from the parsed value (Samuel SEC-1, spec 012 FR-017). */
+function parsedStrings(text) {
+  let root;
+  try { root = JSON.parse(text); } catch (_e) { return []; }
+  const out = [];
+  const stack = [root];
+  while (stack.length > 0 && out.length < MAX_PARSED_STRINGS) {
+    const v = stack.pop();
+    if (typeof v === 'string') out.push(v);
+    else if (Array.isArray(v)) stack.push(...v);
+    else if (v !== null && typeof v === 'object') {
+      for (const key of Object.keys(v)) { out.push(key); stack.push(v[key]); }
+    }
+  }
+  return out;
+}
+
+/** First pattern that matches any of the texts or, for JSON texts, any parsed
+ * string value; by name; never the match. */
 function filterOutput(texts) {
   const list = Array.isArray(texts) ? texts : [texts];
+  const all = [];
   for (const text of list) {
     if (typeof text !== 'string' || text === '') continue;
+    all.push(text, ...parsedStrings(text));
+  }
+  for (const text of all) {
     for (const { name, re } of X.SECRET_PATTERNS) {
       if (re.test(text)) return { hit: true, pattern_name: name };
     }
