@@ -19,7 +19,7 @@ result: <pass|fail|partial|error>
 issues: [<skill-specific tags, or empty>]
 evidence: <VERIFICATION.md path / commit hash / postmortem path>
 gates_fired:
-  - {id: <slug from _shared/gates-registry.md>, verdict: <pass|fail>, caught: <true|false>}
+  - {id: <slug from _shared/gates-registry.md>, verdict: <pass|fail|not_applicable>, caught: <true|false>}
 what_worked: <one sentence>
 one_line_learning: <what would have prevented the main issue, or "no issues">
 ```

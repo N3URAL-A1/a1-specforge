@@ -115,7 +115,7 @@ caseV4() {
     gate13 --gate "$GATE_WAVE" --wave "$w" --base "$PHASE_HEAD"
     assert_rc "V4 gate --wave '$w' → exit 2" 2 "$G_RC"
   done
-  [[ "$G_ERR" == *"0 and 9999"* ]] && ok "V4 the error text says 0 to 9999" || bad "V4 error text: $G_ERR"
+  [[ "$G_ERR" == *"0 to 9999"* ]] && ok "V4 the error text says 0 to 9999" || bad "V4 error text: $G_ERR"
   gate13 --gate "$GATE_WAVE" --wave 9999 --base "$PHASE_HEAD"
   [[ "$G_RC" -ne 2 ]] && ok "V4 --wave 9999 is accepted (upper bound)" || bad "V4 --wave 9999 refused: $G_ERR"
   gate13 --gate "$GATE_WAVE" --wave 0 --base "$PHASE_HEAD" --round 0
@@ -129,7 +129,7 @@ caseV4() {
   sub13 wave-status --phase p13 --waves "0,x"; assert_rc "V4 wave-status --waves 0,x → exit 2" 2 "$G_RC"
   sub13 waive --phase p13 --gate "$GATE_WAVE" --wave -1 --base "$PHASE_HEAD" --reason x --by y
   assert_rc "V4 waive --wave -1 → exit 2 (before any guard text)" 2 "$G_RC"
-  [[ "$G_ERR" == *"0 and 9999"* ]] && ok "V4 waive says 0 to 9999" || bad "V4 waive text: $G_ERR"
+  [[ "$G_ERR" == *"0 to 9999"* ]] && ok "V4 waive says 0 to 9999" || bad "V4 waive text: $G_ERR"
 }
 
 caseV5() {

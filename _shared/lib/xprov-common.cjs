@@ -126,7 +126,7 @@ function parsePositive(value, name) {
 
 /** `--wave` value: an integer from 0 to 9999 (an empty value is refused, never read as 0). */
 function parseWave(value, name) {
-  if (!WAVE_RE.test(String(value))) throw inputError(`--${name} must be an integer between 0 and ${POSITIVE_INT_MAX} (got ${JSON.stringify(clip(value, 80))})`);
+  if (!WAVE_RE.test(String(value))) throw inputError(`--${name} must be an integer from 0 to ${POSITIVE_INT_MAX} (got ${JSON.stringify(clip(value, 80))})`);
   return Number(value);
 }
 
