@@ -59,8 +59,11 @@ The driver has already appended verdict, XREVIEW.md path and result path to
 |---|---|---|
 | `pass` | any | Inform user: **"Plan ready, cross-provider approved."** Show the PLAN.md summary (goal, wave count, success criteria) and suggest: "Run `a1-execute` to start implementation." |
 | `fail-with-findings` | any | REVISE — go to Step 3 (one revision round, then Step 4). |
+| `not_applicable` (exit 1, `reason: external_review_denied`) | any | The owner recorded that no external review applies to this repository (`xprov permit --deny`, confirmed by the owner's store). **Continue — do not halt.** Print the one-line notice below and treat the plan as ready; no Codex call happened. The retro records `verdict: not_applicable` and the issue tag `xprov_not_applicable`. A repository that is merely *not permitted* (no record, or a record the owner's store does not confirm — `external_review_not_permitted`, `external_review_denial_mismatch`) is a `fail`, not this row. |
 | `fail` (any `reason`) | `warning` | Print the warning block below, then treat the plan as ready **with the warning attached** to the summary. The retro records `verdict: fail`. |
 | `fail` (any `reason`) | `blocking` | **HALT.** Print the block below as an error; do not suggest `a1-execute`. Surface the `reason` and the two ways out: fix the cause (e.g. `preflight_failed`, `not_logged_in`, `external_review_not_permitted`) and re-run Step 1, or a human waiver (Step 5). |
+
+Notice for `not_applicable` (one line): `ℹ Cross-provider plan review not applicable — the owner denied external review for this repository (gate plan-review-xprov); continuing.`
 
 Warning / halt block — same text, only the first line differs:
 
@@ -126,11 +129,12 @@ The a1-plan retro is written once, after this phase — not after Phase 4. Add:
 ```yaml
 gates_fired:
   - {id: plan-audit,        verdict: pass, caught: <true|false>}
-  - {id: plan-review-xprov, verdict: <pass|fail>, caught: <true if a finding changed the plan>}
+  - {id: plan-review-xprov, verdict: <pass|fail|not_applicable>, caught: <true if a finding changed the plan>}
 ```
 
-`verdict: fail` for every non-pass outcome, including `round_cap` and a
-`warning`-enforced continue. If a waiver exists for this gate (Step 5), add
+`verdict: fail` for every non-pass outcome except `not_applicable`, including `round_cap` and a
+`warning`-enforced continue. For `not_applicable` write `verdict: not_applicable, caught: false`
+and add `xprov_not_applicable` to `issues`. If a waiver exists for this gate (Step 5), add
 `xprov_waived` to `issues` — the base field of `_shared/retro-template.md`
 (a1-execute uses its own `issue_classes` instead; a1-evolve reads both).
 Validate with `retro validate` before appending, as `04-audit.md` describes.

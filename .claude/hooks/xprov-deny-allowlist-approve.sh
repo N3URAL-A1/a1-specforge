@@ -13,6 +13,16 @@
 # Spec 009 FR-007 (Wave 7, Samuel MAJOR): the same for the human waiver —
 # `xprov waive` and the waiver store path `a1-xprov/waivers`, same
 # normalisation. The script keeps its name: .claude/settings.json wires it.
+# Spec 012 FR-015 (Wave B): the same for the permit — `xprov permit` (also
+# `permit --deny`; NOT `xprov permit-check`, which is read-only) and the denial
+# store path `a1-xprov/permit-denials`. A permit or denial is the owner's act:
+# without the guard an agent could permit a repository or switch a gate off.
+# The store name is matched by its stem `permit-den` (covers a glob such as
+# `permit-den*`); the normaliser also drops single backslashes (`per\mit`) and `$`
+# before a quote (`$'permit'`), and a variable in the subcommand slot (`xprov $p`)
+# is denied. NOT detectable by text: a variable for the tool itself or split over
+# several commands (`x=xprov; $x permit`, `eval "$cmd"`); there the TTY/ancestor
+# guard of `xprov permit` is the control.
 # Without node the raw JSON is judged: JSON `\n` escapes become spaces and
 # backslashes go with the quotes, so an escaped `\"waive\"` matches too.
 # Input: the hook JSON on stdin. Output: a deny decision as JSON, or nothing.
@@ -22,14 +32,23 @@ command_text="$(printf '%s' "$input" | node -e '
     let t;
     try { const j = JSON.parse(raw); t = String((j.tool_input && j.tool_input.command) || ""); }
     catch (_e) { t = raw; } // unparsable input: judge the raw text
-    process.stdout.write(t.replace(/\\\r?\n/g, "").replace(/["\x27]/g, "").replace(/\s+/g, " "));
-  });' 2>/dev/null || printf '%s' "$input" | sed 's/\\n/ /g' | tr -d "\"'\\\\" | tr -s '[:space:]' ' ')"
+    // line continuations, then every single backslash (`per\mit`), `$` before a quote (`$\x27permit\x27`), the quotes
+    process.stdout.write(t.replace(/\\\r?\n/g, "").replace(/\\/g, "").replace(/\$(?=["\x27])/g, "").replace(/["\x27]/g, "").replace(/\s+/g, " "));
+  });' 2>/dev/null || printf '%s' "$input" | sed 's/\\n/ /g' | tr -d "\"'\\\\\$" | tr -s '[:space:]' ' ')"
 case "$command_text" in
   *"allowlist approve"*|*"allowlist-approval"*)
     printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"The allowlist approval is the owner'"'"'s step: run `a1-tools xprov allowlist approve` yourself in a separate terminal (spec 009 FR-030 j). Agents never run it or read the approval store."}}'
     ;;
   *"xprov waive"*|*"a1-xprov/waivers"*)
     printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"A waiver is the owner'"'"'s step: run `a1-tools xprov waive` yourself in a separate terminal (spec 009 FR-007). Agents never run it or touch the waiver store."}}'
+    ;;
+esac
+# `xprov permit-check` is read-only: it is removed before matching `xprov permit`, so
+# `xprov permit-check && xprov permit --by x` is still caught by its second half.
+permit_text="${command_text//xprov permit-check/}"
+case "$permit_text" in
+  *"xprov permit"*|*"a1-xprov/permit-den"*|*"xprov \$"*)
+    printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"A permit or denial is the owner'"'"'s step: run `a1-tools xprov permit` (or `permit --deny`) yourself in a separate terminal (spec 012 FR-014). Agents never run it or touch the denial store."}}'
     ;;
 esac
 exit 0

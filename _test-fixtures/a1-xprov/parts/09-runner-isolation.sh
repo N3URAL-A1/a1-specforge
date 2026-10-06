@@ -161,7 +161,7 @@ remote_plugin = false'
 # prep9 — fresh tree, phase repo p9, permit, compliant home with auth symlink.
 prep9() {
   make_tree; make_phase p9 "${1:-$CASES/approved.PLAN.md}"
-  ( cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov permit --by fixture --record record/2026-09-24-fixture.md >/dev/null 2>&1 ) || echo "WARN prep9: permit failed" >&2
+  write_permit "$PHASE_REPO" fixture record/2026-09-24-fixture.md
   make_home; ln -s "$HOME/.codex/auth.json" "$XHOME/auth.json"; export A1_XPROV_CODEX_HOME="$XHOME"
 }
 

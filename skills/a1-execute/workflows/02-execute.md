@@ -141,6 +141,7 @@ JSON — fix the call). `enforcement` echoes the `wave-inspect-xprov` row of
 | `verdict` | `enforcement` | Action |
 |---|---|---|
 | `pass` | any | Note "cross-provider inspected ✓" in the 2c summary. Proceed to 2c. |
+| `not_applicable` (exit 1, `reason: external_review_denied`) | any | The owner denied external review for this repository (`xprov permit --deny`, confirmed by the owner's store); no Codex call happened. **Continue to 2c — do not halt.** Print `ℹ Wave <N> inspection not applicable — the owner denied external review for this repository; continuing.` in the 2c summary. Retro: `{id: wave-inspect-xprov, verdict: not_applicable, caught: false}` and the issue tag `xprov_not_applicable`. Not a pass; `wave-status` reports it under `not_applicable` and Phase 3 may start. |
 | `fail-with-findings` | any | **Fix round in the same wave.** Re-dispatch a1-erik-executor with `<findings_path>` (Reinhard schema) and the instruction to fix every blocker/major or record why not, commit, then re-run the commit-landed gate and this step again — same `--base $PRE_WAVE_HEAD` (the whole wave diff is re-inspected), **fresh session**: the driver never resumes a Codex session. Before the
 re-run, write Erik's fix summary to the `next.dispositions_path` of the first
 inspect (`xreview/wave-inspect-xprov-wave-<N>[-<lane>]-r1.dispositions.md`, one

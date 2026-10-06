@@ -7,6 +7,8 @@
       "Write(~/.a1-xprov/allowlist-approvals.json)",
       "Edit(~/.a1-xprov/waivers.json)",
       "Write(~/.a1-xprov/waivers.json)",
+      "Edit(~/.a1-xprov/permit-denials.json)",
+      "Write(~/.a1-xprov/permit-denials.json)",
       "Edit(**/.a1/xprov.json)",
       "Write(**/.a1/xprov.json)",
       "Edit(**/.a1/phases/*/xreview/index.json)",

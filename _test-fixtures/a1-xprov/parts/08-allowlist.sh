@@ -99,7 +99,7 @@ new8() {
   printf 'export function add(a, b) { return a + b; }\n' > "$R8/src/add.js"
   # the gate's own outputs stay out of the fixture commits (c8 stages everything else)
   printf '.a1/phases/p8/XREVIEW.md\n.a1/phases/p8/PLAN-REVIEW-LOG.md\n.a1/phases/p8/xreview/\n.a1/phases/p8/observations.jsonl\n' > "$R8/.gitignore"
-  ( cd "$R8" && node "$TREE_TOOLS" xprov permit --by robert --record record/2026-09-28-fixture.md >/dev/null 2>&1 ) || bad "new8: permit failed"
+  write_permit "$R8" robert record/2026-09-28-fixture.md
   c8 "base"
   git -C "$R8" remote add origin "$O8"; push8
 }
@@ -158,6 +158,22 @@ expect8() {
   else got="$(json_get "$G_OUT" "j.step + ':' + j.reason")"; fi
   [[ "$G_RC" -eq 1 && "$got" == "snapshot:$want" ]] && ok "$name → $want" || bad "$name: want snapshot:$want (exit 1), got $got (exit $G_RC) — $(printf '%s' "$G_ERR" | tail -n 2)"
   never_ran8 "$name"
+}
+
+# expect_permit8 <name> — an unusable ~/.a1-xprov now fails closed one step EARLIER than the
+# allowlist (spec 012 FR-001: an allowed file next to an unusable store is denial_mismatch).
+expect_permit8() {
+  local got; got="$(json_get "$G_OUT" "j.step + ':' + j.reason")"
+  [[ "$G_RC" -eq 1 && "$got" == "permit-check:external_review_denial_mismatch" ]] && ok "$1 → fails closed at permit-check (denial_mismatch)" || bad "$1: want permit-check:external_review_denial_mismatch (exit 1), got $got (exit $G_RC)"
+  never_ran8 "$1"
+}
+
+# reader_refuses8 <name> — the approval store READER (the allowlist's own check, R30j5/R30j6) still
+# refuses the current ~/.a1-xprov as unusable: ok false and NOT `missing`. expect_permit8 only shows
+# that the gate stops earlier now; this keeps the original allowlist assertion alive (Reinhard MINOR).
+reader_refuses8() {
+  local r; r="$(node -e 'const AL = require(process.argv[1] + "/_shared/lib/xprov-allowlist.cjs"); const a = AL.readApprovals(); process.stdout.write(JSON.stringify({ ok: a.ok, missing: a.missing }));' "$TREE")"
+  assert_json "$1 the approval-store reader refuses the home as unusable (not 'missing')" "$r" "j.ok + '/' + j.missing" "false/false"
 }
 
 # pass8 <name> — gate exit 0, verdict pass.
@@ -282,10 +298,11 @@ caseR30b3() {
   plan8; expect8 "R30b3-1b default_branch -main (a real remote branch, not a valid --branch name)" "secret_in_snapshot/allowlist_anchor_unresolved"
   # arm 2: permit --default-branch 'a b' → exit 1, file unchanged
   local before; before="$(cat "$R8/.a1/xprov.json")"
-  ( cd "$R8" && node "$TREE_TOOLS" xprov permit --by robert --record record/2026-09-28-fixture.md --default-branch 'a b' >/dev/null 2>&1 ); local rc=$?
-  assert_rc "R30b3-2 permit --default-branch 'a b' is refused" 1 "$rc"
+  # permit's library function (the CLI sits behind the owner guards since spec 012 FR-014)
+  local pl; pl="$(permit_lib "$TREE" "P.permit({ repoRoot: '$R8', by: 'robert', record: 'record/2026-09-28-fixture.md', defaultBranch: 'a b' }).reason")"
+  assert_eq "R30b3-2 permit --default-branch 'a b' is refused" "$pl" '"invalid_default_branch"'
   assert_eq "R30b3-2 .a1/xprov.json unchanged" "$(cat "$R8/.a1/xprov.json")" "$before"
-  ( cd "$R8" && node "$TREE_TOOLS" xprov permit --by robert --record record/2026-09-28-fixture.md --default-branch trunk >/dev/null 2>&1 )
+  permit_lib "$TREE" "P.permit({ repoRoot: '$R8', by: 'robert', record: 'record/2026-09-28-fixture.md', defaultBranch: 'trunk' }).ok" >/dev/null
   assert_json "R30b3-2 permit --default-branch trunk writes default_branch" "$(cat "$R8/.a1/xprov.json")" "j.default_branch + '/' + j.decided_by" "trunk/robert"
   # arms 3/4: origin URL ssh://fixture.invalid/r with a fake ssh first on PATH
   scen8; local sshbin3="$A8/sshbin"; mkdir -p "$sshbin3"; printf '#!/bin/sh\nexit 255\n' > "$sshbin3/ssh"; chmod +x "$sshbin3/ssh"
@@ -545,9 +562,9 @@ caseR30j() {
   scen8; mv "$HOME/.a1-xprov/$STORE_NAME" "$A8/real-store.json"; ln -s "$A8/real-store.json" "$HOME/.a1-xprov/$STORE_NAME"
   plan8; expect8 "R30j4 store that is a symlink to a valid store" "allowlist_invalid/allowlist_unapproved"
   scen8; mv "$HOME/.a1-xprov" "$A8/real-xprov"; ln -s "$A8/real-xprov" "$HOME/.a1-xprov"
-  plan8; expect8 "R30j5 ~/.a1-xprov that is a symlink" "allowlist_invalid/allowlist_unapproved"
+  plan8; expect_permit8 "R30j5 ~/.a1-xprov that is a symlink"; reader_refuses8 "R30j5"
   scen8; chmod 755 "$HOME/.a1-xprov"
-  plan8; expect8 "R30j6 ~/.a1-xprov with mode 0755" "allowlist_invalid/allowlist_unapproved"
+  plan8; expect_permit8 "R30j6 ~/.a1-xprov with mode 0755"; reader_refuses8 "R30j6"
   # j7a: two approved shas; the pass names the one it used
   scen8; local used; used="$(blobsha8)"; local other="0000000000000000000000000000000000000000000000000000000000000001"
   store8 "$other" "$used"
@@ -824,7 +841,7 @@ caseR30h78() {
   L_AK1="id: $FAKE_AK1"; plant8 f.sh "$L_AK1"; printf '{broken\n' > "$R8/.a1/xprov.json"; c8 "fake, broken permit record"
   al_commit8 "$(al_doc "$(al_ent f.sh aws_access_key_id 1 fixture_fake "$(fp8 "$L_AK1")")")"; push8; store8 "$(blobsha8)"
   git -C "$R8" checkout -q -b feat
-  ( cd "$R8" && node "$TREE_TOOLS" xprov permit --by robert --record record/2026-09-28-fixture.md >/dev/null 2>&1 ); c8 "valid permit record"
+  write_permit "$R8" robert record/2026-09-28-fixture.md; c8 "valid permit record"
   plan8; expect8 "R30h8 unparsable .a1/xprov.json at the anchor" "allowlist_invalid"
   assert_json "R30h8 the detail names the unreadable permit record, not owner_mismatch" "$G_OUT" "/xprov\.json at the anchor is not valid JSON/.test(j.reason_detail) && j.reason_detail !== 'allowlist_owner_mismatch'" "true"
 }

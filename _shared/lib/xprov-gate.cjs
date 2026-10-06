@@ -59,8 +59,8 @@ const { parseRegistryRow } = require('./gate-ids.cjs');
 const X = require('./xprov.cjs');
 const C = require('./xprov-common.cjs');
 // Shared helpers — one definition each, in xprov-common.cjs.
-const { REGISTRY_PATH, LANE_RE, DETAIL_MAX_CHARS, inputError, clip, parsePositive, sha256, isPlainObject, readIndex, sameWave, sameLane, writeStdoutSync, gitOut } = C;
-const { permitCheck } = require('./xprov-permit.cjs');
+const { REGISTRY_PATH, LANE_RE, DETAIL_MAX_CHARS, inputError, clip, parsePositive, parseWave, waveNumber, sha256, isPlainObject, readIndex, sameWave, sameLane, writeStdoutSync, gitOut } = C;
+const { permitCheck, permitHint, STATES: PERMIT_STATES } = require('./xprov-permit.cjs');
 const { preflight } = require('./xprov-preflight.cjs');
 const { snapshot, cleanupSnapshot, INPUTS_SUFFIX, INPUT_FILES } = require('./xprov-snapshot.cjs');
 const { observe, MODEL_RE } = require('./xprov-observe.cjs');
@@ -77,6 +77,12 @@ const A1_TOOLS = path.join(__dirname, '..', 'a1-tools.cjs');
 const LOG_FILE = 'PLAN-REVIEW-LOG.md';
 const ENFORCEMENTS = Object.freeze(['warning', 'blocking']);
 const RETRO_ISSUE_WAIVED = 'xprov_waived';
+const RETRO_ISSUE_NOT_APPLICABLE = 'xprov_not_applicable';
+// Registry `applies_to` cell (spec 012 FR-002): `permitted-repos` rows are not applicable to a
+// repository whose owner recorded a denial; `all` (also an empty cell) rows always apply.
+const APPLIES_TO = Object.freeze({ ALL: 'all', PERMITTED_REPOS: 'permitted-repos' });
+const NOT_APPLICABLE_ACCEPTED = 'not_applicable';
+const NOT_APPLICABLE_NOTICE = 'not_applicable — the owner recorded that no external review applies to this repository; no code leaves, the pipeline continues';
 const EXTERNAL_AGENT = 'xprov-codex';
 const SUB_MAX_BUFFER = 64 * 1024 * 1024;
 const BASE_HEX_RE = /^[0-9a-f]{7,40}$/i; // same rule as `run`: a resolved sha, never a symbolic ref
@@ -108,9 +114,29 @@ function registryEnforcement(text, id) {
   return row && row.enforcement ? row.enforcement : null;
 }
 
+function readRegistryText() {
+  try { return fs.readFileSync(REGISTRY_PATH, 'utf8'); } catch (_e) { throw inputError(`registry unreadable: ${REGISTRY_PATH}`); }
+}
+
+/** `applies_to` cell of the registry row for `id`: `all` (empty cell or no column) or `permitted-repos`. */
+function appliesToFor(gateId) {
+  const row = parseRegistryRow(readRegistryText(), gateId);
+  const cell = row && typeof row.applies_to === 'string' ? row.applies_to.trim() : '';
+  if (cell === '') return APPLIES_TO.ALL;
+  if (!Object.values(APPLIES_TO).includes(cell)) throw inputError(`--gate ${gateId}: registry applies_to cell is not all|permitted-repos (${JSON.stringify(clip(cell, 40))})`);
+  return cell;
+}
+
+/** The ONE predicate for gate, load-check and wave-status: the permit result and whether this gate is
+ * not applicable — the state is `denied` (file and the owner's store agree) AND the row applies to permitted repos only. */
+function permitFor(root, gateId) {
+  const permit = permitCheck({ repoRoot: root });
+  return Object.freeze({ permit, notApplicable: permit.state === PERMIT_STATES.DENIED && appliesToFor(gateId) === APPLIES_TO.PERMITTED_REPOS });
+}
+const notApplicableFor = (root, gateId) => permitFor(root, gateId).notApplicable;
+
 function enforcementFor(gateId) {
-  let text;
-  try { text = fs.readFileSync(REGISTRY_PATH, 'utf8'); } catch (_e) { throw inputError(`registry unreadable: ${REGISTRY_PATH}`); }
+  const text = readRegistryText();
   const e = registryEnforcement(text, gateId);
   if (!e || !ENFORCEMENTS.includes(e)) throw inputError(`--gate ${gateId}: registry row missing or its enforcement cell is not warning|blocking (${JSON.stringify(e)})`);
   return e;
@@ -140,7 +166,7 @@ function resolveGateArgs(o) {
   const isPlan = gate === X.GATE_IDS.PLAN_REVIEW;
   if (isPlan && (o.wave !== undefined || o.base !== undefined || o.lane !== undefined)) throw inputError('plan-review-xprov takes no --wave, --base or --lane');
   if (!isPlan && (o.wave === undefined || o.base === undefined)) throw inputError('wave-inspect-xprov requires --wave <N> and --base <PRE_WAVE_HEAD>');
-  const wave = isPlan ? null : parsePositive(o.wave, 'wave');
+  const wave = isPlan ? null : parseWave(o.wave, 'wave');
   if (!isPlan && !BASE_HEX_RE.test(String(o.base))) throw inputError(`--base must be a resolved commit sha (7–40 hex), got ${JSON.stringify(clip(o.base, 80))}`);
   const lane = C.parseLane(o.lane);
   const pluginAllowlist = o.allowPlugins === undefined ? [] : String(o.allowPlugins).split(',').map((s) => s.trim()).filter(Boolean);
@@ -383,6 +409,21 @@ function reviewedOutcome(ctx, base, al, ran, norm) {
     : reviewed;
 }
 
+/** `denied` on a `permitted-repos` row: no run, one log entry, one observation (spec 012 FR-002). */
+function recordNotApplicable(ctx, base, permit) {
+  const result = Object.freeze({
+    ...base, verdict: X.VERDICT_NOT_APPLICABLE, step: 'permit-check', reason: X.REASONS.external_review_denied, permit_state: permit.state,
+    reason_detail: `denied by ${permit.decided_by} on ${permit.decided_on}; the owner's denial store agrees`,
+  });
+  appendLog(ctx, result, 'none');
+  observe({
+    repoRoot: ctx.root, agent: EXTERNAL_AGENT, skill: ctx.isPlan ? 'a1-plan' : 'a1-execute', phase: ctx.phase, wave: ctx.wave, lane: ctx.lane || undefined,
+    type: 'gap', severity: 'minor', pattern: RETRO_ISSUE_NOT_APPLICABLE, provider: 'codex',
+    msg: clip(`${ctx.gate} ${scopeOf(ctx.wave)}${ctx.lane ? ` lane ${ctx.lane}` : ''}: not_applicable (external_review denied by the owner)`, X.TITLE_MAX_CHARS * 4),
+  });
+  return result;
+}
+
 /** Runs the chain; returns a frozen stdout report (never throws for a failing
  * step — only usage errors throw A1_INPUT before anything is created). */
 function gate(o) {
@@ -395,8 +436,12 @@ function gate(o) {
   // permit-check FIRST and outside the logged section: a repository without a
   // permission record gets no a1 write at all — no PLAN-REVIEW-LOG.md entry, no
   // xreview/ (Reinhard, PR review MAJOR 1; the W5 rule for every xprov writer).
-  const permit = permitCheck({ repoRoot: ctx.root });
-  if (!permit.ok) return fail('permit-check', permit.reason, permit.detail);
+  const { permit, notApplicable: na } = permitFor(ctx.root, ctx.gate);
+  if (na) return recordNotApplicable(ctx, base, permit);
+  if (!permit.ok) {
+    const everyRepo = permit.state === PERMIT_STATES.DENIED; // `denied` on an `applies_to: all` row still fails
+    return fail('permit-check', everyRepo ? X.REASONS.external_review_not_permitted : permit.reason, everyRepo ? `external_review: denied, but ${ctx.gate} applies to every repository` : permit.detail, { permit_state: permit.state });
+  }
   if (ctx.round > X.ROUND_CAP) { const r = fail('round', X.REASONS.round_cap, `round ${ctx.round} > cap ${X.ROUND_CAP}`); appendLog(ctx, r, 'none'); return r; }
   const prior = priorRound(ctx); // usage errors surface before any side effect (exit 2 writes nothing)
   let snap = null;
@@ -445,6 +490,16 @@ function loadCheck(o) {
   if (!fs.existsSync(ctx.planPath)) throw inputError(`PLAN.md not found in ${ctx.phaseDir}`);
   if (o.expectSha !== undefined && !/^[0-9a-f]{64}$/.test(String(o.expectSha))) throw inputError('--expect-sha must be a lowercase sha256');
   const planSha = sha256(fs.readFileSync(ctx.planPath));
+  const moved = o.expectSha !== undefined && o.expectSha !== planSha;
+  const movedDetail = `PLAN.md changed since Load: accepted ${o.expectSha}, now ${planSha}`;
+  // A denied repository is read at check time from the permit state, never from an index row (spec 012 FR-005).
+  if (notApplicableFor(ctx.root, gate)) {
+    return Object.freeze({
+      ok: !moved, gate, enforcement, phase: ctx.phase, plan_sha256: planSha, accepted: moved ? null : NOT_APPLICABLE_ACCEPTED,
+      matched_entry: null, matched_waiver: null, newest_pass: null, permit_state: PERMIT_STATES.DENIED,
+      reason: moved ? X.REASONS.plan_changed : null, detail: moved ? movedDetail : null,
+    });
+  }
   const index = readIndex(ctx.indexPath);
   if (index === null) throw inputError(`index.json unparseable or not an array of objects: ${ctx.indexPath}`);
   // index.json rows are pointers (Reinhard M1): a pass row counts only when its run dir in
@@ -454,14 +509,13 @@ function loadCheck(o) {
   const store = WV.readWaivers();
   const waiver = newest !== null && newest.plan_sha256 === planSha ? null : WV.planWaiver(store, { repo: C.commonDirOf(ctx.root), phase: ctx.phase, plan_sha256: planSha });
   const accepted = newest !== null && newest.plan_sha256 === planSha ? 'pass' : (waiver ? 'waiver' : null);
-  const moved = o.expectSha !== undefined && o.expectSha !== planSha;
   const ok = accepted !== null && !moved;
   return Object.freeze({
     ok, gate, enforcement, phase: ctx.phase, plan_sha256: planSha, accepted,
     matched_entry: accepted === 'pass' ? newest : null, matched_waiver: accepted === 'waiver' ? waiver : null,
     newest_pass: newest ? { ts: newest.ts, plan_sha256: newest.plan_sha256, round: newest.round } : null,
     reason: ok ? null : (moved ? X.REASONS.plan_changed : X.REASONS.plan_review_missing),
-    detail: ok ? null : (moved ? `PLAN.md changed since Load: accepted ${o.expectSha}, now ${planSha}` : loadCheckDetail(newest, planSha, store)),
+    detail: ok ? null : (moved ? movedDetail : loadCheckDetail(newest, planSha, store)),
   });
 }
 
@@ -490,7 +544,7 @@ function completedWavesFromStatus(phaseDir) {
 
 /** --waves 1,2 [--lane L] → (wave, lane) pairs; lanes are first-class keys. */
 function parseWavesFlag(value, lane) {
-  const waves = String(value).split(',').map((s) => s.trim()).filter(Boolean).map((s) => parsePositive(s, 'waves'));
+  const waves = String(value).split(',').map((s) => s.trim()).filter(Boolean).map((s) => parseWave(s, 'waves'));
   if (!waves.length) throw inputError('--waves must list at least one wave number');
   return [...new Set(waves)].sort((a, b) => a - b).map((wave) => ({ wave, lane: lane || null }));
 }
@@ -509,6 +563,13 @@ function waveStatus(o) {
   if (o.lane !== undefined && o.waves === undefined) throw inputError('--lane qualifies --waves');
   const completed = o.waves === undefined ? completedWavesFromStatus(ctx.phaseDir) : parseWavesFlag(o.waves, C.parseLane(o.lane));
   if (!completed.length) throw inputError(`no completed waves: no \`## Wave N\` heading in ${ctx.phaseDir}/STATUS*.md and no --waves given`);
+  if (notApplicableFor(ctx.root, gate)) {
+    // No head/base chain is computed: nothing was reviewed, and nothing leaves (spec 012 FR-005).
+    return Object.freeze({
+      ok: true, gate, enforcement, phase: ctx.phase, completed_waves: [...new Set(completed.map((p) => p.wave))], completed_detail: completed,
+      lacking: [], lacking_detail: [], not_applicable: [...new Set(completed.map((p) => p.wave))], head: null, reason: null, permit_state: PERMIT_STATES.DENIED,
+    });
+  }
   const index = readIndex(ctx.indexPath);
   if (index === null) throw inputError(`index.json unparseable or not an array of objects: ${ctx.indexPath}`);
   const workPath = o.workPath === undefined ? ctx.root : path.resolve(String(o.workPath));
@@ -521,7 +582,7 @@ function waveStatus(o) {
   tips[''] = { workPath, head: h.head };
   const candidates = (p) => (planSha === null ? [] : [
     // head/base come from the run dir (a1-reviewed.json), never from the row (Reinhard M1)
-    ...index.filter((e) => e.gate === gate && Number(e.wave) === p.wave && sameLane(e, p.lane) && e.verdict === X.VERDICTS.PASS && e.waived !== true && e.plan_sha256 === planSha)
+    ...index.filter((e) => e.gate === gate && waveNumber(e.wave) === p.wave && sameLane(e, p.lane) && e.verdict === X.VERDICTS.PASS && e.waived !== true && e.plan_sha256 === planSha)
       .map((e) => RR.inspectPass(e.result_path, planSha)).filter(Boolean).map((hb) => ({ kind: 'pass', head: hb.head, base: hb.base })),
     ...WV.waveWaivers(store, { repo, phase: ctx.phase, plan_sha256: planSha, wave: p.wave, lane: p.lane }).map((w) => ({ kind: 'waiver', head: w.head, base: w.base })),
   ]);
@@ -605,7 +666,7 @@ function waive(o) {
   const isPlan = gate === X.GATE_IDS.PLAN_REVIEW;
   if (isPlan && (o.wave !== undefined || o.lane !== undefined || o.base !== undefined || o.workPath !== undefined)) throw inputError('plan-review-xprov takes no --wave, --lane, --base or --work-path');
   if (!isPlan && (o.wave === undefined || o.base === undefined)) throw inputError('wave-inspect-xprov requires --wave <N> and --base <PRE_WAVE_HEAD>');
-  const wave = isPlan ? null : parsePositive(o.wave, 'wave');
+  const wave = isPlan ? null : parseWave(o.wave, 'wave');
   const lane = isPlan ? null : C.parseLane(o.lane);
   const reason = oneLineFlag(o.reason, 'reason', REASON_MAX_CHARS);
   const by = oneLineFlag(o.by, 'by', BY_MAX_CHARS);
@@ -648,6 +709,8 @@ function cmdXprovGate(args) {
     if (!f.phase || !f.gate) return usageExit('gate requires --phase <name> --gate <id>');
     const r = gate({ phase: f.phase, gate: f.gate, wave: f.wave, lane: f.lane, base: f.base, workPath: f['work-path'], round: f.round, timeout: f.timeout, allowPlugins: f['allow-plugins'] });
     process.stderr.write(`xprov gate ${r.gate} ${scopeOf(r.wave)} round ${r.round}: ${r.verdict}${r.reason ? ` (${r.reason} at ${r.step})` : ''} — enforcement ${r.enforcement}\n`);
+    if (r.verdict === X.VERDICT_NOT_APPLICABLE) process.stderr.write(`xprov gate: ${NOT_APPLICABLE_NOTICE}\n`);
+    if (r.step === 'permit-check' && permitHint(r.permit_state)) process.stderr.write(`xprov gate: ${permitHint(r.permit_state)}\n`);
     if (r.allowlist_note) process.stderr.write(`xprov gate: allowlist not applied: ${r.allowlist_note}\n`);
     for (const x of r.allowlist_stale) process.stderr.write(`xprov gate: warning allowlist_stale: ${x.path} · ${x.pattern}\n`);
     for (const u of r.uncovered) process.stderr.write(`xprov gate: uncovered secret-pattern hit: ${u.path} · ${u.pattern}\n`);
@@ -659,7 +722,7 @@ function cmdXprovLoadCheck(args) {
   return withFlags(args, { phase: 'str', 'expect-sha': 'str' }, 'load-check', (f) => {
     if (!f.phase) return usageExit('load-check requires --phase <name> [--expect-sha <sha256>]');
     const r = loadCheck({ phase: f.phase, expectSha: f['expect-sha'] });
-    process.stderr.write(r.ok ? `xprov load-check: PLAN.md matches ${r.accepted === 'waiver' ? `a store waiver for ${r.gate} (not a pass)` : `the newest ${r.gate} pass`}\n` : `xprov load-check: ${r.reason} — ${r.detail} (enforcement ${r.enforcement})\n`);
+    process.stderr.write(r.ok ? `xprov load-check: ${r.accepted === NOT_APPLICABLE_ACCEPTED ? NOT_APPLICABLE_NOTICE : `PLAN.md matches ${r.accepted === 'waiver' ? `a store waiver for ${r.gate} (not a pass)` : `the newest ${r.gate} pass`}`}\n` : `xprov load-check: ${r.reason} — ${r.detail} (enforcement ${r.enforcement})\n`);
     return finish(r, r.ok ? X.EXIT_PASS : X.EXIT_FAIL);
   });
 }
@@ -668,7 +731,7 @@ function cmdXprovWaveStatus(args) {
   return withFlags(args, { phase: 'str', waves: 'str', lane: 'str', 'work-path': 'str', 'lane-work-path': 'str' }, 'wave-status', (f) => {
     if (!f.phase) return usageExit('wave-status requires --phase <name> [--waves 1,2 [--lane <id>]] [--work-path <dir>] [--lane-work-path <lane>=<dir>[,…]]');
     const r = waveStatus({ phase: f.phase, waves: f.waves, lane: f.lane, workPath: f['work-path'], laneWorkPaths: f['lane-work-path'] });
-    process.stderr.write(r.ok ? `xprov wave-status: waves ${r.completed_waves.join(', ')} inspected or waived\n` : `xprov wave-status: waves lacking a ${r.gate} pass or waiver: ${r.lacking.join(', ')} (enforcement ${r.enforcement})\n`);
+    process.stderr.write(r.ok ? `xprov wave-status: ${r.not_applicable ? `waves ${r.not_applicable.join(', ')}: ${NOT_APPLICABLE_NOTICE}` : `waves ${r.completed_waves.join(', ')} inspected or waived`}\n` : `xprov wave-status: waves lacking a ${r.gate} pass or waiver: ${r.lacking.join(', ')} (enforcement ${r.enforcement})\n`);
     return finish(r, r.ok ? X.EXIT_PASS : X.EXIT_FAIL);
   });
 }
@@ -685,6 +748,6 @@ function cmdXprovWaive(args) {
 }
 
 module.exports = {
-  registryEnforcement, readIndex, sameWave, gate, loadCheck, waveStatus, waive,
+  registryEnforcement, appliesToFor, readIndex, sameWave, gate, loadCheck, waveStatus, waive,
   cmdXprovGate, cmdXprovLoadCheck, cmdXprovWaveStatus, cmdXprovWaive,
 };

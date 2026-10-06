@@ -2,7 +2,9 @@
 
 // ---------------------------------------------------------------------------
 // xprov permit-check / permit — spec 009-cross-provider-review-gate, Wave 4
-// (FR-021). Sole writer: this wave.
+// (FR-021). Sole writer: this wave. Spec 012 Wave B (FR-001, FR-007, FR-014,
+// FR-016) added the five permit states, `permit --deny`, the owner guards and
+// the exposure sentence; the denial store lives in xprov-denials.cjs.
 //
 // The permission record `.a1/xprov.json` says whether this repository's code
 // may be sent to an external reviewer. Default is DENY: a missing file, an
@@ -24,6 +26,7 @@ const { spawnSync } = require('child_process');
 const io = require('./io.cjs');
 const xprov = require('./xprov.cjs');
 const C = require('./xprov-common.cjs');
+const D = require('./xprov-denials.cjs');
 // Shared helpers — one definition each, in xprov-common.cjs.
 const { inputError } = C;
 const usageExit = (msg) => C.usageExit('', msg);
@@ -32,34 +35,96 @@ const resolveRoot = (flags) => C.resolveRepoFlag(flags.repo);
 
 const PERMIT_FILE = path.join('.a1', 'xprov.json');
 const ALLOWED = 'allowed';
+const DENIED = 'denied';
+// The five permit states (spec 012 FR-001), computed from the working-tree
+// file AND the owner's denial store.
+const STATES = Object.freeze({ ALLOWED, DENIED, ABSENT: 'absent', INVALID: 'invalid', DENIAL_MISMATCH: 'denial_mismatch' });
 const REQUIRED_FIELDS = Object.freeze(['external_review', 'decided_by', 'decided_on', 'record']);
+const DENIED_REQUIRED_FIELDS = Object.freeze(['external_review', 'decided_by', 'decided_on']); // `record` is optional for a denial
 // Vault-relative note: `record/…` or `project/…`, markdown, no `..` segment.
 const RECORD_RE = /^(record|project)\/[A-Za-z0-9][A-Za-z0-9._\/-]*\.md$/;
 const BY_RE = /^[A-Za-z][A-Za-z0-9._-]{0,63}$/;
 const DENY_MESSAGE = 'External review not permitted for this repository. '
   + 'N3URAL-owned repo: `a1-tools xprov permit --by robert --record <vault-note>`. '
-  + 'Customer repo: needs an a1-ludwig-legal decision as `--record`.';
+  + 'Customer repo: needs an a1-ludwig-legal decision as `--record`, or the owner records that no external review applies: '
+  + '`a1-tools xprov permit --deny --by <name>` (both in a real terminal).';
+// One sentence for every place that says "allowed" (spec 012 FR-016): what actually leaves.
+const EXPOSURE_SENTENCE = 'What leaves for the external reviewer: the full tracked tree of the reviewed commit, the base-side blobs of changed files, '
+  + 'PLAN.md and the dispositions; the provider reads the tree in a read-only sandbox.';
+const HINT_ABSENT = 'run `xprov permit` or `xprov permit --deny` in a real terminal (the owner decides, not an agent)';
+const HINT_MISMATCH = '.a1/xprov.json and the owner\'s denial store disagree — the owner re-runs `xprov permit` or `xprov permit --deny` in a real terminal';
+const TYPED_WORD = Object.freeze({ [ALLOWED]: ALLOWED, [DENIED]: DENIED });
 
 function permitPath(repoRoot) {
   return path.join(repoRoot, PERMIT_FILE);
 }
 
-/** Reads the record; never throws. `ok` is true only for a complete record
- * whose `external_review` is exactly `allowed`. */
+// ---------- reading ----------
+
+/** The working-tree file as { kind: missing|invalid|allowed|denied, detail, rec }; never throws. */
+function readPermitFile(file) {
+  let raw;
+  try { raw = fs.readFileSync(file, 'utf8'); } catch (e) {
+    return e && e.code === 'ENOENT' ? { kind: 'missing', detail: 'missing .a1/xprov.json' } : { kind: 'invalid', detail: 'unreadable .a1/xprov.json' };
+  }
+  let rec;
+  try { rec = JSON.parse(raw); } catch (_e) { return { kind: 'invalid', detail: 'unparseable .a1/xprov.json' }; }
+  if (!rec || typeof rec !== 'object' || Array.isArray(rec)) return { kind: 'invalid', detail: 'malformed .a1/xprov.json (not an object)' };
+  const required = rec.external_review === DENIED ? DENIED_REQUIRED_FIELDS : REQUIRED_FIELDS;
+  const missing = required.filter((f) => typeof rec[f] !== 'string' || rec[f] === '');
+  if (missing.length) return { kind: 'invalid', detail: `missing field: ${missing.join(', ')}` };
+  if (rec.external_review !== ALLOWED && rec.external_review !== DENIED) return { kind: 'invalid', detail: `external_review: ${rec.external_review}` };
+  return { kind: rec.external_review, detail: null, rec };
+}
+
+/** The state of one repository from file x store (spec 012 FR-001): { state, detail }. */
+function classify(fileState, store, denial) {
+  const hasDenial = denial !== undefined;
+  const decided = fileState.kind === ALLOWED || fileState.kind === DENIED;
+  if (decided && !store.ok && !store.missing) return { state: STATES.DENIAL_MISMATCH, detail: `the owner's denial store is not usable (${store.why})` };
+  if (fileState.kind === ALLOWED) {
+    return hasDenial ? { state: STATES.DENIAL_MISMATCH, detail: 'the owner\'s denial store holds a denial for this repository but .a1/xprov.json says allowed' } : { state: STATES.ALLOWED, detail: null };
+  }
+  if (fileState.kind === DENIED) {
+    if (!hasDenial) return { state: STATES.DENIAL_MISMATCH, detail: '.a1/xprov.json says denied but the owner\'s denial store holds no denial for this repository' };
+    const same = denial.decided_by === fileState.rec.decided_by && denial.decided_on === fileState.rec.decided_on;
+    return same ? { state: STATES.DENIED, detail: null } : { state: STATES.DENIAL_MISMATCH, detail: 'decided_by/decided_on in .a1/xprov.json and in the owner\'s denial store differ' };
+  }
+  if (hasDenial) return { state: STATES.DENIAL_MISMATCH, detail: `the owner's denial store holds a denial for this repository but .a1/xprov.json is ${fileState.kind === 'missing' ? 'absent' : 'invalid'}` };
+  return { state: fileState.kind === 'missing' ? STATES.ABSENT : STATES.INVALID, detail: fileState.detail };
+}
+
+const REASON_OF_STATE = Object.freeze({
+  [STATES.ABSENT]: xprov.REASONS.external_review_not_permitted,
+  [STATES.INVALID]: xprov.REASONS.external_review_not_permitted,
+  [STATES.DENIED]: xprov.REASONS.external_review_denied,
+  [STATES.DENIAL_MISMATCH]: xprov.REASONS.external_review_denial_mismatch,
+});
+
+/** Reads the record and the store; never throws. `ok` is true only for state
+ * `allowed`. `denied` and every other state are `ok: false` with a reason. */
 function permitCheck(opts) {
   const root = (opts && opts.repoRoot) || io.repoRoot();
   const file = permitPath(root);
-  const deny = (detail) => Object.freeze({ ok: false, reason: xprov.REASONS.external_review_not_permitted, file, detail });
-  let raw;
-  try { raw = fs.readFileSync(file, 'utf8'); } catch (_e) { return deny('missing .a1/xprov.json'); }
-  let rec;
-  try { rec = JSON.parse(raw); } catch (_e) { return deny('unparseable .a1/xprov.json'); }
-  if (!rec || typeof rec !== 'object' || Array.isArray(rec)) return deny('malformed .a1/xprov.json (not an object)');
-  const missing = REQUIRED_FIELDS.filter((f) => typeof rec[f] !== 'string' || rec[f] === '');
-  if (missing.length) return deny(`missing field: ${missing.join(', ')}`);
-  if (rec.external_review !== ALLOWED) return deny(`external_review: ${rec.external_review}`);
-  return Object.freeze({ ok: true, file, external_review: ALLOWED, decided_by: rec.decided_by, decided_on: rec.decided_on, record: rec.record });
+  const fileState = readPermitFile(file);
+  const key = C.commonDirOf(root);
+  const store = D.readDenials();
+  const { state, detail } = classify(fileState, store, key === null ? undefined : store.denials[key]);
+  if (state === STATES.ALLOWED) {
+    const r = fileState.rec;
+    return Object.freeze({ ok: true, state, file, external_review: ALLOWED, decided_by: r.decided_by, decided_on: r.decided_on, record: r.record });
+  }
+  const denied = state === STATES.DENIED ? { decided_by: fileState.rec.decided_by, decided_on: fileState.rec.decided_on } : {};
+  return Object.freeze({ ok: false, state, reason: REASON_OF_STATE[state], file, detail: detail || state, ...denied });
 }
+
+/** The one-line stderr hint for a failing permit state (spec 012 FR-003), or null. */
+function permitHint(state) {
+  if (state === STATES.DENIAL_MISMATCH) return HINT_MISMATCH;
+  return state === STATES.ABSENT || state === STATES.INVALID ? HINT_ABSENT : null;
+}
+
+// ---------- writing (library; the CLI guard sits in cmdXprovPermit) ----------
 
 function validateBy(by) {
   if (typeof by !== 'string' || !BY_RE.test(by)) throw inputError(`--by must be a plain name (letters, digits, . _ -), got ${JSON.stringify(String(by).slice(0, 80))}`);
@@ -81,14 +146,38 @@ function isValidBranchName(root, name) {
   return r.status === 0 && String(r.stdout).trim() === name;
 }
 
-/** Writes the record atomically. Returns a fresh {ok, file, record}, or
- * {ok: false, reason: 'invalid_default_branch'} with nothing written. */
+const invalidBranch = (root, name) => Object.freeze({ ok: false, reason: 'invalid_default_branch', file: permitPath(root), detail: `--default-branch ${JSON.stringify(String(name).slice(0, 80))} is not a valid branch name (git check-ref-format --branch)` });
+
+function repoKey(root) {
+  const key = C.commonDirOf(root);
+  if (!key) throw inputError(`no git-common-dir for ${root}`);
+  return key;
+}
+
+function writeRecordFile(root, record) {
+  io.writeTextAtomic(permitPath(root), `${JSON.stringify(record, null, 2)}\n`);
+}
+
+/** The denial store as a writer sees it: { denials } to extend, or { refusal } — an
+ * unusable store is never overwritten (rule of appendWaiver). */
+function storeForWrite() {
+  const s = D.readDenials();
+  if (s.ok || s.missing) return { denials: s.denials };
+  return { refusal: Object.freeze({ ok: false, reason: 'denial_store_unusable', detail: `the existing denial store is not usable (${s.why}); fix or remove ${D.denialsPath()} yourself; nothing written` }) };
+}
+
+/** Store write that reports a failure as a string instead of throwing. */
+function tryWriteDenials(denials) {
+  try { D.writeDenials(denials); return null; } catch (e) { return `cannot write the denial store (${e && e.code === 'A1_INPUT' ? e.message : (e && e.code) || 'error'})`; }
+}
+
+/** `permit` (allowed): removes this repository's store denial first, then writes
+ * the file atomically. Returns a fresh {ok, file, record}; {ok: false, reason}
+ * with nothing written for an invalid branch or an unusable store. */
 function permit(opts) {
   const o = opts || {};
   const root = o.repoRoot || io.repoRoot();
-  if (o.defaultBranch !== undefined && !isValidBranchName(root, o.defaultBranch)) {
-    return Object.freeze({ ok: false, reason: 'invalid_default_branch', file: permitPath(root), detail: `--default-branch ${JSON.stringify(String(o.defaultBranch).slice(0, 80))} is not a valid branch name (git check-ref-format --branch)` });
-  }
+  if (o.defaultBranch !== undefined && !isValidBranchName(root, o.defaultBranch)) return invalidBranch(root, o.defaultBranch);
   const record = Object.freeze({
     external_review: ALLOWED,
     decided_by: validateBy(o.by),
@@ -96,9 +185,46 @@ function permit(opts) {
     record: validateRecord(o.record),
     ...(o.defaultBranch !== undefined ? { default_branch: o.defaultBranch } : {}),
   });
-  const file = permitPath(root);
-  io.writeTextAtomic(file, `${JSON.stringify(record, null, 2)}\n`);
-  return Object.freeze({ ok: true, file, record });
+  const key = repoKey(root);
+  const store = storeForWrite();
+  if (store.refusal) return store.refusal;
+  const hadDenial = Boolean(store.denials[key]);
+  if (hadDenial) {
+    const failed = tryWriteDenials(D.withDenial(store.denials, key, null));
+    if (failed) return Object.freeze({ ok: false, reason: 'denial_store_unusable', detail: `${failed}; nothing written` });
+  }
+  try { writeRecordFile(root, record); } catch (e) {
+    const code = (e && e.code) || 'error';
+    return hadDenial
+      ? Object.freeze({ ok: false, reason: xprov.REASONS.external_review_denial_mismatch, file: permitPath(root), detail: `the denial was removed from the store but ${PERMIT_FILE} could not be written (${code}); the file still says denied, so the state is denial_mismatch until the owner re-runs permit` })
+      : Object.freeze({ ok: false, reason: 'permit_write_failed', file: permitPath(root), detail: `${PERMIT_FILE} could not be written (${code}); nothing changed` });
+  }
+  return Object.freeze({ ok: true, file: permitPath(root), record });
+}
+
+/** `permit --deny`: the store first, then the file. A failing file step leaves the
+ * state `denial_mismatch` (fail closed) and says so. */
+function permitDeny(opts) {
+  const o = opts || {};
+  const root = o.repoRoot || io.repoRoot();
+  if (o.defaultBranch !== undefined && !isValidBranchName(root, o.defaultBranch)) return invalidBranch(root, o.defaultBranch);
+  const by = validateBy(o.by);
+  const day = (o.today || io.nowIso()).slice(0, 10);
+  const record = Object.freeze({
+    external_review: DENIED, decided_by: by, decided_on: day,
+    ...(o.record !== undefined ? { record: validateRecord(o.record) } : {}),
+    ...(o.defaultBranch !== undefined ? { default_branch: o.defaultBranch } : {}),
+  });
+  const key = repoKey(root);
+  const store = storeForWrite();
+  if (store.refusal) return store.refusal;
+  const entry = Object.freeze({ decided_by: by, decided_on: day, ts: o.now || io.nowIso() });
+  const failed = tryWriteDenials(D.withDenial(store.denials, key, entry));
+  if (failed) return Object.freeze({ ok: false, reason: 'denial_store_unusable', detail: `${failed}; nothing written` });
+  try { writeRecordFile(root, record); } catch (e) {
+    return Object.freeze({ ok: false, reason: xprov.REASONS.external_review_denial_mismatch, file: permitPath(root), detail: `the denial store was written but ${PERMIT_FILE} could not be (${(e && e.code) || 'error'}); the state is denial_mismatch until the owner re-runs permit` });
+  }
+  return Object.freeze({ ok: true, file: permitPath(root), record, store: D.denialsPath() });
 }
 
 // ---------- CLI ----------
@@ -114,26 +240,61 @@ function cmdXprovPermitCheck(args) {
     throw e;
   }
   const r = permitCheck({ repoRoot: root });
-  if (!r.ok) process.stderr.write(`${DENY_MESSAGE} (${r.detail})\n`);
-  else process.stderr.write(`permit-check: allowed by ${r.decided_by} on ${r.decided_on} (${r.record})\n`);
+  if (r.ok) process.stderr.write(`permit-check: allowed by ${r.decided_by} on ${r.decided_on} (${r.record})\n${EXPOSURE_SENTENCE}\n`);
+  else if (r.state === STATES.DENIED) process.stderr.write(`permit-check: denied by ${r.decided_by} on ${r.decided_on} (the owner's denial store agrees): external review does not apply to this repository\n`);
+  else process.stderr.write(`${DENY_MESSAGE} (${r.detail})${permitHint(r.state) ? `\npermit-check: ${permitHint(r.state)}` : ''}\n`);
   return finish(r, r.ok ? xprov.EXIT_PASS : xprov.EXIT_FAIL);
 }
 
+/** Flag shape of `permit`/`permit --deny`; usage errors (exit 2) before any guard text. */
+function permitArgs(flags) {
+  const deny = flags.deny === true;
+  if (!flags.by || (!deny && !flags.record)) throw inputError(deny ? 'permit --deny requires --by <name> [--record <vault-path>] [--default-branch <name>]' : 'permit requires --by <name> --record <vault-path> [--default-branch <name>]');
+  validateBy(flags.by);
+  if (flags.record !== undefined) validateRecord(flags.record);
+  return { deny, by: flags.by, record: flags.record, defaultBranch: flags['default-branch'] };
+}
+
+/** The owner's confirmation: guards, key + decision shown, the typed-back word. Returns a refusal text or null. */
+function ownerRefusal(root, a, today) {
+  const refusal = require('./xprov-approve.cjs').guardRefusal();
+  if (refusal) return `${refusal}. Run it yourself in a separate terminal (not through an agent and not via the ! prefix). Nothing written.`;
+  const word = a.deny ? DENIED : ALLOWED;
+  const err = (line) => process.stderr.write(`${line}\n`);
+  err(`${a.deny ? 'Denial' : 'Permission'} for ${root}`);
+  err(`  repo: ${repoKey(root)}`); err(`  decided_by: ${a.by}`); err(`  decided_on: ${today}`);
+  if (a.record !== undefined) err(`  record: ${a.record}`);
+  err(a.deny ? 'External review will not apply to this repository: gates report not_applicable and no code leaves.' : EXPOSURE_SENTENCE);
+  process.stderr.write(`Type the word (${word}) to record it: `);
+  const typed = require('./xprov-approve.cjs').readTypedLine();
+  return typed === TYPED_WORD[word] ? null : `typed ${JSON.stringify(C.clip(typed, 40))}, expected ${word}; nothing written`;
+}
+
 function cmdXprovPermit(args) {
-  const flags = io.parseFlags(args || [], { by: 'string', record: 'string', repo: 'string', 'default-branch': 'string' });
+  const flags = io.parseFlags(args || [], { by: 'string', record: 'string', repo: 'string', 'default-branch': 'string', deny: 'bool' });
   if (flags._.length) return usageExit(`permit: unexpected argument ${JSON.stringify(String(flags._[0]).slice(0, 80))}`);
-  if (!flags.by || !flags.record) return usageExit('permit requires --by <name> --record <vault-path> [--default-branch <name>]');
   let r;
-  try { r = permit({ repoRoot: resolveRoot(flags), by: flags.by, record: flags.record, defaultBranch: flags['default-branch'] }); } catch (e) {
+  try {
+    const a = permitArgs(flags);
+    const root = resolveRoot(flags);
+    const today = io.nowIso().slice(0, 10);
+    const refusal = ownerRefusal(root, a, today);
+    if (refusal) return usageExit(`permit: ${refusal}`);
+    const call = { repoRoot: root, by: a.by, record: a.record, defaultBranch: a.defaultBranch, today };
+    r = a.deny ? permitDeny(call) : permit(call);
+  } catch (e) {
     if (e && e.code === 'A1_INPUT') return usageExit(`permit: ${e.message}`);
     throw e;
   }
   if (!r.ok) {
-    process.stderr.write(`permit: ${r.detail}; nothing written\n`);
+    process.stderr.write(`permit: ${r.detail}\n`);
     return finish(r, xprov.EXIT_FAIL);
   }
-  process.stderr.write(`permit: wrote ${r.file}\n`);
+  process.stderr.write(`permit: wrote ${r.file}${r.store ? ` and ${r.store}` : ''}\n`);
   return finish(r, xprov.EXIT_PASS);
 }
 
-module.exports = { PERMIT_FILE, DENY_MESSAGE, permitPath, permitCheck, permit, isValidBranchName, cmdXprovPermitCheck, cmdXprovPermit };
+module.exports = {
+  PERMIT_FILE, DENY_MESSAGE, EXPOSURE_SENTENCE, STATES, permitPath, permitCheck, permitHint, permit, permitDeny, isValidBranchName,
+  cmdXprovPermitCheck, cmdXprovPermit,
+};

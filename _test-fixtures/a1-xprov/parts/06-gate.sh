@@ -38,7 +38,7 @@ pin_warning6() {
 # exports A1_XPROV_CODEX_HOME.
 prep6() {
   make_tree; pin_warning6; make_phase p6 "${1:-$CASES/approved.PLAN.md}"
-  ( cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov permit --by fixture --record record/2026-09-24-fixture.md >/dev/null 2>&1 ) || echo "WARN prep6: permit failed" >&2
+  write_permit "$PHASE_REPO" fixture record/2026-09-24-fixture.md
   make_home; ln -s "$HOME/.codex/auth.json" "$XHOME/auth.json"; export A1_XPROV_CODEX_HOME="$XHOME"
   rm -f "$HOME/.a1-xprov/waivers.json" # the part shares one HOME: no waiver survives into the next case
 }

@@ -208,6 +208,35 @@ make_home() {
   chmod 600 "$XHOME/config.toml"
 }
 
+# write_permit <repo> [by] [record] [default-branch] — writes <repo>/.a1/xprov.json
+# in the documented format (spec 009 FR-021), exactly what `xprov permit` wrote
+# before spec 012 FR-014 put that command behind the owner guards (TTY, typed
+# word): fixtures run non-interactively and cannot call it. The format comes
+# from the spec, not from the module under test (testing.md class 4). Wave B
+# (spec 012) addition to the harness; the permit command itself is covered in
+# part 12.
+write_permit() {
+  node -e '
+    const fs = require("fs"); const path = require("path");
+    const [repo, by, record, branch] = process.argv.slice(1);
+    const rec = { external_review: "allowed", decided_by: by, decided_on: new Date().toISOString().slice(0, 10), record };
+    if (branch) rec.default_branch = branch;
+    fs.mkdirSync(path.join(repo, ".a1"), { recursive: true });
+    fs.writeFileSync(path.join(repo, ".a1", "xprov.json"), JSON.stringify(rec, null, 2) + "\n");
+  ' "$1" "${2:-fixture}" "${3:-record/2026-09-24-fixture.md}" "${4:-}"
+}
+
+# permit_lib <tree-tools-dir-root> <js> — runs <js> with `P` bound to the TREE
+# copy's xprov-permit module (the library functions; the CLI guard is not part
+# of them). Prints the JSON of the expression's value.
+permit_lib() {
+  node -e '
+    const P = require(process.argv[1] + "/_shared/lib/xprov-permit.cjs");
+    const out = (function () { return eval(process.argv[2]); })();
+    process.stdout.write(JSON.stringify(out));
+  ' "$1" "$2"
+}
+
 # ---------- parts, in NN order ----------
 shopt -s nullglob
 parts=("$SUITE"/parts/*.sh)
@@ -217,6 +246,9 @@ if [[ ${#parts[@]} -eq 0 ]]; then
   fail=1
 fi
 for p in "${parts[@]}"; do
+  # Harness gap A.3 (plan 012): a syntax error in a part used to drop the whole
+  # part silently while the suite still printed "N passed, 0 failed".
+  if ! bash -n "$p" 2>"$SUITE_ROOT/syntax.err"; then bad "harness: $(basename "$p") has a bash syntax error: $(head -n 1 "$SUITE_ROOT/syntax.err")"; continue; fi
   # shellcheck disable=SC1090
   source "$p"
 done

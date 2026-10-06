@@ -290,7 +290,7 @@ function cmdRetroValidate(argv) {
   if (present && malformed) {
     process.stderr.write(
       `error: gates_fired block in ${retroPath} is present but unparseable — ` +
-        'expected "- {id: <slug>, verdict: <pass|fail>, caught: <true|false>}" items.\n' +
+        'expected "- {id: <slug>, verdict: <pass|fail|not_applicable>, caught: <true|false>}" items.\n' +
         'A malformed block is NOT treated as "no gates": fix the shape rather than ' +
         'removing it, or this run\'s gate attributions vanish exactly like an ' +
         'unregistered id would (invariant 7).\n'
