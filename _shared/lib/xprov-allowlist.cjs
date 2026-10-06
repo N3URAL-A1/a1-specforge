@@ -371,6 +371,140 @@ function readApprovals() {
   return r.ok ? { ok: true, repos: r.value } : { ...r, repos: {} };
 }
 
+// ---------- changed lines (spec 012 FR-020) ----------
+// A scope covers a match only on a line that is UNCHANGED between the anchor and
+// the reviewed commit (head side) resp. the anchor and --base (base side).
+// "Changed" = on the `+` side of `git diff --unified=0 --no-renames <anchor> <rev>`.
+// Strict, fail closed: a status other than a plain modification (added, deleted,
+// type change, anything a rename or copy would leave), a binary diff, a diff that
+// cannot be parsed or verified, output over the size bound, a failing git call —
+// every line of that path counts as changed. Paths travel as argv elements behind
+// --literal-pathspecs, never through a shell; names are read from `--raw -z`,
+// never from the (quoted) patch text.
+
+const DIFF_MAX_BYTES = 5 * 1024 * 1024; // one patch; the same size as the scan window
+const HUNK_RE = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
+const RAW_RE = /^:\d{6} \d{6} ([0-9a-f]{40,64}) ([0-9a-f]{40,64}) ([A-Z])\d*$/;
+const PATCH_HEADER_PREFIXES = Object.freeze(['index ', 'old mode ', 'new mode ', 'new file mode ', 'deleted file mode ', 'similarity index ', 'dissimilarity index ', 'rename from ', 'rename to ', 'copy from ', 'copy to ']);
+const PATCH_BODY_CHARS = '+- \\';
+
+/** The new-side line ranges of one file's `git diff --unified=0` text:
+ * { ok: true, ranges: [[start, end], …] } (ascending, 1-based, inclusive) or
+ * { ok: false, binary, reason }. Hunk counts are verified against the lines, so a
+ * truncated or garbled patch is "unparseable", never "fewer changes". */
+function parseChangedRanges(text) {
+  const lines = String(text).split('\n');
+  if (lines[lines.length - 1].replace(/\r$/, '') === '') lines.pop();
+  const bad = (reason) => ({ ok: false, binary: false, reason });
+  const ranges = [];
+  let cur = null; // { oldLeft, newLeft } of the open hunk
+  let files = 0;
+  let lastEnd = 0;
+  const closed = () => cur === null || (cur.oldLeft === 0 && cur.newLeft === 0);
+  for (const raw of lines) {
+    if (raw.startsWith('Binary files ') || raw.startsWith('GIT binary patch')) return { ok: false, binary: true, reason: 'binary diff' };
+    if (raw.startsWith('@@')) {
+      if (!closed()) return bad('hunk shorter than its header');
+      const m = HUNK_RE.exec(raw);
+      if (!m) return bad('malformed hunk header');
+      const [oldCount, newStart, newCount] = [m[2] === undefined ? 1 : Number(m[2]), Number(m[3]), m[4] === undefined ? 1 : Number(m[4])];
+      if (![Number(m[1]), oldCount, newStart, newCount].every(Number.isSafeInteger)) return bad('hunk numbers out of range');
+      if (newCount > 0) {
+        if (newStart < 1 || newStart <= lastEnd) return bad('hunks out of order');
+        lastEnd = newStart + newCount - 1;
+        ranges.push([newStart, lastEnd]);
+      }
+      cur = { oldLeft: oldCount, newLeft: newCount };
+      continue;
+    }
+    // inside a hunk every line is body: `+` / `-` or the `\ No newline` marker
+    const body = cur !== null && PATCH_BODY_CHARS.includes(raw[0] || 'x');
+    if (cur !== null && !closed() && !body) return bad('unknown line inside a hunk');
+    if (body) {
+      if (raw[0] === '+') cur.newLeft--; // a surplus line leaves a negative count, which closed() rejects
+      else if (raw[0] === '-') cur.oldLeft--;
+      else if (raw[0] === ' ') return bad('context line in a --unified=0 patch');
+      continue;
+    }
+    if (raw.startsWith('diff --git ')) { files++; if (files > 1) return bad('more than one file'); continue; }
+    if (raw.startsWith('--- ') || raw.startsWith('+++ ') || PATCH_HEADER_PREFIXES.some((h) => raw.startsWith(h))) continue;
+    return bad('unknown line outside a hunk');
+  }
+  return closed() ? { ok: true, ranges } : bad('hunk shorter than its header');
+}
+
+/** Whether any of the ascending, disjoint `ranges` meets lines [a, b] (binary search). */
+function rangesIntersect(ranges, a, b) {
+  let lo = 0;
+  let hi = ranges.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (ranges[mid][1] < a) lo = mid + 1; else hi = mid;
+  }
+  return lo < ranges.length && ranges[lo][0] <= b;
+}
+
+/** `git diff --raw -z --no-renames` output → Map(path → { status, oldSha, newSha }),
+ * or null when it cannot be read with certainty (garbage, a record without a
+ * path, an empty or replacement-character name, a path listed twice). */
+function parseRawDiff(text) {
+  const tokens = String(text).split('\0');
+  if (tokens[tokens.length - 1] === '') tokens.pop();
+  const map = new Map();
+  for (let i = 0; i < tokens.length; i += 2) {
+    const m = RAW_RE.exec(tokens[i]);
+    const name = tokens[i + 1];
+    if (!m || typeof name !== 'string' || name === '' || name.includes('�') || map.has(name)) return null;
+    map.set(name, Object.freeze({ status: m[3], oldSha: m[1], newSha: m[2] }));
+  }
+  return map;
+}
+
+/** git's environment for these reads: no GIT_DIFF_OPTS / GIT_EXTERNAL_DIFF. */
+function diffEnv() {
+  const env = { ...process.env };
+  delete env.GIT_DIFF_OPTS;
+  delete env.GIT_EXTERNAL_DIFF;
+  return env;
+}
+
+/** The changed-line index of `<anchor> → <rev>` in `root`, computed lazily and
+ * cached for the run: { isChanged(path, firstLine, lastLine) }. Never throws; every
+ * doubt answers `true` (changed). */
+function changedLines(root, anchor, rev) {
+  const opts = { env: diffEnv(), maxBuffer: DIFF_MAX_BYTES };
+  const base = ['--literal-pathspecs', '-C', root, 'diff', '--no-ext-diff', '--no-textconv', '--no-renames', '--no-color'];
+  let rawIndex; // undefined = not read yet, null = unreadable
+  const patches = new Map();
+  const readRaw = () => {
+    const r = git([...base, '--raw', '-z', anchor, rev, '--'], { ...opts, maxBuffer: C.GIT_MAX_BUFFER });
+    return r.status === 0 && !r.error ? parseRawDiff(r.stdout) : null;
+  };
+  const readPatch = (p, entry) => {
+    const r = git([...base, '--unified=0', '--diff-algorithm=myers', anchor, rev, '--', p], opts);
+    if (r.status !== 0 || r.error) return { ok: false };
+    const parsed = parseChangedRanges(r.stdout);
+    // a different blob that yields no hunk and no mode line is unexplained: treat it as changed
+    if (parsed.ok && parsed.ranges.length === 0 && entry.oldSha !== entry.newSha) return { ok: false };
+    return parsed;
+  };
+  const check = (p, a, b) => {
+    if (rawIndex === undefined) rawIndex = readRaw();
+    if (rawIndex === null) return true;
+    const entry = rawIndex.get(p);
+    if (entry === undefined) return false; // not in the diff: identical at both ends
+    if (entry.status !== 'M') return true;
+    if (!patches.has(p)) patches.set(p, readPatch(p, entry));
+    const patch = patches.get(p);
+    return !patch.ok || rangesIntersect(patch.ranges, a, b);
+  };
+  return Object.freeze({
+    isChanged(p, a, b) {
+      try { return check(p, a, b); } catch (_e) { return true; }
+    },
+  });
+}
+
 // ---------- evaluation (called by xprov snapshot after the scan) ----------
 
 /** Matches grouped by (path, pattern) in scan order. */
@@ -502,6 +636,6 @@ function evaluate(o) {
 
 module.exports = {
   NO_ALLOWLIST, STORE_MODE, STORE_DIR_MODE, SHA256_RE,
-  parseStrictJson, parseAllowlist, scopesProblem, scopeTreeProblem, pathProblem, blobAt, separateCommitProblem, ownerProblem, verifiedTip, resolveAnchor, defaultBranch, lsRemote,
+  parseStrictJson, parseAllowlist, parseChangedRanges, rangesIntersect, parseRawDiff, changedLines, scopesProblem, scopeTreeProblem, pathProblem, blobAt, separateCommitProblem, ownerProblem, verifiedTip, resolveAnchor, defaultBranch, lsRemote,
   readApprovals, readGuardedStore, exactKeys, storePath, groupPairs, evaluate, permitRecord,
 };

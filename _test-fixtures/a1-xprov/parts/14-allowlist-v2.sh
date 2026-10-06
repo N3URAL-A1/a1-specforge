@@ -212,6 +212,90 @@ caseD1c() {
   pass14 "D1c x after approving the v2 blob's own sha"
 }
 
-for c in ${XPROV14_CASES:-caseD1 caseD1b caseD1c}; do "$c"; done
+# ---------- D2u: unit arm for the diff parser (FR-020, plan D.2) ----------
+# `git diff --unified=0` text → changed new-side line ranges. Inputs are literal diff texts
+# (hunk headers `@@ -a,b +c,d @@` with d = 0, d omitted, deleted-only hunks, CRLF, no trailing
+# newline). Mutation: M12 hunk-count verification removed → the count-mismatch arm.
+# Red before D.2: the parser is not exported.
+caseD2u() {
+  local out; out="$(node -e '
+    const AL = require(process.argv[1] + "/_shared/lib/xprov-allowlist.cjs");
+    const P = AL.parseChangedRanges;
+    const H = "diff --git a/f b/f\nindex 1111111..2222222 100644\n--- a/f\n+++ b/f\n";
+    const r = (t) => { const x = P(t); return x.ok ? JSON.stringify(x.ranges) : "bad:" + (x.binary ? "binary" : "parse"); };
+    const res = {
+      basic: r(H + "@@ -2,0 +3,2 @@\n+a\n+b\n@@ -7 +9 @@\n-x\n+y\n"),
+      deletedOnly: r(H + "@@ -3,2 +2,0 @@\n-a\n-b\n"),
+      dOmitted: r(H + "@@ -4 +5 @@\n-a\n+b\n"),
+      newFile: r("diff --git a/f b/f\nnew file mode 100644\nindex 0000000..2222222\n--- /dev/null\n+++ b/f\n@@ -0,0 +1,3 @@\n+a\n+b\n+c\n"),
+      crlf: r((H + "@@ -2,0 +3,2 @@ ctx\n+a\n+b\n@@ -7 +9 @@\n-x\n+y\n").replace(/\n/g, "\r\n")),
+      noTrailingNewline: r(H + "@@ -1 +1 @@\n-a\n\\ No newline at end of file\n+b\n\\ No newline at end of file"),
+      empty: r(""),
+      modeOnly: r("diff --git a/f b/f\nold mode 100644\nnew mode 100755\n"),
+      binary: r("diff --git a/f b/f\nindex 1111111..2222222 100644\nBinary files a/f and b/f differ\n"),
+      gitBinary: r("diff --git a/f b/f\nindex 1111111..2222222 100644\nGIT binary patch\nliteral 3\nKcmZQz00001\n\n"),
+      badHeader: r(H + "@@ -1 +x @@\n-a\n+b\n"),
+      countMismatch: r(H + "@@ -1 +1,2 @@\n-a\n+b\n"),
+      longer: r(H + "@@ -1 +1 @@\n-a\n+b\n+c\n"),
+      oldLonger: r(H + "@@ -1 +1 @@\n-a\n-c\n+b\n"),
+      oldCountMismatch: r(H + "@@ -1,2 +1 @@\n-a\n+b\n"),
+      unknownLine: r(H + "@@ -1 +1 @@\n-a\n+b\nwhat\n"),
+      twoFiles: r(H + "@@ -1 +1 @@\n-a\n+b\n" + H + "@@ -1 +1 @@\n-a\n+b\n"),
+      notIncreasing: r(H + "@@ -5 +5 @@\n-a\n+b\n@@ -2 +2 @@\n-a\n+b\n"),
+      contentLooksLikeHeader: r(H + "@@ -1 +1 @@\n---- x\n+@@ -9 +9 @@\n"),
+      middleBlank: r(H + "@@ -1 +1 @@\n-a\n\n+b\n"),
+      hugeStart: r(H + "@@ -1 +99999999999999999999 @@\n-a\n+b\n"),
+    };
+    const I = AL.rangesIntersect;
+    res.i = [I([[3, 4], [9, 9]], 1, 2), I([[3, 4], [9, 9]], 2, 3), I([[3, 4], [9, 9]], 4, 4), I([[3, 4], [9, 9]], 5, 8), I([[3, 4], [9, 9]], 5, 9), I([[3, 4], [9, 9]], 10, 12), I([], 1, 5), I([[3, 4]], 1, 100)].join(",");
+    process.stdout.write(JSON.stringify(res));
+  ' "$TREE" 2>&1)"
+  assert_json "D2u basic hunks: +3,2 and +9 (d omitted = 1 line)" "$out" "j.basic" "[[3,4],[9,9]]"
+  assert_json "D2u deleted-only hunk (+2,0) changes no new-side line" "$out" "j.deletedOnly" "[]"
+  assert_json "D2u d omitted means one line" "$out" "j.dOmitted" "[[5,5]]"
+  assert_json "D2u a new file: every line" "$out" "j.newFile" "[[1,3]]"
+  assert_json "D2u CRLF line endings, function-context suffix" "$out" "j.crlf" "[[3,4],[9,9]]"
+  assert_json "D2u no trailing newline, '\\ No newline' markers" "$out" "j.noTrailingNewline" "[[1,1]]"
+  assert_json "D2u empty diff text → ok, no ranges" "$out" "j.empty" "[]"
+  assert_json "D2u mode-only diff → ok, no ranges" "$out" "j.modeOnly" "[]"
+  assert_json "D2u 'Binary files … differ' → binary" "$out" "j.binary" "bad:binary"
+  assert_json "D2u 'GIT binary patch' → binary" "$out" "j.gitBinary" "bad:binary"
+  assert_json "D2u malformed hunk header → unparseable" "$out" "j.badHeader" "bad:parse"
+  assert_json "D2u new-side count differs from the lines → unparseable" "$out" "j.countMismatch" "bad:parse"
+  assert_json "D2u more '+' lines than the header says → unparseable" "$out" "j.longer" "bad:parse"
+  assert_json "D2u more '-' lines than the header says → unparseable" "$out" "j.oldLonger" "bad:parse"
+  assert_json "D2u old-side count differs from the lines → unparseable" "$out" "j.oldCountMismatch" "bad:parse"
+  assert_json "D2u unknown line inside a hunk → unparseable" "$out" "j.unknownLine" "bad:parse"
+  assert_json "D2u two files in one output → unparseable" "$out" "j.twoFiles" "bad:parse"
+  assert_json "D2u hunks out of order → unparseable" "$out" "j.notIncreasing" "bad:parse"
+  assert_json "D2u content that looks like a header stays content" "$out" "j.contentLooksLikeHeader" "[[1,1]]"
+  assert_json "D2u an empty line in the middle → unparseable" "$out" "j.middleBlank" "bad:parse"
+  assert_json "D2u a start beyond the safe integer range → unparseable" "$out" "j.hugeStart" "bad:parse"
+  assert_json "D2u range intersection edges" "$out" "j.i" "false,true,true,false,true,false,false,true"
+  out="$(node -e '
+    const AL = require(process.argv[1] + "/_shared/lib/xprov-allowlist.cjs");
+    const R = (t) => { const m = AL.parseRawDiff(t); return m === null ? "null" : [...m.entries()].map(([p, e]) => p + "=" + e.status).join("|"); };
+    const a = "1".repeat(40), b = "2".repeat(40);
+    const rec = (st, p) => ":100644 100644 " + a + " " + b + " " + st + "\0" + p + "\0";
+    process.stdout.write(JSON.stringify({
+      ok: R(rec("M", "a b.txt") + rec("A", "ü/ö\"q.txt")),
+      empty: R(""),
+      garbage: R("not a raw record\0x\0"),
+      noPath: R(":100644 100644 " + a + " " + b + " M\0"),
+      replacement: R(rec("M", "a�b")),
+      dup: R(rec("M", "x") + rec("D", "x")),
+      emptyMiddle: R(rec("M", "x") + "\0" + rec("M", "y")),
+    }));
+  ' "$TREE" 2>&1)"
+  assert_json "D2u raw diff: records with spaces, quotes, unicode" "$out" "j.ok" "a b.txt=M|ü/ö\"q.txt=A"
+  assert_json "D2u raw diff: empty output = no changed path" "$out" "j.empty" ""
+  assert_json "D2u raw diff: garbage → null (every line counts as changed)" "$out" "j.garbage" "null"
+  assert_json "D2u raw diff: a record without a path → null" "$out" "j.noPath" "null"
+  assert_json "D2u raw diff: a replacement character in a path → null" "$out" "j.replacement" "null"
+  assert_json "D2u raw diff: a path listed twice → null" "$out" "j.dup" "null"
+  assert_json "D2u raw diff: an empty token in the middle → null" "$out" "j.emptyMiddle" "null"
+}
+
+for c in ${XPROV14_CASES:-caseD1 caseD1b caseD1c caseD2u}; do "$c"; done
 export HOME="$SAVED_HOME_14"
 rm -rf "$TMP14"
