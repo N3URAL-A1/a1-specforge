@@ -168,6 +168,14 @@ expect_permit8() {
   never_ran8 "$1"
 }
 
+# reader_refuses8 <name> — the approval store READER (the allowlist's own check, R30j5/R30j6) still
+# refuses the current ~/.a1-xprov as unusable: ok false and NOT `missing`. expect_permit8 only shows
+# that the gate stops earlier now; this keeps the original allowlist assertion alive (Reinhard MINOR).
+reader_refuses8() {
+  local r; r="$(node -e 'const AL = require(process.argv[1] + "/_shared/lib/xprov-allowlist.cjs"); const a = AL.readApprovals(); process.stdout.write(JSON.stringify({ ok: a.ok, missing: a.missing }));' "$TREE")"
+  assert_json "$1 the approval-store reader refuses the home as unusable (not 'missing')" "$r" "j.ok + '/' + j.missing" "false/false"
+}
+
 # pass8 <name> — gate exit 0, verdict pass.
 pass8() {
   [[ "$G_RC" -eq 0 && "$(json_get "$G_OUT" "j.verdict")" == "pass" ]] && ok "$1 → pass" || bad "$1: want pass, got $(json_get "$G_OUT" "j.step + ':' + j.reason + '/' + j.reason_detail") (exit $G_RC) — $(printf '%s' "$G_ERR" | tail -n 2)"
@@ -554,9 +562,9 @@ caseR30j() {
   scen8; mv "$HOME/.a1-xprov/$STORE_NAME" "$A8/real-store.json"; ln -s "$A8/real-store.json" "$HOME/.a1-xprov/$STORE_NAME"
   plan8; expect8 "R30j4 store that is a symlink to a valid store" "allowlist_invalid/allowlist_unapproved"
   scen8; mv "$HOME/.a1-xprov" "$A8/real-xprov"; ln -s "$A8/real-xprov" "$HOME/.a1-xprov"
-  plan8; expect_permit8 "R30j5 ~/.a1-xprov that is a symlink"
+  plan8; expect_permit8 "R30j5 ~/.a1-xprov that is a symlink"; reader_refuses8 "R30j5"
   scen8; chmod 755 "$HOME/.a1-xprov"
-  plan8; expect_permit8 "R30j6 ~/.a1-xprov with mode 0755"
+  plan8; expect_permit8 "R30j6 ~/.a1-xprov with mode 0755"; reader_refuses8 "R30j6"
   # j7a: two approved shas; the pass names the one it used
   scen8; local used; used="$(blobsha8)"; local other="0000000000000000000000000000000000000000000000000000000000000001"
   store8 "$other" "$used"

@@ -127,10 +127,13 @@ function appliesToFor(gateId) {
   return cell;
 }
 
-/** True when the repository's permit state is `denied` (file and the owner's store agree) AND the gate's row applies to permitted repos only. */
-function notApplicableFor(root, gateId) {
-  return permitCheck({ repoRoot: root }).state === PERMIT_STATES.DENIED && appliesToFor(gateId) === APPLIES_TO.PERMITTED_REPOS;
+/** The ONE predicate for gate, load-check and wave-status: the permit result and whether this gate is
+ * not applicable — the state is `denied` (file and the owner's store agree) AND the row applies to permitted repos only. */
+function permitFor(root, gateId) {
+  const permit = permitCheck({ repoRoot: root });
+  return Object.freeze({ permit, notApplicable: permit.state === PERMIT_STATES.DENIED && appliesToFor(gateId) === APPLIES_TO.PERMITTED_REPOS });
 }
+const notApplicableFor = (root, gateId) => permitFor(root, gateId).notApplicable;
 
 function enforcementFor(gateId) {
   const text = readRegistryText();
@@ -407,7 +410,7 @@ function reviewedOutcome(ctx, base, al, ran, norm) {
 }
 
 /** `denied` on a `permitted-repos` row: no run, one log entry, one observation (spec 012 FR-002). */
-function notApplicable(ctx, base, permit) {
+function recordNotApplicable(ctx, base, permit) {
   const result = Object.freeze({
     ...base, verdict: X.VERDICT_NOT_APPLICABLE, step: 'permit-check', reason: X.REASONS.external_review_denied, permit_state: permit.state,
     reason_detail: `denied by ${permit.decided_by} on ${permit.decided_on}; the owner's denial store agrees`,
@@ -433,8 +436,8 @@ function gate(o) {
   // permit-check FIRST and outside the logged section: a repository without a
   // permission record gets no a1 write at all — no PLAN-REVIEW-LOG.md entry, no
   // xreview/ (Reinhard, PR review MAJOR 1; the W5 rule for every xprov writer).
-  const permit = permitCheck({ repoRoot: ctx.root });
-  if (permit.state === PERMIT_STATES.DENIED && appliesToFor(ctx.gate) === APPLIES_TO.PERMITTED_REPOS) return notApplicable(ctx, base, permit);
+  const { permit, notApplicable: na } = permitFor(ctx.root, ctx.gate);
+  if (na) return recordNotApplicable(ctx, base, permit);
   if (!permit.ok) {
     const everyRepo = permit.state === PERMIT_STATES.DENIED; // `denied` on an `applies_to: all` row still fails
     return fail('permit-check', everyRepo ? X.REASONS.external_review_not_permitted : permit.reason, everyRepo ? `external_review: denied, but ${ctx.gate} applies to every repository` : permit.detail, { permit_state: permit.state });
