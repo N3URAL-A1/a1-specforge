@@ -56,6 +56,7 @@ const STORE_DIR_MODE = 0o700;
 const NO_ALLOWLIST = Object.freeze({
   fail: null, unresolved: false, anchor: null, approved_blob: null, allowlisted_hits: 0,
   allowlisted: Object.freeze([]), uncovered: Object.freeze([]), stale: Object.freeze([]), note: null,
+  scoped_hits: Object.freeze([]), scoped_uncovered: Object.freeze([]),
 });
 
 // ---------- strict JSON (duplicate keys are an error at any level) ----------
@@ -389,7 +390,7 @@ const PATCH_HEADER_PREFIXES = Object.freeze(['index ', 'old mode ', 'new mode ',
 const PATCH_BODY_CHARS = '+- \\';
 
 /** The new-side line ranges of one file's `git diff --unified=0` text:
- * { ok: true, ranges: [[start, end], …] } (ascending, 1-based, inclusive) or
+ * { ok: true, ranges: [[start, end], …], hunks } (ranges ascending, 1-based, inclusive; `hunks` counts all hunks, deleted-only ones too) or
  * { ok: false, binary, reason }. Hunk counts are verified against the lines, so a
  * truncated or garbled patch is "unparseable", never "fewer changes". */
 function parseChangedRanges(text) {
@@ -399,6 +400,7 @@ function parseChangedRanges(text) {
   const ranges = [];
   let cur = null; // { oldLeft, newLeft } of the open hunk
   let files = 0;
+  let hunks = 0;
   let lastEnd = 0;
   const closed = () => cur === null || (cur.oldLeft === 0 && cur.newLeft === 0);
   for (const raw of lines) {
@@ -414,6 +416,7 @@ function parseChangedRanges(text) {
         lastEnd = newStart + newCount - 1;
         ranges.push([newStart, lastEnd]);
       }
+      hunks++;
       cur = { oldLeft: oldCount, newLeft: newCount };
       continue;
     }
@@ -430,7 +433,7 @@ function parseChangedRanges(text) {
     if (raw.startsWith('--- ') || raw.startsWith('+++ ') || PATCH_HEADER_PREFIXES.some((h) => raw.startsWith(h))) continue;
     return bad('unknown line outside a hunk');
   }
-  return closed() ? { ok: true, ranges } : bad('hunk shorter than its header');
+  return closed() ? { ok: true, ranges, hunks } : bad('hunk shorter than its header');
 }
 
 /** Whether any of the ascending, disjoint `ranges` meets lines [a, b] (binary search). */
@@ -477,15 +480,15 @@ function changedLines(root, anchor, rev) {
   let rawIndex; // undefined = not read yet, null = unreadable
   const patches = new Map();
   const readRaw = () => {
-    const r = git([...base, '--raw', '-z', anchor, rev, '--'], { ...opts, maxBuffer: C.GIT_MAX_BUFFER });
+    const r = git([...base, '--raw', '--no-abbrev', '-z', anchor, rev, '--'], { ...opts, maxBuffer: C.GIT_MAX_BUFFER });
     return r.status === 0 && !r.error ? parseRawDiff(r.stdout) : null;
   };
   const readPatch = (p, entry) => {
     const r = git([...base, '--unified=0', '--diff-algorithm=myers', anchor, rev, '--', p], opts);
     if (r.status !== 0 || r.error) return { ok: false };
     const parsed = parseChangedRanges(r.stdout);
-    // a different blob that yields no hunk and no mode line is unexplained: treat it as changed
-    if (parsed.ok && parsed.ranges.length === 0 && entry.oldSha !== entry.newSha) return { ok: false };
+    // a different blob (not a mode-only change) that yields no hunk at all is unexplained: treat it as changed
+    if (parsed.ok && parsed.hunks === 0 && entry.oldSha !== entry.newSha) return { ok: false };
     return parsed;
   };
   const check = (p, a, b) => {
@@ -503,6 +506,58 @@ function changedLines(root, anchor, rev) {
       try { return check(p, a, b); } catch (_e) { return true; }
     },
   });
+}
+
+
+// ---------- scopes: which matches a v2 scope may cover (spec 012 FR-020, FR-021) ----------
+
+/** The scope for (path, pattern): the LONGEST matching prefix, so a nested scope
+ * counts its own matches and the broader one keeps its headroom. */
+function scopeFor(scopes, m) {
+  let best = null;
+  for (const sc of scopes) {
+    if (sc.pattern === m.pattern && m.path.startsWith(sc.prefix) && (best === null || sc.prefix.length > best.prefix.length)) best = sc;
+  }
+  return best;
+}
+
+const isLine = (n) => Number.isSafeInteger(n) && n >= 1;
+
+/** Why one scope-eligible match cannot be covered by its scope, or null:
+ * `no_line` (no determinable line, e.g. a UTF-16 view), `changed_line`. */
+function scopeRefusal(m, changed) {
+  if (m.view !== 'latin1' || !isLine(m.line) || !isLine(m.end_line) || m.end_line < m.line) return 'no_line';
+  return changed !== null && !changed.isChanged(m.path, m.line, m.end_line) ? null : 'changed_line';
+}
+
+/** Splits one side's matches into scope-covered ones and the rest. Returns
+ * { rest: matches for the v1 judgement, hits: [{scope, count}], refused: [{scope, count, reason}] }.
+ * `changed` is the changed-line index of this side (null: every match counts as changed).
+ * A scope with more covered matches than its max_count covers nothing (reason max_count):
+ * its matches go back to the v1 judgement. Matches in the allowlist file are never covered. */
+function applyScopes(scopes, matches, changed) {
+  const covered = new Map(); // scope → matches
+  const refused = new Map(); // `${reason}\0${prefix}\0${pattern}` → { scope, reason, count }
+  const refuse = (scope, reason, n) => {
+    const key = `${reason}\0${scope.prefix}\0${scope.pattern}`;
+    const prev = refused.get(key) || { scope, reason, count: 0 };
+    refused.set(key, { ...prev, count: prev.count + n });
+  };
+  for (const m of matches) {
+    const sc = m.path === X.ALLOWLIST_FILE ? null : scopeFor(scopes, m);
+    if (sc === null) continue;
+    const why = scopeRefusal(m, changed);
+    if (why) { refuse(sc, why, 1); continue; }
+    covered.set(sc, [...(covered.get(sc) || []), m]);
+  }
+  const taken = new Set();
+  const hits = [];
+  for (const [sc, list] of covered) {
+    if (list.length > sc.max_count) { refuse(sc, 'max_count', list.length); continue; }
+    list.forEach((m) => taken.add(m));
+    hits.push({ scope: sc, count: list.length });
+  }
+  return { rest: matches.filter((m) => !taken.has(m)), hits, refused: [...refused.values()] };
 }
 
 // ---------- evaluation (called by xprov snapshot after the scan) ----------
@@ -586,9 +641,17 @@ function loadAtAnchor(root, anchor, commitSha, approvals) {
   return { doc, blobSha };
 }
 
+/** The report rows of one side's applyScopes result: counts per (prefix, pattern), never values. */
+function scopeRows(res, side, tag) {
+  return {
+    hits: res.hits.map((h) => tag(side, { prefix: h.scope.prefix, pattern: h.scope.pattern, class: h.scope.class, count: h.count, max_count: h.scope.max_count })),
+    refused: res.refused.map((r) => tag(side, { prefix: r.scope.prefix, pattern: r.scope.pattern, count: r.count, reason: r.reason })),
+  };
+}
+
 /** Applies the anchor's allowlist to the scan. Returns the NO_ALLOWLIST shape
  * with the fields filled in; `fail` set means stop before dispatch.
- * `o.matches` is the reviewed tree (side head). `o.extra` (Wave 7, Samuel:
+ * `o.matches` is the reviewed tree (side head); `o.baseSha` the resolved --base (scopes judge the base side against it). `o.extra` (Wave 7, Samuel:
  * everything that leaves is scanned) adds sides — `base` (base-side blobs of
  * every path the outbound diff touches) and `input` (the PLAN.md and
  * dispositions copies) — judged against the SAME anchored allowlist and the
@@ -614,6 +677,17 @@ function evaluate(o) {
   if (loaded.fail) return result({ fail: loaded.fail });
   if (loaded.absent) return result({});
   const { doc, blobSha } = loaded;
+  const scopes = doc.scopes || [];
+  // Scopes judge the head side against anchor..commit and the base side against anchor..base; the
+  // input side and path names are never scope-covered (FR-020).
+  const index = (rev) => (scopes.length && rev ? changedLines(o.root, anc.anchor, rev) : null);
+  const baseExtra = (o.extra || []).find((e) => e.side === 'base');
+  const headScoped = applyScopes(scopes, o.matches, index(o.commitSha));
+  const baseScoped = baseExtra ? applyScopes(scopes, baseExtra.matches, index(o.baseSha)) : null;
+  const scopedHits = [...scopeRows(headScoped, null, tag).hits, ...(baseScoped ? scopeRows(baseScoped, 'base', tag).hits : [])];
+  const scopedUncovered = [...scopeRows(headScoped, null, tag).refused, ...(baseScoped ? scopeRows(baseScoped, 'base', tag).refused : [])];
+  const restPairs = groupPairs(headScoped.rest);
+  const restSides = sides.map((x) => ({ side: x.side, pairs: x.side === 'base' && baseScoped ? groupPairs(baseScoped.rest) : x.pairs }));
   const allowlisted = [];
   const uncovered = [];
   const judge = (pairMap, side) => {
@@ -624,13 +698,13 @@ function evaluate(o) {
       else uncovered.push(tag(side, { path: p.path, pattern: p.pattern }));
     }
   };
-  judge(pairs, null);
-  for (const s of sides) judge(s.pairs, s.side);
+  judge(restPairs, null);
+  for (const x of restSides) judge(x.pairs, x.side);
   const tracked = new Set(o.tracked);
   const stale = doc.entries.filter((e) => !tracked.has(e.path) || !pairs.has(`${e.path}\0${e.pattern}`)).map((e) => Object.freeze({ path: e.path, pattern: e.pattern }));
   return result({
-    anchor: anc.anchor, approved_blob: blobSha, allowlisted, uncovered, stale,
-    allowlisted_hits: allowlisted.reduce((n, a) => n + a.count, 0),
+    anchor: anc.anchor, approved_blob: blobSha, allowlisted, uncovered, stale, scoped_hits: scopedHits, scoped_uncovered: scopedUncovered,
+    allowlisted_hits: allowlisted.reduce((n, a) => n + a.count, 0) + scopedHits.reduce((n, h) => n + h.count, 0),
   });
 }
 

@@ -251,8 +251,31 @@ function trueChars(src, m) {
   return hit ? Math.max(hit[0].length, m.chars) : m.chars;
 }
 
-/** Every match in one source, in (pattern order, view, offset) order. */
-function scanSource(src, rel, withPositions) {
+/** 1-based line of each byte offset (latin1: one byte, one character) in ONE
+ * streaming pass: Map(offset → 1 + number of LF bytes before it). */
+function lineNumbers(src, offsets) {
+  const sorted = [...new Set(offsets)].sort((a, b) => a - b);
+  const lines = new Map();
+  let line = 1;
+  let pos = 0;
+  for (const target of sorted) {
+    while (pos < target) {
+      const buf = src.read(pos, Math.min(target, pos + POSITION_CHUNK));
+      if (buf.length === 0) break;
+      for (let i = 0; i < buf.length; i++) if (buf[i] === 0x0a) line++;
+      pos += buf.length;
+    }
+    lines.set(target, line);
+  }
+  return lines;
+}
+
+/** Every match in one source, in (pattern order, view, offset) order. `withPositions`
+ * adds line and column (propose); `withLines` adds `line` and `end_line` (the lines
+ * of the match start and of its last character) for latin1-view matches only —
+ * allowlist v2 scopes (spec 012 FR-020) need them; a match in a UTF-16 view carries
+ * no line, and "no line" counts as a changed line there. */
+function scanSource(src, rel, withPositions, withLines) {
   const head = src.read(0, Math.min(src.size, SCAN_WINDOW + SCAN_OVERLAP));
   const mode = utf16Mode(head);
   const views = mode ? ['latin1', mode === 'le' ? 'utf16le' : 'utf16be'] : ['latin1'];
@@ -265,21 +288,27 @@ function scanSource(src, rel, withPositions) {
   }
   const order = (name) => X.SECRET_PATTERNS.findIndex((p) => p.name === name);
   const sorted = [...seen.values()].sort((a, b) => order(a.pattern) - order(b.pattern) || a.view.localeCompare(b.view) || a.abs - b.abs);
-  return mergeOverlaps(sorted)
-    .map((m) => Object.freeze({
-      path: rel, pattern: m.pattern, view: m.view, offset: m.abs,
-      fingerprint: C.sha256(Buffer.from(lineText(src, m.view, m.abs, trueChars(src, m)), 'utf8')),
-      excerpt: `${m.head}… (${m.chars} chars)`,
-      ...(withPositions ? positionOf(src, m.view, m.abs) : {}),
-    }));
+  const merged = mergeOverlaps(sorted).map((m) => ({ ...m, full: trueChars(src, m) }));
+  // a match as long as the re-read bound may be cut short: its last line is unknown, so it gets no line at all
+  const lined = (m) => m.view === 'latin1' && m.full < LINE_MAX_CHARS;
+  const lineOf = withLines
+    ? lineNumbers(src, merged.filter(lined).flatMap((m) => [m.abs, m.abs + Math.max(m.full, 1) - 1]))
+    : null;
+  return merged.map((m) => Object.freeze({
+    path: rel, pattern: m.pattern, view: m.view, offset: m.abs,
+    fingerprint: C.sha256(Buffer.from(lineText(src, m.view, m.abs, m.full), 'utf8')),
+    excerpt: `${m.head}… (${m.chars} chars)`,
+    ...(withPositions ? positionOf(src, m.view, m.abs) : {}),
+    ...(lineOf && lined(m) ? { line: lineOf.get(m.abs), end_line: lineOf.get(m.abs + Math.max(m.full, 1) - 1) } : {}),
+  }));
 }
 
 /** Windowed, counting scan of one tracked entry; never skips, whatever the size. */
-function scanEntry(full, st, rel, withPositions) {
-  if (st.isSymbolicLink()) return scanSource(bufferSource(fs.readlinkSync(full, { encoding: 'buffer' })), rel, withPositions);
+function scanEntry(full, st, rel, withPositions, withLines) {
+  if (st.isSymbolicLink()) return scanSource(bufferSource(fs.readlinkSync(full, { encoding: 'buffer' })), rel, withPositions, withLines);
   if (!st.isFile()) return [];
   const fd = fs.openSync(full, 'r');
-  try { return scanSource(fdSource(fd, st.size), rel, withPositions); } finally { fs.closeSync(fd); }
+  try { return scanSource(fdSource(fd, st.size), rel, withPositions, withLines); } finally { fs.closeSync(fd); }
 }
 
 /** Scan every tracked entry of a clone. Returns { files_scanned, skipped: 0,
@@ -291,6 +320,7 @@ function scanEntry(full, st, rel, withPositions) {
  * (Codex R1, live inspect 2026-10-03; Samuel: take the fix, keep the blobs). */
 function scanTrackedFiles(dir, opts) {
   const withPositions = Boolean(opts && opts.positions);
+  const withLines = Boolean(opts && opts.lines);
   const ls = git(['-C', dir, 'ls-files', '-z']);
   if (ls.status !== 0) return { files_scanned: 0, skipped: 0, tracked: [], matches: [], missingBlobs: [], error: tail(ls.stderr) };
   const tracked = ls.stdout.split('\0').filter(Boolean);
@@ -309,11 +339,11 @@ function scanTrackedFiles(dir, opts) {
       if (b.status !== 0) return { files_scanned: scanned, skipped: 0, tracked, matches, missingBlobs, error: `cat-file ${rel}: ${tail(String(b.stderr))}` };
       scanned++;
       missingBlobs.push({ path: rel, buf: b.stdout });
-      matches.push(...scanSource(bufferSource(b.stdout), rel, withPositions));
+      matches.push(...scanSource(bufferSource(b.stdout), rel, withPositions, withLines));
       continue;
     }
     scanned++;
-    matches.push(...scanEntry(full, st, rel, withPositions));
+    matches.push(...scanEntry(full, st, rel, withPositions, withLines));
   }
   return { files_scanned: scanned, skipped: 0, tracked, matches, missingBlobs };
 }
@@ -481,6 +511,7 @@ function allowlistReport(al) {
   return {
     allowlisted_hits: al.allowlisted_hits, allowlist_anchor: al.anchor, allowlist_approved_blob: al.approved_blob,
     allowlist_stale: al.stale, allowlisted: al.allowlisted, uncovered: al.uncovered, allowlist_note: al.note,
+    scoped_hits: al.scoped_hits, scoped_uncovered: al.scoped_uncovered, // spec 012 FR-023: counts per (prefix, pattern), never values
   };
 }
 
@@ -490,7 +521,7 @@ function allowlistReport(al) {
 /** Every side that leaves: the tree (incl. stripped HEAD blobs), the base side,
  * path names, the input copies. Returns the pieces, or { fail: { reason, … } }. */
 function scanOutbound(dir, cl, inputs, none) {
-  const scan = scanTrackedFiles(dir);
+  const scan = scanTrackedFiles(dir, { lines: true });
   if (scan.error) return { fail: { reason: X.REASONS.snapshot_failed, detail: `ls-files: ${scan.error}`, ...none } };
   // Base side: what the outbound diff carries from <base>.
   const base_ = cl.base === null ? { blobs: [], paths: [] } : baseSideBlobs(dir, cl.base);
@@ -505,7 +536,7 @@ function scanOutbound(dir, cl, inputs, none) {
   try { ins = copyInputs(dir, inputs); } catch (e) { return { fail: { reason: X.REASONS.snapshot_failed, detail: e.message, ...none } }; }
   return {
     scan, base_, ins,
-    baseMatches: base_.blobs.flatMap((b) => scanSource(bufferSource(b.buf), b.path, false)),
+    baseMatches: base_.blobs.flatMap((b) => scanSource(bufferSource(b.buf), b.path, false, true)),
     inputMatches: ins.labels.flatMap((l) => scanEntry(l.dest, fs.lstatSync(l.dest), l.label, false)),
   };
 }
@@ -551,7 +582,7 @@ function snapshot(opts) {
   const out = scanOutbound(dir, cl, opts.inputs, none);
   if (out.fail) return failed(out.fail);
   const al = AL.evaluate({
-    root: primaryRoot, commitSha: cl.commit, gateKind, matches: out.scan.matches, tracked: out.scan.tracked, approvals,
+    root: primaryRoot, commitSha: cl.commit, gateKind, matches: out.scan.matches, tracked: out.scan.tracked, approvals, baseSha: cl.base,
     extra: [{ side: 'base', matches: out.baseMatches }, { side: 'input', matches: out.inputMatches }],
   });
   const report = allowlistReport(al);
@@ -638,6 +669,7 @@ function cmdXprovSnapshot(args) {
   if (!r.ok) {
     process.stderr.write(`xprov snapshot: ${r.reason}${r.reason_detail ? `/${r.reason_detail}` : ''}${r.secret_pattern ? ` (pattern ${r.secret_pattern})` : ''}${r.detail ? ` — ${r.detail}` : ''}\n`);
     for (const u of r.uncovered || []) process.stderr.write(`  uncovered: ${u.path} · ${u.pattern}\n`);
+    for (const u of r.scoped_uncovered || []) process.stderr.write(`  scoped_uncovered: ${u.prefix} · ${u.pattern} · count ${u.count} · ${u.reason}${u.side ? ` · ${u.side}` : ''}\n`);
   }
   if (r.allowlist_note) process.stderr.write(`xprov snapshot: allowlist: ${r.allowlist_note}\n`);
   for (const s of r.allowlist_stale || []) process.stderr.write(`xprov snapshot: allowlist_stale: ${s.path} · ${s.pattern}\n`);

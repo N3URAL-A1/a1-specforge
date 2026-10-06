@@ -212,6 +212,149 @@ caseD1c() {
   pass14 "D1c x after approving the v2 blob's own sha"
 }
 
+# ---------- D3: scopes applied to unchanged lines only (FR-020, FR-021, FR-023) ----------
+# scen14 <scopes-json> [entries-json] — main holds tests/fix.txt (five lines, the 2nd and 4th match
+# password_assignment) and the allowlist; branch feat is checked out, ready for the feature commit.
+scen14() {
+  new14
+  printf 'alpha\n%s\nbeta\n%s\ngamma\n' "$(pwline14 fixtureval01)" "$(pwline14 fixtureval02)" > "$R14/tests/fix.txt"
+  c14 "fixture file"; push14
+  al14 "$(doc14 "$1" "${2:-}")"
+  feat14
+}
+J14() { json_get "$S_OUT" "$1"; }
+# hits14 — "<prefix>|<pattern>|<count>[|<side>]" of every scoped hit, joined by ','
+hits14() { J14 "j.scoped_hits.map((h) => [h.prefix, h.pattern, h.count].concat(h.side ? [h.side] : []).join('|')).join(',')"; }
+unc14() { J14 "j.scoped_uncovered.map((h) => [h.prefix, h.pattern, h.count, h.reason].concat(h.side ? [h.side] : []).join('|')).join(',')"; }
+noval14() { [[ "$S_OUT$S_ERR" != *fixtureval* ]] && ok "$1: no matched value in the result or on stderr" || bad "$1: a matched value leaked into the output"; }
+fp14() { printf '%s' "$1" > "$A14/fp.txt"; sha256_of "$A14/fp.txt"; }
+
+caseD3() {
+  local sc; sc="$(sc14 tests/ password_assignment 5)"
+  # (i) a scope covers a pre-existing fixture hit
+  scen14 "$sc"; printf '// f\n' >> "$R14/src/add.js"; c14 "feature"; snap14 feat
+  pass14 "D3 i scope covers two pre-existing hits"
+  assert_eq "D3 i scoped_hits lists (prefix, pattern, count)" "$(hits14)" "tests/|password_assignment|2"
+  assert_eq "D3 i nothing scope-eligible is left uncovered" "$(unc14)" ""
+  assert_eq "D3 i allowlisted_hits counts the scoped matches" "$(J14 j.allowlisted_hits)" "2"
+  noval14 "D3 i"
+  # a nearby edit, an insertion above (line numbers shift), a deletion above: still unchanged lines
+  scen14 "$sc"; sed -i.bak 's/^alpha$/alpha2/' "$R14/tests/fix.txt"; rm -f "$R14/tests/fix.txt.bak"; c14 "edit line 1"; snap14 feat
+  pass14 "D3 i-b an edit on an unrelated line of the same file"
+  scen14 "$sc"; { printf 'zero\n'; cat "$R14/tests/fix.txt"; } > "$A14/t"; cp "$A14/t" "$R14/tests/fix.txt"; c14 "insert on top"; snap14 feat
+  pass14 "D3 i-c a line inserted above shifts the hits down, they stay unchanged"
+  scen14 "$sc"; sed -i.bak '3d' "$R14/tests/fix.txt"; rm -f "$R14/tests/fix.txt.bak"; c14 "delete line 3"; snap14 feat
+  pass14 "D3 i-d a deleted line above (deleted-only hunk)"
+  # (ii) the same hit on a line the reviewed range adds or rewrites
+  scen14 "$sc"; pwline14 fixtureval03 >> "$R14/tests/fix.txt"; printf '\n' >> "$R14/tests/fix.txt"; c14 "add a hit"; snap14 feat
+  expect14 "D3 ii the same pattern on an ADDED line" "secret_in_snapshot"
+  assert_eq "D3 ii the two old hits stay scope-covered" "$(hits14)" "tests/|password_assignment|2"
+  assert_eq "D3 ii the added one is reported as changed_line, count only" "$(unc14)" "tests/|password_assignment|1|changed_line"
+  assert_eq "D3 ii the uncovered pair names path and pattern" "$(J14 "j.uncovered.map((u) => u.path + '|' + u.pattern).join(',')")" "tests/fix.txt|password_assignment"
+  noval14 "D3 ii"
+  scen14 "$sc"; sed -i.bak 's/fixtureval01/fixtureval99/' "$R14/tests/fix.txt"; rm -f "$R14/tests/fix.txt.bak"; c14 "rewrite a hit"; snap14 feat
+  expect14 "D3 ii-b a covered line REWRITTEN (value changed)" "secret_in_snapshot"
+  assert_eq "D3 ii-b one scope hit left, one changed" "$(hits14) $(unc14)" "tests/|password_assignment|1 tests/|password_assignment|1|changed_line"
+  scen14 "$sc"; printf '%s\n' "$(pwline14 fixtureval05)" > "$R14/tests/new.txt"; c14 "new file"; snap14 feat
+  expect14 "D3 ii-c a NEW file under the prefix" "secret_in_snapshot"
+  scen14 "$sc"; sed -n '2p' "$R14/tests/fix.txt" >> "$R14/tests/fix.txt"; c14 "duplicate a covered line"; snap14 feat
+  expect14 "D3 ii-d a covered line DUPLICATED" "secret_in_snapshot"
+  # (iii) a renamed or copied file: every line strict
+  scen14 "$sc"; git -C "$R14" mv tests/fix.txt tests/moved.txt; c14 "rename"; snap14 feat
+  expect14 "D3 iii renamed file, content identical" "secret_in_snapshot"
+  assert_eq "D3 iii both hits count as changed_line" "$(unc14)" "tests/|password_assignment|2|changed_line"
+  scen14 "$sc"; cp "$R14/tests/fix.txt" "$R14/tests/copy.txt"; c14 "copy"; snap14 feat
+  expect14 "D3 iii-b copied file (the copy is new, the original stays covered)" "secret_in_snapshot"
+  assert_eq "D3 iii-b original covered, copy strict" "$(hits14) $(unc14)" "tests/|password_assignment|2 tests/|password_assignment|2|changed_line"
+  # a changed line with a matching v1 entry takes the v1 path and passes
+  local line3; line3="$(pwline14 fixtureval03)"
+  scen14 "$sc" "$(printf '{"path":"tests/fix.txt","pattern":"password_assignment","max_count":1,"fingerprints":["%s"],"class":"fixture_fake","reason":"fixture","reviewed_by":"robert","added_on":"2026-10-06"}' "$(fp14 "$line3")")"
+  printf '%s\n' "$line3" >> "$R14/tests/fix.txt"; c14 "add the entry-covered line"; snap14 feat
+  pass14 "D3 a changed line covered by an exact v1 entry (fingerprint) passes"
+  assert_eq "D3 …the two old hits are scoped, the new one allowlisted by the entry" "$(hits14) $(J14 j.allowlisted_hits)" "tests/|password_assignment|2 3"
+  # (vii) the count per (prefix, pattern)
+  scen14 "$(sc14 tests/ password_assignment 1)"; printf '// f\n' >> "$R14/src/add.js"; c14 "feature"; snap14 feat
+  expect14 "D3 vii two scoped hits, max_count 1" "secret_in_snapshot"
+  assert_eq "D3 vii the scope is reported with reason max_count and its count" "$(unc14)" "tests/|password_assignment|2|max_count"
+  scen14 "$(sc14 tests/ password_assignment 2)"; printf '// f\n' >> "$R14/src/add.js"; c14 "feature"; snap14 feat
+  pass14 "D3 vii exactly max_count hits are fine"
+  scen14 "$(sc14 tests/ password_assignment 2)"
+  git -C "$R14" checkout -q main; mkdir -p "$R14/tests/unit"; printf '%s\n' "$(pwline14 fixtureval07)" > "$R14/tests/unit/y.txt"; c14 "second file"; push14
+  al14 "$(doc14 "$(sc14 tests/ password_assignment 2)")"; feat14; printf '// f\n' >> "$R14/src/add.js"; c14 "feature"; snap14 feat
+  expect14 "D3 vii the count is per (prefix, pattern) across files (2 + 1 > 2)" "secret_in_snapshot"
+  # the most specific scope takes the match: tests/unit/ counts its own, tests/ keeps room
+  git -C "$R14" checkout -q main
+  al14 "$(doc14 "$(sc14 tests/ password_assignment 2),$(sc14 tests/unit/ password_assignment 1)")"; feat14; printf '// g\n' >> "$R14/src/add.js"; c14 "feature"; snap14 feat
+  pass14 "D3 nested scopes: the longest matching prefix counts the match"
+  assert_eq "D3 nested scopes: one hit each" "$(hits14)" "tests/|password_assignment|2,tests/unit/|password_assignment|1"
+}
+
+# D3b — what a scope never covers or cannot judge: the base side, binary and UTF-16 files, the input side, path names.
+caseD3b() {
+  local sc; sc="$(sc14 tests/ password_assignment 2)"
+  # (ix) base side: the base blob's line changed between the anchor and --base stays strict
+  scen14 "$(sc14 tests/ password_assignment 5)"; local w1 w2
+  pwline14 fixtureval03 >> "$R14/tests/fix.txt"; printf '\n' >> "$R14/tests/fix.txt"; c14 "wave 1 adds a hit"; w1="$(head14)"
+  sed -i.bak '$d' "$R14/tests/fix.txt"; rm -f "$R14/tests/fix.txt.bak"; c14 "wave 2 removes it again"
+  # the file now equals the anchor's: the head side is clean; only the base blob carries the changed line
+  [[ "$(git -C "$R14" diff --name-only main HEAD -- tests/fix.txt)" == "" ]] && ok "D3 ix fixture: head equals the anchor for tests/fix.txt" || bad "D3 ix fixture: head differs from the anchor"
+  snap14 feat --base "$w1"
+  expect14 "D3 ix base blob with a hit on a line changed in the base" "secret_in_snapshot"
+  assert_eq "D3 ix the failing side is base" "$(J14 j.secret_side)" "base"
+  scen14 "$sc"; printf 'delta\n' >> "$R14/tests/fix.txt"; c14 "wave 1 adds a harmless line"; w1="$(head14)"
+  sed -i.bak 's/^gamma$/gamma2/' "$R14/tests/fix.txt"; rm -f "$R14/tests/fix.txt.bak"; c14 "wave 2 edits gamma"
+  snap14 feat --base "$w1"
+  pass14 "D3 ix-b base blob whose hits are on unchanged lines (head and base 2 each, max_count 2 per side)"
+  assert_eq "D3 ix-b scoped hits carry their side" "$(hits14)" "tests/|password_assignment|2,tests/|password_assignment|2|base"
+  # binary diff: every line changed; the unchanged binary file is covered (control)
+  new14
+  { printf '%s\n' "$(pwline14 fixtureval08)"; printf '\0\0\0\0'; } > "$R14/tests/bin.dat"; c14 "binary file"; push14
+  al14 "$(doc14 "$(sc14 tests/ password_assignment 3)")"; feat14; printf '// f\n' >> "$R14/src/add.js"; c14 "feature"; snap14 feat
+  pass14 "D3 binary control: the unchanged binary file's hit is covered (3 hits)"
+  printf '\0' >> "$R14/tests/bin.dat"; c14 "touch the binary file"; snap14 feat
+  expect14 "D3 binary diff: every line counts as changed" "secret_in_snapshot"
+  assert_eq "D3 binary diff: reported as changed_line" "$(unc14)" "tests/|password_assignment|1|changed_line"
+  # UTF-16: a match without a determinable line is never scoped
+  new14
+  node -e 'const fs = require("fs"); fs.writeFileSync(process.argv[1], Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(process.argv[2] + "\n", "utf16le")]));' "$R14/tests/u16.txt" "$(pwline14 fixtureval09)"
+  c14 "utf-16 file"; push14; al14 "$(doc14 "$(sc14 tests/ password_assignment 3)")"; feat14; printf '// f\n' >> "$R14/src/add.js"; c14 "feature"; snap14 feat
+  expect14 "D3 utf-16 file: an unchanged hit without a line number stays strict" "secret_in_snapshot"
+  assert_eq "D3 utf-16 file: reported as no_line" "$(unc14)" "tests/|password_assignment|1|no_line"
+  # the input side: a PLAN copy under a scoped prefix is never covered
+  new14; al14 "$(doc14 "$(sc14 .a1/ password_assignment 5)")"; feat14; mkdir -p "$R14/.a1/phases/p14"; printf '%s\n' "$(pwline14 fixtureval10)" > "$R14/.a1/phases/p14/PLAN.md"
+  printf '// f\n' >> "$R14/src/add.js"; git -C "$R14" add src/add.js; git -C "$R14" commit -qm "feature"
+  snap14 feat; pass14 "D3 input control: without --plan nothing matches"
+  # the label is the path relative to the primary checkout's REAL path (macOS: /var is a symlink to /private/var)
+  snap14 feat --plan "$(cd "$R14" && pwd -P)/.a1/phases/p14/PLAN.md"
+  expect14 "D3 input side: the PLAN copy under a scoped prefix is not covered" "secret_in_snapshot"
+  assert_eq "D3 input side: the failing side is input" "$(J14 j.secret_side)" "input"
+  # path names are never allowlisted
+  scen14 "$sc"; : > "$R14/tests/${PWK}=abcdefgh1.txt"; c14 "path name"; snap14 feat
+  expect14 "D3 path name that matches a pattern, under a scoped prefix" "secret_in_snapshot"
+  assert_eq "D3 path name: side path" "$(J14 j.secret_side)" "path"
+}
+
+# D3g — the gate path: result JSON and XREVIEW.md list scoped_hits with counts, never values (FR-023).
+caseD3g() {
+  scen14 "$(sc14 tests/ password_assignment 5)"
+  export HOME="$A14/home"; mkdir -p "$HOME/.codex"; printf '{"fixture":true}\n' > "$HOME/.codex/auth.json"; chmod 600 "$HOME/.codex/auth.json"
+  make_home; ln -s "$HOME/.codex/auth.json" "$XHOME/auth.json"; export A1_XPROV_CODEX_HOME="$XHOME"
+  git -C "$R14" checkout -q main
+  mkdir -p "$R14/.a1/phases/p14"; cp "$CASES/approved.PLAN.md" "$R14/.a1/phases/p14/PLAN.md"
+  printf '.a1/phases/p14/XREVIEW.md\n.a1/phases/p14/PLAN-REVIEW-LOG.md\n.a1/phases/p14/xreview/\n.a1/phases/p14/observations.jsonl\n' > "$R14/.gitignore"
+  c14 "phase p14"; push14
+  feat14; printf '// f\n' >> "$R14/src/add.js"; c14 "feature"
+  FAKE_RUNNER_ARGV_FILE="$A14/argv.json" FAKE_RUNNER_CASE=approved fake_runner_env
+  G_OUT="$(cd "$R14" && node "$TREE_TOOLS" xprov gate --phase p14 --gate "$GATE_PLAN" --timeout 7 2>"$TMP14/gate-err.txt")"; G_RC=$?
+  assert_rc "D3g gate with scoped hits passes" 0 "$G_RC" "$(tail -n 2 "$TMP14/gate-err.txt")"
+  assert_json "D3g the gate result lists scoped_hits per (prefix, pattern) with the count" "$G_OUT" "j.scoped_hits.map((h) => h.prefix + '|' + h.pattern + '|' + h.count).join(',') + ' ' + j.allowlisted_hits" "tests/|password_assignment|2 2"
+  local xr; xr="$(cat "$R14/.a1/phases/p14/XREVIEW.md" 2>/dev/null)"
+  [[ "$xr" == *"tests/ · password_assignment · count 2"* ]] && ok "D3g XREVIEW.md lists the scoped pair with its count" || bad "D3g XREVIEW.md lacks the scoped pair"
+  [[ "$xr$G_OUT" != *fixtureval* ]] && ok "D3g no matched value in XREVIEW.md or the result" || bad "D3g a matched value leaked"
+  assert_json "D3g the index entry carries allowlisted_hits 2" "$(cat "$R14/.a1/phases/p14/xreview/index.json")" "j[0].allowlisted_hits" "2"
+  unset A1_XPROV_CODEX_HOME
+}
+
 # ---------- D2u: unit arm for the diff parser (FR-020, plan D.2) ----------
 # `git diff --unified=0` text → changed new-side line ranges. Inputs are literal diff texts
 # (hunk headers `@@ -a,b +c,d @@` with d = 0, d omitted, deleted-only hunks, CRLF, no trailing
@@ -296,6 +439,6 @@ caseD2u() {
   assert_json "D2u raw diff: an empty token in the middle → null" "$out" "j.emptyMiddle" "null"
 }
 
-for c in ${XPROV14_CASES:-caseD1 caseD1b caseD1c caseD2u}; do "$c"; done
+for c in ${XPROV14_CASES:-caseD1 caseD1b caseD1c caseD2u caseD3 caseD3b caseD3g}; do "$c"; done
 export HOME="$SAVED_HOME_14"
 rm -rf "$TMP14"
