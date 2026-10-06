@@ -328,6 +328,11 @@ caseD3b() {
   snap14 feat --plan "$(cd "$R14" && pwd -P)/.a1/phases/p14/PLAN.md"
   expect14 "D3 input side: the PLAN copy under a scoped prefix is not covered" "secret_in_snapshot"
   assert_eq "D3 input side: the failing side is input" "$(J14 j.secret_side)" "input"
+  # a real private-key header also matches the scopable pem_begin: the high-confidence match keeps failing
+  new14; printf '%s\n' "${D14}BEGIN RSA PRIVATE KEY${D14}" > "$R14/tests/key.txt"; c14 "key header"; push14
+  al14 "$(doc14 "$(sc14 tests/ pem_begin 5)")"; feat14; printf '// f\n' >> "$R14/src/add.js"; c14 "feature"; snap14 feat
+  expect14 "D3 a PRIVATE KEY header under a pem_begin scope: private_key_header is never scoped" "secret_in_snapshot"
+  assert_eq "D3 …the failing pattern is private_key_header, pem_begin is scope-covered" "$(J14 j.secret_pattern) $(hits14)" "private_key_header tests/|pem_begin|1"
   # path names are never allowlisted
   scen14 "$sc"; : > "$R14/tests/${PWK}=abcdefgh1.txt"; c14 "path name"; snap14 feat
   expect14 "D3 path name that matches a pattern, under a scoped prefix" "secret_in_snapshot"
