@@ -700,6 +700,17 @@ caseS6() {
   assert_json "S6 a bare PRIVATE KEY header still is" "$out" "j.plain.includes('private_key_header')" "true"
   assert_json "S6 counter-test: a PGP PUBLIC KEY BLOCK is not" "$out" "j.pub.includes('private_key_header')" "false"
   assert_json "S6 counter-test: a certificate is not" "$out" "j.cert.includes('private_key_header')" "false"
+  # review point 13: no source file of this wave carries a literal that the content scan itself reports
+  out="$(node -e '
+    const fs = require("fs"); const X = require(process.argv[1] + "/_shared/lib/xprov.cjs");
+    const hits = [];
+    for (const f of ["xprov-approve.cjs", "xprov-allowlist.cjs", "xprov-snapshot.cjs"]) {
+      const t = fs.readFileSync(process.argv[1] + "/_shared/lib/" + f, "utf8");
+      for (const p of X.SECRET_PATTERNS) if (new RegExp(p.re.source, p.re.flags.replace("g", "")).test(t)) hits.push(f + ":" + p.name);
+    }
+    console.log(JSON.stringify({ hits: hits.join(",") }));
+  ' "$TREE")"
+  assert_json "S6 the wave's lib sources contain no secret-shaped literal (pem_begin included)" "$out" "j.hits" ""
 }
 
 # ---------- S7 (Samuel SEC-7): terminal output of paths, prefixes and reasons is escaped ----------

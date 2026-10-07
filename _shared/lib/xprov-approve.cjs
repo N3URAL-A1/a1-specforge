@@ -74,7 +74,8 @@ const ENV_LINE_RE = /\$\{\{\s*secrets\.|\bprocess\.env\b|\bos\.environ\b|\bgeten
 const ENV_VALUE_RE = /^(?:\$\{?[A-Za-z_]|%[A-Za-z_]+%$|<%=|\{\{)/;
 const PLACEHOLDER_RE = /^(?:change[-_ ]?me\w*|your[-_]?\w*|example\w*|placeholder\w*|dummy\w*|fake\w*|sample\w*|redacted|test\w*|x{4,}|\*{3,}|\.{3,}|todo|secret|password|passwd|123456\w*|<[^>]+>)$/i;
 const CODE_VALUE_RE = /^[A-Za-z_$][\w$.]*\(/;
-const LITERAL_REF_RE = /(['"`/])-----BEGIN/;
+// assembled from parts: a source file must not carry a literal the content scan reports itself
+const LITERAL_REF_RE = new RegExp(`(['"\`/])${'-'.repeat(5)}BEGIN`);
 const KIND_ORDER = Object.freeze(['env_reference', 'placeholder', 'code_expression', 'unclassified']);
 const READ_MAX_BYTES = 5 * 1024 * 1024;
 const HIGH_CONFIDENCE = new Set(X.HIGH_CONFIDENCE_PATTERNS);
