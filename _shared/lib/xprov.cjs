@@ -140,7 +140,7 @@ const ALLOWLIST_DETAILS = Object.freeze({
 // `propose` marks matches of these patterns `high_confidence: true` (FR-030 h).
 const HIGH_CONFIDENCE_PATTERNS = Object.freeze([
   'aws_access_key_id', 'github_pat_classic', 'github_token_family', 'github_pat_fine_grained',
-  'google_api_key', 'private_key_header', 'jwt', 'sk_prefixed_key', 'sk_prefixed_key_ext',
+  'google_api_key', 'private_key_header', 'jwt', 'sk_prefixed_key', 'sk_prefixed_key_ext', 'slack_token_family',
 ]);
 
 // ---------- secret patterns (FR-018) ----------

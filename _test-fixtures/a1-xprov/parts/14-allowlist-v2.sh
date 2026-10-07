@@ -141,6 +141,7 @@ caseD1() {
   variant14 "D1 iv scope on aws_access_key_id" "$(doc14 "$(sc14 tests/ aws_access_key_id 1)")" "allowlist_invalid" "high-confidence"
   variant14 "D1 iv scope on sk_prefixed_key_ext" "$(doc14 "$(sc14 tests/ sk_prefixed_key_ext 1)")" "allowlist_invalid" "high-confidence"
   variant14 "D1 iv scope on private_key_header" "$(doc14 "$(sc14 tests/ private_key_header 1)")" "allowlist_invalid" "high-confidence"
+  variant14 "D1 iv scope on slack_token_family" "$(doc14 "$(sc14 tests/ slack_token_family 1)")" "allowlist_invalid" "high-confidence"
   variant14 "D1 non-high-confidence pem_begin scope is valid" "$(doc14 "$(sc14 tests/ pem_begin 1)")" pass
   # (v) prefix must be a tree at the anchor
   variant14 "D1 v prefix that does not exist" "$(doc14 "$(sc14 nodir/ password_assignment 1)")" "allowlist_invalid" "not a directory at the anchor"
