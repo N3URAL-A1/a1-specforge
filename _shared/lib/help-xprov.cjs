@@ -271,6 +271,9 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   path names. Per (prefix, pattern) at most max_count covered
                   matches (longest matching prefix counts a match). Result and
                   XREVIEW.md: scoped_hits, scoped_uncovered — counts only.
+                  scoped_uncovered.reason: changed_line, no_line, max_count,
+                  diff_unreadable (git failed, binary or unparseable diff),
+                  git_timeout (each git read is bounded to 30 s).
                   A v2 blob needs its own approval; the typed count is
                   entries + scopes. Approval
                   store ~/.a1-xprov/allowlist-approvals.json (0600, dir 0700,
