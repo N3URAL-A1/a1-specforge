@@ -151,7 +151,7 @@ migration mid-run.
 
 ## Isolation Gate (HARD RULE — before any wave execution)
 
-No wave code is written in the primary checkout. Before Wave 1, the phase MUST
+No wave code is written in the primary checkout. Before the first wave (Wave 0 if the plan has one), the phase MUST
 be moved into its own git worktree on a fresh branch off `main` — full
 convention (worktree naming, shared-state rule, scope claim, merge discipline,
 gotchas): `_shared/parallel-spec-isolation.md`. Short form:
@@ -234,5 +234,5 @@ rejects it inside a lane, and that rejection is not to be worked around.
 - Always show the diff summary after each wave (`git log --oneline -5`)
 - If a wave is BLOCKED (a1-erik-executor reports blocked tasks), surface to user before continuing
 - Never re-execute already-committed tasks — check STATUS.md first
-- Never start Wave 1 while `xprov load-check` reports `plan_review_missing` under `blocking`; never spawn Victor while `xprov wave-status` exits 1 under `blocking`
+- Never start the first wave (Wave 0 if the plan has one) while `xprov load-check` reports `plan_review_missing` under `blocking`; never spawn Victor while `xprov wave-status` exits 1 under `blocking`
 - Never run `xprov waive` from this skill — the human runs it, the skill only prints the command
