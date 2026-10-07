@@ -201,14 +201,19 @@ function draftScopes(root, scopes) {
   return { version: 2, owner, entries: [], scopes: scopes.map((s) => ({ prefix: s.prefix, pattern: s.pattern, class: s.class, max_count: s.count, reason: '', reviewed_by: owner, added_on: today })) };
 }
 
+/** Text for the owner's terminal: C0, DEL, C1, line/paragraph separators, zero-width and bidi
+ * controls become `\uXXXX` (SEC-7) — a path, prefix or reason can carry an escape sequence. */
+const UNSAFE_TERMINAL_RE = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]/g;
+const safeText = (t) => String(t).replace(UNSAFE_TERMINAL_RE, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
+
 function cmdProposeScopes(root, commit, asJson) {
   const r = matchesAt(root, commit, { kinds: true });
   if (!r.ok) {
-    process.stderr.write(`xprov allowlist propose: snapshot_failed — ${r.detail}\n`);
+    process.stderr.write(`xprov allowlist propose: snapshot_failed — ${safeText(r.detail)}\n`);
     return C.emitJson({ ok: false, reason: X.REASONS.snapshot_failed, detail: r.detail }, X.EXIT_FAIL);
   }
   const p = proposeScopes(r.matches);
-  const err = (line) => process.stderr.write(`${line}\n`);
+  const err = (line) => process.stderr.write(`${safeText(line)}\n`);
   for (const s of p.scopes) err(`${s.prefix}  ${s.pattern}  ${s.count}  ${s.class}  ${KIND_ORDER.map((k) => `${k} ${s.kinds[k]}`).join(' · ')}`);
   for (const n of p.not_scopable) err(`not scopable (high confidence, needs v1 entries): ${n.pattern} ${n.count}`);
   if (p.root_files) err(`root-level files (no directory prefix, need v1 entries): ${p.root_files} match(es)`);
@@ -226,11 +231,11 @@ function cmdPropose(args) {
   if (flags.scopes) return cmdProposeScopes(root, flags.commit, Boolean(flags.json));
   const r = matchesAt(root, flags.commit);
   if (!r.ok) {
-    process.stderr.write(`xprov allowlist propose: snapshot_failed — ${r.detail}\n`);
+    process.stderr.write(`xprov allowlist propose: snapshot_failed — ${safeText(r.detail)}\n`);
     return C.emitJson({ ok: false, reason: X.REASONS.snapshot_failed, detail: r.detail }, X.EXIT_FAIL);
   }
   const rows = listing(r.matches);
-  for (const m of rows) process.stderr.write(`${m.location}  ${m.pattern}  ${m.class}  ${m.excerpt}  high_confidence: ${m.high_confidence}\n`);
+  for (const m of rows) process.stderr.write(`${safeText(`${m.location}  ${m.pattern}  ${m.class}  ${m.excerpt}  high_confidence: ${m.high_confidence}`)}\n`);
   process.stderr.write(`xprov allowlist propose: ${rows.length} match(es) at ${r.commit.slice(0, 12)}; nothing written\n`);
   if (flags.json) return C.emitJson(draft(root, r.matches), X.EXIT_PASS);
   return C.emitJson({ ok: true, commit: r.commit, matches: rows }, X.EXIT_PASS);
@@ -367,7 +372,7 @@ function approveListing(doc, rows) {
   }
   const count = doc.entries.length + scopes.length;
   const prompt = doc.version === 2 ? `Type the number of entries and scopes (${count}) to approve this blob: ` : `Type the number of entries (${count}) to approve this blob: `;
-  return { lines, count, prompt };
+  return { lines: lines.map(safeText), count, prompt };
 }
 
 function approve(root) {
@@ -383,7 +388,7 @@ function approve(root) {
   if (!r.ok) return { code: X.EXIT_FAIL, msg: `snapshot of ${t.tip.slice(0, 12)} failed: ${r.detail}` };
   const sha = C.sha256(blob);
   const rows = listing(r.matches);
-  const err = (line) => process.stderr.write(`${line}\n`);
+  const err = (line) => process.stderr.write(`${safeText(line)}\n`);
   // Warn, never block: a blob the gate will reject anyway is not worth approving.
   const sep = AL.separateCommitProblem(root, t.tip);
   if (sep) err(`warning: ${sep} — the gate reports allowlist_not_separate_commit for this blob`);
@@ -431,11 +436,11 @@ function cmdApprove(args) {
   } catch (e) {
     if (e && e.code === 'A1_INPUT') throw e;
     // git, blob, clone and write failures: one line, exit 1, nothing half-written (Reinhard R-M4)
-    process.stderr.write(`[a1-tools] xprov allowlist approve: failed — ${C.clip(String(e && e.message ? e.message : e).replace(/\s+/g, ' '), C.DETAIL_MAX_CHARS)}; nothing written\n`);
+    process.stderr.write(`[a1-tools] xprov allowlist approve: failed — ${safeText(C.clip(String(e && e.message ? e.message : e).replace(/\s+/g, ' '), C.DETAIL_MAX_CHARS))}; nothing written\n`);
     process.exitCode = X.EXIT_FAIL;
     return null;
   }
-  process.stderr.write(`xprov allowlist approve: ${r.msg}\n`);
+  process.stderr.write(`xprov allowlist approve: ${safeText(r.msg)}\n`);
   if (r.out) return C.emitJson(r.out, r.code);
   process.exitCode = r.code;
   return null;

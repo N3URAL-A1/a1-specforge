@@ -702,6 +702,28 @@ caseS6() {
   assert_json "S6 counter-test: a certificate is not" "$out" "j.cert.includes('private_key_header')" "false"
 }
 
-for c in ${XPROV14_CASES:-caseD1 caseD1b caseD1c caseD2u caseD3 caseD3b caseD3g casePropose caseApproveListing caseApproveTty caseS2 caseS8 caseR11 caseS1 caseS1u caseS4 caseS6}; do "$c"; done
+# ---------- S7 (Samuel SEC-7): terminal output of paths, prefixes and reasons is escaped ----------
+# Mutation: M26 make safeText the identity → every arm turns red.
+caseS7() {
+  new14
+  local esc; esc="$(printf '\033')"
+  mkdir -p "$R14/lib/${esc}[2Jdir"
+  printf '%s\n' "$(pwline14 fixtureval51)" > "$R14/lib/${esc}[2Jdir/f.js"; c14 "a path with an escape sequence"
+  prop14 --scopes
+  [[ "$P_ERR" != *"$esc"* ]] && ok "S7 propose --scopes: no ESC byte reaches the terminal" || bad "S7 propose --scopes printed an ESC byte"
+  [[ "$P_ERR" == *'\u001b[2Jdir'* ]] && ok "S7 propose --scopes: shown as \\u001b" || bad "S7 propose --scopes: escaped form missing: ${P_ERR:0:200}"
+  prop14
+  [[ "$P_ERR" != *"$esc"* && "$P_ERR" == *'\u001b[2Jdir'* ]] && ok "S7 propose (entries): escaped too" || bad "S7 propose printed an ESC byte or lost the path"
+  local out; out="$(node -e '
+    const AP = require(process.argv[1] + "/_shared/lib/xprov-approve.cjs");
+    const e = String.fromCharCode(27), rlo = String.fromCharCode(0x202e), c1 = String.fromCharCode(0x9b);
+    const doc = { version: 2, owner: "robert", entries: [{ path: "a" + e + "[31m.js", pattern: "p", max_count: 1, class: "c", reason: "r" + rlo + "evil" }], scopes: [{ prefix: "tests/" + c1 + "x/", pattern: "p", max_count: 1, class: "c", reason: "line1\nline2" }] };
+    console.log(JSON.stringify({ text: AP.approveListing(doc, []).lines.join("|") }));
+  ' "$TREE")"
+  assert_json "S7 approve listing: no control, C1 or bidi character" "$out" "/[\\u0000-\\u0009\\u000b-\\u001f\\u007f-\\u009f\\u202a-\\u202e]/.test(j.text)" "false"
+  assert_json "S7 approve listing: escapes are visible, the layout is kept" "$out" "j.text.includes('\\\\u001b[31m.js') && j.text.includes('\\\\u202eevil') && j.text.includes('\\\\u009bx/') && j.text.includes('line1\\\\u000aline2')" "true"
+}
+
+for c in ${XPROV14_CASES:-caseD1 caseD1b caseD1c caseD2u caseD3 caseD3b caseD3g casePropose caseApproveListing caseApproveTty caseS2 caseS8 caseR11 caseS1 caseS1u caseS4 caseS6 caseS7}; do "$c"; done
 export HOME="$SAVED_HOME_14"
 rm -rf "$TMP14"
