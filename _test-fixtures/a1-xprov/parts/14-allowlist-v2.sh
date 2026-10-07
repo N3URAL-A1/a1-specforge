@@ -661,6 +661,28 @@ caseS1u() {
   assert_json "S1u call site: without an index every eligible path is bad" "$out" "j.noIndex" "tests/a,tests/b,tests/c,tests/d"
 }
 
-for c in ${XPROV14_CASES:-caseD1 caseD1b caseD1c caseD2u caseD3 caseD3b caseD3g casePropose caseApproveListing caseApproveTty caseS2 caseS8 caseR11 caseS1 caseS1u}; do "$c"; done
+# ---------- S4 (Samuel SEC-4): a tracked blob whose disk bytes differ is scanned as its blob too ----------
+# Mutation: M24 skip the blob scan for mismatching paths → both arms pass the snapshot.
+caseS4() {
+  # UTF-32LE working-tree encoding: the disk bytes interleave NULs, no pattern matches them; the blob (UTF-8) is what leaves
+  new14
+  node -e 'const t = process.argv[2] + "\n"; const b = Buffer.alloc(t.length * 4); for (let i = 0; i < t.length; i++) b.writeUInt32LE(t.charCodeAt(i), i * 4); require("fs").writeFileSync(process.argv[1], b);' "$R14/tests/u32.txt" "$(pwline14 fixtureval41)"
+  printf 'tests/u32.txt working-tree-encoding=UTF-32LE\n' > "$R14/.gitattributes"; c14 "utf-32 fixture"; push14
+  snap14 main
+  expect14 "S4 a hit that only the blob shows (UTF-32LE on disk)" "secret_in_snapshot"
+  assert_eq "S4 …found as password_assignment" "$(J14 j.secret_pattern)" "password_assignment"
+  # two paths that fold to one file on a case-insensitive disk: the blob that lost the race is still scanned
+  local order
+  for order in "Case.txt:case.txt" "case.txt:Case.txt"; do
+    new14
+    local hit plain; hit="$(printf '%s\n' "$(pwline14 fixtureval42)" | git -C "$R14" hash-object -w --stdin)"; plain="$(printf 'plain\n' | git -C "$R14" hash-object -w --stdin)"
+    git -C "$R14" update-index --add --cacheinfo "100644,$hit,tests/${order%%:*}" --cacheinfo "100644,$plain,tests/${order##*:}"
+    git -C "$R14" commit -qm "case-colliding paths"; push14
+    snap14 main
+    expect14 "S4 hit at tests/${order%%:*}, plain at tests/${order##*:}" "secret_in_snapshot"
+  done
+}
+
+for c in ${XPROV14_CASES:-caseD1 caseD1b caseD1c caseD2u caseD3 caseD3b caseD3g casePropose caseApproveListing caseApproveTty caseS2 caseS8 caseR11 caseS1 caseS1u caseS4}; do "$c"; done
 export HOME="$SAVED_HOME_14"
 rm -rf "$TMP14"
