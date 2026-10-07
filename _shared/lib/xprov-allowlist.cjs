@@ -501,27 +501,27 @@ function gitOut(args) {
 }
 
 /** The changed-line index of `<anchor> → <rev>` in `root`, computed lazily and
- * cached for the run: { refusal(path, firstLine, lastLine) → null | 'changed_line' | 'git_timeout', isChanged }.
- * Never throws; every doubt is a refusal. */
+ * cached for the run: { refusal(path, firstLine, lastLine) → null | 'changed_line' | 'diff_unreadable' | 'git_timeout', isChanged }.
+ * `diff_unreadable`: git failed, or its output is binary, unparseable or unexplained. Never throws; every doubt is a refusal. */
 function changedLines(root, anchor, rev) {
   const opts = { env: diffEnv(), maxBuffer: DIFF_MAX_BYTES };
-  const base = ['--literal-pathspecs', '-C', root, 'diff', '--no-ext-diff', '--no-textconv', '--no-renames', '--no-color'];
+  const base = ['--literal-pathspecs', '-C', root, 'diff', '--no-ext-diff', '--no-textconv', '--no-renames', '--no-color', '--inter-hunk-context=0'];
   let rawIndex; // undefined = not read yet, { why } = unreadable
   const patches = new Map();
   const readRaw = () => {
     const r = git([...base, '--raw', '--no-abbrev', '-z', anchor, rev, '--'], { ...opts, maxBuffer: C.GIT_MAX_BUFFER });
     if (timedOut(r)) return { why: 'git_timeout' };
     const map = r.status === 0 && !r.error ? parseRawDiff(r.stdout) : null;
-    return map === null ? { why: 'changed_line' } : { map };
+    return map === null ? { why: 'diff_unreadable' } : { map };
   };
   const readPatch = (p, entry) => {
     const r = git([...base, '--unified=0', '--diff-algorithm=myers', anchor, rev, '--', p], opts);
     if (timedOut(r)) return { ok: false, why: 'git_timeout' };
-    if (r.status !== 0 || r.error) return { ok: false, why: 'changed_line' };
+    if (r.status !== 0 || r.error) return { ok: false, why: 'diff_unreadable' };
     const parsed = parseChangedRanges(r.stdout);
     // a different blob (not a mode-only change) that yields no hunk at all is unexplained: treat it as changed
-    if (parsed.ok && parsed.hunks === 0 && entry.oldSha !== entry.newSha) return { ok: false, why: 'changed_line' };
-    return parsed.ok ? parsed : { ok: false, why: 'changed_line' };
+    if (parsed.ok && parsed.hunks === 0 && entry.oldSha !== entry.newSha) return { ok: false, why: 'diff_unreadable' };
+    return parsed.ok ? parsed : { ok: false, why: 'diff_unreadable' };
   };
   const check = (p, a, b) => {
     if (rawIndex === undefined) rawIndex = readRaw();
@@ -535,7 +535,7 @@ function changedLines(root, anchor, rev) {
     return rangesIntersect(patch.ranges, a, b) ? 'changed_line' : null;
   };
   const refusal = (p, a, b) => {
-    try { return check(p, a, b); } catch (_e) { return 'changed_line'; }
+    try { return check(p, a, b); } catch (_e) { return 'diff_unreadable'; }
   };
   return Object.freeze({ refusal, isChanged: (p, a, b) => refusal(p, a, b) !== null });
 }

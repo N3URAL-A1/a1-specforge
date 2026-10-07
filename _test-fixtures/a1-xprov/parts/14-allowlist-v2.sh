@@ -313,7 +313,7 @@ caseD3b() {
   pass14 "D3 binary control: the unchanged binary file's hit is covered (3 hits)"
   printf '\0' >> "$R14/tests/bin.dat"; c14 "touch the binary file"; snap14 feat
   expect14 "D3 binary diff: every line counts as changed" "secret_in_snapshot"
-  assert_eq "D3 binary diff: reported as changed_line" "$(unc14)" "tests/|password_assignment|1|changed_line"
+  assert_eq "D3 binary diff: reported as diff_unreadable" "$(unc14)" "tests/|password_assignment|1|diff_unreadable"
   # UTF-16: a match without a determinable line is never scoped
   new14
   node -e 'const fs = require("fs"); fs.writeFileSync(process.argv[1], Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(process.argv[2] + "\n", "utf16le")]));' "$R14/tests/u16.txt" "$(pwline14 fixtureval09)"
@@ -573,6 +573,17 @@ caseS8() {
   assert_eq "S8 an out-of-range timeout override falls back to the bound" "$(XPROV_GIT_TIMEOUT_MS=99999999 node -e 'process.stdout.write(String(require(process.argv[1] + "/_shared/lib/xprov-allowlist.cjs").gitTimeoutMs()))' "$TREE")" "30000"
 }
 
-for c in ${XPROV14_CASES:-caseD1 caseD1b caseD1c caseD2u caseD3 caseD3b caseD3g casePropose caseApproveListing caseApproveTty caseS2 caseS8}; do "$c"; done
+# ---------- R11 (Reinhard): a repo-configured inter-hunk context must not widen the changed ranges ----------
+# Mutation: M22 drop --inter-hunk-context=0 from the diff arguments → the two edits merge and the hits between them look changed.
+caseR11() {
+  scen14 "$(sc14 tests/ password_assignment 5)"
+  git -C "$R14" config diff.interHunkContext 10
+  sed -i.bak -e 's/^alpha$/alpha2/' -e 's/^gamma$/gamma2/' "$R14/tests/fix.txt"; rm -f "$R14/tests/fix.txt.bak"; c14 "edit the first and last line"
+  snap14 feat
+  pass14 "R11 a configured diff.interHunkContext: the two hits between two edits stay covered"
+  assert_eq "R11 …both hits scoped" "$(hits14)" "tests/|password_assignment|2"
+}
+
+for c in ${XPROV14_CASES:-caseD1 caseD1b caseD1c caseD2u caseD3 caseD3b caseD3g casePropose caseApproveListing caseApproveTty caseS2 caseS8 caseR11}; do "$c"; done
 export HOME="$SAVED_HOME_14"
 rm -rf "$TMP14"
