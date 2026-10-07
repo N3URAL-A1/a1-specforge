@@ -156,7 +156,7 @@ caseD1() {
   # (vi) prefix shape: root, glob, escape, relative segments, missing slash
   local p
   for p in '/' './' '' 'tests' '*/' 'te*/' 't?sts/' 'tests//' '../' '/tests/' 'tests/./' 'tests/../' 'tests\\/' '{tests}/' '[t]ests/'; do
-    variant14 "D1 vi prefix '$p'" "$(doc14 "$(sc14 "$p" password_assignment 1)")" "allowlist_invalid" "prefix"
+    variant14 "D1 vi prefix '$p'" "$(doc14 "$(sc14 "$p" password_assignment 1)")" "allowlist_invalid" ".prefix:"
   done
   # (vii-bound) max_count bounds
   variant14 "D1 max_count 2000 is valid" "$(doc14 "$(sc14 tests/ password_assignment 2000)")" pass
