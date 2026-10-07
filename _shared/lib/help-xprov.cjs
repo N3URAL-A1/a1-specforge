@@ -126,7 +126,8 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   trust anchor covers it (see allowlist below). --repo must
                   share the git-common-dir of the cwd's checkout. stdout adds
                   allowlisted_hits, allowlist_anchor, allowlist_approved_blob,
-                  allowlist_stale, allowlisted, uncovered, allowlist_note.
+                  allowlist_stale, allowlisted, uncovered, allowlist_note,
+                  scoped_hits, scoped_uncovered (allowlist v2, counts only).
                   Wave 7: everything that LEAVES is scanned — with --base the
                   base-side blob of every path the outbound diff touches
                   (git diff --name-only --no-renames <base> of the stripped
@@ -223,12 +224,20 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   the run dir's a1-reviewed.json (written by xprov run); a lane
                   without --lane-work-path lacks. index.json waived: true rows
                   count for nothing.
-    allowlist propose --commit <rev> [--json] [--repo <git-toplevel>]
+    allowlist propose --commit <rev> [--json] [--scopes] [--repo <git-toplevel>]
                   (xprov-approve.cjs, wave 6b) every secret-pattern match at
                   <rev> as path:line:column, pattern, proposed class, masked
                   excerpt (first 4 characters + length), high_confidence —
                   never the matched text. --json prints a DRAFT allowlist with
                   empty reason fields. Never writes a file.
+                  --scopes (spec 012 FR-024) groups the matches for an
+                  allowlist v2: per (prefix, pattern) the count, the proposed
+                  class and the heuristic kinds (env_reference, placeholder,
+                  code_expression, unclassified), the high-confidence counts
+                  (never scopable: v1 entries), the number of root-level
+                  matches, and the path:line list (masked) of what the
+                  heuristics could not classify. With --json: a DRAFT v2
+                  document (entries [], one scope per pair, reasons empty).
     allowlist approve --repo <path> [--revoke <sha256>]
                   (xprov-approve.cjs, wave 6b) HUMAN ONLY, in a separate
                   terminal: exit 2 and nothing written unless stdin and stdout
@@ -247,7 +256,27 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   fingerprints, class, reason, reviewed_by, added_on}]}, at most
                   32 entries, duplicate JSON keys rejected. A reviewed range
                   that touches the file → allowlist_modified; the file's last
-                  commit must touch nothing else; owner = decided_by. Approval
+                  commit must touch nothing else; owner = decided_by.
+                  Version 2 (spec 012, FR-019..FR-023) adds scopes: [{prefix,
+                  pattern, class, max_count 1–2000, reason, reviewed_by,
+                  added_on}] (top level exactly version 2, owner, entries,
+                  scopes; at most 32 scopes, a separate cap). prefix = a
+                  directory that is a tree at the anchor, ends in /, not the
+                  root, no glob or escape; (prefix, pattern) unique; pattern is
+                  never a high-confidence key shape. A scope covers a match
+                  only on a line UNCHANGED between the anchor and the reviewed
+                  commit (base side: anchor and --base); a match without a
+                  line, in a binary, added, renamed or unparseable diff counts
+                  as changed and takes the v1 path. Never the input side or
+                  path names. Per (prefix, pattern) at most max_count covered
+                  matches (longest matching prefix counts a match). Result and
+                  XREVIEW.md: scoped_hits, scoped_uncovered — counts only.
+                  scoped_uncovered.reason: changed_line, no_line, max_count,
+                  diff_unreadable (git failed, binary or unparseable diff),
+                  blob_mismatch (scanned bytes are not the committed blob),
+                  git_timeout (each git read is bounded to 30 s).
+                  A v2 blob needs its own approval; the typed count is
+                  entries + scopes. Approval
                   store ~/.a1-xprov/allowlist-approvals.json (0600, dir 0700,
                   no symlinks): {"version":1,"repos":{"<realpath of
                   git-common-dir>":["<sha256 of the blob>", …]}}.

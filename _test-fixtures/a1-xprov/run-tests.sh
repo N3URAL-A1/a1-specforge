@@ -21,6 +21,11 @@
 set -u
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+# A symlinked _shared lets every copy-and-tamper step write into the live tree (part 01 R22 copies it by hand;
+# review 2026-10-07). Refuse before any part runs.
+if [[ -L "$REPO_ROOT/_shared" || -L "$REPO_ROOT/_shared/vendor" || -L "$REPO_ROOT/_shared/vendor/claudex-loop" ]]; then
+  echo "FAIL  harness: $REPO_ROOT/_shared (or its vendor path) is a symlink; the suite must not run against a linked tree" >&2; exit 2
+fi
 SUITE="$REPO_ROOT/_test-fixtures/a1-xprov"
 CASES="$SUITE/cases"
 FAKE="$SUITE/fake"
@@ -145,10 +150,19 @@ sums_check() {
 # prepends fake/bin to PATH (once) and exports FAKE_RUNNER_CASES_DIR.
 FAKE_PATH_PREPENDED=0
 make_tree() {
+  # Review 2026-10-07: a symlinked _shared made `cp -R` + the runner swap write INTO the live tree
+  # (it polluted vendor/claudex-loop/runner.py once). Refuse before anything is written.
+  if [[ -L "$REPO_ROOT/_shared" || -L "$REPO_ROOT/_shared/vendor" || -L "$REPO_ROOT/_shared/vendor/claudex-loop" ]]; then
+    echo "FAIL  harness: $REPO_ROOT/_shared (or its vendor path) is a symlink; the suite must not run against a linked tree" >&2; exit 2
+  fi
   TREE="$(mktemp -d)"
   cp -R "$REPO_ROOT/_shared" "$TREE/_shared"
   TREE_TOOLS="$TREE/_shared/a1-tools.cjs"
   TREE_VENDOR="$TREE/_shared/vendor/claudex-loop"
+  local tree_real vendor_real; tree_real="$(cd "$TREE" && pwd -P)"; vendor_real="$(cd "$TREE_VENDOR" && pwd -P)"
+  if [[ "$vendor_real" != "$tree_real"/* ]]; then
+    echo "FAIL  harness: the copied vendor dir $vendor_real is not under $tree_real; refusing to swap the runner" >&2; rm -rf "$TREE"; exit 2
+  fi
   cp "$FAKE/fake-runner.py" "$TREE_VENDOR/runner.py"
   ( cd "$TREE_VENDOR" && if command -v shasum >/dev/null 2>&1; then shasum -a 256 runner.py > SHA256SUMS; else sha256sum runner.py > SHA256SUMS; fi )
   # The fake CLIs are COPIED into a temp bin and made executable there — the
@@ -252,6 +266,11 @@ for p in "${parts[@]}"; do
   # shellcheck disable=SC1090
   source "$p"
 done
+
+# The live tree's vendored runner must still be the audited one (a part that wrote into the real tree would show here).
+live_runner_sha="$(shasum -a 256 "$VENDOR/runner.py" 2>/dev/null | cut -d' ' -f1)"
+[[ -n "$live_runner_sha" ]] || live_runner_sha="$(sha256sum "$VENDOR/runner.py" 2>/dev/null | cut -d' ' -f1)"
+[[ "$live_runner_sha" == "$EXPECTED_RUNNER_SHA256" ]] && ok "harness: the live tree's runner.py is still the audited file" || bad "harness: the live tree's runner.py changed during the suite (sha256 ${live_runner_sha:-unreadable})"
 
 if [[ "$(xprov_listing)" == "$XPROV_BEFORE" ]]; then ok "harness: the real ~/.a1-xprov is unchanged by the suite"
 else bad "harness: the suite changed the real ~/.a1-xprov: $(diff <(printf '%s\n' "$XPROV_BEFORE") <(xprov_listing) | head -5 | tr '\n' ' ')"; fi

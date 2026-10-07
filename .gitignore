@@ -11,3 +11,6 @@ checkpoint/
 *.lock.reclaim.*
 .product-stage.lock.json
 *.tmp.*
+
+# fake-runner side file written into a copied tree; never part of the repo
+_shared/vendor/claudex-loop/fake-runner.env.json

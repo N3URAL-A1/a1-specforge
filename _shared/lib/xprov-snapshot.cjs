@@ -67,6 +67,7 @@
 
 const fs = require('fs');
 const os = require('os');
+const crypto = require('crypto');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { parseFlags, repoRoot } = require('./io.cjs');
@@ -251,8 +252,31 @@ function trueChars(src, m) {
   return hit ? Math.max(hit[0].length, m.chars) : m.chars;
 }
 
-/** Every match in one source, in (pattern order, view, offset) order. */
-function scanSource(src, rel, withPositions) {
+/** 1-based line of each byte offset (latin1: one byte, one character) in ONE
+ * streaming pass: Map(offset → 1 + number of LF bytes before it). */
+function lineNumbers(src, offsets) {
+  const sorted = [...new Set(offsets)].sort((a, b) => a - b);
+  const lines = new Map();
+  let line = 1;
+  let pos = 0;
+  for (const target of sorted) {
+    while (pos < target) {
+      const buf = src.read(pos, Math.min(target, pos + POSITION_CHUNK));
+      if (buf.length === 0) break;
+      for (let i = 0; i < buf.length; i++) if (buf[i] === 0x0a) line++;
+      pos += buf.length;
+    }
+    lines.set(target, line);
+  }
+  return lines;
+}
+
+/** Every match in one source, in (pattern order, view, offset) order. `withPositions`
+ * adds line and column (propose); `withLines` adds `line` and `end_line` (the lines
+ * of the match start and of its last character) for latin1-view matches only —
+ * allowlist v2 scopes (spec 012 FR-020) need them; a match in a UTF-16 view carries
+ * no line, and "no line" counts as a changed line there. */
+function scanSource(src, rel, withPositions, withLines) {
   const head = src.read(0, Math.min(src.size, SCAN_WINDOW + SCAN_OVERLAP));
   const mode = utf16Mode(head);
   const views = mode ? ['latin1', mode === 'le' ? 'utf16le' : 'utf16be'] : ['latin1'];
@@ -265,21 +289,73 @@ function scanSource(src, rel, withPositions) {
   }
   const order = (name) => X.SECRET_PATTERNS.findIndex((p) => p.name === name);
   const sorted = [...seen.values()].sort((a, b) => order(a.pattern) - order(b.pattern) || a.view.localeCompare(b.view) || a.abs - b.abs);
-  return mergeOverlaps(sorted)
-    .map((m) => Object.freeze({
-      path: rel, pattern: m.pattern, view: m.view, offset: m.abs,
-      fingerprint: C.sha256(Buffer.from(lineText(src, m.view, m.abs, trueChars(src, m)), 'utf8')),
-      excerpt: `${m.head}… (${m.chars} chars)`,
-      ...(withPositions ? positionOf(src, m.view, m.abs) : {}),
-    }));
+  const merged = mergeOverlaps(sorted).map((m) => ({ ...m, full: trueChars(src, m) }));
+  // a match as long as the re-read bound may be cut short: its last line is unknown, so it gets no line at all
+  const lined = (m) => m.view === 'latin1' && m.full < LINE_MAX_CHARS;
+  const lineOf = withLines
+    ? lineNumbers(src, merged.filter(lined).flatMap((m) => [m.abs, m.abs + Math.max(m.full, 1) - 1]))
+    : null;
+  return merged.map((m) => Object.freeze({
+    path: rel, pattern: m.pattern, view: m.view, offset: m.abs,
+    fingerprint: C.sha256(Buffer.from(lineText(src, m.view, m.abs, m.full), 'utf8')),
+    excerpt: `${m.head}… (${m.chars} chars)`,
+    ...(withPositions ? positionOf(src, m.view, m.abs) : {}),
+    ...(lineOf && lined(m) ? { line: lineOf.get(m.abs), end_line: lineOf.get(m.abs + Math.max(m.full, 1) - 1) } : {}),
+  }));
 }
 
 /** Windowed, counting scan of one tracked entry; never skips, whatever the size. */
-function scanEntry(full, st, rel, withPositions) {
-  if (st.isSymbolicLink()) return scanSource(bufferSource(fs.readlinkSync(full, { encoding: 'buffer' })), rel, withPositions);
+function scanEntry(full, st, rel, withPositions, withLines) {
+  if (st.isSymbolicLink()) return scanSource(bufferSource(fs.readlinkSync(full, { encoding: 'buffer' })), rel, withPositions, withLines);
   if (!st.isFile()) return [];
   const fd = fs.openSync(full, 'r');
-  try { return scanSource(fdSource(fd, st.size), rel, withPositions); } finally { fs.closeSync(fd); }
+  try { return scanSource(fdSource(fd, st.size), rel, withPositions, withLines); } finally { fs.closeSync(fd); }
+}
+
+/** The git blob id (sha1) of `buf`'s bytes. */
+function blobIdOf(buf) {
+  return crypto.createHash('sha1').update(`blob ${buf.length}\0`).update(buf).digest('hex');
+}
+
+/** The blob id of what is on disk at `full` (a symlink: its target text), or null when absent. Streams. */
+function diskBlobId(full) {
+  let st;
+  try { st = fs.lstatSync(full); } catch (_e) { return null; }
+  if (st.isSymbolicLink()) return blobIdOf(fs.readlinkSync(full, { encoding: 'buffer' }));
+  if (!st.isFile()) return null;
+  const h = crypto.createHash('sha1').update(`blob ${st.size}\0`);
+  const fd = fs.openSync(full, 'r');
+  try {
+    const chunk = Buffer.alloc(1 << 20);
+    for (let n = fs.readSync(fd, chunk, 0, chunk.length, null); n > 0; n = fs.readSync(fd, chunk, 0, chunk.length, null)) h.update(chunk.subarray(0, n));
+  } finally { fs.closeSync(fd); }
+  return h.digest('hex');
+}
+
+/** `git ls-tree -r -z HEAD` of a clone: Map path → blob id (blobs only), or null when git fails. */
+function headBlobIds(dir) {
+  const ls = git(['-C', dir, 'ls-tree', '-r', '-z', 'HEAD']);
+  if (ls.status !== 0) return null;
+  const ids = new Map();
+  for (const rec of ls.stdout.split('\0')) {
+    const tab = rec.indexOf('\t');
+    const m = tab > 0 ? /^\d+ blob ([0-9a-f]{40})$/.exec(rec.slice(0, tab)) : null;
+    if (m) ids.set(rec.slice(tab + 1), m[1]);
+  }
+  return ids;
+}
+
+/** Matches in `blobMatches` that `diskMatches` do not account for (multiset difference by pattern + fingerprint). */
+function surplusMatches(blobMatches, diskMatches) {
+  const left = new Map();
+  for (const m of diskMatches) { const k = `${m.pattern}\0${m.fingerprint}`; left.set(k, (left.get(k) || 0) + 1); }
+  const out = [];
+  for (const m of blobMatches) {
+    const k = `${m.pattern}\0${m.fingerprint}`;
+    const n = left.get(k) || 0;
+    if (n > 0) left.set(k, n - 1); else out.push(m);
+  }
+  return out;
 }
 
 /** Scan every tracked entry of a clone. Returns { files_scanned, skipped: 0,
@@ -288,15 +364,23 @@ function scanEntry(full, st, rel, withPositions) {
  * working tree (a stripped repo-local file — `.codex/config.toml` is a
  * realistic secret carrier) is still readable as `git show HEAD:<path>` from
  * the snapshot's object store, so its HEAD blob is scanned as side head
- * (Codex R1, live inspect 2026-10-03; Samuel: take the fix, keep the blobs). */
+ * (Codex R1, live inspect 2026-10-03; Samuel: take the fix, keep the blobs).
+ * SEC-4 (Samuel, 2026-10-07): a tracked path whose bytes on disk are not its committed blob
+ * (two paths that fold to one file on a case-insensitive disk, a working-tree-encoding or eol
+ * rewrite, a directory in the way) is ALSO scanned as its blob; only matches the disk scan did
+ * not already find are added. `untrusted` lists those paths, `blobIds` is path → blob id at HEAD. */
 function scanTrackedFiles(dir, opts) {
   const withPositions = Boolean(opts && opts.positions);
+  const withLines = Boolean(opts && opts.lines);
   const ls = git(['-C', dir, 'ls-files', '-z']);
   if (ls.status !== 0) return { files_scanned: 0, skipped: 0, tracked: [], matches: [], missingBlobs: [], error: tail(ls.stderr) };
   const tracked = ls.stdout.split('\0').filter(Boolean);
+  const blobIds = headBlobIds(dir);
+  if (blobIds === null) return { files_scanned: 0, skipped: 0, tracked: [], matches: [], missingBlobs: [], error: 'ls-tree HEAD failed' };
   let scanned = 0;
   const matches = [];
   const missingBlobs = [];
+  const untrusted = new Set();
   for (const rel of tracked) {
     const full = path.join(dir, rel);
     let st = null;
@@ -306,16 +390,24 @@ function scanTrackedFiles(dir, opts) {
       const type = git(['-C', dir, 'cat-file', '-t', spec]);
       if (type.status !== 0 || type.stdout.trim() !== 'blob') continue; // a gitlink: no content in this object store
       const b = spawnSync('git', ['-C', dir, 'cat-file', 'blob', spec], { maxBuffer: C.GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] });
-      if (b.status !== 0) return { files_scanned: scanned, skipped: 0, tracked, matches, missingBlobs, error: `cat-file ${rel}: ${tail(String(b.stderr))}` };
+      if (b.status !== 0) return { files_scanned: scanned, skipped: 0, tracked, matches, missingBlobs, blobIds, untrusted, error: `cat-file ${rel}: ${tail(String(b.stderr))}` };
       scanned++;
       missingBlobs.push({ path: rel, buf: b.stdout });
-      matches.push(...scanSource(bufferSource(b.stdout), rel, withPositions));
+      matches.push(...scanSource(bufferSource(b.stdout), rel, withPositions, withLines));
       continue;
     }
     scanned++;
-    matches.push(...scanEntry(full, st, rel, withPositions));
+    const own = scanEntry(full, st, rel, withPositions, withLines);
+    matches.push(...own);
+    const id = blobIds.get(rel);
+    if (id === undefined || diskBlobId(full) === id) continue;
+    untrusted.add(rel);
+    const spec = `HEAD:${rel}`;
+    const b = spawnSync('git', ['-C', dir, 'cat-file', 'blob', spec], { maxBuffer: C.GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] });
+    if (b.status !== 0) return { files_scanned: scanned, skipped: 0, tracked, matches, missingBlobs, blobIds, untrusted, error: `cat-file ${rel}: ${tail(String(b.stderr))}` };
+    matches.push(...surplusMatches(scanSource(bufferSource(b.stdout), rel, withPositions, withLines), own));
   }
-  return { files_scanned: scanned, skipped: 0, tracked, matches, missingBlobs };
+  return { files_scanned: scanned, skipped: 0, tracked, matches, missingBlobs, blobIds, untrusted };
 }
 
 /** gitleaks when on PATH, with a1's own config (never the reviewed repo's). */
@@ -360,7 +452,7 @@ function cloneSnapshot(sourceRepo, commit, base) {
   const failed = (detail) => { removeDir(dir); return { ok: false, reason: X.REASONS.snapshot_failed, dir: null, detail }; };
   let baseSha = null;
   if (base) {
-    const rb = git(['-C', sourceRepo, 'rev-parse', '--verify', '--quiet', `${base}^{commit}`]);
+    const rb = git(['--no-replace-objects', '-C', sourceRepo, 'rev-parse', '--verify', '--quiet', `${base}^{commit}`]);
     if (rb.status !== 0) return failed(`base ${base} does not resolve in ${sourceRepo}`);
     baseSha = rb.stdout.trim();
   }
@@ -481,6 +573,7 @@ function allowlistReport(al) {
   return {
     allowlisted_hits: al.allowlisted_hits, allowlist_anchor: al.anchor, allowlist_approved_blob: al.approved_blob,
     allowlist_stale: al.stale, allowlisted: al.allowlisted, uncovered: al.uncovered, allowlist_note: al.note,
+    scoped_hits: al.scoped_hits, scoped_uncovered: al.scoped_uncovered, // spec 012 FR-023: counts per (prefix, pattern), never values
   };
 }
 
@@ -490,7 +583,7 @@ function allowlistReport(al) {
 /** Every side that leaves: the tree (incl. stripped HEAD blobs), the base side,
  * path names, the input copies. Returns the pieces, or { fail: { reason, … } }. */
 function scanOutbound(dir, cl, inputs, none) {
-  const scan = scanTrackedFiles(dir);
+  const scan = scanTrackedFiles(dir, { lines: true });
   if (scan.error) return { fail: { reason: X.REASONS.snapshot_failed, detail: `ls-files: ${scan.error}`, ...none } };
   // Base side: what the outbound diff carries from <base>.
   const base_ = cl.base === null ? { blobs: [], paths: [] } : baseSideBlobs(dir, cl.base);
@@ -505,9 +598,39 @@ function scanOutbound(dir, cl, inputs, none) {
   try { ins = copyInputs(dir, inputs); } catch (e) { return { fail: { reason: X.REASONS.snapshot_failed, detail: e.message, ...none } }; }
   return {
     scan, base_, ins,
-    baseMatches: base_.blobs.flatMap((b) => scanSource(bufferSource(b.buf), b.path, false)),
+    trust: { head: headTrust(dir, scan), base: { sha: new Map(base_.blobs.map((b) => [b.path, blobIdOf(b.buf)])), untrusted: new Set() } },
+    baseMatches: base_.blobs.flatMap((b) => scanSource(bufferSource(b.buf), b.path, false, true)),
     inputMatches: ins.labels.flatMap((l) => scanEntry(l.dest, fs.lstatSync(l.dest), l.label, false)),
   };
+}
+
+/** Paths that carry an attribute which rewrites content on checkout. */
+const REWRITE_ATTRS = Object.freeze(['working-tree-encoding', 'filter', 'ident']);
+
+/** Paths (of `paths`) with a content-rewriting attribute in the clone; all of them when git cannot say. */
+function rewrittenPaths(dir, paths) {
+  const r = git(['-C', dir, 'check-attr', '-z', '--stdin', ...REWRITE_ATTRS], { input: paths.join('\0') + '\0', stdio: ['pipe', 'pipe', 'pipe'] });
+  if (r.status !== 0 || r.error) return new Set(paths);
+  const t = r.stdout.split('\0');
+  const hit = new Set();
+  for (let i = 0; i + 2 < t.length; i += 3) if (t[i + 2] !== 'unspecified' && t[i + 2] !== 'unset') hit.add(t[i]);
+  return hit;
+}
+
+/** SEC-1: which scanned head paths are provably their committed blob. { sha: path → blob id at HEAD,
+ * untrusted: paths whose bytes on disk differ from that blob (scanTrackedFiles), have no blob id, or carry a
+ * rewriting attribute }. Attributes are checked for paths with matches only. */
+function headTrust(dir, scan) {
+  const paths = [...new Set(scan.matches.map((m) => m.path))];
+  const sha = new Map();
+  const untrusted = new Set(scan.untrusted);
+  const rewritten = paths.length ? rewrittenPaths(dir, paths) : new Set();
+  for (const p of paths) {
+    const id = scan.blobIds.get(p);
+    if (id === undefined || rewritten.has(p)) untrusted.add(p);
+    if (id !== undefined) sha.set(p, id);
+  }
+  return { sha, untrusted };
 }
 
 /** FR-030 (e): gitleaks over the tree, the base blobs, the stripped HEAD blobs and
@@ -551,7 +674,7 @@ function snapshot(opts) {
   const out = scanOutbound(dir, cl, opts.inputs, none);
   if (out.fail) return failed(out.fail);
   const al = AL.evaluate({
-    root: primaryRoot, commitSha: cl.commit, gateKind, matches: out.scan.matches, tracked: out.scan.tracked, approvals,
+    root: primaryRoot, commitSha: cl.commit, gateKind, matches: out.scan.matches, tracked: out.scan.tracked, approvals, baseSha: cl.base, trust: out.trust,
     extra: [{ side: 'base', matches: out.baseMatches }, { side: 'input', matches: out.inputMatches }],
   });
   const report = allowlistReport(al);
@@ -638,6 +761,7 @@ function cmdXprovSnapshot(args) {
   if (!r.ok) {
     process.stderr.write(`xprov snapshot: ${r.reason}${r.reason_detail ? `/${r.reason_detail}` : ''}${r.secret_pattern ? ` (pattern ${r.secret_pattern})` : ''}${r.detail ? ` — ${r.detail}` : ''}\n`);
     for (const u of r.uncovered || []) process.stderr.write(`  uncovered: ${u.path} · ${u.pattern}\n`);
+    for (const u of r.scoped_uncovered || []) process.stderr.write(`  scoped_uncovered: ${u.prefix} · ${u.pattern} · count ${u.count} · ${u.reason}${u.side ? ` · ${u.side}` : ''}\n`);
   }
   if (r.allowlist_note) process.stderr.write(`xprov snapshot: allowlist: ${r.allowlist_note}\n`);
   for (const s of r.allowlist_stale || []) process.stderr.write(`xprov snapshot: allowlist_stale: ${s.path} · ${s.pattern}\n`);

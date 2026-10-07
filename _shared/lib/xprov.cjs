@@ -123,6 +123,10 @@ const MODEL_OBSERVED_UNKNOWN = 'unknown'; // FR-013
 const ALLOWLIST_FILE = '.a1/xprov-secret-allowlist.json';
 const ALLOWLIST_MAX_ENTRIES = 32;
 const ALLOWLIST_MAX_COUNT = 8; // per (path, pattern) entry
+// Allowlist v2 scopes (spec 012 FR-019, FR-021). A SEPARATE constant, not a reference to
+// ALLOWLIST_MAX_ENTRIES: raising one cap must never raise the other. Samuel confirms 32 in review.
+const ALLOWLIST_MAX_SCOPES = 32;
+const ALLOWLIST_SCOPE_MAX_COUNT = 2000; // hard bound of one scope's max_count
 const ALLOWLIST_CLASSES = Object.freeze(['fixture_fake', 'doc_example', 'code_pattern']);
 // Human approval store (FR-030 j), outside every repository; written only by
 // the TTY-only `xprov allowlist approve`.
@@ -136,7 +140,7 @@ const ALLOWLIST_DETAILS = Object.freeze({
 // `propose` marks matches of these patterns `high_confidence: true` (FR-030 h).
 const HIGH_CONFIDENCE_PATTERNS = Object.freeze([
   'aws_access_key_id', 'github_pat_classic', 'github_token_family', 'github_pat_fine_grained',
-  'google_api_key', 'private_key_header', 'jwt', 'sk_prefixed_key', 'sk_prefixed_key_ext',
+  'google_api_key', 'private_key_header', 'jwt', 'sk_prefixed_key', 'sk_prefixed_key_ext', 'slack_token_family',
 ]);
 
 // ---------- secret patterns (FR-018) ----------
@@ -159,7 +163,7 @@ const HIGH_CONFIDENCE_PATTERNS = Object.freeze([
 // PATH_NAME_BOUNDARY_PATTERNS (path names only).
 const TOKEN_BOUNDARY = '(?:(?<![A-Za-z0-9])|(?<=\\\\[nrtfbv0]|\\\\u[0-9A-Fa-f]{4}|\\\\x[0-9A-Fa-f]{2}|%[0-9A-Fa-f]{2}|\\x1b\\[[0-9;]{0,16}m))';
 const SECRET_PATTERNS = Object.freeze([
-  Object.freeze({ name: 'private_key_header', re: /-----BEGIN [A-Z ]*PRIVATE KEY-----/ }),
+  Object.freeze({ name: 'private_key_header', re: /-----BEGIN [A-Z ]*PRIVATE KEY( BLOCK)?-----/ }),
   Object.freeze({ name: 'aws_access_key_id', re: /AKIA[0-9A-Z]{16}/ }),
   Object.freeze({ name: 'sk_prefixed_key', re: new RegExp(`${TOKEN_BOUNDARY}sk-[A-Za-z0-9]{20,}`) }),
   Object.freeze({ name: 'github_pat_classic', re: /ghp_[A-Za-z0-9]{36}/ }),
@@ -367,7 +371,7 @@ module.exports = {
   RUNNER_MODES, FORBIDDEN_RUNNER_TOKENS, RUNNER_HOST, RUNNER_DEFAULT_TIMEOUT_SECONDS,
   ARTIFACT_MAX_AGE_DAYS, PASS_RUN_MAX_AGE_DAYS, ROUND_CAP, MAX_FIELD_CHARS, MAX_RESULT_BYTES, TITLE_MAX_CHARS,
   MODEL_REQUESTED_DEFAULT, MODEL_OBSERVED_UNKNOWN,
-  ALLOWLIST_FILE, ALLOWLIST_MAX_ENTRIES, ALLOWLIST_MAX_COUNT, ALLOWLIST_CLASSES, ALLOWLIST_APPROVALS_FILE,
+  ALLOWLIST_FILE, ALLOWLIST_MAX_ENTRIES, ALLOWLIST_MAX_COUNT, ALLOWLIST_MAX_SCOPES, ALLOWLIST_SCOPE_MAX_COUNT, ALLOWLIST_CLASSES, ALLOWLIST_APPROVALS_FILE,
   ALLOWLIST_DETAILS, HIGH_CONFIDENCE_PATTERNS,
   SECRET_PATTERNS, TOKEN_BOUNDARY, PATH_NAME_BOUNDARY_PATTERNS, INSTRUCTION_MARKERS, INSTRUCTION_MARKER_PATTERNS,
   CODEX_HOME_ENV, RUNNER_FILE, SUMS_FILE,

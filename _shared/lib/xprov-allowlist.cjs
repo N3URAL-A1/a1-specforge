@@ -27,12 +27,13 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { spawnSync } = require('child_process');
 const X = require('./xprov.cjs');
 const C = require('./xprov-common.cjs');
 const { PERMIT_FILE, isValidBranchName } = require('./xprov-permit.cjs');
 
-const { gitSpawn: git, gitOut, isPlainObject } = C;
+const { isPlainObject } = C;
 const DETAIL = X.ALLOWLIST_DETAILS;
 
 const LS_REMOTE_TIMEOUT_MS = 30 * 1000; // FR-030 (b)
@@ -45,6 +46,9 @@ const SHA256_RE = /^[0-9a-f]{64}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const PATH_FORBIDDEN_RE = /[*?[\]{}\\\0-\x1f\x7f]/;
 const TOP_KEYS = Object.freeze(['version', 'owner', 'entries']);
+const TOP_KEYS_V2 = Object.freeze(['version', 'owner', 'entries', 'scopes']); // spec 012 FR-019
+const SCOPE_KEYS = Object.freeze(['prefix', 'pattern', 'class', 'max_count', 'reason', 'reviewed_by', 'added_on']);
+const HIGH_CONFIDENCE = new Set(X.HIGH_CONFIDENCE_PATTERNS);
 const ENTRY_KEYS = Object.freeze(['path', 'pattern', 'max_count', 'fingerprints', 'class', 'reason', 'reviewed_by', 'added_on']);
 const PATTERN_NAMES = new Set(X.SECRET_PATTERNS.map((p) => p.name));
 const STORE_MODE = 0o600;
@@ -53,6 +57,7 @@ const STORE_DIR_MODE = 0o700;
 const NO_ALLOWLIST = Object.freeze({
   fail: null, unresolved: false, anchor: null, approved_blob: null, allowlisted_hits: 0,
   allowlisted: Object.freeze([]), uncovered: Object.freeze([]), stale: Object.freeze([]), note: null,
+  scoped_hits: Object.freeze([]), scoped_uncovered: Object.freeze([]),
 });
 
 // ---------- strict JSON (duplicate keys are an error at any level) ----------
@@ -140,12 +145,51 @@ function entryProblem(e, n) {
   return null;
 }
 
-/** { ok: true, doc } or { ok: false, detail } — never throws. */
+/** One scope of a v2 document (spec 012 FR-019): exact keys, a directory prefix
+ * ending in `/` (never the root, no glob or escape, no `.`/`..` segment), a
+ * pattern that is known and NOT high-confidence (real key shapes are never
+ * scoped), a max_count of 1..ALLOWLIST_SCOPE_MAX_COUNT. The tree check at the
+ * anchor needs git and lives in scopeTreeProblem. */
+function scopeProblem(sc, n) {
+  const at = `scopes[${n}]`;
+  if (!exactKeys(sc, SCOPE_KEYS)) return `${at}: keys must be exactly ${SCOPE_KEYS.join(', ')}`;
+  if (typeof sc.prefix !== 'string' || !sc.prefix.endsWith('/')) return `${at}.prefix: a directory path ending in /`;
+  const pp = pathProblem(sc.prefix.slice(0, -1));
+  if (pp) return `${at}.prefix: ${pp}`;
+  if (!PATTERN_NAMES.has(sc.pattern)) return `${at}.pattern: unknown pattern name`;
+  if (HIGH_CONFIDENCE.has(sc.pattern)) return `${at}.pattern: ${sc.pattern} is a high-confidence key shape and is never scoped`;
+  if (!Number.isInteger(sc.max_count) || sc.max_count < 1 || sc.max_count > X.ALLOWLIST_SCOPE_MAX_COUNT) return `${at}.max_count: integer 1–${X.ALLOWLIST_SCOPE_MAX_COUNT}`;
+  if (!X.ALLOWLIST_CLASSES.includes(sc.class)) return `${at}.class: one of ${X.ALLOWLIST_CLASSES.join('|')}`;
+  if (!nonEmpty(sc.reason, REASON_MAX_CHARS)) return `${at}.reason: non-empty, ≤ ${REASON_MAX_CHARS} characters`;
+  if (!nonEmpty(sc.reviewed_by, OWNER_MAX_CHARS)) return `${at}.reviewed_by: non-empty name`;
+  if (typeof sc.added_on !== 'string' || !DATE_RE.test(sc.added_on)) return `${at}.added_on: YYYY-MM-DD`;
+  return null;
+}
+
+/** Problem text for the scopes array of a v2 document, or null. */
+function scopesProblem(scopes) {
+  if (!Array.isArray(scopes)) return 'scopes must be an array';
+  if (scopes.length > X.ALLOWLIST_MAX_SCOPES) return `more than ${X.ALLOWLIST_MAX_SCOPES} scopes (${scopes.length})`;
+  const keys = new Set();
+  for (let n = 0; n < scopes.length; n++) {
+    const problem = scopeProblem(scopes[n], n);
+    if (problem) return problem;
+    const key = `${scopes[n].prefix}\0${scopes[n].pattern}`;
+    if (keys.has(key)) return `scopes[${n}]: duplicate (prefix, pattern) pair`;
+    keys.add(key);
+  }
+  return null;
+}
+
+/** { ok: true, doc } or { ok: false, detail } — never throws. A document is
+ * version 1 (keys version, owner, entries) or version 2 (the same plus scopes). */
 function parseAllowlist(text) {
   let doc;
   try { doc = parseStrictJson(String(text)); } catch (e) { return { ok: false, detail: `invalid JSON: ${e.message}` }; }
-  if (!exactKeys(doc, TOP_KEYS)) return { ok: false, detail: `top level must have exactly ${TOP_KEYS.join(', ')}` };
-  if (doc.version !== 1) return { ok: false, detail: 'version must be 1' };
+  const v2 = isPlainObject(doc) && doc.version === 2;
+  const topKeys = v2 ? TOP_KEYS_V2 : TOP_KEYS;
+  if (!exactKeys(doc, topKeys)) return { ok: false, detail: `top level must have exactly ${topKeys.join(', ')}` };
+  if (!v2 && doc.version !== 1) return { ok: false, detail: 'version must be 1 or 2' };
   if (!nonEmpty(doc.owner, OWNER_MAX_CHARS)) return { ok: false, detail: 'owner: non-empty name' };
   if (!Array.isArray(doc.entries)) return { ok: false, detail: 'entries must be an array' };
   if (doc.entries.length > X.ALLOWLIST_MAX_ENTRIES) return { ok: false, detail: `more than ${X.ALLOWLIST_MAX_ENTRIES} entries (${doc.entries.length})` };
@@ -157,6 +201,10 @@ function parseAllowlist(text) {
     if (pairs.has(key)) return { ok: false, detail: `entries[${n}]: duplicate (path, pattern) pair` };
     pairs.add(key);
   }
+  if (v2) {
+    const sp = scopesProblem(doc.scopes);
+    if (sp) return { ok: false, detail: sp };
+  }
   return { ok: true, doc };
 }
 
@@ -165,7 +213,7 @@ function parseAllowlist(text) {
 /** Raw bytes of `<rev>:<file>`, or null when the path does not exist there. */
 function blobAt(root, rev, file) {
   if (git(['-C', root, 'cat-file', '-e', `${rev}:${file}`]).status !== 0) return null;
-  const r = spawnSync('git', ['-C', root, 'cat-file', 'blob', `${rev}:${file}`], { maxBuffer: MAX_BLOB_BYTES + 1, stdio: ['ignore', 'pipe', 'pipe'] });
+  const r = spawnSync('git', ['--no-replace-objects', '-C', root, 'cat-file', 'blob', `${rev}:${file}`], { env: diffEnv(), timeout: gitTimeoutMs(), killSignal: 'SIGKILL', maxBuffer: MAX_BLOB_BYTES + 1, stdio: ['ignore', 'pipe', 'pipe'] });
   if (r.status !== 0 || !Buffer.isBuffer(r.stdout)) throw new Error(`git cat-file blob ${rev}:${file} failed`);
   return r.stdout;
 }
@@ -325,6 +373,275 @@ function readApprovals() {
   return r.ok ? { ok: true, repos: r.value } : { ...r, repos: {} };
 }
 
+// ---------- changed lines (spec 012 FR-020) ----------
+// A scope covers a match only on a line that is UNCHANGED between the anchor and
+// the reviewed commit (head side) resp. the anchor and --base (base side).
+// "Changed" = on the `+` side of `git diff --unified=0 --no-renames <anchor> <rev>`.
+// Strict, fail closed: a status other than a plain modification (added, deleted,
+// type change, anything a rename or copy would leave), a binary diff, a diff that
+// cannot be parsed or verified, output over the size bound, a failing git call —
+// every line of that path counts as changed. Paths travel as argv elements behind
+// --literal-pathspecs, never through a shell; names are read from `--raw -z`,
+// never from the (quoted) patch text.
+
+const DIFF_MAX_BYTES = 5 * 1024 * 1024; // one patch; the same size as the scan window
+const HUNK_RE = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
+const RAW_RE = /^:\d{6} \d{6} ([0-9a-f]{40,64}) ([0-9a-f]{40,64}) ([A-Z])\d*$/;
+const PATCH_HEADER_PREFIXES = Object.freeze(['index ', 'old mode ', 'new mode ', 'new file mode ', 'deleted file mode ', 'similarity index ', 'dissimilarity index ', 'rename from ', 'rename to ', 'copy from ', 'copy to ']);
+const PATCH_BODY_CHARS = '+- \\';
+
+/** The new-side line ranges of one file's `git diff --unified=0` text:
+ * { ok: true, ranges: [[start, end], …], hunks } (ranges ascending, 1-based, inclusive; `hunks` counts all hunks, deleted-only ones too) or
+ * { ok: false, binary, reason }. Hunk counts are verified against the lines, so a
+ * truncated or garbled patch is "unparseable", never "fewer changes". */
+function parseChangedRanges(text) {
+  const lines = String(text).split('\n');
+  if (lines[lines.length - 1].replace(/\r$/, '') === '') lines.pop();
+  const bad = (reason) => ({ ok: false, binary: false, reason });
+  const ranges = [];
+  let cur = null; // { oldLeft, newLeft } of the open hunk
+  let files = 0;
+  let hunks = 0;
+  let lastEnd = 0;
+  const closed = () => cur === null || (cur.oldLeft === 0 && cur.newLeft === 0);
+  for (const raw of lines) {
+    if (raw.startsWith('Binary files ') || raw.startsWith('GIT binary patch')) return { ok: false, binary: true, reason: 'binary diff' };
+    if (raw.startsWith('@@')) {
+      if (!closed()) return bad('hunk shorter than its header');
+      const m = HUNK_RE.exec(raw);
+      if (!m) return bad('malformed hunk header');
+      const [oldCount, newStart, newCount] = [m[2] === undefined ? 1 : Number(m[2]), Number(m[3]), m[4] === undefined ? 1 : Number(m[4])];
+      if (![Number(m[1]), oldCount, newStart, newCount].every(Number.isSafeInteger)) return bad('hunk numbers out of range');
+      if (newCount > 0) {
+        if (newStart < 1 || newStart <= lastEnd) return bad('hunks out of order');
+        lastEnd = newStart + newCount - 1;
+        ranges.push([newStart, lastEnd]);
+      }
+      hunks++;
+      cur = { oldLeft: oldCount, newLeft: newCount };
+      continue;
+    }
+    // inside a hunk every line is body: `+` / `-` or the `\ No newline` marker
+    const body = cur !== null && PATCH_BODY_CHARS.includes(raw[0] || 'x');
+    if (cur !== null && !closed() && !body) return bad('unknown line inside a hunk');
+    if (body) {
+      if (raw[0] === '+') cur.newLeft--; // a surplus line leaves a negative count, which closed() rejects
+      else if (raw[0] === '-') cur.oldLeft--;
+      else if (raw[0] === ' ') return bad('context line in a --unified=0 patch');
+      continue;
+    }
+    if (raw.startsWith('diff --git ')) { files++; if (files > 1) return bad('more than one file'); continue; }
+    if (raw.startsWith('--- ') || raw.startsWith('+++ ') || PATCH_HEADER_PREFIXES.some((h) => raw.startsWith(h))) continue;
+    return bad('unknown line outside a hunk');
+  }
+  return closed() ? { ok: true, ranges, hunks } : bad('hunk shorter than its header');
+}
+
+/** Whether any of the ascending, disjoint `ranges` meets lines [a, b] (binary search). */
+function rangesIntersect(ranges, a, b) {
+  let lo = 0;
+  let hi = ranges.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (ranges[mid][1] < a) lo = mid + 1; else hi = mid;
+  }
+  return lo < ranges.length && ranges[lo][0] <= b;
+}
+
+/** `git diff --raw -z --no-renames` output → Map(path → { status, oldSha, newSha }),
+ * or null when it cannot be read with certainty (garbage, a record without a
+ * path, an empty or replacement-character name, a path listed twice). */
+function parseRawDiff(text) {
+  const tokens = String(text).split('\0');
+  if (tokens[tokens.length - 1] === '') tokens.pop();
+  const map = new Map();
+  for (let i = 0; i < tokens.length; i += 2) {
+    const m = RAW_RE.exec(tokens[i]);
+    const name = tokens[i + 1];
+    if (!m || typeof name !== 'string' || name === '' || name.includes('�') || map.has(name)) return null;
+    map.set(name, Object.freeze({ status: m[3], oldSha: m[1], newSha: m[2] }));
+  }
+  return map;
+}
+
+/** Variables that can redirect git to other objects, refs, config or a hidden diff. */
+const GIT_ENV_DROP = Object.freeze([
+  'GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+  'GIT_REPLACE_REF_BASE', 'GIT_SHALLOW_FILE', 'GIT_CONFIG', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM',
+  'GIT_CONFIG_COUNT', 'GIT_CONFIG_PARAMETERS', 'GIT_DIFF_OPTS', 'GIT_EXTERNAL_DIFF',
+]);
+
+/** Never exists: pointing GIT_GRAFT_FILE here makes git ignore the repository's own grafts file. */
+const GRAFT_OFF_PATH = path.join(os.tmpdir(), 'a1-xprov-no-such-grafts-file');
+
+/** git's environment for every read against the primary checkout (SEC-2): no redirecting
+ * variables, replace objects switched off. */
+function diffEnv() {
+  const env = { ...process.env };
+  for (const k of GIT_ENV_DROP) delete env[k];
+  for (const k of Object.keys(env)) if (/^GIT_CONFIG_(KEY|VALUE)_\d+$/.test(k)) delete env[k];
+  env.GIT_NO_REPLACE_OBJECTS = '1';
+  env.GIT_GRAFT_FILE = GRAFT_OFF_PATH; // a path that does not exist: .git/info/grafts is not read (SEC-A)
+  return env;
+}
+
+/** Upper bound for one git read in the primary checkout (SEC-8). The env var may only
+ * lower it (tests): a huge or malformed value falls back to the bound. */
+const GIT_TIMEOUT_MS = 30000;
+function gitTimeoutMs() {
+  const n = Number(process.env.XPROV_GIT_TIMEOUT_MS);
+  return Number.isSafeInteger(n) && n >= 1 && n <= GIT_TIMEOUT_MS ? n : GIT_TIMEOUT_MS;
+}
+const timedOut = (r) => Boolean(r.error && r.error.code === 'ETIMEDOUT');
+
+/** One git read in the primary checkout: replace objects off, cleaned environment, bounded time. */
+function git(args, opts) {
+  return C.gitSpawn(['--no-replace-objects', '-c', 'core.commitGraph=false', ...args], { env: diffEnv(), timeout: gitTimeoutMs(), killSignal: 'SIGKILL', ...(opts || {}) });
+}
+
+/** stdout of a successful `git(...)`, else null. */
+function gitOut(args) {
+  const r = git(args);
+  return r.status === 0 ? r.stdout : null;
+}
+
+/** The changed-line index of `<anchor> → <rev>` in `root`, computed lazily and
+ * cached for the run: { refusal(path, firstLine, lastLine) → null | 'changed_line' | 'diff_unreadable' | 'git_timeout', isChanged }.
+ * `diff_unreadable`: git failed, or its output is binary, unparseable or unexplained. Never throws; every doubt is a refusal. */
+function changedLines(root, anchor, rev) {
+  const opts = { env: diffEnv(), maxBuffer: DIFF_MAX_BYTES };
+  const base = ['--literal-pathspecs', '-C', root, 'diff', '--no-ext-diff', '--no-textconv', '--no-renames', '--no-color', '--inter-hunk-context=0'];
+  let rawIndex; // undefined = not read yet, { why } = unreadable
+  const patches = new Map();
+  const readRaw = () => {
+    const r = git([...base, '--raw', '--no-abbrev', '-z', anchor, rev, '--'], { ...opts, maxBuffer: C.GIT_MAX_BUFFER });
+    if (timedOut(r)) return { why: 'git_timeout' };
+    const map = r.status === 0 && !r.error ? parseRawDiff(r.stdout) : null;
+    return map === null ? { why: 'diff_unreadable' } : { map };
+  };
+  const readPatch = (p, entry) => {
+    const r = git([...base, '--unified=0', '--diff-algorithm=myers', anchor, rev, '--', p], opts);
+    if (timedOut(r)) return { ok: false, why: 'git_timeout' };
+    if (r.status !== 0 || r.error) return { ok: false, why: 'diff_unreadable' };
+    const parsed = parseChangedRanges(r.stdout);
+    // a different blob (not a mode-only change) that yields no hunk at all is unexplained: treat it as changed
+    if (parsed.ok && parsed.hunks === 0 && entry.oldSha !== entry.newSha) return { ok: false, why: 'diff_unreadable' };
+    return parsed.ok ? parsed : { ok: false, why: 'diff_unreadable' };
+  };
+  const check = (p, a, b) => {
+    if (rawIndex === undefined) rawIndex = readRaw();
+    if (rawIndex.why) return rawIndex.why;
+    const entry = rawIndex.map.get(p);
+    if (entry === undefined) return null; // not in the diff: identical at both ends
+    if (entry.status !== 'M') return 'changed_line';
+    if (!patches.has(p)) patches.set(p, readPatch(p, entry));
+    const patch = patches.get(p);
+    if (!patch.ok) return patch.why;
+    return rangesIntersect(patch.ranges, a, b) ? 'changed_line' : null;
+  };
+  const refusal = (p, a, b) => {
+    try { return check(p, a, b); } catch (_e) { return 'diff_unreadable'; }
+  };
+  // SEC-1/SEC-2: the blob the scan read must be the blob this index judges. `shaByPath`: path → blob id
+  // of the scanned side (from the clone). Returns the paths whose id differs from the anchor's (not in the
+  // diff) resp. the diff's new id. A failed raw diff returns nothing: `refusal` already answers with its reason.
+  const mismatched = (shaByPath) => {
+    const bad = new Set();
+    try {
+      if (rawIndex === undefined) rawIndex = readRaw();
+      if (rawIndex.why) return bad;
+      const rest = [];
+      for (const [p, sha] of shaByPath) {
+        const entry = rawIndex.map.get(p);
+        if (entry === undefined) rest.push([p, sha]);
+        else if (entry.status === 'D' || entry.newSha !== sha) bad.add(p);
+      }
+      const odd = rest.filter(([p]) => /[\n\0]/.test(p));
+      odd.forEach(([p]) => bad.add(p));
+      const ask = rest.filter(([p]) => !odd.some(([q]) => q === p));
+      if (ask.length === 0) return bad;
+      const r = git(['-C', root, 'cat-file', '--batch-check=%(objectname) %(objecttype)'], { input: ask.map(([p]) => `${anchor}:${p}`).join('\n') + '\n', stdio: ['pipe', 'pipe', 'pipe'] });
+      const out = r.status === 0 && !r.error ? r.stdout.split('\n') : [];
+      ask.forEach(([p, sha], i) => { if (out[i] !== `${sha} blob`) bad.add(p); });
+    } catch (_e) { shaByPath.forEach((_v, p) => bad.add(p)); }
+    return bad;
+  };
+  return Object.freeze({ refusal, mismatched, isChanged: (p, a, b) => refusal(p, a, b) !== null });
+}
+
+
+// ---------- scopes: which matches a v2 scope may cover (spec 012 FR-020, FR-021) ----------
+
+/** The scope for (path, pattern): the LONGEST matching prefix, so a nested scope
+ * counts its own matches and the broader one keeps its headroom. */
+function scopeFor(scopes, m) {
+  let best = null;
+  for (const sc of scopes) {
+    if (sc.pattern === m.pattern && m.path.startsWith(sc.prefix) && (best === null || sc.prefix.length > best.prefix.length)) best = sc;
+  }
+  return best;
+}
+
+const isLine = (n) => Number.isSafeInteger(n) && n >= 1;
+
+/** Why one scope-eligible match cannot be covered by its scope, or null:
+ * `blob_mismatch` (the scanned bytes are not the committed blob), `no_line` (no determinable line, e.g. a UTF-16 view), `changed_line`. */
+function scopeRefusal(m, changed, bad) {
+  if (bad.has(m.path)) return 'blob_mismatch';
+  if (m.view !== 'latin1' || !isLine(m.line) || !isLine(m.end_line) || m.end_line < m.line) return 'no_line';
+  return changed === null ? 'changed_line' : changed.refusal(m.path, m.line, m.end_line);
+}
+
+/** Paths of scope-eligible matches whose scanned bytes are not provably the committed blob
+ * (SEC-1): untrusted in the clone (re-encoded or filtered on checkout, bytes differ from the blob),
+ * unknown, or a blob id the primary checkout's own diff does not confirm (SEC-2). No `trust` = all. */
+function untrustedPaths(scopes, matches, changed, trust) {
+  const paths = new Set();
+  for (const m of matches) if (m.path !== X.ALLOWLIST_FILE && scopeFor(scopes, m) !== null) paths.add(m.path);
+  if (changed === null || !trust) return paths;
+  const bad = new Set();
+  const known = new Map();
+  for (const p of paths) {
+    const sha = trust.sha.get(p);
+    if (sha === undefined || (trust.untrusted && trust.untrusted.has(p))) bad.add(p);
+    else known.set(p, sha);
+  }
+  for (const p of changed.mismatched(known)) bad.add(p);
+  return bad;
+}
+
+/** Splits one side's matches into scope-covered ones and the rest. Returns
+ * { rest: matches for the v1 judgement, hits: [{scope, count}], refused: [{scope, count, reason}] }.
+ * `changed` is the changed-line index of this side (null: every match counts as changed).
+ * A scope with more covered matches than its max_count covers nothing (reason max_count):
+ * its matches go back to the v1 judgement. Matches in the allowlist file are never covered. */
+function applyScopes(scopes, matches, changed, trust) {
+  const covered = new Map(); // scope → matches
+  const refused = new Map(); // `${reason}\0${prefix}\0${pattern}` → { scope, reason, count }
+  const refuse = (scope, reason, n) => {
+    const key = `${reason}\0${scope.prefix}\0${scope.pattern}`;
+    const prev = refused.get(key) || { scope, reason, count: 0 };
+    refused.set(key, { ...prev, count: prev.count + n });
+  };
+  const bad = untrustedPaths(scopes, matches, changed, trust);
+  for (const m of matches) {
+    const sc = m.path === X.ALLOWLIST_FILE ? null : scopeFor(scopes, m);
+    if (sc === null) continue;
+    const why = scopeRefusal(m, changed, bad);
+    if (why) { refuse(sc, why, 1); continue; }
+    if (!covered.has(sc)) covered.set(sc, []);
+    covered.get(sc).push(m);
+  }
+  const taken = new Set();
+  const hits = [];
+  for (const [sc, list] of covered) {
+    if (list.length > sc.max_count) { refuse(sc, 'max_count', list.length); continue; }
+    list.forEach((m) => taken.add(m));
+    hits.push({ scope: sc, count: list.length });
+  }
+  return { rest: matches.filter((m) => !taken.has(m)), hits, refused: [...refused.values()] };
+}
+
 // ---------- evaluation (called by xprov snapshot after the scan) ----------
 
 /** Matches grouped by (path, pattern) in scan order. */
@@ -362,8 +679,20 @@ function ownerProblem(root, anchor, doc) {
   } catch (e) {
     if (e.code !== 'ENOENT') return { detail: `${PERMIT_FILE} in the working tree is not valid JSON`, reasonDetail: null };
   }
-  if (doc.owner === at.decidedBy && doc.owner === inTree && doc.entries.every((e) => e.reviewed_by === doc.owner)) return null;
+  if (doc.owner === at.decidedBy && doc.owner === inTree && [...doc.entries, ...(doc.scopes || [])].every((e) => e.reviewed_by === doc.owner)) return null;
   return { detail: `owner ${JSON.stringify(doc.owner)} must equal decided_by at the anchor (${JSON.stringify(at.decidedBy)}) and in the working tree (${JSON.stringify(inTree)}), and every reviewed_by`, reasonDetail: DETAIL.owner_mismatch };
+}
+
+/** Spec 012 FR-019: every scope prefix is a TREE at the anchor
+ * (`git cat-file -t <anchor>:<prefix>`; a missing path, a blob, a symlink and
+ * a submodule are not). Problem text or null. */
+function scopeTreeProblem(root, anchor, doc) {
+  for (const sc of doc.scopes || []) {
+    const t = git(['-C', root, 'cat-file', '-t', `${anchor}:${sc.prefix.slice(0, -1)}`]);
+    if (timedOut(t)) return `git timed out checking scope prefix ${sc.prefix}`;
+    if (t.status !== 0 || t.stdout.trim() !== 'tree') return `scope prefix ${sc.prefix} is not a directory at the anchor`;
+  }
+  return null;
 }
 
 /** The allowlist document at the anchor after every check of (a), (d), (h),
@@ -380,6 +709,8 @@ function loadAtAnchor(root, anchor, commitSha, approvals) {
   for (const e of doc.entries) {
     if (typeAt(root, anchor, e.path) === 'tree' || typeAt(root, commitSha, e.path) === 'tree') return invalid(`${e.path} is a directory, not a file`);
   }
+  const tree = scopeTreeProblem(root, anchor, doc);
+  if (tree) return invalid(tree);
   const sep = separateCommitProblem(root, anchor);
   if (sep) return invalid(sep, DETAIL.not_separate_commit);
   const owner = ownerProblem(root, anchor, doc);
@@ -393,9 +724,17 @@ function loadAtAnchor(root, anchor, commitSha, approvals) {
   return { doc, blobSha };
 }
 
+/** The report rows of one side's applyScopes result: counts per (prefix, pattern), never values. */
+function scopeRows(res, side, tag) {
+  return {
+    hits: res.hits.map((h) => tag(side, { prefix: h.scope.prefix, pattern: h.scope.pattern, class: h.scope.class, count: h.count, max_count: h.scope.max_count })),
+    refused: res.refused.map((r) => tag(side, { prefix: r.scope.prefix, pattern: r.scope.pattern, count: r.count, reason: r.reason })),
+  };
+}
+
 /** Applies the anchor's allowlist to the scan. Returns the NO_ALLOWLIST shape
  * with the fields filled in; `fail` set means stop before dispatch.
- * `o.matches` is the reviewed tree (side head). `o.extra` (Wave 7, Samuel:
+ * `o.matches` is the reviewed tree (side head); `o.baseSha` the resolved --base (scopes judge the base side against it). `o.extra` (Wave 7, Samuel:
  * everything that leaves is scanned) adds sides — `base` (base-side blobs of
  * every path the outbound diff touches) and `input` (the PLAN.md and
  * dispositions copies) — judged against the SAME anchored allowlist and the
@@ -421,6 +760,20 @@ function evaluate(o) {
   if (loaded.fail) return result({ fail: loaded.fail });
   if (loaded.absent) return result({});
   const { doc, blobSha } = loaded;
+  const scopes = doc.scopes || [];
+  // Scopes judge the head side against anchor..commit and the base side against anchor..base; the
+  // input side and path names are never scope-covered (FR-020).
+  const index = (rev) => (scopes.length && rev ? changedLines(o.root, anc.anchor, rev) : null);
+  const baseExtra = (o.extra || []).find((e) => e.side === 'base');
+  const trust = o.trust || {};
+  const headScoped = applyScopes(scopes, o.matches, index(o.commitSha), trust.head);
+  const baseScoped = baseExtra ? applyScopes(scopes, baseExtra.matches, index(o.baseSha), trust.base) : null;
+  const headRows = scopeRows(headScoped, null, tag);
+  const baseRows = baseScoped ? scopeRows(baseScoped, 'base', tag) : { hits: [], refused: [] };
+  const scopedHits = [...headRows.hits, ...baseRows.hits];
+  const scopedUncovered = [...headRows.refused, ...baseRows.refused];
+  const restPairs = groupPairs(headScoped.rest);
+  const restSides = sides.map((x) => ({ side: x.side, pairs: x.side === 'base' && baseScoped ? groupPairs(baseScoped.rest) : x.pairs }));
   const allowlisted = [];
   const uncovered = [];
   const judge = (pairMap, side) => {
@@ -431,18 +784,18 @@ function evaluate(o) {
       else uncovered.push(tag(side, { path: p.path, pattern: p.pattern }));
     }
   };
-  judge(pairs, null);
-  for (const s of sides) judge(s.pairs, s.side);
+  judge(restPairs, null);
+  for (const x of restSides) judge(x.pairs, x.side);
   const tracked = new Set(o.tracked);
   const stale = doc.entries.filter((e) => !tracked.has(e.path) || !pairs.has(`${e.path}\0${e.pattern}`)).map((e) => Object.freeze({ path: e.path, pattern: e.pattern }));
   return result({
-    anchor: anc.anchor, approved_blob: blobSha, allowlisted, uncovered, stale,
-    allowlisted_hits: allowlisted.reduce((n, a) => n + a.count, 0),
+    anchor: anc.anchor, approved_blob: blobSha, allowlisted, uncovered, stale, scoped_hits: scopedHits, scoped_uncovered: scopedUncovered,
+    allowlisted_hits: allowlisted.reduce((n, a) => n + a.count, 0) + scopedHits.reduce((n, h) => n + h.count, 0),
   });
 }
 
 module.exports = {
   NO_ALLOWLIST, STORE_MODE, STORE_DIR_MODE, SHA256_RE,
-  parseStrictJson, parseAllowlist, pathProblem, blobAt, separateCommitProblem, ownerProblem, verifiedTip, resolveAnchor, defaultBranch, lsRemote,
+  parseStrictJson, parseAllowlist, parseChangedRanges, rangesIntersect, parseRawDiff, changedLines, untrustedPaths, gitTimeoutMs, scopeFor, scopesProblem, scopeTreeProblem, pathProblem, blobAt, separateCommitProblem, ownerProblem, verifiedTip, resolveAnchor, defaultBranch, lsRemote,
   readApprovals, readGuardedStore, exactKeys, storePath, groupPairs, evaluate, permitRecord,
 };

@@ -306,6 +306,8 @@ function allowlistFields(s) {
     allowlisted: Array.isArray(s.allowlisted) ? s.allowlisted : [],
     uncovered: Array.isArray(s.uncovered) ? s.uncovered : [],
     allowlist_note: s.allowlist_note || null,
+    scoped_hits: Array.isArray(s.scoped_hits) ? s.scoped_hits : [],
+    scoped_uncovered: Array.isArray(s.scoped_uncovered) ? s.scoped_uncovered : [],
   });
 }
 
@@ -317,6 +319,9 @@ function noteAllowlist(ctx, al) {
   const lines = [
     `anchor: ${al.allowlist_anchor}`, `approved blob: ${al.allowlist_approved_blob}`, `allowlisted_hits: ${al.allowlisted_hits}`,
     ...al.allowlisted.map((a) => `${a.path} · ${a.pattern} · count ${a.count} · ${a.class}`),
+    // spec 012 FR-023: scope hits and scope refusals per (prefix, pattern), counts only
+    ...al.scoped_hits.map((h) => `scoped: ${h.prefix} · ${h.pattern} · count ${h.count} of max_count ${h.max_count} · ${h.class}${h.side ? ` · side ${h.side}` : ''}`),
+    ...al.scoped_uncovered.map((u) => `scoped_uncovered: ${u.prefix} · ${u.pattern} · count ${u.count} · ${u.reason}${u.side ? ` · side ${u.side}` : ''}`),
     ...al.allowlist_stale.map((x) => `allowlist_stale: ${x.path} · ${x.pattern}`),
     ...al.uncovered.map((u) => `uncovered: ${u.path} · ${u.pattern}`),
   ];
