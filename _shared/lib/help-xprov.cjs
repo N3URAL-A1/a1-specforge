@@ -273,6 +273,7 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   XREVIEW.md: scoped_hits, scoped_uncovered — counts only.
                   scoped_uncovered.reason: changed_line, no_line, max_count,
                   diff_unreadable (git failed, binary or unparseable diff),
+                  blob_mismatch (scanned bytes are not the committed blob),
                   git_timeout (each git read is bounded to 30 s).
                   A v2 blob needs its own approval; the typed count is
                   entries + scopes. Approval
