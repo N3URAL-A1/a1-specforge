@@ -584,6 +584,83 @@ caseR11() {
   assert_eq "R11 …both hits scoped" "$(hits14)" "tests/|password_assignment|2"
 }
 
-for c in ${XPROV14_CASES:-caseD1 caseD1b caseD1c caseD2u caseD3 caseD3b caseD3g casePropose caseApproveListing caseApproveTty caseS2 caseS8 caseR11}; do "$c"; done
+# ---------- S1 (Samuel SEC-1): scanned bytes that differ from the committed blob never get a scope ----------
+# Fixture: a UTF-16LE working-tree-encoding attribute re-encodes the file on checkout (the blob stays UTF-8); padding characters whose
+# bytes are two newlines each shift the scan's line numbers away from the blob's, and CJK characters whose
+# little-endian bytes spell the keyword hide an ADDED line behind an unchanged line number.
+# Mutation: M23 never mark a path untrusted → the PoC is covered again.
+mk_enc14() { # <variant: base|hit> — 12 lines; line 3 is the hit in variant hit
+  node -e '
+    const hit = process.argv[2] === "hit";
+    const ascii = Buffer.from(process.argv[3] + (process.argv[3].length % 2 ? " " : ""), "latin1");
+    let cjk = ""; for (let i = 0; i < ascii.length; i += 2) cjk += String.fromCharCode(ascii[i] | (ascii[i + 1] << 8));
+    const lines = ["x", "ਊ".repeat(3), hit ? cjk : "plain"];
+    for (let i = 4; i <= 12; i++) lines.push("pad" + i);
+    require("fs").writeFileSync(process.argv[1], Buffer.from(lines.join("\n") + "\n", "utf16le")); // the working tree is UTF-16LE; git stores UTF-8
+  ' "$R14/tests/enc.txt" "$1" "$(pwline14 fixtureval31)"
+}
+caseS1() {
+  new14
+  mk_enc14 base; printf 'tests/enc.txt working-tree-encoding=UTF-16LE\n' > "$R14/.gitattributes"; c14 "encoded fixture"; push14
+  al14 "$(doc14 "$(sc14 tests/ password_assignment 5)")"; feat14
+  mk_enc14 hit; c14 "add a hit behind shifted line numbers"
+  snap14 feat
+  expect14 "S1 an added hit hidden by a re-encoded working tree" "secret_in_snapshot"
+  assert_eq "S1 …refused as blob_mismatch" "$(hits14)|$(unc14)" "|tests/|password_assignment|1|blob_mismatch"
+  # hash only: no attribute of the rewriting kind, but the checkout (eol=crlf) changes the bytes → fail closed
+  new14
+  printf 'alpha\n%s\nbeta\n' "$(pwline14 fixtureval32)" > "$R14/tests/crlf.txt"; printf 'tests/crlf.txt text eol=crlf\n' > "$R14/.gitattributes"; c14 "crlf fixture"; push14
+  al14 "$(doc14 "$(sc14 tests/ password_assignment 5)")"; feat14; printf '// f\n' >> "$R14/src/add.js"; c14 "feature"
+  snap14 feat
+  expect14 "S1 hash: an unchanged hit in a file the checkout rewrote (eol=crlf)" "secret_in_snapshot"
+  assert_eq "S1 hash: …blob_mismatch, not covered" "$(hits14)|$(unc14)" "|tests/|password_assignment|1|blob_mismatch"
+  # attribute only: a filter attribute with no driver leaves the bytes equal to the blob → still not covered
+  new14
+  printf 'alpha\n%s\nbeta\n' "$(pwline14 fixtureval33)" > "$R14/tests/flt.txt"; printf 'tests/flt.txt filter=nodriver\n' > "$R14/.gitattributes"; c14 "filter fixture"; push14
+  al14 "$(doc14 "$(sc14 tests/ password_assignment 5)")"; feat14; printf '// f\n' >> "$R14/src/add.js"; c14 "feature"
+  snap14 feat
+  expect14 "S1 attr: an unchanged hit under a filter attribute" "secret_in_snapshot"
+  assert_eq "S1 attr: …blob_mismatch, not covered" "$(hits14)|$(unc14)" "|tests/|password_assignment|1|blob_mismatch"
+  # control: a plain file is covered
+  scen14 "$(sc14 tests/ password_assignment 5)"; printf '// f\n' >> "$R14/src/add.js"; c14 "feature"; snap14 feat
+  pass14 "S1 control: a plain tracked file stays covered"
+}
+# S1u — the cross-check against the primary checkout's own diff (SEC-2): the id of the scanned blob must be the anchor's / the diff's new id.
+caseS1u() {
+  scen14 "$(sc14 tests/ password_assignment 5)"; printf '// f\n' >> "$R14/tests/fix.txt"; c14 "edit"
+  local anchor; anchor="$(git -C "$R14" rev-parse origin/main)"
+  local out; out="$(node -e '
+    const AL = require(process.argv[1] + "/_shared/lib/xprov-allowlist.cjs");
+    const [root, anchor, feat, fixNew, addSame, wrong] = process.argv.slice(2);
+    const idx = AL.changedLines(root, anchor, feat);
+    const bad = (m) => [...idx.mismatched(new Map(m))].sort().join(",");
+    console.log(JSON.stringify({
+      right: bad([["tests/fix.txt", fixNew], ["src/add.js", addSame]]),
+      wrongInDiff: bad([["tests/fix.txt", wrong]]),
+      wrongOutside: bad([["src/add.js", wrong]]),
+      missing: bad([["nope.txt", wrong]]),
+    }));
+  ' "$TREE" "$R14" "$anchor" "$(head14 feat)" "$(git -C "$R14" rev-parse feat:tests/fix.txt)" "$(git -C "$R14" rev-parse feat:src/add.js)" "$(printf '%040d' 7)")"
+  assert_json "S1u right ids: nothing mismatched" "$out" "j.right" ""
+  assert_json "S1u a wrong id for a path in the diff" "$out" "j.wrongInDiff" "tests/fix.txt"
+  assert_json "S1u a wrong id for a path outside the diff (anchor blob differs)" "$out" "j.wrongOutside" "src/add.js"
+  assert_json "S1u a path missing at the anchor" "$out" "j.missing" "nope.txt"
+  # the call site: a path the primary checkout's index disputes, one the clone marks untrusted, one unknown, one fine, no trust at all
+  out="$(node -e '
+    const AL = require(process.argv[1] + "/_shared/lib/xprov-allowlist.cjs");
+    const sc = [{ prefix: "tests/", pattern: "password_assignment", max_count: 5 }];
+    const m = (path) => ({ path, pattern: "password_assignment" });
+    const matches = ["tests/a", "tests/b", "tests/c", "tests/d"].map(m);
+    const changed = { mismatched: (map) => new Set([...map.keys()].filter((p) => p === "tests/a")) };
+    const trust = { sha: new Map([["tests/a", "1"], ["tests/b", "2"], ["tests/d", "4"]]), untrusted: new Set(["tests/b"]) };
+    const ids = (r) => [...r].sort().join(",");
+    console.log(JSON.stringify({ mixed: ids(AL.untrustedPaths(sc, matches, changed, trust)), none: ids(AL.untrustedPaths(sc, matches, changed, undefined)), noIndex: ids(AL.untrustedPaths(sc, matches, null, trust)) }));
+  ' "$TREE")"
+  assert_json "S1u call site: disputed, untrusted and unknown paths are bad, the fine one is not" "$out" "j.mixed" "tests/a,tests/b,tests/c"
+  assert_json "S1u call site: without trust every eligible path is bad" "$out" "j.none" "tests/a,tests/b,tests/c,tests/d"
+  assert_json "S1u call site: without an index every eligible path is bad" "$out" "j.noIndex" "tests/a,tests/b,tests/c,tests/d"
+}
+
+for c in ${XPROV14_CASES:-caseD1 caseD1b caseD1c caseD2u caseD3 caseD3b caseD3g casePropose caseApproveListing caseApproveTty caseS2 caseS8 caseR11 caseS1 caseS1u}; do "$c"; done
 export HOME="$SAVED_HOME_14"
 rm -rf "$TMP14"

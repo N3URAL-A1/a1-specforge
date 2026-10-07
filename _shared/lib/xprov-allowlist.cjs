@@ -537,7 +537,31 @@ function changedLines(root, anchor, rev) {
   const refusal = (p, a, b) => {
     try { return check(p, a, b); } catch (_e) { return 'diff_unreadable'; }
   };
-  return Object.freeze({ refusal, isChanged: (p, a, b) => refusal(p, a, b) !== null });
+  // SEC-1/SEC-2: the blob the scan read must be the blob this index judges. `shaByPath`: path → blob id
+  // of the scanned side (from the clone). Returns the paths whose id differs from the anchor's (not in the
+  // diff) resp. the diff's new id. A failed raw diff returns nothing: `refusal` already answers with its reason.
+  const mismatched = (shaByPath) => {
+    const bad = new Set();
+    try {
+      if (rawIndex === undefined) rawIndex = readRaw();
+      if (rawIndex.why) return bad;
+      const rest = [];
+      for (const [p, sha] of shaByPath) {
+        const entry = rawIndex.map.get(p);
+        if (entry === undefined) rest.push([p, sha]);
+        else if (entry.status === 'D' || entry.newSha !== sha) bad.add(p);
+      }
+      const odd = rest.filter(([p]) => /[\n\0]/.test(p));
+      odd.forEach(([p]) => bad.add(p));
+      const ask = rest.filter(([p]) => !odd.some(([q]) => q === p));
+      if (ask.length === 0) return bad;
+      const r = git(['-C', root, 'cat-file', '--batch-check=%(objectname) %(objecttype)'], { input: ask.map(([p]) => `${anchor}:${p}`).join('\n') + '\n', stdio: ['pipe', 'pipe', 'pipe'] });
+      const out = r.status === 0 && !r.error ? r.stdout.split('\n') : [];
+      ask.forEach(([p, sha], i) => { if (out[i] !== `${sha} blob`) bad.add(p); });
+    } catch (_e) { shaByPath.forEach((_v, p) => bad.add(p)); }
+    return bad;
+  };
+  return Object.freeze({ refusal, mismatched, isChanged: (p, a, b) => refusal(p, a, b) !== null });
 }
 
 
@@ -556,10 +580,29 @@ function scopeFor(scopes, m) {
 const isLine = (n) => Number.isSafeInteger(n) && n >= 1;
 
 /** Why one scope-eligible match cannot be covered by its scope, or null:
- * `no_line` (no determinable line, e.g. a UTF-16 view), `changed_line`. */
-function scopeRefusal(m, changed) {
+ * `blob_mismatch` (the scanned bytes are not the committed blob), `no_line` (no determinable line, e.g. a UTF-16 view), `changed_line`. */
+function scopeRefusal(m, changed, bad) {
+  if (bad.has(m.path)) return 'blob_mismatch';
   if (m.view !== 'latin1' || !isLine(m.line) || !isLine(m.end_line) || m.end_line < m.line) return 'no_line';
   return changed === null ? 'changed_line' : changed.refusal(m.path, m.line, m.end_line);
+}
+
+/** Paths of scope-eligible matches whose scanned bytes are not provably the committed blob
+ * (SEC-1): untrusted in the clone (re-encoded or filtered on checkout, bytes differ from the blob),
+ * unknown, or a blob id the primary checkout's own diff does not confirm (SEC-2). No `trust` = all. */
+function untrustedPaths(scopes, matches, changed, trust) {
+  const paths = new Set();
+  for (const m of matches) if (m.path !== X.ALLOWLIST_FILE && scopeFor(scopes, m) !== null) paths.add(m.path);
+  if (changed === null || !trust) return paths;
+  const bad = new Set();
+  const known = new Map();
+  for (const p of paths) {
+    const sha = trust.sha.get(p);
+    if (sha === undefined || (trust.untrusted && trust.untrusted.has(p))) bad.add(p);
+    else known.set(p, sha);
+  }
+  for (const p of changed.mismatched(known)) bad.add(p);
+  return bad;
 }
 
 /** Splits one side's matches into scope-covered ones and the rest. Returns
@@ -567,7 +610,7 @@ function scopeRefusal(m, changed) {
  * `changed` is the changed-line index of this side (null: every match counts as changed).
  * A scope with more covered matches than its max_count covers nothing (reason max_count):
  * its matches go back to the v1 judgement. Matches in the allowlist file are never covered. */
-function applyScopes(scopes, matches, changed) {
+function applyScopes(scopes, matches, changed, trust) {
   const covered = new Map(); // scope → matches
   const refused = new Map(); // `${reason}\0${prefix}\0${pattern}` → { scope, reason, count }
   const refuse = (scope, reason, n) => {
@@ -575,10 +618,11 @@ function applyScopes(scopes, matches, changed) {
     const prev = refused.get(key) || { scope, reason, count: 0 };
     refused.set(key, { ...prev, count: prev.count + n });
   };
+  const bad = untrustedPaths(scopes, matches, changed, trust);
   for (const m of matches) {
     const sc = m.path === X.ALLOWLIST_FILE ? null : scopeFor(scopes, m);
     if (sc === null) continue;
-    const why = scopeRefusal(m, changed);
+    const why = scopeRefusal(m, changed, bad);
     if (why) { refuse(sc, why, 1); continue; }
     covered.set(sc, [...(covered.get(sc) || []), m]);
   }
@@ -715,8 +759,9 @@ function evaluate(o) {
   // input side and path names are never scope-covered (FR-020).
   const index = (rev) => (scopes.length && rev ? changedLines(o.root, anc.anchor, rev) : null);
   const baseExtra = (o.extra || []).find((e) => e.side === 'base');
-  const headScoped = applyScopes(scopes, o.matches, index(o.commitSha));
-  const baseScoped = baseExtra ? applyScopes(scopes, baseExtra.matches, index(o.baseSha)) : null;
+  const trust = o.trust || {};
+  const headScoped = applyScopes(scopes, o.matches, index(o.commitSha), trust.head);
+  const baseScoped = baseExtra ? applyScopes(scopes, baseExtra.matches, index(o.baseSha), trust.base) : null;
   const scopedHits = [...scopeRows(headScoped, null, tag).hits, ...(baseScoped ? scopeRows(baseScoped, 'base', tag).hits : [])];
   const scopedUncovered = [...scopeRows(headScoped, null, tag).refused, ...(baseScoped ? scopeRows(baseScoped, 'base', tag).refused : [])];
   const restPairs = groupPairs(headScoped.rest);
@@ -743,6 +788,6 @@ function evaluate(o) {
 
 module.exports = {
   NO_ALLOWLIST, STORE_MODE, STORE_DIR_MODE, SHA256_RE,
-  parseStrictJson, parseAllowlist, parseChangedRanges, rangesIntersect, parseRawDiff, changedLines, gitTimeoutMs, scopeFor, scopesProblem, scopeTreeProblem, pathProblem, blobAt, separateCommitProblem, ownerProblem, verifiedTip, resolveAnchor, defaultBranch, lsRemote,
+  parseStrictJson, parseAllowlist, parseChangedRanges, rangesIntersect, parseRawDiff, changedLines, untrustedPaths, gitTimeoutMs, scopeFor, scopesProblem, scopeTreeProblem, pathProblem, blobAt, separateCommitProblem, ownerProblem, verifiedTip, resolveAnchor, defaultBranch, lsRemote,
   readApprovals, readGuardedStore, exactKeys, storePath, groupPairs, evaluate, permitRecord,
 };

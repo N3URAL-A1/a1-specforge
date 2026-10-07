@@ -67,6 +67,7 @@
 
 const fs = require('fs');
 const os = require('os');
+const crypto = require('crypto');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { parseFlags, repoRoot } = require('./io.cjs');
@@ -536,9 +537,71 @@ function scanOutbound(dir, cl, inputs, none) {
   try { ins = copyInputs(dir, inputs); } catch (e) { return { fail: { reason: X.REASONS.snapshot_failed, detail: e.message, ...none } }; }
   return {
     scan, base_, ins,
+    trust: { head: headTrust(dir, scan.matches, scan.missingBlobs), base: { sha: new Map(base_.blobs.map((b) => [b.path, blobIdOf(b.buf)])), untrusted: new Set() } },
     baseMatches: base_.blobs.flatMap((b) => scanSource(bufferSource(b.buf), b.path, false, true)),
     inputMatches: ins.labels.flatMap((l) => scanEntry(l.dest, fs.lstatSync(l.dest), l.label, false)),
   };
+}
+
+/** The git blob id (sha1) of `buf`'s bytes. */
+function blobIdOf(buf) {
+  return crypto.createHash('sha1').update(`blob ${buf.length}\0`).update(buf).digest('hex');
+}
+
+/** The blob id of what is on disk at `full` (a symlink: its target text), or null when absent. Streams. */
+function diskBlobId(full) {
+  let st;
+  try { st = fs.lstatSync(full); } catch (_e) { return null; }
+  if (st.isSymbolicLink()) return blobIdOf(fs.readlinkSync(full, { encoding: 'buffer' }));
+  if (!st.isFile()) return null;
+  const h = crypto.createHash('sha1').update(`blob ${st.size}\0`);
+  const fd = fs.openSync(full, 'r');
+  try {
+    const chunk = Buffer.alloc(1 << 20);
+    for (let n = fs.readSync(fd, chunk, 0, chunk.length, null); n > 0; n = fs.readSync(fd, chunk, 0, chunk.length, null)) h.update(chunk.subarray(0, n));
+  } finally { fs.closeSync(fd); }
+  return h.digest('hex');
+}
+
+/** Paths that carry an attribute which rewrites content on checkout. */
+const REWRITE_ATTRS = Object.freeze(['working-tree-encoding', 'filter', 'ident']);
+
+/** Paths (of `paths`) with a content-rewriting attribute in the clone; all of them when git cannot say. */
+function rewrittenPaths(dir, paths) {
+  const r = git(['-C', dir, 'check-attr', '-z', '--stdin', ...REWRITE_ATTRS], { input: paths.join('\0') + '\0', stdio: ['pipe', 'pipe', 'pipe'] });
+  if (r.status !== 0 || r.error) return new Set(paths);
+  const t = r.stdout.split('\0');
+  const hit = new Set();
+  for (let i = 0; i + 2 < t.length; i += 3) if (t[i + 2] !== 'unspecified' && t[i + 2] !== 'unset') hit.add(t[i]);
+  return hit;
+}
+
+/** SEC-1: which scanned head paths are provably their committed blob. { sha: path → blob id at HEAD,
+ * untrusted: paths whose bytes on disk differ from that blob, or that carry a rewriting attribute }.
+ * Only paths with matches are checked. A stripped repo-local path (scanned from its HEAD blob) is its blob by construction. */
+function headTrust(dir, matches, missingBlobs) {
+  const paths = [...new Set(matches.map((m) => m.path))];
+  const sha = new Map();
+  const untrusted = new Set();
+  if (paths.length === 0) return { sha, untrusted };
+  const ls = git(['-C', dir, 'ls-tree', '-r', '-z', 'HEAD']);
+  const ids = new Map();
+  if (ls.status === 0) {
+    for (const rec of ls.stdout.split('\0')) {
+      const tab = rec.indexOf('\t');
+      const m = tab > 0 ? /^\d+ blob ([0-9a-f]{40})$/.exec(rec.slice(0, tab)) : null;
+      if (m) ids.set(rec.slice(tab + 1), m[1]);
+    }
+  }
+  const stripped = new Set(missingBlobs.map((b) => b.path));
+  const rewritten = rewrittenPaths(dir, paths);
+  for (const p of paths) {
+    const id = ids.get(p);
+    if (id === undefined) { untrusted.add(p); continue; }
+    sha.set(p, id);
+    if (rewritten.has(p) || (!stripped.has(p) && diskBlobId(path.join(dir, p)) !== id)) untrusted.add(p);
+  }
+  return { sha, untrusted };
 }
 
 /** FR-030 (e): gitleaks over the tree, the base blobs, the stripped HEAD blobs and
@@ -582,7 +645,7 @@ function snapshot(opts) {
   const out = scanOutbound(dir, cl, opts.inputs, none);
   if (out.fail) return failed(out.fail);
   const al = AL.evaluate({
-    root: primaryRoot, commitSha: cl.commit, gateKind, matches: out.scan.matches, tracked: out.scan.tracked, approvals, baseSha: cl.base,
+    root: primaryRoot, commitSha: cl.commit, gateKind, matches: out.scan.matches, tracked: out.scan.tracked, approvals, baseSha: cl.base, trust: out.trust,
     extra: [{ side: 'base', matches: out.baseMatches }, { side: 'input', matches: out.inputMatches }],
   });
   const report = allowlistReport(al);
