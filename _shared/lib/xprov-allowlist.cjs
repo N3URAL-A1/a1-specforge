@@ -212,7 +212,7 @@ function parseAllowlist(text) {
 /** Raw bytes of `<rev>:<file>`, or null when the path does not exist there. */
 function blobAt(root, rev, file) {
   if (git(['-C', root, 'cat-file', '-e', `${rev}:${file}`]).status !== 0) return null;
-  const r = spawnSync('git', ['--no-replace-objects', '-C', root, 'cat-file', 'blob', `${rev}:${file}`], { env: diffEnv(), maxBuffer: MAX_BLOB_BYTES + 1, stdio: ['ignore', 'pipe', 'pipe'] });
+  const r = spawnSync('git', ['--no-replace-objects', '-C', root, 'cat-file', 'blob', `${rev}:${file}`], { env: diffEnv(), timeout: gitTimeoutMs(), killSignal: 'SIGKILL', maxBuffer: MAX_BLOB_BYTES + 1, stdio: ['ignore', 'pipe', 'pipe'] });
   if (r.status !== 0 || !Buffer.isBuffer(r.stdout)) throw new Error(`git cat-file blob ${rev}:${file} failed`);
   return r.stdout;
 }
@@ -480,9 +480,18 @@ function diffEnv() {
   return env;
 }
 
-/** One git read in the primary checkout: replace objects off, cleaned environment. */
+/** Upper bound for one git read in the primary checkout (SEC-8). The env var may only
+ * lower it (tests): a huge or malformed value falls back to the bound. */
+const GIT_TIMEOUT_MS = 30000;
+function gitTimeoutMs() {
+  const n = Number(process.env.XPROV_GIT_TIMEOUT_MS);
+  return Number.isSafeInteger(n) && n >= 1 && n <= GIT_TIMEOUT_MS ? n : GIT_TIMEOUT_MS;
+}
+const timedOut = (r) => Boolean(r.error && r.error.code === 'ETIMEDOUT');
+
+/** One git read in the primary checkout: replace objects off, cleaned environment, bounded time. */
 function git(args, opts) {
-  return C.gitSpawn(['--no-replace-objects', ...args], { env: diffEnv(), ...(opts || {}) });
+  return C.gitSpawn(['--no-replace-objects', ...args], { env: diffEnv(), timeout: gitTimeoutMs(), killSignal: 'SIGKILL', ...(opts || {}) });
 }
 
 /** stdout of a successful `git(...)`, else null. */
@@ -492,40 +501,43 @@ function gitOut(args) {
 }
 
 /** The changed-line index of `<anchor> → <rev>` in `root`, computed lazily and
- * cached for the run: { isChanged(path, firstLine, lastLine) }. Never throws; every
- * doubt answers `true` (changed). */
+ * cached for the run: { refusal(path, firstLine, lastLine) → null | 'changed_line' | 'git_timeout', isChanged }.
+ * Never throws; every doubt is a refusal. */
 function changedLines(root, anchor, rev) {
   const opts = { env: diffEnv(), maxBuffer: DIFF_MAX_BYTES };
   const base = ['--literal-pathspecs', '-C', root, 'diff', '--no-ext-diff', '--no-textconv', '--no-renames', '--no-color'];
-  let rawIndex; // undefined = not read yet, null = unreadable
+  let rawIndex; // undefined = not read yet, { why } = unreadable
   const patches = new Map();
   const readRaw = () => {
     const r = git([...base, '--raw', '--no-abbrev', '-z', anchor, rev, '--'], { ...opts, maxBuffer: C.GIT_MAX_BUFFER });
-    return r.status === 0 && !r.error ? parseRawDiff(r.stdout) : null;
+    if (timedOut(r)) return { why: 'git_timeout' };
+    const map = r.status === 0 && !r.error ? parseRawDiff(r.stdout) : null;
+    return map === null ? { why: 'changed_line' } : { map };
   };
   const readPatch = (p, entry) => {
     const r = git([...base, '--unified=0', '--diff-algorithm=myers', anchor, rev, '--', p], opts);
-    if (r.status !== 0 || r.error) return { ok: false };
+    if (timedOut(r)) return { ok: false, why: 'git_timeout' };
+    if (r.status !== 0 || r.error) return { ok: false, why: 'changed_line' };
     const parsed = parseChangedRanges(r.stdout);
     // a different blob (not a mode-only change) that yields no hunk at all is unexplained: treat it as changed
-    if (parsed.ok && parsed.hunks === 0 && entry.oldSha !== entry.newSha) return { ok: false };
-    return parsed;
+    if (parsed.ok && parsed.hunks === 0 && entry.oldSha !== entry.newSha) return { ok: false, why: 'changed_line' };
+    return parsed.ok ? parsed : { ok: false, why: 'changed_line' };
   };
   const check = (p, a, b) => {
     if (rawIndex === undefined) rawIndex = readRaw();
-    if (rawIndex === null) return true;
-    const entry = rawIndex.get(p);
-    if (entry === undefined) return false; // not in the diff: identical at both ends
-    if (entry.status !== 'M') return true;
+    if (rawIndex.why) return rawIndex.why;
+    const entry = rawIndex.map.get(p);
+    if (entry === undefined) return null; // not in the diff: identical at both ends
+    if (entry.status !== 'M') return 'changed_line';
     if (!patches.has(p)) patches.set(p, readPatch(p, entry));
     const patch = patches.get(p);
-    return !patch.ok || rangesIntersect(patch.ranges, a, b);
+    if (!patch.ok) return patch.why;
+    return rangesIntersect(patch.ranges, a, b) ? 'changed_line' : null;
   };
-  return Object.freeze({
-    isChanged(p, a, b) {
-      try { return check(p, a, b); } catch (_e) { return true; }
-    },
-  });
+  const refusal = (p, a, b) => {
+    try { return check(p, a, b); } catch (_e) { return 'changed_line'; }
+  };
+  return Object.freeze({ refusal, isChanged: (p, a, b) => refusal(p, a, b) !== null });
 }
 
 
@@ -547,7 +559,7 @@ const isLine = (n) => Number.isSafeInteger(n) && n >= 1;
  * `no_line` (no determinable line, e.g. a UTF-16 view), `changed_line`. */
 function scopeRefusal(m, changed) {
   if (m.view !== 'latin1' || !isLine(m.line) || !isLine(m.end_line) || m.end_line < m.line) return 'no_line';
-  return changed !== null && !changed.isChanged(m.path, m.line, m.end_line) ? null : 'changed_line';
+  return changed === null ? 'changed_line' : changed.refusal(m.path, m.line, m.end_line);
 }
 
 /** Splits one side's matches into scope-covered ones and the rest. Returns
@@ -627,6 +639,7 @@ function ownerProblem(root, anchor, doc) {
 function scopeTreeProblem(root, anchor, doc) {
   for (const sc of doc.scopes || []) {
     const t = git(['-C', root, 'cat-file', '-t', `${anchor}:${sc.prefix.slice(0, -1)}`]);
+    if (timedOut(t)) return `git timed out checking scope prefix ${sc.prefix}`;
     if (t.status !== 0 || t.stdout.trim() !== 'tree') return `scope prefix ${sc.prefix} is not a directory at the anchor`;
   }
   return null;
@@ -730,6 +743,6 @@ function evaluate(o) {
 
 module.exports = {
   NO_ALLOWLIST, STORE_MODE, STORE_DIR_MODE, SHA256_RE,
-  parseStrictJson, parseAllowlist, parseChangedRanges, rangesIntersect, parseRawDiff, changedLines, scopeFor, scopesProblem, scopeTreeProblem, pathProblem, blobAt, separateCommitProblem, ownerProblem, verifiedTip, resolveAnchor, defaultBranch, lsRemote,
+  parseStrictJson, parseAllowlist, parseChangedRanges, rangesIntersect, parseRawDiff, changedLines, gitTimeoutMs, scopeFor, scopesProblem, scopeTreeProblem, pathProblem, blobAt, separateCommitProblem, ownerProblem, verifiedTip, resolveAnchor, defaultBranch, lsRemote,
   readApprovals, readGuardedStore, exactKeys, storePath, groupPairs, evaluate, permitRecord,
 };

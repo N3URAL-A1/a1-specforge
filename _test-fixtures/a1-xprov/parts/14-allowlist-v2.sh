@@ -558,6 +558,21 @@ caseS2() {
   git -C "$R14" replace -d "$(git -C "$R14" rev-parse 'main^{tree}' | head -n1)" >/dev/null 2>&1
 }
 
-for c in ${XPROV14_CASES:-caseD1 caseD1b caseD1c caseD2u caseD3 caseD3b caseD3g casePropose caseApproveListing caseApproveTty caseS2}; do "$c"; done
+# ---------- S8 (Samuel SEC-8): a git read that hangs is bounded and refuses coverage ----------
+# Mutation: M21 drop the timeout option from the allowlist's git wrapper → the fake git sleeps the full 5 s and the scope covers.
+caseS8() {
+  scen14 "$(sc14 tests/ password_assignment 5)"; printf '// f\n' >> "$R14/src/add.js"; c14 "feature"
+  local real fb="$TMP14/fakebin"; real="$(command -v git)"; mkdir -p "$fb"
+  printf '#!/bin/sh\ncase " $* " in *" --no-abbrev "*) exec sleep 5;; esac\nexec %s "$@"\n' "$real" > "$fb/git"; chmod +x "$fb/git"
+  local t0 t1; t0=$SECONDS
+  PATH="$fb:$PATH" XPROV_GIT_TIMEOUT_MS=1000 snap14 feat
+  t1=$SECONDS
+  expect14 "S8 a hanging git diff --raw: no scope covers" "secret_in_snapshot"
+  assert_eq "S8 …refused with its own reason" "$(hits14)|$(unc14)" "|tests/|password_assignment|2|git_timeout"
+  [[ $((t1 - t0)) -lt 5 ]] && ok "S8 …the run ended before the fake git woke up" || bad "S8: took $((t1 - t0)) s"
+  assert_eq "S8 an out-of-range timeout override falls back to the bound" "$(XPROV_GIT_TIMEOUT_MS=99999999 node -e 'process.stdout.write(String(require(process.argv[1] + "/_shared/lib/xprov-allowlist.cjs").gitTimeoutMs()))' "$TREE")" "30000"
+}
+
+for c in ${XPROV14_CASES:-caseD1 caseD1b caseD1c caseD2u caseD3 caseD3b caseD3g casePropose caseApproveListing caseApproveTty caseS2 caseS8}; do "$c"; done
 export HOME="$SAVED_HOME_14"
 rm -rf "$TMP14"
