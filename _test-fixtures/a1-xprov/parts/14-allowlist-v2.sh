@@ -684,6 +684,24 @@ caseS4() {
   done
 }
 
-for c in ${XPROV14_CASES:-caseD1 caseD1b caseD1c caseD2u caseD3 caseD3b caseD3g casePropose caseApproveListing caseApproveTty caseS2 caseS8 caseR11 caseS1 caseS1u caseS4}; do "$c"; done
+# ---------- S6 (Samuel SEC-6): a PGP private key block is a private key header ----------
+# Mutation: M25 revert the regex to `PRIVATE KEY-----` → the PGP arm turns red.
+caseS6() {
+  local out; out="$(node -e '
+    const X = require(process.argv[1] + "/_shared/lib/xprov.cjs"); const d = process.argv[2];
+    const hit = (t) => X.SECRET_PATTERNS.filter((p) => new RegExp(p.re.source, p.re.flags.replace("g", "")).test(t)).map((p) => p.name).sort().join(",");
+    console.log(JSON.stringify({
+      pgp: hit(d + "BEGIN PGP PRIVATE KEY BLOCK" + d), rsa: hit(d + "BEGIN RSA PRIVATE KEY" + d), plain: hit(d + "BEGIN PRIVATE KEY" + d),
+      pub: hit(d + "BEGIN PGP PUBLIC KEY BLOCK" + d), cert: hit(d + "BEGIN CERTIFICATE" + d),
+    }));
+  ' "$TREE" "$D14")"
+  assert_json "S6 a PGP private key block is private_key_header" "$out" "j.pgp.includes('private_key_header')" "true"
+  assert_json "S6 an RSA private key header still is" "$out" "j.rsa.includes('private_key_header')" "true"
+  assert_json "S6 a bare PRIVATE KEY header still is" "$out" "j.plain.includes('private_key_header')" "true"
+  assert_json "S6 counter-test: a PGP PUBLIC KEY BLOCK is not" "$out" "j.pub.includes('private_key_header')" "false"
+  assert_json "S6 counter-test: a certificate is not" "$out" "j.cert.includes('private_key_header')" "false"
+}
+
+for c in ${XPROV14_CASES:-caseD1 caseD1b caseD1c caseD2u caseD3 caseD3b caseD3g casePropose caseApproveListing caseApproveTty caseS2 caseS8 caseR11 caseS1 caseS1u caseS4 caseS6}; do "$c"; done
 export HOME="$SAVED_HOME_14"
 rm -rf "$TMP14"

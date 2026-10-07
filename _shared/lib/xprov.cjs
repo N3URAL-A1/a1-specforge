@@ -163,7 +163,7 @@ const HIGH_CONFIDENCE_PATTERNS = Object.freeze([
 // PATH_NAME_BOUNDARY_PATTERNS (path names only).
 const TOKEN_BOUNDARY = '(?:(?<![A-Za-z0-9])|(?<=\\\\[nrtfbv0]|\\\\u[0-9A-Fa-f]{4}|\\\\x[0-9A-Fa-f]{2}|%[0-9A-Fa-f]{2}|\\x1b\\[[0-9;]{0,16}m))';
 const SECRET_PATTERNS = Object.freeze([
-  Object.freeze({ name: 'private_key_header', re: /-----BEGIN [A-Z ]*PRIVATE KEY-----/ }),
+  Object.freeze({ name: 'private_key_header', re: /-----BEGIN [A-Z ]*PRIVATE KEY( BLOCK)?-----/ }),
   Object.freeze({ name: 'aws_access_key_id', re: /AKIA[0-9A-Z]{16}/ }),
   Object.freeze({ name: 'sk_prefixed_key', re: new RegExp(`${TOKEN_BOUNDARY}sk-[A-Za-z0-9]{20,}`) }),
   Object.freeze({ name: 'github_pat_classic', re: /ghp_[A-Za-z0-9]{36}/ }),
