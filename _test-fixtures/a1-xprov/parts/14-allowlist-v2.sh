@@ -756,6 +756,29 @@ caseR14() {
   [[ "$P_ERR" == *"above the max_count bound 2000"* ]] && ok "R14 propose --scopes hints when a proposal exceeds the bound" || bad "R14 no hint: ${P_ERR:0:200}"
 }
 
-for c in ${XPROV14_CASES:-caseD1 caseD1b caseD1c caseD2u caseD3 caseD3b caseD3g casePropose caseApproveListing caseApproveTty caseS2 caseS8 caseR11 caseS1 caseS1u caseS4 caseS6 caseS7 caseR14}; do "$c"; done
+# ---------- SA (Samuel, round 3): .git/info/grafts must not rewrite the history the anchor is computed on ----------
+# Mutation: M28 let git read grafts again (GIT_GRAFT_FILE not pinned) → the forged anchor X2 is accepted.
+caseSA() {
+  new14
+  al14 "$(doc14 "$(sc14 tests/ password_assignment 5)")"
+  local m1 m0 t x1 x2 idx; m0="$(git -C "$R14" rev-parse main~1)"; m1="$(git -C "$R14" rev-parse main)"
+  # X1: child of main~1 with exactly main's tree (the allowlist is the only difference to main~1);
+  # X2: child of X1 that also carries a secret-shaped line under tests/
+  x1="$(git -C "$R14" commit-tree "$m1^{tree}" -p "$m0" -m x1)"
+  idx="$A14/idx"; rm -f "$idx"
+  GIT_INDEX_FILE="$idx" git -C "$R14" read-tree "$m1^{tree}"
+  local blob; blob="$(printf '%s\n' "$(pwline14 fixtureval71)" | git -C "$R14" hash-object -w --stdin)"
+  GIT_INDEX_FILE="$idx" git -C "$R14" update-index --add --cacheinfo "100644,$blob,tests/leak.txt"
+  t="$(GIT_INDEX_FILE="$idx" git -C "$R14" write-tree)"
+  x2="$(git -C "$R14" commit-tree "$t" -p "$x1" -m x2)"
+  git -C "$R14" checkout -q -B feat "$x2"; printf '// f\n' >> "$R14/src/add.js"; c14 "feature on the forged line"
+  # the graft: main claims X2 as a second parent, so merge-base(main, feat) becomes X2
+  printf '%s %s %s\n' "$m1" "$m0" "$x2" > "$R14/.git/info/grafts"
+  snap14 feat
+  [[ "$S_RC" -eq 1 && "$(J14 j.ok)" != "true" ]] && ok "SA a grafted history does not move the anchor: the snapshot fails" || bad "SA the grafted anchor was accepted (exit $S_RC, ok=$(J14 j.ok))"
+  assert_eq "SA …and no scope covered the line" "$(hits14)" ""
+}
+
+for c in ${XPROV14_CASES:-caseD1 caseD1b caseD1c caseD2u caseD3 caseD3b caseD3g casePropose caseApproveListing caseApproveTty caseS2 caseS8 caseR11 caseS1 caseS1u caseS4 caseS6 caseS7 caseR14 caseSA}; do "$c"; done
 export HOME="$SAVED_HOME_14"
 rm -rf "$TMP14"

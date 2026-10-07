@@ -27,6 +27,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { spawnSync } = require('child_process');
 const X = require('./xprov.cjs');
 const C = require('./xprov-common.cjs');
@@ -466,9 +467,12 @@ function parseRawDiff(text) {
 /** Variables that can redirect git to other objects, refs, config or a hidden diff. */
 const GIT_ENV_DROP = Object.freeze([
   'GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES',
-  'GIT_REPLACE_REF_BASE', 'GIT_GRAFT_FILE', 'GIT_SHALLOW_FILE', 'GIT_CONFIG', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM',
+  'GIT_REPLACE_REF_BASE', 'GIT_SHALLOW_FILE', 'GIT_CONFIG', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM',
   'GIT_CONFIG_COUNT', 'GIT_CONFIG_PARAMETERS', 'GIT_DIFF_OPTS', 'GIT_EXTERNAL_DIFF',
 ]);
+
+/** Never exists: pointing GIT_GRAFT_FILE here makes git ignore the repository's own grafts file. */
+const GRAFT_OFF_PATH = path.join(os.tmpdir(), 'a1-xprov-no-such-grafts-file');
 
 /** git's environment for every read against the primary checkout (SEC-2): no redirecting
  * variables, replace objects switched off. */
@@ -477,6 +481,7 @@ function diffEnv() {
   for (const k of GIT_ENV_DROP) delete env[k];
   for (const k of Object.keys(env)) if (/^GIT_CONFIG_(KEY|VALUE)_\d+$/.test(k)) delete env[k];
   env.GIT_NO_REPLACE_OBJECTS = '1';
+  env.GIT_GRAFT_FILE = GRAFT_OFF_PATH; // a path that does not exist: .git/info/grafts is not read (SEC-A)
   return env;
 }
 
@@ -491,7 +496,7 @@ const timedOut = (r) => Boolean(r.error && r.error.code === 'ETIMEDOUT');
 
 /** One git read in the primary checkout: replace objects off, cleaned environment, bounded time. */
 function git(args, opts) {
-  return C.gitSpawn(['--no-replace-objects', ...args], { env: diffEnv(), timeout: gitTimeoutMs(), killSignal: 'SIGKILL', ...(opts || {}) });
+  return C.gitSpawn(['--no-replace-objects', '-c', 'core.commitGraph=false', ...args], { env: diffEnv(), timeout: gitTimeoutMs(), killSignal: 'SIGKILL', ...(opts || {}) });
 }
 
 /** stdout of a successful `git(...)`, else null. */
