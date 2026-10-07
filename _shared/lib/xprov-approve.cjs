@@ -176,7 +176,8 @@ function proposeScopes(matches) {
   const groups = new Map();
   for (const m of scopable) {
     const key = `${m.path.split('/')[0]}\0${m.pattern}`;
-    groups.set(key, [...(groups.get(key) || []), m]);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(m);
   }
   const scopes = [...groups.values()].map((g) => {
     const kinds = Object.fromEntries(KIND_ORDER.map((k) => [k, g.filter((m) => (m.kind || 'unclassified') === k).length]));
@@ -216,6 +217,7 @@ function cmdProposeScopes(root, commit, asJson) {
   const p = proposeScopes(r.matches);
   const err = (line) => process.stderr.write(`${safeText(line)}\n`);
   for (const s of p.scopes) err(`${s.prefix}  ${s.pattern}  ${s.count}  ${s.class}  ${KIND_ORDER.map((k) => `${k} ${s.kinds[k]}`).join(' · ')}`);
+  for (const s of p.scopes) if (s.count > X.ALLOWLIST_SCOPE_MAX_COUNT) err(`hint: ${s.prefix} ${s.pattern} has ${s.count} matches, above the max_count bound ${X.ALLOWLIST_SCOPE_MAX_COUNT}: split the prefix into deeper directories`);
   for (const n of p.not_scopable) err(`not scopable (high confidence, needs v1 entries): ${n.pattern} ${n.count}`);
   if (p.root_files) err(`root-level files (no directory prefix, need v1 entries): ${p.root_files} match(es)`);
   for (const u of p.unclassified) err(`unclassified: ${u.location}  ${u.pattern}  ${u.excerpt}  high_confidence: ${u.high_confidence}`);
@@ -367,7 +369,7 @@ function approveListing(doc, rows) {
   }
   const scopes = doc.scopes || [];
   for (const sc of scopes) {
-    const seen = rows.filter((m) => m.pattern === sc.pattern && AL.scopeFor(scopes, m) === sc).length;
+    const seen = rows.filter((m) => m.path !== X.ALLOWLIST_FILE && m.pattern === sc.pattern && AL.scopeFor(scopes, m) === sc).length;
     lines.push(`- scope ${sc.prefix} · ${sc.pattern} · max_count ${sc.max_count} · ${sc.class} · ${sc.reason}`);
     lines.push(`    observed ${seen} match(es) at this commit${seen === 0 ? ' — stale' : seen > sc.max_count ? ' — exceeds max_count' : ''}`);
   }

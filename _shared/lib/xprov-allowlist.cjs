@@ -624,7 +624,8 @@ function applyScopes(scopes, matches, changed, trust) {
     if (sc === null) continue;
     const why = scopeRefusal(m, changed, bad);
     if (why) { refuse(sc, why, 1); continue; }
-    covered.set(sc, [...(covered.get(sc) || []), m]);
+    if (!covered.has(sc)) covered.set(sc, []);
+    covered.get(sc).push(m);
   }
   const taken = new Set();
   const hits = [];
@@ -762,8 +763,10 @@ function evaluate(o) {
   const trust = o.trust || {};
   const headScoped = applyScopes(scopes, o.matches, index(o.commitSha), trust.head);
   const baseScoped = baseExtra ? applyScopes(scopes, baseExtra.matches, index(o.baseSha), trust.base) : null;
-  const scopedHits = [...scopeRows(headScoped, null, tag).hits, ...(baseScoped ? scopeRows(baseScoped, 'base', tag).hits : [])];
-  const scopedUncovered = [...scopeRows(headScoped, null, tag).refused, ...(baseScoped ? scopeRows(baseScoped, 'base', tag).refused : [])];
+  const headRows = scopeRows(headScoped, null, tag);
+  const baseRows = baseScoped ? scopeRows(baseScoped, 'base', tag) : { hits: [], refused: [] };
+  const scopedHits = [...headRows.hits, ...baseRows.hits];
+  const scopedUncovered = [...headRows.refused, ...baseRows.refused];
   const restPairs = groupPairs(headScoped.rest);
   const restSides = sides.map((x) => ({ side: x.side, pairs: x.side === 'base' && baseScoped ? groupPairs(baseScoped.rest) : x.pairs }));
   const allowlisted = [];

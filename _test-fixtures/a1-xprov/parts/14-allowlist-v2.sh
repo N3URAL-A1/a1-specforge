@@ -25,7 +25,8 @@
 #   M8 base side judged against the head diff                        → D2 (ix)
 #   M9 binary diff treated as "no changed lines"                     → D2 binary arm
 #   M10 match without a line treated as unchanged                    → D2 utf-16 arm
-#   M11 scopes also applied to the input side                        → D3 input arm
+#   M11 input copies scanned WITH lines and scopes applied to them (two edits; with only the second the
+#       input matches have no line and are refused as no_line, which the arm cannot tell apart) → D3 input arm
 
 TMP14="$(mktemp -d "${TMPDIR:-/tmp}/a1x14.XXXXXX")"
 [[ -n "$TMP14" && -d "$TMP14" ]] || { echo "FAIL  part 14: mktemp failed" >&2; fail=$((fail + 1)); return 0 2>/dev/null || exit 1; }
@@ -85,7 +86,11 @@ doc14() { printf '{"version":%s,"owner":"%s","entries":[%s],"scopes":[%s]}\n' "$
 
 # al14 <doc> [approve=1] — the allowlist alone in its own commit on main, pushed; approved unless $2 = 0.
 al14() {
-  printf '%s' "$1" > "$R14/$AL14"; git -C "$R14" add "$AL14"; git -C "$R14" commit -qm "allowlist"; push14
+  printf '%s' "$1" > "$R14/$AL14"
+  # an unchanged file is not an error (a variant may rewrite the same document); any other git failure is
+  git -C "$R14" add "$AL14" || bad "part 14 al14: git add failed"
+  if ! git -C "$R14" diff --cached --quiet; then git -C "$R14" commit -qm "allowlist" || bad "part 14 al14: commit failed"; fi
+  push14 || bad "part 14 al14: push failed"
   if [[ "${2:-1}" == 1 ]]; then store14; fi
 }
 
@@ -134,7 +139,7 @@ caseD1() {
   mkdir -p "$R14/d" ; printf 'x\n' > "$R14/d/f.txt"; c14 "dir d"; push14
   local ok2="$(sc14 tests/ password_assignment 5)"
   variant14 "D1 a valid v2 document (one scope, no entries)" "$(doc14 "$ok2")" pass
-  variant14 "D1 viii v1-shaped keys with version 2 (no scopes key)" '{"version":2,"owner":"robert","entries":[]}' "allowlist_invalid"
+  variant14 "D1 v1-shaped keys with version 2 (no scopes key)" '{"version":2,"owner":"robert","entries":[]}' "allowlist_invalid"
   variant14 "D1 v1 document carrying a scopes key" "$(doc14 "$ok2" '' robert 1)" "allowlist_invalid"
   variant14 "D1 version 3" "$(doc14 "$ok2" '' robert 3)" "allowlist_invalid"
   # (iv) high-confidence patterns are never scoped
@@ -311,7 +316,7 @@ caseD3b() {
   new14
   { printf '%s\n' "$(pwline14 fixtureval08)"; printf '\0\0\0\0'; } > "$R14/tests/bin.dat"; c14 "binary file"; push14
   al14 "$(doc14 "$(sc14 tests/ password_assignment 3)")"; feat14; printf '// f\n' >> "$R14/src/add.js"; c14 "feature"; snap14 feat
-  pass14 "D3 binary control: the unchanged binary file's hit is covered (3 hits)"
+  pass14 "D3 binary control: the unchanged binary file's hit is covered (1 hit)"
   printf '\0' >> "$R14/tests/bin.dat"; c14 "touch the binary file"; snap14 feat
   expect14 "D3 binary diff: every line counts as changed" "secret_in_snapshot"
   assert_eq "D3 binary diff: reported as diff_unreadable" "$(unc14)" "tests/|password_assignment|1|diff_unreadable"
@@ -735,6 +740,22 @@ caseS7() {
   assert_json "S7 approve listing: escapes are visible, the layout is kept" "$out" "j.text.includes('\\\\u001b[31m.js') && j.text.includes('\\\\u202eevil') && j.text.includes('\\\\u009bx/') && j.text.includes('line1\\\\u000aline2')" "true"
 }
 
-for c in ${XPROV14_CASES:-caseD1 caseD1b caseD1c caseD2u caseD3 caseD3b caseD3g casePropose caseApproveListing caseApproveTty caseS2 caseS8 caseR11 caseS1 caseS1u caseS4 caseS6 caseS7}; do "$c"; done
+# ---------- R14 (Reinhard NITs): `observed` ignores the allowlist file; propose hints above the max_count bound ----------
+# Mutation: M27 drop the allowlist-file exclusion → the observed count includes the file's own match.
+caseR14() {
+  local out; out="$(node -e '
+    const AP = require(process.argv[1] + "/_shared/lib/xprov-approve.cjs"); const X = require(process.argv[1] + "/_shared/lib/xprov.cjs");
+    const row = (path) => ({ path, pattern: "password_assignment", location: path + ":1:1", excerpt: "x", high_confidence: false });
+    const doc = { version: 2, owner: "robert", entries: [], scopes: [{ prefix: ".a1/", pattern: "password_assignment", max_count: 5, class: "fixture_fake", reason: "r" }] };
+    console.log(JSON.stringify({ text: AP.approveListing(doc, [row(X.ALLOWLIST_FILE), row(".a1/other.txt")]).lines.join("|") }));
+  ' "$TREE")"
+  assert_json "R14 observed counts .a1/other.txt but not the allowlist file itself" "$out" "j.text.includes('observed 1 match(es)')" "true"
+  new14
+  mkdir -p "$R14/lib/big"; local i; for i in $(seq 1 2001); do printf '%s\n' "$(pwline14 fixtureval6x)"; done > "$R14/lib/big/f.js"; c14 "2001 matches under one prefix"
+  prop14 --scopes
+  [[ "$P_ERR" == *"above the max_count bound 2000"* ]] && ok "R14 propose --scopes hints when a proposal exceeds the bound" || bad "R14 no hint: ${P_ERR:0:200}"
+}
+
+for c in ${XPROV14_CASES:-caseD1 caseD1b caseD1c caseD2u caseD3 caseD3b caseD3g casePropose caseApproveListing caseApproveTty caseS2 caseS8 caseR11 caseS1 caseS1u caseS4 caseS6 caseS7 caseR14}; do "$c"; done
 export HOME="$SAVED_HOME_14"
 rm -rf "$TMP14"
