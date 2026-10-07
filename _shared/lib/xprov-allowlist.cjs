@@ -32,7 +32,7 @@ const X = require('./xprov.cjs');
 const C = require('./xprov-common.cjs');
 const { PERMIT_FILE, isValidBranchName } = require('./xprov-permit.cjs');
 
-const { gitSpawn: git, gitOut, isPlainObject } = C;
+const { isPlainObject } = C;
 const DETAIL = X.ALLOWLIST_DETAILS;
 
 const LS_REMOTE_TIMEOUT_MS = 30 * 1000; // FR-030 (b)
@@ -212,7 +212,7 @@ function parseAllowlist(text) {
 /** Raw bytes of `<rev>:<file>`, or null when the path does not exist there. */
 function blobAt(root, rev, file) {
   if (git(['-C', root, 'cat-file', '-e', `${rev}:${file}`]).status !== 0) return null;
-  const r = spawnSync('git', ['-C', root, 'cat-file', 'blob', `${rev}:${file}`], { maxBuffer: MAX_BLOB_BYTES + 1, stdio: ['ignore', 'pipe', 'pipe'] });
+  const r = spawnSync('git', ['--no-replace-objects', '-C', root, 'cat-file', 'blob', `${rev}:${file}`], { env: diffEnv(), maxBuffer: MAX_BLOB_BYTES + 1, stdio: ['ignore', 'pipe', 'pipe'] });
   if (r.status !== 0 || !Buffer.isBuffer(r.stdout)) throw new Error(`git cat-file blob ${rev}:${file} failed`);
   return r.stdout;
 }
@@ -463,12 +463,32 @@ function parseRawDiff(text) {
   return map;
 }
 
-/** git's environment for these reads: no GIT_DIFF_OPTS / GIT_EXTERNAL_DIFF. */
+/** Variables that can redirect git to other objects, refs, config or a hidden diff. */
+const GIT_ENV_DROP = Object.freeze([
+  'GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+  'GIT_REPLACE_REF_BASE', 'GIT_GRAFT_FILE', 'GIT_SHALLOW_FILE', 'GIT_CONFIG', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM',
+  'GIT_CONFIG_COUNT', 'GIT_CONFIG_PARAMETERS', 'GIT_DIFF_OPTS', 'GIT_EXTERNAL_DIFF',
+]);
+
+/** git's environment for every read against the primary checkout (SEC-2): no redirecting
+ * variables, replace objects switched off. */
 function diffEnv() {
   const env = { ...process.env };
-  delete env.GIT_DIFF_OPTS;
-  delete env.GIT_EXTERNAL_DIFF;
+  for (const k of GIT_ENV_DROP) delete env[k];
+  for (const k of Object.keys(env)) if (/^GIT_CONFIG_(KEY|VALUE)_\d+$/.test(k)) delete env[k];
+  env.GIT_NO_REPLACE_OBJECTS = '1';
   return env;
+}
+
+/** One git read in the primary checkout: replace objects off, cleaned environment. */
+function git(args, opts) {
+  return C.gitSpawn(['--no-replace-objects', ...args], { env: diffEnv(), ...(opts || {}) });
+}
+
+/** stdout of a successful `git(...)`, else null. */
+function gitOut(args) {
+  const r = git(args);
+  return r.status === 0 ? r.stdout : null;
 }
 
 /** The changed-line index of `<anchor> → <rev>` in `root`, computed lazily and

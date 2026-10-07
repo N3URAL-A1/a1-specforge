@@ -390,7 +390,7 @@ function cloneSnapshot(sourceRepo, commit, base) {
   const failed = (detail) => { removeDir(dir); return { ok: false, reason: X.REASONS.snapshot_failed, dir: null, detail }; };
   let baseSha = null;
   if (base) {
-    const rb = git(['-C', sourceRepo, 'rev-parse', '--verify', '--quiet', `${base}^{commit}`]);
+    const rb = git(['--no-replace-objects', '-C', sourceRepo, 'rev-parse', '--verify', '--quiet', `${base}^{commit}`]);
     if (rb.status !== 0) return failed(`base ${base} does not resolve in ${sourceRepo}`);
     baseSha = rb.stdout.trim();
   }

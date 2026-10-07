@@ -546,6 +546,18 @@ caseApproveTty() {
   assert_json "D4 the store holds the v2 blob's sha" "$(cat "$HOME/.a1-xprov/$STORE14")" "Object.values(j.repos)[0].join(',')" "$(sha256_of "$A14/blob")"
 }
 
-for c in ${XPROV14_CASES:-caseD1 caseD1b caseD1c caseD2u caseD3 caseD3b caseD3g casePropose caseApproveListing caseApproveTty}; do "$c"; done
+# ---------- S2 (Samuel SEC-2): git replace objects must not hide a change from the changed-line index ----------
+# Mutation: M20 drop --no-replace-objects / the cleaned env from the allowlist's git reads → the arm passes the snapshot.
+caseS2() {
+  scen14 "$(sc14 tests/ password_assignment 5)"
+  printf '%s\n' "$(pwline14 fixtureval20)" >> "$R14/tests/fix.txt"; c14 "add a hit"
+  git -C "$R14" replace "$(git -C "$R14" rev-parse 'feat^{tree}')" "$(git -C "$R14" rev-parse 'main^{tree}')"
+  snap14 feat
+  expect14 "S2 a replace ref makes anchor..commit look empty: the added line is still changed" "secret_in_snapshot"
+  assert_eq "S2 …reported as changed_line, the two old hits stay covered" "$(hits14) $(unc14)" "tests/|password_assignment|2 tests/|password_assignment|1|changed_line"
+  git -C "$R14" replace -d "$(git -C "$R14" rev-parse 'main^{tree}' | head -n1)" >/dev/null 2>&1
+}
+
+for c in ${XPROV14_CASES:-caseD1 caseD1b caseD1c caseD2u caseD3 caseD3b caseD3g casePropose caseApproveListing caseApproveTty caseS2}; do "$c"; done
 export HOME="$SAVED_HOME_14"
 rm -rf "$TMP14"
