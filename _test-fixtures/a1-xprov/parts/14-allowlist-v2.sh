@@ -737,6 +737,13 @@ caseS7() {
     console.log(JSON.stringify({ text: AP.approveListing(doc, []).lines.join("|") }));
   ' "$TREE")"
   assert_json "S7 approve listing: no control, C1 or bidi character" "$out" "/[\\u0000-\\u0009\\u000b-\\u001f\\u007f-\\u009f\\u202a-\\u202e]/.test(j.text)" "false"
+  out2="$(node -e '
+    const AP = require(process.argv[1] + "/_shared/lib/xprov-approve.cjs");
+    const alm = String.fromCharCode(0x61c), shy = String.fromCharCode(0xad), tag = String.fromCodePoint(0xe0041), astral = String.fromCodePoint(0x1f600);
+    const doc = { version: 2, owner: "robert", entries: [], scopes: [{ prefix: "tests/a" + alm + "b" + shy + "c" + tag + "d" + astral + "/", pattern: "p", max_count: 1, class: "c", reason: "r" }] };
+    console.log(JSON.stringify({ text: AP.approveListing(doc, []).lines.join("|") }));
+  ' "$TREE")"
+  assert_json "S7 approve listing: ALM, soft hyphen and tag characters are escaped, other astral text is kept" "$out2" "j.text.includes('a\\\\u061cb\\\\u00adc\\\\u{e0041}d') && j.text.includes(String.fromCodePoint(0x1f600))" "true"
   assert_json "S7 approve listing: escapes are visible, the layout is kept" "$out" "j.text.includes('\\\\u001b[31m.js') && j.text.includes('\\\\u202eevil') && j.text.includes('\\\\u009bx/') && j.text.includes('line1\\\\u000aline2')" "true"
 }
 

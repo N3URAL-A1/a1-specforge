@@ -203,10 +203,13 @@ function draftScopes(root, scopes) {
   return { version: 2, owner, entries: [], scopes: scopes.map((s) => ({ prefix: s.prefix, pattern: s.pattern, class: s.class, max_count: s.count, reason: '', reviewed_by: owner, added_on: today })) };
 }
 
-/** Text for the owner's terminal: C0, DEL, C1, line/paragraph separators, zero-width and bidi
- * controls become `\uXXXX` (SEC-7) — a path, prefix or reason can carry an escape sequence. */
-const UNSAFE_TERMINAL_RE = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]/g;
-const safeText = (t) => String(t).replace(UNSAFE_TERMINAL_RE, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
+/** Text for the owner's terminal: C0, DEL, C1, soft hyphen, ALM, line/paragraph separators, zero-width, bidi and
+ * tag (U+E0000..E007F) controls become `\uXXXX` (SEC-7) — a path, prefix or reason can carry an escape sequence. */
+const UNSAFE_TERMINAL_RE = /[\u0000-\u001f\u007f-\u009f\u00ad\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff\u{e0000}-\u{e007f}]/gu;
+const safeText = (t) => String(t).replace(UNSAFE_TERMINAL_RE, (c) => {
+  const cp = c.codePointAt(0);
+  return cp > 0xffff ? `\\u{${cp.toString(16)}}` : `\\u${cp.toString(16).padStart(4, '0')}`;
+});
 
 function cmdProposeScopes(root, commit, asJson) {
   const r = matchesAt(root, commit, { kinds: true });
