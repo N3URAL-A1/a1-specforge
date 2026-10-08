@@ -75,6 +75,7 @@ const { isUnder } = require('./xprov-artifacts.cjs');
 const X = require('./xprov.cjs');
 const C = require('./xprov-common.cjs');
 const AL = require('./xprov-allowlist.cjs');
+const SR = require('./xprov-scan-records.cjs');
 // Shared helpers — one definition each, in xprov-common.cjs.
 const { DIR_MODE, mkdir0700, writeStdoutSync, gitSpawn: git } = C;
 const tail = C.stderrTail;
@@ -94,6 +95,7 @@ const GITLEAKS_CONFIG = path.join(__dirname, 'xprov-gitleaks.toml');
 const UPLOAD_PACK_FALLBACK = 'git -c uploadpack.allowAnySHA1InWant=true upload-pack'; // literal, ours — not user input
 const INPUTS_SUFFIX = '.inputs';
 const DIFF_SHA_FILE = 'diff.sha256';
+const NONCE_FILE = 'scan.nonce'; // spec 014 FR-005: the nonce of the scan record, next to the input copies
 const INPUTS_RECORD_FILE = 'inputs.json'; // { plan: sha256, feedback: sha256 } of the scanned copies
 const INPUT_FILES = Object.freeze({ plan: 'PLAN.md', feedback: 'feedback.md' });
 const FILE_MODE = 0o600;
@@ -358,6 +360,28 @@ function surplusMatches(blobMatches, diskMatches) {
   return out;
 }
 
+const STAGED_ENTRY_RE = /^(\d{6}) ([0-9a-f]{40,64}) (\d)\t([\s\S]+)$/;
+
+/** `git ls-files -s -z` of a clone: { entries: [{ mode, blob, path }], index_sha256 } or { error }. */
+function lsFilesStaged(dir) {
+  const r = spawnSync('git', ['-C', dir, 'ls-files', '-s', '-z'], { maxBuffer: C.GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] });
+  if (r.status !== 0) return { error: tail(String(r.stderr || r.error)) };
+  const entries = [];
+  for (const raw of r.stdout.toString('utf8').split('\0')) {
+    if (raw === '') continue;
+    const m = STAGED_ENTRY_RE.exec(raw);
+    if (m === null) return { error: 'ls-files -s: unparseable entry' };
+    entries.push(Object.freeze({ mode: m[1], blob: m[2], path: m[4] }));
+  }
+  return { entries, index_sha256: C.sha256(r.stdout) };
+}
+
+/** Spec 014 FR-008: sha256 of `git status --porcelain=v1 -z --untracked-files=all --ignored` of the clone, or null. */
+function statusSha256(dir) {
+  const r = spawnSync('git', ['-C', dir, 'status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignored'], { maxBuffer: C.GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] });
+  return r.status === 0 ? C.sha256(r.stdout) : null;
+}
+
 /** Scan every tracked entry of a clone. Returns { files_scanned, skipped: 0,
  * tracked: [paths], matches: [{path, pattern, view, offset, fingerprint,
  * excerpt}], missingBlobs: [{path, buf}] }. A tracked path missing from the
@@ -368,15 +392,18 @@ function surplusMatches(blobMatches, diskMatches) {
  * SEC-4 (Samuel, 2026-10-07): a tracked path whose bytes on disk are not its committed blob
  * (two paths that fold to one file on a case-insensitive disk, a working-tree-encoding or eol
  * rewrite, a directory in the way) is ALSO scanned as its blob; only matches the disk scan did
- * not already find are added. `untrusted` lists those paths, `blobIds` is path → blob id at HEAD. */
+ * not already find are added. `untrusted` lists those paths, `blobIds` is path → blob id at HEAD.
+ * Spec 014 FR-007: `entries` is one { mode, blob, path } per tracked path and `index_sha256` the sha256
+ * of the raw `git ls-files -s -z` stdout; `tracked` (the path strings) is unchanged. */
 function scanTrackedFiles(dir, opts) {
   const withPositions = Boolean(opts && opts.positions);
   const withLines = Boolean(opts && opts.lines);
-  const ls = git(['-C', dir, 'ls-files', '-z']);
-  if (ls.status !== 0) return { files_scanned: 0, skipped: 0, tracked: [], matches: [], missingBlobs: [], error: tail(ls.stderr) };
-  const tracked = ls.stdout.split('\0').filter(Boolean);
+  const ls = lsFilesStaged(dir);
+  if (ls.error) return { files_scanned: 0, skipped: 0, tracked: [], entries: [], index_sha256: null, matches: [], missingBlobs: [], error: ls.error };
+  const { entries, index_sha256 } = ls;
+  const tracked = entries.map((e) => e.path);
   const blobIds = headBlobIds(dir);
-  if (blobIds === null) return { files_scanned: 0, skipped: 0, tracked: [], matches: [], missingBlobs: [], error: 'ls-tree HEAD failed' };
+  if (blobIds === null) return { files_scanned: 0, skipped: 0, tracked: [], entries: [], index_sha256: null, matches: [], missingBlobs: [], error: 'ls-tree HEAD failed' };
   let scanned = 0;
   const matches = [];
   const missingBlobs = [];
@@ -390,7 +417,7 @@ function scanTrackedFiles(dir, opts) {
       const type = git(['-C', dir, 'cat-file', '-t', spec]);
       if (type.status !== 0 || type.stdout.trim() !== 'blob') continue; // a gitlink: no content in this object store
       const b = spawnSync('git', ['-C', dir, 'cat-file', 'blob', spec], { maxBuffer: C.GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] });
-      if (b.status !== 0) return { files_scanned: scanned, skipped: 0, tracked, matches, missingBlobs, blobIds, untrusted, error: `cat-file ${rel}: ${tail(String(b.stderr))}` };
+      if (b.status !== 0) return { files_scanned: scanned, skipped: 0, tracked, entries, index_sha256, matches, missingBlobs, blobIds, untrusted, error: `cat-file ${rel}: ${tail(String(b.stderr))}` };
       scanned++;
       missingBlobs.push({ path: rel, buf: b.stdout });
       matches.push(...scanSource(bufferSource(b.stdout), rel, withPositions, withLines));
@@ -404,10 +431,10 @@ function scanTrackedFiles(dir, opts) {
     untrusted.add(rel);
     const spec = `HEAD:${rel}`;
     const b = spawnSync('git', ['-C', dir, 'cat-file', 'blob', spec], { maxBuffer: C.GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] });
-    if (b.status !== 0) return { files_scanned: scanned, skipped: 0, tracked, matches, missingBlobs, blobIds, untrusted, error: `cat-file ${rel}: ${tail(String(b.stderr))}` };
+    if (b.status !== 0) return { files_scanned: scanned, skipped: 0, tracked, entries, index_sha256, matches, missingBlobs, blobIds, untrusted, error: `cat-file ${rel}: ${tail(String(b.stderr))}` };
     matches.push(...surplusMatches(scanSource(bufferSource(b.stdout), rel, withPositions, withLines), own));
   }
-  return { files_scanned: scanned, skipped: 0, tracked, matches, missingBlobs, blobIds, untrusted };
+  return { files_scanned: scanned, skipped: 0, tracked, entries, index_sha256, matches, missingBlobs, blobIds, untrusted };
 }
 
 /** gitleaks when on PATH, with a1's own config (never the reviewed repo's). */
@@ -652,6 +679,26 @@ function storeDiffHash(dir, cl, inputsDir) {
   return { sha };
 }
 
+/** FR-005: the scan-pass record of a snapshot that passed every check, plus the nonce next to it.
+ * { ok: true } or { error } — the caller fails the snapshot and removes the dirs on an error. */
+function writeScanPass({ dir, cl, out, hash, gl, repoKey }) {
+  const tree = git(['-C', dir, 'rev-parse', 'HEAD^{tree}']);
+  const statusSha = statusSha256(dir);
+  const inputs = storedInputHashes(dir);
+  if (tree.status !== 0 || statusSha === null || inputs === null) return { error: 'scan record: tree, status or input hashes unavailable' };
+  const nonce = SR.newNonce();
+  try {
+    fs.writeFileSync(path.join(`${dir}${INPUTS_SUFFIX}`, NONCE_FILE), `${nonce}\n`, { mode: FILE_MODE });
+    SR.writeScanRecord(path.basename(dir), {
+      version: 1, snapshot: fs.realpathSync(dir), repo_key: repoKey, commit: cl.commit, base: cl.base, tree: tree.stdout.trim(),
+      index_sha256: out.scan.index_sha256, status_sha256: statusSha, diff_sha256: hash.sha, inputs, gitleaks: gl.available, nonce, ts: new Date().toISOString(),
+    });
+  } catch (e) {
+    return { error: `scan record: ${e.message}` };
+  }
+  return { ok: true };
+}
+
 function snapshot(opts) {
   const sourceRepo = path.resolve(opts.sourceRepo);
   const commit = String(opts.commit);
@@ -687,6 +734,8 @@ function snapshot(opts) {
   if (gl.hit) return failed({ reason: X.REASONS.secret_in_snapshot, secret_pattern: 'gitleaks', reason_detail: 'gitleaks', ...counts, ...report });
   const hash = storeDiffHash(dir, cl, out.ins.inputsDir);
   if (hash.error) return failed({ reason: X.REASONS.snapshot_failed, detail: hash.error, ...none });
+  const rec = writeScanPass({ dir, cl, out, hash, gl, repoKey: primaryCommon });
+  if (rec.error) return failed({ reason: X.REASONS.snapshot_failed, detail: rec.error, ...none });
   return {
     ok: true, snapshot: dir, commit: cl.commit, base: cl.base, depth: cl.depth, ...counts,
     files_skipped: 0, repo_local_removed: cl.repo_local_removed, gitleaks: gl.available,
@@ -710,6 +759,7 @@ function storedDiffSha(dir) {
 function removeSnapshotDirs(dir) {
   removeDir(dir);
   removeDir(`${dir}${INPUTS_SUFFIX}`);
+  try { SR.removeScanRecord(path.basename(dir)); } catch (_e) { /* a non-snapshot name has no record */ }
 }
 
 /** Remove one snapshot; only a direct `snap-*` child of the snapshots root qualifies. */
@@ -772,5 +822,5 @@ function cmdXprovSnapshot(args) {
 module.exports = {
   snapshot, cloneSnapshot, cleanupSnapshot, removeDir, scanTrackedFiles, utf16Mode, gitleaksScan, ensureSnapshotsRoot, cmdXprovSnapshot,
   pathNameHit, SNAP_PREFIX, REPO_LOCAL_STRIP, GITLEAKS_CONFIG, REF_RE, LINE_MAX_CHARS, LINE_CONTEXT_CHARS,
-  INPUTS_SUFFIX, INPUT_FILES, storedDiffSha, storedInputHashes,
+  INPUTS_SUFFIX, INPUT_FILES, NONCE_FILE, storedDiffSha, storedInputHashes, lsFilesStaged, statusSha256,
 };

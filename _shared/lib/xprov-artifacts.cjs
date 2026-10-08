@@ -126,9 +126,13 @@ function gc(opts) {
   // `snapshot` and its cleanup leaves the clone forever — same age rule.
   const snaps = sweepDirs(path.resolve(X.snapshotsDir()), SNAPSHOT_PREFIX, cutoff);
   const homes = sweepRunHomes(now);
+  // Spec 014 FR-005: scan records older than the same cutoff, and records whose snapshot dir is gone.
+  const snapRoot = path.resolve(X.snapshotsDir());
+  const records = require('./xprov-scan-records.cjs').sweepScanRecords(maxAgeDays, (base) => fs.existsSync(path.join(snapRoot, base)), now);
   return {
     root, removed: runs.removed, kept: runs.kept, snapshots_root: snaps.root, snapshots_removed: snaps.removed, snapshots_kept: snaps.kept,
     run_homes_removed: homes.removed, run_homes_kept: homes.kept,
+    scan_records_removed: records.removed, scan_records_kept: records.kept,
   };
 }
 
@@ -189,7 +193,7 @@ function cmdXprovGc(args) {
     passMaxAgeDays = Number(flags['pass-max-age-days']);
   }
   const result = gc({ now: Date.now(), maxAgeDays, passMaxAgeDays, slug: flags.slug }); // a hostile --slug throws A1_INPUT → facade exit 2
-  process.stderr.write(`xprov gc: removed ${result.removed.length}, kept ${result.kept.length} under ${result.root}; snapshots removed ${result.snapshots_removed.length}, kept ${result.snapshots_kept.length}\n`);
+  process.stderr.write(`xprov gc: removed ${result.removed.length}, kept ${result.kept.length} under ${result.root}; snapshots removed ${result.snapshots_removed.length}, kept ${result.snapshots_kept.length}; scan records removed ${result.scan_records_removed.length}, kept ${result.scan_records_kept.length}\n`);
   return C.emitJson(result, X.EXIT_PASS);
 }
 
