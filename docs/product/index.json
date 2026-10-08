@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated": "2026-10-08T09:07:30.355Z",
+  "generated": "2026-10-08T11:06:09.219Z",
   "project": {
     "id": "a1-specforge",
     "title": "a1-specforge — Roadmap",
@@ -204,6 +204,18 @@
       "finished": null,
       "spec_path": null,
       "plan_path": null
+    },
+    {
+      "id": "014-xprov-egress-hardening",
+      "milestone": "continuous",
+      "title": "xprov egress hardening: owner-store permit, scan-bound run, secret patterns, gitleaks",
+      "status": "planned",
+      "stage": null,
+      "depends_on": [],
+      "started": null,
+      "finished": null,
+      "spec_path": "project/a1-specforge/spec/014-xprov-egress-hardening.md",
+      "plan_path": "project/a1-specforge/plans/014-xprov-egress-hardening-wave-plan.md"
     }
   ],
   "next": "002-product-docs-layer",
