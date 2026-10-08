@@ -12,7 +12,7 @@
 //     never travel into XREVIEW.md, stdout or a findings file.
 //
 //   quarantineFindings(findings, { lsFiles: Set, planPath, repoRoot })
-//     → { kept: finding[], quarantined: (finding & { reason, marker? })[], notes: string[] }
+//     → { kept: finding[], quarantined: (finding & { reason, marker?, display_detail? })[], notes: string[] }
 //     Findings are data. `file` must be a relative path without `..` segments
 //     that is in `git ls-files` at the reviewed commit (the caller passes the
 //     set — this module does no git I/O) or equals the phase's PLAN.md path;
@@ -32,6 +32,7 @@ const X = require('./xprov.cjs');
 
 const REASON_PATH = 'path_not_in_repo';
 const REASON_INSTRUCTION = 'instruction_shaped';
+const DISPLAY_DETAIL_MAX_CHARS = X.TITLE_MAX_CHARS * 4; // FR-013: 480
 
 // ---------- secret filter ----------
 
@@ -144,6 +145,19 @@ function instructionMarker(finding, notes) {
 
 // ---------- quarantine ----------
 
+/** Total length <= DISPLAY_DETAIL_MAX_CHARS, an ellipsis when cut. */
+const clipDetail = (text) => (text.length > DISPLAY_DETAIL_MAX_CHARS ? `${text.slice(0, DISPLAY_DETAIL_MAX_CHARS - 1)}…` : text);
+
+/** A `path_not_in_repo` item (FR-013): the same marker scan as an in-repo finding. Without a marker the
+ * item carries `display_detail`, its detail clipped to DISPLAY_DETAIL_MAX_CHARS; with one it carries
+ * the marker and no detail. Secret values never reach here (the output filter ran on the raw result). */
+function quarantinedForPath(finding, notes) {
+  const marker = instructionMarker(finding, notes);
+  if (marker !== null) return { ...finding, reason: REASON_PATH, marker };
+  const detail = typeof finding.detail === 'string' ? finding.detail : '';
+  return { ...finding, reason: REASON_PATH, display_detail: clipDetail(detail) };
+}
+
 function quarantineFindings(findings, ctx) {
   const list = Array.isArray(findings) ? findings : [];
   const context = ctx || {};
@@ -153,7 +167,7 @@ function quarantineFindings(findings, ctx) {
   for (const f of list) {
     const finding = f && typeof f === 'object' ? f : { id: String(f), file: '', evidence: '', fix: '' };
     if (!pathIsInRepo(finding.file, context)) {
-      quarantined.push({ ...finding, reason: REASON_PATH });
+      quarantined.push(quarantinedForPath(finding, notes));
       continue;
     }
     const marker = instructionMarker(finding, notes);

@@ -74,6 +74,7 @@ const LINE_RE = /^(.*):(\d{1,7})$/;
 // `<file>:<symbol>` (2026-10-03, case revise-symbol-nospace); the first wins.
 const SYMBOL_SEPS = Object.freeze([': ', ':']);
 const SYMBOL_MAX_CHARS = 120;
+const PLAN_ALIASES = Object.freeze(['PLAN.md', './PLAN.md']);
 const XREVIEW_HEADER = '# XREVIEW — cross-provider review log\n\nWritten by `a1-tools xprov normalize`; one section per run, newest last.\n';
 
 // ---------- small helpers ----------
@@ -250,7 +251,7 @@ function stripSymbolSuffix(findings, lsFiles, planRel) {
     const i = f.file.indexOf(sep);
     const file = f.file.slice(0, i);
     const symbol = f.file.slice(i + sep.length).replace(/[\r\n\t]+/g, ' ').trim().slice(0, SYMBOL_MAX_CHARS);
-    if (!symbol || !lsFiles.has(file)) return f;
+    if (!symbol || !(lsFiles.has(file) || file === planRel)) return f;
     const evidence = `Symbol: ${symbol}\n${f.evidence}`;
     // The filter scans MAX_FIELD_CHARS per field: a prefix must never push a marker
     // out of that window (Codex R2, live inspect 2026-10-02) — too long → unchanged.
@@ -259,12 +260,29 @@ function stripSymbolSuffix(findings, lsFiles, planRel) {
   });
 }
 
+/** FR-012: a citation of the plan file (`PLAN.md`, `./PLAN.md`, the runner record's own `plan` path, each also
+ * as `<form><sep><symbol>`) becomes `planRel`, so the quarantine sees the repo path. Without a record `plan`
+ * only the bare forms map — no guessing. New objects. */
+function mapPlanFile(findings, planRel, recordPlan) {
+  const aliases = [...PLAN_ALIASES, ...(typeof recordPlan === 'string' && recordPlan !== '' ? [recordPlan] : [])];
+  return findings.map((f) => {
+    if (!f || typeof f.file !== 'string') return f;
+    for (const alias of aliases) {
+      if (f.file === alias) return { ...f, file: planRel };
+      const sep = SYMBOL_SEPS.find((s) => f.file.startsWith(alias + s) && f.file.length > alias.length + s.length);
+      if (sep) return { ...f, file: `${planRel}${sep}${f.file.slice(alias.length + sep.length)}` };
+    }
+    return f;
+  });
+}
+
 /** Quarantine hook over a non-fail outcome. Returns a NEW outcome. */
 function quarantine(filter, outcome, ctx) {
   let q;
   try {
     const lsFiles = lsFilesSet(ctx.workPath);
-    const findings = stripSymbolSuffix(outcome.findings || [], lsFiles, ctx.planRel);
+    const mapped = mapPlanFile(outcome.findings || [], ctx.planRel, ctx.recordPlan);
+    const findings = stripSymbolSuffix(mapped, lsFiles, ctx.planRel);
     q = filter.quarantineFindings(findings, { lsFiles, planPath: ctx.planRel, repoRoot: ctx.workPath });
   } catch (_e) { return contractFail(); }
   if (!isPlainObject(q) || !Array.isArray(q.kept) || !Array.isArray(q.quarantined)) return contractFail();
@@ -281,8 +299,15 @@ function bucketize(findings) {
   return out;
 }
 
-function writeFindingsFile(file, summary, findings) {
-  writeTextAtomic(file, JSON.stringify({ summary, ...bucketize(findings) }, null, 2) + '\n');
+/** FR-014: quarantined items that would have been blockers (severity high), as a list for the REVISE consumers. */
+function quarantinedBlockers(quarantined) {
+  return (quarantined || []).filter((q) => q.bucket === 'blocker')
+    .map((q) => ({ id: q.id, severity: q.severity, file: q.file, reason: q.reason, display_detail: typeof q.display_detail === 'string' ? q.display_detail : null }));
+}
+
+/** `quarantined_blockers` belongs to a REVISE only (a pass never holds quarantined items). */
+function writeFindingsFile(file, summary, findings, blockers) {
+  writeTextAtomic(file, JSON.stringify({ summary, ...bucketize(findings), ...(blockers ? { quarantined_blockers: blockers } : {}) }, null, 2) + '\n');
 }
 
 /** The findings file again in the run dir of `resultPath`, but only when that
@@ -294,10 +319,18 @@ function writeFindingsFile(file, summary, findings) {
 function writeRunDirFindings(ctx, summary, findings, quarantined) {
   const runDir = path.dirname(ctx.resultPath);
   if (!inOwnArtifacts(ctx.resultPath)) return null;
-  const held = (quarantined || []).map((q) => ({ id: q.id, reason: q.reason })); // never their text (FR-006)
+  // FR-006 (009): never their text — except FR-013 (014): a path_not_in_repo item without a marker carries display_detail (clipped, filtered).
+  const held = (quarantined || []).map((q) => ({ id: q.id, reason: q.reason, severity: q.severity, ...(typeof q.display_detail === 'string' ? { display_detail: q.display_detail } : {}) }));
   const body = JSON.stringify({ phase: ctx.phase, gate: ctx.gate, wave: ctx.wave, lane: ctx.lane, round: ctx.round, summary, ...bucketize(findings), quarantined: held }, null, 2) + '\n';
   writeTextAtomic(path.join(runDir, PRIOR_FINDINGS_FILE), body);
   return sha256(body);
+}
+
+/** FR-013: the clipped detail of a quarantined item, one bullet per item that has one. */
+function renderQuarantinedDetails(rows) {
+  const lines = (rows || []).filter((q) => typeof q.display_detail === 'string' && q.display_detail !== '')
+    .map((q) => `- ${cell(q.id, X.TITLE_MAX_CHARS)}: ${cell(q.display_detail, QUARANTINE_DETAIL_MAX_CHARS)}`);
+  return lines.length ? ['', ...lines, ''] : [];
 }
 
 function renderTable(rows) {
@@ -307,6 +340,7 @@ function renderTable(rows) {
 }
 
 const LIST_MAX_ITEMS = 50;
+const QUARANTINE_DETAIL_MAX_CHARS = X.TITLE_MAX_CHARS * 4; // spec 014 FR-013
 
 function renderList(items) {
   if (!Array.isArray(items) || items.length === 0) return ['_none_'];
@@ -331,7 +365,7 @@ function renderSection(ctx, outcome, model, runnerSha) {
     `- runner_sha256: ${runnerSha}`, `- plan_sha256: ${ctx.planSha}`, `- result: ${bullet(ctx.resultPath)}`,
     ...(ctx.findingsPath ? [`- findings: ${path.relative(ctx.phaseDir, ctx.findingsPath)}`] : []), '',
     '### Findings', renderTable(outcome.findings || []),
-    '### Quarantined', renderTable(outcome.quarantined || []),
+    '### Quarantined', renderTable(outcome.quarantined || []), ...renderQuarantinedDetails(outcome.quarantined),
     ...(outcome.notes && outcome.notes.length ? ['### Notes', ...renderList(outcome.notes), ''] : []),
     '### Limitations', ...renderList(resp.limitations), '',
     '### Coverage', ...renderList(resp.coverage), '',
@@ -446,7 +480,7 @@ function evaluate(ctx, read) {
     return fail(X.REASONS.wrong_mode, { reason_detail: `mode=${read.record.mode} for ${ctx.gate} (needs ${want})` });
   }
   const outcome = classify(read.record, ctx.planSha);
-  return outcome.verdict === X.VERDICTS.FAIL ? outcome : quarantine(filter, outcome, ctx);
+  return outcome.verdict === X.VERDICTS.FAIL ? outcome : quarantine(filter, outcome, { ...ctx, recordPlan: read.record.plan });
 }
 
 /** No replay (Samuel MAJOR 1): a run dir of a1's own artifacts is normalized once (realpath). */
@@ -460,12 +494,13 @@ function refuseReplay(args0) {
 }
 
 /** The index row: a pointer to the run dir plus what normalize decided. */
-function indexEntry(ctx, outcome, model, findingsSha, record, tainted) {
+function indexEntry(ctx, outcome, model, findingsSha, record, tainted, quarantinedBlocking) {
   return {
     gate: ctx.gate, wave: ctx.wave, lane: ctx.lane, ...(ctx.isRound ? { round: ctx.round } : { attempt: ctx.attempt }), verdict: outcome.verdict, reason: outcome.reason,
     plan_sha256: ctx.planSha, result_path: ctx.resultPath, ...(findingsSha ? { findings_sha256: findingsSha } : {}),
     ...(ctx.wave !== null ? reviewedHeadBase(ctx.resultPath, tainted ? null : record) : {}), ts: ctx.ts,
     model_requested: model.model_requested, model_observed: model.model_observed, cli_version: model.cli_version,
+    quarantined_blocking: quarantinedBlocking,
     ...(ctx.allowlist || {}),
   };
 }
@@ -492,15 +527,17 @@ function cmdXprovNormalize(args) {
     response: !tainted && isPlainObject(record.response) ? record.response : null,
   };
   const model = modelFields(tainted ? {} : record, ctx.resultPath);
+  const blockers = outcome.verdict === X.VERDICTS.FAIL_WITH_FINDINGS ? quarantinedBlockers(outcome.quarantined) : null;
+  const quarantinedBlocking = blockers ? blockers.length : 0; // FR-014: REVISE only
   let findingsSha = null;
   if (writesFindings) {
     const summary = ctx.response ? bullet(ctx.response.summary) : '';
-    writeFindingsFile(ctx.findingsPath, summary, outcome.findings || []);
+    writeFindingsFile(ctx.findingsPath, summary, outcome.findings || [], blockers);
     findingsSha = writeRunDirFindings(ctx, summary, outcome.findings || [], outcome.quarantined);
   }
   const pin = X.checkRunnerPin();
   const xreviewPath = appendToXreview(ctx.phaseDir, renderSection(ctx, outcome, model, pin.actual || `unverified (${pin.reason})`));
-  const entry = indexEntry(ctx, outcome, model, findingsSha, record, tainted);
+  const entry = indexEntry(ctx, outcome, model, findingsSha, record, tainted, quarantinedBlocking);
   const index = readIndex(ctx.indexPath);
   if (index === null) usage(`index.json changed underneath the run: ${ctx.indexPath}`);
   // a1's own proof that THIS run was accepted (after the output filter and every check above):
@@ -514,7 +551,7 @@ function cmdXprovNormalize(args) {
   writeStdoutSync(`${JSON.stringify({
     verdict: outcome.verdict, reason: outcome.reason, reason_detail: clip(outcome.reason_detail || null, DETAIL_MAX_CHARS),
     secret_pattern: outcome.secret_pattern || null, findings_path: ctx.findingsPath, xreview_path: xreviewPath,
-    index_entry: entry, quarantined: (outcome.quarantined || []).map(echoQuarantined), limitations,
+    index_entry: entry, quarantined: (outcome.quarantined || []).map(echoQuarantined), quarantined_blocking: quarantinedBlocking, limitations,
   }, null, 2)}\n`);
   process.exitCode = outcome.verdict === X.VERDICTS.PASS ? X.EXIT_PASS : X.EXIT_FAIL;
 }

@@ -88,7 +88,7 @@ without APPROVED — surface it to the user, never start a third round.
    ```
    Revise PLAN.md against these external review findings. Reinhard schema
    ({summary, blocker[], major[], minor[]}); address every blocker and major,
-   or state in the dispositions why not.
+   or state in the dispositions why not. Address every entry in `quarantined_blockers[]` as well, or state in the dispositions why not.
 
    <files_to_read>
    - .a1/phases/<phase_name>/PLAN.md

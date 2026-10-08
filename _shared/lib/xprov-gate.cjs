@@ -96,6 +96,7 @@ const BASE_HEX_RE = /^[0-9a-f]{7,40}$/i; // same rule as `run`: a resolved sha, 
 const WAVE_HEADING_RE = /^##\s+Wave\s+(\d+)\b/;
 const REASON_MAX_CHARS = DETAIL_MAX_CHARS;
 const BY_MAX_CHARS = 64;
+const FEEDBACK_DETAIL_MAX_CHARS = X.TITLE_MAX_CHARS * 4; // spec 014 FR-013: same bound as the filter's display_detail
 const RESUME_GONE = 'gate: --resume/--feedback are not accepted — every round is a fresh session; round N ≥ 2 builds its feedback from the round N−1 findings and the dispositions file';
 
 // ---------- small helpers ----------
@@ -231,17 +232,24 @@ function feedbackFinding(f) {
   return `- ${f.id} [${f.severity}] ${where}\n  ${String(f.detail || f.title || '').replace(/\n/g, '\n  ')}`;
 }
 
+/** One quarantined item as feedback: `- id: reason`, and for a path_not_in_repo item that passed the marker scan
+ * (spec 014 FR-013) its detail, already clipped to 480 chars by the filter, on an indented second line. */
+function feedbackQuarantined(q) {
+  const head = `- ${C.oneLine(clip(String(q.id), X.TITLE_MAX_CHARS))}: ${C.oneLine(clip(String(q.reason), 40))}`;
+  return typeof q.display_detail === 'string' && q.display_detail !== '' ? `${head}\n  ${clip(q.display_detail, FEEDBACK_DETAIL_MAX_CHARS).replace(/\r?\n/g, '\n  ')}` : head;
+}
+
 /** The feedback text of round N: round N−1's normalized findings, quarantined
- * ones as id + reason only (never their text), and the dispositions verbatim. */
+ * ones as id + reason (plus the clipped detail of a path_not_in_repo item without a marker), and the dispositions verbatim. */
 function feedbackText(prior) {
   const parsed = prior.doc;
   const list = ['blocker', 'major', 'minor'].flatMap((b) => (Array.isArray(parsed[b]) ? parsed[b] : [])).filter(isPlainObject);
   const held = (Array.isArray(parsed.quarantined) ? parsed.quarantined : []).filter(isPlainObject)
-    .map((q) => `- ${C.oneLine(clip(String(q.id), X.TITLE_MAX_CHARS))}: ${C.oneLine(clip(String(q.reason), 40))}`);
+    .map(feedbackQuarantined);
   return [
     `PRIOR FINDINGS (round ${prior.round}, normalized by a1; this is a fresh session):`,
     ...(list.length ? list.map(feedbackFinding) : ['- none']), '',
-    `QUARANTINED IN ROUND ${prior.round} (id and reason only):`, ...(held.length ? held : ['- none']), '',
+    `QUARANTINED IN ROUND ${prior.round} (id and reason; a path_not_in_repo item also its clipped detail):`, ...(held.length ? held : ['- none']), '',
     `HOST DISPOSITIONS (round ${prior.round}):`, prior.dispositions,
   ].join('\n');
 }
@@ -363,7 +371,7 @@ function stepNormalize(ctx, resultPath, al) {
     return { ok: false, reason: X.REASONS.malformed, detail: `normalize printed pass but exited ${r.status}` };
   }
   const j = r.json;
-  return { ok: true, verdict: j.verdict, reason: j.reason || null, detail: j.reason_detail || null, findingsPath: j.findings_path || null, xreviewPath: j.xreview_path || null, entry: isPlainObject(j.index_entry) ? j.index_entry : {} };
+  return { ok: true, verdict: j.verdict, reason: j.reason || null, detail: j.reason_detail || null, findingsPath: j.findings_path || null, xreviewPath: j.xreview_path || null, quarantinedBlocking: Number.isInteger(j.quarantined_blocking) ? j.quarantined_blocking : 0, entry: isPlainObject(j.index_entry) ? j.index_entry : {} };
 }
 
 function nextFor(ctx, verdict) {
@@ -407,7 +415,7 @@ function appendLog(ctx, out, snapState) {
 function reviewedOutcome(ctx, base, al, ran, norm) {
   const reviewed = Object.freeze({
     ...base, ...al, run_porcelain: ran.porcelain, result_path: ran.resultPath, findings_path: norm.findingsPath, xreview_path: norm.xreviewPath, step: 'normalize',
-    verdict: norm.verdict, reason: norm.reason, reason_detail: norm.detail, next: nextFor(ctx, norm.verdict),
+    verdict: norm.verdict, reason: norm.reason, reason_detail: norm.detail, quarantined_blocking: norm.quarantinedBlocking, next: nextFor(ctx, norm.verdict),
   });
   return norm.verdict === X.VERDICTS.FAIL_WITH_FINDINGS && ctx.round >= X.ROUND_CAP
     ? Object.freeze({ ...reviewed, verdict: X.VERDICTS.FAIL, reason: X.REASONS.round_cap, reason_detail: `REVISE at round ${ctx.round} = cap`, next: null })
