@@ -500,7 +500,7 @@ function indexEntry(ctx, outcome, model, findingsSha, record, tainted, quarantin
     plan_sha256: ctx.planSha, result_path: ctx.resultPath, ...(findingsSha ? { findings_sha256: findingsSha } : {}),
     ...(ctx.wave !== null ? reviewedHeadBase(ctx.resultPath, tainted ? null : record) : {}), ts: ctx.ts,
     model_requested: model.model_requested, model_observed: model.model_observed, cli_version: model.cli_version,
-    quarantined_blocking: quarantinedBlocking,
+    ...(outcome.verdict === X.VERDICTS.FAIL_WITH_FINDINGS ? { quarantined_blocking: quarantinedBlocking } : {}), // FR-014: a REVISE only
     ...(ctx.allowlist || {}),
   };
 }
