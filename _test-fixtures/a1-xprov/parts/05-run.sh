@@ -316,7 +316,7 @@ caseR24() {
   [[ $U_RC -eq 2 ]] && ok "R24h relative --plan → exit 2" || bad "R24h relative plan (rc=$U_RC)"
   run5 review --lane 'a;b'
   [[ $U_RC -eq 2 ]] && ok "R24k --lane with shell metacharacters → exit 2" || bad "R24k lane (rc=$U_RC)"
-  rm -f "$PHASE_REPO/.a1/xprov.json"; before="$(ls "$ARGV_DIR" | wc -l | tr -d ' ')"
+  rm -f "$PHASE_REPO/.a1/xprov.json" "$HOME/.a1-xprov/permits.json"; before="$(ls "$ARGV_DIR" | wc -l | tr -d ' ')"
   run5 review
   assert_json "R24i without .a1/xprov.json → exit 1 external_review_not_permitted" "$U_OUT" "j.reason + '/' + String($U_RC)" "external_review_not_permitted/1"
   assert_eq "R24j permission failure spawned nothing" "$(ls "$ARGV_DIR" | wc -l | tr -d ' ')" "$before"
@@ -409,7 +409,7 @@ caseRC() {
   # even receive the repo-local XREVIEW note. Red-making change: snapshotNotes +
   # appendXreviewNote before permitCheck.
   prep5; printf '# agents\n' > "$PHASE_REPO/AGENTS.md"; commit5 "agents only"; snap5
-  rm -f "$PHASE_REPO/.a1/xprov.json"
+  rm -f "$PHASE_REPO/.a1/xprov.json" "$HOME/.a1-xprov/permits.json" # spec 014: file AND owner entry gone
   run5 review
   assert_json "RC9a without .a1/xprov.json → external_review_not_permitted" "$U_OUT" "j.reason + '/' + String($U_RC)" "external_review_not_permitted/1"
   [[ ! -e "$PHASE_DIR/XREVIEW.md" && ! -e "$PHASE_DIR/PLAN-REVIEW-LOG.md" ]] && ok "RC9b no XREVIEW.md and no PLAN-REVIEW-LOG.md written before the permit check" \

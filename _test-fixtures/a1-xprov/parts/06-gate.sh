@@ -107,7 +107,7 @@ caseR2() {
   # missing permit record → stops at permit-check, before preflight and snapshot;
   # a repository without permission gets NO a1 write (no log, no xreview/) —
   # Reinhard PR-review MAJOR 1. Red-making change: logging the permit-check fail.
-  prep6; rm -f "$PHASE_REPO/.a1/xprov.json"
+  prep6; rm -f "$PHASE_REPO/.a1/xprov.json" "$HOME/.a1-xprov/permits.json" # spec 014: file AND owner entry gone
   gate6 --gate "$GATE_PLAN"
   assert_rc "R2b gate exits 1 without .a1/xprov.json" 1 "$G_RC"
   assert_json "R2b step permit-check, reason external_review_not_permitted" "$G_OUT" "[j.step, j.reason].join('/')" "permit-check/external_review_not_permitted"

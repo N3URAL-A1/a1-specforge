@@ -222,22 +222,54 @@ make_home() {
   chmod 600 "$XHOME/config.toml"
 }
 
-# write_permit <repo> [by] [record] [default-branch] — writes <repo>/.a1/xprov.json
-# in the documented format (spec 009 FR-021), exactly what `xprov permit` wrote
-# before spec 012 FR-014 put that command behind the owner guards (TTY, typed
-# word): fixtures run non-interactively and cannot call it. The format comes
-# from the spec, not from the module under test (testing.md class 4). Wave B
-# (spec 012) addition to the harness; the permit command itself is covered in
-# part 12.
-write_permit() {
+# write_permit_file_only <repo> [by] [record] [default-branch] [decided_on] — writes
+# <repo>/.a1/xprov.json in the documented format (spec 009 FR-021), exactly what
+# the owner command writes into the file. Alone it is the FORGED permit of spec 014
+# FR-002: the file says `allowed`, the owner's store holds nothing, the state is
+# `permit_mismatch`. Fixtures run non-interactively and cannot call the owner
+# command (spec 012 FR-014). The format comes from the spec, not from the module
+# under test (testing.md class 4).
+write_permit_file_only() {
   node -e '
     const fs = require("fs"); const path = require("path");
-    const [repo, by, record, branch] = process.argv.slice(1);
-    const rec = { external_review: "allowed", decided_by: by, decided_on: new Date().toISOString().slice(0, 10), record };
+    const [repo, by, record, branch, on] = process.argv.slice(1);
+    const rec = { external_review: "allowed", decided_by: by, decided_on: on || new Date().toISOString().slice(0, 10), record };
     if (branch) rec.default_branch = branch;
     fs.mkdirSync(path.join(repo, ".a1"), { recursive: true });
     fs.writeFileSync(path.join(repo, ".a1", "xprov.json"), JSON.stringify(rec, null, 2) + "\n");
-  ' "$1" "${2:-fixture}" "${3:-record/2026-09-24-fixture.md}" "${4:-}"
+  ' "$1" "${2:-fixture}" "${3:-record/2026-09-24-fixture.md}" "${4:-}" "${5:-}"
+}
+
+# write_permit_store <repo> [by] [record] [default-branch] [decided_on] — merges ONE entry
+# into the suite store $HOME/.a1-xprov/permits.json (spec 014 FR-001): version 1,
+# `permits` keyed by the realpath of the absolute git-common-dir (on macOS
+# /private/var/...), entry keys decided_by, decided_on, record, ts, optional
+# default_branch. Existing entries of other repositories are kept. Dir 0700 and
+# file 0600 as the owner command leaves them; an existing dir keeps its mode.
+# A directory that is no git repository gets no entry (it has no key).
+write_permit_store() {
+  node -e '
+    const fs = require("fs"); const path = require("path"); const { execFileSync } = require("child_process");
+    const [repo, by, record, branch, on] = process.argv.slice(1);
+    let key;
+    try { key = fs.realpathSync(path.resolve(repo, execFileSync("git", ["-C", repo, "rev-parse", "--git-common-dir"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim())); } catch (_e) { process.exit(0); }
+    const dir = path.join(process.env.HOME, ".a1-xprov"); const file = path.join(dir, "permits.json");
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { mode: 0o700 });
+    let permits = {};
+    try { permits = JSON.parse(fs.readFileSync(file, "utf8")).permits || {}; } catch (_e) { permits = {}; }
+    const entry = { decided_by: by, decided_on: on || new Date().toISOString().slice(0, 10), record, ts: "2026-10-08T00:00:00.000Z" };
+    if (branch) entry.default_branch = branch;
+    fs.writeFileSync(file, JSON.stringify({ version: 1, permits: { ...permits, [key]: entry } }, null, 2) + "\n", { mode: 0o600 });
+    fs.chmodSync(file, 0o600);
+  ' "$1" "${2:-fixture}" "${3:-record/2026-09-24-fixture.md}" "${4:-}" "${5:-}"
+}
+
+# write_permit <repo> [by] [record] [default-branch] — a PERMITTED repository as the owner
+# command leaves it since spec 014 FR-002: the file AND the matching store entry (same
+# arguments, same day). Every gate/run case that needs `allowed` uses this one.
+write_permit() {
+  write_permit_file_only "$@"
+  write_permit_store "$@"
 }
 
 # permit_lib <tree-tools-dir-root> <js> — runs <js> with `P` bound to the TREE

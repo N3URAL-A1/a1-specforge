@@ -85,6 +85,12 @@ const REASON_LIST = Object.freeze([
   // verdict) or it and the owner's denial store disagree (fail closed).
   'external_review_denied',
   'external_review_denial_mismatch',
+  // Spec 014 (Wave 1): the file says `allowed` but the owner's permit store (~/.a1-xprov/permits.json)
+  // holds no matching entry (FR-002). The other two belong to the run binding (Wave 6) and are listed
+  // here now so that wave does not touch this list.
+  'external_review_permit_mismatch',
+  'snapshot_not_scanned',
+  'snapshot_changed_after_scan',
 ]);
 const REASONS = Object.freeze(Object.fromEntries(REASON_LIST.map((r) => [r, r])));
 

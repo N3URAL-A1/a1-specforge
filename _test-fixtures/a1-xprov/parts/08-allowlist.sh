@@ -288,7 +288,8 @@ caseR30b2() {
 # single cause.
 setbranch8() { node -e '
   const fs = require("fs"); const f = process.argv[1]; const r = JSON.parse(fs.readFileSync(f, "utf8"));
-  r.default_branch = process.argv[2]; fs.writeFileSync(f, JSON.stringify(r, null, 2) + "\n");' "$R8/.a1/xprov.json" "$1"; }
+  r.default_branch = process.argv[2]; fs.writeFileSync(f, JSON.stringify(r, null, 2) + "\n");' "$R8/.a1/xprov.json" "$1"
+  write_permit_store "$R8" robert record/2026-09-28-fixture.md "$1"; } # spec 014: the owner's entry follows the file, so this arm still isolates the branch check
 caseR30b3() {
   scen8; setbranch8 'main..x'
   plan8; expect8 "R30b3-1a default_branch main..x" "secret_in_snapshot/allowlist_anchor_unresolved"
@@ -512,6 +513,7 @@ caseR30h() {
   schema_owner8 "R30h2 one reviewed_by ≠ owner" "$(al_doc "$(al_ent f.sh aws_access_key_id 1 fixture_fake "$fp"),$(REVIEWER8=mallory al_ent g.sh aws_access_key_id 1 fixture_fake "$fp")")"
   scen8
   node -e 'const fs = require("fs"); const f = process.argv[1]; const r = JSON.parse(fs.readFileSync(f, "utf8")); r.decided_by = "alice"; fs.writeFileSync(f, JSON.stringify(r, null, 2) + "\n");' "$R8/.a1/xprov.json"
+  write_permit_store "$R8" alice record/2026-09-28-fixture.md # spec 014: the owner's entry follows the file, so this arm still isolates the anchor owner check
   plan8; expect8 "R30h3 decided_by at the anchor (robert) ≠ working tree (alice)" "allowlist_invalid/allowlist_owner_mismatch"
   # h4: 33 entries, written with the literal 33 (never computed from ALLOWLIST_MAX_ENTRIES)
   local many="" i; for i in $(seq 1 33); do many="$many$(al_ent "p$i.sh" aws_access_key_id 1 fixture_fake "$fp"),"; done

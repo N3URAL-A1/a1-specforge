@@ -288,6 +288,11 @@ caseR21() {
   assert_json "R21b decided_on is an ISO date" "$rec" "/^\d{4}-\d{2}-\d{2}$/.test(j.decided_on)" "true"
   out="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov permit-check 2>/dev/null)"; rc=$?
   assert_rc "R21c permit-check exits 0 after permit" 0 "$rc"
+  # Spec 014 FR-002: the owner's store entry is part of "allowed"; the same file without it is a forgery (part 15 has the full table).
+  rm -f "$HOME/.a1-xprov/permits.json"
+  out="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov permit-check 2>/dev/null)"; rc=$?
+  assert_rc "R21c2 the allowed file without the owner's store entry exits 1" 1 "$rc"
+  assert_json "R21c2 reason is external_review_permit_mismatch" "$out" "j.reason" "external_review_permit_mismatch"
 
   printf '{"external_review":"denied","decided_by":"robert","decided_on":"2026-09-24","record":"record/x.md"}\n' > "$PHASE_REPO/.a1/xprov.json"
   out="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov permit-check 2>/dev/null)"; rc=$?
