@@ -492,7 +492,7 @@ w6a_seal_lib() {
     const fs = require('fs'); const path = require('path');
     const S = require(process.argv[1] + '/intent-seal.cjs');
     const [src, home, host] = process.argv.slice(2);
-    const base = { homedir: () => home, hostname: host, rewrite: false, isTty: () => true, confirm: () => true };
+    const base = { homedir: () => home, hostname: host, rewrite: false, isTty: () => true, contextRefusal: () => null, confirm: () => true };
     const seal = (extra) => { try { return S.sealPlugin({ ...base, ...extra }).ok; } catch (e) { return e.code || e.message; } };
     $1" "$INTENT_LIB" "$PLUGIN_SRC" "$FHOME" "$W5B_HOST" "${@:2}" 2>&1
 }

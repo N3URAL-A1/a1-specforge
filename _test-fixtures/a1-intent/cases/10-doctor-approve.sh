@@ -93,7 +93,7 @@ w10_rejected() {
 w10_approve_pty() {
   local answer="$1"
   shift
-  local cmd=(env HOME="$FHOME" A1_VAULT_ROOT="$VAULT" node "$A1_AS" "$FHOME" - "$A1_TOOLS" intent approve "$@")
+  local cmd=(env HOME="$FHOME" A1_VAULT_ROOT="$VAULT" node "$A1_AS" "$FHOME" "$A1_NOGUARD" "$A1_TOOLS" intent approve "$@")
   : >"$SB/.pty"
   if [[ "$(uname -s)" == "Darwin" ]]; then
     w10_feed "$answer" | script -q /dev/null "${cmd[@]}" >"$SB/.pty" 2>&1

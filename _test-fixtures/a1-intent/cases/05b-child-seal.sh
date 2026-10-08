@@ -894,9 +894,9 @@ seal_pty() {
   # the reader is gone, so the feeder simply ends.
   local feed='process.stdout.on("error", () => process.exit(0)); setTimeout(() => { process.stdout.write(process.argv[1] + "\n"); setTimeout(() => {}, 1500); }, 700)'
   if [[ "$(uname -s)" == "Darwin" ]]; then
-    node -e "$feed" "$answer" | script -q /dev/null env HOME="$FHOME" A1_VAULT_ROOT="$VAULT" node "$A1_AS" "$FHOME" - "$tools" intent seal "$@" >"$SB/.pty" 2>&1
+    node -e "$feed" "$answer" | script -q /dev/null env HOME="$FHOME" A1_VAULT_ROOT="$VAULT" node "$A1_AS" "$FHOME" "$A1_NOGUARD" "$tools" intent seal "$@" >"$SB/.pty" 2>&1
   else
-    node -e "$feed" "$answer" | script -qec "$(printf '%q ' env HOME="$FHOME" A1_VAULT_ROOT="$VAULT" node "$A1_AS" "$FHOME" - "$tools" intent seal "$@")" /dev/null >"$SB/.pty" 2>&1
+    node -e "$feed" "$answer" | script -qec "$(printf '%q ' env HOME="$FHOME" A1_VAULT_ROOT="$VAULT" node "$A1_AS" "$FHOME" "$A1_NOGUARD" "$tools" intent seal "$@")" /dev/null >"$SB/.pty" 2>&1
   fi
   PTY_RC=$?
   PTY_OUT="$(tr -d '\r' <"$SB/.pty")"

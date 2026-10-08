@@ -110,7 +110,6 @@ const SEALED_TOOLS_REL = path.join('_shared', 'a1-tools.cjs');
 const BASE_PATH_DIRS = Object.freeze(['/usr/bin', '/bin', '/usr/sbin', '/sbin']);
 const HOST_ID_RE = /^[A-Za-z0-9._-]{1,64}$/;
 const BAD_VALUE_RE = /[\u0000-\u001f\u007f&<>]/; // control characters and the XML metacharacters doctor cannot read
-const CLAUDE_ENV_RE = /^(CLAUDECODE|CLAUDE_PID|CLAUDE_CODE_.*)$/;
 const HOST_BLOCK_RE = /^[^\n]*<!--A1_HOST_ID-->[\s\S]*?<!--\/A1_HOST_ID-->[^\n]*\n/m;
 const INTENT_KEY_RE = /<key>\s*A1_INTENT_/;
 const TEMPLATE_MAX_BYTES = 64 * 1024;
@@ -166,11 +165,10 @@ function findOnPath(name, envPath) {
   return null;
 }
 
+// The shared helper (xprov-approve.cjs), required lazily.
 function claudeContextRefusal(env) {
-  const vars = Object.keys(env).filter((k) => CLAUDE_ENV_RE.test(k));
-  if (vars.length > 0) return `environment: ${vars.sort().join(', ')}`;
   try {
-    return require('./xprov-approve.cjs').ancestryRefusal();
+    return require('./xprov-approve.cjs').claudeContextRefusal(env);
   } catch (e) {
     return `the process ancestry could not be checked (${e.message})`; // fail closed
   }
