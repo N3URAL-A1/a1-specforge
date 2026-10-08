@@ -712,7 +712,7 @@ caseR30j2() {
     assert_json "R30j2-7 store approves the origin/main blob and keeps the other repository" "$(cat "$HOME/.a1-xprov/$STORE_NAME")" "[j.repos['/elsewhere/.git'].join(','), (j.repos['$(storekey8)'] || []).join(',')].join('/')" "$(printf 'a%.0s' $(seq 1 64))/$want"
     local ino_after; ino_after="$(python3 -c 'import os,sys; print(os.stat(sys.argv[1]).st_ino)' "$HOME/.a1-xprov/$STORE_NAME")"
     [[ "$ino_before" != "$ino_after" ]] && ok "R30j2-7 the store was replaced by rename (new inode)" || bad "R30j2-7 the store was rewritten in place (same inode)"
-    assert_eq "R30j2-7 no temp file left in ~/.a1-xprov" "$(ls -A "$HOME/.a1-xprov" | grep -v -e "^$STORE_NAME\$" -e '^snapshots$' -e '^artifacts$' -e '^scan-records$' | wc -l | tr -d ' ')" "0"
+    assert_eq "R30j2-7 no temp file left in ~/.a1-xprov" "$(ls -A "$HOME/.a1-xprov" | grep -v -e "^$STORE_NAME\$" -e '^snapshots$' -e '^artifacts$' -e '^scan-records$' -e '^permits\.json$' -e '^permit-denials\.json$' | wc -l | tr -d ' ')" "0" # spec 014: the owner stores and scan-records/ are legitimate entries, only temp files count
     plan8; pass8 "R30j2-7 the gate passes with the approval approve wrote"
   fi
   # 9 (S-m5): an existing store that is not valid is never replaced silently
