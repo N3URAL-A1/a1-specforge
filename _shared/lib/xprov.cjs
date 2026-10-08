@@ -193,6 +193,26 @@ const SECRET_PATTERNS = Object.freeze([
   Object.freeze({ name: 'password_assignment', re: /(password|passwd)\s*[:=]\s*['"]?[^\s'"]{8,}/i }),
   Object.freeze({ name: 'bearer_token', re: /Bearer\s+[A-Za-z0-9._-]{20,}/ }),
   Object.freeze({ name: 'google_api_key', re: /AIza[0-9A-Za-z_-]{35}/ }),
+  // --- spec 014 FR-009 (appended at the END: the first-match name of every existing hit stays) ---
+  // Unquoted `NAME=value` / `NAME: value` in env, shell, yaml or ini form. Tightened after Wave 0 measured the
+  // literal draft (any `token = <12 non-space>`) at 50 lines in a1-specforge and 569 in n3ural-platform, mostly
+  // ordinary code. The match must be the WHOLE line: optional indent and `export`, a NAME (identifier characters
+  // only, so `const token =` and `x.token =` are code, not config) that contains a secret keyword, then
+  // `=` or `:`, then a value of at least 12 characters from the key alphabet that holds a digit (random keys do;
+  // `readSecretFromVault(...)`, `fooBarBazQuxQuux`, paths and call syntax do not) and that does not start with
+  // `$`, a quote or a backtick (env reference, quoted literal -> secret_assignment). Residual risk (R-3): an
+  // all-letter value or a value with other characters passes this layer; gitleaks is the second layer.
+  // Bounded NAME runs ({0,48}) and line anchors keep the worst case linear (F1h4, SP6).
+  Object.freeze({ name: 'env_assignment_unquoted', re: new RegExp(
+    '^[ \\t]*(?:export[ \\t]+)?[A-Za-z0-9_]{0,48}(?:api_?key|apikey|secret|token|password|passwd|private_key|credential)[A-Za-z0-9_]{0,48}'
+    + '[ \\t]*[=:][ \\t]*(?![$\'"`])(?=[A-Za-z0-9+/_.~=-]*[0-9])[A-Za-z0-9+/_.~=-]{12,}[ \\t]*\\r?$', 'im') }),
+  Object.freeze({ name: 'stripe_live_key', re: new RegExp(`${TOKEN_BOUNDARY}(?:sk|rk)_live_[A-Za-z0-9]{16,}`) }),
+  Object.freeze({ name: 'gitlab_pat', re: new RegExp(`${TOKEN_BOUNDARY}glpat-[A-Za-z0-9_-]{20,}`) }),
+  Object.freeze({ name: 'npm_token', re: new RegExp(`${TOKEN_BOUNDARY}npm_[A-Za-z0-9]{36}`) }),
+  Object.freeze({ name: 'huggingface_token', re: new RegExp(`${TOKEN_BOUNDARY}hf_[A-Za-z0-9]{30,}`) }),
+  Object.freeze({ name: 'sendgrid_key', re: new RegExp(`${TOKEN_BOUNDARY}SG\\.[A-Za-z0-9_-]{16,}\\.[A-Za-z0-9_-]{16,}`) }),
+  // Keyword-shaped like password_assignment: no boundary, not in PATH_NAME_BOUNDARY_PATTERNS.
+  Object.freeze({ name: 'azure_connection_string', re: /(AccountKey|SharedAccessKey)=[A-Za-z0-9+/]{20,}={0,2}/ }),
 ]);
 
 // Path NAMES additionally get the boundary on the other prefix-token patterns
@@ -203,7 +223,7 @@ const SECRET_PATTERNS = Object.freeze([
 const PATH_NAME_BOUNDARY_PATTERNS = Object.freeze([
   'private_key_header', 'aws_access_key_id', 'sk_prefixed_key', 'github_pat_classic', 'slack_token', 'jwt',
   'pem_begin', 'sk_prefixed_key_ext', 'github_token_family', 'github_pat_fine_grained', 'slack_token_family',
-  'google_api_key',
+  'google_api_key', 'stripe_live_key', 'gitlab_pat', 'npm_token', 'huggingface_token', 'sendgrid_key',
 ]);
 
 // ---------- instruction markers (FR-019; compared against NFKC-normalised, space-collapsed, lowercased text) ----------

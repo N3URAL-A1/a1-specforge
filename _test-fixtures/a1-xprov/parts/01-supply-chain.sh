@@ -338,7 +338,9 @@ caseF1() {
       xoxa_short: first('xoxa-1-2-3'),
     };
     // Samuel re-check: the 300 000-char abc:// repetition took 21.6 s with the unbounded url pattern
-    const inputs = ['a'.repeat(10000), 'https://' + 'u'.repeat(10000), 'password = ' + 'x'.repeat(10000), 'sk-' + '-'.repeat(10000), 'Bearer ' + ' '.repeat(10000), 'abc://'.repeat(50000)];
+    const inputs = ['a'.repeat(10000), 'https://' + 'u'.repeat(10000), 'password = ' + 'x'.repeat(10000), 'sk-' + '-'.repeat(10000), 'Bearer ' + ' '.repeat(10000), 'abc://'.repeat(50000),
+      // spec 014 Wave 4: adversarial inputs for env_assignment_unquoted and sendgrid_key (and the other new shapes)
+      'API_KEY=' + 'a'.repeat(100000) + '(', '_token'.repeat(20000), 'export ' + ' '.repeat(100000) + 'TOKEN=', 'SG.' + 'a'.repeat(100000), 'SG.aaaaaaaaaaaaaaaa'.repeat(5000), 'AccountKey='.repeat(10000)];
     // Load-robust (team lead, 2026-10-04: 108-232 ms seen at load average 52-56):
     // per (pattern, input) the MINIMUM of three runs, and the bound is 1 s —
     // linear patterns take a few ms on these inputs, a backtracking one takes
@@ -356,7 +358,7 @@ caseF1() {
   assert_json "F1h2 the eight Samuel shapes each hit their own pattern; ghp_/xoxb keep their original names" "$out2" \
     "Object.entries(j.names).map(([k, v]) => k + '=' + v).join(' ')" \
     "sk_ext=sk_prefixed_key_ext gho=github_token_family fine=github_pat_fine_grained xoxa=slack_token_family url=url_credentials pwd=password_assignment bearer=bearer_token gkey=google_api_key ghp_still_classic=github_pat_classic xoxb_still_slack=slack_token pwd_cwd=none xoxa_short=none"
-  assert_json "F1h3 pattern list has 16 entries (8 spec + 8 amended)" "$out2" "j.count" "16"
+  assert_json "F1h3 pattern list has 23 entries (8 spec + 8 amended + 7 spec 014)" "$out2" "j.count" "23"
   assert_json "F1h4 ReDoS probe: worst pattern × adversarial input (incl. 300 000-char abc://, min of 3 runs) stays under 1 s" "$out2" "j.worst < 1000 ? 'ok' : 'slow ' + j.worstName + ' ' + j.worst + 'ms'" "ok"
   assert_json "F1i INSTRUCTION_MARKERS carry the multi-word markers" "$out" "j.markers" "true"
   assert_json "F1j GATE_ID_LIST is the two registered ids" "$out" "j.gates" "$GATE_PLAN,$GATE_WAVE"

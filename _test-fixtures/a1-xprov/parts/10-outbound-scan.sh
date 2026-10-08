@@ -431,7 +431,23 @@ casePB() {
       password_assignment: "d/pass" + "word=" + r(8, "w"),
       bearer_token: "d/Bea" + "rer " + r(20, "t"),
       google_api_key: "d/AI" + "za" + r(35, "G"),
+      // spec 014 Wave 4 (FR-009): the keyword pattern only matches a whole path name, so its sample has no directory
+      env_assignment_unquoted: "API_" + "KEY=" + r(11, "Z") + "7",
+      stripe_live_key: "d/s" + "k_live_" + r(16, "Q"),
+      gitlab_pat: "d/glp" + "at-" + r(20, "Q"),
+      npm_token: "d/np" + "m_" + r(36, "Q"),
+      huggingface_token: "d/h" + "f_" + r(30, "Q"),
+      sendgrid_key: "d/S" + "G." + r(16, "Q") + "." + r(16, "Q"),
+      azure_connection_string: "d/Account" + "Key=" + r(20, "Q"),
     };
+    for (const n of Object.keys(samples)) {
+      if (!X.SECRET_PATTERNS.some((p) => p.name === n)) out.push(`bad f ${n}: sample without a pattern`);
+    }
+    // the five new prefix patterns carry the path-name boundary: a letter right before them is no hit
+    want("g word-internal npm_", "src/x" + "np" + "m_" + r(36, "Q"), "none");
+    want("g word-internal hf_", "src/x" + "h" + "f_" + r(30, "Q"), "none");
+    want("g word-internal glpat-", "src/x" + "glp" + "at-" + r(20, "Q"), "none");
+    want("g after / glpat-", "src/" + "glp" + "at-" + r(20, "Q"), "gitlab_pat");
     for (const p of X.SECRET_PATTERNS) {
       if (!(p.name in samples)) { out.push(`bad f ${p.name}: no sample`); continue; }
       want(`f ${p.name}`, samples[p.name], p.name);
@@ -518,6 +534,12 @@ caseCB() {
     }
     for (const name of X.PATH_NAME_BOUNDARY_PATTERNS) {
       out.push(X.SECRET_PATTERNS.some((p) => p.name === name) ? `ok guard ${name}` : `bad guard ${name}: not in SECRET_PATTERNS`);
+    }
+    for (const n of ["stripe_live_key", "gitlab_pat", "npm_token", "huggingface_token", "sendgrid_key"]) {
+      out.push(X.PATH_NAME_BOUNDARY_PATTERNS.includes(n) ? `ok boundary list ${n}` : `bad boundary list ${n}: missing`);
+    }
+    for (const n of ["env_assignment_unquoted", "azure_connection_string"]) {
+      out.push(X.PATH_NAME_BOUNDARY_PATTERNS.includes(n) ? `bad boundary list ${n}: must stay out` : `ok boundary list ${n} stays out`);
     }
     const gh = S.pathNameHit(["src/xgh" + "p_" + "P".repeat(36)]);
     out.push(gh === null ? "ok xgh-in-word" : `bad xgh-in-word: got ${gh.pattern}`);
