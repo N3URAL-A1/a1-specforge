@@ -38,7 +38,9 @@ make_tree
 
 # ---------- runtime-assembled fakes ----------
 PWK="pass""word"                                   # keyword of password_assignment
-pwline14() { printf '%s: %s' "$PWK" "$1"; }        # a line the pattern matches (value >= 8 chars)
+# a line password_assignment matches (value >= 8 chars). The value is QUOTED since spec 014 Wave 4: an unquoted
+# `password: <12+ chars with a digit>` line is also an env_assignment_unquoted hit, and these arms count ONE pattern.
+pwline14() { printf '%s: "%s"' "$PWK" "$1"; }
 AKP="AKI""A"
 FAKE_AK14="${AKP}ZZZZZZZZZZZZZZZZ"                 # aws_access_key_id shape (high confidence)
 D14="-----"
