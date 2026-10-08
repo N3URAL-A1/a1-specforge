@@ -1,3 +1,33 @@
 {
-  "reservations": []
+  "reservations": [
+    {
+      "type": "code_scope",
+      "paths": [
+        "_shared/lib/xprov.cjs",
+        "_shared/lib/xprov-permit.cjs",
+        "_shared/lib/xprov-gate.cjs",
+        "_shared/lib/help-xprov.cjs",
+        "_shared/lib/xprov-consent.cjs",
+        "_shared/lib/xprov-consent-store.cjs",
+        "_shared/lib/xprov-consent-grant.cjs",
+        "_shared/lib/xprov-consent-waiver.cjs",
+        "_test-fixtures/a1-xprov/",
+        "hooks/",
+        ".claude/hooks/xprov-deny-allowlist-approve.sh",
+        ".claude/settings.json",
+        "skills/a1-plan/workflows/04b-xprov-review.md",
+        "skills/a1-execute/workflows/01-load.md",
+        "skills/a1-execute/workflows/02-execute.md",
+        "skills/a1-execute/workflows/03-verify.md",
+        ".claude-plugin/plugin.json",
+        ".claude-plugin/marketplace.json",
+        ".mcp.json",
+        "mcp/",
+        "~/.claude/rules/common/xprov-codex.md"
+      ],
+      "by": "013-xprov-chat-consent",
+      "at": "2026-10-08T08:04:46.282Z",
+      "stage": "started"
+    }
+  ]
 }
