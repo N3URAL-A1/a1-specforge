@@ -447,6 +447,12 @@ result, US-011-5 holds: `status`, `claimed_by`, `rejected_reason` and the result
   (the `executor_device` in the Mac's `~/.a1-intents/executor.json`), or by the TTY command
   `a1-tools intent approve <path>` on the Mac. From any other device, an `approve` intent is
   rejected `approve_from_non_executor_device`. The phone can never approve.
+- **The owner commands refuse a Claude Code session.** `intent approve`, `intent seal` and
+  `intent device add` need the owner at a terminal, and a terminal alone does not prove it (an
+  agent gets one from `script`). Each also refuses, with the CLI reason `claude_code_context`
+  (exit 1, nothing written, no secret printed), when a `CLAUDECODE`, `CLAUDE_PID` or
+  `CLAUDE_CODE_*` variable is set or a Claude Code process is an ancestor. This is a CLI
+  refusal, not one of the intent refusal codes below.
 - An approvable target is in `rejected/` with `device_unknown` or `signature_invalid`, or still
   in `queued/`. a1 rewrites the **same** file (the `id` stays): `created_by` becomes the Mac's
   device, with a fresh `nonce`, `created_at` and signature, plus the approval audit group

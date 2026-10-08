@@ -19,6 +19,10 @@ TRACE_SHIM="$STUB_DIR/trace.cjs"
 # call's HOME as the injected passwd home: intent commands refuse a HOME
 # that is not the passwd home (A1_HOME_SPLIT, review MINOR-3).
 A1_AS="$STUB_DIR/a1-tools-as.cjs"
+# Spec for the stub: the loaded copy of xprov-approve.cjs answers "no Claude Code context".
+# Only for the cases that need a human on a pty (positive paths of approve, seal, device add);
+# cases/14-claude-guard.sh never uses it. This session runs under Claude Code itself.
+A1_NOGUARD='{"noClaudeGuard":true}'
 
 # Every result line is also appended to $WORK/.results, so cases/99-suite-meta.sh
 # can check the tag discipline (FR-038) — also for ok/bad called in a subshell.
@@ -80,7 +84,7 @@ pty_run() {
 # provision <device-id> [--qr] — `intent device add` on a pty in the sandbox;
 # output in $SB/.pty, exit code in PTY_RC, the stored secret in SECRET.
 provision() {
-  pty_run "$SB/.pty" env HOME="$FHOME" A1_VAULT_ROOT="$VAULT" node "$A1_AS" "$FHOME" - "$A1_TOOLS" intent device add "$@"
+  pty_run "$SB/.pty" env HOME="$FHOME" A1_VAULT_ROOT="$VAULT" node "$A1_AS" "$FHOME" "$A1_NOGUARD" "$A1_TOOLS" intent device add "$@"
   SECRET="$(node -e 'try { const d = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); process.stdout.write(d.devices[process.argv[2]].secret_hex); } catch (e) {}' \
     "$FHOME/.a1-intents/devices.json" "$1")"
 }

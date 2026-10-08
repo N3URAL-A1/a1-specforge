@@ -303,6 +303,21 @@ function guardRefusal() {
   return ancestryRefusal();
 }
 
+/**
+ * Why a Claude Code session may not run an owner command, or null: the environment first,
+ * then the process ancestry (fails closed). The terminal check stays with the caller, who
+ * may have its own seam for it. `env` is a parameter so callers can inject it.
+ */
+function claudeContextRefusal(env = process.env) {
+  const vars = Object.keys(env).filter((k) => CLAUDE_ENV_RE.test(k));
+  if (vars.length) return `environment: ${vars.sort().join(', ')}`;
+  try {
+    return ancestryRefusal();
+  } catch (e) {
+    return `the process ancestry could not be checked (${e.message})`;
+  }
+}
+
 // ---------- store writer ----------
 
 const EAGAIN_WAIT_MS = 50;
@@ -467,6 +482,6 @@ function cmdXprovAllowlist(args) {
 }
 
 module.exports = {
-  cmdXprovAllowlist, approveListing, proposeScopes, guardRefusal, ancestryRefusal, processInfo, proposeClass, draft, listing, writeStore, writeGuardedStore, readTypedLine,
+  cmdXprovAllowlist, approveListing, proposeScopes, guardRefusal, claudeContextRefusal, ancestryRefusal, processInfo, proposeClass, draft, listing, writeStore, writeGuardedStore, readTypedLine,
   CLAUDE_ENV_RE, CLAUDE_VERSIONS_RE, CLAUDE_NPM_PACKAGE,
 };

@@ -200,7 +200,7 @@ hb_add() {
     const write = process.stdout.write.bind(process.stdout);
     process.stdout.isTTY = true;
     process.stdout.write = (s) => { out += s; return true; };
-    try { D.cmdIntentDevice(args, { openTty }); } finally { process.stdout.write = write; }
+    try { D.cmdIntentDevice(args, { openTty, contextRefusal: () => null }); } finally { process.stdout.write = write; }
     const file = require("path").join(process.env.HOME, ".a1-intents", "devices.json");
     const secret = fs.existsSync(file) ? (JSON.parse(fs.readFileSync(file, "utf8")).devices[args[1]] || {}).secret_hex : "";
     const ttyText = tty === "FAIL" ? "" : fs.readFileSync(tty, "utf8");

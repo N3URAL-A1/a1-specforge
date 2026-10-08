@@ -51,7 +51,7 @@ W3_PAYLOAD_SHA="d44c6af75fba4ec2d394ccdea93c260a30d1136805313cfde73375cd75e74fd7
 # Output in $SB/.pty, exit code in W3_RC.
 # (Pseudo-terminal via lib.sh pty_run; `provision` there is the add-only form.)
 w3_device() {
-  pty_run "$SB/.pty" env HOME="$FHOME" A1_VAULT_ROOT="$VAULT" node "$A1_AS" "$FHOME" - "$A1_TOOLS" intent device "$@"
+  pty_run "$SB/.pty" env HOME="$FHOME" A1_VAULT_ROOT="$VAULT" node "$A1_AS" "$FHOME" "$A1_NOGUARD" "$A1_TOOLS" intent device "$@"
   W3_RC=$PTY_RC
 }
 
@@ -137,14 +137,14 @@ w3_device add pixel
 if [[ $W3_RC -eq 1 && "$(cat "$FHOME/.a1-intents/devices.json")" == "$s3_before" ]] && ! grep -qF "$s3_secret" "$SB/.pty"; then
   ok "S3e second add of a live device -> exit 1, file unchanged, secret not re-printed [FR-011]"
 else bad "S3e second add of a live device -> exit 1, file unchanged, secret not re-printed [FR-011]" "rc=$W3_RC"; fi
-HOME="$FHOME" A1_VAULT_ROOT="$VAULT" node "$A1_AS" "$FHOME" - "$A1_TOOLS" intent device add tablet >"$SB/.out" 2>"$SB/.err" </dev/null
+HOME="$FHOME" A1_VAULT_ROOT="$VAULT" node "$A1_AS" "$FHOME" "$A1_NOGUARD" "$A1_TOOLS" intent device add tablet >"$SB/.out" 2>"$SB/.err" </dev/null
 s3f_rc=$?
 if [[ $s3f_rc -eq 1 && "$(cat "$FHOME/.a1-intents/devices.json")" == "$s3_before" && ! -s "$SB/.out" ]]; then
   ok "S3f non-TTY add -> exit 1, nothing on stdout, file unchanged [FR-011]"
 else bad "S3f non-TTY add -> exit 1, nothing on stdout, file unchanged [FR-011]" "rc=$s3f_rc stdout=$(head -c 200 "$SB/.out")"; fi
 new_sandbox s3g
 rm -rf "$FHOME/.a1-intents"
-HOME="$FHOME" A1_VAULT_ROOT="$VAULT" node "$A1_AS" "$FHOME" - "$A1_TOOLS" intent device add pixel >"$SB/.out" 2>"$SB/.err" </dev/null
+HOME="$FHOME" A1_VAULT_ROOT="$VAULT" node "$A1_AS" "$FHOME" "$A1_NOGUARD" "$A1_TOOLS" intent device add pixel >"$SB/.out" 2>"$SB/.err" </dev/null
 s3g_rc=$?
 if [[ $s3g_rc -eq 1 && ! -e "$FHOME/.a1-intents" ]]; then ok "S3g non-TTY add on a fresh home -> exit 1, ~/.a1-intents not even created [FR-011]"
 else bad "S3g non-TTY add on a fresh home -> exit 1, ~/.a1-intents not even created [FR-011]" "rc=$s3g_rc" "$(ls -la "$FHOME/.a1-intents" 2>&1)"; fi
@@ -263,7 +263,7 @@ else bad "S10 intent device without a verb or with an unknown verb -> usage exit
 # ---------- S11: secrets are never written into the vault ----------
 new_sandbox s11
 mkdir -p "$VAULT/home-in-vault"
-pty_run "$SB/.pty" env HOME="$VAULT/home-in-vault" A1_VAULT_ROOT="$VAULT" node "$A1_AS" "$VAULT/home-in-vault" - "$A1_TOOLS" intent device add pixel
+pty_run "$SB/.pty" env HOME="$VAULT/home-in-vault" A1_VAULT_ROOT="$VAULT" node "$A1_AS" "$VAULT/home-in-vault" "$A1_NOGUARD" "$A1_TOOLS" intent device add pixel
 s11_files="$(find "$VAULT" -name 'devices.json*' | wc -l | tr -d ' ')"
 if [[ $PTY_RC -ne 0 && "$s11_files" == "0" ]] && grep -q 'device secrets never go into the vault' "$SB/.pty"; then
   ok "S11 device add with HOME inside \$A1_VAULT_ROOT is refused, no devices.json in the vault [FR-011]"

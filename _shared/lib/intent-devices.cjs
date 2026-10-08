@@ -267,6 +267,17 @@ function usageExit(message) {
   process.exitCode = EXIT_USAGE;
 }
 
+// Why a Claude Code session may not provision a device, or null. Fails closed;
+// `deps.contextRefusal` (library cases) replaces the shared check, the CLI never passes it.
+function contextRefusal(deps) {
+  if (typeof deps.contextRefusal === 'function') return deps.contextRefusal();
+  try {
+    return require('./xprov-approve.cjs').claudeContextRefusal(process.env);
+  } catch (e) {
+    return `the process ancestry could not be checked (${e.message})`;
+  }
+}
+
 // `deps.openTty` (default: open /dev/tty for writing) exists for the
 // library cases that tell stdout and the terminal apart.
 function cmdAdd(rest, deps = {}) {
@@ -275,6 +286,12 @@ function cmdAdd(rest, deps = {}) {
   if (ids.length !== 1 || ids[0].startsWith('-')) return usageExit('intent device add <device-id> [--qr]');
   if (!requireTty()) {
     process.stderr.write('intent device add: stdout is not a TTY; the secret is printed only to a terminal. Nothing was written.\n');
+    process.exitCode = EXIT_REFUSED;
+    return undefined;
+  }
+  const why = contextRefusal(deps);
+  if (why) {
+    process.stderr.write(`intent device add: refused (claude_code_context): ${why}. Nothing was written.\n`);
     process.exitCode = EXIT_REFUSED;
     return undefined;
   }

@@ -66,7 +66,10 @@ const INTENT_HELP = `  a1-tools intent <sub> [flags]
   a1-tools intent device add <device-id> [--qr] | device revoke <device-id>
                   (wave 3) provision or revoke a device secret in
                   ~/.a1-intents/devices.json (0600). add prints the secret once
-                  and only to a TTY; never writes into the vault.
+                  and only to a TTY; never writes into the vault. add refuses
+                  (exit 1, claude_code_context, nothing written, no secret)
+                  under a Claude Code session: a CLAUDECODE / CLAUDE_PID /
+                  CLAUDE_CODE_* variable or a Claude Code ancestor.
   a1-tools intent claim <path>
                   (wave 4, executor host only) <path> must lie in queued/.
                   Under ~/.a1-intents/ledger.lock: full validation, replay
@@ -155,7 +158,10 @@ const INTENT_HELP = `  a1-tools intent <sub> [flags]
                   is set. Never repairs, never prints a secret.
   a1-tools intent approve <path>
                   (wave 10, executor host only, interactive TTY only — --yes
-                  exit 2, non-TTY stdin or stdout exit 1) shows action,
+                  exit 2, non-TTY stdin or stdout exit 1; a CLAUDECODE /
+                  CLAUDE_PID / CLAUDE_CODE_* variable or a Claude Code
+                  ancestor exits 1 claude_code_context before anything is
+                  read or written) shows action,
                   project, target, the unverified sender and the WHOLE
                   payload with its length on /dev/tty (everything outside
                   letters, marks, numbers, punctuation, symbols and the ASCII
@@ -171,7 +177,9 @@ const INTENT_HELP = `  a1-tools intent <sub> [flags]
                   or a payload above the cap (display_unsafe).
   a1-tools intent seal
                   (wave 5b, executor host only, interactive TTY only — no
-                  --yes) copies the installed a1-specforge plugin read-only
+                  --yes; a CLAUDECODE / CLAUDE_PID / CLAUDE_CODE_* variable
+                  or a Claude Code ancestor exits 1 claude_code_context,
+                  nothing sealed) copies the installed a1-specforge plugin read-only
                   (files 0444, dirs 0555) to ~/.a1-intents-seal/<version>-
                   <12 hex>/ with a sha256 manifest and writes
                   ~/.a1-intents-seal/empty-mcp.json; run verifies it before every

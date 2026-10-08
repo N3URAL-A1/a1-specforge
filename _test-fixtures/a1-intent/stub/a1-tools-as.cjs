@@ -8,7 +8,7 @@
 // removes it through removeChildContextLock on exit.
 //
 //   node a1-tools-as.cjs <passwd-home> <spec-json|-> <a1-tools.cjs> [args...]
-//   spec: { "lock": { action, project, vault_root?, anchor?, intent_id? }, "gitBin": "<abs>", "psFail": true }
+//   spec: { "noClaudeGuard": true, "lock": { action, project, vault_root?, anchor?, intent_id? }, "gitBin": "<abs>", "psFail": true }
 //
 // A `_shared` copy whose intent-child.cjs has no seam (the H6 pass-through)
 // runs unchanged. Fixture-only: production never loads this file.
@@ -31,6 +31,12 @@ if (typeof child.injectChildDeps === 'function') {
     ...(spec.gitBin ? { gitBin: spec.gitBin } : {}),
     ...(spec.psFail ? { parentOf: () => null } : {}), // an ancestry walk that cannot decide
   });
+}
+if (spec.noClaudeGuard) {
+  // Fixture-only: the shared Claude Code context check answers "none" in this process, so the
+  // positive pty cases of approve, seal and device add run even when the test runner itself is
+  // a descendant of Claude Code. The shipped callers look the function up at call time.
+  require(path.join(lib, 'xprov-approve.cjs')).claudeContextRefusal = () => null;
 }
 if (spec.lock) {
   const l = spec.lock;

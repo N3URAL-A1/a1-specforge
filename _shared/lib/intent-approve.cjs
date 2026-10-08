@@ -470,12 +470,29 @@ function confirmOnTty(t, openTty, drain) {
   }
 }
 
+// Why a Claude Code session may not approve, or null. Fails closed; `deps.contextRefusal`
+// (library cases) replaces the shared check, the CLI never passes it.
+function contextRefusal(deps) {
+  if (typeof deps.contextRefusal === 'function') return deps.contextRefusal();
+  try {
+    return require('./xprov-approve.cjs').claudeContextRefusal(process.env);
+  } catch (e) {
+    return `the process ancestry could not be checked (${e.message})`;
+  }
+}
+
 // `a1-tools intent approve <path>` — `deps.openTty` for library cases.
 function cmdIntentApprove(args, deps = {}) {
   if (args.includes('--yes')) return usage('intent approve: --yes is refused; approving needs the owner\'s answer on the terminal');
   if (args.length !== 1 || args[0].startsWith('-')) return usage('intent approve <path> (one rejected/ or queued/ intent file, no flags)');
   if (!requireTty(process.stdin) || !requireTty(process.stdout)) {
     process.stderr.write('intent approve: stdin and stdout must be a TTY; approving needs the owner at the terminal. Nothing was written.\n');
+    process.exitCode = EXIT_REFUSED;
+    return undefined;
+  }
+  const why = contextRefusal(deps);
+  if (why) {
+    process.stderr.write(`intent approve: refused (claude_code_context): ${why}. Nothing was written.\n`);
     process.exitCode = EXIT_REFUSED;
     return undefined;
   }

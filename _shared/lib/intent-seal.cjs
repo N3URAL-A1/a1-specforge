@@ -230,12 +230,22 @@ function confirmOnTty(summary) {
   }
 }
 
+// Environment, then process ancestry (xprov-approve.cjs, required lazily); fails closed.
+function claudeContextRefusal() {
+  try {
+    return require('./xprov-approve.cjs').claudeContextRefusal(process.env);
+  } catch (e) {
+    return `the process ancestry could not be checked (${e.message})`;
+  }
+}
+
 const defaultDeps = () => ({
   homedir: os.homedir,
   hostname: os.hostname(),
   now: Date.now,
   rewrite: INTENT_SEAL_SKILL_REWRITE,
   isTty: () => process.stdin.isTTY === true && process.stdout.isTTY === true,
+  contextRefusal: claudeContextRefusal,
   confirm: confirmOnTty,
   afterLstat: () => {}, //        FR-050 fixture hooks (library calls only): between lstat and open,
   beforeRootCompare: () => {}, // and between the copy and its root compare
@@ -255,6 +265,8 @@ function summaryText(src, tree, sourceRoot, rewrite) {
 function prepareSeal(d) {
   if (d.rewrite === null) throw new SealRefusal('b1_unmeasured', 'INTENT_SEAL_SKILL_REWRITE is null until RESEARCH.md round 3 records the B1 verdict');
   if (!d.isTty()) throw new SealRefusal('not_a_tty', 'intent seal needs an interactive terminal on stdin and stdout');
+  const why = d.contextRefusal();
+  if (why) throw new SealRefusal('claude_code_context', why);
   const config = executorConfig(d);
   if (config === null || config.executor_host !== d.hostname) throw new SealRefusal('not_executor_host', 'intent seal runs only on the executor host');
   const src = readInstalled(d.homedir);
