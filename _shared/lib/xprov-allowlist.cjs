@@ -471,8 +471,9 @@ const GIT_ENV_DROP = Object.freeze([
   'GIT_CONFIG_COUNT', 'GIT_CONFIG_PARAMETERS', 'GIT_DIFF_OPTS', 'GIT_EXTERNAL_DIFF',
 ]);
 
-/** Never exists: pointing GIT_GRAFT_FILE here makes git ignore the repository's own grafts file. */
-const GRAFT_OFF_PATH = path.join(os.tmpdir(), 'a1-xprov-no-such-grafts-file');
+/** Pointing GIT_GRAFT_FILE at /dev/null makes git ignore the repository's own grafts file; no file in a
+ * shared directory is involved (spec 014 FR-017). git prints an advice hint for it, silenced in `git()`. */
+const GRAFT_OFF_PATH = '/dev/null';
 
 /** git's environment for every read against the primary checkout (SEC-2): no redirecting
  * variables, replace objects switched off. */
@@ -481,7 +482,7 @@ function diffEnv() {
   for (const k of GIT_ENV_DROP) delete env[k];
   for (const k of Object.keys(env)) if (/^GIT_CONFIG_(KEY|VALUE)_\d+$/.test(k)) delete env[k];
   env.GIT_NO_REPLACE_OBJECTS = '1';
-  env.GIT_GRAFT_FILE = GRAFT_OFF_PATH; // a path that does not exist: .git/info/grafts is not read (SEC-A)
+  env.GIT_GRAFT_FILE = GRAFT_OFF_PATH; // .git/info/grafts is not read (SEC-A)
   return env;
 }
 
@@ -496,7 +497,7 @@ const timedOut = (r) => Boolean(r.error && r.error.code === 'ETIMEDOUT');
 
 /** One git read in the primary checkout: replace objects off, cleaned environment, bounded time. */
 function git(args, opts) {
-  return C.gitSpawn(['--no-replace-objects', '-c', 'core.commitGraph=false', ...args], { env: diffEnv(), timeout: gitTimeoutMs(), killSignal: 'SIGKILL', ...(opts || {}) });
+  return C.gitSpawn(['--no-replace-objects', '-c', 'core.commitGraph=false', '-c', 'advice.graftFileDeprecated=false', ...args], { env: diffEnv(), timeout: gitTimeoutMs(), killSignal: 'SIGKILL', ...(opts || {}) });
 }
 
 /** stdout of a successful `git(...)`, else null. */
@@ -660,8 +661,12 @@ function groupPairs(matches) {
 /** (d) The newest commit that touched the allowlist in the anchor's history
  * touches nothing else — keeps allowlist changes reviewable. Problem text or null. */
 function separateCommitProblem(root, anchor) {
-  const last = gitOut(['-C', root, 'log', '-1', '--format=%H', '--full-history', '--no-merges', anchor, '--', X.ALLOWLIST_FILE]);
-  const touched = last && last.trim() ? gitOut(['-C', root, 'diff-tree', '--root', '--no-commit-id', '--name-only', '-r', '--no-renames', '-z', last.trim()]) : null;
+  // --first-parent keeps merge commits in view (spec 014 FR-018): an allowlist change that arrives through a merge counts.
+  const last = gitOut(['-C', root, 'log', '-1', '--first-parent', '--format=%H', anchor, '--', X.ALLOWLIST_FILE]);
+  const sha = last ? last.trim() : '';
+  // `-m --first-parent` lists a merge's changes against its first parent and is a no-op for other commits.
+  const diffArgs = ['-C', root, 'diff-tree', '--root', '-m', '--first-parent', '--no-commit-id', '--name-only', '-r', '--no-renames', '-z', sha];
+  const touched = sha ? gitOut(diffArgs) : null;
   const names = touched === null ? [] : touched.split('\0').filter(Boolean);
   return names.length === 1 && names[0] === X.ALLOWLIST_FILE ? null : `the last commit that changed ${X.ALLOWLIST_FILE} also changed other paths`;
 }
@@ -796,6 +801,6 @@ function evaluate(o) {
 
 module.exports = {
   NO_ALLOWLIST, STORE_MODE, STORE_DIR_MODE, SHA256_RE,
-  parseStrictJson, parseAllowlist, parseChangedRanges, rangesIntersect, parseRawDiff, changedLines, untrustedPaths, gitTimeoutMs, scopeFor, scopesProblem, scopeTreeProblem, pathProblem, blobAt, separateCommitProblem, ownerProblem, verifiedTip, resolveAnchor, defaultBranch, lsRemote,
+  parseStrictJson, parseAllowlist, parseChangedRanges, rangesIntersect, parseRawDiff, changedLines, untrustedPaths, gitTimeoutMs, scopeFor, scopesProblem, scopeTreeProblem, pathProblem, blobAt, diffEnv, GRAFT_OFF_PATH, separateCommitProblem, ownerProblem, verifiedTip, resolveAnchor, defaultBranch, lsRemote,
   readApprovals, readGuardedStore, exactKeys, storePath, groupPairs, evaluate, permitRecord,
 };
