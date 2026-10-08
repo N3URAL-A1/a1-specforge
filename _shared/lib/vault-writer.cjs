@@ -32,6 +32,7 @@ const {
   isConflictCopy, externalVaultRoot, rootProblem, warnSkipped, normalizeHostId, hostIdentity,
 } = require('./vault-common.cjs');
 const { emitJson, writeStdoutSync } = require('./xprov-common.cjs');
+const { PRODUCT_SLUG_RE } = require('./product-schema.cjs');
 
 const WRITER_KEY = 'a1_writer_host';
 const WRITER_KEY_PREFIX = `${WRITER_KEY}:`;
@@ -48,13 +49,9 @@ const EXIT = Object.freeze({ ok: 0, refused: 1, usage: 2 });
 
 // ---------- names (FR-042 / FR-043 filter) ----------
 
-function productSlugRe() {
-  return require('./product.cjs').PRODUCT_SLUG_RE; // lazy: product.cjs loads locks → vault-common
-}
-
 /** True for a name that may be treated (and printed) as a project slug. */
 function isProjectName(name) {
-  if (typeof name !== 'string' || isConflictCopy(name) || !productSlugRe().test(name)) return false;
+  if (typeof name !== 'string' || isConflictCopy(name) || !PRODUCT_SLUG_RE.test(name)) return false;
   try { assertSafeSegment(name, 'project slug'); return true; } catch (_e) { return false; }
 }
 

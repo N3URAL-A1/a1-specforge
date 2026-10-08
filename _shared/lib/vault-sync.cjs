@@ -34,6 +34,7 @@ const {
 const { writerGateFor, notWriterReason, gateFields } = require('./vault-writer.cjs');
 const { PRODUCT_MIRROR_SET, PHASES_MIRROR_SET, MIRROR_EXCLUDES } = require('./vault-contract.cjs');
 const { emitJson, writeStdoutSync } = require('./xprov-common.cjs');
+const { PRODUCT_SLUG_RE } = require('./product-schema.cjs');
 
 const SETS = Object.freeze(['product', 'phases']);
 const SET_PATTERNS = Object.freeze({ product: PRODUCT_MIRROR_SET, phases: PHASES_MIRROR_SET });
@@ -90,9 +91,6 @@ function assertSlug(value, label) {
   if (value.length > MAX_SLUG_LENGTH) {
     throw vaultError('input', `${label} must be at most ${MAX_SLUG_LENGTH} characters (got ${value.length})`);
   }
-  // Lazy: product.cjs will require the mirror (Wave 4); a top-level require
-  // here would be circular.
-  const { PRODUCT_SLUG_RE } = require('./product.cjs');
   if (!PRODUCT_SLUG_RE.test(value)) {
     throw vaultError('input', `${label} must be a kebab-case slug (got: ${JSON.stringify(value)})`);
   }
