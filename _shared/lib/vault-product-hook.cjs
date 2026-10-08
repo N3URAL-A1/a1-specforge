@@ -24,6 +24,7 @@ const { PRODUCT_MIRROR_SET, MIRROR_EXCLUDES } = require('./vault-contract.cjs');
 const { MAX_SLUG_LENGTH, rootProblem } = require('./vault-common.cjs');
 const { writerGateFor, notWriterReason } = require('./vault-writer.cjs');
 const { childMirrorAllowed } = require('./intent-child.cjs');
+const { PRODUCT_SLUG_RE } = require('./product-schema.cjs');
 
 // Without a configured vault SC-002/FR-037 win over FR-007's "inactive" value
 // (team-lead decision 2026-09-26): stdout stays byte-identical to the
@@ -48,7 +49,7 @@ function committedSlug(dir) {
   assertSafeSegment(project, 'ROADMAP.md project');
   // FR-034 (review n5): the slug reaches the gate and the skip line, so it
   // must have the CLI slug shape too; the value itself is never echoed.
-  if (!require('./product.cjs').PRODUCT_SLUG_RE.test(project)) throw new Error('ROADMAP.md project: is not a valid project slug');
+  if (!PRODUCT_SLUG_RE.test(project)) throw new Error('ROADMAP.md project: is not a valid project slug');
   return project;
 }
 

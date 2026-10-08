@@ -77,4 +77,14 @@ function writeViaTmp(file, content) {
   }
 }
 
-module.exports = { tmpPathFor, nearestExistingAncestor, assertAncestorInside, assertVaultWriteContained, writeViaTmp };
+/** Write text content to `file` atomically (tmp-file + rename), mirroring
+ * writeJsonAtomic's pattern but for plain markdown (ROADMAP.md, NEXT.md,
+ * feature.md). Creates the parent dir if missing. */
+function writeTextAtomic(file, content) {
+  const dir = path.dirname(file);
+  assertVaultWriteContained(file);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  writeViaTmp(file, content);
+}
+
+module.exports = { tmpPathFor, nearestExistingAncestor, assertAncestorInside, assertVaultWriteContained, writeViaTmp, writeTextAtomic };
