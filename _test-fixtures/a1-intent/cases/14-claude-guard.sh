@@ -31,12 +31,11 @@ for v14 in $(env | cut -d= -f1 | grep -E '^(CLAUDECODE|CLAUDE_PID|CLAUDE_CODE_.*
 g14_pty() {
   local tools="$1" envvar="$2" parent="$3"
   shift 3
-  local inner=("${G14_ENV:-env}" HOME="$FHOME" A1_VAULT_ROOT="$VAULT")
+  local inner=(env HOME="$FHOME" A1_VAULT_ROOT="$VAULT")
   [[ "$envvar" != "-" ]] && inner+=("$envvar")
-  inner+=("${G14_NODE:-node}" "$A1_AS" "$FHOME" - "$tools" intent "$@")
+  inner+=(node "$A1_AS" "$FHOME" "${G14_SPEC:--}" "$tools" intent "$@")
   # Only the injected variable may trigger the refusal, even when the runner is under Claude Code.
   local cmd=("${NOCLAUDE14[@]}" "${inner[@]}")
-  [[ -n "${G14_NODE:-}" ]] && cmd=(env -i PATH=/nonexistent "${inner[@]}") # no ps, no lsof: the tree cannot be read
   [[ "$parent" != "-" ]] && cmd=("${NOCLAUDE14[@]}" "$parent" -c '"$@"; exit $?' _ "${inner[@]}")
   if [[ "$(uname -s)" == "Darwin" ]]; then
     node -e "$G14_FEED" | script -q /dev/null "${cmd[@]}" >"$SB/.pty" 2>&1
@@ -100,32 +99,32 @@ for g14_variant in "env:CLAUDECODE=1:-:environment: .*CLAUDECODE" "parent:-:clau
 done
 
 # ---------- A5: the process tree cannot be read -> fail closed ----------
-# env -i PATH=/nonexistent: no ps, no lsof, no CLAUDE* variable. Pins the try/catch around the walk.
-G14_NODE="$(command -v node)"
-G14_ENV="$(command -v env)"
+# The stub makes the ancestry walk throw (same on macOS and Linux; no CLAUDE* variable is set).
+# Pins the fail-closed try/catch in claudeContextRefusal at CLI level.
+G14_SPEC="$A1_ANCESTRY_THROWS"
 w10_sandbox w14-approve-bare
 RJ="$(w10_rejected signature_invalid)"
 cp "$RJ" "$SB/before.md"
 BEFORE="$(tree_listing "$VAULT" "$FHOME/.a1-intents")"
 g14_pty "$A1_TOOLS" - - approve "$RJ"
-if [[ "$PTY_RC" -eq 1 && "$PTY_OUT" == *claude_code_context* && "$PTY_OUT" == *"cannot read the process tree"* && "$PTY_OUT" != *"Approve?"* ]] \
+if [[ "$PTY_RC" -eq 1 && "$PTY_OUT" == *claude_code_context* && "$PTY_OUT" == *"the process ancestry could not be checked (EACCES: simulated"* && "$PTY_OUT" != *"Approve?"* ]] \
   && cmp -s "$RJ" "$SB/before.md" && [[ -z "$(ls "$Q")" ]] && [[ "$(tree_listing "$VAULT" "$FHOME/.a1-intents")" == "$BEFORE" ]]; then
-  ok "F004-A5 (approve, unreadable process tree) fails closed: exit 1 claude_code_context 'cannot read the process tree', nothing written [FR-015, F-004]"
-else bad "F004-A5 (approve, unreadable process tree) fails closed: exit 1 claude_code_context 'cannot read the process tree', nothing written [FR-015, F-004]" "rc $PTY_RC" "pty: ${PTY_OUT:0:400}"; fi
+  ok "F004-A5 (approve, unreadable process tree) fails closed: exit 1 claude_code_context 'the process ancestry could not be checked', nothing written [FR-015, F-004]"
+else bad "F004-A5 (approve, unreadable process tree) fails closed: exit 1 claude_code_context 'the process ancestry could not be checked', nothing written [FR-015, F-004]" "rc $PTY_RC" "pty: ${PTY_OUT:0:400}"; fi
 w5b_seal_sandbox w14-seal-bare
 g14_pty "$W5B_FALSE_TOOLS" - - seal
 g14_json="$(printf '%s\n' "$PTY_OUT" | grep '^{' | tail -n 1)"
-if [[ "$PTY_RC" -eq 1 && "$g14_json" == *'"claude_code_context"'* && "$PTY_OUT" == *"cannot read the process tree"* ]] && w5b_nothing_sealed; then
+if [[ "$PTY_RC" -eq 1 && "$g14_json" == *'"claude_code_context"'* && "$PTY_OUT" == *"the process ancestry could not be checked (EACCES: simulated"* ]] && w5b_nothing_sealed; then
   ok "F004-A5 (seal, unreadable process tree) fails closed: exit 1 claude_code_context, nothing sealed [FR-040, F-004]"
 else bad "F004-A5 (seal, unreadable process tree) fails closed: exit 1 claude_code_context, nothing sealed [FR-040, F-004]" "rc $PTY_RC json: $g14_json" "pty: ${PTY_OUT:0:400}"; fi
 new_sandbox w14-device-bare
 cp "$FHOME/.a1-intents/devices.json" "$SB/devices.before"
 g14_pty "$A1_TOOLS" - - device add phone-new
-if [[ "$PTY_RC" -eq 1 && "$PTY_OUT" == *claude_code_context* && "$PTY_OUT" == *"cannot read the process tree"* ]] \
+if [[ "$PTY_RC" -eq 1 && "$PTY_OUT" == *claude_code_context* && "$PTY_OUT" == *"the process ancestry could not be checked (EACCES: simulated"* ]] \
   && cmp -s "$FHOME/.a1-intents/devices.json" "$SB/devices.before" && ! printf '%s' "$PTY_OUT" | grep -qE '[0-9a-f]{64}'; then
   ok "F004-A5 (device add, unreadable process tree) fails closed: exit 1 claude_code_context, devices.json unchanged, no secret [FR-011, F-004]"
 else bad "F004-A5 (device add, unreadable process tree) fails closed: exit 1 claude_code_context, devices.json unchanged, no secret [FR-011, F-004]" "rc $PTY_RC" "pty: ${PTY_OUT:0:400}"; fi
-unset G14_NODE G14_ENV
+unset G14_SPEC
 
 # ---------- A4: the shared helper ----------
 g14_helper="$(CLAUDE_PID= CLAUDECODE=1 node -e 'const X = require(process.argv[1] + "/xprov-approve.cjs"); process.stdout.write(typeof X.claudeContextRefusal === "function" ? String(X.claudeContextRefusal({ CLAUDECODE: "1" })) : "<no export>")' "$INTENT_LIB" 2>&1)"

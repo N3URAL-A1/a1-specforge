@@ -312,7 +312,7 @@ function claudeContextRefusal(env = process.env) {
   const vars = Object.keys(env).filter((k) => CLAUDE_ENV_RE.test(k));
   if (vars.length) return `environment: ${vars.sort().join(', ')}`;
   try {
-    return ancestryRefusal();
+    return module.exports.ancestryRefusal(); // looked up at call time, so a fixture stub can replace it
   } catch (e) {
     return `the process ancestry could not be checked (${e.message})`;
   }

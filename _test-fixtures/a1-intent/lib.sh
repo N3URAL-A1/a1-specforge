@@ -23,6 +23,8 @@ A1_AS="$STUB_DIR/a1-tools-as.cjs"
 # Only for the cases that need a human on a pty (positive paths of approve, seal, device add);
 # cases/14-claude-guard.sh never uses it. This session runs under Claude Code itself.
 A1_NOGUARD='{"noClaudeGuard":true}'
+# Spec for the stub: the ancestry walk throws (cases/14-claude-guard.sh F004-A5, fail closed).
+A1_ANCESTRY_THROWS='{"ancestryThrows":true}'
 
 # Every result line is also appended to $WORK/.results, so cases/99-suite-meta.sh
 # can check the tag discipline (FR-038) — also for ok/bad called in a subshell.
