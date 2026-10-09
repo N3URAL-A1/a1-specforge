@@ -61,7 +61,7 @@ const C = require('./xprov-common.cjs');
 // Shared helpers — one definition each, in xprov-common.cjs.
 const { REGISTRY_PATH, LANE_RE, DETAIL_MAX_CHARS, inputError, clip, parsePositive, parseWave, waveNumber, sha256, isPlainObject, readIndex, sameWave, sameLane, writeStdoutSync, gitOut } = C;
 const { permitCheck, permitHint, STATES: PERMIT_STATES } = require('./xprov-permit.cjs');
-const { preflight } = require('./xprov-preflight.cjs');
+const { preflight, onPath } = require('./xprov-preflight.cjs');
 const { snapshot, cleanupSnapshot, INPUTS_SUFFIX, INPUT_FILES } = require('./xprov-snapshot.cjs');
 const { observe, MODEL_RE } = require('./xprov-observe.cjs');
 const WV = require('./xprov-waivers.cjs');
@@ -96,6 +96,9 @@ const BASE_HEX_RE = /^[0-9a-f]{7,40}$/i; // same rule as `run`: a resolved sha, 
 const WAVE_HEADING_RE = /^##\s+Wave\s+(\d+)\b/;
 const REASON_MAX_CHARS = DETAIL_MAX_CHARS;
 const BY_MAX_CHARS = 64;
+// Spec 014 FR-011: a blocking gate needs gitleaks; the detail starts with the code `run` reports as well.
+const GITLEAKS_MISSING_DETAIL = 'gitleaks_missing — gitleaks is required for blocking gates — install it (brew install gitleaks) and re-run';
+const GITLEAKS_WARNING_LINE = 'xprov gate: warning gitleaks not on PATH — patterns-only secret scan';
 const FEEDBACK_DETAIL_MAX_CHARS = X.TITLE_MAX_CHARS * 4; // spec 014 FR-013: same bound as the filter's display_detail
 const RESUME_GONE = 'gate: --resume/--feedback are not accepted — every round is a fresh session; round N ≥ 2 builds its feedback from the round N−1 findings and the dispositions file';
 
@@ -299,7 +302,7 @@ function stepSnapshot(ctx, feedback) {
   // gate kind decides the first-parent step (plan review only).
   const s = snapshot({ sourceRepo: source, commit, base: ctx.base, primaryRoot: ctx.root, gateKind: ctx.isPlan ? 'plan' : 'inspect', inputs: snapshotInputs(ctx, feedback) });
   const allowlist = allowlistFields(s);
-  return s.ok ? { ok: true, snapshot: s.snapshot, commit: s.commit, inputs: s.inputs, allowlist } : { ok: false, reason: s.reason, detail: s.reason_detail || s.detail || s.secret_pattern || null, allowlist };
+  return s.ok ? { ok: true, snapshot: s.snapshot, commit: s.commit, inputs: s.inputs, gitleaks: s.gitleaks === true, allowlist } : { ok: false, reason: s.reason, detail: s.reason_detail || s.detail || s.secret_pattern || null, allowlist };
 }
 
 // ---------- allowlist reporting (FR-030 f, g) ----------
@@ -441,7 +444,7 @@ function recordNotApplicable(ctx, base, permit) {
  * step — only usage errors throw A1_INPUT before anything is created). */
 function gate(o) {
   const ctx = resolveGateArgs(o);
-  const base = Object.freeze({ verdict: X.VERDICTS.FAIL, reason: null, reason_detail: null, step: null, gate: ctx.gate, phase: ctx.phase, wave: ctx.wave, lane: ctx.lane, round: ctx.round, mode: ctx.mode, enforcement: ctx.enforcement, findings_path: null, xreview_path: null, result_path: null, next: null, ...allowlistFields({}) });
+  const base = Object.freeze({ verdict: X.VERDICTS.FAIL, reason: null, reason_detail: null, step: null, gate: ctx.gate, phase: ctx.phase, wave: ctx.wave, lane: ctx.lane, round: ctx.round, mode: ctx.mode, enforcement: ctx.enforcement, findings_path: null, xreview_path: null, result_path: null, next: null, gitleaks: null, ...allowlistFields({}) });
   // A failing step is a FAIL whatever was reached so far — after normalize
   // produced a pass, a broken observe step must not leave `pass` in stdout.
   // `extra` carries the fields already known at that step (e.g. result_path).
@@ -463,9 +466,11 @@ function gate(o) {
   try {
     const pre = preflight({ pluginAllowlist: ctx.pluginAllowlist });
     if (!pre.ok) return (result = fail('preflight', pre.reason, pre.failed.join(', ')));
+    // FR-011: a blocking gate does not degrade to patterns-only; no snapshot is made without gitleaks.
+    if (ctx.enforcement === 'blocking' && !onPath('gitleaks')) return (result = fail('preflight', X.REASONS.preflight_failed, GITLEAKS_MISSING_DETAIL));
     if (prior) feedback = writeFeedback(prior);
     const snapped = stepSnapshot(ctx, feedback);
-    const al = snapped.allowlist;
+    const al = snapped.ok ? Object.freeze({ ...snapped.allowlist, gitleaks: snapped.gitleaks }) : snapped.allowlist;
     noteAllowlist(ctx, al);
     if (!snapped.ok) return (result = fail('snapshot', snapped.reason, snapped.detail, al));
     snap = snapped.snapshot;
@@ -721,6 +726,7 @@ function cmdXprovGate(args) {
   return withFlags(args, { phase: 'str', gate: 'str', wave: 'str', lane: 'str', base: 'str', 'work-path': 'str', round: 'str', timeout: 'str', 'allow-plugins': 'str' }, 'gate', (f) => {
     if (!f.phase || !f.gate) return usageExit('gate requires --phase <name> --gate <id>');
     const r = gate({ phase: f.phase, gate: f.gate, wave: f.wave, lane: f.lane, base: f.base, workPath: f['work-path'], round: f.round, timeout: f.timeout, allowPlugins: f['allow-plugins'] });
+    if (r.gitleaks === false) process.stderr.write(`${GITLEAKS_WARNING_LINE}\n`);
     process.stderr.write(`xprov gate ${r.gate} ${scopeOf(r.wave)} round ${r.round}: ${r.verdict}${r.reason ? ` (${r.reason} at ${r.step})` : ''} — enforcement ${r.enforcement}\n`);
     if (r.verdict === X.VERDICT_NOT_APPLICABLE) process.stderr.write(`xprov gate: ${NOT_APPLICABLE_NOTICE}\n`);
     if (r.step === 'permit-check' && permitHint(r.permit_state)) process.stderr.write(`xprov gate: ${permitHint(r.permit_state)}\n`);

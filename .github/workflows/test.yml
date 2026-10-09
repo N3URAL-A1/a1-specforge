@@ -26,6 +26,19 @@ jobs:
       - name: Syntax check
         run: node --check _shared/a1-tools.cjs
 
+      - name: Install gitleaks (pinned, checksum-checked)
+        # Spec 014 FR-011: gitleaks is required for blocking xprov gates. The version and the sha256 of
+        # gitleaks_<version>_linux_x64.tar.gz are constants of this step (Wave 0 measurement, 2026-10-08);
+        # a mismatch fails the job. The dir is appended to PATH on its own, so the fixtures (stub gitleaks
+        # first on PATH) and their gitleaks-free PATH helper can still tell it apart.
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          set -e
+          bash bin/ci-install-gitleaks.sh "$GITLEAKS_VERSION" "$GITLEAKS_SHA256" "$RUNNER_TEMP/gitleaks-bin"
+          echo "$RUNNER_TEMP/gitleaks-bin" >> "$GITHUB_PATH"
+
       - name: Fixtures
         run: |
           set -e

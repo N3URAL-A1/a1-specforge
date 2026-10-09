@@ -757,6 +757,6 @@ function resolveHomeOrExit(sub) {
 module.exports = {
   COMPLIANT_CONFIG, ALLOWED_SESSION_TOOLS, REQUIRED_FEATURES_OFF, FEATURE_PINS, CURATED_MARKETPLACE,
   parseTomlLines, configChecks, pinFeaturesText, homeSymlinks, skillsDirsProblem, scanPluginCache, sessionToolNames, isGlobalHome,
-  preflight, initHome,
+  preflight, initHome, onPath,
   cmdXprovPreflight, cmdXprovInitHome,
 };

@@ -31,6 +31,9 @@
 #       Red if the feedback is passed without the copy scan.
 #   O8  the snapshot diff changed after the scan → fail/tripwire (detective: the
 #       runner did run; its result is discarded). Red if the diff_sha256 comparison is dropped.
+#       Wave 6 (spec 014 FR-008): an edited tracked file is now refused BEFORE the spawn
+#       (part 20, RB6b), so the tamper here is one the pre-spawn re-check cannot see — the
+#       snapshot's own .git/config (`diff.noprefix`) changes the diff the runner hashes.
 #   O9  a key added and removed within the wave never reaches the snapshot.
 #       Red if inspect fetches base..head history instead of base and head only.
 #   O10 the runner env carries GIT_CONFIG_NOSYSTEM=1. Red if it is dropped.
@@ -71,6 +74,8 @@
 #   RI4 an inspect run on a snapshot without a scanned diff hash is refused AND
 #       logged in PLAN-REVIEW-LOG.md like its sibling refusals (Reinhard m8).
 #       Red if that refusal skips appendLog.
+#       Wave 6 (spec 014 FR-006): the review snapshot's scan record has base null, so the
+#       scan binding refuses first — snapshot_not_scanned / record_mismatch, same log rule.
 #
 # Path NAMES leave too (Codex R1, live inspect 2026-10-03): the runner's change
 # manifest and diff headers carry every outbound path. A path hit is never
@@ -193,7 +198,7 @@ caseO8() {
   local out; out="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov snapshot --repo "$PHASE_REPO" --commit HEAD --base "$base" --plan "$PHASE_PLAN" 2>/dev/null)"
   local snap; snap="$(json_get "$out" "j.snapshot || ''")"
   [[ -n "$snap" && -d "$snap" ]] || { bad "O8 setup: snapshot failed: $(json_get "$out" "j.reason")"; return; }
-  printf '// changed after the scan\n' >> "$snap/src/add.js"
+  git -C "$snap" config diff.noprefix true   # not in the index or the status hash: only the runner's diff text changes
   local argv="$TMP10/o8-argv.json"
   FAKE_RUNNER_ARGV_FILE="$argv" FAKE_RUNNER_CASE=approved fake_runner_env
   local u; u="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov run --mode inspect --snapshot "$snap" --plan "$snap.inputs/PLAN.md" --phase p10 --gate "$GATE_WAVE" --wave 1 --base "$base" --timeout 7 2>/dev/null)"
@@ -332,11 +337,12 @@ caseRI() {
 
   # RI4 — the review snapshot from ri10 has no diff hash; an inspect on it is refused and logged
   ri10
-  local log="$PHASE_REPO/.a1/phases/pri/PLAN-REVIEW-LOG.md"; local n0; n0="$(grep -c 'verdict: fail/snapshot_failed' "$log" 2>/dev/null || true)"; n0="${n0:-0}"
+  local log="$PHASE_REPO/.a1/phases/pri/PLAN-REVIEW-LOG.md"; local n0; n0="$(grep -c 'verdict: fail/snapshot_not_scanned' "$log" 2>/dev/null || true)"; n0="${n0:-0}"
   RI_ARGV="$TMP10/ri-argv-$RANDOM.json"; FAKE_RUNNER_ARGV_FILE="$RI_ARGV" FAKE_RUNNER_CASE=approved fake_runner_env
   RI_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov run --mode inspect --snapshot "$RI_SNAP" --plan "$RI_SNAP.inputs/PLAN.md" --base "$(git -C "$PHASE_REPO" rev-parse HEAD)" --phase pri --gate "$GATE_WAVE" --wave 1 --timeout 7 2>/dev/null)"
-  ri_refused "RI4 inspect without a scanned diff hash" "no scanned diff hash"
-  assert_eq "RI4 the refusal is logged in PLAN-REVIEW-LOG.md" "$(grep -c 'verdict: fail/snapshot_failed' "$log" 2>/dev/null || true)" "$((n0 + 1))"
+  assert_json "RI4 inspect on a review snapshot → refused by the scan binding" "$RI_OUT" "j.reason + '/' + j.reason_detail" "snapshot_not_scanned/record_mismatch"
+  [[ ! -f "$RI_ARGV" ]] && ok "RI4: runner never invoked" || bad "RI4: runner WAS invoked"
+  assert_eq "RI4 the refusal is logged in PLAN-REVIEW-LOG.md" "$(grep -c 'verdict: fail/snapshot_not_scanned' "$log" 2>/dev/null || true)" "$((n0 + 1))"
 }
 
 # pname10 — a secret-shaped file NAME, assembled at runtime (no source line matches).
