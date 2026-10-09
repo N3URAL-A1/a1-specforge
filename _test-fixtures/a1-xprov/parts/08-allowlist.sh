@@ -288,7 +288,8 @@ caseR30b2() {
 # single cause.
 setbranch8() { node -e '
   const fs = require("fs"); const f = process.argv[1]; const r = JSON.parse(fs.readFileSync(f, "utf8"));
-  r.default_branch = process.argv[2]; fs.writeFileSync(f, JSON.stringify(r, null, 2) + "\n");' "$R8/.a1/xprov.json" "$1"; }
+  r.default_branch = process.argv[2]; fs.writeFileSync(f, JSON.stringify(r, null, 2) + "\n");' "$R8/.a1/xprov.json" "$1"
+  write_permit_store "$R8" robert record/2026-09-28-fixture.md "$1"; } # spec 014: the owner's entry follows the file, so this arm still isolates the branch check
 caseR30b3() {
   scen8; setbranch8 'main..x'
   plan8; expect8 "R30b3-1a default_branch main..x" "secret_in_snapshot/allowlist_anchor_unresolved"
@@ -512,6 +513,7 @@ caseR30h() {
   schema_owner8 "R30h2 one reviewed_by ≠ owner" "$(al_doc "$(al_ent f.sh aws_access_key_id 1 fixture_fake "$fp"),$(REVIEWER8=mallory al_ent g.sh aws_access_key_id 1 fixture_fake "$fp")")"
   scen8
   node -e 'const fs = require("fs"); const f = process.argv[1]; const r = JSON.parse(fs.readFileSync(f, "utf8")); r.decided_by = "alice"; fs.writeFileSync(f, JSON.stringify(r, null, 2) + "\n");' "$R8/.a1/xprov.json"
+  write_permit_store "$R8" alice record/2026-09-28-fixture.md # spec 014: the owner's entry follows the file, so this arm still isolates the anchor owner check
   plan8; expect8 "R30h3 decided_by at the anchor (robert) ≠ working tree (alice)" "allowlist_invalid/allowlist_owner_mismatch"
   # h4: 33 entries, written with the literal 33 (never computed from ALLOWLIST_MAX_ENTRIES)
   local many="" i; for i in $(seq 1 33); do many="$many$(al_ent "p$i.sh" aws_access_key_id 1 fixture_fake "$fp"),"; done
@@ -710,7 +712,7 @@ caseR30j2() {
     assert_json "R30j2-7 store approves the origin/main blob and keeps the other repository" "$(cat "$HOME/.a1-xprov/$STORE_NAME")" "[j.repos['/elsewhere/.git'].join(','), (j.repos['$(storekey8)'] || []).join(',')].join('/')" "$(printf 'a%.0s' $(seq 1 64))/$want"
     local ino_after; ino_after="$(python3 -c 'import os,sys; print(os.stat(sys.argv[1]).st_ino)' "$HOME/.a1-xprov/$STORE_NAME")"
     [[ "$ino_before" != "$ino_after" ]] && ok "R30j2-7 the store was replaced by rename (new inode)" || bad "R30j2-7 the store was rewritten in place (same inode)"
-    assert_eq "R30j2-7 no temp file left in ~/.a1-xprov" "$(ls -A "$HOME/.a1-xprov" | grep -v -e "^$STORE_NAME\$" -e '^snapshots$' -e '^artifacts$' | wc -l | tr -d ' ')" "0"
+    assert_eq "R30j2-7 no temp file left in ~/.a1-xprov" "$(ls -A "$HOME/.a1-xprov" | grep -v -e "^$STORE_NAME\$" -e '^snapshots$' -e '^artifacts$' -e '^scan-records$' -e '^permits\.json$' -e '^permit-denials\.json$' | wc -l | tr -d ' ')" "0" # spec 014: the owner stores and scan-records/ are legitimate entries, only temp files count
     plan8; pass8 "R30j2-7 the gate passes with the approval approve wrote"
   fi
   # 9 (S-m5): an existing store that is not valid is never replaced silently

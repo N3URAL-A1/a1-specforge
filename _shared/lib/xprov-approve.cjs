@@ -298,9 +298,9 @@ function ancestryRefusal() {
 
 function guardRefusal() {
   if (!tty.isatty(0) || !tty.isatty(1)) return 'stdin and stdout must both be a terminal';
-  const vars = Object.keys(process.env).filter((k) => CLAUDE_ENV_RE.test(k));
-  if (vars.length) return `refusing under Claude Code (environment: ${vars.sort().join(', ')})`;
-  return ancestryRefusal();
+  const why = claudeContextRefusal(process.env); // one environment + ancestry check for every owner command (spec 014 FR-019)
+  if (why === null) return null;
+  return why.startsWith('environment:') ? `refusing under Claude Code (${why})` : why;
 }
 
 /**

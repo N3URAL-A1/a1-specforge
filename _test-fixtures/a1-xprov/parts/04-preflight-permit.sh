@@ -108,7 +108,7 @@ caseR14() {
   assert_rc "R14c preflight exits 0 on the compliant home" 0 "$W4_RC" "$W4_ERR"
   assert_json "R14c every check is listed with a result" "$W4_OUT" "(j.checks||[]).map(c=>c.name).join(' ')" "$EXPECTED_PREFLIGHT_CHECKS"
   assert_json "R14c no check FAILs and ok is true" "$W4_OUT" "j.ok === true && (j.checks||[]).filter(c=>c.result==='FAIL').length" "0"
-  assert_eq "R14c codex_cli records the measured version string" "$(check_result "$W4_OUT" codex_cli)" "PASS|$EXPECTED_CLI_VERSION"
+  assert_eq "R14c codex_cli records the measured version string and the absolute codex path (FR-016)" "$(check_result "$W4_OUT" codex_cli)" "PASS|$EXPECTED_CLI_VERSION ($(cd "$FAKE_BIN" && pwd -P)/codex)"
   assert_eq "R14c session_tools_exec_only is SKIP (no session), not a pass claim" "$(check_result "$W4_OUT" session_tools_exec_only)" "SKIP|no session"
   assert_json "R14c remote_plugin_switch PASSes with both features off" "$W4_OUT" "(j.checks.find(c=>c.name==='remote_plugin_switch')||{}).result" "PASS"
 
@@ -288,6 +288,11 @@ caseR21() {
   assert_json "R21b decided_on is an ISO date" "$rec" "/^\d{4}-\d{2}-\d{2}$/.test(j.decided_on)" "true"
   out="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov permit-check 2>/dev/null)"; rc=$?
   assert_rc "R21c permit-check exits 0 after permit" 0 "$rc"
+  # Spec 014 FR-002: the owner's store entry is part of "allowed"; the same file without it is a forgery (part 15 has the full table).
+  rm -f "$HOME/.a1-xprov/permits.json"
+  out="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov permit-check 2>/dev/null)"; rc=$?
+  assert_rc "R21c2 the allowed file without the owner's store entry exits 1" 1 "$rc"
+  assert_json "R21c2 reason is external_review_permit_mismatch" "$out" "j.reason" "external_review_permit_mismatch"
 
   printf '{"external_review":"denied","decided_by":"robert","decided_on":"2026-09-24","record":"record/x.md"}\n' > "$PHASE_REPO/.a1/xprov.json"
   out="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov permit-check 2>/dev/null)"; rc=$?

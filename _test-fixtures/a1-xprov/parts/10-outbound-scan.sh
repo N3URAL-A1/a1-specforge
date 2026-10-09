@@ -31,6 +31,9 @@
 #       Red if the feedback is passed without the copy scan.
 #   O8  the snapshot diff changed after the scan → fail/tripwire (detective: the
 #       runner did run; its result is discarded). Red if the diff_sha256 comparison is dropped.
+#       Wave 6 (spec 014 FR-008): an edited tracked file is now refused BEFORE the spawn
+#       (part 20, RB6b), so the tamper here is one the pre-spawn re-check cannot see — the
+#       snapshot's own .git/config (`diff.noprefix`) changes the diff the runner hashes.
 #   O9  a key added and removed within the wave never reaches the snapshot.
 #       Red if inspect fetches base..head history instead of base and head only.
 #   O10 the runner env carries GIT_CONFIG_NOSYSTEM=1. Red if it is dropped.
@@ -71,6 +74,8 @@
 #   RI4 an inspect run on a snapshot without a scanned diff hash is refused AND
 #       logged in PLAN-REVIEW-LOG.md like its sibling refusals (Reinhard m8).
 #       Red if that refusal skips appendLog.
+#       Wave 6 (spec 014 FR-006): the review snapshot's scan record has base null, so the
+#       scan binding refuses first — snapshot_not_scanned / record_mismatch, same log rule.
 #
 # Path NAMES leave too (Codex R1, live inspect 2026-10-03): the runner's change
 # manifest and diff headers carry every outbound path. A path hit is never
@@ -193,7 +198,7 @@ caseO8() {
   local out; out="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov snapshot --repo "$PHASE_REPO" --commit HEAD --base "$base" --plan "$PHASE_PLAN" 2>/dev/null)"
   local snap; snap="$(json_get "$out" "j.snapshot || ''")"
   [[ -n "$snap" && -d "$snap" ]] || { bad "O8 setup: snapshot failed: $(json_get "$out" "j.reason")"; return; }
-  printf '// changed after the scan\n' >> "$snap/src/add.js"
+  git -C "$snap" config diff.noprefix true   # not in the index or the status hash: only the runner's diff text changes
   local argv="$TMP10/o8-argv.json"
   FAKE_RUNNER_ARGV_FILE="$argv" FAKE_RUNNER_CASE=approved fake_runner_env
   local u; u="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov run --mode inspect --snapshot "$snap" --plan "$snap.inputs/PLAN.md" --phase p10 --gate "$GATE_WAVE" --wave 1 --base "$base" --timeout 7 2>/dev/null)"
@@ -332,11 +337,12 @@ caseRI() {
 
   # RI4 — the review snapshot from ri10 has no diff hash; an inspect on it is refused and logged
   ri10
-  local log="$PHASE_REPO/.a1/phases/pri/PLAN-REVIEW-LOG.md"; local n0; n0="$(grep -c 'verdict: fail/snapshot_failed' "$log" 2>/dev/null || true)"; n0="${n0:-0}"
+  local log="$PHASE_REPO/.a1/phases/pri/PLAN-REVIEW-LOG.md"; local n0; n0="$(grep -c 'verdict: fail/snapshot_not_scanned' "$log" 2>/dev/null || true)"; n0="${n0:-0}"
   RI_ARGV="$TMP10/ri-argv-$RANDOM.json"; FAKE_RUNNER_ARGV_FILE="$RI_ARGV" FAKE_RUNNER_CASE=approved fake_runner_env
   RI_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov run --mode inspect --snapshot "$RI_SNAP" --plan "$RI_SNAP.inputs/PLAN.md" --base "$(git -C "$PHASE_REPO" rev-parse HEAD)" --phase pri --gate "$GATE_WAVE" --wave 1 --timeout 7 2>/dev/null)"
-  ri_refused "RI4 inspect without a scanned diff hash" "no scanned diff hash"
-  assert_eq "RI4 the refusal is logged in PLAN-REVIEW-LOG.md" "$(grep -c 'verdict: fail/snapshot_failed' "$log" 2>/dev/null || true)" "$((n0 + 1))"
+  assert_json "RI4 inspect on a review snapshot → refused by the scan binding" "$RI_OUT" "j.reason + '/' + j.reason_detail" "snapshot_not_scanned/record_mismatch"
+  [[ ! -f "$RI_ARGV" ]] && ok "RI4: runner never invoked" || bad "RI4: runner WAS invoked"
+  assert_eq "RI4 the refusal is logged in PLAN-REVIEW-LOG.md" "$(grep -c 'verdict: fail/snapshot_not_scanned' "$log" 2>/dev/null || true)" "$((n0 + 1))"
 }
 
 # pname10 — a secret-shaped file NAME, assembled at runtime (no source line matches).
@@ -431,7 +437,23 @@ casePB() {
       password_assignment: "d/pass" + "word=" + r(8, "w"),
       bearer_token: "d/Bea" + "rer " + r(20, "t"),
       google_api_key: "d/AI" + "za" + r(35, "G"),
+      // spec 014 Wave 4 (FR-009): the keyword pattern only matches a whole path name, so its sample has no directory
+      env_assignment_unquoted: "API_" + "KEY=" + r(11, "Z") + "7",
+      stripe_live_key: "d/s" + "k_live_" + r(16, "Q"),
+      gitlab_pat: "d/glp" + "at-" + r(20, "Q"),
+      npm_token: "d/np" + "m_" + r(36, "Q"),
+      huggingface_token: "d/h" + "f_" + r(30, "Q"),
+      sendgrid_key: "d/S" + "G." + r(16, "Q") + "." + r(16, "Q"),
+      azure_connection_string: "d/Account" + "Key=" + r(20, "Q"),
     };
+    for (const n of Object.keys(samples)) {
+      if (!X.SECRET_PATTERNS.some((p) => p.name === n)) out.push(`bad f ${n}: sample without a pattern`);
+    }
+    // the five new prefix patterns carry the path-name boundary: a letter right before them is no hit
+    want("g word-internal npm_", "src/x" + "np" + "m_" + r(36, "Q"), "none");
+    want("g word-internal hf_", "src/x" + "h" + "f_" + r(30, "Q"), "none");
+    want("g word-internal glpat-", "src/x" + "glp" + "at-" + r(20, "Q"), "none");
+    want("g after / glpat-", "src/" + "glp" + "at-" + r(20, "Q"), "gitlab_pat");
     for (const p of X.SECRET_PATTERNS) {
       if (!(p.name in samples)) { out.push(`bad f ${p.name}: no sample`); continue; }
       want(`f ${p.name}`, samples[p.name], p.name);
@@ -518,6 +540,12 @@ caseCB() {
     }
     for (const name of X.PATH_NAME_BOUNDARY_PATTERNS) {
       out.push(X.SECRET_PATTERNS.some((p) => p.name === name) ? `ok guard ${name}` : `bad guard ${name}: not in SECRET_PATTERNS`);
+    }
+    for (const n of ["stripe_live_key", "gitlab_pat", "npm_token", "huggingface_token", "sendgrid_key"]) {
+      out.push(X.PATH_NAME_BOUNDARY_PATTERNS.includes(n) ? `ok boundary list ${n}` : `bad boundary list ${n}: missing`);
+    }
+    for (const n of ["env_assignment_unquoted", "azure_connection_string"]) {
+      out.push(X.PATH_NAME_BOUNDARY_PATTERNS.includes(n) ? `bad boundary list ${n}: must stay out` : `ok boundary list ${n} stays out`);
     }
     const gh = S.pathNameHit(["src/xgh" + "p_" + "P".repeat(36)]);
     out.push(gh === null ? "ok xgh-in-word" : `bad xgh-in-word: got ${gh.pattern}`);

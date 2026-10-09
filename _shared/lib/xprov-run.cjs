@@ -13,7 +13,9 @@
 //     [--base <sha>] [--feedback <file>]
 //     [--timeout N] [--work-path <dir>] [--no-log]
 //
-// Order: usage checks → permitCheck (never a flag) → runner pin check
+// Order: usage checks → permitCheck (never a flag) → scan binding (spec 014 FR-006,
+// FR-011: the snapshot must be one a passing scan produced, of THIS repository, and
+// a blocking gate needs a gitleaks-checked scan) → runner pin check
 // (`checkRunnerPin()`; mismatch = runner_failed, no spawn) → artifacts dir
 // 0700 → tripwire baseline in a mktemp file → spawnSync python3
 // <vendoredRunnerPath()> … with an ALLOWLISTED environment (PATH, HOME,
@@ -80,7 +82,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { parseFlags, repoRoot, assertSafeSegment, writeTextAtomic, nowIso } = require('./io.cjs');
-const { parseRegistryIds } = require('./gate-ids.cjs');
+const { parseRegistryIds, parseRegistryRow } = require('./gate-ids.cjs'); // parseRegistryRow: NOT xprov-gate.cjs (it requires this module)
 const X = require('./xprov.cjs');
 const C = require('./xprov-common.cjs');
 // Shared helpers — one definition each, in xprov-common.cjs.
@@ -91,8 +93,9 @@ const { ensureArtifactsDir, isUnder, sweepRunHomes } = require('./xprov-artifact
 const { appendXreviewNote } = require('./xprov-normalize.cjs');
 const { filterOutput, instructionMarker } = require('./xprov-filter.cjs');
 const { permitCheck } = require('./xprov-permit.cjs');
-const { homeSymlinks, skillsDirsProblem } = require('./xprov-preflight.cjs');
-const { SNAP_PREFIX, REPO_LOCAL_STRIP, storedDiffSha, storedInputHashes, INPUTS_SUFFIX, INPUT_FILES } = require('./xprov-snapshot.cjs');
+const { homeSymlinks, skillsDirsProblem, resolveTool } = require('./xprov-preflight.cjs');
+const { SNAP_PREFIX, REPO_LOCAL_STRIP, storedDiffSha, storedInputHashes, INPUTS_SUFFIX, INPUT_FILES, NONCE_FILE, statusSha256 } = require('./xprov-snapshot.cjs');
+const { readScanRecord } = require('./xprov-scan-records.cjs');
 
 const NO_LOG_FLAG = 'no-log';
 const FLAGS = Object.freeze({
@@ -192,9 +195,19 @@ function resolveArgs(args) {
 
 // ---------- argv + env (FR-011, FR-014, FR-024) ----------
 
-function buildArgv(ctx, artifactsDir) {
-  const argv = ['python3', X.vendoredRunnerPath(), ctx.mode, '--host', X.RUNNER_HOST, '--repo', ctx.snapshot,
-    '--plan', ctx.plan, '--artifacts', artifactsDir, '--timeout', String(ctx.timeout)];
+/** FR-016: absolute python3 / codex, or { missing } naming the tool that did not resolve. */
+function resolveTools(env) {
+  const python = resolveTool('python3', env);
+  const codex = resolveTool('codex', env);
+  return { python, codex, missing: !python ? 'python3' : (!codex ? 'codex' : null) };
+}
+
+function buildArgv(ctx, artifactsDir, toolsIn) {
+  const tools = toolsIn || resolveTools(process.env);
+  if (tools.missing) throw new Error(`refusing to spawn: ${tools.missing} did not resolve to an absolute executable`);
+  const argv = [tools.python, X.vendoredRunnerPath(), ctx.mode, '--host', X.RUNNER_HOST, '--repo', ctx.snapshot,
+    '--plan', ctx.plan, '--artifacts', artifactsDir, '--timeout', String(ctx.timeout),
+    '--cli', tools.codex];
   if (ctx.mode === 'inspect') argv.push('--base', ctx.base);
   if (ctx.feedback) argv.push('--feedback', ctx.feedback); // every mode: runner.py:348-349 appends it unconditionally
   const forbidden = argv.find((a) => X.FORBIDDEN_RUNNER_TOKENS.includes(a));
@@ -539,6 +552,70 @@ function appendLog(ctx, entry) {
   return file;
 }
 
+// ---------- scan binding (spec 014 FR-006, FR-008, FR-011) ----------
+
+const BINDING = Object.freeze({
+  not_under_snapshots_dir: 'not_under_snapshots_dir', no_scan_record: 'no_scan_record', record_mismatch: 'record_mismatch', repo_mismatch: 'repo_mismatch',
+  index_mismatch: 'index_mismatch', untracked_or_modified_file: 'untracked_or_modified_file', gitleaks_missing: 'gitleaks_missing',
+});
+const ENFORCEMENT_WARNING = 'warning';
+
+/** (a) `--snapshot` is a real direct `snap-*` child of the snapshots root: no symlink at the leaf, and its
+ * realpath is `<realpath of the root>/<basename>` (the rule of cleanupSnapshot). → { dir } or { detail }. */
+function snapshotUnderRoot(snapshot) {
+  try {
+    if (!path.basename(snapshot).startsWith(SNAP_PREFIX) || fs.lstatSync(snapshot).isSymbolicLink()) return { detail: BINDING.not_under_snapshots_dir };
+    const root = fs.realpathSync(X.snapshotsDir());
+    const real = fs.realpathSync(snapshot);
+    return real === path.join(root, path.basename(snapshot)) ? { dir: real } : { detail: BINDING.not_under_snapshots_dir };
+  } catch (_e) {
+    return { detail: BINDING.not_under_snapshots_dir };
+  }
+}
+
+const gitLine = (snapshot, args) => { const out = gitOut(['-C', snapshot, ...args]); return out === null ? null : out.trim(); };
+
+/** (c) The record's commit, base, tree, diff hash and nonce equal what the snapshot holds now. → detail or null. */
+function recordMismatch(ctx, rec, realDir) {
+  const nonce = readIfFile(path.join(`${ctx.snapshot}${INPUTS_SUFFIX}`, NONCE_FILE)).trim();
+  const diff = storedDiffSha(ctx.snapshot);
+  if (rec.snapshot !== realDir || rec.nonce !== nonce || rec.diff_sha256 !== (diff || null)) return BINDING.record_mismatch;
+  if (gitLine(ctx.snapshot, ['rev-parse', 'HEAD']) !== rec.commit || gitLine(ctx.snapshot, ['rev-parse', 'HEAD^{tree}']) !== rec.tree) return BINDING.record_mismatch;
+  if (ctx.mode === 'inspect' && gitLine(ctx.snapshot, ['rev-parse', '--verify', '--quiet', `${ctx.base}^{commit}`]) !== rec.base) return BINDING.record_mismatch;
+  return null;
+}
+
+/** Enforcement cell of the `--gate` row. Anything but `warning` counts as blocking (fail closed). */
+function gateIsBlocking(gate) {
+  let row = null;
+  try { row = parseRegistryRow(fs.readFileSync(REGISTRY_PATH, 'utf8'), gate); } catch (_e) { row = null; }
+  return !row || String(row.enforcement || '').trim() !== ENFORCEMENT_WARNING;
+}
+
+/** FR-006 + the FR-011 direct-path half: → { problem: { reason, detail }, record } — exactly one of them is null. */
+function scanBinding(ctx) {
+  const refuse = (reason, detail) => ({ problem: { reason, detail }, record: null });
+  const under = snapshotUnderRoot(ctx.snapshot);
+  if (under.detail) return refuse(X.REASONS.snapshot_not_scanned, under.detail);
+  const read = readScanRecord(path.basename(under.dir));
+  if (!read.ok) return refuse(X.REASONS.snapshot_not_scanned, BINDING.no_scan_record);
+  const rec = read.value;
+  const mismatch = recordMismatch(ctx, rec, under.dir);
+  if (mismatch) return refuse(X.REASONS.snapshot_not_scanned, mismatch);
+  if (rec.repo_key !== C.commonDirOf(ctx.root)) return refuse(X.REASONS.snapshot_not_scanned, BINDING.repo_mismatch);
+  if (rec.gitleaks === false && gateIsBlocking(ctx.gate)) return refuse(X.REASONS.preflight_failed, BINDING.gitleaks_missing);
+  return { problem: null, record: rec };
+}
+
+/** FR-008, right before the spawn: the snapshot is still what the scan saw. Index first, then the status hash.
+ * → { reason, detail } or null. */
+function changedAfterScan(ctx) {
+  const ls = spawnSync('git', ['-C', ctx.snapshot, 'ls-files', '-s', '-z'], { maxBuffer: C.GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] });
+  if (ls.status !== 0 || sha256(ls.stdout) !== ctx.scan.index_sha256) return { reason: X.REASONS.snapshot_changed_after_scan, detail: BINDING.index_mismatch };
+  if (statusSha256(ctx.snapshot) !== ctx.scan.status_sha256) return { reason: X.REASONS.snapshot_changed_after_scan, detail: BINDING.untracked_or_modified_file };
+  return null;
+}
+
 // ---------- command ----------
 
 function emit(ctx, extra, exitCode) {
@@ -662,6 +739,12 @@ function runWithBaseline(ctx, artifactsDir, argv, notes) {
       process.stderr.write(`xprov run: ${late}; refusing to spawn\n`);
       return o.failWith(X.REASONS.snapshot_failed, late, null, false);
     }
+    // FR-008: the snapshot is still exactly what the passing scan saw (TOCTOU window since cmdXprovRun's binding).
+    const changed = changedAfterScan(ctx);
+    if (changed) {
+      process.stderr.write(`xprov run: ${changed.reason} (${changed.detail}); refusing to spawn\n`);
+      return o.failWith(changed.reason, changed.detail, null, false);
+    }
     const homeIssue = resetSystemSkills();
     if (homeIssue) {
       process.stderr.write(`xprov run: ${homeIssue}\n`);
@@ -687,6 +770,13 @@ function cmdXprovRun(args) {
   if (!permit.ok) {
     process.stderr.write(`xprov run: ${permit.detail || permit.reason}\n`);
     return emit(ctx, { ok: false, reason: permit.reason, reason_detail: permit.detail || null, result_path: null, artifacts_run_dir: null, baseline_delta: [] }, X.EXIT_FAIL);
+  }
+  // FR-006: only a snapshot that a passing scan of THIS repository produced; before any other a1 write.
+  const bound = scanBinding(ctx);
+  if (bound.problem) {
+    process.stderr.write(`xprov run: ${bound.problem.reason} (${bound.problem.detail}); refusing to spawn\n`);
+    appendLog(ctx, { roles: 'unknown', result_path: null, verdict: `fail/${bound.problem.reason}`, notes: {} });
+    return emit(ctx, { ok: false, reason: bound.problem.reason, reason_detail: bound.problem.detail, result_path: null, artifacts_run_dir: null, baseline_delta: [] }, X.EXIT_FAIL);
   }
   // Opportunistic: run-homes a SIGKILL left behind never accumulate (gc's own sweep, not a copy).
   sweepRunHomes();
@@ -724,9 +814,16 @@ function cmdXprovRun(args) {
     process.stderr.write(`xprov run: the reviewed commit tracks repo-local Codex inputs (${present.join(', ')}); they were removed from the snapshot working tree and are logged\n`);
     appendXreviewNote(ctx.phaseDir, `note: repo-local Codex inputs stripped from the snapshot (${ctx.gate}, ${ctx.mode})`, present.map((p) => `${p} is tracked in the reviewed commit; removed from the snapshot working tree before the review`));
   }
+  const tools = resolveTools(process.env);
+  if (tools.missing) {
+    const detail = `${tools.missing} did not resolve to an absolute executable on PATH`;
+    process.stderr.write(`xprov run: ${detail}; refusing to spawn\n`);
+    appendLog(ctx, { roles: 'unknown', result_path: null, verdict: `fail/${X.REASONS.preflight_failed}`, notes });
+    return emit(ctx, { ok: false, reason: X.REASONS.preflight_failed, reason_detail: detail, result_path: null, artifacts_run_dir: null, baseline_delta: [] }, X.EXIT_FAIL);
+  }
   const artifactsDir = ensureArtifactsDir(); // 0700, outside checkout and vault (A1_INPUT → facade exit 2)
-  const argv = buildArgv(ctx, artifactsDir);
-  return runWithBaseline(Object.freeze({ ...ctx, diffSha }), artifactsDir, argv, notes);
+  const argv = buildArgv(ctx, artifactsDir, tools);
+  return runWithBaseline(Object.freeze({ ...ctx, diffSha, scan: bound.record }), artifactsDir, argv, notes);
 }
 
 module.exports = {
