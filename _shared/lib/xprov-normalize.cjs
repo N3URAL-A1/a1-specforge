@@ -276,6 +276,19 @@ function mapPlanFile(findings, planRel, recordPlan) {
   });
 }
 
+/** The strings that leave a normalized finding (detail, display_detail, title, id, file) pass the secret filter once
+ * more: `trim()` and the clipping can turn a value the raw scan let through (`KEY=value<FF>`) into a hit. Null when clean. */
+function lateSecretScan(filter, q) {
+  const texts = [];
+  for (const f of [...q.kept, ...q.quarantined]) {
+    for (const key of ['detail', 'display_detail', 'title', 'id', 'file']) if (typeof f[key] === 'string') texts.push(f[key]);
+  }
+  let hit;
+  try { hit = filter.filterOutput(texts); } catch (_e) { return contractFail(); }
+  if (!isPlainObject(hit) || typeof hit.hit !== 'boolean') return contractFail();
+  return hit.hit ? fail(X.REASONS.secret_in_output, { secret_pattern: typeof hit.pattern_name === 'string' ? hit.pattern_name : 'unnamed' }) : null;
+}
+
 /** Quarantine hook over a non-fail outcome. Returns a NEW outcome. */
 function quarantine(filter, outcome, ctx) {
   let q;
@@ -286,6 +299,8 @@ function quarantine(filter, outcome, ctx) {
     q = filter.quarantineFindings(findings, { lsFiles, planPath: ctx.planRel, repoRoot: ctx.workPath });
   } catch (_e) { return contractFail(); }
   if (!isPlainObject(q) || !Array.isArray(q.kept) || !Array.isArray(q.quarantined)) return contractFail();
+  const late = lateSecretScan(filter, q);
+  if (late !== null) return late;
   const notes = Array.isArray(q.notes) ? q.notes.filter((n) => typeof n === 'string') : [];
   if (outcome.verdict === X.VERDICTS.PASS && q.quarantined.length > 0) return { ...fail(X.REASONS.quarantined), findings: q.kept, quarantined: q.quarantined, notes };
   return { ...outcome, findings: q.kept, quarantined: q.quarantined, notes };
@@ -299,10 +314,13 @@ function bucketize(findings) {
   return out;
 }
 
+/** One line, at most TITLE_MAX_CHARS (the filter already replaced marker-bearing values; this keeps the bound for any caller). */
+const listLine = (value) => clip(String(value == null ? '' : value).replace(/[\r\n\t]+/g, ' '), X.TITLE_MAX_CHARS);
+
 /** FR-014: quarantined items that would have been blockers (severity high), as a list for the REVISE consumers. */
 function quarantinedBlockers(quarantined) {
   return (quarantined || []).filter((q) => q.bucket === 'blocker')
-    .map((q) => ({ id: q.id, severity: q.severity, file: q.file, reason: q.reason, display_detail: typeof q.display_detail === 'string' ? q.display_detail : null }));
+    .map((q) => ({ id: listLine(q.id), severity: q.severity, file: listLine(q.file), reason: q.reason, display_detail: typeof q.display_detail === 'string' ? q.display_detail : null }));
 }
 
 /** `quarantined_blockers` belongs to a REVISE only (a pass never holds quarantined items). */

@@ -117,30 +117,57 @@ function clipField(value) {
 // cannot slip past a space-terminated marker.
 const SPACE_LIKE_RE = new RegExp('[\\s\\u00a0\\u1680\\u2000-\\u200d\\u2028\\u2029\\u202f\\u205f\\u2060\\u3000\\ufeff]+', 'g');
 
-/** NFKC (fullwidth → ASCII), unicode spaces → one space, lowercase. Line
- * breaks survive as a single `\n` so the anchored markers (`system:` at a line
- * start) keep their boundary; everything else space-like collapses. */
+// Unicode format characters (category Cf: soft hyphen, LRM/RLM, bidi controls, tag chars …) render as nothing,
+// so `ig<SHY>nore` reads as `ignore`. The space-like ones (ZWSP, word joiner, BOM) are collapsed to a space first.
+const FORMAT_CHAR_RE = /\p{Cf}/gu;
+
+/** NFKC (fullwidth → ASCII), unicode spaces → one space, remaining format characters removed, lowercase.
+ * Line breaks survive as a single `\n` so the anchored markers (`system:` at a line start) keep their
+ * boundary; everything else space-like collapses. */
 function normalizeHaystack(text) {
   return String(text).normalize('NFKC').replace(/\r\n?/g, '\n')
-    .split('\n').map((line) => line.replace(SPACE_LIKE_RE, ' ')).join('\n')
+    .split('\n').map((line) => line.replace(SPACE_LIKE_RE, ' ').replace(FORMAT_CHAR_RE, '')).join('\n')
     .toLowerCase();
 }
 
-/** The first INSTRUCTION_MARKER found in the normalised evidence + fix, or null. */
+/** The texts a marker is searched in: the line-preserving haystack, the same with every whitespace run
+ * (line breaks included) folded to one space — `ignore\nprevious`, `git\npush`, `rm\n-rf` — and a variant
+ * where format characters become a space (`run<LRM>curl`). */
+function haystackVariants(text) {
+  const base = normalizeHaystack(text);
+  const flat = (t) => t.replace(/\s+/g, ' ');
+  const asSpace = String(text).normalize('NFKC').replace(FORMAT_CHAR_RE, ' ');
+  return [base, flat(base), flat(normalizeHaystack(asSpace))];
+}
+
+function markerIn(variants) {
+  for (const haystack of variants) {
+    for (const marker of X.INSTRUCTION_MARKERS) {
+      if (haystack.includes(marker)) return marker;
+    }
+    for (const { name, re } of X.INSTRUCTION_MARKER_PATTERNS || []) {
+      if (re.test(haystack)) return name;
+    }
+  }
+  return null;
+}
+
+/** The first INSTRUCTION_MARKER found in the normalised evidence + fix + file + id, or null. `file` and `id`
+ * are reviewer text too (a `path_not_in_repo` file is anything), and both travel into the findings file. */
 function instructionMarker(finding, notes) {
   const ev = clipField(finding.evidence);
   const fx = clipField(finding.fix);
-  if (ev.truncated || fx.truncated) {
-    notes.push(`finding ${String(finding.id)}: a field exceeded ${X.MAX_FIELD_CHARS} chars and was scanned up to that length only`);
+  const file = clipField(finding.file);
+  const id = clipField(finding.id);
+  if (ev.truncated || fx.truncated || file.truncated || id.truncated) {
+    notes.push(`finding ${String(finding.id).slice(0, X.TITLE_MAX_CHARS)}: a field exceeded ${X.MAX_FIELD_CHARS} chars and was scanned up to that length only`);
   }
-  const haystack = normalizeHaystack(`${ev.text}\n${fx.text}`);
-  for (const marker of X.INSTRUCTION_MARKERS) {
-    if (haystack.includes(marker)) return marker;
-  }
-  for (const { name, re } of X.INSTRUCTION_MARKER_PATTERNS || []) {
-    if (re.test(haystack)) return name;
-  }
-  return null;
+  return markerIn(haystackVariants(`${ev.text}\n${fx.text}\n${file.text}\n${id.text}`));
+}
+
+/** Marker in the identity fields only (`file`, `id`): those are echoed verbatim in lists, so a hit replaces them. */
+function identityMarker(finding) {
+  return markerIn(haystackVariants(`${clipField(finding.file).text}\n${clipField(finding.id).text}`));
 }
 
 // ---------- quarantine ----------
@@ -148,14 +175,29 @@ function instructionMarker(finding, notes) {
 /** Total length <= DISPLAY_DETAIL_MAX_CHARS, an ellipsis when cut. */
 const clipDetail = (text) => (text.length > DISPLAY_DETAIL_MAX_CHARS ? `${text.slice(0, DISPLAY_DETAIL_MAX_CHARS - 1)}…` : text);
 
+const IDENTITY_PLACEHOLDER = '[redacted: instruction-shaped]';
+const oneLineClip = (v) => {
+  const t = String(v == null ? '' : v).replace(/[\p{Cc}\p{Cf}\u2028\u2029]+/gu, ' ');
+  return t.length > X.TITLE_MAX_CHARS ? `${t.slice(0, X.TITLE_MAX_CHARS - 1)}…` : t;
+};
+
+/** `file` and `id` of a quarantined item as they may be listed: a field with a marker → fixed placeholder (an id
+ * hit also replaces the title, which repeats the id); otherwise one line, at most TITLE_MAX_CHARS. New object. */
+function listableIdentity(finding) {
+  const field = (key) => (identityMarker({ [key]: finding[key] }) !== null ? IDENTITY_PLACEHOLDER : oneLineClip(finding[key]));
+  const id = field('id');
+  return { ...finding, file: field('file'), id, ...(id === IDENTITY_PLACEHOLDER ? { title: IDENTITY_PLACEHOLDER } : {}) };
+}
+
 /** A `path_not_in_repo` item (FR-013): the same marker scan as an in-repo finding. Without a marker the
  * item carries `display_detail`, its detail clipped to DISPLAY_DETAIL_MAX_CHARS; with one it carries
  * the marker and no detail. Secret values never reach here (the output filter ran on the raw result). */
 function quarantinedForPath(finding, notes) {
   const marker = instructionMarker(finding, notes);
-  if (marker !== null) return { ...finding, reason: REASON_PATH, marker };
+  const listed = listableIdentity(finding);
+  if (marker !== null) return { ...listed, reason: REASON_PATH, marker };
   const detail = typeof finding.detail === 'string' ? finding.detail : '';
-  return { ...finding, reason: REASON_PATH, display_detail: clipDetail(detail) };
+  return { ...listed, reason: REASON_PATH, display_detail: clipDetail(detail) };
 }
 
 function quarantineFindings(findings, ctx) {
@@ -172,7 +214,7 @@ function quarantineFindings(findings, ctx) {
     }
     const marker = instructionMarker(finding, notes);
     if (marker !== null) {
-      quarantined.push({ ...finding, reason: REASON_INSTRUCTION, marker });
+      quarantined.push({ ...listableIdentity(finding), reason: REASON_INSTRUCTION, marker });
       continue;
     }
     kept.push({ ...finding });
