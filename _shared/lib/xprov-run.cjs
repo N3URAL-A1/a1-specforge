@@ -93,7 +93,7 @@ const { ensureArtifactsDir, isUnder, sweepRunHomes } = require('./xprov-artifact
 const { appendXreviewNote } = require('./xprov-normalize.cjs');
 const { filterOutput, instructionMarker } = require('./xprov-filter.cjs');
 const { permitCheck } = require('./xprov-permit.cjs');
-const { homeSymlinks, skillsDirsProblem } = require('./xprov-preflight.cjs');
+const { homeSymlinks, skillsDirsProblem, resolveTool } = require('./xprov-preflight.cjs');
 const { SNAP_PREFIX, REPO_LOCAL_STRIP, storedDiffSha, storedInputHashes, INPUTS_SUFFIX, INPUT_FILES, NONCE_FILE, statusSha256 } = require('./xprov-snapshot.cjs');
 const { readScanRecord } = require('./xprov-scan-records.cjs');
 
@@ -195,9 +195,19 @@ function resolveArgs(args) {
 
 // ---------- argv + env (FR-011, FR-014, FR-024) ----------
 
-function buildArgv(ctx, artifactsDir) {
-  const argv = ['python3', X.vendoredRunnerPath(), ctx.mode, '--host', X.RUNNER_HOST, '--repo', ctx.snapshot,
-    '--plan', ctx.plan, '--artifacts', artifactsDir, '--timeout', String(ctx.timeout)];
+/** FR-016: absolute python3 / codex, or { missing } naming the tool that did not resolve. */
+function resolveTools(env) {
+  const python = resolveTool('python3', env);
+  const codex = resolveTool('codex', env);
+  return { python, codex, missing: !python ? 'python3' : (!codex ? 'codex' : null) };
+}
+
+function buildArgv(ctx, artifactsDir, toolsIn) {
+  const tools = toolsIn || resolveTools(process.env);
+  if (tools.missing) throw new Error(`refusing to spawn: ${tools.missing} did not resolve to an absolute executable`);
+  const argv = [tools.python, X.vendoredRunnerPath(), ctx.mode, '--host', X.RUNNER_HOST, '--repo', ctx.snapshot,
+    '--plan', ctx.plan, '--artifacts', artifactsDir, '--timeout', String(ctx.timeout),
+    '--cli', tools.codex];
   if (ctx.mode === 'inspect') argv.push('--base', ctx.base);
   if (ctx.feedback) argv.push('--feedback', ctx.feedback); // every mode: runner.py:348-349 appends it unconditionally
   const forbidden = argv.find((a) => X.FORBIDDEN_RUNNER_TOKENS.includes(a));
@@ -804,8 +814,15 @@ function cmdXprovRun(args) {
     process.stderr.write(`xprov run: the reviewed commit tracks repo-local Codex inputs (${present.join(', ')}); they were removed from the snapshot working tree and are logged\n`);
     appendXreviewNote(ctx.phaseDir, `note: repo-local Codex inputs stripped from the snapshot (${ctx.gate}, ${ctx.mode})`, present.map((p) => `${p} is tracked in the reviewed commit; removed from the snapshot working tree before the review`));
   }
+  const tools = resolveTools(process.env);
+  if (tools.missing) {
+    const detail = `${tools.missing} did not resolve to an absolute executable on PATH`;
+    process.stderr.write(`xprov run: ${detail}; refusing to spawn\n`);
+    appendLog(ctx, { roles: 'unknown', result_path: null, verdict: `fail/${X.REASONS.preflight_failed}`, notes });
+    return emit(ctx, { ok: false, reason: X.REASONS.preflight_failed, reason_detail: detail, result_path: null, artifacts_run_dir: null, baseline_delta: [] }, X.EXIT_FAIL);
+  }
   const artifactsDir = ensureArtifactsDir(); // 0700, outside checkout and vault (A1_INPUT → facade exit 2)
-  const argv = buildArgv(ctx, artifactsDir);
+  const argv = buildArgv(ctx, artifactsDir, tools);
   return runWithBaseline(Object.freeze({ ...ctx, diffSha, scan: bound.record }), artifactsDir, argv, notes);
 }
 

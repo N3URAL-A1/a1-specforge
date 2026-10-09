@@ -249,6 +249,10 @@ const CODEX_HOME_ENV = 'A1_XPROV_CODEX_HOME';
 const DEFAULT_CODEX_HOME_DIRNAME = '.codex-a1-review';
 const RUNNER_FILE = 'runner.py';
 const SUMS_FILE = 'SHA256SUMS';
+// Second, independent pin of the vendored runner (spec 014 FR-015). Changing the
+// runner needs two edits — SHA256SUMS and this constant — and CI compares both
+// (check-enforcement.sh) so a single commit cannot swap the runner unnoticed.
+const RUNNER_SHA256 = '962dfdfe5d67b75eb73ec7c38b9186e6e6e0ca96a68d4ec82595305d8f737c8c';
 
 function xprovHome() {
   return path.join(os.homedir(), XPROV_HOME_DIRNAME);
@@ -348,6 +352,7 @@ function checkRunnerPin(opts) {
     return { ...base, expected, reason: 'runner_unreadable' };
   }
   if (actual !== expected) return { ...base, expected, actual, reason: 'mismatch' };
+  if (actual !== RUNNER_SHA256) return { ...base, expected, actual, reason: 'constant_mismatch' };
   return { ...base, ok: true, expected, actual, reason: null };
 }
 
@@ -390,6 +395,7 @@ function cmdXprov(sub, args) {
 }
 
 module.exports = {
+  RUNNER_SHA256,
   EXIT_PASS, EXIT_FAIL, EXIT_USAGE,
   SUBCOMMANDS, SUBCOMMAND_NAMES,
   REASONS, REASON_LIST, VERDICTS, VERDICT_NOT_APPLICABLE,

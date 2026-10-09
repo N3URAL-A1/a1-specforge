@@ -72,9 +72,9 @@ caseR11() {
   local runner_real; runner_real="$(cd "$TREE_VENDOR" && pwd -P)/runner.py"   # Node realpaths __dirname (macOS /private/var)
   run5 review
   assert_rc "R11b run --mode review with the fake runner exits 0" 0 "$U_RC" "$U_ERR"
-  assert_json "R11c recorded runner argv is exactly review --host claude --repo <snapshot> --plan <abs> --artifacts <dir> --timeout 7" "$(cat "$ARGV_FILE" 2>/dev/null || echo null)" \
-    "JSON.stringify(j)" "$(node -e "process.stdout.write(JSON.stringify([process.argv[1], 'review', '--host', 'claude', '--repo', process.argv[2], '--plan', process.argv[3], '--artifacts', process.argv[4], '--timeout', '7']))" "$runner_real" "$SNAP" "$PLANCOPY" "$art")"
-  assert_json "R11d stdout argv[0..1] is python3 + the copy's vendored runner (R22 argv arm)" "$U_OUT" "j.argv[0] + ' ' + j.argv[1]" "python3 $runner_real"
+  assert_json "R11c recorded runner argv is exactly review --host claude --repo <snapshot> --plan <abs> --artifacts <dir> --timeout 7 --cli <abs codex>" "$(cat "$ARGV_FILE" 2>/dev/null || echo null)" \
+    "JSON.stringify(j)" "$(node -e "process.stdout.write(JSON.stringify([process.argv[1], 'review', '--host', 'claude', '--repo', process.argv[2], '--plan', process.argv[3], '--artifacts', process.argv[4], '--timeout', '7', '--cli', process.argv[5]]))" "$runner_real" "$SNAP" "$PLANCOPY" "$art" "$(cd "$FAKE_BIN" && pwd -P)/codex")"
+  assert_json "R11d stdout argv[0..1] is an absolute python + the copy's vendored runner (R22 argv arm)" "$U_OUT" "(require('path').isAbsolute(j.argv[0]) && require('path').basename(j.argv[0]).startsWith('python')) + ' ' + j.argv[1]" "true $runner_real"
   assert_json "R11e the child received CODEX_HOME = the dedicated home" "$(cat "$ENV_FILE" 2>/dev/null || echo null)" "j.CODEX_HOME" "$XHOME"
   assert_json "R11f stdout names result_path, artifacts_run_dir under the artifacts dir, snapshot, empty baseline_delta" "$U_OUT" \
     "[j.result_path.endsWith('/result.json'), j.artifacts_run_dir.startsWith(require('fs').realpathSync(process.env.HOME) + '/.a1-xprov/artifacts/'), j.snapshot === '$SNAP', j.baseline_delta.length].join('/')" "true/true/true/0"

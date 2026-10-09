@@ -335,6 +335,18 @@ function onPath(name, env) {
   return null;
 }
 
+/** FR-016: `name` resolved to an absolute, existing, executable realpath
+ * (PATH hit from onPath, then fs.realpathSync), or null. Never cached. */
+function resolveTool(name, env) {
+  const hit = onPath(name, env);
+  if (!hit) return null;
+  try {
+    const real = fs.realpathSync(hit);
+    const st = fs.statSync(real);
+    return path.isAbsolute(real) && st.isFile() && (st.mode & 0o111) ? real : null;
+  } catch (_e) { return null; }
+}
+
 /** Realpaths an arg0 shim may point at: the `codex` on PATH and, for the npm
  * layout (measured, Homebrew 2026-10-03: bin/codex.js starts the native
  * node_modules/@openai/codex-<platform>/vendor/<triple>/bin/codex), the native
@@ -508,17 +520,21 @@ function spawnText(cmd, argv, env) {
 }
 
 function pythonCheck(env) {
-  const r = spawnText('python3', ['--version'], env);
+  const bin = resolveTool('python3', env);
+  if (!bin) return check('python_version', false, 'python3 not found on PATH as an absolute executable');
+  const r = spawnText(bin, ['--version'], env);
   const m = r.text.match(/Python (\d+)\.(\d+)(?:\.(\d+))?/);
-  if (r.status !== 0 || !m) return check('python_version', false, r.error || r.text || 'python3 --version failed');
+  if (r.status !== 0 || !m) return check('python_version', false, r.error || r.text || `${bin} --version failed`);
   const [maj, min] = [Number(m[1]), Number(m[2])];
   const ok = maj > PYTHON_MIN[0] || (maj === PYTHON_MIN[0] && min >= PYTHON_MIN[1]);
-  return check('python_version', ok, m[0]);
+  return check('python_version', ok, `${m[0]} (${bin})`);
 }
 
 function codexCliCheck(env) {
-  const r = spawnText('codex', ['--version'], env);
-  return check('codex_cli', r.status === 0, r.status === 0 ? r.text : (r.error || r.text || `exit ${r.status}`));
+  const bin = resolveTool('codex', env);
+  if (!bin) return check('codex_cli', false, 'codex not found on PATH as an absolute executable');
+  const r = spawnText(bin, ['--version'], env);
+  return check('codex_cli', r.status === 0, r.status === 0 ? `${r.text} (${bin})` : (r.error || r.text || `exit ${r.status}`));
 }
 
 // ---------- preflight ----------
@@ -757,6 +773,6 @@ function resolveHomeOrExit(sub) {
 module.exports = {
   COMPLIANT_CONFIG, ALLOWED_SESSION_TOOLS, REQUIRED_FEATURES_OFF, FEATURE_PINS, CURATED_MARKETPLACE,
   parseTomlLines, configChecks, pinFeaturesText, homeSymlinks, skillsDirsProblem, scanPluginCache, sessionToolNames, isGlobalHome,
-  preflight, initHome, onPath,
+  preflight, initHome, onPath, resolveTool,
   cmdXprovPreflight, cmdXprovInitHome,
 };

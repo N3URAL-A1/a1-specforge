@@ -165,6 +165,12 @@ make_tree() {
   fi
   cp "$FAKE/fake-runner.py" "$TREE_VENDOR/runner.py"
   ( cd "$TREE_VENDOR" && if command -v shasum >/dev/null 2>&1; then shasum -a 256 runner.py > SHA256SUMS; else sha256sum runner.py > SHA256SUMS; fi )
+  # FR-015: the copy's RUNNER_SHA256 follows the fake runner (verified with node -p on the copy).
+  local fake_sha; fake_sha="$(sha256_of "$TREE_VENDOR/runner.py")"
+  sed -i.bak -E "s/^(const RUNNER_SHA256 = ')[0-9a-f]{64}(';)/\1${fake_sha}\2/" "$TREE/_shared/lib/xprov.cjs" && rm -f "$TREE/_shared/lib/xprov.cjs.bak"
+  if [[ "$(node -p "require(process.argv[1]).RUNNER_SHA256" "$TREE/_shared/lib/xprov.cjs")" != "$fake_sha" ]]; then
+    echo "FAIL  harness: could not patch RUNNER_SHA256 in the tree copy" >&2; exit 2
+  fi
   # The fake CLIs are COPIED into a temp bin and made executable there — the
   # suite never chmods a file in the real tree (Samuel, Wave 1 review). The
   # fake runner needs no exec bit: production and H1 invoke it as
