@@ -104,6 +104,7 @@ run_case "pass"                          0 "PASS"
 run_case "blocker-spec-not-clarified"    1 "FAIL"
 run_case "blocker-no-plan"               1 "FAIL"
 run_case "blocker-dep-cycle"             1 "FAIL"
+run_case "blocker-dep-cycle-suffixed"    1 "FAIL"   # F-018: Wave 1 <-> Wave 1b
 run_case "blocker-fr-coverage"           1 "FAIL"
 run_case "major-missing-agents"          0 "PASS_WITH_WARNINGS"
 run_case "major-missing-stories"         0 "PASS_WITH_WARNINGS"
@@ -117,6 +118,8 @@ run_resolve_case "pass"                  0 "PASS"
 run_gate_case "gate-pass"                0 "PASS"
 run_gate_case "gate-fail-missing-fr"     1 "FAIL"
 run_gate_case "gate-fail-duplicate-fr"   1 "FAIL"
+run_gate_case "gate-fail-suffixed-wave"  1 "FAIL"   # F-018: FR-002 in Wave 1 and Wave 1b
+run_gate_case "gate-fail-unrecognised-wave" 1 "FAIL"  # F-018: "## Wave 2B" is no wave id
 run_gate_case "gate-fail-phantom-fr"     1 "FAIL"
 run_gate_case "gate-fail-wrong-link"     1 "FAIL"
 run_gate_case "gate-error-no-spec"       2 "ERROR"

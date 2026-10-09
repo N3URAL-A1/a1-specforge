@@ -26,35 +26,62 @@ function extractSpecFRs(specBody) {
   return set;
 }
 
+// Wave headings (audit F-018). A wave id is a number with an optional
+// lower-case letter suffix (`## Wave 6b`) or one upper-case letter
+// (`## Wave E`); "Wave" itself is case-insensitive. Before, only `\d+` was
+// recognised, so `## Wave 6b` and `## Wave E` were not headings and their FRs
+// were silently attributed to the previous wave — a false PASS of check 9.
+// checklist.cjs splits wave blocks with the same scanner.
+const WAVE_ID = '([0-9]+[a-z]?|[A-Z])(?![A-Za-z0-9_])';
+const WAVE_HEADING_RE = new RegExp(`^##\\s+[Ww][Aa][Vv][Ee]\\s+${WAVE_ID}(?![.\\-/][A-Za-z0-9])(.*)$`);
+// A heading that starts like a numbered wave but has no valid id
+// (`## Wave 6B`, `## Wave 6-7`, `## Wave 10.5`). Prose headings such as
+// `## Waves`, `## Wave-DAG` or `## Wave sequencing` stay ordinary headings.
+const WAVE_HEADING_LIKE_RE = /^##\s+wave\s+[0-9]/i;
+const WAVE_REF_RE = new RegExp(`\\b[Ww][Aa][Vv][Ee]\\s+${WAVE_ID}`, 'g');
+
+/** Split a plan body at its wave headings. Returns { sections, problems }:
+ * sections in document order as { id, label, lines }, problems as
+ * { line, heading, reason } for unrecognised and repeated wave headings. */
+function scanWaveSections(planBody) {
+  const sections = [];
+  const problems = [];
+  const seen = new Set();
+  let current = null;
+  planBody.split('\n').forEach((line, idx) => {
+    const h = line.match(WAVE_HEADING_RE);
+    if (h) {
+      current = { id: h[1], label: `Wave ${h[1]}`, lines: [] };
+      if (seen.has(h[1])) problems.push({ line: idx + 1, heading: line, reason: 'duplicate' });
+      seen.add(h[1]);
+      sections.push(current);
+      return;
+    }
+    if (WAVE_HEADING_LIKE_RE.test(line)) {
+      problems.push({ line: idx + 1, heading: line, reason: 'unrecognised' });
+    }
+    if (current) current.lines.push(line);
+  });
+  return { sections, problems };
+}
+
 function extractWaveFRs(planBody) {
-  // Split plan body into wave sections by "## Wave N" headings.
-  // For each wave, collect every FR-### occurrence in that section.
+  // For each wave, collect every FR-### occurrence in its section. A repeated
+  // heading adds to the same wave (F-019: it used to replace the earlier
+  // block's FRs); scanWaveSections reports the repeat as a problem.
   // Returns: Map<waveLabel, Set<FR>>.
   const waves = new Map();
-  const lines = planBody.split('\n');
-  let currentLabel = null;
-  let currentBuf = [];
-  const flush = () => {
-    if (currentLabel === null) return;
-    const text = currentBuf.join('\n');
-    const found = new Set();
-    const m = text.match(FR_PATTERN) || [];
-    for (const fr of m) found.add(fr);
-    waves.set(currentLabel, found);
-  };
-  const headingRe = /^##\s+Wave\s+(\d+)\b(.*)$/i;
-  for (const line of lines) {
-    const h = line.match(headingRe);
-    if (h) {
-      flush();
-      currentLabel = `Wave ${h[1]}`;
-      currentBuf = [];
-    } else if (currentLabel !== null) {
-      currentBuf.push(line);
-    }
+  for (const sec of scanWaveSections(planBody).sections) {
+    const found = waves.get(sec.label) || new Set();
+    for (const fr of sec.lines.join('\n').match(FR_PATTERN) || []) found.add(fr);
+    waves.set(sec.label, found);
   }
-  flush();
   return waves;
+}
+
+/** Wave ids referenced in a text (`Depends on: Wave 5b, Wave E`). */
+function extractWaveRefs(text) {
+  return [...text.matchAll(WAVE_REF_RE)].map((m) => m[1]);
 }
 
 function diffFRCoverage(specFRs, waveMap) {
@@ -77,4 +104,4 @@ function diffFRCoverage(specFRs, waveMap) {
   return { missingInPlan, phantomInPlan, duplicatedInPlan, planFRs };
 }
 
-module.exports = { extractSpecFRs, extractWaveFRs, diffFRCoverage };
+module.exports = { extractSpecFRs, scanWaveSections, extractWaveFRs, extractWaveRefs, diffFRCoverage };

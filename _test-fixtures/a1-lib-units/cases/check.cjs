@@ -4,7 +4,7 @@
 // #9/#10 (a1-new-feature Gate 4.5).
 
 const path = require('path');
-const { eq, done } = require('../lib.cjs');
+const { eq, check, done } = require('../lib.cjs');
 
 const C = require(path.join(process.argv[2], 'check.cjs'));
 const sorted = (set) => [...set].sort();
@@ -56,5 +56,40 @@ eq('C1 empty body', sorted(C.extractSpecFRs('')), []);
   const d = C.diffFRCoverage(spec, C.extractWaveFRs('## Wave 1\nimplements FR-014-1'));
   eq('C4 dropped sub-requirement is missing', d.missingInPlan, ['FR-014-2']);
 }
+
+// C5 — audit F-018: letter-suffixed and letter waves are their own sections.
+// Red-making change: restoring the `(\d+)` heading id in check.cjs.
+{
+  const plan = [
+    '## Wave 6 — base', 'FR-001',
+    '## Wave 6b — follow-up', 'FR-001 again',
+    '## Wave E — result', 'FR-002',
+  ].join('\n');
+  const w = C.extractWaveFRs(plan);
+  eq('C5 wave labels', [...w.keys()], ['Wave 6', 'Wave 6b', 'Wave E']);
+  eq('C5 Wave 6 keeps only its own FRs', sorted(w.get('Wave 6')), ['FR-001']);
+  eq('C5 Wave E ids', sorted(w.get('Wave E')), ['FR-002']);
+  const d = C.diffFRCoverage(new Set(['FR-001', 'FR-002']), w);
+  eq('C5 duplicate across 6 and 6b is found', d.duplicatedInPlan, [{ fr: 'FR-001', waves: ['Wave 6', 'Wave 6b'] }]);
+}
+
+// C6 — heading problems: unreadable ids and repeats are reported, prose
+// headings are not. Red-making change: dropping WAVE_HEADING_LIKE_RE.
+{
+  const plan = ['## Waves', '## Wave-DAG', '## Wave sequencing', '## Wave 1', '## Wave 6B', '## Wave 2.5', '## Wave 1'].join('\n');
+  eq('C6 problems', C.scanWaveSections(plan).problems.map((p) => [p.line, p.reason]), [[5, 'unrecognised'], [6, 'unrecognised'], [7, 'duplicate']]);
+  eq('C6 sections', C.scanWaveSections(plan).sections.map((s) => s.label), ['Wave 1', 'Wave 1']);
+}
+
+// C7 — audit F-019: a repeated heading adds to the wave instead of replacing it.
+// Red-making change: `waves.set(label, found)` without reading the old set.
+{
+  const w = C.extractWaveFRs('## Wave 7\nFR-001\n## Wave 7\nFR-004');
+  eq('C7 union of both blocks', sorted(w.get('Wave 7')), ['FR-001', 'FR-004']);
+}
+
+// C8 — dependency references keep suffixed and letter ids.
+eq('C8 refs', C.extractWaveRefs('**Depends on:** Wave 5b, Wave E and wave 3'), ['5b', 'E', '3']);
+check('C8 no ref in prose without an id', C.extractWaveRefs('the next wave of work').length === 0);
 
 done();
