@@ -162,12 +162,21 @@ function instructionMarker(finding, notes) {
   if (ev.truncated || fx.truncated || file.truncated || id.truncated) {
     notes.push(`finding ${String(finding.id).slice(0, X.TITLE_MAX_CHARS)}: a field exceeded ${X.MAX_FIELD_CHARS} chars and was scanned up to that length only`);
   }
-  return markerIn(haystackVariants(`${ev.text}\n${fx.text}\n${file.text}\n${id.text}`));
+  // field by field: a line break between two fields must not fold into a space and join their words
+  for (const text of [ev.text, fx.text, file.text, id.text]) {
+    const marker = markerIn(haystackVariants(text));
+    if (marker !== null) return marker;
+  }
+  return null;
 }
 
 /** Marker in the identity fields only (`file`, `id`): those are echoed verbatim in lists, so a hit replaces them. */
 function identityMarker(finding) {
-  return markerIn(haystackVariants(`${clipField(finding.file).text}\n${clipField(finding.id).text}`));
+  for (const text of [clipField(finding.file).text, clipField(finding.id).text]) {
+    const marker = markerIn(haystackVariants(text));
+    if (marker !== null) return marker;
+  }
+  return null;
 }
 
 // ---------- quarantine ----------

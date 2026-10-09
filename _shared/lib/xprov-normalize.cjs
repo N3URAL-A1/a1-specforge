@@ -252,7 +252,8 @@ function stripSymbolSuffix(findings, lsFiles, planRel) {
     const file = f.file.slice(0, i);
     const symbol = f.file.slice(i + sep.length).replace(/[\r\n\t]+/g, ' ').trim().slice(0, SYMBOL_MAX_CHARS);
     if (!symbol || !(lsFiles.has(file) || file === planRel)) return f;
-    const evidence = `Symbol: ${symbol}\n${f.evidence}`;
+    // `.` ends the symbol: a bare line break would fold to a space in the marker scan and make `…Run` + newline look like `run `.
+    const evidence = `Symbol: ${symbol}.\n${f.evidence}`;
     // The filter scans MAX_FIELD_CHARS per field: a prefix must never push a marker
     // out of that window (Codex R2, live inspect 2026-10-02) — too long → unchanged.
     if (evidence.length > X.MAX_FIELD_CHARS) return f;

@@ -333,9 +333,9 @@ caseR28() {
   local canary="$TMP03/canary-$$"
   CANARY="$canary" synth3 approved "r.response.findings = [{id:'X1', severity:'low', path: '; touch ' + process.env.CANARY + ' ; rm -rf /', evidence:'inert?', fix:'none'}];" "$TMP03/r28-inj.result.json"
   run_n3 "$TMP03/r28-inj.result.json" p28
-  assert_json "R28b '; rm -rf /' path → quarantined path_not_in_repo, verdict fail/quarantined, path kept as literal text" "$N_OUT" \
-    "j.reason + '/' + j.quarantined[0].reason + '/' + j.quarantined[0].file.startsWith('; touch ') + '/' + j.quarantined[0].file.endsWith(' ; rm -rf /')" \
-    "quarantined/path_not_in_repo/true/true"
+  assert_json "R28b '; rm -rf /' path → quarantined path_not_in_repo, verdict fail/quarantined, path (instruction-shaped, spec 014 SEC-1) listed as the fixed placeholder, never as text" "$N_OUT" \
+    "j.reason + '/' + j.quarantined[0].reason + '/' + j.quarantined[0].file + '/' + j.quarantined[0].marker" \
+    "quarantined/path_not_in_repo/[redacted: instruction-shaped]/rm "
   [[ ! -e "$canary" ]] && ok "R28c the canary was never touched — the path was compared as a string, no shell ran" || bad "R28c canary exists: a shell evaluated the finding path"
 
   # oversized: one 10 000-char field is handled inertly in < 5 s; the string is scanned only up to the guard
