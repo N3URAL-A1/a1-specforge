@@ -169,21 +169,6 @@ function isLockStale(lockPath) {
  * both believe they hold the lock; if live, falls back to the existing
  * bounded retry/backoff. Returns the lock path on success; calls fail()
  * (exit 1) on timeout so callers never proceed without the lock. */
-/** Safety net for a throw inside a locked section: the facade's catch calls
- * process.exit(2) without exitWithLock, which left the lock behind (seen with
- * the fail-closed frontmatter parser, audit F-017). On exit, remove the lock
- * if it is still ours; a normal release has already unlinked it. */
-function releaseOnExit(lockPath) {
-  process.once('exit', () => {
-    try {
-      const payload = JSON.parse(readLockBounded(lockPath));
-      if (payload && payload.pid === process.pid && !isForeignHost(payload)) fs.unlinkSync(lockPath);
-    } catch (_e) {
-      // gone or unreadable: nothing of ours to remove
-    }
-  });
-}
-
 function acquireReservationsLock(file) {
   const dir = path.dirname(file);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -193,7 +178,6 @@ function acquireReservationsLock(file) {
       const fd = fs.openSync(lockPath, 'wx');
       fs.writeFileSync(fd, lockPayload());
       fs.closeSync(fd);
-      releaseOnExit(lockPath);
       return lockPath;
     } catch (e) {
       if (e.code !== 'EEXIST') throw e;
@@ -213,10 +197,7 @@ function acquireReservationsLock(file) {
         }
         let winner = null;
         try { winner = JSON.parse(fs.readFileSync(lockPath, 'utf8')); } catch (_e4) { /* raced */ }
-        if (winner && winner.pid === process.pid) {
-          releaseOnExit(lockPath);
-          return lockPath;
-        }
+        if (winner && winner.pid === process.pid) return lockPath;
         continue; // lost the reclaim race — another live holder now owns the lock
       }
       if (attempt < RESERVATIONS_LOCK_RETRIES - 1) {

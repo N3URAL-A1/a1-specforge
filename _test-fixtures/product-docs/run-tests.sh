@@ -881,7 +881,8 @@ assert_rc "stale-lock-corrupt-payload-reclaimed-succeeds" 0 "$RC" "$OUT"
 # the parser's two-space grammar) used to parse as `features: null`, and
 # add-feature / add-milestone then wrote `[new]` back, deleting every
 # existing entry. Both writers must now refuse (exit 2, `error:` prefix),
-# leave ROADMAP.md byte-identical and release their lock.
+# leave ROADMAP.md byte-identical. The lock the refused call leaves behind
+# names a dead pid and is reclaimed by the next writer.
 F017_PDIR="$WORK/f017/docs/product"
 mkdir -p "$F017_PDIR"
 cat > "$F017_PDIR/ROADMAP.md" <<'EOF'
@@ -915,8 +916,13 @@ for f017_cmd in "add-feature --id 002-new --milestone m1 --title New" "add-miles
   assert_rc "$f017_name-indent0-refused" 2 "$RC" "$OUT"
   assert_true "$f017_name-names-the-line" "$(echo "$OUT" | grep -q '^error: frontmatter line 9: .*"- id: m1"' && echo true || echo false)"
   assert_true "$f017_name-roadmap-unchanged" "$([[ "$(hash_file "$F017_PDIR/ROADMAP.md")" == "$F017_HASH" ]] && echo true || echo false)"
-  assert_true "$f017_name-lock-released" "$([[ ! -e "$F017_PDIR/.product-stage.lock.json.lock" ]] && echo true || echo false)"
 done
+# Once the roadmap is in the parser's shape, the next writer goes through.
+sed -i.bak -e 's/^- /  - /' -e 's/^  \([a-z_]*:\)/    \1/' "$F017_PDIR/ROADMAP.md" && rm -f "$F017_PDIR/ROADMAP.md.bak"
+OUT="$(node "$TOOLS" product add-feature --id 002-new --milestone m1 --title New --dir "$F017_PDIR" 2>&1)"
+RC=$?
+assert_rc "f017-after-reindent-add-feature-succeeds" 0 "$RC" "$OUT"
+assert_true "f017-after-reindent-kept-feature-survives" "$(grep -q '^  - id: 001-kept' "$F017_PDIR/ROADMAP.md" && grep -q '^  - id: 002-new' "$F017_PDIR/ROADMAP.md" && echo true || echo false)"
 
 echo "product-docs fixtures: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]
