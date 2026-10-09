@@ -31,10 +31,22 @@ const { writeTextAtomic } = require('./fs-safe.cjs');
 //      but the remainder does NOT look like `key: value`), it's a simple
 //      string list (delegates to the same scalar rules as the flat parser).
 //   5. Otherwise it's a plain scalar on the same line as the key.
+//   6. Fail closed (audit F-017): any line this grammar does not consume — a
+//      list at indent 0 (`- id: a`), a marker with extra spaces (`-   id: z`),
+//      a field at the wrong indent, a non `key: value` line inside an object
+//      item — throws an A1_INPUT error naming the line. Before, such lines
+//      were skipped, the key parsed as null or `{}`, and the next writer
+//      (`product add-feature`) wrote the emptied list back.
 // Scalars reuse the same quoting/null/number rules as serializeScalar so
 // round-tripping (parse -> serialize -> parse) is lossless for every machine
 // field defined in SCHEMA.md sections 1/2.
 // ---------------------------------------------------------------------------
+
+function unexpectedLine(lineNo, line, why) {
+  const err = new Error(`frontmatter line ${lineNo}: ${why}: ${JSON.stringify(line)}`);
+  err.code = 'A1_INPUT';
+  return err;
+}
 
 /** Parse a nested-object-list frontmatter block (ROADMAP.md / feature.md
  * shape). Returns { fm, body } where fm is a plain object whose values are
@@ -61,14 +73,13 @@ function parseNestedFrontmatter(content) {
 
   while (i < lines.length) {
     const line = lines[i];
-    if (line.trim() === '' || line.startsWith('#')) {
+    if (line.trim() === '' || /^\s*#/.test(line)) {
       i++;
       continue;
     }
     const topMatch = line.match(/^([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$/);
     if (!topMatch) {
-      i++;
-      continue;
+      throw unexpectedLine(i + 2, line, 'expected a top-level `key:` line or a "  - " list item under one');
     }
     const key = topMatch[1];
     const valueRaw = topMatch[2];
@@ -95,6 +106,9 @@ function parseNestedFrontmatter(content) {
       // lines don't match "    [A-Za-z_]" (they start with two extra spaces
       // then a dash) and were previously silently dropped, leaving the
       // field undefined.
+      if (/^  - \s/.test(lines[j])) {
+        throw unexpectedLine(j + 2, lines[j], 'list marker must be "  - " followed directly by the item');
+      }
       const itemLines = [lines[j].replace(/^  - /, '')];
       let k = j + 1;
       while (k < lines.length && /^    [A-Za-z_]/.test(lines[k])) {
@@ -135,7 +149,7 @@ function parseNestedFrontmatter(content) {
     const looksLikeObject = /^[A-Za-z_][A-Za-z0-9_]*:\s?/.test(firstItem);
 
     if (looksLikeObject) {
-      const objects = listLines.map((itemLines) => {
+      const objects = listLines.map((itemLines, itemIdx) => {
         const obj = {};
         for (const itemLine of itemLines) {
           if (typeof itemLine === 'object' && itemLine !== null && '__nestedKey' in itemLine) {
@@ -145,7 +159,9 @@ function parseNestedFrontmatter(content) {
             continue;
           }
           const m = itemLine.match(/^([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$/);
-          if (!m) continue;
+          if (!m) {
+            throw unexpectedLine(i + 2, itemLine, `item ${itemIdx + 1} of \`${key}:\` is not a \`key: value\` line`);
+          }
           const k2 = m[1];
           let v2raw = m[2];
           if (v2raw === '[]') {

@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { vaultRoot, readMd, parseFlags, projectsPath } = require('./io.cjs');
-const { extractSpecFRs, extractWaveFRs, diffFRCoverage } = require('./check.cjs');
+const { extractSpecFRs, scanWaveSections, extractWaveFRs, extractWaveRefs, diffFRCoverage } = require('./check.cjs');
 const { usage } = require('./help.cjs');
 
 // ---------- checklist subcommands ----------
@@ -82,28 +82,15 @@ function checklistPaths(slug, feature) {
   };
 }
 
-// Extract wave blocks from a plan body. Returns Array<{label, num, lines[]}>.
+// Extract wave blocks from a plan body. Returns Array<{label, id, lines[]}>;
+// id is the wave id as written (`6`, `6b`, `E`), see scanWaveSections.
 function extractWaveBlocks(planBody) {
-  const blocks = [];
-  const headingRe = /^##\s+Wave\s+(\d+)\b(.*)$/i;
-  const lines = planBody.split('\n');
-  let current = null;
-  for (const line of lines) {
-    const h = line.match(headingRe);
-    if (h) {
-      if (current) blocks.push(current);
-      current = { label: `Wave ${h[1]}`, num: parseInt(h[1], 10), lines: [] };
-    } else if (current) {
-      current.lines.push(line);
-    }
-  }
-  if (current) blocks.push(current);
-  return blocks;
+  return scanWaveSections(planBody).sections;
 }
 
-// Find the "Depends on:" reference inside a wave block. Returns array of wave-nums.
+// Find the "Depends on:" reference inside a wave block. Returns array of wave ids.
 // Recognizes patterns like:
-//   **Depends on:** Wave 1, Wave 2
+//   **Depends on:** Wave 1, Wave 5b
 //   Depends on: none
 //   Dependencies: Wave 1
 function extractWaveDependencies(block) {
@@ -113,27 +100,21 @@ function extractWaveDependencies(block) {
   if (!m) return [];
   const rest = m[1].trim();
   if (!rest || /^(none|keine|—|-)$/i.test(rest)) return [];
-  const nums = [];
-  const numRe = /\bwave\s+(\d+)\b/gi;
-  let nm;
-  while ((nm = numRe.exec(rest)) !== null) {
-    nums.push(parseInt(nm[1], 10));
-  }
-  return nums;
+  return extractWaveRefs(rest);
 }
 
 // DAG cycle detection via DFS. Returns null if acyclic, or {cycle: [n1,n2,...,n1]} if cyclic.
-function detectWaveCycles(waveNums, depsByNum) {
+function detectWaveCycles(waveIds, depsById) {
   const WHITE = 0,
     GRAY = 1,
     BLACK = 2;
-  const color = new Map(waveNums.map((n) => [n, WHITE]));
+  const color = new Map(waveIds.map((n) => [n, WHITE]));
   const parent = new Map();
   let cycleFound = null;
 
   function dfs(u) {
     color.set(u, GRAY);
-    const deps = depsByNum.get(u) || [];
+    const deps = depsById.get(u) || [];
     for (const v of deps) {
       if (!color.has(v)) continue; // unknown wave — separate check elsewhere
       if (color.get(v) === GRAY) {
@@ -158,7 +139,7 @@ function detectWaveCycles(waveNums, depsByNum) {
     return false;
   }
 
-  for (const n of waveNums) {
+  for (const n of waveIds) {
     if (color.get(n) === WHITE) {
       if (dfs(n)) break;
     }
@@ -248,10 +229,12 @@ function evaluateChecklistWaveStructureRules(waveBlocks) {
 
   // --- Check 4: dependencies form a DAG (BLOCKER) ---
   {
-    const nums = waveBlocks.map((b) => b.num);
-    const depsByNum = new Map();
-    for (const b of waveBlocks) depsByNum.set(b.num, extractWaveDependencies(b));
-    const cycle = waveBlocks.length > 0 ? detectWaveCycles(nums, depsByNum) : null;
+    const ids = [...new Set(waveBlocks.map((b) => b.id))];
+    const depsById = new Map();
+    for (const b of waveBlocks) {
+      depsById.set(b.id, [...(depsById.get(b.id) || []), ...extractWaveDependencies(b)]);
+    }
+    const cycle = waveBlocks.length > 0 ? detectWaveCycles(ids, depsById) : null;
     checks.push({
       id: 4,
       name: 'wave_dependencies_dag',
@@ -259,7 +242,7 @@ function evaluateChecklistWaveStructureRules(waveBlocks) {
       result: cycle ? 'FAIL' : 'PASS',
       detail: cycle
         ? `Dependency cycle detected: ${cycle.map((n) => `Wave ${n}`).join(' → ')}.`
-        : `No cycles in wave dependencies (${nums.length} waves inspected).`,
+        : `No cycles in wave dependencies (${ids.length} waves inspected).`,
     });
   }
 
@@ -493,11 +476,17 @@ function evaluateChecklistRules(slug, paths, spec, plan, planExists) {
     const specFRs = extractSpecFRs(spec.body || '');
     const waveMap = extractWaveFRs(plan.body || '');
     const diff = diffFRCoverage(specFRs, waveMap);
+    // F-018/F-019: a wave heading the scanner cannot read, or a repeated one,
+    // would misattribute FRs; it fails the check instead of passing silently.
+    const headingProblems = scanWaveSections(plan.body || '').problems;
     const ok =
+      headingProblems.length === 0 &&
       diff.missingInPlan.length === 0 &&
       diff.phantomInPlan.length === 0 &&
       diff.duplicatedInPlan.length === 0;
     const parts = [];
+    for (const p of headingProblems)
+      parts.push(`${p.reason} wave heading at plan line ${p.line}: "${p.heading.trim()}"`);
     if (diff.missingInPlan.length > 0)
       parts.push(`missing from every wave: ${diff.missingInPlan.join(', ')}`);
     if (diff.duplicatedInPlan.length > 0)
