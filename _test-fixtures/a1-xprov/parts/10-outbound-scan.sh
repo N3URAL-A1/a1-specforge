@@ -269,7 +269,7 @@ caseFR() {
   assert_json "FR1 round 2 ran (REVISE again → round_cap, not runner_failed)" "$G_OUT" "j.step + ':' + j.reason" "normalize:round_cap"
   local argv; argv="$(cat "$ARGV8_FILE" 2>/dev/null || echo '[]')"
   assert_json "FR1 round 2: fresh session (no --resume), --feedback is the scanned copy" "$argv" \
-    "j.includes('--resume') + '/' + (require('fs').realpathSync(j[j.indexOf('--feedback') + 1]) === require('fs').realpathSync(j[j.indexOf('--repo') + 1] + '.inputs/feedback.md'))" "false/true"
+    "j.includes('--resume') + '/' + (j[j.indexOf('--feedback') + 1].replace(/^\/private\//, '/') === j[j.indexOf('--repo') + 1].replace(/^\/private\//, '/') + '.inputs/feedback.md')" "false/true"
   local snap2; snap2="$(json_get "$argv" "j[j.indexOf('--repo') + 1]")"
   [[ -n "$snap2" && "$snap2" != "$FR_SNAP1" ]] && ok "FR1 round 2 uses a new snapshot" || bad "FR1 round 2 reused $FR_SNAP1"
   [[ ! -e "$snap2" && ! -e "$snap2.inputs" ]] && ok "FR1 snapshot and inputs removed after round 2" || bad "FR1 leftovers at $snap2"
