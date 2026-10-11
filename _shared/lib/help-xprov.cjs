@@ -33,6 +33,12 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   review|inspect → wrong_mode; APPROVED → pass (only after
                   plan sha, secret filter and quarantine agree), REVISE →
                   fail-with-findings, BLOCKED → blocked, else malformed.
+                  Spec 014: findings that cite PLAN.md (or the input copy) are
+                  mapped to the phase's PLAN.md; a quarantined finding that is
+                  not an instruction marker shows a clipped display_detail; the
+                  count of quarantined high-severity items under a REVISE is
+                  quarantined_blocking (stdout, index entry, gate stdout) and
+                  they are listed in the findings file as quarantined_blockers.
                   Writes .a1/phases/<name>/XREVIEW.md, xreview/*.findings.json,
                   xreview/index.json atomically; exit 0 only on pass.
                   The allowlist flags (wave 6b, passed by gate) put the
@@ -75,9 +81,16 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   file unchanged).
     permit-check [--repo <git-toplevel>]
                   (xprov-permit.cjs, wave 4) reads .a1/xprov.json AND the owner's
-                  denial store ~/.a1-xprov/permit-denials.json; stdout \`state\`
-                  is allowed | denied | absent | invalid | denial_mismatch (exit 0
-                  only for allowed). absent/invalid → external_review_not_permitted;
+                  stores ~/.a1-xprov/permit-denials.json and (spec 014)
+                  ~/.a1-xprov/permits.json; stdout \`state\` is allowed | denied |
+                  absent | invalid | denial_mismatch | permit_mismatch (exit 0
+                  only for allowed). allowed needs the file to say allowed AND
+                  the permit store to hold an entry for this repository's
+                  git-common-dir with the same decided_by, decided_on, record
+                  (and default_branch when either side has one); a hand-written
+                  file alone → permit_mismatch → external_review_permit_mismatch,
+                  nothing leaves. Migration: the owner re-runs permit once per
+                  permitted repository. absent/invalid → external_review_not_permitted;
                   denied (file and store agree on decided_by + decided_on) →
                   external_review_denied; every other combination (file-only
                   denied, a store denial next to an allowed file, an unusable
@@ -98,8 +111,12 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   \`allowed\` resp. \`denied\` typed back. --deny writes the owner's
                   store first, then .a1/xprov.json (--record optional); a failing
                   file step leaves denial_mismatch. permit (allowed) first removes
-                  this repository's denial. An unusable store is never overwritten.
-                  The ONLY writer of .a1/xprov.json and of the denial store.
+                  this repository's denial, then (spec 014) writes the entry in
+                  ~/.a1-xprov/permits.json, then .a1/xprov.json; a failing file
+                  step leaves permit_mismatch until the owner re-runs permit.
+                  An unusable store is never overwritten.
+                  The ONLY writer of .a1/xprov.json, the denial store and the
+                  permit store.
                   --default-branch (wave 6b) names the branch whose
                   refs/remotes/origin/<name> anchors the snapshot allowlist
                   (default main); checked with git check-ref-format --branch
@@ -143,6 +160,25 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   --plan/--feedback copy and
                   scan those files into <snapshot>.inputs/ and record their
                   sha256 (inputs.json) — the only inputs xprov run accepts.
+                  Spec 014: a snapshot that passed every check writes a scan
+                  record ~/.a1-xprov/scan-records/<snap-basename>.json (0600,
+                  dir 0700, no symlinks): commit, base, tree, sha256 of
+                  git ls-files -s -z (index) and of git status --porcelain=v1 -z
+                  --untracked-files=all --ignored (status), sha256 of the
+                  snapshot's git metadata (.git/config, hooks/, info/), diff
+                  hash, input hashes, gitleaks (bool), a nonce. gitleaks is
+                  REQUIRED for a blocking registry row: without it on PATH the
+                  snapshot (and gate, step preflight) fails with
+                  preflight_failed / gitleaks_missing (brew install gitleaks);
+                  on a warning row it degrades — one stderr warning line,
+                  stdout gitleaks:false. Every a1 git call on a snapshot (and the
+                  runner's env) pins core.fsmonitor=false, core.hooksPath=
+                  /dev/null, core.trustctime=true, core.checkStat=default via
+                  GIT_CONFIG_COUNT/KEY_n/VALUE_n.
+                  Spec 014 secret patterns (appended): seven more named
+                  patterns incl. env_assignment_unquoted (whole line NAME=value,
+                  at least 12 characters of [A-Za-z0-9+/_.~=-] with a digit); all-letter
+                  secrets pass this layer and rely on gitleaks (blocking rows).
     run --mode review|inspect --snapshot <dir> --plan <abs PLAN.md> --phase <name>
         --gate <id> [--wave N] [--round N] [--lane <id>] [--base <sha>]
         [--feedback <file>] [--timeout N] [--work-path <dir>] [--no-log]
@@ -166,6 +202,22 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   --resume is refused (exit 2): no session is ever resumed, a
                   resumed one replays rollout files the tripwire does not
                   cover; --feedback is review-only.
+                  Spec 014: --gate takes plan-review-xprov or wave-inspect-xprov
+                  only (else exit 2). Before anything else \`run\` binds the
+                  snapshot to its scan record: a direct snap-* child of
+                  ~/.a1-xprov/snapshots by realpath (the realpath is used from
+                  then on), a record that matches commit, base, tree, diff hash
+                  and nonce, the same repository, unchanged git metadata, and for
+                  a blocking row a gitleaks-checked scan. Refusals (exit 1, no
+                  spawn): snapshot_not_scanned (not_under_snapshots_dir |
+                  no_scan_record | record_mismatch | repo_mismatch),
+                  snapshot_changed_after_scan (git_meta_mismatch |
+                  index_mismatch | untracked_or_modified_file; checked again
+                  right before the spawn), preflight_failed / gitleaks_missing.
+                  The runner file must match both SHA256SUMS and the constant
+                  RUNNER_SHA256 (else runner_failed, constant_mismatch); python3
+                  and codex are resolved to absolute paths and codex is passed
+                  as --cli.
                   --plan/--feedback must be the snapshot's copies
                   <snapshot>.inputs/{PLAN.md,feedback.md}, re-hashed against
                   inputs.json before the spawn (else snapshot_failed, no
@@ -300,14 +352,17 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   malformed, wrong_mode, blocked, plan_changed, tripwire,
                   secret_in_snapshot, secret_in_output, quarantined, round_cap,
                   external_review_not_permitted, external_review_denied,
-                  external_review_denial_mismatch, snapshot_failed, not_logged_in,
+                  external_review_denial_mismatch, external_review_permit_mismatch,
+                  snapshot_failed, snapshot_not_scanned, snapshot_changed_after_scan,
+                  run_home_unsafe, not_logged_in,
                   preflight_failed, plan_review_missing, wave_inspect_missing,
                   allowlist_invalid, allowlist_modified.
                   Paths a1 owns: ~/.a1-xprov/artifacts/<repo-slug>/ (0700,
                   runner --artifacts, never inside a checkout or under
                   A1_VAULT_ROOT), ~/.a1-xprov/snapshots/ (clones, removed after
                   normalize), .a1/phases/<name>/XREVIEW.md + xreview/*.json +
-                  PLAN-REVIEW-LOG.md, .a1/xprov.json (permit record),
+                  PLAN-REVIEW-LOG.md, .a1/xprov.json (permit record), ~/.a1-xprov/permits.json (owner permit store,
+                  written only by permit), ~/.a1-xprov/scan-records/ (written by snapshot),
                   ~/.a1-xprov/allowlist-approvals.json (written only by
                   allowlist approve), ~/.a1-xprov/permit-denials.json (written
                   only by permit / permit --deny).
