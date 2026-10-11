@@ -167,14 +167,20 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   --untracked-files=all --ignored (status), sha256 of the
                   snapshot's git metadata (.git/config, hooks/, info/), diff
                   hash, input hashes, gitleaks (bool), a nonce. gitleaks is
-                  REQUIRED for a blocking registry row: without it on PATH the
-                  snapshot (and gate, step preflight) fails with
-                  preflight_failed / gitleaks_missing (brew install gitleaks);
-                  on a warning row it degrades — one stderr warning line,
-                  stdout gitleaks:false. Every a1 git call on a snapshot (and the
-                  runner's env) pins core.fsmonitor=false, core.hooksPath=
-                  /dev/null, core.trustctime=true, core.checkStat=default via
-                  GIT_CONFIG_COUNT/KEY_n/VALUE_n.
+                  REQUIRED for a blocking registry row, resolved to an absolute
+                  path: snapshot itself still runs without it and records
+                  gitleaks:false; gate refuses a blocking row at step preflight
+                  (preflight_failed / gitleaks_missing, brew install gitleaks)
+                  before it snapshots, and run refuses such a record on a
+                  blocking row. On a warning row gate degrades — one stderr
+                  warning line, stdout gitleaks:false. Every a1 git call on a
+                  snapshot (and the runner's env) pins core.fsmonitor=false,
+                  core.hooksPath=/dev/null, core.trustctime=true,
+                  core.checkStat=default via GIT_CONFIG_COUNT/KEY_n/VALUE_n,
+                  drops inherited GIT_DIR/GIT_INDEX_FILE/GIT_OBJECT_DIRECTORY
+                  and friends, and sets GIT_DIR, GIT_COMMON_DIR and
+                  GIT_WORK_TREE to the clone itself. The clone's .git must hold
+                  no commondir, gitdir or objects/info/alternates.
                   Spec 014 secret patterns (appended): seven more named
                   patterns incl. env_assignment_unquoted (whole line NAME=value,
                   at least 12 characters of [A-Za-z0-9+/_.~=-] with a digit); all-letter
@@ -203,7 +209,7 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   resumed one replays rollout files the tripwire does not
                   cover; --feedback is review-only.
                   Spec 014: --gate takes plan-review-xprov or wave-inspect-xprov
-                  only (else exit 2). Before anything else \`run\` binds the
+                  only (else exit 2). After the permit check \`run\` binds the
                   snapshot to its scan record: a direct snap-* child of
                   ~/.a1-xprov/snapshots by realpath (the realpath is used from
                   then on), a record that matches commit, base, tree, diff hash
@@ -211,9 +217,10 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   a blocking row a gitleaks-checked scan. Refusals (exit 1, no
                   spawn): snapshot_not_scanned (not_under_snapshots_dir |
                   no_scan_record | record_mismatch | repo_mismatch),
-                  snapshot_changed_after_scan (git_meta_mismatch |
-                  index_mismatch | untracked_or_modified_file; checked again
-                  right before the spawn), preflight_failed / gitleaks_missing.
+                  snapshot_changed_after_scan (git_dir_forbidden_entry |
+                  git_meta_mismatch | index_mismatch | untracked_or_modified_file;
+                  checked again, before the tripwire baseline and right
+                  before the spawn), preflight_failed / gitleaks_missing.
                   The runner file must match both SHA256SUMS and the constant
                   RUNNER_SHA256 (else runner_failed, constant_mismatch); python3
                   and codex are resolved to absolute paths and codex is passed
