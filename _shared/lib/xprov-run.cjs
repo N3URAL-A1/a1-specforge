@@ -94,7 +94,7 @@ const { appendXreviewNote } = require('./xprov-normalize.cjs');
 const { filterOutput, instructionMarker } = require('./xprov-filter.cjs');
 const { permitCheck } = require('./xprov-permit.cjs');
 const { homeSymlinks, skillsDirsProblem, resolveTool } = require('./xprov-preflight.cjs');
-const { SNAP_PREFIX, REPO_LOCAL_STRIP, storedDiffSha, storedInputHashes, INPUTS_SUFFIX, INPUT_FILES, NONCE_FILE, statusSha256 } = require('./xprov-snapshot.cjs');
+const { SNAP_PREFIX, REPO_LOCAL_STRIP, gitMetaSha256, storedDiffSha, storedInputHashes, INPUTS_SUFFIX, INPUT_FILES, NONCE_FILE, statusSha256 } = require('./xprov-snapshot.cjs');
 const { readScanRecord } = require('./xprov-scan-records.cjs');
 
 const NO_LOG_FLAG = 'no-log';
@@ -109,6 +109,7 @@ const LOG_FILE = 'PLAN-REVIEW-LOG.md';
 // Shared with xprov-gate.cjs (it imports this constant) — one header text, one owner.
 const LOG_HEADER = '# PLAN-REVIEW-LOG — cross-provider runner calls\n\nWritten by `a1-tools xprov run` and `a1-tools xprov gate`; one entry per call, newest last.\n';
 const RUNNER_MODES = new Set(X.RUNNER_MODES);
+const RUN_GATES = Object.freeze(Object.values(X.GATE_IDS));
 const RUN_DIR_PREFIX = 'claudex-';
 const RUN_HOME_PREFIX = 'run-home-';
 const RUN_HOME_MANIFEST_FILE = 'run-home.manifest.json';
@@ -145,8 +146,10 @@ const REPO_LOCAL_TRACKED = Object.freeze({ repo_local_codex_config: '.codex/conf
 const usage = (msg) => C.usageThrow('run', msg);
 const fileSize = (p) => { try { return fs.statSync(p).size; } catch (_e) { return -1; } };
 
-function porcelain(repo) {
-  const out = gitOut(['-C', repo, 'status', '--porcelain', '--untracked-files=all']);
+/** `git status --porcelain` of a checkout. `pinned` (snapshots): the four SEC-2 config pins, so a planted fsmonitor never runs. */
+function porcelain(repo, pinned) {
+  const args = ['-C', repo, 'status', '--porcelain', '--untracked-files=all'];
+  const out = pinned ? C.pinnedGitOut(args) : gitOut(args);
   return out === null ? '<git status failed>' : out;
 }
 
@@ -178,6 +181,9 @@ function resolveArgs(args) {
   let ids;
   try { ids = parseRegistryIds(fs.readFileSync(REGISTRY_PATH, 'utf8')); } catch (_e) { usage(`registry unreadable: ${REGISTRY_PATH}`); }
   if (!ids.includes(flags.gate)) usage(`--gate ${JSON.stringify(String(flags.gate).slice(0, 80))} is not a registered gate id`);
+  // Security review of Wave 6 (SEC-1): a registered `warning` gate (phantom, reconcile-probe) would let a snapshot whose
+  // record says gitleaks:false through. `run` serves the two xprov gates only.
+  if (!RUN_GATES.includes(flags.gate)) usage(`--gate must be ${RUN_GATES.join(' or ')} (got ${JSON.stringify(String(flags.gate).slice(0, 80))})`);
   if (flags.lane !== undefined && !LANE_RE.test(String(flags.lane))) usage(`--lane must match ${LANE_RE} (got ${JSON.stringify(String(flags.lane).slice(0, 80))})`);
   if (flags.feedback && !isFile(flags.feedback)) usage(`--feedback not found: ${flags.feedback}`);
   const workPath = flags['work-path'] ? path.resolve(flags['work-path']) : root;
@@ -215,6 +221,11 @@ function buildArgv(ctx, artifactsDir, toolsIn) {
   return argv;
 }
 
+/** Only the GIT_CONFIG_COUNT/KEY_n/VALUE_n entries of C.pinnedGitEnv(). */
+function pinKeys() {
+  return Object.fromEntries(Object.entries(C.pinnedGitEnv({})));
+}
+
 /** Allowlisted environment for the runner (plus the dedicated CODEX_HOME). HOME
  * is the per-run home and never the caller's: without `runHome` it is left out. */
 function buildEnv(source, runHome) {
@@ -227,6 +238,9 @@ function buildEnv(source, runHome) {
   if (runHome) env.HOME = runHome;
   env.CODEX_HOME = X.codexHome();
   env.GIT_CONFIG_NOSYSTEM = '1'; // the runner's git reads no /etc/gitconfig (Wave 7, Samuel)
+  // SEC-2 (Wave 6 review): the runner's git runs on the snapshot too. These GIT_CONFIG_* keys are a1's own pins, set
+  // AFTER the allowlist loop on purpose — the allowlist is about what the CALLER may hand in (nothing from GIT_*).
+  Object.assign(env, pinKeys());
   return env;
 }
 
@@ -279,7 +293,7 @@ function gitMeta(repo) {
 
 function takeBaseline(ctx) {
   const b = {
-    checkout: porcelain(ctx.root), snapshot: porcelain(ctx.snapshot),
+    checkout: porcelain(ctx.root), snapshot: porcelain(ctx.snapshot, true),
     gitmeta_checkout: gitMeta(ctx.root), home: fileHashes(X.codexHome(), CODEX_RUNTIME_DIRS, '', null, isCodexRuntimeFile),
   };
   if (path.resolve(ctx.workPath) !== path.resolve(ctx.root)) { b.work = porcelain(ctx.workPath); b.gitmeta_work = gitMeta(ctx.workPath); }
@@ -316,8 +330,9 @@ function baselineDelta(before, after) {
 }
 
 function revertSnapshot(snapshot) {
-  spawnSync('git', ['-C', snapshot, 'checkout', '--quiet', '--', '.'], { stdio: 'ignore' });
-  spawnSync('git', ['-C', snapshot, 'clean', '-fdq'], { stdio: 'ignore' });
+  const opts = { stdio: 'ignore', env: C.pinnedGitEnv() };
+  spawnSync('git', ['-C', snapshot, 'checkout', '--quiet', '--', '.'], opts);
+  spawnSync('git', ['-C', snapshot, 'clean', '-fdq'], opts);
 }
 
 // ---------- runner call ----------
@@ -519,7 +534,7 @@ function readIfFile(p) {
 
 /** Presence of repo-local Codex inputs in the reviewed COMMIT (git ls-files; the working tree was stripped). */
 function snapshotNotes(snapshot) {
-  const tracked = new Set((gitOut(['-C', snapshot, 'ls-files', '-z']) || '').split('\0').filter(Boolean));
+  const tracked = new Set((C.pinnedGitOut(['-C', snapshot, 'ls-files', '-z']) || '').split('\0').filter(Boolean));
   const notes = {};
   for (const [key, rel] of Object.entries(REPO_LOCAL_TRACKED)) {
     notes[key] = tracked.has(rel) || [...tracked].some((t) => t.startsWith(`${rel}/`));
@@ -556,7 +571,7 @@ function appendLog(ctx, entry) {
 
 const BINDING = Object.freeze({
   not_under_snapshots_dir: 'not_under_snapshots_dir', no_scan_record: 'no_scan_record', record_mismatch: 'record_mismatch', repo_mismatch: 'repo_mismatch',
-  index_mismatch: 'index_mismatch', untracked_or_modified_file: 'untracked_or_modified_file', gitleaks_missing: 'gitleaks_missing',
+  index_mismatch: 'index_mismatch', git_meta_mismatch: 'git_meta_mismatch', untracked_or_modified_file: 'untracked_or_modified_file', gitleaks_missing: 'gitleaks_missing',
 });
 const ENFORCEMENT_WARNING = 'warning';
 
@@ -573,7 +588,7 @@ function snapshotUnderRoot(snapshot) {
   }
 }
 
-const gitLine = (snapshot, args) => { const out = gitOut(['-C', snapshot, ...args]); return out === null ? null : out.trim(); };
+const gitLine = (snapshot, args) => { const out = C.pinnedGitOut(['-C', snapshot, ...args]); return out === null ? null : out.trim(); };
 
 /** (c) The record's commit, base, tree, diff hash and nonce equal what the snapshot holds now. → detail or null. */
 function recordMismatch(ctx, rec, realDir) {
@@ -592,6 +607,12 @@ function gateIsBlocking(gate) {
   return !row || String(row.enforcement || '').trim() !== ENFORCEMENT_WARNING;
 }
 
+/** SEC-2: the snapshot's git metadata (config, hooks, info) is still what the scan recorded. → detail or null.
+ * Runs BEFORE the first git call on the snapshot in the binding, and again right before the spawn. */
+function gitMetaMismatch(dir, rec) {
+  return gitMetaSha256(dir) === rec.git_meta_sha256 ? null : BINDING.git_meta_mismatch;
+}
+
 /** FR-006 + the FR-011 direct-path half: → { problem: { reason, detail }, record } — exactly one of them is null. */
 function scanBinding(ctx) {
   const refuse = (reason, detail) => ({ problem: { reason, detail }, record: null });
@@ -600,17 +621,21 @@ function scanBinding(ctx) {
   const read = readScanRecord(path.basename(under.dir));
   if (!read.ok) return refuse(X.REASONS.snapshot_not_scanned, BINDING.no_scan_record);
   const rec = read.value;
+  const metaDetail = gitMetaMismatch(under.dir, rec);
+  if (metaDetail) return refuse(X.REASONS.snapshot_changed_after_scan, metaDetail);
   const mismatch = recordMismatch(ctx, rec, under.dir);
   if (mismatch) return refuse(X.REASONS.snapshot_not_scanned, mismatch);
   if (rec.repo_key !== C.commonDirOf(ctx.root)) return refuse(X.REASONS.snapshot_not_scanned, BINDING.repo_mismatch);
   if (rec.gitleaks === false && gateIsBlocking(ctx.gate)) return refuse(X.REASONS.preflight_failed, BINDING.gitleaks_missing);
-  return { problem: null, record: rec };
+  return { problem: null, record: rec, snapshot: under.dir };
 }
 
 /** FR-008, right before the spawn: the snapshot is still what the scan saw. Index first, then the status hash.
  * → { reason, detail } or null. */
 function changedAfterScan(ctx) {
-  const ls = spawnSync('git', ['-C', ctx.snapshot, 'ls-files', '-s', '-z'], { maxBuffer: C.GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] });
+  const metaDetail = gitMetaMismatch(ctx.snapshot, ctx.scan);
+  if (metaDetail) return { reason: X.REASONS.snapshot_changed_after_scan, detail: metaDetail };
+  const ls = spawnSync('git', ['-C', ctx.snapshot, 'ls-files', '-s', '-z'], { env: C.pinnedGitEnv(), maxBuffer: C.GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] });
   if (ls.status !== 0 || sha256(ls.stdout) !== ctx.scan.index_sha256) return { reason: X.REASONS.snapshot_changed_after_scan, detail: BINDING.index_mismatch };
   if (statusSha256(ctx.snapshot) !== ctx.scan.status_sha256) return { reason: X.REASONS.snapshot_changed_after_scan, detail: BINDING.untracked_or_modified_file };
   return null;
@@ -709,8 +734,8 @@ function judgeRun(ctx, o, run, artifactsDir, delta, baselinePath, seen) {
  * hash. normalize takes head/base ONLY from here (checked against the runner's
  * snapshot.base and diff_sha256) — never from flags or the live work path. */
 function writeReviewedRecord(ctx, runDir) {
-  const commit = C.gitOut(['-C', ctx.snapshot, 'rev-parse', '--verify', '--quiet', 'HEAD^{commit}']);
-  const base = C.gitOut(['-C', ctx.snapshot, 'rev-parse', '--verify', '--quiet', `${ctx.base}^{commit}`]);
+  const commit = C.pinnedGitOut(['-C', ctx.snapshot, 'rev-parse', '--verify', '--quiet', 'HEAD^{commit}']);
+  const base = C.pinnedGitOut(['-C', ctx.snapshot, 'rev-parse', '--verify', '--quiet', `${ctx.base}^{commit}`]);
   const diffSha = storedDiffSha(ctx.snapshot);
   if (commit === null || base === null || !diffSha) return;
   fs.writeFileSync(path.join(runDir, REVIEWED_FILE), `${JSON.stringify({ commit: commit.trim(), base: base.trim(), diff_sha256: diffSha }, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
@@ -763,21 +788,24 @@ function runWithBaseline(ctx, artifactsDir, argv, notes) {
 }
 
 function cmdXprovRun(args) {
-  const ctx = resolveArgs(args);
+  const ctx0 = resolveArgs(args);
   // Order (Samuel W5 re-check): usage → permit → pin → notes. A repository without
   // permission receives NO a1 write, not even the repo-local XREVIEW note.
-  const permit = permitCheck({ repoRoot: ctx.root });
+  const permit = permitCheck({ repoRoot: ctx0.root });
   if (!permit.ok) {
     process.stderr.write(`xprov run: ${permit.detail || permit.reason}\n`);
-    return emit(ctx, { ok: false, reason: permit.reason, reason_detail: permit.detail || null, result_path: null, artifacts_run_dir: null, baseline_delta: [] }, X.EXIT_FAIL);
+    return emit(ctx0, { ok: false, reason: permit.reason, reason_detail: permit.detail || null, result_path: null, artifacts_run_dir: null, baseline_delta: [] }, X.EXIT_FAIL);
   }
   // FR-006: only a snapshot that a passing scan of THIS repository produced; before any other a1 write.
-  const bound = scanBinding(ctx);
+  const bound = scanBinding(ctx0);
   if (bound.problem) {
     process.stderr.write(`xprov run: ${bound.problem.reason} (${bound.problem.detail}); refusing to spawn\n`);
-    appendLog(ctx, { roles: 'unknown', result_path: null, verdict: `fail/${bound.problem.reason}`, notes: {} });
-    return emit(ctx, { ok: false, reason: bound.problem.reason, reason_detail: bound.problem.detail, result_path: null, artifacts_run_dir: null, baseline_delta: [] }, X.EXIT_FAIL);
+    appendLog(ctx0, { roles: 'unknown', result_path: null, verdict: `fail/${bound.problem.reason}`, notes: {} });
+    return emit(ctx0, { ok: false, reason: bound.problem.reason, reason_detail: bound.problem.detail, result_path: null, artifacts_run_dir: null, baseline_delta: [] }, X.EXIT_FAIL);
   }
+  // SEC-3 (Wave 6 review): from here on the REALPATH the binding verified is the snapshot — the flag value (a symlinked
+  // parent, a `..`) is never used again for a git call, a hash, the runner's --repo or the stdout.
+  const ctx = { ...ctx0, snapshot: bound.snapshot };
   // Opportunistic: run-homes a SIGKILL left behind never accumulate (gc's own sweep, not a copy).
   sweepRunHomes();
   const notes = snapshotNotes(ctx.snapshot);

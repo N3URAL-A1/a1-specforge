@@ -5,7 +5,7 @@
 //
 //   ~/.a1-xprov/scan-records/<snap-basename>.json
 //
-// A passing `snapshot()` writes one record (tree, index and status hashes, nonce);
+// A passing `snapshot()` writes one record (tree, index, status and git-metadata hashes, nonce);
 // `xprov run` (Wave 6) binds to it. The writer applies the steps of
 // `writeGuardedStore` (xprov-approve.cjs) to a SUBDIRECTORY, which that function
 // cannot do (flat names only): lstat with no symlink, 0700 dirs, a `wx` 0600 temp
@@ -30,9 +30,9 @@ const NONCE_RE = /^[0-9a-f]{32}$/;
 const BASENAME_RE = /^snap-[A-Za-z0-9._-]+$/;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const RECORD_KEYS = Object.freeze([
-  'version', 'snapshot', 'repo_key', 'commit', 'base', 'tree', 'index_sha256', 'status_sha256', 'diff_sha256', 'inputs', 'gitleaks', 'nonce', 'ts',
+  'version', 'snapshot', 'repo_key', 'commit', 'base', 'tree', 'index_sha256', 'status_sha256', 'git_meta_sha256', 'diff_sha256', 'inputs', 'gitleaks', 'nonce', 'ts',
 ]);
-const STRING_KEYS = Object.freeze(['snapshot', 'repo_key', 'commit', 'tree', 'index_sha256', 'status_sha256', 'ts']);
+const STRING_KEYS = Object.freeze(['snapshot', 'repo_key', 'commit', 'tree', 'index_sha256', 'status_sha256', 'git_meta_sha256', 'ts']);
 const NULLABLE_STRING_KEYS = Object.freeze(['base', 'diff_sha256']);
 
 const scanRecordsDir = () => path.join(X.xprovHome(), RECORDS_DIR);

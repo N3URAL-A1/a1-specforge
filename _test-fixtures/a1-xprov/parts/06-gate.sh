@@ -136,7 +136,7 @@ caseR2() {
   assert_json "R2c one observation: agent xprov-codex, type gap, pattern xprov_finding, skill a1-plan" "$(tail -n 1 "$PHASE_DIR/observations.jsonl")" "[j.agent, j.type, j.pattern, j.skill, String(j.wave)].join('/')" "xprov-codex/gap/xprov_finding/a1-plan/null"
   assert_eq "R2c exactly one observation line" "$(wc -l < "$PHASE_DIR/observations.jsonl" | tr -d ' ')" "1"
   assert_eq "R2c the snapshot was removed after normalize" "$(snapshots_left)" "0"
-  assert_json "R2c runner argv is a review call on the snapshot, no --resume" "$(cat "$ARGV6_FILE")" "j[1] + '/' + j.includes('--resume') + '/' + j.includes('--plan') + '/' + (j[j.indexOf('--repo') + 1] || '').startsWith('$SNAPS6/snap-')" "review/false/true/true"
+  assert_json "R2c runner argv is a review call on the snapshot, no --resume" "$(cat "$ARGV6_FILE")" "j[1] + '/' + j.includes('--resume') + '/' + j.includes('--plan') + '/' + (j[j.indexOf('--repo') + 1] || '').startsWith('$(cd "$SNAPS6" && pwd -P)/snap-')" "review/false/true/true"
 
   # enforcement is READ from the registry row, never hardcoded: flip the TREE copy's cell
   sed -i.bak "s/^| \`$GATE_WAVE\` \(.*\)| warning |/| \`$GATE_WAVE\` \1| blocking |/" "$TREE/_shared/gates-registry.md" && rm -f "$TREE/_shared/gates-registry.md.bak"

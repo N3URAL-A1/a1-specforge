@@ -364,7 +364,7 @@ const STAGED_ENTRY_RE = /^(\d{6}) ([0-9a-f]{40,64}) (\d)\t([\s\S]+)$/;
 
 /** `git ls-files -s -z` of a clone: { entries: [{ mode, blob, path }], index_sha256 } or { error }. */
 function lsFilesStaged(dir) {
-  const r = spawnSync('git', ['-C', dir, 'ls-files', '-s', '-z'], { maxBuffer: C.GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] });
+  const r = spawnSync('git', ['-C', dir, 'ls-files', '-s', '-z'], { env: C.pinnedGitEnv(), maxBuffer: C.GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] });
   if (r.status !== 0) return { error: tail(String(r.stderr || r.error)) };
   const entries = [];
   for (const raw of r.stdout.toString('utf8').split('\0')) {
@@ -378,8 +378,33 @@ function lsFilesStaged(dir) {
 
 /** Spec 014 FR-008: sha256 of `git status --porcelain=v1 -z --untracked-files=all --ignored` of the clone, or null. */
 function statusSha256(dir) {
-  const r = spawnSync('git', ['-C', dir, 'status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignored'], { maxBuffer: C.GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] });
+  const r = spawnSync('git', ['-C', dir, 'status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignored'], { env: C.pinnedGitEnv(), maxBuffer: C.GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] });
   return r.status === 0 ? C.sha256(r.stdout) : null;
+}
+
+const GIT_META_ENTRIES = Object.freeze(['config', 'hooks', 'info']);
+
+function hashMetaTree(full, rel, out) {
+  let st;
+  try { st = fs.lstatSync(full); } catch (_e) { return true; } // absent = nothing to bind
+  if (st.isSymbolicLink()) { out.push(`${rel}\tlink\t${fs.readlinkSync(full)}`); return true; }
+  if (st.isFile()) { out.push(`${rel}\tfile\t${C.sha256(fs.readFileSync(full))}`); return true; }
+  if (!st.isDirectory()) { out.push(`${rel}\tother`); return true; }
+  out.push(`${rel}\tdir`);
+  return fs.readdirSync(full).sort().every((name) => hashMetaTree(path.join(full, name), `${rel}/${name}`, out));
+}
+
+/** Spec 014 FR-005 / SEC-2: sha256 over the snapshot clone's git metadata a reviewer could plant — `.git/config`,
+ * everything under `.git/hooks` and `.git/info` (names, types, content hashes; symlinks by link text). null when
+ * `.git` is not a real directory. The record binds it; `xprov run` compares it before it runs any git on the snapshot. */
+function gitMetaSha256(dir) {
+  const gitDir = path.join(dir, '.git');
+  let st;
+  try { st = fs.lstatSync(gitDir); } catch (_e) { return null; }
+  if (!st.isDirectory()) return null;
+  const lines = [];
+  for (const name of GIT_META_ENTRIES) if (!hashMetaTree(path.join(gitDir, name), name, lines)) return null;
+  return C.sha256(lines.join('\n'));
 }
 
 /** Scan every tracked entry of a clone. Returns { files_scanned, skipped: 0,
@@ -416,7 +441,7 @@ function scanTrackedFiles(dir, opts) {
       const spec = `HEAD:${rel}`;
       const type = git(['-C', dir, 'cat-file', '-t', spec]);
       if (type.status !== 0 || type.stdout.trim() !== 'blob') continue; // a gitlink: no content in this object store
-      const b = spawnSync('git', ['-C', dir, 'cat-file', 'blob', spec], { maxBuffer: C.GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] });
+      const b = spawnSync('git', ['-C', dir, 'cat-file', 'blob', spec], { env: C.pinnedGitEnv(), maxBuffer: C.GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] });
       if (b.status !== 0) return { files_scanned: scanned, skipped: 0, tracked, entries, index_sha256, matches, missingBlobs, blobIds, untrusted, error: `cat-file ${rel}: ${tail(String(b.stderr))}` };
       scanned++;
       missingBlobs.push({ path: rel, buf: b.stdout });
@@ -430,7 +455,7 @@ function scanTrackedFiles(dir, opts) {
     if (id === undefined || diskBlobId(full) === id) continue;
     untrusted.add(rel);
     const spec = `HEAD:${rel}`;
-    const b = spawnSync('git', ['-C', dir, 'cat-file', 'blob', spec], { maxBuffer: C.GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] });
+    const b = spawnSync('git', ['-C', dir, 'cat-file', 'blob', spec], { env: C.pinnedGitEnv(), maxBuffer: C.GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] });
     if (b.status !== 0) return { files_scanned: scanned, skipped: 0, tracked, entries, index_sha256, matches, missingBlobs, blobIds, untrusted, error: `cat-file ${rel}: ${tail(String(b.stderr))}` };
     matches.push(...surplusMatches(scanSource(bufferSource(b.stdout), rel, withPositions, withLines), own));
   }
@@ -505,7 +530,7 @@ function cloneSnapshot(sourceRepo, commit, base) {
 function runnerLikeGit(dir, args) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'a1-xprov-githome-'));
   try {
-    const env = { PATH: process.env.PATH, HOME: home, GIT_CONFIG_NOSYSTEM: '1' };
+    const env = { ...C.pinnedGitEnv({}), PATH: process.env.PATH, HOME: home, GIT_CONFIG_NOSYSTEM: '1' };
     for (const [k, v] of Object.entries(process.env)) if (k === 'LANG' || k.startsWith('LC_')) env[k] = v;
     return spawnSync('git', ['-C', dir, ...args], { env, maxBuffer: C.GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] });
   } finally {
@@ -524,7 +549,7 @@ function baseSideBlobs(dir, baseSha) {
     const spec = `${baseSha}:${rel}`;
     const type = git(['-C', dir, 'cat-file', '-t', spec]);
     if (type.status !== 0 || type.stdout.trim() !== 'blob') continue; // added in the wave, or a gitlink (the runner refuses those)
-    const b = spawnSync('git', ['-C', dir, 'cat-file', 'blob', spec], { maxBuffer: C.GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] });
+    const b = spawnSync('git', ['-C', dir, 'cat-file', 'blob', spec], { env: C.pinnedGitEnv(), maxBuffer: C.GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] });
     if (b.status !== 0) return { error: `cat-file ${rel}: ${tail(String(b.stderr))}` };
     blobs.push({ path: rel, buf: b.stdout });
   }
@@ -685,13 +710,14 @@ function writeScanPass({ dir, cl, out, hash, gl, repoKey }) {
   const tree = git(['-C', dir, 'rev-parse', 'HEAD^{tree}']);
   const statusSha = statusSha256(dir);
   const inputs = storedInputHashes(dir);
-  if (tree.status !== 0 || statusSha === null || inputs === null) return { error: 'scan record: tree, status or input hashes unavailable' };
+  const gitMeta = gitMetaSha256(dir);
+  if (tree.status !== 0 || statusSha === null || inputs === null || gitMeta === null) return { error: 'scan record: tree, status, git metadata or input hashes unavailable' };
   const nonce = SR.newNonce();
   try {
     fs.writeFileSync(path.join(`${dir}${INPUTS_SUFFIX}`, NONCE_FILE), `${nonce}\n`, { mode: FILE_MODE });
     SR.writeScanRecord(path.basename(dir), {
       version: 1, snapshot: fs.realpathSync(dir), repo_key: repoKey, commit: cl.commit, base: cl.base, tree: tree.stdout.trim(),
-      index_sha256: out.scan.index_sha256, status_sha256: statusSha, diff_sha256: hash.sha, inputs, gitleaks: gl.available, nonce, ts: new Date().toISOString(),
+      index_sha256: out.scan.index_sha256, status_sha256: statusSha, git_meta_sha256: gitMeta, diff_sha256: hash.sha, inputs, gitleaks: gl.available, nonce, ts: new Date().toISOString(),
     });
   } catch (e) {
     return { error: `scan record: ${e.message}` };
@@ -822,5 +848,5 @@ function cmdXprovSnapshot(args) {
 module.exports = {
   snapshot, cloneSnapshot, cleanupSnapshot, removeDir, scanTrackedFiles, utf16Mode, gitleaksScan, ensureSnapshotsRoot, cmdXprovSnapshot,
   pathNameHit, SNAP_PREFIX, REPO_LOCAL_STRIP, GITLEAKS_CONFIG, REF_RE, LINE_MAX_CHARS, LINE_CONTEXT_CHARS,
-  INPUTS_SUFFIX, INPUT_FILES, NONCE_FILE, storedDiffSha, storedInputHashes, lsFilesStaged, statusSha256,
+  INPUTS_SUFFIX, INPUT_FILES, NONCE_FILE, storedDiffSha, storedInputHashes, lsFilesStaged, statusSha256, gitMetaSha256,
 };

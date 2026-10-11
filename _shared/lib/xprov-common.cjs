@@ -193,6 +193,35 @@ function gitOut(args) {
   return r.status === 0 ? r.stdout : null;
 }
 
+// ---------- git on a snapshot (spec 014, Wave 6 security review SEC-2) ----------
+
+/** The four config keys every a1 git call on a snapshot (and the runner's git) runs under. The snapshot's own
+ * .git/config is the reviewer-side input: `core.fsmonitor` would run a program on status, `core.hooksPath` a hook,
+ * and `core.trustctime=false` / `core.checkStat=minimal` hide a same-size edit from the index and status hashes. */
+const SNAPSHOT_GIT_PINS = Object.freeze([
+  Object.freeze(['core.fsmonitor', 'false']), Object.freeze(['core.hooksPath', '/dev/null']),
+  Object.freeze(['core.trustctime', 'true']), Object.freeze(['core.checkStat', 'default']),
+]);
+const GIT_CONFIG_ENV_RE = /^GIT_CONFIG_(COUNT|(KEY|VALUE)_\d+)$/;
+
+/** `source` (default process.env) as a NEW object with the four pins set through GIT_CONFIG_COUNT/KEY_n/VALUE_n
+ * (command-line precedence, above every config file; pattern of intent-git.cjs). Any GIT_CONFIG_COUNT/KEY/VALUE
+ * already in `source` is dropped first so the pins are the only entries. This is deliberately NOT part of the
+ * runner's env allowlist (xprov-run.cjs ALLOWED_ENV): these keys are a1's own, not the caller's. */
+function pinnedGitEnv(source) {
+  const env = {};
+  for (const [k, v] of Object.entries(source || process.env)) if (!GIT_CONFIG_ENV_RE.test(k)) env[k] = v;
+  env.GIT_CONFIG_COUNT = String(SNAPSHOT_GIT_PINS.length);
+  SNAPSHOT_GIT_PINS.forEach(([key, value], i) => { env[`GIT_CONFIG_KEY_${i}`] = key; env[`GIT_CONFIG_VALUE_${i}`] = value; });
+  return env;
+}
+
+/** stdout (string) of a successful pinned git call on a snapshot, else null. */
+function pinnedGitOut(args) {
+  const r = gitSpawn(args, { env: pinnedGitEnv() });
+  return r.status === 0 ? r.stdout : null;
+}
+
 /** realpath of a checkout's `git rev-parse --git-common-dir`, or null. Two
  * checkouts with the same value share one object store and one set of refs
  * (a linked worktree and its main checkout); FR-030 (b) compares these, and
@@ -222,4 +251,5 @@ module.exports = {
   inputError, writeStdoutSync, emitJson, usageExit, usageThrow,
   clip, stderrTail, oneLine, LINE_BREAKERS_RE, readNoFollow, parsePositive, parseWave, waveNumber, parseLane, sha256, isPlainObject, isDir, isFile,
   mkdir0700, readIndex, sameWave, sameLane, gitSpawn, gitOut, commonDirOf, resolveRepoFlag,
+  SNAPSHOT_GIT_PINS, pinnedGitEnv, pinnedGitOut,
 };

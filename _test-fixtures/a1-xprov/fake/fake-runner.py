@@ -13,6 +13,7 @@ them from `fake-runner.env.json` NEXT TO ITSELF (the harness owns that tree and
 writes the file per call via `fake_runner_env`), and falls back to the real
 environment when the file is absent (direct `python3 fake-runner.py` calls).
 
+  FAKE_RUNNER_DIFF_SALT        appended to the diff before its sha256 (inspect mode): a runner-side diff that differs
   FAKE_RUNNER_ARGV_FILE        write sys.argv (JSON array, one line) here
   FAKE_RUNNER_ENV_FILE         write the child's WHOLE environment as JSON here
   FAKE_RUNNER_CWD_FILE         write os.getcwd() (realpath) here
@@ -173,6 +174,9 @@ def runner_snapshot(repo: str, base: str) -> dict:
             body, kind = b"", "deleted"
         files.append({"path": name, "kind": kind, "sha256": digest(body)})
     diff = git_bytes(repo, "diff", "--no-ext-diff", "--no-textconv", "--binary", base_id, "--")
+    # FAKE_RUNNER_DIFF_SALT (spec 014 Wave 6): the runner's diff differs from the scanned one without any snapshot
+    # change a1 can see (what the retired `git config diff.noprefix` trick did before the git metadata was bound).
+    diff += knobs().get("FAKE_RUNNER_DIFF_SALT", "").encode()
     value = {"base": base_id, "files": files, "diff_sha256": digest(diff)}
     value["sha256"] = digest(json.dumps(value, sort_keys=True).encode())
     return value

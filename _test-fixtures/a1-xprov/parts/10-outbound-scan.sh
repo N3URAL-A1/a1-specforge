@@ -198,9 +198,10 @@ caseO8() {
   local out; out="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov snapshot --repo "$PHASE_REPO" --commit HEAD --base "$base" --plan "$PHASE_PLAN" 2>/dev/null)"
   local snap; snap="$(json_get "$out" "j.snapshot || ''")"
   [[ -n "$snap" && -d "$snap" ]] || { bad "O8 setup: snapshot failed: $(json_get "$out" "j.reason")"; return; }
-  git -C "$snap" config diff.noprefix true   # not in the index or the status hash: only the runner's diff text changes
+  # A `git config diff.noprefix` in the snapshot used to do this; since spec 014 the snapshot's git metadata is bound
+  # (git_meta_mismatch), so the runner-side difference comes from the fake runner itself.
   local argv="$TMP10/o8-argv.json"
-  FAKE_RUNNER_ARGV_FILE="$argv" FAKE_RUNNER_CASE=approved fake_runner_env
+  FAKE_RUNNER_ARGV_FILE="$argv" FAKE_RUNNER_CASE=approved FAKE_RUNNER_DIFF_SALT=salt fake_runner_env
   local u; u="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov run --mode inspect --snapshot "$snap" --plan "$snap.inputs/PLAN.md" --phase p10 --gate "$GATE_WAVE" --wave 1 --base "$base" --timeout 7 2>/dev/null)"
   assert_json "O8 a snapshot diff changed after the scan → tripwire, result discarded" "$u" "j.reason + '/' + String(j.result_path)" "tripwire/null"
   [[ -f "$argv" ]] && ok "O8 (detective) the runner ran; its result was discarded" || bad "O8 the runner never ran — the arm did not reach the comparison"
@@ -268,7 +269,7 @@ caseFR() {
   assert_json "FR1 round 2 ran (REVISE again → round_cap, not runner_failed)" "$G_OUT" "j.step + ':' + j.reason" "normalize:round_cap"
   local argv; argv="$(cat "$ARGV8_FILE" 2>/dev/null || echo '[]')"
   assert_json "FR1 round 2: fresh session (no --resume), --feedback is the scanned copy" "$argv" \
-    "j.includes('--resume') + '/' + (j[j.indexOf('--feedback') + 1] === j[j.indexOf('--repo') + 1] + '.inputs/feedback.md')" "false/true"
+    "j.includes('--resume') + '/' + (require('fs').realpathSync(j[j.indexOf('--feedback') + 1]) === require('fs').realpathSync(j[j.indexOf('--repo') + 1] + '.inputs/feedback.md'))" "false/true"
   local snap2; snap2="$(json_get "$argv" "j[j.indexOf('--repo') + 1]")"
   [[ -n "$snap2" && "$snap2" != "$FR_SNAP1" ]] && ok "FR1 round 2 uses a new snapshot" || bad "FR1 round 2 reused $FR_SNAP1"
   [[ ! -e "$snap2" && ! -e "$snap2.inputs" ]] && ok "FR1 snapshot and inputs removed after round 2" || bad "FR1 leftovers at $snap2"

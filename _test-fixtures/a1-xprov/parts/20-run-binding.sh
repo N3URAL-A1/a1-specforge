@@ -330,5 +330,147 @@ RB_PATH=""
   assert_json "GL5 the step appends the install dir to GITHUB_PATH" "$step" "j.path" "true"
 }
 
+# ---------- Wave 6 security-review conditions (Samuel, 2026-10-09) ----------
+# Literals from the review: SEC-1 `run --gate` takes only the two xprov gates; SEC-2 the
+# snapshot's git metadata (config, hooks, info) is bound by a hash in the scan record and
+# every a1 git call on a snapshot pins four keys; SEC-3 the realpath is used from the
+# binding on. Arm -> the single production change that turns it red:
+#
+#   RF1  --gate phantom / reconcile-probe + record gitleaks:false -> exit 2, 0 spawns;
+#        wave-inspect-xprov still runs.         Red if any registered gate id is accepted.
+#   RF2  fsmonitor script appended to the snapshot's .git/config -> snapshot_changed_after_scan
+#        / git_meta_mismatch, marker file absent, 0 spawns.
+#                                               Red if the config is not bound by a hash.
+#   RF3  trustctime=false + checkStat=minimal + same-size edit with the mtime restored ->
+#        git_meta_mismatch; hooks/ file and info/exclude line added -> git_meta_mismatch.
+#   RF4  in-process: statusSha256 / lsFilesStaged of a clone with a planted fsmonitor start
+#        nothing; a same-size edit under trustctime=false is still seen; the runner env
+#        carries the four pinned keys.         Red if the git calls are not pinned.
+#   RF5  --snapshot given through a symlinked parent -> the runner's --repo and the stdout
+#        snapshot are the realpath.            Red if ctx.snapshot stays the flag value.
+
+rf_run_gate() { # <gate> [mode] — like rb_run, with an explicit --gate
+  local gate="$1"
+  RB_N=$((RB_N + 1)); RB_ARGV="$TMP20/argv-$RB_N.json"
+  FAKE_RUNNER_ARGV_FILE="$RB_ARGV" FAKE_RUNNER_CASE=approved fake_runner_env
+  RB_OUT="$( [[ -n "$RB_PATH" ]] && export PATH="$RB_PATH"; cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov run --mode "${2:-review}" --snapshot "$RB_SNAP" --plan "$RB_SNAP.inputs/PLAN.md" --phase p20 --gate "$gate" --timeout 7 2>"$TMP20/run-err.txt")"; RB_RC=$?
+  RB_ERR="$(cat "$TMP20/run-err.txt")"
+}
+
+# rf_flip_first_byte <file> — same size, other first byte, the original mtime to the nanosecond (touch -r), after the
+# index entry stopped being racy (git re-reads a file whose mtime is not older than the index).
+rf_flip_first_byte() {
+  local ref="$TMP20/flip-ref"
+  sleep 1.1; git -C "$(dirname "$1")" update-index --refresh -q >/dev/null 2>&1
+  cp -p "$1" "$ref"
+  node -e '
+    const fs = require("fs"); const f = process.argv[1]; const b = fs.readFileSync(f);
+    b[0] = b[0] === 88 ? 89 : 88; fs.writeFileSync(f, b);
+  ' "$1"
+  touch -r "$ref" "$1"
+}
+
+# rf_plant_fsmonitor <dir> <marker> — a core.fsmonitor script that leaves <marker> behind, appended to <dir>/.git/config.
+rf_plant_fsmonitor() {
+  local script="$2.sh"
+  printf '#!/bin/sh\ntouch "%s"\nprintf "\\0"\n' "$2" > "$script"; chmod 755 "$script"
+  printf '[core]\n\tfsmonitor = %s\n' "$script" >> "$1/.git/config"
+}
+
+# ---------- RF1: only the two xprov gates may drive `run` ----------
+if [[ -n "$NOGL_PATH" ]]; then
+  rb_arm blocking; RB_PATH="$NOGL_PATH"; rb_snap
+  assert_rc "RF1 setup: snapshot without gitleaks exits 0" 0 "$RB_SRC" "$RB_SERR"
+  assert_json "RF1 setup: the record says gitleaks:false" "$RB_SOUT" "j.gitleaks" "false"
+  for g in phantom reconcile-probe nonexistent-gate; do
+    rf_run_gate "$g"
+    assert_rc "RF1 --gate $g is a usage error" 2 "$RB_RC" "$RB_ERR"
+    assert_eq "RF1 --gate $g: the fake runner was invoked 0 times" "$(rb_invoked)" "0"
+  done
+  RB_PATH=""
+fi
+{
+  rb_arm blocking; rb_snap
+  rf_run_gate wave-inspect-xprov
+  assert_rc "RF1 control: --gate wave-inspect-xprov still runs" 0 "$RB_RC" "$RB_ERR"
+  assert_eq "RF1 control: the fake runner was invoked once" "$(rb_invoked)" "1"
+}
+
+# ---------- RF2: a planted fsmonitor never runs and is refused ----------
+{
+  rb_arm; rb_snap
+  assert_rc "RF2 setup: snapshot exits 0" 0 "$RB_SRC" "$RB_SERR"
+  marker="$TMP20/fsmon-marker-2"; rm -f "$marker"
+  rf_plant_fsmonitor "$RB_SNAP" "$marker"
+  rb_run review
+  rb_expect "RF2 fsmonitor in the snapshot config" snapshot_changed_after_scan git_meta_mismatch
+  [[ ! -e "$marker" ]] && ok "RF2 the fsmonitor script never ran" || bad "RF2 the fsmonitor script ran (marker exists)"
+}
+
+# ---------- RF3: trust-flag trick, a planted hook and an exclude line are refused ----------
+{
+  rb_arm; rb_snap
+  assert_rc "RF3 setup: snapshot exits 0" 0 "$RB_SRC" "$RB_SERR"
+  f="$RB_SNAP/src/add.js"; size_before="$(wc -c < "$f" | tr -d ' ')"
+  rf_flip_first_byte "$f"
+  printf '[core]\n\ttrustctime = false\n\tcheckStat = minimal\n' >> "$RB_SNAP/.git/config"
+  assert_eq "RF3 setup: the edit has the original size" "$(wc -c < "$f" | tr -d ' ')" "$size_before"
+  rb_run review
+  rb_expect "RF3 trustctime=false + checkStat=minimal + same-size edit" snapshot_changed_after_scan git_meta_mismatch
+
+  rb_arm; rb_snap
+  printf '#!/bin/sh\nexit 0\n' > "$RB_SNAP/.git/hooks/post-checkout"; chmod 755 "$RB_SNAP/.git/hooks/post-checkout"
+  rb_run review
+  rb_expect "RF3b a hook file added under .git/hooks" snapshot_changed_after_scan git_meta_mismatch
+
+  rb_arm; rb_snap
+  printf '# planted\n' >> "$RB_SNAP/.git/info/exclude"
+  rb_run review
+  rb_expect "RF3c a line added to .git/info/exclude" snapshot_changed_after_scan git_meta_mismatch
+}
+
+# ---------- RF4: the git calls on a snapshot are pinned ----------
+{
+  rb_arm; rb_snap
+  assert_rc "RF4 setup: snapshot exits 0" 0 "$RB_SRC" "$RB_SERR"
+  marker="$TMP20/fsmon-marker-4"; rm -f "$marker"
+  f="$RB_SNAP/src/add.js"; size_before="$(wc -c < "$f" | tr -d ' ')"
+  before="$(node -e 'process.stdout.write(String(require(process.argv[1] + "/_shared/lib/xprov-snapshot.cjs").statusSha256(process.argv[2])))' "$TREE" "$RB_SNAP")"
+  rf_flip_first_byte "$f"   # first: its update-index --refresh would run a planted fsmonitor
+  printf '[core]\n\ttrustctime = false\n\tcheckStat = minimal\n' >> "$RB_SNAP/.git/config"
+  rf_plant_fsmonitor "$RB_SNAP" "$marker"
+  got="$(node -e '
+    const S = require(process.argv[1] + "/_shared/lib/xprov-snapshot.cjs");
+    const after = S.statusSha256(process.argv[2]);
+    const ls = S.lsFilesStaged(process.argv[2]);
+    process.stdout.write(JSON.stringify({ seen: after !== process.argv[3], ls: Boolean(ls.index_sha256) }));
+  ' "$TREE" "$RB_SNAP" "$before" 2>&1)"
+  assert_json "RF4 a same-size edit under trustctime=false is still seen by the status hash" "$got" "j.seen" "true"
+  assert_json "RF4 lsFilesStaged still answers" "$got" "j.ls" "true"
+  [[ ! -e "$marker" ]] && ok "RF4 statusSha256 / lsFilesStaged start no fsmonitor" || bad "RF4 the fsmonitor script ran (marker exists)"
+  assert_eq "RF4 setup: the file kept its size" "$(wc -c < "$f" | tr -d ' ')" "$size_before"
+
+  rb_arm; rb_snap
+  RB_N=$((RB_N + 1)); RB_ARGV="$TMP20/argv-$RB_N.json"; envf="$TMP20/runner-env-$RB_N.json"
+  FAKE_RUNNER_ARGV_FILE="$RB_ARGV" FAKE_RUNNER_ENV_FILE="$envf" FAKE_RUNNER_CASE=approved fake_runner_env
+  ( cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov run --mode review --snapshot "$RB_SNAP" --plan "$RB_SNAP.inputs/PLAN.md" --phase p20 --gate "$GATE_PLAN" --timeout 7 >/dev/null 2>&1 )
+  pairs="$(json_get "$(cat "$envf" 2>/dev/null || echo '{}')" "(() => { const n = Number(j.GIT_CONFIG_COUNT); const o = {}; for (let i = 0; i < n; i++) o[j['GIT_CONFIG_KEY_' + i]] = j['GIT_CONFIG_VALUE_' + i]; return o; })()")"
+  assert_eq "RF4 the runner env pins the four git keys" "$pairs" '{"core.fsmonitor":"false","core.hooksPath":"/dev/null","core.trustctime":"true","core.checkStat":"default"}'
+}
+
+# ---------- RF5: the realpath is used after the binding ----------
+{
+  rb_arm; rb_snap
+  assert_rc "RF5 setup: snapshot exits 0" 0 "$RB_SRC" "$RB_SERR"
+  real="$(cd "$RB_SNAP" && pwd -P)"
+  ln -s "$(dirname "$real")" "$TMP20/lnk"
+  RB_N=$((RB_N + 1)); RB_ARGV="$TMP20/argv-$RB_N.json"
+  FAKE_RUNNER_ARGV_FILE="$RB_ARGV" FAKE_RUNNER_CASE=approved fake_runner_env
+  RB_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov run --mode review --snapshot "$TMP20/lnk/$(basename "$real")" --plan "$real.inputs/PLAN.md" --phase p20 --gate "$GATE_PLAN" --timeout 7 2>"$TMP20/run-err.txt")"; RB_RC=$?
+  assert_rc "RF5 a snapshot reached through a symlinked parent runs" 0 "$RB_RC" "$(cat "$TMP20/run-err.txt")"
+  assert_json "RF5 the stdout snapshot is the realpath" "$RB_OUT" "j.snapshot" "$real"
+  assert_eq "RF5 the runner's --repo is the realpath" "$(json_get "$(cat "$RB_ARGV")" "j[j.indexOf('--repo') + 1]")" "$real"
+}
+
 export HOME="$SAVED_HOME_20"
 rm -rf "$TMP20"
