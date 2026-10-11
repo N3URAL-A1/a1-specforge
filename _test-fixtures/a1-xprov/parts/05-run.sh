@@ -344,11 +344,11 @@ caseR24() {
 
   # S2 — env allowlist
   prep5; snap5
-  # (GIT_DIR is asserted absent below but not planted: it would also break a1's OWN git calls in this process)
+  # (a caller GIT_DIR is not planted: it would also break a1's OWN git calls in this process; the runner's GIT_DIR is a1's own pin, RG3)
   OPENAI_BASE_URL=https://evil.example PYTHONPATH=/tmp/evil A1_XPROV_SOMETHING=x HTTPS_PROXY=http://p NODE_OPTIONS=--max-old-space-size=64 run5 review
   assert_rc "S2a run with hostile parent env still exits 0" 0 "$U_RC" "$U_ERR"
-  assert_json "S2b OPENAI_BASE_URL / PYTHONPATH / A1_XPROV_* / HTTPS_PROXY / GIT_DIR do not reach the runner; PATH, HOME, CODEX_HOME do" "$(cat "$ENV_FILE")" \
-    "['OPENAI_BASE_URL', 'PYTHONPATH', 'A1_XPROV_SOMETHING', 'HTTPS_PROXY', 'NODE_OPTIONS', 'GIT_DIR', 'A1_XPROV_CODEX_HOME'].filter(k => k in j).join(',') + '|' + ['PATH', 'HOME', 'CODEX_HOME'].every(k => k in j)" "|true"
+  assert_json "S2b OPENAI_BASE_URL / PYTHONPATH / A1_XPROV_* / HTTPS_PROXY do not reach the runner; PATH, HOME, CODEX_HOME do; GIT_DIR is a1's own (the snapshot's .git, spec 014)" "$(cat "$ENV_FILE")" \
+    "['OPENAI_BASE_URL', 'PYTHONPATH', 'A1_XPROV_SOMETHING', 'HTTPS_PROXY', 'NODE_OPTIONS', 'A1_XPROV_CODEX_HOME'].filter(k => k in j).join(',') + '|' + ['PATH', 'HOME', 'CODEX_HOME'].every(k => k in j) + '|' + j.GIT_DIR.endsWith('/.git')" "|true|true"
 }
 
 # ---------- R18d (moved from part 03): run dir retention and bounds ----------
