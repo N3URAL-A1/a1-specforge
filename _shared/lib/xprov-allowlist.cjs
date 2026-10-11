@@ -464,12 +464,8 @@ function parseRawDiff(text) {
   return map;
 }
 
-/** Variables that can redirect git to other objects, refs, config or a hidden diff. */
-const GIT_ENV_DROP = Object.freeze([
-  'GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES',
-  'GIT_REPLACE_REF_BASE', 'GIT_SHALLOW_FILE', 'GIT_CONFIG', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM',
-  'GIT_CONFIG_COUNT', 'GIT_CONFIG_PARAMETERS', 'GIT_DIFF_OPTS', 'GIT_EXTERNAL_DIFF',
-]);
+/** Variables that can redirect git to other objects, refs, config or a hidden diff: one list in xprov-common.cjs. */
+const GIT_ENV_DROP = C.GIT_ENV_DROP;
 
 /** Pointing GIT_GRAFT_FILE at /dev/null makes git ignore the repository's own grafts file; no file in a
  * shared directory is involved (spec 014 FR-017). git prints an advice hint for it, silenced in `git()`. */

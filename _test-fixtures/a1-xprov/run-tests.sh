@@ -274,8 +274,9 @@ write_permit_store() {
 # command leaves it since spec 014 FR-002: the file AND the matching store entry (same
 # arguments, same day). Every gate/run case that needs `allowed` uses this one.
 write_permit() {
-  write_permit_file_only "$@"
-  write_permit_store "$@"
+  local on="${5:-$(date -u +%Y-%m-%d)}"   # one date for file and store (a midnight between the two writes cannot split them)
+  write_permit_file_only "$1" "${2:-fixture}" "${3:-record/2026-09-24-fixture.md}" "${4:-}" "$on"
+  write_permit_store "$1" "${2:-fixture}" "${3:-record/2026-09-24-fixture.md}" "${4:-}" "$on"
 }
 
 # permit_lib <tree-tools-dir-root> <js> — runs <js> with `P` bound to the TREE

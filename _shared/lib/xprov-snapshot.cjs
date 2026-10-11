@@ -76,9 +76,12 @@ const X = require('./xprov.cjs');
 const C = require('./xprov-common.cjs');
 const AL = require('./xprov-allowlist.cjs');
 const SR = require('./xprov-scan-records.cjs');
+const { resolveTool } = require('./xprov-preflight.cjs');
 // Shared helpers — one definition each, in xprov-common.cjs.
 const { DIR_MODE, mkdir0700, writeStdoutSync, gitSpawn: git } = C;
 const tail = C.stderrTail;
+/** One git call on the snapshot clone `dir` (args carry -C dir), under the pinned config and the clone's own git dir. */
+const snapGit = (args, dir, opts) => git(args, { env: C.pinnedGitEnv(null, dir), ...(opts || {}) });
 
 const SNAP_PREFIX = 'snap-';
 const SCAN_WINDOW = X.MAX_RESULT_BYTES; // 5 MB windows …
@@ -336,7 +339,7 @@ function diskBlobId(full) {
 
 /** `git ls-tree -r -z HEAD` of a clone: Map path → blob id (blobs only), or null when git fails. */
 function headBlobIds(dir) {
-  const ls = git(['-C', dir, 'ls-tree', '-r', '-z', 'HEAD']);
+  const ls = snapGit(['-C', dir, 'ls-tree', '-r', '-z', 'HEAD'], dir);
   if (ls.status !== 0) return null;
   const ids = new Map();
   for (const rec of ls.stdout.split('\0')) {
@@ -364,7 +367,7 @@ const STAGED_ENTRY_RE = /^(\d{6}) ([0-9a-f]{40,64}) (\d)\t([\s\S]+)$/;
 
 /** `git ls-files -s -z` of a clone: { entries: [{ mode, blob, path }], index_sha256 } or { error }. */
 function lsFilesStaged(dir) {
-  const r = spawnSync('git', ['-C', dir, 'ls-files', '-s', '-z'], { env: C.pinnedGitEnv(), maxBuffer: C.GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] });
+  const r = spawnSync('git', ['-C', dir, 'ls-files', '-s', '-z'], { env: C.pinnedGitEnv(null, dir), maxBuffer: C.GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] });
   if (r.status !== 0) return { error: tail(String(r.stderr || r.error)) };
   const entries = [];
   for (const raw of r.stdout.toString('utf8').split('\0')) {
@@ -378,8 +381,21 @@ function lsFilesStaged(dir) {
 
 /** Spec 014 FR-008: sha256 of `git status --porcelain=v1 -z --untracked-files=all --ignored` of the clone, or null. */
 function statusSha256(dir) {
-  const r = spawnSync('git', ['-C', dir, 'status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignored'], { env: C.pinnedGitEnv(), maxBuffer: C.GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] });
+  const r = spawnSync('git', ['-C', dir, 'status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignored'], { env: C.pinnedGitEnv(null, dir), maxBuffer: C.GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] });
   return r.status === 0 ? C.sha256(r.stdout) : null;
+}
+
+/** Entries of a snapshot's `.git` that move git's view elsewhere: `commondir` (config, attributes and clean filters of a
+ * foreign repository), `gitdir`, object alternates. A clone a1 builds has none of them. → the first one found, or null;
+ * `.git` that is not a real directory counts as `.git`. */
+const GIT_DIR_FORBIDDEN = Object.freeze(['commondir', 'gitdir', 'objects/info/alternates', 'objects/info/http-alternates']);
+function gitDirProblem(dir) {
+  const gitDir = path.join(dir, '.git');
+  try { if (!fs.lstatSync(gitDir).isDirectory()) return '.git'; } catch (_e) { return '.git'; }
+  for (const rel of GIT_DIR_FORBIDDEN) {
+    try { fs.lstatSync(path.join(gitDir, rel)); return rel; } catch (_e) { /* absent: fine */ }
+  }
+  return null;
 }
 
 const GIT_META_ENTRIES = Object.freeze(['config', 'hooks', 'info']);
@@ -439,9 +455,9 @@ function scanTrackedFiles(dir, opts) {
     try { st = fs.lstatSync(full); } catch (_e) { st = null; }
     if (st === null) {
       const spec = `HEAD:${rel}`;
-      const type = git(['-C', dir, 'cat-file', '-t', spec]);
+      const type = snapGit(['-C', dir, 'cat-file', '-t', spec], dir);
       if (type.status !== 0 || type.stdout.trim() !== 'blob') continue; // a gitlink: no content in this object store
-      const b = spawnSync('git', ['-C', dir, 'cat-file', 'blob', spec], { env: C.pinnedGitEnv(), maxBuffer: C.GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] });
+      const b = spawnSync('git', ['-C', dir, 'cat-file', 'blob', spec], { env: C.pinnedGitEnv(null, dir), maxBuffer: C.GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] });
       if (b.status !== 0) return { files_scanned: scanned, skipped: 0, tracked, entries, index_sha256, matches, missingBlobs, blobIds, untrusted, error: `cat-file ${rel}: ${tail(String(b.stderr))}` };
       scanned++;
       missingBlobs.push({ path: rel, buf: b.stdout });
@@ -455,7 +471,7 @@ function scanTrackedFiles(dir, opts) {
     if (id === undefined || diskBlobId(full) === id) continue;
     untrusted.add(rel);
     const spec = `HEAD:${rel}`;
-    const b = spawnSync('git', ['-C', dir, 'cat-file', 'blob', spec], { env: C.pinnedGitEnv(), maxBuffer: C.GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] });
+    const b = spawnSync('git', ['-C', dir, 'cat-file', 'blob', spec], { env: C.pinnedGitEnv(null, dir), maxBuffer: C.GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] });
     if (b.status !== 0) return { files_scanned: scanned, skipped: 0, tracked, entries, index_sha256, matches, missingBlobs, blobIds, untrusted, error: `cat-file ${rel}: ${tail(String(b.stderr))}` };
     matches.push(...surplusMatches(scanSource(bufferSource(b.stdout), rel, withPositions, withLines), own));
   }
@@ -464,7 +480,9 @@ function scanTrackedFiles(dir, opts) {
 
 /** gitleaks when on PATH, with a1's own config (never the reviewed repo's). */
 function gitleaksScan(dir) {
-  const r = spawnSync('gitleaks', ['detect', '--no-git', '--source', dir, '--no-banner', '--redact', '--config', GITLEAKS_CONFIG],
+  const bin = resolveTool('gitleaks'); // absolute path once, like python3 and codex (FR-016)
+  if (bin === null) return { available: false, hit: false };
+  const r = spawnSync(bin, ['detect', '--no-git', '--source', dir, '--no-banner', '--redact', '--config', GITLEAKS_CONFIG],
     { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   if (r.error && r.error.code === 'ENOENT') return { available: false, hit: false };
   return { available: true, hit: r.status !== 0 };
@@ -473,10 +491,10 @@ function gitleaksScan(dir) {
 // ---------- snapshot ----------
 
 function fetchInto(dir, sourceRepo, commit, depth) {
-  const plain = git(['-C', dir, 'fetch', '--quiet', '--depth', String(depth), sourceRepo, commit]);
+  const plain = git(['-C', dir, 'fetch', '--quiet', '--depth', String(depth), sourceRepo, commit], { env: C.pinnedGitEnv(null) });
   if (plain.status === 0) return plain;
   // Older git refuses a bare sha as `want` unless the server allows it; for a local path the server is ours.
-  return git(['-C', dir, 'fetch', '--quiet', '--depth', String(depth), `--upload-pack=${UPLOAD_PACK_FALLBACK}`, sourceRepo, commit]);
+  return git(['-C', dir, 'fetch', '--quiet', '--depth', String(depth), `--upload-pack=${UPLOAD_PACK_FALLBACK}`, sourceRepo, commit], { env: C.pinnedGitEnv(null) });
 }
 
 function stripRepoLocal(dir) {
@@ -508,13 +526,13 @@ function cloneSnapshot(sourceRepo, commit, base) {
     if (rb.status !== 0) return failed(`base ${base} does not resolve in ${sourceRepo}`);
     baseSha = rb.stdout.trim();
   }
-  const init = git(['init', '--quiet', dir]);
+  const init = git(['init', '--quiet', dir], { env: C.pinnedGitEnv(null) });
   if (init.status !== 0) return failed(`init: ${tail(init.stderr || String(init.error))}`);
   const fetch = fetchInto(dir, sourceRepo, commit, 1);
   if (fetch.status !== 0) return failed(`fetch ${commit} (depth 1): ${tail(fetch.stderr || String(fetch.error))}`);
-  const co = git(['-C', dir, 'checkout', '--quiet', 'FETCH_HEAD']);
+  const co = snapGit(['-C', dir, 'checkout', '--quiet', 'FETCH_HEAD'], dir);
   if (co.status !== 0) return failed(`checkout: ${tail(co.stderr)}`);
-  const head = git(['-C', dir, 'rev-parse', 'HEAD']);
+  const head = snapGit(['-C', dir, 'rev-parse', 'HEAD'], dir);
   if (head.status !== 0) return failed(`rev-parse: ${tail(head.stderr)}`);
   if (baseSha !== null && baseSha !== head.stdout.trim()) {
     const fb = fetchInto(dir, sourceRepo, baseSha, 1);
@@ -530,7 +548,7 @@ function cloneSnapshot(sourceRepo, commit, base) {
 function runnerLikeGit(dir, args) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'a1-xprov-githome-'));
   try {
-    const env = { ...C.pinnedGitEnv({}), PATH: process.env.PATH, HOME: home, GIT_CONFIG_NOSYSTEM: '1' };
+    const env = { ...C.pinnedGitEnv({}, dir), PATH: process.env.PATH, HOME: home, GIT_CONFIG_NOSYSTEM: '1' };
     for (const [k, v] of Object.entries(process.env)) if (k === 'LANG' || k.startsWith('LC_')) env[k] = v;
     return spawnSync('git', ['-C', dir, ...args], { env, maxBuffer: C.GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] });
   } finally {
@@ -547,9 +565,9 @@ function baseSideBlobs(dir, baseSha) {
   const paths = names.stdout.toString('utf8').split('\0').filter(Boolean);
   for (const rel of paths) {
     const spec = `${baseSha}:${rel}`;
-    const type = git(['-C', dir, 'cat-file', '-t', spec]);
+    const type = snapGit(['-C', dir, 'cat-file', '-t', spec], dir);
     if (type.status !== 0 || type.stdout.trim() !== 'blob') continue; // added in the wave, or a gitlink (the runner refuses those)
-    const b = spawnSync('git', ['-C', dir, 'cat-file', 'blob', spec], { env: C.pinnedGitEnv(), maxBuffer: C.GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] });
+    const b = spawnSync('git', ['-C', dir, 'cat-file', 'blob', spec], { env: C.pinnedGitEnv(null, dir), maxBuffer: C.GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] });
     if (b.status !== 0) return { error: `cat-file ${rel}: ${tail(String(b.stderr))}` };
     blobs.push({ path: rel, buf: b.stdout });
   }
@@ -661,7 +679,7 @@ const REWRITE_ATTRS = Object.freeze(['working-tree-encoding', 'filter', 'ident']
 
 /** Paths (of `paths`) with a content-rewriting attribute in the clone; all of them when git cannot say. */
 function rewrittenPaths(dir, paths) {
-  const r = git(['-C', dir, 'check-attr', '-z', '--stdin', ...REWRITE_ATTRS], { input: paths.join('\0') + '\0', stdio: ['pipe', 'pipe', 'pipe'] });
+  const r = snapGit(['-C', dir, 'check-attr', '-z', '--stdin', ...REWRITE_ATTRS], dir, { input: paths.join('\0') + '\0', stdio: ['pipe', 'pipe', 'pipe'] });
   if (r.status !== 0 || r.error) return new Set(paths);
   const t = r.stdout.split('\0');
   const hit = new Set();
@@ -707,10 +725,10 @@ function storeDiffHash(dir, cl, inputsDir) {
 /** FR-005: the scan-pass record of a snapshot that passed every check, plus the nonce next to it.
  * { ok: true } or { error } — the caller fails the snapshot and removes the dirs on an error. */
 function writeScanPass({ dir, cl, out, hash, gl, repoKey }) {
-  const tree = git(['-C', dir, 'rev-parse', 'HEAD^{tree}']);
+  const tree = snapGit(['-C', dir, 'rev-parse', 'HEAD^{tree}'], dir);
   const statusSha = statusSha256(dir);
   const inputs = storedInputHashes(dir);
-  const gitMeta = gitMetaSha256(dir);
+  const gitMeta = gitDirProblem(dir) === null ? gitMetaSha256(dir) : null;
   if (tree.status !== 0 || statusSha === null || inputs === null || gitMeta === null) return { error: 'scan record: tree, status, git metadata or input hashes unavailable' };
   const nonce = SR.newNonce();
   try {
@@ -848,5 +866,5 @@ function cmdXprovSnapshot(args) {
 module.exports = {
   snapshot, cloneSnapshot, cleanupSnapshot, removeDir, scanTrackedFiles, utf16Mode, gitleaksScan, ensureSnapshotsRoot, cmdXprovSnapshot,
   pathNameHit, SNAP_PREFIX, REPO_LOCAL_STRIP, GITLEAKS_CONFIG, REF_RE, LINE_MAX_CHARS, LINE_CONTEXT_CHARS,
-  INPUTS_SUFFIX, INPUT_FILES, NONCE_FILE, storedDiffSha, storedInputHashes, lsFilesStaged, statusSha256, gitMetaSha256,
+  INPUTS_SUFFIX, INPUT_FILES, NONCE_FILE, storedDiffSha, storedInputHashes, lsFilesStaged, statusSha256, gitMetaSha256, gitDirProblem,
 };

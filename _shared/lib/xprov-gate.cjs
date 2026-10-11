@@ -61,7 +61,7 @@ const C = require('./xprov-common.cjs');
 // Shared helpers — one definition each, in xprov-common.cjs.
 const { REGISTRY_PATH, LANE_RE, DETAIL_MAX_CHARS, inputError, clip, parsePositive, parseWave, waveNumber, sha256, isPlainObject, readIndex, sameWave, sameLane, writeStdoutSync, gitOut } = C;
 const { permitCheck, permitHint, STATES: PERMIT_STATES } = require('./xprov-permit.cjs');
-const { preflight, onPath } = require('./xprov-preflight.cjs');
+const { preflight, resolveTool } = require('./xprov-preflight.cjs');
 const { snapshot, cleanupSnapshot, INPUTS_SUFFIX, INPUT_FILES } = require('./xprov-snapshot.cjs');
 const { observe, MODEL_RE } = require('./xprov-observe.cjs');
 const WV = require('./xprov-waivers.cjs');
@@ -467,7 +467,7 @@ function gate(o) {
     const pre = preflight({ pluginAllowlist: ctx.pluginAllowlist });
     if (!pre.ok) return (result = fail('preflight', pre.reason, pre.failed.join(', ')));
     // FR-011: a blocking gate does not degrade to patterns-only; no snapshot is made without gitleaks.
-    if (ctx.enforcement === 'blocking' && !onPath('gitleaks')) return (result = fail('preflight', X.REASONS.preflight_failed, GITLEAKS_MISSING_DETAIL));
+    if (ctx.enforcement === 'blocking' && resolveTool('gitleaks') === null) return (result = fail('preflight', X.REASONS.preflight_failed, GITLEAKS_MISSING_DETAIL));
     if (prior) feedback = writeFeedback(prior);
     const snapped = stepSnapshot(ctx, feedback);
     const al = snapped.ok ? Object.freeze({ ...snapped.allowlist, gitleaks: snapped.gitleaks }) : snapped.allowlist;

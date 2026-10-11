@@ -204,21 +204,39 @@ const SNAPSHOT_GIT_PINS = Object.freeze([
 ]);
 const GIT_CONFIG_ENV_RE = /^GIT_CONFIG_(COUNT|(KEY|VALUE)_\d+)$/;
 
-/** `source` (default process.env) as a NEW object with the four pins set through GIT_CONFIG_COUNT/KEY_n/VALUE_n
- * (command-line precedence, above every config file; pattern of intent-git.cjs). Any GIT_CONFIG_COUNT/KEY/VALUE
- * already in `source` is dropped first so the pins are the only entries. This is deliberately NOT part of the
- * runner's env allowlist (xprov-run.cjs ALLOWED_ENV): these keys are a1's own, not the caller's. */
-function pinnedGitEnv(source) {
+/** Variables that can redirect git to other objects, refs, config or a hidden diff (one list: the primary-checkout
+ * reads of xprov-allowlist.cjs and the snapshot calls below). */
+const GIT_ENV_DROP = Object.freeze([
+  'GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_NAMESPACE', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+  'GIT_REPLACE_REF_BASE', 'GIT_SHALLOW_FILE', 'GIT_CONFIG', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM',
+  'GIT_CONFIG_COUNT', 'GIT_CONFIG_PARAMETERS', 'GIT_DIFF_OPTS', 'GIT_EXTERNAL_DIFF',
+]);
+
+/** `source` (default process.env) as a NEW object for a git call on a snapshot: every GIT_ENV_DROP variable and any
+ * GIT_CONFIG_COUNT/KEY/VALUE of the caller removed, the four SNAPSHOT_GIT_PINS set through GIT_CONFIG_COUNT/KEY_n/VALUE_n
+ * (command-line precedence, above every config file; pattern of intent-git.cjs). With `snapshotDir`, git is also pinned to
+ * that clone's own `.git` (GIT_DIR, GIT_COMMON_DIR, objects) and work tree: a `.git/commondir` file or a different
+ * inherited GIT_DIR then cannot move config, attributes (clean filters) or objects elsewhere. This is deliberately NOT part
+ * of the runner's env allowlist (xprov-run.cjs ALLOWED_ENV): these keys are a1's own, not the caller's. */
+function pinnedGitEnv(source, snapshotDir) {
   const env = {};
-  for (const [k, v] of Object.entries(source || process.env)) if (!GIT_CONFIG_ENV_RE.test(k)) env[k] = v;
+  for (const [k, v] of Object.entries(source || process.env)) if (!GIT_CONFIG_ENV_RE.test(k) && !GIT_ENV_DROP.includes(k)) env[k] = v;
   env.GIT_CONFIG_COUNT = String(SNAPSHOT_GIT_PINS.length);
   SNAPSHOT_GIT_PINS.forEach(([key, value], i) => { env[`GIT_CONFIG_KEY_${i}`] = key; env[`GIT_CONFIG_VALUE_${i}`] = value; });
+  if (snapshotDir) {
+    const dir = path.resolve(snapshotDir);
+    const gitDir = path.join(dir, '.git');
+    env.GIT_DIR = gitDir;
+    env.GIT_COMMON_DIR = gitDir;
+    env.GIT_OBJECT_DIRECTORY = path.join(gitDir, 'objects');
+    env.GIT_WORK_TREE = dir;
+  }
   return env;
 }
 
-/** stdout (string) of a successful pinned git call on a snapshot, else null. */
-function pinnedGitOut(args) {
-  const r = gitSpawn(args, { env: pinnedGitEnv() });
+/** stdout (string) of a successful pinned git call on the snapshot `dir` (args carry their own -C), else null. */
+function pinnedGitOut(args, dir) {
+  const r = gitSpawn(args, { env: pinnedGitEnv(null, dir) });
   return r.status === 0 ? r.stdout : null;
 }
 
@@ -251,5 +269,5 @@ module.exports = {
   inputError, writeStdoutSync, emitJson, usageExit, usageThrow,
   clip, stderrTail, oneLine, LINE_BREAKERS_RE, readNoFollow, parsePositive, parseWave, waveNumber, parseLane, sha256, isPlainObject, isDir, isFile,
   mkdir0700, readIndex, sameWave, sameLane, gitSpawn, gitOut, commonDirOf, resolveRepoFlag,
-  SNAPSHOT_GIT_PINS, pinnedGitEnv, pinnedGitOut,
+  SNAPSHOT_GIT_PINS, GIT_ENV_DROP, pinnedGitEnv, pinnedGitOut,
 };

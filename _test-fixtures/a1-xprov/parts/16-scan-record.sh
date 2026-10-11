@@ -71,7 +71,7 @@ sr_record_file() { printf '%s/.a1-xprov/scan-records/%s.json' "$1" "$(basename "
   if [[ -n "$SR_DIR" && -f "$rec" ]]; then
     ok "SR1 the record scan-records/<basename>.json exists"
     body="$(cat "$rec")"
-    assert_json "SR1 exactly the 13 spec keys, in spec order" "$body" "JSON.stringify(Object.keys(j))" "$SR_RECORD_KEYS"
+    assert_json "SR1 exactly the 14 spec keys, in spec order" "$body" "JSON.stringify(Object.keys(j))" "$SR_RECORD_KEYS"
     assert_eq "SR1 record file mode is 0600" "$(mode_of "$rec")" "600"
     assert_eq "SR1 scan-records dir mode is 0700" "$(mode_of "$home/.a1-xprov/scan-records")" "700"
     assert_json "SR1 version is 1" "$body" "j.version" "1"

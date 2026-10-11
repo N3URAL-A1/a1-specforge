@@ -94,7 +94,7 @@ const { appendXreviewNote } = require('./xprov-normalize.cjs');
 const { filterOutput, instructionMarker } = require('./xprov-filter.cjs');
 const { permitCheck } = require('./xprov-permit.cjs');
 const { homeSymlinks, skillsDirsProblem, resolveTool } = require('./xprov-preflight.cjs');
-const { SNAP_PREFIX, REPO_LOCAL_STRIP, gitMetaSha256, storedDiffSha, storedInputHashes, INPUTS_SUFFIX, INPUT_FILES, NONCE_FILE, statusSha256 } = require('./xprov-snapshot.cjs');
+const { SNAP_PREFIX, REPO_LOCAL_STRIP, gitMetaSha256, gitDirProblem, storedDiffSha, storedInputHashes, INPUTS_SUFFIX, INPUT_FILES, NONCE_FILE, statusSha256 } = require('./xprov-snapshot.cjs');
 const { readScanRecord } = require('./xprov-scan-records.cjs');
 
 const NO_LOG_FLAG = 'no-log';
@@ -149,7 +149,7 @@ const fileSize = (p) => { try { return fs.statSync(p).size; } catch (_e) { retur
 /** `git status --porcelain` of a checkout. `pinned` (snapshots): the four SEC-2 config pins, so a planted fsmonitor never runs. */
 function porcelain(repo, pinned) {
   const args = ['-C', repo, 'status', '--porcelain', '--untracked-files=all'];
-  const out = pinned ? C.pinnedGitOut(args) : gitOut(args);
+  const out = pinned ? C.pinnedGitOut(args, repo) : gitOut(args);
   return out === null ? '<git status failed>' : out;
 }
 
@@ -221,14 +221,14 @@ function buildArgv(ctx, artifactsDir, toolsIn) {
   return argv;
 }
 
-/** Only the GIT_CONFIG_COUNT/KEY_n/VALUE_n entries of C.pinnedGitEnv(). */
-function pinKeys() {
-  return Object.fromEntries(Object.entries(C.pinnedGitEnv({})));
+/** The pinned config keys plus the snapshot's own GIT_DIR / GIT_COMMON_DIR / GIT_WORK_TREE (C.pinnedGitEnv on an empty source). */
+function pinKeys(snapshot) {
+  return C.pinnedGitEnv({}, snapshot);
 }
 
 /** Allowlisted environment for the runner (plus the dedicated CODEX_HOME). HOME
  * is the per-run home and never the caller's: without `runHome` it is left out. */
-function buildEnv(source, runHome) {
+function buildEnv(source, runHome, snapshot) {
   const src = source || process.env;
   const env = {};
   for (const [k, v] of Object.entries(src)) {
@@ -240,14 +240,14 @@ function buildEnv(source, runHome) {
   env.GIT_CONFIG_NOSYSTEM = '1'; // the runner's git reads no /etc/gitconfig (Wave 7, Samuel)
   // SEC-2 (Wave 6 review): the runner's git runs on the snapshot too. These GIT_CONFIG_* keys are a1's own pins, set
   // AFTER the allowlist loop on purpose — the allowlist is about what the CALLER may hand in (nothing from GIT_*).
-  Object.assign(env, pinKeys());
+  Object.assign(env, pinKeys(snapshot));
   return env;
 }
 
 /** spawnSync options: minimal env, snapshot cwd, hard timeout with grace, SIGKILL. */
 function spawnOptions(ctx, runHome) {
   return {
-    cwd: ctx.snapshot, env: buildEnv(null, runHome), encoding: 'utf8', maxBuffer: RUNNER_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'],
+    cwd: ctx.snapshot, env: buildEnv(null, runHome, ctx.snapshot), encoding: 'utf8', maxBuffer: RUNNER_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'],
     timeout: (ctx.timeout + SPAWN_GRACE_SECONDS) * 1000, killSignal: 'SIGKILL',
   };
 }
@@ -330,7 +330,7 @@ function baselineDelta(before, after) {
 }
 
 function revertSnapshot(snapshot) {
-  const opts = { stdio: 'ignore', env: C.pinnedGitEnv() };
+  const opts = { stdio: 'ignore', env: C.pinnedGitEnv(null, snapshot) };
   spawnSync('git', ['-C', snapshot, 'checkout', '--quiet', '--', '.'], opts);
   spawnSync('git', ['-C', snapshot, 'clean', '-fdq'], opts);
 }
@@ -534,7 +534,7 @@ function readIfFile(p) {
 
 /** Presence of repo-local Codex inputs in the reviewed COMMIT (git ls-files; the working tree was stripped). */
 function snapshotNotes(snapshot) {
-  const tracked = new Set((C.pinnedGitOut(['-C', snapshot, 'ls-files', '-z']) || '').split('\0').filter(Boolean));
+  const tracked = new Set((C.pinnedGitOut(['-C', snapshot, 'ls-files', '-z'], snapshot) || '').split('\0').filter(Boolean));
   const notes = {};
   for (const [key, rel] of Object.entries(REPO_LOCAL_TRACKED)) {
     notes[key] = tracked.has(rel) || [...tracked].some((t) => t.startsWith(`${rel}/`));
@@ -571,7 +571,7 @@ function appendLog(ctx, entry) {
 
 const BINDING = Object.freeze({
   not_under_snapshots_dir: 'not_under_snapshots_dir', no_scan_record: 'no_scan_record', record_mismatch: 'record_mismatch', repo_mismatch: 'repo_mismatch',
-  index_mismatch: 'index_mismatch', git_meta_mismatch: 'git_meta_mismatch', untracked_or_modified_file: 'untracked_or_modified_file', gitleaks_missing: 'gitleaks_missing',
+  index_mismatch: 'index_mismatch', git_meta_mismatch: 'git_meta_mismatch', git_dir_forbidden_entry: 'git_dir_forbidden_entry', untracked_or_modified_file: 'untracked_or_modified_file', gitleaks_missing: 'gitleaks_missing',
 });
 const ENFORCEMENT_WARNING = 'warning';
 
@@ -588,7 +588,7 @@ function snapshotUnderRoot(snapshot) {
   }
 }
 
-const gitLine = (snapshot, args) => { const out = C.pinnedGitOut(['-C', snapshot, ...args]); return out === null ? null : out.trim(); };
+const gitLine = (snapshot, args) => { const out = C.pinnedGitOut(['-C', snapshot, ...args], snapshot); return out === null ? null : out.trim(); };
 
 /** (c) The record's commit, base, tree, diff hash and nonce equal what the snapshot holds now. → detail or null. */
 function recordMismatch(ctx, rec, realDir) {
@@ -610,6 +610,7 @@ function gateIsBlocking(gate) {
 /** SEC-2: the snapshot's git metadata (config, hooks, info) is still what the scan recorded. → detail or null.
  * Runs BEFORE the first git call on the snapshot in the binding, and again right before the spawn. */
 function gitMetaMismatch(dir, rec) {
+  if (gitDirProblem(dir) !== null) return BINDING.git_dir_forbidden_entry;
   return gitMetaSha256(dir) === rec.git_meta_sha256 ? null : BINDING.git_meta_mismatch;
 }
 
@@ -635,7 +636,7 @@ function scanBinding(ctx) {
 function changedAfterScan(ctx) {
   const metaDetail = gitMetaMismatch(ctx.snapshot, ctx.scan);
   if (metaDetail) return { reason: X.REASONS.snapshot_changed_after_scan, detail: metaDetail };
-  const ls = spawnSync('git', ['-C', ctx.snapshot, 'ls-files', '-s', '-z'], { env: C.pinnedGitEnv(), maxBuffer: C.GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] });
+  const ls = spawnSync('git', ['-C', ctx.snapshot, 'ls-files', '-s', '-z'], { env: C.pinnedGitEnv(null, ctx.snapshot), maxBuffer: C.GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] });
   if (ls.status !== 0 || sha256(ls.stdout) !== ctx.scan.index_sha256) return { reason: X.REASONS.snapshot_changed_after_scan, detail: BINDING.index_mismatch };
   if (statusSha256(ctx.snapshot) !== ctx.scan.status_sha256) return { reason: X.REASONS.snapshot_changed_after_scan, detail: BINDING.untracked_or_modified_file };
   return null;
@@ -734,8 +735,8 @@ function judgeRun(ctx, o, run, artifactsDir, delta, baselinePath, seen) {
  * hash. normalize takes head/base ONLY from here (checked against the runner's
  * snapshot.base and diff_sha256) — never from flags or the live work path. */
 function writeReviewedRecord(ctx, runDir) {
-  const commit = C.pinnedGitOut(['-C', ctx.snapshot, 'rev-parse', '--verify', '--quiet', 'HEAD^{commit}']);
-  const base = C.pinnedGitOut(['-C', ctx.snapshot, 'rev-parse', '--verify', '--quiet', `${ctx.base}^{commit}`]);
+  const commit = C.pinnedGitOut(['-C', ctx.snapshot, 'rev-parse', '--verify', '--quiet', 'HEAD^{commit}'], ctx.snapshot);
+  const base = C.pinnedGitOut(['-C', ctx.snapshot, 'rev-parse', '--verify', '--quiet', `${ctx.base}^{commit}`], ctx.snapshot);
   const diffSha = storedDiffSha(ctx.snapshot);
   if (commit === null || base === null || !diffSha) return;
   fs.writeFileSync(path.join(runDir, REVIEWED_FILE), `${JSON.stringify({ commit: commit.trim(), base: base.trim(), diff_sha256: diffSha }, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
@@ -744,12 +745,20 @@ function writeReviewedRecord(ctx, runDir) {
 /** Pre-spawn run home + late input re-hash, spawn, post-run judgement; the
  * baseline temp dir and the run home are always removed. */
 function runWithBaseline(ctx, artifactsDir, argv, notes) {
-  const before = takeBaseline(ctx);
-  const baselinePath = writeBaseline(before);
   // `ok` like preflight/permit/observe/snapshot; `baseline_path` only on a
   // tripwire (the file is gone in `finally` — on success only `baseline_delta`
   // is meaningful, on a tripwire the mktemp path documents where the baseline was).
   const o = makeOutcomes(ctx, artifactsDir, { argv, snapshot_notes: notes }, notes);
+  // Reinhard (Wave 6 re-review): the first read of the snapshot in this function is takeBaseline's `git status`; the
+  // scan check comes first, so nothing in the snapshot's git dir is consulted before it was verified. (Checked again below,
+  // right before the spawn.)
+  const early = changedAfterScan(ctx);
+  if (early) {
+    process.stderr.write(`xprov run: ${early.reason} (${early.detail}); refusing to spawn\n`);
+    return o.failWith(early.reason, early.detail, null, false);
+  }
+  const before = takeBaseline(ctx);
+  const baselinePath = writeBaseline(before);
   let runHome = null;
   try {
     const home = prepareRunHome();

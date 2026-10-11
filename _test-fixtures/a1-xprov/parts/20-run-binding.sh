@@ -472,5 +472,65 @@ fi
   assert_eq "RF5 the runner's --repo is the realpath" "$(json_get "$(cat "$RB_ARGV")" "j[j.indexOf('--repo') + 1]")" "$real"
 }
 
+# ---------- Wave 6 review conditions, round 2 (Reinhard, 2026-10-09): the git dir itself ----------
+#   RG1  .git/commondir -> a foreign common dir holding filter.pwn.clean + info/attributes: refused with
+#        git_dir_forbidden_entry before any git call; the filter marker never appears; 0 spawns.
+#   RG2  .git/objects/info/alternates -> the same refusal.
+#   RG3  inherited GIT_DIR / GIT_INDEX_FILE / GIT_OBJECT_DIRECTORY never reach a snapshot git call
+#        (pinnedGitEnv drops them, then sets GIT_DIR/GIT_COMMON_DIR/GIT_WORK_TREE of the snapshot itself);
+#        the runner env carries the snapshot's own GIT_DIR / GIT_COMMON_DIR.
+
+# rg_foreign_common <snapshot> <marker> — a copy of the snapshot's .git with a clean filter on every path.
+rg_foreign_common() {
+  local f="$TMP20/foreign-$RB_N"; rm -rf "$f"; cp -R "$1/.git" "$f"
+  printf '#!/bin/sh\ntouch "%s"\ncat\n' "$2" > "$f.sh"; chmod 755 "$f.sh"
+  printf '[filter "pwn"]\n\tclean = %s\n' "$f.sh" >> "$f/config"
+  mkdir -p "$f/info"; printf '* filter=pwn\n' > "$f/info/attributes"
+  printf '%s\n' "$f" > "$1/.git/commondir"
+  find "$1" -path "$1/.git" -prune -o -type f -exec touch {} +   # every tracked file looks stat-dirty to git status
+}
+
+{
+  rb_arm; rb_snap
+  assert_rc "RG1 setup: snapshot exits 0" 0 "$RB_SRC" "$RB_SERR"
+  marker="$TMP20/pwn-marker-1"; rm -f "$marker"
+  rg_foreign_common "$RB_SNAP" "$marker"
+  rb_run review
+  rb_expect "RG1 .git/commondir to a foreign common dir" snapshot_changed_after_scan git_dir_forbidden_entry
+  [[ ! -e "$marker" ]] && ok "RG1 the foreign clean filter never ran" || bad "RG1 the foreign clean filter ran (marker exists)"
+}
+
+{
+  rb_arm; rb_snap
+  mkdir -p "$RB_SNAP/.git/objects/info"; printf '%s\n' "$PHASE_REPO/.git/objects" > "$RB_SNAP/.git/objects/info/alternates"
+  rb_run review
+  rb_expect "RG2 objects/info/alternates" snapshot_changed_after_scan git_dir_forbidden_entry
+}
+
+{
+  rb_arm; rb_snap
+  assert_rc "RG3 setup: snapshot exits 0" 0 "$RB_SRC" "$RB_SERR"
+  got="$(GIT_DIR="$PHASE_REPO/.git" GIT_INDEX_FILE="$TMP20/nope-index" GIT_OBJECT_DIRECTORY="$TMP20/nope-objects" node -e '
+    const C = require(process.argv[1] + "/_shared/lib/xprov-common.cjs");
+    const S = require(process.argv[1] + "/_shared/lib/xprov-snapshot.cjs");
+    const snap = process.argv[2];
+    const bare = C.pinnedGitEnv(null);
+    const own = C.pinnedGitEnv(null, snap);
+    process.stdout.write(JSON.stringify({
+      dropped: ["GIT_DIR", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY"].every((k) => !(k in bare)),
+      own: [own.GIT_DIR, own.GIT_COMMON_DIR, own.GIT_WORK_TREE].join("|"),
+      status: S.statusSha256(snap) !== null, ls: Boolean(S.lsFilesStaged(snap).index_sha256),
+    }));
+  ' "$TREE" "$RB_SNAP" 2>&1)"
+  assert_json "RG3 inherited GIT_DIR / GIT_INDEX_FILE / GIT_OBJECT_DIRECTORY are dropped" "$got" "j.dropped" "true"
+  assert_json "RG3 a snapshot call runs on the snapshot's own git dir, common dir and work tree" "$got" "j.own" "$RB_SNAP/.git|$RB_SNAP/.git|$RB_SNAP"
+  assert_json "RG3 status and index hashes still answer under the poisoned env" "$got" "j.status + '/' + j.ls" "true/true"
+  RB_N=$((RB_N + 1)); RB_ARGV="$TMP20/argv-$RB_N.json"; envf="$TMP20/runner-env-$RB_N.json"
+  FAKE_RUNNER_ARGV_FILE="$RB_ARGV" FAKE_RUNNER_ENV_FILE="$envf" FAKE_RUNNER_CASE=approved fake_runner_env
+  real="$(cd "$RB_SNAP" && pwd -P)"
+  ( cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov run --mode review --snapshot "$RB_SNAP" --plan "$RB_SNAP.inputs/PLAN.md" --phase p20 --gate "$GATE_PLAN" --timeout 7 >/dev/null 2>&1 )
+  assert_eq "RG3 the runner env names the snapshot's git dir, common dir and work tree" "$(json_get "$(cat "$envf" 2>/dev/null || echo '{}')" "[j.GIT_DIR, j.GIT_COMMON_DIR, j.GIT_WORK_TREE].join('|')")" "$real/.git|$real/.git|$real"
+}
+
 export HOME="$SAVED_HOME_20"
 rm -rf "$TMP20"
