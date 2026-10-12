@@ -76,6 +76,7 @@ Read the `checks` array, list each failed check:
 | `target_branch_free` | "Branch `<branch>` already exists or already has a worktree. Choose a different branch or clean up the existing one." |
 | `worktree_path_free` | "Path `<path>` is not free. Clean it up manually or choose a different slug." |
 | `no_active_registry_entry` | "An active registry entry already exists for `<repo-root, slug>`. Run `exit` for the old one first, then start again — or choose a different slug." |
+| `id_unique` | "Another repo's registry entry holds the generated id. Wait a minute or choose a different slug." |
 
 Stop. Do not auto-fix.
 

@@ -31,6 +31,12 @@ Candidate matching priority (first that applies wins):
 2. `--branch <name>` — match by branch name.
 3. Neither given — match by `basename(worktree_path) === <slug>`.
 
+A worktree that `prepare` placed under a collision-prefixed path
+(`<repo>-<hash6>-<slug>`, see SKILL.md "Name collisions") no longer has
+`basename === <slug>`, so rule 3 does not find it: pass `--worktree-path` or `--branch`.
+The adopted id gets the suffix `-<repo>-<hash6>` when another repo's non-cleaned
+entry already holds the same id.
+
 JSON shape on success:
 
 ```json

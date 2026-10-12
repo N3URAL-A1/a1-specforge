@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 
 const WORKTREE_STATUSES = new Set(['prepared', 'active', 'handoff', 'cleaned']);
@@ -37,8 +38,17 @@ function writeRegistryAtomic(reg) {
   fs.renameSync(tmp, p);
 }
 
+// A1_NOW_OVERRIDE (ISO string) pins the clock for the id stamp only (tests).
+function nowDate() {
+  const raw = process.env.A1_NOW_OVERRIDE;
+  if (!raw) return new Date();
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) throw new Error(`invalid A1_NOW_OVERRIDE: ${raw}`);
+  return d;
+}
+
 function nowCompactId(slug) {
-  const d = new Date();
+  const d = nowDate();
   const pad = (n) => String(n).padStart(2, '0');
   const stamp = `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}-${pad(
     d.getUTCHours()
@@ -115,6 +125,85 @@ function repoParentWorktreeDir(repoRoot) {
   return path.join(path.dirname(repoRoot), 'a1-worktrees');
 }
 
+const TAG_NAME_MAX = 40;
+const TAG_HASH_LEN = 6;
+const NAME_BYTES_MAX = 254; // keep `<prefix>-<slug>` under 255 bytes
+
+function resolveRealOrAbs(p) {
+  // git worktree list --porcelain prints realpaths (symlinks resolved, e.g.
+  // macOS /tmp -> /private/tmp). path.resolve() alone does not resolve
+  // symlinks, so comparing a raw CLI arg against git's output can spuriously
+  // mismatch. Prefer the realpath when the path exists on disk; fall back to
+  // plain resolve otherwise (path may legitimately not exist yet).
+  const abs = path.resolve(p);
+  try {
+    return fs.realpathSync(abs);
+  } catch (_e) {
+    return abs;
+  }
+}
+
+function kebabSafe(name) {
+  const k = String(name)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return k || 'repo';
+}
+
+// `<kebab(basename, <=maxName)>-<6 hex of sha1(real repo root)>`; the hash keeps
+// it unique per repo, the name part is cut first when space is short.
+function repoTag(repoRoot, maxLen = Infinity) {
+  const hash = crypto
+    .createHash('sha1')
+    .update(resolveRealOrAbs(repoRoot))
+    .digest('hex')
+    .slice(0, TAG_HASH_LEN);
+  const room = Math.min(TAG_NAME_MAX, maxLen - TAG_HASH_LEN - 1);
+  if (room < 1) return hash;
+  const name = kebabSafe(path.basename(repoRoot)).slice(0, room).replace(/-+$/, '');
+  return `${name || 'repo'}-${hash}`;
+}
+
+function activeOtherRepo(reg, repoRoot) {
+  return reg.worktrees.filter((w) => w.status !== 'cleaned' && w.repo_root !== repoRoot);
+}
+
+function holdsId(reg, repoRoot, id) {
+  return activeOtherRepo(reg, repoRoot).some((w) => w.id === id);
+}
+
+function holdsPath(reg, repoRoot, worktreePath) {
+  const want = resolveRealOrAbs(worktreePath);
+  return activeOtherRepo(reg, repoRoot).some((w) => resolveRealOrAbs(w.worktree_path) === want);
+}
+
+// Suffix the repo tag when ANOTHER repo holds the id; otherwise unchanged.
+function disambiguateId(reg, repoRoot, id) {
+  return holdsId(reg, repoRoot, id) ? `${id}-${repoTag(repoRoot)}` : id;
+}
+
+function disambiguatePath(reg, repoRoot, slug) {
+  const dir = repoParentWorktreeDir(repoRoot);
+  const plain = path.join(dir, slug);
+  if (!holdsPath(reg, repoRoot, plain)) return plain;
+  const room = NAME_BYTES_MAX - Buffer.byteLength(slug) - 1;
+  return path.join(dir, `${repoTag(repoRoot, room)}-${slug}`);
+}
+
+// Id and path are decided separately. idTaken/pathTaken report a collision that
+// is still there after disambiguation (the caller must refuse, not write).
+function disambiguateNames(reg, repoRoot, slug) {
+  const id = disambiguateId(reg, repoRoot, nowCompactId(slug));
+  const worktreePath = disambiguatePath(reg, repoRoot, slug);
+  return {
+    id,
+    worktreePath,
+    idTaken: holdsId(reg, repoRoot, id),
+    pathTaken: holdsPath(reg, repoRoot, worktreePath),
+  };
+}
+
 function prReviewDir(worktreePath) {
   return path.join(worktreePath, '.a1-review');
 }
@@ -168,6 +257,11 @@ module.exports = {
   findRegistryEntry,
   findActiveBySlug,
   repoParentWorktreeDir,
+  kebabSafe,
+  repoTag,
+  resolveRealOrAbs,
+  disambiguateId,
+  disambiguateNames,
   prReviewDir,
   ensurePrReviewDir,
   readFindings,

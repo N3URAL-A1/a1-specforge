@@ -500,6 +500,177 @@ CONTENT=$(cat "$WORK/a1-worktrees/feat-idempotent/.a1/learnings/project/demo-slu
 assert_eq "learnings-idempotent-overwritten" "v2" "$CONTENT"
 
 # ----------------------------------------------------------------------------
+# Collision cases (bug 2026-10-12 worktree-slug-collision + review hardening).
+# The clock is pinned with A1_NOW_OVERRIDE, so no case depends on the minute
+# boundary. Red-making changes are named per case below.
+# ----------------------------------------------------------------------------
+T0="2026-10-12T10:00:00Z"
+T1="2026-10-12T10:05:00Z"
+STAMP0="20261012-1000"
+
+repo_hash() {
+  # independent of the code under test: sha1 of the real repo path, 6 hex
+  node -e 'const c=require("crypto"),fs=require("fs");
+    console.log(c.createHash("sha1").update(fs.realpathSync(process.argv[1])).digest("hex").slice(0,6));' "$1"
+}
+
+# reg_stat <mode> <slug> <marker>: mode counts -> entries/uniq-ids/uniq-paths,
+# mode states -> sorted "<repo-folder>=<status>" list. Filters on slug + repo_root marker.
+reg_stat() {
+  node -e '
+const [mode, slug, marker] = process.argv.slice(1);
+const r = JSON.parse(require("fs").readFileSync(process.env.A1_WORKTREE_REGISTRY, "utf8"));
+const e = r.worktrees.filter((w) => w.slug === slug && w.repo_root.includes(marker));
+if (mode === "counts") console.log([e.length, new Set(e.map((w) => w.id)).size, new Set(e.map((w) => w.worktree_path)).size].join("/"));
+else console.log(e.map((w) => w.repo_root.split("/").pop() + "=" + w.status).sort().join(","));
+' "$@"
+}
+
+prep_at() {
+  # prep_at <clock> <repo> <slug> -> JSON on stdout
+  A1_NOW_OVERRIDE="$1" node "$TOOLS" worktree prepare "$2" "$3" 2>&1
+}
+
+# ---- CASE 22: same parent, same slug, same minute -> both collide (id + path)
+# RED-making change: dropping disambiguation in cmdWorktreePrepare.
+PAR="$WORK/collide-par"
+make_repo "$PAR/repoA"
+make_repo "$PAR/repoB"
+SLUG="same-slug"
+OUT_A=$(prep_at "$T0" "$PAR/repoA" "$SLUG"); assert_eq "collide-prepare-a-exit" "0" "$?"
+OUT_B=$(prep_at "$T0" "$PAR/repoB" "$SLUG"); assert_eq "collide-prepare-b-exit" "0" "$?"
+ID_A=$(extract_field id "$OUT_A"); ID_B=$(extract_field id "$OUT_B")
+PATH_A=$(extract_field worktree_path "$OUT_A"); PATH_B=$(extract_field worktree_path "$OUT_B")
+HB=$(repo_hash "$PAR/repoB")
+assert_eq "collide-first-id-unchanged" "$STAMP0-$SLUG" "$ID_A"
+assert_eq "collide-first-path-unchanged" "$PAR/a1-worktrees/$SLUG" "$PATH_A"
+assert_eq "collide-second-id-suffixed" "$STAMP0-$SLUG-repob-$HB" "$ID_B"
+assert_eq "collide-second-path-prefixed" "$PAR/a1-worktrees/repob-$HB-$SLUG" "$PATH_B"
+assert_eq "collide-registry-counts-entries-ids-paths" "2/2/2" "$(reg_stat counts "$SLUG" collide-par)"
+node "$TOOLS" worktree enter "$ID_B" >/dev/null 2>&1
+assert_eq "collide-enter-b-exit" "0" "$?"
+assert_eq "collide-enter-b-only-b-active" "repoA=prepared,repoB=active" "$(reg_stat states "$SLUG" collide-par)"
+BR_B=$(git -C "$PAR/repoB" branch --list "feature/$SLUG" | wc -l | tr -d ' ')
+BR_A=$(git -C "$PAR/repoA" branch --list "feature/$SLUG" | wc -l | tr -d ' ')
+assert_eq "collide-branch-only-in-b" "1/0" "$BR_B/$BR_A"
+node "$TOOLS" worktree enter "$SLUG" >/dev/null 2>&1
+assert_eq "collide-enter-by-slug-rejected" "1" "$?"
+node "$TOOLS" worktree prepare "$PAR/repoA" "$SLUG" >/dev/null 2>&1
+assert_eq "collide-same-repo-same-slug-blocker" "1" "$?"
+
+# ---- CASE 23: adopt, same slug, same minute -> id suffixed with name+hash
+# RED-making change: `const id = nowCompactId(slug);` back in cmdWorktreeAdopt.
+PAR2="$WORK/adopt-par"
+make_repo "$PAR2/repoA"
+make_repo "$PAR2/repoB"
+ASLUG="adopt-same"
+for R in repoA repoB; do
+  mkdir -p "$PAR2/wt-$R"
+  git -C "$PAR2/$R" worktree add -q -b "manual/$ASLUG" "$PAR2/wt-$R/$ASLUG" main >/dev/null 2>&1
+done
+OUT_A=$(A1_NOW_OVERRIDE="$T0" node "$TOOLS" worktree adopt "$PAR2/repoA" "$ASLUG" --worktree-path "$PAR2/wt-repoA/$ASLUG" 2>&1)
+assert_eq "adopt-collide-a-exit" "0" "$?"
+OUT_B=$(A1_NOW_OVERRIDE="$T0" node "$TOOLS" worktree adopt "$PAR2/repoB" "$ASLUG" --worktree-path "$PAR2/wt-repoB/$ASLUG" 2>&1)
+assert_eq "adopt-collide-b-exit" "0" "$?"
+AID_A=$(extract_field id "$OUT_A"); AID_B=$(extract_field id "$OUT_B")
+HB2=$(repo_hash "$PAR2/repoB")
+assert_eq "adopt-collide-first-id-unchanged" "$STAMP0-$ASLUG" "$AID_A"
+assert_eq "adopt-collide-second-id-suffixed" "$STAMP0-$ASLUG-repob-$HB2" "$AID_B"
+assert_eq "adopt-collide-registry-counts-entries-ids" "2/2" "$(reg_stat counts "$ASLUG" adopt-par | cut -d/ -f1,2)"
+node "$TOOLS" worktree exit "$AID_B" --mode handoff >/dev/null 2>&1
+assert_eq "adopt-collide-exit-by-id-hits-b-only" "repoA=active,repoB=handoff" "$(reg_stat states "$ASLUG" adopt-par)"
+
+# ---- CASE 24: id and path decided separately
+# RED-making change: one shared "collides" flag that renames both (as before review).
+# 24a path only: same parent, different minute -> id unchanged, path prefixed.
+P3="$WORK/sep-par"; make_repo "$P3/repoA"; make_repo "$P3/repoB"
+OUT_A=$(prep_at "$T0" "$P3/repoA" sep-path); OUT_B=$(prep_at "$T1" "$P3/repoB" sep-path)
+assert_eq "sep-path-only-id-unchanged" "20261012-1005-sep-path" "$(extract_field id "$OUT_B")"
+assert_eq "sep-path-only-path-prefixed" "$P3/a1-worktrees/repob-$(repo_hash "$P3/repoB")-sep-path" "$(extract_field worktree_path "$OUT_B")"
+assert_eq "sep-path-only-counts" "2/2/2" "$(reg_stat counts sep-path sep-par)"
+# 24b id only: different parents, same minute -> id suffixed, path unchanged.
+P4="$WORK/sep-par-1"; P5="$WORK/sep-par-2"; make_repo "$P4/repo"; make_repo "$P5/repo"
+OUT_A=$(prep_at "$T0" "$P4/repo" sep-id); OUT_B=$(prep_at "$T0" "$P5/repo" sep-id)
+assert_eq "sep-id-only-id-suffixed" "$STAMP0-sep-id-repo-$(repo_hash "$P5/repo")" "$(extract_field id "$OUT_B")"
+assert_eq "sep-id-only-path-unchanged" "$P5/a1-worktrees/sep-id" "$(extract_field worktree_path "$OUT_B")"
+assert_eq "sep-id-only-counts" "2/2/2" "$(reg_stat counts sep-id sep-par-)"
+
+# ---- CASE 25: hostile and edge repo folder names (CONVENTIONS: hostile inputs)
+# RED-making change: kebabSafe/tag reverting to the raw basename (no length cap,
+# no hash) -> 25a-25c wrong; spawning a shell with the name -> 25c canary appears.
+edge_case() {
+  # edge_case <label> <folder-name> <slug>: plain repo "base" first (takes the
+  # names), then the odd-named repo collides with it in the same parent.
+  local label="$1" name="$2" slug="$3" par="$WORK/edge-$1"
+  make_repo "$par/base"; make_repo "$par/$name"
+  prep_at "$T0" "$par/base" "$slug" >/dev/null
+  EDGE_OUT=$(cd "$WORK/canary-cwd" && A1_NOW_OVERRIDE="$T0" node "$TOOLS" worktree prepare "$par/$name" "$slug" 2>&1)
+  EDGE_RC=$?
+  EDGE_PAR="$par"; EDGE_NAME="$name"
+}
+mkdir -p "$WORK/canary-cwd"
+# 25a non-ASCII only
+edge_case ascii "日本語" edge-a
+assert_eq "edge-nonascii-exit" "0" "$EDGE_RC"
+assert_eq "edge-nonascii-path" "$EDGE_PAR/a1-worktrees/repo-$(repo_hash "$EDGE_PAR/$EDGE_NAME")-edge-a" "$(extract_field worktree_path "$EDGE_OUT")"
+assert_eq "edge-nonascii-counts" "2/2/2" "$(reg_stat counts edge-a edge-ascii)"
+# 25b >= 200 chars
+LONG=$(printf 'n%.0s' $(seq 1 220))
+edge_case long "$LONG" edge-b
+assert_eq "edge-long-exit" "0" "$EDGE_RC"
+LP=$(extract_field worktree_path "$EDGE_OUT")
+assert_eq "edge-long-path-basename-under-255" "ok" "$([[ ${#LP} -gt 0 && $(basename "$LP" | tr -d "\n" | wc -c) -lt 255 ]] && echo ok || echo bad)"
+assert_eq "edge-long-path-capped-name" "$EDGE_PAR/a1-worktrees/$(printf 'n%.0s' $(seq 1 40))-$(repo_hash "$EDGE_PAR/$LONG")-edge-b" "$LP"
+assert_eq "edge-long-counts" "2/2/2" "$(reg_stat counts edge-b edge-long)"
+# 25c shell metacharacters: inert, canary never created
+META='x$(touch canary-file);`touch canary-file`'
+edge_case meta "$META" edge-c
+assert_eq "edge-meta-exit" "0" "$EDGE_RC"
+assert_eq "edge-meta-path-is-inert-kebab" "$EDGE_PAR/a1-worktrees/x-touch-canary-file-touch-canary-file-$(repo_hash "$EDGE_PAR/$META")-edge-c" "$(extract_field worktree_path "$EDGE_OUT")"
+assert_eq "edge-meta-canary-absent" "absent" "$([[ -e "$WORK/canary-cwd/canary-file" || -e "$EDGE_PAR/canary-file" ]] && echo present || echo absent)"
+assert_eq "edge-meta-counts" "2/2/2" "$(reg_stat counts edge-c edge-meta)"
+# 25d name+slug fit in 255 bytes even for a long slug (prefix is cut, slug never)
+LSLUG=$(printf 's%.0s' $(seq 1 230))
+edge_case lslug "$LONG" "$LSLUG"
+LP=$(extract_field worktree_path "$EDGE_OUT")
+assert_eq "edge-longslug-basename-under-255" "ok" "$([[ ${#LP} -gt 0 && $(basename "$LP" | tr -d "\n" | wc -c) -lt 255 ]] && echo ok || echo bad)"
+assert_eq "edge-longslug-slug-intact" "ok" "$([[ "$LP" == *"-$LSLUG" ]] && echo ok || echo bad)"
+
+# ---- CASE 26: sibling-slug re-collision and the final re-check
+# RED-making change: tag without the hash (old basename-only prefix) -> 26a
+# yields two equal paths; dropping the re-check -> 26b writes a duplicate.
+P6="$WORK/sib-par"; make_repo "$P6/repoA"; make_repo "$P6/repoB"; make_repo "$P6/repoC"
+prep_at "$T0" "$P6/repoA" repob-s >/dev/null
+prep_at "$T0" "$P6/repoC" s >/dev/null
+OUT_B=$(prep_at "$T0" "$P6/repoB" s); assert_eq "sibling-exit" "0" "$?"
+SIB=$(node -e '
+const r = JSON.parse(require("fs").readFileSync(process.env.A1_WORKTREE_REGISTRY, "utf8"));
+const e = r.worktrees.filter((w) => w.repo_root.includes("sib-par"));
+console.log([e.length, new Set(e.map((w) => w.id)).size, new Set(e.map((w) => w.worktree_path)).size].join("/"));')
+assert_eq "sibling-counts-3-entries-3-ids-3-paths" "3/3/3" "$SIB"
+# 26b: a foreign entry already sits on the prefixed path and id -> BLOCKER, no write
+P7="$WORK/block-par"; make_repo "$P7/repoA"; make_repo "$P7/repoB"
+prep_at "$T0" "$P7/repoA" blk >/dev/null
+H7=$(repo_hash "$P7/repoB")
+node -e '
+const fs = require("fs"); const p = process.env.A1_WORKTREE_REGISTRY;
+const r = JSON.parse(fs.readFileSync(p, "utf8"));
+const [par, h] = process.argv.slice(1);
+r.worktrees.push({ id: "20261012-1000-blk-repob-" + h, slug: "blk", repo_root: "/elsewhere/other", worktree_path: par + "/a1-worktrees/repob-" + h + "-blk", branch: "x", base_branch: "main", status: "prepared", phase_history: [] });
+fs.writeFileSync(p, JSON.stringify(r));' "$P7" "$H7"
+BEFORE=$(reg_stat counts blk "")
+OUT_B=$(prep_at "$T0" "$P7/repoB" blk); RC=$?
+assert_eq "recheck-blocker-exit" "1" "$RC"
+assert_eq "recheck-blocker-reports-path-free" "yes" "$(printf '%s' "$OUT_B" | grep -q '"worktree_path_free"' && printf '%s' "$OUT_B" | grep -q '"BLOCKER"' && echo yes || echo no)"
+assert_eq "recheck-blocker-reports-id-unique" "yes" "$(printf '%s' "$OUT_B" | grep -q '"id_unique"' && echo yes || echo no)"
+assert_eq "recheck-blocker-wrote-nothing" "$BEFORE" "$(reg_stat counts blk "")"
+
+# ---- CASE 27: A1_NOW_OVERRIDE is honoured and an invalid value is rejected
+assert_eq "clock-override-used" "20261012-1005" "$(extract_field id "$(prep_at "$T1" "$P3/repoA" clock-x)" | cut -c1-13)"
+A1_NOW_OVERRIDE="not-a-date" node "$TOOLS" worktree prepare "$P3/repoA" clock-bad >/dev/null 2>&1
+assert_eq "clock-override-invalid-rejected" "1" "$([[ $? -ne 0 ]] && echo 1 || echo 0)"
+
+# ----------------------------------------------------------------------------
 # Report
 # ----------------------------------------------------------------------------
 echo ""
