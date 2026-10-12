@@ -551,6 +551,42 @@ node "$TOOLS" worktree prepare "$PAR/repoA" "$SLUG" >/dev/null 2>&1
 assert_eq "collide-same-repo-same-slug-blocker" "1" "$?"
 
 # ----------------------------------------------------------------------------
+# CASE 23: two repos adopt the same slug in the same minute. RED-making change:
+# `const id = nowCompactId(slug);` back in cmdWorktreeAdopt (no disambiguation).
+# ----------------------------------------------------------------------------
+PAR2="$WORK/adopt-par"
+make_repo "$PAR2/repoA"
+make_repo "$PAR2/repoB"
+ASLUG="adopt-same"
+for R in repoA repoB; do
+  mkdir -p "$PAR2/wt-$R"
+  git -C "$PAR2/$R" worktree add -q -b "manual/$ASLUG" "$PAR2/wt-$R/$ASLUG" main >/dev/null 2>&1
+done
+OUT_A=$(node "$TOOLS" worktree adopt "$PAR2/repoA" "$ASLUG" --worktree-path "$PAR2/wt-repoA/$ASLUG" 2>&1)
+assert_eq "adopt-collide-a-exit" "0" "$?"
+OUT_B=$(node "$TOOLS" worktree adopt "$PAR2/repoB" "$ASLUG" --worktree-path "$PAR2/wt-repoB/$ASLUG" 2>&1)
+assert_eq "adopt-collide-b-exit" "0" "$?"
+AID_A=$(extract_field id "$OUT_A")
+AID_B=$(extract_field id "$OUT_B")
+if [[ -n "$AID_A" && "$AID_A" != "$AID_B" ]]; then D=distinct; else D="same:$AID_A|$AID_B"; fi
+assert_eq "adopt-collide-ids-distinct" "distinct" "$D"
+case "$AID_B" in *-repob) D=suffixed ;; *) D="no-suffix:$AID_B" ;; esac
+assert_eq "adopt-collide-second-id-has-repo-suffix" "suffixed" "$D"
+ACOUNTS=$(node -e '
+const r = JSON.parse(require("fs").readFileSync(process.env.A1_WORKTREE_REGISTRY, "utf8"));
+const e = r.worktrees.filter((w) => w.slug === process.argv[1] && w.repo_root.includes("adopt-par"));
+console.log([e.length, new Set(e.map((w) => w.id)).size].join("/"));
+' "$ASLUG")
+assert_eq "adopt-collide-registry-counts-entries-ids" "2/2" "$ACOUNTS"
+node "$TOOLS" worktree exit "$AID_B" --mode handoff >/dev/null 2>&1
+ASTATES=$(node -e '
+const r = JSON.parse(require("fs").readFileSync(process.env.A1_WORKTREE_REGISTRY, "utf8"));
+const e = r.worktrees.filter((w) => w.slug === process.argv[1] && w.repo_root.includes("adopt-par"));
+console.log(e.map((w) => w.repo_root.split("/").pop() + "=" + w.status).sort().join(","));
+' "$ASLUG")
+assert_eq "adopt-collide-exit-by-id-hits-b-only" "repoA=active,repoB=handoff" "$ASTATES"
+
+# ----------------------------------------------------------------------------
 # Report
 # ----------------------------------------------------------------------------
 echo ""

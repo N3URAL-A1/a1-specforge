@@ -123,6 +123,19 @@ function kebabSafe(name) {
   return k || 'repo';
 }
 
+function holdsId(reg, repoRoot, id) {
+  return reg.worktrees.some(
+    (w) => w.status !== 'cleaned' && w.repo_root !== repoRoot && w.id === id
+  );
+}
+
+// Id only (adopt: the path comes from the real worktree). Suffix the repo folder
+// name when ANOTHER repo holds the id; otherwise return the id unchanged.
+function disambiguateId(reg, repoRoot, id) {
+  if (!holdsId(reg, repoRoot, id)) return id;
+  return `${id}-${kebabSafe(path.basename(repoRoot))}`;
+}
+
 function holdsIdOrPath(reg, repoRoot, id, worktreePath) {
   return reg.worktrees.some(
     (w) =>
@@ -199,6 +212,7 @@ module.exports = {
   findActiveBySlug,
   repoParentWorktreeDir,
   kebabSafe,
+  disambiguateId,
   disambiguateNames,
   prReviewDir,
   ensurePrReviewDir,

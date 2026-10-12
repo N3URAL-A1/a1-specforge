@@ -22,6 +22,7 @@ const {
   gitBranchHasWorktree,
   findRegistryEntry,
   findActiveBySlug,
+  disambiguateId,
   disambiguateNames,
 } = require('./worktree-registry.cjs');
 
@@ -495,7 +496,7 @@ function cmdWorktreeAdopt(args) {
 
   const branch = match.branch || flags.branch || null;
   const baseBranch = flags.base || 'main';
-  const id = nowCompactId(slug);
+  const id = disambiguateId(reg, repoRoot, nowCompactId(slug));
   const commitCountRaw = branch
     ? git(repoRoot, ['rev-list', '--count', `${baseBranch}..${branch}`], { allowFail: true })
     : null;
