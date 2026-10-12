@@ -3,11 +3,11 @@ id: 014-xprov-egress-hardening
 project: a1-specforge
 milestone: continuous
 title: "xprov egress hardening: owner-store permit, scan-bound run, secret patterns, gitleaks"
-status: planned
-stage: null
+status: done
+stage: done
 depends_on: []
-started: null
-finished: null
+started: 2026-10-08
+finished: 2026-10-12
 spec_path: project/a1-specforge/spec/014-xprov-egress-hardening.md
 plan_path: project/a1-specforge/plans/014-xprov-egress-hardening-wave-plan.md
 schema_version: 1
