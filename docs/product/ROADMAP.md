@@ -4,7 +4,7 @@ type: roadmap
 project: a1-specforge
 title: "a1-specforge — Roadmap"
 status: active
-updated: 2026-10-08
+updated: 2026-10-12
 source: "migrated from docs/roadmap.md v3.0 (2026-07-10)"
 milestones:
   - id: m0-repo-extract
@@ -159,11 +159,11 @@ features:
   - id: 014-xprov-egress-hardening
     milestone: continuous
     title: "xprov egress hardening: owner-store permit, scan-bound run, secret patterns, gitleaks"
-    status: planned
-    stage: null
+    status: done
+    stage: done
     depends_on: []
-    started: null
-    finished: null
+    started: 2026-10-12
+    finished: 2026-10-12
     spec_path: project/a1-specforge/spec/014-xprov-egress-hardening.md
     plan_path: project/a1-specforge/plans/014-xprov-egress-hardening-wave-plan.md
 next: 002-product-docs-layer
@@ -281,6 +281,7 @@ None.
 - **2026-09-26** — 011-intent-queue-consumer -> started — stage transition via `product stage`
 - **2026-10-08** — feature '014-xprov-egress-hardening' added — Code leaves for Codex only with an owner-store permit, from a scanned snapshot, with gitleaks as a second layer; closes F-001/002/003/006/007/011/028/029
 - **2026-10-08** — feature.md created for '014-xprov-egress-hardening' — formal spec/plan attached via `product feature-init`
+- **2026-10-12** — 014-xprov-egress-hardening -> done — stage transition via `product stage`
 
 ## Appendix — migrated details
 
