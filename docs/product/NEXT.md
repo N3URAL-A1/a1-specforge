@@ -17,7 +17,7 @@ updated: 2026-10-12
 
 ## Next cursor
 
-**005-vault-first-artifacts** — recommended next feature (no unmet dependencies, first eligible feature in roadmap order).
+**006-specforge-kritis-profile** — recommended next feature (no unmet dependencies, first eligible feature in roadmap order).
 
 ## How to continue
 
