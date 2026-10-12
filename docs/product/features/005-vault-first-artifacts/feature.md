@@ -3,7 +3,7 @@ id: 005-vault-first-artifacts
 project: a1-specforge
 milestone: continuous
 title: "Vault-first artifacts"
-status: planned
+status: cancelled
 stage: null
 depends_on: []
 started: null
