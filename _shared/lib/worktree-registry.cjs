@@ -115,6 +115,36 @@ function repoParentWorktreeDir(repoRoot) {
   return path.join(path.dirname(repoRoot), 'a1-worktrees');
 }
 
+function kebabSafe(name) {
+  const k = String(name)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return k || 'repo';
+}
+
+function holdsIdOrPath(reg, repoRoot, id, worktreePath) {
+  return reg.worktrees.some(
+    (w) =>
+      w.status !== 'cleaned' &&
+      w.repo_root !== repoRoot &&
+      (w.id === id || w.worktree_path === worktreePath)
+  );
+}
+
+// Returns { id, worktreePath }. Unchanged names unless a non-cleaned entry of
+// ANOTHER repo already holds the same id or path; then both get the repo folder name.
+function disambiguateNames(reg, repoRoot, slug) {
+  const id = nowCompactId(slug);
+  const worktreePath = path.join(repoParentWorktreeDir(repoRoot), slug);
+  if (!holdsIdOrPath(reg, repoRoot, id, worktreePath)) return { id, worktreePath };
+  const repoName = kebabSafe(path.basename(repoRoot));
+  return {
+    id: `${id}-${repoName}`,
+    worktreePath: path.join(repoParentWorktreeDir(repoRoot), `${repoName}-${slug}`),
+  };
+}
+
 function prReviewDir(worktreePath) {
   return path.join(worktreePath, '.a1-review');
 }
@@ -168,6 +198,8 @@ module.exports = {
   findRegistryEntry,
   findActiveBySlug,
   repoParentWorktreeDir,
+  kebabSafe,
+  disambiguateNames,
   prReviewDir,
   ensurePrReviewDir,
   readFindings,

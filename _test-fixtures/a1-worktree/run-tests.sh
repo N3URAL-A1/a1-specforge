@@ -500,6 +500,57 @@ CONTENT=$(cat "$WORK/a1-worktrees/feat-idempotent/.a1/learnings/project/demo-slu
 assert_eq "learnings-idempotent-overwritten" "v2" "$CONTENT"
 
 # ----------------------------------------------------------------------------
+# CASE 22: two repos in one parent folder, same slug, same minute (bug
+# 2026-10-12 worktree-slug-collision). RED-making change: dropping the
+# disambiguation in cmdWorktreePrepare (id and path back to <stamp>-<slug>
+# and <parent>/a1-worktrees/<slug> for every repo).
+# ----------------------------------------------------------------------------
+PAR="$WORK/collide-par"
+make_repo "$PAR/repoA"
+make_repo "$PAR/repoB"
+SLUG="same-slug"
+OUT_A=$(node "$TOOLS" worktree prepare "$PAR/repoA" "$SLUG" 2>&1)
+assert_eq "collide-prepare-a-exit" "0" "$?"
+OUT_B=$(node "$TOOLS" worktree prepare "$PAR/repoB" "$SLUG" 2>&1)
+assert_eq "collide-prepare-b-exit" "0" "$?"
+ID_A=$(extract_field id "$OUT_A")
+ID_B=$(extract_field id "$OUT_B")
+PATH_A=$(extract_field worktree_path "$OUT_A")
+PATH_B=$(extract_field worktree_path "$OUT_B")
+if [[ -n "$ID_A" && "$ID_A" != "$ID_B" ]]; then D=distinct; else D="same:$ID_A|$ID_B"; fi
+assert_eq "collide-ids-distinct" "distinct" "$D"
+if [[ -n "$PATH_A" && "$PATH_A" != "$PATH_B" ]]; then D=distinct; else D="same:$PATH_A|$PATH_B"; fi
+assert_eq "collide-paths-distinct" "distinct" "$D"
+# count-assert next to the match-asserts: two entries, two unique ids, two unique paths
+COUNTS=$(node -e '
+const r = JSON.parse(require("fs").readFileSync(process.env.A1_WORKTREE_REGISTRY, "utf8"));
+const e = r.worktrees.filter((w) => w.slug === process.argv[1] && w.repo_root.includes("collide-par"));
+console.log([e.length, new Set(e.map((w) => w.id)).size, new Set(e.map((w) => w.worktree_path)).size].join("/"));
+' "$SLUG")
+assert_eq "collide-registry-counts-entries-ids-paths" "2/2/2" "$COUNTS"
+# first repo is not the one that got renamed (first prepare keeps today's names)
+assert_eq "collide-first-path-unchanged" "$PAR/a1-worktrees/$SLUG" "$PATH_A"
+assert_eq "collide-second-path-has-repo-prefix" "$PAR/a1-worktrees/repob-$SLUG" "$PATH_B"
+# enter by id resolves to the right repo
+node "$TOOLS" worktree enter "$ID_B" >/dev/null 2>&1
+assert_eq "collide-enter-b-exit" "0" "$?"
+STATES=$(node -e '
+const r = JSON.parse(require("fs").readFileSync(process.env.A1_WORKTREE_REGISTRY, "utf8"));
+const e = r.worktrees.filter((w) => w.slug === process.argv[1] && w.repo_root.includes("collide-par"));
+console.log(e.map((w) => w.repo_root.split("/").pop() + "=" + w.status).sort().join(","));
+' "$SLUG")
+assert_eq "collide-enter-b-only-b-active" "repoA=prepared,repoB=active" "$STATES"
+BR_B=$(git -C "$PAR/repoB" branch --list "feature/$SLUG" | wc -l | tr -d ' ')
+BR_A=$(git -C "$PAR/repoA" branch --list "feature/$SLUG" | wc -l | tr -d ' ')
+assert_eq "collide-branch-only-in-b" "1/0" "$BR_B/$BR_A"
+# slug lookup is ambiguous across repos -> "pass id instead"
+node "$TOOLS" worktree enter "$SLUG" >/dev/null 2>&1
+assert_eq "collide-enter-by-ambiguous-slug-rejected" "1" "$?"
+# same repo + same slug stays the BLOCKER
+node "$TOOLS" worktree prepare "$PAR/repoA" "$SLUG" >/dev/null 2>&1
+assert_eq "collide-same-repo-same-slug-blocker" "1" "$?"
+
+# ----------------------------------------------------------------------------
 # Report
 # ----------------------------------------------------------------------------
 echo ""

@@ -22,7 +22,7 @@ const {
   gitBranchHasWorktree,
   findRegistryEntry,
   findActiveBySlug,
-  repoParentWorktreeDir,
+  disambiguateNames,
 } = require('./worktree-registry.cjs');
 
 function cmdWorktreePrepare(args) {
@@ -76,8 +76,9 @@ function cmdWorktreePrepare(args) {
     pass('target_branch_free');
   }
 
-  // 6. worktree path free
-  const worktreePath = path.join(repoParentWorktreeDir(repoRoot), slug);
+  // 6. worktree path free (id and path are disambiguated against other repos' entries)
+  const reg = readRegistry();
+  const { id, worktreePath } = disambiguateNames(reg, repoRoot, slug);
   if (fs.existsSync(worktreePath)) {
     fail('worktree_path_free', `Path ${worktreePath} already exists`);
   } else {
@@ -85,7 +86,6 @@ function cmdWorktreePrepare(args) {
   }
 
   // 7. no active registry entry
-  const reg = readRegistry();
   const existing = findActiveBySlug(reg, repoRoot, slug);
   if (existing && !flags['force-reset']) {
     fail(
@@ -103,7 +103,6 @@ function cmdWorktreePrepare(args) {
   }
 
   // All green — write registry entry
-  const id = nowCompactId(slug);
   const entry = {
     id,
     slug,
