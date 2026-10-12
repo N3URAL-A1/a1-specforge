@@ -35,7 +35,7 @@ if [[ ! -f "$REGISTRY" || ! -f "$ADR" ]]; then
   exit 2
 fi
 
-GATE_IDS_LIB="$SELF_ROOT/_shared/lib/gate-ids.cjs" REGISTRY="$REGISTRY" ADR="$ADR" node -e '
+SELF_ROOT="$SELF_ROOT" GATE_IDS_LIB="$SELF_ROOT/_shared/lib/gate-ids.cjs" REGISTRY="$REGISTRY" ADR="$ADR" node -e '
 const fs = require("fs");
 const { parseRegistryRow } = require(process.env.GATE_IDS_LIB);
 const GATES = ["plan-review-xprov", "wave-inspect-xprov"];
@@ -69,6 +69,23 @@ if (GATES.some((id) => rows[id] === "blocking")) {
       if (!cmd.test(section)) problems.push(`a row is blocking but the ADR Live smoke section lacks the xprov gate command for ${id}`);
     }
   }
+}
+
+// FR-015: the runner is pinned twice (SHA256SUMS and RUNNER_SHA256 in xprov.cjs);
+// both must equal the file hash. Read from SELF_ROOT, the checkout this script lives in.
+{
+  const crypto = require("crypto");
+  const root = process.env.SELF_ROOT;
+  const vend = `${root}/_shared/vendor/claudex-loop`;
+  let constant = null, actual = null, pinned = null;
+  try { constant = (fs.readFileSync(`${root}/_shared/lib/xprov.cjs`, "utf8").match(/^const RUNNER_SHA256 = \x27([0-9a-f]{64})\x27;/m) || [])[1] || null; } catch (_e) { constant = null; }
+  try { actual = crypto.createHash("sha256").update(fs.readFileSync(`${vend}/runner.py`)).digest("hex"); } catch (_e) { actual = null; }
+  try { pinned = (fs.readFileSync(`${vend}/SHA256SUMS`, "utf8").match(/^([0-9a-f]{64})\s+\*?runner\.py\s*$/m) || [])[1] || null; } catch (_e) { pinned = null; }
+  if (!constant) problems.push("RUNNER_SHA256 is missing from _shared/lib/xprov.cjs");
+  if (!actual) problems.push("the vendored runner.py is unreadable");
+  if (!pinned) problems.push("SHA256SUMS has no runner.py line");
+  if (constant && actual && constant !== actual) problems.push(`RUNNER_SHA256 ${constant.slice(0, 12)} differs from runner.py ${actual.slice(0, 12)}`);
+  if (pinned && actual && pinned !== actual) problems.push(`SHA256SUMS ${pinned.slice(0, 12)} differs from runner.py ${actual.slice(0, 12)}`);
 }
 
 const ok = problems.length === 0;

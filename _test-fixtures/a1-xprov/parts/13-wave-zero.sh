@@ -39,9 +39,9 @@ plansha13() { (shasum -a 256 "$PHASE_PLAN" 2>/dev/null || sha256sum "$PHASE_PLAN
 repokey13() { (cd "$PHASE_REPO" && cd "$(git rev-parse --git-common-dir)" && pwd -P); }
 prep13() {
   make_tree; make_phase p13
+  rm -rf "$HOME/.a1-xprov" # before the permit: the owner store lives under it (spec 014)
   write_permit "$PHASE_REPO" fixture record/2026-09-24-fixture.md
   make_home; ln -s "$HOME/.codex/auth.json" "$XHOME/auth.json"; export A1_XPROV_CODEX_HOME="$XHOME"
-  rm -rf "$HOME/.a1-xprov"
 }
 gate13() {
   FAKE_RUNNER_ARGV_FILE="$ARGV13" FAKE_RUNNER_CASE="${FAKE_RUNNER_CASE:-approved}" fake_runner_env

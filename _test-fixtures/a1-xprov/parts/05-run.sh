@@ -72,12 +72,12 @@ caseR11() {
   local runner_real; runner_real="$(cd "$TREE_VENDOR" && pwd -P)/runner.py"   # Node realpaths __dirname (macOS /private/var)
   run5 review
   assert_rc "R11b run --mode review with the fake runner exits 0" 0 "$U_RC" "$U_ERR"
-  assert_json "R11c recorded runner argv is exactly review --host claude --repo <snapshot> --plan <abs> --artifacts <dir> --timeout 7" "$(cat "$ARGV_FILE" 2>/dev/null || echo null)" \
-    "JSON.stringify(j)" "$(node -e "process.stdout.write(JSON.stringify([process.argv[1], 'review', '--host', 'claude', '--repo', process.argv[2], '--plan', process.argv[3], '--artifacts', process.argv[4], '--timeout', '7']))" "$runner_real" "$SNAP" "$PLANCOPY" "$art")"
-  assert_json "R11d stdout argv[0..1] is python3 + the copy's vendored runner (R22 argv arm)" "$U_OUT" "j.argv[0] + ' ' + j.argv[1]" "python3 $runner_real"
+  assert_json "R11c recorded runner argv is exactly review --host claude --repo <snapshot> --plan <abs> --artifacts <dir> --timeout 7 --cli <abs codex>" "$(cat "$ARGV_FILE" 2>/dev/null || echo null)" \
+    "JSON.stringify(j)" "$(node -e "process.stdout.write(JSON.stringify([process.argv[1], 'review', '--host', 'claude', '--repo', process.argv[2], '--plan', process.argv[3], '--artifacts', process.argv[4], '--timeout', '7', '--cli', process.argv[5]]))" "$runner_real" "$(cd "$SNAP" && pwd -P)" "$PLANCOPY" "$art" "$(cd "$FAKE_BIN" && pwd -P)/codex")"
+  assert_json "R11d stdout argv[0..1] is an absolute python + the copy's vendored runner (R22 argv arm)" "$U_OUT" "(require('path').isAbsolute(j.argv[0]) && require('path').basename(j.argv[0]).startsWith('python')) + ' ' + j.argv[1]" "true $runner_real"
   assert_json "R11e the child received CODEX_HOME = the dedicated home" "$(cat "$ENV_FILE" 2>/dev/null || echo null)" "j.CODEX_HOME" "$XHOME"
   assert_json "R11f stdout names result_path, artifacts_run_dir under the artifacts dir, snapshot, empty baseline_delta" "$U_OUT" \
-    "[j.result_path.endsWith('/result.json'), j.artifacts_run_dir.startsWith(require('fs').realpathSync(process.env.HOME) + '/.a1-xprov/artifacts/'), j.snapshot === '$SNAP', j.baseline_delta.length].join('/')" "true/true/true/0"
+    "[j.result_path.endsWith('/result.json'), j.artifacts_run_dir.startsWith(require('fs').realpathSync(process.env.HOME) + '/.a1-xprov/artifacts/'), j.snapshot === '$(cd "$SNAP" && pwd -P)', j.baseline_delta.length].join('/')" "true/true/true/0"
   local mode; mode="$(mode_of "$art")"
   assert_eq "R11g artifacts root was pre-created 0700 by a1" "$mode" "700"
   # Wave 7: inspect needs a snapshot built WITH --base (its scanned diff hash sits next to it)
@@ -142,7 +142,7 @@ caseR15() {
   [[ "$bp1" != "$bp2" && "$bp2" != "undefined" && "$bp2" != "null" ]] && ok "R15i two tripwire runs report two different baseline paths (never a fixed /tmp file)" || bad "R15i baseline path reused or missing: $bp1 / $bp2"
   run5 review
   assert_json "R15i2 a successful run reports ok:true, baseline_delta [] and no baseline_path" "$U_OUT" "j.ok + '/' + j.baseline_delta.length + '/' + ('baseline_path' in j)" "true/0/false"
-  grep -q 'FAKE_RUNNER_WROTE_THIS' "$U_OUT" && bad "R15j the follow-up run still sees the tripwire file" || ok "R15j follow-up run on the reverted snapshot is clean"
+  grep -q 'FAKE_RUNNER_WROTE_THIS' <<<"$U_OUT" && bad "R15j the follow-up run still sees the tripwire file" || ok "R15j follow-up run on the reverted snapshot is clean"
   # --untracked-files=all: scratch/ is already untracked; a NEW file inside it is
   # invisible to plain `git status --porcelain` (which prints `?? scratch/` before and after).
   mkdir -p "$PHASE_REPO/scratch"; printf 'a\n' > "$PHASE_REPO/scratch/a.txt"
@@ -316,7 +316,7 @@ caseR24() {
   [[ $U_RC -eq 2 ]] && ok "R24h relative --plan → exit 2" || bad "R24h relative plan (rc=$U_RC)"
   run5 review --lane 'a;b'
   [[ $U_RC -eq 2 ]] && ok "R24k --lane with shell metacharacters → exit 2" || bad "R24k lane (rc=$U_RC)"
-  rm -f "$PHASE_REPO/.a1/xprov.json"; before="$(ls "$ARGV_DIR" | wc -l | tr -d ' ')"
+  rm -f "$PHASE_REPO/.a1/xprov.json" "$HOME/.a1-xprov/permits.json"; before="$(ls "$ARGV_DIR" | wc -l | tr -d ' ')"
   run5 review
   assert_json "R24i without .a1/xprov.json → exit 1 external_review_not_permitted" "$U_OUT" "j.reason + '/' + String($U_RC)" "external_review_not_permitted/1"
   assert_eq "R24j permission failure spawned nothing" "$(ls "$ARGV_DIR" | wc -l | tr -d ' ')" "$before"
@@ -344,11 +344,11 @@ caseR24() {
 
   # S2 — env allowlist
   prep5; snap5
-  # (GIT_DIR is asserted absent below but not planted: it would also break a1's OWN git calls in this process)
+  # (a caller GIT_DIR is not planted: it would also break a1's OWN git calls in this process; the runner's GIT_DIR is a1's own pin, RG3)
   OPENAI_BASE_URL=https://evil.example PYTHONPATH=/tmp/evil A1_XPROV_SOMETHING=x HTTPS_PROXY=http://p NODE_OPTIONS=--max-old-space-size=64 run5 review
   assert_rc "S2a run with hostile parent env still exits 0" 0 "$U_RC" "$U_ERR"
-  assert_json "S2b OPENAI_BASE_URL / PYTHONPATH / A1_XPROV_* / HTTPS_PROXY / GIT_DIR do not reach the runner; PATH, HOME, CODEX_HOME do" "$(cat "$ENV_FILE")" \
-    "['OPENAI_BASE_URL', 'PYTHONPATH', 'A1_XPROV_SOMETHING', 'HTTPS_PROXY', 'NODE_OPTIONS', 'GIT_DIR', 'A1_XPROV_CODEX_HOME'].filter(k => k in j).join(',') + '|' + ['PATH', 'HOME', 'CODEX_HOME'].every(k => k in j)" "|true"
+  assert_json "S2b OPENAI_BASE_URL / PYTHONPATH / A1_XPROV_* / HTTPS_PROXY do not reach the runner; PATH, HOME, CODEX_HOME do; GIT_DIR is a1's own (the snapshot's .git, spec 014)" "$(cat "$ENV_FILE")" \
+    "['OPENAI_BASE_URL', 'PYTHONPATH', 'A1_XPROV_SOMETHING', 'HTTPS_PROXY', 'NODE_OPTIONS', 'A1_XPROV_CODEX_HOME'].filter(k => k in j).join(',') + '|' + ['PATH', 'HOME', 'CODEX_HOME'].every(k => k in j) + '|' + j.GIT_DIR.endsWith('/.git')" "|true|true"
 }
 
 # ---------- R18d (moved from part 03): run dir retention and bounds ----------
@@ -409,7 +409,7 @@ caseRC() {
   # even receive the repo-local XREVIEW note. Red-making change: snapshotNotes +
   # appendXreviewNote before permitCheck.
   prep5; printf '# agents\n' > "$PHASE_REPO/AGENTS.md"; commit5 "agents only"; snap5
-  rm -f "$PHASE_REPO/.a1/xprov.json"
+  rm -f "$PHASE_REPO/.a1/xprov.json" "$HOME/.a1-xprov/permits.json" # spec 014: file AND owner entry gone
   run5 review
   assert_json "RC9a without .a1/xprov.json → external_review_not_permitted" "$U_OUT" "j.reason + '/' + String($U_RC)" "external_review_not_permitted/1"
   [[ ! -e "$PHASE_DIR/XREVIEW.md" && ! -e "$PHASE_DIR/PLAN-REVIEW-LOG.md" ]] && ok "RC9b no XREVIEW.md and no PLAN-REVIEW-LOG.md written before the permit check" \

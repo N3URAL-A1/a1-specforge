@@ -85,6 +85,9 @@ file12() {
     fs.writeFileSync(path.join(repo, ".a1", "xprov.json"), JSON.stringify(o, null, 2) + "\n");
   ' "$PHASE_REPO" "$1" "$2" "$3" "${4:-}"
 }
+# permit12 <by> <on> <record> — the owner's permit-store entry matching file12 allowed (spec 014 FR-002:
+# `allowed` is the file AND this entry; the key is computed by the harness, not by the module under test).
+permit12() { write_permit_store "$PHASE_REPO" "$1" "$3" "" "$2"; }
 gate12() { G_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov gate --phase p12 "$@" 2>"$TMP12/err.txt")"; G_RC=$?; G_ERR="$(cat "$TMP12/err.txt")"; }
 sub12() { G_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov "$@" 2>"$TMP12/err.txt")"; G_RC=$?; G_ERR="$(cat "$TMP12/err.txt")"; }
 nothing12() { [[ ! -e "$PHASE_DIR/PLAN-REVIEW-LOG.md" && ! -e "$PHASE_DIR/xreview" && ! -e "$PHASE_DIR/observations.jsonl" && ! -e "$PHASE_DIR/XREVIEW.md" ]]; }
@@ -149,9 +152,9 @@ caseP3() {
   prep12; file12 allowed robert 2026-10-05 record/x.md; mkdir -p "$HOME/.a1-xprov"; chmod 755 "$HOME/.a1-xprov"
   sub12 permit-check
   assert_json "P3c store with no file but a 0755 ~/.a1-xprov dir, allowed file → denial_mismatch" "$G_OUT" "j.state" "denial_mismatch"
-  chmod 700 "$HOME/.a1-xprov"
+  chmod 700 "$HOME/.a1-xprov"; permit12 robert 2026-10-05 record/x.md
   sub12 permit-check
-  assert_json "P3c control: dir 0700 and no store file → allowed (a missing store is no denial)" "$G_OUT" "j.state + '/' + j.ok" "allowed/true"
+  assert_json "P3c control: dir 0700 and no denial store file (permit entry present) → allowed (a missing store is no denial)" "$G_OUT" "j.state + '/' + j.ok" "allowed/true"
 }
 
 caseP4() {
@@ -252,7 +255,7 @@ caseP8() {
 }
 
 caseP9() {
-  prep12; file12 allowed robert 2026-10-05 record/x.md
+  prep12; file12 allowed robert 2026-10-05 record/x.md; permit12 robert 2026-10-05 record/x.md
   sub12 permit-check
   assert_rc "P9 allowed → exit 0" 0 "$G_RC"
   assert_json "P9 state allowed" "$G_OUT" "j.state + '/' + j.ok" "allowed/true"
@@ -260,6 +263,7 @@ caseP9() {
   # the permit file of plugin 1.10.0 stays valid: no schema change
   assert_json "P9 an existing 1.10.0 record is still allowed" "$G_OUT" "j.record" "record/x.md"
   file12 denied robert 2026-10-05
+  rm -f "$HOME/.a1-xprov/permits.json" # spec 014: a denial next to an owner permit entry is denial_mismatch (part 15 PS4f)
   store12 robert 2026-10-05
   sub12 permit-check
   assert_rc "P9 denied → exit 1 (only allowed exits 0)" 1 "$G_RC"
@@ -406,7 +410,7 @@ caseP13() {
     grep -q "xprov_not_applicable" "$REPO_ROOT/$f" && ok "P13 $f carries the retro tag xprov_not_applicable" || bad "P13 $f lacks xprov_not_applicable"
   done
   assert_json "P13 observe accepts the pattern xprov_not_applicable" "$(node -e 'process.stdout.write(JSON.stringify(require(process.argv[1] + "/_shared/lib/xprov-observe.cjs").PATTERNS))' "$REPO_ROOT")" "j.includes('xprov_not_applicable')" "true"
-  assert_json "P13 REASON_LIST holds both new reasons" "$(node -e 'process.stdout.write(JSON.stringify(require(process.argv[1] + "/_shared/lib/xprov.cjs").REASONS))' "$REPO_ROOT")" "['external_review_denied', 'external_review_denial_mismatch'].every((r) => j[r] === r)" "true"
+  assert_json "P13 REASON_LIST holds the spec 012 reasons and the spec 014 permit_mismatch reason" "$(node -e 'process.stdout.write(JSON.stringify(require(process.argv[1] + "/_shared/lib/xprov.cjs").REASONS))' "$REPO_ROOT")" "['external_review_denied', 'external_review_denial_mismatch', 'external_review_permit_mismatch'].every((r) => j[r] === r)" "true"
   local help; help="$(node "$REPO_ROOT/_shared/a1-tools.cjs" --help 2>&1)"
   local t
   for t in 'permit --deny' 'permit-denials.json' 'denial_mismatch' 'external_review_denied' 'not_applicable' 'xprov_not_applicable' '0..9999'; do

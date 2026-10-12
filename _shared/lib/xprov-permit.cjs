@@ -27,6 +27,7 @@ const io = require('./io.cjs');
 const xprov = require('./xprov.cjs');
 const C = require('./xprov-common.cjs');
 const D = require('./xprov-denials.cjs');
+const PM = require('./xprov-permits.cjs');
 // Shared helpers — one definition each, in xprov-common.cjs.
 const { inputError } = C;
 const usageExit = (msg) => C.usageExit('', msg);
@@ -36,9 +37,9 @@ const resolveRoot = (flags) => C.resolveRepoFlag(flags.repo);
 const PERMIT_FILE = path.join('.a1', 'xprov.json');
 const ALLOWED = 'allowed';
 const DENIED = 'denied';
-// The five permit states (spec 012 FR-001), computed from the working-tree
-// file AND the owner's denial store.
-const STATES = Object.freeze({ ALLOWED, DENIED, ABSENT: 'absent', INVALID: 'invalid', DENIAL_MISMATCH: 'denial_mismatch' });
+// The six permit states (spec 012 FR-001, spec 014 FR-002), computed from the
+// working-tree file AND the owner's denial store AND the owner's permit store.
+const STATES = Object.freeze({ ALLOWED, DENIED, ABSENT: 'absent', INVALID: 'invalid', DENIAL_MISMATCH: 'denial_mismatch', PERMIT_MISMATCH: 'permit_mismatch' });
 const REQUIRED_FIELDS = Object.freeze(['external_review', 'decided_by', 'decided_on', 'record']);
 const DENIED_REQUIRED_FIELDS = Object.freeze(['external_review', 'decided_by', 'decided_on']); // `record` is optional for a denial
 // Vault-relative note: `record/…` or `project/…`, markdown, no `..` segment.
@@ -53,6 +54,8 @@ const EXPOSURE_SENTENCE = 'What leaves for the external reviewer: the full track
   + 'PLAN.md and the dispositions; the provider reads the tree in a read-only sandbox.';
 const HINT_ABSENT = 'run `xprov permit` or `xprov permit --deny` in a real terminal (the owner decides, not an agent)';
 const HINT_MISMATCH = '.a1/xprov.json and the owner\'s denial store disagree — the owner re-runs `xprov permit` or `xprov permit --deny` in a real terminal';
+// Spec 014 FR-004: the detail of `permit_mismatch` and the migration hint for repositories permitted by the file only.
+const HINT_PERMIT_MISMATCH = '.a1/xprov.json says allowed but the owner\'s permit store holds no matching entry — the owner re-runs `xprov permit --by <name> --record <note>` in a real terminal';
 const TYPED_WORD = Object.freeze({ [ALLOWED]: ALLOWED, [DENIED]: DENIED });
 
 function permitPath(repoRoot) {
@@ -77,20 +80,38 @@ function readPermitFile(file) {
   return { kind: rec.external_review, detail: null, rec };
 }
 
-/** The state of one repository from file x store (spec 012 FR-001): { state, detail }. */
-function classify(fileState, store, denial) {
+/** True when the owner's permit entry and the working-tree record state the same decision (spec 014 FR-002). */
+function permitAgrees(rec, entry) {
+  const sameBranch = rec.default_branch === entry.default_branch; // both absent (undefined) counts as equal
+  return entry.decided_by === rec.decided_by && entry.decided_on === rec.decided_on && entry.record === rec.record && sameBranch;
+}
+
+const permitMismatch = (detail) => ({ state: STATES.PERMIT_MISMATCH, detail });
+const fileWord = (kind) => (kind === 'missing' ? 'absent' : 'invalid');
+
+/** The state of one repository from file x denial store x permit store (spec 012 FR-001, spec 014 FR-002):
+ * { state, detail }. `permit` is { ok, missing, why, entry }: the permit-store read plus this repository's entry. */
+function classify(fileState, store, denial, permit) {
   const hasDenial = denial !== undefined;
   const decided = fileState.kind === ALLOWED || fileState.kind === DENIED;
+  const pstore = permit || { ok: true, missing: true, entry: undefined };
+  const entry = pstore.ok ? pstore.entry : undefined;
   if (decided && !store.ok && !store.missing) return { state: STATES.DENIAL_MISMATCH, detail: `the owner's denial store is not usable (${store.why})` };
   if (fileState.kind === ALLOWED) {
-    return hasDenial ? { state: STATES.DENIAL_MISMATCH, detail: 'the owner\'s denial store holds a denial for this repository but .a1/xprov.json says allowed' } : { state: STATES.ALLOWED, detail: null };
+    if (hasDenial) return { state: STATES.DENIAL_MISMATCH, detail: 'the owner\'s denial store holds a denial for this repository but .a1/xprov.json says allowed' };
+    if (!pstore.ok && !pstore.missing) return permitMismatch(`the owner's permit store is not usable (${pstore.why}); ${HINT_PERMIT_MISMATCH}`);
+    if (!entry) return permitMismatch(HINT_PERMIT_MISMATCH);
+    if (!permitAgrees(fileState.rec, entry)) return permitMismatch(`decided_by/decided_on/record/default_branch in .a1/xprov.json and in the owner's permit store differ; ${HINT_PERMIT_MISMATCH}`);
+    return { state: STATES.ALLOWED, detail: null };
   }
   if (fileState.kind === DENIED) {
     if (!hasDenial) return { state: STATES.DENIAL_MISMATCH, detail: '.a1/xprov.json says denied but the owner\'s denial store holds no denial for this repository' };
     const same = denial.decided_by === fileState.rec.decided_by && denial.decided_on === fileState.rec.decided_on;
-    return same ? { state: STATES.DENIED, detail: null } : { state: STATES.DENIAL_MISMATCH, detail: 'decided_by/decided_on in .a1/xprov.json and in the owner\'s denial store differ' };
+    if (!same) return { state: STATES.DENIAL_MISMATCH, detail: 'decided_by/decided_on in .a1/xprov.json and in the owner\'s denial store differ' };
+    return entry ? { state: STATES.DENIAL_MISMATCH, detail: 'the owner\'s permit store holds an entry for this repository but .a1/xprov.json says denied' } : { state: STATES.DENIED, detail: null };
   }
-  if (hasDenial) return { state: STATES.DENIAL_MISMATCH, detail: `the owner's denial store holds a denial for this repository but .a1/xprov.json is ${fileState.kind === 'missing' ? 'absent' : 'invalid'}` };
+  if (hasDenial) return { state: STATES.DENIAL_MISMATCH, detail: `the owner's denial store holds a denial for this repository but .a1/xprov.json is ${fileWord(fileState.kind)}` };
+  if (entry) return permitMismatch(`the owner's permit store holds an entry for this repository but .a1/xprov.json is ${fileWord(fileState.kind)}; ${HINT_PERMIT_MISMATCH}`);
   return { state: fileState.kind === 'missing' ? STATES.ABSENT : STATES.INVALID, detail: fileState.detail };
 }
 
@@ -99,6 +120,7 @@ const REASON_OF_STATE = Object.freeze({
   [STATES.INVALID]: xprov.REASONS.external_review_not_permitted,
   [STATES.DENIED]: xprov.REASONS.external_review_denied,
   [STATES.DENIAL_MISMATCH]: xprov.REASONS.external_review_denial_mismatch,
+  [STATES.PERMIT_MISMATCH]: xprov.REASONS.external_review_permit_mismatch,
 });
 
 /** Reads the record and the store; never throws. `ok` is true only for state
@@ -109,7 +131,9 @@ function permitCheck(opts) {
   const fileState = readPermitFile(file);
   const key = C.commonDirOf(root);
   const store = D.readDenials();
-  const { state, detail } = classify(fileState, store, key === null ? undefined : store.denials[key]);
+  const pstore = PM.readPermits();
+  const permit = { ok: pstore.ok, missing: pstore.missing, why: pstore.why, entry: key === null ? undefined : pstore.permits[key] };
+  const { state, detail } = classify(fileState, store, key === null ? undefined : store.denials[key], permit);
   if (state === STATES.ALLOWED) {
     const r = fileState.rec;
     return Object.freeze({ ok: true, state, file, external_review: ALLOWED, decided_by: r.decided_by, decided_on: r.decided_on, record: r.record });
@@ -121,6 +145,7 @@ function permitCheck(opts) {
 /** The one-line stderr hint for a failing permit state (spec 012 FR-003), or null. */
 function permitHint(state) {
   if (state === STATES.DENIAL_MISMATCH) return HINT_MISMATCH;
+  if (state === STATES.PERMIT_MISMATCH) return HINT_PERMIT_MISMATCH;
   return state === STATES.ABSENT || state === STATES.INVALID ? HINT_ABSENT : null;
 }
 
@@ -171,9 +196,24 @@ function tryWriteDenials(denials) {
   try { D.writeDenials(denials); return null; } catch (e) { return `cannot write the denial store (${e && e.code === 'A1_INPUT' ? e.message : (e && e.code) || 'error'})`; }
 }
 
-/** `permit` (allowed): removes this repository's store denial first, then writes
- * the file atomically. Returns a fresh {ok, file, record}; {ok: false, reason}
- * with nothing written for an invalid branch or an unusable store. */
+/** The permit store as a writer sees it (spec 014 FR-003): { permits } to extend, or
+ * { refusal } — an unusable store is never overwritten. */
+function permitStoreForWrite() {
+  const s = PM.readPermits();
+  if (s.ok || s.missing) return { permits: s.permits };
+  return { refusal: Object.freeze({ ok: false, reason: 'permit_store_unusable', detail: `the existing permit store is not usable (${s.why}); fix or remove ${PM.permitsPath()} yourself; nothing written` }) };
+}
+
+/** Runs one permit-store write (a closure, so the writer is referenced only inside `permit` / `permitDeny`,
+ * spec 014 AC-003.4) and reports a failure as a string instead of throwing. */
+function tryPermitStore(write) {
+  try { write(); return null; } catch (e) { return `cannot write the permit store (${e && e.code === 'A1_INPUT' ? e.message : (e && e.code) || 'error'})`; }
+}
+
+/** `permit` (allowed), spec 014 FR-003 order: (1) removes this repository's store
+ * denial, (2) writes the permit entry, (3) writes the file atomically. Returns a fresh
+ * {ok, file, record}; {ok: false, reason} with nothing written for an invalid branch or
+ * an unusable store; the half-write messages say which state the failure leaves. */
 function permit(opts) {
   const o = opts || {};
   const root = o.repoRoot || io.repoRoot();
@@ -188,16 +228,28 @@ function permit(opts) {
   const key = repoKey(root);
   const store = storeForWrite();
   if (store.refusal) return store.refusal;
+  const pstore = permitStoreForWrite();
+  if (pstore.refusal) return pstore.refusal;
   const hadDenial = Boolean(store.denials[key]);
   if (hadDenial) {
     const failed = tryWriteDenials(D.withDenial(store.denials, key, null));
     if (failed) return Object.freeze({ ok: false, reason: 'denial_store_unusable', detail: `${failed}; nothing written` });
   }
+  const entry = Object.freeze({
+    decided_by: record.decided_by, decided_on: record.decided_on, record: record.record, ts: o.now || io.nowIso(),
+    ...(record.default_branch !== undefined ? { default_branch: record.default_branch } : {}),
+  });
+  const storeFailed = tryPermitStore(() => PM.writePermits(PM.withPermit(pstore.permits, key, entry)));
+  if (storeFailed) {
+    return hadDenial
+      ? Object.freeze({ ok: false, reason: xprov.REASONS.external_review_denial_mismatch, file: permitPath(root), detail: `the denial was removed from the store but the permit entry could not be written (${storeFailed}); the file still says denied, so the state is denial_mismatch until the owner re-runs permit` })
+      : Object.freeze({ ok: false, reason: 'permit_write_failed', file: permitPath(root), detail: `${storeFailed}; nothing changed` });
+  }
   try { writeRecordFile(root, record); } catch (e) {
     const code = (e && e.code) || 'error';
     return hadDenial
       ? Object.freeze({ ok: false, reason: xprov.REASONS.external_review_denial_mismatch, file: permitPath(root), detail: `the denial was removed from the store but ${PERMIT_FILE} could not be written (${code}); the file still says denied, so the state is denial_mismatch until the owner re-runs permit` })
-      : Object.freeze({ ok: false, reason: 'permit_write_failed', file: permitPath(root), detail: `${PERMIT_FILE} could not be written (${code}); nothing changed` });
+      : Object.freeze({ ok: false, reason: xprov.REASONS.external_review_permit_mismatch, file: permitPath(root), detail: `the permit entry was written but ${PERMIT_FILE} could not be written (${code}); the file is absent or old next to the entry, so the state is permit_mismatch until the owner re-runs permit` });
   }
   return Object.freeze({ ok: true, file: permitPath(root), record });
 }
@@ -218,9 +270,19 @@ function permitDeny(opts) {
   const key = repoKey(root);
   const store = storeForWrite();
   if (store.refusal) return store.refusal;
+  // Spec 014 FR-003 order: permit store, then denial store, then file. A store without this repo's entry is not rewritten.
+  const pstore = permitStoreForWrite();
+  if (pstore.refusal) return pstore.refusal;
+  if (pstore.permits[key]) {
+    const permitFailed = tryPermitStore(() => PM.writePermits(PM.withPermit(pstore.permits, key, null)));
+    if (permitFailed) return Object.freeze({ ok: false, reason: 'permit_write_failed', detail: `${permitFailed}; nothing written` });
+  }
   const entry = Object.freeze({ decided_by: by, decided_on: day, ts: o.now || io.nowIso() });
   const failed = tryWriteDenials(D.withDenial(store.denials, key, entry));
-  if (failed) return Object.freeze({ ok: false, reason: 'denial_store_unusable', detail: `${failed}; nothing written` });
+  if (failed) {
+    const removed = Boolean(pstore.permits[key]);
+    return Object.freeze({ ok: false, reason: 'denial_store_unusable', detail: removed ? `${failed}; the permit entry was already removed, so the state is permit_mismatch until the owner re-runs permit` : `${failed}; nothing written` });
+  }
   try { writeRecordFile(root, record); } catch (e) {
     return Object.freeze({ ok: false, reason: xprov.REASONS.external_review_denial_mismatch, file: permitPath(root), detail: `the denial store was written but ${PERMIT_FILE} could not be (${(e && e.code) || 'error'}); the state is denial_mismatch until the owner re-runs permit` });
   }
@@ -295,6 +357,6 @@ function cmdXprovPermit(args) {
 }
 
 module.exports = {
-  PERMIT_FILE, DENY_MESSAGE, EXPOSURE_SENTENCE, STATES, permitPath, permitCheck, permitHint, permit, permitDeny, isValidBranchName,
+  PERMIT_FILE, DENY_MESSAGE, EXPOSURE_SENTENCE, HINT_PERMIT_MISMATCH, STATES, permitPath, permitCheck, permitHint, permit, permitDeny, isValidBranchName,
   cmdXprovPermitCheck, cmdXprovPermit,
 };
