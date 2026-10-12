@@ -6,7 +6,7 @@ vault: "[[project/a1-specforge]]"
 
 # CLAUDE.md — a1-specforge
 
-> Unter 200 Zeilen halten. WHAT / WHY / HOW. Details in `.claude/rules/` und `.claude/skills/`.
+> Unter 200 Zeilen halten. WHAT / WHY / HOW. Details in `_shared/`, `CONTRIBUTING.md` und `docs/adr/`.
 
 ## WHAT — Das Projekt
 
@@ -20,7 +20,7 @@ vault: "[[project/a1-specforge]]"
 
 - Produktname ist `a1-specforge` (Festlegung 2026-07-04); Hardcodes werden auf den Namen angeglichen.
 - `bin/install.sh` ist die Single Source of Truth für das installierte Set; README muss dazu passen (Wächter `bin/verify-install-sync.sh`).
-- Gates sind deterministisch (Code, nicht Prompt). Jede Gate-ID steht in `_shared/gates-registry.md`.
+- Gates sind deterministisch (Code, nicht Prompt). Jede Gate-ID muss in `_shared/gates-registry.md` stehen.
 - xprov-Gate schickt Code nur mit Repo-Freigabe an Codex (Regel `xprov-codex.md`); Allowlist-PRs nur per `--rebase` mergen.
 
 ## HOW — Der praktische Betrieb
@@ -37,10 +37,10 @@ claude plugin update a1-specforge                             # Plugin nach Push
 
 ### Conventions
 
-- Code Englisch, Doku/Specs Deutsch bzw. Englisch laut `_shared/language-policy.md`, Commits `type(scope): description`
+- Datei-Artefakte (Code, Specs, Pläne, Commits) immer Englisch, Chat in der Nutzersprache (`_shared/language-policy.md`); Commits `type(scope): description`
 - `skills/` (Skills), `agents/` (Agents), `_shared/` (CLI + Lib), `_test-fixtures/` (Suites), `docs/` (ADRs, Vision, Roadmap), `packs/` (Gate-Packs)
 - Specs/Pläne/Learnings: Vault `project/a1-specforge/…`, Phasen in `.a1/phases/`
-- Fixtures aus echten Dateien kopieren, nicht aus dem Parser ableiten (`_test-fixtures/CONVENTIONS.md`)
+- Fixtures aus echten Dateien kopieren, nicht aus dem Parser ableiten; Regeln in `_test-fixtures/CONVENTIONS.md`
 
 ### Architecture Essentials
 
