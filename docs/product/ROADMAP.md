@@ -282,6 +282,7 @@ None.
 - **2026-10-08** — feature '014-xprov-egress-hardening' added — Code leaves for Codex only with an owner-store permit, from a scanned snapshot, with gitleaks as a second layer; closes F-001/002/003/006/007/011/028/029
 - **2026-10-08** — feature.md created for '014-xprov-egress-hardening' — formal spec/plan attached via `product feature-init`
 - **2026-10-12** — 014-xprov-egress-hardening -> done — stage transition via `product stage`
+- **2026-10-12** — 014-xprov-egress-hardening started date corrected to 2026-10-08 (claim date); code_scope claim released — product stage stamped today; the stage started on 2026-10-08
 
 ## Appendix — migrated details
 
