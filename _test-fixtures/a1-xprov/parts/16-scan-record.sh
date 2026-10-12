@@ -34,7 +34,7 @@
 TMP16="$(mktemp -d)"
 make_tree
 
-SR_RECORD_KEYS='["version","snapshot","repo_key","commit","base","tree","index_sha256","status_sha256","git_meta_sha256","diff_sha256","inputs","gitleaks","nonce","ts"]'
+SR_RECORD_KEYS='["version","snapshot","repo_key","commit","base","tree","index_sha256","status_sha256","content_sha256","git_meta_sha256","diff_sha256","inputs","gitleaks","nonce","ts"]'
 SR_Q="QQQQQQQQQQQQQQQQ"; SR_AKI="AKI"
 SR_FAKE_KEY="${SR_AKI}A${SR_Q}"          # aws_access_key_id shape, assembled at run time
 
@@ -71,7 +71,7 @@ sr_record_file() { printf '%s/.a1-xprov/scan-records/%s.json' "$1" "$(basename "
   if [[ -n "$SR_DIR" && -f "$rec" ]]; then
     ok "SR1 the record scan-records/<basename>.json exists"
     body="$(cat "$rec")"
-    assert_json "SR1 exactly the 14 spec keys, in spec order" "$body" "JSON.stringify(Object.keys(j))" "$SR_RECORD_KEYS"
+    assert_json "SR1 exactly the 15 record keys (the 14 of the spec plus content_sha256, Wave 10), in order" "$body" "JSON.stringify(Object.keys(j))" "$SR_RECORD_KEYS"
     assert_eq "SR1 record file mode is 0600" "$(mode_of "$rec")" "600"
     assert_eq "SR1 scan-records dir mode is 0700" "$(mode_of "$home/.a1-xprov/scan-records")" "700"
     assert_json "SR1 version is 1" "$body" "j.version" "1"
@@ -207,7 +207,7 @@ sr_record_file() { printf '%s/.a1-xprov/scan-records/%s.json' "$1" "$(basename "
   lib="$(HOME="$home" node -e '
     const fs = require("fs"); const path = require("path");
     const R = require(process.argv[1] + "/_shared/lib/xprov-scan-records.cjs");
-    const good = { version: 1, snapshot: "/s", repo_key: "/r", commit: "c", base: null, tree: "t", index_sha256: "i", status_sha256: "s", git_meta_sha256: "g", diff_sha256: null, inputs: { plan: "h" }, gitleaks: true, nonce: "0123456789abcdef0123456789abcdef", ts: "2026-10-08T00:00:00Z" };
+    const good = { version: 1, snapshot: "/s", repo_key: "/r", commit: "c", base: null, tree: "t", index_sha256: "i", status_sha256: "s", content_sha256: "c", git_meta_sha256: "g", diff_sha256: null, inputs: { plan: "h" }, gitleaks: true, nonce: "0123456789abcdef0123456789abcdef", ts: "2026-10-08T00:00:00Z" };
     const out = {};
     const bads = {
       extraKey: { ...good, extra: 1 }, missingKey: (({ ts, ...r }) => r)(good), badVersion: { ...good, version: 2 }, emptyString: { ...good, tree: "" },

@@ -419,11 +419,13 @@ fi
   rb_expect "RF3 trustctime=false + checkStat=minimal + same-size edit" snapshot_changed_after_scan git_meta_mismatch
 
   rb_arm; rb_snap
+  mkdir -p "$RB_SNAP/.git/hooks"   # the clone is built with an empty template (Wave 10): no hooks/ or info/ of its own
   printf '#!/bin/sh\nexit 0\n' > "$RB_SNAP/.git/hooks/post-checkout"; chmod 755 "$RB_SNAP/.git/hooks/post-checkout"
   rb_run review
   rb_expect "RF3b a hook file added under .git/hooks" snapshot_changed_after_scan git_meta_mismatch
 
   rb_arm; rb_snap
+  mkdir -p "$RB_SNAP/.git/info"
   printf '# planted\n' >> "$RB_SNAP/.git/info/exclude"
   rb_run review
   rb_expect "RF3c a line added to .git/info/exclude" snapshot_changed_after_scan git_meta_mismatch
@@ -455,7 +457,7 @@ fi
   FAKE_RUNNER_ARGV_FILE="$RB_ARGV" FAKE_RUNNER_ENV_FILE="$envf" FAKE_RUNNER_CASE=approved fake_runner_env
   ( cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov run --mode review --snapshot "$RB_SNAP" --plan "$RB_SNAP.inputs/PLAN.md" --phase p20 --gate "$GATE_PLAN" --timeout 7 >/dev/null 2>&1 )
   pairs="$(json_get "$(cat "$envf" 2>/dev/null || echo '{}')" "(() => { const n = Number(j.GIT_CONFIG_COUNT); const o = {}; for (let i = 0; i < n; i++) o[j['GIT_CONFIG_KEY_' + i]] = j['GIT_CONFIG_VALUE_' + i]; return o; })()")"
-  assert_eq "RF4 the runner env pins the four git keys" "$pairs" '{"core.fsmonitor":"false","core.hooksPath":"/dev/null","core.trustctime":"true","core.checkStat":"default"}'
+  assert_eq "RF4 the runner env pins the git keys (four of Wave 6, three of Wave 10)" "$pairs" '{"core.fsmonitor":"false","core.hooksPath":"/dev/null","core.trustctime":"true","core.checkStat":"default","core.attributesFile":"/dev/null","core.excludesFile":"/dev/null","core.untrackedCache":"false"}'
 }
 
 # ---------- RF5: the realpath is used after the binding ----------
@@ -530,6 +532,129 @@ rg_foreign_common() {
   real="$(cd "$RB_SNAP" && pwd -P)"
   ( cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov run --mode review --snapshot "$RB_SNAP" --plan "$RB_SNAP.inputs/PLAN.md" --phase p20 --gate "$GATE_PLAN" --timeout 7 >/dev/null 2>&1 )
   assert_eq "RG3 the runner env names the snapshot's git dir, common dir and work tree" "$(json_get "$(cat "$envf" 2>/dev/null || echo '{}')" "[j.GIT_DIR, j.GIT_COMMON_DIR, j.GIT_WORK_TREE].join('|')")" "$real/.git|$real/.git|$real"
+}
+
+
+# ---------- Wave 10 (security re-check 2026-10-12, owner decision "Option A"): hermetic git on snapshots ----------
+# The class: git configuration or objects from OUTSIDE the bound set (global ~/.gitconfig and attributes, the template
+# dir at `git init`, replace refs, inherited GIT_* variables) steer the snapshot checks or the runner's diff.
+#   RH1  a clean filter from the caller's global config + ~/.config/git/attributes hides a same-length secret written
+#        after the scan -> refused untracked_or_modified_file; the filter program never runs.
+#   RH2  GIT_TEMPLATE_DIR / global init.templateDir at snapshot time: the clone's config has no include; a planted
+#        include/includeIf is refused git_dir_forbidden_entry.
+#   RH3  refs/replace/<base blob> (loose, then packed-refs) -> git_dir_forbidden_entry, nothing spawned.
+#   RH4  pinnedGitEnv: GIT_ATTR_SOURCE, GIT_TEMPLATE_DIR, GIT_EXEC_PATH, GIT_GRAFT_FILE, ... are dropped from the
+#        caller's env; the hermetic keys are set; the runner env carries them too.
+#   RH5  the work-tree content hash does not use git: a same-size edit changes it, a plain touch does not.
+#   RH6  .git/shallow and refs/ are bound by the metadata hash.
+
+rh_same_size_edit() { # <orig copy> <target>: same length, a secret-shaped line
+  python3 -c "import sys;o=open(sys.argv[1],'rb').read();s=sys.argv[3].encode();s=(s+b' '*400)[:len(o)-1]+b'\n';open(sys.argv[2],'wb').write(s)" "$1" "$2" 'K="wJalrXUtnFEMI/K7MDENG/bPxRfiCYzEXAMPLEKEY";'
+}
+
+{
+  rb_arm; rb_snap
+  assert_rc "RH1 setup: snapshot exits 0" 0 "$RB_SRC" "$RB_SERR"
+  marker="$TMP20/pwn-rh1"; rm -f "$marker"
+  orig="$TMP20/orig-rh1.js"; cp "$RB_SNAP/src/add.js" "$orig"
+  printf '#!/bin/sh\ntouch "%s"\ncat "%s"\n' "$marker" "$orig" > "$TMP20/clean-rh1.sh"; chmod 755 "$TMP20/clean-rh1.sh"
+  printf '[filter "pwn"]\n\tclean = %s\n' "$TMP20/clean-rh1.sh" >> "$HOME/.gitconfig"
+  mkdir -p "$HOME/.config/git"; printf 'src/add.js filter=pwn\n' > "$HOME/.config/git/attributes"
+  rh_same_size_edit "$orig" "$RB_SNAP/src/add.js"
+  rb_run review
+  rb_expect "RH1 a secret hidden by the caller's GLOBAL clean filter" snapshot_changed_after_scan untracked_or_modified_file
+  [[ ! -e "$marker" ]] && ok "RH1 the global clean filter never ran" || bad "RH1 the global clean filter ran (marker exists)"
+}
+
+{
+  rb_arm
+  tpl="$TMP20/tpl-rh2"; rm -rf "$tpl"; mkdir -p "$tpl/info" "$tpl/hooks"; inc="$TMP20/inc-rh2.cfg"; : > "$inc"
+  printf '[include]\n\tpath = %s\n' "$inc" > "$tpl/config"
+  printf 'src/add.js filter=pwn\n' > "$tpl/info/attributes"
+  printf '[init]\n\ttemplateDir = %s\n' "$tpl" >> "$HOME/.gitconfig"
+  RB_SOUT="$(cd "$PHASE_REPO" && GIT_TEMPLATE_DIR="$tpl" node "$TREE_TOOLS" xprov snapshot --repo "$PHASE_REPO" --commit HEAD --plan "$PHASE_PLAN" 2>"$TMP20/snap-err.txt")"; RB_SRC=$?
+  RB_SNAP="$(json_get "$RB_SOUT" "j.snapshot || ''")"
+  assert_rc "RH2 setup: snapshot exits 0 with a template dir in env and in the global config" 0 "$RB_SRC" "$(cat "$TMP20/snap-err.txt")"
+  assert_eq "RH2 the clone's config has no include" "$(grep -ci 'include' "$RB_SNAP/.git/config" 2>/dev/null || true)" "0"
+  [[ ! -e "$RB_SNAP/.git/info/attributes" ]] && ok "RH2 the clone has no info/attributes from the template" || bad "RH2 the template's info/attributes landed in the clone"
+  rb_arm; rb_snap
+  printf '[include]\n\tpath = %s\n' "$inc" >> "$RB_SNAP/.git/config"
+  rb_run review
+  rb_expect "RH2 a planted [include] in the clone's config" snapshot_changed_after_scan git_dir_forbidden_entry
+  rb_arm; rb_snap
+  printf '[includeIf "gitdir:/"]\n\tpath = %s\n' "$inc" >> "$RB_SNAP/.git/config"
+  rb_run review
+  rb_expect "RH2 a planted [includeIf] in the clone's config" snapshot_changed_after_scan git_dir_forbidden_entry
+}
+
+{
+  rb_arm
+  base="$PHASE_HEAD"; printf 'export function add(a, b) { return a + b + 0; }\n' > "$PHASE_REPO/src/add.js"; rb_commit "wave"
+  rb_snap "$base"
+  assert_rc "RH3 setup: snapshot exits 0" 0 "$RB_SRC" "$RB_SERR"
+  oldblob="$(git -C "$RB_SNAP" rev-parse "$base:src/add.js")"
+  newblob="$(printf 'AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYzEXAMPLEKEY1\n' | git -C "$RB_SNAP" hash-object -w --stdin)"
+  mkdir -p "$RB_SNAP/.git/refs/replace"; echo "$newblob" > "$RB_SNAP/.git/refs/replace/$oldblob"
+  rb_run inspect --base "$base"
+  rb_expect "RH3 a loose refs/replace/<base blob> (inspect)" snapshot_changed_after_scan git_dir_forbidden_entry
+  rm -rf "$RB_SNAP/.git/refs/replace"
+  printf '%s refs/replace/%s\n' "$newblob" "$oldblob" >> "$RB_SNAP/.git/packed-refs"
+  rb_run inspect --base "$base"
+  rb_expect "RH3 a refs/replace entry in packed-refs (inspect)" snapshot_changed_after_scan git_dir_forbidden_entry
+}
+
+{
+  rb_arm; rb_snap
+  assert_rc "RH4 setup: snapshot exits 0" 0 "$RB_SRC" "$RB_SERR"
+  got="$(GIT_ATTR_SOURCE=HEAD GIT_TEMPLATE_DIR="$TMP20" GIT_EXEC_PATH="$TMP20" GIT_GRAFT_FILE="$TMP20/g" GIT_NO_REPLACE_OBJECTS=0 GIT_CONFIG_GLOBAL="$TMP20/gc" GIT_DEFAULT_REF_FORMAT=reftable GIT_LITERAL_PATHSPECS=1 node -e '
+    const C = require(process.argv[1] + "/_shared/lib/xprov-common.cjs");
+    const R = require(process.argv[1] + "/_shared/lib/xprov-run.cjs");
+    const snap = process.argv[2];
+    const bare = C.pinnedGitEnv(null);
+    const own = C.pinnedGitEnv(null, snap);
+    const run = R.buildEnv(null, process.argv[3], snap);
+    const view = (e) => ({ attr: e.GIT_ATTR_SOURCE, tpl: e.GIT_TEMPLATE_DIR, exec: e.GIT_EXEC_PATH, graft: e.GIT_GRAFT_FILE, fmt: e.GIT_DEFAULT_REF_FORMAT, lit: e.GIT_LITERAL_PATHSPECS,
+      global: e.GIT_CONFIG_GLOBAL, nosys: e.GIT_CONFIG_NOSYSTEM, attrsys: e.GIT_ATTR_NOSYSTEM, norepl: e.GIT_NO_REPLACE_OBJECTS });
+    process.stdout.write(JSON.stringify({ bare: view(bare), own: view(own), run: view(run) }));
+  ' "$TREE" "$RB_SNAP" "$TMP20" 2>&1)"
+  for who in bare own run; do
+    assert_json "RH4 $who: inherited GIT_ATTR_SOURCE / TEMPLATE_DIR / EXEC_PATH / GRAFT_FILE / REF_FORMAT / PATHSPECS do not survive" "$got" \
+      "[j.$who.attr, j.$who.tpl, j.$who.exec, j.$who.graft, j.$who.fmt, j.$who.lit].map(String).join('|')" "undefined|undefined|undefined|undefined|undefined|undefined"
+    assert_json "RH4 $who: global config is /dev/null, no system config or attributes, replace objects off" "$got" \
+      "[j.$who.global, j.$who.nosys, j.$who.attrsys, j.$who.norepl].join('|')" "/dev/null|1|1|1"
+  done
+  cfg="$(GIT_CONFIG_GLOBAL="$TMP20/gc" node -e '
+    const C = require(process.argv[1] + "/_shared/lib/xprov-common.cjs");
+    const e = C.pinnedGitEnv(null, process.argv[2]); const n = Number(e.GIT_CONFIG_COUNT);
+    process.stdout.write(JSON.stringify(Array.from({ length: n }, (_x, i) => e["GIT_CONFIG_KEY_" + i] + "=" + e["GIT_CONFIG_VALUE_" + i])));
+  ' "$TREE" "$RB_SNAP")"
+  assert_json "RH4 core.attributesFile is pinned to /dev/null" "$cfg" "j.includes('core.attributesFile=/dev/null')" "true"
+}
+
+{
+  rb_arm; rb_snap
+  assert_rc "RH5 setup: snapshot exits 0" 0 "$RB_SRC" "$RB_SERR"
+  got="$(node -e '
+    const fs = require("fs"); const S = require(process.argv[1] + "/_shared/lib/xprov-snapshot.cjs");
+    const snap = process.argv[2]; const f = snap + "/src/add.js";
+    const a = S.workTreeContentSha256(snap); fs.utimesSync(f, new Date(0), new Date(0)); const b = S.workTreeContentSha256(snap);
+    const o = fs.readFileSync(f); const m = Buffer.from(o); m[0] = m[0] === 65 ? 66 : 65; fs.writeFileSync(f, m); const c = S.workTreeContentSha256(snap);
+    fs.writeFileSync(f, o); fs.writeFileSync(snap + "/planted.txt", "x"); const d = S.workTreeContentSha256(snap);
+    process.stdout.write(JSON.stringify({ stable: typeof a === "string" && a === b, edit: a !== c, untracked: a !== d }));
+  ' "$TREE" "$RB_SNAP" 2>&1)"
+  assert_json "RH5 the work-tree content hash: touch keeps it, a same-size edit changes it, an untracked file changes it" "$got" "j.stable + '/' + j.edit + '/' + j.untracked" "true/true/true"
+}
+
+{
+  rb_arm; rb_snap
+  assert_rc "RH6 setup: snapshot exits 0" 0 "$RB_SRC" "$RB_SERR"
+  printf '%s\n' "0000000000000000000000000000000000000000" > "$RB_SNAP/.git/shallow"
+  rb_run review
+  rb_expect "RH6 a changed .git/shallow" snapshot_changed_after_scan git_meta_mismatch
+  rb_arm; rb_snap
+  mkdir -p "$RB_SNAP/.git/refs/heads"; printf '%s\n' "$PHASE_HEAD" > "$RB_SNAP/.git/refs/heads/planted"
+  rb_run review
+  rb_expect "RH6 a planted ref under .git/refs" snapshot_changed_after_scan git_meta_mismatch
 }
 
 export HOME="$SAVED_HOME_20"

@@ -181,9 +181,29 @@ const sameLane = (entry, lane) => (lane === null ? entry.lane === null || entry.
 
 // ---------- git ----------
 
+/** git as an absolute realpath (PATH hit, then fs.realpathSync), re-resolved only when PATH changes; plain `git` when it
+ * does not resolve (the spawn then fails with ENOENT as before). Spec 014 Wave 10 / SEC-5: a1's git calls on a snapshot do
+ * not look `git` up again at every spawn. (xprov-preflight.cjs resolveTool cannot be required here: it requires this file.) */
+let gitBinFor = null;
+let gitBinPath = 'git';
+function gitBin() {
+  const pathVar = String(process.env.PATH || '');
+  if (gitBinFor === pathVar) return gitBinPath;
+  gitBinFor = pathVar;
+  gitBinPath = 'git';
+  for (const dir of pathVar.split(path.delimiter).filter(Boolean)) {
+    try {
+      const real = fs.realpathSync(path.join(dir, 'git'));
+      const st = fs.statSync(real);
+      if (path.isAbsolute(real) && st.isFile() && (st.mode & 0o111)) { gitBinPath = real; break; }
+    } catch (_e) { /* not here */ }
+  }
+  return gitBinPath;
+}
+
 /** One git call, argv array, never a shell. Returns { status, stdout, stderr, error }. */
 function gitSpawn(args, opts) {
-  const r = spawnSync('git', args, { encoding: 'utf8', maxBuffer: GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'], ...(opts || {}) });
+  const r = spawnSync(gitBin(), args, { encoding: 'utf8', maxBuffer: GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'], ...(opts || {}) });
   return { status: r.status, stdout: r.stdout || '', stderr: (r.stderr || '').trim(), error: r.error || null };
 }
 
@@ -195,32 +215,46 @@ function gitOut(args) {
 
 // ---------- git on a snapshot (spec 014, Wave 6 security review SEC-2) ----------
 
-/** The four config keys every a1 git call on a snapshot (and the runner's git) runs under. The snapshot's own
- * .git/config is the reviewer-side input: `core.fsmonitor` would run a program on status, `core.hooksPath` a hook,
- * and `core.trustctime=false` / `core.checkStat=minimal` hide a same-size edit from the index and status hashes. */
+/** The config keys every a1 git call on a snapshot (and the runner's git) runs under. The snapshot's own .git/config is
+ * the reviewer-side input: `core.fsmonitor` would run a program on status, `core.hooksPath` a hook, `core.trustctime=false` /
+ * `core.checkStat=minimal` hide a same-size edit from the index and status hashes, `core.attributesFile` / `core.excludesFile`
+ * name a file outside the bound set (clean filters, ignore rules), `core.untrackedCache` trusts a planted index extension. */
 const SNAPSHOT_GIT_PINS = Object.freeze([
   Object.freeze(['core.fsmonitor', 'false']), Object.freeze(['core.hooksPath', '/dev/null']),
   Object.freeze(['core.trustctime', 'true']), Object.freeze(['core.checkStat', 'default']),
+  Object.freeze(['core.attributesFile', '/dev/null']), Object.freeze(['core.excludesFile', '/dev/null']),
+  Object.freeze(['core.untrackedCache', 'false']),
 ]);
-const GIT_CONFIG_ENV_RE = /^GIT_CONFIG_(COUNT|(KEY|VALUE)_\d+)$/;
 
-/** Variables that can redirect git to other objects, refs, config or a hidden diff (one list: the primary-checkout
- * reads of xprov-allowlist.cjs and the snapshot calls below). */
+/** Variables that can redirect git to other objects, refs, config, attributes, helper programs or a hidden diff (one list:
+ * the primary-checkout reads of xprov-allowlist.cjs and the snapshot calls below). pinnedGitEnv goes further and drops
+ * EVERY GIT_* variable of the caller. */
 const GIT_ENV_DROP = Object.freeze([
   'GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_NAMESPACE', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES',
   'GIT_REPLACE_REF_BASE', 'GIT_SHALLOW_FILE', 'GIT_CONFIG', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM',
   'GIT_CONFIG_COUNT', 'GIT_CONFIG_PARAMETERS', 'GIT_DIFF_OPTS', 'GIT_EXTERNAL_DIFF',
+  'GIT_ATTR_SOURCE', 'GIT_TEMPLATE_DIR', 'GIT_EXEC_PATH', 'GIT_GRAFT_FILE', 'GIT_NO_REPLACE_OBJECTS',
+  'GIT_DEFAULT_HASH', 'GIT_DEFAULT_REF_FORMAT', 'GIT_QUARANTINE_PATH', 'GIT_CEILING_DIRECTORIES', 'GIT_DISCOVERY_ACROSS_FILESYSTEM',
+  'GIT_LITERAL_PATHSPECS', 'GIT_GLOB_PATHSPECS', 'GIT_NOGLOB_PATHSPECS', 'GIT_ICASE_PATHSPECS'
 ]);
+const GIT_VAR_RE = /^GIT_/;
 
-/** `source` (default process.env) as a NEW object for a git call on a snapshot: every GIT_ENV_DROP variable and any
- * GIT_CONFIG_COUNT/KEY/VALUE of the caller removed, the four SNAPSHOT_GIT_PINS set through GIT_CONFIG_COUNT/KEY_n/VALUE_n
- * (command-line precedence, above every config file; pattern of intent-git.cjs). With `snapshotDir`, git is also pinned to
- * that clone's own `.git` (GIT_DIR, GIT_COMMON_DIR, objects) and work tree: a `.git/commondir` file or a different
- * inherited GIT_DIR then cannot move config, attributes (clean filters) or objects elsewhere. This is deliberately NOT part
- * of the runner's env allowlist (xprov-run.cjs ALLOWED_ENV): these keys are a1's own, not the caller's. */
+/** `source` (default process.env) as a NEW hermetic env for a git call on a snapshot (spec 014 Wave 10, "Option A"): every
+ * GIT_* variable of the caller is removed (no allowlist of single names to keep up to date), then a1 sets its own —
+ * GIT_CONFIG_GLOBAL=/dev/null, GIT_CONFIG_NOSYSTEM, GIT_ATTR_NOSYSTEM (no ~/.gitconfig, XDG config, /etc config or
+ * /etc/gitattributes: no global clean filter, include or init.templateDir), GIT_NO_REPLACE_OBJECTS (replace refs never
+ * substitute an object) and the SNAPSHOT_GIT_PINS through GIT_CONFIG_COUNT/KEY_n/VALUE_n (command-line precedence, above
+ * every config file; pattern of intent-git.cjs). With `snapshotDir`, git is also pinned to that clone's own `.git`
+ * (GIT_DIR, GIT_COMMON_DIR, objects) and work tree: a `.git/commondir` file or a different inherited GIT_DIR then cannot
+ * move config, attributes (clean filters) or objects elsewhere. This is deliberately NOT part of the runner's env
+ * allowlist (xprov-run.cjs ALLOWED_ENV): these keys are a1's own, not the caller's. */
 function pinnedGitEnv(source, snapshotDir) {
   const env = {};
-  for (const [k, v] of Object.entries(source || process.env)) if (!GIT_CONFIG_ENV_RE.test(k) && !GIT_ENV_DROP.includes(k)) env[k] = v;
+  for (const [k, v] of Object.entries(source || process.env)) if (!GIT_VAR_RE.test(k)) env[k] = v;
+  env.GIT_CONFIG_GLOBAL = '/dev/null';
+  env.GIT_CONFIG_NOSYSTEM = '1';
+  env.GIT_ATTR_NOSYSTEM = '1';
+  env.GIT_NO_REPLACE_OBJECTS = '1';
   env.GIT_CONFIG_COUNT = String(SNAPSHOT_GIT_PINS.length);
   SNAPSHOT_GIT_PINS.forEach(([key, value], i) => { env[`GIT_CONFIG_KEY_${i}`] = key; env[`GIT_CONFIG_VALUE_${i}`] = value; });
   if (snapshotDir) {
@@ -268,6 +302,6 @@ module.exports = {
   REGISTRY_PATH, LANE_RE, POSITIVE_INT_RE, POSITIVE_INT_MAX, WAVE_RE, DETAIL_MAX_CHARS, GIT_MAX_BUFFER, DIR_MODE,
   inputError, writeStdoutSync, emitJson, usageExit, usageThrow,
   clip, stderrTail, oneLine, LINE_BREAKERS_RE, readNoFollow, parsePositive, parseWave, waveNumber, parseLane, sha256, isPlainObject, isDir, isFile,
-  mkdir0700, readIndex, sameWave, sameLane, gitSpawn, gitOut, commonDirOf, resolveRepoFlag,
+  mkdir0700, readIndex, sameWave, sameLane, gitBin, gitSpawn, gitOut, commonDirOf, resolveRepoFlag,
   SNAPSHOT_GIT_PINS, GIT_ENV_DROP, pinnedGitEnv, pinnedGitOut,
 };

@@ -94,7 +94,7 @@ const { appendXreviewNote } = require('./xprov-normalize.cjs');
 const { filterOutput, instructionMarker } = require('./xprov-filter.cjs');
 const { permitCheck } = require('./xprov-permit.cjs');
 const { homeSymlinks, skillsDirsProblem, resolveTool } = require('./xprov-preflight.cjs');
-const { SNAP_PREFIX, REPO_LOCAL_STRIP, gitMetaSha256, gitDirProblem, storedDiffSha, storedInputHashes, INPUTS_SUFFIX, INPUT_FILES, NONCE_FILE, statusSha256 } = require('./xprov-snapshot.cjs');
+const { SNAP_PREFIX, REPO_LOCAL_STRIP, gitMetaSha256, gitDirProblem, workTreeContentSha256, diffSha256, storedDiffSha, storedInputHashes, INPUTS_SUFFIX, INPUT_FILES, NONCE_FILE, statusSha256 } = require('./xprov-snapshot.cjs');
 const { readScanRecord } = require('./xprov-scan-records.cjs');
 
 const NO_LOG_FLAG = 'no-log';
@@ -331,8 +331,8 @@ function baselineDelta(before, after) {
 
 function revertSnapshot(snapshot) {
   const opts = { stdio: 'ignore', env: C.pinnedGitEnv(null, snapshot) };
-  spawnSync('git', ['-C', snapshot, 'checkout', '--quiet', '--', '.'], opts);
-  spawnSync('git', ['-C', snapshot, 'clean', '-fdq'], opts);
+  spawnSync(C.gitBin(), ['-C', snapshot, 'checkout', '--quiet', '--', '.'], opts);
+  spawnSync(C.gitBin(), ['-C', snapshot, 'clean', '-fdq'], opts);
 }
 
 // ---------- runner call ----------
@@ -571,7 +571,7 @@ function appendLog(ctx, entry) {
 
 const BINDING = Object.freeze({
   not_under_snapshots_dir: 'not_under_snapshots_dir', no_scan_record: 'no_scan_record', record_mismatch: 'record_mismatch', repo_mismatch: 'repo_mismatch',
-  index_mismatch: 'index_mismatch', git_meta_mismatch: 'git_meta_mismatch', git_dir_forbidden_entry: 'git_dir_forbidden_entry', untracked_or_modified_file: 'untracked_or_modified_file', gitleaks_missing: 'gitleaks_missing',
+  index_mismatch: 'index_mismatch', git_meta_mismatch: 'git_meta_mismatch', git_dir_forbidden_entry: 'git_dir_forbidden_entry', untracked_or_modified_file: 'untracked_or_modified_file', content_mismatch: 'content_mismatch', diff_mismatch: 'diff_mismatch', gitleaks_missing: 'gitleaks_missing',
 });
 const ENFORCEMENT_WARNING = 'warning';
 
@@ -631,14 +631,21 @@ function scanBinding(ctx) {
   return { problem: null, record: rec, snapshot: under.dir };
 }
 
-/** FR-008, right before the spawn: the snapshot is still what the scan saw. Index first, then the status hash.
+/** FR-008, right before the spawn: the snapshot is still what the scan saw. Index first, then the status hash, the work-tree content, the diff.
  * → { reason, detail } or null. */
 function changedAfterScan(ctx) {
   const metaDetail = gitMetaMismatch(ctx.snapshot, ctx.scan);
   if (metaDetail) return { reason: X.REASONS.snapshot_changed_after_scan, detail: metaDetail };
-  const ls = spawnSync('git', ['-C', ctx.snapshot, 'ls-files', '-s', '-z'], { env: C.pinnedGitEnv(null, ctx.snapshot), maxBuffer: C.GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] });
+  const ls = spawnSync(C.gitBin(), ['-C', ctx.snapshot, 'ls-files', '-s', '-z'], { env: C.pinnedGitEnv(null, ctx.snapshot), maxBuffer: C.GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] });
   if (ls.status !== 0 || sha256(ls.stdout) !== ctx.scan.index_sha256) return { reason: X.REASONS.snapshot_changed_after_scan, detail: BINDING.index_mismatch };
   if (statusSha256(ctx.snapshot) !== ctx.scan.status_sha256) return { reason: X.REASONS.snapshot_changed_after_scan, detail: BINDING.untracked_or_modified_file };
+  // Wave 10 ("Option A"): the status hash above is git's opinion (filters, stat cache). The work-tree bytes themselves, read without git.
+  if (workTreeContentSha256(ctx.snapshot) !== ctx.scan.content_sha256) return { reason: X.REASONS.snapshot_changed_after_scan, detail: BINDING.content_mismatch };
+  // The diff the runner will hash is the diff the scan hashed (detective check of judgeRun, made preventive).
+  if (ctx.mode === 'inspect' && ctx.diffSha && ctx.scan.base) {
+    const d = diffSha256(ctx.snapshot, ctx.scan.base);
+    if (d.sha !== ctx.diffSha) return { reason: X.REASONS.snapshot_changed_after_scan, detail: BINDING.diff_mismatch };
+  }
   return null;
 }
 
