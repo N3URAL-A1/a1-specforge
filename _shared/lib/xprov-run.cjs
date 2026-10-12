@@ -226,6 +226,14 @@ function pinKeys(snapshot) {
   return C.pinnedGitEnv({}, snapshot);
 }
 
+/** SEC-A: the runner's PATH holds only absolute entries, the real git's directory first. The runner (python3) calls
+ * `git` by name with cwd = the snapshot; an empty or relative entry would run a `git` file the reviewed commit brought. */
+function hermeticPath(pathVar) {
+  const git = C.resolveGit(pathVar);
+  const dirs = C.absolutePathDirs(pathVar);
+  return [...new Set(git ? [path.dirname(git), ...dirs] : dirs)].join(path.delimiter);
+}
+
 /** Allowlisted environment for the runner (plus the dedicated CODEX_HOME). HOME
  * is the per-run home and never the caller's: without `runHome` it is left out. */
 function buildEnv(source, runHome, snapshot) {
@@ -236,6 +244,7 @@ function buildEnv(source, runHome, snapshot) {
   }
   delete env.HOME;
   if (runHome) env.HOME = runHome;
+  env.PATH = hermeticPath(src.PATH);
   env.CODEX_HOME = X.codexHome();
   env.GIT_CONFIG_NOSYSTEM = '1'; // the runner's git reads no /etc/gitconfig (Wave 7, Samuel)
   // SEC-2 (Wave 6 review): the runner's git runs on the snapshot too. These GIT_CONFIG_* keys are a1's own pins, set
@@ -634,6 +643,8 @@ function scanBinding(ctx) {
 /** FR-008, right before the spawn: the snapshot is still what the scan saw. Index first, then the status hash, the work-tree content, the diff.
  * → { reason, detail } or null. */
 function changedAfterScan(ctx) {
+  // SEC-B: .git/HEAD is not in the metadata hash (the per-run checkout would break it); the commit is checked again here.
+  if (gitLine(ctx.snapshot, ['rev-parse', 'HEAD']) !== ctx.scan.commit) return { reason: X.REASONS.snapshot_changed_after_scan, detail: BINDING.record_mismatch };
   const metaDetail = gitMetaMismatch(ctx.snapshot, ctx.scan);
   if (metaDetail) return { reason: X.REASONS.snapshot_changed_after_scan, detail: metaDetail };
   const ls = spawnSync(C.gitBin(), ['-C', ctx.snapshot, 'ls-files', '-s', '-z'], { env: C.pinnedGitEnv(null, ctx.snapshot), maxBuffer: C.GIT_MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -871,7 +882,7 @@ function cmdXprovRun(args) {
 }
 
 module.exports = {
-  cmdXprovRun, buildArgv, buildEnv, spawnOptions, baselineDelta, takeBaseline, gitMeta, fileHashes, snapshotNotes, runDirFromStdout,
+  cmdXprovRun, changedAfterScan, buildArgv, buildEnv, spawnOptions, baselineDelta, takeBaseline, gitMeta, fileHashes, snapshotNotes, runDirFromStdout,
   prepareRunHome, removeRunHome, runHomeManifest,
   LOG_HEADER, NO_LOG_FLAG, REVIEWED_FILE, ALLOWED_ENV, CODEX_RUNTIME_DIRS, CODEX_RUNTIME_FILES, RUN_HOME_PREFIX,
 };

@@ -328,7 +328,7 @@ function pluginCacheCheck(home, allowlist) {
 
 /** The first executable `name` on env.PATH, or null. */
 function onPath(name, env) {
-  for (const dir of String((env || process.env).PATH || '').split(path.delimiter).filter(Boolean)) {
+  for (const dir of C.absolutePathDirs((env || process.env).PATH)) { // SEC-A: no empty or relative entries
     const p = path.join(dir, name);
     try { const st = fs.statSync(p); if (st.isFile() && (st.mode & 0o111)) return p; } catch (_e) { /* not here */ }
   }

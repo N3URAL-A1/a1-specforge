@@ -229,13 +229,14 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   no_scan_record | record_mismatch | repo_mismatch),
                   snapshot_changed_after_scan (git_dir_forbidden_entry |
                   git_meta_mismatch | index_mismatch | untracked_or_modified_file |
-                  content_mismatch | diff_mismatch (inspect);
-                  checked again, before the tripwire baseline and right
+                  content_mismatch | diff_mismatch (inspect) | record_mismatch
+                  (HEAD moved); checked again, before the tripwire baseline and right
                   before the spawn), preflight_failed / gitleaks_missing.
                   The runner file must match both SHA256SUMS and the constant
                   RUNNER_SHA256 (else runner_failed, constant_mismatch); python3
                   and codex are resolved to absolute paths and codex is passed
-                  as --cli.
+                  as --cli. The runner's PATH drops empty and relative
+                  entries and starts with the real git's directory.
                   --plan/--feedback must be the snapshot's copies
                   <snapshot>.inputs/{PLAN.md,feedback.md}, re-hashed against
                   inputs.json before the spawn (else snapshot_failed, no

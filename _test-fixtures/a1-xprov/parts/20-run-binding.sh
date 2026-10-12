@@ -657,5 +657,45 @@ rh_same_size_edit() { # <orig copy> <target>: same length, a secret-shaped line
   rb_expect "RH6 a planted ref under .git/refs" snapshot_changed_after_scan git_meta_mismatch
 }
 
+# RI (security re-check 2026-10-12, SEC-A / SEC-B)
+#   RI1  an empty or relative PATH entry (":/usr/bin:/bin", ".:/usr/bin:/bin") with an executable `git` in the cwd:
+#        the runner env PATH has no empty or relative entry and starts with the real git's directory; gitBin() and
+#        resolveTool('git') resolve to the real git; the fake git's marker never appears (spawned with that env).
+#   RI2  .git/HEAD moved to another commit after the binding (the metadata hash does not cover HEAD): changedAfterScan refuses
+#        with snapshot_changed_after_scan / record_mismatch.
+{
+  rb_arm; rb_snap
+  assert_rc "RI setup: snapshot exits 0" 0 "$RB_SRC" "$RB_SERR"
+  realgit="$(node -e 'process.stdout.write(require("fs").realpathSync(require("child_process").execSync("command -v git",{encoding:"utf8"}).trim()))')"
+  nodebin="$(command -v node)"
+  for badpath in ":/usr/bin:/bin" ".:/usr/bin:/bin" "/usr/bin::/bin"; do
+    fakecwd="$TMP20/fakegit.$RANDOM"; mkdir -p "$fakecwd"; marker="$fakecwd/marker"
+    printf '#!/bin/sh\ntouch "%s"\nexit 0\n' "$marker" > "$fakecwd/git"; chmod 755 "$fakecwd/git"
+    got="$(cd "$fakecwd" && PATH="$badpath" "$nodebin" -e '
+      const R = require(process.argv[1] + "/_shared/lib/xprov-run.cjs");
+      const C = require(process.argv[1] + "/_shared/lib/xprov-common.cjs");
+      const P = require(process.argv[1] + "/_shared/lib/xprov-preflight.cjs");
+      const env = R.buildEnv(null, process.argv[3], process.argv[2]);
+      require("child_process").spawnSync("git", ["--version"], { cwd: process.cwd(), env, encoding: "utf8" });
+      const dirs = env.PATH.split(":");
+      process.stdout.write(JSON.stringify({ clean: dirs.every((d) => d !== "" && d[0] === "/"), first: dirs[0], bin: C.gitBin(), tool: P.resolveTool("git", process.env) }));
+    ' "$TREE" "$RB_SNAP" "$TMP20" 2>&1)"
+    assert_json "RI1 PATH='$badpath': runner PATH has no empty or relative entry" "$got" "j.clean" "true"
+    assert_json "RI1 PATH='$badpath': runner PATH starts with the real git's directory" "$got" "j.first" "$(dirname "$realgit")"
+    assert_json "RI1 PATH='$badpath': gitBin() and resolveTool('git') are the real git" "$got" "j.bin === '$realgit' && j.tool === '$realgit'" "true"
+    assert_eq "RI1 PATH='$badpath': the fake git in the cwd never ran" "$([[ -e $marker ]] && echo RAN || echo none)" "none"
+  done
+  head="$(git -C "$RB_SNAP" rev-parse HEAD)"; tree="$(git -C "$RB_SNAP" rev-parse 'HEAD^{tree}')"
+  other="$(GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t git -C "$RB_SNAP" commit-tree "$tree" -p "$head" -m other)"
+  scanjson="$(node -e 'const {readScanRecord}=require(process.argv[1]+"/_shared/lib/xprov-scan-records.cjs"); process.stdout.write(JSON.stringify(readScanRecord(require("path").basename(process.argv[2])).value))' "$TREE" "$RB_SNAP")"
+  printf '%s\n' "$other" > "$RB_SNAP/.git/HEAD"
+  got="$(node -e '
+    const R = require(process.argv[1] + "/_shared/lib/xprov-run.cjs");
+    const r = R.changedAfterScan({ snapshot: process.argv[2], scan: JSON.parse(process.argv[3]), mode: "review" });
+    process.stdout.write(JSON.stringify(r));
+  ' "$TREE" "$RB_SNAP" "$scanjson" 2>&1)"
+  assert_json "RI2 a HEAD moved after the binding" "$got" "j && [j.reason, j.detail].join('/')" "snapshot_changed_after_scan/record_mismatch"
+}
+
 export HOME="$SAVED_HOME_20"
 rm -rf "$TMP20"

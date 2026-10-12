@@ -184,20 +184,31 @@ const sameLane = (entry, lane) => (lane === null ? entry.lane === null || entry.
 /** git as an absolute realpath (PATH hit, then fs.realpathSync), re-resolved only when PATH changes; plain `git` when it
  * does not resolve (the spawn then fails with ENOENT as before). Spec 014 Wave 10 / SEC-5: a1's git calls on a snapshot do
  * not look `git` up again at every spawn. (xprov-preflight.cjs resolveTool cannot be required here: it requires this file.) */
+/** SEC-A: the absolute, non-empty entries of a PATH string. An empty entry (`:/usr/bin`, `::`) and a relative one (`.`)
+ * mean "the current directory" to execvp — in a snapshot that is a file the reviewed commit brought along. */
+function absolutePathDirs(pathVar) {
+  return String(pathVar || '').split(path.delimiter).filter((d) => d !== '' && path.isAbsolute(d));
+}
+
+/** The first executable `git` in the absolute PATH entries as a realpath, or null. */
+function resolveGit(pathVar) {
+  for (const dir of absolutePathDirs(pathVar)) {
+    try {
+      const real = fs.realpathSync(path.join(dir, 'git'));
+      const st = fs.statSync(real);
+      if (path.isAbsolute(real) && st.isFile() && (st.mode & 0o111)) return real;
+    } catch (_e) { /* not here */ }
+  }
+  return null;
+}
+
 let gitBinFor = null;
 let gitBinPath = 'git';
 function gitBin() {
   const pathVar = String(process.env.PATH || '');
   if (gitBinFor === pathVar) return gitBinPath;
   gitBinFor = pathVar;
-  gitBinPath = 'git';
-  for (const dir of pathVar.split(path.delimiter).filter(Boolean)) {
-    try {
-      const real = fs.realpathSync(path.join(dir, 'git'));
-      const st = fs.statSync(real);
-      if (path.isAbsolute(real) && st.isFile() && (st.mode & 0o111)) { gitBinPath = real; break; }
-    } catch (_e) { /* not here */ }
-  }
+  gitBinPath = resolveGit(pathVar) || 'git';
   return gitBinPath;
 }
 
@@ -302,6 +313,6 @@ module.exports = {
   REGISTRY_PATH, LANE_RE, POSITIVE_INT_RE, POSITIVE_INT_MAX, WAVE_RE, DETAIL_MAX_CHARS, GIT_MAX_BUFFER, DIR_MODE,
   inputError, writeStdoutSync, emitJson, usageExit, usageThrow,
   clip, stderrTail, oneLine, LINE_BREAKERS_RE, readNoFollow, parsePositive, parseWave, waveNumber, parseLane, sha256, isPlainObject, isDir, isFile,
-  mkdir0700, readIndex, sameWave, sameLane, gitBin, gitSpawn, gitOut, commonDirOf, resolveRepoFlag,
+  mkdir0700, readIndex, sameWave, sameLane, gitBin, resolveGit, absolutePathDirs, gitSpawn, gitOut, commonDirOf, resolveRepoFlag,
   SNAPSHOT_GIT_PINS, GIT_ENV_DROP, pinnedGitEnv, pinnedGitOut,
 };
