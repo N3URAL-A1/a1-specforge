@@ -24,6 +24,7 @@ const {
   findActiveBySlug,
   disambiguateId,
   disambiguateNames,
+  resolveRealOrAbs,
 } = require('./worktree-registry.cjs');
 
 function cmdWorktreePrepare(args) {
@@ -77,14 +78,18 @@ function cmdWorktreePrepare(args) {
     pass('target_branch_free');
   }
 
-  // 6. worktree path free (id and path are disambiguated against other repos' entries)
+  // 6. worktree path free + id unique (names are disambiguated against other repos' entries)
   const reg = readRegistry();
-  const { id, worktreePath } = disambiguateNames(reg, repoRoot, slug);
+  const { id, worktreePath, idTaken, pathTaken } = disambiguateNames(reg, repoRoot, slug);
   if (fs.existsSync(worktreePath)) {
     fail('worktree_path_free', `Path ${worktreePath} already exists`);
+  } else if (pathTaken) {
+    fail('worktree_path_free', `Path ${worktreePath} is held by another registry entry`);
   } else {
     pass('worktree_path_free');
   }
+  if (idTaken) fail('id_unique', `Id ${id} is held by another registry entry`);
+  else pass('id_unique');
 
   // 7. no active registry entry
   const existing = findActiveBySlug(reg, repoRoot, slug);
@@ -418,20 +423,6 @@ function cmdWorktreeGc(args) {
     removed: removedFromRegistry,
     dry_run: !!flags['dry-run'],
   };
-}
-
-function resolveRealOrAbs(p) {
-  // git worktree list --porcelain prints realpaths (symlinks resolved, e.g.
-  // macOS /tmp -> /private/tmp). path.resolve() alone does not resolve
-  // symlinks, so comparing a raw CLI arg against git's output can spuriously
-  // mismatch. Prefer the realpath when the path exists on disk; fall back to
-  // plain resolve otherwise (path may legitimately not exist yet).
-  const abs = path.resolve(p);
-  try {
-    return fs.realpathSync(abs);
-  } catch (_e) {
-    return abs;
-  }
 }
 
 function cmdWorktreeAdopt(args) {

@@ -116,6 +116,8 @@ ${SPEC_INIT_HELP}
 
   a1-tools worktree prepare <repo-root> <slug> [--branch <name>] [--base <branch>] [--force-reset]
                   Pre-Flight validation + registry entry. Exit: 0 PASS, 1 BLOCKER, 2 ERROR.
+                  Name collision: if another repo's non-cleaned entry holds the same id or path, the id gets the suffix -<repo>-<hash6> and/or the path becomes <repo>-<hash6>-<slug>.
+                  Env: A1_WORKTREE_REGISTRY = registry file; A1_NOW_OVERRIDE = ISO time for the id stamp (tests).
   a1-tools worktree enter <id>
                   Runs 'git worktree add'. Registry: prepared -> active.
   a1-tools worktree status <id>

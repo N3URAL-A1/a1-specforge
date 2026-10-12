@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 
 const WORKTREE_STATUSES = new Set(['prepared', 'active', 'handoff', 'cleaned']);
@@ -37,8 +38,17 @@ function writeRegistryAtomic(reg) {
   fs.renameSync(tmp, p);
 }
 
+// A1_NOW_OVERRIDE (ISO string) pins the clock for the id stamp only (tests).
+function nowDate() {
+  const raw = process.env.A1_NOW_OVERRIDE;
+  if (!raw) return new Date();
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) throw new Error(`invalid A1_NOW_OVERRIDE: ${raw}`);
+  return d;
+}
+
 function nowCompactId(slug) {
-  const d = new Date();
+  const d = nowDate();
   const pad = (n) => String(n).padStart(2, '0');
   const stamp = `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}-${pad(
     d.getUTCHours()
@@ -115,6 +125,24 @@ function repoParentWorktreeDir(repoRoot) {
   return path.join(path.dirname(repoRoot), 'a1-worktrees');
 }
 
+const TAG_NAME_MAX = 40;
+const TAG_HASH_LEN = 6;
+const NAME_BYTES_MAX = 254; // keep `<prefix>-<slug>` under 255 bytes
+
+function resolveRealOrAbs(p) {
+  // git worktree list --porcelain prints realpaths (symlinks resolved, e.g.
+  // macOS /tmp -> /private/tmp). path.resolve() alone does not resolve
+  // symlinks, so comparing a raw CLI arg against git's output can spuriously
+  // mismatch. Prefer the realpath when the path exists on disk; fall back to
+  // plain resolve otherwise (path may legitimately not exist yet).
+  const abs = path.resolve(p);
+  try {
+    return fs.realpathSync(abs);
+  } catch (_e) {
+    return abs;
+  }
+}
+
 function kebabSafe(name) {
   const k = String(name)
     .toLowerCase()
@@ -123,38 +151,56 @@ function kebabSafe(name) {
   return k || 'repo';
 }
 
+// `<kebab(basename, <=maxName)>-<6 hex of sha1(real repo root)>`; the hash keeps
+// it unique per repo, the name part is cut first when space is short.
+function repoTag(repoRoot, maxLen = Infinity) {
+  const hash = crypto
+    .createHash('sha1')
+    .update(resolveRealOrAbs(repoRoot))
+    .digest('hex')
+    .slice(0, TAG_HASH_LEN);
+  const room = Math.min(TAG_NAME_MAX, maxLen - TAG_HASH_LEN - 1);
+  if (room < 1) return hash;
+  const name = kebabSafe(path.basename(repoRoot)).slice(0, room).replace(/-+$/, '');
+  return `${name || 'repo'}-${hash}`;
+}
+
+function activeOtherRepo(reg, repoRoot) {
+  return reg.worktrees.filter((w) => w.status !== 'cleaned' && w.repo_root !== repoRoot);
+}
+
 function holdsId(reg, repoRoot, id) {
-  return reg.worktrees.some(
-    (w) => w.status !== 'cleaned' && w.repo_root !== repoRoot && w.id === id
-  );
+  return activeOtherRepo(reg, repoRoot).some((w) => w.id === id);
 }
 
-// Id only (adopt: the path comes from the real worktree). Suffix the repo folder
-// name when ANOTHER repo holds the id; otherwise return the id unchanged.
+function holdsPath(reg, repoRoot, worktreePath) {
+  const want = resolveRealOrAbs(worktreePath);
+  return activeOtherRepo(reg, repoRoot).some((w) => resolveRealOrAbs(w.worktree_path) === want);
+}
+
+// Suffix the repo tag when ANOTHER repo holds the id; otherwise unchanged.
 function disambiguateId(reg, repoRoot, id) {
-  if (!holdsId(reg, repoRoot, id)) return id;
-  return `${id}-${kebabSafe(path.basename(repoRoot))}`;
+  return holdsId(reg, repoRoot, id) ? `${id}-${repoTag(repoRoot)}` : id;
 }
 
-function holdsIdOrPath(reg, repoRoot, id, worktreePath) {
-  return reg.worktrees.some(
-    (w) =>
-      w.status !== 'cleaned' &&
-      w.repo_root !== repoRoot &&
-      (w.id === id || w.worktree_path === worktreePath)
-  );
+function disambiguatePath(reg, repoRoot, slug) {
+  const dir = repoParentWorktreeDir(repoRoot);
+  const plain = path.join(dir, slug);
+  if (!holdsPath(reg, repoRoot, plain)) return plain;
+  const room = NAME_BYTES_MAX - Buffer.byteLength(slug) - 1;
+  return path.join(dir, `${repoTag(repoRoot, room)}-${slug}`);
 }
 
-// Returns { id, worktreePath }. Unchanged names unless a non-cleaned entry of
-// ANOTHER repo already holds the same id or path; then both get the repo folder name.
+// Id and path are decided separately. idTaken/pathTaken report a collision that
+// is still there after disambiguation (the caller must refuse, not write).
 function disambiguateNames(reg, repoRoot, slug) {
-  const id = nowCompactId(slug);
-  const worktreePath = path.join(repoParentWorktreeDir(repoRoot), slug);
-  if (!holdsIdOrPath(reg, repoRoot, id, worktreePath)) return { id, worktreePath };
-  const repoName = kebabSafe(path.basename(repoRoot));
+  const id = disambiguateId(reg, repoRoot, nowCompactId(slug));
+  const worktreePath = disambiguatePath(reg, repoRoot, slug);
   return {
-    id: `${id}-${repoName}`,
-    worktreePath: path.join(repoParentWorktreeDir(repoRoot), `${repoName}-${slug}`),
+    id,
+    worktreePath,
+    idTaken: holdsId(reg, repoRoot, id),
+    pathTaken: holdsPath(reg, repoRoot, worktreePath),
   };
 }
 
@@ -212,6 +258,8 @@ module.exports = {
   findActiveBySlug,
   repoParentWorktreeDir,
   kebabSafe,
+  repoTag,
+  resolveRealOrAbs,
   disambiguateId,
   disambiguateNames,
   prReviewDir,

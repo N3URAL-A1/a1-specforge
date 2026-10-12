@@ -4,7 +4,8 @@ description: >
   Isolated Git worktree lifecycle: Prepare → Enter → Exit (keep/discard/handoff).
   Lets agents work on a feature branch in a parallel checkout without polluting
   the main tree. Registry at `~/.a1-worktrees-registry.json`, worktrees at
-  `<repo-parent>/a1-worktrees/<slug>/`, branches default `feature/<slug>`.
+  `<repo-parent>/a1-worktrees/<slug>/` (or `<repo>-<hash6>-<slug>/` on a cross-repo
+  collision), branches default `feature/<slug>`.
   MUST trigger when the user says: "worktree for <feature>" (alias: "worktree
   für <feature>"), "isolated branch" (alias: "isolierter branch"), "a1-worktree",
   "create a new worktree" (alias: "neuen worktree anlegen"), "clean up worktree"
@@ -88,6 +89,18 @@ Registry writes are atomic (read → modify → write-tmp → rename).
 | Registry | `~/.a1-worktrees-registry.json` (user-global) |
 
 Override registry location via `A1_WORKTREE_REGISTRY` env var (used in tests).
+Pin the id timestamp via `A1_NOW_OVERRIDE` (ISO string, used in tests).
+
+**Name collisions across repos.** Id (`<UTC-minute>-<slug>`) and path
+(`<repo-parent>/a1-worktrees/<slug>`) carry nothing about the repo. At `prepare`
+(and the id at `adopt`), if a non-cleaned entry of ANOTHER repo already holds the
+same id, the id gets the suffix `-<repo>-<hash6>`; if one holds the same path, the
+path becomes `<repo>-<hash6>-<slug>`. `<repo>` is the kebab-cased folder name (max
+40 chars), `<hash6>` the first 6 hex of sha1 of the real repo root. Both are decided
+separately; without a collision the names stay as above. If the disambiguated name
+is also taken, prepare returns a BLOCKER (`worktree_path_free` / `id_unique`).
+Same repo + same slug stays the `no_active_registry_entry` BLOCKER. Address entries
+by id; a slug shared by several repos is rejected ("pass id instead").
 
 ## Exit modes
 
