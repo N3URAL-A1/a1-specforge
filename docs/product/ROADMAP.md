@@ -128,12 +128,12 @@ features:
   - id: 009-cross-provider-review-gate
     milestone: continuous
     title: "Cross-provider review gate — Codex as a registered, read-only plan and wave reviewer"
-    status: planned
-    stage: null
+    status: done
+    stage: done
     depends_on: []
-    started: null
-    finished: null
-    spec_path: null
+    started: 2026-09-24
+    finished: 2026-10-03
+    spec_path: project/a1-specforge/spec/009-cross-provider-review-gate.md
     plan_path: null
   - id: 010-vault-cockpit-contract
     milestone: continuous
@@ -283,6 +283,7 @@ None.
 - **2026-10-08** — feature.md created for '014-xprov-egress-hardening' — formal spec/plan attached via `product feature-init`
 - **2026-10-12** — 014-xprov-egress-hardening -> done — stage transition via `product stage`
 - **2026-10-12** — 014-xprov-egress-hardening started date corrected to 2026-10-08 (claim date); code_scope claim released — product stage stamped today; the stage started on 2026-10-08
+- **2026-10-12** — 009-cross-provider-review-gate -> done — stage transition via `product stage`; dates corrected to real span 2026-09-24 .. 2026-10-03 (blocking flip), spec_path set after reconcile (all 30 FRs present)
 
 ## Appendix — migrated details
 

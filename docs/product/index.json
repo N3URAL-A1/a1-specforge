@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated": "2026-10-12T13:33:32.714Z",
+  "generated": "2026-10-12T15:35:20.141Z",
   "project": {
     "id": "a1-specforge",
     "title": "a1-specforge — Roadmap",
@@ -171,12 +171,12 @@
       "id": "009-cross-provider-review-gate",
       "milestone": "continuous",
       "title": "Cross-provider review gate — Codex as a registered, read-only plan and wave reviewer",
-      "status": "planned",
-      "stage": null,
+      "status": "done",
+      "stage": "done",
       "depends_on": [],
-      "started": null,
-      "finished": null,
-      "spec_path": null,
+      "started": "2026-09-24",
+      "finished": "2026-10-03",
+      "spec_path": "project/a1-specforge/spec/009-cross-provider-review-gate.md",
       "plan_path": null
     },
     {
