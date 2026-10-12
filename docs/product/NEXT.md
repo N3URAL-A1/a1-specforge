@@ -4,7 +4,7 @@
 
 # a1-specforge — Roadmap
 
-updated: 2026-10-09
+updated: 2026-10-12
 
 ## You are here
 
