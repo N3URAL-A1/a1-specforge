@@ -174,13 +174,23 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   before it snapshots, and run refuses such a record on a
                   blocking row. On a warning row gate degrades — one stderr
                   warning line, stdout gitleaks:false. Every a1 git call on a
-                  snapshot (and the runner's env) pins core.fsmonitor=false,
-                  core.hooksPath=/dev/null, core.trustctime=true,
-                  core.checkStat=default via GIT_CONFIG_COUNT/KEY_n/VALUE_n,
-                  drops inherited GIT_DIR/GIT_INDEX_FILE/GIT_OBJECT_DIRECTORY
-                  and friends, and sets GIT_DIR, GIT_COMMON_DIR and
-                  GIT_WORK_TREE to the clone itself. The clone's .git must hold
-                  no commondir, gitdir or objects/info/alternates.
+                  snapshot (and the runner's env) is hermetic: every inherited
+                  GIT_* variable is dropped, then a1 sets GIT_CONFIG_GLOBAL=
+                  /dev/null, GIT_CONFIG_NOSYSTEM, GIT_ATTR_NOSYSTEM,
+                  GIT_NO_REPLACE_OBJECTS and the clone's own GIT_DIR,
+                  GIT_COMMON_DIR, GIT_WORK_TREE; it pins core.fsmonitor=false,
+                  core.hooksPath, core.attributesFile, core.excludesFile=
+                  /dev/null, core.trustctime=true, core.checkStat=default,
+                  core.untrackedCache=false via GIT_CONFIG_COUNT/KEY_n/VALUE_n.
+                  The clone is built with an empty --template=. So no global
+                  clean filter, include, template, replace ref or inherited
+                  GIT_* can steer a check. The clone's .git must hold no
+                  commondir, gitdir, objects/info/alternates, info/grafts,
+                  refs/replace (loose or in packed-refs) and no include or
+                  includeIf in its config; config, hooks, info, refs,
+                  packed-refs and shallow are bound by the record's metadata
+                  hash. The record also binds a git-free sha256 of every file
+                  in the work tree (content_sha256, filter-independent).
                   Spec 014 secret patterns (appended): seven more named
                   patterns incl. env_assignment_unquoted (whole line NAME=value,
                   at least 12 characters of [A-Za-z0-9+/_.~=-] with a digit); all-letter
@@ -218,7 +228,8 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   spawn): snapshot_not_scanned (not_under_snapshots_dir |
                   no_scan_record | record_mismatch | repo_mismatch),
                   snapshot_changed_after_scan (git_dir_forbidden_entry |
-                  git_meta_mismatch | index_mismatch | untracked_or_modified_file;
+                  git_meta_mismatch | index_mismatch | untracked_or_modified_file |
+                  content_mismatch | diff_mismatch (inspect);
                   checked again, before the tripwire baseline and right
                   before the spawn), preflight_failed / gitleaks_missing.
                   The runner file must match both SHA256SUMS and the constant
