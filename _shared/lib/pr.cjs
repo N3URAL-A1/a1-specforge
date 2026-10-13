@@ -12,6 +12,7 @@ const {
   writeRegistryAtomic,
   findEntryBySlugOrId,
   readFindings,
+  sameRepo,
 } = require('./worktree-registry.cjs');
 
 // PR_STATUSES is local to this group only (its single consumer, cmdPrMarkStatus,
@@ -28,7 +29,7 @@ function cmdPrListHandoff(args) {
   const reg = readRegistry();
   let entries = reg.worktrees.filter((w) => w.status === 'handoff');
   if (flags['repo-root']) {
-    entries = entries.filter((w) => w.repo_root === flags['repo-root']);
+    entries = entries.filter((w) => sameRepo(w.repo_root, flags['repo-root']));
   }
   return {
     count: entries.length,

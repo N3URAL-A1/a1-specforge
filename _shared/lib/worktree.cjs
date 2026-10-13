@@ -11,6 +11,7 @@ const {
   WORKTREE_STATUSES,
   WORKTREE_EXIT_MODES,
   SLUG_RE,
+  SLUG_MAX_BYTES,
   readRegistry,
   writeRegistryAtomic,
   nowCompactId,
@@ -24,6 +25,8 @@ const {
   findActiveBySlug,
   disambiguateId,
   disambiguateNames,
+  holdsId,
+  sameRepo,
   resolveRealOrAbs,
 } = require('./worktree-registry.cjs');
 
@@ -36,7 +39,7 @@ function cmdWorktreePrepare(args) {
   const [repoRootRaw, slug] = flags._;
   if (!repoRootRaw) usage('worktree prepare requires <repo-root>');
   if (!slug) usage('worktree prepare requires <slug>');
-  const repoRoot = path.resolve(repoRootRaw);
+  const repoRoot = resolveRealOrAbs(repoRootRaw);
   const branch = flags.branch || `feature/${slug}`;
   const baseBranch = flags.base || 'main';
 
@@ -45,8 +48,10 @@ function cmdWorktreePrepare(args) {
   const pass = (name) => checks.push({ name, result: 'PASS' });
 
   // 1. slug valid
-  if (!SLUG_RE.test(slug)) {
-    process.stderr.write(`error: invalid slug "${slug}" (must match ${SLUG_RE})\n`);
+  if (!SLUG_RE.test(slug) || Buffer.byteLength(slug) > SLUG_MAX_BYTES) {
+    process.stderr.write(
+      `error: invalid slug "${slug.slice(0, 60)}" (must match ${SLUG_RE}, at most ${SLUG_MAX_BYTES} bytes)\n`
+    );
     process.exit(2);
   }
   pass('slug_valid');
@@ -375,8 +380,8 @@ function cmdWorktreeList(args) {
     entries = entries.filter((e) => e.status === flags.status);
   }
   if (flags['repo-root']) {
-    const abs = path.resolve(flags['repo-root']);
-    entries = entries.filter((e) => e.repo_root === abs);
+    const abs = flags['repo-root'];
+    entries = entries.filter((e) => sameRepo(e.repo_root, abs));
   }
   entries.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
   return {
@@ -430,12 +435,14 @@ function cmdWorktreeAdopt(args) {
   const [repoRootRaw, slug] = flags._;
   if (!repoRootRaw || !slug) usage('worktree adopt requires <repo-root> <slug>');
 
-  if (!SLUG_RE.test(slug)) {
-    process.stderr.write(`error: invalid slug "${slug}" (must match ${SLUG_RE})\n`);
+  if (!SLUG_RE.test(slug) || Buffer.byteLength(slug) > SLUG_MAX_BYTES) {
+    process.stderr.write(
+      `error: invalid slug "${slug.slice(0, 60)}" (must match ${SLUG_RE}, at most ${SLUG_MAX_BYTES} bytes)\n`
+    );
     process.exit(2);
   }
 
-  const repoRoot = path.resolve(repoRootRaw);
+  const repoRoot = resolveRealOrAbs(repoRootRaw);
   if (!gitIsRepo(repoRoot)) {
     process.stderr.write(`error: ${repoRoot} is not a git repository\n`);
     process.exit(2);
@@ -488,6 +495,10 @@ function cmdWorktreeAdopt(args) {
   const branch = match.branch || flags.branch || null;
   const baseBranch = flags.base || 'main';
   const id = disambiguateId(reg, repoRoot, nowCompactId(slug));
+  if (holdsId(reg, repoRoot, id)) {
+    process.stderr.write(`error: id ${id} is held by another registry entry — retry in a minute\n`);
+    process.exit(1);
+  }
   const commitCountRaw = branch
     ? git(repoRoot, ['rev-list', '--count', `${baseBranch}..${branch}`], { allowFail: true })
     : null;
@@ -531,7 +542,7 @@ function cmdWorktreeReconcile(args) {
   const [repoRootRaw] = flags._;
   if (!repoRootRaw) usage('worktree reconcile requires <repo-root>');
 
-  const repoRoot = path.resolve(repoRootRaw);
+  const repoRoot = resolveRealOrAbs(repoRootRaw);
   if (!gitIsRepo(repoRoot)) {
     process.stderr.write(`error: ${repoRoot} is not a git repository\n`);
     process.exit(2);
@@ -546,7 +557,7 @@ function cmdWorktreeReconcile(args) {
   const stale = [];
   const pruned = [];
   for (const e of reg.worktrees) {
-    if (e.repo_root !== repoRoot || e.status === 'cleaned') continue;
+    if (!sameRepo(e.repo_root, repoRoot) || e.status === 'cleaned') continue;
     const entryPathReal = resolveRealOrAbs(e.worktree_path);
     const hasGitMatch = gitWts.some((w) => path.resolve(w.path) === entryPathReal);
     if (hasGitMatch || fs.existsSync(e.worktree_path)) continue;

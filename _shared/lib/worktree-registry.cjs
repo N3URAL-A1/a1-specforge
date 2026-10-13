@@ -9,6 +9,8 @@ const { execFileSync } = require('child_process');
 const WORKTREE_STATUSES = new Set(['prepared', 'active', 'handoff', 'cleaned']);
 const WORKTREE_EXIT_MODES = new Set(['keep', 'discard', 'handoff']);
 const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/;
+// Keeps `<repo-tag>-<slug>` (tag up to 47 bytes) under the 255-byte file name limit.
+const SLUG_MAX_BYTES = 200;
 
 function worktreeRegistryPath() {
   if (process.env.A1_WORKTREE_REGISTRY) return process.env.A1_WORKTREE_REGISTRY;
@@ -43,7 +45,11 @@ function nowDate() {
   const raw = process.env.A1_NOW_OVERRIDE;
   if (!raw) return new Date();
   const d = new Date(raw);
-  if (Number.isNaN(d.getTime())) throw new Error(`invalid A1_NOW_OVERRIDE: ${raw}`);
+  if (Number.isNaN(d.getTime())) {
+    const e = new Error(`invalid A1_NOW_OVERRIDE: ${raw}`);
+    e.code = 'A1_INPUT';
+    throw e;
+  }
   return d;
 }
 
@@ -115,9 +121,14 @@ function findRegistryEntry(reg, id) {
   return reg.worktrees.find((w) => w.id === id);
 }
 
+// Same repo when the real paths match (a symlinked path names the same repo).
+function sameRepo(a, b) {
+  return a === b || resolveRealOrAbs(a) === resolveRealOrAbs(b);
+}
+
 function findActiveBySlug(reg, repoRoot, slug) {
   return reg.worktrees.find(
-    (w) => w.repo_root === repoRoot && w.slug === slug && w.status !== 'cleaned'
+    (w) => sameRepo(w.repo_root, repoRoot) && w.slug === slug && w.status !== 'cleaned'
   );
 }
 
@@ -166,11 +177,14 @@ function repoTag(repoRoot, maxLen = Infinity) {
 }
 
 function activeOtherRepo(reg, repoRoot) {
-  return reg.worktrees.filter((w) => w.status !== 'cleaned' && w.repo_root !== repoRoot);
+  return reg.worktrees.filter((w) => w.status !== 'cleaned' && !sameRepo(w.repo_root, repoRoot));
 }
 
-function holdsId(reg, repoRoot, id) {
-  return activeOtherRepo(reg, repoRoot).some((w) => w.id === id);
+// Lookups by id match any entry, so an id is taken by an entry of any repo and status
+// (cleaned and same-repo entries included).
+// (repoRoot is unused; kept so the call sites stay uniform with holdsPath.)
+function holdsId(reg, _repoRoot, id) {
+  return reg.worktrees.some((w) => w.id === id);
 }
 
 function holdsPath(reg, repoRoot, worktreePath) {
@@ -178,7 +192,7 @@ function holdsPath(reg, repoRoot, worktreePath) {
   return activeOtherRepo(reg, repoRoot).some((w) => resolveRealOrAbs(w.worktree_path) === want);
 }
 
-// Suffix the repo tag when ANOTHER repo holds the id; otherwise unchanged.
+// Suffix the repo tag when ANY entry holds the id; otherwise unchanged.
 function disambiguateId(reg, repoRoot, id) {
   return holdsId(reg, repoRoot, id) ? `${id}-${repoTag(repoRoot)}` : id;
 }
@@ -244,6 +258,7 @@ module.exports = {
   WORKTREE_STATUSES,
   WORKTREE_EXIT_MODES,
   SLUG_RE,
+  SLUG_MAX_BYTES,
   worktreeRegistryPath,
   readRegistry,
   writeRegistryAtomic,
@@ -262,6 +277,8 @@ module.exports = {
   resolveRealOrAbs,
   disambiguateId,
   disambiguateNames,
+  holdsId,
+  sameRepo,
   prReviewDir,
   ensurePrReviewDir,
   readFindings,
