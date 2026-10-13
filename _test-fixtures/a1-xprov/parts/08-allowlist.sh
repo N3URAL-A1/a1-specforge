@@ -599,6 +599,22 @@ claude_ancestor8() {
   done
   return 1
 }
+# claude_walk8 — true when a process-tree ancestor is Claude (CLAUDE_PID or comm "claude").
+# Approximates the ancestry arm of the guard (ancestryRefusal in xprov-approve.cjs). Used where
+# the env is stripped (NOCLAUDE8), so the guard's env arm is off and only ancestry can refuse:
+# a detached process keeps CLAUDECODE/CLAUDE_PID but has no Claude ancestor. The outer CLAUDE_PID
+# stands in for the guard's exe/argv arms (its own CLAUDE_PID arm is off under NOCLAUDE8). Any
+# divergence fails the test, never passes it falsely.
+claude_walk8() {
+  local p=$$ c
+  while [[ -n "$p" && "$p" -gt 1 ]]; do
+    [[ -n "${CLAUDE_PID:-}" && "$p" == "$CLAUDE_PID" ]] && return 0
+    c="$(ps -o comm= -p "$p" 2>/dev/null)"
+    [[ "$(basename -- "${c:-x}")" == claude ]] && return 0
+    p="$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')"
+  done
+  return 1
+}
 skip8() {
   if [[ "${CI:-}" == "true" ]]; then bad "$1: SKIP (claude-code ancestor) is not allowed when CI=true"
   else results+=("SKIP (claude-code ancestor)  $1"); fi
@@ -698,7 +714,7 @@ caseR30j2() {
   scen8; rm -f "$HOME/.a1-xprov/$STORE_NAME"
   PTY_TYPED=2 pty8 "${NOCLAUDE8[@]}" node "$tools" xprov allowlist approve --repo "$R8"; rc=$?
   assert_rc "R30j2-8 wrong typed count → exit 2" 2 "$rc"; store_absent8 "R30j2-8"
-  if claude_ancestor8; then said8 "R30j2-8 (refused earlier under Claude Code)" "$TMP08/pty-out.txt" "Nothing written"
+  if claude_walk8; then said8 "R30j2-8 (refused earlier under Claude Code)" "$TMP08/pty-out.txt" "Nothing written"
   else said8 "R30j2-8" "$TMP08/pty-out.txt" "expected 1; nothing written"; fi
   # 7: positive arm — correct count, temp file + rename, 0600
   if claude_ancestor8; then skip8 "R30j2-7 approve with the correct typed count writes the store 0600 via temp file + rename"; else
