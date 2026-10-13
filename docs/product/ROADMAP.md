@@ -4,7 +4,7 @@ type: roadmap
 project: a1-specforge
 title: "a1-specforge — Roadmap"
 status: active
-updated: 2026-10-12
+updated: 2026-10-13
 source: "migrated from docs/roadmap.md v3.0 (2026-07-10)"
 milestones:
   - id: m0-repo-extract
@@ -166,7 +166,7 @@ features:
     finished: 2026-10-12
     spec_path: project/a1-specforge/spec/014-xprov-egress-hardening.md
     plan_path: project/a1-specforge/plans/014-xprov-egress-hardening-wave-plan.md
-next: 002-product-docs-layer
+next: 006-specforge-kritis-profile
 ---
 
 # a1-specforge — Roadmap
@@ -285,6 +285,7 @@ None.
 - **2026-10-12** — 014-xprov-egress-hardening started date corrected to 2026-10-08 (claim date); code_scope claim released — product stage stamped today; the stage started on 2026-10-08
 - **2026-10-12** — 009-cross-provider-review-gate -> done — stage transition via `product stage`; dates corrected to real span 2026-09-24 .. 2026-10-04 (Wave 7 merged in #18 / 26e79c3; blocking flip 2026-10-03), spec_path set after reconcile (all 30 FRs present)
 - **2026-10-12** — 005-vault-first-artifacts -> cancelled (obsolete) — Spec closed itself 2026-09-13 as obsolete: the planned separate vault sink is superseded by A1_VAULT_ROOT, which delivers FR-001..003; cancelled (not done) because the spec premise no longer holds; a1-reconcile 2026-10-12 confirmed nothing to build
+- **2026-10-13** — next cursor set to 006-specforge-kritis-profile — 002-product-docs-layer is done; product markers warned that next pointed at a done feature
 
 ## Appendix — migrated details
 
