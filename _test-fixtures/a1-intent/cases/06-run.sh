@@ -59,7 +59,7 @@ JS
 # sealed plugin (W6_SEAL, W6_T), the fixture's global git identity.
 w6_sandbox() {
   new_sandbox "$1"
-  set_executor "$W5B_HOST"
+  set_executor @live
   printf '[user]\n\tname = Fixture\n\temail = fixture@example.invalid\n' >"$FHOME/.gitconfig"
   w6_project real-proj
   w6_plugin

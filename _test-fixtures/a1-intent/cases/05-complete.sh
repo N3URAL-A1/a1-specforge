@@ -49,7 +49,7 @@ W5_PAYLOAD_TEXT="Push-Benachrichtigung bei neuem Auftrag"
 w5_sandbox() {
   new_sandbox "$1"
   mk_project real-proj
-  set_executor "$W5_HOST"
+  set_executor @live
   W5_LEDGER="$FHOME/.a1-intents-ledger.json"
   W5_LOG="$FHOME/.a1-intents/log.jsonl"
   W5_C="$VAULT/inbox/intents/claimed"

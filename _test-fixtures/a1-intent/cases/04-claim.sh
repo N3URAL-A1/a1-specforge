@@ -55,7 +55,7 @@ W4_PAYLOAD_SHA="d44c6af75fba4ec2d394ccdea93c260a30d1136805313cfde73375cd75e74fd7
 w4_sandbox() {
   new_sandbox "$1"
   mk_project real-proj
-  set_executor "$W4_HOST"
+  set_executor @live
   W4_LEDGER="$FHOME/.a1-intents-ledger.json"
   W4_LOG="$FHOME/.a1-intents/log.jsonl"
   W4_C="$VAULT/inbox/intents/claimed"

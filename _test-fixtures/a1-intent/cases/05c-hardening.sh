@@ -48,7 +48,7 @@ ZB_HOST="$(node -e 'process.stdout.write(require("os").hostname())')"
 zb_sandbox() {
   new_sandbox "$1"
   mk_project real-proj
-  set_executor "$ZB_HOST"
+  set_executor @live
   ZB_DIR="$FHOME/.a1-intents"
   ZB_LOG="$ZB_DIR/log.jsonl"
   ZB_LEDGER="$FHOME/.a1-intents-ledger.json"

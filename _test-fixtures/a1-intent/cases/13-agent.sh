@@ -211,7 +211,7 @@ a13_reset
 a13_run '["install-agent"]' '{"tty":false}'
 a13_refused "A6a no TTY on stdin/stdout: refused as not_a_tty [FR-040]" not_a_tty
 new_sandbox a13-cli
-set_executor "$A13_HOST"
+set_executor @live
 run_intent install-agent
 if [[ "$RC" -eq 1 && "$(a13_reason)" == "not_a_tty" ]]; then ok "A6b the real CLI with stdout redirected: exit 1 not_a_tty before anything else [FR-040]"
 else bad "A6b the real CLI with stdout redirected: exit 1 not_a_tty before anything else [FR-040]" "exit $RC" "stdout: ${OUT:0:200}"; fi
@@ -279,7 +279,7 @@ a13_refused "A11 no A1_VAULT_ROOT: refused as vault_root_missing [FR-032]" vault
 set_executor "some-other-host"
 a13_run '["install-agent"]'
 a13_refused "A12 this host is not the executor host: refused as not_executor_host [FR-017]" not_executor_host
-set_executor "$A13_HOST"
+set_executor @live
 a13_run '["install-agent"]' '{"platform":"linux"}'
 a13_refused "A13 launchd exists on macOS only: platform linux refused as unsupported_platform [FR-032]" unsupported_platform
 a13_run '["install-agent"]' '{"answer":false}'

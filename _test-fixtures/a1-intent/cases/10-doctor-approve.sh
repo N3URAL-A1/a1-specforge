@@ -48,7 +48,7 @@ W10_APPROVE_ID="9c4d2b7a-1e3f-4a5b-8c6d-7e8f9a0b1c2d"
 w10_sandbox() {
   new_sandbox "$1"
   mk_project real-proj
-  set_executor "$W10_HOST"
+  set_executor @live
   W10_R="$VAULT/inbox/intents/rejected"
   W10_D="$VAULT/inbox/intents/done"
   W10_LOG="$FHOME/.a1-intents/log.jsonl"
