@@ -14,7 +14,14 @@ set -u
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TOOLS="$REPO_ROOT/_shared/a1-tools.cjs"
-FIX="$REPO_ROOT/_test-fixtures/a1-reconcile"
+# The lifecycle cases rewrite drift reports, so they run on a temp copy: the tracked
+# fixtures (and the working tree) stay untouched after a run.
+SRC_FIX="$REPO_ROOT/_test-fixtures/a1-reconcile"
+FIX=$(mktemp -d) || exit 2
+trap 'rm -rf "$FIX"' EXIT
+cp -R "$SRC_FIX/." "$FIX/" || exit 2
+fixture_sum() { (cd "$SRC_FIX" && find . -type f ! -name run-tests.sh | sort | xargs cksum); }
+SUM_BEFORE=$(fixture_sum)
 
 pass=0
 fail=0
@@ -222,6 +229,9 @@ run_lifecycle "single-missing" 2   # MissingFile.tsx, credentials.ts
 run_slot_collision
 run_anchor_extraction
 run_validation
+
+# the tracked fixtures must be byte-identical after the run
+assert "tracked-fixtures-untouched" "$([[ "$(fixture_sum)" == "$SUM_BEFORE" ]] && echo 1 || echo 0)"
 
 printf '\n--- a1-reconcile fixture results ---\n'
 for r in "${results[@]}"; do printf '%s\n' "$r"; done

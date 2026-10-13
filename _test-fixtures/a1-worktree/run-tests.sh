@@ -12,7 +12,7 @@ set -u
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TOOLS="$REPO_ROOT/_shared/a1-tools.cjs"
 
-WORK=$(mktemp -d)
+WORK=$(cd "$(mktemp -d)" && pwd -P)   # real path: repo roots are stored as real paths (macOS /var -> /private/var)
 export A1_WORKTREE_REGISTRY="$WORK/registry.json"
 
 pass=0
@@ -629,8 +629,8 @@ assert_eq "edge-meta-exit" "0" "$EDGE_RC"
 assert_eq "edge-meta-path-is-inert-kebab" "$EDGE_PAR/a1-worktrees/x-touch-canary-file-touch-canary-file-$(repo_hash "$EDGE_PAR/$META")-edge-c" "$(extract_field worktree_path "$EDGE_OUT")"
 assert_eq "edge-meta-canary-absent" "absent" "$([[ -e "$WORK/canary-cwd/canary-file" || -e "$EDGE_PAR/canary-file" ]] && echo present || echo absent)"
 assert_eq "edge-meta-counts" "2/2/2" "$(reg_stat counts edge-c edge-meta)"
-# 25d name+slug fit in 255 bytes even for a long slug (prefix is cut, slug never)
-LSLUG=$(printf 's%.0s' $(seq 1 230))
+# 25d name+slug fit in 255 bytes even for a slug at the 200-byte cap (prefix is cut, slug never)
+LSLUG=$(printf 's%.0s' $(seq 1 200))
 edge_case lslug "$LONG" "$LSLUG"
 LP=$(extract_field worktree_path "$EDGE_OUT")
 assert_eq "edge-longslug-basename-under-255" "ok" "$([[ ${#LP} -gt 0 && $(basename "$LP" | tr -d "\n" | wc -c) -lt 255 ]] && echo ok || echo bad)"
@@ -669,6 +669,58 @@ assert_eq "recheck-blocker-wrote-nothing" "$BEFORE" "$(reg_stat counts blk "")"
 assert_eq "clock-override-used" "20261012-1005" "$(extract_field id "$(prep_at "$T1" "$P3/repoA" clock-x)" | cut -c1-13)"
 A1_NOW_OVERRIDE="not-a-date" node "$TOOLS" worktree prepare "$P3/repoA" clock-bad >/dev/null 2>&1
 assert_eq "clock-override-invalid-rejected" "1" "$([[ $? -ne 0 ]] && echo 1 || echo 0)"
+
+# ---- CASE 28: slug length cap (follow-up: 249+ byte slug overflowed 255 bytes when prefixed)
+# RED-making change: drop the SLUG_MAX_BYTES check -> 28a no longer exits 2.
+P8="$WORK/long-par"; make_repo "$P8/repoA"; make_repo "$P8/repoB"
+LONG249=$(printf 'a%.0s' $(seq 1 249))
+prep_at "$T0" "$P8/repoA" "$LONG249" >/dev/null; RC=$?
+assert_eq "long-slug-249-rejected-exit" "2" "$RC"
+LONG200=$(printf 'a%.0s' $(seq 1 200))
+prep_at "$T0" "$P8/repoA" "$LONG200" >/dev/null
+OUT_B=$(prep_at "$T0" "$P8/repoB" "$LONG200"); assert_eq "long-slug-200-collision-exit" "0" "$?"
+FOLDER=$(extract_field worktree_path "$OUT_B"); FOLDER=${FOLDER##*/}
+assert_eq "long-slug-200-folder-under-255-bytes" "yes" "$([[ ${#FOLDER} -le 254 ]] && echo yes || echo no)"
+assert_eq "long-slug-200-folder-has-repo-tag" "yes" "$([[ "$FOLDER" == repob-* ]] && echo yes || echo no)"
+node "$TOOLS" worktree adopt "$P8/repoA" "$LONG249" >/dev/null 2>&1; assert_eq "long-slug-adopt-rejected-exit" "2" "$?"
+
+# ---- CASE 29: symlinked repo root is the same repo (follow-up, pre-existing gap)
+# RED-making change: path.resolve instead of resolveRealOrAbs in prepare -> repo_root keeps the link.
+P9="$WORK/sym-par"; make_repo "$P9/real"; ln -s "$P9/real" "$P9/link"
+OUT_L=$(prep_at "$T0" "$P9/link" symslug); assert_eq "symlink-prepare-exit" "0" "$?"
+REAL9=$(node -e 'console.log(require("fs").realpathSync(process.argv[1]))' "$P9/real")
+assert_eq "symlink-repo-root-is-real" "$REAL9" "$(extract_field repo_root "$OUT_L")"
+assert_eq "symlink-worktree-dir-next-to-real-repo" "$(dirname "$REAL9")/a1-worktrees/symslug" "$(extract_field worktree_path "$OUT_L")"
+prep_at "$T0" "$P9/real" symslug >/dev/null; assert_eq "symlink-then-real-duplicate-refused-exit" "1" "$?"
+
+# ---- CASE 30: id unique across cleaned and same-repo entries; adopt re-checks (follow-up)
+# RED-making change: holdsId back to "other repo, not cleaned" -> registry holds two equal ids.
+P10="$WORK/id-par"; make_repo "$P10/repoA"
+OUT_1=$(prep_at "$T0" "$P10/repoA" again); ID1=$(extract_field id "$OUT_1")
+node "$TOOLS" worktree exit "$ID1" --mode discard >/dev/null 2>&1
+OUT_2=$(prep_at "$T0" "$P10/repoA" again); assert_eq "reprepare-same-minute-exit" "0" "$?"
+ID2=$(extract_field id "$OUT_2")
+assert_eq "reprepare-id-differs-from-cleaned" "yes" "$([[ -n "$ID2" && "$ID1" != "$ID2" ]] && echo yes || echo no)"
+node "$TOOLS" worktree enter "$ID2" >/dev/null 2>&1; assert_eq "reprepare-enter-new-id-exit" "0" "$?"
+node "$TOOLS" worktree exit "$ID2" --mode discard >/dev/null 2>&1
+BEFORE=$(reg_stat counts again "")
+OUT_3=$(prep_at "$T0" "$P10/repoA" again); RC=$?
+assert_eq "reprepare-third-same-minute-blocker-exit" "1" "$RC"
+assert_eq "reprepare-third-reports-id-unique" "yes" "$(printf '%s' "$OUT_3" | grep -q '"id_unique"' && echo yes || echo no)"
+assert_eq "reprepare-third-wrote-nothing" "$BEFORE" "$(reg_stat counts again "")"
+# adopt: the id it would use is held by a cleaned entry -> suffixed, not duplicated
+P11="$WORK/adopt-id-par"; make_repo "$P11/repoA"
+OUT_1=$(prep_at "$T0" "$P11/repoA" adp); ID1=$(extract_field id "$OUT_1")
+node "$TOOLS" worktree exit "$ID1" --mode discard >/dev/null 2>&1
+git -C "$P11/repoA" worktree add -q "$P11/wt-adp" -b feature/adp-manual
+OUT_A=$(A1_NOW_OVERRIDE="$T0" node "$TOOLS" worktree adopt "$P11/repoA" adp --worktree-path "$P11/wt-adp" 2>&1); assert_eq "adopt-over-cleaned-id-exit" "0" "$?"
+assert_eq "adopt-over-cleaned-id-differs" "yes" "$([[ "$(extract_field id "$OUT_A")" != "$ID1" ]] && echo yes || echo no)"
+assert_eq "adopt-over-cleaned-id-unique-ids" "2/2" "$(reg_stat counts adp "" | cut -d/ -f1-2)"
+
+# ---- CASE 31: invalid A1_NOW_OVERRIDE is a usage error, not an internal error (follow-up)
+# RED-making change: drop e.code = 'A1_INPUT' -> output starts with "internal error:".
+OUT=$(A1_NOW_OVERRIDE="garbage" node "$TOOLS" worktree prepare "$P3/repoA" clock-bad2 2>&1)
+assert_eq "clock-override-invalid-prefix" "error: invalid A1_NOW_OVERRIDE: garbage" "$OUT"
 
 # ----------------------------------------------------------------------------
 # Report
