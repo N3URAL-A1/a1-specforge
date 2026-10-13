@@ -12,7 +12,11 @@ set -u
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TOOLS="$REPO_ROOT/_shared/a1-tools.cjs"
 
-WORK=$(cd "$(mktemp -d)" && pwd -P)   # real path: repo roots are stored as real paths (macOS /var -> /private/var)
+# WORK is a real path (repo roots are stored as real paths; macOS /var -> /private/var) and is
+# checked before the EXIT trap can rm -rf it: a failed mktemp must never leave WORK = cwd.
+WORK=$(mktemp -d) || exit 2
+WORK=$(cd "$WORK" && pwd -P) || exit 2
+[[ -n "$WORK" && -d "$WORK" ]] || exit 2
 export A1_WORKTREE_REGISTRY="$WORK/registry.json"
 
 pass=0
@@ -671,7 +675,7 @@ A1_NOW_OVERRIDE="not-a-date" node "$TOOLS" worktree prepare "$P3/repoA" clock-ba
 assert_eq "clock-override-invalid-rejected" "1" "$([[ $? -ne 0 ]] && echo 1 || echo 0)"
 
 # ---- CASE 28: slug length cap (follow-up: 249+ byte slug overflowed 255 bytes when prefixed)
-# RED-making change: drop the SLUG_MAX_BYTES check -> 28a no longer exits 2.
+# RED-making change: drop the SLUG_MAX_BYTES check -> long-slug-249-rejected-exit no longer exits 2.
 P8="$WORK/long-par"; make_repo "$P8/repoA"; make_repo "$P8/repoB"
 LONG249=$(printf 'a%.0s' $(seq 1 249))
 prep_at "$T0" "$P8/repoA" "$LONG249" >/dev/null; RC=$?
@@ -721,6 +725,32 @@ assert_eq "adopt-over-cleaned-id-unique-ids" "2/2" "$(reg_stat counts adp "" | c
 # RED-making change: drop e.code = 'A1_INPUT' -> output starts with "internal error:".
 OUT=$(A1_NOW_OVERRIDE="garbage" node "$TOOLS" worktree prepare "$P3/repoA" clock-bad2 2>&1)
 assert_eq "clock-override-invalid-prefix" "error: invalid A1_NOW_OVERRIDE: garbage" "$OUT"
+
+# ---- CASE 32: registry entries stored with a symlinked repo_root (legacy) are the same repo
+# RED-making change: sameRepo reduced to === -> prepare is not refused, list/reconcile/pr miss the entry.
+P12="$WORK/legacy-par"; make_repo "$P12/real"; ln -s "$P12/real" "$P12/link"
+node -e '
+const fs = require("fs"); const [p, link, par] = process.argv.slice(1);
+fs.writeFileSync(p, JSON.stringify({ version: 1, worktrees: [{ id: "20261012-0900-leg", slug: "leg", repo_root: link, worktree_path: par + "/a1-worktrees/leg", branch: "feature/leg", base_branch: "main", status: "handoff", created_at: "2026-10-12T09:00:00Z", phase_history: [] }] }));' "$A1_WORKTREE_REGISTRY.legacy" "$P12/link" "$P12"
+LEGACY_REG="$A1_WORKTREE_REGISTRY.legacy"
+leg() { A1_WORKTREE_REGISTRY="$LEGACY_REG" "$@" 2>&1; }
+leg env A1_NOW_OVERRIDE="$T0" node "$TOOLS" worktree prepare "$P12/real" leg >/dev/null; assert_eq "legacy-symlink-entry-blocks-prepare-exit" "1" "$?"
+assert_eq "legacy-symlink-entry-list-count" "1" "$(leg node "$TOOLS" worktree list --repo-root "$P12/real" | grep -c '"id": "20261012-0900-leg"')"
+assert_eq "legacy-symlink-entry-reconcile-sees-it" "yes" "$(leg node "$TOOLS" worktree reconcile "$P12/real" | grep -q '"id": "20261012-0900-leg"' && echo yes || echo no)"
+assert_eq "legacy-symlink-entry-pr-list-count" "1" "$(leg node "$TOOLS" pr list-handoff --repo-root "$P12/real" | grep -c '"slug": "leg"')"
+
+# ---- CASE 33: adopt refuses when its id and the repo-tagged id are both taken
+# RED-making change: drop the holdsId re-check in adopt -> exit 0 with a duplicate id.
+P13="$WORK/adopt-both-par"; make_repo "$P13/repoA"
+TAG13="repoa-$(repo_hash "$P13/repoA")"
+node -e '
+const fs = require("fs"); const [p, repo, stamp, tag] = process.argv.slice(1);
+const e = (id) => ({ id, slug: "both", repo_root: repo, worktree_path: "/gone/" + id, branch: "x", base_branch: "main", status: "cleaned", phase_history: [] });
+fs.writeFileSync(p, JSON.stringify({ version: 1, worktrees: [e(stamp + "-both"), e(stamp + "-both-" + tag)] }));' "$A1_WORKTREE_REGISTRY.both" "$P13/repoA" "$STAMP0" "$TAG13"
+git -C "$P13/repoA" worktree add -q "$P13/wt-both" -b feature/both-manual
+OUT=$(A1_WORKTREE_REGISTRY="$A1_WORKTREE_REGISTRY.both" A1_NOW_OVERRIDE="$T0" node "$TOOLS" worktree adopt "$P13/repoA" both --worktree-path "$P13/wt-both" 2>&1); RC=$?
+assert_eq "adopt-both-ids-taken-exit" "1" "$RC"
+assert_eq "adopt-both-ids-taken-message" "yes" "$(printf '%s' "$OUT" | grep -q 'retry in a minute' && echo yes || echo no)"
 
 # ----------------------------------------------------------------------------
 # Report

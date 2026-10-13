@@ -182,6 +182,7 @@ function activeOtherRepo(reg, repoRoot) {
 
 // Lookups by id match any entry, so an id is taken by an entry of any repo and status
 // (cleaned and same-repo entries included).
+// (repoRoot is unused; kept so the call sites stay uniform with holdsPath.)
 function holdsId(reg, _repoRoot, id) {
   return reg.worktrees.some((w) => w.id === id);
 }
