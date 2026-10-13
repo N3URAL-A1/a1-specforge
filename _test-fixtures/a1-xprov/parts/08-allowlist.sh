@@ -600,9 +600,11 @@ claude_ancestor8() {
   return 1
 }
 # claude_walk8 — true when a process-tree ancestor is Claude (CLAUDE_PID or comm "claude").
-# Mirrors only the ancestry arm of the guard (ancestryRefusal in xprov-approve.cjs). Used where
+# Approximates the ancestry arm of the guard (ancestryRefusal in xprov-approve.cjs). Used where
 # the env is stripped (NOCLAUDE8), so the guard's env arm is off and only ancestry can refuse:
-# a detached process keeps CLAUDECODE/CLAUDE_PID but has no Claude ancestor.
+# a detached process keeps CLAUDECODE/CLAUDE_PID but has no Claude ancestor. The outer CLAUDE_PID
+# stands in for the guard's exe/argv arms (its own CLAUDE_PID arm is off under NOCLAUDE8). Any
+# divergence fails the test, never passes it falsely.
 claude_walk8() {
   local p=$$ c
   while [[ -n "$p" && "$p" -gt 1 ]]; do
