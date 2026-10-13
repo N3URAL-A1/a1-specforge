@@ -869,7 +869,7 @@ w5b_installed() {
 # with copies of four real SKILL.md files (two rows, one unrowed skill).
 w5b_seal_sandbox() {
   new_sandbox "$1"
-  set_executor "$W5B_HOST"
+  set_executor @live
   PLUGIN_SRC="$FHOME/$W5B_PLUGIN_REL/9.9.0"
   local s
   for s in a1-progress a1-fix a1-plan a1-quick; do
@@ -993,7 +993,7 @@ set_executor "other-host.invalid"
 seal_pty "$W5B_FALSE_TOOLS" yes
 if [[ "$PTY_RC" -eq 1 && "$SEAL_JSON" == *'"not_executor_host"'* ]] && w5b_nothing_sealed; then ok "5b-G1d seal on a foreign host -> exit 1 not_executor_host, nothing written [FR-040]"
 else bad "5b-G1d seal on a foreign host -> exit 1 not_executor_host, nothing written [FR-040]" "exit $PTY_RC json: $SEAL_JSON" "pty: ${PTY_OUT:0:300}"; fi
-set_executor "$W5B_HOST"
+set_executor @live
 seal_pty "$W5B_FALSE_TOOLS" no
 if [[ "$PTY_RC" -eq 1 && "$SEAL_JSON" == *'"not_confirmed"'* ]] && w5b_nothing_sealed; then ok "5b-G1e an answer other than yes -> exit 1 not_confirmed, nothing written [FR-040]"
 else bad "5b-G1e an answer other than yes -> exit 1 not_confirmed, nothing written [FR-040]" "exit $PTY_RC json: $SEAL_JSON" "pty: ${PTY_OUT:0:300}"; fi

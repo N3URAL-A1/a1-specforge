@@ -80,7 +80,7 @@ t4_before="$(w8_stat "$W8_F")"
 rmdir "$VAULT/inbox/intents/done.t4" 2>/dev/null; mv "$VAULT/inbox/intents/done" "$VAULT/inbox/intents/done.t4"
 set_executor other-mac.invalid
 w8_tick
-set_executor "$W5B_HOST"
+set_executor @live
 t4="$RC $(w6_js 'o.reasons.join(",")' "$OUT") $( [[ -e "$VAULT/inbox/intents/done" ]] && echo created) $( [[ "$(w8_stat "$W8_F")" == "$t4_before" ]] && echo unchanged)"
 mv "$VAULT/inbox/intents/done.t4" "$VAULT/inbox/intents/done"
 if [[ "$t4" == "1 not_executor_host  unchanged" ]]; then ok "T4 a tick on a foreign host -> exit 1 not_executor_host, the queued file unchanged, no folder created [FR-032, FR-017]"

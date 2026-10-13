@@ -154,9 +154,42 @@ stub_mode() {
   printf '%s\n' "$1" >"$FHOME/.a1-intents/tmp/stub-mode"
 }
 
-# set_executor <hostname> [device-id]
+# live_host — the name the product compares against (os.hostname(), read fresh).
+live_host() { node -e 'process.stdout.write(require("os").hostname())'; }
+
+# The product reads os.hostname() at every call, so a name that changes mid-run
+# (sleep/wake, network change) turns every later claim into not_executor_host.
+# SUITE_HOST is the name at suite start; refresh_hosts re-reads it, re-pins the
+# per-file W*_HOST variables and reports a change ONCE as an environment fault
+# instead of dozens of product failures. NODE_OPTIONS cannot pin it: the
+# product refuses a foreign NODE_OPTIONS (child_context_invalid).
+SUITE_HOST="$(live_host)"
+SUITE_HOST_REPORTED=0
+refresh_hosts() {
+  local now
+  now="$(live_host)"
+  if [[ -z "$now" ]]; then
+    # node missing or crashed: keep the last good name, say so once
+    if [[ "$SUITE_HOST_REPORTED" -eq 0 ]]; then
+      SUITE_HOST_REPORTED=1
+      bad "ENV live_host returned no name: keeping '$SUITE_HOST' [FR-017]" "node os.hostname() failed; results after this point reflect the machine"
+    fi
+    now="$SUITE_HOST"
+  elif [[ "$now" != "$SUITE_HOST" && "$SUITE_HOST_REPORTED" -eq 0 ]]; then
+    SUITE_HOST_REPORTED=1
+    bad "ENV hostname changed during the run ($SUITE_HOST -> $now): later results reflect the machine, not the product [FR-017]" "re-run on a stable network; see fixes/2026-10-13-intent-suite-not-executor-host"
+  fi
+  SUITE_HOST="$now"
+  W4_HOST="$now"; W5_HOST="$now"; W5B_HOST="$now"; ZB_HOST="$now"; W10_HOST="$now"; A13_HOST="$now"
+}
+
+# set_executor <hostname|@live> [device-id] — @live writes the current host name.
+# Never call it with @live inside $(...) or a pipe: the refresh and the fail count
+# would stay in the subshell.
 set_executor() {
-  printf '{"executor_host":"%s","executor_device":"%s"}\n' "$1" "${2:-mac-robert}" >"$FHOME/.a1-intents/executor.json"
+  local host="$1"
+  if [[ "$host" == "@live" ]]; then refresh_hosts; host="$SUITE_HOST"; fi
+  printf '{"executor_host":"%s","executor_device":"%s"}\n' "$host" "${2:-mac-robert}" >"$FHOME/.a1-intents/executor.json"
   chmod 600 "$FHOME/.a1-intents/executor.json"
 }
 
