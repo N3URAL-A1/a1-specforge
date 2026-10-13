@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated": "2026-10-12T16:59:59.580Z",
+  "generated": "2026-10-13T17:24:00.941Z",
   "project": {
     "id": "a1-specforge",
     "title": "a1-specforge — Roadmap",
@@ -218,7 +218,7 @@
       "plan_path": "project/a1-specforge/plans/014-xprov-egress-hardening-wave-plan.md"
     }
   ],
-  "next": "002-product-docs-layer",
+  "next": "006-specforge-kritis-profile",
   "cursor": "006-specforge-kritis-profile",
   "vision": null,
   "audits": [
