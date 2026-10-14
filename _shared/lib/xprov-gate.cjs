@@ -687,7 +687,7 @@ function waive(o) {
   const wave = isPlan ? null : parseWave(o.wave, 'wave');
   const lane = isPlan ? null : C.parseLane(o.lane);
   const reason = oneLineFlag(o.reason, 'reason', REASON_MAX_CHARS);
-  const by = C.rejectReservedBy(oneLineFlag(o.by, 'by', BY_MAX_CHARS)); // spec 016 FR-011
+  const by = C.validatePlainBy(oneLineFlag(o.by, 'by', BY_MAX_CHARS)); // spec 016 FR-011, SEC-4
   const refusal = guardRefusal(); // the owner-approval guards, one implementation (xprov-approve.cjs)
   if (refusal) return { code: X.EXIT_USAGE, msg: `${refusal}. Run it yourself in a separate terminal (not through an agent and not via the ! prefix). Nothing written.` };
   let key;

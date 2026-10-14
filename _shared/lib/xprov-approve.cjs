@@ -448,8 +448,7 @@ function cmdApprove(args) {
   const flags = io.parseFlags(args, { repo: 'str', revoke: 'str', by: 'str' });
   if (flags._.length) return usage(`approve: unexpected argument ${JSON.stringify(C.clip(flags._[0], 80))}`);
   if (flags.by !== undefined) { // spec 016 FR-011: owner-chat is reserved; the value is otherwise a plain bounded name
-    C.rejectReservedBy(flags.by);
-    if (!/^[A-Za-z][A-Za-z0-9._-]{0,63}$/.test(flags.by)) throw C.inputError('--by must be a plain name (letters, digits, . _ -), at most 64 characters');
+    C.validatePlainBy(flags.by);
   }
   if (!flags.repo) return usage('approve requires --repo <path> [--revoke <sha256>]');
   const refusal = guardRefusal();

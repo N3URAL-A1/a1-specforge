@@ -11,6 +11,7 @@
 #   OS5*    Red if readChain() skips the `prev` comparison; OS5f red if appendAudit extends a broken chain.
 #   OS6*    Red if rejectReservedBy() is dropped from validateBy / waive / allowlist approve.
 #   OS7     Red if the origin binding is dropped (the void permit would reach the runner).
+#   OS9-OS16 are the wave-1 security-review fixes SEC-1..SEC-8; each block names its RED proof above its case function.
 # Owner commands run on a tree COPY whose guardRefusal is stubbed to null (the guard itself is
 # measured in parts 08, 11 and 15, the TTY refusal again in OS5k) — never against a real store.
 
@@ -191,8 +192,8 @@ caseOS5() {
   assert_eq "OS5f the permit store is unchanged" "$(sha256_of "$HOME/.a1-xprov/permits.json")" "$before"
   mv "$f" "$TMP22/real.jsonl"; ln -s "$TMP22/real.jsonl" "$f"
   assert_eq "OS5g a symlinked audit log → broken" "$(audit_state22)" "broken"
-  rm -f "$f"; assert_eq "OS5h no audit log → missing" "$(audit_state22)" "missing"
-  : > "$f"; assert_eq "OS5h empty audit log → missing" "$(audit_state22)" "missing"
+  rm -f "$f"; assert_eq "OS5h no audit log next to a bound entry → broken (SEC-1; a legacy entry stays missing, OS4f)" "$(audit_state22)" "broken"
+  : > "$f"; assert_eq "OS5h empty audit log next to a bound entry → broken" "$(audit_state22)" "broken"
   # a hand-written permit of another repo (no audit line for it): visible as missing
   rm -f "$f"; permit22 >/dev/null; make_phase p22; write_permit "$PHASE_REPO" robert "$REC22" "" 2026-10-14
   assert_eq "OS5i a forged entry next to an audited one → audit missing for it" "$(audit_state22)" "missing"
@@ -244,13 +245,13 @@ caseOS6() {
   for v in 'owner-chat' 'Owner-Chat' 'OWNER_CHAT' $'owner\xe2\x80\x91chat' $'\xef\xbd\x8f\xef\xbd\x97\xef\xbd\x8e\xef\xbd\x85\xef\xbd\x92-chat'; do
     n=$((n + 1))
     piped22 allowed permit --by "$v" --record "$REC22"
-    assert_rc "OS6a permit --by variant $n → exit 2" 2 "$G_RC"; [[ "$G_ERR" == *reserved* ]] && ok "OS6a variant $n says reserved" || bad "OS6a variant $n: $G_ERR"
+    assert_rc "OS6a permit --by variant $n → exit 2" 2 "$G_RC"; [[ "$G_ERR" == *reserved* || "$G_ERR" == *ASCII* ]] && ok "OS6a variant $n says reserved" || bad "OS6a variant $n: $G_ERR"
     piped22 denied permit --deny --by "$v"
-    assert_rc "OS6b permit --deny --by variant $n → exit 2" 2 "$G_RC"; [[ "$G_ERR" == *reserved* ]] && ok "OS6b variant $n says reserved" || bad "OS6b variant $n: $G_ERR"
+    assert_rc "OS6b permit --deny --by variant $n → exit 2" 2 "$G_RC"; [[ "$G_ERR" == *reserved* || "$G_ERR" == *ASCII* ]] && ok "OS6b variant $n says reserved" || bad "OS6b variant $n: $G_ERR"
     piped22 plan-review-xprov waive --phase p22 --gate plan-review-xprov --reason r --by "$v"
-    assert_rc "OS6c waive --by variant $n → exit 2" 2 "$G_RC"; [[ "$G_ERR" == *reserved* ]] && ok "OS6c variant $n says reserved" || bad "OS6c variant $n: $G_ERR"
+    assert_rc "OS6c waive --by variant $n → exit 2" 2 "$G_RC"; [[ "$G_ERR" == *reserved* || "$G_ERR" == *ASCII* ]] && ok "OS6c variant $n says reserved" || bad "OS6c variant $n: $G_ERR"
     piped22 "" allowlist approve --repo "$PHASE_REPO" --by "$v"
-    assert_rc "OS6d allowlist approve --by variant $n → exit 2" 2 "$G_RC"; [[ "$G_ERR" == *reserved* ]] && ok "OS6d variant $n says reserved" || bad "OS6d variant $n: $G_ERR"
+    assert_rc "OS6d allowlist approve --by variant $n → exit 2" 2 "$G_RC"; [[ "$G_ERR" == *reserved* || "$G_ERR" == *ASCII* ]] && ok "OS6d variant $n says reserved" || bad "OS6d variant $n: $G_ERR"
   done
   nothing22 && ok "OS6 nothing written by any rejected call" || bad "OS6 a rejected call wrote"
   local big; big="$(printf 'a%.0s' $(seq 1 10000))"
@@ -298,6 +299,224 @@ caseOS8() {
   grep -q 'enforcement: unenforced' <<<"$help" && ok "OS8c help states enforcement: unenforced" || bad "OS8c help lacks the tier-0 statement"
 }
 
+# ---------- security-review fixes SEC-1..SEC-8 (wave 1 review) ----------
+# editstore22 <js> — runs <js> over the first permit entry `e` (and the document `d`) of the suite permit store.
+editstore22() {
+  node -e '
+    const fs = require("fs"); const f = process.argv[1]; const d = JSON.parse(fs.readFileSync(f, "utf8")); const e = Object.values(d.permits)[0];
+    eval(process.argv[2]); fs.writeFileSync(f, JSON.stringify(d, null, 2) + "\n", { mode: 0o600 });
+  ' "$HOME/.a1-xprov/permits.json" "$1"
+}
+# linesha22 <n> — sha256 of the exact text of audit line n (computed here, never by the code under test)
+linesha22() { sed -n "${1}p" "$(auditf22)" | tr -d '\n' > "$TMP22/line.raw"; sha256_of "$TMP22/line.raw"; }
+# check22 <name> <state/reason/audit/ok> — permit-check result in one literal
+check22() { sub22 permit-check; assert_json "$1" "$G_OUT" "[j.state, j.reason || '-', j.audit, j.ok].join('/')" "$2"; }
+FAILCLOSED22=audit_broken/external_review_not_permitted/broken/false
+
+# ---------- OS9: the audit line is bound to the store entry (SEC-1, FR-010) ----------
+# Red proofs (one production change each, all in xprov-audit.cjs verifyAudit unless named):
+#   OS9a  red if appendAudit's line sha is not stored (xprov-permit.cjs permit(): `audit:` dropped)
+#   OS9b/f red if the `later` (last permit/denial line) check is dropped
+#   OS9c  red if the sha-in-chain check (idx < 0) is dropped; OS9g likewise
+#   OS9d  red if the KIND_ACTIONS (permit vs permit-deny) check is dropped
+#   OS9e  red if the `line.repo !== repoKey` check is dropped
+#   OS9h  red if a bound entry next to a missing log is reported `missing` instead of `broken`
+#   OS9i  red if permitCheck stops mapping audit broken → audit_broken (the permit would stay allowed)
+caseOS9() {
+  prep22; origin22 "$ORG22"; permit22 >/dev/null
+  assert_json "OS9a the permit entry stores the sha of its audit line" "$(cat "$HOME/.a1-xprov/permits.json")" "Object.values(j.permits)[0].audit === '$(linesha22 1)'" "true"
+  check22 "OS9a baseline: allowed, audit ok" "allowed/-/ok/true"
+  # b: a later permit-deny line for the repository (a denial that never reached the store) supersedes the permit
+  js22="AU.appendAudit({ repo: '$(key22)', action: 'permit-deny', now: '$NOW22' })"; lib22 "$js22" >/dev/null
+  check22 "OS9b a later permit-deny line → fail closed (audit_broken)" "$FAILCLOSED22"
+  assert_rc "OS9b permit-check exits 1" 1 "$G_RC"
+  [[ "$G_ERR" == *supersedes* ]] && ok "OS9b the detail names the superseding line" || bad "OS9b stderr: $G_ERR"
+  # d: the entry points at the permit-deny line (last grant line, right repo, wrong action)
+  editstore22 "e.audit = '$(linesha22 2)'"
+  check22 "OS9d the entry names a permit-deny line → audit_broken" "$FAILCLOSED22"
+  # c: truncation of the permit line
+  prep22; origin22 "$ORG22"; permit22 >/dev/null; deny22 >/dev/null; permit22 >/dev/null
+  check22 "OS9c control: permit, deny, permit → allowed, audit ok" "allowed/-/ok/true"
+  cp "$(auditf22)" "$TMP22/three.jsonl"; head -n 1 "$TMP22/three.jsonl" > "$(auditf22)"
+  check22 "OS9c the log truncated to line 1 (entry names line 3) → audit_broken" "$FAILCLOSED22"
+  # e: the entry points at a line of another repository
+  prep22; origin22 "$ORG22"; permit22 >/dev/null
+  js22="AU.appendAudit({ repo: '/other/repo/.git', action: 'permit', now: '$NOW22' })"; lib22 "$js22" >/dev/null
+  editstore22 "e.audit = '$(linesha22 2)'"
+  check22 "OS9e the entry names a line of another repository → audit_broken" "$FAILCLOSED22"
+  # f: a failed permit — the audit line is written, the store write fails; the old entry no longer matches the last line
+  prep22; origin22 "$ORG22"; permit22 >/dev/null
+  js22="(() => { require(L + 'xprov-permits.cjs').writePermits = () => { const e = new Error('disk full'); e.code = 'EIO'; throw e; }; return P.permit({ repoRoot: '$PHASE_REPO', by: 'robert', record: '$REC22', today: '2026-10-14', now: '2026-10-14T01:00:00.000Z' }); })()"
+  assert_json "OS9f a permit whose store write fails reports permit_write_failed" "$(lib22 "$js22")" "j.reason" "permit_write_failed"
+  assert_eq "OS9f the failed permit left its audit line" "$(audit_lines22)" "2"
+  check22 "OS9f the old entry is not vouched for by the chain → audit_broken" "$FAILCLOSED22"
+  # g: a hand-written bound entry with an invented audit sha
+  prep22; origin22 "$ORG22"; permit22 >/dev/null
+  editstore22 "e.audit = '$(printf 'a%.0s' $(seq 1 64))'"
+  check22 "OS9g a bound entry naming an unknown audit line → audit_broken" "$FAILCLOSED22"
+  # h: a bound entry without any audit log
+  prep22; origin22 "$ORG22"; permit22 >/dev/null; rm -f "$(auditf22)"
+  check22 "OS9h a bound entry and no audit log → audit_broken (not missing)" "$FAILCLOSED22"
+  : > "$(auditf22)"
+  check22 "OS9h a bound entry and an empty audit log → audit_broken" "$FAILCLOSED22"
+  # i: the same state through the plan gate — no runner call, exit 1
+  local argv="$TMP22/argv9.json"; rm -f "$argv"; FAKE_RUNNER_ARGV_FILE="$argv" fake_runner_env
+  G_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov gate --phase p22 --gate "$GATE_PLAN" 2>"$TMP22/err.txt")"; G_RC=$?
+  assert_rc "OS9i the plan gate refuses on audit_broken" 1 "$G_RC"
+  [[ ! -e "$argv" ]] && ok "OS9i the fake runner recorded zero calls" || bad "OS9i the runner was invoked"
+  FAKE_RUNNER_ARGV_FILE="" fake_runner_env
+  # j: the denial entry is bound too
+  prep22; origin22 "$ORG22"; permit22 >/dev/null; deny22 >/dev/null
+  assert_json "OS9j the denial entry stores the sha of its audit line" "$(cat "$HOME/.a1-xprov/permit-denials.json")" "Object.values(j.denials)[0].audit === '$(linesha22 2)'" "true"
+  check22 "OS9j denied, audit ok" "denied/external_review_denied/ok/false"
+  head -n 1 "$(auditf22)" > "$TMP22/one.jsonl"; cp "$TMP22/one.jsonl" "$(auditf22)"
+  check22 "OS9j a truncated log is visible on a denial too" "denied/external_review_denied/broken/false"
+  # k: re-permit after the denial binds the new line
+  prep22; origin22 "$ORG22"; permit22 >/dev/null; deny22 >/dev/null; permit22 >/dev/null
+  check22 "OS9k permit after deny → allowed, audit ok" "allowed/-/ok/true"
+}
+
+# ---------- OS10: legacy entries only before 2026-10-14 (SEC-7, FR-006) ----------
+# Red if bindingProblem() treats an entry without repo/origin/audit as legacy whatever its ts.
+caseOS10() {
+  prep22; origin22 "$ORG22"; permit22 >/dev/null
+  editstore22 "delete e.repo; delete e.origin; delete e.audit; e.ts = '2026-10-13T23:59:59.000Z'"
+  check22 "OS10a an unbound entry dated before the cutoff stays allowed (audit missing)" "allowed/-/missing/true"
+  editstore22 "e.ts = '2026-10-14T00:00:00.000Z'"
+  sub22 permit-check
+  assert_json "OS10b an unbound entry dated at the cutoff → permit_mismatch" "$G_OUT" "[j.state, j.ok].join('/')" "permit_mismatch/false"
+  editstore22 "e.ts = 'not-a-date'"
+  sub22 permit-check; assert_json "OS10c an unbound entry with an unparseable ts → permit_mismatch" "$G_OUT" "j.state" "permit_mismatch"
+  prep22; origin22 "$ORG22"; permit22 >/dev/null
+  editstore22 "delete e.repo; delete e.origin"
+  sub22 permit-check; assert_json "OS10d an entry with an audit sha but no repo/origin binding → permit_mismatch" "$G_OUT" "j.state" "permit_mismatch"
+}
+
+# ---------- OS11: multi-valued and rewritten origins (SEC-2, FR-006/FR-007) ----------
+# OS11a red if readOrigin reads one value (`--get`) instead of `--get-all`; OS11b red if the `remote get-url --all` read is dropped
+# (insteadOf); OS11c red if the `--push` read is dropped; OS11d red if classifyOrigin accepts `.` / `..` as a repository name.
+caseOS11() {
+  prep22
+  git -C "$PHASE_REPO" remote add origin "$ORG22"; git -C "$PHASE_REPO" config --add remote.origin.url https://evil.example/x.git
+  js22="[RI.readOrigin('$PHASE_REPO'), RI.classifyOrigin(RI.readOrigin('$PHASE_REPO'))]"
+  assert_json "OS11a two remote.origin.url values: the list, classified customer" "$(lib22 "$js22")" "j[0].length + '/' + j[1]" "2/customer"
+  git -C "$PHASE_REPO" config --unset-all remote.origin.url; git -C "$PHASE_REPO" config --add remote.origin.url "$ORG22"; git -C "$PHASE_REPO" config --add remote.origin.url "$ORG22"
+  assert_json "OS11a the same value twice is one value (org)" "$(lib22 "RI.classifyOrigin(RI.readOrigin('$PHASE_REPO'))")" "j" "org"
+  origin22 "$ORG22"; git -C "$PHASE_REPO" config url.https://evil.example/.insteadOf https://github.com/
+  js22="[RI.readOrigin('$PHASE_REPO'), RI.classifyOrigin(RI.readOrigin('$PHASE_REPO'))]"
+  assert_json "OS11b an insteadOf rewrite disagrees with the raw url → customer" "$(lib22 "$js22")" "j[0].length + '/' + j[1]" "2/customer"
+  git -C "$PHASE_REPO" config --unset url.https://evil.example/.insteadOf; origin22 "$ORG22"
+  git -C "$PHASE_REPO" config remote.origin.pushurl https://evil.example/x.git
+  js22="[RI.readOrigin('$PHASE_REPO'), RI.classifyOrigin(RI.readOrigin('$PHASE_REPO'))]"
+  assert_json "OS11c a pushurl that differs → customer" "$(lib22 "$js22")" "j[0].length + '/' + j[1]" "2/customer"
+  assert_json "OS11d '.' and '..' are no organisation repository names" "$(lib22 "['https://github.com/N3URAL-A1/..', 'https://github.com/N3URAL-A1/.', 'git@github.com:N3URAL-A1/..'].map((o) => RI.classifyOrigin(o))")" "j.join(',')" "customer,customer,customer"
+  # the full list is the binding: a permit on a two-valued origin is void when one value goes
+  prep22; origin22 "$ORG22"; git -C "$PHASE_REPO" config --add remote.origin.url https://evil.example/x.git
+  assert_json "OS11e permit() on a two-valued origin stores the list" "$(permit22)" "j.ok" "true"
+  assert_json "OS11e the entry holds both values" "$(cat "$HOME/.a1-xprov/permits.json")" "JSON.stringify(Object.values(j.permits)[0].origin.slice().sort()) === JSON.stringify(['$ORG22', 'https://evil.example/x.git'].sort())" "true"
+  sub22 permit-check; assert_json "OS11e unchanged list → allowed" "$G_OUT" "j.state" "allowed"
+  git -C "$PHASE_REPO" config --unset-all remote.origin.url https://evil.example/x.git
+  sub22 permit-check; assert_json "OS11e one value dropped → origin_changed" "$G_OUT" "j.state" "origin_changed"
+}
+
+# ---------- OS12: git env redirection (SEC-3) ----------
+# Red if commonDirOf / readOrigin stop running under ownerGitEnv() (GIT_ENV_DROP removed) or use the PATH `git`.
+caseOS12() {
+  prep22; origin22 "$ORG22"; permit22 >/dev/null
+  local A="$PHASE_REPO"; make_phase p22; origin22 "$ORG22"
+  mkdir -p "$PHASE_REPO/.a1"; cp "$A/.a1/xprov.json" "$PHASE_REPO/.a1/xprov.json"
+  js22="P.permitCheck({ repoRoot: '$PHASE_REPO' })"
+  assert_json "OS12a control: repo B with A's record and no entry of its own → permit_mismatch" "$(lib22 "$js22")" "j.state" "permit_mismatch"
+  assert_json "OS12b GIT_DIR naming repo A while checking B does not make B repo A" "$(GIT_DIR="$A/.git" lib22 "$js22")" "j.state + '/' + j.ok" "permit_mismatch/false"
+  assert_json "OS12c GIT_COMMON_DIR + GIT_WORK_TREE naming A: same" "$(GIT_COMMON_DIR="$A/.git" GIT_WORK_TREE="$A" lib22 "$js22")" "j.state" "permit_mismatch"
+  js22="require(L + 'xprov-common.cjs').commonDirOf('$PHASE_REPO')"
+  assert_eq "OS12d commonDirOf(B) is B's git dir under GIT_DIR=A" "$(GIT_DIR="$A/.git" lib22 "$js22")" "\"$(key22)\""
+  # an empty PATH entry (= the current directory) must not select a planted `git`: the binary is resolved from absolute PATH entries only
+  mkdir -p "$TMP22/cwdgit"; printf '#!/bin/sh\ntouch "%s/EVIL-GIT-RAN"\nexit 1\n' "$TMP22" > "$TMP22/cwdgit/git"; chmod +x "$TMP22/cwdgit/git"
+  js22="require(L + 'xprov-repo-identity.cjs').readOrigin('$PHASE_REPO')"
+  assert_eq "OS12e readOrigin does not run a git from the current directory" "$(cd "$TMP22/cwdgit" && PATH=":$PATH" lib22 "$js22")" "\"$ORG22\""
+  [[ ! -e "$TMP22/EVIL-GIT-RAN" ]] && ok "OS12e the planted git did not run" || bad "OS12e the planted git ran"
+}
+
+# ---------- OS13: --by hardening (SEC-4, FR-011) ----------
+# OS13a red if isReservedBy() strips only the old separator set; OS13b red if the non-ASCII refusal is dropped from rejectReservedBy();
+# OS13c red if waive's --by is not checked with the permit name pattern (validatePlainBy).
+caseOS13() {
+  make_tree
+  local v ok1
+  for v in $'owner\xe2\x80\x8bchat' $'owner\xc2\xadchat' 'owner.chat' $'owner\xe2\x88\x92chat' 'owner chat' 'OWNER.CHAT'; do
+    ok1="$(node -e 'const C = require(process.argv[1] + "/_shared/lib/xprov-common.cjs"); process.stdout.write(String(C.isReservedBy(process.argv[2])))' "$TREE" "$v")"
+    assert_eq "OS13a isReservedBy($(printf '%s' "$v" | od -An -c | tr -s ' ' | head -c 40)) is true" "$ok1" "true"
+  done
+  ok1="$(node -e 'const C = require(process.argv[1] + "/_shared/lib/xprov-common.cjs"); try { C.rejectReservedBy("own\u0435r-chat"); process.stdout.write("accepted"); } catch (e) { process.stdout.write(e.reason); }' "$TREE")"
+  assert_eq "OS13b a Cyrillic look-alike --by is refused (by_non_ascii)" "$ok1" "by_non_ascii"
+  ok1="$(node -e 'const C = require(process.argv[1] + "/_shared/lib/xprov-common.cjs"); try { C.rejectReservedBy("caf\u00e9"); process.stdout.write("accepted"); } catch (e) { process.stdout.write(e.reason); }' "$TREE")"
+  assert_eq "OS13b any non-ASCII --by is refused" "$ok1" "by_non_ascii"
+  prep22; stubguard22
+  for v in $'owner\xe2\x80\x8bchat' $'owner\xc2\xadchat' 'owner.chat' $'owner\xe2\x88\x92chat' $'own\xd0\xb5r-chat' 'ro bert' 'rob;x'; do
+    piped22 allowed permit --by "$v" --record "$REC22"; assert_rc "OS13c permit --by $(printf '%s' "$v" | od -An -c | tr -s ' ' | head -c 30) → exit 2" 2 "$G_RC"
+    piped22 denied permit --deny --by "$v"; assert_rc "OS13c permit --deny: exit 2" 2 "$G_RC"
+    piped22 plan-review-xprov waive --phase p22 --gate plan-review-xprov --reason r --by "$v"; assert_rc "OS13c waive: exit 2" 2 "$G_RC"
+    piped22 "" allowlist approve --repo "$PHASE_REPO" --by "$v"; assert_rc "OS13c allowlist approve: exit 2" 2 "$G_RC"
+  done
+  piped22 plan-review-xprov waive --phase p22 --gate plan-review-xprov --reason r --by 'robert.k-1'
+  assert_rc "OS13d control: a plain name is still accepted by waive" 0 "$G_RC" "$G_ERR"
+}
+
+# ---------- OS14: audit lock (SEC-5) ----------
+# OS14a/b red if a stale lock is not taken over; OS14c red if takeoverStale() removes a lock that is not the inode it observed stale;
+# OS14d red if the lock is removed in `finally` without the inode/nonce check; OS14e red if a fresh lock is taken over.
+caseOS14() {
+  prep22; local H="$HOME/.a1-xprov" lock
+  lock="$H/.consent-audit.lock"; mkdir -p "$H"; chmod 700 "$H"
+  touch -t 202001010000 "$lock"; printf 'dead' > "$lock"; touch -t 202001010000 "$lock"
+  js22="AU.appendAudit({ repo: '/s/.git', action: 'permit' }).repo"
+  assert_json "OS14a a stale lock is taken over" "$(lib22 "$js22")" "j" "/s/.git"
+  if ls -A "$H" | grep -q 'consent-audit.lock'; then bad "OS14a lock leftovers: $(ls -A "$H" | tr '\n' ' ')"; else ok "OS14a no lock, nonce, takeover or stale leftovers"; fi
+  rm -rf "$H"; mkdir -p "$H"; chmod 700 "$H"; touch -t 202001010000 "$lock"; printf 'dead' > "$lock"; touch -t 202001010000 "$lock"
+  local pids=() i
+  for i in 1 2 3 4 5 6 7 8; do lib22 "AU.appendAudit({ repo: '/r$i/.git', action: 'permit' })" >/dev/null & pids+=($!); done
+  wait "${pids[@]}"
+  assert_json "OS14b eight appenders racing for one stale lock: eight lines, chain intact" "$(lib22 "AU.readChain('$(auditf22)')")" "j.state + '/' + j.lines.length" "ok/8"
+  rm -rf "$H"; mkdir -p "$H"; chmod 700 "$H"
+  js22="(() => { const fs = require('fs'); const lock = '$lock'; fs.writeFileSync(lock, 'old'); const observed = fs.lstatSync(lock); fs.writeFileSync(lock + '.next', 'fresh'); fs.renameSync(lock + '.next', lock); const r = AU.takeoverStale(lock, observed); return [r, fs.existsSync(lock) ? fs.readFileSync(lock, 'utf8') : 'GONE'].join('/'); })()"
+  assert_json "OS14c a lock that replaced the observed stale one is not taken over" "$(lib22 "$js22")" "j" "false/fresh"
+  rm -rf "$H"; mkdir -p "$H"; chmod 700 "$H"
+  js22="(() => { const fs = require('fs'); AU.withLock('$H', () => { fs.rmSync('$lock', { force: true }); fs.writeFileSync('$lock', 'someone else'); }); return fs.existsSync('$lock') ? fs.readFileSync('$lock', 'utf8') : 'GONE'; })()"
+  assert_json "OS14d the lock is removed only by its owner: a replaced lock survives" "$(lib22 "$js22")" "j" "someone else"
+  rm -rf "$H"; mkdir -p "$H"; chmod 700 "$H"; printf 'live' > "$lock"
+  js22="AU.appendAudit({ repo: '/s/.git', action: 'permit' })"
+  assert_json "OS14e append against a live lock refuses" "$(lib22 "$js22")" "j.reason" "audit_locked"
+  assert_eq "OS14e the live lock is untouched" "$(cat "$lock")" "live"
+  [[ ! -e "$(auditf22)" ]] && ok "OS14e no audit line written" || bad "OS14e an audit line was written"
+}
+
+# ---------- OS15: scan-record remove and sweep are writes (SEC-6, FR-009) ----------
+# Red if removeScanRecord() / sweepScanRecords() drop their assertWritable() call (one arm each).
+caseOS15() {
+  local PD="$TMP22/passwd15"; rm -rf "$PD"; mkdir -p "$PD/.a1-xprov/scan-records"; chmod 700 "$PD/.a1-xprov"
+  printf '{}' > "$PD/.a1-xprov/scan-records/snap-x.json"
+  passwd_tree22 "$PD"
+  assert_json "OS15a removeScanRecord refuses under a redirected HOME" "$(lib22 "SR.removeScanRecord('snap-x')")" "j.reason" "owner_home_mismatch"
+  assert_json "OS15b sweepScanRecords refuses under a redirected HOME" "$(lib22 "SR.sweepScanRecords(0, () => false, Date.now() + 1e9)")" "j.reason" "owner_home_mismatch"
+  [[ -f "$PD/.a1-xprov/scan-records/snap-x.json" ]] && ok "OS15 the record is still there" || bad "OS15 the record was removed"
+}
+
+# ---------- OS16: audit free-text fields (SEC-8) ----------
+# Red if nullableString() goes back to the ASCII-control-only pattern (C.LINE_BREAKERS_RE not used).
+caseOS16() {
+  prep22
+  local v
+  for v in '\u2028' '\u2029' '\u202e' '\u2066' '\u0085' '\u009f'; do
+    js22="AU.appendAudit({ repo: '/x/.git', action: 'permit', tool_use_id: 'a${v}b' })"
+    assert_json "OS16a tool_use_id with $v is refused (audit_input)" "$(lib22 "$js22")" "j.reason" "audit_input"
+  done
+  [[ ! -e "$(auditf22)" ]] && ok "OS16a nothing written" || bad "OS16a a line was written"
+  js22="(() => { AU.appendAudit({ repo: '/x/.git', action: 'permit' }); const fs = require('fs'); const f = '$(auditf22)'; const l = JSON.parse(fs.readFileSync(f, 'utf8').trim()); fs.writeFileSync(f, JSON.stringify({ ...l, session_id: 's' + String.fromCharCode(0x202e) + 'x' }) + String.fromCharCode(10)); return AU.readChain(f).state; })()"
+  assert_json "OS16b a hand-written line with a bidi control is off-format (broken)" "$(lib22 "$js22")" "j" "broken"
+}
+
 caseOS1; caseOS2; caseOS3; caseOS4; caseOS5; caseOS5m; caseOS6; caseOS7; caseOS8
+caseOS9; caseOS10; caseOS11; caseOS12; caseOS13; caseOS14; caseOS15; caseOS16
 export HOME="$SAVED_HOME_22"
 rm -rf "$TMP22"

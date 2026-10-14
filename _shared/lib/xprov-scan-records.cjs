@@ -123,6 +123,7 @@ function readScanRecord(basename) {
 
 /** Removes the record of `basename` (a symlink is unlinked, never followed). Returns true when something was removed. */
 function removeScanRecord(basename) {
+  require('./xprov-owner-home.cjs').assertWritable(); // SEC-6: a remove is a write
   const file = recordPath(basename);
   let st = null;
   try {
@@ -139,6 +140,7 @@ function removeScanRecord(basename) {
  * (`snapshotExists(basename)` decides). Only `snap-*.json` regular files are touched.
  * Returns { root, removed: [paths], kept: [paths] }. */
 function sweepScanRecords(maxAgeDays, snapshotExists, nowMs) {
+  require('./xprov-owner-home.cjs').assertWritable(); // SEC-6
   const root = scanRecordsDir();
   const out = { root, removed: [], kept: [] };
   let d;

@@ -292,7 +292,7 @@ caseP11() {
   r="$(permit_lib "$TREE" "P.permitDeny({ repoRoot: '$PHASE_REPO', by: 'robert', today: '2026-10-05' })")"
   assert_json "P11 deny needs no --record (optional for a denial)" "$r" "j.ok" "true"
   assert_json "P11 the denied record: external_review, decided_by, decided_on, no record" "$(cat "$PHASE_REPO/.a1/xprov.json")" "[j.external_review, j.decided_by, j.decided_on, 'record' in j].join('/')" "denied/robert/2026-10-05/false"
-  assert_json "P11 the store entry: same decided_by/decided_on plus ts, keyed by the git-common-dir" "$(cat "$STORE12")" "(() => { const e = j.denials['$(repokey12)']; return e ? [e.decided_by, e.decided_on, typeof e.ts, Object.keys(e).length].join('/') : 'no entry'; })()" "robert/2026-10-05/string/3"
+  assert_json "P11 the store entry: same decided_by/decided_on plus ts and the audit sha, keyed by the git-common-dir" "$(cat "$STORE12")" "(() => { const e = j.denials['$(repokey12)']; return e ? [e.decided_by, e.decided_on, typeof e.ts, Object.keys(e).length].join('/') : 'no entry'; })()" "robert/2026-10-05/string/4"
   r="$(permit_lib "$TREE" "(() => { try { P.permit({ repoRoot: '$PHASE_REPO', by: 'robert' }); return 'no throw'; } catch (e) { return e.code; } })()")"
   assert_json "P11 allow without --record is still refused (A1_INPUT)" "$r" "j" "A1_INPUT"
   r="$(permit_lib "$TREE" "(() => { try { P.permitDeny({ repoRoot: '$PHASE_REPO', by: 'a b' }); return 'no throw'; } catch (e) { return e.code; } })()")"

@@ -14,7 +14,11 @@
 //
 // Writers append BEFORE they change a store, so a store write without an audit
 // line is impossible through the code paths; a failing append aborts the write.
-// Appends are serialised with a lock file (a stale lock is taken over).
+// A store entry names its line (`audit: <sha256 of the line text>`); `verifyAudit` calls the audit ok only when that line is in the
+// chain, belongs to the repository, has the matching action and is the LAST permit/denial line for the repository. A line whose store
+// write then failed, a truncated log and a hand-written entry therefore show as `broken` (permit-check fails closed on `audit_broken`).
+// Appends are serialised with a lock file made as a hard link to a unique nonce file; a stale lock is taken over under a
+// `.takeover` mutex by inode compare, and a holder removes only its own lock (inode + nonce).
 // ---------------------------------------------------------------------------
 
 const fs = require('fs');
@@ -35,20 +39,27 @@ const LOCK_POLL_MS = 25;
 const FIELD_MAX_CHARS = 200;
 const LINE_KEYS = Object.freeze(['ts', 'repo', 'action', 'tool_use_id', 'session_id', 'permission_mode', 'prev']);
 const STATE = Object.freeze({ OK: 'ok', MISSING: 'missing', BROKEN: 'broken' });
-// Actions that stand for a permit or a denial of a repository; `permit-check` calls the audit `ok` only when
-// the chain holds AND the repository has at least one of these.
+// Actions that stand for a permit or a denial of a repository. `permit-check` calls the audit `ok` only when the
+// chain holds AND the store entry names (`audit: <sha>`) a line that is the LAST of these for the repository and
+// whose action matches the entry kind (SEC-1).
 const ACTION = Object.freeze({
   PERMIT: 'permit', PERMIT_DENY: 'permit-deny', WAIVE: 'waive', ALLOWLIST_APPROVE: 'allowlist-approve', ALLOWLIST_REVOKE: 'allowlist-revoke',
   CONSENT: 'consent', CONSENT_DENY: 'consent-deny', CONSENT_REVOKE: 'consent-revoke', CONSENT_WAIVE: 'consent-waive', CONSENT_ALLOWLIST: 'consent-allowlist',
 });
 const GRANT_ACTIONS = Object.freeze([ACTION.PERMIT, ACTION.PERMIT_DENY, ACTION.CONSENT, ACTION.CONSENT_DENY]);
+const KIND_ACTIONS = Object.freeze({ allowed: [ACTION.PERMIT, ACTION.CONSENT], denied: [ACTION.PERMIT_DENY, ACTION.CONSENT_DENY] });
+const SHA_RE = /^[0-9a-f]{64}$/;
 const ACTION_RE = /^[a-z][a-z0-9-]{0,39}$/;
 
 const auditPath = () => path.join(X.xprovHome(), AUDIT_FILE);
 const sha256 = (text) => crypto.createHash('sha256').update(text).digest('hex');
 const sleepMs = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
-const nullableString = (v) => v === null || (typeof v === 'string' && v.length <= FIELD_MAX_CHARS && !/[\0-\x1f\x7f]/.test(v));
+// SEC-8: no control, C1, line-separator or bidi character in a free-text field (a fresh RegExp: the shared one is /g).
+const LINE_BREAKERS = new RegExp(C.LINE_BREAKERS_RE.source);
+const nullableString = (v) => v === null || (typeof v === 'string' && v.length <= FIELD_MAX_CHARS && !LINE_BREAKERS.test(v));
+/** The sha256 a store entry keeps as `audit`: that of the exact text of the line as written. */
+const lineSha = (line) => sha256(JSON.stringify(line));
 
 function validLine(o) {
   if (!C.isPlainObject(o)) return false;
@@ -83,6 +94,7 @@ function readChain(file) {
   if (!r.text.endsWith('\n')) return { state: STATE.BROKEN, lines: [], why: 'the last audit line is incomplete' };
   const raw = r.text.slice(0, -1).split('\n');
   const lines = [];
+  const shas = [];
   let prev = null;
   for (let i = 0; i < raw.length; i++) {
     let o;
@@ -91,16 +103,34 @@ function readChain(file) {
     if (o.prev !== prev) return { state: STATE.BROKEN, lines, why: `line ${i + 1} does not chain to line ${i}` };
     lines.push(Object.freeze(o));
     prev = sha256(raw[i]);
+    shas.push(prev);
   }
-  return { state: STATE.OK, lines, tip: prev };
+  return { state: STATE.OK, lines, shas, tip: prev };
 }
 
-/** The audit state for one repository key: broken (chain), missing (no log, or no grant line for the repo), ok. */
-function verifyAudit(repoKey, file) {
+const verdict = (state, why) => Object.freeze({ state, why: why || null });
+
+/** An entry written by the spec-016 code carries `audit`; a permit entry also `repo` or `origin`. Others are legacy. */
+const bound = (entry, kind) => entry.audit !== undefined || (kind === 'allowed' && (entry.repo !== undefined || entry.origin !== undefined));
+
+/**
+ * The audit state of one store entry (SEC-1). `entry` is the permit entry (kind 'allowed') or the denial entry
+ * (kind 'denied') of `repoKey`, or undefined. ok  = the chain holds AND `entry.audit` names a line of this repository,
+ * of the matching action, that is the last permit/denial line for it. broken = chain broken, or a bound entry whose line is
+ * absent, foreign, of another action or superseded (truncation, a failed store write after the line, a forged entry).
+ * missing = no log / legacy entry without an audit binding / no entry.
+ */
+function verifyAudit(entry, repoKey, kind, file) {
   const chain = readChain(file);
-  if (chain.state !== STATE.OK) return Object.freeze({ state: chain.state, why: chain.why || null });
-  const has = chain.lines.some((l) => l.repo === repoKey && GRANT_ACTIONS.includes(l.action));
-  return Object.freeze({ state: has ? STATE.OK : STATE.MISSING, why: has ? null : 'no permit or denial line for this repository' });
+  if (chain.state === STATE.BROKEN) return verdict(STATE.BROKEN, chain.why);
+  if (!entry || !bound(entry, kind)) return verdict(STATE.MISSING, 'no audited store entry for this repository');
+  if (chain.state === STATE.MISSING) return verdict(STATE.BROKEN, 'the store entry names an audit line but there is no audit log');
+  const idx = typeof entry.audit === 'string' && SHA_RE.test(entry.audit) ? chain.shas.indexOf(entry.audit) : -1;
+  if (idx < 0) return verdict(STATE.BROKEN, 'the audit line of the store entry is not in the chain');
+  const line = chain.lines[idx];
+  if (line.repo !== repoKey || !KIND_ACTIONS[kind].includes(line.action)) return verdict(STATE.BROKEN, 'the audit line of the store entry is for another repository or action');
+  const later = chain.lines.slice(idx + 1).some((l) => l.repo === repoKey && GRANT_ACTIONS.includes(l.action));
+  return later ? verdict(STATE.BROKEN, 'a later permit or denial line for this repository supersedes the audit line of the store entry') : verdict(STATE.OK);
 }
 
 function ensureHome() {
@@ -112,19 +142,64 @@ function ensureHome() {
   return home;
 }
 
-function withLock(home, body) {
+const sameFile = (a, b) => a.ino === b.ino && a.dev === b.dev;
+
+/** Takes over the stale lock `observed` (an lstat taken earlier). One taker at a time (a `.takeover` directory, itself taken over when stale);
+ * under it the lock is re-read, and only the very inode that was observed stale is moved to a unique name and deleted. A fresh lock that
+ * replaced it is left (or, if it was moved in a race, put back). */
+function takeoverStale(lock, observed) {
+  const guard = `${lock}.takeover`;
+  try { fs.mkdirSync(guard, { mode: DIR_MODE }); } catch (e) {
+    if (e.code === 'EEXIST') { try { if (Date.now() - fs.lstatSync(guard).mtimeMs > LOCK_STALE_MS) fs.rmdirSync(guard); } catch (_e) { /* raced away */ } }
+    return false;
+  }
+  try {
+    let now = null;
+    try { now = fs.lstatSync(lock); } catch (_e) { return false; }
+    if (!sameFile(now, observed)) return false;
+    const moved = `${lock}.stale.${crypto.randomBytes(8).toString('hex')}`;
+    try { fs.renameSync(lock, moved); } catch (_e) { return false; }
+    let st = null;
+    try { st = fs.lstatSync(moved); } catch (_e) { return false; }
+    if (sameFile(st, observed)) { fs.rmSync(moved, { force: true }); return true; }
+    try { fs.linkSync(moved, lock); } catch (_e) { /* the slot is taken again; its holder checks ownership on release */ }
+    fs.rmSync(moved, { force: true });
+    return false;
+  } finally { try { fs.rmdirSync(guard); } catch (_e) { /* gone */ } }
+}
+
+/** Creates the lock as a hard link to a unique nonce file (atomic, fails with EEXIST while held). */
+function acquire(home) {
   const lock = path.join(home, LOCK_FILE);
+  const nonce = crypto.randomBytes(16).toString('hex');
+  const mine = `${lock}.${nonce}`;
+  fs.writeFileSync(mine, nonce, { flag: 'wx', mode: FILE_MODE });
   const deadline = Date.now() + LOCK_WAIT_MS;
-  let fd = null;
-  while (fd === null) {
-    try { fd = fs.openSync(lock, 'wx', FILE_MODE); } catch (e) {
-      if (e.code !== 'EEXIST') throw e;
-      try { if (Date.now() - fs.lstatSync(lock).mtimeMs > LOCK_STALE_MS) fs.rmSync(lock, { force: true }); } catch (_e) { /* raced away */ }
+  try {
+    for (;;) {
+      try { fs.linkSync(mine, lock); const st = fs.lstatSync(lock); return { lock, nonce, ino: st.ino, dev: st.dev }; } catch (e) {
+        if (e.code !== 'EEXIST') throw e;
+      }
+      let observed = null;
+      try { observed = fs.lstatSync(lock); } catch (_e) { /* released meanwhile */ }
+      if (observed !== null && Date.now() - observed.mtimeMs > LOCK_STALE_MS && takeoverStale(lock, observed)) continue;
       if (Date.now() > deadline) throw C.inputError('the audit log is locked by another process; nothing written', 'audit_locked');
       sleepMs(LOCK_POLL_MS);
     }
-  }
-  try { return body(); } finally { fs.closeSync(fd); fs.rmSync(lock, { force: true }); }
+  } finally { fs.rmSync(mine, { force: true }); }
+}
+
+/** Removes the lock only when it is still the one this process created (inode and nonce). */
+function release(h) {
+  try {
+    const st = fs.lstatSync(h.lock);
+    if (sameFile(st, h) && fs.readFileSync(h.lock, 'utf8') === h.nonce) fs.rmSync(h.lock, { force: true });
+  } catch (_e) { /* gone or replaced: not ours to remove */ }
+}
+
+function withLock(home, body) {
+  const held = acquire(home);
+  try { return body(); } finally { release(held); }
 }
 
 const field = (v) => (v === undefined || v === null ? null : String(v).slice(0, FIELD_MAX_CHARS));
@@ -159,4 +234,4 @@ function appendAudit(o) {
   });
 }
 
-module.exports = { AUDIT_FILE, LINE_KEYS, STATE, ACTION, GRANT_ACTIONS, auditPath, readChain, verifyAudit, appendAudit };
+module.exports = { AUDIT_FILE, LOCK_FILE, LINE_KEYS, STATE, ACTION, GRANT_ACTIONS, auditPath, readChain, verifyAudit, appendAudit, lineSha, withLock, takeoverStale };

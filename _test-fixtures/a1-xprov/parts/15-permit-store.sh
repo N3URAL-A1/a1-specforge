@@ -131,8 +131,8 @@ casePS2() {
   local doc; doc="$(cat "$PERMITS15" 2>/dev/null || echo '{}')"
   assert_json "PS2 version 1 and exactly one entry keyed by the realpath git-common-dir" "$doc" "j.version + '/' + Object.keys(j.permits).join(',')" "1/$(repokey15)"
   # spec 016 FR-006: the entry also carries `repo` (its own key) and `origin` (explicit null: this fixture repo has none) — six keys
-  assert_json "PS2 the entry: decided_by, record, today, a ts, repo, origin — exactly six keys" "$doc" \
-    "(() => { const e = Object.values(j.permits)[0] || {}; return [e.decided_by, e.record, e.decided_on, typeof e.ts, e.repo === '$(repokey15)', e.origin, Object.keys(e).length].join('/'); })()" "robert/record/2026-10-08-x.md/$(today15)/string/true//6"
+  assert_json "PS2 the entry: decided_by, record, today, a ts, repo, origin, audit — exactly seven keys" "$doc" \
+    "(() => { const e = Object.values(j.permits)[0] || {}; return [e.decided_by, e.record, e.decided_on, typeof e.ts, e.repo === '$(repokey15)', e.origin, Object.keys(e).length].join('/'); })()" "robert/record/2026-10-08-x.md/$(today15)/string/true//7"
   assert_json "PS2 the file says allowed" "$(cat "$PHASE_REPO/.a1/xprov.json" 2>/dev/null || echo '{}')" "j.external_review + '/' + j.decided_by" "allowed/robert"
   sub15 permit-check
   assert_json "PS2 permit-check after the owner write: allowed, exit 0" "$G_OUT" "j.state + '/' + j.ok" "allowed/true"
