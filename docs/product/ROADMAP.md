@@ -138,10 +138,10 @@ features:
   - id: 010-vault-cockpit-contract
     milestone: continuous
     title: "Vault cockpit contract — every a1 status readable in Obsidian on Mac, server and phone"
-    status: planned
-    stage: null
+    status: in-flight
+    stage: started
     depends_on: []
-    started: null
+    started: 2026-10-14
     finished: null
     spec_path: null
     plan_path: null
@@ -169,10 +169,10 @@ features:
   - id: 015-docs-consolidation
     milestone: continuous
     title: "Docs consolidation: one roadmap source of truth, README vault section moved to docs/vault.md"
-    status: planned
-    stage: null
+    status: in-flight
+    stage: started
     depends_on: []
-    started: null
+    started: 2026-10-14
     finished: null
     spec_path: project/a1-specforge/spec/015-docs-consolidation.md
     plan_path: project/a1-specforge/plans/015-docs-consolidation-wave-plan.md
@@ -298,6 +298,8 @@ None.
 - **2026-10-13** — next cursor set to 006-specforge-kritis-profile — 002-product-docs-layer is done; product markers warned that next pointed at a done feature
 - **2026-10-14** — feature '015-docs-consolidation' added — new feature via `product add-feature`
 - **2026-10-14** — feature.md created for '015-docs-consolidation' — formal spec/plan attached via `product feature-init`
+- **2026-10-14** — 010-vault-cockpit-contract -> started — stage transition via `product stage`
+- **2026-10-14** — 015-docs-consolidation -> started — stage transition via `product stage`
 
 ## Appendix — migrated details
 
