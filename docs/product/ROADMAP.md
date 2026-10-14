@@ -169,13 +169,34 @@ features:
   - id: 015-docs-consolidation
     milestone: continuous
     title: "Docs consolidation: one roadmap source of truth, README vault section moved to docs/vault.md"
-    status: in-flight
-    stage: started
+    status: done
+    stage: done
     depends_on: []
     started: 2026-10-14
-    finished: null
+    finished: 2026-10-14
     spec_path: project/a1-specforge/spec/015-docs-consolidation.md
     plan_path: project/a1-specforge/plans/015-docs-consolidation-wave-plan.md
+  - id: 016-xprov-autonomy
+    milestone: continuous
+    title: "xprov autonomy: chat consent instead of terminal steps, Codex at the right places, self-recovering aborts"
+    status: planned
+    stage: null
+    depends_on: []
+    started: null
+    finished: null
+    spec_path: project/a1-specforge/spec/016-xprov-autonomy.md
+    plan_path: project/a1-specforge/plans/016-xprov-autonomy-wave-plan.md
+  - id: 017-enforced-self-checks
+    milestone: continuous
+    title: "Enforced self-checks: gates that really run, verifier reads exit codes, test fidelity, defect-class sweep"
+    status: planned
+    stage: null
+    depends_on:
+      - 016-xprov-autonomy
+    started: null
+    finished: null
+    spec_path: project/a1-specforge/spec/017-enforced-self-checks.md
+    plan_path: project/a1-specforge/plans/017-enforced-self-checks-wave-plan.md
 next: 006-specforge-kritis-profile
 ---
 
@@ -300,6 +321,12 @@ None.
 - **2026-10-14** — feature.md created for '015-docs-consolidation' — formal spec/plan attached via `product feature-init`
 - **2026-10-14** — 010-vault-cockpit-contract -> started — stage transition via `product stage`
 - **2026-10-14** — 015-docs-consolidation -> started — stage transition via `product stage`
+- **2026-10-14** — 015-docs-consolidation -> done — stage transition via `product stage`
+- **2026-10-14** — feature '016-xprov-autonomy' added — new feature via `product add-feature`
+- **2026-10-14** — feature '017-enforced-self-checks' added — new feature via `product add-feature`
+- **2026-10-14** — feature.md created for '016-xprov-autonomy' — formal spec/plan attached via `product feature-init`
+- **2026-10-14** — feature.md created for '017-enforced-self-checks' — formal spec/plan attached via `product feature-init`
+- **2026-10-14** — 015 docs consolidation done; 016 xprov autonomy and 017 enforced self-checks added and prioritised ahead of 006 — owner decision 2026-10-14: reliability and autonomy before launch and new profiles (record 2026-10-14-a1-autonomy-chat-consent)
 
 ## Appendix — migrated details
 

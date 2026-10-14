@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated": "2026-10-14T06:50:24.489Z",
+  "generated": "2026-10-14T07:26:28.786Z",
   "project": {
     "id": "a1-specforge",
     "title": "a1-specforge — Roadmap",
@@ -221,13 +221,39 @@
       "id": "015-docs-consolidation",
       "milestone": "continuous",
       "title": "Docs consolidation: one roadmap source of truth, README vault section moved to docs/vault.md",
-      "status": "in-flight",
-      "stage": "started",
+      "status": "done",
+      "stage": "done",
       "depends_on": [],
       "started": "2026-10-14",
-      "finished": null,
+      "finished": "2026-10-14",
       "spec_path": "project/a1-specforge/spec/015-docs-consolidation.md",
       "plan_path": "project/a1-specforge/plans/015-docs-consolidation-wave-plan.md"
+    },
+    {
+      "id": "016-xprov-autonomy",
+      "milestone": "continuous",
+      "title": "xprov autonomy: chat consent instead of terminal steps, Codex at the right places, self-recovering aborts",
+      "status": "planned",
+      "stage": null,
+      "depends_on": [],
+      "started": null,
+      "finished": null,
+      "spec_path": "project/a1-specforge/spec/016-xprov-autonomy.md",
+      "plan_path": "project/a1-specforge/plans/016-xprov-autonomy-wave-plan.md"
+    },
+    {
+      "id": "017-enforced-self-checks",
+      "milestone": "continuous",
+      "title": "Enforced self-checks: gates that really run, verifier reads exit codes, test fidelity, defect-class sweep",
+      "status": "planned",
+      "stage": null,
+      "depends_on": [
+        "016-xprov-autonomy"
+      ],
+      "started": null,
+      "finished": null,
+      "spec_path": "project/a1-specforge/spec/017-enforced-self-checks.md",
+      "plan_path": "project/a1-specforge/plans/017-enforced-self-checks-wave-plan.md"
     }
   ],
   "next": "006-specforge-kritis-profile",
