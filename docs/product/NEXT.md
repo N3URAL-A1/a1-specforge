@@ -15,6 +15,7 @@ updated: 2026-10-14
 
 - **010-vault-cockpit-contract** — Vault cockpit contract — every a1 status readable in Obsidian on Mac, server and phone (milestone: continuous, stage: started)
 - **011-intent-queue-consumer** — Intent queue consumer — the a1 half of triggering skills from the phone via the vault (milestone: continuous, stage: started)
+- **015-docs-consolidation** — Docs consolidation: one roadmap source of truth, README vault section moved to docs/vault.md (milestone: continuous, stage: started) — scope: project/a1-specforge/spec/015-docs-consolidation.md, project/a1-specforge/plans/015-docs-consolidation-wave-plan.md
 
 ## Next cursor
 
