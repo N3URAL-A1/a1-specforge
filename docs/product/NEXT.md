@@ -13,6 +13,7 @@ updated: 2026-10-14
 
 ## In-flight features
 
+- **010-vault-cockpit-contract** — Vault cockpit contract — every a1 status readable in Obsidian on Mac, server and phone (milestone: continuous, stage: started)
 - **011-intent-queue-consumer** — Intent queue consumer — the a1 half of triggering skills from the phone via the vault (milestone: continuous, stage: started)
 
 ## Next cursor

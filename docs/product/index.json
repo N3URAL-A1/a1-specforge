@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated": "2026-10-14T06:07:27.450Z",
+  "generated": "2026-10-14T06:09:54.099Z",
   "project": {
     "id": "a1-specforge",
     "title": "a1-specforge — Roadmap",
@@ -183,10 +183,10 @@
       "id": "010-vault-cockpit-contract",
       "milestone": "continuous",
       "title": "Vault cockpit contract — every a1 status readable in Obsidian on Mac, server and phone",
-      "status": "planned",
-      "stage": null,
+      "status": "in-flight",
+      "stage": "started",
       "depends_on": [],
-      "started": null,
+      "started": "2026-10-14",
       "finished": null,
       "spec_path": null,
       "plan_path": null
