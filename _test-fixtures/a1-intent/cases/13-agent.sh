@@ -476,8 +476,8 @@ a13_refused "A23 a sealed template that carries an A1_INTENT_* key is refused as
 # A31: `intent seal` tells the owner to re-point the agent (the skew guard refuses until then).
 w5b_seal_sandbox a13-hint
 seal_pty "$A1_TOOLS" yes
-if [[ "$PTY_OUT" == *"intent install-agent --force"* ]]; then ok "A31 intent seal prints the hint to run 'intent install-agent --force' after sealing [FR-040]"
-else bad "A31 intent seal prints the hint to run 'intent install-agent --force' after sealing [FR-040]" "pty: ${PTY_OUT:0:400}"; fi
+if [[ "$PTY_OUT" == *"a1-tools intent post-update"* ]]; then ok "A31 intent seal prints the hint to run 'a1-tools intent post-update' after sealing (spec 016 FR-033 replaced the install-agent --force hint) [FR-040]"
+else bad "A31 intent seal prints the hint to run 'a1-tools intent post-update' after sealing (spec 016 FR-033 replaced the install-agent --force hint) [FR-040]" "pty: ${PTY_OUT:0:400}"; fi
 
 # ---------- A30: seal skew (re-seal without install-agent --force) ----------
 a13_sandbox a13-skew

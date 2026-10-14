@@ -453,6 +453,12 @@ result, US-011-5 holds: `status`, `claimed_by`, `rejected_reason` and the result
   (exit 1, nothing written, no secret printed), when a `CLAUDECODE`, `CLAUDE_PID` or
   `CLAUDE_CODE_*` variable is set or a Claude Code process is an ancestor. This is a CLI
   refusal, not one of the intent refusal codes below.
+- **After a plugin update the owner runs one command: `a1-tools intent post-update`** (spec 016
+  FR-033). It runs `intent seal` and then `intent install-agent --force`, each behind its own
+  guards above (terminal on stdin and stdout, no Claude Code environment or ancestor, executor
+  host, typed confirmation), and prints one combined result. It takes no argument, and a
+  refused seal stops it before the install. `intent device add` and `intent approve` are not
+  part of it and stay separate terminal steps.
 - An approvable target is in `rejected/` with `device_unknown` or `signature_invalid`, or still
   in `queued/`. a1 rewrites the **same** file (the `id` stays): `created_by` becomes the Mac's
   device, with a fresh `nonce`, `created_at` and signature, plus the approval audit group

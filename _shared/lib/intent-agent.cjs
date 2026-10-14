@@ -422,7 +422,7 @@ function install(d, force) {
   const file = plistPath(d);
   const existing = readExisting(file, 'plist_exists_differs');
   const differs = existing !== null && existing !== text;
-  if (differs && !force) throw new AgentRefusal('plist_exists_differs', `${file} exists with other content; review it or pass --force`);
+  if (differs && !force) throw new AgentRefusal('plist_exists_differs', `${file} exists with other content; review it, or run a1-tools intent post-update (it replaces the plist after a seal)`);
   if (!d.confirm(installSummary(file, v, tools))) throw new AgentRefusal('not_confirmed', `the answer was not "${CONFIRM_WORD}"`);
   const base = { ok: true, plist: file, a1_tools: tools, label: LABEL, host_id: v.hostId || null };
   if (existing === null) {
@@ -579,4 +579,17 @@ function cmdIntentInstallAgent(args, deps = {}) {
   return undefined;
 }
 
-module.exports = { cmdIntentInstallAgent, injectAgentDeps, renderPlist, findOnPath, AgentRefusal, LABEL };
+// Spec 016 FR-033 — `intent post-update` runs the forced install behind the same
+// guards (guardHuman inside install). -> { ok: true, result } | { ok: false, refusal }.
+function installForced(deps = {}) {
+  const d = { ...defaultDeps(), ...deps };
+  try {
+    return { ok: true, result: install(d, true) };
+  } catch (e) {
+    const refusal = asRefusal(e);
+    if (refusal === null) throw e;
+    return { ok: false, refusal };
+  }
+}
+
+module.exports = { cmdIntentInstallAgent, installForced, injectAgentDeps, renderPlist, findOnPath, AgentRefusal, LABEL };

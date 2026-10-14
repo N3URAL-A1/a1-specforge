@@ -95,7 +95,7 @@ function cmdIntentSeal(args, deps = {}) {
     process.stdout.write(`${JSON.stringify(r)}\n`);
     process.exitCode = EXIT_OK;
     process.stderr.write(`intent seal: sealed ${r.files} files into ${r.seal_dir}\n`);
-    process.stderr.write('intent seal: a LaunchAgent installed earlier still runs the previous seal; run `intent install-agent --force` to point it here (intent run and tick refuse until then).\n');
+    process.stderr.write('intent seal: a LaunchAgent installed earlier still runs the previous seal; run `a1-tools intent post-update` (seals again and points the agent here; intent run and tick refuse until then).\n');
   } catch (e) {
     if (!(e instanceof SealRefusal)) throw e;
     process.stdout.write(`${JSON.stringify({ ok: false, reasons: [e.code], detail: e.message.slice(0, 300) })}\n`);
@@ -122,6 +122,7 @@ const SUBCOMMANDS = Object.freeze({
   approve: Object.freeze({ module: 'intent-approve.cjs', fn: 'cmdIntentApprove', wave: 10 }),
   'install-agent': Object.freeze({ module: 'intent-agent.cjs', fn: 'cmdIntentInstallAgent', wave: 11 }),
   seal: Object.freeze({ handler: cmdIntentSeal, wave: '5b' }),
+  'post-update': Object.freeze({ module: 'intent-post-update.cjs', fn: 'cmdIntentPostUpdate', wave: 'spec 016 wave 11' }),
 });
 const SUBCOMMAND_NAMES = Object.freeze(Object.keys(SUBCOMMANDS));
 
