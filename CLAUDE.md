@@ -51,7 +51,7 @@ Pipeline Spec → Plan → Execute → Review. Skills orchestrieren Agents; `a1-
 | Resource | Pfad / Link | Zweck |
 |----------|-------------|-------|
 | ADRs | `docs/adr/` | Architektur-Entscheidungen |
-| Vision / Roadmap | `docs/VISION.md`, `docs/roadmap.md`, `docs/product/` | Ziel und Planung |
+| Vision / Roadmap | `docs/VISION.md`, `docs/product/ROADMAP.md` + `NEXT.md` (maßgeblich), `docs/roadmap.md` (Historie) | Ziel und Planung |
 | Gates | `_shared/gates-registry.md` | Alle registrierten Gates |
 | Contributing | `CONTRIBUTING.md` | Test- und PR-Ablauf |
 

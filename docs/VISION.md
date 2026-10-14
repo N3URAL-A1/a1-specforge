@@ -42,8 +42,9 @@ The long-term differentiator is not the pipeline — it's the **learning exchang
 > Note: this table reflects original prioritization intent, not shipped order.
 > In execution, #5 (GitHub Actions gates) and #6 (Plugin distribution) shipped
 > in M7/M8 ahead of #2 (a1-dashboard) and #4 (a1-test), which remain in
-> `docs/roadmap.md`'s Backlog section. Treat `docs/roadmap.md` as the
-> authoritative sequencing; this table is the original rationale.
+> the backlog of `docs/product/ROADMAP.md`. Treat `docs/product/ROADMAP.md`
+> and `docs/product/NEXT.md` as the authoritative sequencing
+> (`docs/roadmap.md` is history); this table is the original rationale.
 
 | # | Idea | What it is | Why |
 |---|------|-----------|-----|
