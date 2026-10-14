@@ -179,10 +179,10 @@ features:
   - id: 016-xprov-autonomy
     milestone: continuous
     title: "xprov autonomy: chat consent instead of terminal steps, Codex at the right places, self-recovering aborts"
-    status: planned
-    stage: null
+    status: in-flight
+    stage: started
     depends_on: []
-    started: null
+    started: 2026-10-14
     finished: null
     spec_path: project/a1-specforge/spec/016-xprov-autonomy.md
     plan_path: project/a1-specforge/plans/016-xprov-autonomy-wave-plan.md
@@ -327,6 +327,7 @@ None.
 - **2026-10-14** — feature.md created for '016-xprov-autonomy' — formal spec/plan attached via `product feature-init`
 - **2026-10-14** — feature.md created for '017-enforced-self-checks' — formal spec/plan attached via `product feature-init`
 - **2026-10-14** — 015 docs consolidation done; 016 xprov autonomy and 017 enforced self-checks added and prioritised ahead of 006 — owner decision 2026-10-14: reliability and autonomy before launch and new profiles (record 2026-10-14-a1-autonomy-chat-consent)
+- **2026-10-14** — 016-xprov-autonomy -> started — stage transition via `product stage`
 
 ## Appendix — migrated details
 

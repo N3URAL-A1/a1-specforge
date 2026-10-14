@@ -15,6 +15,7 @@ updated: 2026-10-14
 
 - **010-vault-cockpit-contract** — Vault cockpit contract — every a1 status readable in Obsidian on Mac, server and phone (milestone: continuous, stage: started)
 - **011-intent-queue-consumer** — Intent queue consumer — the a1 half of triggering skills from the phone via the vault (milestone: continuous, stage: started)
+- **016-xprov-autonomy** — xprov autonomy: chat consent instead of terminal steps, Codex at the right places, self-recovering aborts (milestone: continuous, stage: started) — scope: project/a1-specforge/spec/016-xprov-autonomy.md, project/a1-specforge/plans/016-xprov-autonomy-wave-plan.md
 
 ## Next cursor
 
