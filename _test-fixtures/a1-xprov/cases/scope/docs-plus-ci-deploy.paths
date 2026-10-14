@@ -1,0 +1,4 @@
+.github/actions/setup-test-db/action.yml
+.github/workflows/ci.yml
+.github/workflows/deploy.yml
+docs/adr/2026-07-05_cicd-pipeline.md

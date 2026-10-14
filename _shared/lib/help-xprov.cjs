@@ -373,8 +373,23 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   Not shipped yet: the dispatch entry exists, the module does not;
                   until then the command exits 2 ("not implemented yet"), which
                   keeps every consent path closed.
-    scope (spec 016, planned wave 6)
-                  Not shipped yet (exit 2, "not implemented yet").
+    scope --paths <file> | --base <sha> [--head <sha>] [--repo <git-toplevel>]
+                  (spec 016 FR-015, FR-016; xprov-scope.cjs + xprov-scope-globs.json)
+                  Deterministic, no LLM: classifies a path list (one path per line)
+                  or the files of a git range (default --head HEAD, renames split
+                  so both sides count) as security surface and as docs only.
+                  stdout (exit 0): {version, security_surface, docs_only, total,
+                  matched:[{path, category, glob}]}, matched sorted by path.
+                  security_surface = auth/session/permission, payment, tenant/RLS,
+                  migration and SQL, route/API, manifest and lockfile, secrets and
+                  env templates, CI, deploy/Docker/Terraform, plus quick.cjs
+                  FORBIDDEN_SURFACE_GLOBS (included by reference, never copied).
+                  docs_only = every path is *.md, docs/** or LICENSE and nothing
+                  is security surface. A path that cannot be classified (empty,
+                  absolute, "..", NUL, over 4096 chars) counts as security surface,
+                  category "unclassifiable". Matching is case-insensitive.
+                  Any input or glob-file problem exits 2 with an empty stdout:
+                  treat a non-zero exit as "guarded".
     dispose (spec 016, planned wave 9)
                   Not shipped yet (exit 2, "not implemented yet").
     waive --phase <name> --gate <id> [--wave <N> [--lane <id>] --base <sha>

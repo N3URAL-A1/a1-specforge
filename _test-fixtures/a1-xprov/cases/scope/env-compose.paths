@@ -1,0 +1,3 @@
+.env.local.example
+automation/.env.example
+automation/docker-compose.yml
