@@ -1,6 +1,6 @@
 # a1-specforge Roadmap — v3.0
 
-> **History.** This file records milestones M0–M9. The single source of truth for current and next work is [`docs/product/ROADMAP.md`](product/ROADMAP.md) and [`docs/product/NEXT.md`](product/NEXT.md).
+> **History.** This file records milestones M0–M9. The single source of truth for current and next work is [`docs/product/ROADMAP.md`](product/ROADMAP.md) and [`docs/product/NEXT.md`](product/NEXT.md). The self-hosting note below is superseded by spec 015 (2026-10-14).
 
 **Created:** 2026-07-04 · **Owner:** N3URAL.AI · **Horizon:** July – September 2026
 **Vision:** → [`docs/VISION.md`](VISION.md)
