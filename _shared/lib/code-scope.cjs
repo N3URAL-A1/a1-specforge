@@ -22,105 +22,14 @@ const {
   failWithLock,
   writeJsonAtomic,
 } = require('./locks.cjs');
+const {
+  normalizeScopePath,
+  scopePathsOverlap,
+} = require('./segment-glob.cjs');
 
-/** Normalize a scope path for comparison: strip leading "./", collapse
- * duplicate slashes, strip a single trailing slash (kept conceptually as
- * "directory" via segment comparison, not via string suffix). */
-function normalizeScopePath(p) {
-  let out = String(p).trim().replace(/\\/g, '/');
-  while (out.startsWith('./')) out = out.slice(2);
-  out = out.replace(/\/+/g, '/');
-  if (out.length > 1 && out.endsWith('/')) out = out.slice(0, -1);
-  return out;
-}
-
-/** Split a normalized path into non-empty segments. */
-function scopeSegments(p) {
-  return p.split('/').filter(Boolean);
-}
-
-/** True if `pattern` segment is a glob segment ("*" or "**"). */
-function isGlobSegment(seg) {
-  return seg === '*' || seg === '**';
-}
-
-/** Match a single path's segments against a pattern's segments.
- * "*" matches exactly one segment; "**" matches zero or more segments. */
-function segmentsMatchGlob(patternSegs, pathSegs) {
-  const memo = new Map();
-  function walk(pi, si) {
-    const key = pi + ':' + si;
-    if (memo.has(key)) return memo.get(key);
-    let result;
-    if (pi === patternSegs.length) {
-      result = si === pathSegs.length;
-    } else {
-      const seg = patternSegs[pi];
-      if (seg === '**') {
-        result = walk(pi + 1, si) || (si < pathSegs.length && walk(pi, si + 1));
-      } else if (seg === '*') {
-        result = si < pathSegs.length && walk(pi + 1, si + 1);
-      } else {
-        result = si < pathSegs.length && pathSegs[si] === seg && walk(pi + 1, si + 1);
-      }
-    }
-    memo.set(key, result);
-    return result;
-  }
-  return walk(0, 0);
-}
-
-/** True if segsA is a prefix of segsB at a segment boundary (or equal). */
-function isSegmentPrefix(segsA, segsB) {
-  if (segsA.length > segsB.length) return false;
-  for (let i = 0; i < segsA.length; i++) {
-    if (segsA[i] !== segsB[i]) return false;
-  }
-  return true;
-}
-
-/** Segments up to (excluding) the first glob segment, i.e. the fixed
- * "directory anchor" a glob pattern is rooted under. For a pattern with no
- * glob segment this is just all of its segments (identical to itself). */
-function nonGlobPrefix(segs) {
-  const idx = segs.findIndex(isGlobSegment);
-  return idx === -1 ? segs : segs.slice(0, idx);
-}
-
-/** Deterministic overlap check between two declared scope paths.
- * Overlap if:
- *   - one is a segment-boundary prefix of the other (dir containment), or
- *   - either contains a glob ("*"/"**") that matches the other via glob math, or
- *   - either side's glob is rooted under a directory the other side contains
- *     (or vice versa) — e.g. `src/**\/util.js` vs `src/foo`, or `src/*` vs
- *     `src/a/b.js`. Compares each side's fixed (non-glob) prefix against the
- *     other side's full segments via segment-boundary containment.
- * No fs reads, no git — pure string/segment comparison. */
-function scopePathsOverlap(rawA, rawB) {
-  const a = normalizeScopePath(rawA);
-  const b = normalizeScopePath(rawB);
-  if (a === b) return true;
-  const segsA = scopeSegments(a);
-  const segsB = scopeSegments(b);
-  const hasGlobA = segsA.some(isGlobSegment);
-  const hasGlobB = segsB.some(isGlobSegment);
-  if (hasGlobA && segmentsMatchGlob(segsA, segsB)) return true;
-  if (hasGlobB && segmentsMatchGlob(segsB, segsA)) return true;
-  if (!hasGlobA && !hasGlobB) {
-    if (isSegmentPrefix(segsA, segsB)) return true;
-    if (isSegmentPrefix(segsB, segsA)) return true;
-  } else {
-    // At least one side has a glob: also test directory containment between
-    // each side's fixed (non-glob) prefix and the other side's full path.
-    const prefixA = nonGlobPrefix(segsA);
-    const prefixB = nonGlobPrefix(segsB);
-    if (prefixA.length > 0 && isSegmentPrefix(prefixA, segsB)) return true;
-    if (prefixB.length > 0 && isSegmentPrefix(prefixB, segsA)) return true;
-    if (prefixB.length > 0 && isSegmentPrefix(segsA, prefixB)) return true;
-    if (prefixA.length > 0 && isSegmentPrefix(segsB, prefixA)) return true;
-  }
-  return false;
-}
+// Path normalization, glob matching and overlap math live in segment-glob.cjs
+// (shared with quick.cjs). `scopePathsOverlap` is re-exported below for
+// lane-split.cjs.
 
 /** Find all code_scope reservation entries (excluding a given feature id)
  * whose declared paths overlap the candidate paths. Returns a flat list of

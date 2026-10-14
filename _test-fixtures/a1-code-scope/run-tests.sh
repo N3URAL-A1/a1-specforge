@@ -337,5 +337,20 @@ else
   echo "PASS  list-no-stale-days: no stale field without flag"; pass=$((pass + 1))
 fi
 
+# --- in-segment globs in scopePathsOverlap (bug 2026-10-14-quick-gate-env-sentences) ---
+OVL_RC=0
+OVL_OUT="$(node -e '
+  const { scopePathsOverlap } = require(process.argv[1]);
+  const T = [["src/*.ts","src/a.ts"], ["src/a.ts","src/*.ts"], ["**/*.md","docs/x.md"],
+             ["docs/adr-*.md","docs/adr-1.md"], ["src/*.ts","src/**"], ["docs/ADR-*.md","docs/adr-1.md"]];
+  const F = [["src/*.ts","lib/a.js"], ["**/*.md","docs/x.txt"], ["docs/adr-*.md","other/rfc-1.md"],
+             ["src/*.ts","lib/a.ts"]];
+  let bad = 0;
+  for (const [a,b] of T) if (scopePathsOverlap(a,b) !== true) { console.log("expected overlap: " + a + " vs " + b); bad++; }
+  for (const [a,b] of F) if (scopePathsOverlap(a,b) !== false) { console.log("expected NO overlap: " + a + " vs " + b); bad++; }
+  process.exit(bad ? 1 : 0);
+' "$REPO_ROOT/_shared/lib/code-scope.cjs" 2>&1)" || OVL_RC=$?
+assert_rc "in-segment-glob-overlap-table" 0 "$OVL_RC" "$OVL_OUT"
+
 echo "code-scope fixtures: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

@@ -159,7 +159,43 @@ caseL5() {
   [[ $rc -eq 2 ]] && ok "L5 bad --imports path exits 2, not 1" || bad "L5 bad --imports (rc=$rc)"
 }
 
-caseL1; caseL2; caseL3; caseL4; caseL5
+# ---------- L6: in-segment globs in `owns:` overlap (bug 2026-10-14-quick-gate-env-sentences) ----------
+# `src/*.ts` and `src/a.ts` claim the same file; the old segment matcher compared
+# the segment literally and called them disjoint. Control: `src/*.ts` vs `docs/a.ts`.
+caseL6() {
+  local t out v; t="$(mktemp -d)"
+  cat > "$t/PLAN.md" <<'MD'
+---
+phase: probe
+lanes:
+  - id: lane-a
+    waves: [1]
+    owns:
+      - "src/*.ts"
+  - id: lane-b
+    waves: [2]
+    owns:
+      - "src/a.ts"
+  - id: lane-c
+    waves: [3]
+    owns:
+      - "docs/a.ts"
+---
+
+## Wave 1 — a
+## Wave 2 — b
+## Wave 3 — c
+MD
+  out="$(node "$TOOLS" lane-split check --plan "$t/PLAN.md" 2>/dev/null)"
+  v="$(node -e "
+    const j=JSON.parse(process.argv[1]);
+    const f=j.findings.filter((x)=>x.check==='owns-overlap');
+    process.stdout.write(String(f.length)+'/'+(JSON.stringify(f).includes('lane-c')?'c-involved':'c-clean'));
+  " "$out" 2>&1)"
+  [[ "$v" == "1/c-clean" ]] && ok "L6 in-segment glob owns overlap found, disjoint lane clean" || bad "L6 in-segment owns ($v)"
+}
+
+caseL1; caseL2; caseL3; caseL4; caseL5; caseL6
 printf '%s\n' "${results[@]}"
 echo "----"
 echo "a1-lane-split: $pass passed, $fail failed"

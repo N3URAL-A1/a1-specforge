@@ -24,6 +24,7 @@ const {
   loadReservations,
 } = require('./locks.cjs');
 const { gitSafe } = require('./git-safe.cjs');
+const { matchesGlob, scopePathsOverlap } = require('./segment-glob.cjs');
 
 // ---------- eligibility thresholds (FR-002) ----------
 
@@ -66,58 +67,13 @@ const FORBIDDEN_SURFACE_GLOBS = [
   '**/.env.*',
 ];
 
-// ---------- glob matching (mirrors code-scope.cjs semantics) ----------
-
-function normalizeScopePath(p) {
-  let out = String(p).trim().replace(/\\/g, '/');
-  while (out.startsWith('./')) out = out.slice(2);
-  out = out.replace(/\/+/g, '/');
-  if (out.length > 1 && out.endsWith('/')) out = out.slice(0, -1);
-  return out;
-}
-
-function scopeSegments(p) {
-  return p.split('/').filter(Boolean);
-}
-
-function isGlobSegment(seg) {
-  return seg === '*' || seg === '**';
-}
-
-function segmentsMatchGlob(patternSegs, pathSegs) {
-  const memo = new Map();
-  function walk(pi, si) {
-    const key = pi + ':' + si;
-    if (memo.has(key)) return memo.get(key);
-    let result;
-    if (pi === patternSegs.length) {
-      result = si === pathSegs.length;
-    } else {
-      const seg = patternSegs[pi];
-      if (seg === '**') {
-        result = walk(pi + 1, si) || (si < pathSegs.length && walk(pi, si + 1));
-      } else if (seg === '*') {
-        result = si < pathSegs.length && walk(pi + 1, si + 1);
-      } else {
-        result = si < pathSegs.length && pathSegs[si] === seg && walk(pi + 1, si + 1);
-      }
-    }
-    memo.set(key, result);
-    return result;
-  }
-  return walk(0, 0);
-}
+// ---------- glob matching (shared segment-glob.cjs) ----------
 
 /** True if the given scope path matches any forbidden-surface glob. No
  * filesystem resolution happens anywhere in this check — pure string/segment
  * comparison, consistent with code-scope.cjs's overlap matcher. */
 function matchesForbiddenSurface(scopePath) {
-  const norm = normalizeScopePath(scopePath);
-  const segs = scopeSegments(norm);
-  return FORBIDDEN_SURFACE_GLOBS.some((glob) => {
-    const globSegs = scopeSegments(glob);
-    return segmentsMatchGlob(globSegs, segs);
-  });
+  return FORBIDDEN_SURFACE_GLOBS.some((glob) => matchesGlob(glob, scopePath));
 }
 
 /** True if the scope path is a path-traversal attempt ("..") or an absolute
@@ -142,7 +98,7 @@ function isSuspiciousScopePath(rawScopePath) {
  * for empty/whitespace-only input — callers must fail closed on null. */
 function countIntentSentences(intent) {
   if (typeof intent !== 'string' || intent.trim() === '') return null;
-  const matches = intent.match(/[.!?]/g);
+  const matches = intent.match(/[.!?]+(?=\s|$)/g);
   return matches ? matches.length : 0;
 }
 
@@ -183,43 +139,6 @@ function isWorkingTreeClean(repoRoot) {
 // applied directly in-process against the reservations registry loaded via
 // locks.cjs — no subprocess spawn of `check reservations`/`code-scope
 // check`, per the wave-plan brief.
-
-function nonGlobPrefix(segs) {
-  const idx = segs.findIndex(isGlobSegment);
-  return idx === -1 ? segs : segs.slice(0, idx);
-}
-
-function isSegmentPrefix(segsA, segsB) {
-  if (segsA.length > segsB.length) return false;
-  for (let i = 0; i < segsA.length; i++) {
-    if (segsA[i] !== segsB[i]) return false;
-  }
-  return true;
-}
-
-function scopePathsOverlap(rawA, rawB) {
-  const a = normalizeScopePath(rawA);
-  const b = normalizeScopePath(rawB);
-  if (a === b) return true;
-  const segsA = scopeSegments(a);
-  const segsB = scopeSegments(b);
-  const hasGlobA = segsA.some(isGlobSegment);
-  const hasGlobB = segsB.some(isGlobSegment);
-  if (hasGlobA && segmentsMatchGlob(segsA, segsB)) return true;
-  if (hasGlobB && segmentsMatchGlob(segsB, segsA)) return true;
-  if (!hasGlobA && !hasGlobB) {
-    if (isSegmentPrefix(segsA, segsB)) return true;
-    if (isSegmentPrefix(segsB, segsA)) return true;
-  } else {
-    const prefixA = nonGlobPrefix(segsA);
-    const prefixB = nonGlobPrefix(segsB);
-    if (prefixA.length > 0 && isSegmentPrefix(prefixA, segsB)) return true;
-    if (prefixB.length > 0 && isSegmentPrefix(prefixB, segsA)) return true;
-    if (prefixB.length > 0 && isSegmentPrefix(segsA, prefixB)) return true;
-    if (prefixA.length > 0 && isSegmentPrefix(segsB, prefixA)) return true;
-  }
-  return false;
-}
 
 function findConflictingReservations(reservations, candidatePaths, excludeBy) {
   const conflicts = [];

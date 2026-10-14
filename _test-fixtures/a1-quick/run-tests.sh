@@ -931,5 +931,99 @@ node -e '
 NODE_WEIGHT_RC=$?
 assert_rc "quick-weighted-count-math-standalone" 0 "$NODE_WEIGHT_RC" "(5 quick-run records * 0.2 weight)"
 
+# =============================================================================
+# Bug 2026-10-14-quick-gate-env-sentences: in-segment globs + sentence counter
+# (vault: project/a1-specforge/fixes/2026-10-14-quick-gate-env-sentences.md)
+# =============================================================================
+QLIB="$REPO_ROOT/_shared/lib/quick.cjs"
+
+# per-glob liveness: every FORBIDDEN_SURFACE_GLOBS entry must match one
+# realistic path (a dead glob fails open).
+LIVE_RC=0
+LIVE_OUT="$(node -e '
+  const q = require(process.argv[1]);
+  const real = {
+    "**/auth/**": "src/auth/x.ts", "**/authentication/**": "src/authentication/x.ts",
+    "**/authorization/**": "src/authorization/x.ts", "**/payment/**": "src/payment/x.ts",
+    "**/payments/**": "src/payments/x.ts", "**/billing/**": "src/billing/x.ts",
+    "**/tenant/**": "src/tenant/x.ts", "**/tenants/**": "src/tenants/x.ts",
+    "**/multi-tenant/**": "src/multi-tenant/x.ts", "**/security/**": "src/security/x.ts",
+    "**/rls/**": "db/rls/x.sql", "**/migrations/**": "db/migrations/001.sql",
+    "**/*.env": "config/prod.env", "**/.env.*": "app/.env.local",
+  };
+  let bad = 0;
+  for (const g of q.FORBIDDEN_SURFACE_GLOBS) {
+    if (!real[g]) { console.log("no realistic path for glob " + g); bad++; continue; }
+    if (!q.matchesForbiddenSurface(real[g])) { console.log("DEAD glob " + g + " vs " + real[g]); bad++; }
+  }
+  if (Object.keys(real).length !== q.FORBIDDEN_SURFACE_GLOBS.length) { console.log("table/list size drift"); bad++; }
+  process.exit(bad ? 1 : 0);
+' "$QLIB" 2>&1)" || LIVE_RC=$?
+assert_rc "forbidden-glob-liveness-table" 0 "$LIVE_RC" "$LIVE_OUT"
+
+# path cases: expected true / false
+PATH_RC=0
+PATH_OUT="$(node -e '
+  const q = require(process.argv[1]);
+  const T = [".env", "a/prod.env", ".env.local", "x/.env.example", ".env.local.example",
+             "a/.env.production", "src/Auth/x.ts", "SRC/AUTH/login.ts"];
+  const F = ["src/components/Footer.tsx", "docs/authoring.md", "auth.ts", "src/environment.ts", "envfile"];
+  let bad = 0;
+  for (const p of T) if (q.matchesForbiddenSurface(p) !== true) { console.log("expected true: " + p); bad++; }
+  for (const p of F) if (q.matchesForbiddenSurface(p) !== false) { console.log("expected false: " + p); bad++; }
+  process.exit(bad ? 1 : 0);
+' "$QLIB" 2>&1)" || PATH_RC=$?
+assert_rc "forbidden-surface-env-and-case-paths" 0 "$PATH_RC" "$PATH_OUT"
+
+# sentence counter: dots inside tokens do not count
+SENT_RC=0
+SENT_OUT="$(node -e '
+  const q = require(process.argv[1]);
+  const E = [
+    "Point docs/VISION.md and CLAUDE.md to docs/product/ROADMAP.md + NEXT.md as the roadmap source of truth; docs/roadmap.md is history.",
+    "Bump to v1.2.3 in package.json.", "Wait... then retry.", "Really?! Fix it.",
+    "Fix typo in README.md", "Fix the typo. Then bump 1.2.3.",
+  ];
+  const N = ["One. Two. Three.", "x", "A! B? C."];
+  let bad = 0;
+  for (const s of E) { const n = q.countIntentSentences(s); if (n === null || n > q.MAX_INTENT_SENTENCES) { console.log("expected <=2: " + JSON.stringify(s) + " got " + n); bad++; } }
+  for (const s of N) { const n = q.countIntentSentences(s); if (n !== null && n <= q.MAX_INTENT_SENTENCES && n !== 0) { console.log("expected not-eligible: " + JSON.stringify(s) + " got " + n); bad++; } }
+  if (q.countIntentSentences("   ") !== null) { console.log("blank must be null"); bad++; }
+  if (q.countIntentSentences("x") !== 0) { console.log("x must be 0 (fail closed)"); bad++; }
+  if (q.countIntentSentences("One. Two. Three.") !== 3) { console.log("3 sentences must count 3"); bad++; }
+  process.exit(bad ? 1 : 0);
+' "$QLIB" 2>&1)" || SENT_RC=$?
+assert_rc "sentence-counter-ignores-token-dots" 0 "$SENT_RC" "$SENT_OUT"
+
+# end to end via CLI: file-name intent eligible, 3 sentences and bare x are not
+OUT="$(node "$TOOLS" quick eligibility \
+  --intent "Point docs/VISION.md and CLAUDE.md to docs/product/ROADMAP.md + NEXT.md as the roadmap source of truth; docs/roadmap.md is history." \
+  --files 2 --diff-lines 8 --scope docs/VISION.md,CLAUDE.md \
+  --no-migration --no-new-route --no-new-dep \
+  --repo-root "$CLEAN_REPO" --file "$RESV" --by quick-filenames 2>&1)"
+RC=$?
+assert_rc "cli-intent-with-file-names-eligible" 0 "$RC" "$OUT"
+
+OUT="$(node "$TOOLS" quick eligibility \
+  --intent "x" --files 1 --diff-lines 5 --scope src/components/Footer.tsx \
+  --no-migration --no-new-route --no-new-dep \
+  --repo-root "$CLEAN_REPO" --file "$RESV" --by quick-x 2>&1)"
+RC=$?
+assert_rc "cli-intent-x-not-eligible" 1 "$RC" "$OUT"
+
+OUT="$(node "$TOOLS" quick eligibility \
+  --intent "Fix a. Fix b. Fix c." --files 1 --diff-lines 5 --scope src/components/Footer.tsx \
+  --no-migration --no-new-route --no-new-dep \
+  --repo-root "$CLEAN_REPO" --file "$RESV" --by quick-3s 2>&1)"
+RC=$?
+assert_rc "cli-intent-three-sentences-not-eligible" 1 "$RC" "$OUT"
+
+OUT="$(node "$TOOLS" quick eligibility \
+  --intent "Rename the env sample." --files 1 --diff-lines 5 --scope config/.env.example \
+  --no-migration --no-new-route --no-new-dep \
+  --repo-root "$CLEAN_REPO" --file "$RESV" --by quick-env 2>&1)"
+RC=$?
+assert_rc "cli-env-example-scope-not-eligible" 1 "$RC" "$OUT"
+
 echo "a1-quick: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]
