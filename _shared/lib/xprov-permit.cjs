@@ -272,34 +272,37 @@ function permit(opts) {
     ...(o.defaultBranch !== undefined ? { default_branch: o.defaultBranch } : {}),
   });
   const key = repoKey(root);
-  const store = storeForWrite();
-  if (store.refusal) return store.refusal;
-  const pstore = permitStoreForWrite();
-  if (pstore.refusal) return pstore.refusal;
-  const hadDenial = Boolean(store.denials[key]);
-  const origin = RI.readOrigin(root); // spec 016 FR-006: the entry is bound to this repository identity
-  const line = AU.appendAudit({ repo: key, action: AU.ACTION.PERMIT, now: o.now }); // spec 016 FR-010: the chain line first, then the stores
-  if (hadDenial) {
-    const failed = tryWriteDenials(D.withDenial(store.denials, key, null));
-    if (failed) return Object.freeze({ ok: false, reason: 'denial_store_unusable', detail: `${failed}; nothing written` });
-  }
-  const entry = Object.freeze({
-    decided_by: record.decided_by, decided_on: record.decided_on, record: record.record, ts: o.now || io.nowIso(), repo: key, origin, audit: AU.lineSha(line),
-    ...(record.default_branch !== undefined ? { default_branch: record.default_branch } : {}),
+  // Security review 2026-10-14, MAJOR-1: the stores are read INSIDE the owner-store lock, so a parallel writer cannot be undone by this write.
+  return AU.withStoreLock(() => {
+    const store = storeForWrite();
+    if (store.refusal) return store.refusal;
+    const pstore = permitStoreForWrite();
+    if (pstore.refusal) return pstore.refusal;
+    const hadDenial = Boolean(store.denials[key]);
+    const origin = RI.readOrigin(root); // spec 016 FR-006: the entry is bound to this repository identity
+    const line = AU.appendAudit({ repo: key, action: AU.ACTION.PERMIT, now: o.now }); // spec 016 FR-010: the chain line first, then the stores
+    if (hadDenial) {
+      const failed = tryWriteDenials(D.withDenial(store.denials, key, null));
+      if (failed) return Object.freeze({ ok: false, reason: 'denial_store_unusable', detail: `${failed}; nothing written` });
+    }
+    const entry = Object.freeze({
+      decided_by: record.decided_by, decided_on: record.decided_on, record: record.record, ts: o.now || io.nowIso(), repo: key, origin, audit: AU.lineSha(line),
+      ...(record.default_branch !== undefined ? { default_branch: record.default_branch } : {}),
+    });
+    const storeFailed = tryPermitStore(() => PM.writePermits(PM.withPermit(pstore.permits, key, entry)));
+    if (storeFailed) {
+      return hadDenial
+        ? Object.freeze({ ok: false, reason: xprov.REASONS.external_review_denial_mismatch, file: permitPath(root), detail: `the denial was removed from the store but the permit entry could not be written (${storeFailed}); the file still says denied, so the state is denial_mismatch until the owner re-runs permit` })
+        : Object.freeze({ ok: false, reason: 'permit_write_failed', file: permitPath(root), detail: `${storeFailed}; nothing changed` });
+    }
+    try { writeRecordFile(root, record); } catch (e) {
+      const code = (e && e.code) || 'error';
+      return hadDenial
+        ? Object.freeze({ ok: false, reason: xprov.REASONS.external_review_denial_mismatch, file: permitPath(root), detail: `the denial was removed from the store but ${PERMIT_FILE} could not be written (${code}); the file still says denied, so the state is denial_mismatch until the owner re-runs permit` })
+        : Object.freeze({ ok: false, reason: xprov.REASONS.external_review_permit_mismatch, file: permitPath(root), detail: `the permit entry was written but ${PERMIT_FILE} could not be written (${code}); the file is absent or old next to the entry, so the state is permit_mismatch until the owner re-runs permit` });
+    }
+    return Object.freeze({ ok: true, file: permitPath(root), record });
   });
-  const storeFailed = tryPermitStore(() => PM.writePermits(PM.withPermit(pstore.permits, key, entry)));
-  if (storeFailed) {
-    return hadDenial
-      ? Object.freeze({ ok: false, reason: xprov.REASONS.external_review_denial_mismatch, file: permitPath(root), detail: `the denial was removed from the store but the permit entry could not be written (${storeFailed}); the file still says denied, so the state is denial_mismatch until the owner re-runs permit` })
-      : Object.freeze({ ok: false, reason: 'permit_write_failed', file: permitPath(root), detail: `${storeFailed}; nothing changed` });
-  }
-  try { writeRecordFile(root, record); } catch (e) {
-    const code = (e && e.code) || 'error';
-    return hadDenial
-      ? Object.freeze({ ok: false, reason: xprov.REASONS.external_review_denial_mismatch, file: permitPath(root), detail: `the denial was removed from the store but ${PERMIT_FILE} could not be written (${code}); the file still says denied, so the state is denial_mismatch until the owner re-runs permit` })
-      : Object.freeze({ ok: false, reason: xprov.REASONS.external_review_permit_mismatch, file: permitPath(root), detail: `the permit entry was written but ${PERMIT_FILE} could not be written (${code}); the file is absent or old next to the entry, so the state is permit_mismatch until the owner re-runs permit` });
-  }
-  return Object.freeze({ ok: true, file: permitPath(root), record });
 }
 
 /** `permit --deny`: the store first, then the file. A failing file step leaves the
@@ -316,26 +319,28 @@ function permitDeny(opts) {
     ...(o.defaultBranch !== undefined ? { default_branch: o.defaultBranch } : {}),
   });
   const key = repoKey(root);
-  const store = storeForWrite();
-  if (store.refusal) return store.refusal;
-  // Spec 014 FR-003 order: permit store, then denial store, then file. A store without this repo's entry is not rewritten.
-  const pstore = permitStoreForWrite();
-  if (pstore.refusal) return pstore.refusal;
-  const line = AU.appendAudit({ repo: key, action: AU.ACTION.PERMIT_DENY, now: o.now }); // spec 016 FR-010
-  if (pstore.permits[key]) {
-    const permitFailed = tryPermitStore(() => PM.writePermits(PM.withPermit(pstore.permits, key, null)));
-    if (permitFailed) return Object.freeze({ ok: false, reason: 'permit_write_failed', detail: `${permitFailed}; nothing written` });
-  }
-  const entry = Object.freeze({ decided_by: by, decided_on: day, ts: o.now || io.nowIso(), audit: AU.lineSha(line) });
-  const failed = tryWriteDenials(D.withDenial(store.denials, key, entry));
-  if (failed) {
-    const removed = Boolean(pstore.permits[key]);
-    return Object.freeze({ ok: false, reason: 'denial_store_unusable', detail: removed ? `${failed}; the permit entry was already removed, so the state is permit_mismatch until the owner re-runs permit` : `${failed}; nothing written` });
-  }
-  try { writeRecordFile(root, record); } catch (e) {
-    return Object.freeze({ ok: false, reason: xprov.REASONS.external_review_denial_mismatch, file: permitPath(root), detail: `the denial store was written but ${PERMIT_FILE} could not be (${(e && e.code) || 'error'}); the state is denial_mismatch until the owner re-runs permit` });
-  }
-  return Object.freeze({ ok: true, file: permitPath(root), record, store: D.denialsPath() });
+  return AU.withStoreLock(() => { // MAJOR-1: read the stores inside the owner-store lock
+    const store = storeForWrite();
+    if (store.refusal) return store.refusal;
+    // Spec 014 FR-003 order: permit store, then denial store, then file. A store without this repo's entry is not rewritten.
+    const pstore = permitStoreForWrite();
+    if (pstore.refusal) return pstore.refusal;
+    const line = AU.appendAudit({ repo: key, action: AU.ACTION.PERMIT_DENY, now: o.now }); // spec 016 FR-010
+    if (pstore.permits[key]) {
+      const permitFailed = tryPermitStore(() => PM.writePermits(PM.withPermit(pstore.permits, key, null)));
+      if (permitFailed) return Object.freeze({ ok: false, reason: 'permit_write_failed', detail: `${permitFailed}; nothing written` });
+    }
+    const entry = Object.freeze({ decided_by: by, decided_on: day, ts: o.now || io.nowIso(), audit: AU.lineSha(line) });
+    const failed = tryWriteDenials(D.withDenial(store.denials, key, entry));
+    if (failed) {
+      const removed = Boolean(pstore.permits[key]);
+      return Object.freeze({ ok: false, reason: 'denial_store_unusable', detail: removed ? `${failed}; the permit entry was already removed, so the state is permit_mismatch until the owner re-runs permit` : `${failed}; nothing written` });
+    }
+    try { writeRecordFile(root, record); } catch (e) {
+      return Object.freeze({ ok: false, reason: xprov.REASONS.external_review_denial_mismatch, file: permitPath(root), detail: `the denial store was written but ${PERMIT_FILE} could not be (${(e && e.code) || 'error'}); the state is denial_mismatch until the owner re-runs permit` });
+    }
+    return Object.freeze({ ok: true, file: permitPath(root), record, store: D.denialsPath() });
+  });
 }
 
 // ---------- CLI ----------

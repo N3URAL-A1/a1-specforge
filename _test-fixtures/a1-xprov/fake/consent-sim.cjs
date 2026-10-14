@@ -3,8 +3,12 @@
 // Test-only stand-in for the plugin hook of spec 016 wave 4 (it does not exist yet). It requires ONLY the tree COPY
 // named in its argument (the suite swaps xprov-owner-home.cjs there), never the live _shared/lib.
 //   node consent-sim.cjs '<json>'      json: { cmd, tree, root, kind, ... }   prints one JSON line
-//   ask     { tool_use, session, now? }                       PreToolUse: opens the marker of the canonical question
+//   ask     { tool_use, session, ludwig?, now? }              PreToolUse: opens the marker of the canonical question
+//                                                             (ludwig: the vault path the classification question shows)
 //   answer  { mode: yes|no|free|big|none, form: answers|text, text?, tool_use, session, template, now? }   PostToolUse
+//   answer-raw { qkind, label, tool_use, session }            PostToolUse with a RAW label and the question text of kind qkind
+//                                                             (a hook that mixes questions up); prints the library result
+//   slow-record / slow-permit { ms, deny? } / revoke          the owner-store writers, paused inside their lock window
 //   age     { ms }                                            makes the marker `ms` older (an expired marker)
 //   edit    { path: 'answer.tool_use_id', value }             hand-edits a marker field (a forged marker)
 //   copy    { toRoot }                                        copies root's marker file over the marker file of toRoot
@@ -22,7 +26,7 @@ const C = lib('xprov-common.cjs');
 const RI = lib('xprov-repo-identity.cjs');
 
 const key = (root) => C.commonDirOf(root);
-const question = (root, kind) => Q.buildQuestion(kind, Q.repoContext(root, RI.readOrigin(root)));
+const question = (root, kind) => Q.buildQuestion(kind, Q.repoContext(root, RI.readOrigin(root), { ludwigRecord: kind === 'classification' && a.ludwig ? a.ludwig : undefined }));
 const out = (o) => process.stdout.write(`${JSON.stringify(o)}\n`);
 
 function fill(node, map) {
@@ -46,16 +50,39 @@ function markerPath(root, kind) { return M.markerFile(key(root), kind); }
 
 if (a.cmd === 'ask') {
   const q = question(a.root, a.kind);
-  const r = M.openMarker({ repo: key(a.root), kind: a.kind, hash: q.hash, toolUseId: a.tool_use, sessionId: a.session, now: a.now });
+  const r = M.openMarker({ repo: key(a.root), kind: a.kind, hash: q.hash, originSha: q.originSha, toolUseId: a.tool_use, sessionId: a.session, now: a.now });
   out({ ok: r.ok, reason: r.reason || null, state: r.state || null, hint: r.hint || null, hash: q.hash });
 } else if (a.cmd === 'answer') {
   const q = question(a.root, a.kind);
   const found = A.answerFromPayload(payload(q, a.kind), q.question);
   if (!found.found) { out({ found: false }); } else {
-    const decision = Q.decisionOf(a.kind, found.label);
-    const r = M.answerMarker({ toolUseId: a.tool_use, sessionId: a.session, decision, permissionMode: 'default', now: a.now });
-    out({ found: true, decision, ok: r.ok, reason: r.reason || null });
+    // The hook hands the raw label and the answered question text over; the library derives the decision (security review MINOR-1).
+    const r = M.answerMarker({ toolUseId: a.tool_use, sessionId: a.session, label: found.label, question: q.question, permissionMode: 'default', now: a.now });
+    out({ found: true, decision: r.ok ? r.decision : Q.decisionOf(a.kind, found.label), ok: r.ok, reason: r.reason || null });
   }
+} else if (a.cmd === 'answer-raw') {
+  const q = question(a.root, a.qkind || a.kind);
+  const r = M.answerMarker({ toolUseId: a.tool_use, sessionId: a.session, label: a.label, question: q.question, permissionMode: 'default', now: a.now });
+  out({ ok: r.ok, reason: r.reason || null, decision: r.decision || null });
+} else if (a.cmd === 'slow-record') {
+  // consent record with a pause between its read of the stores and its writes (the window a lost update needs); the lock must close it
+  const R = lib('xprov-consent-record.cjs');
+  const orig = M.claimMarker;
+  M.claimMarker = (want) => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, a.ms); return orig(want); };
+  const r = R.recordConsent({ root: a.root, kind: a.kind, ludwigRecord: a.ludwig });
+  out({ ok: r.ok, reason: r.reason || null });
+} else if (a.cmd === 'slow-permit') {
+  // terminal `permit` (library call) with a pause after its reads of the stores, before the audit line
+  const AU = lib('xprov-audit.cjs'); const P = lib('xprov-permit.cjs');
+  const orig = AU.appendAudit;
+  AU.appendAudit = (o) => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, a.ms); return orig(o); };
+  const call = { repoRoot: a.root, by: 'robert', record: 'record/2026-10-14-fixture.md', today: '2026-10-14' };
+  const r = a.deny ? P.permitDeny(call) : P.permit(call);
+  out({ ok: r.ok, reason: r.reason || null });
+} else if (a.cmd === 'revoke') {
+  const R = lib('xprov-consent-record.cjs');
+  const r = R.revokeConsent({ root: a.root });
+  out({ ok: r.ok, reason: r.reason || null });
 } else if (a.cmd === 'age') {
   const f = markerPath(a.root, a.kind); const m = JSON.parse(fs.readFileSync(f, 'utf8'));
   m.created = new Date(Date.parse(m.created) - a.ms).toISOString(); fs.writeFileSync(f, `${JSON.stringify(m, null, 2)}\n`); out({ ok: true });

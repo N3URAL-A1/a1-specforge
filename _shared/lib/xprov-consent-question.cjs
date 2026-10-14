@@ -36,15 +36,28 @@ const clean = (v) => C.clip(String(v == null ? '' : v).replace(CLEAN_RE, '?'), V
 
 const CLASS_TEXT = Object.freeze({ [RI.CLASS.ORG]: 'Eigenes Repo (Organisation N3URAL-A1)', [RI.CLASS.CUSTOMER]: 'Kundenrepo (kein origin oder origin außerhalb von N3URAL-A1)' });
 
-/** The repository facts a question shows: { name, path, origin (shown string), classification }. */
-function repoContext(root, origin) {
+const sha256 = (text) => crypto.createHash('sha256').update(text).digest('hex');
+
+/**
+ * The repository facts a question shows: { name, path, origin (shown string), originSha, classification, ludwigRecord }.
+ * `originSha` is the sha256 of the RAW origin as JSON: it goes into the question hash, so two origins that render alike
+ * (clipped, or beyond the first four of a list) never share a hash (security review 2026-10-14, MINOR-3).
+ * `opts.ludwigRecord`: the vault path of the legal decision, shown by the classification question (MAJOR-3).
+ */
+function repoContext(root, origin, opts) {
   let real;
   try { real = fs.realpathSync(path.resolve(String(root))); } catch (_e) { real = path.resolve(String(root)); }
   let shown;
   if (origin === null || origin === undefined) shown = 'keiner';
-  else if (Array.isArray(origin)) shown = `MEHRERE WERTE (${origin.slice(0, SHOWN_ORIGINS_MAX).map(clean).join(' | ')})`;
-  else shown = clean(origin);
-  return Object.freeze({ name: clean(path.basename(real)), path: clean(real), origin: shown, classification: RI.classifyOrigin(origin) });
+  else if (Array.isArray(origin)) {
+    const more = origin.length - SHOWN_ORIGINS_MAX;
+    shown = `MEHRERE WERTE (${origin.slice(0, SHOWN_ORIGINS_MAX).map(clean).join(' | ')}${more > 0 ? ` (+${more} more)` : ''})`;
+  } else shown = clean(origin);
+  const lud = opts && opts.ludwigRecord !== undefined ? clean(opts.ludwigRecord) : null;
+  return Object.freeze({
+    name: clean(path.basename(real)), path: clean(real), origin: shown, originSha: sha256(JSON.stringify(origin === undefined ? null : origin)),
+    classification: RI.classifyOrigin(origin), ludwigRecord: lud,
+  });
 }
 
 function buildConsent(ctx) {
@@ -68,7 +81,8 @@ function buildClassification(ctx) {
     `Pfad: ${ctx.path}`,
     `Origin: ${ctx.origin}`,
     `Berechnete Einstufung: ${CLASS_TEXT[ctx.classification]}`,
-    'Ein Kundenrepo darf nur mit einer a1-ludwig-legal-Entscheidung an Codex gehen. Das Ja hier bestätigt die Einstufung als Kundenrepo und dass diese Entscheidung vorliegt. Es ersetzt die Entscheidung nicht: ihr Vault-Pfad wird beim Eintragen der Freigabe verlangt.',
+    `Legal-Entscheidung (Vault-Pfad): ${ctx.ludwigRecord === null || ctx.ludwigRecord === undefined ? 'keine angegeben' : ctx.ludwigRecord}`,
+    'Ein Kundenrepo darf nur mit einer a1-ludwig-legal-Entscheidung an Codex gehen. Das Ja hier bestätigt die Einstufung als Kundenrepo und dass die oben genannte Entscheidung vorliegt. Es ersetzt die Entscheidung nicht: beim Eintragen der Freigabe muss genau dieser Vault-Pfad angegeben werden.',
     'Diese Antwort erlaubt noch keinen Versand; die Freigabe ist eine eigene Frage.',
   ].join('\n');
 }
@@ -90,7 +104,13 @@ const KINDS = Object.freeze({
 const kindDef = (kind) => (typeof kind === 'string' && Object.prototype.hasOwnProperty.call(KINDS, kind) ? KINDS[kind] : null);
 const kindNames = () => Object.keys(KINDS);
 
-const sha256 = (text) => crypto.createHash('sha256').update(text).digest('hex');
+/** The question hash: sha256 of the canonical form (header, text, options, multiSelect, origin_sha). `originSha` is the one of the repository context. */
+function hashOf(kind, question, originSha) {
+  const def = kindDef(kind);
+  if (def === null) return null;
+  const options = [{ label: def.labels.no, description: def.descriptions.no }, { label: def.labels.yes, description: def.descriptions.yes }];
+  return sha256(JSON.stringify({ header: def.header, question, options, multiSelect: false, origin_sha: originSha }));
+}
 
 /** { kind, header, question, labels [no, yes], options, multiSelect, hash, classification } or null for an unknown kind. */
 function buildQuestion(kind, ctx) {
@@ -98,10 +118,9 @@ function buildQuestion(kind, ctx) {
   if (def === null) return null;
   const question = def.build(ctx);
   const options = [{ label: def.labels.no, description: def.descriptions.no }, { label: def.labels.yes, description: def.descriptions.yes }];
-  const canonical = JSON.stringify({ header: def.header, question, options, multiSelect: false });
   return Object.freeze({
     kind, header: def.header, question, labels: Object.freeze([def.labels.no, def.labels.yes]), options: Object.freeze(options), multiSelect: false,
-    hash: sha256(canonical), classification: ctx.classification,
+    hash: hashOf(kind, question, ctx.originSha), originSha: ctx.originSha, classification: ctx.classification,
   });
 }
 
@@ -111,4 +130,4 @@ function decisionOf(kind, label) {
   return def !== null && typeof label === 'string' && label === def.labels.yes ? 'yes' : 'no';
 }
 
-module.exports = { KINDS, VALUE_MAX_CHARS, kindDef, kindNames, repoContext, buildQuestion, decisionOf, clean };
+module.exports = { KINDS, VALUE_MAX_CHARS, kindDef, kindNames, repoContext, buildQuestion, hashOf, decisionOf, clean };

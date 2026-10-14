@@ -6,7 +6,7 @@
 //   <owner home>/.a1-xprov/consent.json   (dir 0700, file 0600, atomic, no symlink: the guarded reader/writer of the permit store)
 //     { version: 1,
 //       consents:        { "<git-common-dir>": { who, when, header, classification, origin, question_hash, answer_label, record, audit, ludwig_record? } },
-//       classifications: { "<git-common-dir>": { who, when, header, origin, question_hash, answer_label, audit } } }
+//       classifications: { "<git-common-dir>": { who, when, header, origin, question_hash, answer_label, audit, ludwig_record? } } }
 //
 // `consents` is the evidence of a permit written by `xprov consent record` (who = owner-chat, when, the canonical header,
 // the classification and raw origin at the decision, the hash of the question the owner saw, the label the owner chose, the
@@ -24,6 +24,7 @@ const STORE_LABEL = 'consent store';
 const CONSENT_REQUIRED = Object.freeze(['who', 'when', 'header', 'classification', 'origin', 'question_hash', 'answer_label', 'record', 'audit']);
 const CONSENT_OPTIONAL = Object.freeze(['ludwig_record']);
 const CLASS_REQUIRED = Object.freeze(['who', 'when', 'header', 'origin', 'question_hash', 'answer_label', 'audit']);
+const CLASS_OPTIONAL = Object.freeze(['ludwig_record']); // the vault path the owner saw in the Einstufung question (security review MAJOR-3)
 
 const guarded = () => require('./xprov-allowlist.cjs');
 const writer = () => require('./xprov-approve.cjs').writeGuardedStore;
@@ -53,7 +54,7 @@ function parseMap(map, required, optional) {
 function parseDoc(doc) {
   if (!guarded().exactKeys(doc, ['version', 'consents', 'classifications']) || doc.version !== 1) return null;
   const consents = parseMap(doc.consents, CONSENT_REQUIRED, CONSENT_OPTIONAL);
-  const classifications = parseMap(doc.classifications, CLASS_REQUIRED, []);
+  const classifications = parseMap(doc.classifications, CLASS_REQUIRED, CLASS_OPTIONAL);
   return consents === null || classifications === null ? null : { consents, classifications };
 }
 

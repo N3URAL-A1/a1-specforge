@@ -30,6 +30,7 @@ const OH = require('./xprov-owner-home.cjs');
 
 const AUDIT_FILE = 'consent-audit.jsonl';
 const LOCK_FILE = '.consent-audit.lock';
+const STORE_LOCK_FILE = '.owner-store.lock'; // the read-modify-write of the owner stores; always taken BEFORE the audit lock, never inside it
 const FILE_MODE = 0o600;
 const DIR_MODE = 0o700;
 const MAX_BYTES = 8 * 1024 * 1024;
@@ -46,7 +47,9 @@ const ACTION = Object.freeze({
   PERMIT: 'permit', PERMIT_DENY: 'permit-deny', WAIVE: 'waive', ALLOWLIST_APPROVE: 'allowlist-approve', ALLOWLIST_REVOKE: 'allowlist-revoke',
   CONSENT: 'consent', CONSENT_DENY: 'consent-deny', CONSENT_REVOKE: 'consent-revoke', CONSENT_WAIVE: 'consent-waive', CONSENT_ALLOWLIST: 'consent-allowlist', CONSENT_CLASSIFY: 'consent-classify',
 });
-const GRANT_ACTIONS = Object.freeze([ACTION.PERMIT, ACTION.PERMIT_DENY, ACTION.CONSENT, ACTION.CONSENT_DENY]);
+// A revoke supersedes every earlier grant line of the repository: a store entry restored from a backup after `consent revoke`
+// names a superseded line and shows as `broken` (security review 2026-10-14, MAJOR-1).
+const GRANT_ACTIONS = Object.freeze([ACTION.PERMIT, ACTION.PERMIT_DENY, ACTION.CONSENT, ACTION.CONSENT_DENY, ACTION.CONSENT_REVOKE]);
 const KIND_ACTIONS = Object.freeze({ allowed: [ACTION.PERMIT, ACTION.CONSENT], denied: [ACTION.PERMIT_DENY, ACTION.CONSENT_DENY] });
 const SHA_RE = /^[0-9a-f]{64}$/;
 const ACTION_RE = /^[a-z][a-z0-9-]{0,39}$/;
@@ -134,6 +137,22 @@ function verifyAudit(entry, repoKey, kind, file) {
   return later ? verdict(STATE.BROKEN, 'a later permit or denial line for this repository supersedes the audit line of the store entry') : verdict(STATE.OK);
 }
 
+/**
+ * Whether the audit line named by `sha` is in the chain, belongs to `repoKey`, has `action` and is not superseded by a later
+ * `consent-revoke` of the same repository (MINOR-4: a stored Einstufung must be vouched for like a permit). { state, why }.
+ */
+function verifyLineOf(sha, repoKey, action, file) {
+  const chain = readChain(file);
+  if (chain.state === STATE.BROKEN) return verdict(STATE.BROKEN, chain.why);
+  if (chain.state === STATE.MISSING) return verdict(STATE.BROKEN, 'there is no audit log');
+  const idx = typeof sha === 'string' && SHA_RE.test(sha) ? chain.shas.indexOf(sha) : -1;
+  if (idx < 0) return verdict(STATE.BROKEN, 'the audit line of the store entry is not in the chain');
+  const line = chain.lines[idx];
+  if (line.repo !== repoKey || line.action !== action) return verdict(STATE.BROKEN, 'the audit line of the store entry is for another repository or action');
+  const revoked = chain.lines.slice(idx + 1).some((l) => l.repo === repoKey && l.action === ACTION.CONSENT_REVOKE);
+  return revoked ? verdict(STATE.BROKEN, 'a later revoke of this repository supersedes the audit line of the store entry') : verdict(STATE.OK);
+}
+
 function ensureHome() {
   const home = X.xprovHome();
   try { fs.mkdirSync(home, { mode: DIR_MODE }); } catch (e) { if (e.code !== 'EEXIST') throw e; } // a parallel first writer may win the race
@@ -182,8 +201,8 @@ function takeoverStale(lock, observed) {
 }
 
 /** Creates the lock as a hard link to a unique nonce file (atomic, fails with EEXIST while held). */
-function acquire(home) {
-  const lock = path.join(home, LOCK_FILE);
+function acquire(home, lockFile) {
+  const lock = path.join(home, lockFile);
   const nonce = crypto.randomBytes(16).toString('hex');
   const mine = `${lock}.${nonce}`;
   fs.writeFileSync(mine, nonce, { flag: 'wx', mode: FILE_MODE });
@@ -210,9 +229,19 @@ function release(h) {
   } catch (_e) { /* gone or replaced: not ours to remove */ }
 }
 
-function withLock(home, body) {
-  const held = acquire(home);
+function withLock(home, body, lockFile) {
+  const held = acquire(home, lockFile || LOCK_FILE);
   try { return body(); } finally { release(held); }
+}
+
+/**
+ * Runs `body` while holding the owner-store lock (security review 2026-10-14, MAJOR-1): every read-modify-write of permits.json,
+ * permit-denials.json and consent.json (consent record / revoke, terminal permit / permit --deny) reads the stores INSIDE this lock,
+ * so a parallel writer cannot restore an entry the other one just removed. Not re-entrant; the audit lock is taken inside it.
+ */
+function withStoreLock(body) {
+  OH.assertWritable();
+  return withLock(ensureHome(), body, STORE_LOCK_FILE);
 }
 
 const field = (v) => (v === undefined || v === null ? null : String(v).slice(0, FIELD_MAX_CHARS));
@@ -247,4 +276,4 @@ function appendAudit(o) {
   });
 }
 
-module.exports = { AUDIT_FILE, LOCK_FILE, LINE_KEYS, STATE, ACTION, GRANT_ACTIONS, auditPath, readChain, verifyAudit, appendAudit, lineSha, withLock, takeoverStale };
+module.exports = { AUDIT_FILE, LOCK_FILE, STORE_LOCK_FILE, LINE_KEYS, STATE, ACTION, GRANT_ACTIONS, auditPath, readChain, verifyAudit, verifyLineOf, appendAudit, lineSha, withLock, withStoreLock, takeoverStale };

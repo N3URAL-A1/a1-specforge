@@ -291,12 +291,22 @@ SCAN15='
 const fs = require("fs"); const path = require("path");
 const root = process.argv[1]; const lib = path.join(root, "_shared", "lib");
 const files = []; (function walk(d) { for (const n of fs.readdirSync(d)) { const p = path.join(d, n); const s = fs.lstatSync(p); if (s.isDirectory()) walk(p); else if (n.endsWith(".cjs")) files.push(p); } })(path.join(root, "_shared"));
-const WRITER = /\b(writePermits|withPermit)\b/; const bad = []; let inPermit = 0; let inConsent = 0; const requirers = [];
+// Security review 2026-10-14 MINOR-8b: a direct writeGuardedStore call that names the permit store (PERMITS_FILE or the literal file name) is a writer too.
+const WRITER = /\b(writePermits|withPermit)\b|writeGuardedStore\b[^\n]*(PERMITS_FILE|permits\.json)/; const bad = []; let inPermit = 0; let inConsent = 0; const requirers = []; const removeOnly = { checked: 0, bad: [] };
 for (const f of files) {
   const rel = path.relative(root, f); const lines = fs.readFileSync(f, "utf8").split("\n");
   if (/require\(.[^)]*xprov-permits(\.cjs)?.\)/.test(lines.join("\n"))) requirers.push(path.basename(f));
   if (path.basename(f) === "xprov-permits.cjs") continue;
   let fn = null;
+  // revokeConsent and writeNo only REMOVE a permit: every withPermit call in them must end in `, null)` (MINOR-8b)
+  if (path.basename(f) === "xprov-consent-record.cjs") {
+    let cur = null;
+    lines.forEach((l, i) => {
+      const m = /^(?:async\s+)?function\s+(\w+)/.exec(l); if (m) cur = m[1]; else if (/^\S/.test(l) && !/^[}\])]/.test(l)) cur = null;
+      if (/^\s*(\/\/|\*|\/\*)/.test(l) || (cur !== "revokeConsent" && cur !== "writeNo")) return;
+      for (const c of l.matchAll(/withPermit\(([^()]*)\)/g)) { removeOnly.checked++; if (c[1].split(",").pop().trim() !== "null") removeOnly.bad.push(rel + ":" + (i + 1) + " in " + cur); }
+    });
+  }
   lines.forEach((l, i) => {
     const m = /^(?:async\s+)?function\s+(\w+)/.exec(l); if (m) fn = m[1]; else if (/^\S/.test(l) && !/^[}\])]/.test(l)) fn = null;
     if (/^\s*(\/\/|\*|\/\*)/.test(l) || !WRITER.test(l)) return;
@@ -306,13 +316,14 @@ for (const f of files) {
     bad.push(rel + ":" + (i + 1) + " in " + (fn || "top level"));
   });
 }
-process.stdout.write(JSON.stringify({ bad, inPermit, inConsent, requirers }));
+process.stdout.write(JSON.stringify({ bad, inPermit, inConsent, requirers, removeOnly }));
 '
 casePS9() {
   local j; j="$(node -e "$SCAN15" "$REPO_ROOT" 2>&1)"
   assert_json "PS9 no file outside xprov-permit.cjs permit/permitDeny references writePermits/withPermit" "$j" "JSON.stringify(j.bad)" "[]"
   assert_json "PS9 xprov-permit.cjs references them inside permit and permitDeny (a scan that sees nothing is no proof)" "$j" "j.inPermit >= 2" "true"
   assert_json "PS9 the consent record module references them inside writeYes, writeNo and revokeConsent only (spec 016 wave 2)" "$j" "j.inConsent >= 3" "true"
+  assert_json "PS9 withPermit in revokeConsent and writeNo only removes (last argument null); the scan sees at least 2 such calls" "$j" "JSON.stringify(j.removeOnly.bad) + '|' + (j.removeOnly.checked >= 2)" "[]|true"
   assert_json "PS9 the module is required by xprov-permit.cjs and the consent record module only (spec 016 wave 2)" "$j" "j.requirers.join(',')" "xprov-consent-record.cjs,xprov-permit.cjs"
   # discriminator: plant a writer call in another module and in permitCheck of a tree copy → the scan must flag both
   local cp="$TMP15/scan-tree"; rm -rf "$cp"; mkdir -p "$cp"; cp -R "$REPO_ROOT/_shared" "$cp/_shared"
@@ -323,6 +334,12 @@ casePS9() {
   assert_json "PS9 discriminator: a writer call planted in xprov-gate.cjs is flagged" "$j" "j.bad.some((b) => b.startsWith('_shared/lib/xprov-gate.cjs'))" "true"
   assert_json "PS9 discriminator: a writer call planted in recordConsent (not a sanctioned function) is flagged" "$j" "j.bad.some((b) => b.includes('xprov-consent-record.cjs') && b.includes('recordConsent'))" "true"
   assert_json "PS9 discriminator: a writer call planted in permitHint is flagged" "$j" "j.bad.some((b) => b.includes('xprov-permit.cjs') && b.includes('permitHint'))" "true"
+  # MINOR-8b discriminators: a direct writeGuardedStore of the permit store, and a withPermit that SETS an entry inside writeNo
+  printf 'const A = require("./xprov-approve.cjs");\nfunction sneak() { return A.writeGuardedStore("permits.json", { version: 1, permits: {} }); }\nmodule.exports = { sneak };\n' >> "$cp/_shared/lib/xprov-run.cjs"
+  node -e 'const fs=require("fs"); const f=process.argv[1]; const s=fs.readFileSync(f,"utf8"); const n="  return (p.stores.permits.permits[p.key] ? step(\x27remove the permit entry\x27, \x27nothing was changed\x27, () => PM.writePermits(PM.withPermit(p.stores.permits.permits, p.key, null)))"; if (s.split(n).length !== 2) process.exit(3); fs.writeFileSync(f, s.replace(n, () => "  void PM.withPermit(p.stores.permits.permits, p.key, entry);\n" + n))' "$cp/_shared/lib/xprov-consent-record.cjs" || bad "PS9 harness: writeNo needle"
+  j="$(node -e "$SCAN15" "$cp" 2>&1)"
+  assert_json "PS9 discriminator: writeGuardedStore('permits.json') planted in xprov-run.cjs is flagged" "$j" "j.bad.some((b) => b.startsWith('_shared/lib/xprov-run.cjs'))" "true"
+  assert_json "PS9 discriminator: a withPermit that sets an entry inside writeNo is flagged as not removal-only" "$j" "j.removeOnly.bad.length >= 1 && j.removeOnly.bad[0].includes('writeNo')" "true"
   rm -rf "$cp"
 }
 

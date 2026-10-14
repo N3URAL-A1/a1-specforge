@@ -4,7 +4,7 @@
 // xprov-consent-marker — the pending marker and the pending-yes of a consent question (spec 016 FR-003, FR-005; wave 2).
 //
 //   <owner home>/.a1-xprov/consent-markers/<sha256(repo key NUL kind)>.json   (dir 0700, file 0600)
-//     { version, repo, kind, hash, nonce, tool_use_id, session_id, created, used, answer }
+//     { version, repo, kind, hash, origin_sha, nonce, tool_use_id, session_id, created, used, answer }
 //
 // Lifecycle: the plugin hook (wave 4) calls `openMarker` on PreToolUse of a canonical question; on PostToolUse it calls
 // `answerMarker` with the decision read from the real answer; `xprov consent record` calls `claimMarker`, which checks
@@ -12,8 +12,11 @@
 //   - one unexpired marker per repo + kind (the file name IS the key; a second asker gets `marker_pending` and polls
 //     `xprov consent ensure` instead of asking again);
 //   - 10 minutes from creation, usable once;
-//   - bound to repo key, kind, question hash, nonce and the tool_use_id + session_id of the PreToolUse call; the answer
-//     must carry the same ids and nonce (a copied marker names another repo, so it fails the repo check);
+//   - checked against repo key, kind, question hash, nonce and the tool_use_id + session_id of the PreToolUse call. These checks
+//     catch a stale, mixed-up or copied-to-another-repo marker. They do NOT prove which answer the owner gave: the ids and the
+//     nonce sit in a file the same OS user can read and write, so copying them proves nothing. The answer comes from the hook
+//     reading the real tool result; `answerMarker` derives the decision from the raw label itself and checks the question text
+//     against the hash of the marker;
 //   - every mutation runs under the audit lock (one writer at a time); create uses `wx`, replace is rename.
 // Tier 0: the same OS user can write these files by hand. The marker keeps a forgery from needing no effort; it does not
 // prevent one, and the audit chain shows the consent line that `record` appends.
@@ -36,7 +39,7 @@ const DIR_MODE = 0o700;
 const ID_MAX_CHARS = 200;
 const MAX_SCAN_FILES = 200;
 const STATE = Object.freeze({ NONE: 'none', PENDING: 'pending', ANSWERED: 'answered', EXPIRED: 'expired', USED: 'used' });
-const MARKER_KEYS = Object.freeze(['version', 'repo', 'kind', 'hash', 'nonce', 'tool_use_id', 'session_id', 'created', 'used', 'answer']);
+const MARKER_KEYS = Object.freeze(['version', 'repo', 'kind', 'hash', 'origin_sha', 'nonce', 'tool_use_id', 'session_id', 'created', 'used', 'answer']);
 const ANSWER_KEYS = Object.freeze(['decision', 'label', 'nonce', 'tool_use_id', 'session_id', 'permission_mode', 'at']);
 const SHA_RE = /^[0-9a-f]{64}$/;
 const NONCE_RE = /^[0-9a-f]{32}$/;
@@ -58,7 +61,7 @@ function validAnswer(a) {
 
 function parseMarker(doc) {
   if (!C.isPlainObject(doc) || Object.keys(doc).length !== MARKER_KEYS.length || !MARKER_KEYS.every((k) => k in doc) || doc.version !== 1) return null;
-  const ok = plainId(doc.repo) && Q.kindDef(doc.kind) !== null && SHA_RE.test(doc.hash) && NONCE_RE.test(doc.nonce) && plainId(doc.tool_use_id) && plainId(doc.session_id)
+  const ok = plainId(doc.repo) && Q.kindDef(doc.kind) !== null && SHA_RE.test(doc.hash) && SHA_RE.test(doc.origin_sha) && NONCE_RE.test(doc.nonce) && plainId(doc.tool_use_id) && plainId(doc.session_id)
     && typeof doc.created === 'string' && !Number.isNaN(Date.parse(doc.created)) && (doc.used === null || (typeof doc.used === 'string' && !Number.isNaN(Date.parse(doc.used)))) && validAnswer(doc.answer);
   return ok ? Object.freeze({ ...doc }) : null;
 }
@@ -109,17 +112,20 @@ function writeAtomic(file, doc, exclusive) {
 function openMarker(o) {
   if (!o || typeof o.repo !== 'string' || o.repo === '') throw C.inputError('marker: repo is required', 'marker_input');
   if (Q.kindDef(o.kind) === null) throw C.inputError('marker: unknown question kind', 'marker_input');
-  if (!SHA_RE.test(String(o.hash)) || !plainId(o.toolUseId) || !plainId(o.sessionId)) throw C.inputError('marker: hash, tool_use_id and session_id are required plain values', 'marker_input');
+  if (!SHA_RE.test(String(o.hash)) || !SHA_RE.test(String(o.originSha)) || !plainId(o.toolUseId) || !plainId(o.sessionId)) throw C.inputError('marker: hash, origin_sha, tool_use_id and session_id are required plain values', 'marker_input');
   const home = ensureDir();
   const file = markerFile(o.repo, o.kind);
   return AU.withLock(home, () => {
     const existing = readFile(file);
     const state = existing.marker ? stateOf(existing.marker, o.now) : STATE.NONE;
-    if (state === STATE.PENDING || state === STATE.ANSWERED) {
+    // An ANSWERED marker for a question that no longer matches (the repository changed after the owner answered) is replaceable:
+    // otherwise the stale answer blocks every new question until it expires (MINOR-7). A PENDING marker is still being answered.
+    const stale = state === STATE.ANSWERED && existing.marker.hash !== o.hash;
+    if ((state === STATE.PENDING || state === STATE.ANSWERED) && !stale) {
       return Object.freeze({ ok: false, reason: 'marker_pending', state, hint: `a ${o.kind} question is already open for this repository; poll \`xprov consent ensure --kind ${o.kind}\` instead of asking again` });
     }
     const marker = Object.freeze({
-      version: 1, repo: o.repo, kind: o.kind, hash: o.hash, nonce: crypto.randomBytes(16).toString('hex'),
+      version: 1, repo: o.repo, kind: o.kind, hash: o.hash, origin_sha: o.originSha, nonce: crypto.randomBytes(16).toString('hex'),
       tool_use_id: o.toolUseId, session_id: o.sessionId, created: nowIso(o.now), used: null, answer: null,
     });
     writeAtomic(file, marker, existing.missing === true);
@@ -134,10 +140,15 @@ function peekMarker(repo, kind, now) {
   return r.missing ? { state: STATE.NONE } : { state: STATE.NONE, why: r.bad };
 }
 
-/** Sets the answer of the PENDING marker that PreToolUse opened for this tool_use_id + session_id (the PostToolUse hook). */
+/**
+ * Sets the answer of the PENDING marker that PreToolUse opened for this tool_use_id + session_id (the PostToolUse hook).
+ * `o`: { toolUseId, sessionId, label (the RAW chosen label), question (the question text that was answered), permissionMode?, now? }.
+ * The decision is derived HERE from the label (only the exact canonical yes label is a yes) and the question text must hash to the
+ * hash of the marker (MINOR-1: a caller cannot hand in a decision, nor an answer to another question).
+ */
 function answerMarker(o) {
   if (!o || !plainId(o.toolUseId) || !plainId(o.sessionId)) return Object.freeze({ ok: false, reason: 'no_marker' });
-  if (o.decision !== 'yes' && o.decision !== 'no') return Object.freeze({ ok: false, reason: 'no_decision' });
+  if (typeof o.label !== 'string' || typeof o.question !== 'string' || o.question === '') return Object.freeze({ ok: false, reason: 'no_decision' });
   const home = ensureDir();
   return AU.withLock(home, () => {
     const dir = markerDir();
@@ -147,10 +158,12 @@ function answerMarker(o) {
       const m = r.marker;
       if (!m || m.tool_use_id !== o.toolUseId || m.session_id !== o.sessionId) continue;
       if (stateOf(m, o.now) !== STATE.PENDING) return Object.freeze({ ok: false, reason: 'marker_not_pending', state: stateOf(m, o.now) });
-      const label = Q.kindDef(m.kind).labels[o.decision];
-      const answer = { decision: o.decision, label, nonce: m.nonce, tool_use_id: m.tool_use_id, session_id: m.session_id, permission_mode: plainId(o.permissionMode) ? o.permissionMode : null, at: nowIso(o.now) };
+      if (Q.hashOf(m.kind, o.question, m.origin_sha) !== m.hash) return Object.freeze({ ok: false, reason: 'question_mismatch' });
+      const decision = Q.decisionOf(m.kind, o.label);
+      const label = Q.kindDef(m.kind).labels[decision];
+      const answer = { decision, label, nonce: m.nonce, tool_use_id: m.tool_use_id, session_id: m.session_id, permission_mode: plainId(o.permissionMode) ? o.permissionMode : null, at: nowIso(o.now) };
       writeAtomic(path.join(dir, name), { ...m, answer }, false);
-      return Object.freeze({ ok: true, decision: o.decision });
+      return Object.freeze({ ok: true, decision });
     }
     return Object.freeze({ ok: false, reason: 'no_marker' });
   });
