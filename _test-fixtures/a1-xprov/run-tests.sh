@@ -38,8 +38,8 @@ ADR="$REPO_ROOT/docs/adr/2026-09-24-cross-provider-review-gate.md"
 # Suite isolation (team lead, 2026-10-03: 88 empty ~/.a1-xprov/artifacts/tmp.*
 # dirs and their $TMPDIR fixture repos piled up). Every part runs under a suite
 # HOME and a suite TMPDIR inside one mktemp root that the EXIT trap removes; the
-# real ~/.a1-xprov is listed (two levels: stores, artifacts/<slug>,
-# snapshots/snap-*) before the parts and compared after — any change is a FAIL.
+# real ~/.a1-xprov owner stores (top-level files, scan-records/) are listed before
+# the parts and compared after — any change is a FAIL.
 # Spec 016 FR-009: the real owner store is the one under the passwd home, not under whatever $HOME says.
 REAL_PASSWD_HOME="$(node -p "require('os').userInfo().homedir")"
 REAL_XPROV_HOME="$REAL_PASSWD_HOME/.a1-xprov"
@@ -48,7 +48,11 @@ xprov_listing() {
   [[ -d "$REAL_XPROV_HOME" ]] || { echo "(absent)"; return 0; }
   node -e '
     const fs = require("fs"), path = require("path"), crypto = require("crypto"); const root = process.argv[1]; const out = [];
-    const walk = (d, depth) => { for (const n of fs.readdirSync(d).sort()) { const p = path.join(d, n); const st = fs.lstatSync(p); const rel = "./" + path.relative(root, p);
+    // artifacts/ and snapshots/ are runtime areas that real gate runs of other sessions write
+    // concurrently (a false FAIL on 2026-10-14); only the owner stores are compared. The suite
+    // keeps its own runs out of them through the swapped owner-home module (plan D-2).
+    const RUNTIME = new Set(["artifacts", "snapshots"]);
+    const walk = (d, depth) => { for (const n of fs.readdirSync(d).sort()) { if (depth === 1 && RUNTIME.has(n)) continue; const p = path.join(d, n); const st = fs.lstatSync(p); const rel = "./" + path.relative(root, p);
       if (st.isFile()) out.push(rel + " " + crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex") + " " + st.mtimeMs); else { out.push(rel); if (st.isDirectory() && depth < 2) walk(p, depth + 1); } } };
     walk(root, 1); process.stdout.write(out.join("\n") + "\n");
   ' "$REAL_XPROV_HOME"
