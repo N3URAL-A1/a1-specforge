@@ -43,7 +43,16 @@ ADR="$REPO_ROOT/docs/adr/2026-09-24-cross-provider-review-gate.md"
 # Spec 016 FR-009: the real owner store is the one under the passwd home, not under whatever $HOME says.
 REAL_PASSWD_HOME="$(node -p "require('os').userInfo().homedir")"
 REAL_XPROV_HOME="$REAL_PASSWD_HOME/.a1-xprov"
-xprov_listing() { if [[ -d "$REAL_XPROV_HOME" ]]; then (cd "$REAL_XPROV_HOME" && find . -mindepth 1 -maxdepth 2 | LC_ALL=C sort); else echo "(absent)"; fi; }
+# Names, and for every file its sha256 and mtime: an ad-hoc write into an existing file (the 2026-10-14 audit-log line) must show too.
+xprov_listing() {
+  [[ -d "$REAL_XPROV_HOME" ]] || { echo "(absent)"; return 0; }
+  node -e '
+    const fs = require("fs"), path = require("path"), crypto = require("crypto"); const root = process.argv[1]; const out = [];
+    const walk = (d, depth) => { for (const n of fs.readdirSync(d).sort()) { const p = path.join(d, n); const st = fs.lstatSync(p); const rel = "./" + path.relative(root, p);
+      if (st.isFile()) out.push(rel + " " + crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex") + " " + st.mtimeMs); else { out.push(rel); if (st.isDirectory() && depth < 2) walk(p, depth + 1); } } };
+    walk(root, 1); process.stdout.write(out.join("\n") + "\n");
+  ' "$REAL_XPROV_HOME"
+}
 XPROV_BEFORE="$(xprov_listing)"
 SUITE_TMP_PARENT="${TMPDIR:-/tmp}"; SUITE_ROOT="$(mktemp -d "${SUITE_TMP_PARENT%/}/a1-xprov-suite.XXXXXX")"
 [[ -n "$SUITE_ROOT" && -d "$SUITE_ROOT" ]] || { echo "FAIL  harness: mktemp for the suite root failed" >&2; exit 1; }
@@ -280,7 +289,45 @@ write_permit_store() {
 write_permit() {
   local on="${5:-$(date -u +%Y-%m-%d)}"   # one date for file and store (a midnight between the two writes cannot split them)
   write_permit_file_only "$1" "${2:-fixture}" "${3:-record/2026-09-24-fixture.md}" "${4:-}" "$on"
-  write_permit_store "$1" "${2:-fixture}" "${3:-record/2026-09-24-fixture.md}" "${4:-}" "$on"
+  write_permit_store_bound "$1" "${2:-fixture}" "${3:-record/2026-09-24-fixture.md}" "${4:-}" "$on"
+}
+
+# write_permit_store_bound <repo> [by] [record] [default-branch] [decided_on] — like write_permit_store, but the entry
+# is fully bound as the owner command leaves it since spec 016: `repo` (the key), `origin` (raw local remote.origin.url,
+# null when none) and `audit` (sha256 of a consent-audit line this helper appends, chained on the last line). Spec 016
+# re-review MAJOR-1: an entry without that binding counts as NO permit, so every case that needs `allowed` uses this.
+# Computed here with node:crypto from the documented line format, never by the code under test.
+write_permit_store_bound() {
+  node -e '
+    const fs = require("fs"); const path = require("path"); const crypto = require("crypto"); const { execFileSync } = require("child_process");
+    const [repo, by, record, branch, on] = process.argv.slice(1);
+    const git = (a) => { try { return execFileSync("git", ["-C", repo, ...a], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }); } catch (_e) { return null; } };
+    const gd = git(["rev-parse", "--git-common-dir"]); if (gd === null) process.exit(0);
+    const key = fs.realpathSync(path.resolve(repo, gd.trim()));
+    const urls = [...new Set((git(["config", "--local", "--get-all", "remote.origin.url"]) || "").split("\n").filter(Boolean))];
+    const dir = path.join(process.env.HOME, ".a1-xprov"); const file = path.join(dir, "permits.json"); const log = path.join(dir, "consent-audit.jsonl");
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { mode: 0o700 });
+    const sha = (t) => crypto.createHash("sha256").update(t).digest("hex");
+    let prev = null; try { const ls = fs.readFileSync(log, "utf8").split("\n").filter(Boolean); if (ls.length) prev = sha(ls[ls.length - 1]); } catch (_e) { prev = null; }
+    const ts = on ? on + "T00:00:00.000Z" : new Date().toISOString();
+    const text = JSON.stringify({ ts, repo: key, action: "permit", tool_use_id: null, session_id: null, permission_mode: null, prev });
+    fs.appendFileSync(log, text + "\n", { mode: 0o600 });
+    let permits = {};
+    try { permits = JSON.parse(fs.readFileSync(file, "utf8")).permits || {}; } catch (_e) { permits = {}; }
+    const entry = { decided_by: by, decided_on: on || new Date().toISOString().slice(0, 10), record, ts, repo: key, origin: urls.length === 0 ? null : (urls.length === 1 ? urls[0] : urls), audit: sha(text) };
+    if (branch) entry.default_branch = branch;
+    fs.writeFileSync(file, JSON.stringify({ version: 1, permits: { ...permits, [key]: entry } }, null, 2) + "\n", { mode: 0o600 });
+    fs.chmodSync(file, 0o600);
+  ' "$1" "${2:-fixture}" "${3:-record/2026-09-24-fixture.md}" "${4:-}" "${5:-}"
+}
+
+# rebind_permit <repo> — re-writes the owner's bound entry for <repo> from its .a1/xprov.json after the fixture changed the
+# repository's origin (a permit is void when the origin changes, spec 016 FR-006; these fixtures change it on purpose).
+rebind_permit() {
+  local f="$1/.a1/xprov.json" args
+  args="$(node -e 'const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); process.stdout.write([r.decided_by, r.record, r.default_branch || "", r.decided_on].join("\n"));' "$f")" || return 0
+  local by rec br on; { IFS= read -r by; IFS= read -r rec; IFS= read -r br; IFS= read -r on; } <<< "$args"
+  write_permit_store_bound "$1" "$by" "$rec" "$br" "$on"
 }
 
 # permit_lib <tree-tools-dir-root> <js> — runs <js> with `P` bound to the TREE

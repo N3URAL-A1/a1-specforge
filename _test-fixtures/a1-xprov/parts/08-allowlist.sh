@@ -101,7 +101,7 @@ new8() {
   printf '.a1/phases/p8/XREVIEW.md\n.a1/phases/p8/PLAN-REVIEW-LOG.md\n.a1/phases/p8/xreview/\n.a1/phases/p8/observations.jsonl\n' > "$R8/.gitignore"
   write_permit "$R8" robert record/2026-09-28-fixture.md
   c8 "base"
-  git -C "$R8" remote add origin "$O8"; push8
+  git -C "$R8" remote add origin "$O8"; rebind_permit "$R8"; push8
 }
 
 # plant8 <file> <line>… — writes the lines to <file> in R8 (overwrites).
@@ -289,7 +289,7 @@ caseR30b2() {
 setbranch8() { node -e '
   const fs = require("fs"); const f = process.argv[1]; const r = JSON.parse(fs.readFileSync(f, "utf8"));
   r.default_branch = process.argv[2]; fs.writeFileSync(f, JSON.stringify(r, null, 2) + "\n");' "$R8/.a1/xprov.json" "$1"
-  write_permit_store "$R8" robert record/2026-09-28-fixture.md "$1"; } # spec 014: the owner's entry follows the file, so this arm still isolates the branch check
+  write_permit_store_bound "$R8" robert record/2026-09-28-fixture.md "$1"; } # spec 014: the owner's entry follows the file, so this arm still isolates the branch check
 caseR30b3() {
   scen8; setbranch8 'main..x'
   plan8; expect8 "R30b3-1a default_branch main..x" "secret_in_snapshot/allowlist_anchor_unresolved"
@@ -307,10 +307,10 @@ caseR30b3() {
   assert_json "R30b3-2 permit --default-branch trunk writes default_branch" "$(cat "$R8/.a1/xprov.json")" "j.default_branch + '/' + j.decided_by" "trunk/robert"
   # arms 3/4: origin URL ssh://fixture.invalid/r with a fake ssh first on PATH
   scen8; local sshbin3="$A8/sshbin"; mkdir -p "$sshbin3"; printf '#!/bin/sh\nexit 255\n' > "$sshbin3/ssh"; chmod +x "$sshbin3/ssh"
-  git -C "$R8" remote set-url origin ssh://fixture.invalid/r
+  git -C "$R8" remote set-url origin ssh://fixture.invalid/r; rebind_permit "$R8"
   PATH="$sshbin3:$PATH" plan8; expect8 "R30b3-3 ls-remote fails (fake ssh exits 255)" "secret_in_snapshot/allowlist_anchor_unresolved"
   scen8; local sshbin4="$A8/sshbin"; mkdir -p "$sshbin4"; printf '#!/bin/sh\nsleep 60\n' > "$sshbin4/ssh"; chmod +x "$sshbin4/ssh"
-  git -C "$R8" remote set-url origin ssh://fixture.invalid/r
+  git -C "$R8" remote set-url origin ssh://fixture.invalid/r; rebind_permit "$R8"
   local t0 t1; t0=$(date +%s)
   PATH="$sshbin4:$PATH" plan8; t1=$(date +%s)
   expect8 "R30b3-4 ls-remote hangs (fake ssh sleeps 60 s)" "secret_in_snapshot/allowlist_anchor_unresolved"
@@ -513,7 +513,7 @@ caseR30h() {
   schema_owner8 "R30h2 one reviewed_by ≠ owner" "$(al_doc "$(al_ent f.sh aws_access_key_id 1 fixture_fake "$fp"),$(REVIEWER8=mallory al_ent g.sh aws_access_key_id 1 fixture_fake "$fp")")"
   scen8
   node -e 'const fs = require("fs"); const f = process.argv[1]; const r = JSON.parse(fs.readFileSync(f, "utf8")); r.decided_by = "alice"; fs.writeFileSync(f, JSON.stringify(r, null, 2) + "\n");' "$R8/.a1/xprov.json"
-  write_permit_store "$R8" alice record/2026-09-28-fixture.md # spec 014: the owner's entry follows the file, so this arm still isolates the anchor owner check
+  write_permit_store_bound "$R8" alice record/2026-09-28-fixture.md # spec 014: the owner's entry follows the file, so this arm still isolates the anchor owner check
   plan8; expect8 "R30h3 decided_by at the anchor (robert) ≠ working tree (alice)" "allowlist_invalid/allowlist_owner_mismatch"
   # h4: 33 entries, written with the literal 33 (never computed from ALLOWLIST_MAX_ENTRIES)
   local many="" i; for i in $(seq 1 33); do many="$many$(al_ent "p$i.sh" aws_access_key_id 1 fixture_fake "$fp"),"; done
@@ -846,7 +846,7 @@ if [ "$batch" = 1 ] && [ "${GIT_TERMINAL_PROMPT:-}" = "0" ]; then exec sh -c "$l
 sleep 60
 SSH
   chmod +x "$bin/ssh"
-  git -C "$R8" remote set-url origin "ssh://fixture.invalid$O8"
+  git -C "$R8" remote set-url origin "ssh://fixture.invalid$O8"; rebind_permit "$R8"
   PATH="$bin:$PATH" plan8; pass8 "R30b3-6 ls-remote runs non-interactively (BatchMode=yes, GIT_TERMINAL_PROMPT=0)"
 }
 

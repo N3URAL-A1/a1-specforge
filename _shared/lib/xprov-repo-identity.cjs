@@ -10,7 +10,7 @@
 // identity is void as soon as either part differs, including an origin that
 // appears or disappears.
 //
-// SEC-2: the origin is read three ways — `config --get-all remote.origin.url`, `remote get-url --all origin`
+// SEC-2: the origin is read three ways — `config --local --get-all remote.origin.url` (no local value = no origin, MINOR-5), `remote get-url --all origin`
 // (url.<x>.insteadOf applied) and `remote get-url --push --all origin`. One distinct value is the origin string; more than one
 // (a multi-valued key, an insteadOf rewrite, a pushurl that differs) is the origin LIST (the distinct values in that read order),
 // which classifies as customer and is bound as a whole. SEC-3: every git call runs the binary of C.gitBin() under
@@ -44,8 +44,11 @@ function gitLines(root, args) {
 /** The raw `remote.origin.url` of a checkout: null when absent, the string when every read agrees on one value, else the
  * frozen list of the distinct values. Throws a typed input error when unreadable or oversized. */
 function readOrigin(root) {
+  // Re-review MINOR-5: the raw read is `--local`; an origin that exists only in global / XDG config is no origin of this repository.
+  const raw = gitLines(root, ['config', '--local', '--get-all', 'remote.origin.url']);
+  if (raw.length === 0) return null;
   const seen = [
-    ...gitLines(root, ['config', '--get-all', 'remote.origin.url']),
+    ...raw,
     ...gitLines(root, ['remote', 'get-url', '--all', 'origin']),
     ...gitLines(root, ['remote', 'get-url', '--push', '--all', 'origin']),
   ];

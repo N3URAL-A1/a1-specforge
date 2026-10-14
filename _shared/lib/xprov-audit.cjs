@@ -56,7 +56,8 @@ const sha256 = (text) => crypto.createHash('sha256').update(text).digest('hex');
 const sleepMs = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
 // SEC-8: no control, C1, line-separator or bidi character in a free-text field (a fresh RegExp: the shared one is /g).
-const LINE_BREAKERS = new RegExp(C.LINE_BREAKERS_RE.source);
+// Re-review MINOR-4: also every Unicode format character (Cf: U+200B..U+200F, U+061C, U+2060, U+FEFF, soft hyphen ...), which render as nothing.
+const LINE_BREAKERS = new RegExp(`${C.LINE_BREAKERS_RE.source}|\\p{Cf}`, 'u');
 const nullableString = (v) => v === null || (typeof v === 'string' && v.length <= FIELD_MAX_CHARS && !LINE_BREAKERS.test(v));
 /** The sha256 a store entry keeps as `audit`: that of the exact text of the line as written. */
 const lineSha = (line) => sha256(JSON.stringify(line));
@@ -144,13 +145,25 @@ function ensureHome() {
 
 const sameFile = (a, b) => a.ino === b.ino && a.dev === b.dev;
 
+/** A leftover `.takeover` slot (re-review MINOR-3). A non-directory is refused (`audit_lock_blocked`, naming the path) and never touched.
+ * A directory older than the stale threshold is removed when empty, else renamed aside to a unique name (never a recursive delete of
+ * something this module did not create); a fresh one is left for its owner. */
+function clearStaleGuard(guard) {
+  let st = null;
+  try { st = fs.lstatSync(guard); } catch (_e) { return; } // raced away
+  if (!st.isDirectory()) throw C.inputError(`${guard} exists and is not a directory; remove it yourself so the audit log can be written; nothing written`, 'audit_lock_blocked');
+  if (Date.now() - st.mtimeMs <= LOCK_STALE_MS) return;
+  try { fs.rmdirSync(guard); return; } catch (_e) { /* not empty (or raced): move it aside below */ }
+  try { fs.renameSync(guard, `${guard}.stale.${crypto.randomBytes(8).toString('hex')}`); } catch (_e) { /* raced away */ }
+}
+
 /** Takes over the stale lock `observed` (an lstat taken earlier). One taker at a time (a `.takeover` directory, itself taken over when stale);
  * under it the lock is re-read, and only the very inode that was observed stale is moved to a unique name and deleted. A fresh lock that
  * replaced it is left (or, if it was moved in a race, put back). */
 function takeoverStale(lock, observed) {
   const guard = `${lock}.takeover`;
   try { fs.mkdirSync(guard, { mode: DIR_MODE }); } catch (e) {
-    if (e.code === 'EEXIST') { try { if (Date.now() - fs.lstatSync(guard).mtimeMs > LOCK_STALE_MS) fs.rmdirSync(guard); } catch (_e) { /* raced away */ } }
+    if (e.code === 'EEXIST') clearStaleGuard(guard);
     return false;
   }
   try {

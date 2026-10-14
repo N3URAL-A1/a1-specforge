@@ -68,7 +68,7 @@ file15() {
   ' "$PHASE_REPO" "$1" "$2" "$3" "${4:-}" "${5:-}"
 }
 # permit15 <by> <on> <record> [branch] — store entry for THIS repo (harness helper, key from git)
-permit15() { write_permit_store "$PHASE_REPO" "$1" "$3" "${4:-}" "$2"; }
+permit15() { write_permit_store_bound "$PHASE_REPO" "$1" "$3" "${4:-}" "$2"; }
 # den15 <by> <on> — denial store entry in the documented format (spec 012 FR-007)
 den15() {
   mkdir -p "$HOME/.a1-xprov"; chmod 700 "$HOME/.a1-xprov"
@@ -177,13 +177,13 @@ casePS4() {
     prep15; file15 allowed robert $D $R; permit15 $variant
     assert_eq "PS4c allowed / differs ($variant) / none → permit_mismatch" "$(st15)" "1/permit_mismatch/external_review_permit_mismatch"
   done
-  prep15; file15 allowed robert $D $R; write_permit_store "$PHASE_REPO" robert $R trunk $D
+  prep15; file15 allowed robert $D $R; write_permit_store_bound "$PHASE_REPO" robert $R trunk $D
   assert_eq "PS4c2 the store has default_branch, the file has none → permit_mismatch" "$(st15)" "1/permit_mismatch/external_review_permit_mismatch"
   prep15; file15 allowed robert $D $R trunk; permit15 robert $D $R
   assert_eq "PS4c3 the file has default_branch, the store has none → permit_mismatch" "$(st15)" "1/permit_mismatch/external_review_permit_mismatch"
-  prep15; file15 allowed robert $D $R trunk; write_permit_store "$PHASE_REPO" robert $R main $D
+  prep15; file15 allowed robert $D $R trunk; write_permit_store_bound "$PHASE_REPO" robert $R main $D
   assert_eq "PS4c4 default_branch differs → permit_mismatch" "$(st15)" "1/permit_mismatch/external_review_permit_mismatch"
-  prep15; file15 allowed robert $D $R trunk; write_permit_store "$PHASE_REPO" robert $R trunk $D
+  prep15; file15 allowed robert $D $R trunk; write_permit_store_bound "$PHASE_REPO" robert $R trunk $D
   assert_eq "PS4c5 control: default_branch equal on both sides → allowed" "$(st15)" "0/allowed/undefined"
   prep15; file15 allowed robert $D $R; permit15 robert $D $R; den15 robert $D
   assert_eq "PS4d allowed / equal / denial present → denial_mismatch" "$(st15)" "1/denial_mismatch/external_review_denial_mismatch"

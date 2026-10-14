@@ -84,7 +84,10 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   stores ~/.a1-xprov/permit-denials.json and (spec 014)
                   ~/.a1-xprov/permits.json; stdout \`state\` is allowed | denied |
                   absent | invalid | denial_mismatch | permit_mismatch |
-                  home_mismatch | origin_changed (exit 0 only for allowed).
+                  home_mismatch | origin_changed | audit_broken |
+                  unbound_legacy (exit 0 only for allowed). unbound_legacy = an
+                  entry without repo/origin/audit binding: no permit, of any date
+                  (external_review_not_permitted); the owner permits again.
                   Spec 016: the owner stores resolve under the home of the OS
                   user record, never $HOME; when $HOME differs, no store is
                   written and the state is home_mismatch (owner_home_mismatch).

@@ -135,11 +135,10 @@ caseOS4() {
   sub22 permit-check; assert_json "OS4e allowed while no origin exists" "$G_OUT" "j.state" "allowed"
   origin22 "$ORG22"; sub22 permit-check
   assert_json "OS4e origin appears → void" "$G_OUT" "j.state" "origin_changed"
-  # legacy entry (no repo, no origin key): stays allowed, audit missing
+  # unbound entry (no repo, no origin, no audit key): no permit of any date (re-review MAJOR-1, spec 016 Clarifications); see OS10
   prep22; origin22 "$ORG22"; write_permit "$PHASE_REPO" robert "$REC22" "" 2026-10-14
-  sub22 permit-check; assert_json "OS4f legacy permit stays allowed with audit missing" "$G_OUT" "j.state + '/' + j.audit" "allowed/missing"
-  origin22 https://github.com/other/fixture.git; sub22 permit-check
-  assert_json "OS4f a legacy permit is not origin-bound" "$G_OUT" "j.state" "allowed"
+  editstore22 "delete e.repo; delete e.origin; delete e.audit"
+  sub22 permit-check; assert_json "OS4f an unbound entry is unbound_legacy, audit missing" "$G_OUT" "j.state + '/' + j.audit + '/' + j.ok" "unbound_legacy/missing/false"
   # record copied from repo A to repo B (same origin, so only the repo key differs)
   prep22; origin22 "$ORG22"; local A="$PHASE_REPO"; permit22 >/dev/null; make_phase p22; origin22 "$ORG22"
   mkdir -p "$PHASE_REPO/.a1"; cp "$A/.a1/xprov.json" "$PHASE_REPO/.a1/xprov.json"
@@ -192,10 +191,10 @@ caseOS5() {
   assert_eq "OS5f the permit store is unchanged" "$(sha256_of "$HOME/.a1-xprov/permits.json")" "$before"
   mv "$f" "$TMP22/real.jsonl"; ln -s "$TMP22/real.jsonl" "$f"
   assert_eq "OS5g a symlinked audit log → broken" "$(audit_state22)" "broken"
-  rm -f "$f"; assert_eq "OS5h no audit log next to a bound entry → broken (SEC-1; a legacy entry stays missing, OS4f)" "$(audit_state22)" "broken"
+  rm -f "$f"; assert_eq "OS5h no audit log next to a bound entry → broken (SEC-1; an unbound entry stays missing, OS4f)" "$(audit_state22)" "broken"
   : > "$f"; assert_eq "OS5h empty audit log next to a bound entry → broken" "$(audit_state22)" "broken"
   # a hand-written permit of another repo (no audit line for it): visible as missing
-  rm -f "$f"; permit22 >/dev/null; make_phase p22; write_permit "$PHASE_REPO" robert "$REC22" "" 2026-10-14
+  rm -f "$f"; permit22 >/dev/null; make_phase p22; write_permit_file_only "$PHASE_REPO" robert "$REC22" "" 2026-10-14; write_permit_store "$PHASE_REPO" robert "$REC22" "" 2026-10-14
   assert_eq "OS5i a forged entry next to an audited one → audit missing for it" "$(audit_state22)" "missing"
   # parallel appenders keep the chain intact
   prep22; local pids=() i
@@ -376,20 +375,46 @@ caseOS9() {
   check22 "OS9k permit after deny → allowed, audit ok" "allowed/-/ok/true"
 }
 
-# ---------- OS10: legacy entries only before 2026-10-14 (SEC-7, FR-006) ----------
-# Red if bindingProblem() treats an entry without repo/origin/audit as legacy whatever its ts.
+# ---------- OS10: an unbound entry is no permit of any date (re-review MAJOR-1, FR-006) ----------
+# Red proofs (one production change each, xprov-permit.cjs):
+#   OS10a-c red if classify() lets an entry without repo/origin/audit through again (the ts-based LEGACY_CUTOFF_MS check back in bindingProblem)
+#   OS10d   red if a partial binding (audit sha, no repo/origin) is also reported unbound_legacy instead of permit_mismatch
+#   OS10e   red if the unbound check moves behind permitAgrees() (the copied entry is then a mismatch, not unbound_legacy)
+#   OS10f   red if REASON_OF_STATE drops unbound_legacy (no reason, the gate does not refuse by reason)
+#   OS10g   red if permit() refuses to replace an unbound entry
 caseOS10() {
-  prep22; origin22 "$ORG22"; permit22 >/dev/null
-  editstore22 "delete e.repo; delete e.origin; delete e.audit; e.ts = '2026-10-13T23:59:59.000Z'"
-  check22 "OS10a an unbound entry dated before the cutoff stays allowed (audit missing)" "allowed/-/missing/true"
-  editstore22 "e.ts = '2026-10-14T00:00:00.000Z'"
+  local U=unbound_legacy/external_review_not_permitted/missing/false ts
+  for ts in 2026-10-13T23:59:59.000Z 2026-10-14T00:00:00.000Z 2026-01-01T00:00:00.000Z not-a-date; do
+    prep22; origin22 "$ORG22"; permit22 >/dev/null
+    editstore22 "delete e.repo; delete e.origin; delete e.audit; e.ts = '$ts'"
+    check22 "OS10a an unbound entry (ts $ts) → unbound_legacy, not ok, audit missing" "$U"
+  done
   sub22 permit-check
-  assert_json "OS10b an unbound entry dated at the cutoff → permit_mismatch" "$G_OUT" "[j.state, j.ok].join('/')" "permit_mismatch/false"
-  editstore22 "e.ts = 'not-a-date'"
-  sub22 permit-check; assert_json "OS10c an unbound entry with an unparseable ts → permit_mismatch" "$G_OUT" "j.state" "permit_mismatch"
+  assert_json "OS10b the file says allowed, yet the state is not a store mismatch" "$G_OUT" "[j.state, j.reason].join('/')" "unbound_legacy/external_review_not_permitted"
+  [[ "$G_ERR" == *"no repository binding"* && "$G_ERR" != *"permit_mismatch"* ]] && ok "OS10c stderr explains the missing binding" || bad "OS10c stderr: $G_ERR"
   prep22; origin22 "$ORG22"; permit22 >/dev/null
   editstore22 "delete e.repo; delete e.origin"
   sub22 permit-check; assert_json "OS10d an entry with an audit sha but no repo/origin binding → permit_mismatch" "$G_OUT" "j.state" "permit_mismatch"
+  # e: an unbound entry copied to another repository key (t1 case d) with a backdated ts
+  prep22; origin22 "$ORG22"; permit22 >/dev/null; local A="$PHASE_REPO"; make_phase p22; origin22 "$ORG22"
+  mkdir -p "$PHASE_REPO/.a1"; cp "$A/.a1/xprov.json" "$PHASE_REPO/.a1/xprov.json"
+  node -e '
+    const fs = require("fs"); const [keyA, keyB, store] = process.argv.slice(1); const d = JSON.parse(fs.readFileSync(store, "utf8"));
+    const { repo, origin, audit, ...bare } = d.permits[keyA]; d.permits[keyB] = { ...bare, ts: "2026-01-01T00:00:00.000Z" }; fs.writeFileSync(store, JSON.stringify(d, null, 2) + "\n", { mode: 0o600 });
+  ' "$(key22 "$A")" "$(key22)" "$HOME/.a1-xprov/permits.json"
+  check22 "OS10e a backdated unbound copy on another repo key → unbound_legacy" "$U"
+  # f: the gate sends nothing
+  local argv="$TMP22/argv10.json"; rm -f "$argv"; FAKE_RUNNER_ARGV_FILE="$argv" fake_runner_env
+  G_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov gate --phase p22 --gate "$GATE_PLAN" 2>"$TMP22/err.txt")"; G_RC=$?
+  assert_rc "OS10f the plan gate refuses on an unbound entry" 1 "$G_RC"
+  G_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov gate --phase p22 --gate "$GATE_WAVE" --wave 1 --base "$PHASE_HEAD" 2>"$TMP22/err.txt")"
+  [[ ! -e "$argv" ]] && ok "OS10f the fake runner recorded zero calls" || bad "OS10f the runner was invoked"
+  [[ -z "$(ls -A "$HOME/.a1-xprov/snapshots" 2>/dev/null)" ]] && ok "OS10f no snapshot was built" || bad "OS10f a snapshot exists"
+  FAKE_RUNNER_ARGV_FILE="" fake_runner_env
+  # g: a later bound permit replaces the unbound entry cleanly
+  assert_json "OS10g re-permit over the unbound entry succeeds" "$(permit22)" "j.ok" "true"
+  check22 "OS10g after the re-permit: allowed, audit ok" "allowed/-/ok/true"
+  assert_json "OS10g the entry is bound now" "$(cat "$HOME/.a1-xprov/permits.json")" "Object.values(j.permits).filter((e) => e.repo && e.audit && 'origin' in e).length" "2"
 }
 
 # ---------- OS11: multi-valued and rewritten origins (SEC-2, FR-006/FR-007) ----------
@@ -516,7 +541,63 @@ caseOS16() {
   assert_json "OS16b a hand-written line with a bidi control is off-format (broken)" "$(lib22 "$js22")" "j" "broken"
 }
 
+# ---------- OS17: re-review MINORs 2..5 ----------
+# Red proofs (one production change each):
+#   OS17a  red if takeoverStale() goes back to `rmdirSync(guard)` only (a stale non-empty .takeover blocks every append until the lock wait ends)
+#   OS17b  red if a non-directory .takeover is silently skipped instead of refused (audit_lock_blocked)
+#   OS17c  red if acquire() leaves its nonce file behind on a normal exit or on the audit_locked refusal
+#   OS17d  red if the audit field check drops the \p{Cf} format-character class (xprov-audit.cjs nullableString)
+#   OS17e  red if readOrigin() reads the raw origin without --local (a global/XDG origin then counts)
+#   OS17f  red if HINT_AUDIT again advises removing the audit log
+caseOS17() {
+  prep22; local H="$HOME/.a1-xprov" lock guard
+  lock="$H/.consent-audit.lock"; guard="$lock.takeover"
+  rm -rf "$H"; mkdir -p "$H"; chmod 700 "$H"
+  printf 'dead' > "$lock"; mkdir "$guard"; printf 'junk' > "$guard/junk"
+  touch -t 202001010000 "$lock" "$guard/junk" "$guard"
+  js22="AU.appendAudit({ repo: '/s/.git', action: 'permit' }).repo"
+  assert_json "OS17a a stale non-empty .takeover does not block the append" "$(lib22 "$js22")" "j" "/s/.git"
+  local aside; aside="$(ls -d "$guard".* 2>/dev/null | head -n 1)"
+  [[ -n "$aside" && -f "$aside/junk" && "$(cat "$aside/junk")" == "junk" ]] && ok "OS17a the stale directory was renamed aside with its content, not deleted" || bad "OS17a aside: '$aside'"
+  [[ ! -e "$guard" ]] && ok "OS17a the .takeover slot is free again" || bad "OS17a .takeover still there"
+  rm -rf "$H"; mkdir -p "$H"; chmod 700 "$H"
+  printf 'dead' > "$lock"; printf 'file' > "$guard"; touch -t 202001010000 "$lock" "$guard"
+  assert_json "OS17b a .takeover that is a file → audit_lock_blocked" "$(lib22 "$js22")" "j.reason" "audit_lock_blocked"
+  assert_json "OS17b the message names the path" "$(lib22 "$js22")" "String(j.message).includes('.consent-audit.lock.takeover')" "true"
+  [[ "$(cat "$guard")" == "file" ]] && ok "OS17b the file was left untouched" || bad "OS17b the file changed"
+  [[ ! -e "$(auditf22)" ]] && ok "OS17b no audit line written" || bad "OS17b an audit line was written"
+  rm -rf "$H"; mkdir -p "$H"; chmod 700 "$H"
+  lib22 "AU.appendAudit({ repo: '/s/.git', action: 'permit' })" >/dev/null
+  printf 'live' > "$lock"; lib22 "AU.appendAudit({ repo: '/s/.git', action: 'permit' })" >/dev/null
+  if ls -A "$H" | grep -E 'consent-audit\.lock\.[0-9a-f]{32}' >/dev/null; then bad "OS17c nonce leftovers: $(ls -A "$H" | tr '\n' ' ')"; else ok "OS17c no nonce file after a normal exit and after a refusal"; fi
+  # d: invisible format characters in audit free-text fields
+  rm -rf "$H"; mkdir -p "$H"; chmod 700 "$H"
+  js22="[0x200e, 0x200f, 0x061c, 0x200b, 0xfeff, 0x2060, 0x00ad].map((cp) => { try { AU.appendAudit({ repo: '/x/.git', action: 'permit', session_id: 'a' + String.fromCharCode(cp) + 'b' }); return 'written'; } catch (e) { return e.reason || e.message; } }).join(',')"
+  assert_json "OS17d U+200E U+200F U+061C U+200B U+FEFF U+2060 U+00AD in a field are each refused (audit_input)" "$(lib22 "$js22")" "j" "audit_input,audit_input,audit_input,audit_input,audit_input,audit_input,audit_input"
+  [[ ! -e "$(auditf22)" ]] && ok "OS17d nothing written" || bad "OS17d a line was written"
+  js22="(() => { AU.appendAudit({ repo: '/x/.git', action: 'permit' }); const fs = require('fs'); const f = '$(auditf22)'; const l = JSON.parse(fs.readFileSync(f, 'utf8').trim()); fs.writeFileSync(f, JSON.stringify({ ...l, permission_mode: 'p' + String.fromCharCode(0x200e) + 'x' }) + String.fromCharCode(10)); return AU.readChain(f).state; })()"
+  assert_json "OS17d a hand-written line with U+200E is off-format (broken)" "$(lib22 "$js22")" "j" "broken"
+  # e: an origin that exists only in global / XDG config is no origin
+  prep22; local XD="$TMP22/xdg17"; rm -rf "$XD"; mkdir -p "$XD/git"
+  printf '[remote "origin"]\n\turl = %s\n' "$ORG22" > "$XD/git/config"
+  git -C "$PHASE_REPO" remote remove origin 2>/dev/null
+  js22="[RI.readOrigin('$PHASE_REPO'), RI.classifyOrigin(RI.readOrigin('$PHASE_REPO'))]"
+  assert_json "OS17e control: no XDG config → no origin, customer" "$(lib22 "$js22")" "JSON.stringify(j)" '[null,"customer"]'
+  assert_json "OS17e an XDG-only origin counts as no origin → customer" "$(XDG_CONFIG_HOME="$XD" lib22 "$js22")" "JSON.stringify(j)" '[null,"customer"]'
+  printf '[remote "origin"]\n\turl = %s\n' "$ORG22" > "$HOME/.gitconfig"
+  assert_json "OS17e a ~/.gitconfig-only origin counts as no origin" "$(lib22 "$js22")" "JSON.stringify(j)" '[null,"customer"]'
+  rm -f "$HOME/.gitconfig"
+  origin22 "$ORG22"
+  assert_json "OS17e a local origin is still read" "$(XDG_CONFIG_HOME="$XD" lib22 "$js22")" "JSON.stringify(j)" "[\"$ORG22\",\"org\"]"
+  git -C "$PHASE_REPO" remote remove origin
+  permit22 >/dev/null
+  assert_json "OS17e a permit made next to an XDG-only origin records origin null" "$(cat "$HOME/.a1-xprov/permits.json")" "Object.values(j.permits)[0].origin === null" "true"
+  # f: the audit hint does not advise deleting the log
+  local hint; hint="$(lib22 "P.permitHint('audit_broken')")"
+  [[ "$hint" != *"remove"* && "$hint" != *"delete"* && "$hint" == *"Reinhard"* && "$hint" == *"report"* ]] && ok "OS17f HINT_AUDIT: no delete advice, says Reinhard review still runs and to report" || bad "OS17f hint: $hint"
+}
+
 caseOS1; caseOS2; caseOS3; caseOS4; caseOS5; caseOS5m; caseOS6; caseOS7; caseOS8
-caseOS9; caseOS10; caseOS11; caseOS12; caseOS13; caseOS14; caseOS15; caseOS16
+caseOS9; caseOS10; caseOS11; caseOS12; caseOS13; caseOS14; caseOS15; caseOS16; caseOS17
 export HOME="$SAVED_HOME_22"
 rm -rf "$TMP22"

@@ -44,10 +44,11 @@ const DENIED = 'denied';
 // working-tree file AND the owner's denial store AND the owner's permit store.
 // Spec 016: `home_mismatch` ($HOME differs from the OS user's home, FR-009) and `origin_changed` (the entry is bound to another
 // origin than the repository has now, FR-006: the permit is void, the repository counts as unpermitted).
-const STATES = Object.freeze({ ALLOWED, DENIED, ABSENT: 'absent', INVALID: 'invalid', DENIAL_MISMATCH: 'denial_mismatch', PERMIT_MISMATCH: 'permit_mismatch', HOME_MISMATCH: 'home_mismatch', ORIGIN_CHANGED: 'origin_changed', AUDIT_BROKEN: 'audit_broken' });
+const STATES = Object.freeze({ ALLOWED, DENIED, ABSENT: 'absent', INVALID: 'invalid', DENIAL_MISMATCH: 'denial_mismatch', PERMIT_MISMATCH: 'permit_mismatch', HOME_MISMATCH: 'home_mismatch', ORIGIN_CHANGED: 'origin_changed', AUDIT_BROKEN: 'audit_broken', UNBOUND_LEGACY: 'unbound_legacy' });
 // SEC-1: `audit_broken` = the entry is bound to an audit line that the chain does not vouch for (edited, truncated, superseded,
-// or a store write that failed after its line): fail closed. Legacy entries (before LEGACY_CUTOFF_MS) have no binding and stay allowed.
-const LEGACY_CUTOFF_MS = Date.parse('2026-10-14T00:00:00Z'); // SEC-7: spec 016 shipped the binding on this day
+// or a store write that failed after its line): fail closed.
+// `unbound_legacy` = an entry with none of repo/origin/audit: NO permit, whatever its `ts` (re-review MAJOR-1: a date cutoff is forgeable,
+// the attacker writes `ts`). It is not a store mismatch: the repository runs Reinhard-only and the owner is asked again.
 const BOUND_KEYS = Object.freeze(['repo', 'origin', 'audit']);
 // Spec 016 FR-010: tier-0 wording. The record is something the same OS user could write; the audit chain makes a naive forgery visible.
 const ENFORCEMENT = 'unenforced';
@@ -66,7 +67,8 @@ const HINT_ABSENT = 'run `xprov permit` or `xprov permit --deny` in a real termi
 const HINT_MISMATCH = '.a1/xprov.json and the owner\'s denial store disagree — the owner re-runs `xprov permit` or `xprov permit --deny` in a real terminal';
 // Spec 014 FR-004: the detail of `permit_mismatch` and the migration hint for repositories permitted by the file only.
 const HINT_PERMIT_MISMATCH = '.a1/xprov.json says allowed but the owner\'s permit store holds no matching entry — the owner re-runs `xprov permit --by <name> --record <note>` in a real terminal';
-const HINT_AUDIT = 'the consent audit log does not vouch for this permit entry — if the chain itself is broken, the owner fixes or removes consent-audit.jsonl; then re-runs `xprov permit` in a real terminal';
+const HINT_AUDIT = 'the consent audit log does not vouch for this permit entry — a broken log blocks Codex sends for every repository (the Reinhard review still runs); the owner should report it, there is no repair command yet';
+const HINT_UNBOUND = 'the permit entry has no repository binding (repo, origin, audit) and counts as no permit — Codex sends nothing and the Reinhard review runs; the owner permits again by chat consent or in a real terminal';
 const HINT_ORIGIN = 'the repository is unpermitted until the owner permits it again (chat consent or the terminal permit command)';
 const TYPED_WORD = Object.freeze({ [ALLOWED]: ALLOWED, [DENIED]: DENIED });
 
@@ -99,14 +101,14 @@ function permitAgrees(rec, entry) {
 }
 
 const permitMismatch = (detail) => ({ state: STATES.PERMIT_MISMATCH, detail });
+/** An entry with none of repo/origin/audit (re-review MAJOR-1): no permit, of any date. */
+const isUnbound = (entry) => BOUND_KEYS.every((k) => entry[k] === undefined);
+const unboundLegacy = () => ({ state: STATES.UNBOUND_LEGACY, detail: `the permit entry has no repository binding (repo, origin, audit); ${HINT_UNBOUND}` });
 
 /** Spec 016 FR-006: an entry that carries a repo key or an origin is void when either differs from the repository now. */
 function bindingProblem(entry, ident) {
   if (!ident) return null;
   const present = BOUND_KEYS.filter((k) => entry[k] !== undefined);
-  if (present.length === 0) { // legacy: only an entry written before the binding existed (SEC-7)
-    return Date.parse(entry.ts) < LEGACY_CUTOFF_MS ? null : permitMismatch(`the permit entry has no repository binding although it is dated after the binding shipped; ${HINT_PERMIT_MISMATCH}`);
-  }
   if (present.length !== BOUND_KEYS.length) return permitMismatch(`the permit entry carries only part of its repository binding (${present.join(', ')}); ${HINT_PERMIT_MISMATCH}`);
   if (entry.repo !== undefined && entry.repo !== ident.key) return permitMismatch(`the permit entry was written for another repository (${C.oneLine(entry.repo)}); ${HINT_PERMIT_MISMATCH}`);
   if (ident.originError) return { state: STATES.ORIGIN_CHANGED, detail: `the permit is void: remote.origin.url cannot be read (${ident.originError})` };
@@ -129,6 +131,7 @@ function classify(fileState, store, denial, permit, ident) {
     if (hasDenial) return { state: STATES.DENIAL_MISMATCH, detail: 'the owner\'s denial store holds a denial for this repository but .a1/xprov.json says allowed' };
     if (!pstore.ok && !pstore.missing) return permitMismatch(`the owner's permit store is not usable (${pstore.why}); ${HINT_PERMIT_MISMATCH}`);
     if (!entry) return permitMismatch(HINT_PERMIT_MISMATCH);
+    if (isUnbound(entry)) return unboundLegacy(); // before the agreement check: a copied entry is no permit, not a "mismatch"
     if (!permitAgrees(fileState.rec, entry)) return permitMismatch(`decided_by/decided_on/record/default_branch in .a1/xprov.json and in the owner's permit store differ; ${HINT_PERMIT_MISMATCH}`);
     const bound = bindingProblem(entry, ident);
     if (bound) return bound;
@@ -141,6 +144,7 @@ function classify(fileState, store, denial, permit, ident) {
     return entry ? { state: STATES.DENIAL_MISMATCH, detail: 'the owner\'s permit store holds an entry for this repository but .a1/xprov.json says denied' } : { state: STATES.DENIED, detail: null };
   }
   if (hasDenial) return { state: STATES.DENIAL_MISMATCH, detail: `the owner's denial store holds a denial for this repository but .a1/xprov.json is ${fileWord(fileState.kind)}` };
+  if (entry && isUnbound(entry)) return unboundLegacy();
   if (entry) return permitMismatch(`the owner's permit store holds an entry for this repository but .a1/xprov.json is ${fileWord(fileState.kind)}; ${HINT_PERMIT_MISMATCH}`);
   return { state: fileState.kind === 'missing' ? STATES.ABSENT : STATES.INVALID, detail: fileState.detail };
 }
@@ -154,6 +158,7 @@ const REASON_OF_STATE = Object.freeze({
   [STATES.HOME_MISMATCH]: xprov.REASONS.owner_home_mismatch,
   [STATES.ORIGIN_CHANGED]: xprov.REASONS.external_review_not_permitted,
   [STATES.AUDIT_BROKEN]: xprov.REASONS.external_review_not_permitted,
+  [STATES.UNBOUND_LEGACY]: xprov.REASONS.external_review_not_permitted,
 });
 
 /** Reads the record and the store; never throws. `ok` is true only for state
@@ -189,6 +194,7 @@ function permitHint(state) {
   if (state === STATES.DENIAL_MISMATCH) return HINT_MISMATCH;
   if (state === STATES.PERMIT_MISMATCH) return HINT_PERMIT_MISMATCH;
   if (state === STATES.AUDIT_BROKEN) return HINT_AUDIT;
+  if (state === STATES.UNBOUND_LEGACY) return HINT_UNBOUND;
   return state === STATES.ABSENT || state === STATES.INVALID ? HINT_ABSENT : null;
 }
 

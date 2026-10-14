@@ -87,7 +87,7 @@ file12() {
 }
 # permit12 <by> <on> <record> — the owner's permit-store entry matching file12 allowed (spec 014 FR-002:
 # `allowed` is the file AND this entry; the key is computed by the harness, not by the module under test).
-permit12() { write_permit_store "$PHASE_REPO" "$1" "$3" "" "$2"; }
+permit12() { write_permit_store_bound "$PHASE_REPO" "$1" "$3" "" "$2"; }
 gate12() { G_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov gate --phase p12 "$@" 2>"$TMP12/err.txt")"; G_RC=$?; G_ERR="$(cat "$TMP12/err.txt")"; }
 sub12() { G_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov "$@" 2>"$TMP12/err.txt")"; G_RC=$?; G_ERR="$(cat "$TMP12/err.txt")"; }
 nothing12() { [[ ! -e "$PHASE_DIR/PLAN-REVIEW-LOG.md" && ! -e "$PHASE_DIR/xreview" && ! -e "$PHASE_DIR/observations.jsonl" && ! -e "$PHASE_DIR/XREVIEW.md" ]]; }
