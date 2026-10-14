@@ -687,7 +687,7 @@ function waive(o) {
   const wave = isPlan ? null : parseWave(o.wave, 'wave');
   const lane = isPlan ? null : C.parseLane(o.lane);
   const reason = oneLineFlag(o.reason, 'reason', REASON_MAX_CHARS);
-  const by = oneLineFlag(o.by, 'by', BY_MAX_CHARS);
+  const by = C.rejectReservedBy(oneLineFlag(o.by, 'by', BY_MAX_CHARS)); // spec 016 FR-011
   const refusal = guardRefusal(); // the owner-approval guards, one implementation (xprov-approve.cjs)
   if (refusal) return { code: X.EXIT_USAGE, msg: `${refusal}. Run it yourself in a separate terminal (not through an agent and not via the ! prefix). Nothing written.` };
   let key;
@@ -701,6 +701,7 @@ function waive(o) {
   const typed = readTypedLine();
   if (typed !== gate) return { code: X.EXIT_USAGE, msg: `typed ${JSON.stringify(clip(typed, 40))}, expected ${gate}; nothing written` };
   const rec = { ...key, reason, by, ts: nowIso() };
+  require('./xprov-audit.cjs').appendAudit({ repo: key.repo, action: 'waive' }); // spec 016 FR-010: the chain line first
   const file = WV.appendWaiver(rec, writeGuardedStore);
   const m = mirrorWaiver(ctx, rec);
   return { code: X.EXIT_PASS, msg: `recorded a human waiver for ${gate} ${scopeOf(wave)} in ${file} — add ${RETRO_ISSUE_WAIVED} to the retro's issues and keep gates_fired verdict as it was — a waiver is not a pass`,

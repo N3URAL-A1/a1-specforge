@@ -26,10 +26,16 @@ trap 'rm -rf "$SUITE_ROOT"' EXIT
 unset A1_VAULT_ROOT A1_VAULT_WRITER_HOST A1_HOST_ID
 
 run_cases() {
-  local module="$1" work out rc summary
+  local module="$1" work out rc summary lib="$LIB"
   work="$SUITE_ROOT/$module"
   mkdir -p "$work/home" "$work/tmp" "$work/cwd"
-  out="$(cd "$work/cwd" && HOME="$work/home" TMPDIR="$work/tmp" node "$SUITE/cases/$module.cjs" "$LIB" "$work" 2>&1)"
+  # Spec 016 plan D-2: xprov modules resolve ~/.a1-xprov from the OS user record, not $HOME. The cases run on a tree
+  # COPY whose owner-home module is the fixture resolver (HOME-based), so they never touch the real store.
+  case "$module" in
+    xprov-*)
+      mkdir -p "$work/tree" && cp -R "$REPO_ROOT/_shared" "$work/tree/_shared" && cp "$REPO_ROOT/_test-fixtures/a1-xprov/fake/xprov-owner-home.cjs" "$work/tree/_shared/lib/xprov-owner-home.cjs" && lib="$work/tree/_shared/lib" ;;
+  esac
+  out="$(cd "$work/cwd" && HOME="$work/home" TMPDIR="$work/tmp" node "$SUITE/cases/$module.cjs" "$lib" "$work" 2>&1)"
   rc=$?
   echo "$out" | grep -E '^(PASS|FAIL)  '
   summary="$(echo "$out" | grep -E '^UNITS [0-9]+ [0-9]+$' | tail -1)"

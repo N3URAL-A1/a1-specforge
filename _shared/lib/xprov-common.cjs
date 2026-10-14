@@ -295,6 +295,16 @@ function commonDirOf(repo) {
   try { return fs.realpathSync(path.resolve(repo, out.trim())); } catch (_e) { return null; }
 }
 
+// Spec 016 FR-011: `owner-chat` is reserved for entries the chat path writes. Compared after NFKC, case-folded,
+// separators (space, hyphen, underscore) dropped, so `Owner_Chat` and `owner\u2011chat` do not slip through.
+const RESERVED_BY = 'owner-chat';
+const isReservedBy = (by) => String(by == null ? '' : by).normalize('NFKC').toLowerCase().replace(/[\s\-_\u2010-\u2015]+/g, '') === RESERVED_BY.replace('-', '');
+/** Throws a typed input error (exit 2 at the facade) when a terminal command is given the reserved `--by` value. */
+function rejectReservedBy(by) {
+  if (isReservedBy(by)) throw inputError(`--by ${RESERVED_BY} is reserved for entries written through the chat path; a terminal command cannot use it`, 'by_reserved');
+  return by;
+}
+
 /** `--repo` must be a git TOPLEVEL (compared by realpath). Undefined → the
  * primary checkout (io.repoRoot()). A subdirectory or a non-repo directory is
  * a usage error, never a silent fallback. */
@@ -311,6 +321,7 @@ function resolveRepoFlag(repoFlag) {
 
 module.exports = {
   REGISTRY_PATH, LANE_RE, POSITIVE_INT_RE, POSITIVE_INT_MAX, WAVE_RE, DETAIL_MAX_CHARS, GIT_MAX_BUFFER, DIR_MODE,
+  RESERVED_BY, isReservedBy, rejectReservedBy,
   inputError, writeStdoutSync, emitJson, usageExit, usageThrow,
   clip, stderrTail, oneLine, LINE_BREAKERS_RE, readNoFollow, parsePositive, parseWave, waveNumber, parseLane, sha256, isPlainObject, isDir, isFile,
   mkdir0700, readIndex, sameWave, sameLane, gitBin, resolveGit, absolutePathDirs, gitSpawn, gitOut, commonDirOf, resolveRepoFlag,

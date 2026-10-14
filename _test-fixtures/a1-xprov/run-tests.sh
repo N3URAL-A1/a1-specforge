@@ -40,7 +40,9 @@ ADR="$REPO_ROOT/docs/adr/2026-09-24-cross-provider-review-gate.md"
 # HOME and a suite TMPDIR inside one mktemp root that the EXIT trap removes; the
 # real ~/.a1-xprov is listed (two levels: stores, artifacts/<slug>,
 # snapshots/snap-*) before the parts and compared after — any change is a FAIL.
-REAL_XPROV_HOME="$HOME/.a1-xprov"
+# Spec 016 FR-009: the real owner store is the one under the passwd home, not under whatever $HOME says.
+REAL_PASSWD_HOME="$(node -p "require('os').userInfo().homedir")"
+REAL_XPROV_HOME="$REAL_PASSWD_HOME/.a1-xprov"
 xprov_listing() { if [[ -d "$REAL_XPROV_HOME" ]]; then (cd "$REAL_XPROV_HOME" && find . -mindepth 1 -maxdepth 2 | LC_ALL=C sort); else echo "(absent)"; fi; }
 XPROV_BEFORE="$(xprov_listing)"
 SUITE_TMP_PARENT="${TMPDIR:-/tmp}"; SUITE_ROOT="$(mktemp -d "${SUITE_TMP_PARENT%/}/a1-xprov-suite.XXXXXX")"
@@ -164,6 +166,8 @@ make_tree() {
     echo "FAIL  harness: the copied vendor dir $vendor_real is not under $tree_real; refusing to swap the runner" >&2; rm -rf "$TREE"; exit 2
   fi
   cp "$FAKE/fake-runner.py" "$TREE_VENDOR/runner.py"
+  # Spec 016 plan D-2: the owner-home resolver is swapped in the tree COPY (no env override exists in production).
+  cp "$FAKE/xprov-owner-home.cjs" "$TREE/_shared/lib/xprov-owner-home.cjs"
   ( cd "$TREE_VENDOR" && if command -v shasum >/dev/null 2>&1; then shasum -a 256 runner.py > SHA256SUMS; else sha256sum runner.py > SHA256SUMS; fi )
   # FR-015: the copy's RUNNER_SHA256 follows the fake runner (verified with node -p on the copy).
   local fake_sha; fake_sha="$(sha256_of "$TREE_VENDOR/runner.py")"

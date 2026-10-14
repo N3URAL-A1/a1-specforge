@@ -725,10 +725,11 @@ caseR30j2() {
     PTY_TYPED=1 pty8 "${NOCLAUDE8[@]}" node "$tools" xprov allowlist approve --repo "$R8"; rc=$?
     assert_rc "R30j2-7 correct typed count → exit 0" 0 "$rc" "$(tail -n 3 "$TMP08/pty-out.txt")"
     assert_eq "R30j2-7 store mode 0600" "$(mode_of "$HOME/.a1-xprov/$STORE_NAME")" "600"
+    assert_json "R30j2-7 (spec 016 FR-010) the approval appended an allowlist-approve audit line" "$(tail -n 1 "$HOME/.a1-xprov/consent-audit.jsonl" 2>/dev/null || echo '{}')" "j.action" "allowlist-approve"
     assert_json "R30j2-7 store approves the origin/main blob and keeps the other repository" "$(cat "$HOME/.a1-xprov/$STORE_NAME")" "[j.repos['/elsewhere/.git'].join(','), (j.repos['$(storekey8)'] || []).join(',')].join('/')" "$(printf 'a%.0s' $(seq 1 64))/$want"
     local ino_after; ino_after="$(python3 -c 'import os,sys; print(os.stat(sys.argv[1]).st_ino)' "$HOME/.a1-xprov/$STORE_NAME")"
     [[ "$ino_before" != "$ino_after" ]] && ok "R30j2-7 the store was replaced by rename (new inode)" || bad "R30j2-7 the store was rewritten in place (same inode)"
-    assert_eq "R30j2-7 no temp file left in ~/.a1-xprov" "$(ls -A "$HOME/.a1-xprov" | grep -v -e "^$STORE_NAME\$" -e '^snapshots$' -e '^artifacts$' -e '^scan-records$' -e '^permits\.json$' -e '^permit-denials\.json$' | wc -l | tr -d ' ')" "0" # spec 014: the owner stores and scan-records/ are legitimate entries, only temp files count
+    assert_eq "R30j2-7 no temp file left in ~/.a1-xprov" "$(ls -A "$HOME/.a1-xprov" | grep -v -e "^$STORE_NAME\$" -e '^snapshots$' -e '^artifacts$' -e '^scan-records$' -e '^permits\.json$' -e '^permit-denials\.json$' -e '^consent-audit\.jsonl$' | wc -l | tr -d ' ')" "0" # spec 014/016: the owner stores, the audit log and scan-records/ are legitimate entries, only temp files count
     plan8; pass8 "R30j2-7 the gate passes with the approval approve wrote"
   fi
   # 9 (S-m5): an existing store that is not valid is never replaced silently

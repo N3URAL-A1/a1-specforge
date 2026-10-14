@@ -27,7 +27,9 @@ const C = require('./xprov-common.cjs');
 const PERMITS_FILE = 'permits.json';
 const STORE_LABEL = 'permit store';
 const REQUIRED_KEYS = Object.freeze(['decided_by', 'decided_on', 'record', 'ts']);
-const OPTIONAL_KEYS = Object.freeze(['default_branch']);
+// Spec 016 FR-006: `repo` (the git-common-dir the entry was written for) and `origin` (raw remote.origin.url at the
+// decision, explicit null = none) bind an entry to one repository identity. Entries of before spec 016 carry neither.
+const OPTIONAL_KEYS = Object.freeze(['default_branch', 'repo', 'origin']);
 
 const guarded = () => require('./xprov-allowlist.cjs');
 const writer = () => require('./xprov-approve.cjs').writeGuardedStore;
@@ -41,7 +43,7 @@ function validEntry(entry) {
   if (!C.isPlainObject(entry)) return false;
   const keys = Object.keys(entry);
   const allowed = [...REQUIRED_KEYS, ...OPTIONAL_KEYS];
-  return REQUIRED_KEYS.every((k) => k in entry) && keys.every((k) => allowed.includes(k)) && keys.every((k) => nonEmptyString(entry[k]));
+  return REQUIRED_KEYS.every((k) => k in entry) && keys.every((k) => allowed.includes(k)) && keys.every((k) => nonEmptyString(entry[k]) || (k === 'origin' && entry[k] === null));
 }
 
 /** The permits map of a parsed store document, or null when it is off-format. */

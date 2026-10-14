@@ -38,6 +38,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
+const OWNER_HOME = require('./xprov-owner-home.cjs');
 
 // ---------- exit contract (house rule for every xprov subcommand) ----------
 // stdout JSON is the machine contract; every human sentence goes to stderr.
@@ -63,6 +64,10 @@ const SUBCOMMANDS = Object.freeze({
   'wave-status': Object.freeze({ module: 'xprov-gate.cjs', fn: 'cmdXprovWaveStatus', wave: 6 }),
   waive: Object.freeze({ module: 'xprov-gate.cjs', fn: 'cmdXprovWaive', wave: 6 }),
   allowlist: Object.freeze({ module: 'xprov-approve.cjs', fn: 'cmdXprovAllowlist', wave: '6b' }),
+  // Spec 016 (wave 1): the modules ship in waves 2, 6 and 9. Until then the missing-module branch of cmdXprov fails closed (exit 2).
+  consent: Object.freeze({ module: 'xprov-consent.cjs', fn: 'cmdXprovConsent', wave: 2 }),
+  scope: Object.freeze({ module: 'xprov-scope.cjs', fn: 'cmdXprovScope', wave: 6 }),
+  dispose: Object.freeze({ module: 'xprov-dispose.cjs', fn: 'cmdXprovDispose', wave: 9 }),
 });
 const SUBCOMMAND_NAMES = Object.freeze(Object.keys(SUBCOMMANDS));
 
@@ -91,6 +96,11 @@ const REASON_LIST = Object.freeze([
   'external_review_permit_mismatch',
   'snapshot_not_scanned',
   'snapshot_changed_after_scan',
+  // Spec 016 (wave 1): reason constants only; the behavior behind them ships in the named waves.
+  'owner_home_mismatch', // $HOME differs from the OS user's home: no owner store is written, permit-check is not ok (FR-009)
+  'scope_exempt', // wave 7: placement rule says this review does not apply
+  'codex_blocked_fallback', // wave 8: blocked twice, Reinhard-only
+  'secret_declined', // wave 9: owner declined the allowlist question for a changed-line hit
 ]);
 const REASONS = Object.freeze(Object.fromEntries(REASON_LIST.map((r) => [r, r])));
 
@@ -255,7 +265,7 @@ const SUMS_FILE = 'SHA256SUMS';
 const RUNNER_SHA256 = '962dfdfe5d67b75eb73ec7c38b9186e6e6e0ca96a68d4ec82595305d8f737c8c';
 
 function xprovHome() {
-  return path.join(os.homedir(), XPROV_HOME_DIRNAME);
+  return path.join(OWNER_HOME.ownerHome(), XPROV_HOME_DIRNAME); // spec 016 FR-009: passwd home, never $HOME
 }
 
 function artifactsDir(slug) {

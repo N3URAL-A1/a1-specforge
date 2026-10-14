@@ -45,6 +45,7 @@ const io = require('./io.cjs');
 const X = require('./xprov.cjs');
 const C = require('./xprov-common.cjs');
 const AL = require('./xprov-allowlist.cjs');
+const audit = require('./xprov-audit.cjs');
 const { cloneSnapshot, cleanupSnapshot, scanTrackedFiles, REF_RE } = require('./xprov-snapshot.cjs');
 
 const EXIT_REFUSED = X.EXIT_USAGE; // every guard refusal is exit 2 with nothing written
@@ -339,6 +340,7 @@ function readTypedLine() {
 /** Atomic write of one guarded store `name` in ~/.a1-xprov (0700, never a
  * symlink): 0600 temp file in the same directory, fsync, then rename. */
 function writeGuardedStore(name, doc) {
+  require('./xprov-owner-home.cjs').assertWritable(); // spec 016 FR-009: no byte when $HOME differs from the OS user's home
   const home = X.xprovHome();
   let st = null;
   try { st = fs.lstatSync(home); } catch (_e) { st = null; }
@@ -424,6 +426,7 @@ function approve(root) {
   const typed = readTypedLine();
   if (typed !== String(view.count)) return { code: EXIT_REFUSED, msg: `typed ${JSON.stringify(C.clip(typed, 16))}, expected ${view.count}; nothing written` };
   const key = C.commonDirOf(root);
+  audit.appendAudit({ repo: key, action: audit.ACTION.ALLOWLIST_APPROVE }); // spec 016 FR-010: the chain line first, then the store
   const repos = { ...store.repos, [key]: [...new Set([...(store.repos[key] || []), sha])] };
   const file = writeStore(repos);
   return { code: X.EXIT_PASS, msg: `approved ${sha} for ${key} in ${file}`, out: { ok: true, repo: key, approved: sha, store: file } };
@@ -436,13 +439,18 @@ function revoke(root, sha) {
   if (!current.ok) return { code: X.EXIT_FAIL, msg: `no valid approval store (${current.why}); nothing to revoke` };
   const list = current.repos[key] || [];
   if (!list.includes(sha)) return { code: X.EXIT_FAIL, msg: `${sha} is not approved for ${key}` };
+  audit.appendAudit({ repo: key, action: audit.ACTION.ALLOWLIST_REVOKE });
   const file = writeStore({ ...current.repos, [key]: list.filter((s) => s !== sha) });
   return { code: X.EXIT_PASS, msg: `revoked ${sha} for ${key} in ${file}`, out: { ok: true, repo: key, revoked: sha, store: file } };
 }
 
 function cmdApprove(args) {
-  const flags = io.parseFlags(args, { repo: 'str', revoke: 'str' });
+  const flags = io.parseFlags(args, { repo: 'str', revoke: 'str', by: 'str' });
   if (flags._.length) return usage(`approve: unexpected argument ${JSON.stringify(C.clip(flags._[0], 80))}`);
+  if (flags.by !== undefined) { // spec 016 FR-011: owner-chat is reserved; the value is otherwise a plain bounded name
+    C.rejectReservedBy(flags.by);
+    if (!/^[A-Za-z][A-Za-z0-9._-]{0,63}$/.test(flags.by)) throw C.inputError('--by must be a plain name (letters, digits, . _ -), at most 64 characters');
+  }
   if (!flags.repo) return usage('approve requires --repo <path> [--revoke <sha256>]');
   const refusal = guardRefusal();
   if (refusal) {

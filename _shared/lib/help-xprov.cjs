@@ -83,8 +83,20 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   (xprov-permit.cjs, wave 4) reads .a1/xprov.json AND the owner's
                   stores ~/.a1-xprov/permit-denials.json and (spec 014)
                   ~/.a1-xprov/permits.json; stdout \`state\` is allowed | denied |
-                  absent | invalid | denial_mismatch | permit_mismatch (exit 0
-                  only for allowed). allowed needs the file to say allowed AND
+                  absent | invalid | denial_mismatch | permit_mismatch |
+                  home_mismatch | origin_changed (exit 0 only for allowed).
+                  Spec 016: the owner stores resolve under the home of the OS
+                  user record, never $HOME; when $HOME differs, no store is
+                  written and the state is home_mismatch (owner_home_mismatch).
+                  An entry written since spec 016 is bound to the repository's
+                  git-common-dir and raw remote.origin.url; an origin that
+                  changes, appears or disappears voids the permit (origin_changed,
+                  external_review_not_permitted). Every result carries
+                  \`enforcement: unenforced\` and \`audit: ok|missing|broken\`: the
+                  consent is a record the same OS user could write; the hash-
+                  chained ~/.a1-xprov/consent-audit.jsonl makes a naive forgery
+                  or a hand-written entry visible (permits of before spec 016
+                  stay allowed and report audit: missing). It prevents nothing. allowed needs the file to say allowed AND
                   the permit store to hold an entry for this repository's
                   git-common-dir with the same decided_by, decided_on, record
                   (and default_branch when either side has one); a hand-written
@@ -309,7 +321,9 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   matches, and the path:line list (masked) of what the
                   heuristics could not classify. With --json: a DRAFT v2
                   document (entries [], one scope per pair, reasons empty).
-    allowlist approve --repo <path> [--revoke <sha256>]
+    allowlist approve --repo <path> [--revoke <sha256>] [--by <name>]
+                  --by (spec 016) is an optional plain name; the value owner-chat is
+                  reserved for chat-written entries and rejected here (exit 2).
                   (xprov-approve.cjs, wave 6b) HUMAN ONLY, in a separate
                   terminal: exit 2 and nothing written unless stdin and stdout
                   are TTYs, no CLAUDECODE / CLAUDE_PID / CLAUDE_CODE_* variable
@@ -355,8 +369,20 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   allowlist_not_separate_commit, allowlist_owner_mismatch,
                   allowlist_unapproved. gitleaks hits and reviewer output are
                   never allowlisted.
+    consent (spec 016, planned wave 2)
+                  Not shipped yet: the dispatch entry exists, the module does not;
+                  until then the command exits 2 ("not implemented yet"), which
+                  keeps every consent path closed.
+    scope (spec 016, planned wave 6)
+                  Not shipped yet (exit 2, "not implemented yet").
+    dispose (spec 016, planned wave 9)
+                  Not shipped yet (exit 2, "not implemented yet").
     waive --phase <name> --gate <id> [--wave <N> [--lane <id>] --base <sha>
           [--work-path <dir>]] --reason "<text>" --by <name>
+                  (spec 016) --by owner-chat is reserved for chat-written entries
+                  and rejected in the terminal commands permit, permit --deny and
+                  waive (exit 2). Every owner write appends a hash-chained line to
+                  ~/.a1-xprov/consent-audit.jsonl first.
                   (xprov-gate.cjs + xprov-waivers.cjs, wave 7; --wave 0 is valid) HUMAN-only, in a
                   separate terminal: the owner-approval guards (TTY on stdin
                   and stdout, no CLAUDECODE/CLAUDE_PID/CLAUDE_CODE_*, no Claude
