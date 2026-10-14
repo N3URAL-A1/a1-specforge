@@ -34,26 +34,61 @@ function scopeSegments(p) {
   return p.split('/').filter(Boolean);
 }
 
-/** True if the segment is a multi-segment `**` or has an in-segment wildcard. */
+/** True if the segment has an in-segment wildcard. */
 function isGlobSegment(seg) {
   return seg.includes('*') || seg.includes('?');
 }
 
-const regexCache = new Map();
+function sameChar(a, b) {
+  return a === b || a.toLowerCase() === b.toLowerCase();
+}
 
-/** Compile one non-`**` pattern segment to an anchored case-insensitive RegExp. */
-function segmentRegExp(seg) {
-  let re = regexCache.get(seg);
-  if (re) return re;
-  let src = '';
-  for (const ch of seg) {
-    if (ch === '*') src += '[^/]*';
-    else if (ch === '?') src += '[^/]';
-    else src += ch.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+/** Linear-ish wildcard match of one segment (`*` any run, `?` one char),
+ * case-insensitive. Two pointers with backtrack to the last `*`: O(n*m) worst
+ * case, no regex, so user-supplied patterns cannot trigger ReDoS. */
+function wildcardMatch(pattern, text) {
+  let p = 0;
+  let t = 0;
+  let star = -1;
+  let mark = 0;
+  while (t < text.length) {
+    if (p < pattern.length && pattern[p] === '*') {
+      star = p;
+      mark = t;
+      p++;
+    } else if (p < pattern.length && (pattern[p] === '?' || sameChar(pattern[p], text[t]))) {
+      p++;
+      t++;
+    } else if (star !== -1) {
+      p = star + 1;
+      mark++;
+      t = mark;
+    } else {
+      return false;
+    }
   }
-  re = new RegExp('^' + src + '$', 'i');
-  regexCache.set(seg, re);
-  return re;
+  while (p < pattern.length && pattern[p] === '*') p++;
+  return p === pattern.length;
+}
+
+/** True if two single-segment patterns can match at least one common name.
+ * DP over (i, j) with memo: O(n*m). */
+function segmentPatternsIntersect(a, b) {
+  const memo = new Map();
+  function go(i, j) {
+    const key = i * (b.length + 1) + j;
+    if (memo.has(key)) return memo.get(key);
+    let r;
+    if (i === a.length && j === b.length) r = true;
+    else if (i < a.length && a[i] === '*') r = go(i + 1, j) || (j < b.length && go(i, j + 1));
+    else if (j < b.length && b[j] === '*') r = go(i, j + 1) || (i < a.length && go(i + 1, j));
+    else if (i < a.length && j < b.length && (a[i] === '?' || b[j] === '?' || sameChar(a[i], b[j]))) {
+      r = go(i + 1, j + 1);
+    } else r = false;
+    memo.set(key, r);
+    return r;
+  }
+  return go(0, 0);
 }
 
 /** Match a path's segments against a pattern's segments. */
@@ -70,7 +105,7 @@ function segmentsMatchGlob(patternSegs, pathSegs) {
       if (seg === '**') {
         result = walk(pi + 1, si) || (si < pathSegs.length && walk(pi, si + 1));
       } else {
-        result = si < pathSegs.length && segmentRegExp(seg).test(pathSegs[si]) && walk(pi + 1, si + 1);
+        result = si < pathSegs.length && wildcardMatch(seg, pathSegs[si]) && walk(pi + 1, si + 1);
       }
     }
     memo.set(key, result);
@@ -79,11 +114,12 @@ function segmentsMatchGlob(patternSegs, pathSegs) {
   return walk(0, 0);
 }
 
-/** True if segsA is a prefix of segsB at a segment boundary (or equal). */
+/** True if segsA is a prefix of segsB at a segment boundary (or equal),
+ * compared case-insensitively like the glob matcher. */
 function isSegmentPrefix(segsA, segsB) {
   if (segsA.length > segsB.length) return false;
   for (let i = 0; i < segsA.length; i++) {
-    if (segsA[i] !== segsB[i]) return false;
+    if (segsA[i].toLowerCase() !== segsB[i].toLowerCase()) return false;
   }
   return true;
 }
@@ -94,37 +130,67 @@ function nonGlobPrefix(segs) {
   return idx === -1 ? segs : segs.slice(0, idx);
 }
 
-/** True if the (normalized) path string matches the glob string. */
+/** True if the path string matches the glob string (both normalized). */
 function matchesGlob(glob, rawPath) {
-  return segmentsMatchGlob(scopeSegments(glob), scopeSegments(normalizeScopePath(rawPath)));
+  return segmentsMatchGlob(
+    scopeSegments(normalizeScopePath(glob)),
+    scopeSegments(normalizeScopePath(rawPath))
+  );
 }
 
-/** Deterministic overlap between two declared scope paths. Overlap if one is a
- * segment-boundary prefix of the other, either glob matches the other, or a
- * glob's fixed prefix contains (or is contained by) the other side. */
+/** A scope is anchored when it starts with a literal directory name. Only
+ * anchored scopes act as a directory that contains the other side's paths; a
+ * leading-glob scope (`*`, `**\/x.js`) overlaps only where it truly matches. */
+function isAnchored(segs) {
+  return segs.length > 0 && !isGlobSegment(segs[0]);
+}
+
+/**
+ * Can two segment lists claim a common path? Walks both lists together:
+ * `**` matches zero or more segments, any other segment pair must be able to
+ * match a common name (segmentPatternsIntersect, so `dir/x-*.ts` and
+ * `dir/y-*.ts` are disjoint). If an anchored side runs out first, it is a
+ * directory above the rest of the other side: overlap. A trailing `**` matches
+ * everything below. A `**` swallows the other side's final segment (treating
+ * it as a directory) only when its own scope is anchored, so `**\/*.md` and
+ * `docs/x.txt` stay disjoint while `src/**\/util.js` and `src/foo` overlap.
+ */
+function segmentListsOverlap(A, B) {
+  const memo = new Map();
+  const anchoredA = isAnchored(A);
+  const anchoredB = isAnchored(B);
+  function go(i, j) {
+    if (i === A.length && j === B.length) return true;
+    if (i === A.length) return anchoredA;
+    if (j === B.length) return anchoredB;
+    const key = i + ':' + j;
+    if (memo.has(key)) return memo.get(key);
+    const a = A[i];
+    const b = B[j];
+    let r;
+    if ((a === '**' && i === A.length - 1) || (b === '**' && j === B.length - 1)) r = true;
+    else if (a === '**' && b === '**') r = go(i + 1, j) || go(i, j + 1);
+    else if (a === '**') r = go(i + 1, j) || ((j + 1 < B.length || anchoredA) && go(i, j + 1));
+    else if (b === '**') r = go(i, j + 1) || ((i + 1 < A.length || anchoredB) && go(i + 1, j));
+    else r = segmentPatternsIntersect(a, b) && go(i + 1, j + 1);
+    memo.set(key, r);
+    return r;
+  }
+  return go(0, 0);
+}
+
+/** Deterministic overlap between two declared scope paths (see
+ * segmentListsOverlap). Pure string comparison, case-insensitive. */
 function scopePathsOverlap(rawA, rawB) {
   const a = normalizeScopePath(rawA);
   const b = normalizeScopePath(rawB);
   if (a === b) return true;
-  const segsA = scopeSegments(a);
-  const segsB = scopeSegments(b);
-  const hasGlobA = segsA.some(isGlobSegment);
-  const hasGlobB = segsB.some(isGlobSegment);
-  if (hasGlobA && segmentsMatchGlob(segsA, segsB)) return true;
-  if (hasGlobB && segmentsMatchGlob(segsB, segsA)) return true;
-  if (!hasGlobA && !hasGlobB) {
-    return isSegmentPrefix(segsA, segsB) || isSegmentPrefix(segsB, segsA);
-  }
-  const prefixA = nonGlobPrefix(segsA);
-  const prefixB = nonGlobPrefix(segsB);
-  if (prefixA.length > 0 && isSegmentPrefix(prefixA, segsB)) return true;
-  if (prefixB.length > 0 && isSegmentPrefix(prefixB, segsA)) return true;
-  if (prefixB.length > 0 && isSegmentPrefix(segsA, prefixB)) return true;
-  if (prefixA.length > 0 && isSegmentPrefix(segsB, prefixA)) return true;
-  return false;
+  return segmentListsOverlap(scopeSegments(a), scopeSegments(b));
 }
 
 module.exports = {
+  wildcardMatch,
+  segmentPatternsIntersect,
   normalizeScopePath,
   scopeSegments,
   isGlobSegment,

@@ -98,7 +98,7 @@ function isSuspiciousScopePath(rawScopePath) {
  * for empty/whitespace-only input — callers must fail closed on null. */
 function countIntentSentences(intent) {
   if (typeof intent !== 'string' || intent.trim() === '') return null;
-  const matches = intent.match(/[.!?]+(?=\s|$)/g);
+  const matches = intent.match(/[.!?]+["')\]]*(?=\s|$)/g);
   return matches ? matches.length : 0;
 }
 

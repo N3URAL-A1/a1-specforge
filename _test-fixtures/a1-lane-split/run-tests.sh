@@ -195,7 +195,41 @@ MD
   [[ "$v" == "1/c-clean" ]] && ok "L6 in-segment glob owns overlap found, disjoint lane clean" || bad "L6 in-segment owns ($v)"
 }
 
-caseL1; caseL2; caseL3; caseL4; caseL5; caseL6
+# ---------- L7: disjoint in-segment globs + a fixed file in one directory (contentbot pattern) ----------
+# Review round 1: counting any `*` segment as a glob made the fixed prefix `tests/unit`
+# overlap every file there (11 and 20 false BLOCKERs on real plans, 0 on main).
+caseL7() {
+  local t out v; t="$(mktemp -d)"
+  cat > "$t/PLAN.md" <<'MD'
+---
+phase: probe
+lanes:
+  - id: lane-a
+    waves: [1]
+    owns:
+      - "tests/unit/dialog-state-*.test.ts"
+      - "src/*.ts"
+  - id: lane-b
+    waves: [2]
+    owns:
+      - "tests/unit/dialog-turn-*.test.ts"
+      - "tests/unit/helpers.ts"
+      - "src/a.js"
+      - "src/sub/a.ts"
+---
+
+## Wave 1 — a
+## Wave 2 — b
+MD
+  out="$(node "$TOOLS" lane-split check --plan "$t/PLAN.md" 2>/dev/null)"
+  v="$(node -e "
+    const j=JSON.parse(process.argv[1]);
+    process.stdout.write(String(j.findings.filter((x)=>x.check==='owns-overlap').length));
+  " "$out" 2>&1)"
+  [[ "$v" == "0" ]] && ok "L7 disjoint globs in one directory give 0 owns-overlap" || bad "L7 false overlap ($v)"
+}
+
+caseL1; caseL2; caseL3; caseL4; caseL5; caseL6; caseL7
 printf '%s\n' "${results[@]}"
 echo "----"
 echo "a1-lane-split: $pass passed, $fail failed"

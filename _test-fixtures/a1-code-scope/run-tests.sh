@@ -113,6 +113,11 @@ assert_rc "leading-doublestar-vs-unrelated" 0 $? "$OUT"
 OUT="$(node "$TOOLS" code-scope claim --by feature-docs-readme --scope "docs/readme.md" --file "$FILE" 2>&1)"
 assert_rc "unrelated-vs-leading-doublestar" 0 $? "$OUT"
 
+# Review round 1: bare "*" truly shares top-level util.js with the recorded "**/util.js"
+# (the old literal-segment matcher missed that overlap). Release it so this block keeps
+# testing what it names: "*" vs unrelated deeper paths.
+OUT="$(node "$TOOLS" code-scope release --by feature-globdoubledstar --file "$FILE" 2>&1)"
+assert_rc "release-doublestar-before-star" 0 $? "$OUT"
 OUT="$(node "$TOOLS" code-scope claim --by feature-globstar-only --scope "*" --file "$FILE" 2>&1)"
 assert_rc "leading-star-vs-unrelated-setup" 0 $? "$OUT"
 OUT="$(node "$TOOLS" code-scope claim --by feature-docs-readme2 --scope "docs/readme2.md" --file "$FILE" 2>&1)"
@@ -342,15 +347,37 @@ OVL_RC=0
 OVL_OUT="$(node -e '
   const { scopePathsOverlap } = require(process.argv[1]);
   const T = [["src/*.ts","src/a.ts"], ["src/a.ts","src/*.ts"], ["**/*.md","docs/x.md"],
-             ["docs/adr-*.md","docs/adr-1.md"], ["src/*.ts","src/**"], ["docs/ADR-*.md","docs/adr-1.md"]];
+             ["docs/adr-*.md","docs/adr-1.md"], ["src/*.ts","src/**"], ["docs/ADR-*.md","docs/adr-1.md"],
+             ["src/*.ts","src"], ["src/*","src/a/b.js"], ["docs/ADR.md","docs/adr.md"], ["dir/*.ts","dir/a-*.ts"]];
   const F = [["src/*.ts","lib/a.js"], ["**/*.md","docs/x.txt"], ["docs/adr-*.md","other/rfc-1.md"],
-             ["src/*.ts","lib/a.ts"]];
+             ["src/*.ts","lib/a.ts"], ["src/*.ts","src/a.js"], ["src/*.ts","src/sub/a.ts"],
+             ["dir/x-*.ts","dir/y-*.ts"], ["**/*.md","docs/x.txt"]];
   let bad = 0;
   for (const [a,b] of T) if (scopePathsOverlap(a,b) !== true) { console.log("expected overlap: " + a + " vs " + b); bad++; }
   for (const [a,b] of F) if (scopePathsOverlap(a,b) !== false) { console.log("expected NO overlap: " + a + " vs " + b); bad++; }
   process.exit(bad ? 1 : 0);
 ' "$REPO_ROOT/_shared/lib/code-scope.cjs" 2>&1)" || OVL_RC=$?
 assert_rc "in-segment-glob-overlap-table" 0 "$OVL_RC" "$OVL_OUT"
+
+# --- ReDoS bound + matchesGlob normalisation (review round 1) ---
+RDS_RC=0
+RDS_OUT="$(node -e '
+  const g = require(process.argv[1]);
+  const stars = "*a".repeat(30) + "*b";
+  const text = "a".repeat(40);
+  const t0 = Date.now();
+  const m = g.matchesGlob("src/" + stars, "src/" + text);
+  const o = g.scopePathsOverlap("src/" + stars, "src/" + "*a".repeat(30) + "*c");
+  const ms = Date.now() - t0;
+  let bad = 0;
+  if (m !== false) { console.log("30-star glob must not match"); bad++; }
+  if (typeof o !== "boolean") { console.log("overlap must return boolean"); bad++; }
+  if (ms >= 200) { console.log("too slow: " + ms + " ms"); bad++; }
+  if (g.matchesGlob("./SRC//*.ts", "src/a.ts") !== true) { console.log("glob side must be normalised"); bad++; }
+  if (g.matchesGlob("src\\\\*.ts", "src/a.ts") !== true) { console.log("backslash glob must be normalised"); bad++; }
+  process.exit(bad ? 1 : 0);
+' "$REPO_ROOT/_shared/lib/segment-glob.cjs" 2>&1)" || RDS_RC=$?
+assert_rc "glob-linear-matcher-time-bound" 0 "$RDS_RC" "$RDS_OUT"
 
 echo "code-scope fixtures: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

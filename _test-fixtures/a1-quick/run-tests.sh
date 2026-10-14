@@ -982,7 +982,7 @@ SENT_OUT="$(node -e '
   const E = [
     "Point docs/VISION.md and CLAUDE.md to docs/product/ROADMAP.md + NEXT.md as the roadmap source of truth; docs/roadmap.md is history.",
     "Bump to v1.2.3 in package.json.", "Wait... then retry.", "Really?! Fix it.",
-    "Fix typo in README.md", "Fix the typo. Then bump 1.2.3.",
+    "Fix the typo. Then bump 1.2.3.", "Do \"a.\" Then \"b.\"",
   ];
   const N = ["One. Two. Three.", "x", "A! B? C."];
   let bad = 0;
@@ -991,9 +991,26 @@ SENT_OUT="$(node -e '
   if (q.countIntentSentences("   ") !== null) { console.log("blank must be null"); bad++; }
   if (q.countIntentSentences("x") !== 0) { console.log("x must be 0 (fail closed)"); bad++; }
   if (q.countIntentSentences("One. Two. Three.") !== 3) { console.log("3 sentences must count 3"); bad++; }
+  // closing quotes/brackets after a terminator still end a sentence
+  if (q.countIntentSentences("Do \"a.\" Then \"b.\" And c.") !== 3) { console.log("quoted terminators must count 3"); bad++; }
+  if (q.countIntentSentences("Fix (a.) Then (b.)") !== 2) { console.log("bracketed terminators must count 2"); bad++; }
+  // KNOWN LIMIT (accepted): no whitespace after the dot, so "Fix a.Fix b.Fix c." counts 1, not 3.
+  // Dots inside tokens (README.md, 1.2.3) must not count; the gate stays advisory for this edge.
+  if (q.countIntentSentences("Fix a.Fix b.Fix c.") !== 1) { console.log("documented undercount changed"); bad++; }
+  // no terminator at all counts 0 (fail closed in eligibility)
+  if (q.countIntentSentences("Fix typo in README.md") !== 0) { console.log("README.md intent must count 0"); bad++; }
   process.exit(bad ? 1 : 0);
 ' "$QLIB" 2>&1)" || SENT_RC=$?
 assert_rc "sentence-counter-ignores-token-dots" 0 "$SENT_RC" "$SENT_OUT"
+
+# "Fix typo in README.md" has no sentence terminator: count 0 and eligibility fails closed
+OUT="$(node "$TOOLS" quick eligibility \
+  --intent "Fix typo in README.md" --files 1 --diff-lines 5 --scope README.md \
+  --no-migration --no-new-route --no-new-dep \
+  --repo-root "$CLEAN_REPO" --file "$RESV" --by quick-readme 2>&1)"
+RC=$?
+assert_rc "cli-intent-no-terminator-not-eligible" 1 "$RC" "$OUT"
+case "$OUT" in *NOT_ELIGIBLE*) assert_rc "cli-intent-no-terminator-verdict" 0 0 "";; *) assert_rc "cli-intent-no-terminator-verdict" 0 1 "$OUT";; esac
 
 # end to end via CLI: file-name intent eligible, 3 sentences and bare x are not
 OUT="$(node "$TOOLS" quick eligibility \
