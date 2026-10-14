@@ -1,3 +1,16 @@
 {
-  "reservations": []
+  "reservations": [
+    {
+      "type": "code_scope",
+      "paths": [
+        "README.md",
+        "docs/vault.md",
+        "docs/roadmap.md",
+        "docs/product/"
+      ],
+      "by": "015-docs-consolidation",
+      "at": "2026-10-14T06:08:59.340Z",
+      "stage": "started"
+    }
+  ]
 }
