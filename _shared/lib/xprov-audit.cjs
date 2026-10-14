@@ -44,7 +44,7 @@ const STATE = Object.freeze({ OK: 'ok', MISSING: 'missing', BROKEN: 'broken' });
 // whose action matches the entry kind (SEC-1).
 const ACTION = Object.freeze({
   PERMIT: 'permit', PERMIT_DENY: 'permit-deny', WAIVE: 'waive', ALLOWLIST_APPROVE: 'allowlist-approve', ALLOWLIST_REVOKE: 'allowlist-revoke',
-  CONSENT: 'consent', CONSENT_DENY: 'consent-deny', CONSENT_REVOKE: 'consent-revoke', CONSENT_WAIVE: 'consent-waive', CONSENT_ALLOWLIST: 'consent-allowlist',
+  CONSENT: 'consent', CONSENT_DENY: 'consent-deny', CONSENT_REVOKE: 'consent-revoke', CONSENT_WAIVE: 'consent-waive', CONSENT_ALLOWLIST: 'consent-allowlist', CONSENT_CLASSIFY: 'consent-classify',
 });
 const GRANT_ACTIONS = Object.freeze([ACTION.PERMIT, ACTION.PERMIT_DENY, ACTION.CONSENT, ACTION.CONSENT_DENY]);
 const KIND_ACTIONS = Object.freeze({ allowed: [ACTION.PERMIT, ACTION.CONSENT], denied: [ACTION.PERMIT_DENY, ACTION.CONSENT_DENY] });

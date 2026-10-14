@@ -5,6 +5,8 @@
 // branch review). help.cjs interpolates the string in place; the rendered
 // --help output is byte-identical to the unsplit text.
 
+const { CONSENT_HELP } = require('./help-xprov-consent.cjs');
+
 const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   Spec 009-cross-provider-review-gate. Cross-provider review
                   gate: sends a phase's PLAN.md (gate plan-review-xprov, a1-plan
@@ -372,10 +374,7 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   allowlist_not_separate_commit, allowlist_owner_mismatch,
                   allowlist_unapproved. gitleaks hits and reviewer output are
                   never allowlisted.
-    consent (spec 016, planned wave 2)
-                  Not shipped yet: the dispatch entry exists, the module does not;
-                  until then the command exits 2 ("not implemented yet"), which
-                  keeps every consent path closed.
+${CONSENT_HELP}
     scope --paths <file> | --base <sha> [--head <sha>] [--repo <git-toplevel>]
                   (spec 016 FR-015, FR-016; xprov-scope.cjs + xprov-scope-globs.json)
                   Deterministic, no LLM: classifies a path list (one path per line)

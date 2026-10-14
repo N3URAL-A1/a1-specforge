@@ -407,6 +407,6 @@ function cmdXprovPermit(args) {
 }
 
 module.exports = {
-  PERMIT_FILE, ENFORCEMENT, DENY_MESSAGE, EXPOSURE_SENTENCE, HINT_PERMIT_MISMATCH, STATES, permitPath, permitCheck, permitHint, permit, permitDeny, isValidBranchName,
+  PERMIT_FILE, ENFORCEMENT, DENY_MESSAGE, EXPOSURE_SENTENCE, HINT_PERMIT_MISMATCH, STATES, permitPath, permitCheck, permitHint, permit, permitDeny, isValidBranchName, validateRecord,
   cmdXprovPermitCheck, cmdXprovPermit,
 };

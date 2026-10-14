@@ -291,7 +291,7 @@ SCAN15='
 const fs = require("fs"); const path = require("path");
 const root = process.argv[1]; const lib = path.join(root, "_shared", "lib");
 const files = []; (function walk(d) { for (const n of fs.readdirSync(d)) { const p = path.join(d, n); const s = fs.lstatSync(p); if (s.isDirectory()) walk(p); else if (n.endsWith(".cjs")) files.push(p); } })(path.join(root, "_shared"));
-const WRITER = /\b(writePermits|withPermit)\b/; const bad = []; let inPermit = 0; const requirers = [];
+const WRITER = /\b(writePermits|withPermit)\b/; const bad = []; let inPermit = 0; let inConsent = 0; const requirers = [];
 for (const f of files) {
   const rel = path.relative(root, f); const lines = fs.readFileSync(f, "utf8").split("\n");
   if (/require\(.[^)]*xprov-permits(\.cjs)?.\)/.test(lines.join("\n"))) requirers.push(path.basename(f));
@@ -301,22 +301,27 @@ for (const f of files) {
     const m = /^(?:async\s+)?function\s+(\w+)/.exec(l); if (m) fn = m[1]; else if (/^\S/.test(l) && !/^[}\])]/.test(l)) fn = null;
     if (/^\s*(\/\/|\*|\/\*)/.test(l) || !WRITER.test(l)) return;
     if (path.basename(f) === "xprov-permit.cjs" && (fn === "permit" || fn === "permitDeny")) { inPermit++; return; }
+    // spec 016 wave 2: the chat channel is the second sanctioned writer (xprov consent record / revoke), at three named functions only.
+    if (path.basename(f) === "xprov-consent-record.cjs" && (fn === "writeYes" || fn === "writeNo" || fn === "revokeConsent")) { inConsent++; return; }
     bad.push(rel + ":" + (i + 1) + " in " + (fn || "top level"));
   });
 }
-process.stdout.write(JSON.stringify({ bad, inPermit, requirers }));
+process.stdout.write(JSON.stringify({ bad, inPermit, inConsent, requirers }));
 '
 casePS9() {
   local j; j="$(node -e "$SCAN15" "$REPO_ROOT" 2>&1)"
   assert_json "PS9 no file outside xprov-permit.cjs permit/permitDeny references writePermits/withPermit" "$j" "JSON.stringify(j.bad)" "[]"
   assert_json "PS9 xprov-permit.cjs references them inside permit and permitDeny (a scan that sees nothing is no proof)" "$j" "j.inPermit >= 2" "true"
-  assert_json "PS9 the module is required by xprov-permit.cjs only" "$j" "j.requirers.join(',')" "xprov-permit.cjs"
+  assert_json "PS9 the consent record module references them inside writeYes, writeNo and revokeConsent only (spec 016 wave 2)" "$j" "j.inConsent >= 3" "true"
+  assert_json "PS9 the module is required by xprov-permit.cjs and the consent record module only (spec 016 wave 2)" "$j" "j.requirers.join(',')" "xprov-consent-record.cjs,xprov-permit.cjs"
   # discriminator: plant a writer call in another module and in permitCheck of a tree copy → the scan must flag both
   local cp="$TMP15/scan-tree"; rm -rf "$cp"; mkdir -p "$cp"; cp -R "$REPO_ROOT/_shared" "$cp/_shared"
   printf 'const P = require("./xprov-permits.cjs");\nfunction leak() { return P.writePermits({}); }\nmodule.exports = { leak };\n' >> "$cp/_shared/lib/xprov-gate.cjs"
   node -e 'const fs=require("fs"); const f=process.argv[1]; const s=fs.readFileSync(f,"utf8"); fs.writeFileSync(f, s.replace("function permitHint(state) {", "function permitHint(state) {\n  require(\"./xprov-permits.cjs\").withPermit({}, \"k\", null);"))' "$cp/_shared/lib/xprov-permit.cjs"
+  node -e 'const fs=require("fs"); const f=process.argv[1]; const s=fs.readFileSync(f,"utf8"); const n="function recordConsent(o) {"; if (s.split(n).length !== 2) process.exit(3); fs.writeFileSync(f, s.replace(n, () => n + "\n  PM.writePermits({});"))' "$cp/_shared/lib/xprov-consent-record.cjs" || bad "PS9 harness: recordConsent needle"
   j="$(node -e "$SCAN15" "$cp" 2>&1)"
   assert_json "PS9 discriminator: a writer call planted in xprov-gate.cjs is flagged" "$j" "j.bad.some((b) => b.startsWith('_shared/lib/xprov-gate.cjs'))" "true"
+  assert_json "PS9 discriminator: a writer call planted in recordConsent (not a sanctioned function) is flagged" "$j" "j.bad.some((b) => b.includes('xprov-consent-record.cjs') && b.includes('recordConsent'))" "true"
   assert_json "PS9 discriminator: a writer call planted in permitHint is flagged" "$j" "j.bad.some((b) => b.includes('xprov-permit.cjs') && b.includes('permitHint'))" "true"
   rm -rf "$cp"
 }
