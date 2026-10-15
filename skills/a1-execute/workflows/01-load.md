@@ -77,7 +77,10 @@ place the check fails with that reason, which is the correct answer.)
   (denied: the line above). When `permit_state` is `origin_changed` or `unbound_legacy`, the
   line names it instead — `ℹ Codex review skipped: permit void (<permit_state>) — the owner should re-consent; Reinhard-only, continuing.` —
   and the retro records the state; Reinhard-only must never look like a plain absent permit. Record `{id: plan-review-xprov, verdict: not_applicable, caught: false}`
-  with the issue tag `xprov_not_applicable`. A mismatch or broken state
+  with the issue tag `xprov_not_applicable`. `accepted: "not_applicable"` with `placement: "scope_exempt"` (spec 016
+  FR-019: the spec is not size L and the plan names no security surface) is exit 0 as well: print
+  `ℹ Plan review not applicable — scope_exempt: spec is not size L and the plan names no security surface; Reinhard-only, continuing.`
+  and record the same retro entry with reason `scope_exempt`. A mismatch or broken state
   (`*_mismatch`, `audit_broken`, `invalid`) stays exit 1.
 - **Exit 1, `reason: plan_review_missing`** → read `enforcement` from the
   stdout JSON (it echoes the `plan-review-xprov` row of

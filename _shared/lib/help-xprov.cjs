@@ -283,6 +283,22 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   (reason external_review_denied, exit 1, one log entry and one
                   xprov_not_applicable observation, no run); on an applies_to:
                   all row it fails external_review_not_permitted.
+                  Spec 016 FR-019/FR-020 placement, checked BEFORE the permit: a plan
+                  review runs only when the spec named by PLAN.md (frontmatter spec:
+                  or spec_path:, a relative .md path in the repo or the vault) has
+                  size: L, or the backtick-quoted paths of the plan's ## Wave
+                  sections are security surface (xprov scope); size unknown is
+                  decided by surface alone, a plan without ## Wave sections runs. A
+                  wave inspection runs only when a LATER wave names the wave in its
+                  Depends on line and the wave's plan files or its diff (--base to
+                  HEAD) are surface; an unlisted wave or a diff git cannot produce
+                  runs. Otherwise: not_applicable, reason scope_exempt, step
+                  placement, exit 1, nothing run, nothing written, no consent
+                  question. No flag sets the size (--size, --spec: exit 2).
+                  load-check accepts an exempt plan (placement scope_exempt);
+                  wave-status lists exempt waves under scope_exempt (a wave with a
+                  gate row is judged on its rows; an exempt wave's commits do not
+                  break the chain of the reviewed waves around it).
                   Spec 016 FR-012: a repository with NO permit (permit state absent,
                   origin_changed or unbound_legacy) on an applies_to: permitted-repos
                   row also gets not_applicable, reason external_review_not_permitted,
@@ -424,7 +440,7 @@ ${CONSENT_HELP}
                   Reasons (stdout \`reason\` on exit 1): runner_failed,
                   malformed, wrong_mode, blocked, plan_changed, tripwire,
                   secret_in_snapshot, secret_in_output, quarantined, round_cap,
-                  external_review_not_permitted, external_review_denied,
+                  external_review_not_permitted, external_review_denied, scope_exempt,
                   external_review_denial_mismatch, external_review_permit_mismatch,
                   snapshot_failed, snapshot_not_scanned, snapshot_changed_after_scan,
                   run_home_unsafe, not_logged_in,

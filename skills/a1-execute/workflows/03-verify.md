@@ -37,6 +37,10 @@ echo "xprov wave-status exit=$RC"
   `unbound_legacy` the retro names the `permit_state` ("Codex review skipped: permit void (<state>)").
   A mismatch
   or broken state (`*_mismatch`, `audit_broken`, `invalid`) stays exit 1.
+  **Placement (spec 016 FR-020).** Waves the placement rule exempts (no later wave depends on them, or no security
+  surface in the files the plan names for them) are listed under `scope_exempt` and need no pass or waiver; a wave
+  that has a gate row is judged on its rows. Retro: `{id: wave-inspect-xprov, verdict: not_applicable, caught: false}`
+  with reason `scope_exempt` and the issue tag `xprov_not_applicable`.
 - **Exit 1** → the stdout JSON lists the lacking waves. For each: go back to
   `02-execute.md` step 2b-x for that wave (re-run the inspection with that
   wave's `--base`), or the owner waives it. Main path: the chat waiver of

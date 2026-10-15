@@ -209,5 +209,5 @@ function cmdXprovScope(args) {
 
 module.exports = {
   GLOBS_FILE, MAX_PATH_CHARS, CATEGORY_UNCLASSIFIABLE,
-  compileGlob, loadGlobs, classifyPaths, classify, parsePathList, cmdXprovScope,
+  compileGlob, loadGlobs, classifyPaths, classify, parsePathList, diffPaths, cmdXprovScope,
 };

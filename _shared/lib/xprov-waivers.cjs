@@ -153,23 +153,30 @@ function leadsTo(workPath, from, to, phase) {
  * Returns a Map pair-key → chosen entry or null. Walks each lane from its last
  * completed wave down: the last must sit at the tip (atTip), every earlier one
  * must end exactly where the next one's base starts; a lacking successor makes
- * every earlier wave of the lane lack too (fail closed). */
-function chainCoverage(pairs, candidates, tips, phase) {
+ * every earlier wave of the lane lack too (fail closed). `exempt` (Set of `wave|lane`, optional): placement-exempt waves are skipped and
+ * make the gap around them unchecked. */
+function chainCoverage(pairs, candidates, tips, phase, exempt) {
   const chosen = new Map();
+  const skip = exempt instanceof Set ? exempt : new Set();
   const key = (p) => `${p.wave}|${p.lane || ''}`;
   const lanes = [...new Set(pairs.map((p) => p.lane || ''))];
   for (const lane of lanes) {
     const waves = pairs.filter((p) => (p.lane || '') === lane).sort((a, b) => a.wave - b.wave);
     const tip = tips[lane];
     let next = null;
+    let seenRequired = false; // a required (non-exempt) wave lies after this one
+    let gap = false; // exempt waves (placement, spec 016 FR-020) lie between this wave and `next` / the tip: their commits are not reviewed by design
     for (let i = waves.length - 1; i >= 0; i--) {
       const p = waves[i];
-      const isLast = i === waves.length - 1;
+      if (skip.has(key(p))) { gap = true; continue; }
+      const isLast = !seenRequired;
       const ok = (c) => SHA_RE.test(String(c.head)) && SHA_RE.test(String(c.base)) && inHistory(tip.workPath, c.base, c.head)
-        && (isLast ? leadsTo(tip.workPath, c.head, tip.head, phase) : next !== null && leadsTo(tip.workPath, c.head, next.base, phase));
+        && (isLast ? (gap || leadsTo(tip.workPath, c.head, tip.head, phase)) : next !== null && (gap || leadsTo(tip.workPath, c.head, next.base, phase)));
       const pick = tip ? [...candidates(p)].reverse().find(ok) || null : null;
       chosen.set(key(p), pick);
       next = pick;
+      seenRequired = true;
+      gap = false;
     }
   }
   return chosen;

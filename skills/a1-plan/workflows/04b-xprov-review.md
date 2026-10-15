@@ -53,7 +53,11 @@ decision D-1): permit-check, then the gate, then the question, then the gate.
    When `permit_state` is `origin_changed` or `unbound_legacy`, the permit is void,
    not absent: print `ℹ Codex review skipped: permit void (<permit_state>) — the owner should re-consent; Reinhard-only.`
    and name the state in the retro, so the lower review level is never silent.
-3. **Ask once.** Only if this session can ask the owner (the AskUserQuestion tool
+   **Placement first (spec 016 FR-019, plan decision D-1).** The same call returns `not_applicable` with
+   `reason: scope_exempt` when the spec named by PLAN.md is not size L and the files the plan names are no
+   security surface. That is not a missing permit: no question is asked, nothing is written.
+3. **Ask once.** Only after the gate call returned `reason: external_review_not_permitted` (never after `scope_exempt`),
+   and only if this session can ask the owner (the AskUserQuestion tool
    exists; this is not a headless run, a CI run or a subagent) and this phase has
    not asked yet, print the canonical question — never write it yourself:
    ```bash
@@ -122,10 +126,12 @@ The driver has already appended verdict, XREVIEW.md path and result path to
 | `fail-with-findings` | any | REVISE — go to Step 3 (one revision round, then Step 4). |
 | `not_applicable` (exit 1, `reason: external_review_denied`) | any | The owner recorded that no external review applies to this repository (a chat No or `xprov permit --deny`, confirmed by the owner's store). **Continue — do not halt.** Print the one-line notice below and treat the plan as ready; no Codex call happened. The retro records `verdict: not_applicable` and the issue tag `xprov_not_applicable`. A record the owner's store does not confirm (`external_review_denial_mismatch`, `external_review_permit_mismatch`) is a `fail`, not this row. |
 | `not_applicable` (exit 1, `reason: external_review_not_permitted`) | any | The repository has no permit and the owner gave none (never asked, No, unanswered, or no chat: Step 1.0). **Continue — do not halt.** Print the no-permit notice below and treat the plan as ready with the Reinhard review only; no Codex call happened. The retro records `verdict: not_applicable` and the issue tag `xprov_not_applicable`. |
+| `not_applicable` (exit 1, `reason: scope_exempt`) | any | The placement rule says the plan review does not apply (spec size not L, no security surface in the files the plan names). **Continue — do not halt.** Print the scope notice below and treat the plan as ready with the Reinhard review only; no consent question is asked, no Codex call happened, nothing was written. The retro records `verdict: not_applicable` with the reason `scope_exempt` and the issue tag `xprov_not_applicable`. |
 | `fail` (any `reason`) | `warning` | Print the warning block below, then treat the plan as ready **with the warning attached** to the summary. The retro records `verdict: fail`. |
 | `fail` (any `reason`) | `blocking` | **HALT.** Print the block below as an error; do not suggest `a1-execute`. Surface the `reason` and the two ways out: fix the cause (e.g. `preflight_failed`, `not_logged_in`, `external_review_permit_mismatch`) and re-run Step 1, or an owner waiver by chat (Step 5). |
 
 Notice for `not_applicable` (one line): `ℹ Cross-provider plan review not applicable — the owner denied external review for this repository (gate plan-review-xprov); continuing.`
+For `scope_exempt`: `ℹ Cross-provider plan review not applicable — scope_exempt: spec is not size L and the plan names no security surface (gate plan-review-xprov); Reinhard-only, continuing.`
 For `external_review_not_permitted`: `ℹ Cross-provider plan review not applicable — no Codex permit for this repository (gate plan-review-xprov); Reinhard-only, continuing.`
 For `permit_state` `origin_changed` or `unbound_legacy`: `ℹ Codex review skipped: permit void (<permit_state>) — the owner should re-consent; Reinhard-only, continuing.`
 
