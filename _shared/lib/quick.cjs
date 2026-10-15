@@ -24,7 +24,7 @@ const {
   loadReservations,
 } = require('./locks.cjs');
 const { gitSafe } = require('./git-safe.cjs');
-const { matchesGlob, scopePathsOverlap, validateScopePath } = require('./segment-glob.cjs');
+const { matchesGlob, scopePathsOverlap, validateScopePath, ScopeLimitError } = require('./segment-glob.cjs');
 
 // ---------- eligibility thresholds (FR-002) ----------
 
@@ -150,8 +150,14 @@ function findConflictingReservations(reservations, candidatePaths, excludeBy) {
     const otherPaths = Array.isArray(r.paths) ? r.paths : [];
     for (const cand of candidatePaths) {
       for (const other of otherPaths) {
-        if (scopePathsOverlap(cand, other)) {
-          conflicts.push({ feature: r.by, path: cand, with: other });
+        try {
+          if (scopePathsOverlap(cand, other)) {
+            conflicts.push({ feature: r.by, path: cand, with: other });
+          }
+        } catch (e) {
+          if (!(e instanceof ScopeLimitError)) throw e;
+          // Stored entry over the input bounds: fail closed as a conflict.
+          conflicts.push({ feature: r.by, path: cand, with: other, reason: `stored scope unusable: ${e.message}` });
         }
       }
     }
@@ -229,7 +235,8 @@ function cmdQuickEligibility(args) {
   const limitErrors = rawScopePaths
     .map((sp) => ({ sp, err: validateScopePath(sp) }))
     .filter((x) => x.err !== null);
-  const scopePaths = rawScopePaths.filter((sp) => validateScopePath(sp) === null);
+  const rejected = new Set(limitErrors.map((x) => x.sp));
+  const scopePaths = rawScopePaths.filter((sp) => !rejected.has(sp));
   if (flags.scope === undefined || flags.scope === null || String(flags.scope).trim() === '') {
     reasons.push('missing required flag --scope');
   } else {
@@ -276,6 +283,9 @@ function cmdQuickEligibility(args) {
     if (conflicts.length > 0) {
       const holders = [...new Set(conflicts.map((c) => c.feature))];
       reasons.push(`conflicting code-scope reservation held by: ${holders.join(', ')}`);
+      for (const c of conflicts.filter((x) => x.reason)) {
+        reasons.push(`reservation of ${c.feature} cannot be compared (fail closed): ${c.reason}`);
+      }
     }
   }
 

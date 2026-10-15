@@ -23,6 +23,7 @@ const fs = require('fs');
 const path = require('path');
 const { parseFlags } = require('./io.cjs');
 const { scopePathsOverlap } = require('./code-scope.cjs');
+const { ScopeLimitError } = require('./segment-glob.cjs');
 
 /** Wave-level markers that make a wave ineligible for a lane. Matched
  * case-insensitively against the wave heading and its task bodies. A wave that
@@ -253,7 +254,15 @@ function crossLaneImportFindings(lanes, repoRootArg) {
   // (check 1) already guarantees no two lanes claim the same path.
   const ownerOf = (rel) => {
     for (const lane of lanes) {
-      if (lane.owns.some((pattern) => scopePathsOverlap([pattern], [rel]))) return lane.id;
+      const owned = lane.owns.some((pattern) => {
+        try {
+          return scopePathsOverlap([pattern], [rel]);
+        } catch (e) {
+          if (e instanceof ScopeLimitError) return false; // reported by owns-overlap
+          throw e;
+        }
+      });
+      if (owned) return lane.id;
     }
     return null;
   };
@@ -346,11 +355,20 @@ function cmdLaneSplitCheck(args) {
     for (let b = a + 1; b < lanes.length; b++) {
       for (const pa of lanes[a].owns) {
         for (const pb of lanes[b].owns) {
-          if (scopePathsOverlap(pa, pb)) {
+          try {
+            if (scopePathsOverlap(pa, pb)) {
+              findings.push({
+                check: 'owns-overlap',
+                severity: 'BLOCKER',
+                msg: `lanes '${lanes[a].id}' and '${lanes[b].id}' both claim overlapping paths: '${pa}' vs '${pb}'`,
+              });
+            }
+          } catch (e) {
+            if (!(e instanceof ScopeLimitError)) throw e;
             findings.push({
               check: 'owns-overlap',
               severity: 'BLOCKER',
-              msg: `lanes '${lanes[a].id}' and '${lanes[b].id}' both claim overlapping paths: '${pa}' vs '${pb}'`,
+              msg: `lanes '${lanes[a].id}' and '${lanes[b].id}': owns path cannot be compared (${e.message}): '${pa.slice(0, 60)}' vs '${pb.slice(0, 60)}'`,
             });
           }
         }

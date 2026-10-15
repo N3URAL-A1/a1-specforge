@@ -21,13 +21,18 @@
  */
 
 /** Normalize a scope path: backslashes to `/`, strip leading "./", collapse
- * duplicate slashes, strip one trailing slash. */
+ * duplicate slashes. A trailing slash is kept: it is the explicit signal that
+ * the last segment is a directory (`docs/v1.2/`), see hasDirSignal. */
 function normalizeScopePath(p) {
   let out = String(p).trim().replace(/\\/g, '/');
   while (out.startsWith('./')) out = out.slice(2);
   out = out.replace(/\/+/g, '/');
-  if (out.length > 1 && out.endsWith('/')) out = out.slice(0, -1);
   return out;
+}
+
+/** True if a normalized scope ends in `/` (explicit directory). */
+function hasDirSignal(norm) {
+  return norm.length > 1 && norm.endsWith('/');
 }
 
 /** Input bounds: scopes are user-supplied; reject absurd shapes instead of
@@ -169,8 +174,7 @@ function isAnchored(segs) {
  * anchored (`src/**`) or ends in a literal name (`**\/fixtures`, `*\/a`): that
  * literal may be a directory on the other side. A scope that ends in a glob
  * segment and starts with one (`*`, `**\/*.md`) names files by pattern and
- * overlaps only where it truly matches. Known limit: `**\/*.md` vs `docs`
- * is reported disjoint although a directory named `docs.md` would match. */
+ * overlaps only where it truly matches. */
 function isDirectoryCapable(segs) {
   return isAnchored(segs) || (segs.length > 0 && !isGlobSegment(segs[segs.length - 1]));
 }
@@ -184,17 +188,24 @@ function isDirectoryCapable(segs) {
  * above the rest of the other side: overlap; a side that is not
  * directory-capable still overlaps when the other side's remainder is all
  * `**` (zero segments). A trailing `**` matches everything below. A `**`
- * swallows the other side's final segment (treating it as a directory) only
- * when its own scope is anchored, so `**\/util.js` and `docs/billing.md` stay
- * disjoint while `src/**\/util.js` / `src/foo` overlap. A directory-capable
+ * swallows the other side's final segment (treating it as a directory) when
+ * its own scope is anchored (`src/**\/util.js` / `src/foo`) or when the other
+ * side is directory-capable and its last segment is not file-like
+ * (`**\/util.js` / `src/billing/`, `**\/*.tsx` / `apps/web`), so
+ * `**\/util.js` and `docs/readme.md` stay disjoint. A directory-capable
  * side whose last literal matched in the middle of the other side overlaps
  * (`**\/fixtures` / `src/fixtures/a.json`).
  */
-function segmentListsOverlap(A, B) {
+function segmentListsOverlap(A, B, trailingDirA = false, trailingDirB = false) {
   if (A.length === 0 || B.length === 0) return true;
   const memo = new Map();
-  const dirA = isDirectoryCapable(A);
-  const dirB = isDirectoryCapable(B);
+  const dirA = trailingDirA || isDirectoryCapable(A);
+  const dirB = trailingDirB || isDirectoryCapable(B);
+  // A literal last segment with an extension (`util.js`, `v1.2`) is taken for a
+  // file unless the scope ends in `/`. Known limit: a directory named like a
+  // file (`docs.md`, no trailing slash) is not swallowed by the other `**`.
+  const fileLike = (segs, k, trailing) =>
+    !(trailing && k === segs.length - 1) && /.\.[^./]+$/.test(segs[k]);
   const anchoredA = isAnchored(A);
   const anchoredB = isAnchored(B);
   const onlyGlobstars = (segs, from) => segs.slice(from).every((s) => s === '**');
@@ -209,9 +220,13 @@ function segmentListsOverlap(A, B) {
     let r;
     if ((a === '**' && i === A.length - 1) || (b === '**' && j === B.length - 1)) r = true;
     else if (a === '**' && b === '**') r = go(i + 1, j) || go(i, j + 1);
-    else if (a === '**') r = go(i + 1, j) || ((j + 1 < B.length || anchoredA) && go(i, j + 1));
-    else if (b === '**') r = go(i, j + 1) || ((i + 1 < A.length || anchoredB) && go(i + 1, j));
-    else r = segmentPatternsIntersect(a, b) && go(i + 1, j + 1);
+    else if (a === '**') {
+      const swallow = j + 1 < B.length || anchoredA || (dirB && !fileLike(B, j, trailingDirB));
+      r = go(i + 1, j) || (swallow && go(i, j + 1));
+    } else if (b === '**') {
+      const swallow = i + 1 < A.length || anchoredB || (dirA && !fileLike(A, i, trailingDirA));
+      r = go(i, j + 1) || (swallow && go(i + 1, j));
+    } else r = segmentPatternsIntersect(a, b) && go(i + 1, j + 1);
     memo.set(key, r);
     return r;
   }
@@ -224,13 +239,14 @@ function scopePathsOverlap(rawA, rawB) {
   const a = normalizeScopePath(rawA);
   const b = normalizeScopePath(rawB);
   if (a === b) return true;
-  return segmentListsOverlap(scopeSegments(a), scopeSegments(b));
+  return segmentListsOverlap(scopeSegments(a), scopeSegments(b), hasDirSignal(a), hasDirSignal(b));
 }
 
 module.exports = {
   wildcardMatch,
   segmentPatternsIntersect,
   normalizeScopePath,
+  hasDirSignal,
   scopeSegments,
   isGlobSegment,
   segmentsMatchGlob,

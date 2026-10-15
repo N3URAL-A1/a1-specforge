@@ -229,7 +229,47 @@ MD
   [[ "$v" == "0" ]] && ok "L7 disjoint globs in one directory give 0 owns-overlap" || bad "L7 false overlap ($v)"
 }
 
-caseL1; caseL2; caseL3; caseL4; caseL5; caseL6; caseL7
+# ---------- L8: directory owns vs leading-** glob, and over-limit owns (review round 3) ----------
+# `src/billing/` can contain a util.js, so `**/util.js` overlaps it; the
+# over-limit owns must be a BLOCKER finding (rc 1), not a crash (rc 2).
+caseL8() {
+  local t out v rc; t="$(mktemp -d)"
+  cat > "$t/PLAN.md" <<'MD'
+---
+phase: probe
+lanes:
+  - id: lane-a
+    waves: [1]
+    owns:
+      - "src/billing/"
+  - id: lane-b
+    waves: [2]
+    owns:
+      - "**/util.js"
+---
+
+## Wave 1 — a
+## Wave 2 — b
+MD
+  out="$(node "$TOOLS" lane-split check --plan "$t/PLAN.md" 2>/dev/null)"
+  v="$(node -e "
+    const j=JSON.parse(process.argv[1]);
+    process.stdout.write(String(j.findings.filter((x)=>x.check==='owns-overlap').length));
+  " "$out" 2>&1)"
+  [[ "$v" == "1" ]] && ok "L8 directory owns vs leading-** glob is an owns-overlap" || bad "L8 directory owns ($v)"
+
+  local long; long="$(node -e 'process.stdout.write("a".repeat(30000))')"
+  sed -i.bak "s#\*\*/util.js#src/${long}#" "$t/PLAN.md"
+  rc=0; out="$(node "$TOOLS" lane-split check --plan "$t/PLAN.md" 2>"$t/err")" || rc=$?
+  v="$(node -e "
+    const j=JSON.parse(process.argv[1]);
+    const f=j.findings.filter((x)=>x.check==='owns-overlap'&&/cannot be compared/.test(x.msg));
+    process.stdout.write(String(f.length)+'/'+f[0].severity);
+  " "$out" 2>&1)"
+  [[ "$rc" == "1" && "$v" == "1/BLOCKER" ]] && ok "L8b over-limit owns is a BLOCKER finding, rc 1" || bad "L8b over-limit owns (rc=$rc v=$v)"
+}
+
+caseL1; caseL2; caseL3; caseL4; caseL5; caseL6; caseL7; caseL8
 printf '%s\n' "${results[@]}"
 echo "----"
 echo "a1-lane-split: $pass passed, $fail failed"

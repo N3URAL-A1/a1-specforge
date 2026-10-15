@@ -1070,6 +1070,23 @@ if ! grep -q "exceeds the limit" <<<"$OUT" || grep -q "RangeError" <<<"$OUT"; th
   echo "FAIL  cli-oversized-scope-segment: expected clear limit reason"; fail=$((fail + 1))
 fi
 
+# Review round 3: a stored reservation over the input bounds is a conflict that
+# names its holder and the reason, not a crash.
+RESV_BIG="$WORK/reservations-overlimit.json"
+node -e '
+  require("fs").writeFileSync(process.argv[1], JSON.stringify({ reservations: [
+    { type: "code_scope", paths: ["src/" + "a".repeat(30000)], by: "spec-stored-long", at: "2026-10-15T00:00:00Z", stage: "started" } ] }));
+' "$RESV_BIG"
+OUT="$(node "$TOOLS" quick eligibility \
+  --intent "Fix the typo." --files 1 --diff-lines 5 --scope "src/x.ts" \
+  --no-migration --no-new-route --no-new-dep \
+  --repo-root "$CLEAN_REPO" --file "$RESV_BIG" --by quick-stored 2>&1)"
+RC=$?
+assert_rc "cli-stored-overlimit-reservation-not-eligible" 1 "$RC" "$OUT"
+if ! grep -q "spec-stored-long" <<<"$OUT" || ! grep -q "stored scope unusable" <<<"$OUT" || grep -q "RangeError" <<<"$OUT"; then
+  echo "FAIL  cli-stored-overlimit-reservation: expected holder + reason, no RangeError"; fail=$((fail + 1))
+fi
+
 MANY="$(node -e 'process.stdout.write("**/".repeat(3000) + "x")')"
 OUT="$(node "$TOOLS" quick eligibility \
   --intent "Fix the typo." --files 1 --diff-lines 5 --scope "$MANY" \

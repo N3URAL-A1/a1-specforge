@@ -26,6 +26,7 @@ const {
   normalizeScopePath,
   scopePathsOverlap,
   validateScopePath,
+  ScopeLimitError,
 } = require('./segment-glob.cjs');
 
 // Path normalization, glob matching and overlap math live in segment-glob.cjs
@@ -43,8 +44,15 @@ function findScopeOverlaps(reservations, candidatePaths, excludeBy) {
     const otherPaths = Array.isArray(r.paths) ? r.paths : [];
     for (const cand of candidatePaths) {
       for (const other of otherPaths) {
-        if (scopePathsOverlap(cand, other)) {
-          overlaps.push({ feature: r.by, path: cand, with: other });
+        try {
+          if (scopePathsOverlap(cand, other)) {
+            overlaps.push({ feature: r.by, path: cand, with: other });
+          }
+        } catch (e) {
+          if (!(e instanceof ScopeLimitError)) throw e;
+          // A stored entry over the input bounds cannot be compared: fail
+          // closed and report it as a conflict with its holder and the reason.
+          overlaps.push({ feature: r.by, path: cand, with: other, reason: `stored scope unusable: ${e.message}` });
         }
       }
     }
@@ -60,6 +68,21 @@ function parseScopeList(raw) {
     .filter(Boolean);
 }
 
+/** Fail closed (rc 1, INVALID_SCOPE) when a --scope path violates the input
+ * bounds. Shared by claim and check. */
+function exitOnInvalidScope(paths, file, by) {
+  for (const sp of paths) {
+    const limitErr = validateScopePath(sp);
+    if (limitErr) {
+      process.stdout.write(
+        JSON.stringify({ status: 'INVALID_SCOPE', file, claim: { by, paths }, error: limitErr }, null, 2) + '\n'
+      );
+      process.stderr.write(`invalid scope (fail closed): ${limitErr}\n`);
+      process.exit(1);
+    }
+  }
+}
+
 const CODE_SCOPE_STAGES = ['started', 'complete', 'review', 'verify', 'merge', 'origin-cleanup', 'done'];
 
 function cmdCodeScopeClaim(args) {
@@ -73,16 +96,7 @@ function cmdCodeScopeClaim(args) {
     usage('code-scope claim requires at least one --scope path');
   }
   const by = flags.by;
-  for (const sp of paths) {
-    const limitErr = validateScopePath(sp);
-    if (limitErr) {
-      process.stdout.write(
-        JSON.stringify({ status: 'INVALID_SCOPE', file, claim: { by, paths }, error: limitErr }, null, 2) + '\n'
-      );
-      process.stderr.write(`invalid scope (fail closed): ${limitErr}\n`);
-      process.exit(1);
-    }
-  }
+  exitOnInvalidScope(paths, file, by);
 
   const lockPath = acquireReservationsLock(file);
   const data = loadReservations(file);
@@ -230,6 +244,7 @@ function cmdCodeScopeCheck(args) {
     usage('code-scope check requires at least one --scope path');
   }
   const by = flags.by;
+  exitOnInvalidScope(paths, file, by);
   const data = loadReservations(file);
   const overlaps = findScopeOverlaps(data.reservations, paths, by);
   if (overlaps.length > 0) {

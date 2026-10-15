@@ -108,8 +108,19 @@ fi
 #     either claim direction. Regression for the empty-nonGlobPrefix bug where
 #     isSegmentPrefix([], x) is trivially true and flips every non-match into
 #     a spurious CONFLICT. ---
+# Review round 3: feature-a holds the directory src/billing/, which may contain
+# a util.js, so "**/util.js" overlaps it (directory capability belongs to the
+# other side). It must still not conflict with the file docs/readme.md.
 OUT="$(node "$TOOLS" code-scope claim --by feature-globdoubledstar --scope "**/util.js" --file "$FILE" 2>&1)"
-assert_rc "leading-doublestar-vs-unrelated" 0 $? "$OUT"
+RC=$?
+assert_rc "leading-doublestar-vs-directory-scope" 1 "$RC" "$OUT"
+if ! grep -q "feature-a" <<<"$OUT"; then
+  echo "FAIL  leading-doublestar-vs-directory-scope: holder feature-a not named"; fail=$((fail + 1))
+fi
+OUT="$(node "$TOOLS" code-scope claim --by feature-globdoubledstar --scope "**/util.js" --file "$WORK/dstar-only.json" 2>&1)"
+assert_rc "leading-doublestar-setup" 0 $? "$OUT"
+OUT="$(node "$TOOLS" code-scope claim --by feature-docs-readme0 --scope "docs/readme.md" --file "$WORK/dstar-only.json" 2>&1)"
+assert_rc "leading-doublestar-vs-file-unrelated" 0 $? "$OUT"
 OUT="$(node "$TOOLS" code-scope claim --by feature-docs-readme --scope "docs/readme.md" --file "$FILE" 2>&1)"
 assert_rc "unrelated-vs-leading-doublestar" 0 $? "$OUT"
 
@@ -351,11 +362,13 @@ OVL_OUT="$(node -e '
              ["src/*.ts","src"], ["src/*","src/a/b.js"], ["docs/ADR.md","docs/adr.md"], ["dir/*.ts","dir/a-*.ts"],
              ["./","src/a.ts"], ["/","x"], ["src/a.ts","./"],
              ["**/fixtures","src/fixtures/a.json"], ["**/a","a/src"],
-             ["*","src/**"], ["*/a","src/?/**"], ["src/**/**","*"], ["*","**/util.js"]];
+             ["*","src/**"], ["*/a","src/?/**"], ["src/**/**","*"], ["*","**/util.js"],
+             ["src/billing/","**/util.js"], ["apps/web","**/*.tsx"], ["*.md/a","*.md/**/b"],
+             ["**/*.md","docs"], ["docs/v1.2/","**/x.md"]];
   const F = [["src/*.ts","lib/a.js"], ["**/*.md","docs/x.txt"], ["docs/adr-*.md","other/rfc-1.md"],
              ["src/*.ts","lib/a.ts"], ["src/*.ts","src/a.js"], ["src/*.ts","src/sub/a.ts"],
-             ["dir/x-*.ts","dir/y-*.ts"],
-             ["**/*.md","docs"]]; // last row pins a known limit: docs.md-as-directory is not modelled
+             ["dir/x-*.ts","dir/y-*.ts"], ["**/util.js","docs/readme.md"],
+             ["**/*.md","docs.txt"], ["docs/v1.2","**/x.md"]]; // last row pins the remaining limit: a file-like last segment without a trailing slash is a file
   let bad = 0;
   for (const [a,b] of T) if (scopePathsOverlap(a,b) !== true) { console.log("expected overlap: " + a + " vs " + b); bad++; }
   for (const [a,b] of F) if (scopePathsOverlap(a,b) !== false) { console.log("expected NO overlap: " + a + " vs " + b); bad++; }
@@ -419,6 +432,38 @@ assert_rc "root-scope-claim-conflicts" 1 $? "$OUT"
 if ! grep -q '"status": "CONFLICT"' <<<"$OUT"; then
   echo "FAIL  root-scope-claim-conflicts: expected CONFLICT"; fail=$((fail + 1))
 fi
+
+# --- check validates --scope like claim (review round 3) ---
+OUT="$(node "$TOOLS" code-scope check --by feature-chk --scope "src/$LONG_SEG" --file "$LIM_FILE" 2>&1)"
+assert_rc "check-oversized-segment-fails-closed" 1 $? "$OUT"
+if ! grep -q "INVALID_SCOPE" <<<"$OUT" || grep -q "RangeError" <<<"$OUT"; then
+  echo "FAIL  check-oversized-segment: expected INVALID_SCOPE, no RangeError"; fail=$((fail + 1))
+else
+  echo "PASS  check-oversized-segment: INVALID_SCOPE"; pass=$((pass + 1))
+fi
+
+# --- stored over-limit entry: conflict naming holder and reason, no crash, no lock left ---
+BAD_FILE="$WORK/stored-overlimit.json"
+node -e '
+  const seg = "a".repeat(30000);
+  require("fs").writeFileSync(process.argv[1], JSON.stringify({ reservations: [
+    { type: "code_scope", paths: ["src/" + seg], by: "feature-stored-long", at: "2026-10-15T00:00:00Z", stage: "started" } ] }));
+' "$BAD_FILE"
+OUT="$(node "$TOOLS" code-scope claim --by feature-new --scope "src/x.ts" --file "$BAD_FILE" 2>&1)"
+RC=$?
+assert_rc "claim-vs-stored-overlimit-conflicts" 1 "$RC" "$OUT"
+if ! grep -q "feature-stored-long" <<<"$OUT" || ! grep -q "stored scope unusable" <<<"$OUT" || grep -q "RangeError" <<<"$OUT"; then
+  echo "FAIL  claim-vs-stored-overlimit: expected holder + reason, no RangeError"; fail=$((fail + 1))
+else
+  echo "PASS  claim-vs-stored-overlimit names holder and reason"; pass=$((pass + 1))
+fi
+if ls "$BAD_FILE".lock >/dev/null 2>&1; then
+  echo "FAIL  claim-vs-stored-overlimit: lock file left behind"; fail=$((fail + 1))
+else
+  echo "PASS  claim-vs-stored-overlimit: no lock file left"; pass=$((pass + 1))
+fi
+OUT="$(node "$TOOLS" code-scope check --by feature-new --scope "src/x.ts" --file "$BAD_FILE" 2>&1)"
+assert_rc "check-vs-stored-overlimit-conflicts" 1 $? "$OUT"
 
 echo "code-scope fixtures: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]
