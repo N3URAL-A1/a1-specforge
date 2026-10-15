@@ -164,7 +164,7 @@ the gate call again.
    runs and stays the owner's own command.
 6. **Headless, CI or subagent:** no question, no consent. Print one line,
    `ℹ No Codex permit and no chat to ask: Reinhard-only review.`, and continue with
-   the `not_applicable` row below.
+   the `not_applicable` row below. An intent run (`a1-tools intent`, headless child) allows none of `xprov permit-check`, `xprov consent` or `xprov gate`: a refusal of such a call by the sandbox (exit 77, permission denied) is final. Do not retry it and do not look for another way; take this same branch (notice line, Reinhard-only, continue).
 7. Never run a terminal-only owner command (`xprov permit`, `xprov waive`,
    `xprov allowlist approve`) and never write `.a1/xprov.json` or `~/.a1-xprov/`.
 

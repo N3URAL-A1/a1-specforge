@@ -83,7 +83,7 @@ decision D-1): permit-check, then the gate, then the question, then the gate.
    Codex; Reinhard-only. An unanswered question is not repeated in this phase.
 5. **Headless or no AskUserQuestion** (CI, subagent, `claude -p`): no question,
    no consent. Print one line — `ℹ No Codex permit and no chat to ask: Reinhard-only review.` —
-   and continue with the `not_applicable` row of Step 2.
+   and continue with the `not_applicable` row of Step 2. An intent run (`a1-tools intent`, headless child) allows none of `xprov permit-check`, `xprov consent` or `xprov gate`: a refusal of such a call by the sandbox (exit 77, permission denied) is final. Do not retry it and do not look for another way; take this same branch (notice line, Reinhard-only, continue).
 6. Never run a terminal-only owner command (`xprov permit`, `xprov waive`,
    `xprov allowlist approve`) and never write `.a1/xprov.json` or
    `~/.a1-xprov/` yourself; the owner answers in chat, the commands above record it.
