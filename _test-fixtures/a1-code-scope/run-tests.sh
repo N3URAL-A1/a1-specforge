@@ -541,6 +541,7 @@ EDGE="$(node -e '
 ' "$REPO_ROOT" 2>&1)"
 expect_eq "hasDirSignal-edge-table" "ok" "$EDGE"
 RF="$WORK/pathological.json"
+node "$TOOLS" code-scope claim --by fb --scope "src/" --file "$RF" >/dev/null 2>&1
 T="$(node -e '
   const { spawnSync } = require("child_process");
   const scope = "a" + "/.".repeat(60000) + "/x";
@@ -550,6 +551,14 @@ T="$(node -e '
   process.stdout.write((r.status === 1 && /INVALID_SCOPE/.test(r.stdout) && ms < 2000) ? "ok" : "bad rc=" + r.status + " ms=" + ms);
 ' "$TOOLS" "$RF" 2>&1)"
 expect_eq "pathological-dot-segments-rejected-fast" "ok" "$T"
+# direct call bypasses the length cap: the scan itself must stay linear
+LIN="$(node -e '
+  const { hasDirSignal } = require(process.argv[1] + "/_shared/lib/segment-glob.cjs");
+  const s = "a" + "/.".repeat(200000) + "/x";
+  const t0 = Date.now(); hasDirSignal(s); const ms = Date.now() - t0;
+  process.stdout.write(ms < 200 ? "ok" : "slow ms=" + ms);
+' "$REPO_ROOT" 2>&1)"
+expect_eq "hasDirSignal-linear-on-long-dot-runs" "ok" "$LIN"
 
 echo "code-scope fixtures: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

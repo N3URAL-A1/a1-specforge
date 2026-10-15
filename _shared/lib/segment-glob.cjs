@@ -37,6 +37,7 @@ function hasDirSignal(norm) {
   // Linear right-to-left scan: strip trailing "/." pairs, then a trailing "/".
   let e = norm.length;
   while (e >= 2 && norm[e - 1] === '.' && norm[e - 2] === '/') e -= 2;
+  // `./.` special case: raw input only; normalized callers never reach it.
   if (e < norm.length) return !(e === 1 && norm[0] === '.');
   return norm[e - 1] === '/';
 }

@@ -24,7 +24,7 @@ const {
   loadReservations,
 } = require('./locks.cjs');
 const { gitSafe } = require('./git-safe.cjs');
-const { matchesGlob, scopePathsOverlap, validateScopePath, ScopeLimitError } = require('./segment-glob.cjs');
+const { matchesGlob, scopePathsOverlap, validateScopePath, ScopeLimitError, MAX_PATH_CHARS } = require('./segment-glob.cjs');
 
 // ---------- eligibility thresholds (FR-002) ----------
 
@@ -79,7 +79,6 @@ function matchesForbiddenSurface(scopePath) {
 // Mirrors xprov-scope.cjs segmentsOf: it classifies these as unclassifiable, so
 // the quick gate must refuse them too (quick stays a subset of xprov-scope).
 const XPROV_ABSOLUTE_RE = /^(?:[\\/]|[A-Za-z]:)/;
-const XPROV_MAX_PATH_CHARS = 4096;
 
 /** True if the scope path is a path-traversal attempt ("..") or an absolute
  * path — a declared change scope must be a plain relative path inside the
@@ -91,7 +90,7 @@ function isSuspiciousScopePath(rawScopePath) {
   const v = String(rawScopePath == null ? '' : rawScopePath).trim();
   if (v === '') return true;
   if (path.isAbsolute(v) || XPROV_ABSOLUTE_RE.test(v)) return true;
-  if (v.includes('\0') || v.length > XPROV_MAX_PATH_CHARS) return true;
+  if (v.includes('\0') || v.length > MAX_PATH_CHARS) return true;
   const segs = v.replace(/\\/g, '/').split('/').filter((s) => s !== '' && s !== '.');
   // No segment left (`.`, `./`) is unclassifiable for xprov-scope: fail closed.
   return segs.length === 0 || segs.some((seg) => seg === '..');
