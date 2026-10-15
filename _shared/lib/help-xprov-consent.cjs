@@ -66,6 +66,17 @@ const CONSENT_HELP = `    consent question|ensure|record|revoke  --kind consent|
                   unenforced) and prevents nothing. Dev install: bin/install.sh
                   installs no plugin hook, so no marker is ever answered there and
                   record writes nothing (the Reinhard-only path applies).
+                  Plugin hook (wave 4, FR-004/FR-005; hooks/hooks.json, active after
+                  \`claude plugin update a1-specforge\`): a consent question (header
+                  xprov-Freigabe, -Einstufung, -Waiver, -Allowlist, or any xprov-*) is
+                  put only byte-equal to what \`consent question\` prints, alone, without
+                  an answers field; the hook opens the marker on that call and records
+                  the pending yes only from the PostToolUse tool_response of the same
+                  tool_use_id. It denies Edit/Write/NotebookEdit/MultiEdit of ~/.a1-xprov/,
+                  .a1/xprov.json and of a settings file that adds an AskUserQuestion hook
+                  (such a hook could answer for the owner); a crash of the hook blocks
+                  the call (exit 2). A Bash write of a store or a settings file stays
+                  tier 0.
                   Exit: 0 ok · 1 refused (stdout JSON \`reason\`) · 2 usage error.`;
 
 module.exports = { CONSENT_HELP };
