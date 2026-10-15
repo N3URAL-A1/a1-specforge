@@ -531,5 +531,25 @@ assert_rc "reclaim-widen-multi-ok" 0 $? "$OUT"
 expect_eq "reclaim-widen-keeps-meta" "true|review|$AT|docs/v1.2/,src/a.ts" \
   "$(rc_json "$OUT" 'j.widened+"|"+j.reservation.stage+"|"+j.reservation.at+"|"+j.reservation.paths.join(",")')"
 
+# --- hasDirSignal edge table + pathological "/." input (Reinhard round 6) ---
+EDGE="$(node -e '
+  const { hasDirSignal } = require(process.argv[1] + "/_shared/lib/segment-glob.cjs");
+  const want = { "/.": true, "a/./.": true, "a/./": true, "a/.": true, "a/..": false, ".": false,
+                 "/": false, "./.": false, "a/.b": false, "a./.": true, "a/": true, "a": false };
+  const bad = Object.keys(want).filter((k) => hasDirSignal(k) !== want[k]);
+  process.stdout.write(bad.length ? "bad:" + JSON.stringify(bad) : "ok");
+' "$REPO_ROOT" 2>&1)"
+expect_eq "hasDirSignal-edge-table" "ok" "$EDGE"
+RF="$WORK/pathological.json"
+T="$(node -e '
+  const { spawnSync } = require("child_process");
+  const scope = "a" + "/.".repeat(60000) + "/x";
+  const t0 = Date.now();
+  const r = spawnSync("node", [process.argv[1], "code-scope", "check", "--by", "fa", "--scope", scope, "--file", process.argv[2]], { encoding: "utf8" });
+  const ms = Date.now() - t0;
+  process.stdout.write((r.status === 1 && /INVALID_SCOPE/.test(r.stdout) && ms < 2000) ? "ok" : "bad rc=" + r.status + " ms=" + ms);
+' "$TOOLS" "$RF" 2>&1)"
+expect_eq "pathological-dot-segments-rejected-fast" "ok" "$T"
+
 echo "code-scope fixtures: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]
