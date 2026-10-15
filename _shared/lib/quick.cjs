@@ -24,7 +24,7 @@ const {
   loadReservations,
 } = require('./locks.cjs');
 const { gitSafe } = require('./git-safe.cjs');
-const { matchesGlob, scopePathsOverlap } = require('./segment-glob.cjs');
+const { matchesGlob, scopePathsOverlap, validateScopePath } = require('./segment-glob.cjs');
 
 // ---------- eligibility thresholds (FR-002) ----------
 
@@ -93,12 +93,14 @@ function isSuspiciousScopePath(rawScopePath) {
 
 // ---------- intent sentence heuristic (FR-002, FR-003) ----------
 
-/** Count sentence-terminating punctuation ('.', '!', '?') as the sentence
- * heuristic named in the spec. Returns null (cannot confidently classify)
- * for empty/whitespace-only input — callers must fail closed on null. */
+/** Count sentence ends as the sentence heuristic named in the spec: a run of
+ * '.', '!', '?' (plus closing quotes/brackets) followed by whitespace or end of
+ * input. A run counts once; the lookbehind keeps the regex linear on long dot
+ * runs. Dots inside tokens (`.env`, `v1.2`) do not count.
+ * Returns null (cannot confidently classify) for empty/whitespace-only input — callers must fail closed on null. */
 function countIntentSentences(intent) {
   if (typeof intent !== 'string' || intent.trim() === '') return null;
-  const matches = intent.match(/[.!?]+["')\]]*(?=\s|$)/g);
+  const matches = intent.match(/(?<![.!?])[.!?]+["')\]]*(?=\s|$)/g);
   return matches ? matches.length : 0;
 }
 
@@ -223,10 +225,17 @@ function cmdQuickEligibility(args) {
     reasons.push(`--diff-lines is ${diffLines}, exceeds the ${MAX_DIFF_LINES}-line cap`);
   }
 
-  const scopePaths = parseScopeList(flags.scope);
+  const rawScopePaths = parseScopeList(flags.scope);
+  const limitErrors = rawScopePaths
+    .map((sp) => ({ sp, err: validateScopePath(sp) }))
+    .filter((x) => x.err !== null);
+  const scopePaths = rawScopePaths.filter((sp) => validateScopePath(sp) === null);
   if (flags.scope === undefined || flags.scope === null || String(flags.scope).trim() === '') {
     reasons.push('missing required flag --scope');
   } else {
+    for (const { err } of limitErrors) {
+      reasons.push(`--scope value rejected (fail closed): ${err}`);
+    }
     const suspiciousHits = scopePaths.filter(isSuspiciousScopePath);
     if (suspiciousHits.length > 0) {
       reasons.push(

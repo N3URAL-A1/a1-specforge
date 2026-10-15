@@ -30,8 +30,46 @@ function normalizeScopePath(p) {
   return out;
 }
 
+/** Input bounds: scopes are user-supplied; reject absurd shapes instead of
+ * letting the O(n*m) matchers or the recursion blow up (RangeError). */
+const MAX_SEGMENT_CHARS = 1024;
+const MAX_SEGMENTS = 256;
+
+class ScopeLimitError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'ScopeLimitError';
+    this.code = 'SCOPE_LIMIT';
+  }
+}
+
+/** Split a normalized scope into segments. Throws ScopeLimitError when a
+ * segment is longer than MAX_SEGMENT_CHARS or there are more than
+ * MAX_SEGMENTS segments. */
 function scopeSegments(p) {
-  return p.split('/').filter(Boolean);
+  const segs = p.split('/').filter(Boolean);
+  if (segs.length > MAX_SEGMENTS) {
+    throw new ScopeLimitError(`scope has ${segs.length} segments, exceeds the limit of ${MAX_SEGMENTS}`);
+  }
+  const tooLong = segs.find((seg) => seg.length > MAX_SEGMENT_CHARS);
+  if (tooLong !== undefined) {
+    throw new ScopeLimitError(
+      `scope segment has ${tooLong.length} characters, exceeds the limit of ${MAX_SEGMENT_CHARS}`
+    );
+  }
+  return segs;
+}
+
+/** Returns an error message if the raw scope path violates the input bounds,
+ * else null. Callers use it to fail closed with a clear message. */
+function validateScopePath(raw) {
+  try {
+    scopeSegments(normalizeScopePath(raw));
+    return null;
+  } catch (e) {
+    if (e instanceof ScopeLimitError) return e.message;
+    throw e;
+  }
 }
 
 /** True if the segment has an in-segment wildcard. */
@@ -114,22 +152,6 @@ function segmentsMatchGlob(patternSegs, pathSegs) {
   return walk(0, 0);
 }
 
-/** True if segsA is a prefix of segsB at a segment boundary (or equal),
- * compared case-insensitively like the glob matcher. */
-function isSegmentPrefix(segsA, segsB) {
-  if (segsA.length > segsB.length) return false;
-  for (let i = 0; i < segsA.length; i++) {
-    if (segsA[i].toLowerCase() !== segsB[i].toLowerCase()) return false;
-  }
-  return true;
-}
-
-/** Segments before the first glob segment: the fixed directory anchor. */
-function nonGlobPrefix(segs) {
-  const idx = segs.findIndex(isGlobSegment);
-  return idx === -1 ? segs : segs.slice(0, idx);
-}
-
 /** True if the path string matches the glob string (both normalized). */
 function matchesGlob(glob, rawPath) {
   return segmentsMatchGlob(
@@ -138,31 +160,48 @@ function matchesGlob(glob, rawPath) {
   );
 }
 
-/** A scope is anchored when it starts with a literal directory name. Only
- * anchored scopes act as a directory that contains the other side's paths; a
- * leading-glob scope (`*`, `**\/x.js`) overlaps only where it truly matches. */
+/** A scope is anchored when it starts with a literal directory name. */
 function isAnchored(segs) {
   return segs.length > 0 && !isGlobSegment(segs[0]);
+}
+
+/** A scope can act as a directory containing the other side's paths when it is
+ * anchored (`src/**`) or ends in a literal name (`**\/fixtures`, `*\/a`): that
+ * literal may be a directory on the other side. A scope that ends in a glob
+ * segment and starts with one (`*`, `**\/*.md`) names files by pattern and
+ * overlaps only where it truly matches. Known limit: `**\/*.md` vs `docs`
+ * is reported disjoint although a directory named `docs.md` would match. */
+function isDirectoryCapable(segs) {
+  return isAnchored(segs) || (segs.length > 0 && !isGlobSegment(segs[segs.length - 1]));
 }
 
 /**
  * Can two segment lists claim a common path? Walks both lists together:
  * `**` matches zero or more segments, any other segment pair must be able to
  * match a common name (segmentPatternsIntersect, so `dir/x-*.ts` and
- * `dir/y-*.ts` are disjoint). If an anchored side runs out first, it is a
- * directory above the rest of the other side: overlap. A trailing `**` matches
- * everything below. A `**` swallows the other side's final segment (treating
- * it as a directory) only when its own scope is anchored, so `**\/*.md` and
- * `docs/x.txt` stay disjoint while `src/**\/util.js` and `src/foo` overlap.
+ * `dir/y-*.ts` are disjoint). An empty list is the repo root and overlaps
+ * everything. If a directory-capable side runs out first, it is a directory
+ * above the rest of the other side: overlap; a side that is not
+ * directory-capable still overlaps when the other side's remainder is all
+ * `**` (zero segments). A trailing `**` matches everything below. A `**`
+ * swallows the other side's final segment (treating it as a directory) only
+ * when its own scope is anchored, so `**\/util.js` and `docs/billing.md` stay
+ * disjoint while `src/**\/util.js` / `src/foo` overlap. A directory-capable
+ * side whose last literal matched in the middle of the other side overlaps
+ * (`**\/fixtures` / `src/fixtures/a.json`).
  */
 function segmentListsOverlap(A, B) {
+  if (A.length === 0 || B.length === 0) return true;
   const memo = new Map();
+  const dirA = isDirectoryCapable(A);
+  const dirB = isDirectoryCapable(B);
   const anchoredA = isAnchored(A);
   const anchoredB = isAnchored(B);
+  const onlyGlobstars = (segs, from) => segs.slice(from).every((s) => s === '**');
   function go(i, j) {
     if (i === A.length && j === B.length) return true;
-    if (i === A.length) return anchoredA;
-    if (j === B.length) return anchoredB;
+    if (i === A.length) return dirA || onlyGlobstars(B, j);
+    if (j === B.length) return dirB || onlyGlobstars(A, i);
     const key = i + ':' + j;
     if (memo.has(key)) return memo.get(key);
     const a = A[i];
@@ -195,8 +234,10 @@ module.exports = {
   scopeSegments,
   isGlobSegment,
   segmentsMatchGlob,
-  isSegmentPrefix,
-  nonGlobPrefix,
+  validateScopePath,
+  ScopeLimitError,
+  MAX_SEGMENT_CHARS,
+  MAX_SEGMENTS,
   matchesGlob,
   scopePathsOverlap,
 };

@@ -25,6 +25,7 @@ const {
 const {
   normalizeScopePath,
   scopePathsOverlap,
+  validateScopePath,
 } = require('./segment-glob.cjs');
 
 // Path normalization, glob matching and overlap math live in segment-glob.cjs
@@ -72,6 +73,16 @@ function cmdCodeScopeClaim(args) {
     usage('code-scope claim requires at least one --scope path');
   }
   const by = flags.by;
+  for (const sp of paths) {
+    const limitErr = validateScopePath(sp);
+    if (limitErr) {
+      process.stdout.write(
+        JSON.stringify({ status: 'INVALID_SCOPE', file, claim: { by, paths }, error: limitErr }, null, 2) + '\n'
+      );
+      process.stderr.write(`invalid scope (fail closed): ${limitErr}\n`);
+      process.exit(1);
+    }
+  }
 
   const lockPath = acquireReservationsLock(file);
   const data = loadReservations(file);

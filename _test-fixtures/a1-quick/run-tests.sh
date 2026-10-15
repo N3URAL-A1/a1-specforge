@@ -1042,5 +1042,56 @@ OUT="$(node "$TOOLS" quick eligibility \
 RC=$?
 assert_rc "cli-env-example-scope-not-eligible" 1 "$RC" "$OUT"
 
+# --- review round 2: root scope, input bounds, sentence regex time bound ---
+RESV_ROOT="$WORK/reservations-root.json"
+cat > "$RESV_ROOT" <<'JSON'
+{ "reservations": [
+  { "type": "code_scope", "by": "spec-998", "paths": ["src/a.ts"], "at": "2026-07-01T00:00:00.000Z", "stage": "started" }
+] }
+JSON
+OUT="$(node "$TOOLS" quick eligibility \
+  --intent "Fix the typo." --files 1 --diff-lines 5 --scope "./" \
+  --no-migration --no-new-route --no-new-dep \
+  --repo-root "$CLEAN_REPO" --file "$RESV_ROOT" --by quick-root 2>&1)"
+RC=$?
+assert_rc "cli-root-scope-vs-reservation-not-eligible" 1 "$RC" "$OUT"
+if ! grep -q "spec-998" <<<"$OUT"; then
+  echo "FAIL  cli-root-scope: expected reservation holder in reasons"; fail=$((fail + 1))
+fi
+
+LONG_SEG="$(node -e 'process.stdout.write("a".repeat(30000))')"
+OUT="$(node "$TOOLS" quick eligibility \
+  --intent "Fix the typo." --files 1 --diff-lines 5 --scope "src/$LONG_SEG" \
+  --no-migration --no-new-route --no-new-dep \
+  --repo-root "$CLEAN_REPO" --file "$RESV" --by quick-long 2>&1)"
+RC=$?
+assert_rc "cli-oversized-scope-segment-not-eligible" 1 "$RC" "$OUT"
+if ! grep -q "exceeds the limit" <<<"$OUT" || grep -q "RangeError" <<<"$OUT"; then
+  echo "FAIL  cli-oversized-scope-segment: expected clear limit reason"; fail=$((fail + 1))
+fi
+
+MANY="$(node -e 'process.stdout.write("**/".repeat(3000) + "x")')"
+OUT="$(node "$TOOLS" quick eligibility \
+  --intent "Fix the typo." --files 1 --diff-lines 5 --scope "$MANY" \
+  --no-migration --no-new-route --no-new-dep \
+  --repo-root "$CLEAN_REPO" --file "$RESV" --by quick-many 2>&1)"
+RC=$?
+assert_rc "cli-too-many-scope-segments-not-eligible" 1 "$RC" "$OUT"
+
+DOT_RC=0
+DOT_OUT="$(node -e '
+  const q = require(process.argv[1]);
+  const t0 = Date.now();
+  const n = q.countIntentSentences(".".repeat(40000) + "x");
+  const n2 = q.countIntentSentences("a" + ".".repeat(40000) + " b.");
+  const ms = Date.now() - t0;
+  let bad = 0;
+  if (ms >= 1000) { console.log("too slow: " + ms + " ms"); bad++; }
+  if (n !== 0) { console.log("dots then x must count 0, got " + n); bad++; }
+  if (n2 !== 2) { console.log("dot run + sentence must count 2, got " + n2); bad++; }
+  process.exit(bad ? 1 : 0);
+' "$REPO_ROOT/_shared/lib/quick.cjs" 2>&1)" || DOT_RC=$?
+assert_rc "sentence-regex-linear-time" 0 "$DOT_RC" "$DOT_OUT"
+
 echo "a1-quick: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]
