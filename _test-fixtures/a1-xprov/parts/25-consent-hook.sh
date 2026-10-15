@@ -15,9 +15,11 @@
 #                                          H12 a Post whose Pre carried answers makes no pending yes [M6]
 #   Store guard (xprov-hook-paths.cjs)     S1 store path [M12] · S2 symlink [M13] · S3 upper case [M14] · S4 tilde [M15] · S6 .a1/xprov.json [M16]
 #                                          S7 NotebookEdit [M17] · S8 MultiEdit [M18] · S9 sibling directory (allow) [M19]
-#   Hook-source class (one rule)           F1/F1b/F7 added Pre entry · F2/F6/F3 no new Pre entry (allow) · F4 settings.local/SETTINGS.JSON · F5 disableAllHooks, allowManagedHooksOnly
-#                                          F9 escaped keys · F9a frontmatter (flow, nested agents, commands) · F9b (allow) · F10 foreign / own hooks.json · F11 plugin cache
-#                                          F12 a1-specforge disabled · F13 NotebookEdit · F14-F16 plugin.json / marketplace.json hooks · F17 manifest without hooks (allow)
+#   Hook-source class (monotone rule: old OR new content holds a marker -> deny)
+#                                          F1/F1b/F7 added Pre entry · F2/F3/F6b/F9b/F17 no marker (allow) · F6 existing hook, other edit · A1 matcher change · A2 new array element
+#                                          A3 event swap · A4 MultiEdit remove+add · A5 hook removed · A6 `---x` line · A7 CLAUDE_CONFIG_DIR · A8 symlinked settings · A9 BOM manifest
+#                                          F4 settings.local/SETTINGS.JSON · F5 disableAllHooks, allowManagedHooksOnly · F9 escaped keys · F9a frontmatter (flow, nested agents, commands)
+#                                          F10 foreign / own hooks.json · F11 plugin cache · F12 a1-specforge enabledPlugins entry · F13 NotebookEdit · F14-F16 plugin.json / marketplace.json hooks
 #                                          F20 json under ~/.claude/plugins · F21 the three real edits (allow); S13/S14 firmlink and missing store dir (macOS)
 #   Fail closed                            X1 module missing / X2 no node [M27: the wrapper without `|| exit 2`]
 #   Repo hook                              R-deny cases name M0..M13 below; the R-allow cases are red under MOLD (the old behaviour).
@@ -250,7 +252,7 @@ settings25() { # <json text> — a settings file on disk
 }
 HOOK_ASK25='{"hooks":{"PreToolUse":[{"matcher":"AskUserQuestion","hooks":[{"type":"command","command":"x"}]}]}}'
 sc_wr() { # <path under the project dir> <content> — Write of a file below the project dir
-  prep25; mkdir -p "$PROJ25/$(dirname "$1")"; edit25 Write "$(inp25 file_path "$PROJ25/$1" content "$2")" "$PROJ25"; dec25
+  prep25; mkdir -p "$PROJ25/$(dirname "$1")"; rm -f "$PROJ25/$1"; edit25 Write "$(inp25 file_path "$PROJ25/$1" content "$2")" "$PROJ25"; dec25
 }
 sc_f1() { local a b c d; a="$(sc_wr .claude/settings.json "$HOOK_ASK25")"; b="$(sc_wr .claude/settings.json '{"hooks":{"PreToolUse":[{"matcher":"","hooks":[{"type":"command","command":"x"}]}]}}')"
   c="$(sc_wr .claude/settings.json '{"hooks":{"PreToolUse":[{"matcher":".*","hooks":[{"type":"command","command":"x"}]}]}}')"; d="$(sc_wr .claude/settings.json '{"hooks":{"PermissionRequest":[{"matcher":"Ask.*","hooks":[{"type":"command","command":"x"}]}]}}')"; echo "$a|$b|$c|$d"; }
@@ -261,10 +263,40 @@ sc_f3() { sc_wr .claude/settings.json '{"hooks":{"PostToolUse":[{"matcher":"AskU
 sc_f4() { local a b; a="$(sc_wr .claude/settings.local.json "$HOOK_ASK25")"; b="$(sc_wr .claude/SETTINGS.JSON "$HOOK_ASK25")"; echo "$a|$b"; }
 sc_f4b() { prep25; mkdir -p "$HOME/.claude"; edit25 Write "$(inp25 file_path "~/.claude/settings.json" content "$HOOK_ASK25")" "$TMP25"; dec25; }
 sc_f5() { local a b; a="$(sc_wr .claude/settings.json '{"disableAllHooks":true}')"; b="$(sc_wr managed-settings.json '{"allowManagedHooksOnly": true}')"; echo "$a|$b"; }
+# monotone rule (R3-1): a settings file that already holds a hook is owner territory, whatever the edit is
 sc_f6() { settings25 "$HOOK_ASK25"; edit25 Write "$(inp25 file_path "$PROJ25/.claude/settings.json" content '{"hooks":{"PreToolUse":[{"matcher":"AskUserQuestion","hooks":[{"type":"command","command":"x"}]}]},"model":"opus"}')" "$PROJ25"; dec25; }
+sc_f6b() { settings25 '{"permissions":{"allow":[]}}'; edit25 Edit "$(inp25 file_path "$PROJ25/.claude/settings.json" old_string '"allow":[]' new_string '"allow":["Read"]')" "$PROJ25"; dec25; }   # no hook anywhere: allowed
+HOOK_BASH25='{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"x"}]}]}}'
+sc_ed() { # <old file text> <old_string> <new_string> — an Edit of .claude/settings.json holding the old text
+  settings25 "$1"; edit25 Edit "$(inp25 file_path "$PROJ25/.claude/settings.json" old_string "$2" new_string "$3")" "$PROJ25"; dec25; }
+sc_a1() { sc_ed "$HOOK_BASH25" '"matcher":"Bash"' '"matcher":".*"'; }                                  # matcher change inside an existing PreToolUse block
+sc_a2() { sc_ed "$HOOK_BASH25" '"command":"x"}]}]' '"command":"x"},{"type":"command","command":"y"}]}]'; }     # a new element in an existing array
+sc_swap() { local a b; a="$(sc_ed '{"hooks":{"PermissionRequest":[{"matcher":"Bash"}]}}' PermissionRequest PreToolUse)"; b="$(sc_ed "$HOOK_BASH25" PreToolUse PermissionRequest)"; echo "$a|$b"; }
+sc_mult() { settings25 "$HOOK_BASH25"; edit25 MultiEdit "$(node -e 'process.stdout.write(JSON.stringify({file_path:process.argv[1],edits:[{old_string:"\"Bash\"",new_string:"\"Read\""},{old_string:"\"command\":\"x\"",new_string:"\"command\":\"y\""}]}))' "$PROJ25/.claude/settings.json")" "$PROJ25"; dec25; }   # remove+add: the count stays equal
+sc_rm() { sc_ed "$HOOK_BASH25" '"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"x"}]}]}' '"model":"opus"'; }   # removing the hook: the old content holds it
+sc_realset() { # this repo's real .claude/settings.json already holds a PreToolUse hook: even a permissions-only edit is owner territory
+  prep25; edit25 Edit "$(inp25 file_path "$REPO_ROOT/.claude/settings.json" old_string '"permissions": {' new_string '"permissions": { ')" "$REPO_ROOT"; dec25; }
 sc_f7() { settings25 '{ broken'; edit25 Edit "$(inp25 file_path "$PROJ25/.claude/settings.json" old_string 'broken' new_string '"hooks": { "PreToolUse": [ { "matcher": "Ask" }')" "$PROJ25"; dec25; }
 sc_f8() { prep25; edit25 Write "$(inp25 file_path "$PROJ25/not-settings.json" content "$HOOK_ASK25")" "$PROJ25"; dec25; }
 # spelling a key without the plain substring: JSON \u escape, YAML flow style with a quoted key, YAML line continuation inside a quoted key
+sc_dash() { sc_wr .claude/agents/q.md $'---x\nname: q\nhooks: {PreToolUse: []}\n---\nb'; }   # the frontmatter delimiter edge: no closing --- block, the whole file counts
+sc_cfg() { # CLAUDE_CONFIG_DIR points elsewhere: files under it are ~/.claude files; the control run without the variable allows them
+  local a b c n; prep25; mkdir -p "$TMP25/cfg/plugins/cache/n/a1-specforge" "$TMP25/cfg/plugins/m"
+  for n in set cache json; do
+    case $n in set) f="$TMP25/cfg/settings.json";; cache) f="$TMP25/cfg/plugins/cache/n/a1-specforge/x.cjs";; json) f="$TMP25/cfg/plugins/m/any.json";; esac
+    edit25 Write "$(inp25 file_path "$f" content "$HOOK_ASK25")" "$PROJ25"; [[ $n == set ]] && a="$(dec25)"; [[ $n == cache ]] && b="$(dec25)"; [[ $n == json ]] && c="$(dec25)"
+  done
+  echo "$a|$b|$c"
+}
+sc_cfg_on() { ( export CLAUDE_CONFIG_DIR="$TMP25/cfg"; sc_cfg ); }
+sc_cfg_off() { ( unset CLAUDE_CONFIG_DIR; sc_cfg ); }
+sc_sym() { # the settings file is a symlink to a file outside .claude; and .claude itself is a symlink to a directory outside it
+  prep25; rm -rf "$PROJ25" "$TMP25/elsewhere"; mkdir -p "$PROJ25/.claude" "$PROJ25/p2" "$TMP25/elsewhere/dir"; printf '{}' > "$TMP25/elsewhere/real.json"
+  ln -s "$TMP25/elsewhere/real.json" "$PROJ25/.claude/settings.json"; ln -s "$TMP25/elsewhere/dir" "$PROJ25/p2/.claude"
+  local a b; edit25 Write "$(inp25 file_path "$PROJ25/.claude/settings.json" content "$HOOK_ASK25")" "$PROJ25"; a="$(dec25)"
+  edit25 Write "$(inp25 file_path "$PROJ25/p2/.claude/settings.json" content "$HOOK_ASK25")" "$PROJ25"; b="$(dec25)"; echo "$a|$b"
+}
+sc_bom() { sc_wr .claude-plugin/plugin.json $'\xef\xbb\xbf{"name":"x","hooks":{"Notification":[]}}'; }   # a BOM makes JSON.parse fail: the plain "hooks" in the text counts
 sc_f18() { local a b c; a="$(sc_wr .claude/settings.json '{"hooks":{"PreToolUse":[]}}')"; b="$(sc_wr .claude/agents/q.md $'---\nname: q\nhooks: {"Pre\\\nToolUse": []}\n---\nb')"; c="$(sc_wr .claude/agents/q.md $'---\nname: q\nhooks: {"\\x50reToolUse": []}\n---\nb')"; echo "$a|$b|$c"; }
 FM25='---
 name: x
@@ -287,7 +319,7 @@ sc_f9b() { local a b; a="$(sc_wr .claude/skills/x/SKILL.md $'---\nname: x\n---\n
 sc_f10() { local a b; prep25; mkdir -p "$PROJ25/foreign/hooks"; edit25 Write "$(inp25 file_path "$PROJ25/foreign/hooks/hooks.json" content "$HOOK_ASK25")" "$PROJ25"; a="$(dec25)"
   edit25 Write "$(inp25 file_path "$HT25/hooks/hooks.json" content "$HOOK_ASK25 $HOOK_ASK25 $HOOK_ASK25 $HOOK_ASK25")" "$PROJ25"; b="$(dec25)"; echo "$a|$b"; }   # own checkout = the tree copy the module lives in
 sc_f11() { prep25; mkdir -p "$HOME/.claude/plugins/cache/n3ural/a1-specforge/1.0"; edit25 Write "$(inp25 file_path "$HOME/.claude/plugins/cache/n3ural/a1-specforge/1.0/_shared/x.cjs" content x)"; dec25; }
-sc_f12() { local a b; a="$(sc_wr .claude/settings.json '{"enabledPlugins":{"a1-specforge@a1-specforge":false}}')"; b="$(sc_wr .claude/settings.json '{"enabledPlugins":{"a1-specforge@a1-specforge":true}}')"; echo "$a|$b"; }
+sc_f12() { local a b; a="$(sc_wr .claude/settings.json '{"enabledPlugins":{"a1-specforge@a1-specforge":false}}')"; b="$(sc_wr .claude/settings.json '{"enabledPlugins":{"a1-specforge@a1-specforge":true}}')"; local c; c="$(sc_wr .claude/settings.json '{"enabledPlugins":{"other@market":false}}')"; echo "$a|$b|$c"; }
 sc_f13() { prep25; mkdir -p "$PROJ25/.claude"; printf '{}' > "$PROJ25/.claude/settings.json"; edit25 NotebookEdit "$(inp25 notebook_path "$PROJ25/.claude/settings.json" new_source x)" "$PROJ25"; dec25; }
 # plugin manifests: inline hooks, a hooks path change, a marketplace entry; a manifest without hooks is fine
 sc_f14() { sc_wr .claude-plugin/plugin.json '{"name":"x","hooks":{"Notification":[{"hooks":[{"type":"command","command":"x"}]}]}}'; }
@@ -315,7 +347,18 @@ caseF() {
   assert_eq "F4 settings.local.json and SETTINGS.JSON: denied" "$(sc_f4)" "$D|$D"
   assert_eq "F4b ~/.claude/settings.json (tilde): denied" "$(sc_f4b)" "$D"
   assert_eq "F5 disableAllHooks true, and allowManagedHooksOnly true in managed-settings.json: denied" "$(sc_f5)" "$D|$D"
-  assert_eq "F6 a file that already holds the hook, edited elsewhere: allowed (nothing is added)" "$(sc_f6)" "allow"
+  assert_eq "F6 a settings file that already holds a hook, edited elsewhere: denied (owner territory, monotone rule)" "$(sc_f6)" "$D"
+  assert_eq "F6b a settings file without any hook, permissions edited: allowed" "$(sc_f6b)" "allow"
+  assert_eq "A3b this repo's own .claude/settings.json (it holds a PreToolUse hook): a permissions-only edit is denied" "$(sc_realset)" "$D"
+  assert_eq "A1 the matcher of an existing PreToolUse block changed (Bash -> .*): denied" "$(sc_a1)" "$D"
+  assert_eq "A2 a new element in the hooks array of an existing PreToolUse block: denied" "$(sc_a2)" "$D"
+  assert_eq "A3 event swap PermissionRequest -> PreToolUse and back: denied" "$(sc_swap)" "$D|$D"
+  assert_eq "A4 MultiEdit that removes one hook and adds another (counts stay equal): denied" "$(sc_mult)" "$D"
+  assert_eq "A5 an edit that removes the hook (the old content holds it): denied" "$(sc_rm)" "$D"
+  assert_eq "A6 an agent file whose first line is ---x (no frontmatter block) with a PreToolUse key: denied" "$(sc_dash)" "$D"
+  assert_eq "A7 CLAUDE_CONFIG_DIR set: its settings.json, plugin cache and plugin json are class files; without the variable the same writes pass" "$(sc_cfg_on)|$(sc_cfg_off)" "$D|$D|$D|allow|allow|allow"
+  assert_eq "A8 a settings file that is a symlink to a file outside .claude, and a symlinked .claude directory: denied (lexical path)" "$(sc_sym)" "$D|$D"
+  assert_eq "A9 a plugin.json with a BOM and a hooks key: denied" "$(sc_bom)" "$D"
   assert_eq "F7 an Edit that leaves unreadable JSON and adds a PreToolUse entry: denied" "$(sc_f7)" "$D"
   assert_eq "F8 a json file that is no hook source: allowed" "$(sc_f8)" "allow"
   assert_eq "F9 a key spelled with a JSON escape, a YAML line continuation, a YAML hex escape: denied" "$(sc_f18)" "$D|$D|$D"
@@ -323,7 +366,7 @@ caseF() {
   assert_eq "F9b a skill without hooks, and a PostToolUse-only frontmatter hook: allowed" "$(sc_f9b)" "allow|allow"
   assert_eq "F10 a hooks.json outside this checkout: denied; the hooks.json of this checkout (the tree copy): allowed" "$(sc_f10)" "$D|allow"
   assert_eq "F11 any file under ~/.claude/plugins/cache/**/a1-specforge/: denied" "$(sc_f11)" "$D"
-  assert_eq "F12 settings that disable the a1-specforge plugin: denied; enabling it: allowed" "$(sc_f12)" "$D|allow"
+  assert_eq "F12 settings with an enabledPlugins entry for a1-specforge (false or true): denied; another plugin: allowed" "$(sc_f12)" "$D|$D|allow"
   assert_eq "F13 NotebookEdit on a settings file: denied" "$(sc_f13)" "$D"
   assert_eq "F14 plugin.json with an inline hooks entry (an event the plain substring rule does not name): denied" "$(sc_f14)" "$D"
   assert_eq "F15 plugin.json whose hooks path changes: denied" "$(sc_f15)" "$D"
@@ -331,31 +374,44 @@ caseF() {
   assert_eq "F17 a new plugin.json and marketplace.json without hooks: allowed" "$(sc_f17)" "allow|allow"
   assert_eq "F20 any json under ~/.claude/plugins/ that adds a PreToolUse entry: denied" "$(sc_f20)" "$D"
   assert_eq "F21 the three real edits (tools: lines and a skill tool list naming AskUserQuestion): allowed" "$(sc_f21)" "allow|allow|allow"
-  local CNT="if (count(EVENT_RE, b) > count(EVENT_RE, a))"
-  red25 "F1" sc_f1 "$D|$D|$D|$D" $PATHS25 "$CNT" "if (false)"
+  local CNT="if (texts.some((t) => EVENT_RE.test(t))) return"
+  local CNTM="if (EVENT_RE.test(texts[1]) && !EVENT_RE.test(texts[0])) return"   # the old rule: the new content must gain an entry
+  local MAN="if (hasHooksKey(neu, mk)) return"
+  red25 "F1" sc_f1 "$D|$D|$D|$D" $PATHS25 "$CNT" "if (false) return"
   red25 "F1b" sc_f1b "$D" $PATHS25 "const next = newContent(tool, input && typeof input === 'object' ? input : {}, old);" "const next = { text: '', fragment: '' };"
-  red25 "F2" sc_f2 "allow" $PATHS25 "$CNT" "if (count(EVENT_RE, b) >= count(EVENT_RE, a))"
-  red25 "F3" sc_f3 "allow" $PATHS25 "const EVENT_RE = /pretooluse|permissionrequest/gi;" "const EVENT_RE = /pretooluse|permissionrequest|posttooluse/gi;"
+  red25 "F2" sc_f2 "allow" $PATHS25 "$CNT" "if (true) return"
+  red25 "F3" sc_f3 "allow" $PATHS25 "const EVENT_RE = /pretooluse|permissionrequest/i;" "const EVENT_RE = /pretooluse|permissionrequest|posttooluse/i;"
   red25 "F4" sc_f4 "$D|$D" $PATHS25 "/^settings[^/]*\\.json\$/.test(named(f))" "/^settings\\.json\$/.test(named(f))"
-  red25 "F5" sc_f5 "$D|$D" $PATHS25 "if (DISABLE_RE.test(b) && !DISABLE_RE.test(a))" "if (false)"
-  red25 "F6" sc_f6 "allow" $PATHS25 "$CNT" "if (count(EVENT_RE, b) > 0)"
-  red25 "F7" sc_f7 "$D" $PATHS25 "$CNT" "if (false)"
-  red25 "F9" sc_f18 "$D|$D|$D" $PATHS25 "if (count(ESCAPE_RE, b) > count(ESCAPE_RE, a))" "if (false)" $PATHS25 "$CNT" "if (false)"
-  red25 "F9a" sc_f9 "$D|$D|$D|$D|$D" $PATHS25 "$CNT" "if (false)"
+  red25 "F5" sc_f5 "$D|$D" $PATHS25 "if (texts.some((t) => DISABLE_RE.test(t))) return" "if (false) return"
+  red25 "F6" sc_f6 "$D" $PATHS25 "$CNT" "$CNTM"
+  red25 "F6b" sc_f6b "allow" $PATHS25 "$CNT" "if (true) return"
+  red25 "A3b" sc_realset "$D" $PATHS25 "$CNT" "$CNTM"
+  red25 "A1" sc_a1 "$D" $PATHS25 "$CNT" "$CNTM"
+  red25 "A2" sc_a2 "$D" $PATHS25 "$CNT" "$CNTM"
+  red25 "A3" sc_swap "$D|$D" $PATHS25 "$CNT" "$CNTM"
+  red25 "A4" sc_mult "$D" $PATHS25 "$CNT" "$CNTM"
+  red25 "A5" sc_rm "$D" $PATHS25 "const texts = [view(old), view(neu)];" "const texts = [view(neu)];"
+  red25 "A6" sc_dash "$D" $PATHS25 "const view = (text) => String(text);" "const view = (text) => { const m = /^---\\r?\\n([\\s\\S]*?)\\r?\\n---/.exec(String(text)); return m ? m[1] : ''; };"
+  red25 "A7" sc_cfg_on "$D|$D|$D" $PATHS25 "if (typeof cfg !== 'string' || cfg === '') return" "if (true) return"
+  red25 "A8" sc_sym "$D|$D" $PATHS25 "const base = [...forms(file, cwd), path.resolve(abs), abs.replace(/\\/{2,}/g, '/')];" "const base = [...forms(file, cwd)];"
+  red25 "A9" sc_bom "$D" $PATHS25 "catch (_e) { return /\"hooks\"/i.test(String(text)); }" "catch (_e) { return false; }"
+  red25 "F7" sc_f7 "$D" $PATHS25 "$CNT" "if (false) return"
+  red25 "F9" sc_f18 "$D|$D|$D" $PATHS25 "if (texts.some((t) => ESCAPE_RE.test(t))) return" "if (false) return" $PATHS25 "$CNT" "if (false) return"
+  red25 "F9a" sc_f9 "$D|$D|$D|$D|$D" $PATHS25 "$CNT" "if (false) return"
   red25 "F9a-md" sc_f9 "$D|$D|$D|$D|$D" $PATHS25 "named(f).endsWith('.md') && (segs(f).includes('agents') || segs(f).includes('commands'))" "false"
-  red25 "F9b" sc_f9b "allow|allow" $PATHS25 "$CNT" "if (count(EVENT_RE, b) >= count(EVENT_RE, a))"
+  red25 "F9b" sc_f9b "allow|allow" $PATHS25 "$CNT" "if (true) return"
   red25 "F10" sc_f10 "$D|allow" $PATHS25 "? null : 'json';" "? 'json' : 'json';"
-  red25 "F10b" sc_f10 "$D|allow" $PATHS25 "$CNT" "if (false)"
+  red25 "F10b" sc_f10 "$D|allow" $PATHS25 "$CNT" "if (false) return"
   red25 "F11" sc_f11 "$D" $PATHS25 "if (low.some((f) => PLUGIN_CACHE_RE.test(f))) return 'cache';" "if (false) return 'cache';"
-  red25 "F12" sc_f12 "$D|allow" $PATHS25 "if (PLUGIN_OFF_RE.test(b) && !PLUGIN_OFF_RE.test(a))" "if (false)"
+  red25 "F12" sc_f12 "$D|$D|allow" $PATHS25 "if (kind === 'json' && texts.some((t) => /enabledplugins/i.test(t) && PLUGIN_ENTRY_RE.test(t))) return" "if (false) return"
   red25 "F13" sc_f13 "$D" $PATHS25 "if (tool === 'NotebookEdit') return { forged: true" "if (false) return { forged: true"
-  red25 "F14" sc_f14 "$D" $PATHS25 "if (hb === undefined ? count(/\"hooks\"/gi, neu) !== count(/\"hooks\"/gi, old) : ha !== hb)" "if (false)"
-  red25 "F15" sc_f15 "$D" $PATHS25 "if (hb === undefined ? count(/\"hooks\"/gi, neu) !== count(/\"hooks\"/gi, old) : ha !== hb)" "if (false)"
-  red25 "F16" sc_f16 "$D" $PATHS25 "if (hb === undefined ? count(/\"hooks\"/gi, neu) !== count(/\"hooks\"/gi, old) : ha !== hb)" "if (false)"
-  red25 "F17" sc_f17 "allow|allow" $PATHS25 "if (hb === undefined ? count(/\"hooks\"/gi, neu) !== count(/\"hooks\"/gi, old) : ha !== hb)" "if (true)"
-  red25 "F20" sc_f20 "$D" $PATHS25 "$CNT" "if (false)"
-  # F21 is red when the judgement looks at the added text alone and counts AskUserQuestion (the rule of the first round)
-  red25 "F21" sc_f21 "allow|allow|allow" $PATHS25 "const EVENT_RE = /pretooluse|permissionrequest/gi;" "const EVENT_RE = /pretooluse|permissionrequest|askuserquestion/gi;" $PATHS25 "next.text === null ? '' : (old || '')" "''"
+  red25 "F14" sc_f14 "$D" $PATHS25 "$MAN" "if (false) return"
+  red25 "F15" sc_f15 "$D" $PATHS25 "$MAN" "if (false) return" $PATHS25 "if (String(old).trim() !== '' && hasHooksKey(old, mk)) return" "if (false) return"
+  red25 "F16" sc_f16 "$D" $PATHS25 "$MAN" "if (false) return"
+  red25 "F17" sc_f17 "allow|allow" $PATHS25 "$MAN" "if (true) return"
+  red25 "F20" sc_f20 "$D" $PATHS25 "$CNT" "if (false) return"
+  # F21 is red when the judgement counts AskUserQuestion as a hook event (the rule of the first round)
+  red25 "F21" sc_f21 "allow|allow|allow" $PATHS25 "const EVENT_RE = /pretooluse|permissionrequest/i;" "const EVENT_RE = /pretooluse|permissionrequest|askuserquestion/i;"
 }
 caseF
 

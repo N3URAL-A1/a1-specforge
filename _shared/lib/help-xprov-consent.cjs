@@ -78,11 +78,18 @@ const CONSENT_HELP = `    consent question|ensure|record|revoke  --kind consent|
                   can be defined or all hooks switched off: settings*.json (user, project,
                   local), managed-settings*.json, hooks/hooks.json (this checkout's own
                   excepted), plugin.json and marketplace.json (a hooks entry added or
-                  changed), any .json under ~/.claude/plugins, and the frontmatter of
-                  SKILL.md and of .md files below a directory named agents or commands.
-                  The rule is one count: a new PreToolUse/PermissionRequest entry or
-                  escape sequence, disableAllHooks / allowManagedHooksOnly true, or the
-                  a1-specforge plugin set to false. A NotebookEdit of such a file is
+                  changed), any .json under ~/.claude/plugins, SKILL.md, and
+                  .md files below a directory named agents or commands (whole file).
+                  The rule is monotone, with no old-vs-new comparison: an edit that
+                  changes such a file is denied when the old or the new whole content
+                  holds PreToolUse/PermissionRequest (any case), an escape sequence,
+                  disableAllHooks / allowManagedHooksOnly, an a1-specforge enabledPlugins
+                  entry, or (manifests) a hooks key. A settings file that already holds a
+                  hook is therefore owner territory: change it with Bash or by hand. A
+                  \$CLAUDE_CONFIG_DIR counts as ~/.claude; paths match lexical and real.
+                  Dev edits of this repo's own hooks/hooks.json from a worktree are
+                  denied when the hook runs from the plugin cache: use Bash (the dev copy
+                  is no live hook source). A NotebookEdit of such a file is
                   always denied. A crash or timeout of the hook blocks the call (exit 2,
                   onFailure block).
                   NOT closed (tier 0 residuals): a Bash write of any of these files, a

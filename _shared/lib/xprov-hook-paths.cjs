@@ -35,11 +35,13 @@
 // 17  CLI-only definitions: `--agents <json>`, `--plugin-dir <dir>`                 RESIDUAL (launch flags)
 // 18  cloud / self-hosted sessions (operator-seeded ~/.claude, runner-image managed settings)  RESIDUAL
 //
-// One rule for the class (no quote or flow-style parsing): a file of the class is denied when the count of the case-insensitive substrings
-// `pretooluse` / `permissionrequest` (whole content for .json, the frontmatter block for .md) grows, when the count of escape markers
-// (`\uXXXX`, `\xXX`, backslash-newline: the ways to spell a key without the substring) grows, when `disableAllHooks` / `allowManagedHooksOnly` is
-// set to true or an a1-specforge `enabledPlugins` entry to false, or (plugin.json, marketplace.json) when a `hooks` key is added or changed.
-// A NotebookEdit of a class file is always denied (its content cannot be checked). The tail is judged as text when the edit cannot be applied.
+// One monotone rule for the class (no old-vs-new comparison, no parsing of matchers, quotes or flow style): an edit that CHANGES a file of the
+// class is denied when the OLD or the NEW whole content (.json and .md alike) holds, case-insensitively, `pretooluse` or `permissionrequest`,
+// an escape marker (`\uXXXX`, `\xXX`, backslash-newline: the ways to spell a key without the substring), `disableAllHooks` or
+// `allowManagedHooksOnly`, or (settings .json) an `enabledPlugins` entry naming a1-specforge; for plugin.json / marketplace.json also when the
+// old or new content has a `hooks` key (BOM or broken JSON: a plain "hooks" in the text). A settings file that already holds a hook is owner
+// territory: an agent edits it only through Bash. A NotebookEdit of a class file is always denied. A Write to a new path counts the old
+// content as empty. The class is matched on the lexical path and on the realpath, and `$CLAUDE_CONFIG_DIR` counts as `~/.claude`.
 //
 // guardedPath(file, cwd)   -> { guarded: true, why } | { guarded: false }
 //       The owner stores: everything under <owner home>/.a1-xprov/, and `.a1/xprov.json` in any checkout. The path is judged as a string
@@ -136,15 +138,27 @@ function guardedPath(file, cwd) {
 
 // ---- the hook-source class ----
 const PLUGIN_CACHE_RE = /\/\.claude\/plugins\/cache\/(?:.*\/)?a1-specforge(?:\/|$)/;
-const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---/;
-const EVENT_RE = /pretooluse|permissionrequest/gi;
-const ESCAPE_RE = /\\u[0-9a-f]{4}|\\x[0-9a-f]{2}|\\\r?\n/gi;
-const DISABLE_RE = /["']?(?:disableAllHooks|allowManagedHooksOnly)["']?\s*:\s*true/i;
-const PLUGIN_OFF_RE = /a1-specforge[^"'\n,}]*["']?\s*:\s*false/i;
+const EVENT_RE = /pretooluse|permissionrequest/i;
+const ESCAPE_RE = /\\u[0-9a-f]{4}|\\x[0-9a-f]{2}|\\\r?\n/i;
+const DISABLE_RE = /disableAllHooks|allowManagedHooksOnly/i;
+const PLUGIN_ENTRY_RE = /a1-specforge[^"'\n,}]*["']?\s*:/i;
+
+/** The class forms of `file`: realpath forms and lexical (unresolved) forms; a path below $CLAUDE_CONFIG_DIR also in its `~/.claude` spelling. */
+function classForms(file, cwd) {
+  const raw = expandHome(String(file), safeHome());
+  const abs = path.isAbsolute(raw) ? raw : `${cwd}/${raw}`;
+  const base = [...forms(file, cwd), path.resolve(abs), abs.replace(/\/{2,}/g, '/')];
+  const cfg = process.env.CLAUDE_CONFIG_DIR;
+  if (typeof cfg !== 'string' || cfg === '') return [...new Set(base)];
+  const roots = [path.resolve(expandHome(cfg, safeHome()))];
+  roots.push(realish(roots[0]));
+  const mapped = base.flatMap((f) => roots.filter((r) => isUnder(fold(f), fold(r))).map((r) => `/__config__/.claude${f.slice(r.length)}`));
+  return [...new Set([...base, ...mapped])];
+}
 
 /** The file kind: 'cache' | 'json' | 'manifest' | 'md' | null. */
 function fileClass(file, cwd) {
-  const fs_ = forms(file, cwd);
+  const fs_ = classForms(file, cwd);
   const low = fs_.map(fold);
   if (low.some((f) => PLUGIN_CACHE_RE.test(f))) return 'cache';
   const named = (f) => path.basename(f);
@@ -186,34 +200,29 @@ function newContent(tool, input, old) {
   return { text, fragment };
 }
 
-const count = (re, text) => (String(text).match(re) || []).length;
-/** The part of the content the counts look at: the frontmatter block of a .md (the whole text when it opens with --- but has no closing one), else everything. */
-function scope(kind, text) {
-  if (kind !== 'md') return String(text);
-  const m = FRONTMATTER_RE.exec(String(text));
-  return m ? m[1] : (String(text).startsWith('---') ? String(text) : '');
-}
+const view = (text) => String(text);
 
-function hooksKeyOf(text, isMarketplace) {
+/** True when the manifest text carries a hooks entry (plugin.json: `hooks`; marketplace.json: a `hooks` on a plugin entry). Unparseable text (BOM, broken JSON): a plain "hooks". */
+function hasHooksKey(text, isMarketplace) {
   try {
     const d = JSON.parse(text);
-    return JSON.stringify(isMarketplace ? (Array.isArray(d.plugins) ? d.plugins.map((p) => p && p.hooks).filter((h) => h !== undefined && h !== null) : []) : (d && d.hooks) || null);
-  } catch (_e) { return undefined; }
+    const list = isMarketplace ? (d && Array.isArray(d.plugins) ? d.plugins.map((p) => p && p.hooks) : []) : [d && d.hooks];
+    return list.some((h) => h !== undefined && h !== null);
+  } catch (_e) { return /"hooks"/i.test(String(text)); }
 }
 
-/** The reason a class file's new content is refused, or null. `old` and `neu` are the whole texts. */
+/** The reason a class file's change is refused, or null. `old` and `neu` are the whole texts (the monotone rule, see the header). */
 function refusal(kind, file, old, neu) {
-  const a = scope(kind, old);
-  const b = scope(kind, neu);
-  if (count(EVENT_RE, b) > count(EVENT_RE, a)) return 'the new content adds a PreToolUse or PermissionRequest entry (such a hook can answer the consent question with updatedInput.answers)';
-  if (count(ESCAPE_RE, b) > count(ESCAPE_RE, a)) return 'the new content adds escape sequences that can spell a hook event without the plain name';
-  if (DISABLE_RE.test(b) && !DISABLE_RE.test(a)) return 'the new content switches hooks off (disableAllHooks / allowManagedHooksOnly), which would disable the consent hook';
-  if (PLUGIN_OFF_RE.test(b) && !PLUGIN_OFF_RE.test(a)) return 'the new content disables the a1-specforge plugin (enabledPlugins), which would switch the consent hook off';
+  if (old === neu) return null;
+  const texts = [view(old), view(neu)];
+  if (texts.some((t) => EVENT_RE.test(t))) return 'the file holds a PreToolUse or PermissionRequest entry before or after the edit (such a hook can answer the consent question with updatedInput.answers)';
+  if (texts.some((t) => ESCAPE_RE.test(t))) return 'the file holds escape sequences that can spell a hook event without the plain name';
+  if (texts.some((t) => DISABLE_RE.test(t))) return 'the file holds disableAllHooks / allowManagedHooksOnly, which would disable the consent hook';
+  if (kind === 'json' && texts.some((t) => /enabledplugins/i.test(t) && PLUGIN_ENTRY_RE.test(t))) return 'the file has an enabledPlugins entry for a1-specforge, which would switch the consent hook off';
   if (kind === 'manifest') {
     const mk = path.basename(forms(file, '/')[0]).toLowerCase() === 'marketplace.json';
-    const ha = String(old).trim() === '' ? (mk ? '[]' : 'null') : hooksKeyOf(old, mk); // a new file has no hooks yet
-    const hb = hooksKeyOf(neu, mk);
-    if (hb === undefined ? count(/"hooks"/gi, neu) !== count(/"hooks"/gi, old) : ha !== hb) return 'the plugin manifest adds or changes a hooks entry (inline hooks or a path to a hooks file)';
+    if (String(old).trim() !== '' && hasHooksKey(old, mk)) return 'the plugin manifest has a hooks entry (inline hooks or a path to a hooks file)';
+    if (hasHooksKey(neu, mk)) return 'the plugin manifest would get a hooks entry (inline hooks or a path to a hooks file)';
   }
   return null;
 }
@@ -227,8 +236,8 @@ function settingsForgery(file, cwd, tool, input) {
   if (tool === 'NotebookEdit') return { forged: true, why: 'a notebook edit cannot be checked as a settings, hooks, manifest or frontmatter change' };
   const old = readOld(file, cwd);
   const next = newContent(tool, input && typeof input === 'object' ? input : {}, old);
-  // An edit that cannot be applied (the old text is not found, the file is too large): the added text alone is judged against nothing.
-  const why = refusal(kind, file, next.text === null ? '' : (old || ''), next.text === null ? next.fragment : next.text);
+  // An edit that cannot be applied (the old text is not found, the file is too large): the old content and the added text are both judged.
+  const why = refusal(kind, file, old || '', next.text === null ? next.fragment : next.text);
   return why === null ? { forged: false } : { forged: true, why };
 }
 
