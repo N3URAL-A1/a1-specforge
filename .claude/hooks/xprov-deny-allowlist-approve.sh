@@ -26,7 +26,7 @@
 # Without node the raw JSON is judged: JSON `\n` escapes become spaces and
 # backslashes go with the quotes, so an escaped `\"waive\"` matches too.
 # Spec 016 FR-032 (Wave 4): a command whose every segment starts with a read-only program (grep, rg, cat, head, tail, wc, ls, echo,
-# sed -n '<n>p', git log|diff|show; `for NAME in ...; do <read-only>; done` loops count too) and that has no redirect, command
+# sed -n '<n>p'; git is NOT read-only (diff.external, textconv and fsmonitor run commands from a config); `for NAME in ...; do <read-only>; done` loops count too) and that has no redirect, command
 # substitution or backtick only reads or prints text. For it the COMMAND-phrase patterns below (`allowlist approve`, `xprov waive`,
 # `xprov permit`, `xprov $`) do not apply: `grep a1-xprov "$S/summary.txt"` is no longer read as `xprov $S`. The STORE-name patterns
 # (`allowlist-approval`, `a1-xprov/waivers`, `a1-xprov/permit-den`) apply to every command as before (parts 08/11/12). A quoted-delimiter

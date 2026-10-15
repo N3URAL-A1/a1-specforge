@@ -13,7 +13,6 @@
 const fs = require('fs');
 
 const READONLY = Object.freeze(['grep', 'rg', 'cat', 'head', 'tail', 'wc', 'ls', 'echo']);
-const GIT_READ = Object.freeze(['log', 'diff', 'show']);
 const SED_SCRIPT_RE = /^(?:\d+|\$|\/[^/]*\/)?(?:,(?:\d+|\$|\/[^/]*\/))?p$/;
 const NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const HEREDOC_RE = /<<(-?)(['"])([A-Za-z_][A-Za-z0-9_]*)\2/;
@@ -60,9 +59,6 @@ function readonlySegment(w) {
   if (prog === 'rg') return !w.some((t) => t === '--pre' || t.startsWith('--pre=') || t.startsWith('--hostname-bin'));
   if (READONLY.includes(prog)) return true;
   if (prog === 'sed') return sub === '-n' && SED_SCRIPT_RE.test(w[2] || '') && w.slice(3).every((t) => !t.startsWith('-'));
-  // git can run diff.external, textconv and fsmonitor commands from a config the agent may have written: read-only only with both
-  // switches off and no -c (Samuel W4 SEC-6); anything else falls through to the deny patterns.
-  if (prog === 'git') return GIT_READ.includes(sub) && w.includes('--no-ext-diff') && w.includes('--no-textconv') && !w.includes('-c') && !w.some((t) => t.startsWith('--output') || t === '--ext-diff');
   return false;
 }
 

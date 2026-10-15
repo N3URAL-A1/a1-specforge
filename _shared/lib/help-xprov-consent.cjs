@@ -73,17 +73,24 @@ const CONSENT_HELP = `    consent question|ensure|record|revoke  --kind consent|
                   an answers field; the hook opens the marker on that call and records
                   the pending yes only from the PostToolUse tool_response of the same
                   tool_use_id. It denies Edit/Write/NotebookEdit/MultiEdit of
-                  ~/.a1-xprov/ (compared by path and by device + inode), .a1/xprov.json,
-                  every file of the installed plugin cache (a1-specforge), a hooks.json
-                  outside this plugin, and a settings file, skill or agent frontmatter
-                  that adds a PreToolUse/PermissionRequest hook matching AskUserQuestion
-                  (such a hook could answer for the owner), sets disableAllHooks or
-                  disables the a1-specforge plugin; a NotebookEdit of such a file is
+                  ~/.a1-xprov/ (path and device + inode), .a1/xprov.json, every file of
+                  the installed a1-specforge plugin cache, and every file where a hook
+                  can be defined or all hooks switched off: settings*.json (user, project,
+                  local), managed-settings*.json, hooks/hooks.json (this checkout's own
+                  excepted), plugin.json and marketplace.json (a hooks entry added or
+                  changed), any .json under ~/.claude/plugins, and the frontmatter of
+                  SKILL.md and of .md files below a directory named agents or commands.
+                  The rule is one count: a new PreToolUse/PermissionRequest entry or
+                  escape sequence, disableAllHooks / allowManagedHooksOnly true, or the
+                  a1-specforge plugin set to false. A NotebookEdit of such a file is
                   always denied. A crash or timeout of the hook blocks the call (exit 2,
-                  onFailure block). NOT closed (tier 0 residuals): a Bash write of a store
-                  or a settings file; an edit of the script of a hook that already matches
-                  AskUserQuestion; managed settings; anything the same OS user can do
-                  outside the Edit tools.
+                  onFailure block).
+                  NOT closed (tier 0 residuals): a Bash write of any of these files, a
+                  store or a settings file; the script of a hook that already exists;
+                  MDM and server-managed settings; the --settings, --agents and
+                  --plugin-dir launch flags; a hooks .json that a plugin.json names
+                  outside ~/.claude/plugins and that is not called hooks.json; cloud
+                  and self-hosted sessions; \`claude plugin disable\` and the /plugin UI.
                   Exit: 0 ok · 1 refused (stdout JSON \`reason\`) · 2 usage error.`;
 
 module.exports = { CONSENT_HELP };

@@ -15,10 +15,10 @@
 #                                          H12 a Post whose Pre carried answers makes no pending yes [M6]
 #   Store guard (xprov-hook-paths.cjs)     S1 store path [M12] · S2 symlink [M13] · S3 upper case [M14] · S4 tilde [M15] · S6 .a1/xprov.json [M16]
 #                                          S7 NotebookEdit [M17] · S8 MultiEdit [M18] · S9 sibling directory (allow) [M19]
-#   Settings forgery                       F1 added Pre hook [M20] · F2 matcher not AskUserQuestion (allow) [M21] · F3 Post hook (allow) [M22]
-#                                          F4 settings.local.json [M23] · F5 disableAllHooks [M24] · F6 unchanged hook (allow) [M25] · F7 fragment [M26]
-#   Wave 4 review (Samuel)                 S13 firmlink/inode [M28] · F9 skill/agent frontmatter hook [M29] · F10 foreign hooks.json, own plugin (allow) [M30, M31]
-#                                          F11 plugin cache [M32] · F12 a1-specforge disabled [M33] · F13 NotebookEdit [M34]
+#   Hook-source class (one rule)           F1/F1b/F7 added Pre entry · F2/F6/F3 no new Pre entry (allow) · F4 settings.local/SETTINGS.JSON · F5 disableAllHooks, allowManagedHooksOnly
+#                                          F9 escaped keys · F9a frontmatter (flow, nested agents, commands) · F9b (allow) · F10 foreign / own hooks.json · F11 plugin cache
+#                                          F12 a1-specforge disabled · F13 NotebookEdit · F14-F16 plugin.json / marketplace.json hooks · F17 manifest without hooks (allow)
+#                                          F20 json under ~/.claude/plugins · F21 the three real edits (allow); S13/S14 firmlink and missing store dir (macOS)
 #   Fail closed                            X1 module missing / X2 no node [M27: the wrapper without `|| exit 2`]
 #   Repo hook                              R-deny cases name M0..M13 below; the R-allow cases are red under MOLD (the old behaviour).
 # Run on tree copies only (the real owner store is never touched; rule 4b of the plan).
@@ -205,6 +205,7 @@ sc_s13() {
   edit25 Write "$(inp25 file_path "/System/Volumes/Data$real/xdir/../.a1-xprov/consent-markers/new.json" content x)"; c="$(dec25)"
   echo "$a|$b|$c"
 }
+sc_s14() { prep25; mkdir -p "$HOME"; local real; real="$(cd "$HOME" && pwd -P)"; edit25 Write "$(inp25 file_path "/System/Volumes/Data$real/.A1-XPROV/new.json" content x)"; dec25; }
 sc_s10() { prep25; mkdir -p "$SDIR25"; edit25 Write "$(inp25 file_path "$HOME/nothing/../.a1-xprov/permits.json" content x)"; local a; a="$(dec25)"; edit25 Write "$(inp25 file_path "$HOME/.a1-xprov//permits.json" content x)"; echo "$a|$(dec25)"; }
 caseS() {
   assert_eq "S1 Edit of permits.json: denied" "$(sc_s1)" "deny:store_path"
@@ -223,15 +224,17 @@ caseS() {
   assert_eq "S12 a 10 000 character file name inside the store: denied" "$(dec25)" "deny:store_path"
   if [[ -d "/System/Volumes/Data" && "$(uname)" == Darwin ]]; then
     assert_eq "S13 firmlink forms of the store (/System/Volumes/Data/<path>, with a missing and an existing .. detour): denied" "$(sc_s13)" "deny:store_path|deny:store_path|deny:store_path"
-    red25 "S13" sc_s13 "deny:store_path|deny:store_path|deny:store_path" $PATHS25 "if (sameInodeUnder(raw, ids))" "if (false)"
+    assert_eq "S14 the store directory does not exist yet: a firmlink path to .a1-xprov in the home directory is denied by name + home inode" "$(sc_s14)" "deny:store_path"
+    red25 "S14" sc_s14 "deny:store_path" $PATHS25 "if (fold(path.basename(cur)) === STORE_DIR_NAME && idOf(parent) !== null && homeIds.has(idOf(parent))) return true;" ""
+    red25 "S13" sc_s13 "deny:store_path|deny:store_path|deny:store_path" $PATHS25 "if (sameInodeUnder(raw, storeIds, homeIds))" "if (false)"
   else
     ok "S13 skipped: no firmlink on this platform (macOS-only case; the inode layer is the same code path)"
   fi
   # the string layer and the inode layer each catch a plain store path: S1 turns red only with BOTH off
-  red25 "S1" sc_s1 "deny:store_path" $PATHS25 "if (roots.some((r) => isUnder(f, r)))" "if (false)" $PATHS25 "if (sameInodeUnder(raw, ids))" "if (false)"
+  red25 "S1" sc_s1 "deny:store_path" $PATHS25 "if (roots.some((r) => isUnder(f, r)))" "if (false)" $PATHS25 "if (sameInodeUnder(raw, storeIds, homeIds))" "if (false)"
   red25 "S2" sc_s2 "deny:store_path|deny:store_path" $PATHS25 "try { return path.join(fs.realpathSync(head), ...tail); }" "try { throw new Error('x'); }"
   # on a case-insensitive file system the inode layer also catches the upper-case path; S3 turns red with both layers off
-  red25 "S3" sc_s3 "deny:store_path" $PATHS25 "const fold = (p) => String(p).normalize('NFC').toLowerCase();" "const fold = (p) => String(p).normalize('NFC');" $PATHS25 "if (sameInodeUnder(raw, ids))" "if (false)"
+  red25 "S3" sc_s3 "deny:store_path" $PATHS25 "const fold = (p) => String(p).normalize('NFC').toLowerCase();" "const fold = (p) => String(p).normalize('NFC');" $PATHS25 "if (sameInodeUnder(raw, storeIds, homeIds))" "if (false)"
   red25 "S4" sc_s4 "deny:store_path" $PATHS25 "return m ? \`\${home}\${m[1]}\` : p;" "return p;"
   red25 "S6" sc_s6 "deny:store_path|deny:store_path" $PATHS25 "if (path.basename(f) === 'xprov.json' && path.basename(path.dirname(f)) === '.a1') return" "if (false) return"
   red25 "S7" sc_s7 "deny:store_path" $RULES25 "tool === 'NotebookEdit' ? input.notebook_path : input.file_path" "input.file_path"
@@ -240,88 +243,121 @@ caseS() {
 }
 caseS
 
-# ---------- F: the settings forgery path (R-1) ----------
+# ---------- F: the hook-source class (R-1, Samuel W4 SEC-3, the measured list at the top of xprov-hook-paths.cjs) ----------
 PROJ25="$TMP25/proj"
 settings25() { # <json text> — a settings file on disk
   rm -rf "$PROJ25"; mkdir -p "$PROJ25/.claude"; printf '%s' "$1" > "$PROJ25/.claude/settings.json"
 }
 HOOK_ASK25='{"hooks":{"PreToolUse":[{"matcher":"AskUserQuestion","hooks":[{"type":"command","command":"x"}]}]}}'
-sc_wr() { # <file name under .claude> <content> — Write of a settings file
-  prep25; mkdir -p "$PROJ25/.claude"; edit25 Write "$(inp25 file_path "$PROJ25/.claude/$1" content "$2")" "$PROJ25"; dec25
+sc_wr() { # <path under the project dir> <content> — Write of a file below the project dir
+  prep25; mkdir -p "$PROJ25/$(dirname "$1")"; edit25 Write "$(inp25 file_path "$PROJ25/$1" content "$2")" "$PROJ25"; dec25
 }
-sc_f1() { local a b c d; a="$(sc_wr settings.json "$HOOK_ASK25")"; b="$(sc_wr settings.json '{"hooks":{"PreToolUse":[{"matcher":"","hooks":[{"type":"command","command":"x"}]}]}}')"
-  c="$(sc_wr settings.json '{"hooks":{"PreToolUse":[{"matcher":".*","hooks":[{"type":"command","command":"x"}]}]}}')"; d="$(sc_wr settings.json '{"hooks":{"PermissionRequest":[{"matcher":"Ask.*","hooks":[{"type":"command","command":"x"}]}]}}')"; echo "$a|$b|$c|$d"; }
+sc_f1() { local a b c d; a="$(sc_wr .claude/settings.json "$HOOK_ASK25")"; b="$(sc_wr .claude/settings.json '{"hooks":{"PreToolUse":[{"matcher":"","hooks":[{"type":"command","command":"x"}]}]}}')"
+  c="$(sc_wr .claude/settings.json '{"hooks":{"PreToolUse":[{"matcher":".*","hooks":[{"type":"command","command":"x"}]}]}}')"; d="$(sc_wr .claude/settings.json '{"hooks":{"PermissionRequest":[{"matcher":"Ask.*","hooks":[{"type":"command","command":"x"}]}]}}')"; echo "$a|$b|$c|$d"; }
 sc_f1b() { settings25 '{"permissions":{"allow":[]}}'; edit25 Edit "$(inp25 file_path "$PROJ25/.claude/settings.json" old_string '"allow":[]' new_string '"allow":[]},"hooks":{"PreToolUse":[{"matcher":"AskUserQuestion","hooks":[{"type":"command","command":"x"}]}]')" "$PROJ25"; dec25; }
-sc_f2() { sc_wr settings.json '{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"x"}]}]},"permissions":{"allow":["Read"]}}'; }
-sc_f3() { sc_wr settings.json '{"hooks":{"PostToolUse":[{"matcher":"AskUserQuestion","hooks":[{"type":"command","command":"log"}]}]}}'; }
-sc_f4() { local a b; a="$(sc_wr settings.local.json "$HOOK_ASK25")"; b="$(sc_wr SETTINGS.JSON "$HOOK_ASK25")"; echo "$a|$b"; }
+sc_f2() { sc_wr .claude/settings.json '{"permissions":{"allow":["Read"]},"model":"opus"}'; }
+sc_f2b() { sc_wr .claude/settings.json '{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"x"}]}]}}'; }   # any new Pre entry counts: the substring rule does not parse matchers
+sc_f3() { sc_wr .claude/settings.json '{"hooks":{"PostToolUse":[{"matcher":"AskUserQuestion","hooks":[{"type":"command","command":"log"}]}]}}'; }
+sc_f4() { local a b; a="$(sc_wr .claude/settings.local.json "$HOOK_ASK25")"; b="$(sc_wr .claude/SETTINGS.JSON "$HOOK_ASK25")"; echo "$a|$b"; }
 sc_f4b() { prep25; mkdir -p "$HOME/.claude"; edit25 Write "$(inp25 file_path "~/.claude/settings.json" content "$HOOK_ASK25")" "$TMP25"; dec25; }
-sc_f5() { sc_wr settings.json '{"disableAllHooks":true}'; }
+sc_f5() { local a b; a="$(sc_wr .claude/settings.json '{"disableAllHooks":true}')"; b="$(sc_wr managed-settings.json '{"allowManagedHooksOnly": true}')"; echo "$a|$b"; }
 sc_f6() { settings25 "$HOOK_ASK25"; edit25 Write "$(inp25 file_path "$PROJ25/.claude/settings.json" content '{"hooks":{"PreToolUse":[{"matcher":"AskUserQuestion","hooks":[{"type":"command","command":"x"}]}]},"model":"opus"}')" "$PROJ25"; dec25; }
 sc_f7() { settings25 '{ broken'; edit25 Edit "$(inp25 file_path "$PROJ25/.claude/settings.json" old_string 'broken' new_string '"hooks": { "PreToolUse": [ { "matcher": "Ask" }')" "$PROJ25"; dec25; }
 sc_f8() { prep25; edit25 Write "$(inp25 file_path "$PROJ25/not-settings.json" content "$HOOK_ASK25")" "$PROJ25"; dec25; }
-caseF() {
-  assert_eq "F1 Write of a settings file that adds a PreToolUse/PermissionRequest hook matching AskUserQuestion (name, empty, .*, Ask.*): denied" "$(sc_f1)" "deny:settings_forgery|deny:settings_forgery|deny:settings_forgery|deny:settings_forgery"
-  assert_eq "F1b the same through an Edit that adds the hook to an existing file: denied" "$(sc_f1b)" "deny:settings_forgery"
-  assert_eq "F2 a settings write whose hook matches Bash only: allowed" "$(sc_f2)" "allow"
-  assert_eq "F3 a PostToolUse AskUserQuestion logger: allowed (it cannot answer)" "$(sc_f3)" "allow"
-  assert_eq "F4 settings.local.json and SETTINGS.JSON: denied" "$(sc_f4)" "deny:settings_forgery|deny:settings_forgery"
-  assert_eq "F4b ~/.claude/settings.json (tilde): denied" "$(sc_f4b)" "deny:settings_forgery"
-  assert_eq "F5 disableAllHooks true (would switch the consent hook off): denied" "$(sc_f5)" "deny:settings_forgery"
-  assert_eq "F6 a file that already holds the hook, edited elsewhere: allowed (nothing is added)" "$(sc_f6)" "allow"
-  assert_eq "F7 an Edit that leaves unreadable JSON and names a hook matcher: denied" "$(sc_f7)" "deny:settings_forgery"
-  assert_eq "F8 a json file that is not a settings file: allowed" "$(sc_f8)" "allow"
-  red25 "F1" sc_f1 "deny:settings_forgery|deny:settings_forgery|deny:settings_forgery|deny:settings_forgery" $PATHS25 "askHooksOf(newDoc).some((h) => !seen.has(h))" "false"
-  red25 "F1b" sc_f1b "deny:settings_forgery" $PATHS25 "const next = newContent(tool, input && typeof input === 'object' ? input : {}, old);
-  const newDoc = parseJson(next.text);" "const next = { text: null, fragment: '' };
-  const newDoc = parseJson(next.text);"
-  red25 "F2" sc_f2 "allow" $PATHS25 "function matcherHitsAsk(matcher) {" "function matcherHitsAsk(matcher) { return true;"
-  red25 "F3" sc_f3 "allow" $PATHS25 "const PRE_EVENTS = Object.freeze(['pretooluse', 'permissionrequest']);" "const PRE_EVENTS = Object.freeze(['pretooluse', 'permissionrequest', 'posttooluse']);"
-  red25 "F4" sc_f4 "deny:settings_forgery|deny:settings_forgery" $PATHS25 "const SETTINGS_FILE_RE = /^settings[^/]*\\.json\$/;" "const SETTINGS_FILE_RE = /^settings\\.json\$/;"
-  red25 "F5" sc_f5 "deny:settings_forgery" $PATHS25 "if (newDoc.disableAllHooks === true && oldDoc.disableAllHooks !== true)" "if (false)"
-  red25 "F6" sc_f6 "allow" $PATHS25 "askHooksOf(newDoc).some((h) => !seen.has(h))" "askHooksOf(newDoc).some((h) => true)"
-  red25 "F7" sc_f7 "deny:settings_forgery" $PATHS25 "const hit = TEXT_ASK_RE.test(next.fragment) || TEXT_DISABLE_RE.test(next.fragment) || /\"matcher\"/i.test(next.fragment) || TEXT_PLUGIN_OFF_RE.test(next.fragment);" "const hit = false;"
-}
-caseF
-
-# Samuel W4 SEC-3/SEC-5: other places a hook can come from
+# spelling a key without the plain substring: JSON \u escape, YAML flow style with a quoted key, YAML line continuation inside a quoted key
+sc_f18() { local a b c; a="$(sc_wr .claude/settings.json '{"hooks":{"PreToolUse":[]}}')"; b="$(sc_wr .claude/agents/q.md $'---\nname: q\nhooks: {"Pre\\\nToolUse": []}\n---\nb')"; c="$(sc_wr .claude/agents/q.md $'---\nname: q\nhooks: {"\\x50reToolUse": []}\n---\nb')"; echo "$a|$b|$c"; }
 FM25='---
 name: x
 hooks:
-  PreToolUse:
+  "PreToolUse":
     - matcher: "AskUserQuestion"
       hooks:
         - type: command
           command: x
 ---
 body'
-sc_fm() { # <relative path> <content> — Write below the project dir
-  prep25; mkdir -p "$PROJ25/$(dirname "$1")"; edit25 Write "$(inp25 file_path "$PROJ25/$1" content "$2")" "$PROJ25"; dec25
-}
-sc_f9() { local a b; a="$(sc_fm .claude/skills/x/SKILL.md "$FM25")"; b="$(sc_fm .claude/agents/y.md "$FM25")"; echo "$a|$b"; }
-sc_f9b() { local a b; a="$(sc_fm .claude/skills/x/SKILL.md $'---\nname: x\n---\nbody')"; b="$(sc_fm skills/z/SKILL.md $'---\nname: z\nhooks:\n  PostToolUse:\n    - matcher: Bash\n---\nb')"; echo "$a|$b"; }
-sc_f10() { rm -rf "$PROJ25"; mkdir -p "$PROJ25/foreign/hooks" "$PROJ25/own/hooks" "$PROJ25/own/.claude-plugin"; printf '{"name":"a1-specforge"}' > "$PROJ25/own/.claude-plugin/plugin.json"
-  prep25; edit25 Write "$(inp25 file_path "$PROJ25/foreign/hooks/hooks.json" content '{}')" "$PROJ25"; local a; a="$(dec25)"
-  edit25 Write "$(inp25 file_path "$PROJ25/own/hooks/hooks.json" content '{}')" "$PROJ25"; echo "$a|$(dec25)"; }
+FMFLOW25='---
+name: x
+hooks: {PermissionRequest: [{matcher: "", hooks: [{type: command, command: x}]}]}
+---
+body'
+sc_f9() { local a b c d e; a="$(sc_wr .claude/skills/x/SKILL.md "$FM25")"; b="$(sc_wr .claude/agents/y.md "$FM25")"; c="$(sc_wr .claude/agents/review/deep/z.md "$FMFLOW25")"
+  d="$(sc_wr .claude/commands/sub/c.md "$FM25")"; e="$(sc_wr skills/z/SKILL.md "$FMFLOW25")"; echo "$a|$b|$c|$d|$e"; }
+sc_f9b() { local a b; a="$(sc_wr .claude/skills/x/SKILL.md $'---\nname: x\n---\nbody')"; b="$(sc_wr skills/z/SKILL.md $'---\nname: z\nhooks:\n  PostToolUse:\n    - matcher: Bash\n---\nb')"; echo "$a|$b"; }
+sc_f10() { local a b; prep25; mkdir -p "$PROJ25/foreign/hooks"; edit25 Write "$(inp25 file_path "$PROJ25/foreign/hooks/hooks.json" content "$HOOK_ASK25")" "$PROJ25"; a="$(dec25)"
+  edit25 Write "$(inp25 file_path "$HT25/hooks/hooks.json" content "$HOOK_ASK25 $HOOK_ASK25 $HOOK_ASK25 $HOOK_ASK25")" "$PROJ25"; b="$(dec25)"; echo "$a|$b"; }   # own checkout = the tree copy the module lives in
 sc_f11() { prep25; mkdir -p "$HOME/.claude/plugins/cache/n3ural/a1-specforge/1.0"; edit25 Write "$(inp25 file_path "$HOME/.claude/plugins/cache/n3ural/a1-specforge/1.0/_shared/x.cjs" content x)"; dec25; }
-sc_f12() { local a b; a="$(sc_wr settings.json '{"enabledPlugins":{"a1-specforge@a1-specforge":false}}')"; b="$(sc_wr settings.json '{"enabledPlugins":{"a1-specforge@a1-specforge":true}}')"; echo "$a|$b"; }
-sc_f13() { settings25 '{}'; prep25; mkdir -p "$PROJ25/.claude"; printf '{}' > "$PROJ25/.claude/settings.json"; edit25 NotebookEdit "$(inp25 notebook_path "$PROJ25/.claude/settings.json" new_source x)" "$PROJ25"; dec25; }
-caseF2() {
-  assert_eq "F9 a skill and an agent file whose frontmatter adds a PreToolUse hook matching AskUserQuestion: denied" "$(sc_f9)" "deny:settings_forgery|deny:settings_forgery"
-  assert_eq "F9b a skill without hooks, and a PostToolUse-only Bash frontmatter hook: allowed" "$(sc_f9b)" "allow|allow"
-  assert_eq "F10 a hooks.json outside this plugin: denied; the hooks.json of a checkout of this plugin: allowed" "$(sc_f10)" "deny:settings_forgery|allow"
-  assert_eq "F11 any file under ~/.claude/plugins/cache/**/a1-specforge/: denied" "$(sc_f11)" "deny:settings_forgery"
-  assert_eq "F12 settings that disable the a1-specforge plugin: denied; enabling it: allowed" "$(sc_f12)" "deny:settings_forgery|allow"
-  assert_eq "F13 NotebookEdit on a settings file: denied" "$(sc_f13)" "deny:settings_forgery"
-  red25 "F9" sc_f9 "deny:settings_forgery|deny:settings_forgery" $PATHS25 "return fmSignature(next.text).some((l) => !seen.has(l))" "return false"
-  red25 "F9b" sc_f9b "allow|allow" $PATHS25 "return fmSignature(next.text).some((l) => !seen.has(l))" "return true"
-  red25 "F10" sc_f10 "deny:settings_forgery|allow" $PATHS25 "&& !ownPluginHooks(fs_[0])) return 'hooksjson';" "&& false) return 'hooksjson';"
-  red25 "F10b" sc_f10 "deny:settings_forgery|allow" $PATHS25 "&& !ownPluginHooks(fs_[0])) return 'hooksjson';" "&& true) return 'hooksjson';"
-  red25 "F11" sc_f11 "deny:settings_forgery" $PATHS25 "if (low.some((f) => PLUGIN_CACHE_RE.test(f))) return 'cache';" "if (false) return 'cache';"
-  red25 "F12" sc_f12 "deny:settings_forgery|allow" $PATHS25 "if (pluginOff(newDoc) && !pluginOff(oldDoc))" "if (false)"
-  red25 "F13" sc_f13 "deny:settings_forgery" $PATHS25 "if (tool === 'NotebookEdit') return { forged: true" "if (false) return { forged: true"
+sc_f12() { local a b; a="$(sc_wr .claude/settings.json '{"enabledPlugins":{"a1-specforge@a1-specforge":false}}')"; b="$(sc_wr .claude/settings.json '{"enabledPlugins":{"a1-specforge@a1-specforge":true}}')"; echo "$a|$b"; }
+sc_f13() { prep25; mkdir -p "$PROJ25/.claude"; printf '{}' > "$PROJ25/.claude/settings.json"; edit25 NotebookEdit "$(inp25 notebook_path "$PROJ25/.claude/settings.json" new_source x)" "$PROJ25"; dec25; }
+# plugin manifests: inline hooks, a hooks path change, a marketplace entry; a manifest without hooks is fine
+sc_f14() { sc_wr .claude-plugin/plugin.json '{"name":"x","hooks":{"Notification":[{"hooks":[{"type":"command","command":"x"}]}]}}'; }
+sc_f15() { rm -rf "$PROJ25"; mkdir -p "$PROJ25/.claude-plugin"; printf '{"name":"x","hooks":"./a.json"}' > "$PROJ25/.claude-plugin/plugin.json"; prep25
+  edit25 Edit "$(inp25 file_path "$PROJ25/.claude-plugin/plugin.json" old_string './a.json' new_string './b.json')" "$PROJ25"; dec25; }
+sc_f16() { sc_wr .claude-plugin/marketplace.json '{"name":"m","plugins":[{"name":"p","source":"./","hooks":{"Notification":[]}}]}'; }
+sc_f17() { local a b; rm -rf "$PROJ25"; a="$(sc_wr .claude-plugin/plugin.json '{"name":"x","version":"1"}')"; b="$(sc_wr .claude-plugin/marketplace.json '{"name":"m","plugins":[{"name":"p","source":"./"}]}')"; echo "$a|$b"; }
+sc_f20() { prep25; mkdir -p "$HOME/.claude/plugins/marketplaces/m"; edit25 Write "$(inp25 file_path "$HOME/.claude/plugins/marketplaces/m/any.json" content "$HOOK_ASK25")"; dec25; }
+# the three real edits of 2026-10-15 that the fragment-text rule used to deny: a tools: line and a skill tool list naming AskUserQuestion
+sc_real() { # <repo file> <line number> — Edit of that real line (a space appended to the line before it)
+  local f="$REPO_ROOT/$1" n="$2"
+  local in; in="$(node -e '
+    const l = require("fs").readFileSync(process.argv[1], "utf8").split("\n"); const n = +process.argv[2];
+    const old = [l[n - 2], l[n - 1]].join("\n"); process.stdout.write(JSON.stringify({ file_path: process.argv[1], old_string: old, new_string: l[n - 2] + " \n" + l[n - 1] }));' "$f" "$n")"
+  prep25; edit25 Edit "$in" "$REPO_ROOT"; dec25
 }
-caseF2
+sc_f21() { echo "$(sc_real agents/a1-rene-requirement-engineer.md 10)|$(sc_real agents/a1-falk-fault-finder.md 12)|$(sc_real skills/a1-new-project/SKILL.md 40)"; }
+caseF() {
+  local D=deny:settings_forgery
+  assert_eq "F1 a settings write that adds a PreToolUse/PermissionRequest entry (name, empty, .*, Ask.*): denied" "$(sc_f1)" "$D|$D|$D|$D"
+  assert_eq "F1b the same through an Edit on an existing file: denied" "$(sc_f1b)" "$D"
+  assert_eq "F2 a settings write without hooks: allowed" "$(sc_f2)" "allow"
+  assert_eq "F2b a PreToolUse hook for Bash only: denied too (the substring rule does not parse matchers)" "$(sc_f2b)" "$D"
+  assert_eq "F3 a PostToolUse AskUserQuestion logger: allowed (it cannot answer)" "$(sc_f3)" "allow"
+  assert_eq "F4 settings.local.json and SETTINGS.JSON: denied" "$(sc_f4)" "$D|$D"
+  assert_eq "F4b ~/.claude/settings.json (tilde): denied" "$(sc_f4b)" "$D"
+  assert_eq "F5 disableAllHooks true, and allowManagedHooksOnly true in managed-settings.json: denied" "$(sc_f5)" "$D|$D"
+  assert_eq "F6 a file that already holds the hook, edited elsewhere: allowed (nothing is added)" "$(sc_f6)" "allow"
+  assert_eq "F7 an Edit that leaves unreadable JSON and adds a PreToolUse entry: denied" "$(sc_f7)" "$D"
+  assert_eq "F8 a json file that is no hook source: allowed" "$(sc_f8)" "allow"
+  assert_eq "F9 a key spelled with a JSON escape, a YAML line continuation, a YAML hex escape: denied" "$(sc_f18)" "$D|$D|$D"
+  assert_eq "F9a frontmatter hooks (quoted key; flow style; nested agents dir; commands dir; plugin skill): denied" "$(sc_f9)" "$D|$D|$D|$D|$D"
+  assert_eq "F9b a skill without hooks, and a PostToolUse-only frontmatter hook: allowed" "$(sc_f9b)" "allow|allow"
+  assert_eq "F10 a hooks.json outside this checkout: denied; the hooks.json of this checkout (the tree copy): allowed" "$(sc_f10)" "$D|allow"
+  assert_eq "F11 any file under ~/.claude/plugins/cache/**/a1-specforge/: denied" "$(sc_f11)" "$D"
+  assert_eq "F12 settings that disable the a1-specforge plugin: denied; enabling it: allowed" "$(sc_f12)" "$D|allow"
+  assert_eq "F13 NotebookEdit on a settings file: denied" "$(sc_f13)" "$D"
+  assert_eq "F14 plugin.json with an inline hooks entry (an event the plain substring rule does not name): denied" "$(sc_f14)" "$D"
+  assert_eq "F15 plugin.json whose hooks path changes: denied" "$(sc_f15)" "$D"
+  assert_eq "F16 marketplace.json whose entry carries hooks: denied" "$(sc_f16)" "$D"
+  assert_eq "F17 a new plugin.json and marketplace.json without hooks: allowed" "$(sc_f17)" "allow|allow"
+  assert_eq "F20 any json under ~/.claude/plugins/ that adds a PreToolUse entry: denied" "$(sc_f20)" "$D"
+  assert_eq "F21 the three real edits (tools: lines and a skill tool list naming AskUserQuestion): allowed" "$(sc_f21)" "allow|allow|allow"
+  local CNT="if (count(EVENT_RE, b) > count(EVENT_RE, a))"
+  red25 "F1" sc_f1 "$D|$D|$D|$D" $PATHS25 "$CNT" "if (false)"
+  red25 "F1b" sc_f1b "$D" $PATHS25 "const next = newContent(tool, input && typeof input === 'object' ? input : {}, old);" "const next = { text: '', fragment: '' };"
+  red25 "F2" sc_f2 "allow" $PATHS25 "$CNT" "if (count(EVENT_RE, b) >= count(EVENT_RE, a))"
+  red25 "F3" sc_f3 "allow" $PATHS25 "const EVENT_RE = /pretooluse|permissionrequest/gi;" "const EVENT_RE = /pretooluse|permissionrequest|posttooluse/gi;"
+  red25 "F4" sc_f4 "$D|$D" $PATHS25 "/^settings[^/]*\\.json\$/.test(named(f))" "/^settings\\.json\$/.test(named(f))"
+  red25 "F5" sc_f5 "$D|$D" $PATHS25 "if (DISABLE_RE.test(b) && !DISABLE_RE.test(a))" "if (false)"
+  red25 "F6" sc_f6 "allow" $PATHS25 "$CNT" "if (count(EVENT_RE, b) > 0)"
+  red25 "F7" sc_f7 "$D" $PATHS25 "$CNT" "if (false)"
+  red25 "F9" sc_f18 "$D|$D|$D" $PATHS25 "if (count(ESCAPE_RE, b) > count(ESCAPE_RE, a))" "if (false)" $PATHS25 "$CNT" "if (false)"
+  red25 "F9a" sc_f9 "$D|$D|$D|$D|$D" $PATHS25 "$CNT" "if (false)"
+  red25 "F9a-md" sc_f9 "$D|$D|$D|$D|$D" $PATHS25 "named(f).endsWith('.md') && (segs(f).includes('agents') || segs(f).includes('commands'))" "false"
+  red25 "F9b" sc_f9b "allow|allow" $PATHS25 "$CNT" "if (count(EVENT_RE, b) >= count(EVENT_RE, a))"
+  red25 "F10" sc_f10 "$D|allow" $PATHS25 "? null : 'json';" "? 'json' : 'json';"
+  red25 "F10b" sc_f10 "$D|allow" $PATHS25 "$CNT" "if (false)"
+  red25 "F11" sc_f11 "$D" $PATHS25 "if (low.some((f) => PLUGIN_CACHE_RE.test(f))) return 'cache';" "if (false) return 'cache';"
+  red25 "F12" sc_f12 "$D|allow" $PATHS25 "if (PLUGIN_OFF_RE.test(b) && !PLUGIN_OFF_RE.test(a))" "if (false)"
+  red25 "F13" sc_f13 "$D" $PATHS25 "if (tool === 'NotebookEdit') return { forged: true" "if (false) return { forged: true"
+  red25 "F14" sc_f14 "$D" $PATHS25 "if (hb === undefined ? count(/\"hooks\"/gi, neu) !== count(/\"hooks\"/gi, old) : ha !== hb)" "if (false)"
+  red25 "F15" sc_f15 "$D" $PATHS25 "if (hb === undefined ? count(/\"hooks\"/gi, neu) !== count(/\"hooks\"/gi, old) : ha !== hb)" "if (false)"
+  red25 "F16" sc_f16 "$D" $PATHS25 "if (hb === undefined ? count(/\"hooks\"/gi, neu) !== count(/\"hooks\"/gi, old) : ha !== hb)" "if (false)"
+  red25 "F17" sc_f17 "allow|allow" $PATHS25 "if (hb === undefined ? count(/\"hooks\"/gi, neu) !== count(/\"hooks\"/gi, old) : ha !== hb)" "if (true)"
+  red25 "F20" sc_f20 "$D" $PATHS25 "$CNT" "if (false)"
+  # F21 is red when the judgement looks at the added text alone and counts AskUserQuestion (the rule of the first round)
+  red25 "F21" sc_f21 "allow|allow|allow" $PATHS25 "const EVENT_RE = /pretooluse|permissionrequest/gi;" "const EVENT_RE = /pretooluse|permissionrequest|askuserquestion/gi;" $PATHS25 "next.text === null ? '' : (old || '')" "''"
+}
+caseF
 
 # ---------- X: fail closed, wire form, packaging ----------
 sc_x1() { prep25; canon25; ask25 pre >/dev/null; rm -f "$HT25/_shared/lib/xprov-hook-rules.cjs"; ask25 pre none yes toolu_x; echo "$H_RC"; }
@@ -371,7 +407,6 @@ declare -a RALLOW25=(
   "sed -n '1,20p' skills/a1-fix/SKILL.md"
   'git log --oneline | grep waive'
   'git diff --stat | tail -3'
-  "git log --no-ext-diff --no-textconv -S 'xprov permit' | head -3"
   'cat README.md | head -20'
   'grep -i "xprov permit" docs'
   'tail -n 5 notes.md && head -3 notes.md'
@@ -400,9 +435,8 @@ declare -a RDENY25=(   # command ::: mutant ids under which it must flip to allo
   "sed -n 'e xprov permit' f:::M5"
   'for f in a; do xprov permit; done:::M6'
   "rg --pre 'xprov permit' x:::M7"
-  "git log --no-ext-diff --no-textconv --output=o -S 'xprov permit':::M8"
-  "git log -S 'xprov permit':::M15"
-  "git log --no-ext-diff --no-textconv -c core.x=y -S 'xprov permit':::M16"
+  "git log -S 'xprov permit':::M8"
+  "git -c core.pager='xprov permit' diff:::M8"
   "cat > f <<'E'OF
 EOF
 xprov permit
@@ -440,10 +474,8 @@ caseR() {
   rh_mut "$TMP25/rm5" xprov-bash-class.cjs "if (prog === 'sed') return sub === '-n' && SED_SCRIPT_RE.test(w[2] || '') && w.slice(3).every((t) => !t.startsWith('-'));" "if (prog === 'sed') return true;"
   rh_mut "$TMP25/rm6" xprov-bash-class.cjs "const body = w[0] === 'do' ? w.slice(1) : w;" "const body = w[0] === 'do' ? [] : w;"
   rh_mut "$TMP25/rm7" xprov-bash-class.cjs "if (prog === 'rg') return !w.some((t) => t === '--pre' || t.startsWith('--pre=') || t.startsWith('--hostname-bin'));" "if (prog === 'rg') return true;"
-  rh_mut "$TMP25/rm8" xprov-bash-class.cjs " && !w.some((t) => t.startsWith('--output') || t === '--ext-diff');" ";"
+  rh_mut "$TMP25/rm8" xprov-bash-class.cjs "'ls', 'echo']" "'ls', 'echo', 'git']"
   rh_mut "$TMP25/rm14" xprov-bash-class.cjs "if (after !== '' && after !== ' ' && after !== '\\t' && after !== '>') return null;" ""
-  rh_mut "$TMP25/rm15" xprov-bash-class.cjs "w.includes('--no-ext-diff') && w.includes('--no-textconv') && " ""
-  rh_mut "$TMP25/rm16" xprov-bash-class.cjs "!w.includes('-c') && " ""
   rh_mut "$TMP25/rm9" xprov-deny-allowlist-approve.sh '*"a1-xprov/waivers"*) deny "$MSG_WAIVE" ;;' '*"a1-xprov/waivers-never"*) deny "$MSG_WAIVE" ;;'; mutate25 "$TMP25/rm9" xprov-deny-allowlist-approve.sh 'case "$permit_text" in *"a1-xprov/permit-den"*) deny "$MSG_PERMIT" ;; esac' 'case "$permit_text" in *"a1-xprov/permit-never"*) deny "$MSG_PERMIT" ;; esac'
   rh_mut "$TMP25/rm10" xprov-bash-class.cjs "return { mode: 'heredoc', judge: h }" "return { mode: 'heredoc', judge: 'cat' }"
   rh_mut "$TMP25/rm11" xprov-bash-class.cjs "segs.length !== 1 ||" ""

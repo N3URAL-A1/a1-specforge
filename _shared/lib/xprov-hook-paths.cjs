@@ -3,22 +3,53 @@
 // ---------------------------------------------------------------------------
 // xprov-hook-paths — what the plugin hook denies for Edit, Write, NotebookEdit and MultiEdit (spec 016 FR-004; wave 4).
 //
-//   guardedPath(file, cwd)   -> { guarded: true, why } | { guarded: false }
-//       The owner stores: everything under <owner home>/.a1-xprov/ (consent.json, consent-markers/, permits.json, permit-denials.json,
-//       waivers.json, allowlist-approvals.json, hit-approvals.json, scan-records/, artifacts/, consent-audit.jsonl and its lock/tmp/stale
-//       forms, .owner-store.lock and its forms, every .tmp file), and `.a1/xprov.json` in any checkout. The path is judged in two forms,
-//       the lexical one (`..` removed first) and the one the operating system walks (a symlink followed by `..`), each resolved through
-//       the deepest existing ancestor (realpath: a symlink to a store file is the store file), `~` and `$HOME` expanded, relative paths
-//       taken against the payload cwd, compared after NFC + lower-casing (APFS is case-insensitive).
-//       Besides the strings, the path is compared by device + inode: every existing ancestor of each form is stat'ed and a match with the
-//       store directory guards it (a macOS firmlink such as /System/Volumes/Data/Users/<u>/.a1-xprov is no symlink and no string match).
-//   settingsForgery(file, cwd, tool, input) -> { forged: true, why } | { forged: false }
-//       R-1 prefill path: a `.claude/settings*.json` (project, local or `~/.claude/`) whose NEW content adds a hook that matches
-//       AskUserQuestion on PreToolUse or PermissionRequest (such a hook may answer the consent question with `updatedInput.answers`),
-//       or switches `disableAllHooks` on (it would switch this plugin hook off). The new content is computed (Write: the content; Edit,
-//       MultiEdit: the file with the replacement applied); an unparseable result is judged as text.
+// EVERY place a Claude Code hook can be defined, or all hooks disabled (measured 2026-10-15 from the official docs; a hook in any of them
+// that matches AskUserQuestion on PreToolUse/PermissionRequest can answer the consent question with `updatedInput.answers`, and a disable
+// switches this plugin hook off). Column "here" says what this module does for it.
 //
-// Tier 0 stays: a Bash command that writes a settings file or a store is outside this hook (the same OS user can always do it).
+//  #  location (doc)                                                              here
+//  1  ~/.claude/settings.json                  (hooks#hook-locations, settings)    guarded: JSON class
+//  2  <project>/.claude/settings.json          (hooks#hook-locations, settings)    guarded: JSON class
+//  3  <project>/.claude/settings.local.json    (hooks#hook-locations, settings)    guarded: JSON class
+//  4  managed-settings.json / managed-settings.d (system dirs; settings, hooks)    guarded by file name (JSON class); MDM and server-managed
+//                                                                                  settings are not files an agent edits: RESIDUAL
+//  5  `--settings <file|json>` launch flag    (settings#settings-per-session)     RESIDUAL (any path, chosen at launch)
+//  6  plugin hooks/hooks.json                  (hooks, plugins-reference)          guarded: JSON class (own checkout hooks/hooks.json excepted)
+//  7  plugin.json inline `hooks` or `hooks` path to any .json (plugins-reference#component-path-forms)
+//                                                                                  guarded: plugin manifest class (a `hooks` key added or changed);
+//                                                                                  a hooks .json outside ~/.claude/plugins and not named
+//                                                                                  hooks.json: RESIDUAL
+//  8  marketplace.json entry `hooks` (inline object form) (plugins-reference#marketplace-entries-and-the-manifest, plugin-marketplaces)
+//                                                                                  guarded: plugin manifest class
+//  9  any .json under ~/.claude/plugins/**  (installed plugins, plugin cache)      guarded: JSON class; the a1-specforge cache: every file denied
+// 10  skill frontmatter `hooks:` (SKILL.md in .claude/skills, ~/.claude/skills, plugin skills/, nested .claude/skills, --add-dir)
+//                                              (hooks#hooks-in-skills-and-agents, skills)   guarded: frontmatter class
+// 11  subagent frontmatter `hooks:` (.claude/agents and ~/.claude/agents and plugin agents/, scanned RECURSIVELY)
+//                                              (sub-agents#hooks-in-subagent-frontmatter)    guarded: frontmatter class (any .md below a dir named agents)
+// 12  command frontmatter (.claude/commands, plugin commands/; "custom commands have been merged into skills", skills)
+//                                                                                  guarded: frontmatter class (any .md below a dir named commands)
+// 13  disableAllHooks (any settings level; hooks#disable-or-remove-hooks)           guarded: JSON class
+// 14  allowManagedHooksOnly (managed settings; blocks user/project/plugin hooks)    guarded: JSON class (the file; the managed tier itself: RESIDUAL)
+// 15  enabledPlugins { a1-specforge: false } (settings)                             guarded: JSON class; `claude plugin disable` / the /plugin UI: RESIDUAL (Bash)
+// 16  scripts that an existing hook runs                                            RESIDUAL (tier 0: an edit of the script of a hook that already exists)
+// 17  CLI-only definitions: `--agents <json>`, `--plugin-dir <dir>`                 RESIDUAL (launch flags)
+// 18  cloud / self-hosted sessions (operator-seeded ~/.claude, runner-image managed settings)  RESIDUAL
+//
+// One rule for the class (no quote or flow-style parsing): a file of the class is denied when the count of the case-insensitive substrings
+// `pretooluse` / `permissionrequest` (whole content for .json, the frontmatter block for .md) grows, when the count of escape markers
+// (`\uXXXX`, `\xXX`, backslash-newline: the ways to spell a key without the substring) grows, when `disableAllHooks` / `allowManagedHooksOnly` is
+// set to true or an a1-specforge `enabledPlugins` entry to false, or (plugin.json, marketplace.json) when a `hooks` key is added or changed.
+// A NotebookEdit of a class file is always denied (its content cannot be checked). The tail is judged as text when the edit cannot be applied.
+//
+// guardedPath(file, cwd)   -> { guarded: true, why } | { guarded: false }
+//       The owner stores: everything under <owner home>/.a1-xprov/, and `.a1/xprov.json` in any checkout. The path is judged as a string
+//       (two forms: `..` collapsed, and as the operating system walks it; realpath through the deepest existing ancestor; `~` and `$HOME`
+//       expanded; NFC + lower case) AND by device + inode of every existing ancestor (a macOS firmlink such as
+//       /System/Volumes/Data/Users/<u>/.a1-xprov is no symlink). When the store directory does not exist yet, an ancestor named `.a1-xprov`
+//       (case-insensitive) whose parent is the home directory (inode) is guarded too.
+// settingsForgery(file, cwd, tool, input) -> { forged: true, why } | { forged: false }       the class rule above.
+//
+// Tier 0 stays: a Bash command that writes any of these is outside this hook (the same OS user can always do it).
 // Request-scoped: no module state.
 // ---------------------------------------------------------------------------
 
@@ -28,10 +59,8 @@ const path = require('path');
 const X = require('./xprov.cjs');
 
 const STORE_DIR_NAME = '.a1-xprov';
-const SETTINGS_FILE_RE = /^settings[^/]*\.json$/;
-const PRE_EVENTS = Object.freeze(['pretooluse', 'permissionrequest']);
-const ASK_TOOL = 'AskUserQuestion';
 const MAX_FILE_BYTES = 4 * 1024 * 1024;
+const OWN_REPO_ROOT = realish(path.resolve(__dirname, '..', '..')); // the checkout this module lives in (not a name field of an editable file)
 
 const fold = (p) => String(p).normalize('NFC').toLowerCase();
 
@@ -54,53 +83,49 @@ function realish(abs) {
   }
 }
 
-/** The forms of `file` to judge: lexical (`..` collapsed) and OS-walked, each realpath-resolved. */
-function forms(file, cwd) {
-  const home = safeHome();
-  const raw = expandHome(String(file), home);
-  const abs = path.isAbsolute(raw) ? raw : `${cwd}/${raw}`;
-  return [...new Set([realish(path.resolve(abs)), realish(abs.replace(/\/{2,}/g, '/'))])];
-}
-
 function safeHome() {
   try { return os.homedir(); } catch (_e) { return ''; }
 }
 
-/** Store roots: the owner store dir by the resolver, and the one under the process home (equal in production). Realpath-resolved. */
-function storeRoots() {
+/** The forms of `file` to judge: lexical (`..` collapsed) and OS-walked, each realpath-resolved. */
+function forms(file, cwd) {
+  const raw = expandHome(String(file), safeHome());
+  const abs = path.isAbsolute(raw) ? raw : `${cwd}/${raw}`;
+  return [...new Set([realish(path.resolve(abs)), realish(abs.replace(/\/{2,}/g, '/'))])];
+}
+
+/** Store roots: the owner store dir by the resolver, and the one under the process home (equal in production). */
+function rootCandidates() {
   const roots = [X.xprovHome()];
   const h = safeHome();
   if (h !== '') roots.push(path.join(h, STORE_DIR_NAME));
-  return [...new Set(roots.flatMap((r) => [path.resolve(r), realish(path.resolve(r))]))].map(fold);
+  return roots.map((r) => path.resolve(r));
 }
 
+const storeRoots = () => [...new Set(rootCandidates().flatMap((r) => [r, realish(r)]))].map(fold);
 const isUnder = (p, root) => p === root || p.startsWith(`${root}/`);
-
 const idOf = (p) => { try { const st = fs.statSync(p); return `${st.dev}:${st.ino}`; } catch (_e) { return null; } };
+const idsOf = (list) => new Set(list.map(idOf).filter((id) => id !== null));
 
-/** True when `p` or one of its existing ancestors is the same directory (device + inode) as a store root. */
-function sameInodeUnder(p, rootIds) {
+/** True when `p` or an existing ancestor is the same directory (device + inode) as a store root, or is a `.a1-xprov` entry of a home directory. */
+function sameInodeUnder(p, storeIds, homeIds) {
   for (let cur = p; ; cur = path.dirname(cur)) {
     const id = idOf(cur);
-    if (id !== null && rootIds.has(id)) return true;
-    if (path.dirname(cur) === cur) return false;
+    if (id !== null && storeIds.has(id)) return true;
+    const parent = path.dirname(cur);
+    if (fold(path.basename(cur)) === STORE_DIR_NAME && idOf(parent) !== null && homeIds.has(idOf(parent))) return true; // the store dir is not created yet
+    if (parent === cur) return false;
   }
-}
-
-function storeRootIds() {
-  const roots = [X.xprovHome()];
-  const h = safeHome();
-  if (h !== '') roots.push(path.join(h, STORE_DIR_NAME));
-  return new Set(roots.map((r) => idOf(path.resolve(r))).filter((id) => id !== null));
 }
 
 /** { guarded, why } for one file path (see header). */
 function guardedPath(file, cwd) {
   if (typeof file !== 'string' || file === '') return { guarded: false };
   const roots = storeRoots();
-  const ids = storeRootIds();
+  const storeIds = idsOf(rootCandidates());
+  const homeIds = idsOf(rootCandidates().map((r) => path.dirname(r)));
   for (const raw of forms(file, cwd)) {
-    if (sameInodeUnder(raw, ids)) return { guarded: true, why: 'the owner store directory (~/.a1-xprov, same device and inode)' };
+    if (sameInodeUnder(raw, storeIds, homeIds)) return { guarded: true, why: 'the owner store directory (~/.a1-xprov, same device and inode)' };
   }
   for (const f of forms(file, cwd).map(fold)) {
     if (roots.some((r) => isUnder(f, r))) return { guarded: true, why: 'the owner store directory (~/.a1-xprov)' };
@@ -109,29 +134,36 @@ function guardedPath(file, cwd) {
   return { guarded: false };
 }
 
-const isSettingsFile = (file, cwd) => forms(file, cwd).map(fold).some((f) => SETTINGS_FILE_RE.test(path.basename(f)) && path.basename(path.dirname(f)) === '.claude');
+// ---- the hook-source class ----
+const PLUGIN_CACHE_RE = /\/\.claude\/plugins\/cache\/(?:.*\/)?a1-specforge(?:\/|$)/;
+const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---/;
+const EVENT_RE = /pretooluse|permissionrequest/gi;
+const ESCAPE_RE = /\\u[0-9a-f]{4}|\\x[0-9a-f]{2}|\\\r?\n/gi;
+const DISABLE_RE = /["']?(?:disableAllHooks|allowManagedHooksOnly)["']?\s*:\s*true/i;
+const PLUGIN_OFF_RE = /a1-specforge[^"'\n,}]*["']?\s*:\s*false/i;
 
-function matcherHitsAsk(matcher) {
-  if (matcher === undefined || matcher === null || matcher === '' || matcher === '*') return true;
-  if (typeof matcher !== 'string') return true;
-  try { return new RegExp(matcher, 'i').test(ASK_TOOL); } catch (_e) { return true; } // an invalid pattern is judged as a hit
-}
-
-/** The JSON texts of the hook entries that match AskUserQuestion on a Pre event (so a hook that may prefill answers). */
-function askHooksOf(doc) {
-  const hooks = doc && typeof doc === 'object' && doc.hooks && typeof doc.hooks === 'object' ? doc.hooks : {};
-  return Object.entries(hooks).filter(([event]) => PRE_EVENTS.includes(fold(event)))
-    .flatMap(([event, entries]) => (Array.isArray(entries) ? entries : []).filter((e) => e && typeof e === 'object' && matcherHitsAsk(e.matcher)).map((e) => `${fold(event)}|${JSON.stringify(e)}`));
-}
-
-function parseJson(text) {
-  if (typeof text !== 'string') return null;
-  try { const d = JSON.parse(text); return d && typeof d === 'object' && !Array.isArray(d) ? d : null; } catch (_e) { return null; }
+/** The file kind: 'cache' | 'json' | 'manifest' | 'md' | null. */
+function fileClass(file, cwd) {
+  const fs_ = forms(file, cwd);
+  const low = fs_.map(fold);
+  if (low.some((f) => PLUGIN_CACHE_RE.test(f))) return 'cache';
+  const named = (f) => path.basename(f);
+  const parent = (f) => path.basename(path.dirname(f));
+  const segs = (f) => f.split('/').slice(0, -1);
+  if (low.some((f) => named(f) === 'hooks.json' && parent(f) === 'hooks')) {
+    return fs_.some((f) => f === path.join(OWN_REPO_ROOT, 'hooks', 'hooks.json')) ? null : 'json';
+  }
+  if (low.some((f) => (named(f) === 'plugin.json' || named(f) === 'marketplace.json') && parent(f) === '.claude-plugin')) return 'manifest';
+  if (low.some((f) => /^settings[^/]*\.json$/.test(named(f)) && parent(f) === '.claude')) return 'json';
+  if (low.some((f) => /^managed-settings[^/]*\.json$/.test(named(f)) || (named(f).endsWith('.json') && segs(f).includes('managed-settings.d')))) return 'json';
+  if (low.some((f) => named(f).endsWith('.json') && f.includes('/.claude/plugins/'))) return 'json';
+  if (low.some((f) => named(f) === 'skill.md' || (named(f).endsWith('.md') && (segs(f).includes('agents') || segs(f).includes('commands'))))) return 'md';
+  return null;
 }
 
 function readOld(file, cwd) {
-  const abs = forms(file, cwd)[0];
   try {
+    const abs = forms(file, cwd)[0];
     const st = fs.lstatSync(abs);
     if (!st.isFile() || st.size > MAX_FILE_BYTES) return null;
     return fs.readFileSync(abs, 'utf8');
@@ -150,87 +182,54 @@ function newContent(tool, input, old) {
   const fragment = edits.map((e) => String((e && e.new_string) || '')).join('\n');
   if (old === null) return { text: null, fragment };
   let text = old;
-  for (const e of edits) {
-    text = text === null ? null : replaceOnce(text, e && e.old_string, e && e.new_string, Boolean(e && e.replace_all));
-  }
+  for (const e of edits) text = text === null ? null : replaceOnce(text, e && e.old_string, e && e.new_string, Boolean(e && e.replace_all));
   return { text, fragment };
 }
 
-const TEXT_ASK_RE = /ask\s*user\s*question/i;
-const TEXT_DISABLE_RE = /disableAllHooks/i;
-const TEXT_PLUGIN_OFF_RE = /a1-specforge["']?\s*:\s*false/i;
-
-/** { forged, why } for a settings JSON edit (see header). */
-function settingsJsonForgery(file, cwd, tool, input) {
-  const old = readOld(file, cwd);
-  const next = newContent(tool, input && typeof input === 'object' ? input : {}, old);
-  const newDoc = parseJson(next.text);
-  if (newDoc === null) {
-    // Cannot be judged as a document (a fragment of a hook, or broken JSON): the fragment decides.
-    const hit = TEXT_ASK_RE.test(next.fragment) || TEXT_DISABLE_RE.test(next.fragment) || /"matcher"/i.test(next.fragment) || TEXT_PLUGIN_OFF_RE.test(next.fragment);
-    return hit ? { forged: true, why: 'the change to this settings file cannot be read as a whole document and its new text names a hook matcher, AskUserQuestion, disableAllHooks or a disabled a1-specforge plugin' } : { forged: false };
-  }
-  const oldDoc = parseJson(old) || {};
-  const seen = new Set(askHooksOf(oldDoc));
-  if (askHooksOf(newDoc).some((h) => !seen.has(h))) return { forged: true, why: 'the new content adds a hook that matches AskUserQuestion (a PreToolUse hook can answer the consent question with updatedInput.answers)' };
-  if (newDoc.disableAllHooks === true && oldDoc.disableAllHooks !== true) return { forged: true, why: 'the new content sets disableAllHooks, which would switch the consent hook off' };
-  if (pluginOff(newDoc) && !pluginOff(oldDoc)) return { forged: true, why: 'the new content disables the a1-specforge plugin (enabledPlugins), which would switch the consent hook off' };
-  return { forged: false };
+const count = (re, text) => (String(text).match(re) || []).length;
+/** The part of the content the counts look at: the frontmatter block of a .md (the whole text when it opens with --- but has no closing one), else everything. */
+function scope(kind, text) {
+  if (kind !== 'md') return String(text);
+  const m = FRONTMATTER_RE.exec(String(text));
+  return m ? m[1] : (String(text).startsWith('---') ? String(text) : '');
 }
 
-const pluginOff = (doc) => C_isObj(doc.enabledPlugins) && Object.entries(doc.enabledPlugins).some(([k, v]) => /a1-specforge/i.test(k) && v === false);
-const C_isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
-
-// ---- other places a hook can come from (Samuel W4 SEC-3, orchestrator decision 2026-10-15) ----
-const PLUGIN_CACHE_RE = /\/\.claude\/plugins\/cache\/(?:.*\/)?a1-specforge(?:\/|$)/;
-const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---/;
-const FM_EVENT_RE = /^\s*(?:pretooluse|permissionrequest)\s*:/i;
-const FM_MATCHER_RE = /^\s*-?\s*matcher\s*:\s*(.*)$/i;
-
-/** True when the hooks.json belongs to a checkout of this plugin itself (its plugin.json names a1-specforge). */
-function ownPluginHooks(abs) {
+function hooksKeyOf(text, isMarketplace) {
   try {
-    const doc = JSON.parse(fs.readFileSync(path.join(path.dirname(path.dirname(abs)), '.claude-plugin', 'plugin.json'), 'utf8'));
-    return doc && doc.name === 'a1-specforge';
-  } catch (_e) { return false; }
+    const d = JSON.parse(text);
+    return JSON.stringify(isMarketplace ? (Array.isArray(d.plugins) ? d.plugins.map((p) => p && p.hooks).filter((h) => h !== undefined && h !== null) : []) : (d && d.hooks) || null);
+  } catch (_e) { return undefined; }
 }
 
-/** 'cache' | 'hooksjson' | 'frontmatter' | 'settings' | null for a path. */
-function fileClass(file, cwd) {
-  const fs_ = forms(file, cwd);
-  const low = fs_.map(fold);
-  if (low.some((f) => PLUGIN_CACHE_RE.test(f))) return 'cache';
-  if (low.some((f) => SETTINGS_FILE_RE.test(path.basename(f)) && path.basename(path.dirname(f)) === '.claude')) return 'settings';
-  if (low.some((f) => path.basename(f) === 'hooks.json' && path.basename(path.dirname(f)) === 'hooks') && !ownPluginHooks(fs_[0])) return 'hooksjson';
-  if (low.some((f) => path.basename(f) === 'skill.md' || (f.endsWith('.md') && path.basename(path.dirname(f)) === 'agents'))) return 'frontmatter';
+/** The reason a class file's new content is refused, or null. `old` and `neu` are the whole texts. */
+function refusal(kind, file, old, neu) {
+  const a = scope(kind, old);
+  const b = scope(kind, neu);
+  if (count(EVENT_RE, b) > count(EVENT_RE, a)) return 'the new content adds a PreToolUse or PermissionRequest entry (such a hook can answer the consent question with updatedInput.answers)';
+  if (count(ESCAPE_RE, b) > count(ESCAPE_RE, a)) return 'the new content adds escape sequences that can spell a hook event without the plain name';
+  if (DISABLE_RE.test(b) && !DISABLE_RE.test(a)) return 'the new content switches hooks off (disableAllHooks / allowManagedHooksOnly), which would disable the consent hook';
+  if (PLUGIN_OFF_RE.test(b) && !PLUGIN_OFF_RE.test(a)) return 'the new content disables the a1-specforge plugin (enabledPlugins), which would switch the consent hook off';
+  if (kind === 'manifest') {
+    const mk = path.basename(forms(file, '/')[0]).toLowerCase() === 'marketplace.json';
+    const ha = String(old).trim() === '' ? (mk ? '[]' : 'null') : hooksKeyOf(old, mk); // a new file has no hooks yet
+    const hb = hooksKeyOf(neu, mk);
+    if (hb === undefined ? count(/"hooks"/gi, neu) !== count(/"hooks"/gi, old) : ha !== hb) return 'the plugin manifest adds or changes a hooks entry (inline hooks or a path to a hooks file)';
+  }
   return null;
-}
-
-/** The hook-relevant lines of a skill or agent frontmatter: a Pre event key, a matcher that hits AskUserQuestion, a mention of it. */
-function fmSignature(text) {
-  const m = FRONTMATTER_RE.exec(typeof text === 'string' ? text : '');
-  if (m === null) return [];
-  return m[1].split('\n').map((l) => l.trim()).filter((l) => FM_EVENT_RE.test(l) || TEXT_ASK_RE.test(l)
-    || (FM_MATCHER_RE.test(l) && matcherHitsAsk(FM_MATCHER_RE.exec(l)[1].replace(/^["']|["']$/g, ''))));
-}
-
-function frontmatterForgery(file, cwd, tool, input) {
-  const old = readOld(file, cwd);
-  const next = newContent(tool, input && typeof input === 'object' ? input : {}, old);
-  if (next.text === null) return /ask\s*user\s*question|pretooluse|permissionrequest/i.test(next.fragment) ? { forged: true, why: 'the new text of this skill or agent file cannot be read as a whole and names a tool hook' } : { forged: false };
-  const seen = new Set(fmSignature(old));
-  return fmSignature(next.text).some((l) => !seen.has(l)) ? { forged: true, why: 'the new frontmatter adds a hook on PreToolUse or PermissionRequest that can match AskUserQuestion' } : { forged: false };
 }
 
 /** { forged, why }: the files from which a hook could answer the consent question or switch this hook off. See the header. */
 function settingsForgery(file, cwd, tool, input) {
   if (typeof file !== 'string' || file === '') return { forged: false };
-  const cls = fileClass(file, cwd);
-  if (cls === null) return { forged: false };
-  if (cls === 'cache') return { forged: true, why: 'a file of the installed a1-specforge plugin (the plugin cache is read-only for agents)' };
-  if (cls === 'hooksjson') return { forged: true, why: 'a hooks.json outside this plugin could add a hook that answers the consent question' };
-  if (tool === 'NotebookEdit') return { forged: true, why: 'a notebook edit cannot be checked as a settings, hooks or frontmatter change' };
-  return cls === 'settings' ? settingsJsonForgery(file, cwd, tool, input) : frontmatterForgery(file, cwd, tool, input);
+  const kind = fileClass(file, cwd);
+  if (kind === null) return { forged: false };
+  if (kind === 'cache') return { forged: true, why: 'a file of the installed a1-specforge plugin (the plugin cache is read-only for agents)' };
+  if (tool === 'NotebookEdit') return { forged: true, why: 'a notebook edit cannot be checked as a settings, hooks, manifest or frontmatter change' };
+  const old = readOld(file, cwd);
+  const next = newContent(tool, input && typeof input === 'object' ? input : {}, old);
+  // An edit that cannot be applied (the old text is not found, the file is too large): the added text alone is judged against nothing.
+  const why = refusal(kind, file, next.text === null ? '' : (old || ''), next.text === null ? next.fragment : next.text);
+  return why === null ? { forged: false } : { forged: true, why };
 }
 
-module.exports = { STORE_DIR_NAME, guardedPath, settingsForgery, isSettingsFile, askHooksOf, forms, storeRoots };
+module.exports = { STORE_DIR_NAME, guardedPath, settingsForgery, fileClass, forms, storeRoots };
