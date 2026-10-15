@@ -23,6 +23,13 @@
 #   CA3   Red if blobSha256() stops hashing the blob content [M11]
 #   CA5   Red if the allowlist-file hit is no longer refused [M12]; red if the foreign scan record is accepted [M13]
 #   CA9   Red if the terminal allowlist revoke drops its store lock [M14]; red if consent allowlist drops its store lock [M15]
+# Samuel W3 review (SEC-1..6), all on the same tree-copy mutants:
+#   CA10  Red if the allowlist-blob check of a hit is dropped AND the hit store is written to the blob-approval store [M16+M17: probe A]
+#         Red if a hit blob that parses as an allowlist document is no longer refused [M16]
+#   CW15  Red if a run record of ANOTHER PLAN.md sha still makes a target [M18]; of another mode [M19]; a copied wave row [M20]  (probe B)
+#   CW16  Red if a row whose verdict differs from the run record is no longer refused [M21]; a round the findings record does not name [M22];
+#         finding text shown although the findings record does not match its hash [M23]; finding text taken from a1-findings.json [M24]
+#   CA11  Red if the terminal approve drops its store lock [M25]; red if consent allowlist drops its store lock [M26]
 # Run on tree copies only (the real owner store is never touched; rule 4b of the plan).
 
 TMP24="$(mktemp -d "${TMPDIR:-/tmp}/a1x24.XXXXXX")"
@@ -63,14 +70,18 @@ wfile24() { echo "$HOME/.a1-xprov/waivers.json"; }
 wcount24() { node -e 'try { process.stdout.write(String(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).waivers.length)); } catch (e) { process.stdout.write("0"); }' "$(wfile24)"; }
 # approved24 — the sorted sha list the approval store holds for the phase repo, comma separated ("-" when none)
 approved24() { node -e 'try { const j = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); const l = (j.repos[process.argv[2]] || []).slice().sort(); process.stdout.write(l.length ? l.join(",") : "-"); } catch (e) { process.stdout.write("-"); }' "$HOME/.a1-xprov/allowlist-approvals.json" "$(key24)"; }
+# hblobs24 — the sorted blob sha list the HIT store (hit-approvals.json) holds for the phase repo, comma separated ("-" when none)
+hfile24() { echo "$HOME/.a1-xprov/hit-approvals.json"; }
+hblobs24() { node -e 'try { const j = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); const l = [...new Set(j.approvals.filter((a) => a.repo === process.argv[2]).map((a) => a.blob))].sort(); process.stdout.write(l.length ? l.join(",") : "-"); } catch (e) { process.stdout.write("-"); }' "$(hfile24)" "$(key24)"; }
 last_action24() { node -e 'const l = require("fs").readFileSync(process.argv[1], "utf8").trim().split("\n"); const j = JSON.parse(l[l.length - 1]); process.stdout.write(j.action + "|" + j.tool_use_id + "|" + j.session_id);' "$(auditf24)" 2>/dev/null; }
 audit_count24() { [[ -e "$(auditf24)" ]] && wc -l < "$(auditf24)" | tr -d ' ' || echo 0; }
 nothing24() { [[ ! -e "$(wfile24)" && ! -e "$HOME/.a1-xprov/allowlist-approvals.json" ]]; }
 # jfile24 <file> <expr over j> — node value of a JSON file
 jfile24() { node -e 'const j = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); const v = (function () { return eval(process.argv[2]); })(); process.stdout.write(typeof v === "string" ? v : JSON.stringify(v));' "$1" "$2"; }
 sha24() { node -e 'process.stdout.write(require("crypto").createHash("sha256").update(require("fs").readFileSync(process.argv[1])).digest("hex"))' "$1"; }
-mtree24() {
-  make_tree
+mtree24() { make_tree; mutate24 "$@"; }
+# mutate24 <lib-file> <from> <to> — one exact-once replacement in the CURRENT tree copy (a second call stacks a second mutation)
+mutate24() {
   node -e '
     const fs = require("fs"); const [tree, name, from, to] = process.argv.slice(1);
     const f = tree + "/_shared/lib/" + name; const s = fs.readFileSync(f, "utf8"); const n = s.split(from).length - 1;
@@ -79,6 +90,14 @@ mtree24() {
   ' "$TREE" "$1" "$2" "$3" || bad "CW harness: mutation failed in $1"
 }
 unmtree24() { TREE="$T24"; TREE_TOOLS="$T24_TOOLS"; }
+# redproof24x <name> <scenario fn> <expected> <file1> <from1> <to1> <file2> <from2> <to2>: the mutant carries TWO changes (a guard that only matters together with a second one)
+redproof24x() {
+  local name="$1" fn="$2" want="$3" got mut
+  got="$($fn)"
+  [[ "$got" == "$want" ]] || { bad "$name: real tree gave '$got', wanted '$want'"; return 0; }
+  mtree24 "$4" "$5" "$6"; mutate24 "$7" "$8" "$9"; mut="$($fn)"; unmtree24
+  [[ "$mut" != "$want" ]] && ok "$name RED [mutant]: with both production changes the outcome flips ('$want' -> '$mut')" || bad "$name RED [mutant]: the guards are dead, the mutant still gives '$mut'"
+}
 # redproof24 <name> <scenario fn> <expected on the real tree> <lib-file> <from> <to>: the mutant must give another value
 redproof24() {
   local name="$1" fn="$2" want="$3" file="$4" from="$5" to="$6" got mut
@@ -133,14 +152,14 @@ caseCW1
 scen_forged24() {
   phase24 both
   fix24 append-row '"row":{"gate":"'$WAVEGATE24'","wave":4,"lane":null,"round":1,"verdict":"fail-with-findings","reason":null,"plan_sha256":"'"$(sha24 "$PHASE_PLAN")"'","result_path":"/etc/hosts","ts":"2026-10-14T00:00:00.000Z"}'
-  cli24 question --kind waiver --phase p24; node -p 'process.argv[1].includes("wave-inspect-xprov Wave 4") ? "forged-row-listed" : "forged-row-ignored"' "$(json_get "$G_OUT" 'j.question')"
+  cli24 question --kind waiver --phase p24; echo "$G_RC|$(json_get "$G_OUT" 'j.listed')|$(node -p 'process.argv[1].includes("wave-inspect-xprov Wave 4") ? "forged-row-listed" : "forged-row-ignored"' "$(json_get "$G_OUT" 'j.question')")"
 }
 scen_rowhead24() {
   phase24 both; fix24 rewrite '"gate":"'$WAVEGATE24'","wave":3,"round":2,"field":"head","value":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"'
   cli24 question --kind waiver --phase p24; node -p 'process.argv[1].includes("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") ? "row-head-used" : "run-record-head-used"' "$(json_get "$G_OUT" 'j.question')"
 }
-redproof24 "CW1c" scen_forged24 "forged-row-ignored" xprov-consent-targets.cjs "RR.runRecord(e.result_path, root) !== null" "true"
-redproof24 "CW1b" scen_rowhead24 "run-record-head-used" xprov-consent-targets.cjs "RR.reviewedHeadBase(row.result_path, undefined, root)" "({ head: row.head === undefined ? null : row.head, base: row.base === undefined ? null : row.base })"
+redproof24 "CW1c" scen_forged24 "0|2|forged-row-ignored" xprov-consent-targets.cjs "if (rec === null || rec.plan_sha256 !== planSha" "if (false && rec.plan_sha256 !== planSha"
+redproof24 "CW1b" scen_rowhead24 "run-record-head-used" xprov-consent-targets.cjs "RR.reviewedHeadBase(row.result_path, rec, root)" "({ head: row.head === undefined ? null : row.head, base: row.base === undefined ? null : row.base })"
 
 # ---------- CW2: yes -> one record per listed target, shape of the terminal waive, bound audit line ----------
 scen_by24() { phase24 both; yes24 waiver >/dev/null; wv24; jfile24 "$(wfile24)" 'j.waivers.map((w) => w.by).join(",")'; }
@@ -302,7 +321,7 @@ scen_race24() {
 }
 caseCW13() {
   assert_eq "CW13 chat waive (slow) and terminal waive in parallel: both records survive (R-4)" "$(scen_race24)" "2"
-  redproof24 "CW13a" scen_race24 "2" xprov-consent-waive.cjs "return R.locked(() => waiveLocked(o));" "return waiveLocked(o);"
+  redproof24 "CW13a" scen_race24 "2" xprov-consent-waive.cjs "return R.locked(() => waiveLocked(o, b));" "return waiveLocked(o, b);"
   redproof24 "CW13b" scen_race24 "2" xprov-gate.cjs "const file = AU.withStoreLock(() => { AU.appendAudit(" "const file = ((fn) => fn())(() => { AU.appendAudit("
 }
 caseCW13
@@ -338,6 +357,70 @@ caseCW14() {
 }
 caseCW14
 
+# ---------- CW15: SEC-2 — a fail row counts only when its run record is bound to it (probe B of the security review) ----------
+inq24() { node -p 'process.argv[1].includes(process.argv[2])' "$(json_get "$G_OUT" 'j.question')" "$1"; }
+# the agent edits PLAN.md (never reviewed), then copies the newest fail row with the NEW sha; result_path still names the OLD plan's run dir
+scen_planbind24() {
+  phase24 plan; printf '\n## Wave 9 - an unreviewed addition\n' >> "$PHASE_PLAN"
+  fix24 clone-row '"gate":"'$PLANGATE24'","round":2,"patch":{"plan_sha256":"@plan"}'
+  cli24 question --kind waiver --phase p24; echo "$G_RC|$(reason24)"
+}
+# a plan-review run record (mode review) copied into a wave-inspect row: a run record of another gate's mode
+scen_modebind24() {
+  phase24 plan; fix24 clone-row '"gate":"'$PLANGATE24'","attempt":1,"patch":{"gate":"'$WAVEGATE24'","wave":5}'
+  cli24 question --kind waiver --phase p24; echo "$G_RC|$(json_get "$G_OUT" 'j.listed')|$(inq24 'wave-inspect-xprov Wave 5')"
+}
+# the wave-3 fail row copied as wave 7: the verified findings record names wave 3
+scen_wavebind24() {
+  phase24 both; fix24 clone-row '"gate":"'$WAVEGATE24'","wave":3,"round":2,"patch":{"wave":7}'
+  cli24 question --kind waiver --phase p24; echo "$G_RC|$(json_get "$G_OUT" 'j.listed')|$(inq24 'Wave 7')"
+}
+caseCW15() {
+  assert_eq "CW15 probe B: a row with the NEW PLAN.md sha pointing at the OLD plan's run record lists nothing" "$(scen_planbind24)" "1|no_failed_targets"
+  assert_eq "CW15 a run record of another mode (review for wave-inspect) lists nothing" "$(scen_modebind24)" "0|1|false"
+  assert_eq "CW15 a copied wave row (the findings record names another wave) lists nothing" "$(scen_wavebind24)" "0|2|false"
+  redproof24 "CW15a" scen_planbind24 "1|no_failed_targets" xprov-consent-targets.cjs "rec.plan_sha256 !== planSha || rec.mode" "rec.mode"
+  redproof24 "CW15b" scen_modebind24 "0|1|false" xprov-consent-targets.cjs " || rec.mode !== WANT_MODE[e.gate]" ""
+  redproof24 "CW15c" scen_wavebind24 "0|2|false" xprov-consent-targets.cjs "if (doc !== null && !(doc.gate === e.gate && C.waveNumber(doc.wave) === wave && laneOf(doc.lane) === lane)) return null;" ""
+}
+caseCW15
+
+# ---------- CW16: SEC-3 — verdict, reason and round come from the run record; finding text from its response ----------
+scen_verdict24() {
+  phase24 plan; fix24 edit-run '"run":"2jfhndmq","file":"result.json","path":"response.verdict","value":"APPROVED"'
+  cli24 question --kind waiver --phase p24; echo "$G_RC|$(reason24)"
+}
+scen_round24() {
+  phase24 plan; fix24 rewrite '"gate":"'$PLANGATE24'","wave":null,"round":2,"field":"round","value":1'
+  cli24 question --kind waiver --phase p24; echo "$G_RC|$(reason24)"
+}
+scen_unverified24() {
+  phase24 plan; fix24 append-bytes '"run":"2jfhndmq","file":"a1-findings.json"'
+  cli24 question --kind waiver --phase p24; echo "$G_RC|$(inq24 'Befunde nicht prüfbar')|$(inq24 "${BLK24:0:40}")"
+}
+scen_fromrun24() {
+  phase24 plan; fix24 forge-findings '"run":"2jfhndmq","title":"FORGED TITLE from a1-findings"'
+  cli24 question --kind waiver --phase p24; echo "$G_RC|$(inq24 'FORGED TITLE')|$(inq24 "${BLK24:0:40}")"
+}
+caseCW16() {
+  assert_eq "CW16 an index row says fail-with-findings, the run record says APPROVED: refused" "$(scen_verdict24)" "1|index_row_mismatch"
+  phase24 plan; fix24 rewrite '"gate":"'$PLANGATE24'","wave":null,"round":2,"field":"reason","value":"blocked"'
+  cli24 question --kind waiver --phase p24
+  assert_json "CW16 an index row with another reason than the run record gives: refused" "$G_OUT" "j.reason" "index_row_mismatch"
+  assert_json "CW16 the refusal names the target and says nothing was written" "$G_OUT" "[j.detail.includes('plan-review-xprov'), j.detail.includes('nothing written')].join('|')" "true|true"
+  wv24
+  assert_json "CW16 consent waive refuses the mismatching row too, before any marker is looked at" "$G_OUT" "j.reason" "index_row_mismatch"
+  assert_eq "CW16 and writes nothing" "$(wcount24)|$(audit_count24)" "0|0"
+  assert_eq "CW16 an index row names round 1, the findings record round 2: refused" "$(scen_round24)" "1|index_row_mismatch"
+  assert_eq "CW16 a findings record that does not match its hash: the fixed line, no finding text" "$(scen_unverified24)" "0|true|false"
+  assert_eq "CW16 a forged a1-findings.json with a matching hash: the run record's text is shown, not the forgery" "$(scen_fromrun24)" "0|false|true"
+  redproof24 "CW16a" scen_verdict24 "1|index_row_mismatch" xprov-consent-targets.cjs "if (derived.verdict !== row.verdict || nullable(derived.reason) !== nullable(row.reason)) {" "if (false) {"
+  redproof24 "CW16b" scen_round24 "1|index_row_mismatch" xprov-consent-targets.cjs "if (doc !== null && Number.isInteger(row.round) && doc.round !== row.round) {" "if (false) {"
+  redproof24 "CW16c" scen_unverified24 "0|true|false" xprov-consent-targets.cjs "const unverified = row.verdict === X.VERDICTS.FAIL_WITH_FINDINGS && doc === null;" "const unverified = false;"
+  redproof24 "CW16d" scen_fromrun24 "0|false|true" xprov-consent-targets.cjs "findings: unverified ? null : openFindings(derived)," "findings: unverified ? null : (doc === null ? [] : doc.blocker.map((f) => ({ severity: 'blocker', id: f.id, title: f.title }))),"
+}
+caseCW16
+
 # ================= the chat allowlist approval (FR-014) =================
 # phaseA24 — a repo whose HEAD holds the two files of the masked real gitleaks report, and its scan hits record (written through the report normalizer)
 phaseA24() {
@@ -368,18 +451,26 @@ redproof24 "CA1" scen_mask24 "clean" xprov-consent-hits.cjs "rule: C.isPlainObje
 caseCA2() {
   phaseA24; ask24 allowlist toolu_a1 sess_a1; ans24 allowlist yes toolu_a1 sess_a1
   assert_json "CA2 the round trip answered yes" "$SIM_OUT" "j.decision" "yes"
+  # a blob-approval store of the terminal `allowlist approve` that already exists must stay byte-identical (SEC-1: the chat never writes it)
+  node -e 'const fs = require("fs"); const d = process.env.HOME + "/.a1-xprov"; fs.writeFileSync(d + "/allowlist-approvals.json", JSON.stringify({ version: 1, repos: { "/other/repo": ["b".repeat(64)] } }) + "\n", { mode: 0o600 });'
+  local before; before="$(sha24 "$HOME/.a1-xprov/allowlist-approvals.json")"
   al24; assert_rc "CA2 consent allowlist exits 0" 0 "$G_RC" "$G_ERR"
   local want; want="$(printf '%s\n%s\n' "$(sha24 "$PHASE_REPO/src/config/client.js")" "$(sha24 "$PHASE_REPO/src/config/.env.sample")" | sort | paste -sd, -)"
-  assert_eq "CA2 the approval store holds the sha256 of both listed blobs for the repository" "$(approved24)" "$want"
-  assert_eq "CA2 the store has the shape of the terminal approval: {version, repos}" "$(jfile24 "$HOME/.a1-xprov/allowlist-approvals.json" 'Object.keys(j).sort().join(",") + "|" + j.version')" "repos,version|1"
-  assert_eq "CA2 the store is a 0600 file" "$(mode_of "$HOME/.a1-xprov/allowlist-approvals.json")" "600"
+  assert_eq "CA2 the HIT store holds the sha256 of both listed blobs for the repository" "$(hblobs24)" "$want"
+  assert_eq "CA2 the blob-approval store was not touched (byte-identical)" "$(sha24 "$HOME/.a1-xprov/allowlist-approvals.json")" "$before"
+  assert_eq "CA2 the hit store is {version, approvals}, one record per hit" "$(jfile24 "$(hfile24)" 'Object.keys(j).sort().join(",") + "|" + j.version + "|" + j.approvals.length')" "approvals,version|1|2"
+  assert_eq "CA2 every record has exactly the keys repo, path, rule, blob, scan, by, audit, ts; by owner-chat; the scan name" "$(jfile24 "$(hfile24)" 'j.approvals.every((a) => Object.keys(a).sort().join(",") === "audit,blob,by,path,repo,rule,scan,ts" && a.by === "owner-chat" && a.scan === "'$SCAN24'" && a.repo === "'"$(key24)"'")')" "true"
+  assert_eq "CA2 the records name the hit paths and rules" "$(jfile24 "$(hfile24)" 'j.approvals.map((a) => a.path + ":" + a.rule).sort().join(",")')" "src/config/.env.sample:github-pat,src/config/client.js:generic-api-key"
+  assert_eq "CA2 the audit link of every record is the sha256 of the consent-allowlist audit line" "$(node -e 'const fs = require("fs"); const c = require("crypto"); const l = fs.readFileSync(process.argv[1], "utf8").trim().split("\n"); const sha = c.createHash("sha256").update(JSON.stringify(JSON.parse(l[l.length - 1]))).digest("hex"); const j = JSON.parse(fs.readFileSync(process.argv[2], "utf8")); process.stdout.write(String(j.approvals.every((a) => a.audit === sha)));' "$(auditf24)" "$(hfile24)")" "true"
+  assert_eq "CA2 the hit store is a 0600 file" "$(mode_of "$(hfile24)")" "600"
   assert_eq "CA2 the audit line is consent-allowlist with the marker's ids" "$(last_action24)" "consent-allowlist|toolu_a1|sess_a1"
   al24; assert_json "CA2 replay: the marker is used" "$G_OUT" "j.reason" "marker_used"
-  # approvals of other repositories and earlier blobs are kept
+  # hit approvals of other repositories are kept
   phaseA24
-  node -e 'const fs = require("fs"); const d = process.env.HOME + "/.a1-xprov"; fs.mkdirSync(d, { recursive: true, mode: 0o700 }); fs.writeFileSync(d + "/allowlist-approvals.json", JSON.stringify({ version: 1, repos: { "/other/repo": ["b".repeat(64)] } }) + "\n", { mode: 0o600 });'
+  node -e 'const fs = require("fs"); const d = process.env.HOME + "/.a1-xprov"; fs.mkdirSync(d, { recursive: true, mode: 0o700 }); fs.writeFileSync(d + "/hit-approvals.json", JSON.stringify({ version: 1, approvals: [{ repo: "/other/repo", path: "a.js", rule: "r", blob: "b".repeat(64), scan: "snap-x", by: "owner-chat", audit: "c".repeat(64), ts: "2026-10-14T00:00:00.000Z" }] }) + "\n", { mode: 0o600 });'
   yes24 allowlist >/dev/null; al24
-  assert_eq "CA2 another repository's approvals are kept" "$(jfile24 "$HOME/.a1-xprov/allowlist-approvals.json" 'j.repos["/other/repo"][0].length')" "64"
+  assert_eq "CA2 another repository's hit approval is kept, two new ones added" "$(jfile24 "$(hfile24)" 'j.approvals.filter((a) => a.repo === "/other/repo").length + "|" + j.approvals.length')" "1|3"
+  [[ ! -e "$HOME/.a1-xprov/allowlist-approvals.json" ]] && ok "CA2 a chat approval never creates the blob-approval store" || bad "CA2 the chat approval created the blob-approval store"
 }
 caseCA2
 
@@ -393,7 +484,7 @@ caseCA3() {
   sim24 "{\"cmd\":\"hits\",\"tree\":\"$TREE\",\"root\":\"$PHASE_REPO\",\"name\":\"$SCAN24\",\"report\":\"$CW24/gitleaks-report.masked.json\"}"
   al24
   assert_json "CA3 a changed blob (new commit, same scan name): question_changed, nothing written" "$G_OUT" "j.reason" "question_changed"
-  assert_eq "CA3 no approval" "$(approved24)" "-"
+  assert_eq "CA3 no approval" "$(hblobs24)" "-"
   # a new hit in the scan changes the question as well
   phaseA24; yes24 allowlist >/dev/null
   sim24 "{\"cmd\":\"hits\",\"tree\":\"$TREE\",\"root\":\"$PHASE_REPO\",\"name\":\"$SCAN24\",\"report\":\"$CW24/gitleaks-report.masked.json\",\"extra\":[{\"path\":\"src/config/client.js\",\"rule\":\"generic-api-key\",\"line\":1,\"column\":2}]}"
@@ -406,21 +497,21 @@ caseCA3() {
   sim24 "{\"cmd\":\"hits\",\"tree\":\"$TREE\",\"root\":\"$PHASE_REPO\",\"name\":\"$SCAN24\",\"report\":\"$CW24/gitleaks-report.masked.json\"}"
   yes24 allowlist >/dev/null; al24
   assert_json "CA3 the new question for the new blob is answered: approved" "$G_OUT" "[j.ok, j.approved.length].join('|')" "true|2"
-  assert_eq "CA3 the approval names the NEW blob sha256" "$(approved24 | tr ',' '\n' | grep -c "$(sha24 "$PHASE_REPO/src/config/client.js")")" "1"
-  redproof24 "CA3" scen_blob24 "content-hash" xprov-consent-hits.cjs ".update(cat.stdout).digest('hex') }" ".update('x').digest('hex') }"
+  assert_eq "CA3 the approval names the NEW blob sha256" "$(hblobs24 | tr ',' '\n' | grep -c "$(sha24 "$PHASE_REPO/src/config/client.js")")" "1"
+  redproof24 "CA3" scen_blob24 "content-hash" xprov-consent-hits.cjs ".update(cat.stdout).digest('hex'), bytes" ".update('x').digest('hex'), bytes"
 }
 caseCA3
 
 # ---------- CA4: No / free text / no answer; a consent never implies an approval ----------
 caseCA4() {
   phaseA24; yes24 allowlist no >/dev/null; al24
-  assert_json "CA4 a No: allowlist_declined" "$G_OUT" "j.reason" "allowlist_declined"; assert_eq "CA4 nothing approved" "$(approved24)" "-"
+  assert_json "CA4 a No: allowlist_declined" "$G_OUT" "j.reason" "allowlist_declined"; assert_eq "CA4 nothing approved" "$(hblobs24)" "-"
   phaseA24; yes24 allowlist free >/dev/null; al24; assert_json "CA4 free text counts as No" "$G_OUT" "j.reason" "allowlist_declined"
   phaseA24; al24; assert_json "CA4 no question: no_marker" "$G_OUT" "j.reason" "no_marker"
   phaseA24; ask24 consent >/dev/null; ans24 consent yes >/dev/null; cli24 record --kind consent >/dev/null; al24
   assert_json "CA4 a consent yes is no allowlist approval" "$G_OUT" "j.reason" "no_marker"
   phaseA24; yes24 waiver >/dev/null 2>&1; al24; assert_json "CA4 a waiver marker is no allowlist marker" "$G_OUT" "j.reason" "no_marker"
-  assert_eq "CA4 still nothing approved" "$(approved24)" "-"
+  assert_eq "CA4 still nothing approved" "$(hblobs24)|$(approved24)" "-|-"
 }
 caseCA4
 
@@ -480,21 +571,82 @@ caseCA6
 
 # ---------- CA9: R-4 — a parallel terminal revoke and a chat approval keep both ----------
 scen_arace24() {
-  phaseA24 >/dev/null; local old; old="$(printf 'c%.0s' $(seq 1 64))"
+  # R-4 + SEC-5: the TERMINAL approve (typed line stubbed, paused inside its lock) and a terminal revoke of an older sha in parallel
+  prep24; lockdir24; local old; old="$(printf 'c%.0s' $(seq 1 64))"
   node -e 'const fs = require("fs"); const d = process.env.HOME + "/.a1-xprov"; fs.writeFileSync(d + "/allowlist-approvals.json", JSON.stringify({ version: 1, repos: { [process.argv[1]]: [process.argv[2]] } }) + "\n", { mode: 0o600 });' "$(key24)" "$old"
-  yes24 allowlist >/dev/null
-  sim24 "{\"cmd\":\"chat-allowlist-slow\",\"tree\":\"$TREE\",\"root\":\"$PHASE_REPO\",\"scan\":\"$SCAN24\",\"ms\":1500}" & local pid=$!
+  sim24 "{\"cmd\":\"term-approve\",\"tree\":\"$TREE\",\"root\":\"$PHASE_REPO\",\"ms\":1500}" & local pid=$!
   sleep 0.5
   node "$SIM24" "{\"cmd\":\"term-revoke\",\"tree\":\"$TREE\",\"root\":\"$PHASE_REPO\",\"sha\":\"$old\"}" >/dev/null 2>&1
   wait "$pid" 2>/dev/null
   echo "$(approved24 | tr ',' '\n' | grep -c "^$old\$")|$(approved24 | tr ',' '\n' | grep -vc "^$old\$")"
 }
 caseCA9() {
-  assert_eq "CA9 chat approval (slow) and terminal revoke in parallel: the revoked sha is gone and both approved blobs stay (R-4)" "$(scen_arace24)" "0|2"
-  redproof24 "CA9a" scen_arace24 "0|2" xprov-approve.cjs "return audit.withStoreLock(() => { // spec 016 R-4: read, audit line, write back under the owner-store lock" "return ((fn) => fn())(() => { //"
-  redproof24 "CA9b" scen_arace24 "0|2" xprov-consent-allowlist.cjs "return R.locked(() => approveLocked(o));" "return approveLocked(o);"
+  assert_eq "CA9 terminal approve (typed line stubbed, slow) and terminal revoke in parallel: the revoked sha is gone and the approved blob stays (R-4, SEC-5)" "$(scen_arace24)" "0|1"
+  redproof24 "CA9a" scen_arace24 "0|1" xprov-approve.cjs $'return audit.withStoreLock(() => {\n    const fresh = currentStore();' $'return ((fn) => fn())(() => {\n    const fresh = currentStore();'
 }
 caseCA9
+
+# ---------- CA10: SEC-1 (probe A) — a chat yes to a hit never becomes a blob approval of the allowlist ----------
+# The hit file docs/notes.json holds the bytes of a VALID allowlist document. Approved in chat, those bytes would load as the allowlist once they are
+# committed as .a1/xprov-secret-allowlist.json. Result: "<reason of consent allowlist>|<is the sha256 of that committed file in the blob-approval store>".
+scen_probeA24() {
+  prep24; mkdir -p "$PHASE_REPO/docs"
+  node -e '
+    const X = require(process.argv[1] + "/_shared/lib/xprov.cjs");
+    const doc = { version: 1, owner: "robert", entries: [{ path: "src/real-secret.js", pattern: X.SECRET_PATTERNS[0].name, max_count: 1, fingerprints: ["a".repeat(64)], class: X.ALLOWLIST_CLASSES[0], reason: "a hit file that reads like an allowlist", reviewed_by: "robert", added_on: "2026-10-15" }] };
+    require("fs").writeFileSync(process.argv[2], JSON.stringify(doc, null, 2) + "\n");' "$TREE" "$PHASE_REPO/docs/notes.json"
+  git -C "$PHASE_REPO" add -A; git -C "$PHASE_REPO" -c user.name=f -c user.email=f@example.invalid commit -qm "fixture: hit file"
+  sim24 "{\"cmd\":\"hits\",\"tree\":\"$TREE\",\"root\":\"$PHASE_REPO\",\"name\":\"$SCAN24\",\"extra\":[{\"path\":\"docs/notes.json\",\"rule\":\"github-pat\",\"line\":9,\"column\":15}]}"
+  cli24 question --kind allowlist --scan "$SCAN24"
+  local qreason; qreason="$(reason24)"
+  # even when the question is put (the hook does not know better), the writer refuses
+  ask24 allowlist >/dev/null 2>&1; ans24 allowlist yes >/dev/null 2>&1; al24
+  local wreason; wreason="$(reason24)"
+  mkdir -p "$PHASE_REPO/.a1"; cp "$PHASE_REPO/docs/notes.json" "$PHASE_REPO/.a1/xprov-secret-allowlist.json"
+  git -C "$PHASE_REPO" add -A; git -C "$PHASE_REPO" -c user.name=f -c user.email=f@example.invalid commit -qm "allowlist (separate commit)"
+  local eff; eff="$(node -e '
+    const AL = require(process.argv[1] + "/_shared/lib/xprov-allowlist.cjs"); const C = require(process.argv[1] + "/_shared/lib/xprov-common.cjs");
+    const sha = C.sha256(AL.blobAt(process.argv[2], "HEAD", ".a1/xprov-secret-allowlist.json"));
+    process.stdout.write((AL.readApprovals().repos[process.argv[3]] || []).includes(sha) ? "approved" : "unapproved");' "$TREE" "$PHASE_REPO" "$(key24)")"
+  echo "$qreason|$wreason|$eff"
+}
+caseCA10() {
+  assert_eq "CA10 probe A: the question for an allowlist-shaped hit blob is refused, the writer refuses, the committed bytes stay unapproved" "$(scen_probeA24)" "allowlist_blob_hit|allowlist_blob_hit|unapproved"
+  [[ ! -e "$(hfile24)" ]] && ok "CA10 nothing was written to the hit store either" || bad "CA10 the hit store exists"
+  # the allowlist evaluation never reads the hit store: only the chat writer and the store module name it
+  assert_eq "CA10 only xprov.cjs (the constant), the store module and the chat allowlist module name the hit store" "$(cd "$T24/_shared/lib" && grep -lE "require\('./xprov-hit-approvals|HIT_APPROVALS_FILE" ./*.cjs | sed 's|^\./||' | sort | paste -sd, -)" "xprov-consent-allowlist.cjs,xprov-hit-approvals.cjs,xprov.cjs"
+  redproof24 "CA10a" scen_probeA24 "allowlist_blob_hit|allowlist_blob_hit|unapproved" xprov-consent-allowlist.cjs "if (AL.parseAllowlist(b.bytes.toString('utf8')).ok) return refuse(" "if (false) return refuse("
+  redproof24x "CA10b" scen_probeA24 "allowlist_blob_hit|allowlist_blob_hit|unapproved" xprov-consent-allowlist.cjs "if (AL.parseAllowlist(b.bytes.toString('utf8')).ok) return refuse(" "if (false) return refuse(" \
+    xprov-consent-allowlist.cjs "HA.appendHitApprovals(records, require('./xprov-approve.cjs').writeGuardedStore)" "require('./xprov-approve.cjs').writeStore({ [b.key]: [...b.blobs] })"
+}
+caseCA10
+
+# ---------- CA11: SEC-6 — question text and git work run outside the store lock; the write runs inside ----------
+scen_alock24() {
+  phaseA24 >/dev/null; yes24 allowlist >/dev/null
+  printf 'someone' > "$HOME/.a1-xprov/.owner-store.lock"
+  al24; local r="$G_RC|$(reason24)|$([[ -e "$(hfile24)" ]] && echo written || echo none)"
+  rm -f "$HOME/.a1-xprov/.owner-store.lock"; echo "$r"
+}
+# a live store lock and a scan that does not exist: the refusal comes from the question build (outside the lock), not from the lock
+scen_alockout24() {
+  phaseA24 >/dev/null; printf 'someone' > "$HOME/.a1-xprov/.owner-store.lock"
+  cli24 allowlist --scan snap-missing; local r="$G_RC|$(reason24)"; rm -f "$HOME/.a1-xprov/.owner-store.lock"; echo "$r"
+}
+scen_wlockout24() {
+  phase24 plan; lockdir24; printf 'someone' > "$HOME/.a1-xprov/.owner-store.lock"
+  printf '\nA later edit.\n' >> "$PHASE_PLAN"   # no index row names the new PLAN.md sha: nothing is failed
+  cli24 waive --phase p24; local r="$G_RC|$(reason24)"; rm -f "$HOME/.a1-xprov/.owner-store.lock"; echo "$r"
+}
+caseCA11() {
+  assert_eq "CA11 a live store lock: the chat allowlist approval is refused (store_locked), nothing is written" "$(scen_alock24)" "1|store_locked|none"
+  assert_eq "CA11 a live store lock and an unknown scan: scan_not_found (the question is built before the lock)" "$(scen_alockout24)" "1|scan_not_found"
+  assert_eq "CA11 a live store lock and no failed target: no_failed_targets (the waiver question is built before the lock)" "$(scen_wlockout24)" "1|no_failed_targets"
+  redproof24 "CA11a" scen_alock24 "1|store_locked|none" xprov-consent-allowlist.cjs "return R.locked(() => approveLocked(o, b));" "return approveLocked(o, b);"
+  redproof24 "CA11b" scen_alockout24 "1|scan_not_found" xprov-consent-allowlist.cjs "const b = buildFor(o); // question text and git work outside the lock" "const b = R.locked(() => buildFor(o)); // question text and git work outside the lock"
+  redproof24 "CA11c" scen_wlockout24 "1|no_failed_targets" xprov-consent-waive.cjs "const b = buildFor(o); // question text, run-record reads" "const b = R.locked(() => buildFor(o)); // question text, run-record reads"
+}
+caseCA11
 
 # ---------- the real tree files stay the audited ones (no part wrote into the live tree) ----------
 [[ ! -e "$REPO_ROOT/_shared/lib/.owner-store.lock" ]] && ok "CW harness: no lock file in the live tree" || bad "CW harness: a lock file appeared in the live tree"

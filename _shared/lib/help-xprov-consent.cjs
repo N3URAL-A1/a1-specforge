@@ -52,9 +52,13 @@ const CONSENT_HELP = `    consent question|ensure|record|revoke  --kind consent|
                   allowlist (wave 3, FR-014): question|ensure --kind allowlist --scan
                   <snap-basename> lists the hits of one secret scan (path, line, rule,
                   blob sha256, a fixed mask instead of an excerpt; the matched text is
-                  never read). \`consent allowlist --scan <snap-basename>\` adds the
-                  listed blobs' sha256 to the approvals store against a matching
-                  owner yes; a changed blob or a new hit needs a new question.
+                  never read). \`consent allowlist --scan <snap-basename>\` writes one
+                  hit approval per listed hit (repo, path, rule, blob sha256, scan, by
+                  owner-chat, audit link) into its OWN store hit-approvals.json, against
+                  a matching owner yes; a changed blob or a new hit needs a new
+                  question. It never writes allowlist-approvals.json; a hit blob that
+                  reads as an allowlist document is refused (the terminal allowlist
+                  approve stays the only way to approve an allowlist file).
                   Tier 0: every owner write appends a hash-chained line to
                   ~/.a1-xprov/consent-audit.jsonl first. The stores are records the
                   same OS user could write; the chain makes a naive forgery

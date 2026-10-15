@@ -9,20 +9,25 @@
 //       would be. The matched text is never read, so it cannot be shown. Plugin hook (wave 4): read the repository path and the scan name
 //       out of the question text with `scopeFromText`, call `buildFor` again and compare byte for byte.
 //   approve({ root, scan, now? })  -> { ok: true, ... } | { ok: false, reason, detail }
-//       Adds the sha256 of every listed blob to the repository's list in allowlist-approvals.json (the same shape `xprov allowlist approve`
-//       writes), only against a marker with a real owner yes whose hash equals the question rebuilt NOW. A changed blob, a new hit or another
-//       commit changes the question: `question_changed`, nothing written. A No or a missing answer writes nothing.
+//       Writes one HIT approval per listed hit (repo, path, rule, blob sha256, scan, by owner-chat, audit link) into the own store
+//       hit-approvals.json (xprov-hit-approvals.cjs), only against a marker with a real owner yes whose hash equals the question rebuilt NOW.
+//       It NEVER writes the blob-approval store of `xprov allowlist approve`, and the allowlist evaluation never reads the hit store (Samuel
+//       W3 SEC-1: otherwise a hit file whose bytes are a valid allowlist document, approved here, would later load as the allowlist).
+//       For the same reason a hit blob that parses as an allowlist document is refused (`allowlist_blob_hit`).
+//       A changed blob, a new hit or another commit changes the question: `question_changed`, nothing written. A No writes nothing.
 //
-// Order of every write: the store lock, the audit line FIRST (consent-allowlist), then the store, read again inside the lock.
-// Request-scoped. Tier 0: see help-xprov-consent.cjs.
+// Order of every write (SEC-6): question text and git work FIRST, outside the lock; inside the store lock only: read the hit store, claim the
+// marker, the audit line (consent-allowlist), the store write. Request-scoped. Tier 0: see help-xprov-consent.cjs.
 // ---------------------------------------------------------------------------
 
+const io = require('./io.cjs');
 const X = require('./xprov.cjs');
 const C = require('./xprov-common.cjs');
 const OH = require('./xprov-owner-home.cjs');
 const RI = require('./xprov-repo-identity.cjs');
 const AU = require('./xprov-audit.cjs');
 const AL = require('./xprov-allowlist.cjs');
+const HA = require('./xprov-hit-approvals.cjs');
 const Q = require('./xprov-consent-question.cjs');
 const R = require('./xprov-consent-record.cjs');
 const H = require('./xprov-consent-hits.cjs');
@@ -68,6 +73,7 @@ function withBlobs(root, rec) {
     if (h.path === X.ALLOWLIST_FILE) return refuse('allowlist_file_hit', `a hit sits in ${X.ALLOWLIST_FILE} itself; its sha256 would read as an allowlist approval, so it cannot be approved by chat; nothing written`);
     const b = H.blobSha256(root, rec.commit, h.path);
     if (!b.ok) return refuse(b.reason, `${b.detail}; nothing written`);
+    if (AL.parseAllowlist(b.bytes.toString('utf8')).ok) return refuse('allowlist_blob_hit', `the blob of ${C.clip(h.path, 120)} parses as an allowlist document; approving an allowlist stays the terminal \`xprov allowlist approve\`; nothing written`);
     out.push(Object.freeze({ ...h, blob: b.sha256 }));
   }
   return out;
@@ -90,14 +96,12 @@ function buildFor(o) {
   return Object.freeze({ ok: true, key, question: Q.buildQuestion(KIND, ctx), hits, blobs: Object.freeze([...new Set(hits.map((h) => h.blob))].sort()) });
 }
 
-function approveLocked(o) {
-  const why = OH.homeMismatch();
-  if (why !== null) return refuse('owner_home_mismatch', `${why}; nothing written`);
-  let b;
-  try { b = buildFor(o); } catch (e) { if (e && e.code === 'A1_INPUT') return refuse(e.reason || 'invalid_input', e.message); throw e; }
-  if (!b.ok) return b;
-  const store = AL.readApprovals();
-  if (!store.ok && !store.missing) return refuse('approvals_store_unusable', `the approval store is not usable (${store.why}); fix or remove it yourself; nothing written`);
+const BY = C.RESERVED_BY;
+
+/** Inside the store lock only: the hit store, the marker, the audit line, the write. `b` is the question built OUTSIDE the lock (SEC-6). */
+function approveLocked(o, b) {
+  const store = HA.readHitApprovals();
+  if (!store.ok && !store.missing) return refuse('approvals_store_unusable', `the hit approval store is not usable (${store.why}); fix or remove it yourself; nothing written`);
   const claim = R.claimDecision({ repo: b.key, kind: KIND, hash: b.question.hash, now: o.now }, { reason: 'allowlist_declined', detail: 'the owner did not approve the blobs; nothing written' });
   if (!claim.ok) return claim;
   const m = claim.marker;
@@ -105,17 +109,22 @@ function approveLocked(o) {
   try { line = AU.appendAudit({ repo: b.key, action: AU.ACTION.CONSENT_ALLOWLIST, now: o.now, tool_use_id: m.tool_use_id, session_id: m.session_id, permission_mode: m.answer.permission_mode }); } catch (e) {
     return refuse(e.reason || 'audit_failed', `${R.errReason(e)}; nothing written (the marker is used: answer the question again)`);
   }
-  const approved = [...new Set([...(store.repos[b.key] || []), ...b.blobs])];
-  const failed = R.step('write the approvals', 'no approval was written; the audit log has the line', () => require('./xprov-approve.cjs').writeStore({ ...store.repos, [b.key]: approved }));
+  const audit = AU.lineSha(line);
+  const now = o.now || io.nowIso();
+  const records = b.hits.map((h) => HA.validRecord({ repo: b.key, path: h.path, rule: h.rule, blob: h.blob, scan: o.scan, by: BY, audit, ts: now }));
+  if (records.some((r) => r === null)) return refuse('hit_record_invalid', 'a hit approval record is off-format; nothing written (the marker is used: answer the question again)');
+  const failed = R.step('write the hit approvals', 'no approval was written; the audit log has the line', () => HA.appendHitApprovals(records, require('./xprov-approve.cjs').writeGuardedStore));
   if (failed) return failed;
-  return Object.freeze({ ok: true, kind: KIND, decision: 'yes', repo: b.key, scan: o.scan, audit: AU.lineSha(line), approved: b.blobs, state: 'approved' });
+  return Object.freeze({ ok: true, kind: KIND, decision: 'yes', repo: b.key, scan: o.scan, audit, approved: b.blobs, hits: b.hits.length, store: X.HIT_APPROVALS_FILE, state: 'approved' });
 }
 
 /** `o`: { root, scan, now? }. See the header. Never throws for a refusal; a malformed scan name is a typed input error (exit 2). */
 function approve(o) {
-  const read = H.readHits(o.scan); // validates the name (typed input error) before any lock
-  void read;
-  return R.locked(() => approveLocked(o));
+  const why = OH.homeMismatch();
+  if (why !== null) return refuse('owner_home_mismatch', `${why}; nothing written`);
+  const b = buildFor(o); // question text and git work outside the lock; a malformed scan name is a typed input error (exit 2) before any lock
+  if (!b.ok) return b;
+  return R.locked(() => approveLocked(o, b));
 }
 
 module.exports = { KIND, HITS_LISTED_MAX, MASK, buildText, scopeFromText, buildFor, approve };

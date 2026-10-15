@@ -398,7 +398,9 @@ function approveListing(doc, rows) {
   return { lines: lines.map(safeText), count, prompt };
 }
 
-function approve(root) {
+/** `seams` (tests only, spec 016 SEC-5): { readTypedLine, matchesAt } stand in for the TTY line and the gitleaks snapshot. */
+function approve(root, seams = {}) {
+  const typedLine = seams.readTypedLine || readTypedLine;
   const store = currentStore();
   if (store.refusal) return { code: X.EXIT_FAIL, msg: store.refusal };
   const t = AL.verifiedTip(root); // the same verification the gate's anchor needs
@@ -407,7 +409,7 @@ function approve(root) {
   if (blob === null) return { code: X.EXIT_FAIL, msg: `no ${X.ALLOWLIST_FILE} at ${t.tip.slice(0, 12)}` };
   const parsed = AL.parseAllowlist(blob.toString('utf8'));
   if (!parsed.ok) return { code: X.EXIT_FAIL, msg: `${X.ALLOWLIST_FILE} at ${t.tip.slice(0, 12)} is invalid: ${parsed.detail}` };
-  const r = matchesAt(root, t.tip);
+  const r = (seams.matchesAt || matchesAt)(root, t.tip);
   if (!r.ok) return { code: X.EXIT_FAIL, msg: `snapshot of ${t.tip.slice(0, 12)} failed: ${r.detail}` };
   const sha = C.sha256(blob);
   const rows = listing(r.matches);
@@ -423,10 +425,10 @@ function approve(root) {
   const view = approveListing(parsed.doc, rows);
   for (const line of view.lines) err(line);
   process.stderr.write(view.prompt);
-  const typed = readTypedLine();
+  const typed = typedLine();
   if (typed !== String(view.count)) return { code: EXIT_REFUSED, msg: `typed ${JSON.stringify(C.clip(typed, 16))}, expected ${view.count}; nothing written` };
   const key = C.commonDirOf(root);
-  // spec 016 FR-010 + R-4: the chain line first; the approvals are read again and written back inside the owner-store lock (a parallel chat approval survives).
+  // spec 016 FR-010 + R-4: the chain line first; the approvals are read again and written back inside the owner-store lock (a parallel revoke or approval survives).
   // The owner's typing above stays outside the lock: a lock held while someone types would time out every other writer.
   return audit.withStoreLock(() => {
     const fresh = currentStore();
@@ -496,6 +498,6 @@ function cmdXprovAllowlist(args) {
 }
 
 module.exports = {
-  cmdXprovAllowlist, approveListing, proposeScopes, revoke, guardRefusal, claudeContextRefusal, ancestryRefusal, processInfo, proposeClass, draft, listing, writeStore, writeGuardedStore, readTypedLine,
+  cmdXprovAllowlist, approveListing, proposeScopes, approve, revoke, guardRefusal, claudeContextRefusal, ancestryRefusal, processInfo, proposeClass, draft, listing, writeStore, writeGuardedStore, readTypedLine,
   CLAUDE_ENV_RE, CLAUDE_VERSIONS_RE, CLAUDE_NPM_PACKAGE,
 };

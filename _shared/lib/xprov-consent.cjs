@@ -17,7 +17,7 @@
 //   question|ensure --kind waiver (--phase <name> | --work-path <worktree>)   the xprov-Waiver question for the gate targets that are failed now
 //   question|ensure --kind allowlist --scan <snap-basename>                    the xprov-Allowlist question for one scan's hits (masked)
 //   waive (--phase <name> | --work-path <worktree>)    one waiver record per LISTED target (by owner-chat), against a matching owner yes
-//   allowlist --scan <snap-basename>                    one approval per listed blob, against a matching owner yes
+//   allowlist --scan <snap-basename>                    one hit approval per listed hit (hit-approvals.json, never the blob-approval store), against a matching owner yes
 // Exit contract: 0 ok · 1 refused (stdout JSON names `reason`) · 2 usage error.
 // The answer is NEVER an argument: it comes from the marker the plugin hook wrote from the real tool result.
 // Tier 0 wording lives in help-xprov-consent.cjs. This module only parses arguments and prints.

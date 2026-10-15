@@ -8,7 +8,10 @@
 //   build   { sets: ['plan','wave'] }   writes xreview/index.json (rows of the sets) + the run dirs under <home>/.a1-xprov/artifacts/<repo basename>/
 //   add     { sets: [...] }             appends the rows (and run dirs) of more sets to the existing index
 //   rewrite { file: 'row', index, field, value }   sets one field of one index row (a forged or tampered row)
-//   retitle { run, title }              replaces the first BLOCKER title of a run's a1-findings.json and the row's findings_sha256
+//   retitle { run, title }              replaces the evidence (so the title) of the first high finding in the run record's result.json
+//   forge-findings { run, title }       a1-findings.json with another title AND a matching findings_sha256 in the index row
+//   edit-run { run, file, path, value } sets one dotted field of a run dir JSON file; append-bytes { run, file } changes a file's bytes
+//   clone-row { gate, wave?, round?, attempt?, patch }   appends a copy of the newest matching row with fields replaced ("@plan" = PLAN.md sha)
 //   files   {}                          writes the two gitleaks-hit files of the masked report into the repo (src/config/…)
 
 const fs = require('fs');
@@ -67,6 +70,14 @@ else if (a.cmd === 'rewrite') {
   const idx = read(indexPath);
   fs.writeFileSync(indexPath, `${JSON.stringify([...idx, a.row], null, 2)}\n`);
 } else if (a.cmd === 'retitle') {
+  // the finding text of a run lives in the RUN RECORD (result.json response.findings[].evidence); the title is its first sentence
+  const p = path.join(artifacts, `claudex-${a.run}`, 'result.json');
+  const rec = read(p);
+  const i = rec.response.findings.findIndex((f) => f.severity === 'high');
+  rec.response.findings[i] = { ...rec.response.findings[i], evidence: a.title };
+  fs.writeFileSync(p, `${JSON.stringify(rec, null, 2)}\n`);
+} else if (a.cmd === 'forge-findings') {
+  // a1-findings.json with another title AND a matching findings_sha256 in the index row: the question must still show the run record's text
   const p = path.join(artifacts, `claudex-${a.run}`, 'a1-findings.json');
   const f = read(p);
   f.blocker[0] = { ...f.blocker[0], title: a.title };
@@ -74,6 +85,23 @@ else if (a.cmd === 'rewrite') {
   const idx = read(indexPath);
   const next = idx.map((r) => (runName(r) === a.run ? { ...r, findings_sha256: sha(fs.readFileSync(p)) } : r));
   fs.writeFileSync(indexPath, `${JSON.stringify(next, null, 2)}\n`);
+} else if (a.cmd === 'edit-run') {
+  // sets one (dotted) field of a JSON file in a run dir: { run, file, path, value } (the index is not touched)
+  const p = path.join(artifacts, `claudex-${a.run}`, a.file);
+  const doc = read(p);
+  const parts = a.path.split('.'); const last = parts.pop();
+  parts.reduce((o, k) => o[k], doc)[last] = a.value;
+  fs.writeFileSync(p, `${JSON.stringify(doc, null, 2)}\n`);
+} else if (a.cmd === 'append-bytes') {
+  // appends a newline to a run dir file: the bytes change, the index row's findings_sha256 does not
+  fs.appendFileSync(path.join(artifacts, `claudex-${a.run}`, a.file), '\n');
+} else if (a.cmd === 'clone-row') {
+  // appends a COPY of the newest matching row with fields replaced (an agent copying a fail row); "@plan" in a value = the current PLAN.md sha
+  const idx = read(indexPath);
+  const src = [...idx].reverse().find((r) => r.gate === a.gate && String(r.wave === undefined || r.wave === null ? '' : r.wave) === String(a.wave === undefined ? '' : a.wave) && String(r.round) === String(a.round) && (a.attempt === undefined || r.attempt === a.attempt));
+  if (!src) { console.error('no such row'); process.exit(3); }
+  const patch = Object.fromEntries(Object.entries(a.patch || {}).map(([k, v]) => [k, v === '@plan' ? planSha() : v]));
+  fs.writeFileSync(indexPath, `${JSON.stringify([...idx, { ...src, ...patch }], null, 2)}\n`);
 } else if (a.cmd === 'files') {
   // the masked report names two files; their lines carry the MASKED-FIXTURE-SECRET markers (the "secret bytes" the question must never show)
   const rep = read(path.join(a.cases, 'gitleaks-report.masked.json'));

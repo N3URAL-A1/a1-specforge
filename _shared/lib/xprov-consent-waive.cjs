@@ -15,8 +15,8 @@
 //
 // Per phase (or per PR review run): marker kind `waiver`, one per repository. `--work-path` names a worktree of the same repository for the
 // PR diff gate; the waiver store cannot key a pr-diff-xprov target yet (wave 10), so it lists no target and writes nothing.
-// Order of every write: the store lock, the audit line FIRST (consent-waive, the marker's tool_use_id and session_id), then the store, then
-// the mirror (index row, XREVIEW note, observation: no authority, failures are reported, not hidden). Tier 0: see help-xprov-consent.cjs.
+// Order of every write (SEC-6): the question text, run-record reads and git work OUTSIDE the lock; inside the store lock: the marker, the audit
+// line FIRST (consent-waive, the marker's tool_use_id and session_id), then the store (read again inside), then the mirror (index row, XREVIEW note, observation: no authority, failures are reported, not hidden). Tier 0: see help-xprov-consent.cjs.
 // Request-scoped: clock and paths are parameters.
 // ---------------------------------------------------------------------------
 
@@ -37,6 +37,7 @@ const KIND = 'waiver';
 const BY = C.RESERVED_BY;
 const TARGETS_LISTED_MAX = 12;
 const FINDINGS_LISTED_MAX = 8;
+const FINDINGS_UNVERIFIED = 'Befunde nicht prüfbar'; // a fixed line: the findings record does not match the run record, so no finding text is shown
 const PR_REVIEW_DIR = path.join('.a1-review', 'xreview');
 const PATH_LINE_RE = /^Pfad: (.*)$/m;
 const PHASE_LINE_RE = /^Phase: (.*)$/m;
@@ -48,15 +49,16 @@ const shortSha = (s) => (s === null ? '-' : s);
 function targetLines(t, i, n) {
   const k = t.key;
   const verdict = t.reason ? `${t.verdict} (${t.reason})` : t.verdict;
-  const round = t.round !== null ? `, Runde ${t.round}${t.round >= X.ROUND_CAP ? ' (Rundenlimit erreicht)' : ''}` : (t.attempt !== null ? `, Versuch ${t.attempt}` : '');
+  const round = t.round !== null ? `, Runde ${t.round}${t.round >= X.ROUND_CAP ? ' (Rundenlimit erreicht)' : ''}` : ''; // only a round the run record proves (SEC-3)
   const out = [
     `Ziel ${i + 1} von ${n}: ${k.gate} (${scopeLabel(k)})`,
     `  Schlüssel: Repo ${Q.clean(k.repo)} · Phase ${Q.clean(k.phase)} · PLAN.md sha256 ${k.plan_sha256}`,
     ...(k.wave === null ? [] : [`  Wave ${k.wave} · Lane ${k.lane || '-'} · head ${shortSha(k.head)} · base ${shortSha(k.base)}`]),
     `  Fehlschlag: ${verdict}${round}`,
   ];
+  if (t.findings === null) out.push(`  ${FINDINGS_UNVERIFIED}`);
   for (const sev of ['blocker', 'major']) {
-    const list = t.findings.filter((f) => f.severity === sev);
+    const list = (t.findings || []).filter((f) => f.severity === sev);
     if (list.length === 0) continue;
     out.push(`  Offene ${sev.toUpperCase()}:`);
     for (const f of list.slice(0, FINDINGS_LISTED_MAX)) out.push(`    - ${Q.clean(f.id)}: ${Q.clean(f.title)}`);
@@ -139,12 +141,8 @@ function mirrorAll(root, scan, records) {
   return errors;
 }
 
-function waiveLocked(o) {
-  const why = OH.homeMismatch();
-  if (why !== null) return refuse('owner_home_mismatch', `${why}; nothing written`);
-  let b;
-  try { b = buildFor(o); } catch (e) { if (e && e.code === 'A1_INPUT') return refuse(e.reason || 'invalid_input', e.message); throw e; }
-  if (!b.ok) return b;
+/** Inside the store lock only: the marker, the audit line, the waiver write, the mirror. `b` is the question built OUTSIDE the lock (SEC-6). */
+function waiveLocked(o, b) {
   const now = o.now || io.nowIso();
   const claim = R.claimDecision({ repo: b.key, kind: KIND, hash: b.question.hash, now: o.now }, { reason: 'waiver_declined', detail: 'the owner did not confirm the waiver; nothing written' });
   if (!claim.ok) return claim;
@@ -168,7 +166,11 @@ function waive(o) {
   if ((o.phase === undefined) === (o.workPath === undefined)) throw C.inputError('give exactly one of --phase <name> or --work-path <worktree>', 'scope_flags');
   if (o.phase !== undefined) T.phaseOf(o.root, o.phase); // a traversal-shaped or unknown phase is exit 2 before any lock
   else workPathOf(o.root, o.workPath);
-  return R.locked(() => waiveLocked(o));
+  const why = OH.homeMismatch();
+  if (why !== null) return refuse('owner_home_mismatch', `${why}; nothing written`);
+  const b = buildFor(o); // question text, run-record reads and git work outside the lock; a bad scope is a typed input error (exit 2)
+  if (!b.ok) return b;
+  return R.locked(() => waiveLocked(o, b));
 }
 
 module.exports = { KIND, TARGETS_LISTED_MAX, buildText, scopeFromText, buildFor, waive };

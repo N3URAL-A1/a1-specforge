@@ -102,7 +102,7 @@ if (a.cmd === 'ask') {
 } else if (a.cmd === 'hits') {
   // writes the scan hits record of the masked REAL gitleaks report (only path, rule, line, column survive fromGitleaksReport)
   const H = lib('xprov-consent-hits.cjs');
-  const report = JSON.parse(fs.readFileSync(a.report, 'utf8'));
+  const report = a.report ? JSON.parse(fs.readFileSync(a.report, 'utf8')) : []; // no report: only the `extra` hits
   const commit = a.commit || C.gitOut(['-C', a.root, 'rev-parse', 'HEAD']).trim();
   const hits = [...H.fromGitleaksReport(report), ...(a.extra || [])];
   H.writeHits(a.name, { version: 1, snapshot: a.name, repo_key: a.repo_key || key(a.root), commit, hits, ts: '2026-10-14T00:00:00.000Z' });
@@ -122,11 +122,25 @@ if (a.cmd === 'ask') {
   const r = G.waive({ phase: a.phase, gate: a.gate, reason: 'terminal waiver', by: 'robert' });
   out({ ok: r.code === 0, code: r.code });
 } else if (a.cmd === 'chat-allowlist-slow') {
+  // the chat hit approval with a pause before its store write
   const AP = lib('xprov-approve.cjs');
-  const orig = AP.writeStore;
-  AP.writeStore = (repos) => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, a.ms); return orig(repos); };
+  const orig = AP.writeGuardedStore;
+  AP.writeGuardedStore = (name, doc) => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, a.ms); return orig(name, doc); };
   const r = lib('xprov-consent-allowlist.cjs').approve({ root: a.root, scan: a.scan });
   out({ ok: r.ok, reason: r.reason || null });
+} else if (a.cmd === 'term-approve') {
+  // the body of the TERMINAL allowlist approve (library call, spec 016 SEC-5): tip, allowlist blob and TTY line are stubbed; the pause sits
+  // in the audit-line append, i.e. INSIDE the owner-store lock, after the approvals were read again
+  const AP = lib('xprov-approve.cjs'); const AL = lib('xprov-allowlist.cjs'); const AU = lib('xprov-audit.cjs');
+  const blob = Buffer.from('stub allowlist blob\n');
+  AL.verifiedTip = () => ({ ok: true, tip: 'a'.repeat(40) });
+  AL.blobAt = () => blob;
+  AL.parseAllowlist = () => ({ ok: true, doc: { version: 1, owner: 'robert', entries: [{ path: 'x.js', pattern: 'p', max_count: 1, class: 'fixture_fake', reason: 'stub' }] } });
+  AL.separateCommitProblem = () => null; AL.scopeTreeProblem = () => null; AL.ownerProblem = () => null;
+  const orig = AU.appendAudit;
+  AU.appendAudit = (o) => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, a.ms); return orig(o); };
+  const r = AP.approve(a.root, { readTypedLine: () => '1', matchesAt: () => ({ ok: true, matches: [] }) });
+  out({ ok: r.code === 0, code: r.code, sha: C.sha256(blob) });
 } else if (a.cmd === 'term-revoke') {
   // the body of the TERMINAL allowlist revoke (library call; the TTY guard lives in its CLI wrapper)
   const r = lib('xprov-approve.cjs').revoke(a.root, a.sha);

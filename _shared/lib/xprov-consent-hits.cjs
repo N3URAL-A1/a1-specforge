@@ -111,7 +111,7 @@ function fromGitleaksReport(report, stripPrefix) {
   });
 }
 
-/** { ok: true, sha256 } of the blob at `commit:path`, or { ok: false, reason, detail }. A symlink, a submodule or a blob over 5 MB is refused. */
+/** { ok: true, sha256, bytes } of the blob at `commit:path`, or { ok: false, reason, detail }. A symlink, a submodule or a blob over 5 MB is refused. */
 function blobSha256(root, commit, relPath) {
   if (!COMMIT_RE.test(String(commit)) || !plainRelPath(relPath)) return { ok: false, reason: 'blob_unresolved', detail: 'the commit or path of the hit is not usable' };
   const env = C.ownerGitEnv();
@@ -120,7 +120,7 @@ function blobSha256(root, commit, relPath) {
   if (m === null) return { ok: false, reason: 'blob_unresolved', detail: `${C.clip(relPath, 120)} is not a regular file at commit ${commit.slice(0, 12)}` };
   const cat = spawnSync(C.gitBin(), ['-C', root, 'cat-file', 'blob', m[2]], { env, maxBuffer: BLOB_MAX_BYTES, stdio: ['ignore', 'pipe', 'pipe'] });
   if (cat.status !== 0 || !Buffer.isBuffer(cat.stdout)) return { ok: false, reason: 'blob_unresolved', detail: `${C.clip(relPath, 120)} cannot be read at commit ${commit.slice(0, 12)} (missing, or over ${BLOB_MAX_BYTES} bytes)` };
-  return { ok: true, sha256: crypto.createHash('sha256').update(cat.stdout).digest('hex') };
+  return { ok: true, sha256: crypto.createHash('sha256').update(cat.stdout).digest('hex'), bytes: cat.stdout };
 }
 
 module.exports = { SUFFIX, HITS_MAX, parseHits, readHits, writeHits, fromGitleaksReport, blobSha256, plainRelPath };
