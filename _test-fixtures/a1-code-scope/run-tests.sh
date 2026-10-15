@@ -108,11 +108,27 @@ fi
 #     either claim direction. Regression for the empty-nonGlobPrefix bug where
 #     isSegmentPrefix([], x) is trivially true and flips every non-match into
 #     a spurious CONFLICT. ---
+# Review round 3: feature-a holds the directory src/billing/, which may contain
+# a util.js, so "**/util.js" overlaps it (directory capability belongs to the
+# other side). It must still not conflict with the file docs/readme.md.
 OUT="$(node "$TOOLS" code-scope claim --by feature-globdoubledstar --scope "**/util.js" --file "$FILE" 2>&1)"
-assert_rc "leading-doublestar-vs-unrelated" 0 $? "$OUT"
+RC=$?
+assert_rc "leading-doublestar-vs-directory-scope" 1 "$RC" "$OUT"
+if ! grep -q "feature-a" <<<"$OUT"; then
+  echo "FAIL  leading-doublestar-vs-directory-scope: holder feature-a not named"; fail=$((fail + 1))
+fi
+OUT="$(node "$TOOLS" code-scope claim --by feature-globdoubledstar --scope "**/util.js" --file "$WORK/dstar-only.json" 2>&1)"
+assert_rc "leading-doublestar-setup" 0 $? "$OUT"
+OUT="$(node "$TOOLS" code-scope claim --by feature-docs-readme0 --scope "docs/readme.md" --file "$WORK/dstar-only.json" 2>&1)"
+assert_rc "leading-doublestar-vs-file-unrelated" 0 $? "$OUT"
 OUT="$(node "$TOOLS" code-scope claim --by feature-docs-readme --scope "docs/readme.md" --file "$FILE" 2>&1)"
 assert_rc "unrelated-vs-leading-doublestar" 0 $? "$OUT"
 
+# Review round 1: bare "*" truly shares top-level util.js with the recorded "**/util.js"
+# (the old literal-segment matcher missed that overlap). Release it so this block keeps
+# testing what it names: "*" vs unrelated deeper paths.
+OUT="$(node "$TOOLS" code-scope release --by feature-globdoubledstar --file "$FILE" 2>&1)"
+assert_rc "release-doublestar-before-star" 0 $? "$OUT"
 OUT="$(node "$TOOLS" code-scope claim --by feature-globstar-only --scope "*" --file "$FILE" 2>&1)"
 assert_rc "leading-star-vs-unrelated-setup" 0 $? "$OUT"
 OUT="$(node "$TOOLS" code-scope claim --by feature-docs-readme2 --scope "docs/readme2.md" --file "$FILE" 2>&1)"
@@ -336,6 +352,133 @@ if grep -q '"stale"' <<<"$OUT"; then
 else
   echo "PASS  list-no-stale-days: no stale field without flag"; pass=$((pass + 1))
 fi
+
+# --- in-segment globs in scopePathsOverlap (bug 2026-10-14-quick-gate-env-sentences) ---
+OVL_RC=0
+OVL_OUT="$(node -e '
+  const { scopePathsOverlap } = require(process.argv[1]);
+  const T = [["src/*.ts","src/a.ts"], ["src/a.ts","src/*.ts"], ["**/*.md","docs/x.md"],
+             ["docs/adr-*.md","docs/adr-1.md"], ["src/*.ts","src/**"], ["docs/ADR-*.md","docs/adr-1.md"],
+             ["src/*.ts","src"], ["src/*","src/a/b.js"], ["docs/ADR.md","docs/adr.md"], ["dir/*.ts","dir/a-*.ts"],
+             ["./","src/a.ts"], ["/","x"], ["src/a.ts","./"],
+             ["**/fixtures","src/fixtures/a.json"], ["**/a","a/src"],
+             ["*","src/**"], ["*/a","src/?/**"], ["src/**/**","*"], ["*","**/util.js"],
+             ["src/billing/","**/util.js"], ["apps/web","**/*.tsx"], ["*.md/a","*.md/**/b"],
+             ["**/*.md","docs"], ["docs/v1.2/","**/x.md"],
+             ["src/.","src/x.ts"], ["./src/./","src/x.ts"], [".env/.",".env"], ["src//x.ts","src/./x.ts"]];
+  const F = [["src/*.ts","lib/a.js"], ["**/*.md","docs/x.txt"], ["docs/adr-*.md","other/rfc-1.md"],
+             ["src/*.ts","lib/a.ts"], ["src/*.ts","src/a.js"], ["src/*.ts","src/sub/a.ts"],
+             ["dir/x-*.ts","dir/y-*.ts"], ["**/util.js","docs/readme.md"],
+             ["**/*.md","docs.txt"], ["docs/v1.2","**/x.md"]]; // last row pins the remaining limit: a file-like last segment without a trailing slash is a file
+  let bad = 0;
+  for (const [a,b] of T) if (scopePathsOverlap(a,b) !== true) { console.log("expected overlap: " + a + " vs " + b); bad++; }
+  for (const [a,b] of F) if (scopePathsOverlap(a,b) !== false) { console.log("expected NO overlap: " + a + " vs " + b); bad++; }
+  process.exit(bad ? 1 : 0);
+' "$REPO_ROOT/_shared/lib/code-scope.cjs" 2>&1)" || OVL_RC=$?
+assert_rc "in-segment-glob-overlap-table" 0 "$OVL_RC" "$OVL_OUT"
+
+# --- ReDoS bound + matchesGlob normalisation (review round 1) ---
+RDS_RC=0
+RDS_OUT="$(node -e '
+  const g = require(process.argv[1]);
+  const stars = "*a".repeat(30) + "*b";
+  const text = "a".repeat(40);
+  const t0 = Date.now();
+  const m = g.matchesGlob("src/" + stars, "src/" + text);
+  const o = g.scopePathsOverlap("src/" + stars, "src/" + "*a".repeat(30) + "*c");
+  const ms = Date.now() - t0;
+  let bad = 0;
+  if (m !== false) { console.log("30-star glob must not match"); bad++; }
+  if (typeof o !== "boolean") { console.log("overlap must return boolean"); bad++; }
+  if (ms >= 1000) { console.log("too slow: " + ms + " ms"); bad++; }
+  if (g.matchesGlob("./SRC//*.ts", "src/a.ts") !== true) { console.log("glob side must be normalised"); bad++; }
+  if (g.matchesGlob("src\\\\*.ts", "src/a.ts") !== true) { console.log("backslash glob must be normalised"); bad++; }
+  process.exit(bad ? 1 : 0);
+' "$REPO_ROOT/_shared/lib/segment-glob.cjs" 2>&1)" || RDS_RC=$?
+assert_rc "glob-linear-matcher-time-bound" 0 "$RDS_RC" "$RDS_OUT"
+
+# --- input bounds (review round 2): clear error, no RangeError ---
+LIM_RC=0
+LIM_OUT="$(node -e '
+  const g = require(process.argv[1]);
+  let bad = 0;
+  const long = "a".repeat(30000);
+  const many = "**/".repeat(3000) + "x";
+  for (const [label, p] of [["30k segment", "src/" + long], ["3000 segments", many]]) {
+    if (!g.validateScopePath(p)) { console.log(label + ": validateScopePath must report an error"); bad++; }
+    try { g.scopePathsOverlap(p, "src/a.ts"); console.log(label + ": scopePathsOverlap must throw ScopeLimitError"); bad++; }
+    catch (e) { if (!(e instanceof g.ScopeLimitError)) { console.log(label + ": wrong error " + e.name); bad++; } }
+  }
+  if (g.validateScopePath("src/" + "a".repeat(1024) + "/x") !== null) { console.log("1024-char segment must pass"); bad++; }
+  process.exit(bad ? 1 : 0);
+' "$REPO_ROOT/_shared/lib/segment-glob.cjs" 2>&1)" || LIM_RC=$?
+assert_rc "scope-input-bounds-lib" 0 "$LIM_RC" "$LIM_OUT"
+
+LIM_FILE="$WORK/limit-reservations.json"
+LONG_SEG="$(node -e 'process.stdout.write("a".repeat(30000))')"
+OUT="$(node "$TOOLS" code-scope claim --by feature-long --scope "src/$LONG_SEG" --file "$LIM_FILE" 2>&1)"
+assert_rc "claim-oversized-segment-fails-closed" 1 $? "$OUT"
+if ! grep -q "exceeds the limit" <<<"$OUT" || grep -q "RangeError" <<<"$OUT"; then
+  echo "FAIL  claim-oversized-segment: expected clear limit message"; fail=$((fail + 1))
+else
+  echo "PASS  claim-oversized-segment: clear limit message"; pass=$((pass + 1))
+fi
+
+# --- root scope overlaps everything (review round 2) ---
+ROOT_FILE="$WORK/root-reservations.json"
+OUT="$(node "$TOOLS" code-scope claim --by feature-a --scope "src/a.ts" --file "$ROOT_FILE" 2>&1)"
+assert_rc "root-scope-setup-claim" 0 $? "$OUT"
+OUT="$(node "$TOOLS" code-scope claim --by feature-root --scope "./" --file "$ROOT_FILE" 2>&1)"
+assert_rc "root-scope-claim-conflicts" 1 $? "$OUT"
+if ! grep -q '"status": "CONFLICT"' <<<"$OUT"; then
+  echo "FAIL  root-scope-claim-conflicts: expected CONFLICT"; fail=$((fail + 1))
+fi
+
+# --- idempotent re-claim ignores the directory signal (review round 4) ---
+IDEM_FILE="$WORK/idem.json"
+OUT="$(node "$TOOLS" code-scope claim --by feature-idem --scope "src/" --file "$IDEM_FILE" 2>&1)"
+assert_rc "idem-claim-with-trailing-slash" 0 $? "$OUT"
+OUT="$(node "$TOOLS" code-scope stage --by feature-idem --set review --file "$IDEM_FILE" 2>&1)"
+assert_rc "idem-stage-review" 0 $? "$OUT"
+OUT="$(node "$TOOLS" code-scope claim --by feature-idem --scope "src" --file "$IDEM_FILE" 2>&1)"
+assert_rc "idem-reclaim-without-slash" 0 $? "$OUT"
+if ! grep -q '"idempotent": true' <<<"$OUT" || ! grep -q '"stage": "review"' <<<"$OUT"; then
+  echo "FAIL  idem-reclaim-without-slash: expected idempotent:true and stage review kept"; fail=$((fail + 1))
+else
+  echo "PASS  idem-reclaim-without-slash keeps stage review"; pass=$((pass + 1))
+fi
+
+# --- check validates --scope like claim (review round 3) ---
+OUT="$(node "$TOOLS" code-scope check --by feature-chk --scope "src/$LONG_SEG" --file "$LIM_FILE" 2>&1)"
+assert_rc "check-oversized-segment-fails-closed" 1 $? "$OUT"
+if ! grep -q "INVALID_SCOPE" <<<"$OUT" || grep -q "RangeError" <<<"$OUT"; then
+  echo "FAIL  check-oversized-segment: expected INVALID_SCOPE, no RangeError"; fail=$((fail + 1))
+else
+  echo "PASS  check-oversized-segment: INVALID_SCOPE"; pass=$((pass + 1))
+fi
+
+# --- stored over-limit entry: conflict naming holder and reason, no crash, no lock left ---
+BAD_FILE="$WORK/stored-overlimit.json"
+node -e '
+  const seg = "a".repeat(30000);
+  require("fs").writeFileSync(process.argv[1], JSON.stringify({ reservations: [
+    { type: "code_scope", paths: ["src/" + seg], by: "feature-stored-long", at: "2026-10-15T00:00:00Z", stage: "started" } ] }));
+' "$BAD_FILE"
+OUT="$(node "$TOOLS" code-scope claim --by feature-new --scope "src/x.ts" --file "$BAD_FILE" 2>&1)"
+RC=$?
+assert_rc "claim-vs-stored-overlimit-conflicts" 1 "$RC" "$OUT"
+if ! grep -q "feature-stored-long" <<<"$OUT" || ! grep -q "stored scope unusable" <<<"$OUT" || grep -q "RangeError" <<<"$OUT"; then
+  echo "FAIL  claim-vs-stored-overlimit: expected holder + reason, no RangeError"; fail=$((fail + 1))
+else
+  echo "PASS  claim-vs-stored-overlimit names holder and reason"; pass=$((pass + 1))
+fi
+if ls "$BAD_FILE".lock >/dev/null 2>&1; then
+  echo "FAIL  claim-vs-stored-overlimit: lock file left behind"; fail=$((fail + 1))
+else
+  echo "PASS  claim-vs-stored-overlimit: no lock file left"; pass=$((pass + 1))
+fi
+OUT="$(node "$TOOLS" code-scope check --by feature-new --scope "src/x.ts" --file "$BAD_FILE" 2>&1)"
+assert_rc "check-vs-stored-overlimit-conflicts" 1 $? "$OUT"
 
 echo "code-scope fixtures: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

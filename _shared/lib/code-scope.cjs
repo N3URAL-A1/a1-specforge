@@ -22,105 +22,16 @@ const {
   failWithLock,
   writeJsonAtomic,
 } = require('./locks.cjs');
+const {
+  scopePathsOverlap,
+  validateScopePath,
+  ScopeLimitError,
+  scopeKey,
+} = require('./segment-glob.cjs');
 
-/** Normalize a scope path for comparison: strip leading "./", collapse
- * duplicate slashes, strip a single trailing slash (kept conceptually as
- * "directory" via segment comparison, not via string suffix). */
-function normalizeScopePath(p) {
-  let out = String(p).trim().replace(/\\/g, '/');
-  while (out.startsWith('./')) out = out.slice(2);
-  out = out.replace(/\/+/g, '/');
-  if (out.length > 1 && out.endsWith('/')) out = out.slice(0, -1);
-  return out;
-}
-
-/** Split a normalized path into non-empty segments. */
-function scopeSegments(p) {
-  return p.split('/').filter(Boolean);
-}
-
-/** True if `pattern` segment is a glob segment ("*" or "**"). */
-function isGlobSegment(seg) {
-  return seg === '*' || seg === '**';
-}
-
-/** Match a single path's segments against a pattern's segments.
- * "*" matches exactly one segment; "**" matches zero or more segments. */
-function segmentsMatchGlob(patternSegs, pathSegs) {
-  const memo = new Map();
-  function walk(pi, si) {
-    const key = pi + ':' + si;
-    if (memo.has(key)) return memo.get(key);
-    let result;
-    if (pi === patternSegs.length) {
-      result = si === pathSegs.length;
-    } else {
-      const seg = patternSegs[pi];
-      if (seg === '**') {
-        result = walk(pi + 1, si) || (si < pathSegs.length && walk(pi, si + 1));
-      } else if (seg === '*') {
-        result = si < pathSegs.length && walk(pi + 1, si + 1);
-      } else {
-        result = si < pathSegs.length && pathSegs[si] === seg && walk(pi + 1, si + 1);
-      }
-    }
-    memo.set(key, result);
-    return result;
-  }
-  return walk(0, 0);
-}
-
-/** True if segsA is a prefix of segsB at a segment boundary (or equal). */
-function isSegmentPrefix(segsA, segsB) {
-  if (segsA.length > segsB.length) return false;
-  for (let i = 0; i < segsA.length; i++) {
-    if (segsA[i] !== segsB[i]) return false;
-  }
-  return true;
-}
-
-/** Segments up to (excluding) the first glob segment, i.e. the fixed
- * "directory anchor" a glob pattern is rooted under. For a pattern with no
- * glob segment this is just all of its segments (identical to itself). */
-function nonGlobPrefix(segs) {
-  const idx = segs.findIndex(isGlobSegment);
-  return idx === -1 ? segs : segs.slice(0, idx);
-}
-
-/** Deterministic overlap check between two declared scope paths.
- * Overlap if:
- *   - one is a segment-boundary prefix of the other (dir containment), or
- *   - either contains a glob ("*"/"**") that matches the other via glob math, or
- *   - either side's glob is rooted under a directory the other side contains
- *     (or vice versa) — e.g. `src/**\/util.js` vs `src/foo`, or `src/*` vs
- *     `src/a/b.js`. Compares each side's fixed (non-glob) prefix against the
- *     other side's full segments via segment-boundary containment.
- * No fs reads, no git — pure string/segment comparison. */
-function scopePathsOverlap(rawA, rawB) {
-  const a = normalizeScopePath(rawA);
-  const b = normalizeScopePath(rawB);
-  if (a === b) return true;
-  const segsA = scopeSegments(a);
-  const segsB = scopeSegments(b);
-  const hasGlobA = segsA.some(isGlobSegment);
-  const hasGlobB = segsB.some(isGlobSegment);
-  if (hasGlobA && segmentsMatchGlob(segsA, segsB)) return true;
-  if (hasGlobB && segmentsMatchGlob(segsB, segsA)) return true;
-  if (!hasGlobA && !hasGlobB) {
-    if (isSegmentPrefix(segsA, segsB)) return true;
-    if (isSegmentPrefix(segsB, segsA)) return true;
-  } else {
-    // At least one side has a glob: also test directory containment between
-    // each side's fixed (non-glob) prefix and the other side's full path.
-    const prefixA = nonGlobPrefix(segsA);
-    const prefixB = nonGlobPrefix(segsB);
-    if (prefixA.length > 0 && isSegmentPrefix(prefixA, segsB)) return true;
-    if (prefixB.length > 0 && isSegmentPrefix(prefixB, segsA)) return true;
-    if (prefixB.length > 0 && isSegmentPrefix(segsA, prefixB)) return true;
-    if (prefixA.length > 0 && isSegmentPrefix(segsB, prefixA)) return true;
-  }
-  return false;
-}
+// Path normalization, glob matching and overlap math live in segment-glob.cjs
+// (shared with quick.cjs). `scopePathsOverlap` is re-exported below for
+// lane-split.cjs.
 
 /** Find all code_scope reservation entries (excluding a given feature id)
  * whose declared paths overlap the candidate paths. Returns a flat list of
@@ -133,8 +44,15 @@ function findScopeOverlaps(reservations, candidatePaths, excludeBy) {
     const otherPaths = Array.isArray(r.paths) ? r.paths : [];
     for (const cand of candidatePaths) {
       for (const other of otherPaths) {
-        if (scopePathsOverlap(cand, other)) {
-          overlaps.push({ feature: r.by, path: cand, with: other });
+        try {
+          if (scopePathsOverlap(cand, other)) {
+            overlaps.push({ feature: r.by, path: cand, with: other });
+          }
+        } catch (e) {
+          if (!(e instanceof ScopeLimitError)) throw e;
+          // A stored entry over the input bounds cannot be compared: fail
+          // closed and report it as a conflict with its holder and the reason.
+          overlaps.push({ feature: r.by, path: cand, with: other, reason: `stored scope unusable: ${e.message}` });
         }
       }
     }
@@ -150,6 +68,21 @@ function parseScopeList(raw) {
     .filter(Boolean);
 }
 
+/** Fail closed (rc 1, INVALID_SCOPE) when a --scope path violates the input
+ * bounds. Shared by claim and check. */
+function exitOnInvalidScope(paths, file, by) {
+  for (const sp of paths) {
+    const limitErr = validateScopePath(sp);
+    if (limitErr) {
+      process.stdout.write(
+        JSON.stringify({ status: 'INVALID_SCOPE', file, claim: { by, paths }, error: limitErr }, null, 2) + '\n'
+      );
+      process.stderr.write(`invalid scope (fail closed): ${limitErr}\n`);
+      process.exit(1);
+    }
+  }
+}
+
 const CODE_SCOPE_STAGES = ['started', 'complete', 'review', 'verify', 'merge', 'origin-cleanup', 'done'];
 
 function cmdCodeScopeClaim(args) {
@@ -163,14 +96,15 @@ function cmdCodeScopeClaim(args) {
     usage('code-scope claim requires at least one --scope path');
   }
   const by = flags.by;
+  exitOnInvalidScope(paths, file, by);
 
   const lockPath = acquireReservationsLock(file);
   const data = loadReservations(file);
   const existingSame = data.reservations.find((r) => r.type === 'code_scope' && r.by === by);
 
   if (existingSame) {
-    const existingNorm = (existingSame.paths || []).map(normalizeScopePath).sort();
-    const candidateNorm = paths.map(normalizeScopePath).sort();
+    const existingNorm = (existingSame.paths || []).map(scopeKey).sort();
+    const candidateNorm = paths.map(scopeKey).sort();
     const identical =
       existingNorm.length === candidateNorm.length &&
       existingNorm.every((p, i) => p === candidateNorm[i]);
@@ -310,6 +244,7 @@ function cmdCodeScopeCheck(args) {
     usage('code-scope check requires at least one --scope path');
   }
   const by = flags.by;
+  exitOnInvalidScope(paths, file, by);
   const data = loadReservations(file);
   const overlaps = findScopeOverlaps(data.reservations, paths, by);
   if (overlaps.length > 0) {

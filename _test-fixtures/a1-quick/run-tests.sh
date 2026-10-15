@@ -931,5 +931,211 @@ node -e '
 NODE_WEIGHT_RC=$?
 assert_rc "quick-weighted-count-math-standalone" 0 "$NODE_WEIGHT_RC" "(5 quick-run records * 0.2 weight)"
 
+# =============================================================================
+# Bug 2026-10-14-quick-gate-env-sentences: in-segment globs + sentence counter
+# (vault: project/a1-specforge/fixes/2026-10-14-quick-gate-env-sentences.md)
+# =============================================================================
+QLIB="$REPO_ROOT/_shared/lib/quick.cjs"
+
+# per-glob liveness: every FORBIDDEN_SURFACE_GLOBS entry must match one
+# realistic path (a dead glob fails open).
+LIVE_RC=0
+LIVE_OUT="$(node -e '
+  const q = require(process.argv[1]);
+  const real = {
+    "**/auth/**": "src/auth/x.ts", "**/authentication/**": "src/authentication/x.ts",
+    "**/authorization/**": "src/authorization/x.ts", "**/payment/**": "src/payment/x.ts",
+    "**/payments/**": "src/payments/x.ts", "**/billing/**": "src/billing/x.ts",
+    "**/tenant/**": "src/tenant/x.ts", "**/tenants/**": "src/tenants/x.ts",
+    "**/multi-tenant/**": "src/multi-tenant/x.ts", "**/security/**": "src/security/x.ts",
+    "**/rls/**": "db/rls/x.sql", "**/migrations/**": "db/migrations/001.sql",
+    "**/*.env": "config/prod.env", "**/.env.*": "app/.env.local",
+  };
+  let bad = 0;
+  for (const g of q.FORBIDDEN_SURFACE_GLOBS) {
+    if (!real[g]) { console.log("no realistic path for glob " + g); bad++; continue; }
+    if (!q.matchesForbiddenSurface(real[g])) { console.log("DEAD glob " + g + " vs " + real[g]); bad++; }
+  }
+  if (Object.keys(real).length !== q.FORBIDDEN_SURFACE_GLOBS.length) { console.log("table/list size drift"); bad++; }
+  process.exit(bad ? 1 : 0);
+' "$QLIB" 2>&1)" || LIVE_RC=$?
+assert_rc "forbidden-glob-liveness-table" 0 "$LIVE_RC" "$LIVE_OUT"
+
+# path cases: expected true / false
+PATH_RC=0
+PATH_OUT="$(node -e '
+  const q = require(process.argv[1]);
+  const T = [".env", "a/prod.env", ".env.local", "x/.env.example", ".env.local.example",
+             "a/.env.production", "src/Auth/x.ts", "SRC/AUTH/login.ts"];
+  const F = ["src/components/Footer.tsx", "docs/authoring.md", "auth.ts", "src/environment.ts", "envfile"];
+  let bad = 0;
+  for (const p of T) if (q.matchesForbiddenSurface(p) !== true) { console.log("expected true: " + p); bad++; }
+  for (const p of F) if (q.matchesForbiddenSurface(p) !== false) { console.log("expected false: " + p); bad++; }
+  process.exit(bad ? 1 : 0);
+' "$QLIB" 2>&1)" || PATH_RC=$?
+assert_rc "forbidden-surface-env-and-case-paths" 0 "$PATH_RC" "$PATH_OUT"
+
+# sentence counter: dots inside tokens do not count
+SENT_RC=0
+SENT_OUT="$(node -e '
+  const q = require(process.argv[1]);
+  const E = [
+    "Point docs/VISION.md and CLAUDE.md to docs/product/ROADMAP.md + NEXT.md as the roadmap source of truth; docs/roadmap.md is history.",
+    "Bump to v1.2.3 in package.json.", "Wait... then retry.", "Really?! Fix it.",
+    "Fix the typo. Then bump 1.2.3.", "Do \"a.\" Then \"b.\"",
+  ];
+  const N = ["One. Two. Three.", "x", "A! B? C."];
+  let bad = 0;
+  for (const s of E) { const n = q.countIntentSentences(s); if (n === null || n > q.MAX_INTENT_SENTENCES) { console.log("expected <=2: " + JSON.stringify(s) + " got " + n); bad++; } }
+  for (const s of N) { const n = q.countIntentSentences(s); if (n !== null && n <= q.MAX_INTENT_SENTENCES && n !== 0) { console.log("expected not-eligible: " + JSON.stringify(s) + " got " + n); bad++; } }
+  if (q.countIntentSentences("   ") !== null) { console.log("blank must be null"); bad++; }
+  if (q.countIntentSentences("x") !== 0) { console.log("x must be 0 (fail closed)"); bad++; }
+  if (q.countIntentSentences("One. Two. Three.") !== 3) { console.log("3 sentences must count 3"); bad++; }
+  // closing quotes/brackets after a terminator still end a sentence
+  if (q.countIntentSentences("Do \"a.\" Then \"b.\" And c.") !== 3) { console.log("quoted terminators must count 3"); bad++; }
+  if (q.countIntentSentences("Fix (a.) Then (b.)") !== 2) { console.log("bracketed terminators must count 2"); bad++; }
+  // KNOWN LIMIT (accepted): no whitespace after the dot, so "Fix a.Fix b.Fix c." counts 1, not 3.
+  // Dots inside tokens (README.md, 1.2.3) must not count; the gate stays advisory for this edge.
+  if (q.countIntentSentences("Fix a.Fix b.Fix c.") !== 1) { console.log("documented undercount changed"); bad++; }
+  // no terminator at all counts 0 (fail closed in eligibility)
+  if (q.countIntentSentences("Fix typo in README.md") !== 0) { console.log("README.md intent must count 0"); bad++; }
+  process.exit(bad ? 1 : 0);
+' "$QLIB" 2>&1)" || SENT_RC=$?
+assert_rc "sentence-counter-ignores-token-dots" 0 "$SENT_RC" "$SENT_OUT"
+
+# "Fix typo in README.md" has no sentence terminator: count 0 and eligibility fails closed
+OUT="$(node "$TOOLS" quick eligibility \
+  --intent "Fix typo in README.md" --files 1 --diff-lines 5 --scope README.md \
+  --no-migration --no-new-route --no-new-dep \
+  --repo-root "$CLEAN_REPO" --file "$RESV" --by quick-readme 2>&1)"
+RC=$?
+assert_rc "cli-intent-no-terminator-not-eligible" 1 "$RC" "$OUT"
+case "$OUT" in *NOT_ELIGIBLE*) assert_rc "cli-intent-no-terminator-verdict" 0 0 "";; *) assert_rc "cli-intent-no-terminator-verdict" 0 1 "$OUT";; esac
+
+# end to end via CLI: file-name intent eligible, 3 sentences and bare x are not
+OUT="$(node "$TOOLS" quick eligibility \
+  --intent "Point docs/VISION.md and CLAUDE.md to docs/product/ROADMAP.md + NEXT.md as the roadmap source of truth; docs/roadmap.md is history." \
+  --files 2 --diff-lines 8 --scope docs/VISION.md,CLAUDE.md \
+  --no-migration --no-new-route --no-new-dep \
+  --repo-root "$CLEAN_REPO" --file "$RESV" --by quick-filenames 2>&1)"
+RC=$?
+assert_rc "cli-intent-with-file-names-eligible" 0 "$RC" "$OUT"
+
+OUT="$(node "$TOOLS" quick eligibility \
+  --intent "x" --files 1 --diff-lines 5 --scope src/components/Footer.tsx \
+  --no-migration --no-new-route --no-new-dep \
+  --repo-root "$CLEAN_REPO" --file "$RESV" --by quick-x 2>&1)"
+RC=$?
+assert_rc "cli-intent-x-not-eligible" 1 "$RC" "$OUT"
+
+OUT="$(node "$TOOLS" quick eligibility \
+  --intent "Fix a. Fix b. Fix c." --files 1 --diff-lines 5 --scope src/components/Footer.tsx \
+  --no-migration --no-new-route --no-new-dep \
+  --repo-root "$CLEAN_REPO" --file "$RESV" --by quick-3s 2>&1)"
+RC=$?
+assert_rc "cli-intent-three-sentences-not-eligible" 1 "$RC" "$OUT"
+
+OUT="$(node "$TOOLS" quick eligibility \
+  --intent "Rename the env sample." --files 1 --diff-lines 5 --scope config/.env.example \
+  --no-migration --no-new-route --no-new-dep \
+  --repo-root "$CLEAN_REPO" --file "$RESV" --by quick-env 2>&1)"
+RC=$?
+assert_rc "cli-env-example-scope-not-eligible" 1 "$RC" "$OUT"
+
+# --- review round 2: root scope, input bounds, sentence regex time bound ---
+RESV_ROOT="$WORK/reservations-root.json"
+cat > "$RESV_ROOT" <<'JSON'
+{ "reservations": [
+  { "type": "code_scope", "by": "spec-998", "paths": ["src/a.ts"], "at": "2026-07-01T00:00:00.000Z", "stage": "started" }
+] }
+JSON
+OUT="$(node "$TOOLS" quick eligibility \
+  --intent "Fix the typo." --files 1 --diff-lines 5 --scope "./" \
+  --no-migration --no-new-route --no-new-dep \
+  --repo-root "$CLEAN_REPO" --file "$RESV_ROOT" --by quick-root 2>&1)"
+RC=$?
+assert_rc "cli-root-scope-vs-reservation-not-eligible" 1 "$RC" "$OUT"
+if ! grep -q "spec-998" <<<"$OUT"; then
+  echo "FAIL  cli-root-scope: expected reservation holder in reasons"; fail=$((fail + 1))
+fi
+
+LONG_SEG="$(node -e 'process.stdout.write("a".repeat(30000))')"
+OUT="$(node "$TOOLS" quick eligibility \
+  --intent "Fix the typo." --files 1 --diff-lines 5 --scope "src/$LONG_SEG" \
+  --no-migration --no-new-route --no-new-dep \
+  --repo-root "$CLEAN_REPO" --file "$RESV" --by quick-long 2>&1)"
+RC=$?
+assert_rc "cli-oversized-scope-segment-not-eligible" 1 "$RC" "$OUT"
+if ! grep -q "exceeds the limit" <<<"$OUT" || grep -q "RangeError" <<<"$OUT"; then
+  echo "FAIL  cli-oversized-scope-segment: expected clear limit reason"; fail=$((fail + 1))
+fi
+
+# Review round 4: path normalisation must match xprov-scope segmentsOf ('.' and
+# empty segments dropped; '..', absolute, drive-letter, empty-after-drop and
+# over-long values unclassifiable). Quick must never allow what xprov forbids.
+NORM_RC=0
+NORM_OUT="$(node -e '
+  const q = require(process.argv[1]);
+  let bad = 0;
+  for (const p of [".env/.", "config/.env.local/.", "src/./.env", "./.env", "src//.env", "SRC\\.ENV.LOCAL", "auth/./x", "./auth"]) {
+    if (!q.matchesForbiddenSurface(p)) { console.log("must be forbidden: " + p); bad++; }
+  }
+  for (const p of [".", "./", "", "  ", "../x", "a/../b", "/etc/x", "\\x", "C:x", "c:/x", "a\0b", "a/".repeat(2100)]) {
+    if (!q.isSuspiciousScopePath(p)) { console.log("must be suspicious: " + JSON.stringify(p.slice(0, 20))); bad++; }
+  }
+  for (const p of ["src/./a.ts", "docs/readme.md", "a b/c"]) {
+    if (q.isSuspiciousScopePath(p)) { console.log("must not be suspicious: " + p); bad++; }
+  }
+  process.exit(bad ? 1 : 0);
+' "$REPO_ROOT/_shared/lib/quick.cjs" 2>&1)" || NORM_RC=$?
+assert_rc "scope-normalisation-matches-xprov" 0 "$NORM_RC" "$NORM_OUT"
+for SC in ".env/." "config/.env.local/." "src/./.env" "."; do
+  OUT="$(node "$TOOLS" quick eligibility \
+    --intent "Fix the typo." --files 1 --diff-lines 5 --scope "$SC" \
+    --no-migration --no-new-route --no-new-dep \
+    --repo-root "$CLEAN_REPO" --file "$RESV" --by quick-dot 2>&1)"
+  assert_rc "cli-dot-segment-scope-not-eligible[$SC]" 1 $? "$OUT"
+done
+
+# Review round 3: a stored reservation over the input bounds is a conflict that
+# names its holder and the reason, not a crash.
+RESV_BIG="$WORK/reservations-overlimit.json"
+node -e '
+  require("fs").writeFileSync(process.argv[1], JSON.stringify({ reservations: [
+    { type: "code_scope", paths: ["src/" + "a".repeat(30000)], by: "spec-stored-long", at: "2026-10-15T00:00:00Z", stage: "started" } ] }));
+' "$RESV_BIG"
+OUT="$(node "$TOOLS" quick eligibility \
+  --intent "Fix the typo." --files 1 --diff-lines 5 --scope "src/x.ts" \
+  --no-migration --no-new-route --no-new-dep \
+  --repo-root "$CLEAN_REPO" --file "$RESV_BIG" --by quick-stored 2>&1)"
+RC=$?
+assert_rc "cli-stored-overlimit-reservation-not-eligible" 1 "$RC" "$OUT"
+if ! grep -q "spec-stored-long" <<<"$OUT" || ! grep -q "stored scope unusable" <<<"$OUT" || grep -q "RangeError" <<<"$OUT"; then
+  echo "FAIL  cli-stored-overlimit-reservation: expected holder + reason, no RangeError"; fail=$((fail + 1))
+fi
+
+MANY="$(node -e 'process.stdout.write("**/".repeat(3000) + "x")')"
+OUT="$(node "$TOOLS" quick eligibility \
+  --intent "Fix the typo." --files 1 --diff-lines 5 --scope "$MANY" \
+  --no-migration --no-new-route --no-new-dep \
+  --repo-root "$CLEAN_REPO" --file "$RESV" --by quick-many 2>&1)"
+RC=$?
+assert_rc "cli-too-many-scope-segments-not-eligible" 1 "$RC" "$OUT"
+
+DOT_RC=0
+DOT_OUT="$(node -e '
+  const q = require(process.argv[1]);
+  const t0 = Date.now();
+  const n = q.countIntentSentences(".".repeat(40000) + "x");
+  const n2 = q.countIntentSentences("a" + ".".repeat(40000) + " b.");
+  const ms = Date.now() - t0;
+  let bad = 0;
+  if (ms >= 1000) { console.log("too slow: " + ms + " ms"); bad++; }
+  if (n !== 0) { console.log("dots then x must count 0, got " + n); bad++; }
+  if (n2 !== 2) { console.log("dot run + sentence must count 2, got " + n2); bad++; }
+  process.exit(bad ? 1 : 0);
+' "$REPO_ROOT/_shared/lib/quick.cjs" 2>&1)" || DOT_RC=$?
+assert_rc "sentence-regex-linear-time" 0 "$DOT_RC" "$DOT_OUT"
+
 echo "a1-quick: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]
