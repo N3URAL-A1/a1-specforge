@@ -122,7 +122,9 @@ caseCC1() {
   local first="$G_OUT"; cli23 question --kind consent
   assert_eq "CC1a deterministic: same repo, same bytes" "$G_OUT" "$first"
   [[ "$G_ERR" != *nforgeable* ]] && ok "CC1a stderr makes no unforgeable claim" || bad "CC1a stderr: $G_ERR"
-  cli23 question --kind classification --ludwig-record "$LUD23"
+  # W5-6: a classification question follows an owner yes to the consent question of the same phase
+  mkdir -p "$PHASE_REPO/.a1/phases/q23-cls"; cli23 question --kind consent --phase q23-cls >/dev/null; yes23 consent yes >/dev/null
+  cli23 question --kind classification --phase q23-cls --ludwig-record "$LUD23"
   assert_json "CC1b classification question: header xprov-Einstufung, No label first" "$G_OUT" "[j.header, j.labels[0], j.labels[1]].join('|')" "xprov-Einstufung|$CNO23|$CYES23"
   assert_json "CC1b the question shows the legal record path the owner is asked to confirm (MAJOR-3)" "$G_OUT" "j.question.includes('Legal-Entscheidung (Vault-Pfad): $LUD23')" "true"
   prep23 ""; cli23 question --kind consent

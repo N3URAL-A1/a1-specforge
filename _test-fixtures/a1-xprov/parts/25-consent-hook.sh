@@ -110,6 +110,13 @@ sc_h7() { prep25; canon25; ask25 pre 'header:xprov-Freigabe2'; local a; a="$(dec
 sc_h8() { prep25; canon25; ask25 pre none yes toolu_a >/dev/null; ask25 pre none yes toolu_b sess_b; echo "$(dec25)"; }
 sc_h20() { prep25; canon25; rm -f "$HOME/.a1-xprov/consent-asked.json"; ask25 pre; echo "$(dec25)|$(st25)"; }
 sc_h21() { prep25; canon25; ask25 pre none yes toolu_a >/dev/null; ask25 post none no toolu_a >/dev/null; cli25 record --kind consent >/dev/null; cli25 revoke >/dev/null; ask25 pre none yes toolu_b sess_b; echo "$(dec25)"; }
+# W5-6 (Samuel wave 5): a classification question follows only an owner yes to the consent question of the phase.
+V25="$TMP25/vault"; LUD25=record/2026-10-14-ludwig-fixture.md; mkdir -p "$V25/record"; printf 'fixture legal record\n' > "$V25/$LUD25"
+clsq25() { ( cd "$REPO25" && A1_VAULT_ROOT="$V25" node "$T25_TOOLS" xprov consent question --kind classification --phase p25 --ludwig-record "$LUD25" 2>/dev/null </dev/null ); }
+hookvault25() { H_OUT="$(A1_VAULT_ROOT="$V25" bash "$1/hooks/xprov-consent-hook.sh" < "$2" 2>"$TMP25/herr.txt")"; H_RC=$?; H_ERR="$(cat "$TMP25/herr.txt")"; }
+# consent asked and answered yes, the classification question issued by the CLI; then (revoke=1) the consent marker is dropped: the yes is gone when the hook sees the classification
+sc_h22() { prep25; canon25; ask25 pre >/dev/null; ask25 post none yes toolu_a >/dev/null; clsq25 > "$TMP25/q.json"; [[ "${1:-0}" == 1 ]] && cli25 revoke >/dev/null; node "$PAY25" "$(node -e 'process.stdout.write(JSON.stringify({capture:process.argv[1],event:"pre",qfile:process.argv[2],mutate:"none",mode:"yes",tool_use:"toolu_c",session:"sess_c",cwd:process.argv[3]}))' "$CAP25" "$TMP25/q.json" "$REPO25")" > "$TMP25/p.json"; hookvault25 "$HT25" "$TMP25/p.json"; echo "$(dec25)"; }
+sc_h22b() { sc_h22 1; }
 # the pending yes: Pre, then Post with the real answer shape, for a given label mode
 sc_post() { prep25; canon25; ask25 pre; ask25 post none "$1"; echo "$(dec25)|$(st25)"; }
 sc_h10no() { sc_post no; }
@@ -143,6 +150,8 @@ caseH() {
   assert_eq "H8 a second asker while the question is open: denied (poll consent ensure)" "$(sc_h8)" "deny:marker_pending"
   assert_eq "H20 the canonical question put without a prior \`consent question\` (no ask record): denied, no marker (W5-1)" "$(sc_h20)" "deny:consent_not_asked|none/-"
   assert_eq "H21 owner No, agent revokes, puts the canonical text again: denied, the ask opened its one marker already (W5-1)" "$(sc_h21)" "deny:consent_already_asked"
+  assert_eq "H22 classification after an owner yes to the consent question: allowed once (W5-6)" "$(sc_h22)" "allow"
+  assert_eq "H22b classification whose consent yes is gone: denied classification_needs_consent_yes (W5-6)" "$(sc_h22b)" "deny:classification_needs_consent_yes"
   assert_eq "H10a Post with the No label: recorded as no, never a yes" "$(sc_h10no)" "allow|answered/no"
   assert_eq "H10b Post with free text: recorded as no" "$(sc_h10free)" "allow|answered/no"
   assert_eq "H11 Post without an answer (dismissed): nothing recorded, the marker stays pending" "$(sc_h11)" "allow|pending/-"
@@ -183,6 +192,7 @@ caseH_red() {
   red25 "H20" sc_h20 "deny:consent_not_asked|none/-" xprov-consent-asked.cjs "if (hits.length === 0) return R.refuse(" "if (false) return R.refuse("
   red25 "H20b" sc_h20 "deny:consent_not_asked|none/-" $RULES25 "require('./xprov-consent-asked.cjs').ASK_KINDS.includes(kind) ?" "false ?"
   red25 "H21" sc_h21 "deny:consent_already_asked" xprov-consent-asked.cjs "const fresh = hits.find(([, e]) => e.opened === null);" "const fresh = hits[0];"
+  red25 "H22b" sc_h22b "deny:classification_needs_consent_yes" xprov-consent-asked.cjs "if (o.kind === 'classification' && fresh !== undefined && !consentYes(store, o.key, fresh[1].dev, fresh[1].ino, o.now)) return NEEDS_CONSENT_YES();" ""
   red25 "H10a" sc_h10no "allow|answered/no" $RULES25 "label: found.label, question," "label: 'Ja, dieses Repo an Codex senden', question,"
   red25 "H10b" sc_h10free "allow|answered/no" $RULES25 "label: found.label, question," "label: 'Ja, dieses Repo an Codex senden', question,"
   red25 "H11" sc_h11 "allow|pending/-" $RULES25 "if (!found.found) return Object.freeze({ action: 'ignored'" "if (false) return Object.freeze({ action: 'ignored'"

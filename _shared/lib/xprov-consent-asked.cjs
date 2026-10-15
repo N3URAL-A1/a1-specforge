@@ -20,6 +20,9 @@
 // An unusable store refuses too (`asked_store_unusable`, fail closed: no question) and is never overwritten.
 // Entries older than a year are dropped on the next write; more than MAX_ENTRIES live entries refuse (`asked_store_full`).
 //
+// A `classification` question (W5-6) is refused (`classification_needs_consent_yes`, no question text) unless the same repo + phase has a consent
+// entry whose marker holds the owner's canonical yes (answered or used): after a consent No an agent cannot ask the sibling question instead.
+//
 // Tier 0: the same OS user could delete the file or choose a fresh phase name; the plugin hook denies agent edits of ~/.a1-xprov/
 // and the audit chain shows every ask. The waiver and allowlist questions are not covered: their targets change by design (FR-013).
 // Request-scoped: clock and paths are parameters.
@@ -102,6 +105,18 @@ function reshow(key, kind, hash, prior, now) {
   return prior.hash === hash && (open.state === M.STATE.PENDING || open.state === M.STATE.ANSWERED) && open.marker.hash === hash;
 }
 
+/**
+ * W5-6 (Samuel wave 5): a classification question may follow only an owner YES to the consent question of the same repo + phase (the yes sits in the
+ * consent marker as answered or used; a No, no answer or no ask refuses). The check reads the consent entry by phase directory (dev + ino).
+ */
+function consentYes(store, key, dev, ino, now) {
+  const e = Object.values(store.asked).find((x) => x.repo === key && x.kind === 'consent' && x.dev === dev && x.ino === ino);
+  if (e === undefined) return false;
+  const m = M.peekMarker(key, 'consent', now).marker;
+  return Boolean(m) && m.hash === e.hash && m.answer !== null && m.answer !== undefined && m.answer.decision === 'yes';
+}
+const NEEDS_CONSENT_YES = () => R.refuse('classification_needs_consent_yes', 'a classification question follows only an owner yes to the consent question of this phase; no question, continue Reinhard-only');
+
 function pruned(asked, nowMs) {
   return Object.fromEntries(Object.entries(asked).filter(([, e]) => nowMs - Date.parse(e.at) <= RETAIN_MS));
 }
@@ -113,6 +128,7 @@ function claimLocked(o) {
   const id = entryId(o.key, o.kind, o.scope);
   const sameDir = (e) => e.repo === o.key && e.kind === o.kind && e.dev === o.scope.dev && e.ino === o.scope.ino; // a renamed phase dir is the same phase
   const prior = store.asked[id] || Object.values(store.asked).find(sameDir);
+  if (o.kind === 'classification' && !consentYes(store, o.key, o.scope.dev, o.scope.ino, o.now)) return NEEDS_CONSENT_YES();
   if (prior !== undefined) return reshow(o.key, o.kind, o.hash, prior, o.now) ? Object.freeze({ ok: true, reshown: true }) : refuseAsked(o.scope);
   const live = pruned(store.asked, Date.parse(now));
   if (Object.keys(live).length >= MAX_ENTRIES) return R.refuse('asked_store_full', `the ${STORE_LABEL} holds ${MAX_ENTRIES} entries; no question`);
@@ -146,6 +162,7 @@ function openAsked(o) {
     const hits = Object.entries(store.asked).filter(([, e]) => e.repo === o.key && e.kind === o.kind && e.hash === o.hash);
     if (hits.length === 0) return R.refuse('consent_not_asked', 'this question was not issued by `xprov consent question --kind ' + o.kind + ' --phase <name>` (or its phase already used its ask); run that command first, once per phase');
     const fresh = hits.find(([, e]) => e.opened === null);
+    if (o.kind === 'classification' && fresh !== undefined && !consentYes(store, o.key, fresh[1].dev, fresh[1].ino, o.now)) return NEEDS_CONSENT_YES();
     if (fresh === undefined) {
       const open = M.peekMarker(o.key, o.kind, o.now).state;
       if (open === M.STATE.PENDING || open === M.STATE.ANSWERED) { const r = M.openMarker({ repo: o.key, kind: o.kind, hash: o.hash, originSha: o.originSha, toolUseId: o.toolUseId, sessionId: o.sessionId, now: o.now }); return R.refuse(r.reason || 'marker_pending', r.hint || 'the question is open'); }
@@ -159,4 +176,4 @@ function openAsked(o) {
   });
 }
 
-module.exports = { ASKED_FILE, ASK_KINDS, SCOPE_TYPES, askedPath, readAsked, scopeOf, claimAsk, openAsked, entryId };
+module.exports = { consentYes, ASKED_FILE, ASK_KINDS, SCOPE_TYPES, askedPath, readAsked, scopeOf, claimAsk, openAsked, entryId };

@@ -18,6 +18,7 @@
 #   AQ3  revoke does not reset the ask    Red if revokeConsent() also resets the asked store                              [mutant M6]
 #   AQ3c another repo may ask in a phase of the same name   Red if the entry id omits the repository key               [mutant M9]
 #   AQ3b the sibling kind may still ask   Red if the entry id omits the kind                                             [mutant M7]
+#   AQ8  classification needs the consent yes of the phase   Red if claimAsk() drops the consent-yes check            [W5-6]
 #   AQ4  re-show only while the marker is open   Red if the re-show exception ignores the marker state                    [mutant M8]
 # Mutants run on tree copies only (rule 4b); the real owner store stays untouched (the harness compares it at the end).
 
@@ -91,6 +92,22 @@ redproof26() { # <name> <scenario fn> <expected on the real tree> <lib-file> <fr
   [[ "$got" == "$want" ]] || { bad "$name: real tree gave '$got', wanted '$want'"; return 0; }
   mtree26 "$file" "$from" "$to"; mut="$($fn)"; unmtree26
   [[ "$mut" != "$want" ]] && ok "$name RED [mutant]: with the production change the outcome flips ('$want' -> '$mut')" || bad "$name RED [mutant]: the guard is dead, the mutant still gives '$mut'"
+}
+
+# redproof26b — like redproof26 but the mutant carries TWO production changes in one lib file (the two independent lookups of one guard)
+redproof26b() { # <name> <scenario fn> <expected> <lib-file> <from1> <to1> <from2> <to2>
+  local name="$1" fn="$2" want="$3" file="$4" got mut
+  got="$($fn)"
+  [[ "$got" == "$want" ]] || { bad "$name: real tree gave '$got', wanted '$want'"; return 0; }
+  mtree26 "$file" "$5" "$6"
+  node -e '
+    const fs = require("fs"); const [tree, name, from, to] = process.argv.slice(1);
+    const f = tree + "/_shared/lib/" + name; const s = fs.readFileSync(f, "utf8"); const n = s.split(from).length - 1;
+    if (n !== 1) { console.error("mutation needle count " + n + ": " + from.slice(0, 60)); process.exit(3); }
+    fs.writeFileSync(f, s.replace(from, () => to));
+  ' "$TREE" "$file" "$7" "$8" || bad "NP harness: second mutation failed in $file"
+  mut="$($fn)"; unmtree26
+  [[ "$mut" != "$want" ]] && ok "$name RED [mutant, both lookups]: with both production changes the outcome flips ('$want' -> '$mut')" || bad "$name RED [mutant]: the guard is dead, the mutant still gives '$mut'"
 }
 
 # ---------- NP1: never asked / headless (FR-012) ----------
@@ -249,7 +266,7 @@ caseAQ7() {
   if [[ "$got" == *case-sensitive ]]; then assert_eq "AQ7b P26 on a case-sensitive disk is no directory: usage error" "$got" "2/case-sensitive"
   else
     assert_eq "AQ7b P26 and p26 are one directory (case-insensitive disk): the second question is refused" "$got" "1/already_asked_this_scope"
-    # no RED mutant for the canonical name alone: the device + inode lookup (AQ7 RED) catches the same directory independently; the two are one defence in depth
+    redproof26b "AQ7b" scen_aq7_case "1/already_asked_this_scope" xprov-consent-asked.cjs "const canon = names.includes(ph.phase) ? ph.phase : (like.length === 1 ? like[0] : null);" "const canon = ph.phase;" "|| Object.values(store.asked).find(sameDir);" "|| undefined;"
   fi
 }
 
@@ -277,7 +294,16 @@ scen_aq3() {
   cli26 revoke >/dev/null; local state; sub26 permit-check; state="$(json_get "$G_OUT" "j.state")"
   cli26 question --kind consent --phase p26; echo "$state/$G_RC/$(json_get "$G_OUT" "j.reason")"
 }
-scen_aq3b() { prep26; cli26 question --kind consent --phase p26 >/dev/null; cli26 question --kind classification --phase p26 --ludwig-record "$LUD26" >/dev/null; echo "$G_RC"; }
+scen_aq3b() { prep26; cli26 question --kind consent --phase p26 >/dev/null; ask26 consent; ans26 consent yes; cli26 question --kind classification --phase p26 --ludwig-record "$LUD26" >/dev/null; echo "$G_RC"; }
+# W5-6: classification needs the consent yes of the phase; an owner No (or no answer) refuses it
+scen_aq8() { prep26; cli26 question --kind consent --phase p26 >/dev/null; ask26 consent; ans26 consent "${1:-no}"; cli26 question --kind classification --phase p26 --ludwig-record "$LUD26"; echo "$G_RC/$(json_get "$G_OUT" "j.reason")"; }
+scen_aq8_noconsent() { prep26; cli26 question --kind classification --phase p26 --ludwig-record "$LUD26"; echo "$G_RC/$(json_get "$G_OUT" "j.reason")"; }
+caseAQ8() {
+  assert_eq "AQ8 consent No: the classification question of the phase is refused, no question text" "$(scen_aq8 no)" "1/classification_needs_consent_yes"
+  assert_eq "AQ8 consent never asked: refused too" "$(scen_aq8_noconsent)" "1/classification_needs_consent_yes"
+  assert_eq "AQ8 consent yes: the classification question is allowed" "$(scen_aq8 yes)" "0/undefined"
+  redproof26 "AQ8" scen_aq8 "1/classification_needs_consent_yes" xprov-consent-asked.cjs "if (o.kind === 'classification' && !consentYes(store, o.key, o.scope.dev, o.scope.ino, o.now)) return NEEDS_CONSENT_YES();" ""
+}
 scen_aq3c() { prep26; cli26 question --kind consent --phase p26 >/dev/null; make_phase p26; git -C "$PHASE_REPO" remote add origin "$ORG26"; cli26 question --kind consent --phase p26; echo "$G_RC"; }
 scen_aq4() { prep26; cli26 question --kind consent --phase p26 >/dev/null; local first="$G_OUT"; ask26 consent; cli26 question --kind consent --phase p26; [[ "$G_OUT" == "$first" ]] && echo "$G_RC/same" || echo "$G_RC/other"; }
 
@@ -350,7 +376,7 @@ caseAQ6() {
 
 caseNP1; caseNP2; caseNP3; caseNP4; caseNP5
 caseNP6; redproof26 "NP6" scen_np6 "named" xprov-gate-nopermit.cjs "(state === STATES.ABSENT ? NOTICE :" "(true ? NOTICE :"
-caseAQ1; caseAQ2; caseAQ3; caseAQ4; caseAQ5; caseAQ6; caseAQ7
+caseAQ1; caseAQ2; caseAQ3; caseAQ4; caseAQ5; caseAQ6; caseAQ7; caseAQ8
 export HOME="$SAVED_HOME_26"
 if [[ "$SAVED_VAULT_26" == "__unset__" ]]; then unset A1_VAULT_ROOT; else export A1_VAULT_ROOT="$SAVED_VAULT_26"; fi
 rm -rf "$TMP26"

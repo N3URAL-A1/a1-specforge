@@ -54,6 +54,9 @@ const CONSENT_HELP = `    consent question|ensure|record|revoke  --kind consent|
                   never overwritten. A new phase may ask once. A refusal means: no
                   question, Reinhard-only. Waiver and allowlist questions are not
                   covered (their targets change by design).
+                  A classification question is put only after an owner yes to the
+                  consent question of the same phase (reason
+                  classification_needs_consent_yes otherwise, no question text).
                   The hook enforces the same ledger: the canonical consent or
                   classification AskUserQuestion is let through only after \`consent
                   question\` recorded it (else deny consent_not_asked); one entry opens
