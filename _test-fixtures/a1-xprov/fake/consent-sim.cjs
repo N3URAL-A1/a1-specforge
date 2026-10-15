@@ -139,7 +139,7 @@ if (a.cmd === 'ask') {
   AL.separateCommitProblem = () => null; AL.scopeTreeProblem = () => null; AL.ownerProblem = () => null;
   const orig = AU.appendAudit;
   AU.appendAudit = (o) => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, a.ms); return orig(o); };
-  const r = AP.approve(a.root, { readTypedLine: () => '1', matchesAt: () => ({ ok: true, matches: [] }) });
+  const r = AP.approve(a.root, { ...(a.noguard ? {} : { guardRefusal: () => null }), readTypedLine: () => '1', matchesAt: () => ({ ok: true, matches: [] }) });
   out({ ok: r.code === 0, code: r.code, sha: C.sha256(blob) });
 } else if (a.cmd === 'term-revoke') {
   // the body of the TERMINAL allowlist revoke (library call; the TTY guard lives in its CLI wrapper)

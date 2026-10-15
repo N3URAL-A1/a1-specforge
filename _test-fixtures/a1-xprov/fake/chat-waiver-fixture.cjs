@@ -76,6 +76,17 @@ else if (a.cmd === 'rewrite') {
   const i = rec.response.findings.findIndex((f) => f.severity === 'high');
   rec.response.findings[i] = { ...rec.response.findings[i], evidence: a.title };
   fs.writeFileSync(p, `${JSON.stringify(rec, null, 2)}\n`);
+  // the kept bucket of a1-findings.json carries the same title (what the normalizer wrote: "<id>: <first sentence>", one line, 120 chars)
+  const t = String(a.title).replace(/\s+/g, ' ').trim();
+  const m = t.match(/^(.*?[.!?])(\s|$)/);
+  const title = `${rec.response.findings[i].id}: ${(m ? m[1] : t).trim()}`.replace(/[\r\n\t]+/g, ' ').slice(0, 120);
+  const fp = path.join(artifacts, `claudex-${a.run}`, 'a1-findings.json');
+  const doc = read(fp);
+  const k = doc.blocker.findIndex((f) => f.id === rec.response.findings[i].id);
+  doc.blocker[k] = { ...doc.blocker[k], title };
+  fs.writeFileSync(fp, `${JSON.stringify(doc, null, 2)}\n`);
+  const idx = read(indexPath);
+  fs.writeFileSync(indexPath, `${JSON.stringify(idx.map((r) => (runName(r) === a.run ? { ...r, findings_sha256: sha(fs.readFileSync(fp)) } : r)), null, 2)}\n`);
 } else if (a.cmd === 'forge-findings') {
   // a1-findings.json with another title AND a matching findings_sha256 in the index row: the question must still show the run record's text
   const p = path.join(artifacts, `claudex-${a.run}`, 'a1-findings.json');
@@ -92,6 +103,11 @@ else if (a.cmd === 'rewrite') {
   const parts = a.path.split('.'); const last = parts.pop();
   parts.reduce((o, k) => o[k], doc)[last] = a.value;
   fs.writeFileSync(p, `${JSON.stringify(doc, null, 2)}\n`);
+} else if (a.cmd === 'rehash-findings') {
+  // after an edit of a run's a1-findings.json: the index row's findings_sha256 names the new bytes (the file stays "verified")
+  const p = path.join(artifacts, `claudex-${a.run}`, 'a1-findings.json');
+  const idx = read(indexPath);
+  fs.writeFileSync(indexPath, `${JSON.stringify(idx.map((r) => (runName(r) === a.run ? { ...r, findings_sha256: sha(fs.readFileSync(p)) } : r)), null, 2)}\n`);
 } else if (a.cmd === 'append-bytes') {
   // appends a newline to a run dir file: the bytes change, the index row's findings_sha256 does not
   fs.appendFileSync(path.join(artifacts, `claudex-${a.run}`, a.file), '\n');

@@ -79,7 +79,7 @@ function buildText(ctx) {
     'Ein Waiver ist kein Bestanden. Er gilt nur für genau diese Ziele und nur, solange PLAN.md und Stand unverändert sind.',
     ...w.listed.flatMap((t, i) => targetLines(t, i, w.listed.length)),
     ...(w.more > 0 ? [`Weitere Ziele (${w.more}) sind hier nicht aufgeführt; das Ja deckt sie nicht ab.`] : []),
-    ...(w.skipped.length ? [`Nicht per Chat waivbar (kein geprüfter Head/Base): ${w.skipped.map((s) => `${s.gate} Wave ${s.wave}`).join(', ')}.`] : []),
+    ...(w.skipped.length ? [`Nicht per Chat waivbar: ${w.skipped.map((s) => `${s.gate}${s.wave === null ? '' : ` Wave ${s.wave}`} (${Q.clean(s.why)})`).join(', ')}.`] : []),
     'Das Ja deckt genau diese Ziele ab. Ein Ziel, das sich danach ändert (neue PLAN.md, neuer Head), und eine Prüfung, die danach fehlschlägt, brauchen eine neue Frage.',
     'Die Freigabe zum Senden an Codex (xprov-Freigabe) ist davon unabhängig und ersetzt keinen Waiver.',
     'Ein Nein oder keine Antwort heisst: nichts wird geschrieben, die Ziele bleiben fehlgeschlagen.',

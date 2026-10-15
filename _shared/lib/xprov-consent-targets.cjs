@@ -19,8 +19,9 @@
 //   - the owner's waiver store holds no waiver for exactly that key.
 // A wave without a reviewed head and base (the inspection never completed: blocked, runner_failed) cannot be keyed by the waiver
 // store; it is reported in `skipped` and left to the terminal `xprov waive`.
-// Open BLOCKER and MAJOR titles are read from the run record's response (never from the row); a fail-with-findings row whose
-// a1-findings.json does not match its findings_sha256 lists no finding text (`findings: null`, the question prints a fixed line).
+// Open BLOCKER and MAJOR titles are the ones the verified a1-findings.json KEEPS (the quarantine hook already ran), confirmed by the
+// run record's response; quarantined finding text is never shown (SEC-7). Without a verified findings record (a fail/blocked row, or a
+// hash mismatch) `findings` is null and the question prints a fixed line. A fail/quarantined or fail/secret_in_output row is `skipped`.
 // A round number is shown only when that verified findings record names it.
 // Request-scoped: root, phase and the stores are read per call; no module state.
 // ---------------------------------------------------------------------------
@@ -40,6 +41,8 @@ const WANT_MODE = Object.freeze({ [X.GATE_IDS.PLAN_REVIEW]: 'review', [X.GATE_ID
 const SEVERITY_BUCKETS = Object.freeze(['blocker', 'major']);
 const FINDINGS_PER_BUCKET_MAX = 50; // read bound; the question lists fewer
 const ID_MAX_CHARS = 40;
+const TITLE_DIFFERS = 'Titel nicht prüfbar'; // the findings record and the run record disagree on this finding's title
+const NOT_DERIVABLE = Object.freeze(['quarantined', 'secret_in_output']); // fail reasons the normalizer sets after classify(): the run record alone cannot prove them
 
 const refuse = (reason, detail) => Object.freeze({ ok: false, reason, detail });
 const str = (v) => (typeof v === 'string' ? v : '');
@@ -63,10 +66,23 @@ function findingsDoc(row, root) {
   try { const doc = JSON.parse(bytes.toString('utf8')); return C.isPlainObject(doc) ? doc : null; } catch (_e) { return null; }
 }
 
-/** The open BLOCKER / MAJOR findings the RUN RECORD's response holds (the normalizer's own mapping): [{ severity, id, title }]. */
-function openFindings(derived) {
-  return Object.freeze(SEVERITY_BUCKETS.flatMap((bucket) => (Array.isArray(derived.findings) ? derived.findings : []).filter((f) => f.bucket === bucket).slice(0, FINDINGS_PER_BUCKET_MAX)
-    .map((f) => ({ severity: bucket, id: C.clip(str(f.id), ID_MAX_CHARS), title: str(f.title) }))));
+/**
+ * The open BLOCKER / MAJOR findings to show (Samuel W3 SEC-7): ONLY ids the verified findings record keeps in its blocker[] / major[]
+ * buckets, i.e. what the normalizer's quarantine hook let through; the run record's response (which still holds the quarantined text)
+ * only confirms that the id exists in that bucket. An id listed in doc.quarantined is never shown, and neither is its text. A title that
+ * differs between the two is replaced by a fixed note. Returns [{ severity, id, title }].
+ */
+function shownFindings(doc, derived) {
+  const held = new Set((Array.isArray(doc.quarantined) ? doc.quarantined : []).filter(C.isPlainObject).map((q) => str(q.id)));
+  const confirmed = new Map((Array.isArray(derived.findings) ? derived.findings : []).map((f) => [`${f.bucket}|${f.id}`, f]));
+  return Object.freeze(SEVERITY_BUCKETS.flatMap((bucket) => (Array.isArray(doc[bucket]) ? doc[bucket] : []).filter(C.isPlainObject).slice(0, FINDINGS_PER_BUCKET_MAX)
+    .map((k) => {
+      const id = str(k.id);
+      const d = confirmed.get(`${bucket}|${id}`);
+      if (d === undefined || held.has(id)) return null;
+      const title = str(k.title) === str(d.title) ? str(k.title) : TITLE_DIFFERS;
+      return { severity: bucket, id: C.clip(id, ID_MAX_CHARS), title: title.startsWith(`${id}: `) ? title.slice(id.length + 2) : title }; // mapFinding titles start with "<id>: "
+    }).filter((f) => f !== null)));
 }
 
 const laneOf = (v) => (v === undefined ? null : v);
@@ -109,6 +125,8 @@ function targetOf(scopeRows, base, root, store) {
   if (real.length === 0) return cands.length === 0 ? null : { skipped: cands[cands.length - 1].skip };
   const { e: row, rec, doc, wave, lane } = real[real.length - 1];
   if (lane !== null && !C.LANE_RE.test(String(lane))) return null;
+  // MINOR-A: a genuine fail/quarantined or fail/secret_in_output row (FR-031) cannot be derived from the run record: this target is left to the terminal waive.
+  if (row.verdict === X.VERDICTS.FAIL && NOT_DERIVABLE.includes(row.reason)) return { skipped: { gate: row.gate, wave, lane, why: row.reason } };
   // SEC-3: verdict and reason come from the run record by the normalizer's own total mapping; a row that says otherwise is a lie.
   const derived = classify(rec, base.planSha);
   if (derived.verdict !== row.verdict || nullable(derived.reason) !== nullable(row.reason)) {
@@ -121,11 +139,10 @@ function targetOf(scopeRows, base, root, store) {
   const key = { repo: base.repo, phase: base.phase, gate: row.gate, plan_sha256: base.planSha, wave, lane, head: hb.head, base: hb.base };
   if (wave !== null && hb.head === null) return { skipped: { gate: row.gate, wave, lane, why: 'no reviewed head and base' } };
   if (covered(store, key)) return null;
-  const unverified = row.verdict === X.VERDICTS.FAIL_WITH_FINDINGS && doc === null; // the findings record does not match its hash: no finding text is shown
   return { target: Object.freeze({
     key: Object.freeze(key), verdict: derived.verdict, reason: typeof derived.reason === 'string' && X.REASON_LIST.includes(derived.reason) ? derived.reason : null,
     round: doc !== null && Number.isInteger(row.round) ? row.round : null,
-    findings: unverified ? null : openFindings(derived), quarantined: doc !== null && Array.isArray(doc.quarantined) ? doc.quarantined.length : 0,
+    findings: doc === null ? null : shownFindings(doc, derived), quarantined: doc !== null && Array.isArray(doc.quarantined) ? doc.quarantined.length : 0,
   }) };
 }
 

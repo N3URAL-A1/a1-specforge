@@ -398,8 +398,10 @@ function approveListing(doc, rows) {
   return { lines: lines.map(safeText), count, prompt };
 }
 
-/** `seams` (tests only, spec 016 SEC-5): { readTypedLine, matchesAt } stand in for the TTY line and the gitleaks snapshot. */
+/** `seams` (tests only, spec 016 SEC-5): { guardRefusal, readTypedLine, matchesAt } stand in for the TTY guard, the TTY line and the gitleaks snapshot. */
 function approve(root, seams = {}) {
+  const refusal = (seams.guardRefusal || guardRefusal)(); // the guard runs here too: an in-process caller of the export gets no free pass
+  if (refusal) return { code: EXIT_REFUSED, msg: `${refusal}. Run it yourself in a separate terminal (not through an agent and not via the ! prefix). Nothing written.` };
   const typedLine = seams.readTypedLine || readTypedLine;
   const store = currentStore();
   if (store.refusal) return { code: X.EXIT_FAIL, msg: store.refusal };
