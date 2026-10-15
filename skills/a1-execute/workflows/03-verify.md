@@ -28,6 +28,13 @@ echo "xprov wave-status exit=$RC"
   inspected and none is lacking. Record `{id: wave-inspect-xprov, verdict:
   not_applicable, caught: false}` in the retro with the issue tag
   `xprov_not_applicable`; it is not a pass.
+  **Spec 016 accepted verdicts.** This step never asks the owner anything
+  (the consent question belongs to `02-execute.md` 2b-x.0). The `not_applicable`
+  list is also non-empty for a repository with no permit (`permit_state: absent`,
+  `origin_changed` or `unbound_legacy`, reason `external_review_not_permitted`):
+  exit 0, Reinhard-only, retro `{id: wave-inspect-xprov, verdict: not_applicable, caught: false}`
+  with the issue tag `xprov_not_applicable` (see `issue_classes` below). A mismatch
+  or broken state (`*_mismatch`, `audit_broken`, `invalid`) stays exit 1.
 - **Exit 1** → the stdout JSON lists the lacking waves. For each: go back to
   `02-execute.md` step 2b-x for that wave (re-run the inspection with that
   wave's `--base`), or the user waives it — the human runs

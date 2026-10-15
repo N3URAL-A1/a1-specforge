@@ -33,6 +33,7 @@ const R = require('./xprov-consent-record.cjs');
 const L = require('./xprov-consent-ludwig.cjs');
 const W = require('./xprov-consent-waive.cjs');
 const A = require('./xprov-consent-allowlist.cjs');
+const AK = require('./xprov-consent-asked.cjs');
 
 const ECHO_MAX = 80;
 const SCOPED = Object.freeze({ waiver: W, allowlist: A }); // kinds whose question is built from the phase / scan state (wave 3)
@@ -42,7 +43,7 @@ const shown = (v) => JSON.stringify(String(v).slice(0, ECHO_MAX));
 
 const SCOPE_FLAGS = { phase: 'string', 'work-path': 'string', scan: 'string' };
 const FLAGS = Object.freeze({
-  question: { kind: 'string', repo: 'string', 'ludwig-record': 'string', ...SCOPE_FLAGS },
+  question: { kind: 'string', repo: 'string', 'ludwig-record': 'string', run: 'string', ...SCOPE_FLAGS },
   ensure: { kind: 'string', repo: 'string', 'ludwig-record': 'string', ...SCOPE_FLAGS },
   record: { kind: 'string', repo: 'string', 'ludwig-record': 'string' },
   revoke: { repo: 'string' },
@@ -54,6 +55,9 @@ const FLAGS = Object.freeze({
 function scopeFlagProblem(sub, flags) {
   const kind = sub === 'waive' ? 'waiver' : (sub === 'allowlist' ? 'allowlist' : flags.kind);
   const has = (n) => flags[n] !== undefined;
+  const asksOnce = sub === 'question' && AK.ASK_KINDS.includes(kind); // spec 016 wave 5: --phase <name> | --run <id> scope the one ask
+  if (has('run') && !asksOnce) return '--run belongs to `question --kind consent|classification`';
+  if (asksOnce) return has('work-path') || has('scan') ? '--work-path and --scan belong to --kind waiver|allowlist' : null;
   if (kind === 'waiver') return has('phase') === has('work-path') ? 'give exactly one of --phase <name> or --work-path <worktree>' : (has('scan') ? '--scan belongs to --kind allowlist' : null);
   if (kind === 'allowlist') return !has('scan') ? '--scan <snap-basename> is required' : (has('phase') || has('work-path') ? '--phase and --work-path belong to --kind waiver' : null);
   return has('phase') || has('work-path') || has('scan') ? '--phase, --work-path and --scan belong to --kind waiver|allowlist' : null;
@@ -114,8 +118,27 @@ function cmdQuestion(args) {
   const missing = a.flags.kind === 'classification' ? L.verifyInVault(a.flags['ludwig-record']) : null; // never show the owner a path that does not exist
   if (missing) { process.stderr.write(`consent: ${missing.detail}\n`); return C.emitJson({ ok: false, reason: missing.reason, detail: missing.detail }, xprov.EXIT_FAIL, false); }
   const q = Q.buildQuestion(a.flags.kind, f.ctx);
+  const ask = claimOnce(a, f.key, q.hash);
+  if (ask !== null) return ask.printed ? null : usage(`question: ${ask.message}`);
   process.stderr.write(`consent question: put exactly this question with AskUserQuestion (header ${q.header}, labels ${q.labels.map((l) => JSON.stringify(l)).join(' / ')}); the hash is ${q.hash.slice(0, 12)}…\n`);
   return C.emitJson({ ok: true, repo: f.key, kind: q.kind, header: q.header, question: q.question, labels: q.labels, options: q.options, multiSelect: q.multiSelect, hash: q.hash, classification: q.classification }, xprov.EXIT_PASS, false);
+}
+
+/**
+ * "Ask once per phase" (spec 016 FR-002): records the ask of a consent / classification question or refuses it. null when the question may be printed;
+ * { printed: true } after a refusal printed as JSON (exit 1: the agent goes on Reinhard-only); { message } for a bad scope flag (exit 2).
+ */
+function claimOnce(a, key, hash) {
+  let scope;
+  try { scope = AK.scopeOf(a.root, a.flags); } catch (e) {
+    if (e && e.code === 'A1_INPUT') return { message: e.message };
+    throw e;
+  }
+  const r = AK.claimAsk({ key, kind: a.flags.kind, scope, hash });
+  if (r.ok) return null;
+  process.stderr.write(`consent question: ${r.detail}\n`);
+  C.emitJson({ ok: false, reason: r.reason, detail: r.detail }, xprov.EXIT_FAIL, false);
+  return { printed: true };
 }
 
 function questionScoped(a) {

@@ -47,6 +47,7 @@ const STATE = Object.freeze({ OK: 'ok', MISSING: 'missing', BROKEN: 'broken' });
 const ACTION = Object.freeze({
   PERMIT: 'permit', PERMIT_DENY: 'permit-deny', WAIVE: 'waive', ALLOWLIST_APPROVE: 'allowlist-approve', ALLOWLIST_REVOKE: 'allowlist-revoke',
   CONSENT: 'consent', CONSENT_DENY: 'consent-deny', CONSENT_REVOKE: 'consent-revoke', CONSENT_WAIVE: 'consent-waive', CONSENT_ALLOWLIST: 'consent-allowlist', CONSENT_CLASSIFY: 'consent-classify',
+  CONSENT_ASKED: 'consent-asked', // spec 016 wave 5: the ask-once-per-scope record; not a grant
 });
 // A revoke supersedes every earlier grant line of the repository: a store entry restored from a backup after `consent revoke`
 // names a superseded line and shows as `broken` (security review 2026-10-14, MAJOR-1).

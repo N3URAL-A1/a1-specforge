@@ -110,7 +110,7 @@ caseR2() {
   prep6; rm -f "$PHASE_REPO/.a1/xprov.json" "$HOME/.a1-xprov/permits.json" # spec 014: file AND owner entry gone
   gate6 --gate "$GATE_PLAN"
   assert_rc "R2b gate exits 1 without .a1/xprov.json" 1 "$G_RC"
-  assert_json "R2b step permit-check, reason external_review_not_permitted" "$G_OUT" "[j.step, j.reason].join('/')" "permit-check/external_review_not_permitted"
+  assert_json "R2b step permit-check, reason external_review_not_permitted, verdict not_applicable (spec 016 FR-012; was fail before wave 5)" "$G_OUT" "[j.step, j.reason, j.verdict].join('/')" "permit-check/external_review_not_permitted/not_applicable"
   assert_eq "R2b still no snapshot" "$(snapshots_left)" "0"
   [[ ! -e "$PHASE_DIR/PLAN-REVIEW-LOG.md" && ! -e "$PHASE_DIR/xreview" ]] && ok "R2b no PLAN-REVIEW-LOG.md and no xreview/ in an unpermitted repo" || bad "R2b a1 wrote into an unpermitted repo: $(ls "$PHASE_DIR")"
   # usage error out of preflight (hostile A1_XPROV_CODEX_HOME) → exit 2, nothing written.

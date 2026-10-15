@@ -283,6 +283,14 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   (reason external_review_denied, exit 1, one log entry and one
                   xprov_not_applicable observation, no run); on an applies_to:
                   all row it fails external_review_not_permitted.
+                  Spec 016 FR-012: a repository with NO permit (permit state absent,
+                  origin_changed or unbound_legacy) on an applies_to: permitted-repos
+                  row also gets not_applicable, reason external_review_not_permitted,
+                  exit 1, and nothing else: no run, no snapshot, no log entry, no
+                  observation, no owner-store byte (the skill adds the retro tag). A
+                  mismatch (denial next to a permit, permit without file, unusable
+                  store), a broken audit chain, a corrupt .a1/xprov.json and an
+                  owner-home mismatch stay a fail.
     load-check --phase <name> [--expect-sha <sha256>]
                   (xprov-gate.cjs, wave 6) newest plan-review-xprov pass entry
                   — counted only when its run dir in a1's artifacts holds a
@@ -294,12 +302,15 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   now → plan_changed (a1-execute runs it before every wave).
                   A denied repository (applies_to: permitted-repos) → exit 0,
                   accepted: not_applicable (read from the permit state at check
-                  time, never from an index row).
+                  time, never from an index row). Spec 016: the same for a
+                  repository with no permit (permit_state absent, origin_changed,
+                  unbound_legacy).
     wave-status --phase <name> [--waves 0,1,2 [--lane <id>]] [--work-path <dir>]
                 [--lane-work-path <lane>=<dir>[,…]]
                   (xprov-gate.cjs, wave 6) waves are numbered from 0. A denied
                   repository (applies_to: permitted-repos) → exit 0 with every
-                  completed wave under not_applicable, no chain computed.
+                  completed wave under not_applicable, no chain computed. Spec 016:
+                  the same for a repository with no permit.
                   Otherwise every completed wave needs a
                   wave-inspect-xprov pass or a store waiver, both bound to this
                   PLAN.md's sha and chained per lane: base an ancestor of head,

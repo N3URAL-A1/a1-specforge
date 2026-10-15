@@ -65,6 +65,7 @@ const { preflight, resolveTool } = require('./xprov-preflight.cjs');
 const { snapshot, cleanupSnapshot, INPUTS_SUFFIX, INPUT_FILES } = require('./xprov-snapshot.cjs');
 const { observe, MODEL_RE } = require('./xprov-observe.cjs');
 const WV = require('./xprov-waivers.cjs');
+const NP = require('./xprov-gate-nopermit.cjs');
 const RR = require('./xprov-runrecord.cjs');
 const { guardRefusal, readTypedLine, writeGuardedStore } = require('./xprov-approve.cjs');
 const { appendXreviewNote, PRIOR_FINDINGS_FILE } = require('./xprov-normalize.cjs');
@@ -83,6 +84,7 @@ const RETRO_ISSUE_NOT_APPLICABLE = 'xprov_not_applicable';
 const APPLIES_TO = Object.freeze({ ALL: 'all', PERMITTED_REPOS: 'permitted-repos' });
 const NOT_APPLICABLE_ACCEPTED = 'not_applicable';
 const NOT_APPLICABLE_NOTICE = 'not_applicable — the owner recorded that no external review applies to this repository; no code leaves, the pipeline continues';
+const noticeOf = (state) => (NP.isNoPermitState(state) ? NP.NOTICE : NOT_APPLICABLE_NOTICE); // spec 016 FR-012: no permit has its own one-line notice
 const EXTERNAL_AGENT = 'xprov-codex';
 const SUB_MAX_BUFFER = 64 * 1024 * 1024;
 const BASE_HEX_RE = /^[0-9a-f]{7,40}$/i; // same rule as `run`: a resolved sha, never a symbolic ref
@@ -132,12 +134,13 @@ function appliesToFor(gateId) {
 }
 
 /** The ONE predicate for gate, load-check and wave-status: the permit result and whether this gate is
- * not applicable — the state is `denied` (file and the owner's store agree) AND the row applies to permitted repos only. */
+ * not applicable — the state is `denied` (file and the owner's store agree) or "no permit" (spec 016 FR-012, xprov-gate-nopermit.cjs)
+ * AND the row applies to permitted repos only. */
 function permitFor(root, gateId) {
   const permit = permitCheck({ repoRoot: root });
-  return Object.freeze({ permit, notApplicable: permit.state === PERMIT_STATES.DENIED && appliesToFor(gateId) === APPLIES_TO.PERMITTED_REPOS });
+  const decided = permit.state === PERMIT_STATES.DENIED || NP.isNoPermit(permit);
+  return Object.freeze({ permit, notApplicable: decided && appliesToFor(gateId) === APPLIES_TO.PERMITTED_REPOS });
 }
-const notApplicableFor = (root, gateId) => permitFor(root, gateId).notApplicable;
 
 function enforcementFor(gateId) {
   const text = readRegistryText();
@@ -453,7 +456,7 @@ function gate(o) {
   // permission record gets no a1 write at all — no PLAN-REVIEW-LOG.md entry, no
   // xreview/ (Reinhard, PR review MAJOR 1; the W5 rule for every xprov writer).
   const { permit, notApplicable: na } = permitFor(ctx.root, ctx.gate);
-  if (na) return recordNotApplicable(ctx, base, permit);
+  if (na) return NP.isNoPermit(permit) ? NP.result(base, permit) : recordNotApplicable(ctx, base, permit);
   if (!permit.ok) {
     const everyRepo = permit.state === PERMIT_STATES.DENIED; // `denied` on an `applies_to: all` row still fails
     return fail('permit-check', everyRepo ? X.REASONS.external_review_not_permitted : permit.reason, everyRepo ? `external_review: denied, but ${ctx.gate} applies to every repository` : permit.detail, { permit_state: permit.state });
@@ -511,10 +514,11 @@ function loadCheck(o) {
   const moved = o.expectSha !== undefined && o.expectSha !== planSha;
   const movedDetail = `PLAN.md changed since Load: accepted ${o.expectSha}, now ${planSha}`;
   // A denied repository is read at check time from the permit state, never from an index row (spec 012 FR-005).
-  if (notApplicableFor(ctx.root, gate)) {
+  const np = permitFor(ctx.root, gate);
+  if (np.notApplicable) {
     return Object.freeze({
       ok: !moved, gate, enforcement, phase: ctx.phase, plan_sha256: planSha, accepted: moved ? null : NOT_APPLICABLE_ACCEPTED,
-      matched_entry: null, matched_waiver: null, newest_pass: null, permit_state: PERMIT_STATES.DENIED,
+      matched_entry: null, matched_waiver: null, newest_pass: null, permit_state: np.permit.state,
       reason: moved ? X.REASONS.plan_changed : null, detail: moved ? movedDetail : null,
     });
   }
@@ -581,11 +585,12 @@ function waveStatus(o) {
   if (o.lane !== undefined && o.waves === undefined) throw inputError('--lane qualifies --waves');
   const completed = o.waves === undefined ? completedWavesFromStatus(ctx.phaseDir) : parseWavesFlag(o.waves, C.parseLane(o.lane));
   if (!completed.length) throw inputError(`no completed waves: no \`## Wave N\` heading in ${ctx.phaseDir}/STATUS*.md and no --waves given`);
-  if (notApplicableFor(ctx.root, gate)) {
+  const ws = permitFor(ctx.root, gate);
+  if (ws.notApplicable) {
     // No head/base chain is computed: nothing was reviewed, and nothing leaves (spec 012 FR-005).
     return Object.freeze({
       ok: true, gate, enforcement, phase: ctx.phase, completed_waves: [...new Set(completed.map((p) => p.wave))], completed_detail: completed,
-      lacking: [], lacking_detail: [], not_applicable: [...new Set(completed.map((p) => p.wave))], head: null, reason: null, permit_state: PERMIT_STATES.DENIED,
+      lacking: [], lacking_detail: [], not_applicable: [...new Set(completed.map((p) => p.wave))], head: null, reason: null, permit_state: ws.permit.state,
     });
   }
   const index = readIndex(ctx.indexPath);
@@ -730,7 +735,7 @@ function cmdXprovGate(args) {
     const r = gate({ phase: f.phase, gate: f.gate, wave: f.wave, lane: f.lane, base: f.base, workPath: f['work-path'], round: f.round, timeout: f.timeout, allowPlugins: f['allow-plugins'] });
     if (r.gitleaks === false) process.stderr.write(`${GITLEAKS_WARNING_LINE}\n`);
     process.stderr.write(`xprov gate ${r.gate} ${scopeOf(r.wave)} round ${r.round}: ${r.verdict}${r.reason ? ` (${r.reason} at ${r.step})` : ''} — enforcement ${r.enforcement}\n`);
-    if (r.verdict === X.VERDICT_NOT_APPLICABLE) process.stderr.write(`xprov gate: ${NOT_APPLICABLE_NOTICE}\n`);
+    if (r.verdict === X.VERDICT_NOT_APPLICABLE) process.stderr.write(`xprov gate: ${noticeOf(r.permit_state)}\n`);
     if (r.step === 'permit-check' && permitHint(r.permit_state)) process.stderr.write(`xprov gate: ${permitHint(r.permit_state)}\n`);
     if (r.allowlist_note) process.stderr.write(`xprov gate: allowlist not applied: ${r.allowlist_note}\n`);
     for (const x of r.allowlist_stale) process.stderr.write(`xprov gate: warning allowlist_stale: ${x.path} · ${x.pattern}\n`);
@@ -743,7 +748,7 @@ function cmdXprovLoadCheck(args) {
   return withFlags(args, { phase: 'str', 'expect-sha': 'str' }, 'load-check', (f) => {
     if (!f.phase) return usageExit('load-check requires --phase <name> [--expect-sha <sha256>]');
     const r = loadCheck({ phase: f.phase, expectSha: f['expect-sha'] });
-    process.stderr.write(r.ok ? `xprov load-check: ${r.accepted === NOT_APPLICABLE_ACCEPTED ? NOT_APPLICABLE_NOTICE : `PLAN.md matches ${r.accepted === 'waiver' ? `a store waiver for ${r.gate} (not a pass)` : `the newest ${r.gate} pass`}`}\n` : `xprov load-check: ${r.reason} — ${r.detail} (enforcement ${r.enforcement})\n`);
+    process.stderr.write(r.ok ? `xprov load-check: ${r.accepted === NOT_APPLICABLE_ACCEPTED ? noticeOf(r.permit_state) : `PLAN.md matches ${r.accepted === 'waiver' ? `a store waiver for ${r.gate} (not a pass)` : `the newest ${r.gate} pass`}`}\n` : `xprov load-check: ${r.reason} — ${r.detail} (enforcement ${r.enforcement})\n`);
     return finish(r, r.ok ? X.EXIT_PASS : X.EXIT_FAIL);
   });
 }
@@ -752,7 +757,7 @@ function cmdXprovWaveStatus(args) {
   return withFlags(args, { phase: 'str', waves: 'str', lane: 'str', 'work-path': 'str', 'lane-work-path': 'str' }, 'wave-status', (f) => {
     if (!f.phase) return usageExit('wave-status requires --phase <name> [--waves 1,2 [--lane <id>]] [--work-path <dir>] [--lane-work-path <lane>=<dir>[,…]]');
     const r = waveStatus({ phase: f.phase, waves: f.waves, lane: f.lane, workPath: f['work-path'], laneWorkPaths: f['lane-work-path'] });
-    process.stderr.write(r.ok ? `xprov wave-status: ${r.not_applicable ? `waves ${r.not_applicable.join(', ')}: ${NOT_APPLICABLE_NOTICE}` : `waves ${r.completed_waves.join(', ')} inspected or waived`}\n` : `xprov wave-status: waves lacking a ${r.gate} pass or waiver: ${r.lacking.join(', ')} (enforcement ${r.enforcement})\n`);
+    process.stderr.write(r.ok ? `xprov wave-status: ${r.not_applicable ? `waves ${r.not_applicable.join(', ')}: ${noticeOf(r.permit_state)}` : `waves ${r.completed_waves.join(', ')} inspected or waived`}\n` : `xprov wave-status: waves lacking a ${r.gate} pass or waiver: ${r.lacking.join(', ')} (enforcement ${r.enforcement})\n`);
     return finish(r, r.ok ? X.EXIT_PASS : X.EXIT_FAIL);
   });
 }

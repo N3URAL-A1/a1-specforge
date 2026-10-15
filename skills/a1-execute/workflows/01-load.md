@@ -68,6 +68,15 @@ place the check fails with that reason, which is the correct answer.)
   `ℹ Plan review not applicable — the owner denied external review for this repository; continuing.`
   and record `{id: plan-review-xprov, verdict: not_applicable, caught: false}`
   in the retro (issue tag `xprov_not_applicable`). It is not a pass.
+  **Spec 016 accepted verdicts.** Step 0c never asks the owner anything: the
+  consent question belongs to a1-plan `04b-xprov-review.md` Step 1.0 and
+  `02-execute.md` 2b-x.0. `accepted: "not_applicable"` is exit 0 for a denied
+  repository (`permit_state: denied`) and for a repository with no permit
+  (`permit_state: absent`, `origin_changed` or `unbound_legacy`): **continue**,
+  print `ℹ Plan review not applicable — no Codex permit for this repository; Reinhard-only, continuing.`
+  (denied: the line above), and record `{id: plan-review-xprov, verdict: not_applicable, caught: false}`
+  with the issue tag `xprov_not_applicable`. A mismatch or broken state
+  (`*_mismatch`, `audit_broken`, `invalid`) stays exit 1.
 - **Exit 1, `reason: plan_review_missing`** → read `enforcement` from the
   stdout JSON (it echoes the `plan-review-xprov` row of
   `_shared/gates-registry.md`; the workflow applies it, the CLI never does):

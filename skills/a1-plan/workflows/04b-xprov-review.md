@@ -16,15 +16,73 @@ driver never does (the flip changes one registry cell and no code).
 - `.a1/phases/<phase_name>/AUDIT.md` exists and its verdict is **PASS**. A FAIL
   audit never reaches this phase — `04-audit.md` routes it back to Phase 3.
 - The project permits external review: `.a1/xprov.json` with
-  `external_review: allowed` (FR-021). The driver checks this first and stops
-  with `reason: external_review_not_permitted` otherwise — for customer
-  repositories that decision belongs to a1-ludwig-legal, not to this skill.
+  `external_review: allowed` plus the owner's permit entry (FR-021). The driver
+  checks this first. A repository with no permit is **not** a failure (spec 016
+  FR-012): the driver returns `not_applicable` with
+  `reason: external_review_not_permitted` and the pipeline continues with the
+  Reinhard review only — Step 1.0 asks the owner once per phase. For customer
+  repositories the permit decision belongs to a1-ludwig-legal, not to this skill.
 
 ## Inputs
 
 - `.a1/phases/<phase_name>/PLAN.md` — the reviewed artifact (sha256 recorded
   in `xreview/index.json`; a1-execute's Load check compares against it).
 - `<repo>` — the a1-specforge checkout that owns `_shared/a1-tools.cjs`.
+
+## Step 1.0 — Consent and placement (spec 016)
+
+The owner's chat consent is the permit (spec 016 FR-002). It is asked at most
+once per phase, only here (never in a1-execute `01-load.md` Step 0c or
+`03-verify.md`), and only when a question can reach the owner. Order (plan
+decision D-1): permit-check, then the gate, then the question, then the gate.
+
+1. **Permit state.** Capture it, then read `state`:
+   ```bash
+   XREVIEW_DIR=".a1/phases/<phase_name>/xreview"
+   mkdir -p "$XREVIEW_DIR"
+   node <repo>/_shared/a1-tools.cjs xprov permit-check > "$XREVIEW_DIR/permit-check.last-run.json"; RC=$?
+   echo "xprov permit-check exit=$RC"
+   ```
+   `allowed`, `denied` (the owner said No: never ask again, `xprov consent
+   revoke` is the owner's call) and every mismatch or broken state (`*_mismatch`,
+   `audit_broken`, `invalid`, `home_mismatch`): no question. Go to Step 1 and
+   route what the gate says. Only `absent`, `origin_changed` and
+   `unbound_legacy` (no permit) lead on.
+2. **Run the gate** (Step 1). A no-permit repository returns `not_applicable`
+   with `reason: external_review_not_permitted` and zero bytes left the machine.
+3. **Ask once.** Only if this session can ask the owner (the AskUserQuestion tool
+   exists; this is not a headless run, a CI run or a subagent) and this phase has
+   not asked yet, print the canonical question — never write it yourself:
+   ```bash
+   node <repo>/_shared/a1-tools.cjs xprov consent question --kind consent --phase <phase_name> > "$XREVIEW_DIR/consent-question.json"; RC=$?
+   echo "xprov consent question exit=$RC"
+   ```
+   Exit 0: put exactly the printed `header`, `question` and `labels` (No label
+   first, one question, no `answers` field) with AskUserQuestion. The plugin hook
+   denies any other text. If the printed `classification` is `customer`, do not
+   ask: a1-ludwig-legal decides (rule `xprov-codex.md` step 4), continue Reinhard-only.
+   Exit 1 (`already_asked_this_scope`, `asked_store_unusable`, `asked_store_full`
+   …): do not ask, do not retry, do not run `consent revoke` to ask again —
+   the code refuses a second question in this phase. Continue Reinhard-only.
+4. **Record the answer** right after AskUserQuestion returned:
+   ```bash
+   node <repo>/_shared/a1-tools.cjs xprov consent record --kind consent > "$XREVIEW_DIR/consent-record.last-run.json"; RC=$?
+   echo "xprov consent record exit=$RC"
+   ```
+   Exit 0 with `decision: yes`: run Step 1 once more; the repository now has a
+   permit. Exit 0 with `decision: no`: the owner denied it (an owner-chat
+   denial); Reinhard-only. Exit 1 (no answer reached the hook, a free-text
+   answer, an unanswered question): nothing is recorded and nothing goes to
+   Codex; Reinhard-only. An unanswered question is not repeated in this phase.
+5. **Headless or no AskUserQuestion** (CI, subagent, `claude -p`): no question,
+   no consent. Print one line — `ℹ No Codex permit and no chat to ask: Reinhard-only review.` —
+   and continue with the `not_applicable` row of Step 2.
+6. Never run a terminal-only owner command (`xprov permit`, `xprov waive`,
+   `xprov allowlist approve`) and never write `.a1/xprov.json` or
+   `~/.a1-xprov/` yourself; the owner answers in chat, the commands above record it.
+
+Placement (which plans skip the cross-provider review altogether) joins this
+block in a later wave of spec 016.
 
 ## Step 1 — Run the gate (round 1)
 
@@ -59,11 +117,13 @@ The driver has already appended verdict, XREVIEW.md path and result path to
 |---|---|---|
 | `pass` | any | Inform user: **"Plan ready, cross-provider approved."** Show the PLAN.md summary (goal, wave count, success criteria) and suggest: "Run `a1-execute` to start implementation." |
 | `fail-with-findings` | any | REVISE — go to Step 3 (one revision round, then Step 4). |
-| `not_applicable` (exit 1, `reason: external_review_denied`) | any | The owner recorded that no external review applies to this repository (`xprov permit --deny`, confirmed by the owner's store). **Continue — do not halt.** Print the one-line notice below and treat the plan as ready; no Codex call happened. The retro records `verdict: not_applicable` and the issue tag `xprov_not_applicable`. A repository that is merely *not permitted* (no record, or a record the owner's store does not confirm — `external_review_not_permitted`, `external_review_denial_mismatch`) is a `fail`, not this row. |
+| `not_applicable` (exit 1, `reason: external_review_denied`) | any | The owner recorded that no external review applies to this repository (a chat No or `xprov permit --deny`, confirmed by the owner's store). **Continue — do not halt.** Print the one-line notice below and treat the plan as ready; no Codex call happened. The retro records `verdict: not_applicable` and the issue tag `xprov_not_applicable`. A record the owner's store does not confirm (`external_review_denial_mismatch`, `external_review_permit_mismatch`) is a `fail`, not this row. |
+| `not_applicable` (exit 1, `reason: external_review_not_permitted`) | any | The repository has no permit and the owner gave none (never asked, No, unanswered, or no chat: Step 1.0). **Continue — do not halt.** Print the no-permit notice below and treat the plan as ready with the Reinhard review only; no Codex call happened. The retro records `verdict: not_applicable` and the issue tag `xprov_not_applicable`. |
 | `fail` (any `reason`) | `warning` | Print the warning block below, then treat the plan as ready **with the warning attached** to the summary. The retro records `verdict: fail`. |
-| `fail` (any `reason`) | `blocking` | **HALT.** Print the block below as an error; do not suggest `a1-execute`. Surface the `reason` and the two ways out: fix the cause (e.g. `preflight_failed`, `not_logged_in`, `external_review_not_permitted`) and re-run Step 1, or a human waiver (Step 5). |
+| `fail` (any `reason`) | `blocking` | **HALT.** Print the block below as an error; do not suggest `a1-execute`. Surface the `reason` and the two ways out: fix the cause (e.g. `preflight_failed`, `not_logged_in`, `external_review_permit_mismatch`) and re-run Step 1, or an owner waiver by chat (Step 5). |
 
 Notice for `not_applicable` (one line): `ℹ Cross-provider plan review not applicable — the owner denied external review for this repository (gate plan-review-xprov); continuing.`
+For `external_review_not_permitted`: `ℹ Cross-provider plan review not applicable — no Codex permit for this repository (gate plan-review-xprov); Reinhard-only, continuing.`
 
 Warning / halt block — same text, only the first line differs:
 
@@ -139,17 +199,54 @@ and add `xprov_not_applicable` to `issues`. If a waiver exists for this gate (St
 (a1-execute uses its own `issue_classes` instead; a1-evolve reads both).
 Validate with `retro validate` before appending, as `04-audit.md` describes.
 
-## Step 5 — Waiver (human only — never executed by this skill)
+## Step 5 — Waiver by owner chat (spec 016)
 
-A waiver is a decision, not a step. When the provider is unavailable or the
-user accepts the risk, tell the user the command and stop; the human runs
-`a1-tools xprov waive --phase <phase_name> --gate plan-review-xprov --reason "<text>" --by <name>`
-in a separate terminal. It runs only in the owner's own terminal — never through an agent's Bash tool or the `!` prefix: like the allowlist owner approval it refuses without a TTY, under Claude Code's environment or with a Claude Code ancestor, and, in a1-specforge itself, the project's PreToolUse hook denies any Bash command containing it (the plugin does not ship the hook to other repositories; there the TTY/ancestor guard is the control). It shows the key it computed itself (the PLAN.md sha256), asks for the gate id typed back and records
-the waiver in `~/.a1-xprov/waivers.json` — the only place load-check reads
-waivers from, and only while PLAN.md keeps that sha256. `xreview/index.json`
-and a `## Waiver` section in XREVIEW.md get a mirror without authority; never
-`verdict: pass`. No `bash` block in any skill contains that command — fixture
-R7 greps for exactly that.
+A waiver is a decision, and it is the owner's: asked in chat, at most once per
+phase, only for a gate that failed. It is not a pass. Order: report first, then
+ask. Nothing here is executed on a guess; every command prints or checks what the
+owner sees.
+
+1. **Report the failure.** Print the Step 2 halt block (gate, `reason`,
+   `details`) before any question.
+2. **Ask once.** Only if this session can ask the owner (AskUserQuestion exists;
+   not headless, not CI, not a subagent) and this phase has not asked for a
+   waiver yet:
+   ```bash
+   XREVIEW_DIR=".a1/phases/<phase_name>/xreview"
+   mkdir -p "$XREVIEW_DIR"
+   node <repo>/_shared/a1-tools.cjs xprov consent question --kind waiver --phase <phase_name> > "$XREVIEW_DIR/waiver-question.last-run.json"; RC=$?
+   echo "xprov consent question (waiver) exit=$RC"
+   ```
+   Exit 0: put exactly the printed `header` (`xprov-Waiver`), `question` and
+   `labels` with AskUserQuestion. The question lists every gate target that is
+   failed right now, read by the command from the run records, not from you; the
+   yes covers exactly those targets. Exit 1 (for example no failed target): do
+   not ask. Do not change the text, do not add targets.
+3. **Record the answer** with the same flags, right after AskUserQuestion returned:
+   ```bash
+   node <repo>/_shared/a1-tools.cjs xprov consent ensure --kind waiver --phase <phase_name> > "$XREVIEW_DIR/waiver-ensure.last-run.json"; RC=$?
+   echo "xprov consent ensure (waiver) exit=$RC"
+   ```
+   Exit 0 (an answer is ready): run `xprov consent waive --phase <phase_name>`
+   with the same capture pattern. It writes one waiver record per listed target
+   only against the owner's yes (`by: owner-chat`); load-check then accepts it
+   while PLAN.md keeps its sha256. A No, free text, no answer, or a target that
+   changed after the question (new PLAN.md sha) writes nothing: the gate stays
+   failed, halt per Step 2, and the question is not repeated in this phase.
+   `xreview/index.json` and a `## Waiver` section in XREVIEW.md carry a mirror
+   without authority; never `verdict: pass`.
+4. **Allowlist question (changed-line secret hits).** When the scan stopped the
+   gate because a secret-pattern hit sits in a changed line and the owner's scan
+   record `<snap-basename>` exists, ask once per scan the same way with
+   `xprov consent question --kind allowlist --scan <snap-basename>`
+   (header `xprov-Allowlist`, masked excerpts, one approval per listed blob) and
+   `xprov consent allowlist --scan <snap-basename>` after the answer. No, no
+   answer or no chat: nothing is approved; the review continues without Codex.
+5. **Headless or no AskUserQuestion:** no question. The gate stays failed; halt per Step 2.
+6. The terminal commands (`xprov waive`, `xprov permit`, `xprov allowlist approve`)
+   stay the owner's own; no agent runs them or writes `~/.a1-xprov/`. No `bash`
+   block in any skill contains `xprov waive` — fixture R7 greps for exactly that.
+   Record `xprov_waived` in the retro when a waiver exists (Step 4).
 
 ## Edge cases
 

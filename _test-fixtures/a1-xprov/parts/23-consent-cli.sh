@@ -55,7 +55,16 @@ prep23() {
   return 0
 }
 key23() { (cd "${1:-$PHASE_REPO}" && cd "$(git rev-parse --git-common-dir)" && pwd -P); }
-cli23() { G_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov consent "$@" 2>"$TMP23/err.txt" </dev/null)"; G_RC=$?; G_ERR="$(cat "$TMP23/err.txt")"; }
+# Spec 016 wave 5: `question --kind consent|classification` needs a scope (--phase | --run) and records the ask once per scope. Part 23 tests the
+# question text and the stores, not the scope: every question call without a scope flag gets a fresh phase dir (the ask-once rule is part 26).
+CLI23_N=0
+cli23() {
+  local args=("$@")
+  if [[ "${1:-}" == question && " $* " != *" --phase "* && " $* " != *" --run "* && ( " $* " == *" --kind consent "* || " $* " == *" --kind classification "* ) ]]; then
+    CLI23_N=$((CLI23_N + 1)); mkdir -p "$PHASE_REPO/.a1/phases/q23-$CLI23_N" 2>/dev/null; args+=(--phase "q23-$CLI23_N")
+  fi
+  G_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov consent ${args[@]+"${args[@]}"} 2>"$TMP23/err.txt" </dev/null)"; G_RC=$?; G_ERR="$(cat "$TMP23/err.txt")"
+}
 pc23() { G_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov permit-check 2>"$TMP23/err.txt" </dev/null)"; G_RC=$?; G_ERR="$(cat "$TMP23/err.txt")"; }
 lib23() {
   node -e '
@@ -79,6 +88,7 @@ edit23() { sim23 "{\"cmd\":\"edit\",\"tree\":\"$TREE\",\"root\":\"$PHASE_REPO\",
 reason23() { json_get "$G_OUT" "j.reason"; }
 auditf23() { echo "$HOME/.a1-xprov/consent-audit.jsonl"; }
 audit_lines23() { [[ -e "$(auditf23)" ]] && wc -l < "$(auditf23)" | tr -d ' ' || echo 0; }
+nostores23() { [[ ! -e "$HOME/.a1-xprov/permits.json" && ! -e "$HOME/.a1-xprov/permit-denials.json" && ! -e "$HOME/.a1-xprov/consent.json" && ! -e "$PHASE_REPO/.a1/xprov.json" ]]; }
 nothing23() { [[ ! -e "$HOME/.a1-xprov/permits.json" && ! -e "$HOME/.a1-xprov/permit-denials.json" && ! -e "$HOME/.a1-xprov/consent.json" && ! -e "$HOME/.a1-xprov/consent-audit.jsonl" && ! -e "$PHASE_REPO/.a1/xprov.json" ]]; }
 # mtree23 <lib-file> <from> <to> — swaps TREE for a copy with ONE production change (refuses unless <from> occurs exactly once)
 mtree23() {
@@ -141,7 +151,8 @@ caseCC1() {
   cli23 question; assert_rc "CC1j --kind is required (exit 2)" 2 "$G_RC"
   cli23 question --kind consent extra; assert_rc "CC1j an unexpected argument is refused (exit 2)" 2 "$G_RC"
   cli23 question --kind consent --repo ../../etc; assert_rc "CC1j --repo ../../etc is refused (exit 2)" 2 "$G_RC"
-  nothing23 && ok "CC1 question writes nothing" || bad "CC1 a store was written"
+  # wave 5 flip: a consent / classification question now records the ask (consent-asked.json + one consent-asked audit line); it still writes no permit, denial, evidence or repo file
+  nostores23 && ok "CC1 question writes no permit, denial, evidence or repo file (only the ask record, wave 5)" || bad "CC1 a permit, denial or evidence store was written"
 }
 
 # ---------- CC2: yes -> permit + evidence + bound audit line (FR-003, FR-006, FR-010) ----------
@@ -162,7 +173,9 @@ caseCC2() {
     assert_json "CC2c [$form] permits.json entry: owner-chat, repo key, raw origin, chat record, audit sha" "$(cat "$HOME/.a1-xprov/permits.json")" "(() => { const e = j.permits['$key']; return [e.decided_by, e.repo === '$key', e.origin === '$ORG23', e.record, /^[0-9a-f]{64}\$/.test(e.audit)].join('|'); })()" "owner-chat|true|true|record/2026-10-14-a1-autonomy-chat-consent.md|true"
     assert_json "CC2d [$form] consent.json evidence: who, header, classification, origin, question hash, answer label" "$(cat "$HOME/.a1-xprov/consent.json")" "(() => { const e = j.consents['$key']; return [e.who, e.header, e.classification, e.origin, e.question_hash === '$hash', e.answer_label, typeof e.when, e.audit === Object.values(JSON.parse(require('fs').readFileSync('$HOME/.a1-xprov/permits.json', 'utf8')).permits)[0].audit].join('|'); })()" "owner-chat|xprov-Freigabe|org|$ORG23|true|$YES23|string|true"
     assert_json "CC2e [$form] .a1/xprov.json says allowed by owner-chat" "$(cat "$PHASE_REPO/.a1/xprov.json")" "[j.external_review, j.decided_by].join('|')" "allowed|owner-chat"
-    assert_json "CC2f [$form] the audit line: action consent, tool_use_id and session_id of the question, chain start" "$(tail -n 1 "$(auditf23)")" "[j.action, j.tool_use_id, j.session_id, j.permission_mode, j.prev === null, j.repo === '$key'].join('|')" "consent|toolu_consent|sess_1|default|true|true"
+    # wave 5 flip: the chain starts with the consent-asked line of the question; the consent line is chained to it (was: chain start, prev null)
+    assert_json "CC2f [$form] the audit line: action consent, tool_use_id and session_id of the question, chained after the consent-asked line" "$(tail -n 1 "$(auditf23)")" "[j.action, j.tool_use_id, j.session_id, j.permission_mode, j.prev === require('crypto').createHash('sha256').update(require('fs').readFileSync('$(auditf23)', 'utf8').split('\n')[0]).digest('hex'), j.repo === '$key'].join('|')" "consent|toolu_consent|sess_1|default|true|true"
+    assert_json "CC2f [$form] the first audit line is the ask of the question (consent-asked, chain start)" "$(head -n 1 "$(auditf23)")" "[j.action, j.prev === null, j.repo === '$key'].join('|')" "consent-asked|true|true"
     pc23
     assert_rc "CC2g [$form] permit-check exits 0" 0 "$G_RC" "$G_ERR"
     assert_json "CC2g [$form] allowed, audit ok, enforcement unenforced" "$G_OUT" "[j.state, j.audit, j.enforcement].join('|')" "allowed|ok|unenforced"

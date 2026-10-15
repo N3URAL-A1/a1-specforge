@@ -49,7 +49,7 @@ prep25() {
 }
 prep25 >/dev/null; REPO25="$(cd "$TMP25/repo" && pwd -P)"
 cli25() { ( cd "$REPO25" && env -u A1_VAULT_ROOT node "$T25_TOOLS" xprov consent "$@" 2>/dev/null </dev/null ); }
-canon25() { cli25 question --kind "${1:-consent}" > "$TMP25/q.json"; }
+canon25() { mkdir -p "$REPO25/.a1/phases/p25"; cli25 question --kind "${1:-consent}" --phase p25 > "$TMP25/q.json"; }   # spec 016 wave 5: the question is scoped to a phase (one ask per phase; prep25 empties the store)
 hookrun25() { H_OUT="$(env -u A1_VAULT_ROOT bash "$1/hooks/xprov-consent-hook.sh" < "$2" 2>"$TMP25/herr.txt")"; H_RC=$?; H_ERR="$(cat "$TMP25/herr.txt")"; }
 # ask25 <pre|post> [mutate] [mode] [tool_use] [session] — the capture-derived payload for the canonical question in $TMP25/q.json, run through the hook
 ask25() {

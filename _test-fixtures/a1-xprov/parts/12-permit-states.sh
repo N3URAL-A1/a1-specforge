@@ -13,7 +13,8 @@
 #   P5  deny then allow removes the store entry.
 #   P6  proper `denied` under `blocking` → not_applicable (today: HALT).
 #   P7  `denied` on a row with applies_to `all` (or empty) → still fails.
-#   P8  absent / invalid → external_review_not_permitted + hint, no writes.
+#   P8  absent → not_applicable / external_review_not_permitted (spec 016 FR-012, flipped from fail in wave 5) + hint, no writes;
+#       invalid → still a fail.
 #   P9  permit-check: state + exit codes + the exposure sentence (FR-016).
 #   P10 registry: last column applies_to, both xprov rows permitted-repos.
 #   P11 library rules of permit / permit --deny (record optional only for deny,
@@ -240,13 +241,13 @@ caseP7() {
 caseP8() {
   prep12
   gate12 --gate "$GATE_PLAN"
-  assert_json "P8 absent → external_review_not_permitted (never not_applicable)" "$G_OUT" "j.verdict + '/' + j.reason" "fail/external_review_not_permitted"
+  assert_json "P8 absent → not_applicable / external_review_not_permitted (spec 016 FR-012; was fail before wave 5)" "$G_OUT" "j.verdict + '/' + j.reason" "not_applicable/external_review_not_permitted"
   [[ "$G_ERR" == *"permit --deny"* ]] && ok "P8 the hint names permit and permit --deny" || bad "P8 hint: $G_ERR"
   nothing12 && ok "P8 nothing written" || bad "P8 wrote: $(ls "$PHASE_DIR")"
   mkdir -p "$PHASE_REPO/.a1"; printf '{not json\n' > "$PHASE_REPO/.a1/xprov.json"
   sub12 permit-check; assert_json "P8 invalid file → state invalid" "$G_OUT" "j.state + '/' + j.reason" "invalid/external_review_not_permitted"
   gate12 --gate "$GATE_PLAN"
-  assert_json "P8 invalid → external_review_not_permitted" "$G_OUT" "j.reason" "external_review_not_permitted"
+  assert_json "P8 invalid → still a fail with external_review_not_permitted" "$G_OUT" "j.verdict + '/' + j.reason" "fail/external_review_not_permitted"
   file12 maybe robert 2026-10-05 record/x.md
   sub12 permit-check; assert_json "P8 another external_review value → invalid" "$G_OUT" "j.state" "invalid"
   file12 denied robert ""

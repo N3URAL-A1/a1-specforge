@@ -145,7 +145,8 @@ caseCW1() {
   done
   cli24 question --kind waiver; assert_rc "CW1e question --kind waiver without --phase/--work-path (exit 2)" 2 "$G_RC"
   cli24 question --kind waiver --phase p24 --work-path "$PHASE_REPO"; assert_rc "CW1e both --phase and --work-path (exit 2)" 2 "$G_RC"
-  cli24 question --kind consent --phase p24; assert_rc "CW1e --phase belongs to the waiver kind (exit 2)" 2 "$G_RC"
+  # wave 5 flip: --phase now also scopes the consent / classification questions (ask once per phase); --scan still belongs to the allowlist kind only
+  cli24 question --kind consent --phase p24 --scan snap-x; assert_rc "CW1e --scan belongs to the allowlist kind (exit 2)" 2 "$G_RC"
   cli24 question --kind allowlist; assert_rc "CW1e --kind allowlist needs --scan (exit 2)" 2 "$G_RC"
 }
 caseCW1
