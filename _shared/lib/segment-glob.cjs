@@ -30,9 +30,11 @@ function normalizeScopePath(p) {
   return out;
 }
 
-/** True if a normalized scope ends in `/` (explicit directory). */
+/** True if a normalized scope ends in `/` or in `/.` (any number of `/./`
+ * pairs): both name a directory, and scopeSegments drops the `.` anyway. */
+const DIR_SIGNAL_RE = /\/(\.\/)*\.?$/;
 function hasDirSignal(norm) {
-  return norm.length > 1 && norm.endsWith('/');
+  return norm.length > 1 && DIR_SIGNAL_RE.test(norm);
 }
 
 /** Canonical identity of a scope for equality checks: segments only, without

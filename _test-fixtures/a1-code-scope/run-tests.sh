@@ -480,5 +480,56 @@ fi
 OUT="$(node "$TOOLS" code-scope check --by feature-new --scope "src/x.ts" --file "$BAD_FILE" 2>&1)"
 assert_rc "check-vs-stored-overlimit-conflicts" 1 $? "$OUT"
 
+# --- re-claim directory signal (fix scope-reclaim-dir-signal) ---
+rc_json() { node -e 'const j=JSON.parse(process.argv[1]);process.stdout.write(String(eval(process.argv[2])))' "$1" "$2" 2>&1; }
+expect_eq() { # name expected actual
+  if [[ "$2" == "$3" ]]; then echo "PASS  $1"; pass=$((pass + 1)); else echo "FAIL  $1: expected '$2', got '$3'"; fail=$((fail + 1)); fi
+}
+RF="$WORK/reclaim-1.json"
+node "$TOOLS" code-scope claim --by fa --scope "docs/v1.2" --file "$RF" >/dev/null 2>&1
+OUT="$(node "$TOOLS" code-scope claim --by fa --scope "docs/v1.2/" --file "$RF" 2>&1)"
+assert_rc "reclaim-widen-ok" 0 $? "$OUT"
+expect_eq "reclaim-widen-stores-dir-form" "docs/v1.2/" "$(rc_json "$(cat "$RF")" 'j.reservations[0].paths[0]')"
+OUT="$(node "$TOOLS" code-scope check --by fb --scope '**/x' --file "$RF" 2>&1)"
+assert_rc "reclaim-widen-then-glob-conflicts" 1 $? "$OUT"
+
+RF="$WORK/reclaim-2.json"
+node "$TOOLS" code-scope claim --by fa --scope "docs/v1.2/." --file "$RF" >/dev/null 2>&1
+OUT="$(node "$TOOLS" code-scope check --by fb --scope '**/x' --file "$RF" 2>&1)"
+assert_rc "trailing-slash-dot-is-directory" 1 $? "$OUT"
+RF="$WORK/reclaim-3.json"
+node "$TOOLS" code-scope claim --by fa --scope "docs/v1.2/./." --file "$RF" >/dev/null 2>&1
+OUT="$(node "$TOOLS" code-scope check --by fb --scope '**/x' --file "$RF" 2>&1)"
+assert_rc "trailing-slash-dot-dot-is-directory" 1 $? "$OUT"
+
+# reverse order: stored dir form, plain re-claim -> idempotent, nothing written
+RF="$WORK/reclaim-4.json"
+node "$TOOLS" code-scope claim --by fa --scope "docs/v1.2/" --file "$RF" >/dev/null 2>&1
+BEFORE="$(cat "$RF")"
+OUT="$(node "$TOOLS" code-scope claim --by fa --scope "docs/v1.2" --file "$RF" 2>&1)"
+assert_rc "reclaim-narrower-idempotent" 0 $? "$OUT"
+expect_eq "reclaim-narrower-no-write" "$BEFORE" "$(cat "$RF")"
+expect_eq "reclaim-narrower-not-widened" "undefined" "$(rc_json "$OUT" 'j.widened')"
+
+# widening re-claim that collides with another feature: CONFLICT, stored unchanged
+RF="$WORK/reclaim-5.json"
+node "$TOOLS" code-scope claim --by fa --scope "docs/v1.2" --file "$RF" >/dev/null 2>&1
+node "$TOOLS" code-scope claim --by fb --scope '**/x' --file "$RF" >/dev/null 2>&1
+BEFORE="$(cat "$RF")"
+OUT="$(node "$TOOLS" code-scope claim --by fa --scope "docs/v1.2/" --file "$RF" 2>&1)"
+assert_rc "reclaim-widen-conflict-rc1" 1 $? "$OUT"
+expect_eq "reclaim-widen-conflict-stored-unchanged" "$BEFORE" "$(cat "$RF")"
+if ls "$RF".lock >/dev/null 2>&1; then echo "FAIL  reclaim-widen-conflict: lock left"; fail=$((fail + 1)); else echo "PASS  reclaim-widen-conflict: no lock left"; pass=$((pass + 1)); fi
+
+# successful widening keeps at/stage/by and reports widened
+RF="$WORK/reclaim-6.json"
+node "$TOOLS" code-scope claim --by fa --scope "docs/v1.2,src/a.ts" --file "$RF" >/dev/null 2>&1
+node "$TOOLS" code-scope stage --by fa --set review --file "$RF" >/dev/null 2>&1
+AT="$(rc_json "$(cat "$RF")" 'j.reservations[0].at')"
+OUT="$(node "$TOOLS" code-scope claim --by fa --scope "src/a.ts,docs/v1.2/" --file "$RF" 2>&1)"
+assert_rc "reclaim-widen-multi-ok" 0 $? "$OUT"
+expect_eq "reclaim-widen-keeps-meta" "true|review|$AT|docs/v1.2/,src/a.ts" \
+  "$(rc_json "$OUT" 'j.widened+"|"+j.reservation.stage+"|"+j.reservation.at+"|"+j.reservation.paths.join(",")')"
+
 echo "code-scope fixtures: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]
