@@ -82,7 +82,8 @@ const CONSENT_HELP = `    consent question|ensure|record|revoke  --kind consent|
                   .md files below a directory named agents or commands (whole file).
                   The rule is monotone, with no old-vs-new comparison: an edit that
                   changes such a file is denied when the old or the new whole content
-                  holds PreToolUse/PermissionRequest (any case), an escape sequence,
+                  holds PreToolUse/PermissionRequest (any case), an escape sequence
+                  (in an .md only inside its frontmatter),
                   disableAllHooks / allowManagedHooksOnly, an a1-specforge enabledPlugins
                   entry, or (manifests) a hooks key. A settings file that already holds a
                   hook is therefore owner territory: change it with Bash or by hand. A

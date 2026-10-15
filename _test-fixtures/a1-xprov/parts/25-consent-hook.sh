@@ -296,6 +296,24 @@ sc_sym() { # the settings file is a symlink to a file outside .claude; and .clau
   local a b; edit25 Write "$(inp25 file_path "$PROJ25/.claude/settings.json" content "$HOOK_ASK25")" "$PROJ25"; a="$(dec25)"
   edit25 Write "$(inp25 file_path "$PROJ25/p2/.claude/settings.json" content "$HOOK_ASK25")" "$PROJ25"; b="$(dec25)"; echo "$a|$b"
 }
+# R4-1: bash line continuations in an .md body are no keys; the escape check looks at the frontmatter region only
+sc_mdbody() { sc_wr .claude/agents/q.md $'---\nname: q\n---\nrun a \\\n  b'; }
+sc_mdevbody() { sc_wr .claude/agents/q.md $'---\nname: q\n---\nsee PreToolUse'; }   # an event name anywhere in the file still counts
+sc_mdnoopen() { sc_wr .claude/agents/q.md $'name: q\nrun a \\\n  b'; }              # no opening --- : no escape check
+sc_guard() { # a one-space edit of line 1 of every class file in this snapshot (hooks/hooks.json is the excepted own file): only settings.json may be denied
+  local f n=0 list="" in; prep25
+  while IFS= read -r f; do
+    in="$(node -e 'const l=require("fs").readFileSync(process.argv[1],"utf8").split("\n")[0]; process.stdout.write(JSON.stringify({file_path:process.argv[1],old_string:l,new_string:l+" "}))' "$REPO_ROOT/$f")"
+    edit25 Edit "$in" "$REPO_ROOT"; [[ "$(dec25)" == allow ]] || { n=$((n + 1)); list="$list$f,"; }
+  done < <(cd "$REPO_ROOT" && find . -path ./.git -prune -o -path ./_test-fixtures -prune -o -path ./node_modules -prune -o -type f -print | sed 's|^\./||' | sort | grep -E '(^|/)\.claude/settings[^/]*\.json$|(^|/)\.claude-plugin/[^/]*\.json$|(^|/)SKILL\.md$|(^|/)(agents|commands)/.*\.md$')
+  echo "$n|${list%,}"
+}
+sc_link() { # R4-2: ~/.claude/settings.json and <cwd>/.claude/settings.json are symlinks into a dotfiles directory; the agent writes the target or a link to it
+  prep25; rm -rf "$PROJ25" "$TMP25/dots"; mkdir -p "$HOME/.claude" "$PROJ25/.claude" "$TMP25/dots"; rm -f "$HOME/.claude/settings.json"
+  printf '{}' > "$TMP25/dots/user.json"; printf '{}' > "$TMP25/dots/proj.json"; printf '{}' > "$TMP25/dots/other.json"
+  ln -s "$TMP25/dots/user.json" "$HOME/.claude/settings.json"; ln -s "$TMP25/dots/proj.json" "$PROJ25/.claude/settings.json"; ln -s "$TMP25/dots/user.json" "$TMP25/dots/chain.json"
+  local o="" w; for w in user proj chain other; do edit25 Write "$(inp25 file_path "$TMP25/dots/$w.json" content "$HOOK_ASK25")" "$PROJ25"; o="$o$(dec25)|"; done; echo "${o%|}"
+}
 sc_bom() { sc_wr .claude-plugin/plugin.json $'\xef\xbb\xbf{"name":"x","hooks":{"Notification":[]}}'; }   # a BOM makes JSON.parse fail: the plain "hooks" in the text counts
 sc_f18() { local a b c; a="$(sc_wr .claude/settings.json '{"hooks":{"PreToolUse":[]}}')"; b="$(sc_wr .claude/agents/q.md $'---\nname: q\nhooks: {"Pre\\\nToolUse": []}\n---\nb')"; c="$(sc_wr .claude/agents/q.md $'---\nname: q\nhooks: {"\\x50reToolUse": []}\n---\nb')"; echo "$a|$b|$c"; }
 FM25='---
@@ -358,6 +376,11 @@ caseF() {
   assert_eq "A6 an agent file whose first line is ---x (no frontmatter block) with a PreToolUse key: denied" "$(sc_dash)" "$D"
   assert_eq "A7 CLAUDE_CONFIG_DIR set: its settings.json, plugin cache and plugin json are class files; without the variable the same writes pass" "$(sc_cfg_on)|$(sc_cfg_off)" "$D|$D|$D|allow|allow|allow"
   assert_eq "A8 a settings file that is a symlink to a file outside .claude, and a symlinked .claude directory: denied (lexical path)" "$(sc_sym)" "$D|$D"
+  assert_eq "R4-1a a bash line continuation in an .md body (clean frontmatter): allowed" "$(sc_mdbody)" "allow"
+  assert_eq "R4-1b an event name in the body of an .md: denied (whole file)" "$(sc_mdevbody)" "$D"
+  assert_eq "R4-1c an .md without an opening --- and a line continuation: allowed" "$(sc_mdnoopen)" "allow"
+  assert_eq "R4-1d one-space edit of every class file of this snapshot: only .claude/settings.json is denied" "$(sc_guard)" "1|.claude/settings.json"
+  assert_eq "R4-2 settings symlinked into a dotfiles dir (user, project, chain): the targets are denied, an unrelated file in it is allowed" "$(sc_link)" "$D|$D|$D|allow"
   assert_eq "A9 a plugin.json with a BOM and a hooks key: denied" "$(sc_bom)" "$D"
   assert_eq "F7 an Edit that leaves unreadable JSON and adds a PreToolUse entry: denied" "$(sc_f7)" "$D"
   assert_eq "F8 a json file that is no hook source: allowed" "$(sc_f8)" "allow"
@@ -394,9 +417,14 @@ caseF() {
   red25 "A6" sc_dash "$D" $PATHS25 "const view = (text) => String(text);" "const view = (text) => { const m = /^---\\r?\\n([\\s\\S]*?)\\r?\\n---/.exec(String(text)); return m ? m[1] : ''; };"
   red25 "A7" sc_cfg_on "$D|$D|$D" $PATHS25 "if (typeof cfg !== 'string' || cfg === '') return" "if (true) return"
   red25 "A8" sc_sym "$D|$D" $PATHS25 "const base = [...forms(file, cwd), path.resolve(abs), abs.replace(/\\/{2,}/g, '/')];" "const base = [...forms(file, cwd)];"
+  red25 "R4-1a" sc_mdbody "allow" $PATHS25 "const escTexts = kind === 'md' ? texts.map(frontmatterRegion) : texts;" "const escTexts = texts;"
+  red25 "R4-1b" sc_mdevbody "$D" $PATHS25 "if (texts.some((t) => EVENT_RE.test(t))) return" "if (escTexts.some((t) => EVENT_RE.test(t))) return"
+  red25 "R4-1c" sc_mdnoopen "allow" $PATHS25 "if (!t.startsWith('---')) return '';" "if (!t.startsWith('---')) return t;"
+  red25 "R4-1d" sc_guard "1|.claude/settings.json" $PATHS25 "const escTexts = kind === 'md' ? texts.map(frontmatterRegion) : texts;" "const escTexts = texts;"
+  red25 "R4-2" sc_link "$D|$D|$D|allow" $PATHS25 " || isKnownSettingsFile(file, cwd)) return 'json';" ") return 'json';"
   red25 "A9" sc_bom "$D" $PATHS25 "catch (_e) { return /\"hooks\"/i.test(String(text)); }" "catch (_e) { return false; }"
   red25 "F7" sc_f7 "$D" $PATHS25 "$CNT" "if (false) return"
-  red25 "F9" sc_f18 "$D|$D|$D" $PATHS25 "if (texts.some((t) => ESCAPE_RE.test(t))) return" "if (false) return" $PATHS25 "$CNT" "if (false) return"
+  red25 "F9" sc_f18 "$D|$D|$D" $PATHS25 "if (escTexts.some((t) => ESCAPE_RE.test(t))) return" "if (false) return" $PATHS25 "$CNT" "if (false) return"
   red25 "F9a" sc_f9 "$D|$D|$D|$D|$D" $PATHS25 "$CNT" "if (false) return"
   red25 "F9a-md" sc_f9 "$D|$D|$D|$D|$D" $PATHS25 "named(f).endsWith('.md') && (segs(f).includes('agents') || segs(f).includes('commands'))" "false"
   red25 "F9b" sc_f9b "allow|allow" $PATHS25 "$CNT" "if (true) return"

@@ -37,11 +37,13 @@
 //
 // One monotone rule for the class (no old-vs-new comparison, no parsing of matchers, quotes or flow style): an edit that CHANGES a file of the
 // class is denied when the OLD or the NEW whole content (.json and .md alike) holds, case-insensitively, `pretooluse` or `permissionrequest`,
-// an escape marker (`\uXXXX`, `\xXX`, backslash-newline: the ways to spell a key without the substring), `disableAllHooks` or
+// an escape marker (`\uXXXX`, `\xXX`, backslash-newline: the ways to spell a key without the substring; in an .md only inside the possible
+// frontmatter region, from the opening `---` to the first line that is exactly `---`, because bash line continuations fill the bodies), `disableAllHooks` or
 // `allowManagedHooksOnly`, or (settings .json) an `enabledPlugins` entry naming a1-specforge; for plugin.json / marketplace.json also when the
 // old or new content has a `hooks` key (BOM or broken JSON: a plain "hooks" in the text). A settings file that already holds a hook is owner
 // territory: an agent edits it only through Bash. A NotebookEdit of a class file is always denied. A Write to a new path counts the old
 // content as empty. The class is matched on the lexical path and on the realpath, and `$CLAUDE_CONFIG_DIR` counts as `~/.claude`.
+// A file that is the same device + inode as a settings*.json of ~/.claude, <cwd>/.claude or $CLAUDE_CONFIG_DIR (dotfiles symlinks) is in the class.
 //
 // guardedPath(file, cwd)   -> { guarded: true, why } | { guarded: false }
 //       The owner stores: everything under <owner home>/.a1-xprov/, and `.a1/xprov.json` in any checkout. The path is judged as a string
@@ -157,6 +159,19 @@ function classForms(file, cwd) {
 }
 
 /** The file kind: 'cache' | 'json' | 'manifest' | 'md' | null. */
+/** True when `file` is the same file (device + inode, symlinks followed) as a settings*.json of ~/.claude, <cwd>/.claude or $CLAUDE_CONFIG_DIR. */
+function isKnownSettingsFile(file, cwd) {
+  const id = idOf(forms(file, cwd)[0]);
+  if (id === null) return false;
+  const cfg = process.env.CLAUDE_CONFIG_DIR;
+  const dirs = [path.join(safeHome(), '.claude'), path.join(String(cwd || ''), '.claude'), ...(typeof cfg === 'string' && cfg !== '' ? [expandHome(cfg, safeHome())] : [])];
+  return dirs.some((d) => {
+    let names = [];
+    try { names = fs.readdirSync(d).filter((n) => /^settings[^/]*\.json$/i.test(n)); } catch (_e) { /* no such directory */ }
+    return names.some((n) => idOf(path.join(d, n)) === id);
+  });
+}
+
 function fileClass(file, cwd) {
   const fs_ = classForms(file, cwd);
   const low = fs_.map(fold);
@@ -168,7 +183,7 @@ function fileClass(file, cwd) {
     return fs_.some((f) => f === path.join(OWN_REPO_ROOT, 'hooks', 'hooks.json')) ? null : 'json';
   }
   if (low.some((f) => (named(f) === 'plugin.json' || named(f) === 'marketplace.json') && parent(f) === '.claude-plugin')) return 'manifest';
-  if (low.some((f) => /^settings[^/]*\.json$/.test(named(f)) && parent(f) === '.claude')) return 'json';
+  if (low.some((f) => /^settings[^/]*\.json$/.test(named(f)) && parent(f) === '.claude') || isKnownSettingsFile(file, cwd)) return 'json';
   if (low.some((f) => /^managed-settings[^/]*\.json$/.test(named(f)) || (named(f).endsWith('.json') && segs(f).includes('managed-settings.d')))) return 'json';
   if (low.some((f) => named(f).endsWith('.json') && f.includes('/.claude/plugins/'))) return 'json';
   if (low.some((f) => named(f) === 'skill.md' || (named(f).endsWith('.md') && (segs(f).includes('agents') || segs(f).includes('commands'))))) return 'md';
@@ -202,6 +217,15 @@ function newContent(tool, input, old) {
 
 const view = (text) => String(text);
 
+/** The part of a .md where a YAML escape could spell a key: from the opening `---` (BOM stripped) to the first line that is exactly `---` (else the whole text); '' when the file does not open with `---`. */
+function frontmatterRegion(text) {
+  const t = String(text).replace(/^\uFEFF/, '');
+  if (!t.startsWith('---')) return '';
+  const lines = t.split('\n');
+  const end = lines.findIndex((l, i) => i > 0 && l.trim() === '---');
+  return end === -1 ? t : lines.slice(0, end + 1).join('\n');
+}
+
 /** True when the manifest text carries a hooks entry (plugin.json: `hooks`; marketplace.json: a `hooks` on a plugin entry). Unparseable text (BOM, broken JSON): a plain "hooks". */
 function hasHooksKey(text, isMarketplace) {
   try {
@@ -215,8 +239,9 @@ function hasHooksKey(text, isMarketplace) {
 function refusal(kind, file, old, neu) {
   if (old === neu) return null;
   const texts = [view(old), view(neu)];
+  const escTexts = kind === 'md' ? texts.map(frontmatterRegion) : texts; // bash line continuations in the body of an .md are no keys
   if (texts.some((t) => EVENT_RE.test(t))) return 'the file holds a PreToolUse or PermissionRequest entry before or after the edit (such a hook can answer the consent question with updatedInput.answers)';
-  if (texts.some((t) => ESCAPE_RE.test(t))) return 'the file holds escape sequences that can spell a hook event without the plain name';
+  if (escTexts.some((t) => ESCAPE_RE.test(t))) return 'the file holds escape sequences that can spell a hook event without the plain name';
   if (texts.some((t) => DISABLE_RE.test(t))) return 'the file holds disableAllHooks / allowManagedHooksOnly, which would disable the consent hook';
   if (kind === 'json' && texts.some((t) => /enabledplugins/i.test(t) && PLUGIN_ENTRY_RE.test(t))) return 'the file has an enabledPlugins entry for a1-specforge, which would switch the consent hook off';
   if (kind === 'manifest') {
