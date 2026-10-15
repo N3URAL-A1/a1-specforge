@@ -54,7 +54,11 @@ ${SPEC_INIT_HELP}
                   in-flight feature's code_scope. Overlap -> exit 1, JSON
                   {status:"CONFLICT", overlaps:[...]}, stderr names holder(s).
                   No overlap -> atomic write, exit 0. Same-feature identical
-                  re-claim is idempotent (exit 0).
+                  re-claim is idempotent (exit 0). A trailing "/" or "/." marks a
+                  directory. Re-claiming a stored file-like path with the directory
+                  form (docs/v1.2 -> docs/v1.2/) widens the stored scope (keeps at,
+                  stage); it is checked against other features first and may exit 1
+                  CONFLICT, leaving the stored scope unchanged.
   a1-tools code-scope check --by <feature-id> --scope <path>[,<path>...] [--file <path>]
                   Dry-run variant of claim: same overlap comparison, never writes.
   a1-tools code-scope stage --by <feature-id> --set <stage> [--file <path>]

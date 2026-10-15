@@ -27,6 +27,8 @@ const {
   validateScopePath,
   ScopeLimitError,
   scopeKey,
+  hasDirSignal,
+  normalizeScopePath,
 } = require('./segment-glob.cjs');
 
 // Path normalization, glob matching and overlap math live in segment-glob.cjs
@@ -85,6 +87,27 @@ function exitOnInvalidScope(paths, file, by) {
 
 const CODE_SCOPE_STAGES = ['started', 'complete', 'review', 'verify', 'merge', 'origin-cleanup', 'done'];
 
+/** Merge a same-key re-claim into the stored paths. Per scopeKey the directory
+ * signal is stored OR candidate. Returns null when nothing widens (stored list
+ * unchanged), else a new path list (stored order; widened entries take the
+ * candidate's spelling). */
+function widenStoredPaths(stored, candidate) {
+  const dirByKey = new Map();
+  for (const c of candidate) {
+    if (hasDirSignal(normalizeScopePath(c))) dirByKey.set(scopeKey(c), c);
+  }
+  let widened = false;
+  const merged = stored.map((sp) => {
+    const cand = dirByKey.get(scopeKey(sp));
+    if (cand !== undefined && !hasDirSignal(normalizeScopePath(sp))) {
+      widened = true;
+      return cand;
+    }
+    return sp;
+  });
+  return widened ? merged : null;
+}
+
 function cmdCodeScopeClaim(args) {
   const flags = parseFlags(args, { by: 'value', scope: 'value', file: 'value' });
   const file = reservationsFile(flags);
@@ -109,7 +132,30 @@ function cmdCodeScopeClaim(args) {
       existingNorm.length === candidateNorm.length &&
       existingNorm.every((p, i) => p === candidateNorm[i]);
     if (identical) {
-      const out = { status: 'OK', idempotent: true, file, reservation: existingSame };
+      const merged = widenStoredPaths(existingSame.paths || [], paths);
+      if (merged === null) {
+        const out = { status: 'OK', idempotent: true, file, reservation: existingSame };
+        process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+        exitWithLock(lockPath, 0);
+      }
+      // The candidate adds a directory signal the stored form lacks: check the
+      // widened scope against every other feature before storing it (fail safe).
+      const widenOverlaps = findScopeOverlaps(data.reservations, merged, by);
+      if (widenOverlaps.length > 0) {
+        const out = { status: 'CONFLICT', file, claim: { by, paths: merged }, overlaps: widenOverlaps };
+        process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+        const featureIds = [...new Set(widenOverlaps.map((o) => o.feature))];
+        process.stderr.write(
+          `conflict: widened scope overlaps in-flight feature(s): ${featureIds.join(', ')}\n`
+        );
+        exitWithLock(lockPath, 1);
+      }
+      const widened = { ...existingSame, paths: merged };
+      const next = {
+        reservations: data.reservations.map((r) => (r === existingSame ? widened : r)),
+      };
+      writeJsonAtomic(file, next);
+      const out = { status: 'OK', idempotent: true, widened: true, file, reservation: widened };
       process.stdout.write(JSON.stringify(out, null, 2) + '\n');
       exitWithLock(lockPath, 0);
     }

@@ -30,9 +30,16 @@ function normalizeScopePath(p) {
   return out;
 }
 
-/** True if a normalized scope ends in `/` (explicit directory). */
+/** True if a normalized scope ends in `/` or in `/.` (any number of `/./`
+ * pairs): both name a directory, and scopeSegments drops the `.` anyway. */
 function hasDirSignal(norm) {
-  return norm.length > 1 && norm.endsWith('/');
+  if (norm.length <= 1) return false;
+  // Linear right-to-left scan: strip trailing "/." pairs, then a trailing "/".
+  let e = norm.length;
+  while (e >= 2 && norm[e - 1] === '.' && norm[e - 2] === '/') e -= 2;
+  // `./.` special case: raw input only; normalized callers never reach it.
+  if (e < norm.length) return !(e === 1 && norm[0] === '.');
+  return norm[e - 1] === '/';
 }
 
 /** Canonical identity of a scope for equality checks: segments only, without
@@ -51,6 +58,9 @@ function scopeKey(raw) {
  * letting the O(n*m) matchers or the recursion blow up (RangeError). */
 const MAX_SEGMENT_CHARS = 1024;
 const MAX_SEGMENTS = 256;
+/** Cap on the whole normalized path: `.` segments are dropped before the
+ * segment count, so without it they could grow the input unbounded. */
+const MAX_PATH_CHARS = 4096;
 
 class ScopeLimitError extends Error {
   constructor(message) {
@@ -66,6 +76,9 @@ class ScopeLimitError extends Error {
  * segment is longer than MAX_SEGMENT_CHARS or there are more than
  * MAX_SEGMENTS segments. */
 function scopeSegments(p) {
+  if (p.length > MAX_PATH_CHARS) {
+    throw new ScopeLimitError(`scope has ${p.length} characters, exceeds the limit of ${MAX_PATH_CHARS}`);
+  }
   const segs = p.split('/').filter((s) => s !== '' && s !== '.');
   if (segs.length > MAX_SEGMENTS) {
     throw new ScopeLimitError(`scope has ${segs.length} segments, exceeds the limit of ${MAX_SEGMENTS}`);
@@ -269,6 +282,7 @@ module.exports = {
   ScopeLimitError,
   MAX_SEGMENT_CHARS,
   MAX_SEGMENTS,
+  MAX_PATH_CHARS,
   matchesGlob,
   scopePathsOverlap,
 };

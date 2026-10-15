@@ -269,7 +269,35 @@ MD
   [[ "$rc" == "1" && "$v" == "1/BLOCKER" ]] && ok "L8b over-limit owns is a BLOCKER finding, rc 1" || bad "L8b over-limit owns (rc=$rc v=$v)"
 }
 
-caseL1; caseL2; caseL3; caseL4; caseL5; caseL6; caseL7; caseL8
+# ---------- L9: owns ending in "/." is a directory (fix scope-reclaim-dir-signal) ----------
+caseL9() {
+  local t out v; t="$(mktemp -d)"
+  cat > "$t/PLAN.md" <<'MD'
+---
+phase: probe
+lanes:
+  - id: lane-a
+    waves: [1]
+    owns:
+      - "docs/v1.2/."
+  - id: lane-b
+    waves: [2]
+    owns:
+      - "**/x"
+---
+
+## Wave 1 — a
+## Wave 2 — b
+MD
+  out="$(node "$TOOLS" lane-split check --plan "$t/PLAN.md" 2>/dev/null)"
+  v="$(node -e "
+    const j=JSON.parse(process.argv[1]);
+    process.stdout.write(String(j.findings.filter((x)=>x.check==='owns-overlap').length));
+  " "$out" 2>&1)"
+  [[ "$v" == "1" ]] && ok "L9 owns 'docs/v1.2/.' counts as directory, overlaps '**/x'" || bad "L9 dir-dot owns ($v)"
+}
+
+caseL1; caseL2; caseL3; caseL4; caseL5; caseL6; caseL7; caseL8; caseL9
 printf '%s\n' "${results[@]}"
 echo "----"
 echo "a1-lane-split: $pass passed, $fail failed"

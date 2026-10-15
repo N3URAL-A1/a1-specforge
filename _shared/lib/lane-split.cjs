@@ -256,7 +256,7 @@ function crossLaneImportFindings(lanes, repoRootArg) {
     for (const lane of lanes) {
       const owned = lane.owns.some((pattern) => {
         try {
-          return scopePathsOverlap([pattern], [rel]);
+          return scopePathsOverlap(pattern, rel);
         } catch (e) {
           if (e instanceof ScopeLimitError) return false; // reported by owns-overlap
           throw e;
