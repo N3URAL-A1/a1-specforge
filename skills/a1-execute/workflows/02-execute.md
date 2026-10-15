@@ -127,7 +127,10 @@ the gate call again.
    the gate call below and route what it says. Only `absent`, `origin_changed`
    and `unbound_legacy` (no permit) lead on.
 2. **Gate call** (below). A no-permit repository returns `not_applicable` with
-   `reason: external_review_not_permitted`; zero bytes left the machine.
+   `reason: external_review_not_permitted`; zero bytes left the machine. When
+   `permit_state` is `origin_changed` or `unbound_legacy`, print
+   `ℹ Codex review skipped: permit void (<permit_state>) — the owner should re-consent; Reinhard-only.`
+   and put the state in the retro (never present it as a plain absent permit).
 3. **Ask once.** Only if this session can ask the owner (AskUserQuestion exists;
    not headless, not CI, not a subagent — an executor subagent never asks) and
    this phase has not asked yet:
@@ -152,8 +155,9 @@ the gate call again.
    owner may accept the risk, use the flow of a1-plan `04b-xprov-review.md` Step 5
    with this `--phase <phase_name>`: report what failed first, then
    `xprov consent question --kind waiver --phase <phase_name>`, AskUserQuestion
-   exactly as printed, then `xprov consent ensure|waive --kind waiver`. The terminal
-   `xprov waive` below stays the owner's own command.
+   exactly as printed, then `xprov consent ensure|waive --kind waiver`. This is the
+   main path; the terminal `xprov waive` below is only the fallback for headless
+   runs and stays the owner's own command.
 6. **Headless, CI or subagent:** no question, no consent. Print one line,
    `ℹ No Codex permit and no chat to ask: Reinhard-only review.`, and continue with
    the `not_applicable` row below.
@@ -216,8 +220,8 @@ findings plus that summary. One fix round per wave (`next.fix_round` is always 1
    Continuing to the checkpoint because the registry row is still `warning`.
 ```
 
-**Waiver — terminal path.** (The owner can also waive by chat: 2b-x.0 item 5.) When the provider is down or the user accepts the
-risk, tell the user the command and wait; the human runs
+**Waiver — terminal fallback.** (Main path: the owner waives by chat, 2b-x.0 item 5.) Only when no chat can ask (headless run) and the provider is down or the owner accepts the
+risk, tell the owner the command and wait; the owner runs
 `a1-tools xprov waive --phase <phase_name> --gate wave-inspect-xprov --wave <N> --base $PRE_WAVE_HEAD --work-path $WORK_PATH --reason "<text>" --by <name>`
 in a separate terminal. It runs only in the owner's own terminal — never through an agent's Bash tool or the `!` prefix: like the allowlist owner approval it refuses without a TTY, under Claude Code's environment or with a Claude Code ancestor, and, in a1-specforge itself, the project's PreToolUse hook denies any Bash command containing it (the plugin does not ship the hook to other repositories; there the TTY/ancestor guard is the control). It shows the key it computed itself (the PLAN.md sha256, the work path's HEAD and the full
 base sha), asks for the gate id typed back and records the waiver in

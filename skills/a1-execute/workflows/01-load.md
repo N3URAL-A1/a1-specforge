@@ -74,7 +74,9 @@ place the check fails with that reason, which is the correct answer.)
   repository (`permit_state: denied`) and for a repository with no permit
   (`permit_state: absent`, `origin_changed` or `unbound_legacy`): **continue**,
   print `ℹ Plan review not applicable — no Codex permit for this repository; Reinhard-only, continuing.`
-  (denied: the line above), and record `{id: plan-review-xprov, verdict: not_applicable, caught: false}`
+  (denied: the line above). When `permit_state` is `origin_changed` or `unbound_legacy`, the
+  line names it instead — `ℹ Codex review skipped: permit void (<permit_state>) — the owner should re-consent; Reinhard-only, continuing.` —
+  and the retro records the state; Reinhard-only must never look like a plain absent permit. Record `{id: plan-review-xprov, verdict: not_applicable, caught: false}`
   with the issue tag `xprov_not_applicable`. A mismatch or broken state
   (`*_mismatch`, `audit_broken`, `invalid`) stays exit 1.
 - **Exit 1, `reason: plan_review_missing`** → read `enforcement` from the
@@ -85,9 +87,14 @@ place the check fails with that reason, which is the correct answer.)
   - `blocking` → **STOP before the Isolation Gate.** Print the block with the
     first line `❌ … enforcement: blocking`; route the user to `a1-plan`
     Phase 4b (re-run the review on the current PLAN.md). The only other way
-    forward is a human waiver — tell the user the command, do not run it:
+    forward is a waiver by the owner. Main path (chat): a1-plan
+    `04b-xprov-review.md` Step 5 with `--phase <phase_name>` — report what failed,
+    `xprov consent question --kind waiver --phase <phase_name>`, AskUserQuestion
+    exactly as printed, then `xprov consent ensure|waive --kind waiver`. Fallback
+    for headless runs (no chat to ask): tell the owner the terminal command and
+    wait; an agent never runs it:
     `a1-tools xprov waive --phase <phase_name> --gate plan-review-xprov --reason "<text>" --by <name>`.
-    It runs only in the owner's own terminal — never through an agent's Bash tool or the `!` prefix: like the allowlist owner approval it refuses without a TTY, under Claude Code's environment or with a Claude Code ancestor, and, in a1-specforge itself, the project's PreToolUse hook denies any Bash command containing it (the plugin does not ship the hook to other repositories; there the TTY/ancestor guard is the control). It shows the key it computed itself (the PLAN.md sha256), asks for the gate id typed back and records the waiver in the guarded store
+    The terminal command refuses without a TTY, under Claude Code's environment or with a Claude Code ancestor; it shows the key it computed itself (the PLAN.md sha256), asks for the gate id typed back and records the waiver in the guarded store
     `~/.a1-xprov/waivers.json`; load-check accepts it only while PLAN.md still has that sha256. A
     `waived: true` row in `index.json` is a mirror and unblocks nothing (spec 009 FR-003, FR-007).
 - **Exit 2** → usage error or `xprov-gate.cjs` not shipped in this plugin

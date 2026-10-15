@@ -33,13 +33,18 @@ echo "xprov wave-status exit=$RC"
   list is also non-empty for a repository with no permit (`permit_state: absent`,
   `origin_changed` or `unbound_legacy`, reason `external_review_not_permitted`):
   exit 0, Reinhard-only, retro `{id: wave-inspect-xprov, verdict: not_applicable, caught: false}`
-  with the issue tag `xprov_not_applicable` (see `issue_classes` below). A mismatch
+  with the issue tag `xprov_not_applicable` (see `issue_classes` below). For `origin_changed` or
+  `unbound_legacy` the retro names the `permit_state` ("Codex review skipped: permit void (<state>)").
+  A mismatch
   or broken state (`*_mismatch`, `audit_broken`, `invalid`) stays exit 1.
 - **Exit 1** → the stdout JSON lists the lacking waves. For each: go back to
   `02-execute.md` step 2b-x for that wave (re-run the inspection with that
-  wave's `--base`), or the user waives it — the human runs
+  wave's `--base`), or the owner waives it. Main path: the chat waiver of
+  `02-execute.md` 2b-x.0 item 5 (`xprov consent question --kind waiver --phase <phase_name>`,
+  AskUserQuestion exactly as printed, `xprov consent ensure|waive --kind waiver`).
+  Fallback for headless runs only: the owner runs
   `a1-tools xprov waive --phase <phase_name> --gate wave-inspect-xprov --wave <N> --base <that wave's PRE_WAVE_HEAD> --work-path $WORK_PATH --reason "<text>" --by <name>`
-  themselves, in a separate terminal (it refuses agent process trees); this skill never does. While the registry row says `warning`,
+  in a separate terminal (it refuses agent process trees); this skill never does. While the registry row says `warning`,
   an exit 1 here is the same warning block as in step 2b-x and Victor is
   spawned anyway (record `verdict: fail` in the retro); once `blocking`, stop
   here.

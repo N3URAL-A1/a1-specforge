@@ -50,6 +50,9 @@ decision D-1): permit-check, then the gate, then the question, then the gate.
    `unbound_legacy` (no permit) lead on.
 2. **Run the gate** (Step 1). A no-permit repository returns `not_applicable`
    with `reason: external_review_not_permitted` and zero bytes left the machine.
+   When `permit_state` is `origin_changed` or `unbound_legacy`, the permit is void,
+   not absent: print `ℹ Codex review skipped: permit void (<permit_state>) — the owner should re-consent; Reinhard-only.`
+   and name the state in the retro, so the lower review level is never silent.
 3. **Ask once.** Only if this session can ask the owner (the AskUserQuestion tool
    exists; this is not a headless run, a CI run or a subagent) and this phase has
    not asked yet, print the canonical question — never write it yourself:
@@ -124,6 +127,7 @@ The driver has already appended verdict, XREVIEW.md path and result path to
 
 Notice for `not_applicable` (one line): `ℹ Cross-provider plan review not applicable — the owner denied external review for this repository (gate plan-review-xprov); continuing.`
 For `external_review_not_permitted`: `ℹ Cross-provider plan review not applicable — no Codex permit for this repository (gate plan-review-xprov); Reinhard-only, continuing.`
+For `permit_state` `origin_changed` or `unbound_legacy`: `ℹ Codex review skipped: permit void (<permit_state>) — the owner should re-consent; Reinhard-only, continuing.`
 
 Warning / halt block — same text, only the first line differs:
 
