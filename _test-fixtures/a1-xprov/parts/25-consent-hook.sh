@@ -299,6 +299,8 @@ sc_sym() { # the settings file is a symlink to a file outside .claude; and .clau
 # R4-1: bash line continuations in an .md body are no keys; the escape check looks at the frontmatter region only
 sc_mdbody() { sc_wr .claude/agents/q.md $'---\nname: q\n---\nrun a \\\n  b'; }
 sc_mdevbody() { sc_wr .claude/agents/q.md $'---\nname: q\n---\nsee PreToolUse'; }   # an event name anywhere in the file still counts
+# R5-1 (Samuel wave 4 round 5, theoretical): whitespace before the opening --- (BOM plus spaces; a blank line) still opens the frontmatter region
+sc_r51() { local a b; a="$(sc_wr .claude/agents/q.md $'\xef\xbb\xbf  ---\nname: q\nhooks: {"\\x50reToolUse": []}\n---\nb')"; b="$(sc_wr .claude/agents/r.md $'\n---\nname: q\nhooks: {"\\x50reToolUse": []}\n---\nb')"; echo "$a|$b"; }
 sc_mdnoopen() { sc_wr .claude/agents/q.md $'name: q\nrun a \\\n  b'; }              # no opening --- : no escape check
 sc_guard() { # a one-space edit of line 1 of every class file in this snapshot (hooks/hooks.json is the excepted own file): only settings.json may be denied
   local f n=0 list="" in; prep25
@@ -379,6 +381,7 @@ caseF() {
   assert_eq "R4-1a a bash line continuation in an .md body (clean frontmatter): allowed" "$(sc_mdbody)" "allow"
   assert_eq "R4-1b an event name in the body of an .md: denied (whole file)" "$(sc_mdevbody)" "$D"
   assert_eq "R4-1c an .md without an opening --- and a line continuation: allowed" "$(sc_mdnoopen)" "allow"
+  assert_eq "R5-1 an escaped event name in the frontmatter of an .md that opens with BOM + spaces, or with a blank line: denied" "$(sc_r51)" "$D|$D"
   assert_eq "R4-1d one-space edit of every class file of this snapshot: only .claude/settings.json is denied" "$(sc_guard)" "1|.claude/settings.json"
   assert_eq "R4-2 settings symlinked into a dotfiles dir (user, project, chain): the targets are denied, an unrelated file in it is allowed" "$(sc_link)" "$D|$D|$D|allow"
   assert_eq "A9 a plugin.json with a BOM and a hooks key: denied" "$(sc_bom)" "$D"
@@ -420,6 +423,7 @@ caseF() {
   red25 "R4-1a" sc_mdbody "allow" $PATHS25 "const escTexts = kind === 'md' ? texts.map(frontmatterRegion) : texts;" "const escTexts = texts;"
   red25 "R4-1b" sc_mdevbody "$D" $PATHS25 "if (texts.some((t) => EVENT_RE.test(t))) return" "if (escTexts.some((t) => EVENT_RE.test(t))) return"
   red25 "R4-1c" sc_mdnoopen "allow" $PATHS25 "if (!t.startsWith('---')) return '';" "if (!t.startsWith('---')) return t;"
+  red25 "R5-1" sc_r51 "$D|$D" $PATHS25 "const t = String(text).replace(/^[\\uFEFF\\s]+/, '');" "const t = String(text).replace(/^\\uFEFF/, '');"
   red25 "R4-1d" sc_guard "1|.claude/settings.json" $PATHS25 "const escTexts = kind === 'md' ? texts.map(frontmatterRegion) : texts;" "const escTexts = texts;"
   red25 "R4-2" sc_link "$D|$D|$D|allow" $PATHS25 " || isKnownSettingsFile(file, cwd)) return 'json';" ") return 'json';"
   red25 "A9" sc_bom "$D" $PATHS25 "catch (_e) { return /\"hooks\"/i.test(String(text)); }" "catch (_e) { return false; }"

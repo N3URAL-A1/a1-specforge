@@ -217,9 +217,9 @@ function newContent(tool, input, old) {
 
 const view = (text) => String(text);
 
-/** The part of a .md where a YAML escape could spell a key: from the opening `---` (BOM stripped) to the first line that is exactly `---` (else the whole text); '' when the file does not open with `---`. */
+/** The part of a .md where a YAML escape could spell a key: from the opening `---` (leading BOM and whitespace, blank lines included, stripped) to the first line that is exactly `---` (else the whole text); '' when the file does not open with `---`. */
 function frontmatterRegion(text) {
-  const t = String(text).replace(/^\uFEFF/, '');
+  const t = String(text).replace(/^[\uFEFF\s]+/, '');
   if (!t.startsWith('---')) return '';
   const lines = t.split('\n');
   const end = lines.findIndex((l, i) => i > 0 && l.trim() === '---');
