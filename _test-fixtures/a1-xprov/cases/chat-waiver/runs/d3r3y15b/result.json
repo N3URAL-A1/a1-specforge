@@ -1,0 +1,77 @@
+{
+  "status": "completed",
+  "mode": "review",
+  "provider": "codex",
+  "roles": {
+    "host": "claude",
+    "planner": "claude",
+    "reviewer": "codex",
+    "builder": "claude",
+    "inspector": "codex"
+  },
+  "repo": "/Users/rob/.a1-xprov/snapshots/snap-vy4JPx",
+  "plan": "/Users/rob/.a1-xprov/snapshots/snap-vy4JPx.inputs/PLAN.md",
+  "plan_sha256": "dd78f2416251b8895d45fe1563fd344a5a39e0610cdfbbee0a17386cfa24d735",
+  "requested_model": null,
+  "requested_effort": null,
+  "base": null,
+  "snapshot": null,
+  "previous": null,
+  "started_at": 1791837998.56352,
+  "artifacts": "/Users/rob/.a1-xprov/artifacts/infra-rename-a1-office/claudex-d3r3y15b",
+  "cli_version": "codex-cli 0.155.1",
+  "executable": [
+    "/opt/homebrew/lib/node_modules/@openai/codex/bin/codex.js"
+  ],
+  "exit_code": 0,
+  "session_id": "01a131de-0ec2-7773-9c64-12c3363b5e8d",
+  "response": {
+    "verdict": "REVISE",
+    "summary": "The main cutover is carefully gated, but rollback guidance and the optional deletion gates leave concrete operational gaps.",
+    "findings": [
+      {
+        "id": "R1",
+        "severity": "medium",
+        "path": ".github/workflows/deploy.yml:99",
+        "evidence": "The failure summary directs operators to `kubectl rollout undo` as the last healthy revision. After B7, that command selects B6, which still uses the new registry path. The plan explicitly recognizes this problem but updates only STATUS.md, leaving the operational failure response unchanged. An operator following Deploy Verification after the cutover can therefore fail to restore the old registry during an incident.",
+        "fix": "Update the workflow's rollback guidance and related operational instructions to use a recorded, verified image digest and registry path. Explain the B6/B7 revision behavior where operators receive the failure instructions."
+      },
+      {
+        "id": "R2",
+        "severity": "high",
+        "path": "PLAN.md — Task 4.1, steps 2–4",
+        "evidence": "The all-workload and active-ReplicaSet checks occur before Robert's confirmation pause. After confirmation, only `deploy/n3ural-app` and its pods are rechecked. The B2–B8 freeze has ended. Another workload can start using the old namespace during that pause while the app image and generation remain unchanged; LIVE_OK still passes and deletion removes that workload's image source.",
+        "fix": "Establish a deletion-window freeze covering consumers of the old registry, then rerun gates b–e after confirmation immediately before deletion. If the consumer set or deletion inventory changes, stop and refresh the approval."
+      },
+      {
+        "id": "R3",
+        "severity": "medium",
+        "path": "PLAN.md — Task 4.1, gate c",
+        "evidence": "Gate c labels other remote branches 'not deployable' and excludes them. However, build-image.yml explicitly supports selecting a branch for workflow_dispatch, checks out that branch, and uses its registry path with SCW_SECRET_KEY. A retained branch containing the old workflow can still be dispatched after deletion and attempt to publish to the deleted namespace. Worktrees and open PRs do not cover all executable workflow refs.",
+        "fix": "Include dispatchable branches containing the old build workflow in the cleanup decision, or explicitly retire their build/deploy use through an enforceable restriction. Do not treat absence of an open PR or worktree as proof that a branch cannot publish."
+      }
+    ],
+    "coverage": [
+      "Verified the supplied PLAN.md SHA256.",
+      "Read the phase RESEARCH.md and MAP.md, and reviewed all four plan waves and their verification scripts.",
+      "Inspected infra labels, selectors, image references, deployment strategy, pull policy, and app README.",
+      "Traced registry publishing through build-image.yml, manual deployment instructions, registry cleanup documentation, and QA setup references.",
+      "Inspected the related deploy verification workflow and its rollback failure summary.",
+      "Read the CI change classifier and the two proposed unit-test files; searched repository registry references beyond the plan's target files."
+    ],
+    "limitations": [
+      "Static review only; no tests, plan scripts, cluster commands, registry requests, or mutations were executed.",
+      "Live digests, registry responses, credentials, remote branch contents, and production state were not independently verified.",
+      "External repositories and the external xprov implementation were not inspected."
+    ]
+  },
+  "usage": {
+    "input_tokens": 190450,
+    "cached_input_tokens": 134016,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 1457,
+    "reasoning_output_tokens": 160
+  },
+  "observed_models": [],
+  "elapsed_seconds": 48.67
+}

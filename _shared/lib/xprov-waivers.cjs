@@ -175,13 +175,17 @@ function chainCoverage(pairs, candidates, tips, phase) {
   return chosen;
 }
 
-/** Appends one record; a broken existing store is never replaced (Samuel S-m5 for approvals). */
-function appendWaiver(record, writeGuardedStore) {
+/** Appends the records in ONE atomic write; a broken existing store is never replaced (Samuel S-m5 for approvals).
+ * The caller holds the owner-store lock (xprov-audit.cjs withStoreLock): this reads the store and writes it back (spec 016 R-4). */
+function appendWaivers(records, writeGuardedStore) {
   const current = readWaivers();
   if (!current.ok && !current.missing) throw C.inputError(`the existing ${STORE_LABEL} is not usable (${current.why}); fix or remove ${waiversPath()} yourself`, 'store_broken');
-  const rec = validRecord(record);
-  if (!rec) throw new Error('internal: waiver record off-format');
-  return writeGuardedStore(WAIVERS_FILE, { version: 1, waivers: [...current.waivers, rec] });
+  const recs = records.map(validRecord);
+  if (recs.some((r) => r === null)) throw new Error('internal: waiver record off-format');
+  return writeGuardedStore(WAIVERS_FILE, { version: 1, waivers: [...current.waivers, ...recs] });
 }
 
-module.exports = { WAIVERS_FILE, RECORD_KEYS, waiversPath, readWaivers, planShaOf, headIn, inHistory, planWaiver, waveWaivers, chainCoverage, leadsTo, exemptFiles, parseRawZ, appendWaiver, validRecord };
+/** Appends one record (see appendWaivers). */
+const appendWaiver = (record, writeGuardedStore) => appendWaivers([record], writeGuardedStore);
+
+module.exports = { WAIVERS_FILE, RECORD_KEYS, waiversPath, readWaivers, planShaOf, headIn, inHistory, planWaiver, waveWaivers, chainCoverage, leadsTo, exemptFiles, parseRawZ, appendWaiver, appendWaivers, validRecord };

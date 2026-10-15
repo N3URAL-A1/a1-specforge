@@ -1,0 +1,42 @@
+[
+ {
+  "RuleID": "generic-api-key",
+  "Description": "Detected a Generic API Key, potentially exposing access to various services and sensitive operations.",
+  "StartLine": 1,
+  "EndLine": 1,
+  "StartColumn": 18,
+  "EndColumn": 59,
+  "Match": "MASKED-FIXTURE-MATCH-1",
+  "Secret": "MASKED-FIXTURE-SECRET-1",
+  "File": "src/config/client.js",
+  "SymlinkFile": "",
+  "Commit": "",
+  "Entropy": 4.9541965,
+  "Author": "",
+  "Email": "",
+  "Date": "",
+  "Message": "",
+  "Tags": [],
+  "Fingerprint": "src/config/client.js:generic-api-key:1"
+ },
+ {
+  "RuleID": "github-pat",
+  "Description": "Uncovered a GitHub Personal Access Token, potentially leading to unauthorized repository access and sensitive content exposure.",
+  "StartLine": 1,
+  "EndLine": 1,
+  "StartColumn": 14,
+  "EndColumn": 53,
+  "Match": "MASKED-FIXTURE-MATCH-2",
+  "Secret": "MASKED-FIXTURE-SECRET-2",
+  "File": "src/config/.env.sample",
+  "SymlinkFile": "",
+  "Commit": "",
+  "Entropy": 4.8341837,
+  "Author": "",
+  "Email": "",
+  "Date": "",
+  "Message": "",
+  "Tags": [],
+  "Fingerprint": "src/config/.env.sample:github-pat:1"
+ }
+]

@@ -28,12 +28,12 @@ const PASS_MARKER_FILE = 'a1-pass.json';
 const SHA_RE = /^[0-9a-f]{40,64}$/;
 
 /** The run dir of `resultPath` lies in THIS repository's artifacts dir (realpath). */
-function inOwnArtifacts(resultPath) {
+function inOwnArtifacts(resultPath, root) {
   if (typeof resultPath !== 'string' || resultPath === '') return false;
   const A = require('./xprov-artifacts.cjs');
-  const root = X.artifactsDir(A.repoSlug());
+  const dir = X.artifactsDir(A.repoSlug(root));
   const runDir = path.dirname(path.resolve(resultPath));
-  return A.isUnder(runDir, root) && path.resolve(runDir) !== path.resolve(root);
+  return A.isUnder(runDir, dir) && path.resolve(runDir) !== path.resolve(dir);
 }
 
 /** A JSON object read with O_NOFOLLOW (C.readNoFollow), or null. */
@@ -51,16 +51,16 @@ function hasPassMarker(runDir, planSha) {
 }
 
 /** result.json of a run dir in our artifacts, or null. */
-function runRecord(resultPath) {
-  return inOwnArtifacts(resultPath) ? readJsonNoFollow(path.resolve(resultPath)) : null;
+function runRecord(resultPath, root) {
+  return inOwnArtifacts(resultPath, root) ? readJsonNoFollow(path.resolve(resultPath)) : null;
 }
 
 /** { head, base } of an inspection ONLY from a1-reviewed.json, and only when
  * it agrees with the record's snapshot.base and diff_sha256; else nulls. */
-function reviewedHeadBase(resultPath, record) {
+function reviewedHeadBase(resultPath, record, root) {
   const none = { head: null, base: null };
-  const rec = record === undefined ? runRecord(resultPath) : record;
-  if (!inOwnArtifacts(resultPath) || !C.isPlainObject(rec) || !C.isPlainObject(rec.snapshot)) return none;
+  const rec = record === undefined ? runRecord(resultPath, root) : record;
+  if (!inOwnArtifacts(resultPath, root) || !C.isPlainObject(rec) || !C.isPlainObject(rec.snapshot)) return none;
   const rev = readJsonNoFollow(path.join(path.dirname(path.resolve(resultPath)), REVIEWED_FILE));
   if (!rev || !SHA_RE.test(String(rev.commit)) || !SHA_RE.test(String(rev.base))) return none;
   if (rev.base !== rec.snapshot.base || rev.diff_sha256 !== rec.snapshot.diff_sha256) return none;
@@ -72,18 +72,18 @@ const approvedAs = (rec, mode, planSha) => C.isPlainObject(rec) && rec.status ==
 
 /** A plan-review pass row counts only when its run dir holds a completed,
  * APPROVED review of exactly this PLAN.md (load-check, FR-003). */
-function planPassValid(resultPath, planSha) {
-  const rec = runRecord(resultPath);
+function planPassValid(resultPath, planSha, root) {
+  const rec = runRecord(resultPath, root);
   return approvedAs(rec, 'review', planSha) && hasPassMarker(path.dirname(path.resolve(resultPath)), planSha);
 }
 
 /** A wave pass row counts only through its run dir: a completed, APPROVED
  * inspect of this PLAN.md with a matching a1-reviewed.json → { head, base },
  * else null (wave-status, FR-004). The row's own head/base are never read. */
-function inspectPass(resultPath, planSha) {
-  const rec = runRecord(resultPath);
+function inspectPass(resultPath, planSha, root) {
+  const rec = runRecord(resultPath, root);
   if (!approvedAs(rec, 'inspect', planSha) || !hasPassMarker(path.dirname(path.resolve(resultPath)), planSha)) return null;
-  const hb = reviewedHeadBase(resultPath, rec);
+  const hb = reviewedHeadBase(resultPath, rec, root);
   return hb.head === null ? null : hb;
 }
 

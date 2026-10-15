@@ -5,6 +5,8 @@
 
 const CONSENT_HELP = `    consent question|ensure|record|revoke  --kind consent|classification [--repo <git-toplevel>]
           [--ludwig-record <vault path>]
+    consent question|ensure --kind waiver|allowlist, consent waive, consent allowlist
+          (--phase <name> | --work-path <worktree> | --scan <snap-basename>) [--repo <git-toplevel>]
                   (spec 016 FR-002, FR-003, FR-005, FR-007, FR-008; xprov-consent*.cjs)
                   The owner's yes to "may this repo go to Codex" as a chat answer,
                   no terminal. question: prints the canonical AskUserQuestion input
@@ -35,7 +37,24 @@ const CONSENT_HELP = `    consent question|ensure|record|revoke  --kind consent|
                   markers whatever channel wrote them; the next send asks again. An
                   unusable consent or denial store is reported (exit 1,
                   revoke_partial) and left alone; the permit is removed anyway.
-                  waive and allowlist follow in wave 3 (exit 2 until then).
+                  waive (wave 3, FR-013): question|ensure --kind waiver (--phase <name> |
+                  --work-path <worktree>) puts ONE xprov-Waiver question per phase
+                  listing every gate target that is failed now, read by the command
+                  from xreview/index.json and the run records (never from arguments):
+                  gate, repo, phase, PLAN.md sha256, wave, lane, head, base, the fail
+                  reason and the open BLOCKER/MAJOR titles. \`consent waive\` with the
+                  same flags writes one waiver record per listed target (by
+                  owner-chat, the shape of the terminal waive) against a matching
+                  owner yes. A target that changed (new PLAN.md sha, new head) or a
+                  gate that failed after the question changes the question: nothing
+                  is written, a new question is needed. The consent to send never
+                  implies a waiver. A waiver is not a pass.
+                  allowlist (wave 3, FR-014): question|ensure --kind allowlist --scan
+                  <snap-basename> lists the hits of one secret scan (path, line, rule,
+                  blob sha256, a fixed mask instead of an excerpt; the matched text is
+                  never read). \`consent allowlist --scan <snap-basename>\` adds the
+                  listed blobs' sha256 to the approvals store against a matching
+                  owner yes; a changed blob or a new hit needs a new question.
                   Tier 0: every owner write appends a hash-chained line to
                   ~/.a1-xprov/consent-audit.jsonl first. The stores are records the
                   same OS user could write; the chain makes a naive forgery

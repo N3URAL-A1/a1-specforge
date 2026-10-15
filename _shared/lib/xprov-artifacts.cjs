@@ -50,8 +50,8 @@ const MS_PER_HOUR = 60 * 60 * 1000;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const REASON_INSIDE = 'artifacts_inside_checkout_or_vault';
 
-function repoSlug() {
-  return assertSafeSegment(path.basename(repoRoot()), 'repo slug');
+function repoSlug(root) {
+  return assertSafeSegment(path.basename(root === undefined ? repoRoot() : root), 'repo slug'); // `root`: a checkout other than the current directory's (spec 016 consent CLI)
 }
 
 /** realpath of `p` even when its tail does not exist yet: resolve the deepest

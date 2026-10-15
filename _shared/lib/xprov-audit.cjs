@@ -37,6 +37,7 @@ const MAX_BYTES = 8 * 1024 * 1024;
 const LOCK_WAIT_MS = 3000;
 const LOCK_STALE_MS = 15000;
 const LOCK_POLL_MS = 25;
+const FUTURE_SKEW_MS = 5000; // a lock stamped further ahead than this is not a live holder's (clock skew stays below it)
 const FIELD_MAX_CHARS = 200;
 const LINE_KEYS = Object.freeze(['ts', 'repo', 'action', 'tool_use_id', 'session_id', 'permission_mode', 'prev']);
 const STATE = Object.freeze({ OK: 'ok', MISSING: 'missing', BROKEN: 'broken' });
@@ -171,7 +172,7 @@ function clearStaleGuard(guard) {
   let st = null;
   try { st = fs.lstatSync(guard); } catch (_e) { return; } // raced away
   if (!st.isDirectory()) throw C.inputError(`${guard} exists and is not a directory; remove it yourself so the audit log can be written; nothing written`, 'audit_lock_blocked');
-  if (Date.now() - st.mtimeMs <= LOCK_STALE_MS) return;
+  if (!isStale(st, Date.now())) return;
   try { fs.rmdirSync(guard); return; } catch (_e) { /* not empty (or raced): move it aside below */ }
   try { fs.renameSync(guard, `${guard}.stale.${crypto.randomBytes(8).toString('hex')}`); } catch (_e) { /* raced away */ }
 }
@@ -200,6 +201,18 @@ function takeoverStale(lock, observed) {
   } finally { try { fs.rmdirSync(guard); } catch (_e) { /* gone */ } }
 }
 
+/** A lock is stale when its mtime is older than the threshold, or lies in the FUTURE beyond the clock-skew tolerance (R-1: an mtime
+ * pushed to the year 2100 must not block every owner write for good). */
+const isStale = (st, nowMs) => nowMs - st.mtimeMs > LOCK_STALE_MS || st.mtimeMs - nowMs > FUTURE_SKEW_MS;
+
+/** The refusal for a lock that stayed taken: it names WHICH lock (owner stores or audit log), its path and its age (R-1). */
+function lockedError(lockFile, lock, observed) {
+  const store = lockFile === STORE_LOCK_FILE;
+  const ageS = observed === null ? null : Math.round((Date.now() - observed.mtimeMs) / 1000);
+  const age = ageS === null ? 'it was released as we gave up' : (ageS < 0 ? `its mtime lies ${-ageS} s in the future` : `held for ${ageS} s`);
+  return C.inputError(`the ${store ? 'owner stores are' : 'audit log is'} locked by another process (${store ? 'store lock' : 'audit lock'} ${lock}; ${age}; a lock older than ${LOCK_STALE_MS / 1000} s is taken over, a live one is waited for ${LOCK_WAIT_MS / 1000} s); nothing written`, store ? 'store_locked' : 'audit_locked');
+}
+
 /** Creates the lock as a hard link to a unique nonce file (atomic, fails with EEXIST while held). */
 function acquire(home, lockFile) {
   const lock = path.join(home, lockFile);
@@ -214,8 +227,8 @@ function acquire(home, lockFile) {
       }
       let observed = null;
       try { observed = fs.lstatSync(lock); } catch (_e) { /* released meanwhile */ }
-      if (observed !== null && Date.now() - observed.mtimeMs > LOCK_STALE_MS && takeoverStale(lock, observed)) continue;
-      if (Date.now() > deadline) throw C.inputError('the audit log is locked by another process; nothing written', 'audit_locked');
+      if (observed !== null && isStale(observed, Date.now()) && takeoverStale(lock, observed)) continue;
+      if (Date.now() > deadline) throw lockedError(lockFile, lock, observed);
       sleepMs(LOCK_POLL_MS);
     }
   } finally { fs.rmSync(mine, { force: true }); }

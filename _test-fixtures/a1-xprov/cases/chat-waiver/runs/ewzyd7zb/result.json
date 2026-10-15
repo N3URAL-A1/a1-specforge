@@ -1,0 +1,157 @@
+{
+  "status": "completed",
+  "mode": "inspect",
+  "provider": "codex",
+  "roles": {
+    "host": "claude",
+    "planner": "claude",
+    "reviewer": "codex",
+    "builder": "claude",
+    "inspector": "codex"
+  },
+  "repo": "/Users/rob/.a1-xprov/snapshots/snap-NWzHBT",
+  "plan": "/Users/rob/.a1-xprov/snapshots/snap-NWzHBT.inputs/PLAN.md",
+  "plan_sha256": "65a4b16e42810522e8c5a1f6f7cd246db1abeac3da1dec9ed35b5add1e8a8266",
+  "requested_model": null,
+  "requested_effort": null,
+  "base": "8476ff7c1b99b5379c137347a9439576acdaa031",
+  "snapshot": {
+    "base": "8476ff7c1b99b5379c137347a9439576acdaa031",
+    "files": [
+      {
+        "path": ".a1/phases/infra-rename-cutover/STATUS.md",
+        "kind": "file",
+        "sha256": "5d55b63cd6aee93b0660866c360d5f2106d922ce07c977c715422686e883a4d6"
+      },
+      {
+        "path": ".a1/phases/infra-rename-cutover/observations.jsonl",
+        "kind": "file",
+        "sha256": "c6b0b36e8a415f7b989e4d2f742a81be7e9d3c229d2931e2b611f4c84ebedd97"
+      },
+      {
+        "path": ".a1/phases/infra-rename-cutover/xreview/wave-inspect-xprov-wave-3-r1.dispositions.md",
+        "kind": "file",
+        "sha256": "638823b0f30a0bccf6071d09ad3c7e65abd2abd5ef43b0d5464efd29fe4a1079"
+      },
+      {
+        "path": ".github/workflows/build-image.yml",
+        "kind": "file",
+        "sha256": "b0a78c98d18fdc901840c519f16452f27a2ddf70bc18ba3355eba8a97585d39d"
+      },
+      {
+        "path": ".github/workflows/deploy.yml",
+        "kind": "file",
+        "sha256": "04d5429b7b9e0f0b805ca37243bd26e937d28e902a4e4ff1b90353b5b7957600"
+      },
+      {
+        "path": ".github/workflows/uptime-monitor.yml",
+        "kind": "file",
+        "sha256": "84458da8c84239d177bdf08da87d7dd6d0f22016f3bdd88067c2593cb70943ab"
+      },
+      {
+        "path": "automation/registry/README.md",
+        "kind": "file",
+        "sha256": "7eca70b7a0fc655a9caef77a642ec165e1331d3bee9c78a30356e2b8d9a2419c"
+      },
+      {
+        "path": "docs/OPERATIONS.md",
+        "kind": "file",
+        "sha256": "712245987c52d1334f2b261c392eed425df5f2dbeee9226f8e8c7560609dc267"
+      },
+      {
+        "path": "docs/runbooks/expense-mail-intake.md",
+        "kind": "file",
+        "sha256": "50093ee5bb48efb82b239506545385b104c86b8ff220ace7d218fcb8da1dec06"
+      },
+      {
+        "path": "infra/app/README.md",
+        "kind": "file",
+        "sha256": "7f4d69f49dac709134a9d1b89c4cbd6e5cb549c8f4c88146523cba6e4637653b"
+      },
+      {
+        "path": "scripts/ops/capture-rollback-ref.mjs",
+        "kind": "file",
+        "sha256": "0b2a331c6701b8114af1c1c3e06730a81e19079b2bac22aa16d3dec91d417fac"
+      },
+      {
+        "path": "scripts/ops/capture-rollback-ref.sh",
+        "kind": "file",
+        "sha256": "c7cdfcb4da157f5a74b6dd50383aab6ead44be6466f4ff90ce31872be6dd34f3"
+      },
+      {
+        "path": "scripts/ops/registry-ref-exists.sh",
+        "kind": "file",
+        "sha256": "1983c13f9854d4018a2642a8b22f2b081a89e60ee0a272b4defd4259269277ad"
+      },
+      {
+        "path": "scripts/setup-qa-e2e-tenant.ts",
+        "kind": "file",
+        "sha256": "33118d4bbc71f781f68b905b9647967018a8f93942cc10d1a02ed8f82efe0184"
+      },
+      {
+        "path": "tests/ci/unit-job-dateien.txt",
+        "kind": "file",
+        "sha256": "d8fc5868bb15ed39d3737987eb782b58cf76a613f2026e40b53c60bbe6d73bea"
+      },
+      {
+        "path": "tests/unit/ops/capture-rollback-ref.test.ts",
+        "kind": "file",
+        "sha256": "10f9845950c2f44ee008204329493dbdc3b9754ca016c0a4a745efa497a3d778"
+      },
+      {
+        "path": "tests/unit/ops/registry-ref-exists.test.ts",
+        "kind": "file",
+        "sha256": "62014b8e5c6161e752317544e0cd7e557c2fecb32108753bd73cdeeb1f8f6092"
+      },
+      {
+        "path": "tests/unit/ops/registry-stubs.ts",
+        "kind": "file",
+        "sha256": "ea5ec24da2dd43325aad815ae0e343cc3b5e8008f3412ce6acc88c15ec49fed4"
+      }
+    ],
+    "diff_sha256": "0d5447d9e280b6cec00156d94fdf24bddf143b29f5302aa7c708e6ade8e3054c",
+    "sha256": "5ffef42d09205fd7f831dbc65b69f1172198c4585e7a0b621d6e16e518a6677f"
+  },
+  "previous": null,
+  "started_at": 1791952495.711231,
+  "artifacts": "/Users/rob/.a1-xprov/artifacts/infra-rename-a1-office/claudex-ewzyd7zb",
+  "cli_version": "codex-cli 0.155.1",
+  "executable": [
+    "/opt/homebrew/lib/node_modules/@openai/codex/bin/codex.js"
+  ],
+  "exit_code": 0,
+  "session_id": "01a138b1-24dd-7680-af97-136969ad951a",
+  "response": {
+    "verdict": "REVISE",
+    "summary": "The UID/resourceVersion precondition addresses prior finding R1. One concrete failure-handling defect remains in both deployment guards.",
+    "findings": [
+      {
+        "id": "R2",
+        "severity": "medium",
+        "path": "docs/OPERATIONS.md:579",
+        "evidence": "Every nonzero kubectl patch result marks the rollback record 'NICHT VERWENDET' and reports 'KEIN Wechsel'. The same branch appears in .github/workflows/build-image.yml:239. If the API server commits the image change but the connection drops before the response arrives, kubectl can fail although rollout has started. The guard then skips rollout monitoring and incorrectly invalidates the applicable rollback record. Guard test (d) models only a rejected Conflict, not an applied write followed by a transport error.",
+        "fix": "Treat unsuccessful patch commands as an unknown outcome unless rejection is established. Preserve the rollback record, report the uncertainty, and reconcile the Deployment UID, image and rollout state through exit-checked reads before classifying the attempt. If reads fail, retain the unknown status and require reconciliation before retrying. Apply this to both guard sources and add an applied-write/lost-response test."
+      }
+    ],
+    "coverage": [
+      "Reviewed all 18 manifest-listed changed files using repository reads and the supplied diff, plus the plan, RESEARCH.md, MAP.md and prior-finding disposition.",
+      "Traced capture shell → evaluator → registry resolver, metadata recheck, conditional patch, logging and rollback guidance in both guard sources.",
+      "Inspected capture/resolver tests and stubs, unit-job registration and CI invocation.",
+      "Searched deployment and registry writers across workflows, scripts, infrastructure, automation and active documentation; inspected the Deployment manifest and restart instructions."
+    ],
+    "limitations": [
+      "Static review only; no tests or production commands were run, and no files were edited.",
+      "Recorded test results, production measurements and server-side dry-run claims were reviewed as evidence but not independently reproduced.",
+      "Live cluster state, registry inventories, remote branch workflows and freeze-release conditions were not verified."
+    ]
+  },
+  "usage": {
+    "input_tokens": 866025,
+    "cached_input_tokens": 735488,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 1771,
+    "reasoning_output_tokens": 313
+  },
+  "observed_models": [],
+  "elapsed_seconds": 82.94
+}

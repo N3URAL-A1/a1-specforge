@@ -701,8 +701,9 @@ function waive(o) {
   const typed = readTypedLine();
   if (typed !== gate) return { code: X.EXIT_USAGE, msg: `typed ${JSON.stringify(clip(typed, 40))}, expected ${gate}; nothing written` };
   const rec = { ...key, reason, by, ts: nowIso() };
-  require('./xprov-audit.cjs').appendAudit({ repo: key.repo, action: 'waive' }); // spec 016 FR-010: the chain line first
-  const file = WV.appendWaiver(rec, writeGuardedStore);
+  const AU = require('./xprov-audit.cjs');
+  // spec 016 FR-010 + R-4: the chain line first; the store is read and written back inside the owner-store lock (a parallel chat waiver survives)
+  const file = AU.withStoreLock(() => { AU.appendAudit({ repo: key.repo, action: AU.ACTION.WAIVE }); return WV.appendWaiver(rec, writeGuardedStore); });
   const m = mirrorWaiver(ctx, rec);
   return { code: X.EXIT_PASS, msg: `recorded a human waiver for ${gate} ${scopeOf(wave)} in ${file} — add ${RETRO_ISSUE_WAIVED} to the retro's issues and keep gates_fired verdict as it was — a waiver is not a pass`,
     out: { ok: true, waiver: rec, store: file, entry: m.entry, index_path: ctx.indexPath, xreview_path: m.xreviewPath, observation_file: m.observationFile, retro_issue: RETRO_ISSUE_WAIVED } };
@@ -768,6 +769,6 @@ function cmdXprovWaive(args) {
 }
 
 module.exports = {
-  registryEnforcement, appliesToFor, readIndex, sameWave, gate, loadCheck, waveStatus, waive,
+  registryEnforcement, appliesToFor, readIndex, sameWave, gate, loadCheck, waveStatus, waive, mirrorWaiver,
   cmdXprovGate, cmdXprovLoadCheck, cmdXprovWaveStatus, cmdXprovWaive,
 };

@@ -26,7 +26,12 @@ const C = lib('xprov-common.cjs');
 const RI = lib('xprov-repo-identity.cjs');
 
 const key = (root) => C.commonDirOf(root);
-const question = (root, kind) => Q.buildQuestion(kind, Q.repoContext(root, RI.readOrigin(root), { ludwigRecord: kind === 'classification' && a.ludwig ? a.ludwig : undefined }));
+// Wave 3 kinds are built by their own modules from the phase / scan state, exactly as the plugin hook will (in-process require).
+const question = (root, kind) => {
+  if (kind === 'waiver') return lib('xprov-consent-waive.cjs').buildFor({ root, phase: a.phase }).question;
+  if (kind === 'allowlist') return lib('xprov-consent-allowlist.cjs').buildFor({ root, scan: a.scan }).question;
+  return Q.buildQuestion(kind, Q.repoContext(root, RI.readOrigin(root), { ludwigRecord: kind === 'classification' && a.ludwig ? a.ludwig : undefined }));
+};
 const out = (o) => process.stdout.write(`${JSON.stringify(o)}\n`);
 
 function fill(node, map) {
@@ -94,6 +99,38 @@ if (a.cmd === 'ask') {
   fs.copyFileSync(markerPath(a.root, a.kind), markerPath(a.toRoot, a.kind)); fs.chmodSync(markerPath(a.toRoot, a.kind), 0o600); out({ ok: true });
 } else if (a.cmd === 'marker') {
   out(JSON.parse(fs.readFileSync(markerPath(a.root, a.kind), 'utf8')));
+} else if (a.cmd === 'hits') {
+  // writes the scan hits record of the masked REAL gitleaks report (only path, rule, line, column survive fromGitleaksReport)
+  const H = lib('xprov-consent-hits.cjs');
+  const report = JSON.parse(fs.readFileSync(a.report, 'utf8'));
+  const commit = a.commit || C.gitOut(['-C', a.root, 'rev-parse', 'HEAD']).trim();
+  const hits = [...H.fromGitleaksReport(report), ...(a.extra || [])];
+  H.writeHits(a.name, { version: 1, snapshot: a.name, repo_key: a.repo_key || key(a.root), commit, hits, ts: '2026-10-14T00:00:00.000Z' });
+  out({ ok: true, hits: hits.length, commit });
+} else if (a.cmd === 'chat-waive-slow') {
+  // consent waive with a pause between its read of the waiver store and its write (the window a lost update needs); the store lock must close it
+  const AP = lib('xprov-approve.cjs');
+  const orig = AP.writeGuardedStore;
+  AP.writeGuardedStore = (name, doc) => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, a.ms); return orig(name, doc); };
+  const r = lib('xprov-consent-waive.cjs').waive({ root: a.root, phase: a.phase });
+  out({ ok: r.ok, reason: r.reason || null });
+} else if (a.cmd === 'term-waive') {
+  // the TERMINAL waive (library call; its TTY guards are stubbed BEFORE the gate module loads), run from the repository (cwd)
+  const AP = lib('xprov-approve.cjs');
+  AP.guardRefusal = () => null; AP.readTypedLine = () => a.gate;
+  const G = lib('xprov-gate.cjs');
+  const r = G.waive({ phase: a.phase, gate: a.gate, reason: 'terminal waiver', by: 'robert' });
+  out({ ok: r.code === 0, code: r.code });
+} else if (a.cmd === 'chat-allowlist-slow') {
+  const AP = lib('xprov-approve.cjs');
+  const orig = AP.writeStore;
+  AP.writeStore = (repos) => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, a.ms); return orig(repos); };
+  const r = lib('xprov-consent-allowlist.cjs').approve({ root: a.root, scan: a.scan });
+  out({ ok: r.ok, reason: r.reason || null });
+} else if (a.cmd === 'term-revoke') {
+  // the body of the TERMINAL allowlist revoke (library call; the TTY guard lives in its CLI wrapper)
+  const r = lib('xprov-approve.cjs').revoke(a.root, a.sha);
+  out({ ok: r.code === 0, code: r.code });
 } else {
   process.stderr.write(`consent-sim: unknown cmd ${String(a.cmd).slice(0, 40)}\n`); process.exit(2);
 }

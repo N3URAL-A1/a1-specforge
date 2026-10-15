@@ -1,0 +1,12 @@
+{
+  "phase": "infra-rename-cutover",
+  "gate": "wave-inspect-xprov",
+  "wave": 1,
+  "lane": null,
+  "round": 1,
+  "summary": "No material defects found in the submitted Wave 1 changes. The seven infra files match the planned 12 line replacements; selectors, pod templates, object names, and runtime configuration remain unchanged.",
+  "blocker": [],
+  "major": [],
+  "minor": [],
+  "quarantined": []
+}

@@ -10,7 +10,7 @@
 // function and compares byte for byte, `consent record` recomputes the hash against the marker.
 //
 // Wave 2 registers `consent` (header xprov-Freigabe) and `classification` (xprov-Einstufung).
-// Wave 3 adds `waiver` and `allowlist` by adding entries to KINDS; nothing else changes.
+// Wave 3 adds `waiver` (xprov-Waiver) and `allowlist` (xprov-Allowlist) by adding entries to KINDS; nothing else changes.
 //
 // Texts are German (the owner reads them), one question, two labels, no markup beyond plain text.
 // Every value taken from the repository (name, path, origin) is cleaned of control, line-break and
@@ -87,6 +87,8 @@ function buildClassification(ctx) {
   ].join('\n');
 }
 
+// The waiver and allowlist texts are built by their own modules (they read the failed targets / scan hits themselves); required lazily
+// so this registry stays free of an import cycle. Their builders read `ctx.waiver` / `ctx.allowlist`, which only those modules set.
 const KINDS = Object.freeze({
   consent: Object.freeze({
     header: 'xprov-Freigabe', build: buildConsent,
@@ -97,6 +99,16 @@ const KINDS = Object.freeze({
     header: 'xprov-Einstufung', build: buildClassification,
     labels: Object.freeze({ no: 'Nein, keine Einstufung', yes: 'Ja, Kundenrepo, Legal-Entscheidung liegt vor' }),
     descriptions: Object.freeze({ no: 'Keine Einstufung; eine Freigabe bleibt gesperrt.', yes: 'Das Repo gilt als Kundenrepo; eine a1-ludwig-legal-Entscheidung liegt vor.' }),
+  }),
+  waiver: Object.freeze({
+    header: 'xprov-Waiver', build: (ctx) => require('./xprov-consent-waive.cjs').buildText(ctx),
+    labels: Object.freeze({ no: 'Nein, keinen Waiver', yes: 'Ja, diese Ziele per Waiver freigeben' }),
+    descriptions: Object.freeze({ no: 'Nichts wird geschrieben; die Ziele bleiben fehlgeschlagen.', yes: 'Ein Waiver je aufgeführtem Ziel, gebunden an PLAN.md-sha und Head.' }),
+  }),
+  allowlist: Object.freeze({
+    header: 'xprov-Allowlist', build: (ctx) => require('./xprov-consent-allowlist.cjs').buildText(ctx),
+    labels: Object.freeze({ no: 'Nein, nichts freigeben', yes: 'Ja, diese Blobs freigeben' }),
+    descriptions: Object.freeze({ no: 'Nichts wird freigegeben; die Prüfung läuft ohne Codex.', yes: 'Eine Freigabe je aufgeführtem Blob, gebunden an dessen sha256.' }),
   }),
 });
 

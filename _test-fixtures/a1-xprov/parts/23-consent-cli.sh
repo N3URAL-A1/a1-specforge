@@ -407,7 +407,7 @@ caseCC12() {
   cli23 record --kind consent --answer yes; assert_rc "CC12b an answer is not an argument: exit 2" 2 "$G_RC"
   cli23 record --kind consent --repo ../../etc; assert_rc "CC12b --repo traversal: exit 2" 2 "$G_RC"
   cli23 record; assert_rc "CC12b record without --kind: exit 2" 2 "$G_RC"
-  cli23 waive --kind waiver; assert_rc "CC12c consent waive (wave 3): exit 2" 2 "$G_RC"; [[ "$G_ERR" == *"planned wave 3"* ]] && ok "CC12c says planned wave 3" || bad "CC12c: $G_ERR"
+  cli23 waive --kind waiver; assert_rc "CC12c consent waive takes no --kind (wave 3 implements it; part 24): exit 2" 2 "$G_RC"; [[ "$G_ERR" == *"unexpected argument"* ]] && ok "CC12c says unexpected argument (flipped in wave 3: was 'planned wave 3')" || bad "CC12c: $G_ERR"
   cli23 allowlist; assert_rc "CC12c consent allowlist (wave 3): exit 2" 2 "$G_RC"
   cli23; assert_rc "CC12d consent without a subcommand: exit 2" 2 "$G_RC"
   cli23 '; rm -rf /'; assert_rc "CC12d injection-shaped subcommand: exit 2" 2 "$G_RC"

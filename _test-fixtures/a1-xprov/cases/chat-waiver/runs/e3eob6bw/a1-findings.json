@@ -1,0 +1,21 @@
+{
+  "phase": "infra-rename-cutover",
+  "gate": "wave-inspect-xprov",
+  "wave": 3,
+  "lane": null,
+  "round": 1,
+  "summary": "One concurrency defect remains in the new guarded deployment procedure after the phase freeze ends.",
+  "blocker": [],
+  "major": [
+    {
+      "id": "R1",
+      "file": "docs/OPERATIONS.md",
+      "line": 570,
+      "title": "R1: Capture and image replacement are not conditional on the same Deployment version.",
+      "detail": "Capture and image replacement are not conditional on the same Deployment version. capture-rollback-ref.sh reads the Deployment once, then reads ReplicaSets/pods and performs registry requests; the guard subsequently runs unconditional kubectl set image. After FREEZE_RELEASED, two operators can both capture healthy image A, then deploy B and C respectively. C's recorded rollback is A rather than B, and C can overwrite B while its rollout is incomplete despite the advertised completed-rollout gate. The generated build-image.yml guard has the same defect; its concurrency group serializes builds only.\n\nFix (reviewer proposal, not applied): Serialize capture-through-rollout across all deployment writers, or carry the captured Deployment UID/resourceVersion into an atomic conditional image update that rejects intervening changes. Apply the protection to both guard sources and add an interleaving test showing that a changed Deployment prevents the second write.",
+      "severity": "medium"
+    }
+  ],
+  "minor": [],
+  "quarantined": []
+}

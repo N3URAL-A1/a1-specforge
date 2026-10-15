@@ -43,7 +43,7 @@ const BY = C.RESERVED_BY;
 const CHAT_RECORD = 'record/2026-10-14-a1-autonomy-chat-consent.md';
 const CLASS_KIND = 'classification';
 // Failures of the lock or the tripwire are refusals (exit 1), not crashes.
-const LOCK_REASONS = Object.freeze(['audit_locked', 'audit_lock_blocked', 'audit_dir', 'owner_home_mismatch']);
+const LOCK_REASONS = Object.freeze(['store_locked', 'audit_locked', 'audit_lock_blocked', 'audit_dir', 'owner_home_mismatch']);
 
 const refuse = (reason, detail, extra) => Object.freeze({ ok: false, reason, detail, ...(extra || {}) });
 const sameOrigin = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -90,6 +90,20 @@ function locked(fn) {
     if (e && e.code === 'A1_INPUT' && LOCK_REASONS.includes(e.reason)) return refuse(e.reason, `${e.message}`);
     throw e;
   }
+}
+
+/**
+ * The answer of a waiver or allowlist question (wave 3): checks the marker against the freshly rebuilt question (`want.hash`), marks it
+ * used (once) and returns { ok: true, marker } only for a yes. A No (or any free text) is consumed and refused with `declined`
+ * ({ reason, detail }): nothing is written for it. Runs inside the owner-store lock; the marker is claimed before any store write.
+ */
+function claimDecision(want, declined) {
+  const seen = M.checkMarker(want);
+  if (!seen.ok) return refuse(seen.reason, MARKER_DETAIL[seen.reason] || 'the marker cannot be used; nothing written');
+  const claimed = M.claimMarker(want);
+  if (!claimed.ok) return refuse(claimed.reason, MARKER_DETAIL[claimed.reason] || 'the marker cannot be used; nothing written');
+  const marker = claimed.marker;
+  return marker.answer.decision === 'yes' ? Object.freeze({ ok: true, marker }) : refuse(declined.reason, declined.detail);
 }
 
 /** A failing step as a refusal that names the state it leaves. */
@@ -242,4 +256,4 @@ function revokeConsent(o) {
   });
 }
 
-module.exports = { CHAT_RECORD, recordConsent, revokeConsent };
+module.exports = { CHAT_RECORD, recordConsent, revokeConsent, refuse, locked, step, errReason, claimDecision, MARKER_DETAIL };

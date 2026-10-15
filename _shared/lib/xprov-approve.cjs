@@ -426,22 +426,29 @@ function approve(root) {
   const typed = readTypedLine();
   if (typed !== String(view.count)) return { code: EXIT_REFUSED, msg: `typed ${JSON.stringify(C.clip(typed, 16))}, expected ${view.count}; nothing written` };
   const key = C.commonDirOf(root);
-  audit.appendAudit({ repo: key, action: audit.ACTION.ALLOWLIST_APPROVE }); // spec 016 FR-010: the chain line first, then the store
-  const repos = { ...store.repos, [key]: [...new Set([...(store.repos[key] || []), sha])] };
-  const file = writeStore(repos);
-  return { code: X.EXIT_PASS, msg: `approved ${sha} for ${key} in ${file}`, out: { ok: true, repo: key, approved: sha, store: file } };
+  // spec 016 FR-010 + R-4: the chain line first; the approvals are read again and written back inside the owner-store lock (a parallel chat approval survives).
+  // The owner's typing above stays outside the lock: a lock held while someone types would time out every other writer.
+  return audit.withStoreLock(() => {
+    const fresh = currentStore();
+    if (fresh.refusal) return { code: X.EXIT_FAIL, msg: fresh.refusal };
+    audit.appendAudit({ repo: key, action: audit.ACTION.ALLOWLIST_APPROVE });
+    const file = writeStore({ ...fresh.repos, [key]: [...new Set([...(fresh.repos[key] || []), sha])] });
+    return { code: X.EXIT_PASS, msg: `approved ${sha} for ${key} in ${file}`, out: { ok: true, repo: key, approved: sha, store: file } };
+  });
 }
 
 function revoke(root, sha) {
   if (!AL.SHA256_RE.test(String(sha))) return { code: EXIT_REFUSED, msg: '--revoke needs a lowercase sha256' };
   const key = C.commonDirOf(root);
-  const current = AL.readApprovals();
-  if (!current.ok) return { code: X.EXIT_FAIL, msg: `no valid approval store (${current.why}); nothing to revoke` };
-  const list = current.repos[key] || [];
-  if (!list.includes(sha)) return { code: X.EXIT_FAIL, msg: `${sha} is not approved for ${key}` };
-  audit.appendAudit({ repo: key, action: audit.ACTION.ALLOWLIST_REVOKE });
-  const file = writeStore({ ...current.repos, [key]: list.filter((s) => s !== sha) });
-  return { code: X.EXIT_PASS, msg: `revoked ${sha} for ${key} in ${file}`, out: { ok: true, repo: key, revoked: sha, store: file } };
+  return audit.withStoreLock(() => { // spec 016 R-4: read, audit line, write back under the owner-store lock
+    const current = AL.readApprovals();
+    if (!current.ok) return { code: X.EXIT_FAIL, msg: `no valid approval store (${current.why}); nothing to revoke` };
+    const list = current.repos[key] || [];
+    if (!list.includes(sha)) return { code: X.EXIT_FAIL, msg: `${sha} is not approved for ${key}` };
+    audit.appendAudit({ repo: key, action: audit.ACTION.ALLOWLIST_REVOKE });
+    const file = writeStore({ ...current.repos, [key]: list.filter((s) => s !== sha) });
+    return { code: X.EXIT_PASS, msg: `revoked ${sha} for ${key} in ${file}`, out: { ok: true, repo: key, revoked: sha, store: file } };
+  });
 }
 
 function cmdApprove(args) {
@@ -489,6 +496,6 @@ function cmdXprovAllowlist(args) {
 }
 
 module.exports = {
-  cmdXprovAllowlist, approveListing, proposeScopes, guardRefusal, claudeContextRefusal, ancestryRefusal, processInfo, proposeClass, draft, listing, writeStore, writeGuardedStore, readTypedLine,
+  cmdXprovAllowlist, approveListing, proposeScopes, revoke, guardRefusal, claudeContextRefusal, ancestryRefusal, processInfo, proposeClass, draft, listing, writeStore, writeGuardedStore, readTypedLine,
   CLAUDE_ENV_RE, CLAUDE_VERSIONS_RE, CLAUDE_NPM_PACKAGE,
 };
