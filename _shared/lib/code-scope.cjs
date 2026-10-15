@@ -23,10 +23,10 @@ const {
   writeJsonAtomic,
 } = require('./locks.cjs');
 const {
-  normalizeScopePath,
   scopePathsOverlap,
   validateScopePath,
   ScopeLimitError,
+  scopeKey,
 } = require('./segment-glob.cjs');
 
 // Path normalization, glob matching and overlap math live in segment-glob.cjs
@@ -103,8 +103,8 @@ function cmdCodeScopeClaim(args) {
   const existingSame = data.reservations.find((r) => r.type === 'code_scope' && r.by === by);
 
   if (existingSame) {
-    const existingNorm = (existingSame.paths || []).map(normalizeScopePath).sort();
-    const candidateNorm = paths.map(normalizeScopePath).sort();
+    const existingNorm = (existingSame.paths || []).map(scopeKey).sort();
+    const candidateNorm = paths.map(scopeKey).sort();
     const identical =
       existingNorm.length === candidateNorm.length &&
       existingNorm.every((p, i) => p === candidateNorm[i]);

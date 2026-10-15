@@ -76,6 +76,11 @@ function matchesForbiddenSurface(scopePath) {
   return FORBIDDEN_SURFACE_GLOBS.some((glob) => matchesGlob(glob, scopePath));
 }
 
+// Mirrors xprov-scope.cjs segmentsOf: it classifies these as unclassifiable, so
+// the quick gate must refuse them too (quick stays a subset of xprov-scope).
+const XPROV_ABSOLUTE_RE = /^(?:[\\/]|[A-Za-z]:)/;
+const XPROV_MAX_PATH_CHARS = 4096;
+
 /** True if the scope path is a path-traversal attempt ("..") or an absolute
  * path — a declared change scope must be a plain relative path inside the
  * repo. This is deliberately NOT folded into matchesForbiddenSurface: a
@@ -85,10 +90,11 @@ function matchesForbiddenSurface(scopePath) {
 function isSuspiciousScopePath(rawScopePath) {
   const v = String(rawScopePath == null ? '' : rawScopePath).trim();
   if (v === '') return true;
-  if (path.isAbsolute(v)) return true;
-  if (v.includes('\0')) return true;
-  const segs = v.replace(/\\/g, '/').split('/').filter(Boolean);
-  return segs.some((seg) => seg === '..');
+  if (path.isAbsolute(v) || XPROV_ABSOLUTE_RE.test(v)) return true;
+  if (v.includes('\0') || v.length > XPROV_MAX_PATH_CHARS) return true;
+  const segs = v.replace(/\\/g, '/').split('/').filter((s) => s !== '' && s !== '.');
+  // No segment left (`.`, `./`) is unclassifiable for xprov-scope: fail closed.
+  return segs.length === 0 || segs.some((seg) => seg === '..');
 }
 
 // ---------- intent sentence heuristic (FR-002, FR-003) ----------

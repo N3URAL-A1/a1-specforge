@@ -1070,6 +1070,33 @@ if ! grep -q "exceeds the limit" <<<"$OUT" || grep -q "RangeError" <<<"$OUT"; th
   echo "FAIL  cli-oversized-scope-segment: expected clear limit reason"; fail=$((fail + 1))
 fi
 
+# Review round 4: path normalisation must match xprov-scope segmentsOf ('.' and
+# empty segments dropped; '..', absolute, drive-letter, empty-after-drop and
+# over-long values unclassifiable). Quick must never allow what xprov forbids.
+NORM_RC=0
+NORM_OUT="$(node -e '
+  const q = require(process.argv[1]);
+  let bad = 0;
+  for (const p of [".env/.", "config/.env.local/.", "src/./.env", "./.env", "src//.env", "SRC\\.ENV.LOCAL", "auth/./x", "./auth"]) {
+    if (!q.matchesForbiddenSurface(p)) { console.log("must be forbidden: " + p); bad++; }
+  }
+  for (const p of [".", "./", "", "  ", "../x", "a/../b", "/etc/x", "\\x", "C:x", "c:/x", "a\0b", "a/".repeat(2100)]) {
+    if (!q.isSuspiciousScopePath(p)) { console.log("must be suspicious: " + JSON.stringify(p.slice(0, 20))); bad++; }
+  }
+  for (const p of ["src/./a.ts", "docs/readme.md", "a b/c"]) {
+    if (q.isSuspiciousScopePath(p)) { console.log("must not be suspicious: " + p); bad++; }
+  }
+  process.exit(bad ? 1 : 0);
+' "$REPO_ROOT/_shared/lib/quick.cjs" 2>&1)" || NORM_RC=$?
+assert_rc "scope-normalisation-matches-xprov" 0 "$NORM_RC" "$NORM_OUT"
+for SC in ".env/." "config/.env.local/." "src/./.env" "."; do
+  OUT="$(node "$TOOLS" quick eligibility \
+    --intent "Fix the typo." --files 1 --diff-lines 5 --scope "$SC" \
+    --no-migration --no-new-route --no-new-dep \
+    --repo-root "$CLEAN_REPO" --file "$RESV" --by quick-dot 2>&1)"
+  assert_rc "cli-dot-segment-scope-not-eligible[$SC]" 1 $? "$OUT"
+done
+
 # Review round 3: a stored reservation over the input bounds is a conflict that
 # names its holder and the reason, not a crash.
 RESV_BIG="$WORK/reservations-overlimit.json"

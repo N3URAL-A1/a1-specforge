@@ -364,7 +364,8 @@ OVL_OUT="$(node -e '
              ["**/fixtures","src/fixtures/a.json"], ["**/a","a/src"],
              ["*","src/**"], ["*/a","src/?/**"], ["src/**/**","*"], ["*","**/util.js"],
              ["src/billing/","**/util.js"], ["apps/web","**/*.tsx"], ["*.md/a","*.md/**/b"],
-             ["**/*.md","docs"], ["docs/v1.2/","**/x.md"]];
+             ["**/*.md","docs"], ["docs/v1.2/","**/x.md"],
+             ["src/.","src/x.ts"], ["./src/./","src/x.ts"], [".env/.",".env"], ["src//x.ts","src/./x.ts"]];
   const F = [["src/*.ts","lib/a.js"], ["**/*.md","docs/x.txt"], ["docs/adr-*.md","other/rfc-1.md"],
              ["src/*.ts","lib/a.ts"], ["src/*.ts","src/a.js"], ["src/*.ts","src/sub/a.ts"],
              ["dir/x-*.ts","dir/y-*.ts"], ["**/util.js","docs/readme.md"],
@@ -431,6 +432,20 @@ OUT="$(node "$TOOLS" code-scope claim --by feature-root --scope "./" --file "$RO
 assert_rc "root-scope-claim-conflicts" 1 $? "$OUT"
 if ! grep -q '"status": "CONFLICT"' <<<"$OUT"; then
   echo "FAIL  root-scope-claim-conflicts: expected CONFLICT"; fail=$((fail + 1))
+fi
+
+# --- idempotent re-claim ignores the directory signal (review round 4) ---
+IDEM_FILE="$WORK/idem.json"
+OUT="$(node "$TOOLS" code-scope claim --by feature-idem --scope "src/" --file "$IDEM_FILE" 2>&1)"
+assert_rc "idem-claim-with-trailing-slash" 0 $? "$OUT"
+OUT="$(node "$TOOLS" code-scope stage --by feature-idem --set review --file "$IDEM_FILE" 2>&1)"
+assert_rc "idem-stage-review" 0 $? "$OUT"
+OUT="$(node "$TOOLS" code-scope claim --by feature-idem --scope "src" --file "$IDEM_FILE" 2>&1)"
+assert_rc "idem-reclaim-without-slash" 0 $? "$OUT"
+if ! grep -q '"idempotent": true' <<<"$OUT" || ! grep -q '"stage": "review"' <<<"$OUT"; then
+  echo "FAIL  idem-reclaim-without-slash: expected idempotent:true and stage review kept"; fail=$((fail + 1))
+else
+  echo "PASS  idem-reclaim-without-slash keeps stage review"; pass=$((pass + 1))
 fi
 
 # --- check validates --scope like claim (review round 3) ---

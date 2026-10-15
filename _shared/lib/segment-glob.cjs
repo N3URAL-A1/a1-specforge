@@ -35,6 +35,18 @@ function hasDirSignal(norm) {
   return norm.length > 1 && norm.endsWith('/');
 }
 
+/** Canonical identity of a scope for equality checks: segments only, without
+ * the directory signal (`src/` and `src` are the same claim). */
+function scopeKey(raw) {
+  const norm = normalizeScopePath(raw);
+  try {
+    return scopeSegments(norm).join('/');
+  } catch (e) {
+    if (e instanceof ScopeLimitError) return norm;
+    throw e;
+  }
+}
+
 /** Input bounds: scopes are user-supplied; reject absurd shapes instead of
  * letting the O(n*m) matchers or the recursion blow up (RangeError). */
 const MAX_SEGMENT_CHARS = 1024;
@@ -48,11 +60,13 @@ class ScopeLimitError extends Error {
   }
 }
 
-/** Split a normalized scope into segments. Throws ScopeLimitError when a
+/** Split a normalized scope into segments. Empty and `.` segments are dropped,
+ * exactly as xprov-scope's segmentsOf does, so `.env/.` and `.env` are one
+ * path for every gate. Throws ScopeLimitError when a
  * segment is longer than MAX_SEGMENT_CHARS or there are more than
  * MAX_SEGMENTS segments. */
 function scopeSegments(p) {
-  const segs = p.split('/').filter(Boolean);
+  const segs = p.split('/').filter((s) => s !== '' && s !== '.');
   if (segs.length > MAX_SEGMENTS) {
     throw new ScopeLimitError(`scope has ${segs.length} segments, exceeds the limit of ${MAX_SEGMENTS}`);
   }
@@ -247,6 +261,7 @@ module.exports = {
   segmentPatternsIntersect,
   normalizeScopePath,
   hasDirSignal,
+  scopeKey,
   scopeSegments,
   isGlobSegment,
   segmentsMatchGlob,
