@@ -84,7 +84,7 @@ const RETRO_ISSUE_NOT_APPLICABLE = 'xprov_not_applicable';
 const APPLIES_TO = Object.freeze({ ALL: 'all', PERMITTED_REPOS: 'permitted-repos' });
 const NOT_APPLICABLE_ACCEPTED = 'not_applicable';
 const NOT_APPLICABLE_NOTICE = 'not_applicable — the owner recorded that no external review applies to this repository; no code leaves, the pipeline continues';
-const noticeOf = (state) => (NP.isNoPermitState(state) ? NP.NOTICE : NOT_APPLICABLE_NOTICE); // spec 016 FR-012: no permit has its own one-line notice
+const noticeOf = (state) => (NP.isNoPermitState(state) ? NP.noticeFor(state) : NOT_APPLICABLE_NOTICE); // spec 016 FR-012: no permit has its own one-line notice
 const EXTERNAL_AGENT = 'xprov-codex';
 const SUB_MAX_BUFFER = 64 * 1024 * 1024;
 const BASE_HEX_RE = /^[0-9a-f]{7,40}$/i; // same rule as `run`: a resolved sha, never a symbolic ref

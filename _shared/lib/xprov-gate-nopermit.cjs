@@ -21,6 +21,8 @@ const { STATES } = require('./xprov-permit.cjs');
 
 const NO_PERMIT_STATES = Object.freeze([STATES.ABSENT, STATES.ORIGIN_CHANGED, STATES.UNBOUND_LEGACY]);
 const NOTICE = 'not_applicable — no external review permit for this repository (external_review_not_permitted); no code leaves, the pipeline continues with the Reinhard review';
+/** The one-line notice for a permit state. A void or legacy permit is named: Codex review is skipped silently otherwise (wave 5 review W5-4). */
+const noticeFor = (state) => (state === STATES.ABSENT ? NOTICE : `Codex review skipped: permit void (${state}) — the owner should re-consent; ${NOTICE}`);
 
 /** True for a permit-check result that is "no permit" (not allowed, and in one of the listed states). */
 const isNoPermit = (permit) => Boolean(permit) && permit.ok === false && NO_PERMIT_STATES.includes(permit.state);
@@ -34,4 +36,4 @@ function result(base, permit) {
   });
 }
 
-module.exports = { NO_PERMIT_STATES, NOTICE, isNoPermit, isNoPermitState, result };
+module.exports = { NO_PERMIT_STATES, NOTICE, noticeFor, isNoPermit, isNoPermitState, result };

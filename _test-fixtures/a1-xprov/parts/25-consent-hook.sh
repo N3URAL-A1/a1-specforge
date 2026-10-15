@@ -108,6 +108,8 @@ sc_h6() { prep25; canon25; ask25 pre answers; echo "$(dec25)|$(st25)"; }
 sc_h6b() { prep25; canon25; ask25 pre annotations; echo "$(dec25)|$(st25)"; }
 sc_h7() { prep25; canon25; ask25 pre 'header:xprov-Freigabe2'; local a; a="$(dec25)"; ask25 pre 'header:XPROV-freigabe'; echo "$a|$(dec25)|$(st25)"; }
 sc_h8() { prep25; canon25; ask25 pre none yes toolu_a >/dev/null; ask25 pre none yes toolu_b sess_b; echo "$(dec25)"; }
+sc_h20() { prep25; canon25; rm -f "$HOME/.a1-xprov/consent-asked.json"; ask25 pre; echo "$(dec25)|$(st25)"; }
+sc_h21() { prep25; canon25; ask25 pre none yes toolu_a >/dev/null; ask25 post none no toolu_a >/dev/null; cli25 record --kind consent >/dev/null; cli25 revoke >/dev/null; ask25 pre none yes toolu_b sess_b; echo "$(dec25)"; }
 # the pending yes: Pre, then Post with the real answer shape, for a given label mode
 sc_post() { prep25; canon25; ask25 pre; ask25 post none "$1"; echo "$(dec25)|$(st25)"; }
 sc_h10no() { sc_post no; }
@@ -139,6 +141,8 @@ caseH() {
   assert_eq "H6b an annotations field: denied" "$(sc_h6b)" "deny:consent_answers|none/-"
   assert_eq "H7 header lookalikes (xprov-Freigabe2, XPROV-freigabe): denied, no marker" "$(sc_h7)" "deny:consent_non_canonical|deny:consent_non_canonical|none/-"
   assert_eq "H8 a second asker while the question is open: denied (poll consent ensure)" "$(sc_h8)" "deny:marker_pending"
+  assert_eq "H20 the canonical question put without a prior \`consent question\` (no ask record): denied, no marker (W5-1)" "$(sc_h20)" "deny:consent_not_asked|none/-"
+  assert_eq "H21 owner No, agent revokes, puts the canonical text again: denied, the ask opened its one marker already (W5-1)" "$(sc_h21)" "deny:consent_already_asked"
   assert_eq "H10a Post with the No label: recorded as no, never a yes" "$(sc_h10no)" "allow|answered/no"
   assert_eq "H10b Post with free text: recorded as no" "$(sc_h10free)" "allow|answered/no"
   assert_eq "H11 Post without an answer (dismissed): nothing recorded, the marker stays pending" "$(sc_h11)" "allow|pending/-"
@@ -175,7 +179,10 @@ caseH_red() {
   red25 "H6" sc_h6 "deny:consent_answers|none/-" $RULES25 "if ('answers' in input ||" "if ("
   red25 "H6b" sc_h6b "deny:consent_answers|none/-" $RULES25 "|| 'annotations' in input" ""
   red25 "H7" sc_h7 "deny:consent_non_canonical|deny:consent_non_canonical|none/-" $RULES25 "|| inNamespace(q.header))" ")" $RULES25 "if (kind === null || q.header !== Q.kindDef(kind).header)" "if (false)"
-  red25 "H8" sc_h8 "deny:marker_pending" $RULES25 "if (!r.ok) return deny(r.reason, r.hint);" ""
+  red25 "H8" sc_h8 "deny:marker_pending" $RULES25 "if (!r.ok) return deny(r.reason, r.detail || r.hint);" ""
+  red25 "H20" sc_h20 "deny:consent_not_asked|none/-" xprov-consent-asked.cjs "if (hits.length === 0) return R.refuse(" "if (false) return R.refuse("
+  red25 "H20b" sc_h20 "deny:consent_not_asked|none/-" $RULES25 "require('./xprov-consent-asked.cjs').ASK_KINDS.includes(kind) ?" "false ?"
+  red25 "H21" sc_h21 "deny:consent_already_asked" xprov-consent-asked.cjs "const fresh = hits.find(([, e]) => e.opened === null);" "const fresh = hits[0];"
   red25 "H10a" sc_h10no "allow|answered/no" $RULES25 "label: found.label, question," "label: 'Ja, dieses Repo an Codex senden', question,"
   red25 "H10b" sc_h10free "allow|answered/no" $RULES25 "label: found.label, question," "label: 'Ja, dieses Repo an Codex senden', question,"
   red25 "H11" sc_h11 "allow|pending/-" $RULES25 "if (!found.found) return Object.freeze({ action: 'ignored'" "if (false) return Object.freeze({ action: 'ignored'"

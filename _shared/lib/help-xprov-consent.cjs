@@ -5,7 +5,7 @@
 
 const CONSENT_HELP = `    consent question|ensure|record|revoke  --kind consent|classification [--repo <git-toplevel>]
           [--ludwig-record <vault path>]
-    consent question --kind consent|classification (--phase <name> | --run <id>)
+    consent question --kind consent|classification --phase <name>
                   (ask once per phase, spec 016 wave 5; xprov-consent-asked.cjs)
     consent question|ensure --kind waiver|allowlist, consent waive, consent allowlist
           (--phase <name> | --work-path <worktree> | --scan <snap-basename>) [--repo <git-toplevel>]
@@ -36,22 +36,32 @@ const CONSENT_HELP = `    consent question|ensure|record|revoke  --kind consent|
                   passes the SAME --ludwig-record. Without $A1_VAULT_ROOT a customer
                   repo is refused.
                   Ask once per phase (FR-002), enforced in code: question --kind
-                  consent|classification needs --phase <name> (an existing
-                  .a1/phases/<name>) or --run <id> (a PR review run, plain id such as
-                  pr-12). The first call for repo + kind + phase|run records the ask in
-                  ~/.a1-xprov/consent-asked.json (audit line consent-asked) and prints
-                  the question. Every later call for the same repo + kind + phase|run
-                  is refused (exit 1, reason already_asked_this_scope, no question text)
-                  after an owner No, after an unanswered or expired question and after
-                  \`consent revoke\`: revoke never touches this store, so an agent
-                  cannot revoke a No and ask again in the phase. The one exception
-                  is the same question (same hash) while its marker is still open
-                  (pending or answered): it is shown again. An unusable store refuses
-                  (asked_store_unusable) and is never overwritten. A new phase may ask
-                  once. A refusal means: no question, Reinhard-only. Waiver and
-                  allowlist questions are not covered (their targets change by design).
-                  Tier 0: the same OS user could delete the file or invent a phase
-                  name; the audit chain shows every ask.
+                  consent|classification needs --phase <name>, the exact name of an
+                  existing .a1/phases/<name> (a lookalike such as P25 for p25 on a
+                  case-insensitive disk resolves to the listed name; the entry also
+                  holds the directory's device + inode, so a renamed phase is still
+                  the same phase). --run <id> is reserved for the PR diff gate (wave
+                  10) and is refused (exit 2). The first call for repo + kind + phase
+                  records the ask in ~/.a1-xprov/consent-asked.json (audit line
+                  consent-asked) and prints the question. Every later call for the
+                  same repo + kind + phase is refused (exit 1, reason
+                  already_asked_this_scope, no question text) after an owner No, after
+                  an unanswered or expired question and after \`consent revoke\`:
+                  revoke never touches this store, so an agent cannot revoke a No and
+                  ask again in the phase. The one exception is the same question (same
+                  hash) while its marker is still open (pending or answered): it is
+                  shown again. An unusable store refuses (asked_store_unusable) and is
+                  never overwritten. A new phase may ask once. A refusal means: no
+                  question, Reinhard-only. Waiver and allowlist questions are not
+                  covered (their targets change by design).
+                  The hook enforces the same ledger: the canonical consent or
+                  classification AskUserQuestion is let through only after \`consent
+                  question\` recorded it (else deny consent_not_asked); one entry opens
+                  exactly one marker (a second ask after the marker was used or expired
+                  is denied consent_already_asked). A customer repo burns its ask when
+                  the question is only printed (fail-safe).
+                  Tier 0: the same OS user could delete the file or create a new phase
+                  directory; the audit chain shows every ask.
                   revoke: removes the repo's permit, denial, evidence and unused
                   markers whatever channel wrote them; the next send asks again. An
                   unusable consent or denial store is reported (exit 1,

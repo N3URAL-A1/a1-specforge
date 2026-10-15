@@ -108,8 +108,10 @@ function preAsk(payload, o) {
   const built = rebuild(kind, String(q.question));
   if (built.action === 'deny') return built;
   if (!isCanonical(q, built.q)) return deny('consent_non_canonical', `the question is not byte-equal to the one \`a1-tools xprov consent question --kind ${kind}\` prints; ask it exactly as printed`);
-  const r = M.openMarker({ repo: built.key, kind, hash: built.q.hash, originSha: built.q.originSha, toolUseId: payload.tool_use_id, sessionId: payload.session_id, now: o && o.now });
-  if (!r.ok) return deny(r.reason, r.hint);
+  const open = { repo: built.key, key: built.key, kind, hash: built.q.hash, originSha: built.q.originSha, toolUseId: payload.tool_use_id, sessionId: payload.session_id, now: o && o.now };
+  // ask once per phase (W5-1): consent and classification are put only after `consent question` recorded the ask; one entry opens one marker
+  const r = require('./xprov-consent-asked.cjs').ASK_KINDS.includes(kind) ? require('./xprov-consent-asked.cjs').openAsked(open) : M.openMarker(open);
+  if (!r.ok) return deny(r.reason, r.detail || r.hint);
   return Object.freeze({ action: 'opened', kind, hash: built.q.hash });
 }
 

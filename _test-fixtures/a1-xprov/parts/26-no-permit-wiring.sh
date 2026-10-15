@@ -229,10 +229,45 @@ caseAQ1() {
   assert_json "AQ1 the entry: repo key, kind, scope phase p26, question hash, audit sha, time" "$(cat "$ASKED26")" "(() => { const e = Object.values(j.asked)[0]; return [e.repo === '$(key26)', e.kind, e.scope_type, e.scope, e.hash === '$hash', /^[0-9a-f]{64}\$/.test(e.audit), typeof e.at].join('|'); })()" "true|consent|phase|p26|true|true|string"
   assert_eq "AQ1 one audit line: consent-asked" "$(audit_actions26)" "consent-asked"
   assert_eq "AQ1 store mode 0600" "$(mode_of "$ASKED26")" "600"
+  assert_json "AQ1 the entry holds the phase directory's device + inode and no opened marker yet (W5-1, W5-2)" "$(cat "$ASKED26")" "(() => { const e = Object.values(j.asked)[0]; return [Number.isSafeInteger(e.dev), e.ino === $(node -p "require('fs').statSync('$PHASE_DIR').ino"), e.opened === null].join('|'); })()" "true|true|true"
+  # W5-2 (wave 5 review): --run is reserved for the PR diff gate (wave 10): refused, nothing recorded
   prep26; cli26 question --kind consent --run pr-12
-  assert_rc "AQ1 a PR run id is a scope too (--run pr-12)" 0 "$G_RC" "$G_ERR"
-  assert_json "AQ1 …recorded as scope_type run" "$(cat "$ASKED26")" "Object.values(j.asked)[0].scope_type + '|' + Object.values(j.asked)[0].scope" "run|pr-12"
+  assert_rc "AQ1 --run pr-12 is refused for now (exit 2, reserved for the PR diff gate)" 2 "$G_RC"
+  [[ "$G_ERR" == *"reserved for the PR diff gate"* && ! -e "$ASKED26" ]] && ok "AQ1 …names the reason and wrote nothing" || bad "AQ1 --run: $G_ERR"
 }
+
+# W5-2: the phase key is the directory as the listing spells it, plus its device + inode
+scen_aq7_rename() { prep26; cli26 question --kind consent --phase p26 >/dev/null; mv "$PHASE_DIR" "$PHASE_REPO/.a1/phases/p26-moved"; cli26 question --kind consent --phase p26-moved; echo "$G_RC/$(json_get "$G_OUT" "j.reason")"; }
+scen_aq7_case() {
+  prep26; cli26 question --kind consent --phase p26 >/dev/null; cli26 question --kind consent --phase P26
+  if [[ -d "$PHASE_REPO/.a1/phases/P26" ]]; then echo "$G_RC/$(json_get "$G_OUT" "j.reason")"; else echo "$G_RC/case-sensitive"; fi
+}
+caseAQ7() {
+  assert_eq "AQ7 the same phase directory renamed keeps its ask (device + inode): refused" "$(scen_aq7_rename)" "1/already_asked_this_scope"
+  redproof26 "AQ7" scen_aq7_rename "1/already_asked_this_scope" xprov-consent-asked.cjs "|| Object.values(store.asked).find(sameDir);" "|| undefined;"
+  local got; got="$(scen_aq7_case)"
+  if [[ "$got" == *case-sensitive ]]; then assert_eq "AQ7b P26 on a case-sensitive disk is no directory: usage error" "$got" "2/case-sensitive"
+  else
+    assert_eq "AQ7b P26 and p26 are one directory (case-insensitive disk): the second question is refused" "$got" "1/already_asked_this_scope"
+    # no RED mutant for the canonical name alone: the device + inode lookup (AQ7 RED) catches the same directory independently; the two are one defence in depth
+  fi
+}
+
+# W5-4: a void or legacy permit is named in the output, not only in the exit code
+caseNP6() {
+  prep26; write_permit "$PHASE_REPO" fixture record/2026-09-24-fixture.md
+  git -C "$PHASE_REPO" remote set-url origin https://github.com/N3URAL-A1/other.git
+  gate26 --gate "$GATE_PLAN"
+  assert_json "NP6 gate stdout names the void permit state" "$G_OUT" "j.permit_state" "origin_changed"
+  [[ "$G_ERR" == *"permit void (origin_changed)"* && "$G_ERR" == *"re-consent"* ]] && ok "NP6 the gate notice says: Codex review skipped, permit void (origin_changed), re-consent" || bad "NP6 notice: $G_ERR"
+  sub26 load-check --phase p26
+  [[ "$G_ERR" == *"permit void (origin_changed)"* ]] && ok "NP6 the load-check notice names the state" || bad "NP6 load-check notice: $G_ERR"
+  sub26 wave-status --phase p26
+  [[ "$G_ERR" == *"permit void (origin_changed)"* ]] && ok "NP6 the wave-status notice names the state" || bad "NP6 wave-status notice: $G_ERR"
+  prep26; gate26 --gate "$GATE_PLAN"
+  [[ "$G_ERR" != *"permit void"* ]] && ok "NP6 state absent: the plain no-permit notice (not a void permit)" || bad "NP6 absent notice: $G_ERR"
+}
+scen_np6() { prep26; write_permit "$PHASE_REPO" fixture record/2026-09-24-fixture.md; git -C "$PHASE_REPO" remote set-url origin https://github.com/N3URAL-A1/other.git; gate26 --gate "$GATE_PLAN"; [[ "$G_ERR" == *"permit void (origin_changed)"* ]] && echo named || echo silent; }
 
 # scen_aq2: unanswered, then a second ask after the marker expired -> refused
 scen_aq2() { prep26; cli26 question --kind consent --phase p26 >/dev/null; ask26 consent; age26 consent; cli26 question --kind consent --phase p26; echo "$G_RC/$(json_get "$G_OUT" "j.reason")"; }
@@ -314,7 +349,8 @@ caseAQ6() {
 }
 
 caseNP1; caseNP2; caseNP3; caseNP4; caseNP5
-caseAQ1; caseAQ2; caseAQ3; caseAQ4; caseAQ5; caseAQ6
+caseNP6; redproof26 "NP6" scen_np6 "named" xprov-gate-nopermit.cjs "(state === STATES.ABSENT ? NOTICE :" "(true ? NOTICE :"
+caseAQ1; caseAQ2; caseAQ3; caseAQ4; caseAQ5; caseAQ6; caseAQ7
 export HOME="$SAVED_HOME_26"
 if [[ "$SAVED_VAULT_26" == "__unset__" ]]; then unset A1_VAULT_ROOT; else export A1_VAULT_ROOT="$SAVED_VAULT_26"; fi
 rm -rf "$TMP26"
