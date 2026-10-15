@@ -4,17 +4,17 @@
     "PreToolUse": [
       {
         "matcher": "AskUserQuestion",
-        "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/xprov-consent-hook.sh\" || exit 2" }]
+        "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/xprov-consent-hook.sh\" || exit 2", "onFailure": "block" }]
       },
       {
         "matcher": "Edit|Write|NotebookEdit|MultiEdit",
-        "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/xprov-consent-hook.sh\" || exit 2" }]
+        "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/xprov-consent-hook.sh\" || exit 2", "onFailure": "block" }]
       }
     ],
     "PostToolUse": [
       {
         "matcher": "AskUserQuestion",
-        "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/xprov-consent-hook.sh\" || exit 2" }]
+        "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/xprov-consent-hook.sh\" || exit 2", "onFailure": "block" }]
       }
     ]
   }

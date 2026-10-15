@@ -60,7 +60,9 @@ function readonlySegment(w) {
   if (prog === 'rg') return !w.some((t) => t === '--pre' || t.startsWith('--pre=') || t.startsWith('--hostname-bin'));
   if (READONLY.includes(prog)) return true;
   if (prog === 'sed') return sub === '-n' && SED_SCRIPT_RE.test(w[2] || '') && w.slice(3).every((t) => !t.startsWith('-'));
-  if (prog === 'git') return GIT_READ.includes(sub) && !w.some((t) => t.startsWith('--output') || t === '--ext-diff');
+  // git can run diff.external, textconv and fsmonitor commands from a config the agent may have written: read-only only with both
+  // switches off and no -c (Samuel W4 SEC-6); anything else falls through to the deny patterns.
+  if (prog === 'git') return GIT_READ.includes(sub) && w.includes('--no-ext-diff') && w.includes('--no-textconv') && !w.includes('-c') && !w.some((t) => t.startsWith('--output') || t === '--ext-diff');
   return false;
 }
 
@@ -86,10 +88,15 @@ function heredocHeader(text) {
   const header = lines[0];
   const m = HEREDOC_RE.exec(header);
   if (m === null || header.slice(m.index + m[0].length).includes('<<')) return null;
+  // The delimiter must end where bash ends the word (Samuel W4 SEC-2): `<<'E'OF` is the delimiter EOF in bash, not E.
+  const after = header.charAt(m.index + m[0].length);
+  if (after !== '' && after !== ' ' && after !== '\t' && after !== '>') return null;
   const rest = (header.slice(0, m.index) + header.slice(m.index + m[0].length)).replace(/>>?/g, ' ');
   const segs = split(rest);
   if (segs === null || segs.length !== 1 || !['cat', 'tee'].includes(segs[0][0])) return null;
-  const end = lines.findIndex((l, i) => i > 0 && (m[1] === '-' ? l.replace(/^\t+/, '') : l) === m[3]);
+  const isEnd = (l) => (m[1] === '-' ? l.replace(/^\t+/, '') : l) === m[3];
+  const end = lines.findIndex((l, i) => i > 0 && isEnd(l));
+  if (lines.filter((l, i) => i > 0 && isEnd(l)).length !== 1) return null; // zero or several terminators: ambiguous, full check
   if (end < 0 || lines.slice(end + 1).some((l) => l.trim() !== '')) return null;
   return header;
 }

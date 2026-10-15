@@ -72,11 +72,18 @@ const CONSENT_HELP = `    consent question|ensure|record|revoke  --kind consent|
                   put only byte-equal to what \`consent question\` prints, alone, without
                   an answers field; the hook opens the marker on that call and records
                   the pending yes only from the PostToolUse tool_response of the same
-                  tool_use_id. It denies Edit/Write/NotebookEdit/MultiEdit of ~/.a1-xprov/,
-                  .a1/xprov.json and of a settings file that adds an AskUserQuestion hook
-                  (such a hook could answer for the owner); a crash of the hook blocks
-                  the call (exit 2). A Bash write of a store or a settings file stays
-                  tier 0.
+                  tool_use_id. It denies Edit/Write/NotebookEdit/MultiEdit of
+                  ~/.a1-xprov/ (compared by path and by device + inode), .a1/xprov.json,
+                  every file of the installed plugin cache (a1-specforge), a hooks.json
+                  outside this plugin, and a settings file, skill or agent frontmatter
+                  that adds a PreToolUse/PermissionRequest hook matching AskUserQuestion
+                  (such a hook could answer for the owner), sets disableAllHooks or
+                  disables the a1-specforge plugin; a NotebookEdit of such a file is
+                  always denied. A crash or timeout of the hook blocks the call (exit 2,
+                  onFailure block). NOT closed (tier 0 residuals): a Bash write of a store
+                  or a settings file; an edit of the script of a hook that already matches
+                  AskUserQuestion; managed settings; anything the same OS user can do
+                  outside the Edit tools.
                   Exit: 0 ok · 1 refused (stdout JSON \`reason\`) · 2 usage error.`;
 
 module.exports = { CONSENT_HELP };
