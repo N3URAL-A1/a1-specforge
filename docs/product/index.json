@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated": "2026-10-14T07:27:12.666Z",
+  "generated": "2026-10-15T08:09:23.516Z",
   "project": {
     "id": "a1-specforge",
     "title": "a1-specforge — Roadmap",
@@ -254,6 +254,20 @@
       "finished": null,
       "spec_path": "project/a1-specforge/spec/017-enforced-self-checks.md",
       "plan_path": "project/a1-specforge/plans/017-enforced-self-checks-wave-plan.md"
+    },
+    {
+      "id": "018-pipeline-metrics",
+      "milestone": "continuous",
+      "title": "Measure the pipeline: escaped-defect attribution and cost per feature",
+      "status": "planned",
+      "stage": null,
+      "depends_on": [
+        "017-enforced-self-checks"
+      ],
+      "started": null,
+      "finished": null,
+      "spec_path": "project/a1-specforge/spec/018-pipeline-metrics.md",
+      "plan_path": "project/a1-specforge/plans/018-pipeline-metrics-wave-plan.md"
     }
   ],
   "next": "006-specforge-kritis-profile",
