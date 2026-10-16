@@ -279,6 +279,10 @@ scen_pf8() { # only a real directory is removed: a link named plugins is left al
   prep29; mkdir -p "$TMP29/elsewhere/cache/x/1.0"; ln -s "$TMP29/elsewhere" "$XHOME/plugins"
   XH="$XHOME" mod29 "R.removePlugins(process.env.XH)" > /dev/null; echo "/link=$([[ -L "$XHOME/plugins" ]] && echo kept || echo gone)/target=$([[ -e "$TMP29/elsewhere/cache" ]] && echo kept || echo gone)"
 }
+scen_pf10() { # the owner allowlisted a plugin: its dir is not removed, the repair cannot verify, the run stops
+  prep29; mkdir -p "$XHOME/plugins/cache/x/1.0"
+  gate29 --gate "$GATE_PLAN" --allow-plugins other/y/1.0; echo "$(sum29)/plugins-dir=$([[ -e "$XHOME/plugins" ]] && echo present || echo gone)"
+}
 scen_pf9() { # the report's check list decides: etc_codex_absent (not fixable here) with a repairable check beside it
   prep29; mkdir -p "$XHOME/plugins/cache/x/1.0"
   XH="$XHOME" mod29 "(() => { const out = R.preflightWithRepair({ codexHome: process.env.XH, homedir: process.env.HOME }, { ok: false, reason: 'preflight_failed', failed: ['plugins_cache_empty', 'etc_codex_absent'], codex_home: process.env.XH }); return out.recovery === null; })()"
@@ -286,7 +290,7 @@ scen_pf9() { # the report's check list decides: etc_codex_absent (not fixable he
 }
 casePF() {
   assert_eq "PF1 plugins_cache_empty: the plugins dir is removed in the review home, preflight runs again and the gate goes on" "$(scen_pf1)" "$PF_OK/plugins-dir=gone/remove_plugins"
-  redproof29 "PF1" scen_pf1 "$PF_OK/plugins-dir=gone/remove_plugins" xprov-recover.cjs "if (first.failed.includes('plugins_cache_empty') && removePlugins(first.codex_home)) actions.push('remove_plugins');" ""
+  redproof29 "PF1" scen_pf1 "$PF_OK/plugins-dir=gone/remove_plugins" xprov-recover.cjs "if (first.failed.includes('plugins_cache_empty') && !keepPlugins && removePlugins(first.codex_home)) actions.push('remove_plugins');" ""
   assert_eq "PF2 a missing feature pin is appended by init-home --pin-features, then the gate goes on" "$(scen_pf2)" "$PF_OK/pin_features/1"
   redproof29 "PF2" scen_pf2 "$PF_OK/pin_features/1" xprov-recover.cjs "pinFeatures: true, pruneMarketplaces: true" "pinFeatures: false, pruneMarketplaces: true"
   assert_eq "PF3 a human-set true is refused: the config stays byte-identical, the run stops with preflight_failed, no runner call" "$(scen_pf3)" "1/fail/preflight_failed/0/preflight_repair:false/config-same/calls=0"
@@ -303,6 +307,8 @@ casePF() {
   redproof29 "PF7b" scen_pf7 "refused,refused" xprov-recover.cjs "path.resolve(home) !== path.resolve(reported)) return" "false) return"
   assert_eq "PF8 a link named plugins is not followed" "$(scen_pf8)" "/link=kept/target=kept"
   redproof29 "PF8" scen_pf8 "/link=kept/target=kept" xprov-recover.cjs "if (!st.isDirectory()) return false;" ""
+  assert_eq "PF10 an owner allowlist keeps the plugins dir: no removal, the run stops with preflight_failed" "$(scen_pf10)" "1/fail/preflight_failed/0/preflight_repair:false/plugins-dir=present"
+  redproof29 "PF10" scen_pf10 "1/fail/preflight_failed/0/preflight_repair:false/plugins-dir=present" xprov-recover.cjs "&& !keepPlugins &&" "&&"
   assert_eq "PF9 repairable and unfixable checks together: nothing is touched" "$(scen_pf9)" "true/plugins-dir=present"
   redproof29 "PF9" scen_pf9 "true/plugins-dir=present" xprov-recover.cjs "|| !first.failed.every((n) => REPAIRABLE_CHECKS.includes(n))" "|| false"
 }

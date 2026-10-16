@@ -281,6 +281,7 @@ owner sees.
   repaired once in the dedicated review home, never in `~/.codex`. Nothing else is recovered: `secret_in_snapshot`, `secret_in_output`,
   `tripwire`, `quarantined`, `run_home_unsafe`, `snapshot_changed_after_scan`, `allowlist_invalid`, `allowlist_modified`, every permit or
   store mismatch and `round_cap` stay a stop with their reason. Do not re-run the gate yourself to "retry" one of them.
+  A call that recovers waits 30 s and 120 s and may call the runner up to three times: give the Bash call the 10-minute maximum or start it in the background and read its output.
 - **Preflight FAIL `plugins_cache_empty`.** Codex has installed plugins into
   `$CODEX_HOME/plugins/cache/` on its own (measured 2026-09-24: the
   `openai-curated-remote` set); `init-home` never deletes anything, so the home

@@ -196,7 +196,9 @@ function preflightWithRepair(opts, pre0) {
   const problem = reviewHomeProblem(first.codex_home, first.codex_home, homedir);
   if (problem !== null) return Object.freeze({ pre: first, recovery: Object.freeze({ action: 'preflight_repair', ok: false, refused: problem, actions: [] }) });
   const actions = [];
-  if (first.failed.includes('plugins_cache_empty') && removePlugins(first.codex_home)) actions.push('remove_plugins');
+  // an owner who allowlisted plugins (--allow-plugins) keeps them: the plugins dir is not removed then, the repair cannot verify and the run stops
+  const keepPlugins = Array.isArray(o.pluginAllowlist) && o.pluginAllowlist.length > 0;
+  if (first.failed.includes('plugins_cache_empty') && !keepPlugins && removePlugins(first.codex_home)) actions.push('remove_plugins');
   const init = PF.initHome({ codexHome: first.codex_home, homedir, env: o.env, pinFeatures: true, pruneMarketplaces: true });
   if (init.pinned && init.pinned.length) actions.push('pin_features');
   if (init.pruned && init.pruned.attempted) actions.push('prune_marketplaces');
