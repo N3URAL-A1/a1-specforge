@@ -144,6 +144,15 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
             [--model-requested <m>] [--model-observed <m>] [--repo <git-toplevel>]
                   (xprov-observe.cjs, wave 4) one observations.jsonl line with
                   pattern xprov_finding, model_requested, model_observed.
+            [--gate <id>] [--owner-handoffs 0..99] [--codex-runs 0|1]
+            [--abort-reason none|<reason code>] [--recovered true|false]
+            [--review-worktree <abs dir>]
+                  (spec 016 FR-035, wave 8) the run fields xprov gate writes
+                  itself: owner hand-offs, Codex runs (1 only for the first
+                  line of a gate target: rounds and retries collapse), abort
+                  reason, recovered. --review-worktree writes to
+                  <dir>/.a1-review/xreview/observations.jsonl (the PR diff
+                  review); an absolute path without .., no link on the way.
     snapshot --repo <path> --commit <sha> [--base <sha>] [--plan <file>] [--feedback <file>] | --remove <dir>
                   (xprov-snapshot.cjs, wave 5) fresh depth-limited fetch under
                   ~/.a1-xprov/snapshots/ (git init + fetch --depth 1 + checkout
@@ -278,6 +287,22 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   like the PLAN.md; next.round_cmd shows the call. Enforcement (warning|blocking) is READ
                   from the registry row and echoed in stdout, never applied here.
                   --wave N counts from 0 (0..9999); --round and --timeout from 1.
+                  Self-recovery (spec 016 FR-024..028, FR-031; xprov-recover.cjs;
+                  recovery in stdout and in the log entry): runner_failed caused
+                  by network, timeout or HTTP 5xx is retried twice (30 s, 120 s);
+                  a blocked answer is repeated once, a second one is not_applicable /
+                  codex_blocked_fallback (load-check and wave-status accept it,
+                  Reinhard is the only review, nobody is asked); a snapshot whose
+                  base does not resolve is retried once on the merge-base with the
+                  default branch (fetched when missing); a preflight_failed that
+                  only plugins/ removal, init-home --pin-features and
+                  --prune-marketplaces fix is repaired once, in the review home only.
+                  secret_in_snapshot, secret_in_output, tripwire, quarantined,
+                  run_home_unsafe, snapshot_changed_after_scan, allowlist_invalid,
+                  allowlist_modified, every permit or store mismatch and round_cap
+                  are never retried. One observation line per run that got past
+                  placement and permit (owner_handoffs, codex_runs, abort_reason,
+                  recovered).
                   A repository whose permit state is denied, on a registry row
                   with applies_to: permitted-repos, gets verdict not_applicable
                   (reason external_review_denied, exit 1, one log entry and one

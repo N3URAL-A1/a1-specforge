@@ -26,6 +26,9 @@ const REVIEWED_FILE = 'a1-reviewed.json';
 // never counts as a pass and never earns the long retention (Samuel SEC-1).
 const PASS_MARKER_FILE = 'a1-pass.json';
 const SHA_RE = /^[0-9a-f]{40,64}$/;
+// Spec 016 FR-026: a1's marker in the run dir of the SECOND BLOCKED answer of a gate target; load-check and wave-status accept the
+// `codex_blocked_fallback` only through it (the index row is a pointer, as for a pass).
+const BLOCKED_MARKER_FILE = 'a1-blocked.json';
 
 /** The run dir of `resultPath` lies in THIS repository's artifacts dir (realpath). */
 function inOwnArtifacts(resultPath, root) {
@@ -87,4 +90,19 @@ function inspectPass(resultPath, planSha, root) {
   return hb.head === null ? null : hb;
 }
 
-module.exports = { REVIEWED_FILE, PASS_MARKER_FILE, hasPassMarker, inOwnArtifacts, readJsonNoFollow, runRecord, reviewedHeadBase, planPassValid, inspectPass };
+/** The run dir holds a BLOCKED answer for exactly this PLAN.md and gate, with a1's twice-blocked marker; mode: review (plan gate) | inspect (wave gate). */
+function blockedFallbackValid(resultPath, planSha, mode, gate, root) {
+  const rec = runRecord(resultPath, root);
+  if (!C.isPlainObject(rec) || rec.status !== 'completed' || rec.mode !== mode || rec.plan_sha256 !== planSha || !C.isPlainObject(rec.response) || rec.response.verdict !== 'BLOCKED') return false;
+  const m = readJsonNoFollow(path.join(path.dirname(path.resolve(resultPath)), BLOCKED_MARKER_FILE));
+  return m !== null && m.blocked_twice === true && m.plan_sha256 === planSha && m.gate === gate;
+}
+
+/** { head, base } of a valid blocked-fallback inspect run (as inspectPass), else null. */
+function blockedFallbackHeadBase(resultPath, planSha, gate, root) {
+  if (!blockedFallbackValid(resultPath, planSha, 'inspect', gate, root)) return null;
+  const hb = reviewedHeadBase(resultPath, undefined, root);
+  return hb.head === null ? null : hb;
+}
+
+module.exports = { REVIEWED_FILE, PASS_MARKER_FILE, BLOCKED_MARKER_FILE, blockedFallbackValid, blockedFallbackHeadBase, hasPassMarker, inOwnArtifacts, readJsonNoFollow, runRecord, reviewedHeadBase, planPassValid, inspectPass };

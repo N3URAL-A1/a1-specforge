@@ -134,6 +134,12 @@ the gate call again.
    **Placement first (spec 016 FR-020, D-1).** The same call returns `not_applicable` with `reason: scope_exempt`
    for a wave that no later wave names in its `Depends on` line or whose files and diff are no security surface:
    no question is asked, nothing is written, `wave-status` accepts it.
+   **Self-recovery (spec 016 FR-024..028, FR-031).** The same call retries a network, timeout or 5xx `runner_failed` twice (30 s, 120 s), repeats a
+   `blocked` answer once, recomputes a base that does not resolve (merge-base with the default branch), and repairs a `preflight_failed` that only
+   the review-home actions fix; `recovery` in the stdout JSON lists what it did. Twice `blocked` ends as `not_applicable` with
+   `reason: codex_blocked_fallback`: Reinhard is the only review for this wave, no question is asked, `wave-status` accepts it. Every other
+   reason (`secret_in_snapshot`, `secret_in_output`, `tripwire`, `quarantined`, `run_home_unsafe`, `snapshot_changed_after_scan`,
+   `allowlist_invalid`, `allowlist_modified`, permit or store mismatches, `round_cap`) is a stop: do not re-run the gate to retry it.
 3. **Ask once.** Only after the gate call returned `reason: external_review_not_permitted` (never after `scope_exempt`),
    and only if this session can ask the owner (AskUserQuestion exists;
    not headless, not CI, not a subagent — an executor subagent never asks) and

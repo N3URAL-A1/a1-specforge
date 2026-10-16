@@ -200,6 +200,14 @@ make_tree() {
     FAKE_PATH_PREPENDED=1
   fi
   export FAKE_RUNNER_CASES_DIR="$CASES"
+  # Spec 016 plan D-3: the retry delays (30 s, 120 s) are constants of xprov-recover.cjs; the COPY gets [1, 2] ms so the suite never sleeps.
+  # Rewritten with node (no `sed -i`: BSD and GNU differ); a copy that still holds the real delays would sleep 150 s per retry: refuse.
+  node -e '
+    const fs = require("fs"); const f = process.argv[1]; if (!fs.existsSync(f)) process.exit(0);
+    const s = fs.readFileSync(f, "utf8"); const from = "const RETRY_DELAYS_MS = Object.freeze([30000, 120000]);";
+    if (s.split(from).length !== 2) { console.error("RETRY_DELAYS_MS line not found exactly once"); process.exit(3); }
+    fs.writeFileSync(f, s.replace(from, "const RETRY_DELAYS_MS = Object.freeze([1, 2]);"));
+  ' "$TREE/_shared/lib/xprov-recover.cjs" || { echo "FAIL  harness: could not rewrite RETRY_DELAYS_MS in the tree copy" >&2; exit 2; }
 }
 
 # make_phase <name> [plan-file] — builds a temp git checkout with one commit

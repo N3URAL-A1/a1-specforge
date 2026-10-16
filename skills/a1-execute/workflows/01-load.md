@@ -80,7 +80,9 @@ place the check fails with that reason, which is the correct answer.)
   with the issue tag `xprov_not_applicable`. `accepted: "not_applicable"` with `placement: "scope_exempt"` (spec 016
   FR-019: the spec is not size L and the plan names no security surface) is exit 0 as well: print
   `ℹ Plan review not applicable — scope_exempt: spec is not size L and the plan names no security surface; Reinhard-only, continuing.`
-  and record the same retro entry with reason `scope_exempt`. A mismatch or broken state
+  and record the same retro entry with reason `scope_exempt`. `accepted: "codex_blocked_fallback"` (spec 016 FR-026: Codex answered BLOCKED
+  twice for exactly this PLAN.md) is exit 0 too: print `ℹ Plan review not applicable — Codex answered BLOCKED twice; the Reinhard review is the only review for this plan, continuing.`
+  and record the retro entry with reason `codex_blocked_fallback` (issue tag `xprov_not_applicable`). A mismatch or broken state
   (`*_mismatch`, `audit_broken`, `invalid`) stays exit 1.
 - **Exit 1, `reason: plan_review_missing`** → read `enforcement` from the
   stdout JSON (it echoes the `plan-review-xprov` row of

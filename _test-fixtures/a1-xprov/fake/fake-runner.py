@@ -52,6 +52,11 @@ environment when the file is absent (direct `python3 fake-runner.py` calls).
   FAKE_RUNNER_REFUSE_MSG       like REFUSE, but `claudex-loop: <this text>` — the
                                runner's interpolated refusals (runner.py:102, :415)
   FAKE_RUNNER_EXIT             exit code (default 0)
+  FAKE_RUNNER_FAIL_ERROR       the runner's own failure: result.json status failed with this `error`
+                               text (no codex stdout), exit 1 — e.g. the timeout message
+  FAKE_RUNNER_SEQUENCE         JSON list of knob objects, one per CALL (the last repeats): the n-th call
+                               runs with those FAKE_RUNNER_* values on top of the others (spec 016 Wave 8)
+  FAKE_RUNNER_COUNT_FILE       one line is appended per call; its line count selects the sequence entry
 
 A resume is checked like runner.py:257-269 (same repo, plan, provider, mode,
 model, effort; status completed; a session UUID) — the check whose absence
@@ -254,8 +259,22 @@ def base_resolves(repo: str | None, base: str | None) -> bool:
     return r.returncode == 0
 
 
+def scripted(k: dict) -> dict:
+    """FAKE_RUNNER_SEQUENCE: the knob set of THIS call (call n takes entry min(n, last)); every call is counted."""
+    seq, counter = k.get("FAKE_RUNNER_SEQUENCE"), k.get("FAKE_RUNNER_COUNT_FILE")
+    if not seq or not counter:
+        return k
+    path = Path(counter)
+    n = len(path.read_text(encoding="utf-8").splitlines()) if path.is_file() else 0
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(f"call {n + 1}\n")
+    steps = json.loads(seq)
+    step = steps[min(n, len(steps) - 1)]
+    return {**k, **{key: str(v) for key, v in step.items() if key.startswith("FAKE_RUNNER_")}}
+
+
 def main(argv: list[str]) -> int:
-    k = knobs()
+    k = scripted(knobs())
     argv_file = k.get("FAKE_RUNNER_ARGV_FILE")
     if argv_file:
         Path(argv_file).write_text(json.dumps(argv) + "\n", encoding="utf-8")
@@ -319,6 +338,14 @@ def main(argv: list[str]) -> int:
         target = Path(write_path)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text("tripwire probe\n", encoding="utf-8")
+    fail_error = k.get("FAKE_RUNNER_FAIL_ERROR")
+    if fail_error and run_dir is not None:
+        failed = {"status": "failed", "mode": mode, "provider": "codex", "repo": str(Path(repo).resolve()) if repo else None,
+                  "error": fail_error, "exit_code": 1}
+        (run_dir / "result.json").write_text(json.dumps(failed, indent=2) + "\n", encoding="utf-8")
+        print(json.dumps({"provider": "codex", "model": "CLI default (unresolved)", "mode": mode, "artifacts": str(run_dir)}), flush=True)
+        print(json.dumps(failed, indent=2))
+        return 1
     codex_stdout = k.get("FAKE_RUNNER_CODEX_STDOUT")
     if codex_stdout and run_dir is not None:
         src = Path(codex_stdout)

@@ -62,7 +62,8 @@ const { REGISTRY_PATH, LANE_RE, DETAIL_MAX_CHARS, inputError, clip, parsePositiv
 const { permitCheck, permitHint, STATES: PERMIT_STATES } = require('./xprov-permit.cjs');
 const { preflight, resolveTool } = require('./xprov-preflight.cjs');
 const { snapshot, cleanupSnapshot, INPUTS_SUFFIX, INPUT_FILES } = require('./xprov-snapshot.cjs');
-const { observe, MODEL_RE } = require('./xprov-observe.cjs');
+const { observe, MODEL_RE, runsCounted } = require('./xprov-observe.cjs');
+const R = require('./xprov-recover.cjs');
 const WV = require('./xprov-waivers.cjs');
 const NP = require('./xprov-gate-nopermit.cjs');
 const PL = require('./xprov-placement.cjs');
@@ -315,7 +316,7 @@ function nextFor(ctx, verdict) {
   };
 }
 
-function stepObserve(ctx, out, entry) {
+function stepObserve(ctx, out, entry, state) {
   const pass = out.verdict === X.VERDICTS.PASS;
   const msg = clip(`${ctx.gate} ${scopeOf(ctx.wave)}${ctx.lane ? ` lane ${ctx.lane}` : ''} round ${ctx.round}: ${out.verdict}${out.reason ? ` (${out.reason})` : ''}${out.findings_path ? ` — findings ${path.basename(out.findings_path)}` : ''}`, X.TITLE_MAX_CHARS * 4);
   observe({
@@ -326,10 +327,12 @@ function stepObserve(ctx, out, entry) {
     // observed_models[0] must never cost the observation.
     modelRequested: typeof entry.model_requested === 'string' && MODEL_RE.test(entry.model_requested) ? entry.model_requested : undefined,
     modelObserved: typeof entry.model_observed === 'string' && MODEL_RE.test(entry.model_observed) ? entry.model_observed : undefined,
+    ...runFields(ctx, state, out),
   });
+  state.observed = true;
 }
 
-function appendLog(ctx, out, snapState) {
+function appendLog(ctx, out, snapState, state) {
   const file = path.join(ctx.phaseDir, LOG_FILE);
   const existing = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : LOG_HEADER;
   const none = C.oneLine;
@@ -337,7 +340,7 @@ function appendLog(ctx, out, snapState) {
     `## gate ${ctx.gate} · ${scopeOf(ctx.wave)}${ctx.lane ? ` · lane ${ctx.lane}` : ''} · round ${ctx.round} · ${nowIso()}`, '',
     `- step: ${none(out.step)}`, `- verdict: ${none(out.verdict)}`, `- reason: ${none(out.reason)}`, `- detail: ${none(clip(out.reason_detail, DETAIL_MAX_CHARS))}`,
     `- enforcement: ${ctx.enforcement}`, `- xreview: ${none(out.xreview_path)}`, `- result: ${none(out.result_path)}`, `- findings: ${none(out.findings_path)}`,
-    `- snapshot: ${none(snapState)}`, '',
+    `- snapshot: ${none(snapState)}`, ...(state && state.recovery.length ? [`- recovery: ${none(JSON.stringify(state.recovery))}`] : []), '',
   ].join('\n');
   writeTextAtomic(file, `${existing}${existing.endsWith('\n') ? '' : '\n'}\n${entry}`);
 }
@@ -372,6 +375,12 @@ function recordNotApplicable(ctx, base, permit) {
  * step — only usage errors throw A1_INPUT before anything is created). */
 function gate(o) {
   const ctx = resolveGateArgs(o);
+  const state = { recovery: [], runnerCalls: 0, logged: false, observed: false };
+  const out = driveGate(ctx, state);
+  return state.logged ? finishRun(ctx, state, out) : out;
+}
+
+function driveGate(ctx, state) {
   const base = Object.freeze({ verdict: X.VERDICTS.FAIL, reason: null, reason_detail: null, step: null, gate: ctx.gate, phase: ctx.phase, wave: ctx.wave, lane: ctx.lane, round: ctx.round, mode: ctx.mode, enforcement: ctx.enforcement, findings_path: null, xreview_path: null, result_path: null, next: null, gitleaks: null, ...allowlistFields({}) });
   // A failing step is a FAIL whatever was reached so far — after normalize
   // produced a pass, a broken observe step must not leave `pass` in stdout.
@@ -389,28 +398,35 @@ function gate(o) {
     const everyRepo = permit.state === PERMIT_STATES.DENIED; // `denied` on an `applies_to: all` row still fails
     return fail('permit-check', everyRepo ? X.REASONS.external_review_not_permitted : permit.reason, everyRepo ? `external_review: denied, but ${ctx.gate} applies to every repository` : permit.detail, { permit_state: permit.state });
   }
-  if (ctx.round > X.ROUND_CAP) { const r = fail('round', X.REASONS.round_cap, `round ${ctx.round} > cap ${X.ROUND_CAP}`); appendLog(ctx, r, 'none'); return r; }
+  if (ctx.round > X.ROUND_CAP) { const r = fail('round', X.REASONS.round_cap, `round ${ctx.round} > cap ${X.ROUND_CAP}`); state.logged = true; appendLog(ctx, r, 'none', state); return r; }
   const prior = priorRound(ctx); // usage errors surface before any side effect (exit 2 writes nothing)
   let snap = null;
   let feedback = null;
   let result;
   try {
-    const pre = preflight({ pluginAllowlist: ctx.pluginAllowlist });
+    const fixed = R.preflightWithRepair({ pluginAllowlist: ctx.pluginAllowlist });
+    state.recovery = addRecovery(state.recovery, fixed.recovery);
+    const pre = fixed.pre;
     if (!pre.ok) return (result = fail('preflight', pre.reason, pre.failed.join(', ')));
     // FR-011: a blocking gate does not degrade to patterns-only; no snapshot is made without gitleaks.
     if (ctx.enforcement === 'blocking' && resolveTool('gitleaks') === null) return (result = fail('preflight', X.REASONS.preflight_failed, GITLEAKS_MISSING_DETAIL));
     if (prior) feedback = writeFeedback(prior);
-    const snapped = stepSnapshot(ctx, feedback);
+    const sb = R.snapshotWithBase(ctx, (b) => stepSnapshot(b === ctx.base ? ctx : Object.freeze({ ...ctx, base: b }), feedback));
+    state.recovery = addRecovery(state.recovery, sb.recovery);
+    const snapped = sb.snapped;
+    const runCtx = sb.base === ctx.base ? ctx : Object.freeze({ ...ctx, base: sb.base });
     const al = snapped.ok ? Object.freeze({ ...snapped.allowlist, gitleaks: snapped.gitleaks }) : snapped.allowlist;
     noteAllowlist(ctx, al);
     if (!snapped.ok) return (result = fail('snapshot', snapped.reason, snapped.detail, al));
     snap = snapped.snapshot;
-    const ran = stepRun(ctx, snap, snapped.inputs);
+    const rv = R.reviewSteps(() => { state.runnerCalls += 1; return stepRun(runCtx, snap, snapped.inputs); }, (p) => stepNormalize(ctx, p, al));
+    state.recovery = R.runnerRecovery(rv).reduce(addRecovery, state.recovery);
+    const { ran, norm } = rv;
     if (!ran.ok) return (result = fail('run', ran.reason, ran.detail, { ...al, run_porcelain: ran.porcelain || null }));
-    const norm = stepNormalize(ctx, ran.resultPath, al);
     if (!norm.ok) return (result = fail('normalize', norm.reason, norm.detail, { ...al, result_path: ran.resultPath }));
+    if (rv.fallback && markedFallback(ctx, ran, norm)) return (result = Object.freeze({ ...base, ...al, run_porcelain: ran.porcelain, result_path: ran.resultPath, xreview_path: norm.xreviewPath, step: 'normalize', verdict: X.VERDICT_NOT_APPLICABLE, reason: X.REASONS.codex_blocked_fallback, reason_detail: R.BLOCKED_NOTICE, next: null }));
     const capped = reviewedOutcome(ctx, base, al, ran, norm);
-    try { stepObserve(ctx, capped, norm.entry); } catch (e) { return (result = fail('observe', X.REASONS.malformed, e.message, { ...al, result_path: ran.resultPath, findings_path: norm.findingsPath, xreview_path: norm.xreviewPath })); }
+    try { stepObserve(ctx, capped, norm.entry, state); } catch (e) { return (result = fail('observe', X.REASONS.malformed, e.message, { ...al, result_path: ran.resultPath, findings_path: norm.findingsPath, xreview_path: norm.xreviewPath })); }
     return (result = capped);
   } finally {
     // MINOR (a): a failed cleanup is logged by path, never disguised as 'none'.
@@ -420,8 +436,43 @@ function gate(o) {
     // Only a step OUTCOME is logged. A throw (usage error from preflight's
     // codexHome(), an unexpected exception) leaves `result` unset: exit 2 must
     // write nothing, and an internal error must not pose as a gate entry.
-    if (result) appendLog(ctx, result, snapState);
+    if (result) { state.logged = true; appendLog(ctx, result, snapState, state); }
   }
+}
+
+/** The blocked fallback is real only with a1's marker in the run dir of the second BLOCKED answer (bound to the plan sha normalize recorded). */
+function markedFallback(ctx, ran, norm) {
+  try { return R.markFallback(ran.resultPath, ctx.gate, norm.entry && norm.entry.plan_sha256, ctx.root); } catch (_e) { return false; }
+}
+
+const addRecovery = (list, note) => (note ? [...list, note] : list);
+
+/** Owner hand-offs this result asks for: the terminal command of a missing permit, the allowlist question of an uncovered secret hit (spec 016 FR-035). */
+function ownerHandoffs(out) {
+  return (out.step === 'permit-check' && permitHint(out.permit_state) ? 1 : 0) + (Array.isArray(out.uncovered) && out.uncovered.length ? 1 : 0);
+}
+
+/** The four run fields of the observation line (FR-035). `codex_runs` is 1 only for the first line of a gate target that reached the runner: rounds, retries and delta runs collapse (FR-022). */
+function runFields(ctx, state, out) {
+  const first = state.runnerCalls > 0 && runsCounted({ repoRoot: ctx.root, phase: ctx.phase, gate: ctx.gate, wave: ctx.wave, lane: ctx.lane }) === 0;
+  return { gate: ctx.gate, ownerHandoffs: ownerHandoffs(out), codexRuns: first ? 1 : 0, abortReason: out.verdict === X.VERDICTS.FAIL && out.reason ? out.reason : null, recovered: R.recovered(state.recovery) };
+}
+
+/** One observation per gate run that got past placement and permit (the paths that write nothing by FR-012/FR-020 append nothing). */
+function finishRun(ctx, state, out) {
+  const final = Object.freeze({ ...out, ...(state.recovery.length ? { recovery: Object.freeze([...state.recovery]) } : {}) });
+  if (!state.observed) {
+    const quiet = final.verdict === X.VERDICTS.PASS || final.verdict === X.VERDICT_NOT_APPLICABLE;
+    try {
+      observe({
+        repoRoot: ctx.root, agent: EXTERNAL_AGENT, skill: ctx.isPlan ? 'a1-plan' : 'a1-execute', phase: ctx.phase, wave: ctx.wave, lane: ctx.lane || undefined,
+        type: quiet ? 'gap' : 'blocker', severity: quiet ? 'minor' : 'major', ...(final.verdict === X.VERDICT_NOT_APPLICABLE ? { pattern: RETRO_ISSUE_NOT_APPLICABLE } : {}), provider: 'codex',
+        msg: clip(`${ctx.gate} ${scopeOf(ctx.wave)}${ctx.lane ? ` lane ${ctx.lane}` : ''} round ${ctx.round}: ${final.verdict}${final.reason ? ` (${final.reason} at ${final.step})` : ''}`, X.TITLE_MAX_CHARS * 4),
+        ...runFields(ctx, state, final),
+      });
+    } catch (e) { process.stderr.write(`xprov gate: observation not written: ${clip(String(e && e.message), 200)}\n`); }
+  }
+  return final;
 }
 
 // ---------- load-check ----------
@@ -463,11 +514,14 @@ function loadCheck(o) {
   const newest = passes.length ? [...passes].sort((a, b) => String(a.ts || '').localeCompare(String(b.ts || '')))[passes.length - 1] : null;
   const store = WV.readWaivers();
   const waiver = newest !== null && newest.plan_sha256 === planSha ? null : WV.planWaiver(store, { repo: C.commonDirOf(ctx.root), phase: ctx.phase, plan_sha256: planSha });
-  const accepted = newest !== null && newest.plan_sha256 === planSha ? 'pass' : (waiver ? 'waiver' : null);
+  // spec 016 FR-026: twice BLOCKED = Reinhard is the only review; a1's marker in the run dir is the proof, the index row only points at it
+  const fallback = newest === null && waiver === null
+    ? index.find((e) => e.gate === gate && e.reason === X.REASONS.blocked && e.plan_sha256 === planSha && RR.blockedFallbackValid(e.result_path, planSha, 'review', gate)) || null : null;
+  const accepted = newest !== null && newest.plan_sha256 === planSha ? 'pass' : (waiver ? 'waiver' : (fallback ? X.REASONS.codex_blocked_fallback : null));
   const ok = accepted !== null && !moved;
   return Object.freeze({
     ok, gate, enforcement, phase: ctx.phase, plan_sha256: planSha, accepted,
-    matched_entry: accepted === 'pass' ? newest : null, matched_waiver: accepted === 'waiver' ? waiver : null,
+    matched_entry: accepted === 'pass' ? newest : (fallback || null), matched_waiver: accepted === 'waiver' ? waiver : null,
     newest_pass: newest ? { ts: newest.ts, plan_sha256: newest.plan_sha256, round: newest.round } : null,
     reason: ok ? null : (moved ? X.REASONS.plan_changed : X.REASONS.plan_review_missing),
     detail: ok ? null : (moved ? movedDetail : loadCheckDetail(newest, planSha, store)),
@@ -551,6 +605,9 @@ function waveStatus(o) {
     ...index.filter((e) => e.gate === gate && waveNumber(e.wave) === p.wave && sameLane(e, p.lane) && e.verdict === X.VERDICTS.PASS && e.waived !== true && e.plan_sha256 === planSha)
       .map((e) => RR.inspectPass(e.result_path, planSha)).filter(Boolean).map((hb) => ({ kind: 'pass', head: hb.head, base: hb.base })),
     ...WV.waveWaivers(store, { repo, phase: ctx.phase, plan_sha256: planSha, wave: p.wave, lane: p.lane }).map((w) => ({ kind: 'waiver', head: w.head, base: w.base })),
+    // twice BLOCKED (spec 016 FR-026): head/base from the run dir like a pass, accepted only with a1's marker
+    ...index.filter((e) => e.gate === gate && waveNumber(e.wave) === p.wave && sameLane(e, p.lane) && e.reason === X.REASONS.blocked && e.plan_sha256 === planSha)
+      .map((e) => RR.blockedFallbackHeadBase(e.result_path, planSha, gate)).filter(Boolean).map((hb) => ({ kind: 'fallback', head: hb.head, base: hb.base })),
   ]);
   const chosen = WV.chainCoverage(completed, candidates, tips, ctx.phase, exempt, ex.ranges);
   const covered = (p) => exempt.has(`${p.wave}|${p.lane || ''}`) || chosen.get(`${p.wave}|${p.lane || ''}`) != null;
@@ -560,6 +617,7 @@ function waveStatus(o) {
     ok: lacking.length === 0, gate, enforcement, phase: ctx.phase,
     completed_waves: [...new Set(completed.map((p) => p.wave))], completed_detail: completed, lacking, lacking_detail: lackingDetail,
     head: h.head, scope_exempt: exemptWaves, deferred_to_pr: ex.deferred, exempt_refused: ex.refused,
+    blocked_fallback: [...new Set(completed.filter((p) => { const c = chosen.get(`${p.wave}|${p.lane || ''}`); return c != null && c.kind === 'fallback'; }).map((p) => p.wave))],
     reason: lacking.length ? X.REASONS.wave_inspect_missing : null,
   });
 }
@@ -679,7 +737,8 @@ function cmdXprovGate(args) {
     const r = gate({ phase: f.phase, gate: f.gate, wave: f.wave, lane: f.lane, base: f.base, workPath: f['work-path'], round: f.round, timeout: f.timeout, allowPlugins: f['allow-plugins'] });
     if (r.gitleaks === false) process.stderr.write(`${GITLEAKS_WARNING_LINE}\n`);
     process.stderr.write(`xprov gate ${r.gate} ${scopeOf(r.wave)} round ${r.round}: ${r.verdict}${r.reason ? ` (${r.reason} at ${r.step})` : ''} — enforcement ${r.enforcement}\n`);
-    if (r.verdict === X.VERDICT_NOT_APPLICABLE) process.stderr.write(`xprov gate: ${noticeOf(r.permit_state, r.placement)}\n`);
+    if (r.verdict === X.VERDICT_NOT_APPLICABLE) process.stderr.write(`xprov gate: ${r.reason === X.REASONS.codex_blocked_fallback ? R.BLOCKED_NOTICE : noticeOf(r.permit_state, r.placement)}\n`);
+    for (const x of r.recovery || []) process.stderr.write(`xprov gate: recovery ${x.action}: ${x.ok ? 'worked' : 'did not help'}\n`);
     if (r.step === 'permit-check' && permitHint(r.permit_state)) process.stderr.write(`xprov gate: ${permitHint(r.permit_state)}\n`);
     if (r.allowlist_note) process.stderr.write(`xprov gate: allowlist not applied: ${r.allowlist_note}\n`);
     for (const x of r.allowlist_stale) process.stderr.write(`xprov gate: warning allowlist_stale: ${x.path} · ${x.pattern}\n`);
@@ -692,7 +751,7 @@ function cmdXprovLoadCheck(args) {
   return withFlags(args, { phase: 'str', 'expect-sha': 'str' }, 'load-check', (f) => {
     if (!f.phase) return usageExit('load-check requires --phase <name> [--expect-sha <sha256>]');
     const r = loadCheck({ phase: f.phase, expectSha: f['expect-sha'] });
-    process.stderr.write(r.ok ? `xprov load-check: ${r.accepted === NOT_APPLICABLE_ACCEPTED ? noticeOf(r.permit_state, r.placement) : `PLAN.md matches ${r.accepted === 'waiver' ? `a store waiver for ${r.gate} (not a pass)` : `the newest ${r.gate} pass`}`}\n` : `xprov load-check: ${r.reason} — ${r.detail} (enforcement ${r.enforcement})\n`);
+    process.stderr.write(r.ok ? `xprov load-check: ${r.accepted === NOT_APPLICABLE_ACCEPTED ? noticeOf(r.permit_state, r.placement) : r.accepted === X.REASONS.codex_blocked_fallback ? R.BLOCKED_NOTICE : `PLAN.md matches ${r.accepted === 'waiver' ? `a store waiver for ${r.gate} (not a pass)` : `the newest ${r.gate} pass`}`}\n` : `xprov load-check: ${r.reason} — ${r.detail} (enforcement ${r.enforcement})\n`);
     return finish(r, r.ok ? X.EXIT_PASS : X.EXIT_FAIL);
   });
 }
@@ -702,6 +761,7 @@ function cmdXprovWaveStatus(args) {
     if (!f.phase) return usageExit('wave-status requires --phase <name> [--waves 1,2 [--lane <id>]] [--expect-sha <sha256>] [--wave-range <n>=<base>..<head>,…] [--work-path <dir>] [--lane-work-path <lane>=<dir>[,…]]');
     const r = waveStatus({ phase: f.phase, waves: f.waves, lane: f.lane, workPath: f['work-path'], laneWorkPaths: f['lane-work-path'], expectSha: f['expect-sha'], waveRange: f['wave-range'] });
     process.stderr.write(r.ok ? `xprov wave-status: ${r.not_applicable ? `waves ${r.not_applicable.join(', ')}: ${noticeOf(r.permit_state, r.placement)}` : `waves ${r.completed_waves.join(', ')} inspected or waived`}\n` : `xprov wave-status: waves lacking a ${r.gate} pass or waiver: ${r.lacking.join(', ')} (enforcement ${r.enforcement})\n`);
+    if (Array.isArray(r.blocked_fallback) && r.blocked_fallback.length) process.stderr.write(`xprov wave-status: waves ${r.blocked_fallback.join(', ')}: ${R.BLOCKED_NOTICE}\n`);
     return finish(r, r.ok ? X.EXIT_PASS : X.EXIT_FAIL);
   });
 }
@@ -718,6 +778,6 @@ function cmdXprovWaive(args) {
 }
 
 module.exports = {
-  registryEnforcement, appliesToFor, readIndex, sameWave, gate, loadCheck, waveStatus, waive, mirrorWaiver,
+  registryEnforcement, appliesToFor, readIndex, sameWave, gate, loadCheck, waveStatus, waive, mirrorWaiver, ownerHandoffs,
   cmdXprovGate, cmdXprovLoadCheck, cmdXprovWaveStatus, cmdXprovWaive,
 };

@@ -140,9 +140,12 @@ function gc(opts) {
  * APPROVED review/inspect. The runner's verdict alone is not enough: a run a1
  * discarded (secret_in_output, quarantine) keeps the short retention (Samuel SEC-1). */
 function isPassRun(dir) {
-  if (!RR.hasPassMarker(dir)) return false;
+  const marked = RR.hasPassMarker(dir);
+  // spec 016 FR-026: the run dir of a twice-BLOCKED target carries a1's fallback marker and is the proof loaders read: same long retention
+  const fallback = !marked && RR.readJsonNoFollow(path.join(dir, RR.BLOCKED_MARKER_FILE)) !== null;
+  if (!marked && !fallback) return false;
   const r = RR.readJsonNoFollow(path.join(dir, 'result.json'));
-  return r !== null && r.status === 'completed' && X.RUNNER_MODES.includes(r.mode) && C.isPlainObject(r.response) && r.response.verdict === 'APPROVED';
+  return r !== null && r.status === 'completed' && X.RUNNER_MODES.includes(r.mode) && C.isPlainObject(r.response) && r.response.verdict === (marked ? 'APPROVED' : 'BLOCKED');
 }
 
 /** The stale run-home sweep, shared by gc and (opportunistically) every

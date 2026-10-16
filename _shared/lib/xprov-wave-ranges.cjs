@@ -66,4 +66,4 @@ function verify(o) {
   return Object.freeze({ ok: true, ranges: new Map(rs.map((r) => [r.wave, r])) });
 }
 
-module.exports = { DEFAULT_BRANCH_REFS, verify };
+module.exports = { DEFAULT_BRANCH_REFS, anchorOf, verify };

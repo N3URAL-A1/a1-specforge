@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"01a10178-bf2e-7c62-9896-d64dc02ff63d"}
+{"type":"turn.started"}
+{"type":"error","message":"unexpected status 503 Service Unavailable: upstream connect error or disconnect/reset before headers"}
+{"type":"turn.failed","error":{"message":"unexpected status 503 Service Unavailable: upstream connect error or disconnect/reset before headers"}}

@@ -127,10 +127,12 @@ The driver has already appended verdict, XREVIEW.md path and result path to
 | `not_applicable` (exit 1, `reason: external_review_denied`) | any | The owner recorded that no external review applies to this repository (a chat No or `xprov permit --deny`, confirmed by the owner's store). **Continue — do not halt.** Print the one-line notice below and treat the plan as ready; no Codex call happened. The retro records `verdict: not_applicable` and the issue tag `xprov_not_applicable`. A record the owner's store does not confirm (`external_review_denial_mismatch`, `external_review_permit_mismatch`) is a `fail`, not this row. |
 | `not_applicable` (exit 1, `reason: external_review_not_permitted`) | any | The repository has no permit and the owner gave none (never asked, No, unanswered, or no chat: Step 1.0). **Continue — do not halt.** Print the no-permit notice below and treat the plan as ready with the Reinhard review only; no Codex call happened. The retro records `verdict: not_applicable` and the issue tag `xprov_not_applicable`. |
 | `not_applicable` (exit 1, `reason: scope_exempt`) | any | The placement rule says the plan review does not apply (spec size not L, no security surface in the files the plan names). **Continue — do not halt.** Print the scope notice below and treat the plan as ready with the Reinhard review only; no consent question is asked, no Codex call happened, nothing was written. The retro records `verdict: not_applicable` with the reason `scope_exempt` and the issue tag `xprov_not_applicable`. |
+| `not_applicable` (exit 1, `reason: codex_blocked_fallback`) | any | Codex answered BLOCKED twice (the gate repeated the run once by itself, spec 016 FR-026). **Continue — do not halt.** Print the blocked notice below: the Reinhard review is the only review for this plan. No consent question is asked. `xprov load-check` accepts it (`accepted: "codex_blocked_fallback"`) for this PLAN.md sha. The retro records `verdict: not_applicable` with the reason `codex_blocked_fallback` and the issue tag `xprov_not_applicable`. |
 | `fail` (any `reason`) | `warning` | Print the warning block below, then treat the plan as ready **with the warning attached** to the summary. The retro records `verdict: fail`. |
 | `fail` (any `reason`) | `blocking` | **HALT.** Print the block below as an error; do not suggest `a1-execute`. Surface the `reason` and the two ways out: fix the cause (e.g. `preflight_failed`, `not_logged_in`, `external_review_permit_mismatch`) and re-run Step 1, or an owner waiver by chat (Step 5). |
 
 Notice for `not_applicable` (one line): `ℹ Cross-provider plan review not applicable — the owner denied external review for this repository (gate plan-review-xprov); continuing.`
+For `codex_blocked_fallback`: `ℹ Cross-provider plan review not applicable — Codex answered BLOCKED twice (gate plan-review-xprov); the Reinhard review is the only review for this plan, continuing.`
 For `scope_exempt`: `ℹ Cross-provider plan review not applicable — scope_exempt: spec is not size L and the plan names no security surface (gate plan-review-xprov); Reinhard-only, continuing.`
 For `external_review_not_permitted`: `ℹ Cross-provider plan review not applicable — no Codex permit for this repository (gate plan-review-xprov); Reinhard-only, continuing.`
 For `permit_state` `origin_changed` or `unbound_legacy`: `ℹ Codex review skipped: permit void (<permit_state>) — the owner should re-consent; Reinhard-only, continuing.`
@@ -271,6 +273,14 @@ owner sees.
   `plan_review_missing`. Re-run Step 1 — do not hand-edit `index.json`.
 - **Multi-lane plans.** One review of the whole PLAN.md; lanes are inspected
   per wave by `wave-inspect-xprov` in a1-execute, not here.
+- **Self-recovery (spec 016 FR-024..028, FR-031).** The gate repairs four failures by itself and says so in `recovery` (stdout) and in the
+  log entry of `PLAN-REVIEW-LOG.md`: a `runner_failed` caused by network, timeout or an HTTP 5xx answer is retried twice (30 s, then 120 s;
+  every attempt is listed); a `blocked` answer is repeated once, and a second one ends as `not_applicable` / `codex_blocked_fallback`; a
+  snapshot whose base does not resolve is retried once on the merge-base with the default branch (inspect only); a `preflight_failed` that
+  only the three additive review-home actions fix (`rm -rf $CODEX_HOME/plugins`, `xprov init-home --pin-features`, `--prune-marketplaces`) is
+  repaired once in the dedicated review home, never in `~/.codex`. Nothing else is recovered: `secret_in_snapshot`, `secret_in_output`,
+  `tripwire`, `quarantined`, `run_home_unsafe`, `snapshot_changed_after_scan`, `allowlist_invalid`, `allowlist_modified`, every permit or
+  store mismatch and `round_cap` stay a stop with their reason. Do not re-run the gate yourself to "retry" one of them.
 - **Preflight FAIL `plugins_cache_empty`.** Codex has installed plugins into
   `$CODEX_HOME/plugins/cache/` on its own (measured 2026-09-24: the
   `openai-curated-remote` set); `init-home` never deletes anything, so the home

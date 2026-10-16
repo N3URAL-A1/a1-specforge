@@ -42,6 +42,9 @@ echo "xprov wave-status exit=$RC"
   surface for them and their real diff, `--wave-range`, is none either) are listed under `scope_exempt` and need no pass or waiver; a wave
   that has a gate row is judged on its rows. Retro: `{id: wave-inspect-xprov, verdict: not_applicable, caught: false}`
   with reason `scope_exempt` and the issue tag `xprov_not_applicable`.
+  **Blocked fallback (spec 016 FR-026).** A wave Codex answered BLOCKED twice is covered by a1's marker in its run dir and listed under
+  `blocked_fallback`: Reinhard is the only review for it. Retro: `{id: wave-inspect-xprov, verdict: not_applicable, caught: false}` with reason
+  `codex_blocked_fallback` and the issue tag `xprov_not_applicable`.
 - **Exit 1** → the stdout JSON lists the lacking waves. For each: go back to
   `02-execute.md` step 2b-x for that wave (re-run the inspection with that
   wave's `--base`), or the owner waives it. Main path: the chat waiver of
