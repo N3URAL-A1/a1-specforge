@@ -278,7 +278,7 @@ owner sees.
   every attempt is listed); a `blocked` answer is repeated once, and a second one ends as `not_applicable` / `codex_blocked_fallback`; a
   snapshot whose base does not resolve is retried once on the merge-base with the default branch (inspect only); a `preflight_failed` that
   only the three additive review-home actions fix (`rm -rf $CODEX_HOME/plugins`, `xprov init-home --pin-features`, `--prune-marketplaces`) is
-  repaired once in the dedicated review home, never in `~/.codex`. Nothing else is recovered: `secret_in_snapshot`, `secret_in_output`,
+  repaired once in the dedicated review home, never in `~/.codex`, and only in a home the owner made (the marker `xprov init-home` writes, or the default `~/.codex-a1-review`; an `A1_XPROV_CODEX_HOME` override without the marker is not repaired). Nothing else is recovered: `secret_in_snapshot`, `secret_in_output`,
   `tripwire`, `quarantined`, `run_home_unsafe`, `snapshot_changed_after_scan`, `allowlist_invalid`, `allowlist_modified`, every permit or
   store mismatch and `round_cap` stay a stop with their reason. Do not re-run the gate yourself to "retry" one of them.
   A call that recovers waits 30 s and 120 s and may call the runner up to three times: give the Bash call the 10-minute maximum or start it in the background and read its output.

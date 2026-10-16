@@ -27,12 +27,14 @@ const C = require('./xprov-common.cjs');
 const PF = require('./xprov-preflight.cjs');
 const WR = require('./xprov-wave-ranges.cjs');
 const RR = require('./xprov-runrecord.cjs');
+const HM = require('./xprov-homemark.cjs');
 
 const RETRY_DELAYS_MS = Object.freeze([30000, 120000]);
 const FETCH_TIMEOUT_MS = 60000;
 const BRANCH_RE = /^[A-Za-z0-9][A-Za-z0-9._\/-]{0,100}$/;
 const FETCH_BRANCHES = Object.freeze(['main', 'master']);
 const REMOTE = 'origin';
+const FETCH_SSH_COMMAND = 'ssh -o BatchMode=yes'; // no ssh prompt (host key, passphrase) may stall an unattended fetch; GIT_TERMINAL_PROMPT=0 covers https
 const BLOCKED_NOTICE = 'not_applicable — Codex answered BLOCKED twice; the Reinhard review is the only review for this target, no owner question is asked';
 const CAUSES = Object.freeze({ TIMEOUT: 'timeout', NETWORK: 'network', HTTP_5XX: 'http_5xx' });
 
@@ -125,7 +127,7 @@ const BASE_UNRESOLVED_RE = /^base \S+ does not resolve in /;
 function fetchDefaultBranch(workPath) {
   if (C.gitOut(['-C', workPath, 'config', '--get', `remote.${REMOTE}.url`]) === null) return false;
   return FETCH_BRANCHES.some((b) => BRANCH_RE.test(b) && C.gitSpawn(['-C', workPath, 'fetch', '--no-tags', '--quiet', REMOTE, `+refs/heads/${b}:refs/remotes/${REMOTE}/${b}`],
-    { timeout: FETCH_TIMEOUT_MS, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } }).status === 0);
+    { timeout: FETCH_TIMEOUT_MS, env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_SSH_COMMAND: FETCH_SSH_COMMAND } }).status === 0);
 }
 
 /** merge-base of the default branch and the work path's HEAD (fetching the ref when no default branch resolves): { base, fetched } | null. */
@@ -162,15 +164,25 @@ function snapshotWithBase(ctx, snap) {
 const REPAIRABLE_CHECKS = Object.freeze(['plugins_cache_empty', 'remote_plugin_switch', 'features_pinned_off', 'auth_store_file']);
 const PLUGINS_DIR = 'plugins';
 
-/** The repair touches ONLY the dedicated review home: not the global ~/.codex (realpath), nothing inside it, and not a path the preflight did not report. */
-function reviewHomeProblem(home, reported, homedir) {
-  if (typeof home !== 'string' || !path.isAbsolute(home) || path.resolve(home) !== path.resolve(reported)) return 'the home to repair is not the one preflight checked';
+/**
+ * The repair touches ONLY the dedicated review home: `home` is the home preflight checked, `expected` the review home the gate computes on its
+ * own (xprov.codexHome(env)); the two must be the same path. Not the global ~/.codex (realpath), nothing inside it, and a home the owner made:
+ * the marker `xprov init-home` writes, or the default `~/.codex-a1-review` (W8-3).
+ */
+function reviewHomeProblem(home, expected, homedir) {
+  if (typeof home !== 'string' || !path.isAbsolute(home) || typeof expected !== 'string' || path.resolve(home) !== path.resolve(expected)) return 'the home to repair is not the review home the gate expects';
   if (PF.isGlobalHome(home, homedir)) return 'the home is the global ~/.codex';
   const global = path.join(homedir, '.codex');
   const real = (p) => { try { return fs.realpathSync(p); } catch (_e) { return path.resolve(p); } };
   const rel = path.relative(real(global), real(home));
   if (rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))) return 'the home lies inside the global ~/.codex';
+  if (!HM.hasOwnerMarker(home) && !HM.isCanonicalHome(home, homedir)) return 'the home carries no owner marker (run `xprov init-home` in a terminal)';
   return null;
+}
+
+/** The review home the runner will use (the same function the runner's env uses); null for a hostile override. */
+function expectedHome(env) {
+  try { return X.codexHome(env); } catch (_e) { return null; }
 }
 
 /** `rm -rf $CODEX_HOME/plugins` — a real directory directly under the home, never a link. */
@@ -193,7 +205,7 @@ function preflightWithRepair(opts, pre0) {
   const first = pre0 || run();
   if (first.ok || first.reason !== X.REASONS.preflight_failed || !first.failed.every((n) => REPAIRABLE_CHECKS.includes(n))) return Object.freeze({ pre: first, recovery: null });
   const homedir = o.homedir || require('os').homedir();
-  const problem = reviewHomeProblem(first.codex_home, first.codex_home, homedir);
+  const problem = reviewHomeProblem(first.codex_home, expectedHome(o.env), homedir);
   if (problem !== null) return Object.freeze({ pre: first, recovery: Object.freeze({ action: 'preflight_repair', ok: false, refused: problem, actions: [] }) });
   const actions = [];
   // an owner who allowlisted plugins (--allow-plugins) keeps them: the plugins dir is not removed then, the repair cannot verify and the run stops

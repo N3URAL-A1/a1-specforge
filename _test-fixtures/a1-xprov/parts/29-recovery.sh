@@ -48,7 +48,9 @@ prep29() {
   make_phase p29 "${1:-$CASES/approved.PLAN.md}"
   [[ -n "${2:-}" ]] && git -C "$PHASE_REPO" remote add origin "$2"
   rm -rf "$STORE29"; write_permit "$PHASE_REPO" fixture record/2026-09-24-fixture.md
-  make_home; ln -s "$HOME/.codex/auth.json" "$XHOME/auth.json"; export A1_XPROV_CODEX_HOME="$XHOME"
+  make_home; export A1_XPROV_CODEX_HOME="$XHOME"
+  node "$TREE_TOOLS" xprov init-home >/dev/null 2>&1 </dev/null # the owner command writes the owner marker (W8-3); the gate's repair never does
+  ln -s "$HOME/.codex/auth.json" "$XHOME/auth.json"
   printf '## Wave 1 — one\n' > "$PHASE_DIR/STATUS.md"
   SEQ29=""
 }
@@ -222,6 +224,14 @@ scen_sb2() {
 scen_sb3() { base29; git -C "$PHASE_REPO" branch -q -D "$DEFB29"; gate29 --gate "$GATE_WAVE" --wave 1 --base "$BOGUS_BASE" --work-path "$PHASE_REPO"; echo "$(sum29)/$(json_get "$G_OUT" "j.step + '/' + /does not resolve/.test(j.reason_detail)")/$(snaps29)"; }
 scen_sb4() { base29; gate29 --gate "$GATE_WAVE" --wave 1 --base "$PHASE_HEAD" --work-path "$PHASE_REPO"; sum29; }
 SB1="0/pass/null/1/base_recomputed:true/base-is-merge-base"
+scen_sb8() { # the base fetch runs with git's ssh in batch mode and the terminal prompt off, even when the caller's environment names another ssh command
+  base29 "ssh://git@example.invalid/repo.git"; git -C "$PHASE_REPO" branch -q -D "$DEFB29"
+  local dir="$TMP29/sshstub"; rm -rf "$dir"; mkdir -p "$dir"; rm -f "$TMP29/ssh-log"
+  printf '#!/bin/sh\nprintf "%%s|prompt=%%s\\n" "$*" "$GIT_TERMINAL_PROMPT" >> "%s/ssh-log"\nexit 255\n' "$TMP29" > "$dir/ssh"; chmod +x "$dir/ssh"
+  printf '#!/bin/sh\nprintf "caller-ssh\\n" >> "%s/ssh-log"\nexit 255\n' "$TMP29" > "$dir/caller-ssh"; chmod +x "$dir/caller-ssh"
+  local keep="$PATH"; PATH="$dir:$PATH"; GIT_SSH_COMMAND="$dir/caller-ssh" gate29 --gate "$GATE_WAVE" --wave 1 --base "$BOGUS_BASE" --work-path "$PHASE_REPO"; PATH="$keep"
+  sort -u "$TMP29/ssh-log" 2>/dev/null | head -2 | sed -E 's/^.*(BatchMode=yes).*(prompt=.*)$/\1 \2/' | tr '\n' ';'
+}
 # modsb29 <ctx js> <snap stub js> — snapshotWithBase over the phase repo (WP), counting the stub calls
 modsb29() { WP="$PHASE_REPO" mod29 "(() => { let n = 0; const out = R.snapshotWithBase({ base: '$BOGUS_BASE', isPlan: false, workPath: process.env.WP, ...$1 }, (b) => { n += 1; return $2; }); return n + '/' + out.snapped.reason + '/' + out.snapped.detail + '/' + (out.recovery ? out.recovery.ok : 'none'); })()"; }
 scen_sb5() { base29; modsb29 "{}" "{ ok: false, reason: 'snapshot_failed', detail: 'base ' + b.slice(0, 7) + ' does not resolve in /x' }"; }
@@ -234,6 +244,8 @@ caseSB() {
   redproof29 "SB2" scen_sb2 "0/pass/null/1/base_recomputed:true/true/base-is-merge-base" xprov-recover.cjs "if (base === null && fetchDefaultBranch(workPath))" "if (false && fetchDefaultBranch(workPath))"
   assert_eq "SB3 no default branch to recompute from: the run stops with the original reason and detail, no runner call, no snapshot left" "$(scen_sb3)" "1/fail/snapshot_failed/0/base_recomputed:false/snapshot/true/0"
   redproof29 "SB3" scen_sb3 "1/fail/snapshot_failed/0/base_recomputed:false/snapshot/true/0" xprov-recover.cjs "if (re === null || re.base === ctx.base) return" "if (false) return"
+  assert_eq "SB8 the base fetch sets GIT_SSH_COMMAND to batch mode and GIT_TERMINAL_PROMPT=0 even when the caller's environment has another ssh command" "$(scen_sb8)" "BatchMode=yes prompt=0;"
+  redproof29 "SB8" scen_sb8 "BatchMode=yes prompt=0;" xprov-recover.cjs "GIT_SSH_COMMAND: FETCH_SSH_COMMAND" "GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND"
   assert_eq "SB4 a base that resolves is never recomputed" "$(scen_sb4)" "0/pass/null/1/none"
   assert_eq "SB5 the recomputed base fails too: two snapshot calls, the ORIGINAL failure is returned" "$(scen_sb5)" "2/snapshot_failed/base deadbee does not resolve in /x/false"
   redproof29 "SB5" scen_sb5 "2/snapshot_failed/base deadbee does not resolve in /x/false" xprov-recover.cjs "? Object.freeze({ snapped: second, base: re.base, recovery: note(true, re.base) })
@@ -266,12 +278,13 @@ scen_pf5() { # not logged in: no repair, reason not_logged_in, the plugins dir s
 }
 scen_pf6() { # the home is the global ~/.codex: refused whatever the report says; the plugins dir there stays
   prep29; mkdir -p "$HOME/.codex/plugins/cache/x/1.0"
-  WP_HOME="$HOME/.codex" mod29 "(() => { const out = R.preflightWithRepair({ homedir: process.env.HOME, codexHome: process.env.WP_HOME }, { ok: false, reason: 'preflight_failed', failed: ['plugins_cache_empty'], codex_home: process.env.WP_HOME }); return (out.recovery ? out.recovery.refused : 'none'); })()"
+  WP_HOME="$HOME/.codex" mod29 "(() => { const out = R.preflightWithRepair({ homedir: process.env.HOME, codexHome: process.env.WP_HOME, env: { ...process.env, A1_XPROV_CODEX_HOME: process.env.WP_HOME } }, { ok: false, reason: 'preflight_failed', failed: ['plugins_cache_empty'], codex_home: process.env.WP_HOME }); return (out.recovery ? out.recovery.refused : 'none'); })()"
   echo "/plugins-dir=$([[ -e "$HOME/.codex/plugins" ]] && echo present || echo gone)"
   rm -rf "$HOME/.codex/plugins"
 }
 scen_pf7() { # a report for another home than the one checked, and a home INSIDE the global one: refused
   prep29; mkdir -p "$HOME/.codex/sub/plugins/cache/x/1.0"
+  node -e "const M = require('$TREE/_shared/lib/xprov-homemark.cjs'); M.writeOwnerMarker('$HOME/.codex/sub'); M.writeOwnerMarker('$TMP29');" # both homes are the owner's: only the two guards under test can refuse
   WP_HOME="$HOME/.codex/sub" mod29 "[R.reviewHomeProblem(process.env.WP_HOME, process.env.WP_HOME, process.env.HOME), R.reviewHomeProblem('$TMP29', '$TMP29/other', process.env.HOME)].map((p) => p === null ? 'ok' : 'refused').join(',')"
   rm -rf "$HOME/.codex/sub"
 }
@@ -287,6 +300,35 @@ scen_pf9() { # the report's check list decides: etc_codex_absent (not fixable he
   prep29; mkdir -p "$XHOME/plugins/cache/x/1.0"
   XH="$XHOME" mod29 "(() => { const out = R.preflightWithRepair({ codexHome: process.env.XH, homedir: process.env.HOME }, { ok: false, reason: 'preflight_failed', failed: ['plugins_cache_empty', 'etc_codex_absent'], codex_home: process.env.XH }); return out.recovery === null; })()"
   echo "/plugins-dir=$([[ -e "$XHOME/plugins" ]] && echo present || echo gone)"
+}
+scen_pf11() { # A1_XPROV_CODEX_HOME points at another absolute dir that carries no owner marker: no repair, plugins/ untouched
+  prep29; rm -f "$XHOME/.a1-review-home"; mkdir -p "$XHOME/plugins/cache/x/1.0"
+  gate29 --gate "$GATE_PLAN"; echo "$(sum29)/plugins-dir=$([[ -e "$XHOME/plugins" ]] && echo present || echo gone)/$(json_get "$G_OUT" "j.recovery ? j.recovery[0].refused : 'none'")"
+}
+scen_pf12() { # the report is for a marked home, the gate expects another one (env): refused, plugins/ untouched
+  prep29; mkdir -p "$XHOME/plugins/cache/x/1.0"
+  XH="$XHOME" mod29 "(() => { const out = R.preflightWithRepair({ codexHome: process.env.XH, homedir: process.env.HOME, env: { ...process.env, A1_XPROV_CODEX_HOME: '$TMP29/another' } }, { ok: false, reason: 'preflight_failed', failed: ['plugins_cache_empty'], codex_home: process.env.XH }); return out.recovery ? out.recovery.refused : 'repaired'; })()"
+  echo "/plugins-dir=$([[ -e "$XHOME/plugins" ]] && echo present || echo gone)"
+}
+scen_pf13() { # the default home ~/.codex-a1-review is the canonical name: repaired without a marker (the env override is unset)
+  prep29; local keep="$A1_XPROV_CODEX_HOME"; unset A1_XPROV_CODEX_HOME
+  XHOME="$HOME/.codex-a1-review"; rm -rf "$XHOME"; make_home_at29 "$XHOME"; ln -s "$HOME/.codex/auth.json" "$XHOME/auth.json"; mkdir -p "$XHOME/plugins/cache/x/1.0"
+  gate29 --gate "$GATE_PLAN"; export A1_XPROV_CODEX_HOME="$keep"
+  echo "$(sum29)/plugins-dir=$([[ -e "$XHOME/plugins" ]] && echo present || echo gone)/marker=$([[ -e "$XHOME/.a1-review-home" ]] && echo written || echo none)"; rm -rf "$HOME/.codex-a1-review"
+}
+make_home_at29() { mkdir -p "$1"; chmod 700 "$1"; printf '%s\n' "$COMPLIANT_CONFIG" > "$1/config.toml"; chmod 600 "$1/config.toml"; }
+scen_pf14() { # a marker is a regular file with the marker text: a link to it, wrong text and a directory are not owner markers
+  prep29; local good="$XHOME/.a1-review-home" h2="$TMP29/h2" h3="$TMP29/h3" h4="$TMP29/h4"; rm -rf "$h2" "$h3" "$h4"; mkdir -p "$h2" "$h3" "$h4"
+  ln -s "$good" "$h2/.a1-review-home"; printf 'owner\n' > "$h3/.a1-review-home"; mkdir "$h4/.a1-review-home"
+  node -e "const M = require('$TREE/_shared/lib/xprov-homemark.cjs'); console.log([process.argv[1], process.argv[2], process.argv[3], process.argv[4]].map((h) => M.hasOwnerMarker(h)).join(','))" "$XHOME" "$h2" "$h3" "$h4"
+}
+scen_pf15() { # `xprov init-home` (the owner command) writes the marker once, mode 0600, and never into the global home
+  make_home; rm -f "$XHOME/.a1-review-home"
+  A1_XPROV_CODEX_HOME="$XHOME" node "$TREE_TOOLS" xprov init-home >/dev/null 2>&1 </dev/null
+  local a="$(ls -a "$XHOME" | grep -c '^\.a1-review-home$')/$(node -e 'console.log((require("fs").statSync(process.argv[1]).mode & 0o777).toString(8))' "$XHOME/.a1-review-home" 2>/dev/null)"
+  local gh; gh="$(mktemp -d)"; mkdir -p "$gh/.codex"; printf '{}\n' > "$gh/.codex/auth.json"
+  HOME="$gh" A1_XPROV_CODEX_HOME="$gh/.codex" node "$TREE_TOOLS" xprov init-home >/dev/null 2>&1 </dev/null
+  echo "$a/global-marker=$([[ -e "$gh/.codex/.a1-review-home" ]] && echo written || echo none)"; rm -rf "$gh"
 }
 casePF() {
   assert_eq "PF1 plugins_cache_empty: the plugins dir is removed in the review home, preflight runs again and the gate goes on" "$(scen_pf1)" "$PF_OK/plugins-dir=gone/remove_plugins"
@@ -304,13 +346,26 @@ casePF() {
   const global" "  const global" xprov-recover.cjs "if (rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))) return 'the home lies inside the global ~/.codex';" ""
   assert_eq "PF7 a home inside ~/.codex and a report for another home are refused" "$(scen_pf7)" "refused,refused"
   redproof29 "PF7a" scen_pf7 "refused,refused" xprov-recover.cjs "if (rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))) return 'the home lies inside the global ~/.codex';" ""
-  redproof29 "PF7b" scen_pf7 "refused,refused" xprov-recover.cjs "path.resolve(home) !== path.resolve(reported)) return" "false) return"
+  redproof29 "PF7b" scen_pf7 "refused,refused" xprov-recover.cjs "path.resolve(home) !== path.resolve(expected)) return" "false) return"
   assert_eq "PF8 a link named plugins is not followed" "$(scen_pf8)" "/link=kept/target=kept"
   redproof29 "PF8" scen_pf8 "/link=kept/target=kept" xprov-recover.cjs "if (!st.isDirectory()) return false;" ""
   assert_eq "PF10 an owner allowlist keeps the plugins dir: no removal, the run stops with preflight_failed" "$(scen_pf10)" "1/fail/preflight_failed/0/preflight_repair:false/plugins-dir=present"
   redproof29 "PF10" scen_pf10 "1/fail/preflight_failed/0/preflight_repair:false/plugins-dir=present" xprov-recover.cjs "&& !keepPlugins &&" "&&"
   assert_eq "PF9 repairable and unfixable checks together: nothing is touched" "$(scen_pf9)" "true/plugins-dir=present"
   redproof29 "PF9" scen_pf9 "true/plugins-dir=present" xprov-recover.cjs "|| !first.failed.every((n) => REPAIRABLE_CHECKS.includes(n))" "|| false"
+  local PF11="1/fail/preflight_failed/0/preflight_repair:false/plugins-dir=present/the home carries no owner marker (run \`xprov init-home\` in a terminal)"
+  assert_eq "PF11 an override home without the owner marker is not repaired: refused with a reason, plugins/ untouched, no runner call" "$(scen_pf11)" "$PF11"
+  redproof29 "PF11" scen_pf11 "$PF11" xprov-recover.cjs "if (!HM.hasOwnerMarker(home) && !HM.isCanonicalHome(home, homedir)) return" "if (false) return"
+  assert_eq "PF12 the home preflight checked must be the review home the gate expects (xprov.codexHome(env))" "$(scen_pf12)" "the home to repair is not the review home the gate expects/plugins-dir=present"
+  redproof29 "PF12" scen_pf12 "the home to repair is not the review home the gate expects/plugins-dir=present" xprov-recover.cjs "expectedHome(o.env), homedir)" "first.codex_home, homedir)"
+  assert_eq "PF13 the default ~/.codex-a1-review needs no marker, and the repair does not write one" "$(scen_pf13)" "$PF_OK/plugins-dir=gone/marker=none"
+  redproof29 "PF13" scen_pf13 "$PF_OK/plugins-dir=gone/marker=none" xprov-homemark.cjs "return real(home) === real(path.join(homedir || os.homedir(), CANONICAL_DIRNAME));" "return false;"
+  assert_eq "PF14 only a regular file with the marker text is a marker" "$(scen_pf14)" "true,false,false,false"
+  redproof29 "PF14a" scen_pf14 "true,false,false,false" xprov-homemark.cjs "return buf.toString('utf8', 0, n) === MARKER_TEXT;" "return n > 0 || true;"
+  redproof29 "PF14b" scen_pf14 "true,false,false,false" xprov-homemark.cjs "if (!fs.lstatSync(file).isFile()) return false;" "" xprov-homemark.cjs "fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0)" "fs.constants.O_RDONLY"
+  assert_eq "PF15 init-home writes the marker (0600) into the owner's home and none into the global ~/.codex" "$(scen_pf15)" "1/600/global-marker=none"
+  redproof29 "PF15a" scen_pf15 "1/600/global-marker=none" xprov-preflight.cjs "HM.writeOwnerMarker(home);" "false;"
+  redproof29 "PF15b" scen_pf15 "1/600/global-marker=none" xprov-preflight.cjs "r0.reason !== 'codex_home_is_global' && fs.existsSync(home)" "fs.existsSync(home)"
 }
 
 # ---------- HS: the hard stops (FR-031) ----------
@@ -342,8 +397,22 @@ scen_hs3d() {
   SEQ29="[{\"FAKE_RUNNER_CASE\":\"$TMP29/quarantine.result.json\"},$OK29]"; gate29 --gate "$GATE_PLAN"; sum29
 }
 scen_hs3e() { prep29; rm -f "$STORE29/permits.json"; SEQ29="[$NET29,$OK29]"; gate29 --gate "$GATE_PLAN"; echo "$(sum29)"; } # the file says allowed, the owner's store holds nothing
+scen_hs1b() { # W8-5: every REASON_LIST reason except the four recoverable ones is a hard stop, in isRecoverable AND in all four wrappers; a new reason is one too
+  base29; mod29 "(() => {
+    const X = require('$TREE/_shared/lib/xprov.cjs'); const four = ['runner_failed', 'blocked', 'snapshot_failed', 'preflight_failed'];
+    const rest = X.REASON_LIST.filter((r) => !four.includes(r));
+    const probes = ['reason_added_in_a_later_wave', 'constructor', '__proto__', 'toString', '', undefined, null, 5];
+    return rest.length + '/' + rest.filter((r) => R.isRecoverable(r)).length + '/' + probes.filter((r) => R.isRecoverable(r)).length + '/' + four.filter((r) => R.isRecoverable(r)).length;
+  })()"
+}
+scen_hs1c() { base29; local r n=0 bad=""; for r in $(node -p "require('$TREE/_shared/lib/xprov.cjs').REASON_LIST.filter((r) => !['runner_failed','blocked','snapshot_failed','preflight_failed'].includes(r)).join(' ')"); do n=$((n + 1)); [[ "$(hs2one29 "$r")" == "1111" ]] || bad="$bad $r"; done; echo "$n/${bad:-none}"; }
 caseHS() {
   assert_eq "HS1 exactly runner_failed, blocked, snapshot_failed and preflight_failed are recoverable (REASON_LIST enumerated)" "$(scen_hs1)" "runner_failed,blocked,snapshot_failed,preflight_failed"
+  local rest; rest="$(node -p "require('$TREE/_shared/lib/xprov.cjs').REASON_LIST.length - 4")"
+  assert_eq "HS1b every REASON_LIST reason except the four is not recoverable; unknown, prototype-shaped and non-string probes are not either" "$(scen_hs1b)" "$rest/0/0/4"
+  redproof29 "HS1b" scen_hs1b "$rest/0/0/4" xprov-recover.cjs "const isRecoverable = (reason) => RECOVERABLE_REASONS.includes(reason);" "const isRecoverable = (reason) => ![X.REASONS.tripwire, X.REASONS.secret_in_snapshot, X.REASONS.secret_in_output, X.REASONS.quarantined].includes(reason);"
+  assert_eq "HS1c all $rest other reasons make the four wrappers repair nothing and call once" "$(scen_hs1c)" "$rest/none"
+  redproof29 "HS1c" scen_hs1c "$rest/none" xprov-recover.cjs "first.ok || first.reason !== X.REASONS.snapshot_failed ||" "first.ok ||"
   redproof29 "HS1" scen_hs1 "runner_failed,blocked,snapshot_failed,preflight_failed" xprov-recover.cjs "X.REASONS.snapshot_failed, X.REASONS.preflight_failed]);" "X.REASONS.snapshot_failed, X.REASONS.preflight_failed, X.REASONS.tripwire]);"
   base29; local r
   for r in $HARD29; do assert_eq "HS2 $r: runner, normalize, snapshot and preflight wrappers each run once and repair nothing" "$(hs2one29 "$r")" "1111"; done

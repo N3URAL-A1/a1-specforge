@@ -76,6 +76,9 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
     init-home [--prune-marketplaces] [--pin-features]
                   (xprov-preflight.cjs, wave 4) create the dedicated home
                   idempotently; never overwrites an existing config.toml.
+                  Writes the owner marker .a1-review-home (0600) into the home: the
+                  gate's self-repair of a preflight_failed works only in a marked
+                  home or in the default ~/.codex-a1-review (spec 016 W8-3).
                   --pin-features (wave 7) appends the missing pins to an
                   existing home — cli_auth_credentials_store = "file" after the
                   last root key, '<pin> = false' lines to [features]; additive
