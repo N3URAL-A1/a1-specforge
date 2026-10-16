@@ -604,10 +604,10 @@ function waveStatus(o) {
     return Object.freeze({ ok: false, gate, enforcement, phase: ctx.phase, completed_waves: [...new Set(completed.map((p) => p.wave))], completed_detail: completed, lacking: [], lacking_detail: [], scope_exempt: [], head: null, reason: X.REASONS.plan_changed, detail: `PLAN.md changed since Load: accepted ${o.expectSha}, now ${planSha}` });
   }
   // placement (FR-020, WP-2): only for the PLAN.md accepted at Load (--expect-sha) and with the wave's real diff (--wave-range); a wave with a gate row is judged on its rows
-  const exempt = PL.exemptKeys({ planPath: ctx.planPath, planShaOk: o.expectSha !== undefined, completed, rangesText: o.waveRange, workPath, hasRow: (p) => index.some((e) => e.gate === gate && waveNumber(e.wave) === p.wave) });
+  const ex = PL.exemptKeys({ planPath: ctx.planPath, phase: ctx.phase, planShaOk: o.expectSha !== undefined, completed, rangesText: o.waveRange, workPath, hasRow: (p) => index.some((e) => e.gate === gate && waveNumber(e.wave) === p.wave) }); const exempt = ex.keys;
   const exemptWaves = [...new Set(completed.filter((p) => exempt.has(`${p.wave}|${p.lane || ''}`)).map((p) => p.wave))];
   if (exempt.size === completed.length) {
-    return Object.freeze({ ok: true, gate, enforcement, phase: ctx.phase, completed_waves: [...new Set(completed.map((p) => p.wave))], completed_detail: completed, lacking: [], lacking_detail: [], not_applicable: exemptWaves, scope_exempt: exemptWaves, placement: PL.REASON, head: null, reason: null });
+    return Object.freeze({ ok: true, gate, enforcement, phase: ctx.phase, completed_waves: [...new Set(completed.map((p) => p.wave))], completed_detail: completed, lacking: [], lacking_detail: [], not_applicable: exemptWaves, scope_exempt: exemptWaves, deferred_to_pr: ex.deferred, placement: PL.REASON, head: null, reason: null });
   }
   const ws = permitFor(ctx.root, gate);
   if (ws.notApplicable) {
@@ -636,7 +636,7 @@ function waveStatus(o) {
   return Object.freeze({
     ok: lacking.length === 0, gate, enforcement, phase: ctx.phase,
     completed_waves: [...new Set(completed.map((p) => p.wave))], completed_detail: completed, lacking, lacking_detail: lackingDetail,
-    head: h.head, scope_exempt: exemptWaves,
+    head: h.head, scope_exempt: exemptWaves, deferred_to_pr: ex.deferred, exempt_refused: ex.refused,
     reason: lacking.length ? X.REASONS.wave_inspect_missing : null,
   });
 }

@@ -21,7 +21,7 @@ node <repo>/_shared/a1-tools.cjs xprov wave-status --phase <phase_name> --work-p
 # multi-lane: append --lane-work-path <lane-id>=<that lane's WORK_PATH>[,…] (a lane without one lacks)
 echo "xprov wave-status exit=$RC"
 ```
-`$WAVE_RANGES` as in `02-execute.md` 2c. `--expect-sha "$LOADED_PLAN_SHA"` binds the exemption to the PLAN.md accepted at Load (a different sha fails `plan_changed`); `--wave-range <N>=<PRE_WAVE_HEAD of wave N>..<HEAD after wave N>[,…]` gives wave-status the real diff of every completed wave: a wave that a later wave depends on counts as `scope_exempt` only when that diff is no security surface (no range, no exemption).
+`$WAVE_RANGES` as in `02-execute.md` 2c. `--expect-sha "$LOADED_PLAN_SHA"` binds the exemption to the PLAN.md accepted at Load (a different sha fails `plan_changed`); `--wave-range <N>=<PRE_WAVE_HEAD of wave N>..<HEAD after wave N>[,…]` gives wave-status the real diff of EVERY completed wave and wave-status verifies it against git: the ranges must tile (only the workflow's own files between them), end at the work path's tip and start where the branch leaves the default branch (`git merge-base`); any mismatch (`exempt_refused` in the JSON, with a reason) refuses all exemptions, so the waves lack. A wave that a later wave depends on counts as `scope_exempt` only when its diff is no security surface; a wave nobody depends on is exempt, and when its diff is surface it is listed under `deferred_to_pr`: name those waves in the PR body, the PR diff gate reviews them.
 
 - **Exit 0** → continue to the prompt template. A non-empty `not_applicable`
   list in the stdout JSON means the owner denied external review for this

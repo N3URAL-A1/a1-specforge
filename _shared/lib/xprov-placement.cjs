@@ -22,6 +22,7 @@ const path = require('path');
 const C = require('./xprov-common.cjs');
 const SC = require('./xprov-scope.cjs');
 const LS = require('./lane-split.cjs');
+const WR = require('./xprov-wave-ranges.cjs');
 
 const MAX_PLAN_BYTES = 4 * 1024 * 1024;
 const MAX_SPEC_BYTES = 2 * 1024 * 1024;
@@ -105,19 +106,25 @@ function pathsIn(text) {
 }
 
 const LOOSE_SPLIT_RE = /[\s`'"<>()[\]{},;|&$=]+/;
-const LOOSE_EDGE_RE = /^[-*#>:]+|[:.]+$/g;
+const LOOSE_EDGE_RE = /^[-*#>]+|[:.]+$/g;
+const SCHEME_RE = /^[A-Za-z][A-Za-z0-9+.-]*:(?!\/\/)/; // file:src/a.ts
+const LINE_SUFFIX_RE = /(?::\d+){1,2}$|#L\d+(?:-L?\d+)?$/; // src/a.ts:12:3, src/a.ts#L12
 
 /**
- * Every relative path-shaped token of the whole text, quoted or not, under any heading (WP-3): a surface file named in prose or under `## Files`
- * still makes the plan run. Absolute paths, URLs, `~` and `..` segments in free text are not repo paths and are skipped here (the strict
- * backtick rule of the `## Wave` sections still counts them as unclassifiable = surface).
+ * Every path-shaped token of the whole text, quoted or not, under any heading (WP-3, WP3-b): a surface file named in prose or under `## Files`
+ * still makes the plan run, in whatever form: relative, `./`, `../`, absolute, `path:12`, `file:path`. Only real URLs (`://`) are skipped.
+ * A token is classified under every suffix of its segments (`/repo/src/auth/login.ts` also as `src/auth/login.ts`): the root the plan was
+ * written in is not ours to know. The cost is a false "run", never a false exemption.
  */
 function looseTokens(text) {
   const out = new Set();
   for (const raw of String(text).split(LOOSE_SPLIT_RE)) {
-    const t = raw.replace(LOOSE_EDGE_RE, '');
-    if (t === '' || t.startsWith('/') || t.startsWith('~') || t.includes(':') || t.split('/').includes('..')) continue;
-    if (t.includes('/') || EXT_RE.test(t)) out.add(t);
+    let t = raw.replace(LOOSE_EDGE_RE, '');
+    if (t === '' || t.includes('://')) continue;
+    t = t.replace(SCHEME_RE, '').replace(LINE_SUFFIX_RE, '');
+    const segs = t.split('/').filter((x) => x !== '' && x !== '.' && x !== '..');
+    if (segs.length === 0 || !(t.includes('/') || EXT_RE.test(t))) continue;
+    for (let k = 0; k < segs.length; k++) out.add(segs.slice(k).join('/'));
   }
   return [...out];
 }
@@ -188,24 +195,30 @@ function parseRanges(value) {
 }
 
 /**
- * Keys `wave|lane` of the completed pairs wave-status may treat as scope_exempt (spec 016 FR-020, Samuel wave 7 WP-2):
- * the PLAN.md must be the one accepted at Load (expectSha given and equal), the gate left no row for the wave, and either no later wave
- * depends on it (accepted, the PR diff gate reviews the whole diff, WP-4) or the plan names no surface for it AND its real diff
- * (--wave-range, base..head) re-classifies as no surface. A missing range or a diff git cannot produce: not exempt.
+ * Waves wave-status may treat as scope_exempt (spec 016 FR-020; Samuel wave 7 WP-2, WP2-a, WP1-c; plan decision of 2026-10-16):
+ * the PLAN.md must be the one accepted at Load (planShaOk), the gate left no row for the wave, and the ranges (--wave-range) must verify against
+ * git (xprov-wave-ranges.cjs: tile, end at the tip, start at the merge-base with the default branch); a failed verification refuses every
+ * exemption with a named reason. Then a wave nobody depends on is exempt (a surface diff is reported as deferred_to_pr: the PR diff gate reviews
+ * it), and a depended-on wave is exempt only when the plan names no surface for it AND its verified diff is none.
+ * Returns { keys: Set of `wave|lane`, deferred: [wave], refused: null | { reason, detail } }.
  */
 function exemptKeys(o) {
+  const none = (refused) => ({ keys: new Set(), deferred: [], refused: refused || null });
   const text = readPlan(o.planPath);
-  if (text === null || !o.planShaOk) return new Set();
-  const ranges = parseRanges(o.rangesText);
-  const ok = (p) => {
-    if (o.hasRow(p)) return false;
+  if (text === null || !o.planShaOk) return none();
+  const cand = o.completed.filter((p) => !o.hasRow(p) && planFactsOfWave(text, p.wave).listed);
+  if (cand.length === 0) return none();
+  if (o.completed.some((p) => p.lane)) return none({ reason: 'lanes_unsupported', detail: 'wave exemptions are not computed for lane waves' });
+  const v = WR.verify({ workPath: o.workPath, phase: o.phase, ranges: parseRanges(o.rangesText), waves: o.completed.map((p) => p.wave) });
+  if (!v.ok) return none({ reason: v.reason, detail: v.detail });
+  const keys = new Set();
+  const deferred = [];
+  for (const p of cand) {
     const f = planFactsOfWave(text, p.wave);
-    if (!f.listed) return false;
-    if (!f.depended) return true;
-    const r = ranges.get(p.wave);
-    return !f.surface && r !== undefined && !rangeSurface(o.workPath, r);
-  };
-  return new Set(o.completed.filter(ok).map((p) => `${p.wave}|${p.lane || ''}`));
+    const surface = rangeSurface(o.workPath, v.ranges.get(p.wave));
+    if (!f.depended) { keys.add(`${p.wave}|`); if (surface) deferred.push(p.wave); } else if (!f.surface && !surface) keys.add(`${p.wave}|`);
+  }
+  return { keys, deferred, refused: null };
 }
 
 function rangeSurface(workPath, r) {

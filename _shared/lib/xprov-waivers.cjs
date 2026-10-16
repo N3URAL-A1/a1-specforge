@@ -154,13 +154,7 @@ function leadsTo(workPath, from, to, phase) {
  * completed wave down: the last must sit at the tip (atTip), every earlier one
  * must end exactly where the next one's base starts; a lacking successor makes
  * every earlier wave of the lane lack too (fail closed). `exempt` (Set of `wave|lane`, optional): placement-exempt waves are skipped; the
- * gap around them keeps the ancestry rule and drops the workflow-files-only rule when the gap's diff is no security surface. */
-/** The paths changed from..to are security surface (Wave 6 classifier); a diff git cannot produce counts as surface (guarded). */
-function gapIsSurface(workPath, from, to) {
-  const SC = require('./xprov-scope.cjs');
-  try { return SC.classifyPaths(SC.diffPaths(workPath, from, to), SC.loadGlobs()).security_surface; } catch (_e) { return true; }
-}
-
+ * gap around them keeps the ancestry rule; the workflow-files-only rule is dropped there (the gap is exactly the verified exempt ranges). */
 function chainCoverage(pairs, candidates, tips, phase, exempt) {
   const chosen = new Map();
   const skip = exempt instanceof Set ? exempt : new Set();
@@ -176,10 +170,9 @@ function chainCoverage(pairs, candidates, tips, phase, exempt) {
       const p = waves[i];
       if (skip.has(key(p))) { gap = true; continue; }
       const isLast = !seenRequired;
-      // across exempt waves (gap) the head must STILL be an ancestor of the next base / the tip; only the "workflow files only" rule is
-      // relaxed, and only when what lies in the gap is no security surface (spec 016 FR-020, Samuel wave 7 WP-1)
-      const reaches = (c, to) => leadsTo(tip.workPath, c.head, to, phase)
-        || (gap && inHistory(tip.workPath, c.head, to) && !gapIsSurface(tip.workPath, c.head, to));
+      // across exempt waves (gap) the head must STILL be an ancestor of the next base / the tip; the "workflow files only" rule is relaxed
+      // because the caller passes `exempt` only for waves whose ranges it verified to tile the gap (xprov-wave-ranges.cjs, spec 016 FR-020)
+      const reaches = (c, to) => leadsTo(tip.workPath, c.head, to, phase) || (gap && inHistory(tip.workPath, c.head, to));
       const ok = (c) => SHA_RE.test(String(c.head)) && SHA_RE.test(String(c.base)) && inHistory(tip.workPath, c.base, c.head)
         && (isLast ? reaches(c, tip.head) : next !== null && reaches(c, next.base));
       const pick = tip ? [...candidates(p)].reverse().find(ok) || null : null;

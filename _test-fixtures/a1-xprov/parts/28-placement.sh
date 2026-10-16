@@ -56,6 +56,7 @@ prep28() {
     git -C "$PHASE_REPO" commit -qam "fixture: spec_path" 
   fi
   PHASE_HEAD="$(cd "$PHASE_REPO" && git rev-parse HEAD)"
+  git -C "$PHASE_REPO" checkout -q -b feature   # the default branch stays at PHASE_HEAD: the anchor of the wave ranges (git merge-base)
   printf '## Wave 1 — one\n' > "$PHASE_DIR/STATUS.md"
   rm -rf "$STORE28"
   make_home; ln -s "$HOME/.codex/auth.json" "$XHOME/auth.json"; export A1_XPROV_CODEX_HOME="$XHOME"
@@ -236,8 +237,8 @@ caseWV() {
 
 # ---------- ST: load-check / wave-status ----------
 scen_st1() { prep28 002.PLAN.md "$SPEC_M28"; sub28 load-check --phase p28; echo "$G_RC/$(json_get "$G_OUT" "j.accepted + '/' + j.placement")"; }
-scen_st2a() { prep28 016.PLAN.md; mkranges28 1 2 3 4 5 6; status28 1 2 3 4 5 6 12; wstat28; echo "$G_RC/$(json_get "$G_OUT" "j.ok + '/' + JSON.stringify(j.scope_exempt) + '/' + j.placement")"; }
-scen_st2b() { prep28 016.PLAN.md; write_permit "$PHASE_REPO" fixture record/2026-09-24-fixture.md; mkranges28 6; status28 6 7; wstat28; echo "$G_RC/$(json_get "$G_OUT" "j.ok + '/' + JSON.stringify(j.lacking) + '/' + JSON.stringify(j.scope_exempt)")"; }
+scen_st2a() { prep28 016.PLAN.md; mkranges28 1 2 3 4 5 6 12; status28 1 2 3 4 5 6 12; wstat28; echo "$G_RC/$(json_get "$G_OUT" "j.ok + '/' + JSON.stringify(j.scope_exempt) + '/' + j.placement")"; }
+scen_st2b() { prep28 016.PLAN.md; write_permit "$PHASE_REPO" fixture record/2026-09-24-fixture.md; mkranges28 6 7; status28 6 7; wstat28; echo "$G_RC/$(json_get "$G_OUT" "j.ok + '/' + JSON.stringify(j.lacking) + '/' + JSON.stringify(j.scope_exempt)")"; }
 caseST() {
   assert_eq "ST1 load-check accepts an exempt plan: exit 0, accepted not_applicable, placement scope_exempt" "$(scen_st1)" "0/not_applicable/scope_exempt"
   prep28 002.PLAN.md "$SPEC_M28"; sub28 load-check --phase p28
@@ -247,7 +248,7 @@ caseST() {
   assert_eq "ST2 wave-status: waves 1-6 and 12 are all exempt: exit 0, scope_exempt listed, nothing lacking" "$(scen_st2a)" "0/true/[1,2,3,4,5,6,12]/scope_exempt"
   assert_eq "ST2 wave-status: wave 7 is required and has no pass: exit 1, lacking [7], wave 6 stays exempt" "$(scen_st2b)" "1/false/[7]/[6]"
   redproof28 "ST1" scen_st1 "0/not_applicable/scope_exempt" xprov-gate.cjs "if (!placed.run) {" "if (false) {"
-  redproof28 "ST2" scen_st2a "0/true/[1,2,3,4,5,6,12]/scope_exempt" xprov-placement.cjs "if (text === null || !o.planShaOk) return new Set();" "if (true) return new Set();"
+  redproof28 "ST2" scen_st2a "0/true/[1,2,3,4,5,6,12]/scope_exempt" xprov-placement.cjs "if (text === null || !o.planShaOk) return none();" "if (true) return none();"
 }
 
 # ST3: a wave with a gate row is judged on its rows, not exempted from the plan
@@ -262,31 +263,38 @@ scen_st4() {
   prep28 016.PLAN.md; write_permit "$PHASE_REPO" fixture record/2026-09-24-fixture.md
   local base="$PHASE_HEAD"; commit28 src/w7.js; local h7; h7="$(git -C "$PHASE_REPO" rev-parse HEAD)"
   waiver28 7 "$h7" "$base"; commit28 src/after-wave-7.js
-  wstat28 --waves 7,12
+  RANGES28="7=$base..$h7,12=$h7..$(git -C "$PHASE_REPO" rev-parse HEAD)"; wstat28 --waves 7,12
   echo "$G_RC/$(json_get "$G_OUT" "j.ok + '/' + JSON.stringify(j.lacking)")"
 }
 caseST34() {
   assert_eq "ST3 a wave with a gate row is lacking, not exempt (exit 1, lacking [6], nothing exempt)" "$(scen_st3)" "1/[6]/[]"
   redproof28 "ST3" scen_st3 "1/[6]/[]" xprov-gate.cjs "(p) => index.some((e) => e.gate === gate && waveNumber(e.wave) === p.wave)" "(p) => false"
   assert_eq "ST4 wave 7 waived, then a commit of exempt wave 12: wave-status ok" "$(scen_st4)" "0/true/[]"
-  redproof28 "ST4" scen_st4 "0/true/[]" xprov-waivers.cjs "|| (gap && inHistory(tip.workPath, c.head, to) && !gapIsSurface(tip.workPath, c.head, to));" ";"
+  redproof28 "ST4" scen_st4 "0/true/[]" xprov-waivers.cjs "|| (gap && inHistory(tip.workPath, c.head, to));" ";"
 }
 
-# ---------- review round (Samuel wave 7): WP-1 chain gap keeps ancestry and the surface rule, WP-2 sha + real diff, WP-3 whole-plan tokens ----------
-# WP-1a: the head the waiver names sits on a side branch (a decoy), the tip is elsewhere: not covered
+# ---------- review rounds (Samuel wave 7): WP-1 chain gap keeps ancestry, WP-2 sha + verified ranges, WP-3 whole-plan tokens in every form ----------
+# head28 — the current HEAD of the phase repo
+head28() { git -C "$PHASE_REPO" rev-parse HEAD; }
+# WP-1a: the head the waiver names sits on a side branch (a decoy); the (verified) ranges are honest: the waiver does not cover wave 7
 scen_wp1a() {
   prep28 016.PLAN.md; write_permit "$PHASE_REPO" fixture record/2026-09-24-fixture.md
-  local base="$PHASE_HEAD" main; main="$(git -C "$PHASE_REPO" rev-parse --abbrev-ref HEAD)"
-  git -C "$PHASE_REPO" checkout -q -b decoy; commit28 src/decoy.js; local hd; hd="$(git -C "$PHASE_REPO" rev-parse HEAD)"
-  git -C "$PHASE_REPO" checkout -q "$main"; commit28 src/after-wave-7.js
-  waiver28 7 "$hd" "$base"; wstat28 --waves 7,12
+  local base="$PHASE_HEAD"; commit28 src/w7.js; local h7; h7="$(head28)"; commit28 src/after-wave-7.js
+  git -C "$PHASE_REPO" checkout -q -b decoy "$base"; commit28 src/decoy.js; local hd; hd="$(head28)"; git -C "$PHASE_REPO" checkout -q feature
+  waiver28 7 "$hd" "$base"; RANGES28="7=$base..$h7,12=$h7..$(head28)"; wstat28 --waves 7,12
   echo "$G_RC/$(json_get "$G_OUT" "JSON.stringify(j.lacking)")"
 }
-# WP-1b: an honest head, but what lies in the gap is security surface (CI file): the gap rule is not relaxed
+# WP-1b/c: an honest waived wave 7, then (b) a non-depended wave 12 with a CI diff: allowed in the gap, deferred_to_pr; (c) a depended wave 8 with a CI diff: not exempt
 scen_wp1b() {
   prep28 016.PLAN.md; write_permit "$PHASE_REPO" fixture record/2026-09-24-fixture.md
-  local base="$PHASE_HEAD"; commit28 src/w7.js; local h7; h7="$(git -C "$PHASE_REPO" rev-parse HEAD)"
-  waiver28 7 "$h7" "$base"; commit28 .github/workflows/ci.yml; wstat28 --waves 7,12
+  local base="$PHASE_HEAD"; commit28 src/w7.js; local h7; h7="$(head28)"; waiver28 7 "$h7" "$base"; commit28 .github/workflows/ci.yml
+  RANGES28="7=$base..$h7,12=$h7..$(head28)"; wstat28 --waves 7,12
+  echo "$G_RC/$(json_get "$G_OUT" "JSON.stringify(j.lacking) + '/' + JSON.stringify(j.deferred_to_pr) + '/' + JSON.stringify(j.scope_exempt)")"
+}
+scen_wp1c() {
+  prep28 016.PLAN.md; write_permit "$PHASE_REPO" fixture record/2026-09-24-fixture.md
+  local base="$PHASE_HEAD"; commit28 src/w7.js; local h7; h7="$(head28)"; waiver28 7 "$h7" "$base"; commit28 .github/workflows/ci.yml
+  RANGES28="7=$base..$h7,8=$h7..$(head28)"; wstat28 --waves 7,8
   echo "$G_RC/$(json_get "$G_OUT" "JSON.stringify(j.lacking)")"
 }
 # WP-2a: the plan was edited after Load (all Depends on lines removed): --expect-sha of the accepted plan no longer matches
@@ -297,34 +305,78 @@ scen_wp2a() {
   echo "$G_RC/$(json_get "$G_OUT" "j.reason")"
 }
 # WP-2b: without --expect-sha nothing is exempt (wave 12 would be, if the plan were bound)
-scen_wp2b() { prep28 016.PLAN.md; write_permit "$PHASE_REPO" fixture record/2026-09-24-fixture.md; status28 12; sub28 wave-status --phase p28 --waves 12; echo "$G_RC/$(json_get "$G_OUT" "JSON.stringify(j.lacking)")"; }
-# WP-2c: wave 6 is depended on; its real range touches CI: not exempt; no range at all: not exempt; a range git cannot diff: not exempt
+scen_wp2b() { prep28 016.PLAN.md; write_permit "$PHASE_REPO" fixture record/2026-09-24-fixture.md; mkranges28 12; status28 12; sub28 wave-status --phase p28 --waves 12 --wave-range "$RANGES28"; echo "$G_RC/$(json_get "$G_OUT" "JSON.stringify(j.lacking)")"; }
+# WP-2c: wave 6 is depended on; its verified range touches CI: not exempt; no range at all: refused; a range git cannot resolve: refused
 scen_wp2c() {
   prep28 016.PLAN.md; write_permit "$PHASE_REPO" fixture record/2026-09-24-fixture.md
-  local b; b="$(git -C "$PHASE_REPO" rev-parse HEAD)"; commit28 .github/workflows/ci.yml; local h; h="$(git -C "$PHASE_REPO" rev-parse HEAD)"
+  local b; b="$(head28)"; commit28 .github/workflows/ci.yml; local h; h="$(head28)"
   status28 6; RANGES28="6=$b..$h" wstat28 --waves 6; local a="$G_RC/$(json_get "$G_OUT" "JSON.stringify(j.lacking)")"
   RANGES28="" wstat28 --waves 6; local n="$G_RC/$(json_get "$G_OUT" "JSON.stringify(j.lacking)")"
   RANGES28="6=deadbeefdeadbeef..deadbeefdeadbeef" wstat28 --waves 6; echo "$a|$n|$G_RC/$(json_get "$G_OUT" "JSON.stringify(j.lacking)")"
 }
-# WP-3: a surface path in prose, and one under a ## Files heading, makes the plan run
-scen_wp3a() { prep28 002.PLAN.md "$SPEC_M28"; prepend28 'The migration touches supabase/migrations/001_init.sql directly.'; gate28 --gate "$GATE_PLAN"; out28; }
-scen_wp3b() { prep28 002.PLAN.md "$SPEC_M28"; prepend28 $'## Files\n- `.github/workflows/ci.yml`'; gate28 --gate "$GATE_PLAN"; out28; }
+# WR: the ranges are verified against git. Each scenario yields "<rc>/<lacking>/<refusal reason>"; the honest one exempts wave 12 (nobody depends on it).
+wr28() { status28 12; wstat28 --waves 12; echo "$G_RC/$(json_get "$G_OUT" "JSON.stringify(j.lacking) + '/' + (j.exempt_refused ? j.exempt_refused.reason : 'none')")"; }
+scen_wr0() { prep28 016.PLAN.md; write_permit "$PHASE_REPO" fixture record/2026-09-24-fixture.md; mkranges28 12; wr28; }
+scen_wr_empty() { prep28 016.PLAN.md; write_permit "$PHASE_REPO" fixture record/2026-09-24-fixture.md; RANGES28="12=$(head28)..$(head28)"; wr28; }
+scen_wr_foreign() {   # base not an ancestor of head: the base is a decoy commit (a workflow-file commit off the default branch), the head the real tip
+  prep28 016.PLAN.md; write_permit "$PHASE_REPO" fixture record/2026-09-24-fixture.md
+  git -C "$PHASE_REPO" checkout -q -b decoy "$PHASE_HEAD"; printf 'x\n' >> "$PHASE_DIR/STATUS.md"; git -C "$PHASE_REPO" add -A; git -C "$PHASE_REPO" commit -qm decoy; local d; d="$(head28)"
+  git -C "$PHASE_REPO" checkout -q feature; commit28 src/w12.js; RANGES28="12=$d..$(head28)"; wr28
+}
+scen_wr_gap() {       # a commit that belongs to no wave sits between wave 1 and wave 12
+  prep28 016.PLAN.md; write_permit "$PHASE_REPO" fixture record/2026-09-24-fixture.md
+  local b; b="$(head28)"; commit28 src/w1.js; local c1; c1="$(head28)"; commit28 src/nobody.js; local c2; c2="$(head28)"; commit28 src/w12.js
+  RANGES28="1=$b..$c1,12=$c2..$(head28)"; status28 1 12; wstat28 --waves 1,12
+  echo "$G_RC/$(json_get "$G_OUT" "JSON.stringify(j.lacking) + '/' + (j.exempt_refused ? j.exempt_refused.reason : 'none')")"
+}
+scen_wr_tip() { prep28 016.PLAN.md; write_permit "$PHASE_REPO" fixture record/2026-09-24-fixture.md; mkranges28 12; commit28 src/after.js; wr28; }
+scen_wr_anchor() { prep28 016.PLAN.md; write_permit "$PHASE_REPO" fixture record/2026-09-24-fixture.md; commit28 src/unranged.js; mkranges28 12; wr28; }
+# WP-3: a surface path in every form (prose, ## Files, absolute, ../, :line, file:) makes the plan run
+scen_wp3() { prep28 002.PLAN.md "$SPEC_M28"; prepend28 "$1"; gate28 --gate "$GATE_PLAN"; out28; }
 caseWP() {
-  assert_eq "WP1 a waiver whose head sits on a side branch does not cover wave 7 across an exempt wave (ancestry kept)" "$(scen_wp1a)" "1/[7]"
-  redproof28 "WP1a" scen_wp1a "1/[7]" xprov-waivers.cjs "|| (gap && inHistory(tip.workPath, c.head, to) && !gapIsSurface(tip.workPath, c.head, to));" "|| gap;"
-  assert_eq "WP1 an honest head followed by CI changes in the gap: not covered (gap rule not relaxed for surface)" "$(scen_wp1b)" "1/[7]"
-  redproof28 "WP1b" scen_wp1b "1/[7]" xprov-waivers.cjs "&& !gapIsSurface(tip.workPath, c.head, to));" ");"
+  assert_eq "WP1 a waiver whose head sits on a side branch does not cover wave 7 across a verified exempt wave (ancestry kept)" "$(scen_wp1a)" "1/[7]"
+  redproof28 "WP1a" scen_wp1a "1/[7]" xprov-waivers.cjs "|| (gap && inHistory(tip.workPath, c.head, to));" "|| gap;"
+  assert_eq "WP1 an honest waived wave 7, then a non-depended wave 12 with a CI diff: covered, wave 12 listed as deferred_to_pr (no false stop)" "$(scen_wp1b)" "0/[]/[12]/[12]"
+  redproof28 "WP1b" scen_wp1b "0/[]/[12]/[12]" xprov-placement.cjs "if (surface) deferred.push(p.wave);" "if (false) deferred.push(p.wave);"
+  assert_eq "WP1 a depended wave 8 with a CI diff in the gap is not exempt: it and the wave before it lack" "$(scen_wp1c)" "1/[7,8]"
+  redproof28 "WP1c" scen_wp1c "1/[7,8]" xprov-placement.cjs "else if (!f.surface && !surface) keys.add(" "else if (!f.surface) keys.add("
   assert_eq "WP2 a PLAN.md edited after Load (no Depends on lines left): wave-status fails plan_changed" "$(scen_wp2a)" "1/plan_changed"
   redproof28 "WP2a" scen_wp2a "1/plan_changed" xprov-gate.cjs "if (o.expectSha !== undefined && o.expectSha !== planSha) {" "if (false) {"
   assert_eq "WP2 without --expect-sha nothing is exempt: wave 12 lacks" "$(scen_wp2b)" "1/[12]"
   redproof28 "WP2b" scen_wp2b "1/[12]" xprov-gate.cjs "planShaOk: o.expectSha !== undefined," "planShaOk: true,"
-  assert_eq "WP2 a depended wave: real range with CI, no range, an undiffable range: lacking each time" "$(scen_wp2c)" "1/[6]|1/[6]|1/[6]"
-  redproof28 "WP2c" scen_wp2c "1/[6]|1/[6]|1/[6]" xprov-placement.cjs "return !f.surface && r !== undefined && !rangeSurface(o.workPath, r);" "return !f.surface;"
-  redproof28 "WP2d" scen_wp2c "1/[6]|1/[6]|1/[6]" xprov-placement.cjs "try { return surfaceOf(SC.diffPaths(workPath, r.base, r.head)); } catch (_e) { return true; }" "try { return surfaceOf(SC.diffPaths(workPath, r.base, r.head)); } catch (_e) { return false; }"
-  assert_eq "WP3 a surface path in prose (not backticked, no wave section) makes the plan run" "$(scen_wp3a)" "$NOPERMIT28"
-  assert_eq "WP3 a surface path under a ## Files heading makes the plan run" "$(scen_wp3b)" "$NOPERMIT28"
-  redproof28 "WP3" scen_wp3a "$NOPERMIT28" xprov-placement.cjs "[...waves.flatMap((w) => w.paths), ...looseTokens(text)]" "[...waves.flatMap((w) => w.paths)]"
+  assert_eq "WP2 a depended wave: verified range with CI, no range, an unresolvable range: lacking each time" "$(scen_wp2c)" "1/[6]|1/[6]|1/[6]"
+  redproof28 "WP2c" scen_wp2c "1/[6]|1/[6]|1/[6]" xprov-placement.cjs "else if (!f.surface && !surface) keys.add(" "else if (!f.surface) keys.add("
+  assert_eq "WR0 control: honest ranges exempt wave 12 (nothing lacking, no refusal)" "$(scen_wr0)" "0/[]/none"
+  assert_eq "WR an empty range (base == head) refuses every exemption" "$(scen_wr_empty)" "1/[12]/range_empty"
+  redproof28 "WR1" scen_wr_empty "1/[12]/range_empty" xprov-wave-ranges.cjs "if (base === head) return bad(" "if (false) return bad("
+  assert_eq "WR a range whose base is not an ancestor of its head refuses" "$(scen_wr_foreign)" "1/[12]/range_not_ancestor"
+  redproof28 "WR2" scen_wr_foreign "1/[12]/range_not_ancestor" xprov-wave-ranges.cjs "if (!WV.inHistory(o.workPath, base, head)) return bad(" "if (false) return bad("
+  assert_eq "WR a commit between two ranges that belongs to no wave refuses" "$(scen_wr_gap)" "1/[1,12]/range_gap"
+  redproof28 "WR3" scen_wr_gap "1/[1,12]/range_gap" xprov-wave-ranges.cjs "if (!WV.leadsTo(o.workPath, rs[i - 1].head, rs[i].base, o.phase)) return bad(" "if (false) return bad("
+  assert_eq "WR a last head that is not the work path's tip refuses" "$(scen_wr_tip)" "1/[12]/range_tip"
+  redproof28 "WR4" scen_wr_tip "1/[12]/range_tip" xprov-wave-ranges.cjs "if (!WV.leadsTo(o.workPath, rs[rs.length - 1].head, tip, o.phase)) return bad(" "if (false) return bad("
+  assert_eq "WR a first base that is not where the branch leaves the default branch refuses" "$(scen_wr_anchor)" "1/[12]/range_anchor"
+  redproof28 "WR5" scen_wr_anchor "1/[12]/range_anchor" xprov-wave-ranges.cjs "if (!WV.leadsTo(o.workPath, anchor, rs[0].base, o.phase)) return bad(" "if (false) return bad("
+  local f
+  for f in 'Prose: the migration touches supabase/migrations/001_init.sql directly.' $'## Files\n- `.github/workflows/ci.yml`'; do
+    assert_eq "WP3 a surface path in prose / under a ## Files heading makes the plan run" "$(scen_wp3 "$f")" "$NOPERMIT28"
+  done
+  redproof28 "WP3" scen_wp3a_ "$NOPERMIT28" xprov-placement.cjs "[...waves.flatMap((w) => w.paths), ...looseTokens(text)]" "[...waves.flatMap((w) => w.paths)]"
+  assert_eq "WP3 absolute /repo/src/auth/login.ts makes the plan run" "$(scen_wp3 'Edit /repo/src/auth/login.ts now.')" "$NOPERMIT28"
+  redproof28 "WP3-abs" scen_wp3_abs "$NOPERMIT28" xprov-placement.cjs "if (t === '' || t.includes('://')) continue;" "if (t === '' || t.includes('://') || t.startsWith('/')) continue;"
+  assert_eq "WP3 ../src/auth/login.ts makes the plan run" "$(scen_wp3 'Edit ../src/auth/login.ts now.')" "$NOPERMIT28"
+  redproof28 "WP3-dotdot" scen_wp3_dd "$NOPERMIT28" xprov-placement.cjs "if (t === '' || t.includes('://')) continue;" "if (t === '' || t.includes('://') || t.startsWith('..')) continue;"
+  assert_eq "WP3 src/auth/login.ts:12 makes the plan run" "$(scen_wp3 'See src/auth/login.ts:12 for the bug.')" "$NOPERMIT28"
+  redproof28 "WP3-line" scen_wp3_ln "$NOPERMIT28" xprov-placement.cjs "if (t === '' || t.includes('://')) continue;" "if (t === '' || t.includes('://') || LINE_SUFFIX_RE.test(t)) continue;"
+  assert_eq "WP3 file:src/auth/login.ts makes the plan run" "$(scen_wp3 'Open file:src/auth/login.ts please.')" "$NOPERMIT28"
+  redproof28 "WP3-scheme" scen_wp3_sc "$NOPERMIT28" xprov-placement.cjs "if (t === '' || t.includes('://')) continue;" "if (t === '' || t.includes('://') || SCHEME_RE.test(t)) continue;"
+  assert_eq "WP3 a real URL is no path: the plan stays exempt" "$(scen_wp3 'See https://example.com/src/auth/login.ts for docs.')" "$EXEMPT28"
 }
+scen_wp3a_() { scen_wp3 'Prose: the migration touches supabase/migrations/001_init.sql directly.'; }
+scen_wp3_abs() { scen_wp3 'Edit /repo/src/auth/login.ts now.'; }
+scen_wp3_dd() { scen_wp3 'Edit ../src/auth/login.ts now.'; }
+scen_wp3_ln() { scen_wp3 'See src/auth/login.ts:12 for the bug.'; }
+scen_wp3_sc() { scen_wp3 'Open file:src/auth/login.ts please.'; }
 
 casePL; casePL4; casePL5; caseWV; caseST; caseST34; caseWP
 export HOME="$SAVED_HOME_28"
