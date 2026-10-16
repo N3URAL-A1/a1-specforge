@@ -143,7 +143,7 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   on write (invalid → exit 1, nothing written) and on read.
     observe --agent xprov-codex|a1-<first>-<role> --skill <s> --phase <name>
             --type gap|blocker --severity <sev> --msg "<text>" [--wave N] [--lane <id>]
-            [--pattern xprov_finding|xprov_waived|xprov_not_applicable] [--provider codex]
+            [--pattern xprov_finding|xprov_waived|xprov_not_applicable|xprov_disposed] [--provider codex]
             [--model-requested <m>] [--model-observed <m>] [--repo <git-toplevel>]
                   (xprov-observe.cjs, wave 4) one observations.jsonl line with
                   pattern xprov_finding, model_requested, model_observed.

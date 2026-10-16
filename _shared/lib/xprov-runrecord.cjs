@@ -29,6 +29,11 @@ const SHA_RE = /^[0-9a-f]{40,64}$/;
 // Spec 016 FR-026: a1's marker in the run dir of the SECOND BLOCKED answer of a gate target; load-check and wave-status accept the
 // `codex_blocked_fallback` only through it (the index row is a pointer, as for a pass).
 const BLOCKED_MARKER_FILE = 'a1-blocked.json';
+// Spec 016 FR-025: a1's marker in the run dir of the ROUND-CAP answer (a REVISE without BLOCKER) that `xprov dispose` accepted; load-check and
+// wave-status accept the `accepted: dispositions` index row only through it. FINDINGS_FILE is the run-dir findings record normalize writes
+// (xprov-normalize.cjs PRIOR_FINDINGS_FILE; a fixture asserts both names stay equal).
+const DISPOSED_MARKER_FILE = 'a1-disposed.json';
+const FINDINGS_FILE = 'a1-findings.json';
 
 /** The run dir of `resultPath` lies in THIS repository's artifacts dir (realpath). */
 function inOwnArtifacts(resultPath, root) {
@@ -105,4 +110,44 @@ function blockedFallbackHeadBase(resultPath, planSha, gate, root) {
   return hb.head === null ? null : hb;
 }
 
-module.exports = { REVIEWED_FILE, PASS_MARKER_FILE, BLOCKED_MARKER_FILE, blockedFallbackValid, blockedFallbackHeadBase, hasPassMarker, inOwnArtifacts, readJsonNoFollow, runRecord, reviewedHeadBase, planPassValid, inspectPass };
+/** The run dir's findings record when its bytes hash to `sha`, as a parsed object, else null. */
+function verifiedFindings(runDir, sha) {
+  const bytes = C.readNoFollow(path.join(runDir, FINDINGS_FILE), X.MAX_RESULT_BYTES);
+  if (!bytes || typeof sha !== 'string' || C.sha256(bytes) !== sha) return null;
+  try { const v = JSON.parse(bytes.toString('utf8')); return C.isPlainObject(v) ? v : null; } catch (_e) { return null; }
+}
+
+const laneOrNull = (v) => (v === undefined ? null : v);
+
+/**
+ * The disposition marker of a round-cap run dir when everything it claims still holds: the run record is a completed REVISE of the gate's
+ * own mode, the marker names this gate, wave, lane and the expected PLAN.md sha at round X.ROUND_CAP, and the run dir's findings record
+ * (hash-checked against the marker) holds NO blocker. → the marker object or null. `want`: { planSha, gate, wave, lane }.
+ */
+function disposedMarker(resultPath, want, root) {
+  const rec = runRecord(resultPath, root);
+  const mode = want.gate === X.GATE_IDS.PLAN_REVIEW ? 'review' : 'inspect';
+  if (!C.isPlainObject(rec) || rec.status !== 'completed' || rec.mode !== mode || !C.isPlainObject(rec.response) || rec.response.verdict !== 'REVISE') return null;
+  const runDir = path.dirname(path.resolve(resultPath));
+  const m = readJsonNoFollow(path.join(runDir, DISPOSED_MARKER_FILE));
+  if (m === null || m.gate !== want.gate || C.waveNumber(m.wave) !== C.waveNumber(want.wave) || laneOrNull(m.lane) !== laneOrNull(want.lane)) return null;
+  if (m.plan_sha256 !== want.planSha || m.round !== X.ROUND_CAP || m.reviewed_plan_sha256 !== rec.plan_sha256) return null;
+  const doc = verifiedFindings(runDir, m.findings_sha256);
+  const blockers = doc === null ? null : doc.blocker;
+  return doc !== null && Array.isArray(blockers) && blockers.length === 0 && doc.round === X.ROUND_CAP && doc.gate === want.gate ? m : null;
+}
+
+/** Plan gate: the round-cap run dir is disposed for exactly this PLAN.md sha. */
+function planDisposed(resultPath, planSha, root) {
+  return disposedMarker(resultPath, { planSha, gate: X.GATE_IDS.PLAN_REVIEW, wave: null, lane: null }, root) !== null;
+}
+
+/** Wave gate: { head, base } of a disposed round-cap inspect (head = the work path's HEAD at dispose time, base = the reviewed base), else null. */
+function waveDisposedHeadBase(resultPath, planSha, gate, wave, lane, root) {
+  const m = disposedMarker(resultPath, { planSha, gate, wave, lane }, root);
+  if (m === null || !SHA_RE.test(String(m.head)) || !SHA_RE.test(String(m.base))) return null;
+  const hb = reviewedHeadBase(resultPath, undefined, root);
+  return hb.base === m.base ? { head: m.head, base: m.base } : null;
+}
+
+module.exports = { REVIEWED_FILE, PASS_MARKER_FILE, BLOCKED_MARKER_FILE, DISPOSED_MARKER_FILE, FINDINGS_FILE, verifiedFindings, disposedMarker, planDisposed, waveDisposedHeadBase, blockedFallbackValid, blockedFallbackHeadBase, hasPassMarker, inOwnArtifacts, readJsonNoFollow, runRecord, reviewedHeadBase, planPassValid, inspectPass };

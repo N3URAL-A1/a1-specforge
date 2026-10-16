@@ -143,9 +143,11 @@ function isPassRun(dir) {
   const marked = RR.hasPassMarker(dir);
   // spec 016 FR-026: the run dir of a twice-BLOCKED target carries a1's fallback marker and is the proof loaders read: same long retention
   const fallback = !marked && RR.readJsonNoFollow(path.join(dir, RR.BLOCKED_MARKER_FILE)) !== null;
-  if (!marked && !fallback) return false;
+  // spec 016 FR-025: the round-cap run dir that `xprov dispose` accepted carries a1's disposition marker: same long retention
+  const disposed = !marked && !fallback && RR.readJsonNoFollow(path.join(dir, RR.DISPOSED_MARKER_FILE)) !== null;
+  if (!marked && !fallback && !disposed) return false;
   const r = RR.readJsonNoFollow(path.join(dir, 'result.json'));
-  return r !== null && r.status === 'completed' && X.RUNNER_MODES.includes(r.mode) && C.isPlainObject(r.response) && r.response.verdict === (marked ? 'APPROVED' : 'BLOCKED');
+  return r !== null && r.status === 'completed' && X.RUNNER_MODES.includes(r.mode) && C.isPlainObject(r.response) && r.response.verdict === (marked ? 'APPROVED' : (disposed ? 'REVISE' : 'BLOCKED'));
 }
 
 /** The stale run-home sweep, shared by gc and (opportunistically) every

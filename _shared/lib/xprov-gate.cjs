@@ -68,6 +68,7 @@ const WV = require('./xprov-waivers.cjs');
 const NP = require('./xprov-gate-nopermit.cjs');
 const PL = require('./xprov-placement.cjs');
 const RR = require('./xprov-runrecord.cjs');
+const AC = require('./xprov-accept.cjs');
 const { guardRefusal, readTypedLine, writeGuardedStore } = require('./xprov-approve.cjs');
 const { appendXreviewNote } = require('./xprov-normalize.cjs');
 const { dispositionsPath, priorRound, writeFeedback } = require('./xprov-feedback.cjs');
@@ -514,14 +515,13 @@ function loadCheck(o) {
   const newest = passes.length ? [...passes].sort((a, b) => String(a.ts || '').localeCompare(String(b.ts || '')))[passes.length - 1] : null;
   const store = WV.readWaivers();
   const waiver = newest !== null && newest.plan_sha256 === planSha ? null : WV.planWaiver(store, { repo: C.commonDirOf(ctx.root), phase: ctx.phase, plan_sha256: planSha });
-  // spec 016 FR-026: twice BLOCKED = Reinhard is the only review; a1's marker in the run dir is the proof, the index row only points at it
-  const fallback = newest === null && waiver === null
-    ? index.find((e) => e.gate === gate && e.reason === X.REASONS.blocked && e.plan_sha256 === planSha && RR.blockedFallbackValid(e.result_path, planSha, 'review', gate)) || null : null;
-  const accepted = newest !== null && newest.plan_sha256 === planSha ? 'pass' : (waiver ? 'waiver' : (fallback ? X.REASONS.codex_blocked_fallback : null));
+  // spec 016 FR-026 / FR-025: twice BLOCKED, or round_cap closed by dispositions; a1's marker in the run dir is the proof, the index row only points at it
+  const side = newest === null && waiver === null ? AC.planSideRecord(index, gate, planSha, ctx.root) : null;
+  const accepted = newest !== null && newest.plan_sha256 === planSha ? 'pass' : (waiver ? 'waiver' : (side ? side.accepted : null));
   const ok = accepted !== null && !moved;
   return Object.freeze({
     ok, gate, enforcement, phase: ctx.phase, plan_sha256: planSha, accepted,
-    matched_entry: accepted === 'pass' ? newest : (fallback || null), matched_waiver: accepted === 'waiver' ? waiver : null,
+    matched_entry: accepted === 'pass' ? newest : (side ? side.entry : null), matched_waiver: accepted === 'waiver' ? waiver : null,
     newest_pass: newest ? { ts: newest.ts, plan_sha256: newest.plan_sha256, round: newest.round } : null,
     reason: ok ? null : (moved ? X.REASONS.plan_changed : X.REASONS.plan_review_missing),
     detail: ok ? null : (moved ? movedDetail : loadCheckDetail(newest, planSha, store)),
@@ -605,9 +605,8 @@ function waveStatus(o) {
     ...index.filter((e) => e.gate === gate && waveNumber(e.wave) === p.wave && sameLane(e, p.lane) && e.verdict === X.VERDICTS.PASS && e.waived !== true && e.plan_sha256 === planSha)
       .map((e) => RR.inspectPass(e.result_path, planSha)).filter(Boolean).map((hb) => ({ kind: 'pass', head: hb.head, base: hb.base })),
     ...WV.waveWaivers(store, { repo, phase: ctx.phase, plan_sha256: planSha, wave: p.wave, lane: p.lane }).map((w) => ({ kind: 'waiver', head: w.head, base: w.base })),
-    // twice BLOCKED (spec 016 FR-026): head/base from the run dir like a pass, accepted only with a1's marker
-    ...index.filter((e) => e.gate === gate && waveNumber(e.wave) === p.wave && sameLane(e, p.lane) && e.reason === X.REASONS.blocked && e.plan_sha256 === planSha)
-      .map((e) => RR.blockedFallbackHeadBase(e.result_path, planSha, gate)).filter(Boolean).map((hb) => ({ kind: 'fallback', head: hb.head, base: hb.base })),
+    // twice BLOCKED (FR-026) or round_cap closed by dispositions (FR-025): head/base from the run dir like a pass, accepted only with a1's marker
+    ...AC.waveSideCandidates(index, gate, p, planSha, ctx.root),
   ]);
   const chosen = WV.chainCoverage(completed, candidates, tips, ctx.phase, exempt, ex.ranges);
   const covered = (p) => exempt.has(`${p.wave}|${p.lane || ''}`) || chosen.get(`${p.wave}|${p.lane || ''}`) != null;
@@ -617,9 +616,14 @@ function waveStatus(o) {
     ok: lacking.length === 0, gate, enforcement, phase: ctx.phase,
     completed_waves: [...new Set(completed.map((p) => p.wave))], completed_detail: completed, lacking, lacking_detail: lackingDetail,
     head: h.head, scope_exempt: exemptWaves, deferred_to_pr: ex.deferred, exempt_refused: ex.refused,
-    blocked_fallback: [...new Set(completed.filter((p) => { const c = chosen.get(`${p.wave}|${p.lane || ''}`); return c != null && c.kind === 'fallback'; }).map((p) => p.wave))],
+    blocked_fallback: kindWaves(completed, chosen, 'fallback'), disposed: kindWaves(completed, chosen, AC.DISPOSITIONS),
     reason: lacking.length ? X.REASONS.wave_inspect_missing : null,
   });
+}
+
+/** The waves whose chosen coverage is of `kind` (fallback | dispositions). */
+function kindWaves(completed, chosen, kind) {
+  return [...new Set(completed.filter((p) => { const c = chosen.get(`${p.wave}|${p.lane || ''}`); return c != null && c.kind === kind; }).map((p) => p.wave))];
 }
 
 /** --lane-work-path L=dir[,L2=dir]: each lane's work path (same git-common-dir) and HEAD. */
@@ -751,7 +755,7 @@ function cmdXprovLoadCheck(args) {
   return withFlags(args, { phase: 'str', 'expect-sha': 'str' }, 'load-check', (f) => {
     if (!f.phase) return usageExit('load-check requires --phase <name> [--expect-sha <sha256>]');
     const r = loadCheck({ phase: f.phase, expectSha: f['expect-sha'] });
-    process.stderr.write(r.ok ? `xprov load-check: ${r.accepted === NOT_APPLICABLE_ACCEPTED ? noticeOf(r.permit_state, r.placement) : r.accepted === X.REASONS.codex_blocked_fallback ? R.BLOCKED_NOTICE : `PLAN.md matches ${r.accepted === 'waiver' ? `a store waiver for ${r.gate} (not a pass)` : `the newest ${r.gate} pass`}`}\n` : `xprov load-check: ${r.reason} — ${r.detail} (enforcement ${r.enforcement})\n`);
+    process.stderr.write(r.ok ? `xprov load-check: ${r.accepted === NOT_APPLICABLE_ACCEPTED ? noticeOf(r.permit_state, r.placement) : (AC.sideNotice(r.accepted, R.BLOCKED_NOTICE) || `PLAN.md matches ${r.accepted === 'waiver' ? `a store waiver for ${r.gate} (not a pass)` : `the newest ${r.gate} pass`}`)}\n` : `xprov load-check: ${r.reason} — ${r.detail} (enforcement ${r.enforcement})\n`);
     return finish(r, r.ok ? X.EXIT_PASS : X.EXIT_FAIL);
   });
 }

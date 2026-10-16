@@ -33,6 +33,7 @@ const X = require('./xprov.cjs');
 const C = require('./xprov-common.cjs');
 const WV = require('./xprov-waivers.cjs');
 const RR = require('./xprov-runrecord.cjs');
+const AC = require('./xprov-accept.cjs');
 const { PRIOR_FINDINGS_FILE, classify } = require('./xprov-normalize.cjs');
 
 const FAIL_VERDICTS = Object.freeze([X.VERDICTS.FAIL, X.VERDICTS.FAIL_WITH_FINDINGS]);
@@ -92,10 +93,11 @@ const nullable = (v) => (v === undefined ? null : v);
  * One failing index row as a candidate, or null / { skip } (spec 016 Samuel W3 SEC-2). The row is a pointer; it counts only when its run
  * record names THIS PLAN.md sha and the gate's own mode, and (a wave) a verified findings record names the same gate, wave and lane.
  */
-function candidate(e, planSha, root) {
+function candidate(e, root) {
   if (!FAIL_VERDICTS.includes(e.verdict) || typeof e.result_path !== 'string') return null;
   const rec = RR.runRecord(e.result_path, root);
-  if (rec === null || rec.plan_sha256 !== planSha || rec.mode !== WANT_MODE[e.gate]) return null;
+  // the run record names the sha the row names (a round-cap row of an older sha is a target too: planRows)
+  if (rec === null || typeof e.plan_sha256 !== 'string' || rec.plan_sha256 !== e.plan_sha256 || rec.mode !== WANT_MODE[e.gate]) return null;
   const wave = C.waveNumber(e.wave);
   const lane = laneOf(e.lane);
   const doc = e.verdict === X.VERDICTS.FAIL_WITH_FINDINGS ? findingsDoc(e, root) : null;
@@ -105,12 +107,20 @@ function candidate(e, planSha, root) {
 }
 
 const scopeKey = (gate, wave, lane) => `${gate}|${wave === null ? '' : wave}|${lane || ''}`;
-const planRows = (index, planSha) => index.filter((e) => e.waived !== true && typeof e.verdict === 'string' && e.plan_sha256 === planSha && GATE_ORDER.includes(e.gate));
+// Rows of the current PLAN.md sha, plus the round-cap REVISE of the plan gate at an older sha: after the fixes of round 2 the plan changed, and
+// a dispose that failed (an undisposed MAJOR, spec 016 FR-025) leaves exactly that target for the waiver question (the waiver binds the CURRENT sha).
+const capCarry = (e) => e.gate === X.GATE_IDS.PLAN_REVIEW && e.verdict === X.VERDICTS.FAIL_WITH_FINDINGS && Number(e.round) === X.ROUND_CAP;
+const planRows = (index, planSha) => index.filter((e) => e.waived !== true && typeof e.verdict === 'string' && GATE_ORDER.includes(e.gate) && (e.plan_sha256 === planSha || capCarry(e)));
 
 /** True when the scope holds a pass whose run dir proves it. */
 function passed(rows, gate, planSha, root) {
   return rows.some((e) => e.verdict === X.VERDICTS.PASS && typeof e.result_path === 'string'
     && (gate === X.GATE_IDS.PLAN_REVIEW ? RR.planPassValid(e.result_path, planSha, root) : RR.inspectPass(e.result_path, planSha, root) !== null));
+}
+
+/** True when a1's own side record closes the scope (spec 016): the twice-BLOCKED fallback or the round-cap dispositions — nothing is left to waive. */
+function sideClosed(index, gate, wave, lane, planSha, root) {
+  return gate === X.GATE_IDS.PLAN_REVIEW ? AC.planSideRecord(index, gate, planSha, root) !== null : AC.waveSideCandidates(index, gate, { wave, lane }, planSha, root).length > 0;
 }
 
 function covered(store, key) {
@@ -120,7 +130,7 @@ function covered(store, key) {
 
 /** One target for the newest failing row of a scope, or { skipped } / null. */
 function targetOf(scopeRows, base, root, store) {
-  const cands = scopeRows.map((e) => candidate(e, base.planSha, root)).filter((c) => c !== null);
+  const cands = scopeRows.map((e) => candidate(e, root)).filter((c) => c !== null);
   const real = cands.filter((c) => !c.skip);
   if (real.length === 0) return cands.length === 0 ? null : { skipped: cands[cands.length - 1].skip };
   const { e: row, rec, doc, wave, lane } = real[real.length - 1];
@@ -128,7 +138,7 @@ function targetOf(scopeRows, base, root, store) {
   // MINOR-A: a genuine fail/quarantined or fail/secret_in_output row (FR-031) cannot be derived from the run record: this target is left to the terminal waive.
   if (row.verdict === X.VERDICTS.FAIL && NOT_DERIVABLE.includes(row.reason)) return { skipped: { gate: row.gate, wave, lane, why: row.reason } };
   // SEC-3: verdict and reason come from the run record by the normalizer's own total mapping; a row that says otherwise is a lie.
-  const derived = classify(rec, base.planSha);
+  const derived = classify(rec, row.plan_sha256);
   if (derived.verdict !== row.verdict || nullable(derived.reason) !== nullable(row.reason)) {
     return { refuse: refuse('index_row_mismatch', `the index row for ${row.gate}${wave === null ? '' : ` wave ${wave}`} says ${row.verdict}/${nullable(row.reason)} but its run record gives ${derived.verdict}/${nullable(derived.reason)}; no chat waiver is offered for this phase: waive that target with the terminal command; nothing written`) };
   }
@@ -174,7 +184,7 @@ function collectTargets(o) {
   const skipped = [];
   for (const scopeRows of scopes.values()) {
     const gate = scopeRows[0].gate;
-    if (passed(scopeRows, gate, planSha, o.root)) continue;
+    if (passed(scopeRows, gate, planSha, o.root) || sideClosed(index, gate, C.waveNumber(scopeRows[0].wave), laneOf(scopeRows[0].lane), planSha, o.root)) continue;
     const t = targetOf(scopeRows, base, o.root, store);
     if (t === null) continue;
     if (t.refuse) return t.refuse;
