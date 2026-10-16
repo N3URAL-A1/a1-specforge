@@ -651,7 +651,7 @@ caseWS() {
   assert_json "WS9 a copy without a1-reviewed.json gets no head/base" "$(cat "$PHASE_DIR/xreview/index.json")" "String(j[j.length - 1].head) + '/' + String(j[j.length - 1].base)" "null/null"
   sub6 wave-status --phase p6 --waves 1
   assert_rc "WS9 …so the unreviewed commit is not covered → exit 1" 1 "$G_RC"
-  grep -q "wave-status --phase <phase_name> --work-path \$WORK_PATH > " "$REPO_ROOT/skills/a1-execute/workflows/02-execute.md" && ok "WS8 02-execute.md checks the chain at 2c" || bad "WS8 02-execute.md lacks the 2c chain check"
+  grep -q "wave-status --phase <phase_name> --work-path \$WORK_PATH --expect-sha \"\$LOADED_PLAN_SHA\" --wave-range \"\$WAVE_RANGES\" > " "$REPO_ROOT/skills/a1-execute/workflows/02-execute.md" && ok "WS8 02-execute.md checks the chain at 2c (bound to the loaded plan sha and the wave ranges)" || bad "WS8 02-execute.md lacks the 2c chain check"
   # WS12 — the boundary between two waves
   prep6
   mkdir -p "$PHASE_REPO/docs/product"; printf '## Wave 1 — one\n## Wave 2 — two\n' > "$PHASE_DIR/STATUS.md"

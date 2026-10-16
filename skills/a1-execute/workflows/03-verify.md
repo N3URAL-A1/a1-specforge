@@ -17,10 +17,11 @@ below); pass `--waves 1,2,3` only when STATUS is not yet consolidated.
 
 ```bash
 mkdir -p .a1/phases/<phase_name>/xreview
-node <repo>/_shared/a1-tools.cjs xprov wave-status --phase <phase_name> --work-path $WORK_PATH > .a1/phases/<phase_name>/xreview/wave-status.last-run.json; RC=$?
+node <repo>/_shared/a1-tools.cjs xprov wave-status --phase <phase_name> --work-path $WORK_PATH --expect-sha "$LOADED_PLAN_SHA" --wave-range "$WAVE_RANGES" > .a1/phases/<phase_name>/xreview/wave-status.last-run.json; RC=$?
 # multi-lane: append --lane-work-path <lane-id>=<that lane's WORK_PATH>[,…] (a lane without one lacks)
 echo "xprov wave-status exit=$RC"
 ```
+`$WAVE_RANGES` as in `02-execute.md` 2c. `--expect-sha "$LOADED_PLAN_SHA"` binds the exemption to the PLAN.md accepted at Load (a different sha fails `plan_changed`); `--wave-range <N>=<PRE_WAVE_HEAD of wave N>..<HEAD after wave N>[,…]` gives wave-status the real diff of every completed wave: a wave that a later wave depends on counts as `scope_exempt` only when that diff is no security surface (no range, no exemption).
 
 - **Exit 0** → continue to the prompt template. A non-empty `not_applicable`
   list in the stdout JSON means the owner denied external review for this
@@ -37,8 +38,8 @@ echo "xprov wave-status exit=$RC"
   `unbound_legacy` the retro names the `permit_state` ("Codex review skipped: permit void (<state>)").
   A mismatch
   or broken state (`*_mismatch`, `audit_broken`, `invalid`) stays exit 1.
-  **Placement (spec 016 FR-020).** Waves the placement rule exempts (no later wave depends on them, or no security
-  surface in the files the plan names for them) are listed under `scope_exempt` and need no pass or waiver; a wave
+  **Placement (spec 016 FR-020).** Waves the placement rule exempts (no later wave depends on them, or the plan names no security
+  surface for them and their real diff, `--wave-range`, is none either) are listed under `scope_exempt` and need no pass or waiver; a wave
   that has a gate row is judged on its rows. Retro: `{id: wave-inspect-xprov, verdict: not_applicable, caught: false}`
   with reason `scope_exempt` and the issue tag `xprov_not_applicable`.
 - **Exit 1** → the stdout JSON lists the lacking waves. For each: go back to

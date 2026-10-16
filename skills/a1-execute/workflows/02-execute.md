@@ -290,9 +290,10 @@ fi
 summary, check the wave just inspected — or waived — against the work path as
 it is now:
 ```bash
-node <repo>/_shared/a1-tools.cjs xprov wave-status --phase <phase_name> --work-path $WORK_PATH > .a1/phases/<phase_name>/xreview/wave-status.last-run.json; RC=$?
+node <repo>/_shared/a1-tools.cjs xprov wave-status --phase <phase_name> --work-path $WORK_PATH --expect-sha "$LOADED_PLAN_SHA" --wave-range "$WAVE_RANGES" > .a1/phases/<phase_name>/xreview/wave-status.last-run.json; RC=$?
 echo "xprov wave-status (after wave <N>) exit=$RC"
 ```
+`$WAVE_RANGES` is `<N>=<PRE_WAVE_HEAD>..<HEAD after the wave>` for every completed wave, comma-separated (record both shas when a wave ends). `--expect-sha "$LOADED_PLAN_SHA"` binds the exemption to the PLAN.md accepted at Load (a different sha fails `plan_changed`); `--wave-range <N>=<PRE_WAVE_HEAD of wave N>..<HEAD after wave N>[,…]` gives wave-status the real diff of every completed wave: a wave that a later wave depends on counts as `scope_exempt` only when that diff is no security surface (no range, no exemption).
 (multi-lane, per lane checkpoint: `--waves <N> --lane <lane-id> --lane-work-path <lane-id>=$WORK_PATH`
 checks that lane's pair (N, lane-id) against that lane's HEAD). The covered waves must form a chain: each wave's recorded
 head equals the next wave's base, and the last completed wave's head equals

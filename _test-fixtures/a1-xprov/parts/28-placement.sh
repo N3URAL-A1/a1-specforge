@@ -135,6 +135,18 @@ waiver28() {
   ' "$HOME/.a1-xprov/waivers.json" "$repo" "$sha" "$1" "$2" "$3"
   chmod 600 "$HOME/.a1-xprov/waivers.json"
 }
+plansha28() { (shasum -a 256 "$PHASE_PLAN" 2>/dev/null || sha256sum "$PHASE_PLAN") | cut -d' ' -f1; }
+# mkranges28 <wave...> — one non-surface commit per wave; RANGES28 = "N=<base>..<head>,…" (the executor's PRE_WAVE_HEAD .. wave end)
+mkranges28() {
+  local w b; RANGES28=""
+  for w in "$@"; do b="$(git -C "$PHASE_REPO" rev-parse HEAD)"; commit28 "src/w$w.js"; RANGES28+="${RANGES28:+,}$w=$b..$(git -C "$PHASE_REPO" rev-parse HEAD)"; done
+}
+# wstat28 [extra flags…] — wave-status bound to the current PLAN.md sha and the recorded wave ranges
+wstat28() { sub28 wave-status --phase p28 --expect-sha "$(plansha28)" ${RANGES28:+--wave-range "$RANGES28"} "$@"; }
+# prepend28 <text> — the text goes in front of the first ## Wave heading of the phase PLAN.md (a place no wave section owns)
+prepend28() {
+  node -e 'const fs=require("fs"); const [f,t]=process.argv.slice(1); const s=fs.readFileSync(f,"utf8"); const m=/^#{2,4}\s+\**\s*Wave\s+\d+/m.exec(s); if(!m){process.exit(3);} fs.writeFileSync(f, s.slice(0,m.index)+t+"\n"+s.slice(m.index));' "$PHASE_PLAN" "$1" || bad "prepend28 failed"
+}
 status28() { local w; : > "$PHASE_DIR/STATUS.md"; for w in "$@"; do printf '## Wave %s — w\n' "$w" >> "$PHASE_DIR/STATUS.md"; done; }
 
 # ---------- PL: plan placement ----------
@@ -224,8 +236,8 @@ caseWV() {
 
 # ---------- ST: load-check / wave-status ----------
 scen_st1() { prep28 002.PLAN.md "$SPEC_M28"; sub28 load-check --phase p28; echo "$G_RC/$(json_get "$G_OUT" "j.accepted + '/' + j.placement")"; }
-scen_st2a() { prep28 016.PLAN.md; status28 1 2 3 4 5 6 12; sub28 wave-status --phase p28; echo "$G_RC/$(json_get "$G_OUT" "j.ok + '/' + JSON.stringify(j.scope_exempt) + '/' + j.placement")"; }
-scen_st2b() { prep28 016.PLAN.md; write_permit "$PHASE_REPO" fixture record/2026-09-24-fixture.md; status28 6 7; sub28 wave-status --phase p28; echo "$G_RC/$(json_get "$G_OUT" "j.ok + '/' + JSON.stringify(j.lacking) + '/' + JSON.stringify(j.scope_exempt)")"; }
+scen_st2a() { prep28 016.PLAN.md; mkranges28 1 2 3 4 5 6; status28 1 2 3 4 5 6 12; wstat28; echo "$G_RC/$(json_get "$G_OUT" "j.ok + '/' + JSON.stringify(j.scope_exempt) + '/' + j.placement")"; }
+scen_st2b() { prep28 016.PLAN.md; write_permit "$PHASE_REPO" fixture record/2026-09-24-fixture.md; mkranges28 6; status28 6 7; wstat28; echo "$G_RC/$(json_get "$G_OUT" "j.ok + '/' + JSON.stringify(j.lacking) + '/' + JSON.stringify(j.scope_exempt)")"; }
 caseST() {
   assert_eq "ST1 load-check accepts an exempt plan: exit 0, accepted not_applicable, placement scope_exempt" "$(scen_st1)" "0/not_applicable/scope_exempt"
   prep28 002.PLAN.md "$SPEC_M28"; sub28 load-check --phase p28
@@ -235,14 +247,14 @@ caseST() {
   assert_eq "ST2 wave-status: waves 1-6 and 12 are all exempt: exit 0, scope_exempt listed, nothing lacking" "$(scen_st2a)" "0/true/[1,2,3,4,5,6,12]/scope_exempt"
   assert_eq "ST2 wave-status: wave 7 is required and has no pass: exit 1, lacking [7], wave 6 stays exempt" "$(scen_st2b)" "1/false/[7]/[6]"
   redproof28 "ST1" scen_st1 "0/not_applicable/scope_exempt" xprov-gate.cjs "if (!placed.run) {" "if (false) {"
-  redproof28 "ST2" scen_st2a "0/true/[1,2,3,4,5,6,12]/scope_exempt" xprov-placement.cjs "return f.listed && (!f.depended || !f.surface);" "return false;"
+  redproof28 "ST2" scen_st2a "0/true/[1,2,3,4,5,6,12]/scope_exempt" xprov-placement.cjs "if (text === null || !o.planShaOk) return new Set();" "if (true) return new Set();"
 }
 
 # ST3: a wave with a gate row is judged on its rows, not exempted from the plan
 scen_st3() {
   prep28 016.PLAN.md; write_permit "$PHASE_REPO" fixture record/2026-09-24-fixture.md; mkdir -p "$PHASE_DIR/xreview"
   printf '[{"gate":"wave-inspect-xprov","wave":6,"lane":null,"round":1,"verdict":"fail-with-findings"}]\n' > "$PHASE_DIR/xreview/index.json"
-  status28 6; sub28 wave-status --phase p28 --waves 6
+  mkranges28 6; status28 6; wstat28 --waves 6
   echo "$G_RC/$(json_get "$G_OUT" "JSON.stringify(j.lacking) + '/' + JSON.stringify(j.scope_exempt)")"
 }
 # ST4: a reviewed (waived) required wave followed by an exempt wave's commits still counts: the gap around the exempt wave is not checked
@@ -250,17 +262,71 @@ scen_st4() {
   prep28 016.PLAN.md; write_permit "$PHASE_REPO" fixture record/2026-09-24-fixture.md
   local base="$PHASE_HEAD"; commit28 src/w7.js; local h7; h7="$(git -C "$PHASE_REPO" rev-parse HEAD)"
   waiver28 7 "$h7" "$base"; commit28 src/after-wave-7.js
-  sub28 wave-status --phase p28 --waves 7,12
+  wstat28 --waves 7,12
   echo "$G_RC/$(json_get "$G_OUT" "j.ok + '/' + JSON.stringify(j.lacking)")"
 }
 caseST34() {
   assert_eq "ST3 a wave with a gate row is lacking, not exempt (exit 1, lacking [6], nothing exempt)" "$(scen_st3)" "1/[6]/[]"
   redproof28 "ST3" scen_st3 "1/[6]/[]" xprov-gate.cjs "(p) => index.some((e) => e.gate === gate && waveNumber(e.wave) === p.wave)" "(p) => false"
   assert_eq "ST4 wave 7 waived, then a commit of exempt wave 12: wave-status ok" "$(scen_st4)" "0/true/[]"
-  redproof28 "ST4" scen_st4 "0/true/[]" xprov-waivers.cjs "(isLast ? (gap || leadsTo(tip.workPath, c.head, tip.head, phase))" "(isLast ? (leadsTo(tip.workPath, c.head, tip.head, phase))"
+  redproof28 "ST4" scen_st4 "0/true/[]" xprov-waivers.cjs "|| (gap && inHistory(tip.workPath, c.head, to) && !gapIsSurface(tip.workPath, c.head, to));" ";"
 }
 
-casePL; casePL4; casePL5; caseWV; caseST; caseST34
+# ---------- review round (Samuel wave 7): WP-1 chain gap keeps ancestry and the surface rule, WP-2 sha + real diff, WP-3 whole-plan tokens ----------
+# WP-1a: the head the waiver names sits on a side branch (a decoy), the tip is elsewhere: not covered
+scen_wp1a() {
+  prep28 016.PLAN.md; write_permit "$PHASE_REPO" fixture record/2026-09-24-fixture.md
+  local base="$PHASE_HEAD" main; main="$(git -C "$PHASE_REPO" rev-parse --abbrev-ref HEAD)"
+  git -C "$PHASE_REPO" checkout -q -b decoy; commit28 src/decoy.js; local hd; hd="$(git -C "$PHASE_REPO" rev-parse HEAD)"
+  git -C "$PHASE_REPO" checkout -q "$main"; commit28 src/after-wave-7.js
+  waiver28 7 "$hd" "$base"; wstat28 --waves 7,12
+  echo "$G_RC/$(json_get "$G_OUT" "JSON.stringify(j.lacking)")"
+}
+# WP-1b: an honest head, but what lies in the gap is security surface (CI file): the gap rule is not relaxed
+scen_wp1b() {
+  prep28 016.PLAN.md; write_permit "$PHASE_REPO" fixture record/2026-09-24-fixture.md
+  local base="$PHASE_HEAD"; commit28 src/w7.js; local h7; h7="$(git -C "$PHASE_REPO" rev-parse HEAD)"
+  waiver28 7 "$h7" "$base"; commit28 .github/workflows/ci.yml; wstat28 --waves 7,12
+  echo "$G_RC/$(json_get "$G_OUT" "JSON.stringify(j.lacking)")"
+}
+# WP-2a: the plan was edited after Load (all Depends on lines removed): --expect-sha of the accepted plan no longer matches
+scen_wp2a() {
+  prep28 016.PLAN.md; write_permit "$PHASE_REPO" fixture record/2026-09-24-fixture.md; local sha; sha="$(plansha28)"
+  node -e 'const fs=require("fs"); const f=process.argv[1]; fs.writeFileSync(f, fs.readFileSync(f,"utf8").split("\n").filter((l)=>!/Depends on/i.test(l)).join("\n"));' "$PHASE_PLAN"
+  status28 7; sub28 wave-status --phase p28 --waves 7 --expect-sha "$sha"
+  echo "$G_RC/$(json_get "$G_OUT" "j.reason")"
+}
+# WP-2b: without --expect-sha nothing is exempt (wave 12 would be, if the plan were bound)
+scen_wp2b() { prep28 016.PLAN.md; write_permit "$PHASE_REPO" fixture record/2026-09-24-fixture.md; status28 12; sub28 wave-status --phase p28 --waves 12; echo "$G_RC/$(json_get "$G_OUT" "JSON.stringify(j.lacking)")"; }
+# WP-2c: wave 6 is depended on; its real range touches CI: not exempt; no range at all: not exempt; a range git cannot diff: not exempt
+scen_wp2c() {
+  prep28 016.PLAN.md; write_permit "$PHASE_REPO" fixture record/2026-09-24-fixture.md
+  local b; b="$(git -C "$PHASE_REPO" rev-parse HEAD)"; commit28 .github/workflows/ci.yml; local h; h="$(git -C "$PHASE_REPO" rev-parse HEAD)"
+  status28 6; RANGES28="6=$b..$h" wstat28 --waves 6; local a="$G_RC/$(json_get "$G_OUT" "JSON.stringify(j.lacking)")"
+  RANGES28="" wstat28 --waves 6; local n="$G_RC/$(json_get "$G_OUT" "JSON.stringify(j.lacking)")"
+  RANGES28="6=deadbeefdeadbeef..deadbeefdeadbeef" wstat28 --waves 6; echo "$a|$n|$G_RC/$(json_get "$G_OUT" "JSON.stringify(j.lacking)")"
+}
+# WP-3: a surface path in prose, and one under a ## Files heading, makes the plan run
+scen_wp3a() { prep28 002.PLAN.md "$SPEC_M28"; prepend28 'The migration touches supabase/migrations/001_init.sql directly.'; gate28 --gate "$GATE_PLAN"; out28; }
+scen_wp3b() { prep28 002.PLAN.md "$SPEC_M28"; prepend28 $'## Files\n- `.github/workflows/ci.yml`'; gate28 --gate "$GATE_PLAN"; out28; }
+caseWP() {
+  assert_eq "WP1 a waiver whose head sits on a side branch does not cover wave 7 across an exempt wave (ancestry kept)" "$(scen_wp1a)" "1/[7]"
+  redproof28 "WP1a" scen_wp1a "1/[7]" xprov-waivers.cjs "|| (gap && inHistory(tip.workPath, c.head, to) && !gapIsSurface(tip.workPath, c.head, to));" "|| gap;"
+  assert_eq "WP1 an honest head followed by CI changes in the gap: not covered (gap rule not relaxed for surface)" "$(scen_wp1b)" "1/[7]"
+  redproof28 "WP1b" scen_wp1b "1/[7]" xprov-waivers.cjs "&& !gapIsSurface(tip.workPath, c.head, to));" ");"
+  assert_eq "WP2 a PLAN.md edited after Load (no Depends on lines left): wave-status fails plan_changed" "$(scen_wp2a)" "1/plan_changed"
+  redproof28 "WP2a" scen_wp2a "1/plan_changed" xprov-gate.cjs "if (o.expectSha !== undefined && o.expectSha !== planSha) {" "if (false) {"
+  assert_eq "WP2 without --expect-sha nothing is exempt: wave 12 lacks" "$(scen_wp2b)" "1/[12]"
+  redproof28 "WP2b" scen_wp2b "1/[12]" xprov-gate.cjs "planShaOk: o.expectSha !== undefined," "planShaOk: true,"
+  assert_eq "WP2 a depended wave: real range with CI, no range, an undiffable range: lacking each time" "$(scen_wp2c)" "1/[6]|1/[6]|1/[6]"
+  redproof28 "WP2c" scen_wp2c "1/[6]|1/[6]|1/[6]" xprov-placement.cjs "return !f.surface && r !== undefined && !rangeSurface(o.workPath, r);" "return !f.surface;"
+  redproof28 "WP2d" scen_wp2c "1/[6]|1/[6]|1/[6]" xprov-placement.cjs "try { return surfaceOf(SC.diffPaths(workPath, r.base, r.head)); } catch (_e) { return true; }" "try { return surfaceOf(SC.diffPaths(workPath, r.base, r.head)); } catch (_e) { return false; }"
+  assert_eq "WP3 a surface path in prose (not backticked, no wave section) makes the plan run" "$(scen_wp3a)" "$NOPERMIT28"
+  assert_eq "WP3 a surface path under a ## Files heading makes the plan run" "$(scen_wp3b)" "$NOPERMIT28"
+  redproof28 "WP3" scen_wp3a "$NOPERMIT28" xprov-placement.cjs "[...waves.flatMap((w) => w.paths), ...looseTokens(text)]" "[...waves.flatMap((w) => w.paths)]"
+}
+
+casePL; casePL4; casePL5; caseWV; caseST; caseST34; caseWP
 export HOME="$SAVED_HOME_28"
 if [[ "$SAVED_VAULT_28" == "__unset__" ]]; then unset A1_VAULT_ROOT; else export A1_VAULT_ROOT="$SAVED_VAULT_28"; fi
 rm -rf "$TMP28"

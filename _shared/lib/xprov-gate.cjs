@@ -597,8 +597,14 @@ function waveStatus(o) {
   if (!completed.length) throw inputError(`no completed waves: no \`## Wave N\` heading in ${ctx.phaseDir}/STATUS*.md and no --waves given`);
   const index = readIndex(ctx.indexPath);
   if (index === null) throw inputError(`index.json unparseable or not an array of objects: ${ctx.indexPath}`);
-  // placement (spec 016 FR-020): waves the rule exempts need no inspection; a wave with a gate row is judged on its rows
-  const exempt = PL.exemptKeys(ctx.planPath, completed, (p) => index.some((e) => e.gate === gate && waveNumber(e.wave) === p.wave));
+  const workPath = o.workPath === undefined ? ctx.root : path.resolve(String(o.workPath));
+  const planSha = fs.existsSync(ctx.planPath) ? sha256(fs.readFileSync(ctx.planPath)) : null;
+  if (o.expectSha !== undefined && !/^[0-9a-f]{64}$/.test(String(o.expectSha))) throw inputError('--expect-sha must be a lowercase sha256');
+  if (o.expectSha !== undefined && o.expectSha !== planSha) {
+    return Object.freeze({ ok: false, gate, enforcement, phase: ctx.phase, completed_waves: [...new Set(completed.map((p) => p.wave))], completed_detail: completed, lacking: [], lacking_detail: [], scope_exempt: [], head: null, reason: X.REASONS.plan_changed, detail: `PLAN.md changed since Load: accepted ${o.expectSha}, now ${planSha}` });
+  }
+  // placement (FR-020, WP-2): only for the PLAN.md accepted at Load (--expect-sha) and with the wave's real diff (--wave-range); a wave with a gate row is judged on its rows
+  const exempt = PL.exemptKeys({ planPath: ctx.planPath, planShaOk: o.expectSha !== undefined, completed, rangesText: o.waveRange, workPath, hasRow: (p) => index.some((e) => e.gate === gate && waveNumber(e.wave) === p.wave) });
   const exemptWaves = [...new Set(completed.filter((p) => exempt.has(`${p.wave}|${p.lane || ''}`)).map((p) => p.wave))];
   if (exempt.size === completed.length) {
     return Object.freeze({ ok: true, gate, enforcement, phase: ctx.phase, completed_waves: [...new Set(completed.map((p) => p.wave))], completed_detail: completed, lacking: [], lacking_detail: [], not_applicable: exemptWaves, scope_exempt: exemptWaves, placement: PL.REASON, head: null, reason: null });
@@ -611,12 +617,10 @@ function waveStatus(o) {
       lacking: [], lacking_detail: [], not_applicable: [...new Set(completed.map((p) => p.wave))], head: null, reason: null, permit_state: ws.permit.state,
     });
   }
-  const workPath = o.workPath === undefined ? ctx.root : path.resolve(String(o.workPath));
   const repo = C.commonDirOf(ctx.root);
   const h = WV.headIn(workPath, repo);
   if (h.problem) throw inputError(h.problem);
   const store = WV.readWaivers();
-  const planSha = fs.existsSync(ctx.planPath) ? sha256(fs.readFileSync(ctx.planPath)) : null;
   const tips = laneTips(o.laneWorkPaths, repo);
   tips[''] = { workPath, head: h.head };
   const candidates = (p) => (planSha === null ? [] : [
@@ -771,9 +775,9 @@ function cmdXprovLoadCheck(args) {
 }
 
 function cmdXprovWaveStatus(args) {
-  return withFlags(args, { phase: 'str', waves: 'str', lane: 'str', 'work-path': 'str', 'lane-work-path': 'str' }, 'wave-status', (f) => {
-    if (!f.phase) return usageExit('wave-status requires --phase <name> [--waves 1,2 [--lane <id>]] [--work-path <dir>] [--lane-work-path <lane>=<dir>[,…]]');
-    const r = waveStatus({ phase: f.phase, waves: f.waves, lane: f.lane, workPath: f['work-path'], laneWorkPaths: f['lane-work-path'] });
+  return withFlags(args, { phase: 'str', waves: 'str', lane: 'str', 'work-path': 'str', 'lane-work-path': 'str', 'expect-sha': 'str', 'wave-range': 'str' }, 'wave-status', (f) => {
+    if (!f.phase) return usageExit('wave-status requires --phase <name> [--waves 1,2 [--lane <id>]] [--expect-sha <sha256>] [--wave-range <n>=<base>..<head>,…] [--work-path <dir>] [--lane-work-path <lane>=<dir>[,…]]');
+    const r = waveStatus({ phase: f.phase, waves: f.waves, lane: f.lane, workPath: f['work-path'], laneWorkPaths: f['lane-work-path'], expectSha: f['expect-sha'], waveRange: f['wave-range'] });
     process.stderr.write(r.ok ? `xprov wave-status: ${r.not_applicable ? `waves ${r.not_applicable.join(', ')}: ${noticeOf(r.permit_state, r.placement)}` : `waves ${r.completed_waves.join(', ')} inspected or waived`}\n` : `xprov wave-status: waves lacking a ${r.gate} pass or waiver: ${r.lacking.join(', ')} (enforcement ${r.enforcement})\n`);
     return finish(r, r.ok ? X.EXIT_PASS : X.EXIT_FAIL);
   });

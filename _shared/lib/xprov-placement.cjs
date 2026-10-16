@@ -104,6 +104,24 @@ function pathsIn(text) {
   return [...out];
 }
 
+const LOOSE_SPLIT_RE = /[\s`'"<>()[\]{},;|&$=]+/;
+const LOOSE_EDGE_RE = /^[-*#>:]+|[:.]+$/g;
+
+/**
+ * Every relative path-shaped token of the whole text, quoted or not, under any heading (WP-3): a surface file named in prose or under `## Files`
+ * still makes the plan run. Absolute paths, URLs, `~` and `..` segments in free text are not repo paths and are skipped here (the strict
+ * backtick rule of the `## Wave` sections still counts them as unclassifiable = surface).
+ */
+function looseTokens(text) {
+  const out = new Set();
+  for (const raw of String(text).split(LOOSE_SPLIT_RE)) {
+    const t = raw.replace(LOOSE_EDGE_RE, '');
+    if (t === '' || t.startsWith('/') || t.startsWith('~') || t.includes(':') || t.split('/').includes('..')) continue;
+    if (t.includes('/') || EXT_RE.test(t)) out.add(t);
+  }
+  return [...out];
+}
+
 /** { num, paths, deps } per `## Wave N` section of the plan text. */
 function wavesOf(planText) {
   return LS.parseWaves(planText).map((w) => Object.freeze({ num: w.num, paths: pathsIn(w.body), deps: LS.declaredDeps(w.body) }));
@@ -127,7 +145,7 @@ function planPlacement(root, planPath) {
   const size = sizeOfSpec(root, specRefOf(text));
   if (waves.length === 0) return runs('PLAN.md has no `## Wave` section: placement cannot decide', { size, surface: null });
   if (size === SIZE_L) return runs('spec size L', { size, surface: null });
-  const surface = surfaceOf(waves.flatMap((w) => w.paths));
+  const surface = surfaceOf([...waves.flatMap((w) => w.paths), ...looseTokens(text)]);
   return surface ? runs('the plan names security surface', { size, surface }) : exempt(`spec size ${size === null ? 'unknown' : size} and no security surface in the files the plan names`, { size, surface });
 }
 
@@ -155,20 +173,43 @@ function wavePlacement(planPath, wave, workPath, base) {
   return surface ? runs('a later wave depends on this wave and it touches security surface', { depended: true, surface }) : exempt('a later wave depends on this wave, but no security surface in its files or its diff', { depended: true, surface });
 }
 
-/**
- * wave-status side (no diff known there): a completed wave is exempt when placement from the PLAN alone says so
- * (nobody depends on it, or the files the plan names for it are no surface). The caller still runs it normally when the gate left a row for it.
- */
-function waveExemptFromPlan(planPath, wave) {
-  const text = readPlan(planPath);
-  if (text === null) return false;
-  const f = planFactsOfWave(text, wave);
-  return f.listed && (!f.depended || !f.surface);
+const RANGE_RE = /^(\d{1,4})=([0-9a-fA-F]{7,40})\.\.([0-9a-fA-F]{7,40})$/;
+
+/** `--wave-range 1=<base>..<head>,2=…` → Map wave → { base, head }; throws A1_INPUT on a malformed entry. */
+function parseRanges(value) {
+  const m = new Map();
+  if (value === undefined) return m;
+  for (const part of String(value).split(',').map((s) => s.trim()).filter(Boolean)) {
+    const r = RANGE_RE.exec(part);
+    if (r === null) throw C.inputError(`--wave-range entries are <wave>=<base sha>..<head sha>, got ${JSON.stringify(C.clip(part, 80))}`);
+    m.set(Number(r[1]), Object.freeze({ base: r[2], head: r[3] }));
+  }
+  return m;
 }
 
-/** Keys `wave|lane` of the completed pairs placement exempts from the plan alone and for which the gate left no row (a row is judged normally). */
-function exemptKeys(planPath, completed, hasRow) {
-  return new Set(completed.filter((p) => waveExemptFromPlan(planPath, p.wave) && !hasRow(p)).map((p) => `${p.wave}|${p.lane || ''}`));
+/**
+ * Keys `wave|lane` of the completed pairs wave-status may treat as scope_exempt (spec 016 FR-020, Samuel wave 7 WP-2):
+ * the PLAN.md must be the one accepted at Load (expectSha given and equal), the gate left no row for the wave, and either no later wave
+ * depends on it (accepted, the PR diff gate reviews the whole diff, WP-4) or the plan names no surface for it AND its real diff
+ * (--wave-range, base..head) re-classifies as no surface. A missing range or a diff git cannot produce: not exempt.
+ */
+function exemptKeys(o) {
+  const text = readPlan(o.planPath);
+  if (text === null || !o.planShaOk) return new Set();
+  const ranges = parseRanges(o.rangesText);
+  const ok = (p) => {
+    if (o.hasRow(p)) return false;
+    const f = planFactsOfWave(text, p.wave);
+    if (!f.listed) return false;
+    if (!f.depended) return true;
+    const r = ranges.get(p.wave);
+    return !f.surface && r !== undefined && !rangeSurface(o.workPath, r);
+  };
+  return new Set(o.completed.filter(ok).map((p) => `${p.wave}|${p.lane || ''}`));
+}
+
+function rangeSurface(workPath, r) {
+  try { return surfaceOf(SC.diffPaths(workPath, r.base, r.head)); } catch (_e) { return true; }
 }
 
 /** The gate's stdout report for an exempt review: nothing was run, nothing is written. */
@@ -178,4 +219,4 @@ function result(base, pl) {
 
 const NOTICE = 'not_applicable — scope_exempt: the placement rule says this review does not apply (small or no security surface); no code leaves, the pipeline continues';
 
-module.exports = { REASON, NOTICE, SIZES, specRefOf, sizeOfSpec, pathsIn, wavesOf, planPlacement, wavePlacement, waveExemptFromPlan, exemptKeys, planFactsOfWave, result };
+module.exports = { REASON, NOTICE, SIZES, specRefOf, sizeOfSpec, pathsIn, wavesOf, planPlacement, wavePlacement, exemptKeys, planFactsOfWave, parseRanges, result };

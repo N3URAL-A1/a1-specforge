@@ -296,9 +296,17 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   placement, exit 1, nothing run, nothing written, no consent
                   question. No flag sets the size (--size, --spec: exit 2).
                   load-check accepts an exempt plan (placement scope_exempt);
-                  wave-status lists exempt waves under scope_exempt (a wave with a
-                  gate row is judged on its rows; an exempt wave's commits do not
-                  break the chain of the reviewed waves around it).
+                  wave-status lists exempt waves under scope_exempt only for the
+                  PLAN.md bound by --expect-sha (a different sha fails plan_changed;
+                  without it nothing is exempt). A wave no later wave depends on is
+                  exempt; a depended-on wave is exempt only when the plan names no
+                  surface for it AND its real diff (--wave-range <n>=<base>..<head>)
+                  is none (no range or no diff: not exempt). A wave with a gate row
+                  is judged on its rows. Across an exempt wave the reviewed head must
+                  still be an ancestor of the next base / the tip; only the
+                  workflow-files-only rule is relaxed, and only when the gap's diff
+                  is no security surface. The plan placement reads every relative
+                  path-shaped token of the whole PLAN.md, not only the ## Wave ones.
                   Spec 016 FR-012: a repository with NO permit (permit state absent,
                   origin_changed or unbound_legacy) on an applies_to: permitted-repos
                   row also gets not_applicable, reason external_review_not_permitted,

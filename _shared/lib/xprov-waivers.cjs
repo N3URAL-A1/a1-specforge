@@ -153,8 +153,14 @@ function leadsTo(workPath, from, to, phase) {
  * Returns a Map pair-key → chosen entry or null. Walks each lane from its last
  * completed wave down: the last must sit at the tip (atTip), every earlier one
  * must end exactly where the next one's base starts; a lacking successor makes
- * every earlier wave of the lane lack too (fail closed). `exempt` (Set of `wave|lane`, optional): placement-exempt waves are skipped and
- * make the gap around them unchecked. */
+ * every earlier wave of the lane lack too (fail closed). `exempt` (Set of `wave|lane`, optional): placement-exempt waves are skipped; the
+ * gap around them keeps the ancestry rule and drops the workflow-files-only rule when the gap's diff is no security surface. */
+/** The paths changed from..to are security surface (Wave 6 classifier); a diff git cannot produce counts as surface (guarded). */
+function gapIsSurface(workPath, from, to) {
+  const SC = require('./xprov-scope.cjs');
+  try { return SC.classifyPaths(SC.diffPaths(workPath, from, to), SC.loadGlobs()).security_surface; } catch (_e) { return true; }
+}
+
 function chainCoverage(pairs, candidates, tips, phase, exempt) {
   const chosen = new Map();
   const skip = exempt instanceof Set ? exempt : new Set();
@@ -170,8 +176,12 @@ function chainCoverage(pairs, candidates, tips, phase, exempt) {
       const p = waves[i];
       if (skip.has(key(p))) { gap = true; continue; }
       const isLast = !seenRequired;
+      // across exempt waves (gap) the head must STILL be an ancestor of the next base / the tip; only the "workflow files only" rule is
+      // relaxed, and only when what lies in the gap is no security surface (spec 016 FR-020, Samuel wave 7 WP-1)
+      const reaches = (c, to) => leadsTo(tip.workPath, c.head, to, phase)
+        || (gap && inHistory(tip.workPath, c.head, to) && !gapIsSurface(tip.workPath, c.head, to));
       const ok = (c) => SHA_RE.test(String(c.head)) && SHA_RE.test(String(c.base)) && inHistory(tip.workPath, c.base, c.head)
-        && (isLast ? (gap || leadsTo(tip.workPath, c.head, tip.head, phase)) : next !== null && (gap || leadsTo(tip.workPath, c.head, next.base, phase)));
+        && (isLast ? reaches(c, tip.head) : next !== null && reaches(c, next.base));
       const pick = tip ? [...candidates(p)].reverse().find(ok) || null : null;
       chosen.set(key(p), pick);
       next = pick;
