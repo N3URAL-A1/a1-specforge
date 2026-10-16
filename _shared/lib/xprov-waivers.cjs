@@ -153,9 +153,9 @@ function leadsTo(workPath, from, to, phase) {
  * Returns a Map pair-key → chosen entry or null. Walks each lane from its last
  * completed wave down: the last must sit at the tip (atTip), every earlier one
  * must end exactly where the next one's base starts; a lacking successor makes
- * every earlier wave of the lane lack too (fail closed). `exempt` (Set of `wave|lane`, optional): placement-exempt waves are skipped; the
- * gap around them keeps the ancestry rule; the workflow-files-only rule is dropped there (the gap is exactly the verified exempt ranges). */
-function chainCoverage(pairs, candidates, tips, phase, exempt) {
+ * every earlier wave of the lane lack too (fail closed). `exempt` (Set of `wave|lane`, optional) and `ranges` (Map wave -> verified { base, head }): placement-exempt waves are skipped; the
+ * gap around them keeps the ancestry rule via the wave's verified range; the workflow-files-only rule is dropped there (the gap is exactly the verified exempt ranges). */
+function chainCoverage(pairs, candidates, tips, phase, exempt, ranges) {
   const chosen = new Map();
   const skip = exempt instanceof Set ? exempt : new Set();
   const key = (p) => `${p.wave}|${p.lane || ''}`;
@@ -172,7 +172,13 @@ function chainCoverage(pairs, candidates, tips, phase, exempt) {
       const isLast = !seenRequired;
       // across exempt waves (gap) the head must STILL be an ancestor of the next base / the tip; the "workflow files only" rule is relaxed
       // because the caller passes `exempt` only for waves whose ranges it verified to tile the gap (xprov-wave-ranges.cjs, spec 016 FR-020)
-      const reaches = (c, to) => leadsTo(tip.workPath, c.head, to, phase) || (gap && inHistory(tip.workPath, c.head, to));
+      // and the pass head must lead to the END of the wave's verified range (only workflow files between): commits added to the wave after its review
+      // are not left unclassified in the gap (Samuel wave 7 round 3)
+      const viaRange = (c, to) => {
+        const r = ranges instanceof Map ? ranges.get(p.wave) : undefined;
+        return r !== undefined && leadsTo(tip.workPath, c.head, r.head, phase) && inHistory(tip.workPath, r.head, to);
+      };
+      const reaches = (c, to) => leadsTo(tip.workPath, c.head, to, phase) || (gap && viaRange(c, to));
       const ok = (c) => SHA_RE.test(String(c.head)) && SHA_RE.test(String(c.base)) && inHistory(tip.workPath, c.base, c.head)
         && (isLast ? reaches(c, tip.head) : next !== null && reaches(c, next.base));
       const pick = tip ? [...candidates(p)].reverse().find(ok) || null : null;

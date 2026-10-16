@@ -218,7 +218,7 @@ function exemptKeys(o) {
     const surface = rangeSurface(o.workPath, v.ranges.get(p.wave));
     if (!f.depended) { keys.add(`${p.wave}|`); if (surface) deferred.push(p.wave); } else if (!f.surface && !surface) keys.add(`${p.wave}|`);
   }
-  return { keys, deferred, refused: null };
+  return { keys, deferred, refused: null, ranges: v.ranges };
 }
 
 function rangeSurface(workPath, r) {

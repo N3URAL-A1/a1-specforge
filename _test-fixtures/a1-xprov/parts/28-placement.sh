@@ -270,7 +270,7 @@ caseST34() {
   assert_eq "ST3 a wave with a gate row is lacking, not exempt (exit 1, lacking [6], nothing exempt)" "$(scen_st3)" "1/[6]/[]"
   redproof28 "ST3" scen_st3 "1/[6]/[]" xprov-gate.cjs "(p) => index.some((e) => e.gate === gate && waveNumber(e.wave) === p.wave)" "(p) => false"
   assert_eq "ST4 wave 7 waived, then a commit of exempt wave 12: wave-status ok" "$(scen_st4)" "0/true/[]"
-  redproof28 "ST4" scen_st4 "0/true/[]" xprov-waivers.cjs "|| (gap && inHistory(tip.workPath, c.head, to));" ";"
+  redproof28 "ST4" scen_st4 "0/true/[]" xprov-waivers.cjs "|| (gap && viaRange(c, to));" ";"
 }
 
 # ---------- review rounds (Samuel wave 7): WP-1 chain gap keeps ancestry, WP-2 sha + verified ranges, WP-3 whole-plan tokens in every form ----------
@@ -282,6 +282,14 @@ scen_wp1a() {
   local base="$PHASE_HEAD"; commit28 src/w7.js; local h7; h7="$(head28)"; commit28 src/after-wave-7.js
   git -C "$PHASE_REPO" checkout -q -b decoy "$base"; commit28 src/decoy.js; local hd; hd="$(head28)"; git -C "$PHASE_REPO" checkout -q feature
   waiver28 7 "$hd" "$base"; RANGES28="7=$base..$h7,12=$h7..$(head28)"; wstat28 --waves 7,12
+  echo "$G_RC/$(json_get "$G_OUT" "JSON.stringify(j.lacking)")"
+}
+# WP-1d: a surface commit added to wave 7 AFTER its review (the waiver names the earlier head) sits in the wave's verified range: not covered
+scen_wp1d() {
+  prep28 016.PLAN.md; write_permit "$PHASE_REPO" fixture record/2026-09-24-fixture.md
+  local base="$PHASE_HEAD"; commit28 src/w7.js; local h7; h7="$(head28)"; waiver28 7 "$h7" "$base"
+  commit28 .github/workflows/ci.yml; local late; late="$(head28)"; commit28 src/w12.js
+  RANGES28="7=$base..$late,12=$late..$(head28)"; wstat28 --waves 7,12
   echo "$G_RC/$(json_get "$G_OUT" "JSON.stringify(j.lacking)")"
 }
 # WP-1b/c: an honest waived wave 7, then (b) a non-depended wave 12 with a CI diff: allowed in the gap, deferred_to_pr; (c) a depended wave 8 with a CI diff: not exempt
@@ -335,7 +343,9 @@ scen_wr_anchor() { prep28 016.PLAN.md; write_permit "$PHASE_REPO" fixture record
 scen_wp3() { prep28 002.PLAN.md "$SPEC_M28"; prepend28 "$1"; gate28 --gate "$GATE_PLAN"; out28; }
 caseWP() {
   assert_eq "WP1 a waiver whose head sits on a side branch does not cover wave 7 across a verified exempt wave (ancestry kept)" "$(scen_wp1a)" "1/[7]"
-  redproof28 "WP1a" scen_wp1a "1/[7]" xprov-waivers.cjs "|| (gap && inHistory(tip.workPath, c.head, to));" "|| gap;"
+  redproof28 "WP1a" scen_wp1a "1/[7]" xprov-waivers.cjs "|| (gap && viaRange(c, to));" "|| gap;"
+  assert_eq "WP1 a late surface commit after the pass of wave 7 (inside its verified range) is not covered by the pass" "$(scen_wp1d)" "1/[7]"
+  redproof28 "WP1d" scen_wp1d "1/[7]" xprov-waivers.cjs "return r !== undefined && leadsTo(tip.workPath, c.head, r.head, phase) && inHistory(tip.workPath, r.head, to);" "return r !== undefined && inHistory(tip.workPath, r.head, to);"
   assert_eq "WP1 an honest waived wave 7, then a non-depended wave 12 with a CI diff: covered, wave 12 listed as deferred_to_pr (no false stop)" "$(scen_wp1b)" "0/[]/[12]/[12]"
   redproof28 "WP1b" scen_wp1b "0/[]/[12]/[12]" xprov-placement.cjs "if (surface) deferred.push(p.wave);" "if (false) deferred.push(p.wave);"
   assert_eq "WP1 a depended wave 8 with a CI diff in the gap is not exempt: it and the wave before it lack" "$(scen_wp1c)" "1/[7,8]"
