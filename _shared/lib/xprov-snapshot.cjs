@@ -76,6 +76,8 @@ const X = require('./xprov.cjs');
 const C = require('./xprov-common.cjs');
 const AL = require('./xprov-allowlist.cjs');
 const SR = require('./xprov-scan-records.cjs');
+const EX = require('./xprov-snapshot-exclude.cjs');
+const CH = require('./xprov-consent-hits.cjs');
 const { resolveTool } = require('./xprov-preflight.cjs');
 // Shared helpers — one definition each, in xprov-common.cjs.
 const { DIR_MODE, mkdir0700, writeStdoutSync, gitSpawn: git } = C;
@@ -522,11 +524,28 @@ function scanTrackedFiles(dir, opts) {
 /** gitleaks when on PATH, with a1's own config (never the reviewed repo's). */
 function gitleaksScan(dir) {
   const bin = resolveTool('gitleaks'); // absolute path once, like python3 and codex (FR-016)
-  if (bin === null) return { available: false, hit: false };
-  const r = spawnSync(bin, ['detect', '--no-git', '--source', dir, '--no-banner', '--redact', '--config', GITLEAKS_CONFIG],
-    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-  if (r.error && r.error.code === 'ENOENT') return { available: false, hit: false };
-  return { available: true, hit: r.status !== 0 };
+  if (bin === null) return { available: false, hit: false, findings: [] };
+  const rdir = fs.mkdtempSync(path.join(os.tmpdir(), 'a1-xprov-gl-'));
+  try {
+    const report = path.join(rdir, 'report.json');
+    const r = spawnSync(bin, ['detect', '--no-git', '--source', dir, '--no-banner', '--redact', '--config', GITLEAKS_CONFIG, '--report-format', 'json', '--report-path', report],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    if (r.error && r.error.code === 'ENOENT') return { available: false, hit: false, findings: [] };
+    return { available: true, hit: r.status !== 0, findings: r.status !== 0 ? gitleaksFindings(report, dir) : [] };
+  } finally {
+    fs.rmSync(rdir, { recursive: true, force: true });
+  }
+}
+
+/** Path + rule of a gitleaks JSON report (never the secret), paths relative to the scanned dir; an unreadable report gives one unplaced finding. */
+function gitleaksFindings(report, dir) {
+  const unplaced = [{ path: '(unplaced)', rule: 'gitleaks', line: 1, column: 1 }];
+  try {
+    const roots = [dir, fs.realpathSync(dir)];
+    const raw = JSON.parse(fs.readFileSync(report, 'utf8'));
+    const prefix = roots.find((p) => Array.isArray(raw) && raw.length > 0 && raw.every((e) => e && typeof e.File === 'string' && e.File.startsWith(`${p}/`)));
+    return prefix === undefined ? unplaced : CH.fromGitleaksReport(raw, prefix);
+  } catch (_e) { return unplaced; }
 }
 
 // ---------- snapshot ----------
@@ -668,7 +687,7 @@ function copyInputs(dir, inputs) {
 
 /** gitleaks over in-memory blobs, written to a 0700 temp dir that is removed. */
 function gitleaksBlobs(blobs) {
-  if (blobs.length === 0) return { available: true, hit: false };
+  if (blobs.length === 0) return { available: true, hit: false, findings: [] };
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'a1-xprov-base-'));
   try {
     blobs.forEach((b, n) => {
@@ -753,7 +772,9 @@ function gitleaksAll(dir, out) {
   const gl = gitleaksScan(dir);
   const inputBlobs = out.ins.labels.map((l) => ({ path: path.basename(l.dest), buf: fs.readFileSync(l.dest) }));
   const blobs = gitleaksBlobs([...out.base_.blobs, ...out.scan.missingBlobs, ...inputBlobs]);
-  return { available: gl.available, hit: gl.hit || blobs.hit };
+  // tree findings sit on the head side; blob findings (base, stripped HEAD blobs, inputs) are never excludable
+  const findings = [...gl.findings.map((f) => ({ ...f, side: 'head' })), ...blobs.findings.map((f) => ({ ...f, side: 'blob' }))];
+  return { available: gl.available, hit: gl.hit || blobs.hit, findings };
 }
 
 /** sha256 of the diff the runner will hash (`git diff --binary <base>` under the runner-like env): { sha } or { error }. */
@@ -793,7 +814,45 @@ function writeScanPass({ dir, cl, out, hash, gl, repoKey }) {
   return { ok: true };
 }
 
-function snapshot(opts) {
+/** Pattern hits carry no position; the hits record (xprov consent question --kind allowlist) needs line and column. */
+function positionedHits(dir, hits) {
+  const out = [];
+  for (const h of hits) {
+    if (h.side !== 'head' || !CH.plainRelPath(h.path)) continue;
+    if (Number.isInteger(h.line) && Number.isInteger(h.column)) { out.push(h); continue; }
+    const full = path.join(dir, h.path);
+    let st = null;
+    try { st = fs.lstatSync(full); } catch (_e) { continue; }
+    for (const m of scanEntry(full, st, h.path, true, false)) if (m.pattern === h.rule && Number.isInteger(m.line)) out.push({ ...h, line: m.line, column: m.column });
+  }
+  return out;
+}
+
+/** The scan hits record of a stopped scan (changed-line hits), or null when nothing is recordable. */
+function writeHitsRecord(dir, cl, hits, repoKey) {
+  const usable = positionedHits(dir, hits);
+  if (usable.length === 0) return null;
+  try {
+    CH.writeHits(path.basename(dir), EX.hitsRecordFor({ basename: path.basename(dir), repoKey, commit: cl.commit, hits: usable }));
+    return path.basename(dir);
+  } catch (_e) { return null; }
+}
+
+/** The failed-scan fields of a secret stop: the first hit as before, plus what FR-029 decides (excludable paths, or the recorded changed hits). */
+function secretStop({ dir, cl, out, al, gl, repoKey, canExclude }) {
+  const hits = [
+    ...al.uncovered.map((u) => ({ path: u.path, rule: u.pattern, side: u.side || 'head' })),
+    ...gl.findings.map((f) => ({ path: f.path, rule: f.rule, side: f.side, line: f.line, column: f.column })),
+  ];
+  const cls = EX.classify(hits, { changed: new Set(out.base_.paths), inputs: new Set(out.ins.labels.map((l) => l.label)), tracked: new Set(out.scan.tracked), canExclude });
+  const first = al.uncovered.length
+    ? { secret_pattern: al.uncovered[0].pattern, secret_side: al.uncovered[0].side || 'head', reason_detail: al.unresolved ? X.ALLOWLIST_DETAILS.anchor_unresolved : null }
+    : { secret_pattern: 'gitleaks', reason_detail: 'gitleaks' };
+  const scan = cls.excludable.length ? null : writeHitsRecord(dir, cl, cls.changed.length ? cls.changed : hits, repoKey);
+  return { reason: X.REASONS.secret_in_snapshot, ...first, excludable: cls.excludable, scan_record: scan };
+}
+
+function snapshotPass(opts, exclude) {
   const sourceRepo = path.resolve(opts.sourceRepo);
   const commit = String(opts.commit);
   const base = opts.base === undefined || opts.base === null ? null : String(opts.base);
@@ -812,6 +871,10 @@ function snapshot(opts) {
   if (!cl.ok) return { ok: false, reason: cl.reason, snapshot: null, commit, detail: cl.detail, ...none };
   const dir = cl.dir;
   const failed = (extra) => { removeSnapshotDirs(dir); return { ok: false, snapshot: null, commit, ...extra }; };
+  if (exclude) { // FR-029: the second pass runs on a clone without the unchanged files that held a hit
+    const ex = EX.excludeFromClone(dir, exclude.map((h) => h.path), [cl.commit, cl.base].filter(Boolean));
+    if (!ex.ok) return failed({ reason: X.REASONS.snapshot_failed, detail: ex.detail, ...none });
+  }
   const out = scanOutbound(dir, cl, opts.inputs, none);
   if (out.fail) return failed(out.fail);
   const al = AL.evaluate({
@@ -821,11 +884,8 @@ function snapshot(opts) {
   const report = allowlistReport(al);
   const counts = { files_scanned: out.scan.files_scanned, base_files_scanned: out.base_.blobs.length, inputs_scanned: out.ins.labels.length };
   if (al.fail) return failed({ reason: al.fail.reason, reason_detail: al.fail.reason_detail || null, detail: al.fail.detail || null, ...counts, ...report });
-  if (al.uncovered.length) {
-    return failed({ reason: X.REASONS.secret_in_snapshot, secret_pattern: al.uncovered[0].pattern, secret_side: al.uncovered[0].side || 'head', reason_detail: al.unresolved ? X.ALLOWLIST_DETAILS.anchor_unresolved : null, ...counts, ...report });
-  }
   const gl = gitleaksAll(dir, out);
-  if (gl.hit) return failed({ reason: X.REASONS.secret_in_snapshot, secret_pattern: 'gitleaks', reason_detail: 'gitleaks', ...counts, ...report });
+  if (al.uncovered.length || gl.hit) return failed({ ...secretStop({ dir, cl, out, al, gl, repoKey: primaryCommon, canExclude: exclude === null && cl.base !== null }), ...counts, ...report });
   const hash = storeDiffHash(dir, cl, out.ins.inputsDir);
   if (hash.error) return failed({ reason: X.REASONS.snapshot_failed, detail: hash.error, ...none });
   const rec = writeScanPass({ dir, cl, out, hash, gl, repoKey: primaryCommon });
@@ -835,6 +895,14 @@ function snapshot(opts) {
     files_skipped: 0, repo_local_removed: cl.repo_local_removed, gitleaks: gl.available,
     inputs: out.ins.copies, diff_sha256: hash.sha, ...report,
   };
+}
+
+/** Review target + scan (see snapshotPass). FR-029: when every hit sits in a file the diff does not change, the clone is made again
+ * without those files and scanned again; the result lists them (path + rule id, never a value). */
+function snapshot(opts) {
+  const first = snapshotPass(opts, null);
+  if (first.ok || !Array.isArray(first.excludable) || first.excludable.length === 0) return first;
+  return { ...snapshotPass(opts, first.excludable), excluded: first.excludable };
 }
 
 /** The input-copy hashes `snapshot()` recorded next to the snapshot, or null. */

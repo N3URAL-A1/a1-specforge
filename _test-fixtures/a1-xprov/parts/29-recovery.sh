@@ -196,9 +196,9 @@ caseBL() {
   assert_eq "BL5 without a1's marker in the run dir the index row alone is no fallback" "$(scen_bl5)" "1/plan_review_missing"
   redproof29 "BL5" scen_bl5 "1/plan_review_missing" xprov-runrecord.cjs "return m !== null && m.blocked_twice === true && m.plan_sha256 === planSha && m.gate === gate;" "return true;"
   assert_eq "BL6 a PLAN.md changed after the fallback is not covered" "$(scen_bl6)" "1/plan_review_missing"
-  redproof29 "BL6" scen_bl6 "1/plan_review_missing" xprov-runrecord.cjs "rec.plan_sha256 !== planSha ||" "false ||" xprov-gate.cjs "e.reason === X.REASONS.blocked && e.plan_sha256 === planSha && RR.blockedFallbackValid" "e.reason === X.REASONS.blocked && RR.blockedFallbackValid" xprov-runrecord.cjs "m.blocked_twice === true && m.plan_sha256 === planSha &&" "m.blocked_twice === true &&"
+  redproof29 "BL6" scen_bl6 "1/plan_review_missing" xprov-runrecord.cjs "rec.plan_sha256 !== planSha ||" "false ||" xprov-accept.cjs "e.reason === X.REASONS.blocked && e.plan_sha256 === planSha && RR.blockedFallbackValid" "e.reason === X.REASONS.blocked && RR.blockedFallbackValid" xprov-runrecord.cjs "m.blocked_twice === true && m.plan_sha256 === planSha &&" "m.blocked_twice === true &&"
   assert_eq "BL7 a wave blocked twice: wave-status accepts it and names the wave" "$(scen_bl7)" "$BLOCKED_NA/0/true/[1]"
-  redproof29 "BL7" scen_bl7 "$BLOCKED_NA/0/true/[1]" xprov-gate.cjs ".map((hb) => ({ kind: 'fallback', head: hb.head, base: hb.base }))" ".slice(0, 0)"
+  redproof29 "BL7" scen_bl7 "$BLOCKED_NA/0/true/[1]" xprov-accept.cjs ".map((hb) => ({ kind: 'fallback', head: hb.head, base: hb.base }))" ".slice(0, 0)"
 }
 
 # ---------- SB: the base of an inspect ----------

@@ -28,6 +28,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { dispositionsPath } = require('./xprov-feedback.cjs');
 const { assertSafeSegment } = require('./io.cjs');
 const X = require('./xprov.cjs');
 const C = require('./xprov-common.cjs');
@@ -107,10 +108,15 @@ function candidate(e, root) {
 }
 
 const scopeKey = (gate, wave, lane) => `${gate}|${wave === null ? '' : wave}|${lane || ''}`;
-// Rows of the current PLAN.md sha, plus the round-cap REVISE of the plan gate at an older sha: after the fixes of round 2 the plan changed, and
-// a dispose that failed (an undisposed MAJOR, spec 016 FR-025) leaves exactly that target for the waiver question (the waiver binds the CURRENT sha).
+// Rows of the current PLAN.md sha, plus the round-cap REVISE of the plan gate at an older sha WHEN the round-2 dispositions file exists: the agent
+// fixed the plan after round 2 and tried to dispose; a dispose that failed (an undisposed MAJOR, spec 016 FR-025) leaves exactly that target for
+// the waiver question (the waiver binds the CURRENT sha). Without that file an older sha stays no target.
 const capCarry = (e) => e.gate === X.GATE_IDS.PLAN_REVIEW && e.verdict === X.VERDICTS.FAIL_WITH_FINDINGS && Number(e.round) === X.ROUND_CAP;
-const planRows = (index, planSha) => index.filter((e) => e.waived !== true && typeof e.verdict === 'string' && GATE_ORDER.includes(e.gate) && (e.plan_sha256 === planSha || capCarry(e)));
+const hasDispositions = (phaseDir) => C.readNoFollow(dispositionsPath({ phaseDir, gate: X.GATE_IDS.PLAN_REVIEW, wave: null, lane: null }, X.ROUND_CAP), X.MAX_RESULT_BYTES) !== null;
+const planRows = (index, planSha, phaseDir) => {
+  const carry = index.some(capCarry) && hasDispositions(phaseDir);
+  return index.filter((e) => e.waived !== true && typeof e.verdict === 'string' && GATE_ORDER.includes(e.gate) && (e.plan_sha256 === planSha || (carry && capCarry(e))));
+};
 
 /** True when the scope holds a pass whose run dir proves it. */
 function passed(rows, gate, planSha, root) {
@@ -174,7 +180,7 @@ function collectTargets(o) {
   if (!store.ok && !store.missing) return refuse('waiver_store_unusable', `the waiver store is not usable (${store.why}); fix or remove it yourself; nothing written`);
   const planSha = C.sha256(planBytes);
   const base = { repo, phase: ctx.phase, planSha };
-  const rows = planRows(index, planSha);
+  const rows = planRows(index, planSha, ctx.phaseDir);
   const scopes = new Map();
   for (const e of rows) {
     const k = scopeKey(e.gate, C.waveNumber(e.wave), e.lane);

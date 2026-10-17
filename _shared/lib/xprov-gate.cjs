@@ -249,6 +249,7 @@ function allowlistFields(s) {
     allowlist_note: s.allowlist_note || null,
     scoped_hits: Array.isArray(s.scoped_hits) ? s.scoped_hits : [],
     scoped_uncovered: Array.isArray(s.scoped_uncovered) ? s.scoped_uncovered : [],
+    excluded: Array.isArray(s.excluded) ? s.excluded : [], scan_record: typeof s.scan_record === 'string' ? s.scan_record : null, // FR-029: unchanged files left out (path + rule), the hits record of a stop
   });
 }
 
@@ -256,8 +257,9 @@ function allowlistFields(s) {
  * allowlist was applied: path, pattern NAME, count and class per pair — never
  * the matched text or a fingerprint — plus stale and uncovered pairs. */
 function noteAllowlist(ctx, al) {
-  if (!al || !al.allowlist_anchor) return;
+  if (!al || !(al.allowlist_anchor || al.excluded.length)) return;
   const lines = [
+    ...al.excluded.map((x) => `excluded (unchanged file, secret hit; the reviewer did not see it): ${x.path} · ${x.rule}`),
     `anchor: ${al.allowlist_anchor}`, `approved blob: ${al.allowlist_approved_blob}`, `allowlisted_hits: ${al.allowlisted_hits}`,
     ...al.allowlisted.map((a) => `${a.path} · ${a.pattern} · count ${a.count} · ${a.class}`),
     // spec 012 FR-023: scope hits and scope refusals per (prefix, pattern), counts only
@@ -424,6 +426,7 @@ function driveGate(ctx, state) {
     state.recovery = R.runnerRecovery(rv).reduce(addRecovery, state.recovery);
     const { ran, norm } = rv;
     if (!ran.ok) return (result = fail('run', ran.reason, ran.detail, { ...al, run_porcelain: ran.porcelain || null }));
+    if (al.excluded.length && !RR.writeExcluded(ran.resultPath, al.excluded, ctx.root)) return (result = fail('run', X.REASONS.malformed, 'the excluded-files record could not be written next to the run record', { ...al, result_path: ran.resultPath }));
     if (!norm.ok) return (result = fail('normalize', norm.reason, norm.detail, { ...al, result_path: ran.resultPath }));
     if (rv.fallback && markedFallback(ctx, ran, norm)) return (result = Object.freeze({ ...base, ...al, run_porcelain: ran.porcelain, result_path: ran.resultPath, xreview_path: norm.xreviewPath, step: 'normalize', verdict: X.VERDICT_NOT_APPLICABLE, reason: X.REASONS.codex_blocked_fallback, reason_detail: R.BLOCKED_NOTICE, next: null }));
     const capped = reviewedOutcome(ctx, base, al, ran, norm);

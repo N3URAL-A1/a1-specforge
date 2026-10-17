@@ -159,7 +159,7 @@ scen_rowhead24() {
   phase24 both; fix24 rewrite '"gate":"'$WAVEGATE24'","wave":3,"round":2,"field":"head","value":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"'
   cli24 question --kind waiver --phase p24; node -p 'process.argv[1].includes("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") ? "row-head-used" : "run-record-head-used"' "$(json_get "$G_OUT" 'j.question')"
 }
-redproof24 "CW1c" scen_forged24 "0|2|forged-row-ignored" xprov-consent-targets.cjs "if (rec === null || rec.plan_sha256 !== planSha" "if (false && rec.plan_sha256 !== planSha"
+redproof24 "CW1c" scen_forged24 "0|2|forged-row-ignored" xprov-consent-targets.cjs "if (rec === null || typeof e.plan_sha256" "if (false && typeof e.plan_sha256"
 redproof24 "CW1b" scen_rowhead24 "run-record-head-used" xprov-consent-targets.cjs "RR.reviewedHeadBase(row.result_path, rec, root)" "({ head: row.head === undefined ? null : row.head, base: row.base === undefined ? null : row.base })"
 
 # ---------- CW2: yes -> one record per listed target, shape of the terminal waive, bound audit line ----------
@@ -380,7 +380,7 @@ caseCW15() {
   assert_eq "CW15 probe B: a row with the NEW PLAN.md sha pointing at the OLD plan's run record lists nothing" "$(scen_planbind24)" "1|no_failed_targets"
   assert_eq "CW15 a run record of another mode (review for wave-inspect) lists nothing" "$(scen_modebind24)" "0|1|false"
   assert_eq "CW15 a copied wave row (the findings record names another wave) lists nothing" "$(scen_wavebind24)" "0|2|false"
-  redproof24 "CW15a" scen_planbind24 "1|no_failed_targets" xprov-consent-targets.cjs "rec.plan_sha256 !== planSha || rec.mode" "rec.mode"
+  redproof24 "CW15a" scen_planbind24 "1|no_failed_targets" xprov-consent-targets.cjs "rec.plan_sha256 !== e.plan_sha256 || rec.mode" "rec.mode"
   redproof24 "CW15b" scen_modebind24 "0|1|false" xprov-consent-targets.cjs " || rec.mode !== WANT_MODE[e.gate]" ""
   redproof24 "CW15c" scen_wavebind24 "0|2|false" xprov-consent-targets.cjs "if (doc !== null && !(doc.gate === e.gate && C.waveNumber(doc.wave) === wave && laneOf(doc.lane) === lane)) return null;" ""
 }

@@ -270,7 +270,7 @@ caseDP() {
   redproof30 "DP1c" scen_dp1b "0/bound-now/true/dispositions//changed" $DPN "const planSha = C.sha256(fs.readFileSync(ctx.planPath));" "const planSha = cap.rec.plan_sha256;"
   redproof30 "DP2" scen_dp2 "1/blocker_open/absent/0/false//plan_review_missing/B1" $DPN "if (open.blockers.length) return refuse(" "if (false) return refuse("
   redproof30 "DP3a" scen_dp3 "1/undisposed/absent/0/false//plan_review_missing/L1:no_line" $DPN "if (judged.problems.length) return refuse(" "if (false) return refuse("
-  redproof30 "DP3b" scen_dp3b "1/undisposed/1/current-sha" xprov-consent-targets.cjs "&& (e.plan_sha256 === planSha || capCarry(e)));" "&& e.plan_sha256 === planSha);"
+  redproof30 "DP3b" scen_dp3b "1/undisposed/1/current-sha" xprov-consent-targets.cjs "(carry && capCarry(e))));" "false));"
   redproof30 "DP3c" scen_dp3d "0/none" xprov-consent-targets.cjs "|| sideClosed(index, gate, C.waveNumber(scopeRows[0].wave), laneOf(scopeRows[0].lane), planSha, o.root)) continue;" ") continue;"
   redproof30 "DP4a" scen_dp4h "0/ok/1+1/present/contained" $DPN $'id.replace(/[.*+?^${}()|[\\]\\\\]/g, \'\\\\$&\')' "id"
   redproof30 "DP4b" scen_dp4b "1/undisposed/L1:reason_instruction_shaped/absent" $DPN "if (instructionMarker({ id: '', evidence: reason, fix: '' }, []) !== null) return { ok: false, why: 'reason_instruction_shaped' };" ""
@@ -290,5 +290,69 @@ caseDP() {
   redproof30 "DP6f" scen_dp6f "$W6" $RRN "if (m.plan_sha256 !== want.planSha || m.round" "if (m.round" xprov-accept.cjs "e.accepted === DISPOSITIONS && e.plan_sha256 === planSha &&" "e.accepted === DISPOSITIONS &&"
 }
 caseDP
+# ---------- EX: FR-029 — a secret hit in a file the diff does not change is excluded; a hit in a changed file stops ----------
+EXK30="AKIA""QQQQQQQQQQQQQQQQ" # aws_access_key_id shape, assembled at run time
+# ex_repo30 <name> <leak in old.js 0|1> <leak in new.js 0|1> — base commit holds src/old.js; the wave commit adds src/new.js. Sets PHASE_*, EX_BASE.
+ex_repo30() {
+  make_phase "$1"
+  if [[ "$2" == 1 ]]; then printf 'k = "%s"\n' "$EXK30" > "$PHASE_REPO/src/old.js"; else printf 'k = 1\n' > "$PHASE_REPO/src/old.js"; fi
+  ( cd "$PHASE_REPO" && git add -A && git commit -qm "fixture: old.js" ); EX_BASE="$(cd "$PHASE_REPO" && git rev-parse HEAD)"
+  if [[ "$3" == 1 ]]; then printf 'k = "%s"\n' "$EXK30" > "$PHASE_REPO/src/new.js"; else printf 'export const two = 2;\n' > "$PHASE_REPO/src/new.js"; fi
+  ( cd "$PHASE_REPO" && git add -A && git commit -qm "fixture: wave commit" ); PHASE_HEAD="$(cd "$PHASE_REPO" && git rev-parse HEAD)"
+}
+ex_snap30() { # [snapshot flags...] — sets EX_OUT EX_ERR EX_RC EX_DIR
+  EX_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov snapshot --repo "$PHASE_REPO" --commit HEAD --plan "$PHASE_PLAN" "$@" 2>"$TMP30/ex.err")"; EX_RC=$?
+  EX_ERR="$(cat "$TMP30/ex.err")"; EX_DIR="$(json_get "$EX_OUT" "j.snapshot || ''")"; [[ "$EX_DIR" == "UNPARSEABLE" ]] && EX_DIR=""
+}
+hits30() { find "$HOME/.a1-xprov/scan-records" -type f -name '*.hits.json' 2>/dev/null | wc -l | tr -d ' '; }
+clearhits30() { rm -f "$HOME/.a1-xprov/scan-records/"*.hits.json 2>/dev/null; }
+# scen_ex <old leak> <new leak> [env NEEDLE] — rc/excluded/blob/diff/new/leak/hits
+scen_ex() {
+  fresh_ex30=1; clearhits30
+  ex_repo30 "ex$1$2" "$1" "$2"; ex_snap30 --base "$EX_BASE"
+  local excl blob diff new leak
+  excl="$(json_get "$EX_OUT" "(j.excluded || []).map((x) => x.path + ':' + x.rule).join(',')")"
+  if [[ -n "$EX_DIR" && -d "$EX_DIR" ]]; then
+    git -C "$EX_DIR" cat-file -e "HEAD:src/old.js" 2>/dev/null && blob=present || blob=gone
+    diff="$(git -C "$EX_DIR" diff --name-only "$EX_BASE" 2>/dev/null | tr '\n' ',')"
+    git -C "$EX_DIR" cat-file -e "HEAD:src/new.js" 2>/dev/null && new=present || new=gone
+    leak="$(git -C "$EX_DIR" cat-file --batch-all-objects --batch 2>/dev/null | grep -ac "$EXK30")"
+    ( cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov snapshot --remove "$EX_DIR" >/dev/null 2>&1 )
+  else blob=-; diff=-; new=-; leak=-; fi
+  local out_leak=0; [[ "$EX_OUT$EX_ERR" == *"$EXK30"* ]] && out_leak=1
+  echo "$EX_RC/$(json_get "$EX_OUT" "j.reason || 'ok'")/$excl/$blob/$diff/$new/$leak/out$out_leak/hits$(hits30)"
+}
+scen_ex_10() { scen_ex 1 0; }
+scen_ex_01() { scen_ex 0 1; }
+scen_ex_11() { scen_ex 1 1; }
+scen_ex_gl0() { scen_ex_gl 0; }
+scen_ex_plan() { # plan mode: a repo file hit stays a hard stop (no diff to compare with)
+  clearhits30; ex_repo30 "explan" 1 0; ex_snap30
+  echo "$EX_RC/$(json_get "$EX_OUT" "j.reason || 'ok'")/$(json_get "$EX_OUT" "(j.excluded || []).length")"
+}
+scen_ex_gl() { # fake gitleaks (needle) finds the key in the unchanged file only / in the changed file
+  clearhits30; ex_repo30 "exgl$1" "$1" 0
+  [[ "$1" == 0 ]] && { printf 'k = "%s"\n' "$EXK30" > "$PHASE_REPO/src/new.js"; ( cd "$PHASE_REPO" && git add -A && git commit -qm "fixture: key in the wave" ); }
+  FAKE_GITLEAKS_NEEDLE="QQQQQQQQQQQQQQQQ" ex_snap30 --base "$EX_BASE"
+  echo "$EX_RC/$(json_get "$EX_OUT" "j.reason || 'ok'")/$(json_get "$EX_OUT" "(j.excluded || []).length")"
+}
+caseEX() {
+  unmtree30 2>/dev/null; fresh30
+  local X1="0/ok/src/old.js:aws_access_key_id/gone/src/new.js,/present/0/out0/hits0"
+  assert_eq "EX1 a hit in an unchanged file: snapshot ok, file listed (path:rule), blob gone from the object store, diff has no deletion, the changed file is there, no key anywhere, no hits record" "$(scen_ex 1 0)" "$X1"
+  assert_eq "EX2 a hit in the changed file: hard stop, nothing excluded, ONE hits record for the allowlist question, no key in the output" "$(scen_ex 0 1)" "1/secret_in_snapshot//-/-/-/-/out0/hits1"
+  assert_eq "EX3 a hit in an unchanged AND one in a changed file: the changed hit stops everything (nothing excluded)" "$(scen_ex 1 1)" "1/secret_in_snapshot//-/-/-/-/out0/hits1"
+  assert_eq "EX4 plan mode (no diff): a repo file hit stays a hard stop" "$(scen_ex_plan)" "1/secret_in_snapshot/0"
+  assert_eq "EX5 gitleaks and the patterns find the key in the unchanged file only: excluded (two entries: pattern and gitleaks rule), ok" "$(scen_ex_gl 1)" "0/ok/2"
+  assert_eq "EX6 gitleaks finds the key in the changed file: hard stop" "$(scen_ex_gl 0)" "1/secret_in_snapshot/0"
+  local SX=xprov-snapshot-exclude.cjs SN=xprov-snapshot.cjs
+  redproof30 "EX1a" scen_ex_10 "$X1" $SX "'--skip-worktree'" "'--no-skip-worktree'"
+  redproof30 "EX1b" scen_ex_10 "$X1" $SX "new Set(ids)" "new Set()" $SX "if (gitRun(dir, ['cat-file', '-e', id]).status === 0) return" "if (false) return"
+  redproof30 "EX2" scen_ex_01 "1/secret_in_snapshot//-/-/-/-/out0/hits1" $SX "&& !ctx.changed.has(h.path) &&" "&&"
+  redproof30 "EX3" scen_ex_11 "1/secret_in_snapshot//-/-/-/-/out0/hits1" $SX "const all = changed.length === 0 && excludable.length > 0" "const all = excludable.length > 0"
+  redproof30 "EX4" scen_ex_plan "1/secret_in_snapshot/0" $SN "canExclude: exclude === null && cl.base !== null" "canExclude: exclude === null"
+  redproof30 "EX6" scen_ex_gl0 "1/secret_in_snapshot/0" $SX "&& !ctx.changed.has(h.path) &&" "&&"
+}
+caseEX
 rm -rf "$TMP30"
 export HOME="$SAVED_HOME_30"

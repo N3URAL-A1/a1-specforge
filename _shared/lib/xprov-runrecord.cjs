@@ -16,6 +16,7 @@
 // (ADR §4): the deny/hook guard against accidental or helpful use only.
 // ---------------------------------------------------------------------------
 
+const fs = require('fs');
 const path = require('path');
 const X = require('./xprov.cjs');
 const C = require('./xprov-common.cjs');
@@ -34,6 +35,7 @@ const BLOCKED_MARKER_FILE = 'a1-blocked.json';
 // (xprov-normalize.cjs PRIOR_FINDINGS_FILE; a fixture asserts both names stay equal).
 const DISPOSED_MARKER_FILE = 'a1-disposed.json';
 const FINDINGS_FILE = 'a1-findings.json';
+const EXCLUDED_FILE = 'a1-excluded.json'; // FR-029: unchanged files left out of the snapshot (path + rule id), next to the run record
 
 /** The run dir of `resultPath` lies in THIS repository's artifacts dir (realpath). */
 function inOwnArtifacts(resultPath, root) {
@@ -150,4 +152,14 @@ function waveDisposedHeadBase(resultPath, planSha, gate, wave, lane, root) {
   return hb.base === m.base ? { head: m.head, base: m.base } : null;
 }
 
-module.exports = { REVIEWED_FILE, PASS_MARKER_FILE, BLOCKED_MARKER_FILE, DISPOSED_MARKER_FILE, FINDINGS_FILE, verifiedFindings, disposedMarker, planDisposed, waveDisposedHeadBase, blockedFallbackValid, blockedFallbackHeadBase, hasPassMarker, inOwnArtifacts, readJsonNoFollow, runRecord, reviewedHeadBase, planPassValid, inspectPass };
+/** Write the excluded-files record into the run dir of `resultPath` (own artifacts only; 0600, once). true when it is there afterwards. */
+function writeExcluded(resultPath, excluded, root) {
+  if (!inOwnArtifacts(resultPath, root)) return false;
+  const file = path.join(path.dirname(path.resolve(resultPath)), EXCLUDED_FILE);
+  try {
+    fs.writeFileSync(file, `${JSON.stringify({ version: 1, excluded: excluded.map((x) => ({ path: x.path, rule: x.rule })), ts: new Date().toISOString() }, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
+    return true;
+  } catch (e) { return e.code === 'EEXIST'; }
+}
+
+module.exports = { EXCLUDED_FILE, writeExcluded, REVIEWED_FILE, PASS_MARKER_FILE, BLOCKED_MARKER_FILE, DISPOSED_MARKER_FILE, FINDINGS_FILE, verifiedFindings, disposedMarker, planDisposed, waveDisposedHeadBase, blockedFallbackValid, blockedFallbackHeadBase, hasPassMarker, inOwnArtifacts, readJsonNoFollow, runRecord, reviewedHeadBase, planPassValid, inspectPass };
