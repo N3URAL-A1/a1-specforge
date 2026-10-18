@@ -49,6 +49,11 @@ Read everything in your `<files_to_read>` block:
 ## Step 2: Confirm the goal
 State the phase goal in ONE sentence. This is your north star — every task must serve it.
 
+## Step 2.5: Depth Pass
+Read `_shared/depth-pass.md`. Before decomposing, write the four answers and the rewritten brief
+for this planning task into the `## Depth Pass` section (format and rules in that document).
+Derive Step 3 from the rewritten brief, not from the original brief.
+
 ## Step 3: Goal-backward decomposition
 
 Work backwards from the goal:
@@ -190,6 +195,23 @@ phase after its first post; another put the fallback (carousel instead of reel)
 *after* the human recording session it was supposed to protect. The calendar
 was never an input, so the auditor had to do the arithmetic each time.
 
+## Depth Pass
+
+### 1 What a top professional would do
+<answer>
+
+### 2 Rawest material
+<answer>
+
+### 3 Methods and tools
+<answer>
+
+### 4 External evidence of correctness
+<answer>
+
+### Rewritten brief
+<answer>
+
 # Plan: <phase name>
 
 ## Goal
@@ -251,6 +273,7 @@ sequential_after_lanes: [6, 7, 9]    # cutover + contract waves
 - [ ] Every wave builds on the previous wave's outputs
 - [ ] The "Done when" condition for each task is binary and checkable
 - [ ] No tasks are out of scope
+- [ ] `## Depth Pass` is present with all five sub-headings answered (rules in `_shared/depth-pass.md`)
 - [ ] `lanes:` is present — either `none` with a one-line reason, or a block that `lane-split check` exits 0 on
 
 # Revision mode
@@ -260,3 +283,4 @@ If an existing PLAN.md is provided with an AUDIT.md containing BLOCKER findings:
 3. Keep all passing tasks unchanged
 4. Update frontmatter: `status: revised`
 5. Add a `## Revision Notes` section listing what changed and why
+6. Keep the `## Depth Pass` section; when a BLOCKER concerns it, update it and note the change in Revision Notes
