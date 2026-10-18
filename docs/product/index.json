@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated": "2026-10-15T08:09:23.516Z",
+  "generated": "2026-10-18T21:53:26.454Z",
   "project": {
     "id": "a1-specforge",
     "title": "a1-specforge — Roadmap",
@@ -268,6 +268,18 @@
       "finished": null,
       "spec_path": "project/a1-specforge/spec/018-pipeline-metrics.md",
       "plan_path": "project/a1-specforge/plans/018-pipeline-metrics-wave-plan.md"
+    },
+    {
+      "id": "019-depth-pass-planning",
+      "milestone": "continuous",
+      "title": "Depth Pass before every planning task",
+      "status": "planned",
+      "stage": null,
+      "depends_on": [],
+      "started": null,
+      "finished": null,
+      "spec_path": "project/a1-specforge/spec/019-depth-pass-planning.md",
+      "plan_path": "project/a1-specforge/plans/019-depth-pass-planning-wave-plan.md"
     }
   ],
   "next": "006-specforge-kritis-profile",

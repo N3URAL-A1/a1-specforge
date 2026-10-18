@@ -4,7 +4,7 @@ type: roadmap
 project: a1-specforge
 title: "a1-specforge — Roadmap"
 status: active
-updated: 2026-10-15
+updated: 2026-10-18
 source: "migrated from docs/roadmap.md v3.0 (2026-07-10)"
 milestones:
   - id: m0-repo-extract
@@ -208,6 +208,16 @@ features:
     finished: null
     spec_path: project/a1-specforge/spec/018-pipeline-metrics.md
     plan_path: project/a1-specforge/plans/018-pipeline-metrics-wave-plan.md
+  - id: 019-depth-pass-planning
+    milestone: continuous
+    title: "Depth Pass before every planning task"
+    status: planned
+    stage: null
+    depends_on: []
+    started: null
+    finished: null
+    spec_path: project/a1-specforge/spec/019-depth-pass-planning.md
+    plan_path: project/a1-specforge/plans/019-depth-pass-planning-wave-plan.md
 next: 006-specforge-kritis-profile
 ---
 
@@ -341,6 +351,8 @@ None.
 - **2026-10-14** — 016-xprov-autonomy -> started — stage transition via `product stage`
 - **2026-10-15** — feature '018-pipeline-metrics' added — new feature via `product add-feature`
 - **2026-10-15** — feature.md created for '018-pipeline-metrics' — formal spec/plan attached via `product feature-init`
+- **2026-10-18** — feature '019-depth-pass-planning' added — Every planner answers the four depth questions and rewrites its brief before decomposing; a deterministic gate enforces the section
+- **2026-10-18** — feature.md created for '019-depth-pass-planning' — formal spec/plan attached via `product feature-init`
 
 ## Appendix — migrated details
 
