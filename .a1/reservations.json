@@ -62,6 +62,25 @@
       "by": "016-xprov-autonomy",
       "at": "2026-10-14T07:26:40.213Z",
       "stage": "started"
+    },
+    {
+      "type": "code_scope",
+      "paths": [
+        "_shared/depth-pass.md",
+        "_shared/lib/depth-pass.cjs",
+        "_shared/a1-tools.cjs",
+        "_shared/lib/help.cjs",
+        "skills/a1-plan/workflows/03-plan.md",
+        "skills/a1-new-feature/workflows/04-plan.md",
+        "skills/a1-modernize/workflows/05-plan.md",
+        "agents/a1-pablo-planner.md",
+        "agents/a1-vincente-vibe-optimizer.md",
+        "agents/a1-adam-auditor.md",
+        "_test-fixtures/a1-depth-pass/"
+      ],
+      "by": "019-depth-pass-planning",
+      "at": "2026-10-18T21:59:17.680Z",
+      "stage": "started"
     }
   ]
 }
