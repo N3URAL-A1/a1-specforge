@@ -1035,3 +1035,27 @@ gitleaks hits and reviewer output (`secret_in_output`) are never allowlisted.
 - R-7: the CI gitleaks download trusts the pinned release checksum chosen at implementation time.
 
 **Owner actions after merge (no agent runs them).** `brew install gitleaks` on every gate machine; the `permit` re-run of item 1 for a1-specforge and n3ural-platform. The plugin version bump (`.claude-plugin/*`) is a separate release step; until then the CLI runs from the clone.
+
+## Addendum 2026-10-18 — The PR diff gate `pr-diff-xprov` and `scope_exempt` (spec 016, wave 10)
+
+**Placement is a cost optimisation, the PR diff gate is the boundary.** Every input that can make a plan or a wave `scope_exempt` (plan text, `Depends on`
+lines, spec size, `--wave-range`, `--expect-sha`) is written or passed by the agent. The only anchors the agent cannot steer are git objects and the remote.
+`pr-diff-xprov` (registry row, `warning`, `applies_to: permitted-repos`) therefore reviews the real PR diff once per head sha, next to Reinhard, from
+a1-pr-review step 2.2b. a1-new-feature and a1-fix reach Codex only through that step (static assertion in the a1-pr-review suite).
+
+- **Anchor.** `merge-base(remote base, head)..head`. The remote base comes from `gh pr view --json baseRefOid` (`--pr`), else `git ls-remote --symref origin HEAD` at
+  gate time; local `origin/<default>` and `<default>` are never used, and the Wave 8 base recomputation is switched off for this gate. A local ref that differs from the remote
+  is reported and blocks the merge (`local_ref_differs`). Residual (tier 0): `gh` infers the repository and `ls-remote` uses `remote.origin.url` from the agent-writable git config;
+  a fetched object is self-verifying (sha), the answer of a re-pointed remote is not.
+- **`scope_exempt` for the PR gate** (zero bytes, nothing written): an empty or docs-only diff; with `--spec` of size S a diff without security surface. `--spec` never exempts a
+  surface diff; without it only docs-only exempts. No permit: `not_applicable`, Reinhard-only, unchanged.
+- **State and identity.** `<worktree>/.a1-review/xreview/` (index, run records, dispositions, observations); no phase. The target is the head sha (wave 0, lane `pr<12 hex>`);
+  the same head reuses the stored pass with zero runner calls, a new head sends only the commits since the newest covered head. The runner reads a brief a1 writes
+  (`.a1-review/PLAN.md`: head, base, merge-base, spec path); `.a1-review/` is untracked state and never part of the snapshot, which clones the committed head.
+- **Merge block (code, `xprov gate --gate pr-diff-xprov --merge-check`).** It computes surface itself and requires, for exactly the current head sha, a pass, round-cap dispositions, an
+  owner chat waiver or a decline with an owner No the consent hook recorded on the allowlist marker. `codex_blocked_fallback` never counts on a surface diff (diff content can prompt
+  Codex into BLOCKED); a decline without that owner No does not count. Both are shown to the owner in the PR body and the waiver question. It does not read PLAN.md, `deferred_to_pr` or `--spec`.
+- **Ask once per run.** `xprov consent question --kind consent --run <worktree>` scopes the one ask of a PR review run (wave 5 had reserved `--run`). The chat waiver works with
+  `--work-path <worktree>`; the waiver store keys a `pr-diff-xprov` record like a wave (phase `pr-review`, wave 0, lane, head, base).
+- **Out of scope.** The `warning` to `blocking` flip of the findings severity needs one live PR review recorded in the "Live smoke" section above; that section is unchanged.
+

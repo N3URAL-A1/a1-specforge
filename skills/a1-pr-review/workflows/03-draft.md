@@ -45,6 +45,12 @@ Reinhard reviewed this branch. <X> BLOCKER, <Y> MAJOR, <Z> MINOR.
 
 <If MAJOR list is empty, omit this section entirely.>
 
+### Cross-provider review (omit when `pr-diff-xprov` did not apply or passed cleanly)
+
+<One bullet per item: the waves `xprov wave-status` listed under `deferred_to_pr` ("wave N: surface diff, reviewed by the PR diff gate"); a `codex_blocked_fallback`
+("Codex answered BLOCKED twice on this diff; the owner is asked for a waiver"); a `secret_declined` ("secret-shaped string declined from Codex review"); every
+line of `pr_body[]` from the merge check (2.7). Reason names only, never a matched value.>
+
 ## Test Plan
 
 - [ ] CI passes

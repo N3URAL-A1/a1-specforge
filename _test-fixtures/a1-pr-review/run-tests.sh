@@ -153,6 +153,35 @@ else
   fail_case "positional slug did not reach registry lookup — flags._[0] may be broken"
 fi
 
+echo "== Test 12: spec 016 wave 10 - pr-diff-xprov wiring in the skill text"
+SK="$(cd "$(dirname "$0")/../.." && pwd)/skills"
+REV="$SK/a1-pr-review/workflows/02-review.md"
+if grep -q "xprov gate --gate pr-diff-xprov" "$REV" && grep -q "2.2b" "$REV"; then
+  pass_case "step 2.2b runs the pr-diff-xprov gate next to the Reinhard spawn"
+else
+  fail_case "02-review.md lacks step 2.2b / the pr-diff-xprov gate call"
+fi
+if grep -q -- "--merge-check" "$REV"; then
+  pass_case "the merge check (--merge-check) is a step of the review workflow"
+else
+  fail_case "02-review.md lacks the --merge-check step"
+fi
+if grep -q '`source` field' "$REV" && grep -q '"codex"' "$REV" && grep -q '"reinhard"' "$REV"; then
+  pass_case "findings are tagged by source (reinhard / codex)"
+else
+  fail_case "02-review.md does not describe the findings source tag"
+fi
+if grep -q "Cross-provider review" "$SK/a1-pr-review/workflows/03-draft.md"; then
+  pass_case "the PR body carries a Cross-provider review section"
+else
+  fail_case "03-draft.md lacks the Cross-provider review section"
+fi
+leak=0
+for f in "$SK/a1-new-feature/workflows/05-implement.md" "$SK/a1-fix/SKILL.md"; do
+  if grep -q "xprov gate" "$f"; then leak=1; fail_case "$f calls the cross-provider gate; it is reached only through a1-pr-review 2.2b"; fi
+done
+[ "$leak" -eq 0 ] && pass_case "a1-new-feature 05-implement and a1-fix call no cross-provider gate (static)"
+
 echo ""
 echo "a1-pr-review: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]
