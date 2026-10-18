@@ -247,10 +247,16 @@ caseAQ1() {
   assert_eq "AQ1 one audit line: consent-asked" "$(audit_actions26)" "consent-asked"
   assert_eq "AQ1 store mode 0600" "$(mode_of "$ASKED26")" "600"
   assert_json "AQ1 the entry holds the phase directory's device + inode and no opened marker yet (W5-1, W5-2)" "$(cat "$ASKED26")" "(() => { const e = Object.values(j.asked)[0]; return [Number.isSafeInteger(e.dev), e.ino === $(node -p "require('fs').statSync('$PHASE_DIR').ino"), e.opened === null].join('|'); })()" "true|true|true"
-  # W5-2 (wave 5 review): --run is reserved for the PR diff gate (wave 10): refused, nothing recorded
+  # wave 10: --run <worktree> scopes the one ask of a PR review run (a name that is no absolute worktree path is still refused, nothing recorded)
   prep26; cli26 question --kind consent --run pr-12
-  assert_rc "AQ1 --run pr-12 is refused for now (exit 2, reserved for the PR diff gate)" 2 "$G_RC"
-  [[ "$G_ERR" == *"reserved for the PR diff gate"* && ! -e "$ASKED26" ]] && ok "AQ1 …names the reason and wrote nothing" || bad "AQ1 --run: $G_ERR"
+  assert_rc "AQ1 --run pr-12 (no absolute worktree path) is refused (exit 2)" 2 "$G_RC"
+  [[ "$G_ERR" == *"--work-path must be an absolute path"* && ! -e "$ASKED26" ]] && ok "AQ1 …names the reason and wrote nothing" || bad "AQ1 --run: $G_ERR"
+  prep26; cli26 question --kind consent --run "$PHASE_REPO"
+  assert_rc "AQ1 --run <worktree>: the first call asks (exit 0)" 0 "$G_RC"
+  assert_json "AQ1 …the entry is scoped by the run (worktree)" "$(cat "$ASKED26")" "(() => { const e = Object.values(j.asked)[0]; return [e.scope_type, e.scope === '$(node -p "require('fs').realpathSync('$PHASE_REPO')")'].join('|'); })()" "run|true"
+  cli26 question --kind consent --run "$PHASE_REPO"
+  assert_rc "AQ1 …a second call for the same run is refused (exit 1)" 1 "$G_RC"
+  assert_eq "AQ1 …with already_asked_this_scope" "$(json_get "$G_OUT" "j.reason")" "already_asked_this_scope"
 }
 
 # W5-2: the phase key is the directory as the listing spells it, plus its device + inode

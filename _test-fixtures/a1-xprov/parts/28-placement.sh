@@ -182,7 +182,7 @@ casePL4() {
   assert_eq "PL4 --size L, --spec <file> and --size=S: exit 2 each, and the message says no flag sets the size" "$(scen_pl4)" "2/2/2/named"
   prep28 002.PLAN.md "$SPEC_M28"; sub28 gate --phase p28 --gate "$GATE_PLAN" --size L
   nothing28 && ok "PL4 the refused call wrote nothing" || bad "PL4 wrote: $(ls "$PHASE_DIR")"
-  redproof28 "PL4" scen_pl4 "2/2/2/named" xprov-gate.cjs "if ((args || []).some((a) => /^--(size|spec|scope|placement)(=|\$)/.test(String(a)))) return usageExit(SIZE_FLAG_GONE);" ""
+  redproof28 "PL4" scen_pl4 "2/2/2/named" xprov-gate.cjs "if ((args || []).some((a) => (pr ? /^--(size|scope|placement)(=|\$)/ : /^--(size|spec|scope|placement)(=|\$)/).test(String(a)))) return usageExit(SIZE_FLAG_GONE);" ""
 }
 
 # PL5: hostile input

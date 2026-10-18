@@ -149,7 +149,7 @@ function reviewFile(worktree) {
 /** How many lines of the phase file already count a Codex run for this gate target (gate, wave, lane): `codex_runs` is 1 only for the first (FR-022). */
 function runsCounted(o) {
   let text = '';
-  try { text = fs.readFileSync(phaseFile(o.repoRoot || io.repoRoot(), io.assertSafeSegment(o.phase, '--phase')), 'utf8'); } catch (_e) { return 0; }
+  try { text = fs.readFileSync(o.reviewWorktree === undefined ? phaseFile(o.repoRoot || io.repoRoot(), io.assertSafeSegment(o.phase, '--phase')) : reviewFile(o.reviewWorktree), 'utf8'); } catch (_e) { return 0; }
   const lane = o.lane || null;
   return text.split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch (_e) { return null; } })
     .filter((l) => l && l.gate === o.gate && (l.wave === undefined ? null : l.wave) === (o.wave === undefined ? null : o.wave) && (l.lane || null) === lane && l.codex_runs >= 1).length;

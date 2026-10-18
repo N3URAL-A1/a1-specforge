@@ -101,6 +101,9 @@ const REASON_LIST = Object.freeze([
   'scope_exempt', // wave 7: placement rule says this review does not apply
   'codex_blocked_fallback', // wave 8: blocked twice, Reinhard-only
   'secret_declined', // wave 9: owner declined the allowlist question for a changed-line hit
+  'pr_anchor_unavailable', // wave 10: the real target base (gh pr view / ls-remote) could not be resolved or fetched
+  'pr_base_mismatch', // wave 10: --base is not the remote base the gate resolved itself
+  'pr_merge_blocked', // wave 10: the merge check refuses (surface diff without an accepted pr-diff-xprov result for the head sha)
 ]);
 const REASONS = Object.freeze(Object.fromEntries(REASON_LIST.map((r) => [r, r])));
 
@@ -112,7 +115,7 @@ const VERDICTS = Object.freeze({ PASS: 'pass', FAIL_WITH_FINDINGS: 'fail-with-fi
 const VERDICT_NOT_APPLICABLE = 'not_applicable';
 
 // ---------- gate ids (rows in _shared/gates-registry.md) ----------
-const GATE_IDS = Object.freeze({ PLAN_REVIEW: 'plan-review-xprov', WAVE_INSPECT: 'wave-inspect-xprov' });
+const GATE_IDS = Object.freeze({ PLAN_REVIEW: 'plan-review-xprov', WAVE_INSPECT: 'wave-inspect-xprov', PR_DIFF: 'pr-diff-xprov' }); // PR_DIFF: spec 016 wave 10, a1-pr-review step 2.2b
 const GATE_ID_LIST = Object.freeze(Object.values(GATE_IDS));
 
 // ---------- runner usage limits (FR-024) ----------

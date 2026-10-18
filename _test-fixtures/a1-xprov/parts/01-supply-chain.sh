@@ -309,8 +309,8 @@ caseF1() {
     process.stdout.write(JSON.stringify({ subs, reasons, ghp, akia, assign, clean, markers, gates, home }));
   " "$XPROV_LIB" 2>&1)"
   assert_json "F1f dispatch table has 17 entries (allowlist added in Wave 6b; consent, scope, dispose in spec 016 wave 1)" "$out" "j.subs" "17"
-  assert_json "F1g REASON_LIST is the spec's thirteen reason codes plus the documented freeze exceptions (preflight_failed W4, plan_review_missing + wave_inspect_missing W6, allowlist_invalid + allowlist_modified W6b, run_home_unsafe W7, external_review_denied + external_review_denial_mismatch spec 012, external_review_permit_mismatch + snapshot_not_scanned + snapshot_changed_after_scan spec 014, owner_home_mismatch + scope_exempt + codex_blocked_fallback + secret_declined spec 016)" "$out" "j.reasons" \
-    "runner_failed,malformed,wrong_mode,blocked,plan_changed,tripwire,secret_in_snapshot,secret_in_output,quarantined,round_cap,external_review_not_permitted,snapshot_failed,not_logged_in,preflight_failed,plan_review_missing,wave_inspect_missing,allowlist_invalid,allowlist_modified,run_home_unsafe,external_review_denied,external_review_denial_mismatch,external_review_permit_mismatch,snapshot_not_scanned,snapshot_changed_after_scan,owner_home_mismatch,scope_exempt,codex_blocked_fallback,secret_declined"
+  assert_json "F1g REASON_LIST is the spec's thirteen reason codes plus the documented freeze exceptions (preflight_failed W4, plan_review_missing + wave_inspect_missing W6, allowlist_invalid + allowlist_modified W6b, run_home_unsafe W7, external_review_denied + external_review_denial_mismatch spec 012, external_review_permit_mismatch + snapshot_not_scanned + snapshot_changed_after_scan spec 014, owner_home_mismatch + scope_exempt + codex_blocked_fallback + secret_declined + pr_anchor_unavailable + pr_base_mismatch + pr_merge_blocked spec 016)" "$out" "j.reasons" \
+    "runner_failed,malformed,wrong_mode,blocked,plan_changed,tripwire,secret_in_snapshot,secret_in_output,quarantined,round_cap,external_review_not_permitted,snapshot_failed,not_logged_in,preflight_failed,plan_review_missing,wave_inspect_missing,allowlist_invalid,allowlist_modified,run_home_unsafe,external_review_denied,external_review_denial_mismatch,external_review_permit_mismatch,snapshot_not_scanned,snapshot_changed_after_scan,owner_home_mismatch,scope_exempt,codex_blocked_fallback,secret_declined,pr_anchor_unavailable,pr_base_mismatch,pr_merge_blocked"
   assert_json "F1h SECRET_PATTERNS hit ghp_/AKIA/assignment shapes and not plain text" "$out" \
     "[j.ghp, j.akia, j.assign, j.clean].join('/')" "true/true/true/false"
 
@@ -361,7 +361,7 @@ caseF1() {
   assert_json "F1h3 pattern list has 23 entries (8 spec + 8 amended + 7 spec 014)" "$out2" "j.count" "23"
   assert_json "F1h4 ReDoS probe: worst pattern × adversarial input (incl. 300 000-char abc://, min of 3 runs) stays under 1 s" "$out2" "j.worst < 1000 ? 'ok' : 'slow ' + j.worstName + ' ' + j.worst + 'ms'" "ok"
   assert_json "F1i INSTRUCTION_MARKERS carry the multi-word markers" "$out" "j.markers" "true"
-  assert_json "F1j GATE_ID_LIST is the two registered ids" "$out" "j.gates" "$GATE_PLAN,$GATE_WAVE"
+  assert_json "F1j GATE_ID_LIST is the three registered ids (spec 016 wave 10 adds pr-diff-xprov)" "$out" "j.gates" "$GATE_PLAN,$GATE_WAVE,pr-diff-xprov"
   assert_json "F1k codexHome() honours A1_XPROV_CODEX_HOME and defaults to .codex-a1-review" "$out" "j.home" "/x/override .codex-a1-review"
 
   # Samuel's Wave 1 review (MINOR 1): the override must be absolute, is

@@ -446,7 +446,8 @@ function resolveArgs(args) {
   if (!flags.gate) usage('--gate is required');
   const phase = assertSafeSegment(flags.phase, '--phase');
   const root = repoRoot();
-  const phaseDir = path.join(root, '.a1', 'phases', phase);
+  let phaseDir;
+  try { phaseDir = C.phaseDirOf(root, phase, flags['work-path'] ? path.resolve(flags['work-path']) : undefined); } catch (e) { if (e && e.code === 'A1_INPUT') usage(e.message); throw e; } // the reserved PR phase lives in <work-path>/.a1-review
   if (!fs.existsSync(phaseDir) || !fs.statSync(phaseDir).isDirectory()) usage(`phase dir not found: ${phaseDir}`);
   let ids;
   try { ids = parseRegistryIds(fs.readFileSync(REGISTRY_PATH, 'utf8')); } catch (_e) { usage(`registry unreadable: ${REGISTRY_PATH}`); }

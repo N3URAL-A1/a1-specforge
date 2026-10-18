@@ -24,6 +24,8 @@ const RR = require('./xprov-runrecord.cjs');
 const WV = require('./xprov-waivers.cjs');
 const CH = require('./xprov-consent-hits.cjs');
 const A = require('./xprov-artifacts.cjs');
+const M = require('./xprov-consent-marker.cjs');
+const AL = require('./xprov-consent-allowlist.cjs');
 
 const ACCEPTED = 'secret_declined';
 const DIR_PREFIX = 'declined-';
@@ -41,6 +43,24 @@ function targetOf(ctx, o) {
   return b === null ? refuse(REFUSALS.base, '--base must be a full commit sha that resolves in the work path') : Object.freeze({ ok: true, head: h.head, base: b.trim() });
 }
 
+/**
+ * The owner No on the allowlist question for this scan, as the consent hook recorded it on the marker (spec 016 wave 10, precondition 4): the
+ * marker of kind allowlist is ANSWERED with decision no, bound by nonce, tool_use_id and session_id, and its hash equals the question rebuilt now.
+ * → { decision, kind, hash, scan, tool_use_id, session_id, at } or null (no chat, no answer, a yes, a stale or foreign question). The merge block
+ * on a PR diff counts a decline only with this record. Tier 0: the same OS user can write the marker by hand (see xprov-consent-marker.cjs).
+ */
+function ownerNo(root, scan) {
+  try {
+    const b = AL.buildFor({ root, scan });
+    if (!b.ok) return null;
+    const p = M.peekMarker(b.key, AL.KIND);
+    const m = p.marker;
+    if (p.state !== M.STATE.ANSWERED || !m || m.hash !== b.question.hash || !m.answer || m.answer.decision !== 'no') return null;
+    if (m.answer.nonce !== m.nonce || m.answer.tool_use_id !== m.tool_use_id || m.answer.session_id !== m.session_id) return null;
+    return Object.freeze({ decision: 'no', kind: AL.KIND, hash: m.hash, scan, tool_use_id: m.tool_use_id, session_id: m.session_id, at: m.answer.at });
+  } catch (_e) { return null; }
+}
+
 function decline(ctx, o) {
   const scan = String(o.scan);
   if (!/^snap-[A-Za-z0-9._-]{1,120}$/.test(scan)) return refuse(REFUSALS.scan, 'the scan name must look like snap-…');
@@ -53,7 +73,7 @@ function decline(ctx, o) {
   const planSha = C.sha256(fs.readFileSync(ctx.planPath));
   const marker = Object.freeze({
     version: 1, kind: ACCEPTED, gate: ctx.gate, wave: ctx.wave, lane: ctx.lane, plan_sha256: planSha, head: target.head, base: target.base,
-    scan, hits: read.value.hits.length, ts: nowIso(),
+    scan, hits: read.value.hits.length, owner_no: ownerNo(ctx.root, scan), ts: nowIso(),
   });
   const dir = path.join(X.artifactsDir(A.repoSlug(ctx.root)), `${DIR_PREFIX}${Date.now()}-${crypto.randomBytes(6).toString('hex')}`);
   const file = path.join(dir, 'a1-declined.json');
@@ -74,4 +94,4 @@ function decline(ctx, o) {
   }
 }
 
-module.exports = { decline, ACCEPTED, REFUSALS };
+module.exports = { decline, ownerNo, ACCEPTED, REFUSALS };

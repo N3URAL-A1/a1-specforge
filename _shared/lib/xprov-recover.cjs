@@ -146,7 +146,7 @@ function recomputeBase(workPath) {
  */
 function snapshotWithBase(ctx, snap) {
   const first = snap(ctx.base);
-  if (first.ok || first.reason !== X.REASONS.snapshot_failed || ctx.isPlan || !BASE_UNRESOLVED_RE.test(String(first.detail || ''))) return Object.freeze({ snapped: first, base: ctx.base, recovery: null });
+  if (first.ok || first.reason !== X.REASONS.snapshot_failed || ctx.isPlan || ctx.review || !BASE_UNRESOLVED_RE.test(String(first.detail || ''))) return Object.freeze({ snapped: first, base: ctx.base, recovery: null });
   const re = recomputeBase(ctx.workPath);
   const note = (ok, to) => Object.freeze({ action: 'base_recomputed', from: ctx.base, to: to || null, fetched: re !== null && re.fetched, ok });
   if (re === null || re.base === ctx.base) return Object.freeze({ snapped: first, base: ctx.base, recovery: note(false, null) });

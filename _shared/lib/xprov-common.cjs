@@ -36,6 +36,10 @@ const POSITIVE_INT_MAX = 9999;
 // Wave numbers start at 0 (spec 012 FR-008: a wave-0 phase exists, e.g. 059).
 // Only `--wave`/`--waves` use this shape; `--round` and `--timeout` stay positive.
 const WAVE_RE = /^(0|[1-9]\d{0,3})$/;
+// Spec 016 wave 10: the PR diff gate keeps its state in `<work path>/.a1-review/`, not in a phase dir. Inside the run, normalize, dispose and
+// consent modules it travels as the reserved phase name PR_PHASE (no real phase dir carries it: phaseDirOf never looks under .a1/phases for it).
+const PR_PHASE = 'pr-review';
+const REVIEW_DIR = '.a1-review';
 const DETAIL_MAX_CHARS = 500; // reason_detail, echoed limitations, stderr tails, log cells
 const GIT_MAX_BUFFER = 64 * 1024 * 1024;
 const DIR_MODE = 0o700;
@@ -154,6 +158,32 @@ function mkdir0700(dir) {
     if (e && e.code === 'ENAMETOOLONG') throw inputError(`${dir} exceeds the filesystem's path length limit`, 'path_too_long');
     throw e;
   }
+}
+
+/** `workPath` as a real directory path: absolute, no `..` segment, no control character, exists (typed input errors, reason worktree_invalid). */
+function realWorkPath(workPath) {
+  const w = String(workPath == null ? '' : workPath);
+  if (!path.isAbsolute(w) || /[\0-\x1f]/.test(w) || w.split(/[\\/]/).includes('..')) throw inputError('--work-path must be an absolute path without `..` or control characters', 'worktree_invalid');
+  let real;
+  try { real = fs.realpathSync(w); } catch (_e) { throw inputError(`--work-path does not exist: ${clip(w, 200)}`, 'worktree_invalid'); }
+  if (!fs.statSync(real).isDirectory()) throw inputError('--work-path is not a directory', 'worktree_invalid');
+  return real;
+}
+
+/** `<workPath>/.a1-review`: a real work path, and (when it exists) a plain directory, never a link (the dir is agent-reachable; a link
+ * would redirect every write). Created 0700 when `create` and missing. Typed input errors. */
+function reviewDirOf(workPath, create) {
+  const dir = path.join(realWorkPath(workPath), REVIEW_DIR);
+  let st = null;
+  try { st = fs.lstatSync(dir); } catch (_e) { st = null; }
+  if (st === null) { if (create) mkdir0700(dir); return dir; }
+  if (st.isSymbolicLink() || !st.isDirectory()) throw inputError(`${clip(dir, 200)} is not a plain directory`, 'worktree_invalid');
+  return dir;
+}
+
+/** The directory of a phase's gate state: `<root>/.a1/phases/<phase>`, or `<workPath>/.a1-review` for the reserved PR_PHASE. */
+function phaseDirOf(root, phase, workPath) {
+  return phase === PR_PHASE ? reviewDirOf(workPath === undefined || workPath === null ? root : workPath, false) : path.join(root, '.a1', 'phases', phase);
 }
 
 // ---------- xreview/index.json ----------
@@ -339,7 +369,7 @@ function resolveRepoFlag(repoFlag) {
 }
 
 module.exports = {
-  REGISTRY_PATH, LANE_RE, POSITIVE_INT_RE, POSITIVE_INT_MAX, WAVE_RE, DETAIL_MAX_CHARS, GIT_MAX_BUFFER, DIR_MODE,
+  PR_PHASE, REVIEW_DIR, realWorkPath, reviewDirOf, phaseDirOf, REGISTRY_PATH, LANE_RE, POSITIVE_INT_RE, POSITIVE_INT_MAX, WAVE_RE, DETAIL_MAX_CHARS, GIT_MAX_BUFFER, DIR_MODE,
   RESERVED_BY, BY_RE, isReservedBy, rejectReservedBy, validatePlainBy, ownerGitEnv,
   inputError, writeStdoutSync, emitJson, usageExit, usageThrow,
   clip, stderrTail, oneLine, LINE_BREAKERS_RE, readNoFollow, parsePositive, parseWave, waveNumber, parseLane, sha256, isPlainObject, isDir, isFile,

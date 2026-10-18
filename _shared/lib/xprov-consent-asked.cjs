@@ -42,7 +42,7 @@ const CT = require('./xprov-consent-targets.cjs');
 const ASKED_FILE = 'consent-asked.json';
 const STORE_LABEL = 'consent-asked store';
 const ASK_KINDS = Object.freeze(['consent', 'classification']);
-const SCOPE_TYPES = Object.freeze({ PHASE: 'phase' }); // --run (PR review runs) is reserved for the PR diff gate, wave 10
+const SCOPE_TYPES = Object.freeze({ PHASE: 'phase', RUN: 'run' }); // run = one PR review run: the worktree a1-pr-review reviews (spec 016 wave 10)
 const ENTRY_KEYS = Object.freeze(['repo', 'kind', 'scope_type', 'scope', 'hash', 'at', 'audit', 'opened', 'dev', 'ino']);
 const RETAIN_MS = 365 * 24 * 60 * 60 * 1000;
 const MAX_ENTRIES = 2000;
@@ -80,10 +80,16 @@ function readAsked() {
 /**
  * The scope of the flags as { type, id, dev, ino }, or a typed input error. A phase must exist as `.a1/phases/<name>`; its key is the name as the
  * directory listing spells it (a lookalike such as P25 for p25 on a case-insensitive disk resolves to the listed name) and the entry also holds the
- * directory's device and inode, so a renamed directory is still the same phase. `--run` is reserved for the PR diff gate (wave 10) and refused.
+ * directory's device and inode, so a renamed directory is still the same phase. `--run <worktree>` (spec 016 wave 10) scopes the one ask of a PR review run by the worktree.
  */
 function scopeOf(root, flags) {
-  if (flags.run !== undefined) throw C.inputError('--run is reserved for the PR diff gate (wave 10) and not accepted yet: give --phase <name> (an existing .a1/phases/<name>)', 'scope_reserved');
+  if (flags.run !== undefined) {
+    if (flags.phase !== undefined) throw C.inputError('give --phase <name> or --run <worktree>, not both', 'scope_flags');
+    const w = C.realWorkPath(flags.run); // a PR review run is scoped by its worktree (absolute path, same repository); dev + ino keep a renamed directory the same run
+    if (C.commonDirOf(w) !== C.commonDirOf(root)) throw C.inputError(`--run ${C.clip(w, 200)} does not share the git-common-dir of the repository`, 'work_path_foreign');
+    const rst = fs.lstatSync(w);
+    return Object.freeze({ type: SCOPE_TYPES.RUN, id: w, dev: rst.dev, ino: rst.ino });
+  }
   if (flags.phase === undefined) throw C.inputError('give --phase <name> (an existing .a1/phases/<name>): the question is asked once per phase', 'scope_required');
   const ph = CT.phaseOf(root, flags.phase);
   const dir = path.dirname(ph.phaseDir);

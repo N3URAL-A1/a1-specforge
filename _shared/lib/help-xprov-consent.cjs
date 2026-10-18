@@ -40,8 +40,8 @@ const CONSENT_HELP = `    consent question|ensure|record|revoke  --kind consent|
                   existing .a1/phases/<name> (a lookalike such as P25 for p25 on a
                   case-insensitive disk resolves to the listed name; the entry also
                   holds the directory's device + inode, so a renamed phase is still
-                  the same phase). --run <id> is reserved for the PR diff gate (wave
-                  10) and is refused (exit 2). The first call for repo + kind + phase
+                  the same phase). --run <absolute worktree> (instead of --phase) scopes
+                  the one ask of a PR review run (a1-pr-review, wave 10). The first call for repo + kind + phase
                   records the ask in ~/.a1-xprov/consent-asked.json (audit line
                   consent-asked) and prints the question. Every later call for the
                   same repo + kind + phase is refused (exit 1, reason

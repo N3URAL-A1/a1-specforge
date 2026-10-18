@@ -64,7 +64,7 @@ function rebuild(kind, text) {
   try {
     if (kind === 'waiver') {
       const s = W.scopeFromText(text);
-      const b = s ? W.buildFor({ root, phase: s.phase }) : null;
+      const b = s ? W.buildFor(s.workPath ? { root, workPath: s.workPath } : { root, phase: s.phase }) : null;
       return b && b.ok ? { kind, key: b.key, q: b.question } : deny('consent_unresolvable', 'no waivable target for the phase this question names');
     }
     if (kind === 'allowlist') {

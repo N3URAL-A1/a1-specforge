@@ -50,7 +50,7 @@ function validRecord(r) {
   if (!AL.exactKeys(r, RECORD_KEYS)) return null;
   const str = (v) => typeof v === 'string' && v !== '';
   if (![r.repo, r.phase, r.gate, r.reason, r.by, r.ts].every(str) || !SHA256_HEX_RE.test(r.plan_sha256)) return null;
-  const isWave = r.gate === X.GATE_IDS.WAVE_INSPECT;
+  const isWave = r.gate === X.GATE_IDS.WAVE_INSPECT || r.gate === X.GATE_IDS.PR_DIFF; // the PR diff gate is keyed like a wave (wave 0, lane pr<head>)
   if (isWave && !(Number.isInteger(r.wave) && r.wave >= 0 && SHA_RE.test(String(r.head)) && SHA_RE.test(String(r.base)))) return null;
   if (isWave && r.lane !== null && !C.LANE_RE.test(String(r.lane))) return null;
   if (!isWave && (r.wave !== null || r.lane !== null || r.head !== null || r.base !== null)) return null;
@@ -93,7 +93,7 @@ function planWaiver(store, key) {
 
 /** Store waivers for (repo, phase, plan sha, wave, lane), oldest first. */
 function waveWaivers(store, key) {
-  return store.waivers.filter((w) => w.gate === X.GATE_IDS.WAVE_INSPECT && w.repo === key.repo && w.phase === key.phase
+  return store.waivers.filter((w) => w.gate === (key.gate === X.GATE_IDS.PR_DIFF ? X.GATE_IDS.PR_DIFF : X.GATE_IDS.WAVE_INSPECT) && w.repo === key.repo && w.phase === key.phase
     && w.plan_sha256 === key.plan_sha256 && w.wave === key.wave && w.lane === (key.lane || null));
 }
 

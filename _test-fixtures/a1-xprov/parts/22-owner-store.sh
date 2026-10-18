@@ -292,7 +292,7 @@ caseOS8() {
   done
   out="$(node -e 'const x = require(process.argv[1]); process.stdout.write(JSON.stringify({ s: x.SUBCOMMAND_NAMES.slice(-3), r: x.REASON_LIST.slice(-4) }));' "$XPROV_LIB")"
   assert_json "OS8b dispatch entries consent, scope, dispose" "$out" "j.s.join(',')" "consent,scope,dispose"
-  assert_json "OS8b new reason codes" "$out" "j.r.join(',')" "owner_home_mismatch,scope_exempt,codex_blocked_fallback,secret_declined"
+  assert_json "OS8b new reason codes" "$out" "j.r.join(',')" "secret_declined,pr_anchor_unavailable,pr_base_mismatch,pr_merge_blocked"
   local help; help="$(node "$TOOLS" xprov --help 2>&1; node "$TOOLS" --help 2>&1)"
   grep -qiE 'unforgeable|tamper[- ]?proof' <<<"$help" && bad "OS8c a help text claims unforgeable/tamper-proof" || ok "OS8c no help text claims unforgeable or tamper-proof"
   grep -q 'enforcement: unenforced' <<<"$help" && ok "OS8c help states enforcement: unenforced" || bad "OS8c help lacks the tier-0 statement"

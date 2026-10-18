@@ -41,9 +41,10 @@ const FINDINGS_UNVERIFIED = 'Befunde nicht prüfbar'; // a fixed line: the findi
 const PR_REVIEW_DIR = path.join('.a1-review', 'xreview');
 const PATH_LINE_RE = /^Pfad: (.*)$/m;
 const PHASE_LINE_RE = /^Phase: (.*)$/m;
+const WORKTREE_LINE_RE = /^Worktree: (.*)$/m;
 
 const { refuse } = R;
-const scopeLabel = (k) => (k.wave === null ? 'Plan' : `Wave ${k.wave}${k.lane ? `, Lane ${Q.clean(k.lane)}` : ''}`);
+const scopeLabel = (k) => (k.gate === X.GATE_IDS.PR_DIFF ? 'PR-Diff' : k.wave === null ? 'Plan' : `Wave ${k.wave}${k.lane ? `, Lane ${Q.clean(k.lane)}` : ''}`);
 const shortSha = (s) => (s === null ? '-' : s);
 
 function targetLines(t, i, n) {
@@ -76,6 +77,7 @@ function buildText(ctx) {
     `Repo: ${ctx.name}`,
     `Pfad: ${ctx.path}`,
     `Phase: ${Q.clean(w.phase)}`,
+    ...(w.workPath ? [`Worktree: ${Q.clean(w.workPath)}`] : []), // the PR diff gate: the hook rebuilds the question from this path
     'Ein Waiver ist kein Bestanden. Er gilt nur für genau diese Ziele und nur, solange PLAN.md und Stand unverändert sind.',
     ...w.listed.flatMap((t, i) => targetLines(t, i, w.listed.length)),
     ...(w.more > 0 ? [`Weitere Ziele (${w.more}) sind hier nicht aufgeführt; das Ja deckt sie nicht ab.`] : []),
@@ -90,7 +92,8 @@ function buildText(ctx) {
 function scopeFromText(text) {
   const p = PATH_LINE_RE.exec(String(text));
   const ph = PHASE_LINE_RE.exec(String(text));
-  return p && ph ? { path: p[1], phase: ph[1] } : null;
+  const w = WORKTREE_LINE_RE.exec(String(text));
+  return p && ph ? { path: p[1], phase: ph[1], workPath: w ? w[1] : null } : null;
 }
 
 /** A worktree of the same repository for the PR diff gate: { dir } or a typed input error (exit 2). */
@@ -113,16 +116,15 @@ function buildFor(o) {
   if (key === null) throw C.inputError(`${o.root} is not a git repository`, 'not_a_repository');
   if (o.workPath !== undefined) {
     workPathOf(o.root, o.workPath);
-    return refuse('no_failed_targets', 'no waivable target in this PR review run: the waiver store cannot key a pr-diff-xprov target before wave 10; nothing written');
   }
-  const scan = T.collectTargets({ root: o.root, phase: o.phase });
+  const scan = T.collectTargets({ root: o.root, phase: o.phase, workPath: o.workPath });
   if (!scan.ok) return scan;
   if (scan.targets.length === 0) {
     return refuse('no_failed_targets', `no gate target of the phase ${C.clip(scan.phase, 80)} is failed at the current PLAN.md${scan.skipped.length ? ' that a chat waiver can key' : ''}; nothing to waive`);
   }
   const origin = RI.readOrigin(o.root);
   const listed = scan.targets.slice(0, TARGETS_LISTED_MAX);
-  const ctx = { ...Q.repoContext(o.root, origin), waiver: { phase: scan.phase, listed, more: scan.targets.length - listed.length, skipped: scan.skipped } };
+  const ctx = { ...Q.repoContext(o.root, origin), waiver: { phase: scan.phase, workPath: o.workPath === undefined ? null : scan.ctx.workPath, listed, more: scan.targets.length - listed.length, skipped: scan.skipped } };
   return Object.freeze({ ok: true, key, question: Q.buildQuestion(KIND, ctx), targets: listed, skipped: scan.skipped, scan });
 }
 
@@ -133,7 +135,7 @@ const recordOf = (t, hash, now) => Object.freeze({
 /** The mirrors (index row, XREVIEW note, observation) of the written records; failures are named, never hidden. */
 function mirrorAll(root, scan, records) {
   const G = require('./xprov-gate.cjs');
-  const ctx = { root, phase: scan.phase, phaseDir: scan.ctx.phaseDir, planPath: scan.ctx.planPath, indexPath: scan.ctx.indexPath };
+  const ctx = { root, phase: scan.phase, workPath: scan.ctx.workPath, phaseDir: scan.ctx.phaseDir, planPath: scan.ctx.planPath, indexPath: scan.ctx.indexPath };
   const errors = [];
   for (const rec of records) {
     try { G.mirrorWaiver(ctx, rec); } catch (e) { errors.push(`${rec.gate} ${rec.wave === null ? 'plan' : `wave-${rec.wave}`}: ${C.clip(e && e.message ? e.message : String(e), 200)}`); }

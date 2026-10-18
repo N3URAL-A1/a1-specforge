@@ -38,8 +38,8 @@ const AC = require('./xprov-accept.cjs');
 const { PRIOR_FINDINGS_FILE, classify } = require('./xprov-normalize.cjs');
 
 const FAIL_VERDICTS = Object.freeze([X.VERDICTS.FAIL, X.VERDICTS.FAIL_WITH_FINDINGS]);
-const GATE_ORDER = Object.freeze([X.GATE_IDS.PLAN_REVIEW, X.GATE_IDS.WAVE_INSPECT]);
-const WANT_MODE = Object.freeze({ [X.GATE_IDS.PLAN_REVIEW]: 'review', [X.GATE_IDS.WAVE_INSPECT]: 'inspect' }); // the runner mode of each gate (normalize's own rule)
+const GATE_ORDER = Object.freeze([X.GATE_IDS.PLAN_REVIEW, X.GATE_IDS.WAVE_INSPECT, X.GATE_IDS.PR_DIFF]);
+const WANT_MODE = Object.freeze({ [X.GATE_IDS.PLAN_REVIEW]: 'review', [X.GATE_IDS.WAVE_INSPECT]: 'inspect', [X.GATE_IDS.PR_DIFF]: 'inspect' }); // the runner mode of each gate (normalize's own rule)
 const SEVERITY_BUCKETS = Object.freeze(['blocker', 'major']);
 const FINDINGS_PER_BUCKET_MAX = 50; // read bound; the question lists fewer
 const ID_MAX_CHARS = 40;
@@ -48,6 +48,12 @@ const NOT_DERIVABLE = Object.freeze(['quarantined', 'secret_in_output']); // fai
 
 const refuse = (reason, detail) => Object.freeze({ ok: false, reason, detail });
 const str = (v) => (typeof v === 'string' ? v : '');
+
+/** The PR diff gate's state dir `<work-path>/.a1-review` as a phase context (spec 016 wave 10). */
+function prCtx(workPath) {
+  const phaseDir = C.reviewDirOf(workPath, false);
+  return { phase: C.PR_PHASE, phaseDir, workPath: C.realWorkPath(workPath), planPath: path.join(phaseDir, 'PLAN.md'), indexPath: path.join(phaseDir, 'xreview', 'index.json') };
+}
 
 /** The phase directory under `root`, as { phase, phaseDir, planPath, indexPath }; a typed input error for a traversal-shaped or missing phase. */
 function phaseOf(root, phaseFlag) {
@@ -126,7 +132,9 @@ function passed(rows, gate, planSha, root) {
 
 /** True when a1's own side record closes the scope (spec 016): the twice-BLOCKED fallback or the round-cap dispositions — nothing is left to waive. */
 function sideClosed(index, gate, wave, lane, planSha, root) {
-  return gate === X.GATE_IDS.PLAN_REVIEW ? AC.planSideRecord(index, gate, planSha, root) !== null : AC.waveSideCandidates(index, gate, { wave, lane }, planSha, root).length > 0;
+  if (gate === X.GATE_IDS.PLAN_REVIEW) return AC.planSideRecord(index, gate, planSha, root) !== null;
+  const side = AC.waveSideCandidates(index, gate, { wave, lane }, planSha, root);
+  return (gate === X.GATE_IDS.PR_DIFF ? side.filter((c) => c.kind === AC.DISPOSITIONS) : side).length > 0; // on a PR diff the blocked fallback is no result: it stays waivable
 }
 
 function covered(store, key) {
@@ -169,10 +177,11 @@ const order = (a, b) => GATE_ORDER.indexOf(a.key.gate) - GATE_ORDER.indexOf(b.ke
  * possibly empty) or a refusal { ok: false, reason, detail }. Throws a typed input error for a traversal-shaped or unknown phase.
  */
 function collectTargets(o) {
-  const ctx = phaseOf(o.root, o.phase);
+  const ctx = o.workPath === undefined ? phaseOf(o.root, o.phase) : prCtx(o.workPath);
   const repo = C.commonDirOf(o.root);
   if (repo === null) return refuse('not_a_repository', `${o.root} is not a git repository`);
   const planBytes = C.readNoFollow(ctx.planPath, X.MAX_RESULT_BYTES * 4);
+  if (!planBytes && o.workPath !== undefined && (C.readIndex(ctx.indexPath) || [null]).length === 0) return Object.freeze({ ok: true, repo, phase: ctx.phase, planSha: null, ctx, targets: Object.freeze([]), skipped: Object.freeze([]) }); // a PR review that never ran has nothing to waive
   if (!planBytes) return refuse('plan_missing', `PLAN.md not found (or not a regular file) in the phase ${C.clip(ctx.phase, 80)}`);
   const index = C.readIndex(ctx.indexPath);
   if (index === null) return refuse('index_unreadable', 'xreview/index.json is unparseable or not an array of objects');

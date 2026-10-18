@@ -69,7 +69,9 @@ const NP = require('./xprov-gate-nopermit.cjs');
 const PL = require('./xprov-placement.cjs');
 const RR = require('./xprov-runrecord.cjs');
 const DL = require('./xprov-delta.cjs');
+const PD = require('./xprov-pr-diff.cjs');
 const AC = require('./xprov-accept.cjs');
+const { completedWavesFromStatus, parseWavesFlag, kindWaves, laneTips } = require('./xprov-wave-helpers.cjs');
 const { guardRefusal, readTypedLine, writeGuardedStore } = require('./xprov-approve.cjs');
 const { appendXreviewNote } = require('./xprov-normalize.cjs');
 const { dispositionsPath, priorRound, writeFeedback } = require('./xprov-feedback.cjs');
@@ -98,7 +100,6 @@ const BASE_HEX_RE = /^[0-9a-f]{7,40}$/i; // same rule as `run`: a resolved sha, 
 // writes `round: N` for rounds and `attempt: N` for the rest, so the driver
 // counts rows with a numeric `round` and nothing else — the same key normalize
 // uses for its own collision check, which keeps both sides on one number.
-const WAVE_HEADING_RE = /^##\s+Wave\s+(\d+)\b/;
 const REASON_MAX_CHARS = DETAIL_MAX_CHARS;
 const BY_MAX_CHARS = 64;
 // Spec 014 FR-011: a blocking gate needs gitleaks; the detail starts with the code `run` reports as well.
@@ -167,6 +168,9 @@ function requireGateId(gateFlag) {
 }
 
 const scopeOf = (wave) => (wave === null ? 'plan' : `wave-${wave}`);
+// spec 016 wave 10: the PR diff gate (ctx.review) keeps its observations in <work-path>/.a1-review/xreview and is run by a1-pr-review
+const obsSkill = (ctx) => (ctx.review ? PD.SKILL : ctx.isPlan ? 'a1-plan' : 'a1-execute');
+const obsWhere = (ctx) => (ctx.review ? { reviewWorktree: ctx.workPath } : {});
 
 // ---------- gate driver ----------
 
@@ -277,7 +281,7 @@ function stepRun(ctx, snap, inputs) {
   if (ctx.wave !== null) argv.push('--wave', String(ctx.wave));
   if (ctx.lane !== null) argv.push('--lane', ctx.lane);
   if (ctx.base !== null) argv.push('--base', ctx.base);
-  if (ctx.workPath !== ctx.root) argv.push('--work-path', ctx.workPath);
+  if (ctx.workPath !== ctx.root || ctx.review) argv.push('--work-path', ctx.workPath);
   if (ctx.timeout !== null) argv.push('--timeout', String(ctx.timeout));
   if (NO_LOG_FLAG) argv.push(`--${NO_LOG_FLAG}`); // one log entry per gate call: the driver's
   if (inputs.feedback) argv.push('--feedback', inputs.feedback);
@@ -296,7 +300,7 @@ function stepNormalize(ctx, resultPath, al) {
   if (al.allowlist_approved_blob) argv.push('--allowlist-approved-blob', al.allowlist_approved_blob);
   if (ctx.wave !== null) argv.push('--wave', String(ctx.wave));
   if (ctx.lane !== null) argv.push('--lane', ctx.lane);
-  if (ctx.workPath !== ctx.root) argv.push('--work-path', ctx.workPath);
+  if (ctx.workPath !== ctx.root || ctx.review) argv.push('--work-path', ctx.workPath);
   const r = runSub(ctx, argv);
   if (!r.json || !Object.values(X.VERDICTS).includes(r.json.verdict)) {
     return { ok: false, reason: X.REASONS.malformed, detail: r.stderr || `normalize exited ${r.status} without a verdict` };
@@ -324,7 +328,7 @@ function stepObserve(ctx, out, entry, state) {
   const pass = out.verdict === X.VERDICTS.PASS;
   const msg = clip(`${ctx.gate} ${scopeOf(ctx.wave)}${ctx.lane ? ` lane ${ctx.lane}` : ''} round ${ctx.round}: ${out.verdict}${out.reason ? ` (${out.reason})` : ''}${out.findings_path ? ` — findings ${path.basename(out.findings_path)}` : ''}`, X.TITLE_MAX_CHARS * 4);
   observe({
-    repoRoot: ctx.root, agent: EXTERNAL_AGENT, skill: ctx.isPlan ? 'a1-plan' : 'a1-execute', phase: ctx.phase, wave: ctx.wave, lane: ctx.lane || undefined,
+    repoRoot: ctx.root, agent: EXTERNAL_AGENT, skill: obsSkill(ctx), ...obsWhere(ctx), phase: ctx.phase, wave: ctx.wave, lane: ctx.lane || undefined,
     type: pass ? 'gap' : 'blocker', severity: pass ? 'minor' : 'major', msg, provider: 'codex',
     // Model strings come from the runner record; only a shape observe accepts
     // is forwarded, anything else falls back to observe's literals — a hostile
@@ -362,13 +366,14 @@ function reviewedOutcome(ctx, base, al, ran, norm) {
 
 /** `denied` on a `permitted-repos` row: no run, one log entry, one observation (spec 012 FR-002). */
 function recordNotApplicable(ctx, base, permit) {
+  if (ctx.review) PD.ensureDir(ctx.workPath);
   const result = Object.freeze({
     ...base, verdict: X.VERDICT_NOT_APPLICABLE, step: 'permit-check', reason: X.REASONS.external_review_denied, permit_state: permit.state,
     reason_detail: `denied by ${permit.decided_by} on ${permit.decided_on}; the owner's denial store agrees`,
   });
   appendLog(ctx, result, 'none');
   observe({
-    repoRoot: ctx.root, agent: EXTERNAL_AGENT, skill: ctx.isPlan ? 'a1-plan' : 'a1-execute', phase: ctx.phase, wave: ctx.wave, lane: ctx.lane || undefined,
+    repoRoot: ctx.root, agent: EXTERNAL_AGENT, skill: obsSkill(ctx), ...obsWhere(ctx), phase: ctx.phase, wave: ctx.wave, lane: ctx.lane || undefined,
     type: 'gap', severity: 'minor', pattern: RETRO_ISSUE_NOT_APPLICABLE, provider: 'codex',
     msg: clip(`${ctx.gate} ${scopeOf(ctx.wave)}${ctx.lane ? ` lane ${ctx.lane}` : ''}: not_applicable (external_review denied by the owner)`, X.TITLE_MAX_CHARS * 4),
   });
@@ -377,15 +382,21 @@ function recordNotApplicable(ctx, base, permit) {
 
 /** Runs the chain; returns a frozen stdout report (never throws for a failing
  * step — only usage errors throw A1_INPUT before anything is created). */
+/** The PR diff gate's context (spec 016 wave 10): no --phase, the target is the head sha of --work-path. */
+function prContext(o) {
+  return PD.contextOf(o, { root: repoRoot(), enforcement: enforcementFor(o.gate), pluginAllowlist: o.allowPlugins === undefined ? [] : String(o.allowPlugins).split(',').map((x) => x.trim()).filter(Boolean),
+    timeout: o.timeout === undefined ? null : parsePositive(o.timeout, 'timeout'), round: o.round === undefined ? undefined : parsePositive(o.round, 'round') });
+}
+
 function gate(o) {
-  const ctx = resolveGateArgs(o);
+  const ctx = o.gate === X.GATE_IDS.PR_DIFF ? prContext(o) : resolveGateArgs(o);
   const state = { recovery: [], runnerCalls: 0, logged: false, observed: false };
   const out = driveGate(ctx, state);
   return state.logged ? finishRun(ctx, state, out) : out;
 }
 
 function driveGate(ctx, state) {
-  const base = Object.freeze({ verdict: X.VERDICTS.FAIL, reason: null, reason_detail: null, step: null, gate: ctx.gate, phase: ctx.phase, wave: ctx.wave, lane: ctx.lane, round: ctx.round, mode: ctx.mode, enforcement: ctx.enforcement, findings_path: null, xreview_path: null, result_path: null, next: null, gitleaks: null, ...allowlistFields({}) });
+  const base = Object.freeze({ verdict: X.VERDICTS.FAIL, reason: null, reason_detail: null, step: null, gate: ctx.gate, phase: ctx.phase, wave: ctx.wave, lane: ctx.lane, round: ctx.round, mode: ctx.mode, enforcement: ctx.enforcement, findings_path: null, xreview_path: null, result_path: null, next: null, gitleaks: null, ...allowlistFields({}), ...(ctx.review ? { pr: ctx.review.report || null } : {}) });
   // A failing step is a FAIL whatever was reached so far — after normalize
   // produced a pass, a broken observe step must not leave `pass` in stdout.
   // `extra` carries the fields already known at that step (e.g. result_path).
@@ -394,13 +405,19 @@ function driveGate(ctx, state) {
   // permission record gets no a1 write at all — no PLAN-REVIEW-LOG.md entry, no
   // xreview/ (Reinhard, PR review MAJOR 1; the W5 rule for every xprov writer).
   // placement BEFORE the permit branch (spec 016 D-1, FR-019/FR-020): a review that does not apply asks nobody and writes nothing
-  const placed = ctx.isPlan ? PL.planPlacement(ctx.root, ctx.planPath) : PL.wavePlacement(ctx.planPath, ctx.wave, ctx.workPath, ctx.base);
+  if (ctx.review && ctx.review.failure) return fail('anchor', ctx.review.failure.reason, ctx.review.failure.detail); // the remote base could not be resolved: nothing is written
+  const placed = ctx.review ? ctx.review.placed : ctx.isPlan ? PL.planPlacement(ctx.root, ctx.planPath) : PL.wavePlacement(ctx.planPath, ctx.wave, ctx.workPath, ctx.base);
   if (!placed.run) return PL.result(base, placed);
   const { permit, notApplicable: na } = permitFor(ctx.root, ctx.gate);
   if (na) return NP.isNoPermit(permit) ? NP.result(base, permit) : recordNotApplicable(ctx, base, permit);
   if (!permit.ok) {
     const everyRepo = permit.state === PERMIT_STATES.DENIED; // `denied` on an `applies_to: all` row still fails
     return fail('permit-check', everyRepo ? X.REASONS.external_review_not_permitted : permit.reason, everyRepo ? `external_review: denied, but ${ctx.gate} applies to every repository` : permit.detail, { permit_state: permit.state });
+  }
+  if (ctx.review) { // FR-018: the same head sha reuses the stored pass (zero runner calls); otherwise the brief the runner reads is written
+    const hit = PD.reusedPass(ctx);
+    if (hit) return Object.freeze({ ...base, verdict: X.VERDICTS.PASS, step: 'reuse', result_path: hit.result_path, findings_path: hit.findings_path || null, reused: true, reason_detail: 'the stored pass for this head sha is reused; no runner call' });
+    PD.writeBrief(ctx);
   }
   const dl = ctx.isPlan ? DL.prepare(ctx) : null; // FR-030: after a passed plan review only the changed sections go out; a cosmetic edit sends nothing
   if (dl && dl.kind === 'cosmetic') { const r = DL.passResult(base, dl); state.logged = true; appendLog(ctx, r, 'none', state); return r; }
@@ -464,7 +481,7 @@ function ownerHandoffs(out) {
 
 /** The four run fields of the observation line (FR-035). `codex_runs` is 1 only for the first line of a gate target that reached the runner: rounds, retries and delta runs collapse (FR-022). */
 function runFields(ctx, state, out) {
-  const first = state.runnerCalls > 0 && runsCounted({ repoRoot: ctx.root, phase: ctx.phase, gate: ctx.gate, wave: ctx.wave, lane: ctx.lane }) === 0;
+  const first = state.runnerCalls > 0 && runsCounted({ repoRoot: ctx.root, ...obsWhere(ctx), phase: ctx.phase, gate: ctx.gate, wave: ctx.wave, lane: ctx.lane }) === 0;
   return { gate: ctx.gate, ownerHandoffs: ownerHandoffs(out), codexRuns: first ? 1 : 0, abortReason: out.verdict === X.VERDICTS.FAIL && out.reason ? out.reason : null, recovered: R.recovered(state.recovery) };
 }
 
@@ -475,7 +492,7 @@ function finishRun(ctx, state, out) {
     const quiet = final.verdict === X.VERDICTS.PASS || final.verdict === X.VERDICT_NOT_APPLICABLE;
     try {
       observe({
-        repoRoot: ctx.root, agent: EXTERNAL_AGENT, skill: ctx.isPlan ? 'a1-plan' : 'a1-execute', phase: ctx.phase, wave: ctx.wave, lane: ctx.lane || undefined,
+        repoRoot: ctx.root, agent: EXTERNAL_AGENT, skill: obsSkill(ctx), ...obsWhere(ctx), phase: ctx.phase, wave: ctx.wave, lane: ctx.lane || undefined,
         type: quiet ? 'gap' : 'blocker', severity: quiet ? 'minor' : 'major', ...(final.verdict === X.VERDICT_NOT_APPLICABLE ? { pattern: RETRO_ISSUE_NOT_APPLICABLE } : {}), provider: 'codex',
         msg: clip(`${ctx.gate} ${scopeOf(ctx.wave)}${ctx.lane ? ` lane ${ctx.lane}` : ''} round ${ctx.round}: ${final.verdict}${final.reason ? ` (${final.reason} at ${final.step})` : ''}`, X.TITLE_MAX_CHARS * 4),
         ...runFields(ctx, state, final),
@@ -538,34 +555,6 @@ function loadCheck(o) {
 }
 
 // ---------- wave-status ----------
-
-/** Completed (wave, lane) pairs from STATUS.md (lane null) and every
- * STATUS-<lane>.md (lane from the file name) — `## Wave N` headings. A
- * STATUS.md heading whose wave number a STATUS-<lane>.md also lists is the
- * lane consolidation (a1-execute merges lane files into STATUS.md before
- * Victor), not a lane-null wave: it is skipped (Reinhard M2). Sequential
- * waves after the lanes carry their own numbers and still count. */
-function completedWavesFromStatus(phaseDir) {
-  const headings = (f) => fs.readFileSync(path.join(phaseDir, f), 'utf8').split('\n').map((l) => l.match(WAVE_HEADING_RE)).filter(Boolean).map((w) => Number(w[1]));
-  const files = fs.readdirSync(phaseDir).sort().map((f) => ({ f, m: f.match(/^STATUS(?:-([A-Za-z0-9_-]+))?\.md$/) })).filter((x) => x.m);
-  const laneWaves = new Set(files.filter((x) => x.m[1]).flatMap((x) => headings(x.f)));
-  const pairs = [];
-  for (const { f, m } of files) {
-    const lane = m[1] || null;
-    for (const wave of headings(f)) {
-      if (lane === null && laneWaves.has(wave)) continue;
-      if (!pairs.some((p) => p.wave === wave && p.lane === lane)) pairs.push({ wave, lane });
-    }
-  }
-  return pairs.sort((a, b) => a.wave - b.wave || String(a.lane).localeCompare(String(b.lane)));
-}
-
-/** --waves 1,2 [--lane L] → (wave, lane) pairs; lanes are first-class keys. */
-function parseWavesFlag(value, lane) {
-  const waves = String(value).split(',').map((s) => s.trim()).filter(Boolean).map((s) => parseWave(s, 'waves'));
-  if (!waves.length) throw inputError('--waves must list at least one wave number');
-  return [...new Set(waves)].sort((a, b) => a - b).map((wave) => ({ wave, lane: lane || null }));
-}
 
 /** Coverage key is (wave, lane): a lane wave needs its own pass or a store
  * waiver (FR-004, FR-007), both bound to this phase's PLAN.md sha and chained
@@ -630,27 +619,6 @@ function waveStatus(o) {
   });
 }
 
-/** The waves whose chosen coverage is of `kind` (fallback | dispositions). */
-function kindWaves(completed, chosen, kind) {
-  return [...new Set(completed.filter((p) => { const c = chosen.get(`${p.wave}|${p.lane || ''}`); return c != null && c.kind === kind; }).map((p) => p.wave))];
-}
-
-/** --lane-work-path L=dir[,L2=dir]: each lane's work path (same git-common-dir) and HEAD. */
-function laneTips(value, repo) {
-  const tips = {};
-  if (value === undefined) return tips;
-  for (const part of String(value).split(',').map((s) => s.trim()).filter(Boolean)) {
-    const i = part.indexOf('=');
-    const lane = C.parseLane(i > 0 ? part.slice(0, i) : '');
-    if (!lane) throw inputError(`--lane-work-path entries are <lane>=<dir>, got ${JSON.stringify(clip(part, 80))}`);
-    const dir = path.resolve(part.slice(i + 1));
-    const h = WV.headIn(dir, repo);
-    if (h.problem) throw inputError(h.problem);
-    tips[lane] = { workPath: dir, head: h.head };
-  }
-  return tips;
-}
-
 // ---------- waive (human only) ----------
 
 /** The single-line text flags of a waiver (`--reason`, `--by`). */
@@ -689,7 +657,7 @@ function mirrorWaiver(ctx, rec) {
   // MINOR (b): a waiver is an observation too — the learning loop must see it
   // (pattern xprov_waived, the tag the retro carries in `issues`).
   const obs = observe({
-    repoRoot: ctx.root, agent: EXTERNAL_AGENT, skill: rec.wave === null ? 'a1-plan' : 'a1-execute', phase: ctx.phase, wave: rec.wave, lane: rec.lane || undefined,
+    repoRoot: ctx.root, agent: EXTERNAL_AGENT, skill: rec.phase === C.PR_PHASE ? PD.SKILL : rec.wave === null ? 'a1-plan' : 'a1-execute', ...(rec.phase === C.PR_PHASE ? { reviewWorktree: ctx.workPath } : {}), phase: ctx.phase, wave: rec.wave, lane: rec.lane || undefined,
     type: 'gap', severity: 'major', pattern: RETRO_ISSUE_WAIVED, msg: clip(`waived ${rec.gate} ${scope}: ${rec.reason}`, X.TITLE_MAX_CHARS * 4), provider: 'codex',
   });
   return { entry, xreviewPath, observationFile: obs && obs.file ? obs.file : null };
@@ -743,11 +711,15 @@ function withFlags(args, known, sub, body) {
 }
 
 function cmdXprovGate(args) {
-  if ((args || []).some((a) => /^--(size|spec|scope|placement)(=|$)/.test(String(a)))) return usageExit(SIZE_FLAG_GONE);
+  const pr = (args || []).some((a) => a === X.GATE_IDS.PR_DIFF || a === `--gate=${X.GATE_IDS.PR_DIFF}`); // --spec/--pr/--merge-check belong to the PR diff gate only (spec 016 wave 10)
+  if ((args || []).some((a) => (pr ? /^--(size|scope|placement)(=|$)/ : /^--(size|spec|scope|placement)(=|$)/).test(String(a)))) return usageExit(SIZE_FLAG_GONE);
   if ((args || []).some((a) => /^--(resume|feedback)(=|$)/.test(String(a)))) return usageExit(RESUME_GONE);
-  return withFlags(args, { phase: 'str', gate: 'str', wave: 'str', lane: 'str', base: 'str', 'work-path': 'str', round: 'str', timeout: 'str', 'allow-plugins': 'str' }, 'gate', (f) => {
-    if (!f.phase || !f.gate) return usageExit('gate requires --phase <name> --gate <id>');
-    const r = gate({ phase: f.phase, gate: f.gate, wave: f.wave, lane: f.lane, base: f.base, workPath: f['work-path'], round: f.round, timeout: f.timeout, allowPlugins: f['allow-plugins'] });
+  const known = { phase: 'str', gate: 'str', wave: 'str', lane: 'str', base: 'str', 'work-path': 'str', round: 'str', timeout: 'str', 'allow-plugins': 'str', ...(pr ? { spec: 'str', pr: 'str', 'merge-check': 'bool' } : {}) };
+  return withFlags(args, known, 'gate', (f) => {
+    if (!f.gate || (!f.phase && f.gate !== X.GATE_IDS.PR_DIFF)) return usageExit('gate requires --phase <name> --gate <id> (pr-diff-xprov: --gate pr-diff-xprov --work-path <abs worktree> [--base <sha>] [--pr <n>] [--spec <path>] [--merge-check])');
+    if (f.gate === X.GATE_IDS.PR_DIFF && (f.phase || f.wave || f.lane)) return usageExit('pr-diff-xprov takes no --phase, --wave or --lane: the target is the head sha of --work-path');
+    if (f['merge-check']) return require('./xprov-pr-merge.cjs').cmdMergeCheck({ workPath: f['work-path'], base: f.base, pr: f.pr, enforcement: enforcementFor(f.gate), permitFor });
+    const r = gate({ phase: f.phase, gate: f.gate, wave: f.wave, lane: f.lane, base: f.base, workPath: f['work-path'], round: f.round, timeout: f.timeout, allowPlugins: f['allow-plugins'], spec: f.spec, pr: f.pr });
     if (r.gitleaks === false) process.stderr.write(`${GITLEAKS_WARNING_LINE}\n`);
     process.stderr.write(`xprov gate ${r.gate} ${scopeOf(r.wave)} round ${r.round}: ${r.verdict}${r.reason ? ` (${r.reason} at ${r.step})` : ''} — enforcement ${r.enforcement}\n`);
     if (r.verdict === X.VERDICT_NOT_APPLICABLE) process.stderr.write(`xprov gate: ${r.reason === X.REASONS.codex_blocked_fallback ? R.BLOCKED_NOTICE : noticeOf(r.permit_state, r.placement)}\n`);

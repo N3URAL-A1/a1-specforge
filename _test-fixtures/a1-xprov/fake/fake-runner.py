@@ -25,6 +25,7 @@ environment when the file is absent (direct `python3 fake-runner.py` calls).
                                $CODEX_HOME/skills/.system when absent (marker
                                8bcfb84cfbe4722a + one skill), then write the names
                                it would load from .system (JSON array) here
+  FAKE_RUNNER_BIND_PLAN        1 = the record's plan_sha256 is the sha256 of the --plan file the runner got (the real runner does)
   FAKE_RUNNER_PROMPT_FILE      write the prompt the runner would hand Codex here:
                                the plan body (runner.py:337-338), on --resume the
                                session Codex would REPLAY — every file under
@@ -206,6 +207,9 @@ def stamp_record(run_dir: Path, mode: str | None, repo: str | None, plan: str | 
         record["repo"] = str(Path(repo).resolve())
     if plan:
         record["plan"] = str(Path(plan).resolve())
+        if knobs().get("FAKE_RUNNER_BIND_PLAN") == "1":  # spec 016 wave 10: the PR brief is written by the gate, so its sha cannot be baked into a case
+            import hashlib
+            record["plan_sha256"] = hashlib.sha256(Path(plan).read_bytes()).hexdigest()
     record["requested_model"] = model
     record["requested_effort"] = effort
     if mode == "inspect" and repo and base:

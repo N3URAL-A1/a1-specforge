@@ -239,7 +239,7 @@ scen_sb6() { base29; modsb29 "{}" "{ ok: false, reason: 'snapshot_failed', detai
 scen_sb7() { base29; modsb29 "{ isPlan: true }" "{ ok: false, reason: 'snapshot_failed', detail: 'base ' + b.slice(0, 7) + ' does not resolve in /x' }"; }
 caseSB() {
   assert_eq "SB1 an unresolvable base is recomputed against the default branch and the inspect runs on it" "$(scen_sb1)" "$SB1"
-  redproof29 "SB1" scen_sb1 "$SB1" xprov-recover.cjs "ctx.isPlan || !BASE_UNRESOLVED_RE.test" "true || !BASE_UNRESOLVED_RE.test"
+  redproof29 "SB1" scen_sb1 "$SB1" xprov-recover.cjs "ctx.isPlan || ctx.review || !BASE_UNRESOLVED_RE.test" "true || ctx.review || !BASE_UNRESOLVED_RE.test"
   assert_eq "SB2 a default branch that is only on the remote is fetched, then the base is recomputed" "$(scen_sb2)" "0/pass/null/1/base_recomputed:true/true/base-is-merge-base" 
   redproof29 "SB2" scen_sb2 "0/pass/null/1/base_recomputed:true/true/base-is-merge-base" xprov-recover.cjs "if (base === null && fetchDefaultBranch(workPath))" "if (false && fetchDefaultBranch(workPath))"
   assert_eq "SB3 no default branch to recompute from: the run stops with the original reason and detail, no runner call, no snapshot left" "$(scen_sb3)" "1/fail/snapshot_failed/0/base_recomputed:false/snapshot/true/0"

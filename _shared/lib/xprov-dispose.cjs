@@ -127,17 +127,17 @@ function bindingOf(ctx, cap) {
 
 function context(o) {
   const phase = assertSafeSegment(o.phase, '--phase');
-  if (![X.GATE_IDS.PLAN_REVIEW, X.GATE_IDS.WAVE_INSPECT].includes(o.gate)) throw C.inputError(`--gate must be ${X.GATE_IDS.PLAN_REVIEW} or ${X.GATE_IDS.WAVE_INSPECT}, got ${JSON.stringify(C.clip(String(o.gate), 80))}`);
+  if (![X.GATE_IDS.PLAN_REVIEW, X.GATE_IDS.WAVE_INSPECT, X.GATE_IDS.PR_DIFF].includes(o.gate)) throw C.inputError(`--gate must be ${X.GATE_IDS.PLAN_REVIEW}, ${X.GATE_IDS.WAVE_INSPECT} or ${X.GATE_IDS.PR_DIFF}, got ${JSON.stringify(C.clip(String(o.gate), 80))}`);
   const isPlan = o.gate === X.GATE_IDS.PLAN_REVIEW;
   if (isPlan && (o.wave !== undefined || o.lane !== undefined || o.workPath !== undefined)) throw C.inputError('plan-review-xprov takes no --wave, --lane or --work-path');
-  if (!isPlan && o.wave === undefined) throw C.inputError('wave-inspect-xprov requires --wave <N> (and --work-path <dir> for a worktree)');
+  if (!isPlan && o.wave === undefined) throw C.inputError('wave-inspect-xprov and pr-diff-xprov require --wave <N> (and --work-path <dir> for a worktree)');
   const root = repoRoot();
-  const phaseDir = path.join(root, '.a1', 'phases', phase);
+  const workPath = o.workPath === undefined ? root : path.resolve(String(o.workPath));
+  if (!fs.existsSync(workPath) || !fs.statSync(workPath).isDirectory()) throw C.inputError(`--work-path is not a directory: ${workPath}`);
+  const phaseDir = C.phaseDirOf(root, phase, workPath); // the reserved PR phase keeps its state in <work-path>/.a1-review (pr-diff-xprov)
   if (!fs.existsSync(phaseDir) || !fs.statSync(phaseDir).isDirectory()) throw C.inputError(`phase dir not found: ${phaseDir}`);
   const planPath = path.join(phaseDir, 'PLAN.md');
   if (!fs.existsSync(planPath)) throw C.inputError(`PLAN.md not found in ${phaseDir}`);
-  const workPath = o.workPath === undefined ? root : path.resolve(String(o.workPath));
-  if (!fs.existsSync(workPath) || !fs.statSync(workPath).isDirectory()) throw C.inputError(`--work-path is not a directory: ${workPath}`);
   const indexPath = path.join(phaseDir, 'xreview', 'index.json');
   const index = C.readIndex(indexPath);
   if (index === null) throw C.inputError(`index.json unparseable or not an array of objects: ${indexPath}`);
