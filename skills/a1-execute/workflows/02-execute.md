@@ -139,7 +139,8 @@ the gate call again.
    the review-home actions fix; `recovery` in the stdout JSON lists what it did. Twice `blocked` ends as `not_applicable` with
    `reason: codex_blocked_fallback`: Reinhard is the only review for this wave, no question is asked, `wave-status` accepts it. Every other
    reason (`secret_in_snapshot`, `secret_in_output`, `tripwire`, `quarantined`, `run_home_unsafe`, `snapshot_changed_after_scan`,
-   `allowlist_invalid`, `allowlist_modified`, permit or store mismatches, `round_cap`) is a stop: do not re-run the gate to retry it.
+   `allowlist_invalid`, `allowlist_modified`, permit or store mismatches, `round_cap`) is a stop: do not re-run the gate to retry it. Two exits exist for
+   a stop that is not a hard security stop: a `round_cap` whose round 2 holds no BLOCKER (write `xreview/wave-inspect-xprov-wave-<N>[-<lane>]-r2.dispositions.md`, one `<id>: fixed|accepted: <reason>` line per finding id, then `xprov dispose --phase <phase_name> --gate wave-inspect-xprov --wave <N> [--lane <id>] --work-path <dir>`; success is `accepted: "dispositions"`, retro `verdict: fail` plus the `issue_classes` tag `xprov_disposed`; `blocker_open` and `undisposed` go to the waiver question), and a changed-line secret hit the owner declined (`xprov dispose ... --secret-declined <snap-basename> --base <sha>`; the wave ends `not_applicable` / `secret_declined`, Reinhard-only). A secret hit in a file the diff does not change is excluded by the gate itself and listed in `excluded`.
 3. **Ask once.** Only after the gate call returned `reason: external_review_not_permitted` (never after `scope_exempt`),
    and only if this session can ask the owner (AskUserQuestion exists;
    not headless, not CI, not a subagent — an executor subagent never asks) and

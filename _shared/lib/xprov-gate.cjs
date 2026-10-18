@@ -68,6 +68,7 @@ const WV = require('./xprov-waivers.cjs');
 const NP = require('./xprov-gate-nopermit.cjs');
 const PL = require('./xprov-placement.cjs');
 const RR = require('./xprov-runrecord.cjs');
+const DL = require('./xprov-delta.cjs');
 const AC = require('./xprov-accept.cjs');
 const { guardRefusal, readTypedLine, writeGuardedStore } = require('./xprov-approve.cjs');
 const { appendXreviewNote } = require('./xprov-normalize.cjs');
@@ -202,7 +203,7 @@ function resolveGateArgs(o) {
  * PLAN.md the runner will read and, for round N ≥ 2 after a REVISE, the
  * feedback file. The runner only ever gets these COPIES (`snapshot().inputs`). */
 function snapshotInputs(ctx, feedback) {
-  const inputs = [{ key: 'plan', source: ctx.planPath, label: `.a1/phases/${ctx.phase}/PLAN.md` }];
+  const inputs = [{ key: 'plan', source: ctx.deltaFile || ctx.planPath, label: `.a1/phases/${ctx.phase}/PLAN.md` }];
   if (feedback) inputs.push({ key: 'feedback', source: feedback, label: `round-${ctx.round - 1} findings + dispositions` });
   return inputs;
 }
@@ -401,8 +402,11 @@ function driveGate(ctx, state) {
     const everyRepo = permit.state === PERMIT_STATES.DENIED; // `denied` on an `applies_to: all` row still fails
     return fail('permit-check', everyRepo ? X.REASONS.external_review_not_permitted : permit.reason, everyRepo ? `external_review: denied, but ${ctx.gate} applies to every repository` : permit.detail, { permit_state: permit.state });
   }
-  if (ctx.round > X.ROUND_CAP) { const r = fail('round', X.REASONS.round_cap, `round ${ctx.round} > cap ${X.ROUND_CAP}`); state.logged = true; appendLog(ctx, r, 'none', state); return r; }
+  const dl = ctx.isPlan ? DL.prepare(ctx) : null; // FR-030: after a passed plan review only the changed sections go out; a cosmetic edit sends nothing
+  if (dl && dl.kind === 'cosmetic') { const r = DL.passResult(base, dl); state.logged = true; appendLog(ctx, r, 'none', state); return r; }
+  if (ctx.round > X.ROUND_CAP) { DL.cleanup(dl); const r = fail('round', X.REASONS.round_cap, `round ${ctx.round} > cap ${X.ROUND_CAP}`); state.logged = true; appendLog(ctx, r, 'none', state); return r; }
   const prior = priorRound(ctx); // usage errors surface before any side effect (exit 2 writes nothing)
+  const dctx = dl ? Object.freeze({ ...ctx, deltaFile: dl.file }) : ctx;
   let snap = null;
   let feedback = null;
   let result;
@@ -414,7 +418,7 @@ function driveGate(ctx, state) {
     // FR-011: a blocking gate does not degrade to patterns-only; no snapshot is made without gitleaks.
     if (ctx.enforcement === 'blocking' && resolveTool('gitleaks') === null) return (result = fail('preflight', X.REASONS.preflight_failed, GITLEAKS_MISSING_DETAIL));
     if (prior) feedback = writeFeedback(prior);
-    const sb = R.snapshotWithBase(ctx, (b) => stepSnapshot(b === ctx.base ? ctx : Object.freeze({ ...ctx, base: b }), feedback));
+    const sb = R.snapshotWithBase(ctx, (b) => stepSnapshot(b === ctx.base ? dctx : Object.freeze({ ...dctx, base: b }), feedback));
     state.recovery = addRecovery(state.recovery, sb.recovery);
     const snapped = sb.snapped;
     const runCtx = sb.base === ctx.base ? ctx : Object.freeze({ ...ctx, base: sb.base });
@@ -422,7 +426,8 @@ function driveGate(ctx, state) {
     noteAllowlist(ctx, al);
     if (!snapped.ok) return (result = fail('snapshot', snapped.reason, snapped.detail, al));
     snap = snapped.snapshot;
-    const rv = R.reviewSteps(() => { state.runnerCalls += 1; return stepRun(runCtx, snap, snapped.inputs); }, (p) => stepNormalize(ctx, p, al));
+    const rv = R.reviewSteps(() => { state.runnerCalls += 1; const r1 = stepRun(runCtx, snap, snapped.inputs); return dl && r1.ok && !DL.stamp(r1.resultPath, dl, ctx.root) ? { ok: false, reason: X.REASONS.malformed, detail: 'the delta marker could not be written next to the run record' } : r1; }, // FR-030: the marker must exist before normalize reads the record
+     (p) => stepNormalize(ctx, p, al));
     state.recovery = R.runnerRecovery(rv).reduce(addRecovery, state.recovery);
     const { ran, norm } = rv;
     if (!ran.ok) return (result = fail('run', ran.reason, ran.detail, { ...al, run_porcelain: ran.porcelain || null }));
@@ -437,6 +442,7 @@ function driveGate(ctx, state) {
     let snapState = 'none';
     if (snap) { try { cleanupSnapshot(snap); snapState = 'removed'; } catch (_e) { snapState = `cleanup failed: ${snap}`; } }
     if (feedback) fs.rmSync(path.dirname(feedback), { recursive: true, force: true });
+    DL.cleanup(dl);
     // Only a step OUTCOME is logged. A throw (usage error from preflight's
     // codexHome(), an unexpected exception) leaves `result` unset: exit 2 must
     // write nothing, and an internal error must not pose as a gate entry.
@@ -519,12 +525,12 @@ function loadCheck(o) {
   const store = WV.readWaivers();
   const waiver = newest !== null && newest.plan_sha256 === planSha ? null : WV.planWaiver(store, { repo: C.commonDirOf(ctx.root), phase: ctx.phase, plan_sha256: planSha });
   // spec 016 FR-026 / FR-025: twice BLOCKED, or round_cap closed by dispositions; a1's marker in the run dir is the proof, the index row only points at it
-  const side = newest === null && waiver === null ? AC.planSideRecord(index, gate, planSha, ctx.root) : null;
+  const side = newest === null && waiver === null ? AC.planSideRecord(index, gate, planSha, ctx.root, fs.readFileSync(ctx.planPath, 'utf8')) : null;
   const accepted = newest !== null && newest.plan_sha256 === planSha ? 'pass' : (waiver ? 'waiver' : (side ? side.accepted : null));
   const ok = accepted !== null && !moved;
   return Object.freeze({
     ok, gate, enforcement, phase: ctx.phase, plan_sha256: planSha, accepted,
-    matched_entry: accepted === 'pass' ? newest : (side ? side.entry : null), matched_waiver: accepted === 'waiver' ? waiver : null,
+    matched_entry: accepted === 'pass' && newest ? newest : (side ? side.entry : null), carried_from: side && side.carried_from ? side.carried_from : null, matched_waiver: accepted === 'waiver' ? waiver : null,
     newest_pass: newest ? { ts: newest.ts, plan_sha256: newest.plan_sha256, round: newest.round } : null,
     reason: ok ? null : (moved ? X.REASONS.plan_changed : X.REASONS.plan_review_missing),
     detail: ok ? null : (moved ? movedDetail : loadCheckDetail(newest, planSha, store)),
@@ -758,7 +764,7 @@ function cmdXprovLoadCheck(args) {
   return withFlags(args, { phase: 'str', 'expect-sha': 'str' }, 'load-check', (f) => {
     if (!f.phase) return usageExit('load-check requires --phase <name> [--expect-sha <sha256>]');
     const r = loadCheck({ phase: f.phase, expectSha: f['expect-sha'] });
-    process.stderr.write(r.ok ? `xprov load-check: ${r.accepted === NOT_APPLICABLE_ACCEPTED ? noticeOf(r.permit_state, r.placement) : (AC.sideNotice(r.accepted, R.BLOCKED_NOTICE) || `PLAN.md matches ${r.accepted === 'waiver' ? `a store waiver for ${r.gate} (not a pass)` : `the newest ${r.gate} pass`}`)}\n` : `xprov load-check: ${r.reason} — ${r.detail} (enforcement ${r.enforcement})\n`);
+    process.stderr.write(r.ok ? `xprov load-check: ${r.accepted === NOT_APPLICABLE_ACCEPTED ? noticeOf(r.permit_state, r.placement) : (AC.sideNotice(r.carried_from ? 'carried' : r.accepted, R.BLOCKED_NOTICE) || `PLAN.md matches ${r.accepted === 'waiver' ? `a store waiver for ${r.gate} (not a pass)` : `the newest ${r.gate} pass`}`)}\n` : `xprov load-check: ${r.reason} — ${r.detail} (enforcement ${r.enforcement})\n`);
     return finish(r, r.ok ? X.EXIT_PASS : X.EXIT_FAIL);
   });
 }

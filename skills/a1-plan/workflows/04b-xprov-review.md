@@ -128,6 +128,7 @@ The driver has already appended verdict, XREVIEW.md path and result path to
 | `not_applicable` (exit 1, `reason: external_review_not_permitted`) | any | The repository has no permit and the owner gave none (never asked, No, unanswered, or no chat: Step 1.0). **Continue — do not halt.** Print the no-permit notice below and treat the plan as ready with the Reinhard review only; no Codex call happened. The retro records `verdict: not_applicable` and the issue tag `xprov_not_applicable`. |
 | `not_applicable` (exit 1, `reason: scope_exempt`) | any | The placement rule says the plan review does not apply (spec size not L, no security surface in the files the plan names). **Continue — do not halt.** Print the scope notice below and treat the plan as ready with the Reinhard review only; no consent question is asked, no Codex call happened, nothing was written. The retro records `verdict: not_applicable` with the reason `scope_exempt` and the issue tag `xprov_not_applicable`. |
 | `not_applicable` (exit 1, `reason: codex_blocked_fallback`) | any | Codex answered BLOCKED twice (the gate repeated the run once by itself, spec 016 FR-026). **Continue — do not halt.** Print the blocked notice below: the Reinhard review is the only review for this plan. No consent question is asked. `xprov load-check` accepts it (`accepted: "codex_blocked_fallback"`) for this PLAN.md sha. The retro records `verdict: not_applicable` with the reason `codex_blocked_fallback` and the issue tag `xprov_not_applicable`. |
+| `not_applicable` (exit 1, `reason: secret_declined`) | any | A secret hit sat in a changed line and the owner declined the allowlist question (or gave no answer, or there is no chat; Step 5.4). **Continue — do not halt.** Reinhard is the only review; nothing was sent. `xprov load-check` accepts it (`accepted: "secret_declined"`). The retro records `verdict: not_applicable` with the reason `secret_declined` and the issue tag `xprov_not_applicable`. |
 | `fail` (any `reason`) | `warning` | Print the warning block below, then treat the plan as ready **with the warning attached** to the summary. The retro records `verdict: fail`. |
 | `fail` (any `reason`) | `blocking` | **HALT.** Print the block below as an error; do not suggest `a1-execute`. Surface the `reason` and the two ways out: fix the cause (e.g. `preflight_failed`, `not_logged_in`, `external_review_permit_mismatch`) and re-run Step 1, or an owner waiver by chat (Step 5). |
 
@@ -151,7 +152,20 @@ For `blocking` the first line reads `❌ … enforcement: blocking — execution
 not permitted until this passes or a human waives it.`
 
 `round_cap` is a `fail` like any other: it means two review rounds completed
-without APPROVED — surface it to the user, never start a third round.
+without APPROVED — never start a third round. **Dispositions (spec 016 FR-025).**
+When round 2 holds NO blocker (only major, minor or quarantined findings), write
+the host dispositions file `xreview/plan-review-xprov-plan-r2.dispositions.md`
+(the path is `next.dispositions_path` of round 1 with `r2`), one line per finding id of round 2:
+`<id>: fixed: <what changed>` or `<id>: accepted: <reason>` (non-empty, one line,
+no secret, no instruction). Then run
+```bash
+node <repo>/_shared/a1-tools.cjs xprov dispose --phase <phase_name> --gate plan-review-xprov > "$XREVIEW_DIR/dispose.last-run.json"; RC=$?
+echo "xprov dispose exit=$RC"
+```
+Exit 0: the plan is ready (`xprov load-check` accepts `accepted: "dispositions"` for the current PLAN.md sha); the retro records `verdict: fail` with the issue tag
+`xprov_disposed`. Exit 1 with `refused: blocker_open` keeps the hard stop (only an owner waiver leads on); `refused: undisposed` names the ids without
+a usable line: fix the file once, or the target goes to the per-phase waiver question (Step 5). Any other refusal: surface it, do not retry blindly.
+Without the file or with a BLOCKER, surface `round_cap` to the user as a stop.
 
 ## Step 3 — REVISE: revision round (only after `fail-with-findings`)
 
@@ -206,7 +220,7 @@ gates_fired:
 
 `verdict: fail` for every non-pass outcome except `not_applicable`, including `round_cap` and a
 `warning`-enforced continue. For `not_applicable` write `verdict: not_applicable, caught: false`
-and add `xprov_not_applicable` to `issues`. If a waiver exists for this gate (Step 5), add
+and add `xprov_not_applicable` to `issues`. If the round cap was closed by `xprov dispose`, keep `verdict: fail` and add `xprov_disposed`. If a waiver exists for this gate (Step 5), add
 `xprov_waived` to `issues` — the base field of `_shared/retro-template.md`
 (a1-execute uses its own `issue_classes` instead; a1-evolve reads both).
 Validate with `retro validate` before appending, as `04-audit.md` describes.
@@ -253,7 +267,10 @@ owner sees.
    `xprov consent question --kind allowlist --scan <snap-basename>`
    (header `xprov-Allowlist`, masked excerpts, one approval per listed blob) and
    `xprov consent allowlist --scan <snap-basename>` after the answer. No, no
-   answer or no chat: nothing is approved; the review continues without Codex.
+   answer or no chat: nothing is approved and nothing goes to Codex. Close the target with
+   `xprov dispose --phase <phase_name> --gate plan-review-xprov --secret-declined <snap-basename>`
+   (wave gate: `--wave <N> --work-path <dir> --base <sha>` too). a1 checks that the scan record for this repo and this exact HEAD exists and writes
+   the marker; the target ends `not_applicable` / `secret_declined` and the Reinhard review is the only review.
 5. **Headless or no AskUserQuestion:** no question. The gate stays failed; halt per Step 2.
 6. The terminal commands (`xprov waive`, `xprov permit`, `xprov allowlist approve`)
    stay the owner's own; no agent runs them or writes `~/.a1-xprov/`. No `bash`
@@ -271,6 +288,11 @@ owner sees.
 - **PLAN.md edited after a pass** (e.g. a manual touch-up). The pass entry's
   `plan_sha256` no longer matches; a1-execute's Load check reports
   `plan_review_missing`. Re-run Step 1 — do not hand-edit `index.json`.
+- **Delta review and exclusion (spec 016 FR-029, FR-030).** After a PASSED plan review a changed PLAN.md goes out as a delta: frontmatter, Goal,
+  Success Criteria and the changed sections (a1 keeps the approved text as `a1-plan.md` in the pass run dir; without it the review is full). A
+  whitespace- or heading-only edit sends nothing: the gate returns `pass` with `delta.kind: cosmetic` and `load-check` reports `carried_from`.
+  In a wave inspection a secret hit in a file the diff does not change is excluded and listed in the result (`excluded`: path and rule id) and in
+  XREVIEW.md; read that list, the reviewer did not see those files. A hit in a changed file stays a stop.
 - **Multi-lane plans.** One review of the whole PLAN.md; lanes are inspected
   per wave by `wave-inspect-xprov` in a1-execute, not here.
 - **Self-recovery (spec 016 FR-024..028, FR-031).** The gate repairs four failures by itself and says so in `recovery` (stdout) and in the

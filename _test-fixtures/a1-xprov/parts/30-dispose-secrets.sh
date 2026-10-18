@@ -395,5 +395,100 @@ caseDC() {
   if (m === null || m.kind"
 }
 caseDC
+# ---------- DL: FR-030 — delta plan review after a passed review; a cosmetic edit sends nothing ----------
+# mk_sha30 <out> <sha> — the approved answer for a plan whose runner-side sha is <sha>
+mk_sha30() {
+  node -e '
+    const fs = require("fs"); const [src, out, sha] = process.argv.slice(1);
+    const r = JSON.parse(fs.readFileSync(src, "utf8")); r.plan_sha256 = sha; fs.writeFileSync(out, JSON.stringify(r, null, 2) + "\n");
+  ' "$CASES/approved.result.json" "$1" "$2"
+}
+# delta_sha30 <old plan file> <new plan file> — sha256 of the delta text a1 builds (the TREE under test)
+delta_sha30() {
+  node -e '
+    const fs = require("fs"); const crypto = require("crypto"); const D = require(process.argv[1] + "/_shared/lib/xprov-delta.cjs");
+    const a = D.analyze(fs.readFileSync(process.argv[2], "utf8"), fs.readFileSync(process.argv[3], "utf8"));
+    process.stdout.write(a.delta === null ? "none" : crypto.createHash("sha256").update(a.delta).digest("hex"));
+  ' "$TREE" "$1" "$2"
+}
+pass30() { # a full review that passes (runner answer bound to the plan sha); leaves PASS_DIR30
+  mk_sha30 "$TMP30/pass.json" "$(plansha30)"
+  FAKE_RUNNER_PROMPT_FILE="$TMP30/prompt-full.txt" FAKE_RUNNER_CASE="$TMP30/pass.json" gate30 --gate "$GATE_PLAN" --round 1
+  PASS_DIR30="$(dirname "$(json_get "$G_OUT" "j.result_path")")"
+}
+delta_gate30() { # the gate on the edited plan; DL_PROMPT = the prompt the reviewer got (empty when no run)
+  rm -f "$TMP30/prompt-d.txt"
+  mk_sha30 "$TMP30/passd.json" "${1:-$(plansha30)}"
+  FAKE_RUNNER_PROMPT_FILE="$TMP30/prompt-d.txt" FAKE_RUNNER_CASE="$TMP30/passd.json" gate30 --gate "$GATE_PLAN"
+  DL_PROMPT="$(cat "$TMP30/prompt-d.txt" 2>/dev/null)"
+}
+scen_dl1() { # the Tasks section changed after a pass: only Tasks (plus Goal) go out; the pass binds the FULL sha
+  prep30; pass30
+  local old="$TMP30/old.PLAN.md"; cp "$PHASE_PLAN" "$old"
+  local copy; [[ -f "$PASS_DIR30/a1-plan.md" ]] && copy=copy || copy=nocopy
+  node -e 'const fs=require("fs");const f=process.argv[1];fs.writeFileSync(f,fs.readFileSync(f,"utf8").replace("## Acceptance checks","- a second task for the delta\n\n## Acceptance checks"));' "$PHASE_PLAN"
+  local dsha; dsha="$(delta_sha30 "$old" "$PHASE_PLAN")"
+  delta_gate30 "$dsha"
+  local full; full="$([[ "$DL_PROMPT" == *"## Acceptance"* ]] && echo full || echo cut)"
+  local dm; [[ -f "$(dirname "$(json_get "$G_OUT" "j.result_path")")/a1-delta.json" ]] && dm=marker || dm=nomarker
+  echo "$copy/$G_RC/$(json_get "$G_OUT" "j.verdict")/$([[ "$DL_PROMPT" == *"DELTA REVIEW"* ]] && echo delta || echo nodelta)/$([[ "$DL_PROMPT" == *"a second task"* ]] && echo has-change || echo no-change)/$full/$dm/$(lc30)"
+}
+scen_dl2() { # a whitespace + heading-text edit: nothing is sent, load-check carries the pass
+  prep30; pass30
+  node -e 'const fs=require("fs");const f=process.argv[1];fs.writeFileSync(f,fs.readFileSync(f,"utf8").replace("## Out of scope","##   Out of scope (renamed)  ").replace(/\n/g,"  \n"));' "$PHASE_PLAN"
+  delta_gate30
+  sub30 load-check --phase p30
+  echo "$G_RC/$(json_get "$G_OUT" "[j.ok, j.accepted, !!j.carried_from].join('/')")/prompt=$([[ -z "$DL_PROMPT" ]] && echo none || echo sent)"
+}
+scen_dl3() { # no stored copy: a full review
+  prep30; pass30; rm -f "$PASS_DIR30/a1-plan.md"
+  node -e 'const fs=require("fs");const f=process.argv[1];fs.writeFileSync(f,fs.readFileSync(f,"utf8").replace("## Acceptance checks","- another task\n\n## Acceptance checks"));' "$PHASE_PLAN"
+  delta_gate30
+  echo "$([[ "$DL_PROMPT" == *"DELTA REVIEW"* ]] && echo delta || echo full)"
+}
+scen_dl4() { # the stored copy does not hash to the pass: a full review
+  prep30; pass30; printf 'tampered\n' >> "$PASS_DIR30/a1-plan.md"
+  node -e 'const fs=require("fs");const f=process.argv[1];fs.writeFileSync(f,fs.readFileSync(f,"utf8").replace("## Acceptance checks","- yet another task\n\n## Acceptance checks"));' "$PHASE_PLAN"
+  delta_gate30
+  echo "$([[ "$DL_PROMPT" == *"DELTA REVIEW"* ]] && echo delta || echo full)"
+}
+caseDL() {
+  fresh30
+  assert_eq "DL1 a changed Tasks section after a pass: copy kept, delta sent (changed section yes, unchanged section no), marker written, load-check accepts the full sha" "$(scen_dl1)" "copy/0/pass/delta/has-change/cut/marker/true/pass/"
+  assert_eq "DL2 whitespace + heading-only edit: gate passes without a run, load-check carries the pass" "$(scen_dl2)" "0/true/pass/true/prompt=none"
+  assert_eq "DL3 no stored copy: full review" "$(scen_dl3)" "full"
+  assert_eq "DL4 tampered copy: full review" "$(scen_dl4)" "full"
+  local DLN=xprov-delta.cjs
+  redproof30 "DL1a" scen_dl1 "copy/0/pass/delta/has-change/cut/marker/true/pass/" xprov-gate.cjs "source: ctx.deltaFile || ctx.planPath" "source: ctx.planPath"
+  redproof30 "DL1b" scen_dl1 "copy/0/pass/delta/has-change/cut/marker/true/pass/" xprov-runrecord.cjs "m.sent_plan_sha256 === rec.plan_sha256 ?" "false ?"
+  redproof30 "DL2a" scen_dl2 "0/true/pass/true/prompt=none" $DLN "if (canonical(oldText) === canonical(newText))" "if (false)"
+  redproof30 "DL4a" scen_dl4 "full" $DLN "C.sha256(buf) === entry.plan_sha256 ?" "true ?"
+}
+caseDL
+# ---------- HS30: FR-031 — after a hard-stop reason no retry, fallback, disposition or delta path applies ----------
+HARD30="secret_in_output tripwire quarantined run_home_unsafe snapshot_changed_after_scan allowlist_invalid allowlist_modified external_review_permit_mismatch external_review_denial_mismatch owner_home_mismatch"
+# scen_hs30 <reason> — a round-2 row that failed with <reason>: dispose refuses, the recovery list does not name it, load-check stays closed
+scen_hs30() {
+  prep30; to_cap30 "M1:medium" "M1:medium" >/dev/null 2>&1
+  node -e '
+    const fs = require("fs"); const [idx, reason] = process.argv.slice(1); const a = JSON.parse(fs.readFileSync(idx, "utf8"));
+    fs.writeFileSync(idx, JSON.stringify(a.map((e) => (String(e.round) === "2" ? { ...e, verdict: "fail", reason } : e)), null, 2) + "\n");
+  ' "$PHASE_DIR/xreview/index.json" "$1"
+  printf 'M1: fixed: done\n' > "$(DISP30)"
+  sub30 dispose --phase p30 --gate "$GATE_PLAN"
+  local rec; rec="$(node -e 'const R=require(process.argv[1]+"/_shared/lib/xprov-recover.cjs");process.stdout.write(String(R.isRecoverable(process.argv[2])))' "$TREE" "$1")"
+  echo "$G_RC/$(json_get "$G_OUT" "j.refused")/recoverable=$rec/$(lc30)"
+}
+caseHS30() {
+  fresh30
+  local r DPN=xprov-dispose.cjs
+  for r in $HARD30; do
+    assert_eq "HS30 $r: dispose refuses, the recovery list does not name it, load-check stays closed" "$(scen_hs30 "$r")" "1/not_a_revise/recoverable=false/false//plan_review_missing"
+  done
+  assert_eq "HS30 the findings file name dispose reads is the one normalize writes" "$(node -e 'const a=require(process.argv[1]+"/_shared/lib/xprov-runrecord.cjs").FINDINGS_FILE;const b=require(process.argv[1]+"/_shared/lib/xprov-normalize.cjs").PRIOR_FINDINGS_FILE;process.stdout.write(a===b?"same":a+"!="+b)' "$TREE")" "same"
+  redproof30 "HS30a" "scen_hs30 tripwire" "1/not_a_revise/recoverable=false/false//plan_review_missing" $DPN "if (row.verdict !== X.VERDICTS.FAIL_WITH_FINDINGS) return" "if (false) return"
+  redproof30 "HS30b" "scen_hs30 run_home_unsafe" "1/not_a_revise/recoverable=false/false//plan_review_missing" xprov-recover.cjs "const RECOVERABLE_REASONS = Object.freeze([X.REASONS.runner_failed," "const RECOVERABLE_REASONS = Object.freeze([X.REASONS.run_home_unsafe, X.REASONS.runner_failed,"
+}
+caseHS30
 rm -rf "$TMP30"
 export HOME="$SAVED_HOME_30"

@@ -254,7 +254,7 @@ result: <pass|partial|fail>
 waves_executed: <N>
 observations_total: $OBS_COUNT
 observations_major_plus: $MAJOR_COUNT
-issue_classes: [<from: plan_drift, missing_dependency, wave_too_large, flaky_test, env_issue, spec_omission, unverifiable_criterion, blocker_unforeseen, xprov_waived, xprov_not_applicable>]
+issue_classes: [<from: plan_drift, missing_dependency, wave_too_large, flaky_test, env_issue, spec_omission, unverifiable_criterion, blocker_unforeseen, xprov_waived, xprov_not_applicable, xprov_disposed>]
 phase_that_produced_most_issues: <plan|implement|verify>
 ```
 
@@ -279,7 +279,7 @@ gates_fired:
 
 `wave-inspect-xprov` gets **one line per wave** (per lane wave in multi-lane
 phases), `verdict: fail` for every non-pass outcome including a
-`warning`-enforced continue, a `round_cap` and a waived wave (a waiver is
+`warning`-enforced continue, a `round_cap` (also one closed by `xprov dispose`: keep `verdict: fail` and add `xprov_disposed` to `issue_classes`) and a waived wave (a waiver is
 never a pass — it additionally puts `xprov_waived` into `issue_classes`,
 a1-execute's own tag field; a1-plan records the same waiver in the base
 `issues` field of `_shared/retro-template.md`, and a1-evolve reads both).

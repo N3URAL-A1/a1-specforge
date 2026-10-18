@@ -82,7 +82,7 @@ place the check fails with that reason, which is the correct answer.)
   `ℹ Plan review not applicable — scope_exempt: spec is not size L and the plan names no security surface; Reinhard-only, continuing.`
   and record the same retro entry with reason `scope_exempt`. `accepted: "codex_blocked_fallback"` (spec 016 FR-026: Codex answered BLOCKED
   twice for exactly this PLAN.md) is exit 0 too: print `ℹ Plan review not applicable — Codex answered BLOCKED twice; the Reinhard review is the only review for this plan, continuing.`
-  and record the retro entry with reason `codex_blocked_fallback` (issue tag `xprov_not_applicable`). A mismatch or broken state
+  and record the retro entry with reason `codex_blocked_fallback` (issue tag `xprov_not_applicable`). `accepted: "dispositions"` (FR-025: round 2 closed by recorded dispositions, no BLOCKER) and `accepted: "secret_declined"` (FR-029: the owner declined the allowlist question for a changed-line secret hit) are exit 0 too: record `xprov_disposed` respectively `xprov_not_applicable` (reason `secret_declined`) in the retro. `wave-status` lists such waves under `disposed` and `declined` next to `blocked_fallback`; a `carried_from` field in the `load-check` output means a whitespace- or heading-only PLAN.md edit kept the earlier pass (FR-030). A mismatch or broken state
   (`*_mismatch`, `audit_broken`, `invalid`) stays exit 1.
 - **Exit 1, `reason: plan_review_missing`** → read `enforcement` from the
   stdout JSON (it echoes the `plan-review-xprov` row of

@@ -60,9 +60,39 @@ function hasPassMarker(runDir, planSha) {
   return m !== null && (planSha === undefined || m.plan_sha256 === planSha);
 }
 
-/** result.json of a run dir in our artifacts, or null. */
+// Spec 016 FR-030: a delta plan review sends the changed sections only, so the runner records the sha of THAT text. a1's marker in the run dir
+// (written by the gate before normalize) maps it back to the PLAN.md sha it stands for; `runRecord` and normalize read the record through it.
+const DELTA_MARKER_FILE = 'a1-delta.json';
+const PLAN_COPY_FILE = 'a1-plan.md'; // the approved PLAN.md next to the pass marker (the base of a later delta or cosmetic carry)
+const SHA256_RE = /^[0-9a-f]{64}$/;
+
+/** `rec` with plan_sha256 = the full PLAN.md sha when the run dir holds a delta marker for exactly this record, else `rec` itself. */
+function mapDelta(rec, resultPath, root) {
+  if (!C.isPlainObject(rec) || !inOwnArtifacts(resultPath, root)) return rec;
+  const m = readJsonNoFollow(path.join(path.dirname(path.resolve(resultPath)), DELTA_MARKER_FILE));
+  return m !== null && SHA256_RE.test(String(m.plan_sha256)) && m.sent_plan_sha256 === rec.plan_sha256 ? { ...rec, plan_sha256: m.plan_sha256, sent_plan_sha256: m.sent_plan_sha256 } : rec;
+}
+
+/** Write one of a1's small run-dir files once (0600, wx); true when it is there afterwards. */
+function writeRunDirFile(resultPath, name, body, root) {
+  if (!inOwnArtifacts(resultPath, root)) return false;
+  try { fs.writeFileSync(path.join(path.dirname(path.resolve(resultPath)), name), body, { mode: 0o600, flag: 'wx' }); return true; } catch (e) { return e.code === 'EEXIST'; }
+}
+
+/** The gate's note that THIS run saw a delta: { plan_sha256 (full), sent_plan_sha256 (what the runner hashed), base_plan_sha256 }. */
+function writeDeltaMarker(resultPath, doc, root) {
+  return writeRunDirFile(resultPath, DELTA_MARKER_FILE, `${JSON.stringify({ version: 1, ...doc, ts: new Date().toISOString() }, null, 2)}\n`, root);
+}
+
+/** Keep the approved PLAN.md next to the pass marker, only when its bytes hash to the sha the pass names. */
+function writePlanCopy(resultPath, planPath, planSha, root) {
+  const buf = C.readNoFollow(planPath, X.MAX_RESULT_BYTES * 4);
+  return buf !== null && C.sha256(buf) === planSha && writeRunDirFile(resultPath, PLAN_COPY_FILE, buf, root);
+}
+
+/** result.json of a run dir in our artifacts, or null (read through the delta marker). */
 function runRecord(resultPath, root) {
-  return inOwnArtifacts(resultPath, root) ? readJsonNoFollow(path.resolve(resultPath)) : null;
+  return inOwnArtifacts(resultPath, root) ? mapDelta(readJsonNoFollow(path.resolve(resultPath)), resultPath, root) : null;
 }
 
 /** { head, base } of an inspection ONLY from a1-reviewed.json, and only when
@@ -171,4 +201,4 @@ function declinedMarker(resultPath, want, root) {
   return want.wave === null || (SHA_RE.test(String(m.head)) && SHA_RE.test(String(m.base))) ? m : null;
 }
 
-module.exports = { declinedMarker, EXCLUDED_FILE, writeExcluded, REVIEWED_FILE, PASS_MARKER_FILE, BLOCKED_MARKER_FILE, DISPOSED_MARKER_FILE, FINDINGS_FILE, verifiedFindings, disposedMarker, planDisposed, waveDisposedHeadBase, blockedFallbackValid, blockedFallbackHeadBase, hasPassMarker, inOwnArtifacts, readJsonNoFollow, runRecord, reviewedHeadBase, planPassValid, inspectPass };
+module.exports = { DELTA_MARKER_FILE, PLAN_COPY_FILE, mapDelta, writeDeltaMarker, writePlanCopy, declinedMarker, EXCLUDED_FILE, writeExcluded, REVIEWED_FILE, PASS_MARKER_FILE, BLOCKED_MARKER_FILE, DISPOSED_MARKER_FILE, FINDINGS_FILE, verifiedFindings, disposedMarker, planDisposed, waveDisposedHeadBase, blockedFallbackValid, blockedFallbackHeadBase, hasPassMarker, inOwnArtifacts, readJsonNoFollow, runRecord, reviewedHeadBase, planPassValid, inspectPass };

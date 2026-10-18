@@ -38,7 +38,7 @@ const { parseFlags, repoRoot, assertSafeSegment, writeTextAtomic, nowIso } = req
 const { parseRegistryIds } = require('./gate-ids.cjs');
 const X = require('./xprov.cjs');
 const C = require('./xprov-common.cjs');
-const { inOwnArtifacts, reviewedHeadBase, PASS_MARKER_FILE } = require('./xprov-runrecord.cjs');
+const { inOwnArtifacts, reviewedHeadBase, PASS_MARKER_FILE, mapDelta, writePlanCopy } = require('./xprov-runrecord.cjs');
 // Shared helpers — one definition each, in xprov-common.cjs.
 const { REGISTRY_PATH, sha256, isPlainObject, parsePositive, parseWave, parseLane, writeStdoutSync, readIndex, sameWave, sameLane, DETAIL_MAX_CHARS } = C;
 
@@ -498,7 +498,7 @@ function evaluate(ctx, read) {
   if (read.record.status === 'completed' && RUNNER_MODES.has(read.record.mode) && read.record.mode !== want) {
     return fail(X.REASONS.wrong_mode, { reason_detail: `mode=${read.record.mode} for ${ctx.gate} (needs ${want})` });
   }
-  const outcome = classify(read.record, ctx.planSha);
+  const outcome = classify(mapDelta(read.record, ctx.resultPath), ctx.planSha); // FR-030: a delta run's record names the sha of what was sent
   return outcome.verdict === X.VERDICTS.FAIL ? outcome : quarantine(filter, outcome, { ...ctx, recordPlan: read.record.plan });
 }
 
@@ -563,6 +563,7 @@ function cmdXprovNormalize(args) {
   // the pass retention in gc and the row validation in load-check/wave-status need it.
   if (outcome.verdict === X.VERDICTS.PASS && inOwnArtifacts(ctx.resultPath)) {
     fs.writeFileSync(path.join(path.dirname(ctx.resultPath), PASS_MARKER_FILE), `${JSON.stringify({ gate: ctx.gate, plan_sha256: ctx.planSha, ts: ctx.ts }, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
+    if (ctx.gate === X.GATE_IDS.PLAN_REVIEW) writePlanCopy(ctx.resultPath, ctx.planPath, ctx.planSha); // FR-030: the approved text, the base of a later delta
   }
   writeTextAtomic(ctx.indexPath, JSON.stringify([...index, entry], null, 2) + '\n');
   runGcIfPresent();
