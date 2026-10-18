@@ -5,7 +5,7 @@
 //
 // After a PASSED plan review, a PLAN.md that changed again is not reviewed in full. The gate sends the frontmatter and title, the Goal,
 // the Success Criteria and the sections that changed; the sections that did not change are named, not sent. A change that only touches
-// whitespace or heading text sends nothing: load-check and the gate carry the earlier pass to the new sha.
+// whitespace at line edges sends nothing (heading text, words and fenced or frontmatter lines are compared byte-exact; Samuel W9-1): load-check and the gate carry the earlier pass to the new sha.
 //
 // The earlier text is a1's own copy `a1-plan.md` in the run dir of the pass (written by normalize with the pass marker, bound by its
 // sha256 to the pass). No copy, or a copy that does not hash to the pass sha: no delta, a full review.
@@ -46,13 +46,33 @@ function split(text) {
   return { preamble: pre.join('\n'), sections: sections.map((s) => ({ heading: s.heading, body: s.lines.join('\n') })) };
 }
 
-const squash = (t) => String(t).split('\n').map((l) => l.replace(/\s+/g, ' ').trim()).filter((l) => l !== '').join('\n');
+/**
+ * Lines of `text` in comparison form (Samuel W9-1): outside code fences and the YAML frontmatter only leading and trailing whitespace of a line
+ * is normalised and blank lines are dropped; inside a fence or the frontmatter every line is kept byte-exact (indentation can change meaning).
+ * Words inside a line are never touched, so a renamed or swapped heading, a changed word or changed indentation inside a fence all differ.
+ */
+function normLines(text, frontmatter) {
+  const lines = String(text).split('\n');
+  const out = [];
+  let fenced = false;
+  let front = frontmatter && lines[0] !== undefined && lines[0].trimEnd() === '---';
+  lines.forEach((line, i) => {
+    if (front) { out.push(line); if (i > 0 && line.trimEnd() === '---') front = false; return; }
+    if (FENCE_RE.test(line)) { fenced = !fenced; out.push(line.trim()); return; }
+    if (fenced) { out.push(line); return; }
+    const t = line.trim();
+    if (t !== '') out.push(t);
+  });
+  return out.join('\n');
+}
+const squash = (t) => normLines(t, false);
+
 const isContext = (heading) => CONTEXT_HEADINGS.some((re) => re.test(heading));
 
-/** The document with heading TEXT dropped and whitespace squashed: equal for two documents that differ only in whitespace or headings. */
+/** The whole document in comparison form, heading text included: equal only for documents that differ in line-edge whitespace and blank lines. */
 function canonical(text) {
   const s = split(text);
-  return [squash(s.preamble), ...s.sections.map((x) => `##\n${squash(x.body)}`)].join('\n');
+  return [normLines(s.preamble, true), ...s.sections.map((x) => `## ${x.heading.trim()}\n${normLines(x.body, false)}`)].join('\n');
 }
 
 const deltaText = (heading, body) => `## ${heading}\n${body.replace(/^\n+|\n+$/g, '')}\n`;
@@ -74,7 +94,7 @@ function analyze(oldText, newText) {
   const b = split(newText);
   const oldBy = new Map(a.sections.map((s) => [s.heading, squash(s.body)]));
   const newHeads = new Set(b.sections.map((s) => s.heading));
-  const pre = squash(a.preamble) !== squash(b.preamble);
+  const pre = normLines(a.preamble, true) !== normLines(b.preamble, true);
   const changed = b.sections.filter((s) => !oldBy.has(s.heading) || oldBy.get(s.heading) !== squash(s.body)).map((s) => s.heading);
   const removed = a.sections.filter((s) => !newHeads.has(s.heading)).map((s) => s.heading);
   const kept = b.sections.filter((s) => !changed.includes(s.heading) && !isContext(s.heading)).map((s) => s.heading);

@@ -336,6 +336,17 @@ scen_ex_gl() { # fake gitleaks (needle) finds the key in the unchanged file only
   FAKE_GITLEAKS_NEEDLE="QQQQQQQQQQQQQQQQ" ex_snap30 --base "$EX_BASE"
   echo "$EX_RC/$(json_get "$EX_OUT" "j.reason || 'ok'")/$(json_get "$EX_OUT" "(j.excluded || []).length")"
 }
+scen_ex7() { # the wave gate with a secret hit in an unchanged file: the reviewer's input names the excluded path (never the value)
+  clearhits30; prep30; printf '## Wave 2 — two\n' > "$PHASE_DIR/STATUS.md"
+  printf 'k = "%s"\n' "$EXK30" > "$PHASE_REPO/src/old.js"; git -C "$PHASE_REPO" add src; git -C "$PHASE_REPO" commit -qm "fixture: old.js"
+  local base; base="$(git -C "$PHASE_REPO" rev-parse HEAD)"
+  printf 'export const w2 = 1;\n' > "$PHASE_REPO/src/w2.js"; git -C "$PHASE_REPO" add src; git -C "$PHASE_REPO" commit -qm "feat: wave 2"
+  rm -f "$TMP30/prompt-ex.txt"
+  FAKE_RUNNER_PROMPT_FILE="$TMP30/prompt-ex.txt" gate30 --gate "$GATE_WAVE" --wave 2 --base "$base"
+  local p; p="$(cat "$TMP30/prompt-ex.txt" 2>/dev/null)"
+  local line=no key=no; [[ "$p" == *"excluded (unchanged, secret hit): src/old.js"* ]] && line=yes; [[ "$p$G_OUT" == *"$EXK30"* ]] && key=LEAK
+  echo "line=$line/key=$key"
+}
 caseEX() {
   unmtree30 2>/dev/null; fresh30
   local X1="0/ok/src/old.js:aws_access_key_id/gone/src/new.js,/present/0/out0/hits0"
@@ -346,11 +357,13 @@ caseEX() {
   assert_eq "EX5 gitleaks and the patterns find the key in the unchanged file only: excluded (two entries: pattern and gitleaks rule), ok" "$(scen_ex_gl 1)" "0/ok/2"
   assert_eq "EX6 gitleaks finds the key in the changed file: hard stop" "$(scen_ex_gl 0)" "1/secret_in_snapshot/0"
   local SX=xprov-snapshot-exclude.cjs SN=xprov-snapshot.cjs
+  assert_eq "EX7 the reviewer's input carries 'excluded (unchanged, secret hit): <path>' and no value" "$(scen_ex7)" "line=yes/key=no"
   redproof30 "EX1a" scen_ex_10 "$X1" $SX "'--skip-worktree'" "'--no-skip-worktree'"
   redproof30 "EX1b" scen_ex_10 "$X1" $SX "new Set(ids)" "new Set()" $SX "if (gitRun(dir, ['cat-file', '-e', id]).status === 0) return" "if (false) return"
   redproof30 "EX2" scen_ex_01 "1/secret_in_snapshot//-/-/-/-/out0/hits1" $SX "&& !ctx.changed.has(h.path) &&" "&&"
   redproof30 "EX3" scen_ex_11 "1/secret_in_snapshot//-/-/-/-/out0/hits1" $SX "const all = changed.length === 0 && excludable.length > 0" "const all = excludable.length > 0"
   redproof30 "EX4" scen_ex_plan "1/secret_in_snapshot/0" $SN "canExclude: exclude === null && cl.base !== null" "canExclude: exclude === null"
+  redproof30 "EX7a" scen_ex7 "line=yes/key=no" $SN "inputs: note.inputs" "inputs: opts.inputs"
   redproof30 "EX6" scen_ex_gl0 "1/secret_in_snapshot/0" $SX "&& !ctx.changed.has(h.path) &&" "&&"
 }
 caseEX
@@ -433,13 +446,29 @@ scen_dl1() { # the Tasks section changed after a pass: only Tasks (plus Goal) go
   local dm; [[ -f "$(dirname "$(json_get "$G_OUT" "j.result_path")")/a1-delta.json" ]] && dm=marker || dm=nomarker
   echo "$copy/$G_RC/$(json_get "$G_OUT" "j.verdict")/$([[ "$DL_PROMPT" == *"DELTA REVIEW"* ]] && echo delta || echo nodelta)/$([[ "$DL_PROMPT" == *"a second task"* ]] && echo has-change || echo no-change)/$full/$dm/$(lc30)"
 }
-scen_dl2() { # a whitespace + heading-text edit: nothing is sent, load-check carries the pass
+edit30() { node -e 'const fs=require("fs");const f=process.argv[1];const fn=new Function("t",process.argv[2]);fs.writeFileSync(f,fn(fs.readFileSync(f,"utf8")));' "$PHASE_PLAN" "$1"; }
+scen_dl2() { # edge whitespace and blank lines in prose only: nothing is sent, load-check carries the pass
   prep30; pass30
-  node -e 'const fs=require("fs");const f=process.argv[1];fs.writeFileSync(f,fs.readFileSync(f,"utf8").replace("## Out of scope","##   Out of scope (renamed)  ").replace(/\n/g,"  \n"));' "$PHASE_PLAN"
+  edit30 'return t.replace(/\n\n/g, "\n\n\n").replace(/^(- .*)$/gm, "  $1   ").replace(/^1\. /m, "  1. ");'
   delta_gate30
   sub30 load-check --phase p30
   echo "$G_RC/$(json_get "$G_OUT" "[j.ok, j.accepted, !!j.carried_from].join('/')")/prompt=$([[ -z "$DL_PROMPT" ]] && echo none || echo sent)"
 }
+# scen_dlx <setup edit js> <change js> — the change is NOT cosmetic: a run happens (prompt sent), no carried pass
+scen_dlx() {
+  prep30; edit30 "$1"; pass30
+  edit30 "$2"
+  delta_gate30
+  sub30 load-check --phase p30
+  echo "$([[ -z "$DL_PROMPT" ]] && echo none || echo sent)/carried=$(json_get "$G_OUT" "!!j.carried_from")"
+}
+DLX_FRONT='return "---\nowner: a1\nlist:\n  - one\n---\n" + t;'
+DLX_FENCE='return t.replace("## Out of scope", "## Out of scope\n```\nline\n  indented\n```");'
+scen_dl5() { scen_dlx 'return t;' 'return t.replace("## Tasks", "## @@").replace("## Acceptance checks", "## Tasks").replace("## @@", "## Acceptance checks");'; }
+scen_dl6() { scen_dlx 'return t;' 'return t.replace("# Plan: rename add() to sum()", "# Plan: rename add() to total()");'; }
+scen_dl7() { scen_dlx "$DLX_FRONT" 'return t.replace("  - one", "    - one");'; }
+scen_dl8() { scen_dlx "$DLX_FENCE" 'return t.replace("  indented", "    indented");'; }
+scen_dl9() { scen_dlx 'return t;' 'return t.replace("## Goal", "## Goal (renamed)");'; }
 scen_dl3() { # no stored copy: a full review
   prep30; pass30; rm -f "$PASS_DIR30/a1-plan.md"
   node -e 'const fs=require("fs");const f=process.argv[1];fs.writeFileSync(f,fs.readFileSync(f,"utf8").replace("## Acceptance checks","- another task\n\n## Acceptance checks"));' "$PHASE_PLAN"
@@ -455,13 +484,23 @@ scen_dl4() { # the stored copy does not hash to the pass: a full review
 caseDL() {
   fresh30
   assert_eq "DL1 a changed Tasks section after a pass: copy kept, delta sent (changed section yes, unchanged section no), marker written, load-check accepts the full sha" "$(scen_dl1)" "copy/0/pass/delta/has-change/cut/marker/true/pass/"
-  assert_eq "DL2 whitespace + heading-only edit: gate passes without a run, load-check carries the pass" "$(scen_dl2)" "0/true/pass/true/prompt=none"
+  assert_eq "DL2 edge-whitespace and blank-line edit in prose: gate passes without a run, load-check carries the pass" "$(scen_dl2)" "0/true/pass/true/prompt=none"
   assert_eq "DL3 no stored copy: full review" "$(scen_dl3)" "full"
   assert_eq "DL4 tampered copy: full review" "$(scen_dl4)" "full"
+  local NC="sent/carried=false"
+  assert_eq "DL5 swapped Tasks/Acceptance headings are not cosmetic" "$(scen_dl5)" "$NC"
+  assert_eq "DL6 a renamed title is not cosmetic" "$(scen_dl6)" "$NC"
+  assert_eq "DL7 a YAML frontmatter indentation change is not cosmetic" "$(scen_dl7)" "$NC"
+  assert_eq "DL8 a fenced-block indentation change is not cosmetic" "$(scen_dl8)" "$NC"
+  assert_eq "DL9 a renamed heading is not cosmetic" "$(scen_dl9)" "$NC"
   local DLN=xprov-delta.cjs
   redproof30 "DL1a" scen_dl1 "copy/0/pass/delta/has-change/cut/marker/true/pass/" xprov-gate.cjs "source: ctx.deltaFile || ctx.planPath" "source: ctx.planPath"
   redproof30 "DL1b" scen_dl1 "copy/0/pass/delta/has-change/cut/marker/true/pass/" xprov-runrecord.cjs "m.sent_plan_sha256 === rec.plan_sha256 ?" "false ?"
   redproof30 "DL2a" scen_dl2 "0/true/pass/true/prompt=none" $DLN "if (canonical(oldText) === canonical(newText))" "if (false)"
+  redproof30 "DL5a" scen_dl5 "$NC" $DLN '`## ${x.heading.trim()}\n${normLines(x.body, false)}`' '`${normLines(x.body, false)}`'
+  redproof30 "DL6a" scen_dl6 "$NC" $DLN 'normLines(s.preamble, true), ...' '...'
+  redproof30 "DL7a" scen_dl7 "$NC" $DLN 'if (front) { out.push(line);' 'if (front) { out.push(line.trim());'
+  redproof30 "DL8a" scen_dl8 "$NC" $DLN 'if (fenced) { out.push(line); return; }' 'if (fenced) { out.push(line.trim()); return; }'
   redproof30 "DL4a" scen_dl4 "full" $DLN "C.sha256(buf) === entry.plan_sha256 ?" "true ?"
 }
 caseDL

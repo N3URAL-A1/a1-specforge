@@ -18,6 +18,7 @@
 // ---------------------------------------------------------------------------
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const C = require('./xprov-common.cjs');
@@ -120,4 +121,22 @@ function hitsRecordFor({ basename, repoKey, commit, hits }) {
   };
 }
 
-module.exports = { classify, excludeFromClone, hitsRecordFor, MAX_EXCLUDED };
+/** The line the reviewer reads for each excluded file (Samuel W9-2): path only, never a value. */
+const noteLine = (p) => `excluded (unchanged, secret hit): ${p}`;
+
+/**
+ * `inputs` (the snapshot's input list) plus the excluded-file lines in the `feedback` input, so the context Codex receives names what it did not
+ * see. An existing feedback input keeps its text and gets the lines appended. → { inputs, cleanup }.
+ */
+function noteInputs(inputs, excluded) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'a1-xprov-excl-'));
+  fs.chmodSync(dir, 0o700);
+  const lines = [...new Set(excluded.map((x) => x.path))].map(noteLine).join('\n');
+  const old = (inputs || []).find((i) => i.key === 'feedback');
+  const file = path.join(dir, 'feedback.md');
+  fs.writeFileSync(file, `${old ? `${fs.readFileSync(old.source, 'utf8')}\n\n` : ''}${lines}\n`, { mode: 0o600 });
+  const note = { key: 'feedback', source: file, label: old ? old.label : 'excluded files' };
+  return { inputs: [...(inputs || []).filter((i) => i.key !== 'feedback'), note], cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) };
+}
+
+module.exports = { noteLine, noteInputs, classify, excludeFromClone, hitsRecordFor, MAX_EXCLUDED };

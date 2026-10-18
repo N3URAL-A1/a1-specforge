@@ -902,7 +902,8 @@ function snapshotPass(opts, exclude) {
 function snapshot(opts) {
   const first = snapshotPass(opts, null);
   if (first.ok || !Array.isArray(first.excludable) || first.excludable.length === 0) return first;
-  return { ...snapshotPass(opts, first.excludable), excluded: first.excludable };
+  const note = EX.noteInputs(opts.inputs, first.excludable); // Samuel W9-2: the reviewer is told which files it did not see
+  try { return { ...snapshotPass({ ...opts, inputs: note.inputs }, first.excludable), excluded: first.excludable }; } finally { note.cleanup(); }
 }
 
 /** The input-copy hashes `snapshot()` recorded next to the snapshot, or null. */
