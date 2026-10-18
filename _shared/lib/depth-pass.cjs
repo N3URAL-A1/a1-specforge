@@ -217,8 +217,25 @@ function usageError(msg) {
   process.exit(2);
 }
 
+/** Largest plan file accepted (bytes). A plan is prose; anything bigger is a mistake or an attack. */
+const MAX_PLAN_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Validate the plan path and read it. Rejects (exit 2): a `..` segment, a path
+ * that is not a regular file (directory, device, FIFO), a file over
+ * MAX_PLAN_BYTES, and any read error. The path is never passed to a shell.
+ */
 function readPlan(planArg) {
+  if (planArg.includes('\0')) return usageError('invalid plan path: NUL byte');
+  if (planArg.split(/[\\/]+/).includes('..')) {
+    return usageError(`invalid plan path (".." segment not allowed): ${planArg}`);
+  }
   try {
+    const st = fs.statSync(planArg);
+    if (!st.isFile()) return usageError(`plan is not a regular file: ${planArg}`);
+    if (st.size > MAX_PLAN_BYTES) {
+      return usageError(`plan too large: ${st.size} bytes exceeds the limit of ${MAX_PLAN_BYTES} bytes`);
+    }
     return fs.readFileSync(planArg, 'utf8');
   } catch (e) {
     return usageError(`cannot read plan ${planArg}: ${e.code || e.message}`);

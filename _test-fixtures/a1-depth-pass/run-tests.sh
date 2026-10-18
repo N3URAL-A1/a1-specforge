@@ -7,9 +7,29 @@
 # cannot drift away from real plan text. This suite must NOT embed the prompt
 # text of _shared/depth-pass.md (FR-003: exactly one markdown hit repo-wide).
 #
-# RED proof: each exit-1 case header names the single production-code change in
-# _shared/lib/depth-pass.cjs that turns it red. The mutation runs (on a
-# `git archive` snapshot) and the hostile-input cases are Wave 2.
+# RED proof: each guard case header names the single production-code change in
+# _shared/lib/depth-pass.cjs that turns it red, and records "Measured red <date>"
+# once the mutation was run on a `git archive` snapshot (never the shared worktree).
+#
+# ## RED proof (case -> named mutation; results are in the case headers)
+# | case | mutation in _shared/lib/depth-pass.cjs |
+# |------|-----------------------------------------|
+# | D2   | findSection(): heading test matches any `##` heading |
+# | D2c  | checkSubsections(): delete the missing-sub-heading findings.push |
+# | D3   | isPlaceholder(): remove the `<...>` template-token test |
+# | D4   | isPlaceholder(): remove the `tbd` test |
+# | D5   | isPlaceholder(): remove the empty-body test |
+# | D6   | isSelfReferential(): ignore the denylist/stopword set |
+# | D9   | tagFences(): never mark lines as fenced |
+# | D10  | findSection(): take the last `## Depth Pass` instead of the first |
+# | D12  | cmdPlanDepthCheck(): empty text exits 2 |
+# | D14  | ORACLE_STOPWORDS: add one word without touching the doc |
+# | D16  | readPlan(): delete the `..` segment check |
+# | D17  | readPlan(): delete the isFile check (and let read errors fall through) |
+# | D18  | readPlan(): raise MAX_PLAN_BYTES to 1 GiB |
+# | D19  | cmdPlanDepthCheck(): execSync over the plan text |
+# | D20  | cmdPlanDepthCheck(): execSync over the --plan argument |
+# | D21  | checkDepthPass(): Atomics.wait(length / 5 ms) |
 
 set -u
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -131,13 +151,15 @@ assert_json "D10c duplicate is reported" "$WORK/out.json" 'r.duplicate_sections=
 
 # D2 missing section.
 # RED: in findSection(), make the heading regex match any `##` heading (or return the whole text), so the section is "found".
+# Measured red 2026-10-19: findSection() heading test matches any `##` -> D2 FAIL (also D2b, D19c)
 sed 's/^## Depth Pass/## Depth Notes/' "$COMPLETE" > "$WORK/missing.md"
 run_check "$WORK/missing.md"
 assert_rc "D2 missing section" 1 "$RC" "$(cat "$WORK/out.json" "$WORK/err.txt")"
 assert_json "D2b report names the missing section" "$WORK/out.json" 'r.verdict==="fail" && r.offending.includes("## Depth Pass")'
 
 # D2c one sub-heading missing (heading 3 renamed).
-# RED: in checkSubheadings(), drop the required-name loop (report no missing sub-headings).
+# RED: in checkSubsections(), delete the `findings.push(finding('subheadings', ...))` line (a missing sub-heading is no longer reported).
+# Measured red 2026-10-19: checkSubsections() missing-sub-heading push deleted -> D2c FAIL (also D2d)
 sed 's/^### 3 Methods and tools/### 3 Something else/' "$COMPLETE" > "$WORK/missing-sub.md"
 run_check "$WORK/missing-sub.md"
 assert_rc "D2c missing sub-heading 3" 1 "$RC" "$(cat "$WORK/out.json" "$WORK/err.txt")"
@@ -145,6 +167,7 @@ assert_json "D2d report names sub-heading 3" "$WORK/out.json" 'r.offending.some(
 
 # D3 placeholder <…> (Unicode ellipsis) and <...> (ASCII).
 # RED: in isPlaceholder(), remove the `<…>` template-token regex.
+# Measured red 2026-10-19: isPlaceholder() `<...>` test returns false -> D3 FAIL (also D3b, D3c)
 rewrite_body "$COMPLETE" "$WORK/ph1.md" "$H2" '<…>'
 run_check "$WORK/ph1.md"
 assert_rc "D3 placeholder <…>" 1 "$RC" "$(cat "$WORK/out.json" "$WORK/err.txt")"
@@ -155,6 +178,7 @@ assert_rc "D3c placeholder <...>" 1 "$RC" "$(cat "$WORK/out.json" "$WORK/err.txt
 
 # D4 TBD, upper and lower case.
 # RED: in isPlaceholder(), remove the `tbd` comparison.
+# Measured red 2026-10-19: isPlaceholder() `tbd` test removed -> D4 FAIL (also D4b)
 rewrite_body "$COMPLETE" "$WORK/tbd.md" "$H1" 'TBD'
 run_check "$WORK/tbd.md"
 assert_rc "D4 TBD" 1 "$RC" "$(cat "$WORK/out.json" "$WORK/err.txt")"
@@ -164,12 +188,14 @@ assert_rc "D4b tbd (lower case)" 1 "$RC" "$(cat "$WORK/out.json" "$WORK/err.txt"
 
 # D5 empty answer body.
 # RED: in isPlaceholder(), remove the empty-body test (`body.trim() === ''`).
+# Measured red 2026-10-19: isPlaceholder() empty-body test removed -> D5 FAIL
 rewrite_body "$COMPLETE" "$WORK/empty-ans.md" "$H2" ''
 run_check "$WORK/empty-ans.md"
 assert_rc "D5 empty answer" 1 "$RC" "$(cat "$WORK/out.json" "$WORK/err.txt")"
 
 # D6 self-referential oracle.
 # RED: in isSelfReferential(), remove the ORACLE_DENYLIST membership test (every token counted as a real noun).
+# Measured red 2026-10-19: isSelfReferential() returns false -> D6 FAIL (also D6b)
 rewrite_body "$COMPLETE" "$WORK/selfref.md" "$H4" 'Claude and I will check it'
 run_check "$WORK/selfref.md"
 assert_rc "D6 self-referential answer 4" 1 "$RC" "$(cat "$WORK/out.json" "$WORK/err.txt")"
@@ -177,6 +203,7 @@ assert_json "D6b report names sub-heading 4 as self-referential" "$WORK/out.json
 
 # D9 heading only inside a fenced code block does not count (backtick and tilde fences).
 # RED: in findSection(), drop the fence tracking (the quoted heading then counts).
+# Measured red 2026-10-19: tagFences() never fences -> D9 FAIL (also D9b)
 { echo "Example of the template:"; echo; echo '```markdown'; cat "$COMPLETE"; echo '```'; } > "$WORK/fenced-bt.md"
 run_check "$WORK/fenced-bt.md"
 assert_rc "D9 fenced (backticks) only" 1 "$RC" "$(cat "$WORK/out.json" "$WORK/err.txt")"
@@ -186,12 +213,14 @@ assert_rc "D9b fenced (tildes) only" 1 "$RC" "$(cat "$WORK/out.json" "$WORK/err.
 
 # D10 duplicate heading, first section incomplete, second complete -> the FIRST is used -> 1.
 # RED: in findSection(), take the last `## Depth Pass` instead of the first.
+# Measured red 2026-10-19: findSection() takes the last heading -> D10 FAIL (also D10b, D10c)
 { echo "## Depth Pass"; echo; echo "### 1 What a top professional would do"; echo "TBD"; echo; cat "$COMPLETE"; } > "$WORK/dup-first-bad.md"
 run_check "$WORK/dup-first-bad.md"
 assert_rc "D10 duplicate heading uses the first (incomplete) section" 1 "$RC" "$(cat "$WORK/out.json" "$WORK/err.txt")"
 
 # D12 empty file -> missing section.
 # RED: in cmdPlanDepthCheck(), treat empty text as "usage error" (exit 2) or as pass.
+# Measured red 2026-10-19: empty text exits 2 -> D12 FAIL (got exit 2)
 : > "$WORK/empty.md"
 run_check "$WORK/empty.md"
 assert_rc "D12 empty file" 1 "$RC" "$(cat "$WORK/out.json" "$WORK/err.txt")"
@@ -213,10 +242,115 @@ rc=0; out="$(node "$TOOLS" plan depth-check --plan "$WORK/does-not-exist.md" 2>&
 assert_rc "D13f unreadable (missing) file" 2 "$rc" "$out"
 case "$out" in *usage*|*"not found"*|*"cannot read"*) echo "PASS  D13g stderr says what is wrong"; pass=$((pass + 1));; *) echo "FAIL  D13g stderr message: $out"; fail=$((fail + 1));; esac
 
+# D16 path traversal: a `..` segment is rejected before any file access (exit 2, stderr names the rule).
+# RED: in readPlan(), delete the `planArg.split(...).includes('..')` check.
+# Measured red 2026-10-19: one extra word in ORACLE_STOPWORDS -> D14 FAIL
+# The file behind the path EXISTS and is complete, so only the guard can produce exit 2.
+mkdir -p "$WORK/sub"
+cp "$COMPLETE" "$WORK/sub/p.md"
+rc=0; out="$(node "$TOOLS" plan depth-check --plan "$WORK/sub/../sub/p.md" 2>&1)" || rc=$?
+assert_rc "D16 traversal through an existing file" 2 "$rc" "$out"
+case "$out" in *'".." segment'*) echo "PASS  D16b stderr names the rule"; pass=$((pass + 1));; *) echo "FAIL  D16b stderr: $out"; fail=$((fail + 1));; esac
+rc=0; out="$(node "$TOOLS" plan depth-check --plan ../../etc/passwd 2>&1)" || rc=$?
+assert_rc "D16c ../../etc/passwd" 2 "$rc" "$out"
+rc=0; out="$(node "$TOOLS" plan depth-check --plan '..\..\etc\passwd' 2>&1)" || rc=$?
+assert_rc "D16d backslash traversal" 2 "$rc" "$out"
+
+# D17 a directory is not a plan (exit 2).
+# RED: in readPlan(), delete the `!st.isFile()` check AND make the catch return '' instead of exit 2
+#      (readFileSync on a directory throws EISDIR, so the isFile check alone is masked by the catch: two edits, one guard).
+# Measured red 2026-10-19: readPlan() `..` check disabled -> D16 FAIL (also D16b)
+rc=0; out="$(node "$TOOLS" plan depth-check --plan "$WORK/sub" 2>&1)" || rc=$?
+assert_rc "D17 directory path" 2 "$rc" "$out"
+case "$out" in *"not a regular file"*) echo "PASS  D17b stderr names the rule"; pass=$((pass + 1));; *) echo "FAIL  D17b stderr: $out"; fail=$((fail + 1));; esac
+
+# D18 size cap: one byte over 5 MiB -> exit 2 with the limit in stderr; exactly at the cap is read.
+# RED: in readPlan(), raise MAX_PLAN_BYTES to 1024 * 1024 * 1024 (the 5 MiB + 1 plan is then read -> exit 1).
+# Measured red 2026-10-19: readPlan() isFile check removed + catch returns '' -> D17 FAIL (also D17b, D13f, D13g, D20)
+node -e '
+  const fs = require("fs");
+  const cap = 5 * 1024 * 1024;
+  fs.writeFileSync(process.argv[1] + "/over-cap.md", "x".repeat(cap + 1));
+' "$WORK"
+rc=0; out="$(node "$TOOLS" plan depth-check --plan "$WORK/over-cap.md" 2>&1)" || rc=$?
+assert_rc "D18 plan over the size cap" 2 "$rc" "$out"
+case "$out" in *5242880*) echo "PASS  D18b stderr states the limit"; pass=$((pass + 1));; *) echo "FAIL  D18b stderr lacks the limit: $out"; fail=$((fail + 1));; esac
+
+# D19 injection-shaped input is inert. Part 1: in the PLAN TEXT (answers carry shell/HTML payloads).
+# RED: in cmdPlanDepthCheck(), add `require("child_process").execSync('echo ' + c + ' >/dev/null')` for each `$(touch ...)` match in the plan
+#      text (only the payload is fed to the shell, never the whole plan; the side-effect file then appears).
+# Measured red 2026-10-19: MAX_PLAN_BYTES = 1 GiB -> D18 FAIL (also D18b)
+INJ="$WORK/inj"; mkdir -p "$INJ"
+node -e '
+  const fs = require("fs");
+  const [inp, outp, dir] = process.argv.slice(1);
+  const payload = "; rm -rf / ; $(touch " + dir + "/pwn-subst) `touch " + dir + "/pwn-tick` <script>alert(1)</script> && touch " + dir + "/pwn-and";
+  const t = fs.readFileSync(inp, "utf8").replace(/^(### 4 External evidence of correctness\n+)/m, "$1" + payload + " pytest suite\n\n");
+  fs.writeFileSync(outp, t);
+' "$COMPLETE" "$WORK/inj-text.md" "$INJ"
+run_check "$WORK/inj-text.md"
+assert_rc "D19 injection-shaped plan text parsed as text" 0 "$RC" "$(cat "$WORK/out.json" "$WORK/err.txt")"
+if [[ -z "$(ls -A "$INJ")" ]]; then echo "PASS  D19b no side-effect file from plan text"; pass=$((pass + 1)); else echo "FAIL  D19b side-effect file(s): $(ls "$INJ")"; fail=$((fail + 1)); fi
+# Same payload with the section removed: still inert, plain finding (exit 1).
+sed 's/^## Depth Pass/## Depth Notes/' "$WORK/inj-text.md" > "$WORK/inj-missing.md"
+run_check "$WORK/inj-missing.md"
+assert_rc "D19c injection-shaped text without section -> finding" 1 "$RC" "$(cat "$WORK/out.json" "$WORK/err.txt")"
+if [[ -z "$(ls -A "$INJ")" ]]; then echo "PASS  D19d no side-effect file"; pass=$((pass + 1)); else echo "FAIL  D19d side-effect file(s): $(ls "$INJ")"; fail=$((fail + 1)); fi
+
+# D20 injection-shaped input in the PATH argument: never reaches a shell (file simply not found -> exit 2).
+# RED: in cmdPlanDepthCheck(), add `require("child_process").execSync("cat " + flags.plan + " >/dev/null 2>&1")`
+#      (the `; touch` in the path then runs and creates the side-effect file).
+# Measured red 2026-10-19: execSync over `$(touch ...)` plan-text payload -> D19b FAIL (also D19d, D20b: side-effect file pwn-subst appeared)
+for evil in "x; touch $INJ/pwn-path" "\$(touch $INJ/pwn-path2)" "\`touch $INJ/pwn-path3\`" "<script>.md"; do
+  rc=0; out="$(node "$TOOLS" plan depth-check --plan "$evil" 2>&1)" || rc=$?
+  assert_rc "D20 hostile path '$evil'" 2 "$rc" "$out"
+done
+if [[ -z "$(ls -A "$INJ")" ]]; then echo "PASS  D20b no side-effect file from path"; pass=$((pass + 1)); else echo "FAIL  D20b side-effect file(s): $(ls "$INJ")"; fail=$((fail + 1)); fi
+
+# D21 oversized plans finish in time and pass: 10 000 chars < 1 s, 1 MB (one 1 MB line, and many lines) < 2 s.
+# RED: in checkDepthPass(), add `Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Math.floor(text.length / 5))`
+#      (sleeps length/5 ms: 10 000 chars -> 2 s, 1 MB -> 200 s, killed by the 10 s harness timeout).
+# Measured red 2026-10-19: execSync over the --plan argument -> D20b FAIL (side-effect file pwn-path appeared)
+# timed_check <plan> -> sets RC, ELAPSED_MS. Portable timer: node hrtime around spawnSync (no `date +%N`), 10 s kill.
+timed_check() {
+  local res
+  res="$(node -e '
+    const { spawnSync } = require("child_process");
+    const t0 = process.hrtime.bigint();
+    const r = spawnSync("node", [process.argv[1], "plan", "depth-check", "--plan", process.argv[2]], { encoding: "utf8", timeout: 10000, maxBuffer: 64 * 1024 * 1024 });
+    const ms = Number((process.hrtime.bigint() - t0) / 1000000n);
+    process.stdout.write((r.status === null ? 124 : r.status) + " " + ms);
+  ' "$TOOLS" "$1")"
+  RC="${res%% *}"; ELAPSED_MS="${res##* }"
+}
+gen_big() { # <out> <chars> <line-width: 0 = one line>
+  node -e '
+    const fs = require("fs");
+    const [inp, outp, n, width] = [process.argv[1], process.argv[2], Number(process.argv[3]), Number(process.argv[4])];
+    let body = "pytest suite ".repeat(Math.ceil(n / 13)).slice(0, n);
+    if (width > 0) body = body.replace(new RegExp(".{1," + width + "}", "g"), (m) => m + "\n");
+    const t = fs.readFileSync(inp, "utf8").replace(/^(### 4 External evidence of correctness\n+)/m, "$1" + body + "\n\n");
+    fs.writeFileSync(outp, t);
+  ' "$COMPLETE" "$@"
+}
+gen_big "$WORK/big-10k.md" 10000 0
+timed_check "$WORK/big-10k.md"
+assert_rc "D21 10 000-char answer" 0 "$RC" "elapsed ${ELAPSED_MS} ms"
+if [[ "$ELAPSED_MS" -lt 1000 ]]; then echo "PASS  D21b 10k plan in ${ELAPSED_MS} ms (< 1000)"; pass=$((pass + 1)); else echo "FAIL  D21b 10k plan took ${ELAPSED_MS} ms (limit 1000)"; fail=$((fail + 1)); fi
+gen_big "$WORK/big-1m-line.md" 1000000 0
+timed_check "$WORK/big-1m-line.md"
+assert_rc "D21c 1 MB single-line answer" 0 "$RC" "elapsed ${ELAPSED_MS} ms"
+if [[ "$ELAPSED_MS" -lt 2000 ]]; then echo "PASS  D21d 1 MB one-line plan in ${ELAPSED_MS} ms (< 2000)"; pass=$((pass + 1)); else echo "FAIL  D21d 1 MB one-line plan took ${ELAPSED_MS} ms (limit 2000)"; fail=$((fail + 1)); fi
+gen_big "$WORK/big-1m-lines.md" 1000000 80
+timed_check "$WORK/big-1m-lines.md"
+assert_rc "D21e 1 MB many-line answer" 0 "$RC" "elapsed ${ELAPSED_MS} ms"
+if [[ "$ELAPSED_MS" -lt 2000 ]]; then echo "PASS  D21f 1 MB multi-line plan in ${ELAPSED_MS} ms (< 2000)"; pass=$((pass + 1)); else echo "FAIL  D21f 1 MB multi-line plan took ${ELAPSED_MS} ms (limit 2000)"; fail=$((fail + 1)); fi
+
 # ---------------------------------------------------------------- doc owns the lists
 
 # D14 the two lists in _shared/depth-pass.md (section "Self-reference rule") equal the exported constants.
 # RED: add or drop one word in ORACLE_STOPWORDS (or ORACLE_DENYLIST) without touching the doc.
+# Measured red 2026-10-19: Atomics.wait(length / 5 ms) in checkDepthPass() -> D21b FAIL (10k took 3018 ms; 1 MB cases hit the 10 s kill)
 rc=0
 out="$(DOC="$DOC" LIB="$LIB" node -e '
   const fs = require("fs");
