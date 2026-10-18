@@ -203,14 +203,22 @@ function dispose(o) {
 }
 
 function cmdXprovDispose(args) {
-  const flags = parseFlags(args || [], { phase: 'str', gate: 'str', wave: 'str', lane: 'str', 'work-path': 'str' });
+  const flags = parseFlags(args || [], { phase: 'str', gate: 'str', wave: 'str', lane: 'str', 'work-path': 'str', 'secret-declined': 'str', base: 'str' });
   const usage = (m) => C.usageExit('dispose', m);
   if (flags._.length) return usage(`unexpected argument ${JSON.stringify(C.clip(String(flags._[0]), 80))}`);
   if (!flags.phase || !flags.gate) return usage('requires --phase <name> --gate <id> [--wave N [--lane <id>] --work-path <dir>]');
+  if (flags.base !== undefined && flags['secret-declined'] === undefined) return usage('--base belongs to --secret-declined');
   let r;
-  try { r = dispose({ phase: flags.phase, gate: flags.gate, wave: flags.wave, lane: flags.lane, workPath: flags['work-path'] }); } catch (e) {
+  try {
+    const target = { phase: flags.phase, gate: flags.gate, wave: flags.wave, lane: flags.lane, workPath: flags['work-path'] };
+    r = flags['secret-declined'] === undefined ? dispose(target) : require('./xprov-decline.cjs').decline(context(target), { scan: flags['secret-declined'], base: flags.base });
+  } catch (e) {
     if (e && e.code === 'A1_INPUT') return usage(e.message);
     throw e;
+  }
+  if (r.ok && r.accepted === 'secret_declined') {
+    process.stderr.write(`xprov dispose: ${r.gate} ${scopeOf(r.wave, r.lane)} closed without Codex: the allowlist question was declined (Reinhard-only review; record verdict not_applicable, reason secret_declined)\n`);
+    return C.emitJson(r, X.EXIT_PASS);
   }
   process.stderr.write(r.ok
     ? `xprov dispose: ${r.gate} ${scopeOf(r.wave, r.lane)} closed by dispositions (${r.fixed} fixed, ${r.accepted_count} accepted) — add ${RETRO_ISSUE} to the retro's issues and keep gates_fired verdict fail\n`

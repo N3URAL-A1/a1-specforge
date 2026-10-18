@@ -619,7 +619,7 @@ function waveStatus(o) {
     ok: lacking.length === 0, gate, enforcement, phase: ctx.phase,
     completed_waves: [...new Set(completed.map((p) => p.wave))], completed_detail: completed, lacking, lacking_detail: lackingDetail,
     head: h.head, scope_exempt: exemptWaves, deferred_to_pr: ex.deferred, exempt_refused: ex.refused,
-    blocked_fallback: kindWaves(completed, chosen, 'fallback'), disposed: kindWaves(completed, chosen, AC.DISPOSITIONS),
+    blocked_fallback: kindWaves(completed, chosen, 'fallback'), disposed: kindWaves(completed, chosen, AC.DISPOSITIONS), declined: kindWaves(completed, chosen, AC.DECLINED),
     reason: lacking.length ? X.REASONS.wave_inspect_missing : null,
   });
 }

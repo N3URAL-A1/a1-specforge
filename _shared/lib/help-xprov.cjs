@@ -167,6 +167,15 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   cwd as skill instructions; every tracked file is
                   secret-scanned (shared pattern list, windowed, UTF-16 aware,
                   + gitleaks with a1's own config when on PATH) before dispatch.
+                  Spec 016 FR-029 (inspect, with --base): when every hit sits in a
+                  tracked file the diff does not change, the clone is made again
+                  without those files (deleted, skip-worktree, blob dropped from
+                  the object store) and scanned again; the result lists them as
+                  "excluded" (path + rule id, never a value). A hit in a changed
+                  file, on the base or input side, or one a1 cannot place stays a
+                  hard stop and leaves a hits record (scan_record) for
+                  consent question --kind allowlist. Plan review has no diff: no
+                  exclusion.
                   Wave 6b: the scan COUNTS every match and fingerprints its
                   line; a hit passes only when the approved allowlist at the
                   trust anchor covers it (see allowlist below). --repo must
@@ -460,8 +469,34 @@ ${CONSENT_HELP}
                   category "unclassifiable". Matching is case-insensitive.
                   Any input or glob-file problem exits 2 with an empty stdout:
                   treat a non-zero exit as "guarded".
-    dispose (spec 016, planned wave 9)
-                  Not shipped yet (exit 2, "not implemented yet").
+    dispose --phase <name> --gate plan-review-xprov|wave-inspect-xprov
+            [--wave <N> [--lane <id>] --work-path <dir>]
+                  (spec 016 FR-025, xprov-dispose.cjs) Round 2 ended REVISE without a
+                  BLOCKER (round_cap). The agent writes
+                  xreview/<gate>-<target>-r2.dispositions.md, one line per finding id:
+                  "<id>: fixed: <what changed>" or "<id>: accepted: <reason>" (reason
+                  non-empty, one line, at most 1000 chars, no secret or instruction
+                  shape). Every major, minor and quarantined id of round 2 needs one.
+                  Success (exit 0): a1's marker a1-disposed.json in the round-2 run dir
+                  (bound to the PLAN.md sha now; a wave also to the work path HEAD and
+                  the reviewed base), the index row accepted: dispositions, an XREVIEW
+                  section and an observation (pattern xprov_disposed); load-check and
+                  wave-status accept the row only through the marker. Refusal (exit 1,
+                  JSON refused/detail): round_cap_not_reached, not_a_revise,
+                  blocker_open (the hard stop stays), undisposed (the target goes to
+                  the waiver question), round_unbound, already_disposed (one dispose
+                  per round-2 run dir), no_reviewed_base, head_not_descendant,
+                  dispose_unwritable. Facts come from a1's artifacts dir, not from the
+                  phase files.
+    dispose --phase <name> --gate <id> [--wave <N> [--lane <id>] --work-path <dir>
+            --base <sha>] --secret-declined <snap-basename>
+                  (spec 016 FR-029) The owner declined the allowlist question for a
+                  changed-line secret hit (or no answer, no chat). Needs the hits
+                  record the failed scan wrote for this repository and the exact HEAD
+                  of the target. Writes a1's marker a1-declined.json (artifacts dir)
+                  and the index row accepted: secret_declined; the target ends
+                  not_applicable (Reinhard-only review). A PLAN.md edit or a moved
+                  head needs a fresh review.
     waive --phase <name> --gate <id> [--wave <N> [--lane <id>] --base <sha>
           [--work-path <dir>]] --reason "<text>" --by <name>
                   (spec 016) --by owner-chat is reserved for chat-written entries

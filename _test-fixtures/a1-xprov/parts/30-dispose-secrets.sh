@@ -354,5 +354,46 @@ caseEX() {
   redproof30 "EX6" scen_ex_gl0 "1/secret_in_snapshot/0" $SX "&& !ctx.changed.has(h.path) &&" "&&"
 }
 caseEX
+# ---------- DC: FR-029 — the owner declined the allowlist question: not_applicable / secret_declined (Reinhard-only) ----------
+# dc_stop30 — the plan gate's snapshot stops on a changed-line hit (plan review has no diff, so nothing is excluded); sets DC_SCAN
+dc_stop30() {
+  prep30
+  printf 'k = "%s"\n' "$EXK30" > "$PHASE_REPO/src/leak.js"
+  ( cd "$PHASE_REPO" && git add -A && git commit -qm "fixture: planted key" )
+  ex_snap30
+  DC_SCAN="$(json_get "$EX_OUT" "j.scan_record || ''")"
+}
+dcd30() { sub30 dispose --phase p30 --gate "$GATE_PLAN" --secret-declined "${1:-$DC_SCAN}"; }
+rowsdc30() { json_get "$(cat "$PHASE_DIR/xreview/index.json" 2>/dev/null || echo '[]')" "j.filter((e) => e.accepted === 'secret_declined').length"; }
+scen_dc1() { dc_stop30; local before; before="$(lc30)"; dcd30; echo "$before|$G_RC/$(json_get "$G_OUT" "j.ok ? 'ok' : j.refused")/rows$(rowsdc30)/$(lc30)"; }
+scen_dc2() { dc_stop30; dcd30 "snap-nothing-recorded"; echo "$G_RC/$(json_get "$G_OUT" "j.refused")/rows$(rowsdc30)/$(lc30)"; }
+scen_dc3() { dc_stop30; printf 'x = 1\n' > "$PHASE_REPO/src/more.js"; ( cd "$PHASE_REPO" && git add -A && git commit -qm "fixture: a later commit" ); dcd30; echo "$G_RC/$(json_get "$G_OUT" "j.refused")/rows$(rowsdc30)"; }
+scen_dc4() { dc_stop30; dcd30; printf '\nedited after the decline\n' >> "$PHASE_PLAN"; echo "$(lc30)"; }
+scen_dc5() { # a forged row without a1's marker, and a row whose marker is bound to another sha
+  dc_stop30
+  node -e '
+    const fs = require("fs"); const [idx, sha] = process.argv.slice(1); let a = []; try { a = JSON.parse(fs.readFileSync(idx, "utf8")); } catch (_e) { a = []; }
+    a.push({ gate: "plan-review-xprov", wave: null, lane: null, accepted: "secret_declined", reason: "secret_declined", plan_sha256: sha, result_path: "/nonexistent/a1-declined.json", ts: new Date().toISOString() });
+    fs.mkdirSync(require("path").dirname(idx), { recursive: true }); fs.writeFileSync(idx, JSON.stringify(a, null, 2) + "\n");
+  ' "$PHASE_DIR/xreview/index.json" "$(plansha30)"
+  echo "$(lc30)"
+}
+caseDC() {
+  fresh30
+  assert_eq "DC1 before: load-check fails; the decline writes marker + row (exit 0); load-check accepts secret_declined" "$(scen_dc1)" "false//plan_review_missing|0/ok/rows1/true/secret_declined/"
+  assert_eq "DC2 no hits record for that scan name: refused, nothing written" "$(scen_dc2)" "1/scan_unusable/rows0/false//plan_review_missing"
+  assert_eq "DC3 the HEAD moved after the stop: refused as stale" "$(scen_dc3)" "1/scan_stale/rows0"
+  assert_eq "DC4 a PLAN.md edit after the decline: no longer accepted" "$(scen_dc4)" "false//plan_review_missing"
+  assert_eq "DC5 a row without a1's marker is not accepted" "$(scen_dc5)" "false//plan_review_missing"
+  local DCN=xprov-decline.cjs
+  redproof30 "DC3a" scen_dc3 "1/scan_stale/rows0" $DCN "if (read.value.commit !== target.head)" "if (false)"
+  redproof30 "DC2a" scen_dc2 "1/scan_unusable/rows0/false//plan_review_missing" $DCN "if (!read.ok) return" "if (false) return"
+  redproof30 "DC4a" scen_dc4 "false//plan_review_missing" xprov-runrecord.cjs "m.gate !== want.gate || m.plan_sha256 !== want.planSha) return null;" "m.gate !== want.gate) return null;" xprov-accept.cjs "e.accepted === DECLINED && e.plan_sha256 === planSha &&" "e.accepted === DECLINED &&"
+  redproof30 "DC5a" scen_dc5 "false//plan_review_missing" xprov-runrecord.cjs "if (!inOwnArtifacts(resultPath, root)) return null;
+  const m = readJsonNoFollow(path.resolve(resultPath));
+  if (m === null || m.kind" "const m = { kind: 'secret_declined', gate: want.gate, wave: want.wave, lane: want.lane, plan_sha256: want.planSha, head: 'a'.repeat(40), base: 'b'.repeat(40) };
+  if (m === null || m.kind"
+}
+caseDC
 rm -rf "$TMP30"
 export HOME="$SAVED_HOME_30"

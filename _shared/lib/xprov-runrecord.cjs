@@ -162,4 +162,13 @@ function writeExcluded(resultPath, excluded, root) {
   } catch (e) { return e.code === 'EEXIST'; }
 }
 
-module.exports = { EXCLUDED_FILE, writeExcluded, REVIEWED_FILE, PASS_MARKER_FILE, BLOCKED_MARKER_FILE, DISPOSED_MARKER_FILE, FINDINGS_FILE, verifiedFindings, disposedMarker, planDisposed, waveDisposedHeadBase, blockedFallbackValid, blockedFallbackHeadBase, hasPassMarker, inOwnArtifacts, readJsonNoFollow, runRecord, reviewedHeadBase, planPassValid, inspectPass };
+/** FR-029: a1's `secret_declined` marker (xprov-decline.cjs) at `resultPath`, bound to the gate, scope and PLAN.md sha. → the marker or null. */
+function declinedMarker(resultPath, want, root) {
+  if (!inOwnArtifacts(resultPath, root)) return null;
+  const m = readJsonNoFollow(path.resolve(resultPath));
+  if (m === null || m.kind !== 'secret_declined' || m.gate !== want.gate || m.plan_sha256 !== want.planSha) return null;
+  if (C.waveNumber(m.wave) !== C.waveNumber(want.wave) || laneOrNull(m.lane) !== laneOrNull(want.lane)) return null;
+  return want.wave === null || (SHA_RE.test(String(m.head)) && SHA_RE.test(String(m.base))) ? m : null;
+}
+
+module.exports = { declinedMarker, EXCLUDED_FILE, writeExcluded, REVIEWED_FILE, PASS_MARKER_FILE, BLOCKED_MARKER_FILE, DISPOSED_MARKER_FILE, FINDINGS_FILE, verifiedFindings, disposedMarker, planDisposed, waveDisposedHeadBase, blockedFallbackValid, blockedFallbackHeadBase, hasPassMarker, inOwnArtifacts, readJsonNoFollow, runRecord, reviewedHeadBase, planPassValid, inspectPass };
