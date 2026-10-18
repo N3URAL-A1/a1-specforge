@@ -203,6 +203,40 @@ scen_mc7() { # a decline WITH an owner No (the consent hook recorded an answered
   G_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov dispose --phase pr-review --gate pr-diff-xprov --wave 0 --lane "$lane" --work-path "$PHASE_REPO" --base "$base" --secret-declined "$scan" 2>/dev/null </dev/null)"; local d="$?/$(field31 "j.accepted")"
   mc31; echo "$d|$G_RC/$(field31 "j.covered_by.join(',')")"
 }
+scen_mc8() { # the owner waiver for head X does not cover head Y (a later commit)
+  prep31; commit31 src/auth/login.js 'export const login = 1;'
+  blocked31
+  local head; head="$(git -C "$PHASE_REPO" rev-parse HEAD)"
+  node -e '
+    const fs = require("fs"); const path = require("path"); const { execFileSync } = require("child_process");
+    const [repo, head, base, plan] = process.argv.slice(1);
+    const key = fs.realpathSync(path.resolve(repo, execFileSync("git", ["-C", repo, "rev-parse", "--git-common-dir"], { encoding: "utf8" }).trim()));
+    const file = path.join(process.env.HOME, ".a1-xprov", "waivers.json");
+    const rec = { repo: key, phase: "pr-review", gate: "pr-diff-xprov", plan_sha256: plan, wave: 0, lane: "pr" + head.slice(0, 12), head, base, reason: "fixture waiver", by: "owner-chat", ts: new Date().toISOString() };
+    fs.writeFileSync(file, JSON.stringify({ version: 1, waivers: [rec] }, null, 2) + "\n", { mode: 0o600 });
+  ' "$PHASE_REPO" "$head" "$(git -C "$ORIGIN31" rev-parse main)" "$(sha256_of "$PHASE_REPO/.a1-review/PLAN.md")"
+  mc31; local a="$G_RC/$(field31 "j.covered_by.join(',')")"
+  commit31 src/auth/more.js 'export const more = 1;'
+  mc31; echo "$a|$G_RC/$(reasons31)"
+}
+scen_mc9() { # a voided permit (the origin changed): a surface diff blocks and the owner is told; no surface is ok
+  prep31; commit31 src/auth/login.js 'export const login = 1;'
+  git -C "$PHASE_REPO" remote set-url --push origin "$ORIGIN31"
+  local other; other="$(mktemp -d "$TMP31/other.XXXXXX")"; git init -q --bare "$other"
+  git -C "$PHASE_REPO" remote set-url origin "$other"
+  git -C "$other" symbolic-ref HEAD refs/heads/main; git -C "$PHASE_REPO" push -q "$other" main 2>/dev/null
+  mc31; local a="$G_RC/$(reasons31)/$(field31 "j.owner_question")"
+  git -C "$PHASE_REPO" reset -q --hard HEAD~1; git -C "$PHASE_REPO" -c user.name=t -c user.email=t@t commit -q --allow-empty -m none
+  commit31 docs/readme.md '# x'
+  mc31; echo "$a|$G_RC/$(field31 "j.placement")"
+}
+scen_mc10() { # a stale local main (behind the remote) is no stop; a moved one is (MC2)
+  prep31; commit31 src/auth/login.js 'export const login = 1;'
+  local clone; clone="$(mktemp -d "$TMP31/clone.XXXXXX")"; git clone -q "$ORIGIN31" "$clone" 2>/dev/null
+  git -C "$clone" -c user.name=t -c user.email=t@t commit -q --allow-empty -m "remote moves"; git -C "$clone" push -q origin main 2>/dev/null
+  pr31; local g="$G_RC/$(field31 "j.verdict")"
+  mc31; echo "$g|$G_RC/$(field31 "j.covered_by.join(',')")/$(reasons31)"
+}
 scen_mc6() { # no surface: ok without any result
   prep31; commit31 src/util.js 'export const u = 1;'
   mc31; echo "$G_RC/$(field31 "j.ok")/$(field31 "j.placement")"
@@ -214,6 +248,9 @@ caseMC() {
   assert_eq "MC4 an owner waiver for exactly this head counts" "$(scen_mc4)" "1->0/waiver"
   assert_eq "MC5 a decline without an owner No on the allowlist marker does not count" "$(scen_mc5)" "1/secret_in_snapshot|0/secret_declined|1/secret_declined_without_owner_no"
   assert_eq "MC7 a decline with an owner No recorded by the consent hook counts" "$(scen_mc7)" "0/secret_declined|0/secret_declined"
+  assert_eq "MC8 a waiver for head X does not cover head Y" "$(scen_mc8)" "0/waiver|1/pr_merge_blocked"
+  assert_eq "MC9 a voided permit blocks a surface diff and names it; a docs-only diff is ok" "$(scen_mc9)" "1/permit_voided/true|0/no_surface"
+  assert_eq "MC10 a stale local main is no stop" "$(scen_mc10)" "0/pass|0/pass/"
   assert_eq "MC6 no surface: ok without any result" "$(scen_mc6)" "0/true/no_surface"
   local PMN=xprov-pr-merge.cjs PCN=xprov-pr-cover.cjs
   redproof31 "MC1a" scen_mc1 "1/pr_merge_blocked|0/true/pass|1/pr_merge_blocked" $PCN "if (l.head !== h || !accept(l)" "if (!accept(l)"
@@ -222,6 +259,9 @@ caseMC() {
   redproof31 "MC3a" scen_mc3 "not_applicable/codex_blocked_fallback|1/blocked_fallback_not_accepted/true" $PCN "const acceptMerge = (l) => l.kind === KINDS.PASS" "const acceptMerge = (l) => l.kind === KINDS.FALLBACK || l.kind === KINDS.PASS"
   redproof31 "MC5a" scen_mc5 "1/secret_in_snapshot|0/secret_declined|1/secret_declined_without_owner_no" $PCN "(l.kind === KINDS.DECLINED && l.ownerNo === true)" "(l.kind === KINDS.DECLINED)"
   redproof31 "MC7a" scen_mc7 "0/secret_declined|0/secret_declined" xprov-decline.cjs "if (p.state !== M.STATE.ANSWERED ||" "if (true ||"
+  redproof31 "MC8a" scen_mc8 "0/waiver|1/pr_merge_blocked" $PCN "if (l.head !== h || !accept(l)" "if (!accept(l)"
+  redproof31 "MC9a" scen_mc9 "1/permit_voided/true|0/no_surface" $PMN "const VOIDED_STATES = Object.freeze(['origin_changed', 'unbound_legacy']);" "const VOIDED_STATES = Object.freeze([]);"
+  redproof31 "MC10a" scen_mc10 "0/pass|0/pass/" xprov-pr-diff.cjs "if (ownerGit(['-C', workPath, 'merge-base', '--is-ancestor', sha, base]).status === 0) continue;" ""
   redproof31 "MC6a" scen_mc6 "0/true/no_surface" $PMN "return Object.freeze({ ...report, ok: blocked.length === 0, blocked, placement: 'no_surface' });" "return Object.freeze({ ...report, ok: false, blocked, placement: 'no_surface' });"
 }
 caseMC

@@ -100,12 +100,15 @@ function ensureObject(workPath, sha, branch) {
   return has();
 }
 
-/** Local refs that differ from the remote base: [{ ref, local }] (shas only). The merge check blocks on a non-empty list. */
+/** Local refs that were MOVED away from the remote base: [{ ref, local }] (shas only). A ref that merely lags (an ancestor of the remote
+ * base) is stale, not forged: the diff never uses it, so it is no stop (W10-3). The merge check blocks on a non-empty list. */
 function localRefProblems(workPath, branch, base) {
   const out = [];
   for (const ref of [`refs/remotes/origin/${branch}`, `refs/heads/${branch}`]) {
     const sha = gitLine(['-C', workPath, 'rev-parse', '--verify', '--quiet', `${ref}^{commit}`]);
-    if (sha !== null && sha !== base) out.push(Object.freeze({ ref, local: sha }));
+    if (sha === null || sha === base) continue;
+    if (ownerGit(['-C', workPath, 'merge-base', '--is-ancestor', sha, base]).status === 0) continue;
+    out.push(Object.freeze({ ref, local: sha }));
   }
   return Object.freeze(out);
 }

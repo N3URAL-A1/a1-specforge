@@ -22,6 +22,7 @@ const WV = require('./xprov-waivers.cjs');
 const PD = require('./xprov-pr-diff.cjs');
 const PC = require('./xprov-pr-cover.cjs');
 
+const VOIDED_STATES = Object.freeze(['origin_changed', 'unbound_legacy']);
 const blockedOf = (reason, detail) => Object.freeze({ reason, detail });
 
 /** The merge check: a frozen report. Typed input errors (exit 2) for bad arguments. `deps`: { root, enforcement, permitFor }. */
@@ -30,8 +31,11 @@ function mergeCheck(o, deps) {
   const gate = X.GATE_IDS.PR_DIFF;
   const head = { ok: true, gate, mode: 'merge-check', enforcement: deps.enforcement, blocked: [], pr_body: [], covered_by: [] };
   const np = deps.permitFor(deps.root, gate);
-  if (np.notApplicable) return Object.freeze({ ...head, placement: 'not_applicable', permit_state: np.permit.state, detail: 'no permit or denied: Reinhard-only review, the merge check does not apply' });
-  if (!np.permit.ok) return Object.freeze({ ...head, ok: false, permit_state: np.permit.state, blocked: [blockedOf('permit', np.permit.detail || 'the permit state is not usable')] });
+  // Only `absent` and `denied` are Reinhard-only. A voided permit (origin_changed, unbound_legacy) is the owner's repository with a permit that
+  // lost its binding: a surface diff blocks and the owner is told (W10-2, like W5-4).
+  const voided = np.notApplicable && VOIDED_STATES.includes(np.permit.state);
+  if (np.notApplicable && !voided) return Object.freeze({ ...head, placement: 'not_applicable', permit_state: np.permit.state, detail: 'no permit or denied: Reinhard-only review, the merge check does not apply' });
+  if (!np.permit.ok && !voided) return Object.freeze({ ...head, ok: false, permit_state: np.permit.state, blocked: [blockedOf('permit', np.permit.detail || 'the permit state is not usable')] });
   const t = PD.target(a, deps.root);
   if (!t.ok) return Object.freeze({ ...head, ok: false, blocked: [blockedOf(t.reason, t.detail)] });
   const blocked = [];
@@ -39,6 +43,10 @@ function mergeCheck(o, deps) {
   if (t.prHead !== null && t.prHead !== t.head) blocked.push(blockedOf('pr_head_mismatch', `the PR head on GitHub is ${PD.short(t.prHead)} but the work path HEAD is ${PD.short(t.head)}; push or reset so the reviewed commit is the merged one`));
   const report = { ...head, head: t.head, remote_base: t.remoteBase, base_source: t.source, merge_base: t.mergeBase, surface: t.cls.surface, docs_only: t.cls.docsOnly, lane: t.lane };
   if (!t.cls.surface) return Object.freeze({ ...report, ok: blocked.length === 0, blocked, placement: 'no_surface' });
+  if (voided) {
+    const b = blockedOf('permit_voided', `the permit of this repository is ${np.permit.state}: Codex cannot review the surface diff. ask the owner to consent again in the chat or to approve a chat waiver for this head`);
+    return Object.freeze({ ...report, ok: false, blocked: [...blocked, b], pr_body: [`permit_voided: ${b.detail}`], owner_question: true, permit_state: np.permit.state });
+  }
   const index = C.readIndex(C.reviewDirOf(a.workPath, false) + '/xreview/index.json');
   if (index === null) return Object.freeze({ ...report, ok: false, blocked: [...blocked, blockedOf('pr_merge_blocked', 'xreview/index.json is unparseable')] });
   const links = PC.linksOf(index, deps.root, WV.readWaivers(), C.commonDirOf(deps.root));
