@@ -28,7 +28,7 @@ const RI = lib('xprov-repo-identity.cjs');
 const key = (root) => C.commonDirOf(root);
 // Wave 3 kinds are built by their own modules from the phase / scan state, exactly as the plugin hook will (in-process require).
 const question = (root, kind) => {
-  if (kind === 'waiver') return lib('xprov-consent-waive.cjs').buildFor({ root, phase: a.phase }).question;
+  if (kind === 'waiver') return lib('xprov-consent-waive.cjs').buildFor(a.work_path ? { root, workPath: a.work_path } : { root, phase: a.phase }).question;
   if (kind === 'allowlist') return lib('xprov-consent-allowlist.cjs').buildFor({ root, scan: a.scan }).question;
   return Q.buildQuestion(kind, Q.repoContext(root, RI.readOrigin(root), { ludwigRecord: kind === 'classification' && a.ludwig ? a.ludwig : undefined }));
 };

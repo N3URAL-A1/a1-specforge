@@ -405,7 +405,11 @@ function driveGate(ctx, state) {
   // permission record gets no a1 write at all — no PLAN-REVIEW-LOG.md entry, no
   // xreview/ (Reinhard, PR review MAJOR 1; the W5 rule for every xprov writer).
   // placement BEFORE the permit branch (spec 016 D-1, FR-019/FR-020): a review that does not apply asks nobody and writes nothing
-  if (ctx.review && ctx.review.failure) return fail('anchor', ctx.review.failure.reason, ctx.review.failure.detail); // the remote base could not be resolved: nothing is written
+  if (ctx.review && ctx.review.failure) { // the remote base could not be resolved: nothing is written. A repository without a usable permit still ends not_applicable (SC-005), offline or not.
+    const early = permitFor(ctx.root, ctx.gate);
+    if (early.notApplicable) return NP.isNoPermit(early.permit) ? NP.result(base, early.permit) : recordNotApplicable(ctx, base, early.permit);
+    return fail('anchor', ctx.review.failure.reason, ctx.review.failure.detail);
+  }
   const placed = ctx.review ? ctx.review.placed : ctx.isPlan ? PL.planPlacement(ctx.root, ctx.planPath) : PL.wavePlacement(ctx.planPath, ctx.wave, ctx.workPath, ctx.base);
   if (!placed.run) return PL.result(base, placed);
   const { permit, notApplicable: na } = permitFor(ctx.root, ctx.gate);
