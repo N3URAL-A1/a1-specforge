@@ -52,7 +52,7 @@ Wave format per wave:
   - Depends on: [W-XX, ...]
 Wave ordering: resolve dependencies, no circular deps.
 Max waves: 8 for a typical brownfield run. If more needed, flag for Robert.
-Depth Pass: read `_shared/depth-pass.md`. PLAN.md carries a `## Depth Pass`
+Depth Pass: read `<repo>/_shared/depth-pass.md`. PLAN.md carries a `## Depth Pass`
 section with its five sub-headings, directly after the frontmatter, and the
 waves are derived from its rewritten brief.
 ```
@@ -67,7 +67,9 @@ The check reads only the Depth Pass section and ignores the `W-NN` wave format.
 
 Exit 0 → proceed to Step 3. Exit 1 → the section is missing or incomplete (the
 JSON names the offending sub-headings); hand them back to a1-pablo-planner as a
-revision brief before Adam sees the plan. Exit 2 → usage error, fix the invocation.
+revision brief before Adam sees the plan. At most 2 revision briefs: if the check still
+exits 1 after the second, stop, keep the status unchanged, record `revision-limit-reached`
+and report to the user with the finding list. Exit 2 → usage error, fix the invocation.
 
 ## Step 3 — Spawn a1-adam-auditor (after Pablo completes)
 

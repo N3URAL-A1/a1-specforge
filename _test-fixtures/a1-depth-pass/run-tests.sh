@@ -16,13 +16,14 @@
 # |------|-----------------------------------------|
 # | D2   | findSection(): heading test matches any `##` heading |
 # | D2c  | checkSubsections(): delete the missing-sub-heading findings.push |
-# | D3   | isPlaceholder(): remove the `<...>` template-token test |
-# | D4   | isPlaceholder(): remove the `tbd` test |
-# | D5   | isPlaceholder(): remove the empty-body test |
+# | D3   | isPlaceholderLine(): remove the `<...>` template-token test |
+# | D4   | PLACEHOLDER_TOKENS: remove the `tbd` entry |
+# | D5   | isPlaceholder(): `lines.every(...)` becomes `lines.length > 0 && lines.every(...)` |
 # | D6   | isSelfReferential(): ignore the denylist/stopword set |
 # | D9   | tagFences(): never mark lines as fenced |
 # | D10  | findSection(): take the last `## Depth Pass` instead of the first |
 # | D12  | cmdPlanDepthCheck(): empty text exits 2 |
+# | D13g | readPlan(): the catch reports a generic usage error without the error code (message lacks ENOENT) |
 # | D14  | ORACLE_STOPWORDS: add one word without touching the doc |
 # | D16  | readPlan(): delete the `..` segment check |
 # | D17  | readPlan(): delete the isFile check (and let read errors fall through) |
@@ -30,6 +31,13 @@
 # | D19  | cmdPlanDepthCheck(): execSync over the plan text |
 # | D20  | cmdPlanDepthCheck(): execSync over the --plan argument |
 # | D21  | checkDepthPass(): Atomics.wait(length / 5 ms) |
+# | D22  | readPlan(): drop the resolveVaultPath branch (target = planArg) |
+# | D22b | readPlan(): the catch returns '' instead of exit 2 |
+# | D22c | readPlan(): delete the `..` segment check (the normalised vault path then exists) |
+# | D23  | isPlaceholder(): `lines.every(` becomes `lines.length === 1 && lines.every(` (two <answer> lines); PLACEHOLDER_TOKENS emptied (TODO, N/A, ...); fence marker lines not filtered (fenced TBD) |
+# | D23g | isPlaceholderLine(): always return true (real one-line answer wrongly rejected, exit 0 case) |
+# | D24  | tagFences(): remove the backtick-in-rest-of-line test (inline code span opens a fence) |
+# | D25  | PLACEHOLDER_TOKENS: add one entry without touching the doc |
 
 set -u
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -166,8 +174,8 @@ assert_rc "D2c missing sub-heading 3" 1 "$RC" "$(cat "$WORK/out.json" "$WORK/err
 assert_json "D2d report names sub-heading 3" "$WORK/out.json" 'r.offending.some(o=>/methods and tools/i.test(o))'
 
 # D3 placeholder <…> (Unicode ellipsis) and <...> (ASCII).
-# RED: in isPlaceholder(), remove the `<…>` template-token regex.
-# Measured red 2026-10-19: isPlaceholder() `<...>` test returns false -> D3 FAIL (also D3b, D3c)
+# RED: in isPlaceholderLine(), remove the `<...>` template-token regex test.
+# Measured red 2026-10-19: isPlaceholderLine() `<...>` test removed -> D3 FAIL (also D3b, D3c, D23d)
 rewrite_body "$COMPLETE" "$WORK/ph1.md" "$H2" '<…>'
 run_check "$WORK/ph1.md"
 assert_rc "D3 placeholder <…>" 1 "$RC" "$(cat "$WORK/out.json" "$WORK/err.txt")"
@@ -177,8 +185,8 @@ run_check "$WORK/ph2.md"
 assert_rc "D3c placeholder <...>" 1 "$RC" "$(cat "$WORK/out.json" "$WORK/err.txt")"
 
 # D4 TBD, upper and lower case.
-# RED: in isPlaceholder(), remove the `tbd` comparison.
-# Measured red 2026-10-19: isPlaceholder() `tbd` test removed -> D4 FAIL (also D4b)
+# RED: in PLACEHOLDER_TOKENS, remove the `tbd` entry.
+# Measured red 2026-10-19: `tbd` removed from PLACEHOLDER_TOKENS -> D4 FAIL (also D4b, D23e, D25)
 rewrite_body "$COMPLETE" "$WORK/tbd.md" "$H1" 'TBD'
 run_check "$WORK/tbd.md"
 assert_rc "D4 TBD" 1 "$RC" "$(cat "$WORK/out.json" "$WORK/err.txt")"
@@ -187,8 +195,8 @@ run_check "$WORK/tbd2.md"
 assert_rc "D4b tbd (lower case)" 1 "$RC" "$(cat "$WORK/out.json" "$WORK/err.txt")"
 
 # D5 empty answer body.
-# RED: in isPlaceholder(), remove the empty-body test (`body.trim() === ''`).
-# Measured red 2026-10-19: isPlaceholder() empty-body test removed -> D5 FAIL
+# RED: in isPlaceholder(), make an answer with no non-empty line count as real (`lines.length > 0 && lines.every(...)`).
+# Measured red 2026-10-19: empty-body handling removed -> D5 FAIL only
 rewrite_body "$COMPLETE" "$WORK/empty-ans.md" "$H2" ''
 run_check "$WORK/empty-ans.md"
 assert_rc "D5 empty answer" 1 "$RC" "$(cat "$WORK/out.json" "$WORK/err.txt")"
@@ -240,11 +248,13 @@ rc=0; out="$(node "$TOOLS" plan 2>&1)" || rc=$?
 assert_rc "D13e no subcommand" 2 "$rc" "$out"
 rc=0; out="$(node "$TOOLS" plan depth-check --plan "$WORK/does-not-exist.md" 2>&1)" || rc=$?
 assert_rc "D13f unreadable (missing) file" 2 "$rc" "$out"
-case "$out" in *usage*|*"not found"*|*"cannot read"*) echo "PASS  D13g stderr says what is wrong"; pass=$((pass + 1));; *) echo "FAIL  D13g stderr message: $out"; fail=$((fail + 1));; esac
+# D13g RED: in readPlan(), replace the catch message with a generic text (no "cannot read ... ENOENT").
+# Measured red 2026-10-19: catch message replaced by 'bad plan' -> D13g FAIL (also D22b2)
+case "$out" in *"cannot read"*ENOENT*) echo "PASS  D13g stderr says what is wrong"; pass=$((pass + 1));; *) echo "FAIL  D13g stderr message: $out"; fail=$((fail + 1));; esac
 
 # D16 path traversal: a `..` segment is rejected before any file access (exit 2, stderr names the rule).
 # RED: in readPlan(), delete the `planArg.split(...).includes('..')` check.
-# Measured red 2026-10-19: one extra word in ORACLE_STOPWORDS -> D14 FAIL
+# Measured red 2026-10-19: readPlan() `..` check disabled -> D16 FAIL (also D16b)
 # The file behind the path EXISTS and is complete, so only the guard can produce exit 2.
 mkdir -p "$WORK/sub"
 cp "$COMPLETE" "$WORK/sub/p.md"
@@ -259,14 +269,14 @@ assert_rc "D16d backslash traversal" 2 "$rc" "$out"
 # D17 a directory is not a plan (exit 2).
 # RED: in readPlan(), delete the `!st.isFile()` check AND make the catch return '' instead of exit 2
 #      (readFileSync on a directory throws EISDIR, so the isFile check alone is masked by the catch: two edits, one guard).
-# Measured red 2026-10-19: readPlan() `..` check disabled -> D16 FAIL (also D16b)
+# Measured red 2026-10-19: readPlan() isFile check removed + catch returns '' -> D17 FAIL (also D17b, D13f, D13g, D20)
 rc=0; out="$(node "$TOOLS" plan depth-check --plan "$WORK/sub" 2>&1)" || rc=$?
 assert_rc "D17 directory path" 2 "$rc" "$out"
 case "$out" in *"not a regular file"*) echo "PASS  D17b stderr names the rule"; pass=$((pass + 1));; *) echo "FAIL  D17b stderr: $out"; fail=$((fail + 1));; esac
 
 # D18 size cap: one byte over 5 MiB -> exit 2 with the limit in stderr; exactly at the cap is read.
 # RED: in readPlan(), raise MAX_PLAN_BYTES to 1024 * 1024 * 1024 (the 5 MiB + 1 plan is then read -> exit 1).
-# Measured red 2026-10-19: readPlan() isFile check removed + catch returns '' -> D17 FAIL (also D17b, D13f, D13g, D20)
+# Measured red 2026-10-19: MAX_PLAN_BYTES = 1 GiB -> D18 FAIL (also D18b)
 node -e '
   const fs = require("fs");
   const cap = 5 * 1024 * 1024;
@@ -279,7 +289,7 @@ case "$out" in *5242880*) echo "PASS  D18b stderr states the limit"; pass=$((pas
 # D19 injection-shaped input is inert. Part 1: in the PLAN TEXT (answers carry shell/HTML payloads).
 # RED: in cmdPlanDepthCheck(), add `require("child_process").execSync('echo ' + c + ' >/dev/null')` for each `$(touch ...)` match in the plan
 #      text (only the payload is fed to the shell, never the whole plan; the side-effect file then appears).
-# Measured red 2026-10-19: MAX_PLAN_BYTES = 1 GiB -> D18 FAIL (also D18b)
+# Measured red 2026-10-19: execSync over `$(touch ...)` plan-text payload -> D19b FAIL (also D19d, D20b: side-effect file pwn-subst appeared)
 INJ="$WORK/inj"; mkdir -p "$INJ"
 node -e '
   const fs = require("fs");
@@ -300,7 +310,7 @@ if [[ -z "$(ls -A "$INJ")" ]]; then echo "PASS  D19d no side-effect file"; pass=
 # D20 injection-shaped input in the PATH argument: never reaches a shell (file simply not found -> exit 2).
 # RED: in cmdPlanDepthCheck(), add `require("child_process").execSync("cat " + flags.plan + " >/dev/null 2>&1")`
 #      (the `; touch` in the path then runs and creates the side-effect file).
-# Measured red 2026-10-19: execSync over `$(touch ...)` plan-text payload -> D19b FAIL (also D19d, D20b: side-effect file pwn-subst appeared)
+# Measured red 2026-10-19: execSync over the --plan argument -> D20b FAIL (side-effect file pwn-path appeared)
 for evil in "x; touch $INJ/pwn-path" "\$(touch $INJ/pwn-path2)" "\`touch $INJ/pwn-path3\`" "<script>.md"; do
   rc=0; out="$(node "$TOOLS" plan depth-check --plan "$evil" 2>&1)" || rc=$?
   assert_rc "D20 hostile path '$evil'" 2 "$rc" "$out"
@@ -310,7 +320,7 @@ if [[ -z "$(ls -A "$INJ")" ]]; then echo "PASS  D20b no side-effect file from pa
 # D21 oversized plans finish in time and pass: 10 000 chars < 1 s, 1 MB (one 1 MB line, and many lines) < 2 s.
 # RED: in checkDepthPass(), add `Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Math.floor(text.length / 5))`
 #      (sleeps length/5 ms: 10 000 chars -> 2 s, 1 MB -> 200 s, killed by the 10 s harness timeout).
-# Measured red 2026-10-19: execSync over the --plan argument -> D20b FAIL (side-effect file pwn-path appeared)
+# Measured red 2026-10-19: Atomics.wait(length / 5 ms) in checkDepthPass() -> D21b FAIL (10k took 3018 ms; 1 MB cases hit the 10 s kill)
 # timed_check <plan> -> sets RC, ELAPSED_MS. Portable timer: node hrtime around spawnSync (no `date +%N`), 10 s kill.
 timed_check() {
   local res
@@ -346,11 +356,73 @@ timed_check "$WORK/big-1m-lines.md"
 assert_rc "D21e 1 MB many-line answer" 0 "$RC" "elapsed ${ELAPSED_MS} ms"
 if [[ "$ELAPSED_MS" -lt 2000 ]]; then echo "PASS  D21f 1 MB multi-line plan in ${ELAPSED_MS} ms (< 2000)"; pass=$((pass + 1)); else echo "FAIL  D21f 1 MB multi-line plan took ${ELAPSED_MS} ms (limit 2000)"; fail=$((fail + 1)); fi
 
+
+# D22 vault-relative --plan: a relative path that does not exist under the cwd resolves against A1_VAULT_ROOT.
+# RED: in readPlan(), drop the resolveVaultPath branch (`target = planArg`): the vault-relative path is then ENOENT -> exit 2.
+# Measured red 2026-10-19: readPlan() resolveVaultPath branch dropped (target = planArg) -> D22 FAIL only
+VAULT="$WORK/vault"; EMPTY_VAULT="$WORK/vault-empty"; CWD_DIR="$WORK/cwd-empty"
+mkdir -p "$VAULT/project/x/plans" "$VAULT/x" "$EMPTY_VAULT" "$CWD_DIR"
+cp "$COMPLETE" "$VAULT/project/x/plans/p.md"
+cp "$COMPLETE" "$VAULT/x/p.md"
+rc=0; out="$(cd "$CWD_DIR" && A1_VAULT_ROOT="$VAULT" node "$TOOLS" plan depth-check --plan project/x/plans/p.md 2>&1)" || rc=$?
+assert_rc "D22 vault-relative plan resolves through A1_VAULT_ROOT" 0 "$rc" "$out"
+
+# D22b the same relative path without that file in the vault -> exit 2, "cannot read" shape.
+# RED: in readPlan(), make the catch return '' instead of exit 2 (the empty text is then a finding, exit 1).
+# Measured red 2026-10-19: readPlan() catch returns '' -> D22b FAIL (also D22b2, D13f, D13g, D20 x4)
+rc=0; out="$(cd "$CWD_DIR" && A1_VAULT_ROOT="$EMPTY_VAULT" node "$TOOLS" plan depth-check --plan project/x/plans/p.md 2>&1)" || rc=$?
+assert_rc "D22b vault-relative plan missing in the vault" 2 "$rc" "$out"
+case "$out" in *"cannot read plan"*ENOENT*) echo "PASS  D22b2 stderr keeps the cannot-read shape"; pass=$((pass + 1));; *) echo "FAIL  D22b2 stderr: $out"; fail=$((fail + 1));; esac
+
+# D22c `..` segments are rejected before vault resolution (project/../x/p.md normalises to the existing $VAULT/x/p.md).
+# RED: in readPlan(), delete the `planArg.split(...).includes('..')` check (the plan is then found and read -> exit 0).
+# Measured red 2026-10-19: readPlan() `..` check disabled -> D22c FAIL (also D22d, D16, D16b)
+rc=0; out="$(cd "$CWD_DIR" && A1_VAULT_ROOT="$VAULT" node "$TOOLS" plan depth-check --plan project/../x/p.md 2>&1)" || rc=$?
+assert_rc "D22c '..' rejected before vault resolution" 2 "$rc" "$out"
+case "$out" in *'".." segment'*) echo "PASS  D22d stderr names the rule"; pass=$((pass + 1));; *) echo "FAIL  D22d stderr: $out"; fail=$((fail + 1));; esac
+
+# D23 placeholder set: TODO, N/A, '...', '-', two <answer> lines, a fenced TBD all fail.
+# RED: in isPlaceholder(), change `lines.every(` to `lines.length === 1 && lines.every(` (D23d fails); empty PLACEHOLDER_TOKENS (D23, D23b, D23c fail);
+#      do not filter fence marker lines (D23e fails).
+# Measured red 2026-10-19: PLACEHOLDER_TOKENS emptied -> D23, D23b, D23c FAIL (also D4, D4b, D23e, D23f, D25); isPlaceholder() `lines.every` -> `lines.length < 2 && ...` -> D23d FAIL (also D23f); fence marker lines not filtered -> D23e FAIL only
+rewrite_body "$COMPLETE" "$WORK/todo.md" "$H1" 'TODO'
+run_check "$WORK/todo.md"
+assert_rc "D23 TODO placeholder" 1 "$RC" "$(cat "$WORK/out.json" "$WORK/err.txt")"
+rewrite_body "$COMPLETE" "$WORK/na.md" "$H2" 'N/A.'
+run_check "$WORK/na.md"
+assert_rc "D23b N/A. placeholder (trailing punctuation)" 1 "$RC" "$(cat "$WORK/out.json" "$WORK/err.txt")"
+rewrite_body "$COMPLETE" "$WORK/dots.md" "$H1" '...'
+run_check "$WORK/dots.md"
+assert_rc "D23c '...' placeholder" 1 "$RC" "$(cat "$WORK/out.json" "$WORK/err.txt")"
+rewrite_body "$COMPLETE" "$WORK/two-tokens.md" "$H2" $'<answer>\n<answer>'
+run_check "$WORK/two-tokens.md"
+assert_rc "D23d two <answer> lines" 1 "$RC" "$(cat "$WORK/out.json" "$WORK/err.txt")"
+rewrite_body "$COMPLETE" "$WORK/fenced-tbd.md" "$H1" $'```\nTBD\n```'
+run_check "$WORK/fenced-tbd.md"
+assert_rc "D23e fenced TBD" 1 "$RC" "$(cat "$WORK/out.json" "$WORK/err.txt")"
+rewrite_body "$COMPLETE" "$WORK/dash.md" "$H2" $'- -\n<!-- note -->\n-'
+run_check "$WORK/dash.md"
+assert_rc "D23f bullet dash and comment only" 1 "$RC" "$(cat "$WORK/out.json" "$WORK/err.txt")"
+
+# D23g a real one-line answer still passes (guards against over-rejection).
+# RED: in isPlaceholderLine(), return true unconditionally (every answer is rejected -> exit 1).
+# Measured red 2026-10-19: isPlaceholderLine() returns true unconditionally -> D23g FAIL (also D1, D7, D8 x5, D11, D21 x3 and others: every answer rejected)
+rewrite_body "$COMPLETE" "$WORK/real-one-line.md" "$H2" 'Upstream schema dump from the production database'
+run_check "$WORK/real-one-line.md"
+assert_rc "D23g real one-line answer passes" 0 "$RC" "$(cat "$WORK/out.json" "$WORK/err.txt")"
+
+# D24 an inline code span at line start is not a fence opener (CommonMark), so the section after it is still found.
+# RED: in tagFences(), remove the `line.slice(m[0].length).includes('`')` test (the span opens a fence that never closes -> exit 1).
+# Measured red 2026-10-19: tagFences() backtick-in-rest-of-line test removed -> D24 FAIL only
+{ echo '```js``` is inline'; echo; cat "$COMPLETE"; } > "$WORK/inline-fence.md"
+run_check "$WORK/inline-fence.md"
+assert_rc "D24 inline code span is not a fence opener" 0 "$RC" "$(cat "$WORK/out.json" "$WORK/err.txt")"
+
 # ---------------------------------------------------------------- doc owns the lists
 
 # D14 the two lists in _shared/depth-pass.md (section "Self-reference rule") equal the exported constants.
 # RED: add or drop one word in ORACLE_STOPWORDS (or ORACLE_DENYLIST) without touching the doc.
-# Measured red 2026-10-19: Atomics.wait(length / 5 ms) in checkDepthPass() -> D21b FAIL (10k took 3018 ms; 1 MB cases hit the 10 s kill)
+# Measured red 2026-10-19: one extra word in ORACLE_STOPWORDS -> D14 FAIL
 rc=0
 out="$(DOC="$DOC" LIB="$LIB" node -e '
   const fs = require("fs");
@@ -372,6 +444,23 @@ out="$(DOC="$DOC" LIB="$LIB" node -e '
   same("stopwords", list("Stopwords"), lib.ORACLE_STOPWORDS);
 ' 2>&1)" || rc=$?
 assert_rc "D14 doc lists equal code constants" 0 "$rc" "$out"
+
+# D25 the placeholder list in _shared/depth-pass.md ("Placeholder tokens:" line) equals PLACEHOLDER_TOKENS (case-insensitive).
+# RED: add or drop one entry in PLACEHOLDER_TOKENS without touching the doc.
+# Measured red 2026-10-19: one extra entry in PLACEHOLDER_TOKENS -> D25 FAIL only
+rc=0
+out="$(DOC="$DOC" LIB="$LIB" node -e '
+  const fs = require("fs");
+  const text = fs.readFileSync(process.env.DOC, "utf8").replace(/\r\n/g, "\n");
+  const l = text.split("\n").find((x) => x.startsWith("Placeholder tokens:"));
+  if (!l) { console.log("no Placeholder tokens line"); process.exit(1); }
+  const doc = l.slice("Placeholder tokens:".length).split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+  const code = require(process.env.LIB).PLACEHOLDER_TOKENS;
+  const sd = new Set(doc), sc = new Set(code);
+  const ok = doc.length === sd.size && code.length === sc.size && [...sd].every((w) => sc.has(w)) && sd.size === sc.size;
+  if (!ok) { console.log("placeholder tokens differ: doc=" + doc.join("|") + " code=" + code.join("|")); process.exit(1); }
+' 2>&1)" || rc=$?
+assert_rc "D25 doc placeholder list equals code constant" 0 "$rc" "$out"
 
 # D15 the doc states the a1-quick exemption and carries the five exact sub-headings.
 if grep -q 'a1-quick' "$DOC" 2>/dev/null \

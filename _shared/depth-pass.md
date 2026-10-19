@@ -41,12 +41,14 @@ planning brief.
 ## Rules
 
 - The rewritten brief is the goal statement the waves are derived from. Decompose after it, never before.
-- Size-S plans may answer in one line each. An empty answer, `TBD` or a lone `<...>` template token still fails.
+- Size-S plans may answer in one line each. An answer still fails when, after stripping fences, bullet markers and HTML comments, every non-empty line is a `<...>` token or one of `TBD`, `TODO`, `N/A`, `...`, `-` (case-insensitive, trailing punctuation ignored). An empty answer fails too. `_shared/lib/depth-pass.cjs` mirrors the list as `PLACEHOLDER_TOKENS`; this document owns it.
+
+Placeholder tokens: TBD, TODO, N/A, ..., -
 - A `phase_kind: no-code` phase still needs an external oracle in answer 4 (for example a content assertion against a published artifact).
 - One Depth Pass per PLAN.md. When several phases are planned in one run, each PLAN.md gets its own.
 - Revision mode keeps the section. If a BLOCKER concerns it, the planner updates it and notes the change in Revision Notes.
 - Answer 2 must name material rawer than the inputs the planner was handed (real schema, real logs, actual source, upstream docs, primary data), or state explicitly why none exists.
-- Answer 4 must name an oracle outside the planner and the user: a test suite, a measurement, a real system response, a spec AC executed against production data, a third-party standard.
+- Answer 4 must name an oracle outside the planner and the user: a test suite, a measurement, a real system response, a spec AC executed against production data, a third-party standard. These are NOT external oracles: the executor, and the same model that runs the check.
 - Exemption: `a1-quick` is exempt, because the XS lane has no planner.
 
 ## Self-reference rule

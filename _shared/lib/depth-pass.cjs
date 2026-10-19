@@ -13,14 +13,16 @@
  * Checks (all blocking):
  *   1. section              a `## Depth Pass` heading exists outside fenced code
  *   2. subheadings          all five sub-headings exist inside the section
- *   3. placeholders         no answer is empty, `TBD` or a lone `<...>` token
+ *   3. placeholders         no answer is empty or made only of `<...>` tokens / PLACEHOLDER_TOKENS
  *   4. oracle               answer 4 holds at least one token outside the lists
  *
  * Exit codes: 0 = PASS, 1 = finding, 2 = usage/read error.
  */
 
 const fs = require('fs');
+const path = require('path');
 const { parseFlags } = require('./io.cjs');
+const { resolveVaultPath } = require('./io-roots.cjs');
 
 const USAGE = 'usage: a1-tools plan depth-check --plan <path/to/PLAN.md>\n';
 const SECTION_NAME = 'depth pass';
@@ -55,6 +57,10 @@ const ORACLE_STOPWORDS = Object.freeze([
   'work',
 ]);
 
+/** Mirrors the "Rules" placeholder list of `_shared/depth-pass.md` (the doc owns it; the
+ * fixture suite proves the equality). Matched case-insensitively, trailing punctuation ignored. */
+const PLACEHOLDER_TOKENS = Object.freeze(['tbd', 'todo', 'n/a', '...', '-']);
+
 const SELF_REFERENTIAL = new Set([...ORACLE_DENYLIST, ...ORACLE_STOPWORDS]);
 
 /** Strip a UTF-8 BOM and normalise CRLF/CR so the rest sees plain LF text. */
@@ -73,15 +79,17 @@ function tagFences(text) {
   for (const line of text.split('\n')) {
     const m = line.match(/^ {0,3}(`{3,}|~{3,})/);
     if (open === null) {
-      if (m) {
+      // CommonMark: a backtick fence opener may not have a backtick in the rest of the line.
+      const opens = m && !(m[1][0] === '`' && line.slice(m[0].length).includes('`'));
+      if (opens) {
         open = { ch: m[1][0], len: m[1].length };
-        tagged.push({ line, fenced: true });
+        tagged.push({ line, fenced: true, marker: true });
       } else {
-        tagged.push({ line, fenced: false });
+        tagged.push({ line, fenced: false, marker: false });
       }
     } else {
       const closes = m && m[1][0] === open.ch && m[1].length >= open.len && line.trim() === m[1];
-      tagged.push({ line, fenced: true });
+      tagged.push({ line, fenced: true, marker: Boolean(closes) });
       if (closes) open = null;
     }
   }
@@ -141,12 +149,26 @@ function collectSubsections(sectionLines) {
   return new Map([...subs].map(([k, v]) => [k, v.join('\n').trim()]));
 }
 
-/** Empty, `TBD`, or solely a `<...>` template token (a leading bullet is ignored). */
+/** True when one line is a `<...>` template token or a PLACEHOLDER_TOKENS entry. */
+function isPlaceholderLine(line) {
+  const l = line.toLowerCase();
+  if (/^<[^<>]*>[.,;:!?]*$/.test(l)) return true;
+  if (PLACEHOLDER_TOKENS.includes(l)) return true;
+  const stripped = l.replace(/[.,;:!?]+$/, '');
+  return stripped !== '' && PLACEHOLDER_TOKENS.includes(stripped);
+}
+
+/**
+ * Empty, or (after stripping HTML comments, fence marker lines and bullet markers) every
+ * non-empty line is a placeholder line.
+ */
 function isPlaceholder(body) {
-  const b = body.trim().replace(/^[-*+]\s+/, '').trim();
-  if (b === '') return true;
-  if (/^tbd\.?$/i.test(b)) return true;
-  return /^<[^<>]*>$/.test(b);
+  const noComments = body.replace(/<!--[\s\S]*?(-->|$)/g, '');
+  const lines = tagFences(noComments)
+    .filter((t) => !t.marker)
+    .map((t) => t.line.trim().replace(/^[-*+]\s+/, '').trim())
+    .filter((l) => l !== '');
+  return lines.every(isPlaceholderLine);
 }
 
 /** Lowercase, split on every non-letter/digit, drop tokens of length 1. */
@@ -221,24 +243,31 @@ function usageError(msg) {
 const MAX_PLAN_BYTES = 5 * 1024 * 1024;
 
 /**
- * Validate the plan path and read it. Rejects (exit 2): a `..` segment, a path
- * that is not a regular file (directory, device, FIFO), a file over
- * MAX_PLAN_BYTES, and any read error. The path is never passed to a shell.
+ * Validate the plan path and read it. Rejects (exit 2): NUL, a `..` segment (both before any
+ * file access), a path that is not a regular file (directory, device, FIFO), a file over
+ * MAX_PLAN_BYTES, and any read error. A relative path that does not exist relative to the cwd
+ * is resolved against the vault root (`resolveVaultPath`). The file is opened once; type and
+ * size are checked on the descriptor. The path is never passed to a shell.
  */
 function readPlan(planArg) {
   if (planArg.includes('\0')) return usageError('invalid plan path: NUL byte');
   if (planArg.split(/[\\/]+/).includes('..')) {
     return usageError(`invalid plan path (".." segment not allowed): ${planArg}`);
   }
+  let fd = null;
   try {
-    const st = fs.statSync(planArg);
+    const target = path.isAbsolute(planArg) || fs.existsSync(planArg) ? planArg : resolveVaultPath(planArg);
+    fd = fs.openSync(target, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK);
+    const st = fs.fstatSync(fd);
     if (!st.isFile()) return usageError(`plan is not a regular file: ${planArg}`);
     if (st.size > MAX_PLAN_BYTES) {
       return usageError(`plan too large: ${st.size} bytes exceeds the limit of ${MAX_PLAN_BYTES} bytes`);
     }
-    return fs.readFileSync(planArg, 'utf8');
+    return fs.readFileSync(fd, 'utf8');
   } catch (e) {
     return usageError(`cannot read plan ${planArg}: ${e.code || e.message}`);
+  } finally {
+    if (fd !== null) fs.closeSync(fd);
   }
 }
 
@@ -252,4 +281,4 @@ function cmdPlanDepthCheck(args) {
   process.exit(report.verdict === 'pass' ? 0 : 1);
 }
 
-module.exports = { ORACLE_DENYLIST, ORACLE_STOPWORDS, checkDepthPass, tokenise, cmdPlanDepthCheck };
+module.exports = { ORACLE_DENYLIST, ORACLE_STOPWORDS, PLACEHOLDER_TOKENS, checkDepthPass, tokenise, cmdPlanDepthCheck };

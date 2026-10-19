@@ -50,7 +50,7 @@ Read everything in your `<files_to_read>` block:
 State the phase goal in ONE sentence. This is your north star — every task must serve it.
 
 ## Step 2.5: Depth Pass
-Read `_shared/depth-pass.md`. Before decomposing, write the four answers and the rewritten brief
+Read `<repo>/_shared/depth-pass.md`. Before decomposing, write the four answers and the rewritten brief
 for this planning task into the `## Depth Pass` section (format and rules in that document).
 Derive Step 3 from the rewritten brief, not from the original brief.
 
@@ -273,7 +273,7 @@ sequential_after_lanes: [6, 7, 9]    # cutover + contract waves
 - [ ] Every wave builds on the previous wave's outputs
 - [ ] The "Done when" condition for each task is binary and checkable
 - [ ] No tasks are out of scope
-- [ ] `## Depth Pass` is present with all five sub-headings answered (rules in `_shared/depth-pass.md`)
+- [ ] `## Depth Pass` is present with all five sub-headings answered (rules in `<repo>/_shared/depth-pass.md`)
 - [ ] `lanes:` is present — either `none` with a one-line reason, or a block that `lane-split check` exits 0 on
 
 # Revision mode

@@ -85,7 +85,7 @@ Use the `finding_classes` tags consistently — they feed `patterns.md`
 clustering. A run with zero findings still gets an entry (`audit_findings: 0`).
 
 **`gates_fired` is required** — a1-plan runs registered gates (`plan-audit`,
-`plan-review-xprov`, and `lane-split` on plans with a `lanes:` block). One
+`plan-review-xprov`, `depth-pass` on every plan, and `lane-split` on plans with a `lanes:` block). One
 line per gate that ran, ids verbatim from `_shared/gates-registry.md`;
 `04b-xprov-review.md` Step 4 defines the `plan-review-xprov` line. Add
 `xprov_waived` to `issues` (the base field of `_shared/retro-template.md`;

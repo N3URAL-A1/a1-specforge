@@ -115,12 +115,12 @@ Flag scope issues as MINOR.
 
 ## Step 6.5: Check Depth Pass
 
-`plan depth-check` already ran deterministically before you, so you judge content, not structure. The rules live in `_shared/depth-pass.md` (Rules and Self-reference rule); read them there, do not restate them.
+`plan depth-check` already ran deterministically before you, so you judge content, not structure. The rules live in `<repo>/_shared/depth-pass.md` (Rules and Self-reference rule); read them there, do not restate them.
 
 The "inputs the planner was handed" are the files from your Step 1 `<files_to_read>` block (PLAN.md excluded). Compare answer 2 against those.
 
 - No `## Depth Pass` section in PLAN.md: BLOCKER.
-- Answer 4 vague or self-referential (names the planner, the executor, or the same model as the check): MAJOR.
+- Answer 4 vague, or not an external oracle per the answer-4 rule: MAJOR.
 - Answer 2 not rawer than the handed inputs and no stated reason why none exists: MAJOR.
 
 Findings from this step are attributed under `plan-audit` (no separate gate id).
