@@ -347,6 +347,7 @@ hkprobes31() { # Samuel's probe strings (MC-1..MC-5) and more: every merge inten
     'xargs gh pr merge'
     "gh pr merge 7 --match-head-commit ${sha}x"
     'git log --oneline | gh pr merge 7'
+    'grep -n merge x <(gh pr merge 7)'
   )
 }
 scen_hk4() { # every probe is denied as non-canonical; the canonical forms, read-only mentions and other commands pass
@@ -356,6 +357,10 @@ scen_hk4() { # every probe is denied as non-canonical; the canonical forms, read
   for p in "${PROBES31[@]}"; do out="$out$(hk31 "$p" | sed 's/^deny:merge_not_canonical$/D/;s/^allow$/A/;s/^deny:.*$/d/')"; done
   local sha; sha="$(printf 'a%.0s' $(seq 1 40))"
   echo "$out|$(hk31 'grep "gh pr merge" README.md')|$(hk31 'git log --grep merge')|$(hk31 'git status')|$(hk31 "rg 'gh pr merge' docs")|$(hk31 'git diff HEAD~1')"
+}
+scen_hk7() { # post-merge verify and other commands that only CONTAIN the letters merge
+  prep31; commit31 src/auth/login.js 'export const login = 1;'; ghstub31 7
+  echo "$(hk31 'gh pr view 12 --json state,mergedAt')|$(hk31 'gh pr view 12 --json mergeable,mergeStateStatus')|$(hk31 'gh pr list --state merged')|$(hk31 'git merge-base main HEAD && gh pr view 12')|$(hk31 'gh pr create --title t --body-file body.md')"
 }
 scen_hk6() { # canonical forms with a passing check are allowed (flags in any order), the PR head sha must be a worktree head
   prep31; commit31 src/auth/login.js 'export const login = 1;'; ghstub31 7
@@ -377,7 +382,8 @@ caseHK() {
   assert_eq "HK1 gh pr merge: denied without a result, allowed with a pass for the head (run from the primary checkout)" "$(scen_hk1)" "deny:merge_blocked|allow|allow"
   assert_eq "HK2 a repository without a permit: allow, whatever gh says" "$(scen_hk2)" "allow"
   assert_eq "HK3 the merge check exits 2 / 77 / 1: deny (fail closed)" "$(scen_hk3)" "deny:merge_blocked|deny:merge_blocked|deny:merge_blocked|"
-  assert_eq "HK4 every probe string (cd, grouping, substitution, flag values, GH_REPO, --repo, gh api, GraphQL, wrappers) is denied as non-canonical; read-only mentions and other commands pass" "$(scen_hk4)" "DDDDDDDDDDDDDDDDDDD|allow|allow|allow|allow|allow"
+  assert_eq "HK4 every probe string (cd, grouping, substitution, flag values, GH_REPO, --repo, gh api, GraphQL, wrappers) is denied as non-canonical; read-only mentions and other commands pass" "$(scen_hk4)" "DDDDDDDDDDDDDDDDDDDD|allow|allow|allow|allow|allow"
+  assert_eq "HK7 whole-word intent: mergedAt, mergeable, merged, merge-base and --body-file are no merge intent (the a1-pr-review verify step passes)" "$(scen_hk7)" "allow|allow|allow|allow|allow"
   assert_eq "HK6 the canonical forms are allowed when the merge check passes" "$(scen_hk6)" "allow|allow|allow"
   assert_eq "HK5 node unavailable: a non-merge Bash call is allowed (shell early-out), a merge payload is denied (exit 2)" "$(scen_hk5)" "0|2"
   local mut5; mtree31 xprov-hook-merge.cjs "const CHECK_TIMEOUT_MS = 90000;" "const CHECK_TIMEOUT_MS = 90000;"
@@ -387,8 +393,9 @@ caseHK() {
   redproof31 "HK1a" scen_hk1 "deny:merge_blocked|allow|allow" $HMN "if (r.status === 0) return allow();" "return allow();"
   redproof31 "HK2a" scen_hk2 "allow" $HMN "return state === STATES.ABSENT || state === STATES.DENIED;" "return false;"
   redproof31 "HK3a" scen_hk3 "deny:merge_blocked|deny:merge_blocked|deny:merge_blocked|" $HMN "if (r.status === 0) return allow();" "if (r.status === 0 || r.status === 2 || r.status === 77) return allow();"
-  redproof31 "HK4a" scen_hk4 "DDDDDDDDDDDDDDDDDDD|allow|allow|allow|allow|allow" $HMN "return readOnlyMention(text) ? { kind: 'readonly' } : { kind: 'other' };" "return { kind: 'readonly' };"
-  redproof31 "HK4b" scen_hk4 "DDDDDDDDDDDDDDDDDDD|allow|allow|allow|allow|allow" $HMN "  return segments.length > 0 && segments.every(" "  return false && segments.every("
+  redproof31 "HK4a" scen_hk4 "DDDDDDDDDDDDDDDDDDDD|allow|allow|allow|allow|allow" $HMN "return readOnlyMention(text) ? { kind: 'readonly' } : { kind: 'other' };" "return { kind: 'readonly' };"
+  redproof31 "HK4b" scen_hk4 "DDDDDDDDDDDDDDDDDDDD|allow|allow|allow|allow|allow" $HMN "  return segments.length > 0 && segments.every(" "  return false && segments.every("
+  redproof31 "HK7a" scen_hk7 "allow|allow|allow|allow|allow" $HMN "const MERGE_WORD_RE = /(?<![\\w-])merge(?![\\w-])|mergePullRequest|enablePullRequestAutoMerge/;" "const MERGE_WORD_RE = /merge|mergePullRequest|enablePullRequestAutoMerge|Merge/;"
   redproof31 "HK6a" scen_hk6 "allow|allow|allow" $HMN "const CANONICAL_RE = /^gh pr merge ([1-9][0-9]{0,8})((?: --squash| --merge| --rebase| --delete-branch| -d| --match-head-commit [0-9a-f]{40})*)\$/;" "const CANONICAL_RE = /^nothing\$/;"
 }
 caseHK

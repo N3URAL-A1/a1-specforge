@@ -12,7 +12,7 @@
 //      the text contains `gh` as a word and `merge`, `mergePullRequest` or `enablePullRequestAutoMerge`. With merge intent only ONE command passes
 //      to the check: the whole text is exactly `gh pr merge <number> [--squash|--merge|--rebase] [--delete-branch|-d] [--match-head-commit <40 hex>]`
 //      (no cd, env assignment, wrapper, grouping, substitution, repo flag or other flag). Everything else is denied with a hint, except a
-//      read-only mention: every segment starts with grep, rg, git log, git grep, git show or git diff, and the text has no `$(`, backtick, `eval`,
+//      read-only mention: every segment starts with grep, rg, git log, git grep, git show or git diff, and the text has no `$(`, `<(`, `>(`, backtick, `eval`,
 //      `bash -c` / `sh -c`. The session `cwd` is the repository of the canonical form (it has no `cd`).
 //   2. The repository: the session `payload.cwd` -> `git rev-parse --show-toplevel`. Not a git repository: allow (no a1 context).
 //   3. The permit context, from the same lookup the gate uses (`permitCheck`): state `absent` or `denied` = Reinhard-only = allow, so
@@ -36,11 +36,11 @@ const MAX_COMMAND_CHARS = 100000;
 const SKIP_REF = /^refs\/heads\//;
 const A1_TOOLS = path.join(__dirname, '..', 'a1-tools.cjs');
 const GH_WORD_RE = /(?:^|[^A-Za-z0-9_-])gh(?![A-Za-z0-9_-])/;
-const MERGE_WORD_RE = /merge|mergePullRequest|enablePullRequestAutoMerge|Merge/;
+const MERGE_WORD_RE = /(?<![\w-])merge(?![\w-])|mergePullRequest|enablePullRequestAutoMerge/; // whole word: not mergedAt, mergeable, merged, merge-base
 const CANONICAL_RE = /^gh pr merge ([1-9][0-9]{0,8})((?: --squash| --merge| --rebase| --delete-branch| -d| --match-head-commit [0-9a-f]{40})*)$/;
 const READONLY_FIRST = Object.freeze(['grep', 'rg']);
 const READONLY_GIT = Object.freeze(['log', 'grep', 'show', 'diff']);
-const SUBSTITUTION_RE = /\$\(|`|\beval\b|\b(?:bash|sh|zsh)\s+-c\b/;
+const SUBSTITUTION_RE = /\$\(|<\(|>\(|`|\beval\b|\b(?:bash|sh|zsh)\s+-c\b/;
 const CANONICAL_HINT = 'run exactly `gh pr merge <number> [--squash|--merge|--rebase] [--delete-branch|-d] [--match-head-commit <sha>]` as the only command (no cd, env prefix, wrapper, grouping, --repo or other flags), from the PR\'s worktree or the primary checkout';
 
 const allow = () => Object.freeze({ action: 'allow' });
