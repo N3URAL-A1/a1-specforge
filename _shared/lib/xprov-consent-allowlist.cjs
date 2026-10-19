@@ -98,6 +98,16 @@ function buildFor(o) {
 
 const BY = C.RESERVED_BY;
 
+/** One record per path + rule + blob with the number of occurrences the question listed (an extra occurrence later is not covered). */
+function recordsOf(b, scan, audit, ts) {
+  const groups = new Map();
+  for (const h of b.hits) {
+    const k = `${h.path}\t${h.rule}\t${h.blob}`;
+    groups.set(k, { h, count: (groups.has(k) ? groups.get(k).count : 0) + 1 });
+  }
+  return [...groups.values()].map(({ h, count }) => HA.validRecord({ repo: b.key, path: h.path, rule: h.rule, blob: h.blob, scan, by: BY, audit, ts, count }));
+}
+
 /** Inside the store lock only: the hit store, the marker, the audit line, the write. `b` is the question built OUTSIDE the lock (SEC-6). */
 function approveLocked(o, b) {
   const store = HA.readHitApprovals();
@@ -111,7 +121,7 @@ function approveLocked(o, b) {
   }
   const audit = AU.lineSha(line);
   const now = o.now || io.nowIso();
-  const records = b.hits.map((h) => HA.validRecord({ repo: b.key, path: h.path, rule: h.rule, blob: h.blob, scan: o.scan, by: BY, audit, ts: now }));
+  const records = recordsOf(b, o.scan, audit, now);
   if (records.some((r) => r === null)) return refuse('hit_record_invalid', 'a hit approval record is off-format; nothing written (the marker is used: answer the question again)');
   const failed = R.step('write the hit approvals', 'no approval was written; the audit log has the line', () => HA.appendHitApprovals(records, require('./xprov-approve.cjs').writeGuardedStore));
   if (failed) return failed;

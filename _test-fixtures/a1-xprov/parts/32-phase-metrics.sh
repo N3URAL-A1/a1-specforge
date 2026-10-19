@@ -90,7 +90,7 @@ scen_ph1() { # plan, wave and PR gates pass in a permitted repo: zero owner hand
   echo "$a/$b/$c|$(sum32)|terminal=$(terminal32)"
 }
 # stop32 — a PR gate run that stops on a secret in a changed line; sets SCAN32 (the scan record) and prints rc/reason
-stop32() { commit32 src/auth/login.js "k = \"$EXK32\""; pr32; SCAN32="$(f32 j.scan_record)"; echo "$G_RC/$(f32 j.reason)"; }
+stop32() { commit32 src/auth/login.js "${1:-k = \"$EXK32\"}"; pr32; SCAN32="$(f32 j.scan_record)"; echo "$G_RC/$(f32 j.reason)"; }
 # chat32 — the owner's chat Yes for the allowlist question of SCAN32, then `consent allowlist` writes the hit approvals; prints the question/approve exit codes
 chat32() {
   local sim="{\"tree\":\"$TREE\",\"root\":\"$PHASE_REPO\",\"kind\":\"allowlist\",\"phase\":\"p32\",\"scan\":\"$SCAN32\",\"tool_use\":\"toolu_c32\",\"session\":\"sess_c32\""
@@ -111,7 +111,9 @@ tamper32() { # <node expression on the store document d> — rewrites the fixtur
   node -e 'const fs=require("fs");const f=process.argv[1];const m=fs.statSync(f).mode&0o777;const d=JSON.parse(fs.readFileSync(f,"utf8"));(function(d){eval(process.argv[2]);})(d);fs.writeFileSync(f,JSON.stringify(d,null,2)+"\n",{mode:m});' "$STORE32/hit-approvals.json" "$1"
 }
 scen_hc() {
-  prep32; stop32 >/dev/null; chat32
+  prep32
+  case "$1" in two|extra) stop32 "k = \"$EXK32\""$'\n'"k2 = \"$EXK32\"" >/dev/null ;; *) stop32 >/dev/null ;; esac
+  chat32
   case "$1" in
     same) ;;
     newhead) commit32 docs/note.md '# unrelated' ;;                                            # a new head, a new scan, the same blob
@@ -120,6 +122,9 @@ scen_hc() {
     rule) tamper32 'd.approvals[0].rule="aws_secret_access_key"' ;;                           # another rule id
     repo) tamper32 'd.approvals[0].repo="/elsewhere/.git"' ;;                                 # another repository key
     audit) tamper32 'd.approvals[0].audit="'"$(printf '0%.0s' $(seq 1 64))"'"' ;;             # a broken audit link
+    two) ;;                                                                                   # two occurrences listed and approved: covered
+    extra) tamper32 'd.approvals[0].count=1' ;;                                              # one more occurrence than the owner saw
+    legacy) tamper32 'delete d.approvals[0].count' ;;                                        # a record from before `count`
     shape) tamper32 'd.approvals[0].extra=1' ;;                                              # a wrong record shape
     *) echo "bad variant"; return ;;
   esac
@@ -181,15 +186,18 @@ caseHC() {
   assert_eq "HC1 an approved hit proceeds; the run lists path, rule id and the audit link (never the value) and writes the record" "$(scen_hc same | sed 's/|handoffs.*$//')" "$ok_"
   assert_eq "HC2 a new head with the same blob (a new scan) is covered" "$(scen_hc newhead | sed 's/|handoffs.*$//')" "$ok_"
   local v
-  for v in blob path rule repo audit shape; do
+  for v in blob path rule repo audit shape extra legacy; do
     assert_eq "HC3 $v: not covered, the stop stands" "$(scen_hc $v | sed 's/|handoffs.*$//')" "$stop"
   done
+  assert_eq "HC4 two listed occurrences, approved together: covered" "$(scen_hc two | sed 's/|handoffs.*$//')" "0/pass/null|listed=src/auth/login.js:aws_access_key_id:64|recorded|clean"
   local HCN=xprov-hit-cover.cjs want="$ok_"
   redproof32 "HC1a" "scen_hc_same" "$ok_" $HCN "if (rec === null) return none;" "return none;"
   redproof32 "HC3a" "scen_hc_blob" "$stop" $HCN " && a.blob === blob" ""
   redproof32 "HC3b" "scen_hc_rule" "$stop" $HCN " && a.rule === hit.rule" ""
   redproof32 "HC3c" "scen_hc_path" "$stop" $HCN " && a.path === hit.path" ""
   redproof32 "HC3d" "scen_hc_repo" "$stop" $HCN "a.repo === repoKey && " ""
+  redproof32 "HC3f" "scen_hc_extra" "$stop" $HCN " && a.count === count" ""
+  redproof32 "HC3g" "scen_hc_legacy" "$stop" $HCN " && a.count === count" ""
   redproof32 "HC3e" "scen_hc_audit" "$stop" $HCN ".state !== AU.STATE.OK) return none;" ".state === 'never') return none;"
 }
 scen_hc_same() { scen_hc same | sed 's/|handoffs.*$//'; }
@@ -197,6 +205,8 @@ scen_hc_blob() { scen_hc blob | sed 's/|handoffs.*$//'; }
 scen_hc_rule() { scen_hc rule | sed 's/|handoffs.*$//'; }
 scen_hc_path() { scen_hc path | sed 's/|handoffs.*$//'; }
 scen_hc_repo() { scen_hc repo | sed 's/|handoffs.*$//'; }
+scen_hc_extra() { scen_hc extra | sed 's/|handoffs.*$//'; }
+scen_hc_legacy() { scen_hc legacy | sed 's/|handoffs.*$//'; }
 scen_hc_audit() { scen_hc audit | sed 's/|handoffs.*$//'; }
 caseHC
 

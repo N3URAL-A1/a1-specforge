@@ -850,10 +850,12 @@ const classifyHits = (hits, out, canExclude) => EX.classify(hits, { changed: new
  * FR-014 / FR-029 (wave 12): the changed-line hits the owner approved in the chat (hit-approvals.json, see xprov-hit-cover.cjs) let the scan
  * through. [{ path, rule, audit }] when EVERY hit of the stop is a changed-line hit with a valid approval of this blob, else null (the stop stands).
  */
-function approvedChangedHits({ root, cl, out, al, gl, repoKey, canExclude }) {
+function approvedChangedHits({ root, dir, cl, out, al, gl, repoKey, canExclude }) {
   const cls = classifyHits(hitsOf(al, gl), out, canExclude);
   if (cls.excludable.length > 0 || cls.changed.length === 0) return null;
-  const cov = HC.coverage(cls.changed, { root, repoKey, commit: cl.commit });
+  const counts = new Map();
+  for (const h of positionedHits(dir, cls.changed)) counts.set(`${h.path}\t${h.rule}`, (counts.get(`${h.path}\t${h.rule}`) || 0) + 1);
+  const cov = HC.coverage(cls.changed, { root, repoKey, commit: cl.commit, counts });
   return cov.covered ? cov.approved : null;
 }
 

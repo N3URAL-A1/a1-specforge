@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 // xprov-hit-cover — the FR-029 hit check's reader of the owner's chat hit approvals (spec 016 FR-014 / FR-029, wave 12).
 //
-//   coverage(hits, { root, repoKey, commit }) -> { covered: true, approved: [{ path, rule, audit }] } | { covered: false }
+//   coverage(hits, { root, repoKey, commit, counts }) -> { covered: true, approved: [{ path, rule, audit }] } | { covered: false }
 //
 // A secret-scan hit in a changed line sends nothing and puts the allowlist question of FR-014 to the owner. After a chat Yes
 // (`xprov consent allowlist`) the owner store ~/.a1-xprov/hit-approvals.json holds one record per listed hit. The next scan of the same
@@ -12,6 +12,8 @@
 //   - the store is readable and well-formed (guarded owner store: 0700 dir, 0600 file, own uid, exact record shape, `by: owner-chat`);
 //   - a record matches repo key + path + rule id + the sha256 of THIS hit's blob at the scanned commit (not the scan id: a new scan of the
 //     same blob is covered; a changed blob, another path, another rule or another repository is not);
+//   - the record's `count` (occurrences of that rule in that blob, as the owner saw them listed) equals the occurrences found NOW (`counts`, a Map
+//     path<TAB>rule -> n): an extra occurrence the owner never saw is uncovered. A legacy record without `count` is uncovered;
 //   - the record's audit link is in the audit chain, belongs to this repository, has the action consent-allowlist and is not superseded by
 //     a later consent-revoke (xprov-audit.cjs verifyLineOf).
 // Only head-side hits in a plain relative path can be approved (the question lists those only). Never the matched value: the result and the
@@ -31,8 +33,8 @@ const APPROVED_FILE = 'a1-hit-approved.json';
 const MAX_APPROVED = 50;
 
 /** The approved record of one hit, or null. */
-function recordOf(store, hit, repoKey, blob) {
-  return store.approvals.find((a) => a.repo === repoKey && a.path === hit.path && a.rule === hit.rule && a.blob === blob) || null;
+function recordOf(store, hit, repoKey, blob, count) {
+  return store.approvals.find((a) => a.repo === repoKey && a.path === hit.path && a.rule === hit.rule && a.blob === blob && a.count === count) || null;
 }
 
 function coverage(hits, o) {
@@ -45,7 +47,9 @@ function coverage(hits, o) {
     if (h.side !== 'head' || !H.plainRelPath(h.path) || typeof h.rule !== 'string') return none;
     const b = H.blobSha256(o.root, o.commit, h.path);
     if (!b.ok) return none;
-    const rec = recordOf(store, h, o.repoKey, b.sha256);
+    const count = o.counts instanceof Map ? o.counts.get(`${h.path}\t${h.rule}`) : undefined; // occurrences NOW; a legacy record has no count and never equals it
+    if (!Number.isInteger(count) || count < 1) return none;
+    const rec = recordOf(store, h, o.repoKey, b.sha256, count);
     if (rec === null) return none;
     if (AU.verifyLineOf(rec.audit, o.repoKey, AU.ACTION.CONSENT_ALLOWLIST, AU.auditPath()).state !== AU.STATE.OK) return none;
     approved.push(Object.freeze({ path: h.path, rule: h.rule, audit: rec.audit }));

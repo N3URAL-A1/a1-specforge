@@ -8,8 +8,9 @@
 // consumers of one approval set would let a yes to one question act as a yes to another. A hit blob that parses as an allowlist document
 // is never approved here (xprov-consent-allowlist.cjs refuses it first).
 //
-// One record per approved hit: { repo, path, rule, blob, scan, by: owner-chat, audit, ts }
+// One record per approved path + rule: { repo, path, rule, blob, scan, by: owner-chat, audit, ts, count }
 //   repo   realpath of the git-common-dir      path, rule  from the scan hits record     blob  sha256 of the blob the hit sits in
+//   count  how many occurrences of the rule the question listed in that blob (a record without it is legacy and never covers a hit)
 //   scan   the scan record basename            audit       sha256 of the consent-allowlist audit line written before this record
 // Same store rules as the other owner stores (xprov-allowlist.cjs readGuardedStore: 0700 dir, 0600 file, own uid, O_NOFOLLOW read, atomic write).
 // The caller holds the owner-store lock: `append` reads the store and writes it back (spec 016 R-4). Request-scoped: no module state.
@@ -22,7 +23,9 @@ const AL = require('./xprov-allowlist.cjs');
 
 const STORE_LABEL = 'hit approval store';
 const SHA256_HEX_RE = /^[0-9a-f]{64}$/;
-const RECORD_KEYS = Object.freeze(['repo', 'path', 'rule', 'blob', 'scan', 'by', 'audit', 'ts']);
+const RECORD_KEYS_LEGACY = Object.freeze(['repo', 'path', 'rule', 'blob', 'scan', 'by', 'audit', 'ts']); // before `count`: still readable, never covers a hit
+const RECORD_KEYS = Object.freeze([...RECORD_KEYS_LEGACY, 'count']);
+const COUNT_MAX = 100000;
 const APPROVALS_MAX = 5000; // read bound of one store
 
 const storePath = () => path.join(X.xprovHome(), X.HIT_APPROVALS_FILE);
@@ -30,7 +33,9 @@ const sameHit = (a, b) => a.repo === b.repo && a.path === b.path && a.rule === b
 
 /** A store record has exactly RECORD_KEYS with the right shapes, else null. */
 function validRecord(r) {
-  if (!AL.exactKeys(r, RECORD_KEYS)) return null;
+  const legacy = AL.exactKeys(r, RECORD_KEYS_LEGACY);
+  if (!legacy && !AL.exactKeys(r, RECORD_KEYS)) return null;
+  if (!legacy && !(Number.isInteger(r.count) && r.count >= 1 && r.count <= COUNT_MAX)) return null;
   const str = (v) => typeof v === 'string' && v !== '';
   if (![r.repo, r.path, r.rule, r.scan, r.ts].every(str) || !SHA256_HEX_RE.test(r.blob) || !SHA256_HEX_RE.test(r.audit) || r.by !== C.RESERVED_BY) return null;
   return Object.freeze({ ...r });

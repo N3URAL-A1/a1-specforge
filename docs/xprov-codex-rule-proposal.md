@@ -42,7 +42,7 @@ Die Platzierung spart Kosten. Die Grenze ist das PR-Diff-Gate.
 
 ## 4. Runden, Dispositions, Selbstheilung
 
-- Findings aus Runde 2 mit MAJOR/MINOR, aber ohne BLOCKER, schließe ich **automatisch** ab (`xprov dispose`, Dispositions je Finding). Es braucht keinen Waiver.
+- Findings aus Runde 2 mit MAJOR/MINOR, aber ohne BLOCKER, schließe ich **automatisch** ab (`xprov dispose`, Dispositions je Finding). Es braucht keinen Waiver. **Das heißt ausdrücklich:** Beim Rundenlimit setze ich jedes offene MAJOR selbst auf `fixed` oder `accepted: <Grund>` (FR-025), ohne dass du gefragt wirst. Wer diese Regel übernimmt, übernimmt das bewusst. BLOCKER kann ich so nicht abschließen.
 - Selbstheilung ohne Rückfrage: Runner-Fehler werden begrenzt wiederholt, die Review-Home-Konfiguration und die Basis werden repariert. Antwortet Codex zweimal mit BLOCKED, endet das Gate Reinhard-only (`codex_blocked_fallback`); das ist auf einer Sicherheitsfläche **kein** Ergebnis für den Merge. Jeder Lauf schreibt eine Beobachtungszeile (`owner_handoffs`, `codex_runs`, `abort_reason`, `recovered`).
 - Bleibt ein Ziel nach den Runden rot (BLOCKER, Rundenlimit), frage ich **einmal je Phase** im Chat nach einem Waiver (`consent question --kind waiver`). Ein Ja gilt nur für genau die gelisteten Ziele und nur für diese PLAN.md-Version bzw. diesen Head. Ein Waiver ist kein Bestanden.
 
@@ -50,7 +50,7 @@ Die Platzierung spart Kosten. Die Grenze ist das PR-Diff-Gate.
 
 Diese Befunde umgehe ich nicht. Befund melden, Ursache beheben, neu laufen lassen:
 
-- Geheimnis-Treffer in **geänderten** Zeilen (`secret_in_snapshot`): ich stelle die Allowlist-Frage im Chat (`consent question --kind allowlist --scan <snap>`). Nein oder keine Antwort beendet das Gate Reinhard-only (`secret_declined`); auf einer Sicherheitsfläche zählt das nur mit einem Eigentümer-Nein, das der Hook am Marker festgehalten hat. Treffer in **unveränderten** Dateien werden ausgeschlossen und im Review-Input mit Pfad genannt (nie mit Wert).
+- Geheimnis-Treffer in **geänderten** Zeilen (`secret_in_snapshot`): ich stelle die Allowlist-Frage im Chat (`consent question --kind allowlist --scan <snap>`). Nein oder keine Antwort beendet das Gate Reinhard-only (`secret_declined`); auf einer Sicherheitsfläche zählt das nur mit einem Eigentümer-Nein, das der Hook am Marker festgehalten hat. Ein Ja schickt genau die gelisteten Blobs an Codex (je Pfad, Regel und Blob-Hash, mit der Zahl der gelisteten Fundstellen); ändert sich ein Blob oder kommt eine Fundstelle dazu, braucht es eine neue Frage. Treffer werden nur ausgeschlossen, wenn **alle** Treffer in unveränderten Dateien liegen, es höchstens 50 sind und eine Basis existiert; sie stehen dann im Review-Input mit Pfad (nie mit Wert). Liegt auch nur ein Treffer in einer geänderten Zeile, gibt es keinen Ausschluss und ich frage.
 - `secret_in_output`, `tripwire`, `quarantined`, `run_home_unsafe`, `external_review_permit_mismatch`, `snapshot_changed_after_scan`, `allowlist_invalid`, `allowlist_modified`.
 - Eine Sperre des Berechtigungssystems (z. B. „CI Bypass“) umgehe ich nicht. Ich melde sie und lasse Robert entscheiden.
 
