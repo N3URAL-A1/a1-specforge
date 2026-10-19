@@ -212,7 +212,7 @@ features:
     milestone: continuous
     title: "Depth Pass before every planning task"
     status: in-flight
-    stage: complete
+    stage: verify
     depends_on: []
     started: 2026-10-19
     finished: null
@@ -354,6 +354,8 @@ None.
 - **2026-10-18** — feature '019-depth-pass-planning' added — Every planner answers the four depth questions and rewrites its brief before decomposing; a deterministic gate enforces the section
 - **2026-10-18** — feature.md created for '019-depth-pass-planning' — formal spec/plan attached via `product feature-init`
 - **2026-10-19** — 019-depth-pass-planning -> complete — stage transition via `product stage`
+- **2026-10-19** — 019-depth-pass-planning -> review — stage transition via `product stage`
+- **2026-10-19** — 019-depth-pass-planning -> verify — stage transition via `product stage`
 
 ## Appendix — migrated details
 
