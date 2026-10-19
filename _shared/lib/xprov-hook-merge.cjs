@@ -8,14 +8,17 @@
 //   decideMerge(payload, deps?) -> { action: 'allow' } | { action: 'deny', reason, detail }
 //
 // What the hook resolves (merges are often run from the primary checkout, not from the review worktree):
-//   1. The command: a segment (split on ; & | and newline) whose first word is `gh` (or a shell/eval/xargs running such text) with `pr merge`, or
-//      `gh api` naming `/pulls/<n>/merge`. Anything else is allowed at once and untouched (no git, no gh, no node work).
-//   2. The repository: `payload.cwd` -> `git rev-parse --show-toplevel`. Not a git repository: allow (no a1 context).
+//   1. The command (plan decision 2026-10-19, merge hook parsing: ALLOW ONE CANONICAL FORM instead of recognising merge forms). Merge intent =
+//      the text contains `gh` as a word and `merge`, `mergePullRequest` or `enablePullRequestAutoMerge`. With merge intent only ONE command passes
+//      to the check: the whole text is exactly `gh pr merge <number> [--squash|--merge|--rebase] [--delete-branch|-d] [--match-head-commit <40 hex>]`
+//      (no cd, env assignment, wrapper, grouping, substitution, repo flag or other flag). Everything else is denied with a hint, except a
+//      read-only mention: every segment starts with grep, rg, git log, git grep, git show or git diff, and the text has no `$(`, backtick, `eval`,
+//      `bash -c` / `sh -c`. The session `cwd` is the repository of the canonical form (it has no `cd`).
+//   2. The repository: the session `payload.cwd` -> `git rev-parse --show-toplevel`. Not a git repository: allow (no a1 context).
 //   3. The permit context, from the same lookup the gate uses (`permitCheck`): state `absent` or `denied` = Reinhard-only = allow, so
 //      merges in repositories that never joined xprov are untouched. Every other state (allowed, a voided permit, a broken store) is a
 //      context where the merge check decides.
-//   4. The PR: a number or URL in the command, else `gh pr view [<arg>] --json number,headRefOid,headRefName` from the repository
-//      (the current branch's PR when no argument is given). `--repo`/`-R` names another repository: deny (the check needs this checkout).
+//   4. The PR: the number of the canonical form; `gh pr view <n> --json number,headRefOid,headRefName` gives head sha and branch.
 //   5. The worktree: `git worktree list --porcelain` of the repository; the one whose branch is the PR's head branch and whose HEAD is the PR's
 //      head sha (the primary checkout counts when it has that branch). None: deny with the hint to review from the PR's own worktree.
 //   6. The decision: `a1-tools xprov gate --gate pr-diff-xprov --work-path <worktree> --pr <n> --merge-check` as a child with a timeout.
@@ -30,51 +33,40 @@ const { spawnSync } = require('child_process');
 const CHECK_TIMEOUT_MS = 90000;
 const LOOKUP_TIMEOUT_MS = 30000;
 const MAX_COMMAND_CHARS = 100000;
-const PR_NUMBER_RE = /^[1-9]\d{0,8}$/;
-const PR_URL_RE = /\/pull\/([1-9]\d{0,8})(?:[/?#].*)?$/;
-const API_MERGE_RE = /\/pulls\/([1-9]\d{0,8})\/merge(?:\b|$)/;
-const WRAPPERS = Object.freeze(['bash', 'sh', 'zsh', 'eval', 'xargs', 'env', 'command', 'exec', 'time', 'nohup', 'sudo']);
 const SKIP_REF = /^refs\/heads\//;
 const A1_TOOLS = path.join(__dirname, '..', 'a1-tools.cjs');
+const GH_WORD_RE = /(?:^|[^A-Za-z0-9_-])gh(?![A-Za-z0-9_-])/;
+const MERGE_WORD_RE = /merge|mergePullRequest|enablePullRequestAutoMerge|Merge/;
+const CANONICAL_RE = /^gh pr merge ([1-9][0-9]{0,8})((?: --squash| --merge| --rebase| --delete-branch| -d| --match-head-commit [0-9a-f]{40})*)$/;
+const READONLY_FIRST = Object.freeze(['grep', 'rg']);
+const READONLY_GIT = Object.freeze(['log', 'grep', 'show', 'diff']);
+const SUBSTITUTION_RE = /\$\(|`|\beval\b|\b(?:bash|sh|zsh)\s+-c\b/;
+const CANONICAL_HINT = 'run exactly `gh pr merge <number> [--squash|--merge|--rebase] [--delete-branch|-d] [--match-head-commit <sha>]` as the only command (no cd, env prefix, wrapper, grouping, --repo or other flags), from the PR\'s worktree or the primary checkout';
 
 const allow = () => Object.freeze({ action: 'allow' });
 const deny = (reason, detail) => Object.freeze({ action: 'deny', reason, detail });
 
-/** Normalised words of one command segment: quotes and backslashes dropped (the same view the deny hook of the repo takes). */
-const wordsOf = (segment) => segment.replace(/\\\r?\n/g, '').replace(/\\/g, '').replace(/["']/g, '').trim().split(/\s+/).filter(Boolean);
+/** True when every segment starts with a read-only program and the text has no substitution, eval or shell -c: it only prints or searches text. */
+function readOnlyMention(text) {
+  if (SUBSTITUTION_RE.test(text)) return false;
+  const segments = text.split(/[;&|\n\r]+/).map((x) => x.trim()).filter(Boolean);
+  return segments.length > 0 && segments.every((seg) => {
+    const w = seg.split(/\s+/);
+    return READONLY_FIRST.includes(w[0]) || (w[0] === 'git' && READONLY_GIT.includes(w[1]));
+  });
+}
 
-/** { pr: number|null, arg: string|null, repoFlag: boolean } for a merge command, else null. Pure. */
-function parseMerge(command) {
-  const text = String(command || '');
-  if (text.length > MAX_COMMAND_CHARS) return { pr: null, arg: null, repoFlag: false, oversize: true };
-  if (!/\bgh\b/.test(text) || !/\b(merge|pulls)\b/.test(text)) return null;
-  for (const segment of text.split(/[;&|\n\r]+/)) {
-    let w = wordsOf(segment);
-    while (w.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(w[0])) w = w.slice(1);
-    if (w.length === 0) continue;
-    const first = path.basename(w[0]);
-    if (WRAPPERS.includes(first)) { // `bash -c "gh pr merge 5"`, `eval ...`, `xargs gh pr merge`: the wrapped text is judged as a whole
-      const m = parseMerge(w.slice(1).join(' ').replace(/^-c\s+/, ''));
-      if (m !== null) return m;
-      continue;
-    }
-    if (first !== 'gh') continue;
-    const rest = w.slice(1);
-    const repoFlag = rest.some((t) => t === '-R' || t === '--repo' || t.startsWith('--repo=') || (t.startsWith('-R') && t.length > 2));
-    const pr = rest.indexOf('pr');
-    if (pr >= 0 && rest[pr + 1] === 'merge') {
-      const args = rest.slice(pr + 2).filter((t) => !t.startsWith('-'));
-      const arg = args.length ? args[0] : null;
-      const num = arg === null ? null : PR_NUMBER_RE.test(arg) ? Number(arg) : (PR_URL_RE.exec(arg) || [])[1];
-      return { pr: num === undefined || num === null ? null : Number(num), arg, repoFlag };
-    }
-    const api = rest.indexOf('api');
-    if (api >= 0) {
-      const hit = rest.slice(api + 1).map((t) => API_MERGE_RE.exec(t)).find(Boolean);
-      if (hit) return { pr: Number(hit[1]), arg: String(hit[1]), repoFlag };
-    }
-  }
-  return null;
+/**
+ * { kind: 'none' } (no merge intent), { kind: 'canonical', pr }, { kind: 'readonly' } or { kind: 'other' } (merge intent in any other shape:
+ * denied). Pure; no normalisation of quotes or backslashes: the canonical form is matched byte for byte.
+ */
+function classify(command) {
+  const text = String(command == null ? '' : command);
+  if (text.length > MAX_COMMAND_CHARS) return { kind: 'other' };
+  if (!GH_WORD_RE.test(text) || !MERGE_WORD_RE.test(text)) return { kind: 'none' };
+  const m = CANONICAL_RE.exec(text.trim());
+  if (m !== null) return { kind: 'canonical', pr: Number(m[1]) };
+  return readOnlyMention(text) ? { kind: 'readonly' } : { kind: 'other' };
 }
 
 const run = (cmd, args, cwd, timeout) => spawnSync(cmd, args, { cwd, encoding: 'utf8', timeout, maxBuffer: 4 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'], env: process.env });
@@ -98,7 +90,7 @@ function worktrees(root) {
 /** The PR facts from gh: { number, head, branch } or null. */
 function prFacts(root, m) {
   const args = ['pr', 'view'];
-  if (m.arg !== null && m.arg !== undefined && !m.arg.startsWith('-')) args.push(m.arg);
+  args.push(String(m.pr));
   args.push('--json', 'number,headRefOid,headRefName');
   const r = run('gh', args, root, LOOKUP_TIMEOUT_MS);
   if (r.status !== 0) return null;
@@ -120,19 +112,15 @@ function decideMerge(payload, deps) {
   const d = deps || {};
   try {
     const input = payload && payload.tool_input;
-    let m;
-    try { m = parseMerge(input && input.command); } catch (_e) { // an unreadable command must not stop every Bash call: only a merge-looking one is denied
-      return /\bgh\b[\s\S]*\bmerge\b/.test(String(input && input.command)) ? deny('merge_unreadable', 'the command looks like a merge but cannot be parsed') : allow();
-    }
-    if (m === null) return allow();
-    if (m.oversize) return deny('merge_unreadable', 'the command is too long to judge');
+    const m = classify(input && input.command);
+    if (m.kind === 'none' || m.kind === 'readonly') return allow();
+    if (m.kind === 'other') return deny('merge_not_canonical', `a merge is allowed in one form only: ${CANONICAL_HINT}`);
     const cwd = typeof payload.cwd === 'string' && payload.cwd.startsWith('/') ? payload.cwd : process.cwd();
     const root = topLevel(cwd);
     if (root === null || reinhardOnly(root, d)) return allow();
-    if (m.repoFlag) return deny('merge_other_repo', 'the merge names another repository (--repo / -R); run it from that repository\'s own checkout so the PR diff gate can judge it');
     const pr = prFacts(root, m);
     if (pr === null) return deny('merge_pr_unresolved', 'the pull request could not be read from GitHub (gh pr view); the PR diff gate cannot judge the merge');
-    if (m.pr !== null && m.pr !== pr.number) return deny('merge_pr_unresolved', 'gh pr view answered another pull request than the command names');
+    if (m.pr !== pr.number) return deny('merge_pr_unresolved', 'gh pr view answered another pull request than the command names');
     const wt = worktrees(root).find((x) => x.branch === pr.branch && x.head === pr.head);
     if (!wt) return deny('merge_no_worktree', `no worktree of this repository has the PR branch ${pr.branch} at the PR head ${pr.head.slice(0, 12)}; review and merge from the PR's own worktree (a1-pr-review step 2.7) or push so the head matches`);
     const r = (d.spawn || run)(process.execPath, [A1_TOOLS, 'xprov', 'gate', '--gate', 'pr-diff-xprov', '--work-path', wt.path, '--pr', String(pr.number), '--merge-check'], wt.path, CHECK_TIMEOUT_MS);
@@ -146,4 +134,4 @@ function decideMerge(payload, deps) {
   }
 }
 
-module.exports = { parseMerge, decideMerge, reinhardOnly };
+module.exports = { classify, decideMerge, reinhardOnly };

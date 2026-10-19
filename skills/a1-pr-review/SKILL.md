@@ -135,7 +135,7 @@ JSON which the workflow then writes to `findings.json` via the CLI.
   not review PRs (standing instruction, 2026-09-09). Sequence: Reinhard
   reviews the diff as a subagent → fix every BLOCKER and MAJOR, one push per
   round (`_shared/push-cadence.md`) → run the merge check (`workflows/02-review.md` 2.7; exit 1 = no merge) → then merge
-  with `gh pr merge --squash --delete-branch`, verify it landed
+  with `gh pr merge <n> --squash --delete-branch`, verify it landed
   (`gh pr view --json state,mergedAt`), sync the primary checkout's `main`
   via `_shared/push-cadence.md` P3 (never a bare `git pull`), and advance the
   registry.

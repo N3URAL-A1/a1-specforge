@@ -186,6 +186,11 @@ if grep -q '"matcher": "Bash"' "$SK/../hooks/hooks.json"; then
 else
   fail_case "hooks/hooks.json has no Bash matcher: the merge check is not enforced"
 fi
+if grep -q 'gh pr merge <n> --squash --delete-branch' "$SK/a1-pr-review/SKILL.md" && grep -q 'exactly ONE command' "$REV"; then
+  pass_case "the merge step uses the canonical form the hook allows"
+else
+  fail_case "the a1-pr-review merge step does not name the canonical gh pr merge form"
+fi
 leak=0
 for f in "$SK/a1-new-feature/workflows/05-implement.md" "$SK/a1-fix/SKILL.md"; do
   if grep -q "xprov gate" "$f"; then leak=1; fail_case "$f calls the cross-provider gate; it is reached only through a1-pr-review 2.2b"; fi

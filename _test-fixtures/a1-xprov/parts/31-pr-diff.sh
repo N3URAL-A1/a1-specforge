@@ -309,7 +309,7 @@ scen_hk1() { # no result: deny; a pass for this head: allow. The merge is run fr
   FAKE_RUNNER_BIND_PLAN=1 FAKE_RUNNER_CASE=approved FAKE_RUNNER_SEQUENCE='[{}]' FAKE_RUNNER_COUNT_FILE="$COUNT31" FAKE_RUNNER_ARGV_FILE="$TMP31/argv.json" fake_runner_env
   (cd "$wt" && node "$TREE_TOOLS" xprov gate --gate pr-diff-xprov --work-path "$wt" --timeout 7 >/dev/null 2>&1 </dev/null)
   local b; b="$(hk31 'gh pr merge 7 --squash' "$PHASE_REPO")"
-  local c; c="$(hk31 'gh pr merge' "$wt")"
+  local c; c="$(hk31 'gh pr merge 7' "$wt")"
   echo "$a|$b|$c"
 }
 scen_hk2() { # a repository that never joined xprov: allow, even when gh cannot answer (only the permit lookup decides)
@@ -325,9 +325,44 @@ scen_hk3() { # the check exits 2 or 77 (stub a1-tools in a tree copy): deny
   done
   echo "$out"
 }
-scen_hk4() { # forms: gh api .../pulls/7/merge, bash -c wrapper, a merge mentioned in a read-only command
+hkprobes31() { # Samuel's probe strings (MC-1..MC-5) and more: every merge intent that is not the canonical form
+  local sha; sha="$(printf 'a%.0s' $(seq 1 40))"
+  PROBES31=(
+    'cd /tmp && gh pr merge 7'
+    '(gh pr merge 7)'
+    'echo $(gh pr merge 7)'
+    'gh pr merge --body "text" 7'
+    'gh pr merge 7 --body x'
+    'GH_REPO=o/r gh pr merge 7'
+    'gh pr merge 7 --repo o/r'
+    'gh pr merge 7 -R o/r'
+    'gh api -X PUT repos/o/r/pulls/7/merge'
+    'gh api repos/o/r/pulls/7/merge -X PUT'
+    'gh api graphql -f query="mutation{mergePullRequest(input:{pullRequestId:\"x\"}){clientMutationId}}"'
+    'gh pr merge 7 --auto'
+    'gh pr merge'
+    'gh pr merge 7; ls'
+    'bash -c "gh pr merge 7"'
+    'eval "gh pr merge 7"'
+    'xargs gh pr merge'
+    "gh pr merge 7 --match-head-commit ${sha}x"
+    'git log --oneline | gh pr merge 7'
+  )
+}
+scen_hk4() { # every probe is denied as non-canonical; the canonical forms, read-only mentions and other commands pass
   prep31; commit31 src/auth/login.js 'export const login = 1;'; ghstub31 7
-  echo "$(hk31 'gh api -X PUT repos/o/r/pulls/7/merge')|$(hk31 'bash -c "gh pr merge 7"')|$(hk31 'grep "gh pr merge" README.md')|$(hk31 'echo gh pr merge')|$(hk31 'git status')"
+  hkprobes31
+  local out="" p
+  for p in "${PROBES31[@]}"; do out="$out$(hk31 "$p" | sed 's/^deny:merge_not_canonical$/D/;s/^allow$/A/;s/^deny:.*$/d/')"; done
+  local sha; sha="$(printf 'a%.0s' $(seq 1 40))"
+  echo "$out|$(hk31 'grep "gh pr merge" README.md')|$(hk31 'git log --grep merge')|$(hk31 'git status')|$(hk31 "rg 'gh pr merge' docs")|$(hk31 'git diff HEAD~1')"
+}
+scen_hk6() { # canonical forms with a passing check are allowed (flags in any order), the PR head sha must be a worktree head
+  prep31; commit31 src/auth/login.js 'export const login = 1;'; ghstub31 7
+  FAKE_RUNNER_BIND_PLAN=1 FAKE_RUNNER_CASE=approved FAKE_RUNNER_SEQUENCE='[{}]' FAKE_RUNNER_COUNT_FILE="$COUNT31" FAKE_RUNNER_ARGV_FILE="$TMP31/argv.json" fake_runner_env
+  (cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov gate --gate pr-diff-xprov --work-path "$PHASE_REPO" --timeout 7 >/dev/null 2>&1 </dev/null)
+  local sha; sha="$(git -C "$PHASE_REPO" rev-parse HEAD)"
+  echo "$(hk31 'gh pr merge 7')|$(hk31 'gh pr merge 7 --rebase -d')|$(hk31 "gh pr merge 7 --squash --delete-branch --match-head-commit $sha")"
 }
 scen_hk5() { # node unavailable (PATH without node): a non-merge Bash call is allowed by the shell early-out, a merge payload is denied (exit 2)
   local tree="${1:-$TREE}" nb="$TMP31/nonode"; mkdir -p "$nb"; ln -sf "$(command -v bash)" "$nb/bash"
@@ -342,7 +377,8 @@ caseHK() {
   assert_eq "HK1 gh pr merge: denied without a result, allowed with a pass for the head (run from the primary checkout)" "$(scen_hk1)" "deny:merge_blocked|allow|allow"
   assert_eq "HK2 a repository without a permit: allow, whatever gh says" "$(scen_hk2)" "allow"
   assert_eq "HK3 the merge check exits 2 / 77 / 1: deny (fail closed)" "$(scen_hk3)" "deny:merge_blocked|deny:merge_blocked|deny:merge_blocked|"
-  assert_eq "HK4 gh api merge and a bash -c wrapper are judged, a read-only mention and other commands pass" "$(scen_hk4)" "deny:merge_blocked|deny:merge_blocked|allow|allow|allow"
+  assert_eq "HK4 every probe string (cd, grouping, substitution, flag values, GH_REPO, --repo, gh api, GraphQL, wrappers) is denied as non-canonical; read-only mentions and other commands pass" "$(scen_hk4)" "DDDDDDDDDDDDDDDDDDD|allow|allow|allow|allow|allow"
+  assert_eq "HK6 the canonical forms are allowed when the merge check passes" "$(scen_hk6)" "allow|allow|allow"
   assert_eq "HK5 node unavailable: a non-merge Bash call is allowed (shell early-out), a merge payload is denied (exit 2)" "$(scen_hk5)" "0|2"
   local mut5; mtree31 xprov-hook-merge.cjs "const CHECK_TIMEOUT_MS = 90000;" "const CHECK_TIMEOUT_MS = 90000;"
   sed -i.bak 's/^  \*) exit 0 ;;$/  *) ;;/' "$TREE/hooks/xprov-merge-hook.sh"; mut5="$(scen_hk5 "$TREE")"; unmtree31
@@ -351,6 +387,8 @@ caseHK() {
   redproof31 "HK1a" scen_hk1 "deny:merge_blocked|allow|allow" $HMN "if (r.status === 0) return allow();" "return allow();"
   redproof31 "HK2a" scen_hk2 "allow" $HMN "return state === STATES.ABSENT || state === STATES.DENIED;" "return false;"
   redproof31 "HK3a" scen_hk3 "deny:merge_blocked|deny:merge_blocked|deny:merge_blocked|" $HMN "if (r.status === 0) return allow();" "if (r.status === 0 || r.status === 2 || r.status === 77) return allow();"
-  redproof31 "HK4a" scen_hk4 "deny:merge_blocked|deny:merge_blocked|allow|allow|allow" $HMN "const API_MERGE_RE = /\\/pulls\\/([1-9]\\d{0,8})\\/merge(?:\\b|\$)/;" "const API_MERGE_RE = /\\/nothing\\/([1-9])\\/x/;"
+  redproof31 "HK4a" scen_hk4 "DDDDDDDDDDDDDDDDDDD|allow|allow|allow|allow|allow" $HMN "return readOnlyMention(text) ? { kind: 'readonly' } : { kind: 'other' };" "return { kind: 'readonly' };"
+  redproof31 "HK4b" scen_hk4 "DDDDDDDDDDDDDDDDDDD|allow|allow|allow|allow|allow" $HMN "  return segments.length > 0 && segments.every(" "  return false && segments.every("
+  redproof31 "HK6a" scen_hk6 "allow|allow|allow" $HMN "const CANONICAL_RE = /^gh pr merge ([1-9][0-9]{0,8})((?: --squash| --merge| --rebase| --delete-branch| -d| --match-head-commit [0-9a-f]{40})*)\$/;" "const CANONICAL_RE = /^nothing\$/;"
 }
 caseHK

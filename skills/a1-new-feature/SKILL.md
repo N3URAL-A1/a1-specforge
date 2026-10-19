@@ -306,7 +306,7 @@ the same working tree overwrite each other's files and push half-finished work
 3. **Merge via PR** only after the final wave is GREEN (typically after Phase 6
    Verify passes): hand the worktree to `a1-pr-review`
    (`a1-worktree exit --mode handoff`). It pushes the branch, opens the PR, runs
-   the review, and squash-merges (`gh pr merge --squash --delete-branch`). No
+   the review, and squash-merges (`gh pr merge <n> --squash --delete-branch`). No
    local merge into `main`, no `git push origin main`.
    If `origin/main` no longer builds for reasons unrelated to this feature:
    STOP, do NOT layer on top, report to Robert.
