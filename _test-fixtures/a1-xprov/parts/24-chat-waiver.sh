@@ -652,7 +652,7 @@ caseCA10() {
   assert_eq "CA10 probe A: the question for an allowlist-shaped hit blob is refused, the writer refuses, the committed bytes stay unapproved" "$(scen_probeA24)" "allowlist_blob_hit|allowlist_blob_hit|unapproved"
   [[ ! -e "$(hfile24)" ]] && ok "CA10 nothing was written to the hit store either" || bad "CA10 the hit store exists"
   # the allowlist evaluation never reads the hit store: only the chat writer and the store module name it
-  assert_eq "CA10 only xprov.cjs (the constant), the store module and the chat allowlist module name the hit store" "$(cd "$T24/_shared/lib" && grep -lE "require\('./xprov-hit-approvals|HIT_APPROVALS_FILE" ./*.cjs | sed 's|^\./||' | sort | paste -sd, -)" "xprov-consent-allowlist.cjs,xprov-hit-approvals.cjs,xprov.cjs"
+  assert_eq "CA10 only xprov.cjs (the constant), the store module, the chat allowlist module and the FR-029 reader (xprov-hit-cover.cjs, wave 12) name the hit store" "$(cd "$T24/_shared/lib" && grep -lE "require\('./xprov-hit-approvals|HIT_APPROVALS_FILE" ./*.cjs | sed 's|^\./||' | sort | paste -sd, -)" "xprov-consent-allowlist.cjs,xprov-hit-approvals.cjs,xprov-hit-cover.cjs,xprov.cjs"
   redproof24 "CA10a" scen_probeA24 "allowlist_blob_hit|allowlist_blob_hit|unapproved" xprov-consent-allowlist.cjs "if (AL.parseAllowlist(b.bytes.toString('utf8')).ok) return refuse(" "if (false) return refuse("
   redproof24x "CA10b" scen_probeA24 "allowlist_blob_hit|allowlist_blob_hit|unapproved" xprov-consent-allowlist.cjs "if (AL.parseAllowlist(b.bytes.toString('utf8')).ok) return refuse(" "if (false) return refuse(" \
     xprov-consent-allowlist.cjs "HA.appendHitApprovals(records, require('./xprov-approve.cjs').writeGuardedStore)" "require('./xprov-approve.cjs').writeStore({ [b.key]: [...b.blobs] })"

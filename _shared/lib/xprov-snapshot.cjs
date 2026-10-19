@@ -78,6 +78,7 @@ const AL = require('./xprov-allowlist.cjs');
 const SR = require('./xprov-scan-records.cjs');
 const EX = require('./xprov-snapshot-exclude.cjs');
 const CH = require('./xprov-consent-hits.cjs');
+const HC = require('./xprov-hit-cover.cjs');
 const { resolveTool } = require('./xprov-preflight.cjs');
 // Shared helpers — one definition each, in xprov-common.cjs.
 const { DIR_MODE, mkdir0700, writeStdoutSync, gitSpawn: git } = C;
@@ -839,12 +840,26 @@ function writeHitsRecord(dir, cl, hits, repoKey) {
 }
 
 /** The failed-scan fields of a secret stop: the first hit as before, plus what FR-029 decides (excludable paths, or the recorded changed hits). */
+const hitsOf = (al, gl) => [
+  ...al.uncovered.map((u) => ({ path: u.path, rule: u.pattern, side: u.side || 'head' })),
+  ...gl.findings.map((f) => ({ path: f.path, rule: f.rule, side: f.side, line: f.line, column: f.column })),
+];
+const classifyHits = (hits, out, canExclude) => EX.classify(hits, { changed: new Set(out.base_.paths), inputs: new Set(out.ins.labels.map((l) => l.label)), tracked: new Set(out.scan.tracked), canExclude });
+
+/**
+ * FR-014 / FR-029 (wave 12): the changed-line hits the owner approved in the chat (hit-approvals.json, see xprov-hit-cover.cjs) let the scan
+ * through. [{ path, rule, audit }] when EVERY hit of the stop is a changed-line hit with a valid approval of this blob, else null (the stop stands).
+ */
+function approvedChangedHits({ root, cl, out, al, gl, repoKey, canExclude }) {
+  const cls = classifyHits(hitsOf(al, gl), out, canExclude);
+  if (cls.excludable.length > 0 || cls.changed.length === 0) return null;
+  const cov = HC.coverage(cls.changed, { root, repoKey, commit: cl.commit });
+  return cov.covered ? cov.approved : null;
+}
+
 function secretStop({ dir, cl, out, al, gl, repoKey, canExclude }) {
-  const hits = [
-    ...al.uncovered.map((u) => ({ path: u.path, rule: u.pattern, side: u.side || 'head' })),
-    ...gl.findings.map((f) => ({ path: f.path, rule: f.rule, side: f.side, line: f.line, column: f.column })),
-  ];
-  const cls = EX.classify(hits, { changed: new Set(out.base_.paths), inputs: new Set(out.ins.labels.map((l) => l.label)), tracked: new Set(out.scan.tracked), canExclude });
+  const hits = hitsOf(al, gl);
+  const cls = classifyHits(hits, out, canExclude);
   const first = al.uncovered.length
     ? { secret_pattern: al.uncovered[0].pattern, secret_side: al.uncovered[0].side || 'head', reason_detail: al.unresolved ? X.ALLOWLIST_DETAILS.anchor_unresolved : null }
     : { secret_pattern: 'gitleaks', reason_detail: 'gitleaks' };
@@ -885,7 +900,12 @@ function snapshotPass(opts, exclude) {
   const counts = { files_scanned: out.scan.files_scanned, base_files_scanned: out.base_.blobs.length, inputs_scanned: out.ins.labels.length };
   if (al.fail) return failed({ reason: al.fail.reason, reason_detail: al.fail.reason_detail || null, detail: al.fail.detail || null, ...counts, ...report });
   const gl = gitleaksAll(dir, out);
-  if (al.uncovered.length || gl.hit) return failed({ ...secretStop({ dir, cl, out, al, gl, repoKey: primaryCommon, canExclude: exclude === null && cl.base !== null }), ...counts, ...report });
+  let approved = [];
+  if (al.uncovered.length || gl.hit) {
+    const stopArgs = { dir, cl, out, al, gl, repoKey: primaryCommon, canExclude: exclude === null && cl.base !== null };
+    approved = approvedChangedHits({ root: primaryRoot, ...stopArgs }) || [];
+    if (approved.length === 0) return failed({ ...secretStop(stopArgs), ...counts, ...report });
+  }
   const hash = storeDiffHash(dir, cl, out.ins.inputsDir);
   if (hash.error) return failed({ reason: X.REASONS.snapshot_failed, detail: hash.error, ...none });
   const rec = writeScanPass({ dir, cl, out, hash, gl, repoKey: primaryCommon });
@@ -893,7 +913,7 @@ function snapshotPass(opts, exclude) {
   return {
     ok: true, snapshot: dir, commit: cl.commit, base: cl.base, depth: cl.depth, ...counts,
     files_skipped: 0, repo_local_removed: cl.repo_local_removed, gitleaks: gl.available,
-    inputs: out.ins.copies, diff_sha256: hash.sha, ...report,
+    inputs: out.ins.copies, diff_sha256: hash.sha, ...report, ...(approved.length ? { uncovered: [], approved_hits: approved } : {}),
   };
 }
 

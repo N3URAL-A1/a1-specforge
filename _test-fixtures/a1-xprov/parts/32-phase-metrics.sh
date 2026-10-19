@@ -89,16 +89,44 @@ scen_ph1() { # plan, wave and PR gates pass in a permitted repo: zero owner hand
   commit32 src/auth/login.js 'export const login = 1;'; pr32; local c; c="$(f32 j.verdict)"
   echo "$a/$b/$c|$(sum32)|terminal=$(terminal32)"
 }
-scen_ph2() { # a secret in a changed line: the hand-off is one CHAT allowlist question (counted as 1); the chat yes writes the approval; no terminal command is named
-  prep32; commit32 src/auth/login.js "k = \"$EXK32\""
-  pr32; local first="$G_RC/$(f32 j.reason)"; local scan; scan="$(f32 j.scan_record)"
-  local sim="{\"tree\":\"$TREE\",\"root\":\"$PHASE_REPO\",\"kind\":\"allowlist\",\"phase\":\"p32\",\"scan\":\"$scan\",\"tool_use\":\"toolu_ph2\",\"session\":\"sess_ph2\""
-  run32 approved consent question --kind allowlist --scan "$scan"; local q="$G_RC"
+# stop32 — a PR gate run that stops on a secret in a changed line; sets SCAN32 (the scan record) and prints rc/reason
+stop32() { commit32 src/auth/login.js "k = \"$EXK32\""; pr32; SCAN32="$(f32 j.scan_record)"; echo "$G_RC/$(f32 j.reason)"; }
+# chat32 — the owner's chat Yes for the allowlist question of SCAN32, then `consent allowlist` writes the hit approvals; prints the question/approve exit codes
+chat32() {
+  local sim="{\"tree\":\"$TREE\",\"root\":\"$PHASE_REPO\",\"kind\":\"allowlist\",\"phase\":\"p32\",\"scan\":\"$SCAN32\",\"tool_use\":\"toolu_c32\",\"session\":\"sess_c32\""
+  run32 approved consent question --kind allowlist --scan "$SCAN32"; CHAT_Q32="$G_RC"
   sim32 "$sim,\"cmd\":\"ask\"}" >/dev/null
   sim32 "$sim,\"cmd\":\"answer\",\"mode\":\"yes\",\"text\":\"x\",\"template\":\"$TPL32/post-tool-use.answers.template.json\"}" >/dev/null
-  run32 approved consent allowlist --scan "$scan"; local appr="$G_RC"
-  local recs; recs="$(node -p 'try{JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).approvals.length}catch(e){"none"}' "$STORE32/hit-approvals.json" 2>/dev/null)"
-  echo "$first|question=$q|approve=$appr|records=$recs|$(sum32)|terminal=$(terminal32)"
+  run32 approved consent allowlist --scan "$SCAN32"; CHAT_A32="$G_RC"
+}
+store32() { node -p 'try{JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).approvals.length}catch(e){"none"}' "$STORE32/hit-approvals.json" 2>/dev/null; }
+scen_ph2() { # a secret in a changed line: one CHAT allowlist question (counted as 1); the chat yes writes the approval; the NEXT run proceeds (SC-001 end to end)
+  prep32; stop32 >"$TMP32/first.txt"; local first; first="$(cat "$TMP32/first.txt")"; chat32
+  local recs; recs="$(store32)"
+  pr32; local then="$G_RC/$(f32 j.verdict)"
+  echo "$first|question=$CHAT_Q32|approve=$CHAT_A32|records=$recs|then=$then|$(sum32)|terminal=$(terminal32)"
+}
+# scen_hc <variant> — approve in the chat, then change one thing, then run again (covered hits proceed; anything else stops)
+tamper32() { # <node expression on the store document d> — rewrites the fixture hit store in place, mode kept
+  node -e 'const fs=require("fs");const f=process.argv[1];const m=fs.statSync(f).mode&0o777;const d=JSON.parse(fs.readFileSync(f,"utf8"));(function(d){eval(process.argv[2]);})(d);fs.writeFileSync(f,JSON.stringify(d,null,2)+"\n",{mode:m});' "$STORE32/hit-approvals.json" "$1"
+}
+scen_hc() {
+  prep32; stop32 >/dev/null; chat32
+  case "$1" in
+    same) ;;
+    newhead) commit32 docs/note.md '# unrelated' ;;                                            # a new head, a new scan, the same blob
+    blob) commit32 src/auth/login.js "k = \"$EXK32\" // changed" ;;                           # the blob changed
+    path) commit32 src/auth/other.js "k = \"$EXK32\"" ;;                                     # a new hit in another path
+    rule) tamper32 'd.approvals[0].rule="aws_secret_access_key"' ;;                           # another rule id
+    repo) tamper32 'd.approvals[0].repo="/elsewhere/.git"' ;;                                 # another repository key
+    audit) tamper32 'd.approvals[0].audit="'"$(printf '0%.0s' $(seq 1 64))"'"' ;;             # a broken audit link
+    shape) tamper32 'd.approvals[0].extra=1' ;;                                              # a wrong record shape
+    *) echo "bad variant"; return ;;
+  esac
+  pr32
+  local dir; dir="$(f32 j.result_path)"; local rec=none; [[ -n "$dir" && -e "$(dirname "$dir")/a1-hit-approved.json" ]] && rec=recorded
+  local leak=clean; [[ "$G_OUT$G_ERR" == *"$EXK32"* ]] && leak=LEAK
+  echo "$G_RC/$(f32 j.verdict)/$(f32 j.reason)|listed=$(f32 '(j.approved_hits||[]).map((x) => x.path + ":" + x.rule + ":" + (x.audit.length)).join(",")')|$rec|$leak|handoffs$(sum32 | cut -d/ -f1)"
 }
 scen_ph3() { # the round cap on the PR target ends in a chat waiver for exactly this head: the merge check accepts it, a new head is blocked again
   prep32; commit32 src/auth/login.js 'export const login = 1;'
@@ -140,12 +168,38 @@ scen_sw() { # <state> — all three gates: verdicts, runner calls, snapshots, by
 casePH() {
   fresh32
   assert_eq "PH1 SC-001: plan, wave and PR gates pass; owner_handoffs 0, 3 Codex runs counted once, no terminal command named" "$(scen_ph1)" "pass/pass/pass|0/3/3|terminal=0"
-  assert_eq "PH2 SC-001: a secret in a changed line is one CHAT hand-off; the chat approval writes the hit approval; no terminal command named" "$(scen_ph2)" "1/secret_in_snapshot|question=0|approve=0|records=1|1/0/1|terminal=0"
+  assert_eq "PH2 SC-001: a secret in a changed line is one CHAT hand-off; the chat approval is written and the NEXT run proceeds; no terminal command named" "$(scen_ph2)" "1/secret_in_snapshot|question=0|approve=0|records=1|then=0/pass|1/1/2|terminal=0"
   assert_eq "PH3 a failed PR review ends in a chat waiver for exactly this head; a new head is blocked again" "$(scen_ph3)" "fail-with-findings/null|ask=0/1|waive=0|check=0/waiver|newhead=1|terminal=0"
   redproof32 "PH1a" scen_ph1 "pass/pass/pass|0/3/3|terminal=0" xprov-gate.cjs "codexRuns: first ? 1 : 0" "codexRuns: 0"
-  redproof32 "PH2a" scen_ph2 "1/secret_in_snapshot|question=0|approve=0|records=1|1/0/1|terminal=0" xprov-gate.cjs "(Array.isArray(out.uncovered) && out.uncovered.length ? 1 : 0)" "0"
+  redproof32 "PH2a" scen_ph2 "1/secret_in_snapshot|question=0|approve=0|records=1|then=0/pass|1/1/2|terminal=0" xprov-gate.cjs "(Array.isArray(out.uncovered) && out.uncovered.length ? 1 : 0)" "0"
 }
 casePH
+# ---------- HC: the reader of the chat hit approvals (FR-014 / FR-029, wave 12) ----------
+caseHC() {
+  local stop="1/fail/secret_in_snapshot|listed=|none|clean"
+  local ok_="0/pass/null|listed=src/auth/login.js:aws_access_key_id:64|recorded|clean"
+  assert_eq "HC1 an approved hit proceeds; the run lists path, rule id and the audit link (never the value) and writes the record" "$(scen_hc same | sed 's/|handoffs.*$//')" "$ok_"
+  assert_eq "HC2 a new head with the same blob (a new scan) is covered" "$(scen_hc newhead | sed 's/|handoffs.*$//')" "$ok_"
+  local v
+  for v in blob path rule repo audit shape; do
+    assert_eq "HC3 $v: not covered, the stop stands" "$(scen_hc $v | sed 's/|handoffs.*$//')" "$stop"
+  done
+  local HCN=xprov-hit-cover.cjs want="$ok_"
+  redproof32 "HC1a" "scen_hc_same" "$ok_" $HCN "if (rec === null) return none;" "return none;"
+  redproof32 "HC3a" "scen_hc_blob" "$stop" $HCN " && a.blob === blob" ""
+  redproof32 "HC3b" "scen_hc_rule" "$stop" $HCN " && a.rule === hit.rule" ""
+  redproof32 "HC3c" "scen_hc_path" "$stop" $HCN " && a.path === hit.path" ""
+  redproof32 "HC3d" "scen_hc_repo" "$stop" $HCN "a.repo === repoKey && " ""
+  redproof32 "HC3e" "scen_hc_audit" "$stop" $HCN ".state !== AU.STATE.OK) return none;" ".state === 'never') return none;"
+}
+scen_hc_same() { scen_hc same | sed 's/|handoffs.*$//'; }
+scen_hc_blob() { scen_hc blob | sed 's/|handoffs.*$//'; }
+scen_hc_rule() { scen_hc rule | sed 's/|handoffs.*$//'; }
+scen_hc_path() { scen_hc path | sed 's/|handoffs.*$//'; }
+scen_hc_repo() { scen_hc repo | sed 's/|handoffs.*$//'; }
+scen_hc_audit() { scen_hc audit | sed 's/|handoffs.*$//'; }
+caseHC
+
 caseSW() {
   local s want="not_applicable/external_review_not_permitted"
   for s in absent unanswered offline changed; do

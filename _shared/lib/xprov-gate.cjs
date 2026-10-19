@@ -63,6 +63,7 @@ const { permitCheck, permitHint, STATES: PERMIT_STATES } = require('./xprov-perm
 const { preflight, resolveTool } = require('./xprov-preflight.cjs');
 const { snapshot, cleanupSnapshot, INPUTS_SUFFIX, INPUT_FILES } = require('./xprov-snapshot.cjs');
 const { observe, MODEL_RE, runsCounted } = require('./xprov-observe.cjs');
+const HC = require('./xprov-hit-cover.cjs');
 const R = require('./xprov-recover.cjs');
 const WV = require('./xprov-waivers.cjs');
 const NP = require('./xprov-gate-nopermit.cjs');
@@ -254,6 +255,7 @@ function allowlistFields(s) {
     allowlist_note: s.allowlist_note || null,
     scoped_hits: Array.isArray(s.scoped_hits) ? s.scoped_hits : [],
     scoped_uncovered: Array.isArray(s.scoped_uncovered) ? s.scoped_uncovered : [],
+    approved_hits: Array.isArray(s.approved_hits) ? s.approved_hits : [], // FR-014/FR-029: changed-line hits the owner approved in the chat (path, rule, audit link)
     excluded: Array.isArray(s.excluded) ? s.excluded : [], scan_record: typeof s.scan_record === 'string' ? s.scan_record : null, // FR-029: unchanged files left out (path + rule), the hits record of a stop
   });
 }
@@ -262,9 +264,10 @@ function allowlistFields(s) {
  * allowlist was applied: path, pattern NAME, count and class per pair — never
  * the matched text or a fingerprint — plus stale and uncovered pairs. */
 function noteAllowlist(ctx, al) {
-  if (!al || !(al.allowlist_anchor || al.excluded.length)) return;
+  if (!al || !(al.allowlist_anchor || al.excluded.length || al.approved_hits.length)) return;
   const lines = [
     ...al.excluded.map((x) => `excluded (unchanged file, secret hit; the reviewer did not see it): ${x.path} · ${x.rule}`),
+    ...al.approved_hits.map((x) => `approved by the owner in the chat (secret hit, changed line): ${x.path} · ${x.rule} · audit ${x.audit}`),
     `anchor: ${al.allowlist_anchor}`, `approved blob: ${al.allowlist_approved_blob}`, `allowlisted_hits: ${al.allowlisted_hits}`,
     ...al.allowlisted.map((a) => `${a.path} · ${a.pattern} · count ${a.count} · ${a.class}`),
     // spec 012 FR-023: scope hits and scope refusals per (prefix, pattern), counts only
@@ -453,6 +456,7 @@ function driveGate(ctx, state) {
     const { ran, norm } = rv;
     if (!ran.ok) return (result = fail('run', ran.reason, ran.detail, { ...al, run_porcelain: ran.porcelain || null }));
     if (al.excluded.length && !RR.writeExcluded(ran.resultPath, al.excluded, ctx.root)) return (result = fail('run', X.REASONS.malformed, 'the excluded-files record could not be written next to the run record', { ...al, result_path: ran.resultPath }));
+    if (al.approved_hits.length && !HC.writeApproved(ran.resultPath, al.approved_hits, ctx.root)) return (result = fail('run', X.REASONS.malformed, 'the approved-hits record could not be written next to the run record', { ...al, result_path: ran.resultPath }));
     if (!norm.ok) return (result = fail('normalize', norm.reason, norm.detail, { ...al, result_path: ran.resultPath }));
     if (rv.fallback && markedFallback(ctx, ran, norm)) return (result = Object.freeze({ ...base, ...al, run_porcelain: ran.porcelain, result_path: ran.resultPath, xreview_path: norm.xreviewPath, step: 'normalize', verdict: X.VERDICT_NOT_APPLICABLE, reason: X.REASONS.codex_blocked_fallback, reason_detail: R.BLOCKED_NOTICE, next: null }));
     const capped = reviewedOutcome(ctx, base, al, ran, norm);

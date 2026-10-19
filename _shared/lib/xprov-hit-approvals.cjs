@@ -4,7 +4,7 @@
 // xprov-hit-approvals — the owner's chat approvals of secret-scan hits (spec 016 FR-014; Samuel W3 SEC-1).
 //
 // Its OWN store ~/.a1-xprov/hit-approvals.json, separate from the blob-approval store of `xprov allowlist approve`. The FR-029 hit check
-// (wave 9) is the only reader. The allowlist evaluation (xprov-allowlist.cjs) never requires this module and never reads the file: two
+// is the only reader: xprov-hit-cover.cjs (called from xprov-snapshot.cjs when a scan stops on changed-line hits; wave 12). The allowlist evaluation (xprov-allowlist.cjs) never requires this module and never reads the file: two
 // consumers of one approval set would let a yes to one question act as a yes to another. A hit blob that parses as an allowlist document
 // is never approved here (xprov-consent-allowlist.cjs refuses it first).
 //
