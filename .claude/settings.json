@@ -23,6 +23,10 @@
           {
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/xprov-deny-allowlist-approve.sh\""
+          },
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/hooks/xprov-consent-hook.sh\" || exit 2"
           }
         ]
       }

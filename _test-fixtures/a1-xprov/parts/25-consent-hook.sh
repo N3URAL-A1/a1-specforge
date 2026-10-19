@@ -468,7 +468,7 @@ caseF
 sc_x1() { prep25; canon25; ask25 pre >/dev/null; rm -f "$HT25/_shared/lib/xprov-hook-rules.cjs"; ask25 pre none yes toolu_x; echo "$H_RC"; }
 sc_x2() { prep25; canon25; ask25 pre none yes toolu_n >/dev/null; env -i PATH=/nonexistent /bin/bash "$HT25/hooks/xprov-consent-hook.sh" < "$TMP25/p.json" >/dev/null 2>&1; echo "$?"; }
 sc_x3() { printf 'not json at all' > "$TMP25/p.json"; hookrun25 "$HT25" "$TMP25/p.json"; echo "$H_RC"; }
-sc_x4() { printf '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"ls"}}' > "$TMP25/p.json"; hookrun25 "$HT25" "$TMP25/p.json"; dec25; }
+sc_x4() { printf '{"hook_event_name":"PreToolUse","tool_name":"Read","tool_input":{"file_path":"/etc/hosts"}}' > "$TMP25/p.json"; hookrun25 "$HT25" "$TMP25/p.json"; dec25; }
 caseX() {
   # X1 runs on its own tree copy: the module is removed there
   make_tree; cp -R "$REPO_ROOT/hooks" "$TREE/hooks"; local keep="$HT25"; HT25="$TREE"
@@ -476,9 +476,9 @@ caseX() {
   HT25="$keep"
   assert_eq "X2 no node on PATH: blocked (exit 2), not 127" "$(sc_x2)" "2"
   assert_eq "X3 unparseable hook input: blocked (exit 2)" "$(sc_x3)" "2"
-  assert_eq "X4 a call the hook does not handle (Bash) cannot be classified: denied" "$(sc_x4)" "deny:unguarded_event"
-  assert_json "X5 hooks/hooks.json: PreToolUse on AskUserQuestion and on Edit|Write|NotebookEdit(|MultiEdit), PostToolUse on AskUserQuestion, every command ends in || exit 2" "$(cat "$REPO_ROOT/hooks/hooks.json")" \
-    "[j.hooks.PreToolUse.map((m) => m.matcher).join(','), j.hooks.PostToolUse.map((m) => m.matcher).join(','), Object.values(j.hooks).flat().every((m) => m.hooks.every((h) => /xprov-consent-hook\\.sh\"? \\|\\| exit 2\$/.test(h.command)))].join('|')" "AskUserQuestion,Edit|Write|NotebookEdit|MultiEdit|AskUserQuestion|true"
+  assert_eq "X4 a call the hook does not handle (Read) cannot be classified: denied" "$(sc_x4)" "deny:unguarded_event"
+  assert_json "X5 hooks/hooks.json: PreToolUse on AskUserQuestion, Bash (wave 10 merge block) and on Edit|Write|NotebookEdit(|MultiEdit), PostToolUse on AskUserQuestion, every command ends in || exit 2" "$(cat "$REPO_ROOT/hooks/hooks.json")" \
+    "[j.hooks.PreToolUse.map((m) => m.matcher).join(','), j.hooks.PostToolUse.map((m) => m.matcher).join(','), Object.values(j.hooks).flat().every((m) => m.hooks.every((h) => /xprov-consent-hook\\.sh\"? \\|\\| exit 2\$/.test(h.command)))].join('|')" "AskUserQuestion,Bash,Edit|Write|NotebookEdit|MultiEdit|AskUserQuestion|true"
   assert_json "X5b every hooks.json entry sets onFailure block (a timeout must not fail open; Claude Code 2.1.295+, code.claude.com/docs/en/hooks)" "$(cat "$REPO_ROOT/hooks/hooks.json")" "Object.values(j.hooks).flat().every((m) => m.hooks.every((h) => h.onFailure === 'block'))" "true"
   [[ "$(node -p 'JSON.stringify(require(process.argv[1]).CONSENT_HELP.includes("Dev install: bin/install.sh") && require(process.argv[1]).CONSENT_HELP.includes("Plugin hook (wave 4"))' "$REPO_ROOT/_shared/lib/help-xprov-consent.cjs")" == "true" ]] && ok "X6 the consent help names the plugin hook and that a dev install has none (R-3)" || bad "X6 help text lacks the plugin hook note"
   local sh="$REPO_ROOT/hooks/xprov-consent-hook.sh"

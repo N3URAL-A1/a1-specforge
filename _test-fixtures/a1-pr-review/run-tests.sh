@@ -176,6 +176,16 @@ if grep -q "Cross-provider review" "$SK/a1-pr-review/workflows/03-draft.md"; the
 else
   fail_case "03-draft.md lacks the Cross-provider review section"
 fi
+if grep -q "Merge only on exit 0" "$REV" && grep -q "exit 77" "$REV"; then
+  pass_case "step 2.7 says: merge only on exit 0, exits 1/2/77 named"
+else
+  fail_case "02-review.md 2.7 lacks the merge-only-on-exit-0 rule"
+fi
+if grep -q '"matcher": "Bash"' "$SK/../hooks/hooks.json"; then
+  pass_case "the plugin hooks.json carries the Bash matcher of the merge hook"
+else
+  fail_case "hooks/hooks.json has no Bash matcher: the merge check is not enforced"
+fi
 leak=0
 for f in "$SK/a1-new-feature/workflows/05-implement.md" "$SK/a1-fix/SKILL.md"; do
   if grep -q "xprov gate" "$f"; then leak=1; fail_case "$f calls the cross-provider gate; it is reached only through a1-pr-review 2.2b"; fi

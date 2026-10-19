@@ -31,7 +31,7 @@ STORE31="$HOME/.a1-xprov"
 N31=0
 EXK31="AKIA""QQQQQQQQQQQQQQQQ"
 
-fresh31() { make_tree; T31="$TREE"; T31_TOOLS="$TREE_TOOLS"; }
+fresh31() { make_tree; cp -R "$REPO_ROOT/hooks" "$TREE/hooks"; T31="$TREE"; T31_TOOLS="$TREE_TOOLS"; }
 unmtree31() { TREE="$T31"; TREE_TOOLS="$T31_TOOLS"; TREE_VENDOR="$T31/_shared/vendor/claudex-loop"; }
 mutate31() { # <lib-file> <from> <to> — one production change in the CURRENT tree copy (refuses unless <from> occurs exactly once)
   node -e '
@@ -41,7 +41,7 @@ mutate31() { # <lib-file> <from> <to> — one production change in the CURRENT t
     fs.writeFileSync(f, s.replace(from, () => to));
   ' "$TREE" "$1" "$2" "$3" || bad "part 31 harness: mutation failed in $1"
 }
-mtree31() { make_tree; mutate31 "$1" "$2" "$3"; }
+mtree31() { make_tree; cp -R "$REPO_ROOT/hooks" "$TREE/hooks"; mutate31 "$1" "$2" "$3"; }
 redproof31() { # <name> <scenario fn> <expected on the real tree> <lib-file> <from> <to> [<lib-file2> <from2> <to2>]
   local name="$1" fn="$2" want="$3" got mut
   got="$($fn)"
@@ -284,3 +284,60 @@ caseHP() {
   assert_eq "HP7 --phase is refused for the PR gate" "$(hp31 --work-path "$W" --phase p31)" "2/clean/runs0"
 }
 caseHP
+
+# ---------- HK: the plugin Bash hook (W10-1): gh pr merge runs only after the merge check exits 0 ----------
+# gh is a stub on PATH that answers `pr view` from a JSON file (GH_STUB_JSON); GH_STUB_RC=1 makes it fail.
+ghstub31() { # <number> — writes the stub dir and the JSON of the PR for the current HEAD of the feature branch
+  GHBIN31="$TMP31/ghbin"; mkdir -p "$GHBIN31"
+  printf '#!/usr/bin/env bash\nif [[ "$1 $2" == "pr view" ]]; then [[ "${GH_STUB_RC:-0}" == 0 ]] || exit 1; cat "$GH_STUB_JSON"; exit 0; fi\nexit 1\n' > "$GHBIN31/gh"; chmod +x "$GHBIN31/gh"
+  GH_STUB_JSON="$TMP31/gh.json"
+  printf '{"number":%s,"headRefOid":"%s","headRefName":"feat","baseRefOid":"%s","baseRefName":"main"}\n' "$1" "$(git -C "$PHASE_REPO" rev-parse feat)" "$(git -C "$ORIGIN31" rev-parse main)" > "$GH_STUB_JSON"
+}
+# hk31 <command> [cwd] [tree] — one PreToolUse Bash payload through the plugin hook: prints allow | deny:<reason>
+hk31() {
+  local cmd="$1" cwd="${2:-$PHASE_REPO}" tree="${3:-$TREE}" payload
+  payload="$(node -e 'process.stdout.write(JSON.stringify({ hook_event_name: "PreToolUse", tool_name: "Bash", tool_use_id: "toolu_hk", session_id: "sess_hk", cwd: process.argv[2], tool_input: { command: process.argv[1] } }))' "$cmd" "$cwd")"
+  local out; out="$(printf '%s' "$payload" | env -u A1_VAULT_ROOT PATH="$GHBIN31:$PATH" GH_STUB_JSON="$GH_STUB_JSON" GH_STUB_RC="${GH_STUB_RC:-0}" bash "$tree/hooks/xprov-consent-hook.sh" 2>/dev/null)"; local rc=$?
+  [[ $rc -eq 0 ]] || { echo "rc$rc"; return; }
+  node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{if(!d.trim()){process.stdout.write("allow");return;}const o=JSON.parse(d).hookSpecificOutput;process.stdout.write(o.permissionDecision+":"+/\(([a-z_]+)\)/.exec(o.permissionDecisionReason)[1]);});' <<< "$out"
+}
+scen_hk1() { # no result: deny; a pass for this head: allow. The merge is run from the PRIMARY checkout (main), the review lives in the PR's worktree
+  prep31; commit31 src/auth/login.js 'export const login = 1;'
+  local wt="$TMP31/wt.$RANDOM"; git -C "$PHASE_REPO" checkout -q main; git -C "$PHASE_REPO" worktree add -q "$wt" feat
+  ghstub31 7
+  local a; a="$(hk31 'gh pr merge 7 --squash --delete-branch' "$PHASE_REPO")"
+  FAKE_RUNNER_BIND_PLAN=1 FAKE_RUNNER_CASE=approved FAKE_RUNNER_SEQUENCE='[{}]' FAKE_RUNNER_COUNT_FILE="$COUNT31" FAKE_RUNNER_ARGV_FILE="$TMP31/argv.json" fake_runner_env
+  (cd "$wt" && node "$TREE_TOOLS" xprov gate --gate pr-diff-xprov --work-path "$wt" --timeout 7 >/dev/null 2>&1 </dev/null)
+  local b; b="$(hk31 'gh pr merge 7 --squash' "$PHASE_REPO")"
+  local c; c="$(hk31 'gh pr merge' "$wt")"
+  echo "$a|$b|$c"
+}
+scen_hk2() { # a repository that never joined xprov: allow, even when gh cannot answer (only the permit lookup decides)
+  prep31; commit31 src/auth/login.js 'export const login = 1;'; rm -rf "$STORE31" "$PHASE_REPO/.a1/xprov.json"
+  ghstub31 7; GH_STUB_RC=1 hk31 'gh pr merge 7 --squash'
+}
+scen_hk3() { # the check exits 2 or 77 (stub a1-tools in a tree copy): deny
+  prep31; commit31 src/auth/login.js 'export const login = 1;'; ghstub31 7
+  local out="" rc t
+  for rc in 2 77 1; do
+    t="$(mktemp -d "$TMP31/t3.XXXXXX")"; cp -R "$TREE/_shared" "$TREE/hooks" "$t/"; printf 'process.exit(%s);\n' "$rc" > "$t/_shared/a1-tools.cjs"
+    out="$out$(hk31 'gh pr merge 7' "$PHASE_REPO" "$t")|"
+  done
+  echo "$out"
+}
+scen_hk4() { # forms: gh api .../pulls/7/merge, bash -c wrapper, a merge mentioned in a read-only command
+  prep31; commit31 src/auth/login.js 'export const login = 1;'; ghstub31 7
+  echo "$(hk31 'gh api -X PUT repos/o/r/pulls/7/merge')|$(hk31 'bash -c "gh pr merge 7"')|$(hk31 'grep "gh pr merge" README.md')|$(hk31 'echo gh pr merge')|$(hk31 'git status')"
+}
+caseHK() {
+  assert_eq "HK1 gh pr merge: denied without a result, allowed with a pass for the head (run from the primary checkout)" "$(scen_hk1)" "deny:merge_blocked|allow|allow"
+  assert_eq "HK2 a repository without a permit: allow, whatever gh says" "$(scen_hk2)" "allow"
+  assert_eq "HK3 the merge check exits 2 / 77 / 1: deny (fail closed)" "$(scen_hk3)" "deny:merge_blocked|deny:merge_blocked|deny:merge_blocked|"
+  assert_eq "HK4 gh api merge and a bash -c wrapper are judged, a read-only mention and other commands pass" "$(scen_hk4)" "deny:merge_blocked|deny:merge_blocked|allow|allow|allow"
+  local HMN=xprov-hook-merge.cjs
+  redproof31 "HK1a" scen_hk1 "deny:merge_blocked|allow|allow" $HMN "if (r.status === 0) return allow();" "return allow();"
+  redproof31 "HK2a" scen_hk2 "allow" $HMN "return state === STATES.ABSENT || state === STATES.DENIED;" "return false;"
+  redproof31 "HK3a" scen_hk3 "deny:merge_blocked|deny:merge_blocked|deny:merge_blocked|" $HMN "if (r.status === 0) return allow();" "if (r.status === 0 || r.status === 2 || r.status === 77) return allow();"
+  redproof31 "HK4a" scen_hk4 "deny:merge_blocked|deny:merge_blocked|allow|allow|allow" $HMN "const API_MERGE_RE = /\\/pulls\\/([1-9]\\d{0,8})\\/merge(?:\\b|\$)/;" "const API_MERGE_RE = /\\/nothing\\/([1-9])\\/x/;"
+}
+caseHK

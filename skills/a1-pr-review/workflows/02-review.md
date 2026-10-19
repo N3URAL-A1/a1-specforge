@@ -135,9 +135,9 @@ node <repo>/_shared/a1-tools.cjs xprov gate --gate pr-diff-xprov --work-path "<w
 echo "xprov merge-check exit=$RC"
 ```
 
-Exit 0: merge. Exit 1: do NOT merge. The stdout `blocked[]` names why (`pr_merge_blocked`: no pass, dispositions or owner waiver for this head sha on a
+Merge only on exit 0. Any other exit means no merge: exit 1 = blocked, exit 2 = refused arguments or an unusable setup (fix the call, do not retry blind), exit 77 = refused by the intent sandbox. The plugin Bash hook runs the same check before every `gh pr merge` and `gh api .../pulls/<n>/merge` and denies the merge on any exit but 0 (a repository without a permit is not affected); the hook finds the PR's worktree itself, so the merge may be run from the primary checkout. Exit 1 detail follows. The stdout `blocked[]` names why (`pr_merge_blocked`: no pass, dispositions or owner waiver for this head sha on a
 security-surface diff; `local_ref_differs`: sync the local `origin/<default>` and `<default>` with the remote; `pr_head_mismatch`: push so the reviewed commit is the merged one;
-`blocked_fallback_not_accepted`, `secret_declined_without_owner_no`: ask the owner, Step 2.2c). Run 2.2b again for a new head sha. No permit or a denied repository: the check
+`blocked_fallback_not_accepted`, `secret_declined_without_owner_no`, `permit_voided`: ask the owner, Step 2.2c). Run 2.2b again for a new head sha. No permit or a denied repository: the check
 returns `ok` (Reinhard-only, unchanged). The check reads git and the remote itself; PLAN.md, `deferred_to_pr` and `--spec` do not influence it.
 `deferred_to_pr` waves from `xprov wave-status` and any `pr_body` lines of the check go into the PR body (Phase 3).
 
