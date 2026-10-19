@@ -166,7 +166,7 @@ the gate call again.
    owner may accept the risk, use the flow of a1-plan `04b-xprov-review.md` Step 5
    with this `--phase <phase_name>`: report what failed first, then
    `xprov consent question --kind waiver --phase <phase_name>`, AskUserQuestion
-   exactly as printed, then `xprov consent ensure|waive --kind waiver`. This is the
+   exactly as printed, then `xprov consent ensure --kind waiver --phase <phase_name>` and `xprov consent waive --phase <phase_name>`. This is the
    main path; the terminal `xprov waive` below is only the fallback for headless
    runs and stays the owner's own command.
 6. **Headless, CI or subagent:** no question, no consent. Print one line,

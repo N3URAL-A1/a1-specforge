@@ -95,7 +95,7 @@ place the check fails with that reason, which is the correct answer.)
     forward is a waiver by the owner. Main path (chat): a1-plan
     `04b-xprov-review.md` Step 5 with `--phase <phase_name>` — report what failed,
     `xprov consent question --kind waiver --phase <phase_name>`, AskUserQuestion
-    exactly as printed, then `xprov consent ensure|waive --kind waiver`. Fallback
+    exactly as printed, then `xprov consent ensure --kind waiver --phase <phase_name>` and `xprov consent waive --phase <phase_name>`. Fallback
     for headless runs (no chat to ask): tell the owner the terminal command and
     wait; an agent never runs it:
     `a1-tools xprov waive --phase <phase_name> --gate plan-review-xprov --reason "<text>" --by <name>`.

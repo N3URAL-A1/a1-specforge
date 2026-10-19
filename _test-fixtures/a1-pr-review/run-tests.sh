@@ -197,6 +197,11 @@ for f in "$SK/a1-new-feature/workflows/05-implement.md" "$SK/a1-fix/SKILL.md"; d
 done
 [ "$leak" -eq 0 ] && pass_case "a1-new-feature 05-implement and a1-fix call no cross-provider gate (static)"
 
+# `consent waive` takes no --kind (and needs --phase or --work-path): the shorthand `ensure|waive --kind waiver` exits 2 (Reinhard 2026-10-19)
+bad_waive="$(grep -rnE 'consent (ensure\|)?waive --kind|ensure\|waive' "$SK" 2>/dev/null | head -3)"
+if [ -z "$bad_waive" ]; then pass_case "no skill text shows 'consent waive --kind' or the 'ensure|waive' shorthand (static)"
+else fail_case "a skill text shows a waive call that exits 2: $bad_waive"; fi
+
 echo ""
 echo "a1-pr-review: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

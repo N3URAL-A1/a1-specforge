@@ -383,14 +383,14 @@ function recordNotApplicable(ctx, base, permit) {
   return result;
 }
 
-/** Runs the chain; returns a frozen stdout report (never throws for a failing
- * step — only usage errors throw A1_INPUT before anything is created). */
 /** The PR diff gate's context (spec 016 wave 10): no --phase, the target is the head sha of --work-path. */
 function prContext(o) {
   return PD.contextOf(o, { root: repoRoot(), enforcement: enforcementFor(o.gate), pluginAllowlist: o.allowPlugins === undefined ? [] : String(o.allowPlugins).split(',').map((x) => x.trim()).filter(Boolean),
     timeout: o.timeout === undefined ? null : parsePositive(o.timeout, 'timeout'), round: o.round === undefined ? undefined : parsePositive(o.round, 'round') });
 }
 
+/** Runs the chain; returns a frozen stdout report (never throws for a failing
+ * step — only usage errors throw A1_INPUT before anything is created). */
 function gate(o) {
   const ctx = o.gate === X.GATE_IDS.PR_DIFF ? prContext(o) : resolveGateArgs(o);
   const state = { recovery: [], runnerCalls: 0, logged: false, observed: false };

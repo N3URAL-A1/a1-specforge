@@ -11,7 +11,7 @@
 //     scope = the phase name as the directory listing spells it; dev + ino = the phase directory (a renamed directory is the same phase);
 //     opened = tool_use_id of the marker the hook opened for this entry (null until then): one entry opens exactly one marker
 //
-// `consent question --kind consent|classification` calls `claimAsk` before it prints the question. The first call for repo + kind + scope
+// `consent question --kind consent|classification --phase <name>` (or `--run <worktree>`) calls `claimAsk` before it prints the question. The first call for repo + kind + scope
 // (scope = a phase `.a1/phases/<name>` that exists; `--run` is reserved for the PR diff gate, wave 10) is recorded: an audit line `consent-asked` first, then the entry.
 // Every later call for the same triple is refused (`already_asked_this_scope`), whatever happened in between: an owner No, no answer,
 // an expired or used marker, a `consent revoke` (revoke never touches this store). The one exception is a re-show of the SAME question
@@ -90,7 +90,7 @@ function scopeOf(root, flags) {
     const rst = fs.lstatSync(w);
     return Object.freeze({ type: SCOPE_TYPES.RUN, id: w, dev: rst.dev, ino: rst.ino });
   }
-  if (flags.phase === undefined) throw C.inputError('give --phase <name> (an existing .a1/phases/<name>): the question is asked once per phase', 'scope_required');
+  if (flags.phase === undefined) throw C.inputError('give --phase <name> (an existing .a1/phases/<name>) or --run <worktree>: the question is asked once per phase or PR review run', 'scope_required');
   const ph = CT.phaseOf(root, flags.phase);
   const dir = path.dirname(ph.phaseDir);
   const fold = (n) => n.normalize('NFC').toLowerCase();
@@ -155,6 +155,11 @@ function claimAsk(o) {
   return R.locked(() => claimLocked(o));
 }
 
+/** Removes the marker a failed open just wrote (own repo + kind only). */
+function dropFreshMarker(o) {
+  try { fs.rmSync(M.markerFile(o.key, o.kind), { force: true }); } catch (_e) { /* the refusal below still stops this ask */ }
+}
+
 /**
  * The hook's gate (spec 016 FR-002, wave 5 review W5-1): a canonical question is put only after `consent question` recorded it. Opens the marker
  * for `o` ({ key, kind, hash, originSha, toolUseId, sessionId, now? }) and marks ONE entry as having opened it; an entry opens exactly one marker.
@@ -166,7 +171,7 @@ function openAsked(o) {
     const store = readAsked();
     if (!store.ok && !store.missing) return R.refuse('asked_store_unusable', `the ${STORE_LABEL} is not usable (${store.why}); no question`);
     const hits = Object.entries(store.asked).filter(([, e]) => e.repo === o.key && e.kind === o.kind && e.hash === o.hash);
-    if (hits.length === 0) return R.refuse('consent_not_asked', 'this question was not issued by `xprov consent question --kind ' + o.kind + ' --phase <name>` (or its phase already used its ask); run that command first, once per phase');
+    if (hits.length === 0) return R.refuse('consent_not_asked', 'this question was not issued by `xprov consent question --kind ' + o.kind + ' --phase <name>` (or `--run <worktree>`; or its scope already used its ask); run that command first, once per phase');
     const fresh = hits.find(([, e]) => e.opened === null);
     if (o.kind === 'classification' && fresh !== undefined && !consentYes(store, o.key, fresh[1].dev, fresh[1].ino, o.now)) return NEEDS_CONSENT_YES();
     if (fresh === undefined) {
@@ -177,7 +182,10 @@ function openAsked(o) {
     const r = M.openMarker({ repo: o.key, kind: o.kind, hash: o.hash, originSha: o.originSha, toolUseId: o.toolUseId, sessionId: o.sessionId, now: o.now });
     if (!r.ok) return R.refuse(r.reason, r.hint);
     const [id, e] = fresh;
-    try { writer()(ASKED_FILE, { version: 1, asked: { ...store.asked, [id]: Object.freeze({ ...e, opened: o.toolUseId }) } }); } catch (err) { return R.refuse('write_failed', `cannot record the open question (${R.errReason(err)})`); }
+    try { writer()(ASKED_FILE, { version: 1, asked: { ...store.asked, [id]: Object.freeze({ ...e, opened: o.toolUseId }) } }); } catch (err) {
+      dropFreshMarker(o); // W5-1: no marker may outlive an entry that does not say it opened it, or a second ask could open a second marker
+      return R.refuse('write_failed', `cannot record the open question (${R.errReason(err)})`);
+    }
     return Object.freeze({ ok: true, marker: r.marker });
   });
 }

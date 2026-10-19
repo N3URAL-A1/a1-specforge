@@ -21,7 +21,7 @@ Ein a1-Gate schickt Code oder Diffs nur an Codex (Fremdanbieter), wenn Robert da
 
 - Fehlt die Freigabe (`xprov permit-check` zeigt `absent`, `origin_changed` oder `unbound_legacy`), frage ich **im Chat** (`AskUserQuestion`), höchstens **einmal je Phase bzw. je PR-Review-Lauf** (`consent question --kind consent --phase <phase>` oder `--run <Worktree>`). Die Frage ist kanonisch: ich stelle sie byte-genau, wie der Befehl sie ausgibt. Sie nennt Repo, ob es privat ist, dass Plan, Wave-Diffs bzw. PR-Diff an Codex gehen, und was das Gate liefert.
 - Der Plugin-Hook (`PreToolUse`/`PostToolUse` auf `AskUserQuestion`) nimmt die Antwort aus der echten Tool-Antwort auf. Ein Ja gilt **für dieses Repo** (`consent record` schreibt das Permit samt Audit-Zeile, gebunden an die Origin-URL). Danach laufen alle Gates dieses Repos **automatisch und ohne weitere Rückfrage**. Ausgabe an Robert nur bei Befund, Fehler oder Blocker.
-- Ein Nein ist ein Eigentümer-Nein (`external_review_denied`) und gilt, bis Robert es ändert.
+- Ein Nein ist ein Eigentümer-Nein (`external_review_denied`) und gilt, bis Robert es ändert. `consent revoke` führe ich nur auf Roberts ausdrückliche Anweisung aus, nie um nach einem Nein erneut zu fragen (das ist eine Regel für mich, kein Code).
 - Neues Repo, anderer Origin oder ein Permit ohne Beleg (`unbound_legacy`) zählt als **kein Permit**: neue Frage.
 - **Kundenrepos** (nicht N3URAL-eigen): diese Regel gilt nicht allein. Die Klassifikationsfrage braucht eine `a1-ludwig-legal`-Entscheidung als Beleg (`consent question --kind classification`, Vault-Pfad der Entscheidung). Ohne sie frage ich nicht weiter und sende nichts.
 
@@ -44,7 +44,7 @@ Die Platzierung spart Kosten. Die Grenze ist das PR-Diff-Gate.
 
 - Findings aus Runde 2 mit MAJOR/MINOR, aber ohne BLOCKER, schließe ich **automatisch** ab (`xprov dispose`, Dispositions je Finding). Es braucht keinen Waiver. **Das heißt ausdrücklich:** Beim Rundenlimit setze ich jedes offene MAJOR selbst auf `fixed` oder `accepted: <Grund>` (FR-025), ohne dass du gefragt wirst. Wer diese Regel übernimmt, übernimmt das bewusst. BLOCKER kann ich so nicht abschließen.
 - Selbstheilung ohne Rückfrage: Runner-Fehler werden begrenzt wiederholt, die Review-Home-Konfiguration und die Basis werden repariert. Antwortet Codex zweimal mit BLOCKED, endet das Gate Reinhard-only (`codex_blocked_fallback`); das ist auf einer Sicherheitsfläche **kein** Ergebnis für den Merge. Jeder Lauf schreibt eine Beobachtungszeile (`owner_handoffs`, `codex_runs`, `abort_reason`, `recovered`).
-- Bleibt ein Ziel nach den Runden rot (BLOCKER, Rundenlimit), frage ich **einmal je Phase** im Chat nach einem Waiver (`consent question --kind waiver`). Ein Ja gilt nur für genau die gelisteten Ziele und nur für diese PLAN.md-Version bzw. diesen Head. Ein Waiver ist kein Bestanden.
+- Bleibt ein Ziel nach den Runden rot (BLOCKER, Rundenlimit), frage ich **einmal je Phase** im Chat nach einem Waiver (`consent question --kind waiver`). Ein Ja gilt nur für genau die gelisteten Ziele und nur für diese PLAN.md-Version bzw. diesen Head. Ein Waiver ist kein Bestanden. **Ehrlich gesagt:** „einmal je Phase“ ist beim Waiver eine **Skill-Regel**, im Code nicht erzwungen (Tier 0): nur die Frage nach der Freigabe (Consent) zählt der Code (`consent-asked`). Ein Waiver-Ledger baue ich jetzt nicht.
 
 ## 5. Harte Stopps
 

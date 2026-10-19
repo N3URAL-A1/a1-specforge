@@ -49,7 +49,7 @@ echo "xprov wave-status exit=$RC"
   `02-execute.md` step 2b-x for that wave (re-run the inspection with that
   wave's `--base`), or the owner waives it. Main path: the chat waiver of
   `02-execute.md` 2b-x.0 item 5 (`xprov consent question --kind waiver --phase <phase_name>`,
-  AskUserQuestion exactly as printed, `xprov consent ensure|waive --kind waiver`).
+  AskUserQuestion exactly as printed, `xprov consent ensure --kind waiver --phase <phase_name>` and `xprov consent waive --phase <phase_name>`).
   Fallback for headless runs only: the owner runs
   `a1-tools xprov waive --phase <phase_name> --gate wave-inspect-xprov --wave <N> --base <that wave's PRE_WAVE_HEAD> --work-path $WORK_PATH --reason "<text>" --by <name>`
   in a separate terminal (it refuses agent process trees); this skill never does. While the registry row says `warning`,

@@ -217,7 +217,7 @@ function cmdScopedWrite(sub, args) {
     throw e;
   }
   return reportResult(r, (x) => (sub === 'waive' ? `${x.waived.length} waiver record(s) written for phase ${x.phase}; the owner typed nothing in a terminal; a waiver is not a pass`
-    : `${x.approved.length} blob approval(s) written; the owner typed nothing in a terminal`));
+    : `${x.approved.length} hit approval(s) written to hit-approvals.json; the owner typed nothing in a terminal`));
 }
 
 function cmdRevoke(args) {

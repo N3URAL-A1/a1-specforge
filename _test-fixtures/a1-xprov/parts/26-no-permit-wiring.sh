@@ -382,7 +382,25 @@ caseAQ6() {
 
 caseNP1; caseNP2; caseNP3; caseNP4; caseNP5
 caseNP6; redproof26 "NP6" scen_np6 "named" xprov-gate-nopermit.cjs "(state === STATES.ABSENT ? NOTICE :" "(true ? NOTICE :"
-caseAQ1; caseAQ2; caseAQ3; caseAQ4; caseAQ5; caseAQ6; caseAQ7; caseAQ8
+# AQ9 (Reinhard 2026-10-19, W5-1): a write error after the marker was opened must not leave the marker behind (a second ask could open a second one)
+scen_aq9() { # prints: refusal reason / marker state afterwards (none = dropped)
+  prep26; cli26 question --kind consent --phase p26
+  local hash; hash="$(json_get "$G_OUT" "j.hash")"
+  (cd "$PHASE_REPO" && node -e '
+    const T = process.argv[1], A = require(T + "/_shared/lib/xprov-consent-asked.cjs"), M = require(T + "/_shared/lib/xprov-consent-marker.cjs");
+    const AP = require(T + "/_shared/lib/xprov-approve.cjs"), C = require(T + "/_shared/lib/xprov-common.cjs");
+    const key = C.commonDirOf(process.cwd()); const w = AP.writeGuardedStore;
+    AP.writeGuardedStore = () => { throw new Error("forced write failure"); };
+    const r = A.openAsked({ key, kind: "consent", hash: process.argv[2], originSha: "0".repeat(64), toolUseId: "toolu_aq9", sessionId: "sess_aq9" });
+    AP.writeGuardedStore = w;
+    process.stdout.write(r.reason + "/" + M.peekMarker(key, "consent").state);
+  ' "$TREE" "$hash" 2>/dev/null)
+}
+caseAQ9() {
+  assert_eq "AQ9 a forced write failure after the marker opened: write_failed and the fresh marker is dropped" "$(scen_aq9)" "write_failed/none"
+  redproof26 "AQ9a" scen_aq9 "write_failed/none" xprov-consent-asked.cjs "      dropFreshMarker(o); // W5-1" "      // W5-1"
+}
+caseAQ1; caseAQ2; caseAQ3; caseAQ4; caseAQ5; caseAQ6; caseAQ7; caseAQ8; caseAQ9
 export HOME="$SAVED_HOME_26"
 if [[ "$SAVED_VAULT_26" == "__unset__" ]]; then unset A1_VAULT_ROOT; else export A1_VAULT_ROOT="$SAVED_VAULT_26"; fi
 rm -rf "$TMP26"
