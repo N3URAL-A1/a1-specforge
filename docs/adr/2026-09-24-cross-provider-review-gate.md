@@ -1058,7 +1058,7 @@ a1-pr-review step 2.2b. a1-new-feature and a1-fix reach Codex only through that 
 - **Ask once per run.** `xprov consent question --kind consent --run <worktree>` scopes the one ask of a PR review run (wave 5 had reserved `--run`). The chat waiver works with
   `--work-path <worktree>`; the waiver store keys a `pr-diff-xprov` record like a wave (phase `pr-review`, wave 0, lane, head, base).
 - **Out of scope.** The `warning` to `blocking` flip of the findings severity needs one live PR review recorded in the "Live smoke" section above; that section is unchanged.
-- **Enforcement point (W10-1).** The merge block is code, and a plugin PreToolUse hook on `Bash` makes it bite: `gh pr merge` and `gh api .../pulls/<n>/merge` run only after
+- **Enforcement point (W10-1).** (Blast radius: the `Bash` matcher sees every Bash call, so it has its own wrapper `hooks/xprov-merge-hook.sh`: pure shell, no node, exit 0 unless the payload contains the substring `merge`; only those payloads reach node and fail closed. A broken node therefore blocks merges only, not all of Bash.) The merge block is code, and a plugin PreToolUse hook on `Bash` makes it bite: `gh pr merge` and `gh api .../pulls/<n>/merge` run only after
   `xprov gate --gate pr-diff-xprov --merge-check` exits 0 (any other exit, a timeout or a spawn error denies). The hook resolves, in order: the command (a segment that starts with `gh`,
   also inside `bash -c`/`eval`/`xargs` wrappers), the repository of `cwd`, the permit lookup of the gate (`absent` or `denied` = Reinhard-only = allow, so repositories outside xprov are
   untouched; a voided permit is judged), the PR number and head sha (`gh pr view`), and the worktree (`git worktree list`: PR head branch at the PR head sha), so a merge run from the

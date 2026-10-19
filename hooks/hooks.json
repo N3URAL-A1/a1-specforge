@@ -8,7 +8,7 @@
       },
       {
         "matcher": "Bash",
-        "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/xprov-consent-hook.sh\" || exit 2", "onFailure": "block" }]
+        "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/xprov-merge-hook.sh\" || exit 2", "onFailure": "block" }]
       },
       {
         "matcher": "Edit|Write|NotebookEdit|MultiEdit",

@@ -297,7 +297,7 @@ ghstub31() { # <number> — writes the stub dir and the JSON of the PR for the c
 hk31() {
   local cmd="$1" cwd="${2:-$PHASE_REPO}" tree="${3:-$TREE}" payload
   payload="$(node -e 'process.stdout.write(JSON.stringify({ hook_event_name: "PreToolUse", tool_name: "Bash", tool_use_id: "toolu_hk", session_id: "sess_hk", cwd: process.argv[2], tool_input: { command: process.argv[1] } }))' "$cmd" "$cwd")"
-  local out; out="$(printf '%s' "$payload" | env -u A1_VAULT_ROOT PATH="$GHBIN31:$PATH" GH_STUB_JSON="$GH_STUB_JSON" GH_STUB_RC="${GH_STUB_RC:-0}" bash "$tree/hooks/xprov-consent-hook.sh" 2>/dev/null)"; local rc=$?
+  local out; out="$(printf '%s' "$payload" | env -u A1_VAULT_ROOT PATH="$GHBIN31:$PATH" GH_STUB_JSON="$GH_STUB_JSON" GH_STUB_RC="${GH_STUB_RC:-0}" bash "$tree/hooks/xprov-merge-hook.sh" 2>/dev/null)"; local rc=$?
   [[ $rc -eq 0 ]] || { echo "rc$rc"; return; }
   node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{if(!d.trim()){process.stdout.write("allow");return;}const o=JSON.parse(d).hookSpecificOutput;process.stdout.write(o.permissionDecision+":"+/\(([a-z_]+)\)/.exec(o.permissionDecisionReason)[1]);});' <<< "$out"
 }
@@ -329,11 +329,24 @@ scen_hk4() { # forms: gh api .../pulls/7/merge, bash -c wrapper, a merge mention
   prep31; commit31 src/auth/login.js 'export const login = 1;'; ghstub31 7
   echo "$(hk31 'gh api -X PUT repos/o/r/pulls/7/merge')|$(hk31 'bash -c "gh pr merge 7"')|$(hk31 'grep "gh pr merge" README.md')|$(hk31 'echo gh pr merge')|$(hk31 'git status')"
 }
+scen_hk5() { # node unavailable (PATH without node): a non-merge Bash call is allowed by the shell early-out, a merge payload is denied (exit 2)
+  local tree="${1:-$TREE}" nb="$TMP31/nonode"; mkdir -p "$nb"; ln -sf "$(command -v bash)" "$nb/bash"
+  local ls_p='{"hook_event_name":"PreToolUse","tool_name":"Bash","cwd":"/tmp","tool_input":{"command":"ls -la && git status"}}'
+  local mg_p='{"hook_event_name":"PreToolUse","tool_name":"Bash","cwd":"/tmp","tool_input":{"command":"gh pr merge 7 --squash"}}'
+  local a b
+  printf '%s' "$ls_p" | env -i PATH="$nb" "$nb/bash" "$tree/hooks/xprov-merge-hook.sh" >/dev/null 2>&1; a=$?
+  printf '%s' "$mg_p" | env -i PATH="$nb" "$nb/bash" "$tree/hooks/xprov-merge-hook.sh" >/dev/null 2>&1; b=$?
+  echo "$a|$b"
+}
 caseHK() {
   assert_eq "HK1 gh pr merge: denied without a result, allowed with a pass for the head (run from the primary checkout)" "$(scen_hk1)" "deny:merge_blocked|allow|allow"
   assert_eq "HK2 a repository without a permit: allow, whatever gh says" "$(scen_hk2)" "allow"
   assert_eq "HK3 the merge check exits 2 / 77 / 1: deny (fail closed)" "$(scen_hk3)" "deny:merge_blocked|deny:merge_blocked|deny:merge_blocked|"
   assert_eq "HK4 gh api merge and a bash -c wrapper are judged, a read-only mention and other commands pass" "$(scen_hk4)" "deny:merge_blocked|deny:merge_blocked|allow|allow|allow"
+  assert_eq "HK5 node unavailable: a non-merge Bash call is allowed (shell early-out), a merge payload is denied (exit 2)" "$(scen_hk5)" "0|2"
+  local mut5; mtree31 xprov-hook-merge.cjs "const CHECK_TIMEOUT_MS = 90000;" "const CHECK_TIMEOUT_MS = 90000;"
+  sed -i.bak 's/^  \*) exit 0 ;;$/  *) ;;/' "$TREE/hooks/xprov-merge-hook.sh"; mut5="$(scen_hk5 "$TREE")"; unmtree31
+  [[ "$mut5" != "0|2" ]] && ok "HK5a RED [mutant]: with the early-out removed the outcome flips ('0|2' -> '$mut5')" || bad "HK5a RED [mutant]: the guard is dead, the mutant still gives '$mut5'"
   local HMN=xprov-hook-merge.cjs
   redproof31 "HK1a" scen_hk1 "deny:merge_blocked|allow|allow" $HMN "if (r.status === 0) return allow();" "return allow();"
   redproof31 "HK2a" scen_hk2 "allow" $HMN "return state === STATES.ABSENT || state === STATES.DENIED;" "return false;"
