@@ -1,0 +1,8 @@
+# Sibling of net-disconnect.codex-stdout.txt — provenance record (spec 016 Wave 8, FR-024).
+case: net-disconnect
+origin: constructed
+constructed_on: 2026-10-16
+what: the shape of a codex --json event stream that ends on a transport error: thread.started, turn.started, one {"type":"error","message":…} event, turn.failed. Same four-line frame as the captured usage-limit.codex-stdout.txt; only the message differs.
+message_source: the wording of the Codex CLI's transport errors (stream disconnected / unexpected status), written from memory of its output, NOT captured
+why_not_captured: the two network aborts that motivated FR-024 (spec 016 section Problem: "11 aborts … network 2") left no run record on disk (searched ~/.a1-xprov, the repo, the vault); a live provocation needs an outage
+used_by: parts/29-recovery.sh — a1 reads the cause from the message (xprov-recover.cjs causeOf), so only the message matters

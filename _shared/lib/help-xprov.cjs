@@ -5,6 +5,8 @@
 // branch review). help.cjs interpolates the string in place; the rendered
 // --help output is byte-identical to the unsplit text.
 
+const { CONSENT_HELP } = require('./help-xprov-consent.cjs');
+
 const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   Spec 009-cross-provider-review-gate. Cross-provider review
                   gate: sends a phase's PLAN.md (gate plan-review-xprov, a1-plan
@@ -74,6 +76,9 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
     init-home [--prune-marketplaces] [--pin-features]
                   (xprov-preflight.cjs, wave 4) create the dedicated home
                   idempotently; never overwrites an existing config.toml.
+                  Writes the owner marker .a1-review-home (0600) into the home: the
+                  gate's self-repair of a preflight_failed works only in a marked
+                  home or in the default ~/.codex-a1-review (spec 016 W8-3).
                   --pin-features (wave 7) appends the missing pins to an
                   existing home — cli_auth_credentials_store = "file" after the
                   last root key, '<pin> = false' lines to [features]; additive
@@ -83,8 +88,23 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   (xprov-permit.cjs, wave 4) reads .a1/xprov.json AND the owner's
                   stores ~/.a1-xprov/permit-denials.json and (spec 014)
                   ~/.a1-xprov/permits.json; stdout \`state\` is allowed | denied |
-                  absent | invalid | denial_mismatch | permit_mismatch (exit 0
-                  only for allowed). allowed needs the file to say allowed AND
+                  absent | invalid | denial_mismatch | permit_mismatch |
+                  home_mismatch | origin_changed | audit_broken |
+                  unbound_legacy (exit 0 only for allowed). unbound_legacy = an
+                  entry without repo/origin/audit binding: no permit, of any date
+                  (external_review_not_permitted); the owner permits again.
+                  Spec 016: the owner stores resolve under the home of the OS
+                  user record, never $HOME; when $HOME differs, no store is
+                  written and the state is home_mismatch (owner_home_mismatch).
+                  An entry written since spec 016 is bound to the repository's
+                  git-common-dir and raw remote.origin.url; an origin that
+                  changes, appears or disappears voids the permit (origin_changed,
+                  external_review_not_permitted). Every result carries
+                  \`enforcement: unenforced\` and \`audit: ok|missing|broken\`: the
+                  consent is a record the same OS user could write; the hash-
+                  chained ~/.a1-xprov/consent-audit.jsonl makes a naive forgery
+                  or a hand-written entry visible (permits of before spec 016
+                  stay allowed and report audit: missing). It prevents nothing. allowed needs the file to say allowed AND
                   the permit store to hold an entry for this repository's
                   git-common-dir with the same decided_by, decided_on, record
                   (and default_branch when either side has one); a hand-written
@@ -123,10 +143,19 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   on write (invalid → exit 1, nothing written) and on read.
     observe --agent xprov-codex|a1-<first>-<role> --skill <s> --phase <name>
             --type gap|blocker --severity <sev> --msg "<text>" [--wave N] [--lane <id>]
-            [--pattern xprov_finding|xprov_waived|xprov_not_applicable] [--provider codex]
+            [--pattern xprov_finding|xprov_waived|xprov_not_applicable|xprov_disposed] [--provider codex]
             [--model-requested <m>] [--model-observed <m>] [--repo <git-toplevel>]
                   (xprov-observe.cjs, wave 4) one observations.jsonl line with
                   pattern xprov_finding, model_requested, model_observed.
+            [--gate <id>] [--owner-handoffs 0..99] [--codex-runs 0|1]
+            [--abort-reason none|<reason code>] [--recovered true|false]
+            [--review-worktree <abs dir>]
+                  (spec 016 FR-035, wave 8) the run fields xprov gate writes
+                  itself: owner hand-offs, Codex runs (1 only for the first
+                  line of a gate target: rounds and retries collapse), abort
+                  reason, recovered. --review-worktree writes to
+                  <dir>/.a1-review/xreview/observations.jsonl (the PR diff
+                  review); an absolute path without .., no link on the way.
     snapshot --repo <path> --commit <sha> [--base <sha>] [--plan <file>] [--feedback <file>] | --remove <dir>
                   (xprov-snapshot.cjs, wave 5) fresh depth-limited fetch under
                   ~/.a1-xprov/snapshots/ (git init + fetch --depth 1 + checkout
@@ -138,6 +167,15 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   cwd as skill instructions; every tracked file is
                   secret-scanned (shared pattern list, windowed, UTF-16 aware,
                   + gitleaks with a1's own config when on PATH) before dispatch.
+                  Spec 016 FR-029 (inspect, with --base): when every hit sits in a
+                  tracked file the diff does not change, the clone is made again
+                  without those files (deleted, skip-worktree, blob dropped from
+                  the object store) and scanned again; the result lists them as
+                  "excluded" (path + rule id, never a value). A hit in a changed
+                  file, on the base or input side, or one a1 cannot place stays a
+                  hard stop and leaves a hits record (scan_record) for
+                  consent question --kind allowlist. Plan review has no diff: no
+                  exclusion.
                   Wave 6b: the scan COUNTS every match and fingerprints its
                   line; a hit passes only when the approved allowlist at the
                   trust anchor covers it (see allowlist below). --repo must
@@ -261,11 +299,64 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   like the PLAN.md; next.round_cmd shows the call. Enforcement (warning|blocking) is READ
                   from the registry row and echoed in stdout, never applied here.
                   --wave N counts from 0 (0..9999); --round and --timeout from 1.
+                  Self-recovery (spec 016 FR-024..028, FR-031; xprov-recover.cjs;
+                  recovery in stdout and in the log entry): runner_failed caused
+                  by network, timeout or HTTP 5xx is retried twice (30 s, 120 s);
+                  a blocked answer is repeated once, a second one is not_applicable /
+                  codex_blocked_fallback (load-check and wave-status accept it,
+                  Reinhard is the only review, nobody is asked); a snapshot whose
+                  base does not resolve is retried once on the merge-base with the
+                  default branch (fetched when missing); a preflight_failed that
+                  only plugins/ removal, init-home --pin-features and
+                  --prune-marketplaces fix is repaired once, in the review home only.
+                  secret_in_snapshot, secret_in_output, tripwire, quarantined,
+                  run_home_unsafe, snapshot_changed_after_scan, allowlist_invalid,
+                  allowlist_modified, every permit or store mismatch and round_cap
+                  are never retried. One observation line per run that got past
+                  placement and permit (owner_handoffs, codex_runs, abort_reason,
+                  recovered).
                   A repository whose permit state is denied, on a registry row
                   with applies_to: permitted-repos, gets verdict not_applicable
                   (reason external_review_denied, exit 1, one log entry and one
                   xprov_not_applicable observation, no run); on an applies_to:
                   all row it fails external_review_not_permitted.
+                  Spec 016 FR-019/FR-020 placement, checked BEFORE the permit: a plan
+                  review runs only when the spec named by PLAN.md (frontmatter spec:
+                  or spec_path:, a relative .md path in the repo or the vault) has
+                  size: L, or the backtick-quoted paths of the plan's ## Wave
+                  sections are security surface (xprov scope); size unknown is
+                  decided by surface alone, a plan without ## Wave sections runs. A
+                  wave inspection runs only when a LATER wave names the wave in its
+                  Depends on line and the wave's plan files or its diff (--base to
+                  HEAD) are surface; an unlisted wave or a diff git cannot produce
+                  runs. Otherwise: not_applicable, reason scope_exempt, step
+                  placement, exit 1, nothing run, nothing written, no consent
+                  question. No flag sets the size (--size, --spec: exit 2).
+                  load-check accepts an exempt plan (placement scope_exempt);
+                  wave-status lists exempt waves under scope_exempt only for the
+                  PLAN.md bound by --expect-sha (a different sha fails plan_changed;
+                  without it nothing is exempt). A wave no later wave depends on is
+                  exempt; a depended-on wave is exempt only when the plan names no
+                  surface for it AND its real diff is none. The ranges (--wave-range
+                  <n>=<base>..<head>, one per completed wave) are verified against git:
+                  base != head and an ancestor of head, the ranges tile (only the
+                  workflow's own files between them), the last head leads to the tip,
+                  the first base is reached from git merge-base <default branch> <tip>;
+                  any mismatch refuses every exemption (exempt_refused: reason). A
+                  wave nobody depends on whose diff is surface is exempt and listed
+                  under deferred_to_pr (the PR diff gate reviews it). A wave with a
+                  gate row is judged on its rows. Across an exempt wave the reviewed
+                  head must still be an ancestor of the next base / the tip. The plan
+                  placement reads every path-shaped token of the whole PLAN.md (also
+                  absolute, ../, path:12 and file:path forms; only :// URLs are skipped).
+                  Spec 016 FR-012: a repository with NO permit (permit state absent,
+                  origin_changed or unbound_legacy) on an applies_to: permitted-repos
+                  row also gets not_applicable, reason external_review_not_permitted,
+                  exit 1, and nothing else: no run, no snapshot, no log entry, no
+                  observation, no owner-store byte (the skill adds the retro tag). A
+                  mismatch (denial next to a permit, permit without file, unusable
+                  store), a broken audit chain, a corrupt .a1/xprov.json and an
+                  owner-home mismatch stay a fail.
     load-check --phase <name> [--expect-sha <sha256>]
                   (xprov-gate.cjs, wave 6) newest plan-review-xprov pass entry
                   — counted only when its run dir in a1's artifacts holds a
@@ -277,12 +368,15 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   now → plan_changed (a1-execute runs it before every wave).
                   A denied repository (applies_to: permitted-repos) → exit 0,
                   accepted: not_applicable (read from the permit state at check
-                  time, never from an index row).
+                  time, never from an index row). Spec 016: the same for a
+                  repository with no permit (permit_state absent, origin_changed,
+                  unbound_legacy).
     wave-status --phase <name> [--waves 0,1,2 [--lane <id>]] [--work-path <dir>]
                 [--lane-work-path <lane>=<dir>[,…]]
                   (xprov-gate.cjs, wave 6) waves are numbered from 0. A denied
                   repository (applies_to: permitted-repos) → exit 0 with every
-                  completed wave under not_applicable, no chain computed.
+                  completed wave under not_applicable, no chain computed. Spec 016:
+                  the same for a repository with no permit.
                   Otherwise every completed wave needs a
                   wave-inspect-xprov pass or a store waiver, both bound to this
                   PLAN.md's sha and chained per lane: base an ancestor of head,
@@ -309,7 +403,9 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   matches, and the path:line list (masked) of what the
                   heuristics could not classify. With --json: a DRAFT v2
                   document (entries [], one scope per pair, reasons empty).
-    allowlist approve --repo <path> [--revoke <sha256>]
+    allowlist approve --repo <path> [--revoke <sha256>] [--by <name>]
+                  --by (spec 016) is an optional plain name; the value owner-chat is
+                  reserved for chat-written entries and rejected here (exit 2).
                   (xprov-approve.cjs, wave 6b) HUMAN ONLY, in a separate
                   terminal: exit 2 and nothing written unless stdin and stdout
                   are TTYs, no CLAUDECODE / CLAUDE_PID / CLAUDE_CODE_* variable
@@ -355,8 +451,58 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   allowlist_not_separate_commit, allowlist_owner_mismatch,
                   allowlist_unapproved. gitleaks hits and reviewer output are
                   never allowlisted.
+${CONSENT_HELP}
+    scope --paths <file> | --base <sha> [--head <sha>] [--repo <git-toplevel>]
+                  (spec 016 FR-015, FR-016; xprov-scope.cjs + xprov-scope-globs.json)
+                  Deterministic, no LLM: classifies a path list (one path per line)
+                  or the files of a git range (default --head HEAD, renames split
+                  so both sides count) as security surface and as docs only.
+                  stdout (exit 0): {version, security_surface, docs_only, total,
+                  matched:[{path, category, glob}]}, matched sorted by path.
+                  security_surface = auth/session/permission, payment, tenant/RLS,
+                  migration and SQL, route/API, manifest and lockfile, secrets and
+                  env templates, CI, deploy/Docker/Terraform, plus quick.cjs
+                  FORBIDDEN_SURFACE_GLOBS (included by reference, never copied).
+                  docs_only = every path is *.md, docs/** or LICENSE and nothing
+                  is security surface. A path that cannot be classified (empty,
+                  absolute, "..", NUL, over 4096 chars) counts as security surface,
+                  category "unclassifiable". Matching is case-insensitive.
+                  Any input or glob-file problem exits 2 with an empty stdout:
+                  treat a non-zero exit as "guarded".
+    dispose --phase <name> --gate plan-review-xprov|wave-inspect-xprov
+            [--wave <N> [--lane <id>] --work-path <dir>]
+                  (spec 016 FR-025, xprov-dispose.cjs) Round 2 ended REVISE without a
+                  BLOCKER (round_cap). The agent writes
+                  xreview/<gate>-<target>-r2.dispositions.md, one line per finding id:
+                  "<id>: fixed: <what changed>" or "<id>: accepted: <reason>" (reason
+                  non-empty, one line, at most 1000 chars, no secret or instruction
+                  shape). Every major, minor and quarantined id of round 2 needs one.
+                  Success (exit 0): a1's marker a1-disposed.json in the round-2 run dir
+                  (bound to the PLAN.md sha now; a wave also to the work path HEAD and
+                  the reviewed base), the index row accepted: dispositions, an XREVIEW
+                  section and an observation (pattern xprov_disposed); load-check and
+                  wave-status accept the row only through the marker. Refusal (exit 1,
+                  JSON refused/detail): round_cap_not_reached, not_a_revise,
+                  blocker_open (the hard stop stays), undisposed (the target goes to
+                  the waiver question), round_unbound, already_disposed (one dispose
+                  per round-2 run dir), no_reviewed_base, head_not_descendant,
+                  dispose_unwritable. Facts come from a1's artifacts dir, not from the
+                  phase files.
+    dispose --phase <name> --gate <id> [--wave <N> [--lane <id>] --work-path <dir>
+            --base <sha>] --secret-declined <snap-basename>
+                  (spec 016 FR-029) The owner declined the allowlist question for a
+                  changed-line secret hit (or no answer, no chat). Needs the hits
+                  record the failed scan wrote for this repository and the exact HEAD
+                  of the target. Writes a1's marker a1-declined.json (artifacts dir)
+                  and the index row accepted: secret_declined; the target ends
+                  not_applicable (Reinhard-only review). A PLAN.md edit or a moved
+                  head needs a fresh review.
     waive --phase <name> --gate <id> [--wave <N> [--lane <id>] --base <sha>
           [--work-path <dir>]] --reason "<text>" --by <name>
+                  (spec 016) --by owner-chat is reserved for chat-written entries
+                  and rejected in the terminal commands permit, permit --deny and
+                  waive (exit 2). Every owner write appends a hash-chained line to
+                  ~/.a1-xprov/consent-audit.jsonl first.
                   (xprov-gate.cjs + xprov-waivers.cjs, wave 7; --wave 0 is valid) HUMAN-only, in a
                   separate terminal: the owner-approval guards (TTY on stdin
                   and stdout, no CLAUDECODE/CLAUDE_PID/CLAUDE_CODE_*, no Claude
@@ -370,7 +516,7 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   Reasons (stdout \`reason\` on exit 1): runner_failed,
                   malformed, wrong_mode, blocked, plan_changed, tripwire,
                   secret_in_snapshot, secret_in_output, quarantined, round_cap,
-                  external_review_not_permitted, external_review_denied,
+                  external_review_not_permitted, external_review_denied, scope_exempt,
                   external_review_denial_mismatch, external_review_permit_mismatch,
                   snapshot_failed, snapshot_not_scanned, snapshot_changed_after_scan,
                   run_home_unsafe, not_logged_in,

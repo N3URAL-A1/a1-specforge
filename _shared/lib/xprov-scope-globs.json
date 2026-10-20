@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "description": "Spec 016 FR-015/FR-016: the one glob list of `xprov scope`. Matching is on the lower-cased, normalized, repo-relative path; `*` stays inside one path segment, `**` spans segments. `include` names a list owned by another module (module#export); it is resolved at run time and never copied here (plan decision D-4).",
+  "include": "quick.cjs#FORBIDDEN_SURFACE_GLOBS",
+  "include_category": "forbidden_surface",
+  "categories": {
+    "auth_session_permission": [
+      "**/login/**", "**/signin/**", "**/session/**", "**/sessions/**", "**/permissions/**", "**/rbac/**", "**/acl/**",
+      "**/oauth/**", "**/sso/**", "**/jwt/**", "**/identity/**",
+      "**/auth.*", "**/auth-*", "**/auth_*", "**/*-auth.*", "**/*_auth.*", "**/*.auth.*",
+      "**/session.*", "**/session-*", "**/session_*", "**/*-session.*", "**/*.session.*",
+      "**/permissions.*", "**/permission.*", "**/*-permissions.*", "**/*.permissions.*", "**/rbac.*", "**/jwt.*", "**/oauth.*"
+    ],
+    "payment": [
+      "**/checkout/**", "**/stripe/**", "**/paypal/**",
+      "**/payment.*", "**/payments.*", "**/payment-*", "**/payment_*", "**/*-payment.*", "**/*-payments.*", "**/*.payment.*",
+      "**/billing.*", "**/billing-*", "**/billing_*", "**/*-billing.*", "**/*.billing.*",
+      "**/stripe.*", "**/stripe-*", "**/stripe_*"
+    ],
+    "tenant_rls": [
+      "**/tenant.*", "**/tenant-*", "**/tenant_*", "**/*-tenant.*", "**/*.tenant.*",
+      "**/rls.*", "**/rls-*", "**/rls_*", "**/*-rls.*", "**/*.rls.*", "**/row-level-security/**",
+      "**/policies/**"
+    ],
+    "migration": [
+      "**/migrate/**", "**/alembic/**", "**/flyway/**", "**/liquibase/**", "**/*.sql", "**/schema.prisma", "**/prisma/**"
+    ],
+    "route_api": [
+      "**/routes/**", "**/route/**", "**/api/**", "**/endpoints/**", "**/controllers/**", "**/trpc/**", "**/graphql/**",
+      "**/route.*", "**/routes.*", "**/*.routes.*", "**/*-routes.*", "**/router.*", "**/*.router.*", "**/*.controller.*",
+      "**/openapi.*", "**/*.openapi.*", "**/swagger.*"
+    ],
+    "manifest_lockfile": [
+      "**/package.json", "**/package-lock.json", "**/npm-shrinkwrap.json", "**/yarn.lock", "**/pnpm-lock.yaml", "**/pnpm-workspace.yaml",
+      "**/bun.lock", "**/bun.lockb", "**/.npmrc", "**/.yarnrc", "**/.yarnrc.yml",
+      "**/requirements.txt", "**/requirements-*.txt", "**/pipfile", "**/pipfile.lock", "**/poetry.lock", "**/pyproject.toml", "**/uv.lock",
+      "**/setup.py", "**/setup.cfg",
+      "**/go.mod", "**/go.sum", "**/cargo.toml", "**/cargo.lock", "**/gemfile", "**/gemfile.lock",
+      "**/composer.json", "**/composer.lock", "**/pom.xml", "**/build.gradle", "**/build.gradle.kts", "**/gradle.lockfile",
+      "**/*.csproj", "**/packages.lock.json", "**/mix.exs", "**/mix.lock"
+    ],
+    "secrets_env": [
+      "**/.env", "**/secrets/**", "**/secret/**", "**/secrets.*", "**/secret.*", "**/credentials", "**/credentials.*",
+      "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/*.keystore", "**/id_rsa*", "**/id_ed25519*", "**/.netrc", "**/*.tfvars"
+    ],
+    "ci": [
+      "**/.github/workflows/**", "**/.github/actions/**", "**/.github/dependabot.yml", "**/.github/dependabot.yaml",
+      "**/.gitlab-ci.yml", "**/.gitlab-ci.yaml", "**/.gitlab/**", "**/.circleci/**", "**/.buildkite/**", "**/jenkinsfile",
+      "**/azure-pipelines.yml", "**/.travis.yml", "**/bitbucket-pipelines.yml"
+    ],
+    "deploy_infra": [
+      "**/dockerfile", "**/dockerfile.*", "**/*.dockerfile", "**/docker-compose*.yml", "**/docker-compose*.yaml", "**/compose.yml", "**/compose.yaml",
+      "**/docker/**", "**/*.tf", "**/terraform/**", "**/infra/**", "**/infrastructure/**", "**/deploy/**", "**/deployment/**", "**/deployments/**",
+      "**/k8s/**", "**/kubernetes/**", "**/helm/**", "**/charts/**", "**/ansible/**", "**/systemd/**", "**/launchd/**", "**/*.plist",
+      "**/deploy.*", "**/deploy-*", "**/deploy_*", "**/*-deploy.*", "**/*_deploy.*",
+      "**/vercel*", "**/netlify.toml", "**/fly.toml", "**/railway.json", "**/railway.toml", "**/procfile", "**/serverless.yml",
+      "**/wrangler.toml", "**/nginx*.conf", "**/caddyfile", "**/ecosystem.config.*"
+    ]
+  },
+  "docs": ["**/*.md", "docs/**", "license"]
+}

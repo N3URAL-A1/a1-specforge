@@ -25,8 +25,23 @@
 # guard of `xprov permit` is the control.
 # Without node the raw JSON is judged: JSON `\n` escapes become spaces and
 # backslashes go with the quotes, so an escaped `\"waive\"` matches too.
+# Spec 016 FR-032 (Wave 4): a command whose every segment starts with a read-only program (grep, rg, cat, head, tail, wc, ls, echo,
+# sed -n '<n>p'; git is NOT read-only (diff.external, textconv and fsmonitor run commands from a config); `for NAME in ...; do <read-only>; done` loops count too) and that has no redirect, command
+# substitution or backtick only reads or prints text. For it the COMMAND-phrase patterns below (`allowlist approve`, `xprov waive`,
+# `xprov permit`, `xprov $`) do not apply: `grep a1-xprov "$S/summary.txt"` is no longer read as `xprov $S`. The STORE-name patterns
+# (`allowlist-approval`, `a1-xprov/waivers`, `a1-xprov/permit-den`) apply to every command as before (parts 08/11/12). A quoted-delimiter
+# heredoc written by one `cat`/`tee` is judged by its header line: a body that merely mentions a phrase passes, a write TO a store is
+# still caught by its target path. `grep x; xprov permit`, `xprov permit`, `xprov $v` and tab-separated forms stay denied: one segment
+# that is not read-only puts the whole command back under the patterns. The classifier is xprov-bash-class.cjs (same directory); if it
+# cannot run, the old behaviour applies. Not a security boundary: see the notes above on what text cannot detect.
 # Input: the hook JSON on stdin. Output: a deny decision as JSON, or nothing.
 input="$(cat)"
+mode=plain
+classified="$(printf '%s' "$input" | node "$(dirname "${BASH_SOURCE[0]}")/xprov-bash-class.cjs" 2>/dev/null)" && {
+  mode="${classified%%$'\n'*}"
+  [[ "$mode" == heredoc ]] && input="${classified#*$'\n'}"
+}
+[[ "$mode" == readonly || "$mode" == heredoc ]] || mode=plain
 command_text="$(printf '%s' "$input" | node -e '
   let raw = ""; process.stdin.on("data", (d) => { raw += d; }).on("end", () => {
     let t;
@@ -35,20 +50,26 @@ command_text="$(printf '%s' "$input" | node -e '
     // line continuations, then every single backslash (`per\mit`), `$` before a quote (`$\x27permit\x27`), the quotes
     process.stdout.write(t.replace(/\\\r?\n/g, "").replace(/\\/g, "").replace(/\$(?=["\x27])/g, "").replace(/["\x27]/g, "").replace(/\s+/g, " "));
   });' 2>/dev/null || printf '%s' "$input" | sed 's/\\n/ /g' | tr -d "\"'\\\\\$" | tr -s '[:space:]' ' ')"
+deny() {
+  printf '%s\n' "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"$1\"}}"
+  exit 0
+}
+MSG_ALLOWLIST='The allowlist approval is the owner'"'"'s step: run `a1-tools xprov allowlist approve` yourself in a separate terminal (spec 009 FR-030 j). Agents never run it or read the approval store.'
+MSG_WAIVE='A waiver is the owner'"'"'s step: run `a1-tools xprov waive` yourself in a separate terminal (spec 009 FR-007). Agents never run it or touch the waiver store.'
+MSG_PERMIT='A permit or denial is the owner'"'"'s step: run `a1-tools xprov permit` (or `permit --deny`) yourself in a separate terminal (spec 012 FR-014). Agents never run it or touch the denial store.'
+# STORE names: judged for every command, read-only or not.
 case "$command_text" in
-  *"allowlist approve"*|*"allowlist-approval"*)
-    printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"The allowlist approval is the owner'"'"'s step: run `a1-tools xprov allowlist approve` yourself in a separate terminal (spec 009 FR-030 j). Agents never run it or read the approval store."}}'
-    ;;
-  *"xprov waive"*|*"a1-xprov/waivers"*)
-    printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"A waiver is the owner'"'"'s step: run `a1-tools xprov waive` yourself in a separate terminal (spec 009 FR-007). Agents never run it or touch the waiver store."}}'
-    ;;
+  *"allowlist-approval"*) deny "$MSG_ALLOWLIST" ;;
+  *"a1-xprov/waivers"*) deny "$MSG_WAIVE" ;;
 esac
 # `xprov permit-check` is read-only: it is removed before matching `xprov permit`, so
 # `xprov permit-check && xprov permit --by x` is still caught by its second half.
 permit_text="${command_text//xprov permit-check/}"
-case "$permit_text" in
-  *"xprov permit"*|*"a1-xprov/permit-den"*|*"xprov \$"*)
-    printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"A permit or denial is the owner'"'"'s step: run `a1-tools xprov permit` (or `permit --deny`) yourself in a separate terminal (spec 012 FR-014). Agents never run it or touch the denial store."}}'
-    ;;
-esac
+case "$permit_text" in *"a1-xprov/permit-den"*) deny "$MSG_PERMIT" ;; esac
+# COMMAND phrases: not judged for a read-only command (it only prints the text).
+if [[ "$mode" != readonly ]]; then
+  case "$command_text" in *"allowlist approve"*) deny "$MSG_ALLOWLIST" ;; esac
+  case "$command_text" in *"xprov waive"*) deny "$MSG_WAIVE" ;; esac
+  case "$permit_text" in *"xprov permit"*|*'xprov $'*) deny "$MSG_PERMIT" ;; esac
+fi
 exit 0

@@ -68,6 +68,22 @@ place the check fails with that reason, which is the correct answer.)
   `ℹ Plan review not applicable — the owner denied external review for this repository; continuing.`
   and record `{id: plan-review-xprov, verdict: not_applicable, caught: false}`
   in the retro (issue tag `xprov_not_applicable`). It is not a pass.
+  **Spec 016 accepted verdicts.** Step 0c never asks the owner anything: the
+  consent question belongs to a1-plan `04b-xprov-review.md` Step 1.0 and
+  `02-execute.md` 2b-x.0. `accepted: "not_applicable"` is exit 0 for a denied
+  repository (`permit_state: denied`) and for a repository with no permit
+  (`permit_state: absent`, `origin_changed` or `unbound_legacy`): **continue**,
+  print `ℹ Plan review not applicable — no Codex permit for this repository; Reinhard-only, continuing.`
+  (denied: the line above). When `permit_state` is `origin_changed` or `unbound_legacy`, the
+  line names it instead — `ℹ Codex review skipped: permit void (<permit_state>) — the owner should re-consent; Reinhard-only, continuing.` —
+  and the retro records the state; Reinhard-only must never look like a plain absent permit. Record `{id: plan-review-xprov, verdict: not_applicable, caught: false}`
+  with the issue tag `xprov_not_applicable`. `accepted: "not_applicable"` with `placement: "scope_exempt"` (spec 016
+  FR-019: the spec is not size L and the plan names no security surface) is exit 0 as well: print
+  `ℹ Plan review not applicable — scope_exempt: spec is not size L and the plan names no security surface; Reinhard-only, continuing.`
+  and record the same retro entry with reason `scope_exempt`. `accepted: "codex_blocked_fallback"` (spec 016 FR-026: Codex answered BLOCKED
+  twice for exactly this PLAN.md) is exit 0 too: print `ℹ Plan review not applicable — Codex answered BLOCKED twice; the Reinhard review is the only review for this plan, continuing.`
+  and record the retro entry with reason `codex_blocked_fallback` (issue tag `xprov_not_applicable`). `accepted: "dispositions"` (FR-025: round 2 closed by recorded dispositions, no BLOCKER) and `accepted: "secret_declined"` (FR-029: the owner declined the allowlist question for a changed-line secret hit) are exit 0 too: record `xprov_disposed` respectively `xprov_not_applicable` (reason `secret_declined`) in the retro. `wave-status` lists such waves under `disposed` and `declined` next to `blocked_fallback`; a `carried_from` field in the `load-check` output means a whitespace- or heading-only PLAN.md edit kept the earlier pass (FR-030). A mismatch or broken state
+  (`*_mismatch`, `audit_broken`, `invalid`) stays exit 1.
 - **Exit 1, `reason: plan_review_missing`** → read `enforcement` from the
   stdout JSON (it echoes the `plan-review-xprov` row of
   `_shared/gates-registry.md`; the workflow applies it, the CLI never does):
@@ -76,9 +92,14 @@ place the check fails with that reason, which is the correct answer.)
   - `blocking` → **STOP before the Isolation Gate.** Print the block with the
     first line `❌ … enforcement: blocking`; route the user to `a1-plan`
     Phase 4b (re-run the review on the current PLAN.md). The only other way
-    forward is a human waiver — tell the user the command, do not run it:
+    forward is a waiver by the owner. Main path (chat): a1-plan
+    `04b-xprov-review.md` Step 5 with `--phase <phase_name>` — report what failed,
+    `xprov consent question --kind waiver --phase <phase_name>`, AskUserQuestion
+    exactly as printed, then `xprov consent ensure --kind waiver --phase <phase_name>` and `xprov consent waive --phase <phase_name>`. Fallback
+    for headless runs (no chat to ask): tell the owner the terminal command and
+    wait; an agent never runs it:
     `a1-tools xprov waive --phase <phase_name> --gate plan-review-xprov --reason "<text>" --by <name>`.
-    It runs only in the owner's own terminal — never through an agent's Bash tool or the `!` prefix: like the allowlist owner approval it refuses without a TTY, under Claude Code's environment or with a Claude Code ancestor, and, in a1-specforge itself, the project's PreToolUse hook denies any Bash command containing it (the plugin does not ship the hook to other repositories; there the TTY/ancestor guard is the control). It shows the key it computed itself (the PLAN.md sha256), asks for the gate id typed back and records the waiver in the guarded store
+    The terminal command refuses without a TTY, under Claude Code's environment or with a Claude Code ancestor; it shows the key it computed itself (the PLAN.md sha256), asks for the gate id typed back and records the waiver in the guarded store
     `~/.a1-xprov/waivers.json`; load-check accepts it only while PLAN.md still has that sha256. A
     `waived: true` row in `index.json` is a mirror and unblocks nothing (spec 009 FR-003, FR-007).
 - **Exit 2** → usage error or `xprov-gate.cjs` not shipped in this plugin

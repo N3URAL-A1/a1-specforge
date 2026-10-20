@@ -1,0 +1,6 @@
+.a1/TICKET-ops-audit-append-fehlt-auf-prod.md
+.a1/TICKET-testvorgaben-5433.md
+docs/OPERATIONS.md
+tests/integration/billing-completion.test.ts
+tests/integration/custom-fields-activation.test.ts
+tests/unit/agent/route-switch-agent-wave2.test.ts

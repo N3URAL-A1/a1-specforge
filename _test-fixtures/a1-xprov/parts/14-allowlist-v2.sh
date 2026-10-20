@@ -66,7 +66,7 @@ new14() {
   printf 'plain\n' > "$R14/tests/plain.txt"; printf 'plain\n' > "$R14/lib/plain.txt"
   write_permit "$R14" robert record/2026-10-06-fixture.md
   c14 "base"
-  git -C "$R14" remote add origin "$O14"; push14
+  git -C "$R14" remote add origin "$O14"; rebind_permit "$R14"; push14
 }
 
 # store14 — approves the allowlist blob at origin/main (store written directly, documented format).

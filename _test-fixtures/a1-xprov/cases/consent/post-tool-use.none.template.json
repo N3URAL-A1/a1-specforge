@@ -1,0 +1,10 @@
+{
+  "session_id": "__SESSION__",
+  "transcript_path": "/dev/null",
+  "cwd": "/dev/null",
+  "permission_mode": "default",
+  "hook_event_name": "PostToolUse",
+  "tool_name": "AskUserQuestion",
+  "tool_use_id": "__TOOL_USE__",
+  "tool_response": { "questions": [], "answers": {}, "annotations": {} }
+}

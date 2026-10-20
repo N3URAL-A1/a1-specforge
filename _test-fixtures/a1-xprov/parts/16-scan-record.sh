@@ -127,8 +127,10 @@ sr_record_file() { printf '%s/.a1-xprov/scan-records/%s.json' "$1" "$(basename "
   sr_snap "$home"
   assert_rc "SR2 planted secret exits 1" 1 "$SR_RC"
   assert_json "SR2 reason is secret_in_snapshot" "$SR_OUT" "j.reason" "secret_in_snapshot"
-  n="$(find "$home/.a1-xprov/scan-records" -type f 2>/dev/null | wc -l | tr -d ' ')"
-  assert_eq "SR2 scan-records holds no file" "$n" "0"
+  n="$(find "$home/.a1-xprov/scan-records" -type f ! -name '*.hits.json' 2>/dev/null | wc -l | tr -d ' ')"
+  assert_eq "SR2 scan-records holds no scan-pass record" "$n" "0"
+  n="$(find "$home/.a1-xprov/scan-records" -type f -name '*.hits.json' 2>/dev/null | wc -l | tr -d ' ')"
+  assert_eq "SR2b the stop leaves ONE hits record (path + rule, FR-029) for the allowlist question" "$n" "1"
 }
 
 # ---------- SR3: --remove removes the record ----------

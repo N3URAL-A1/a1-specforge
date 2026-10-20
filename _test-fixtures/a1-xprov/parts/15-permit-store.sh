@@ -68,7 +68,7 @@ file15() {
   ' "$PHASE_REPO" "$1" "$2" "$3" "${4:-}" "${5:-}"
 }
 # permit15 <by> <on> <record> [branch] — store entry for THIS repo (harness helper, key from git)
-permit15() { write_permit_store "$PHASE_REPO" "$1" "$3" "${4:-}" "$2"; }
+permit15() { write_permit_store_bound "$PHASE_REPO" "$1" "$3" "${4:-}" "$2"; }
 # den15 <by> <on> — denial store entry in the documented format (spec 012 FR-007)
 den15() {
   mkdir -p "$HOME/.a1-xprov"; chmod 700 "$HOME/.a1-xprov"
@@ -130,8 +130,9 @@ casePS2() {
   assert_eq "PS2 ~/.a1-xprov mode 0700" "$(mode15 "$HOME/.a1-xprov" 2>/dev/null)" "700"
   local doc; doc="$(cat "$PERMITS15" 2>/dev/null || echo '{}')"
   assert_json "PS2 version 1 and exactly one entry keyed by the realpath git-common-dir" "$doc" "j.version + '/' + Object.keys(j.permits).join(',')" "1/$(repokey15)"
-  assert_json "PS2 the entry: decided_by, record, today, a ts, exactly four keys" "$doc" \
-    "(() => { const e = Object.values(j.permits)[0] || {}; return [e.decided_by, e.record, e.decided_on, typeof e.ts, Object.keys(e).length].join('/'); })()" "robert/record/2026-10-08-x.md/$(today15)/string/4"
+  # spec 016 FR-006: the entry also carries `repo` (its own key) and `origin` (explicit null: this fixture repo has none) — six keys
+  assert_json "PS2 the entry: decided_by, record, today, a ts, repo, origin, audit — exactly seven keys" "$doc" \
+    "(() => { const e = Object.values(j.permits)[0] || {}; return [e.decided_by, e.record, e.decided_on, typeof e.ts, e.repo === '$(repokey15)', e.origin, Object.keys(e).length].join('/'); })()" "robert/record/2026-10-08-x.md/$(today15)/string/true//7"
   assert_json "PS2 the file says allowed" "$(cat "$PHASE_REPO/.a1/xprov.json" 2>/dev/null || echo '{}')" "j.external_review + '/' + j.decided_by" "allowed/robert"
   sub15 permit-check
   assert_json "PS2 permit-check after the owner write: allowed, exit 0" "$G_OUT" "j.state + '/' + j.ok" "allowed/true"
@@ -176,13 +177,13 @@ casePS4() {
     prep15; file15 allowed robert $D $R; permit15 $variant
     assert_eq "PS4c allowed / differs ($variant) / none → permit_mismatch" "$(st15)" "1/permit_mismatch/external_review_permit_mismatch"
   done
-  prep15; file15 allowed robert $D $R; write_permit_store "$PHASE_REPO" robert $R trunk $D
+  prep15; file15 allowed robert $D $R; write_permit_store_bound "$PHASE_REPO" robert $R trunk $D
   assert_eq "PS4c2 the store has default_branch, the file has none → permit_mismatch" "$(st15)" "1/permit_mismatch/external_review_permit_mismatch"
   prep15; file15 allowed robert $D $R trunk; permit15 robert $D $R
   assert_eq "PS4c3 the file has default_branch, the store has none → permit_mismatch" "$(st15)" "1/permit_mismatch/external_review_permit_mismatch"
-  prep15; file15 allowed robert $D $R trunk; write_permit_store "$PHASE_REPO" robert $R main $D
+  prep15; file15 allowed robert $D $R trunk; write_permit_store_bound "$PHASE_REPO" robert $R main $D
   assert_eq "PS4c4 default_branch differs → permit_mismatch" "$(st15)" "1/permit_mismatch/external_review_permit_mismatch"
-  prep15; file15 allowed robert $D $R trunk; write_permit_store "$PHASE_REPO" robert $R trunk $D
+  prep15; file15 allowed robert $D $R trunk; write_permit_store_bound "$PHASE_REPO" robert $R trunk $D
   assert_eq "PS4c5 control: default_branch equal on both sides → allowed" "$(st15)" "0/allowed/undefined"
   prep15; file15 allowed robert $D $R; permit15 robert $D $R; den15 robert $D
   assert_eq "PS4d allowed / equal / denial present → denial_mismatch" "$(st15)" "1/denial_mismatch/external_review_denial_mismatch"
@@ -290,33 +291,55 @@ SCAN15='
 const fs = require("fs"); const path = require("path");
 const root = process.argv[1]; const lib = path.join(root, "_shared", "lib");
 const files = []; (function walk(d) { for (const n of fs.readdirSync(d)) { const p = path.join(d, n); const s = fs.lstatSync(p); if (s.isDirectory()) walk(p); else if (n.endsWith(".cjs")) files.push(p); } })(path.join(root, "_shared"));
-const WRITER = /\b(writePermits|withPermit)\b/; const bad = []; let inPermit = 0; const requirers = [];
+// Security review 2026-10-14 MINOR-8b: a direct writeGuardedStore call that names the permit store (PERMITS_FILE or the literal file name) is a writer too.
+const WRITER = /\b(writePermits|withPermit)\b|writeGuardedStore\b[^\n]*(PERMITS_FILE|permits\.json)/; const bad = []; let inPermit = 0; let inConsent = 0; const requirers = []; const removeOnly = { checked: 0, bad: [] };
 for (const f of files) {
   const rel = path.relative(root, f); const lines = fs.readFileSync(f, "utf8").split("\n");
   if (/require\(.[^)]*xprov-permits(\.cjs)?.\)/.test(lines.join("\n"))) requirers.push(path.basename(f));
   if (path.basename(f) === "xprov-permits.cjs") continue;
   let fn = null;
+  // revokeConsent and writeNo only REMOVE a permit: every withPermit call in them must end in `, null)` (MINOR-8b)
+  if (path.basename(f) === "xprov-consent-record.cjs") {
+    let cur = null;
+    lines.forEach((l, i) => {
+      const m = /^(?:async\s+)?function\s+(\w+)/.exec(l); if (m) cur = m[1]; else if (/^\S/.test(l) && !/^[}\])]/.test(l)) cur = null;
+      if (/^\s*(\/\/|\*|\/\*)/.test(l) || (cur !== "revokeConsent" && cur !== "writeNo")) return;
+      for (const c of l.matchAll(/withPermit\(([^()]*)\)/g)) { removeOnly.checked++; if (c[1].split(",").pop().trim() !== "null") removeOnly.bad.push(rel + ":" + (i + 1) + " in " + cur); }
+    });
+  }
   lines.forEach((l, i) => {
     const m = /^(?:async\s+)?function\s+(\w+)/.exec(l); if (m) fn = m[1]; else if (/^\S/.test(l) && !/^[}\])]/.test(l)) fn = null;
     if (/^\s*(\/\/|\*|\/\*)/.test(l) || !WRITER.test(l)) return;
     if (path.basename(f) === "xprov-permit.cjs" && (fn === "permit" || fn === "permitDeny")) { inPermit++; return; }
+    // spec 016 wave 2: the chat channel is the second sanctioned writer (xprov consent record / revoke), at three named functions only.
+    if (path.basename(f) === "xprov-consent-record.cjs" && (fn === "writeYes" || fn === "writeNo" || fn === "revokeConsent")) { inConsent++; return; }
     bad.push(rel + ":" + (i + 1) + " in " + (fn || "top level"));
   });
 }
-process.stdout.write(JSON.stringify({ bad, inPermit, requirers }));
+process.stdout.write(JSON.stringify({ bad, inPermit, inConsent, requirers, removeOnly }));
 '
 casePS9() {
   local j; j="$(node -e "$SCAN15" "$REPO_ROOT" 2>&1)"
   assert_json "PS9 no file outside xprov-permit.cjs permit/permitDeny references writePermits/withPermit" "$j" "JSON.stringify(j.bad)" "[]"
   assert_json "PS9 xprov-permit.cjs references them inside permit and permitDeny (a scan that sees nothing is no proof)" "$j" "j.inPermit >= 2" "true"
-  assert_json "PS9 the module is required by xprov-permit.cjs only" "$j" "j.requirers.join(',')" "xprov-permit.cjs"
+  assert_json "PS9 the consent record module references them inside writeYes, writeNo and revokeConsent only (spec 016 wave 2)" "$j" "j.inConsent >= 3" "true"
+  assert_json "PS9 withPermit in revokeConsent and writeNo only removes (last argument null); the scan sees at least 2 such calls" "$j" "JSON.stringify(j.removeOnly.bad) + '|' + (j.removeOnly.checked >= 2)" "[]|true"
+  assert_json "PS9 the module is required by xprov-permit.cjs and the consent record module only (spec 016 wave 2)" "$j" "j.requirers.join(',')" "xprov-consent-record.cjs,xprov-permit.cjs"
   # discriminator: plant a writer call in another module and in permitCheck of a tree copy → the scan must flag both
   local cp="$TMP15/scan-tree"; rm -rf "$cp"; mkdir -p "$cp"; cp -R "$REPO_ROOT/_shared" "$cp/_shared"
   printf 'const P = require("./xprov-permits.cjs");\nfunction leak() { return P.writePermits({}); }\nmodule.exports = { leak };\n' >> "$cp/_shared/lib/xprov-gate.cjs"
   node -e 'const fs=require("fs"); const f=process.argv[1]; const s=fs.readFileSync(f,"utf8"); fs.writeFileSync(f, s.replace("function permitHint(state) {", "function permitHint(state) {\n  require(\"./xprov-permits.cjs\").withPermit({}, \"k\", null);"))' "$cp/_shared/lib/xprov-permit.cjs"
+  node -e 'const fs=require("fs"); const f=process.argv[1]; const s=fs.readFileSync(f,"utf8"); const n="function recordConsent(o) {"; if (s.split(n).length !== 2) process.exit(3); fs.writeFileSync(f, s.replace(n, () => n + "\n  PM.writePermits({});"))' "$cp/_shared/lib/xprov-consent-record.cjs" || bad "PS9 harness: recordConsent needle"
   j="$(node -e "$SCAN15" "$cp" 2>&1)"
   assert_json "PS9 discriminator: a writer call planted in xprov-gate.cjs is flagged" "$j" "j.bad.some((b) => b.startsWith('_shared/lib/xprov-gate.cjs'))" "true"
+  assert_json "PS9 discriminator: a writer call planted in recordConsent (not a sanctioned function) is flagged" "$j" "j.bad.some((b) => b.includes('xprov-consent-record.cjs') && b.includes('recordConsent'))" "true"
   assert_json "PS9 discriminator: a writer call planted in permitHint is flagged" "$j" "j.bad.some((b) => b.includes('xprov-permit.cjs') && b.includes('permitHint'))" "true"
+  # MINOR-8b discriminators: a direct writeGuardedStore of the permit store, and a withPermit that SETS an entry inside writeNo
+  printf 'const A = require("./xprov-approve.cjs");\nfunction sneak() { return A.writeGuardedStore("permits.json", { version: 1, permits: {} }); }\nmodule.exports = { sneak };\n' >> "$cp/_shared/lib/xprov-run.cjs"
+  node -e 'const fs=require("fs"); const f=process.argv[1]; const s=fs.readFileSync(f,"utf8"); const n="  return (p.stores.permits.permits[p.key] ? step(\x27remove the permit entry\x27, \x27nothing was changed\x27, () => PM.writePermits(PM.withPermit(p.stores.permits.permits, p.key, null)))"; if (s.split(n).length !== 2) process.exit(3); fs.writeFileSync(f, s.replace(n, () => "  void PM.withPermit(p.stores.permits.permits, p.key, entry);\n" + n))' "$cp/_shared/lib/xprov-consent-record.cjs" || bad "PS9 harness: writeNo needle"
+  j="$(node -e "$SCAN15" "$cp" 2>&1)"
+  assert_json "PS9 discriminator: writeGuardedStore('permits.json') planted in xprov-run.cjs is flagged" "$j" "j.bad.some((b) => b.startsWith('_shared/lib/xprov-run.cjs'))" "true"
+  assert_json "PS9 discriminator: a withPermit that sets an entry inside writeNo is flagged as not removal-only" "$j" "j.removeOnly.bad.length >= 1 && j.removeOnly.bad[0].includes('writeNo')" "true"
   rm -rf "$cp"
 }
 

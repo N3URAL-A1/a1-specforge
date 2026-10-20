@@ -184,8 +184,20 @@ const INTENT_HELP = `  a1-tools intent <sub> [flags]
                   <12 hex>/ with a sha256 manifest and writes
                   ~/.a1-intents-seal/empty-mcp.json; run verifies it before every
                   spawn. B1 measured WIDENS (2026-09-28): every skill's
-                  allowed-tools is rewritten to its row list. Re-run after
-                  every plugin update.
+                  allowed-tools is rewritten to its row list. After a plugin
+                  update use 'intent post-update' (below), not this alone.
+  a1-tools intent post-update
+                  (spec 016 FR-033, executor host only, no arguments) the one
+                  owner step after 'claude plugin update a1-specforge': runs
+                  'intent seal', then 'intent install-agent --force', and
+                  prints one combined JSON result. Each step keeps its own
+                  guards (stdin and stdout TTY, no CLAUDECODE / CLAUDE_PID /
+                  CLAUDE_CODE_* variable, no Claude Code ancestor, not in
+                  intent child mode, the owner types "yes" for each step). A
+                  refused seal means the install does not run. Exit 0 both
+                  done, 1 a step refused (stdout names the step), 2 usage.
+                  'intent device add' and 'intent approve' stay separate
+                  terminal steps.
   a1-tools git status|diff|add|commit|log [args]
                   (wave 6, intent child mode only; exit 2 outside it) git for
                   the child of a write intent, per action allowlist. Fixed
@@ -206,10 +218,10 @@ const INTENT_HELP = `  a1-tools intent <sub> [flags]
                   with a reason, unless: 'intent doctor' passes, the seal
                   verifies (FR-040), node and claude are on PATH, and
                   A1_VAULT_ROOT is set (A1_HOST_ID is carried when set). The
-                  plist runs the SEALED copy's a1-tools (re-run with --force
-                  after every 'intent seal'). It is written 0600 to
-                  ~/Library/LaunchAgents/ and never replaces a differing file
-                  without --force; then '/bin/launchctl bootstrap gui/<uid>'.
+                  plist runs the SEALED copy's a1-tools (after a plugin update
+                  run 'intent post-update', which seals and reinstalls). It is
+                  written 0600 to ~/Library/LaunchAgents/ and never replaces a
+                  differing file on its own; then '/bin/launchctl bootstrap gui/<uid>'.
                   --uninstall: bootout, remove the plist. --status: state and
                   last exit of the job, whether the plist still points at the
                   current seal, and the last 5 lines of ~/.a1-intents/log.jsonl.

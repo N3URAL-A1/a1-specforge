@@ -1,0 +1,136 @@
+'use strict';
+
+// help-xprov-consent — the help text of `a1-tools xprov consent` (spec 016, wave 2), split out of help-xprov.cjs.
+// Tier-0 wording only: a record the same OS user could write; the audit chain makes a naive forgery visible and prevents nothing.
+
+const CONSENT_HELP = `    consent question|ensure|record|revoke  --kind consent|classification [--repo <git-toplevel>]
+          [--ludwig-record <vault path>]
+    consent question --kind consent|classification --phase <name>
+                  (ask once per phase, spec 016 wave 5; xprov-consent-asked.cjs)
+    consent question|ensure --kind waiver|allowlist, consent waive, consent allowlist
+          (--phase <name> | --work-path <worktree> | --scan <snap-basename>) [--repo <git-toplevel>]
+                  (spec 016 FR-002, FR-003, FR-005, FR-007, FR-008; xprov-consent*.cjs)
+                  The owner's yes to "may this repo go to Codex" as a chat answer,
+                  no terminal. question: prints the canonical AskUserQuestion input
+                  (header xprov-Freigabe or xprov-Einstufung, German text, one
+                  question, the No label first, hash). ensure: state of the open
+                  marker (none|pending|answered|expired|used) and whether to ask;
+                  a second asker polls it and does not ask again; exit 0 only when
+                  an answer is ready. record: turns a matching, unexpired (10 min),
+                  unused marker with a real owner answer into the stores:
+                  yes -> permits.json entry + .a1/xprov.json + consent.json evidence;
+                  No -> an owner-chat denial (a later yes is refused until \`consent
+                  revoke\`); no answer -> nothing written, exit 1.
+                  The answer is never an argument: the plugin hook reads it from the
+                  real tool result and derives yes/no from the label itself. The
+                  marker's repo, kind, question hash, nonce, tool_use_id and
+                  session_id catch a stale, mixed-up or copied marker. They do not
+                  prove who answered: the ids and the nonce sit in a file the same
+                  OS user can read and write.
+                  A customer repo (no origin, a list of origins, or an origin outside
+                  N3URAL-A1) is refused until the owner answered the xprov-Einstufung
+                  question, which names the a1-ludwig-legal record
+                  (\`question|ensure|record --kind classification --ludwig-record
+                  <record/... or project/....md>\`, a regular file under
+                  $A1_VAULT_ROOT, shown in the question text), and the consent yes
+                  passes the SAME --ludwig-record. Without $A1_VAULT_ROOT a customer
+                  repo is refused.
+                  Ask once per phase (FR-002), enforced in code: question --kind
+                  consent|classification needs --phase <name>, the exact name of an
+                  existing .a1/phases/<name> (a lookalike such as P25 for p25 on a
+                  case-insensitive disk resolves to the listed name; the entry also
+                  holds the directory's device + inode, so a renamed phase is still
+                  the same phase). --run <absolute worktree> (instead of --phase) scopes
+                  the one ask of a PR review run (a1-pr-review, wave 10). The first call for repo + kind + phase
+                  records the ask in ~/.a1-xprov/consent-asked.json (audit line
+                  consent-asked) and prints the question. Every later call for the
+                  same repo + kind + phase is refused (exit 1, reason
+                  already_asked_this_scope, no question text) after an owner No, after
+                  an unanswered or expired question and after \`consent revoke\`:
+                  revoke never touches this store, so an agent cannot revoke a No and
+                  ask again in the phase. The one exception is the same question (same
+                  hash) while its marker is still open (pending or answered): it is
+                  shown again. An unusable store refuses (asked_store_unusable) and is
+                  never overwritten. A new phase may ask once. A refusal means: no
+                  question, Reinhard-only. Waiver and allowlist questions are not
+                  covered (their targets change by design).
+                  A classification question is put only after an owner yes to the
+                  consent question of the same phase (reason
+                  classification_needs_consent_yes otherwise, no question text).
+                  The hook enforces the same ledger: the canonical consent or
+                  classification AskUserQuestion is let through only after \`consent
+                  question\` recorded it (else deny consent_not_asked); one entry opens
+                  exactly one marker (a second ask after the marker was used or expired
+                  is denied consent_already_asked). A customer repo burns its ask when
+                  the question is only printed (fail-safe).
+                  Tier 0: the same OS user could delete the file or create a new phase
+                  directory; the audit chain shows every ask.
+                  revoke: removes the repo's permit, denial, evidence and unused
+                  markers whatever channel wrote them; the next send asks again. An
+                  unusable consent or denial store is reported (exit 1,
+                  revoke_partial) and left alone; the permit is removed anyway.
+                  waive (wave 3, FR-013): question|ensure --kind waiver (--phase <name> |
+                  --work-path <worktree>) puts ONE xprov-Waiver question per phase
+                  listing every gate target that is failed now, read by the command
+                  from xreview/index.json and the run records (never from arguments):
+                  gate, repo, phase, PLAN.md sha256, wave, lane, head, base, the fail
+                  reason and the open BLOCKER/MAJOR titles. \`consent waive\` with the
+                  same flags writes one waiver record per listed target (by
+                  owner-chat, the shape of the terminal waive) against a matching
+                  owner yes. A target that changed (new PLAN.md sha, new head) or a
+                  gate that failed after the question changes the question: nothing
+                  is written, a new question is needed. The consent to send never
+                  implies a waiver. A waiver is not a pass.
+                  allowlist (wave 3, FR-014): question|ensure --kind allowlist --scan
+                  <snap-basename> lists the hits of one secret scan (path, line, rule,
+                  blob sha256, a fixed mask instead of an excerpt; the matched text is
+                  never read). \`consent allowlist --scan <snap-basename>\` writes one
+                  hit approval per listed hit (repo, path, rule, blob sha256, scan, by
+                  owner-chat, audit link) into its OWN store hit-approvals.json, against
+                  a matching owner yes; a changed blob or a new hit needs a new
+                  question. It never writes allowlist-approvals.json; a hit blob that
+                  reads as an allowlist document is refused (the terminal allowlist
+                  approve stays the only way to approve an allowlist file).
+                  Tier 0: every owner write appends a hash-chained line to
+                  ~/.a1-xprov/consent-audit.jsonl first. The stores are records the
+                  same OS user could write; the chain makes a naive forgery
+                  visible (permit-check: audit missing|broken, enforcement:
+                  unenforced) and prevents nothing. Dev install: bin/install.sh
+                  installs no plugin hook, so no marker is ever answered there and
+                  record writes nothing (the Reinhard-only path applies).
+                  Plugin hook (wave 4, FR-004/FR-005; hooks/hooks.json, active after
+                  \`claude plugin update a1-specforge\`): a consent question (header
+                  xprov-Freigabe, -Einstufung, -Waiver, -Allowlist, or any xprov-*) is
+                  put only byte-equal to what \`consent question\` prints, alone, without
+                  an answers field; the hook opens the marker on that call and records
+                  the pending yes only from the PostToolUse tool_response of the same
+                  tool_use_id. It denies Edit/Write/NotebookEdit/MultiEdit of
+                  ~/.a1-xprov/ (path and device + inode), .a1/xprov.json, every file of
+                  the installed a1-specforge plugin cache, and every file where a hook
+                  can be defined or all hooks switched off: settings*.json (user, project,
+                  local), managed-settings*.json, hooks/hooks.json (this checkout's own
+                  excepted), plugin.json and marketplace.json (a hooks entry added or
+                  changed), any .json under ~/.claude/plugins, SKILL.md, and
+                  .md files below a directory named agents or commands (whole file).
+                  The rule is monotone, with no old-vs-new comparison: an edit that
+                  changes such a file is denied when the old or the new whole content
+                  holds PreToolUse/PermissionRequest (any case), an escape sequence
+                  (in an .md only inside its frontmatter),
+                  disableAllHooks / allowManagedHooksOnly, an a1-specforge enabledPlugins
+                  entry, or (manifests) a hooks key. A settings file that already holds a
+                  hook is therefore owner territory: change it with Bash or by hand. A
+                  \$CLAUDE_CONFIG_DIR counts as ~/.claude; paths match lexical and real.
+                  Dev edits of this repo's own hooks/hooks.json from a worktree are
+                  denied when the hook runs from the plugin cache: use Bash (the dev copy
+                  is no live hook source). A NotebookEdit of such a file is
+                  always denied. A crash or timeout of the hook blocks the call (exit 2,
+                  onFailure block).
+                  NOT closed (tier 0 residuals): a Bash write of any of these files, a
+                  store or a settings file; the script of a hook that already exists;
+                  MDM and server-managed settings; the --settings, --agents and
+                  --plugin-dir launch flags; a hooks .json that a plugin.json names
+                  outside ~/.claude/plugins and that is not called hooks.json; cloud
+                  and self-hosted sessions; \`claude plugin disable\` and the /plugin UI.
+                  Exit: 0 ok · 1 refused (stdout JSON \`reason\`) · 2 usage error.`;
+
+module.exports = { CONSENT_HELP };

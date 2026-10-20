@@ -1,0 +1,4 @@
+scripts/build-fonts.mjs
+src/styles/fonts.css
+src/styles/fonts/LICENSE-Inter.txt
+src/styles/fonts/LICENSE-SourceSerif4.txt

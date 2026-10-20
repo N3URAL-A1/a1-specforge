@@ -1,0 +1,76 @@
+{
+  "status": "completed",
+  "mode": "review",
+  "provider": "codex",
+  "roles": {
+    "host": "claude",
+    "planner": "claude",
+    "reviewer": "codex",
+    "builder": "claude",
+    "inspector": "codex"
+  },
+  "repo": "/Users/rob/.a1-xprov/snapshots/snap-W9ZMRl",
+  "plan": "/Users/rob/.a1-xprov/snapshots/snap-W9ZMRl.inputs/PLAN.md",
+  "plan_sha256": "2c2af732e96d7e9297f656af03d63c7d44aecb4bb4d65e1f763caf2f6d95173f",
+  "requested_model": null,
+  "requested_effort": null,
+  "base": null,
+  "snapshot": null,
+  "previous": null,
+  "started_at": 1791866347.835881,
+  "artifacts": "/Users/rob/.a1-xprov/artifacts/infra-rename-a1-office/claudex-2jfhndmq",
+  "cli_version": "codex-cli 0.155.1",
+  "executable": [
+    "/opt/homebrew/lib/node_modules/@openai/codex/bin/codex.js"
+  ],
+  "exit_code": 0,
+  "session_id": "01a1338e-a231-7362-9915-c9be4630c5ca",
+  "response": {
+    "verdict": "REVISE",
+    "summary": "The revised plan improves cutover safeguards, but rollback guidance and deletion gates still contain concrete defects.",
+    "findings": [
+      {
+        "id": "R1",
+        "severity": "medium",
+        "path": "docs/OPERATIONS.md:654",
+        "evidence": "Wave 3 step 2b fixes <registry> to a1-office when resolving historical revisions. However, only digest D is copied; step 2 explicitly says older rollback images such as 98252af remain exclusively in the old namespace. Following the proposed guidance for such a revision produces a missing image. Furthermore, resolving a historical tag today does not establish its previously deployed digest: build-image.yml:71–81 explicitly documents that rebuilding a commit overwrites its tag with different content.",
+        "fix": "Document rollback targets as verified full repository-and-digest pairs recorded when deployed. Preserve the old registry path for retained older images and the namespace-failure rollback until deletion. Do not treat current tag resolution as proof of a historical healthy digest; verify availability of the selected exact reference before changing the Deployment."
+      },
+      {
+        "id": "R2",
+        "severity": "medium",
+        "path": ".github/workflows/build-image.yml:45",
+        "evidence": "Wave 4 gate c explicitly excludes other remote branches as 'not deployable'. This workflow explicitly supports branch selection, checks out the selected ref, and pushes using its own IMAGE value and SCW_SECRET_KEY (lines 95–157). A retained branch containing the old workflow can therefore still be dispatched after the freeze ends and attempt to publish to the deleted namespace. Checking worktrees and open PRs does not cover these executable refs.",
+        "fix": "Include all dispatchable refs carrying the old registry workflow in the deletion decision. Update or retire them, or enforce a restriction outside those stale workflow files that prevents their registry-writing runs. Verify that restriction before deleting the namespace."
+      },
+      {
+        "id": "R3",
+        "severity": "high",
+        "path": ".a1/phases/infra-rename-a1-office/PLAN.md:191",
+        "evidence": "Wave 4 gate b ends the entire kubectl pipeline with '|| true'. If the all-namespace inventory fails, for example because the operator can read n3ural but lacks cluster-wide list permissions, grep receives no images and prints 0; the pipeline succeeds even with pipefail enabled. Both pre/post inventories can consequently record B=0 while the namespaced live re-check succeeds, allowing irreversible deletion without inspecting other workloads.",
+        "fix": "Fetch each required inventory separately and require successful exit before parsing it. Count matches from the successfully captured data, tolerating only grep's no-match status. Apply explicit acquisition/error checks to ReplicaSet, Git/PR, and registry inventories as well; failed reads must stop deletion rather than become empty inventories."
+      }
+    ],
+    "coverage": [
+      "Read the supplied plan and verified its SHA256 matches the requested hash.",
+      "Read phase RESEARCH.md and MAP.md and inspected the planned infra label, selector, image-placeholder, and documentation changes.",
+      "Traced build-image.yml registry login, branch selection, image tags, cache writes, and deployment summaries.",
+      "Inspected deploy.yml, uptime-monitor.yml, OPERATIONS.md, runtime-cutover references, registry cleanup guidance, and QA setup image references.",
+      "Reviewed copy, authentication, blob verification, rollout, rollback, freeze, and deletion commands statically; inspected relevant cron test assertions without executing tests."
+    ],
+    "limitations": [
+      "No files changed, tests run, or work delegated.",
+      "Live cluster state, registry contents, IAM permissions, GitHub settings, remote refs, and historical production measurements were not independently verified.",
+      "This reviews the proposed plan against repository evidence, not an implemented change."
+    ]
+  },
+  "usage": {
+    "input_tokens": 207956,
+    "cached_input_tokens": 146432,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 1947,
+    "reasoning_output_tokens": 271
+  },
+  "observed_models": [],
+  "elapsed_seconds": 75.74
+}

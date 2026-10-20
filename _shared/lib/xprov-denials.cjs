@@ -29,6 +29,7 @@ const C = require('./xprov-common.cjs');
 const DENIALS_FILE = 'permit-denials.json';
 const STORE_LABEL = 'permit denial store';
 const ENTRY_KEYS = Object.freeze(['decided_by', 'decided_on', 'ts']);
+const AUDITED_KEYS = Object.freeze([...ENTRY_KEYS, 'audit']); // spec 016 SEC-1: `audit` = sha256 of the audit line of the denial
 
 const guarded = () => require('./xprov-allowlist.cjs');
 const writer = () => require('./xprov-approve.cjs').writeGuardedStore;
@@ -41,7 +42,8 @@ function parseDenialsDoc(doc) {
   if (!AL.exactKeys(doc, ['version', 'denials']) || doc.version !== 1 || !C.isPlainObject(doc.denials)) return null;
   const denials = {};
   for (const [key, entry] of Object.entries(doc.denials)) {
-    if (!AL.exactKeys(entry, ENTRY_KEYS) || !ENTRY_KEYS.every((k) => typeof entry[k] === 'string' && entry[k] !== '')) return null;
+    const keys = C.isPlainObject(entry) && 'audit' in entry ? AUDITED_KEYS : ENTRY_KEYS;
+    if (!AL.exactKeys(entry, keys) || !keys.every((k) => typeof entry[k] === 'string' && entry[k] !== '')) return null;
     denials[key] = Object.freeze({ ...entry });
   }
   return denials;

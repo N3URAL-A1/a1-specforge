@@ -1,0 +1,77 @@
+{
+  "status": "completed",
+  "mode": "review",
+  "provider": "codex",
+  "roles": {
+    "host": "claude",
+    "planner": "claude",
+    "reviewer": "codex",
+    "builder": "claude",
+    "inspector": "codex"
+  },
+  "repo": "/Users/rob/.a1-xprov/snapshots/snap-YoQjUk",
+  "plan": "/Users/rob/.a1-xprov/snapshots/snap-YoQjUk.inputs/PLAN.md",
+  "plan_sha256": "982388d5a7d13526243903b6e16690add65957db0d03761ec514dcfb725d8f14",
+  "requested_model": null,
+  "requested_effort": null,
+  "base": null,
+  "snapshot": null,
+  "previous": null,
+  "started_at": 1791837461.695578,
+  "artifacts": "/Users/rob/.a1-xprov/artifacts/infra-rename-a1-office/claudex-rbpqulw_",
+  "cli_version": "codex-cli 0.155.1",
+  "executable": [
+    "/opt/homebrew/lib/node_modules/@openai/codex/bin/codex.js"
+  ],
+  "exit_code": 0,
+  "session_id": "01a131d5-e738-7261-95a0-b75565a7ab70",
+  "response": {
+    "verdict": "BLOCKED",
+    "summary": "Required RESEARCH.md and MAP.md for this phase are absent from the snapshot and supplied inputs, preventing full spec-fidelity review. The inspected plan also contains concrete defects requiring revision.",
+    "findings": [
+      {
+        "id": "R1",
+        "severity": "high",
+        "path": "PLAN.md — Wave 2, B5b overlap/removal script",
+        "evidence": "The script force-removes every local image with any overlapping layer and no container reference. An unrelated, locally built image sharing the Alpine base qualifies, including an untagged image that cannot be restored. The EXIT trap only pulls recorded non-Scaleway tags; it cannot restore unpushed images and may replace mutable tags with different content.",
+        "fix": "Use an isolated disposable image store for the supplementary pull, or omit cache removal and record degradation. Do not force-remove arbitrary images selected solely by layer overlap."
+      },
+      {
+        "id": "R2",
+        "severity": "medium",
+        "path": "PLAN.md — Task 3.1 step 1; automation/registry/README.md:49",
+        "evidence": "The planned blanket replacement moves the historical digest-retrieval example to a1-office, although B3 copies only digest D. The surrounding text discusses 17 deleted historical tags and demonstrates digest 630e2fae…, which the plan never copies. The rollback-tag example at README.md:87 similarly follows a table identifying 98252af, also not copied. Readers following these examples against the new namespace lose the documented recovery path.",
+        "fix": "Keep historical recovery examples explicitly bound to the old namespace. Add separate instructions for images built or copied into a1-office, and adjust the fixed replacement counts accordingly."
+      },
+      {
+        "id": "R3",
+        "severity": "high",
+        "path": "PLAN.md — Wave 2, B0 through B7",
+        "evidence": "The live image is checked only at B0, before several approval pauses and image operations. docs/OPERATIONS.md:569 documents a separate manual writer to the same deployment; the build workflow also emits manual rollout commands. If another deploy occurs after B0, B6 silently replaces that newer release with D, and the preauthorized rollback also restores the stale D. The plan has no deployment exclusion or immediate state guard.",
+        "fix": "Establish a deployment maintenance lock covering cutover and rollback. Immediately before B6, verify the deployment image and relevant revision still match B0, preferably using an atomic conditional patch. Stop and rebaseline if they changed; ensure rollback cannot overwrite an intervening deployment."
+      }
+    ],
+    "coverage": [
+      "Verified the supplied PLAN.md SHA256 matches the requested hash.",
+      "Inspected the seven Wave 1 infrastructure files, including selectors, image configuration, pull-secret references and probes.",
+      "Inspected build-image.yml and deploy.yml, tracing registry pushes, build-cache writes, manual rollout instructions and rollback guidance.",
+      "Inspected Wave 3 target references and registry cleanup/recovery documentation.",
+      "Read the CI classifier and the two proposed unit-test files without executing them.",
+      "Searched related scripts, workflows, infrastructure, automation and runbooks for registry references and deployment writers."
+    ],
+    "limitations": [
+      "Phase RESEARCH.md and MAP.md were not available; their scope and cited measurements could not be inspected.",
+      "No tests or plan scripts were executed, no files were changed, and no work was delegated.",
+      "Production, registry, local Docker state, remote branches and open PRs were not inspected; live measurements remain assertions supplied by the plan."
+    ]
+  },
+  "usage": {
+    "input_tokens": 136181,
+    "cached_input_tokens": 86656,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 1513,
+    "reasoning_output_tokens": 172
+  },
+  "observed_models": [],
+  "elapsed_seconds": 53.62
+}

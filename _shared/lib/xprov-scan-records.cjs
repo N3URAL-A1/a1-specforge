@@ -69,6 +69,7 @@ function ensureDir0700(dir) {
 
 /** Atomic write of the record for `basename`; returns the path. Throws on an off-format doc or any fs failure. */
 function writeScanRecord(basename, doc) {
+  require('./xprov-owner-home.cjs').assertWritable(); // spec 016 FR-009: no byte when $HOME differs from the OS user's home
   if (parseScanRecord(doc) === null) throw C.inputError('scan record has an unknown format; refusing to write it', 'scan_record_format');
   const target = recordPath(basename);
   ensureDir0700(X.xprovHome());
@@ -122,6 +123,7 @@ function readScanRecord(basename) {
 
 /** Removes the record of `basename` (a symlink is unlinked, never followed). Returns true when something was removed. */
 function removeScanRecord(basename) {
+  require('./xprov-owner-home.cjs').assertWritable(); // SEC-6: a remove is a write
   const file = recordPath(basename);
   let st = null;
   try {
@@ -138,6 +140,7 @@ function removeScanRecord(basename) {
  * (`snapshotExists(basename)` decides). Only `snap-*.json` regular files are touched.
  * Returns { root, removed: [paths], kept: [paths] }. */
 function sweepScanRecords(maxAgeDays, snapshotExists, nowMs) {
+  require('./xprov-owner-home.cjs').assertWritable(); // SEC-6
   const root = scanRecordsDir();
   const out = { root, removed: [], kept: [] };
   let d;
