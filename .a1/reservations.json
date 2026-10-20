@@ -13,10 +13,11 @@
         "agents/a1-pablo-planner.md",
         "agents/a1-vincente-vibe-optimizer.md",
         "agents/a1-adam-auditor.md",
-        "_test-fixtures/a1-depth-pass/"
+        "_test-fixtures/a1-depth-pass/",
+        "_shared/gates-registry.md"
       ],
       "by": "019-depth-pass-planning",
-      "at": "2026-10-18T21:59:17.680Z",
+      "at": "2026-10-20T17:35:19.113Z",
       "stage": "verify"
     }
   ]
