@@ -22,6 +22,8 @@ fail=0
 # reads anywhere in the code-scope path).
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/a1-code-scope-test.XXXXXX")"
 FILE="$WORK/reservations.json"
+# spec 017: a gate call logs into the git work tree of its cwd; gate calls that need `--phase` run in this throwaway repo
+GATE_CWD="$WORK/gate-cwd"; mkdir -p "$GATE_CWD" && git -C "$GATE_CWD" init -q || exit 1
 
 assert_rc() {
   local name="$1" expected="$2" actual="$3" out="$4"
@@ -506,7 +508,7 @@ assert_rc "trailing-slash-dot-dot-is-directory" 1 $? "$OUT"
 RF="$WORK/reclaim-4.json"
 node "$TOOLS" code-scope claim --by fa --scope "docs/v1.2/" --file "$RF" >/dev/null 2>&1
 BEFORE="$(cat "$RF")"
-OUT="$(node "$TOOLS" code-scope claim --by fa --scope "docs/v1.2" --file "$RF" 2>&1)"
+OUT="$(cd "$GATE_CWD" && node "$TOOLS" code-scope claim --by fa --scope "docs/v1.2" --file "$RF" --phase fx-code-scope 2>&1)"
 assert_rc "reclaim-narrower-idempotent" 0 $? "$OUT"
 expect_eq "reclaim-narrower-no-write" "$BEFORE" "$(cat "$RF")"
 expect_eq "reclaim-narrower-not-widened" "undefined" "$(rc_json "$OUT" 'j.widened')"
@@ -526,7 +528,7 @@ RF="$WORK/reclaim-6.json"
 node "$TOOLS" code-scope claim --by fa --scope "docs/v1.2,src/a.ts" --file "$RF" >/dev/null 2>&1
 node "$TOOLS" code-scope stage --by fa --set review --file "$RF" >/dev/null 2>&1
 AT="$(rc_json "$(cat "$RF")" 'j.reservations[0].at')"
-OUT="$(node "$TOOLS" code-scope claim --by fa --scope "src/a.ts,docs/v1.2/" --file "$RF" 2>&1)"
+OUT="$(cd "$GATE_CWD" && node "$TOOLS" code-scope claim --by fa --scope "src/a.ts,docs/v1.2/" --file "$RF" --phase fx-code-scope 2>&1)"
 assert_rc "reclaim-widen-multi-ok" 0 $? "$OUT"
 expect_eq "reclaim-widen-keeps-meta" "true|review|$AT|docs/v1.2/,src/a.ts" \
   "$(rc_json "$OUT" 'j.widened+"|"+j.reservation.stage+"|"+j.reservation.at+"|"+j.reservation.paths.join(",")')"

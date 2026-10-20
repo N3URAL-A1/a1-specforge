@@ -204,11 +204,11 @@ assert_rc "missing-required-flag" 1 "$RC" "$OUT"
 # multi-reason-lists-all: two independent failures at once (files AND diff
 # over budget) -> reasons[] must contain >= 2 entries, not just the first
 # =============================================================================
-OUT="$(node "$TOOLS" quick eligibility \
+OUT="$(cd "$CLEAN_REPO" && node "$TOOLS" quick eligibility \
   --intent "Fix the typo in the footer copyright year." \
   --files 5 --diff-lines 200 --scope src/components/Footer.tsx \
   --no-migration --no-new-route --no-new-dep \
-  --repo-root "$CLEAN_REPO" --file "$RESV" --by quick-multi 2>&1)"
+  --repo-root "$CLEAN_REPO" --file "$RESV" --by quick-multi --phase fx-quick 2>&1)"
 RC=$?
 assert_rc "multi-reason-part1" 1 "$RC" "$OUT"
 REASON_COUNT="$(node -e '
@@ -240,11 +240,11 @@ assert_rc "hostile-path-traversal-scope" 1 "$RC" "$OUT"
 # executed. Assert no side-effect marker file is created and the command
 # still returns a clean, parseable JSON verdict.
 MARKER="$WORK/injection-marker"
-OUT="$(node "$TOOLS" quick eligibility \
+OUT="$(cd "$CLEAN_REPO" && node "$TOOLS" quick eligibility \
   --intent "Fix the footer; \$(touch $MARKER) \`touch $MARKER\`" \
   --files 1 --diff-lines 10 --scope src/components/Footer.tsx \
   --no-migration --no-new-route --no-new-dep \
-  --repo-root "$CLEAN_REPO" --file "$RESV" --by quick-injection 2>&1)"
+  --repo-root "$CLEAN_REPO" --file "$RESV" --by quick-injection --phase fx-quick 2>&1)"
 RC=$?
 if [[ -e "$MARKER" ]]; then
   echo "FAIL  hostile-injection-intent: injected side effect occurred — $MARKER was created"
