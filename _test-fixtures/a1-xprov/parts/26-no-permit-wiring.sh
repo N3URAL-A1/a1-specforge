@@ -199,7 +199,7 @@ caseNP3() {
   prep26
   node -e '
     const fs = require("fs"); const f = process.argv[1]; const id = "plan-review-xprov";
-    fs.writeFileSync(f, fs.readFileSync(f, "utf8").split("\n").map((l) => (l.startsWith("| `" + id + "` |") ? l.replace(/\|\s*[a-z-]*\s*\|\s*$/, "| all |") : l)).join("\n"));
+    fs.writeFileSync(f, fs.readFileSync(f, "utf8").split("\n").map((l) => (l.startsWith("| `" + id + "` |") ? l.replace(/\|\s*[a-z-]*\s*(\|[^|]*\|\s*)$/, "| all $1") : l)).join("\n"));
   ' "$TREE/_shared/gates-registry.md"
   gate26 --gate "$GATE_PLAN"
   assert_json "NP3 no permit on an applies_to: all row: fail / external_review_not_permitted" "$G_OUT" "[j.verdict, j.reason].join('/')" "fail/external_review_not_permitted"
