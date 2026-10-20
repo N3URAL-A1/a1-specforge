@@ -38,6 +38,7 @@
 # | D23g | isPlaceholderLine(): always return true (real one-line answer wrongly rejected, exit 0 case) |
 # | D24  | tagFences(): remove the backtick-in-rest-of-line test (inline code span opens a fence) |
 # | D25  | PLACEHOLDER_TOKENS: add one entry without touching the doc |
+# | D26  | _shared/gates-registry.md: delete the `depth-pass` row |
 
 set -u
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -473,6 +474,16 @@ if grep -q 'a1-quick' "$DOC" 2>/dev/null \
 else
   echo "FAIL  D15 doc lacks a1-quick exemption or a sub-heading"; fail=$((fail + 1))
 fi
+
+# D26 retro validate accepts gates_fired id depth-pass (FR-012, SC-005): the registry row exists.
+# RED: delete the `depth-pass` row from _shared/gates-registry.md -> retro validate reports "unknown", exit 1.
+# Measured red 2026-10-19: row deleted on a git-archive snapshot -> D26 FAIL only
+RETRO_DIR="$(mktemp -d)"
+printf -- '---\ntype: pattern\ngates_fired:\n  - {id: depth-pass, verdict: pass, caught: false}\n---\n' > "$RETRO_DIR/retro.md"
+rc=0
+out="$(node "$TOOLS" retro validate "$RETRO_DIR/retro.md" 2>&1)" || rc=$?
+assert_rc "D26 retro validate accepts gates_fired id depth-pass" 0 "$rc" "$out"
+rm -rf "$RETRO_DIR"
 
 echo "a1-depth-pass: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]
