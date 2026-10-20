@@ -27,6 +27,7 @@
         "_shared/lib/fidelity-resolve.cjs",
         "_shared/lib/fidelity-rules.cjs",
         "_shared/lib/fidelity-ci.cjs",
+        "_shared/lib/fidelity-ci-runners.cjs",
         "_shared/lib/disposition.cjs",
         "_shared/lib/fix-class-sweep.cjs",
         "_shared/lib/pr-merge-check.cjs",
@@ -82,7 +83,7 @@
         "_shared/lib/locks.cjs"
       ],
       "by": "017-enforced-self-checks",
-      "at": "2026-10-20T22:32:53.357Z",
+      "at": "2026-10-20T23:32:55.803Z",
       "stage": "started"
     }
   ]
