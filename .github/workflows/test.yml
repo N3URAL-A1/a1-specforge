@@ -98,6 +98,13 @@ jobs:
         # _test-fixtures/a1-gates-lint proves the red path on a planted gate.
         run: node _shared/a1-tools.cjs gates lint
 
+      - name: Roadmap coherence (no vault)
+        # Spec 017 FR-033. A `done` or `in-flight` roadmap feature must carry
+        # spec_path (ROADMAP.md entry or features/<id>/feature.md). Needs no
+        # vault: the vault-backed status comparison stays a local/merge-time
+        # check. Exit 1 fails the job. Fixture: parts/07-coherence.sh (CI*).
+        run: env -u A1_VAULT_ROOT node _shared/a1-tools.cjs product validate --spec-status --ci --phase ci
+
       - name: Install/README sync check
         run: bash bin/verify-install-sync.sh
 
