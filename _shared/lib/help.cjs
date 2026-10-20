@@ -10,6 +10,11 @@ const { SPEC_INIT_HELP, VAULT_HELP } = require('./help-vault.cjs');
 const { INTENT_HELP } = require('./help-intent.cjs');
 const { XPROV_HELP } = require('./help-xprov.cjs');
 const { GATES_HELP } = require('./help-gates.cjs');
+const { VERIFY_HELP } = require('./help-verify.cjs');
+const { FIDELITY_HELP } = require('./help-fidelity.cjs');
+const { DISPOSITION_HELP } = require('./help-disposition.cjs');
+const { FIX_SWEEP_HELP } = require('./help-fix-sweep.cjs');
+const { MERGE_CHECK_HELP } = require('./help-merge-check.cjs');
 
 function usage(msg) {
   process.stderr.write(`usage error: ${msg}\n`);
@@ -610,6 +615,16 @@ ${SPEC_INIT_HELP}
                   _test-fixtures/a1-workflow-lint/snippets/, not a live catch.
 
 ${GATES_HELP}
+
+${VERIFY_HELP}
+
+${FIDELITY_HELP}
+
+${DISPOSITION_HELP}
+
+${FIX_SWEEP_HELP}
+
+${MERGE_CHECK_HELP}
 
 ${XPROV_HELP}
 

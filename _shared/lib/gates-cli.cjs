@@ -1,8 +1,8 @@
 'use strict';
 
 // ---------------------------------------------------------------------------
-// gates-cli — dispatch of the `gates` command group (spec 017, Wave 1: only
-// `gates lint`). Every path ends in process.exit with 0 / 1 / 2:
+// gates-cli — dispatch of the `gates` command group (spec 017: `gates lint`
+// (Wave 1), `gates lint --log` and `gates fired --log` (Wave 2)). Every path ends in process.exit with 0 / 1 / 2:
 //   0  every named skill calls its gate (or the row carries a live exemption)
 //   1  at least one finding
 //   2  usage error, unknown flag, hostile value, unreadable root or registry
@@ -13,6 +13,8 @@ const fs = require('fs');
 const path = require('path');
 const { parseFlags, repoRoot } = require('./io.cjs');
 const { lintGates } = require('./gates-lint.cjs');
+const { verifyChain } = require('./gate-log.cjs');
+const { readGateLog, firedYaml } = require('./retro-gatelog.cjs');
 
 const MAX_ARG_LENGTH = 4096;
 const MAX_REGISTRY_BYTES = 2 * 1024 * 1024;
@@ -70,9 +72,40 @@ function formatFinding(f) {
   return `finding: ${f.gate || '-'} — ${f.rule}: ${f.reason}${where ? ` (${where})` : ''}`;
 }
 
+/** `gates lint --log <file>`: shape + hash chain of one gate log (FR-010). */
+function cmdGatesLintLog(file) {
+  const logPath = path.resolve(process.cwd(), checkArg('log', file));
+  let result;
+  try {
+    result = verifyChain(logPath);
+  } catch (_e) {
+    die(`gate log unreadable: ${logPath}`);
+  }
+  process.stdout.write(`${JSON.stringify({ log: logPath, lines: result.lines, problems: result.problems })}\n`);
+  for (const p of result.problems) process.stderr.write(`finding: ${p.rule} at line ${p.line}: ${p.reason}\n`);
+  process.exit(result.ok ? 0 : 1);
+}
+
+/** `gates fired --log <file>`: print the gates_fired YAML block derived from the log. */
+function cmdGatesFired(argv) {
+  const flags = parseFlags(argv, { log: 'string' });
+  if (flags._.length > 0) die(`unexpected argument: ${flags._[0]} (usage: gates fired --log <file>)`);
+  if (flags.log === undefined) die('gates fired needs --log <file>');
+  const logPath = path.resolve(process.cwd(), checkArg('log', flags.log));
+  let log;
+  try {
+    log = readGateLog(logPath);
+  } catch (e) {
+    die(e.message);
+  }
+  process.stdout.write(firedYaml(log.records));
+  process.exit(0);
+}
+
 function cmdGatesLint(argv) {
-  const flags = parseFlags(argv, { root: 'string', registry: 'string', today: 'string' });
-  if (flags._.length > 0) die(`unexpected argument: ${flags._[0]} (usage: gates lint [--root <path>] [--registry <path>] [--today YYYY-MM-DD])`);
+  const flags = parseFlags(argv, { root: 'string', registry: 'string', today: 'string', log: 'string' });
+  if (flags._.length > 0) die(`unexpected argument: ${flags._[0]} (usage: gates lint [--root <path>] [--registry <path>] [--today YYYY-MM-DD] | gates lint --log <file>)`);
+  if (flags.log !== undefined) return cmdGatesLintLog(flags.log);
   const inputs = resolveInputs(flags);
   const report = lintGates({
     registryText: inputs.registryText,
@@ -92,7 +125,8 @@ function cmdGatesLint(argv) {
 /** @param {string} sub @param {string[]} rest */
 function cmdGates(sub, rest) {
   if (sub === 'lint') return cmdGatesLint(rest);
-  return die(`unknown gates subcommand: ${sub === undefined ? '(none)' : sub} (expected "lint")`);
+  if (sub === 'fired') return cmdGatesFired(rest);
+  return die(`unknown gates subcommand: ${sub === undefined ? '(none)' : sub} (expected "lint" or "fired")`);
 }
 
 module.exports = { cmdGates, cmdGatesLint };

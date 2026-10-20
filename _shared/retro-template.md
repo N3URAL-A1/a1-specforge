@@ -70,6 +70,22 @@ layer earlier). `$RETRO_FILE` is the standalone retro document being
 prepared for this run — a single `gates_fired` block, not the accumulated
 per-skill store file it is about to be appended into.
 
+**`gates_fired` comes from the gate log, not from memory (spec 017).** Every
+call of a gated subcommand appends a line to
+`.a1/phases/<scope>/gate-log.jsonl` (call sites pass `--phase <scope>`). Do
+not type the block: print it and paste it.
+
+```bash
+node <repo>/_shared/a1-tools.cjs gates fired --log .a1/phases/<scope>/gate-log.jsonl
+```
+
+For `deterministic` gates, add `--gate-log <that file>` to the `retro validate`
+call above. It exits 1 when an entry has no log line, carries another verdict
+than the last log line, or when the log holds a `fail` of a `blocking` gate that
+the retro leaves out. `prompt` and `human` entries stay self-reported. Retros
+dated before `ENFORCED_SINCE` (`_shared/lib/enforced-since.cjs`) are legacy and
+skip this check.
+
 ## Write targets (in this order)
 
 1. **Learning store — required, canonical source:**

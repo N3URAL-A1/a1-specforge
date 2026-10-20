@@ -4,6 +4,8 @@ const fs = require('fs');
 const path = require('path');
 const { parseFrontmatter, fail, parseFlags, repoRoot } = require('./io.cjs');
 const { parseRegistryIds, expandRangeIds, resolveGateId } = require('./gate-ids.cjs');
+const { checkRetroAgainstLog } = require('./retro-gatelog.cjs');
+const { ENFORCED_SINCE } = require('./enforced-since.cjs');
 
 // ---------------------------------------------------------------------------
 // retro validate — Wave 2 of spec 007-retro-gate-id-validator.
@@ -204,7 +206,7 @@ function resolveRetroPath(flags) {
   if (leftovers.length > 0) {
     process.stderr.write(
       `usage error: unrecognised argument(s): ${leftovers.join(' ')}\n` +
-        '  usage: retro validate <retro-path> [--registry <path>]\n'
+        '  usage: retro validate <retro-path> [--registry <path>] [--gate-log <path>] [--enforced-since YYYY-MM-DD]\n'
     );
     process.exit(1);
   }
@@ -258,9 +260,10 @@ function loadRegistryText(flags) {
  * @param {string[]} argv
  */
 function cmdRetroValidate(argv) {
-  const flags = parseFlags(argv, { registry: 'value' });
+  const flags = parseFlags(argv, { registry: 'value', 'gate-log': 'value', 'enforced-since': 'value' });
   const retroPath = resolveRetroPath(flags);
-  const expanded = expandRangeIds(parseRegistryIds(loadRegistryText(flags)));
+  const registryText = loadRegistryText(flags);
+  const expanded = expandRangeIds(parseRegistryIds(registryText));
 
   const retroText = fs.readFileSync(retroPath, 'utf8');
   const blocks = frontmatterBlocks(retroText);
@@ -272,6 +275,7 @@ function cmdRetroValidate(argv) {
   let present = false;
   let malformed = false;
   const rawEntries = [];
+  const blockInfos = [];
   for (const block of candidates) {
     let fm;
     try {
@@ -281,6 +285,7 @@ function cmdRetroValidate(argv) {
       process.exit(2);
     }
     const got = parseGatesFired(fm);
+    blockInfos.push({ date: fm.date, isEntry: got.present || fm.date !== undefined, entries: got.entries });
     if (!got.present) continue;
     present = true;
     if (got.malformed) malformed = true;
@@ -298,13 +303,15 @@ function cmdRetroValidate(argv) {
     process.exit(2);
   }
 
+  const gateLog = runGateLogCheck(flags, registryText, blockInfos);
+
   if (!present) {
     // Missing field is legitimate for read-only reporter skills
     // (retro-template.md). Nothing to validate; still print the JSON shape
     // so callers can rely on a stable contract regardless of exit path.
-    const out = { file: retroPath, entries: [], valid: 0, drift: 0, unknown: 0 };
+    const out = { file: retroPath, entries: [], valid: 0, drift: 0, unknown: 0, ...(gateLog ? { gate_log: gateLog } : {}) };
     process.stdout.write(JSON.stringify(out) + '\n');
-    process.exit(0);
+    process.exit(gateLog && gateLog.problems.length > 0 ? 1 : 0);
   }
 
   const results = rawEntries.map((entry, idx) => {
@@ -312,7 +319,35 @@ function cmdRetroValidate(argv) {
     return { id: entry.id, status: r.status, canonical: r.canonical, line: idx + 1 };
   });
 
-  reportAndExit(retroPath, results);
+  reportAndExit(retroPath, results, gateLog);
+}
+
+/**
+ * FR-009: compare the retro with the gate log. Returns null without
+ * `--gate-log`. A missing/malformed log or a bad flag value is exit 2 (a log
+ * that cannot be trusted must not read as "nothing fired").
+ * @param {object} flags @param {string} registryText @param {object[]} blockInfos
+ */
+function runGateLogCheck(flags, registryText, blockInfos) {
+  if (!('gate-log' in flags) && !('enforced-since' in flags)) return null; // present-without-value is a usage error below
+  const logPath = flags['gate-log'];
+  const since = flags['enforced-since'] === undefined ? ENFORCED_SINCE : flags['enforced-since'];
+  if (logPath === undefined || typeof logPath !== 'string' || logPath === '' || logPath.length > MAX_PATH_LEN || /[\x00-\x1f\x7f]/.test(logPath)) {
+    process.stderr.write('error: --enforced-since needs --gate-log <path>; --gate-log needs a plain path\n');
+    process.exit(2);
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(since))) {
+    process.stderr.write('error: --enforced-since must be YYYY-MM-DD\n');
+    process.exit(2);
+  }
+  try {
+    return checkRetroAgainstLog({ logPath: path.resolve(process.cwd(), logPath), registryText, blocks: blockInfos, since });
+  } catch (e) {
+    if (e.code !== 'A1_GATELOG') throw e;
+    process.stderr.write(`error: ${e.message}\n`);
+    process.exit(2);
+  }
+  return null;
 }
 
 /**
@@ -326,7 +361,7 @@ function cmdRetroValidate(argv) {
  * @param {string} retroPath
  * @param {{id: string, status: string, canonical?: string, line: number}[]} results
  */
-function reportAndExit(retroPath, results) {
+function reportAndExit(retroPath, results, gateLog) {
   const valid = results.filter((r) => r.status === 'ok').length;
   const drift = results.filter((r) => r.status === 'drift').length;
   const unknown = results.filter((r) => r.status === 'unknown').length;
@@ -337,10 +372,14 @@ function reportAndExit(retroPath, results) {
       : { id: r.id, status: r.status, line: r.line };
 
   process.stdout.write(
-    JSON.stringify({ file: retroPath, entries: results.map(toEntry), valid, drift, unknown }) + '\n'
+    JSON.stringify({ file: retroPath, entries: results.map(toEntry), valid, drift, unknown, ...(gateLog ? { gate_log: gateLog } : {}) }) + '\n'
   );
 
-  if (drift === 0 && unknown === 0) {
+  const logProblems = gateLog ? gateLog.problems : [];
+  for (const p of logProblems) {
+    process.stderr.write(`fix: gate log ${p.rule}: ${p.id} - ${p.reason}.\n`);
+  }
+  if (drift === 0 && unknown === 0 && logProblems.length === 0) {
     process.exit(0);
   }
 
