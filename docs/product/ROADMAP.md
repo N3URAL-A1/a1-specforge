@@ -56,6 +56,8 @@ features:
     depends_on: []
     started: 2026-07-10
     finished: 2026-07-10
+    spec_path: project/a1-specforge/spec/001-roadmap-gate-parallel-features.md
+    plan_path: null
   - id: 002-product-docs-layer
     milestone: continuous
     title: "Project Product Docs: docs/product layer + adopt mode"
@@ -65,6 +67,8 @@ features:
       - 001-roadmap-gate-parallel-features
     started: 2026-07-10
     finished: 2026-09-13
+    spec_path: project/a1-specforge/spec/002-product-docs-layer.md
+    plan_path: null
   - id: 007-retro-gate-id-validator
     milestone: continuous
     title: "Machine guards for false-green evidence: gate-id validator, workflow lint, glob liveness"
@@ -143,7 +147,7 @@ features:
     depends_on: []
     started: 2026-10-14
     finished: null
-    spec_path: null
+    spec_path: project/a1-specforge/spec/010-vault-cockpit-contract.md
     plan_path: null
   - id: 011-intent-queue-consumer
     milestone: continuous
@@ -154,7 +158,7 @@ features:
       - 010-vault-cockpit-contract
     started: 2026-09-26
     finished: null
-    spec_path: null
+    spec_path: project/a1-specforge/spec/011-intent-queue-consumer.md
     plan_path: null
   - id: 014-xprov-egress-hardening
     milestone: continuous
@@ -364,6 +368,10 @@ None.
 - **2026-10-20** — 019-depth-pass-planning -> merge — stage transition via `product stage`
 - **2026-10-20** — 019-depth-pass-planning -> origin-cleanup — stage transition via `product stage`
 - **2026-10-20** — 017-enforced-self-checks -> started — stage transition via `product stage`
+- **2026-10-20** — feature.md created for '001-roadmap-gate-parallel-features' — formal spec/plan attached via `product feature-init`
+- **2026-10-20** — feature.md created for '002-product-docs-layer' — formal spec/plan attached via `product feature-init`
+- **2026-10-20** — feature.md created for '010-vault-cockpit-contract' — formal spec/plan attached via `product feature-init`
+- **2026-10-20** — feature.md created for '011-intent-queue-consumer' — formal spec/plan attached via `product feature-init`
 
 ## Appendix — migrated details
 
