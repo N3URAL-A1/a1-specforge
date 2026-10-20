@@ -16,7 +16,7 @@ and `assert_rc`/`assert_true`-style helpers that print `PASS`/`FAIL  <name>` per
 last two lines of every suite are a summary echo and the exit gate:
 
 ```bash
-# from _test-fixtures/a1-reservations/run-tests.sh:14-30
+# from _test-fixtures/a1-reservations/run-tests.sh:14-33
 set -u
 # Shared temp helper: guarded, explicit template, one EXIT trap (see "Isolation").
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
@@ -24,7 +24,7 @@ set -u
 pass=0
 fail=0
 
-mk_workdir WORK reservations
+mk_workdir WORK work
 FILE="$WORK/reservations.json"
 
 assert_rc() {

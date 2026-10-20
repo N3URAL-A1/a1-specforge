@@ -60,9 +60,10 @@ xprov_listing() {
 XPROV_BEFORE="$(xprov_listing)"
 SUITE_TMP_PARENT="${TMPDIR:-/tmp}"; SUITE_ROOT="$(mktemp -d "${SUITE_TMP_PARENT%/}/a1-xprov-suite.XXXXXX")"
 [[ -n "$SUITE_ROOT" && -d "$SUITE_ROOT" ]] || { echo "FAIL  harness: mktemp for the suite root failed" >&2; exit 1; }
-trap 'rm -rf "$SUITE_ROOT"' EXIT
+trap 'a1_fx_cleanup 2>/dev/null; rm -rf "$SUITE_ROOT"' EXIT   # a1_fx_cleanup is defined by lib/tmp.sh below; both orders are safe
 export TMPDIR="$SUITE_ROOT/tmp"; mkdir -p "$TMPDIR"
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
+[[ "$A1_FX_ROOT" == "$SUITE_ROOT"/* ]] || { echo "FAIL  harness: the temp helper root $A1_FX_ROOT is not inside $SUITE_ROOT" >&2; exit 2; }
 export HOME="$SUITE_ROOT/home"; mkdir -p "$HOME/.codex"
 printf '{"fixture":true}\n' > "$HOME/.codex/auth.json"; chmod 600 "$HOME/.codex/auth.json"
 
