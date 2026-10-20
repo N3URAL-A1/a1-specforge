@@ -206,13 +206,13 @@ const WRITE_SCOPE = ['code-scope check', 'code-scope claim', 'code-scope release
 const GIT_READ = ['git diff', 'git log', 'git status'];
 const NEW_FEATURE_ALLOW = Object.freeze([
   'check reservations', 'checklist run', 'code-scope claim', 'code-scope release', 'code-scope stage',
-  'product feature-init', 'product stage', 'quick eligibility', 'realpath-check run', 'schema-check run',
+  'plan depth-check', 'product feature-init', 'product stage', 'quick eligibility', 'realpath-check run', 'schema-check run',
   'spec init', 'spec set-size', 'spec update-status', ...GIT_READ,
 ]);
 const INTENT_CHILD_ALLOWLIST = Object.freeze({
   'new-feature': NEW_FEATURE_ALLOW,
   'continue-feature': NEW_FEATURE_ALLOW,
-  plan: Object.freeze(['lane-split check', ...GIT_READ]),
+  plan: Object.freeze(['lane-split check', 'plan depth-check', ...GIT_READ]),
   execute: Object.freeze([...WRITE_SCOPE, 'lane-split check', 'product audit-set', 'product stage', 'git add', 'git commit', ...GIT_READ]),
   fix: Object.freeze([
     'code-scope check', 'fix find-duplicates', 'fix next-suffix', 'fix update-status',

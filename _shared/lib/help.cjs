@@ -255,6 +255,12 @@ ${SPEC_INIT_HELP}
                   Plans with no lanes (or "lanes: none") pass untouched.
                   Exit: 0 pass, 1 blockers found, 2 usage/parse error.
 
+  a1-tools plan depth-check --plan <path/to/PLAN.md>
+                  Check the "## Depth Pass" section of a plan: heading present,
+                  five sub-headings, no empty/TBD/<...> answer, and answer 4
+                  names an oracle outside planner and user. Prints a JSON report.
+                  Exit: 0 pass, 1 finding, 2 usage/read error (bad path, > 5 MiB).
+
   a1-tools realpath-check run --diff-base <git-ref> [--project <dir>]
                               [--evidence <file>] [--real-markers <pattern>] [--json]
                   Gate 0.7: scan the diff <base>..HEAD for real-backend surfaces

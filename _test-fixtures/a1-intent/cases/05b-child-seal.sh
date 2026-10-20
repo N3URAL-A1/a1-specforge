@@ -569,7 +569,7 @@ w5b_psetup() {
 w5b_pexpect() {
   case "$1" in
     "checklist run") PEXPECT="1 write" ;;
-    "schema-check run"|"quick eligibility") PEXPECT="1 read" ;;
+    "schema-check run"|"quick eligibility"|"plan depth-check") PEXPECT="1 read" ;; # depth-check: the seeded "# Plan" has no Depth Pass -> verdict fail, exit 1
     "code-scope check"|"realpath-check run"|"lane-split check"|"fix find-duplicates"|"fix next-suffix") PEXPECT="0 read" ;;
     "git status"|"git diff"|"git log") PEXPECT="0 read" ;; # --no-optional-locks: no index refresh
     *) PEXPECT="0 write" ;;
@@ -629,6 +629,9 @@ w5b_pargs() {
     "lane-split check|in") PARGS=(lane-split check --plan docs/PLAN.md) ;;
     "lane-split check|out") PARGS=(lane-split check --plan /etc/hosts) ;;
     "lane-split check|link") PARGS=(lane-split check --plan "$L/PLAN.md") ;;
+    "plan depth-check|in") PARGS=(plan depth-check --plan docs/PLAN.md) ;;
+    "plan depth-check|out") PARGS=(plan depth-check --plan /etc/hosts) ;;
+    "plan depth-check|link") PARGS=(plan depth-check --plan "$L/PLAN.md") ;;
     "fix find-duplicates|in") PARGS=(fix find-duplicates real-proj crash) ;;
     "fix find-duplicates|out") PARGS=(fix find-duplicates other crash) ;;
     "fix find-duplicates|link") PARGS=(fix find-duplicates real-proj "$L/x") ;;
@@ -737,8 +740,8 @@ for p_action in new-feature continue-feature plan execute fix stage; do
   done < <(node -e 'console.log(require(process.argv[1] + "/intent-constants.cjs").INTENT_CHILD_ALLOWLIST[process.argv[2]].join("\n"))' "$INTENT_LIB" "$p_action")
   p_counts="$p_counts $p_action=$p_n"
 done
-if [[ "$p_counts" == " new-feature=16 continue-feature=16 plan=4 execute=12 fix=9 stage=1" && "$p_reached" -eq 58 ]]; then ok "5b-Pn every allowlisted subcommand was probed and every in-variant reached its path ($p_counts, reached $p_reached) [FR-041, FR-048]"
-else bad "5b-Pn every allowlisted subcommand was probed and every in-variant reached its path [FR-041, FR-048]" "counts:$p_counts reached $p_reached of 58"; fi
+if [[ "$p_counts" == " new-feature=17 continue-feature=17 plan=5 execute=12 fix=9 stage=1" && "$p_reached" -eq 61 ]]; then ok "5b-Pn every allowlisted subcommand was probed and every in-variant reached its path ($p_counts, reached $p_reached) [FR-041, FR-048]"
+else bad "5b-Pn every allowlisted subcommand was probed and every in-variant reached its path [FR-041, FR-048]" "counts:$p_counts reached $p_reached of 61"; fi
 p_git_set="$(printf '%s\n' $p_git_users | LC_ALL=C sort -u | tr '\n' ' ')"
 if [[ "$p_git_set" == "continue-feature/git_diff continue-feature/git_log continue-feature/git_status continue-feature/quick_eligibility continue-feature/realpath-check_run execute/git_add execute/git_commit execute/git_diff execute/git_log execute/git_status fix/git_diff fix/git_log fix/git_status fix/quick_eligibility new-feature/git_diff new-feature/git_log new-feature/git_status new-feature/quick_eligibility new-feature/realpath-check_run plan/git_diff plan/git_log plan/git_status " ]]; then ok "5b-Pg the allowlisted subcommands that run git internally all ran it hardened, with no caller variable ($p_git_set) [FR-048]"
 else bad "5b-Pg the allowlisted subcommands that run git internally all ran it hardened, with no caller variable [FR-048]" "got: $p_git_set"; fi

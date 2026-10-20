@@ -37,6 +37,7 @@ Create an executable PLAN.md for this phase.
 - .a1/phases/<phase_name>/RESEARCH.md
 - .a1/phases/<phase_name>/MAP.md
 - <spec_path> (if provided)
+- <repo>/_shared/depth-pass.md
 - .a1/phases/<phase_name>/PLAN.md (if revision mode — include AUDIT.md too)
 - .a1/phases/<phase_name>/AUDIT.md (revision mode only)
 </files_to_read>
@@ -46,6 +47,9 @@ Create an executable PLAN.md for this phase.
 **Lane decision required:** Step 4.5 — set `lanes:` in the frontmatter, either
 `none` (the default, with a one-line reason) or a lane block. Then verify it:
 `node <repo>/_shared/a1-tools.cjs lane-split check --plan <output path>`.
+**Depth Pass required:** the PLAN.md carries a `## Depth Pass` section with its
+five sub-headings, directly after the frontmatter, as specified in
+`<repo>/_shared/depth-pass.md`.
 <if revision_mode>
 **Mode:** REVISION — the AUDIT.md contains BLOCKER findings that must be resolved.
 </if>
@@ -64,9 +68,27 @@ before Adam sees the plan. Exit 2 → usage/parse error, fix the invocation.
 
 A plan without lanes exits 0 — this gate is free for the sequential default.
 
+## Depth Pass gate (deterministic, after Pablo returns)
+
+```bash
+node <repo>/_shared/a1-tools.cjs plan depth-check --plan .a1/phases/<phase_name>/PLAN.md
+```
+
+Run it right after the Lane gate and before Adam is spawned. Exit 0 → proceed to
+the audit. Exit 1 → the `## Depth Pass` section is missing, incomplete, or an
+answer is empty or self-referential; the JSON names the offending sub-headings.
+Hand them back to a1-pablo-planner as a revision brief (rules in
+`<repo>/_shared/depth-pass.md`) before Adam sees the plan. At most 2 revision briefs: if the check
+still exits 1 after the second, stop, keep the status unchanged, record
+`revision-limit-reached` (as the Adam loop does) and report to the user with the finding
+list. Exit 2 → usage/parse error, fix the invocation.
+
+The gate is attributed in the retro as `{id: depth-pass, verdict: pass|fail, caught: <true|false>}`
+(verdict `fail` when a revision brief was needed).
+
 ## Completion
 
-Planning phase is done when `PLAN.md` exists at the output path with `status: planned` (or `status: revised`) in frontmatter, and `lane-split check` exits 0.
+Planning phase is done when `PLAN.md` exists at the output path with `status: planned` (or `status: revised`) in frontmatter, `lane-split check` exits 0, and `plan depth-check` exits 0.
 
 ## Revision mode
 

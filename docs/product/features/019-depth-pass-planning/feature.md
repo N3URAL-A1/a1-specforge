@@ -4,7 +4,7 @@ project: a1-specforge
 milestone: continuous
 title: "Depth Pass before every planning task"
 status: in-flight
-stage: verify
+stage: origin-cleanup
 depends_on: []
 started: 2026-10-19
 finished: null

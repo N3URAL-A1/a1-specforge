@@ -445,6 +445,17 @@ function main() {
         cmdLaneSplitCheck(rest);
         return; // unreachable — cmdLaneSplitCheck calls process.exit()
       } else usage(`unknown lane-split subcommand: ${sub}`);
+    } else if (group === 'plan') {
+      if (sub === 'depth-check') {
+        // Lazy require — only paid when `plan depth-check ...` is actually invoked.
+        const { cmdPlanDepthCheck } = require(path.join(__dirname, 'lib', 'depth-pass.cjs'));
+        // owns its own exit code (0 pass / 1 finding / 2 usage error) and stdout
+        cmdPlanDepthCheck(rest);
+        return; // unreachable — cmdPlanDepthCheck calls process.exit()
+      }
+      // Usage errors are exit 2 (usage() exits 1, the "finding" branch of a gate).
+      process.stderr.write(`plan: unknown subcommand: ${sub || '(none)'}\nusage: a1-tools plan depth-check --plan <path/to/PLAN.md>\n`);
+      process.exit(2);
     } else if (group === 'checklist') {
       if (sub === 'run') {
         // checklist run owns its own exit code (0/1/2) and report format.
