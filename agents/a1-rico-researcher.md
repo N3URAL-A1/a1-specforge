@@ -94,6 +94,7 @@ Identify what could block execution:
 - Schema migrations (destructive?)
 - Breaking changes between current and required library versions
 - Circular dependencies in planned work
+- Product decisions hiding as "open questions" — anything only the product owner can answer (entity semantics, archive/backfill policy, which terminal state exists, the minimum deliverable) goes into `## Decisions needed`, never into Risks or Recommendations
 
 ## Step 5: Write RESEARCH.md
 
@@ -121,12 +122,19 @@ generated: <ISO date>
 |---|---|---|
 | <risk> | HIGH/MED/LOW | <mitigation> |
 
+## Decisions needed
+| Question | Why it blocks planning | Options seen |
+|---|---|---|
+| <product question only the owner can answer> | <which task or wave changes with the answer> | <a / b> |
+
 ## Recommendations
 <3-5 concrete recommendations for the planner>
 
 ## Key File References
 <list of files relevant to this task>
 ```
+
+`## Decisions needed` is read by the orchestrator, who puts every row to the user BEFORE the planner runs. A question left as "open" in Risks surfaces after PLAN v1 and becomes an orchestrator interpretation (2026-10-03 059-object-types: the lost-terminal question; 2026-09-28 058-workflow-core: three research claims the planner had to refute live). Leave the section with a single row `none` when there is nothing to ask.
 
 ## Step 6: Return summary
 After writing, output a 3-5 sentence summary of the most important findings.

@@ -15,17 +15,36 @@ hand-writing `ROADMAP.md`:
 ```bash
 node <repo>/_shared/a1-tools.cjs product init \
   --project <slug> --title "<Product name>" \
-  --milestones '<json array from Phase 3: [{"id":"<m-slug>","title":"<short>","status":"planned","target":"<YYYY-MM|null>"}]>' \
-  --features '<json array from Phase 3: [{"id":"<###-feature-slug>","milestone":"<m-slug>","title":"<short>","status":"planned","depends_on":[]}]>' \
   --source "scaffolded by a1-roadmap (new-project mode)"
+# `product init` scaffolds EMPTY lists and silently ignores --milestones/--features
+# (measured 2026-10-20: a call with both flags wrote `milestones: []`, `features: []`;
+# runs 2026-10-06 and 2026-10-08 hit the same). Add every milestone and feature from
+# Phase 3 with the add-* commands, milestones first:
+node <repo>/_shared/a1-tools.cjs product add-milestone \
+  --project <slug> --id <m-slug> --title "<short>" --status planned --target <YYYY-MM|null>
+node <repo>/_shared/a1-tools.cjs product add-feature \
+  --project <slug> --id <###-feature-slug> --milestone <m-slug> --title "<short>" --status planned
+# repeat add-milestone per milestone, add-feature per feature
+grep -c '^  *- id: ' docs/product/ROADMAP.md   # must equal milestones + features from Phase 3
 ```
 
-This single call must produce a `docs/product/ROADMAP.md` that names **ALL**
-milestones and **ALL** features known from Phase 3 upfront — each with its
-1-sentence goal — per the rolling-wave contract in `docs/product/SCHEMA.md`
-§1. It also regenerates `NEXT.md` and `index.json` (same
-`regenerateDerived` path Wave 2/3 use for `product stage`). Do not hand-write
-any of the three files.
+After the last call `docs/product/ROADMAP.md` names **ALL** milestones and **ALL**
+features known from Phase 3 upfront — each with its 1-sentence goal — per the
+rolling-wave contract in `docs/product/SCHEMA.md` §1. Every `product` call
+regenerates `NEXT.md` and `index.json` (same `regenerateDerived` path Wave 2/3 use
+for `product stage`). Do not hand-write any of the three files.
+
+**Count after every call that rewrites `ROADMAP.md`** (`add-*`, `changelog`,
+`stage`): the `- id:` line count must not shrink. On 2026-09-26 one `changelog`
+call dropped 40 of 48 features behind a folded scalar, and only the before/after
+count showed it; the three later runs that counted lost nothing.
+
+**Language (FR-016):** every argument that lands in `docs/product/` (titles, goals,
+pillars, changelog notes) is English — `product validate` flags German, and four runs
+(2026-09-26, 09-28, 10-06, 10-08) wrote German first and rebuilt the whole layer.
+For a German customer project the owner may keep German deliverable names: accept
+the validate warning once and record that decision as a `product changelog` entry
+instead of rebuilding. Never mix the two within one roadmap.
 
 Immediately after `product init` succeeds, call `vision-init` using the
 mission statement and pillars confirmed in Phase 1 (Discover) so the new

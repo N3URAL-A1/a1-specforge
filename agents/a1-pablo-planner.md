@@ -248,8 +248,8 @@ Derived from spec acceptance criteria. Binary and measurable.
 
 ## Verification
 After all waves complete, verify the goal was achieved:
-- [ ] <concrete check 1>
-- [ ] <concrete check 2>
+- [ ] <concrete check 1> — red when: <code line / state / input that fails it>; red run: <command you ran against a fixture or stub, or `eyeball` for a human check>
+- [ ] <concrete check 2> — red when: <…>; red run: <…>
 ````
 
 When Step 4.5 DID find a split, `lanes: none` is replaced by the block form:
@@ -275,6 +275,8 @@ sequential_after_lanes: [6, 7, 9]    # cutover + contract waves
 - [ ] No tasks are out of scope
 - [ ] `## Depth Pass` is present with all five sub-headings answered (rules in `<repo>/_shared/depth-pass.md`)
 - [ ] `lanes:` is present — either `none` with a one-line reason, or a block that `lane-split check` exits 0 on
+- [ ] Every `## Verification` check and every "Done when" probe names the condition under which it goes red, and you ran each one once against a fixture or stub and recorded the red result (see `_shared/agent-lessons.md#plan-probe-red-line`)
+- [ ] When the deliverable leaves the team (customer, security lead, translation, pitch), a fact/audience review task sits in the wave BEFORE verification (see `_shared/agent-lessons.md#pablo-outward-doc-review`)
 
 # Revision mode
 If an existing PLAN.md is provided with an AUDIT.md containing BLOCKER findings:

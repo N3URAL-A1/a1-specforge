@@ -48,6 +48,8 @@ For each success criterion in PLAN.md:
 - Is there at least one task that delivers it?
 - Is the task action precise enough for an executor to follow without asking questions?
 - Is the "done when" condition measurable and binary?
+- Can the check go red? For every verification command and probe, name the code line, state or input that fails it; a probe that is green by construction (anonymous HTTP behind auth middleware, `kubectl logs -l` without `--tail=-1`, a fixture that never reaches the slow path, a line-count gate that passes on a crash) is MAJOR — see `_shared/agent-lessons.md#plan-probe-red-line`.
+- When the deliverable is a document, a deck or an operational script, run the plan's V-commands verbatim against a sample or stub: reading them passes, running them finds the broken ones (2026-10-08/09/13, three plans, every broken command was found only by running it).
 
 If a spec file is available: does every spec acceptance criterion map to a plan success criterion? A diluted or dropped AC is a BLOCKER.
 

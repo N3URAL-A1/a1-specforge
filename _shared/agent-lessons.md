@@ -274,3 +274,58 @@ property the author believed was in play. That is class 3 of
 Related failure at the same site: a gate whose dependency is missing must exit
 2 (usage error), never 0 — see invariant 8, "a gate that cannot fail is
 documentation".
+
+## Pablo / Adam — a probe that cannot go red is documentation {#plan-probe-red-line}
+
+2026-10-08 → 2026-10-19, five a1-plan runs in four projects, plus four postmortems
+that reached production with the same shape:
+
+- **ai-net M1-P1 (2026-10-08):** two of three audit rounds were only about broken
+  V-commands (sentence splitter, wrong column). Adam ran them verbatim against sample
+  files; reading them had passed.
+- **ai-net M1-P2 (2026-10-09):** six "will certainly fail" layout constants became
+  blockers at plan time because the auditor ran the plan's own height formula over
+  every slide (a 30-line prototype). The release gate of the same phase was fail-open:
+  `_run_check` skipped a missing check script and the converter exited 0 without
+  writing; only the line-level review saw it.
+- **a1-office infra-rename-cutover (2026-10-13):** the capture-fails and wrong-state
+  paths of the operational scripts had no stub-driven red test; Codex found a gap in
+  every round that four audit rounds had passed.
+- **captrader-llm M4-P2 (2026-10-13):** an `&`/`&&` binding error in a server command
+  would have broken polling and kill inside the maintenance window; found by replaying
+  the command in a container at audit time.
+- **a1-office db-private-endpoint (2026-10-19):** four smoke probes were green forever
+  by construction: anonymous HTTP behind a login redirect, a reserved slug swallowing
+  pool errors, `kubectl logs -l` with its 10-line default, `git grep -E \b` inert on
+  Apple Git. Adam asked per probe "where does this turn red?" and found all four.
+- Postmortems of the same class: a line-count gate green on a crashed run for months
+  (2026-09-28 tsc ratchet); a negative guard for an absent object, vacuous by
+  construction (2026-10-15 postgrest anon); a performance fixture that never reached
+  the slow path (2026-10-15 scope-reclaim).
+
+**Root cause: the plan wrote the check as prose and the audit read it as prose.** A
+check nobody ran before execution has the evidential value of the sentence "this will
+work".
+
+**Rule.** For every verification command and every "Done when" probe the plan names
+the condition under which it goes red (the code line, the state, the input). The
+planner runs each one once against a fixture or stub and records the red result; the
+auditor repeats the run for anything a human cannot eyeball and flags a probe that is
+green by construction as MAJOR. Fix post-PASS MINORs before any gate that binds the
+PLAN sha (`plan-review-xprov`), not after.
+
+## Pablo — outward-facing documents need a fact review before verification {#pablo-outward-doc-review}
+
+2026-09-29, NOURA architecture docs for a security lead: a line-level reviewer and an
+audience/fact reviewer (Bertram) found the same four contradictions (overclaims like
+"nie", tier contradictions, board citations) that a green check script and a PASS
+verifier had not. 2026-10-03, NOURA 026 English translation: an independent bilingual
+reviewer found a security-meaning drift ("never on the basis of the dialogue" → "never
+… alone") that every automated check missed, and a grammar fix had silently removed a
+mandated qualifier. 2026-10-13, captrader-llm: customer documentation condensed from
+eval data overstated three claims; the number-against-sentence check ran only in review.
+
+**Rule.** When the deliverable leaves the team (customer, security lead, translation,
+pitch), the plan carries a fact/audience review task — a bilingual reviewer or
+`bertram-brand-chief` with the numbers register — in the wave BEFORE verification,
+plus a count check per legal or qualifying marker ("up to", "never", "only").
