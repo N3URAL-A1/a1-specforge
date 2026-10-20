@@ -457,5 +457,44 @@ check "M3 mutated tool: tests red on both sides fail the verdict (case turns red
 vrun "$P" --base main
 check "M3b original tool: pre_existing_red does not fail the verdict (revert turns it green)" 0 'j.verdict+"/"+j.pre_existing_red.length' "pass/3"
 
+# ---------- S: skip increase vs base (spec 017 FR-017, FR-025, Wave 8) ----------
+# green.json / more.json: planted edits of the real vitest file - all 3 failures turned green; skipped 2 (base) or 4 (head)
+node -e '
+  const fs=require("fs"); const j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
+  j.numPassedTests=43; j.numFailedTests=0; j.numFailedTestSuites=0; j.success=true;
+  for (const f of j.testResults) { f.status="passed"; for (const a of f.assertionResults||[]) if (a.status==="failed") a.status="passed"; }
+  fs.writeFileSync(process.argv[2], JSON.stringify(j)); j.numPendingTests=4; fs.writeFileSync(process.argv[3], JSON.stringify(j));' "$CORPUS/vitest-3-40-2.json" "$WORK/green.json" "$WORK/more.json"
+SKIP_STUB='case "$(cat src/app.js)" in *MORE*) export A1_FX_REPORT="$A1_FX_MORE";; esac
+'"$REPORT_STUB"
+skipcase() { # skipcase <label> <head report file> [disposition args...]: base reports 2 skipped, head the given report
+  newproj "$1"; stub vitest "$SKIP_STUB"; cfg '{"commands":[{"id":"unit","argv":["./bin/vitest","run"]}]}'; printf 'module.exports = "ok";\n' > "$P/src/app.js"; seal
+  printf 'module.exports = "MORE";\n' > "$P/src/app.js"
+  export A1_FX_ARGS="$WORK/args-s" A1_FX_REPORT="$WORK/green.json" A1_FX_MORE="$2" A1_FX_RC=0
+  if [[ $# -gt 2 ]]; then shift 2; (cd "$P" && node "$TOOLS" disposition add --kind skip_increase --reason "fixture: reviewed skip increase" --by fx "$@" >/dev/null 2>&1); fi
+  g "$P" add -A; g "$P" commit -q -m head
+  vrun "$P" --base main
+}
+skipcase s1 "$WORK/more.json"
+check "S1 skipped 2 on base, 4 on head, no disposition: exit 1, fail, reason skip_increase" 1 'const c=j.commands[0]; [j.verdict,j.reason,c.reason,c.skip_increase.base,c.skip_increase.head,c.skip_increase.dispositioned].join(",")' "fail,skip_increase,skip_increase,2,4,false"
+skipcase s2 "$WORK/more.json" --rule skip-increase --file unit --text "2->4"
+check "S2 same increase with a skip_increase disposition for exactly 2->4: exit 0, pass, dispositioned" 0 'const c=j.commands[0]; [j.verdict,c.reason,c.skip_increase.dispositioned,c.skip_increase.fingerprint.startsWith("skip-increase:unit:")].join(",")' "pass,,true,true"
+skipcase s3 "$WORK/more.json" --rule skip-increase --file unit --text "2->3"
+check "S3 disposition for another increase (2->3) does not cover 2->4: exit 1" 1 'j.verdict+","+j.commands[0].skip_increase.dispositioned' "fail,false"
+skipcase s4 "$WORK/more.json" --rule skip-increase --file other-cmd --text "2->4"
+check "S4 disposition for another command id does not cover it: exit 1" 1 'j.verdict' "fail"
+skipcase s5 "$WORK/green.json"
+check "S5 skipped 2 on both sides: exit 0, pass, no skip_increase record" 0 'j.verdict+","+(j.commands[0].skip_increase===undefined)' "pass,true"
+skipcase s6 "$WORK/more.json" --rule skip-increase --file unit --text "2->4"
+FP="$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"))[0].fingerprint)' "$P/.a1/dispositions.json")"
+(cd "$P" && node "$TOOLS" disposition review "$FP" --verdict overturned --reason "fixture: reviewer overturned" >/dev/null 2>&1); g "$P" commit -q -am overturned
+vrun "$P" --base main
+check "S6 the same disposition overturned by review clears nothing: exit 1" 1 'j.verdict+","+j.commands[0].skip_increase.dispositioned' "fail,false"
+skipcase s7 "$WORK/more.json"; vrun "$P"
+check "S7 without --base nothing is compared: exit 0, pass" 0 'j.verdict+","+j.commands[0].skipped' "pass,4"
+skipcase s8 "$WORK/more.json"; printf '[{"kind":"skip_increase"}]\n' > "$P/.a1/dispositions.json"; vrun "$P" --base main
+check "S8 malformed .a1/dispositions.json: exit 2 bad_config (fail closed)" 2 'j.error' "bad_config"
+skipcase s9 "$WORK/more.json"; printf '[]\n' > "$P/.a1/dispositions.json"; g "$P" add -A; g "$P" commit -q -m "empty store"; vrun "$P" --base main
+check "S9 empty dispositions store behaves as none: exit 1" 1 'j.verdict' "fail"
+
 echo "a1-verify: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

@@ -195,6 +195,19 @@ expect "H4 corrected claudia test keeps a withTenantContext mock: exit 1" 1 "$RC
 expect "H4 mock-of-subject count" 1 "$(fcount mock-of-subject)"
 expect "H4 ctx.skip() lines are skipped-test findings (count)" "$(grep -c 'ctx.skip()' "$REAL/claudia-after.http-caps-audit.test.ts")" "$(fcount skipped-test)"
 
+# H4b Q21 / SC-005 (Wave 8): flagged until a reviewed disposition records the reason, then exit 0. H4 above is the flagged
+#     state; here the same repo gets one disposition per flagged line content (the identical ctx.skip() lines share one).
+CL="$REAL/claudia-after.http-caps-audit.test.ts"
+MOCKL="$(grep -n 'vi.mock("@/lib/db/tenant-pool"' "$CL" | head -1 | cut -d: -f1)"; SKIPL="$(grep -n 'ctx.skip()' "$CL" | head -1 | cut -d: -f1)"
+(cd "$R" && node "$TOOLS" disposition add --kind fidelity --rule mock-of-subject --file tests/http-caps.test.ts --line "$MOCKL" --reason "fixture: pass-through wrapper mock, reproduced from a1-office" --by fx >/dev/null)
+run_tf
+NSKIP="$(grep -c 'ctx.skip()' "$CL")"
+expect "H4b mock disposition alone: the skipped-test findings keep exit 1 (count)" "1|$NSKIP" "$RC|$(fcount skipped-test)"
+(cd "$R" && node "$TOOLS" disposition add --kind fidelity --rule skipped-test --file tests/http-caps.test.ts --line "$SKIPL" --reason "fixture: ctx.skip() without a database, reproduced from a1-office" --by fx >/dev/null)
+run_tf
+expect "H4b both dispositions recorded: corrected claudia test exits 0" 0 "$RC"
+expect "H4b zero findings left (count) and all dispositioned (1 mock + every identical skip line)" "0|$((NSKIP + 1))" "$(js 'j.count')|$(js 'j.dispositioned')"
+
 # --------------------------------------------------------------------------------------------
 # Mutation proof: planted defect turns the green case red, revert turns it green again (M1)
 # --------------------------------------------------------------------------------------------
