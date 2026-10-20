@@ -53,6 +53,26 @@
 #   test-fidelity.cjs changedFiles(): git run through a shell                   -> X1a, X1b
 #   test-fidelity.cjs changedFiles(): diff against the empty tree               -> every green case + S4
 #   test-fidelity.cjs cmdTestFidelity(): exit code always 0                     -> every exit-1 case
+#
+# Wave 7 (`test-not-in-ci`), measured red 2026-10-21 on git-archive snapshots, one edit each (cases that fail):
+#   fidelity-ci.cjs fileFinding(): ci_globs match removed                         -> CI1a, CI1b
+#   fidelity-ci.cjs testNotInCi(): literal run:-line check of ci_globs removed    -> CI2a, CI2b
+#   fidelity-ci.cjs testNotInCi(): no-workflows branch disabled                   -> CI3a, CI3b, CI3c
+#   fidelity-ci-runners.cjs nodeMatcher(): config `exclude` ignored               -> CI4
+#   fidelity-ci-runners.cjs judge(): literal positional filters ignored           -> CI5a, CI5b, CI7
+#   fidelity-ci.cjs fileFinding(): unresolved reasons ignored                     -> CI6a, CI6b, CI6c
+#   fidelity-ci.cjs followScript(): script body not followed                      -> CI4, CI7 and every Wave 4 green case
+#   fidelity-ci-runners.cjs pytestMatcher(): testpaths ignored                    -> CI8
+#   fidelity-ci.cjs startState(): working-directory dropped                       -> CI9
+#   fidelity-ci-runners.cjs walkUp(): package.json "jest" key ignored             -> CI10
+#   fidelity-ci.cjs readValue(): block scalars (`>-`) not read                    -> CI9, CI11b
+#   fidelity-ci-runners.cjs readText(): size cap removed                          -> CI12c
+#   fidelity-ci.cjs findPackage(): malformed package.json swallowed               -> CI12a
+#   fidelity-ci.cjs readCiConfig(): ci_globs shape check removed                  -> CI12b
+#   fidelity-ci.cjs walkCommand(): command after a dynamic `cd` still resolved    -> CI12e
+#   fidelity-ci.cjs scalar(): quoted value with trailing comment not unquoted     -> CI11c
+#   fidelity-ci-runners.cjs globToRegex(): extglob `?(...)` not translated        -> CI4, CI5a, CI5b, CI7, CI11b, CI11c, Wave 4 green cases
+#   fidelity-ci-runners.cjs pytestMatcher(): default python_files replaced        -> CI8, CI8b
 unset A1_VAULT_ROOT A1_VAULT_WRITER_HOST A1_HOST_ID
 set -u
 
