@@ -72,10 +72,11 @@
         "_test-fixtures/a1-fix/",
         "_test-fixtures/a1-pr-review/",
         "_test-fixtures/a1-vault-cockpit/",
-        "_test-fixtures/a1-workflow-lint/"
+        "_test-fixtures/a1-workflow-lint/",
+        "_test-fixtures/a1-xprov/"
       ],
       "by": "017-enforced-self-checks",
-      "at": "2026-10-20T18:38:11.197Z",
+      "at": "2026-10-20T21:59:01.782Z",
       "stage": "started"
     }
   ]
