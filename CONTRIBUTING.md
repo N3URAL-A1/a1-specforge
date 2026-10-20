@@ -68,6 +68,8 @@ Any change to `_shared/a1-tools.cjs` requires fixture coverage per
 hostile-input rejection case for every new CLI subcommand. Run the full suite before
 opening a PR: `for r in _test-fixtures/*/run*.sh; do bash "$r" || break; done`.
 
+Runs started from inside an agent session (a `claude` process is an ancestor, or `CLAUDECODE` is set) skip the owner-terminal cases of `a1-xprov` (parts 08, 11, 12, 13, 14; part 15 swaps in a library driver); CI never skips them. Before a PR, run the suite once outside the agent as a non-root user, for example in Docker with gitleaks 8.30.1 on `PATH`: copy a `git archive` snapshot (with `git init` and a commit) to `/work`, `chown -R node:node /work`, then `docker run --rm -v <snapshot>:/src:ro node:20 su node -s /bin/bash -c 'cd /work && bash _test-fixtures/a1-xprov/run-tests.sh'`. The container must not see the real owner home.
+
 ## Commit format
 
 ```
