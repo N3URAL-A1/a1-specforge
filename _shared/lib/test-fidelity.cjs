@@ -104,6 +104,14 @@ function snippet(src, starts, line) {
   return src.slice(from, to).trim().slice(0, SNIPPET_MAX);
 }
 
+const JS_EXT = /\.(?:[cm]?[jt]s|[jt]sx)$/;
+
+/** Language of the per-file rules by extension, or null when none applies (FR-022..024 are JS/TS and Python only). */
+function langOf(rel) {
+  if (rel.endsWith('.py')) return 'py';
+  return JS_EXT.test(rel) ? 'js' : null;
+}
+
 function scanFile(ctx, rel, deadline) {
   if (Date.now() > deadline) throw new UsageError('scan timed out');
   let src;
@@ -112,7 +120,8 @@ function scanFile(ctx, rel, deadline) {
     throw new UsageError(`cannot read ${JSON.stringify(rel)}: ${e.message}`);
   }
   if (src === null) return [];
-  const lang = rel.endsWith('.py') ? 'py' : 'js';
+  const lang = langOf(rel);
+  if (lang === null) return []; // bash and other suites matched by test_globs: only test-not-in-ci applies
   const { code, strings } = mask(src, lang);
   const starts = lineIndex(src);
   const t = { rel, lang, code, strings, starts, lineOf: (off) => lineOf(starts, off) };

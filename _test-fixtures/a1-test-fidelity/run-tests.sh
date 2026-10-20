@@ -44,6 +44,7 @@
 #   test-fidelity.cjs loadConfig(): db_wrappers from config ignored             -> R8b, U2b
 #   test-fidelity.cjs loadConfig(): malformed config swallowed                  -> U2a
 #   test-fidelity.cjs scan(): test_globs ignored                                -> T1b
+#   test-fidelity.cjs scanFile(): langOf() returns 'js' for every extension    -> T1b, T5a (bash heredoc lexed as JS)
 #   test-fidelity.cjs changedFiles(): `split('\0')` -> `split('\n')`           -> T2 (and every case whose names are plain: all pass-through cases)
 #   test-fidelity.cjs readSource(): symlink check removed                       -> T3
 #   test-fidelity.cjs readSource(): size cap removed                            -> X4
@@ -320,7 +321,16 @@ expect "R9 nested query/db keys are not flagged: exit 0" 0 "$RC"
 new_repo; mkdir -p "$R/checks"; printf 'it.skip("x", () => {});\n' > "$R/checks/a.sh"; head_commit; run_tf
 expect "T1a file outside the default globs is not scanned: exit 0" 0 "$RC"
 new_repo; mkdir -p "$R/checks" "$R/.a1"; printf 'it.skip("x", () => {});\n' > "$R/checks/a.sh"; printf '{"test_globs": ["checks/*.sh"]}\n' > "$R/.a1/fidelity.json"; head_commit; run_tf
-expect "T1b test_globs picks it up: exit 1" 1 "$RC"
+expect "T1b test_globs picks it up (test-not-in-ci only, a .sh gets no JS rules): exit 1" "test-not-in-ci:checks/a.sh" "$(js "j.findings.map(f=>f.rule+':'+f.file).join('|')")"
+# T5  RED: scanFile() lexes every test_globs file as JS. A bash suite with it.skip text in a heredoc gets no skipped-test;
+#     the same text in a .test.ts does.
+new_repo; mkdir -p "$R/_test-fixtures/x" "$R/.a1"; printf '{"test_globs":["_test-fixtures/*/run*.sh"],"ci_globs":["_test-fixtures/*/run*.sh"]}\n' > "$R/.a1/fidelity.json"
+wf_t5='name: t\non: push\njobs:\n  t:\n    runs-on: ubuntu-latest\n    steps:\n      - run: for r in _test-fixtures/*/run*.sh; do bash "$r"; done\n      - run: npm test\n'
+printf "$wf_t5" > "$R/.github/workflows/ci.yml"; G add -A; G commit -q -m t5 >/dev/null; G tag -f base >/dev/null
+printf '#!/usr/bin/env bash\ncat <<EOT\nit.skip("x", () => {});\nif (!db) return;\nvi.mock("../lib/audit", () => ({ pool: 1 }));\nEOT\n' > "$R/_test-fixtures/x/run-tests.sh"; head_commit; run_tf
+expect "T5a bash suite with it.skip text in a heredoc: exit 0" 0 "$RC"; expect "T5a scanned (count)" 1 "$(js 'j.scanned')"; expect "T5a findings (count)" 0 "$(js 'j.count')"
+printf 'it.skip("x", () => {});\n' > "$R/tests/h.test.ts"; head_commit; run_tf
+expect "T5b the same text in a .test.ts: one skipped-test" 1 "$(fcount skipped-test)"
 # T2  RED: changedFiles() parses git output split on newlines instead of NUL.
 new_repo; mkdir -p "$R/my tests"
 printf 'it.skip("x", () => {});\n' > "$R/my tests/a b.test.ts"

@@ -252,7 +252,7 @@ function pytestMatcher(state, inv) {
   const given = positional.map((p) => p.split('::')[0]);
   const rooted = given.map((p) => joinDir(inv.cwd, p));
   if (rooted.includes(null)) return { dynamic: true, root: inv.cwd };
-  const paths = given.length > 0 ? rooted : (cfg.testpaths || ['']).map((p) => joinDir(cfg.dir, p));
+  const paths = given.length > 0 ? rooted : (cfg.testpaths || ['']).map((p) => (p === '' ? cfg.dir : joinDir(cfg.dir, p)));
   if (paths.includes(null)) return { dynamic: true, root: inv.cwd };
   return { py: true, dynamic: false, paths, files: cfg.files && cfg.files.length > 0 ? cfg.files : PYTEST_FILES, root: '' };
 }
