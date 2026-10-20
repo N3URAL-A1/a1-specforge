@@ -31,6 +31,8 @@ Wave 2 settled these details (built as specified above):
 - `--phase` is stripped only when argv names a subcommand from an `invoke` cell; a flagged key (`product validate --spec-status`) also needs its flag in argv. A scope matches `[A-Za-z0-9_][A-Za-z0-9._-]{0,99}` without `..`; anything else exits 2 before the command runs.
 - Outside a git work tree nothing is logged (stderr notice); the log is per work tree, found from the current directory.
 - `gates lint --log <file>` checks only the log (registry rules do not run). `gates fired --log` prints the last verdict per gate id and `caught: true` when the log holds a `fail` line for it.
+- Lock (deviation from the FR-010 wording): appends serialise on an atomic `mkdir` lock in the git common dir, not on `locks.cjs`. `acquireReservationsLock` creates the lock file first and writes its payload afterwards; a reader in that gap sees an empty lock, calls it stale and steals it, which forked the chain under load (measured: 12 broken links in the 2 x 50 writer test). The intent of FR-010 (serialised read-then-append) holds; the `locks.cjs` race is a separate bug.
+- Intent children (spec 017 Q15, same detection as the sandbox guard): the hook strips `--phase` but appends no line and writes no `info/exclude` entry, whatever the exit code (77 included), because a child must not write outside its project. Headless intent runs therefore leave no gate log, and a retro written for such a run cannot pass `--gate-log`. No env switch exists for normal runs.
 - `retro validate --gate-log` exits 2 when the log is missing, malformed or its chain is broken. `--enforced-since YYYY-MM-DD` overrides the constant for tests only.
 
 ### 4. Dispositions

@@ -262,7 +262,8 @@ function recordRun(gateId, scope, exitCode) {
 
 /**
  * Facade hook. When argv names a subcommand from a registry `invoke` cell:
- * strip `--phase`, and append one log line when the process exits. Any other
+ * strip `--phase`, and append one log line when the process exits (not in an
+ * intent child: it appends nothing and writes no exclude entry). Any other
  * argv is returned untouched. A logging failure is reported on stderr and
  * never changes the gate's exit code.
  *
@@ -280,6 +281,10 @@ function installGateLog(argv, registryText) {
     process.stderr.write(`error: ${e.message}\n`);
     process.exit(2);
   }
+  // Spec 017 Q15: an intent child (same detection as the sandbox guard) writes
+  // nothing outside its project, so it appends no line and touches no
+  // info/exclude, whatever the exit code (77 included).
+  if (require('./intent-child.cjs').inChildMode()) return stripped.argv;
   const scope = stripped.scope || UNSCOPED;
   process.on('exit', (code) => {
     try { recordRun(gateId, scope, code); } catch (e) {
