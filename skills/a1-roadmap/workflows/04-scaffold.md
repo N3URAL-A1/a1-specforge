@@ -13,24 +13,26 @@ For a **new project** (this phase's "New Project" mode), the full
 hand-writing `ROADMAP.md`:
 
 ```bash
-node <repo>/_shared/a1-tools.cjs product init \
-  --project <slug> --title "<Product name>" \
-  --source "scaffolded by a1-roadmap (new-project mode)"
-# `product init` scaffolds EMPTY lists and silently ignores --milestones/--features
-# (measured 2026-10-20: a call with both flags wrote `milestones: []`, `features: []`;
-# runs 2026-10-06 and 2026-10-08 hit the same). Add every milestone and feature from
-# Phase 3 with the add-* commands, milestones first:
+node <repo>/_shared/a1-tools.cjs product init --project <slug> --title "<Product name>"
+# `product init` scaffolds EMPTY lists: it silently ignores --milestones, --features
+# and --source (measured 2026-10-20: a call with all three wrote `milestones: []`,
+# `features: []` and the hardcoded source; runs 2026-10-06 and 2026-10-08 hit the
+# same). Add every milestone and feature from Phase 3 with the add-* commands,
+# milestones first; --goal carries the 1-sentence goal into the changelog line:
 node <repo>/_shared/a1-tools.cjs product add-milestone \
-  --project <slug> --id <m-slug> --title "<short>" --status planned --target <YYYY-MM|null>
+  --project <slug> --id <m-slug> --title "<short>" --goal "<1-sentence goal>" \
+  --status planned --target <YYYY-MM|omit>
 node <repo>/_shared/a1-tools.cjs product add-feature \
-  --project <slug> --id <###-feature-slug> --milestone <m-slug> --title "<short>" --status planned
+  --project <slug> --id <###-feature-slug> --milestone <m-slug> --title "<short>" \
+  --goal "<1-sentence goal>" --depends-on <a,b|omit> --status planned
 # repeat add-milestone per milestone, add-feature per feature
 grep -c '^  *- id: ' docs/product/ROADMAP.md   # must equal milestones + features from Phase 3
 ```
 
 After the last call `docs/product/ROADMAP.md` names **ALL** milestones and **ALL**
-features known from Phase 3 upfront — each with its 1-sentence goal — per the
-rolling-wave contract in `docs/product/SCHEMA.md` §1. Every `product` call
+features known from Phase 3 upfront, with `depends_on` from Phase 3 and each
+1-sentence goal recorded through `--goal`, per the rolling-wave contract in
+`docs/product/SCHEMA.md` §1. Every `product` call
 regenerates `NEXT.md` and `index.json` (same `regenerateDerived` path Wave 2/3 use
 for `product stage`). Do not hand-write any of the three files.
 
@@ -39,14 +41,14 @@ for `product stage`). Do not hand-write any of the three files.
 call dropped 40 of 48 features behind a folded scalar, and only the before/after
 count showed it; the three later runs that counted lost nothing.
 
-**Language (FR-016):** every argument that lands in `docs/product/` (titles, goals,
-pillars, changelog notes) is English — `product validate` flags German, and four runs
+**Language (FR-016, SCHEMA §0, constitution invariant 10):** every argument that
+lands in `docs/product/` (titles, goals, pillars, changelog notes) is English, also
+for German customer projects — only the deliverables themselves (decks, docs the
+customer receives) keep the customer's language. `product validate` only warns on
+German, so phrase the CLI arguments in English BEFORE the first call: four runs
 (2026-09-26, 09-28, 10-06, 10-08) wrote German first and rebuilt the whole layer.
-For a German customer project the owner may keep German deliverable names: accept
-the validate warning once and record that decision as a `product changelog` entry
-instead of rebuilding. Never mix the two within one roadmap.
 
-Immediately after `product init` succeeds, call `vision-init` using the
+After the add-* calls and the count check, call `vision-init` using the
 mission statement and pillars confirmed in Phase 1 (Discover) so the new
 project has `docs/product/VISION.md` from day one (schema v1.1, FR-021):
 
@@ -69,10 +71,13 @@ extend the existing `ROADMAP.md` instead of re-initializing:
 
 ```bash
 node <repo>/_shared/a1-tools.cjs product add-milestone \
-  --project <slug> --id <m-slug> --title "<short>" --status planned --target <YYYY-MM|null>
+  --project <slug> --id <m-slug> --title "<short>" --goal "<1-sentence goal>" \
+  --status planned --target <YYYY-MM|omit>
 node <repo>/_shared/a1-tools.cjs product add-feature \
-  --project <slug> --id <###-feature-slug> --milestone <m-slug> --title "<short>" --status planned
-# repeat add-feature for every feature named in Phase 3 under this milestone
+  --project <slug> --id <###-feature-slug> --milestone <m-slug> --title "<short>" \
+  --goal "<1-sentence goal>" --depends-on <a,b|omit> --status planned
+# repeat add-feature for every feature named in Phase 3 under this milestone;
+# count `- id:` lines before and after (see 4a)
 ```
 
 If the project is **legacy-only** (has `.a1/roadmap.md`, no `docs/product/`)

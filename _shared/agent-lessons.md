@@ -311,8 +311,12 @@ work".
 the condition under which it goes red (the code line, the state, the input). The
 planner runs each one once against a fixture or stub and records the red result; the
 auditor repeats the run for anything a human cannot eyeball and flags a probe that is
-green by construction as MAJOR. Fix post-PASS MINORs before any gate that binds the
-PLAN sha (`plan-review-xprov`), not after.
+green by construction as MAJOR. Green-by-construction shapes seen so far: anonymous
+HTTP behind auth middleware, `kubectl logs -l` without `--tail=-1`, a fixture that
+never reaches the slow path, a line-count gate that passes on a crash, a negative
+guard for an object that does not exist. For documents, decks and operational
+scripts the V-commands ARE the tests: reading them passes, running them finds the
+broken ones (2026-10-08/09/13, three plans).
 
 ## Pablo — outward-facing documents need a fact review before verification {#pablo-outward-doc-review}
 
@@ -329,3 +333,37 @@ eval data overstated three claims; the number-against-sentence check ran only in
 pitch), the plan carries a fact/audience review task — a bilingual reviewer or
 `bertram-brand-chief` with the numbers register — in the wave BEFORE verification,
 plus a count check per legal or qualifying marker ("up to", "never", "only").
+
+## Rico — product decisions hide as "open questions" {#rico-decisions-needed}
+
+2026-09-28, a1-office 058-workflow-core: three research claims (history columns, the
+number of write paths, what "accepted" means) were refuted live by the planner; the
+plan went through four revisions. 2026-10-03, a1-office 059-object-types: the product
+questions research surfaced (interested party = lead? pair entity now? archive model?
+backfill?) were put to the owner before planning and captured in DECISIONS.md — audit
+went 1B/7M → PASS in one revision. The one question left "open" in RESEARCH.md (lost
+terminal vs "rejected often come back") surfaced only after PLAN v1 and turned into an
+orchestrator interpretation that needed explicit confirmation before the prod apply.
+2026-10-08, ai-net M1-P1: minimum deliverable never asked; five of seven waves were
+cancelled mid-phase.
+
+**Rule.** A question only the product owner can answer is not a risk and not a
+recommendation. Rico lists it under `## Decisions needed` and repeats the rows in his
+hand-back; the orchestrator asks the user before the planner is spawned and records
+the answers next to the question. The planner and auditor treat the answers as binding.
+
+## Any orchestrator — a fix brief without the plan's protections or with unmeasured facts {#fix-brief-measured}
+
+2026-10-14, a1-office infra-rename-cutover: the review-fix brief did not carry the
+plan's AS-list, so the executor rewrote protected historical README lines on a
+reviewer's wish; Victor caught the violation, the lines were reset. 2026-10-14,
+my-smart-home 001-health-probe: the orchestrator's fix brief stated "Linux ping exit 2
+= tool error" without measuring it; the fix introduced a false-DOWN regression that
+Reinhard round 2 and Victor each found by running ping in a Debian container — one full
+extra review round. 2026-10-13 and 2026-10-15, captrader-llm: report claims condensed
+from eval data ("by hand", "0.32.4 does not load v1") were never re-measured and were
+caught only in review.
+
+**Rule.** A brief that asks an agent to fix findings names the plan's protected items
+verbatim and tags every platform or environment fact `measured: <command>` — or hands
+the measurement to the agent as a task. See `_shared/spawn-policy.md` S4.

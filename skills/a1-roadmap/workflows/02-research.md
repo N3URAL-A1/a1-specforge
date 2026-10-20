@@ -30,4 +30,11 @@ Research the domain and tech stack for this project roadmap.
 
 When RESEARCH.md exists at `.a1/RESEARCH.md`.
 
+Before moving on, read its `## Decisions needed` section (also echoed at the end of
+the researcher's summary). Put every row that is not `none` to the user with
+`AskUserQuestion`, one question per turn, and record the answers in `.a1/RESEARCH.md`
+under the same table (`Answer` column) before Phase 3 structures milestones — a
+product question left "open" here resurfaces after the plan is written
+(`_shared/agent-lessons.md#rico-decisions-needed`).
+
 Brief user: "Research done. Key finding: <most important thing>. Moving to milestone planning."

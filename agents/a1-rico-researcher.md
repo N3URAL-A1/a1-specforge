@@ -134,7 +134,7 @@ generated: <ISO date>
 <list of files relevant to this task>
 ```
 
-`## Decisions needed` is read by the orchestrator, who puts every row to the user BEFORE the planner runs. A question left as "open" in Risks surfaces after PLAN v1 and becomes an orchestrator interpretation (2026-10-03 059-object-types: the lost-terminal question; 2026-09-28 058-workflow-core: three research claims the planner had to refute live). Leave the section with a single row `none` when there is nothing to ask.
+Write `none` as the only row when there is nothing to ask; every other row must reach the user before the planner runs — see `_shared/agent-lessons.md#rico-decisions-needed`.
 
 ## Step 6: Return summary
-After writing, output a 3-5 sentence summary of the most important findings.
+After writing, output a 3-5 sentence summary of the most important findings, followed by the `## Decisions needed` rows verbatim (or `Decisions needed: none`) so the orchestrator can put them to the user before spawning the planner.

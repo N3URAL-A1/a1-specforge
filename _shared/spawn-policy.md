@@ -34,12 +34,8 @@ for wave execution, review and verification spawn a fresh typed agent.
 A brief that asks an agent to fix review findings names the plan's protected items
 (AS-list, must-not-touch lines, scope) verbatim, and states every platform or
 environment fact as `measured: <command>` or hands it to the agent as a measurement
-task. Measured 2026-10-14 twice: a fix brief without the AS-list made the executor
-rewrite protected README lines on a reviewer's wish (a1-office infra-rename-cutover);
-an unmeasured "Linux ping exit 2 = tool error" in a fix brief introduced a false-DOWN
-regression that cost a full extra review round (my-smart-home 001). Same class in
-captrader-llm 2026-10-13/15: report claims condensed from the data instead of
-re-measured, caught only in review.
+task. Four review-fix rounds in October 2026 were caused by briefs that lacked one or
+the other — incidents in `_shared/agent-lessons.md#fix-brief-measured`.
 
 ## Self-check before dispatch
 
