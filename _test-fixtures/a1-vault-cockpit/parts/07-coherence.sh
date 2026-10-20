@@ -436,6 +436,14 @@ caseD4() {
 }
 
 # ============ Section CI — product validate --spec-status --ci (FR-033) ============
+# Measured red (2026-10-21, git-archive snapshot, one production line reverted each):
+#   M1 featureFileSpecPath ignored            → CI2 x2 red
+#   M2 every status gated                     → CI4b x2, CI8 count red
+#   M3 missing roadmap exits 1 again          → CI6 x2 red
+#   M4 exit ignores coherence violations      → K1, K5, D1, D2, CI1, CI4, CI7, CI8b red
+#   M5 terminal-disagreement branch removed   → D1, D2 (+ K1, K5, K6) red
+#   M6 status_drift promoted to violation     → D3 x2 (+ K3) red
+#   M7 hasPath() accepts any string           → CI7 x4 red
 # No vault anywhere: every call runs with env -u A1_VAULT_ROOT.
 # d_ci <name> — runs --spec-status --ci from $C_WORK/<name>/repo; sets C_OUT, C_RC.
 d_ci() {
@@ -489,14 +497,21 @@ caseCI6() {
   assert_json "CI6 result not_applicable" "$C_OUT" "j.ci.result" "not_applicable"
   assert_eq "CI6 nothing written" "$(find "$C_WORK/ci6/repo" -mindepth 1 | wc -l | tr -d ' ')" "0"
 }
-# Hostile input: a blank value is no path; a broken feature.md does not crash.
+# Hostile input: a blank or the string "null" is no path; a broken feature.md does not crash.
+# Red-making change: hasPath() accepting any string.
 caseCI7() {
-  c_case ci7 none done '"   "'
-  mkdir -p "$C_WORK/ci7/repo/docs/product/features/005-demo"
-  printf -- '---\nspec_path: [unclosed\n' > "$C_WORK/ci7/repo/docs/product/features/005-demo/feature.md"
-  d_ci ci7
-  assert_rc "CI7 blank spec_path + broken feature.md → exit 1, no crash" 1 "$C_RC" "$(head -c 300 "$C_WORK/stderr")"
-  assert_json "CI7 one violation" "$C_OUT" "j.ci.violations.length" "1"
+  local v
+  for v in '"   "' '"null"'; do
+    c_case ci7 none done null
+    sed "s#^    spec_path: null#    spec_path: $v#" "$C_WORK/ci7/repo/docs/product/ROADMAP.md" > "$C_WORK/ci7.new" \
+      && mv "$C_WORK/ci7.new" "$C_WORK/ci7/repo/docs/product/ROADMAP.md"
+    mkdir -p "$C_WORK/ci7/repo/docs/product/features/005-demo"
+    printf -- '---\nspec_path: [unclosed\n' > "$C_WORK/ci7/repo/docs/product/features/005-demo/feature.md"
+    d_ci ci7
+    assert_rc "CI7 spec_path $v + broken feature.md → exit 1, no crash" 1 "$C_RC" "$(head -c 300 "$C_WORK/stderr")"
+    assert_json "CI7 $v: one violation" "$C_OUT" "j.ci.violations.length" "1"
+    rm -rf "$C_WORK/ci7"
+  done
 }
 # The committed docs/product of THIS repo: green (SC-008 CI side), then 001 stripped → red.
 caseCI8() {
