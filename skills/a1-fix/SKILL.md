@@ -163,8 +163,9 @@ through the worktree unconditionally.) The flow:
 2. **Work the fix** there (Phases 1–4). Build + test must be GREEN in the worktree.
 3. **Merge via PR** only after GREEN: hand the worktree to `a1-pr-review`
    (`a1-worktree exit --mode handoff`). It pushes the branch, opens the PR,
-   runs the review, and squash-merges (`gh pr merge --squash --delete-branch`).
+   runs the review, and squash-merges (`gh pr merge <n> --squash --delete-branch`).
    No local merge into `main`, no `git push origin main`.
+   The cross-provider (Codex) review of the fix diff runs only inside `a1-pr-review` (step 2.2b, `pr-diff-xprov`); this skill never runs a cross-provider gate itself.
    If `origin/main` is broken (build fails for reasons unrelated to your fix):
    STOP, do NOT layer your fix on top, report to Robert.
 4. **Tear down** the worktree: done by `a1-pr-review` after the merge — do not

@@ -1,0 +1,8 @@
+Real files, copied read-only on 2026-10-14/15:
+- plan.index.json  <- ~/claude-projects/a1-office/.a1/phases/infra-rename-a1-office/xreview/index.json (4 plan rows: 2 blocked, 2 fail-with-findings)
+- wave.index.json  <- ~/claude-projects/a1-office/.a1/phases/infra-rename-cutover/xreview/index.json (wave 1 pass, wave 3 rounds 1+2, mirrors)
+- runs/<name>/     <- ~/.a1-xprov/artifacts/infra-rename-a1-office/claudex-<name>/ (result.json, a1-findings.json, a1-reviewed.json, a1-pass.json)
+- gitleaks-report.masked.json <- a real `gitleaks detect --no-git --report-format json` run (gitleaks 8.30.1, a1's xprov-gitleaks.toml)
+  over a scratch directory with two planted fake tokens; Secret and Match values were replaced by MASKED-FIXTURE-* markers
+  before commit (the planted values are not in the repository). Tests search the question output for those markers.
+The part adapts plan_sha256 / result_path / plan_sha256 inside result.json to the fixture repository at test time (node, not the code under test).

@@ -153,6 +153,55 @@ else
   fail_case "positional slug did not reach registry lookup — flags._[0] may be broken"
 fi
 
+echo "== Test 12: spec 016 wave 10 - pr-diff-xprov wiring in the skill text"
+SK="$(cd "$(dirname "$0")/../.." && pwd)/skills"
+REV="$SK/a1-pr-review/workflows/02-review.md"
+if grep -q "xprov gate --gate pr-diff-xprov" "$REV" && grep -q "2.2b" "$REV"; then
+  pass_case "step 2.2b runs the pr-diff-xprov gate next to the Reinhard spawn"
+else
+  fail_case "02-review.md lacks step 2.2b / the pr-diff-xprov gate call"
+fi
+if grep -q -- "--merge-check" "$REV"; then
+  pass_case "the merge check (--merge-check) is a step of the review workflow"
+else
+  fail_case "02-review.md lacks the --merge-check step"
+fi
+if grep -q '`source` field' "$REV" && grep -q '"codex"' "$REV" && grep -q '"reinhard"' "$REV"; then
+  pass_case "findings are tagged by source (reinhard / codex)"
+else
+  fail_case "02-review.md does not describe the findings source tag"
+fi
+if grep -q "Cross-provider review" "$SK/a1-pr-review/workflows/03-draft.md"; then
+  pass_case "the PR body carries a Cross-provider review section"
+else
+  fail_case "03-draft.md lacks the Cross-provider review section"
+fi
+if grep -q "Merge only on exit 0" "$REV" && grep -q "exit 77" "$REV"; then
+  pass_case "step 2.7 says: merge only on exit 0, exits 1/2/77 named"
+else
+  fail_case "02-review.md 2.7 lacks the merge-only-on-exit-0 rule"
+fi
+if grep -q '"matcher": "Bash"' "$SK/../hooks/hooks.json"; then
+  pass_case "the plugin hooks.json carries the Bash matcher of the merge hook"
+else
+  fail_case "hooks/hooks.json has no Bash matcher: the merge check is not enforced"
+fi
+if grep -q 'gh pr merge <n> --squash --delete-branch' "$SK/a1-pr-review/SKILL.md" && grep -q 'exactly ONE command' "$REV"; then
+  pass_case "the merge step uses the canonical form the hook allows"
+else
+  fail_case "the a1-pr-review merge step does not name the canonical gh pr merge form"
+fi
+leak=0
+for f in "$SK/a1-new-feature/workflows/05-implement.md" "$SK/a1-fix/SKILL.md"; do
+  if grep -q "xprov gate" "$f"; then leak=1; fail_case "$f calls the cross-provider gate; it is reached only through a1-pr-review 2.2b"; fi
+done
+[ "$leak" -eq 0 ] && pass_case "a1-new-feature 05-implement and a1-fix call no cross-provider gate (static)"
+
+# `consent waive` takes no --kind (and needs --phase or --work-path): the shorthand `ensure|waive --kind waiver` exits 2 (Reinhard 2026-10-19)
+bad_waive="$(grep -rnE 'consent (ensure\|)?waive --kind|ensure\|waive' "$SK" 2>/dev/null | head -3)"
+if [ -z "$bad_waive" ]; then pass_case "no skill text shows 'consent waive --kind' or the 'ensure|waive' shorthand (static)"
+else fail_case "a skill text shows a waive call that exits 2: $bad_waive"; fi
+
 echo ""
 echo "a1-pr-review: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

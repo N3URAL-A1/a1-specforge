@@ -38,6 +38,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
+const OWNER_HOME = require('./xprov-owner-home.cjs');
 
 // ---------- exit contract (house rule for every xprov subcommand) ----------
 // stdout JSON is the machine contract; every human sentence goes to stderr.
@@ -63,6 +64,10 @@ const SUBCOMMANDS = Object.freeze({
   'wave-status': Object.freeze({ module: 'xprov-gate.cjs', fn: 'cmdXprovWaveStatus', wave: 6 }),
   waive: Object.freeze({ module: 'xprov-gate.cjs', fn: 'cmdXprovWaive', wave: 6 }),
   allowlist: Object.freeze({ module: 'xprov-approve.cjs', fn: 'cmdXprovAllowlist', wave: '6b' }),
+  // Spec 016 (wave 1): the modules ship in waves 2, 6 and 9. Until then the missing-module branch of cmdXprov fails closed (exit 2).
+  consent: Object.freeze({ module: 'xprov-consent.cjs', fn: 'cmdXprovConsent', wave: 2 }),
+  scope: Object.freeze({ module: 'xprov-scope.cjs', fn: 'cmdXprovScope', wave: 6 }),
+  dispose: Object.freeze({ module: 'xprov-dispose.cjs', fn: 'cmdXprovDispose', wave: 9 }),
 });
 const SUBCOMMAND_NAMES = Object.freeze(Object.keys(SUBCOMMANDS));
 
@@ -91,6 +96,14 @@ const REASON_LIST = Object.freeze([
   'external_review_permit_mismatch',
   'snapshot_not_scanned',
   'snapshot_changed_after_scan',
+  // Spec 016 (wave 1): reason constants only; the behavior behind them ships in the named waves.
+  'owner_home_mismatch', // $HOME differs from the OS user's home: no owner store is written, permit-check is not ok (FR-009)
+  'scope_exempt', // wave 7: placement rule says this review does not apply
+  'codex_blocked_fallback', // wave 8: blocked twice, Reinhard-only
+  'secret_declined', // wave 9: owner declined the allowlist question for a changed-line hit
+  'pr_anchor_unavailable', // wave 10: the real target base (gh pr view / ls-remote) could not be resolved or fetched
+  'pr_base_mismatch', // wave 10: --base is not the remote base the gate resolved itself
+  'pr_merge_blocked', // wave 10: the merge check refuses (surface diff without an accepted pr-diff-xprov result for the head sha)
 ]);
 const REASONS = Object.freeze(Object.fromEntries(REASON_LIST.map((r) => [r, r])));
 
@@ -102,7 +115,7 @@ const VERDICTS = Object.freeze({ PASS: 'pass', FAIL_WITH_FINDINGS: 'fail-with-fi
 const VERDICT_NOT_APPLICABLE = 'not_applicable';
 
 // ---------- gate ids (rows in _shared/gates-registry.md) ----------
-const GATE_IDS = Object.freeze({ PLAN_REVIEW: 'plan-review-xprov', WAVE_INSPECT: 'wave-inspect-xprov' });
+const GATE_IDS = Object.freeze({ PLAN_REVIEW: 'plan-review-xprov', WAVE_INSPECT: 'wave-inspect-xprov', PR_DIFF: 'pr-diff-xprov' }); // PR_DIFF: spec 016 wave 10, a1-pr-review step 2.2b
 const GATE_ID_LIST = Object.freeze(Object.values(GATE_IDS));
 
 // ---------- runner usage limits (FR-024) ----------
@@ -137,6 +150,8 @@ const ALLOWLIST_CLASSES = Object.freeze(['fixture_fake', 'doc_example', 'code_pa
 // Human approval store (FR-030 j), outside every repository; written only by
 // the TTY-only `xprov allowlist approve`.
 const ALLOWLIST_APPROVALS_FILE = 'allowlist-approvals.json';
+// Chat hit approvals (spec 016 FR-014): their OWN store, read only by the FR-029 hit check; the blob-approval evaluation never reads it.
+const HIT_APPROVALS_FILE = 'hit-approvals.json';
 const ALLOWLIST_DETAILS = Object.freeze({
   anchor_unresolved: 'allowlist_anchor_unresolved',
   not_separate_commit: 'allowlist_not_separate_commit',
@@ -255,7 +270,7 @@ const SUMS_FILE = 'SHA256SUMS';
 const RUNNER_SHA256 = '962dfdfe5d67b75eb73ec7c38b9186e6e6e0ca96a68d4ec82595305d8f737c8c';
 
 function xprovHome() {
-  return path.join(os.homedir(), XPROV_HOME_DIRNAME);
+  return path.join(OWNER_HOME.ownerHome(), XPROV_HOME_DIRNAME); // spec 016 FR-009: passwd home, never $HOME
 }
 
 function artifactsDir(slug) {
@@ -403,7 +418,7 @@ module.exports = {
   RUNNER_MODES, FORBIDDEN_RUNNER_TOKENS, RUNNER_HOST, RUNNER_DEFAULT_TIMEOUT_SECONDS,
   ARTIFACT_MAX_AGE_DAYS, PASS_RUN_MAX_AGE_DAYS, ROUND_CAP, MAX_FIELD_CHARS, MAX_RESULT_BYTES, TITLE_MAX_CHARS,
   MODEL_REQUESTED_DEFAULT, MODEL_OBSERVED_UNKNOWN,
-  ALLOWLIST_FILE, ALLOWLIST_MAX_ENTRIES, ALLOWLIST_MAX_COUNT, ALLOWLIST_MAX_SCOPES, ALLOWLIST_SCOPE_MAX_COUNT, ALLOWLIST_CLASSES, ALLOWLIST_APPROVALS_FILE,
+  ALLOWLIST_FILE, ALLOWLIST_MAX_ENTRIES, ALLOWLIST_MAX_COUNT, ALLOWLIST_MAX_SCOPES, ALLOWLIST_SCOPE_MAX_COUNT, ALLOWLIST_CLASSES, ALLOWLIST_APPROVALS_FILE, HIT_APPROVALS_FILE,
   ALLOWLIST_DETAILS, HIGH_CONFIDENCE_PATTERNS,
   SECRET_PATTERNS, TOKEN_BOUNDARY, PATH_NAME_BOUNDARY_PATTERNS, INSTRUCTION_MARKERS, INSTRUCTION_MARKER_PATTERNS,
   CODEX_HOME_ENV, RUNNER_FILE, SUMS_FILE,

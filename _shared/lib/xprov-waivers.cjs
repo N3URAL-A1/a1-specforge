@@ -50,7 +50,7 @@ function validRecord(r) {
   if (!AL.exactKeys(r, RECORD_KEYS)) return null;
   const str = (v) => typeof v === 'string' && v !== '';
   if (![r.repo, r.phase, r.gate, r.reason, r.by, r.ts].every(str) || !SHA256_HEX_RE.test(r.plan_sha256)) return null;
-  const isWave = r.gate === X.GATE_IDS.WAVE_INSPECT;
+  const isWave = r.gate === X.GATE_IDS.WAVE_INSPECT || r.gate === X.GATE_IDS.PR_DIFF; // the PR diff gate is keyed like a wave (wave 0, lane pr<head>)
   if (isWave && !(Number.isInteger(r.wave) && r.wave >= 0 && SHA_RE.test(String(r.head)) && SHA_RE.test(String(r.base)))) return null;
   if (isWave && r.lane !== null && !C.LANE_RE.test(String(r.lane))) return null;
   if (!isWave && (r.wave !== null || r.lane !== null || r.head !== null || r.base !== null)) return null;
@@ -93,7 +93,7 @@ function planWaiver(store, key) {
 
 /** Store waivers for (repo, phase, plan sha, wave, lane), oldest first. */
 function waveWaivers(store, key) {
-  return store.waivers.filter((w) => w.gate === X.GATE_IDS.WAVE_INSPECT && w.repo === key.repo && w.phase === key.phase
+  return store.waivers.filter((w) => w.gate === (key.gate === X.GATE_IDS.PR_DIFF ? X.GATE_IDS.PR_DIFF : X.GATE_IDS.WAVE_INSPECT) && w.repo === key.repo && w.phase === key.phase
     && w.plan_sha256 === key.plan_sha256 && w.wave === key.wave && w.lane === (key.lane || null));
 }
 
@@ -153,35 +153,55 @@ function leadsTo(workPath, from, to, phase) {
  * Returns a Map pair-key → chosen entry or null. Walks each lane from its last
  * completed wave down: the last must sit at the tip (atTip), every earlier one
  * must end exactly where the next one's base starts; a lacking successor makes
- * every earlier wave of the lane lack too (fail closed). */
-function chainCoverage(pairs, candidates, tips, phase) {
+ * every earlier wave of the lane lack too (fail closed). `exempt` (Set of `wave|lane`, optional) and `ranges` (Map wave -> verified { base, head }): placement-exempt waves are skipped; the
+ * gap around them keeps the ancestry rule via the wave's verified range; the workflow-files-only rule is dropped there (the gap is exactly the verified exempt ranges). */
+function chainCoverage(pairs, candidates, tips, phase, exempt, ranges) {
   const chosen = new Map();
+  const skip = exempt instanceof Set ? exempt : new Set();
   const key = (p) => `${p.wave}|${p.lane || ''}`;
   const lanes = [...new Set(pairs.map((p) => p.lane || ''))];
   for (const lane of lanes) {
     const waves = pairs.filter((p) => (p.lane || '') === lane).sort((a, b) => a.wave - b.wave);
     const tip = tips[lane];
     let next = null;
+    let seenRequired = false; // a required (non-exempt) wave lies after this one
+    let gap = false; // exempt waves (placement, spec 016 FR-020) lie between this wave and `next` / the tip: their commits are not reviewed by design
     for (let i = waves.length - 1; i >= 0; i--) {
       const p = waves[i];
-      const isLast = i === waves.length - 1;
+      if (skip.has(key(p))) { gap = true; continue; }
+      const isLast = !seenRequired;
+      // across exempt waves (gap) the head must STILL be an ancestor of the next base / the tip; the "workflow files only" rule is relaxed
+      // because the caller passes `exempt` only for waves whose ranges it verified to tile the gap (xprov-wave-ranges.cjs, spec 016 FR-020)
+      // and the pass head must lead to the END of the wave's verified range (only workflow files between): commits added to the wave after its review
+      // are not left unclassified in the gap (Samuel wave 7 round 3)
+      const viaRange = (c, to) => {
+        const r = ranges instanceof Map ? ranges.get(p.wave) : undefined;
+        return r !== undefined && leadsTo(tip.workPath, c.head, r.head, phase) && inHistory(tip.workPath, r.head, to);
+      };
+      const reaches = (c, to) => leadsTo(tip.workPath, c.head, to, phase) || (gap && viaRange(c, to));
       const ok = (c) => SHA_RE.test(String(c.head)) && SHA_RE.test(String(c.base)) && inHistory(tip.workPath, c.base, c.head)
-        && (isLast ? leadsTo(tip.workPath, c.head, tip.head, phase) : next !== null && leadsTo(tip.workPath, c.head, next.base, phase));
+        && (isLast ? reaches(c, tip.head) : next !== null && reaches(c, next.base));
       const pick = tip ? [...candidates(p)].reverse().find(ok) || null : null;
       chosen.set(key(p), pick);
       next = pick;
+      seenRequired = true;
+      gap = false;
     }
   }
   return chosen;
 }
 
-/** Appends one record; a broken existing store is never replaced (Samuel S-m5 for approvals). */
-function appendWaiver(record, writeGuardedStore) {
+/** Appends the records in ONE atomic write; a broken existing store is never replaced (Samuel S-m5 for approvals).
+ * The caller holds the owner-store lock (xprov-audit.cjs withStoreLock): this reads the store and writes it back (spec 016 R-4). */
+function appendWaivers(records, writeGuardedStore) {
   const current = readWaivers();
   if (!current.ok && !current.missing) throw C.inputError(`the existing ${STORE_LABEL} is not usable (${current.why}); fix or remove ${waiversPath()} yourself`, 'store_broken');
-  const rec = validRecord(record);
-  if (!rec) throw new Error('internal: waiver record off-format');
-  return writeGuardedStore(WAIVERS_FILE, { version: 1, waivers: [...current.waivers, rec] });
+  const recs = records.map(validRecord);
+  if (recs.some((r) => r === null)) throw new Error('internal: waiver record off-format');
+  return writeGuardedStore(WAIVERS_FILE, { version: 1, waivers: [...current.waivers, ...recs] });
 }
 
-module.exports = { WAIVERS_FILE, RECORD_KEYS, waiversPath, readWaivers, planShaOf, headIn, inHistory, planWaiver, waveWaivers, chainCoverage, leadsTo, exemptFiles, parseRawZ, appendWaiver, validRecord };
+/** Appends one record (see appendWaivers). */
+const appendWaiver = (record, writeGuardedStore) => appendWaivers([record], writeGuardedStore);
+
+module.exports = { WAIVERS_FILE, RECORD_KEYS, waiversPath, readWaivers, planShaOf, headIn, inHistory, planWaiver, waveWaivers, chainCoverage, leadsTo, exemptFiles, parseRawZ, appendWaiver, appendWaivers, validRecord };

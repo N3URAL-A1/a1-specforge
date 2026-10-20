@@ -1,0 +1,33 @@
+{
+  "phase": "infra-rename-a1-office",
+  "gate": "plan-review-xprov",
+  "wave": null,
+  "lane": null,
+  "round": 1,
+  "summary": "The main cutover is carefully gated, but rollback guidance and the optional deletion gates leave concrete operational gaps.",
+  "blocker": [],
+  "major": [
+    {
+      "id": "R1",
+      "file": ".github/workflows/deploy.yml",
+      "line": 99,
+      "title": "R1: The failure summary directs operators to `kubectl rollout undo` as the last healthy revision.",
+      "detail": "The failure summary directs operators to `kubectl rollout undo` as the last healthy revision. After B7, that command selects B6, which still uses the new registry path. The plan explicitly recognizes this problem but updates only STATUS.md, leaving the operational failure response unchanged. An operator following Deploy Verification after the cutover can therefore fail to restore the old registry during an incident.\n\nFix (reviewer proposal, not applied): Update the workflow's rollback guidance and related operational instructions to use a recorded, verified image digest and registry path. Explain the B6/B7 revision behavior where operators receive the failure instructions.",
+      "severity": "medium"
+    }
+  ],
+  "minor": [],
+  "quarantined": [
+    {
+      "id": "R2",
+      "reason": "path_not_in_repo",
+      "severity": "high"
+    },
+    {
+      "id": "R3",
+      "reason": "path_not_in_repo",
+      "severity": "medium",
+      "display_detail": "Gate c labels other remote branches 'not deployable' and excludes them. However, build-image.yml explicitly supports selecting a branch for workflow_dispatch, checks out that branch, and uses its registry path with SCW_SECRET_KEY. A retained branch containing the old workflow can still be dispatched after deletion and attempt to publish to the deleted namespace. Worktrees and open PRs do not cover all executable workflow refs.\n\nFix (reviewer proposal, not applied): Include d…"
+    }
+  ]
+}

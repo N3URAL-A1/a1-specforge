@@ -1,0 +1,99 @@
+{
+  "status": "completed",
+  "mode": "inspect",
+  "provider": "codex",
+  "roles": {
+    "host": "claude",
+    "planner": "claude",
+    "reviewer": "codex",
+    "builder": "claude",
+    "inspector": "codex"
+  },
+  "repo": "/Users/rob/.a1-xprov/snapshots/snap-BrMbh1",
+  "plan": "/Users/rob/.a1-xprov/snapshots/snap-BrMbh1.inputs/PLAN.md",
+  "plan_sha256": "bf706673ef37761b1870a27d79ca01eed80b1ee4f62433ef8b300118c8b8bf4b",
+  "requested_model": null,
+  "requested_effort": null,
+  "base": "dca2e1860fe8ea8ed5ce4f07c123b313edbda13d",
+  "snapshot": {
+    "base": "dca2e1860fe8ea8ed5ce4f07c123b313edbda13d",
+    "files": [
+      {
+        "path": ".a1/phases/infra-rename-cutover/STATUS.md",
+        "kind": "file",
+        "sha256": "1d51f463eb89c806ff3af29018f9b0bb3314161f7287c34074260444c82422ad"
+      },
+      {
+        "path": "infra/app/README.md",
+        "kind": "file",
+        "sha256": "44e8253f1f08603ee0bbcceb5432e733f38562f506b7853d661b7b644a8bc0a0"
+      },
+      {
+        "path": "infra/app/cronjob-expense-mail-intake.yaml",
+        "kind": "file",
+        "sha256": "3c3eae284dfcf44b6b3f030f9721f719606ec5c39412586721d24ba4c049e359"
+      },
+      {
+        "path": "infra/app/cronjob-rls-check.yaml",
+        "kind": "file",
+        "sha256": "6e508fbccf6b651ced0c524bb5f1d779af948f182b3b0975caf0d70276171e85"
+      },
+      {
+        "path": "infra/app/cronjob-tick.yaml",
+        "kind": "file",
+        "sha256": "e6596295a799821d43309b07e377b2854bf3c58889740daecc92f38c51d82f2e"
+      },
+      {
+        "path": "infra/app/deployment.yaml",
+        "kind": "file",
+        "sha256": "11376c37fa667f2f146bd3ed16f75be90d0cc1a811c5ec9d078e7bc5e8e77c94"
+      },
+      {
+        "path": "infra/postgrest/deployment.yaml",
+        "kind": "file",
+        "sha256": "59e5f07340adc792eebac3118097d5c35c92ffeae39b5ee6060908353452ec3c"
+      },
+      {
+        "path": "infra/postgrest/service.yaml",
+        "kind": "file",
+        "sha256": "55ef366c2b8e29d10ea5104e8acbe388934530a325d79037c1dec9eeb657f2bc"
+      }
+    ],
+    "diff_sha256": "d42794a7002961365d834acd6cb44befe482565abb2c618b229be1edebafe6b7",
+    "sha256": "5bacbb4a8ca983d5ce5f099c30747b0c4667e9f3a6be7ce97013a6e938c9d83c"
+  },
+  "previous": null,
+  "started_at": 1791902923.448704,
+  "artifacts": "/Users/rob/.a1-xprov/artifacts/infra-rename-a1-office/claudex-dbx0noyq",
+  "cli_version": "codex-cli 0.155.1",
+  "executable": [
+    "/opt/homebrew/lib/node_modules/@openai/codex/bin/codex.js"
+  ],
+  "exit_code": 0,
+  "session_id": "01a135bc-c375-7d23-ba83-0fcfce996ddc",
+  "response": {
+    "verdict": "APPROVED",
+    "summary": "No material defects found in the submitted Wave 1 changes. The seven infra files match the planned 12 line replacements; selectors, pod templates, object names, and runtime configuration remain unchanged.",
+    "findings": [],
+    "coverage": [
+      "Read all eight changed files and compared the submitted diff with Wave 1 requirements.",
+      "Read PLAN.md, RESEARCH.md, and MAP.md; verified the supplied plan SHA256.",
+      "Traced app and PostgREST Deployment, Service, affinity, and PDB selectors; searched related repository consumers of the part-of labels.",
+      "Inspected registry image and buildcache writers in build-image.yml, deployment guidance, registry rollback documentation, and the two relevant test files."
+    ],
+    "limitations": [
+      "Approval covers the submitted Wave 1 repository changes, not completion of Waves 2 and 3 or authorization for production cutover.",
+      "No tests were run. Test and snapshot results recorded in STATUS.md were not independently verified.",
+      "Live Kubernetes state, registry contents, credentials, and GitHub run history were not inspected."
+    ]
+  },
+  "usage": {
+    "input_tokens": 306130,
+    "cached_input_tokens": 229760,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 1031,
+    "reasoning_output_tokens": 24
+  },
+  "observed_models": [],
+  "elapsed_seconds": 64.11
+}

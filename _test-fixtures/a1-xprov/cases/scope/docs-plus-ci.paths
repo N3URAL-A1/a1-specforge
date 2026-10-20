@@ -1,0 +1,3 @@
+.claude/rules/dev-patterns.md
+.github/workflows/ci.yml
+automation/db/migrations/MIGRATIONS-RESERVED.md

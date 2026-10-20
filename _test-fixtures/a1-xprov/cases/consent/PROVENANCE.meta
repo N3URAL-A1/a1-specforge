@@ -1,0 +1,18 @@
+Provenance of the consent payload templates (spec 016 wave 2, plan risk R-1).
+
+SHAPE ONLY. The owner's question and answer texts are NOT copied; the templates carry __TOKENS__ that the suite fills
+with the canonical xprov question of the fixture repository.
+
+Real source (read-only, 2026-10-14): the Claude Code session transcript
+  ~/.claude/projects/-Users-rob-claude-projects-noa-planning/ce966712-ed0f-44c3-b401-824ee4468bc1.jsonl
+holds an owner-answered AskUserQuestion call. Its tool_use input was
+  { questions: [ { question, header, options: [ { label, description } ], multiSelect } ] }
+and the result line carried
+  toolUseResult = { questions: [...], answers: { "<question text>": "<chosen label>" }, annotations: {} }
+  tool_result content (string) = 'Your questions have been answered: "<question>"="<label>". You can now continue with these answers in mind.'
+These are the two shapes of post-tool-use.answers.template.json (tool_response = toolUseResult) and
+post-tool-use.text.template.json (tool_response = the content string). post-tool-use.none.template.json is the same
+envelope with an empty answers map (a question that was dismissed).
+
+NOT measured: what a PostToolUse hook really receives under tool_response, and whether its tool_use_id equals the
+PreToolUse one. Plan wave 4 captures one live Pre/Post pair first and replaces these templates if the shape differs.

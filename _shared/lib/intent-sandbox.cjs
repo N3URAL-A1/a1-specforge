@@ -235,6 +235,12 @@ const XPROV = 'starts a second model provider (Codex) from inside the child';
 // project/<slug>/. Excluded until spec round 10 decides how an execute intent passes the blocking
 // xprov gates (Reinhard W11 MAJOR).
 const XPROV_STORE = 'reads the xprov waiver store ~/.a1-xprov/ outside project/<slug>/ (starts no provider; spec round 10 decides the execute path)';
+// Spec 016: permit-check reads the owner's permit store and `consent` writes owner stores (asked ledger, audit) and puts a chat question;
+// an intent run is headless (no AskUserQuestion, no owner in chat), so both are excluded: no permit and no chat = Reinhard-only (spec 016 FR-012).
+const XPROV_CONSENT = 'reads or writes the owner stores ~/.a1-xprov/ outside project/<slug>/ and needs an owner in chat; an intent run is headless, so it takes the Reinhard-only path (spec 016 FR-012)';
+// Spec 016 FR-025/FR-029: dispose reads a1's run records under ~/.a1-xprov/ (and, with --secret-declined, the owner's scan-records); it needs the
+// gate's round-2 run, which an intent child never starts (xprov gate is excluded), so nothing is left to dispose.
+const XPROV_DISPOSE = 'reads a1\'s run records and scan records under ~/.a1-xprov/ outside project/<slug>/; an intent run starts no Codex review, so no round-cap or secret stop exists to close (spec 016 FR-025, FR-029)';
 const TRANSCRIPTS = 'reads Claude Code session transcripts under ~/.claude/projects/';
 const ROW_R = 'row R (progress) has no Bash';
 const NEW_FEATURE_EXCLUDED = Object.freeze({
@@ -246,10 +252,10 @@ const NEW_FEATURE_EXCLUDED = Object.freeze({
 const INTENT_CHILD_EXCLUSIONS = Object.freeze({
   'new-feature': NEW_FEATURE_EXCLUDED,
   'continue-feature': NEW_FEATURE_EXCLUDED,
-  plan: Object.freeze({ 'retro validate': OUTSIDE_STORE, 'vault sync': VAULT_WIDE, 'xprov gate': XPROV, 'xprov waive': XPROV }),
+  plan: Object.freeze({ 'retro validate': OUTSIDE_STORE, 'vault sync': VAULT_WIDE, 'xprov consent': XPROV_CONSENT, 'xprov dispose': XPROV_DISPOSE, 'xprov gate': XPROV, 'xprov permit-check': XPROV_CONSENT, 'xprov waive': XPROV }),
   execute: Object.freeze({
     'cost run': TRANSCRIPTS, 'retro validate': OUTSIDE_STORE, 'vault sync': VAULT_WIDE,
-    'xprov gate': XPROV, 'xprov load-check': XPROV_STORE, 'xprov waive': XPROV, 'xprov wave-status': XPROV_STORE,
+    'xprov consent': XPROV_CONSENT, 'xprov dispose': XPROV_DISPOSE, 'xprov gate': XPROV, 'xprov load-check': XPROV_STORE, 'xprov permit-check': XPROV_CONSENT, 'xprov waive': XPROV, 'xprov wave-status': XPROV_STORE,
   }),
   fix: Object.freeze({
     'fix count-postmortems-since': 'scans the postmortems of every project',

@@ -1,0 +1,25 @@
+{
+  "description": "a1-specforge xprov consent hook (spec 016 FR-004): canonical consent questions only, pending-yes from the real answer, store and settings-forgery deny, and the merge block for gh pr merge (spec 016 wave 10), fail closed.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/xprov-consent-hook.sh\" || exit 2", "onFailure": "block" }]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/xprov-merge-hook.sh\" || exit 2", "timeout": 180, "onFailure": "block" }]
+      },
+      {
+        "matcher": "Edit|Write|NotebookEdit|MultiEdit",
+        "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/xprov-consent-hook.sh\" || exit 2", "onFailure": "block" }]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/xprov-consent-hook.sh\" || exit 2", "onFailure": "block" }]
+      }
+    ]
+  }
+}

@@ -65,6 +65,7 @@ const { spawnSync } = require('child_process');
 const io = require('./io.cjs');
 const xprov = require('./xprov.cjs');
 const C = require('./xprov-common.cjs');
+const HM = require('./xprov-homemark.cjs');
 
 const HOME_MODE = 0o700;
 const CONFIG_MODE = 0o600;
@@ -663,7 +664,7 @@ function pinFeatures(home, configPath) {
 }
 
 function isEffectivelyEmpty(home) {
-  return fs.readdirSync(home).filter((n) => !CODEX_IGNORED_DIRS.includes(n)).length === 0;
+  return fs.readdirSync(home).filter((n) => !CODEX_IGNORED_DIRS.includes(n) && n !== HM.MARKER_FILE).length === 0;
 }
 
 /** Idempotent: creates a missing home (0700 + compliant config + auth
@@ -725,7 +726,10 @@ function cmdXprovInitHome(args) {
   if (flags._.length) return usageExit(`init-home: unexpected argument ${JSON.stringify(String(flags._[0]).slice(0, 80))}`);
   const home = resolveHomeOrExit('init-home');
   if (home === null) return null;
-  const r = initHome({ codexHome: home, pruneMarketplaces: Boolean(flags['prune-marketplaces']), pinFeatures: Boolean(flags['pin-features']) });
+  const r0 = initHome({ codexHome: home, pruneMarketplaces: Boolean(flags['prune-marketplaces']), pinFeatures: Boolean(flags['pin-features']) });
+  // the owner command marks the home as the owner's (W8-3): the gate's self-repair works only in a marked home (or the default one)
+  const marked = r0.reason !== 'codex_home_is_global' && fs.existsSync(home) && HM.writeOwnerMarker(home);
+  const r = marked ? { ...r0, owner_marker: true } : r0;
   const lines = [];
   if (r.reason === 'codex_home_is_global') lines.push(`init-home: refused — ${home} is the global ~/.codex`);
   else if (r.reason === 'pin_conflict') lines.push(`init-home: --pin-features refused — ${r.conflicts.join(', ')}; a human set it, a1 does not overwrite it`);

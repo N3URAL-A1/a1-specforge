@@ -13,7 +13,17 @@ fi
 if [[ -n "${FAKE_GITLEAKS_NEEDLE:-}" ]]; then
   src=""; prev=""
   for a in "$@"; do [[ "$prev" == "--source" ]] && src="$a"; prev="$a"; done
-  [[ -n "$src" ]] && grep -rqF -- "$FAKE_GITLEAKS_NEEDLE" "$src" 2>/dev/null && exit 1
+  rep=""; prev=""
+  for a in "$@"; do [[ "$prev" == "--report-path" ]] && rep="$a"; prev="$a"; done
+  if [[ -n "$src" ]] && grep -rqF -- "$FAKE_GITLEAKS_NEEDLE" "$src" 2>/dev/null; then
+    # spec 016 FR-029: like the real tool, a JSON report of path + rule + position (the secret itself is never written)
+    if [[ -n "$rep" ]]; then
+      { printf '['; sep=""
+        while IFS= read -r hit; do printf '%s{"File":"%s","RuleID":"fake-needle","StartLine":1,"StartColumn":1}' "$sep" "$hit"; sep=","; done < <(grep -rlF -- "$FAKE_GITLEAKS_NEEDLE" "$src" 2>/dev/null)
+        printf ']'; } > "$rep"
+    fi
+    exit 1
+  fi
   exit 0
 fi
 exit "${FAKE_GITLEAKS_EXIT:-0}"

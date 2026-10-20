@@ -110,7 +110,7 @@ caseR2() {
   prep6; rm -f "$PHASE_REPO/.a1/xprov.json" "$HOME/.a1-xprov/permits.json" # spec 014: file AND owner entry gone
   gate6 --gate "$GATE_PLAN"
   assert_rc "R2b gate exits 1 without .a1/xprov.json" 1 "$G_RC"
-  assert_json "R2b step permit-check, reason external_review_not_permitted" "$G_OUT" "[j.step, j.reason].join('/')" "permit-check/external_review_not_permitted"
+  assert_json "R2b step permit-check, reason external_review_not_permitted, verdict not_applicable (spec 016 FR-012; was fail before wave 5)" "$G_OUT" "[j.step, j.reason, j.verdict].join('/')" "permit-check/external_review_not_permitted/not_applicable"
   assert_eq "R2b still no snapshot" "$(snapshots_left)" "0"
   [[ ! -e "$PHASE_DIR/PLAN-REVIEW-LOG.md" && ! -e "$PHASE_DIR/xreview" ]] && ok "R2b no PLAN-REVIEW-LOG.md and no xreview/ in an unpermitted repo" || bad "R2b a1 wrote into an unpermitted repo: $(ls "$PHASE_DIR")"
   # usage error out of preflight (hostile A1_XPROV_CODEX_HOME) → exit 2, nothing written.
@@ -407,13 +407,16 @@ caseR7() {
 caseR9g() {
   prep6
   mkdir -p "$XHOME/plugins/cache/openai-curated-remote/x/1.0"
-  gate6 --gate "$GATE_PLAN"
+  # a non-empty allowlist that does not name the dir: the offender stays, and the owner's allowlist forbids the preflight repair of spec 016 FR-028
+  gate6 --gate "$GATE_PLAN" --allow-plugins openai-curated-remote/other/1.0
   assert_json "R9g1 a plugin dir in the home's cache fails the gate at preflight (plugins_cache_empty)" "$G_OUT" \
     "[j.step, j.reason, /plugins_cache_empty/.test(j.reason_detail)].join('/')" "preflight/preflight_failed/true"
   # allowlist entries are paths under plugins/cache/ — <marketplace>/<plugin>/<version> (preflight's scan depth 3)
   gate6 --gate "$GATE_PLAN" --allow-plugins openai-curated-remote/x/1.0
   assert_rc "R9g2 the same gate with --allow-plugins <marketplace>/x/1.0 passes preflight and completes (exit 0)" 0 "$G_RC" "$G_ERR"
   assert_json "R9g2 verdict pass at step normalize" "$G_OUT" "[j.verdict, j.step].join('/')" "pass/normalize"
+  # the allowlist reached preflight: the allowlisted dir is still there (without it the FR-028 repair would have removed it and passed anyway)
+  [[ -d "$XHOME/plugins/cache/openai-curated-remote/x/1.0" ]] && ok "R9g2 the allowlisted plugin dir was not touched" || bad "R9g2 the allowlisted plugin dir is gone"
 }
 
 # ---------- R8 (Reinhard, Wave 6 review): the steps the first fixture pass never reached ----------
@@ -472,11 +475,12 @@ caseR8() {
   FAKE_RUNNER_CASE="$TMP06/hostile-model.result.json" gate6 --gate "$GATE_PLAN"
   assert_rc "R8e gate exits 0 with a hostile observed model string" 0 "$G_RC" "$G_ERR"
   assert_json "R8e observation written with model_observed unknown (hostile string dropped)" "$(tail -n 1 "$PHASE_DIR/observations.jsonl")" "j.agent + '/' + j.model_observed" "xprov-codex/unknown"
-  # (f) blocked at round 1 is an attempt: the next run is round 1 again and resumes nothing
+  # (f) blocked at round 1 is an attempt: the next run is round 1 again and resumes nothing (spec 016 FR-026: the gate repeats a blocked run once; the fake is blocked
+  # both times, so the first call ends as the Reinhard-only fallback, still an attempt that consumes no round)
   prep6
   case_with_sha blocked "$approved_sha" "$TMP06/blocked-approved-sha.result.json"
   FAKE_RUNNER_CASE="$TMP06/blocked-approved-sha.result.json" gate6 --gate "$GATE_PLAN"
-  assert_json "R8f BLOCKED → fail/blocked at step normalize, round 1" "$G_OUT" "[j.verdict, j.reason, j.step, j.round].join('/')" "fail/blocked/normalize/1"
+  assert_json "R8f BLOCKED twice → not_applicable/codex_blocked_fallback at step normalize, round 1 (was fail/blocked before spec 016 FR-026)" "$G_OUT" "[j.verdict, j.reason, j.step, j.round].join('/')" "not_applicable/codex_blocked_fallback/normalize/1"
   gate6 --gate "$GATE_PLAN"
   assert_rc "R8f the run after a blocked attempt passes" 0 "$G_RC" "$G_ERR"
   assert_json "R8f …as round 1 again (attempts do not consume the cap)" "$G_OUT" "j.round + '/' + j.verdict" "1/pass"
@@ -651,7 +655,7 @@ caseWS() {
   assert_json "WS9 a copy without a1-reviewed.json gets no head/base" "$(cat "$PHASE_DIR/xreview/index.json")" "String(j[j.length - 1].head) + '/' + String(j[j.length - 1].base)" "null/null"
   sub6 wave-status --phase p6 --waves 1
   assert_rc "WS9 …so the unreviewed commit is not covered → exit 1" 1 "$G_RC"
-  grep -q "wave-status --phase <phase_name> --work-path \$WORK_PATH > " "$REPO_ROOT/skills/a1-execute/workflows/02-execute.md" && ok "WS8 02-execute.md checks the chain at 2c" || bad "WS8 02-execute.md lacks the 2c chain check"
+  grep -q "wave-status --phase <phase_name> --work-path \$WORK_PATH --expect-sha \"\$LOADED_PLAN_SHA\" --wave-range \"\$WAVE_RANGES\" > " "$REPO_ROOT/skills/a1-execute/workflows/02-execute.md" && ok "WS8 02-execute.md checks the chain at 2c (bound to the loaded plan sha and the wave ranges)" || bad "WS8 02-execute.md lacks the 2c chain check"
   # WS12 — the boundary between two waves
   prep6
   mkdir -p "$PHASE_REPO/docs/product"; printf '## Wave 1 — one\n## Wave 2 — two\n' > "$PHASE_DIR/STATUS.md"

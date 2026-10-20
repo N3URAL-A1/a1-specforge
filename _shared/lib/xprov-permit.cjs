@@ -28,6 +28,9 @@ const xprov = require('./xprov.cjs');
 const C = require('./xprov-common.cjs');
 const D = require('./xprov-denials.cjs');
 const PM = require('./xprov-permits.cjs');
+const OH = require('./xprov-owner-home.cjs');
+const RI = require('./xprov-repo-identity.cjs');
+const AU = require('./xprov-audit.cjs');
 // Shared helpers — one definition each, in xprov-common.cjs.
 const { inputError } = C;
 const usageExit = (msg) => C.usageExit('', msg);
@@ -39,12 +42,20 @@ const ALLOWED = 'allowed';
 const DENIED = 'denied';
 // The six permit states (spec 012 FR-001, spec 014 FR-002), computed from the
 // working-tree file AND the owner's denial store AND the owner's permit store.
-const STATES = Object.freeze({ ALLOWED, DENIED, ABSENT: 'absent', INVALID: 'invalid', DENIAL_MISMATCH: 'denial_mismatch', PERMIT_MISMATCH: 'permit_mismatch' });
+// Spec 016: `home_mismatch` ($HOME differs from the OS user's home, FR-009) and `origin_changed` (the entry is bound to another
+// origin than the repository has now, FR-006: the permit is void, the repository counts as unpermitted).
+const STATES = Object.freeze({ ALLOWED, DENIED, ABSENT: 'absent', INVALID: 'invalid', DENIAL_MISMATCH: 'denial_mismatch', PERMIT_MISMATCH: 'permit_mismatch', HOME_MISMATCH: 'home_mismatch', ORIGIN_CHANGED: 'origin_changed', AUDIT_BROKEN: 'audit_broken', UNBOUND_LEGACY: 'unbound_legacy' });
+// SEC-1: `audit_broken` = the entry is bound to an audit line that the chain does not vouch for (edited, truncated, superseded,
+// or a store write that failed after its line): fail closed.
+// `unbound_legacy` = an entry with none of repo/origin/audit: NO permit, whatever its `ts` (re-review MAJOR-1: a date cutoff is forgeable,
+// the attacker writes `ts`). It is not a store mismatch: the repository runs Reinhard-only and the owner is asked again.
+const BOUND_KEYS = Object.freeze(['repo', 'origin', 'audit']);
+// Spec 016 FR-010: tier-0 wording. The record is something the same OS user could write; the audit chain makes a naive forgery visible.
+const ENFORCEMENT = 'unenforced';
 const REQUIRED_FIELDS = Object.freeze(['external_review', 'decided_by', 'decided_on', 'record']);
 const DENIED_REQUIRED_FIELDS = Object.freeze(['external_review', 'decided_by', 'decided_on']); // `record` is optional for a denial
 // Vault-relative note: `record/…` or `project/…`, markdown, no `..` segment.
 const RECORD_RE = /^(record|project)\/[A-Za-z0-9][A-Za-z0-9._\/-]*\.md$/;
-const BY_RE = /^[A-Za-z][A-Za-z0-9._-]{0,63}$/;
 const DENY_MESSAGE = 'External review not permitted for this repository. '
   + 'N3URAL-owned repo: `a1-tools xprov permit --by robert --record <vault-note>`. '
   + 'Customer repo: needs an a1-ludwig-legal decision as `--record`, or the owner records that no external review applies: '
@@ -56,6 +67,9 @@ const HINT_ABSENT = 'run `xprov permit` or `xprov permit --deny` in a real termi
 const HINT_MISMATCH = '.a1/xprov.json and the owner\'s denial store disagree — the owner re-runs `xprov permit` or `xprov permit --deny` in a real terminal';
 // Spec 014 FR-004: the detail of `permit_mismatch` and the migration hint for repositories permitted by the file only.
 const HINT_PERMIT_MISMATCH = '.a1/xprov.json says allowed but the owner\'s permit store holds no matching entry — the owner re-runs `xprov permit --by <name> --record <note>` in a real terminal';
+const HINT_AUDIT = 'the consent audit log does not vouch for this permit entry — a broken log blocks Codex sends for every repository (the Reinhard review still runs); the owner should report it, there is no repair command yet';
+const HINT_UNBOUND = 'the permit entry has no repository binding (repo, origin, audit) and counts as no permit — Codex sends nothing and the Reinhard review runs; the owner permits again by chat consent or in a real terminal';
+const HINT_ORIGIN = 'the repository is unpermitted until the owner permits it again (chat consent or the terminal permit command)';
 const TYPED_WORD = Object.freeze({ [ALLOWED]: ALLOWED, [DENIED]: DENIED });
 
 function permitPath(repoRoot) {
@@ -87,11 +101,27 @@ function permitAgrees(rec, entry) {
 }
 
 const permitMismatch = (detail) => ({ state: STATES.PERMIT_MISMATCH, detail });
+/** An entry with none of repo/origin/audit (re-review MAJOR-1): no permit, of any date. */
+const isUnbound = (entry) => BOUND_KEYS.every((k) => entry[k] === undefined);
+const unboundLegacy = () => ({ state: STATES.UNBOUND_LEGACY, detail: `the permit entry has no repository binding (repo, origin, audit); ${HINT_UNBOUND}` });
+
+/** Spec 016 FR-006: an entry that carries a repo key or an origin is void when either differs from the repository now. */
+function bindingProblem(entry, ident) {
+  if (!ident) return null;
+  const present = BOUND_KEYS.filter((k) => entry[k] !== undefined);
+  if (present.length !== BOUND_KEYS.length) return permitMismatch(`the permit entry carries only part of its repository binding (${present.join(', ')}); ${HINT_PERMIT_MISMATCH}`);
+  if (entry.repo !== undefined && entry.repo !== ident.key) return permitMismatch(`the permit entry was written for another repository (${C.oneLine(entry.repo)}); ${HINT_PERMIT_MISMATCH}`);
+  if (ident.originError) return { state: STATES.ORIGIN_CHANGED, detail: `the permit is void: remote.origin.url cannot be read (${ident.originError})` };
+  if (RI.originChanged(entry.origin, ident.origin)) {
+    return { state: STATES.ORIGIN_CHANGED, detail: `the permit is void: remote.origin.url changed (recorded ${entry.origin === null ? 'none' : 'an origin'}, now ${ident.origin === null ? 'none' : 'another origin'}); ${HINT_ORIGIN}` };
+  }
+  return null;
+}
 const fileWord = (kind) => (kind === 'missing' ? 'absent' : 'invalid');
 
 /** The state of one repository from file x denial store x permit store (spec 012 FR-001, spec 014 FR-002):
  * { state, detail }. `permit` is { ok, missing, why, entry }: the permit-store read plus this repository's entry. */
-function classify(fileState, store, denial, permit) {
+function classify(fileState, store, denial, permit, ident) {
   const hasDenial = denial !== undefined;
   const decided = fileState.kind === ALLOWED || fileState.kind === DENIED;
   const pstore = permit || { ok: true, missing: true, entry: undefined };
@@ -101,7 +131,10 @@ function classify(fileState, store, denial, permit) {
     if (hasDenial) return { state: STATES.DENIAL_MISMATCH, detail: 'the owner\'s denial store holds a denial for this repository but .a1/xprov.json says allowed' };
     if (!pstore.ok && !pstore.missing) return permitMismatch(`the owner's permit store is not usable (${pstore.why}); ${HINT_PERMIT_MISMATCH}`);
     if (!entry) return permitMismatch(HINT_PERMIT_MISMATCH);
+    if (isUnbound(entry)) return unboundLegacy(); // before the agreement check: a copied entry is no permit, not a "mismatch"
     if (!permitAgrees(fileState.rec, entry)) return permitMismatch(`decided_by/decided_on/record/default_branch in .a1/xprov.json and in the owner's permit store differ; ${HINT_PERMIT_MISMATCH}`);
+    const bound = bindingProblem(entry, ident);
+    if (bound) return bound;
     return { state: STATES.ALLOWED, detail: null };
   }
   if (fileState.kind === DENIED) {
@@ -111,6 +144,7 @@ function classify(fileState, store, denial, permit) {
     return entry ? { state: STATES.DENIAL_MISMATCH, detail: 'the owner\'s permit store holds an entry for this repository but .a1/xprov.json says denied' } : { state: STATES.DENIED, detail: null };
   }
   if (hasDenial) return { state: STATES.DENIAL_MISMATCH, detail: `the owner's denial store holds a denial for this repository but .a1/xprov.json is ${fileWord(fileState.kind)}` };
+  if (entry && isUnbound(entry)) return unboundLegacy();
   if (entry) return permitMismatch(`the owner's permit store holds an entry for this repository but .a1/xprov.json is ${fileWord(fileState.kind)}; ${HINT_PERMIT_MISMATCH}`);
   return { state: fileState.kind === 'missing' ? STATES.ABSENT : STATES.INVALID, detail: fileState.detail };
 }
@@ -121,6 +155,10 @@ const REASON_OF_STATE = Object.freeze({
   [STATES.DENIED]: xprov.REASONS.external_review_denied,
   [STATES.DENIAL_MISMATCH]: xprov.REASONS.external_review_denial_mismatch,
   [STATES.PERMIT_MISMATCH]: xprov.REASONS.external_review_permit_mismatch,
+  [STATES.HOME_MISMATCH]: xprov.REASONS.owner_home_mismatch,
+  [STATES.ORIGIN_CHANGED]: xprov.REASONS.external_review_not_permitted,
+  [STATES.AUDIT_BROKEN]: xprov.REASONS.external_review_not_permitted,
+  [STATES.UNBOUND_LEGACY]: xprov.REASONS.external_review_not_permitted,
 });
 
 /** Reads the record and the store; never throws. `ok` is true only for state
@@ -133,28 +171,36 @@ function permitCheck(opts) {
   const store = D.readDenials();
   const pstore = PM.readPermits();
   const permit = { ok: pstore.ok, missing: pstore.missing, why: pstore.why, entry: key === null ? undefined : pstore.permits[key] };
-  const { state, detail } = classify(fileState, store, key === null ? undefined : store.denials[key], permit);
+  const denial = key === null ? undefined : store.denials[key];
+  const homeWhy = OH.homeMismatch(); // spec 016 FR-009: fail closed before any decision is read as valid
+  const auditOf = (kind) => (key === null ? { state: AU.STATE.MISSING, why: null } : AU.verifyAudit(kind === 'denied' ? denial : permit.entry, key, kind));
+  if (homeWhy !== null) return Object.freeze({ ok: false, state: STATES.HOME_MISMATCH, reason: REASON_OF_STATE[STATES.HOME_MISMATCH], file, detail: homeWhy, enforcement: ENFORCEMENT, audit: auditOf('allowed').state });
+  const first = classify(fileState, store, denial, permit, RI.bindingIdentity(root, key));
+  const audit = auditOf(first.state === STATES.DENIED || (!permit.entry && denial) ? 'denied' : 'allowed'); // spec 016 FR-010
+  const tier0 = { enforcement: ENFORCEMENT, audit: audit.state };
+  // SEC-1: an audited entry that the chain does not vouch for is no permit (legacy entries are `missing`, not `broken`).
+  const { state, detail } = first.state === STATES.ALLOWED && audit.state === AU.STATE.BROKEN
+    ? { state: STATES.AUDIT_BROKEN, detail: `the audit log does not vouch for the permit entry (${audit.why}); ${HINT_AUDIT}` } : first;
   if (state === STATES.ALLOWED) {
     const r = fileState.rec;
-    return Object.freeze({ ok: true, state, file, external_review: ALLOWED, decided_by: r.decided_by, decided_on: r.decided_on, record: r.record });
+    return Object.freeze({ ok: true, state, file, external_review: ALLOWED, decided_by: r.decided_by, decided_on: r.decided_on, record: r.record, ...tier0 });
   }
   const denied = state === STATES.DENIED ? { decided_by: fileState.rec.decided_by, decided_on: fileState.rec.decided_on } : {};
-  return Object.freeze({ ok: false, state, reason: REASON_OF_STATE[state], file, detail: detail || state, ...denied });
+  return Object.freeze({ ok: false, state, reason: REASON_OF_STATE[state], file, detail: detail || state, ...denied, ...tier0 });
 }
 
 /** The one-line stderr hint for a failing permit state (spec 012 FR-003), or null. */
 function permitHint(state) {
   if (state === STATES.DENIAL_MISMATCH) return HINT_MISMATCH;
   if (state === STATES.PERMIT_MISMATCH) return HINT_PERMIT_MISMATCH;
+  if (state === STATES.AUDIT_BROKEN) return HINT_AUDIT;
+  if (state === STATES.UNBOUND_LEGACY) return HINT_UNBOUND;
   return state === STATES.ABSENT || state === STATES.INVALID ? HINT_ABSENT : null;
 }
 
 // ---------- writing (library; the CLI guard sits in cmdXprovPermit) ----------
 
-function validateBy(by) {
-  if (typeof by !== 'string' || !BY_RE.test(by)) throw inputError(`--by must be a plain name (letters, digits, . _ -), got ${JSON.stringify(String(by).slice(0, 80))}`);
-  return by;
-}
+const validateBy = (by) => C.validatePlainBy(by); // spec 016 FR-011, SEC-4: one check for permit, waive and allowlist approve
 
 function validateRecord(record) {
   const r = typeof record === 'string' ? record : '';
@@ -226,32 +272,37 @@ function permit(opts) {
     ...(o.defaultBranch !== undefined ? { default_branch: o.defaultBranch } : {}),
   });
   const key = repoKey(root);
-  const store = storeForWrite();
-  if (store.refusal) return store.refusal;
-  const pstore = permitStoreForWrite();
-  if (pstore.refusal) return pstore.refusal;
-  const hadDenial = Boolean(store.denials[key]);
-  if (hadDenial) {
-    const failed = tryWriteDenials(D.withDenial(store.denials, key, null));
-    if (failed) return Object.freeze({ ok: false, reason: 'denial_store_unusable', detail: `${failed}; nothing written` });
-  }
-  const entry = Object.freeze({
-    decided_by: record.decided_by, decided_on: record.decided_on, record: record.record, ts: o.now || io.nowIso(),
-    ...(record.default_branch !== undefined ? { default_branch: record.default_branch } : {}),
+  // Security review 2026-10-14, MAJOR-1: the stores are read INSIDE the owner-store lock, so a parallel writer cannot be undone by this write.
+  return AU.withStoreLock(() => {
+    const store = storeForWrite();
+    if (store.refusal) return store.refusal;
+    const pstore = permitStoreForWrite();
+    if (pstore.refusal) return pstore.refusal;
+    const hadDenial = Boolean(store.denials[key]);
+    const origin = RI.readOrigin(root); // spec 016 FR-006: the entry is bound to this repository identity
+    const line = AU.appendAudit({ repo: key, action: AU.ACTION.PERMIT, now: o.now }); // spec 016 FR-010: the chain line first, then the stores
+    if (hadDenial) {
+      const failed = tryWriteDenials(D.withDenial(store.denials, key, null));
+      if (failed) return Object.freeze({ ok: false, reason: 'denial_store_unusable', detail: `${failed}; nothing written` });
+    }
+    const entry = Object.freeze({
+      decided_by: record.decided_by, decided_on: record.decided_on, record: record.record, ts: o.now || io.nowIso(), repo: key, origin, audit: AU.lineSha(line),
+      ...(record.default_branch !== undefined ? { default_branch: record.default_branch } : {}),
+    });
+    const storeFailed = tryPermitStore(() => PM.writePermits(PM.withPermit(pstore.permits, key, entry)));
+    if (storeFailed) {
+      return hadDenial
+        ? Object.freeze({ ok: false, reason: xprov.REASONS.external_review_denial_mismatch, file: permitPath(root), detail: `the denial was removed from the store but the permit entry could not be written (${storeFailed}); the file still says denied, so the state is denial_mismatch until the owner re-runs permit` })
+        : Object.freeze({ ok: false, reason: 'permit_write_failed', file: permitPath(root), detail: `${storeFailed}; nothing changed` });
+    }
+    try { writeRecordFile(root, record); } catch (e) {
+      const code = (e && e.code) || 'error';
+      return hadDenial
+        ? Object.freeze({ ok: false, reason: xprov.REASONS.external_review_denial_mismatch, file: permitPath(root), detail: `the denial was removed from the store but ${PERMIT_FILE} could not be written (${code}); the file still says denied, so the state is denial_mismatch until the owner re-runs permit` })
+        : Object.freeze({ ok: false, reason: xprov.REASONS.external_review_permit_mismatch, file: permitPath(root), detail: `the permit entry was written but ${PERMIT_FILE} could not be written (${code}); the file is absent or old next to the entry, so the state is permit_mismatch until the owner re-runs permit` });
+    }
+    return Object.freeze({ ok: true, file: permitPath(root), record });
   });
-  const storeFailed = tryPermitStore(() => PM.writePermits(PM.withPermit(pstore.permits, key, entry)));
-  if (storeFailed) {
-    return hadDenial
-      ? Object.freeze({ ok: false, reason: xprov.REASONS.external_review_denial_mismatch, file: permitPath(root), detail: `the denial was removed from the store but the permit entry could not be written (${storeFailed}); the file still says denied, so the state is denial_mismatch until the owner re-runs permit` })
-      : Object.freeze({ ok: false, reason: 'permit_write_failed', file: permitPath(root), detail: `${storeFailed}; nothing changed` });
-  }
-  try { writeRecordFile(root, record); } catch (e) {
-    const code = (e && e.code) || 'error';
-    return hadDenial
-      ? Object.freeze({ ok: false, reason: xprov.REASONS.external_review_denial_mismatch, file: permitPath(root), detail: `the denial was removed from the store but ${PERMIT_FILE} could not be written (${code}); the file still says denied, so the state is denial_mismatch until the owner re-runs permit` })
-      : Object.freeze({ ok: false, reason: xprov.REASONS.external_review_permit_mismatch, file: permitPath(root), detail: `the permit entry was written but ${PERMIT_FILE} could not be written (${code}); the file is absent or old next to the entry, so the state is permit_mismatch until the owner re-runs permit` });
-  }
-  return Object.freeze({ ok: true, file: permitPath(root), record });
 }
 
 /** `permit --deny`: the store first, then the file. A failing file step leaves the
@@ -268,25 +319,28 @@ function permitDeny(opts) {
     ...(o.defaultBranch !== undefined ? { default_branch: o.defaultBranch } : {}),
   });
   const key = repoKey(root);
-  const store = storeForWrite();
-  if (store.refusal) return store.refusal;
-  // Spec 014 FR-003 order: permit store, then denial store, then file. A store without this repo's entry is not rewritten.
-  const pstore = permitStoreForWrite();
-  if (pstore.refusal) return pstore.refusal;
-  if (pstore.permits[key]) {
-    const permitFailed = tryPermitStore(() => PM.writePermits(PM.withPermit(pstore.permits, key, null)));
-    if (permitFailed) return Object.freeze({ ok: false, reason: 'permit_write_failed', detail: `${permitFailed}; nothing written` });
-  }
-  const entry = Object.freeze({ decided_by: by, decided_on: day, ts: o.now || io.nowIso() });
-  const failed = tryWriteDenials(D.withDenial(store.denials, key, entry));
-  if (failed) {
-    const removed = Boolean(pstore.permits[key]);
-    return Object.freeze({ ok: false, reason: 'denial_store_unusable', detail: removed ? `${failed}; the permit entry was already removed, so the state is permit_mismatch until the owner re-runs permit` : `${failed}; nothing written` });
-  }
-  try { writeRecordFile(root, record); } catch (e) {
-    return Object.freeze({ ok: false, reason: xprov.REASONS.external_review_denial_mismatch, file: permitPath(root), detail: `the denial store was written but ${PERMIT_FILE} could not be (${(e && e.code) || 'error'}); the state is denial_mismatch until the owner re-runs permit` });
-  }
-  return Object.freeze({ ok: true, file: permitPath(root), record, store: D.denialsPath() });
+  return AU.withStoreLock(() => { // MAJOR-1: read the stores inside the owner-store lock
+    const store = storeForWrite();
+    if (store.refusal) return store.refusal;
+    // Spec 014 FR-003 order: permit store, then denial store, then file. A store without this repo's entry is not rewritten.
+    const pstore = permitStoreForWrite();
+    if (pstore.refusal) return pstore.refusal;
+    const line = AU.appendAudit({ repo: key, action: AU.ACTION.PERMIT_DENY, now: o.now }); // spec 016 FR-010
+    if (pstore.permits[key]) {
+      const permitFailed = tryPermitStore(() => PM.writePermits(PM.withPermit(pstore.permits, key, null)));
+      if (permitFailed) return Object.freeze({ ok: false, reason: 'permit_write_failed', detail: `${permitFailed}; nothing written` });
+    }
+    const entry = Object.freeze({ decided_by: by, decided_on: day, ts: o.now || io.nowIso(), audit: AU.lineSha(line) });
+    const failed = tryWriteDenials(D.withDenial(store.denials, key, entry));
+    if (failed) {
+      const removed = Boolean(pstore.permits[key]);
+      return Object.freeze({ ok: false, reason: 'denial_store_unusable', detail: removed ? `${failed}; the permit entry was already removed, so the state is permit_mismatch until the owner re-runs permit` : `${failed}; nothing written` });
+    }
+    try { writeRecordFile(root, record); } catch (e) {
+      return Object.freeze({ ok: false, reason: xprov.REASONS.external_review_denial_mismatch, file: permitPath(root), detail: `the denial store was written but ${PERMIT_FILE} could not be (${(e && e.code) || 'error'}); the state is denial_mismatch until the owner re-runs permit` });
+    }
+    return Object.freeze({ ok: true, file: permitPath(root), record, store: D.denialsPath() });
+  });
 }
 
 // ---------- CLI ----------
@@ -305,6 +359,7 @@ function cmdXprovPermitCheck(args) {
   if (r.ok) process.stderr.write(`permit-check: allowed by ${r.decided_by} on ${r.decided_on} (${r.record})\n${EXPOSURE_SENTENCE}\n`);
   else if (r.state === STATES.DENIED) process.stderr.write(`permit-check: denied by ${r.decided_by} on ${r.decided_on} (the owner's denial store agrees): external review does not apply to this repository\n`);
   else process.stderr.write(`${DENY_MESSAGE} (${r.detail})${permitHint(r.state) ? `\npermit-check: ${permitHint(r.state)}` : ''}\n`);
+  process.stderr.write(`permit-check: enforcement ${r.enforcement}, audit ${r.audit} — a record the same OS user could write; the audit chain makes a naive forgery visible, it does not prevent one\n`);
   return finish(r, r.ok ? xprov.EXIT_PASS : xprov.EXIT_FAIL);
 }
 
@@ -357,6 +412,6 @@ function cmdXprovPermit(args) {
 }
 
 module.exports = {
-  PERMIT_FILE, DENY_MESSAGE, EXPOSURE_SENTENCE, HINT_PERMIT_MISMATCH, STATES, permitPath, permitCheck, permitHint, permit, permitDeny, isValidBranchName,
+  PERMIT_FILE, ENFORCEMENT, DENY_MESSAGE, EXPOSURE_SENTENCE, HINT_PERMIT_MISMATCH, STATES, permitPath, permitCheck, permitHint, permit, permitDeny, isValidBranchName, validateRecord,
   cmdXprovPermitCheck, cmdXprovPermit,
 };

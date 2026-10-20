@@ -268,6 +268,8 @@ git -C <repo> ls-tree origin/main automation/db/migrations/ | grep -E '<your-new
 
 Only after a clean rebase + no number collision + green build on the rebased tree do you hand
 the branch to `a1-pr-review`, which makes its first push (`_shared/push-cadence.md` P1).
+The hand-off names the spec path (`--spec <spec path>`, a relative `.md` path) so a1-pr-review step 2.2b can pass it to the PR diff gate (`pr-diff-xprov`):
+the spec size can exempt a PR diff without security surface, never a surface diff. The feature skill itself never runs a cross-provider gate; Codex sees the diff only through a1-pr-review.
 
 Tell the user:
 

@@ -36,6 +36,10 @@ const POSITIVE_INT_MAX = 9999;
 // Wave numbers start at 0 (spec 012 FR-008: a wave-0 phase exists, e.g. 059).
 // Only `--wave`/`--waves` use this shape; `--round` and `--timeout` stay positive.
 const WAVE_RE = /^(0|[1-9]\d{0,3})$/;
+// Spec 016 wave 10: the PR diff gate keeps its state in `<work path>/.a1-review/`, not in a phase dir. Inside the run, normalize, dispose and
+// consent modules it travels as the reserved phase name PR_PHASE (no real phase dir carries it: phaseDirOf never looks under .a1/phases for it).
+const PR_PHASE = 'pr-review';
+const REVIEW_DIR = '.a1-review';
 const DETAIL_MAX_CHARS = 500; // reason_detail, echoed limitations, stderr tails, log cells
 const GIT_MAX_BUFFER = 64 * 1024 * 1024;
 const DIR_MODE = 0o700;
@@ -154,6 +158,32 @@ function mkdir0700(dir) {
     if (e && e.code === 'ENAMETOOLONG') throw inputError(`${dir} exceeds the filesystem's path length limit`, 'path_too_long');
     throw e;
   }
+}
+
+/** `workPath` as a real directory path: absolute, no `..` segment, no control character, exists (typed input errors, reason worktree_invalid). */
+function realWorkPath(workPath) {
+  const w = String(workPath == null ? '' : workPath);
+  if (!path.isAbsolute(w) || /[\0-\x1f]/.test(w) || w.split(/[\\/]/).includes('..')) throw inputError('--work-path must be an absolute path without `..` or control characters', 'worktree_invalid');
+  let real;
+  try { real = fs.realpathSync(w); } catch (_e) { throw inputError(`--work-path does not exist: ${clip(w, 200)}`, 'worktree_invalid'); }
+  if (!fs.statSync(real).isDirectory()) throw inputError('--work-path is not a directory', 'worktree_invalid');
+  return real;
+}
+
+/** `<workPath>/.a1-review`: a real work path, and (when it exists) a plain directory, never a link (the dir is agent-reachable; a link
+ * would redirect every write). Created 0700 when `create` and missing. Typed input errors. */
+function reviewDirOf(workPath, create) {
+  const dir = path.join(realWorkPath(workPath), REVIEW_DIR);
+  let st = null;
+  try { st = fs.lstatSync(dir); } catch (_e) { st = null; }
+  if (st === null) { if (create) mkdir0700(dir); return dir; }
+  if (st.isSymbolicLink() || !st.isDirectory()) throw inputError(`${clip(dir, 200)} is not a plain directory`, 'worktree_invalid');
+  return dir;
+}
+
+/** The directory of a phase's gate state: `<root>/.a1/phases/<phase>`, or `<workPath>/.a1-review` for the reserved PR_PHASE. */
+function phaseDirOf(root, phase, workPath) {
+  return phase === PR_PHASE ? reviewDirOf(workPath === undefined || workPath === null ? root : workPath, false) : path.join(root, '.a1', 'phases', phase);
 }
 
 // ---------- xreview/index.json ----------
@@ -285,14 +315,43 @@ function pinnedGitOut(args, dir) {
   return r.status === 0 ? r.stdout : null;
 }
 
+/** The env of the owner-store git reads (SEC-3): the caller's env without GIT_ENV_DROP (no GIT_DIR / GIT_CONFIG_* / helper
+ * redirection), no system config; the user's global config stays (url.<x>.insteadOf lives there). */
+function ownerGitEnv() {
+  const env = { ...process.env };
+  for (const k of GIT_ENV_DROP) delete env[k];
+  env.GIT_CONFIG_NOSYSTEM = '1';
+  return env;
+}
+
 /** realpath of a checkout's `git rev-parse --git-common-dir`, or null. Two
  * checkouts with the same value share one object store and one set of refs
  * (a linked worktree and its main checkout); FR-030 (b) compares these, and
- * the approval store (FR-030 j) is keyed by it. */
+ * the approval store (FR-030 j) is keyed by it. Runs under ownerGitEnv(). */
 function commonDirOf(repo) {
-  const out = gitOut(['-C', repo, 'rev-parse', '--git-common-dir']);
-  if (out === null) return null;
-  try { return fs.realpathSync(path.resolve(repo, out.trim())); } catch (_e) { return null; }
+  const r = gitSpawn(['-C', repo, 'rev-parse', '--git-common-dir'], { env: ownerGitEnv() });
+  if (r.status !== 0) return null;
+  try { return fs.realpathSync(path.resolve(repo, r.stdout.trim())); } catch (_e) { return null; }
+}
+
+// Spec 016 FR-011: `owner-chat` is reserved for entries the chat path writes. SEC-4: compared after NFKC + lower-casing with
+// EVERY character but [a-z0-9] dropped (`Owner_Chat`, `owner.chat`, zero-width space, U+2212), and any non-ASCII `--by`
+// is refused outright (a Cyrillic small ie is no fold of `e`).
+const RESERVED_BY = 'owner-chat';
+const BY_RE = /^[A-Za-z][A-Za-z0-9._-]{0,63}$/;
+const NON_ASCII_RE = /[^\x00-\x7f]/;
+const isReservedBy = (by) => String(by == null ? '' : by).normalize('NFKC').toLowerCase().replace(/[^a-z0-9]+/g, '') === RESERVED_BY.replace('-', '');
+/** Throws a typed input error (exit 2 at the facade) when a terminal command is given the reserved or a non-ASCII `--by` value. */
+function rejectReservedBy(by) {
+  if (NON_ASCII_RE.test(String(by == null ? '' : by))) throw inputError('--by must be ASCII (letters, digits, . _ -)', 'by_non_ascii');
+  if (isReservedBy(by)) throw inputError(`--by ${RESERVED_BY} is reserved for entries written through the chat path; a terminal command cannot use it`, 'by_reserved');
+  return by;
+}
+/** The one `--by` check of every terminal writer (permit, waive, allowlist approve): not reserved, ASCII, a plain bounded name. */
+function validatePlainBy(by) {
+  rejectReservedBy(by);
+  if (typeof by !== 'string' || !BY_RE.test(by)) throw inputError(`--by must be a plain name (letters, digits, . _ -), at most 64 characters, got ${JSON.stringify(String(by).slice(0, 80))}`);
+  return by;
 }
 
 /** `--repo` must be a git TOPLEVEL (compared by realpath). Undefined → the
@@ -310,7 +369,8 @@ function resolveRepoFlag(repoFlag) {
 }
 
 module.exports = {
-  REGISTRY_PATH, LANE_RE, POSITIVE_INT_RE, POSITIVE_INT_MAX, WAVE_RE, DETAIL_MAX_CHARS, GIT_MAX_BUFFER, DIR_MODE,
+  PR_PHASE, REVIEW_DIR, realWorkPath, reviewDirOf, phaseDirOf, REGISTRY_PATH, LANE_RE, POSITIVE_INT_RE, POSITIVE_INT_MAX, WAVE_RE, DETAIL_MAX_CHARS, GIT_MAX_BUFFER, DIR_MODE,
+  RESERVED_BY, BY_RE, isReservedBy, rejectReservedBy, validatePlainBy, ownerGitEnv,
   inputError, writeStdoutSync, emitJson, usageExit, usageThrow,
   clip, stderrTail, oneLine, LINE_BREAKERS_RE, readNoFollow, parsePositive, parseWave, waveNumber, parseLane, sha256, isPlainObject, isDir, isFile,
   mkdir0700, readIndex, sameWave, sameLane, gitBin, resolveGit, absolutePathDirs, gitSpawn, gitOut, commonDirOf, resolveRepoFlag,

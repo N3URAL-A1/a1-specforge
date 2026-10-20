@@ -24,7 +24,8 @@ if [[ -z "$WORK" || ! -d "$WORK" ]]; then
   echo "a1-intent: mktemp gave no directory — aborting before any case runs" >&2
   exit 3
 fi
-trap 'rm -rf "$WORK"' EXIT
+# seals are read-only by design; give write back before removing the work dir
+trap 'chmod -R u+w "$WORK" 2>/dev/null; rm -rf "$WORK"' EXIT
 
 # shellcheck source=lib.sh
 source "$SUITE_DIR/lib.sh"

@@ -1,0 +1,21 @@
+{
+  "phase": "infra-rename-cutover",
+  "gate": "wave-inspect-xprov",
+  "wave": 3,
+  "lane": null,
+  "round": 2,
+  "summary": "The UID/resourceVersion precondition addresses prior finding R1. One concrete failure-handling defect remains in both deployment guards.",
+  "blocker": [],
+  "major": [
+    {
+      "id": "R2",
+      "file": "docs/OPERATIONS.md",
+      "line": 579,
+      "title": "R2: Every nonzero kubectl patch result marks the rollback record 'NICHT VERWENDET' and reports 'KEIN Wechsel'.",
+      "detail": "Every nonzero kubectl patch result marks the rollback record 'NICHT VERWENDET' and reports 'KEIN Wechsel'. The same branch appears in .github/workflows/build-image.yml:239. If the API server commits the image change but the connection drops before the response arrives, kubectl can fail although rollout has started. The guard then skips rollout monitoring and incorrectly invalidates the applicable rollback record. Guard test (d) models only a rejected Conflict, not an applied write followed by a transport error.\n\nFix (reviewer proposal, not applied): Treat unsuccessful patch commands as an unknown outcome unless rejection is established. Preserve the rollback record, report the uncertainty, and reconcile the Deployment UID, image and rollout state through exit-checked reads before classifying the attempt. If reads fail, retain the unknown status and require reconciliation before retrying. Apply this to both guard sources and add an applied-write/lost-response test.",
+      "severity": "medium"
+    }
+  ],
+  "minor": [],
+  "quarantined": []
+}

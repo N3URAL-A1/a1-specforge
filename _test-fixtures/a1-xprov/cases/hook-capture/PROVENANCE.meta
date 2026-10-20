@@ -1,0 +1,17 @@
+Provenance of the hook payload captures (spec 016 wave 4, plan risk R-1; live capture 2026-10-15).
+
+pre.jsonl, post.jsonl: ONE real PreToolUse and ONE real PostToolUse payload of an owner-answered AskUserQuestion call, copied
+byte for byte (one JSON object per file, one line). Source: a temporary logging hook in a scratch repo, Claude Code
+interactive, trusted folder, owner session, permission_mode `auto`. The owner answered "Ja".
+
+Measured facts (plan R-1, "Live capture DONE"):
+  1. Both payloads carry session_id, prompt_id, transcript_path, cwd, permission_mode, hook_event_name, tool_name, tool_input, tool_use_id.
+     tool_use_id is identical in Pre and Post.
+  2. Post tool_response = { questions, answers, annotations }; answers = map question text -> chosen label.
+  3. Post tool_input ALSO carries answers and annotations (the answered input). A forgery check "Pre input carried answers" must
+     read the Pre payload, never the Post tool_input.
+  4. duration_ms is 0: no timing signal exists.
+  5. The real Pre tool_input has no `answers` key.
+The header of the captured question is "Test" (not a consent header). Case payloads of part 25 keep this exact shape and rewrite
+only question text, header, option labels, ids and cwd (fake/hook-payload.cjs).
+Paths are the owner's scratch paths; no test reads them.

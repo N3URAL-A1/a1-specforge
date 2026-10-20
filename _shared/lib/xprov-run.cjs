@@ -155,6 +155,11 @@ function porcelain(repo, pinned) {
 
 // ---------- argument resolution ----------
 
+/** The phase dir; for the reserved PR phase `<work-path>/.a1-review` (a typed input error becomes a usage error). */
+function phaseDirOrUsage(root, phase, workPathFlag) {
+  try { return C.phaseDirOf(root, phase, workPathFlag === undefined ? undefined : path.resolve(workPathFlag)); } catch (e) { if (e && e.code === 'A1_INPUT') return usage(e.message); throw e; }
+}
+
 function resolveArgs(args) {
   // No session is ever resumed (Samuel, Wave 7 MAJOR): `codex exec resume`
   // replays a rollout file in the dedicated home that no check covers.
@@ -175,7 +180,7 @@ function resolveArgs(args) {
   if (!flags.phase) usage('--phase is required');
   const phase = assertSafeSegment(flags.phase, '--phase');
   const root = repoRoot();
-  const phaseDir = path.join(root, '.a1', 'phases', phase);
+  const phaseDir = phaseDirOrUsage(root, phase, flags['work-path']);
   if (!isDir(phaseDir)) usage(`phase dir not found: ${phaseDir}`);
   if (!flags.gate) usage('--gate is required');
   let ids;

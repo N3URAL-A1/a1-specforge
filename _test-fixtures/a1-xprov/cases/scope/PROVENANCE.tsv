@@ -1,0 +1,41 @@
+auth-routes	a1-office	92e19a5a56f5a50c5361009baad9acf0968fb1c0	
+auth-tests	a1-office	2fc37bec0c250b9c9ba1f4c3b2d877bee5c22112	
+payment-billing-file	a1-office	906fcabde1fbac3825aaba65e2f750887d831642	
+payment-test	a1-office	11e4f0d9af5fcc6da2e2b710d334a1c291673eb5	
+tenant-purge	a1-office	f1bedd35245e405a50a5169c7c00f94d443250e0	
+tenant-ui	a1-office	feaabf100859be3aad3808099c5c34888e5480d5	
+migration-sql	a1-office	8d6edec2ce4602eba6445d64c7e4d02a1a3b8f88	
+migration-sql-plus-plan	a1-office	85f2d5fc334f4ef0e6942d0f3e4dc636ae727da3	
+migration-md-only	a1-office	980a54fb18bfd0b48a87fb8c897bede956546eeb	
+sql-script	a1-office	2cd97bd4ac18353caf6e9d57468611ca7951ce7f	
+route-internal	a1-office	d74d0e562d041b2b6afd89f12c63b87ddf522962	
+route-mixed	a1-office	f7e995bc27fab04140c84017b058f0a3233a5d69	
+manifest-only	a1-office	21020856864e8d561a17fdabe61a8f52f6d6d63b	
+manifest-lock	a1-office	18dc5aebf3fa4476ae3238bc07ad325f27396ecf	
+env-template-cors	a1-office	62b3d93de0566ed663d1de2be15669f87590d369	
+env-compose	a1-office	07d7aeb9947f11bf36f9286fb0b366485754c93a	
+ci-workflow	a1-office	7a1406160b150608bf01d05673063577f79c7189	
+ci-with-test	a1-office	a670da49e099dcd89fc50a75625281b593b99b54	
+dockerfile-docs	n3ural-brain	2d40221e23a04f1d5cb7273701cff876e3df0bcb	
+terraform	captrader-llm	5551dfa29fb8ac3f643dba5395886932daad0af4	
+infra-k8s-docs	a1-office	6692d581b447847ea9017f2855008b6eb63a0c02	
+deploy-script-vercel	a1-office	e8f50e94716e91fb48af596e0e8316b1179bcebc	
+vercel-json	a1-office	3d955a0e0a0f978b4cd3f4c1866e90edbe81b6d5	
+docs-only-product	a1-office-landing	266c0e3d85d9395de79ab5c04a781645d7596609	
+docs-single	a1-office-landing	cd073d617fd860c07210b070dc2d008001253cf9	
+docs-readme	a1-office-landing	064b9493156fb0e2d12eb7c9868210cf7a989c93	
+docs-md-rules	a1-office	59dba1538cd1bc56af079b323bef7b6051e0211c	
+docs-claude-md	a1-office	b05c5c6cb64f264314068d0143fdd3d9c6d6fa34	
+docs-images-subset	a1-office	25d0f6aa12a98fa4e0a1970d36d71432452bf9b2	subset: grep -E ^docs/
+docs-plus-ci	a1-office	1020d36bc9ebfb2942fb46f4defdccf87abdf059	
+docs-plus-ci-deploy	a1-office	a388294d63b76275d0eaefca19b58a98c5087dac	
+docs-plus-env	a1-office	55648072c8e50092b0e42b05f4b59fce589790d7	
+docs-plus-lockfile	n3ural-contentbot	8d160d83aacacffa7da16a0a8be99f249b3cec4a	
+session-test-plus-md	a1-office	f7d6fd9b972919ed5f59ea6c619fbdc4156047f1	
+size-s-plain-tsx	a1-office-landing	b1b5117d87ae0f9e1035d87f08d1e209cf1ab6b7	
+size-s-plain-cjs	a1-specforge	11865840311f7c52bc3d92e1de00df15c015920f	
+license-mix	a1-specforge	f0c4820ea053adab07bb992577481f7e7b68c13d	
+license-font-txt	obsidian-lumen	f18ee1a9205dc9d83c4f4b4cfbeb4064b8e41611	
+middleware-test	a1-office	41c280d86b5a2c5e6a8337bc424b365e41afde50	
+license-only	a1-specforge	f0c4820ea053adab07bb992577481f7e7b68c13d	subset: grep -E ^LICENSE$
+empty	-	-	synthetic: zero bytes (an empty diff)

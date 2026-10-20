@@ -283,8 +283,8 @@ caseR17() {
   FAKE_GITLEAKS_EXIT=1 FAKE_GITLEAKS_ARGV_FILE="$TMP05/gitleaks-argv.txt" snap5
   assert_json "R17e fake gitleaks exit 1 → secret_in_snapshot (pattern gitleaks)" "$S_OUT" "j.reason + '/' + j.secret_pattern" "secret_in_snapshot/gitleaks"
   local gl; gl="$(cat "$TMP05/gitleaks-argv.txt" 2>/dev/null)"
-  [[ "$gl" == detect\ --no-git\ --source\ *\ --no-banner\ --redact\ --config\ */_shared/lib/xprov-gitleaks.toml ]] \
-    && ok "R17f gitleaks argv: detect --no-git --source <dir> --no-banner --redact --config <a1's own toml>" || bad "R17f gitleaks argv: $gl"
+  [[ "$gl" == detect\ --no-git\ --source\ *\ --no-banner\ --redact\ --config\ */_shared/lib/xprov-gitleaks.toml\ --report-format\ json\ --report-path\ */report.json ]] \
+    && ok "R17f gitleaks argv: detect --no-git --source <dir> --no-banner --redact --config <a1's own toml> --report-format json --report-path <tmp> (FR-029: path + rule only)" || bad "R17f gitleaks argv: $gl"
   assert_eq "R17g snapshot dir gone after the gitleaks hit (count unchanged)" "$(snapshots_count)" "$n_before"
 }
 

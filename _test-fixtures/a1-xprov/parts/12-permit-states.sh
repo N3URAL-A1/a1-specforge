@@ -13,7 +13,8 @@
 #   P5  deny then allow removes the store entry.
 #   P6  proper `denied` under `blocking` → not_applicable (today: HALT).
 #   P7  `denied` on a row with applies_to `all` (or empty) → still fails.
-#   P8  absent / invalid → external_review_not_permitted + hint, no writes.
+#   P8  absent → not_applicable / external_review_not_permitted (spec 016 FR-012, flipped from fail in wave 5) + hint, no writes;
+#       invalid → still a fail.
 #   P9  permit-check: state + exit codes + the exposure sentence (FR-016).
 #   P10 registry: last column applies_to, both xprov rows permitted-repos.
 #   P11 library rules of permit / permit --deny (record optional only for deny,
@@ -87,7 +88,7 @@ file12() {
 }
 # permit12 <by> <on> <record> — the owner's permit-store entry matching file12 allowed (spec 014 FR-002:
 # `allowed` is the file AND this entry; the key is computed by the harness, not by the module under test).
-permit12() { write_permit_store "$PHASE_REPO" "$1" "$3" "" "$2"; }
+permit12() { write_permit_store_bound "$PHASE_REPO" "$1" "$3" "" "$2"; }
 gate12() { G_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov gate --phase p12 "$@" 2>"$TMP12/err.txt")"; G_RC=$?; G_ERR="$(cat "$TMP12/err.txt")"; }
 sub12() { G_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov "$@" 2>"$TMP12/err.txt")"; G_RC=$?; G_ERR="$(cat "$TMP12/err.txt")"; }
 nothing12() { [[ ! -e "$PHASE_DIR/PLAN-REVIEW-LOG.md" && ! -e "$PHASE_DIR/xreview" && ! -e "$PHASE_DIR/observations.jsonl" && ! -e "$PHASE_DIR/XREVIEW.md" ]]; }
@@ -240,13 +241,13 @@ caseP7() {
 caseP8() {
   prep12
   gate12 --gate "$GATE_PLAN"
-  assert_json "P8 absent → external_review_not_permitted (never not_applicable)" "$G_OUT" "j.verdict + '/' + j.reason" "fail/external_review_not_permitted"
+  assert_json "P8 absent → not_applicable / external_review_not_permitted (spec 016 FR-012; was fail before wave 5)" "$G_OUT" "j.verdict + '/' + j.reason" "not_applicable/external_review_not_permitted"
   [[ "$G_ERR" == *"permit --deny"* ]] && ok "P8 the hint names permit and permit --deny" || bad "P8 hint: $G_ERR"
   nothing12 && ok "P8 nothing written" || bad "P8 wrote: $(ls "$PHASE_DIR")"
   mkdir -p "$PHASE_REPO/.a1"; printf '{not json\n' > "$PHASE_REPO/.a1/xprov.json"
   sub12 permit-check; assert_json "P8 invalid file → state invalid" "$G_OUT" "j.state + '/' + j.reason" "invalid/external_review_not_permitted"
   gate12 --gate "$GATE_PLAN"
-  assert_json "P8 invalid → external_review_not_permitted" "$G_OUT" "j.reason" "external_review_not_permitted"
+  assert_json "P8 invalid → still a fail with external_review_not_permitted" "$G_OUT" "j.verdict + '/' + j.reason" "fail/external_review_not_permitted"
   file12 maybe robert 2026-10-05 record/x.md
   sub12 permit-check; assert_json "P8 another external_review value → invalid" "$G_OUT" "j.state" "invalid"
   file12 denied robert ""
@@ -292,7 +293,7 @@ caseP11() {
   r="$(permit_lib "$TREE" "P.permitDeny({ repoRoot: '$PHASE_REPO', by: 'robert', today: '2026-10-05' })")"
   assert_json "P11 deny needs no --record (optional for a denial)" "$r" "j.ok" "true"
   assert_json "P11 the denied record: external_review, decided_by, decided_on, no record" "$(cat "$PHASE_REPO/.a1/xprov.json")" "[j.external_review, j.decided_by, j.decided_on, 'record' in j].join('/')" "denied/robert/2026-10-05/false"
-  assert_json "P11 the store entry: same decided_by/decided_on plus ts, keyed by the git-common-dir" "$(cat "$STORE12")" "(() => { const e = j.denials['$(repokey12)']; return e ? [e.decided_by, e.decided_on, typeof e.ts, Object.keys(e).length].join('/') : 'no entry'; })()" "robert/2026-10-05/string/3"
+  assert_json "P11 the store entry: same decided_by/decided_on plus ts and the audit sha, keyed by the git-common-dir" "$(cat "$STORE12")" "(() => { const e = j.denials['$(repokey12)']; return e ? [e.decided_by, e.decided_on, typeof e.ts, Object.keys(e).length].join('/') : 'no entry'; })()" "robert/2026-10-05/string/4"
   r="$(permit_lib "$TREE" "(() => { try { P.permit({ repoRoot: '$PHASE_REPO', by: 'robert' }); return 'no throw'; } catch (e) { return e.code; } })()")"
   assert_json "P11 allow without --record is still refused (A1_INPUT)" "$r" "j" "A1_INPUT"
   r="$(permit_lib "$TREE" "(() => { try { P.permitDeny({ repoRoot: '$PHASE_REPO', by: 'a b' }); return 'no throw'; } catch (e) { return e.code; } })()")"

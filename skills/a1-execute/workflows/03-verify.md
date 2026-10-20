@@ -17,10 +17,11 @@ below); pass `--waves 1,2,3` only when STATUS is not yet consolidated.
 
 ```bash
 mkdir -p .a1/phases/<phase_name>/xreview
-node <repo>/_shared/a1-tools.cjs xprov wave-status --phase <phase_name> --work-path $WORK_PATH > .a1/phases/<phase_name>/xreview/wave-status.last-run.json; RC=$?
+node <repo>/_shared/a1-tools.cjs xprov wave-status --phase <phase_name> --work-path $WORK_PATH --expect-sha "$LOADED_PLAN_SHA" --wave-range "$WAVE_RANGES" > .a1/phases/<phase_name>/xreview/wave-status.last-run.json; RC=$?
 # multi-lane: append --lane-work-path <lane-id>=<that lane's WORK_PATH>[,…] (a lane without one lacks)
 echo "xprov wave-status exit=$RC"
 ```
+`$WAVE_RANGES` as in `02-execute.md` 2c. `--expect-sha "$LOADED_PLAN_SHA"` binds the exemption to the PLAN.md accepted at Load (a different sha fails `plan_changed`); `--wave-range <N>=<PRE_WAVE_HEAD of wave N>..<HEAD after wave N>[,…]` gives wave-status the real diff of EVERY completed wave and wave-status verifies it against git: the ranges must tile (only the workflow's own files between them), end at the work path's tip and start where the branch leaves the default branch (`git merge-base`); any mismatch (`exempt_refused` in the JSON, with a reason) refuses all exemptions, so the waves lack. A wave that a later wave depends on counts as `scope_exempt` only when its diff is no security surface; a wave nobody depends on is exempt, and when its diff is surface it is listed under `deferred_to_pr`: name those waves in the PR body, the PR diff gate reviews them.
 
 - **Exit 0** → continue to the prompt template. A non-empty `not_applicable`
   list in the stdout JSON means the owner denied external review for this
@@ -28,11 +29,30 @@ echo "xprov wave-status exit=$RC"
   inspected and none is lacking. Record `{id: wave-inspect-xprov, verdict:
   not_applicable, caught: false}` in the retro with the issue tag
   `xprov_not_applicable`; it is not a pass.
+  **Spec 016 accepted verdicts.** This step never asks the owner anything
+  (the consent question belongs to `02-execute.md` 2b-x.0). The `not_applicable`
+  list is also non-empty for a repository with no permit (`permit_state: absent`,
+  `origin_changed` or `unbound_legacy`, reason `external_review_not_permitted`):
+  exit 0, Reinhard-only, retro `{id: wave-inspect-xprov, verdict: not_applicable, caught: false}`
+  with the issue tag `xprov_not_applicable` (see `issue_classes` below). For `origin_changed` or
+  `unbound_legacy` the retro names the `permit_state` ("Codex review skipped: permit void (<state>)").
+  A mismatch
+  or broken state (`*_mismatch`, `audit_broken`, `invalid`) stays exit 1.
+  **Placement (spec 016 FR-020).** Waves the placement rule exempts (no later wave depends on them, or the plan names no security
+  surface for them and their real diff, `--wave-range`, is none either) are listed under `scope_exempt` and need no pass or waiver; a wave
+  that has a gate row is judged on its rows. Retro: `{id: wave-inspect-xprov, verdict: not_applicable, caught: false}`
+  with reason `scope_exempt` and the issue tag `xprov_not_applicable`.
+  **Blocked fallback (spec 016 FR-026).** A wave Codex answered BLOCKED twice is covered by a1's marker in its run dir and listed under
+  `blocked_fallback`: Reinhard is the only review for it. Retro: `{id: wave-inspect-xprov, verdict: not_applicable, caught: false}` with reason
+  `codex_blocked_fallback` and the issue tag `xprov_not_applicable`.
 - **Exit 1** → the stdout JSON lists the lacking waves. For each: go back to
   `02-execute.md` step 2b-x for that wave (re-run the inspection with that
-  wave's `--base`), or the user waives it — the human runs
+  wave's `--base`), or the owner waives it. Main path: the chat waiver of
+  `02-execute.md` 2b-x.0 item 5 (`xprov consent question --kind waiver --phase <phase_name>`,
+  AskUserQuestion exactly as printed, `xprov consent ensure --kind waiver --phase <phase_name>` and `xprov consent waive --phase <phase_name>`).
+  Fallback for headless runs only: the owner runs
   `a1-tools xprov waive --phase <phase_name> --gate wave-inspect-xprov --wave <N> --base <that wave's PRE_WAVE_HEAD> --work-path $WORK_PATH --reason "<text>" --by <name>`
-  themselves, in a separate terminal (it refuses agent process trees); this skill never does. While the registry row says `warning`,
+  in a separate terminal (it refuses agent process trees); this skill never does. While the registry row says `warning`,
   an exit 1 here is the same warning block as in step 2b-x and Victor is
   spawned anyway (record `verdict: fail` in the retro); once `blocking`, stop
   here.
@@ -234,7 +254,7 @@ result: <pass|partial|fail>
 waves_executed: <N>
 observations_total: $OBS_COUNT
 observations_major_plus: $MAJOR_COUNT
-issue_classes: [<from: plan_drift, missing_dependency, wave_too_large, flaky_test, env_issue, spec_omission, unverifiable_criterion, blocker_unforeseen, xprov_waived, xprov_not_applicable>]
+issue_classes: [<from: plan_drift, missing_dependency, wave_too_large, flaky_test, env_issue, spec_omission, unverifiable_criterion, blocker_unforeseen, xprov_waived, xprov_not_applicable, xprov_disposed>]
 phase_that_produced_most_issues: <plan|implement|verify>
 ```
 
@@ -259,7 +279,7 @@ gates_fired:
 
 `wave-inspect-xprov` gets **one line per wave** (per lane wave in multi-lane
 phases), `verdict: fail` for every non-pass outcome including a
-`warning`-enforced continue, a `round_cap` and a waived wave (a waiver is
+`warning`-enforced continue, a `round_cap` (also one closed by `xprov dispose`: keep `verdict: fail` and add `xprov_disposed` to `issue_classes`) and a waived wave (a waiver is
 never a pass — it additionally puts `xprov_waived` into `issue_classes`,
 a1-execute's own tag field; a1-plan records the same waiver in the base
 `issues` field of `_shared/retro-template.md`, and a1-evolve reads both).

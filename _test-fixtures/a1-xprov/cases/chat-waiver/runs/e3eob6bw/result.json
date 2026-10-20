@@ -1,0 +1,147 @@
+{
+  "status": "completed",
+  "mode": "inspect",
+  "provider": "codex",
+  "roles": {
+    "host": "claude",
+    "planner": "claude",
+    "reviewer": "codex",
+    "builder": "claude",
+    "inspector": "codex"
+  },
+  "repo": "/Users/rob/.a1-xprov/snapshots/snap-FJTXoK",
+  "plan": "/Users/rob/.a1-xprov/snapshots/snap-FJTXoK.inputs/PLAN.md",
+  "plan_sha256": "65a4b16e42810522e8c5a1f6f7cd246db1abeac3da1dec9ed35b5add1e8a8266",
+  "requested_model": null,
+  "requested_effort": null,
+  "base": "8476ff7c1b99b5379c137347a9439576acdaa031",
+  "snapshot": {
+    "base": "8476ff7c1b99b5379c137347a9439576acdaa031",
+    "files": [
+      {
+        "path": ".a1/phases/infra-rename-cutover/STATUS.md",
+        "kind": "file",
+        "sha256": "da91cd126a5a6d869608e5b80f96b49fc1e64e56bc36c2326bfc0dfc37a973d1"
+      },
+      {
+        "path": ".github/workflows/build-image.yml",
+        "kind": "file",
+        "sha256": "5839e0eec52addc08fab7cb64d116c37c4513017e0b3986cba77aab1be40d70b"
+      },
+      {
+        "path": ".github/workflows/deploy.yml",
+        "kind": "file",
+        "sha256": "04d5429b7b9e0f0b805ca37243bd26e937d28e902a4e4ff1b90353b5b7957600"
+      },
+      {
+        "path": ".github/workflows/uptime-monitor.yml",
+        "kind": "file",
+        "sha256": "84458da8c84239d177bdf08da87d7dd6d0f22016f3bdd88067c2593cb70943ab"
+      },
+      {
+        "path": "automation/registry/README.md",
+        "kind": "file",
+        "sha256": "7eca70b7a0fc655a9caef77a642ec165e1331d3bee9c78a30356e2b8d9a2419c"
+      },
+      {
+        "path": "docs/OPERATIONS.md",
+        "kind": "file",
+        "sha256": "02b9c4cce6e64b8c5da38d71f290b395e43dc282d5c9074a6dfa15fdf695fa55"
+      },
+      {
+        "path": "docs/runbooks/expense-mail-intake.md",
+        "kind": "file",
+        "sha256": "50093ee5bb48efb82b239506545385b104c86b8ff220ace7d218fcb8da1dec06"
+      },
+      {
+        "path": "infra/app/README.md",
+        "kind": "file",
+        "sha256": "7f4d69f49dac709134a9d1b89c4cbd6e5cb549c8f4c88146523cba6e4637653b"
+      },
+      {
+        "path": "scripts/ops/capture-rollback-ref.mjs",
+        "kind": "file",
+        "sha256": "b0b88a5be7cb058f9d4b006bf1c9dff9004770d0997e9c0a05a6c611d1f84b54"
+      },
+      {
+        "path": "scripts/ops/capture-rollback-ref.sh",
+        "kind": "file",
+        "sha256": "b427e3dd9babe03771fc60272bbeda6929b25b01febd2ea59481e6f79617babc"
+      },
+      {
+        "path": "scripts/ops/registry-ref-exists.sh",
+        "kind": "file",
+        "sha256": "1983c13f9854d4018a2642a8b22f2b081a89e60ee0a272b4defd4259269277ad"
+      },
+      {
+        "path": "scripts/setup-qa-e2e-tenant.ts",
+        "kind": "file",
+        "sha256": "33118d4bbc71f781f68b905b9647967018a8f93942cc10d1a02ed8f82efe0184"
+      },
+      {
+        "path": "tests/ci/unit-job-dateien.txt",
+        "kind": "file",
+        "sha256": "d8fc5868bb15ed39d3737987eb782b58cf76a613f2026e40b53c60bbe6d73bea"
+      },
+      {
+        "path": "tests/unit/ops/capture-rollback-ref.test.ts",
+        "kind": "file",
+        "sha256": "dc1dc4d1d453209a07dddad3e152ee78a4587e4a5583b9cbe6457e6998b78960"
+      },
+      {
+        "path": "tests/unit/ops/registry-ref-exists.test.ts",
+        "kind": "file",
+        "sha256": "a719b4807f21e6b9bc0f7d026d89865e0023fa6eb5f7aaad1fe778e2f979ad96"
+      },
+      {
+        "path": "tests/unit/ops/registry-stubs.ts",
+        "kind": "file",
+        "sha256": "ea5ec24da2dd43325aad815ae0e343cc3b5e8008f3412ce6acc88c15ec49fed4"
+      }
+    ],
+    "diff_sha256": "8af8e3692a4768d1e4fec4866287721dd384ded652eef0a81e2f9f7b65f7e049",
+    "sha256": "fc5c01ca8a0c3debf3613138bf0698cb5aa1e2ceb26d4e1c06ebe3328ff47ddd"
+  },
+  "previous": null,
+  "started_at": 1791924255.0190442,
+  "artifacts": "/Users/rob/.a1-xprov/artifacts/infra-rename-a1-office/claudex-e3eob6bw",
+  "cli_version": "codex-cli 0.155.1",
+  "executable": [
+    "/opt/homebrew/lib/node_modules/@openai/codex/bin/codex.js"
+  ],
+  "exit_code": 0,
+  "session_id": "01a13702-3e06-72a2-8801-a170e1e0ba63",
+  "response": {
+    "verdict": "REVISE",
+    "summary": "One concurrency defect remains in the new guarded deployment procedure after the phase freeze ends.",
+    "findings": [
+      {
+        "id": "R1",
+        "severity": "medium",
+        "path": "docs/OPERATIONS.md:570",
+        "evidence": "Capture and image replacement are not conditional on the same Deployment version. capture-rollback-ref.sh reads the Deployment once, then reads ReplicaSets/pods and performs registry requests; the guard subsequently runs unconditional kubectl set image. After FREEZE_RELEASED, two operators can both capture healthy image A, then deploy B and C respectively. C's recorded rollback is A rather than B, and C can overwrite B while its rollout is incomplete despite the advertised completed-rollout gate. The generated build-image.yml guard has the same defect; its concurrency group serializes builds only.",
+        "fix": "Serialize capture-through-rollout across all deployment writers, or carry the captured Deployment UID/resourceVersion into an atomic conditional image update that rejects intervening changes. Apply the protection to both guard sources and add an interleaving test showing that a changed Deployment prevents the second write."
+      }
+    ],
+    "coverage": [
+      "Read the supplied plan and verified its SHA256; inspected RESEARCH.md, MAP.md and STATUS.md.",
+      "Reviewed all 16 changed files, including capture evaluation, registry authentication, guard generation, tests and CI registration.",
+      "Traced related deployment and restart instructions across scripts, infra, automation, workflows and runbooks.",
+      "Inspected Deployment selectors, rollout strategy, probes and pull policy; CI test invocation, unit-list gate, Dockerfile and .dockerignore."
+    ],
+    "limitations": [
+      "No tests, deployment commands or registry requests were run; recorded test and production results were treated as supplied evidence.",
+      "Live cluster state, remote dispatchable refs and registry inventories were not independently verified.",
+      "Pre-merge and phase-end inventory checks and FREEZE_RELEASED are still pending in the supplied STATUS.md."
+    ]
+  },
+  "usage": {
+    "input_tokens": 859291,
+    "cached_input_tokens": 732416,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 2002,
+    "reasoning_output_tokens": 610
+  },
+  "observed_models": [],
+  "elapsed_seconds": 81.53
+}

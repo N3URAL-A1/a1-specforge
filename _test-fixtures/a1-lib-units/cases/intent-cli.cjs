@@ -40,7 +40,7 @@ const CLI = require(path.join(LIB, 'intent-cli.cjs'));
 
 require(path.join(LIB, 'intent-child.cjs')).injectChildDeps({ passwdHome: () => os.homedir() });
 
-eq('I1 subcommand names', CLI.SUBCOMMAND_NAMES, ['validate', 'device', 'claim', 'reject', 'complete', 'run', 'tick', 'watch', 'list', 'schema', 'doctor', 'approve', 'install-agent', 'seal']);
+eq('I1 subcommand names', CLI.SUBCOMMAND_NAMES, ['validate', 'device', 'claim', 'reject', 'complete', 'run', 'tick', 'watch', 'list', 'schema', 'doctor', 'approve', 'install-agent', 'seal', 'post-update']);
 eq('I1 exit codes', [CLI.EXIT_OK, CLI.EXIT_INVALID, CLI.EXIT_USAGE], [0, 1, 2]);
 
 const usage = (name, sub, args, re) => {

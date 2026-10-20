@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated": "2026-10-19T00:03:27.202Z",
+  "generated": "2026-10-20T02:43:32.210Z",
   "project": {
     "id": "a1-specforge",
     "title": "a1-specforge — Roadmap",
@@ -234,7 +234,7 @@
       "milestone": "continuous",
       "title": "xprov autonomy: chat consent instead of terminal steps, Codex at the right places, self-recovering aborts",
       "status": "in-flight",
-      "stage": "started",
+      "stage": "origin-cleanup",
       "depends_on": [],
       "started": "2026-10-14",
       "finished": null,
@@ -274,7 +274,7 @@
       "milestone": "continuous",
       "title": "Depth Pass before every planning task",
       "status": "in-flight",
-      "stage": "complete",
+      "stage": "verify",
       "depends_on": [],
       "started": "2026-10-19",
       "finished": null,
