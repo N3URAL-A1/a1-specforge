@@ -94,6 +94,7 @@ Identify what could block execution:
 - Schema migrations (destructive?)
 - Breaking changes between current and required library versions
 - Circular dependencies in planned work
+- Product decisions hiding as "open questions" — anything only the product owner can answer (entity semantics, archive/backfill policy, which terminal state exists, the minimum deliverable) goes into `## Decisions needed`, never into Risks or Recommendations
 
 ## Step 5: Write RESEARCH.md
 
@@ -121,6 +122,11 @@ generated: <ISO date>
 |---|---|---|
 | <risk> | HIGH/MED/LOW | <mitigation> |
 
+## Decisions needed
+| Question | Why it blocks planning | Options seen |
+|---|---|---|
+| <product question only the owner can answer> | <which task or wave changes with the answer> | <a / b> |
+
 ## Recommendations
 <3-5 concrete recommendations for the planner>
 
@@ -128,5 +134,7 @@ generated: <ISO date>
 <list of files relevant to this task>
 ```
 
+Write `none` as the only row when there is nothing to ask; every other row must reach the user before the planner runs — see `_shared/agent-lessons.md#rico-decisions-needed`.
+
 ## Step 6: Return summary
-After writing, output a 3-5 sentence summary of the most important findings.
+After writing, output a 3-5 sentence summary of the most important findings, followed by the `## Decisions needed` rows verbatim (or `Decisions needed: none`) so the orchestrator can put them to the user before spawning the planner.
