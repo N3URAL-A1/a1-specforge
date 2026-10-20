@@ -212,7 +212,7 @@ features:
     milestone: continuous
     title: "Depth Pass before every planning task"
     status: in-flight
-    stage: verify
+    stage: origin-cleanup
     depends_on: []
     started: 2026-10-19
     finished: null
@@ -361,6 +361,8 @@ None.
 - **2026-10-20** — 016-xprov-autonomy -> verify — stage transition via `product stage`
 - **2026-10-20** — 016-xprov-autonomy -> merge — stage transition via `product stage`
 - **2026-10-20** — 016-xprov-autonomy -> origin-cleanup — stage transition via `product stage`
+- **2026-10-20** — 019-depth-pass-planning -> merge — stage transition via `product stage`
+- **2026-10-20** — 019-depth-pass-planning -> origin-cleanup — stage transition via `product stage`
 
 ## Appendix — migrated details
 

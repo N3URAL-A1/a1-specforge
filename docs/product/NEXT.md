@@ -16,7 +16,7 @@ updated: 2026-10-20
 - **010-vault-cockpit-contract** — Vault cockpit contract — every a1 status readable in Obsidian on Mac, server and phone (milestone: continuous, stage: started)
 - **011-intent-queue-consumer** — Intent queue consumer — the a1 half of triggering skills from the phone via the vault (milestone: continuous, stage: started)
 - **016-xprov-autonomy** — xprov autonomy: chat consent instead of terminal steps, Codex at the right places, self-recovering aborts (milestone: continuous, stage: origin-cleanup) — scope: project/a1-specforge/spec/016-xprov-autonomy.md, project/a1-specforge/plans/016-xprov-autonomy-wave-plan.md
-- **019-depth-pass-planning** — Depth Pass before every planning task (milestone: continuous, stage: verify) — scope: project/a1-specforge/spec/019-depth-pass-planning.md, project/a1-specforge/plans/019-depth-pass-planning-wave-plan.md
+- **019-depth-pass-planning** — Depth Pass before every planning task (milestone: continuous, stage: origin-cleanup) — scope: project/a1-specforge/spec/019-depth-pass-planning.md, project/a1-specforge/plans/019-depth-pass-planning-wave-plan.md
 
 ## Next cursor
 

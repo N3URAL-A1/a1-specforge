@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated": "2026-10-20T02:43:32.210Z",
+  "generated": "2026-10-20T18:36:45.891Z",
   "project": {
     "id": "a1-specforge",
     "title": "a1-specforge — Roadmap",
@@ -274,7 +274,7 @@
       "milestone": "continuous",
       "title": "Depth Pass before every planning task",
       "status": "in-flight",
-      "stage": "verify",
+      "stage": "origin-cleanup",
       "depends_on": [],
       "started": "2026-10-19",
       "finished": null,
