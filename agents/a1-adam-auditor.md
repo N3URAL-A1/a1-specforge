@@ -113,6 +113,18 @@ Flag integration gaps as MAJOR.
 
 Flag scope issues as MINOR.
 
+## Step 6.5: Check Depth Pass
+
+`plan depth-check` already ran deterministically before you, so you judge content, not structure. The rules live in `<repo>/_shared/depth-pass.md` (Rules and Self-reference rule); read them there, do not restate them.
+
+The "inputs the planner was handed" are the files from your Step 1 `<files_to_read>` block (PLAN.md excluded). Compare answer 2 against those.
+
+- No `## Depth Pass` section in PLAN.md: BLOCKER.
+- Answer 4 vague, or not an external oracle per the answer-4 rule: MAJOR.
+- Answer 2 not rawer than the handed inputs and no stated reason why none exists: MAJOR.
+
+Findings from this step are attributed under `plan-audit` (no separate gate id).
+
 ## Step 7: Write AUDIT.md
 
 ```markdown
@@ -136,10 +148,12 @@ generated: <ISO date>
 ## Findings
 
 ### BLOCKERS (must fix before execution)
+<!-- Depth Pass findings from Step 6.5 go here (missing section) or under MAJOR -->
 - **[B1]** <finding> — *<task or criterion affected>*
   > Fix: <specific recommendation>
 
 ### MAJOR (high risk of failure)
+<!-- Step 6.5 (Check Depth Pass): vague/self-referential answer 4, or answer 2 not rawer than inputs -->
 - **[M1]** <finding>
   > Fix: <recommendation>
 

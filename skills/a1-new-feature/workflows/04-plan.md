@@ -61,6 +61,11 @@ Use the **Agent** tool with `subagent_type: "a1-vincente-vibe-optimizer"` and
 > - SC-### → kept for Phase 6; use them only as a fitness check per wave.
 > - Dependencies → determine the order.
 >
+> **Depth Pass requirement:** read `<repo>/_shared/depth-pass.md` first. The wave plan
+> carries a `## Depth Pass` section with its five sub-headings, placed directly
+> after the frontmatter (before the coverage matrix), and the waves are derived
+> from its rewritten brief.
+>
 > **Wave plan structure (Markdown with YAML frontmatter):**
 >
 > ```yaml
@@ -186,9 +191,23 @@ Use the **Agent** tool with `subagent_type: "a1-vincente-vibe-optimizer"` and
 >
 > When done: report "Wave plan complete: N waves, M FRs distributed, K parallelizable."
 
-## Step 3 — Update spec frontmatter
+## Step 3 — Depth Pass check, then update spec frontmatter
 
-After Vincente reports completion, link the wave-plan back into the spec:
+After Vincente reports completion, run the deterministic Depth Pass check first:
+
+```bash
+node <repo>/_shared/a1-tools.cjs plan depth-check --plan <plan-path>
+```
+
+Exit 0 → continue with the status update below. Exit 1 → the `## Depth Pass`
+section is missing or incomplete (the JSON names the offending sub-headings;
+rules in `<repo>/_shared/depth-pass.md`): send Vincente a revision brief, skip the status
+update, and the spec status stays `clarified` until the check exits 0. At most 2 revision
+briefs: if the check still exits 1 after the second, stop, keep the status `clarified`,
+record `revision-limit-reached` and report to the user with the finding list. Exit 2 →
+usage error, fix the invocation.
+
+The status update runs only on depth-check exit 0. Link the wave-plan back into the spec:
 
 ```bash
 node <repo>/_shared/a1-tools.cjs spec update-status \
