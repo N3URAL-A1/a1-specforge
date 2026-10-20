@@ -9,6 +9,7 @@ const {
 const { SPEC_INIT_HELP, VAULT_HELP } = require('./help-vault.cjs');
 const { INTENT_HELP } = require('./help-intent.cjs');
 const { XPROV_HELP } = require('./help-xprov.cjs');
+const { GATES_HELP } = require('./help-gates.cjs');
 
 function usage(msg) {
   process.stderr.write(`usage error: ${msg}\n`);
@@ -607,6 +608,8 @@ ${SPEC_INIT_HELP}
                   guard exists to prevent the return of was fixed the same
                   morning) — RED proof is fixture-based under
                   _test-fixtures/a1-workflow-lint/snippets/, not a live catch.
+
+${GATES_HELP}
 
 ${XPROV_HELP}
 

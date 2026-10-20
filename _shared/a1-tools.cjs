@@ -646,6 +646,11 @@ function main() {
         cmdWorkflowLint(rest);
         return; // unreachable — cmdWorkflowLint calls process.exit()
       } else usage(`unknown workflow subcommand: ${sub}`);
+    } else if (group === 'gates') {
+      // Spec 017-enforced-self-checks, Wave 1: lib/gates-cli.cjs owns the
+      // group's dispatch and every exit code (0 / 1 / 2). Lazy require.
+      require(path.join(__dirname, 'lib', 'gates-cli.cjs')).cmdGates(sub, rest);
+      return; // unreachable — every gates subcommand calls process.exit()
     } else if (group === 'xprov') {
       // Spec 009-cross-provider-review-gate, Wave 1 — the facade's ONLY edit
       // for that spec. lib/xprov.cjs owns the full dispatch table; every
@@ -676,7 +681,7 @@ function main() {
       require(path.join(__dirname, 'lib', 'intent-git.cjs')).cmdGit(sub, rest);
       return;
     } else {
-      usage(`unknown command group: ${group} (expected "spec", "fix", "analyze", "check", "checklist", "constitution", "worktree", "pr", "phantom", "reconcile", "modernize", "schema-check", "cost", "pack", "product", "quick", "learnings", "retro", "workflow", "intent", "git", or "realpath-check"). fix supports: next-suffix, update-status, list, find-duplicates, integrity-check, init-postmortem, count-postmortems-since, update-promote-state, write-suggestion`);
+      usage(`unknown command group: ${group} (expected "spec", "fix", "analyze", "check", "checklist", "constitution", "worktree", "pr", "phantom", "reconcile", "modernize", "schema-check", "cost", "pack", "product", "quick", "learnings", "retro", "workflow", "gates", "intent", "git", or "realpath-check"). fix supports: next-suffix, update-status, list, find-duplicates, integrity-check, init-postmortem, count-postmortems-since, update-promote-state, write-suggestion`);
     }
   } catch (e) {
     // Input-validation errors (e.g. path-traversal guard) are user errors,

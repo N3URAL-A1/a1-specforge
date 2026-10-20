@@ -91,6 +91,13 @@ jobs:
         # pipeline's status where `$?` belongs to the parser.
         run: node _shared/a1-tools.cjs workflow lint
 
+      - name: Gate wiring lint
+        # Spec 017 FR-005. Every registry gate whose `invoke` cell names a skill
+        # must be called from that skill in a fenced bash block; an unwired row
+        # without a live exemption (or past its date) exits 1. Fixture
+        # _test-fixtures/a1-gates-lint proves the red path on a planted gate.
+        run: node _shared/a1-tools.cjs gates lint
+
       - name: Install/README sync check
         run: bash bin/verify-install-sync.sh
 

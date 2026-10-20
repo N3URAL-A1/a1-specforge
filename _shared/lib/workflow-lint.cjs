@@ -422,6 +422,7 @@ module.exports = {
   isValueDefaulting,
   isSwallowedExitPipe,
   extractBashFenceLines,
+  joinContinuations,
   listWorkflowFiles,
   checkVaultSyncSteps,
   REQUIRED_VAULT_SYNC_FILES,
