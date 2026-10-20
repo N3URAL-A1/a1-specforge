@@ -8,6 +8,7 @@
 # so the test never touches the real vault or the real repo.
 
 set -u
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
 
 # Spec 010 Wave 4: every product writer mirrors docs/product into A1_VAULT_ROOT.
 # A fixture must never reach the developer's real vault, and its expectations
@@ -35,8 +36,8 @@ bad()  { results+=("FAIL  $1"); fail=$((fail + 1)); }
 # A1_VAULT_ROOT set → path under the env dir, exit 0, stderr source: env.
 caseA() {
   local home tmpvault out err rc
-  home="$(mktemp -d)"
-  tmpvault="$(mktemp -d)"
+  mk_workdir home home
+  mk_workdir tmpvault tmpvault
   out="$(cd "$REPO_ROOT" && env HOME="$home" A1_VAULT_ROOT="$tmpvault/vault" \
         node "$TOOLS" spec next-number demo 2>/tmp/a1vf.errA)"
   rc=$?
@@ -54,8 +55,8 @@ caseA() {
 # unset env, cwd = fresh git repo → path under <repo>/.a1/learnings, source: repo-local.
 caseB() {
   local home repo out err rc
-  home="$(mktemp -d)"
-  repo="$(mktemp -d)"
+  mk_workdir home home
+  mk_workdir repo repo
   git -C "$repo" init -q
   out="$(cd "$repo" && env -u A1_VAULT_ROOT HOME="$home" \
         node "$TOOLS" spec next-number demo 2>/tmp/a1vf.errB)"
@@ -75,8 +76,8 @@ caseB() {
 # unset env, non-git cwd, ~/N3URAL-Vault exists → legacy + deprecation warning.
 caseC() {
   local home nongit out err rc
-  home="$(mktemp -d)"
-  nongit="$(mktemp -d)"     # mktemp dirs are not git repos
+  mk_workdir home home
+  mk_workdir nongit nongit     # mktemp dirs are not git repos
   mkdir -p "$home/N3URAL-Vault"
   out="$(cd "$nongit" && env -u A1_VAULT_ROOT HOME="$home" \
         node "$TOOLS" spec next-number demo 2>/tmp/a1vf.errC)"
@@ -95,8 +96,8 @@ caseC() {
 # fresh git repo with NO .a1/ → exit 0, .a1/learnings created, both status lines.
 caseD() {
   local home repo out err rc
-  home="$(mktemp -d)"
-  repo="$(mktemp -d)"
+  mk_workdir home home
+  mk_workdir repo repo
   git -C "$repo" init -q
   [[ -e "$repo/.a1" ]] && rm -rf "$repo/.a1"
   out="$(cd "$repo" && env -u A1_VAULT_ROOT HOME="$home" \
@@ -117,8 +118,8 @@ caseD() {
 # unset env, non-git cwd, no legacy vault → exit 2, error names A1_VAULT_ROOT.
 caseE() {
   local home nongit out err rc
-  home="$(mktemp -d)"       # fresh HOME: no N3URAL-Vault
-  nongit="$(mktemp -d)"
+  mk_workdir home home       # fresh HOME: no N3URAL-Vault
+  mk_workdir nongit nongit
   out="$(cd "$nongit" && env -u A1_VAULT_ROOT HOME="$home" \
         node "$TOOLS" spec next-number demo 2>/tmp/a1vf.errE)"
   rc=$?
@@ -135,8 +136,8 @@ caseE() {
 # → write lands under <repo>/.a1/learnings/pattern/a1-learnings/..., exit 0, source: repo-local.
 caseF() {
   local home repo out err rc wrote
-  home="$(mktemp -d)"
-  repo="$(mktemp -d)"
+  mk_workdir home home
+  mk_workdir repo repo
   git -C "$repo" init -q
   out="$(cd "$repo" && env -u A1_VAULT_ROOT HOME="$home" \
         node "$TOOLS" fix write-suggestion demo-agent --title "Test" --body "b" 2>/tmp/a1vf.errF)"
@@ -286,6 +287,44 @@ caseL1() {
   else bad "L1 BSD-only shell idioms found"; while IFS= read -r l; do results+=("      $l"); done <<<"$hits"; fi
 }
 
+# ---------- Case L2: no bare mktemp in the fixture suites (suite-tmpdir-leak) ----------
+# macOS (BSD) `mktemp`, `mktemp -d` and `mktemp -t` WITHOUT a path template ignore
+# $TMPDIR and write to the per-user temp dir; suites that redirect TMPDIR (a1-xprov)
+# then leak every directory (15k per day, 2026-10-20). Every site must pass an explicit
+# "${TMPDIR:-/tmp}/..." template, normally through `mk_workdir` / `mk_tmpfile` in
+# _test-fixtures/lib/tmp.sh. Comment lines are ignored.
+# Exempt: _test-fixtures/a1-depth-pass/ (reserved by spec 019, in flight on 2026-10-20);
+# it is migrated after spec 019 merges, then this exemption goes away.
+# Red-making change: putting one bare `mktemp -d` (or `mktemp`, `mktemp -t`) back into any
+# suite script under _test-fixtures/**/*.sh. L2a is the matcher self-test: it must hit the
+# planted bare lines and miss the templated ones, so L2b cannot pass by matching nothing.
+l2_re() {
+  # Assembled from pieces so this very file does not match.
+  printf '%s' '(^|[^_A-Za-z])mk''temp[[:space:]]*(-[a-zA-Z]+[[:space:]]*)*([)'"'"';|&`]|$)'
+}
+caseL2() {
+  local re bad_planted good_planted hits n
+  re="$(l2_re)"
+  bad_planted='x="$(mk''temp -d)"
+y=$(mk''temp)
+z="$(mk''temp -d -t)"
+mk''temp -d'
+  good_planted='x="$(mk''temp -d "${TMPDIR:-/tmp}/a.XXXXXX")"
+y="$(mk''temp "$R/f.XXXXXX")"
+echo "mk''temp gave no directory"
+w="$(g_mk''temp name)"'
+  n="$(printf '%s\n' "$bad_planted" | grep -cE "$re" || true)"
+  if [[ "$n" -eq 4 ]]; then ok "L2a matcher hits all 4 planted bare mktemp lines"
+  else bad "L2a matcher hit $n of 4 planted bare mktemp lines"; fi
+  n="$(printf '%s\n' "$good_planted" | grep -cE "$re" || true)"
+  if [[ "$n" -eq 0 ]]; then ok "L2a matcher misses the 4 templated/unrelated lines"
+  else bad "L2a matcher hit $n templated/unrelated lines (false positives)"; fi
+  hits="$(cd "$REPO_ROOT" && find _test-fixtures -name '*.sh' -type f -not -path '_test-fixtures/a1-depth-pass/*' -print0 \
+    | xargs -0 grep -nE "$re" | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' || true)"
+  if [[ -z "$hits" ]]; then ok "L2b no bare mktemp in _test-fixtures/**/*.sh"
+  else bad "L2b bare mktemp found (use mk_workdir / mk_tmpfile from _test-fixtures/lib/tmp.sh)"; while IFS= read -r l; do results+=("      $l"); done <<<"$hits"; fi
+}
+
 caseA
 caseB
 caseC
@@ -301,6 +340,7 @@ caseG G4b checklist-full run_checklist_full
 caseP1
 caseP2
 caseL1
+caseL2
 
 printf '\n--- a1-vault-fallback fixture results ---\n'
 for r in "${results[@]}"; do printf '%s\n' "$r"; done
