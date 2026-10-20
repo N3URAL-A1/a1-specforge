@@ -1,0 +1,9 @@
+{
+  "each": "_test-fixtures/*/run*.sh",
+  "argv_prefix": ["bash"],
+  "commands": [
+    { "id": "_test-fixtures/a1-schema-check/parser/run-parser.sh", "argv": ["bash", "_test-fixtures/a1-schema-check/parser/run-parser.sh"], "reporter": "none" }
+  ],
+  "timeout_ms": 1800000,
+  "flaky_base": []
+}
