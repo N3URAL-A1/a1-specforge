@@ -215,9 +215,14 @@ function detectGermanMarkers(content, label) {
  * features/<###>-<slug>/feature.md, VISION.md, and every audits/*.md.
  * Never writes any file. Exit: 0 valid, 1 invalid or ROADMAP.md missing. */
 function cmdProductValidate(args) {
-  const flags = parseFlags(args, { dir: 'value', 'spec-status': 'bool' });
+  const flags = parseFlags(args, { dir: 'value', 'spec-status': 'bool', ci: 'bool' });
   const dir = productDirFromFlags(flags);
   const roadmapFile = path.join(dir, 'ROADMAP.md');
+  if (flags.ci && !fs.existsSync(roadmapFile)) {
+    // Spec 017 FR-033: no roadmap in the repo -> the CI check does not apply.
+    process.stdout.write(JSON.stringify({ valid: true, errors: [], warnings: [], file: null, ci: require('./product-validate-ci.cjs').ciSection({ roadmapFm: null, dir }) }, null, 2) + '\n');
+    process.exit(0);
+  }
   if (!fs.existsSync(roadmapFile)) {
     process.stdout.write(JSON.stringify({ valid: false, errors: [`ROADMAP.md not found at ${roadmapFile}`] }, null, 2) + '\n');
     process.exit(1);
@@ -312,9 +317,13 @@ function cmdProductValidate(args) {
 
   const valid = errors.length === 0;
   // Spec 010 W7 (FR-028): `--spec-status` adds the spec↔roadmap coherence section; without it the output is unchanged.
-  const coherence = flags['spec-status'] ? { spec_status: require('./spec-coherence.cjs').specStatusSection(fm) } : {};
+  // Spec 017 FR-033: `--ci` swaps the vault-backed section for the roadmap-internal spec_path check (no vault).
+  const coherence = flags.ci
+    ? { ci: require('./product-validate-ci.cjs').ciSection({ roadmapFm: fm, dir }) }
+    : flags['spec-status'] ? { spec_status: require('./spec-coherence.cjs').specStatusSection(fm) } : {};
+  const coherenceViolations = (coherence.spec_status || coherence.ci || { violations: [] }).violations.length;
   process.stdout.write(JSON.stringify({ valid, errors, warnings, file: roadmapFile, ...coherence }, null, 2) + '\n');
-  process.exit(valid && !(coherence.spec_status && coherence.spec_status.violations.length > 0) ? 0 : 1);
+  process.exit(valid && coherenceViolations === 0 ? 0 : 1);
 }
 
 module.exports = {
