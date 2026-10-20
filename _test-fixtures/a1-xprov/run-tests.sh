@@ -62,6 +62,7 @@ SUITE_TMP_PARENT="${TMPDIR:-/tmp}"; SUITE_ROOT="$(mktemp -d "${SUITE_TMP_PARENT%
 [[ -n "$SUITE_ROOT" && -d "$SUITE_ROOT" ]] || { echo "FAIL  harness: mktemp for the suite root failed" >&2; exit 1; }
 trap 'rm -rf "$SUITE_ROOT"' EXIT
 export TMPDIR="$SUITE_ROOT/tmp"; mkdir -p "$TMPDIR"
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
 export HOME="$SUITE_ROOT/home"; mkdir -p "$HOME/.codex"
 printf '{"fixture":true}\n' > "$HOME/.codex/auth.json"; chmod 600 "$HOME/.codex/auth.json"
 
@@ -116,7 +117,7 @@ assert_rc() {
 # JSON). The JSON travels through a TEMP FILE, never as an argv element: a
 # > 64 KiB stdout blew Linux ARG_MAX ("Argument list too long") in CI.
 # Unparseable JSON prints UNPARSEABLE (never a silent pass).
-JSON_TMP="$(mktemp -d)"
+mk_workdir JSON_TMP json_tmp
 json_get() {
   local file="$JSON_TMP/json.$$.$RANDOM"
   printf '%s' "$1" > "$file"
@@ -170,7 +171,7 @@ make_tree() {
   if [[ -L "$REPO_ROOT/_shared" || -L "$REPO_ROOT/_shared/vendor" || -L "$REPO_ROOT/_shared/vendor/claudex-loop" ]]; then
     echo "FAIL  harness: $REPO_ROOT/_shared (or its vendor path) is a symlink; the suite must not run against a linked tree" >&2; exit 2
   fi
-  TREE="$(mktemp -d)"
+  mk_workdir TREE tree
   cp -R "$REPO_ROOT/_shared" "$TREE/_shared"
   TREE_TOOLS="$TREE/_shared/a1-tools.cjs"
   TREE_VENDOR="$TREE/_shared/vendor/claudex-loop"
@@ -193,7 +194,7 @@ make_tree() {
   # fake runner needs no exec bit: production and H1 invoke it as
   # `python3 <path>`.
   if [[ $FAKE_PATH_PREPENDED -eq 0 ]]; then
-    FAKE_BIN="$(mktemp -d)"
+    mk_workdir FAKE_BIN fake_bin
     cp "$FAKE/bin/"* "$FAKE_BIN/"
     chmod +x "$FAKE_BIN"/*
     export PATH="$FAKE_BIN:$PATH"
@@ -216,7 +217,7 @@ make_tree() {
 # PHASE_HEAD.
 make_phase() {
   local name="$1" plan="${2:-$CASES/approved.PLAN.md}"
-  PHASE_REPO="$(mktemp -d)"
+  mk_workdir PHASE_REPO phase_repo
   PHASE_DIR="$PHASE_REPO/.a1/phases/$name"
   PHASE_PLAN="$PHASE_DIR/PLAN.md"
   mkdir -p "$PHASE_DIR" "$PHASE_REPO/src"
@@ -247,7 +248,7 @@ fake_runner_env() {
 # make_home — builds a 0700 dedicated Codex home with the compliant
 # config.toml (0600). Sets XHOME. Callers set A1_XPROV_CODEX_HOME=$XHOME.
 make_home() {
-  XHOME="$(mktemp -d)"
+  mk_workdir XHOME xhome
   chmod 700 "$XHOME"
   printf '%s\n' "$COMPLIANT_CONFIG" > "$XHOME/config.toml"
   chmod 600 "$XHOME/config.toml"

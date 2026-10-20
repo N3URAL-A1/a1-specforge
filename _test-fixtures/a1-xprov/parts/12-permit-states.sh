@@ -29,7 +29,7 @@
 # Code: under Claude Code they print `SKIP (claude-code ancestor)`; with
 # CI=true a SKIP is a FAIL (as part 11).
 
-TMP12="$(mktemp -d "${TMPDIR:-/tmp}/a1x12.XXXXXX")"
+mk_workdir TMP12 "a1x12"
 [[ -n "$TMP12" && -d "$TMP12" ]] || { echo "FAIL  part 12: mktemp failed" >&2; fail=$((fail + 1)); return 0 2>/dev/null || exit 1; }
 SAVED_HOME_12="$HOME"
 export HOME="$TMP12/home"; mkdir -p "$HOME"

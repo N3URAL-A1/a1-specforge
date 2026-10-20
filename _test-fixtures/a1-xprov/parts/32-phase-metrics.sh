@@ -12,7 +12,7 @@
 #     SC-005  every run ends not_applicable (never a blocking fail)                                                                  [mutant N1]
 # RS  real-store snapshot: the owner's real ~/.a1-xprov (sha256 + mtime) is the same before and after this part
 
-TMP32="$(mktemp -d "${TMPDIR:-/tmp}/a1x32.XXXXXX")"
+mk_workdir TMP32 "a1x32"
 [[ -n "$TMP32" && -d "$TMP32" ]] || { echo "FAIL  part 32: mktemp failed" >&2; fail=$((fail + 1)); return 0 2>/dev/null || exit 1; }
 REAL_HOME_32="$HOME"
 REAL_STORE_32="$REAL_HOME_32/.a1-xprov"

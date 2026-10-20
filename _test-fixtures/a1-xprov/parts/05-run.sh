@@ -14,9 +14,9 @@
 # Real Codex is never reached: A1_XPROV_CODEX_HOME points at a throwaway
 # compliant home and HOME at a throwaway dir.
 
-TMP05="$(mktemp -d)"
+mk_workdir TMP05 tmp05
 SAVED_HOME_05="$HOME"
-export HOME="$(mktemp -d)"
+mk_workdir HOME home; export HOME
 ARGV_DIR="$TMP05/argv"; mkdir -p "$ARGV_DIR"; ARGV_N=0
 
 # prep5 [plan] — fresh tree, phase repo, permit record, compliant home. Sets

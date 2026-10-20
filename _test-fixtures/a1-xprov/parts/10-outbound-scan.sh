@@ -126,7 +126,7 @@ if ! declare -F new8 >/dev/null; then
   bad "part 10: part 08 helpers (new8 …) are not loaded"
 else
 
-TMP10="$(mktemp -d)"
+mk_workdir TMP10 tmp10
 [[ -n "$TMP10" && -d "$TMP10" ]] || { echo "FAIL  part 10: mktemp -d failed" >&2; exit 1; }
 SAVED_HOME_10="$HOME"
 

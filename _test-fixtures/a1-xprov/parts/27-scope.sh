@@ -21,9 +21,9 @@
 # The pure functions are exported for waves 7 and 10; SC2 pins their output shape.
 
 SC_CASES="$CASES/scope"
-SC_CWD="$(mktemp -d)"            # every run starts in an empty directory: a stray write shows up in `ls -A`
-SC_ERRF="$(mktemp)"
-SC_WORK="$(mktemp -d)"
+mk_workdir SC_CWD sc_cwd            # every run starts in an empty directory: a stray write shows up in `ls -A`
+mk_tmpfile SC_ERRF sc_errf
+mk_workdir SC_WORK sc_work
 
 # sc_run <tools> <args...> -> SC_OUT SC_ERR SC_RC (stdout and stderr kept apart; cwd = $SC_CWD)
 sc_run() {
@@ -255,7 +255,7 @@ sc_run "$TREE_TOOLS" --paths "$SC_WORK/rev.paths"
 [[ "$SC_OUT" != "$fwd" ]] && ok "SC7 [mutant R5: sort dropped] reversed input changes the bytes (guard goes red)" || bad "SC7 [mutant R5] the sort removal did not change the output"
 
 # ---------- SC8/SC9: --base / --head over a real git range ----------
-SC_REPO="$(mktemp -d)"
+mk_workdir SC_REPO sc_repo
 (
   cd "$SC_REPO" && git init -q && git config user.name fixture && git config user.email fixture@example.invalid && git config commit.gpgsign false
   mkdir -p src docs auth lib

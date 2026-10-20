@@ -26,7 +26,7 @@
 #   SP6      each hit matches exactly one pattern name (first-match order) and ReDoS: the new
 #            patterns on adversarial 100 000-char inputs stay under 1 s (min of 3).
 
-TMP18="$(mktemp -d "${TMPDIR:-/tmp}/a1x18.XXXXXX")"
+mk_workdir TMP18 "a1x18"
 [[ -n "$TMP18" && -d "$TMP18" ]] || { echo "FAIL  part 18: mktemp failed" >&2; fail=$((fail + 1)); return 0 2>/dev/null || exit 1; }
 make_tree
 

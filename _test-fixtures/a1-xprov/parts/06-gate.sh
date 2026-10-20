@@ -12,7 +12,7 @@
 # The driver reads `enforcement` from the TREE copy's gates-registry.md — one
 # arm flips a cell there to prove the value is read, not hardcoded.
 
-TMP06="$(mktemp -d)"
+mk_workdir TMP06 tmp06
 SAVED_HOME_06="$HOME"
 export HOME="$TMP06/home"; mkdir -p "$HOME/.codex"; printf '{"fixture":true}\n' > "$HOME/.codex/auth.json"; chmod 600 "$HOME/.codex/auth.json"
 ARGV6_DIR="$TMP06/argv"; mkdir -p "$ARGV6_DIR"; ARGV6_N=0
