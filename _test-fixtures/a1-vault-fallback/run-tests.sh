@@ -292,15 +292,15 @@ caseL1() {
 # $TMPDIR and write to the per-user temp dir; suites that redirect TMPDIR (a1-xprov)
 # then leak every directory (15k per day, 2026-10-20). Every site must pass an explicit
 # "${TMPDIR:-/tmp}/..." template, normally through `mk_workdir` / `mk_tmpfile` in
-# _test-fixtures/lib/tmp.sh. Comment lines are ignored.
-# Exempt: _test-fixtures/a1-depth-pass/ (reserved by spec 019, in flight on 2026-10-20);
-# it is migrated after spec 019 merges, then this exemption goes away.
+# _test-fixtures/lib/tmp.sh. Comment lines are ignored. Scans _test-fixtures/**/*.sh and bin/*.sh.
 # Red-making change: putting one bare `mktemp -d` (or `mktemp`, `mktemp -t`) back into any
 # suite script under _test-fixtures/**/*.sh. L2a is the matcher self-test: it must hit the
 # planted bare lines and miss the templated ones, so L2b cannot pass by matching nothing.
 l2_re() {
-  # Assembled from pieces so this very file does not match.
-  printf '%s' '(^|[^_A-Za-z])mk''temp[[:space:]]*(-[a-zA-Z]+[[:space:]]*)*([)'"'"';|&`]|$)'
+  # Assembled from pieces so this very file does not match. A bare invocation is mktemp followed
+  # only by flags (-d, -t, --directory), then a terminator or a redirection; any path template
+  # ("...XXXXXX") puts a word after the flags and so never matches.
+  printf '%s' '(^|[^_A-Za-z0-9-])mk''temp([[:space:]]+-{1,2}[a-zA-Z-]+)*[[:space:]]*([0-9]*[<>&]|[)'"'"';|&`]|$)'
 }
 caseL2() {
   local re bad_planted good_planted hits n
@@ -308,18 +308,22 @@ caseL2() {
   bad_planted='x="$(mk''temp -d)"
 y=$(mk''temp)
 z="$(mk''temp -d -t)"
-mk''temp -d'
+mk''temp -d
+u=$(mk''temp -d 2>/dev/null)
+v=$(mk''temp -d > "$f")
+w=$(mk''temp --directory)'
   good_planted='x="$(mk''temp -d "${TMPDIR:-/tmp}/a.XXXXXX")"
 y="$(mk''temp "$R/f.XXXXXX")"
 echo "mk''temp gave no directory"
-w="$(g_mk''temp name)"'
+w="$(g_mk''temp name)"
+q="$(mk''temp -d "$R/y.XXXXXX" 2>/dev/null)"'
   n="$(printf '%s\n' "$bad_planted" | grep -cE "$re" || true)"
-  if [[ "$n" -eq 4 ]]; then ok "L2a matcher hits all 4 planted bare mktemp lines"
-  else bad "L2a matcher hit $n of 4 planted bare mktemp lines"; fi
+  if [[ "$n" -eq 7 ]]; then ok "L2a matcher hits all 7 planted bare mktemp lines"
+  else bad "L2a matcher hit $n of 7 planted bare mktemp lines"; fi
   n="$(printf '%s\n' "$good_planted" | grep -cE "$re" || true)"
-  if [[ "$n" -eq 0 ]]; then ok "L2a matcher misses the 4 templated/unrelated lines"
+  if [[ "$n" -eq 0 ]]; then ok "L2a matcher misses the 5 templated/unrelated lines"
   else bad "L2a matcher hit $n templated/unrelated lines (false positives)"; fi
-  hits="$(cd "$REPO_ROOT" && find _test-fixtures -name '*.sh' -type f -not -path '_test-fixtures/a1-depth-pass/*' -print0 \
+  hits="$(cd "$REPO_ROOT" && find _test-fixtures bin -name '*.sh' -type f -print0 \
     | xargs -0 grep -nE "$re" | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' || true)"
   if [[ -z "$hits" ]]; then ok "L2b no bare mktemp in _test-fixtures/**/*.sh"
   else bad "L2b bare mktemp found (use mk_workdir / mk_tmpfile from _test-fixtures/lib/tmp.sh)"; while IFS= read -r l; do results+=("      $l"); done <<<"$hits"; fi
