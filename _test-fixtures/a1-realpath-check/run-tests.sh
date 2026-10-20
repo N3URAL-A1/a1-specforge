@@ -95,5 +95,22 @@ NOGIT="$(mktemp -d)"
 OUT="$(node "$TOOLS" realpath-check run --diff-base HEAD~1 --project "$NOGIT" 2>&1)"
 assert_rc "e-no-git" 2 $? "$OUT"
 
+# --- (f) spec 017 FR-008: the gate call appends one hash-chained log line ---
+# Measured red 2026-10-20 (git-archive snapshot): gate-log.cjs recordRun() not called -> (f) fails
+# (no log file); verdictForExit() 1 -> pass -> (f2) fails.
+LOGW="$(mktemp -d "${TMPDIR:-/tmp}/a1-fx-realpath-log.XXXXXX")" || exit 1
+[[ -n "$LOGW" && -d "$LOGW" ]] || exit 1
+trap 'rm -rf "${LOGW:?}"' EXIT
+cp -R "$REPO_D/." "$LOGW/" # a complete git repo (two commits) with the SQL diff and no evidence file
+OUT="$(cd "$LOGW" && node "$TOOLS" realpath-check run --phase w1 --diff-base HEAD~1 --project . 2>&1)"
+RC=$?
+LINE="$(cat "$LOGW/.a1/phases/w1/gate-log.jsonl" 2>/dev/null)"
+GOT="$(node -e 'const r=JSON.parse(process.argv[1]); process.stdout.write([r.gate,r.verdict,r.exit,r.scope].join("|"))' "$LINE" 2>&1)"
+if [[ $RC -eq 1 && "$GOT" == "gate-0.7-realpath|fail|1|w1" && "$(printf '%s\n' "$LINE" | wc -l | tr -d ' ')" == "1" ]]; then
+  echo "PASS  f-gate-log-line (one line: gate-0.7-realpath, fail, exit 1, scope w1)"; pass=$((pass + 1))
+else
+  echo "FAIL  f-gate-log-line (rc=$RC got=$GOT out=$OUT)"; fail=$((fail + 1))
+fi
+
 echo "realpath-check fixtures: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

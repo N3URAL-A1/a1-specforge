@@ -697,6 +697,159 @@ expect_json "I7 live registry carries test-fidelity, fix-class-sweep, pr-merge-c
   "const fs=require('fs'); const m=gi.invokeMap(fs.readFileSync('$REPO_ROOT/_shared/gates-registry.md','utf8')); process.stdout.write([m['test-fidelity'],m['fix class-sweep'],m['pr merge-check']].join(','))" \
   "test-fidelity,fix-class-sweep,pr-merge-check"
 
+# ===========================================================================
+# Spec 017 Wave 2 — `retro validate --gate-log` (FR-009) and `gates fired --log`.
+# The logs are written by the REAL facade hook: a throwaway git repo is gated
+# with `realpath-check run` and `schema-check run` (real subcommands, real
+# fixtures), so the log lines are authentic, not hand-typed. The retro files are
+# edits of the real corpus/retro-clean.md. `--enforced-since 2026-10-01` is the
+# test escape hatch for ENFORCED_SINCE (the constant is a far-future placeholder
+# until wave 14). Each case names the production change that turns it red.
+# Measured red 2026-10-20 (git-archive snapshot, one line reverted each):
+#   retro-gatelog.cjs entryProblems(): `class !== deterministic` skip removed  -> L1 (prompt entry flagged)
+#   retro-gatelog.cjs entryProblems(): no_log_line branch removed              -> L2
+#   retro-gatelog.cjs entryProblems(): verdict comparison removed              -> L3
+#   retro-gatelog.cjs checkRetroAgainstLog(): blocking-fail loop removed       -> L4a
+#   retro-gatelog.cjs checkRetroAgainstLog(): `!named.has(id)` -> always true  -> L4b
+#   retro-gatelog.cjs isLegacy(): always false                                 -> L5a
+#   retro-gatelog.cjs isLegacy(): `day < since` -> `day <= since`              -> L5b, L5d (boundary day)
+#   retro-gatelog.cjs retroVerdict(): error->fail mapping removed              -> L6a
+#   retro-gatelog.cjs readGateLog(): chain check dropped (ok forced true)      -> L7b
+#   retro-validate.cjs runGateLogCheck(): path value check removed             -> L8b, L8c (message)
+#   retro-validate.cjs runGateLogCheck(): date value check removed             -> L8a
+#   retro-gatelog.cjs firedYaml(): `caught` hard-coded false                   -> L9a
+# ===========================================================================
+
+GL_WORK="$(mktemp -d "${TMPDIR:-/tmp}/a1-fx-retro-gatelog.XXXXXX")" || exit 1
+[[ -n "$GL_WORK" && -d "$GL_WORK" ]] || exit 1
+trap 'rm -rf "${GL_WORK:?}"' EXIT
+SINCE=2026-10-01
+
+gl_repo() { # gl_repo <name> <added-file> <content> -> repo dir with one extra commit
+  local d="$GL_WORK/$1"
+  mkdir -p "$d" && git -C "$d" init -q && git -C "$d" config user.email t@t.dev && git -C "$d" config user.name test || return 1
+  echo seed > "$d/seed.txt"; git -C "$d" add -A; git -C "$d" commit -qm base
+  mkdir -p "$d/$(dirname "$2")"; printf '%s\n' "$3" > "$d/$2"; git -C "$d" add -A; git -C "$d" commit -qm feat
+  echo "$d"
+}
+gl_run() { (cd "$1" && shift && node "$TOOLS" "$@" >/dev/null 2>&1); } # run a gate inside a repo
+
+# retro <out> <date> <entry>... — real retro-clean.md with another date and gates_fired block
+gl_retro() {
+  local out="$1" date="$2"; shift 2
+  { sed -n '1,8p' "$CORPUS/retro-clean.md" | sed "s/^date: .*/date: $date/"
+    for e in "$@"; do printf '  - %s\n' "$e"; done
+    sed -n '12,$p' "$CORPUS/retro-clean.md"; } > "$out"
+}
+gl_validate() { # gl_validate <retro> <log> [extra flags] -> OUT RC ERR
+  OUT="$(node "$TOOLS" retro validate "$1" --gate-log "$2" "${@:3}" 2>"$GL_WORK/err")"; RC=$?; ERR="$(cat "$GL_WORK/err")"
+}
+gl_js() { node -e 'const j=JSON.parse(process.argv[1]); process.stdout.write(String('"$1"'))' "$OUT" 2>&1; }
+gl_check() { # gl_check <label> <want-rc> <js> <want>
+  local got; got="$(gl_js "$3")"
+  if [[ "$RC" -eq "$2" && "$got" == "$4" ]]; then ok "$1"; else bad "$1 (rc=$RC want=$2; got=$got want=$4; err=$ERR)"; fi
+}
+
+PASS_REPO="$(gl_repo pass src/util.js 'export const add = (a, b) => a + b;')" || exit 1
+FAIL_REPO="$(gl_repo fail src/db.js "export const q = () => db.query('UPDATE users SET x=1');")" || exit 1
+gl_run "$PASS_REPO" realpath-check run --phase r --diff-base HEAD~1 --project .
+gl_run "$PASS_REPO" schema-check run --phase r --migrations "$REPO_ROOT/_test-fixtures/a1-schema-check/pass/migrations"
+gl_run "$FAIL_REPO" realpath-check run --phase r --diff-base HEAD~1 --project .
+gl_run "$PASS_REPO" schema-check run --phase e --migrations "$GL_WORK/no-such-dir"
+PASS_LOG="$PASS_REPO/.a1/phases/r/gate-log.jsonl"
+FAIL_LOG="$FAIL_REPO/.a1/phases/r/gate-log.jsonl"
+ERR_LOG="$PASS_REPO/.a1/phases/e/gate-log.jsonl"
+
+E_RP='{id: gate-0.7-realpath, verdict: pass, caught: false}'
+E_SC='{id: gate-0.6-schema, verdict: pass, caught: false}'
+E_PA='{id: plan-audit, verdict: pass, caught: false}'
+E_BUILD='{id: gate-1-build, verdict: pass, caught: false}'
+
+# L1 green: two deterministic entries match the log; the prompt entry (plan-audit) has no log line and is not checked.
+gl_retro "$GL_WORK/l1.md" 2026-10-20 "$E_RP" "$E_SC" "$E_PA"
+gl_validate "$GL_WORK/l1.md" "$PASS_LOG" --enforced-since $SINCE
+gl_check "L1 retro matches the log (prompt entry unchecked): exit 0, checked, 2 lines, 0 problems" 0 \
+  'j.gate_log.checked+"/"+j.gate_log.lines+"/"+j.gate_log.problems.length' "true/2/0"
+
+# L2 an entry of a deterministic gate with no log line -> exit 1
+gl_retro "$GL_WORK/l2.md" 2026-10-20 "$E_RP" "$E_SC" "$E_BUILD"
+gl_validate "$GL_WORK/l2.md" "$PASS_LOG" --enforced-since $SINCE
+gl_check "L2 gate-1-build in the retro, not in the log: exit 1 no_log_line naming it" 1 \
+  'j.gate_log.problems.map(p=>p.rule+":"+p.id).join(",")' "no_log_line:gate-1-build"
+
+# L3 same id, other verdict -> exit 1
+gl_retro "$GL_WORK/l3.md" 2026-10-20 '{id: gate-0.7-realpath, verdict: fail, caught: true}' "$E_SC"
+gl_validate "$GL_WORK/l3.md" "$PASS_LOG" --enforced-since $SINCE
+gl_check "L3 retro says fail, the log says pass: exit 1 verdict_mismatch" 1 \
+  'j.gate_log.problems.map(p=>p.rule+":"+p.id).join(",")' "verdict_mismatch:gate-0.7-realpath"
+
+# L4 a blocking fail in the log that the retro leaves out -> exit 1; naming it with the log's verdict -> exit 0
+gl_retro "$GL_WORK/l4a.md" 2026-10-20 "$E_PA"
+gl_validate "$GL_WORK/l4a.md" "$FAIL_LOG" --enforced-since $SINCE
+gl_check "L4a log holds fail of blocking gate-0.7-realpath, retro omits it: exit 1 missing_blocking_fail" 1 \
+  'j.gate_log.problems.map(p=>p.rule+":"+p.id).join(",")' "missing_blocking_fail:gate-0.7-realpath"
+gl_retro "$GL_WORK/l4b.md" 2026-10-20 '{id: gate-0.7-realpath, verdict: fail, caught: true}'
+gl_validate "$GL_WORK/l4b.md" "$FAIL_LOG" --enforced-since $SINCE
+gl_check "L4b same log, retro names the gate with verdict fail: exit 0, 0 problems" 0 'j.gate_log.problems.length+"/"+j.gate_log.lines' "0/1"
+
+# L5 legacy retros skip the check; the boundary day is enforced; the real constant is honoured
+gl_retro "$GL_WORK/l5a.md" 2026-09-12 "$E_BUILD"
+gl_validate "$GL_WORK/l5a.md" "$PASS_LOG" --enforced-since $SINCE
+gl_check "L5a retro dated before ENFORCED_SINCE with a planted unlogged entry: exit 0, checked=false" 0 'j.gate_log.checked+"/"+j.gate_log.problems.length' "false/0"
+gl_retro "$GL_WORK/l5b.md" 2026-10-01 "$E_BUILD"
+gl_validate "$GL_WORK/l5b.md" "$PASS_LOG" --enforced-since $SINCE
+gl_check "L5b retro dated ON the enforcement day is checked: exit 1" 1 'j.gate_log.checked+"/"+j.gate_log.problems.length' "true/1"
+CONST="$(node -e 'process.stdout.write(require(process.argv[1]).ENFORCED_SINCE)' "$REPO_ROOT/_shared/lib/enforced-since.cjs")"
+DAY_BEFORE="$(node -e 'const d=new Date(process.argv[1]+"T00:00:00Z"); d.setUTCDate(d.getUTCDate()-1); process.stdout.write(d.toISOString().slice(0,10))' "$CONST")"
+gl_retro "$GL_WORK/l5c.md" "$DAY_BEFORE" "$E_BUILD"
+gl_validate "$GL_WORK/l5c.md" "$PASS_LOG"
+gl_check "L5c without --enforced-since the code constant ($CONST) decides: the day before is legacy, exit 0" 0 'j.gate_log.checked' "false"
+gl_retro "$GL_WORK/l5d.md" "$CONST" "$E_BUILD"
+gl_validate "$GL_WORK/l5d.md" "$PASS_LOG"
+gl_check "L5d a retro dated on the constant is checked: exit 1" 1 'j.gate_log.checked+"/"+j.gate_log.problems.length' "true/1"
+
+# L6 a crashed gate (log verdict error, exit 2) reads as fail in the retro vocabulary
+gl_retro "$GL_WORK/l6a.md" 2026-10-20 '{id: gate-0.6-schema, verdict: fail, caught: true}'
+gl_validate "$GL_WORK/l6a.md" "$ERR_LOG" --enforced-since $SINCE
+gl_check "L6a log says error, retro says fail: exit 0" 0 'j.gate_log.problems.length' "0"
+gl_retro "$GL_WORK/l6b.md" 2026-10-20 "$E_SC"
+gl_validate "$GL_WORK/l6b.md" "$ERR_LOG" --enforced-since $SINCE
+gl_check "L6b log says error, retro says pass: exit 1 verdict_mismatch" 1 'j.gate_log.problems.map(p=>p.rule).join(",")' "verdict_mismatch"
+
+# L7 a log that cannot be trusted is exit 2, never "nothing fired"
+cp "$PASS_LOG" "$GL_WORK/tampered.jsonl"
+node -e 'const fs=require("fs"),f=process.argv[1];const l=fs.readFileSync(f,"utf8").split("\n");l[0]=l[0].replace("\"pass\"","\"fail\"");fs.writeFileSync(f,l.join("\n"))' "$GL_WORK/tampered.jsonl"
+gl_validate "$GL_WORK/l1.md" "$GL_WORK/tampered.jsonl" --enforced-since $SINCE
+[[ $RC -eq 2 && -z "$OUT" && "$ERR" == *"not trustworthy"* ]] && ok "L7b first line edited (chain broken): exit 2, no report, message names the log" || bad "L7b (rc=$RC out=$OUT err=$ERR)"
+gl_validate "$GL_WORK/l1.md" "$GL_WORK/no-such.jsonl" --enforced-since $SINCE
+[[ $RC -eq 2 && "$ERR" == *"unreadable"* ]] && ok "L7a missing log: exit 2" || bad "L7a (rc=$RC err=$ERR)"
+
+# L8 hostile flag values
+gl_validate "$GL_WORK/l1.md" "$PASS_LOG" --enforced-since not-a-date
+[[ $RC -eq 2 ]] && ok "L8a --enforced-since not a date: exit 2" || bad "L8a (rc=$RC)"
+gl_validate "$GL_WORK/l1.md" "$(printf 'x\ny')" --enforced-since $SINCE
+[[ $RC -eq 2 && "$ERR" == *"needs a plain path"* ]] && ok "L8b newline in --gate-log path: exit 2, usage message (not an internal error)" || bad "L8b (rc=$RC err=$ERR)"
+OUT="$(node "$TOOLS" retro validate "$GL_WORK/l1.md" --gate-log 2>"$GL_WORK/err")"; RC=$?; ERR="$(cat "$GL_WORK/err")"
+[[ $RC -eq 2 && "$ERR" == *"needs a plain path"* ]] && ok "L8c --gate-log without a value: exit 2, usage message" || bad "L8c (rc=$RC err=$ERR)"
+gl_validate "$GL_WORK/l1.md" "$GL_WORK" --enforced-since $SINCE
+[[ $RC -eq 2 ]] && ok "L8d --gate-log is a directory: exit 2" || bad "L8d (rc=$RC)"
+
+# L9 `gates fired --log` prints the block the template tells the writer to paste; pasted, it validates
+FIRED="$(node "$TOOLS" gates fired --log "$PASS_LOG" 2>&1)"; FRC=$?
+WANT=$'gates_fired:\n  - {id: gate-0.7-realpath, verdict: pass, caught: false}\n  - {id: gate-0.6-schema, verdict: pass, caught: false}'
+[[ $FRC -eq 0 && "$FIRED" == "$WANT" ]] && ok "L9 gates fired prints both gates with their last verdict (exact block)" || bad "L9 (rc=$FRC out=$FIRED)"
+FIRED_F="$(node "$TOOLS" gates fired --log "$FAIL_LOG" 2>&1)"
+[[ "$FIRED_F" == $'gates_fired:\n  - {id: gate-0.7-realpath, verdict: fail, caught: true}' ]] && ok "L9a a fail line prints verdict fail, caught true" || bad "L9a ($FIRED_F)"
+{ sed -n '1,7p' "$CORPUS/retro-clean.md" | sed 's/^date: .*/date: 2026-10-20/'; printf '%s\n' "$FIRED"; sed -n '12,$p' "$CORPUS/retro-clean.md"; } > "$GL_WORK/l9.md"
+gl_validate "$GL_WORK/l9.md" "$PASS_LOG" --enforced-since $SINCE
+gl_check "L9b the pasted block validates against its own log: exit 0, 2 lines, 0 problems" 0 'j.valid+"/"+j.gate_log.lines+"/"+j.gate_log.problems.length' "2/2/0"
+node "$TOOLS" gates fired --log "$GL_WORK/tampered.jsonl" >/dev/null 2>&1; FRC=$?
+[[ $FRC -eq 2 ]] && ok "L9c gates fired on a tampered log: exit 2" || bad "L9c (rc=$FRC)"
+
+# L10 without --gate-log nothing changes: no gate_log key, same exit as before
+OUT="$(node "$TOOLS" retro validate "$GL_WORK/l2.md" 2>/dev/null)"; RC=$?
+[[ $RC -eq 0 && "$(gl_js 'Object.prototype.hasOwnProperty.call(j,"gate_log")')" == "false" ]] && ok "L10 no --gate-log: exit 0, no gate_log key" || bad "L10 (rc=$RC out=$OUT)"
+
 printf '%s\n' "${results[@]}"
 echo "----"
 echo "a1-retro-validate: $pass passed, $fail failed"

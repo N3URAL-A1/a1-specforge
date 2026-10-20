@@ -224,5 +224,133 @@ run_lint --root "$WORK/m1" --registry "$WORK/wired.md"; back_rc=$RC
 if [[ $green_rc -eq 0 && $red_rc -eq 1 && $back_rc -eq 0 ]]; then ok "M1 removing the only fenced call turns the lint red, restoring it turns it green (0/1/0)"
 else bad "M1 mutation proof ($green_rc/$red_rc/$back_rc)"; fi
 
+# ===========================================================================
+# Spec 017 Wave 2 — the gate log (FR-008) and `gates lint --log` (FR-010).
+# Gates are run through the REAL facade hook in throwaway git repos: `realpath-check
+# run` (verbatim the call a workflow makes) and `check reservations --list`.
+# Measured red 2026-10-20 (git-archive snapshot, one line reverted each):
+#   gate-log.cjs appendGateLine(): `prev` always ZERO_HASH               -> F3, F3b, F8, F8b, F9a-g
+#   gate-log.cjs appendGateLine(): acquireLock() replaced by a no-op         -> F8 (parallel writers fork the chain)
+#   gate-log.cjs appendGateLine(): ensureExcluded call removed           -> F2
+#   gate-log.cjs ensureExcluded(): idempotence check removed             -> F2b
+#   gate-log.cjs verdictForExit(): exit 1 -> pass                        -> F3
+#   gate-log.cjs recordRun(): UNSCOPED notice removed                    -> F4
+#   gate-log.cjs recordRun(): notice printed for scoped runs too         -> F4b
+#   gate-log.cjs installGateLog(): returns argv, not the stripped argv   -> F8 (check reservations rejects the unknown --phase)
+#   gate-log.cjs SCOPE_RE: `..`/`/` accepted                             -> F6
+#   gate-log.cjs matchInvoke(): sub-token compare removed                -> F5
+#   gate-log.cjs matchInvoke(): required `--flag` tokens ignored         -> F11
+#   gate-log.cjs verifyChain(): prev comparison removed                  -> F9a, F9b, F9g, F8b (+ retro L7b, L9c)
+#   gate-log.cjs verifyChain(): shapeProblem() removed                   -> F9d
+#   gate-log.cjs recordRun(): git context check removed                  -> F7
+#   gate-log.cjs verdictForExit(): exit 0 -> fail                        -> a1-schema-check gate-log case
+# ===========================================================================
+
+GLR="$WORK/glrepo"
+mkdir -p "$GLR" && git -C "$GLR" init -q && git -C "$GLR" config user.email t@t.dev && git -C "$GLR" config user.name test || exit 1
+echo seed > "$GLR/seed.txt"; git -C "$GLR" add -A; git -C "$GLR" commit -qm base
+mkdir -p "$GLR/src"; echo 'export const add = (a, b) => a + b;' > "$GLR/src/util.js"; git -C "$GLR" add -A; git -C "$GLR" commit -qm feat
+GL="$GLR/.a1/phases/w1/gate-log.jsonl"
+inrepo() { local d="$1"; shift; (cd "$d" && node "$TOOLS" "$@"); } # run a1-tools with cwd = repo
+
+# F1 FR-008 line shape
+inrepo "$GLR" realpath-check run --phase w1 --diff-base HEAD~1 --project . >/dev/null 2>"$WORK/err"; RC=$?
+HEAD_SHA="$(git -C "$GLR" rev-parse HEAD)"
+SHAPE="$(node -e '
+  const fs=require("fs"); const t=fs.readFileSync(process.argv[1],"utf8"); const lines=t.split("\n").filter(Boolean);
+  const r=JSON.parse(lines[0]);
+  process.stdout.write([lines.length, Object.keys(r).join(","), r.gate, r.verdict, r.exit, r.head_sha===process.argv[2], r.scope, r.prev==="0".repeat(64), !Number.isNaN(Date.parse(r.ts))&&r.ts.endsWith("Z")].join("|"));' "$GL" "$HEAD_SHA" 2>&1)"
+[[ $RC -eq 0 && "$SHAPE" == "1|ts,gate,verdict,exit,head_sha,scope,prev|gate-0.7-realpath|pass|0|true|w1|true|true" ]] \
+  && ok "F1 one line with ts, gate id, verdict, exit, head sha, scope, 64-zero prev" || bad "F1 (rc=$RC shape=$SHAPE err=$(cat "$WORK/err"))"
+
+# F2 never committed: clean porcelain, exclude entry present exactly once even after a second call
+PORC="$(git -C "$GLR" status --porcelain)"
+inrepo "$GLR" realpath-check run --phase w1 --diff-base HEAD~1 --project . >/dev/null 2>&1
+COUNT="$(grep -cxF '.a1/phases/*/gate-log.jsonl' "$(git -C "$GLR" rev-parse --git-common-dir | sed "s|^[^/]|$GLR/&|")/info/exclude")"
+[[ -z "$PORC" && -z "$(git -C "$GLR" status --porcelain)" ]] && ok "F2 git status --porcelain is empty after gate calls (log + lock are not visible)" || bad "F2 porcelain: $PORC"
+[[ "$COUNT" == "1" ]] && ok "F2b info/exclude holds the pattern exactly once after two writes (idempotent)" || bad "F2b exclude count=$COUNT"
+[[ ! -e "$GLR/.git/a1-gate-log.lock.d" && -z "$(find "$GLR/.a1" -name '*lock*')" ]] && ok "F2c no lock left behind (not in the work tree, not in the git dir)" || bad "F2c lock remains"
+
+# F3 chain over real lines; fail verdict from a real exit 1
+mkdir -p "$GLR/src" && printf '%s\n' "export const q = () => db.query('UPDATE users SET x=1');" > "$GLR/src/db.js"
+git -C "$GLR" add -A; git -C "$GLR" commit -qm sql
+inrepo "$GLR" realpath-check run --phase w1 --diff-base HEAD~1 --project . >/dev/null 2>&1; RC=$?
+CH="$(node -e '
+  const fs=require("fs"),c=require("crypto"); const L=fs.readFileSync(process.argv[1],"utf8").split("\n").filter(Boolean);
+  const last=JSON.parse(L[L.length-1]);
+  process.stdout.write([L.length,last.verdict,last.exit,last.prev===c.createHash("sha256").update(L[L.length-2]).digest("hex")].join("|"));' "$GL")"
+[[ $RC -eq 1 && "$CH" == "3|fail|1|true" ]] && ok "F3 exit 1 logs verdict fail, exit 1; prev is the sha256 of the previous line (3 lines)" || bad "F3 (rc=$RC ch=$CH)"
+run_lint --log "$GL"
+check "F3b gates lint --log on the real log: exit 0, 3 lines, 0 problems" 0 'j.lines+"/"+j.problems.length' "3/0"
+
+# F4 no --phase: _unscoped and exactly one stderr notice; scoped runs print none
+UERR="$(cd "$GLR" && node "$TOOLS" realpath-check run --diff-base HEAD~2 --project . 2>&1 >/dev/null)"
+NOTICES="$(printf '%s\n' "$UERR" | grep -c '^gate-log: no --phase given')"
+[[ "$NOTICES" == "1" && -f "$GLR/.a1/phases/_unscoped/gate-log.jsonl" ]] && ok "F4 no --phase: line in _unscoped, one stderr notice" || bad "F4 (notices=$NOTICES err=$UERR)"
+SERR="$(cd "$GLR" && node "$TOOLS" realpath-check run --phase=w1 --diff-base HEAD~2 --project . 2>&1 >/dev/null)"
+[[ "$(printf '%s\n' "$SERR" | grep -c '^gate-log:')" == "0" ]] && ok "F4b --phase=<scope> form: no notice" || bad "F4b (err=$SERR)"
+
+# F5 only subcommands named in an invoke cell log
+BEFORE="$(find "$GLR/.a1" -name 'gate-log.jsonl' -exec cat {} + | wc -l | tr -d ' ')"
+inrepo "$GLR" schema-check parse --migrations "$WORK/none" --phase w1 >/dev/null 2>&1
+inrepo "$GLR" gates lint --log "$GL" >/dev/null 2>&1
+AFTER="$(find "$GLR/.a1" -name 'gate-log.jsonl' -exec cat {} + | wc -l | tr -d ' ')"
+[[ "$BEFORE" == "$AFTER" && "$BEFORE" -ge 4 ]] && ok "F5 schema-check parse and gates lint (not in any invoke cell) append nothing ($BEFORE lines before and after)" || bad "F5 (before=$BEFORE after=$AFTER)"
+
+# F6 hostile --phase values: exit 2, command not run, nothing written
+for bad_scope in '../x' 'a/b' $'a\nb' '' '-x' 'a..b'; do
+  rm -rf "$GLR/.a1/phases/x" "$WORK/res.json"
+  (cd "$GLR" && node "$TOOLS" check reservations --claim m:1 --by s --file "$WORK/res.json" --phase "$bad_scope" >/dev/null 2>"$WORK/err"); RC=$?
+  if [[ $RC -eq 2 && ! -e "$WORK/res.json" && ! -e "$GLR/.a1/phases/x" && ! -e "$GLR/x" ]]; then ok "F6 --phase $(printf %q "$bad_scope"): exit 2, command not run"
+  else bad "F6 --phase $(printf %q "$bad_scope") (rc=$RC, res exists: $([[ -e $WORK/res.json ]] && echo yes || echo no))"; fi
+done
+(cd "$GLR" && node "$TOOLS" check reservations --list --file "$WORK/res.json" --phase >/dev/null 2>&1); RC=$?
+[[ $RC -eq 2 ]] && ok "F6b --phase without a value: exit 2" || bad "F6b (rc=$RC)"
+
+# F7 outside a git work tree: the gate keeps its exit code, the notice names the problem, no .a1 is created
+NOGIT="$WORK/nogit"; mkdir -p "$NOGIT"
+(cd "$NOGIT" && node "$TOOLS" check reservations --list --file "$NOGIT/r.json" --phase w1 >/dev/null 2>"$WORK/err"); RC=$?
+[[ $RC -eq 0 && ! -e "$NOGIT/.a1/phases" && "$(cat "$WORK/err")" == *"not inside a git work tree"* ]] && ok "F7 no git repo: exit code kept (0), notice on stderr, nothing written" || bad "F7 (rc=$RC err=$(cat "$WORK/err"))"
+
+# F8 two parallel writers, 50 lines each (pids from \$!)
+PAR="$GLR/.a1/phases/par/gate-log.jsonl"
+( for _i in $(seq 1 50); do (cd "$GLR" && node "$TOOLS" check reservations --list --file "$WORK/ra.json" --phase par >/dev/null 2>&1); done ) & PA=$!
+( for _i in $(seq 1 50); do (cd "$GLR" && node "$TOOLS" check reservations --list --file "$WORK/rb.json" --phase par >/dev/null 2>&1); done ) & PB=$!
+wait "$PA"; wait "$PB"
+run_lint --log "$PAR"
+check "F8 two parallel writers x 50: 100 lines, chain intact, exit 0" 0 'j.lines+"/"+j.problems.length' "100/0"
+[[ "$(node -e 'const L=require("fs").readFileSync(process.argv[1],"utf8").split("\n").filter(Boolean);process.stdout.write(String(new Set(L.map(l=>JSON.parse(l).prev)).size))' "$PAR")" == "100" ]] \
+  && ok "F8b all 100 prev hashes are distinct (no two writers chained to the same predecessor)" || bad "F8b duplicate prev hashes"
+
+# F9 tamper cases on copies of the real log (N lines)
+N="$(wc -l < "$GL" | tr -d ' ')"
+cp "$GL" "$WORK/t.jsonl"
+node -e 'const fs=require("fs"),f=process.argv[1];const l=fs.readFileSync(f,"utf8").split("\n");l[1]=l[1].replace("\"fail\"","\"pass\"").replace("\"pass\"","\"fail\"");const r=JSON.parse(l[1]);r.exit=7;l[1]=JSON.stringify(r);fs.writeFileSync(f,l.join("\n"))' "$WORK/t.jsonl"
+run_lint --log "$WORK/t.jsonl"
+check "F9a second line edited: exit 1, chain_broken reported on the NEXT line (3)" 1 'j.problems.map(p=>p.rule+"@"+p.line).join(",")' "chain_broken@3"
+cp "$GL" "$WORK/t2.jsonl"
+node -e 'const fs=require("fs"),f=process.argv[1];const l=fs.readFileSync(f,"utf8").split("\n");l.splice(1,1);fs.writeFileSync(f,l.join("\n"))' "$WORK/t2.jsonl"
+run_lint --log "$WORK/t2.jsonl"
+check "F9b middle line deleted: exit 1, chain_broken" 1 'j.problems.map(p=>p.rule).join(",")' "chain_broken"
+cp "$GL" "$WORK/t3.jsonl"; echo 'this is not json' >> "$WORK/t3.jsonl"
+run_lint --log "$WORK/t3.jsonl"
+check "F9c garbage line appended: exit 1, malformed_line on the new last line" 1 'j.problems.map(p=>p.rule+"@"+p.line).join(",")' "malformed_line@$((N + 1))"
+cp "$GL" "$WORK/t4.jsonl"; node -e 'const fs=require("fs"),c=require("crypto"),f=process.argv[1];const L=fs.readFileSync(f,"utf8").split("\n").filter(Boolean);const o=JSON.parse(L[L.length-1]);delete o.gate;o.prev=c.createHash("sha256").update(L[L.length-1]).digest("hex");fs.appendFileSync(f,JSON.stringify(o)+"\n")' "$WORK/t4.jsonl"
+run_lint --log "$WORK/t4.jsonl"
+check "F9d well-chained line without a gate id: exit 1, malformed_line on that line only" 1 'j.problems.map(p=>p.rule+"@"+p.line).join(",")' "malformed_line@$((N + 1))"
+run_lint --log "$WORK/no-such.jsonl"
+check_rc "F9e missing log file: exit 2" 2
+: > "$WORK/empty.jsonl"; run_lint --log "$WORK/empty.jsonl"
+check "F9f empty log: exit 0, 0 lines" 0 'j.lines+"/"+j.problems.length' "0/0"
+run_lint --log "$WORK/t.jsonl" --root "$WORK/base"
+check "F9g --log mode ignores registry flags and lints only the log (still exit 1)" 1 'j.problems.length' "1"
+
+# F11 matchInvoke: a flagged key needs its flag, a plain key needs its subcommand
+MATCH="$(node -e '
+  const g=require(process.argv[1]); const m={"product validate --spec-status":"A","schema-check run":"B","test-fidelity":"C"};
+  process.stdout.write([g.matchInvoke(["product","validate","--spec-status","x"],m), g.matchInvoke(["product","validate"],m), g.matchInvoke(["product","validate","--spec-status=x"],m),
+    g.matchInvoke(["schema-check","parse"],m), g.matchInvoke(["schema-check","run"],m), g.matchInvoke(["test-fidelity","--diff-base","x"],m), g.matchInvoke(["test-fidelity-x"],m)].join(","))' "$REPO_ROOT/_shared/lib/gate-log.cjs")"
+[[ "$MATCH" == "A,,A,,B,C," ]] && ok "F11 matchInvoke: flag token required, sub token exact, group-only key matches with flags" || bad "F11 ($MATCH)"
+
 echo "a1-gates-lint: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]
