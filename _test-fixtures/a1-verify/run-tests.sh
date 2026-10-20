@@ -27,6 +27,20 @@
 #   verify-check.cjs checkVerification(): A1_PREFIX exclusion removed                     : E3c
 #   verify-check.cjs checkVerification(): code_changed_after_run branch removed           : E4
 #   verify-check.cjs checkVerification(): head_sha_unknown branch removed                 : E2
+#
+# Wave 6 (spec 017 FR-015, FR-016, FR-039), measured red 2026-10-21 the same way:
+#   verify-base.cjs settle(): base-subset rule (`fresh.length === 0 && baseIds !== null`) removed : F2, M3b
+#   verify-base.cjs settle(): unlisted-flaky test (`!flakyBase.includes(i)`) disabled              : G1, G3, G4
+#   verify-base.cjs settle(): retry disabled (`retried = false`)                                   : G1, G1b, G2, G3, G4, G4b, G5b
+#   verify-run.cjs runBaseSide(): `c.file && !existsSync` (absent-on-base) removed                 : F6
+#   verify-run.cjs groupRunnerMain(): `process.kill(-child.pid)` -> `process.kill(child.pid)`      : P1c (grandchild survives)
+#   verify-base.cjs readCache(): always a miss                                                     : K2, K2b, K3, K3b, K4b, K4c, K5
+#   verify-base.cjs dirtyPaths(): gate-log/cache exclusion removed                                 : K5, K8
+#   verify-run.cjs runHeadSide(): dirty-tree check removed                                         : K4, K4b
+#   verify-base.cjs commandHash(): timeout left out of the hash                                    : K6
+#   verify-base.cjs withSnapshot(): rmSync removed                                                 : F5c
+#   verify-base.cjs resolveMergeBase(): merge-base failure check removed                           : S2
+#   verify-base.cjs flakyBaseGrown(): `!had.has(i)` -> false                                       : G6, G6e
 unset A1_VAULT_ROOT A1_VAULT_WRITER_HOST A1_HOST_ID
 set -u
 
@@ -141,7 +155,7 @@ check "A7b env var present: exit 0" 0 'j.verdict' "pass"
 reporter_case() { # reporter_case <label> <runner name> <report file> <argv-json> <expect-flag>
   newproj "$1"; stub "$2" "$REPORT_STUB"; cfg "{\"commands\":[{\"id\":\"t\",\"argv\":$4}]}"; seal
   export A1_FX_ARGS="$WORK/args-$1" A1_FX_REPORT="$3" A1_FX_RC="${6:-1}"
-  vrun "$P" --base main
+  vrun "$P"
 }
 reporter_case b1 vitest "$CORPUS/vitest-3-40-2.json" '["./bin/vitest","run"]'
 check "B1 vitest JSON: exit 1, passed 40 failed 3 skipped 2, verdict fail command_failed" 1 \
@@ -164,17 +178,17 @@ for (let i = 0; i < 3; i++) test('fail ' + i, () => { assert.fail('x'); });
 for (let i = 0; i < 2; i++) test('skip ' + i, { skip: true }, () => {});
 JS
 cfg '{"commands":[{"id":"tap","argv":["node","--test","t.test.js"]}]}'; seal
-vrun "$P" --base main
+vrun "$P"
 check "B4 node:test via TAP (real run): 40/3/2, exit 1, fail" 1 'const c=j.commands[0]; [c.passed,c.failed,c.skipped,c.exit_code,j.verdict].join(",")' "40,3,2,1,fail"
 
 newproj b5; stub plain 'echo "12 passed, 0 failed"; exit 0'; cfg '{"commands":[{"id":"plain","argv":["./bin/plain"]}]}'; seal
-vrun "$P" --base main
+vrun "$P"
 check "B5 runner without parsable reporter: null counts, verdict from exit code (pass)" 0 'const c=j.commands[0]; [c.passed,c.failed,c.skipped,j.verdict].join(",")' ",,,pass"
 
 newproj b6; stub ok 'exit 0'; cfg '{"commands":[{"argv":["./bin/ok"]}]}'; seal
 printf -- '---\nverdict: PASS\npassed: 13\n---\n\n# Verification: demo\n\nbody text\n' > "$WORK/VER.md"
 cp "$WORK/VER.md" "$P/VER.md"
-vrun "$P" --base main --out "$P/VER.md"
+vrun "$P" --out "$P/VER.md"
 check_rc "B6 --out: exit 0" 0
 RUN_FM="$(node -e '
   const {parseFrontmatter}=require(process.argv[1]); const {fm,body}=parseFrontmatter(require("fs").readFileSync(process.argv[2],"utf8"));
@@ -206,7 +220,7 @@ check "C5 runner binary missing: exit 1 spawn_failed" 1 'j.reason' "spawn_failed
 # ---------- D: implausible crash and zero tests (FR-014, SC-003) ----------
 newproj d1; stub tsc 'kill -KILL $$'; cfg '{"commands":[{"id":"typecheck","argv":["./bin/tsc"]}]}'; seal
 cp "$WORK/VER.md" "$P/.a1/VERIFICATION.md"
-vrun "$P" --base main --out "$P/.a1/VERIFICATION.md"
+vrun "$P" --out "$P/.a1/VERIFICATION.md"
 check "D1 SC-003 typecheck killed with zero parsed failures: fail implausible_crash" 1 'j.verdict+"/"+j.reason' "fail/implausible_crash"
 vcheck "$P/.a1/VERIFICATION.md"
 check "D1b verify check on the file claiming PASS below that run: exit 1 verify_run_not_pass" 1 'j.reasons.join()' "verify_run_not_pass"
@@ -215,19 +229,19 @@ check "D2 pytest exit 5, junit holds 0 failures: implausible_crash (failed == 0 
 
 reporter_case d3 vitest "$WORK/zero.json" '["./bin/vitest"]' x 0
 printf 'module.exports = 2;\n' > "$P/src/app.js"; g "$P" commit -q -am "touch source"
-vrun "$P" --base main
+vrun "$P"
 check "D3 zero tests executed on a diff touching src/app.js: fail zero_tests" 1 'j.reason+"/"+j.touches_source' "zero_tests/true"
 newproj d3b; stub vitest "$REPORT_STUB"; cfg '{"commands":[{"argv":["./bin/vitest"]}]}'; seal
 printf 'x\n' > "$P/src/new file
 name.js"
-A1_FX_ARGS="$WORK/args-d3b" A1_FX_REPORT="$WORK/zero.json" A1_FX_RC=0 vrun "$P" --base main
+A1_FX_ARGS="$WORK/args-d3b" A1_FX_REPORT="$WORK/zero.json" A1_FX_RC=0 vrun "$P"
 check "D3b hostile: untracked source file with a space and a newline in its name still counts (NUL-separated git output)" 1 'j.reason+"/"+j.changed_files' "zero_tests/1"
 reporter_case d4 vitest "$WORK/zero.json" '["./bin/vitest"]' x 0
 printf '# demo 2\n' > "$P/README.md"; mkdir -p "$P/docs"; printf 'x\n' > "$P/docs/a.txt"; g "$P" add -A; g "$P" commit -q -m docs
-vrun "$P" --base main
+vrun "$P"
 check "D4 docs-only diff (README.md, docs/a.txt) with zero tests: pass, touches_source false" 0 'j.verdict+"/"+j.touches_source+"/"+j.changed_files' "pass/false/2"
 reporter_case d5 vitest "$WORK/zero.json" '["./bin/vitest"]' x 0
-vrun "$P" --base main
+vrun "$P"
 check "D5 empty diff with zero tests: pass" 0 'j.verdict+"/"+j.changed_files' "pass/0"
 
 # ---------- E: verify check (FR-018) ----------
@@ -239,7 +253,7 @@ printf -- '---\nverdict: PASS\nverify_run: {"verdict":"pass","head_sha":"%s","co
 vcheck "$P/.a1/VERIFICATION.md"
 check "E2 hand-edited verify_run with a head_sha git does not know: exit 1 head_sha_unknown" 1 'j.reasons.join()' "head_sha_unknown"
 printf -- '---\nverdict: PASS\n---\n' > "$P/.a1/VERIFICATION.md"
-vrun "$P" --base main --out "$P/.a1/VERIFICATION.md"
+vrun "$P" --out "$P/.a1/VERIFICATION.md"
 vcheck "$P/.a1/VERIFICATION.md"
 check "E3 fresh run, nothing committed since: exit 0" 0 'j.ok' "true"
 g "$P" add -A; g "$P" commit -q -m "verification"
@@ -254,7 +268,7 @@ check "E4 code changed after the run: exit 1 code_changed_after_run, 1 path" 1 '
 
 newproj e5; stub ok 'exit 0'; cfg '{"commands":[{"argv":["./bin/ok"]}]}'; seal
 printf -- '---\nverdict: PASS\n---\n' > "$P/VERIFICATION.md"
-vrun "$P" --base main --out "$P/VERIFICATION.md"
+vrun "$P" --out "$P/VERIFICATION.md"
 g "$P" add -A; g "$P" commit -q -m "verification at the root"
 vcheck "$P/VERIFICATION.md"
 check "E5 VERIFICATION.md outside .a1/ committed alone: exit 0 (file itself excluded)" 0 'j.ok' "true"
@@ -280,6 +294,137 @@ vrun "$P"
 check "H9 shell metacharacters in id and argv stay literal: exit 0, no file created" 0 'j.verdict' "pass"
 [[ ! -e /tmp/a1-fx-pwned ]] && ok "H9b no shell interpretation of argv" || { bad "H9b /tmp/a1-fx-pwned exists"; rm -f /tmp/a1-fx-pwned; }
 
+# ---------- F: head vs base snapshot (FR-015) ----------
+# alt.json: planted edit of the real vitest file - failing test "fail 0" renamed "fail 9"
+sed 's/"fail 0"/"fail 9"/g' "$CORPUS/vitest-3-40-2.json" > "$WORK/alt.json"
+MODE_STUB='case "$(cat src/app.js)" in *ALT*) export A1_FX_REPORT="$A1_FX_ALT";; *BAD*) ;; *) exit 0;; esac
+'"$REPORT_STUB"
+export A1_FX_ARGS="$WORK/args-f" A1_FX_REPORT="$CORPUS/vitest-3-40-2.json" A1_FX_ALT="$WORK/alt.json" A1_FX_RC=1
+basecase() { # basecase <label> <marker on base> <marker on head>
+  newproj "$1"; stub vitest "$MODE_STUB"; cfg '{"commands":[{"id":"unit","argv":["./bin/vitest","run"]}]}'
+  printf 'module.exports = "%s";\n' "$2" > "$P/src/app.js"; seal
+  printf 'module.exports = "%s";\n' "$3" > "$P/src/app.js"; g "$P" commit -q -am head
+  vrun "$P" --base main
+}
+basecase f1 ok BAD
+check "F1 failure on head only: exit 1, fail, nothing recorded pre_existing_red (base snapshot was green)" 1 'j.verdict+"/"+j.pre_existing_red.length+"/"+j.commands[0].failed_ids.length+"/"+(j.head_sha!==j.base_sha)' "fail/0/3/true"
+basecase f2 BAD BAD2
+check "F2 same 3 tests red on head and base: exit 0, pass, 3 recorded pre_existing_red" 0 'j.verdict+"/"+j.pre_existing_red.length+"/"+j.pre_existing_red.map(x=>x.id).join("|")' "pass/3/a.test.mjs > fail 0|a.test.mjs > fail 1|a.test.mjs > fail 2"
+basecase f3 BAD ALT
+check "F3 head fails a test base does not (fail 9): exit 1, the 2 shared ones are pre_existing_red" 1 'j.verdict+"/"+j.pre_existing_red.length+"/"+j.commands[0].failed_ids.includes("a.test.mjs > fail 9")' "fail/2/true"
+basecase f4 BAD ok
+check "F4 red on base, green on head: exit 0, pass, no pre_existing_red" 0 'j.verdict+"/"+j.pre_existing_red.length' "pass/0"
+
+# the snapshot is a git-archive extraction in a temp dir: live tree untouched, temp dir removed
+newproj f5; stub cnt 'pwd -P >> "${A1_FX_CWDLOG:?}"; exit 0'; cfg '{"commands":[{"id":"cnt","argv":["./bin/cnt"]}]}'; seal
+printf 'module.exports = 5;\n' > "$P/src/app.js"; g "$P" commit -q -am head
+export A1_FX_CWDLOG="$WORK/cwd-f5"; : > "$A1_FX_CWDLOG"; mkdir -p "$WORK/tmp-f5"
+TMPDIR="$WORK/tmp-f5" vrun "$P" --base main
+check_rc "F5 --base main on a clean branch: exit 0" 0
+[[ "$(grep -c 'a1-fx-verify-base-' "$A1_FX_CWDLOG")" == "1" && "$(wc -l < "$A1_FX_CWDLOG" | tr -d ' ')" == "2" ]] && ok "F5b one run inside a base snapshot dir + one on head (2 runs total)" || bad "F5b cwd log: $(cat "$A1_FX_CWDLOG")"
+[[ -z "$(ls -A "$WORK/tmp-f5")" ]] && ok "F5c snapshot dir and tar removed after the run" || bad "F5c leftovers: $(ls -A "$WORK/tmp-f5")"
+[[ "$(g "$P" rev-parse --abbrev-ref HEAD)" == "feat" && -z "$(g "$P" status --porcelain)" && "$(cat "$P/src/app.js")" == 'module.exports = 5;' ]] && ok "F5d live tree untouched (branch feat, clean, head content)" || bad "F5d live tree changed"
+
+# a suite file that exists only on head cannot be masked by "red on base" (absent on base != red on base)
+newproj f6; mkdir -p "$P/suites/a" "$P/suites/b"; printf 'exit 0\n' > "$P/suites/a/run.sh"; cfg '{"each":"suites/*/run*.sh","argv_prefix":["bash"]}'; seal
+printf 'exit 1\n' > "$P/suites/b/run.sh"; g "$P" add -A; g "$P" commit -q -m "new red suite"
+vrun "$P" --base main
+check "F6 new suite red on head, file absent on base: exit 1, fail, not pre_existing_red" 1 'j.verdict+"/"+j.pre_existing_red.length+"/"+j.commands.map(c=>c.id+":"+c.reason).join(",")' "fail/0/suites/a/run.sh:null,suites/b/run.sh:command_failed"
+
+# ---------- G: flaky (FR-016) ----------
+FLAKY_STUB='n=0; [ -f "${A1_FX_CTR:?}" ] && n="$(cat "$A1_FX_CTR")"; echo $((n + 1)) > "$A1_FX_CTR"
+[ "$n" = 0 ] || exit 0
+'"$REPORT_STUB"
+IDS3='["a.test.mjs > fail 0","a.test.mjs > fail 1","a.test.mjs > fail 2"]'
+flakycase() { # flakycase <label> <flaky_base json>
+  newproj "$1"; stub vitest "$FLAKY_STUB"; cfg "{\"flaky_base\":$2,\"commands\":[{\"id\":\"unit\",\"argv\":[\"./bin/vitest\",\"run\"]}]}"; seal
+  export A1_FX_CTR="$WORK/ctr-$1"; rm -f "$A1_FX_CTR"; vrun "$P"
+}
+flakycase g1 '[]'
+check "G1 fails once, passes on the single re-run, id not in flaky_base: exit 1, new_flaky, 3 flaky recorded (never dropped)" 1 'j.verdict+"/"+j.reason+"/"+j.flaky.length+"/"+j.commands[0].exit_code' "fail/new_flaky/3/0"
+[[ "$(cat "$A1_FX_CTR")" == "2" ]] && ok "G1b exactly one re-run (2 invocations)" || bad "G1b invocations $(cat "$A1_FX_CTR")"
+flakycase g2 "$IDS3"
+check "G2 same three ids listed in flaky_base: exit 0, pass, still recorded flaky" 0 'j.verdict+"/"+j.flaky.length+"/"+j.reason' "pass/3/null"
+flakycase g3 '["a.test.mjs > fail 0","a.test.mjs > fail 1"]'
+check "G3 only 2 of the 3 flaky ids listed: exit 1 new_flaky (limit 0 for unlisted)" 1 'j.verdict+"/"+j.reason+"/"+j.flaky.length' "fail/new_flaky/3"
+
+newproj g4; stub flk 'n=0; [ -f "${A1_FX_CTR:?}" ] && n="$(cat "$A1_FX_CTR")"; echo $((n + 1)) > "$A1_FX_CTR"; [ "$n" = 0 ] && exit 1; exit 0'
+cfg '{"commands":[{"id":"flk","argv":["./bin/flk"]}]}'; seal
+export A1_FX_CTR="$WORK/ctr-g4"; rm -f "$A1_FX_CTR"; vrun "$P"
+check "G4 runner without ids: whole command re-run once, command id is the flaky id -> new_flaky" 1 'j.reason+"/"+j.flaky.map(x=>x.id).join()' "new_flaky/flk"
+cfg '{"flaky_base":["flk"],"commands":[{"id":"flk","argv":["./bin/flk"]}]}'; g "$P" commit -q -am list
+rm -f "$A1_FX_CTR"; vrun "$P"
+check "G4b command id listed in flaky_base: exit 0" 0 'j.verdict+"/"+j.flaky.length' "pass/1"
+
+newproj g5; stub red 'n=0; [ -f "${A1_FX_CTR:?}" ] && n="$(cat "$A1_FX_CTR")"; echo $((n + 1)) > "$A1_FX_CTR"; exit 1'
+cfg '{"commands":[{"id":"red","argv":["./bin/red"]}]}'; seal
+export A1_FX_CTR="$WORK/ctr-g5"; rm -f "$A1_FX_CTR"; vrun "$P"
+check "G5 fails again on the re-run: a real failure, not flaky (exit 1, command_failed, 0 flaky)" 1 'j.reason+"/"+j.flaky.length' "command_failed/0"
+[[ "$(cat "$A1_FX_CTR")" == "2" ]] && ok "G5b retried exactly once" || bad "G5b invocations $(cat "$A1_FX_CTR")"
+
+# frozen list: exported check merge-check uses (reason flaky_base_grown, wave 10)
+grown() { node -e 'const b=require(process.argv[1]); process.stdout.write(JSON.stringify(b.flakyBaseGrown(JSON.parse(process.argv[2]), JSON.parse(process.argv[3]))))' "$REPO_ROOT/_shared/lib/verify-base.cjs" "$1" "$2" 2>&1; }
+[[ "$(grown '{"flaky_base":["a"]}' '{"flaky_base":["a","b"]}')" == '["b"]' ]] && ok "G6 head list holds b absent from base list: grown [b]" || bad "G6"
+[[ "$(grown '{"flaky_base":["a","b"]}' '{"flaky_base":["a"]}')" == '[]' ]] && ok "G6b shrunk list: not grown" || bad "G6b"
+[[ "$(grown '{"flaky_base":["a"]}' '{"flaky_base":["a"]}')" == '[]' ]] && ok "G6c equal list: not grown" || bad "G6c"
+[[ "$(grown 'null' '{"flaky_base":["x","y"]}')" == '[]' ]] && ok "G6d base has no .a1/verify.json: the creating PR may set the initial list" || bad "G6d"
+[[ "$(grown '{}' '{"flaky_base":["x"]}')" == '["x"]' ]] && ok "G6e base file without flaky_base, head adds x: grown" || bad "G6e"
+
+# ---------- K: result cache (FR-039) ----------
+newproj k1; stub cnt 'pwd -P >> "${A1_FX_CWDLOG:?}"; exit 0'; cfg '{"commands":[{"id":"cnt","argv":["./bin/cnt"]}]}'; seal
+printf 'module.exports = 11;\n' > "$P/src/app.js"; g "$P" commit -q -am head
+export A1_FX_CWDLOG="$WORK/cwd-k1"; : > "$A1_FX_CWDLOG"
+runs() { wc -l < "$A1_FX_CWDLOG" | tr -d ' '; }
+vrun "$P" --base main
+check "K1 first run: cache miss on both sides, 2 runs (head + base snapshot)" 0 'j.cache.head+"/"+j.cache.base' "miss/miss"
+[[ "$(runs)" == "2" ]] && ok "K1b suite ran twice" || bad "K1b runs $(runs)"
+vrun "$P" --base main
+check "K2 same clean head sha + same base sha: cache hit on both sides" 0 'j.cache.head+"/"+j.cache.base+"/"+j.verdict' "hit/hit/pass"
+[[ "$(runs)" == "2" ]] && ok "K2b no suite spawned (counter file unchanged)" || bad "K2b runs $(runs)"
+printf 'module.exports = 12;\n' > "$P/src/app.js"; g "$P" commit -q -am head2
+vrun "$P" --base main
+check "K3 new head sha, same base sha: head miss, base hit" 0 'j.cache.head+"/"+j.cache.base' "miss/hit"
+[[ "$(runs)" == "3" && "$(grep -c 'a1-fx-verify-base-' "$A1_FX_CWDLOG")" == "1" ]] && ok "K3b one more run, base snapshot not re-run" || bad "K3b runs $(runs)"
+printf 'dirty\n' > "$P/untracked.txt"
+vrun "$P" --base main
+check "K4 dirty tree (untracked file): no head reuse" 0 'j.cache.head' "dirty"
+[[ "$(runs)" == "4" ]] && ok "K4b suite ran again" || bad "K4b runs $(runs)"
+rm -f "$P/untracked.txt"
+vrun "$P" --base main
+check "K4c tree clean again: the stored clean-head result is reused (dirty run did not overwrite it)" 0 'j.cache.head' "hit"
+: > "$P/.git/info/exclude"
+vrun "$P" --base main
+check "K5 gate-log and cache paths shown by git status (no info/exclude) do not make the tree dirty" 0 'j.cache.head' "hit"
+vrun "$P" --base main --timeout-ms 777000
+check "K6 different command hash (timeout changed): no reuse" 0 'j.cache.head+"/"+j.cache.base' "miss/miss"
+[[ -z "$(g "$P" status --porcelain | grep -v 'gate-log.jsonl\|verify-cache')" ]] && ok "K7 cache files never dirty the real tree" || bad "K7 $(g "$P" status --porcelain)"
+DIRTY_OUT="$(node -e 'const b=require(process.argv[1]); process.stdout.write(JSON.stringify(b.dirtyPaths([".a1/phases/x/gate-log.jsonl",".a1/verify-cache/a.json","src/a.js",".a1/phases/x/gate-log.jsonl.bak"])))' "$REPO_ROOT/_shared/lib/verify-base.cjs")"
+[[ "$DIRTY_OUT" == '["src/a.js",".a1/phases/x/gate-log.jsonl.bak"]' ]] && ok "K8 dirtyPaths ignores exactly gate-log and cache paths (2 of 4 kept)" || bad "K8 $DIRTY_OUT"
+printf '{broken' > "$(ls "$P"/.a1/verify-cache/*.json | head -1)"
+vrun "$P" --base main --timeout-ms 777000
+check_rc "K9 hostile: corrupted cache file is a miss, not a crash" 0
+
+# ---------- S: shallow clone without the base ----------
+newproj s0; stub ok 'exit 0'; cfg '{"commands":[{"argv":["./bin/ok"]}]}'; seal
+printf 'module.exports = 2;\n' > "$P/src/app.js"; g "$P" commit -q -am head
+git clone -q --depth 1 --branch feat --single-branch "file://$P" "$WORK/shallow" 2>/dev/null
+vrun "$WORK/shallow" --base main
+check "S1 shallow clone without the base ref: exit 2 base_unresolved, message names git fetch" 2 'j.error+"/"+j.message.includes("git fetch")' "base_unresolved/true"
+git -C "$WORK/shallow" fetch -q --depth 1 "file://$P" main:refs/remotes/origin/main 2>/dev/null
+vrun "$WORK/shallow" --base origin/main
+check "S2 base ref present but no common ancestor in the shallow history: exit 2 base_unresolved" 2 'j.error' "base_unresolved"
+
+# ---------- P: timeout kills the whole process group ----------
+is_alive() { local st; st="$(ps -o stat= -p "$1" 2>/dev/null | tr -d ' ')"; [[ -n "$st" && "$st" != Z* ]]; }
+newproj p1; stub suite 'sleep 60 & echo $! > "${A1_FX_PIDFILE:?}"; wait'; cfg '{"commands":[{"id":"suite","argv":["bash","./bin/suite"]}]}'; seal
+export A1_FX_PIDFILE="$WORK/pid-p1"; rm -f "$A1_FX_PIDFILE"
+vrun "$P" --timeout-ms 700
+check "P1 bash suite with a background grandchild times out: exit 1, timeout" 1 'j.reason+"/"+j.commands[0].timed_out' "timeout/true"
+GPID="$(cat "$A1_FX_PIDFILE" 2>/dev/null)"
+[[ "$GPID" =~ ^[0-9]+$ ]] && ok "P1b grandchild pid recorded ($GPID is a number)" || bad "P1b no grandchild pid"
+for _i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do is_alive "$GPID" || break; sleep 0.2; done
+if is_alive "$GPID"; then bad "P1c grandchild $GPID survived the timeout kill"; kill "$GPID" 2>/dev/null; else ok "P1c no grandchild survives (process group killed)"; fi
+
 # ---------- M: mutation proof ----------
 # A copy of _shared with the crash rule disabled must miss the SC-003 signal case;
 # the original catches it.
@@ -295,6 +440,22 @@ OUT="$(cd "$P" && node "$MUT/_shared/a1-tools.cjs" verify run --project "$P" --p
 check "M1 mutated tool: signal kill reports 'signal', not implausible_crash (case turns red)" 1 'j.reason' "signal"
 vrun "$P"
 check "M1b original tool: implausible_crash again (revert turns it green)" 1 'j.reason' "implausible_crash"
+
+# second planted defect: the base-subset rule removed in a copy must fail F2 (original passes it)
+MUT2="$WORK/mut2"; mkdir -p "$MUT2"; cp -R "$REPO_ROOT/_shared" "$MUT2/_shared"
+node -e '
+  const fs=require("fs"); const f=process.argv[1]; let s=fs.readFileSync(f,"utf8");
+  const needle="if (reason !== null && fresh.length === 0 && baseIds !== null) reason = null;";
+  if (s.split(needle).length !== 2) process.exit(3);
+  fs.writeFileSync(f, s.replace(needle, ""));' "$MUT2/_shared/lib/verify-base.cjs"
+[[ $? -eq 0 ]] && ok "M2 planted defect applied (base-subset rule removed in the copy)" || bad "M2 needle not found - update this case with settle()"
+newproj m3; stub vitest "$MODE_STUB"; cfg '{"commands":[{"id":"unit","argv":["./bin/vitest","run"]}]}'
+printf 'module.exports = "BAD";\n' > "$P/src/app.js"; seal
+printf 'module.exports = "BAD2";\n' > "$P/src/app.js"; g "$P" commit -q -am head
+OUT="$(cd "$P" && node "$MUT2/_shared/a1-tools.cjs" verify run --project "$P" --phase fx --base main 2>/dev/null)"; RC=$?
+check "M3 mutated tool: tests red on both sides fail the verdict (case turns red)" 1 'j.verdict' "fail"
+vrun "$P" --base main
+check "M3b original tool: pre_existing_red does not fail the verdict (revert turns it green)" 0 'j.verdict+"/"+j.pre_existing_red.length' "pass/3"
 
 echo "a1-verify: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]
