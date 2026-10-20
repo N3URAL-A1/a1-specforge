@@ -77,22 +77,6 @@
       "by": "017-enforced-self-checks",
       "at": "2026-10-20T18:38:11.197Z",
       "stage": "started"
-    },
-    {
-      "type": "code_scope",
-      "paths": [
-        "agents/a1-pablo-planner.md",
-        "agents/a1-adam-auditor.md",
-        "agents/a1-rico-researcher.md",
-        "agents/a1-walter-web-developer.md",
-        "_shared/spawn-policy.md",
-        "_shared/agent-lessons.md",
-        "skills/a1-roadmap/",
-        "skills/a1-analyze/"
-      ],
-      "by": "evolve-run-8",
-      "at": "2026-10-20T20:29:45.747Z",
-      "stage": "started"
     }
   ]
 }
