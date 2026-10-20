@@ -1,0 +1,621 @@
+# ============================================================
+# ci.yml — Haupt-CI-Pipeline (ADR 2026-07-05_cicd-pipeline.md)
+#
+# Topologie (D2):
+#   lint-and-static-gates ─┬─ unit-tests ────────┬─ build ── e2e-smoke
+#                          └─ integration-core ──┘
+#
+# NAHTSTELLE zu P1.5 Wave 2 (paralleler Executor):
+#   - Task 2.1 liefert: tests/ci/roles-seed.sql, tests/ci/schema-seed.sql,
+#     scripts/ci/dump-ci-schema.sh, Freshness-Gate, Fixture-Seed
+#     → konsumiert über .github/actions/setup-test-db (Composite).
+#   - Task 2.2 befüllt: unit-tests (Skip-Liste w5-detail-switcher).
+#   - Task 2.3 befüllt: e2e-smoke (login-smoke.spec.ts, webServer).
+#   - Task 2.4 befüllt: gate-tsc + gate-tsc-tests-ratchet Steps.
+#   - Task 4.1/3.1 hängen gate-route-auth / gate-single-test-root
+#     in multi-tenant-tests.yml ODER hier ein (dependency-frei → dort).
+#   - Task 2.1 befüllt 2026-09-10: integration-core (Kern-Suiten). Seit
+#     2026-09-28 die EINZIGE Stelle dieser Liste — der Zwilling
+#     integration-core.yml ist entfernt (Fix-Bericht
+#     2026-09-28-ci-minutes-growth-2: dieselben 27 Suiten liefen bei jedem
+#     Push zweimal, nur dieser Job ist required check).
+#
+#   HISTORISCH, seit 2026-09-10 nicht mehr zutreffend: Die Platzhalter-Steps
+#   waren mit `if: false` + TODO deaktiviert, damit dieser Skeleton mergebar
+#   ist, ohne PRs zu blockieren. Bei `integration-core` war das teuer: der Job
+#   ist ein ERFORDERLICHER Kontext der main-Branch-Regel und meldete deshalb
+#   seit dem 2026-07-05 (Commit ceae65a, gut zwei Monate) grün, ohne einen Test
+#   auszuführen (45 s Laufzeit, DB-Aufbau ohne Testlauf), während der Job mit
+#   den echten Suiten in integration-core.yml NICHT erforderlich ist. Ein roter
+#   GoBD-Lauf konnte damit keinen Merge verhindern.
+#   Audit-Befund F-029, bestätigt beim Merge von PR #223.
+#
+#   Lehre für künftige Skeletons: Ein deaktivierter Step in einem Job, der als
+#   required check eingetragen ist, ist kein Platzhalter, sondern eine
+#   Attrappe. Entweder den Step befüllen oder den Job aus der Pflichtliste
+#   nehmen — nicht beides offen lassen. Es gibt derzeit KEIN `if: false` mehr
+#   in dieser Datei (Prüfung: `grep -n "if: false" .github/workflows/ci.yml`
+#   darf nur Kommentarzeilen treffen).
+#
+# multi-tenant-tests.yml bleibt daneben bestehen (ADR D1).
+#
+# DOKU-SPUR (2026-09-28, Fix-Bericht 2026-09-28-ci-minutes-growth-2):
+#   Ein PR gegen main, der NUR Doku-Pfade ändert (Allowlist in
+#   scripts/ci/classify-changes.mjs: docs/ ohne docs/developer/, .a1/,
+#   .claude/, Root-*.md — jeweils nur mit Doku-Endungen), überspringt die
+#   teure Arbeit: ~1 statt ~16 abgerechnete Minuten.
+#
+#   Das ist KEINE Attrappe im Sinn der Lehre oben, aus drei Gründen:
+#   1. Der Klassifikator läuft IM required Job lint-and-static-gates, nicht in
+#      einem eigenen Job. Scheitert er, ist dieser Pflicht-Check rot. (Ein
+#      eigener Job, der scheitert, ließe alle abhängigen Pflicht-Jobs
+#      "skipped" melden — und skipped zählt für required checks als grün.)
+#   2. Fail-closed: Nur ein positiver Beweis ergibt docs_only=true; jede
+#      Abfrage lautet `!= 'true'`, ein leerer Output läuft also voll. Push auf
+#      main läuft immer voll, ebenso jeder PR gegen eine andere Basis.
+#   3. Allowlist statt Blocklist, belegt durch
+#      tests/unit/scripts/classify-changes.test.ts (Pfadmatrix, echtes
+#      Git-Repo mit Merge-Commit, Wächter für Code, der Doku-Pfade liest).
+#
+#   build und e2e-smoke tragen kein eigenes `if:` — sie hängen per `needs` an
+#   unit-tests/integration-core und werden mit ihnen übersprungen. Wer dort
+#   `if: always()` einbaut, hebelt das aus.
+#
+#   Ein NEUER Schritt in lint-and-static-gates braucht dasselbe
+#   `if: steps.scope.outputs.docs_only != 'true'`. Ohne läuft er auch im
+#   Doku-Lauf mit — das kostet nur Minuten, lässt aber nichts ungeprüft durch.
+#
+#   Merge Queue: Wird sie im Ruleset aktiviert, brauchen ci.yml UND
+#   multi-tenant-tests.yml einen `merge_group`-Trigger, sonst melden die
+#   Pflicht-Kontexte in der Queue nie. Der Klassifikator läuft dort voll
+#   (jedes Event außer pull_request ist ein voller Lauf).
+#
+#   Es gibt weiterhin KEIN `if: false`. Jedes `if:` dieser Datei fragt den
+#   Klassifikator ab — außer `if: failure()` am Upload des Playwright-Reports
+#   (Prüfung: `grep -n "^ *if:" .github/workflows/ci.yml`).
+# ============================================================
+
+name: CI
+
+on:
+  pull_request:
+    branches: ["**"]
+  push:
+    branches: ["main"]
+
+concurrency:
+  # PR: eine Gruppe pro Ref, überholte Läufe werden abgebrochen — ein
+  # überholter PR-Push wird nie gemergt.
+  # Push (main): eine Gruppe pro SHA. Eine gemeinsame Gruppe reicht NICHT,
+  # auch ohne cancel-in-progress: GitHub hält je Gruppe nur EINEN wartenden
+  # Lauf und ersetzt ihn beim nächsten — bei drei schnellen Merges bliebe der
+  # mittlere main-Commit ohne Pflicht-Ergebnis (Review Falk MINOR 1,
+  # Reinhard MINOR-1 zu PR #315).
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Least privilege für den GITHUB_TOKEN (Feature 048, Finding M1). Ohne diesen
+# Block erbt jeder Job die Default-Permissions des Repos, die je nach
+# Einstellung Schreibrechte auf contents/issues/pull-requests umfassen.
+#
+# Geprüft: KEIN Job dieses Workflows braucht mehr als Lesezugriff — es gibt
+# keine PR-Kommentare, keine Checks-API-Aufrufe, keine Deployments und keine
+# gh/github-script-Aufrufe. Verwendet werden nur checkout, setup-node,
+# pnpm/action-setup, actions/cache, actions/upload-artifact (eigene
+# Artifact-API, kein contents:write) und die lokale setup-test-db-Action.
+# Braucht ein künftiger Job mehr, bekommt ER job-level permissions — dieses
+# Workflow-Level bleibt read.
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "24"
+  PNPM_VERSION: "10"
+
+jobs:
+  # ----------------------------------------------------------
+  # Stage 1 — Lint + Typecheck (billig, zuerst; ADR D2)
+  # ----------------------------------------------------------
+  lint-and-static-gates:
+    name: lint-and-static-gates
+    runs-on: ubuntu-latest
+    outputs:
+      docs_only: ${{ steps.scope.outputs.docs_only }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 2 = der Merge-Commit von pull_request plus seine beiden Eltern;
+          # der Klassifikator vergleicht HEAD^1 (Basis) mit HEAD.
+          fetch-depth: 2
+
+      - name: Änderungsumfang (nur Doku? — Allowlist, fail-closed)
+        id: scope
+        # Vor jedem Setup, mit dem Node des Runners: dependency-frei. Werte
+        # über env, nicht per ${{ }} im Shell-Text (Branch-Namen dürfen $(…)
+        # enthalten).
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: node scripts/ci/classify-changes.mjs
+
+      - uses: pnpm/action-setup@v4
+        if: steps.scope.outputs.docs_only != 'true'
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        if: steps.scope.outputs.docs_only != 'true'
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Configure git token for private @n3ural/ui (ADR D4)
+        if: steps.scope.outputs.docs_only != 'true'
+        # Hinweis: scripts/vercel-install.sh (die frühere zweite Fundstelle
+        # dieser Logik) ist mit dem Contract-PR zu Task 9.4 entfernt — dieser
+        # Block ist damit die einzige Wahrheit.
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          CLEAN_TOKEN=$(printf '%s' "$GH_TOKEN" | tr -d '\n\r')
+          TOKENED="https://x-access-token:${CLEAN_TOKEN}@github.com/"
+          git config --global url."$TOKENED".insteadOf "ssh://git@github.com/"
+          git config --global --add url."$TOKENED".insteadOf "git@github.com:"
+          git config --global --add url."$TOKENED".insteadOf "https://github.com/"
+
+      - name: gate-single-test-root (P1.5 Task 3.1 — genau EIN Test-Root `tests/`)
+        if: steps.scope.outputs.docs_only != 'true'
+        # Dep-freies Node-Skript — läuft vor dem Install.
+        run: node scripts/gate-single-test-root.mjs
+
+      - name: Install (frozen lockfile — fängt Lockfile-Drift im PR ab)
+        if: steps.scope.outputs.docs_only != 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace packages (tsc/vitest brauchen deren dist-Typen)
+        if: steps.scope.outputs.docs_only != 'true'
+        # Memory-Gotcha: @n3ural/office-* dist in frischen Checkouts IMMER bauen,
+        # sonst meldet tsc Cannot-find-module über den gesamten app/-Scope.
+        run: |
+          pnpm --filter @n3ural/office-core build
+          pnpm --filter @n3ural/office-agent-runtime build
+          pnpm --filter @n3ural/office-cli build
+          pnpm --filter @n3ural/office-mcp build
+
+      - name: Lint (nicht blockierend bis Baseline 0 — blockierend ist gate-lint-ratchet)
+        if: steps.scope.outputs.docs_only != 'true'
+        # P1.5 Task 4.4: Der Error-Count wurde von 318 auf 58 gesenkt; ein hartes
+        # 0-Error-Gate ist noch nicht erreichbar (verbleibende Errors sind neue
+        # react-hooks@7-Regeln + no-any/no-require in Testdateien, beide DEFERRED).
+        # Das blockierende Signal ist gate-lint-ratchet (multi-tenant-tests.yml,
+        # Job static-tsc-gates) — es verhindert dass der Count WÄCHST.
+        run: pnpm run lint || echo "::warning::Lint-Errors vorhanden (Baseline 58) — blockierend ist gate-lint-ratchet, nicht dieser Step."
+
+      - name: Prettier check
+        if: steps.scope.outputs.docs_only != 'true'
+        run: pnpm exec prettier --check . || echo "::warning::Format-Drift — npm run format lokal ausführen (nicht blockierend bis Baseline sauber)"
+
+      # ---- Konsolidiert (2026-07-06): ci.yml ist die einzige Quelle der
+      # tsc-/Ratchet-Gates. Die npm-Strip-Jobs in multi-tenant-tests.yml wurden
+      # entfernt — sie konnten @n3ural/*-Typen nie auflösen (kein GH_TOKEN-Ära).
+      - name: gate-unit-job-liste (Tippfehler in der Dateiliste fallen sonst NICHT auf)
+        if: steps.scope.outputs.docs_only != 'true'
+        # Vitest ueberspringt einen Pfad, den es nicht findet, STILL und meldet
+        # gruen mit einer Datei weniger (gemessen: 57 statt 58). Eine
+        # Pflichtpruefung verliert so lautlos eine Datei.
+        run: node scripts/gate-unit-job-liste.mjs
+
+      - name: gate-tsc (Produktionscode-Typecheck)
+        if: steps.scope.outputs.docs_only != 'true'
+        run: node scripts/gate-tsc.mjs
+
+      - name: gate-tsc-tests-ratchet (Test-Typschuld darf nicht wachsen)
+        if: steps.scope.outputs.docs_only != 'true'
+        run: node scripts/gate-tsc-tests-ratchet.mjs
+
+      - name: gate-lint-ratchet (Lint-Error-Schuld darf nicht wachsen)
+        if: steps.scope.outputs.docs_only != 'true'
+        run: node scripts/gate-lint-ratchet.mjs
+
+  # ----------------------------------------------------------
+  # Stage 2a — Unit-Tests (kein DB; parallel zu integration-core)
+  # Einhängepunkt Task 2.2
+  # ----------------------------------------------------------
+  unit-tests:
+    name: unit-tests
+    needs: lint-and-static-gates
+    if: needs.lint-and-static-gates.outputs.docs_only != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Configure git token
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          CLEAN_TOKEN=$(printf '%s' "$GH_TOKEN" | tr -d '\n\r')
+          git config --global url."https://x-access-token:${CLEAN_TOKEN}@github.com/".insteadOf "https://github.com/"
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Build workspace packages (Unit-Tests importieren @n3ural/office-*)
+        run: |
+          pnpm --filter @n3ural/office-core build
+          pnpm --filter @n3ural/office-agent-runtime build
+          pnpm --filter @n3ural/office-cli build
+          pnpm --filter @n3ural/office-mcp build
+      - name: Run unit tests
+        # Konsolidiert (2026-07-06): ci.yml ist die einzige Quelle — der
+        # npm-Strip-Job `unit-tests (Task 2.2)` in multi-tenant-tests.yml
+        # wurde entfernt (konnte @n3ural/* nie auflösen).
+        # `tests/integration/time-entries-read-api.test.ts` läuft bewusst HIER
+        # mit und nicht im integration-core-Job: Die Suite lädt eine
+        # Office-Route, die aus `packages/office-core/dist/` importiert. Dieser
+        # Job baut die Workspace-Packages (Schritt davor), integration-core
+        # entfernt sie per Design (npm-only-Install, "Strip workspace deps").
+        #
+        # Warum überhaupt: Der Office-Read-Pfad war 11 Tage in Produktion tot,
+        # und die einzige Suite, die ihn abdeckt, lief in KEINEM Gate. Sie
+        # braucht keine DB — sie mockt.
+        #
+        # `tests/middleware/` (2026-09-11, Review zu PR #230): Dasselbe Muster,
+        # eine Ebene tiefer. Die Suite bewacht, dass `proxy.ts` eine vom
+        # Client geschickte `x-tenant-id` nicht weiterreicht, wenn die Sitzung
+        # keinen Mandanten hat — und stand in KEINER Workflow-Liste
+        # (`grep -rn "tests/middleware" .github/` → leer). Der Wächter zum
+        # Sicherheitsfix desselben PRs wäre damit Dekoration gewesen. Sie
+        # braucht weder Datenbank noch Rollen (`auth` und `getProxyPool` sind
+        # gemockt), läuft in der CI also identisch zu lokal. Bewusst hier und
+        # nicht im integration-core-Job.
+        #
+        # `tests/integration/api/invoices-status-freeze.test.ts` läuft ebenfalls
+        # HIER und nicht im integration-core-Job — gemessen: Sie ist mit ihren
+        # fuenf Mocks (auth, next/headers, crm/api, pdf-snapshot, invoice-profile)
+        # vollständig DB-frei, 6/6 grün auch gegen einen geschlossenen Port. Ein
+        # Eintrag in die Integrations-Liste würde behaupten, sie prüfe gegen eine
+        # Datenbank; sie prüft Routen-Logik.
+        #
+        # Warum überhaupt: Die Suite war seit dem 2026-06-30 ROT (Commit
+        # `1062a13` brachte das M7/M8-Gate, der Test mockte `x-tenant-id` als
+        # `"tenant-1"` — kein UUID, also 500 aus der DB) und stand in KEINER
+        # CI-Liste. Zwei Monate unbemerkt. Der Eintrag erfolgt mit derselben
+        # Änderung, die sie grün macht — vorher wäre er eine rote Pflichtprüfung.
+        #
+        # `tests/components`, `tests/workshop`, `tests/mail` ergänzt 2026-09-13
+        # — 43 Dateien, 438 Tests, die in KEINEM CI-Lauf liefen.
+        #
+        # Dazu 58 einzelne Dateien aus den übrigen ungelisteten Verzeichnissen
+        # (Liste in `tests/ci/unit-job-dateien.txt`). Warum einzeln und nicht
+        # als Verzeichnis: KEINES der sieben ist einheitlich. Gemessen am
+        # 2026-09-13 über alle ungelisteten Verzeichnisse hinweg:
+        #
+        #     58 grün mit echten Fällen   ← diese hier
+        #     40 rot
+        #      1 Attrappe (besteht, weil sie jeden Fall überspringt)
+        #
+        # Die 40 roten sind NICHT durch DB-Variablen zu heilen — gemessen:
+        # gegen eine geseedete Datenbank werden nur 6 grün, 34 bleiben rot.
+        # Die Ursachen sind GEMISCHT, und das ist für das Folge-Ticket der
+        # entscheidende Punkt:
+        #
+        #   fehlende Fixtures (FK-Verletzung, `audit_log_actor_user_id_fkey`)
+        #   veralteter Test   (`tests/expenses/soft-delete.test.ts` importiert
+        #                      `PATCH`, die Route exportiert `DELETE`)
+        #   falscher Fake    (`client.query is not a function`)
+        #   Modul-Auflösung  (next-auth ↔ next/server)
+        #   Fachlogik        (AssertionError, ohne Einzelfallprüfung nicht von
+        #                     einem Fixture-Problem zu unterscheiden)
+        #
+        # Eine frühere Fassung dieses Kommentars schrieb "überwiegend fehlende
+        # Fixtures" — hochgerechnet aus EINER Meldung. Gemessen sind es 8 von
+        # 33. Wer das Ticket nach der falschen Fassung aufsetzt, baut Fixtures
+        # und steht bei mindestens vier Dateien vor einem Problem, das Fixtures
+        # nicht lösen. Jede Datei braucht eine eigene Diagnose; eigenes Ticket.
+        #
+        # Die Attrappe (`tests/lib/crm/invoice-immutability.test.ts`, 11 Fälle,
+        # ALLE übersprungen) ist bewusst NICHT eingetragen. Sie einzutragen
+        # wäre die schlimmere Variante von "rot": ein Pflicht-Check, der grün
+        # meldet und nichts prüft — genau die Klasse, gegen die dieser PR
+        # antritt.
+        #
+        # `tests/e2e/` und `tests/e2e-agent/` sind KEINE ungelisteten
+        # Verzeichnisse: `vitest.config.ts` schließt sie aus (Playwright bzw.
+        # kostenpflichtige LLM-Läufe gegen Prod, ADR D1). Wer sie mitzählt,
+        # sucht nach einer Lücke, die es nicht gibt.
+        #
+        # Ein CLI-`--exclude` ist hier KEIN Ersatz für die Liste: ein einziges
+        # `--exclude`-Argument hebt die config-`exclude` für `tests/e2e-agent`
+        # auf — gemessen tauchen dann 19 e2e-agent-Dateien im Lauf auf, also
+        # kostenpflichtige LLM-Aufrufe gegen Produktion.
+        #
+        # DB-Freiheit gemessen, nicht angenommen: 58/58 grün (639 Fälle) ohne
+        # jede PG-Variable, plus 43/43 für die drei Verzeichnisse.
+        run: |
+          pnpm exec vitest run \
+            tests/unit tests/middleware tests/components tests/workshop tests/mail \
+            tests/integration/time-entries-read-api.test.ts \
+            tests/integration/api/invoices-status-freeze.test.ts \
+            $(grep -vE '^\s*(#|$)' tests/ci/unit-job-dateien.txt | tr '\n' ' ')
+
+  # ----------------------------------------------------------
+  # Stage 2b — Integration-Core (ephemere Postgres + Schema-Seed)
+  # Einhängepunkt Task 2.1 — DB-Setup via Composite Action (ADR D3)
+  # ----------------------------------------------------------
+  integration-core:
+    name: integration-core
+    needs: lint-and-static-gates
+    if: needs.lint-and-static-gates.outputs.docs_only != 'true'
+    runs-on: ubuntu-latest
+    # env auf JOB-Ebene, nicht nur am Test-Step (2026-09-10):
+    # `tests/integration/_helpers/read-migration-harness.ts` baut seine
+    # Verbindung aus den PG*-Variablen und fällt ohne sie auf `127.0.0.1:5433`
+    # zurück — den Port des gelöschten Cloud-SQL-Proxys. Ein Test-Step mit nur
+    # `DATABASE_URL` lief deshalb in `connect ECONNREFUSED 127.0.0.1:5433`,
+    # während `withSystemContext` (das DATABASE_URL liest) funktionierte: 6 von
+    # 13 Suiten rot aus einem Grund, der nichts mit ihrem Prüfgegenstand zu tun
+    # hat. Dieselbe Klasse wie der stille Fallback in dev-patterns.md
+    # („PGDATABASE explizit setzen").
+    # Werte identisch mit dem Service-Container unten. (Der frühere Zwilling
+    # integration-core.yml nutzte `n3ural_crm_ci`; kein Test hängt am Namen —
+    # geprüft 2026-09-28, Treffer nur in Kommentaren.)
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGDATABASE: n3ural_ci
+      PGUSER: crm_admin
+      PGPASSWORD: ci_test_password_only
+      POSTGRES_PASSWORD: ci_test_password_only
+      # Signalisiert den Suiten eine erreichbare DB (Skip-Guards fragen es ab).
+      CLOUD_SQL_PROXY: "1"
+      DATABASE_URL: postgresql://crm_admin:ci_test_password_only@127.0.0.1:5432/n3ural_ci
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: n3ural_ci
+          POSTGRES_USER: crm_admin
+          POSTGRES_PASSWORD: ci_test_password_only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Configure git token
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          CLEAN_TOKEN=$(printf '%s' "$GH_TOKEN" | tr -d '\n\r')
+          git config --global url."https://x-access-token:${CLEAN_TOKEN}@github.com/".insteadOf "https://github.com/"
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup test database (roles + schema-seed + freshness + fixtures)
+        id: db
+        uses: ./.github/actions/setup-test-db
+        with:
+          postgres-password: ci_test_password_only
+
+      # Befüllt am 2026-09-10 (vorher `if: false` + TODO(p1.5-w2-task-2.1)).
+      # Warum das dringend war: `integration-core` ist ein ERFORDERLICHER
+      # Kontext der main-Branch-Regel, führte aber keinen Test aus und meldete
+      # nach 45 s grün. Der Job, der die Suiten damals wirklich ausführte, lag
+      # in `integration-core.yml` und war NICHT erforderlich — ein roter
+      # GoBD-Testlauf konnte also keinen Merge verhindern. Gefunden im
+      # Plattform-Audit 2026-09-09 (Befund F-029) und beim Merge von PR #223
+      # im laufenden Betrieb bestätigt.
+      #
+      # Einzige Suitenliste (seit 2026-09-28). Der Zwilling integration-core.yml
+      # und sein Sync-Gate (scripts/gate-integration-suites-sync.mjs) sind
+      # entfernt: Dieselben Suiten liefen bei jedem Push zweimal, und nur
+      # dieser Job ist required check. Neue Kern-Suite → hier eintragen.
+      #
+      # Seriell, nicht parallel: `vitest run <files>` respektiert
+      # `fileParallelism: false` aus vitest.config.ts (Interferenz-Lektion).
+      # DATABASE_URL kommt aus dem env-Block auf Job-Ebene (oben), identisch mit
+      # dem Service-Container. `steps.db.outputs.database-url` waere aequivalent,
+      # aber zwei Quellen fuer denselben Wert driften irgendwann auseinander.
+      - name: Run core integration suites (seriell — Interferenz-Lektion)
+        run: |
+          npx vitest run \
+            tests/integration/write-invoices-isolation.test.ts \
+            tests/integration/invoice-number-sequence.test.ts \
+            tests/integration/office-v1-mark-sent.test.ts \
+            tests/integration/audit-log-immutable.test.ts \
+            tests/integration/invoice-pdf-snapshot-grants.test.ts \
+            tests/integration/view-security-invoker.test.ts \
+            tests/integration/tenant-policy-membership.test.ts \
+            tests/integration/security/rls-invariants.test.ts \
+            tests/integration/security/audit-log-spalten.test.ts \
+            tests/integration/security/invoice-profile-tenant-boundary.test.ts \
+            tests/integration/security/tenant-membership-guard.test.ts \
+            tests/integration/security/ops-functions-call-sites.test.ts \
+            tests/integration/security/ops-cron-context.test.ts \
+            tests/integration/security/ops-notify-dedup-lock.test.ts \
+            tests/integration/security/tick-kontextwahl-wirkebene.test.ts \
+            tests/integration/security/agent-conversation-orphan-cleanup.test.ts \
+            tests/integration/security/foreign-references-sec7.test.ts \
+            tests/integration/security/tenant-resolution-functions.test.ts \
+            tests/integration/security/w4c-lesestellen-wirkebene.test.ts \
+            tests/integration/security/w4fg-schreibpfade-wirkebene.test.ts \
+            tests/integration/security/w4g-tenants-gegenraum.test.ts \
+            tests/integration/security/w4e-tenants-entzug-wirkebene.test.ts \
+            tests/integration/crm/quote-deal-link.test.ts \
+            tests/integration/crm/generate-invoice-side-items.test.ts \
+            tests/integration/agent/klaus-invoice-selected-items.test.ts \
+            tests/integration/tenant-purge-completeness.test.ts \
+            tests/integration/billing-checkout-session.test.ts \
+            tests/integration/tenant-provision.test.ts \
+            tests/integration/stripe-webhook-subscription.test.ts \
+            tests/integration/billing-checkout-hardening.test.ts \
+            tests/integration/tenant-onboarding-e2e.test.ts \
+            tests/integration/session-token-lifecycle.test.ts \
+            tests/integration/session-token-security.test.ts \
+            tests/integration/crm-bearer-dual-auth.test.ts \
+            tests/integration/claudia/mail-draft-audit.test.ts \
+            tests/integration/claudia/http-caps-audit.test.ts \
+            tests/integration/workflow/dashboard-behavior-parity.test.ts \
+            tests/integration/workflow/default-pipeline-seed.test.ts \
+            tests/integration/workflow/foreign-references.test.ts \
+            tests/integration/workflow/link-customer-effect.test.ts \
+            tests/integration/workflow/new-object-grants.test.ts \
+            tests/integration/workflow/office-deal-patch.test.ts \
+            tests/integration/workflow/registry-vs-check.test.ts \
+            tests/integration/workflow/stage-kind-readers.test.ts \
+            tests/integration/workflow/stage-transition-followup.test.ts \
+            tests/integration/workflow/stage-transitions-rls.test.ts \
+            tests/integration/workflow/stage-write-paths.test.ts \
+            tests/integration/pipeline-flow-quote-billing.test.ts \
+            tests/integration/pipeline-flow-won-gate.test.ts \
+            tests/integration/object-types/field-definitions-vocabulary.test.ts \
+            tests/integration/object-types/lead-dashboard-paths.test.ts \
+            tests/integration/object-types/lead-office-paths.test.ts \
+            tests/integration/object-types/lead-private-conversion.test.ts \
+            tests/integration/object-types/lead-stage-columns.test.ts \
+            tests/integration/object-types/pipeline-seeds.test.ts \
+            tests/integration/object-types/pr342-field-definitions-flag.test.ts \
+            tests/integration/object-types/pr342-route-review-fixes.test.ts \
+            tests/integration/object-types/properties-rls.test.ts \
+            tests/integration/object-types/property-paths.test.ts \
+            tests/integration/object-types/saule-sync.test.ts \
+            tests/integration/object-types/stage-history-composite-fk.test.ts \
+            tests/integration/object-types/tenant-purge-objects.test.ts \
+            tests/integration/expense-mail-intake/schema/migration-149.test.ts \
+            tests/integration/expense-mail-intake/persist/process-attachment.test.ts \
+            tests/integration/expense-mail-intake/run/run-mail-intake.test.ts \
+            tests/integration/expense-mail-intake/dry-run.test.ts \
+            tests/integration/expense-mail-drafts/save-with-draft.test.ts \
+            tests/integration/expense-mail-drafts/save-concurrency.test.ts \
+            tests/integration/expense-mail-drafts/discard.test.ts \
+            tests/integration/expense-mail-drafts/discard-provider-error.test.ts \
+            tests/integration/expense-mail-drafts/read.test.ts
+
+  # ----------------------------------------------------------
+  # Stage 3 — Build (teuerster Step, NACH den Tests; ADR D2)
+  # ----------------------------------------------------------
+  build:
+    name: build
+    needs: [unit-tests, integration-core]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Configure git token
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          CLEAN_TOKEN=$(printf '%s' "$GH_TOKEN" | tr -d '\n\r')
+          git config --global url."https://x-access-token:${CLEAN_TOKEN}@github.com/".insteadOf "https://github.com/"
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Restore Next.js build cache
+        uses: actions/cache@v4
+        with:
+          path: .next/cache
+          key: nextjs-${{ hashFiles('pnpm-lock.yaml') }}-${{ hashFiles('app/**', 'lib/**', 'components/**', 'packages/**/src/**') }}
+          restore-keys: |
+            nextjs-${{ hashFiles('pnpm-lock.yaml') }}-
+
+      - name: Build packages + app (Reihenfolge lt. ADR D4)
+        # TODO(p1.5-handoff): auf `pnpm run build:packages && pnpm run build`
+        # umstellen, sobald build:packages als Script zentralisiert ist.
+        run: |
+          pnpm --filter @n3ural/office-core build
+          pnpm --filter @n3ural/office-agent-runtime build
+          pnpm --filter @n3ural/office-cli build
+          pnpm --filter @n3ural/office-mcp build
+          NODE_OPTIONS='--max-old-space-size=4096' pnpm run build
+
+  # ----------------------------------------------------------
+  # Stage 4 — E2E-Smoke (Playwright Login-Smoke; ADR D1/D2)
+  # Einhängepunkt Task 2.3 — Job lebt HIER, nicht in e2e-smoke.yml
+  # ----------------------------------------------------------
+  e2e-smoke:
+    name: e2e-smoke
+    needs: build
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: n3ural_ci
+          POSTGRES_USER: crm_admin
+          POSTGRES_PASSWORD: ci_test_password_only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Configure git token
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          CLEAN_TOKEN=$(printf '%s' "$GH_TOKEN" | tr -d '\n\r')
+          git config --global url."https://x-access-token:${CLEAN_TOKEN}@github.com/".insteadOf "https://github.com/"
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup test database
+        id: db
+        uses: ./.github/actions/setup-test-db
+        with:
+          postgres-password: ci_test_password_only
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run login smoke
+        # webServer-Block in playwright.config.ts startet den Dev-Server selbst.
+        env:
+          DATABASE_URL: ${{ steps.db.outputs.database-url }}
+          CI: "true"
+          E2E_SMOKE_EMAIL: ci-owner@example.test
+          E2E_SMOKE_PASSWORD: ci-owner-smoke-pw
+          # Dummy-Secret NUR für den ephemeren CI-Dev-Server (Auth.js MissingSecret-Fix).
+          # Kein echtes Secret nötig: Wegwerf-DB, synthetischer User, kein externer Zugriff.
+          AUTH_SECRET: ci-e2e-dummy-auth-secret-not-production
+          AUTH_TRUST_HOST: "true"
+          MULTI_TENANT_ENABLED: "true"
+        run: pnpm exec playwright test tests/e2e/login-smoke.spec.ts
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14

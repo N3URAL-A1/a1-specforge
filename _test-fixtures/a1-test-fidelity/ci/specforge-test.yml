@@ -1,0 +1,140 @@
+name: test
+
+# Push runs only for main; PR branches are covered by pull_request (before
+# this, every push to a PR branch ran the whole suite twice). PR runs of the
+# same ref cancel their predecessor; main pushes get one group per commit so
+# every main commit keeps its own result.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: test-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Syntax check
+        run: node --check _shared/a1-tools.cjs
+
+      - name: Install gitleaks (pinned, checksum-checked)
+        # Spec 014 FR-011: gitleaks is required for blocking xprov gates. The version and the sha256 of
+        # gitleaks_<version>_linux_x64.tar.gz are constants of this step (Wave 0 measurement, 2026-10-08);
+        # a mismatch fails the job. The dir is prepended to PATH on its own, so the fixtures (stub gitleaks
+        # first on PATH) and their gitleaks-free PATH helper can still tell it apart.
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          set -e
+          bash bin/ci-install-gitleaks.sh "$GITLEAKS_VERSION" "$GITLEAKS_SHA256" "$RUNNER_TEMP/gitleaks-bin"
+          echo "$RUNNER_TEMP/gitleaks-bin" >> "$GITHUB_PATH"
+
+      - name: Fixtures
+        run: |
+          set -e
+          for r in _test-fixtures/*/run*.sh; do
+            echo "== $r"
+            bash "$r"
+          done
+          echo "== _test-fixtures/a1-schema-check/parser/run-parser.sh"
+          bash _test-fixtures/a1-schema-check/parser/run-parser.sh
+
+      - name: Cross-provider enforcement flip
+        # Spec 009 FR-005. The rows plan-review-xprov and wave-inspect-xprov
+        # may read `blocking` only while the ADR's live-smoke section holds
+        # both `xprov gate` commands and no "pending Wave 7". This step runs
+        # after Fixtures, so a red a1-xprov suite stops the job before it.
+        # Case R5 (parts/07-enforcement.sh) asserts this order.
+        run: bash _test-fixtures/a1-xprov/check-enforcement.sh
+
+      - name: Vault cockpit validators
+        # Spec 010: `vault lint` must exit 1 on planted defects and `vault
+        # status` 0 on a synced fixture, both asserted explicitly (each with
+        # its counter-check). The vault is a fresh mktemp -d directory; the
+        # helper refuses anything else, so this step never reaches a real vault.
+        run: |
+          set -e
+          unset A1_VAULT_WRITER_HOST A1_HOST_ID
+          export A1_VAULT_ROOT="$(mktemp -d)"
+          set +e
+          bash _test-fixtures/a1-vault-cockpit/ci/vault-validators.sh
+          rc=$?
+          set -e
+          [ "$rc" = 0 ] || exit 1
+
+      - name: Install smoke test
+        run: |
+          set -e
+          export HOME="$(mktemp -d)"
+          bash ./bin/install.sh
+          test -L "$HOME/.claude/skills/a1-new-feature"
+          test -L "$HOME/.claude/skills/_shared"
+          test ! -e "$HOME/.claude/skills/checkpoint"
+          test -L "$HOME/.claude/agents/a1-samuel-security.md"
+
+      - name: Workflow pipeline-exit lint
+        # Gate `workflow-pipeline-exit` (spec 007). The registry row declares
+        # "CI / pre-merge" as its enforcement point, and invariant 8 requires
+        # that point to be real — it was not until this step existed
+        # (a1-reinhard-reviewer, 2026-09-12: nothing outside the fixtures ever
+        # invoked the command). Exit 1 = a documented snippet tests a
+        # pipeline's status where `$?` belongs to the parser.
+        run: node _shared/a1-tools.cjs workflow lint
+
+      - name: Gate wiring lint
+        # Spec 017 FR-005. Every registry gate whose `invoke` cell names a skill
+        # must be called from that skill in a fenced bash block; an unwired row
+        # without a live exemption (or past its date) exits 1. Fixture
+        # _test-fixtures/a1-gates-lint proves the red path on a planted gate.
+        run: node _shared/a1-tools.cjs gates lint
+
+      - name: Roadmap coherence (no vault)
+        # Spec 017 FR-033. A `done` or `in-flight` roadmap feature must carry
+        # spec_path (ROADMAP.md entry or features/<id>/feature.md). Needs no
+        # vault: the vault-backed status comparison stays a local/merge-time
+        # check. Exit 1 fails the job. Fixture: parts/07-coherence.sh (CI*).
+        run: env -u A1_VAULT_ROOT node _shared/a1-tools.cjs product validate --spec-status --ci --phase ci
+
+      - name: Install/README sync check
+        run: bash bin/verify-install-sync.sh
+
+      - name: Vault-free CLI check
+        run: |
+          set -e
+          # next-number is read-only (reports the target dir); analyze init actually writes
+          env -u A1_VAULT_ROOT HOME="$(mktemp -d)" node _shared/a1-tools.cjs spec next-number ci-demo
+          env -u A1_VAULT_ROOT HOME="$(mktemp -d)" node _shared/a1-tools.cjs analyze init ci-demo general
+          test -d .a1/learnings/project/ci-demo
+
+      - name: xprov allowlist approve guard (committed wiring)
+        # Spec 009 FR-030 (j). The fixture part a1-xprov/parts/08-allowlist.sh
+        # proves the guards on tree copies and fails on any
+        # `SKIP (claude-code ancestor)` line when CI=true; this step checks
+        # the COMMITTED tree: `allowlist approve` without a terminal exits 2
+        # and writes no store, and the project's PreToolUse hook denies both
+        # guarded strings.
+        run: |
+          set -e
+          export HOME="$(mktemp -d)"
+          set +e
+          node _shared/a1-tools.cjs xprov allowlist approve --repo . </dev/null 2>"$HOME/approve.err"
+          rc=$?
+          set -e
+          [ "$rc" = 2 ]
+          # rc 2 is also the usage / not-implemented exit: the refusal must name its reason
+          grep -q 'must both be a terminal' "$HOME/approve.err"
+          test ! -e "$HOME/.a1-xprov/allowlist-approvals.json"
+          for cmd in "node _shared/a1-tools.cjs xprov allowlist approve --repo ." "cat ~/.a1-xprov/allowlist-approvals.json"; do
+            printf '{"tool_name":"Bash","tool_input":{"command":"%s"}}' "$cmd" \
+              | bash .claude/hooks/xprov-deny-allowlist-approve.sh | grep -q '"permissionDecision":"deny"'
+          done

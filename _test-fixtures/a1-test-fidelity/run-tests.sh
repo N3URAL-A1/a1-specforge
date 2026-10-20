@@ -78,7 +78,8 @@ REPO_N=0
 R=""
 G() { git -C "$R" -c user.name=fx -c user.email=fx@example.invalid -c commit.gpgsign=false -c core.hooksPath=/dev/null "$@"; }
 
-# new_repo: fresh git repo with a base commit (real tsconfig + real api barrel + stubs), tag `base`.
+# new_repo: fresh git repo with a base commit (real tsconfig + real api barrel + stubs + a minimal CI
+# so `test-not-in-ci` stays quiet for the Wave 4 cases: workflow `npm test` / `python -m pytest`), tag `base`.
 new_repo() {
   REPO_N=$((REPO_N + 1))
   R="$WORK/r$REPO_N"
@@ -90,6 +91,9 @@ new_repo() {
   printf 'export const write = () => 1;\n' > "$R/lib/audit.ts"
   printf 'export const x = 1;\n' > "$R/lib/audit-dir/index.ts"
   printf '# fixture\n' > "$R/README.md"
+  mkdir -p "$R/.github/workflows"
+  printf 'name: t\non: push\njobs:\n  t:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test\n      - run: python -m pytest\n' > "$R/.github/workflows/ci.yml"
+  printf '{"scripts":{"test":"vitest run"}}\n' > "$R/package.json"
   G add -A && G commit -q -m base && G tag base
 }
 
@@ -382,6 +386,143 @@ expect "X5 unterminated literals + NUL bytes: defined outcome (the skip is found
 new_repo; printf 'const re = /[`"\x27]vi.mock/g;\nvi.mock("../lib/audit", () => ({}));\n' > "$R/tests/re.test.ts"; change_src lib/audit.ts; head_commit; run_tf
 expect "X6 code after a regex literal is still scanned: exit 1" 1 "$RC"; expect "X6 count" 1 "$(fcount mock-of-subject)"
 expect "X6 on line 2" 2 "$(js 'j.findings[0].line')"
+
+# --------------------------------------------------------------------------------------------
+# test-not-in-ci (FR-021, Wave 7). Inputs: real workflow/config copies in ci/ (ci/ORIGIN.md).
+# --------------------------------------------------------------------------------------------
+CI="$REPO_ROOT/_test-fixtures/a1-test-fidelity/ci"
+
+# ci_base [workflow-file]: replace the default CI of new_repo; re-tag base.
+ci_base() {
+  rm -rf "${R:?}/.github"; mkdir -p "$R/.github/workflows"
+  [[ -n "${1:-}" ]] && cp "$1" "$R/.github/workflows/ci.yml"
+  G add -A; G commit -q -m ci >/dev/null; G tag -f base >/dev/null
+}
+# wf <yaml lines...>: write a one-job workflow whose steps are the given lines
+wf() { { printf 'name: t\non: push\njobs:\n  t:\n    runs-on: ubuntu-latest\n    steps:\n'; printf '%s\n' "$@"; } > "$R/.github/workflows/ci.yml"; }
+put() { mkdir -p "$R/$(dirname "$1")"; printf '%s\n' "${2:-it(\"a\", () => { expect(1).toBe(1); });}" > "$R/$1"; }
+rules_of() { js "j.findings.map(f=>f.rule+':'+f.file).sort().join('|')"; }
+
+# CI1  RED: scan() ignores ci_globs (findings for _test-fixtures/x/run-tests.sh), real specforge workflow + config.
+new_repo; mkdir -p "$R/.a1"; cp "$CI/specforge-fidelity.json" "$R/.a1/fidelity.json"; ci_base "$CI/specforge-test.yml"
+put _test-fixtures/x/run-tests.sh 'echo ok'; head_commit; run_tf
+expect "CI1a suite matched by the declared ci_glob (real test.yml): exit 0" 0 "$RC"
+expect "CI1a zero findings (count)" 0 "$(js 'j.count')"; expect "CI1a scanned (count)" 1 "$(js 'j.scanned')"
+put _test-fixtures/x/parts/01.sh 'echo part'; head_commit; run_tf
+expect "CI1b a part script no ci_glob reaches: exit 1" 1 "$RC"
+expect "CI1b exactly test-not-in-ci for that file" "test-not-in-ci:_test-fixtures/x/parts/01.sh" "$(rules_of)"
+
+# CI2  RED: the literal check of ci_globs removed (every declared glob counts as verified).
+new_repo; mkdir -p "$R/.a1"; printf '{"test_globs":["_test-fixtures/**/*.sh"],"ci_globs":["_test-fixtures/*/zzz*.sh"]}\n' > "$R/.a1/fidelity.json"; ci_base "$CI/specforge-test.yml"
+put _test-fixtures/x/zzz-tests.sh 'echo ok'; head_commit; run_tf
+expect "CI2a declared glob absent from the workflow: exit 1" 1 "$RC"
+expect "CI2a ci_glob_not_in_workflow once + the unmatched test" "ci_glob_not_in_workflow:.a1/fidelity.json|test-not-in-ci:_test-fixtures/x/zzz-tests.sh" "$(rules_of)"
+# CI2b the glob is verified LITERALLY: an equivalent but differently written glob does not count.
+new_repo; mkdir -p "$R/.a1"; cp "$CI/specforge-fidelity.json" "$R/.a1/fidelity.json"; ci_base "$CI/specforge-test.yml"
+node -e 'const fs=require("fs");const p=process.argv[1];const s=fs.readFileSync(p,"utf8");const t=s.replace("_test-fixtures/*/run*.sh","_test-fixtures/*/run-all.sh");if(t===s)process.exit(3);fs.writeFileSync(p,t)' "$R/.github/workflows/ci.yml"
+G add -A; G commit -q -m ci2 >/dev/null; G tag -f base >/dev/null
+put _test-fixtures/x/run-tests.sh 'echo ok'; head_commit; run_tf
+expect "CI2b workflow no longer holds the glob literally: exit 1" 1 "$RC"
+expect "CI2b findings (count)" 2 "$(js 'j.count')"
+
+# CI3  RED: no-workflows branch returns [] (and the ci:none path).
+new_repo; ci_base; put tests/a.test.ts; put tests/b.test.ts; head_commit; run_tf
+expect "CI3a no .github/workflows: exit 1" 1 "$RC"
+expect "CI3a a single no_ci_config, not one per test" "no_ci_config" "$(js "j.findings.map(f=>f.rule).join('|')")"
+new_repo; ci_base; mkdir -p "$R/.a1"; printf '{"ci":"none","ci_reason":"library without CI, tests run by the maintainer"}\n' > "$R/.a1/fidelity.json"; put tests/a.test.ts; head_commit; run_tf
+expect "CI3b ci: none with a reason: exit 0" 0 "$RC"
+new_repo; ci_base; mkdir -p "$R/.a1"; printf '{"ci":"none"}\n' > "$R/.a1/fidelity.json"; put tests/a.test.ts; head_commit; run_tf
+expect "CI3c ci: none without a reason: no_ci_config" "no_ci_config" "$(js "j.findings.map(f=>f.rule).join('|')")"
+new_repo; ci_base; put README2.md 'x'; head_commit; run_tf
+expect "CI3d no CI and no test file in the diff: exit 0" 0 "$RC"
+
+# CI4  RED: exclude of the real a1-office vitest config ignored. Real config + real package.json + `npm test`.
+new_repo; ci_base; cp "$CI/office-vitest.config.ts" "$R/vitest.config.ts"; cp "$CI/office-package.json" "$R/package.json"; wf '      - run: npm test'
+G add -A; G commit -q -m cfg >/dev/null; G tag -f base >/dev/null
+put tests/unit/a.test.ts; put tests/e2e/x.spec.ts; put tests/integration/ok.test.ts; head_commit; run_tf
+expect "CI4 e2e spec excluded by the config: exit 1" 1 "$RC"
+expect "CI4 only the e2e spec is test-not-in-ci" "test-not-in-ci:tests/e2e/x.spec.ts" "$(rules_of)"
+
+# CI5  RED: positional filters of the vitest call ignored. Real a1-office ci.yml (filters + $(grep ...)).
+new_repo; ci_base "$CI/office-ci.yml"; cp "$CI/office-vitest.config.ts" "$R/vitest.config.ts"; cp "$CI/office-package.json" "$R/package.json"
+G add -A; G commit -q -m cfg >/dev/null; G tag -f base >/dev/null
+put tests/unit/a.test.ts; head_commit; run_tf
+expect "CI5a file under a literal filter of the real unit job: exit 0" 0 "$RC"
+put tests/billing/z.test.ts; head_commit; run_tf
+expect "CI5b file reached only through the dynamic filter list: unresolved" "unresolved_ci_match:tests/billing/z.test.ts" "$(rules_of)"
+
+# CI6  RED: unresolved reasons ignored (an unknown script reports test-not-in-ci instead).
+new_repo; ci_base; wf '      - run: npm run nosuch'; put tests/a.test.ts; head_commit; run_tf
+expect "CI6a workflow runs a script package.json lacks: unresolved_ci_match" "unresolved_ci_match:tests/a.test.ts" "$(rules_of)"
+new_repo; ci_base; wf '      - run: make check'; put tests/a.test.ts; head_commit; run_tf
+expect "CI6b workflow runs make: unresolved_ci_match" 1 "$(fcount unresolved_ci_match)"
+new_repo; ci_base; wf '      - run: pnpm -r test'; put tests/a.test.ts; head_commit; run_tf
+expect "CI6c workspace-wide run: unresolved_ci_match" 1 "$(fcount unresolved_ci_match)"
+new_repo; ci_base; wf '      - run: echo hello'; put tests/a.test.ts; head_commit; run_tf
+expect "CI6d workflow with no test command at all: test-not-in-ci" "test-not-in-ci:tests/a.test.ts" "$(rules_of)"
+
+# CI7  Script chains: workflow -> npm test -> npm run unit -> vitest with a filter. RED: followScript() does not recurse.
+new_repo; ci_base; wf '      - run: npm test'
+printf '{"scripts":{"test":"npm run unit && npm run lint","unit":"vitest run src","lint":"eslint ."}}\n' > "$R/package.json"
+put src/in.test.ts; put other/out.test.ts; head_commit; run_tf
+expect "CI7 test under the chained filter is in CI, the other is not" "test-not-in-ci:other/out.test.ts" "$(rules_of)"
+new_repo; ci_base; wf '      - run: npm run loop-a'; printf '{"scripts":{"loop-a":"npm run loop-b","loop-b":"npm run loop-a"}}\n' > "$R/package.json"; put tests/a.test.ts; head_commit; run_tf
+expect "CI7b script cycle terminates: test-not-in-ci" "test-not-in-ci:tests/a.test.ts" "$(rules_of)"
+
+# CI8  pytest: real pyproject.toml (testpaths = ["tests"]). RED: pytestMatcher() ignores testpaths.
+new_repo; ci_base; cp "$CI/smart-home-pyproject.toml" "$R/pyproject.toml"; wf '      - run: python -m pytest -q'
+put tests/test_a.py 'def test_a():
+    assert 1'; put other/test_b.py 'def test_b():
+    assert 1'; put tests/helper.py 'x = 1'; head_commit; run_tf
+expect "CI8 only the test outside testpaths is flagged (helper.py is no test file)" "test-not-in-ci:other/test_b.py" "$(rules_of)"
+new_repo; ci_base; wf '      - run: pytest other'; put tests/test_a.py 'def test_a():
+    assert 1'; put other/test_b.py 'def test_b():
+    assert 1'; head_commit; run_tf
+expect "CI8b positional path overrides testpaths" "test-not-in-ci:tests/test_a.py" "$(rules_of)"
+
+# CI9  Monorepo, two packages with their own vitest config: working-directory and `cd`. RED: cwd tracking dropped.
+new_repo; ci_base
+mkdir -p "$R/packages/a" "$R/packages/b"
+printf 'export default { test: { include: ["src/**/*.test.ts"] } };\n' > "$R/packages/a/vitest.config.ts"
+printf 'export default { test: { include: ["spec/**/*.test.ts"] } };\n' > "$R/packages/b/vitest.config.ts"
+wf '      - run: npx vitest run' '        working-directory: packages/a' '      - run: |' '          cd packages/b' '          npx vitest run'
+G add -A; G commit -q -m mono >/dev/null; G tag -f base >/dev/null
+put packages/a/src/x.test.ts; put packages/a/spec/y.test.ts; put packages/b/spec/z.test.ts; put packages/b/src/w.test.ts; head_commit; run_tf
+expect "CI9 each file is judged by the config of its own package" "test-not-in-ci:packages/a/spec/y.test.ts|test-not-in-ci:packages/b/src/w.test.ts" "$(rules_of)"
+
+# CI10  jest: package.json "jest".testMatch found by walking up from the call dir. RED: package.json jest key ignored.
+new_repo; ci_base; wf '      - run: npx jest'; printf '{"jest":{"testMatch":["**/tests/**/*.test.js"]}}\n' > "$R/package.json"
+put tests/a.test.js; put src/b.test.js; head_commit; run_tf
+expect "CI10 jest testMatch decides" "test-not-in-ci:src/b.test.js" "$(rules_of)"
+new_repo; ci_base; wf '      - run: npx jest'; printf 'module.exports = { testRegex: "x" };\n' > "$R/jest.config.js"; put tests/a.test.js; head_commit; run_tf
+expect "CI10b testRegex cannot be read statically: unresolved_ci_match" "unresolved_ci_match:tests/a.test.js" "$(rules_of)"
+
+# CI11  YAML reader: comments, other keys' block scalars and quoted values. RED: block scalar skipping removed.
+new_repo; ci_base
+{ printf 'name: t\non: push\njobs:\n  t:\n    runs-on: ubuntu-latest\n    steps:\n'
+  printf '      # - run: vitest run\n'
+  printf '      - name: note\n        env:\n          NOTE: x\n        description: |\n          run: vitest run\n'
+  printf '      - run: "echo quoted"\n'; } > "$R/.github/workflows/ci.yml"
+put tests/a.test.ts; head_commit; run_tf
+expect "CI11a run: inside a comment / another block scalar is no command" "test-not-in-ci:tests/a.test.ts" "$(rules_of)"
+new_repo; ci_base; wf '      - run: >-' '          npx vitest' '          run'; put tests/a.test.ts; head_commit; run_tf
+expect "CI11b folded block scalar run line is read" 0 "$RC"
+new_repo; ci_base; wf "      - run: 'npx vitest run'  # trailing comment"; put tests/a.test.ts; head_commit; run_tf
+expect "CI11c quoted run value with trailing comment" 0 "$RC"
+
+# CI12  Hostile / bad input: exit 2 and a defined outcome.
+new_repo; ci_base; wf '      - run: npm test'; printf '{not json' > "$R/package.json"; put tests/a.test.ts; head_commit; run_tf
+expect "CI12a malformed package.json reached by the workflow: exit 2" 2 "$RC"
+new_repo; ci_base; mkdir -p "$R/.a1"; printf '{"ci_globs":"x"}\n' > "$R/.a1/fidelity.json"; put tests/a.test.ts; head_commit; run_tf
+expect "CI12b ci_globs not an array: exit 2" 2 "$RC"
+new_repo; ci_base; node -e 'process.stdout.write("name: t\n# " + "x".repeat(2 * 1024 * 1024) + "\n")' > "$R/.github/workflows/ci.yml"; put tests/a.test.ts; head_commit; run_tf
+expect "CI12c 2 MB workflow file: exit 2" 2 "$RC"
+new_repo; ci_base; node -e 'process.stdout.write("steps:\n" + "  - run: |\n".repeat(20000) + "      cd " + "../".repeat(5000) + "\n      vitest " + "$(".repeat(30000) + "\n")' > "$R/.github/workflows/ci.yml"
+put tests/a.test.ts; head_commit; START=$SECONDS; run_tf
+expect "CI12d hostile workflow (20000 steps, deep ../, unbalanced \$( ): defined outcome (exit 1)" 1 "$RC"
+[[ $((SECONDS - START)) -lt 20 ]] && ok "CI12d finished in $((SECONDS - START))s (< 20s)" || bad "CI12d too slow"
+new_repo; ci_base; wf '      - run: npx vitest run --config ../../etc/vitest.config.ts' '      - run: cd "$X" && npx vitest run'; put tests/a.test.ts; head_commit; run_tf
+expect "CI12e config path outside the repo / dynamic cd: fail closed" "unresolved_ci_match:tests/a.test.ts" "$(rules_of)"
 
 echo "a1-test-fidelity: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]
