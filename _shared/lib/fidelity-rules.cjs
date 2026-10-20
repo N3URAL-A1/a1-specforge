@@ -10,6 +10,7 @@
 
 const { isWordChar } = require('./fidelity-tokenizer.cjs');
 const { subjectFiles } = require('./fidelity-resolve.cjs');
+const { testNotInCi } = require('./fidelity-ci.cjs');
 
 const DEFAULT_DB_WRAPPERS = ['withTenantContext', 'pool', 'db', 'query'];
 const MAX_SCAN_SPAN = 200000;
@@ -311,7 +312,7 @@ function earlyReturnGuard(t) {
 /** Per-file rules, run on every touched test file. */
 const FILE_RULES = [mockOfSubject, skippedTest, earlyReturnGuard];
 
-/** Repo-level rules (slot for `test-not-in-ci`, spec 017 wave 7). Each takes ctx and returns findings. */
-const REPO_RULES = [];
+/** Repo-level rules (`test-not-in-ci` and its sub-findings, spec 017 wave 7). Each takes ctx and returns findings. */
+const REPO_RULES = [testNotInCi];
 
 module.exports = { FILE_RULES, REPO_RULES, DEFAULT_DB_WRAPPERS, matchParen, argStarts, objectKeys };
