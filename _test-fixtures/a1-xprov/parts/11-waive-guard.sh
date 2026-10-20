@@ -131,7 +131,9 @@ caseW() {
     skip11 "W5 owner waiver for the plan gate"; skip11 "W6 wrong typed gate id"; skip11 "W7 owner waiver for a wave"; skip11 "W8 atomic second write"
     return 0
   fi
-  prep11
+  # spec 016 FR-012: a repo WITHOUT a permit is not_applicable and load-check accepts that before it looks at any waiver; the waiver path
+  # (FR-007) is only exercised in a permitted repo, so p11 gets a permit (CI on Linux without a claude ancestor found this, 2026-10-20)
+  prep11; write_permit "$PHASE_REPO"
   PTY_TYPED="$GATE_PLAN" pty11 "${NOCLAUDE11[@]}" sh -c 'cd "$1" && node "$2" xprov waive --phase p11 --gate "$3" --reason "codex quota" --by owner-fixture' sh "$PHASE_REPO" "$tools" "$GATE_PLAN"; rc=$?
   assert_rc "W5 owner waiver (gate id typed back) → exit 0" 0 "$rc"
   assert_json "W5 the store record's key equals the spec's computation" "$(cat "$STORE11" 2>/dev/null || echo '{}')" \
@@ -162,6 +164,7 @@ caseW() {
     "(j.waivers.find((w) => w.gate === '$GATE_WAVE') || {}).head + '/' + (j.waivers.find((w) => w.gate === '$GATE_WAVE') || {}).base" "$h7/$PHASE_HEAD"
   ( cd "$PHASE_REPO" && node "$tools" xprov wave-status --phase p11 >/dev/null 2>&1 ); rc=$?
   assert_rc "W7 wave-status exit 0 on the store waiver" 0 "$rc"
+  assert_json "W7 …accepted through the waiver: the wave is not reported not_applicable" "$(cd "$PHASE_REPO" && node "$tools" xprov wave-status --phase p11 2>/dev/null)" "[(j.not_applicable || []).length, j.lacking.length].join('/')" "0/0"
   [[ "$(ls -i "$STORE11" | awk '{print $1}')" != "$ino" ]] && ok "W8 the second write replaced the file (temp + rename)" || bad "W8 the store was written in place"
   assert_json "W8 the first record survives" "$(cat "$STORE11")" "j.waivers.map((w) => w.gate).join(',')" "$GATE_PLAN,$GATE_WAVE"
 }
