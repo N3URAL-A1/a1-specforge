@@ -189,11 +189,11 @@ features:
   - id: 017-enforced-self-checks
     milestone: continuous
     title: "Enforced self-checks: gates that really run, verifier reads exit codes, test fidelity, defect-class sweep"
-    status: planned
-    stage: null
+    status: in-flight
+    stage: started
     depends_on:
       - 016-xprov-autonomy
-    started: null
+    started: 2026-10-20
     finished: null
     spec_path: project/a1-specforge/spec/017-enforced-self-checks.md
     plan_path: project/a1-specforge/plans/017-enforced-self-checks-wave-plan.md
@@ -363,6 +363,7 @@ None.
 - **2026-10-20** — 016-xprov-autonomy -> origin-cleanup — stage transition via `product stage`
 - **2026-10-20** — 019-depth-pass-planning -> merge — stage transition via `product stage`
 - **2026-10-20** — 019-depth-pass-planning -> origin-cleanup — stage transition via `product stage`
+- **2026-10-20** — 017-enforced-self-checks -> started — stage transition via `product stage`
 
 ## Appendix — migrated details
 
