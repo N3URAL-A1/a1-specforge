@@ -25,7 +25,7 @@ fi
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "ci-install-gitleaks: version must look like 8.30.1 (got: $VERSION)" >&2; exit 2; }
 [[ "$EXPECTED" =~ ^[0-9a-f]{64}$ ]] || { echo "ci-install-gitleaks: sha256 must be 64 lowercase hex characters" >&2; exit 2; }
 
-WORK="$(mktemp -d)"
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/a1-gitleaks-install.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
 
 if [[ -n "$ARCHIVE" ]]; then
