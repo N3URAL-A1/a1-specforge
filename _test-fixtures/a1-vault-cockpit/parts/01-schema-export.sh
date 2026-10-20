@@ -15,7 +15,7 @@ S_RC=$?
 # Red-making change: changing any value in SPEC_STATUSES (or any exported
 # set) without regenerating the golden — SC-010 first half.
 caseS1() {
-  local tmp; tmp="$(mktemp)"
+  local tmp; mk_tmpfile tmp tmp
   node "$TOOLS" schema export --json > "$tmp" 2>/dev/null
   assert_rc "S1a schema export --json exits 0" 0 "$S_RC"
   if [[ -f "$GOLDEN" ]] && cmp -s "$tmp" "$GOLDEN"; then ok "S1b export bytes equal golden/schema-export.v1.json"
@@ -31,7 +31,7 @@ caseS2() { assert_json "S2 contract_version is the literal 1" "$S_OUT" "j.contra
 # ---------- S3 deterministic: two runs are byte-identical ----------
 # Red-making change: adding a `generated: nowIso()` key to the export.
 caseS3() {
-  local a b; a="$(mktemp)"; b="$(mktemp)"
+  local a b; mk_tmpfile a a; mk_tmpfile b b
   node "$TOOLS" schema export --json > "$a" 2>/dev/null
   node "$TOOLS" schema export --json > "$b" 2>/dev/null
   if cmp -s "$a" "$b"; then ok "S3 two runs produce identical bytes"; else bad "S3 two runs differ"; fi
@@ -95,7 +95,7 @@ caseS8() {
 caseS9() {
   assert_json "S9a size_values is the literal [S,M,L]" "$S_OUT" "JSON.stringify(j.size_values)" '["S","M","L"]'
   local work rc
-  work="$(mktemp -d)"
+  mk_workdir work work
   mkdir -p "$work/vault/project/demo/spec"
   printf -- '---\nid: 001-demo\nstatus: draft\nsize: null\n---\n\n# Demo\n' > "$work/vault/project/demo/spec/001-demo.md"
   A1_VAULT_ROOT="$work/vault" node "$TOOLS" spec set-size project/demo/spec/001-demo.md XL >/dev/null 2>&1; rc=$?
@@ -113,7 +113,7 @@ caseS10() {
   assert_json "S10b project_statuses is the literal [active,paused,done]" "$S_OUT" \
     "JSON.stringify(j.project_statuses)" '["active","paused","done"]'
   local work rc
-  work="$(mktemp -d)"
+  mk_workdir work work
   node "$TOOLS" product init --project s10demo --title "S10 Demo" --dir "$work/docs" >/dev/null 2>&1
   sed -i.bak 's/^status: active$/status: paused/' "$work/docs/ROADMAP.md" && rm -f "$work/docs/ROADMAP.md.bak"
   node "$TOOLS" product validate --dir "$work/docs" >/dev/null 2>&1; rc=$?

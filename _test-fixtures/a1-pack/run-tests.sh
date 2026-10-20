@@ -3,6 +3,7 @@
 # Covers: validate (valid/missing-field/executable-checks), import (staged +
 # idempotent re-import), export (anonymization deny-regex leak).
 set -u
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$DIR/../.." && pwd)"
@@ -52,8 +53,7 @@ expect_grep "validate rejects executable payload" "executable payloads" \
   node "$TOOLS" pack validate "$DIR/executable-checks-pack"
 
 # --- import (staged in a temp repo) ---
-TMP_REPO="$(mktemp -d)"
-trap 'rm -rf "$TMP_REPO" "$TMP_VAULT"' EXIT
+mk_workdir TMP_REPO tmp_repo
 expect_rc "import valid-pack → 0 (staged)" 0 \
   node "$TOOLS" pack import "$DIR/valid-pack" --dest "$TMP_REPO"
 if [[ -f "$TMP_REPO/.a1/packs/valid-pack/pack.yaml" ]]; then
@@ -74,7 +74,7 @@ expect_grep "re-import reports idempotent" "idempotent" \
   node "$TOOLS" pack import "$DIR/valid-pack" --dest "$TMP_REPO"
 
 # --- export: planted /Users/rob leak must abort with exit 1 ---
-TMP_VAULT="$(mktemp -d)"
+mk_workdir TMP_VAULT tmp_vault
 mkdir -p "$TMP_VAULT/pattern/a1-learnings"
 cat > "$TMP_VAULT/pattern/a1-learnings/patterns.md" <<'EOF'
 ---

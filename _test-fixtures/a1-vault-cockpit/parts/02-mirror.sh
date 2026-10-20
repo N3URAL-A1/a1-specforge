@@ -47,7 +47,7 @@ rel_files() { (cd "$1" 2>/dev/null && find . -type f | sed 's#^\./##' | LC_ALL=C
 
 mtime_ns() { python3 -c "import os, sys; print(os.stat(sys.argv[1]).st_mtime_ns)" "$1"; }
 
-M_WORK="$(mktemp -d)"
+mk_workdir M_WORK m_work
 M_REPO="$M_WORK/repo"; M_VAULT="$M_WORK/vault"; M_SLUG="demo"
 make_mirror_repo "$M_REPO"; make_mirror_vault "$M_VAULT" "$M_SLUG"
 cp "$M_VAULT/project/$M_SLUG.md" "$M_WORK/hub.before"
@@ -147,7 +147,7 @@ caseM5() {
 # shape a real directory can carry.
 caseM6() {
   local w r v out rc lines
-  w="$(mktemp -d)"; r="$w/repo"; v="$w/vault"
+  mk_workdir w w; r="$w/repo"; v="$w/vault"
   make_mirror_repo "$r"; make_mirror_vault "$v" demo
   mkdir -p "$r/.a1/phases/bad\\phase"; printf '# evil\n' > "$r/.a1/phases/bad\\phase/GOAL.md"
   out="$(node "$M_HARNESS" --repo "$r" --vault "$v" --slug demo 2>"$w/stderr")"; rc=$?
@@ -206,7 +206,7 @@ caseM8() {
 # object (a caller's mutation would then leak into the next call).
 caseM9() {
   local w out err
-  w="$(mktemp -d)"
+  mk_workdir w w
   out="$(A1_VAULT_ROOT="$w/v" IO_LIB="$M_IO" node -e "
     const io = require(process.env.IO_LIB);
     const info = io.vaultRootInfo(); const root = io.vaultRoot();

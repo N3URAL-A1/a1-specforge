@@ -18,6 +18,7 @@
 # change that turns it red (wave plan's W1-W8 table).
 
 set -u
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TOOLS="$REPO_ROOT/_shared/a1-tools.cjs"
@@ -34,7 +35,7 @@ bad() { results+=("FAIL  $1"); fail=$((fail + 1)); }
 # Red-making change: removing the `$?`-after-pipe predicate.
 caseW1() {
   local work out rc file_ok line_ok
-  work="$(mktemp -d)"
+  mk_workdir work work
   mkdir -p "$work/skills/a1-fake/workflows"
   cp "$SNIPPETS/w1-piped-dollar-question.md" "$work/skills/a1-fake/workflows/01-collect.md"
   out="$(node "$TOOLS" workflow lint --root "$work" 2>/dev/null)"; rc=$?
@@ -58,7 +59,7 @@ caseW1() {
 # Red-making change: widening the matcher to any pipe near a status test.
 caseW2() {
   local work out rc flagged
-  work="$(mktemp -d)"
+  mk_workdir work work
   mkdir -p "$work/skills/a1-fake/workflows"
   cp "$SNIPPETS/w2-corrected-capture-then-check.md" "$work/skills/a1-fake/workflows/01-collect.md"
   out="$(node "$TOOLS" workflow lint --root "$work" 2>/dev/null)"; rc=$?
@@ -78,7 +79,7 @@ caseW2() {
 # (W1 stays green) if this regresses.
 caseW3() {
   local work out rc flagged
-  work="$(mktemp -d)"
+  mk_workdir work work
   mkdir -p "$work/skills/a1-fake/workflows"
   cp "$SNIPPETS/w3-value-default-not-flagged.md" "$work/skills/a1-fake/workflows/03-verify.md"
   out="$(node "$TOOLS" workflow lint --root "$work" 2>/dev/null)"; rc=$?
@@ -97,7 +98,7 @@ caseW3() {
 # Red-making change: implementing only the `$?` form.
 caseW4() {
   local work out rc flagged
-  work="$(mktemp -d)"
+  mk_workdir work work
   mkdir -p "$work/skills/a1-fake/workflows"
   cp "$SNIPPETS/w4-pipe-then-exit.md" "$work/skills/a1-fake/workflows/02-cluster.md"
   out="$(node "$TOOLS" workflow lint --root "$work" 2>/dev/null)"; rc=$?
@@ -116,7 +117,7 @@ caseW4() {
 # Red-making change: scanning the whole file instead of fenced blocks only.
 caseW5() {
   local work out rc flagged
-  work="$(mktemp -d)"
+  mk_workdir work work
   mkdir -p "$work/skills/a1-fake/workflows"
   cp "$SNIPPETS/w5-prose-immunity.md" "$work/skills/a1-fake/workflows/01-collect.md"
   out="$(node "$TOOLS" workflow lint --root "$work" 2>/dev/null)"; rc=$?
@@ -167,8 +168,8 @@ caseW7() {
 # exit 2, nothing executed, no hang.
 caseW8() {
   local home canary rc1 rc2 rc3 work timed_out child_pid rc_file big
-  home="$(mktemp -d)"; canary="$home/pwned"
-  work="$(mktemp -d)"
+  mk_workdir home home; canary="$home/pwned"
+  mk_workdir work work
 
   # (a) traversal-shaped --root that resolves to a real file, not a directory
   # (mirrors V9's "reach a distinct real branch" lesson: pick a target that
@@ -223,7 +224,7 @@ caseW8() {
 # for goes unflagged again.
 caseW9() {
   local work out rc found
-  work="$(mktemp -d)"
+  mk_workdir work work
   mkdir -p "$work/skills/a1-evolve/workflows"
   cp "$SNIPPETS/w9-real-2026-09-11-from-git.md" "$work/skills/a1-evolve/workflows/01-collect.md"
   out="$(node "$TOOLS" workflow lint --root "$work" 2>/dev/null)"; rc=$?
@@ -249,7 +250,7 @@ caseW9() {
 # Red-making change: removing the `flags._.length > 0` guard in cmdWorkflowLint.
 caseW10() {
   local work rc_typo rc_ok scanned
-  work="$(mktemp -d)"
+  mk_workdir work work
   mkdir -p "$work/skills/a-fake/workflows"
   printf '# no bash fence here\n' > "$work/skills/a-fake/workflows/01-x.md"
 
@@ -285,7 +286,7 @@ caseW10() {
 
 copySkills() {
   local work
-  work="$(mktemp -d)"
+  mk_workdir work work
   cp -R "$REPO_ROOT/skills" "$work/skills"
   printf '%s' "$work"
 }

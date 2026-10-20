@@ -20,6 +20,7 @@
 # count (usage text is no JSON); making lint ignore a planted class fails it too.
 
 set -u
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)/tmp.sh" || exit 2
 
 REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 TOOLS="$REPO_ROOT/_shared/a1-tools.cjs"
@@ -36,8 +37,7 @@ case "$VAULT" in
 esac
 [[ -z "$(ls -A "$VAULT")" ]] || fail "A1_VAULT_ROOT is not empty: $VAULT"
 
-WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK"' EXIT
+mk_workdir WORK work
 mkdir -p "$WORK/home" "$WORK/code"
 export HOME="$WORK/home"
 export A1_CODE_ROOTS="$WORK/code"

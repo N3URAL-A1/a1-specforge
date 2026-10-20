@@ -20,7 +20,7 @@
 # `stage: null`). K0 additionally runs against a COPY of this repo's own
 # ROADMAP.md.
 
-C_WORK="$(mktemp -d)"
+mk_workdir C_WORK c_work
 mkdir -p "$C_WORK/home" "$C_WORK/noroots"
 
 # c_roadmap <file> <feature-id> <status> <spec_path|null> — schema-v1 roadmap

@@ -21,7 +21,7 @@
 # the named mutations (Wave 3 report) each turn their case red, except the
 # plain-unlink one, which C17 documents as unreachable defence in depth.
 
-C_WORK="$(mktemp -d)"
+mk_workdir C_WORK c_work
 C_HOME="$C_WORK/home"; C_CODE="$C_WORK/code"; C_ERR="$C_WORK/stderr"
 mkdir -p "$C_HOME" "$C_CODE"
 C_OUT=""; C_RC=0

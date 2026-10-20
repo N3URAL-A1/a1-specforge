@@ -29,6 +29,7 @@
 #   stale .planning/ vs newer evidence -> newest evidence wins            (FR-020)
 #   conflict resolution appends a discrepancy changelog line              (FR-020)
 set -u
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
 
 # Spec 010 Wave 4: every product writer mirrors docs/product into A1_VAULT_ROOT.
 # A fixture must never reach the developer's real vault, and its expectations
@@ -66,7 +67,7 @@ assert_true() {
   fi
 }
 
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-adopt-test.XXXXXX")"
+mk_workdir WORK "a1-product-adopt-test"
 
 # ============================================================================
 # Scenario A — synthetic brownfield project exercising the full evidence

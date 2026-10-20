@@ -38,6 +38,7 @@
 # a positive assertion in the same case that was red.
 
 set -u
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
 
 # Spec 010 Wave 4: every product writer mirrors docs/product into A1_VAULT_ROOT.
 # A fixture must never reach the developer's real vault, and its expectations
@@ -77,7 +78,7 @@ assert_eq() {
 # `j` bound to the parsed JSON and prints the result (strings verbatim, else
 # JSON). The JSON travels through a TEMP FILE, never as an argv element (a
 # > 64 KiB argv blew ARG_MAX in CI). Unparseable JSON prints UNPARSEABLE.
-JSON_TMP="$(mktemp -d)"
+mk_workdir JSON_TMP json_tmp
 json_get() {
   local file="$JSON_TMP/json.$$.$RANDOM"
   printf '%s' "$1" > "$file"

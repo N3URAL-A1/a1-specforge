@@ -5,13 +5,13 @@
 # singular add-finding regression. Self-cleaning: works in a temp dir.
 
 set -u
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TOOLS="$REPO_ROOT/_shared/a1-tools.cjs"
 FIX="$REPO_ROOT/_test-fixtures/a1-analyze-cli"
 
-TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+mk_workdir TMP tmp
 
 pass=0
 fail=0

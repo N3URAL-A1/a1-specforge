@@ -12,6 +12,7 @@
 # injection-shaped body text, oversized body) per CONVENTIONS.md.
 
 set -u
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TOOLS="$REPO_ROOT/_shared/a1-tools.cjs"
@@ -44,7 +45,7 @@ assert_rc() {
   fi
 }
 
-WORK="$(mktemp -d)"
+mk_workdir WORK work
 VAULT="$WORK/vault"
 mkdir -p "$VAULT"
 

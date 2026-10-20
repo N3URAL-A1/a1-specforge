@@ -10,7 +10,7 @@
 # W14 and W16 let `vault writer` write a hub (class 3). The key line the
 # command must produce is typed here as a literal, never read from the module.
 
-X_WORK="$(mktemp -d)"
+mk_workdir X_WORK x_work
 X_HOME="$X_WORK/home"; X_ERR="$X_WORK/stderr"
 mkdir -p "$X_HOME"
 X_OUT=""; X_RC=0

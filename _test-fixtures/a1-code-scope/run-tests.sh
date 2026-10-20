@@ -10,6 +10,7 @@
 #   check (dry-run) does not write   -> 0/1, file untouched
 #   works in a non-git tmp dir       -> 0 (no git assumptions anywhere)
 set -u
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$DIR/../.." && pwd)"
@@ -20,7 +21,7 @@ fail=0
 
 # Use a tmp dir explicitly OUTSIDE any git repo to prove determinism (no git
 # reads anywhere in the code-scope path).
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/a1-code-scope-test.XXXXXX")"
+mk_workdir WORK "a1-code-scope-test"
 FILE="$WORK/reservations.json"
 
 assert_rc() {

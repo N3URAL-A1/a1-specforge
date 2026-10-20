@@ -22,6 +22,7 @@
 #   (b) only .a1/roadmap.md present          -> gate passes via fallback
 #   (c) neither present                      -> gate reports MISSING/HALT
 set -u
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
 
 # Spec 010 Wave 4: every product writer mirrors docs/product into A1_VAULT_ROOT.
 # A fixture must never reach the developer's real vault, and its expectations
@@ -144,7 +145,7 @@ project: fixture
 '
 
 # --- (a) only docs/product/ROADMAP.md present -> gate passes preferring it ---
-WORK_A="$(mktemp -d)"
+mk_workdir WORK_A work_a
 mkdir -p "$WORK_A/docs/product"
 printf '%s' "$VALID_ROADMAP_DOCS" > "$WORK_A/docs/product/ROADMAP.md"
 
@@ -166,7 +167,7 @@ fi
 rm -rf "$WORK_A"
 
 # --- (b) only .a1/roadmap.md present -> gate passes via fallback ---
-WORK_B="$(mktemp -d)"
+mk_workdir WORK_B work_b
 mkdir -p "$WORK_B/.a1"
 printf '%s' "$VALID_ROADMAP_LEGACY" > "$WORK_B/.a1/roadmap.md"
 
@@ -188,7 +189,7 @@ fi
 rm -rf "$WORK_B"
 
 # --- (b2) both present -> docs/product/ still wins (preference, not just fallback) ---
-WORK_B2="$(mktemp -d)"
+mk_workdir WORK_B2 work_b2
 mkdir -p "$WORK_B2/docs/product" "$WORK_B2/.a1"
 printf '%s' "$VALID_ROADMAP_DOCS" > "$WORK_B2/docs/product/ROADMAP.md"
 printf '%s' "$VALID_ROADMAP_LEGACY" > "$WORK_B2/.a1/roadmap.md"
@@ -204,7 +205,7 @@ fi
 rm -rf "$WORK_B2"
 
 # --- (c) neither present -> gate reports MISSING/HALT ---
-WORK_C="$(mktemp -d)"
+mk_workdir WORK_C work_c
 # deliberately empty: no docs/product/ROADMAP.md, no .a1/roadmap.md
 
 RESULT_C="$(run_gate "$WORK_C")"
@@ -218,7 +219,7 @@ fi
 rm -rf "$WORK_C"
 
 # --- (d) unparseable docs/product/ROADMAP.md -> treated as missing (HALT), never silently overwritten ---
-WORK_D="$(mktemp -d)"
+mk_workdir WORK_D work_d
 mkdir -p "$WORK_D/docs/product"
 printf 'not a real roadmap, no frontmatter, no entry marker\n' > "$WORK_D/docs/product/ROADMAP.md"
 
@@ -240,7 +241,7 @@ rm -rf "$WORK_D"
 # entries, zero HTML comments) — NOT reconstructed from the check being
 # tested. Under the old two-conjunct rule this returned
 # UNPARSEABLE and halted the skill in 11 of 14 projects.
-WORK_E="$(mktemp -d)"
+mk_workdir WORK_E work_e
 mkdir -p "$WORK_E/docs/product"
 cat > "$WORK_E/docs/product/ROADMAP.md" <<'ROADMAP_E'
 ---
@@ -280,7 +281,7 @@ rm -rf "$WORK_E"
 # over the real corpus: 74 of 85 specs carrying a `roadmap_entry:` reported
 # MISMATCH while their slug sat in the frontmatter of the very roadmap being
 # checked. Body copied from a1-office-landing's real roadmap shape.
-WORK_F="$(mktemp -d)"
+mk_workdir WORK_F work_f
 cat > "$WORK_F/ROADMAP.md" <<'ROADMAP_F'
 ---
 schema_version: 1
@@ -346,7 +347,7 @@ rm -rf "$WORK_F"
 # re-adding the `<!-- entry:` conjunct to the legacy branch alone left all 12
 # tests green (measured 2026-09-20, found in review). Class 1 of testing.md --
 # the suite did not enter the path it claimed to cover.
-WORK_G="$(mktemp -d)"
+mk_workdir WORK_G work_g
 mkdir -p "$WORK_G/.a1"
 cat > "$WORK_G/.a1/roadmap.md" <<'ROADMAP_G'
 ---

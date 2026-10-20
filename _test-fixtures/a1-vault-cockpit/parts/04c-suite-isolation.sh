@@ -57,7 +57,7 @@ caseI1() {
      && git -C "$REPO_ROOT" diff --quiet -- "$I_RESTORE_REL" 2>/dev/null; then restore=yes; fi
   while IFS= read -r s; do
     n=$((n + 1))
-    sentinel="$(mktemp -d)"; home="$(mktemp -d)"
+    mk_workdir sentinel sentinel; mk_workdir home home
     if [[ -z "$sentinel" || ! -d "$sentinel" || -z "$home" || ! -d "$home" ]]; then
       bad "I1 $s: mktemp gave no directory — suite not run"; continue
     fi
@@ -113,7 +113,7 @@ caseX1() {
   assert_eq "X1 static: every A1_VAULT_WRITER_HOST unset line also drops A1_HOST_ID ($n lines)" "$missing" ""
   assert_eq "X1 dynamic: A1_HOST_ID=leak does not survive any runner's unset line ($m lines run)" "$leaks" ""
   own="$(grep -E '^unset [^#]*A1_VAULT_WRITER_HOST' "$SUITE/run-tests.sh" | head -1)"
-  w="$(mktemp -d)"; mkdir -p "$w/vault/project" "$w/repo/docs/product"
+  mk_workdir w w; mkdir -p "$w/vault/project" "$w/repo/docs/product"
   git -C "$w/repo" init -q 2>/dev/null || git init -q "$w/repo"
   printf -- '---\nproject: demo\nstatus: active\n---\n# Roadmap\n' > "$w/repo/docs/product/ROADMAP.md"
   out="$(cd "$w/repo" && A1_HOST_ID=leak A1_VAULT_ROOT="$w/vault" HOME="$w" A1_CODE_ROOTS="$w" TOOLS="$TOOLS" \

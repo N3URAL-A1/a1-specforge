@@ -40,7 +40,7 @@ hb_count() { grep -cxF -- "$2" "$1" 2>/dev/null || true; }
 # `lines.slice(insertAt + 1)` (the splice eats the line after the insertion
 # point) — the hub minus the added line no longer equals the original.
 caseHB1() {
-  local w rc; w="$(mktemp -d)"; hb_vault "$w"
+  local w rc; mk_workdir w w; hb_vault "$w"
   cp "$w/v/project/demo.md" "$w/hub.before"
   hb_run "$w" vault link-hub demo --spec 003-x; rc=$?
   assert_rc "HB1 link-hub demo --spec 003-x exits 0" 0 "$rc" "$(head -c 300 "$w/err")"
@@ -63,7 +63,7 @@ caseHB1() {
 # Red-making change: removing the exact-line check (`lines.some(...) → return
 # null`) in insertRelationLine — the second run appends a duplicate.
 caseHB2() {
-  local w rc m1 m2; w="$(mktemp -d)"; hb_vault "$w"
+  local w rc m1 m2; mk_workdir w w; hb_vault "$w"
   hb_run "$w" vault link-hub demo --spec 003-x
   cp "$w/v/project/demo.md" "$w/hub.after1"; m1="$(hb_mtime "$w/v/project/demo.md")"
   sleep 1
@@ -84,7 +84,7 @@ caseHB2() {
 # (`${RELATIONS_HEADING}\n\n${line}\n\n${text}`) instead of appending — the
 # last two non-empty lines are no longer heading + line.
 caseHB3() {
-  local w rc; w="$(mktemp -d)"; hb_vault "$w"
+  local w rc; mk_workdir w w; hb_vault "$w"
   printf -- '---\ntype: project\n---\n# demo\n\nNo relations yet.\n' > "$w/v/project/demo.md"
   cp "$w/v/project/demo.md" "$w/hub.before"
   hb_run "$w" vault link-hub demo --spec 003-x; rc=$?
@@ -104,7 +104,7 @@ caseHB3() {
 # `writeTextAtomic(hubPath, '')` (creating the hub) — the call then links into
 # the new file and exits 0.
 caseHB4() {
-  local w rc; w="$(mktemp -d)"; hb_vault "$w"
+  local w rc; mk_workdir w w; hb_vault "$w"
   rm -f "$w/v/project/demo.md"
   hb_run "$w" vault link-hub demo --spec 003-x; rc=$?
   assert_rc "HB4 link-hub with a missing hub exits 1" 1 "$rc"
@@ -119,7 +119,7 @@ caseHB4() {
 # linkHub (single) — the hub is written. HB5b: removing `&& !dryRun` in
 # linkSpecsIntoHub (all-specs) — the backfill writes during a dry run.
 caseHB5() {
-  local w rc m1; w="$(mktemp -d)"; hb_vault "$w"
+  local w rc m1; mk_workdir w w; hb_vault "$w"
   cp "$w/v/project/demo.md" "$w/hub.before"; m1="$(hb_mtime "$w/v/project/demo.md")"
   sleep 1
   hb_run "$w" vault link-hub demo --spec 003-x --dry-run; rc=$?
@@ -142,7 +142,7 @@ caseHB5() {
 # Red-making change: dropping the SPEC_EXCLUDE_RE filter in
 # listSpecBasenames — 001-a-VERIFICATION gets a relation line.
 caseHB6() {
-  local w rc; w="$(mktemp -d)"; hb_vault "$w"
+  local w rc; mk_workdir w w; hb_vault "$w"
   printf '# a\n' > "$w/v/project/demo/spec/001-a.md"
   printf '# verification\n' > "$w/v/project/demo/spec/001-a-VERIFICATION.md"
   cp "$w/v/project/demo.md" "$w/hub.before"
@@ -164,7 +164,7 @@ caseHB6() {
 # project slug in cmdSpecInit (HB7d: exit 2); removing SPEC_TITLE_MAX_CHARS
 # (HB7f: a 10 000-char title is written).
 caseHB7() {
-  local w rc before long; w="$(mktemp -d)"; hb_vault "$w"
+  local w rc before long; mk_workdir w w; hb_vault "$w"
   cp "$w/v/project/demo.md" "$w/hub.before"; before="$(hb_files "$w/v")"
   hb_run "$w" vault link-hub '../x' --spec 003-x; rc=$?
   assert_rc "HB7a link-hub '../x' --spec 003-x is refused" 1 "$rc"
@@ -191,7 +191,7 @@ caseHB7() {
 # the self-check refuses, exit 2, and head -2 differs); separately, deleting
 # the linkHub call in cmdSpecInit (HB8d — the hub gains nothing).
 caseHB8() {
-  local w rc f; w="$(mktemp -d)"; hb_vault "$w"
+  local w rc f; mk_workdir w w; hb_vault "$w"
   cp "$w/v/project/demo.md" "$w/hub.before"
   hb_run "$w" spec init demo search-index --title "Search index"; rc=$?
   f="$w/v/project/demo/spec/004-search-index.md"
@@ -214,7 +214,7 @@ caseHB8() {
 # Red-making change: removing the refuseExistingFeatureSlug call in
 # cmdSpecInit — the second run exits 0 and writes 005-search-index.md.
 caseHB9() {
-  local w rc before; w="$(mktemp -d)"; hb_vault "$w"
+  local w rc before; mk_workdir w w; hb_vault "$w"
   hb_run "$w" spec init demo search-index --title "Search index"
   cp "$w/v/project/demo/spec/004-search-index.md" "$w/spec.after1"
   cp "$w/v/project/demo.md" "$w/hub.after1"; before="$(hb_files "$w/v")"
@@ -234,7 +234,7 @@ caseHB9() {
 # Red-making change: the same hub-creating mutation as HB4 (linkHub writes the
 # hub instead of returning `missing`) — JSON says linked and the hub exists.
 caseHB10() {
-  local w rc; w="$(mktemp -d)"; hb_vault "$w"
+  local w rc; mk_workdir w w; hb_vault "$w"
   rm -f "$w/v/project/demo.md"
   hb_run "$w" spec init demo search-index --title "Search index"; rc=$?
   assert_rc "HB10 spec init without a hub still exits 0" 0 "$rc" "$(head -c 300 "$w/err")"
@@ -259,7 +259,7 @@ caseT1() {
 # Red-making change: dropping `&& !isConflictCopy(f)` in listSpecBasenames
 # (the old SPEC_EXCLUDE_RE missed `(conflict 2)` and `(Conflicted copy`).
 caseHB11() {
-  local w rc f; w="$(mktemp -d)"; hb_vault "$w"
+  local w rc f; mk_workdir w w; hb_vault "$w"
   for f in "003-x (conflict 2).md" "003-x (conflict 2026-09-25).md" "003-x (Conflicted copy 2026-09-25).md" \
            "003-x.sync-conflict-20260925-101010-ABCDEFG.md"; do
     printf -- '---\ntype: spec\nid: 003-x\n---\n# x\n' > "$w/v/project/demo/spec/$f"
@@ -277,7 +277,7 @@ caseHB11() {
 # Red-making change: dropping the `cr` suffix in insertRelationLine (the
 # inserted line ends in a bare LF: mixed line endings).
 caseHB12() {
-  local w rc; w="$(mktemp -d)"; hb_vault "$w"
+  local w rc; mk_workdir w w; hb_vault "$w"
   printf -- '---\r\ntype: project\r\n---\r\n# demo\r\n\r\n## Relations\r\n\r\n- uses [[y]]\r\n\r\n## Notes\r\n' > "$w/v/project/demo.md"
   cp "$w/v/project/demo.md" "$w/hub.before"
   hb_run "$w" vault link-hub demo --spec 003-x; rc=$?

@@ -88,6 +88,7 @@
 #     `Fixes F-007` (case-insensitive keyword) and does NOT match a bare
 #     `F-007` mention with no closing keyword immediately before it.
 set -u
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
 
 # Spec 010 Wave 4: every product writer mirrors docs/product into A1_VAULT_ROOT.
 # A fixture must never reach the developer's real vault, and its expectations
@@ -249,7 +250,7 @@ EOF
 # ===========================================================================
 # Scenario 1 (SC-002): valid VISION.md + valid audit file -> validate exits 0
 # ===========================================================================
-WORK1="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-schema-v11-valid.XXXXXX")"
+mk_workdir WORK1 "a1-product-schema-v11-valid"
 PDIR1="$WORK1/docs/product"
 write_base_roadmap "$PDIR1" "schema-v11-valid"
 write_valid_vision "$PDIR1" "schema-v11-valid"
@@ -271,7 +272,7 @@ fi
 # ===========================================================================
 # Scenario 2 (FR-001): VISION.md with empty pillars: [] -> validate exits 1
 # ===========================================================================
-WORK2="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-schema-v11-emptypillars.XXXXXX")"
+mk_workdir WORK2 "a1-product-schema-v11-emptypillars"
 PDIR2="$WORK2/docs/product"
 write_base_roadmap "$PDIR2" "schema-v11-emptypillars"
 cat > "$PDIR2/VISION.md" <<EOF
@@ -297,7 +298,7 @@ assert_contains "empty-pillars-error-mentions-pillars" "$OUT" "pillars"
 # ===========================================================================
 # Scenario 3 (FR-001): VISION.md with pillars key omitted entirely -> exit 1
 # ===========================================================================
-WORK3="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-schema-v11-nopillars.XXXXXX")"
+mk_workdir WORK3 "a1-product-schema-v11-nopillars"
 PDIR3="$WORK3/docs/product"
 write_base_roadmap "$PDIR3" "schema-v11-nopillars"
 cat > "$PDIR3/VISION.md" <<EOF
@@ -322,7 +323,7 @@ assert_contains "omitted-pillars-error-mentions-pillars" "$OUT" "pillars"
 # ===========================================================================
 # Scenario 4 (FR-005): audit file missing required `verdict` field -> exit 1
 # ===========================================================================
-WORK4="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-schema-v11-noverdict.XXXXXX")"
+mk_workdir WORK4 "a1-product-schema-v11-noverdict"
 PDIR4="$WORK4/docs/product"
 write_base_roadmap "$PDIR4" "schema-v11-noverdict"
 mkdir -p "$PDIR4/audits"
@@ -356,7 +357,7 @@ assert_contains "audit-missing-verdict-error-mentions-verdict" "$OUT" "verdict"
 # ===========================================================================
 # Scenario 5 (FR-006): finding status out of enum -> validate exits 1
 # ===========================================================================
-WORK5="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-schema-v11-badstatus.XXXXXX")"
+mk_workdir WORK5 "a1-product-schema-v11-badstatus"
 PDIR5="$WORK5/docs/product"
 write_base_roadmap "$PDIR5" "schema-v11-badstatus"
 mkdir -p "$PDIR5/audits"
@@ -392,7 +393,7 @@ assert_contains "finding-invalid-status-error-mentions-status" "$OUT" "status"
 # Scenario 6 (FR-006): all four valid statuses accepted, one audit file each
 # ===========================================================================
 for st in open fixed obsolete accepted; do
-  WORKST="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-schema-v11-status-${st}.XXXXXX")"
+  mk_workdir WORKST "a1-product-schema-v11-status-${st}"
   PDIRST="$WORKST/docs/product"
   write_base_roadmap "$PDIRST" "schema-v11-status-${st}"
   write_valid_audit "$PDIRST" "schema-v11-status-${st}" "$st"
@@ -408,7 +409,7 @@ done
 # proves Wave 1's validate extension did not weaken the pre-existing v1
 # depends_on-must-be-an-array check while adding VISION.md/audits coverage.
 # ===========================================================================
-WORK7="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-schema-v11-legacy-depends.XXXXXX")"
+mk_workdir WORK7 "a1-product-schema-v11-legacy-depends"
 PDIR7="$WORK7/docs/product"
 mkdir -p "$PDIR7"
 cat > "$PDIR7/ROADMAP.md" <<'EOF'
@@ -473,7 +474,7 @@ assert_contains "legacy-malformed-depends-on-error-mentions-depends" "$OUT" "dep
 # still exit 0 with no vision/audit-related errors (backward-compat
 # degrade-to-no-op for v1-only projects).
 # ===========================================================================
-WORK8="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-schema-v11-novision-noaudits.XXXXXX")"
+mk_workdir WORK8 "a1-product-schema-v11-novision-noaudits"
 PDIR8="$WORK8/docs/product"
 write_base_roadmap "$PDIR8" "schema-v11-novision-noaudits"
 
@@ -497,7 +498,7 @@ fi
 # state-changing product command regenerates index.json via the shared
 # regenerateDerived() path Wave 2 extended) to force a fresh regeneration.
 # ===========================================================================
-WORK9="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-schema-v11-index-vision-audits.XXXXXX")"
+mk_workdir WORK9 "a1-product-schema-v11-index-vision-audits"
 PDIR9="$WORK9/docs/product"
 write_base_roadmap "$PDIR9" "schema-v11-index-va"
 write_valid_vision "$PDIR9" "schema-v11-index-va"
@@ -563,7 +564,7 @@ fi
 # _test-fixtures/product-adopt/run-tests.sh (grep for "index.schema.json"
 # there).
 # ===========================================================================
-WORK10="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-schema-v11-v1only-index.XXXXXX")"
+mk_workdir WORK10 "a1-product-schema-v11-v1only-index"
 PDIR10="$WORK10/docs/product"
 write_base_roadmap "$PDIR10" "schema-v11-v1only"
 
@@ -632,7 +633,7 @@ fi
 # audit with every findings[].feature id pointing at an existing feature
 # must pass.
 # ===========================================================================
-WORK11="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-schema-v11-feature-crosscheck.XXXXXX")"
+mk_workdir WORK11 "a1-product-schema-v11-feature-crosscheck"
 PDIR11="$WORK11/docs/product"
 write_base_roadmap "$PDIR11" "schema-v11-crosscheck"
 mkdir -p "$PDIR11/audits"
@@ -712,7 +713,7 @@ hash_file() {
 # validate` passes. Running vision-init again refuses (non-zero exit) and
 # leaves the existing VISION.md byte-unchanged.
 # ===========================================================================
-WORK12="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-schema-v11-vision-init.XXXXXX")"
+mk_workdir WORK12 "a1-product-schema-v11-vision-init"
 PDIR12="$WORK12/docs/product"
 write_base_roadmap "$PDIR12" "schema-v11-vision-init"
 
@@ -756,7 +757,7 @@ fi
 # vision-init with zero --pillar flags must also refuse (schema v1.1's
 # non-empty pillars[] rule, FR-001) — reject at the CLI boundary rather than
 # writing a VISION.md that immediately fails `product validate`.
-WORK12B="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-schema-v11-vision-init-nopillar.XXXXXX")"
+mk_workdir WORK12B "a1-product-schema-v11-vision-init-nopillar"
 PDIR12B="$WORK12B/docs/product"
 write_base_roadmap "$PDIR12B" "schema-v11-vision-init-nopillar"
 OUT="$(node "$TOOLS" product vision-init --title "No Pillars" --dir "$PDIR12B" 2>&1)"
@@ -774,7 +775,7 @@ fi
 # regenerated (vision.updated reflects the bump), and the prose body AND
 # pillars[] stay byte-for-byte unchanged.
 # ===========================================================================
-WORK13="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-schema-v11-vision-touch.XXXXXX")"
+mk_workdir WORK13 "a1-product-schema-v11-vision-touch"
 PDIR13="$WORK13/docs/product"
 write_base_roadmap "$PDIR13" "schema-v11-vision-touch"
 mkdir -p "$PDIR13"
@@ -852,7 +853,7 @@ else
 fi
 
 # vision-touch against a project with no VISION.md must refuse, not create one.
-WORK13B="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-schema-v11-vision-touch-missing.XXXXXX")"
+mk_workdir WORK13B "a1-product-schema-v11-vision-touch-missing"
 PDIR13B="$WORK13B/docs/product"
 write_base_roadmap "$PDIR13B" "schema-v11-vision-touch-missing"
 OUT="$(node "$TOOLS" product vision-touch --dir "$PDIR13B" 2>&1)"
@@ -878,7 +879,7 @@ fi
 # has already been renamed into place on disk when the injected throw fires;
 # the rollback must remove it again (it did not pre-exist), leaving
 # docs/product/ exactly as it was before the call (no VISION.md at all).
-WORK14A="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-schema-v11-vision-init-fault.XXXXXX")"
+mk_workdir WORK14A "a1-product-schema-v11-vision-init-fault"
 PDIR14A="$WORK14A/docs/product"
 write_base_roadmap "$PDIR14A" "schema-v11-vision-init-fault"
 
@@ -922,7 +923,7 @@ fi
 # injected throw fires; the rollback must restore BOTH to their exact prior
 # content (not just the file that "failed"), proving the all-or-nothing
 # guarantee covers every file in the write set, not only the last one.
-WORK14B="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-schema-v11-vision-touch-fault.XXXXXX")"
+mk_workdir WORK14B "a1-product-schema-v11-vision-touch-fault"
 PDIR14B="$WORK14B/docs/product"
 write_base_roadmap "$PDIR14B" "schema-v11-vision-touch-fault"
 node "$TOOLS" product vision-init --title "Pre-fault Vision" --pillar reliability:Reliability:"Never lose data." --dir "$PDIR14B" >/dev/null 2>&1
@@ -1008,7 +1009,7 @@ write_analysis_fixture() {
 # exactly one new audits/<date>-<focus>.md with every finding at status:
 # open, and index.json's audits[] gains a matching entry.
 # ===========================================================================
-WORK15="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-schema-v11-audit-publish.XXXXXX")"
+mk_workdir WORK15 "a1-product-schema-v11-audit-publish"
 PDIR15="$WORK15/docs/product"
 write_base_roadmap "$PDIR15" "schema-v11-audit-publish"
 write_analysis_fixture "$WORK15/analysis-general.md" "general" "2026-07-13T09:00:00.000Z" \
@@ -1105,7 +1106,7 @@ fi
 # Scenario 17 (FR-007 edge case): a zero-findings analysis still produces a
 # valid audit file with an empty findings: [] array (not an error).
 # ===========================================================================
-WORK17="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-schema-v11-audit-publish-zero.XXXXXX")"
+mk_workdir WORK17 "a1-product-schema-v11-audit-publish-zero"
 PDIR17="$WORK17/docs/product"
 write_base_roadmap "$PDIR17" "schema-v11-audit-publish-zero"
 cat > "$WORK17/analysis-zero.md" <<'EOF'
@@ -1150,7 +1151,7 @@ fi
 # status/fixed_commit/feature, appends a changelog line, leaves other
 # findings byte-unchanged, and index.json's derived open/fixed counts update.
 # ===========================================================================
-WORK18="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-schema-v11-audit-set.XXXXXX")"
+mk_workdir WORK18 "a1-product-schema-v11-audit-set"
 PDIR18="$WORK18/docs/product"
 write_base_roadmap "$PDIR18" "schema-v11-audit-set"
 write_analysis_fixture "$WORK18/analysis.md" "general" "2026-07-13T09:00:00.000Z" \
@@ -1275,7 +1276,7 @@ assert_rc "edge-audit-set-fixed-to-open-validate-exit-0" 0 "$RC" "$OUT"
 # fault forced between tmp-write and rename must leave all affected files in
 # their prior consistent state for both writers.
 # ===========================================================================
-WORK22="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-schema-v11-audit-fault.XXXXXX")"
+mk_workdir WORK22 "a1-product-schema-v11-audit-fault"
 PDIR22="$WORK22/docs/product"
 write_base_roadmap "$PDIR22" "schema-v11-audit-fault"
 write_analysis_fixture "$WORK22/analysis.md" "general" "2026-07-13T09:00:00.000Z" \
