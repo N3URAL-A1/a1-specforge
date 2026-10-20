@@ -263,7 +263,7 @@ caseK10() {
   c_case k10 done planned path
   git -C "$base/repo" init -q
   C_OUT="$(cd "$base/repo" && env -u A1_VAULT_ROOT HOME="$C_WORK/home" A1_CODE_ROOTS="$C_WORK/noroots" \
-    node "$TOOLS" product validate --spec-status 2>"$C_WORK/stderr")"
+    node "$TOOLS" product validate --spec-status --phase fx-coherence 2>"$C_WORK/stderr")"
   C_RC=$?
   assert_eq "K10 vault-less --spec-status creates no .a1/learnings/" \
     "$([[ -e "$base/repo/.a1/learnings" ]] && echo created || echo absent)" "absent"
@@ -384,4 +384,140 @@ caseB5() {
 }
 
 caseB1; caseB2; caseB3; caseB4; caseB5
+
+# ============ Section D — three-drift regression (spec 017 FR-035) ============
+# Copies of the REAL docs/product/ROADMAP.md plus the real frontmatter of specs
+# 005, 010, 014 (spec-drift/, status line set to the 2026-10-14 drifted value:
+# 005 done vs roadmap cancelled, 014 implementing vs roadmap done, 010
+# implementing vs roadmap planned — the roadmap copy sets 010 to planned). The
+# temp vault holds ONE spec per case, so every other feature is unlinked.
+# Expected counts are literals from the spec text, never read from the module.
+
+# d_case <name> <spec-id> — repo = real roadmap copy (010 forced to planned).
+d_case() {
+  local name="$1" id="$2" base="$C_WORK/$1"
+  mkdir -p "$base/repo/docs/product" "$base/vault/project/a1-specforge/spec"
+  awk '/^  - id: 010-vault-cockpit-contract$/{f=1} f&&/^    status: in-flight$/{print "    status: planned"; f=0; next} {print}' \
+    "$REPO_ROOT/docs/product/ROADMAP.md" > "$base/repo/docs/product/ROADMAP.md"
+  cp "$SUITE/spec-drift/$id.md" "$base/vault/project/a1-specforge/spec/$id.md"
+}
+
+# Red-making change: removing the terminal-disagreement branch in spec-coherence.cjs.
+caseD1() {
+  d_case d1 005-vault-first-artifacts
+  c_validate d1 --spec-status
+  assert_rc "D1 005 drift alone (spec done, roadmap cancelled) → exit 1" 1 "$C_RC" "$(head -c 300 "$C_WORK/stderr")"
+  assert_json "D1 exactly one violation, it names 005" "$C_OUT" \
+    "[j.spec_status.violations.length, j.spec_status.violations[0].feature].join(',')" "1,005-vault-first-artifacts"
+}
+caseD2() {
+  d_case d2 014-xprov-egress-hardening
+  c_validate d2 --spec-status
+  assert_rc "D2 014 drift alone (spec implementing, roadmap done) → exit 1" 1 "$C_RC" "$(head -c 300 "$C_WORK/stderr")"
+  assert_json "D2 exactly one violation, it names 014" "$C_OUT" \
+    "[j.spec_status.violations.length, j.spec_status.violations[0].feature].join(',')" "1,014-xprov-egress-hardening"
+}
+# Red-making change: promoting non-terminal drift to a violation (exit 1) or dropping it.
+caseD3() {
+  d_case d3 010-vault-cockpit-contract
+  c_validate d3 --spec-status
+  assert_rc "D3 010 drift alone (spec implementing, roadmap planned) → exit 0" 0 "$C_RC" "$(head -c 300 "$C_WORK/stderr")"
+  assert_json "D3 one status_drift warning for 010, no violation" "$C_OUT" \
+    "[j.spec_status.warnings.length, j.spec_status.warnings[0].kind, j.spec_status.warnings[0].feature, j.spec_status.violations.length].join(',')" \
+    "1,status_drift,010-vault-cockpit-contract,0"
+}
+# Mutation proof: reconciling 005 (spec cancelled, as the real file is) turns D1 green.
+caseD4() {
+  sed 's/^status: done$/status: cancelled/' "$SUITE/spec-drift/005-vault-first-artifacts.md" \
+    > "$C_WORK/d1/vault/project/a1-specforge/spec/005-vault-first-artifacts.md"
+  c_validate d1 --spec-status
+  assert_rc "D4 005 reconciled (spec cancelled) → exit 0" 0 "$C_RC"
+  assert_json "D4 no violation left" "$C_OUT" "j.spec_status.violations.length" "0"
+}
+
+# ============ Section CI — product validate --spec-status --ci (FR-033) ============
+# No vault anywhere: every call runs with env -u A1_VAULT_ROOT.
+# d_ci <name> — runs --spec-status --ci from $C_WORK/<name>/repo; sets C_OUT, C_RC.
+d_ci() {
+  local name="$1"
+  C_OUT="$(cd "$C_WORK/$name/repo" && env -u A1_VAULT_ROOT HOME="$C_WORK/home" A1_CODE_ROOTS="$C_WORK/noroots" \
+    node "$TOOLS" product validate --spec-status --ci 2>"$C_WORK/stderr")"
+  C_RC=$?
+}
+
+# Red-making change: --ci not parsed (unknown flag → exit 2) or violations not counted into the exit.
+caseCI1() {
+  c_case ci1 none done null
+  d_ci ci1
+  assert_rc "CI1 done feature without spec_path → exit 1" 1 "$C_RC" "$(head -c 300 "$C_WORK/stderr")"
+  assert_json "CI1 one violation naming 005-demo, checked 1" "$C_OUT" \
+    "[j.ci.violations.length, j.ci.violations[0].feature, j.ci.checked, j.ci.result].join(',')" "1,005-demo,1,violations"
+}
+# Red-making change: ignoring features/<id>/feature.md (only the ROADMAP entry is read).
+caseCI2() {
+  c_case ci2 none done null
+  mkdir -p "$C_WORK/ci2/repo/docs/product/features/005-demo"
+  printf -- '---\nid: 005-demo\nspec_path: project/demo/spec/005-demo.md\nschema_version: 1\n---\n\nx\n' \
+    > "$C_WORK/ci2/repo/docs/product/features/005-demo/feature.md"
+  d_ci ci2
+  assert_rc "CI2 spec_path only in features/<id>/feature.md → exit 0" 0 "$C_RC" "$(head -c 300 "$C_WORK/stderr")"
+  assert_json "CI2 checked 1, violations 0" "$C_OUT" "[j.ci.checked, j.ci.violations.length].join(',')" "1,0"
+}
+# Mutation proof: re-adding the path in the ROADMAP entry turns CI1 green.
+caseCI3() {
+  c_case ci3 none done path
+  d_ci ci3
+  assert_rc "CI3 spec_path present in ROADMAP.md → exit 0 (CI1 mutation)" 0 "$C_RC"
+  assert_json "CI3 result ok, vault never consulted (no spec_status key)" "$C_OUT" \
+    "[j.ci.result, j.spec_status === undefined].join(',')" "ok,true"
+}
+# Red-making change: gating every status instead of done|in-flight.
+caseCI4() {
+  c_case ci4 none in-flight null
+  d_ci ci4
+  assert_rc "CI4 in-flight without spec_path → exit 1" 1 "$C_RC" "$(head -c 300 "$C_WORK/stderr")"
+  c_case ci5 none planned null
+  d_ci ci5
+  assert_rc "CI4b planned without spec_path → exit 0 (not gated)" 0 "$C_RC"
+  assert_json "CI4b checked 0" "$C_OUT" "j.ci.checked" "0"
+}
+# Red-making change: treating a missing roadmap as an error (the old exit 1).
+caseCI6() {
+  mkdir -p "$C_WORK/ci6/repo"
+  d_ci ci6
+  assert_rc "CI6 no roadmap → exit 0" 0 "$C_RC" "$(head -c 300 "$C_WORK/stderr")"
+  assert_json "CI6 result not_applicable" "$C_OUT" "j.ci.result" "not_applicable"
+  assert_eq "CI6 nothing written" "$(find "$C_WORK/ci6/repo" -mindepth 1 | wc -l | tr -d ' ')" "0"
+}
+# Hostile input: a blank value is no path; a broken feature.md does not crash.
+caseCI7() {
+  c_case ci7 none done '"   "'
+  mkdir -p "$C_WORK/ci7/repo/docs/product/features/005-demo"
+  printf -- '---\nspec_path: [unclosed\n' > "$C_WORK/ci7/repo/docs/product/features/005-demo/feature.md"
+  d_ci ci7
+  assert_rc "CI7 blank spec_path + broken feature.md → exit 1, no crash" 1 "$C_RC" "$(head -c 300 "$C_WORK/stderr")"
+  assert_json "CI7 one violation" "$C_OUT" "j.ci.violations.length" "1"
+}
+# The committed docs/product of THIS repo: green (SC-008 CI side), then 001 stripped → red.
+caseCI8() {
+  local base="$C_WORK/ci8"
+  mkdir -p "$base/repo/docs"
+  cp -R "$REPO_ROOT/docs/product" "$base/repo/docs/product"
+  d_ci ci8
+  assert_rc "CI8 committed roadmap + feature files → exit 0" 0 "$C_RC" "$(head -c 300 "$C_WORK/stderr")"
+  local want
+  want="$(awk '/^features:/{f=1} f&&/^    status: (done|in-flight)$/{n++} END{print n+0}' "$REPO_ROOT/docs/product/ROADMAP.md")"
+  assert_json "CI8 checked = done|in-flight count of the committed roadmap" "$C_OUT" "j.ci.checked" "$want"
+  assert_json "CI8 more than 10 gated features (count guard)" "$C_OUT" "j.ci.checked > 10" "true"
+  sed '/^  - id: 001-roadmap-gate-parallel-features$/,/^  - id: 002-/{/^    spec_path:/d;}' "$base/repo/docs/product/ROADMAP.md" > "$base/r.new" \
+    && mv "$base/r.new" "$base/repo/docs/product/ROADMAP.md"
+  rm -f "$base/repo/docs/product/features/001-roadmap-gate-parallel-features/feature.md"
+  d_ci ci8
+  assert_rc "CI8b 001 stripped of spec_path → exit 1" 1 "$C_RC"
+  assert_json "CI8b violation names 001" "$C_OUT" "j.ci.violations.map(v => v.feature).join(',')" "001-roadmap-gate-parallel-features"
+}
+
+caseD1; caseD2; caseD3; caseD4
+caseCI1; caseCI2; caseCI3; caseCI4; caseCI6; caseCI7; caseCI8
+
 rm -rf "$C_WORK"
