@@ -4,7 +4,7 @@ project: a1-specforge
 milestone: continuous
 title: "xprov autonomy: chat consent instead of terminal steps, Codex at the right places, self-recovering aborts"
 status: in-flight
-stage: complete
+stage: origin-cleanup
 depends_on: []
 started: 2026-10-14
 finished: null

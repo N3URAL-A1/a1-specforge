@@ -4,7 +4,7 @@ type: roadmap
 project: a1-specforge
 title: "a1-specforge — Roadmap"
 status: active
-updated: 2026-10-19
+updated: 2026-10-20
 source: "migrated from docs/roadmap.md v3.0 (2026-07-10)"
 milestones:
   - id: m0-repo-extract
@@ -180,7 +180,7 @@ features:
     milestone: continuous
     title: "xprov autonomy: chat consent instead of terminal steps, Codex at the right places, self-recovering aborts"
     status: in-flight
-    stage: complete
+    stage: origin-cleanup
     depends_on: []
     started: 2026-10-14
     finished: null
@@ -357,6 +357,10 @@ None.
 - **2026-10-19** — 019-depth-pass-planning -> review — stage transition via `product stage`
 - **2026-10-19** — 019-depth-pass-planning -> verify — stage transition via `product stage`
 - **2026-10-19** — 016-xprov-autonomy -> complete — stage transition via `product stage`
+- **2026-10-20** — 016-xprov-autonomy -> review — stage transition via `product stage`
+- **2026-10-20** — 016-xprov-autonomy -> verify — stage transition via `product stage`
+- **2026-10-20** — 016-xprov-autonomy -> merge — stage transition via `product stage`
+- **2026-10-20** — 016-xprov-autonomy -> origin-cleanup — stage transition via `product stage`
 
 ## Appendix — migrated details
 
