@@ -34,15 +34,19 @@ A1_FX_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/a1-fx-root.XXXXXX")" || a1_fx_die "mkte
 A1_FX_ROOT="$(cd "$A1_FX_ROOT" && pwd -P)" || a1_fx_die "realpath of the suite root failed"
 [[ -n "$A1_FX_ROOT" && -d "$A1_FX_ROOT" ]] || a1_fx_die "suite root vanished after realpath"
 A1_FX_ROOT_PID="$$"
-export A1_FX_ROOT_PID
 
-# a1_fx_cleanup — remove the suite root (chmod first: suites plant read-only dirs).
+# a1_fx_cleanup — remove the suite root. Suites plant read-only and mode-000 dirs, so restore
+# directory permissions first (find, not chmod -R: a mode-000 dir blocks the recursion). Every
+# step is `|| true`: a failing chmod must never stop the rm (suites may run under `set -e`).
 a1_fx_cleanup() {
-  # Only the process that created the root removes it (child bash inherits nothing: not exported).
-  [[ -n "${A1_FX_ROOT:-}" && "${A1_FX_ROOT_PID:-}" == "$$" && -d "$A1_FX_ROOT" ]] || return 0
+  # Only the top-level shell that created the root removes it: $$ is the same inside a
+  # ( subshell ), so BASH_SUBSHELL must be 0 too. Child bash processes inherit nothing (not exported).
+  [[ -n "${A1_FX_ROOT:-}" && "${A1_FX_ROOT_PID:-}" == "$$" && "${BASH_SUBSHELL:-0}" -eq 0 && -d "$A1_FX_ROOT" ]] || return 0
   case "$A1_FX_ROOT" in */a1-fx-root.*) ;; *) return 0 ;; esac
-  chmod -R u+w "$A1_FX_ROOT" 2>/dev/null
-  rm -rf "$A1_FX_ROOT"
+  find "$A1_FX_ROOT" -type d -exec chmod u+rwx {} + 2>/dev/null || true
+  find "$A1_FX_ROOT" -type f -exec chmod u+w {} + 2>/dev/null || true
+  rm -rf "$A1_FX_ROOT" || true
+  return 0
 }
 
 # mk_workdir <VAR> <label> — sets VAR (printf -v, no subshell) to a fresh real dir.

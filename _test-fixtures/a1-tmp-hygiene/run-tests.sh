@@ -6,6 +6,7 @@
 # empty afterwards. Plus helper cases for _test-fixtures/lib/tmp.sh (failure exit, read-only
 # dirs, subshell registration, guard on a failed mktemp).
 #
+# Red-making change (H5): chmod -R instead of find in a1_fx_cleanup. (H6): dropping the BASH_SUBSHELL test.
 # Red-making change: removing the cleanup of one suite, e.g. replacing the `mk_workdir WORK`
 # line in a1-reservations/run-tests.sh with a bare-template `WORK="$(mktemp -d "${TMPDIR:-/tmp}/x.XXXXXX")"`,
 # leaves a directory in the private TMPDIR: H4 (a1-reservations) goes red. Measured 2026-10-20.
@@ -68,6 +69,19 @@ out="$(TMPDIR="$PARENT/does-not-exist" bash -c '. "$1/lib/tmp.sh"; echo SHOULD-N
 if [[ $rc -ne 0 && "$out" != *SHOULD-NOT-RUN* ]]; then ok "H3e unusable TMPDIR aborts before any case runs (rc=$rc)"
 else bad "H3e unusable TMPDIR did not abort" "rc=$rc out: [$out]"; fi
 
+# H5: a mode-000 subdir under `set -e` — chmod -R cannot enter it, a failing chmod must not stop the rm.
+t="$(fresh_tmp h5)"
+TMPDIR="$t" bash -c 'set -e; . "$1/lib/tmp.sh"; mk_workdir W a; mkdir -p "$W/locked/inner"; touch "$W/locked/inner/f"; chmod 000 "$W/locked"' _ "$FX_DIR" >/dev/null 2>&1
+left="$(ls -A "$t")"
+if [[ -z "$left" ]]; then ok "H5 mode-000 subdir under set -e: the root is removed"
+else bad "H5 mode-000 subdir left the root behind" "left: [$left]"; chmod -R u+rwx "$t" 2>/dev/null; fi
+
+# H6: a ( subshell ) calling a1_fx_cleanup must not wipe the parent's root ($$ is unchanged in subshells).
+t="$(fresh_tmp h6)"
+res="$(TMPDIR="$t" bash -c '. "$1/lib/tmp.sh" || exit 2; mk_workdir W a; ( a1_fx_cleanup ); [[ -d "$W" ]] && echo ALIVE || echo WIPED' _ "$FX_DIR" 2>&1)"
+if [[ "$res" == ALIVE ]]; then ok "H6 a1_fx_cleanup in a subshell leaves the parent's root alone"
+else bad "H6 subshell cleanup wiped the parent's root" "res: [$res]"; fi
+
 # ---------- H4: real suites leave a private TMPDIR empty ----------
 # Fast suites that were among the leakers; each runs with its own fresh TMPDIR and without the
 # real vault. The suite's own result is not judged here (its own run does that) — only the leak.
@@ -84,8 +98,8 @@ for s in "${SUITES[@]}"; do
     chmod -R u+w "$t" 2>/dev/null
   fi
   # Control: the suite actually ran (a crash at startup would also leave the dir empty).
-  if echo "$out" | grep -qE 'passed|PASS'; then ok "H4c $s produced test output (not an empty run)"
-  else bad "H4c $s produced no PASS/passed output" "out: [$(echo "$out" | head -3 | tr '\n' ' ')]"; fi
+  if echo "$out" | grep -qE '[0-9]+ passed, [0-9]+ failed'; then ok "H4c $s printed its summary line (not an empty run)"
+  else bad "H4c $s printed no 'N passed, M failed' summary" "out: [$(echo "$out" | head -3 | tr '\n' ' ')]"; fi
 done
 
 echo "a1-tmp-hygiene: $pass passed, $fail failed"
