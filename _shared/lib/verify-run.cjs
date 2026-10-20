@@ -15,6 +15,7 @@ const { spawnSync, spawn } = require('child_process');
 const { gitRaw, headSha, splitNul, diffNames } = require('./verify-check.cjs');
 const rep = require('./verify-reporters.cjs');
 const vb = require('./verify-base.cjs');
+const { loadEntries, clearedFingerprints } = require('./disposition-store.cjs');
 
 const { VerifyError } = vb;
 
@@ -246,7 +247,8 @@ function runBaseSide(project, plan, baseSha, hash, touches, tmp) {
   }])));
   if (!cached) vb.writeCache(project, baseSha, hash, results);
   const ids = new Map(plan.commands.map((c) => [c.id, results[c.id].raw.absent ? new Set() : vb.idSet(finishCommand(results[c.id].raw, touches))]));
-  return { ids, cache: cached ? 'hit' : 'miss' };
+  const skipped = new Map(plan.commands.map((c) => [c.id, results[c.id].raw.absent ? 0 : results[c.id].raw.skipped]));
+  return { ids, skipped, cache: cached ? 'hit' : 'miss' };
 }
 
 /** Head side: cached or fresh first runs, retry once on failure, settle against base and flaky_base. */
@@ -268,6 +270,13 @@ function runHeadSide(project, plan, head, hash, ctx) {
   const stillClean = clean && vb.dirtyPaths(statusPaths(project)).length === 0;
   if (stillClean && ranLive) vb.writeCache(project, head, hash, results);
   return { settled, cache: cached ? (ranLive ? 'partial' : 'hit') : (clean ? 'miss' : 'dirty') };
+}
+
+/** Fingerprints of the committed `skip_increase` dispositions; an unreadable store is a config error (exit 2). */
+function skipIncreaseDispositions(project) {
+  try { return clearedFingerprints(loadEntries(project), 'skip_increase'); } catch (e) {
+    throw new VerifyError('bad_config', e.message);
+  }
 }
 
 const pairs = (commands, key) => commands.flatMap((c) => c[key].map((id) => ({ command: c.id, id })));
@@ -292,10 +301,11 @@ function runVerify(opts) {
   try {
     const base = opts.base !== undefined ? runBaseSide(project, timed, baseSha, hash, touches, tmp) : null;
     const side = runHeadSide(project, timed, head, hash, { tmp, touches, baseIds: base ? base.ids : null });
+    const commands = base ? vb.applySkipIncrease(side.settled, base.skipped, skipIncreaseDispositions(project)) : side.settled;
     return {
-      ...overall(side.settled, plan.noTestsReason), source: plan.source, head_sha: head, base_sha: baseSha, touches_source: touches,
+      ...overall(commands, plan.noTestsReason), source: plan.source, head_sha: head, base_sha: baseSha, touches_source: touches,
       changed_files: changed.length, flaky: pairs(side.settled, 'flaky_ids'), pre_existing_red: pairs(side.settled, 'pre_existing_red_ids'),
-      cache: { head: side.cache, base: base ? base.cache : 'none' }, commands: side.settled,
+      cache: { head: side.cache, base: base ? base.cache : 'none' }, commands,
     };
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });

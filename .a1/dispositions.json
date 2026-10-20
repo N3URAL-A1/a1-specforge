@@ -1,0 +1,66 @@
+[
+  {
+    "kind": "fidelity",
+    "fingerprint": "test-not-in-ci:_test-fixtures/a1-test-fidelity/real/claudia-after.http-caps-audit.test.ts:e3b0c44298fc1c14",
+    "reason": "test-not-in-ci: fixture data reproduced from a1-office (see _test-fixtures/a1-test-fidelity/real/ORIGIN.md), not a live test of this repository; the a1-test-fidelity suite reads it as input and no CI runner executes it by design",
+    "date": "2026-10-20",
+    "by": "walter",
+    "review": "pending"
+  },
+  {
+    "kind": "fidelity",
+    "fingerprint": "test-not-in-ci:_test-fixtures/a1-test-fidelity/real/claudia-before.mail-rules-rejected-audit.test.ts:e3b0c44298fc1c14",
+    "reason": "test-not-in-ci: fixture data reproduced from a1-office (see _test-fixtures/a1-test-fidelity/real/ORIGIN.md), not a live test of this repository; the a1-test-fidelity suite reads it as input and no CI runner executes it by design",
+    "date": "2026-10-20",
+    "by": "walter",
+    "review": "pending"
+  },
+  {
+    "kind": "fidelity",
+    "fingerprint": "test-not-in-ci:_test-fixtures/a1-test-fidelity/real/quote-after.quote-deal-link.test.ts:e3b0c44298fc1c14",
+    "reason": "test-not-in-ci: fixture data reproduced from a1-office (see _test-fixtures/a1-test-fidelity/real/ORIGIN.md), not a live test of this repository; the a1-test-fidelity suite reads it as input and no CI runner executes it by design",
+    "date": "2026-10-20",
+    "by": "walter",
+    "review": "pending"
+  },
+  {
+    "kind": "fidelity",
+    "fingerprint": "test-not-in-ci:_test-fixtures/a1-test-fidelity/real/quote-before.pipeline-flow-quote-billing.test.ts:e3b0c44298fc1c14",
+    "reason": "test-not-in-ci: fixture data reproduced from a1-office (see _test-fixtures/a1-test-fidelity/real/ORIGIN.md), not a live test of this repository; the a1-test-fidelity suite reads it as input and no CI runner executes it by design",
+    "date": "2026-10-20",
+    "by": "walter",
+    "review": "pending"
+  },
+  {
+    "kind": "fidelity",
+    "fingerprint": "mock-of-subject:_test-fixtures/a1-test-fidelity/real/claudia-after.http-caps-audit.test.ts:f364f135bc43c51c",
+    "reason": "mock-of-subject: fixture data reproduced from a1-office (see _test-fixtures/a1-test-fidelity/real/ORIGIN.md), not a live test of this repository; the pass-through withTenantContext mock is the bug class SC-005 measures (Q21)",
+    "date": "2026-10-20",
+    "by": "walter",
+    "review": "pending"
+  },
+  {
+    "kind": "fidelity",
+    "fingerprint": "skipped-test:_test-fixtures/a1-test-fidelity/real/claudia-after.http-caps-audit.test.ts:e1afa5b18b7b7ea5",
+    "reason": "skipped-test: fixture data reproduced from a1-office (see _test-fixtures/a1-test-fidelity/real/ORIGIN.md), not a live test of this repository; the ctx.skip() lines (identical text) are part of the corrected claudia test as shipped upstream",
+    "date": "2026-10-20",
+    "by": "walter",
+    "review": "pending"
+  },
+  {
+    "kind": "fidelity",
+    "fingerprint": "mock-of-subject:_test-fixtures/a1-test-fidelity/real/claudia-before.mail-rules-rejected-audit.test.ts:f364f135bc43c51c",
+    "reason": "mock-of-subject: fixture data reproduced from a1-office (see _test-fixtures/a1-test-fidelity/real/ORIGIN.md), not a live test of this repository; it is the historical defective test that FR-020 must flag in the suite (H1)",
+    "date": "2026-10-20",
+    "by": "walter",
+    "review": "pending"
+  },
+  {
+    "kind": "fidelity",
+    "fingerprint": "mock-of-subject:_test-fixtures/a1-test-fidelity/real/quote-before.pipeline-flow-quote-billing.test.ts:f364f135bc43c51c",
+    "reason": "mock-of-subject: fixture data reproduced from a1-office (see _test-fixtures/a1-test-fidelity/real/ORIGIN.md), not a live test of this repository; it is the historical defective test that FR-020 must flag in the suite (H2)",
+    "date": "2026-10-20",
+    "by": "walter",
+    "review": "pending"
+  }
+]

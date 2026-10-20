@@ -17,6 +17,7 @@ const { parseFlags } = require('./io.cjs');
 const { mask, lineIndex, lineOf } = require('./fidelity-tokenizer.cjs');
 const { loadAliases, isTestFile, FidelityConfigError } = require('./fidelity-resolve.cjs');
 const { FILE_RULES, REPO_RULES, DEFAULT_DB_WRAPPERS } = require('./fidelity-rules.cjs');
+const D = require('./disposition-store.cjs');
 
 const MAX_REF_LENGTH = 512;
 const MAX_FILES = 5000;
@@ -150,7 +151,11 @@ function scan(project, base) {
   const deadline = Date.now() + SCAN_DEADLINE_MS;
   const perFile = tests.flatMap((rel) => scanFile(ctx, rel, deadline));
   const repo = REPO_RULES.flatMap((rule) => rule(ctx));
-  return { findings: [...perFile, ...repo].sort(compareFindings), scanned: tests.length };
+  const all = [...perFile, ...repo].sort(compareFindings).map((f) => ({ ...f, fingerprint: D.fingerprintOf(f.rule, f.file, f.text) }));
+  // FR-025: only a committed `fidelity` disposition with this exact fingerprint clears a finding (an overturned one clears nothing).
+  const cleared = D.clearedFingerprints(D.loadEntries(project), 'fidelity');
+  const findings = all.filter((f) => !cleared.has(f.fingerprint));
+  return { findings, scanned: tests.length, dispositioned: all.length - findings.length };
 }
 
 function fail2(message) {
@@ -162,11 +167,11 @@ function fail2(message) {
 function cmdTestFidelity(sub, rest) {
   try {
     const { base, project } = parseArgs(sub === undefined ? rest : [sub, ...rest]);
-    const { findings, scanned } = scan(project, base);
-    process.stdout.write(`${JSON.stringify({ ok: findings.length === 0, base, scanned, count: findings.length, findings })}\n`);
+    const { findings, scanned, dispositioned } = scan(project, base);
+    process.stdout.write(`${JSON.stringify({ ok: findings.length === 0, base, scanned, count: findings.length, dispositioned, findings })}\n`);
     process.exitCode = findings.length === 0 ? 0 : 1;
   } catch (e) {
-    if (e instanceof UsageError || e instanceof FidelityConfigError) fail2(e.message);
+    if (e instanceof UsageError || e instanceof FidelityConfigError || e instanceof D.DispositionError) fail2(e.message);
     else fail2(`internal error: ${e && e.message ? e.message : String(e)}`);
   }
 }

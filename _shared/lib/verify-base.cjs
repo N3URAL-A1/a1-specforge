@@ -14,6 +14,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { gitRaw } = require('./verify-check.cjs');
+const { fingerprintOf } = require('./disposition-store.cjs');
 
 const CACHE_DIR = '.a1/verify-cache';
 const CACHE_EXCLUDE = '.a1/verify-cache/';
@@ -165,7 +166,31 @@ function flakyBaseGrown(baseVerifyJson, headVerifyJson) {
   return [...new Set(list(head).filter((i) => !had.has(i)))];
 }
 
+/** Fingerprint of one skip increase: rule skip-increase, the command id, and the exact `base->head` counts. */
+function skipFingerprint(commandId, baseSkipped, headSkipped) {
+  return fingerprintOf('skip-increase', commandId, `${baseSkipped}->${headSkipped}`);
+}
+
+/**
+ * Skip-increase rule (FR-017). More skipped tests on head than on base fails the command with reason
+ * `skip_increase` unless a `skip_increase` disposition with the fingerprint of exactly this increase is
+ * recorded. Counts that are unknown on either side (no report) are not judged.
+ * @param {object[]} commands settled head records
+ * @param {Map<string, number|null>} baseSkipped skipped count per command id on the base side
+ * @param {Set<string>} cleared fingerprints of non-overturned skip_increase dispositions
+ * @returns {object[]} new records; a record with an increase carries `skip_increase: {base, head, fingerprint, dispositioned}`
+ */
+function applySkipIncrease(commands, baseSkipped, cleared) {
+  return commands.map((c) => {
+    const base = baseSkipped.get(c.id);
+    if (typeof c.skipped !== 'number' || typeof base !== 'number' || c.skipped <= base) return c;
+    const fingerprint = skipFingerprint(c.id, base, c.skipped);
+    const dispositioned = cleared.has(fingerprint);
+    return { ...c, reason: c.reason === null && !dispositioned ? 'skip_increase' : c.reason, skip_increase: { base, head: c.skipped, fingerprint, dispositioned } };
+  });
+}
+
 module.exports = {
-  VerifyError, RETRYABLE, CACHE_DIR, resolveMergeBase, extractSnapshot, withSnapshot, dirtyPaths, commandHash,
+  VerifyError, skipFingerprint, applySkipIncrease, RETRYABLE, CACHE_DIR, resolveMergeBase, extractSnapshot, withSnapshot, dirtyPaths, commandHash,
   readCache, writeCache, failingIds, settle, idSet, flakyBaseGrown,
 };
