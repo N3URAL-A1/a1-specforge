@@ -1,0 +1,267 @@
+---
+name: a1-fix
+description: >
+  End-to-end bug pipeline with project-scoped learning loop: Pre-Flight → Report →
+  Diagnose → Fix → Verify → Postmortem. State persists in bug-report YAML frontmatter
+  (reported → diagnosed → fixing → fixed). Bug reports live under
+  `project/<slug>/fixes/<YYYY-MM-DD>-<bug-slug>.md`, repo-local by default
+  (external vault via `A1_VAULT_ROOT`, e.g. Obsidian).
+  MUST trigger when the user says: "bug in <X>" (alias: "fehler in <X>"),
+  "<X> crashes" (alias: "<X> crasht"), "<feature> doesn't work" (alias:
+  "<feature> funktioniert nicht"), "X is broken", "broken since deploy", "regression",
+  "crash", "a1-fix", "fix this", "create a bug report" (alias: "bug-report anlegen"),
+  "this used to work", "it stopped working", or any request to investigate/diagnose/fix
+  a malfunction in shipped functionality. Orchestrates a1-falk-fault-finder (triage + diagnosis) and a
+  project code agent (the fix). Writes a structured Postmortem to the learning
+  store (repo-local default; external vault via `A1_VAULT_ROOT`, e.g. Obsidian)
+  after every terminal verdict. Do NOT activate for: new feature work (use
+  a1-new-feature), PR code review without a reported defect (use Reinhard), or
+  refactor without a defect.
+allowed-tools:
+  - Read
+  - Write
+  - Edit
+  - Bash
+  - Glob
+  - Grep
+  - Agent
+---
+
+# a1-fix — Bug Pipeline (Pre-Flight → Postmortem)
+
+Language: English-first; German trigger aliases supported.
+
+This skill is a thin orchestrator. The phase logic lives in `workflows/`. The
+shared CLI helper (`<repo>/_shared/a1-tools.cjs`) handles deterministic
+file ops. Sub-agents do the actual thinking.
+
+## Spawn Policy (HARD RULE)
+
+Spawn a1 agents by `subagent_type` without `name` (else pass `model` explicitly); briefs carry
+paths, not documents. Details + self-check: `_shared/spawn-policy.md`.
+
+## Phases
+
+| # | Phase | Workflow | Status after |
+|---|---|---|---|
+| 0a | Quick Triage | Skill itself (no workflow file) | — (no file created yet) |
+| 0 | Pre-Flight | `workflows/00-preflight.md` | — (no file created yet) |
+| 1 | Report | `workflows/01-report.md` | reported |
+| 2 | Diagnose | `workflows/02-diagnose.md` | diagnosed |
+| 3 | Fix (incl. Scope-Clarify Gate) | `workflows/03-fix.md` | fixing → (fix_commit set) |
+| 4 | Verify + Postmortem | `workflows/04-verify.md` | fixed (or back to Phase 2) |
+
+**Scope-Clarify Gate (Phase 3, Step 1.5):** For any fix touching UI (columns,
+buttons, forms, layouts), ask up to 3 targeted scope questions **before** dispatching
+the code agent. Model: the pinned reasoning-tier model. Skip for pure logic/crash bugs.
+
+**Audit auto-close (Phase 3, Step 4.5):** when the project has `docs/product/audits/*.md`
+and the fix commit message uses the explicit `Closes F-0NN` / `Fixes F-0NN` convention
+(not a bare mention), the skill auto-calls `product audit-set --status fixed` to close
+the tracked finding — see `workflows/03-fix.md` Step 4.5 (FR-022).
+
+Terminal non-fix statuses: `cant-reproduce`, `wont-fix`, `duplicate`, `cancelled`.
+Bugs in these states stay on disk; slots are NOT recycled.
+
+## Drift-Prevention Architecture
+
+This skill treats two layers differently:
+
+**IMMUTABLE EXECUTOR** (never written by the skill at runtime):
+- `agents/*.md` — agent definitions
+- `skills/*.md` — skill definitions
+
+**MUTABLE KNOWLEDGE LAYER** (written by the skill, always append-only):
+- `project/<project>/postmortems/<date>-<bug-slug>.md` — raw learning artifacts
+- `project/<project>/bug-patterns.md` — pattern proposals section only (append)
+- `pattern/a1-learnings/lessons/<agent>/_suggestions/<date>-<slug>.md` — candidate lessons
+
+**Robert is THE ONLY writer to `pattern/a1-learnings/lessons/<agent>/_active.md`.** The skill
+never touches `_active.md` files. Promote-lessons writes suggestions only.
+
+## Phase 0a — Quick Triage
+
+Before Pre-Flight, run the deterministic XS gate against the reported
+symptom:
+
+```bash
+node <repo>/_shared/a1-tools.cjs quick eligibility \
+  --intent "<1-2 sentence symptom description>" --files <n> --diff-lines <estimate> \
+  --scope <path>[,<path>...] --no-migration --no-new-route --no-new-dep \
+  --by fix-<bug-slug>
+```
+
+- **Exit 0 (ELIGIBLE)** → skip Pre-Flight entirely (including the Isolation
+  Gate's worktree requirement below) and tell the user this is being routed
+  to the `a1-quick` lane instead of the full bug pipeline. Hand off to
+  `a1-quick` (pass along the symptom/intent and scope just used) and stop
+  here.
+- **Exit 1 (NOT_ELIGIBLE)** → proceed to Phase 0 (Pre-Flight) unchanged.
+
+**Override, either direction:** forcing *out* of the quick lane into the
+full pipeline is always honored without discussion, for any reason.
+Forcing *into* the quick lane despite a NOT_ELIGIBLE result is honored
+without discussion for any reason **except** a forbidden-surface hit or a
+reservation conflict — those two are hard-blocked and not overridable.
+
+## Pre-Flight (mandatory on every new bug)
+
+Before Phase 1, run `00-preflight.md`. Five checks:
+
+0. **isolation-gate (HARD RULE — runs FIRST)** — before any code is touched, the
+   fix MUST run in an isolated git worktree on its own branch. This prevents the
+   parallel-session corruption class (two sessions in the same working tree
+   overwrite each other's files and push half-finished work to `main`). See
+   **Isolation Gate** below. If the gate cannot be satisfied: STOP and ask Robert.
+1. **integrity-check** — verifies agents and skills have not drifted from the lock
+   file. If mismatch detected: STOP, report to Robert, write nothing.
+2. **bug-patterns lookup** — reads `project/<project>/bug-patterns.md` and surfaces
+   relevant patterns to Falk's context before triage.
+3. **postmortem search** — searches `project/<project>/postmortems/` for similar bugs.
+4. **scope-overlap check (non-blocking)** — compares the fix's target files
+   against every in-flight feature's declared `code_scope`. Never blocks the
+   fix; see **Scope Overlap Bypass** below.
+
+## Scope Overlap Bypass (a1-fix never blocks on in-flight feature scope)
+
+Hotfixes and regressions cannot wait behind a parallel feature's claimed
+scope — a production bug does not care that Feature X has reserved
+`src/billing/`. So a1-fix runs the overlap check in **dry-run mode only**
+and always proceeds:
+
+```bash
+node <repo>/_shared/a1-tools.cjs code-scope check \
+  --by fix-<bug-slug> --scope <target-file-paths-comma-separated>
+```
+
+- **CONFLICT (exit 1)** → do NOT stop. Print a warning to the user naming
+  the overlapping in-flight feature id(s) from stderr, then proceed to
+  Phase 1 (Report) as normal.
+- **OK (exit 0)** → proceed silently, no warning needed.
+
+**Never claim scope for a hotfix.** Only `code-scope check` (dry-run) is
+called — never `code-scope claim`. A fix's target files are never reserved
+in `.a1/reservations.json`; this keeps the fix out of the lifecycle-stage
+bookkeeping entirely and avoids blocking the feature it briefly overlapped
+with.
+
+## Isolation Gate (HARD RULE — before any code change)
+
+Every fix runs in its own git worktree on a fresh branch off `main` (cross-skill
+convention incl. shared-state + scope-claim rules: `_shared/parallel-spec-isolation.md`). No exceptions
+for "it's just a one-liner". (XS-eligible fixes are diverted before this gate
+is ever reached — see Phase 0a above; everything that reaches this point goes
+through the worktree unconditionally.) The flow:
+
+1. **Create the worktree** (delegate to the `a1-worktree` skill, or inline):
+   ```bash
+   git -C <repo> fetch origin main
+   git -C <repo> worktree add ../a1-worktrees/fix-<bug-slug> -b fix/<bug-slug> origin/main
+   ```
+   All subsequent edits, builds, and tests happen inside that worktree path —
+   never in the primary checkout.
+2. **Work the fix** there (Phases 1–4). Build + test must be GREEN in the worktree.
+3. **Merge via PR** only after GREEN: hand the worktree to `a1-pr-review`
+   (`a1-worktree exit --mode handoff`). It pushes the branch, opens the PR,
+   runs the review, and squash-merges (`gh pr merge <n> --squash --delete-branch`).
+   No local merge into `main`, no `git push origin main`.
+   The cross-provider (Codex) review of the fix diff runs only inside `a1-pr-review` (step 2.2b, `pr-diff-xprov`); this skill never runs a cross-provider gate itself.
+   If `origin/main` is broken (build fails for reasons unrelated to your fix):
+   STOP, do NOT layer your fix on top, report to Robert.
+4. **Tear down** the worktree: done by `a1-pr-review` after the merge — do not
+   exit it a second time here.
+
+**Never** cherry-pick a commit from a feature branch onto a fresh main branch as a
+workaround — that is the anti-pattern this gate exists to eliminate. **Never** push
+a build-red `main`. **Never** edit files in the primary checkout while another
+session may be using it. When the fix branch is pushed: `_shared/push-cadence.md`.
+
+## Routing — pick the right phase
+
+1. If the user provides a bug-report path: read frontmatter `status`.
+2. If no bug-report exists yet: run Pre-Flight → Phase 1 (Report).
+3. Otherwise route by status:
+   - `reported` → Phase 2 (Diagnose) via Falk
+   - `diagnosed` → Phase 3 (Fix) — propose code agent, user dispatches
+   - `fixing` → Phase 4 (Verify) once fix_commit is set
+   - `fixed` → no work; ask if a follow-up regression run is needed
+   - `cant-reproduce`, `wont-fix`, `duplicate`, `cancelled` → no work; confirm and stop
+
+## State mechanics
+
+State is persisted in the bug-report frontmatter. Update via the shared CLI:
+
+```bash
+node <repo>/_shared/a1-tools.cjs fix update-status \
+  "project/<slug>/fixes/<YYYY-MM-DD>-<bug-slug>.md" <new-status> [flags]
+```
+
+Flags: `--recommended-code-agent <name>`, `--fix-commit <hash>`,
+`--verify-result <text>`, `--duplicate-of <path>`.
+
+## Storage — Write Whitelist (HARD RULE)
+
+The skill may ONLY write to these paths inside the Vault:
+
+| Path | What |
+|------|------|
+| `project/<slug>/fixes/<date>-<slug>.md` | Bug reports |
+| `project/<project>/postmortems/<date>-<slug>.md` | Postmortems |
+| `project/<project>/bug-patterns.md` | Proposals section only (append) |
+| `pattern/a1-learnings/lessons/<agent>/_suggestions/<date>-<slug>.md` | Lesson candidates |
+| `pattern/a1-learnings/_canonical/agents.lock.json` | Lock file (bootstrap only) |
+| `pattern/a1-learnings/_state/last_promote.json` | Promote state |
+
+**NEVER WRITE:**
+- `agents/*.md` (agent definitions)
+- Any `skills/*.md` file
+- `pattern/a1-learnings/lessons/<agent>/_active.md`
+
+## Learning Loop (4 stages)
+
+**Stage 1 — Pre-Flight:** Check integrity + load patterns + search postmortems.
+
+**Stage 2 — Fix Execution:** Normal Phase 1–3.
+
+**Stage 3 — Post-Mortem (hard gate in Phase 4):** After every terminal verdict,
+write a structured postmortem via `fix init-postmortem`. Not optional.
+
+**Stage 4 — promote-lessons (auto-trigger):** After Phase 4, count postmortems
+since last promote. If ≥5 new postmortems: offer Robert to run promote-lessons.
+Promote-lessons reads all postmortems, clusters patterns, writes suggestions to
+`pattern/a1-learnings/lessons/<agent>/_suggestions/` only. Robert manually promotes to `_active.md`.
+
+## Agent integration
+
+| Phase | Agent | Source |
+|---|---|---|
+| 0 Pre-Flight | Skill itself (no agent) | — |
+| 1 Report | Falk | `~/.claude/agents/a1-falk-fault-finder.md` |
+| 2 Diagnose | Falk | same |
+| 3 Fix | Project code agent (a1-walter-web-developer / backend-bernd / a1-aik-ai-engineer / felix-flutter-engineer / a1-alex-architekt) | Read target CLAUDE.md |
+| 4 Verify | Skill itself; optionally a1-tobi-tester (severity ≥ MAJOR) | — |
+
+Falk is spawned via the `Agent` tool. Falk never edits code.
+
+## Hard rules
+
+- **Never touch code outside an isolated worktree on a fix branch.** The Isolation
+  Gate runs before everything. Merge to `main` only when build + tests are GREEN.
+  Never cherry-pick as a merge workaround. Never push a build-red `main`.
+- Never edit bug-report frontmatter with Edit/Write — always use `fix update-status`.
+- Never skip Phase 0 (Pre-Flight). If integrity-check fails: STOP immediately.
+- Never skip Phase 1 (Report). Structured triage prevents diagnosis on incomplete info.
+- Never let Falk fix code. Falk diagnoses; code agents fix.
+- Never recycle date+suffix slots.
+- Postmortem is a hard gate after every terminal verdict — not optional.
+- promote-lessons writes to `_suggestions/` only. Never to `_active.md`.
+- User-facing output language: see `_shared/language-policy.md` (artifacts English,
+  conversation in the user's language).
+- One question per turn during Phase 1. No wall-of-text.
+
+## Hand-offs
+
+- New features: `a1-new-feature`.
+- PR code review: Reinhard.
+- QA regression suite design: a1-tobi-tester (Phase 4, severity ≥ MAJOR).
+- Cross-cutting incident response: Pablo + Dirk.

@@ -631,6 +631,72 @@ caseV11() {
 
 caseV1; caseV2; caseV3; caseV4; caseV5; caseV6; caseV7; caseV8; caseV9; caseV10; caseV11
 
+# ===========================================================================
+# Spec 017 Wave 1 — the registry gains an `invoke` column (last). The id parser
+# and `retro validate` must be unaffected; the new cell parser must survive an
+# escaped pipe, a stray pipe, an exemption suffix and `none`. Fixture:
+# corpus/fixture-registry-invoke.md (frozen copy of fixture-registry.md plus the
+# two columns). Each case names the production change that turns it red.
+# Measured red 2026-10-20 (snapshot, one line reverted each):
+#   parseRegistryRows() tail/notes split made left-positional -> I3, I6
+#   parseInvokeCell() isRealDate() check dropped               -> I5
+#   invokeMap() keyed by gate id instead of subcommand         -> I4, I7
+#   parseInvokeCell() `none` no longer recognised              -> I3, I6
+#   registry: `fix class-sweep` cell misspelled                -> I7
+#   registry: a row loses a cell                               -> I6
+# ===========================================================================
+
+INVOKE_REG="$CORPUS/fixture-registry-invoke.md"
+
+# I1. ids unchanged by the new columns. Red: parseRegistryIds reading the last cell as the id.
+expect_json "I1 invoke column does not disturb the id list" \
+  "const fs=require('fs'); const a=gi.parseRegistryIds(fs.readFileSync('$INVOKE_REG','utf8')); const b=gi.parseRegistryIds(fs.readFileSync('$FIXTURE_REG','utf8')); process.stdout.write(JSON.stringify(a)===JSON.stringify(b) && a.length===4 ? 'same4' : 'DIFF '+JSON.stringify(a))" \
+  "same4"
+
+# I2. retro validate against the invoke registry: clean retro 0, unknown id 1.
+# Red: retro-validate reading registry cells positionally from the right.
+caseI2() {
+  local work rc1 rc2
+  work="$(mktemp -d "${TMPDIR:-/tmp}/a1-fx-retro-invoke.XXXXXX")" || return 1
+  [[ -n "$work" && -d "$work" ]] || return 1
+  cp "$CORPUS/retro-fixture-ids.md" "$work/retro.md"
+  node "$TOOLS" retro validate "$work/retro.md" --registry "$INVOKE_REG" >/dev/null 2>&1; rc1=$?
+  sed 's/id: beta-gate/id: beta-gate-unknown/' "$CORPUS/retro-fixture-ids.md" > "$work/retro2.md"
+  node "$TOOLS" retro validate "$work/retro2.md" --registry "$INVOKE_REG" >/dev/null 2>&1; rc2=$?
+  rm -rf "${work:?}"
+  if [[ $rc1 -eq 0 && $rc2 -eq 1 ]]; then ok "I2 retro validate on the invoke registry: clean 0, planted unknown id 1"
+  else bad "I2 retro validate on the invoke registry (clean=$rc1 planted=$rc2)"; fi
+}
+caseI2
+
+# I3. cell parser: exact result per row. Red: splitRowCells without `\|`, or
+# positional-from-the-left notes (the stray pipe in gamma-gate shifts every cell).
+expect_json "I3 rowInvokes: kinds, subcommands, skills, exemption per fixture row (escaped pipe and stray pipe rows included)" \
+  "const fs=require('fs'); const r=gi.rowInvokes(fs.readFileSync('$INVOKE_REG','utf8')); process.stdout.write(JSON.stringify(r.map(x=>[x.id,x.kind,x.subcommand||null,(x.skills||[]).join('+'),x.exemption?x.exemption.until:null,x.malformed])))" \
+  '[["alpha-gate","command","alpha run","a1-new-feature+a1-fix",null,false],["beta-gate","command","beta run","a1-execute","2026-11-30",false],["gamma-gate","none",null,"",null,false],["range-gate1..gate3","none",null,"",null,false]]'
+
+# I4. invokeMap: one entry per command row. Red: invokeMap keyed by gate id.
+expect_json "I4 invokeMap is {subcommand -> gate id}" \
+  "const fs=require('fs'); process.stdout.write(JSON.stringify(gi.invokeMap(fs.readFileSync('$INVOKE_REG','utf8'))))" \
+  '{"alpha run":"alpha-gate","beta run":"beta-gate"}'
+
+# I5. cell grammar edge cases on parseInvokeCell directly.
+expect_json "I5 parseInvokeCell: external, empty, missing @, bad date, missing reason, two exemption suffixes" \
+  "const k=(c)=>gi.parseInvokeCell(c).kind; process.stdout.write([k('external'),k(''),k('\`x y\` a1-fix'),k('none; unwired_until=2026-13-01; unwired_reason=r'),k('none; unwired_until=2026-11-30'),k('none; unwired_until=2026-11-30; unwired_reason=a; unwired_until=2026-11-30; unwired_reason=b')].join(','))" \
+  "external,invalid,invalid,invalid,invalid,invalid"
+
+# I6. the LIVE registry: every id row carries a parsable invoke cell, every
+# row is well-formed, and the number of rows equals the number of ids (count assert).
+# Red: any row added without an invoke cell, or a row with fewer cells than the header.
+expect_json "I6 live registry: all rows have a valid invoke cell (rows == ids, 0 invalid, 0 malformed)" \
+  "const fs=require('fs'); const t=fs.readFileSync('$REPO_ROOT/_shared/gates-registry.md','utf8'); const ids=gi.parseRegistryIds(t); const r=gi.rowInvokes(t); process.stdout.write([ids.length===r.length && ids.length>40, r.filter(x=>x.kind==='invalid').length, r.filter(x=>x.malformed||!x.hasInvokeColumn).length].join('/'))" \
+  "true/0/0"
+
+# I7. the three rows spec 017 adds exist and name their subcommand (FR-002 / wave 1 brief).
+expect_json "I7 live registry carries test-fidelity, fix-class-sweep, pr-merge-check with their subcommands" \
+  "const fs=require('fs'); const m=gi.invokeMap(fs.readFileSync('$REPO_ROOT/_shared/gates-registry.md','utf8')); process.stdout.write([m['test-fidelity'],m['fix class-sweep'],m['pr merge-check']].join(','))" \
+  "test-fidelity,fix-class-sweep,pr-merge-check"
+
 printf '%s\n' "${results[@]}"
 echo "----"
 echo "a1-retro-validate: $pass passed, $fail failed"
