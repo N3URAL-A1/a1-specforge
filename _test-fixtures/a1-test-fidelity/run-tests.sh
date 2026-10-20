@@ -428,8 +428,9 @@ new_repo; mkdir -p "$R/.a1"; cp "$CI/specforge-fidelity.json" "$R/.a1/fidelity.j
 put _test-fixtures/x/run-tests.sh 'echo ok'; head_commit; run_tf
 expect "CI1a suite matched by the declared ci_glob (real test.yml): exit 0" 0 "$RC"
 expect "CI1a zero findings (count)" 0 "$(js 'j.count')"; expect "CI1a scanned (count)" 1 "$(js 'j.scanned')"
+printf '{"test_globs":["_test-fixtures/**/*.sh"],"ci_globs":["_test-fixtures/*/run*.sh"]}\n' > "$R/.a1/fidelity.json"
 put _test-fixtures/x/parts/01.sh 'echo part'; head_commit; run_tf
-expect "CI1b a part script no ci_glob reaches: exit 1" 1 "$RC"
+expect "CI1b a declared test glob no ci_glob reaches: exit 1" 1 "$RC"
 expect "CI1b exactly test-not-in-ci for that file" "test-not-in-ci:_test-fixtures/x/parts/01.sh" "$(rules_of)"
 
 # CI2  RED: the literal check of ci_globs removed (every declared glob counts as verified).

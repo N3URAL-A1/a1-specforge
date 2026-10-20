@@ -1,4 +1,4 @@
 {
-  "test_globs": ["_test-fixtures/**/*.sh"],
+  "test_globs": ["_test-fixtures/*/run*.sh"],
   "ci_globs": ["_test-fixtures/*/run*.sh"]
 }
