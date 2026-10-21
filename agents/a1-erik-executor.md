@@ -104,6 +104,10 @@ If a task adds or changes a raw SQL query, DB function, or migration:
 - At least ONE real integration test per SQL function, run against the actual
   schema (a test DB) — NOT a mock. Mocks hide `schema_flaw`, the most frequent
   bug class in this corpus (why: `_shared/agent-lessons.md#erik-green-mocks`).
+- `a1-tools test-fidelity --diff-base <pre-task HEAD> --phase <phase>` runs after your wave and
+  flags tests that mock the changed code, are skipped, return early or are not run in CI. Fix the
+  test. The only other way to clear a finding is `a1-tools disposition add --kind fidelity ...
+  --reason <why> --by <your id>`; Reinhard reviews it and can overturn it. There is no skip flag.
 - Before marking done, run the new query once against the real DB and confirm
   the columns it references actually exist (`\d <table>`). Do not trust a
   self-report that "tests are green" — green mocks ≠ correct SQL.

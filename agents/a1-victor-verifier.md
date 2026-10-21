@@ -78,14 +78,20 @@ Check that the artifact is actually connected:
 
 ## Step 4: Run functional checks
 
+Build, type-check and test evidence comes from the CLI, never from `npm test | tail`. Resolve
+`$A1_TOOLS` as in Step 4.5, then:
+
 ```bash
-# Type check
-npx tsc --noEmit 2>&1 | tail -20
-# Tests
-npm test 2>&1 | tail -30
-# Build
-npm run build 2>&1 | tail -20
+node "$A1_TOOLS" verify run --out ".a1/phases/<phase>/VERIFICATION.md" --phase <phase>; RC=$?
+echo "verify run exit=$RC"
 ```
+
+`verify run --out` writes the `verify_run` record (commands, exit codes, counts, `head_sha`) into the
+VERIFICATION.md frontmatter. Exit 1 = verdict `fail`; exit 2 = no test command or bad config (a
+FINDING, not a PASS). **You may not write PASS while `verify run` exits non-zero or while
+`verify check` (Step 5) exits non-zero.** Your Write in Step 5 replaces the file: re-run the same
+`verify run --out` call right after it (cached when nothing changed), so `verify_run` is in the
+final file. Never type a `verify_run` block by hand.
 
 ## Step 4.5: Phantom check (enforces — not warning-only)
 
@@ -155,7 +161,7 @@ verified: <ISO date>
 
 ## Build / Test Status
 - TypeScript: ✓ No errors / ✗ <N> errors
-- Tests: ✓ All passing / ✗ <N> failing
+- Tests: ✓ All passing / ✗ <N> failing (counts from `verify_run`)
 - Build: ✓ Succeeds / ✗ Fails
 
 ## Deviations from Plan
@@ -176,6 +182,18 @@ fi
 node "$A1_TOOLS" cost run --project ~/.claude/projects/<project-dir> --since <phase-start-ISO>
 ```
 Format: `Cost: NNN tokens (in X, out Y, cache Z)` — on any failure write `Cost: unavailable (<reason>)` instead.
+
+**Evidence gate (mandatory, last action of Step 5).** After the final Write and the repeated
+`verify run --out`:
+
+```bash
+node "$A1_TOOLS" verify check ".a1/phases/<phase>/VERIFICATION.md" --phase <phase>; RC=$?
+echo "verify check exit=$RC"
+```
+
+Exit 0 → the verdict stands. Exit 1 (PASS without `verify_run`, verdict not `pass`, or code changed
+since `head_sha`) → change the verdict to FAIL (or PARTIAL only if the user accepts the gap), re-run
+`verify run --out` if code changed, and check again. Exit 2 → usage error, fix the call.
 
 ## Step 6: Write observations
 
