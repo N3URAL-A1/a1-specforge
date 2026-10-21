@@ -12,6 +12,7 @@
 #   hostile-injection        -> observed safe outcome (exit 3, no code execution)
 #   hostile-overlong          -> observed safe outcome (exit 3, no hang)
 set -u
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$DIR/../.." && pwd)"
@@ -101,7 +102,7 @@ fi
 # bound it manually via a background job + wait/kill instead, same pattern
 # as a1-reservations/run-tests.sh's hostile-release-overlong case.
 OVERLONG_VALUE="$(head -c 12000 /dev/zero | tr '\0' 'a')"
-WORK="$(mktemp -d)"
+mk_workdir WORK work
 OVERLONG_OUT_FILE="$WORK/overlong.out"
 node "$TOOLS" learnings count-since-watermark --projects-root "$OVERLONG_VALUE" --json >"$OVERLONG_OUT_FILE" 2>&1 &
 OVERLONG_PID=$!

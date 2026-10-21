@@ -22,7 +22,7 @@
 #   RQ7        APPROVED + quarantined item: fail/quarantined, quarantined_blocking 0.
 #   RQ8        04b-xprov-review.md and 02-execute.md carry the one added sentence (once each).
 
-TMP19="$(mktemp -d "${TMPDIR:-/tmp}/a1x19.XXXXXX")"
+mk_workdir TMP19 "a1x19"
 [[ -n "$TMP19" && -d "$TMP19" ]] || { echo "FAIL  part 19: mktemp failed" >&2; fail=$((fail + 1)); return 0 2>/dev/null || exit 1; }
 SAVED_HOME_19="$HOME"
 export HOME="$TMP19/home"; mkdir -p "$HOME/.codex"; printf '{"fixture":true}\n' > "$HOME/.codex/auth.json"; chmod 600 "$HOME/.codex/auth.json"

@@ -4,11 +4,11 @@
 # the id-lookups must still find them (bug found during M5 validation 2026-07-05:
 # approve-proposal failed with "proposal P-001 not found" right after add-proposal).
 set -euo pipefail
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CLI="$REPO/_shared/a1-tools.cjs"
-TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+mk_workdir TMP tmp
 export A1_VAULT_ROOT="$TMP/vault"
 mkdir -p "$TMP/vault" "$TMP/project"
 

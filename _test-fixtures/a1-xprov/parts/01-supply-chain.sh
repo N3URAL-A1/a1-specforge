@@ -47,7 +47,7 @@ caseR22_static() {
 # Red-making change: making checkRunnerPin() tolerate a mismatch, or skipping
 # the check when SHA256SUMS is unreadable (an absent pin must be a FAIL).
 caseR23() {
-  local t; t="$(mktemp -d)"
+  local t; mk_workdir t t
   cp -R "$REPO_ROOT/_shared" "$t/_shared"
   local vend="$t/_shared/vendor/claudex-loop"
   # flip byte 0 ('#' of the shebang) to '%'
@@ -160,7 +160,7 @@ caseR27() {
 # Red-making change: deleting either registry row (Diana's file). The second
 # arm proves the validator is not accepting anything xprov-shaped.
 caseR1() {
-  local t rc_ok rc_bad; t="$(mktemp -d)"
+  local t rc_ok rc_bad; mk_workdir t t
   cat > "$t/retro-both.md" <<MD
 ---
 date: 2026-09-24
@@ -398,7 +398,7 @@ caseH1() {
   make_phase h1-phase
   [[ -f "$PHASE_PLAN" && -d "$PHASE_REPO/.git" && -n "$PHASE_HEAD" ]] && ok "H1e make_phase builds a committed checkout with PLAN.md" || bad "H1e make_phase"
 
-  local art argv rc; art="$(mktemp -d)"
+  local art argv rc; mk_workdir art art
   FAKE_RUNNER_ARGV_FILE="$art/argv.json" FAKE_RUNNER_CASE=approved \
     python3 "$TREE_VENDOR/runner.py" review --host claude --repo "$PHASE_REPO" --plan "$PHASE_PLAN" --artifacts "$art" --timeout 5 >/dev/null 2>&1; rc=$?
   local run_dir; run_dir="$(ls -d "$art"/claudex-* 2>/dev/null | head -1)"
@@ -432,5 +432,5 @@ caseH1() {
     && ok "H1k make_home builds a 0700 home with the compliant config" || bad "H1k make_home (mode=$mode)"
 }
 
-TMPDIR_F1="$(mktemp -d)"
+mk_workdir TMPDIR_F1 tmpdir_f1
 caseR22_static; caseR23; caseR27; caseR1; caseR29; caseF1; caseH1

@@ -23,7 +23,7 @@
 # cmdXprovPermit with guardRefusal replaced, so the store logic is still measured.
 # Under Claude Code the real guard path stays covered by PS6 (pipe, CLAUDECODE=1).
 
-TMP15="$(mktemp -d "${TMPDIR:-/tmp}/a1x15.XXXXXX")"
+mk_workdir TMP15 "a1x15"
 [[ -n "$TMP15" && -d "$TMP15" ]] || { echo "FAIL  part 15: mktemp failed" >&2; fail=$((fail + 1)); return 0 2>/dev/null || exit 1; }
 SAVED_HOME_15="$HOME"
 export HOME="$TMP15/home"; mkdir -p "$HOME"

@@ -41,6 +41,7 @@
 # | D26  | _shared/gates-registry.md: delete the `depth-pass` row |
 
 set -u
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TOOLS="$REPO_ROOT/_shared/a1-tools.cjs"
 LIB="$REPO_ROOT/_shared/lib/depth-pass.cjs"
@@ -52,8 +53,7 @@ unset A1_VAULT_ROOT
 pass=0
 fail=0
 
-WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK"' EXIT
+mk_workdir WORK work
 
 assert_rc() {
   local name="$1" expected="$2" actual="$3" out="$4"
@@ -478,7 +478,7 @@ fi
 # D26 retro validate accepts gates_fired id depth-pass (FR-012, SC-005): the registry row exists.
 # RED: delete the `depth-pass` row from _shared/gates-registry.md -> retro validate reports "unknown", exit 1.
 # Measured red 2026-10-19: row deleted on a git-archive snapshot -> D26 FAIL only
-RETRO_DIR="$(mktemp -d)"
+mk_workdir RETRO_DIR retro
 printf -- '---\ntype: pattern\ngates_fired:\n  - {id: depth-pass, verdict: pass, caught: false}\n---\n' > "$RETRO_DIR/retro.md"
 rc=0
 out="$(node "$TOOLS" retro validate "$RETRO_DIR/retro.md" 2>&1)" || rc=$?

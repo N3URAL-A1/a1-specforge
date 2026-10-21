@@ -13,6 +13,7 @@
 # only ever asked the question it could not answer.
 
 set -u
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TOOLS="$REPO_ROOT/_shared/a1-tools.cjs"
 
@@ -50,7 +51,7 @@ MD
 # claim imports were checked. Red-making change: defaulting imports_checked to
 # true, or running the import scan without a repo root.
 caseL1() {
-  local t out; t="$(mktemp -d)"; plant_crossing "$t"
+  local t out; mk_workdir t t; plant_crossing "$t"
   out="$(node "$TOOLS" lane-split check --plan "$t/PLAN.md" 2>/dev/null)"
   local v; v="$(node -e "
     const j=JSON.parse(process.argv[1]);
@@ -65,7 +66,7 @@ caseL1() {
 # change: remove the crossLaneImportFindings() call, or drop the `.`-prefix
 # filter so nothing resolves.
 caseL2() {
-  local t out rc; t="$(mktemp -d)"; plant_crossing "$t"
+  local t out rc; mk_workdir t t; plant_crossing "$t"
   out="$(node "$TOOLS" lane-split check --plan "$t/PLAN.md" --imports "$t" 2>/dev/null)"; rc=$?
   local v; v="$(node -e "
     const j=JSON.parse(process.argv[1]);
@@ -80,7 +81,7 @@ caseL2() {
 # The guard must not fire on intra-lane imports, which are normal. Red-making
 # change: dropping the `owner !== lane.id` comparison.
 caseL3() {
-  local t out; t="$(mktemp -d)"
+  local t out; mk_workdir t t
   mkdir -p "$t/src/a"
   printf 'export const LIMIT = 5;\n' > "$t/src/a/helper.mjs"
   printf "import { LIMIT } from './helper.mjs';\nexport const u = LIMIT;\n" > "$t/src/a/user.mjs"
@@ -116,7 +117,7 @@ MD
 # `a/helper.mjs` resolves to exactly lane-a's file.
 # Red-making change: removing the `spec.startsWith('.')` filter.
 caseL4() {
-  local t out; t="$(mktemp -d)"
+  local t out; mk_workdir t t
   mkdir -p "$t/src/a" "$t/src"
   printf 'export const L = 1;\n' > "$t/src/a/helper.mjs"
   # Bare specifier (no leading dot) that WOULD resolve onto lane-a's file if
@@ -153,7 +154,7 @@ MD
 # loop. A typo must not look like a finding.
 # Red-making change: using usage() (exit 1) instead of exit 2.
 caseL5() {
-  local t rc; t="$(mktemp -d)"; plant_crossing "$t"
+  local t rc; mk_workdir t t; plant_crossing "$t"
   rc=0
   node "$TOOLS" lane-split check --plan "$t/PLAN.md" --imports "$t/nonexistent" >/dev/null 2>&1 || rc=$?
   [[ $rc -eq 2 ]] && ok "L5 bad --imports path exits 2, not 1" || bad "L5 bad --imports (rc=$rc)"
@@ -163,7 +164,7 @@ caseL5() {
 # `src/*.ts` and `src/a.ts` claim the same file; the old segment matcher compared
 # the segment literally and called them disjoint. Control: `src/*.ts` vs `docs/a.ts`.
 caseL6() {
-  local t out v; t="$(mktemp -d)"
+  local t out v; mk_workdir t t
   cat > "$t/PLAN.md" <<'MD'
 ---
 phase: probe
@@ -199,7 +200,7 @@ MD
 # Review round 1: counting any `*` segment as a glob made the fixed prefix `tests/unit`
 # overlap every file there (11 and 20 false BLOCKERs on real plans, 0 on main).
 caseL7() {
-  local t out v; t="$(mktemp -d)"
+  local t out v; mk_workdir t t
   cat > "$t/PLAN.md" <<'MD'
 ---
 phase: probe
@@ -233,7 +234,7 @@ MD
 # `src/billing/` can contain a util.js, so `**/util.js` overlaps it; the
 # over-limit owns must be a BLOCKER finding (rc 1), not a crash (rc 2).
 caseL8() {
-  local t out v rc; t="$(mktemp -d)"
+  local t out v rc; mk_workdir t t
   cat > "$t/PLAN.md" <<'MD'
 ---
 phase: probe
@@ -271,7 +272,7 @@ MD
 
 # ---------- L9: owns ending in "/." is a directory (fix scope-reclaim-dir-signal) ----------
 caseL9() {
-  local t out v; t="$(mktemp -d)"
+  local t out v; mk_workdir t t
   cat > "$t/PLAN.md" <<'MD'
 ---
 phase: probe

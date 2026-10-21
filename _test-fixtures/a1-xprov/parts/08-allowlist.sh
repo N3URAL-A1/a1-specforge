@@ -42,7 +42,7 @@
 #   - Linux (aiserver) Claude Code form is NOT measured here: open step for
 #     Robert (`cat /proc/$CLAUDE_PID/comm; readlink /proc/$CLAUDE_PID/exe`).
 
-TMP08="$(mktemp -d)"
+mk_workdir TMP08 tmp08
 SAVED_HOME_08="$HOME"
 AL_FILE=".a1/xprov-secret-allowlist.json"
 STORE_NAME="allowlist-approvals.json"

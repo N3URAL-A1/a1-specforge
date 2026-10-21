@@ -19,7 +19,7 @@
 #   PV6  no `codex` on PATH -> preflight exit 1 with `codex_cli: FAIL`; `run` refuses
 #        with preflight_failed and spawns nothing.       Red (run arm) if run does not resolve codex.
 
-TMP21="$(mktemp -d)"
+mk_workdir TMP21 tmp21
 SAVED_HOME_21="$HOME"
 PV_AUDITED_SHA="962dfdfe5d67b75eb73ec7c38b9186e6e6e0ca96a68d4ec82595305d8f737c8c"
 PV_N=0

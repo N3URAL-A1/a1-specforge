@@ -25,7 +25,7 @@
 #   Repo hook                              R-deny cases name M0..M13 below; the R-allow cases are red under MOLD (the old behaviour).
 # Run on tree copies only (the real owner store is never touched; rule 4b of the plan).
 
-TMP25="$(mktemp -d "${TMPDIR:-/tmp}/a1x25.XXXXXX")"
+mk_workdir TMP25 "a1x25"
 [[ -n "$TMP25" && -d "$TMP25" ]] || { echo "FAIL  part 25: mktemp failed" >&2; fail=$((fail + 1)); return 0 2>/dev/null || exit 1; }
 SAVED_HOME_25="$HOME"
 export HOME="$TMP25/home"; mkdir -p "$HOME"

@@ -23,7 +23,7 @@
 # and again here). Each named mutation below was applied to a throwaway copy
 # and turned its case red (Wave 4A report).
 
-T_WORK="$(mktemp -d)"
+mk_workdir T_WORK t_work
 T_HOME="$T_WORK/home"; T_ERR="$T_WORK/stderr"
 mkdir -p "$T_HOME"
 T_OUT=""; T_RC=0

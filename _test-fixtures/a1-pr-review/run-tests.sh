@@ -4,12 +4,12 @@
 # temporären Worktree-Pfad. Mutiert nichts Echtes.
 
 set -u
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
 
 CLI="node $(cd "$(dirname "${BASH_SOURCE[0]}")/../../_shared" && pwd)/a1-tools.cjs"
 FIXTURE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+mk_workdir TMP tmp
 
 REGISTRY="$TMP/registry.json"
 WT="$TMP/worktrees/demo-feature"

@@ -17,6 +17,7 @@
 # to restore" branch.
 
 set -u
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TOOLS="$REPO_ROOT/_shared/a1-tools.cjs"
@@ -43,7 +44,7 @@ bootstrap() {
     git -C "$dir" init -q
     # commit 1: baseline (stubs) — copy .baseline/ over the real files.
     local saved
-    saved="$(mktemp -d)"
+    mk_workdir saved saved
     cp -R "$dir/PLAN.md" "$dir/src" "$saved/" 2>/dev/null || true
     cp -R "$dir/.baseline/." "$dir/"
     git -C "$dir" add -A

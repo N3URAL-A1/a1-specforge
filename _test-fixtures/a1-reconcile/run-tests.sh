@@ -11,14 +11,14 @@
 # that's a sub-agent's job in Phase 3 of the skill, not a deterministic CLI op.
 
 set -u
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TOOLS="$REPO_ROOT/_shared/a1-tools.cjs"
 # The lifecycle cases rewrite drift reports, so they run on a temp copy: the tracked
 # fixtures (and the working tree) stay untouched after a run.
 SRC_FIX="$REPO_ROOT/_test-fixtures/a1-reconcile"
-FIX=$(mktemp -d) || exit 2
-trap 'rm -rf "$FIX"' EXIT
+mk_workdir FIX fix || exit 2
 cp -R "$SRC_FIX/." "$FIX/" || exit 2
 fixture_sum() { (cd "$SRC_FIX" && find . -type f ! -name run-tests.sh | sort | xargs cksum); }
 SUM_BEFORE=$(fixture_sum)

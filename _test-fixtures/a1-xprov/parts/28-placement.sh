@@ -22,7 +22,7 @@
 #   ST4  an exempt wave after a reviewed one does not make it lack          [mutant P14]
 # Mutants run on tree copies only (rule 4b); the real owner store stays untouched.
 
-TMP28="$(mktemp -d "${TMPDIR:-/tmp}/a1x28.XXXXXX")"
+mk_workdir TMP28 "a1x28"
 [[ -n "$TMP28" && -d "$TMP28" ]] || { echo "FAIL  part 28: mktemp failed" >&2; fail=$((fail + 1)); return 0 2>/dev/null || exit 1; }
 SAVED_HOME_28="$HOME"
 export HOME="$TMP28/home"; mkdir -p "$HOME/.codex"; printf '{"fixture":true}\n' > "$HOME/.codex/auth.json"; chmod 600 "$HOME/.codex/auth.json"

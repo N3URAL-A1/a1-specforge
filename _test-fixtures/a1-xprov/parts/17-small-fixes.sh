@@ -15,7 +15,7 @@
 #   SF7b guardRefusal text and the ancestry stub seam (module.exports.ancestryRefusal), fail-closed on a throw.
 #   SF8  parts 11 and 12 run unchanged (they stay in the suite; nothing here edits them).
 
-TMP17="$(mktemp -d "${TMPDIR:-/tmp}/a1x17.XXXXXX")"
+mk_workdir TMP17 "a1x17"
 [[ -n "$TMP17" && -d "$TMP17" ]] || { echo "FAIL  part 17: mktemp failed" >&2; fail=$((fail + 1)); return 0 2>/dev/null || exit 1; }
 LIB17="$REPO_ROOT/_shared/lib"
 AL_FILE17=".a1/xprov-secret-allowlist.json"   # literal from the spec (ALLOWLIST_FILE)

@@ -10,12 +10,12 @@
 # Unlike part 02, this part runs the REAL filter: make_tree copies whatever
 # `_shared/lib/xprov-filter.cjs` the tree has, and nothing here overwrites it.
 
-TMP03="$(mktemp -d)"
+mk_workdir TMP03 tmp03
 # The real home is out of reach for every case in this part (Samuel W3): a
 # production path that resolved ~/.a1-xprov from the developer's real HOME
 # would write into a throwaway dir here. Restored at the end of the part.
 SAVED_HOME_03="$HOME"
-export HOME="$(mktemp -d)"
+mk_workdir HOME home; export HOME
 
 # run_n3 <result> <phase> [more flags] — normalize from inside $PHASE_REPO with
 # the plan-review gate. Sets N_OUT, N_ERR, N_RC.
@@ -194,7 +194,7 @@ caseR19() {
 # against the wrong cutoff (a 7-day cutoff removes the 13-day dir).
 caseR20() {
   make_tree; make_phase p20 "$CASES/approved.PLAN.md"
-  local home; home="$(mktemp -d)"
+  local home; mk_workdir home home
   local out; out="$(cd "$PHASE_REPO" && HOME="$home" node -e "
     const a = require(process.argv[1]); const fs = require('fs'); const path = require('path');
     const dir = a.ensureArtifactsDir();
@@ -209,7 +209,7 @@ caseR20() {
   # A pre-existing 0755 dir (the runner's own root.mkdir leaves one, see
   # VENDORED.md) must be tightened: mkdirSync on an existing dir changes
   # nothing, only the explicit chmodSync does. Red-making change: drop chmodSync.
-  local home2; home2="$(mktemp -d)"; mkdir -p "$home2/.a1-xprov/artifacts/$(basename "$PHASE_REPO")"; chmod 755 "$home2/.a1-xprov" "$home2/.a1-xprov/artifacts" "$home2/.a1-xprov/artifacts/$(basename "$PHASE_REPO")"
+  local home2; mk_workdir home2 home2; mkdir -p "$home2/.a1-xprov/artifacts/$(basename "$PHASE_REPO")"; chmod 755 "$home2/.a1-xprov" "$home2/.a1-xprov/artifacts" "$home2/.a1-xprov/artifacts/$(basename "$PHASE_REPO")"
   out="$(cd "$PHASE_REPO" && HOME="$home2" node -e "
     const a = require(process.argv[1]); const fs = require('fs'); const path = require('path');
     const dir = a.ensureArtifactsDir();
@@ -226,7 +226,7 @@ caseR20() {
   assert_eq "R20d artifacts under the checkout are refused (typed error)" "$out" "ERR:artifacts_inside_checkout_or_vault/A1_INPUT"
   [[ ! -e "$PHASE_REPO/home" ]] && ok "R20e nothing was created inside the checkout" || bad "R20e a directory was created inside the checkout"
   # HOME under A1_VAULT_ROOT → refused too
-  local vault; vault="$(mktemp -d)"
+  local vault; mk_workdir vault vault
   out="$(cd "$PHASE_REPO" && A1_VAULT_ROOT="$vault" HOME="$vault/sub" node -e "
     const a = require(process.argv[1]);
     try { a.ensureArtifactsDir(); process.stdout.write('created'); } catch (e) { process.stdout.write('ERR:' + e.reason); }
@@ -301,7 +301,7 @@ caseR20() {
   # internal `root` is guarded like the artifacts dir itself.
   # Red-making change: letting EEXIST/ENAMETOOLONG escape as internal errors, or
   # skipping assertArtifactsRoot() for gc.root.
-  local home3; home3="$(mktemp -d)"; printf 'not a dir' > "$home3/.a1-xprov"
+  local home3; mk_workdir home3 home3; printf 'not a dir' > "$home3/.a1-xprov"
   out="$(cd "$PHASE_REPO" && HOME="$home3" node -e "
     const a = require(process.argv[1]);
     try { a.ensureArtifactsDir(); process.stdout.write('created'); } catch (e) { process.stdout.write('ERR:' + e.reason + '/' + e.code); }

@@ -21,7 +21,7 @@
 # OB  one observation line per gate run with owner_handoffs, codex_runs, abort_reason, recovered; no secret, no repo content
 # Mutants run on tree copies only (rule 4b); the real owner store stays untouched.
 
-TMP29="$(mktemp -d "${TMPDIR:-/tmp}/a1x29.XXXXXX")"
+mk_workdir TMP29 "a1x29"
 [[ -n "$TMP29" && -d "$TMP29" ]] || { echo "FAIL  part 29: mktemp failed" >&2; fail=$((fail + 1)); return 0 2>/dev/null || exit 1; }
 SAVED_HOME_29="$HOME"
 export HOME="$TMP29/home"; mkdir -p "$HOME/.codex"; printf '{"fixture":true}\n' > "$HOME/.codex/auth.json"; chmod 600 "$HOME/.codex/auth.json"
@@ -326,7 +326,7 @@ scen_pf15() { # `xprov init-home` (the owner command) writes the marker once, mo
   make_home; rm -f "$XHOME/.a1-review-home"
   A1_XPROV_CODEX_HOME="$XHOME" node "$TREE_TOOLS" xprov init-home >/dev/null 2>&1 </dev/null
   local a="$(ls -a "$XHOME" | grep -c '^\.a1-review-home$')/$(node -e 'console.log((require("fs").statSync(process.argv[1]).mode & 0o777).toString(8))' "$XHOME/.a1-review-home" 2>/dev/null)"
-  local gh; gh="$(mktemp -d)"; mkdir -p "$gh/.codex"; printf '{}\n' > "$gh/.codex/auth.json"
+  local gh; mk_workdir gh gh; mkdir -p "$gh/.codex"; printf '{}\n' > "$gh/.codex/auth.json"
   HOME="$gh" A1_XPROV_CODEX_HOME="$gh/.codex" node "$TREE_TOOLS" xprov init-home >/dev/null 2>&1 </dev/null
   echo "$a/global-marker=$([[ -e "$gh/.codex/.a1-review-home" ]] && echo written || echo none)"; rm -rf "$gh"
 }

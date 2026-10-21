@@ -13,7 +13,7 @@
 #   DP6  twice: already_disposed; forged rows and tampered run dirs are not accepted                                      [mutants F1..F4]
 #   DP7  waves: the head after the fixes, the reviewed base; wave-status accepts; a moved-away head does not             [mutants W1, W2]
 
-TMP30="$(mktemp -d "${TMPDIR:-/tmp}/a1x30.XXXXXX")"
+mk_workdir TMP30 "a1x30"
 [[ -n "$TMP30" && -d "$TMP30" ]] || { echo "FAIL  part 30: mktemp failed" >&2; fail=$((fail + 1)); return 0 2>/dev/null || exit 1; }
 SAVED_HOME_30="$HOME"
 export HOME="$TMP30/home"; mkdir -p "$HOME/.codex"; printf '{"fixture":true}\n' > "$HOME/.codex/auth.json"; chmod 600 "$HOME/.codex/auth.json"
