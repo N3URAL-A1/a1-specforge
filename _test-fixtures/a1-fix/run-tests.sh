@@ -462,9 +462,43 @@ run_hostile_oversized() {
   fi
 }
 
+# ---------------------------------------------------------------------------
+# class_query gate of update-status (spec 017 Wave 9, FR-027). The bug file is the
+# real report frontmatter (copied for a1-fix-class-sweep, origin in its real/ORIGIN.md).
+# Deep cases (malformed variants, class sweep) live in _test-fixtures/a1-fix-class-sweep/.
+# ---------------------------------------------------------------------------
+run_class_query_gate() {
+  local fixes_dir="$VAULT/project/demo/fixes" real="$REPO_ROOT/_test-fixtures/a1-fix-class-sweep/real/bug-frontmatter.txt"
+  local f="$fixes_dir/2026-10-03-real-report.md" out exit_code
+  mkdir -p "$fixes_dir"
+  { grep -v '^status:' "$real"; printf 'status: reported\n---\n\n# Bug\n'; } > "$f"
+  out=$(A1_VAULT_ROOT="$VAULT" node "$TOOLS" fix update-status "$f" diagnosed --enforced-since 2026-01-01 2>&1)
+  exit_code=$?
+  assert_rc "update-status diagnosed without class_query exits 1" 1 "$exit_code" "$out"
+  if printf '%s' "$out" | grep -q '"reason": "class_query_missing"'; then
+    assert "update-status refusal names class_query_missing" "1"
+  else
+    assert "update-status refusal names class_query_missing" "0"
+  fi
+  if grep -q '^status: reported$' "$f"; then
+    assert "refused update-status leaves the file at status: reported" "1"
+  else
+    assert "refused update-status leaves the file at status: reported" "0"
+  fi
+  out=$(A1_VAULT_ROOT="$VAULT" node "$TOOLS" fix update-status "$f" diagnosed 2>&1)
+  exit_code=$?
+  assert_rc "legacy bug file (dated before ENFORCED_SINCE) skips the class_query check" 0 "$exit_code" "$out"
+  if grep -q '^status: diagnosed$' "$f"; then
+    assert "legacy bug file reached status: diagnosed" "1"
+  else
+    assert "legacy bug file reached status: diagnosed" "0"
+  fi
+}
+
 # ---------- run all ----------
 run_next_suffix
 run_update_status
+run_class_query_gate
 run_find_duplicates
 run_integrity_check
 run_init_postmortem

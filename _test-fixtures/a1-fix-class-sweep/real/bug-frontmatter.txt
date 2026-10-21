@@ -1,0 +1,25 @@
+---
+type: bug-report
+project: a1-office
+bug_slug: foreign-customer-id-invoices-tasks
+title: "Foreign tenant customer_id/project_id accepted on dashboard invoice/quote creation and workspace tasks (SEC-7)"
+status: fixed
+severity: major
+reported_at: 2026-10-03T10:15
+reporter: "a1-samuel-security (re-review PR #317), a1-reinhard-reviewer (MINOR-2)"
+affected_repos:
+  - n3ural-platform
+related_deploy: "pre-existing, before 058; found during PR #317 review"
+duplicate_of: null
+phase_history:
+  - "phase=report completed=2026-10-03T10:15:00+02:00"
+  - "phase=diagnose completed=2026-10-03T08:30:39.286Z"
+  - "phase=fix-start completed=2026-10-03T10:09:00.740Z"
+  - "phase=verify completed=2026-10-03T12:25:10.063Z"
+recommended_code_agent: a1-walter-web-developer
+fix_commit: 712f842b
+verify_result: "PR #319 merged 712f842b; CI 6/6, SEC-7 suite 120/120 in CI; Samuel PASS, Reinhard APPROVE. Deployed 2026-10-03 image a1office-app:712f842 (build run 37122534004), 2/2 ready, 0 restarts, health healthy/db up, running container contains new code (old image 0 files), logs clean, tick Complete. Rollback: a1office-app:cce24ef"
+tags:
+  - bug
+  - security
+  - project/a1-office
