@@ -378,7 +378,7 @@ caseW14() { vaultSyncCase W14 skills/a1-plan/workflows/04-audit.md; }
 # gains a pipeline-status test (the shape the wiring must never use).
 caseW15() {
   local work out rc n
-  work="$(mktemp -d)"; [[ -n "$work" && -d "$work" ]] || return 1
+  mk_workdir work work
   mkdir -p "$work/skills/a1-fake/workflows"
   cp "$SNIPPETS/w15-wave-gate-block-from-02-execute.md" "$work/skills/a1-fake/workflows/02-execute.md"
   n="$(grep -c 'a1-tools.cjs' "$work/skills/a1-fake/workflows/02-execute.md")"
@@ -393,7 +393,7 @@ caseW15() {
 
 caseW16() {
   local work out rc
-  work="$(mktemp -d)"; [[ -n "$work" && -d "$work" ]] || return 1
+  mk_workdir work work
   mkdir -p "$work/skills/a1-fake/workflows"
   sed 's/--phase <phase_name>; RC=\$?/--phase <phase_name> | grep -v zzz; RC=$?/' "$SNIPPETS/w15-wave-gate-block-from-02-execute.md" > "$work/skills/a1-fake/workflows/02-execute.md"
   out="$(node "$TOOLS" workflow lint --root "$work" 2>/dev/null)"; rc=$?
