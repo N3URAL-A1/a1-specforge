@@ -20,7 +20,13 @@ const CACHE_DIR = '.a1/verify-cache';
 const CACHE_EXCLUDE = '.a1/verify-cache/';
 const CACHE_VERSION = 1;
 const MAX_CACHE_BYTES = 8 * 1024 * 1024;
-const GATE_LOG_RE = /^\.a1\/phases\/[^/]+\/gate-log\.jsonl$/;
+const A1_PREFIX = '.a1/';
+const LOCKFILES = Object.freeze(['package-lock.json', 'pnpm-lock.yaml', 'yarn.lock']);
+// A head failure with one of these reasons is never recorded as pre_existing_red, whatever the base shows:
+// a crash, a timeout or a command that did not start tells nothing about which tests were red before.
+const NEVER_PRE_EXISTING = Object.freeze(['spawn_failed', 'timeout', 'implausible_crash']);
+const CONFIG_FILE = '.a1/verify.json';
+const CONFIG_RULE = 'verify-config';
 const SHA_RE = /^[0-9a-f]{40}$/;
 const RETRYABLE = Object.freeze(['command_failed', 'reported_failures', 'signal', 'implausible_crash']);
 const ARCHIVE_TIMEOUT_MS = 10 * 60 * 1000;
@@ -39,11 +45,33 @@ function resolveMergeBase(project, ref) {
   return mb.trim();
 }
 
+// Paths removed when the process exits through process.exit() (an intent child refused mid-run exits 77
+// without unwinding the stack, so `finally` never runs): spec 017 review SEC-5.
+const exitCleanup = new Set();
+let exitHookInstalled = false;
+
+function removeAll() {
+  for (const p of exitCleanup) { try { fs.rmSync(p, { recursive: true, force: true }); } catch (_e) { /* best effort at exit */ } }
+}
+
+/** Registers `p` for removal at process exit; returns the release function (call after removing it normally). */
+function cleanupOnExit(p) {
+  if (!exitHookInstalled) { process.on('exit', removeAll); exitHookInstalled = true; }
+  exitCleanup.add(p);
+  return () => { exitCleanup.delete(p); };
+}
+
+/** True inside an `intent run` child: it writes nothing outside its project (spec 017 Q20). */
+function inIntentChild() {
+  try { return require('./intent-child.cjs').inChildMode() === true; } catch (_e) { return false; }
+}
+
 /** Extracts `git archive <sha>` into a fresh guarded temp dir; returns the dir. Caller removes it. */
 function extractSnapshot(project, sha) {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'a1-fx-verify-base-')));
+  const tar = path.join(dir, '..', `${path.basename(dir)}.tar`);
+  const release = [cleanupOnExit(dir), cleanupOnExit(tar)];
   try {
-    const tar = path.join(dir, '..', `${path.basename(dir)}.tar`);
     const a = spawnSync('git', ['-C', project, 'archive', '--format=tar', '-o', tar, sha], { shell: false, stdio: 'ignore', timeout: ARCHIVE_TIMEOUT_MS });
     if (a.status !== 0) throw new VerifyError('base_unresolved', `git archive of ${sha} failed (object missing in a shallow clone? run: git fetch --unshallow)`);
     try {
@@ -52,9 +80,12 @@ function extractSnapshot(project, sha) {
     } finally { fs.rmSync(tar, { force: true }); }
     const nm = path.join(project, 'node_modules');
     if (fs.existsSync(nm) && !fs.existsSync(path.join(dir, 'node_modules'))) fs.symlinkSync(nm, path.join(dir, 'node_modules'));
+    release[1]();
     return dir;
   } catch (e) {
     fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(tar, { force: true });
+    release.forEach((r) => r());
     throw e;
   }
 }
@@ -62,17 +93,36 @@ function extractSnapshot(project, sha) {
 /** Runs fn(snapshotDir) on a snapshot of `sha`; the dir is removed on every path. */
 function withSnapshot(project, sha, fn) {
   const dir = extractSnapshot(project, sha);
-  try { return fn(dir); } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  const release = cleanupOnExit(dir);
+  try { return fn(dir); } finally { fs.rmSync(dir, { recursive: true, force: true }); release(); }
 }
 
-/** Paths from `git status` that count as a dirty tree: gate-log and cache paths are not (FR-039). */
+/**
+ * Paths from `git status` that count as a dirty tree. Nothing under `.a1/` does (FR-039, Q12): the gate log,
+ * the cache and phase files change on every run and are covered by the command hash where they matter
+ * (`.a1/verify.json`), the same rule `verify check` applies to code changed after a run.
+ */
 function dirtyPaths(paths) {
-  return paths.filter((p) => !(p.startsWith(`${CACHE_DIR}/`) || GATE_LOG_RE.test(p)));
+  return paths.filter((p) => !p.startsWith(A1_PREFIX));
 }
 
-function commandHash(commands) {
+/**
+ * Digest of what a cached result depends on besides the sha and the command set: the node version and the
+ * lockfiles present (SEC-10 - a dependency bump changes results without changing the sha of a clean tree).
+ * @param {(name: string) => string|null} read content of a lockfile in the tree the commands run in
+ */
+function envDigest(read) {
+  const h = crypto.createHash('sha256').update(process.version);
+  for (const name of LOCKFILES) {
+    const body = read(name);
+    h.update(`\0${name}\0${body === null ? '-' : crypto.createHash('sha256').update(body).digest('hex')}`);
+  }
+  return h.digest('hex');
+}
+
+function commandHash(commands, env) {
   const norm = commands.map((c) => [c.id, c.argv, c.kind, c.timeoutMs]);
-  return crypto.createHash('sha256').update(JSON.stringify(norm)).digest('hex').slice(0, 32);
+  return crypto.createHash('sha256').update(JSON.stringify([norm, env || ''])).digest('hex').slice(0, 32);
 }
 
 function cacheFile(project, sha, hash) { return path.join(project, CACHE_DIR, `${sha}-${hash}.json`); }
@@ -90,6 +140,7 @@ function readCache(project, sha, hash, commands) {
 }
 
 function ensureCacheExcluded(project) {
+  if (inIntentChild()) return; // an intent child writes no info/exclude (Q20)
   const common = (gitRaw(project, ['rev-parse', '--git-common-dir']) || '').trim();
   if (common === '') return;
   const file = path.resolve(project, common, 'info', 'exclude');
@@ -101,6 +152,7 @@ function ensureCacheExcluded(project) {
 }
 
 function writeCache(project, sha, hash, results) {
+  if (inIntentChild()) return; // no exclude entry, so no untracked cache files either
   ensureCacheExcluded(project);
   const file = cacheFile(project, sha, hash);
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -135,16 +187,17 @@ function settle(first, retry, baseIds, flakyBase) {
   const finalIds = failingIds(final);
   const stillFailing = new Set(finalIds);
   const flaky = retried ? failingIds(first).filter((i) => !stillFailing.has(i)) : [];
-  const preExisting = baseIds === null ? [] : finalIds.filter((i) => baseIds.has(i));
+  const never = NEVER_PRE_EXISTING.includes(final.reason);
+  const preExisting = baseIds === null || never ? [] : finalIds.filter((i) => baseIds.has(i));
   const fresh = finalIds.filter((i) => baseIds === null || !baseIds.has(i));
   let reason = final.reason;
-  if (reason !== null && fresh.length === 0 && baseIds !== null) reason = null;
+  if (reason !== null && fresh.length === 0 && baseIds !== null && !never) reason = null;
   if (reason === null && flaky.some((i) => !flakyBase.includes(i))) reason = 'new_flaky';
   return { ...final, reason, failed_ids: final.failed_ids, flaky_ids: flaky, pre_existing_red_ids: preExisting, retried };
 }
 
-/** Failing-id set for one finished base command. */
-function idSet(f) { return new Set(failingIds(f)); }
+/** Failing-id set for one finished base command; a base crash, timeout or spawn failure names no red test. */
+function idSet(f) { return NEVER_PRE_EXISTING.includes(f.reason) ? new Set() : new Set(failingIds(f)); }
 
 function parseVerifyJson(v, which) {
   if (v === undefined || v === null || v === '') return null;
@@ -164,6 +217,32 @@ function flakyBaseGrown(baseVerifyJson, headVerifyJson) {
   const list = (cfg) => (Array.isArray(cfg.flaky_base) ? cfg.flaky_base.filter((x) => typeof x === 'string') : []);
   const had = new Set(list(base));
   return [...new Set(list(head).filter((i) => !had.has(i)))];
+}
+
+function canon(v) {
+  if (Array.isArray(v)) return `[${v.map(canon).join(',')}]`;
+  if (v !== null && typeof v === 'object') return `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${canon(v[k])}`).join(',')}}`;
+  return JSON.stringify(v);
+}
+
+/**
+ * SEC-2: the command set comes from the merge-base's `.a1/verify.json`, so a PR cannot choose what judges it.
+ * The head file may differ from the base file only by a shorter `flaky_base` (FR-016, frozen list).
+ * @returns {{fields: string[], fingerprint: string}|null} null when nothing but a shrunk flaky_base changed
+ */
+function configChange(baseCfg, headCfg) {
+  const base = parseVerifyJson(baseCfg, 'base');
+  const head = parseVerifyJson(headCfg, 'head');
+  if (base === null && head === null) return null;
+  const text = canon(head === null ? null : head);
+  const fingerprint = fingerprintOf(CONFIG_RULE, CONFIG_FILE, text);
+  if (base === null || head === null) return { fields: [head === null ? 'removed' : 'added'], fingerprint };
+  const strip = (c) => Object.fromEntries(Object.entries(c).filter(([k]) => k !== 'flaky_base'));
+  const bs = strip(base);
+  const hs = strip(head);
+  const fields = [...new Set([...Object.keys(bs), ...Object.keys(hs)])].filter((k) => canon(bs[k]) !== canon(hs[k])).sort();
+  if (flakyBaseGrown(base, head).length > 0) fields.push('flaky_base');
+  return fields.length === 0 ? null : { fields, fingerprint };
 }
 
 /** Fingerprint of one skip increase: rule skip-increase, the command id, and the exact `base->head` counts. */
@@ -191,6 +270,6 @@ function applySkipIncrease(commands, baseSkipped, cleared) {
 }
 
 module.exports = {
-  VerifyError, skipFingerprint, applySkipIncrease, RETRYABLE, CACHE_DIR, resolveMergeBase, extractSnapshot, withSnapshot, dirtyPaths, commandHash,
+  VerifyError, skipFingerprint, applySkipIncrease, RETRYABLE, NEVER_PRE_EXISTING, canon, CACHE_DIR, CONFIG_FILE, CONFIG_RULE, configChange, envDigest, cleanupOnExit, parseVerifyJson, resolveMergeBase, extractSnapshot, withSnapshot, dirtyPaths, commandHash,
   readCache, writeCache, failingIds, settle, idSet, flakyBaseGrown,
 };

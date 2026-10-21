@@ -57,9 +57,8 @@ REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TOOLS="${A1_FX_TOOLS:-$REPO_ROOT/_shared/a1-tools.cjs}"
 CORPUS="$REPO_ROOT/_test-fixtures/a1-verify/corpus"
 
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/a1-fx-verify.XXXXXX")" || exit 1
-[[ -n "$WORK" && -d "$WORK" ]] || exit 1
-trap 'rm -rf "${WORK:?}"' EXIT
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
+mk_workdir WORK a1-verify
 
 export GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0
 export A1_FX_CORPUS="$CORPUS"
@@ -224,7 +223,7 @@ reporter_case c4 vitest "$CORPUS/vitest-3-40-2.json" '["./bin/vitest"]' x 0
 check "C4 exit 0 but the report lists 3 failures: still fail (reported_failures)" 1 'j.verdict+"/"+j.reason' "fail/reported_failures"
 newproj c5; cfg '{"commands":[{"argv":["./bin/does-not-exist"]}]}'; seal
 vrun "$P"
-check "C5 runner binary missing: exit 1 spawn_failed" 1 'j.reason' "spawn_failed"
+check "C5 runner binary missing: exit 2 spawn_failed (FR-041: a command that cannot start is a tool error, not a verdict)" 2 'j.error' "spawn_failed"
 
 # ---------- D: implausible crash and zero tests (FR-014, SC-003) ----------
 newproj d1; stub tsc 'kill -KILL $$'; cfg '{"commands":[{"id":"typecheck","argv":["./bin/tsc"]}]}'; seal
@@ -408,7 +407,7 @@ vrun "$P" --base main --timeout-ms 777000
 check "K6 different command hash (timeout changed): no reuse" 0 'j.cache.head+"/"+j.cache.base' "miss/miss"
 [[ -z "$(g "$P" status --porcelain | grep -v 'gate-log.jsonl\|verify-cache')" ]] && ok "K7 cache files never dirty the real tree" || bad "K7 $(g "$P" status --porcelain)"
 DIRTY_OUT="$(node -e 'const b=require(process.argv[1]); process.stdout.write(JSON.stringify(b.dirtyPaths([".a1/phases/x/gate-log.jsonl",".a1/verify-cache/a.json","src/a.js",".a1/phases/x/gate-log.jsonl.bak"])))' "$REPO_ROOT/_shared/lib/verify-base.cjs")"
-[[ "$DIRTY_OUT" == '["src/a.js",".a1/phases/x/gate-log.jsonl.bak"]' ]] && ok "K8 dirtyPaths ignores exactly gate-log and cache paths (2 of 4 kept)" || bad "K8 $DIRTY_OUT"
+[[ "$DIRTY_OUT" == '["src/a.js"]' ]] && ok "K8 dirtyPaths treats everything under .a1/ as clean (1 of 4 kept)" || bad "K8 $DIRTY_OUT"
 printf '{broken' > "$(ls "$P"/.a1/verify-cache/*.json | head -1)"
 vrun "$P" --base main --timeout-ms 777000
 check_rc "K9 hostile: corrupted cache file is a miss, not a crash" 0
@@ -454,7 +453,7 @@ check "M1b original tool: implausible_crash again (revert turns it green)" 1 'j.
 MUT2="$WORK/mut2"; mkdir -p "$MUT2"; cp -R "$REPO_ROOT/_shared" "$MUT2/_shared"
 node -e '
   const fs=require("fs"); const f=process.argv[1]; let s=fs.readFileSync(f,"utf8");
-  const needle="if (reason !== null && fresh.length === 0 && baseIds !== null) reason = null;";
+  const needle="if (reason !== null && fresh.length === 0 && baseIds !== null && !never) reason = null;";
   if (s.split(needle).length !== 2) process.exit(3);
   fs.writeFileSync(f, s.replace(needle, ""));' "$MUT2/_shared/lib/verify-base.cjs"
 [[ $? -eq 0 ]] && ok "M2 planted defect applied (base-subset rule removed in the copy)" || bad "M2 needle not found - update this case with settle()"
@@ -504,6 +503,123 @@ skipcase s8 "$WORK/more.json"; printf '[{"kind":"skip_increase"}]\n' > "$P/.a1/d
 check "S8 malformed .a1/dispositions.json: exit 2 bad_config (fail closed)" 2 'j.error' "bad_config"
 skipcase s9 "$WORK/more.json"; printf '[]\n' > "$P/.a1/dispositions.json"; g "$P" add -A; g "$P" commit -q -m "empty store"; vrun "$P" --base main
 check "S9 empty dispositions store behaves as none: exit 1" 1 'j.verdict' "fail"
+
+# ---------- R: spec 017 review round B (SEC-2, M3, M5, SEC-5, SEC-10, m7) ----------
+# Measured red 2026-10-21 (HEAD code before the fix, this suite overlaid):
+#   SEC-2 verify run --base: command set from the merge-base's verify.json + verify_config_changed : R1, R1b, R1c, R1d
+#   M3 settle(): timeout / implausible_crash / spawn_failed pre_existing_red                         : R2, R2b, R2c
+#   M5 dirtyPaths() all of .a1/ clean; envDigest in the cache key                                    : R3, R3b, R3c
+#   SEC-5 exit hook removes runVerify tmp and the base snapshot                                       : R4, R4b
+#   m7 writeCache() skips info/exclude and cache files in an intent child                             : R5
+#   SEC-10 group runner kills the process group on a normal exit                                      : R6
+# Overlay mutation (one line reverted in a copy): R1d with the config-change clearance ignored -> exit 1 (case R1e).
+vbase() { # vbase <label> <base cfg json> <head cfg json> [stub name body]: base commit holds cfg 1, head commit cfg 2
+  newproj "$1"; stub ok 'exit 0'; stub red 'exit 1'; cfg "$2"; seal
+  cfg "$3"; g "$P" commit -q -am "head config"
+}
+vbase r1 '{"commands":[{"id":"unit","argv":["./bin/red"]}]}' '{"commands":[{"id":"unit","argv":["./bin/ok"]}]}'
+vrun "$P" --base main
+check "R1 head swaps the red command for a green one: exit 1 verify_config_changed, the run used the BASE argv" 1 'j.verdict+"/"+j.reason+"/"+j.commands[0].argv.join(" ")+"/"+j.config_changed.fields.join()' "fail/verify_config_changed/./bin/red/commands"
+vbase r1b '{"flaky_base":["x","y"],"commands":[{"id":"unit","argv":["./bin/ok"]}]}' '{"flaky_base":["x"],"commands":[{"id":"unit","argv":["./bin/ok"]}]}'
+vrun "$P" --base main
+check "R1b only flaky_base shrank: exit 0, pass, no config_changed" 0 'j.verdict+"/"+(j.config_changed===undefined)' "pass/true"
+vbase r1c '{"flaky_base":["x"],"commands":[{"id":"unit","argv":["./bin/ok"]}]}' '{"flaky_base":["x","z"],"commands":[{"id":"unit","argv":["./bin/ok"]}]}'
+vrun "$P" --base main
+check "R1c flaky_base grew: exit 1 verify_config_changed (field flaky_base)" 1 'j.reason+"/"+j.config_changed.fields.join()' "verify_config_changed/flaky_base"
+# R1d: a reviewed config_change disposition for exactly this head content clears it. The tree under test is a copy of
+# _shared whose disposition store accepts rule verify-config (the rule belongs to the store; see the report).
+MUT3="$WORK/mut3"; mkdir -p "$MUT3"; cp -R "$REPO_ROOT/_shared" "$MUT3/_shared"
+node -e '
+  const fs=require("fs"); const f=process.argv[1]; let s=fs.readFileSync(f,"utf8");
+  const a=s.indexOf("const KINDS = Object.freeze({"); const b=s.indexOf("\n});", a);
+  if (a < 0 || b < 0) process.exit(3);
+  s=s.slice(0,b)+"\n  config_change: Object.freeze([\"verify-config\", \"fidelity-config\"]),"+s.slice(b);
+  fs.writeFileSync(f, s);' "$MUT3/_shared/lib/disposition-store.cjs"
+[[ $? -eq 0 ]] && ok "R1d0 copy of the disposition store accepts kind config_change / rule verify-config" || bad "R1d0 KINDS block not found"
+vbase r1d '{"commands":[{"id":"unit","argv":["./bin/red"]}]}' '{"commands":[{"id":"unit","argv":["./bin/ok"]}]}'
+CANON="$(node -e 'const b=require(process.argv[1]); process.stdout.write(b.canon(JSON.parse(require("fs").readFileSync(process.argv[2],"utf8"))))' "$REPO_ROOT/_shared/lib/verify-base.cjs" "$P/.a1/verify.json")"
+(cd "$P" && node "$MUT3/_shared/a1-tools.cjs" disposition add --kind config_change --rule verify-config --file .a1/verify.json --text "$CANON" --reason "fixture: reviewed config change" --by fx >/dev/null 2>"$WORK/err"); RCD=$?
+[[ $RCD -eq 0 ]] && ok "R1d1 disposition recorded for the exact head config" || bad "R1d1 disposition add rc=$RCD $(cat "$WORK/err")"
+g "$P" add -A; g "$P" commit -q -m disposition
+OUT="$(cd "$P" && node "$MUT3/_shared/a1-tools.cjs" verify run --project "$P" --phase fx --base main 2>/dev/null)"; RC=$?
+check "R1d reviewed disposition for exactly this config: config_changed recorded dispositioned, verdict from the commands" 0 'j.verdict+"/"+j.config_changed.dispositioned' "pass/true"
+cfg '{"commands":[{"id":"unit","argv":["./bin/ok"]},{"id":"more","argv":["./bin/ok"]}]}'; g "$P" commit -q -am "different config"
+OUT="$(cd "$P" && node "$MUT3/_shared/a1-tools.cjs" verify run --project "$P" --phase fx --base main 2>/dev/null)"; RC=$?
+check "R1e a disposition for another config content does not clear this one: exit 1" 1 'j.reason+"/"+j.config_changed.dispositioned' "verify_config_changed/false"
+
+# M3: crash, timeout and spawn failure are never pre_existing_red, even when base and head fail the same way
+newproj r2; stub slow 'exec sleep 30'; cfg '{"timeout_ms":500,"commands":[{"id":"unit","argv":["./bin/slow"]}]}'; seal
+printf 'module.exports = 2;\n' > "$P/src/app.js"; g "$P" commit -q -am head
+vrun "$P" --base main
+check "R2 timeout on base and on head: exit 1, timeout, nothing recorded pre_existing_red" 1 'j.reason+"/"+j.pre_existing_red.length' "timeout/0"
+newproj r2b; stub killed 'kill -KILL $$'; cfg '{"commands":[{"id":"unit","argv":["./bin/killed"]}]}'; seal
+printf 'module.exports = 2;\n' > "$P/src/app.js"; g "$P" commit -q -am head
+vrun "$P" --base main
+check "R2b implausible_crash on base and on head: exit 1, implausible_crash, not pre_existing_red" 1 'j.reason+"/"+j.pre_existing_red.length' "implausible_crash/0"
+newproj r2c; cfg '{"commands":[{"id":"unit","argv":["./bin/does-not-exist"]}]}'; seal
+printf 'module.exports = 2;\n' > "$P/src/app.js"; g "$P" commit -q -am head
+vrun "$P" --base main
+check "R2c command cannot start on base and head: exit 2 spawn_failed (never a pass)" 2 'j.error' "spawn_failed"
+SETTLE="$(node -e '
+  const b=require(process.argv[1]); const f={id:"u",reason:"timeout",failed_ids:["u"],failed:null};
+  const r=b.settle(f, () => f, new Set(["u"]), []); process.stdout.write(r.reason+"/"+r.pre_existing_red_ids.length)' "$REPO_ROOT/_shared/lib/verify-base.cjs")"
+[[ "$SETTLE" == "timeout/0" ]] && ok "R2d settle(): a timeout whose id is red on the base stays a timeout" || bad "R2d $SETTLE"
+
+# M5: .a1/ paths never make the tree dirty; the cache key covers lockfiles and the node version
+newproj r3; stub cnt 'pwd -P >> "${A1_FX_CWDLOG:?}"; exit 0'; cfg '{"commands":[{"id":"cnt","argv":["./bin/cnt"]}]}'; seal
+printf 'module.exports = 3;\n' > "$P/src/app.js"; g "$P" commit -q -am head
+export A1_FX_CWDLOG="$WORK/cwd-r3"; : > "$A1_FX_CWDLOG"
+vrun "$P" --base main
+mkdir -p "$P/.a1/phases/p"; printf 'notes\n' > "$P/.a1/phases/p/VERIFICATION.md"
+vrun "$P" --base main
+check "R3 an untracked file under .a1/phases/ does not dirty the tree: head cache hit" 0 'j.cache.head' "hit"
+printf '*.lock\npackage-lock.json\n' >> "$P/.git/info/exclude"; printf '{"lockfileVersion":3}\n' > "$P/package-lock.json"
+vrun "$P" --base main
+check "R3b a lockfile appears (git-ignored, tree still clean): head and base keys change, no reuse of the old result" 0 'j.cache.head' "miss"
+vrun "$P" --base main
+check "R3b2 same lockfile again: hit" 0 'j.cache.head' "hit"
+printf '{"lockfileVersion":3,"x":1}\n' > "$P/package-lock.json"
+vrun "$P" --base main
+check "R3b3 lockfile content changed: miss" 0 'j.cache.head' "miss"
+ENVD="$(node -e '
+  const b=require(process.argv[1]); const r=(n)=>null;
+  const a=b.envDigest(r); Object.defineProperty(process,"version",{value:"v0.0.0"}); const c=b.envDigest(r);
+  const cmds=[{id:"a",argv:["x"],kind:"none",timeoutMs:1}];
+  process.stdout.write([a!==c, b.commandHash(cmds,"p")!==b.commandHash(cmds,"q")].join())' "$REPO_ROOT/_shared/lib/verify-base.cjs")"
+[[ "$ENVD" == "true,true" ]] && ok "R3c envDigest changes with the node version; commandHash changes with the env digest" || bad "R3c $ENVD"
+
+# SEC-5: process.exit() mid-run (an intent child refused with 77) leaves no temp dir and no tar behind
+newproj r4; stub ok 'exit 0'; cfg '{"commands":[{"id":"unit","argv":["./bin/ok"]}]}'; seal
+printf 'module.exports = 4;\n' > "$P/src/app.js"; g "$P" commit -q -am head
+mkdir -p "$WORK/tmp-r4"
+(cd "$P" && TMPDIR="$WORK/tmp-r4" node -e '
+  const vb=require(process.argv[1]); const vr=require(process.argv[2]);
+  vb.settle=() => process.exit(77);
+  vr.runVerify({project:process.argv[3], base:"main"});' "$REPO_ROOT/_shared/lib/verify-base.cjs" "$REPO_ROOT/_shared/lib/verify-run.cjs" "$P" >/dev/null 2>&1); RC=$?
+[[ $RC -eq 77 && -z "$(ls -A "$WORK/tmp-r4")" ]] && ok "R4 exit 77 after the runs: verify temp dir removed (rc=77, TMPDIR empty)" || bad "R4 rc=$RC leftovers: $(ls -A "$WORK/tmp-r4")"
+(cd "$P" && TMPDIR="$WORK/tmp-r4" node -e '
+  const vb=require(process.argv[1]); const sha=require("child_process").execFileSync("git",["-C",process.argv[2],"rev-parse","HEAD"],{encoding:"utf8"}).trim();
+  vb.withSnapshot(process.argv[2], sha, () => process.exit(77));' "$REPO_ROOT/_shared/lib/verify-base.cjs" "$P" >/dev/null 2>&1); RC=$?
+[[ $RC -eq 77 && -z "$(ls -A "$WORK/tmp-r4")" ]] && ok "R4b exit 77 inside the base snapshot: snapshot dir and tar removed" || bad "R4b rc=$RC leftovers: $(ls -A "$WORK/tmp-r4")"
+
+# m7: an intent child writes neither info/exclude nor cache files
+newproj r5; stub ok 'exit 0'; cfg '{"commands":[{"id":"unit","argv":["./bin/ok"]}]}'; seal
+: > "$P/.git/info/exclude"
+(cd "$P" && A1_INTENT_CHILD=1 A1_INTENT_ID=fx-intent node -e '
+  const vb=require(process.argv[1]); vb.writeCache(process.argv[2], "a".repeat(40), "h", {unit:{raw:{}}});' "$REPO_ROOT/_shared/lib/verify-base.cjs" "$P" >/dev/null 2>&1)
+[[ ! -s "$P/.git/info/exclude" && ! -e "$P/.a1/verify-cache" ]] && ok "R5 intent child: no info/exclude entry, no cache file" || bad "R5 exclude=$(cat "$P/.git/info/exclude") cache=$(ls "$P/.a1/verify-cache" 2>&1)"
+(cd "$P" && node -e '
+  const vb=require(process.argv[1]); vb.writeCache(process.argv[2], "a".repeat(40), "h", {unit:{raw:{}}});' "$REPO_ROOT/_shared/lib/verify-base.cjs" "$P" >/dev/null 2>&1)
+[[ -s "$P/.git/info/exclude" && -e "$P/.a1/verify-cache" ]] && ok "R5b control outside child mode: exclude entry and cache file written" || bad "R5b control wrote nothing"
+
+# SEC-10: the group dies on a normal exit too
+newproj r6; stub leaver 'sleep 60 & echo $! > "${A1_FX_PIDFILE:?}"; exit 0'; cfg '{"commands":[{"id":"suite","argv":["bash","./bin/leaver"]}]}'; seal
+export A1_FX_PIDFILE="$WORK/pid-r6"; rm -f "$A1_FX_PIDFILE"
+vrun "$P"
+check_rc "R6 suite exits 0 and leaves a background child: verdict pass" 0
+GPID="$(cat "$A1_FX_PIDFILE" 2>/dev/null)"
+for _i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do is_alive "$GPID" || break; sleep 0.2; done
+if is_alive "$GPID"; then bad "R6b background child $GPID survived a normal exit"; kill "$GPID" 2>/dev/null; else ok "R6b no background child survives a normal exit (group killed on every path)"; fi
 
 echo "a1-verify: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

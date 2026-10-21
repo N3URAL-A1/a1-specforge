@@ -116,9 +116,13 @@ function fromPytest(project) {
   return has ? [{ id: 'python3 -m pytest -q', argv: ['python3', '-m', 'pytest', '-q'], kind: 'pytest', viaScript: false, timeoutMs: DEFAULT_TIMEOUT_MS }] : [];
 }
 
-/** { commands, source, noTestsReason, requiresEnv, flakyBase }; throws VerifyError (exit 2). */
-function resolveCommands(project) {
-  const cfg = readJsonFile(path.join(project, '.a1', 'verify.json'), '.a1/verify.json');
+/**
+ * { commands, source, noTestsReason, requiresEnv, flakyBase }; throws VerifyError (exit 2).
+ * @param {object|null} [config] parsed `.a1/verify.json` to use instead of the file in `project`
+ *   (`null` = the merge-base has none); undefined reads the file in `project`.
+ */
+function resolveCommands(project, config) {
+  const cfg = config === undefined ? readJsonFile(path.join(project, '.a1', 'verify.json'), '.a1/verify.json') : config;
   if (cfg !== null && (typeof cfg !== 'object' || Array.isArray(cfg))) throw new VerifyError('bad_config', '.a1/verify.json must be an object');
   const requiresEnv = cfg && Array.isArray(cfg.requires_env) ? cfg.requires_env.filter((n) => typeof n === 'string') : [];
   const flakyBase = cfg && Array.isArray(cfg.flaky_base) ? cfg.flaky_base.filter((n) => typeof n === 'string') : [];
@@ -157,10 +161,15 @@ function groupRunnerMain() {
   const fd = fs.openSync(spec.stdoutFile, 'w');
   const child = spawn(spec.argv[0], spec.argv.slice(1), { cwd: spec.cwd, shell: false, detached: true, stdio: ['ignore', fd, 'ignore'] });
   let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
+  // SEC-10: the group dies on EVERY way out (timeout, normal exit, spawn error, a signal to this runner),
+  // not only on timeout - a suite that returns 0 and leaves a background child must not leave it running.
+  const killGroup = () => {
+    if (!child.pid) return;
     try { process.kill(-child.pid, 'SIGKILL'); } catch (_e) { /* group already gone */ }
-  }, spec.timeoutMs);
+  };
+  process.on('exit', killGroup);
+  for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.on(sig, () => { killGroup(); process.exit(1); });
+  const timer = setTimeout(() => { timedOut = true; killGroup(); }, spec.timeoutMs);
   child.on('error', () => { clearTimeout(timer); emit({ spawnError: true }); });
   child.on('exit', (status, signal) => { clearTimeout(timer); emit({ status, signal, timedOut }); });
 }
@@ -176,6 +185,8 @@ function runCommand(cmd, cwd, tmp, label) {
   const stdoutFile = path.join(tmp, `stdout-${label}`);
   const argv = rep.injectFlags(cmd.kind, cmd.argv, reportFile, cmd.viaScript);
   const r = spawnGroup(argv, cwd, stdoutFile, cmd.timeoutMs);
+  // FR-041: a command that cannot start (unknown runner) is an error of the tool, never a verdict.
+  if (r.spawnError === true) throw new VerifyError('spawn_failed', `cannot start ${JSON.stringify(cmd.argv.join(' ').slice(0, 200))} (unknown runner or not executable) in ${path.basename(cwd)}`);
   const counts = rep.parseReport(cmd.kind, readCapped(reportFile, false), cmd.kind === 'node-test' ? readCapped(stdoutFile, true) : null, cwd);
   return {
     id: cmd.id, argv: cmd.argv, exit_code: typeof r.status === 'number' ? r.status : null, signal: r.signal || null, timed_out: r.timedOut === true,
@@ -279,6 +290,37 @@ function skipIncreaseDispositions(project) {
   }
 }
 
+function readLockfile(project, name) {
+  try { return fs.readFileSync(path.join(project, name), 'utf8'); } catch (_e) { return null; }
+}
+
+/**
+ * SEC-2 (spec 017 review): with --base the command set is the merge-base's `.a1/verify.json`.
+ * @returns {{base: object|null, head: object|null, change: object|null, shrunkFlaky: string[]|null}}
+ */
+function baseConfigGuard(project, baseSha) {
+  const baseText = gitRaw(project, ['show', `${baseSha}:${vb.CONFIG_FILE}`]);
+  if (baseText !== null && Buffer.byteLength(baseText) > MAX_CONFIG_BYTES) throw new VerifyError('bad_config', 'the merge-base .a1/verify.json is larger than 1 MiB');
+  const base = vb.parseVerifyJson(baseText, 'base');
+  const head = readJsonFile(path.join(project, '.a1', 'verify.json'), '.a1/verify.json');
+  const change = vb.configChange(base, head);
+  const shrunk = change === null && base !== null && head !== null && Array.isArray(head.flaky_base)
+    ? head.flaky_base.filter((x) => typeof x === 'string') : null;
+  return { base, head, change, shrunkFlaky: shrunk };
+}
+
+/** Reasons: a changed config fails unless a committed, non-overturned `config_change` disposition names exactly this head content. */
+function configChangeRecord(project, guard) {
+  if (guard.change === null) return null;
+  let cleared;
+  try { cleared = clearedFingerprints(loadEntries(project), 'config_change'); } catch (e) { throw new VerifyError('bad_config', e.message); }
+  return { fields: guard.change.fields, fingerprint: guard.change.fingerprint, dispositioned: cleared.has(guard.change.fingerprint) };
+}
+
+function withConfigReason(v) {
+  return { ...v, verdict: 'fail', reason: 'verify_config_changed', reasons: ['verify_config_changed', ...v.reasons] };
+}
+
 const pairs = (commands, key) => commands.flatMap((c) => c[key].map((id) => ({ command: c.id, id })));
 
 /**
@@ -287,28 +329,35 @@ const pairs = (commands, key) => commands.flatMap((c) => c[key].map((id) => ({ c
  */
 function runVerify(opts) {
   const project = fs.realpathSync(opts.project);
-  const plan = resolveCommands(project);
-  const missing = plan.requiresEnv.filter((n) => !process.env[n]);
-  if (missing.length > 0) throw new VerifyError('env_missing', `required environment variable(s) not set: ${missing.join(', ')}`);
   const head = headSha(project);
   if (opts.base !== undefined && head === null) throw new VerifyError('base_unresolved', '--base needs a git repository with a commit');
   const baseSha = head ? resolveBase(project, opts.base) : null;
+  const cfgGuard = opts.base !== undefined ? baseConfigGuard(project, baseSha) : null;
+  const plan = resolveCommands(project, cfgGuard ? cfgGuard.base : undefined);
+  const flakyBase = cfgGuard && cfgGuard.shrunkFlaky !== null ? cfgGuard.shrunkFlaky : plan.flakyBase;
+  const missing = plan.requiresEnv.filter((n) => !process.env[n]);
+  if (missing.length > 0) throw new VerifyError('env_missing', `required environment variable(s) not set: ${missing.join(', ')}`);
   const changed = head ? changeSet(project, baseSha) : [];
   const touches = changed.some(isSourcePath);
-  const timed = { ...plan, commands: plan.commands.map((c) => (opts.timeoutMs ? { ...c, timeoutMs: opts.timeoutMs } : c)) };
-  const hash = vb.commandHash(timed.commands);
+  const timed = { ...plan, flakyBase, commands: plan.commands.map((c) => (opts.timeoutMs ? { ...c, timeoutMs: opts.timeoutMs } : c)) };
+  const hash = vb.commandHash(timed.commands, vb.envDigest((n) => readLockfile(project, n)));
+  const baseHash = baseSha ? vb.commandHash(timed.commands, vb.envDigest((n) => gitRaw(project, ['show', `${baseSha}:${n}`]))) : hash;
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'a1-verify-'));
+  const release = vb.cleanupOnExit(tmp);
   try {
-    const base = opts.base !== undefined ? runBaseSide(project, timed, baseSha, hash, touches, tmp) : null;
+    const base = opts.base !== undefined ? runBaseSide(project, timed, baseSha, baseHash, touches, tmp) : null;
     const side = runHeadSide(project, timed, head, hash, { tmp, touches, baseIds: base ? base.ids : null });
-    const commands = base ? vb.applySkipIncrease(side.settled, base.skipped, skipIncreaseDispositions(project)) : side.settled;
+    const settled = base ? vb.applySkipIncrease(side.settled, base.skipped, skipIncreaseDispositions(project)) : side.settled;
+    const configChanged = cfgGuard ? configChangeRecord(project, cfgGuard) : null;
+    const verdict = overall(settled, plan.noTestsReason);
     return {
-      ...overall(commands, plan.noTestsReason), source: plan.source, head_sha: head, base_sha: baseSha, touches_source: touches,
-      changed_files: changed.length, flaky: pairs(side.settled, 'flaky_ids'), pre_existing_red: pairs(side.settled, 'pre_existing_red_ids'),
-      cache: { head: side.cache, base: base ? base.cache : 'none' }, commands,
+      ...(configChanged && !configChanged.dispositioned ? withConfigReason(verdict) : verdict), source: plan.source, head_sha: head, base_sha: baseSha,
+      touches_source: touches, changed_files: changed.length, flaky: pairs(side.settled, 'flaky_ids'), pre_existing_red: pairs(side.settled, 'pre_existing_red_ids'),
+      cache: { head: side.cache, base: base ? base.cache : 'none' }, ...(configChanged ? { config_changed: configChanged } : {}), commands: settled,
     };
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
+    release();
   }
 }
 
