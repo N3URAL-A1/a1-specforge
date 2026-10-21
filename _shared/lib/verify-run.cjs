@@ -247,7 +247,7 @@ function runBaseSide(project, plan, baseSha, hash, touches, tmp) {
   }])));
   if (!cached) vb.writeCache(project, baseSha, hash, results);
   const ids = new Map(plan.commands.map((c) => [c.id, results[c.id].raw.absent ? new Set() : vb.idSet(finishCommand(results[c.id].raw, touches))]));
-  const skipped = new Map(plan.commands.map((c) => [c.id, results[c.id].raw.absent ? 0 : results[c.id].raw.skipped]));
+  const skipped = new Map(plan.commands.map((c) => [c.id, typeof results[c.id].raw.skipped === 'number' ? results[c.id].raw.skipped : null])); // absent-on-base: no count, not compared
   return { ids, skipped, cache: cached ? 'hit' : 'miss' };
 }
 

@@ -143,8 +143,8 @@ dis review "mock-of-subject:tests/mail-rules.test.ts:$GOODHASH" --verdict upheld
 expect "C25 review of an unknown fingerprint: exit 1" 1 "$RC"
 dis review "$FP" --verdict maybe --reason "r"
 expect "C26 review with an invalid verdict: exit 2" 2 "$RC"
-dis review "$FP" --verdict upheld --reason ""
-expect "C27 review with an empty reason: exit 2" 2 "$RC"
+dis review "$FP" --verdict upheld --reason "   "
+expect "C27 review with a blank reason: exit 2" 2 "$RC"
 expect "C28 after every refusal the entry is still pending (count of reviewed = 0)" 0 "$(store 'j.filter(e=>e.review!=="pending").length')"
 dis add --kind skip_increase --rule skip-increase --file unit --text $'1->2\n|x\n' --reason "newline and pipe in the TEXT are hashed, not stored" --by fx
 expect "C29 hostile --text (newline, pipe) is hashed: exit 0, store still valid JSON with 2 entries" "0|2" "$RC|$(store 'j.length')"
