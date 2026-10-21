@@ -23,8 +23,9 @@ const MAX_CACHE_BYTES = 8 * 1024 * 1024;
 const A1_PREFIX = '.a1/';
 const LOCKFILES = Object.freeze(['package-lock.json', 'pnpm-lock.yaml', 'yarn.lock']);
 // A head failure with one of these reasons is never recorded as pre_existing_red, whatever the base shows:
-// a crash, a timeout or a command that did not start tells nothing about which tests were red before.
-const NEVER_PRE_EXISTING = Object.freeze(['spawn_failed', 'timeout', 'implausible_crash']);
+// a crash or a timeout tells nothing about which tests were red before. (A command that cannot start is not listed:
+// runCommand throws VerifyError spawn_failed, exit 2, before any record reaches settle().)
+const NEVER_PRE_EXISTING = Object.freeze(['timeout', 'implausible_crash']);
 const CONFIG_FILE = '.a1/verify.json';
 const CONFIG_RULE = 'verify-config';
 const SHA_RE = /^[0-9a-f]{40}$/;
@@ -66,9 +67,9 @@ function inIntentChild() {
   try { return require('./intent-child.cjs').inChildMode() === true; } catch (_e) { return false; }
 }
 
-/** Extracts `git archive <sha>` into a fresh guarded temp dir; returns the dir. Caller removes it. */
-function extractSnapshot(project, sha) {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'a1-fx-verify-base-')));
+/** Extracts `git archive <sha>` into a fresh guarded temp dir (a1-fx-verify-<label>-*); returns the dir. Caller removes it. */
+function extractSnapshot(project, sha, label = 'base') {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `a1-fx-verify-${label}-`)));
   const tar = path.join(dir, '..', `${path.basename(dir)}.tar`);
   const release = [cleanupOnExit(dir), cleanupOnExit(tar)];
   try {
@@ -91,8 +92,8 @@ function extractSnapshot(project, sha) {
 }
 
 /** Runs fn(snapshotDir) on a snapshot of `sha`; the dir is removed on every path. */
-function withSnapshot(project, sha, fn) {
-  const dir = extractSnapshot(project, sha);
+function withSnapshot(project, sha, fn, label = 'base') {
+  const dir = extractSnapshot(project, sha, label);
   const release = cleanupOnExit(dir);
   try { return fn(dir); } finally { fs.rmSync(dir, { recursive: true, force: true }); release(); }
 }

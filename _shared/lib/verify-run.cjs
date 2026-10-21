@@ -15,7 +15,7 @@ const { spawnSync, spawn } = require('child_process');
 const { gitRaw, headSha, splitNul, diffNames } = require('./verify-check.cjs');
 const rep = require('./verify-reporters.cjs');
 const vb = require('./verify-base.cjs');
-const { loadEntries, clearedFingerprints } = require('./disposition-store.cjs');
+const { loadEntries, entriesAt, clearedFingerprints, fingerprintOf } = require('./disposition-store.cjs');
 
 const { VerifyError } = vb;
 
@@ -25,6 +25,7 @@ const MAX_CONFIG_BYTES = 1024 * 1024;
 const MAX_COMMANDS = 500;
 const BASE_CANDIDATES = Object.freeze(['origin/main', 'main', 'master']);
 const NPM_SCRIPTS = Object.freeze(['typecheck', 'build', 'test']);
+const PYTEST_FILES = Object.freeze(['pyproject.toml', 'pytest.ini', 'tox.ini']);
 const NPM_PLACEHOLDER_RE = /no test specified/i;
 const KILL_GRACE_MS = 10 * 1000;
 const GROUP_RUNNER_FLAG = '--group-runner';
@@ -96,38 +97,67 @@ function fromConfig(project, cfg) {
   return out;
 }
 
-function packageManager(project) {
-  if (fs.existsSync(path.join(project, 'pnpm-lock.yaml'))) return 'pnpm';
-  if (fs.existsSync(path.join(project, 'yarn.lock'))) return 'yarn';
+/** Where the autodetect files are read from: the working tree (no --base) or a commit (--base: base and HEAD, never the live tree). */
+function fsSource(project) {
+  return { has: (n) => fs.existsSync(path.join(project, n)), readJson: (n) => readJsonFile(path.join(project, n), n) };
+}
+
+function gitSource(project, sha) {
+  return {
+    has: (n) => gitRaw(project, ['cat-file', '-e', `${sha}:${n}`]) !== null,
+    readJson: (n) => {
+      const text = gitRaw(project, ['show', `${sha}:${n}`]);
+      if (text === null) return null;
+      if (Buffer.byteLength(text) > MAX_CONFIG_BYTES) throw new VerifyError('bad_config', `${n} at ${sha.slice(0, 12)} is larger than 1 MiB`);
+      try { return JSON.parse(text); } catch (e) { throw new VerifyError('bad_config', `${n} at ${sha.slice(0, 12)} is not valid JSON: ${e.message}`); }
+    },
+  };
+}
+
+function packageManager(src) {
+  if (src.has('pnpm-lock.yaml')) return 'pnpm';
+  if (src.has('yarn.lock')) return 'yarn';
   return 'npm';
 }
 
-function fromPackageJson(project) {
-  const pkg = readJsonFile(path.join(project, 'package.json'), 'package.json');
+// `detect` carries what the argv does not: the script body (npm run test runs whatever package.json says) - compared base vs head.
+function fromPackageJson(src) {
+  const pkg = src.readJson('package.json');
   const scripts = pkg && pkg.scripts && typeof pkg.scripts === 'object' ? pkg.scripts : {};
-  const pm = packageManager(project);
+  const pm = packageManager(src);
   return NPM_SCRIPTS.filter((n) => typeof scripts[n] === 'string' && !NPM_PLACEHOLDER_RE.test(scripts[n])).map((n) => ({
-    id: `${pm} run ${n}`, argv: [pm, 'run', n], kind: n === 'test' ? rep.detectScriptKind(scripts[n]) : 'none', viaScript: true, timeoutMs: DEFAULT_TIMEOUT_MS,
+    id: `${pm} run ${n}`, argv: [pm, 'run', n], kind: n === 'test' ? rep.detectScriptKind(scripts[n]) : 'none', viaScript: true, timeoutMs: DEFAULT_TIMEOUT_MS, detect: scripts[n],
   }));
 }
 
-function fromPytest(project) {
-  const has = ['pyproject.toml', 'pytest.ini', 'tox.ini'].some((f) => fs.existsSync(path.join(project, f)));
-  return has ? [{ id: 'python3 -m pytest -q', argv: ['python3', '-m', 'pytest', '-q'], kind: 'pytest', viaScript: false, timeoutMs: DEFAULT_TIMEOUT_MS }] : [];
+function fromPytest(src) {
+  const found = PYTEST_FILES.filter((f) => src.has(f));
+  return found.length > 0 ? [{ id: 'python3 -m pytest -q', argv: ['python3', '-m', 'pytest', '-q'], kind: 'pytest', viaScript: false, timeoutMs: DEFAULT_TIMEOUT_MS, detect: found.join(',') }] : [];
+}
+
+/** The autodetected command set of a tree (package.json first, then pytest); [] when none. */
+function autodetect(src) {
+  const pkg = fromPackageJson(src);
+  return pkg.length > 0 ? pkg : fromPytest(src);
+}
+
+function detectSignature(commands) {
+  return vb.canon(commands.map((c) => [c.id, c.argv, c.kind, c.detect === undefined ? null : c.detect]));
 }
 
 /**
  * { commands, source, noTestsReason, requiresEnv, flakyBase }; throws VerifyError (exit 2).
  * @param {object|null} [config] parsed `.a1/verify.json` to use instead of the file in `project`
  *   (`null` = the merge-base has none); undefined reads the file in `project`.
+ * @param {{has: Function, readJson: Function}} [src] where package.json / pytest files are read from (default: the files in `project`)
  */
-function resolveCommands(project, config) {
+function resolveCommands(project, config, src = fsSource(project)) {
   const cfg = config === undefined ? readJsonFile(path.join(project, '.a1', 'verify.json'), '.a1/verify.json') : config;
   if (cfg !== null && (typeof cfg !== 'object' || Array.isArray(cfg))) throw new VerifyError('bad_config', '.a1/verify.json must be an object');
   const requiresEnv = cfg && Array.isArray(cfg.requires_env) ? cfg.requires_env.filter((n) => typeof n === 'string') : [];
   const flakyBase = cfg && Array.isArray(cfg.flaky_base) ? cfg.flaky_base.filter((n) => typeof n === 'string') : [];
   const reason = cfg && typeof cfg.no_tests_reason === 'string' && cfg.no_tests_reason !== '' ? cfg.no_tests_reason : null;
-  const tries = [['verify.json', () => (cfg ? fromConfig(project, cfg) : [])], ['package.json', () => fromPackageJson(project)], ['pytest', () => fromPytest(project)]];
+  const tries = [['verify.json', () => (cfg ? fromConfig(project, cfg) : [])], ['package.json', () => fromPackageJson(src)], ['pytest', () => fromPytest(src)]];
   for (const [source, get] of tries) {
     const commands = get();
     if (commands.length > 0) return { commands, source, noTestsReason: null, requiresEnv, flakyBase };
@@ -251,36 +281,36 @@ function overall(commands, noTestsReason) {
 }
 
 /** Base side (FR-015): { ids: Map<commandId, Set>, cache } from the cache or a git-archive snapshot of baseSha. */
-function runBaseSide(project, plan, baseSha, hash, touches, tmp) {
-  const cached = vb.readCache(project, baseSha, hash, plan.commands);
+function runBaseSide(project, plan, baseSha, hash, touches, tmp, noCache) {
+  const cached = noCache ? null : vb.readCache(project, baseSha, hash, plan.commands);
   const results = cached || vb.withSnapshot(project, baseSha, (dir) => Object.fromEntries(plan.commands.map((c, i) => [c.id, {
     raw: c.file && !fs.existsSync(path.join(dir, c.file)) ? { absent: true } : runCommand(c, dir, tmp, `b${i}`),
   }])));
-  if (!cached) vb.writeCache(project, baseSha, hash, results);
+  if (!cached && !noCache) vb.writeCache(project, baseSha, hash, results);
   const ids = new Map(plan.commands.map((c) => [c.id, results[c.id].raw.absent ? new Set() : vb.idSet(finishCommand(results[c.id].raw, touches))]));
   const skipped = new Map(plan.commands.map((c) => [c.id, typeof results[c.id].raw.skipped === 'number' ? results[c.id].raw.skipped : null])); // absent-on-base: no count, not compared
-  return { ids, skipped, cache: cached ? 'hit' : 'miss' };
+  return { ids, skipped, cache: noCache ? 'off' : (cached ? 'hit' : 'miss') };
 }
 
-/** Head side: cached or fresh first runs, retry once on failure, settle against base and flaky_base. */
+/** Head side: cached or fresh first runs, retry once on failure, settle against base and flaky_base. ctx.cwd: where the commands run (a HEAD snapshot with --base). */
 function runHeadSide(project, plan, head, hash, ctx) {
-  const clean = head !== null && vb.dirtyPaths(statusPaths(project)).length === 0;
+  const clean = !ctx.noCache && head !== null && vb.dirtyPaths(statusPaths(project)).length === 0;
   const cached = clean ? vb.readCache(project, head, hash, plan.commands) : null;
   const results = {};
   let ranLive = false;
   const settled = plan.commands.map((c, i) => {
     const entry = cached ? cached[c.id] : null;
-    const raw = entry ? entry.raw : (ranLive = true, runCommand(c, project, ctx.tmp, `h${i}`));
+    const raw = entry ? entry.raw : (ranLive = true, runCommand(c, ctx.cwd, ctx.tmp, `h${i}`));
     results[c.id] = { raw, retry: entry && entry.retry ? entry.retry : null };
     const retry = () => {
-      if (!results[c.id].retry) { ranLive = true; results[c.id] = { raw, retry: runCommand(c, project, ctx.tmp, `r${i}`) }; }
+      if (!results[c.id].retry) { ranLive = true; results[c.id] = { raw, retry: runCommand(c, ctx.cwd, ctx.tmp, `r${i}`) }; }
       return finishCommand(results[c.id].retry, ctx.touches);
     };
     return vb.settle(finishCommand(raw, ctx.touches), retry, ctx.baseIds ? ctx.baseIds.get(c.id) : null, plan.flakyBase);
   });
   const stillClean = clean && vb.dirtyPaths(statusPaths(project)).length === 0;
   if (stillClean && ranLive) vb.writeCache(project, head, hash, results);
-  return { settled, cache: cached ? (ranLive ? 'partial' : 'hit') : (clean ? 'miss' : 'dirty') };
+  return { settled, cache: ctx.noCache ? 'off' : (cached ? (ranLive ? 'partial' : 'hit') : (clean ? 'miss' : 'dirty')) };
 }
 
 /** Fingerprints of the committed `skip_increase` dispositions; an unreadable store is a config error (exit 2). */
@@ -294,27 +324,63 @@ function readLockfile(project, name) {
   try { return fs.readFileSync(path.join(project, name), 'utf8'); } catch (_e) { return null; }
 }
 
+/** `.a1/verify.json` of a commit (null = none there); size-capped and parsed like the working-tree file. */
+function configAt(project, sha, which) {
+  const text = gitRaw(project, ['show', `${sha}:${vb.CONFIG_FILE}`]);
+  if (text !== null && Buffer.byteLength(text) > MAX_CONFIG_BYTES) throw new VerifyError('bad_config', `the ${which} .a1/verify.json is larger than 1 MiB`);
+  return vb.parseVerifyJson(text, which);
+}
+
 /**
- * SEC-2 (spec 017 review): with --base the command set is the merge-base's `.a1/verify.json`.
+ * SEC-2 (spec 017 review): with --base the command set is the merge-base's, and both sides are read from commits
+ * (base and HEAD), never from the live working tree.
  * @returns {{base: object|null, head: object|null, change: object|null, shrunkFlaky: string[]|null}}
  */
-function baseConfigGuard(project, baseSha) {
-  const baseText = gitRaw(project, ['show', `${baseSha}:${vb.CONFIG_FILE}`]);
-  if (baseText !== null && Buffer.byteLength(baseText) > MAX_CONFIG_BYTES) throw new VerifyError('bad_config', 'the merge-base .a1/verify.json is larger than 1 MiB');
-  const base = vb.parseVerifyJson(baseText, 'base');
-  const head = readJsonFile(path.join(project, '.a1', 'verify.json'), '.a1/verify.json');
+function baseConfigGuard(project, baseSha, headSha_) {
+  const base = configAt(project, baseSha, 'base');
+  const head = configAt(project, headSha_, 'head');
   const change = vb.configChange(base, head);
   const shrunk = change === null && base !== null && head !== null && Array.isArray(head.flaky_base)
     ? head.flaky_base.filter((x) => typeof x === 'string') : null;
   return { base, head, change, shrunkFlaky: shrunk };
 }
 
-/** Reasons: a changed config fails unless a committed, non-overturned `config_change` disposition names exactly this head content. */
-function configChangeRecord(project, guard) {
-  if (guard.change === null) return null;
-  let cleared;
-  try { cleared = clearedFingerprints(loadEntries(project), 'config_change'); } catch (e) { throw new VerifyError('bad_config', e.message); }
-  return { fields: guard.change.fields, fingerprint: guard.change.fingerprint, dispositioned: cleared.has(guard.change.fingerprint) };
+/**
+ * Which command set judges a --base run, and whether the base side can be compared.
+ * Base resolves a set: that set, plus a forced `change` when the autodetected set (script bodies included) differs at HEAD (Q23).
+ * Base resolves none (no verify.json, nothing autodetectable): the HEAD set runs, there is nothing to compare against,
+ * and the change is forced because the PR itself supplies what judges it.
+ * @returns {{plan: object, compareBase: boolean, change: {fields: string[], fingerprint: string}|null}}
+ */
+function selectBasePlan(project, baseSha, headSha_, guard) {
+  const baseSrc = gitSource(project, baseSha);
+  const headSrc = gitSource(project, headSha_);
+  let basePlan = null;
+  try { basePlan = resolveCommands(project, guard.base, baseSrc); } catch (e) {
+    if (!(e instanceof VerifyError) || e.reason !== 'no_test_command') throw e;
+  }
+  const forced = (commands) => ({ fields: ['commands'], fingerprint: fingerprintOf(vb.CONFIG_RULE, vb.CONFIG_FILE, detectSignature(commands)) });
+  if (basePlan === null) {
+    const plan = resolveCommands(project, guard.head, headSrc);
+    return { plan, compareBase: false, change: guard.change || forced(plan.commands) };
+  }
+  if (guard.change === null && basePlan.source !== 'verify.json') {
+    const headAuto = autodetect(headSrc);
+    const sig = detectSignature(headAuto);
+    if (sig !== detectSignature(autodetect(baseSrc))) return { plan: basePlan, compareBase: true, change: { fields: ['autodetect'], fingerprint: fingerprintOf(vb.CONFIG_RULE, vb.CONFIG_FILE, sig) } };
+  }
+  return { plan: basePlan, compareBase: true, change: guard.change };
+}
+
+/**
+ * Reasons: a changed command set fails unless a COMMITTED (store at HEAD), UPHELD `config_change` disposition names exactly
+ * this head content. A pending, overturned or working-tree-only entry clears nothing (merge-check blocks a pending one anyway).
+ */
+function configChangeRecord(project, change, headSha_) {
+  if (change === null) return null;
+  let upheld;
+  try { upheld = new Set(entriesAt(project, headSha_).filter((e) => e.kind === 'config_change' && e.review === 'upheld').map((e) => e.fingerprint)); } catch (e) { throw new VerifyError('bad_config', e.message); }
+  return { fields: change.fields, fingerprint: change.fingerprint, dispositioned: upheld.has(change.fingerprint) };
 }
 
 function withConfigReason(v) {
@@ -324,7 +390,8 @@ function withConfigReason(v) {
 const pairs = (commands, key) => commands.flatMap((c) => c[key].map((id) => ({ command: c.id, id })));
 
 /**
- * @param {{project:string, base?:string, timeoutMs?:number}} opts
+ * @param {{project:string, base?:string, timeoutMs?:number, noCache?:boolean}} opts noCache: never read or write the
+ *   sha + command-hash result cache (merge-check sets it: a cache file is writable by the code under test)
  * @returns {object} the verify_run record; throws VerifyError (exit 2)
  */
 function runVerify(opts) {
@@ -332,9 +399,10 @@ function runVerify(opts) {
   const head = headSha(project);
   if (opts.base !== undefined && head === null) throw new VerifyError('base_unresolved', '--base needs a git repository with a commit');
   const baseSha = head ? resolveBase(project, opts.base) : null;
-  const cfgGuard = opts.base !== undefined ? baseConfigGuard(project, baseSha) : null;
-  const plan = resolveCommands(project, cfgGuard ? cfgGuard.base : undefined);
-  const flakyBase = cfgGuard && cfgGuard.shrunkFlaky !== null ? cfgGuard.shrunkFlaky : plan.flakyBase;
+  const cfgGuard = opts.base !== undefined ? baseConfigGuard(project, baseSha, head) : null;
+  const sel = cfgGuard ? selectBasePlan(project, baseSha, head, cfgGuard) : { plan: resolveCommands(project), compareBase: false, change: null };
+  const plan = sel.plan;
+  const flakyBase = cfgGuard && sel.compareBase && cfgGuard.shrunkFlaky !== null ? cfgGuard.shrunkFlaky : plan.flakyBase;
   const missing = plan.requiresEnv.filter((n) => !process.env[n]);
   if (missing.length > 0) throw new VerifyError('env_missing', `required environment variable(s) not set: ${missing.join(', ')}`);
   const changed = head ? changeSet(project, baseSha) : [];
@@ -345,10 +413,12 @@ function runVerify(opts) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'a1-verify-'));
   const release = vb.cleanupOnExit(tmp);
   try {
-    const base = opts.base !== undefined ? runBaseSide(project, timed, baseSha, baseHash, touches, tmp) : null;
-    const side = runHeadSide(project, timed, head, hash, { tmp, touches, baseIds: base ? base.ids : null });
+    const base = sel.compareBase ? runBaseSide(project, timed, baseSha, baseHash, touches, tmp, opts.noCache === true) : null;
+    const runHead = (cwd) => runHeadSide(project, timed, head, hash, { tmp, touches, baseIds: base ? base.ids : null, cwd, noCache: opts.noCache === true });
+    // --base: HEAD runs from a git-archive snapshot like the base side, so git-ignored local files cannot change the verdict.
+    const side = opts.base !== undefined ? vb.withSnapshot(project, head, runHead, 'head') : runHead(project);
     const settled = base ? vb.applySkipIncrease(side.settled, base.skipped, skipIncreaseDispositions(project)) : side.settled;
-    const configChanged = cfgGuard ? configChangeRecord(project, cfgGuard) : null;
+    const configChanged = configChangeRecord(project, sel.change, head);
     const verdict = overall(settled, plan.noTestsReason);
     return {
       ...(configChanged && !configChanged.dispositioned ? withConfigReason(verdict) : verdict), source: plan.source, head_sha: head, base_sha: baseSha,

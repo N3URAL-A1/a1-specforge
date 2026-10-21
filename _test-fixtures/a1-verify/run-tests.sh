@@ -494,7 +494,7 @@ skipcase s5 "$WORK/green.json"
 check "S5 skipped 2 on both sides: exit 0, pass, no skip_increase record" 0 'j.verdict+","+(j.commands[0].skip_increase===undefined)' "pass,true"
 skipcase s6 "$WORK/more.json" --rule skip-increase --file unit --text "2->4"
 FP="$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"))[0].fingerprint)' "$P/.a1/dispositions.json")"
-(cd "$P" && node "$TOOLS" disposition review "$FP" --verdict overturned --reason "fixture: reviewer overturned" >/dev/null 2>&1); g "$P" commit -q -am overturned
+(cd "$P" && node "$TOOLS" disposition review "$FP" --verdict overturned --reason "fixture: reviewer overturned" --by reviewer >/dev/null 2>&1); g "$P" commit -q -am overturned
 vrun "$P" --base main
 check "S6 the same disposition overturned by review clears nothing: exit 1" 1 'j.verdict+","+j.commands[0].skip_increase.dispositioned' "fail,false"
 skipcase s7 "$WORK/more.json"; vrun "$P"
@@ -540,6 +540,7 @@ vbase r1d '{"commands":[{"id":"unit","argv":["./bin/red"]}]}' '{"commands":[{"id
 CANON="$(node -e 'const b=require(process.argv[1]); process.stdout.write(b.canon(JSON.parse(require("fs").readFileSync(process.argv[2],"utf8"))))' "$REPO_ROOT/_shared/lib/verify-base.cjs" "$P/.a1/verify.json")"
 (cd "$P" && node "$MUT3/_shared/a1-tools.cjs" disposition add --kind config_change --rule verify-config --file .a1/verify.json --text "$CANON" --reason "fixture: reviewed config change" --by fx >/dev/null 2>"$WORK/err"); RCD=$?
 [[ $RCD -eq 0 ]] && ok "R1d1 disposition recorded for the exact head config" || bad "R1d1 disposition add rc=$RCD $(cat "$WORK/err")"
+(cd "$P" && node "$TOOLS" disposition review "$(node -e 'const e=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(e[e.length-1].fingerprint)' "$P/.a1/dispositions.json")" --verdict upheld --reason "fixture: reviewed" --by reviewer >/dev/null 2>&1)
 g "$P" add -A; g "$P" commit -q -m disposition
 OUT="$(cd "$P" && node "$MUT3/_shared/a1-tools.cjs" verify run --project "$P" --phase fx --base main 2>/dev/null)"; RC=$?
 check "R1d reviewed disposition for exactly this config: config_changed recorded dispositioned, verdict from the commands" 0 'j.verdict+"/"+j.config_changed.dispositioned' "pass/true"
@@ -620,6 +621,87 @@ check_rc "R6 suite exits 0 and leaves a background child: verdict pass" 0
 GPID="$(cat "$A1_FX_PIDFILE" 2>/dev/null)"
 for _i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do is_alive "$GPID" || break; sleep 0.2; done
 if is_alive "$GPID"; then bad "R6b background child $GPID survived a normal exit"; kill "$GPID" 2>/dev/null; else ok "R6b no background child survives a normal exit (group killed on every path)"; fi
+
+# ---------- C: spec 017 review round C (BLOCKER base without command set, autodetect from base tree, forged cache, snapshot head) ----------
+# Measured red 2026-10-21 (HEAD code before the fix, this suite overlaid):
+#   C1 base resolves no command set: head set + forced verify_config_changed instead of exit 2 no_test_command : C1, C1b, C1c
+#   C2 autodetect (package.json, pytest) read from the base tree; differing detected set -> verify_config_changed : C2, C2b
+#   C3 --no-cache: no cache read or write, live run (forged cache file ignored)                                  : C3b, C3c
+#   C4 head side runs in a `git archive HEAD` snapshot when --base is given                                      : C4
+#   C5 config_change clearance reads the committed store and needs an upheld verdict                             : C5, C5b
+cdisp() { # cdisp <upheld|pending|none-committed>: record a config_change disposition for the exact head config in $P
+  local canon; canon="$(node -e 'const b=require(process.argv[1]); process.stdout.write(b.canon(JSON.parse(require("fs").readFileSync(process.argv[2],"utf8"))))' "$REPO_ROOT/_shared/lib/verify-base.cjs" "$P/.a1/verify.json")"
+  (cd "$P" && node "$TOOLS" disposition add --kind config_change --rule verify-config --file .a1/verify.json --text "$canon" --reason "fixture: reviewed config change" --by fx >/dev/null 2>&1)
+  if [[ "$1" == "upheld" ]]; then
+    local fp; fp="$(node -e 'const e=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(e[e.length-1].fingerprint)' "$P/.a1/dispositions.json")"
+    (cd "$P" && node "$TOOLS" disposition review "$fp" --verdict upheld --reason "fixture: reviewed" --by reviewer >/dev/null 2>&1)
+  fi
+}
+# C1: the merge-base has no .a1/verify.json and nothing autodetectable; the PR adds the file (this very PR's shape)
+newproj c1; stub ok 'exit 0'; seal
+cfg '{"commands":[{"id":"unit","argv":["./bin/ok"]}]}'; g "$P" add -A; g "$P" commit -q -m "add verify.json"
+vrun "$P" --base main
+check "C1 base has no command set, head adds .a1/verify.json: exit 1 verify_config_changed (head set run), not exit 2" 1 'j.verdict+"/"+j.reason+"/"+j.source+"/"+j.commands[0].id+"/"+j.cache.base+"/"+j.config_changed.dispositioned' "fail/verify_config_changed/verify.json/unit/none/false"
+cdisp upheld; g "$P" add -A; g "$P" commit -q -m "upheld disposition"
+vrun "$P" --base main
+check "C1b the same change with a committed, upheld config_change disposition for exactly this content: exit 0, pass" 0 'j.verdict+"/"+j.config_changed.dispositioned' "pass/true"
+newproj c1c; stub red 'exit 1'; seal
+cfg '{"commands":[{"id":"unit","argv":["./bin/red"]}]}'; g "$P" add -A; g "$P" commit -q -m "add verify.json"
+vrun "$P" --base main
+check "C1c base has no command set and the head command is red: still exit 1 (config reason first, red command listed)" 1 'j.reason+"/"+j.reasons.includes("command_failed")' "verify_config_changed/true"
+
+# C2: autodetect comes from the base tree (Samuel's demo: the PR sets "test":"true")
+newproj c2; printf '%s' '{"name":"x","scripts":{"test":"node -e \"process.exit(1)\""}}' > "$P/package.json"; seal
+printf '%s' '{"name":"x","scripts":{"test":"true"}}' > "$P/package.json"; g "$P" commit -q -am "make the suite pass"
+vrun "$P" --base main
+check "C2 PR rewrites the package.json test script to a no-op: exit 1 verify_config_changed (detected set differs base vs head)" 1 'j.verdict+"/"+j.reason+"/"+j.config_changed.fields.join()' "fail/verify_config_changed/autodetect"
+newproj c2b; seal
+printf '%s' '{"name":"x","scripts":{"test":"true"}}' > "$P/package.json"; g "$P" add -A; g "$P" commit -q -m "add package.json"
+vrun "$P" --base main
+check "C2b base has nothing to detect, PR adds a package.json test script: exit 1 verify_config_changed (not exit 2, not a silent pass)" 1 'j.reason+"/"+j.config_changed.fields.join()' "verify_config_changed/commands"
+newproj c2c; printf '%s' '{"name":"x","scripts":{"test":"node -e 0"}}' > "$P/package.json"; seal
+printf 'module.exports = 2;\n' > "$P/src/app.js"; g "$P" commit -q -am "source only"
+vrun "$P" --base main
+check "C2c control: package.json unchanged, source change only: exit 0, pass, no config_changed" 0 'j.verdict+"/"+(j.config_changed===undefined)' "pass/true"
+
+# C3: --no-cache ignores (and never writes) the result cache
+newproj c3; stub red 'exit 1'; cfg '{"commands":[{"id":"unit","argv":["./bin/red"]}]}'; seal
+vrun "$P"
+check "C3 first run red: exit 1, cache written for the clean head" 1 'j.verdict+"/"+j.cache.head' "fail/miss"
+node -e '
+  const fs=require("fs"),path=require("path"); const d=path.join(process.argv[1],".a1","verify-cache"); const f=fs.readdirSync(d).filter((n)=>n.endsWith(".json"))[0];
+  const e=JSON.parse(fs.readFileSync(path.join(d,f),"utf8"));
+  for (const k of Object.keys(e.results)) e.results[k].raw={...e.results[k].raw,exit_code:0,failed_ids:[]};
+  fs.writeFileSync(path.join(d,f), JSON.stringify(e));' "$P"
+vrun "$P"
+check "C3a control: a forged cache file turns the red suite green (this is why merge-check passes --no-cache)" 0 'j.verdict+"/"+j.cache.head' "pass/hit"
+vrun "$P" --no-cache
+check "C3b --no-cache: forged cache ignored, live run, exit 1" 1 'j.verdict+"/"+j.cache.head+"/"+j.cache.base' "fail/off/none"
+NC_BEFORE="$(cat "$P"/.a1/verify-cache/*.json | cksum)"
+vrun "$P" --no-cache
+[[ "$(cat "$P"/.a1/verify-cache/*.json | cksum)" == "$NC_BEFORE" ]] && ok "C3c --no-cache writes no cache either (cache file unchanged)" || bad "C3c cache file changed"
+NC_OPT="$(cd "$P" && node -e 'const r=require(process.argv[1]); const v=r.runVerify({project:process.argv[2], noCache:true}); process.stdout.write(v.verdict+"/"+v.cache.head)' "$REPO_ROOT/_shared/lib/verify-run.cjs" "$P" 2>&1)"
+[[ "$NC_OPT" == "fail/off" ]] && ok "C3d runVerify({noCache:true}) is the same switch for merge-check" || bad "C3d $NC_OPT"
+
+# C4: with --base the head side runs from a git-archive snapshot of HEAD; a git-ignored local file cannot change the result
+newproj c4; printf 'local/\n' > "$P/.gitignore"; stub chk '[ -f local/flag ] && exit 1; exit 0'; cfg '{"commands":[{"id":"unit","argv":["./bin/chk"]}]}'; seal
+printf 'module.exports = 2;\n' > "$P/src/app.js"; g "$P" commit -q -am head
+mkdir -p "$P/local"; : > "$P/local/flag"
+vrun "$P" --base main
+check "C4 git-ignored local/flag would turn the live tree red: --base result is the committed HEAD's (exit 0, pass)" 0 'j.verdict' "pass"
+
+# C5: the config_change clearance reads the committed store and needs an upheld verdict
+vbase c5 '{"commands":[{"id":"unit","argv":["./bin/red"]}]}' '{"commands":[{"id":"unit","argv":["./bin/ok"]}]}'
+cdisp pending; g "$P" add -A; g "$P" commit -q -m "pending disposition"
+vrun "$P" --base main
+check "C5 a committed but still pending config_change disposition does not clear: exit 1" 1 'j.reason+"/"+j.config_changed.dispositioned' "verify_config_changed/false"
+vbase c5b '{"commands":[{"id":"unit","argv":["./bin/red"]}]}' '{"commands":[{"id":"unit","argv":["./bin/ok"]}]}'
+cdisp upheld
+vrun "$P" --base main
+check "C5b an upheld disposition that is not committed (working tree only) does not clear: exit 1" 1 'j.reason+"/"+j.config_changed.dispositioned' "verify_config_changed/false"
+g "$P" add -A; g "$P" commit -q -m "upheld disposition"
+vrun "$P" --base main
+check "C5c the same upheld disposition committed: exit 0, dispositioned" 0 'j.verdict+"/"+j.config_changed.dispositioned' "pass/true"
 
 echo "a1-verify: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

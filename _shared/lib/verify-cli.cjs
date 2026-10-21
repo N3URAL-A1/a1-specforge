@@ -15,7 +15,7 @@ const { readMd, writeMdAtomic } = require('./io-frontmatter.cjs');
 const { VerifyError, runVerify, MAX_TIMEOUT_MS } = require('./verify-run.cjs');
 const { cmdVerifyCheck } = require('./verify-check.cjs');
 
-const KNOWN_FLAGS = { project: 'string', base: 'string', out: 'string', 'timeout-ms': 'string' };
+const KNOWN_FLAGS = { project: 'string', base: 'string', out: 'string', 'timeout-ms': 'string', 'no-cache': 'bool' };
 const MAX_ARG_LENGTH = 4096;
 
 function fail(reason, message) {
@@ -28,7 +28,7 @@ function parseArgs(args) {
   const flags = parseFlags(args, KNOWN_FLAGS);
   if (flags._.length > 0) fail('usage', `unexpected argument ${JSON.stringify(flags._[0])}`);
   for (const [k, v] of Object.entries(flags)) {
-    if (k === '_') continue;
+    if (k === '_' || k === 'no-cache') continue;
     if (typeof v !== 'string' || v === '' || v.length > MAX_ARG_LENGTH || v.includes('\0')) fail('usage', `--${k} needs a plain value`);
   }
   let timeoutMs;
@@ -36,7 +36,7 @@ function parseArgs(args) {
     timeoutMs = Number(flags['timeout-ms']);
     if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > MAX_TIMEOUT_MS) fail('usage', '--timeout-ms must be an integer in 1..86400000');
   }
-  return { project: path.resolve(process.cwd(), flags.project || '.'), base: flags.base, out: flags.out, timeoutMs };
+  return { project: path.resolve(process.cwd(), flags.project || '.'), base: flags.base, out: flags.out, timeoutMs, noCache: flags['no-cache'] === true };
 }
 
 /** Writes `verify_run` into the frontmatter of `file`, keeping every other key and the body. */
@@ -71,7 +71,7 @@ function cmdVerifyRun(args) {
 function cmdVerify(sub, rest) {
   if (sub === 'run') return cmdVerifyRun(rest);
   if (sub === 'check') return cmdVerifyCheck(rest);
-  process.stderr.write('usage: a1-tools verify run [--project <dir>] [--base <ref>] [--out <VERIFICATION.md>] [--timeout-ms <n>] | verify check <VERIFICATION.md>\n');
+  process.stderr.write('usage: a1-tools verify run [--project <dir>] [--base <ref>] [--out <VERIFICATION.md>] [--timeout-ms <n>] [--no-cache] | verify check <VERIFICATION.md>\n');
   return process.exit(2);
 }
 
