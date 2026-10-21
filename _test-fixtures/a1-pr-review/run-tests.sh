@@ -238,6 +238,25 @@ else fail_case "05-merge.md lost the spec 016 precondition or the --body-file ru
 if grep -q '2.2b' "$REV" && grep -q 'pr-diff-xprov' "$REV"; then pass_case "the Codex PR diff review step (2.2b) is still in 02-review.md"
 else fail_case "02-review.md lost the Codex review step"; fi
 
+# ---------- spec 017 wave 12 (FR-025): disposition review in 02-review.md + Reinhard ----------
+# Measured red 2026-10-21 (git-archive snapshot, one line changed, suite run):
+#   02-review.md: `disposition review` renamed to `disposition view`  : real-flags case
+#   02-review.md: `--phase pr-<n>` added to the disposition call      : no --phase case (the CLI exits 2 on it)
+#   agents/a1-reinhard-reviewer.md: heading "Disposition Review" cut   : agent-duty case
+AGT="$SK/../agents/a1-reinhard-reviewer.md"
+rb="$(node -e '
+  const t=require("fs").readFileSync(process.argv[1],"utf8"); const out=[]; const re=/^```bash\n([\s\S]*?)^```/gm; let m;
+  while((m=re.exec(t))) out.push(m[1]); process.stdout.write(JSON.stringify(out));' "$REV")"
+rbj() { printf '%s' "$rb" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const b=JSON.parse(s);console.log(eval(process.argv[1]))})' "$1"; }
+if [ "$(rbj 'b.filter(x=>/disposition review /.test(x)).length')" = "1" ]; then pass_case "02-review.md has exactly one disposition review call (count)"; else fail_case "02-review.md disposition review call count != 1"; fi
+if [ "$(rbj 'b.filter(x=>/disposition review <fingerprint> --verdict <upheld\|overturned> --reason /.test(x)&&/--by a1-reinhard-reviewer/.test(x)).length')" = "1" ]; then pass_case "the call uses the real flags (--verdict upheld|overturned, --reason, --by)"; else fail_case "disposition review call lacks --verdict/--reason/--by"; fi
+if [ "$(rbj 'b.filter(x=>/disposition review /.test(x)&&/--phase/.test(x)).length')" = "0" ]; then pass_case "disposition review passes no --phase (the command rejects it with exit 2)"; else fail_case "disposition review call passes --phase"; fi
+if [ "$(rbj 'b.filter(x=>/disposition review /.test(x)&&/RC=\$\?/.test(x)&&/-ne 0/.test(x)&&/exit "\$RC"/.test(x)).length')" = "1" ]; then pass_case "the disposition review block tests its exit code explicitly"; else fail_case "disposition review block does not test \$?"; fi
+if [ "$(rbj 'b.findIndex(x=>/disposition review /.test(x))>b.findIndex(x=>/xprov gate --gate pr-diff-xprov --work-path/.test(x))')" = "true" ] && grep -q '^### 2.3b' "$REV" && [ "$(grep -n '^### 2.3b' "$REV" | cut -d: -f1)" -lt "$(grep -n '^### 2.4 ' "$REV" | cut -d: -f1)" ]; then pass_case "the disposition step sits between 2.3 and 2.4, after the Codex step"; else fail_case "disposition step 2.3b is missing or misplaced"; fi
+if grep -q 'Dispositions changed between base and head' "$REV"; then pass_case "the Reinhard brief carries the changed dispositions"; else fail_case "Reinhard brief lacks the changed-dispositions line"; fi
+if grep -q 'overturned' "$AGT" && grep -q 'upheld' "$AGT" && grep -q 'Disposition Review' "$AGT"; then pass_case "Reinhard agent file states the disposition review duty with upheld/overturned"; else fail_case "agents/a1-reinhard-reviewer.md lacks the disposition review duty"; fi
+if [ "$(wc -l < "$AGT")" -le 260 ]; then pass_case "Reinhard agent file stays short (<= 260 lines)"; else fail_case "Reinhard agent file grew past 260 lines"; fi
+
 echo ""
 echo "a1-pr-review: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]
