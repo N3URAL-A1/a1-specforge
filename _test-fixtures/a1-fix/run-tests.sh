@@ -528,7 +528,7 @@ run_wave12_wiring() {
     const rec=d.filter(b=>/class-sweep --record/.test(b.text));
     res.push(["diagnose record call: exit test + --phase",rec.length===1&&/exit "\$RC"/.test(rec[0].text)&&/--phase fix-<bug-slug>/.test(rec[0].text)]);
     res.push(["diagnose update-status has no --phase (takes none)",d.filter(b=>/fix update-status/.test(b.text)&&/--phase/.test(b.text)).length===0]);
-    res.push(["preflight gate calls pass --phase fix-<bug-slug> x2",p.filter(b=>/(integrity-check|code-scope check)/.test(b.text)&&/--phase fix-<bug-slug>/.test(b.text)).length===2]);
+    res.push(["preflight: integrity-check (registry gate) passes --phase fix-<bug-slug>; code-scope check (not a registry gate, ignores the flag) passes none",p.filter(b=>/integrity-check/.test(b.text)&&/--phase fix-<bug-slug>/.test(b.text)).length===1&&p.filter(b=>/code-scope check/.test(b.text)&&!/--phase/.test(b.text)).length===1]);
     // real flags: every --flag at a call site must exist in that command real help text (+ --phase, stripped by the facade)
     const flagsOf=h=>new Set((h.match(/--[a-z][a-z-]*/g)||[]));
     const sweep=flagsOf(require(path.join(lib,"help-fix-sweep.cjs")).FIX_SWEEP_HELP);
