@@ -71,10 +71,18 @@ function cmdFixUpdateStatus(args) {
     'fix-commit': 'value',
     'verify-result': 'value',
     'duplicate-of': 'value',
+    project: 'value',
+    'enforced-since': 'value',
   });
   const bugPath = resolveVaultPath(bugPathInput);
   if (!fs.existsSync(bugPath)) fail(`bug file not found: ${bugPath}`);
   const { fm, body } = readMd(bugPath);
+  // Spec 017 FR-027/FR-030: class_query must be valid; `fixed` also needs a clean class sweep.
+  const gate = require('./fix-class-sweep.cjs').statusGate(fm, newStatus, bugPath, flags);
+  if (gate) {
+    fs.writeSync(1, `${JSON.stringify(gate.body, null, 2)}\n`);
+    process.exit(gate.exit);
+  }
   fm.status = newStatus;
 
   // Phase mapping for bug lifecycle.

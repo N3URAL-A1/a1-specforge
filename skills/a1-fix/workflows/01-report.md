@@ -99,6 +99,19 @@ Read `~/.claude/skills/a1-fix/templates/bug-report-template.md` and substitute:
 
 If a duplicate-of relation was confirmed in Step 1, set `duplicate_of: <vault-path>`.
 
+Add the defect-class query to the frontmatter (spec 017; `fix update-status <bug> diagnosed|fixing|fixed`
+refuses the file without it, reason `class_query_missing`). It can never be waived; a query that matches only
+the root site is valid. Fill it at the latest at diagnosis, in exactly this flat shape (the frontmatter parser
+has no nested objects, so the query is a list):
+
+```yaml
+class_query:
+  - pattern: <extended regex that finds the sibling code sites>
+  - glob: <path scope, e.g. lib/**/*.ts>
+  - engine: grep -E        # or: rg
+root_site: <file>:<line>   # the root-cause site; the query must match it
+```
+
 Write the file via the Write tool to the absolute path
 `<vault-root>/project/<project-slug>/fixes/<file>`.
 
