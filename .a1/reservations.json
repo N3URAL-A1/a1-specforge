@@ -57,7 +57,7 @@
         "skills/a1-quick/",
         "skills/a1-checklist/",
         "skills/a1-modernize/",
-        "skills/a1-roadmap/  # added Wave 13 (call-site sweep hit: product init flags)",
+        "skills/a1-roadmap/",
         "docs/adr/",
         "docs/product/",
         "README.md",
@@ -84,10 +84,12 @@
         "_shared/lib/locks.cjs",
         "_shared/lib/intent-constants.cjs",
         "_test-fixtures/a1-pr-review/",
-        "_test-fixtures/a1-fix/"
+        "_test-fixtures/a1-fix/",
+        "_shared/lib/disposition-store.cjs",
+        "_shared/lib/intent-argv.cjs"
       ],
       "by": "017-enforced-self-checks",
-      "at": "2026-10-21T07:28:34.368Z",
+      "at": "2026-10-21T08:55:29.082Z",
       "stage": "started"
     }
   ]
