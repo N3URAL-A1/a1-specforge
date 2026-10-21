@@ -223,6 +223,21 @@ run_lint --root "$WORK/m1" --registry "$WORK/wired.md"; back_rc=$RC
 if [[ $green_rc -eq 0 && $red_rc -eq 1 && $back_rc -eq 0 ]]; then ok "M1 removing the only fenced call turns the lint red, restoring it turns it green (0/1/0)"
 else bad "M1 mutation proof ($green_rc/$red_rc/$back_rc)"; fi
 
+# ---------- P: spec 017 review round C - a gate call without --phase in a skill that validates its retro against the gate log ----------
+# Measured red 2026-10-21 (rule not yet in gates-lint.cjs): P1 exits 0. Revert checkSkills() call_without_phase branch -> P1 red.
+GATE_LOG_FENCE='\n```bash\nnode <repo>/_shared/a1-tools.cjs retro validate "$RETRO_FILE" --gate-log "$GATE_LOG" --phase retro-x\n```\n'
+tree p1
+printf "$GATE_LOG_FENCE" >> "$WORK/p1/skills/a1-new-feature/workflows/05-implement.md"
+run_lint --root "$WORK/p1" --registry "$WORK/wired.md"
+check "P1 skill validates its retro with --gate-log, its gate call has no --phase: exit 1, call_without_phase names gate, skill and line" 1 \
+  'j.findings.map(f=>f.rule+":"+f.gate+":"+f.skill+":"+(f.line>0)).join(",")' "call_without_phase:check-reservations:a1-new-feature:true"
+plant "$WORK/p1/skills/a1-new-feature/workflows/04.5-consistency-gate.md" "$WORK/p1/skills/a1-new-feature/workflows/04.5-consistency-gate.md" 's = s.replace("check reservations \\\n", "check reservations --phase x \\\n");'
+run_lint --root "$WORK/p1" --registry "$WORK/wired.md"
+check "P2 the same call with --phase: exit 0, 0 findings, still 1 wired call" 0 'j.findings.length+"/"+j.wired.length' "0/1"
+tree p3
+run_lint --root "$WORK/p3" --registry "$WORK/wired.md"
+check "P3 control: no retro validate --gate-log in the skill, call without --phase is not flagged: exit 0" 0 'j.findings.length' "0"
+
 # ===========================================================================
 # Spec 017 Wave 2 — the gate log (FR-008) and `gates lint --log` (FR-010).
 # Gates are run through the REAL facade hook in throwaway git repos: `realpath-check

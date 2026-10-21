@@ -58,7 +58,7 @@ five sub-headings, directly after the frontmatter, as specified in
 ## Lane gate (deterministic, after Pablo returns)
 
 ```bash
-node <repo>/_shared/a1-tools.cjs lane-split check --plan .a1/phases/<phase_name>/PLAN.md
+node <repo>/_shared/a1-tools.cjs lane-split check --plan .a1/phases/<phase_name>/PLAN.md --phase <phase_name>
 ```
 
 Exit 0 → proceed to the audit. Exit 1 → the declared lane split is unsound
@@ -71,7 +71,7 @@ A plan without lanes exits 0 — this gate is free for the sequential default.
 ## Depth Pass gate (deterministic, after Pablo returns)
 
 ```bash
-node <repo>/_shared/a1-tools.cjs plan depth-check --plan .a1/phases/<phase_name>/PLAN.md
+node <repo>/_shared/a1-tools.cjs plan depth-check --plan .a1/phases/<phase_name>/PLAN.md --phase <phase_name>
 ```
 
 Run it right after the Lane gate and before Adam is spawned. Exit 0 → proceed to

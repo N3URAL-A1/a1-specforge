@@ -19,6 +19,8 @@
 //   unknown_skill        a named skill has no directory under skills/
 //   unwired              a named skill has no fenced call of the subcommand
 //   exemption_expired    the exemption date lies before today
+//   call_without_phase   a skill wires `retro validate --gate-log` but a call of a named gate in it has no --phase
+//                        (the gate log line would land in _unscoped and the retro's gates_fired check always stops)
 // A valid, unexpired exemption suppresses blocking_unwired and unwired for
 // that row; it is always listed.
 // ---------------------------------------------------------------------------
@@ -77,10 +79,18 @@ function findCalls(files, subcommand) {
     const content = readIfSmall(file);
     if (content === null) continue;
     for (const l of joinContinuations(extractBashFenceLines(content))) {
-      if (isCallLine(l.text) && re.test(l.text)) hits.push({ file, line: l.lineNo });
+      if (isCallLine(l.text) && re.test(l.text)) hits.push({ file, line: l.lineNo, text: l.text });
     }
   }
   return hits;
+}
+
+const PHASE_FLAG_RE = /(?:^|\s)--phase(?:=|\s|$)/;
+const GATE_LOG_FLAG_RE = /(?:^|\s)--gate-log(?:=|\s|$)/;
+
+/** True when the skill's workflows validate the retro against the phase gate log (`retro validate --gate-log`). */
+function wiresGateLog(files) {
+  return findCalls(files, 'retro validate').some((h) => GATE_LOG_FLAG_RE.test(h.text));
 }
 
 function skillDirExists(skillsRoot, skill) {
@@ -126,7 +136,15 @@ function checkSkills(row, skillsRoot, today) {
     }
     const files = skillFiles(skillsRoot, skill);
     const hits = findCalls(files, row.subcommand);
-    if (hits.length > 0) { wired.push({ skill, calls: hits.length }); continue; }
+    if (hits.length > 0) {
+      wired.push({ skill, calls: hits.length });
+      if (wiresGateLog(files)) {
+        for (const h of hits.filter((x) => !PHASE_FLAG_RE.test(x.text))) {
+          out.push({ rule: 'call_without_phase', gate: row.id, skill, file: h.file, line: h.line, reason: `"a1-tools.cjs ${row.subcommand}" has no --phase <phase_name> but ${skill} validates its retro with retro validate --gate-log` });
+        }
+      }
+      continue;
+    }
     missing.push({ skill, files });
   }
   if (!ex.active) {

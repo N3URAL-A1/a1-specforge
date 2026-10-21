@@ -88,7 +88,7 @@ symptom:
 node <repo>/_shared/a1-tools.cjs quick eligibility \
   --intent "<1-2 sentence symptom description>" --files <n> --diff-lines <estimate> \
   --scope <path>[,<path>...] --no-migration --no-new-route --no-new-dep \
-  --by fix-<bug-slug>
+  --by fix-<bug-slug> --phase fix-<bug-slug>
 ```
 
 - **Exit 0 (ELIGIBLE)** → skip Pre-Flight entirely (including the Isolation

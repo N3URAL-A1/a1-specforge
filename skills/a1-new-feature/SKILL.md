@@ -207,7 +207,7 @@ the local reservations file:
 
 ```bash
 node <repo>/_shared/a1-tools.cjs code-scope claim \
-  --by <spec-id> --scope <code_scope from wave-plan frontmatter>
+  --by <spec-id> --scope <code_scope from wave-plan frontmatter> --phase <spec-id>
 ```
 
 - **CONFLICT (exit 1)** → Implementation does NOT start. The CLI output names

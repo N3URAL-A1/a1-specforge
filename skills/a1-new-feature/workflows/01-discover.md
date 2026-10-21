@@ -61,7 +61,7 @@ already stated in this conversation:
 node <repo>/_shared/a1-tools.cjs quick eligibility \
   --intent "<1-2 sentence intent as stated so far>" --files <n> --diff-lines <estimate> \
   --scope <path>[,<path>...] --no-migration --no-new-route --no-new-dep \
-  --by <project-slug>-<feature-slug>
+  --by <project-slug>-<feature-slug> --phase <spec-id>
 ```
 
 Do **not** run an extra interview turn just to fill in eligibility flags —
