@@ -66,6 +66,14 @@ function workTreeDenyRules(cwd) {
   return Object.freeze(INTENT_WORKTREE_DENY_PATHS.flatMap((p) => [`Edit(/${cwd}/${p})`, `Write(/${cwd}/${p})`]));
 }
 
+// Spec 017 review (SEC-2/SEC-3): the repo files that decide what the merge check and the self-checks accept. A child that could write them
+// would clear its own findings or widen its own checks; the owner (or Reinhard, outside the child) edits them. One Edit and one Write rule each.
+const INTENT_OWNER_CONFIG_PATHS = Object.freeze(['.a1/dispositions.json', '.a1/verify.json', '.a1/fidelity.json']);
+function ownerConfigDenyRules(cwd) {
+  if (typeof cwd !== 'string' || !cwd.startsWith('/')) throw new Error('ownerConfigDenyRules: the project path must be absolute');
+  return Object.freeze(INTENT_OWNER_CONFIG_PATHS.flatMap((p) => [`Edit(/${cwd}/${p})`, `Write(/${cwd}/${p})`]));
+}
+
 // FR-021 — the only env names of a spawned child (17; FR-042 git keys last).
 // A1_INTENT_ID joined in the Part A review (MINOR-1): it must equal the
 // lock's intent_id, so an orphan of an earlier run never takes a new lock.
@@ -205,8 +213,10 @@ const WRITE_SCOPE = ['code-scope check', 'code-scope claim', 'code-scope release
 // FR-048 — git through the wrapper, per the skills' own git calls (intent-git.cjs header).
 const GIT_READ = ['git diff', 'git log', 'git status'];
 // Spec 017 Q23: the wired self-checks. `test-fidelity` is flag-only (no subcommand): its allowlist key is the group.
+// `verify run` and `fix class-sweep` are NOT on the allowlist (review SEC-5): they spawn non-git processes (the project's test command,
+// grep), which the child's spawn guard refuses with 77 anyway; they run owner-side. See SPAWNS_PROCESSES below.
 const INTENT_FLAG_ONLY_GROUPS = Object.freeze(['test-fidelity']);
-const SELF_CHECKS = ['verify run', 'verify check', 'test-fidelity'];
+const SELF_CHECKS = ['verify check', 'test-fidelity'];
 const NEW_FEATURE_ALLOW = Object.freeze([
   'check reservations', 'checklist run', 'code-scope claim', 'code-scope release', 'code-scope stage',
   'plan depth-check', 'product feature-init', 'product stage', 'quick eligibility', 'realpath-check run', 'schema-check run',
@@ -222,7 +232,7 @@ const INTENT_CHILD_ALLOWLIST = Object.freeze({
   ]),
   fix: Object.freeze([
     'code-scope check', 'fix find-duplicates', 'fix next-suffix', 'fix update-status',
-    'product audit-set', 'quick eligibility', 'realpath-check run', 'test-fidelity', 'fix class-sweep', ...GIT_READ,
+    'product audit-set', 'quick eligibility', 'realpath-check run', 'test-fidelity', ...GIT_READ,
   ]),
   stage: Object.freeze(['product stage']),
   progress: Object.freeze([]), // row R has no Bash
@@ -251,11 +261,13 @@ const TRANSCRIPTS = 'reads Claude Code session transcripts under ~/.claude/proje
 const ROW_R = 'row R (progress) has no Bash';
 const OWN_FINDINGS = 'an autonomous child must not clear its own findings (reviewed human or reviewer decision)';
 const DISPOSITIONS = Object.freeze({ 'disposition add': OWN_FINDINGS, 'disposition review': OWN_FINDINGS });
+const SPAWNS_PROCESSES = 'spawns non-git processes; runs owner-side (SEC-5)';
 const NEW_FEATURE_EXCLUDED = Object.freeze({
   'cost run': TRANSCRIPTS,
   'retro validate': OUTSIDE_STORE,
   'vault link-hub': VAULT_WIDE,
   ...DISPOSITIONS,
+  'verify run': SPAWNS_PROCESSES,
   'vault writer': 'reads and sets the hub writer declaration (a1_writer_host), a hub note outside project/<slug>/ that only a human sets (spec 010 FR-038)',
 });
 const INTENT_CHILD_EXCLUSIONS = Object.freeze({
@@ -263,11 +275,12 @@ const INTENT_CHILD_EXCLUSIONS = Object.freeze({
   'continue-feature': NEW_FEATURE_EXCLUDED,
   plan: Object.freeze({ ...DISPOSITIONS, 'retro validate': OUTSIDE_STORE, 'vault sync': VAULT_WIDE, 'xprov consent': XPROV_CONSENT, 'xprov dispose': XPROV_DISPOSE, 'xprov gate': XPROV, 'xprov permit-check': XPROV_CONSENT, 'xprov waive': XPROV }),
   execute: Object.freeze({
-    ...DISPOSITIONS, 'cost run': TRANSCRIPTS, 'retro validate': OUTSIDE_STORE, 'vault sync': VAULT_WIDE,
+    ...DISPOSITIONS, 'cost run': TRANSCRIPTS, 'retro validate': OUTSIDE_STORE, 'vault sync': VAULT_WIDE, 'verify run': SPAWNS_PROCESSES,
     'xprov consent': XPROV_CONSENT, 'xprov dispose': XPROV_DISPOSE, 'xprov gate': XPROV, 'xprov load-check': XPROV_STORE, 'xprov permit-check': XPROV_CONSENT, 'xprov waive': XPROV, 'xprov wave-status': XPROV_STORE,
   }),
   fix: Object.freeze({
     ...DISPOSITIONS,
+    'fix class-sweep': SPAWNS_PROCESSES,
     'fix count-postmortems-since': 'scans the postmortems of every project',
     'fix init-postmortem': 'fix.cjs postmortemsDir joins project/<slug>/postmortems/ itself, past projectsPath and its guard (measured: another slug and ../.. both written)',
     'fix integrity-check': 'hashes agents/ and skills/ outside the project and writes pattern/a1-learnings/_canonical/',
@@ -300,6 +313,8 @@ module.exports = {
   childSystemPrompt,
   INTENT_WORKTREE_DENY_PATHS,
   workTreeDenyRules,
+  INTENT_OWNER_CONFIG_PATHS,
+  ownerConfigDenyRules,
   INTENT_SEAL_SKILL_REWRITE,
   INTENT_CHILD_EXIT_CODE,
   INTENT_CHILD_REFUSAL_REASONS,

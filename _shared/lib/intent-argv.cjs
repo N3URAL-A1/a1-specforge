@@ -16,7 +16,8 @@
 //     <T> = realpath(<SEAL>)/_shared/a1-tools.cjs, byte-identical in the
 //     allow list and in the system prompt (RESEARCH.md round 3, B1-GIT).
 //   buildDenyRules — Bash(git *--output*), the four wrapper rules (B6), the
-//     seal, the work-tree rules of <CWD> (FR-042), for a write action the
+//     seal, the work-tree rules of <CWD> (FR-042), the owner-config rules
+//     (.a1/dispositions.json, verify.json, fidelity.json; spec 017 review), for a write action the
 //     primary checkout, and the 8 private-state rules (FR-049).
 //   buildEnv — built from nothing, never a filtered process.env (RESEARCH.md
 //     round 3, B4-a/b/c: zsh re-reads ~/.zshenv on every Bash call, and
@@ -35,7 +36,7 @@ const path = require('path');
 
 const {
   INTENT_CHILD_ENV_NAMES, INTENT_CHILD_OPTIONAL_ENV_NAMES, INTENT_ROW_TOOLS, INTENT_WRAPPER_DENY, SAFE_PATH_RE, INTENT_HOSTNAME_RE,
-  childSystemPrompt, rowAllow, readDenyRules, workTreeDenyRules,
+  childSystemPrompt, rowAllow, readDenyRules, workTreeDenyRules, ownerConfigDenyRules,
 } = require('./intent-constants.cjs');
 const { GIT_CONFIG_ENV } = require('./intent-git.cjs');
 
@@ -54,7 +55,7 @@ const sealTools = (sealDir) => path.join(sealDir, A1_TOOLS_REL);
 function buildDenyRules({ sealDir, cwd, passwdHome, primary = null }) {
   return Object.freeze([
     'Bash(git *--output*)', ...INTENT_WRAPPER_DENY, `Edit(/${sealDir}/**)`, `Write(/${sealDir}/**)`,
-    ...workTreeDenyRules(cwd), ...(primary ? [`Edit(/${primary}/**)`, `Write(/${primary}/**)`] : []), ...readDenyRules(passwdHome),
+    ...workTreeDenyRules(cwd), ...ownerConfigDenyRules(cwd), ...(primary ? [`Edit(/${primary}/**)`, `Write(/${primary}/**)`] : []), ...readDenyRules(passwdHome),
   ]);
 }
 
@@ -233,7 +234,7 @@ function pinnedRule(o) {
   const primary = o.row === 'W' ? [`Edit(/${o.primary}/**)`, `Write(/${o.primary}/**)`] : [];
   const required = [
     'Bash(git *--output*)', ...INTENT_WRAPPER_DENY, `Edit(/${o.sealDir}/**)`, `Write(/${o.sealDir}/**)`,
-    ...workTreeDenyRules(o.cwd), ...primary, ...readDenyRules(o.passwdHome),
+    ...workTreeDenyRules(o.cwd), ...ownerConfigDenyRules(o.cwd), ...primary, ...readDenyRules(o.passwdHome),
   ];
   const given = new Set(o.denyRules || []);
   return required.every((r) => given.has(r)) ? null : 'deny_rules_incomplete';
