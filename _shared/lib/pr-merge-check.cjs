@@ -144,8 +144,7 @@ function bugResolves(opts, baseSha) {
 /** Reasons from a flaky_base change: the head's .a1/verify.json lists ids the base's did not. */
 function flakyBaseReasons(project, baseSha) {
   const baseText = gitRaw(project, ['show', `${baseSha}:.a1/verify.json`]);
-  let headText = null;
-  try { headText = fs.readFileSync(path.join(project, '.a1', 'verify.json'), 'utf8'); } catch (_e) { /* absent on head */ }
+  const headText = gitRaw(project, ['show', 'HEAD:.a1/verify.json']); // the committed head, never the working tree
   return flakyBaseGrown(baseText, headText).map((id) => ({ reason: 'flaky_base_grown', id }));
 }
 
@@ -194,7 +193,7 @@ function mergeCheck(opts) {
   ];
   const report = {
     ok: reasons.length === 0, pr: Number(opts.pr), base: baseRef, base_sha: baseSha, head_sha: record.head_sha, gh_bin: ghBinMode(), reasons,
-    suites: { verdict: record.verdict, cache: record.cache, pre_existing_red: record.pre_existing_red, flaky: record.flaky, config_changed: record.config_changed || null },
+    suites: { verdict: record.verdict, cache: record.cache, pre_existing_red: record.pre_existing_red, flaky: record.flaky, config_changed: record.config_changed || null, suite_removed: record.suite_removed || null },
     required_checks: { total: checks.total, red: checks.red.length, pending: checks.pending.length },
     upheld_dispositions: guards.upheld,
   };

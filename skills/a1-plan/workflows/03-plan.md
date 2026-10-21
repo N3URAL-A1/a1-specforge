@@ -46,7 +46,7 @@ Create an executable PLAN.md for this phase.
 **Output path:** .a1/phases/<phase_name>/PLAN.md
 **Lane decision required:** Step 4.5 — set `lanes:` in the frontmatter, either
 `none` (the default, with a one-line reason) or a lane block. Then verify it:
-`node <repo>/_shared/a1-tools.cjs lane-split check --plan <output path>`.
+`node <repo>/_shared/a1-tools.cjs lane-split check --plan <output path> --phase <phase_name>`.
 **Depth Pass required:** the PLAN.md carries a `## Depth Pass` section with its
 five sub-headings, directly after the frontmatter, as specified in
 `<repo>/_shared/depth-pass.md`.

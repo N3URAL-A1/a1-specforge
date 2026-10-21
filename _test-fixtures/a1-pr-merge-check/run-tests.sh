@@ -426,5 +426,18 @@ expect "H7 --require-vault alone on drift: exit 1" 1 "$RC"
 OUT="$(cd "$P" && env -u A1_VAULT_ROOT node "$TOOLS" product validate --spec-status --ci --phase fx-w10 2>"$WORK/err")"; RC=$?
 expect "H8 control: --ci without a vault is unchanged (exit 0 with spec_path set)" 0 "$RC"
 
+# ---------- J: spec 017 review round D (suite_removed surfaces; flaky_base read from HEAD, not the working tree) ----------
+# Measured red 2026-10-21 (HEAD code before the fix, this suite overlaid): J1, J1b (no each from trees / no suite_removed), J2 (flakyBaseReasons read the working tree)
+BASE_HOOK=jhook
+jhook() { mkdir -p "$1/t/a" "$1/t/b"; printf 'exit 0\n' > "$1/t/a/run.sh"; printf 'exit 1\n' > "$1/t/b/run.sh"; printf '{"each":"t/*/run.sh","argv_prefix":["bash"]}\n' > "$1/.a1/verify.json"; }
+new_pr j1 0 0; g "$P" rm -q t/b/run.sh; g "$P" commit -q -m "drop the red suite"; mc
+BASE_HOOK=
+expect "J1 the branch deletes the red each-suite: exit 1, suite_red_on_head with cause suite_removed" "1|suite_red_on_head|true" "$RC|$(reasons)|$(js "j.reasons[0].causes.includes('suite_removed')")"
+expect "J1b the report carries the removed ids and the fingerprint to disposition" "t/b/run.sh|verify-config:.a1/verify.json:" "$(js 'j.suites.suite_removed.ids.join()')|$(js 'j.suites.suite_removed.fingerprint' | cut -c1-30)"
+new_pr j2 0 0
+printf '{"commands":[{"id":"unit","argv":["bash","suite.sh"]}],"flaky_base":["unit"]}\n' > "$P/.a1/verify.json"
+mc
+expect "J2 an uncommitted flaky_base edit in the working tree is not read as the head's list (no flaky_base_grown)" "false" "$(js "j.reasons.some(r=>r.reason==='flaky_base_grown')")"
+
 echo "a1-pr-merge-check: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]
