@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated": "2026-10-20T22:47:12.102Z",
+  "generated": "2026-10-21T18:31:25.711Z",
   "project": {
     "id": "a1-specforge",
     "title": "a1-specforge — Roadmap",
@@ -246,7 +246,7 @@
       "milestone": "continuous",
       "title": "Enforced self-checks: gates that really run, verifier reads exit codes, test fidelity, defect-class sweep",
       "status": "in-flight",
-      "stage": "started",
+      "stage": "complete",
       "depends_on": [
         "016-xprov-autonomy"
       ],

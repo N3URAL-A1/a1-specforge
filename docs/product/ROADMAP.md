@@ -4,7 +4,7 @@ type: roadmap
 project: a1-specforge
 title: "a1-specforge — Roadmap"
 status: active
-updated: 2026-10-20
+updated: 2026-10-21
 source: "migrated from docs/roadmap.md v3.0 (2026-07-10)"
 milestones:
   - id: m0-repo-extract
@@ -194,7 +194,7 @@ features:
     milestone: continuous
     title: "Enforced self-checks: gates that really run, verifier reads exit codes, test fidelity, defect-class sweep"
     status: in-flight
-    stage: started
+    stage: complete
     depends_on:
       - 016-xprov-autonomy
     started: 2026-10-20
@@ -372,6 +372,7 @@ None.
 - **2026-10-20** — feature.md created for '002-product-docs-layer' — formal spec/plan attached via `product feature-init`
 - **2026-10-20** — feature.md created for '010-vault-cockpit-contract' — formal spec/plan attached via `product feature-init`
 - **2026-10-20** — feature.md created for '011-intent-queue-consumer' — formal spec/plan attached via `product feature-init`
+- **2026-10-21** — 017-enforced-self-checks -> complete — stage transition via `product stage`
 
 ## Appendix — migrated details
 
