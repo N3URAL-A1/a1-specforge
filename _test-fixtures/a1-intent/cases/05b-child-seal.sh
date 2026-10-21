@@ -789,8 +789,8 @@ h7f_excl="$(node -e '
   const acts = ["new-feature", "continue-feature", "plan", "execute", "fix", "progress"];
   console.log(acts.filter((a) => ["disposition add", "disposition review"].every((k) => C.INTENT_CHILD_EXCLUSIONS[a][k] === R)).length
     + "/" + acts.filter((a) => ["disposition add", "disposition review"].some((k) => C.INTENT_CHILD_ALLOWLIST[a].includes(k))).length);' "$INTENT_LIB" 2>&1)"
-if [[ -z "$h7f_bad" && "$h7f_n" -eq 14 && "$h7f_excl" == "6/0" ]]; then ok "5b-H7f disposition add/review: refused 77 for 7 actions (14 calls), nothing written, reason recorded for 6 actions, on no allowlist ($h7f_excl) [spec 017 Q23]"
-else bad "5b-H7f disposition add/review: refused 77 for every action, nothing written, reason recorded, on no allowlist [spec 017 Q23]" "calls $h7f_n; bad:$h7f_bad; excl/allow $h7f_excl"; fi
+if [[ -z "$h7f_bad" && "$h7f_n" -eq 14 && "$h7f_excl" == "6/0" ]]; then ok "5b-H7f disposition add/review: refused 77 for 7 actions (14 calls), nothing written, reason recorded for 6 actions, on no allowlist ($h7f_excl) [FR-041, spec 017 Q23]"
+else bad "5b-H7f disposition add/review: refused 77 for every action, nothing written, reason recorded, on no allowlist [FR-041, spec 017 Q23]" "calls $h7f_n; bad:$h7f_bad; excl/allow $h7f_excl"; fi
 
 # ---------- L: `..` or `.` behind a missing segment, per path flag (MAJOR-1) ----------
 # nonexist/../lnk/x names the link target once Node normalizes it; the check
