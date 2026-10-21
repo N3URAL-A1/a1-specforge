@@ -5,7 +5,10 @@
     "reason": "test-not-in-ci: fixture data reproduced from a1-office (see _test-fixtures/a1-test-fidelity/real/ORIGIN.md), not a live test of this repository; the a1-test-fidelity suite reads it as input and no CI runner executes it by design",
     "date": "2026-10-20",
     "by": "walter",
-    "review": "pending"
+    "review": "upheld",
+    "review_reason": "Fixture input copied from a1-office (ORIGIN.md); this repo has no JS runner and Q22 requires a reviewed disposition, not an exclude list (Reinhard review PR #55)",
+    "reviewed_at": "2026-10-21T19:13:00.360Z",
+    "reviewed_by": "a1-reinhard-reviewer"
   },
   {
     "kind": "fidelity",
@@ -13,7 +16,10 @@
     "reason": "test-not-in-ci: fixture data reproduced from a1-office (see _test-fixtures/a1-test-fidelity/real/ORIGIN.md), not a live test of this repository; the a1-test-fidelity suite reads it as input and no CI runner executes it by design",
     "date": "2026-10-20",
     "by": "walter",
-    "review": "pending"
+    "review": "upheld",
+    "review_reason": "Fixture input copied from a1-office (ORIGIN.md); this repo has no JS runner and Q22 requires a reviewed disposition, not an exclude list (Reinhard review PR #55)",
+    "reviewed_at": "2026-10-21T19:13:00.411Z",
+    "reviewed_by": "a1-reinhard-reviewer"
   },
   {
     "kind": "fidelity",
@@ -21,7 +27,10 @@
     "reason": "test-not-in-ci: fixture data reproduced from a1-office (see _test-fixtures/a1-test-fidelity/real/ORIGIN.md), not a live test of this repository; the a1-test-fidelity suite reads it as input and no CI runner executes it by design",
     "date": "2026-10-20",
     "by": "walter",
-    "review": "pending"
+    "review": "upheld",
+    "review_reason": "Fixture input copied from a1-office (ORIGIN.md); this repo has no JS runner and Q22 requires a reviewed disposition, not an exclude list (Reinhard review PR #55)",
+    "reviewed_at": "2026-10-21T19:13:00.461Z",
+    "reviewed_by": "a1-reinhard-reviewer"
   },
   {
     "kind": "fidelity",
@@ -29,7 +38,10 @@
     "reason": "test-not-in-ci: fixture data reproduced from a1-office (see _test-fixtures/a1-test-fidelity/real/ORIGIN.md), not a live test of this repository; the a1-test-fidelity suite reads it as input and no CI runner executes it by design",
     "date": "2026-10-20",
     "by": "walter",
-    "review": "pending"
+    "review": "upheld",
+    "review_reason": "Fixture input copied from a1-office (ORIGIN.md); this repo has no JS runner and Q22 requires a reviewed disposition, not an exclude list (Reinhard review PR #55)",
+    "reviewed_at": "2026-10-21T19:13:00.514Z",
+    "reviewed_by": "a1-reinhard-reviewer"
   },
   {
     "kind": "fidelity",
@@ -37,7 +49,10 @@
     "reason": "mock-of-subject: fixture data reproduced from a1-office (see _test-fixtures/a1-test-fidelity/real/ORIGIN.md), not a live test of this repository; the pass-through withTenantContext mock is the bug class SC-005 measures (Q21)",
     "date": "2026-10-20",
     "by": "walter",
-    "review": "pending"
+    "review": "upheld",
+    "review_reason": "True positive kept as fixture evidence (Q21/H1/H2); the file is data and never runs here (Reinhard review PR #55)",
+    "reviewed_at": "2026-10-21T19:13:00.566Z",
+    "reviewed_by": "a1-reinhard-reviewer"
   },
   {
     "kind": "fidelity",
@@ -45,7 +60,10 @@
     "reason": "skipped-test: fixture data reproduced from a1-office (see _test-fixtures/a1-test-fidelity/real/ORIGIN.md), not a live test of this repository; the ctx.skip() lines (identical text) are part of the corrected claudia test as shipped upstream",
     "date": "2026-10-20",
     "by": "walter",
-    "review": "pending"
+    "review": "upheld",
+    "review_reason": "13 identical ctx.skip lines are verbatim upstream fixture data; fingerprint only clears this one fixture file (Reinhard review PR #55)",
+    "reviewed_at": "2026-10-21T19:13:00.619Z",
+    "reviewed_by": "a1-reinhard-reviewer"
   },
   {
     "kind": "fidelity",
@@ -53,7 +71,10 @@
     "reason": "mock-of-subject: fixture data reproduced from a1-office (see _test-fixtures/a1-test-fidelity/real/ORIGIN.md), not a live test of this repository; it is the historical defective test that FR-020 must flag in the suite (H1)",
     "date": "2026-10-20",
     "by": "walter",
-    "review": "pending"
+    "review": "upheld",
+    "review_reason": "True positive kept as fixture evidence (Q21/H1/H2); the file is data and never runs here (Reinhard review PR #55)",
+    "reviewed_at": "2026-10-21T19:13:00.671Z",
+    "reviewed_by": "a1-reinhard-reviewer"
   },
   {
     "kind": "fidelity",
@@ -61,6 +82,25 @@
     "reason": "mock-of-subject: fixture data reproduced from a1-office (see _test-fixtures/a1-test-fidelity/real/ORIGIN.md), not a live test of this repository; it is the historical defective test that FR-020 must flag in the suite (H2)",
     "date": "2026-10-20",
     "by": "walter",
+    "review": "upheld",
+    "review_reason": "True positive kept as fixture evidence (Q21/H1/H2); the file is data and never runs here (Reinhard review PR #55)",
+    "reviewed_at": "2026-10-21T19:13:00.721Z",
+    "reviewed_by": "a1-reinhard-reviewer"
+  },
+  {
+    "kind": "config_change",
+    "fingerprint": "verify-config:.a1/verify.json:708b20e4e1a8ea29",
+    "reason": "spec 017 introduces .a1/verify.json for this repo (no base config exists): each _test-fixtures/*/run*.sh via bash",
+    "date": "2026-10-21",
+    "by": "orchestrator",
+    "review": "pending"
+  },
+  {
+    "kind": "config_change",
+    "fingerprint": "fidelity-config:.a1/fidelity.json:f5a4dc1f09743741",
+    "reason": "spec 017 introduces .a1/fidelity.json for this repo (no base config exists); test_globs narrowed per Q22",
+    "date": "2026-10-21",
+    "by": "orchestrator",
     "review": "pending"
   }
 ]
