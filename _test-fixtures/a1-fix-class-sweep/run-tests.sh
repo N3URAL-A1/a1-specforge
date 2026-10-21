@@ -45,9 +45,8 @@ TOOLS="${A1_FX_TOOLS:-$REPO_ROOT/_shared/a1-tools.cjs}"
 LIB="$(dirname "$TOOLS")/lib"
 REAL="$REPO_ROOT/_test-fixtures/a1-fix-class-sweep/real"
 
-W="$(mktemp -d "${TMPDIR:-/tmp}/a1-fx-class-sweep.XXXXXX")" || exit 1
-[[ -n "$W" && -d "$W" ]] || exit 1
-trap 'rm -rf "${W:?}"' EXIT
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
+mk_workdir W class-sweep
 export GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0
 VAULT="$W/vault"; mkdir -p "$VAULT/project/demo/fixes" || exit 1
 SINCE=2026-01-01

@@ -18,9 +18,8 @@ REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TOOLS="${A1_FX_TOOLS:-$REPO_ROOT/_shared/a1-tools.cjs}"
 SHARED="$(dirname "$TOOLS")"
 
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/a1-fx-exit2.XXXXXX")" || exit 1
-[[ -n "$WORK" && -d "$WORK" ]] || exit 1
-trap 'rm -rf "${WORK:?}"' EXIT
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
+mk_workdir WORK exit2
 export GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0
 
 pass=0; fail=0

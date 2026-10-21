@@ -84,9 +84,8 @@ REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TOOLS="$REPO_ROOT/_shared/a1-tools.cjs"
 REAL="$REPO_ROOT/_test-fixtures/a1-test-fidelity/real"
 
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/a1-fx-test-fidelity.XXXXXX")" || exit 1
-[[ -n "$WORK" && -d "$WORK" ]] || exit 1
-trap 'rm -rf "${WORK:?}"' EXIT
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
+mk_workdir WORK test-fidelity
 
 pass=0
 fail=0

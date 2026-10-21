@@ -46,9 +46,8 @@ fi
 # Spec 017 FR-008: the gate call appends one log line (gate-0.6-schema) to the repo it runs in.
 # Measured red 2026-10-20 (git-archive snapshot): gate-log.cjs recordRun() not called -> no log file;
 # verdictForExit() 0 -> fail -> verdict assert fails.
-LOGW="$(mktemp -d "${TMPDIR:-/tmp}/a1-fx-schema-log.XXXXXX")" || exit 1
-[[ -n "$LOGW" && -d "$LOGW" ]] || exit 1
-trap 'rm -rf "${LOGW:?}"' EXIT
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
+mk_workdir LOGW schema-log
 git -C "$LOGW" init -q && git -C "$LOGW" config user.email t@t.dev && git -C "$LOGW" config user.name test
 echo seed > "$LOGW/seed.txt"; git -C "$LOGW" add -A; git -C "$LOGW" commit -qm base
 (cd "$LOGW" && node "$TOOLS" schema-check run --phase s1 --migrations "$DIR/pass/migrations" >/dev/null 2>&1); rc=$?

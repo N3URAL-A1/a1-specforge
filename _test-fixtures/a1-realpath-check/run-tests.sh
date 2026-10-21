@@ -99,9 +99,7 @@ assert_rc "e-no-git" 2 $? "$OUT"
 # --- (f) spec 017 FR-008: the gate call appends one hash-chained log line ---
 # Measured red 2026-10-20 (git-archive snapshot): gate-log.cjs recordRun() not called -> (f) fails
 # (no log file); verdictForExit() 1 -> pass -> (f2) fails.
-LOGW="$(mktemp -d "${TMPDIR:-/tmp}/a1-fx-realpath-log.XXXXXX")" || exit 1
-[[ -n "$LOGW" && -d "$LOGW" ]] || exit 1
-trap 'rm -rf "${LOGW:?}"' EXIT
+mk_workdir LOGW realpath-log
 cp -R "$REPO_D/." "$LOGW/" # a complete git repo (two commits) with the SQL diff and no evidence file
 OUT="$(cd "$LOGW" && node "$TOOLS" realpath-check run --phase w1 --diff-base HEAD~1 --project . 2>&1)"
 RC=$?
