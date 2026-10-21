@@ -254,7 +254,7 @@ ${SPEC_INIT_HELP}
                   "Cost: N tokens (in X, out Y, cache Z)"; --json for machines.
                   Exit: 0 ok, 2 error (dir missing / no JSONL files).
 
-  a1-tools lane-split check --plan <path/to/PLAN.md>
+  a1-tools lane-split check --plan <path/to/PLAN.md> [--imports <repo-root>]
                   Validate a PLAN.md lanes block before waves run in parallel:
                   pairwise owns-overlap, wave coverage, cross-lane dependency,
                   and cutover waves sitting inside a lane.
@@ -438,7 +438,7 @@ ${SPEC_INIT_HELP}
                   transaction as every other product-mutating command.
                   Exit: 0 ok, 1 usage/not-found/unknown-finding/unknown-
                   feature/write error.
-  a1-tools product validate [--dir docs/product] [--spec-status]
+  a1-tools product validate [--dir docs/product] [--spec-status] [--ci] [--require-vault]
                   Read-only. Validates <dir>/ROADMAP.md frontmatter against
                   the schema-v1 contract (docs/product/SCHEMA.md section 1 /
                   index.schema.json): required fields, enums, id/date
@@ -461,6 +461,11 @@ ${SPEC_INIT_HELP}
                   the repo-local tier, resolved read-only (nothing is
                   created, nothing announced on stderr). Without the flag
                   the output is unchanged.
+                  --ci (spec 017 FR-033, with --spec-status): vault-free half
+                  of the check; a roadmap feature that is done or in-flight
+                  must name its spec_path. No roadmap = exit 0.
+                  --require-vault (FR-034, implies --spec-status): exit 2
+                  when A1_VAULT_ROOT is unset; excludes --ci.
   a1-tools product import --file <path> --project <slug>
                   [--title <text>] [--dir docs/product]
                   Migrate a legacy hand-rolled roadmap into a fresh

@@ -115,6 +115,18 @@ if [ "$RC" -ne 0 ]; then echo "STOP: disposition review exit=$RC"; exit "$RC"; f
 An `overturned` verdict is a MAJOR finding in `findings.json` (title `disposition overturned: <fingerprint>`) and blocks the
 merge check of `workflows/05-merge.md` until the finding is fixed.
 
+### 2.3c Workflow lint (`workflow-pipeline-exit`)
+
+The linter reads the `skills/*/workflows/*.md` of the a1-tools installation, so this step guards a PR that changes those files:
+a fenced bash block must not test a pipeline's status where `$?` reads the last command instead of the parser.
+
+```bash
+node <repo>/_shared/a1-tools.cjs workflow lint --phase pr-<n>; RC=$?
+if [ "$RC" -ne 0 ]; then echo "STOP: workflow lint exit=$RC, findings[] on stdout"; exit "$RC"; fi
+```
+
+Exit 1 is a MAJOR finding in `findings.json` until the block is fixed.
+
 ### 2.4 Persist findings
 
 Write ONE `findings.json` to `<worktree_path>/.a1-review/findings.json` (atomic: write to `.tmp`, then `mv`) holding the findings of both reviewers.
