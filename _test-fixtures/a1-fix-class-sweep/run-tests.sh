@@ -8,8 +8,8 @@
 # the real vault is never touched. Engine is `grep -E` (always present); the `rg` cases need no rg binary.
 #
 # Measured red 2026-10-21 (git-archive snapshot of the wave commits, one production line reverted, both a1-fix suites run;
-# cases that fail). A `timeout:` option itself cannot be reverted safely (the backtracking grep would never end), so E3 is
-# proven through the line that turns the timeout into exit 2.
+# cases that fail). E3 uses a stub grep that sleeps (engine-independent: GNU grep cannot be made to backtrack); it is proven through the
+# line that turns the timeout into exit 2.
 #   fix-class-sweep.cjs runEngine(): spawn with shell:true                  : A1-A13, C1-C3, E1-E6 (every call; E1 is the point)
 #   fix-class-sweep.cjs MAX_MATCHES 50 -> 51                                : B2, B3
 #   fix-class-sweep.cjs recompute(): `>` -> `>=`                            : B1, B4
@@ -274,10 +274,13 @@ std 'x = .*touch PWNED' '**/*.ts' 'grep -E' src.ts:1 2026-10-03-meta2.md
 sw --record "$BUG"
 expect "E2 a metacharacter-free pattern for the same line records it: exit 0, count 1" "0/1" "$RC/$(js 'j.count')"
 
-mkrepo; node -e 'require("fs").writeFileSync(process.argv[1],"a".repeat(60)+"X\n")' "$R/slow.ts"; G add -A; G commit -q -m slow
-std '(a*)*\1c' '**/*.ts' 'grep -E' slow.ts:1 2026-10-03-slow.md
-OUT="$(FX_CWD="$R" A1_VAULT_ROOT="$VAULT" A1_CLASS_SWEEP_TIMEOUT_MS=500 cli fix class-sweep --phase fx-w9 --record "$BUG" 2>"$W/err")"; RC=$?; ERR="$(cat "$W/err")"
-expect "E3 catastrophic regex: exit 2 (timeout), no stdout" "2/" "$RC/$OUT"
+# E3: the engine does not return in time. A catastrophic regex is NOT engine-independent (BSD grep backtracks and hangs, GNU grep has no
+# backtracking and answers query_too_broad at once), so the hang is a stub `grep` first on PATH that sleeps past the timeout.
+mkrepo; printf 'x = 1\n' > "$R/slow.ts"; G add -A; G commit -q -m slow
+std 'x = 1' '**/*.ts' 'grep -E' slow.ts:1 2026-10-03-slow.md
+SLOWBIN="$W/slowbin"; mkdir -p "$SLOWBIN"; printf '#!/bin/sh\nexec sleep 30\n' > "$SLOWBIN/grep"; chmod +x "$SLOWBIN/grep"
+OUT="$(FX_CWD="$R" PATH="$SLOWBIN:$PATH" A1_VAULT_ROOT="$VAULT" A1_CLASS_SWEEP_TIMEOUT_MS=500 cli fix class-sweep --phase fx-w9 --record "$BUG" 2>"$W/err")"; RC=$?; ERR="$(cat "$W/err")"
+expect "E3 engine that never answers (stub grep sleeps): exit 2 (timeout), no stdout" "2/" "$RC/$OUT"
 expect "E3 stderr names the timeout" "yes" "$([[ "$ERR" == *"timed out"* ]] && echo yes || echo no)"
 expect "E3 nothing recorded" "undefined" "$(fmv 'fm.class_sweep_at_diagnosis')"
 
