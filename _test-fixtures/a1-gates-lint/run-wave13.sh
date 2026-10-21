@@ -17,9 +17,8 @@ set -u
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TOOLS="$REPO_ROOT/_shared/a1-tools.cjs"
 SWEEP="$REPO_ROOT/_test-fixtures/a1-gates-lint/check-callsite-flags.cjs"
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/a1-fx-wave13.XXXXXX")" || exit 1
-[[ -n "$WORK" && -d "$WORK" ]] || exit 1
-trap 'rm -rf "${WORK:?}"' EXIT
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
+mk_workdir WORK wave13
 
 pass=0
 fail=0

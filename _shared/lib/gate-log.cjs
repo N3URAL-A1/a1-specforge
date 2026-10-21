@@ -91,31 +91,87 @@ function ensureExcluded(commonDir) {
   return true;
 }
 
+const OWNER_FILE = 'owner';
+
 function isStaleLock(lockDir) {
   try { return Date.now() - fs.statSync(lockDir).mtimeMs > LOCK_STALE_MS; } catch (_e) { return false; }
 }
 
-/** @returns {string} the lock directory; throws after ~10 s without getting it */
+/** pid + random nonce: names one acquisition, so a steal and a release can tell whose lock they hold. */
+function newOwnerToken() {
+  return `${process.pid}:${crypto.randomBytes(8).toString('hex')}`;
+}
+
+function readOwner(lockDir) {
+  try { return fs.readFileSync(path.join(lockDir, OWNER_FILE), 'utf8'); } catch (_e) { return null; }
+}
+
+/**
+ * Steals an abandoned lock (SEC-7). `observed` is the owner token read when the lock was judged stale.
+ * The rename is atomic, but between "judged stale" and "renamed" the holder may have been replaced by a live
+ * one: after the rename the moved directory must still carry the observed token and still be old, else it is
+ * put back and the steal reports false.
+ * @returns {boolean} true when an abandoned lock was removed
+ */
+function stealStaleLock(lockDir, observed) {
+  const aside = `${lockDir}.stale.${process.pid}.${crypto.randomBytes(4).toString('hex')}`;
+  try { fs.renameSync(lockDir, aside); } catch (_e) { return false; } // lost the race, or already gone
+  if (readOwner(aside) === observed && isStaleLock(aside)) {
+    fs.rmSync(aside, { recursive: true, force: true });
+    return true;
+  }
+  try { fs.renameSync(aside, lockDir); } catch (_e) { /* a newer lock took the place: leave the moved one aside */ }
+  return false;
+}
+
+/** @returns {{dir: string, token: string}} the held lock; throws after ~10 s without getting it */
 function acquireLock(lockDir) {
   for (let attempt = 0; attempt < LOCK_RETRIES; attempt++) {
     try {
       fs.mkdirSync(lockDir);
-      return lockDir;
+      const token = newOwnerToken();
+      fs.writeFileSync(path.join(lockDir, OWNER_FILE), token, { flag: 'wx' });
+      return { dir: lockDir, token };
     } catch (e) {
       if (e.code !== 'EEXIST') throw e;
-      if (isStaleLock(lockDir)) {
-        // rename is atomic: of several stealers exactly one succeeds
-        try { fs.renameSync(lockDir, `${lockDir}.stale.${process.pid}`); fs.rmSync(`${lockDir}.stale.${process.pid}`, { recursive: true, force: true }); } catch (_e2) { /* lost the race */ }
-        continue;
-      }
+      if (isStaleLock(lockDir)) { stealStaleLock(lockDir, readOwner(lockDir)); continue; }
       sleepSyncMs(LOCK_RETRY_DELAY_MS);
     }
   }
   throw new Error(`could not lock ${lockDir} after ${LOCK_RETRIES} attempts`);
 }
 
-function releaseLock(lockDir) {
-  try { fs.rmdirSync(lockDir); } catch (_e) { /* already gone */ }
+/** Releases only a lock this acquisition still owns (a stolen one is somebody else's now). */
+function releaseLock(lock) {
+  if (readOwner(lock.dir) !== lock.token) return;
+  try { fs.rmSync(path.join(lock.dir, OWNER_FILE), { force: true }); fs.rmdirSync(lock.dir); } catch (_e) { /* already gone */ }
+}
+
+function refuse(file, why) {
+  const err = new Error(`refusing to write the gate log ${file}: ${why}`);
+  err.code = 'A1_UNSAFE_PATH';
+  return err;
+}
+
+function insideRoot(realRoot, real) {
+  return real === realRoot || real.startsWith(realRoot + path.sep);
+}
+
+/**
+ * SEC-8: `.a1`, `.a1/phases` and `.a1/phases/<scope>` (where they exist) and the log file itself must not lead
+ * out of the repository, so a symlink planted in a checkout cannot redirect the append.
+ */
+function assertContained(root, scope, file) {
+  const realRoot = fs.realpathSync(root);
+  let cur = root;
+  for (const seg of ['.a1', 'phases', scope]) {
+    cur = path.join(cur, seg);
+    try { fs.lstatSync(cur); } catch (e) { if (e.code === 'ENOENT') return; throw e; }
+    let real;
+    try { real = fs.realpathSync(cur); } catch (_e) { throw refuse(file, `${cur} is a dangling symlink`); }
+    if (!insideRoot(realRoot, real)) throw refuse(file, `${path.relative(root, cur)} resolves outside the repository`);
+  }
+  try { if (fs.lstatSync(file).isSymbolicLink()) throw refuse(file, 'the log file is a symlink'); } catch (e) { if (e.code !== 'ENOENT') throw e; }
 }
 
 function lastNonEmptyLine(text) {
@@ -137,10 +193,12 @@ function logPathFor(root, scope) {
 function appendGateLine(rec) {
   const scope = validateScope(rec.scope);
   const file = logPathFor(rec.root, scope);
+  assertContained(rec.root, scope, file);
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  if (rec.commonDir) ensureExcluded(rec.commonDir);
+  assertContained(rec.root, scope, file);
   const lock = acquireLock(path.join(rec.commonDir || path.dirname(file), LOCK_NAME));
   try {
+    if (rec.commonDir) ensureExcluded(rec.commonDir); // inside the lock: one writer edits info/exclude at a time (SEC-7)
     const existing = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
     const prevLine = lastNonEmptyLine(existing);
     const record = {
@@ -154,7 +212,7 @@ function appendGateLine(rec) {
     };
     const line = JSON.stringify(record);
     const lead = existing === '' || existing.endsWith('\n') ? '' : '\n';
-    const fd = fs.openSync(file, 'a');
+    const fd = fs.openSync(file, fs.constants.O_WRONLY | fs.constants.O_APPEND | fs.constants.O_CREAT | (fs.constants.O_NOFOLLOW || 0), 0o644);
     try { fs.writeSync(fd, Buffer.from(`${lead}${line}\n`, 'utf8')); } finally { fs.closeSync(fd); }
     return { file, line };
   } finally {
@@ -244,8 +302,20 @@ function stripPhase(argv) {
   return { argv: out, scope };
 }
 
-function recordRun(gateId, scope, exitCode) {
-  const ctx = gitContext(process.cwd());
+/** The repo a gate call acts on: `--project <dir>` when it names a directory, else the working directory (m2). */
+function projectDirOf(argv) {
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    const v = a === '--project' ? argv[i + 1] : (a.startsWith('--project=') ? a.slice('--project='.length) : null);
+    if (typeof v !== 'string' || v === '' || v.includes('\0')) continue;
+    const abs = path.resolve(process.cwd(), v);
+    try { if (fs.statSync(abs).isDirectory()) return abs; } catch (_e) { /* not a path (a slug?): keep the cwd */ }
+  }
+  return process.cwd();
+}
+
+function recordRun(gateId, scope, exitCode, dir) {
+  const ctx = gitContext(dir || process.cwd());
   if (!ctx) {
     process.stderr.write(`gate-log: not inside a git work tree, ${gateId} (exit ${exitCode}) was not logged\n`);
     return;
@@ -286,8 +356,9 @@ function installGateLog(argv, registryText) {
   // info/exclude, whatever the exit code (77 included).
   if (require('./intent-child.cjs').inChildMode()) return stripped.argv;
   const scope = stripped.scope || UNSCOPED;
+  const dir = projectDirOf(stripped.argv);
   process.on('exit', (code) => {
-    try { recordRun(gateId, scope, code); } catch (e) {
+    try { recordRun(gateId, scope, code, dir); } catch (e) {
       process.stderr.write(`gate-log: could not append the line for ${gateId}: ${e.message}\n`);
     }
   });
@@ -297,5 +368,5 @@ function installGateLog(argv, registryText) {
 module.exports = {
   ZERO_HASH, UNSCOPED, EXCLUDE_PATTERN, SCOPE_RE,
   validateScope, verdictForExit, appendGateLine, verifyChain, matchInvoke, stripPhase,
-  installGateLog, gitContext, ensureExcluded,
+  installGateLog, gitContext, ensureExcluded, projectDirOf, stealStaleLock, assertContained,
 };

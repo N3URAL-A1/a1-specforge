@@ -32,9 +32,8 @@ CORPUS="$REPO_ROOT/_test-fixtures/a1-gates-lint/corpus"
 REAL_ROWS="$CORPUS/registry-real-rows.md"
 OLD_REGISTRY="$REPO_ROOT/_test-fixtures/a1-retro-validate/corpus/fixture-registry.md"
 
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/a1-fx-gates-lint.XXXXXX")" || exit 1
-[[ -n "$WORK" && -d "$WORK" ]] || exit 1
-trap 'rm -rf "${WORK:?}"' EXIT
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
+mk_workdir WORK gates-lint
 
 pass=0
 fail=0
@@ -365,6 +364,62 @@ hook_probe 1 A1_INTENT_ID=fx-intent >/dev/null 2>&1
 [[ ! -e "$CHR/.a1" ]] && ok "F12b A1_INTENT_ID alone (the orphan flag) also counts as child mode: nothing written" || bad "F12b a log was written"
 hook_probe 1 A1_UNRELATED=1 >/dev/null 2>&1
 [[ -f "$CHR/.a1/phases/w9/gate-log.jsonl" ]] && ok "F12c control: the same call outside child mode logs (exit 1 -> fail line)" || bad "F12c control wrote no log"
+
+# F13..F17 spec 017 review (m2, SEC-8, SEC-7). Measured red 2026-10-21 (HEAD code before the fix, this suite overlaid):
+#   gate-log.cjs recordRun(): git context from the cwd, not from --project  -> F13, F13b
+#   gate-log.cjs assertContained() removed                                  -> F14, F14b
+#   gate-log.cjs stealStaleLock(): owner-token check removed                -> F15
+#   gate-log.cjs appendGateLine(): ensureExcluded outside the lock          -> F16
+mkgit() { # mkgit <dir>: a repo with one commit
+  mkdir -p "$1" && git -C "$1" init -q && git -C "$1" config user.email t@t.dev && git -C "$1" config user.name test || exit 1
+  echo seed > "$1/seed.txt"; git -C "$1" add -A; git -C "$1" commit -qm base
+}
+OTHER="$WORK/otherrepo"; mkgit "$OTHER"
+(cd "$OTHER" && node "$TOOLS" realpath-check run --phase m2 --diff-base HEAD~1 --project "$GLR" >/dev/null 2>&1)
+[[ -f "$GLR/.a1/phases/m2/gate-log.jsonl" && ! -e "$OTHER/.a1/phases/m2" ]] && ok "F13 --project names the repo: the log line lands in the project, not in the cwd repo" || bad "F13 (project log: $([[ -f $GLR/.a1/phases/m2/gate-log.jsonl ]] && echo yes || echo no), cwd repo log: $([[ -e $OTHER/.a1/phases/m2 ]] && echo yes || echo no))"
+[[ "$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8").split("\n")[0]).head_sha)' "$GLR/.a1/phases/m2/gate-log.jsonl" 2>/dev/null)" == "$(git -C "$GLR" rev-parse HEAD)" ]] && ok "F13a head_sha is the project's HEAD, not the cwd repo's" || bad "F13a head_sha"
+(cd "$NOGIT" && node "$TOOLS" realpath-check run --phase m2b --diff-base HEAD~1 --project "$GLR" >/dev/null 2>"$WORK/err")
+[[ -f "$GLR/.a1/phases/m2b/gate-log.jsonl" && "$(cat "$WORK/err")" != *"not inside a git work tree"* ]] && ok "F13b cwd outside any git repo, --project inside one: logged in the project" || bad "F13b ($(cat "$WORK/err"))"
+
+OUTSIDE="$WORK/outside-dir"; mkdir -p "$OUTSIDE"
+SYMR="$WORK/symrepo"; mkgit "$SYMR"; echo b > "$SYMR/b.txt"; git -C "$SYMR" add -A; git -C "$SYMR" commit -qm two
+mkdir -p "$SYMR/.a1/phases"; ln -s "$OUTSIDE" "$SYMR/.a1/phases/s8"
+(cd "$SYMR" && node "$TOOLS" realpath-check run --phase s8 --diff-base HEAD~1 --project . >/dev/null 2>"$WORK/err"); RC=$?
+[[ -z "$(ls -A "$OUTSIDE")" && "$(cat "$WORK/err")" == *"refusing to write the gate log"* && $RC -eq 0 ]] && ok "F14 .a1/phases/<scope> symlinked outside the repo: nothing written there, refusal on stderr, gate exit code (0) kept" || bad "F14 (rc=$RC outside=$(ls -A "$OUTSIDE") err=$(cat "$WORK/err"))"
+mkdir -p "$SYMR/.a1/phases/s8b"; : > "$OUTSIDE/victim.jsonl"; ln -s "$OUTSIDE/victim.jsonl" "$SYMR/.a1/phases/s8b/gate-log.jsonl"
+(cd "$SYMR" && node "$TOOLS" realpath-check run --phase s8b --diff-base HEAD~1 --project . >/dev/null 2>"$WORK/err")
+[[ ! -s "$OUTSIDE/victim.jsonl" && "$(cat "$WORK/err")" == *"refusing to write the gate log"* ]] && ok "F14b the log file itself a symlink to a file outside: not appended" || bad "F14b (victim size $(wc -c < "$OUTSIDE/victim.jsonl") err=$(cat "$WORK/err"))"
+mkdir -p "$SYMR/real-phase"; ln -s "$SYMR/real-phase" "$SYMR/.a1/phases/s8c"
+(cd "$SYMR" && node "$TOOLS" realpath-check run --phase s8c --diff-base HEAD~1 --project . >/dev/null 2>&1)
+[[ -f "$SYMR/real-phase/gate-log.jsonl" ]] && ok "F14c control: a symlink that stays inside the repo is accepted" || bad "F14c in-repo symlink refused"
+
+# F15 stale-lock steal verifies the owner token after the rename
+LK="$WORK/lk"; mkdir -p "$LK"
+steal() { node -e '
+  const fs=require("fs"), path=require("path"), g=require(process.argv[1]);
+  const lock=process.argv[2]; fs.mkdirSync(lock); fs.writeFileSync(path.join(lock,"owner"), process.argv[3]);
+  const old=new Date(Date.now()-120000); fs.utimesSync(lock, old, old);
+  const r=g.stealStaleLock(lock, process.argv[4]); process.stdout.write(r+"/"+fs.existsSync(lock)+"/"+(fs.existsSync(path.join(lock,"owner"))?fs.readFileSync(path.join(lock,"owner"),"utf8"):"-"));' "$REPO_ROOT/_shared/lib/gate-log.cjs" "$1" "$2" "$3"; }
+R15a="$(steal "$LK/a.d" "live:2" "dead:1")"
+[[ "$R15a" == "false/true/live:2" ]] && ok "F15 the lock turned out to be another holder's (token differs from the one judged stale): put back, steal reports false" || bad "F15 ($R15a)"
+R15b="$(steal "$LK/b.d" "dead:1" "dead:1")"
+[[ "$R15b" == "true/false/-" ]] && ok "F15b the observed abandoned lock is removed (true, directory gone)" || bad "F15b ($R15b)"
+R15c="$(node -e '
+  const fs=require("fs"), path=require("path"), g=require(process.argv[1]); const lock=process.argv[2]; fs.mkdirSync(lock);
+  fs.writeFileSync(path.join(lock,"owner"),"dead:1"); process.stdout.write(String(g.stealStaleLock(lock,"dead:1"))+"/"+fs.existsSync(lock));' "$REPO_ROOT/_shared/lib/gate-log.cjs" "$LK/c.d")"
+[[ "$R15c" == "false/true" ]] && ok "F15c a fresh (not old) lock is never stolen even when the token matches" || bad "F15c ($R15c)"
+
+# F16 info/exclude is edited inside the lock
+LKR="$WORK/lockrepo"; mkgit "$LKR"; : > "$LKR/.git/info/exclude"
+mkdir "$LKR/.git/a1-gate-log.lock.d"; printf 'held:1' > "$LKR/.git/a1-gate-log.lock.d/owner"
+(cd "$LKR" && node -e '
+  const g=require(process.argv[1]); const c=g.gitContext(process.cwd());
+  g.appendGateLine({root:c.root, commonDir:c.commonDir, scope:"s16", gateId:"x", verdict:"pass", exitCode:0});' "$REPO_ROOT/_shared/lib/gate-log.cjs" >/dev/null 2>&1) & BG=$!
+sleep 1
+HELD_EXCL="$(grep -c 'gate-log' "$LKR/.git/info/exclude" || true)"
+rm -rf "$LKR/.git/a1-gate-log.lock.d"
+wait "$BG"
+[[ "${HELD_EXCL:-0}" == "0" && "$(grep -c 'gate-log' "$LKR/.git/info/exclude" || true)" == "1" && -s "$LKR/.a1/phases/s16/gate-log.jsonl" ]] && ok "F16 while another writer holds the lock info/exclude stays untouched; after release the line and the exclude entry appear" || bad "F16 (held excl=$HELD_EXCL, after=$(cat "$LKR/.git/info/exclude"))"
 
 # F11 matchInvoke: a flagged key needs its flag, a plain key needs its subcommand
 MATCH="$(node -e '
