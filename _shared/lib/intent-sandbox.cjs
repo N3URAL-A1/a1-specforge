@@ -204,19 +204,25 @@ function optionProblem(group, args) {
 const WRITE_SCOPE = ['code-scope check', 'code-scope claim', 'code-scope release', 'code-scope stage'];
 // FR-048 — git through the wrapper, per the skills' own git calls (intent-git.cjs header).
 const GIT_READ = ['git diff', 'git log', 'git status'];
+// Spec 017 Q23: the wired self-checks. `test-fidelity` is flag-only (no subcommand): its allowlist key is the group.
+const INTENT_FLAG_ONLY_GROUPS = Object.freeze(['test-fidelity']);
+const SELF_CHECKS = ['verify run', 'verify check', 'test-fidelity'];
 const NEW_FEATURE_ALLOW = Object.freeze([
   'check reservations', 'checklist run', 'code-scope claim', 'code-scope release', 'code-scope stage',
   'plan depth-check', 'product feature-init', 'product stage', 'quick eligibility', 'realpath-check run', 'schema-check run',
-  'spec init', 'spec set-size', 'spec update-status', ...GIT_READ,
+  'spec init', 'spec set-size', 'spec update-status', ...SELF_CHECKS, ...GIT_READ,
 ]);
 const INTENT_CHILD_ALLOWLIST = Object.freeze({
   'new-feature': NEW_FEATURE_ALLOW,
   'continue-feature': NEW_FEATURE_ALLOW,
   plan: Object.freeze(['lane-split check', 'plan depth-check', ...GIT_READ]),
-  execute: Object.freeze([...WRITE_SCOPE, 'lane-split check', 'product audit-set', 'product stage', 'git add', 'git commit', ...GIT_READ]),
+  execute: Object.freeze([
+    ...WRITE_SCOPE, 'lane-split check', 'product audit-set', 'product stage', 'realpath-check run', 'schema-check run',
+    ...SELF_CHECKS, 'git add', 'git commit', ...GIT_READ,
+  ]),
   fix: Object.freeze([
     'code-scope check', 'fix find-duplicates', 'fix next-suffix', 'fix update-status',
-    'product audit-set', 'quick eligibility', ...GIT_READ,
+    'product audit-set', 'quick eligibility', 'realpath-check run', 'test-fidelity', 'fix class-sweep', ...GIT_READ,
   ]),
   stage: Object.freeze(['product stage']),
   progress: Object.freeze([]), // row R has no Bash
@@ -243,28 +249,32 @@ const XPROV_CONSENT = 'reads or writes the owner stores ~/.a1-xprov/ outside pro
 const XPROV_DISPOSE = 'reads a1\'s run records and scan records under ~/.a1-xprov/ outside project/<slug>/; an intent run starts no Codex review, so no round-cap or secret stop exists to close (spec 016 FR-025, FR-029)';
 const TRANSCRIPTS = 'reads Claude Code session transcripts under ~/.claude/projects/';
 const ROW_R = 'row R (progress) has no Bash';
+const OWN_FINDINGS = 'an autonomous child must not clear its own findings (reviewed human or reviewer decision)';
+const DISPOSITIONS = Object.freeze({ 'disposition add': OWN_FINDINGS, 'disposition review': OWN_FINDINGS });
 const NEW_FEATURE_EXCLUDED = Object.freeze({
   'cost run': TRANSCRIPTS,
   'retro validate': OUTSIDE_STORE,
   'vault link-hub': VAULT_WIDE,
+  ...DISPOSITIONS,
   'vault writer': 'reads and sets the hub writer declaration (a1_writer_host), a hub note outside project/<slug>/ that only a human sets (spec 010 FR-038)',
 });
 const INTENT_CHILD_EXCLUSIONS = Object.freeze({
   'new-feature': NEW_FEATURE_EXCLUDED,
   'continue-feature': NEW_FEATURE_EXCLUDED,
-  plan: Object.freeze({ 'retro validate': OUTSIDE_STORE, 'vault sync': VAULT_WIDE, 'xprov consent': XPROV_CONSENT, 'xprov dispose': XPROV_DISPOSE, 'xprov gate': XPROV, 'xprov permit-check': XPROV_CONSENT, 'xprov waive': XPROV }),
+  plan: Object.freeze({ ...DISPOSITIONS, 'retro validate': OUTSIDE_STORE, 'vault sync': VAULT_WIDE, 'xprov consent': XPROV_CONSENT, 'xprov dispose': XPROV_DISPOSE, 'xprov gate': XPROV, 'xprov permit-check': XPROV_CONSENT, 'xprov waive': XPROV }),
   execute: Object.freeze({
-    'cost run': TRANSCRIPTS, 'retro validate': OUTSIDE_STORE, 'vault sync': VAULT_WIDE,
+    ...DISPOSITIONS, 'cost run': TRANSCRIPTS, 'retro validate': OUTSIDE_STORE, 'vault sync': VAULT_WIDE,
     'xprov consent': XPROV_CONSENT, 'xprov dispose': XPROV_DISPOSE, 'xprov gate': XPROV, 'xprov load-check': XPROV_STORE, 'xprov permit-check': XPROV_CONSENT, 'xprov waive': XPROV, 'xprov wave-status': XPROV_STORE,
   }),
   fix: Object.freeze({
+    ...DISPOSITIONS,
     'fix count-postmortems-since': 'scans the postmortems of every project',
     'fix init-postmortem': 'fix.cjs postmortemsDir joins project/<slug>/postmortems/ itself, past projectsPath and its guard (measured: another slug and ../.. both written)',
     'fix integrity-check': 'hashes agents/ and skills/ outside the project and writes pattern/a1-learnings/_canonical/',
     'fix update-promote-state': OUTSIDE_STORE, 'fix write-suggestion': OUTSIDE_STORE, 'retro validate': OUTSIDE_STORE,
   }),
   progress: Object.freeze({
-    'code-scope list': ROW_R, 'code-scope release': ROW_R, 'product markers': ROW_R, 'product status': ROW_R,
+    ...DISPOSITIONS, 'code-scope list': ROW_R, 'code-scope release': ROW_R, 'product markers': ROW_R, 'product status': ROW_R,
     'vault lint': ROW_R, 'vault status': ROW_R, 'vault sync': ROW_R, 'git log': ROW_R, 'git status': ROW_R,
   }),
 });
@@ -296,6 +306,7 @@ module.exports = {
   INTENT_CHILD_PATH_FLAGS,
   INTENT_CHILD_ALLOWLIST,
   INTENT_CHILD_EXCLUSIONS,
+  INTENT_FLAG_ONLY_GROUPS,
   INTENT_PROJECT_SLUG_RE,
   SAFE_PATH_RE,
   INTENT_CHILD_SHORT_OPTIONS,

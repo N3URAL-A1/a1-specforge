@@ -442,7 +442,7 @@ h7_b="$(node -e '
     Object.keys(A).sort().join(",") === [...actions].sort().join(","),
     Object.isFrozen(A) && Object.values(A).every((l) => Object.isFrozen(l)),
     !entries.some((e) => e.startsWith("intent")),
-    entries.every((e) => /^[a-z][a-z-]* [a-z][a-z-]*$/.test(e)),
+    entries.every((e) => /^[a-z][a-z-]* [a-z][a-z-]*$/.test(e) || C.INTENT_FLAG_ONLY_GROUPS.includes(e)),
     A.progress.length === 0, A.approve.length === 0, A.cancel.length === 0,
     A.stage.length === 1 && A.stage[0] === "product stage",
     C.INTENT_CHILD_EXIT_CODE === 77,
@@ -551,6 +551,13 @@ w5b_psetup() {
   case "$1" in
     "code-scope release") w5b_run "$CWD" "$A1_TOOLS" -- code-scope claim --by 011-r --scope rel/ ;;
     "code-scope stage") w5b_run "$CWD" "$A1_TOOLS" -- code-scope claim --by 011-s --scope stg/ ;;
+    "verify run")
+      mkdir -p "$CWD/.a1"
+      printf '{"commands":[{"id":"probe","argv":["true"],"timeout_s":10}],"no_tests_reason":"probe"}\n' >"$CWD/.a1/verify.json" ;;
+    "verify check") printf -- '---\nstatus: draft\n---\n# V\n' >"$CWD/docs/VERIFICATION.md" ;;
+    "fix class-sweep")
+      printf -- '---\ntitle: "Bug"\nstatus: diagnosed\nseverity: minor\nsymptom: crash on start\nclass_query:\n  - pattern: x\n  - glob: src/a.js\n  - engine: grep -E\nroot_site: src/a.js:1\n---\n# Bug\n' \
+        >"$VAULT/project/real-proj/fixes/2026-09-27-bug.md" ;;
     "git add") printf 'add probe\n' >>"$CWD/src/a.js" ;;
     "git commit")
       printf 'commit probe\n' >>"$CWD/src/a.js"
@@ -569,6 +576,10 @@ w5b_psetup() {
 w5b_pexpect() {
   case "$1" in
     "checklist run") PEXPECT="1 write" ;;
+    # verify run and fix class-sweep are allowed (spec 017 Q23) but start a program (the project's test command, grep -E): the child's
+    # spawn guard (FR-048, RV7b) refuses every program except git with 77, nothing written. Allowlisted, fail-closed at the spawn.
+    "verify run"|"fix class-sweep") PEXPECT="77 read" ;;
+    "verify check"|"test-fidelity") PEXPECT="0 read" ;; # verify check on a file without a PASS claim: ok; test-fidelity on a clean diff: ok
     "schema-check run"|"quick eligibility"|"plan depth-check") PEXPECT="1 read" ;; # depth-check: the seeded "# Plan" has no Depth Pass -> verdict fail, exit 1
     "code-scope check"|"realpath-check run"|"lane-split check"|"fix find-duplicates"|"fix next-suffix") PEXPECT="0 read" ;;
     "git status"|"git diff"|"git log") PEXPECT="0 read" ;; # --no-optional-locks: no index refresh
@@ -617,6 +628,18 @@ w5b_pargs() {
     "schema-check run|in") PARGS=(schema-check run --migrations db/migrations) ;;
     "schema-check run|out") PARGS=(schema-check run --migrations /etc) ;;
     "schema-check run|link") PARGS=(schema-check run --migrations "$L") ;;
+    "verify run|in") PARGS=(verify run --project . --out docs/VERIFICATION.md) ;;
+    "verify run|out") PARGS=(verify run --project . --out ../other/V.md) ;;
+    "verify run|link") PARGS=(verify run --project . --out "$L/V.md") ;;
+    "verify check|in") PARGS=(verify check docs/VERIFICATION.md) ;;
+    "verify check|out") PARGS=(verify check ../other/V.md) ;;
+    "verify check|link") PARGS=(verify check "$L/V.md") ;;
+    "test-fidelity|in") PARGS=(test-fidelity --diff-base HEAD) ;;
+    "test-fidelity|out") PARGS=(test-fidelity --diff-base HEAD --project ../other) ;;
+    "test-fidelity|link") PARGS=(test-fidelity --diff-base HEAD --project "$L") ;;
+    "fix class-sweep|in") PARGS=(fix class-sweep --record project/real-proj/fixes/2026-09-27-bug.md --project .) ;;
+    "fix class-sweep|out") PARGS=(fix class-sweep --record project/other/fixes/2026-09-27-bug.md --project .) ;;
+    "fix class-sweep|link") PARGS=(fix class-sweep --record "$L/2026-09-27-bug.md" --project .) ;;
     "spec init|in") PARGS=(spec init real-proj feat-p --title "Feat P") ;;
     "spec init|out") PARGS=(spec init other feat-p --title "Feat P") ;;
     "spec init|link") PARGS=(spec init real-proj feat-q --title "$L/q") ;;
@@ -714,7 +737,7 @@ p_variant() {
   if [[ "$var" == "in" ]]; then
     w5b_pexpect "$sub"
     local want_rc="${PEXPECT% *}" kind="${PEXPECT#* }" n="${got#ok }"
-    if [[ "$RC" -ne "$want_rc" ]]; then p_bad="$p_bad in: exit $RC, want $want_rc (${ERR:0:160})"
+    if [[ "$RC" -ne "$want_rc" ]]; then p_bad="$p_bad in: exit $RC, want $want_rc (${ERR:0:160} ${OUT:0:200})"
     elif [[ "$kind" == "write" && "$n" -eq 0 ]]; then p_bad="$p_bad in: nothing written"
     elif [[ "$kind" == "read" && "$n" -ne 0 ]]; then p_bad="$p_bad in: a reader wrote $n entries"
     else p_reached=$((p_reached + 1)); fi
@@ -740,11 +763,34 @@ for p_action in new-feature continue-feature plan execute fix stage; do
   done < <(node -e 'console.log(require(process.argv[1] + "/intent-constants.cjs").INTENT_CHILD_ALLOWLIST[process.argv[2]].join("\n"))' "$INTENT_LIB" "$p_action")
   p_counts="$p_counts $p_action=$p_n"
 done
-if [[ "$p_counts" == " new-feature=17 continue-feature=17 plan=5 execute=12 fix=9 stage=1" && "$p_reached" -eq 61 ]]; then ok "5b-Pn every allowlisted subcommand was probed and every in-variant reached its path ($p_counts, reached $p_reached) [FR-041, FR-048]"
-else bad "5b-Pn every allowlisted subcommand was probed and every in-variant reached its path [FR-041, FR-048]" "counts:$p_counts reached $p_reached of 61"; fi
+if [[ "$p_counts" == " new-feature=20 continue-feature=20 plan=5 execute=17 fix=12 stage=1" && "$p_reached" -eq 75 ]]; then ok "5b-Pn every allowlisted subcommand was probed and every in-variant reached its path ($p_counts, reached $p_reached) [FR-041, FR-048]"
+else bad "5b-Pn every allowlisted subcommand was probed and every in-variant reached its path [FR-041, FR-048]" "counts:$p_counts reached $p_reached of 75"; fi
 p_git_set="$(printf '%s\n' $p_git_users | LC_ALL=C sort -u | tr '\n' ' ')"
-if [[ "$p_git_set" == "continue-feature/git_diff continue-feature/git_log continue-feature/git_status continue-feature/quick_eligibility continue-feature/realpath-check_run execute/git_add execute/git_commit execute/git_diff execute/git_log execute/git_status fix/git_diff fix/git_log fix/git_status fix/quick_eligibility new-feature/git_diff new-feature/git_log new-feature/git_status new-feature/quick_eligibility new-feature/realpath-check_run plan/git_diff plan/git_log plan/git_status " ]]; then ok "5b-Pg the allowlisted subcommands that run git internally all ran it hardened, with no caller variable ($p_git_set) [FR-048]"
+if [[ "$p_git_set" == "continue-feature/git_diff continue-feature/git_log continue-feature/git_status continue-feature/quick_eligibility continue-feature/realpath-check_run continue-feature/test-fidelity continue-feature/verify_run execute/git_add execute/git_commit execute/git_diff execute/git_log execute/git_status execute/realpath-check_run execute/test-fidelity execute/verify_run fix/fix_class-sweep fix/git_diff fix/git_log fix/git_status fix/quick_eligibility fix/realpath-check_run fix/test-fidelity new-feature/git_diff new-feature/git_log new-feature/git_status new-feature/quick_eligibility new-feature/realpath-check_run new-feature/test-fidelity new-feature/verify_run plan/git_diff plan/git_log plan/git_status " ]]; then ok "5b-Pg the allowlisted subcommands that run git internally all ran it hardened, with no caller variable ($p_git_set) [FR-048]"
 else bad "5b-Pg the allowlisted subcommands that run git internally all ran it hardened, with no caller variable [FR-048]" "got: $p_git_set"; fi
+
+# ---------- H7f (spec 017 Q23): an autonomous child must not clear its own findings ----------
+# disposition add / review are refused with 77 for every action, write nothing, and each action that
+# runs a skill records the reason in INTENT_CHILD_EXCLUSIONS (both directions: the call is refused AND classified).
+w5b_probe_sandbox h7f
+h7f_bad=""
+h7f_n=0
+for h7f_action in new-feature continue-feature plan execute fix stage progress; do
+  for h7f_sub in add review; do
+    h7f_n=$((h7f_n + 1))
+    child "$h7f_action" real-proj disposition "$h7f_sub" --kind fidelity --rule skipped-test --file src/a.js --line 1 --reason r --by x
+    [[ "$RC" -eq 77 ]] || h7f_bad="$h7f_bad $h7f_action/$h7f_sub=$RC"
+  done
+done
+[[ ! -e "$CWD/.a1/dispositions.json" && ! -e "$W5B_PRIMARY/.a1/dispositions.json" ]] || h7f_bad="$h7f_bad wrote-dispositions-file"
+h7f_excl="$(node -e '
+  const C = require(process.argv[1] + "/intent-constants.cjs");
+  const R = "an autonomous child must not clear its own findings (reviewed human or reviewer decision)";
+  const acts = ["new-feature", "continue-feature", "plan", "execute", "fix", "progress"];
+  console.log(acts.filter((a) => ["disposition add", "disposition review"].every((k) => C.INTENT_CHILD_EXCLUSIONS[a][k] === R)).length
+    + "/" + acts.filter((a) => ["disposition add", "disposition review"].some((k) => C.INTENT_CHILD_ALLOWLIST[a].includes(k))).length);' "$INTENT_LIB" 2>&1)"
+if [[ -z "$h7f_bad" && "$h7f_n" -eq 14 && "$h7f_excl" == "6/0" ]]; then ok "5b-H7f disposition add/review: refused 77 for 7 actions (14 calls), nothing written, reason recorded for 6 actions, on no allowlist ($h7f_excl) [spec 017 Q23]"
+else bad "5b-H7f disposition add/review: refused 77 for every action, nothing written, reason recorded, on no allowlist [spec 017 Q23]" "calls $h7f_n; bad:$h7f_bad; excl/allow $h7f_excl"; fi
 
 # ---------- L: `..` or `.` behind a missing segment, per path flag (MAJOR-1) ----------
 # nonexist/../lnk/x names the link target once Node normalizes it; the check
