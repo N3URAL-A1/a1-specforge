@@ -14,20 +14,25 @@ hand-writing `ROADMAP.md`:
 
 ```bash
 node <repo>/_shared/a1-tools.cjs product init \
-  --project <slug> --title "<Product name>" \
-  --milestones '<json array from Phase 3: [{"id":"<m-slug>","title":"<short>","status":"planned","target":"<YYYY-MM|null>"}]>' \
-  --features '<json array from Phase 3: [{"id":"<###-feature-slug>","milestone":"<m-slug>","title":"<short>","status":"planned","depends_on":[]}]>' \
-  --source "scaffolded by a1-roadmap (new-project mode)"
+  --project <slug> --title "<Product name>"
+# then, for EVERY milestone and feature known from Phase 3 (one call each):
+node <repo>/_shared/a1-tools.cjs product add-milestone \
+  --id <m-slug> --title "<short>" --goal "<1 sentence>" --status planned --target <YYYY-MM|null>
+node <repo>/_shared/a1-tools.cjs product add-feature \
+  --id <###-feature-slug> --milestone <m-slug> --title "<short>" --goal "<1 sentence>" --status planned [--depends-on <id>,<id>]
 ```
 
-This single call must produce a `docs/product/ROADMAP.md` that names **ALL**
+`product init` writes only the empty skeleton (it accepts no milestone or feature
+list; measured 2026-10-21: extra flags are ignored and the roadmap holds none of
+them). The `add-milestone` / `add-feature` calls must leave a
+`docs/product/ROADMAP.md` that names **ALL**
 milestones and **ALL** features known from Phase 3 upfront — each with its
 1-sentence goal — per the rolling-wave contract in `docs/product/SCHEMA.md`
-§1. It also regenerates `NEXT.md` and `index.json` (same
+§1. Every call also regenerates `NEXT.md` and `index.json` (same
 `regenerateDerived` path Wave 2/3 use for `product stage`). Do not hand-write
 any of the three files.
 
-Immediately after `product init` succeeds, call `vision-init` using the
+Immediately after the scaffold calls above succeed, call `vision-init` using the
 mission statement and pillars confirmed in Phase 1 (Discover) so the new
 project has `docs/product/VISION.md` from day one (schema v1.1, FR-021):
 
@@ -50,9 +55,9 @@ extend the existing `ROADMAP.md` instead of re-initializing:
 
 ```bash
 node <repo>/_shared/a1-tools.cjs product add-milestone \
-  --project <slug> --id <m-slug> --title "<short>" --status planned --target <YYYY-MM|null>
+  --id <m-slug> --title "<short>" --status planned --target <YYYY-MM|null>
 node <repo>/_shared/a1-tools.cjs product add-feature \
-  --project <slug> --id <###-feature-slug> --milestone <m-slug> --title "<short>" --status planned
+  --id <###-feature-slug> --milestone <m-slug> --title "<short>" --status planned
 # repeat add-feature for every feature named in Phase 3 under this milestone
 ```
 

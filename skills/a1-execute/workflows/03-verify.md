@@ -83,7 +83,7 @@ and check it. Both calls carry `--phase <phase_name>` and both exit codes are te
 ```bash
 node <repo>/_shared/a1-tools.cjs verify run --project "$WORK_PATH" --out .a1/phases/<phase_name>/VERIFICATION.md --phase <phase_name>; RUN_RC=$?
 echo "verify run exit=$RUN_RC"
-node <repo>/_shared/a1-tools.cjs verify check .a1/phases/<phase_name>/VERIFICATION.md --phase <phase_name>; CHECK_RC=$?
+node <repo>/_shared/a1-tools.cjs verify check .a1/phases/<phase_name>/VERIFICATION.md; CHECK_RC=$?
 echo "verify check exit=$CHECK_RC"
 if [ $RUN_RC -ne 0 ] || [ $CHECK_RC -ne 0 ]; then echo "VERIFICATION.md cannot be PASS"; fi
 ```

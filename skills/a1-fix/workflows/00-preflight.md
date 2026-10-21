@@ -91,7 +91,7 @@ declared code scope:
 
 ```bash
 node <repo>/_shared/a1-tools.cjs code-scope check \
-  --by fix-<bug-slug> --scope <target-file-paths-comma-separated> --phase fix-<bug-slug>
+  --by fix-<bug-slug> --scope <target-file-paths-comma-separated>
 ```
 
 - **Exit 1 (CONFLICT)** — the fix's files overlap an in-flight feature. **Do

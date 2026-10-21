@@ -67,7 +67,7 @@ walkthrough result is written to VERIFICATION.md (keep the `verify_run` key), an
 any verdict `PASS` is reported:
 
 ```bash
-node <repo>/_shared/a1-tools.cjs verify check .a1/phases/<spec-id>/VERIFICATION.md --phase <spec-id>; CHECK_RC=$?
+node <repo>/_shared/a1-tools.cjs verify check .a1/phases/<spec-id>/VERIFICATION.md; CHECK_RC=$?
 echo "verify check exit=$CHECK_RC"
 if [ $CHECK_RC -ne 0 ]; then echo "STOP: verify check refused PASS (re-run verify run --out)"; fi
 ```

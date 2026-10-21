@@ -11,7 +11,7 @@ const { extractBashFenceLines, joinContinuations } = require(path.join(__dirname
 const root = process.argv[2];
 const FLAGS = {
   'verify run': ['project', 'base', 'out', 'timeout-ms', 'phase'],
-  'verify check': ['phase'],
+  'verify check': [], // verify check takes one file and no flag: --phase exits 2 (Wave 13 measured)
   'test-fidelity': ['diff-base', 'project', 'phase'],
   'realpath-check run': ['diff-base', 'project', 'evidence', 'real-markers', 'json', 'phase'],
   'schema-check run': ['migrations', 'tables', 'trigger-pattern', 'json', 'phase'],
@@ -41,7 +41,7 @@ for (const [rel, [phase, want]] of Object.entries(FILES)) {
     calls += 1;
     const flags = [...l.text.matchAll(/\s--([a-z][a-z-]*)/g)].map((x) => x[1]);
     for (const f of flags) if (!FLAGS[cmd].includes(f)) problems.push(`${rel}:${l.lineNo} ${cmd}: unknown flag --${f}`);
-    if (!l.text.includes(`--phase ${phase}`)) problems.push(`${rel}:${l.lineNo} ${cmd}: missing --phase ${phase}`);
+    if (cmd !== 'verify check' && !l.text.includes(`--phase ${phase}`)) problems.push(`${rel}:${l.lineNo} ${cmd}: missing --phase ${phase}`);
     if (cmd !== 'lane-split check' && !/RC=\$\?/.test(l.text)) problems.push(`${rel}:${l.lineNo} ${cmd}: exit code not captured`);
   }
   for (const [cmd, n] of Object.entries(want)) {

@@ -158,8 +158,7 @@ product-docs layer). Concrete insertion points in this skill:
 
   ```bash
   node <repo>/_shared/a1-tools.cjs product feature-init \
-    --project <slug> --id <###-feature-slug> --milestone <m-slug> \
-    --title "<short title>" \
+    --id <###-feature-slug> \
     [--spec-path "project/<slug>/spec/<###>-<feature-slug>.md"] \
     [--plan-path "project/<slug>/plans/<###>-<feature-slug>-wave-plan.md"]
   ```

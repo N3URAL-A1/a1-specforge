@@ -187,7 +187,7 @@ Format: `Cost: NNN tokens (in X, out Y, cache Z)` — on any failure write `Cost
 `verify run --out`:
 
 ```bash
-node "$A1_TOOLS" verify check ".a1/phases/<phase>/VERIFICATION.md" --phase <phase>; RC=$?
+node "$A1_TOOLS" verify check ".a1/phases/<phase>/VERIFICATION.md"; RC=$?
 echo "verify check exit=$RC"
 ```
 

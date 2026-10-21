@@ -22,7 +22,7 @@ Spec status is `planned` and frontmatter `wave_plan_path` is set. Wave-plan file
 **Consistency Gate must be PASS before Wave 1 starts.** If it hasn't run yet:
 
 ```bash
-node <repo>/_shared/a1-tools.cjs consistency-check <plan-path> <spec-path>
+node <repo>/_shared/a1-tools.cjs checklist run <project-slug>/<###>-<feature-slug> --only 9,10,11 --format json
 ```
 
 Do NOT start Wave 1 if the gate returns FAIL. Orphaned FRs (FRs not mapped to any wave) produced 44% of historical post-deploy bugs — the gate costs 30 seconds and prevents hours of fixes.
