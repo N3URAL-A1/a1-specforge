@@ -703,8 +703,7 @@ expect_json "I7 live registry carries test-fidelity, fix-class-sweep, pr-merge-c
 # with `realpath-check run` and `schema-check run` (real subcommands, real
 # fixtures), so the log lines are authentic, not hand-typed. The retro files are
 # edits of the real corpus/retro-clean.md. `--enforced-since 2026-10-01` is the
-# test escape hatch for ENFORCED_SINCE (the constant is a far-future placeholder
-# until wave 14). Each case names the production change that turns it red.
+# test escape hatch for ENFORCED_SINCE (the constant is the 017 release date, 2026-10-21). Each case names the production change that turns it red.
 # Measured red 2026-10-20 (git-archive snapshot, one line reverted each):
 #   retro-gatelog.cjs entryProblems(): `class !== deterministic` skip removed  -> L1 (prompt entry flagged)
 #   retro-gatelog.cjs entryProblems(): no_log_line branch removed              -> L2

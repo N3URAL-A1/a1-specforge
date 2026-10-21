@@ -5,8 +5,8 @@
 // the gate-log cross-check (FR-009); bug files dated before it skip the
 // `class_query` requirement (FR-027). Legacy records are skipped, never rewritten.
 //
-// PLACEHOLDER: a far-future date keeps every date-gated rule dormant until
-// Wave 14 sets the 017 release date. Do not edit before then.
-const ENFORCED_SINCE = '2999-12-31';
+// Set to the 017 release date (Wave 14, 2026-10-21). Fixtures that need another
+// day run against a copy of _shared/ and replace this line; they never edit the real file.
+const ENFORCED_SINCE = '2026-10-21';
 
 module.exports = { ENFORCED_SINCE };
