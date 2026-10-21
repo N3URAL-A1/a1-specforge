@@ -208,6 +208,7 @@ else fail_case "a skill text shows a waive call that exits 2: $bad_waive"; fi
 #   `exit "$RC"` removed from the merge-check block                  : explicit-exit-code case
 #   `--require-vault` removed from the coherence call                : block-order case (DCMG -> D?MG)
 #   `--phase pr-<n>` removed from the merge-check call               : --phase case
+#   Wave 13: `--phase pr-<n>` put back on the disposition review call   : --phase case (flag now must be absent there)
 MRG="$SK/a1-pr-review/workflows/05-merge.md"
 blocks_json() { # fenced bash blocks of 05-merge.md as a JSON array of strings
   node -e '
@@ -227,7 +228,8 @@ if [ "$(bj 'b[3].trim()')" = "gh pr merge <n> --squash --delete-branch" ]; then 
 else fail_case "merge block is not the byte-exact canonical form: $(bj 'JSON.stringify(b[3])')"; fi
 if [ "$(bj 'b.slice(0,3).filter(x=>/RC=\$\?/.test(x)&&/-ne 0/.test(x)&&/exit "\$RC"/.test(x)).length')" = "3" ]; then pass_case "each check block tests its exit code explicitly and stops on non-zero (count 3)"
 else fail_case "a check block does not test \$? and exit"; fi
-if [ "$(bj 'b.slice(0,3).filter(x=>/--phase pr-<n>/.test(x)).length')" = "3" ]; then pass_case "every check call passes --phase pr-<n> (count 3)"; else fail_case "a check call in 05-merge.md lacks --phase pr-<n>"; fi
+# Wave 13: `disposition review` (block 0) is not a registry gate and exits 2 on --phase; the two registry gates (blocks 1, 2) carry it.
+if [ "$(bj 'b.slice(1,3).filter(x=>/--phase pr-<n>/.test(x)).length')" = "2" ] && [ "$(bj 'b.slice(0,1).filter(x=>/disposition review /.test(x)&&!/--phase/.test(x)).length')" = "1" ]; then pass_case "coherence and merge-check calls pass --phase pr-<n> (count 2); disposition review passes none (the command rejects it)"; else fail_case "05-merge.md: a registry call lacks --phase pr-<n> or disposition review passes --phase"; fi
 if printf '%s' "$HAND" | grep -q 'workflows/05-merge.md'; then pass_case "SKILL.md Hand-offs points to workflows/05-merge.md"
 else fail_case "SKILL.md Hand-offs does not point to 05-merge.md"; fi
 if [ "$(printf '%s' "$HAND" | grep -c 'gh pr merge')" = "1" ]; then pass_case "the Hand-offs prose carries no second merge sequence (one gh pr merge mention, the pointer; count)"

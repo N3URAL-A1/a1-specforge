@@ -2,8 +2,8 @@
 
 Goal: merge a reviewed PR. The assistant merges, never the user (standing instruction, 2026-09-09).
 This file is the only merge path of the skill. Three code checks run first, in this order; each block
-ends the run on a non-zero exit. `gh pr merge` runs only after all three exited 0. Every call passes
-`--phase pr-<n>` (gate log scope, spec 017).
+ends the run on a non-zero exit. `gh pr merge` runs only after all three exited 0. `product validate` and
+`pr merge-check` pass `--phase pr-<n>` (gate log scope, spec 017); `disposition review` is not a registry gate and rejects `--phase` (exit 2).
 
 Preconditions:
 
@@ -18,7 +18,7 @@ List the dispositions added or changed since the base: `git diff <base>...HEAD -
 Reinhard reviews each one; record every verdict. No changed disposition: nothing to record, go to 5.2.
 
 ```bash
-node <repo>/_shared/a1-tools.cjs disposition review <fingerprint> --verdict <upheld|overturned> --reason "<why>" --by a1-reinhard-reviewer --phase pr-<n>; RC=$?
+node <repo>/_shared/a1-tools.cjs disposition review <fingerprint> --verdict <upheld|overturned> --reason "<why>" --by a1-reinhard-reviewer; RC=$?
 if [ "$RC" -ne 0 ]; then echo "STOP: disposition review exit=$RC, no merge"; exit "$RC"; fi
 ```
 
