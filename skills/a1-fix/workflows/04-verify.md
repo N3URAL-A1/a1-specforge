@@ -11,6 +11,43 @@ with the new data point.
 If `fix_commit` is null: abort and tell the user that Phase 3 is not
 complete (no commit recorded).
 
+## Step 0 — Code gates (spec 017, before any symptom question)
+
+Three deterministic checks run first, in this order. Each block ends the run on a non-zero exit. A user
+"yes" on the symptom question (Step 1) alone never sets `status: fixed`: `fix update-status … fixed` repeats
+the class-sweep check and refuses while a match stays open. `<fix-base>` is the commit the fix branched
+from (`git merge-base HEAD <default-branch>`); `<bug-slug>` is the slug of the bug report.
+
+### 0.1 Real-backend evidence
+
+```bash
+node <repo>/_shared/a1-tools.cjs realpath-check run --diff-base <fix-base> --phase fix-<bug-slug>; RC=$?
+if [ "$RC" -ne 0 ]; then echo "STOP: realpath-check exit=$RC; fix has SQL/RLS/external-API changes without real-backend evidence"; exit "$RC"; fi
+```
+
+### 0.2 Test fidelity
+
+```bash
+node <repo>/_shared/a1-tools.cjs test-fidelity --diff-base <fix-base> --phase fix-<bug-slug>; RC=$?
+if [ "$RC" -ne 0 ]; then echo "STOP: test-fidelity exit=$RC; read the findings (rule, file, line) on stdout"; exit "$RC"; fi
+```
+
+Exit 1 means the fix's tests mock the subject, skip, or return early. Fix the test (never weaken it to go
+green). A finding that is correct as written gets a `disposition add --kind fidelity` with a reason; Reinhard
+reviews it at the PR (`a1-pr-review` Step 5.1).
+
+### 0.3 Class sweep
+
+Pass one `--guard <fingerprint>=<test-file>` per remaining sibling site that a new test in the fix diff guards.
+A site that is intentionally left gets `disposition add --kind class_sweep` first.
+
+```bash
+node <repo>/_shared/a1-tools.cjs fix class-sweep --verify "<bug-path>" --diff-base <fix-base> --phase fix-<bug-slug>; RC=$?
+if [ "$RC" -ne 0 ]; then echo "STOP: fix class-sweep --verify exit=$RC (class_sweep_open: a sibling site is neither guarded nor accepted); status stays fixing"; exit "$RC"; fi
+```
+
+Exit 1 with `class_sweep_open`: fix the sibling sites (back to Phase 3), then run Step 0 again.
+
 ## Step 1 — Re-run reproduction
 
 Read the bug report's `## Reproduction Steps` section. Walk the user through
@@ -46,7 +83,7 @@ recommend re-opening (Step 4).
 
 ## Step 3 — Mark fixed
 
-If reproduction confirms symptom is gone (and a1-tobi-tester is green or skipped):
+Only after Step 0 exited 0 on all three blocks. If reproduction confirms symptom is gone (and a1-tobi-tester is green or skipped):
 
 1. Build a one-line `verify_result` string:
    `"<YYYY-MM-DD>: symptom not reproducible after commit <short-hash>; regression: <passed|skipped>"`

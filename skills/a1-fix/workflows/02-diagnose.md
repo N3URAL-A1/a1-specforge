@@ -49,6 +49,8 @@ Use the `Agent` tool to spawn Falk (`~/.claude/agents/a1-falk-fault-finder.md`) 
 >     symptom is "data is wrong on this invoice/page", confirm whether the
 >     other creation/render paths have the same gap BEFORE recommending a
 >     one-spot fix. Name the full set of affected sites in the diagnosis.
+>     Turn that set into the bug report's `class_query` (extended regex, glob, engine, plus
+>     `root_site`); Step 3 counts it with `fix class-sweep --record`.
 > 4. Formulate a hypothesis with:
 >    - **Root Cause** (one statement of what is actually broken)
 >    - **Evidence** (file:line references, log excerpts, commit hashes)
@@ -76,7 +78,21 @@ When Falk returns:
 
 1. Use the Edit tool to replace the `## Diagnosis (Phase 02 — filled by Falk)`
    block in the bug report with Falk's filled-in content.
-2. Run the CLI to flip status and set the recommended agent:
+2. Record the defect class (spec 017, `fix-class-sweep`). Fill `class_query` and `root_site` in the
+   bug report first (shape in `01-report.md` Step 4), then count the sibling sites. This runs BEFORE
+   the status flip and takes the bug-report path:
+
+```bash
+node <repo>/_shared/a1-tools.cjs fix class-sweep --record "<bug-path>" --phase fix-<bug-slug>; RC=$?
+if [ "$RC" -ne 0 ]; then echo "STOP: fix class-sweep --record exit=$RC; status stays reported"; exit "$RC"; fi
+```
+
+   Exit 1 names the refusal in JSON: `root_site_not_matched` (the query misses the root site: widen
+   it) or `query_too_broad` (more than 50 matches: narrow it). Fix the query and run it again. Do
+   not flip the status past a refusal.
+
+3. Run the CLI to flip status and set the recommended agent
+   (`fix update-status` refuses `class_query_missing`, and from `fixed` on an open sweep):
 
 ```bash
 node <repo>/_shared/a1-tools.cjs fix update-status \

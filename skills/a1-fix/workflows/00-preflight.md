@@ -9,7 +9,7 @@ Total time: ~30 seconds. Do not skip.
 Verify that agent and skill files have not drifted from the canonical lock file:
 
 ```bash
-node <repo>/_shared/a1-tools.cjs fix integrity-check
+node <repo>/_shared/a1-tools.cjs fix integrity-check --phase fix-<bug-slug>
 ```
 
 **If status is `"bootstrapped"`:** Lock file was just created from the current state.
@@ -91,7 +91,7 @@ declared code scope:
 
 ```bash
 node <repo>/_shared/a1-tools.cjs code-scope check \
-  --by fix-<bug-slug> --scope <target-file-paths-comma-separated>
+  --by fix-<bug-slug> --scope <target-file-paths-comma-separated> --phase fix-<bug-slug>
 ```
 
 - **Exit 1 (CONFLICT)** — the fix's files overlap an in-flight feature. **Do
