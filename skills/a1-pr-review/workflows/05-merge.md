@@ -46,8 +46,16 @@ Add `--bug <fix-report-id>` for a test that is red on head AND base and has an a
 The report must be a real a1-fix report (frontmatter `type: bug-report`, `bug_slug`, `status`) in the vault or committed at the base.
 One `--bug` clears every base-red id; required checks red on head are never compared with the base.
 `head_mismatch` means the local checkout is not the PR head on a clean tree: push or check out the PR head, then run again.
-A changed `.a1/fidelity.json` blocks (`fidelity_config_changed`): clear it by an upheld `config_change` disposition from a second
-reviewer, or pass `--accept-config-change "<reason>"` after the owner agreed (the report logs the reason).
+Two config changes block, because a config can switch checks off. No flag clears either; only a second reviewer does:
+
+- `fidelity_config_changed`: `.a1/fidelity.json` differs from the base. The reason carries the `fingerprint`.
+- `suite_red_on_head` with cause `verify_config_changed`: `.a1/verify.json` differs from the base. The fingerprint is `suites.config_changed.fingerprint` in the report.
+
+To clear one: `node <repo>/_shared/a1-tools.cjs disposition add --kind config_change --fingerprint <fp> --reason "<why>" --by <author>`
+(`<fp>` = `suites.config_changed.fingerprint` for `verify.json`, the reason's `fingerprint` for `fidelity.json`); a reviewer other than
+`<author>` records `disposition review <fp> --verdict upheld --reason "<why>" --by <reviewer>` (5.1); commit and push `.a1/dispositions.json`;
+run 5.3 again. The fingerprint covers the exact head content: change the config again and the verdict no longer matches.
+The suites run fresh on every merge check (`--no-cache`); no result cache is trusted.
 
 ```bash
 node <repo>/_shared/a1-tools.cjs pr merge-check --pr <n> --phase pr-<n>; RC=$?

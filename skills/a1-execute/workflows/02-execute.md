@@ -138,6 +138,10 @@ run in CI. Re-dispatch the executor to fix the test. The only other way out is a
 disposition (`disposition add --kind fidelity ... --reason <why> --by <agent>`); Reinhard reviews
 it at PR review and an overturned one blocks the merge. There is no skip flag.
 
+Intent child (`A1_INTENT_CHILD=1`): skip the block below. A child cannot run `verify run` (the spawn guard refuses it, exit 77).
+Record "gate-1-build: verify deferred to owner" in the wave report instead. The owner runs `verify run` after the child ends and
+before any merge; `pr merge-check` runs the suites itself, so a deferred gate never lets a red suite through.
+
 ```bash
 node <repo>/_shared/a1-tools.cjs verify run --project "$WORK_PATH" --phase <phase_name>; RC=$?
 echo "verify run (gate-1-build) exit=$RC"

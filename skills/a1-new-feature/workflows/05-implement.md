@@ -22,7 +22,7 @@ Spec status is `planned` and frontmatter `wave_plan_path` is set. Wave-plan file
 **Consistency Gate must be PASS before Wave 1 starts.** If it hasn't run yet:
 
 ```bash
-node <repo>/_shared/a1-tools.cjs checklist run <project-slug>/<###>-<feature-slug> --only 9,10,11 --format json
+node <repo>/_shared/a1-tools.cjs checklist run <project-slug>/<###>-<feature-slug> --only 9,10,11 --format json --phase <spec-id>
 ```
 
 Do NOT start Wave 1 if the gate returns FAIL. Orphaned FRs (FRs not mapped to any wave) produced 44% of historical post-deploy bugs — the gate costs 30 seconds and prevents hours of fixes.
@@ -40,7 +40,7 @@ its entries with commas (no spaces) to build the `--scope` CSV value:
 #   - components/widgets/
 # → --scope "app/api/widgets/,components/widgets/"
 node <repo>/_shared/a1-tools.cjs code-scope claim \
-  --by <spec-id> --scope <code_scope-paths-comma-separated>
+  --by <spec-id> --scope <code_scope-paths-comma-separated> --phase <spec-id>
 ```
 
 - Exit 1 (`CONFLICT`) → **do not start Implementation.** Surface the named
@@ -257,6 +257,10 @@ review. There is no skip flag.
 
 Run the project's deterministic build and test check (commands from `.a1/verify.json`, else the
 npm `typecheck`/`build`/`test` scripts):
+
+Intent child (`A1_INTENT_CHILD=1`): skip the block below. A child cannot run `verify run` (the spawn guard refuses it, exit 77).
+Record "gate-1-build: verify deferred to owner" in the wave report instead. The owner runs `verify run` after the child ends and
+before any merge; `pr merge-check` runs the suites itself, so a deferred gate never lets a red suite through.
 
 ```bash
 node <repo>/_shared/a1-tools.cjs verify run --project <dir> --phase <spec-id>; RC=$?

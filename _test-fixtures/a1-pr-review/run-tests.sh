@@ -273,6 +273,15 @@ else fail_case "02-review 2.3b lacks the commit+push block for the dispositions 
 if grep -q 'dispositions_uncommitted' "$MRG" && grep -q 'dispositions_uncommitted' "$REV"; then pass_case "both workflows name dispositions_uncommitted as the reason for the commit step"
 else fail_case "a workflow does not explain dispositions_uncommitted"; fi
 
+# ---------- spec 017 review round C (MINOR-1/2/B): config-change reasons documented, no self-authorizing flag ----------
+# Measured red 2026-10-21 (before the 05-merge.md edit): verify_config_changed and the add-command line absent, --accept-config-change present.
+if grep -q 'verify_config_changed' "$MRG" && grep -q 'fidelity_config_changed' "$MRG" && grep -q 'disposition add --kind config_change --fingerprint' "$MRG" && grep -q 'suites.config_changed.fingerprint' "$MRG"; then pass_case "05-merge 5.3 documents verify_config_changed and fidelity_config_changed and how a second reviewer clears them"
+else fail_case "05-merge 5.3 does not document verify_config_changed / fidelity_config_changed and the config_change disposition route"; fi
+if ! grep -q 'accept-config-change' "$MRG"; then pass_case "05-merge names no --accept-config-change flag (no self-authorizing way around the config check)"
+else fail_case "05-merge still mentions --accept-config-change"; fi
+if grep -q 'disposition review' "$MRG" && grep -q -e '--by a1-reinhard-reviewer' "$MRG"; then pass_case "05-merge disposition review lines carry --by (required since round C)"
+else fail_case "05-merge disposition review line lacks --by"; fi
+
 echo ""
 echo "a1-pr-review: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]
