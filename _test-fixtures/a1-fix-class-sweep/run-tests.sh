@@ -7,7 +7,36 @@
 # The bug files live in a TEMP vault (A1_VAULT_ROOT is unset, then pointed at a temp dir for the CLI calls only);
 # the real vault is never touched. Engine is `grep -E` (always present); the `rg` cases need no rg binary.
 #
-# Measured red: see the "Measured red" block below (filled in after the runs on a git-archive snapshot).
+# Measured red 2026-10-21 (git-archive snapshot of the wave commits, one production line reverted, both a1-fix suites run;
+# cases that fail). A `timeout:` option itself cannot be reverted safely (the backtracking grep would never end), so E3 is
+# proven through the line that turns the timeout into exit 2.
+#   fix-class-sweep.cjs runEngine(): spawn with shell:true                  : A1-A13, C1-C3, E1-E6 (every call; E1 is the point)
+#   fix-class-sweep.cjs MAX_MATCHES 50 -> 51                                : B2, B3
+#   fix-class-sweep.cjs recompute(): `>` -> `>=`                            : B1, B4
+#   fix-class-sweep.cjs doRecord(): root_site check removed                 : C1, C2, E1
+#   fix-class-sweep.cjs runEngine(): timeout error swallowed                : E3
+#   fix-class-sweep.cjs runEngine(): ENOENT branch removed                  : E5
+#   fix-class-sweep.cjs guardOk(): `changed.has(test)` removed              : A7 (test file not in the fix diff)
+#   fix-class-sweep.cjs guardOk(): `isPlainFile` removed                    : A7 (file deleted in the diff)
+#   fix-class-sweep.cjs classify(): stored guards ignored                   : A8, A10
+#   fix-class-sweep.cjs classify(): any match counts as accepted            : A3-A6, A8, A9, A11, A12
+#   fix-class-sweep.cjs checkGuard(): unknown-match check removed           : A7
+#   fix-class-sweep.cjs doVerify(): after_fix / guards not written          : A5, A8, A10
+#   fix-class-sweep.cjs doRecord(): class_sweep_base not stored             : A8, A10
+#   fix-class-sweep.cjs doVerify(): class_sweep_base not read               : A8, A10
+#   fix-class-sweep.cjs doVerify(): not-recorded check removed              : E9
+#   fix-class-sweep.cjs checkFixed(): not-recorded check removed            : E9
+#   fix-class-sweep.cjs statusGate(): `fixed` recompute removed             : A4, A6, A9, E9
+#   fix-class-sweep.cjs statusGate(): requireQuery -> readQuery (no refusal): D1, D4, D5b-d, D6
+#   fix-class-sweep.cjs statusGate(): legacy skip removed                   : D3, D5a, a1-fix legacy case
+#   fix-class-sweep.cjs statusGate(): undated file treated as legacy        : D4
+#   fix-class-sweep.cjs statusGate(): override may move the date later      : D5c
+#   fix-class-sweep.cjs listFiles(): glob filter removed                    : B4, C2
+#   fix-class-sweep.cjs fingerprintFor(): unsafe-path form removed          : E4
+#   fix-class-sweep.cjs readQuery(): pattern length / newline / engine / glob `..` / `**` cap / root_site path : D6 (one each)
+#   fix-class-sweep.cjs classify(): dispositions-file error swallowed       : E6
+#   fix-class-sweep.cjs sweep(): one sibling site dropped                   : A1, A2, A3
+#   fix.cjs cmdFixUpdateStatus(): gate call disabled                        : A4, A6, A9, D1, D4-D6, a1-fix class_query cases
 unset A1_VAULT_ROOT A1_VAULT_WRITER_HOST A1_HOST_ID
 set -u
 
@@ -97,6 +126,10 @@ sw --verify "$BUG" --guard "$FP=tests/missing.test.ts"
 expect "A7 guard naming a missing file: exit 1 guard_invalid" "1/guard_invalid" "$RC/$(js 'j.reason')"
 sw --verify "$BUG" --guard "$FP=../escape.test.ts"
 expect "A7 guard path with ..: exit 1 guard_invalid" "1/guard_invalid" "$RC/$(js 'j.reason')"
+rm "$R/tests/old.test.ts"
+sw --verify "$BUG" --guard "$FP=tests/old.test.ts"
+expect "A7 guard naming a file deleted in the fix diff (in the diff, absent on disk): exit 1 guard_invalid" "1/guard_invalid" "$RC/$(js 'j.reason')"
+G checkout -- tests/old.test.ts
 sw --verify "$BUG" --guard "class-sweep:other.ts:0123456789abcdef=tests/convert-tenant.test.ts"
 expect "A7 guard for a fingerprint that is not a current match: exit 1 guard_unknown_match" "1/guard_unknown_match" "$RC/$(js 'j.reason')"
 sw --verify "$BUG" --guard "$FP=tests/convert-tenant.test.ts"
