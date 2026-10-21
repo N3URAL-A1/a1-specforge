@@ -112,7 +112,7 @@ Deterministic helpers for all pipelines live under `_shared/` (`~6.8k` LOC): ato
 
 ### Enforced self-checks (spec 017)
 
-Nine commands turn the pipeline's self-reports into measured results. A call writes one line to a git-excluded gate log (`.a1/phases/<scope>/gate-log.jsonl`, hash-chained), and `retro validate --gate-log` checks a retro's `gates_fired` against it.
+Nine commands turn the pipeline's self-reports into measured results. Only calls of a subcommand that a registry `invoke` cell names write a line (for example `verify run`, `test-fidelity`, `realpath-check run`, `schema-check run`, `retro validate`; `gates fired` and `gates lint` do not), and only outside an intent child. The line goes to a git-excluded, hash-chained gate log (`.a1/phases/<scope>/gate-log.jsonl`, scope from `--phase`; without it `_unscoped`), and `retro validate --gate-log` checks a retro's `gates_fired` against it.
 
 | Command | What it enforces |
 |---|---|
@@ -157,7 +157,7 @@ English-first; German trigger phrases remain supported as aliases. Some workflow
 
 ## Testing
 
-46 fixture runners live under `_test-fixtures/*/run*.sh` (including the vault-fallback and phantom runners) plus a nested schema-check parser runner. Run them all:
+47 fixture runners live under `_test-fixtures/*/run*.sh` (counted with `ls _test-fixtures/*/run*.sh | wc -l`; this includes the vault-fallback, phantom and `run-wave13.sh` runners) plus one nested runner, `_test-fixtures/a1-schema-check/parser/run-parser.sh`. Run them all:
 
 ```bash
 for r in _test-fixtures/*/run*.sh; do bash "$r" || break; done

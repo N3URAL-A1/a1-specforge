@@ -421,6 +421,18 @@ rm -rf "$LKR/.git/a1-gate-log.lock.d"
 wait "$BG"
 [[ "${HELD_EXCL:-0}" == "0" && "$(grep -c 'gate-log' "$LKR/.git/info/exclude" || true)" == "1" && -s "$LKR/.a1/phases/s16/gate-log.jsonl" ]] && ok "F16 while another writer holds the lock info/exclude stays untouched; after release the line and the exclude entry appear" || bad "F16 (held excl=$HELD_EXCL, after=$(cat "$LKR/.git/info/exclude"))"
 
+# N1..N3 spec 017 review (m3, NITs). Measured red 2026-10-21 (HEAD files before the fix): README said 46 runners (47 exist) -> N1;
+# the unknown-group usage did not list verify / test-fidelity / disposition -> N2; test.yml listed modules by hand -> N3.
+RUNNERS="$(cd "$REPO_ROOT" && ls _test-fixtures/*/run*.sh | wc -l | tr -d ' ')"
+README_N="$(sed -n 's/^\([0-9][0-9]*\) fixture runners live under `_test-fixtures\/\*\/run\*\.sh`.*/\1/p' "$REPO_ROOT/README.md")"
+[[ -n "$README_N" && "$README_N" == "$RUNNERS" ]] && ok "N1 README fixture-runner count ($README_N) equals the real count of _test-fixtures/*/run*.sh ($RUNNERS)" || bad "N1 README says '$README_N', real count $RUNNERS"
+(cd "$NOGIT" && node "$TOOLS" bogus-group >/dev/null 2>"$WORK/err")
+MISSING=""; for g in verify test-fidelity disposition gates; do [[ "$(cat "$WORK/err")" == *"\"$g\""* ]] || MISSING="$MISSING $g"; done
+[[ -z "$MISSING" ]] && ok "N2 the unknown-group usage lists verify, test-fidelity, disposition (and gates)" || bad "N2 usage lacks:$MISSING"
+if grep -q 'for f in _shared/lib/\*\.cjs' "$REPO_ROOT/.github/workflows/test.yml" && ! grep -q 'retro-gatelog test-fidelity' "$REPO_ROOT/.github/workflows/test.yml"; then ok "N3 CI syntax check globs _shared/lib/*.cjs (no hand-kept module list)"; else bad "N3 test.yml syntax step"; fi
+for f in "$REPO_ROOT"/_shared/lib/*.cjs; do node --check "$f" 2>/dev/null || { bad "N3b node --check failed: $f"; break; }; done
+ok "N3b every _shared/lib/*.cjs passes node --check (the CI step's loop)"
+
 # F11 matchInvoke: a flagged key needs its flag, a plain key needs its subcommand
 MATCH="$(node -e '
   const g=require(process.argv[1]); const m={"product validate --spec-status":"A","schema-check run":"B","test-fidelity":"C"};
