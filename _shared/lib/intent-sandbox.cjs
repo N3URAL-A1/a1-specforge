@@ -68,7 +68,8 @@ function workTreeDenyRules(cwd) {
 
 // Spec 017 review (SEC-2/SEC-3): the repo files that decide what the merge check and the self-checks accept. A child that could write them
 // would clear its own findings or widen its own checks; the owner (or Reinhard, outside the child) edits them. One Edit and one Write rule each.
-const INTENT_OWNER_CONFIG_PATHS = Object.freeze(['.a1/dispositions.json', '.a1/verify.json', '.a1/fidelity.json']);
+// `.a1/verify-cache/**` joined in review round C (defense in depth): merge-check runs with noCache, but a forged cache must not exist at all.
+const INTENT_OWNER_CONFIG_PATHS = Object.freeze(['.a1/dispositions.json', '.a1/verify.json', '.a1/fidelity.json', '.a1/verify-cache/**']);
 function ownerConfigDenyRules(cwd) {
   if (typeof cwd !== 'string' || !cwd.startsWith('/')) throw new Error('ownerConfigDenyRules: the project path must be absolute');
   return Object.freeze(INTENT_OWNER_CONFIG_PATHS.flatMap((p) => [`Edit(/${cwd}/${p})`, `Write(/${cwd}/${p})`]));
