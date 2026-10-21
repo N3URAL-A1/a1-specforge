@@ -50,6 +50,30 @@ process's `cwd` matches the checkout under test before trusting any result — a
 stale server manufactures false bug evidence.
 See `_shared/agent-lessons.md#verify-stale-server`.
 
+## Step 0.6 — Build/test evidence (`verify run`, then `verify check`)
+
+Before the walkthrough, record the build and test result in the spec's VERIFICATION.md (path:
+`.a1/phases/<spec-id>/VERIFICATION.md`, create the directory). The `verify_run` frontmatter block
+is written only by this command:
+
+```bash
+mkdir -p .a1/phases/<spec-id>
+node <repo>/_shared/a1-tools.cjs verify run --project <dir> --out .a1/phases/<spec-id>/VERIFICATION.md --phase <spec-id>; RUN_RC=$?
+echo "verify run exit=$RUN_RC"
+```
+
+Exit 1 or 2 stops Phase 6: fix the failing command (or `.a1/verify.json`), re-run. After the
+walkthrough result is written to VERIFICATION.md (keep the `verify_run` key), and again before
+any verdict `PASS` is reported:
+
+```bash
+node <repo>/_shared/a1-tools.cjs verify check .a1/phases/<spec-id>/VERIFICATION.md --phase <spec-id>; CHECK_RC=$?
+echo "verify check exit=$CHECK_RC"
+if [ $CHECK_RC -ne 0 ]; then echo "STOP: verify check refused PASS (re-run verify run --out)"; fi
+```
+
+Exit 1 = no PASS: the spec stays `implementing`. Code changed since the run → re-run `verify run --out`.
+
 ## Step 1 — Extract Acceptance Scenarios
 
 Read the spec. Collect every Given/When/Then block under `## Acceptance Scenarios`, grouped

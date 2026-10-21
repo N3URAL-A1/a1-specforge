@@ -74,6 +74,26 @@ Verify that the phase goal was achieved.
 **Output path:** .a1/phases/<phase_name>/VERIFICATION.md
 ```
 
+## After Victor returns: build/test evidence (spec 017, gate `gate-1-build`)
+
+Victor's build/test evidence is the `verify_run` record in the VERIFICATION.md frontmatter, written
+only by `verify run --out`. Re-run it (served from the sha + command cache when nothing changed)
+and check it. Both calls carry `--phase <phase_name>` and both exit codes are tested:
+
+```bash
+node <repo>/_shared/a1-tools.cjs verify run --project "$WORK_PATH" --out .a1/phases/<phase_name>/VERIFICATION.md --phase <phase_name>; RUN_RC=$?
+echo "verify run exit=$RUN_RC"
+node <repo>/_shared/a1-tools.cjs verify check .a1/phases/<phase_name>/VERIFICATION.md --phase <phase_name>; CHECK_RC=$?
+echo "verify check exit=$CHECK_RC"
+if [ $RUN_RC -ne 0 ] || [ $CHECK_RC -ne 0 ]; then echo "VERIFICATION.md cannot be PASS"; fi
+```
+
+`verify run` exit 1 (verdict `fail`) or `verify check` exit 1 (PASS without `verify_run`, verdict
+not `pass`, or code changed since `head_sha`) means the verdict is FAIL: set `verdict: FAIL` in
+VERIFICATION.md, list the failing command as a gap, route as FAIL below. Exit 2 (no test command,
+bad config) is a stop: fix the project's `.a1/verify.json`, then re-run. Never edit the
+`verify_run` block by hand.
+
 ## Step 0 — Read `phase_kind` before choosing the build evidence
 
 PLAN.md frontmatter carries `phase_kind: <code | no-code>` (owner:
