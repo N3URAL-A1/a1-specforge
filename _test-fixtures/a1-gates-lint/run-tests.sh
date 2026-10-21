@@ -373,5 +373,37 @@ MATCH="$(node -e '
     g.matchInvoke(["schema-check","parse"],m), g.matchInvoke(["schema-check","run"],m), g.matchInvoke(["test-fidelity","--diff-base","x"],m), g.matchInvoke(["test-fidelity-x"],m)].join(","))' "$REPO_ROOT/_shared/lib/gate-log.cjs")"
 [[ "$MATCH" == "A,,A,,B,C," ]] && ok "F11 matchInvoke: flag token required, sub token exact, group-only key matches with flags" || bad "F11 ($MATCH)"
 
+# ---------- W11: spec 017 wave 11 wiring of a1-execute / a1-new-feature / Victor ----------
+# Real files (no copies of the parser): the call sites must exist, use only flags the CLIs
+# accept, carry --phase <scope> and capture the exit code. check-wave11-callsites.cjs does
+# the extraction; mutations run on a copy of the six real files.
+# Measured red 2026-10-21 (git-archive snapshot, line reverted, suite run):
+#   02-execute.md test-fidelity call removed                    -> W11a, W11e
+#   05-implement.md `--phase <spec-id>` dropped from test-fidelity -> W11b
+#   02-execute.md `--diff-base` -> `--base` on test-fidelity     -> W11c
+#   06-verify.md `verify check` fence removed                    -> W11d
+W11CHK="$REPO_ROOT/_test-fixtures/a1-gates-lint/check-wave11-callsites.cjs"
+W11FILES="skills/a1-execute/workflows/02-execute.md skills/a1-execute/workflows/03-verify.md skills/a1-execute/SKILL.md skills/a1-new-feature/workflows/05-implement.md skills/a1-new-feature/workflows/06-verify.md agents/a1-victor-verifier.md"
+OUT="$(node "$W11CHK" "$REPO_ROOT" 2>&1)"; RC=$?
+[[ $RC -eq 0 && "$OUT" == "calls=15" ]] && ok "W11a real call sites: 15 calls, known flags, --phase scope, exit code captured" || bad "W11a ($OUT)"
+w11_mutate() { # w11_mutate <file> <python-ish js edit on s>
+  rm -rf "${WORK:?}/w11"; mkdir -p "$WORK/w11"
+  for f in $W11FILES; do mkdir -p "$WORK/w11/$(dirname "$f")"; cp "$REPO_ROOT/$f" "$WORK/w11/$f"; done
+  plant "$WORK/w11/$1" "$WORK/w11/$1" "$2"
+  W11OUT="$(node "$W11CHK" "$WORK/w11" 2>&1)"; W11RC=$?
+}
+w11_mutate skills/a1-new-feature/workflows/05-implement.md 's = s.replace(/(test-fidelity [^\n]*) --phase <spec-id>/, "$1");'
+[[ $W11RC -eq 1 && "$W11OUT" == *"05-implement.md"*"missing --phase <spec-id>"* ]] && ok "W11b --phase dropped from a1-new-feature test-fidelity call: flagged" || bad "W11b ($W11OUT)"
+w11_mutate skills/a1-execute/workflows/02-execute.md 's = s.replace("test-fidelity --diff-base", "test-fidelity --base");'
+[[ $W11RC -eq 1 && "$W11OUT" == *"unknown flag --base"* ]] && ok "W11c wrong flag on test-fidelity: flagged" || bad "W11c ($W11OUT)"
+w11_mutate skills/a1-new-feature/workflows/06-verify.md 's = s.replace(/^node [^\n]*verify check[^\n]*$/m, "");'
+[[ $W11RC -eq 1 && "$W11OUT" == *"verify check expected 1 call(s), found 0"* ]] && ok "W11d verify check call removed from 06-verify: flagged" || bad "W11d ($W11OUT)"
+w11_mutate skills/a1-execute/workflows/02-execute.md 's = s.replace(/^node [^\n]*test-fidelity[^\n]*$/m, "");'
+[[ $W11RC -eq 1 && "$W11OUT" == *"02-execute.md: test-fidelity expected 1 call(s), found 0"* ]] && ok "W11e test-fidelity call removed from 02-execute: flagged" || bad "W11e ($W11OUT)"
+run_lint
+WIRED="$(node -e 'const j=JSON.parse(process.argv[1]);const w=j.wired.filter(x=>["gate-0.6-schema","gate-1-build","test-fidelity"].includes(x.gate)&&["a1-execute","a1-new-feature"].includes(x.skill));process.stdout.write(w.length+":"+w.map(x=>x.gate+"@"+x.skill).sort().join(","))' "$OUT")"
+[[ $RC -eq 0 && "$WIRED" == "6:gate-0.6-schema@a1-execute,gate-0.6-schema@a1-new-feature,gate-1-build@a1-execute,gate-1-build@a1-new-feature,test-fidelity@a1-execute,test-fidelity@a1-new-feature" ]] \
+  && ok "W11f real tree: gates lint exit 0 and reports the a1-execute and a1-new-feature sides of gate-0.6-schema, gate-1-build, test-fidelity wired (6)" || bad "W11f (rc=$RC wired=$WIRED)"
+
 echo "a1-gates-lint: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]
