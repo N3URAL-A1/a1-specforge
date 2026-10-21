@@ -230,10 +230,11 @@ for cmd in "test-fidelity --diff-base base" "verify run" "verify check $R/none.m
 done
 
 # ---------- G: the committed store of this repo ----------
-OUT="$(node -e 'const d=require(process.argv[1]+"/disposition.cjs");const e=d.loadEntries(process.argv[2]);console.log(JSON.stringify({n:e.length,files:[...new Set(e.filter(x=>x.kind==="fidelity").map(x=>x.fingerprint.split(":")[1]))].sort(),bad:e.filter(x=>!/fixture data/.test(x.reason)||!/a1-office/.test(x.reason)||x.review==="overturned").length}))' "$LIB" "$REPO_ROOT")"; RC=$?
+OUT="$(node -e 'const d=require(process.argv[1]+"/disposition.cjs");const e=d.loadEntries(process.argv[2]);console.log(JSON.stringify({n:e.length,files:[...new Set(e.filter(x=>x.kind==="fidelity").map(x=>x.fingerprint.split(":")[1]))].sort(),bad:e.filter(x=>x.kind==="fidelity"&&(!/fixture data/.test(x.reason)||!/a1-office/.test(x.reason)||x.review==="overturned")).length,cfgBad:e.filter(x=>x.kind==="config_change"&&x.review==="overturned").length}))' "$LIB" "$REPO_ROOT")"; RC=$?
 expect "G1 the repo store loads and validates (exit 0)" 0 "$RC"
 expect "G2 each of the 4 real/*.test.ts fixture files has a disposition (count of distinct files)" 4 "$(js 'j.files.filter(f=>/^_test-fixtures\/a1-test-fidelity\/real\/.*\.test\.ts$/.test(f)).length')"
-expect "G3 every committed disposition says fixture data from a1-office and none is overturned (count 0)" 0 "$(js 'j.bad')"
+expect "G3 every committed fidelity disposition says fixture data from a1-office and none is overturned (count 0)" 0 "$(js 'j.bad')"
+expect "G4 no committed config_change disposition is overturned (count 0)" 0 "$(js 'j.cfgBad')"
 
 # ---------- H: lock ownership (review SEC-7) and the reviewer fields (SEC-3) ----------
 # The steal path used rmdir on whatever was there; a lock swapped in between stat and rmdir was removed under its holder.

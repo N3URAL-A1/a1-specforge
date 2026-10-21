@@ -93,7 +93,10 @@
     "reason": "spec 017 introduces .a1/verify.json for this repo (no base config exists): each _test-fixtures/*/run*.sh via bash",
     "date": "2026-10-21",
     "by": "orchestrator",
-    "review": "pending"
+    "review": "upheld",
+    "review_reason": "each _test-fixtures/*/run*.sh (47 suites) plus the schema-check parser runner is exactly the CI Fixtures step (FR-036); timeout_ms 1800000 per suite is sane; empty flaky_base is a valid initial list (Reinhard review PR #55 round C)",
+    "reviewed_at": "2026-10-21T19:29:53.051Z",
+    "reviewed_by": "a1-reinhard-reviewer"
   },
   {
     "kind": "config_change",
@@ -101,6 +104,9 @@
     "reason": "spec 017 introduces .a1/fidelity.json for this repo (no base config exists); test_globs narrowed per Q22",
     "date": "2026-10-21",
     "by": "orchestrator",
-    "review": "pending"
+    "review": "upheld",
+    "review_reason": "test_globs and ci_globs are the entry points _test-fixtures/*/run*.sh per Q22; the ci glob appears literally in the CI run loop; db_wrappers defaults fine (Reinhard review PR #55 round C)",
+    "reviewed_at": "2026-10-21T19:29:53.103Z",
+    "reviewed_by": "a1-reinhard-reviewer"
   }
 ]
