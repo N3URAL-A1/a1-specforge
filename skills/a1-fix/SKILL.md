@@ -249,6 +249,11 @@ Falk is spawned via the `Agent` tool. Falk never edits code.
   Gate runs before everything. Merge to `main` only when build + tests are GREEN.
   Never cherry-pick as a merge workaround. Never push a build-red `main`.
 - Never edit bug-report frontmatter with Edit/Write — always use `fix update-status`.
+  One documented exception: `class_query` and `root_site` (the defect-class query, spec 017) are
+  descriptive data that no CLI flag carries. The main session writes them with Edit/Write at Phase 1
+  or Phase 2 (shape: `workflows/01-report.md` Step 4); `fix class-sweep --record` validates them
+  before the status flips, and `fix update-status` refuses a file without them (`class_query_missing`).
+  `status`, `phase_history`, `fix_commit`, `verify_result` and `recommended_code_agent` stay CLI-only.
 - Never skip Phase 0 (Pre-Flight). If integrity-check fails: STOP immediately.
 - Never skip Phase 1 (Report). Structured triage prevents diagnosis on incomplete info.
 - Never let Falk fix code. Falk diagnoses; code agents fix.

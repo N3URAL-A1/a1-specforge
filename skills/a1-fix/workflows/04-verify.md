@@ -93,8 +93,13 @@ Only after Step 0 exited 0 on all three blocks. If reproduction confirms symptom
 ```bash
 node <repo>/_shared/a1-tools.cjs fix update-status \
   "<bug-path>" fixed \
-  --verify-result "<verify_result_string>"
+  --verify-result "<verify_result_string>"; RC=$?
+if [ "$RC" -ne 0 ]; then echo "STOP: fix update-status fixed exit=$RC (class_sweep_open: a sibling site is neither guarded nor accepted - back to Step 0.3; class_query_missing: fill class_query and root_site); status stays fixing"; exit "$RC"; fi
 ```
+
+Exit 1 prints a JSON refusal on stdout. `class_sweep_open` means a sibling site of the defect class is still
+open: go back to Phase 3 (guard or fix it) and run Step 0 again. `class_query_missing` means the report has no
+valid `class_query` (Phase 2 fills it). The report stays at `fixing`; do not tell the user the bug is fixed.
 
 3. Use the Edit tool to fill the `## Verification (Phase 04 — filled by skill)`
    section in the bug report with the verification details.

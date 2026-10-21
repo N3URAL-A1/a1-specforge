@@ -554,6 +554,32 @@ run_wave12_wiring() {
   assert_rc "wave12 wiring: workflow lint on the real skills is clean" 0 "$lint_rc" ""
 }
 
+# ---------- spec 017 review round B (m4): template placeholders, frontmatter exception, mark-fixed exit check ----------
+# Measured red 2026-10-21 (HEAD files before the fix): template without class_query/root_site -> m4 template + round-trip cases;
+# 04-verify.md mark-fixed block without RC capture -> m4 exit-test case; SKILL.md rule without exception -> m4 exception case.
+run_review_m4() {
+  local tpl="$REPO_ROOT/skills/a1-fix/templates/bug-report-template.md" proj="$WORK/m4proj" out rc f
+  assert "m4 template carries class_query: and root_site: placeholders" "$([[ "$(grep -c '^class_query:$' "$tpl")" == "1" && "$(grep -c '^root_site: ' "$tpl")" == "1" ]] && echo 1 || echo 0)"
+  mkdir -p "$proj/src" "$VAULT/project/m4/fixes"
+  printf 'const foo = 1;\n' > "$proj/src/a.txt"
+  f="$VAULT/project/m4/fixes/2026-10-22-template-roundtrip.md"
+  sed -e 's/<PROJECT_SLUG>/m4/g' -e 's/<BUG_SLUG>/template-roundtrip/' -e 's/<ONE_LINE_TITLE>/Template round trip/g' \
+      -e 's/<blocker|major|minor|nit>/minor/' -e 's/<YYYY-MM-DDTHH:MM>/2026-10-22T10:00/' -e 's/<REPORTER>/fx/' -e 's/<repo-name>/demo/' \
+      -e 's/<commit-hash-or-date-or-unknown>/unknown/' -e 's/<ISO_TIMESTAMP>/2026-10-22T10:00:00Z/' \
+      -e 's/<extended regex[^>]*>/foo/' -e 's/<path scope[^>]*>/src\/*.txt/' -e 's/^root_site: .*/root_site: src\/a.txt:1/' "$tpl" > "$f"
+  out=$(A1_VAULT_ROOT="$VAULT" node "$TOOLS" fix update-status "$f" diagnosed 2>&1); rc=$?
+  assert_rc "m4 a bug file made from the template with the query filled in passes update-status diagnosed" 0 "$rc" "$out"
+  sed -i.bak -e 's/^root_site: .*/root_site: <file>:<line>/' "$f" && rm -f "$f.bak"
+  out=$(A1_VAULT_ROOT="$VAULT" node "$TOOLS" fix update-status "$f" fixing 2>&1); rc=$?
+  assert_rc "m4 the unfilled root_site placeholder is refused (the template does not smuggle a pass)" 1 "$rc" "$out"
+  local v="$REPO_ROOT/skills/a1-fix/workflows/04-verify.md"
+  assert "m4 04-verify: the mark-fixed update-status block captures RC, tests it and names class_sweep_open" "$(node -e '
+    const t=require("fs").readFileSync(process.argv[1],"utf8"); const re=/^```bash\n([\s\S]*?)^```/gm; let m, ok=0;
+    while((m=re.exec(t))) if (/fix update-status[\s\S]*"<bug-path>" fixed/.test(m[1]) && /--verify-result "<verify_result_string>"; RC=\$\?/.test(m[1]) && /-ne 0/.test(m[1]) && /exit "\$RC"/.test(m[1]) && /class_sweep_open/.test(m[1])) ok++;
+    process.stdout.write(ok===1?"1":"0")' "$v")"
+  assert "m4 SKILL.md: the frontmatter rule names the class_query/root_site exception" "$(grep -A4 'Never edit bug-report frontmatter' "$REPO_ROOT/skills/a1-fix/SKILL.md" | grep -c 'class_query' | awk '{print ($1>=1)?1:0}')"
+}
+
 # ---------- run all ----------
 run_next_suffix
 run_update_status
@@ -569,6 +595,7 @@ run_hostile_path_traversal
 run_hostile_injection
 run_hostile_oversized
 run_wave12_wiring
+run_review_m4
 
 printf '\n--- a1-fix fixture results ---\n'
 for r in "${results[@]}"; do printf '%s\n' "$r"; done

@@ -11,6 +11,11 @@ affected_repos:
   - <repo-name>
 related_deploy: <commit-hash-or-date-or-unknown>
 duplicate_of: null
+class_query:
+  - pattern: <extended regex that finds the sibling code sites; set at Phase 02>
+  - glob: <path scope, e.g. lib/**/*.ts>
+  - engine: grep -E
+root_site: <file>:<line>
 phase_history:
   - phase=report completed=<ISO_TIMESTAMP>
 recommended_code_agent: null
