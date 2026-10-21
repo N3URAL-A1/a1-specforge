@@ -16,9 +16,9 @@ const DISPOSITION_HELP = `  a1-tools disposition add --kind <fidelity|skip_incre
                   Exit 0 recorded / 1 duplicate fingerprint / 2 usage or invalid store (empty
                   reason, unknown kind, rule of another kind, glob or ".." in the path).
                   No --skip or --ignore option exists on any check.
-  a1-tools disposition review <fingerprint> --verdict <upheld|overturned> --reason <text> [--by <who>]
+  a1-tools disposition review <fingerprint> --verdict <upheld|overturned> --reason <text> --by <who>
                   Records the reviewer's verdict (a1-pr-review, Reinhard). An overturned entry clears
-                  nothing. Give --by: merge-check refuses a verdict without reviewed_by/reviewed_at and one whose
+                  nothing. --by is required (exit 2 without it): merge-check refuses a verdict without reviewed_by/reviewed_at and one whose
                   reviewer is the entry's own author (disposition_self_reviewed). Commit and push the file after
                   the verdict: merge-check reads HEAD. Exit 0 / 1 unknown fingerprint (exact match only) / 2 usage.`;
 

@@ -95,9 +95,10 @@ a1-pr-review step (Reinhard) upholds or overturns it before `pr merge-check` pas
 ```bash
 node _shared/a1-tools.cjs disposition add --kind fidelity --rule skipped-test --file tests/a.test.js --line 1 \
   --reason "skip tracks upstream bug 42, re-enabled when fixed" --by <who>
-node _shared/a1-tools.cjs disposition review <fingerprint> --verdict upheld --reason "bug 42 is real"
+node _shared/a1-tools.cjs disposition review <fingerprint> --verdict upheld --reason "bug 42 is real" --by <reviewer>
 ```
 
+`--by` is required on `review`: a verdict without a named reviewer, or by the entry's own author, fails the merge check.
 The fingerprint is printed by `disposition add` and in every `test-fidelity` finding. Intent children never call
 `disposition add` or `disposition review` (an autonomous child must not clear its own findings).
 

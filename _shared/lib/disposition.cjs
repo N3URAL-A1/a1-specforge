@@ -5,7 +5,7 @@
 //   add     records an entry with review: pending
 //             --kind fidelity|skip_increase|class_sweep|config_change --reason <t> --by <who>
 //             (--fingerprint <fp> | --rule <id> --file <path> [--line <n> | --text <t>]) [--project <dir>]
-//   review  <fingerprint> --verdict upheld|overturned --reason <t> [--by <who>] [--project <dir>]
+//   review  <fingerprint> --verdict upheld|overturned --reason <t> --by <who> [--project <dir>]
 // Exit 0 recorded / 1 refused (duplicate, unknown fingerprint; JSON `error` on stdout) / 2 usage or
 // unreadable store. There is no --skip and no --ignore: every unknown option is a usage error.
 // The store, the fingerprint grammar and the merge-check feed live in disposition-store.cjs.
@@ -21,7 +21,7 @@ const ADD_FLAGS = { kind: 'string', fingerprint: 'string', rule: 'string', file:
 const REVIEW_FLAGS = { verdict: 'string', reason: 'string', by: 'string', project: 'string' };
 const FILE_LEVEL_RULES = Object.freeze(['test-not-in-ci']);
 const USAGE = 'usage: a1-tools disposition add --kind <fidelity|skip_increase|class_sweep|config_change> (--fingerprint <fp> | --rule <id> --file <path> [--line <n> | --text <t>]) --reason <t> --by <who> [--project <dir>]\n'
-  + '       a1-tools disposition review <fingerprint> --verdict <upheld|overturned> --reason <t> [--by <who>] [--project <dir>]\n';
+  + '       a1-tools disposition review <fingerprint> --verdict <upheld|overturned> --reason <t> --by <who> [--project <dir>]\n';
 
 class UsageError extends Error {}
 
@@ -109,11 +109,12 @@ function cmdReview(args) {
   S.parseFingerprint(fingerprint);
   if (!S.VERDICTS.includes(flags.verdict)) throw new UsageError(`--verdict must be ${S.VERDICTS.join(' | ')}`);
   const reason = S.checkText('--reason', flags.reason, S.MAX_REASON);
-  const by = flags.by === undefined ? null : S.checkText('--by', flags.by, S.MAX_BY);
+  if (flags.by === undefined) throw new UsageError('--by <reviewer> is required: merge-check refuses a verdict without a named reviewer');
+  const by = S.checkText('--by', flags.by, S.MAX_BY);
   const found = S.withEntries(projectOf(flags), (list) => {
     if (!list.some((e) => e.fingerprint === fingerprint)) return { next: null, result: false };
     const next = list.map((e) => (e.fingerprint !== fingerprint ? e
-      : { ...e, review: flags.verdict, review_reason: reason, reviewed_at: nowIso(), ...(by === null ? {} : { reviewed_by: by }) }));
+      : { ...e, review: flags.verdict, review_reason: reason, reviewed_at: nowIso(), reviewed_by: by }));
     return { next, result: true };
   });
   if (!found) return emit({ ok: false, error: 'not_found', fingerprint }, 1);

@@ -49,9 +49,8 @@ TOOLS="${A1_FX_TOOLS:-$REPO_ROOT/_shared/a1-tools.cjs}"
 LIB="$(dirname "$TOOLS")/lib"
 REAL="$REPO_ROOT/_test-fixtures/a1-test-fidelity/real"
 
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/a1-fx-disposition.XXXXXX")" || exit 1
-[[ -n "$WORK" && -d "$WORK" ]] || exit 1
-trap 'rm -rf "${WORK:?}"' EXIT
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
+mk_workdir WORK fx-disposition
 export GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0
 
 pass=0; fail=0
@@ -115,7 +114,7 @@ expect "A6 review overturned: exit 0" 0 "$RC"
 expect "A6 entry now overturned with reason, reviewer and timestamp (count of 3 fields)" "overturned|3" "$(store 'j[0].review+"|"+["review_reason","reviewed_by","reviewed_at"].filter(k=>j[0][k]).length')"
 tf
 expect "A7 an overturned disposition clears nothing: exit 1" 1 "$RC"
-dis review "$FP" --verdict upheld --reason "fixture: re-reviewed, pass-through is intended"
+dis review "$FP" --verdict upheld --reason "fixture: re-reviewed, pass-through is intended" --by reviewer
 expect "A8 review upheld: exit 0, entry upheld" "0|upheld" "$RC|$(store 'j[0].review')"
 tf
 expect "A8 upheld disposition clears the finding: exit 0" 0 "$RC"
@@ -127,9 +126,9 @@ chk() { node -e '
   process.stdout.write(JSON.stringify(r.map((x) => x.reason)));' "$LIB" "$R" "$1" "${2:-HEAD}"; }
 new_repo; G tag base2; add_mock >/dev/null; G add -A; G commit -q -m pending
 expect "B1 entry added after base, still pending: disposition_unreviewed" '["disposition_unreviewed"]' "$(chk base2)"
-dis review "$FP" --verdict upheld --reason "fixture: reviewed"; G commit -q -am upheld
+dis review "$FP" --verdict upheld --reason "fixture: reviewed" --by reviewer; G commit -q -am upheld
 expect "B2 upheld: no reason reported" '[]' "$(chk base2)"
-dis review "$FP" --verdict overturned --reason "fixture: overturned later"; G commit -q -am over
+dis review "$FP" --verdict overturned --reason "fixture: overturned later" --by reviewer; G commit -q -am over
 expect "B3 overturned: disposition_overturned (and only that)" '["disposition_overturned"]' "$(chk base2)"
 expect "B4 base = head: nothing changed; the overturned entry is still reported" '["disposition_overturned"]' "$(chk HEAD)"
 new_repo; add_mock >/dev/null; G add -A; G commit -q -m pend; G tag base3; printf '// x\n' >> "$R/lib/crm/invoices.ts"; G commit -q -am unrelated
@@ -171,14 +170,16 @@ add_mock >/dev/null
 dis add --kind fidelity --rule mock-of-subject --file tests/mail-rules.test.ts --line "$MOCK_LINE" --reason "again" --by fx
 expect "C23 duplicate fingerprint: exit 1 (refused, not overwritten)" 1 "$RC"
 expect "C23 still one entry with the first reason (count + reason)" "1|fixture: reviewed pass-through" "$(store 'j.length+"|"+j[0].reason')"
-dis review 'mock-of-subject:*:*' --verdict upheld --reason "wildcard"
+dis review 'mock-of-subject:*:*' --verdict upheld --reason "wildcard" --by reviewer
 expect "C24 review with a wildcard fingerprint: exit 2" 2 "$RC"
-dis review "mock-of-subject:tests/mail-rules.test.ts:$GOODHASH" --verdict upheld --reason "unknown hash"
+dis review "mock-of-subject:tests/mail-rules.test.ts:$GOODHASH" --verdict upheld --reason "unknown hash" --by reviewer
 expect "C25 review of an unknown fingerprint: exit 1" 1 "$RC"
-dis review "$FP" --verdict maybe --reason "r"
+dis review "$FP" --verdict maybe --reason "r" --by reviewer
 expect "C26 review with an invalid verdict: exit 2" 2 "$RC"
-dis review "$FP" --verdict upheld --reason "   "
+dis review "$FP" --verdict upheld --reason "   " --by reviewer
 expect "C27 review with a blank reason: exit 2" 2 "$RC"
+dis review "$FP" --verdict upheld --reason "no reviewer named"
+expect "C29 review without --by: exit 2 (a verdict without a reviewer is refused, spec 017 review MINOR-3)" 2 "$RC"
 expect "C28 after every refusal the entry is still pending (count of reviewed = 0)" 0 "$(store 'j.filter(e=>e.review!=="pending").length')"
 dis add --kind skip_increase --rule skip-increase --file unit --text $'1->2\n|x\n' --reason "newline and pipe in the TEXT are hashed, not stored" --by fx
 expect "C29 hostile --text (newline, pipe) is hashed: exit 0, store still valid JSON with 2 entries" "0|2" "$RC|$(store 'j.length')"
