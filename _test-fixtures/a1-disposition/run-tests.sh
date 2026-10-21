@@ -6,7 +6,35 @@
 # fingerprints, globs and bad stores are string inputs written by this suite. Every equality assert has a count assert beside it.
 #
 # Measured red 2026-10-21 (git-archive snapshot, one production line reverted, suite run; cases that fail):
-# (pending)
+#   disposition-store.cjs normalise(): whitespace collapse removed                       : A3
+#   disposition-store.cjs textHash(): line text left out of the hash                      : A4
+#   disposition-store.cjs checkFingerprint(): rule-of-kind check removed                  : C6, C7, D5
+#   disposition-store.cjs GLOB_CHARS_RE: `*` `?` `|` allowed                              : C8, C9, C13, D2
+#   disposition-store.cjs isSafeFile(): `..` segment allowed                              : C10
+#   disposition-store.cjs parseFingerprint(): hash-is-16-hex check removed                : C14
+#   disposition-store.cjs withEntries(): mkdir lock not taken                             : E1 (lost updates)
+#   disposition-store.cjs clearedFingerprints(): overturned entries clear                 : A7 (and a1-verify S6)
+#   disposition-store.cjs checkText(): blank text allowed                                 : C2, C3 (blank reason)
+#   disposition-store.cjs parseEntries(): duplicate-fingerprint check removed             : D6
+#   disposition-store.cjs checkEntry(): unknown-key check removed                         : D4
+#   disposition-store.cjs checkEntry(): review_reason requirement removed                 : D7
+#   disposition-store.cjs changedBetween(): every entry counts as changed                 : B5
+#   disposition-store.cjs changedBetween(): no entry counts as changed                    : B1
+#   disposition-store.cjs pendingOrOverturned(): overturned part dropped                  : B3, B4
+#   disposition.cjs parseStrict(): stray-argument check removed (--skip/--ignore accepted): C19, C20
+#   disposition.cjs cmdReview(): parseFingerprint() check removed (wildcard review)       : C24
+#   disposition.cjs cmdAdd(): duplicate check removed                                     : C23
+#   disposition.cjs cmdAdd(): --by not validated                                          : C4
+#   disposition.cjs cmdAdd(): --reason not validated                                      : C2, C3
+#   disposition.cjs lineText(): empty-line check removed                                  : C18
+#   disposition.cjs fingerprintFromFlags(): file-level rule accepts --text                : C17
+#   disposition.cjs fingerprintFromFlags(): line rule without --line accepted             : C16
+#   disposition.cjs cmdReview(): verdict not validated                                    : C26
+#   disposition.cjs cmdReview(): reason not validated                                     : C27
+#   verify-cli.cjs KNOWN_FLAGS: a `skip` flag added                                       : F1
+#   test-fidelity.cjs scan(): dispositions not applied                                    : A2, A3, A5, A8 (and a1-test-fidelity H4b)
+#   test-fidelity.cjs scan(): any kind of disposition clears (not only fidelity)          : A2, A3, A5, A8
+#   test-fidelity.cjs scan(): store not loaded                                            : A2, A3, A5, A8, D1-D8
 unset A1_VAULT_ROOT A1_VAULT_WRITER_HOST A1_HOST_ID
 set -u
 

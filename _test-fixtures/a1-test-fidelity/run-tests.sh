@@ -74,6 +74,9 @@
 #   fidelity-ci.cjs scalar(): quoted value with trailing comment not unquoted     -> CI11c
 #   fidelity-ci-runners.cjs globToRegex(): extglob `?(...)` not translated        -> CI4, CI5a, CI5b, CI7, CI11b, CI11c, Wave 4 green cases
 #   fidelity-ci-runners.cjs pytestMatcher(): default python_files replaced        -> CI8, CI8b
+#
+# Wave 8 (Q21), measured red 2026-10-21 the same way:
+#   test-fidelity.cjs scan(): dispositions not applied                            -> H4b (corrected claudia test stays flagged)
 unset A1_VAULT_ROOT A1_VAULT_WRITER_HOST A1_HOST_ID
 set -u
 

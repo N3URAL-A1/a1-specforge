@@ -41,6 +41,15 @@
 #   verify-base.cjs withSnapshot(): rmSync removed                                                 : F5c
 #   verify-base.cjs resolveMergeBase(): merge-base failure check removed                           : S2
 #   verify-base.cjs flakyBaseGrown(): `!had.has(i)` -> false                                       : G6, G6e
+#
+# Wave 8 (spec 017 FR-017, FR-025), measured red 2026-10-21 the same way:
+#   verify-base.cjs applySkipIncrease(): equal counts judged (`<=` -> `<`)                       : S5 (also F2, M3b)
+#   verify-base.cjs applySkipIncrease(): disposition ignored                                     : S2
+#   verify-base.cjs applySkipIncrease(): any disposition of the command covers any increase     : S3
+#   verify-base.cjs applySkipIncrease(): any skip_increase disposition covers it (no id/counts)   : S3, S4
+#   verify-run.cjs runVerify(): skip rule not applied                                            : S1, S2, S3, S4, S6, S8, S9
+#   verify-run.cjs skipIncreaseDispositions(): unreadable store swallowed                        : S8
+#   disposition-store.cjs clearedFingerprints(): overturned entries clear                        : S6
 unset A1_VAULT_ROOT A1_VAULT_WRITER_HOST A1_HOST_ID
 set -u
 
