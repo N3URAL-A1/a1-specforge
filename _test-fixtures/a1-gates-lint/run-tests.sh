@@ -378,10 +378,11 @@ MATCH="$(node -e '
 # accept, carry --phase <scope> and capture the exit code. check-wave11-callsites.cjs does
 # the extraction; mutations run on a copy of the six real files.
 # Measured red 2026-10-21 (git-archive snapshot, line reverted, suite run):
-#   02-execute.md test-fidelity call removed                    -> W11a, W11e
-#   05-implement.md `--phase <spec-id>` dropped from test-fidelity -> W11b
-#   02-execute.md `--diff-base` -> `--base` on test-fidelity     -> W11c
-#   06-verify.md `verify check` fence removed                    -> W11d
+#   02-execute.md test-fidelity call line deleted                 -> W11a, W11c, W11f
+#   05-implement.md verify run call line deleted                  -> W11a
+#   06-verify.md / 03-verify.md verify check call line deleted    -> W11a (each)
+#   a1-victor-verifier.md verify check call line deleted          -> W11a
+# W11b-W11e plant their own defect in a copy and need the real files green first.
 W11CHK="$REPO_ROOT/_test-fixtures/a1-gates-lint/check-wave11-callsites.cjs"
 W11FILES="skills/a1-execute/workflows/02-execute.md skills/a1-execute/workflows/03-verify.md skills/a1-execute/SKILL.md skills/a1-new-feature/workflows/05-implement.md skills/a1-new-feature/workflows/06-verify.md agents/a1-victor-verifier.md"
 OUT="$(node "$W11CHK" "$REPO_ROOT" 2>&1)"; RC=$?
