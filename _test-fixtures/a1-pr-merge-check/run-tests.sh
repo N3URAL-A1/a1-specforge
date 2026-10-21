@@ -49,12 +49,16 @@ expect() { if [[ "$2" == "$3" ]]; then ok "$1"; else bad "$1 (expected '$2', got
 
 g() { local d="$1"; shift; git -C "$d" -c commit.gpgsign=false -c user.name=t -c user.email=t@t -c core.hooksPath=/dev/null "$@"; }
 
-# gh stub: records argv, answers `pr view` with the base branch and `pr checks` from A1_FX_CHECKS (+ rc, stderr).
+# gh stub: records argv, answers `pr view` with the base branch (or the head sha, A1_FX_HEAD else the cwd HEAD) and `pr checks` from A1_FX_CHECKS (+ rc, stderr).
 cat > "$WORK/bin/gh" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "${A1_FX_GH_LOG:?}"
 case "$1 $2" in
-  "pr view") printf '{"baseRefName":"main"}\n'; exit 0 ;;
+  "pr view")
+    case "$*" in
+      *headRefOid*) printf '{"headRefOid":"%s"}\n' "${A1_FX_HEAD:-$(git rev-parse HEAD)}"; exit 0 ;;
+      *) printf '{"baseRefName":"main"}\n'; exit 0 ;;
+    esac ;;
   "pr checks")
     [ -n "${A1_FX_CHECKS_ERR:-}" ] && printf '%s\n' "$A1_FX_CHECKS_ERR" >&2
     [ -n "${A1_FX_CHECKS:-}" ] && cat "$A1_FX_CHECKS"
@@ -80,6 +84,7 @@ new_pr() {
   printf 'module.exports = 1;\n' > "$P/src/app.js"
   printf '#!/usr/bin/env bash\nexit %s\n' "$2" > "$P/suite.sh"
   printf '{"commands":[{"id":"unit","argv":["bash","suite.sh"]}]}\n' > "$P/.a1/verify.json"
+  ${BASE_HOOK:-:} "$P"
   g "$P" add -A; g "$P" commit -q -m base; g "$P" checkout -q -b feat
   printf 'module.exports = 2;\n' > "$P/src/app.js"
   printf '#!/usr/bin/env bash\nexit %s\n' "$3" > "$P/suite.sh"
@@ -106,33 +111,52 @@ new_pr b1 0 1; mc
 expect "B1 red on head, green on base: exit 1" 1 "$RC"
 expect "B1 exactly one reason: suite_red_on_head" "suite_red_on_head" "$(reasons)"
 expect "B1 the failing command is named (unit) with a cause" "unit|1" "$(js 'j.reasons[0].failed[0].command+"|"+j.reasons[0].failed.length')"
-new_pr b2 1 1; mc
+# fix reports as a1-fix writes them (skills/a1-fix/templates/bug-report-template.md): type bug-report, bug_slug, status
+fixrep() { printf -- '---\ntype: bug-report\nproject: demo\nbug_slug: %s\ntitle: t\nstatus: %s\nseverity: major\n---\n\n# t\n' "$2" "${3:-diagnosed}" > "$1"; }
+seed_fixes() { # committed on main, i.e. present at the base
+  mkdir -p "$1/.a1/fixes"
+  fixrep "$1/.a1/fixes/2026-10-21-unit-red-on-main.md" unit-red-on-main
+  printf -- '---\nid: x\n---\n' > "$1/.a1/fixes/2026-10-21-unit-red-on-main.postmortem.md"
+  printf 'no frontmatter here\n' > "$1/.a1/fixes/plain.md"
+  printf -- '---\nid: old-shape\nproject: demo\nstatus: diagnosed\n---\n' > "$1/.a1/fixes/old-shape.md"
+  printf -- '---\ntype: bug-report\nbug_slug: no-status\n---\n' > "$1/.a1/fixes/no-status.md"
+  printf -- '---\ntype: note\nbug_slug: wrong-type\nstatus: diagnosed\n---\n' > "$1/.a1/fixes/wrong-type.md"
+}
+BASE_HOOK=seed_fixes new_pr b2 1 1; mc
 expect "B2 red on head AND base, no --bug: exit 1" 1 "$RC"
 expect "B2 exactly one reason: base_red_unreported (suite is not 'new red')" "base_red_unreported" "$(reasons)"
 expect "B2 the shared red test is named (count 1)" "unit|1" "$(js 'j.reasons[0].red_on_base_and_head[0].command+"|"+j.reasons[0].red_on_base_and_head.length')"
-# the report: an a1-fix report in the repo path .a1/fixes/<id>.md
-mkdir -p "$P/.a1/fixes"
-printf -- '---\nid: 2026-10-21-unit-red-on-main\nproject: demo\ntitle: unit red on main\nstatus: diagnosed\ncreated: 2026-10-21\n---\n\n# unit red on main\n' > "$P/.a1/fixes/2026-10-21-unit-red-on-main.md"
 mc --bug 2026-10-21-unit-red-on-main
-expect "B3 red on both + --bug resolving to a repo fix report: exit 0" 0 "$RC"
+expect "B3 red on both + --bug resolving to a repo fix report present at the base: exit 0" 0 "$RC"
 expect "B3 ok true, no reasons (count)" "true|0" "$(js 'j.ok+"|"+j.reasons.length')"
 expect "B3 the shared red is still listed under suites (count 1)" "1" "$(js 'j.suites.pre_existing_red.length')"
 mc --bug 2026-10-21-does-not-exist
 expect "B4 --bug that resolves to nothing: exit 1" 1 "$RC"
 expect "B4 reason bug_unresolved" "bug_unresolved" "$(reasons)"
-printf -- '---\nid: x\n---\n' > "$P/.a1/fixes/2026-10-21-unit-red-on-main.postmortem.md"
 mc --bug 2026-10-21-unit-red-on-main.postmortem
 expect "B5 a postmortem file is not the fix report: exit 1 bug_unresolved" "1|bug_unresolved" "$RC|$(reasons)"
-printf 'no frontmatter here\n' > "$P/.a1/fixes/plain.md"
 mc --bug plain
 expect "B6 a file without frontmatter is not an a1-fix report: exit 1" "1|bug_unresolved" "$RC|$(reasons)"
+# SEC-6: frontmatter must be the a1-fix shape; the report must exist at the base
+mc --bug old-shape
+expect "N1 frontmatter without type bug-report / bug_slug does not resolve: exit 1 bug_unresolved" "1|bug_unresolved" "$RC|$(reasons)"
+mc --bug no-status
+expect "N2 type bug-report + bug_slug but no status does not resolve: exit 1 bug_unresolved" "1|bug_unresolved" "$RC|$(reasons)"
+mc --bug wrong-type
+expect "N5 bug_slug and status but type is not bug-report does not resolve: exit 1 bug_unresolved" "1|bug_unresolved" "$RC|$(reasons)"
+fixrep "$P/.a1/fixes/branch-only.md" branch-only; g "$P" add -A; g "$P" commit -q -m "branch invents its report"; mc --bug branch-only
+expect "N3 a well-formed report that only the branch adds (absent at base) does not resolve: exit 1 bug_unresolved" "1|bug_unresolved" "$RC|$(reasons)"
 # vault resolution (sentinel temp vault, slug flag)
 V="$WORK/vault"; mkdir -p "$V/project/demo/fixes"
-printf -- '---\nid: 2026-10-21-vault-bug\nproject: demo\nstatus: fixed\n---\n\n# vault bug\n' > "$V/project/demo/fixes/2026-10-21-vault-bug.md"
-OUT="$(cd "$P" && A1_VAULT_ROOT="$V" A1_GH_BIN="$WORK/bin/gh" A1_FX_CHECKS="$CHK" node "$TOOLS" pr merge-check --pr 7 --base main --phase fx-w10 --bug 2026-10-21-vault-bug --slug demo 2>"$WORK/err")"; RC=$?
+fixrep "$V/project/demo/fixes/2026-10-21-vault-bug.md" vault-bug fixed
+printf -- '---\nid: 2026-10-21-old\nproject: demo\nstatus: fixed\n---\n' > "$V/project/demo/fixes/2026-10-21-old.md"
+vmc() { OUT="$(cd "$P" && A1_VAULT_ROOT="$V" A1_GH_BIN="$WORK/bin/gh" A1_FX_CHECKS="$CHK" node "$TOOLS" pr merge-check --pr 7 --base main --phase fx-w10 "$@" 2>"$WORK/err")"; RC=$?; }
+vmc --bug 2026-10-21-vault-bug --slug demo
 expect "B7 --bug in the vault (project/<slug>/fixes): exit 0" 0 "$RC"
-OUT="$(cd "$P" && A1_VAULT_ROOT="$V" A1_GH_BIN="$WORK/bin/gh" A1_FX_CHECKS="$CHK" node "$TOOLS" pr merge-check --pr 7 --base main --phase fx-w10 --bug 2026-10-21-vault-bug --slug other 2>"$WORK/err")"; RC=$?
+vmc --bug 2026-10-21-vault-bug --slug other
 expect "B8 same id under another project slug does not resolve: exit 1" "1|bug_unresolved" "$RC|$(reasons)"
+vmc --bug 2026-10-21-old --slug demo
+expect "N4 a vault file with the old frontmatter shape does not resolve: exit 1 bug_unresolved" "1|bug_unresolved" "$RC|$(reasons)"
 # M1 mutation proof: flip the head suite back to green and the same call goes green
 new_pr m1 0 1; mc; r1=$RC
 printf '#!/usr/bin/env bash\nexit 0\n' > "$P/suite.sh"; g "$P" commit -q -am revert; mc; r2=$RC
@@ -163,11 +187,21 @@ CHK="$WORK/checks-green.json"
 expect "C9 no --base: the base branch comes from gh pr view (exit 0, base main)" "0|main" "$RC|$(js 'j.base')"
 expect "C9 gh pr view was asked for the base (count 1)" "1" "$(grep -c '^pr view 7 --json baseRefName$' "$A1_FX_GH_LOG" | tr -d ' ')"
 
+dis() { (cd "$P" && node "$TOOLS" disposition "$@" >"$WORK/dis.out" 2>"$WORK/dis.err"); }
 # ---------- D: flaky_base frozen (FR-016) ----------
 new_pr d1 0 0
 printf '{"commands":[{"id":"unit","argv":["bash","suite.sh"]}],"flaky_base":["unit"]}\n' > "$P/.a1/verify.json"; g "$P" commit -q -am "grow flaky_base"; mc
 expect "D1 head adds an id to flaky_base: exit 1" 1 "$RC"
-expect "D1 reason flaky_base_grown names the id (count 1)" "flaky_base_grown|unit|1" "$(js 'j.reasons[0].reason+"|"+j.reasons[0].id+"|"+j.reasons.length')"
+# Since the review (SEC-2) verify run --base takes the command set from the base, so a changed .a1/verify.json is itself a reason
+# (suite_red_on_head, cause verify_config_changed) next to the frozen-list reason.
+expect "D1 reasons: flaky_base_grown plus the verify config change (suite_red_on_head)" "flaky_base_grown,suite_red_on_head" "$(reasons)"
+expect "D1 reason flaky_base_grown names the id" "unit" "$(js "j.reasons.find(r=>r.reason==='flaky_base_grown').id")"
+expect "D1 the suite reason names verify_config_changed" "true" "$(js "j.reasons.find(r=>r.reason==='suite_red_on_head').causes.includes('verify_config_changed')")"
+FPD="$(js 'j.suites.config_changed.fingerprint')"
+expect "D1 the report carries the verify-config fingerprint for the disposition" "verify-config:.a1/verify.json:" "$(printf '%s' "$FPD" | cut -c1-30)"
+dis add --kind config_change --fingerprint "$FPD" --reason "fixture: config reviewed" --by fx; g "$P" add -A; g "$P" commit -q -m cfg-disp
+dis review "$FPD" --verdict upheld --reason "fixture: ok" --by reviewer; g "$P" commit -q -m cfg-review -- .a1/dispositions.json; mc
+expect "D4 a reviewed config_change disposition clears the config part only: flaky_base_grown (the frozen list) stays" "1|flaky_base_grown" "$RC|$(reasons)"
 new_pr d2 0 0
 printf '{"commands":[{"id":"unit","argv":["bash","suite.sh"]}],"flaky_base":["unit"]}\n' > "$P/.a1/verify.json"; g "$P" commit -q -am "list on main"
 g "$P" checkout -q main; g "$P" merge -q --ff-only feat; g "$P" checkout -q -b feat2; printf '// x\n' >> "$P/src/app.js"; g "$P" commit -q -am work; mc
@@ -176,7 +210,7 @@ new_pr d3 0 0
 printf '{"commands":[{"id":"unit","argv":["bash","suite.sh"]}],"flaky_base":["unit"]}\n' > "$P/.a1/verify.json"
 g "$P" commit -q -am "list"; g "$P" checkout -q main; g "$P" merge -q --ff-only feat; g "$P" checkout -q -b feat3
 printf '{"commands":[{"id":"unit","argv":["bash","suite.sh"]}],"flaky_base":["unit","other"]}\n' > "$P/.a1/verify.json"; g "$P" commit -q -am "one more"; mc
-expect "D3 list grew by one on top of the base list: exit 1, only the new id named" "1|flaky_base_grown|other|1" "$RC|$(js 'j.reasons[0].reason+"|"+j.reasons[0].id+"|"+j.reasons.length')"
+expect "D3 list grew by one on top of the base list: exit 1, only the new id named by flaky_base_grown" "1|other|flaky_base_grown,suite_red_on_head" "$RC|$(js "j.reasons.find(r=>r.reason==='flaky_base_grown').id")|$(reasons)"
 
 # ---------- E: dispositions (FR-025 merge side) ----------
 dis() { (cd "$P" && node "$TOOLS" disposition "$@" >"$WORK/dis.out" 2>"$WORK/dis.err"); }
@@ -202,6 +236,88 @@ expect "F2 two merge-check calls wrote exactly two gate-log lines (count: none f
 expect "F2 every line is the pr-merge-check gate" "2" "$(grep -c '"gate":"pr-merge-check"' "$LOG" | tr -d ' ')"
 expect "F2 no verify-run gate line (count 0)" "0" "$(grep -c 'gate-1-build' "$LOG" | tr -d ' ')"
 expect "F3 the merge-check call leaves git status clean (cache and log are git-excluded)" "" "$(g "$P" status --porcelain)"
+
+# ---------- I: head pinning (review SEC-1 / M1) ----------
+new_pr i1 0 0; : > "$A1_FX_GH_LOG"; mc
+LOCAL_HEAD="$(g "$P" rev-parse HEAD)"
+expect "I1 head_sha in the report is the local HEAD the merge must pin (--match-head-commit)" "$LOCAL_HEAD" "$(js 'j.head_sha')"
+expect "I1 gh was asked for headRefOid (count 1)" "1" "$(grep -c '^pr view 7 --json headRefOid$' "$A1_FX_GH_LOG" | tr -d ' ')"
+OTHER_SHA="$(printf 'a%.0s' $(seq 1 40))"
+export A1_FX_HEAD="$OTHER_SHA"; mc; unset A1_FX_HEAD
+expect "I2 the PR head differs from local HEAD: exit 1, exactly head_mismatch (local_head_differs)" "1|head_mismatch|local_head_differs|1" "$RC|$(reasons)|$(js 'j.reasons[0].cause')|$(js 'j.reasons.length')"
+expect "I2 both shas named so the cause is readable" "$LOCAL_HEAD|$OTHER_SHA" "$(js 'j.reasons[0].local_head+"|"+j.reasons[0].pr_head')"
+printf 'module.exports = 3;\n' > "$P/src/app.js"; mc
+expect "I3 uncommitted change to a tracked file: exit 1 head_mismatch (dirty_tree)" "1|head_mismatch|dirty_tree" "$RC|$(reasons)|$(js 'j.reasons[0].cause')"
+g "$P" checkout -q -- src/app.js; printf 'stray\n' > "$P/stray.txt"; mc
+expect "I4 an untracked file counts as dirty: exit 1 head_mismatch, path named" "1|head_mismatch|stray.txt" "$RC|$(reasons)|$(js 'j.reasons[0].paths.join(",")')"
+rm -f "$P/stray.txt"; mkdir -p "$P/.a1/verify-cache" "$P/.a1/phases/zz"; printf 'x\n' > "$P/.a1/verify-cache/x.json"; printf '{}\n' > "$P/.a1/phases/zz/gate-log.jsonl"
+: > "$P/.git/info/exclude" # a checkout that lost its excludes: the two paths show up as untracked and must still be ignored
+expect "I5 premise: without the excludes git status lists both paths (count 2)" "2" "$(g "$P" status --porcelain --untracked-files=all | grep -c -e '\.a1/verify-cache/x\.json' -e 'phases/zz/gate-log\.jsonl')"
+mc
+expect "I5 the run's own cache and gate-log files do not make the tree dirty: exit 0" "0|0" "$RC|$(js 'j.reasons.length')"
+export A1_FX_HEAD="not-a-sha"; mc; unset A1_FX_HEAD
+expect "I6 gh gives no usable headRefOid: exit 2 gh_failed (never a silent pass)" "2|gh_failed" "$RC|$(js 'j.error')"
+
+# ---------- J: dispositions must be committed (review M2) ----------
+new_pr j1 0 0; dis add "${FIDELITY_ARGS[@]}"; g "$P" add -A; g "$P" commit -q -m disp
+FPJ="$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"))[0].fingerprint)' "$P/.a1/dispositions.json")"
+dis review "$FPJ" --verdict upheld --reason "fixture: upheld" --by reviewer; mc
+expect "J1 verdict recorded but not committed: exit 1, dispositions_uncommitted (the committed entry is still pending)" "1|disposition_unreviewed,dispositions_uncommitted" "$RC|$(reasons)"
+g "$P" commit -q -m review -- .a1/dispositions.json; mc
+expect "J2 the same verdict committed: exit 0, no reasons" "0|0" "$RC|$(js 'j.reasons.length')"
+dis review "$FPJ" --verdict overturned --reason "fixture: overturned" --by reviewer; g "$P" commit -q -m overturn -- .a1/dispositions.json
+dis review "$FPJ" --verdict upheld --reason "fixture: flipped back, not committed" --by reviewer; mc
+expect "J3 a working-tree flip from overturned to upheld does not hide the committed overturn: exit 1" "1|disposition_overturned,dispositions_uncommitted" "$RC|$(reasons)"
+new_pr j4 0 0; dis add "${FIDELITY_ARGS[@]}"; mc
+expect "J4 a dispositions file that was never committed: exit 1 dispositions_uncommitted" "1|dispositions_uncommitted" "$RC|$(reasons)"
+
+# ---------- K: no self-approval (review SEC-3 / m6) ----------
+new_pr k1 0 0; dis add "${FIDELITY_ARGS[@]}"; g "$P" add -A; g "$P" commit -q -m disp
+FPK="$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"))[0].fingerprint)' "$P/.a1/dispositions.json")"
+dis review "$FPK" --verdict upheld --reason "fixture: self" --by fx; g "$P" commit -q -m review -- .a1/dispositions.json; mc
+expect "K1 reviewed_by equals the entry's by: exit 1, disposition_self_reviewed names the fingerprint" "1|disposition_self_reviewed|$FPK" "$RC|$(reasons)|$(js 'j.reasons[0].fingerprint')"
+dis review "$FPK" --verdict upheld --reason "fixture: case differs" --by FX; g "$P" commit -q -m review2 -- .a1/dispositions.json; mc
+expect "K2 the same name in another case is still the author: exit 1 disposition_self_reviewed" "1|disposition_self_reviewed" "$RC|$(reasons)"
+dis review "$FPK" --verdict upheld --reason "fixture: nobody named"; g "$P" commit -q -m review3 -- .a1/dispositions.json; mc
+expect "K3 a verdict without reviewed_by: exit 1 disposition_self_reviewed" "1|disposition_self_reviewed" "$RC|$(reasons)"
+node -e 'const fs=require("fs");const f=process.argv[1];const j=JSON.parse(fs.readFileSync(f,"utf8"));j[0].reviewed_by="reviewer";delete j[0].reviewed_at;fs.writeFileSync(f,JSON.stringify(j,null,2)+"\n")' "$P/.a1/dispositions.json"; g "$P" commit -q -m review4 -- .a1/dispositions.json; mc
+expect "K4 a verdict without reviewed_at (hand-edited): exit 1 disposition_self_reviewed" "1|disposition_self_reviewed" "$RC|$(reasons)"
+dis review "$FPK" --verdict upheld --reason "fixture: independent" --by reviewer; g "$P" commit -q -m review5 -- .a1/dispositions.json; mc
+expect "K5 an independent reviewer: exit 0, no reasons" "0|0" "$RC|$(js 'j.reasons.length')"
+expect "K5 the newly upheld entry is listed in the report (count 1, reviewer named)" "1|$FPK|reviewer" "$(js 'j.upheld_dispositions.length+"|"+j.upheld_dispositions[0].fingerprint+"|"+j.upheld_dispositions[0].reviewed_by')"
+new_pr k6 0 0; mc
+expect "K6 no disposition on the branch: upheld_dispositions is an empty list (count 0)" "0" "$(js 'j.upheld_dispositions.length')"
+
+# ---------- L: fidelity config change (review SEC-2) ----------
+CFG='{"rules":{"skipped-test":"off"}}'
+fid_base() { printf '{"rules":{}}\n' > "$1/.a1/fidelity.json"; }
+new_pr l1 0 0; printf '%s\n' "$CFG" > "$P/.a1/fidelity.json"; g "$P" add -A; g "$P" commit -q -m "add fidelity config"; mc
+expect "L1 .a1/fidelity.json added on the branch: exit 1 fidelity_config_changed" "1|fidelity_config_changed|added" "$RC|$(reasons)|$(js 'j.reasons[0].change')"
+FPL="$(js 'j.reasons[0].fingerprint')"
+mc --accept-config-change "owner reviewed the rule switch in chat"
+expect "L2 --accept-config-change <reason>: exit 0, the reason is logged in the report" "0|owner reviewed the rule switch in chat|.a1/fidelity.json" "$RC|$(js 'j.config_change_accepted[0].reason')|$(js 'j.config_change_accepted[0].file')"
+dis add --kind config_change --fingerprint "$FPL" --reason "fixture: config reviewed" --by fx; g "$P" add -A; g "$P" commit -q -m cfg-disp
+dis review "$FPL" --verdict upheld --reason "fixture: ok" --by reviewer; g "$P" commit -q -m cfg-review -- .a1/dispositions.json; mc
+expect "L3 an upheld config_change disposition from another reviewer on that exact content: exit 0" "0|0" "$RC|$(js 'j.reasons.length')"
+printf '{"rules":{"skipped-test":"off","mock-of-subject":"off"}}\n' > "$P/.a1/fidelity.json"; g "$P" commit -q -am "config changed again"; mc
+expect "L4 the config changes again after the review: the old disposition no longer matches, exit 1 fidelity_config_changed with a new fingerprint" "1|fidelity_config_changed|new" "$RC|$(reasons)|$([[ "$(js 'j.reasons[0].fingerprint')" != "$FPL" ]] && echo new || echo same)"
+new_pr l5 0 0; printf '%s\n' "$CFG" > "$P/.a1/fidelity.json"; g "$P" add -A; g "$P" commit -q -m cfg; mc; FPL5="$(js 'j.reasons[0].fingerprint')"
+dis add --kind config_change --fingerprint "$FPL5" --reason "fixture: self" --by fx; dis review "$FPL5" --verdict upheld --reason "fixture: self" --by fx; g "$P" add -A; g "$P" commit -q -m cfg-self; mc
+expect "L5 a config disposition the author reviewed himself clears nothing: exit 1 (fidelity_config_changed + disposition_self_reviewed)" "1|disposition_self_reviewed,fidelity_config_changed" "$RC|$(reasons)"
+new_pr l6 0 0; fid_base "$P"; g "$P" add -A; g "$P" commit -q -m cfg; g "$P" checkout -q main; g "$P" merge -q --ff-only feat; g "$P" checkout -q -b feat6; printf '// y\n' >> "$P/src/app.js"; g "$P" commit -q -am work; mc
+expect "L6 the config is the same on the base and on head: exit 0, no reason" "0|0" "$RC|$(js 'j.reasons.length')"
+new_pr l8 0 0; printf '%s\n' "$CFG" > "$P/.a1/fidelity.json"; g "$P" add -A; g "$P" commit -q -m cfg; mc; FPL8="$(js 'j.reasons[0].fingerprint')"
+dis add --kind config_change --fingerprint "$FPL8" --reason "fixture: pending only" --by fx; g "$P" add -A; g "$P" commit -q -m cfg-pending; mc
+expect "L8 a pending (unreviewed) config disposition clears nothing: exit 1 (fidelity_config_changed + disposition_unreviewed)" "1|disposition_unreviewed,fidelity_config_changed" "$RC|$(reasons)"
+BASE_HOOK=fid_base new_pr l7 0 0; g "$P" rm -q .a1/fidelity.json; g "$P" commit -q -m "drop config"; mc
+expect "L7 the config is deleted on the branch: exit 1 fidelity_config_changed (removed)" "1|fidelity_config_changed|removed" "$RC|$(reasons)|$(js 'j.reasons[0].change')"
+
+# ---------- M: gh binary provenance (review SEC-4) ----------
+new_pr m4 0 0; mc
+expect "M1b A1_GH_BIN override: stderr names the binary" "1" "$(printf '%s\n' "$ERR" | grep -c "^pr merge-check: gh from A1_GH_BIN=$WORK/bin/gh$" | tr -d ' ')"
+expect "M1b the report says gh_bin override" "override" "$(js 'j.gh_bin')"
+OUT="$(cd "$P" && PATH="$WORK/bin:$PATH" A1_FX_CHECKS="$CHK" node "$TOOLS" pr merge-check --pr 7 --base main --phase fx-w10 2>"$WORK/err")"; RC=$?; ERR="$(cat "$WORK/err")"
+expect "M2 default gh from PATH: gh_bin default, no A1_GH_BIN line on stderr (count 0)" "0|default|0" "$RC|$(js 'j.gh_bin')|$(printf '%s\n' "$ERR" | grep -c 'A1_GH_BIN' | tr -d ' ')"
 
 # ---------- G: hostile and usage inputs ----------
 new_pr h1 0 0

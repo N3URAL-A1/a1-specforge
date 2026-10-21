@@ -15,11 +15,20 @@ Preconditions:
 ## 5.1 Disposition review state (FR-025)
 
 List the dispositions added or changed since the base: `git diff <base>...HEAD -- .a1/dispositions.json`.
-Reinhard reviews each one; record every verdict. No changed disposition: nothing to record, go to 5.2.
+Reinhard reviews each one; record every verdict with `--by a1-reinhard-reviewer`. The author of an entry never reviews it
+(`disposition_self_reviewed`). No changed disposition: nothing to record, go to 5.2.
+
+The merge check reads verdicts from the committed `HEAD`, not from the working tree (`dispositions_uncommitted`). After the
+last verdict, commit and push the file in the same block (this is the review round's push, `_shared/push-cadence.md` P1), then run
+5.3 again. Repeat the `disposition review` line once per fingerprint before the commit.
 
 ```bash
 node <repo>/_shared/a1-tools.cjs disposition review <fingerprint> --verdict <upheld|overturned> --reason "<why>" --by a1-reinhard-reviewer; RC=$?
 if [ "$RC" -ne 0 ]; then echo "STOP: disposition review exit=$RC, no merge"; exit "$RC"; fi
+git commit -m "chore(review): disposition verdicts for pr <n>" -- .a1/dispositions.json; RC=$?
+if [ "$RC" -ne 0 ]; then echo "STOP: commit of .a1/dispositions.json exit=$RC, no merge"; exit "$RC"; fi
+git push; RC=$?
+if [ "$RC" -ne 0 ]; then echo "STOP: push exit=$RC, no merge"; exit "$RC"; fi
 ```
 
 An `overturned` verdict blocks the merge in 5.3 (`disposition_overturned`); fix the finding, then run 5.1 again.
@@ -34,6 +43,11 @@ if [ "$RC" -ne 0 ]; then echo "STOP: product validate exit=$RC, no merge. Exit 1
 ## 5.3 Merge check (FR-036, FR-037)
 
 Add `--bug <fix-report-id>` for a test that is red on head AND base and has an a1-fix report (`base_red_unreported` otherwise).
+The report must be a real a1-fix report (frontmatter `type: bug-report`, `bug_slug`, `status`) in the vault or committed at the base.
+One `--bug` clears every base-red id; required checks red on head are never compared with the base.
+`head_mismatch` means the local checkout is not the PR head on a clean tree: push or check out the PR head, then run again.
+A changed `.a1/fidelity.json` blocks (`fidelity_config_changed`): clear it by an upheld `config_change` disposition from a second
+reviewer, or pass `--accept-config-change "<reason>"` after the owner agreed (the report logs the reason).
 
 ```bash
 node <repo>/_shared/a1-tools.cjs pr merge-check --pr <n> --phase pr-<n>; RC=$?
@@ -45,10 +59,11 @@ Exit 1 names every red reason in `reasons[]`. Fix the cause and run 5.1 to 5.3 a
 ## 5.4 Merge
 
 Run this as the only command of the Bash call (the hook allows one canonical form, `_shared/lib/xprov-hook-merge.cjs`).
-PR bodies go in with `--body-file`, never inline.
+PR bodies go in with `--body-file`, never inline. `<head_sha>` is `head_sha` from the stdout of 5.3 (40 hex): GitHub then merges
+that commit or refuses, so a push between the check and the merge cannot slip in (spec 017 review SEC-1).
 
 ```bash
-gh pr merge <n> --squash --delete-branch
+gh pr merge <n> --squash --delete-branch --match-head-commit <head_sha>
 ```
 
 Then verify it landed (`gh pr view <n> --json state,mergedAt`), sync the primary checkout's `main`
@@ -59,4 +74,4 @@ Production deploys and migrations on a production database still need the user's
 ## Failure modes
 
 - Any of 5.1 to 5.3 exits 1 or 2: no merge. Report the reason, fix, repeat from 5.1.
-- `gh pr merge` denied by the hook: read the hint, fix the cause (head sha moved, local ref differs). Do not rephrase the command.
+- `gh pr merge` denied by the hook: read the hint, fix the cause (head sha moved: run 5.3 again and use the new `head_sha`; local ref differs). Do not rephrase the command.

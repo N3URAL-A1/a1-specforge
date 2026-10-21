@@ -25,6 +25,9 @@ const KINDS = Object.freeze({
   fidelity: Object.freeze(['mock-of-subject', 'skipped-test', 'early-return-guard', 'test-not-in-ci']),
   skip_increase: Object.freeze(['skip-increase']),
   class_sweep: Object.freeze(['class-sweep']),
+  // Spec 017 review (SEC-2): a changed .a1/fidelity.json (rule fidelity-config, merge-check) or .a1/verify.json (rule verify-config,
+  // verify run --base) is cleared by a reviewed entry on the exact head content.
+  config_change: Object.freeze(['fidelity-config', 'verify-config']),
 });
 const REVIEWS = Object.freeze(['pending', 'upheld', 'overturned']);
 const VERDICTS = Object.freeze(['upheld', 'overturned']);
@@ -87,7 +90,7 @@ function parseFingerprint(fp) {
 
 /** Validates the fingerprint against its kind (the rule id must belong to the kind) and returns the parsed parts. */
 function checkFingerprint(kind, fp) {
-  if (!Object.prototype.hasOwnProperty.call(KINDS, kind)) throw bad(`unknown kind ${JSON.stringify(String(kind).slice(0, 40))} (fidelity | skip_increase | class_sweep)`);
+  if (!Object.prototype.hasOwnProperty.call(KINDS, kind)) throw bad(`unknown kind ${JSON.stringify(String(kind).slice(0, 40))} (fidelity | skip_increase | class_sweep | config_change)`);
   const parts = parseFingerprint(fp);
   if (!KINDS[kind].includes(parts.rule)) throw bad(`rule ${JSON.stringify(parts.rule.slice(0, 60))} does not belong to kind ${kind} (${KINDS[kind].join(' | ')})`);
   return parts;
@@ -154,17 +157,57 @@ function clearedFingerprints(entries, kind) {
 
 // ---------- write (lock + atomic rename) ----------
 
-function acquireLock(lockDir) {
-  for (let i = 0; i < LOCK_RETRIES; i++) {
-    try { fs.mkdirSync(lockDir); return; } catch (e) {
+const OWNER_FILE = 'owner';
+const NONCE_BYTES = 8;
+
+function readOwner(lockDir) {
+  try { return fs.readFileSync(path.join(lockDir, OWNER_FILE), 'utf8').trim(); } catch (_e) { return null; }
+}
+
+/**
+ * Steals a lock that looked stale. SEC-7: rename (atomic: one thief wins), then verify what was moved. If the moved directory carries
+ * another owner token than the one observed, or is younger than the stale age, a live lock was swapped in between stat and rename:
+ * move it back (best effort; the writer's own ownership check before the write covers the rest).
+ */
+function stealStale(lockDir, observedOwner, token) {
+  const grave = `${lockDir}.stale.${token.replace(/[^0-9a-f]/g, '')}`;
+  try { fs.renameSync(lockDir, grave); } catch (_e) { return; } // lost the race or already gone
+  let live = true;
+  try { live = Date.now() - fs.statSync(grave).mtimeMs <= LOCK_STALE_MS || readOwner(grave) !== observedOwner; } catch (_e) { live = false; }
+  if (live) {
+    try { fs.renameSync(grave, lockDir); return; } catch (_e) { /* a new lock exists: the victim's ownership check fails safe */ }
+  }
+  try { fs.rmSync(grave, { recursive: true, force: true }); } catch (_e) { /* leftover grave is harmless */ }
+}
+
+/** Takes the mkdir lock; returns the owner token written inside it. opts: { retries, retryMs, staleMs } (fixtures). */
+function acquireLock(lockDir, opts = {}) {
+  const retries = opts.retries === undefined ? LOCK_RETRIES : opts.retries;
+  const retryMs = opts.retryMs === undefined ? LOCK_RETRY_MS : opts.retryMs;
+  const token = `${process.pid}:${crypto.randomBytes(NONCE_BYTES).toString('hex')}`;
+  for (let i = 0; i < retries; i++) {
+    try {
+      fs.mkdirSync(lockDir);
+      fs.writeFileSync(path.join(lockDir, OWNER_FILE), `${token}\n`, 'utf8');
+      return token;
+    } catch (e) {
       if (e.code !== 'EEXIST') throw e;
       try {
-        if (Date.now() - fs.statSync(lockDir).mtimeMs > LOCK_STALE_MS) fs.rmdirSync(lockDir);
+        const observed = readOwner(lockDir);
+        if (Date.now() - fs.statSync(lockDir).mtimeMs > LOCK_STALE_MS) stealStale(lockDir, observed, token);
       } catch (_e) { /* lost the race or already gone */ }
-      sleepSyncMs(LOCK_RETRY_MS);
+      sleepSyncMs(retryMs);
     }
   }
   throw new DispositionError('lock', `could not lock ${path.basename(lockDir)} (another disposition command is running?)`);
+}
+
+function ownsLock(lockDir, token) { return readOwner(lockDir) === token; }
+
+/** Removes the lock only when it is still ours. */
+function releaseLock(lockDir, token) {
+  if (!ownsLock(lockDir, token)) return;
+  try { fs.rmSync(lockDir, { recursive: true, force: true }); } catch (_e) { /* already gone */ }
 }
 
 /** Runs fn(entries) under the mkdir lock; fn returns the new list (or null for "no write"). Returns fn's second slot. */
@@ -172,17 +215,18 @@ function withEntries(project, fn) {
   const file = filePath(project);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const lockDir = `${file}.lock.d`;
-  acquireLock(lockDir);
+  const token = acquireLock(lockDir);
   try {
     const { next, result } = fn(loadEntries(project));
     if (next !== null) {
+      if (!ownsLock(lockDir, token)) throw new DispositionError('lock', `lost the lock on ${path.basename(file)} while working; nothing written, run the command again`);
       const tmp = `${file}.tmp.${process.pid}`;
       fs.writeFileSync(tmp, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
       fs.renameSync(tmp, file);
     }
     return result;
   } finally {
-    try { fs.rmdirSync(lockDir); } catch (_e) { /* already gone */ }
+    releaseLock(lockDir, token);
   }
 }
 
@@ -207,6 +251,22 @@ function changedBetween(project, baseRef, headRef = 'HEAD') {
   return entriesAt(project, headRef).filter((e) => base.get(e.fingerprint) !== JSON.stringify(e));
 }
 
+/** SEC-3: a verdict needs a reviewer other than the author: reviewed_by and reviewed_at present, reviewed_by != by. */
+function isSelfReviewed(e) {
+  if (e.review === 'pending') return false;
+  const named = (v) => typeof v === 'string' && v.trim() !== '';
+  if (!named(e.reviewed_by) || !named(e.reviewed_at)) return true;
+  return e.reviewed_by.trim().toLowerCase() === String(e.by).trim().toLowerCase();
+}
+
+/** Merge-check feed for the entries new/changed base..head: self-reviewed verdicts and the newly upheld list (reported, not blocking). */
+function reviewIntegrity(project, baseRef, headRef = 'HEAD') {
+  const changed = changedBetween(project, baseRef, headRef);
+  const selfReviewed = changed.filter(isSelfReviewed).map((e) => ({ reason: 'disposition_self_reviewed', kind: e.kind, fingerprint: e.fingerprint, by: e.by, reviewed_by: e.reviewed_by || null }));
+  const upheld = changed.filter((e) => e.review === 'upheld').map((e) => ({ kind: e.kind, fingerprint: e.fingerprint, by: e.by, reviewed_by: e.reviewed_by || null, reason: e.reason, review_reason: e.review_reason }));
+  return { selfReviewed, upheld };
+}
+
 /**
  * The merge-check feed (wave 10): [{ reason, kind, fingerprint }].
  * disposition_unreviewed: a changed entry still pending. disposition_overturned: any overturned entry at head.
@@ -221,4 +281,5 @@ module.exports = {
   DispositionError, KINDS, VERDICTS, FILE_GIT, MAX_REASON, MAX_BY,
   normalise, textHash, isSafeFile, fingerprintOf, parseFingerprint, checkFingerprint, checkText,
   checkEntry, parseEntries, loadEntries, clearedFingerprints, withEntries, entriesAt, changedBetween, pendingOrOverturned,
+  isSelfReviewed, reviewIntegrity, acquireLock, releaseLock, ownsLock,
 };

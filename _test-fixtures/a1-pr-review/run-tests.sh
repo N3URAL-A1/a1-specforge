@@ -224,7 +224,7 @@ if [ "$order" = "DCMG" ]; then pass_case "block order: disposition review, coher
 if [ "$(bj 'b.filter(x=>/gh pr merge/.test(x)).length')" = "1" ] && [ "$(bj 'b.findIndex(x=>/gh pr merge/.test(x))')" = "3" ]; then
   pass_case "no gh pr merge before the three checks: exactly one merge command, in the last block"
 else fail_case "gh pr merge appears outside the last fenced block"; fi
-if [ "$(bj 'b[3].trim()')" = "gh pr merge <n> --squash --delete-branch" ]; then pass_case "the merge block is exactly the canonical form the hook allows (only command, no extra flags)"
+if [ "$(bj 'b[3].trim()')" = "gh pr merge <n> --squash --delete-branch --match-head-commit <head_sha>" ]; then pass_case "the merge block is exactly the canonical form the hook allows, with the head pin (only command, no other flags)"
 else fail_case "merge block is not the byte-exact canonical form: $(bj 'JSON.stringify(b[3])')"; fi
 if [ "$(bj 'b.slice(0,3).filter(x=>/RC=\$\?/.test(x)&&/-ne 0/.test(x)&&/exit "\$RC"/.test(x)).length')" = "3" ]; then pass_case "each check block tests its exit code explicitly and stops on non-zero (count 3)"
 else fail_case "a check block does not test \$? and exit"; fi
@@ -258,6 +258,20 @@ if [ "$(rbj 'b.findIndex(x=>/disposition review /.test(x))>b.findIndex(x=>/xprov
 if grep -q 'Dispositions changed between base and head' "$REV"; then pass_case "the Reinhard brief carries the changed dispositions"; else fail_case "Reinhard brief lacks the changed-dispositions line"; fi
 if grep -q 'overturned' "$AGT" && grep -q 'upheld' "$AGT" && grep -q 'Disposition Review' "$AGT"; then pass_case "Reinhard agent file states the disposition review duty with upheld/overturned"; else fail_case "agents/a1-reinhard-reviewer.md lacks the disposition review duty"; fi
 if [ "$(wc -l < "$AGT")" -le 260 ]; then pass_case "Reinhard agent file stays short (<= 260 lines)"; else fail_case "Reinhard agent file grew past 260 lines"; fi
+
+# ---------- spec 017 review round A (M1, M2): head pin and committed dispositions ----------
+# Measured red 2026-10-21 (git-archive snapshot, one line changed, suite run):
+#   05-merge.md: `--match-head-commit <head_sha>` removed from the merge block   : head-pin case (and the byte-exact canonical case)
+#   05-merge.md: `git push` removed from the disposition block                    : commit+push case
+#   02-review.md: the commit+push block removed from 2.3b                         : 2.3b commit+push case
+if [ "$(bj 'b[0].includes("git commit -m") && b[0].includes("-- .a1/dispositions.json") && b[0].includes("git push") && b[0].indexOf("disposition review") < b[0].indexOf("git commit") && b[0].indexOf("git commit") < b[0].indexOf("git push")')" = "true" ]; then pass_case "05-merge 5.1 commits .a1/dispositions.json (explicit path) and pushes, after the review call"
+else fail_case "05-merge 5.1 block lacks the ordered review, commit (-- .a1/dispositions.json), push sequence"; fi
+if [ "$(bj 'b[3].includes("--match-head-commit <head_sha>")')" = "true" ] && grep -q 'head_sha' "$MRG"; then pass_case "05-merge 5.4 pins the merge to the head_sha that merge-check reported"
+else fail_case "05-merge 5.4 does not pass --match-head-commit <head_sha>"; fi
+if [ "$(rbj 'b.filter(x=>/git commit -m/.test(x)&&/-- \.a1\/dispositions\.json/.test(x)&&/git push/.test(x)).length')" = "1" ]; then pass_case "02-review 2.3b has one commit+push block for .a1/dispositions.json (count)"
+else fail_case "02-review 2.3b lacks the commit+push block for the dispositions file"; fi
+if grep -q 'dispositions_uncommitted' "$MRG" && grep -q 'dispositions_uncommitted' "$REV"; then pass_case "both workflows name dispositions_uncommitted as the reason for the commit step"
+else fail_case "a workflow does not explain dispositions_uncommitted"; fi
 
 echo ""
 echo "a1-pr-review: $pass passed, $fail failed"

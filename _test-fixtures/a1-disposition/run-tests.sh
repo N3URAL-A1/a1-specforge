@@ -31,6 +31,12 @@
 #   disposition.cjs fingerprintFromFlags(): line rule without --line accepted             : C16
 #   disposition.cjs cmdReview(): verdict not validated                                    : C26
 #   disposition.cjs cmdReview(): reason not validated                                     : C27
+#   disposition-store.cjs stealStale(): post-rename live check removed (always remove)     : H1
+#   disposition-store.cjs acquireLock(): stale steal removed                              : H2, H3
+#   disposition-store.cjs withEntries(): ownsLock check before the write removed           : H4
+#   disposition-store.cjs releaseLock(): ownership check removed (always rmdir)            : H5
+#   disposition-store.cjs KINDS: config_change removed                                     : H7, H7b
+#   disposition-store.cjs KINDS: verify-config dropped from config_change                  : H7b (and a1-verify R1d)
 #   verify-cli.cjs KNOWN_FLAGS: a `skip` flag added                                       : F1
 #   test-fidelity.cjs scan(): dispositions not applied                                    : A2, A3, A5, A8 (and a1-test-fidelity H4b)
 #   test-fidelity.cjs scan(): any kind of disposition clears (not only fidelity)          : A2, A3, A5, A8
@@ -227,6 +233,63 @@ OUT="$(node -e 'const d=require(process.argv[1]+"/disposition.cjs");const e=d.lo
 expect "G1 the repo store loads and validates (exit 0)" 0 "$RC"
 expect "G2 each of the 4 real/*.test.ts fixture files has a disposition (count of distinct files)" 4 "$(js 'j.files.filter(f=>/^_test-fixtures\/a1-test-fidelity\/real\/.*\.test\.ts$/.test(f)).length')"
 expect "G3 every committed disposition says fixture data from a1-office and none is overturned (count 0)" 0 "$(js 'j.bad')"
+
+# ---------- H: lock ownership (review SEC-7) and the reviewer fields (SEC-3) ----------
+# The steal path used rmdir on whatever was there; a lock swapped in between stat and rmdir was removed under its holder.
+LOCKJS="$WORK/lock-probe.cjs"
+cat > "$LOCKJS" <<'JS'
+const fs = require('fs'); const path = require('path');
+const [lib, mode, dir] = process.argv.slice(2);
+const D = require(`${lib}/disposition-store.cjs`);
+const lock = path.join(dir, 'x.lock.d');
+const owner = () => { try { return fs.readFileSync(path.join(lock, 'owner'), 'utf8').trim(); } catch (_e) { return 'none'; } };
+const graves = () => fs.readdirSync(dir).filter((n) => n.includes('.stale.')).length;
+if (mode === 'live') { // stat says stale once, the real lock is fresh and owned by someone else
+  fs.mkdirSync(lock); fs.writeFileSync(path.join(lock, 'owner'), '4242:live\n');
+  const real = fs.statSync; let n = 0;
+  fs.statSync = function (p, ...a) { return p === lock && n++ === 0 ? { mtimeMs: 0 } : real.call(fs, p, ...a); };
+  let code = 'acquired';
+  try { D.acquireLock(lock, { retries: 3, retryMs: 1 }); } catch (e) { code = e.code; }
+  console.log(`${code}|${owner()}|${graves()}`);
+} else if (mode === 'stale') { // really stale: stolen, new owner token, no grave left
+  fs.mkdirSync(lock); fs.writeFileSync(path.join(lock, 'owner'), '1:dead\n');
+  const old = new Date(Date.now() - 120000); fs.utimesSync(lock, old, old);
+  const token = D.acquireLock(lock, { retries: 5, retryMs: 1 });
+  console.log(`${owner() === token ? 'ours' : 'other'}|${token.startsWith(`${process.pid}:`) ? 'pid' : 'nopid'}|${graves()}`);
+} else if (mode === 'ownerless') { // a crash left the dir without an owner file: stale by age, stolen
+  fs.mkdirSync(lock); const old = new Date(Date.now() - 120000); fs.utimesSync(lock, old, old);
+  const token = D.acquireLock(lock, { retries: 5, retryMs: 1 });
+  console.log(`${owner() === token ? 'ours' : 'other'}|${graves()}`);
+} else if (mode === 'lost' || mode === 'foreign') { // the lock is taken away while fn runs
+  const entry = { kind: 'fidelity', fingerprint: 'skipped-test:t/a.ts:0123456789abcdef', reason: 'r', date: '2026-10-21', by: 'fx', review: 'pending' };
+  const lockDir = path.join(dir, '.a1', 'dispositions.json.lock.d');
+  let code = 'done';
+  try {
+    D.withEntries(dir, (list) => {
+      fs.writeFileSync(path.join(lockDir, 'owner'), '999:thief\n');
+      return mode === 'lost' ? { next: [...list, entry], result: true } : { next: null, result: true };
+    });
+  } catch (e) { code = e.code; }
+  const written = fs.existsSync(path.join(dir, '.a1', 'dispositions.json')) ? 'written' : 'not-written';
+  const left = fs.existsSync(lockDir) ? fs.readFileSync(path.join(lockDir, 'owner'), 'utf8').trim() : 'gone';
+  console.log(`${code}|${written}|${left}`);
+}
+JS
+lockrun() { local d="$WORK/lk-$1"; rm -rf "$d"; mkdir -p "$d"; node "$LOCKJS" "$LIB" "$1" "$d" 2>&1; }
+expect "H1 a fresh lock that looked stale at stat time is not stolen: acquire gives up with 'lock', the owner token and dir stay, no grave left" "lock|4242:live|0" "$(lockrun live)"
+expect "H2 a really stale lock is stolen: new owner token is ours (pid-prefixed), no grave left" "ours|pid|0" "$(lockrun stale)"
+expect "H3 a stale lock without an owner file (crash between mkdir and write) is stolen" "ours|0" "$(lockrun ownerless)"
+expect "H4 the lock was taken over while fn ran: withEntries throws 'lock' and writes nothing; the thief's lock is left alone" "lock|not-written|999:thief" "$(lockrun lost)"
+expect "H5 a lock taken over while fn ran, nothing to write: the finally does not remove the thief's lock" "done|not-written|999:thief" "$(lockrun foreign)"
+new_repo; add_mock; FPH="$(store 'j[0].fingerprint')"
+dis review "$FPH" --verdict upheld --reason "fixture: ok" --by reviewer
+expect "H6 review records reviewed_by and reviewed_at (an ISO time) next to the verdict" "reviewer|1|upheld" "$(store 'j[0].reviewed_by+"|"+(/^\d{4}-\d{2}-\d{2}T/.test(j[0].reviewed_at)?1:0)+"|"+j[0].review')"
+dis add --kind config_change --rule fidelity-config --file .a1/fidelity.json --text '{"rules":{}}' --reason "fixture: cfg" --by fx
+expect "H7 kind config_change with rule fidelity-config is accepted: exit 0, fingerprint starts fidelity-config:.a1/fidelity.json:" "0|1" "$RC|$(store 'j.filter(e=>e.kind==="config_change"&&e.fingerprint.startsWith("fidelity-config:.a1/fidelity.json:")).length')"
+dis add --kind config_change --rule verify-config --file .a1/verify.json --text '{"commands":[]}' --reason "fixture: verify cfg" --by fx
+expect "H7b kind config_change with rule verify-config (round B verify_config_changed) is accepted: exit 0, fingerprint starts verify-config:.a1/verify.json:" "0|1" "$RC|$(store 'j.filter(e=>e.kind==="config_change"&&e.fingerprint.startsWith("verify-config:.a1/verify.json:")).length')"
+dis add --kind config_change --rule skipped-test --file .a1/fidelity.json --text x --reason "fixture: cfg" --by fx
+expect "H8 kind config_change with a rule of another kind is refused: exit 2" 2 "$RC"
 
 echo "a1-disposition: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

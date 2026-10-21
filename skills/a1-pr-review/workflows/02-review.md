@@ -112,6 +112,17 @@ node <repo>/_shared/a1-tools.cjs disposition review <fingerprint> --verdict <uph
 if [ "$RC" -ne 0 ]; then echo "STOP: disposition review exit=$RC"; exit "$RC"; fi
 ```
 
+After the last verdict, commit and push the file, then run the merge check again (`workflows/05-merge.md` 5.3): it reads verdicts from
+the committed `HEAD` only and refuses `dispositions_uncommitted`. Use `--by a1-reinhard-reviewer` on every review; the author of an entry never
+reviews it (`disposition_self_reviewed`). Push once per review round (`_shared/push-cadence.md` P1).
+
+```bash
+git commit -m "chore(review): disposition verdicts for pr <n>" -- .a1/dispositions.json; RC=$?
+if [ "$RC" -ne 0 ]; then echo "STOP: commit of .a1/dispositions.json exit=$RC"; exit "$RC"; fi
+git push; RC=$?
+if [ "$RC" -ne 0 ]; then echo "STOP: push exit=$RC"; exit "$RC"; fi
+```
+
 An `overturned` verdict is a MAJOR finding in `findings.json` (title `disposition overturned: <fingerprint>`) and blocks the
 merge check of `workflows/05-merge.md` until the finding is fixed.
 

@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 // `a1-tools disposition add | review` — spec 017 FR-025 (Wave 8).
 //   add     records an entry with review: pending
-//             --kind fidelity|skip_increase|class_sweep --reason <t> --by <who>
+//             --kind fidelity|skip_increase|class_sweep|config_change --reason <t> --by <who>
 //             (--fingerprint <fp> | --rule <id> --file <path> [--line <n> | --text <t>]) [--project <dir>]
 //   review  <fingerprint> --verdict upheld|overturned --reason <t> [--by <who>] [--project <dir>]
 // Exit 0 recorded / 1 refused (duplicate, unknown fingerprint; JSON `error` on stdout) / 2 usage or
@@ -20,7 +20,7 @@ const SNIPPET_MAX = 160; // the same cut test-fidelity applies to a finding's li
 const ADD_FLAGS = { kind: 'string', fingerprint: 'string', rule: 'string', file: 'string', line: 'string', text: 'string', reason: 'string', by: 'string', project: 'string' };
 const REVIEW_FLAGS = { verdict: 'string', reason: 'string', by: 'string', project: 'string' };
 const FILE_LEVEL_RULES = Object.freeze(['test-not-in-ci']);
-const USAGE = 'usage: a1-tools disposition add --kind <fidelity|skip_increase|class_sweep> (--fingerprint <fp> | --rule <id> --file <path> [--line <n> | --text <t>]) --reason <t> --by <who> [--project <dir>]\n'
+const USAGE = 'usage: a1-tools disposition add --kind <fidelity|skip_increase|class_sweep|config_change> (--fingerprint <fp> | --rule <id> --file <path> [--line <n> | --text <t>]) --reason <t> --by <who> [--project <dir>]\n'
   + '       a1-tools disposition review <fingerprint> --verdict <upheld|overturned> --reason <t> [--by <who>] [--project <dir>]\n';
 
 class UsageError extends Error {}
