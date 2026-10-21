@@ -24,7 +24,17 @@ jobs:
           node-version: '20'
 
       - name: Syntax check
-        run: node --check _shared/a1-tools.cjs
+        # Spec 017 FR-005 (wave 10): the facade plus every module spec 017 added under
+        # _shared/lib/. A missing file fails the job (node --check exits 1).
+        run: |
+          set -e
+          node --check _shared/a1-tools.cjs
+          for f in disposition-store disposition enforced-since fidelity-ci-runners fidelity-ci fidelity-resolve \
+            fidelity-rules fidelity-tokenizer fix-class-sweep gate-log gates-cli gates-lint help-disposition \
+            help-fidelity help-fix-sweep help-gates help-merge-check help-verify pr-merge-check product-validate-ci \
+            retro-gatelog test-fidelity verify-base verify-check verify-cli verify-reporters verify-run; do
+            node --check "_shared/lib/$f.cjs"
+          done
 
       - name: Install gitleaks (pinned, checksum-checked)
         # Spec 014 FR-011: gitleaks is required for blocking xprov gates. The version and the sha256 of

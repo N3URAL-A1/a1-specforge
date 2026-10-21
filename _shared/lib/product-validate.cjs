@@ -203,6 +203,21 @@ function detectGermanMarkers(content, label) {
   return `${label}: contains German-language markers (umlauts/ß or common German function words) — docs/product/ artifacts must be authored in English (FR-016). Best-effort lint; review for accidental German prose.`;
 }
 
+/** Spec 017 FR-034: `--require-vault` (merge-time coherence) implies `--spec-status` and refuses to run
+ * without a real vault: A1_VAULT_ROOT unset or not a directory -> exit 2, so a merge step cannot pass on
+ * the repo-local fallback. Combined with --ci it is a usage error (the two modes exclude each other). */
+function requireVaultOrExit(flags) {
+  const root = process.env.A1_VAULT_ROOT;
+  let ok = false;
+  try { ok = Boolean(root) && fs.statSync(root).isDirectory(); } catch (_e) { ok = false; }
+  const why = flags.ci ? '--require-vault and --ci exclude each other'
+    : ok ? null : 'A1_VAULT_ROOT is unset or not a directory; the merge-time coherence check needs the vault';
+  if (why === null) return;
+  process.stdout.write(JSON.stringify({ valid: false, error: 'vault_required', message: why }) + '\n');
+  process.stderr.write(`product validate: ${why}\n`);
+  process.exit(2);
+}
+
 /** product validate [--dir docs/product]: read-only schema check of
  * <dir>/ROADMAP.md frontmatter against docs/product/SCHEMA.md section 1 /
  * index.schema.json, plus (schema v1.1, Wave 1) VISION.md (section 6) and
@@ -215,7 +230,8 @@ function detectGermanMarkers(content, label) {
  * features/<###>-<slug>/feature.md, VISION.md, and every audits/*.md.
  * Never writes any file. Exit: 0 valid, 1 invalid or ROADMAP.md missing. */
 function cmdProductValidate(args) {
-  const flags = parseFlags(args, { dir: 'value', 'spec-status': 'bool', ci: 'bool' });
+  const flags = parseFlags(args, { dir: 'value', 'spec-status': 'bool', ci: 'bool', 'require-vault': 'bool' });
+  if (flags['require-vault']) requireVaultOrExit(flags);
   const dir = productDirFromFlags(flags);
   const roadmapFile = path.join(dir, 'ROADMAP.md');
   if (flags.ci && !fs.existsSync(roadmapFile)) {
@@ -320,7 +336,7 @@ function cmdProductValidate(args) {
   // Spec 017 FR-033: `--ci` swaps the vault-backed section for the roadmap-internal spec_path check (no vault).
   const coherence = flags.ci
     ? { ci: require('./product-validate-ci.cjs').ciSection({ roadmapFm: fm, dir }) }
-    : flags['spec-status'] ? { spec_status: require('./spec-coherence.cjs').specStatusSection(fm) } : {};
+    : flags['spec-status'] || flags['require-vault'] ? { spec_status: require('./spec-coherence.cjs').specStatusSection(fm) } : {};
   const coherenceViolations = (coherence.spec_status || coherence.ci || { violations: [] }).violations.length;
   process.stdout.write(JSON.stringify({ valid, errors, warnings, file: roadmapFile, ...coherence }, null, 2) + '\n');
   process.exit(valid && coherenceViolations === 0 ? 0 : 1);
