@@ -9,7 +9,26 @@
 # _test-fixtures/a1-vault-cockpit/spec-drift/005-vault-first-artifacts.md in a sentinel temp vault.
 #
 # Measured red (git-archive snapshot, one production line reverted, suite run; cases that fail):
-#   RED_PLACEHOLDER
+#   Measured red 2026-10-21:
+#   pr-merge-check.cjs suiteReasons(): suite verdict ignored (`record.verdict !== 'pass'` -> false)   : B1, M1
+#   pr-merge-check.cjs suiteReasons(): base_red_unreported branch off                                  : B2
+#   pr-merge-check.cjs bugResolves(): every --bug id resolves                                          : B4, B6, B8
+#   pr-merge-check.cjs bugResolves(): `.postmortem` exclusion removed                                  : B5
+#   pr-merge-check.cjs isReport(): frontmatter check removed                                           : B6
+#   pr-merge-check.cjs bugResolves(): vault dir ignores --slug                                         : B8
+#   pr-merge-check.cjs requiredChecks(): pending list emptied                                          : C2
+#   pr-merge-check.cjs requiredChecks(): only bucket `fail` counts red (cancel / no-shape pass)        : C3
+#   pr-merge-check.cjs requiredChecks(): `--required` dropped from the gh args                         : A1
+#   pr-merge-check.cjs requiredChecks(): "no required checks reported" branch removed                  : C6
+#   pr-merge-check.cjs resolveBaseRef(): always `main` (gh pr view not asked)                          : C9
+#   pr-merge-check.cjs mergeCheck(): flakyBaseReasons not added                                        : D1, D3
+#   pr-merge-check.cjs mergeCheck(): pendingOrOverturned not added                                     : E1, E3
+#   product-validate.cjs: requireVaultOrExit() call removed                                            : H2, H3, H3b, H3c, H5
+#   product-validate.cjs requireVaultOrExit(): vault directory check -> true                           : H2, H3, H3b, H3c
+#   product-validate.cjs requireVaultOrExit(): --ci exclusion removed                                  : H5
+#   product-validate.cjs: --require-vault no longer implies --spec-status                              : H6, H7
+#   Not covered by an in-suite mutation: the nested-call gate-log rule (F2) holds because merge-check
+#   calls runVerify in process; it would turn red if cmdPrMergeCheck spawned `a1-tools verify run`.
 unset A1_VAULT_ROOT A1_VAULT_WRITER_HOST A1_HOST_ID A1_GH_BIN
 set -u
 

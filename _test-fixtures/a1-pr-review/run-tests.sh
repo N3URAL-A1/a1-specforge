@@ -202,6 +202,42 @@ bad_waive="$(grep -rnE 'consent (ensure\|)?waive --kind|ensure\|waive' "$SK" 2>/
 if [ -z "$bad_waive" ]; then pass_case "no skill text shows 'consent waive --kind' or the 'ensure|waive' shorthand (static)"
 else fail_case "a skill text shows a waive call that exits 2: $bad_waive"; fi
 
+# ---------- spec 017 wave 10 (FR-038): workflows/05-merge.md ----------
+# Measured red 2026-10-21 (git-archive snapshot, one line of 05-merge.md changed, suite run):
+#   merge block gets an extra flag (`--admin`)                       : canonical-form case
+#   `exit "$RC"` removed from the merge-check block                  : explicit-exit-code case
+#   `--require-vault` removed from the coherence call                : block-order case (DCMG -> D?MG)
+#   `--phase pr-<n>` removed from the merge-check call               : --phase case
+MRG="$SK/a1-pr-review/workflows/05-merge.md"
+blocks_json() { # fenced bash blocks of 05-merge.md as a JSON array of strings
+  node -e '
+    const t=require("fs").readFileSync(process.argv[1],"utf8"); const out=[]; const re=/^```bash\n([\s\S]*?)^```/gm; let m;
+    while((m=re.exec(t))) out.push(m[1]); process.stdout.write(JSON.stringify(out));' "$1"
+}
+BJ="$(blocks_json "$MRG")"
+bj() { printf '%s' "$BJ" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const b=JSON.parse(s);console.log(eval(process.argv[1]))})' "$1"; }
+HAND="$(awk '/^## Hand-offs/{f=1} f' "$SK/a1-pr-review/SKILL.md")"
+if [ "$(bj 'b.length')" = "4" ]; then pass_case "05-merge.md has exactly 4 fenced bash blocks (count)"; else fail_case "05-merge.md fenced bash blocks: $(bj 'b.length') (want 4)"; fi
+order="$(bj 'b.map(x=>/disposition review/.test(x)?"D":/product validate --spec-status --require-vault/.test(x)?"C":/pr merge-check/.test(x)?"M":/^gh pr merge /m.test(x)?"G":"?").join("")')"
+if [ "$order" = "DCMG" ]; then pass_case "block order: disposition review, coherence (--require-vault), merge-check, gh pr merge"; else fail_case "05-merge.md block order is '$order' (want DCMG)"; fi
+if [ "$(bj 'b.filter(x=>/gh pr merge/.test(x)).length')" = "1" ] && [ "$(bj 'b.findIndex(x=>/gh pr merge/.test(x))')" = "3" ]; then
+  pass_case "no gh pr merge before the three checks: exactly one merge command, in the last block"
+else fail_case "gh pr merge appears outside the last fenced block"; fi
+if [ "$(bj 'b[3].trim()')" = "gh pr merge <n> --squash --delete-branch" ]; then pass_case "the merge block is exactly the canonical form the hook allows (only command, no extra flags)"
+else fail_case "merge block is not the byte-exact canonical form: $(bj 'JSON.stringify(b[3])')"; fi
+if [ "$(bj 'b.slice(0,3).filter(x=>/RC=\$\?/.test(x)&&/-ne 0/.test(x)&&/exit "\$RC"/.test(x)).length')" = "3" ]; then pass_case "each check block tests its exit code explicitly and stops on non-zero (count 3)"
+else fail_case "a check block does not test \$? and exit"; fi
+if [ "$(bj 'b.slice(0,3).filter(x=>/--phase pr-<n>/.test(x)).length')" = "3" ]; then pass_case "every check call passes --phase pr-<n> (count 3)"; else fail_case "a check call in 05-merge.md lacks --phase pr-<n>"; fi
+if printf '%s' "$HAND" | grep -q 'workflows/05-merge.md'; then pass_case "SKILL.md Hand-offs points to workflows/05-merge.md"
+else fail_case "SKILL.md Hand-offs does not point to 05-merge.md"; fi
+if [ "$(printf '%s' "$HAND" | grep -c 'gh pr merge')" = "1" ]; then pass_case "the Hand-offs prose carries no second merge sequence (one gh pr merge mention, the pointer; count)"
+else fail_case "Hand-offs still holds merge prose beyond the pointer"; fi
+if grep -q 'Step 2.7' "$MRG" && grep -q -- '--merge-check' "$MRG" && grep -q -- '--body-file' "$MRG"; then
+  pass_case "05-merge.md keeps the spec 016 precondition (step 2.7 merge check) and the --body-file rule"
+else fail_case "05-merge.md lost the spec 016 precondition or the --body-file rule"; fi
+if grep -q '2.2b' "$REV" && grep -q 'pr-diff-xprov' "$REV"; then pass_case "the Codex PR diff review step (2.2b) is still in 02-review.md"
+else fail_case "02-review.md lost the Codex review step"; fi
+
 echo ""
 echo "a1-pr-review: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]
