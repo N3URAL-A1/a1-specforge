@@ -555,6 +555,7 @@ w5b_psetup() {
       mkdir -p "$CWD/.a1"
       printf '{"commands":[{"id":"probe","argv":["true"],"timeout_s":10}],"no_tests_reason":"probe"}\n' >"$CWD/.a1/verify.json" ;;
     "verify check") printf -- '---\nstatus: draft\n---\n# V\n' >"$CWD/docs/VERIFICATION.md" ;;
+    "gates fired") mkdir -p "$CWD/.a1/phases/p"; : >"$CWD/.a1/phases/p/gate-log.jsonl" ;;
     "fix class-sweep")
       printf -- '---\ntitle: "Bug"\nstatus: diagnosed\nseverity: minor\nsymptom: crash on start\nclass_query:\n  - pattern: x\n  - glob: src/a.js\n  - engine: grep -E\nroot_site: src/a.js:1\n---\n# Bug\n' \
         >"$VAULT/project/real-proj/fixes/2026-09-27-bug.md" ;;
@@ -577,7 +578,7 @@ w5b_pexpect() {
   case "$1" in
     "checklist run") PEXPECT="1 write" ;;
     # verify run and fix class-sweep are not on the allowlist since spec 017 review SEC-5 (they spawn non-git processes; owner-side): see 5b-H7g.
-    "verify check"|"test-fidelity") PEXPECT="0 read" ;; # verify check on a file without a PASS claim: ok; test-fidelity on a clean diff: ok
+    "verify check"|"test-fidelity"|"gates fired") PEXPECT="0 read" ;; # verify check on a file without a PASS claim: ok; test-fidelity on a clean diff: ok
     "schema-check run"|"quick eligibility"|"plan depth-check") PEXPECT="1 read" ;; # depth-check: the seeded "# Plan" has no Depth Pass -> verdict fail, exit 1
     "code-scope check"|"realpath-check run"|"lane-split check"|"fix find-duplicates"|"fix next-suffix") PEXPECT="0 read" ;;
     "git status"|"git diff"|"git log") PEXPECT="0 read" ;; # --no-optional-locks: no index refresh
@@ -629,6 +630,9 @@ w5b_pargs() {
     "verify run|in") PARGS=(verify run --project . --out docs/VERIFICATION.md) ;;
     "verify run|out") PARGS=(verify run --project . --out ../other/V.md) ;;
     "verify run|link") PARGS=(verify run --project . --out "$L/V.md") ;;
+    "gates fired|in") PARGS=(gates fired --log .a1/phases/p/gate-log.jsonl) ;;
+    "gates fired|out") PARGS=(gates fired --log ../other/gate-log.jsonl) ;;
+    "gates fired|link") PARGS=(gates fired --log "$L/gate-log.jsonl") ;;
     "verify check|in") PARGS=(verify check docs/VERIFICATION.md) ;;
     "verify check|out") PARGS=(verify check ../other/V.md) ;;
     "verify check|link") PARGS=(verify check "$L/V.md") ;;
@@ -761,8 +765,8 @@ for p_action in new-feature continue-feature plan execute fix stage; do
   done < <(node -e 'console.log(require(process.argv[1] + "/intent-constants.cjs").INTENT_CHILD_ALLOWLIST[process.argv[2]].join("\n"))' "$INTENT_LIB" "$p_action")
   p_counts="$p_counts $p_action=$p_n"
 done
-if [[ "$p_counts" == " new-feature=19 continue-feature=19 plan=5 execute=16 fix=11 stage=1" && "$p_reached" -eq 71 ]]; then ok "5b-Pn every allowlisted subcommand was probed and every in-variant reached its path ($p_counts, reached $p_reached) [FR-041, FR-048]"
-else bad "5b-Pn every allowlisted subcommand was probed and every in-variant reached its path [FR-041, FR-048]" "counts:$p_counts reached $p_reached of 71"; fi
+if [[ "$p_counts" == " new-feature=20 continue-feature=20 plan=6 execute=17 fix=12 stage=1" && "$p_reached" -eq 76 ]]; then ok "5b-Pn every allowlisted subcommand was probed and every in-variant reached its path ($p_counts, reached $p_reached) [FR-041, FR-048]"
+else bad "5b-Pn every allowlisted subcommand was probed and every in-variant reached its path [FR-041, FR-048]" "counts:$p_counts reached $p_reached of 76"; fi
 p_git_set="$(printf '%s\n' $p_git_users | LC_ALL=C sort -u | tr '\n' ' ')"
 if [[ "$p_git_set" == "continue-feature/git_diff continue-feature/git_log continue-feature/git_status continue-feature/quick_eligibility continue-feature/realpath-check_run continue-feature/test-fidelity execute/git_add execute/git_commit execute/git_diff execute/git_log execute/git_status execute/realpath-check_run execute/test-fidelity fix/git_diff fix/git_log fix/git_status fix/quick_eligibility fix/realpath-check_run fix/test-fidelity new-feature/git_diff new-feature/git_log new-feature/git_status new-feature/quick_eligibility new-feature/realpath-check_run new-feature/test-fidelity plan/git_diff plan/git_log plan/git_status " ]]; then ok "5b-Pg the allowlisted subcommands that run git internally all ran it hardened, with no caller variable ($p_git_set) [FR-048]"
 else bad "5b-Pg the allowlisted subcommands that run git internally all ran it hardened, with no caller variable [FR-048]" "got: $p_git_set"; fi
@@ -837,7 +841,7 @@ if [[ "$RC" -eq 77 && -z "$(ls -A "$SB/outside")" ]]; then ok "5b-L0 the measure
 else bad "5b-L0 the measured bypass: check reservations --file nonexist/../lnk/res.json -> 77, nothing in the link target [FR-041]" "exit $RC, target: $(ls -A "$SB/outside" | head -3)"; fi
 child stage real-proj product stage --by 011-x --set started --dir newdir/./sub
 expect_refused "5b-L1 a . segment behind a missing one -> 77 path_outside_scope (fail closed) [FR-041]" path_outside_scope
-if [[ "$l_n" -eq 40 ]]; then ok "5b-Ln all 40 path flags probed [FR-041]"; else bad "5b-Ln all 40 path flags probed [FR-041]" "probed $l_n"; fi
+if [[ "$l_n" -eq 41 ]]; then ok "5b-Ln all 41 path flags probed [FR-041]"; else bad "5b-Ln all 41 path flags probed [FR-041]" "probed $l_n"; fi
 
 # ---------- F: result-note filter residuals of the re-review (MINOR-1, MINOR-2) ----------
 # Library cases on intent-redact.cjs. F1: a 4 MiB stream of BEGIN markers

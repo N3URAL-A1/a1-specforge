@@ -156,7 +156,7 @@ const INTENT_CHILD_REFUSAL_REASONS = Object.freeze(['child_context_invalid', 'su
 // Every other argument is checked when it contains `/` or starts with `.`/`~`.
 const INTENT_CHILD_PATH_FLAGS = Object.freeze([
   '--agents-dir', '--artifacts', '--baseline-tests', '--body-file', '--config', '--dest', '--dir',
-  '--duplicate-of', '--evidence', '--file', '--files', '--json', '--migrations', '--out', '--plan',
+  '--duplicate-of', '--evidence', '--file', '--files', '--json', '--log', '--migrations', '--out', '--plan',
   '--plan-path', '--project', '--project-path', '--projects-root', '--record', '--registry',
   '--replay-file', '--repo', '--repo-path', '--repo-root', '--root', '--skills-dir', '--snapshot',
   '--snapshot-replay', '--source', '--source-postmortem', '--spec', '--spec-path', '--stderr', '--stdout',
@@ -217,22 +217,24 @@ const GIT_READ = ['git diff', 'git log', 'git status'];
 // grep), which the child's spawn guard refuses with 77 anyway; they run owner-side. See SPAWNS_PROCESSES below.
 const INTENT_FLAG_ONLY_GROUPS = Object.freeze(['test-fidelity']);
 const SELF_CHECKS = ['verify check', 'test-fidelity'];
+// Spec 017 review (retro wiring): `gates fired --log <file>` only reads a gate log inside the project and prints YAML.
+const GATES_READ = ['gates fired'];
 const NEW_FEATURE_ALLOW = Object.freeze([
   'check reservations', 'checklist run', 'code-scope claim', 'code-scope release', 'code-scope stage',
   'plan depth-check', 'product feature-init', 'product stage', 'quick eligibility', 'realpath-check run', 'schema-check run',
-  'spec init', 'spec set-size', 'spec update-status', ...SELF_CHECKS, ...GIT_READ,
+  'spec init', 'spec set-size', 'spec update-status', ...SELF_CHECKS, ...GATES_READ, ...GIT_READ,
 ]);
 const INTENT_CHILD_ALLOWLIST = Object.freeze({
   'new-feature': NEW_FEATURE_ALLOW,
   'continue-feature': NEW_FEATURE_ALLOW,
-  plan: Object.freeze(['lane-split check', 'plan depth-check', ...GIT_READ]),
+  plan: Object.freeze(['lane-split check', 'plan depth-check', ...GATES_READ, ...GIT_READ]),
   execute: Object.freeze([
     ...WRITE_SCOPE, 'lane-split check', 'product audit-set', 'product stage', 'realpath-check run', 'schema-check run',
-    ...SELF_CHECKS, 'git add', 'git commit', ...GIT_READ,
+    ...SELF_CHECKS, ...GATES_READ, 'git add', 'git commit', ...GIT_READ,
   ]),
   fix: Object.freeze([
     'code-scope check', 'fix find-duplicates', 'fix next-suffix', 'fix update-status',
-    'product audit-set', 'quick eligibility', 'realpath-check run', 'test-fidelity', ...GIT_READ,
+    'product audit-set', 'quick eligibility', 'realpath-check run', 'test-fidelity', ...GATES_READ, ...GIT_READ,
   ]),
   stage: Object.freeze(['product stage']),
   progress: Object.freeze([]), // row R has no Bash
