@@ -406,7 +406,7 @@ function main() {
       else if (sub === 'write-suggestion') result = cmdFixWriteSuggestion(rest);
       else if (sub === 'class-sweep') {
         require(path.join(__dirname, 'lib', 'fix-class-sweep.cjs')).cmdFixClassSweep(sub, rest);
-        return; // unreachable — the stub exits 2 (spec 017 wave 9 replaces it)
+        return; // unreachable — the command exits itself
       }
       else usage(`unknown fix subcommand: ${sub}`);
     } else if (group === 'analyze') {
@@ -510,7 +510,7 @@ function main() {
       else if (sub === 'findings-summary') result = cmdPrFindingsSummary(rest);
       else if (sub === 'merge-check') {
         require(path.join(__dirname, 'lib', 'pr-merge-check.cjs')).cmdPrMergeCheck(sub, rest);
-        return; // unreachable — the stub exits 2 (spec 017 wave 10 replaces it)
+        return; // unreachable — the command exits itself
       }
       else usage(`unknown pr subcommand: ${sub}`);
     } else if (group === 'phantom') {

@@ -346,7 +346,7 @@ check "F9f empty log: exit 0, 0 lines" 0 'j.lines+"/"+j.problems.length' "0/0"
 run_lint --log "$WORK/t.jsonl" --root "$WORK/base"
 check "F9g --log mode ignores registry flags and lints only the log (still exit 1)" 1 'j.problems.length' "1"
 
-# F12 intent child (spec 017 Q15): --phase is stripped, no log line, no exclude entry, even on exit 77/1.
+# F12 intent child (spec 017 Q20): --phase is stripped, no log line, no exclude entry, even on exit 77/1.
 # Red: remove the inChildMode() return in installGateLog() -> F12a, F12b (a line and an exclude entry appear).
 CHR="$WORK/childrepo"; mkdir -p "$CHR" && git -C "$CHR" init -q && git -C "$CHR" config user.email t@t.dev && git -C "$CHR" config user.name test || exit 1
 echo seed > "$CHR/seed.txt"; git -C "$CHR" add -A; git -C "$CHR" commit -qm base

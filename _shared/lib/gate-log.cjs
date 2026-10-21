@@ -281,7 +281,7 @@ function installGateLog(argv, registryText) {
     process.stderr.write(`error: ${e.message}\n`);
     process.exit(2);
   }
-  // Spec 017 Q15: an intent child (same detection as the sandbox guard) writes
+  // Spec 017 Q20: an intent child (same detection as the sandbox guard) writes
   // nothing outside its project, so it appends no line and touches no
   // info/exclude, whatever the exit code (77 included).
   if (require('./intent-child.cjs').inChildMode()) return stripped.argv;
