@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated": "2026-10-21T18:31:25.711Z",
+  "generated": "2026-10-21T22:40:21.828Z",
   "project": {
     "id": "a1-specforge",
     "title": "a1-specforge — Roadmap",
@@ -233,11 +233,11 @@
       "id": "016-xprov-autonomy",
       "milestone": "continuous",
       "title": "xprov autonomy: chat consent instead of terminal steps, Codex at the right places, self-recovering aborts",
-      "status": "in-flight",
-      "stage": "origin-cleanup",
+      "status": "done",
+      "stage": "done",
       "depends_on": [],
       "started": "2026-10-14",
-      "finished": null,
+      "finished": "2026-10-21",
       "spec_path": "project/a1-specforge/spec/016-xprov-autonomy.md",
       "plan_path": "project/a1-specforge/plans/016-xprov-autonomy-wave-plan.md"
     },
@@ -273,11 +273,11 @@
       "id": "019-depth-pass-planning",
       "milestone": "continuous",
       "title": "Depth Pass before every planning task",
-      "status": "in-flight",
-      "stage": "origin-cleanup",
+      "status": "done",
+      "stage": "done",
       "depends_on": [],
       "started": "2026-10-19",
-      "finished": null,
+      "finished": "2026-10-21",
       "spec_path": "project/a1-specforge/spec/019-depth-pass-planning.md",
       "plan_path": "project/a1-specforge/plans/019-depth-pass-planning-wave-plan.md"
     }
