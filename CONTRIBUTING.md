@@ -70,6 +70,37 @@ opening a PR: `for r in _test-fixtures/*/run*.sh; do bash "$r" || break; done`.
 
 Runs started from inside an agent session (a `claude` process is an ancestor, or `CLAUDECODE` is set) skip the owner-terminal cases of `a1-xprov` (parts 08, 11, 12, 13, 14; part 15 swaps in a library driver); CI never skips them. Before a PR, run the suite once outside the agent as a non-root user, for example in Docker with gitleaks 8.30.1 on `PATH`: copy a `git archive` snapshot (with `git init` and a commit) to `/work`, `chown -R node:node /work`, then `docker run --rm -v <snapshot>:/src:ro node:20 su node -s /bin/bash -c 'cd /work && bash _test-fixtures/a1-xprov/run-tests.sh'`. The container must not see the real owner home.
 
+## Self-checks: `verify run`, `test-fidelity`, dispositions (spec 017)
+
+Run these before a PR; CI and the a1 skills run the same commands. Replace `<phase>` with a scope name
+(`--phase` names the gate-log scope; omit it and the line goes to `_unscoped` with one stderr notice).
+
+```bash
+# all fixture suites as one verify run; writes verify_run into the file (exit 0 pass / 1 fail / 2 usage or bad config)
+node _shared/a1-tools.cjs verify run --project . --out .a1/phases/<phase>/VERIFICATION.md --phase <phase>
+# a VERIFICATION.md that claims PASS needs a green verify_run and no source change since head_sha
+node _shared/a1-tools.cjs verify check .a1/phases/<phase>/VERIFICATION.md
+# tests added or changed since main: mock-of-subject, skipped-test, early-return-guard, test-not-in-ci (exit 1 = findings)
+node _shared/a1-tools.cjs test-fidelity --diff-base main --phase <phase>
+# registry wiring and the CI workflow rules
+node _shared/a1-tools.cjs gates lint && node _shared/a1-tools.cjs workflow lint
+```
+
+`.a1/verify.json` declares the commands (one per `_test-fixtures/*/run*.sh`, so a new suite is picked up without an edit).
+`.a1/fidelity.json` holds `db_wrappers`, `test_globs` and `ci_globs`.
+
+A finding is never switched off by a flag. Record a reason instead; the entry starts as `review: pending` and the
+a1-pr-review step (Reinhard) upholds or overturns it before `pr merge-check` passes:
+
+```bash
+node _shared/a1-tools.cjs disposition add --kind fidelity --rule skipped-test --file tests/a.test.js --line 1 \
+  --reason "skip tracks upstream bug 42, re-enabled when fixed" --by <who>
+node _shared/a1-tools.cjs disposition review <fingerprint> --verdict upheld --reason "bug 42 is real"
+```
+
+The fingerprint is printed by `disposition add` and in every `test-fidelity` finding. Intent children never call
+`disposition add` or `disposition review` (an autonomous child must not clear its own findings).
+
 ## Commit format
 
 ```

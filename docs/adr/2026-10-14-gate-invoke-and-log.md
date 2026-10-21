@@ -32,7 +32,7 @@ Wave 2 settled these details (built as specified above):
 - Outside a git work tree nothing is logged (stderr notice); the log is per work tree, found from the current directory.
 - `gates lint --log <file>` checks only the log (registry rules do not run). `gates fired --log` prints the last verdict per gate id and `caught: true` when the log holds a `fail` line for it.
 - Lock (deviation from the FR-010 wording): appends serialise on an atomic `mkdir` lock in the git common dir, not on `locks.cjs`. `acquireReservationsLock` creates the lock file first and writes its payload afterwards; a reader in that gap sees an empty lock, calls it stale and steals it, which forked the chain under load (measured: 12 broken links in the 2 x 50 writer test). The intent of FR-010 (serialised read-then-append) holds; the `locks.cjs` race is a separate bug.
-- Intent children (spec 017 Q15, same detection as the sandbox guard): the hook strips `--phase` but appends no line and writes no `info/exclude` entry, whatever the exit code (77 included), because a child must not write outside its project. Headless intent runs therefore leave no gate log, and a retro written for such a run cannot pass `--gate-log`. No env switch exists for normal runs.
+- Intent children (spec 017 Q20, same detection as the sandbox guard): the hook strips `--phase` but appends no line and writes no `info/exclude` entry, whatever the exit code (77 included), because a child must not write outside its project. Headless intent runs therefore leave no gate log, and a retro written for such a run cannot pass `--gate-log`. No env switch exists for normal runs.
 - `retro validate --gate-log` exits 2 when the log is missing, malformed or its chain is broken. `--enforced-since YYYY-MM-DD` overrides the constant for tests only.
 
 ### 4. Dispositions
@@ -56,4 +56,35 @@ Child processes via argv arrays (`spawnSync(cmd, args, {shell: false})`), git ou
 - The lint reads text, not behaviour: a fenced call that is never reached still counts. The gate log (wave 2) and `retro validate --gate-log` close that gap for retros.
 
 ## Results
-(Wave 14 adds the measured results.)
+
+Measured at wave 14 (2026-10-21, branch `feature/017-enforced-self-checks`).
+
+### Registry (`gates lint`)
+| | main (before 017) | after wave 13 |
+|---|---|---|
+| gate rows | 44 | 47 (+`test-fidelity`, `fix-class-sweep`, `pr-merge-check`) |
+| class `deterministic` | 27 | 24 |
+| class `prompt` | 10 | 16 |
+| class `human` | 7 | 7 |
+| live `unwired_until` exemptions | 0 (column did not exist) | 0 (11 after wave 1, 0 after wave 13) |
+
+Six rows were reclassified from `deterministic` to `prompt` because no CLI exists for them: `gate-0-self-report`, `gate-0.5-surface`, `gate-2-deploy` (wave 1), `phase-artifacts-exist`, `quick-escalation`, `roadmap-gate` (wave 13). `workflow-pipeline-exit` got its call (`workflow lint` in a1-pr-review); `gate-0.6-schema`, `gate-0.7-realpath`, `gate-1-build` and `spec-roadmap-status-coherent` got theirs in waves 11 to 13. `gates lint` exits 0 with `exemptions: []`. The 2026-11-30 deadline was never needed.
+
+### Implementation decisions taken during the build
+- **Q20 (wave 2)**: intent children append no gate-log line and write no `info/exclude` (same class as the nested-call exception); suites that compare stderr pass `--phase`; the log lock is an atomic `mkdir` (see section 3).
+- **Q21 (wave 4)**: the corrected claudia test still wraps `withTenantContext` in a pass-through mock and calls `ctx.skip()`. The `mock-of-subject` flag is a true positive and stays; SC-005 reads as exit 0 on the corrected quote test, exit 1 on the claudia test until a reviewed wave 8 disposition records the reason. The fixture asserts both states.
+- **Q22 (wave 7)**: `test_globs` for this repo narrowed to the entry points `_test-fixtures/*/run*.sh` (sub-scripts run through them); the four fixture-data `real/*.test.ts` files stay flagged and carry reviewed dispositions (review pending until the PR review).
+- **Q23 (wave 13/14, intent sandbox)**: the wired commands were in neither `INTENT_CHILD_ALLOWLIST` nor `INTENT_CHILD_EXCLUSIONS` (`a1-intent` 5b-H7a and 5b-H7c red). Allowed: `verify run`, `verify check`, `test-fidelity` for new-feature, continue-feature and execute; `realpath-check run` and `schema-check run` for execute; `realpath-check run`, `test-fidelity` and `fix class-sweep` for fix. Excluded for every action that runs a skill: `disposition add` and `disposition review` ("an autonomous child must not clear its own findings"). `test-fidelity` has no subcommand, so the guard keys a flag-only group (`INTENT_FLAG_ONLY_GROUPS`) by the group name and validates the option-shaped word like any other argument (`--diff-base` still needs a revision).
+- **Open edge of Q23**: `verify run` starts the project's test command and `fix class-sweep` starts `grep -E`. The child's spawn guard (FR-048) refuses every program except git with exit 77. Both commands are therefore allowed but refused at the spawn in a child (measured: 5b-P in-variant exit 77, nothing written). That fails closed: a child cannot produce a green `verify_run`. A spawn policy for these two is a separate decision.
+- **`ENFORCED_SINCE`** is `2026-10-21`. Fixtures that need another day copy `_shared/` and replace the constant line.
+
+### Defects the new checks found while they were being built
+- **Wave 12**: the wave 10 `05-merge.md` passed `--phase` to `disposition review`, which takes none (exit 2). The wave 10 test had asserted the text of the line, not the flag. Fixed in wave 13.
+- **Wave 13 call-site sweep** (`check-callsite-flags.cjs`: every fenced `a1-tools` call, 216 calls, flags compared with the command's own help): 7 real hits. `05-merge.md` `disposition review --phase`; `verify check --phase` in three workflows; `code-scope check --phase` in the a1-fix preflight; `product init`, `product feature-init` and `add-*` called with flags the command silently ignored; a call to a non-existent `consistency-check` subcommand. All fixed; the sweep stays in `a1-gates-lint` so a new call site is checked.
+- **Wave 2**: `locks.cjs` creates the lock file before writing its payload, so a reader saw an empty lock and stole it (12 broken chain links in the 2 x 50 writer test). The gate log uses its own `mkdir` lock; the `locks.cjs` race is filed as a separate bug.
+- **Wave 3/6**: a timeout kill left grandchildren running; `verify run` now kills the process group (wave 6).
+- **Wave 4/7**: the JS and Python skip rules ran on files of the other language; gated by language in wave 7.
+- **Wave 14**: the `test-fidelity` help listed three rules and omitted `test-not-in-ci`, `no_ci_config`, `ci_glob_not_in_workflow` and `--phase`; corrected from the code.
+
+### Audit (FR-040, FR-041)
+Each new subcommand has its own suite with green, red-per-rule, mutation-proof and hostile-input cases (`a1-gates-lint`, `a1-verify`, `a1-test-fidelity`, `a1-disposition`, `a1-fix-class-sweep`, `a1-pr-merge-check`). The wave 14 suite `a1-exit2-audit` adds one internal-error case per subcommand (a directory in place of the file it reads, or a failing `gh`), the help-lists-it check, and a count assert that no "not implemented" stub path remains.
