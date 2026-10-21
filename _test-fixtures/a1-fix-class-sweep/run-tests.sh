@@ -188,9 +188,19 @@ mkbug 2026-10-03-noquery2.md "reported_at: 2026-10-03T10:15"
 mkbug nodate.md; grep -v '^reported_at:' "$BUG" > "$W/nodate.md" && cp "$W/nodate.md" "$BUG"
 us diagnosed
 expect "D4 no date at all: fail closed, enforced -> exit 1 class_query_missing" "1/class_query_missing" "$RC/$(js 'j.reason')"
-mkbug 2026-10-03-future.md
-us diagnosed --enforced-since 3000-01-01
-expect "D5 --enforced-since can only move enforcement earlier: a later date is ignored (legacy by constant, exit 0)" "0" "$RC"
+# D5: the constant is a far-future placeholder until wave 14, so these cases run against a copy of _shared/ whose
+# ENFORCED_SINCE is 2026-10-01 (the real file is never edited): the boundary day is enforced, the day before is legacy,
+# and --enforced-since can only move enforcement earlier, never later.
+cp -R "$REPO_ROOT/_shared" "$W/shared-copy" && node -e 'const fs=require("fs"),p=process.argv[1];fs.writeFileSync(p,fs.readFileSync(p,"utf8").replace("2999-12-31","2026-10-01"))' "$W/shared-copy/lib/enforced-since.cjs"
+usc() { OUT="$(A1_VAULT_ROOT="$VAULT" node "$W/shared-copy/a1-tools.cjs" fix update-status "$BUG" diagnosed "$@" 2>"$W/err")"; RC=$?; }
+mkbug 2026-09-30-before.md "reported_at: 2026-09-30T09:00"; usc
+expect "D5a copy with ENFORCED_SINCE 2026-10-01: a report from 2026-09-30 is legacy, exit 0" "0" "$RC"
+mkbug 2026-10-01-onday.md "reported_at: 2026-10-01T09:00"; usc
+expect "D5b a report from the enforcement day is enforced: exit 1 class_query_missing" "1/class_query_missing" "$RC/$(js 'j.reason')"
+mkbug 2026-10-03-later.md; usc --enforced-since 3000-01-01
+expect "D5c --enforced-since 3000-01-01 does not loosen the constant: exit 1" "1" "$RC"
+mkbug 2026-09-30-earlier.md "reported_at: 2026-09-30T09:00"; usc --enforced-since 2026-09-01
+expect "D5d --enforced-since 2026-09-01 tightens it: the 2026-09-30 report is enforced, exit 1" "1" "$RC"
 bad_q() { # bad_q <label> <lines...> : a malformed class_query is refused at diagnosed
   local label="$1"; shift; mkbug 2026-10-03-bad.md "$@"; us diagnosed --enforced-since "$SINCE"
   expect "D6 $label: exit 1 class_query_missing" "1/class_query_missing" "$RC/$(js 'j.reason')"
