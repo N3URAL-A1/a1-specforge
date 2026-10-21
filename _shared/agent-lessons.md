@@ -274,3 +274,96 @@ property the author believed was in play. That is class 3 of
 Related failure at the same site: a gate whose dependency is missing must exit
 2 (usage error), never 0 — see invariant 8, "a gate that cannot fail is
 documentation".
+
+## Pablo / Adam — a probe that cannot go red is documentation {#plan-probe-red-line}
+
+2026-10-08 → 2026-10-19, five a1-plan runs in four projects, plus four postmortems
+that reached production with the same shape:
+
+- **ai-net M1-P1 (2026-10-08):** two of three audit rounds were only about broken
+  V-commands (sentence splitter, wrong column). Adam ran them verbatim against sample
+  files; reading them had passed.
+- **ai-net M1-P2 (2026-10-09):** six "will certainly fail" layout constants became
+  blockers at plan time because the auditor ran the plan's own height formula over
+  every slide (a 30-line prototype). The release gate of the same phase was fail-open:
+  `_run_check` skipped a missing check script and the converter exited 0 without
+  writing; only the line-level review saw it.
+- **a1-office infra-rename-cutover (2026-10-13):** the capture-fails and wrong-state
+  paths of the operational scripts had no stub-driven red test; Codex found a gap in
+  every round that four audit rounds had passed.
+- **captrader-llm M4-P2 (2026-10-13):** an `&`/`&&` binding error in a server command
+  would have broken polling and kill inside the maintenance window; found by replaying
+  the command in a container at audit time.
+- **a1-office db-private-endpoint (2026-10-19):** four smoke probes were green forever
+  by construction: anonymous HTTP behind a login redirect, a reserved slug swallowing
+  pool errors, `kubectl logs -l` with its 10-line default, `git grep -E \b` inert on
+  Apple Git. Adam asked per probe "where does this turn red?" and found all four.
+- Postmortems of the same class: a line-count gate green on a crashed run for months
+  (2026-09-28 tsc ratchet); a negative guard for an absent object, vacuous by
+  construction (2026-10-15 postgrest anon); a performance fixture that never reached
+  the slow path (2026-10-15 scope-reclaim).
+
+**Root cause: the plan wrote the check as prose and the audit read it as prose.** A
+check nobody ran before execution has the evidential value of the sentence "this will
+work".
+
+**Rule.** For every verification command and every "Done when" probe the plan names
+the condition under which it goes red (the code line, the state, the input). The
+planner runs each one once against a fixture or stub and records the red result; the
+auditor repeats the run for anything a human cannot eyeball and flags a probe that is
+green by construction as MAJOR. Green-by-construction shapes seen so far: anonymous
+HTTP behind auth middleware, `kubectl logs -l` without `--tail=-1`, a fixture that
+never reaches the slow path, a line-count gate that passes on a crash, a negative
+guard for an object that does not exist. For documents, decks and operational
+scripts the V-commands ARE the tests: reading them passes, running them finds the
+broken ones (2026-10-08/09/13, three plans).
+
+## Pablo — outward-facing documents need a fact review before verification {#pablo-outward-doc-review}
+
+2026-09-29, NOURA architecture docs for a security lead: a line-level reviewer and an
+audience/fact reviewer (Bertram) found the same four contradictions (overclaims like
+"nie", tier contradictions, board citations) that a green check script and a PASS
+verifier had not. 2026-10-03, NOURA 026 English translation: an independent bilingual
+reviewer found a security-meaning drift ("never on the basis of the dialogue" → "never
+… alone") that every automated check missed, and a grammar fix had silently removed a
+mandated qualifier. 2026-10-13, captrader-llm: customer documentation condensed from
+eval data overstated three claims; the number-against-sentence check ran only in review.
+
+**Rule.** When the deliverable leaves the team (customer, security lead, translation,
+pitch), the plan carries a fact/audience review task — a bilingual reviewer or
+`bertram-brand-chief` with the numbers register — in the wave BEFORE verification,
+plus a count check per legal or qualifying marker ("up to", "never", "only").
+
+## Rico — product decisions hide as "open questions" {#rico-decisions-needed}
+
+2026-09-28, a1-office 058-workflow-core: three research claims (history columns, the
+number of write paths, what "accepted" means) were refuted live by the planner; the
+plan went through four revisions. 2026-10-03, a1-office 059-object-types: the product
+questions research surfaced (interested party = lead? pair entity now? archive model?
+backfill?) were put to the owner before planning and captured in DECISIONS.md — audit
+went 1B/7M → PASS in one revision. The one question left "open" in RESEARCH.md (lost
+terminal vs "rejected often come back") surfaced only after PLAN v1 and turned into an
+orchestrator interpretation that needed explicit confirmation before the prod apply.
+2026-10-08, ai-net M1-P1: minimum deliverable never asked; five of seven waves were
+cancelled mid-phase.
+
+**Rule.** A question only the product owner can answer is not a risk and not a
+recommendation. Rico lists it under `## Decisions needed` and repeats the rows in his
+hand-back; the orchestrator asks the user before the planner is spawned and records
+the answers next to the question. The planner and auditor treat the answers as binding.
+
+## Any orchestrator — a fix brief without the plan's protections or with unmeasured facts {#fix-brief-measured}
+
+2026-10-14, a1-office infra-rename-cutover: the review-fix brief did not carry the
+plan's AS-list, so the executor rewrote protected historical README lines on a
+reviewer's wish; Victor caught the violation, the lines were reset. 2026-10-14,
+my-smart-home 001-health-probe: the orchestrator's fix brief stated "Linux ping exit 2
+= tool error" without measuring it; the fix introduced a false-DOWN regression that
+Reinhard round 2 and Victor each found by running ping in a Debian container — one full
+extra review round. 2026-10-13 and 2026-10-15, captrader-llm: report claims condensed
+from eval data ("by hand", "0.32.4 does not load v1") were never re-measured and were
+caught only in review.
+
+**Rule.** A brief that asks an agent to fix findings names the plan's protected items
+verbatim and tags every platform or environment fact `measured: <command>` — or hands
+the measurement to the agent as a task. See `_shared/spawn-policy.md` S4.

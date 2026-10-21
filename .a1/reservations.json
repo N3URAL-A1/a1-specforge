@@ -27,6 +27,7 @@
         "_shared/lib/fidelity-resolve.cjs",
         "_shared/lib/fidelity-rules.cjs",
         "_shared/lib/fidelity-ci.cjs",
+        "_shared/lib/fidelity-ci-runners.cjs",
         "_shared/lib/disposition.cjs",
         "_shared/lib/fix-class-sweep.cjs",
         "_shared/lib/pr-merge-check.cjs",
@@ -72,10 +73,17 @@
         "_test-fixtures/a1-fix/",
         "_test-fixtures/a1-pr-review/",
         "_test-fixtures/a1-vault-cockpit/",
-        "_test-fixtures/a1-workflow-lint/"
+        "_test-fixtures/a1-workflow-lint/",
+        "_test-fixtures/a1-xprov/",
+        "_test-fixtures/a1-code-scope/",
+        "_test-fixtures/a1-quick/",
+        "_test-fixtures/a1-vault-fallback/",
+        "_test-fixtures/a1-intent/",
+        "_shared/lib/intent-sandbox.cjs",
+        "_shared/lib/locks.cjs"
       ],
       "by": "017-enforced-self-checks",
-      "at": "2026-10-20T18:38:11.197Z",
+      "at": "2026-10-20T23:32:55.803Z",
       "stage": "started"
     }
   ]
