@@ -15,7 +15,7 @@ const { spawnSync, spawn } = require('child_process');
 const { gitRaw, headSha, splitNul, diffNames } = require('./verify-check.cjs');
 const rep = require('./verify-reporters.cjs');
 const vb = require('./verify-base.cjs');
-const { loadEntries, entriesAt, clearedFingerprints, fingerprintOf } = require('./disposition-store.cjs');
+const { loadEntries, entriesAt, clearedFingerprints, fingerprintOf, isSelfReviewed } = require('./disposition-store.cjs');
 
 const { VerifyError } = vb;
 
@@ -29,6 +29,8 @@ const PYTEST_FILES = Object.freeze(['pyproject.toml', 'pytest.ini', 'tox.ini']);
 const NPM_PLACEHOLDER_RE = /no test specified/i;
 const KILL_GRACE_MS = 10 * 1000;
 const GROUP_RUNNER_FLAG = '--group-runner';
+// Vault variables never reach a suite: 18 suites forgot `unset A1_VAULT_ROOT` and leaked fixture paths into the real vault.
+const SUITE_ENV_DROP = Object.freeze(['A1_VAULT_ROOT', 'A1_VAULT_WRITER_HOST', 'A1_HOST_ID']);
 
 function readJsonFile(file, what) {
   let st;
@@ -55,20 +57,41 @@ function globToRegExp(seg) {
   return new RegExp(`^${seg.split('*').map((s) => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('[^/]*')}$`);
 }
 
-/** Expand `a/*\/run*.sh` (segments, `*` only, no `..`) to sorted repo-relative files. */
-function expandEach(project, pattern) {
+function checkEachPattern(pattern) {
   const segs = pattern.split('/');
   if (segs.some((s) => s === '' || s === '..' || s === '.') || pattern.includes('\0')) throw new VerifyError('bad_config', `each: unsafe pattern ${JSON.stringify(pattern)}`);
+  return segs;
+}
+
+/** Regular files (modes 100644/100755) of a commit's tree, repo-relative, via `git ls-tree -r -z`; null when git cannot read it. */
+function treeFiles(project, ref) {
+  const out = gitRaw(project, ['ls-tree', '-r', '-z', ref]);
+  if (out === null) return null;
+  return out.split('\0').filter(Boolean).map((l) => /^100(?:644|755) blob [0-9a-f]+\t(.+)$/s.exec(l)).filter(Boolean).map((m) => m[1]);
+}
+
+/** Pure glob over a file list (`*` within one segment only). Sorted, de-duplicated. */
+function matchEach(files, pattern) {
+  const segs = checkEachPattern(pattern);
+  const res = segs.map((seg) => (seg.includes('*') ? globToRegExp(seg) : null));
+  const hit = files.filter((f) => {
+    const parts = f.split('/');
+    return parts.length === segs.length && parts.every((part, i) => (res[i] ? res[i].test(part) : part === segs[i]));
+  });
+  return [...new Set(hit)].sort();
+}
+
+/** Working-tree fallback for a directory that is not a git repository with a commit. */
+function expandFromDisk(project, segs) {
   let level = [''];
   segs.forEach((seg, i) => {
     const last = i === segs.length - 1;
     const next = [];
     for (const base of level) {
-      const entries = seg.includes('*')
-        ? fs.readdirSync(path.join(project, base), { withFileTypes: true }).filter((d) => globToRegExp(seg).test(d.name))
-        : [{ name: seg, isDirectory: () => true, isFile: () => true }];
-      for (const d of entries.sort((a, b) => (a.name < b.name ? -1 : 1))) {
-        const rel = base === '' ? d.name : `${base}/${d.name}`;
+      let entries;
+      try { entries = seg.includes('*') ? fs.readdirSync(path.join(project, base), { withFileTypes: true }).map((d) => d.name).filter((n) => globToRegExp(seg).test(n)) : [seg]; } catch (_e) { continue; }
+      for (const name of entries.sort()) {
+        const rel = base === '' ? name : `${base}/${name}`;
         let st;
         try { st = fs.lstatSync(path.join(project, rel)); } catch (_e) { continue; }
         if (last ? st.isFile() : st.isDirectory()) next.push(rel);
@@ -79,7 +102,25 @@ function expandEach(project, pattern) {
   return level;
 }
 
-function fromConfig(project, cfg) {
+/**
+ * Expand `a/*\/run*.sh` (segments, `*` only, no `..`) to sorted repo-relative files of a COMMIT tree (default HEAD; spec 017
+ * review round D: never the live tree, so an untracked or git-ignored file cannot join the suite set). Not a git repo with a
+ * commit: the working tree.
+ */
+function expandEach(project, pattern, ref = 'HEAD') {
+  const segs = checkEachPattern(pattern);
+  const files = treeFiles(project, ref);
+  return files === null ? expandFromDisk(project, segs) : matchEach(files, pattern);
+}
+
+/** The `each` commands of a config for the given files (one per file, id = path). */
+function eachCommands(cfg, files) {
+  const prefix = cfg.argv_prefix === undefined ? [] : checkArgv(cfg.argv_prefix, 'argv_prefix');
+  const timeoutMs = checkTimeout(cfg.timeout_ms, 'verify.json');
+  return files.map((rel) => ({ id: rel, file: rel, argv: [...prefix, rel], kind: 'none', viaScript: false, timeoutMs }));
+}
+
+function fromConfig(project, cfg, ref) {
   const out = [];
   const defTimeout = checkTimeout(cfg.timeout_ms, 'verify.json');
   (Array.isArray(cfg.commands) ? cfg.commands : []).forEach((c, i) => {
@@ -88,10 +129,7 @@ function fromConfig(project, cfg) {
     out.push({ id: typeof c.id === 'string' && c.id ? c.id : argv.join(' '), argv, kind: c.reporter || rep.detectKind(argv), viaScript: false, timeoutMs: checkTimeout(c.timeout_ms === undefined ? defTimeout : c.timeout_ms, `commands[${i}]`) });
   });
   if (typeof cfg.each === 'string') {
-    const prefix = cfg.argv_prefix === undefined ? [] : checkArgv(cfg.argv_prefix, 'argv_prefix');
-    for (const rel of expandEach(project, cfg.each)) {
-      out.push({ id: rel, file: rel, argv: [...prefix, rel], kind: 'none', viaScript: false, timeoutMs: defTimeout });
-    }
+    out.push(...eachCommands(cfg, expandEach(project, cfg.each, ref)));
   }
   if (out.length > MAX_COMMANDS) throw new VerifyError('bad_config', `more than ${MAX_COMMANDS} commands`);
   return out;
@@ -99,11 +137,12 @@ function fromConfig(project, cfg) {
 
 /** Where the autodetect files are read from: the working tree (no --base) or a commit (--base: base and HEAD, never the live tree). */
 function fsSource(project) {
-  return { has: (n) => fs.existsSync(path.join(project, n)), readJson: (n) => readJsonFile(path.join(project, n), n) };
+  return { ref: 'HEAD', has: (n) => fs.existsSync(path.join(project, n)), readJson: (n) => readJsonFile(path.join(project, n), n) };
 }
 
 function gitSource(project, sha) {
   return {
+    ref: sha,
     has: (n) => gitRaw(project, ['cat-file', '-e', `${sha}:${n}`]) !== null,
     readJson: (n) => {
       const text = gitRaw(project, ['show', `${sha}:${n}`]);
@@ -157,12 +196,12 @@ function resolveCommands(project, config, src = fsSource(project)) {
   const requiresEnv = cfg && Array.isArray(cfg.requires_env) ? cfg.requires_env.filter((n) => typeof n === 'string') : [];
   const flakyBase = cfg && Array.isArray(cfg.flaky_base) ? cfg.flaky_base.filter((n) => typeof n === 'string') : [];
   const reason = cfg && typeof cfg.no_tests_reason === 'string' && cfg.no_tests_reason !== '' ? cfg.no_tests_reason : null;
-  const tries = [['verify.json', () => (cfg ? fromConfig(project, cfg) : [])], ['package.json', () => fromPackageJson(src)], ['pytest', () => fromPytest(src)]];
+  const tries = [['verify.json', () => (cfg ? fromConfig(project, cfg, src.ref) : [])], ['package.json', () => fromPackageJson(src)], ['pytest', () => fromPytest(src)]];
   for (const [source, get] of tries) {
     const commands = get();
-    if (commands.length > 0) return { commands, source, noTestsReason: null, requiresEnv, flakyBase };
+    if (commands.length > 0) return { commands, source, noTestsReason: null, requiresEnv, flakyBase, eachCfg: source === 'verify.json' && typeof cfg.each === 'string' ? cfg : null };
   }
-  if (reason) return { commands: [], source: 'no_tests_reason', noTestsReason: reason, requiresEnv, flakyBase };
+  if (reason) return { commands: [], source: 'no_tests_reason', noTestsReason: reason, requiresEnv, flakyBase, eachCfg: null };
   throw new VerifyError('no_test_command', 'no .a1/verify.json command, package.json typecheck/build/test script or pytest config found; declare no_tests_reason in .a1/verify.json if the project has no tests');
 }
 
@@ -185,11 +224,15 @@ function readCapped(file, tail) {
  * process group, so this wrapper starts the command detached and, on timeout, SIGKILLs the whole
  * group so no grandchild of a `bash` suite survives. Spec on stdin, result JSON on stdout.
  */
+function suiteEnv(env) {
+  return Object.fromEntries(Object.entries(env).filter(([k]) => !SUITE_ENV_DROP.includes(k)));
+}
+
 function groupRunnerMain() {
   const spec = JSON.parse(fs.readFileSync(0, 'utf8'));
   const emit = (o) => { process.stdout.write(JSON.stringify(o)); process.exit(0); };
   const fd = fs.openSync(spec.stdoutFile, 'w');
-  const child = spawn(spec.argv[0], spec.argv.slice(1), { cwd: spec.cwd, shell: false, detached: true, stdio: ['ignore', fd, 'ignore'] });
+  const child = spawn(spec.argv[0], spec.argv.slice(1), { cwd: spec.cwd, env: suiteEnv(process.env), shell: false, detached: true, stdio: ['ignore', fd, 'ignore'] });
   let timedOut = false;
   // SEC-10: the group dies on EVERY way out (timeout, normal exit, spawn error, a signal to this runner),
   // not only on timeout - a suite that returns 0 and leaves a background child must not leave it running.
@@ -306,7 +349,7 @@ function runHeadSide(project, plan, head, hash, ctx) {
       if (!results[c.id].retry) { ranLive = true; results[c.id] = { raw, retry: runCommand(c, ctx.cwd, ctx.tmp, `r${i}`) }; }
       return finishCommand(results[c.id].retry, ctx.touches);
     };
-    return vb.settle(finishCommand(raw, ctx.touches), retry, ctx.baseIds ? ctx.baseIds.get(c.id) : null, plan.flakyBase);
+    return vb.settle(finishCommand(raw, ctx.touches), retry, ctx.baseIds ? (ctx.baseIds.get(c.id) || new Set()) : null, plan.flakyBase);
   });
   const stillClean = clean && vb.dirtyPaths(statusPaths(project)).length === 0;
   if (stillClean && ranLive) vb.writeCache(project, head, hash, results);
@@ -376,15 +419,46 @@ function selectBasePlan(project, baseSha, headSha_, guard) {
  * Reasons: a changed command set fails unless a COMMITTED (store at HEAD), UPHELD `config_change` disposition names exactly
  * this head content. A pending, overturned or working-tree-only entry clears nothing (merge-check blocks a pending one anyway).
  */
-function configChangeRecord(project, change, headSha_) {
-  if (change === null) return null;
-  let upheld;
-  try { upheld = new Set(entriesAt(project, headSha_).filter((e) => e.kind === 'config_change' && e.review === 'upheld').map((e) => e.fingerprint)); } catch (e) { throw new VerifyError('bad_config', e.message); }
-  return { fields: change.fields, fingerprint: change.fingerprint, dispositioned: upheld.has(change.fingerprint) };
+function upheldConfigFingerprints(project, headSha_) {
+  try { return new Set(entriesAt(project, headSha_).filter((e) => e.kind === 'config_change' && e.review === 'upheld' && !isSelfReviewed(e)).map((e) => e.fingerprint)); } catch (e) { throw new VerifyError('bad_config', e.message); }
 }
 
-function withConfigReason(v) {
-  return { ...v, verdict: 'fail', reason: 'verify_config_changed', reasons: ['verify_config_changed', ...v.reasons] };
+function configChangeRecord(project, change, headSha_) {
+  if (change === null) return null;
+  return { fields: change.fields, fingerprint: change.fingerprint, dispositioned: upheldConfigFingerprints(project, headSha_).has(change.fingerprint) };
+}
+
+function withReasons(v, extra) {
+  return extra.length === 0 ? v : { ...v, verdict: 'fail', reason: extra[0], reasons: [...extra, ...v.reasons.filter((r) => !extra.includes(r))] };
+}
+
+/**
+ * suite_removed (review round D): `each` suites the base plan names that the HEAD tree no longer has. Cleared like
+ * verify_config_changed: only by a committed, upheld, not self-reviewed `config_change` disposition (rule verify-config,
+ * file .a1/verify.json) whose text is canon({suite_removed: <sorted removed ids>}) - the fingerprint covers exactly that id set.
+ */
+function suiteRemovedRecord(project, ids, headSha_) {
+  if (ids.length === 0) return null;
+  const text = vb.canon({ suite_removed: ids });
+  const fingerprint = fingerprintOf(vb.CONFIG_RULE, vb.CONFIG_FILE, text);
+  return { ids, fingerprint, text, dispositioned: upheldConfigFingerprints(project, headSha_).has(fingerprint) };
+}
+
+/**
+ * The command set that runs on HEAD. Without a compare (no --base) it is the plan itself. With --base the plan came from the
+ * merge-base tree; its `each` pattern is re-expanded on the HEAD tree: suites HEAD added run there, suites the base had and
+ * HEAD lost are returned in `removed` (and not run).
+ * @returns {{commands: object[], removed: string[]}}
+ */
+function headCommands(project, plan, headSha_) {
+  if (headSha_ === null || plan.eachCfg === null) return { commands: plan.commands, removed: [] };
+  const headEach = eachCommands(plan.eachCfg, expandEach(project, plan.eachCfg.each, headSha_));
+  const baseIds = new Set(plan.commands.filter((c) => c.file).map((c) => c.id));
+  const headIds = new Set(headEach.map((c) => c.id));
+  return {
+    commands: [...plan.commands.filter((c) => !c.file), ...headEach],
+    removed: [...baseIds].filter((id) => !headIds.has(id)).sort(),
+  };
 }
 
 const pairs = (commands, key) => commands.flatMap((c) => c[key].map((id) => ({ command: c.id, id })));
@@ -407,23 +481,27 @@ function runVerify(opts) {
   if (missing.length > 0) throw new VerifyError('env_missing', `required environment variable(s) not set: ${missing.join(', ')}`);
   const changed = head ? changeSet(project, baseSha) : [];
   const touches = changed.some(isSourcePath);
-  const timed = { ...plan, flakyBase, commands: plan.commands.map((c) => (opts.timeoutMs ? { ...c, timeoutMs: opts.timeoutMs } : c)) };
-  const hash = vb.commandHash(timed.commands, vb.envDigest((n) => readLockfile(project, n)));
+  const withTimeout = (list) => list.map((c) => (opts.timeoutMs ? { ...c, timeoutMs: opts.timeoutMs } : c));
+  const timed = { ...plan, flakyBase, commands: withTimeout(plan.commands) };
+  const headSet = headCommands(project, plan, sel.compareBase && head ? head : null);
+  const headTimed = { ...timed, commands: withTimeout(headSet.commands) };
+  const hash = vb.commandHash(headTimed.commands, vb.envDigest((n) => readLockfile(project, n)));
   const baseHash = baseSha ? vb.commandHash(timed.commands, vb.envDigest((n) => gitRaw(project, ['show', `${baseSha}:${n}`]))) : hash;
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'a1-verify-'));
   const release = vb.cleanupOnExit(tmp);
   try {
     const base = sel.compareBase ? runBaseSide(project, timed, baseSha, baseHash, touches, tmp, opts.noCache === true) : null;
-    const runHead = (cwd) => runHeadSide(project, timed, head, hash, { tmp, touches, baseIds: base ? base.ids : null, cwd, noCache: opts.noCache === true });
+    const runHead = (cwd) => runHeadSide(project, headTimed, head, hash, { tmp, touches, baseIds: base ? base.ids : null, cwd, noCache: opts.noCache === true });
     // --base: HEAD runs from a git-archive snapshot like the base side, so git-ignored local files cannot change the verdict.
     const side = opts.base !== undefined ? vb.withSnapshot(project, head, runHead, 'head') : runHead(project);
     const settled = base ? vb.applySkipIncrease(side.settled, base.skipped, skipIncreaseDispositions(project)) : side.settled;
     const configChanged = configChangeRecord(project, sel.change, head);
-    const verdict = overall(settled, plan.noTestsReason);
+    const removed = suiteRemovedRecord(project, headSet.removed, head);
+    const extra = [...(configChanged && !configChanged.dispositioned ? ['verify_config_changed'] : []), ...(removed && !removed.dispositioned ? ['suite_removed'] : [])];
     return {
-      ...(configChanged && !configChanged.dispositioned ? withConfigReason(verdict) : verdict), source: plan.source, head_sha: head, base_sha: baseSha,
+      ...withReasons(overall(settled, plan.noTestsReason), extra), source: plan.source, head_sha: head, base_sha: baseSha,
       touches_source: touches, changed_files: changed.length, flaky: pairs(side.settled, 'flaky_ids'), pre_existing_red: pairs(side.settled, 'pre_existing_red_ids'),
-      cache: { head: side.cache, base: base ? base.cache : 'none' }, ...(configChanged ? { config_changed: configChanged } : {}), commands: settled,
+      cache: { head: side.cache, base: base ? base.cache : 'none' }, ...(configChanged ? { config_changed: configChanged } : {}), ...(removed ? { suite_removed: removed } : {}), commands: settled,
     };
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });

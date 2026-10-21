@@ -703,5 +703,62 @@ g "$P" add -A; g "$P" commit -q -m "upheld disposition"
 vrun "$P" --base main
 check "C5c the same upheld disposition committed: exit 0, dispositioned" 0 'j.verdict+"/"+j.config_changed.dispositioned' "pass/true"
 
+# ---------- D: spec 017 review round D (each glob from the git trees, suite_removed, self-review, env drop) ----------
+# Measured red 2026-10-21 (HEAD code before the fix, this suite overlaid):
+#   D1 `each` expanded from base/HEAD trees; a base suite missing on HEAD -> suite_removed : D1, D1b, D1c, D1d
+#   D2 untracked / git-ignored files never expand (with and without --base)                : D2, D2b
+#   D3 configChangeRecord ignores self-reviewed upheld entries                              : D3
+#   D4 runCommand drops A1_VAULT_ROOT / A1_VAULT_WRITER_HOST / A1_HOST_ID from the child    : D4
+eachproj() { # eachproj <label>: base holds t/a (green) and t/b (red) under `each: t/*/run.sh`
+  newproj "$1"; printf '.gitignore\nlocal/\n' > /dev/null; printf 'ignored/\n' > "$P/.gitignore"
+  mkdir -p "$P/t/a" "$P/t/b"; printf 'exit 0\n' > "$P/t/a/run.sh"; printf 'exit 1\n' > "$P/t/b/run.sh"
+  cfg '{"each":"t/*/run.sh","argv_prefix":["bash"]}'; seal
+}
+rmdisp() { # rmdisp <upheld|self> <removed ids json> [by] [reviewer]: a committed config_change disposition for the removed id set
+  local text fp; text="$(node -e 'const b=require(process.argv[1]); process.stdout.write(b.canon({suite_removed: JSON.parse(process.argv[2]).slice().sort()}))' "$REPO_ROOT/_shared/lib/verify-base.cjs" "$2")"
+  (cd "$P" && node "$TOOLS" disposition add --kind config_change --rule verify-config --file .a1/verify.json --text "$text" --reason "fixture: suite retired" --by "${3:-fx}" >/dev/null 2>&1)
+  fp="$(node -e 'const e=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(e[e.length-1].fingerprint)' "$P/.a1/dispositions.json")"
+  (cd "$P" && node "$TOOLS" disposition review "$fp" --verdict upheld --reason "fixture: reviewed" --by "${4:-reviewer}" >/dev/null 2>&1)
+  g "$P" add -A; g "$P" commit -q -m "removal disposition"
+}
+eachproj d1; g "$P" rm -q t/b/run.sh; g "$P" commit -q -m "delete the red suite"
+vrun "$P" --base main
+check "D1 branch deletes the red suite t/b/run.sh: exit 1, reason suite_removed (not a silent pass)" 1 'j.verdict+"/"+j.reason+"/"+j.suite_removed.ids.join()+"/"+j.suite_removed.dispositioned' "fail/suite_removed/t/b/run.sh/false"
+check "D1b the removed suite is not run on head; the base side listed both (commands = head set)" 1 'j.commands.map(c=>c.id).join()' "t/a/run.sh"
+rmdisp upheld '["t/b/run.sh"]'
+vrun "$P" --base main
+check "D1c a committed, upheld config_change disposition over exactly the removed id set clears it: exit 0" 0 'j.verdict+"/"+j.suite_removed.dispositioned' "pass/true"
+eachproj d1d; g "$P" rm -q t/b/run.sh; g "$P" commit -q -m "delete the red suite"
+rmdisp upheld '["t/a/run.sh"]'
+vrun "$P" --base main
+check "D1d a disposition over a different id set clears nothing: exit 1 suite_removed" 1 'j.reason+"/"+j.suite_removed.dispositioned' "suite_removed/false"
+eachproj d1e; mkdir -p "$P/t/n"; printf 'exit 1\n' > "$P/t/n/run.sh"; g "$P" add -A; g "$P" commit -q -m "new red suite"
+vrun "$P" --base main
+check "D1e control: a NEW suite under the same pattern runs on head (red -> exit 1 command_failed), nothing removed" 1 'j.reasons.includes("command_failed")+"/"+(j.suite_removed===undefined)+"/"+j.commands.map(c=>c.id).join()' "true/true/t/a/run.sh,t/b/run.sh,t/n/run.sh"
+
+eachproj d2; mkdir -p "$P/ignored/c"; printf 'exit 127\n' > "$P/ignored/c/run.sh"; mkdir -p "$P/t/c"; printf 'exit 1\n' > "$P/t/c/run.sh"; printf 't/c/\n' >> "$P/.gitignore"
+printf 'module.exports = 2;\n' > "$P/src/app.js"; g "$P" commit -q -am "head" -- src/app.js
+vrun "$P" --base main
+check "D2 gitignored untracked t/c/run.sh is not expanded with --base (only the tracked suites; t/b is red on base and head)" 0 'j.commands.map(c=>c.id).join()' "t/a/run.sh,t/b/run.sh"
+vrun "$P"
+check "D2b without --base the untracked file is not expanded either (HEAD tree)" 1 'j.commands.map(c=>c.id).join()' "t/a/run.sh,t/b/run.sh"
+
+# D3: a self-reviewed upheld entry (reviewed_by == by) clears nothing
+vbase d3 '{"commands":[{"id":"unit","argv":["./bin/red"]}]}' '{"commands":[{"id":"unit","argv":["./bin/ok"]}]}'
+D3CANON="$(node -e 'const b=require(process.argv[1]); process.stdout.write(b.canon(JSON.parse(require("fs").readFileSync(process.argv[2],"utf8"))))' "$REPO_ROOT/_shared/lib/verify-base.cjs" "$P/.a1/verify.json")"
+(cd "$P" && node "$TOOLS" disposition add --kind config_change --rule verify-config --file .a1/verify.json --text "$D3CANON" --reason "fixture" --by same >/dev/null 2>&1)
+D3FP="$(node -e 'const e=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(e[e.length-1].fingerprint)' "$P/.a1/dispositions.json")"
+node -e 'const fs=require("fs"); const f=process.argv[1]; const e=JSON.parse(fs.readFileSync(f,"utf8")); const x=e[e.length-1]; x.review="upheld"; x.review_reason="fixture"; x.reviewed_by="same"; x.reviewed_at="2026-10-21"; fs.writeFileSync(f, JSON.stringify(e,null,2)+"\n");' "$P/.a1/dispositions.json"
+g "$P" add -A; g "$P" commit -q -m "self reviewed"
+vrun "$P" --base main
+check "D3 an upheld config_change entry reviewed by its own author does not clear: exit 1 verify_config_changed" 1 'j.reason+"/"+j.config_changed.dispositioned' "verify_config_changed/false"
+
+# D4: the suite sees no vault variables
+newproj d4; stub vaultless '[ -z "${A1_VAULT_ROOT:-}" ] && [ -z "${A1_VAULT_WRITER_HOST:-}" ] && [ -z "${A1_HOST_ID:-}" ] || exit 1'
+cfg '{"commands":[{"id":"unit","argv":["./bin/vaultless"]}]}'; seal
+mkdir -p "$WORK/d4vault"
+OUT="$(cd "$P" && A1_VAULT_ROOT="$WORK/d4vault" A1_VAULT_WRITER_HOST=h A1_HOST_ID=h node -e 'const r=require(process.argv[1]); const v=r.runVerify({project:process.argv[2], noCache:true}); process.stdout.write(JSON.stringify(v))' "$REPO_ROOT/_shared/lib/verify-run.cjs" "$P" 2>"$WORK/err")"; RC=$?
+check "D4 A1_VAULT_ROOT / A1_VAULT_WRITER_HOST / A1_HOST_ID are set in the owner env but unset in the suite: pass" 0 'j.verdict' "pass"
+
 echo "a1-verify: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]
