@@ -20,6 +20,7 @@
 #     (not just at the end) -> index.json + NEXT.md agree with ROADMAP.md /
 #     feature.md frontmatter at each of the 10 steps, 0 detected drift
 set -u
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
 
 # Spec 010 Wave 4: every product writer mirrors docs/product into A1_VAULT_ROOT.
 # A fixture must never reach the developer's real vault, and its expectations
@@ -162,7 +163,7 @@ check_no_drift() {
   return 0
 }
 
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-docs-test.XXXXXX")"
+mk_workdir WORK "a1-product-docs-test"
 PDIR="$WORK/docs/product"
 mkdir -p "$PDIR/features/002-second-feature"
 
@@ -580,7 +581,7 @@ fi
 # --- SC-003: 10 consecutive CLI-driven state changes on a real project,
 # drift-checked after EVERY step (not just once at the end). Fresh fixture
 # dir so this scenario isn't entangled with the mutation history above. ---
-SC003_WORK="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-docs-sc003.XXXXXX")"
+mk_workdir SC003_WORK "a1-product-docs-sc003"
 SC003_PDIR="$SC003_WORK/docs/product"
 mkdir -p "$SC003_PDIR/features/002-second-feature"
 
@@ -791,7 +792,7 @@ assert_true "sc003-exactly-10-steps-exercised" "$([[ $sc003_steps -eq 10 ]] && e
 # must be rejected before any path is built or file written, for every
 # write-path entry point that joins a user-supplied slug into a path.
 # ===========================================================================
-SEC_WORK="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-docs-sec-test.XXXXXX")"
+mk_workdir SEC_WORK "a1-product-docs-sec-test"
 SEC_PDIR="$SEC_WORK/docs"
 rm -rf /tmp/a1-tools-ESCAPED
 node "$TOOLS" product init --project secdemo --title "Sec Demo" --dir "$SEC_PDIR" >/dev/null 2>&1
@@ -825,7 +826,7 @@ rm -rf /tmp/a1-tools-ESCAPED
 # the lock is older than RESERVATIONS_LOCK_STALE_MS (5 min) — see
 # isLockStale() in _shared/a1-tools.cjs.
 # ===========================================================================
-STALE_WORK="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-docs-stale-lock-test.XXXXXX")"
+mk_workdir STALE_WORK "a1-product-docs-stale-lock-test"
 STALE_PDIR="$STALE_WORK/docs"
 node "$TOOLS" product init --project staledemo --title "Stale Demo" --dir "$STALE_PDIR" >/dev/null 2>&1
 

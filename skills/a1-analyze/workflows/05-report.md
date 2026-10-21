@@ -13,6 +13,7 @@ Apply this routing logic to the deduplicated findings:
 | Finding type | Suggested follow-up skill |
 |---|---|
 | Any BLOCKER | `a1-fix` (one entry per BLOCKER, or grouped if same root cause) |
+| Any finding when the Scope section flags **blueprint mode** (analyzed tree ≠ target repo) | `a1-roadmap` — findings are "do not carry over" guidance for our own product, never fix orders on the source (see `01-scope.md` Step 4.5) |
 | MAJOR with structural change (multiple files, new module, refactor) | `a1-new-feature` (grouped by structural area) |
 | MAJOR with compliance/legal scope | direct → Ludwig |
 | All remaining MAJOR + MINOR (polish, style, small) | "Backlog" (no skill) |

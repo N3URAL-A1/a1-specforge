@@ -30,7 +30,7 @@
 # Code: under Claude Code they print `SKIP (claude-code ancestor)`; with
 # CI=true a SKIP is a FAIL, so CI always runs them (as part 08's R30j2).
 
-TMP11="$(mktemp -d "${TMPDIR:-/tmp}/a1x11.XXXXXX")"
+mk_workdir TMP11 "a1x11"
 [[ -n "$TMP11" && -d "$TMP11" ]] || { echo "FAIL  part 11: mktemp failed" >&2; fail=$((fail + 1)); return 0 2>/dev/null || exit 1; }
 SAVED_HOME_11="$HOME"
 export HOME="$TMP11/home"; mkdir -p "$HOME"

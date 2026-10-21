@@ -21,7 +21,7 @@
 # of main 687f4b9 before the Wave 10 code, and every named mutation below was
 # applied alone to a `git archive` copy of the finished tree.
 
-W_WORK="$(mktemp -d)"
+mk_workdir W_WORK w_work
 W_HOME="$W_WORK/home"; W_ERR="$W_WORK/stderr"
 mkdir -p "$W_HOME"
 W_OUT=""; W_RC=0

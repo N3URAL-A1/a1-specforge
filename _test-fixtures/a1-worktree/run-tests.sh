@@ -8,13 +8,14 @@
 # not touch the user's real registry.
 
 set -u
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TOOLS="$REPO_ROOT/_shared/a1-tools.cjs"
 
 # WORK is a real path (repo roots are stored as real paths; macOS /var -> /private/var) and is
 # checked before the EXIT trap can rm -rf it: a failed mktemp must never leave WORK = cwd.
-WORK=$(mktemp -d) || exit 2
+mk_workdir WORK work || exit 2
 WORK=$(cd "$WORK" && pwd -P) || exit 2
 [[ -n "$WORK" && -d "$WORK" ]] || exit 2
 export A1_WORKTREE_REGISTRY="$WORK/registry.json"
@@ -25,6 +26,7 @@ results=()
 
 cleanup() {
   rm -rf "$WORK"
+  a1_fx_cleanup
 }
 trap cleanup EXIT
 

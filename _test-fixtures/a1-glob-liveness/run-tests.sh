@@ -14,6 +14,7 @@
 # catches this class; only a live match count does.
 
 set -u
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 LIB="$REPO_ROOT/_shared/lib/glob-liveness.cjs"
@@ -30,8 +31,8 @@ bad() { results+=("FAIL  $1"); fail=$((fail + 1)); }
 # (plural) — plants a `projects` dir, the consumer's expansion finds none.
 caseG1() {
   local base out rc declared
-  base="$(mktemp -d)"
-  declared="$(mktemp -d)"
+  mk_workdir base base
+  mk_workdir declared declared
   # Same JSON shape `learnings roots --json` emits: 4 glob keys, each an
   # array of one pattern derived from a single root.
   out="$(node -e '
@@ -67,7 +68,7 @@ caseG1() {
 # that turns it red.
 caseG2() {
   local base out rc reported
-  base="$(mktemp -d)"
+  mk_workdir base base
   # A glob segment that CANNOT exist under the planted layout: plantFor will
   # create `.../projects/<tok>/quick` (matching the literal pattern given),
   # but the pattern below asks for a DIFFERENT plural segment than what a
@@ -105,7 +106,7 @@ caseG2() {
 # same planted root for a same-shape comparison.
 caseG3() {
   local base out rc verdict
-  base="$(mktemp -d)"
+  mk_workdir base base
   out="$(node -e '
     const { liveness, plantFor } = require(process.argv[1]);
     const path = require("path");
@@ -151,7 +152,7 @@ caseG3() {
 # Red-making change: inverting the `>= 1` assertion.
 caseG4() {
   local base out rc ok_count
-  base="$(mktemp -d)"
+  mk_workdir base base
   out="$(node -e '
     const { liveness } = require(process.argv[1]);
     const path = require("path");
@@ -187,7 +188,7 @@ caseG4() {
 # non-matching sibling exists: `readdir` overcounts it, `ls -d` does not.
 caseG5() {
   local base out rc helper_count shell_count glob
-  base="$(mktemp -d)"
+  mk_workdir base base
   glob="$base/*/.a1/learnings/pattern/a1-learnings"
   mkdir -p "$base/planted/.a1/learnings/pattern/a1-learnings"
   mkdir -p "$base/sibling-no-match/.a1/learnings/pattern"
@@ -226,7 +227,7 @@ caseG5() {
 # needs no unwinding at all.
 caseG6() {
   local work target suite rc_before rc_after
-  work="$(mktemp -d)"
+  mk_workdir work work
 
   # Copy only what the a1-code-roots suite needs: the shared libs, the facade,
   # and the suite itself. `cp -R` of the whole repo would drag .git along.
@@ -235,6 +236,9 @@ caseG6() {
   cp "$REPO_ROOT/_shared/a1-tools.cjs" "$work/_shared/"
   cp "$REPO_ROOT"/_shared/lib/*.cjs "$work/_shared/lib/"
   cp "$REPO_ROOT/_test-fixtures/a1-code-roots/run-tests.sh" "$work/_test-fixtures/a1-code-roots/"
+  # The copied suite sources the shared temp helper from ../lib (suite-tmpdir-leak).
+  mkdir -p "$work/_test-fixtures/lib"
+  cp "$REPO_ROOT/_test-fixtures/lib/tmp.sh" "$work/_test-fixtures/lib/"
   # a1-code-roots' case K greps this workflow doc for drift, so the copy needs
   # it too — without it K fails for a missing file and G6's "before" run is
   # already red, which would make G6 report a retrofit failure that is really a
@@ -269,7 +273,7 @@ caseG6() {
 # interpolated into the command string — a canary appears.
 caseG7() {
   local base canary fired r
-  base="$(mktemp -d)"; canary="$base/CANARY_G7"
+  mk_workdir base base; canary="$base/CANARY_G7"
   fired=no
   for pat in "$base/*; touch $canary" \
              "$base/*\$(touch $canary)" \
@@ -299,7 +303,7 @@ caseG7() {
 # A1_CODE_ROOTS denylist — the canary appears again.
 caseG8() {
   local host canary globs rc
-  host="$(mktemp -d)"; canary="$host/CANARY_G8"
+  mk_workdir host host; canary="$host/CANARY_G8"
   mkdir -p "$host/a1probe\$(touch $canary)"
   rc=0
   globs="$(A1_CODE_ROOTS="$host/a1probe\$(touch $canary)" \
@@ -326,7 +330,7 @@ caseG8() {
 # Red-making change: drop `IFS=` from the bash snippet — the count becomes 0.
 caseG9() {
   local base dir got
-  base="$(mktemp -d)"; dir="$base/My Projects"
+  mk_workdir base base; dir="$base/My Projects"
   mkdir -p "$dir/r1/.a1/learnings/project/x/quick" "$dir/r2/.a1/learnings/project/x/quick"
   got="$(node -e "
     const gl=require('$LIB');
@@ -345,7 +349,7 @@ caseG9() {
 # Red-making change: remove the catch returning 0 — E2BIG/ENAMETOOLONG escapes.
 caseG10() {
   local base got
-  base="$(mktemp -d)"
+  mk_workdir base base
   got="$(node -e "
     const gl=require('$LIB');
     const pat='/'+'a'.repeat(10000)+'/*';
@@ -365,7 +369,7 @@ caseG10() {
 # Red-making change: remove the containment check — the directory appears.
 caseG11() {
   local base got target
-  base="$(mktemp -d)"
+  mk_workdir base base
   # A UNIQUE escape target per run, cleaned up unconditionally. The first
   # version used a fixed name and asserted its absence — so once a mutation
   # probe had legitimately created it, the case failed on the leftover artefact

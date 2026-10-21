@@ -19,7 +19,7 @@
 # Mutation record: 23 single-line mutations of vault-lint.cjs (one per class
 # detection, per guard, per byte rule) each turned at least one L assert red.
 
-L_WORK="$(mktemp -d)"
+mk_workdir L_WORK l_work
 mkdir -p "$L_WORK/home"
 
 # Wave 10 (FR-038, review N2): a project folder without a hub note is

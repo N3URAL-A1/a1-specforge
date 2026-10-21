@@ -42,7 +42,7 @@
 # by a shadow dir of symlinks to its other entries; the helper proves
 # `! command -v gitleaks` before use and the arm FAILS (never skips) otherwise.
 
-TMP20="$(mktemp -d)"
+mk_workdir TMP20 tmp20
 SAVED_HOME_20="$HOME"
 RB_N=0
 RB_GITLEAKS_VERSION="8.30.1"

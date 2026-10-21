@@ -73,6 +73,7 @@ Always read the target project's `CLAUDE.md` first and apply its conventions.
 - E2E: critical user journeys
 - A feature is not done until all tests are green
 - Minimum 80% test coverage on code you write
+- A test for a guard, leak or error classifier drives the real exported function with real library objects — never a copy of the logic in the test file, never a grep of SQL text — and your wave report names the defect you re-inserted to prove the test fails (see `_shared/agent-lessons.md#guard-self-proof`)
 
 ### Security by Default
 - Input validation on every layer using schema-based validation (Zod)

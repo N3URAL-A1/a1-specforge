@@ -28,7 +28,7 @@
 #   CC15  Red if labelFromText() drops its startsWith anchor                        [mutant M13]
 # Run on tree copies only (the real owner store is never touched; rule 4b of the plan).
 
-TMP23="$(mktemp -d "${TMPDIR:-/tmp}/a1x23.XXXXXX")"
+mk_workdir TMP23 "a1x23"
 [[ -n "$TMP23" && -d "$TMP23" ]] || { echo "FAIL  part 23: mktemp failed" >&2; fail=$((fail + 1)); return 0 2>/dev/null || exit 1; }
 SAVED_HOME_23="$HOME"
 export HOME="$TMP23/home"; mkdir -p "$HOME"
@@ -547,7 +547,7 @@ scen_stale23() { prep23; yes23 >/dev/null; git -C "$PHASE_REPO" remote set-url o
 scen_drop23() { prep23; yes23 >/dev/null; cli23 revoke >/dev/null; cli23 record --kind consent; echo "$G_RC/$(reason23)"; }
 scen_late23() { prep23; yes23 >/dev/null; cli23 record --kind consent >/dev/null; ans23 consent yes; json_get "$SIM_OUT" "j.ok + '/' + j.reason"; }
 scen_home23() {
-  local t2; t2="$(mktemp -d)"; cp -R "$TREE/_shared" "$t2/_shared"
+  local t2; mk_workdir t2 t2; cp -R "$TREE/_shared" "$t2/_shared"
   node -e 'const fs = require("fs"); const [src, dst, pd] = process.argv.slice(1); const s = fs.readFileSync(src, "utf8"); const n = "return os.userInfo().homedir;"; fs.writeFileSync(dst, s.replace(n, () => "return " + JSON.stringify(pd) + ";"));' "$REPO_ROOT/_shared/lib/xprov-owner-home.cjs" "$t2/_shared/lib/xprov-owner-home.cjs" "$TMP23/passwd2"
   rm -rf "$TMP23/passwd2"; mkdir -p "$TMP23/passwd2"; TREE="$t2"; TREE_TOOLS="$t2/_shared/a1-tools.cjs"; prep23; cli23 record --kind consent
   echo "$G_RC/$(reason23)/$([[ -e "$TMP23/passwd2/.a1-xprov" ]] && echo bytes || echo none)"; rm -rf "$t2"

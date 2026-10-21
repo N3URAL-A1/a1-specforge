@@ -12,6 +12,7 @@
 #   hostile-release-injection -> 0 idempotent, injection-shaped value treated inertly
 #   hostile-release-overlong  -> 0 or 1, oversized value does not hang
 set -u
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$DIR/../.." && pwd)"
@@ -20,7 +21,7 @@ TOOLS="$REPO_ROOT/_shared/a1-tools.cjs"
 pass=0
 fail=0
 
-WORK="$(mktemp -d)"
+mk_workdir WORK work
 FILE="$WORK/reservations.json"
 
 assert_rc() {

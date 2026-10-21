@@ -3,6 +3,7 @@
 # Runs every fixture, asserts exit code and JSON .status field.
 
 set -u
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
 
 # Spec 010 Wave 4: every product writer mirrors docs/product into A1_VAULT_ROOT.
 # A fixture must never reach the developer's real vault, and its expectations
@@ -18,7 +19,7 @@ FIX="$REPO_ROOT/_test-fixtures/a1-checklist"
 # Check #11 (spec 010 W7) looks for a roadmap in the cwd, the code-root
 # checkouts and the vault mirror. Pin the code roots to an empty temp dir so
 # no case ever reads a real ~/claude-projects checkout.
-CL_WORK="$(mktemp -d)"
+mk_workdir CL_WORK cl_work
 mkdir -p "$CL_WORK/noroots"
 export A1_CODE_ROOTS="$CL_WORK/noroots"
 

@@ -10,6 +10,7 @@
 # matches nothing reports "no learnings" instead of failing (2026-09-11).
 
 set -u
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TOOLS="$REPO_ROOT/_shared/a1-tools.cjs"
@@ -26,7 +27,7 @@ bad() { results+=("FAIL  $1"); fail=$((fail + 1)); }
 # even though the fake HOME also has a ~/code that autodetect would find.
 caseA() {
   local home declared out err rc
-  home="$(mktemp -d)"; declared="$(mktemp -d)"
+  mk_workdir home home; mk_workdir declared declared
   mkdir -p "$home/code"            # decoy autodetect would pick
   out="$(cd "$REPO_ROOT" && env HOME="$home" A1_CODE_ROOTS="$declared" \
         node "$TOOLS" learnings roots 2>"$home/err")"; rc=$?
@@ -46,7 +47,7 @@ caseA() {
 # A1_CODE_ROOTS would otherwise look like a working setup.
 caseB() {
   local home out rc
-  home="$(mktemp -d)"
+  mk_workdir home home
   mkdir -p "$home/code"            # autodetect COULD rescue it — must not
   out="$(cd "$REPO_ROOT" && env HOME="$home" A1_CODE_ROOTS="/nope/xyz:/also/missing" \
         node "$TOOLS" learnings roots 2>&1)"; rc=$?
@@ -61,7 +62,7 @@ caseB() {
 # Both layouts present → both returned (a split setup must not lose one).
 caseC() {
   local home out err rc
-  home="$(mktemp -d)"
+  mk_workdir home home
   mkdir -p "$home/claude-projects" "$home/code"
   out="$(cd "$REPO_ROOT" && env -u A1_CODE_ROOTS HOME="$home" \
         node "$TOOLS" learnings roots 2>"$home/err")"; rc=$?
@@ -81,7 +82,7 @@ caseC() {
 # PARENT is used (sibling-checkout layout).
 caseD() {
   local home parent repo out err rc
-  home="$(mktemp -d)"; parent="$(mktemp -d)"
+  mk_workdir home home; mk_workdir parent parent
   repo="$parent/myproj"; mkdir -p "$repo"; git -C "$repo" init -q
   out="$(cd "$repo" && env -u A1_CODE_ROOTS HOME="$home" \
         node "$TOOLS" learnings roots 2>"$home/err")"; rc=$?
@@ -117,7 +118,7 @@ caseD() {
 # phase must never synthesize from an empty corpus and call it success.
 caseE() {
   local home nowhere out rc
-  home="$(mktemp -d)"; nowhere="$(mktemp -d)"
+  mk_workdir home home; mk_workdir nowhere nowhere
   out="$(cd "$nowhere" && env -u A1_CODE_ROOTS HOME="$home" \
         node "$TOOLS" learnings roots 2>&1)"; rc=$?
   if [[ $rc -eq 3 ]] && printf '%s' "$out" | grep -q 'no project roots resolved'; then
@@ -132,7 +133,7 @@ caseE() {
 # at a literal /code path would be the original defect.
 caseF() {
   local home declared out rc
-  home="$(mktemp -d)"; declared="$(mktemp -d)"
+  mk_workdir home home; mk_workdir declared declared
   out="$(cd "$REPO_ROOT" && env HOME="$home" A1_CODE_ROOTS="$declared" \
         node "$TOOLS" learnings roots 2>/dev/null)"; rc=$?
   # ALL FOUR glob keys, checked structurally. Grepping only two let the dead
@@ -198,7 +199,7 @@ caseF() {
 # runs the shape the workflow documents and asserts it aborts with node's code.
 caseG() {
   local home nowhere rc roots
-  home="$(mktemp -d)"; nowhere="$(mktemp -d)"
+  mk_workdir home home; mk_workdir nowhere nowhere
   # Mirror of the snippet in skills/a1-evolve/workflows/01-collect.md §1a.
   rc=0
   roots="$(cd "$nowhere" && env -u A1_CODE_ROOTS HOME="$home" bash -c '
@@ -244,7 +245,7 @@ caseK() {
 # "no roots". The two states need different remedies, so they must not merge.
 caseH() {
   local home rc
-  home="$(mktemp -d)"; mkdir -p "$home/claude-projects"
+  mk_workdir home home; mkdir -p "$home/claude-projects"
   rc=0
   (cd "$REPO_ROOT" && env HOME="$home" A1_CODE_ROOTS="/nope/xyz" \
     node "$TOOLS" learnings roots >/dev/null 2>&1) || rc=$?
@@ -263,7 +264,7 @@ caseH() {
 # path that DOES exist, which only the isAbsolute check can reject.
 caseJ() {
   local home rc out
-  home="$(mktemp -d)"
+  mk_workdir home home
   mkdir -p "$home/real-but-relative"
   rc=0
   # cwd = $home, so "real-but-relative" resolves to an existing directory.
@@ -281,7 +282,7 @@ caseJ() {
 # execute anything and never hang.
 caseI() {
   local home rc1 rc2 rc3 canary big sub
-  home="$(mktemp -d)"; canary="$home/pwned"
+  mk_workdir home home; canary="$home/pwned"
   rc1=0; (cd "$REPO_ROOT" && env HOME="$home" A1_CODE_ROOTS="../../etc" \
     node "$TOOLS" learnings roots >/dev/null 2>&1) || rc1=$?
   rc2=0; (cd "$REPO_ROOT" && env HOME="$home" A1_CODE_ROOTS="; touch $canary" \

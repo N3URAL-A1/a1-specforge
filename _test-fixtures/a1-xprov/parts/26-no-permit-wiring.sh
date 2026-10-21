@@ -22,7 +22,7 @@
 #   AQ4  re-show only while the marker is open   Red if the re-show exception ignores the marker state                    [mutant M8]
 # Mutants run on tree copies only (rule 4b); the real owner store stays untouched (the harness compares it at the end).
 
-TMP26="$(mktemp -d "${TMPDIR:-/tmp}/a1x26.XXXXXX")"
+mk_workdir TMP26 "a1x26"
 [[ -n "$TMP26" && -d "$TMP26" ]] || { echo "FAIL  part 26: mktemp failed" >&2; fail=$((fail + 1)); return 0 2>/dev/null || exit 1; }
 SAVED_HOME_26="$HOME"
 export HOME="$TMP26/home"; mkdir -p "$HOME/.codex"; printf '{"fixture":true}\n' > "$HOME/.codex/auth.json"; chmod 600 "$HOME/.codex/auth.json"

@@ -7,6 +7,7 @@
 #   (d) SQL in diff + missing evidence -> 1
 #   (e) no git repo                    -> 2
 set -u
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$DIR/../.." && pwd)"
@@ -32,7 +33,7 @@ assert_rc() {
 make_repo() {
   local relpath="$1" content="$2"
   local repo
-  repo="$(mktemp -d)"
+  mk_workdir repo repo
   git -C "$repo" init -q
   git -C "$repo" config user.email t@t.dev
   git -C "$repo" config user.name test
@@ -91,7 +92,7 @@ OUT="$(node "$TOOLS" realpath-check run --diff-base HEAD~1 --project "$REPO_D" 2
 assert_rc "d-missing-evidence" 1 $? "$OUT"
 
 # --- (e) no git repo -> 2 ---
-NOGIT="$(mktemp -d)"
+mk_workdir NOGIT nogit
 OUT="$(node "$TOOLS" realpath-check run --diff-base HEAD~1 --project "$NOGIT" 2>&1)"
 assert_rc "e-no-git" 2 $? "$OUT"
 

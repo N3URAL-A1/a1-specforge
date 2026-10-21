@@ -23,7 +23,7 @@
 # HP  hostile: traversal in --work-path / --spec, injection-shaped --base, 10 000-char --spec exit 2 and write nothing
 # FR-022  the fixture phase (plan review + one depended surface wave + the PR diff) shows at most 3 Codex runs
 
-TMP31="$(mktemp -d "${TMPDIR:-/tmp}/a1x31.XXXXXX")"
+mk_workdir TMP31 "a1x31"
 [[ -n "$TMP31" && -d "$TMP31" ]] || { echo "FAIL  part 31: mktemp failed" >&2; fail=$((fail + 1)); return 0 2>/dev/null || exit 1; }
 SAVED_HOME_31="$HOME"
 export HOME="$TMP31/home"; mkdir -p "$HOME/.codex"; printf '{"fixture":true}\n' > "$HOME/.codex/auth.json"; chmod 600 "$HOME/.codex/auth.json"

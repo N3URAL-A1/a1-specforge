@@ -30,7 +30,7 @@
 #   root07 baseline: on a tree whose real rows are `blocking` with complete
 #        evidence, dropping the reset turns R5a, R5e, R5f and flip07 red.
 
-TMP07="$(mktemp -d)"
+mk_workdir TMP07 tmp07
 [[ -n "$TMP07" && -d "$TMP07" ]] || { echo "FAIL  part 07: mktemp -d failed" >&2; exit 1; }
 CHECK07="$SUITE/check-enforcement.sh"
 ADR_REL07="docs/adr/2026-09-24-cross-provider-review-gate.md"

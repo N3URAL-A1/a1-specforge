@@ -48,6 +48,7 @@ For each success criterion in PLAN.md:
 - Is there at least one task that delivers it?
 - Is the task action precise enough for an executor to follow without asking questions?
 - Is the "done when" condition measurable and binary?
+- Can the check go red? Name where each verification command or probe turns red, run every V-command a human cannot eyeball verbatim against a sample or stub, and flag a probe that is green by construction as MAJOR — see `_shared/agent-lessons.md#plan-probe-red-line`.
 
 If a spec file is available: does every spec acceptance criterion map to a plan success criterion? A diluted or dropped AC is a BLOCKER.
 

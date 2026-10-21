@@ -16,13 +16,15 @@ and `assert_rc`/`assert_true`-style helpers that print `PASS`/`FAIL  <name>` per
 last two lines of every suite are a summary echo and the exit gate:
 
 ```bash
-# from _test-fixtures/a1-reservations/run-tests.sh:14-30
+# from _test-fixtures/a1-reservations/run-tests.sh:14-33
 set -u
+# Shared temp helper: guarded, explicit template, one EXIT trap (see "Isolation").
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
 
 pass=0
 fail=0
 
-WORK="$(mktemp -d)"
+mk_workdir WORK work
 FILE="$WORK/reservations.json"
 
 assert_rc() {
@@ -49,7 +51,14 @@ suite are green, exit 1 means at least one case failed.
 
 ## Isolation
 
-- All mutable state goes into `mktemp -d` — never write into the repo tree or a fixed path.
+- All mutable state goes into a directory from `mk_workdir <VAR> <label>` (file: `mk_tmpfile`)
+  in `_test-fixtures/lib/tmp.sh` — never write into the repo tree or a fixed path. The helper
+  passes an explicit `"${TMPDIR:-/tmp}/..."` template (macOS `mktemp` without one ignores
+  `$TMPDIR` and leaked ~15k dirs a day), guards the result (`mktemp` failure, empty, not a dir,
+  realpath), and removes everything with one EXIT trap. Call it directly, not inside `$(...)`.
+  A suite with its own EXIT trap must call `a1_fx_cleanup` from it. A bare `mktemp`,
+  `mktemp -d` or `mktemp -t` is a red lint case (`a1-vault-fallback` L2); the runtime check is
+  `a1-tmp-hygiene`.
 - CI additionally runs with `HOME=$(mktemp -d)` so suites cannot depend on a developer's
   real `~/.claude/` state.
 - Original fixture data (vault fixtures, sample registries, etc.) is immutable — copy it
@@ -131,6 +140,13 @@ Each red-making change below is quoted from the case's header comment in the nam
 | `vault lint --fix-type` scope and bytes (`a1-vault-cockpit/parts/06a-lint.sh`) | L5, L5b, L8, L10, L11 | L5: stamping on any finding instead of on `type_missing` (files with a type gain a second `type:`). L5b: dropping the `frontmatter_folded` skip in `applyFixType` (the folded file is stamped and no longer listed under `skipped`). L8: resolving the tier with `vaultRootInfo()` before the refusal (creates `.a1/learnings/`, prints `learnings root:`). L10: dropping the `emptyTypeLine()` replacement (an empty `type:` gets duplicated and every run adds another). L11: restoring the "type_missing is the ONLY finding" guard (status outliers stay unstamped). |
 | Hub linking: conflict copies and CRLF (`a1-vault-cockpit/parts/06b-hub.sh`) | HB11, HB12 | HB11: dropping `&& !isConflictCopy(f)` in `listSpecBasenames` (`(conflict 2)`, `(Conflicted copy …)` and friends get linked). HB12: dropping the `cr` suffix in `insertRelationLine`, in the insert or the append branch (bare-LF lines in a CRLF hub). |
 | Writer gate order and linked set roots (`a1-vault-cockpit/parts/05-hosts.sh`) | H7c, S3, S5 | H7c: running the writer gate before the argument checks in `cmdVaultLinkHub` (a bare `vault link-hub` exits 0 `skipped` instead of 1). S3/S5 text: the old "source folder resolves outside the repo" reason instead of the FR-005 set-root refusal. S5 hook: dropping the `patterns.length === 0` early return in `planSet` (the product hook warns about a `phases/` set it never mirrors). |
+
+### Instances that satisfy this rule (bug suite-tmpdir-leak, 2026-10-20)
+
+| Guard | Case(s) | Named red-making change |
+|---|---|---|
+| No bare `mktemp` in fixture suites (`a1-vault-fallback/run-tests.sh`) | L2a, L2b | L2b: putting one bare `mktemp -d` (or `mktemp`, `mktemp -t`) back into any `_test-fixtures/**/*.sh`. L2a is the matcher self-test (planted bare and templated lines) so L2b cannot go green by matching nothing. `_test-fixtures/a1-depth-pass/` is exempt until it is migrated after spec 019 merges. |
+| Suites leave their TMPDIR empty (`a1-tmp-hygiene/run-tests.sh`) | H1-H4 | H4: replacing the `mk_workdir WORK` line in `a1-reservations/run-tests.sh` with a `mktemp -d "${TMPDIR:-/tmp}/x.XXXXXX"` that nobody removes. H1: dropping `a1_fx_cleanup` from the EXIT trap in `lib/tmp.sh`. |
 
 ### A worked lesson from Wave 4: a case that could not enter its own branch
 

@@ -65,6 +65,7 @@
 #     (2 open, 2 fixed) with NEITHER `--only`/`--all`, only the 2 open
 #     findings are mirrored.
 set -u
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
 
 # Spec 010 Wave 4: every product writer mirrors docs/product into A1_VAULT_ROOT.
 # A fixture must never reach the developer's real vault, and its expectations
@@ -154,7 +155,7 @@ EOF
 # Scenario 1 (SC-001/SC-003): audit-publish + audit-set (18 fixed) +
 # audit-mirror --all against the vendored niimo analysis.
 # ===========================================================================
-WORK1="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-audit-mirror-niimo.XXXXXX")"
+mk_workdir WORK1 "a1-product-audit-mirror-niimo"
 PDIR1="$WORK1/docs/product"
 write_niimo_roadmap "$PDIR1"
 
@@ -312,7 +313,7 @@ fi
 # Scenario 3 (FR-012 edge case): unknown --milestone hard-fails BEFORE any
 # feature is written.
 # ===========================================================================
-WORK3="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-audit-mirror-badmilestone.XXXXXX")"
+mk_workdir WORK3 "a1-product-audit-mirror-badmilestone"
 PDIR3="$WORK3/docs/product"
 write_niimo_roadmap "$PDIR3"
 node "$TOOLS" product audit-publish --analysis "$VENDORED_ANALYSIS" --dir "$PDIR3" >/dev/null 2>&1
@@ -338,7 +339,7 @@ fi
 # OPEN findings are mirrored, on a small synthetic 4-finding audit (2 open,
 # 2 fixed).
 # ===========================================================================
-WORK4="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-audit-mirror-defaultscope.XXXXXX")"
+mk_workdir WORK4 "a1-product-audit-mirror-defaultscope"
 PDIR4="$WORK4/docs/product"
 mkdir -p "$PDIR4/audits"
 cat > "$PDIR4/ROADMAP.md" <<'EOF'

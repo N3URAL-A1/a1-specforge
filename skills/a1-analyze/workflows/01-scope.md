@@ -69,6 +69,25 @@ The helper:
 
 Parse the JSON, capture the path.
 
+## Step 4.5 — Belief check (measure the owner's claims before any lane is briefed)
+
+List every statement the user made as a fact about the codebase ("Codex review is
+integrated", "specs 009–011 are done", "tasks have no assignees"). For each one run
+the single command that would disprove it (a grep, a `find | sort | uniq -c` of status
+vocabularies, a `spec list`, a CI status) and record `measured: <command> → <result>`
+in the analysis file's Scope section. A refuted belief re-routes the focus and the
+lane briefs; a confirmed one becomes a fact the lanes may cite.
+
+Three runs in a row (2026-09-24 a1-specforge, 2026-09-26 a1-office, 2026-10-08
+a1-specforge) named this the step that made the briefs precise: one grep (0 codex
+references) re-routed a whole analysis; one re-measurement refuted a claim (tasks DO
+have assignees) before it reached the roadmap.
+
+When the analyzed tree is NOT the target repo (blueprint mode: a customer app read as
+a model for our own product), say so in the Scope section. Findings about the source
+are then "do not carry over" guidance, not fix orders, and the report routes to
+`a1-roadmap`, not to `a1-fix` per BLOCKER.
+
 ## Step 5 — Confirm with the user
 
 Tell the user:

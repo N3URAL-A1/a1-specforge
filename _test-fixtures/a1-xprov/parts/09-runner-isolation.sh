@@ -118,7 +118,7 @@
 # The canary measurements that justify (1) are in the ADR §6 and STATUS; the
 # fakes below follow them, never the code.
 
-TMP09="$(mktemp -d)"
+mk_workdir TMP09 tmp09
 [[ -n "$TMP09" && -d "$TMP09" ]] || { echo "FAIL  part 09: mktemp -d failed" >&2; exit 1; }
 SAVED_HOME_09="$HOME"
 export HOME="$TMP09/home"; mkdir -p "$HOME/.codex"; printf '{"fixture":true}\n' > "$HOME/.codex/auth.json"; chmod 600 "$HOME/.codex/auth.json"

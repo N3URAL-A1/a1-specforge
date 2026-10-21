@@ -29,6 +29,7 @@
 #                                    inert text (no shell side effect)
 #   hostile-oversized-intent     -> fails fast (<5s), does not hang
 set -u
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
 
 # Spec 010 Wave 4: every product writer mirrors docs/product into A1_VAULT_ROOT.
 # A fixture must never reach the developer's real vault, and its expectations
@@ -44,7 +45,7 @@ TOOLS="$REPO_ROOT/_shared/a1-tools.cjs"
 pass=0
 fail=0
 
-WORK="$(mktemp -d)"
+mk_workdir WORK work
 
 assert_rc() {
   local name="$1" expected="$2" actual="$3" out="$4"

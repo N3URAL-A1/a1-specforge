@@ -39,6 +39,7 @@
 #   product validate: German-language ROADMAP.md -> FR-016 warning
 #     (still exit 0 -- lint is a warning, not a hard block)        -> 0
 set -u
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
 
 # Spec 010 Wave 4: every product writer mirrors docs/product into A1_VAULT_ROOT.
 # A fixture must never reach the developer's real vault, and its expectations
@@ -75,7 +76,7 @@ assert_true() {
   fi
 }
 
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/a1-product-import-test.XXXXXX")"
+mk_workdir WORK "a1-product-import-test"
 
 # ===========================================================================
 # Fixture A — hand-written HTML (Niimo-style, Frappe-Gantt)

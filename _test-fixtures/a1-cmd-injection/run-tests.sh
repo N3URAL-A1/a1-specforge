@@ -13,6 +13,7 @@
 # Isolation: everything mutable lives under a fresh `mktemp -d`.
 
 set -u
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TOOLS="$REPO_ROOT/_shared/a1-tools.cjs"
@@ -49,7 +50,7 @@ assert_rc_nonzero() {
 # ---------------------------------------------------------------------------
 test_hostile_anchor() {
   local work marker vault repo
-  work="$(mktemp -d)"
+  mk_workdir work work
   marker="$work/pwned-anchor"
   vault="$work/vault"
   repo="$work/repo"
@@ -107,7 +108,7 @@ EOF
 # ---------------------------------------------------------------------------
 test_hostile_repo_path() {
   local work marker
-  work="$(mktemp -d)"
+  mk_workdir work work
   marker="$work/pwned-repopath"
   mkdir -p "$work/plan-dir"
   cat > "$work/plan-dir/PLAN.md" <<'EOF'
@@ -133,7 +134,7 @@ EOF
 # ---------------------------------------------------------------------------
 test_hostile_since() {
   local work marker repo
-  work="$(mktemp -d)"
+  mk_workdir work work
   marker="$work/pwned-since"
   repo="$work/repo"
   mkdir -p "$repo"
@@ -161,7 +162,7 @@ test_hostile_since() {
 # ---------------------------------------------------------------------------
 test_legit_since_still_works() {
   local work repo
-  work="$(mktemp -d)"
+  mk_workdir work work
   repo="$work/repo"
   mkdir -p "$repo/src"
 
@@ -196,7 +197,7 @@ test_legit_since_still_works() {
 # touching the file; a valid value round-trips into the frontmatter.
 test_set_size() {
   local work
-  work="$(mktemp -d)"
+  mk_workdir work work
   local vault="$work/vault"
   mkdir -p "$vault/project/demo/spec"
   printf -- '---\nid: 001-demo\nstatus: draft\nsize: null\n---\n\n# Demo\n' \

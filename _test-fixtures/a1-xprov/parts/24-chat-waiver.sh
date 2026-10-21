@@ -32,7 +32,7 @@
 #   CA11  Red if the terminal approve drops its store lock [M25]; red if consent allowlist drops its store lock [M26]
 # Run on tree copies only (the real owner store is never touched; rule 4b of the plan).
 
-TMP24="$(mktemp -d "${TMPDIR:-/tmp}/a1x24.XXXXXX")"
+mk_workdir TMP24 "a1x24"
 [[ -n "$TMP24" && -d "$TMP24" ]] || { echo "FAIL  part 24: mktemp failed" >&2; fail=$((fail + 1)); return 0 2>/dev/null || exit 1; }
 SAVED_HOME_24="$HOME"
 export HOME="$TMP24/home"; mkdir -p "$HOME"

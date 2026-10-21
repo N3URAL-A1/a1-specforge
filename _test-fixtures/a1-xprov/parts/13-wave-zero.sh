@@ -16,7 +16,7 @@
 #   V7  observe / run / normalize accept wave 0.
 #   V8  a wave-0 owner waiver through the CLI (owner path; SKIP under Claude Code).
 
-TMP13="$(mktemp -d "${TMPDIR:-/tmp}/a1x13.XXXXXX")"
+mk_workdir TMP13 "a1x13"
 [[ -n "$TMP13" && -d "$TMP13" ]] || { echo "FAIL  part 13: mktemp failed" >&2; fail=$((fail + 1)); return 0 2>/dev/null || exit 1; }
 SAVED_HOME_13="$HOME"
 export HOME="$TMP13/home"; mkdir -p "$HOME/.codex"; printf '{"fixture":true}\n' > "$HOME/.codex/auth.json"; chmod 600 "$HOME/.codex/auth.json"

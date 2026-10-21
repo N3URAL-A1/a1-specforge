@@ -31,7 +31,7 @@
 #   SR7  unit arms of the record module: parse rejections, the reader refuses
 #        a 0644 file, a symlinked file and a 0755 dir; write leaves no temp file.
 
-TMP16="$(mktemp -d)"
+mk_workdir TMP16 tmp16
 make_tree
 
 SR_RECORD_KEYS='["version","snapshot","repo_key","commit","base","tree","index_sha256","status_sha256","content_sha256","git_meta_sha256","diff_sha256","inputs","gitleaks","nonce","ts"]'

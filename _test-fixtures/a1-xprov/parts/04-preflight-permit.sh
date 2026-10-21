@@ -59,7 +59,7 @@ make_home_w4() { make_home; }
 # make_fake_global_home — a temp HOME holding .codex/ (with auth.json) so the
 # global-home check has something real to realpath against. Sets FAKE_HOME.
 make_fake_global_home() {
-  FAKE_HOME="$(mktemp -d)"
+  mk_workdir FAKE_HOME fake_home
   mkdir -p "$FAKE_HOME/.codex"
   printf '{"fixture":true}\n' > "$FAKE_HOME/.codex/auth.json"
   chmod 600 "$FAKE_HOME/.codex/auth.json"
@@ -68,7 +68,7 @@ make_fake_global_home() {
 # xprov_w4 <sub> [args…] — runs the TREE copy's a1-tools xprov <sub> with the
 # fake HOME and the given XHOME; stdout → W4_OUT, stderr → W4_ERR, exit → W4_RC.
 xprov_w4() {
-  local errf; errf="$(mktemp)"
+  local errf; mk_tmpfile errf errf
   W4_OUT="$(HOME="$FAKE_HOME" A1_XPROV_CODEX_HOME="$XHOME" node "$TREE_TOOLS" xprov "$@" 2>"$errf")"; W4_RC=$?
   W4_ERR="$(cat "$errf")"; rm -f "$errf"
 }
@@ -121,7 +121,7 @@ caseR14() {
   assert_eq "R14d config.toml bytes unchanged" "$after" "$before"
 
   # R14e — init-home on a missing dir creates 0700 + the frozen config + auth symlink; preflight then passes
-  XHOME="$(mktemp -d)/fresh-home"
+  mk_workdir XHOME xhome; XHOME="$XHOME/fresh-home"
   xprov_w4 init-home
   assert_rc "R14e init-home exits 0 creating a fresh home" 0 "$W4_RC" "$W4_ERR"
   assert_json "R14e init-home reports changed:true" "$W4_OUT" "j.changed" "true"
@@ -159,7 +159,7 @@ caseR14() {
 
   # R14i — unreadable SHA256SUMS is a runner_pin FAIL, not a skip
   make_home_w4; ln -s "$FAKE_HOME/.codex/auth.json" "$XHOME/auth.json"
-  local saved; saved="$(mktemp -d)"; mv "$TREE_VENDOR/SHA256SUMS" "$saved/"
+  local saved; mk_workdir saved saved; mv "$TREE_VENDOR/SHA256SUMS" "$saved/"
   xprov_w4 preflight
   mv "$saved/SHA256SUMS" "$TREE_VENDOR/SHA256SUMS"
   assert_rc "R14i preflight exits 1 without SHA256SUMS" 1 "$W4_RC"
@@ -269,7 +269,7 @@ caseS2() {
 # Red-making change: defaulting an absent .a1/xprov.json to `allowed`.
 caseR21() {
   make_tree; make_phase r21-phase
-  local out err rc errf; errf="$(mktemp)"
+  local out err rc errf; mk_tmpfile errf errf
   out="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov permit-check 2>"$errf")"; rc=$?; err="$(cat "$errf")"; rm -f "$errf"
   assert_rc "R21a permit-check exits 1 without .a1/xprov.json" 1 "$rc"
   assert_json "R21a reason is external_review_not_permitted" "$out" "j.reason" "external_review_not_permitted"
@@ -315,7 +315,7 @@ caseR21() {
   out="$(node "$TREE_TOOLS" xprov permit-check --repo "$PHASE_REPO/src" 2>&1)"; rc=$?
   assert_rc "R21h permit-check --repo <subdir> is a usage error" 2 "$rc" "$out"
   [[ "$out" == *"git toplevel"* ]] && ok "R21h the message names the toplevel" || bad "R21h message: $out"
-  local nogit; nogit="$(mktemp -d)"
+  local nogit; mk_workdir nogit nogit
   out="$(node "$TREE_TOOLS" xprov permit --repo "$nogit" --by robert --record record/x.md 2>&1)"; rc=$?
   assert_rc "R21h permit --repo <non-repo> is a usage error" 2 "$rc" "$out"
   [[ ! -e "$nogit/.a1/xprov.json" ]] && ok "R21h nothing was written into the non-repo dir" || bad "R21h permit wrote into a non-repo dir"
@@ -373,7 +373,7 @@ caseR25() {
 # model_observed.
 caseR26() {
   make_tree; make_phase r26-phase
-  local retro; retro="$(mktemp -d)/retro.md"
+  local retro; mk_workdir retro retro; retro="$retro/retro.md"
   cat > "$retro" <<'EOF'
 ---
 date: 2026-09-24

@@ -28,7 +28,7 @@
 #   M11 input copies scanned WITH lines and scopes applied to them (two edits; with only the second the
 #       input matches have no line and are refused as no_line, which the arm cannot tell apart) → D3 input arm
 
-TMP14="$(mktemp -d "${TMPDIR:-/tmp}/a1x14.XXXXXX")"
+mk_workdir TMP14 "a1x14"
 [[ -n "$TMP14" && -d "$TMP14" ]] || { echo "FAIL  part 14: mktemp failed" >&2; fail=$((fail + 1)); return 0 2>/dev/null || exit 1; }
 SAVED_HOME_14="$HOME"
 AL14=".a1/xprov-secret-allowlist.json"

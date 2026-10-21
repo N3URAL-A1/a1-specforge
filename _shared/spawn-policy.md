@@ -29,8 +29,17 @@ re-sent on every turn of the agent.
 A fork inherits the parent's full context. Use it only when that context is the point;
 for wave execution, review and verification spawn a fresh typed agent.
 
+## S4 — Fix briefs carry the plan's protections and measured facts only
+
+A brief that asks an agent to fix review findings names the plan's protected items
+(AS-list, must-not-touch lines, scope) verbatim, and states every platform or
+environment fact as `measured: <command>` or hands it to the agent as a measurement
+task. Four review-fix rounds in October 2026 were caused by briefs that lacked one or
+the other — incidents in `_shared/agent-lessons.md#fix-brief-measured`.
+
 ## Self-check before dispatch
 
 - [ ] `subagent_type` set, `name` absent — or `model` set explicitly
 - [ ] Brief lists paths, no pasted plan/spec bodies
 - [ ] Not a fork, unless the full parent context is required
+- [ ] Fix brief: the plan's protected list is included; every platform fact is tagged `measured:` or delegated as a measurement

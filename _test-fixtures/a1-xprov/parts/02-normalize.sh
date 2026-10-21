@@ -16,7 +16,7 @@
 # machine (see .meta): nothing below compares against them; the plan sha is
 # recomputed from the PLAN.md placed in the phase dir.
 
-TMP02="$(mktemp -d)"
+mk_workdir TMP02 tmp02
 # The approved case as an INSPECT record (runner.py:313 records the run's mode):
 # normalize refuses a review record for the wave gate (wrong_mode, Codex R1 on cf5a86e).
 INSPECT_APPROVED02="$TMP02/approved-inspect.result.json"

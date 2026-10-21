@@ -4,6 +4,7 @@
 # logs added), per-model breakdown, --since window, malformed-line skip
 # (injected into a TEMP COPY — the committed fixture stays valid JSON).
 set -u
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$DIR/../.." && pwd)"
@@ -54,8 +55,7 @@ else
 fi
 
 # --- Case 3: malformed line skipped (temp copy, per expected.md delegation) ---
-TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+mk_workdir TMP tmp
 cp "$DIR/session-sample.jsonl" "$TMP/session-sample.jsonl"
 mkdir -p "$TMP/session-sample/subagents"
 cp "$DIR/session-sample/subagents/"*.jsonl "$TMP/session-sample/subagents/"

@@ -11,6 +11,7 @@
 # fixture table (007-retro-gate-id-validator-wave-plan.md).
 
 set -u
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 LIB="$REPO_ROOT/_shared/lib/gate-ids.cjs"
@@ -279,7 +280,7 @@ FIXTURE_LIVE_REGISTRY="$REPO_ROOT/_shared/gates-registry.md"
 # Red-making change: making membership fuzzy, or inverting the exit.
 caseV1() {
   local work rc out drift
-  work="$(mktemp -d)"
+  mk_workdir work work
   cp "$CORPUS/retro-clean.md" "$work/retro.md"
   out="$(node "$TOOLS" retro validate "$work/retro.md" 2>/dev/null)"; rc=$?
   drift="$(node -e "console.log(JSON.parse(process.argv[1]).drift)" "$out" 2>/dev/null)"
@@ -300,7 +301,7 @@ caseV1() {
 # matches the bare canonical id, never the id-as-written.
 caseV2() {
   local work rc err
-  work="$(mktemp -d)"
+  mk_workdir work work
   cp "$CORPUS/retro-drift.md" "$work/retro.md"
   err="$(node "$TOOLS" retro validate "$work/retro.md" 2>&1 1>/dev/null)"; rc=$?
   if [[ $rc -eq 1 ]] && printf '%s' "$err" | grep -qE '`lane-split`'; then
@@ -318,7 +319,7 @@ caseV2() {
 # Red-making change: collapsing unknown into drift (V2 stays green, V3 alone fails).
 caseV3() {
   local work rc out err has_canonical
-  work="$(mktemp -d)"
+  mk_workdir work work
   cp "$CORPUS/retro-unknown.md" "$work/retro.md"
   out="$(node "$TOOLS" retro validate "$work/retro.md" 2>"$work/stderr.txt")"; rc=$?
   err="$(cat "$work/stderr.txt")"
@@ -343,7 +344,7 @@ caseV3() {
 # item in a block (e.g. only reading the first `- {id: ...}` line).
 caseV4() {
   local work out check
-  work="$(mktemp -d)"
+  mk_workdir work work
   cp "$CORPUS/snapshot-58-entries.md" "$work/snapshot.md"
   out="$(node "$TOOLS" retro validate "$work/snapshot.md" 2>/dev/null)"
   check="$(node -e "
@@ -414,7 +415,7 @@ caseV4() {
 # reading the registry file.
 caseV5() {
   local work rc_before rc_after out_before out_after
-  work="$(mktemp -d)"
+  mk_workdir work work
   cp "$FIXTURE_LIVE_REGISTRY" "$work/registry.md"
   cp "$CORPUS/retro-clean.md" "$work/retro.md"   # cites `lane-split`, among others
 
@@ -436,7 +437,7 @@ caseV5() {
 # Red-making change: treating unparseable as empty (the silent-discard defect).
 caseV6() {
   local work rc_missing rc_malformed
-  work="$(mktemp -d)"
+  mk_workdir work work
   cp "$CORPUS/retro-missing-field.md" "$work/missing.md"
   cp "$CORPUS/retro-malformed.md" "$work/malformed.md"
 
@@ -523,8 +524,8 @@ caseV8() {
 # checks THAT specific stderr message, not a bare exit code.
 caseV9() {
   local home canary rc1 rc2 rc3 err1 big work traversal_ok sub rc_file timed_out child_pid
-  home="$(mktemp -d)"; canary="$home/pwned"
-  work="$(mktemp -d)"
+  mk_workdir home home; canary="$home/pwned"
+  mk_workdir work work
 
   # (a) path traversal reaching a REAL, EXISTING directory (not a file) via
   # a traversal-shaped relative path, run with cwd = a subdirectory so the
@@ -587,7 +588,7 @@ caseV9() {
 # (the pre-fix behaviour) -> entries=[] and rc=0 instead of the 3 ids below.
 caseV10() {
   local work rc out valid drift ids
-  work="$(mktemp -d)"
+  mk_workdir work work
   cp "$CORPUS/retro-appended-entries.md" "$work/retro.md"
   out="$(node "$TOOLS" retro validate "$work/retro.md" 2>/dev/null)"; rc=$?
   valid="$(node -e "console.log(JSON.parse(process.argv[1]).valid)" "$out" 2>/dev/null)"

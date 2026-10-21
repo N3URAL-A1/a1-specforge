@@ -15,7 +15,7 @@
 # Owner commands run on a tree COPY whose guardRefusal is stubbed to null (the guard itself is
 # measured in parts 08, 11 and 15, the TTY refusal again in OS5k) — never against a real store.
 
-TMP22="$(mktemp -d "${TMPDIR:-/tmp}/a1x22.XXXXXX")"
+mk_workdir TMP22 "a1x22"
 [[ -n "$TMP22" && -d "$TMP22" ]] || { echo "FAIL  part 22: mktemp failed" >&2; fail=$((fail + 1)); return 0 2>/dev/null || exit 1; }
 SAVED_HOME_22="$HOME"
 export HOME="$TMP22/home"; mkdir -p "$HOME"

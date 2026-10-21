@@ -55,7 +55,7 @@
 # vault-common.cjs (re-exported by vault-mirror.cjs). RED proof by mutation on
 # a `cp -R` copy, one per arm, each measured red (fix-agent B report).
 
-H_WORK="$(mktemp -d)"
+mk_workdir H_WORK h_work
 H_HOME="$H_WORK/home"; H_ERR="$H_WORK/stderr"
 mkdir -p "$H_HOME"
 H_OUT=""; H_RC=0
