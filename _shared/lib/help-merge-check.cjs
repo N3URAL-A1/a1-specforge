@@ -11,7 +11,7 @@ const MERGE_CHECK_HELP = `  a1-tools pr merge-check --pr <n> [--base <ref>] [--b
                   base_red_unreported, bug_unresolved, required_check_red, required_check_pending, flaky_base_grown,
                   disposition_unreviewed, disposition_overturned, disposition_self_reviewed (a verdict without reviewed_by/reviewed_at,
                   or by the entry's own author), fidelity_config_changed (.a1/fidelity.json differs from the base);
-                  suite_red_on_head with cause verify_config_changed (.a1/verify.json differs from the base) or suite_removed (an `each` suite of the
+                  suite_red_on_head with cause verify_config_changed (.a1/verify.json differs from the base) or suite_removed (an "each" suite of the
                   base is gone at HEAD; report suites.suite_removed.fingerprint);
                   exit 2 usage, gh failure, unresolvable base. The report carries head_sha (pass it to
                   \`gh pr merge --match-head-commit\`), upheld_dispositions[] (entries new/changed on the branch that were upheld).
