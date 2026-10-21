@@ -71,7 +71,7 @@ mkdir .a1/dispositions.json
 expect "D4 disposition add with a directory as .a1/dispositions.json exits 2" "2" \
   "$(rc disposition add --kind fidelity --rule skipped-test --file a.test.ts --line 1 --reason r --by fx --project "$WORK/repo")"
 expect "D5 disposition review with a directory as .a1/dispositions.json exits 2" "2" \
-  "$(rc disposition review skipped-test:a.test.ts:0123456789abcdef --verdict upheld --reason r --project "$WORK/repo")"
+  "$(rc disposition review skipped-test:a.test.ts:0123456789abcdef --verdict upheld --reason r --by reviewer --project "$WORK/repo")"
 expect "D6 fix class-sweep --record with a directory as the bug file exits 2" "2" "$(rc fix class-sweep --record "$BUGDIR" --project "$WORK/repo")"
 expect "D7 fix class-sweep --verify with a directory as the bug file exits 2" "2" "$(rc fix class-sweep --verify "$BUGDIR" --project "$WORK/repo")"
 expect "D8 pr merge-check with a failing gh binary exits 2" "2" \

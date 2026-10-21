@@ -151,7 +151,7 @@ dis add --kind class_sweep --fingerprint "$FP" --reason "fixture: convert route 
 expect "A11 disposition add class_sweep: exit 0" "0" "$RC"
 sw --verify "$BUG"
 expect "A11 accepted match: verify exit 0, accepted=1 open=0" "0/1/0" "$RC/$(js 'j.counts.accepted')/$(js 'j.counts.open')"
-dis review "$FP" --verdict overturned --reason "fixture: reviewer disagrees"
+dis review "$FP" --verdict overturned --reason "fixture: reviewer disagrees" --by reviewer
 sw --verify "$BUG"
 expect "A12 overturned disposition clears nothing: verify exit 1" "1/class_sweep_open" "$RC/$(js 'j.reason')"
 dis add --kind fidelity --rule mock-of-subject --file tests/old.test.ts --line 1 --reason "fixture: other kind" --by fx
