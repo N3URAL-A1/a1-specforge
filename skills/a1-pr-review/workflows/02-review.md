@@ -47,6 +47,8 @@ your response, fenced with ```json. Schema:
   "minor":   [{"file": "...", "line": 42, "title": "...", "detail": "..."}]
 }
 
+Dispositions changed between base and head (step 2.3b): <list of fingerprints, or none>.
+
 Focus areas: security, immutability, multi-tenant correctness, error
 handling, input validation. Use the project's CLAUDE.md and rules as the
 review baseline.
@@ -97,6 +99,21 @@ put it with AskUserQuestion exactly as printed, then `xprov consent ensure --kin
 Parse the fenced ```json block from a1-reinhard-reviewer's response. If parsing
 fails, tell the user and re-prompt a1-reinhard-reviewer with a stricter
 "JSON only, no prose" directive (max one retry).
+
+### 2.3b Disposition review (spec 017, FR-025)
+
+Reinhard reviews every disposition added or changed in the diff: `git -C "<worktree_path>" diff main...HEAD -- .a1/dispositions.json`
+(list the fingerprints for the 2.2 brief before spawning). Each gets a verdict: `upheld` (the reason justifies it) or
+`overturned` (the reason does not justify it, or the finding is real). Record each one. `disposition` takes no `--phase`.
+No changed disposition: nothing to record, go to 2.4.
+
+```bash
+node <repo>/_shared/a1-tools.cjs disposition review <fingerprint> --verdict <upheld|overturned> --reason "<why>" --by a1-reinhard-reviewer; RC=$?
+if [ "$RC" -ne 0 ]; then echo "STOP: disposition review exit=$RC"; exit "$RC"; fi
+```
+
+An `overturned` verdict is a MAJOR finding in `findings.json` (title `disposition overturned: <fingerprint>`) and blocks the
+merge check of `workflows/05-merge.md` until the finding is fixed.
 
 ### 2.4 Persist findings
 
