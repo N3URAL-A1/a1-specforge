@@ -658,8 +658,7 @@ expect_json "I1 invoke column does not disturb the id list" \
 # Red: retro-validate reading registry cells positionally from the right.
 caseI2() {
   local work rc1 rc2
-  work="$(mktemp -d "${TMPDIR:-/tmp}/a1-fx-retro-invoke.XXXXXX")" || return 1
-  [[ -n "$work" && -d "$work" ]] || return 1
+  mk_workdir work retro-invoke
   cp "$CORPUS/retro-fixture-ids.md" "$work/retro.md"
   node "$TOOLS" retro validate "$work/retro.md" --registry "$INVOKE_REG" >/dev/null 2>&1; rc1=$?
   sed 's/id: beta-gate/id: beta-gate-unknown/' "$CORPUS/retro-fixture-ids.md" > "$work/retro2.md"
@@ -720,9 +719,7 @@ expect_json "I7 live registry carries test-fidelity, fix-class-sweep, pr-merge-c
 #   retro-gatelog.cjs firedYaml(): `caught` hard-coded false                   -> L9a
 # ===========================================================================
 
-GL_WORK="$(mktemp -d "${TMPDIR:-/tmp}/a1-fx-retro-gatelog.XXXXXX")" || exit 1
-[[ -n "$GL_WORK" && -d "$GL_WORK" ]] || exit 1
-trap 'rm -rf "${GL_WORK:?}"' EXIT
+mk_workdir GL_WORK retro-gatelog
 SINCE=2026-10-01
 
 gl_repo() { # gl_repo <name> <added-file> <content> -> repo dir with one extra commit
@@ -849,6 +846,37 @@ node "$TOOLS" gates fired --log "$GL_WORK/tampered.jsonl" >/dev/null 2>&1; FRC=$
 # L10 without --gate-log nothing changes: no gate_log key, same exit as before
 OUT="$(node "$TOOLS" retro validate "$GL_WORK/l2.md" 2>/dev/null)"; RC=$?
 [[ $RC -eq 0 && "$(gl_js 'Object.prototype.hasOwnProperty.call(j,"gate_log")')" == "false" ]] && ok "L10 no --gate-log: exit 0, no gate_log key" || bad "L10 (rc=$RC out=$OUT)"
+
+# L11 spec 017 review (M4): validating a retro must not poison the log it validates against.
+# Measured red 2026-10-21: the call sites passed no --phase retro-<scope> (or --phase <scope>) -> L11c shows the loop.
+LOOP_REPO="$(gl_repo loop src/db.js "export const q = () => db.query('UPDATE users SET x=1');")" || exit 1
+gl_run "$LOOP_REPO" realpath-check run --phase r --diff-base HEAD~1 --project .
+LOOP_LOG="$LOOP_REPO/.a1/phases/r/gate-log.jsonl"
+gl_retro "$GL_WORK/lp-ok.md" 2026-10-20 '{id: gate-0.7-realpath, verdict: fail, caught: true}'
+gl_retro "$GL_WORK/lp-bad.md" 2026-10-20 '{id: gate-0.7-realpath, verdict: fail, caught: true}' '{id: no-such-gate, verdict: pass, caught: false}'
+lp_validate() { # lp_validate <retro> <scope-flag value>
+  OUT="$(cd "$LOOP_REPO" && node "$TOOLS" retro validate "$1" --gate-log "$LOOP_LOG" --enforced-since $SINCE --phase "$2" 2>"$GL_WORK/err")"; RC=$?; ERR="$(cat "$GL_WORK/err")"
+}
+lp_validate "$GL_WORK/lp-bad.md" retro-r; BAD_RC=$RC
+lp_validate "$GL_WORK/lp-ok.md" retro-r
+[[ $BAD_RC -eq 1 && $RC -eq 0 ]] && ok "L11 a failed validation under --phase retro-r, then the fixed retro: exit 1 then exit 0 (no loop)" || bad "L11 (bad rc=$BAD_RC, fixed rc=$RC, err=$ERR)"
+[[ "$(wc -l < "$LOOP_REPO/.a1/phases/retro-r/gate-log.jsonl" | tr -d ' ')" == "2" && "$(wc -l < "$LOOP_LOG" | tr -d ' ')" == "1" ]] && ok "L11b the two validations are logged under retro-r (2 lines); the validated log keeps its 1 line" || bad "L11b retro-r=$(wc -l < "$LOOP_REPO/.a1/phases/retro-r/gate-log.jsonl") r=$(wc -l < "$LOOP_LOG")"
+lp_validate "$GL_WORK/lp-bad.md" r; lp_validate "$GL_WORK/lp-ok.md" r
+[[ $RC -eq 1 && "$(gl_js 'j.gate_log.problems.map(p=>p.rule+":"+p.id).join(",")')" == "missing_blocking_fail:retro-gate-ids" ]] && ok "L11c control: the same sequence under --phase r (the validated scope) loops: fixed retro still exit 1 missing_blocking_fail" || bad "L11c (rc=$RC out=$OUT)"
+
+# L12 the five retro call sites carry the whole chain in ONE fenced block: gates fired -> retro validate --gate-log --phase retro-<scope>
+WIRING="$(node -e '
+  const fs=require("fs"), path=require("path"); const root=process.argv[1];
+  const files=["skills/a1-execute/workflows/03-verify.md","skills/a1-fix/workflows/04-verify.md","skills/a1-new-feature/workflows/06-verify.md","skills/a1-plan/workflows/04-audit.md","skills/a1-evolve/workflows/04-apply.md","_shared/retro-template.md"];
+  const out=[];
+  for (const f of files) {
+    const t=fs.readFileSync(path.join(root,f),"utf8");
+    const blocks=[...t.matchAll(/```bash\n([\s\S]*?)```/g)].map(m=>m[1]).filter(b=>/retro validate/.test(b));
+    const good=blocks.filter(b=>/gates fired --log "\$GATE_LOG"; RC=\$\?/.test(b) && /retro validate "\$RETRO_FILE" --gate-log "\$GATE_LOG" --phase retro-\S+; RC=\$\?/.test(b));
+    out.push(f.split("/").slice(-1)[0]+":"+blocks.length+"/"+good.length);
+  }
+  process.stdout.write(out.join(" "));' "$REPO_ROOT")"
+[[ "$WIRING" == "03-verify.md:1/1 04-verify.md:1/1 06-verify.md:1/1 04-audit.md:1/1 04-apply.md:1/1 retro-template.md:1/1" ]] && ok "L12 each of the 5 skill call sites and the template: one retro-validate block, all with gates fired + --gate-log + --phase retro-<scope>" || bad "L12 ($WIRING)"
 
 printf '%s\n' "${results[@]}"
 echo "----"

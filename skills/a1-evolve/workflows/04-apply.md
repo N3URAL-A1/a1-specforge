@@ -112,7 +112,10 @@ with skill = `a1-evolve`.
   of this instruction:
 
   ```bash
-  node <repo>/_shared/a1-tools.cjs retro validate "$RETRO_FILE"; RC=$?
-  if [ $RC -ne 0 ]; then echo "fix the gate ids above before the entry counts"; exit $RC; fi
+  GATE_LOG=".a1/phases/evolve-<run-date>/gate-log.jsonl"
+  node <repo>/_shared/a1-tools.cjs gates fired --log "$GATE_LOG"; RC=$?
+  if [ $RC -ne 0 ]; then echo "gate log unreadable or broken (exit $RC) - fix it before the entry counts"; exit $RC; fi
+  node <repo>/_shared/a1-tools.cjs retro validate "$RETRO_FILE" --gate-log "$GATE_LOG" --phase retro-evolve-<run-date>; RC=$?
+  if [ $RC -ne 0 ]; then echo "fix the gates_fired block above before the entry counts"; exit $RC; fi
   ```
 

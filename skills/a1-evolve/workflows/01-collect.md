@@ -26,7 +26,7 @@ itself a guard that guarded nothing. Two separate statuses matter (2 = bad
 `A1_CODE_ROOTS`, 3 = nothing resolved), so do not collapse them.
 
 ```bash
-ROOTS_JSON=$(node <repo>/_shared/a1-tools.cjs learnings roots); RC=$?
+ROOTS_JSON=$(node <repo>/_shared/a1-tools.cjs learnings roots --phase evolve-<run-date>); RC=$?
 if [ $RC -ne 0 ]; then
   case $RC in
     2) echo "A1_CODE_ROOTS is set but points nowhere — fix it before synthesizing" ;;

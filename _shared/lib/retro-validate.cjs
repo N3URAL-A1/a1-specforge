@@ -89,7 +89,11 @@ function rejectHostilePath(raw) {
 // (a1-reinhard-reviewer's re-review NIT, 2026-09-12).
 
 function registryPath() {
-  return path.join(repoRoot(), '_shared', 'gates-registry.md');
+  const inRepo = path.join(repoRoot(), '_shared', 'gates-registry.md');
+  if (fs.existsSync(inRepo)) return inRepo;
+  // Called from another project's checkout (the retro call sites of a1-execute, a1-fix, ...): use this
+  // tool's own registry instead of failing exit 2 on a path that only exists inside the a1-specforge repo.
+  return path.resolve(__dirname, '..', 'gates-registry.md');
 }
 
 // Parse the `gates_fired:` block-of-objects shape
