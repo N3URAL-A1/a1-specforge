@@ -1,13 +1,14 @@
 'use strict';
 
-// `pr merge-check --pr <n> [--base <ref>] [--bug <id>] [--accept-config-change <reason>] [--project <dir>] [--slug <project>]`
+// `pr merge-check --pr <n> [--base <ref>] [--bug <id>] [--project <dir>] [--slug <project>]`
 // (spec 017 FR-036, FR-037, FR-016, FR-025). The last code check before `gh pr merge`.
 //   exit 0  nothing red: suites pass (or are red on the base too AND reported with --bug that resolves),
 //           no required check red/pending, flaky_base not grown, no pending/overturned/self-reviewed disposition,
-//           local HEAD == the PR head (gh headRefOid) on a clean tree, dispositions committed, fidelity config unchanged
+//           local HEAD == the PR head (gh headRefOid) on a clean tree, dispositions committed, fidelity config unchanged or cleared by a reviewed config_change disposition
 //   exit 1  at least one reason; every reason is named in `reasons[]` on stdout
 //   exit 2  usage, unreadable state, gh failure, unresolvable base (stdout JSON {ok:false,error,message})
-// It runs `verify run --base` in process (cache reused, no nested gate-log line: only the facade logs).
+// It runs `verify run --base` in process with noCache (a head cache file is forgeable by the branch author, SEC review round C);
+// no nested gate-log line: only the facade logs.
 // `gh` is called through the binary seam `A1_GH_BIN` (default `gh`), argv array, no shell. An override is announced on stderr
 // (`pr merge-check: gh from A1_GH_BIN=<path>`) and reported as `gh_bin: "override"` (SEC-4).
 // The report's `head_sha` is the commit `gh pr merge --match-head-commit` must pin (SEC-1).
@@ -22,7 +23,7 @@ const { gitRaw } = require('./verify-check.cjs');
 const { pendingOrOverturned, reviewIntegrity, entriesAt, DispositionError } = require('./disposition-store.cjs');
 const G = require('./pr-merge-guards.cjs');
 
-const KNOWN_FLAGS = { pr: 'string', base: 'string', bug: 'string', 'accept-config-change': 'string', project: 'string', slug: 'string' };
+const KNOWN_FLAGS = { pr: 'string', base: 'string', bug: 'string', project: 'string', slug: 'string' };
 const MAX_ARG_LENGTH = 4096;
 const GH_TIMEOUT_MS = 60 * 1000;
 const GH_MAX_BYTES = 8 * 1024 * 1024;
@@ -53,7 +54,7 @@ function parseArgs(args) {
   if (!PR_RE.test(flags.pr || '')) throw new MergeCheckError('usage', '--pr <number> is required (a positive integer)');
   if (flags.bug !== undefined && !BUG_RE.test(flags.bug)) throw new MergeCheckError('usage', '--bug must be a plain fix-report id (letters, digits, dot, dash, underscore)');
   if (flags.slug !== undefined && !SLUG_RE.test(flags.slug)) throw new MergeCheckError('usage', '--slug must be a plain project slug');
-  return { pr: flags.pr, base: flags.base, bug: flags.bug, slug: flags.slug, acceptConfigChange: flags['accept-config-change'], project: path.resolve(process.cwd(), flags.project || '.') };
+  return { pr: flags.pr, base: flags.base, bug: flags.bug, slug: flags.slug, project: path.resolve(process.cwd(), flags.project || '.') };
 }
 
 /** Runs the gh seam. Returns { status, stdout, stderr }; a binary that cannot start is a MergeCheckError (exit 2). */
@@ -168,10 +169,10 @@ function guardReasons(opts, baseSha) {
   const head = G.headReasons(opts.project, prHeadSha(opts.pr, opts.project));
   if (head === null) throw new MergeCheckError('git_failed', 'cannot read HEAD or git status of the project');
   const integrity = reviewIntegrity(opts.project, baseSha, 'HEAD');
-  const config = G.fidelityConfigCheck(opts.project, baseSha, entriesAt(opts.project, 'HEAD'), opts.acceptConfigChange);
+  const config = G.fidelityConfigCheck(opts.project, baseSha, entriesAt(opts.project, 'HEAD'));
   return {
     reasons: [...head.reasons, ...G.dispositionsUncommitted(opts.project), ...integrity.selfReviewed, ...config.reasons],
-    upheld: integrity.upheld, accepted: config.accepted,
+    upheld: integrity.upheld,
   };
 }
 
@@ -180,7 +181,7 @@ function mergeCheck(opts) {
   const baseRef = resolveBaseRef(opts);
   const baseSha = resolveMergeBase(opts.project, baseRef);
   const guards = guardReasons(opts, baseSha);
-  const record = runVerify({ project: opts.project, base: baseRef });
+  const record = runVerify({ project: opts.project, base: baseRef, noCache: true });
   const checks = requiredChecks(opts.pr, opts.project);
   const bugOk = opts.bug !== undefined && bugResolves(opts, baseSha);
   const reasons = [
@@ -195,7 +196,7 @@ function mergeCheck(opts) {
     ok: reasons.length === 0, pr: Number(opts.pr), base: baseRef, base_sha: baseSha, head_sha: record.head_sha, gh_bin: ghBinMode(), reasons,
     suites: { verdict: record.verdict, cache: record.cache, pre_existing_red: record.pre_existing_red, flaky: record.flaky, config_changed: record.config_changed || null },
     required_checks: { total: checks.total, red: checks.red.length, pending: checks.pending.length },
-    upheld_dispositions: guards.upheld, config_change_accepted: guards.accepted,
+    upheld_dispositions: guards.upheld,
   };
   return { exit: reasons.length === 0 ? 0 : 1, report };
 }

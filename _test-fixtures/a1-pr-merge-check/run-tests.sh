@@ -10,6 +10,10 @@
 #
 # Measured red (git-archive snapshot, one production line reverted, suite run; cases that fail):
 #   Measured red 2026-10-21:
+#   Round C (review fixes), measured against the code before the fix:
+#   pr-merge-guards.cjs OWN_OUTPUT: `.a1-review/` entry removed                                         : I7
+#   pr-merge-check.cjs mergeCheck(): runVerify without noCache (forged head cache trusted)             : N6 (needs verify run --no-cache)
+#   pr-merge-check.cjs: --accept-config-change flag back in KNOWN_FLAGS                                : L2
 #   pr-merge-check.cjs suiteReasons(): suite verdict ignored (`record.verdict !== 'pass'` -> false)   : B1, M1
 #   pr-merge-check.cjs suiteReasons(): base_red_unreported branch off                                  : B2
 #   pr-merge-check.cjs bugResolves(): every --bug id resolves                                          : B4, B6, B8
@@ -36,9 +40,8 @@ REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TOOLS="${A1_FX_TOOLS:-$REPO_ROOT/_shared/a1-tools.cjs}"
 REAL_SPEC="$REPO_ROOT/_test-fixtures/a1-vault-cockpit/spec-drift/005-vault-first-artifacts.md"
 
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/a1-fx-merge-check.XXXXXX")" || exit 1
-[[ -n "$WORK" && -d "$WORK" ]] || exit 1
-trap 'rm -rf "${WORK:?}"' EXIT
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
+mk_workdir WORK fx-merge-check
 export GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0 HOME="$WORK/home"
 mkdir -p "$HOME" "$WORK/bin"
 
@@ -227,10 +230,10 @@ new_pr e4 0 0; dis add "${FIDELITY_ARGS[@]}"; g "$P" add -A; g "$P" commit -q -m
 printf 'not json' > "$P/.a1/dispositions.json"; g "$P" commit -q -am broken; mc
 expect "E4 an unreadable dispositions store is exit 2 (not a silent pass)" 2 "$RC"
 
-# ---------- F: result cache reuse, no nested gate-log line ----------
+# ---------- F: no result cache in merge-check, no nested gate-log line ----------
 new_pr f1 0 0; mc; first="$OUT"; mc
-expect "F1 second run reads the cache on head and base" "hit|hit" "$(js 'j.suites.cache.head+"|"+j.suites.cache.base')"
-expect "F1 first run was a miss on both sides" "miss|miss" "$(printf '%s' "$first" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);console.log(j.suites.cache.head+"|"+j.suites.cache.base)})')"
+expect "F1 second run does not read the cache (merge-check runs with no-cache, SEC review round C)" "off|off" "$(js 'j.suites.cache.head+"|"+j.suites.cache.base')"
+expect "F1 first run did not use the cache either" "off|off" "$(printf '%s' "$first" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);console.log(j.suites.cache.head+"|"+j.suites.cache.base)})')"
 LOG="$P/.a1/phases/fx-w10/gate-log.jsonl"
 expect "F2 two merge-check calls wrote exactly two gate-log lines (count: none for the nested verify run)" 2 "$(wc -l < "$LOG" | tr -d ' ')"
 expect "F2 every line is the pr-merge-check gate" "2" "$(grep -c '"gate":"pr-merge-check"' "$LOG" | tr -d ' ')"
@@ -255,6 +258,14 @@ rm -f "$P/stray.txt"; mkdir -p "$P/.a1/verify-cache" "$P/.a1/phases/zz"; printf 
 expect "I5 premise: without the excludes git status lists both paths (count 2)" "2" "$(g "$P" status --porcelain --untracked-files=all | grep -c -e '\.a1/verify-cache/x\.json' -e 'phases/zz/gate-log\.jsonl')"
 mc
 expect "I5 the run's own cache and gate-log files do not make the tree dirty: exit 0" "0|0" "$RC|$(js 'j.reasons.length')"
+# I7 (review MAJOR): a1-pr-review writes .a1-review/ into the checkout before merge-check; a repo with no exclude line must not call that dirty
+new_pr i7 0 0; : > "$P/.git/info/exclude"; mkdir -p "$P/.a1-review"; printf 'findings\n' > "$P/.a1-review/reinhard.md"
+expect "I7 premise: without an exclude line git status lists .a1-review/reinhard.md" "1" "$(g "$P" status --porcelain --untracked-files=all | grep -c -e '\.a1-review/reinhard\.md')"
+mc
+expect "I7 the review output .a1-review/ does not make the tree dirty: exit 0, no reasons" "0|0" "$RC|$(js 'j.reasons.length')"
+mkdir -p "$P/.a1-reviewer"; printf 'x\n' > "$P/.a1-reviewer/x.md"
+mc
+expect "I7b a look-alike dir (.a1-reviewer/) is still dirty: exit 1 head_mismatch" "1|head_mismatch" "$RC|$(reasons)"
 export A1_FX_HEAD="not-a-sha"; mc; unset A1_FX_HEAD
 expect "I6 gh gives no usable headRefOid: exit 2 gh_failed (never a silent pass)" "2|gh_failed" "$RC|$(js 'j.error')"
 
@@ -295,7 +306,9 @@ new_pr l1 0 0; printf '%s\n' "$CFG" > "$P/.a1/fidelity.json"; g "$P" add -A; g "
 expect "L1 .a1/fidelity.json added on the branch: exit 1 fidelity_config_changed" "1|fidelity_config_changed|added" "$RC|$(reasons)|$(js 'j.reasons[0].change')"
 FPL="$(js 'j.reasons[0].fingerprint')"
 mc --accept-config-change "owner reviewed the rule switch in chat"
-expect "L2 --accept-config-change <reason>: exit 0, the reason is logged in the report" "0|owner reviewed the rule switch in chat|.a1/fidelity.json" "$RC|$(js 'j.config_change_accepted[0].reason')|$(js 'j.config_change_accepted[0].file')"
+expect "L2 --accept-config-change no longer exists (no self-authorizing flag, spec 017 review MINOR-B): exit 2, the flag is refused" "2" "$RC"
+mc
+expect "L2b without the flag the config change still blocks: exit 1 fidelity_config_changed" "1|fidelity_config_changed" "$RC|$(reasons)"
 dis add --kind config_change --fingerprint "$FPL" --reason "fixture: config reviewed" --by fx; g "$P" add -A; g "$P" commit -q -m cfg-disp
 dis review "$FPL" --verdict upheld --reason "fixture: ok" --by reviewer; g "$P" commit -q -m cfg-review -- .a1/dispositions.json; mc
 expect "L3 an upheld config_change disposition from another reviewer on that exact content: exit 0" "0|0" "$RC|$(js 'j.reasons.length')"
@@ -318,6 +331,19 @@ expect "M1b A1_GH_BIN override: stderr names the binary" "1" "$(printf '%s\n' "$
 expect "M1b the report says gh_bin override" "override" "$(js 'j.gh_bin')"
 OUT="$(cd "$P" && PATH="$WORK/bin:$PATH" A1_FX_CHECKS="$CHK" node "$TOOLS" pr merge-check --pr 7 --base main --phase fx-w10 2>"$WORK/err")"; RC=$?; ERR="$(cat "$WORK/err")"
 expect "M2 default gh from PATH: gh_bin default, no A1_GH_BIN line on stderr (count 0)" "0|default|0" "$RC|$(js 'j.gh_bin')|$(printf '%s\n' "$ERR" | grep -c 'A1_GH_BIN' | tr -d ' ')"
+
+# ---------- N: forged verify cache (review MAJOR, Samuel): merge-check never trusts the head cache ----------
+# Needs verify run --no-cache (C1); runVerify({noCache:true}) ignores the cache file and runs the suites.
+new_pr n0 0 0; (cd "$P" && node "$TOOLS" verify run --project "$P" --phase fx-w10 >/dev/null 2>&1)
+GREEN_CACHE="$(ls "$P"/.a1/verify-cache/*.json | head -1)"
+new_pr n1 0 1; mc
+expect "N6 premise: suite red on head: exit 1 suite_red_on_head" "1|suite_red_on_head" "$RC|$(reasons)"
+RED_HEAD="$(g "$P" rev-parse HEAD)"; CHASH="$(basename "$GREEN_CACHE" .json)"; CHASH="${CHASH#*-}"; mkdir -p "$P/.a1/verify-cache"
+node -e 'const fs=require("fs");const g=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));g.sha=process.argv[2];fs.writeFileSync(process.argv[3],JSON.stringify(g))' "$GREEN_CACHE" "$RED_HEAD" "$P/.a1/verify-cache/$RED_HEAD-$CHASH.json"
+(cd "$P" && node "$TOOLS" verify run --project "$P" --phase fx-w10 >/dev/null 2>&1); VRC=$?
+expect "N6 premise: a plain verify run (cache on) trusts the forged cache and passes the red head: exit 0" "0" "$VRC"
+mc
+expect "N6 forged head cache (green results planted for the red head sha): exit 1, the suite is run again" "1|suite_red_on_head" "$RC|$(reasons)"
 
 # ---------- G: hostile and usage inputs ----------
 new_pr h1 0 0

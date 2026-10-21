@@ -18,8 +18,9 @@ const GIT_MAX_BUFFER = 16 * 1024 * 1024;
 const FIDELITY_REL = '.a1/fidelity.json';
 const CONFIG_KIND = 'config_change';
 const CONFIG_RULE = 'fidelity-config';
-// Files a merge-check run itself writes (both are git-excluded in a healthy checkout, but a repo that lost the exclude must not block).
-const OWN_OUTPUT = Object.freeze([/^\.a1\/verify-cache(\/|$)/, /^\.a1\/phases\/[^/]+\/gate-log\.jsonl$/]);
+// Files a merge-check run (or the a1-pr-review run before it) writes: the verify cache, the gate log and the review output dir
+// `.a1-review/`. They are git-excluded in a healthy checkout, but a repo that lost the exclude must not block.
+const OWN_OUTPUT = Object.freeze([/^\.a1\/verify-cache(\/|$)/, /^\.a1\/phases\/[^/]+\/gate-log\.jsonl$/, /^\.a1-review(\/|$)/]);
 
 function gitText(project, args) {
   try {
@@ -69,20 +70,19 @@ function dispositionsUncommitted(project) {
 
 /**
  * SEC-1b (fidelity config, SEC-2 part): `.a1/fidelity.json` differing base..HEAD blocks the merge, because the config can switch rules off.
- * Cleared by an upheld, independently reviewed disposition of kind config_change on the exact head content,
- * or by `--accept-config-change <reason>`, which the report logs (`config_change_accepted`).
- * @returns {{reasons:object[], accepted:object[]}|null} null when git fails
+ * Cleared only like verify_config_changed: by an upheld disposition of kind config_change (rule fidelity-config) on the exact head content,
+ * reviewed by someone other than its author. There is no flag that clears it (a flag would let the caller authorize its own change).
+ * @returns {{reasons:object[]}}
  */
-function fidelityConfigCheck(project, baseSha, entriesAtHead, acceptReason) {
+function fidelityConfigCheck(project, baseSha, entriesAtHead) {
   const baseText = gitText(project, ['show', `${baseSha}:${FIDELITY_REL}`]);
   const headText = gitText(project, ['show', `HEAD:${FIDELITY_REL}`]);
-  if (baseText === headText) return { reasons: [], accepted: [] };
+  if (baseText === headText) return { reasons: [] };
   const fingerprint = D.fingerprintOf(CONFIG_RULE, FIDELITY_REL, headText === null ? '' : headText);
   const cleared = entriesAtHead.some((e) => e.kind === CONFIG_KIND && e.fingerprint === fingerprint && e.review === 'upheld' && !D.isSelfReviewed(e));
-  if (cleared) return { reasons: [], accepted: [] };
-  if (acceptReason !== undefined) return { reasons: [], accepted: [{ file: FIDELITY_REL, fingerprint, reason: acceptReason }] };
+  if (cleared) return { reasons: [] };
   const change = baseText === null ? 'added' : (headText === null ? 'removed' : 'changed');
-  return { reasons: [{ reason: 'fidelity_config_changed', file: FIDELITY_REL, change, fingerprint, hint: `disposition add --kind ${CONFIG_KIND} --fingerprint ${fingerprint} (reviewed by someone else) or pass --accept-config-change <reason>` }], accepted: [] };
+  return { reasons: [{ reason: 'fidelity_config_changed', file: FIDELITY_REL, change, fingerprint, hint: `disposition add --kind ${CONFIG_KIND} --fingerprint ${fingerprint} --reason <why> --by <you>; a second reviewer runs disposition review ${fingerprint} --verdict upheld --by <reviewer>; commit and push .a1/dispositions.json; run the merge check again` }] };
 }
 
 module.exports = { SHA_RE, headReasons, dispositionsUncommitted, fidelityConfigCheck, statusPaths, CONFIG_KIND, CONFIG_RULE };
