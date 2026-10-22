@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="3" skipped="2" tests="45" time="0.057" timestamp="2026-10-21T00:50:06.276687+02:00" hostname="host"><testcase classname="test_a" name="test_pass[0]" time="0.006" /><testcase classname="test_a" name="test_pass[1]" time="0.000" /><testcase classname="test_a" name="test_pass[2]" time="0.000" /><testcase classname="test_a" name="test_pass[3]" time="0.000" /><testcase classname="test_a" name="test_pass[4]" time="0.000" /><testcase classname="test_a" name="test_pass[5]" time="0.000" /><testcase classname="test_a" name="test_pass[6]" time="0.000" /><testcase classname="test_a" name="test_pass[7]" time="0.000" /><testcase classname="test_a" name="test_pass[8]" time="0.000" /><testcase classname="test_a" name="test_pass[9]" time="0.004" /><testcase classname="test_a" name="test_pass[10]" time="0.000" /><testcase classname="test_a" name="test_pass[11]" time="0.000" /><testcase classname="test_a" name="test_pass[12]" time="0.000" /><testcase classname="test_a" name="test_pass[13]" time="0.000" /><testcase classname="test_a" name="test_pass[14]" time="0.000" /><testcase classname="test_a" name="test_pass[15]" time="0.000" /><testcase classname="test_a" name="test_pass[16]" time="0.000" /><testcase classname="test_a" name="test_pass[17]" time="0.000" /><testcase classname="test_a" name="test_pass[18]" time="0.000" /><testcase classname="test_a" name="test_pass[19]" time="0.000" /><testcase classname="test_a" name="test_pass[20]" time="0.000" /><testcase classname="test_a" name="test_pass[21]" time="0.000" /><testcase classname="test_a" name="test_pass[22]" time="0.000" /><testcase classname="test_a" name="test_pass[23]" time="0.000" /><testcase classname="test_a" name="test_pass[24]" time="0.000" /><testcase classname="test_a" name="test_pass[25]" time="0.000" /><testcase classname="test_a" name="test_pass[26]" time="0.000" /><testcase classname="test_a" name="test_pass[27]" time="0.000" /><testcase classname="test_a" name="test_pass[28]" time="0.000" /><testcase classname="test_a" name="test_pass[29]" time="0.000" /><testcase classname="test_a" name="test_pass[30]" time="0.004" /><testcase classname="test_a" name="test_pass[31]" time="0.000" /><testcase classname="test_a" name="test_pass[32]" time="0.000" /><testcase classname="test_a" name="test_pass[33]" time="0.000" /><testcase classname="test_a" name="test_pass[34]" time="0.000" /><testcase classname="test_a" name="test_pass[35]" time="0.000" /><testcase classname="test_a" name="test_pass[36]" time="0.000" /><testcase classname="test_a" name="test_pass[37]" time="0.000" /><testcase classname="test_a" name="test_pass[38]" time="0.000" /><testcase classname="test_a" name="test_pass[39]" time="0.000" /><testcase classname="test_a" name="test_fail[0]" time="0.000"><failure message="assert 0 == (0 + 1)">i = 0
+
+    @pytest.mark.parametrize("i", range(3))
+    def test_fail(i):
+&gt;       assert i == i + 1
+E       assert 0 == (0 + 1)
+
+test_a.py:7: AssertionError</failure></testcase><testcase classname="test_a" name="test_fail[1]" time="0.000"><failure message="assert 1 == (1 + 1)">i = 1
+
+    @pytest.mark.parametrize("i", range(3))
+    def test_fail(i):
+&gt;       assert i == i + 1
+E       assert 1 == (1 + 1)
+
+test_a.py:7: AssertionError</failure></testcase><testcase classname="test_a" name="test_fail[2]" time="0.000"><failure message="assert 2 == (2 + 1)">i = 2
+
+    @pytest.mark.parametrize("i", range(3))
+    def test_fail(i):
+&gt;       assert i == i + 1
+E       assert 2 == (2 + 1)
+
+test_a.py:7: AssertionError</failure></testcase><testcase classname="test_a" name="test_skip_a" time="0.000"><skipped type="pytest.skip" message="x">/work/proj/test_a.py:8: x</skipped></testcase><testcase classname="test_a" name="test_skip_b" time="0.000"><skipped type="pytest.skip" message="x">/work/proj/test_a.py:10: x</skipped></testcase></testsuite></testsuites>

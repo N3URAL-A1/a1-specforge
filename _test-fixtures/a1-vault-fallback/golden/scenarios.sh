@@ -71,11 +71,14 @@ g_run() {
   local tools="$1" prefix="$2" rc
   shift 2
   g_need_dir G_REPO "$G_REPO"; g_need_dir G_HOME "$G_HOME"
+  # spec 017: `--phase <scope>` only scopes the gate log (a git-excluded side file); keep it out of the compared header
+  local shown=() skip=0 a
+  for a in "$@"; do if ((skip)); then skip=0; elif [[ "$a" == --phase ]]; then skip=1; else shown+=("$a"); fi; done
   (cd "$G_REPO" && env -u A1_VAULT_ROOT -u A1_VAULT_WRITER_HOST -u A1_HOST_ID HOME="$G_HOME" \
       node "$tools" "$@" >"$prefix.raw.out" 2>"$prefix.raw.err")
   rc=$?
-  { printf '## %s rc=%d\n' "$*" "$rc" | g_normalise; g_normalise <"$prefix.raw.out"; } >>"$prefix.out"
-  { printf '## %s rc=%d\n' "$*" "$rc" | g_normalise; g_normalise <"$prefix.raw.err"; } >>"$prefix.err"
+  { printf '## %s rc=%d\n' "${shown[*]}" "$rc" | g_normalise; g_normalise <"$prefix.raw.out"; } >>"$prefix.out"
+  { printf '## %s rc=%d\n' "${shown[*]}" "$rc" | g_normalise; g_normalise <"$prefix.raw.err"; } >>"$prefix.err"
   rm -f "$prefix.raw.out" "$prefix.raw.err"
 }
 
@@ -94,7 +97,7 @@ g_files() {
       printf '== repo/%s\n' "$f" >>"$prefix.files"
       g_normalise <"$G_REPO/$f" >>"$prefix.files"
     fi
-  done < <(cd "$G_REPO" && find . -mindepth 1 -path ./.git -prune -o -print | sed 's#^\./##' | LC_ALL=C sort)
+  done < <(cd "$G_REPO" && find . -mindepth 1 \( -path ./.git -o -path ./.a1/phases \) -prune -o -print | sed 's#^\./##' | LC_ALL=C sort)
   while IFS= read -r f; do
     printf '== home/%s\n' "$f" >>"$prefix.files"
   done < <(cd "$G_HOME" && find . -mindepth 1 -print | sed 's#^\./##' | LC_ALL=C sort)
@@ -187,7 +190,7 @@ g_checklist() {
   g_setup
   mkdir -p "$G_REPO/.a1/learnings"
   cp -R "$G_CHECKLIST_FIXTURE/project" "$G_REPO/.a1/learnings/"
-  g_run "$tools" "$prefix" checklist run demo/001-login "$@" --format json
+  g_run "$tools" "$prefix" checklist run demo/001-login "$@" --format json --phase vf-checklist
   g_files "$prefix"
 }
 run_checklist_gate() { g_checklist "$1" "$2" --only 9,10; }

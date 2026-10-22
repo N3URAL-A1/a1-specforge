@@ -66,6 +66,15 @@ function workTreeDenyRules(cwd) {
   return Object.freeze(INTENT_WORKTREE_DENY_PATHS.flatMap((p) => [`Edit(/${cwd}/${p})`, `Write(/${cwd}/${p})`]));
 }
 
+// Spec 017 review (SEC-2/SEC-3): the repo files that decide what the merge check and the self-checks accept. A child that could write them
+// would clear its own findings or widen its own checks; the owner (or Reinhard, outside the child) edits them. One Edit and one Write rule each.
+// `.a1/verify-cache/**` joined in review round C (defense in depth): merge-check runs with noCache, but a forged cache must not exist at all.
+const INTENT_OWNER_CONFIG_PATHS = Object.freeze(['.a1/dispositions.json', '.a1/verify.json', '.a1/fidelity.json', '.a1/verify-cache/**']);
+function ownerConfigDenyRules(cwd) {
+  if (typeof cwd !== 'string' || !cwd.startsWith('/')) throw new Error('ownerConfigDenyRules: the project path must be absolute');
+  return Object.freeze(INTENT_OWNER_CONFIG_PATHS.flatMap((p) => [`Edit(/${cwd}/${p})`, `Write(/${cwd}/${p})`]));
+}
+
 // FR-021 — the only env names of a spawned child (17; FR-042 git keys last).
 // A1_INTENT_ID joined in the Part A review (MINOR-1): it must equal the
 // lock's intent_id, so an orphan of an earlier run never takes a new lock.
@@ -148,7 +157,7 @@ const INTENT_CHILD_REFUSAL_REASONS = Object.freeze(['child_context_invalid', 'su
 // Every other argument is checked when it contains `/` or starts with `.`/`~`.
 const INTENT_CHILD_PATH_FLAGS = Object.freeze([
   '--agents-dir', '--artifacts', '--baseline-tests', '--body-file', '--config', '--dest', '--dir',
-  '--duplicate-of', '--evidence', '--file', '--files', '--json', '--migrations', '--out', '--plan',
+  '--duplicate-of', '--evidence', '--file', '--files', '--json', '--log', '--migrations', '--out', '--plan',
   '--plan-path', '--project', '--project-path', '--projects-root', '--record', '--registry',
   '--replay-file', '--repo', '--repo-path', '--repo-root', '--root', '--skills-dir', '--snapshot',
   '--snapshot-replay', '--source', '--source-postmortem', '--spec', '--spec-path', '--stderr', '--stdout',
@@ -204,19 +213,29 @@ function optionProblem(group, args) {
 const WRITE_SCOPE = ['code-scope check', 'code-scope claim', 'code-scope release', 'code-scope stage'];
 // FR-048 — git through the wrapper, per the skills' own git calls (intent-git.cjs header).
 const GIT_READ = ['git diff', 'git log', 'git status'];
+// Spec 017 Q23: the wired self-checks. `test-fidelity` is flag-only (no subcommand): its allowlist key is the group.
+// `verify run` and `fix class-sweep` are NOT on the allowlist (review SEC-5): they spawn non-git processes (the project's test command,
+// grep), which the child's spawn guard refuses with 77 anyway; they run owner-side. See SPAWNS_PROCESSES below.
+const INTENT_FLAG_ONLY_GROUPS = Object.freeze(['test-fidelity']);
+const SELF_CHECKS = ['verify check', 'test-fidelity'];
+// Spec 017 review (retro wiring): `gates fired --log <file>` only reads a gate log inside the project and prints YAML.
+const GATES_READ = ['gates fired'];
 const NEW_FEATURE_ALLOW = Object.freeze([
   'check reservations', 'checklist run', 'code-scope claim', 'code-scope release', 'code-scope stage',
   'plan depth-check', 'product feature-init', 'product stage', 'quick eligibility', 'realpath-check run', 'schema-check run',
-  'spec init', 'spec set-size', 'spec update-status', ...GIT_READ,
+  'spec init', 'spec set-size', 'spec update-status', ...SELF_CHECKS, ...GATES_READ, ...GIT_READ,
 ]);
 const INTENT_CHILD_ALLOWLIST = Object.freeze({
   'new-feature': NEW_FEATURE_ALLOW,
   'continue-feature': NEW_FEATURE_ALLOW,
-  plan: Object.freeze(['lane-split check', 'plan depth-check', ...GIT_READ]),
-  execute: Object.freeze([...WRITE_SCOPE, 'lane-split check', 'product audit-set', 'product stage', 'git add', 'git commit', ...GIT_READ]),
+  plan: Object.freeze(['lane-split check', 'plan depth-check', ...GATES_READ, ...GIT_READ]),
+  execute: Object.freeze([
+    ...WRITE_SCOPE, 'lane-split check', 'product audit-set', 'product stage', 'realpath-check run', 'schema-check run',
+    ...SELF_CHECKS, ...GATES_READ, 'git add', 'git commit', ...GIT_READ,
+  ]),
   fix: Object.freeze([
     'code-scope check', 'fix find-duplicates', 'fix next-suffix', 'fix update-status',
-    'product audit-set', 'quick eligibility', ...GIT_READ,
+    'product audit-set', 'quick eligibility', 'realpath-check run', 'test-fidelity', ...GATES_READ, ...GIT_READ,
   ]),
   stage: Object.freeze(['product stage']),
   progress: Object.freeze([]), // row R has no Bash
@@ -243,28 +262,35 @@ const XPROV_CONSENT = 'reads or writes the owner stores ~/.a1-xprov/ outside pro
 const XPROV_DISPOSE = 'reads a1\'s run records and scan records under ~/.a1-xprov/ outside project/<slug>/; an intent run starts no Codex review, so no round-cap or secret stop exists to close (spec 016 FR-025, FR-029)';
 const TRANSCRIPTS = 'reads Claude Code session transcripts under ~/.claude/projects/';
 const ROW_R = 'row R (progress) has no Bash';
+const OWN_FINDINGS = 'an autonomous child must not clear its own findings (reviewed human or reviewer decision)';
+const DISPOSITIONS = Object.freeze({ 'disposition add': OWN_FINDINGS, 'disposition review': OWN_FINDINGS });
+const SPAWNS_PROCESSES = 'spawns non-git processes; runs owner-side (SEC-5)';
 const NEW_FEATURE_EXCLUDED = Object.freeze({
   'cost run': TRANSCRIPTS,
   'retro validate': OUTSIDE_STORE,
   'vault link-hub': VAULT_WIDE,
+  ...DISPOSITIONS,
+  'verify run': SPAWNS_PROCESSES,
   'vault writer': 'reads and sets the hub writer declaration (a1_writer_host), a hub note outside project/<slug>/ that only a human sets (spec 010 FR-038)',
 });
 const INTENT_CHILD_EXCLUSIONS = Object.freeze({
   'new-feature': NEW_FEATURE_EXCLUDED,
   'continue-feature': NEW_FEATURE_EXCLUDED,
-  plan: Object.freeze({ 'retro validate': OUTSIDE_STORE, 'vault sync': VAULT_WIDE, 'xprov consent': XPROV_CONSENT, 'xprov dispose': XPROV_DISPOSE, 'xprov gate': XPROV, 'xprov permit-check': XPROV_CONSENT, 'xprov waive': XPROV }),
+  plan: Object.freeze({ ...DISPOSITIONS, 'retro validate': OUTSIDE_STORE, 'vault sync': VAULT_WIDE, 'xprov consent': XPROV_CONSENT, 'xprov dispose': XPROV_DISPOSE, 'xprov gate': XPROV, 'xprov permit-check': XPROV_CONSENT, 'xprov waive': XPROV }),
   execute: Object.freeze({
-    'cost run': TRANSCRIPTS, 'retro validate': OUTSIDE_STORE, 'vault sync': VAULT_WIDE,
+    ...DISPOSITIONS, 'cost run': TRANSCRIPTS, 'retro validate': OUTSIDE_STORE, 'vault sync': VAULT_WIDE, 'verify run': SPAWNS_PROCESSES,
     'xprov consent': XPROV_CONSENT, 'xprov dispose': XPROV_DISPOSE, 'xprov gate': XPROV, 'xprov load-check': XPROV_STORE, 'xprov permit-check': XPROV_CONSENT, 'xprov waive': XPROV, 'xprov wave-status': XPROV_STORE,
   }),
   fix: Object.freeze({
+    ...DISPOSITIONS,
+    'fix class-sweep': SPAWNS_PROCESSES,
     'fix count-postmortems-since': 'scans the postmortems of every project',
     'fix init-postmortem': 'fix.cjs postmortemsDir joins project/<slug>/postmortems/ itself, past projectsPath and its guard (measured: another slug and ../.. both written)',
     'fix integrity-check': 'hashes agents/ and skills/ outside the project and writes pattern/a1-learnings/_canonical/',
     'fix update-promote-state': OUTSIDE_STORE, 'fix write-suggestion': OUTSIDE_STORE, 'retro validate': OUTSIDE_STORE,
   }),
   progress: Object.freeze({
-    'code-scope list': ROW_R, 'code-scope release': ROW_R, 'product markers': ROW_R, 'product status': ROW_R,
+    ...DISPOSITIONS, 'code-scope list': ROW_R, 'code-scope release': ROW_R, 'product markers': ROW_R, 'product status': ROW_R,
     'vault lint': ROW_R, 'vault status': ROW_R, 'vault sync': ROW_R, 'git log': ROW_R, 'git status': ROW_R,
   }),
 });
@@ -290,12 +316,15 @@ module.exports = {
   childSystemPrompt,
   INTENT_WORKTREE_DENY_PATHS,
   workTreeDenyRules,
+  INTENT_OWNER_CONFIG_PATHS,
+  ownerConfigDenyRules,
   INTENT_SEAL_SKILL_REWRITE,
   INTENT_CHILD_EXIT_CODE,
   INTENT_CHILD_REFUSAL_REASONS,
   INTENT_CHILD_PATH_FLAGS,
   INTENT_CHILD_ALLOWLIST,
   INTENT_CHILD_EXCLUSIONS,
+  INTENT_FLAG_ONLY_GROUPS,
   INTENT_PROJECT_SLUG_RE,
   SAFE_PATH_RE,
   INTENT_CHILD_SHORT_OPTIONS,

@@ -18,12 +18,13 @@ node <repo>/_shared/a1-tools.cjs product init --project <slug> --title "<Product
 # and --source (measured 2026-10-20: a call with all three wrote `milestones: []`,
 # `features: []` and the hardcoded source; runs 2026-10-06 and 2026-10-08 hit the
 # same). Add every milestone and feature from Phase 3 with the add-* commands,
-# milestones first; --goal carries the 1-sentence goal into the changelog line:
+# milestones first; --goal carries the 1-sentence goal into the changelog line.
+# The add-* commands take no --project: run them from the target repo root.
 node <repo>/_shared/a1-tools.cjs product add-milestone \
-  --project <slug> --id <m-slug> --title "<short>" --goal "<1-sentence goal>" \
+  --id <m-slug> --title "<short>" --goal "<1-sentence goal>" \
   --status planned --target <YYYY-MM|omit>
 node <repo>/_shared/a1-tools.cjs product add-feature \
-  --project <slug> --id <###-feature-slug> --milestone <m-slug> --title "<short>" \
+  --id <###-feature-slug> --milestone <m-slug> --title "<short>" \
   --goal "<1-sentence goal>" --depends-on <a,b|omit> --status planned
 # repeat add-milestone per milestone, add-feature per feature
 grep -c '^  *- id: ' docs/product/ROADMAP.md   # must equal milestones + features from Phase 3
@@ -71,10 +72,10 @@ extend the existing `ROADMAP.md` instead of re-initializing:
 
 ```bash
 node <repo>/_shared/a1-tools.cjs product add-milestone \
-  --project <slug> --id <m-slug> --title "<short>" --goal "<1-sentence goal>" \
+  --id <m-slug> --title "<short>" --goal "<1-sentence goal>" \
   --status planned --target <YYYY-MM|omit>
 node <repo>/_shared/a1-tools.cjs product add-feature \
-  --project <slug> --id <###-feature-slug> --milestone <m-slug> --title "<short>" \
+  --id <###-feature-slug> --milestone <m-slug> --title "<short>" \
   --goal "<1-sentence goal>" --depends-on <a,b|omit> --status planned
 # repeat add-feature for every feature named in Phase 3 under this milestone;
 # count `- id:` lines before and after (see 4a)

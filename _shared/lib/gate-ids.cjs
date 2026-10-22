@@ -232,6 +232,140 @@ function parseRegistryRow(text, id) {
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// Spec 017 wave 1 — the `invoke` column (docs/adr/2026-10-14-gate-invoke-and-log.md).
+//
+// Cell grammar (last column of the id table):
+//   `<subcommand>` @ skill[,skill...]   a1-tools subcommand the named skills must call
+//   external                            CLI lives in another repo
+//   none                                prompt / human gates
+// optionally followed by the exemption suffix
+//   ; unwired_until=<YYYY-MM-DD>; unwired_reason=<text>
+// ---------------------------------------------------------------------------
+
+const INVOKE_COMMAND_RE = /^`([^`]+)`\s+@\s+([a-z0-9][a-z0-9-]*(?:\s*,\s*[a-z0-9][a-z0-9-]*)*)$/;
+const EXEMPTION_SPLIT_RE = /\s*;\s*unwired_until=/;
+const EXEMPTION_RE = /^(\d{4}-\d{2}-\d{2})\s*;\s*unwired_reason=(\S.*)$/;
+const HEAD_COLUMNS = 6; // id, phase, class, cost, owning file, enforcement
+
+function isRealDate(text) {
+  const d = new Date(`${text}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === text;
+}
+
+/**
+ * Parse one `invoke` cell. Never throws. `kind` is `command`, `external`,
+ * `none` or `invalid` (with `error`); `exemption` is `{until, reason}` or null.
+ *
+ * @param {string} cell
+ * @returns {{kind: string, subcommand?: string, skills?: string[], exemption: ({until: string, reason: string}|null), error?: string, raw: string}}
+ */
+function parseInvokeCell(cell) {
+  const raw = String(cell === undefined ? '' : cell).replace(/\\\|/g, '|').trim();
+  const [mainPart, ...rest] = raw.split(EXEMPTION_SPLIT_RE);
+  let exemption = null;
+  if (rest.length > 0) {
+    const m = rest.join('').match(EXEMPTION_RE);
+    if (rest.length !== 1 || !m || !isRealDate(m[1])) {
+      return { kind: 'invalid', exemption: null, error: 'malformed exemption suffix (need "; unwired_until=<YYYY-MM-DD>; unwired_reason=<text>")', raw };
+    }
+    exemption = { until: m[1], reason: m[2].trim() };
+  } else if (/unwired_(until|reason)/.test(raw)) {
+    return { kind: 'invalid', exemption: null, error: 'malformed exemption suffix (need both unwired_until and unwired_reason)', raw };
+  }
+  const main = mainPart.trim();
+  if (main === '') return { kind: 'invalid', exemption, error: 'empty invoke cell', raw };
+  if (main === 'external' || main === 'none') return { kind: main, exemption, raw };
+  const m = main.match(INVOKE_COMMAND_RE);
+  if (!m) return { kind: 'invalid', exemption, error: 'cell is not `<subcommand>` @ skill[,skill], external or none', raw };
+  const skills = m[2].split(',').map((x) => x.trim());
+  return { kind: 'command', subcommand: m[1].trim().replace(/\s+/g, ' '), skills, exemption, raw };
+}
+
+// Split one table line on UNESCAPED pipes; returns the cells between the
+// outer pipes (trimmed). An escaped `\|` stays inside its cell.
+function splitRowCells(line) {
+  const cells = [];
+  let cur = '';
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '\\' && line[i + 1] === '|') { cur += '\\|'; i++; continue; }
+    if (ch === '|') { cells.push(cur); cur = ''; continue; }
+    cur += ch;
+  }
+  cells.push(cur);
+  return cells.slice(1, -1).map((c) => c.trim());
+}
+
+/**
+ * Rows of the id table with named cells. Notes may hold stray unescaped pipes
+ * (real rows do: "pass|fail" inside backticks), so only the first six and the
+ * last (columns - 7) cells are positional; everything between is `notes`.
+ * A row with fewer cells than the header has `malformed: true`.
+ *
+ * @param {string} text
+ * @returns {{id: string, line: number, malformed: boolean, cells: Object<string,string>}[]}
+ */
+function parseRegistryRows(text) {
+  const lines = String(text).split('\n');
+  const headerLine = lines.findIndex((l) => TABLE_HEADER_RE.test(l));
+  if (headerLine === -1) return [];
+  const columns = splitRowCells(lines[headerLine]).map((c) => c.toLowerCase());
+  const tailCount = Math.max(columns.length - HEAD_COLUMNS - 1, 0);
+  const rows = [];
+  for (let i = headerLine + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.trim() === '') break;
+    if (TABLE_SEPARATOR_RE.test(line)) continue;
+    const m = line.match(TABLE_ROW_ID_RE);
+    if (!m) continue;
+    const toks = splitRowCells(line);
+    const out = {};
+    const malformed = toks.length < columns.length;
+    columns.slice(0, HEAD_COLUMNS).forEach((name, idx) => { out[name] = toks[idx] === undefined ? '' : toks[idx]; });
+    out.id = m[1];
+    if (columns.length > HEAD_COLUMNS) {
+      const tail = malformed ? [] : toks.slice(toks.length - tailCount);
+      const notesEnd = malformed ? toks.length : toks.length - tailCount;
+      out[columns[HEAD_COLUMNS]] = toks.slice(HEAD_COLUMNS, notesEnd).join('|');
+      columns.slice(HEAD_COLUMNS + 1).forEach((name, idx) => { out[name] = tail[idx] === undefined ? '' : tail[idx]; });
+    }
+    rows.push({ id: m[1], line: i + 1, malformed, cells: out });
+  }
+  return rows;
+}
+
+/**
+ * `{subcommand -> gateId}` for every row whose invoke cell names a subcommand.
+ * First row wins on a duplicate (the lint reports the duplicate itself).
+ *
+ * @param {string} text
+ * @returns {Object<string,string>}
+ */
+function invokeMap(text) {
+  const map = {};
+  for (const row of parseRegistryRows(text)) {
+    const inv = parseInvokeCell(row.cells.invoke);
+    if (inv.kind === 'command' && !Object.prototype.hasOwnProperty.call(map, inv.subcommand)) map[inv.subcommand] = row.id;
+  }
+  return map;
+}
+
+/**
+ * Per-row invoke data: `{id, kind, subcommand, skills, exemption, error}`.
+ *
+ * @param {string} text
+ * @returns {Object[]}
+ */
+function rowInvokes(text) {
+  return parseRegistryRows(text).map((row) => ({
+    id: row.id, line: row.line, malformed: row.malformed,
+    class: row.cells.class, enforcement: row.cells.enforcement,
+    hasInvokeColumn: Object.prototype.hasOwnProperty.call(row.cells, 'invoke'),
+    ...parseInvokeCell(row.cells.invoke),
+  }));
+}
+
 module.exports = {
   parseRegistryIds,
   parseRegistryRow,
@@ -239,4 +373,8 @@ module.exports = {
   isRegisteredId,
   KNOWN_ALIASES,
   resolveGateId,
+  parseInvokeCell,
+  parseRegistryRows,
+  invokeMap,
+  rowInvokes,
 };

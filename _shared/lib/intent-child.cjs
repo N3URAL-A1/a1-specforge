@@ -349,12 +349,16 @@ function pathArguments(args, pathFlags) {
 const clip = (s) => String(s).slice(0, DETAIL_MAX_CHARS);
 
 // -> { ok: true } or { ok: false, reason, detail } for one invocation.
-function childGuard(group, sub, args, ctx, deps = {}) {
+function childGuard(group, sub, argsAfterSub, ctx, deps = {}) {
   const d = { ...defaultDeps(), ...deps };
   if (!ctx.ok) return { ok: false, reason: ctx.reason, detail: ctx.detail };
   const C = require('./intent-constants.cjs');
-  const key = `${group} ${sub}`;
-  if (group === undefined || sub === undefined || !C.INTENT_CHILD_ALLOWLIST[ctx.action].includes(key)) {
+  // A flag-only command (test-fidelity --diff-base ...) has no subcommand: its key is the group
+  // alone and the option-shaped "sub" is validated like any other argument.
+  const flagOnly = typeof sub === 'string' && sub.startsWith('-') && C.INTENT_FLAG_ONLY_GROUPS.includes(group);
+  const key = flagOnly ? group : `${group} ${sub}`;
+  const args = flagOnly ? [sub, ...argsAfterSub] : argsAfterSub;
+  if (group === undefined || (sub === undefined && !flagOnly) || !C.INTENT_CHILD_ALLOWLIST[ctx.action].includes(key)) {
     return { ok: false, reason: 'subcommand_not_allowed', detail: clip(`${key} is not allowed for action ${ctx.action}`) };
   }
   const optionShaped = C.optionProblem(group, args.map(String));

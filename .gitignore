@@ -4,6 +4,9 @@
 checkpoint/
 .a1/learnings/
 
+# Spec 017 gate log: hash-chained firing record, never committed (FR-008)
+.a1/phases/*/gate-log.jsonl
+
 # a1-tools lock and atomic-write leftovers (spec 010 Wave 5; narrowed in the
 # review fix n6 to the names locks.cjs / product.cjs / io.cjs write, so a
 # package manager lockfile such as yarn.lock is never hidden)

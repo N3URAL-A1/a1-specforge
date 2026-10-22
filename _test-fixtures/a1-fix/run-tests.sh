@@ -463,9 +463,127 @@ run_hostile_oversized() {
   fi
 }
 
+# ---------------------------------------------------------------------------
+# class_query gate of update-status (spec 017 Wave 9, FR-027). The bug file is the
+# real report frontmatter (copied for a1-fix-class-sweep, origin in its real/ORIGIN.md).
+# Deep cases (malformed variants, class sweep) live in _test-fixtures/a1-fix-class-sweep/.
+# ---------------------------------------------------------------------------
+run_class_query_gate() {
+  local fixes_dir="$VAULT/project/demo/fixes" real="$REPO_ROOT/_test-fixtures/a1-fix-class-sweep/real/bug-frontmatter.txt"
+  local f="$fixes_dir/2026-10-03-real-report.md" out exit_code
+  mkdir -p "$fixes_dir"
+  { grep -v '^status:' "$real"; printf 'status: reported\n---\n\n# Bug\n'; } > "$f"
+  out=$(A1_VAULT_ROOT="$VAULT" node "$TOOLS" fix update-status "$f" diagnosed --enforced-since 2026-01-01 2>&1)
+  exit_code=$?
+  assert_rc "update-status diagnosed without class_query exits 1" 1 "$exit_code" "$out"
+  if printf '%s' "$out" | grep -q '"reason": "class_query_missing"'; then
+    assert "update-status refusal names class_query_missing" "1"
+  else
+    assert "update-status refusal names class_query_missing" "0"
+  fi
+  if grep -q '^status: reported$' "$f"; then
+    assert "refused update-status leaves the file at status: reported" "1"
+  else
+    assert "refused update-status leaves the file at status: reported" "0"
+  fi
+  out=$(A1_VAULT_ROOT="$VAULT" node "$TOOLS" fix update-status "$f" diagnosed 2>&1)
+  exit_code=$?
+  assert_rc "legacy bug file (dated before ENFORCED_SINCE) skips the class_query check" 0 "$exit_code" "$out"
+  if grep -q '^status: diagnosed$' "$f"; then
+    assert "legacy bug file reached status: diagnosed" "1"
+  else
+    assert "legacy bug file reached status: diagnosed" "0"
+  fi
+}
+
+# ---------- spec 017 wave 12 (FR-006, FR-032): skills/a1-fix/workflows wiring ----------
+# Measured red 2026-10-21 (git-archive snapshot, one line reverted, suite run):
+#   04-verify.md: class-sweep flag renamed (--verify -> --check)  : call-site flags case
+#   04-verify.md: --phase dropped from the realpath-check call      : --phase x3 case
+#   04-verify.md: test-fidelity --diff-base -> --base               : --diff-base + flags cases (2 red)
+#   02-diagnose.md: class-sweep --record block removed              : order + record-call cases (2 red)
+#   00-preflight.md: --phase dropped from integrity-check           : preflight --phase case
+# Blocks are read from the real workflow files; flags are checked against the real help text of each command.
+run_wave12_wiring() {
+  local wf="$REPO_ROOT/skills/a1-fix/workflows" out
+  out=$(node -e '
+    const fs=require("fs"), path=require("path");
+    const wf=process.argv[1], lib=path.join(process.argv[2],"_shared","lib");
+    const blocks=f=>{const t=fs.readFileSync(path.join(wf,f),"utf8");const o=[];const re=/^```bash\n([\s\S]*?)^```/gm;let m;
+      while((m=re.exec(t))) o.push({text:m[1],pos:m.index,src:t});return o;};
+    const v=blocks("04-verify.md"), d=blocks("02-diagnose.md"), p=blocks("00-preflight.md");
+    const step1=v[0].src.indexOf("## Step 1");
+    const pre=v.filter(b=>b.pos<step1);
+    const kind=b=>/realpath-check run/.test(b.text)?"R":/test-fidelity/.test(b.text)?"T":/fix class-sweep --verify/.test(b.text)?"C":"?";
+    const res=[];
+    res.push(["verify step0 block count",pre.length===3]);
+    res.push(["verify step0 order R,T,C",pre.map(kind).join("")==="RTC"]);
+    res.push(["verify step0 before symptom question",step1>0&&v[0].src.indexOf("Does the symptom still occur")>step1]);
+    res.push(["verify step0 explicit exit test x3",pre.filter(b=>/RC=\$\?/.test(b.text)&&/-ne 0/.test(b.text)&&/exit "\$RC"/.test(b.text)).length===3]);
+    res.push(["verify step0 --phase fix-<bug-slug> x3",pre.filter(b=>/--phase fix-<bug-slug>/.test(b.text)).length===3]);
+    res.push(["verify test-fidelity has --diff-base",pre.filter(b=>/test-fidelity --diff-base /.test(b.text)).length===1]);
+    const fixed=v.findIndex(b=>/fix update-status[\s\S]*fixed/.test(b.text));
+    res.push(["verify mark-fixed block stays, after step0",fixed>=3&&v[fixed].pos>pre[2].pos]);
+    const dk=d.map(b=>/class-sweep --record/.test(b.text)?"S":/fix update-status/.test(b.text)?"U":"?").join("");
+    res.push(["diagnose order: class-sweep --record before update-status",dk==="SU"]);
+    const rec=d.filter(b=>/class-sweep --record/.test(b.text));
+    res.push(["diagnose record call: exit test + --phase",rec.length===1&&/exit "\$RC"/.test(rec[0].text)&&/--phase fix-<bug-slug>/.test(rec[0].text)]);
+    res.push(["diagnose update-status has no --phase (takes none)",d.filter(b=>/fix update-status/.test(b.text)&&/--phase/.test(b.text)).length===0]);
+    res.push(["preflight: integrity-check (registry gate) passes --phase fix-<bug-slug>; code-scope check (not a registry gate, ignores the flag) passes none",p.filter(b=>/integrity-check/.test(b.text)&&/--phase fix-<bug-slug>/.test(b.text)).length===1&&p.filter(b=>/code-scope check/.test(b.text)&&!/--phase/.test(b.text)).length===1]);
+    // real flags: every --flag at a call site must exist in that command real help text (+ --phase, stripped by the facade)
+    const flagsOf=h=>new Set((h.match(/--[a-z][a-z-]*/g)||[]));
+    const sweep=flagsOf(require(path.join(lib,"help-fix-sweep.cjs")).FIX_SWEEP_HELP);
+    const fid=flagsOf(require(path.join(lib,"help-fidelity.cjs")).FIDELITY_HELP);
+    const real=flagsOf(fs.readFileSync(path.join(lib,"help.cjs"),"utf8").split("a1-tools realpath-check run")[1].split("\n")[0]);
+    const bad=[];
+    const chk=(b,set)=>{for(const f of (b.text.match(/--[a-z][a-z-]*/g)||[])) if(f!=="--phase"&&!set.has(f)) bad.push(f);};
+    for(const b of pre){chk(b,kind(b)==="R"?real:kind(b)==="T"?fid:sweep);}
+    for(const b of rec) chk(b,sweep);
+    res.push(["call-site flags exist in real help (bad="+bad.join(",")+")",bad.length===0&&real.size>=2&&sweep.size>=3&&fid.size>=1]);
+    for(const [n,ok] of res) console.log((ok?"1 ":"0 ")+n);
+  ' "$wf" "$REPO_ROOT" 2>&1)
+  local line n=0
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    n=$((n + 1))
+    assert "wave12 wiring: ${line:2}" "$([[ "${line:0:1}" == "1" ]] && echo 1 || echo 0)"
+  done <<< "$out"
+  assert "wave12 wiring: all 12 checks ran (count)" "$([[ "$n" -eq 12 ]] && echo 1 || echo 0)"
+  local lint_rc
+  node "$TOOLS" workflow lint --root "$REPO_ROOT" >/dev/null 2>&1; lint_rc=$?
+  assert_rc "wave12 wiring: workflow lint on the real skills is clean" 0 "$lint_rc" ""
+}
+
+# ---------- spec 017 review round B (m4): template placeholders, frontmatter exception, mark-fixed exit check ----------
+# Measured red 2026-10-21 (HEAD files before the fix): template without class_query/root_site -> m4 template + round-trip cases;
+# 04-verify.md mark-fixed block without RC capture -> m4 exit-test case; SKILL.md rule without exception -> m4 exception case.
+run_review_m4() {
+  local tpl="$REPO_ROOT/skills/a1-fix/templates/bug-report-template.md" proj="$WORK/m4proj" out rc f
+  assert "m4 template carries class_query: and root_site: placeholders" "$([[ "$(grep -c '^class_query:$' "$tpl")" == "1" && "$(grep -c '^root_site: ' "$tpl")" == "1" ]] && echo 1 || echo 0)"
+  mkdir -p "$proj/src" "$VAULT/project/m4/fixes"
+  printf 'const foo = 1;\n' > "$proj/src/a.txt"
+  f="$VAULT/project/m4/fixes/2026-10-22-template-roundtrip.md"
+  sed -e 's/<PROJECT_SLUG>/m4/g' -e 's/<BUG_SLUG>/template-roundtrip/' -e 's/<ONE_LINE_TITLE>/Template round trip/g' \
+      -e 's/<blocker|major|minor|nit>/minor/' -e 's/<YYYY-MM-DDTHH:MM>/2026-10-22T10:00/' -e 's/<REPORTER>/fx/' -e 's/<repo-name>/demo/' \
+      -e 's/<commit-hash-or-date-or-unknown>/unknown/' -e 's/<ISO_TIMESTAMP>/2026-10-22T10:00:00Z/' \
+      -e 's/<extended regex[^>]*>/foo/' -e 's/<path scope[^>]*>/src\/*.txt/' -e 's/^root_site: .*/root_site: src\/a.txt:1/' "$tpl" > "$f"
+  out=$(A1_VAULT_ROOT="$VAULT" node "$TOOLS" fix update-status "$f" diagnosed 2>&1); rc=$?
+  assert_rc "m4 a bug file made from the template with the query filled in passes update-status diagnosed" 0 "$rc" "$out"
+  sed -i.bak -e 's/^root_site: .*/root_site: <file>:<line>/' "$f" && rm -f "$f.bak"
+  out=$(A1_VAULT_ROOT="$VAULT" node "$TOOLS" fix update-status "$f" fixing 2>&1); rc=$?
+  assert_rc "m4 the unfilled root_site placeholder is refused (the template does not smuggle a pass)" 1 "$rc" "$out"
+  local v="$REPO_ROOT/skills/a1-fix/workflows/04-verify.md"
+  assert "m4 04-verify: the mark-fixed update-status block captures RC, tests it and names class_sweep_open" "$(node -e '
+    const t=require("fs").readFileSync(process.argv[1],"utf8"); const re=/^```bash\n([\s\S]*?)^```/gm; let m, ok=0;
+    while((m=re.exec(t))) if (/fix update-status[\s\S]*"<bug-path>" fixed/.test(m[1]) && /--verify-result "<verify_result_string>"; RC=\$\?/.test(m[1]) && /-ne 0/.test(m[1]) && /exit "\$RC"/.test(m[1]) && /class_sweep_open/.test(m[1])) ok++;
+    process.stdout.write(ok===1?"1":"0")' "$v")"
+  assert "m4 SKILL.md: the frontmatter rule names the class_query/root_site exception" "$(grep -A4 'Never edit bug-report frontmatter' "$REPO_ROOT/skills/a1-fix/SKILL.md" | grep -c 'class_query' | awk '{print ($1>=1)?1:0}')"
+}
+
 # ---------- run all ----------
 run_next_suffix
 run_update_status
+run_class_query_gate
 run_find_duplicates
 run_integrity_check
 run_init_postmortem
@@ -476,6 +594,8 @@ run_write_suggestion
 run_hostile_path_traversal
 run_hostile_injection
 run_hostile_oversized
+run_wave12_wiring
+run_review_m4
 
 printf '\n--- a1-fix fixture results ---\n'
 for r in "${results[@]}"; do printf '%s\n' "$r"; done

@@ -183,7 +183,7 @@ N lanes = N worktrees, same rules as N phases, no new convention.
    completed waves' code exists, so the import check can actually run:
    ```bash
    node <repo>/_shared/a1-tools.cjs lane-split check \
-     --plan <plan path> --imports <repo root>
+     --plan <plan path> --imports <repo root> --phase <phase_name>
    ```
    Exit 1 → do not start any lane; back to `a1-plan`.
 

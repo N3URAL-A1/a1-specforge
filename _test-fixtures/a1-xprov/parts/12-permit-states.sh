@@ -16,7 +16,7 @@
 #   P8  absent → not_applicable / external_review_not_permitted (spec 016 FR-012, flipped from fail in wave 5) + hint, no writes;
 #       invalid → still a fail.
 #   P9  permit-check: state + exit codes + the exposure sentence (FR-016).
-#   P10 registry: last column applies_to, both xprov rows permitted-repos.
+#   P10 registry: applies_to precedes the last column (invoke, spec 017), both xprov rows permitted-repos.
 #   P11 library rules of permit / permit --deny (record optional only for deny,
 #       an unusable store is never overwritten, deny refuses without --by).
 #   P12 hook: denies `xprov permit`, `permit --deny`, the denial-store path;
@@ -97,7 +97,7 @@ setapplies12() { # <value> — sets the applies_to cell of both xprov rows in th
   node -e '
     const fs = require("fs"); const f = process.argv[1]; const v = process.argv[2];
     const ids = ["plan-review-xprov", "wave-inspect-xprov"];
-    const out = fs.readFileSync(f, "utf8").split("\n").map((l) => (ids.some((id) => l.startsWith("| `" + id + "` |")) ? l.replace(/\|\s*[a-z-]*\s*\|\s*$/, "| " + v + " |") : l));
+    const out = fs.readFileSync(f, "utf8").split("\n").map((l) => (ids.some((id) => l.startsWith("| `" + id + "` |")) ? l.replace(/\|\s*[a-z-]*\s*(\|[^|]*\|\s*)$/, "| " + v + " $1") : l));
     fs.writeFileSync(f, out.join("\n"));
   ' "$TREE/_shared/gates-registry.md" "$1"
 }
@@ -278,9 +278,9 @@ caseP10() {
     const row = (id) => G.parseRegistryRow(text, id);
     const header = text.split("\n").find((l) => /^\|\s*id\s*\|/i.test(l));
     const cols = header.split("|").slice(1, -1).map((c) => c.trim().toLowerCase());
-    process.stdout.write(JSON.stringify({ last: cols[cols.length - 1], plan: row("plan-review-xprov").applies_to, wave: row("wave-inspect-xprov").applies_to, audit: row("plan-audit").applies_to }));
+    process.stdout.write(JSON.stringify({ last: cols[cols.length - 2], invoke: cols[cols.length - 1], plan: row("plan-review-xprov").applies_to, wave: row("wave-inspect-xprov").applies_to, audit: row("plan-audit").applies_to }));
   ' "$REPO_ROOT")"
-  assert_json "P10 the id table's last column is applies_to" "$j" "j.last" "applies_to"
+  assert_json "P10 applies_to is the column before the last one, and invoke (spec 017) is last" "$j" "j.last + '/' + j.invoke" "applies_to/invoke"
   assert_json "P10 both xprov rows carry permitted-repos" "$j" "j.plan + '/' + j.wave" "permitted-repos/permitted-repos"
   assert_json "P10 another row leaves the cell empty (= all)" "$j" "JSON.stringify(j.audit)" '""'
   local n; n="$(grep -c 'not_applicable' "$REGISTRY")"

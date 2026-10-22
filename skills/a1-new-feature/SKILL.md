@@ -158,8 +158,7 @@ product-docs layer). Concrete insertion points in this skill:
 
   ```bash
   node <repo>/_shared/a1-tools.cjs product feature-init \
-    --project <slug> --id <###-feature-slug> --milestone <m-slug> \
-    --title "<short title>" \
+    --id <###-feature-slug> \
     [--spec-path "project/<slug>/spec/<###>-<feature-slug>.md"] \
     [--plan-path "project/<slug>/plans/<###>-<feature-slug>-wave-plan.md"]
   ```
@@ -208,7 +207,7 @@ the local reservations file:
 
 ```bash
 node <repo>/_shared/a1-tools.cjs code-scope claim \
-  --by <spec-id> --scope <code_scope from wave-plan frontmatter>
+  --by <spec-id> --scope <code_scope from wave-plan frontmatter> --phase <spec-id>
 ```
 
 - **CONFLICT (exit 1)** → Implementation does NOT start. The CLI output names

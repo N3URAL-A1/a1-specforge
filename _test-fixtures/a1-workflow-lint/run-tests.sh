@@ -371,8 +371,42 @@ caseW12() { vaultSyncCase W12 skills/a1-execute/workflows/02-execute.md; }
 caseW13() { vaultSyncCase W13 skills/a1-execute/workflows/03-verify.md; }
 caseW14() { vaultSyncCase W14 skills/a1-plan/workflows/04-audit.md; }
 
+# ---------- W15/W16: the spec 017 per-wave gate block (wave 11) ----------
+# W15: verbatim copy of the 2b-g block of skills/a1-execute/workflows/02-execute.md -> no finding.
+# W16: the same block with a piped call whose status is tested via $? -> flagged.
+# Red-making change (W16): removing the `$?`-after-pipe predicate. W15 turns red when the block
+# gains a pipeline-status test (the shape the wiring must never use).
+caseW15() {
+  local work out rc n
+  mk_workdir work work
+  mkdir -p "$work/skills/a1-fake/workflows"
+  cp "$SNIPPETS/w15-wave-gate-block-from-02-execute.md" "$work/skills/a1-fake/workflows/02-execute.md"
+  n="$(grep -c 'a1-tools.cjs' "$work/skills/a1-fake/workflows/02-execute.md")"
+  out="$(node "$TOOLS" workflow lint --root "$work" 2>/dev/null)"; rc=$?
+  if [[ $rc -eq 0 && "$n" == "4" ]]; then
+    ok "W15 per-wave gate block (4 calls) lints clean"
+  else
+    bad "W15 per-wave gate block (rc=$rc calls=$n out=$out)"
+  fi
+  rm -rf "${work:?}"
+}
+
+caseW16() {
+  local work out rc
+  mk_workdir work work
+  mkdir -p "$work/skills/a1-fake/workflows"
+  sed 's/--phase <phase_name>; RC=\$?/--phase <phase_name> | grep -v zzz; RC=$?/' "$SNIPPETS/w15-wave-gate-block-from-02-execute.md" > "$work/skills/a1-fake/workflows/02-execute.md"
+  out="$(node "$TOOLS" workflow lint --root "$work" 2>/dev/null)"; rc=$?
+  if [[ $rc -eq 1 && "$out" == *02-execute.md* ]]; then
+    ok "W16 gate block with a piped call and a tested RC is flagged"
+  else
+    bad "W16 piped gate block (rc=$rc out=$out)"
+  fi
+  rm -rf "${work:?}"
+}
+
 caseW1; caseW2; caseW3; caseW4; caseW5; caseW6; caseW7; caseW8; caseW9; caseW10
-caseW11; caseW12; caseW13; caseW14
+caseW11; caseW12; caseW13; caseW14; caseW15; caseW16
 
 printf '%s\n' "${results[@]}"
 echo "----"

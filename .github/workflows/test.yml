@@ -24,7 +24,14 @@ jobs:
           node-version: '20'
 
       - name: Syntax check
-        run: node --check _shared/a1-tools.cjs
+        # Spec 017 FR-005: the facade plus every module under _shared/lib/ (a glob, so a new module is
+        # covered without editing this step). A syntax error fails the job (node --check exits 1).
+        run: |
+          set -e
+          node --check _shared/a1-tools.cjs
+          for f in _shared/lib/*.cjs; do
+            node --check "$f"
+          done
 
       - name: Install gitleaks (pinned, checksum-checked)
         # Spec 014 FR-011: gitleaks is required for blocking xprov gates. The version and the sha256 of
@@ -90,6 +97,20 @@ jobs:
         # invoked the command). Exit 1 = a documented snippet tests a
         # pipeline's status where `$?` belongs to the parser.
         run: node _shared/a1-tools.cjs workflow lint
+
+      - name: Gate wiring lint
+        # Spec 017 FR-005. Every registry gate whose `invoke` cell names a skill
+        # must be called from that skill in a fenced bash block; an unwired row
+        # without a live exemption (or past its date) exits 1. Fixture
+        # _test-fixtures/a1-gates-lint proves the red path on a planted gate.
+        run: node _shared/a1-tools.cjs gates lint
+
+      - name: Roadmap coherence (no vault)
+        # Spec 017 FR-033. A `done` or `in-flight` roadmap feature must carry
+        # spec_path (ROADMAP.md entry or features/<id>/feature.md). Needs no
+        # vault: the vault-backed status comparison stays a local/merge-time
+        # check. Exit 1 fails the job. Fixture: parts/07-coherence.sh (CI*).
+        run: env -u A1_VAULT_ROOT node _shared/a1-tools.cjs product validate --spec-status --ci --phase ci
 
       - name: Install/README sync check
         run: bash bin/verify-install-sync.sh

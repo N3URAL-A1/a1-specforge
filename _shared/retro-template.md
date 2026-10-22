@@ -51,9 +51,19 @@ drift entries across 3 spellings).** Before appending a `gates_fired` block
 to the store, validate it with `a1-tools retro validate`:
 
 ```bash
-node <repo>/_shared/a1-tools.cjs retro validate "$RETRO_FILE"; RC=$?
-if [ $RC -ne 0 ]; then echo "fix the gate ids above before the entry counts"; exit $RC; fi
+GATE_LOG=".a1/phases/<scope>/gate-log.jsonl"
+node <repo>/_shared/a1-tools.cjs gates fired --log "$GATE_LOG"; RC=$?
+if [ $RC -ne 0 ]; then echo "gate log unreadable or broken (exit $RC) - fix it before the entry counts"; exit $RC; fi
+node <repo>/_shared/a1-tools.cjs retro validate "$RETRO_FILE" --gate-log "$GATE_LOG" --phase retro-<scope>; RC=$?
+if [ $RC -ne 0 ]; then echo "fix the gates_fired block above before the entry counts"; exit $RC; fi
 ```
+
+`retro validate` runs under its own scope, `--phase retro-<scope>`, never under
+`<scope>`: it is a gated subcommand too (`retro-gate-ids`, blocking), and a
+first failed run logged into the scope it validates would leave a `fail` line
+the retro cannot name, so every re-run would fail on `missing_blocking_fail`
+(`verdict_mismatch` for a later pass). The `retro-<scope>` log is git-excluded
+like every gate log.
 
 Capture-then-check, **never a pipe** (`... | RC=$?` makes `$?` belong to the
 parser, not `retro validate` — this exact mistake shipped in `01-collect.md`
@@ -69,6 +79,22 @@ reproduce the exact silent-discard defect this validator exists to kill, one
 layer earlier). `$RETRO_FILE` is the standalone retro document being
 prepared for this run — a single `gates_fired` block, not the accumulated
 per-skill store file it is about to be appended into.
+
+**`gates_fired` comes from the gate log, not from memory (spec 017).** Every
+call of a gated subcommand appends a line to
+`.a1/phases/<scope>/gate-log.jsonl` (call sites pass `--phase <scope>`). Do
+not type the block: print it and paste it.
+
+```bash
+node <repo>/_shared/a1-tools.cjs gates fired --log .a1/phases/<scope>/gate-log.jsonl
+```
+
+For `deterministic` gates the `retro validate` call above carries `--gate-log`
+with that file. It exits 1 when an entry has no log line, carries another verdict
+than the last log line, or when the log holds a `fail` of a `blocking` gate that
+the retro leaves out. `prompt` and `human` entries stay self-reported. Retros
+dated before `ENFORCED_SINCE` (`_shared/lib/enforced-since.cjs`) are legacy and
+skip this check.
 
 ## Write targets (in this order)
 

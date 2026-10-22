@@ -13,8 +13,8 @@ updated: 2026-10-21
 
 ## In-flight features
 
-- **010-vault-cockpit-contract** — Vault cockpit contract — every a1 status readable in Obsidian on Mac, server and phone (milestone: continuous, stage: started)
-- **011-intent-queue-consumer** — Intent queue consumer — the a1 half of triggering skills from the phone via the vault (milestone: continuous, stage: started)
+- **010-vault-cockpit-contract** — Vault cockpit contract — every a1 status readable in Obsidian on Mac, server and phone (milestone: continuous, stage: started) — scope: project/a1-specforge/spec/010-vault-cockpit-contract.md
+- **011-intent-queue-consumer** — Intent queue consumer — the a1 half of triggering skills from the phone via the vault (milestone: continuous, stage: started) — scope: project/a1-specforge/spec/011-intent-queue-consumer.md
 - **017-enforced-self-checks** — Enforced self-checks: gates that really run, verifier reads exit codes, test fidelity, defect-class sweep (milestone: continuous, stage: complete) — scope: project/a1-specforge/spec/017-enforced-self-checks.md, project/a1-specforge/plans/017-enforced-self-checks-wave-plan.md
 
 ## Next cursor

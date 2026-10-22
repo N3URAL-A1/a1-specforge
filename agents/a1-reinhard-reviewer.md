@@ -167,6 +167,13 @@ escalation class — it was a near-verbatim duplicate.)
 - [ ] Error handling complete (no swallow)
 - [ ] No hardcoded values
 
+### Phase 8b — Disposition Review (a1-pr-review)
+
+When the brief lists changed dispositions (`.a1/dispositions.json`), give each a verdict `upheld` or `overturned`
+(the caller records it via `disposition review`). **Overturn** when the reason does not justify the exception, or the
+finding behind it is real (a mock of the subject, a skip that hides a failing case, a sibling site left unguarded).
+Name each verdict with fingerprint and one-line reason; an overturned one is a MAJOR finding.
+
 ### Phase 9 — Verdict & Output
 
 - ✅ **APPROVE** — ship it

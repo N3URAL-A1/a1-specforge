@@ -1,0 +1,146 @@
+---
+name: a1-pr-review
+description: >
+  Turns a finished feature branch into a reviewed Pull Request. Four phases:
+  Detect (scan a1-worktree registry for `handoff`; no registry entry? →
+  adopt-first fallback, see workflows/01-detect.md) → Review (spawn
+  a1-reinhard-reviewer, findings JSON) → Draft (PR title+body) → Submit
+  (`gh pr create`). BLOCKER findings halt; MAJOR go into PR body "Known
+  Issues"; MINOR stay as inline comment suggestions.
+  MUST trigger when the user says: "pr review for <slug>" (alias: "pr review
+  für <slug>"), "a1-pr-review", "review my worktree" (alias: "review meinen
+  worktree"), "draft a pr" (alias: "pr draften"), "open a pr" (alias: "pr
+  aufmachen"), "feature is done, open a PR" (alias: "feature ist fertig, PR
+  aufmachen"), "worktree to review" (alias: "worktree zur review"), "code
+  review + PR", "put reinhard on <slug>" (alias: "reinhard auf <slug>
+  ansetzen"), or any request to wrap a handoff-state worktree into a Pull
+  Request.
+  Runs strictly AFTER implementation on a branch that has commits.
+  Do NOT activate for: raw `gh pr create` without review (use gh directly),
+  generic code-review-only (call a1-reinhard-reviewer directly), worktrees
+  still in `active` status (run a1-worktree exit --mode handoff first), or
+  branches that already have an open PR.
+allowed-tools:
+  - Read
+  - Bash
+  - Agent
+---
+
+# a1-pr-review — Handoff to Pull Request
+
+Language: English-first; German trigger aliases supported.
+
+This skill is a thin orchestrator. The lifecycle logic lives in
+`workflows/`. The shared CLI helper
+(`<repo>/_shared/a1-tools.cjs pr`) handles registry scans,
+findings serialization, and status updates. The `gh` CLI is invoked
+directly from the workflows — there is no wrapper.
+
+## When to use
+
+Activate when a worktree exits in mode `handoff` (registry status
+`handoff`). Typical chain:
+
+```
+a1-new-feature → a1-worktree (enter/exit handoff) → a1-pr-review
+```
+
+## When NOT to use
+
+- Worktrees still `active` — must exit to `handoff` via a1-worktree first.
+- Generic code-review without PR intent — call `a1-reinhard-reviewer` directly.
+- Hot-fix branches that already have an open PR.
+- Re-runs after `pr-open` — registry status is terminal for this skill.
+
+No registry entry for a worktree the user names directly? → adopt-first
+fallback, see `workflows/01-detect.md`.
+
+## Spawn Policy (HARD RULE)
+
+Spawn a1 agents by `subagent_type` without `name` (else pass `model` explicitly); briefs carry
+paths, not documents. Details + self-check: `_shared/spawn-policy.md`.
+
+## Phases
+
+| # | Phase | Workflow | Status after |
+|---|---|---|---|
+| 1 | Detect | `workflows/01-detect.md` | in-review |
+| 2 | Review | `workflows/02-review.md` | reviewed |
+| 3 | Draft | `workflows/03-draft.md` | draft-ready |
+| 4 | Submit | `workflows/04-submit.md` | pr-open |
+
+## Routing — pick the right phase
+
+1. If the user names a slug and no `.a1-review/findings.json` exists in
+   the worktree → Phase 1 (Detect).
+2. If `findings.json` exists but no `pr-draft.md` → Phase 3 (Draft) — or
+   re-run Phase 2 if the user explicitly asks for re-review.
+3. If `pr-draft.md` exists and registry is still `reviewed` →
+   Phase 4 (Submit).
+4. If the user asks "was steht zur Review?" → call
+   `a1-tools pr list-handoff` directly, no phase needed.
+
+## State mechanics
+
+State is split across two locations:
+
+| What | Where |
+|---|---|
+| Worktree status (`handoff` → `in-review` → `reviewed` → `pr-open`) | `~/.a1-worktrees-registry.json` |
+| Review findings (BLOCKER / MAJOR / MINOR arrays) | `<worktree>/.a1-review/findings.json` |
+| PR draft (title + body markdown) | `<worktree>/.a1-review/pr-draft.md` |
+| Cross-provider PR diff review (`pr-diff-xprov`, step 2.2b): index, run records, dispositions, observations | `<worktree>/.a1-review/xreview/` (target = head sha; the merge check of 2.7 reads it) |
+
+Update via CLI only — never write the registry directly:
+
+```bash
+node <repo>/_shared/a1-tools.cjs pr list-handoff
+node <repo>/_shared/a1-tools.cjs pr findings-summary <slug>
+node <repo>/_shared/a1-tools.cjs pr mark-pr-open <slug> <pr-url>
+```
+
+## Agent integration
+
+Phase 2 spawns the global `a1-reinhard-reviewer` agent via the `Agent` tool, and next to it (step 2.2b) runs `xprov gate --gate pr-diff-xprov` for the Codex review of the same diff; before `gh pr merge` the code check of step 2.7 (`xprov gate --gate pr-diff-xprov --merge-check`) must exit 0. Reinhard's
+brief is structured (worktree path, branch, diff range, scope hint from
+the last `phase_history` entry). Reinhard returns findings as inline
+JSON which the workflow then writes to `findings.json` via the CLI.
+
+## Hard rules
+
+- BLOCKER findings halt the flow before Phase 4. The user must confirm
+  explicitly to proceed despite blockers.
+- MAJOR findings are listed in the PR body under "Known Issues".
+- MINOR findings are not in the PR body — they go into a separate
+  `inline-comments.md` for optional manual posting.
+- Never invoke `git push` or `gh pr create` without explicit user
+  confirmation in Phase 4. This covers the first push only: pushes of
+  review-fix rounds after the PR is open follow the standing instruction
+  (the assistant reviews and merges without asking) and need no extra
+  confirmation. **Merging is different**: once the review is
+  clean, merge without asking (see Hand-offs). The user has standing
+  instruction not to review PRs.
+- **Never end a run by asking the user to review or merge.** A PR that
+  passed review and whose BLOCKER/MAJOR findings are fixed gets merged in
+  the same run. Reporting "ready for your review" is a failure mode, not a
+  hand-off.
+- Never write `~/.a1-worktrees-registry.json` directly. CLI only.
+- User-facing prompts follow `_shared/language-policy.md` (user's language,
+  never hardcoded). CLI output (JSON, log lines) and file contents (PR body,
+  findings) stay in **English**.
+
+## Hand-offs
+
+- After `pr-open`: **the assistant merges — never the user.** The user does
+  not review PRs (standing instruction, 2026-09-09). Sequence: Reinhard
+  reviews the diff as a subagent → fix every BLOCKER and MAJOR, one push per
+  round (`_shared/push-cadence.md`) → run the merge check (`workflows/02-review.md` 2.7; exit 1 = no merge) → then merge
+  with `gh pr merge <n> --squash --delete-branch`, verify it landed
+  (`gh pr view --json state,mergedAt`), sync the primary checkout's `main`
+  via `_shared/push-cadence.md` P3 (never a bare `git pull`), and advance the
+  registry.
+  Do not ask the user to review, and do not hand the PR back as "ready for
+  your review". Report what was merged, not what awaits them.
+  The one thing that still needs the user's word is a **production deploy or
+  a migration applied to a production database** — merging is not that.
+- BLOCKER halt → user fixes in worktree, then re-runs Phase 2 (review).

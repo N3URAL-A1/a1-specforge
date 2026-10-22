@@ -22,7 +22,7 @@ Spec status is `planned` and frontmatter `wave_plan_path` is set. Wave-plan file
 **Consistency Gate must be PASS before Wave 1 starts.** If it hasn't run yet:
 
 ```bash
-node <repo>/_shared/a1-tools.cjs consistency-check <plan-path> <spec-path>
+node <repo>/_shared/a1-tools.cjs checklist run <project-slug>/<###>-<feature-slug> --only 9,10,11 --format json --phase <spec-id>
 ```
 
 Do NOT start Wave 1 if the gate returns FAIL. Orphaned FRs (FRs not mapped to any wave) produced 44% of historical post-deploy bugs — the gate costs 30 seconds and prevents hours of fixes.
@@ -40,7 +40,7 @@ its entries with commas (no spaces) to build the `--scope` CSV value:
 #   - components/widgets/
 # → --scope "app/api/widgets/,components/widgets/"
 node <repo>/_shared/a1-tools.cjs code-scope claim \
-  --by <spec-id> --scope <code_scope-paths-comma-separated>
+  --by <spec-id> --scope <code_scope-paths-comma-separated> --phase <spec-id>
 ```
 
 - Exit 1 (`CONFLICT`) → **do not start Implementation.** Surface the named
@@ -206,10 +206,16 @@ sites at once. Three identical data-corrections in a row means you skipped this 
 **Gate 0.6 — Schema check (waves with DB migrations only)**
 
 For waves that add or change migrations, run the deterministic pre-gate before wave
-sign-off: `node <repo>/_shared/a1-tools.cjs schema-check run --migrations <dir>`
-(checks: audit trigger per table, RLS enabled, FK type match — exit 1 = wave not signed
-off). Semantic checks (enum completeness, expand→migrate→contract) stay in the 04-plan.md
-migration checklist.
+sign-off (checks: audit trigger per table, RLS enabled, FK type match):
+
+```bash
+node <repo>/_shared/a1-tools.cjs schema-check run --migrations <dir> --phase <spec-id>; RC=$?
+echo "schema-check exit=$RC"
+if [ $RC -ne 0 ]; then echo "STOP: schema-check red, wave not signed off"; fi
+```
+
+Exit 1 = wave not signed off. Semantic checks (enum completeness, expand→migrate→contract)
+stay in the 04-plan.md migration checklist.
 
 **Gate 0.7 — Real-path proof (waves touching SQL / RLS / external HTTP only)**
 
@@ -219,7 +225,9 @@ deterministic real-path check:
 
 ```bash
 node <repo>/_shared/a1-tools.cjs realpath-check run \
-  --diff-base <wave-start-ref> --project <dir>
+  --diff-base <wave-start-ref> --project <dir> --phase <spec-id>; RC=$?
+echo "realpath-check exit=$RC"
+if [ $RC -ne 0 ]; then echo "STOP: realpath-check red, wave not signed off"; fi
 ```
 
 The check greps the wave diff for SQL/fetch signatures and requires the executor to have produced
@@ -230,9 +238,37 @@ Rationale: `mock_tests_hide_sql_bugs` has recurred 3× — most damagingly an ho
 that shipped behind 23 green tests because none hit the real DB path. This gate kills that class
 structurally instead of by prompt appeal.
 
+**Gate 0.8 — Test fidelity (every wave)**
+
+Green tests that mock the changed code, are skipped, return early or do not run in CI prove
+nothing. Scan the tests this wave added or changed:
+
+```bash
+node <repo>/_shared/a1-tools.cjs test-fidelity --diff-base <wave-start-ref> --project <dir> --phase <spec-id>; RC=$?
+echo "test-fidelity exit=$RC"
+if [ $RC -ne 0 ]; then echo "STOP: test-fidelity red (findings as JSON above)"; fi
+```
+
+Exit 1 = wave not signed off: the agent fixes the tests. The only other way out is a recorded
+`disposition add --kind fidelity ... --reason <why> --by <agent>`; Reinhard reviews it at PR
+review. There is no skip flag.
+
 **Gate 1 — Build**
 
-Run the project-specific build command (in CLAUDE.md, e.g. `npm run build`).
+Run the project's deterministic build and test check (commands from `.a1/verify.json`, else the
+npm `typecheck`/`build`/`test` scripts):
+
+Intent child (`A1_INTENT_CHILD=1`): skip the block below. A child cannot run `verify run` (the spawn guard refuses it, exit 77).
+Record "gate-1-build: verify deferred to owner" in the wave report instead. The owner runs `verify run` after the child ends and
+before any merge; `pr merge-check` runs the suites itself, so a deferred gate never lets a red suite through.
+
+```bash
+node <repo>/_shared/a1-tools.cjs verify run --project <dir> --phase <spec-id>; RC=$?
+echo "verify run exit=$RC"
+if [ $RC -ne 0 ]; then echo "STOP: gate-1-build red (verdict fail or no test command)"; fi
+```
+
+Run the project-specific build command from CLAUDE.md too when it is not covered (e.g. `npm run build`).
 On build failure: wave stays `in-progress`, agent repairs it. No proceeding.
 
 **Gate 2 — Preview-Deploy**

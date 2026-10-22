@@ -196,7 +196,7 @@ Use the **Agent** tool with `subagent_type: "a1-vincente-vibe-optimizer"` and
 After Vincente reports completion, run the deterministic Depth Pass check first:
 
 ```bash
-node <repo>/_shared/a1-tools.cjs plan depth-check --plan <plan-path>
+node <repo>/_shared/a1-tools.cjs plan depth-check --plan <plan-path> --phase <spec-id>
 ```
 
 Exit 0 → continue with the status update below. Exit 1 → the `## Depth Pass`

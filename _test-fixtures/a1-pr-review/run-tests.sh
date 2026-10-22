@@ -202,6 +202,86 @@ bad_waive="$(grep -rnE 'consent (ensure\|)?waive --kind|ensure\|waive' "$SK" 2>/
 if [ -z "$bad_waive" ]; then pass_case "no skill text shows 'consent waive --kind' or the 'ensure|waive' shorthand (static)"
 else fail_case "a skill text shows a waive call that exits 2: $bad_waive"; fi
 
+# ---------- spec 017 wave 10 (FR-038): workflows/05-merge.md ----------
+# Measured red 2026-10-21 (git-archive snapshot, one line of 05-merge.md changed, suite run):
+#   merge block gets an extra flag (`--admin`)                       : canonical-form case
+#   `exit "$RC"` removed from the merge-check block                  : explicit-exit-code case
+#   `--require-vault` removed from the coherence call                : block-order case (DCMG -> D?MG)
+#   `--phase pr-<n>` removed from the merge-check call               : --phase case
+#   Wave 13: `--phase pr-<n>` put back on the disposition review call   : --phase case (flag now must be absent there)
+MRG="$SK/a1-pr-review/workflows/05-merge.md"
+blocks_json() { # fenced bash blocks of 05-merge.md as a JSON array of strings
+  node -e '
+    const t=require("fs").readFileSync(process.argv[1],"utf8"); const out=[]; const re=/^```bash\n([\s\S]*?)^```/gm; let m;
+    while((m=re.exec(t))) out.push(m[1]); process.stdout.write(JSON.stringify(out));' "$1"
+}
+BJ="$(blocks_json "$MRG")"
+bj() { printf '%s' "$BJ" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const b=JSON.parse(s);console.log(eval(process.argv[1]))})' "$1"; }
+HAND="$(awk '/^## Hand-offs/{f=1} f' "$SK/a1-pr-review/SKILL.md")"
+if [ "$(bj 'b.length')" = "4" ]; then pass_case "05-merge.md has exactly 4 fenced bash blocks (count)"; else fail_case "05-merge.md fenced bash blocks: $(bj 'b.length') (want 4)"; fi
+order="$(bj 'b.map(x=>/disposition review/.test(x)?"D":/product validate --spec-status --require-vault/.test(x)?"C":/pr merge-check/.test(x)?"M":/^gh pr merge /m.test(x)?"G":"?").join("")')"
+if [ "$order" = "DCMG" ]; then pass_case "block order: disposition review, coherence (--require-vault), merge-check, gh pr merge"; else fail_case "05-merge.md block order is '$order' (want DCMG)"; fi
+if [ "$(bj 'b.filter(x=>/gh pr merge/.test(x)).length')" = "1" ] && [ "$(bj 'b.findIndex(x=>/gh pr merge/.test(x))')" = "3" ]; then
+  pass_case "no gh pr merge before the three checks: exactly one merge command, in the last block"
+else fail_case "gh pr merge appears outside the last fenced block"; fi
+if [ "$(bj 'b[3].trim()')" = "gh pr merge <n> --squash --delete-branch --match-head-commit <head_sha>" ]; then pass_case "the merge block is exactly the canonical form the hook allows, with the head pin (only command, no other flags)"
+else fail_case "merge block is not the byte-exact canonical form: $(bj 'JSON.stringify(b[3])')"; fi
+if [ "$(bj 'b.slice(0,3).filter(x=>/RC=\$\?/.test(x)&&/-ne 0/.test(x)&&/exit "\$RC"/.test(x)).length')" = "3" ]; then pass_case "each check block tests its exit code explicitly and stops on non-zero (count 3)"
+else fail_case "a check block does not test \$? and exit"; fi
+# Wave 13: `disposition review` (block 0) is not a registry gate and exits 2 on --phase; the two registry gates (blocks 1, 2) carry it.
+if [ "$(bj 'b.slice(1,3).filter(x=>/--phase pr-<n>/.test(x)).length')" = "2" ] && [ "$(bj 'b.slice(0,1).filter(x=>/disposition review /.test(x)&&!/--phase/.test(x)).length')" = "1" ]; then pass_case "coherence and merge-check calls pass --phase pr-<n> (count 2); disposition review passes none (the command rejects it)"; else fail_case "05-merge.md: a registry call lacks --phase pr-<n> or disposition review passes --phase"; fi
+if printf '%s' "$HAND" | grep -q 'workflows/05-merge.md'; then pass_case "SKILL.md Hand-offs points to workflows/05-merge.md"
+else fail_case "SKILL.md Hand-offs does not point to 05-merge.md"; fi
+if [ "$(printf '%s' "$HAND" | grep -c 'gh pr merge')" = "1" ]; then pass_case "the Hand-offs prose carries no second merge sequence (one gh pr merge mention, the pointer; count)"
+else fail_case "Hand-offs still holds merge prose beyond the pointer"; fi
+if grep -q 'Step 2.7' "$MRG" && grep -q -- '--merge-check' "$MRG" && grep -q -- '--body-file' "$MRG"; then
+  pass_case "05-merge.md keeps the spec 016 precondition (step 2.7 merge check) and the --body-file rule"
+else fail_case "05-merge.md lost the spec 016 precondition or the --body-file rule"; fi
+if grep -q '2.2b' "$REV" && grep -q 'pr-diff-xprov' "$REV"; then pass_case "the Codex PR diff review step (2.2b) is still in 02-review.md"
+else fail_case "02-review.md lost the Codex review step"; fi
+
+# ---------- spec 017 wave 12 (FR-025): disposition review in 02-review.md + Reinhard ----------
+# Measured red 2026-10-21 (git-archive snapshot, one line changed, suite run):
+#   02-review.md: `disposition review` renamed to `disposition view`  : real-flags case
+#   02-review.md: `--phase pr-<n>` added to the disposition call      : no --phase case (the CLI exits 2 on it)
+#   agents/a1-reinhard-reviewer.md: heading "Disposition Review" cut   : agent-duty case
+AGT="$SK/../agents/a1-reinhard-reviewer.md"
+rb="$(node -e '
+  const t=require("fs").readFileSync(process.argv[1],"utf8"); const out=[]; const re=/^```bash\n([\s\S]*?)^```/gm; let m;
+  while((m=re.exec(t))) out.push(m[1]); process.stdout.write(JSON.stringify(out));' "$REV")"
+rbj() { printf '%s' "$rb" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const b=JSON.parse(s);console.log(eval(process.argv[1]))})' "$1"; }
+if [ "$(rbj 'b.filter(x=>/disposition review /.test(x)).length')" = "1" ]; then pass_case "02-review.md has exactly one disposition review call (count)"; else fail_case "02-review.md disposition review call count != 1"; fi
+if [ "$(rbj 'b.filter(x=>/disposition review <fingerprint> --verdict <upheld\|overturned> --reason /.test(x)&&/--by a1-reinhard-reviewer/.test(x)).length')" = "1" ]; then pass_case "the call uses the real flags (--verdict upheld|overturned, --reason, --by)"; else fail_case "disposition review call lacks --verdict/--reason/--by"; fi
+if [ "$(rbj 'b.filter(x=>/disposition review /.test(x)&&/--phase/.test(x)).length')" = "0" ]; then pass_case "disposition review passes no --phase (the command rejects it with exit 2)"; else fail_case "disposition review call passes --phase"; fi
+if [ "$(rbj 'b.filter(x=>/disposition review /.test(x)&&/RC=\$\?/.test(x)&&/-ne 0/.test(x)&&/exit "\$RC"/.test(x)).length')" = "1" ]; then pass_case "the disposition review block tests its exit code explicitly"; else fail_case "disposition review block does not test \$?"; fi
+if [ "$(rbj 'b.findIndex(x=>/disposition review /.test(x))>b.findIndex(x=>/xprov gate --gate pr-diff-xprov --work-path/.test(x))')" = "true" ] && grep -q '^### 2.3b' "$REV" && [ "$(grep -n '^### 2.3b' "$REV" | cut -d: -f1)" -lt "$(grep -n '^### 2.4 ' "$REV" | cut -d: -f1)" ]; then pass_case "the disposition step sits between 2.3 and 2.4, after the Codex step"; else fail_case "disposition step 2.3b is missing or misplaced"; fi
+if grep -q 'Dispositions changed between base and head' "$REV"; then pass_case "the Reinhard brief carries the changed dispositions"; else fail_case "Reinhard brief lacks the changed-dispositions line"; fi
+if grep -q 'overturned' "$AGT" && grep -q 'upheld' "$AGT" && grep -q 'Disposition Review' "$AGT"; then pass_case "Reinhard agent file states the disposition review duty with upheld/overturned"; else fail_case "agents/a1-reinhard-reviewer.md lacks the disposition review duty"; fi
+if [ "$(wc -l < "$AGT")" -le 260 ]; then pass_case "Reinhard agent file stays short (<= 260 lines)"; else fail_case "Reinhard agent file grew past 260 lines"; fi
+
+# ---------- spec 017 review round A (M1, M2): head pin and committed dispositions ----------
+# Measured red 2026-10-21 (git-archive snapshot, one line changed, suite run):
+#   05-merge.md: `--match-head-commit <head_sha>` removed from the merge block   : head-pin case (and the byte-exact canonical case)
+#   05-merge.md: `git push` removed from the disposition block                    : commit+push case
+#   02-review.md: the commit+push block removed from 2.3b                         : 2.3b commit+push case
+if [ "$(bj 'b[0].includes("git commit -m") && b[0].includes("-- .a1/dispositions.json") && b[0].includes("git push") && b[0].indexOf("disposition review") < b[0].indexOf("git commit") && b[0].indexOf("git commit") < b[0].indexOf("git push")')" = "true" ]; then pass_case "05-merge 5.1 commits .a1/dispositions.json (explicit path) and pushes, after the review call"
+else fail_case "05-merge 5.1 block lacks the ordered review, commit (-- .a1/dispositions.json), push sequence"; fi
+if [ "$(bj 'b[3].includes("--match-head-commit <head_sha>")')" = "true" ] && grep -q 'head_sha' "$MRG"; then pass_case "05-merge 5.4 pins the merge to the head_sha that merge-check reported"
+else fail_case "05-merge 5.4 does not pass --match-head-commit <head_sha>"; fi
+if [ "$(rbj 'b.filter(x=>/git commit -m/.test(x)&&/-- \.a1\/dispositions\.json/.test(x)&&/git push/.test(x)).length')" = "1" ]; then pass_case "02-review 2.3b has one commit+push block for .a1/dispositions.json (count)"
+else fail_case "02-review 2.3b lacks the commit+push block for the dispositions file"; fi
+if grep -q 'dispositions_uncommitted' "$MRG" && grep -q 'dispositions_uncommitted' "$REV"; then pass_case "both workflows name dispositions_uncommitted as the reason for the commit step"
+else fail_case "a workflow does not explain dispositions_uncommitted"; fi
+
+# ---------- spec 017 review round C (MINOR-1/2/B): config-change reasons documented, no self-authorizing flag ----------
+# Measured red 2026-10-21 (before the 05-merge.md edit): verify_config_changed and the add-command line absent, --accept-config-change present.
+if grep -q 'verify_config_changed' "$MRG" && grep -q 'fidelity_config_changed' "$MRG" && grep -q 'disposition add --kind config_change --fingerprint' "$MRG" && grep -q 'suites.config_changed.fingerprint' "$MRG"; then pass_case "05-merge 5.3 documents verify_config_changed and fidelity_config_changed and how a second reviewer clears them"
+else fail_case "05-merge 5.3 does not document verify_config_changed / fidelity_config_changed and the config_change disposition route"; fi
+if ! grep -q 'accept-config-change' "$MRG"; then pass_case "05-merge names no --accept-config-change flag (no self-authorizing way around the config check)"
+else fail_case "05-merge still mentions --accept-config-change"; fi
+if grep -q 'disposition review' "$MRG" && grep -q -e '--by a1-reinhard-reviewer' "$MRG"; then pass_case "05-merge disposition review lines carry --by (required since round C)"
+else fail_case "05-merge disposition review line lacks --by"; fi
+
 echo ""
 echo "a1-pr-review: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

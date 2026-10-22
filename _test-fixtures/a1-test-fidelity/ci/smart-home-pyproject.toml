@@ -1,0 +1,31 @@
+[project]
+name = "smart-home-monitor"
+version = "0.1.0"
+description = "Controme Miniserver health probe"
+requires-python = ">=3.11"
+dependencies = ["httpx>=0.28,<0.29"]
+
+[project.scripts]
+smart-home-monitor = "smart_home_monitor.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/smart_home_monitor"]
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "."]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

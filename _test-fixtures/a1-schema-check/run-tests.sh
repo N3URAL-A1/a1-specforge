@@ -43,5 +43,21 @@ else
   fail=$((fail + 1))
 fi
 
+# Spec 017 FR-008: the gate call appends one log line (gate-0.6-schema) to the repo it runs in.
+# Measured red 2026-10-20 (git-archive snapshot): gate-log.cjs recordRun() not called -> no log file;
+# verdictForExit() 0 -> fail -> verdict assert fails.
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
+mk_workdir LOGW schema-log
+git -C "$LOGW" init -q && git -C "$LOGW" config user.email t@t.dev && git -C "$LOGW" config user.name test
+echo seed > "$LOGW/seed.txt"; git -C "$LOGW" add -A; git -C "$LOGW" commit -qm base
+(cd "$LOGW" && node "$TOOLS" schema-check run --phase s1 --migrations "$DIR/pass/migrations" >/dev/null 2>&1); rc=$?
+line="$(cat "$LOGW/.a1/phases/s1/gate-log.jsonl" 2>/dev/null)"
+got="$(node -e 'const r=JSON.parse(process.argv[1]); process.stdout.write([r.gate,r.verdict,r.exit,r.scope].join("|"))' "$line" 2>&1)"
+if [[ $rc -eq 0 && "$got" == "gate-0.6-schema|pass|0|s1" ]]; then
+  echo "PASS  gate-log line (gate-0.6-schema, pass, exit 0, scope s1)"; pass=$((pass + 1))
+else
+  echo "FAIL  gate-log line (rc=$rc got=$got)"; fail=$((fail + 1))
+fi
+
 echo "schema-check fixtures: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

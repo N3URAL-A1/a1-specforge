@@ -110,6 +110,22 @@ All 17 skills below match the `SKILLS` array in `bin/install.sh` exactly.
 
 Deterministic helpers for all pipelines live under `_shared/` (`~6.8k` LOC): atomic frontmatter writes, number/suffix reservations, spec/fix/analyze scaffolding, phantom and schema checks, cost tracking, and the learning-store resolver. Skills call it; you rarely invoke it directly.
 
+### Enforced self-checks (spec 017)
+
+Nine commands turn the pipeline's self-reports into measured results. Only calls of a subcommand that a registry `invoke` cell names write a line (for example `verify run`, `test-fidelity`, `realpath-check run`, `schema-check run`, `retro validate`; `gates fired` and `gates lint` do not), and only outside an intent child. The line goes to a git-excluded, hash-chained gate log (`.a1/phases/<scope>/gate-log.jsonl`, scope from `--phase`; without it `_unscoped`), and `retro validate --gate-log` checks a retro's `gates_fired` against it.
+
+| Command | What it enforces |
+|---|---|
+| `gates lint` | Every blocking deterministic gate in `_shared/gates-registry.md` has a skill that calls it (`invoke` column). CI step. |
+| `gates fired --log <file>` | Prints the `gates_fired` block of a retro from the gate log. |
+| `verify run` / `verify check` | Runs the project's suites (`.a1/verify.json`), records exit codes in `VERIFICATION.md`, and rejects a PASS claim without a green `verify_run`. |
+| `test-fidelity --diff-base <ref>` | Flags tests that mock the subject, skip, return early, or no CI run reaches. |
+| `disposition add` / `review` | The only way to clear a finding: a committed, reviewed entry in `.a1/dispositions.json`. No `--skip` flag exists. |
+| `fix class-sweep` | a1-fix lists every sibling site of a defect class before a bug may be marked fixed. |
+| `pr merge-check` | The last check before `gh pr merge`: suites on head and base, required checks, flaky list, dispositions. |
+
+Every new command exits 2 on an internal error and never 0. Details: [`docs/adr/2026-10-14-gate-invoke-and-log.md`](docs/adr/2026-10-14-gate-invoke-and-log.md); how to run them as a contributor: [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
 ### Vault mirror and cockpit (spec 010)
 
 With `A1_VAULT_ROOT` set, the CLI keeps a one-way, read-only copy of each project's product and phase state in an external vault. Two machines can share one vault through a per-project writer host. Commands, rules and variables are in [`docs/vault.md`](docs/vault.md).
@@ -141,7 +157,7 @@ English-first; German trigger phrases remain supported as aliases. Some workflow
 
 ## Testing
 
-22 fixture test suites live under `_test-fixtures/*/run*.sh` (including the vault-fallback and phantom runners) plus a nested schema-check parser runner. Run them all:
+47 fixture runners live under `_test-fixtures/*/run*.sh` (counted with `ls _test-fixtures/*/run*.sh | wc -l`; this includes the vault-fallback, phantom and `run-wave13.sh` runners) plus one nested runner, `_test-fixtures/a1-schema-check/parser/run-parser.sh`. Run them all:
 
 ```bash
 for r in _test-fixtures/*/run*.sh; do bash "$r" || break; done

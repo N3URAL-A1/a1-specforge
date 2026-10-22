@@ -363,9 +363,21 @@ const { cmdRetroValidate } = require(path.join(__dirname, 'lib', 'retro-validate
 // ---------- workflow group (lib/workflow-lint.cjs) ----------
 // Spec 007-retro-gate-id-validator, Wave 3.
 const { cmdWorkflowLint } = require(path.join(__dirname, 'lib', 'workflow-lint.cjs'));
+const { installGateLog } = require(path.join(__dirname, 'lib', 'gate-log.cjs'));
+
+/** The registry this CLI ships with; unreadable means no gate log, never a crash. */
+function readRegistryText() {
+  try {
+    return fs.readFileSync(path.join(__dirname, 'gates-registry.md'), 'utf8');
+  } catch (_e) {
+    return '';
+  }
+}
 
 function main() {
-  const argv = process.argv.slice(2);
+  // Spec 017 Wave 2 (FR-008): a subcommand named in a registry `invoke` cell
+  // gets `--phase <scope>` stripped and one gate-log line appended at exit.
+  const argv = installGateLog(process.argv.slice(2), readRegistryText());
   if (argv.length === 0 || argv[0] === '--help' || argv[0] === '-h') {
     // No process.exit() here: the help text is larger than a pipe buffer
     // (64 KiB), and exiting before stdout drains cuts it off.
@@ -392,6 +404,10 @@ function main() {
       else if (sub === 'count-postmortems-since') result = cmdFixCountPostmortemsSince(rest);
       else if (sub === 'update-promote-state') result = cmdFixUpdatePromoteState(rest);
       else if (sub === 'write-suggestion') result = cmdFixWriteSuggestion(rest);
+      else if (sub === 'class-sweep') {
+        require(path.join(__dirname, 'lib', 'fix-class-sweep.cjs')).cmdFixClassSweep(sub, rest);
+        return; // unreachable — the command exits itself
+      }
       else usage(`unknown fix subcommand: ${sub}`);
     } else if (group === 'analyze') {
       if (sub === 'next-slot') result = cmdAnalyzeNextSlot(rest);
@@ -492,6 +508,10 @@ function main() {
       else if (sub === 'mark-status') result = cmdPrMarkStatus(rest);
       else if (sub === 'mark-pr-open') result = cmdPrMarkPrOpen(rest);
       else if (sub === 'findings-summary') result = cmdPrFindingsSummary(rest);
+      else if (sub === 'merge-check') {
+        require(path.join(__dirname, 'lib', 'pr-merge-check.cjs')).cmdPrMergeCheck(sub, rest);
+        return; // unreachable — the command exits itself
+      }
       else usage(`unknown pr subcommand: ${sub}`);
     } else if (group === 'phantom') {
       if (sub === 'check') {
@@ -646,6 +666,21 @@ function main() {
         cmdWorkflowLint(rest);
         return; // unreachable — cmdWorkflowLint calls process.exit()
       } else usage(`unknown workflow subcommand: ${sub}`);
+    } else if (group === 'gates') {
+      // Spec 017-enforced-self-checks, Wave 1: lib/gates-cli.cjs owns the
+      // group's dispatch and every exit code (0 / 1 / 2). Lazy require.
+      require(path.join(__dirname, 'lib', 'gates-cli.cjs')).cmdGates(sub, rest);
+      return; // unreachable — every gates subcommand calls process.exit()
+    } else if (group === 'verify') {
+      // Spec 017 Wave 2: fail-closed stub (exit 2); wave 3 builds run/check.
+      require(path.join(__dirname, 'lib', 'verify-cli.cjs')).cmdVerify(sub, rest);
+      return;
+    } else if (group === 'test-fidelity') {
+      require(path.join(__dirname, 'lib', 'test-fidelity.cjs')).cmdTestFidelity(sub, rest); // wave 4
+      return;
+    } else if (group === 'disposition') {
+      require(path.join(__dirname, 'lib', 'disposition.cjs')).cmdDisposition(sub, rest); // wave 8
+      return;
     } else if (group === 'xprov') {
       // Spec 009-cross-provider-review-gate, Wave 1 — the facade's ONLY edit
       // for that spec. lib/xprov.cjs owns the full dispatch table; every
@@ -676,7 +711,7 @@ function main() {
       require(path.join(__dirname, 'lib', 'intent-git.cjs')).cmdGit(sub, rest);
       return;
     } else {
-      usage(`unknown command group: ${group} (expected "spec", "fix", "analyze", "check", "checklist", "constitution", "worktree", "pr", "phantom", "reconcile", "modernize", "schema-check", "cost", "pack", "product", "quick", "learnings", "retro", "workflow", "intent", "git", or "realpath-check"). fix supports: next-suffix, update-status, list, find-duplicates, integrity-check, init-postmortem, count-postmortems-since, update-promote-state, write-suggestion`);
+      usage(`unknown command group: ${group} (expected "spec", "fix", "analyze", "check", "checklist", "constitution", "worktree", "pr", "phantom", "reconcile", "modernize", "schema-check", "cost", "pack", "product", "quick", "learnings", "retro", "workflow", "gates", "verify", "test-fidelity", "disposition", "intent", "git", or "realpath-check"). fix supports: next-suffix, update-status, list, find-duplicates, integrity-check, init-postmortem, count-postmortems-since, update-promote-state, write-suggestion`);
     }
   } catch (e) {
     // Input-validation errors (e.g. path-traversal guard) are user errors,
