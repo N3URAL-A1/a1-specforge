@@ -29,11 +29,12 @@
         "skills/a1-new-feature/workflows/04-plan.md",
         "skills/a1-new-feature/workflows/05-implement.md",
         "skills/a1-execute/workflows/02-execute.md",
+        "skills/a1-execute/workflows/03-verify.md",
         "skills/a1-plan/",
         "_shared/agent-lessons.md"
       ],
       "by": "evolve-run-8b",
-      "at": "2026-10-22T20:39:23.754Z",
+      "at": "2026-10-22T20:42:01.776Z",
       "stage": "started"
     }
   ]
