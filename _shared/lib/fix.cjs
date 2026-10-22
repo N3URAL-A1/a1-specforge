@@ -19,6 +19,7 @@ const {
   serializeScalar,
 } = require('./io.cjs');
 const { appendPhaseHistory } = require('./spec.cjs');
+const { validateFieldValue, validateFiles } = require('./postmortem-fields.cjs');
 
 // ---------- fix subcommands ----------
 
@@ -299,6 +300,8 @@ function cmdFixInitPostmortem(args) {
     'phase-friction': 'value',
     'quak-regression': 'value',
     'fix-required-test-first': 'value',
+    'found-by': 'value',
+    'should-have-caught': 'value',
   });
   const bugSlug = flags._[0];
   const projectSlug = flags._[1];
@@ -314,6 +317,13 @@ function cmdFixInitPostmortem(args) {
     if (key !== '_' && typeof value === 'string' && /[\r\n]/.test(value)) {
       fail(`fix init-postmortem: --${key} must not contain a line break`);
     }
+  }
+  // Spec 018 FR-002/FR-004: closed-set values, checked before anything is created.
+  const foundBy = flags['found-by'] === undefined ? 'unknown' : flags['found-by'];
+  const shouldHaveCaught = flags['should-have-caught'] === undefined ? 'unknown' : flags['should-have-caught'];
+  for (const [field, value] of [['found_by', foundBy], ['should_have_caught', shouldHaveCaught]]) {
+    const verdict = validateFieldValue(field, value);
+    if (!verdict.ok) fail(`fix init-postmortem: ${verdict.reason}`);
   }
   const dir = postmortemsDir(projectSlug);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -339,6 +349,8 @@ date: ${date}
 severity: ${severity}
 terminal_status: ${terminalStatus}
 root_cause_class: [${rootCauseClass}]
+found_by: ${foundBy}
+should_have_caught: ${shouldHaveCaught}
 fix_wave_count: ${fixWaveCount}
 diagnosis_rounds: ${diagnosisRounds}
 phase_that_produced_most_friction: ${phaseFriction}
@@ -396,6 +408,15 @@ ${oneLineLearning}
     date,
     filename,
   };
+}
+
+// Spec 018 FR-002/FR-003: plain-text report, owns its exit code (0 / 1 invalid / 2 unreadable)
+// through process.exitCode, so stdout drains before the process ends.
+function cmdFixValidatePostmortem(args) {
+  if (args.length === 0) usage('fix validate-postmortem <file> [<file>...]');
+  const { lines, code } = validateFiles(args);
+  process.stdout.write(`${lines.join('\n')}\n`);
+  process.exitCode = code;
 }
 
 function cmdFixCountPostmortemsSince(args) {
@@ -490,6 +511,7 @@ module.exports = {
   cmdFixFindDuplicates,
   cmdFixIntegrityCheck,
   cmdFixInitPostmortem,
+  cmdFixValidatePostmortem,
   cmdFixCountPostmortemsSince,
   cmdFixUpdatePromoteState,
   cmdFixWriteSuggestion,
