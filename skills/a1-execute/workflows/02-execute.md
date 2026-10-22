@@ -374,7 +374,9 @@ Continue? [y to proceed / n to stop]
 **Mid-run decision (before the next wave).** If the user changed a requirement during this
 wave — scope cut, altered success criterion, "do it differently" — append it to
 `.a1/phases/<phase_name>/GOAL.md` under `## Decisions` now:
-`- <date> — <decision> — affects: <success criterion or task id>`. PLAN.md stays as loaded
+`- <date> — <decision> — affects: <success criterion or task id>`. GOAL.md missing (a phase
+planned by `a1-plan` without a roadmap scaffold — 8 of 8 phases in this repo) → create it with
+`# Goal: <phase_goal from the PLAN.md frontmatter>` and the `## Decisions` heading. PLAN.md stays as loaded
 (its sha is bound by `--expect-sha`); Victor reads `## Decisions` as amendments to the
 success criteria (03-verify.md). A decision that lives only in the chat is verified against
 the old criterion (2026-10-15 captrader 012, 2026-10-08/09 ai-net M1-P1/P2).

@@ -14,6 +14,12 @@ vague_action:   [obs1, obs2]
 missing_import: [obs1]
 ```
 
+Then read the Changelog table of `patterns.md` (learning store, path as in 04-apply.md):
+every row tagged `prose-only` whose pattern tag appears again in this run's observations or
+retros is added to the cluster `lesson_without_mechanical_check`, with the row's file as
+evidence — a lesson that recurred after a prose fix needs a fixture, lint rule or gate, not
+another sentence.
+
 ### 2b. Group by affected skill/agent
 For each pattern cluster, identify which skill/agent file is responsible:
 
