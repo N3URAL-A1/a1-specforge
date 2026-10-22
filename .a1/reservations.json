@@ -31,10 +31,11 @@
         "skills/a1-execute/workflows/02-execute.md",
         "skills/a1-execute/workflows/03-verify.md",
         "skills/a1-plan/",
-        "_shared/agent-lessons.md"
+        "_shared/agent-lessons.md",
+        "_shared/lib/intent-sandbox.cjs"
       ],
       "by": "evolve-run-8b",
-      "at": "2026-10-22T20:42:01.776Z",
+      "at": "2026-10-22T21:14:20.001Z",
       "stage": "started"
     }
   ]
