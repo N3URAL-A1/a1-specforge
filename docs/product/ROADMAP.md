@@ -4,7 +4,7 @@ type: roadmap
 project: a1-specforge
 title: "a1-specforge — Roadmap"
 status: active
-updated: 2026-10-21
+updated: 2026-10-22
 source: "migrated from docs/roadmap.md v3.0 (2026-07-10)"
 milestones:
   - id: m0-repo-extract
@@ -193,12 +193,12 @@ features:
   - id: 017-enforced-self-checks
     milestone: continuous
     title: "Enforced self-checks: gates that really run, verifier reads exit codes, test fidelity, defect-class sweep"
-    status: in-flight
-    stage: complete
+    status: done
+    stage: done
     depends_on:
       - 016-xprov-autonomy
     started: 2026-10-20
-    finished: null
+    finished: 2026-10-22
     spec_path: project/a1-specforge/spec/017-enforced-self-checks.md
     plan_path: project/a1-specforge/plans/017-enforced-self-checks-wave-plan.md
   - id: 018-pipeline-metrics
@@ -375,6 +375,11 @@ None.
 - **2026-10-21** — 017-enforced-self-checks -> complete — stage transition via `product stage`
 - **2026-10-21** — 016-xprov-autonomy -> done — stage transition via `product stage`
 - **2026-10-21** — 019-depth-pass-planning -> done — stage transition via `product stage`
+- **2026-10-22** — 017-enforced-self-checks -> review — stage transition via `product stage`
+- **2026-10-22** — 017-enforced-self-checks -> verify — stage transition via `product stage`
+- **2026-10-22** — 017-enforced-self-checks -> merge — stage transition via `product stage`
+- **2026-10-22** — 017-enforced-self-checks -> origin-cleanup — stage transition via `product stage`
+- **2026-10-22** — 017-enforced-self-checks -> done — stage transition via `product stage`
 
 ## Appendix — migrated details
 
