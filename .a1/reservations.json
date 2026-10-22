@@ -32,10 +32,11 @@
         "skills/a1-execute/workflows/03-verify.md",
         "skills/a1-plan/",
         "_shared/agent-lessons.md",
-        "_shared/lib/intent-sandbox.cjs"
+        "_shared/lib/intent-sandbox.cjs",
+        "_test-fixtures/a1-intent/cases/05b-child-seal.sh"
       ],
       "by": "evolve-run-8b",
-      "at": "2026-10-22T21:14:20.001Z",
+      "at": "2026-10-22T21:24:48.336Z",
       "stage": "started"
     }
   ]
