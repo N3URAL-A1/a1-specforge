@@ -117,11 +117,11 @@ function collect(vault, slugs, last) {
   const rows = []; const unreported = []; const notes = [];
   for (const slug of slugs) {
     for (const e of entriesOf(vault, slug, last)) {
-      const label = `${slug}/${printable(e.id)}`;
+      const label = `${printable(slug)}/${printable(e.id)}`;
       const c = costOfFile(e.file);
       if (c.reason) { unreported.push({ kind: e.kind, id: label, reason: c.reason }); continue; }
       rows.push({ kind: e.kind, id: label, tokens: c.tokens, approx: c.approx });
-      if (c.lines > 1) notes.push(`${label}: ${c.lines} cost lines in ${e.rel}, using the last`);
+      if (c.lines > 1) notes.push(`${label}: ${c.lines} cost lines in ${printable(e.rel)}, using the last`);
     }
   }
   return { rows, unreported, notes };

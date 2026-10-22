@@ -171,3 +171,22 @@ run_tools "$CV8" metrics cost --project hn
 assert_rc "CO13a newline dir name" 0 "$RC" "$OUT"
 assert_eq "CO13b no forged line (count 0)" "$(count_lines '^unreported phase forged' "$OUT")" "0"
 assert_has "CO13c name printed quoted" "$OUT" 'hn/"evil\nunreported phase forged (x)"'
+
+# ---- CO14 hostile names in the note line and in the project slug (re-review NIT) ----
+mk_workdir CV9 cost9
+NN="$CV9/project/hn/phases/two
+phase q 999999 tokens"
+mkdir -p "$NN"
+printf 'Cost: 1 tokens\n\nCost: 2 tokens\n' > "$NN/VERIFICATION.md"
+run_tools "$CV9" metrics cost --project hn
+assert_rc "CO14a two cost lines under a newline dir" 0 "$RC" "$OUT"
+assert_eq "CO14b note line forges no row (count 0)" "$(count_lines '^phase q 999999 tokens' "$OUT")" "0"
+mk_workdir CV10 cost10
+NS="$CV10/project/sl
+phase z 5 tokens/phases/q"
+mkdir -p "$NS"
+printf 'Cost: 7 tokens\n' > "$NS/VERIFICATION.md"
+run_tools "$CV10" metrics cost
+assert_rc "CO14c newline project slug without --project" 0 "$RC" "$OUT"
+assert_eq "CO14d slug forges no row (count 0)" "$(count_lines '^phase z 5 tokens' "$OUT")" "0"
+assert_has "CO14e slug printed quoted" "$OUT" '"sl\nphase z 5 tokens"/q'
