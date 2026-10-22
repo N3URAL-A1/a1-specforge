@@ -222,6 +222,16 @@ features:
     finished: 2026-10-21
     spec_path: project/a1-specforge/spec/019-depth-pass-planning.md
     plan_path: project/a1-specforge/plans/019-depth-pass-planning-wave-plan.md
+  - id: 020-live-probes
+    milestone: continuous
+    title: "Live probes: measure the real effect after merge or deploy"
+    status: clarified
+    stage: null
+    depends_on: []
+    started: null
+    finished: null
+    spec_path: project/a1-specforge/spec/020-live-probes.md
+    plan_path: null
 next: 006-specforge-kritis-profile
 ---
 
@@ -380,6 +390,8 @@ None.
 - **2026-10-22** — 017-enforced-self-checks -> merge — stage transition via `product stage`
 - **2026-10-22** — 017-enforced-self-checks -> origin-cleanup — stage transition via `product stage`
 - **2026-10-22** — 017-enforced-self-checks -> done — stage transition via `product stage`
+- **2026-10-22** — feature '020-live-probes' added — After merge or deploy, declared probes measure the real effect from outside, including a counter-test
+- **2026-10-22** — feature.md created for '020-live-probes' — formal spec/plan attached via `product feature-init`
 
 ## Appendix — migrated details
 
