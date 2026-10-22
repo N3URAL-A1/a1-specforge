@@ -113,7 +113,7 @@ if [ "$RC" -ne 0 ]; then echo "cost run exit=$RC; write 'Cost: unavailable (<rea
 ```
 
    On exit 0 append `Cost: N tokens (in X, out Y, cache Z)` to the fix report body; on a non-zero exit
-   append `Cost: unavailable (<reason>)`. `a1-tools metrics cost` reads this line back.
+   append `Cost: unavailable (<reason>)`. The cost report of spec 018 reads this line back.
 
 5. Tell the user:
 
