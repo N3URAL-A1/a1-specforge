@@ -20,6 +20,7 @@ const METRICS_HELP = `  a1-tools fix validate-postmortem <file> [<file>...]
                   Spec 018. Sums the "Cost: N tokens" line of each project/<slug>/phases/*/VERIFICATION.md
                   and of each fixed fix report. Prints one row per run, the total, coverage r/t (p%) and
                   the unreported runs. Without --project: every project in the vault.
+                  --last N keeps the newest N phases AND the newest N fixes (up to 2N runs), by date.
                   Exit 0 / 1 usage error / 2 vault absent or I/O error.`;
 
 module.exports = { METRICS_HELP };

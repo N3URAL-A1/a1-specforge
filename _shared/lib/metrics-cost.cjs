@@ -19,9 +19,14 @@ const { listRuns, lastN, vaultOrExit2 } = require('./metrics-runs.cjs');
 const EXIT_IO = 2;
 const MAX_FILE_BYTES = 1024 * 1024; // a cost line sits in a small report; bigger files are not read
 const PERCENT = 100;
-// Anchored at line start: table rows ("| … Cost: …") and list items ("- [x] … Cost: …") never match.
-const COST_LINE_RE = /^\s*(?:\*\*Cost:\*\*\s*)?(?:Cost:\s*)?(~?)([0-9][0-9,]*)\s+tokens\b/;
-const UNAVAILABLE_RE = /^\s*(?:\*\*Cost:\*\*\s*)?(?:Cost:\s*)?unavailable\b/i;
+// Anchored at line start with a mandatory prefix: table rows ("| … Cost: …"), list items and prose
+// ("12 tokens per call") never match. Real forms: "**Cost:** N", "**Cost:** Cost: N", "Cost: N".
+const COST_PREFIX = '(?:\\*\\*Cost:\\*\\*\\s*(?:Cost:\\s*)?|Cost:\\s*)';
+const COST_LINE_RE = new RegExp(`^\\s*${COST_PREFIX}(~?)([0-9][0-9,]*)\\s+tokens\\b`);
+const UNAVAILABLE_RE = new RegExp(`^\\s*${COST_PREFIX}unavailable\\b`, 'i');
+// Names with spaces are legitimate; only control characters (newline, ESC, …) could forge a report line.
+const CONTROL_RE = /[\u0000-\u001f\u007f]/;
+const MAX_PRINTED_VALUE = 120;
 const GROUPED_RE = /^[0-9]{1,3}(?:,[0-9]{3})+$/;
 const PLAIN_RE = /^[0-9]+$/;
 const DATE_RE = /\d{4}-\d{2}-\d{2}/;
@@ -35,21 +40,21 @@ function parseTokens(raw) {
 }
 
 /**
- * The last matching cost line of a text wins.
+ * The last matching cost line of a text wins, whether it carries a number or says "unavailable".
  * @returns {{tokens:number, approx:boolean, lines:number}|{reason:string, lines:number}}
  */
 function parseCost(text) {
-  let hit = null;
+  let last = null; // {m} for a number line, {unavailable:true} for an unavailable line
   let count = 0;
-  let unavailable = false;
   for (const line of text.split(/\r?\n/)) {
     const m = COST_LINE_RE.exec(line);
-    if (m) { hit = m; count += 1; } else if (UNAVAILABLE_RE.test(line)) unavailable = true;
+    if (m) { last = { m }; count += 1; } else if (UNAVAILABLE_RE.test(line)) last = { unavailable: true };
   }
-  if (!hit) return { reason: unavailable ? 'unavailable' : 'no_cost_line', lines: 0 };
-  const tokens = parseTokens(hit[2]);
+  if (!last) return { reason: 'no_cost_line', lines: 0 };
+  if (last.unavailable) return { reason: 'unavailable', lines: count };
+  const tokens = parseTokens(last.m[2]);
   if (tokens === null) return { reason: 'ambiguous', lines: count };
-  return { tokens, approx: hit[1] === '~', lines: count };
+  return { tokens, approx: last.m[1] === '~', lines: count };
 }
 
 function costOfFile(file) {
@@ -96,6 +101,10 @@ function entriesOf(vault, slug, last) {
   return last ? [...lastN(phases, last), ...lastN(fixes, last)] : [...phases, ...fixes];
 }
 
+function printable(v) {
+  return CONTROL_RE.test(v) ? JSON.stringify(v.slice(0, MAX_PRINTED_VALUE)) : v;
+}
+
 function projectSlugs(vault) {
   try {
     return fs.readdirSync(path.join(vault, 'project'), { withFileTypes: true })
@@ -108,7 +117,7 @@ function collect(vault, slugs, last) {
   const rows = []; const unreported = []; const notes = [];
   for (const slug of slugs) {
     for (const e of entriesOf(vault, slug, last)) {
-      const label = `${slug}/${e.id}`;
+      const label = `${slug}/${printable(e.id)}`;
       const c = costOfFile(e.file);
       if (c.reason) { unreported.push({ kind: e.kind, id: label, reason: c.reason }); continue; }
       rows.push({ kind: e.kind, id: label, tokens: c.tokens, approx: c.approx });
@@ -140,7 +149,16 @@ function parseLast(raw) {
   return Number(raw);
 }
 
+function requireValues(args) {
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] !== '--project' && args[i] !== '--last') continue;
+    const v = args[i + 1];
+    if (v === undefined || v.startsWith('--')) usage(`metrics cost: ${args[i]} needs a value`);
+  }
+}
+
 function cmdMetricsCost(args) {
+  requireValues(args);
   const flags = parseFlags(args, FLAGS);
   if (flags._.length) usage(`metrics cost: unexpected argument ${JSON.stringify(String(flags._[0]).slice(0, 40))}`);
   const last = parseLast(flags.last);

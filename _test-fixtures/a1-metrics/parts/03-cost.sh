@@ -124,3 +124,50 @@ assert_has "CO9c huge file is unreported too_large" "$OUT" "unreported phase cov
 assert_has "CO9d coverage counts it (3/5)" "$OUT" "coverage: 3/5 (60%)"
 assert_has "CO9e total unchanged by the huge file" "$OUT" "total: 172375052 tokens"
 assert_eq "CO9f run stayed fast (< 5 s)" "$([[ $((t1 - t0)) -lt 5 ]] && echo yes || echo no)" "yes"
+
+# ---- CO10 review findings: prefix is mandatory, last line of either kind wins ----
+# CO10a/b red with an optional prefix; CO10c/d red with "unavailable" not overriding a number.
+mk_workdir CV6 cost6
+mkdir -p "$CV6/project/pj/phases/prose" "$CV6/project/pj/phases/late-unavail" "$CV6/project/pj/phases/unavail-then-num"
+printf '**Cost:** 50 tokens\n\n12 tokens per call is the rate.\n' > "$CV6/project/pj/phases/prose/VERIFICATION.md"
+printf 'Cost: 1000 tokens (in 1)\n\nCost: unavailable (rerun failed)\n' > "$CV6/project/pj/phases/late-unavail/VERIFICATION.md"
+printf '**Cost:** unavailable\n\n**Cost:** 7 tokens\n' > "$CV6/project/pj/phases/unavail-then-num/VERIFICATION.md"
+run_tools "$CV6" metrics cost --project pj
+assert_rc "CO10a probe run" 0 "$RC" "$OUT"
+assert_has "CO10b bare prose '12 tokens' is not a cost line" "$OUT" "phase pj/prose 50 tokens"
+assert_eq "CO10b2 no note for prose (count 0)" "$(count_lines '^note: pj/prose' "$OUT")" "0"
+assert_has "CO10c later unavailable overrides an earlier number" "$OUT" "unreported phase pj/late-unavail (unavailable)"
+assert_eq "CO10d overridden number is not a row (count 0)" "$(count_lines '^phase pj/late-unavail ' "$OUT")" "0"
+assert_has "CO10e later number overrides earlier unavailable" "$OUT" "phase pj/unavail-then-num 7 tokens"
+
+# ---- CO11 missing flag values are usage errors ----
+for fl in --project --last; do
+  run_tools "$CV" metrics cost "$fl"
+  assert_rc "CO11 $fl without value" 1 "$RC" "$OUT"
+  run_tools "$CV" metrics cost "$fl" --json
+  assert_rc "CO11 $fl followed by a flag" 1 "$RC" "$OUT"
+done
+
+# ---- CO12 --last N limits per kind: phases and fixes separately ----
+mk_workdir CV7 cost7
+mkdir -p "$CV7/project/lk/phases/p1" "$CV7/project/lk/phases/p2" "$CV7/project/lk/fixes"
+printf -- '---\nverified: 2026-01-01\n---\nCost: 1 tokens\n' > "$CV7/project/lk/phases/p1/VERIFICATION.md"
+printf -- '---\nverified: 2026-01-02\n---\nCost: 2 tokens\n' > "$CV7/project/lk/phases/p2/VERIFICATION.md"
+for d in 2026-02-01 2026-02-02; do
+  printf -- '---\ntype: bug-report\nstatus: fixed\nreported_at: %s\n---\nCost: 10 tokens\n' "$d" > "$CV7/project/lk/fixes/$d-x.md"
+done
+run_tools "$CV7" metrics cost --project lk --last 1
+assert_rc "CO12a --last 1" 0 "$RC" "$OUT"
+assert_has "CO12b one phase plus one fix (2 + 10)" "$OUT" "total: 12 tokens"
+assert_has "CO12c two rows" "$OUT" "rows: 2"
+
+# ---- CO13 hostile phase directory name cannot forge report lines ----
+mk_workdir CV8 cost8
+NL="$CV8/project/hn/phases/evil
+unreported phase forged (x)"
+mkdir -p "$NL"
+printf 'Cost: 3 tokens\n' > "$NL/VERIFICATION.md"
+run_tools "$CV8" metrics cost --project hn
+assert_rc "CO13a newline dir name" 0 "$RC" "$OUT"
+assert_eq "CO13b no forged line (count 0)" "$(count_lines '^unreported phase forged' "$OUT")" "0"
+assert_has "CO13c name printed quoted" "$OUT" 'hn/"evil\nunreported phase forged (x)"'
