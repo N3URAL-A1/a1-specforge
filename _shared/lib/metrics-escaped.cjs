@@ -22,6 +22,7 @@ const path = require('path');
 const { parseFrontmatter } = require('./io-frontmatter.cjs');
 const { assertSafeSegment } = require('./io-roots.cjs');
 const { listRuns, lastN, vaultOrExit2 } = require('./metrics-runs.cjs');
+const { usage } = require('./help.cjs');
 
 const EXIT_BREACH = 1;
 const EXIT_IO = 2;
@@ -39,22 +40,27 @@ function fail(msg) {
   process.exit(EXIT_IO);
 }
 
+/** A bad flag or value is a usage error: exit 1 through help.cjs usage(), like every a1-tools command. */
+function badUsage(msg) {
+  usage(`metrics escaped: ${msg}`);
+}
+
 function takeValue(args, i, flag) {
   const v = args[i + 1];
-  if (v === undefined || v.startsWith('--')) fail(`${flag} needs a value`);
+  if (v === undefined || v.startsWith('--')) badUsage(`${flag} needs a value`);
   return v;
 }
 
 function parseCount(text, flag, min) {
   const n = UINT_RE.test(text) && text.length <= MAX_COUNT_DIGITS ? Number(text) : NaN;
   if (!Number.isInteger(n) || n < min) {
-    fail(`${flag} needs an integer >= ${min} (got ${JSON.stringify(text.slice(0, 40))})`);
+    badUsage(`${flag} needs an integer >= ${min} (got ${JSON.stringify(text.slice(0, 40))})`);
   }
   return n;
 }
 
 function parseGroup(value) {
-  if (value !== 'should-have-caught') fail('--group-by accepts only "should-have-caught"');
+  if (value !== 'should-have-caught') badUsage('--group-by accepts only "should-have-caught"');
   return true;
 }
 
@@ -68,9 +74,9 @@ function parseArgs(args) {
     else if (a === '--last') o.last = parseCount(takeValue(args, i++, a), a, 1);
     else if (a === '--fail-above') o.failAbove = parseCount(takeValue(args, i++, a), a, 0);
     else if (a === '--group-by') o.groupBy = parseGroup(takeValue(args, i++, a));
-    else fail(`unknown argument ${JSON.stringify(a.slice(0, 60))}`);
+    else badUsage(`unknown argument ${JSON.stringify(a.slice(0, 60))}`);
   }
-  if (!o.project) fail('--project <slug> is required');
+  if (!o.project) badUsage('--project <slug> is required');
   return o;
 }
 
@@ -197,9 +203,9 @@ function renderText(report, groups) {
 /** @param {string[]} args - argv after `metrics escaped` */
 function cmdMetricsEscaped(args) {
   const opts = parseArgs(args);
+  try { assertSafeSegment(opts.project, 'project slug'); } catch (e) { badUsage(String(e && e.message).split('\n')[0]); }
   let report;
   try {
-    assertSafeSegment(opts.project, 'project slug');
     report = scan(vaultOrExit2(), opts.project, opts.last);
   } catch (e) {
     fail(String(e && e.message).split('\n')[0]);

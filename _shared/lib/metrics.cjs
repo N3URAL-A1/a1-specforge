@@ -1,8 +1,8 @@
 'use strict';
 
 // metrics — command group router (spec 018-pipeline-metrics). Report commands:
-// exit 0 by default, 1 for a --fail-above breach or a usage error, 2 for an I/O
-// error, an absent vault or unreadable input. Each subcommand owns its exit code.
+// exit 0 by default, 1 for a --fail-above breach or a usage error (help.cjs usage(),
+// the a1-tools convention), 2 for an I/O error, an absent vault or unreadable input. Each subcommand owns its exit code.
 // This module only routes; the logic lives in metrics-escaped.cjs and metrics-cost.cjs.
 
 const path = require('path');

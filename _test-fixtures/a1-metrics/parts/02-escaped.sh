@@ -185,9 +185,9 @@ assert_rc "ES7c --fail-above 5: exit 0" 0 "$RC" "$OUT"
 run_tools "$V6" metrics escaped --project demo --fail-above 0 --last 3
 assert_rc "ES7d --fail-above 0 with 1 escaped in window: exit 1" 1 "$RC" "$OUT"
 
-# ---- ES8 I/O and usage errors exit 2 with one line, no stack ----
-check_err() { # name expected-substring
-  assert_rc "$1 exits 2" 2 "$RC" "$OUT"
+# ---- ES8 errors with one line, no stack: I/O -> 2, usage -> 1 (a1-tools convention, help.cjs usage()) ----
+check_err() { # name expected-substring [expected-rc, default 2]
+  assert_rc "$1 exits ${3:-2}" "${3:-2}" "$RC" "$OUT"
   assert_has "$1 message" "$OUT" "$2"
   assert_eq "$1 no stack trace (count 0)" "$(line_count "$OUT" '    at ')" "0"
 }
@@ -196,19 +196,19 @@ check_err "ES8a vault unset" "A1_VAULT_ROOT"
 run_tools "$V6/does-not-exist" metrics escaped --project demo
 check_err "ES8b vault path absent" "not a directory"
 run_tools "$V6" metrics escaped
-check_err "ES8c --project missing" "--project"
+check_err "ES8c --project missing" "--project" 1
 run_tools "$V6" metrics escaped --project '../x'
-check_err "ES8d slug with path separator" "plain identifier"
+check_err "ES8d slug with path separator" "plain identifier" 1
 run_tools "$V6" metrics escaped --project demo --last 0
-check_err "ES8e --last 0" "--last"
+check_err "ES8e --last 0" "--last" 1
 run_tools "$V6" metrics escaped --project demo --last abc
-check_err "ES8f --last abc" "--last"
+check_err "ES8f --last abc" "--last" 1
 run_tools "$V6" metrics escaped --project demo --fail-above -1
-check_err "ES8g --fail-above -1" "--fail-above"
+check_err "ES8g --fail-above -1" "--fail-above" 1
 run_tools "$V6" metrics escaped --project demo --group-by severity
-check_err "ES8h --group-by other value" "--group-by"
+check_err "ES8h --group-by other value" "--group-by" 1
 run_tools "$V6" metrics escaped --project demo --bogus
-check_err "ES8i unknown flag" "unknown argument"
+check_err "ES8i unknown flag" "unknown argument" 1
 
 # ---- ES9 hostile input: odd names and values are data, never a crash ----
 mk_demo V7 es9

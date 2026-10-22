@@ -15,11 +15,11 @@ const METRICS_HELP = `  a1-tools fix validate-postmortem <file> [<file>...]
                   post-merge-ci / production, should_have_caught a gate or reviewer) dated inside the span
                   of the last N finished runs (N default 10; done specs + fixed fix reports). Prints
                   runs, escaped, the evidence list and the unknown/legacy count. Vault from A1_VAULT_ROOT.
-                  Exit 0 (a report) / 1 only with --fail-above and escaped > n / 2 vault absent or I/O error.
+                  Exit 0 (a report) / 1 --fail-above breach (escaped > n) or usage error / 2 vault absent or I/O error.
   a1-tools metrics cost [--project <slug>] [--last <N>] [--json]
                   Spec 018. Sums the "Cost: N tokens" line of each project/<slug>/phases/*/VERIFICATION.md
                   and of each fixed fix report. Prints one row per run, the total, coverage r/t (p%) and
                   the unreported runs. Without --project: every project in the vault.
-                  Exit 0 / 2 vault absent or I/O error.`;
+                  Exit 0 / 1 usage error / 2 vault absent or I/O error.`;
 
 module.exports = { METRICS_HELP };
