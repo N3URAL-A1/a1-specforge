@@ -21,6 +21,20 @@
       "by": "018-pipeline-metrics",
       "at": "2026-10-22T20:24:07.728Z",
       "stage": "started"
+    },
+    {
+      "type": "code_scope",
+      "paths": [
+        "skills/a1-evolve/workflows/04-apply.md",
+        "skills/a1-new-feature/workflows/04-plan.md",
+        "skills/a1-new-feature/workflows/05-implement.md",
+        "skills/a1-execute/workflows/02-execute.md",
+        "skills/a1-plan/",
+        "_shared/agent-lessons.md"
+      ],
+      "by": "evolve-run-8b",
+      "at": "2026-10-22T20:39:23.754Z",
+      "stage": "started"
     }
   ]
 }
