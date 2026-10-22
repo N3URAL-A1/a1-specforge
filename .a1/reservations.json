@@ -26,6 +26,7 @@
       "type": "code_scope",
       "paths": [
         "skills/a1-evolve/workflows/04-apply.md",
+        "skills/a1-evolve/workflows/02-cluster.md",
         "skills/a1-new-feature/workflows/04-plan.md",
         "skills/a1-new-feature/workflows/05-implement.md",
         "skills/a1-execute/workflows/02-execute.md",
@@ -36,7 +37,7 @@
         "_test-fixtures/a1-intent/cases/05b-child-seal.sh"
       ],
       "by": "evolve-run-8b",
-      "at": "2026-10-22T21:24:48.336Z",
+      "at": "2026-10-22T21:42:07.167Z",
       "stage": "started"
     }
   ]
