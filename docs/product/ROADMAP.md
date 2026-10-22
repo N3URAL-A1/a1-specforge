@@ -183,11 +183,11 @@ features:
   - id: 016-xprov-autonomy
     milestone: continuous
     title: "xprov autonomy: chat consent instead of terminal steps, Codex at the right places, self-recovering aborts"
-    status: in-flight
-    stage: origin-cleanup
+    status: done
+    stage: done
     depends_on: []
     started: 2026-10-14
-    finished: null
+    finished: 2026-10-21
     spec_path: project/a1-specforge/spec/016-xprov-autonomy.md
     plan_path: project/a1-specforge/plans/016-xprov-autonomy-wave-plan.md
   - id: 017-enforced-self-checks
@@ -215,11 +215,11 @@ features:
   - id: 019-depth-pass-planning
     milestone: continuous
     title: "Depth Pass before every planning task"
-    status: in-flight
-    stage: origin-cleanup
+    status: done
+    stage: done
     depends_on: []
     started: 2026-10-19
-    finished: null
+    finished: 2026-10-21
     spec_path: project/a1-specforge/spec/019-depth-pass-planning.md
     plan_path: project/a1-specforge/plans/019-depth-pass-planning-wave-plan.md
 next: 006-specforge-kritis-profile
@@ -373,6 +373,8 @@ None.
 - **2026-10-20** — feature.md created for '010-vault-cockpit-contract' — formal spec/plan attached via `product feature-init`
 - **2026-10-20** — feature.md created for '011-intent-queue-consumer' — formal spec/plan attached via `product feature-init`
 - **2026-10-21** — 017-enforced-self-checks -> complete — stage transition via `product stage`
+- **2026-10-21** — 016-xprov-autonomy -> done — stage transition via `product stage`
+- **2026-10-21** — 019-depth-pass-planning -> done — stage transition via `product stage`
 
 ## Appendix — migrated details
 
