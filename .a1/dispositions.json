@@ -108,5 +108,16 @@
     "review_reason": "test_globs and ci_globs are the entry points _test-fixtures/*/run*.sh per Q22; the ci glob appears literally in the CI run loop; db_wrappers defaults fine (Reinhard review PR #55 round C)",
     "reviewed_at": "2026-10-21T19:29:53.103Z",
     "reviewed_by": "a1-reinhard-reviewer"
+  },
+  {
+    "kind": "config_change",
+    "fingerprint": "verify-config:.a1/verify.json:2242699dd1fbcba2",
+    "reason": "timeout_ms 30 min -> 120 min per suite: CI measured a1-vault-cockpit 27.5 min and a1-xprov 18.5 min on 43cef25; the local merge-check timed out on both twice (no test failed). Command set unchanged.",
+    "date": "2026-10-22",
+    "by": "orchestrator",
+    "review": "upheld",
+    "review_reason": "Only timeout_ms rises (30 -> 120 min per suite, well under MAX_TIMEOUT_MS 24 h); commands, flaky_base and every other field are unchanged, so no test or command is hidden; the fingerprint matches configChange(null, head).",
+    "reviewed_at": "2026-10-22T16:53:00.998Z",
+    "reviewed_by": "a1-reinhard-reviewer"
   }
 ]
