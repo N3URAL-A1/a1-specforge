@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated": "2026-10-22T22:09:16.358Z",
+  "generated": "2026-10-22T18:31:31.106Z",
   "project": {
     "id": "a1-specforge",
     "title": "a1-specforge — Roadmap",
@@ -280,18 +280,6 @@
       "finished": "2026-10-21",
       "spec_path": "project/a1-specforge/spec/019-depth-pass-planning.md",
       "plan_path": "project/a1-specforge/plans/019-depth-pass-planning-wave-plan.md"
-    },
-    {
-      "id": "020-live-probes",
-      "milestone": "continuous",
-      "title": "Live probes: measure the real effect after merge or deploy",
-      "status": "clarified",
-      "stage": null,
-      "depends_on": [],
-      "started": null,
-      "finished": null,
-      "spec_path": "project/a1-specforge/spec/020-live-probes.md",
-      "plan_path": null
     }
   ],
   "next": "006-specforge-kritis-profile",
