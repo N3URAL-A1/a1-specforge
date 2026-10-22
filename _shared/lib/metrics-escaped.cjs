@@ -4,9 +4,10 @@
 // metrics escaped — escaped-BLOCKER count over the last N finished runs
 // (spec 018-pipeline-metrics, FR-006..FR-009, FR-015).
 //
-// A postmortem ESCAPED when, case-insensitively, severity == blocker AND
+// A postmortem ESCAPED when severity == blocker AND
 // found_by is user / post-merge-ci / production (a person or production found
-// it, not a gate or a reviewer) AND should_have_caught names something other
+// it, not a gate or a reviewer; severity and found_by are compared lower-cased)
+// AND should_have_caught names something other
 // than none / unknown / absent. Values are read as written: no registry check,
 // so a gate that left the registry still counts.
 //
@@ -108,7 +109,7 @@ function readPostmortem(dir, name) {
       ok: true,
       date: dateOf(fm, name),
       severity: textOf(fm.severity).toLowerCase(),
-      foundBy: textOf(fm.found_by),
+      foundBy: textOf(fm.found_by).toLowerCase(),
       should: textOf(fm.should_have_caught),
     };
   } catch (_e) {

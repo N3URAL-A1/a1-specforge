@@ -233,3 +233,10 @@ run_tools "$V7" metrics escaped --project demo --last 10
 T1="$(date +%s)"
 assert_rc "ES10a timing run exits 0" 0 "$RC" "$OUT"
 [[ $((T1 - T0)) -le 2 ]] && ok "ES10b report took $((T1 - T0))s (<= 2s incl. one-second clock granularity)" || bad "ES10b report took $((T1 - T0))s"
+
+# ---- ES11 found_by is case-insensitive like severity ----
+mk_demo V8 es11
+mk_pm "$V8" 2026-10-12-upper.md "$BASE_C" date=2026-10-12 found_by=User should_have_caught=gate-0.6-schema
+run_tools "$V8" metrics escaped --project demo
+assert_rc "ES11a upper-case found_by" 0 "$RC" "$OUT"
+assert_has "ES11b found_by: User counts as escaped" "$OUT" "escaped: 1"
