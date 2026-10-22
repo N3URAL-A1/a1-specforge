@@ -21,6 +21,11 @@ Audit this PLAN.md for quality and coverage gaps. Write AUDIT.md.
 
 ### If verdict is PASS
 - Inform user: "Audit passed. No blockers found."
+- **MINORs on a verification line are fixed now, not later.** A MINOR that names a
+  `Verification` command or a "Done when" probe (red-line missing, green by construction —
+  Adam Step 2) goes back to Pablo for one revision before 04b: 04b records the PLAN.md
+  sha256 and a1-execute binds it at Load (`--expect-sha`), so a fix after 04b costs a
+  re-review (`_shared/agent-lessons.md#plan-probe-red-line`). Other MINORs stay notes.
 - **Then load `04b-xprov-review.md`** (Phase 4b, cross-provider plan review,
   gate `plan-review-xprov`). The PLAN.md summary and the "Run `a1-execute`"
   suggestion are given there, after the second provider has spoken — a PASS

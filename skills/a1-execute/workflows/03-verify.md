@@ -69,6 +69,8 @@ Verify that the phase goal was achieved.
   per-lane STATUS-<lane-id>.md files into it BEFORE spawning Victor, otherwise
   he verifies against a file the lane executors never wrote
 - <spec_path> (if available)
+- .a1/phases/<phase_name>/GOAL.md — its `## Decisions` rows (written at 02-execute.md 2c)
+  amend the success criteria: verify the decided state, not the original line
 </files_to_read>
 
 **Output path:** .a1/phases/<phase_name>/VERIFICATION.md

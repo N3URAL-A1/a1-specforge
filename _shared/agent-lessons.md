@@ -311,7 +311,8 @@ work".
 the condition under which it goes red (the code line, the state, the input). The
 planner runs each one once against a fixture or stub and records the red result; the
 auditor repeats the run for anything a human cannot eyeball and flags a probe that is
-green by construction as MAJOR. Green-by-construction shapes seen so far: anonymous
+green by construction as MAJOR; a MINOR on a probe is fixed before `plan-review-xprov`
+records the PLAN sha, not after (a1-plan 04-audit.md). Green-by-construction shapes seen so far: anonymous
 HTTP behind auth middleware, `kubectl logs -l` without `--tail=-1`, a fixture that
 never reaches the slow path, a line-count gate that passes on a crash, a negative
 guard for an object that does not exist. For documents, decks and operational

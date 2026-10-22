@@ -29,3 +29,9 @@ Focus areas: tech stack, relevant codebase patterns, external dependencies, risk
 Research phase is done when `RESEARCH.md` exists at the output path.
 
 Present to user: "Research complete. Key findings: <3-line summary from agent>."
+
+Before Phase 2, read the `## Decisions needed` section of RESEARCH.md (Rico also echoes its
+rows at the end of his summary). Put every row that is not `none` to the user with
+`AskUserQuestion`, one question per turn, and record the answers in RESEARCH.md under the
+same table (`Answer` column) before Marco and Pablo run — a product question left open here
+comes back as a plan revision (`_shared/agent-lessons.md#rico-decisions-needed`).

@@ -43,7 +43,13 @@ PATTERNS="$VAULT/pattern/a1-learnings/patterns.md"
 Update `patterns.md`:
 1. Update frontmatter `updated:` date
 2. Update "Aktive Patterns" table — add/update rows for each processed pattern
-3. Append to "Changelog" table — one row per applied change with commit hash
+3. Append to "Changelog" table — one row per applied change with commit hash. The `File`
+   cell also names the **mechanical check** that would catch the pattern's next recurrence
+   (a fixture suite, lint rule or CLI gate — e.g. `check: a1-workflow-lint`), or carries the
+   tag `prose-only` when the change is instruction text with no guard. Record `prose-only`
+   honestly; it is the input for the next run's "lesson without a guard" cluster (2026-09-25/26
+   the BSD-portability class recurred twice after a retro, FR-016 three times — every one a
+   prose-only fix).
 
 Format for new pattern rows:
 ```markdown

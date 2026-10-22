@@ -371,6 +371,14 @@ Vault mirror: <✓ synced | ⚠ sync exit <RC> | – no vault root>
 Continue? [y to proceed / n to stop]
 ```
 
+**Mid-run decision (before the next wave).** If the user changed a requirement during this
+wave — scope cut, altered success criterion, "do it differently" — append it to
+`.a1/phases/<phase_name>/GOAL.md` under `## Decisions` now:
+`- <date> — <decision> — affects: <success criterion or task id>`. PLAN.md stays as loaded
+(its sha is bound by `--expect-sha`); Victor reads `## Decisions` as amendments to the
+success criteria (03-verify.md). A decision that lives only in the chat is verified against
+the old criterion (2026-10-15 captrader 012, 2026-10-08/09 ai-net M1-P1/P2).
+
 Wait for user input before starting next wave.
 
 ## Audit Auto-Close (FR-022, spec `003-product-schema-v1.1-vision-audits`)

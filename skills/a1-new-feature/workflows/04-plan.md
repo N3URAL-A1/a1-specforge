@@ -207,6 +207,22 @@ briefs: if the check still exits 1 after the second, stop, keep the status `clar
 record `revision-limit-reached` and report to the user with the finding list. Exit 2 →
 usage error, fix the invocation.
 
+**Scope dry-run (same step, after depth-check exit 0).** In the primary checkout, after the
+P3 sync (`git pull --rebase origin main`, `_shared/push-cadence.md`), run the claim as a check —
+it reads the local reservations file and writes nothing:
+
+```bash
+node <repo>/_shared/a1-tools.cjs code-scope check --by <spec-id> --scope <code_scope as CSV>
+```
+
+Exit 0 → append `## Scope check` with `free (<date>)` to the end of the wave-plan. Exit 1 → the
+JSON names the in-flight feature and the overlapping path: put it to the user now (wait for
+the holder, narrow `code_scope`, or proceed and accept the block at the Phase 5 Scope Claim
+Gate), write the answer under `## Scope check` (`conflict with <id> on <path> — <decision>`)
+and revise `code_scope` when the decision narrows it. The collision costs one question here
+and the whole plan at Phase 5 (2026-10-19 spec 019 vs 016, 2026-10-08 a1-fix hook held by
+013, 2026-09-28 spec 058).
+
 The status update runs only on depth-check exit 0. Link the wave-plan back into the spec:
 
 ```bash
