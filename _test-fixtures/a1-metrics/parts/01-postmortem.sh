@@ -153,13 +153,13 @@ for cmd in 'metrics escaped' 'metrics cost' 'fix validate-postmortem'; do
   assert_has "PM5i unknown-group usage string lists '$cmd'" "$(grep -n 'unknown command group' "$TOOLS")" "$cmd"
 done
 
-# ---- PM6 stubs fail closed ----
+# ---- PM6 the report commands are real (no stub left) ----
 run_tools "$V1" metrics escaped --project a1-specforge
-assert_rc "PM6a metrics escaped stub exits 2" 2 "$RC" "$OUT"
-assert_has "PM6b names wave 2" "$OUT" "not implemented — spec 018 wave 2"
+assert_rc "PM6a metrics escaped runs and exits 0" 0 "$RC" "$OUT"
+assert_has "PM6b metrics escaped prints a report" "$OUT" "escaped"
 run_tools "$V1" metrics cost --project a1-specforge
-assert_rc "PM6c metrics cost stub exits 2" 2 "$RC" "$OUT"
-assert_has "PM6d names wave 3" "$OUT" "not implemented — spec 018 wave 3"
+assert_rc "PM6c metrics cost runs and exits 0" 0 "$RC" "$OUT"
+assert_has "PM6d metrics cost prints coverage" "$OUT" "coverage:"
 
 # ---- PM7 metrics writes no gate-log line (no registry invoke cell names it) ----
 mkdir "$V1/repo" && ( cd "$V1/repo" && git init -q . )

@@ -70,6 +70,10 @@ opening a PR: `for r in _test-fixtures/*/run*.sh; do bash "$r" || break; done`.
 
 Runs started from inside an agent session (a `claude` process is an ancestor, or `CLAUDECODE` is set) skip the owner-terminal cases of `a1-xprov` (parts 08, 11, 12, 13, 14; part 15 swaps in a library driver); CI never skips them. Before a PR, run the suite once outside the agent as a non-root user, for example in Docker with gitleaks 8.30.1 on `PATH`: copy a `git archive` snapshot (with `git init` and a commit) to `/work`, `chown -R node:node /work`, then `docker run --rm -v <snapshot>:/src:ro node:20 su node -s /bin/bash -c 'cd /work && bash _test-fixtures/a1-xprov/run-tests.sh'`. The container must not see the real owner home.
 
+### Metrics suite (spec 018)
+
+`_test-fixtures/a1-metrics/run-tests.sh` covers `metrics escaped`, `metrics cost` and the postmortem `found_by` / `should_have_caught` fields. Its fixtures are byte copies of real vault files (the byte check runs only where `~/N3URAL-Vault` exists). Usage errors of both commands exit 1 (`help.cjs` `usage()`), a missing vault or I/O error exits 2. Before a PR, run it in `docker run --rm -u 1000:1000 -e HOME=/tmp -v <git-archive snapshot>:/w -w /w node:20 bash _test-fixtures/a1-metrics/run-tests.sh`.
+
 ## Self-checks: `verify run`, `test-fidelity`, dispositions (spec 017)
 
 Run these before a PR; CI and the a1 skills run the same commands. Replace `<phase>` with a scope name

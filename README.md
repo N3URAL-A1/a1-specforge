@@ -126,6 +126,17 @@ Nine commands turn the pipeline's self-reports into measured results. Only calls
 
 Every new command exits 2 on an internal error and never 0. Details: [`docs/adr/2026-10-14-gate-invoke-and-log.md`](docs/adr/2026-10-14-gate-invoke-and-log.md); how to run them as a contributor: [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
+### Pipeline metrics (spec 018)
+
+Two read-only reports over vault markdown. They need `A1_VAULT_ROOT`, make no network call and write nothing.
+
+| Command | What it reports |
+|---|---|
+| `metrics escaped --project <slug> [--last N] [--json] [--group-by should-have-caught] [--fail-above n]` | Blocker postmortems found by the user, post-merge CI or production that a gate or reviewer should have caught, inside the last N finished runs. Exit 1 only with `--fail-above` and a count above `n`. |
+| `metrics cost [--project <slug>] [--last N] [--json]` | Sums the `Cost:` line of each `VERIFICATION.md` and fixed fix report; prints the total, coverage and the unreported runs. |
+
+`fix init-postmortem` takes `--found-by` and `--should-have-caught`; `fix validate-postmortem <file>` checks them. Usage errors exit 1, a missing vault or an I/O error exits 2.
+
 ### Vault mirror and cockpit (spec 010)
 
 With `A1_VAULT_ROOT` set, the CLI keeps a one-way, read-only copy of each project's product and phase state in an external vault. Two machines can share one vault through a per-project writer host. Commands, rules and variables are in [`docs/vault.md`](docs/vault.md).
