@@ -30,7 +30,11 @@ grows. This bounds prompt growth: prompts hold stable operating principles,
 the lessons file holds the append-only incident log.
 
 ### 4d. Verify change is syntactically correct
-Quick read-back to confirm the edit landed cleanly.
+Quick read-back to confirm the edit landed cleanly. If the diff adds an `a1-tools <group> <sub>`
+call to a file under `skills/`, run `_test-fixtures/a1-intent/run-tests.sh` before the review:
+fixture 5b-H7a refuses every call that is neither on the action's allowlist nor recorded as an
+exclusion in `_shared/lib/intent-sandbox.cjs` (2026-10-22, run 8b: two red cases and a count
+pin before the review saw the diff).
 
 ## After all proposals processed
 
@@ -43,7 +47,14 @@ PATTERNS="$VAULT/pattern/a1-learnings/patterns.md"
 Update `patterns.md`:
 1. Update frontmatter `updated:` date
 2. Update "Aktive Patterns" table — add/update rows for each processed pattern
-3. Append to "Changelog" table — one row per applied change with commit hash
+3. Append to "Changelog" table — one row per applied change with commit hash. The `File`
+   cell also names the **mechanical check** that would catch the pattern's next recurrence
+   (a fixture suite, lint rule or CLI gate — e.g. `check: a1-workflow-lint`), or carries the
+   tag `prose-only` when the change is instruction text with no guard. Record `prose-only`
+   honestly; 02-cluster.md 2a reads it — a `prose-only` row whose pattern recurs joins the
+   `lesson_without_mechanical_check` cluster (2026-09-25/26
+   the BSD-portability class recurred twice after a retro, FR-016 three times — every one a
+   prose-only fix).
 
 Format for new pattern rows:
 ```markdown

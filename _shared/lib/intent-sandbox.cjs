@@ -221,7 +221,7 @@ const SELF_CHECKS = ['verify check', 'test-fidelity'];
 // Spec 017 review (retro wiring): `gates fired --log <file>` only reads a gate log inside the project and prints YAML.
 const GATES_READ = ['gates fired'];
 const NEW_FEATURE_ALLOW = Object.freeze([
-  'check reservations', 'checklist run', 'code-scope claim', 'code-scope release', 'code-scope stage',
+  'check reservations', 'checklist run', 'code-scope check', 'code-scope claim', 'code-scope release', 'code-scope stage',
   'plan depth-check', 'product feature-init', 'product stage', 'quick eligibility', 'realpath-check run', 'schema-check run',
   'spec init', 'spec set-size', 'spec update-status', ...SELF_CHECKS, ...GATES_READ, ...GIT_READ,
 ]);
@@ -283,6 +283,7 @@ const INTENT_CHILD_EXCLUSIONS = Object.freeze({
   }),
   fix: Object.freeze({
     ...DISPOSITIONS,
+    'cost run': TRANSCRIPTS,
     'fix class-sweep': SPAWNS_PROCESSES,
     'fix count-postmortems-since': 'scans the postmortems of every project',
     'fix init-postmortem': 'fix.cjs postmortemsDir joins project/<slug>/postmortems/ itself, past projectsPath and its guard (measured: another slug and ../.. both written)',
