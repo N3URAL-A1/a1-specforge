@@ -246,8 +246,9 @@ Completion Gate), each after its own confirmation:
    ```
    **Live probes (spec 020, gate `live-probes`)** — after the merge is confirmed and the deploy of the merged `main` is
    live, before step 4. Measures the merged effect from outside with the probes in `.a1/live-probes.yaml` (owner-side only;
-   an intent child is refused with exit 77). `<dir>` is a checkout of the merged `main`: `probe run` refuses an uncommitted or
-   modified probe file (exit 2, `probes_file_uncommitted`). Exit 1 or 2 stops the run: the feature is not verified live; fix
+   an intent child is refused with exit 77). `<dir>` is a checkout of the merged `main` with `origin` fetched: `probe run`
+   reads the probe file from the git blob and refuses an uncommitted, modified, local-only or unreviewed one (exit 2,
+   `probes_file_uncommitted`, `probes_no_reviewed_ref`, `probes_file_unreviewed`). Exit 1 or 2 stops the run: the feature is not verified live; fix
    the cause, do not advance to step 4. A probe-file change goes through a new PR (merge-check blocks it as
    `probes_config_changed`), never through an edit of the working tree.
    ```bash

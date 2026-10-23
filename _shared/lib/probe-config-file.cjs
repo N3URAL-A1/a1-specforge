@@ -77,33 +77,78 @@ function assertPlainConfigDir(projectDir) {
   assertByteExact(dir, FILE_NAME, fst);
 }
 
-const GIT_ENV_DROP = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_OBJECT_DIRECTORY', 'GIT_NAMESPACE', 'GIT_ALTERNATE_OBJECT_DIRECTORIES'];
+const REL_GIT = FILE_REL.split(path.sep).join('/');
+const REVIEWED_REFS = ['refs/remotes/origin/HEAD', 'refs/remotes/origin/main'];
+const CAT_MAX_BUFFER = 8 * 1024 * 1024;
 
-/** Environment for the git checks: an inherited GIT_DIR / GIT_WORK_TREE must not point git at another repository. */
+/** Environment for the git calls: no inherited repository selection and no injected configuration (filters, fsmonitor, aliases). */
 function gitEnv() {
-  const env = { ...process.env };
-  for (const k of GIT_ENV_DROP) delete env[k];
+  const env = {};
+  for (const [k, v] of Object.entries(process.env)) if (!k.startsWith('GIT_CONFIG') && !/^GIT_(DIR|WORK_TREE|INDEX_FILE|COMMON_DIR|OBJECT_DIRECTORY|NAMESPACE|ALTERNATE_OBJECT_DIRECTORIES|REPLACE_REF_BASE)$/.test(k)) env[k] = v;
+  env.GIT_CONFIG_NOSYSTEM = '1';
+  env.GIT_CONFIG_GLOBAL = '/dev/null';
   return env;
 }
 
-/**
- * SEC-11: the probe file is read from a work tree whose copy was reviewed. Refused (`probes_file_uncommitted`): the project is not a git
- * work tree, the file is not tracked (untracked, assume-unchanged, skip-worktree), or it differs from HEAD (staged or unstaged).
- * Fixed argv through the audited git helper (execFileSync, no shell); the path follows `--`.
- */
-function assertCommitted(projectDir) {
+/** Runner of fixed-argv git calls through the audited helper. Returns trimmed stdout, or null when git fails. */
+function gitRunner(projectDir, extra) {
   const { gitSafe } = require(path.join(__dirname, 'git-safe.cjs'));
-  const opts = { allowFail: true, env: gitEnv() };
-  const git = (args) => gitSafe(projectDir, ['-c', 'core.fsmonitor=false', ...args], opts);
-  const inside = git(['rev-parse', '--is-inside-work-tree']);
-  if (inside !== 'true') fail('probes_file_uncommitted', FILE_REL);
-  const tracked = git(['ls-files', '-v', '--', FILE_REL.split(path.sep).join('/')]);
-  if (typeof tracked !== 'string' || !tracked.startsWith('H ')) fail('probes_file_uncommitted', FILE_REL);
-  const same = git(['diff', '--quiet', '--no-ext-diff', 'HEAD', '--', FILE_REL.split(path.sep).join('/')]);
-  if (typeof same !== 'string') fail('probes_file_uncommitted', FILE_REL);
+  const opts = { allowFail: true, env: gitEnv(), ...extra };
+  return (args) => {
+    const r = gitSafe(projectDir, ['--no-replace-objects', '-c', 'core.fsmonitor=false', ...args], opts);
+    return typeof r === 'string' ? r : null;
+  };
 }
 
-/** Text of the probe file, or null when it does not exist. The file must be committed and unmodified (assertCommitted) before it is read. */
+/**
+ * SEC-11 (working tree): the file must be tracked and equal to HEAD, so the message for an edited, staged or untracked file is clear.
+ * Refused (`probes_file_uncommitted`): not a git work tree, untracked / assume-unchanged / skip-worktree, or differs from HEAD.
+ * This is only the first line of defence; the text itself comes from the git object (readReviewedBlob), never from the file.
+ */
+function assertCommitted(git) {
+  if (git(['rev-parse', '--is-inside-work-tree']) !== 'true') fail('probes_file_uncommitted', FILE_REL);
+  const tracked = git(['ls-files', '-v', '--', REL_GIT]);
+  if (tracked === null || !tracked.startsWith('H ')) fail('probes_file_uncommitted', FILE_REL);
+  if (git(['diff', '--quiet', '--no-ext-diff', 'HEAD', '--', REL_GIT]) === null) fail('probes_file_uncommitted', FILE_REL);
+}
+
+/**
+ * SEC-11 (review binding): blob(HEAD:path) must equal blob(<reviewed ref>:path), where the reviewed ref is origin/HEAD, else origin/main.
+ * A local, unpushed commit therefore never counts as reviewed. Returns the blob id.
+ */
+function reviewedBlob(git) {
+  const head = git(['rev-parse', '--verify', '-q', `HEAD:./${REL_GIT}`]);
+  if (head === null) fail('probes_file_uncommitted', FILE_REL);
+  const ref = REVIEWED_REFS.find((r) => git(['rev-parse', '--verify', '-q', `${r}^{commit}`]) !== null);
+  if (!ref) fail('probes_no_reviewed_ref', FILE_REL);
+  if (git(['rev-parse', '--verify', '-q', `${ref}:./${REL_GIT}`]) !== head) fail('probes_file_unreviewed', FILE_REL);
+  return head;
+}
+
+const objectHash = (oid, buf) => require('crypto').createHash(oid.length === 64 ? 'sha256' : 'sha1').update(`blob ${buf.length}\0`).update(buf).digest('hex');
+
+/**
+ * Bytes of blob `oid` straight from the object store (`cat-file --batch`, never --filters). The blob is requested twice so the content
+ * sits between two header lines: git-safe trims the ends of stdout, and a trailing tab or CR must reach the control-character check.
+ * The bytes are verified against the object id before they are used.
+ */
+function readBlob(projectDir, oid) {
+  const size = Number(gitRunner(projectDir, {})(['cat-file', '-s', oid]));
+  if (!Number.isInteger(size)) fail('unreadable', FILE_REL);
+  if (size > MAX_BYTES) fail('file_too_large', FILE_REL);
+  if (size === 0) fail('empty_file', FILE_REL);
+  const out = gitRunner(projectDir, { encoding: 'latin1', input: `${oid}\n${oid}\n`, stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: CAT_MAX_BUFFER })(['cat-file', '--batch']);
+  const header = `${oid} blob ${size}\n`;
+  if (out === null || !out.startsWith(header)) fail('unreadable', FILE_REL);
+  const buf = Buffer.from(out.slice(header.length, header.length + size), 'latin1');
+  if (buf.length !== size || objectHash(oid, buf) !== oid) fail('unreadable', FILE_REL);
+  return buf;
+}
+
+/**
+ * Text of the probe file, or null when no file is on disk. The text is never read from the filesystem: it is the reviewed git blob
+ * (see assertCommitted, reviewedBlob, readBlob), so a clean filter, a local commit or a change after the check cannot alter what runs.
+ */
 function readProbeFile(file, projectDir) {
   let st;
   try { st = fs.lstatSync(file); } catch (e) {
@@ -111,12 +156,9 @@ function readProbeFile(file, projectDir) {
     return fail('unreadable', FILE_REL);
   }
   if (!st.isFile()) fail('not_a_regular_file', FILE_REL);
-  assertCommitted(projectDir);
-  if (st.size > MAX_BYTES) fail('file_too_large', FILE_REL);
-  if (st.size === 0) fail('empty_file', FILE_REL);
-  let buf;
-  try { buf = fs.readFileSync(file); } catch (_e) { return fail('unreadable', FILE_REL); }
-  if (buf.length > MAX_BYTES) fail('file_too_large', FILE_REL);
+  const git = gitRunner(projectDir, {});
+  assertCommitted(git);
+  const buf = readBlob(projectDir, reviewedBlob(git));
   try { return new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch (_e) { return fail('invalid_utf8', FILE_REL); }
 }
 

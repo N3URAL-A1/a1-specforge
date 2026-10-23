@@ -26,9 +26,12 @@ const PROBE_HELP = `  a1-tools probe run --project <dir> [--phase <scope>] [--wa
                   beside it), config_name_variant (the name is not byte-exact, or another name on the
                   filesystem is the same file), a1_dir_symlink (.a1/ is a symlink or resolves outside the
                   project), a1_dir_submodule (.a1/ holds its own .git, so it is not the repo's own tree).
-                  probes_file_uncommitted (exit 2, nothing sent): the file must be tracked, equal to HEAD (nothing
-                  staged or unstaged) and <dir> a git work tree, so an unreviewed edit is never run; a probe-file
-                  change goes through a PR (merge-check: probes_config_changed) and <dir> is a checkout of the merged main.
+                  The probe text is read from the reviewed git blob, never from the file on disk. Refused (exit 2,
+                  nothing sent): probes_file_uncommitted (<dir> is no git work tree, or the file is untracked or
+                  differs from HEAD, staged or unstaged), probes_no_reviewed_ref (neither refs/remotes/origin/HEAD nor
+                  refs/remotes/origin/main exists: fetch origin), probes_file_unreviewed (the HEAD blob differs from
+                  the one on that ref, e.g. a local unpushed commit). A probe-file change goes through a PR
+                  (merge-check: probes_config_changed); <dir> is a checkout of the merged main with origin fetched.
                   --wait N (0..600) re-runs failed read-only probes every 5 s until all pass or N is spent.
                   Reason codes: status_mismatch, body_mismatch, header_mismatch, json_mismatch, timeout,
                   unreachable, dns_error, tls_error, env_missing, deny_half_open, allow_failed, deny_failed,

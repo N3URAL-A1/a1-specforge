@@ -345,3 +345,76 @@ if [[ "$(jq1 "$BR" ms)" -lt 2500 ]]; then ok "M3 the retry loop ends inside budg
 BR="$(budget_run 400 0 5000 '[["p","pair",1000,"/hang"],["after","leaf",1000,"/ok"]]')"
 expect "M4 a pair whose allow half spends the budget: deny half never starts" '["timeout_budget","timeout_budget"]' "$(jq1 "$BR" r)"
 if [[ "$(jq1 "$BR" ms)" -lt 800 ]]; then ok "M4 the allow half was capped (< 800 ms)"; else bad "M4 took $(jq1 "$BR" ms) ms"; fi
+
+# --- SEC-11 round 2: the text comes from the reviewed git object, bound to origin/HEAD or origin/main ---
+{ hdr; cat <<YML
+  - id: root
+    kind: http
+    url: http://$H:$HTTP_PORT/ok
+    expect:
+      status: 200
+YML
+} > "$WORK/rv.yml"
+# R1 no reviewed ref at all
+mk_workdir NOREF noref
+git -C "$NOREF" init -q; mkdir -p "$NOREF/.a1"; cp "$WORK/rv.yml" "$NOREF/.a1/live-probes.yaml"
+git -C "$NOREF" add -A; git -C "$NOREF" -c commit.gpgsign=false -c core.hooksPath=/dev/null commit -q -m x
+LB probe run --project "$NOREF"
+expect "V1 committed but no origin/HEAD and no origin/main: exit 2" "2" "$RC"
+expect_has "V1 names probes_no_reviewed_ref" "$ERR" "probes_no_reviewed_ref"
+git -C "$NOREF" update-ref refs/remotes/origin/main HEAD
+LB probe run --project "$NOREF"
+expect "V1b with refs/remotes/origin/main it runs" "0" "$RC"
+git -C "$NOREF" update-ref -d refs/remotes/origin/main
+git -C "$NOREF" update-ref refs/remotes/origin/trunk HEAD; git -C "$NOREF" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/trunk
+LB probe run --project "$NOREF"
+expect "V1c origin/HEAD (symbolic) is the reviewed ref too" "0" "$RC"
+# R2 a local, unpushed commit that changes the file
+put v-ahead < "$WORK/rv.yml"
+commit_all
+cat >> "$D/.a1/live-probes.yaml" <<YML
+  - id: local-only
+    kind: http
+    url: http://$H:$HTTP_PORT/ok
+    expect:
+      status: 200
+YML
+VB="$(srv_total)"
+git -C "$WORK" add -A -f; git -C "$WORK" -c commit.gpgsign=false -c core.hooksPath=/dev/null commit -q -m "local commit -am"
+PROBE_NOCOMMIT=1 LB probe run --project "$D"
+expect "V2 a local unpushed commit that changed the file: exit 2" "2" "$RC"
+expect_has "V2 names probes_file_unreviewed" "$ERR" "probes_file_unreviewed"
+expect "V2 no request sent" "$VB" "$(srv_total)"
+# R3 a local commit ahead that leaves the file's blob identical to the reviewed one
+put v-same < "$WORK/rv.yml"
+commit_all
+printf 'x\n' > "$WORK/unrelated.txt"; git -C "$WORK" add -f unrelated.txt; git -C "$WORK" -c commit.gpgsign=false -c core.hooksPath=/dev/null commit -q -m "unrelated local commit"
+PROBE_NOCOMMIT=1 LB probe run --project "$D"
+expect "V3 local commit ahead, same blob as origin/main: runs" "0" "$RC"
+expect_has "V3 the probe ran" "$OUT" "root http pass ok"
+# R4 a clean filter must not change what is loaded: the text is the blob, not the working-tree bytes
+mkdir -p "$WORK/v-filter/.a1"
+sed 's/id: root/id: evil/' "$WORK/rv.yml" > "$WORK/v-filter/.a1/live-probes.yaml"
+printf 'v-filter/.a1/live-probes.yaml filter=fx\n' > "$WORK/.git/info/attributes"
+git -C "$WORK" config filter.fx.clean "sed 's/evil/root/'"
+commit_all
+PROBE_NOCOMMIT=1 LB probe run --project "$WORK/v-filter"
+expect "V4 clean filter: runs" "0" "$RC"
+expect_has "V4 the reviewed blob (id root) is what ran" "$OUT" "root http pass ok"
+expect_lacks "V4 the raw working-tree id never shows" "$OUT" "evil"
+# R5 the same filter injected through the environment at probe time (config set only for the probe call)
+git -C "$WORK" config --unset filter.fx.clean
+PROBE_NOCOMMIT=1 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=filter.fx.clean GIT_CONFIG_VALUE_0="sed 's/evil/root/'" LB probe run --project "$WORK/v-filter"
+expect "V5 a clean filter injected by GIT_CONFIG_COUNT is ignored: raw file differs from HEAD, exit 2" "2" "$RC"
+expect_has "V5 names probes_file_uncommitted" "$ERR" "probes_file_uncommitted"
+PROBE_NOCOMMIT=1 GIT_CONFIG_PARAMETERS="'filter.fx.clean=sed s/evil/root/'" LB probe run --project "$WORK/v-filter"
+expect "V5b GIT_CONFIG_PARAMETERS is ignored as well" "2" "$RC"
+rm -f "$WORK/.git/info/attributes"
+# R6 smudge-style config cannot change the loaded blob either (cat-file without --filters)
+git -C "$WORK" config filter.fx.smudge "sed 's/root/evil/'"
+printf 'v-ahead/.a1/live-probes.yaml filter=fx\n' > "$WORK/.git/info/attributes"
+commit_all
+PROBE_NOCOMMIT=1 LB probe run --project "$WORK/v-same"
+expect "V6 smudge filter configured: loaded text is the blob" "0" "$RC"
+expect_lacks "V6 no smudged id" "$OUT" "evil"
+rm -f "$WORK/.git/info/attributes"; git -C "$WORK" config --unset filter.fx.smudge

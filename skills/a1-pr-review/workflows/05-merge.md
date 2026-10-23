@@ -84,7 +84,7 @@ Production deploys and migrations on a production database still need the user's
 ## 5.5 Live probes (spec 020)
 
 Runs after the merge in 5.4 landed (`gh pr view <n> --json state,mergedAt` shows MERGED) and the deploy of the merged `main` is live.
-It measures the merged effect from outside with `.a1/live-probes.yaml`; the project dir is the checkout of the merged `main`.
+It measures the merged effect from outside with `.a1/live-probes.yaml`; the project dir is the checkout of the merged `main` with `origin` fetched (the probe file is read from the git blob and must equal the one on `origin/main`).
 Exit 1 or 2: report the merged PR as not verified live and name the failing probe; the merge itself stays done. `no_probes`
 is reported as "not verified live (no_probes)", never as "verified live". Owner-side only: an intent child is refused with exit 77.
 

@@ -46,7 +46,7 @@ probes:
     expect:
       status: 500
 YML
-gp_commit() { git -C "$GP" add -A -f >/dev/null 2>&1; git -C "$GP" -c commit.gpgsign=false -c core.hooksPath=/dev/null commit -q --allow-empty -m fx >/dev/null 2>&1; }
+gp_commit() { git -C "$GP" add -A -f >/dev/null 2>&1; git -C "$GP" -c commit.gpgsign=false -c core.hooksPath=/dev/null commit -q --allow-empty -m fx >/dev/null 2>&1; git -C "$GP" update-ref refs/remotes/origin/main HEAD; }
 gp_commit
 GLOG="$GP/.a1/phases/020-live-probes/gate-log.jsonl"
 SRV_B="$(srv_total)"
@@ -163,7 +163,7 @@ USAGE="$(node "$TOOLS" zzz-group 2>&1)"
 expect_has "H3 unknown-group usage lists probe" "$USAGE" '"probe"'
 expect_has "H3 usage text names probe run" "$USAGE" "probe run"
 HP="$(node "$TOOLS" --help 2>&1 | sed -n '/a1-tools probe run/,/Not available to intent children/p')"
-for tok in --phase env_header_over_http env_query_over_http too_many_probes config_name_variant config_case_variant a1_dir_symlink a1_dir_submodule probes_file_uncommitted body_mismatch json_mismatch header_mismatch unexpected_open unexpected_closed bad_request timeout_budget A1_PROBE_ALLOW_LOOPBACK; do
+for tok in --phase env_header_over_http env_query_over_http too_many_probes config_name_variant config_case_variant a1_dir_symlink a1_dir_submodule probes_file_uncommitted probes_no_reviewed_ref probes_file_unreviewed body_mismatch json_mismatch header_mismatch unexpected_open unexpected_closed bad_request timeout_budget A1_PROBE_ALLOW_LOOPBACK; do
   expect_has "H4 help documents $tok" "$HP" "$tok"
 done
 expect_has "H6 help names the one-clock run budget" "$HP" "5 min plus the --wait window"

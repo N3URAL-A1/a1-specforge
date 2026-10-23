@@ -28,6 +28,7 @@ git init -q "$WORK" || { echo "FAIL  harness: git init"; exit 2; }
 commit_all() {
   git -C "$WORK" add -A -f >/dev/null 2>&1
   git -C "$WORK" -c commit.gpgsign=false -c core.hooksPath=/dev/null commit -q --allow-empty -m fx >/dev/null 2>&1
+  git -C "$WORK" update-ref refs/remotes/origin/main HEAD   # the fake "reviewed" state: what origin/main holds (SEC-11)
 }
 
 pass=0; fail=0; skipped=0
