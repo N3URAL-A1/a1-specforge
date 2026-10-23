@@ -1,0 +1,735 @@
+# parts/01-config.sh — spec 020 Wave 1: closed-grammar reader + static policy (FR-003, FR-004, FR-008, FR-012).
+# Sourced by run-tests.sh. Probe files are hand-written inputs (not parser output). Every rejection case
+# asserts exit 2, the offending key in stderr, no stub message, and zero requests at the loopback server.
+# Route and role facts model the a1-office postmortems 2026-09-26-claudia-caps-audit-insert-500 and
+# 2026-10-15-postgrest-anon-inherited-crud (Vault project/a1-office/postmortems/).
+
+H="127.0.0.1"
+P="$HTTP_PORT"
+
+# --- control: a valid file reaches the stub (proves the rejections below are policy, not usage slips) ---
+put c-valid <<YML
+version: 1
+hosts:
+  - name: $H
+    class: staging
+    allow_http: true
+probes:
+  - id: root
+    kind: http
+    url: http://$H:$P/ok
+    expect:
+      status: 200
+  - id: port
+    kind: tcp
+    host: $H
+    port: $TCP_PORT
+    expect: open
+YML
+probe run --project "$D"; accept "C1 valid file (http + tcp)"
+probe run --project "$D" --json --wait 5; accept "C2 valid file with --json --wait"
+
+# --- FR-003: hostile / malformed files -------------------------------------------------------------
+put h-unknown-top <<YML
+version: 1
+bogus: 1
+hosts: []
+probes: []
+YML
+probe run --project "$D"; reject "H1 unknown top-level key" "bogus"
+
+put h-unknown-probe <<YML
+version: 1
+hosts:
+  - name: $H
+    class: staging
+    allow_http: true
+probes:
+  - id: a
+    kind: http
+    url: http://$H:$P/ok
+    comand: ls
+    expect:
+      status: 200
+YML
+probe run --project "$D"; reject "H2 unknown probe key" "probes[0].comand"
+
+put h-dup <<YML
+version: 1
+hosts:
+  - name: $H
+    class: staging
+    allow_http: true
+probes:
+  - id: same
+    kind: http
+    url: http://$H:$P/ok
+    expect:
+      status: 200
+  - id: same
+    kind: http
+    url: http://$H:$P/boom
+    expect:
+      status: 200
+YML
+probe run --project "$D"; reject "H3 duplicate probe id" "duplicate_id"
+
+put h-anchor <<YML
+version: 1
+hosts:
+  - name: $H
+    class: staging
+    allow_http: true
+probes:
+  - id: a
+    kind: http
+    url: &u http://$H:$P/ok
+    expect:
+      status: 200
+YML
+probe run --project "$D"; reject "H4 anchor" "anchor_refused"
+
+put h-alias <<YML
+version: 1
+hosts:
+  - name: $H
+    class: staging
+    allow_http: true
+probes:
+  - id: a
+    kind: http
+    url: *u
+    expect:
+      status: 200
+YML
+probe run --project "$D"; reject "H5 alias" "alias_refused"
+
+put h-tag <<YML
+version: 1
+hosts:
+  - name: $H
+    class: staging
+    allow_http: true
+probes:
+  - id: a
+    kind: !!str http
+    url: http://$H:$P/ok
+    expect:
+      status: 200
+YML
+probe run --project "$D"; reject "H6 tag" "tag_refused"
+
+put h-merge <<YML
+version: 1
+hosts: []
+probes:
+  - <<: *base
+YML
+probe run --project "$D"; reject "H7 merge key" "bad_line"
+
+put h-tab <<YML
+version: 1
+hosts: []
+probes: []
+YML
+printf 'extra:\tx\n' >> "$D/.a1/live-probes.yaml"
+probe run --project "$D"; reject "H8 tab control character" "control_character"
+
+put h-cr <<YML
+version: 1
+hosts: []
+probes: []
+YML
+printf 'x: y\r\n' >> "$D/.a1/live-probes.yaml"
+probe run --project "$D"; reject "H9 carriage return" "control_character"
+
+put h-esc <<YML
+version: 1
+hosts: []
+probes: []
+YML
+printf 'x: a\033[31mb\n' >> "$D/.a1/live-probes.yaml"
+probe run --project "$D"; reject "H10 escape control character" "control_character"
+
+mkdir -p "$WORK/h-empty/.a1"; : > "$WORK/h-empty/.a1/live-probes.yaml"
+probe run --project "$WORK/h-empty"; reject "H11 0-byte file" "empty_file"
+
+put h-comments <<YML
+# only a comment
+
+YML
+probe run --project "$D"; reject "H12 comment-only file" "empty_file"
+
+put h-nover <<YML
+hosts: []
+probes: []
+YML
+probe run --project "$D"; reject "H13 no version" "version"
+
+put h-ver2 <<YML
+version: 2
+hosts: []
+probes: []
+YML
+probe run --project "$D"; reject "H14 version 2" "version"
+
+put h-noclass <<YML
+version: 1
+hosts:
+  - name: $H
+    allow_http: true
+probes: []
+YML
+probe run --project "$D"; reject "H15 host without class" "hosts[0].class"
+
+put h-badclass <<YML
+version: 1
+hosts:
+  - name: $H
+    class: dev
+probes: []
+YML
+probe run --project "$D"; reject "H16 host class outside the set" "hosts[0].class"
+
+put h-flow <<YML
+version: 1
+hosts: []
+probes:
+  - {id: a, kind: http}
+YML
+probe run --project "$D"; reject "H17 flow-style map" "bad_line"
+
+put h-flowval <<YML
+version: 1
+hosts: []
+probes: []
+x: {a: 1}
+YML
+probe run --project "$D"; reject "H18 flow-style value" "flow_style_refused"
+
+put h-expand <<YML
+version: 1
+hosts:
+  - name: $H
+    class: staging
+    allow_http: true
+probes:
+  - id: a
+    kind: http
+    url: http://$H:$P/\${HOME}
+    expect:
+      status: 200
+YML
+probe run --project "$D"; reject "H19 \${} expansion attempt" "expansion_refused"
+
+put h-block <<YML
+version: 1
+hosts: []
+probes: []
+x: |
+YML
+probe run --project "$D"; reject "H20 block scalar" "block_scalar_refused"
+
+# oversized file (> 256 KiB) — conventions: oversized input must fail fast
+put h-big <<YML
+version: 1
+hosts: []
+probes: []
+YML
+node -e 'process.stdout.write("# "+"x".repeat(300000)+"\n")' >> "$D/.a1/live-probes.yaml"
+probe run --project "$D"; reject "H21 file over 256 KiB" "file_too_large"
+
+# a directory / symlink in place of the file (exit2-audit style)
+mkdir -p "$WORK/h-dir/.a1/live-probes.yaml"
+probe run --project "$WORK/h-dir"; reject "H22 directory in place of the file" "not_a_regular_file"
+mkdir -p "$WORK/h-link/.a1"; printf 'version: 1\n' > "$WORK/h-link/real.yaml"
+ln -s "$WORK/h-link/real.yaml" "$WORK/h-link/.a1/live-probes.yaml"
+probe run --project "$WORK/h-link"; reject "H23 symlink in place of the file" "not_a_regular_file"
+
+# --- path traversal / injection / oversized values (CONVENTIONS) ------------------------------------
+probe run --project "../../../../etc/does-not-exist"; expect "T1 traversal-shaped missing project exits 2" "2" "$RC"
+expect_lacks "T1b ... and is no stub run" "$ERR" "not implemented"
+probe run --project "$WORK/no-such-dir"; expect "T2 missing project dir exits 2" "2" "$RC"
+INJ="$WORK/inj-marker"
+put t-inject <<YML
+version: 1
+hosts:
+  - name: $H
+    class: staging
+    allow_http: true
+probes:
+  - id: a
+    kind: http
+    url: http://$H:$P/ok
+    headers:
+      X-Note: "\$(touch $INJ); rm -rf /"
+    expect:
+      status: 200
+YML
+probe run --project "$D"; accept "T3 injection-shaped header value is inert text"
+expect "T3b the command substitution was not evaluated" "no" "$([[ -e $INJ ]] && echo yes || echo no)"
+put t-long <<YML
+version: 1
+hosts:
+  - name: $H
+    class: staging
+    allow_http: true
+probes:
+  - id: a
+    kind: http
+    url: http://$H:$P/ok
+    headers:
+      X-Note: "$(node -e 'process.stdout.write("a".repeat(10001))')"
+    expect:
+      status: 200
+YML
+probe run --project "$D"; reject "T4 10001-char header value" "value_too_long"
+put t-badid <<YML
+version: 1
+hosts: []
+probes:
+  - id: "a; rm -rf /"
+    kind: tcp
+    host: $H
+    port: 1
+    expect: open
+YML
+probe run --project "$D"; reject "T5 injection-shaped probe id" "probes[0].id"
+
+# --- FR-004: closed kind set ------------------------------------------------------------------------
+put k-command <<YML
+version: 1
+hosts: []
+probes:
+  - id: a
+    kind: command
+    command: ls
+YML
+probe run --project "$D"; reject "K1 kind: command" "unknown_kind"
+put k-shell <<YML
+version: 1
+hosts: []
+probes:
+  - id: a
+    kind: shell
+YML
+probe run --project "$D"; reject "K2 kind: shell" "unknown_kind"
+put k-nest <<YML
+version: 1
+hosts:
+  - name: $H
+    class: staging
+probes:
+  - id: a
+    kind: pair
+    allow:
+      kind: command
+    deny:
+      kind: tcp
+      host: $H
+      port: 1
+      expect: closed
+YML
+probe run --project "$D"; reject "K3 kind: command inside a pair half" "unknown_kind"
+lines="$(grep -cE 'child_process|eval\(|new Function|require\(.vm.\)' "$SHARED"/lib/probe*.cjs | awk -F: '{n+=$NF} END{print n+0}')"
+files="$(ls "$SHARED"/lib/probe*.cjs 2>/dev/null | wc -l | tr -d ' ')"
+expect "K4 no child_process / eval / new Function / vm in probe*.cjs (0 hits)" "0" "$lines"
+[[ "$files" -ge 2 ]] && ok "K4b count assert: probe*.cjs files scanned ($files)" || bad "K4b scanned too few probe*.cjs files ($files)"
+
+# --- FR-008: secrets only as {env: NAME} ------------------------------------------------------------
+put s-auth <<YML
+version: 1
+hosts:
+  - name: $H
+    class: staging
+    allow_http: true
+probes:
+  - id: a
+    kind: http
+    url: http://$H:$P/ok
+    headers:
+      Authorization: Bearer x
+    expect:
+      status: 200
+YML
+probe run --project "$D"; reject "S1 literal Authorization header" "probes[0].headers.Authorization"
+expect_lacks "S1b the literal value is not echoed" "$ERR" "Bearer"
+for spec in "headers|X-Api-Key|abc" "headers|Cookie|sid=1" "query|token|abc" "query|api_key|abc" "query|password|abc" "query|client_secret|abc"; do
+  IFS='|' read -r sect name val <<<"$spec"
+  put "s-lit-$name" <<YML
+version: 1
+hosts:
+  - name: $H
+    class: staging
+    allow_http: true
+probes:
+  - id: a
+    kind: http
+    url: http://$H:$P/ok
+    $sect:
+      $name: $val
+    expect:
+      status: 200
+YML
+  probe run --project "$D"; reject "S2 literal under secret-named $sect key '$name'" "probes[0].$sect.$name"
+done
+put s-ok-literal <<YML
+version: 1
+hosts:
+  - name: $H
+    class: staging
+    allow_http: true
+probes:
+  - id: a
+    kind: http
+    url: http://$H:$P/ok
+    query:
+      page: 2
+    headers:
+      Accept: application/json
+    expect:
+      status: 200
+YML
+probe run --project "$D"; accept "S3 literal under a non-secret key passes parsing"
+
+mk_env_case() { # <case> <env-ref-text>
+  put "$1" <<YML
+version: 1
+hosts:
+  - name: $H
+    class: staging
+    allow_http: true
+probes:
+  - id: a
+    kind: http
+    url: http://$H:$P/ok
+    headers:
+      Authorization: $2
+    expect:
+      status: 200
+YML
+}
+mk_env_case s-env-ok '{env: API_TOKEN}'
+probe run --project "$D"; accept "S4 {env: API_TOKEN} passes parsing"
+mk_env_case s-env-lower '{env: lower_case}'
+probe run --project "$D"; reject "S5 lower-case env name" "bad_env_name"
+mk_env_case s-env-long "{env: A$(node -e 'process.stdout.write("B".repeat(64))')}"
+probe run --project "$D"; reject "S6 65-char env name" "bad_env_name"
+mk_env_case s-env-64 "{env: A$(node -e 'process.stdout.write("B".repeat(63))')}"
+probe run --project "$D"; accept "S7 64-char env name is the allowed maximum"
+mk_env_case s-env-extra '{env: A_B, x: y}'
+probe run --project "$D"; reject "S8 env reference with extra flow content" "flow_style_refused"
+
+# --- FR-012: method x host class --------------------------------------------------------------------
+mk_method_case() { # <case> <class> <method-line or empty>
+  put "$1" <<YML
+version: 1
+hosts:
+  - name: $H
+    class: $2
+    allow_http: true
+probes:
+  - id: a
+    kind: http
+    url: http://$H:$P/ok
+$3
+    expect:
+      status: 200
+YML
+}
+mk_method_case m-post-prod production '    method: POST'
+probe run --project "$D"; reject "M1 POST on a production host" "mutating_method_on_production"
+mk_method_case m-post-stg staging '    method: POST'
+probe run --project "$D"; accept "M2 POST on a staging host passes the policy check"
+mk_method_case m-post-prev preview '    method: POST'
+probe run --project "$D"; accept "M3 POST on a preview host passes the policy check"
+mk_method_case m-del-prod production '    method: DELETE'
+probe run --project "$D"; reject "M4 DELETE on a production host" "mutating_method_on_production"
+mk_method_case m-put-prod production '    method: PUT'
+probe run --project "$D"; reject "M5 PUT on a production host" "mutating_method_on_production"
+for cls in production preview staging; do
+  mk_method_case "m-patch-$cls" "$cls" '    method: PATCH'
+  probe run --project "$D"; reject "M6 PATCH on a $cls host" "method_refused"
+done
+for m in CONNECT TRACE get; do
+  mk_method_case "m-other-$m" staging "    method: $m"
+  probe run --project "$D"; reject "M7 method $m" "method_refused"
+done
+for m in GET HEAD OPTIONS; do
+  mk_method_case "m-ro-$m" production "    method: $m"
+  probe run --project "$D"; accept "M8 $m on a production host"
+done
+mk_method_case m-default production ''
+probe run --project "$D"; accept "M9 missing method on a production host"
+got="$(node -e 'const c=require(process.argv[1]).loadProbeConfig(process.argv[2]);process.stdout.write(c.probes[0].method+"/"+c.probes.length)' "$SHARED/lib/probe-config.cjs" "$D" 2>&1)"
+expect "M10 a missing method parses as GET (1 probe)" "GET/1" "$got"
+
+# --- hosts, URLs, pair rules, bounds ---------------------------------------------------------------
+put u-unlisted <<YML
+version: 1
+hosts:
+  - name: $H
+    class: staging
+    allow_http: true
+probes:
+  - id: a
+    kind: http
+    url: http://other.example.test/ok
+    expect:
+      status: 200
+YML
+probe run --project "$D"; reject "U1 URL host not in hosts" "host_not_listed"
+put u-http <<YML
+version: 1
+hosts:
+  - name: $H
+    class: staging
+probes:
+  - id: a
+    kind: http
+    url: http://$H:$P/ok
+    expect:
+      status: 200
+YML
+probe run --project "$D"; reject "U2 http without allow_http" "scheme_refused"
+put u-userinfo <<YML
+version: 1
+hosts:
+  - name: $H
+    class: staging
+    allow_http: true
+probes:
+  - id: a
+    kind: http
+    url: http://user:pw@$H:$P/ok
+    expect:
+      status: 200
+YML
+probe run --project "$D"; reject "U3 userinfo in URL" "url_userinfo_refused"
+put u-ftp <<YML
+version: 1
+hosts:
+  - name: $H
+    class: staging
+    allow_http: true
+probes:
+  - id: a
+    kind: http
+    url: ftp://$H/x
+    expect:
+      status: 200
+YML
+probe run --project "$D"; reject "U4 ftp scheme" "scheme_refused"
+put u-tcphost <<YML
+version: 1
+hosts:
+  - name: $H
+    class: staging
+probes:
+  - id: a
+    kind: tcp
+    host: elsewhere.example.test
+    port: 80
+    expect: open
+YML
+probe run --project "$D"; reject "U5 tcp host not in hosts" "host_not_listed"
+put u-port0 <<YML
+version: 1
+hosts:
+  - name: $H
+    class: staging
+probes:
+  - id: a
+    kind: tcp
+    host: $H
+    port: 0
+    expect: open
+YML
+probe run --project "$D"; reject "U6 tcp port 0" "probes[0].port"
+put u-timeout <<YML
+version: 1
+hosts:
+  - name: $H
+    class: staging
+probes:
+  - id: a
+    kind: tcp
+    host: $H
+    port: 1
+    timeout_ms: 60001
+    expect: open
+YML
+probe run --project "$D"; reject "U7 timeout_ms 60001" "probes[0].timeout_ms"
+put u-timeout-max <<YML
+version: 1
+hosts:
+  - name: $H
+    class: staging
+probes:
+  - id: a
+    kind: tcp
+    host: $H
+    port: 1
+    timeout_ms: 60000
+    expect: open
+YML
+probe run --project "$D"; accept "U8 timeout_ms 60000 is the maximum"
+put u-dupname <<YML
+version: 1
+hosts:
+  - name: $H
+    class: staging
+  - name: $H
+    class: production
+probes: []
+YML
+probe run --project "$D"; reject "U9 duplicate host name" "duplicate_host"
+
+mk_pair() { # <case> <deny-status-line>
+  put "$1" <<YML
+version: 1
+hosts:
+  - name: $H
+    class: production
+    allow_http: true
+probes:
+  - id: p
+    kind: pair
+    allow:
+      kind: http
+      url: http://$H:$P/anon
+      expect:
+        status: 200
+    deny:
+      kind: http
+      url: http://$H:$P/anon
+      expect:
+        status: $2
+YML
+}
+mk_pair p-ok '[401, 403]'
+probe run --project "$D"; accept "P1 pair with a refusal deny half (401/403)"
+mk_pair p-redirect 302
+probe run --project "$D"; accept "P2 deny half expecting a 3xx"
+mk_pair p-2xx 200
+probe run --project "$D"; reject "P3 deny half expecting 200" "deny_not_refusal"
+mk_pair p-list-2xx '[403, 204]'
+probe run --project "$D"; reject "P4 deny list holding a 2xx" "deny_not_refusal"
+mk_pair p-500 500
+probe run --project "$D"; reject "P5 deny half expecting 500 is no refusal" "deny_not_refusal"
+put p-noallow <<YML
+version: 1
+hosts:
+  - name: $H
+    class: production
+    allow_http: true
+probes:
+  - id: p
+    kind: pair
+    deny:
+      kind: tcp
+      host: $H
+      port: 1
+      expect: closed
+YML
+probe run --project "$D"; reject "P6 pair without allow" "probes[0].allow"
+put p-tcp <<YML
+version: 1
+hosts:
+  - name: $H
+    class: production
+probes:
+  - id: p
+    kind: pair
+    allow:
+      kind: tcp
+      host: $H
+      port: $TCP_PORT
+      expect: open
+    deny:
+      kind: tcp
+      host: $H
+      port: 1
+      expect: closed
+YML
+probe run --project "$D"; accept "P7 tcp pair (open / closed)"
+put p-tcp-open-deny <<YML
+version: 1
+hosts:
+  - name: $H
+    class: production
+probes:
+  - id: p
+    kind: pair
+    allow:
+      kind: tcp
+      host: $H
+      port: 1
+      expect: open
+    deny:
+      kind: tcp
+      host: $H
+      port: 1
+      expect: open
+YML
+probe run --project "$D"; reject "P8 tcp deny half expecting open" "deny_not_refusal"
+put p-nested-pair <<YML
+version: 1
+hosts:
+  - name: $H
+    class: production
+probes:
+  - id: p
+    kind: pair
+    allow:
+      kind: pair
+    deny:
+      kind: tcp
+      host: $H
+      port: 1
+      expect: closed
+YML
+probe run --project "$D"; reject "P9 pair nested in a pair" "nested_pair"
+put p-half-id <<YML
+version: 1
+hosts:
+  - name: $H
+    class: production
+probes:
+  - id: p
+    kind: pair
+    allow:
+      id: x
+      kind: tcp
+      host: $H
+      port: 1
+      expect: open
+    deny:
+      kind: tcp
+      host: $H
+      port: 1
+      expect: closed
+YML
+probe run --project "$D"; reject "P10 id inside a pair half" "probes[0].allow.id"
+
+# --- CLI scaffold -----------------------------------------------------------------------------------
+probe; expect "L1 probe without subcommand exits 2" "2" "$RC"
+expect_has "L1b usage names 'probe run'" "$ERR" "probe run"
+probe bogus; expect "L2 probe bogus exits 2" "2" "$RC"
+probe run; expect "L3 probe run without --project exits 2" "2" "$RC"
+expect_has "L3b names --project" "$ERR" "--project"
+probe run --project "$D" --wait 601; expect "L4 --wait 601 exits 2" "2" "$RC"
+expect_lacks "L4b not the stub" "$ERR" "not implemented"
+probe run --project "$D" --wait -1; expect "L5 --wait -1 exits 2" "2" "$RC"
+probe run --project "$D" --bogus; expect "L6 unknown flag exits 2" "2" "$RC"
+expect_lacks "L6b not the stub" "$ERR" "not implemented"
+mkdir -p "$WORK/l-absent"
+probe run --project "$WORK/l-absent"; accept "L7 absent file reaches the stub (no_probes arrives in wave 4)"
+help="$(node "$TOOLS" --help 2>&1)"
+expect_has "L8 help lists 'a1-tools probe run'" "$help" "a1-tools probe run"
+expect_has "L8b help names A1_PROBE_ALLOW_LOOPBACK" "$help" "A1_PROBE_ALLOW_LOOPBACK"
+bogus_out="$(node "$TOOLS" no-such-group 2>&1)"
+expect_has "L9 unknown-group usage lists \"probe\"" "$bogus_out" '"probe"'
+expect_has "L10 facade header lists probe run" "$(sed -n 1,80p "$TOOLS")" "a1-tools probe run"
+
+expect "Z1 the server counted zero requests over the whole part" "0" "$(srv_total)"
