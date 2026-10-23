@@ -125,7 +125,14 @@ expect_lacks "L3b scrubMessage exists" "$die_out" "NOFN"
 # --- FR-015: unreachable without a network -> exit 1; no workflow runs the probe CLI ---
 expect "L4 no workflow runs 'probe run'" "0" "$(cat "$REPO_ROOT"/.github/workflows/*.yml | grep -c 'probe run')"
 OFFLINE=0
-if [[ -d /sys/class/net ]] && [[ "$(ls /sys/class/net | grep -vxc lo)" == "0" ]]; then OFFLINE=1; fi
+# offline = Linux with no interface other than lo in state "up" (docker --network none leaves only down stubs)
+if [[ -d /sys/class/net ]]; then
+  OFFLINE=1
+  for ifc in /sys/class/net/*; do
+    [[ "$(basename "$ifc")" == "lo" ]] && continue
+    [[ "$(cat "$ifc/operstate" 2>/dev/null)" == "down" ]] || OFFLINE=0
+  done
+fi
 if [[ "$OFFLINE" == "1" ]]; then
   cat > "$WORK/off.yml" <<'YML'
 version: 1
