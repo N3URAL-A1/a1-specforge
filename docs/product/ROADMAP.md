@@ -225,10 +225,10 @@ features:
   - id: 020-live-probes
     milestone: continuous
     title: "Live probes: measure the real effect after merge or deploy"
-    status: planned
-    stage: null
+    status: in-flight
+    stage: started
     depends_on: []
-    started: null
+    started: 2026-10-23
     finished: null
     spec_path: project/a1-specforge/spec/020-live-probes.md
     plan_path: null
@@ -423,6 +423,7 @@ None.
 - **2026-10-23** — 018-pipeline-metrics -> merge — stage transition via `product stage`
 - **2026-10-23** — 018-pipeline-metrics -> origin-cleanup — stage transition via `product stage`
 - **2026-10-23** — 018-pipeline-metrics -> done — stage transition via `product stage`
+- **2026-10-23** — 020-live-probes -> started — stage transition via `product stage`
 
 ## Appendix — migrated details
 

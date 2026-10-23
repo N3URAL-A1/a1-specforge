@@ -3,10 +3,10 @@ id: 020-live-probes
 project: a1-specforge
 milestone: continuous
 title: "Live probes: measure the real effect after merge or deploy"
-status: planned
-stage: null
+status: in-flight
+stage: started
 depends_on: []
-started: null
+started: 2026-10-23
 finished: null
 spec_path: project/a1-specforge/spec/020-live-probes.md
 plan_path: null
