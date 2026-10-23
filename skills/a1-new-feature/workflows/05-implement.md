@@ -377,3 +377,10 @@ If at any point during a wave the user requests a change to the spec (new FR, ch
 
 This is friction by design — silent spec drift is the most common cause of broken Phase 6
 verifies.
+
+A scope cut ("leave FR-3 out"), a deferral or a "do it differently" given in chat **is** a
+spec change and takes the same route before the next wave is dispatched — the decision is
+written into the spec file (deferred FR, changed AC), never carried only in the conversation.
+Phase 6 verifies the file: on 2026-10-15 (captrader 012) the verifier failed an FR the user
+had changed in chat; 2026-10-03 (a1-office 059) and 2026-10-08/09
+(ai-net M1-P1/P2) ran the same way.

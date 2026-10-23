@@ -1,7 +1,7 @@
 ---
 name: a1-plan
 description: >
-  Full planning pipeline for an implementation phase: Research → Map → Plan → Audit, producing
+  Full planning pipeline for an implementation phase: Research → Map → Plan (with Depth Pass) → Audit, producing
   an executor-ready PLAN.md with waves, tasks, and verifiable success criteria. State lives in
   `.a1/phases/<name>/`. MUST trigger when the user says: "plan phase" (alias: "phase planen"),
   "plan a new phase" (alias: "neue phase planen"), "create a plan" (alias: "plan erstellen"),
@@ -44,7 +44,7 @@ paths, not documents. Details + self-check: `_shared/spawn-policy.md`.
 |---|---|---|---|---|
 | 1 | Research | `workflows/01-research.md` | a1-rico-researcher | RESEARCH.md |
 | 2 | Map | `workflows/02-map.md` | a1-marco-mapper | MAP.md |
-| 3 | Plan | `workflows/03-plan.md` | a1-pablo-planner | PLAN.md |
+| 3 | Plan | `workflows/03-plan.md` (incl. Depth Pass, `plan depth-check`) | a1-pablo-planner | PLAN.md (`## Depth Pass`) |
 | 4 | Audit | `workflows/04-audit.md` | a1-adam-auditor | AUDIT.md |
 | 4b | Cross-provider review | `workflows/04b-xprov-review.md` | — (orchestrator; `a1-tools xprov gate`, Codex via vendored runner) | XREVIEW.md, `xreview/index.json`, PLAN-REVIEW-LOG.md |
 
