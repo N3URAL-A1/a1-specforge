@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated": "2026-10-23T06:41:52.735Z",
+  "generated": "2026-10-23T06:45:11.753Z",
   "project": {
     "id": "a1-specforge",
     "title": "a1-specforge — Roadmap",
@@ -291,6 +291,20 @@
       "started": null,
       "finished": null,
       "spec_path": "project/a1-specforge/spec/020-live-probes.md",
+      "plan_path": null
+    },
+    {
+      "id": "021-dashboard",
+      "milestone": "continuous",
+      "title": "a1-dashboard: local read-only view of pipeline state",
+      "status": "planned",
+      "stage": null,
+      "depends_on": [
+        "018-pipeline-metrics"
+      ],
+      "started": null,
+      "finished": null,
+      "spec_path": "project/a1-specforge/spec/021-dashboard.md",
       "plan_path": null
     }
   ],

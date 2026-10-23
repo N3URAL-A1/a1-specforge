@@ -232,6 +232,17 @@ features:
     finished: null
     spec_path: project/a1-specforge/spec/020-live-probes.md
     plan_path: null
+  - id: 021-dashboard
+    milestone: continuous
+    title: "a1-dashboard: local read-only view of pipeline state"
+    status: planned
+    stage: null
+    depends_on:
+      - 018-pipeline-metrics
+    started: null
+    finished: null
+    spec_path: project/a1-specforge/spec/021-dashboard.md
+    plan_path: null
 next: 006-specforge-kritis-profile
 ---
 
@@ -394,6 +405,8 @@ None.
 - **2026-10-22** — feature.md created for '020-live-probes' — formal spec/plan attached via `product feature-init`
 - **2026-10-23** — 018-pipeline-metrics -> complete — stage transition via `product stage`
 - **2026-10-23** — 018-pipeline-metrics -> review — stage transition via `product stage`
+- **2026-10-23** — feature '021-dashboard' added — A generated read-only vault note shows phases, waves, verifications, learnings and cost without reading files
+- **2026-10-23** — feature.md created for '021-dashboard' — formal spec/plan attached via `product feature-init`
 
 ## Appendix — migrated details
 
