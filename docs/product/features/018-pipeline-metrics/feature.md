@@ -4,7 +4,7 @@ project: a1-specforge
 milestone: continuous
 title: "Measure the pipeline: escaped-defect attribution and cost per feature"
 status: in-flight
-stage: complete
+stage: review
 depends_on:
   - 017-enforced-self-checks
 started: 2026-10-23

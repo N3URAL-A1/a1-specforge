@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated": "2026-10-23T06:41:24.799Z",
+  "generated": "2026-10-23T06:41:52.735Z",
   "project": {
     "id": "a1-specforge",
     "title": "a1-specforge — Roadmap",
@@ -260,7 +260,7 @@
       "milestone": "continuous",
       "title": "Measure the pipeline: escaped-defect attribution and cost per feature",
       "status": "in-flight",
-      "stage": "complete",
+      "stage": "review",
       "depends_on": [
         "017-enforced-self-checks"
       ],

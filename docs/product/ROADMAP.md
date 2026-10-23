@@ -205,7 +205,7 @@ features:
     milestone: continuous
     title: "Measure the pipeline: escaped-defect attribution and cost per feature"
     status: in-flight
-    stage: complete
+    stage: review
     depends_on:
       - 017-enforced-self-checks
     started: 2026-10-23
@@ -393,6 +393,7 @@ None.
 - **2026-10-22** — feature '020-live-probes' added — After merge or deploy, declared probes measure the real effect from outside, including a counter-test
 - **2026-10-22** — feature.md created for '020-live-probes' — formal spec/plan attached via `product feature-init`
 - **2026-10-23** — 018-pipeline-metrics -> complete — stage transition via `product stage`
+- **2026-10-23** — 018-pipeline-metrics -> review — stage transition via `product stage`
 
 ## Appendix — migrated details
 
