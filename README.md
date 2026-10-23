@@ -126,6 +126,14 @@ Nine commands turn the pipeline's self-reports into measured results. Only calls
 
 Every new command exits 2 on an internal error and never 0. Details: [`docs/adr/2026-10-14-gate-invoke-and-log.md`](docs/adr/2026-10-14-gate-invoke-and-log.md); how to run them as a contributor: [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
+### Live probes (spec 020)
+
+| Command | What it does |
+|---|---|
+| `probe run --project <dir> [--phase <scope>] [--wait <seconds>] [--json]` | Reads `<dir>/.a1/live-probes.yaml` and measures the real effect from outside after a merge: HTTP status/body/JSON, TCP open/closed, allow/deny pairs. Exit 0 all passed or `no_probes`, 1 a probe failed, 2 hostile file or usage error. Runs owner-side only (an intent child gets exit 77). A change to the probe file blocks `pr merge-check` until a second reviewer upholds it. |
+
+The file format, the policy per host class and every reason code: `a1-tools --help` (section `probe run`). Secrets only as `{env: NAME}`; the run prints codes and numbers only, never a response body or a secret value.
+
 ### Pipeline metrics (spec 018)
 
 Two read-only reports over vault markdown. They need `A1_VAULT_ROOT`, make no network call and write nothing.

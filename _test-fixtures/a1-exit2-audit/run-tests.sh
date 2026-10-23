@@ -36,7 +36,7 @@ mkdir -p .a1/phases/p
 BUGDIR="$WORK/repo/bugdir"; mkdir "$BUGDIR"
 
 # A1 no stub left (count assert beside the equality)
-stubs="$(grep -rEc 'not implemented, spec 017|not implemented yet \(spec 017' "$SHARED/a1-tools.cjs" "$SHARED"/lib/*.cjs | awk -F: '{n+=$NF} END{print n+0}')"
+stubs="$(grep -rEc 'not implemented, spec 017|not implemented yet \(spec 017|not implemented — spec' "$SHARED/a1-tools.cjs" "$SHARED"/lib/*.cjs | awk -F: '{n+=$NF} END{print n+0}')"
 files="$(ls "$SHARED"/lib/*.cjs | wc -l | tr -d ' ')"
 expect "A1 no spec 017 'not implemented' stub path remains in the facade or lib (0 hits over $files lib files + facade)" "0" "$stubs"
 [[ "$files" -ge 50 ]] && ok "A1b count assert: more than 50 lib files scanned ($files)" || bad "A1b scanned too few lib files ($files)"
@@ -44,7 +44,7 @@ expect "A1 no spec 017 'not implemented' stub path remains in the facade or lib 
 # B help lists each new subcommand
 help="$(node "$TOOLS" --help 2>&1)"
 n=0
-for cmd in 'gates lint' 'gates fired' 'verify run' 'verify check' 'test-fidelity' 'disposition add' 'disposition review' 'fix class-sweep' 'pr merge-check'; do
+for cmd in 'gates lint' 'gates fired' 'verify run' 'verify check' 'test-fidelity' 'disposition add' 'disposition review' 'fix class-sweep' 'pr merge-check' 'probe run'; do
   n=$((n + 1))
   if grep -q "a1-tools $cmd" <<<"$help"; then ok "B$n help lists '$cmd'"; else bad "B$n help lists '$cmd'"; fi
 done
@@ -76,6 +76,15 @@ expect "D6 fix class-sweep --record with a directory as the bug file exits 2" "2
 expect "D7 fix class-sweep --verify with a directory as the bug file exits 2" "2" "$(rc fix class-sweep --verify "$BUGDIR" --project "$WORK/repo")"
 expect "D8 pr merge-check with a failing gh binary exits 2" "2" \
   "$(cd "$WORK/repo" && A1_GH_BIN=/usr/bin/false node "$TOOLS" pr merge-check --pr 1 --base HEAD --project "$WORK/repo" >/dev/null 2>&1; echo $?)"
+
+# D9 probe run (spec 020): the same control pair - a valid probe file is not 2, a directory in its place is 2
+printf 'version: 1\nhosts: []\nprobes: []\n' > .a1/live-probes.yaml
+r="$(rc probe run --project "$WORK/repo")"
+[[ "$r" != "2" ]] && ok "D9 control: probe run with a readable empty .a1/live-probes.yaml is not 2 (got $r)" || bad "D9 control exited 2"
+rm .a1/live-probes.yaml; mkdir .a1/live-probes.yaml
+expect "D9b probe run with a directory as .a1/live-probes.yaml exits 2" "2" "$(rc probe run --project "$WORK/repo")"
+rmdir .a1/live-probes.yaml
+expect "D9c probe run without --project exits 2" "2" "$(rc probe run)"
 
 # E hostile input never exits 0
 expect "E1 verify run with --project pointing at a missing dir exits 2" "2" "$(rc verify run --project "$WORK/nope")"

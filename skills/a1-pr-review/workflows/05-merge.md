@@ -46,14 +46,15 @@ Add `--bug <fix-report-id>` for a test that is red on head AND base and has an a
 The report must be a real a1-fix report (frontmatter `type: bug-report`, `bug_slug`, `status`) in the vault or committed at the base.
 One `--bug` clears every base-red id; required checks red on head are never compared with the base.
 `head_mismatch` means the local checkout is not the PR head on a clean tree: push or check out the PR head, then run again.
-Three findings block, because a config or a deleted suite can switch checks off. No flag clears any; only a second reviewer does:
+Four findings block, because a config or a deleted suite can switch checks off. No flag clears any; only a second reviewer does:
 
 - `fidelity_config_changed`: `.a1/fidelity.json` differs from the base. The reason carries the `fingerprint`.
 - `suite_red_on_head` with cause `verify_config_changed`: `.a1/verify.json` differs from the base. The fingerprint is `suites.config_changed.fingerprint` in the report.
 - `suite_red_on_head` with cause `suite_removed`: an `each` suite the base names is gone at HEAD (a deleted red suite no longer fails). The fingerprint is `suites.suite_removed.fingerprint`; it covers exactly the removed id set (`suites.suite_removed.ids`).
+- `probes_config_changed`: `.a1/live-probes.yaml` differs from the base (added, changed or deleted). The reason carries the `fingerprint`; the probe file names the hosts the next run connects to, so a PR cannot widen it unreviewed.
 
 To clear one: `node <repo>/_shared/a1-tools.cjs disposition add --kind config_change --fingerprint <fp> --reason "<why>" --by <author>`
-(`<fp>` = `suites.config_changed.fingerprint` or `suites.suite_removed.fingerprint` for `verify.json`, the reason's `fingerprint` for `fidelity.json`); a reviewer other than
+(`<fp>` = `suites.config_changed.fingerprint` or `suites.suite_removed.fingerprint` for `verify.json`, the reason's `fingerprint` for `fidelity.json` and `live-probes.yaml`); a reviewer other than
 `<author>` records `disposition review <fp> --verdict upheld --reason "<why>" --by <reviewer>` (5.1); commit and push `.a1/dispositions.json`;
 run 5.3 again. The fingerprint covers the exact head content: change the config again and the verdict no longer matches.
 The suites run fresh on every merge check (`--no-cache`); no result cache is trusted.
@@ -80,7 +81,20 @@ with `_shared/push-cadence.md` P3 (never a bare `git pull`) and advance the regi
 (`a1-tools pr mark-status`). Report what was merged and which findings there were.
 Production deploys and migrations on a production database still need the user's word.
 
+## 5.5 Live probes (spec 020)
+
+Runs after the merge in 5.4 landed (`gh pr view <n> --json state,mergedAt` shows MERGED) and the deploy of the merged `main` is live.
+It measures the merged effect from outside with `.a1/live-probes.yaml`; the project dir is the checkout of the merged `main`.
+Exit 1 or 2: report the merged PR as not verified live and name the failing probe; the merge itself stays done. `no_probes`
+is reported as "not verified live (no_probes)", never as "verified live". Owner-side only: an intent child is refused with exit 77.
+
+```bash
+node <repo>/_shared/a1-tools.cjs probe run --project <dir> --phase pr-<n>; RC=$?
+if [ "$RC" -ne 0 ]; then echo "STOP: probe run exit=$RC (1 = a probe failed or was not measured, 2 = usage error or hostile file), not verified live"; exit "$RC"; fi
+```
+
 ## Failure modes
 
 - Any of 5.1 to 5.3 exits 1 or 2: no merge. Report the reason, fix, repeat from 5.1.
+- 5.5 exits 1 or 2: the merge stays done; report "not verified live" with the failing probe ids, fix forward.
 - `gh pr merge` denied by the hook: read the hint, fix the cause (head sha moved: run 5.3 again and use the new `head_sha`; local ref differs). Do not rephrase the command.

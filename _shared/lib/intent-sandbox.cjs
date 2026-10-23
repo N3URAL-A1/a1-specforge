@@ -265,12 +265,14 @@ const ROW_R = 'row R (progress) has no Bash';
 const OWN_FINDINGS = 'an autonomous child must not clear its own findings (reviewed human or reviewer decision)';
 const DISPOSITIONS = Object.freeze({ 'disposition add': OWN_FINDINGS, 'disposition review': OWN_FINDINGS });
 const SPAWNS_PROCESSES = 'spawns non-git processes; runs owner-side (SEC-5)';
+const NETWORK = 'opens outbound network connections to declared hosts; runs owner-side after the merge (spec 020 FR-018)';
 const NEW_FEATURE_EXCLUDED = Object.freeze({
   'cost run': TRANSCRIPTS,
   'retro validate': OUTSIDE_STORE,
   'vault link-hub': VAULT_WIDE,
   ...DISPOSITIONS,
   'verify run': SPAWNS_PROCESSES,
+  'probe run': NETWORK,
   'vault writer': 'reads and sets the hub writer declaration (a1_writer_host), a hub note outside project/<slug>/ that only a human sets (spec 010 FR-038)',
 });
 const INTENT_CHILD_EXCLUSIONS = Object.freeze({

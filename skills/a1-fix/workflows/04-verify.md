@@ -104,6 +104,8 @@ valid `class_query` (Phase 2 fills it). The report stays at `fixing`; do not tel
 3. Use the Edit tool to fill the `## Verification (Phase 04 — filled by skill)`
    section in the bug report with the verification details.
 
+   Live verification of a fix runs in a1-pr-review 5.5 after the merge (the probe CLI measures the merged effect from outside); this step does not run it.
+
 4. Append the cost line to the fix report body (same format as Victor's step; the line is never omitted).
    `<fix-start>` is the ISO time the fix began (the report's `fixing` entry in `phase_history`):
 
