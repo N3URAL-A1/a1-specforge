@@ -981,4 +981,53 @@ rm -rf "$WORK/n-sub2"; mkdir -p "$WORK/n-sub2/.a1/.git"
 printf '%s\n' "$VALID_PROBES" > "$WORK/n-sub2/.a1/live-probes.yaml"
 probe run --project "$WORK/n-sub2"; reject ".a1/.git directory" "a1_dir_submodule"
 
+# --- SEC-7a (review fix): a scheme spelled in upper case must not slip past the env-over-http refusal ----------------------
+for sch in HTTP Http hTTp; do
+  put "u-hdr-$sch" <<YML
+version: 1
+hosts:
+  - name: $H
+    class: staging
+    allow_http: true
+probes:
+  - id: a
+    kind: http
+    url: $sch://$H:$P/ok
+    headers:
+      X-Probe-Id: {env: PROBE_VALUE}
+    expect:
+      status: 200
+YML
+  PROBE_VALUE=secretvalue probe run --project "$D"; reject "U1 $sch:// scheme with an env header is refused" "bad_url"
+  put "u-qry-$sch" <<YML
+version: 1
+hosts:
+  - name: $H
+    class: staging
+    allow_http: true
+probes:
+  - id: a
+    kind: http
+    url: $sch://$H:$P/ok
+    query:
+      v: {env: PROBE_VALUE}
+    expect:
+      status: 200
+YML
+  PROBE_VALUE=secretvalue probe run --project "$D"; reject "U2 $sch:// scheme with an env query value is refused" "bad_url"
+done
+put u-https-upper <<YML
+version: 1
+hosts:
+  - name: $H
+    class: staging
+probes:
+  - id: a
+    kind: http
+    url: HTTPS://$H:$P/ok
+    expect:
+      status: 200
+YML
+probe run --project "$D"; reject "U3 an upper-case https scheme is refused too (the scheme must be written in lower case)" "bad_url"
+
 expect "Z1 the server counted zero requests over the whole part" "0" "$(srv_total)"

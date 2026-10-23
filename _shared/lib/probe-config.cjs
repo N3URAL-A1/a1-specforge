@@ -186,8 +186,9 @@ function parseUrl(raw, where, hosts) {
   try { u = new URL(raw); } catch (_e) { fail('bad_url', where); }
   if (u.username || u.password) fail('url_userinfo_refused', where);
   const host = hostOf(hosts, u.hostname, where);
+  if (!/^[a-z][a-z0-9+.-]*:/.test(raw)) fail('bad_url', where); // SEC-7a: the scheme is written in lower case, no case-folded spelling reaches a check
   if (u.protocol !== 'https:' && !(u.protocol === 'http:' && host.allow_http)) fail('scheme_refused', where);
-  return { url: raw, host };
+  return { url: raw, host, protocol: u.protocol };
 }
 
 function validateKv(m, where, nameRe) {
@@ -245,15 +246,15 @@ function timeoutOf(p, where) {
 }
 
 function validateHttp(p, where, hosts) {
-  const { url, host } = parseUrl(need(p, 'url', where), `${where}.url`, hosts);
+  const { url, host, protocol } = parseUrl(need(p, 'url', where), `${where}.url`, hosts);
   const method = p.method === undefined ? 'GET' : p.method;
   if (!METHODS.includes(method)) fail('method_refused', `${where}.method`);
   if (MUTATING.includes(method) && host.class === 'production') fail('mutating_method_on_production', `${where}.method`);
   const headers = p.headers === undefined ? {} : validateKv(p.headers, `${where}.headers`, HEADER_NAME_RE);
   // SEC-7a: a secret taken from the environment must not travel in clear text, not even to an allow_http host.
-  if (url.startsWith('http:')) for (const [k, v] of Object.entries(headers)) if (v.env !== undefined) fail('env_header_over_http', `${where}.headers.${k}`);
+  if (protocol === 'http:') for (const [k, v] of Object.entries(headers)) if (v.env !== undefined) fail('env_header_over_http', `${where}.headers.${k}`);
   const query = p.query === undefined ? {} : validateKv(p.query, `${where}.query`, QUERY_NAME_RE);
-  if (url.startsWith('http:')) for (const [k, v] of Object.entries(query)) if (v.env !== undefined) fail('env_query_over_http', `${where}.query.${k}`);
+  if (protocol === 'http:') for (const [k, v] of Object.entries(query)) if (v.env !== undefined) fail('env_query_over_http', `${where}.query.${k}`);
   return {
     kind: 'http', url, host: host.name, host_class: host.class, method,
     headers,
