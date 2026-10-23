@@ -218,9 +218,10 @@ blocks_json() { # fenced bash blocks of 05-merge.md as a JSON array of strings
 BJ="$(blocks_json "$MRG")"
 bj() { printf '%s' "$BJ" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const b=JSON.parse(s);console.log(eval(process.argv[1]))})' "$1"; }
 HAND="$(awk '/^## Hand-offs/{f=1} f' "$SK/a1-pr-review/SKILL.md")"
-if [ "$(bj 'b.length')" = "4" ]; then pass_case "05-merge.md has exactly 4 fenced bash blocks (count)"; else fail_case "05-merge.md fenced bash blocks: $(bj 'b.length') (want 4)"; fi
-order="$(bj 'b.map(x=>/disposition review/.test(x)?"D":/product validate --spec-status --require-vault/.test(x)?"C":/pr merge-check/.test(x)?"M":/^gh pr merge /m.test(x)?"G":"?").join("")')"
-if [ "$order" = "DCMG" ]; then pass_case "block order: disposition review, coherence (--require-vault), merge-check, gh pr merge"; else fail_case "05-merge.md block order is '$order' (want DCMG)"; fi
+# Spec 020 wave 6: 5.5 adds the fifth block (probe run, after the merge); the first four are unchanged.
+if [ "$(bj 'b.length')" = "5" ]; then pass_case "05-merge.md has exactly 5 fenced bash blocks (count)"; else fail_case "05-merge.md fenced bash blocks: $(bj 'b.length') (want 5)"; fi
+order="$(bj 'b.map(x=>/disposition review/.test(x)?"D":/product validate --spec-status --require-vault/.test(x)?"C":/pr merge-check/.test(x)?"M":/^gh pr merge /m.test(x)?"G":/probe run/.test(x)?"P":"?").join("")')"
+if [ "$order" = "DCMGP" ]; then pass_case "block order: disposition review, coherence (--require-vault), merge-check, gh pr merge, live probes"; else fail_case "05-merge.md block order is '$order' (want DCMGP)"; fi
 if [ "$(bj 'b.filter(x=>/gh pr merge/.test(x)).length')" = "1" ] && [ "$(bj 'b.findIndex(x=>/gh pr merge/.test(x))')" = "3" ]; then
   pass_case "no gh pr merge before the three checks: exactly one merge command, in the last block"
 else fail_case "gh pr merge appears outside the last fenced block"; fi
