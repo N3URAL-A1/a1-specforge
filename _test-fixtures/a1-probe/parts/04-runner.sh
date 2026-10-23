@@ -394,21 +394,26 @@ expect "V3 local commit ahead, same blob as origin/main: runs" "0" "$RC"
 expect_has "V3 the probe ran" "$OUT" "root http pass ok"
 # R4 a clean filter must not change what is loaded: the text is the blob, not the working-tree bytes
 mkdir -p "$WORK/v-filter/.a1"
-sed 's/id: root/id: evil/' "$WORK/rv.yml" > "$WORK/v-filter/.a1/live-probes.yaml"
+sed 's/id: root/id: evil-ids/' "$WORK/rv.yml" > "$WORK/v-filter/.a1/live-probes.yaml"
 printf 'v-filter/.a1/live-probes.yaml filter=fx\n' > "$WORK/.git/info/attributes"
-git -C "$WORK" config filter.fx.clean "sed 's/evil/root/'"
+git -C "$WORK" config filter.fx.clean "sed 's/evil-ids/root/'"
 commit_all
 PROBE_NOCOMMIT=1 LB probe run --project "$WORK/v-filter"
 expect "V4 clean filter: runs" "0" "$RC"
 expect_has "V4 the reviewed blob (id root) is what ran" "$OUT" "root http pass ok"
 expect_lacks "V4 the raw working-tree id never shows" "$OUT" "evil"
-# R5 the same filter injected through the environment at probe time (config set only for the probe call)
+# R5 a filter command injected through the environment must never run (the file is touched so git has to re-read it through the filter)
 git -C "$WORK" config --unset filter.fx.clean
-PROBE_NOCOMMIT=1 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=filter.fx.clean GIT_CONFIG_VALUE_0="sed 's/evil/root/'" LB probe run --project "$WORK/v-filter"
-expect "V5 a clean filter injected by GIT_CONFIG_COUNT is ignored: raw file differs from HEAD, exit 2" "2" "$RC"
+V5C="$WORK/canary-env"; rm -f "$V5C"
+touch -t 202001010000 "$WORK/v-filter/.a1/live-probes.yaml"
+PROBE_NOCOMMIT=1 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=filter.fx.clean GIT_CONFIG_VALUE_0="touch $V5C; cat" LB probe run --project "$WORK/v-filter"
+expect "V5 GIT_CONFIG_COUNT filter: raw file differs from HEAD, exit 2" "2" "$RC"
 expect_has "V5 names probes_file_uncommitted" "$ERR" "probes_file_uncommitted"
-PROBE_NOCOMMIT=1 GIT_CONFIG_PARAMETERS="'filter.fx.clean=sed s/evil/root/'" LB probe run --project "$WORK/v-filter"
-expect "V5b GIT_CONFIG_PARAMETERS is ignored as well" "2" "$RC"
+expect "V5 the injected filter command never ran (canary absent)" "no" "$([[ -e "$V5C" ]] && echo yes || echo no)"
+touch -t 202001010000 "$WORK/v-filter/.a1/live-probes.yaml"
+PROBE_NOCOMMIT=1 GIT_CONFIG_PARAMETERS="'filter.fx.clean=touch $V5C; cat'" LB probe run --project "$WORK/v-filter"
+expect "V5b GIT_CONFIG_PARAMETERS filter: exit 2" "2" "$RC"
+expect "V5b the injected filter command never ran (canary absent)" "no" "$([[ -e "$V5C" ]] && echo yes || echo no)"
 rm -f "$WORK/.git/info/attributes"
 # R6 smudge-style config cannot change the loaded blob either (cat-file without --filters)
 git -C "$WORK" config filter.fx.smudge "sed 's/root/evil/'"
