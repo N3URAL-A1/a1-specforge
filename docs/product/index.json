@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated": "2026-10-23T06:45:11.753Z",
+  "generated": "2026-10-23T06:46:43.822Z",
   "project": {
     "id": "a1-specforge",
     "title": "a1-specforge — Roadmap",
@@ -305,6 +305,18 @@
       "started": null,
       "finished": null,
       "spec_path": "project/a1-specforge/spec/021-dashboard.md",
+      "plan_path": null
+    },
+    {
+      "id": "022-spec-driven-tests",
+      "milestone": "continuous",
+      "title": "a1-test: generate executable tests from acceptance criteria",
+      "status": "planned",
+      "stage": null,
+      "depends_on": [],
+      "started": null,
+      "finished": null,
+      "spec_path": "project/a1-specforge/spec/022-spec-driven-tests.md",
       "plan_path": null
     }
   ],

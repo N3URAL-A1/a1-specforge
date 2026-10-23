@@ -243,6 +243,16 @@ features:
     finished: null
     spec_path: project/a1-specforge/spec/021-dashboard.md
     plan_path: null
+  - id: 022-spec-driven-tests
+    milestone: continuous
+    title: "a1-test: generate executable tests from acceptance criteria"
+    status: planned
+    stage: null
+    depends_on: []
+    started: null
+    finished: null
+    spec_path: project/a1-specforge/spec/022-spec-driven-tests.md
+    plan_path: null
 next: 006-specforge-kritis-profile
 ---
 
@@ -407,6 +417,8 @@ None.
 - **2026-10-23** — 018-pipeline-metrics -> review — stage transition via `product stage`
 - **2026-10-23** — feature '021-dashboard' added — A generated read-only vault note shows phases, waves, verifications, learnings and cost without reading files
 - **2026-10-23** — feature.md created for '021-dashboard' — formal spec/plan attached via `product feature-init`
+- **2026-10-23** — feature '022-spec-driven-tests' added — Every acceptance criterion gets a tagged test written before the code, proven red when the feature is reverted
+- **2026-10-23** — feature.md created for '022-spec-driven-tests' — formal spec/plan attached via `product feature-init`
 
 ## Appendix — migrated details
 
