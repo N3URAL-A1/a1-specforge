@@ -21,10 +21,12 @@
         "_test-fixtures/a1-probe/",
         "_test-fixtures/a1-exit2-audit/run-tests.sh",
         "CONTRIBUTING.md",
-        "README.md"
+        "README.md",
+        "_shared/lib/disposition-store.cjs",
+        "_shared/lib/help-disposition.cjs"
       ],
       "by": "020-live-probes",
-      "at": "2026-10-23T11:27:18.278Z",
+      "at": "2026-10-23T16:51:29.907Z",
       "stage": "started"
     }
   ]
