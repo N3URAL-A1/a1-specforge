@@ -17,6 +17,7 @@ const SHA_RE = /^[0-9a-f]{40}$/;
 const GIT_MAX_BUFFER = 16 * 1024 * 1024;
 const FIDELITY_REL = '.a1/fidelity.json';
 const PROBES_REL = '.a1/live-probes.yaml';
+const A1_DIR = '.a1';
 const CONFIG_KIND = 'config_change';
 const CONFIG_RULE = 'fidelity-config';
 /** Guarded config files: a change base..HEAD blocks the merge until a second reviewer upholds a config_change disposition (rule = fingerprint namespace). */
@@ -75,27 +76,80 @@ function dispositionsUncommitted(project) {
 }
 
 /**
+ * Every tree entry under a top-level directory whose name equals `.a1` case-insensitively (a case-insensitive checkout folds
+ * `.A1` onto `.a1`), recursively, as { path, mode, sha }; a top-level `.a1` that is a symlink (mode 120000) is returned as itself.
+ * null when git fails (the caller blocks: an unreadable tree is not an unchanged one).
+ */
+function a1TreeEntries(project, rev) {
+  const top = gitText(project, ['ls-tree', '-z', rev]);
+  if (top === null) return null;
+  const out = [];
+  for (const rec of top.split('\0')) {
+    const m = /^(\d+) (\w+) ([0-9a-f]+)\t(.*)$/s.exec(rec);
+    if (!m || m[4].toLowerCase() !== A1_DIR) continue;
+    if (m[1] === '120000') { out.push({ path: m[4], mode: m[1], sha: m[3] }); continue; }
+    if (m[2] !== 'tree') continue;
+    const sub = gitText(project, ['ls-tree', '-r', '-z', m[3]]);
+    if (sub === null) return null;
+    for (const r of sub.split('\0')) {
+      const s2 = /^(\d+) (\w+) ([0-9a-f]+)\t(.*)$/s.exec(r);
+      if (s2) out.push({ path: `${m[4]}/${s2[4]}`, mode: s2[1], sha: s2[3] });
+    }
+  }
+  return out;
+}
+
+/** What one side (base or head) holds for a guarded file: matched paths (case-insensitive) with their blobs, and whether `.a1` is a symlink. */
+function sideOf(project, rev, guard, entries) {
+  const want = guard.rel.toLowerCase();
+  const matched = entries.filter((e) => e.path.toLowerCase() === want).sort((x, y) => (x.path < y.path ? -1 : 1));
+  const symlinked = entries.some((e) => e.mode === '120000' && e.path.toLowerCase() === A1_DIR);
+  const texts = matched.map((e) => ({ path: e.path, mode: e.mode, text: gitText(project, ['cat-file', 'blob', e.sha]) }));
+  return { rev, matched: texts, symlinked, key: JSON.stringify(texts.map((t) => [t.path, t.mode, t.text])) };
+}
+
+/** Fingerprint text of the head side: the plain content when the exact path is the only match (unchanged from before), else path+mode+content of every match. */
+function headFingerprintText(guard, head) {
+  const plain = head.matched.length === 1 && head.matched[0].path === guard.rel && head.matched[0].mode !== '120000' && !head.symlinked;
+  if (plain) return head.matched[0].text === null ? '' : head.matched[0].text;
+  if (head.matched.length === 0 && !head.symlinked) return '';
+  return `${head.symlinked ? 'symlink:.a1\n' : ''}${head.matched.map((t) => `${t.path}\0${t.mode}\0${t.text === null ? '' : t.text}`).join('\n')}`;
+}
+
+/**
  * SEC-1b (config files, SEC-2 part): a guarded config file (.a1/fidelity.json: it can switch rules off; .a1/live-probes.yaml: it names
  * the hosts live probes may reach, spec 020 FR-019) differing base..HEAD blocks the merge. Added, changed and deleted all count; a deleted
  * file fingerprints as empty content. Cleared only like verify_config_changed: by an upheld disposition of kind config_change (the guard's
  * rule) on the exact head content, reviewed by someone other than its author. There is no flag that clears it (a flag would let the caller
  * authorize its own change).
+ * Spec 020 review round (SEC-1/SEC-2): the base and head trees are listed and every guarded path is matched case-insensitively, because
+ * a case-insensitive checkout resolves `.a1/LIVE-PROBES.yaml` (or `.A1/...`) to the file the loader reads; and a symlinked `.a1` on either
+ * side blocks outright, because the exact-path lookup then returns nothing on both sides while the loader follows the link.
  * @returns {{reasons:object[]}}
  */
-function configChangeCheck(project, baseSha, entriesAtHead, guard) {
-  const baseText = gitText(project, ['show', `${baseSha}:${guard.rel}`]);
-  const headText = gitText(project, ['show', `HEAD:${guard.rel}`]);
-  if (baseText === headText) return { reasons: [] };
-  const fingerprint = D.fingerprintOf(guard.rule, guard.rel, headText === null ? '' : headText);
+function configChangeCheck(project, baseSha, entriesAtHead, guard, trees) {
+  const [baseEntries, headEntries] = trees;
+  const unreadable = baseEntries === null || headEntries === null;
+  const base = unreadable ? { key: '', matched: [], symlinked: false } : sideOf(project, baseSha, guard, baseEntries);
+  const head = unreadable ? { key: '', matched: [], symlinked: false } : sideOf(project, 'HEAD', guard, headEntries);
+  const symlinked = base.symlinked || head.symlinked;
+  if (!unreadable && !symlinked && base.key === head.key) return { reasons: [] };
+  const fingerprint = D.fingerprintOf(guard.rule, guard.rel, unreadable ? 'unreadable-tree' : headFingerprintText(guard, head));
   const cleared = entriesAtHead.some((e) => e.kind === CONFIG_KIND && e.fingerprint === fingerprint && e.review === 'upheld' && !D.isSelfReviewed(e));
   if (cleared) return { reasons: [] };
-  const change = baseText === null ? 'added' : (headText === null ? 'removed' : 'changed');
-  return { reasons: [{ reason: guard.reason, file: guard.rel, change, fingerprint, hint: `disposition add --kind ${CONFIG_KIND} --fingerprint ${fingerprint} --reason <why> --by <you>; a second reviewer runs disposition review ${fingerprint} --verdict upheld --by <reviewer>; commit and push .a1/dispositions.json; run the merge check again` }] };
+  let change = 'changed';
+  if (unreadable) change = 'unreadable';
+  else if (symlinked) change = 'symlink';
+  else if (base.matched.length === 0) change = 'added';
+  else if (head.matched.length === 0) change = 'removed';
+  const file = !unreadable && !symlinked && head.matched.length > 0 ? head.matched.map((t) => t.path).join(', ') : (!unreadable && !symlinked && base.matched.length > 0 ? base.matched.map((t) => t.path).join(', ') : guard.rel);
+  return { reasons: [{ reason: guard.reason, file, change, fingerprint, hint: `disposition add --kind ${CONFIG_KIND} --fingerprint ${fingerprint} --reason <why> --by <you>; a second reviewer runs disposition review ${fingerprint} --verdict upheld --by <reviewer>; commit and push .a1/dispositions.json; run the merge check again` }] };
 }
 
 /** All guarded config files in table order (fidelity first, so the existing reason order is unchanged). */
 function configChangeChecks(project, baseSha, entriesAtHead) {
-  return { reasons: CONFIG_GUARDS.flatMap((guard) => configChangeCheck(project, baseSha, entriesAtHead, guard).reasons) };
+  const trees = [a1TreeEntries(project, baseSha), a1TreeEntries(project, 'HEAD')];
+  return { reasons: CONFIG_GUARDS.flatMap((guard) => configChangeCheck(project, baseSha, entriesAtHead, guard, trees).reasons) };
 }
 
 module.exports = { SHA_RE, headReasons, dispositionsUncommitted, configChangeChecks, statusPaths, CONFIG_KIND, CONFIG_RULE };

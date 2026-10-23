@@ -732,4 +732,39 @@ bogus_out="$(node "$TOOLS" no-such-group 2>&1)"
 expect_has "L9 unknown-group usage lists \"probe\"" "$bogus_out" '"probe"'
 expect_has "L10 facade header lists probe run" "$(sed -n 1,80p "$TOOLS")" "a1-tools probe run"
 
+# --- SEC-1/SEC-2 (review round): the loader reads only the exact-name file in a real `.a1` directory ------------------
+VALID_PROBES="version: 1
+hosts:
+  - name: $H
+    class: staging
+    allow_http: true
+probes:
+  - id: root
+    kind: http
+    url: http://$H:$P/ok
+    expect:
+      status: 200"
+rm -rf "$WORK/s-link"; mkdir -p "$WORK/s-link/cfg"
+printf '%s\n' "$VALID_PROBES" > "$WORK/s-link/cfg/live-probes.yaml"
+ln -s cfg "$WORK/s-link/.a1"
+probe run --project "$WORK/s-link"; reject "S1 .a1 is a symlink to a dir holding a valid file" "a1_dir_symlink"
+rm -rf "$WORK/s-dlink"; mkdir -p "$WORK/s-dlink/real"
+ln -s real "$WORK/s-dlink/.a1"
+probe run --project "$WORK/s-dlink"; reject "S2 .a1 is a symlink even when the target holds no probe file" "a1_dir_symlink"
+rm -rf "$WORK/s-case"; mkdir -p "$WORK/s-case/.a1"
+printf '%s\n' "$VALID_PROBES" > "$WORK/s-case/.a1/LIVE-PROBES.yaml"
+probe run --project "$WORK/s-case"; reject "S3 only a case variant of the file name exists" "config_case_variant"
+put s-case2 <<YML
+$VALID_PROBES
+YML
+printf '%s\n' "$VALID_PROBES" > "$D/.a1/Live-Probes.yaml"
+# only a case-sensitive filesystem can hold both names; on APFS the second write is the same file (S3 covers that FS)
+if [[ -e "$D/.a1/live-probes.yaml" && "$(ls "$D/.a1" | wc -l | tr -d ' ')" == "2" ]]; then
+  probe run --project "$D"; reject "S4 exact name plus a case variant side by side" "config_case_variant"
+fi
+rm -rf "$WORK/s-real"; mkdir -p "$WORK/s-real-parent"
+ln -s s-real-parent "$WORK/s-real-link"
+mkdir -p "$WORK/s-real-parent/.a1"; printf '%s\n' "$VALID_PROBES" > "$WORK/s-real-parent/.a1/live-probes.yaml"
+probe run --project "$WORK/s-real-link"; accept "S5 control: a symlinked PROJECT dir with a real .a1 still loads"
+
 expect "Z1 the server counted zero requests over the whole part" "0" "$(srv_total)"

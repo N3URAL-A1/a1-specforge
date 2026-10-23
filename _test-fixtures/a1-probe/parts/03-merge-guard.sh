@@ -124,3 +124,44 @@ expect "G11 disposition add accepts rule probes-config for kind config_change (e
 mg_dis add --kind config_change --fingerprint "bogus-config:.a1/live-probes.yaml:0123456789abcdef" --reason "fixture: unknown rule" --by fx
 expect "G11 an unknown rule is still refused (exit 2)" "2" "$?"
 expect_has "G11 refusal names the rule/kind mismatch" "$(cat "$WORK/mg-dis.err")" "does not belong to kind config_change"
+
+# --- SEC-1/SEC-2 (review round): case variants and a symlinked .a1 must not slip past the exact-path guard ----------------
+mg_pr g12 :; mg_yaml evil.example.test > "$MG_P/.a1/LIVE-PROBES.yaml"; mg_commit "add upper-case probes"; mg_check
+expect "G12 case variant .a1/LIVE-PROBES.yaml added: exit 1 probes_config_changed" "1|probes_config_changed" "$MG_RC|$(mg_reasons)"
+expect "G12 the reason names the variant path, change=added" ".a1/LIVE-PROBES.yaml|added" "$(mg_js 'j.reasons[0].file+"|"+j.reasons[0].change')"
+MG_FP12="$(mg_js 'j.reasons[0].fingerprint')"
+mg_dis add --kind config_change --fingerprint "$MG_FP12" --reason "fixture: variant reviewed" --by fx
+mg_dis review "$MG_FP12" --verdict upheld --reason "fixture: ok" --by reviewer; mg_commit "variant-upheld"; mg_check
+expect "G12b the variant is cleared by an upheld disposition on its exact content: exit 0" "0|0" "$MG_RC|$(mg_js 'j.reasons.length')"
+git -C "$MG_P" mv .a1/LIVE-PROBES.yaml .a1/Live-Probes.yaml 2>/dev/null || mg_git "$MG_P" mv .a1/LIVE-PROBES.yaml .a1/Live-Probes.yaml; mg_commit "rename variant"; mg_check
+expect "G12c renaming the variant changes the fingerprint (path is part of it): blocks again" "1|probes_config_changed|new" "$MG_RC|$(mg_reasons)|$([[ "$(mg_js 'j.reasons[0].fingerprint')" != "$MG_FP12" ]] && echo new || echo same)"
+
+mg_pr g13 :; printf '{"rules":{"skipped-test":"off"}}\n' > "$MG_P/.a1/Fidelity.JSON"; mg_commit "add upper-case fidelity"; mg_check
+expect "G13 case variant .a1/Fidelity.JSON added: exit 1 fidelity_config_changed" "1|fidelity_config_changed" "$MG_RC|$(mg_reasons)"
+
+# directory-name variant, FS independent: the blob goes into the index and the commit by plumbing
+mg_pr g14 :
+MG_BL="$(mg_yaml evil.example.test | mg_git "$MG_P" hash-object -w --stdin)"
+mg_git "$MG_P" update-index --add --cacheinfo "100644,$MG_BL,.A1/live-probes.yaml"; mg_git "$MG_P" commit -q -m "add .A1 dir variant"; mg_check
+expect_has "G14 .A1/live-probes.yaml (directory-name variant) blocks as probes_config_changed" "$(mg_reasons)" "probes_config_changed"
+MG_BL="$(printf '{"rules":{}}\n' | mg_git "$MG_P" hash-object -w --stdin)"
+mg_git "$MG_P" update-index --add --cacheinfo "100644,$MG_BL,.A1/FIDELITY.json"; mg_git "$MG_P" commit -q -m "add .A1 fidelity variant"; mg_check
+expect_has "G14b .A1/FIDELITY.json (directory-name variant) blocks as fidelity_config_changed" "$(mg_reasons)" "fidelity_config_changed"
+
+# .a1 replaced by a symlink to a directory that holds the files (git show of the exact path returns nothing on both sides)
+mg_pr g15 :
+mv "$MG_P/.a1" "$MG_P/cfg"; ln -s cfg "$MG_P/.a1"; mg_yaml evil.example.test > "$MG_P/cfg/live-probes.yaml"; printf '{"rules":{"skipped-test":"off"}}\n' > "$MG_P/cfg/fidelity.json"; mg_commit "symlink .a1"; mg_check
+expect_has "G15 .a1 became a symlink: probes guard blocks" "$(mg_reasons)" "probes_config_changed"
+expect_has "G15 .a1 became a symlink: fidelity guard blocks" "$(mg_reasons)" "fidelity_config_changed"
+expect "G15 exit 1" "1" "$MG_RC"
+expect "G15 change=symlink on the probes reason" "symlink" "$(mg_js "j.reasons.find(r=>r.reason==='probes_config_changed').change")"
+
+# symlinked .a1 on BOTH sides (nothing differs base..head) still blocks, and a real .a1 on head with a symlink on base blocks too
+mg_sym_base() { mv "$1/.a1" "$1/cfg"; ln -s cfg "$1/.a1"; }
+# (the full merge-check fails closed with exit 2 here because the trusted verify.json is unreachable through the link; the guard itself is called directly)
+mg_pr g16 mg_sym_base; mg_check
+expect "G16 .a1 symlink on both sides: the merge check fails closed (exit 2)" "2" "$MG_RC"
+MG_G16="$(cd "$MG_P" && node -e 'const G=require(process.argv[1]);const b=require("child_process").execFileSync("git",["rev-parse","main"],{encoding:"utf8"}).trim();console.log(G.configChangeChecks(process.cwd(),b,[]).reasons.map(r=>r.reason).sort().join(","))' "$SHARED/lib/pr-merge-guards.cjs")"
+expect "G16 guard alone: .a1 symlink on both sides, no config difference, still blocks both configs" "fidelity_config_changed,probes_config_changed" "$MG_G16"
+mg_pr g17 mg_sym_base; rm "$MG_P/.a1"; mv "$MG_P/cfg" "$MG_P/.a1"; mg_commit "back to a real dir"; mg_check
+expect_has "G17 symlink on the base side only: blocks" "$(mg_reasons)" "probes_config_changed"

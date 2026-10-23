@@ -314,6 +314,30 @@ function deepFreeze(o) {
 
 // ---------- file access ----------
 
+const FILE_NAME = path.basename(FILE_REL);
+
+/**
+ * SEC-1/SEC-2: the file must be read from a real `.a1` directory under the project, by its exact name. A symlinked `.a1`
+ * (or one whose real path leaves the project) and a case variant of the file name (which a case-insensitive filesystem
+ * would silently resolve) are refused; the merge guard compares exact git paths, so the loader must never read anything else.
+ */
+function assertPlainConfigDir(projectDir) {
+  const dir = path.join(projectDir, path.dirname(FILE_REL));
+  let st;
+  try { st = fs.lstatSync(dir); } catch (e) {
+    if (e && e.code === 'ENOENT') return;
+    fail('unreadable', FILE_REL);
+  }
+  if (st.isSymbolicLink()) fail('a1_dir_symlink', FILE_REL);
+  if (!st.isDirectory()) fail('not_a_regular_file', FILE_REL);
+  let real; let realProject;
+  try { real = fs.realpathSync.native(dir); realProject = fs.realpathSync.native(projectDir); } catch (_e) { return fail('unreadable', FILE_REL); }
+  if (real !== path.join(realProject, path.dirname(FILE_REL))) fail('a1_dir_symlink', FILE_REL);
+  let names;
+  try { names = fs.readdirSync(dir); } catch (_e) { return fail('unreadable', FILE_REL); }
+  if (names.some((n) => n !== FILE_NAME && n.toLowerCase() === FILE_NAME)) fail('config_case_variant', FILE_REL);
+}
+
 function readProbeFile(file) {
   let st;
   try { st = fs.lstatSync(file); } catch (e) {
@@ -336,6 +360,7 @@ function readProbeFile(file) {
  */
 function loadProbeConfig(projectDir) {
   const file = path.join(projectDir, FILE_REL);
+  assertPlainConfigDir(projectDir);
   const text = readProbeFile(file);
   if (text === null) return { absent: true, file };
   const bad = CONTROL_RE.exec(text);
