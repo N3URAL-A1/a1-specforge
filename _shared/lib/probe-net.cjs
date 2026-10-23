@@ -184,6 +184,12 @@ function guardConnect(agent, env, onBlocked) {
   return agent;
 }
 
+/** IP literals skip `lookup` in net.connect, so the guard is applied to them before any socket exists. */
+function literalBlocked(host, env) {
+  const h = String(host).replace(/^\[|\]$/g, '');
+  return net.isIP(h) !== 0 && !allowed(h, env);
+}
+
 function resolveKv(map, env) {
   const out = [];
   for (const [k, v] of Object.entries(map || {})) {
@@ -254,6 +260,7 @@ function runHttp(probe, ctx) {
     if (target.missing) return resolve(result(start, { pass: false, reason: 'env_missing', not_measured: true }));
     if (target.bad) return resolve(result(start, { pass: false, reason: 'bad_request' }));
     const { url } = target;
+    if (literalBlocked(url.hostname, env)) return resolve(result(start, { pass: false, reason: 'blocked_host', blocked: true }));
     const mod = url.protocol === 'https:' ? https : http;
     let settled = false;
     let blocked = false;
@@ -328,6 +335,7 @@ function runTcp(probe, ctx) {
       const pass = state === probe.expect;
       return resolve(result(start, { pass, reason: pass ? 'ok' : `unexpected_${state}` }));
     };
+    if (literalBlocked(probe.host, env)) return finish('blocked');
     timer = setTimeout(() => finish('closed'), probe.timeout_ms);
     sock = net.connect({ host: probe.host.replace(/^\[|\]$/g, ''), port: probe.port, lookup: (ctx && ctx.lookup) || guardedLookup(env) });
     sock.once('connect', () => {

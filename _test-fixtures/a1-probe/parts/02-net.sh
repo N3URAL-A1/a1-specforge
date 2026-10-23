@@ -82,12 +82,21 @@ R="$(env -u A1_PROBE_ALLOW_LOOPBACK node "$NETH" http "$(hp /ok '{"status":[200]
 expect "N12 loopback without allow is blocked" "true" "$(jf "$R" blocked)"
 expect "N12 reason blocked_host" "blocked_host" "$(jf "$R" reason)"
 expect "N12 no request reached the server" "$before" "$(srv_total)"
+before="$(srv_total)"
 R="$(env -u A1_PROBE_ALLOW_LOOPBACK node "$NETH" tcp "{\"kind\":\"tcp\",\"host\":\"127.0.0.1\",\"port\":$TCP_PORT,\"expect\":\"open\",\"timeout_ms\":2000}" 2>/dev/null)"
 expect "N12b tcp loopback without allow is blocked" "blocked_host" "$(jf "$R" reason)"
+expect "N12b lookup guard stopped it before any TCP connect (server counts connections)" "$before" "$(srv_total)"
+
+# lookup layer (a name, not an IP literal): "localhost" resolves to loopback; the guard must stop it before connect
+before="$(srv_total)"
+R="$(env -u A1_PROBE_ALLOW_LOOPBACK node "$NETH" tcp "{\"kind\":\"tcp\",\"host\":\"localhost\",\"port\":$TCP_PORT,\"expect\":\"open\",\"timeout_ms\":2000}" 2>/dev/null)"
+expect "N12c localhost name blocked by the lookup guard" "blocked_host" "$(jf "$R" reason)"
+expect "N12c no TCP connection was made" "$before" "$(srv_total)"
 
 # rebinding: lookup says "fine", the connection lands on 127.0.0.1 (blocked without allow) -> socket destroyed
 before="$(srv_total)"
-R="$(env -u A1_PROBE_ALLOW_LOOPBACK node "$NETH" http-rawlookup "$(hp /ok '{"status":[200]}')" 2>/dev/null)"
+RB="$(hp /ok '{"status":[200]}')"; RB="${RB//http:\/\/127.0.0.1:/http://rebind.invalid:}"
+R="$(env -u A1_PROBE_ALLOW_LOOPBACK node "$NETH" http-rawlookup "$RB" 2>/dev/null)"
 expect "N13 connected-address check blocks" "blocked_host" "$(jf "$R" reason)"
 expect "N13 flagged blocked" "true" "$(jf "$R" blocked)"
 expect "N13 server saw no request" "$before" "$(srv_total)"
