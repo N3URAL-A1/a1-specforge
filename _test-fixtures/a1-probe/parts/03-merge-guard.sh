@@ -165,3 +165,25 @@ MG_G16="$(cd "$MG_P" && node -e 'const G=require(process.argv[1]);const b=requir
 expect "G16 guard alone: .a1 symlink on both sides, no config difference, still blocks both configs" "fidelity_config_changed,probes_config_changed" "$MG_G16"
 mg_pr g17 mg_sym_base; rm "$MG_P/.a1"; mv "$MG_P/cfg" "$MG_P/.a1"; mg_commit "back to a real dir"; mg_check
 expect_has "G17 symlink on the base side only: blocks" "$(mg_reasons)" "probes_config_changed"
+
+mg_nonascii_base() { mkdir -p "$1/.a1"; printf 'x\n' > "$1/.a1/live-probe"$'\xc5\xbf'".yaml"; }
+# --- SEC-8 / SEC-9 (review round 2) -------------------------------------------------------------------------------------------
+# Unicode names are committed by plumbing so the cases do not depend on the filesystem. Rule: ANY non-ASCII name directly under a
+# .a1 variant, or a non-ASCII top-level name that folds (NFKC + lower-case) to .a1, blocks both guarded entries (change=name_variant).
+mg_plumb() { # <path> -> adds a blob at <path> to the index and commits (working tree untouched)
+  local bl; bl="$(printf 'x\n' | mg_git "$MG_P" hash-object -w --stdin)"
+  mg_git "$MG_P" update-index --add --cacheinfo "100644,$bl,$1"; mg_git "$MG_P" commit -q -m "plumb"
+}
+mg_pr g18 :; mg_plumb ".a1/live-probe"$'\xc5\xbf'".yaml"; mg_check
+expect_has "G18 .a1/live-probe(U+017F).yaml blocks the probes entry" "$(mg_reasons)" "probes_config_changed"
+expect_has "G18 ... and the fidelity entry" "$(mg_reasons)" "fidelity_config_changed"
+expect "G18 change=name_variant" "name_variant" "$(mg_js "j.reasons.find(r=>r.reason==='probes_config_changed').change")"
+mg_pr g19 :; mg_plumb ".a"$'\xef\xbc\x91'"/live-probes.yaml"; mg_check
+expect_has "G19 top-level .a(fullwidth 1) folds to .a1 under NFKC: blocks" "$(mg_reasons)" "probes_config_changed"
+mg_pr g20 :; mg_plumb ".a1/fidelit"$'\xc4\xb1'"-x.json"; mg_check
+expect_has "G20 any non-ASCII name directly under .a1 blocks (dotless i)" "$(mg_reasons)" "fidelity_config_changed"
+mg_pr g21 :; mg_plumb ".a1/phases/caf"$'\xc3\xa9'"/x.md"; mg_check
+expect_lacks "G21 control: a non-ASCII name deeper than .a1's direct children does not block the configs" "$(mg_reasons)" "_config_changed"
+# the same name present on the base side only blocks too
+mg_pr g22 mg_nonascii_base; mg_check
+expect_has "G22 name variant on the base side only: blocks" "$(mg_reasons)" "probes_config_changed"

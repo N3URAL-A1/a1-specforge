@@ -328,14 +328,40 @@ function deepFreeze(o) {
 // ---------- file access ----------
 
 const FILE_NAME = path.basename(FILE_REL);
+const DIR_NAME = path.dirname(FILE_REL);
+const NON_ASCII_RE = /[^\u0000-\u007f]/;
+
+/** Entries of `dir` that could be a differently spelled name of `exact`: any non-ASCII name or an ASCII case variant (what a folding filesystem can alias). */
+function aliasCandidates(names, exact) {
+  return names.filter((n) => n !== exact && (NON_ASCII_RE.test(n) || n.toLowerCase() === exact));
+}
+const sameNode = (a, b) => a.ino === b.ino && a.dev === b.dev;
 
 /**
- * SEC-1/SEC-2: the file must be read from a real `.a1` directory under the project, by its exact name. A symlinked `.a1`
- * (or one whose real path leaves the project) and a case variant of the file name (which a case-insensitive filesystem
- * would silently resolve) are refused; the merge guard compares exact git paths, so the loader must never read anything else.
+ * `exact` must be listed byte-for-byte in `dir`, and no other entry may be the same file or directory (same ino+dev). A filesystem
+ * that folds case or Unicode (APFS: U+017F -> s) would otherwise open `live-probeſ.yaml` when asked for `live-probes.yaml`, and the
+ * merge guard, which compares git paths, would never have seen that name. Never open a name that is not byte-exact.
+ */
+function assertByteExact(dir, exact, st) {
+  let names;
+  try { names = fs.readdirSync(dir); } catch (_e) { return fail('unreadable', FILE_REL); }
+  if (!names.includes(exact)) fail('config_name_variant', FILE_REL);
+  for (const n of aliasCandidates(names, exact)) {
+    let other;
+    try { other = fs.lstatSync(path.join(dir, n)); } catch (_e) { continue; }
+    if (sameNode(st, other)) fail('config_name_variant', FILE_REL);
+  }
+  return names;
+}
+
+/**
+ * SEC-1/SEC-2/SEC-8/SEC-9: the file must be read from a real `.a1` directory under the project (not a symlink, not a submodule),
+ * by its exact name. Refused: a symlinked `.a1` or one whose real path leaves the project (`a1_dir_symlink`), a submodule checkout
+ * (`a1_dir_submodule`), a case variant of the file name (`config_case_variant`), and any name variant the filesystem aliases onto
+ * the guarded name (`config_name_variant`).
  */
 function assertPlainConfigDir(projectDir) {
-  const dir = path.join(projectDir, path.dirname(FILE_REL));
+  const dir = path.join(projectDir, DIR_NAME);
   let st;
   try { st = fs.lstatSync(dir); } catch (e) {
     if (e && e.code === 'ENOENT') return;
@@ -343,12 +369,17 @@ function assertPlainConfigDir(projectDir) {
   }
   if (st.isSymbolicLink()) fail('a1_dir_symlink', FILE_REL);
   if (!st.isDirectory()) fail('not_a_regular_file', FILE_REL);
+  assertByteExact(projectDir, DIR_NAME, st);
   let real; let realProject;
   try { real = fs.realpathSync.native(dir); realProject = fs.realpathSync.native(projectDir); } catch (_e) { return fail('unreadable', FILE_REL); }
-  if (real !== path.join(realProject, path.dirname(FILE_REL))) fail('a1_dir_symlink', FILE_REL);
+  if (real !== path.join(realProject, DIR_NAME)) fail('a1_dir_symlink', FILE_REL);
   let names;
   try { names = fs.readdirSync(dir); } catch (_e) { return fail('unreadable', FILE_REL); }
   if (names.some((n) => n !== FILE_NAME && n.toLowerCase() === FILE_NAME)) fail('config_case_variant', FILE_REL);
+  let fst = null;
+  try { fst = fs.lstatSync(path.join(dir, FILE_NAME)); } catch (e) { if (!e || e.code !== 'ENOENT') fail('unreadable', FILE_REL); }
+  if (fst === null) return;
+  assertByteExact(dir, FILE_NAME, fst);
 }
 
 function readProbeFile(file) {

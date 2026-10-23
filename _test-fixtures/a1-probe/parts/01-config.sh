@@ -951,4 +951,27 @@ mk_many "$WORK/m-51" 51 tcp; probe run --project "$WORK/m-51"; reject "M2 51 pro
 mk_many "$WORK/m-50p" 50 pair; probe run --project "$WORK/m-50p"; accept "M3 50 pairs count as 50 (a pair is one probe)"
 mk_many "$WORK/m-51p" 51 pair; probe run --project "$WORK/m-51p"; reject "M4 51 pairs" "too_many_probes"
 
+# --- SEC-8 / SEC-9 (review round 2): a name the filesystem folds onto the guarded one, and a submodule .a1 ---------------------
+# A hard link with a different (non-ASCII) name shares ino+dev with the opened file: refused on every filesystem.
+rm -rf "$WORK/n-link"; mkdir -p "$WORK/n-link/.a1"
+printf '%s\n' "$VALID_PROBES" > "$WORK/n-link/.a1/live-probes.yaml"
+ln "$WORK/n-link/.a1/live-probes.yaml" "$WORK/n-link/.a1/l"$'\xc3\xaf'"ve-probes.yaml"
+probe run --project "$WORK/n-link"; reject "N1 another entry in .a1 shares ino+dev with the file" "config_name_variant"
+# A name the filesystem folds (U+017F LATIN SMALL LETTER LONG S -> s on APFS) must not be opened as live-probes.yaml.
+rm -rf "$WORK/n-fold"; mkdir -p "$WORK/n-fold/.a1"
+printf '%s\n' "$VALID_PROBES" > "$WORK/n-fold/.a1/live-probe"$'\xc5\xbf'".yaml"
+if [[ -e "$WORK/n-fold/.a1/live-probes.yaml" ]]; then
+  probe run --project "$WORK/n-fold"; reject "N2 live-probe(U+017F).yaml opened as live-probes.yaml by a folding FS" "config_name_variant"
+else
+  echo "SKIP  N2 this filesystem does not fold U+017F onto s (N1 covers the ino+dev rule everywhere)"
+fi
+# Same for the directory: a project whose real directory is spelled .A1 (a folding FS resolves .a1 to it).
+rm -rf "$WORK/n-dir"; mkdir -p "$WORK/n-dir/.A1"
+printf '%s\n' "$VALID_PROBES" > "$WORK/n-dir/.A1/live-probes.yaml"
+if [[ -d "$WORK/n-dir/.a1" ]]; then
+  probe run --project "$WORK/n-dir"; reject "N3 directory spelled .A1 opened as .a1 by a folding FS" "config_name_variant"
+else
+  echo "SKIP  N3 this filesystem is case-sensitive (no .a1 alias of .A1 to refuse)"
+fi
+
 expect "Z1 the server counted zero requests over the whole part" "0" "$(srv_total)"
