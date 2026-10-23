@@ -31,6 +31,7 @@ const HOST_NAME_RE = /^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$/;
 const ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const JSON_PATH_RE = /^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*$/;
 const SECRET_KEY_RE = /authorization|token|secret|password|key|cookie/i;
+const UNSAFE_NAMES = ['__proto__', 'constructor', 'prototype'];
 const MAX_VALUE = 1024;
 const MAX_LINE_BYTES = 4096;
 const HTTP_KEYS = ['kind', 'url', 'method', 'headers', 'query', 'expect', 'timeout_ms'];
@@ -192,11 +193,11 @@ function validateKv(m, where, nameRe) {
   needMap(m, where);
   const names = Object.keys(m);
   if (names.length > 32) fail('too_many_entries', where);
-  const out = {};
+  const out = Object.create(null); // a plain {} would turn a `__proto__` key into a prototype swap
   for (const k of names) {
     const w = `${where}.${k}`;
     const v = m[k];
-    if (!nameRe.test(k)) fail('bad_name', w);
+    if (!nameRe.test(k) || UNSAFE_NAMES.includes(k)) fail('bad_name', w);
     if (v instanceof EnvRef) { out[k] = { env: v.name }; continue; }
     if (SECRET_KEY_RE.test(k)) fail('literal_value_refused', w);
     if (!['string', 'number', 'boolean'].includes(typeof v)) fail('bad_value', w);

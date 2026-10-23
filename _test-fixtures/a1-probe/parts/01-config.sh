@@ -787,4 +787,41 @@ probes: []
 YML
 probe run --project "$D"; accept "R4 trailing spaces are still trimmed"
 
+# --- SEC-4: header/query names cannot be __proto__ / constructor / prototype --------------------------------------------
+for nm in __proto__ constructor prototype; do
+  put "q-$nm" <<YML
+version: 1
+hosts:
+  - name: $H
+    class: staging
+    allow_http: true
+probes:
+  - id: a
+    kind: http
+    url: http://$H:$P/ok
+    query:
+      $nm: x
+    expect:
+      status: 200
+YML
+  probe run --project "$D"; reject "Q1 query name $nm" "probes[0].query.$nm"
+done
+put q-hdr <<YML
+version: 1
+hosts:
+  - name: $H
+    class: staging
+    allow_http: true
+probes:
+  - id: a
+    kind: http
+    url: http://$H:$P/ok
+    headers:
+      constructor: x
+    expect:
+      status: 200
+YML
+probe run --project "$D"; reject "Q2 header name constructor" "probes[0].headers.constructor"
+expect_has "Q2 code is bad_name" "$ERR" "bad_name"
+
 expect "Z1 the server counted zero requests over the whole part" "0" "$(srv_total)"
