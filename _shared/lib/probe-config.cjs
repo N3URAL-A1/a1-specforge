@@ -252,10 +252,12 @@ function validateHttp(p, where, hosts) {
   const headers = p.headers === undefined ? {} : validateKv(p.headers, `${where}.headers`, HEADER_NAME_RE);
   // SEC-7a: a secret taken from the environment must not travel in clear text, not even to an allow_http host.
   if (url.startsWith('http:')) for (const [k, v] of Object.entries(headers)) if (v.env !== undefined) fail('env_header_over_http', `${where}.headers.${k}`);
+  const query = p.query === undefined ? {} : validateKv(p.query, `${where}.query`, QUERY_NAME_RE);
+  if (url.startsWith('http:')) for (const [k, v] of Object.entries(query)) if (v.env !== undefined) fail('env_query_over_http', `${where}.query.${k}`);
   return {
     kind: 'http', url, host: host.name, host_class: host.class, method,
     headers,
-    query: p.query === undefined ? {} : validateKv(p.query, `${where}.query`, QUERY_NAME_RE),
+    query,
     expect: validateHttpExpect(need(p, 'expect', where), `${where}.expect`),
     timeout_ms: timeoutOf(p, where),
   };

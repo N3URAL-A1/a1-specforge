@@ -864,6 +864,47 @@ probes:
         status: 403
 YML
 probe run --project "$D"; reject "E2 env header inside a pair half over http:" "env_header_over_http"
+put e-query <<YML
+version: 1
+hosts:
+  - name: $H
+    class: staging
+    allow_http: true
+probes:
+  - id: a
+    kind: http
+    url: http://$H:$P/ok
+    query:
+      v: {env: PROBE_VALUE}
+    expect:
+      status: 200
+YML
+probe run --project "$D"; reject "E5 env query value on an http: probe" "probes[0].query.v"
+expect_has "E5 code env_query_over_http" "$ERR" "env_query_over_http"
+put e-query-pair <<YML
+version: 1
+hosts:
+  - name: $H
+    class: staging
+    allow_http: true
+probes:
+  - id: a
+    kind: pair
+    allow:
+      kind: http
+      url: http://$H:$P/ok
+      expect:
+        status: 200
+    deny:
+      kind: http
+      url: http://$H:$P/deny
+      query:
+        v: {env: PROBE_VALUE}
+      expect:
+        status: 403
+YML
+probe run --project "$D"; reject "E6 env query value inside a pair half over http:" "env_query_over_http"
+
 put e-https <<YML
 version: 1
 hosts:

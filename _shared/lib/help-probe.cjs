@@ -9,7 +9,7 @@ const PROBE_HELP = `  a1-tools probe run --project <dir> [--phase <scope>] [--wa
                   class production|preview|staging (mandatory). Kinds: http (url, method, headers, query,
                   expect.status/body_contains/json/header), tcp (host, port, expect open|closed), pair (one
                   allow + one deny half; the deny half must expect a refusal: 401/403/404/3xx or tcp closed).
-                  Secrets only as {env: NAME}; a literal under authorization|token|secret|password|key|cookie
+                  Secrets only as {env: NAME}, and never on an http: URL (env_header_over_http / env_query_over_http, exit 2); a literal under authorization|token|secret|password|key|cookie
                   exits 2. GET/HEAD/OPTIONS everywhere; POST/PUT/DELETE only on preview/staging hosts; any
                   other method exits 2. A URL or tcp host must be listed in hosts; loopback, link-local,
                   private and metadata addresses are refused (checked on the connected IP); redirects are
