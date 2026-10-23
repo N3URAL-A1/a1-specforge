@@ -466,3 +466,25 @@ git -C "$WORK" symbolic-ref -d refs/remotes/origin/HEAD; git -C "$WORK" update-r
 expect "X5 the refused runs sent nothing; only X4 reached the server (2 counted: http + tcp)" "$((XB + 2))" "$(srv_total)"
 commit_all
 
+# --- SEC-14: a probe file deleted only in the working tree must not turn into no_probes ---
+put y-del < "$WORK/rv.yml"
+commit_all
+rm "$D/.a1/live-probes.yaml"
+PROBE_NOCOMMIT=1 LB probe run --project "$D"
+expect "Y1 tracked file deleted on disk: exit 2" "2" "$RC"
+expect_has "Y1 names probes_file_uncommitted" "$ERR" "probes_file_uncommitted"
+expect_lacks "Y1 is not no_probes" "$OUT" "no_probes"
+git -C "$WORK" checkout -q -- y-del/.a1/live-probes.yaml
+# HEAD no longer has it, the reviewed ref still does: still not no_probes
+GCI rm -q -f y-del/.a1/live-probes.yaml; GCI commit -q -m "local delete"; mkdir -p "$D/.a1"
+PROBE_NOCOMMIT=1 LB probe run --project "$D"
+expect "Y2 deleted in a local commit, still on the reviewed ref: exit 2" "2" "$RC"
+expect_has "Y2 names probes_file_uncommitted" "$ERR" "probes_file_uncommitted"
+commit_all
+LB probe run --project "$D"
+expect "Y3 absent in HEAD, in the reviewed ref and on disk: no_probes, exit 0" "0" "$RC"
+expect_has "Y3 reports no_probes" "$OUT" "no_probes"
+mk_workdir NOGIT2 nogit2
+LB probe run --project "$NOGIT2"
+expect "Y4 not a git work tree and no file: no_probes, exit 0" "0" "$RC"
+expect_has "Y4 reports no_probes" "$OUT" "no_probes"

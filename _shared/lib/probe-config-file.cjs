@@ -155,6 +155,15 @@ function reviewedBlob(git) {
   return head;
 }
 
+/** SEC-14: no file on disk is `no_probes` only when HEAD and the reviewed ref hold none either (a deleted tracked file is refused). */
+function assertAbsentEverywhere(projectDir) {
+  const git = gitRunner(projectDir, {});
+  if (git(['rev-parse', '--is-inside-work-tree']) !== 'true') return;
+  if (git(['rev-parse', '--verify', '-q', `HEAD:./${REL_GIT}`]) !== null) fail('probes_file_uncommitted', FILE_REL);
+  const ref = reviewedRef(git);
+  if (ref && git(['rev-parse', '--verify', '-q', `${ref}:./${REL_GIT}`]) !== null) fail('probes_file_uncommitted', FILE_REL);
+}
+
 const objectHash = (oid, buf) => require('crypto').createHash(oid.length === 64 ? 'sha256' : 'sha1').update(`blob ${buf.length}\0`).update(buf).digest('hex');
 
 /**
@@ -182,7 +191,7 @@ function readBlob(projectDir, oid) {
 function readProbeFile(file, projectDir) {
   let st;
   try { st = fs.lstatSync(file); } catch (e) {
-    if (e && e.code === 'ENOENT') return null;
+    if (e && e.code === 'ENOENT') { assertAbsentEverywhere(projectDir); return null; }
     return fail('unreadable', FILE_REL);
   }
   if (!st.isFile()) fail('not_a_regular_file', FILE_REL);
