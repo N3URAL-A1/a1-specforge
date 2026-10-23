@@ -148,10 +148,11 @@ probes:
       status: 200
 YML
   put offline < "$WORK/off.yml"
+  SRV_BEFORE="$(srv_total)"
   probe run --project "$D"
   expect "L4 offline public name exits 1" "1" "$RC"
   if grep -qE 'public http fail (unreachable|dns_error)' <<<"$OUT"; then ok "L4 offline reason is unreachable/dns_error"; else bad "L4 offline reason (got: ${OUT:0:200})"; fi
-  expect "L4 offline run sent nothing to the loopback server" "0" "$(srv_total)"
+  expect "L4 offline run sent nothing to the loopback server" "$SRV_BEFORE" "$(srv_total)"
 else
   echo "SKIP offline (network present)"; ok "L4 offline case skipped and counted (network present)"
 fi
