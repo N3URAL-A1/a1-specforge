@@ -166,6 +166,8 @@ HP="$(node "$TOOLS" --help 2>&1 | sed -n '/a1-tools probe run/,/Not available to
 for tok in --phase env_header_over_http env_query_over_http too_many_probes config_name_variant config_case_variant a1_dir_symlink a1_dir_submodule probes_file_uncommitted probes_no_reviewed_ref probes_file_unreviewed body_mismatch json_mismatch header_mismatch unexpected_open unexpected_closed bad_request timeout_budget A1_PROBE_ALLOW_LOOPBACK; do
   expect_has "H4 help documents $tok" "$HP" "$tok"
 done
+expect_has "H6b help states the git-only child processes" "$HP" "the only child processes are fixed-argv git reads of the probe file"
+expect_lacks "H6b the false no-spawn claim is gone" "$HP" "no process spawn"
 expect_has "H6 help names the one-clock run budget" "$HP" "5 min plus the --wait window"
 expect_lacks "H6 the old per-run wording is gone" "$HP" "5 min per run"
 expect_has "H7 merge-check help documents the unchanged special .a1 state" "$(node "$TOOLS" --help 2>&1)" "even when it is unchanged between base and head"

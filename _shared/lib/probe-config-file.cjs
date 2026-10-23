@@ -2,7 +2,7 @@
 
 // probe-config-file — file access of `.a1/live-probes.yaml` (spec 020-live-probes, SEC-1/2/8/9 and the shared error type).
 // Split out of probe-config.cjs: everything that touches the filesystem lives here, the grammar and policy stay there.
-// No network, no module-global state, no process spawning of its own: the one git check (SEC-11) goes through git-safe.cjs. The file is read by its exact, byte-for-byte name from a real
+// No network, no module-global state, no shell; the only child processes are the fixed-argv git reads of the probe file (SEC-11), run through git-safe.cjs. The file is read by its exact, byte-for-byte name from a real
 // `.a1` directory; every refusal is a ProbeConfigError (callers exit 2).
 
 const fs = require('fs');

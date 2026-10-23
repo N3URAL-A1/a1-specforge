@@ -4,7 +4,7 @@
 const PROBE_HELP = `  a1-tools probe run --project <dir> [--phase <scope>] [--wait <seconds>] [--json]
                   Spec 020-live-probes. Reads <dir>/.a1/live-probes.yaml and measures the real effect from
                   outside: one result line per probe (id, kind, pass|fail|not_measured, reason code) and a
-                  summary "pass=N fail=N not_measured=N". Deterministic, no LLM, no shell, no process spawn.
+                  summary "pass=N fail=N not_measured=N". Deterministic, no LLM, no shell; the only child processes are fixed-argv git reads of the probe file.
                   File: a closed YAML subset (version: 1, hosts, probes). hosts: [{name, class, allow_http?}],
                   class production|preview|staging (mandatory). Kinds: http (url, method, headers, query,
                   expect.status/body_contains/json/header), tcp (host, port, expect open|closed), pair (one

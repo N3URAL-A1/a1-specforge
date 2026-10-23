@@ -418,3 +418,14 @@ PROBE_NOCOMMIT=1 LB probe run --project "$WORK/v-same"
 expect "V6 smudge filter configured: loaded text is the blob" "0" "$RC"
 expect_lacks "V6 no smudged id" "$OUT" "evil"
 rm -f "$WORK/.git/info/attributes"; git -C "$WORK" config --unset filter.fx.smudge
+
+# --- a blocked allow half stays blocked (exit 2) even when it ends after the run deadline ---
+BL="$(cd "$SHARED/.." && node -e '
+const net = require("./_shared/lib/probe-net.cjs");
+net.runHttp = async () => { await new Promise((r) => setTimeout(r, 150)); return { pass: false, reason: "blocked_host", blocked: true, duration_ms: 150 }; };
+const { execute } = require("./_shared/lib/probe.cjs");
+const leaf = { kind: "http", url: "http://127.0.0.1:1/x", host: "127.0.0.1", host_class: "staging", method: "GET", headers: {}, query: {}, expect: { status: [200] }, timeout_ms: 1000 };
+execute({ probes: [{ id: "p", kind: "pair", allow: leaf, deny: leaf }] }, { env: process.env, budgetMs: 100, waitS: 0 })
+  .then((r) => process.stdout.write(JSON.stringify({ reason: r[0].reason, blocked: r[0].blocked === true })));')"
+expect "B2 blocked allow half that outlives the budget: reason blocked_host" "blocked_host" "$(jq1 "$BL" reason)"
+expect "B2 blocked flag set (exit 2 follows)" "true" "$(jq1 "$BL" blocked)"

@@ -6,8 +6,8 @@
 // indented maps and lists of maps, scalars, `[]`, int lists for `status`, and the `{env: NAME}` reference.
 // Refused at parse time: anchors, aliases, tags, merge keys, block scalars, flow maps, `${`, tabs and every
 // control character. Every key level has an allowlist. All policy (kinds, methods by host class, hosts,
-// schemes, secrets, bounds) is decided here, before any network module is loaded. No network, no process
-// spawning of its own (the committed-file check runs through git-safe), no module-global state: loadProbeConfig() returns a deeply frozen, normalized value.
+// schemes, secrets, bounds) is decided here, before any network module is loaded. No network, no shell, no module-global state (the only child processes
+// are the fixed-argv git reads of the probe file, in probe-config-file.cjs): loadProbeConfig() returns a deeply frozen, normalized value.
 //
 // Errors name a code and the dotted key path (`probes[0].headers.Authorization`), never a value.
 

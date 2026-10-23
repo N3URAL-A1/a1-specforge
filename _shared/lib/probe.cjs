@@ -8,7 +8,8 @@
 // Flow: parse + static policy -> address preflight (any blocked host: exit 2, nothing sent) -> probes run
 // sequentially in file order -> optional --wait re-runs of failed read-only probes -> one report sink.
 // The network module is loaded lazily and only after a successful parse, so a hostile file never reaches
-// network code. Result lines carry codes and numbers only (id, kind, verdict, reason, status, attempts, ms).
+// network code. No shell anywhere; the only child processes are the fixed-argv git reads of the probe file (probe-config-file.cjs).
+// Result lines carry codes and numbers only (id, kind, verdict, reason, status, attempts, ms).
 
 const fs = require('fs');
 const path = require('path');
@@ -86,6 +87,7 @@ const capped = (leaf, deadline) => ({ ...leaf, timeout_ms: Math.max(1, Math.min(
 /** Pair: allow half first, then deny half (both always run so the report can name the failing half) unless the run budget is spent. */
 async function runPair(probe, ctx, deadline) {
   const allow = await runLeaf(capped(probe.allow, deadline), ctx);
+  if (allow.blocked) return { allow_status: allow.status, pass: false, reason: 'blocked_host', blocked: true, duration_ms: allow.duration_ms }; // exit 2 wins over a spent budget
   if (Date.now() >= deadline) return { allow_status: allow.status, pass: false, reason: 'timeout_budget', duration_ms: allow.duration_ms };
   const deny = await runLeaf(capped(probe.deny, deadline), ctx);
   const base = { allow_status: allow.status, deny_status: deny.status, duration_ms: allow.duration_ms + deny.duration_ms };
