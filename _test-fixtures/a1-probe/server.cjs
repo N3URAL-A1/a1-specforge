@@ -15,6 +15,7 @@
 //   /slow        trickles one byte per 200 ms        (slow-loris)
 //   /big         5 MiB body
 //   /echo-secret 200, echoes the request Authorization header in the body
+//   /marker      500, body BODYMARK-7f3a91 and header x-marker (leak proof: must never reach an output)
 //   /__count     {"total":N,"routes":{path:n}}       (not counted itself)
 // The TCP listener accepts and ends every connection; its connections are counted as "tcp".
 
@@ -51,6 +52,7 @@ function route(req, res) {
     res.writeHead(200, { 'content-type': 'application/octet-stream' });
     res.end(Buffer.alloc(5 * 1024 * 1024, 0x61));
   } else if (p === '/echo-secret') send(200, JSON.stringify({ echo: req.headers.authorization || '' }));
+  else if (p === '/marker') send(500, '{"leak":"BODYMARK-7f3a91"}', { 'x-marker': 'HDRMARK-7f3a91' });
   else send(404, '{"error":"not_found"}');
 }
 

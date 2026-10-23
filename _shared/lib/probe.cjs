@@ -19,11 +19,25 @@ const RETRY_INTERVAL_MS = 5000;
 const READ_ONLY = ['GET', 'HEAD', 'OPTIONS'];
 const USAGE = 'usage: a1-tools probe run --project <dir> [--wait <seconds>] [--json]';
 
-/** One-line message on stderr, exit 2. Text goes through the shared redactor first. */
-function die(msg) {
+/** Drop a message that holds an actual secret value, then run it through the shared redactor. */
+function scrubMessage(msg, secrets) {
   const { redact } = require(path.join(__dirname, 'intent-redact.cjs'));
-  process.stderr.write(`probe: ${redact(String(msg)).replace(/\s+/g, ' ').slice(0, 500)}\n`);
+  const t = String(msg);
+  const hit = (secrets || []).some((s) => s && t.includes(s));
+  return redact(hit ? '[redacted: holds a secret value]' : t).replace(/\s+/g, ' ').slice(0, 500);
+}
+
+/** One-line message on stderr, exit 2. `secrets`: resolved credential values the message must not hold. */
+function die(msg, secrets) {
+  process.stderr.write(`probe: ${scrubMessage(msg, secrets)}\n`);
   process.exit(2);
+}
+
+/** Every resolved `{env: NAME}` value of the config (the values this run could leak). */
+function configSecrets(config, env) {
+  const { secretValues } = require(path.join(__dirname, 'probe-net.cjs'));
+  const leaves = (config.probes || []).flatMap((p) => (p.kind === 'pair' ? [p.allow, p.deny] : [p]));
+  return leaves.flatMap((l) => secretValues(l, env));
 }
 
 function parseArgs(args) {
@@ -188,10 +202,11 @@ function loadConfig(project) {
   }
 }
 
-async function mainRun(opts) {
+async function mainRun(opts, held) {
   const project = resolveProject(opts.project);
   const config = loadConfig(project);
   if (config.absent || config.probes.length === 0) return reportNoProbes(config, opts.json);
+  held.push(...configSecrets(config, process.env));
   const pf = await require(path.join(__dirname, 'probe-net.cjs')).preflight(config.hosts, process.env);
   if (!pf.ok) return die(`blocked_host: ${pf.host}`);
   const results = await execute(config, { env: process.env, waitS: opts.wait });
@@ -202,7 +217,8 @@ async function mainRun(opts) {
 
 function cmdProbeRun(args) {
   const opts = parseArgs(args);
-  mainRun(opts).then((code) => { process.exitCode = code; }, (e) => die(`internal error: ${(e && e.message) || e}`));
+  const held = [];
+  mainRun(opts, held).then((code) => { process.exitCode = code; }, (e) => die(`internal error: ${(e && e.message) || e}`, held));
 }
 
 /**
@@ -214,4 +230,4 @@ function cmdProbe(sub, args) {
   cmdProbeRun(args);
 }
 
-module.exports = { cmdProbe, execute, MAX_WAIT_S };
+module.exports = { cmdProbe, execute, scrubMessage, MAX_WAIT_S };

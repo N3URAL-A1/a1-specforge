@@ -161,11 +161,32 @@ async function preflight(hosts, env, opts = {}) {
 
 // ---------- shared helpers ----------
 
-/** Raw error text for stderr only, through the shared redactor. */
-function diagnose(err) {
+const MIN_SECRET_LEN = 4;
+
+/** Resolved values of every `{env: NAME}` reference of a probe leaf (headers and query). */
+function secretValues(probe, env) {
+  const out = [];
+  for (const map of [probe && probe.headers, probe && probe.query]) {
+    for (const v of Object.values(map || {})) {
+      const val = v && v.env !== undefined ? env[v.env] : undefined;
+      if (typeof val === 'string' && val.length >= MIN_SECRET_LEN) out.push(val);
+    }
+  }
+  return out;
+}
+
+/** Replace text that holds an actual secret value by a fixed marker (by value, not by pattern). */
+function scrubText(text, secrets) {
+  const t = String(text);
+  return (secrets || []).some((s) => s && t.includes(s)) ? '[redacted: holds a secret value]' : t;
+}
+
+/** Raw error text for stderr only: scrubbed by actual secret values, then through the shared redactor. */
+function diagnose(err, secrets) {
   try {
     const { redact } = require(path.join(__dirname, 'intent-redact.cjs'));
-    process.stderr.write(`probe-net: ${redact(String((err && err.message) || err)).replace(/\s+/g, ' ').slice(0, 300)}\n`);
+    const raw = scrubText(String((err && err.message) || err), secrets);
+    process.stderr.write(`probe-net: ${redact(raw).replace(/\s+/g, ' ').slice(0, 300)}\n`);
   } catch (_e) { /* diagnostics are best effort */ }
 }
 
@@ -273,6 +294,7 @@ function runHttp(probe, ctx) {
     if (target.missing) return resolve(result(start, { pass: false, reason: 'env_missing', not_measured: true }));
     if (target.bad) return resolve(result(start, { pass: false, reason: 'bad_request' }));
     const { url } = target;
+    const secrets = secretValues(probe, env);
     if (literalBlocked(url.hostname, env)) return resolve(result(start, { pass: false, reason: 'blocked_host', blocked: true }));
     const mod = url.protocol === 'https:' ? https : http;
     let settled = false;
@@ -295,11 +317,11 @@ function runHttp(probe, ctx) {
         lookup: (ctx && ctx.lookup) || guardedLookup(env), maxHeaderSize: MAX_HEADER, rejectUnauthorized: true,
       });
     } catch (e) {
-      diagnose(e);
+      diagnose(e, secrets);
       return finish({ pass: false, reason: 'bad_request' });
     }
     req.on('error', (e) => {
-      diagnose(e);
+      diagnose(e, secrets);
       if (blocked || (e && e.code === 'BLOCKED_HOST')) return finish({ pass: false, reason: 'blocked_host', blocked: true });
       return finish({ pass: false, reason: mapNetError(e) });
     });
@@ -356,7 +378,7 @@ function runTcp(probe, ctx) {
       return finish('open');
     });
     sock.on('error', (e) => {
-      diagnose(e);
+      diagnose(e, []);
       if (e && e.code === 'BLOCKED_HOST') return finish('blocked');
       if (e && e.code === 'ECONNREFUSED') return finish('closed');
       return finish('error', mapNetError(e));
@@ -364,4 +386,4 @@ function runTcp(probe, ctx) {
   });
 }
 
-module.exports = { preflight, runHttp, runTcp, classifyAddress, allowed, guardedLookup, MAX_BODY };
+module.exports = { preflight, runHttp, runTcp, classifyAddress, allowed, scrubText, secretValues, guardedLookup, MAX_BODY };
