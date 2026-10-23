@@ -123,6 +123,34 @@ function sideOf(project, rev, guard, entries) {
   return { rev, matched: texts, special, variants, key: JSON.stringify(texts.map((t) => [t.path, t.mode, t.text])) };
 }
 
+// Attributes that change what a checkout puts in the working tree (SEC-10): a `.gitattributes`-only change can make the loader read
+// different bytes (or none) from an unchanged blob. `diff`/`merge`/`export-*` do not alter the checked-out bytes and are not read.
+const CONTENT_ATTRS = ['text', 'eol', 'crlf', 'working-tree-encoding', 'filter', 'ident'];
+
+/** Effective content attributes of `paths` at `rev` as a stable string ('' when none set). null when this git cannot tell (no --source). */
+function attrKeyOf(project, rev, paths) {
+  const out = gitText(project, ['check-attr', '-z', `--source=${rev}`, ...CONTENT_ATTRS, '--', ...paths]);
+  if (out === null) return null;
+  const f = out.split('\0');
+  const set = [];
+  for (let i = 0; i + 2 < f.length; i += 3) if (f[i + 2] !== 'unspecified') set.push(`${f[i]}\0${f[i + 1]}=${f[i + 2]}`);
+  return set.sort().join('\n');
+}
+
+/** Fallback when --source is unsupported: the blobs of every .gitattributes that can apply (repo root and .a1/); any edit counts. */
+function attrBlobKeyOf(project, rev) {
+  return ['.gitattributes', `${A1_DIR}/.gitattributes`].map((f) => `${f}\0${gitText(project, ['show', `${rev}:${f}`]) || ''}`).join('\n');
+}
+
+/** Attribute keys of base and head for the guard's paths; both from the same method so the two sides stay comparable. */
+function attrKeys(project, baseSha, guard, baseSide, headSide) {
+  const paths = [...new Set([guard.rel, ...baseSide.matched.map((t) => t.path), ...headSide.matched.map((t) => t.path)])];
+  const b = attrKeyOf(project, baseSha, paths);
+  const h = attrKeyOf(project, 'HEAD', paths);
+  if (b !== null && h !== null) return { base: b, head: h };
+  return { base: attrBlobKeyOf(project, baseSha), head: attrBlobKeyOf(project, 'HEAD') };
+}
+
 /** Fingerprint text of the head side: the plain content when the exact path is the only match (unchanged from before), else path+mode+content of every match. */
 function headFingerprintText(guard, head) {
   const plain = head.matched.length === 1 && head.matched[0].path === guard.rel && head.matched[0].mode !== SYMLINK && !head.special;
@@ -148,8 +176,13 @@ function configChangeCheck(project, baseSha, entriesAtHead, guard, trees) {
   const base = unreadable ? { key: '', matched: [], special: null, variants: [] } : sideOf(project, baseSha, guard, baseEntries);
   const head = unreadable ? { key: '', matched: [], special: null, variants: [] } : sideOf(project, 'HEAD', guard, headEntries);
   const special = head.special || base.special;
-  if (!unreadable && !special && base.key === head.key) return { reasons: [] };
-  const fingerprint = D.fingerprintOf(guard.rule, guard.rel, unreadable ? 'unreadable-tree' : headFingerprintText(guard, head));
+  const attrs = unreadable ? { base: '', head: '' } : attrKeys(project, baseSha, guard, base, head);
+  // An attribute change only matters while the guarded file exists on a side (no file, nothing for the loader to read).
+  const attrsChanged = attrs.base !== attrs.head && (base.matched.length > 0 || head.matched.length > 0);
+  if (!unreadable && !special && !attrsChanged && base.key === head.key) return { reasons: [] };
+  // The attribute set is part of the fingerprint only when attributes changed, so the plain case keeps its golden fingerprint.
+  const attrPart = attrsChanged ? `\nattributes:\n${attrs.head}` : '';
+  const fingerprint = D.fingerprintOf(guard.rule, guard.rel, unreadable ? 'unreadable-tree' : headFingerprintText(guard, head) + attrPart);
   const cleared = entriesAtHead.some((e) => e.kind === CONFIG_KIND && e.fingerprint === fingerprint && e.review === 'upheld' && !D.isSelfReviewed(e));
   if (cleared) return { reasons: [] };
   let change = 'changed';
@@ -157,6 +190,7 @@ function configChangeCheck(project, baseSha, entriesAtHead, guard, trees) {
   else if (special) change = special;
   else if (base.matched.length === 0) change = 'added';
   else if (head.matched.length === 0) change = 'removed';
+  if (change === 'changed' && attrsChanged && base.key === head.key) change = 'attributes';
   const file = !unreadable && !special && head.matched.length > 0 ? head.matched.map((t) => t.path).join(', ') : (!unreadable && !special && base.matched.length > 0 ? base.matched.map((t) => t.path).join(', ') : guard.rel);
   return { reasons: [{ reason: guard.reason, file, change, fingerprint, hint: `disposition add --kind ${CONFIG_KIND} --fingerprint ${fingerprint} --reason <why> --by <you>; a second reviewer runs disposition review ${fingerprint} --verdict upheld --by <reviewer>; commit and push .a1/dispositions.json; run the merge check again` }] };
 }

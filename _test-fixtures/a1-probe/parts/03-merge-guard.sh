@@ -194,3 +194,43 @@ mg_git "$MG_P" update-index --add --cacheinfo "160000,$(mg_git "$MG_P" rev-parse
 expect_has "G23 .a1 became a submodule (160000): probes entry blocks" "$(mg_reasons)" "probes_config_changed"
 expect_has "G23 ... and the fidelity entry" "$(mg_reasons)" "fidelity_config_changed"
 expect "G23 change=submodule" "submodule" "$(mg_js "j.reasons.find(r=>r.reason==='probes_config_changed').change")"
+
+# --- SEC-10: a .gitattributes-only change alters what the loader reads after checkout; blobs alone do not show it --------------
+# Rule: block when the effective content attributes (text, eol, crlf, working-tree-encoding, filter, ident) of a guarded file differ
+# base..head and the file exists on a side. Attributes already identical on both sides do NOT block (only a change does).
+mg_attr() { printf '%s\n' "$2" > "$MG_P/$1"; mg_commit "attrs $1"; mg_check; }
+mg_gattr() { mg_attr .gitattributes "$1"; }
+mg_pr g24 mg_base_both; mg_gattr '.a1/live-probes.yaml text eol=crlf'
+expect "G24 eol=crlf added to live-probes.yaml (blob unchanged): exit 1 probes_config_changed" "1|probes_config_changed" "$MG_RC|$(mg_reasons)"
+expect "G24 change=attributes, file named" "attributes|.a1/live-probes.yaml" "$(mg_js 'j.reasons[0].change+"|"+j.reasons[0].file')"
+MG_FP24="$(mg_js 'j.reasons[0].fingerprint')"
+# (a worktree with this attribute cannot be re-encoded by git add/status, so the commit goes in by plumbing and the guard is called directly)
+mg_pr g25 mg_base_both
+MG_BL="$(printf '.a1/live-probes.yaml working-tree-encoding=UTF-16LE\n' | mg_git "$MG_P" hash-object -w --stdin)"
+mg_git "$MG_P" update-index --add --cacheinfo "100644,$MG_BL,.gitattributes"; mg_git "$MG_P" commit -q -m "add encoding attr"
+MG_G25="$(cd "$MG_P" && node -e 'const G=require(process.argv[1]);const b=require("child_process").execFileSync("git",["rev-parse","main"],{encoding:"utf8"}).trim();const r=G.configChangeChecks(process.cwd(),b,[]).reasons;console.log(r.map(x=>x.reason+":"+x.change).join(","))' "$SHARED/lib/pr-merge-guards.cjs")"
+expect "G25 working-tree-encoding=UTF-16LE added (blob unchanged): probes_config_changed, change=attributes (guard called directly)" "probes_config_changed:attributes" "$MG_G25"
+mg_pr g26 mg_base_both; mg_gattr '*.yaml filter=evil'
+expect "G26 filter=evil added via a glob: exit 1 probes_config_changed (attributes)" "1|probes_config_changed|attributes" "$MG_RC|$(mg_reasons)|$(mg_js 'j.reasons[0].change')"
+mg_pr g26b mg_base_both; mg_attr .a1/.gitattributes 'fidelity.json ident'
+expect "G26b ident on fidelity.json via .a1/.gitattributes: exit 1 fidelity_config_changed (attributes)" "1|fidelity_config_changed|attributes" "$MG_RC|$(mg_reasons)|$(mg_js 'j.reasons[0].change')"
+mg_pr g27 mg_base_both; mg_gattr '*.md diff=word'
+expect "G27 control: an attribute that does not touch the checked-out bytes (diff=) does not block" "0|0" "$MG_RC|$(mg_js 'j.reasons.length')"
+mg_pr g27b :; mg_gattr '.a1/live-probes.yaml text eol=crlf'
+expect "G27b control: attributes changed but no guarded file on either side does not block" "0|0" "$MG_RC|$(mg_js 'j.reasons.length')"
+g28_base() { mg_base_both "$1"; printf '.a1/live-probes.yaml text eol=lf\n' > "$1/.gitattributes"; }
+mg_pr g28 g28_base; mg_attr README unrelated
+expect "G28 attribute already set identically on base and head, file unchanged: no block (only a change blocks)" "0|0" "$MG_RC|$(mg_js 'j.reasons.length')"
+mg_pr g28b g28_base; mg_gattr '.a1/live-probes.yaml text eol=crlf'
+expect "G28b attribute value changed (eol=lf -> eol=crlf): blocks" "1|probes_config_changed|attributes" "$MG_RC|$(mg_reasons)|$(mg_js 'j.reasons[0].change')"
+mg_pr g28c g28_base; mg_git "$MG_P" rm -q .gitattributes; mg_git "$MG_P" commit -q -m "drop attrs"; mg_check
+expect "G28c attribute removed (base had one): blocks" "1|probes_config_changed|attributes" "$MG_RC|$(mg_reasons)|$(mg_js 'j.reasons[0].change')"
+
+# clearing: the fingerprint binds to the attribute set
+mg_dis add --kind config_change --fingerprint "$(mg_js 'j.reasons[0].fingerprint')" --reason "fixture: attrs reviewed" --by fx
+MG_FP29="$(mg_js 'j.reasons[0].fingerprint')"
+mg_dis review "$MG_FP29" --verdict upheld --reason "fixture: ok" --by reviewer; mg_commit "attrs-upheld"; mg_check
+expect "G29 attribute change upheld by a second reviewer: exit 0" "0|0" "$MG_RC|$(mg_js 'j.reasons.length')"
+printf '.a1/live-probes.yaml ident\n' > "$MG_P/.gitattributes"; mg_commit "other attrs"; mg_check
+expect "G29b a different attribute set after the verdict: the old verdict no longer matches, blocks" "1|probes_config_changed|new" "$MG_RC|$(mg_reasons)|$([[ "$(mg_js 'j.reasons[0].fingerprint')" != "$MG_FP29" ]] && echo new || echo same)"
+expect "G29c the fingerprint differs from the eol=crlf case (attribute set is in it)" "new" "$([[ "$MG_FP24" != "$(mg_js 'j.reasons[0].fingerprint')" ]] && echo new || echo same)"
