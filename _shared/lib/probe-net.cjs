@@ -36,6 +36,9 @@ function classifyV4(b) {
   if (a === 192 && c === 0 && b[2] === 0) return BLOCKED;
   if (a === 192 && c === 168) return BLOCKED;
   if (a === 198 && (c === 18 || c === 19)) return BLOCKED;
+  if (a === 192 && c === 0 && b[2] === 2) return BLOCKED; // 192.0.2.0/24 TEST-NET-1
+  if (a === 198 && c === 51 && b[2] === 100) return BLOCKED; // 198.51.100.0/24 TEST-NET-2
+  if (a === 203 && c === 0 && b[2] === 113) return BLOCKED; // 203.0.113.0/24 TEST-NET-3
   return OK;
 }
 
@@ -70,6 +73,9 @@ function parseV6(text) {
 
 const zero = (b, from, to) => b.slice(from, to).every((x) => x === 0);
 
+/** A v4 address embedded in a v6 one: usable only when it is a public unicast address (loopback in there is still blocked). */
+const embedded = (v4) => (classifyV4(v4) === OK ? OK : BLOCKED);
+
 function classifyV6(b) {
   if (zero(b, 0, 16)) return BLOCKED;
   if (zero(b, 0, 15) && b[15] === 1) return LOOPBACK;
@@ -79,9 +85,16 @@ function classifyV6(b) {
     const r = classifyV4(b.slice(12));
     return r === OK ? OK : BLOCKED;
   }
+  if (zero(b, 0, 8) && b[8] === 0xff && b[9] === 0xff && b[10] === 0 && b[11] === 0) return embedded(b.slice(12)); // ::ffff:0:0/96 (SIIT)
+  if (b[0] === 0 && b[1] === 0x64 && b[2] === 0xff && b[3] === 0x9b && b[4] === 0 && b[5] === 1) { // 64:ff9b:1::/48 (local-use NAT64)
+    return embedded(b.slice(12)) === OK && embedded([b[6], b[7], b[9], b[10]]) === OK ? OK : BLOCKED; // last 32 bits and the RFC 6052 /48 layout
+  }
+  if (b[0] === 0x20 && b[1] === 0x01 && b[2] === 0 && b[3] === 0) return BLOCKED; // 2001::/32 Teredo
+  if (b[0] === 1 && b[1] === 0 && zero(b, 2, 8)) return BLOCKED; // 100::/64 discard-only
   if (b[0] === 0x20 && b[1] === 0x02) { const r = classifyV4(b.slice(2, 6)); if (r !== OK) return BLOCKED; } // 6to4
   if ((b[0] & 0xfe) === 0xfc) return BLOCKED; // fc00::/7 (covers fd00:ec2::254)
   if (b[0] === 0xfe && (b[1] & 0xc0) === 0x80) return BLOCKED; // fe80::/10
+  if (b[0] === 0xfe && (b[1] & 0xc0) === 0xc0) return BLOCKED; // fec0::/10 (deprecated site-local)
   if (b[0] === 0xff) return BLOCKED; // ff00::/8
   return OK;
 }
