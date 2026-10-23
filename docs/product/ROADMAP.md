@@ -226,7 +226,7 @@ features:
     milestone: continuous
     title: "Live probes: measure the real effect after merge or deploy"
     status: in-flight
-    stage: complete
+    stage: verify
     depends_on: []
     started: 2026-10-23
     finished: null
@@ -425,6 +425,8 @@ None.
 - **2026-10-23** — 018-pipeline-metrics -> done — stage transition via `product stage`
 - **2026-10-23** — 020-live-probes -> started — stage transition via `product stage`
 - **2026-10-23** — 020-live-probes -> complete — stage transition via `product stage`
+- **2026-10-23** — 020-live-probes -> review — stage transition via `product stage`
+- **2026-10-23** — 020-live-probes -> verify — stage transition via `product stage`
 
 ## Appendix — migrated details
 
