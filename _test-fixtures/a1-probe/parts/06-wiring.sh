@@ -46,6 +46,8 @@ probes:
     expect:
       status: 500
 YML
+gp_commit() { git -C "$GP" add -A -f >/dev/null 2>&1; git -C "$GP" -c commit.gpgsign=false -c core.hooksPath=/dev/null commit -q --allow-empty -m fx >/dev/null 2>&1; }
+gp_commit
 GLOG="$GP/.a1/phases/020-live-probes/gate-log.jsonl"
 SRV_B="$(srv_total)"
 A1_PROBE_ALLOW_LOOPBACK=1 node "$TOOLS" probe run --project "$GP" --phase 020-live-probes >"$WORK/g.out" 2>"$WORK/g.err"; GRC=$?
@@ -78,7 +80,7 @@ probes:
     expect:
       status: 200
 YML
-A1_FX_SECRET6="$SEC6" A1_PROBE_ALLOW_LOOPBACK=1 node "$TOOLS" probe run --project "$GP" --phase 020-live-probes >"$WORK/g2.out" 2>"$WORK/g2.err"; GRC2=$?
+gp_commit; A1_FX_SECRET6="$SEC6" A1_PROBE_ALLOW_LOOPBACK=1 node "$TOOLS" probe run --project "$GP" --phase 020-live-probes >"$WORK/g2.out" 2>"$WORK/g2.err"; GRC2=$?
 expect "G3b failing run exits 1" "1" "$GRC2"
 expect "G3b gate log now has two lines" "2" "$(wc -l < "$GLOG" | tr -d ' ')"
 expect_count "G3b the second line carries exit 1" "1" "$(cat "$GLOG")" '"exit":1'
@@ -89,22 +91,25 @@ expect "G4 secret absent from the gate log (count 0)" "0" "$(grep -cF -- "$SEC6"
 expect "G4 body marker absent from the gate log (count 0)" "0" "$(grep -cF -- "BODYMARK-7f3a91" "$GLOG")"
 expect "G4 secret absent from the run output (count 0)" "0" "$(grep -cF -- "$SEC6" <<<"$GFILES")"
 # without --phase the line goes to the _unscoped scope; the named scope keeps its two lines
-A1_PROBE_ALLOW_LOOPBACK=1 node "$TOOLS" probe run --project "$GP" >/dev/null 2>&1
+gp_commit; A1_PROBE_ALLOW_LOOPBACK=1 node "$TOOLS" probe run --project "$GP" >/dev/null 2>&1
 expect "G5 a run without --phase writes nothing under phases/020-live-probes" "2" "$(wc -l < "$GLOG" | tr -d ' ')"
 # hostile scope: refused before anything runs
 probe run --project "$GP" --phase ../x
 expect "G5b traversal scope exits 2" "2" "$RC"
 
 # --- FR-017: call sites ------------------------------------------------------------------------------------
-expect "D1 06-verify.md has one fenced probe run call with --phase <spec-id>" "1" "$(cnt '^ *node <repo>/_shared/a1-tools\.cjs probe run --project <dir> --phase <spec-id>; RC=\$\?' "$NF")"
+expect "D1 06-verify.md has one fenced probe run call with --phase <spec-id>" "1" "$(cnt '^ *node <repo>/_shared/a1-tools\.cjs probe run --project <dir> --phase <spec-id> --wait 120; RC=\$\?' "$NF")"
 expect "D1 06-verify.md stops on a non-zero exit (STOP line for probe run)" "1" "$(cnt 'STOP: probe run exit=' "$NF")"
 expect "D1 06-verify.md has the Live probes section for VERIFICATION.md" "1" "$(cnt '^## Live probes|`## Live probes`' "$NF")"
 expect "D1 06-verify.md names the no_probes wording" "1" "$(cnt 'not verified live \(no_probes\)' "$NF")"
+expect "D1b 06-verify.md says a probe-file change goes through a new PR (probes_config_changed)" "1" "$(cnt 'A probe-file change goes through a new PR' "$NF")"
+expect "D1b 06-verify.md names the deploy condition" "1" "$(cnt 'the deploy of the merged `main` is$' "$NF")"
+expect "D1b 06-verify.md drops the old wording" "0" "$(cnt 'fix the cause or the probe file' "$NF")"
 LC="$(grep -n 'probe run --project' "$NF" | head -1 | cut -d: -f1)"; M3="$(grep -n '^3\. \*\*Merge\*\*' "$NF" | head -1 | cut -d: -f1)"
 M4="$(grep -n '^4\. \*\*Origin cleanup\*\*' "$NF" | head -1 | cut -d: -f1)"
 if [[ -n "$LC" && -n "$M3" && -n "$M4" && "$LC" -gt "$M3" && "$LC" -lt "$M4" ]]; then ok "D1 the probe block sits right after Lifecycle step 3 (before step 4)"; else bad "D1 probe block position (call=$LC step3=$M3 step4=$M4)"; fi
 expect "D2 05-merge.md has the 5.5 heading" "1" "$(cnt '^## 5\.5 Live probes' "$MG")"
-expect "D2 05-merge.md calls probe run with --phase pr-<n>" "1" "$(cnt '^node <repo>/_shared/a1-tools\.cjs probe run --project <dir> --phase pr-<n>; RC=\$\?' "$MG")"
+expect "D2 05-merge.md calls probe run with --phase pr-<n>" "1" "$(cnt '^node <repo>/_shared/a1-tools\.cjs probe run --project <dir> --phase pr-<n> --wait 120; RC=\$\?' "$MG")"
 expect "D2 05-merge.md 5.3 lists probes_config_changed as a blocking finding" "1" "$(cnt '^- `probes_config_changed`' "$MG")"
 expect "D2 05-merge.md 5.3 says four findings" "1" "$(cnt '^Four findings block' "$MG")"
 S53="$(grep -n '^## 5\.3 ' "$MG" | cut -d: -f1)"; S54="$(grep -n '^## 5\.4 ' "$MG" | cut -d: -f1)"; S55="$(grep -n '^## 5\.5 ' "$MG" | cut -d: -f1)"
@@ -129,14 +134,14 @@ probes:
 YML
 put ichild < "$WORK/ic.yml"
 SRV_C="$(srv_total)"
-IC_OUT="$(A1_INTENT_CHILD=1 A1_PROBE_ALLOW_LOOPBACK=1 node "$TOOLS" probe run --project "$D" 2>/dev/null)"; ICRC=$?
+commit_all; IC_OUT="$(A1_INTENT_CHILD=1 A1_PROBE_ALLOW_LOOPBACK=1 node "$TOOLS" probe run --project "$D" 2>/dev/null)"; ICRC=$?
 expect "I1 child run exits 77" "77" "$ICRC"
 expect_has "I1 stdout names intent_child_refused" "$IC_OUT" "intent_child_refused"
 expect "I1 the loopback server counted 0 requests" "0" "$(( $(srv_total) - SRV_C ))"
-IC2="$(A1_INTENT_CHILD=1 A1_INTENT_ID=fx-intent A1_PROBE_ALLOW_LOOPBACK=1 node "$TOOLS" probe run --project "$D" --json 2>/dev/null)"; IC2RC=$?
+commit_all; IC2="$(A1_INTENT_CHILD=1 A1_INTENT_ID=fx-intent A1_PROBE_ALLOW_LOOPBACK=1 node "$TOOLS" probe run --project "$D" --json 2>/dev/null)"; IC2RC=$?
 expect "I2 child run with an intent id exits 77 as well" "77" "$IC2RC"
 expect "I2 still 0 requests" "0" "$(( $(srv_total) - SRV_C ))"
-expect "I3 control: the same call outside child mode exits 0 and does reach the server" "0" "$(A1_PROBE_ALLOW_LOOPBACK=1 node "$TOOLS" probe run --project "$D" >/dev/null 2>&1; echo $?)"
+commit_all; expect "I3 control: the same call outside child mode exits 0 and does reach the server" "0" "$(A1_PROBE_ALLOW_LOOPBACK=1 node "$TOOLS" probe run --project "$D" >/dev/null 2>&1; echo $?)"
 expect "I3 control reached the server once (count)" "1" "$(( $(srv_total) - SRV_C ))"
 SBX="$REPO_ROOT/_shared/lib/intent-sandbox.cjs"
 expect "I4 intent-sandbox records probe run as a deliberate exclusion with a reason" "1" "$(cnt "'probe run': NETWORK" "$SBX")"
@@ -156,7 +161,7 @@ USAGE="$(node "$TOOLS" zzz-group 2>&1)"
 expect_has "H3 unknown-group usage lists probe" "$USAGE" '"probe"'
 expect_has "H3 usage text names probe run" "$USAGE" "probe run"
 HP="$(node "$TOOLS" --help 2>&1 | sed -n '/a1-tools probe run/,/Not available to intent children/p')"
-for tok in --phase env_header_over_http env_query_over_http too_many_probes config_name_variant config_case_variant a1_dir_symlink a1_dir_submodule body_mismatch json_mismatch header_mismatch unexpected_open unexpected_closed bad_request timeout_budget A1_PROBE_ALLOW_LOOPBACK; do
+for tok in --phase env_header_over_http env_query_over_http too_many_probes config_name_variant config_case_variant a1_dir_symlink a1_dir_submodule probes_file_uncommitted body_mismatch json_mismatch header_mismatch unexpected_open unexpected_closed bad_request timeout_budget A1_PROBE_ALLOW_LOOPBACK; do
   expect_has "H4 help documents $tok" "$HP" "$tok"
 done
 SIZE="$(wc -l < "$SHARED/lib/help-probe.cjs" | tr -d ' ')"

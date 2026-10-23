@@ -244,11 +244,14 @@ Completion Gate), each after its own confirmation:
    ```bash
    node <repo>/_shared/a1-tools.cjs code-scope stage --by <spec-id> --set merge
    ```
-   **Live probes (spec 020, gate `live-probes`)** — directly after the merge is confirmed, before step 4. Measures the
-   merged effect from outside with the probes in `.a1/live-probes.yaml` (owner-side only; an intent child is refused with
-   exit 77). Exit 1 or 2 stops the run: the feature is not verified live; fix the cause or the probe file, do not advance to step 4.
+   **Live probes (spec 020, gate `live-probes`)** — after the merge is confirmed and the deploy of the merged `main` is
+   live, before step 4. Measures the merged effect from outside with the probes in `.a1/live-probes.yaml` (owner-side only;
+   an intent child is refused with exit 77). `<dir>` is a checkout of the merged `main`: `probe run` refuses an uncommitted or
+   modified probe file (exit 2, `probes_file_uncommitted`). Exit 1 or 2 stops the run: the feature is not verified live; fix
+   the cause, do not advance to step 4. A probe-file change goes through a new PR (merge-check blocks it as
+   `probes_config_changed`), never through an edit of the working tree.
    ```bash
-   node <repo>/_shared/a1-tools.cjs probe run --project <dir> --phase <spec-id>; RC=$?
+   node <repo>/_shared/a1-tools.cjs probe run --project <dir> --phase <spec-id> --wait 120; RC=$?
    if [ "$RC" -ne 0 ]; then echo "STOP: probe run exit=$RC (1 = a probe failed or was not measured, 2 = usage error or hostile file), not verified live"; exit "$RC"; fi
    ```
    Append the result lines (one per probe plus the `pass=N fail=N not_measured=N` summary) under a new `## Live probes`

@@ -73,7 +73,7 @@ LEAK_D="$D"
 
 leak_run() { # leak_run <label> [extra args] — env carries the secret; sets RC OUT ERR
   local o="$WORK/l.out.$$" e="$WORK/l.err.$$"
-  env -u A1_FX_UNSET_VAR A1_FX_SECRET="$SECRET" A1_PROBE_ALLOW_LOOPBACK=1 node "$TOOLS" probe run --project "$LEAK_D" "${@:2}" > "$o" 2> "$e"; RC=$?
+  commit_all; env -u A1_FX_UNSET_VAR A1_FX_SECRET="$SECRET" A1_PROBE_ALLOW_LOOPBACK=1 node "$TOOLS" probe run --project "$LEAK_D" "${@:2}" > "$o" 2> "$e"; RC=$?
   OUT="$(cat "$o")"; ERR="$(cat "$e")"
 }
 nocount() { # nocount <name> <haystack> <needle> — count of lines holding the needle is 0

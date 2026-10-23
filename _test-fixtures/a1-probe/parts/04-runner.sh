@@ -98,7 +98,7 @@ expect_has "R4b names blocked_host" "$ERR" "blocked_host"
       status: 200
 YML
 } > "$WORK/in.yml"; put r-nm < "$WORK/in.yml"
-env -u A1_PROBE_TEST_UNSET_VAR A1_PROBE_ALLOW_LOOPBACK=1 node "$TOOLS" probe run --project "$D" > "$WORK/nm.out" 2> "$WORK/nm.err"; RC=$?
+commit_all; env -u A1_PROBE_TEST_UNSET_VAR A1_PROBE_ALLOW_LOOPBACK=1 node "$TOOLS" probe run --project "$D" > "$WORK/nm.out" 2> "$WORK/nm.err"; RC=$?
 OUT="$(cat "$WORK/nm.out")"
 expect "R5 unset env exits 1" "1" "$RC"
 expect_has "R5 not_measured env_missing" "$OUT" "authed http not_measured env_missing"
@@ -253,3 +253,65 @@ const mk = (id) => ({ id, kind: "http", url: "http://127.0.0.1:" + process.argv[
 execute({ probes: [mk("a"), mk("b"), mk("c")] }, { env: process.env, budgetMs: 1500, waitS: 0 })
   .then((r) => process.stdout.write(JSON.stringify(r.map((x) => x.reason))));' "$HTTP_PORT")"
 expect "B1 two timeouts, then timeout_budget" '["timeout","timeout","timeout_budget"]' "$R"
+
+# --- SEC-11 (review fix): only a committed, unmodified .a1/live-probes.yaml is run; the file a PR can change is never trusted ---
+{ hdr; cat <<YML
+  - id: root
+    kind: http
+    url: http://$H:$HTTP_PORT/ok
+    expect:
+      status: 200
+YML
+} > "$WORK/c.yml"
+put c-clean < "$WORK/c.yml"
+LB probe run --project "$D"
+expect "C1 committed, clean file runs" "0" "$RC"
+expect_has "C1 the probe ran" "$OUT" "root http pass ok"
+CB="$(srv_total)"
+cat >> "$D/.a1/live-probes.yaml" <<YML
+  - id: added
+    kind: http
+    url: http://$H:$HTTP_PORT/ok
+    expect:
+      status: 200
+YML
+PROBE_NOCOMMIT=1 LB probe run --project "$D"
+expect "C2 unstaged added probe: exit 2" "2" "$RC"
+expect_has "C2 names probes_file_uncommitted" "$ERR" "probes_file_uncommitted"
+expect "C2 no request sent" "$CB" "$(srv_total)"
+git -C "$WORK" add "c-clean/.a1/live-probes.yaml"
+PROBE_NOCOMMIT=1 LB probe run --project "$D"
+expect "C3 staged but not committed: exit 2" "2" "$RC"
+expect_has "C3 names probes_file_uncommitted" "$ERR" "probes_file_uncommitted"
+LB probe run --project "$D"
+expect "C4 once committed it runs" "0" "$RC"
+expect_has "C4 both probes ran" "$OUT" "pass=2 fail=0"
+mkdir -p "$WORK/c-untracked/.a1"; cp "$WORK/c.yml" "$WORK/c-untracked/.a1/live-probes.yaml"
+PROBE_NOCOMMIT=1 LB probe run --project "$WORK/c-untracked"
+expect "C5 untracked file: exit 2" "2" "$RC"
+expect_has "C5 names probes_file_uncommitted" "$ERR" "probes_file_uncommitted"
+expect "C5 no request sent" "$((CB + 2))" "$(srv_total)"
+git -C "$WORK" add -f c-untracked/.a1/live-probes.yaml; git -C "$WORK" -c commit.gpgsign=false commit -q -m c5 >/dev/null 2>&1
+git -C "$WORK" update-index --assume-unchanged c-untracked/.a1/live-probes.yaml
+printf '# edited\n' >> "$WORK/c-untracked/.a1/live-probes.yaml"
+PROBE_NOCOMMIT=1 LB probe run --project "$WORK/c-untracked"
+expect "C6 assume-unchanged hides an edit from git status: still exit 2" "2" "$RC"
+expect_has "C6 names probes_file_uncommitted" "$ERR" "probes_file_uncommitted"
+git -C "$WORK" update-index --no-assume-unchanged c-untracked/.a1/live-probes.yaml
+git -C "$WORK" update-index --skip-worktree c-untracked/.a1/live-probes.yaml
+PROBE_NOCOMMIT=1 LB probe run --project "$WORK/c-untracked"
+expect "C7 skip-worktree: exit 2" "2" "$RC"
+git -C "$WORK" update-index --no-skip-worktree c-untracked/.a1/live-probes.yaml
+# not a git work tree at all
+mk_workdir NOGIT nogit
+mkdir -p "$NOGIT/.a1"; cp "$WORK/c.yml" "$NOGIT/.a1/live-probes.yaml"
+LB probe run --project "$NOGIT"
+expect "C8 project outside any git work tree: exit 2" "2" "$RC"
+expect_has "C8 names probes_file_uncommitted" "$ERR" "probes_file_uncommitted"
+# GIT_DIR pointing at the repo that does track a file of that name must not vouch for another tree
+GIT_DIR="$WORK/.git" LB probe run --project "$NOGIT"
+expect "C9 an inherited GIT_DIR does not turn an untracked tree into a committed one" "2" "$RC"
+# a hostile file is still refused for its own reason first
+LB probe run --project "$WORK/h-link"
+expect "C10 structural refusals keep their codes" "2" "$RC"
+expect_has "C10 symlinked file code" "$ERR" "not_a_regular_file"

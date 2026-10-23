@@ -79,9 +79,10 @@ expect "D8 pr merge-check with a failing gh binary exits 2" "2" \
 
 # D9 probe run (spec 020): the same control pair - a valid probe file is not 2, a directory in its place is 2
 printf 'version: 1\nhosts: []\nprobes: []\n' > .a1/live-probes.yaml
+git add .a1/live-probes.yaml && git -c user.name=fx -c user.email=fx@example.invalid -c commit.gpgsign=false -c core.hooksPath=/dev/null commit -q -m probes   # SEC-11: probe run reads only a committed file
 r="$(rc probe run --project "$WORK/repo")"
 [[ "$r" != "2" ]] && ok "D9 control: probe run with a readable empty .a1/live-probes.yaml is not 2 (got $r)" || bad "D9 control exited 2"
-rm .a1/live-probes.yaml; mkdir .a1/live-probes.yaml
+git rm -q -f .a1/live-probes.yaml; mkdir .a1/live-probes.yaml
 expect "D9b probe run with a directory as .a1/live-probes.yaml exits 2" "2" "$(rc probe run --project "$WORK/repo")"
 rmdir .a1/live-probes.yaml
 expect "D9c probe run without --project exits 2" "2" "$(rc probe run)"

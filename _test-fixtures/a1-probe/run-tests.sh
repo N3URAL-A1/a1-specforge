@@ -21,6 +21,14 @@ export GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0
 
 mk_workdir WORK probe
 : "${WORK:?}"
+# SEC-11: `probe run` reads only a committed, unmodified .a1/live-probes.yaml. The suite's WORK is one git work tree and
+# probe() commits everything before each call (PROBE_NOCOMMIT=1 skips that, for the cases that need an unreviewed file).
+export GIT_AUTHOR_NAME=fx GIT_AUTHOR_EMAIL=fx@example.invalid GIT_COMMITTER_NAME=fx GIT_COMMITTER_EMAIL=fx@example.invalid
+git init -q "$WORK" || { echo "FAIL  harness: git init"; exit 2; }
+commit_all() {
+  git -C "$WORK" add -A -f >/dev/null 2>&1
+  git -C "$WORK" -c commit.gpgsign=false -c core.hooksPath=/dev/null commit -q --allow-empty -m fx >/dev/null 2>&1
+}
 
 pass=0; fail=0
 ok()  { echo "PASS  $1"; pass=$((pass + 1)); }
@@ -72,6 +80,7 @@ put() {
 # probe <args...> — sets RC, OUT (stdout), ERR (stderr). Fixed env: no allow-loopback unless the caller sets it.
 probe() {
   local o="$WORK/o.$$" e="$WORK/e.$$"
+  [[ "${PROBE_NOCOMMIT:-}" == "1" ]] || commit_all
   node "$TOOLS" probe "$@" > "$o" 2> "$e"; RC=$?
   OUT="$(cat "$o")"; ERR="$(cat "$e")"
 }

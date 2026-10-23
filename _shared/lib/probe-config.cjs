@@ -7,7 +7,7 @@
 // Refused at parse time: anchors, aliases, tags, merge keys, block scalars, flow maps, `${`, tabs and every
 // control character. Every key level has an allowlist. All policy (kinds, methods by host class, hosts,
 // schemes, secrets, bounds) is decided here, before any network module is loaded. No network, no process
-// spawning, no module-global state: loadProbeConfig() returns a deeply frozen, normalized value.
+// spawning of its own (the committed-file check runs through git-safe), no module-global state: loadProbeConfig() returns a deeply frozen, normalized value.
 //
 // Errors name a code and the dotted key path (`probes[0].headers.Authorization`), never a value.
 
@@ -323,7 +323,7 @@ function deepFreeze(o) {
 function loadProbeConfig(projectDir) {
   const file = path.join(projectDir, FILE_REL);
   assertPlainConfigDir(projectDir);
-  const text = readProbeFile(file);
+  const text = readProbeFile(file, projectDir);
   if (text === null) return { absent: true, file };
   const bad = CONTROL_RE.exec(text);
   if (bad) fail('control_character', FILE_REL, text.slice(0, bad.index).split('\n').length);

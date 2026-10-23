@@ -2,7 +2,7 @@
 
 // probe-config-file — file access of `.a1/live-probes.yaml` (spec 020-live-probes, SEC-1/2/8/9 and the shared error type).
 // Split out of probe-config.cjs: everything that touches the filesystem lives here, the grammar and policy stay there.
-// No network, no process spawning, no module-global state. The file is read by its exact, byte-for-byte name from a real
+// No network, no module-global state, no process spawning of its own: the one git check (SEC-11) goes through git-safe.cjs. The file is read by its exact, byte-for-byte name from a real
 // `.a1` directory; every refusal is a ProbeConfigError (callers exit 2).
 
 const fs = require('fs');
@@ -77,13 +77,41 @@ function assertPlainConfigDir(projectDir) {
   assertByteExact(dir, FILE_NAME, fst);
 }
 
-function readProbeFile(file) {
+const GIT_ENV_DROP = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_OBJECT_DIRECTORY', 'GIT_NAMESPACE', 'GIT_ALTERNATE_OBJECT_DIRECTORIES'];
+
+/** Environment for the git checks: an inherited GIT_DIR / GIT_WORK_TREE must not point git at another repository. */
+function gitEnv() {
+  const env = { ...process.env };
+  for (const k of GIT_ENV_DROP) delete env[k];
+  return env;
+}
+
+/**
+ * SEC-11: the probe file is read from a work tree whose copy was reviewed. Refused (`probes_file_uncommitted`): the project is not a git
+ * work tree, the file is not tracked (untracked, assume-unchanged, skip-worktree), or it differs from HEAD (staged or unstaged).
+ * Fixed argv through the audited git helper (execFileSync, no shell); the path follows `--`.
+ */
+function assertCommitted(projectDir) {
+  const { gitSafe } = require(path.join(__dirname, 'git-safe.cjs'));
+  const opts = { allowFail: true, env: gitEnv() };
+  const git = (args) => gitSafe(projectDir, ['-c', 'core.fsmonitor=false', ...args], opts);
+  const inside = git(['rev-parse', '--is-inside-work-tree']);
+  if (inside !== 'true') fail('probes_file_uncommitted', FILE_REL);
+  const tracked = git(['ls-files', '-v', '--', FILE_REL.split(path.sep).join('/')]);
+  if (typeof tracked !== 'string' || !tracked.startsWith('H ')) fail('probes_file_uncommitted', FILE_REL);
+  const same = git(['diff', '--quiet', '--no-ext-diff', 'HEAD', '--', FILE_REL.split(path.sep).join('/')]);
+  if (typeof same !== 'string') fail('probes_file_uncommitted', FILE_REL);
+}
+
+/** Text of the probe file, or null when it does not exist. The file must be committed and unmodified (assertCommitted) before it is read. */
+function readProbeFile(file, projectDir) {
   let st;
   try { st = fs.lstatSync(file); } catch (e) {
     if (e && e.code === 'ENOENT') return null;
     return fail('unreadable', FILE_REL);
   }
   if (!st.isFile()) fail('not_a_regular_file', FILE_REL);
+  assertCommitted(projectDir);
   if (st.size > MAX_BYTES) fail('file_too_large', FILE_REL);
   if (st.size === 0) fail('empty_file', FILE_REL);
   let buf;
@@ -91,6 +119,5 @@ function readProbeFile(file) {
   if (buf.length > MAX_BYTES) fail('file_too_large', FILE_REL);
   try { return new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch (_e) { return fail('invalid_utf8', FILE_REL); }
 }
-
 
 module.exports = { ProbeConfigError, fail, FILE_REL, MAX_BYTES, assertPlainConfigDir, readProbeFile };

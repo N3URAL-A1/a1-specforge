@@ -89,7 +89,7 @@ Exit 1 or 2: report the merged PR as not verified live and name the failing prob
 is reported as "not verified live (no_probes)", never as "verified live". Owner-side only: an intent child is refused with exit 77.
 
 ```bash
-node <repo>/_shared/a1-tools.cjs probe run --project <dir> --phase pr-<n>; RC=$?
+node <repo>/_shared/a1-tools.cjs probe run --project <dir> --phase pr-<n> --wait 120; RC=$?
 if [ "$RC" -ne 0 ]; then echo "STOP: probe run exit=$RC (1 = a probe failed or was not measured, 2 = usage error or hostile file), not verified live"; exit "$RC"; fi
 ```
 
