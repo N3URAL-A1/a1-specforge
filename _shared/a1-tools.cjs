@@ -44,9 +44,22 @@
  *   a1-tools fix init-postmortem <bug-slug> <project-slug> [flags]
  *       Flags: --date --severity --root-cause-class --terminal-status --one-line-learning
  *              --fix-wave-count --diagnosis-rounds --phase-friction --quak-regression
- *              --fix-required-test-first
+ *              --fix-required-test-first --found-by --should-have-caught
  *       → JSON { path, project, bug_slug, date, filename }
  *         Creates project/<project>/postmortems/<date>-<bug-slug>.md with YAML frontmatter.
+ *         --found-by / --should-have-caught (spec 018) default to "unknown" and are validated
+ *         before any file is written (charset, closed set, registered gate ID, reviewer:<agent>).
+ *
+ *   a1-tools fix validate-postmortem <file> [<file>...]
+ *       → one line per file: "<file>: legacy|valid|invalid <reason>" (plain text)
+ *         legacy = neither found_by nor should_have_caught. Exit 0 legacy/valid, 1 invalid, 2 unreadable.
+ *
+ *   a1-tools metrics escaped --project <slug> [--last <N>] [--json] [--group-by should-have-caught]
+ *                            [--fail-above <n>]
+ *       Escaped-BLOCKER count over the last N runs (spec 018). Report: exit 0 unless --fail-above.
+ *
+ *   a1-tools metrics cost [--project <slug>] [--last <N>] [--json]
+ *       Token total per phase VERIFICATION.md and fixed fix report, with unreported runs (spec 018).
  *
  *   a1-tools fix count-postmortems-since --since <ISO-timestamp>
  *       → JSON { count, since, files: [...] }
@@ -243,6 +256,7 @@ const {
   cmdFixFindDuplicates,
   cmdFixIntegrityCheck,
   cmdFixInitPostmortem,
+  cmdFixValidatePostmortem,
   cmdFixCountPostmortemsSince,
   cmdFixUpdatePromoteState,
   cmdFixWriteSuggestion,
@@ -401,6 +415,10 @@ function main() {
       else if (sub === 'find-duplicates') result = cmdFixFindDuplicates(rest);
       else if (sub === 'integrity-check') result = cmdFixIntegrityCheck(rest);
       else if (sub === 'init-postmortem') result = cmdFixInitPostmortem(rest);
+      else if (sub === 'validate-postmortem') {
+        cmdFixValidatePostmortem(rest); // spec 018: owns its exit code and plain-text stdout
+        return;
+      }
       else if (sub === 'count-postmortems-since') result = cmdFixCountPostmortemsSince(rest);
       else if (sub === 'update-promote-state') result = cmdFixUpdatePromoteState(rest);
       else if (sub === 'write-suggestion') result = cmdFixWriteSuggestion(rest);
@@ -705,13 +723,18 @@ function main() {
       // implemented yet) via process.exitCode. Lazy require.
       require(path.join(__dirname, 'lib', 'intent-cli.cjs')).run(sub, rest);
       return;
+    } else if (group === 'metrics') {
+      // Spec 018-pipeline-metrics, Wave 1: lib/metrics.cjs routes escaped / cost and
+      // owns every exit code (0 / 1 / 2). Lazy require.
+      require(path.join(__dirname, 'lib', 'metrics.cjs')).cmdMetrics(sub, rest);
+      return;
     } else if (group === 'git') {
       // Spec 011 Wave 6 (FR-048): git for the intent child only, through a
       // fixed grammar and hardened options; exit 2 outside child mode.
       require(path.join(__dirname, 'lib', 'intent-git.cjs')).cmdGit(sub, rest);
       return;
     } else {
-      usage(`unknown command group: ${group} (expected "spec", "fix", "analyze", "check", "checklist", "constitution", "worktree", "pr", "phantom", "reconcile", "modernize", "schema-check", "cost", "pack", "product", "quick", "learnings", "retro", "workflow", "gates", "verify", "test-fidelity", "disposition", "intent", "git", or "realpath-check"). fix supports: next-suffix, update-status, list, find-duplicates, integrity-check, init-postmortem, count-postmortems-since, update-promote-state, write-suggestion`);
+      usage(`unknown command group: ${group} (expected "spec", "fix", "analyze", "check", "checklist", "constitution", "worktree", "pr", "phantom", "reconcile", "modernize", "schema-check", "cost", "pack", "product", "quick", "learnings", "retro", "workflow", "gates", "verify", "test-fidelity", "disposition", "intent", "metrics", "git", or "realpath-check"). fix supports: next-suffix, update-status, list, find-duplicates, integrity-check, init-postmortem, validate-postmortem, count-postmortems-since, update-promote-state, write-suggestion. Spec 018 adds: fix validate-postmortem, metrics escaped, metrics cost`);
     }
   } catch (e) {
     // Input-validation errors (e.g. path-traversal guard) are user errors,

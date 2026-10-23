@@ -104,7 +104,18 @@ valid `class_query` (Phase 2 fills it). The report stays at `fixing`; do not tel
 3. Use the Edit tool to fill the `## Verification (Phase 04 — filled by skill)`
    section in the bug report with the verification details.
 
-4. Tell the user:
+4. Append the cost line to the fix report body (same format as Victor's step; the line is never omitted).
+   `<fix-start>` is the ISO time the fix began (the report's `fixing` entry in `phase_history`):
+
+```bash
+node <repo>/_shared/a1-tools.cjs cost run --project <claude-projects-dir> --since <fix-start>; RC=$?
+if [ "$RC" -ne 0 ]; then echo "cost run exit=$RC; write 'Cost: unavailable (<reason>)' instead"; fi
+```
+
+   On exit 0 append `Cost: N tokens (in X, out Y, cache Z)` to the fix report body; on a non-zero exit
+   append `Cost: unavailable (<reason>)`. The cost report of spec 018 reads this line back.
+
+5. Tell the user:
 
 > "Fix verified. Status: fixed. Bug report:
 > `project/<slug>/fixes/<file>`. Audit trail complete in `phase_history`."
@@ -165,6 +176,8 @@ node <repo>/_shared/a1-tools.cjs fix init-postmortem \
   --date "$(date +%F)" \
   --severity "<blocker|major|minor|nit>" \
   --root-cause-class "<tag>" \
+  --found-by "<user|post-merge-ci|production|unknown|<gate-id>|reviewer:<agent>>" \
+  --should-have-caught "<none|unknown|<gate-id>|reviewer:<agent>>" \
   --terminal-status "<fixed|wont-fix|cant-reproduce|duplicate>" \
   --one-line-learning "<what would have prevented the bug>" \
   --fix-wave-count "<N>" \
@@ -182,6 +195,12 @@ Then open the returned file path and fill in:
 - **What Went Well** — diagnosis speed, tooling quality
 - **What Didn't Go Well** — friction points
 - **Suggested Lesson** — one concrete, actionable rule for prevention
+
+`--found-by` says who or what found the bug. A bug found after merge by the user is `found_by: user`.
+`--should-have-caught` names the gate ID (from `_shared/gates-registry.md`) or `reviewer:<agent>` that
+should have caught it, or `none` when no gate could. `unknown` is allowed only with a stated reason in the
+postmortem's Contributing Factors. A bad value exits 1 and writes no file; `fix validate-postmortem <file>`
+re-checks an existing postmortem.
 
 Root cause tags: `missing_wiring` | `schema_flaw` | `regression` | `race_condition` |
 `env_config` | `third_party_change` | `ui_state_bug` | `auth_tenant` | `spec_omission` |
