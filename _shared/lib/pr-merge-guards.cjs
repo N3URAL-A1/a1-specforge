@@ -9,6 +9,7 @@
 // ---------------------------------------------------------------------------
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const D = require('./disposition-store.cjs');
@@ -127,28 +128,35 @@ function sideOf(project, rev, guard, entries) {
 // different bytes (or none) from an unchanged blob. `diff`/`merge`/`export-*` do not alter the checked-out bytes and are not read.
 const CONTENT_ATTRS = ['text', 'eol', 'crlf', 'working-tree-encoding', 'filter', 'ident'];
 
-/** Effective content attributes of `paths` at `rev` as a stable string ('' when none set). null when this git cannot tell (no --source). */
+/**
+ * Effective content attributes of `paths` at `rev` as a stable string ('' when none set), identical on every git version: the tree is read
+ * into a temporary index and `check-attr --cached` resolves the attributes from it (`--source` only exists since git 2.40). The worktree and
+ * the real index are never consulted. null when git fails (the caller blocks: unreadable is not unchanged).
+ */
 function attrKeyOf(project, rev, paths) {
-  const out = gitText(project, ['check-attr', '-z', `--source=${rev}`, ...CONTENT_ATTRS, '--', ...paths]);
-  if (out === null) return null;
-  const f = out.split('\0');
-  const set = [];
-  for (let i = 0; i + 2 < f.length; i += 3) if (f[i + 2] !== 'unspecified') set.push(`${f[i]}\0${f[i + 1]}=${f[i + 2]}`);
-  return set.sort().join('\n');
+  let dir = null;
+  try {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'a1-attr-'));
+    const idx = path.join(dir, 'index');
+    execFileSync('git', ['-C', project, 'read-tree', `--index-output=${idx}`, rev], { stdio: ['ignore', 'ignore', 'ignore'], maxBuffer: GIT_MAX_BUFFER, shell: false });
+    const out = execFileSync('git', ['-C', project, 'check-attr', '-z', '--cached', ...CONTENT_ATTRS, '--', ...paths],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: GIT_MAX_BUFFER, shell: false, env: { ...process.env, GIT_INDEX_FILE: idx } });
+    const f = out.split('\0');
+    const set = [];
+    for (let i = 0; i + 2 < f.length; i += 3) if (f[i + 2] !== 'unspecified') set.push(`${f[i]}\0${f[i + 1]}=${f[i + 2]}`);
+    return set.sort().join('\n');
+  } catch (_e) { return null; } finally {
+    if (dir) { try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_r) { /* tmp cleanup only */ } }
+  }
 }
 
-/** Fallback when --source is unsupported: the blobs of every .gitattributes that can apply (repo root and .a1/); any edit counts. */
-function attrBlobKeyOf(project, rev) {
-  return ['.gitattributes', `${A1_DIR}/.gitattributes`].map((f) => `${f}\0${gitText(project, ['show', `${rev}:${f}`]) || ''}`).join('\n');
-}
-
-/** Attribute keys of base and head for the guard's paths; both from the same method so the two sides stay comparable. */
+/** Attribute keys of base and head for the guard's paths. An unreadable side yields a distinct marker, so it counts as changed. */
 function attrKeys(project, baseSha, guard, baseSide, headSide) {
   const paths = [...new Set([guard.rel, ...baseSide.matched.map((t) => t.path), ...headSide.matched.map((t) => t.path)])];
   const b = attrKeyOf(project, baseSha, paths);
   const h = attrKeyOf(project, 'HEAD', paths);
-  if (b !== null && h !== null) return { base: b, head: h };
-  return { base: attrBlobKeyOf(project, baseSha), head: attrBlobKeyOf(project, 'HEAD') };
+  if (b === null || h === null) return { base: b === null ? 'unreadable' : b, head: h === null ? 'unreadable-head' : h };
+  return { base: b, head: h };
 }
 
 /** Fingerprint text of the head side: the plain content when the exact path is the only match (unchanged from before), else path+mode+content of every match. */

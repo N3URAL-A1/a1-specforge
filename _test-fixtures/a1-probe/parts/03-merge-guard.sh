@@ -234,3 +234,16 @@ expect "G29 attribute change upheld by a second reviewer: exit 0" "0|0" "$MG_RC|
 printf '.a1/live-probes.yaml ident\n' > "$MG_P/.gitattributes"; mg_commit "other attrs"; mg_check
 expect "G29b a different attribute set after the verdict: the old verdict no longer matches, blocks" "1|probes_config_changed|new" "$MG_RC|$(mg_reasons)|$([[ "$(mg_js 'j.reasons[0].fingerprint')" != "$MG_FP29" ]] && echo new || echo same)"
 expect "G29c the fingerprint differs from the eol=crlf case (attribute set is in it)" "new" "$([[ "$MG_FP24" != "$(mg_js 'j.reasons[0].fingerprint')" ]] && echo new || echo same)"
+
+# Attributes are resolved from a temporary index per side (works on git < 2.40, which has no check-attr --source): the worktree and the
+# real index play no part, and the temporary index is removed again.
+mg_pr g30 mg_base_both; printf '.a1/live-probes.yaml text eol=crlf\n' > "$MG_P/.gitattributes"   # uncommitted: worktree only
+MG_T30="$WORK/mg-tmp30"; rm -rf "$MG_T30"; mkdir -p "$MG_T30"
+MG_G30="$(cd "$MG_P" && TMPDIR="$MG_T30" node -e 'const G=require(process.argv[1]);const b=require("child_process").execFileSync("git",["rev-parse","main"],{encoding:"utf8"}).trim();console.log(G.configChangeChecks(process.cwd(),b,[]).reasons.length)' "$SHARED/lib/pr-merge-guards.cjs")"
+expect "G30 an uncommitted worktree .gitattributes is not read: no block (count 0)" "0" "$MG_G30"
+expect "G30 no temporary index left behind" "0" "$(find "$MG_T30" -mindepth 1 | wc -l | tr -d ' ')"
+expect "G30 the real index is untouched (status shows only the untracked .gitattributes)" "?? .gitattributes" "$(mg_git "$MG_P" status --porcelain)"
+mg_commit "attrs committed"
+MG_G30B="$(cd "$MG_P" && TMPDIR="$MG_T30" node -e 'const G=require(process.argv[1]);const b=require("child_process").execFileSync("git",["rev-parse","main"],{encoding:"utf8"}).trim();console.log(G.configChangeChecks(process.cwd(),b,[]).reasons.map(r=>r.change).join(","))' "$SHARED/lib/pr-merge-guards.cjs")"
+expect "G30b the same attribute committed: blocks via the temporary index" "attributes" "$MG_G30B"
+expect "G30b no temporary index left behind" "0" "$(find "$MG_T30" -mindepth 1 | wc -l | tr -d ' ')"
