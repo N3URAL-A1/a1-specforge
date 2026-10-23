@@ -84,10 +84,11 @@ reject() {
   expect_lacks "$1 was rejected, not stubbed" "$ERR" "not implemented"
   expect "$1 sent no request" "0" "$(srv_total)"
 }
-# accept <name> — the file parsed and policy passed: only the Wave 1 stub stops the run (exit 2).
+# accept <name> — the file parsed and policy passed: the run stops at the address guard (exit 2,
+# blocked_host) because these calls do not set A1_PROBE_ALLOW_LOOPBACK, so no request is ever sent.
 accept() {
-  expect "$1 parses (stub exit 2)" "2" "$RC"
-  expect_has "$1 reaches the stub" "$ERR" "not implemented"
+  expect "$1 parses (address guard exit 2)" "2" "$RC"
+  expect_has "$1 reaches the address guard" "$ERR" "blocked_host"
   expect "$1 sent no request" "0" "$(srv_total)"
 }
 

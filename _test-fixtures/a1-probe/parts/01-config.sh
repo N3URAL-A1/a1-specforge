@@ -396,12 +396,12 @@ mk_env_case() { # <case> <env-ref-text>
   put "$1" <<YML
 version: 1
 hosts:
-  - name: staging.example.test
+  - name: localhost
     class: staging
 probes:
   - id: a
     kind: http
-    url: https://staging.example.test/ok
+    url: https://localhost/ok
     headers:
       Authorization: $2
     expect:
@@ -723,7 +723,7 @@ probe run --project "$D" --wait -1; expect "L5 --wait -1 exits 2" "2" "$RC"
 probe run --project "$D" --bogus; expect "L6 unknown flag exits 2" "2" "$RC"
 expect_lacks "L6b not the stub" "$ERR" "not implemented"
 mkdir -p "$WORK/l-absent"
-probe run --project "$WORK/l-absent"; accept "L7 absent file reaches the stub (no_probes arrives in wave 4)"
+probe run --project "$WORK/l-absent"; expect "L7 absent file is no_probes (exit 0)" "0" "$RC"
 help="$(node "$TOOLS" --help 2>&1)"
 expect_has "L8 help lists 'a1-tools probe run'" "$help" "a1-tools probe run"
 expect_has "L8b help names A1_PROBE_ALLOW_LOOPBACK" "$help" "A1_PROBE_ALLOW_LOOPBACK"
@@ -778,13 +778,13 @@ node -e 'process.stdout.write("version: 1\nhosts: []\nprobes: []\n#"+"a".repeat(
 probe run --project "$WORK/r-long2"; reject "R2 a comment line over the 4096-byte cap" "bad_line"
 rm -rf "$WORK/r-ok"; mkdir -p "$WORK/r-ok/.a1"
 node -e 'process.stdout.write("version: 1\nhosts: []\nprobes: []\n#"+"a".repeat(4094)+"\n")' > "$WORK/r-ok/.a1/live-probes.yaml"
-probe run --project "$WORK/r-ok"; accept "R3 a line of exactly 4096 bytes is accepted"
+probe run --project "$WORK/r-ok"; expect "R3 a line of exactly 4096 bytes is accepted (no probes: exit 0)" "0" "$RC"
 put r-trail <<YML
 version: 1   
 hosts: []   
 probes: []   
 YML
-probe run --project "$D"; accept "R4 trailing spaces are still trimmed"
+probe run --project "$D"; expect "R4 trailing spaces are still trimmed (no probes: exit 0)" "0" "$RC"
 
 # --- SEC-4: header/query names cannot be __proto__ / constructor / prototype --------------------------------------------
 for nm in __proto__ constructor prototype; do
@@ -908,12 +908,12 @@ probe run --project "$D"; reject "E6 env query value inside a pair half over htt
 put e-https <<YML
 version: 1
 hosts:
-  - name: staging.example.test
+  - name: localhost
     class: staging
 probes:
   - id: a
     kind: http
-    url: https://staging.example.test/ok
+    url: https://localhost/ok
     headers:
       X-Probe-Id: {env: PROBE_VALUE}
     query:
