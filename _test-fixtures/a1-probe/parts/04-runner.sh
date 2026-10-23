@@ -434,3 +434,35 @@ execute({ probes: [{ id: "p", kind: "pair", allow: leaf, deny: leaf }] }, { env:
   .then((r) => process.stdout.write(JSON.stringify({ reason: r[0].reason, blocked: r[0].blocked === true })));')"
 expect "B2 blocked allow half that outlives the budget: reason blocked_host" "blocked_host" "$(jq1 "$BL" reason)"
 expect "B2 blocked flag set (exit 2 follows)" "true" "$(jq1 "$BL" blocked)"
+
+# --- SEC-13: the reviewed ref must be a remote-tracking ref under refs/remotes/origin/, never a symref into local branches ---
+BR_LOCAL="$(git -C "$WORK" symbolic-ref --short HEAD)"
+GCI() { git -C "$WORK" -c commit.gpgsign=false -c core.hooksPath=/dev/null "$@"; }
+put x-sym < "$WORK/rv.yml"
+commit_all
+printf '  - id: local-only\n    kind: tcp\n    host: %s\n    port: %s\n    expect: open\n' "$H" "$TCP_PORT" >> "$D/.a1/live-probes.yaml"
+GCI add -A -f >/dev/null 2>&1; GCI commit -q -m "local-only probe"
+XB="$(srv_total)"
+git -C "$WORK" symbolic-ref refs/remotes/origin/HEAD "refs/heads/$BR_LOCAL"
+PROBE_NOCOMMIT=1 LB probe run --project "$D"
+expect "X1 origin/HEAD symref to a local branch: exit 2" "2" "$RC"
+expect_has "X1 names probes_no_reviewed_ref (no silent fallback to origin/main)" "$ERR" "probes_no_reviewed_ref"
+git -C "$WORK" symbolic-ref -d refs/remotes/origin/HEAD
+git -C "$WORK" update-ref refs/remotes/origin/HEAD HEAD
+PROBE_NOCOMMIT=1 LB probe run --project "$D"
+expect "X2 a non-symbolic origin/HEAD is refused: exit 2" "2" "$RC"
+expect_has "X2 names probes_no_reviewed_ref" "$ERR" "probes_no_reviewed_ref"
+git -C "$WORK" update-ref -d refs/remotes/origin/HEAD
+git -C "$WORK" update-ref -d --no-deref refs/remotes/origin/main
+git -C "$WORK" symbolic-ref refs/remotes/origin/main "refs/heads/$BR_LOCAL"
+PROBE_NOCOMMIT=1 LB probe run --project "$D"
+expect "X3 origin/main symref to a local branch: exit 2" "2" "$RC"
+expect_has "X3 names probes_no_reviewed_ref" "$ERR" "probes_no_reviewed_ref"
+git -C "$WORK" update-ref -d --no-deref refs/remotes/origin/main
+git -C "$WORK" update-ref refs/remotes/origin/trunk HEAD; git -C "$WORK" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/trunk
+PROBE_NOCOMMIT=1 LB probe run --project "$D"
+expect "X4 origin/HEAD symref to another origin/ ref is accepted" "0" "$RC"
+git -C "$WORK" symbolic-ref -d refs/remotes/origin/HEAD; git -C "$WORK" update-ref -d refs/remotes/origin/trunk
+expect "X5 the refused runs sent nothing; only X4 reached the server (2 counted: http + tcp)" "$((XB + 2))" "$(srv_total)"
+commit_all
+

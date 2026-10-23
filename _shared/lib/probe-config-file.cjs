@@ -78,7 +78,7 @@ function assertPlainConfigDir(projectDir) {
 }
 
 const REL_GIT = FILE_REL.split(path.sep).join('/');
-const REVIEWED_REFS = ['refs/remotes/origin/HEAD', 'refs/remotes/origin/main'];
+const ORIGIN_NS = 'refs/remotes/origin/';
 const CAT_MAX_BUFFER = 8 * 1024 * 1024;
 
 /** Environment for the git calls: no inherited repository selection and no injected configuration (filters, fsmonitor, aliases). */
@@ -112,14 +112,44 @@ function assertCommitted(git) {
   if (git(['diff', '--quiet', '--no-ext-diff', 'HEAD', '--', REL_GIT]) === null) fail('probes_file_uncommitted', FILE_REL);
 }
 
+/** Follows symbolic refs from `name`; every hop must stay under refs/remotes/origin/ (SEC-13). Returns the final ref name, or false. */
+function originRef(git, name) {
+  let cur = name;
+  for (let i = 0; i < 5; i += 1) {
+    const target = git(['symbolic-ref', '-q', cur]);
+    if (target === null) return cur;
+    if (!target.startsWith(ORIGIN_NS)) return false;
+    cur = target;
+  }
+  return false;
+}
+
 /**
- * SEC-11 (review binding): blob(HEAD:path) must equal blob(<reviewed ref>:path), where the reviewed ref is origin/HEAD, else origin/main.
- * A local, unpushed commit therefore never counts as reviewed. Returns the blob id.
+ * The reviewed ref: refs/remotes/origin/HEAD (a symref into refs/remotes/origin/), else refs/remotes/origin/main. A symref that leaves
+ * refs/remotes/origin/ (e.g. into a local branch) and a non-symbolic origin/HEAD are refused, never replaced by a fallback. Null = none.
+ */
+function reviewedRef(git) {
+  const exists = (r) => git(['rev-parse', '--verify', '-q', `${r}^{commit}`]) !== null;
+  const head = `${ORIGIN_NS}HEAD`;
+  if (git(['symbolic-ref', '-q', head]) === null) {
+    if (exists(head)) return null;
+  } else {
+    const target = originRef(git, head);
+    if (target === false) return null;
+    if (exists(target)) return target;
+  }
+  const main = originRef(git, `${ORIGIN_NS}main`);
+  return main && exists(main) ? main : null;
+}
+
+/**
+ * SEC-11 (review binding): blob(HEAD:path) must equal blob(<reviewed ref>:path). A local, unpushed commit therefore never counts as
+ * reviewed. Returns the blob id.
  */
 function reviewedBlob(git) {
   const head = git(['rev-parse', '--verify', '-q', `HEAD:./${REL_GIT}`]);
   if (head === null) fail('probes_file_uncommitted', FILE_REL);
-  const ref = REVIEWED_REFS.find((r) => git(['rev-parse', '--verify', '-q', `${r}^{commit}`]) !== null);
+  const ref = reviewedRef(git);
   if (!ref) fail('probes_no_reviewed_ref', FILE_REL);
   if (git(['rev-parse', '--verify', '-q', `${ref}:./${REL_GIT}`]) !== head) fail('probes_file_unreviewed', FILE_REL);
   return head;
