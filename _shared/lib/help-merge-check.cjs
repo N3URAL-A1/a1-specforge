@@ -10,7 +10,8 @@ const MERGE_CHECK_HELP = `  a1-tools pr merge-check --pr <n> [--base <ref>] [--b
                   dirty), dispositions_uncommitted (.a1/dispositions.json differs from HEAD: commit and push it), suite_red_on_head,
                   base_red_unreported, bug_unresolved, required_check_red, required_check_pending, flaky_base_grown,
                   disposition_unreviewed, disposition_overturned, disposition_self_reviewed (a verdict without reviewed_by/reviewed_at,
-                  or by the entry's own author), fidelity_config_changed (.a1/fidelity.json differs from the base);
+                  or by the entry's own author), fidelity_config_changed (.a1/fidelity.json differs from the base),
+                  probes_config_changed (.a1/live-probes.yaml added, changed or deleted against the base);
                   suite_red_on_head with cause verify_config_changed (.a1/verify.json differs from the base) or suite_removed (an "each" suite of the
                   base is gone at HEAD; report suites.suite_removed.fingerprint);
                   exit 2 usage, gh failure, unresolvable base. The report carries head_sha (pass it to
@@ -19,9 +20,9 @@ const MERGE_CHECK_HELP = `  a1-tools pr merge-check --pr <n> [--base <ref>] [--b
                   vault (project/<slug>/fixes/<id>.md) or committed at the base (.a1/fixes/<id>.md); a report the branch adds does not count.
                   One --bug clears ALL base-red ids of the run, it is not matched per id. Required checks that are red on head are never
                   compared with the base: a required check red on both sides still blocks.
-                  Clearing verify_config_changed / suite_removed / fidelity_config_changed: no flag exists. Run \`disposition add --kind config_change
+                  Clearing verify_config_changed / suite_removed / fidelity_config_changed / probes_config_changed: no flag exists. Run \`disposition add --kind config_change
                   --fingerprint <fp> --reason <why> --by <you>\` (fp = suites.config_changed.fingerprint or suites.suite_removed.fingerprint for verify.json, the
-                  fingerprint of the fidelity_config_changed reason for fidelity.json), have a second reviewer run \`disposition review <fp> --verdict upheld --by <reviewer>\`,
+                  fingerprint of the fidelity_config_changed or probes_config_changed reason for those files), have a second reviewer run \`disposition review <fp> --verdict upheld --by <reviewer>\`,
                   commit and push .a1/dispositions.json, run the merge check again. The fingerprint covers the exact head content: change the
                   config again and the verdict no longer matches.`;
 

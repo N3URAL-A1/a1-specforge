@@ -11,8 +11,8 @@ const DISPOSITION_HELP = `  a1-tools disposition add --kind <fidelity|skip_incre
                   mock-of-subject | skipped-test | early-return-guard | test-not-in-ci (file-level,
                   no --line); skip_increase = skip-increase (file = verify command id, text =
                   "<base>-><head>" skipped counts); class_sweep = class-sweep; config_change =
-                  fidelity-config (file = .a1/fidelity.json) | verify-config (file = .a1/verify.json); the
-                  fingerprint is printed by \`pr merge-check\` (fidelity_config_changed, suites.config_changed).
+                  fidelity-config (file = .a1/fidelity.json) | verify-config (file = .a1/verify.json) | probes-config (file = .a1/live-probes.yaml); the
+                  fingerprint is printed by \`pr merge-check\` (fidelity_config_changed, probes_config_changed, suites.config_changed).
                   Exit 0 recorded / 1 duplicate fingerprint / 2 usage or invalid store (empty
                   reason, unknown kind, rule of another kind, glob or ".." in the path).
                   No --skip or --ignore option exists on any check.

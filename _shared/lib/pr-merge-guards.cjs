@@ -16,8 +16,14 @@ const D = require('./disposition-store.cjs');
 const SHA_RE = /^[0-9a-f]{40}$/;
 const GIT_MAX_BUFFER = 16 * 1024 * 1024;
 const FIDELITY_REL = '.a1/fidelity.json';
+const PROBES_REL = '.a1/live-probes.yaml';
 const CONFIG_KIND = 'config_change';
 const CONFIG_RULE = 'fidelity-config';
+/** Guarded config files: a change base..HEAD blocks the merge until a second reviewer upholds a config_change disposition (rule = fingerprint namespace). */
+const CONFIG_GUARDS = [
+  { rel: FIDELITY_REL, reason: 'fidelity_config_changed', rule: CONFIG_RULE },
+  { rel: PROBES_REL, reason: 'probes_config_changed', rule: 'probes-config' },
+];
 // Files a merge-check run (or the a1-pr-review run before it) writes: the verify cache, the gate log and the review output dir
 // `.a1-review/`. They are git-excluded in a healthy checkout, but a repo that lost the exclude must not block.
 const OWN_OUTPUT = Object.freeze([/^\.a1\/verify-cache(\/|$)/, /^\.a1\/phases\/[^/]+\/gate-log\.jsonl$/, /^\.a1-review(\/|$)/]);
@@ -69,20 +75,27 @@ function dispositionsUncommitted(project) {
 }
 
 /**
- * SEC-1b (fidelity config, SEC-2 part): `.a1/fidelity.json` differing base..HEAD blocks the merge, because the config can switch rules off.
- * Cleared only like verify_config_changed: by an upheld disposition of kind config_change (rule fidelity-config) on the exact head content,
- * reviewed by someone other than its author. There is no flag that clears it (a flag would let the caller authorize its own change).
+ * SEC-1b (config files, SEC-2 part): a guarded config file (.a1/fidelity.json: it can switch rules off; .a1/live-probes.yaml: it names
+ * the hosts live probes may reach, spec 020 FR-019) differing base..HEAD blocks the merge. Added, changed and deleted all count; a deleted
+ * file fingerprints as empty content. Cleared only like verify_config_changed: by an upheld disposition of kind config_change (the guard's
+ * rule) on the exact head content, reviewed by someone other than its author. There is no flag that clears it (a flag would let the caller
+ * authorize its own change).
  * @returns {{reasons:object[]}}
  */
-function fidelityConfigCheck(project, baseSha, entriesAtHead) {
-  const baseText = gitText(project, ['show', `${baseSha}:${FIDELITY_REL}`]);
-  const headText = gitText(project, ['show', `HEAD:${FIDELITY_REL}`]);
+function configChangeCheck(project, baseSha, entriesAtHead, guard) {
+  const baseText = gitText(project, ['show', `${baseSha}:${guard.rel}`]);
+  const headText = gitText(project, ['show', `HEAD:${guard.rel}`]);
   if (baseText === headText) return { reasons: [] };
-  const fingerprint = D.fingerprintOf(CONFIG_RULE, FIDELITY_REL, headText === null ? '' : headText);
+  const fingerprint = D.fingerprintOf(guard.rule, guard.rel, headText === null ? '' : headText);
   const cleared = entriesAtHead.some((e) => e.kind === CONFIG_KIND && e.fingerprint === fingerprint && e.review === 'upheld' && !D.isSelfReviewed(e));
   if (cleared) return { reasons: [] };
   const change = baseText === null ? 'added' : (headText === null ? 'removed' : 'changed');
-  return { reasons: [{ reason: 'fidelity_config_changed', file: FIDELITY_REL, change, fingerprint, hint: `disposition add --kind ${CONFIG_KIND} --fingerprint ${fingerprint} --reason <why> --by <you>; a second reviewer runs disposition review ${fingerprint} --verdict upheld --by <reviewer>; commit and push .a1/dispositions.json; run the merge check again` }] };
+  return { reasons: [{ reason: guard.reason, file: guard.rel, change, fingerprint, hint: `disposition add --kind ${CONFIG_KIND} --fingerprint ${fingerprint} --reason <why> --by <you>; a second reviewer runs disposition review ${fingerprint} --verdict upheld --by <reviewer>; commit and push .a1/dispositions.json; run the merge check again` }] };
 }
 
-module.exports = { SHA_RE, headReasons, dispositionsUncommitted, fidelityConfigCheck, statusPaths, CONFIG_KIND, CONFIG_RULE };
+/** All guarded config files in table order (fidelity first, so the existing reason order is unchanged). */
+function configChangeChecks(project, baseSha, entriesAtHead) {
+  return { reasons: CONFIG_GUARDS.flatMap((guard) => configChangeCheck(project, baseSha, entriesAtHead, guard).reasons) };
+}
+
+module.exports = { SHA_RE, headReasons, dispositionsUncommitted, configChangeChecks, statusPaths, CONFIG_KIND, CONFIG_RULE };

@@ -26,8 +26,8 @@ const KINDS = Object.freeze({
   skip_increase: Object.freeze(['skip-increase']),
   class_sweep: Object.freeze(['class-sweep']),
   // Spec 017 review (SEC-2): a changed .a1/fidelity.json (rule fidelity-config, merge-check) or .a1/verify.json (rule verify-config,
-  // verify run --base) is cleared by a reviewed entry on the exact head content.
-  config_change: Object.freeze(['fidelity-config', 'verify-config']),
+  // verify run --base) or .a1/live-probes.yaml (rule probes-config, spec 020) is cleared by a reviewed entry on the exact head content.
+  config_change: Object.freeze(['fidelity-config', 'verify-config', 'probes-config']),
 });
 const REVIEWS = Object.freeze(['pending', 'upheld', 'overturned']);
 const VERDICTS = Object.freeze(['upheld', 'overturned']);

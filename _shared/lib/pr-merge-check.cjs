@@ -4,7 +4,7 @@
 // (spec 017 FR-036, FR-037, FR-016, FR-025). The last code check before `gh pr merge`.
 //   exit 0  nothing red: suites pass (or are red on the base too AND reported with --bug that resolves),
 //           no required check red/pending, flaky_base not grown, no pending/overturned/self-reviewed disposition,
-//           local HEAD == the PR head (gh headRefOid) on a clean tree, dispositions committed, fidelity config unchanged or cleared by a reviewed config_change disposition
+//           local HEAD == the PR head (gh headRefOid) on a clean tree, dispositions committed, fidelity and live-probes config unchanged or cleared by a reviewed config_change disposition
 //   exit 1  at least one reason; every reason is named in `reasons[]` on stdout
 //   exit 2  usage, unreadable state, gh failure, unresolvable base (stdout JSON {ok:false,error,message})
 // It runs `verify run --base` in process with noCache (a head cache file is forgeable by the branch author, SEC review round C);
@@ -163,12 +163,12 @@ function suiteReasons(record, bugOk, bug) {
 
 function ghBinMode() { return process.env.A1_GH_BIN ? 'override' : 'default'; }
 
-/** The reasons of the pinning guards (head, committed dispositions, self review, fidelity config) plus what the report must log. */
+/** The reasons of the pinning guards (head, committed dispositions, self review, config files: fidelity.json, live-probes.yaml) plus what the report must log. */
 function guardReasons(opts, baseSha) {
   const head = G.headReasons(opts.project, prHeadSha(opts.pr, opts.project));
   if (head === null) throw new MergeCheckError('git_failed', 'cannot read HEAD or git status of the project');
   const integrity = reviewIntegrity(opts.project, baseSha, 'HEAD');
-  const config = G.fidelityConfigCheck(opts.project, baseSha, entriesAt(opts.project, 'HEAD'));
+  const config = G.configChangeChecks(opts.project, baseSha, entriesAt(opts.project, 'HEAD'));
   return {
     reasons: [...head.reasons, ...G.dispositionsUncommitted(opts.project), ...integrity.selfReviewed, ...config.reasons],
     upheld: integrity.upheld,
