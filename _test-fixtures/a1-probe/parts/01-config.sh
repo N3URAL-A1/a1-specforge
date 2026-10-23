@@ -279,11 +279,11 @@ probes:
     kind: http
     url: http://$H:$P/ok
     headers:
-      X-Note: "$(node -e 'process.stdout.write("a".repeat(10001))')"
+      X-Note: "$(node -e 'process.stdout.write("a".repeat(2001))')"
     expect:
       status: 200
 YML
-probe run --project "$D"; reject "T4 10001-char header value" "value_too_long"
+probe run --project "$D"; reject "T4 2001-char header value (over MAX_VALUE, under the line cap)" "value_too_long"
 put t-badid <<YML
 version: 1
 hosts: []
@@ -766,5 +766,25 @@ rm -rf "$WORK/s-real"; mkdir -p "$WORK/s-real-parent"
 ln -s s-real-parent "$WORK/s-real-link"
 mkdir -p "$WORK/s-real-parent/.a1"; printf '%s\n' "$VALID_PROBES" > "$WORK/s-real-parent/.a1/live-probes.yaml"
 probe run --project "$WORK/s-real-link"; accept "S5 control: a symlinked PROJECT dir with a real .a1 still loads"
+
+# --- SEC-3 (review round): no quadratic regex on hostile lines; per-line cap 4096 bytes -> bad_line ---------------------
+rm -rf "$WORK/r-long"; mkdir -p "$WORK/r-long/.a1"
+node -e 'const sp=" ".repeat(250000);process.stdout.write("version: 1\nhosts: []\nprobes: []\nx"+sp+"y\n")' > "$WORK/r-long/.a1/live-probes.yaml"
+R_T0="$(node -p 'Date.now()')"
+probe run --project "$WORK/r-long"; R_T1="$(node -p 'Date.now()')"
+reject "R1 250k-character line" "bad_line"
+expect "R1 rejected in under 1 s (no quadratic regex)" "1" "$([[ $((R_T1 - R_T0)) -lt 1000 ]] && echo 1 || echo 0)"
+rm -rf "$WORK/r-long2"; mkdir -p "$WORK/r-long2/.a1"
+node -e 'process.stdout.write("version: 1\nhosts: []\nprobes: []\n#"+"a".repeat(4096)+"\n")' > "$WORK/r-long2/.a1/live-probes.yaml"
+probe run --project "$WORK/r-long2"; reject "R2 a comment line over the 4096-byte cap" "bad_line"
+rm -rf "$WORK/r-ok"; mkdir -p "$WORK/r-ok/.a1"
+node -e 'process.stdout.write("version: 1\nhosts: []\nprobes: []\n#"+"a".repeat(4094)+"\n")' > "$WORK/r-ok/.a1/live-probes.yaml"
+probe run --project "$WORK/r-ok"; accept "R3 a line of exactly 4096 bytes is accepted"
+put r-trail <<YML
+version: 1   
+hosts: []   
+probes: []   
+YML
+probe run --project "$D"; accept "R4 trailing spaces are still trimmed"
 
 expect "Z1 the server counted zero requests over the whole part" "0" "$(srv_total)"

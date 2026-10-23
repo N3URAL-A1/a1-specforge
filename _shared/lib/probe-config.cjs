@@ -32,6 +32,7 @@ const ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const JSON_PATH_RE = /^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*$/;
 const SECRET_KEY_RE = /authorization|token|secret|password|key|cookie/i;
 const MAX_VALUE = 1024;
+const MAX_LINE_BYTES = 4096;
 const HTTP_KEYS = ['kind', 'url', 'method', 'headers', 'query', 'expect', 'timeout_ms'];
 const TCP_KEYS = ['kind', 'host', 'port', 'expect', 'timeout_ms'];
 
@@ -54,9 +55,13 @@ const isInt = (v, lo, hi) => typeof v === 'number' && Number.isInteger(v) && v >
 function tokenize(text) {
   const out = [];
   text.split('\n').forEach((l, idx) => {
-    const m = /^( *)(.*?) *$/.exec(l);
-    if (m[2] === '' || m[2].startsWith('#')) return;
-    out.push({ indent: m[1].length, text: m[2], no: idx + 1 });
+    if (Buffer.byteLength(l) > MAX_LINE_BYTES) fail('bad_line', '', idx + 1); // before any regex: no hostile line gets to the matcher
+    const m = /^( *)(.*)$/.exec(l); // linear: the trailing blanks are trimmed by string method, not by a backtracking group
+    let end = m[2].length;
+    while (end > 0 && m[2][end - 1] === ' ') end -= 1; // trailing blanks (spaces only, as before)
+    const body = m[2].slice(0, end);
+    if (body === '' || body.startsWith('#')) return;
+    out.push({ indent: m[1].length, text: body, no: idx + 1 });
   });
   return out;
 }
