@@ -14,7 +14,7 @@ const fs = require('fs');
 const path = require('path');
 
 const MAX_WAIT_S = 600;
-const BUDGET_MS = 5 * 60 * 1000;
+const BUDGET_MS = 5 * 60 * 1000; // per run; the whole run may last BUDGET_MS plus the --wait window
 const RETRY_INTERVAL_MS = 5000;
 const READ_ONLY = ['GET', 'HEAD', 'OPTIONS'];
 const USAGE = 'usage: a1-tools probe run --project <dir> [--wait <seconds>] [--json]';
@@ -80,22 +80,26 @@ function verdictOf(r) {
   return r.not_measured ? 'not_measured' : 'fail';
 }
 
-/** Pair: allow half first, then deny half (both always run so the report can name the failing half). */
-async function runPair(probe, ctx) {
-  const allow = await runLeaf(probe.allow, ctx);
-  const deny = await runLeaf(probe.deny, ctx);
+/** A leaf whose timeout never reaches past the run deadline. */
+const capped = (leaf, deadline) => ({ ...leaf, timeout_ms: Math.max(1, Math.min(leaf.timeout_ms, deadline - Date.now())) });
+
+/** Pair: allow half first, then deny half (both always run so the report can name the failing half) unless the run budget is spent. */
+async function runPair(probe, ctx, deadline) {
+  const allow = await runLeaf(capped(probe.allow, deadline), ctx);
+  if (Date.now() >= deadline) return { allow_status: allow.status, pass: false, reason: 'timeout_budget', duration_ms: allow.duration_ms };
+  const deny = await runLeaf(capped(probe.deny, deadline), ctx);
   const base = { allow_status: allow.status, deny_status: deny.status, duration_ms: allow.duration_ms + deny.duration_ms };
   const blocked = allow.blocked || deny.blocked;
   if (blocked) return { ...base, pass: false, reason: 'blocked_host', blocked: true };
   if (!allow.pass) return { ...base, pass: false, reason: allow.not_measured ? 'env_missing' : 'allow_failed', not_measured: !!allow.not_measured };
   if (deny.pass) return { ...base, pass: true, reason: 'ok' };
   if (deny.not_measured) return { ...base, pass: false, reason: 'env_missing', not_measured: true };
-  const halfOpen = deny.reason === 'status_mismatch' || deny.reason === 'unexpected_open';
-  return { ...base, pass: false, reason: halfOpen ? 'deny_half_open' : 'deny_failed' };
+  const open = (deny.reason === 'status_mismatch' && deny.status >= 200 && deny.status < 300) || deny.reason === 'unexpected_open';
+  return { ...base, pass: false, reason: open ? 'deny_half_open' : 'deny_failed' };
 }
 
-function runOne(probe, ctx) {
-  return probe.kind === 'pair' ? runPair(probe, ctx) : runLeaf(probe, ctx);
+function runOne(probe, ctx, deadline) {
+  return probe.kind === 'pair' ? runPair(probe, ctx, deadline) : runLeaf(capped(probe, deadline), ctx);
 }
 
 /** A probe may be repeated under --wait only when nothing it sends mutates state. */
@@ -107,20 +111,20 @@ function isReadOnly(probe) {
 const entry = (probe, r, attempts) => ({ probe, r, attempts });
 
 /** One sequential pass over config.probes; `prev` entries carry the attempt counts of earlier passes. */
-async function runPass(entries, config, ctx, budgetMs) {
-  const start = Date.now();
+async function runPass(entries, config, ctx, deadline) {
   const out = [];
   for (const probe of config.probes) {
     const prev = entries ? entries.find((e) => e.probe === probe) : null;
-    out.push(await runBudgeted(probe, ctx, start, budgetMs, prev));
+    out.push(await runBudgeted(probe, ctx, deadline, prev));
     if (out[out.length - 1].r.blocked) break;
   }
   return out;
 }
 
-async function runBudgeted(probe, ctx, start, budgetMs, prev) {
-  if (Date.now() - start >= budgetMs) return entry(probe, { pass: false, reason: 'timeout_budget', duration_ms: 0 }, prev ? prev.attempts : 1);
-  return entry(probe, await runOne(probe, ctx), prev ? prev.attempts + 1 : 1);
+/** No probe starts after the deadline: a first run becomes fail timeout_budget, a repeat keeps its earlier result. */
+async function runBudgeted(probe, ctx, deadline, prev) {
+  if (Date.now() >= deadline) return prev || entry(probe, { pass: false, reason: 'timeout_budget', duration_ms: 0 }, 1);
+  return entry(probe, await runOne(probe, ctx, deadline), prev ? prev.attempts + 1 : 1);
 }
 
 /**
@@ -134,12 +138,13 @@ async function execute(config, opts = {}) {
   const waitMs = (opts.waitS || 0) * 1000;
   const interval = opts.intervalMs === undefined ? RETRY_INTERVAL_MS : opts.intervalMs;
   const t0 = Date.now();
-  let entries = await runPass(null, config, ctx, budgetMs);
+  const deadline = t0 + budgetMs + waitMs; // one clock for the whole run: budget plus the --wait window
+  let entries = await runPass(null, config, ctx, deadline);
   while (!entries.some((e) => e.r.blocked) && Date.now() - t0 + interval <= waitMs) {
     const again = entries.filter((e) => !e.r.pass && !e.r.not_measured && e.r.reason !== 'timeout_budget' && isReadOnly(e.probe));
     if (again.length === 0) break;
     await sleep(interval);
-    const redo = await runPass(entries, { probes: again.map((e) => e.probe) }, ctx, budgetMs);
+    const redo = await runPass(entries, { probes: again.map((e) => e.probe) }, ctx, deadline);
     entries = entries.map((e) => redo.find((x) => x.probe === e.probe) || e);
   }
   return entries.map((e) => ({ ...e.r, id: e.probe.id, kind: e.probe.kind, attempts: e.attempts }));
@@ -211,7 +216,7 @@ async function mainRun(opts, held) {
   if (!pf.ok) return die(`blocked_host: ${pf.host}`);
   const results = await execute(config, { env: process.env, waitS: opts.wait });
   const code = report(results, opts.json);
-  if (code === 2) return die('blocked_host: a connected address was refused');
+  if (code === 2) process.stderr.write('probe: blocked_host: a connected address was refused\n'); // no process.exit: a piped --json report is flushed whole
   return code;
 }
 

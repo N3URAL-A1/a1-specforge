@@ -223,8 +223,8 @@ if [ "$(bj 'b.length')" = "5" ]; then pass_case "05-merge.md has exactly 5 fence
 order="$(bj 'b.map(x=>/disposition review/.test(x)?"D":/product validate --spec-status --require-vault/.test(x)?"C":/pr merge-check/.test(x)?"M":/^gh pr merge /m.test(x)?"G":/probe run/.test(x)?"P":"?").join("")')"
 if [ "$order" = "DCMGP" ]; then pass_case "block order: disposition review, coherence (--require-vault), merge-check, gh pr merge, live probes"; else fail_case "05-merge.md block order is '$order' (want DCMGP)"; fi
 if [ "$(bj 'b.filter(x=>/gh pr merge/.test(x)).length')" = "1" ] && [ "$(bj 'b.findIndex(x=>/gh pr merge/.test(x))')" = "3" ]; then
-  pass_case "no gh pr merge before the three checks: exactly one merge command, in the last block"
-else fail_case "gh pr merge appears outside the last fenced block"; fi
+  pass_case "no gh pr merge before the three checks: exactly one merge command, in the fourth block (the probe block follows it)"
+else fail_case "gh pr merge appears outside the fourth fenced block"; fi
 if [ "$(bj 'b[3].trim()')" = "gh pr merge <n> --squash --delete-branch --match-head-commit <head_sha>" ]; then pass_case "the merge block is exactly the canonical form the hook allows, with the head pin (only command, no other flags)"
 else fail_case "merge block is not the byte-exact canonical form: $(bj 'JSON.stringify(b[3])')"; fi
 if [ "$(bj 'b.slice(0,3).filter(x=>/RC=\$\?/.test(x)&&/-ne 0/.test(x)&&/exit "\$RC"/.test(x)).length')" = "3" ]; then pass_case "each check block tests its exit code explicitly and stops on non-zero (count 3)"

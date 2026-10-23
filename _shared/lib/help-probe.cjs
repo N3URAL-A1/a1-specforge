@@ -13,8 +13,10 @@ const PROBE_HELP = `  a1-tools probe run --project <dir> [--phase <scope>] [--wa
                   exits 2. GET/HEAD/OPTIONS everywhere; POST/PUT/DELETE only on preview/staging hosts; any
                   other method exits 2. A URL or tcp host must be listed in hosts; loopback, link-local,
                   private and metadata addresses are refused (checked on the connected IP); redirects are
-                  not followed; TLS is always verified. Limits: 10 s per probe (timeout_ms up to 60000),
-                  5 min per run, 1 MiB per response.
+                  not followed; TLS is always verified. Limits: 10 s per probe (timeout_ms up to 60000), 1 MiB per
+                  response; one clock per run: 5 min plus the --wait window. No probe starts after that, the
+                  timeout of a running probe (and of each pair half) is cut to the time left, and the probes
+                  not run fail with timeout_budget.
                   --phase <scope> names the gate-log scope (a1-new-feature: the spec id; a1-pr-review: pr-<n>); the
                   facade strips it, writes one gate-log line (gate live-probes, exit code, no result text) and the
                   probe parser never sees it. Without --phase the line goes to the scope _unscoped.
@@ -31,8 +33,8 @@ const PROBE_HELP = `  a1-tools probe run --project <dir> [--phase <scope>] [--wa
                   Reason codes: status_mismatch, body_mismatch, header_mismatch, json_mismatch, timeout,
                   unreachable, dns_error, tls_error, env_missing, deny_half_open, allow_failed, deny_failed,
                   unexpected_open / unexpected_closed (the tcp port state is the opposite of expect), bad_request (the request
-                  could not be built, e.g. a malformed header value), timeout_budget (the 5 min run budget was
-                  spent before this probe ran).
+                  could not be built, e.g. a malformed header value), timeout_budget (the run budget, 5 min plus --wait,
+                  was spent before this probe finished or started).
                   No file or "probes: []": exit 0 with the line "no_probes: <path> ..." ("no_probes": true
                   in --json); report "not verified live (no_probes)", never "verified live".
                   Exit 0 all passed or no_probes / 1 a probe failed or was not measured / 2 usage error,

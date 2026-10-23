@@ -963,7 +963,7 @@ printf '%s\n' "$VALID_PROBES" > "$WORK/n-fold/.a1/live-probe"$'\xc5\xbf'".yaml"
 if [[ -e "$WORK/n-fold/.a1/live-probes.yaml" ]]; then
   probe run --project "$WORK/n-fold"; reject "N2 live-probe(U+017F).yaml opened as live-probes.yaml by a folding FS" "config_name_variant"
 else
-  echo "SKIP  N2 this filesystem does not fold U+017F onto s (N1 covers the ino+dev rule everywhere)"
+  skip "N2 this filesystem does not fold U+017F onto s (N1 covers the ino+dev rule everywhere)"
 fi
 # Same for the directory: a project whose real directory is spelled .A1 (a folding FS resolves .a1 to it).
 rm -rf "$WORK/n-dir"; mkdir -p "$WORK/n-dir/.A1"
@@ -971,7 +971,7 @@ printf '%s\n' "$VALID_PROBES" > "$WORK/n-dir/.A1/live-probes.yaml"
 if [[ -d "$WORK/n-dir/.a1" ]]; then
   probe run --project "$WORK/n-dir"; reject "N3 directory spelled .A1 opened as .a1 by a folding FS" "config_name_variant"
 else
-  echo "SKIP  N3 this filesystem is case-sensitive (no .a1 alias of .A1 to refuse)"
+  skip "N3 this filesystem is case-sensitive (no .a1 alias of .A1 to refuse)"
 fi
 rm -rf "$WORK/n-sub"; mkdir -p "$WORK/n-sub/.a1"
 printf '%s\n' "$VALID_PROBES" > "$WORK/n-sub/.a1/live-probes.yaml"

@@ -30,9 +30,10 @@ commit_all() {
   git -C "$WORK" -c commit.gpgsign=false -c core.hooksPath=/dev/null commit -q --allow-empty -m fx >/dev/null 2>&1
 }
 
-pass=0; fail=0
+pass=0; fail=0; skipped=0
 ok()  { echo "PASS  $1"; pass=$((pass + 1)); }
 bad() { echo "FAIL  $1"; fail=$((fail + 1)); }
+skip() { echo "SKIP  $1"; skipped=$((skipped + 1)); }   # a skipped case is never counted as a pass
 expect() { if [[ "$2" == "$3" ]]; then ok "$1"; else bad "$1 (expected '$2', got '$3')"; fi; }
 # expect_has <name> <haystack> <fixed-string> / expect_lacks (same args)
 expect_has()   { if grep -qF -- "$3" <<<"$2"; then ok "$1"; else bad "$1 (missing '$3' in: ${2:0:200})"; fi; }
@@ -108,5 +109,5 @@ for part in "$SUITE_DIR"/parts/[0-9][0-9]-*.sh; do
 done
 stop_server
 
-echo "a1-probe: $pass passed, $fail failed"
+echo "a1-probe: $pass passed, $fail failed, skipped=$skipped"
 [[ $fail -eq 0 ]]

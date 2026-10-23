@@ -90,6 +90,7 @@ function classifyV6(b) {
     return embedded(b.slice(12)) === OK && embedded([b[6], b[7], b[9], b[10]]) === OK ? OK : BLOCKED; // last 32 bits and the RFC 6052 /48 layout
   }
   if (b[0] === 0x20 && b[1] === 0x01 && b[2] === 0 && b[3] === 0) return BLOCKED; // 2001::/32 Teredo
+  if (b[0] === 0x20 && b[1] === 0x01 && b[2] === 0x0d && b[3] === 0xb8) return BLOCKED; // 2001:db8::/32 documentation
   if (b[0] === 1 && b[1] === 0 && zero(b, 2, 8)) return BLOCKED; // 100::/64 discard-only
   if (b[0] === 0x20 && b[1] === 0x02) { const r = classifyV4(b.slice(2, 6)); if (r !== OK) return BLOCKED; } // 6to4
   if ((b[0] & 0xfe) === 0xfc) return BLOCKED; // fc00::/7 (covers fd00:ec2::254)

@@ -158,6 +158,12 @@ LB probe run --project "$D"
 expect "P5 tcp pair whose deny half is open exits 1" "1" "$RC"
 expect_has "P5 deny_half_open for tcp" "$OUT" "port-pair pair fail deny_half_open"
 
+pairfile p-deny500 /ok 200 /boom 403
+LB probe run --project "$D"
+expect "P6 deny half answers 500 (not 2xx): exit 1" "1" "$RC"
+expect_has "P6 reason deny_failed, not deny_half_open" "$OUT" "anon-role pair fail deny_failed"
+expect_lacks "P6 not reported as half open" "$OUT" "deny_half_open"
+
 # SC-002: anon route, vulnerable then fixed server
 pairfile sc2 /ok 200 /anon 401
 LB probe run --project "$D"
@@ -315,3 +321,27 @@ expect "C9 an inherited GIT_DIR does not turn an untracked tree into a committed
 LB probe run --project "$WORK/h-link"
 expect "C10 structural refusals keep their codes" "2" "$RC"
 expect_has "C10 symlinked file code" "$ERR" "not_a_regular_file"
+
+# --- run budget (review fix): ONE clock for the whole execute, total = budget + --wait window; probes and pair halves are capped to what is left ---
+budget_run() { # budget_run <budgetMs> <waitS> <intervalMs> <spec-js: array of [id, "leaf"|"pair", timeout_ms, path]> -> JSON {r:[reasons],a:[attempts],ms}
+  (cd "$SHARED/.." && A1_PROBE_ALLOW_LOOPBACK=1 node -e '
+const { execute } = require("./_shared/lib/probe.cjs");
+const port = process.argv[1];
+const leaf = (t, p) => ({ kind: "http", url: "http://127.0.0.1:" + port + p, host: "127.0.0.1", host_class: "staging", method: "GET", headers: {}, query: {}, expect: { status: [200] }, timeout_ms: t });
+const mk = ([id, k, t, p]) => (k === "pair" ? { id, kind: "pair", allow: leaf(t, p), deny: leaf(t, "/deny") } : { id, ...leaf(t, p) });
+const t0 = Date.now();
+execute({ probes: JSON.parse(process.argv[5]).map(mk) }, { env: process.env, budgetMs: +process.argv[2], waitS: +process.argv[3], intervalMs: +process.argv[4] })
+  .then((r) => process.stdout.write(JSON.stringify({ r: r.map((x) => x.reason), a: r.map((x) => x.attempts), ms: Date.now() - t0 })));' "$HTTP_PORT" "$1" "$2" "$3" "$4")
+}
+BR="$(budget_run 300 0 5000 '[["a","leaf",1000,"/hang"],["b","leaf",1000,"/ok"]]')"
+expect "M1 the first probe is capped to the budget, the second does not start" '["timeout","timeout_budget"]' "$(jq1 "$BR" r)"
+if [[ "$(jq1 "$BR" ms)" -lt 800 ]]; then ok "M1 the run ended with the budget (< 800 ms, not the 1000 ms probe timeout)"; else bad "M1 took $(jq1 "$BR" ms) ms"; fi
+BR="$(budget_run 100 1 200 '[["a","leaf",1500,"/hang"]]')"
+expect "M2 total = budget + wait window: one capped attempt (1100 ms), no retry" '["timeout"]|[1]' "$(jq1 "$BR" r)|$(jq1 "$BR" a)"
+if [[ "$(jq1 "$BR" ms)" -lt 1450 ]]; then ok "M2 capped to 100 + 1000 ms (< 1450 ms, not the 1500 ms probe timeout)"; else bad "M2 took $(jq1 "$BR" ms) ms"; fi
+BR="$(budget_run 100 2 200 '[["a","leaf",300,"/hang"]]')"
+if [[ "$(jq1 "$BR" a)" == "[4]" || "$(jq1 "$BR" a)" == "[3]" || "$(jq1 "$BR" a)" == "[5]" ]]; then ok "M3 --wait retries a failing read-only probe inside the window ($(jq1 "$BR" a))"; else bad "M3 attempts $(jq1 "$BR" a)"; fi
+if [[ "$(jq1 "$BR" ms)" -lt 2500 ]]; then ok "M3 the retry loop ends inside budget + wait (< 2500 ms)"; else bad "M3 took $(jq1 "$BR" ms) ms"; fi
+BR="$(budget_run 400 0 5000 '[["p","pair",1000,"/hang"],["after","leaf",1000,"/ok"]]')"
+expect "M4 a pair whose allow half spends the budget: deny half never starts" '["timeout_budget","timeout_budget"]' "$(jq1 "$BR" r)"
+if [[ "$(jq1 "$BR" ms)" -lt 800 ]]; then ok "M4 the allow half was capped (< 800 ms)"; else bad "M4 took $(jq1 "$BR" ms) ms"; fi

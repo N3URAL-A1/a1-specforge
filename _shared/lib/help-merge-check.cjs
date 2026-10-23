@@ -25,6 +25,9 @@ const MERGE_CHECK_HELP = `  a1-tools pr merge-check --pr <n> [--base <ref>] [--b
                   --fingerprint <fp> --reason <why> --by <you>\` (fp = suites.config_changed.fingerprint or suites.suite_removed.fingerprint for verify.json, the
                   fingerprint of the fidelity_config_changed or probes_config_changed reason for those files), have a second reviewer run \`disposition review <fp> --verdict upheld --by <reviewer>\`,
                   commit and push .a1/dispositions.json, run the merge check again. The fingerprint covers the exact head content: change the
-                  config again and the verdict no longer matches.`;
+                  config again and the verdict no longer matches.
+                  A special .a1 state (a symlinked .a1, an .a1 that is a submodule, or a non-ASCII or case-variant name under .a1) on either side
+                  blocks every merge-check as fidelity_config_changed / probes_config_changed even when it is unchanged between base and head;
+                  only a config_change disposition for the reported fingerprint clears it.`;
 
 module.exports = { MERGE_CHECK_HELP };

@@ -63,9 +63,10 @@ done
 
 # --- SEC-5 (review round): more special-purpose ranges ---
 SEC5_ADDRS=(fec0::1 2001:0:4136:e378:8000:63bf:3fff:fdd2 64:ff9b:1::a00:1 64:ff9b:1:a00:0:100:: ::ffff:0:a00:1 ::ffff:0:7f00:1 100::1 192.0.2.1 198.51.100.7 203.0.113.9
-  ::ffff:0:5db8:d822 100:0:0:1::1 2001:1::1 192.0.3.1 198.51.101.1 203.0.114.1 64:ff9b::5db8:d822)
+  ::ffff:0:5db8:d822 100:0:0:1::1 2001:1::1 192.0.3.1 198.51.101.1 203.0.114.1 64:ff9b::5db8:d822
+  2001:db8::1 2001:db8:ffff:ffff::1 2001:db9::1 2001:db7::1)
 SEC5_WANT=(blocked blocked blocked blocked blocked blocked blocked blocked blocked blocked
-  ok ok ok ok ok ok ok)
+  ok ok ok ok ok ok ok blocked blocked ok ok)
 SEC5_JSON="$(node -e 'process.stdout.write(JSON.stringify(process.argv.slice(1)))' "${SEC5_ADDRS[@]}")"
 SEC5_CL="$(node "$NETH" classify "$SEC5_JSON")"
 expect "N9b classifier on ${#SEC5_ADDRS[@]} added addresses" "${#SEC5_ADDRS[@]}" "$(node -e 'process.stdout.write(String(JSON.parse(process.argv[1]).length))' "$SEC5_CL")"

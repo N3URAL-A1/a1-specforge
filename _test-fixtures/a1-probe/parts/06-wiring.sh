@@ -105,6 +105,8 @@ expect "D1 06-verify.md names the no_probes wording" "1" "$(cnt 'not verified li
 expect "D1b 06-verify.md says a probe-file change goes through a new PR (probes_config_changed)" "1" "$(cnt 'A probe-file change goes through a new PR' "$NF")"
 expect "D1b 06-verify.md names the deploy condition" "1" "$(cnt 'the deploy of the merged `main` is$' "$NF")"
 expect "D1b 06-verify.md drops the old wording" "0" "$(cnt 'fix the cause or the probe file' "$NF")"
+expect "D5 the offline case is skipped, not counted as a pass (no ok() on the skip path)" "0" "$(cnt 'ok "L4 offline case skipped' "$REPO_ROOT/_test-fixtures/a1-probe/parts/05-leak.sh")"
+expect "D5 probe.cjs has no process.exit after the report (only die() exits)" "1" "$(cnt 'process\.exit\(' "$SHARED/lib/probe.cjs")"
 LC="$(grep -n 'probe run --project' "$NF" | head -1 | cut -d: -f1)"; M3="$(grep -n '^3\. \*\*Merge\*\*' "$NF" | head -1 | cut -d: -f1)"
 M4="$(grep -n '^4\. \*\*Origin cleanup\*\*' "$NF" | head -1 | cut -d: -f1)"
 if [[ -n "$LC" && -n "$M3" && -n "$M4" && "$LC" -gt "$M3" && "$LC" -lt "$M4" ]]; then ok "D1 the probe block sits right after Lifecycle step 3 (before step 4)"; else bad "D1 probe block position (call=$LC step3=$M3 step4=$M4)"; fi
@@ -164,6 +166,9 @@ HP="$(node "$TOOLS" --help 2>&1 | sed -n '/a1-tools probe run/,/Not available to
 for tok in --phase env_header_over_http env_query_over_http too_many_probes config_name_variant config_case_variant a1_dir_symlink a1_dir_submodule probes_file_uncommitted body_mismatch json_mismatch header_mismatch unexpected_open unexpected_closed bad_request timeout_budget A1_PROBE_ALLOW_LOOPBACK; do
   expect_has "H4 help documents $tok" "$HP" "$tok"
 done
+expect_has "H6 help names the one-clock run budget" "$HP" "5 min plus the --wait window"
+expect_lacks "H6 the old per-run wording is gone" "$HP" "5 min per run"
+expect_has "H7 merge-check help documents the unchanged special .a1 state" "$(node "$TOOLS" --help 2>&1)" "even when it is unchanged between base and head"
 SIZE="$(wc -l < "$SHARED/lib/help-probe.cjs" | tr -d ' ')"
 if [[ "$SIZE" -lt 400 ]]; then ok "H5 help-probe.cjs stays under 400 lines ($SIZE)"; else bad "H5 help-probe.cjs is $SIZE lines"; fi
 

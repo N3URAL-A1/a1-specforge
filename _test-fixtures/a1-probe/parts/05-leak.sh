@@ -90,7 +90,7 @@ expect_has "L1 body path present" "$OUT" "body-probe http fail body_mismatch"
 expect_has "L1 timeout path present" "$OUT" "hang-probe http fail timeout"
 expect_has "L1 tls_error path present" "$OUT" "tls-probe http fail tls_error"
 expect_has "L1 env_missing path present" "$OUT" "envmiss-probe http not_measured env_missing"
-expect_has "L1 pair path present" "$OUT" "pair-probe pair fail deny_half_open"
+expect_has "L1 pair path present" "$OUT" "pair-probe pair fail deny_failed"
 T_OUT="$OUT"; T_ERR="$ERR"
 leak_run json --json
 J_OUT="$OUT"; J_ERR="$ERR"
@@ -154,6 +154,6 @@ YML
   if grep -qE 'public http fail (unreachable|dns_error)' <<<"$OUT"; then ok "L4 offline reason is unreachable/dns_error"; else bad "L4 offline reason (got: ${OUT:0:200})"; fi
   expect "L4 offline run sent nothing to the loopback server" "$SRV_BEFORE" "$(srv_total)"
 else
-  echo "SKIP offline (network present)"; ok "L4 offline case skipped and counted (network present)"
+  skip "L4 offline case (network present; runs under docker --network none)"
 fi
 stop_server
