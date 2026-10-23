@@ -204,12 +204,12 @@ features:
   - id: 018-pipeline-metrics
     milestone: continuous
     title: "Measure the pipeline: escaped-defect attribution and cost per feature"
-    status: in-flight
-    stage: review
+    status: done
+    stage: done
     depends_on:
       - 017-enforced-self-checks
     started: 2026-10-23
-    finished: null
+    finished: 2026-10-23
     spec_path: project/a1-specforge/spec/018-pipeline-metrics.md
     plan_path: project/a1-specforge/plans/018-pipeline-metrics-wave-plan.md
   - id: 019-depth-pass-planning
@@ -419,6 +419,10 @@ None.
 - **2026-10-23** — feature.md created for '021-dashboard' — formal spec/plan attached via `product feature-init`
 - **2026-10-23** — feature '022-spec-driven-tests' added — Every acceptance criterion gets a tagged test written before the code, proven red when the feature is reverted
 - **2026-10-23** — feature.md created for '022-spec-driven-tests' — formal spec/plan attached via `product feature-init`
+- **2026-10-23** — 018-pipeline-metrics -> verify — stage transition via `product stage`
+- **2026-10-23** — 018-pipeline-metrics -> merge — stage transition via `product stage`
+- **2026-10-23** — 018-pipeline-metrics -> origin-cleanup — stage transition via `product stage`
+- **2026-10-23** — 018-pipeline-metrics -> done — stage transition via `product stage`
 
 ## Appendix — migrated details
 
