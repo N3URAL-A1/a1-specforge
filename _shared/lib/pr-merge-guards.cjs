@@ -97,7 +97,7 @@ function a1TreeEntries(project, rev) {
     const m = /^(\d+) (\w+) ([0-9a-f]+)\t(.*)$/s.exec(rec);
     if (!m || fold(m[4]) !== A1_DIR) continue;
     const topVariant = NON_ASCII_RE.test(m[4]);
-    if (m[1] === SYMLINK) { out.push({ path: m[4], mode: m[1], sha: m[3], variant: topVariant }); continue; }
+    if (m[1] === SYMLINK || m[1] === GITLINK) { out.push({ path: m[4], mode: m[1], sha: m[3], variant: topVariant }); continue; }
     if (m[2] !== 'tree') continue;
     if (topVariant) out.push({ path: m[4], mode: m[1], sha: m[3], variant: true });
     const sub = gitText(project, ['ls-tree', '-r', '-z', m[3]]);
@@ -110,7 +110,7 @@ function a1TreeEntries(project, rev) {
   return out;
 }
 
-const SPECIAL_MODES = { [SYMLINK]: 'symlink' };
+const SPECIAL_MODES = { [SYMLINK]: 'symlink', [GITLINK]: 'submodule' };
 
 /** What one side (base or head) holds for a guarded file: matched paths (case-insensitive) with their blobs, and any special condition of `.a1` itself. */
 function sideOf(project, rev, guard, entries) {

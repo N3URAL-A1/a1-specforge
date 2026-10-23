@@ -373,6 +373,7 @@ function assertPlainConfigDir(projectDir) {
   let real; let realProject;
   try { real = fs.realpathSync.native(dir); realProject = fs.realpathSync.native(projectDir); } catch (_e) { return fail('unreadable', FILE_REL); }
   if (real !== path.join(realProject, DIR_NAME)) fail('a1_dir_symlink', FILE_REL);
+  try { fs.lstatSync(path.join(dir, '.git')); fail('a1_dir_submodule', FILE_REL); } catch (e) { if (e instanceof ProbeConfigError) throw e; }
   let names;
   try { names = fs.readdirSync(dir); } catch (_e) { return fail('unreadable', FILE_REL); }
   if (names.some((n) => n !== FILE_NAME && n.toLowerCase() === FILE_NAME)) fail('config_case_variant', FILE_REL);

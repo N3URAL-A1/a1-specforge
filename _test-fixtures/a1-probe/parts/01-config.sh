@@ -973,5 +973,12 @@ if [[ -d "$WORK/n-dir/.a1" ]]; then
 else
   echo "SKIP  N3 this filesystem is case-sensitive (no .a1 alias of .A1 to refuse)"
 fi
+rm -rf "$WORK/n-sub"; mkdir -p "$WORK/n-sub/.a1"
+printf '%s\n' "$VALID_PROBES" > "$WORK/n-sub/.a1/live-probes.yaml"
+printf 'gitdir: ../.git/modules/a1\n' > "$WORK/n-sub/.a1/.git"
+probe run --project "$WORK/n-sub"; reject ".a1 is a submodule checkout (.a1/.git file)" "a1_dir_submodule"
+rm -rf "$WORK/n-sub2"; mkdir -p "$WORK/n-sub2/.a1/.git"
+printf '%s\n' "$VALID_PROBES" > "$WORK/n-sub2/.a1/live-probes.yaml"
+probe run --project "$WORK/n-sub2"; reject ".a1/.git directory" "a1_dir_submodule"
 
 expect "Z1 the server counted zero requests over the whole part" "0" "$(srv_total)"

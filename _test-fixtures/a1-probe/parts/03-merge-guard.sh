@@ -187,3 +187,10 @@ expect_lacks "G21 control: a non-ASCII name deeper than .a1's direct children do
 # the same name present on the base side only blocks too
 mg_pr g22 mg_nonascii_base; mg_check
 expect_has "G22 name variant on the base side only: blocks" "$(mg_reasons)" "probes_config_changed"
+# SEC-9: .a1 as a gitlink (mode 160000)
+mg_pr g23 :
+mg_git "$MG_P" rm -r -q --cached .a1
+mg_git "$MG_P" update-index --add --cacheinfo "160000,$(mg_git "$MG_P" rev-parse HEAD),.a1"; mg_git "$MG_P" commit -q -m "a1 as submodule"; mg_check
+expect_has "G23 .a1 became a submodule (160000): probes entry blocks" "$(mg_reasons)" "probes_config_changed"
+expect_has "G23 ... and the fidelity entry" "$(mg_reasons)" "fidelity_config_changed"
+expect "G23 change=submodule" "submodule" "$(mg_js "j.reasons.find(r=>r.reason==='probes_config_changed').change")"
