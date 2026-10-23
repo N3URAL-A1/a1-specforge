@@ -4,7 +4,7 @@ type: roadmap
 project: a1-specforge
 title: "a1-specforge — Roadmap"
 status: active
-updated: 2026-10-22
+updated: 2026-10-23
 source: "migrated from docs/roadmap.md v3.0 (2026-07-10)"
 milestones:
   - id: m0-repo-extract
@@ -204,11 +204,11 @@ features:
   - id: 018-pipeline-metrics
     milestone: continuous
     title: "Measure the pipeline: escaped-defect attribution and cost per feature"
-    status: planned
-    stage: null
+    status: in-flight
+    stage: complete
     depends_on:
       - 017-enforced-self-checks
-    started: null
+    started: 2026-10-23
     finished: null
     spec_path: project/a1-specforge/spec/018-pipeline-metrics.md
     plan_path: project/a1-specforge/plans/018-pipeline-metrics-wave-plan.md
@@ -392,6 +392,7 @@ None.
 - **2026-10-22** — 017-enforced-self-checks -> done — stage transition via `product stage`
 - **2026-10-22** — feature '020-live-probes' added — After merge or deploy, declared probes measure the real effect from outside, including a counter-test
 - **2026-10-22** — feature.md created for '020-live-probes' — formal spec/plan attached via `product feature-init`
+- **2026-10-23** — 018-pipeline-metrics -> complete — stage transition via `product stage`
 
 ## Appendix — migrated details
 

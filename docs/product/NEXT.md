@@ -4,7 +4,7 @@
 
 # a1-specforge — Roadmap
 
-updated: 2026-10-22
+updated: 2026-10-23
 
 ## You are here
 
@@ -15,6 +15,7 @@ updated: 2026-10-22
 
 - **010-vault-cockpit-contract** — Vault cockpit contract — every a1 status readable in Obsidian on Mac, server and phone (milestone: continuous, stage: started) — scope: project/a1-specforge/spec/010-vault-cockpit-contract.md
 - **011-intent-queue-consumer** — Intent queue consumer — the a1 half of triggering skills from the phone via the vault (milestone: continuous, stage: started) — scope: project/a1-specforge/spec/011-intent-queue-consumer.md
+- **018-pipeline-metrics** — Measure the pipeline: escaped-defect attribution and cost per feature (milestone: continuous, stage: complete) — scope: project/a1-specforge/spec/018-pipeline-metrics.md, project/a1-specforge/plans/018-pipeline-metrics-wave-plan.md
 
 ## Next cursor
 
