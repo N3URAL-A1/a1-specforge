@@ -396,13 +396,12 @@ mk_env_case() { # <case> <env-ref-text>
   put "$1" <<YML
 version: 1
 hosts:
-  - name: $H
+  - name: staging.example.test
     class: staging
-    allow_http: true
 probes:
   - id: a
     kind: http
-    url: http://$H:$P/ok
+    url: https://staging.example.test/ok
     headers:
       Authorization: $2
     expect:
@@ -823,5 +822,92 @@ probes:
 YML
 probe run --project "$D"; reject "Q2 header name constructor" "probes[0].headers.constructor"
 expect_has "Q2 code is bad_name" "$ERR" "bad_name"
+
+# --- SEC-7 (owner decision): {env: NAME} header over plain http is refused; at most 50 probes per file --------------------
+put e-http <<YML
+version: 1
+hosts:
+  - name: $H
+    class: staging
+    allow_http: true
+probes:
+  - id: a
+    kind: http
+    url: http://$H:$P/ok
+    headers:
+      X-Probe-Id: {env: PROBE_VALUE}
+    expect:
+      status: 200
+YML
+probe run --project "$D"; reject "E1 env header on an http: probe (allow_http host)" "probes[0].headers.X-Probe-Id"
+expect_has "E1 code env_header_over_http" "$ERR" "env_header_over_http"
+put e-pair <<YML
+version: 1
+hosts:
+  - name: $H
+    class: staging
+    allow_http: true
+probes:
+  - id: a
+    kind: pair
+    allow:
+      kind: http
+      url: http://$H:$P/ok
+      headers:
+        X-Probe-Id: {env: PROBE_VALUE}
+      expect:
+        status: 200
+    deny:
+      kind: http
+      url: http://$H:$P/deny
+      expect:
+        status: 403
+YML
+probe run --project "$D"; reject "E2 env header inside a pair half over http:" "env_header_over_http"
+put e-https <<YML
+version: 1
+hosts:
+  - name: staging.example.test
+    class: staging
+probes:
+  - id: a
+    kind: http
+    url: https://staging.example.test/ok
+    headers:
+      X-Probe-Id: {env: PROBE_VALUE}
+    query:
+      v: {env: PROBE_VALUE}
+    expect:
+      status: 200
+YML
+probe run --project "$D"; accept "E3 control: env header over https: is accepted"
+put e-http-lit <<YML
+version: 1
+hosts:
+  - name: $H
+    class: staging
+    allow_http: true
+probes:
+  - id: a
+    kind: http
+    url: http://$H:$P/ok
+    headers:
+      X-Probe-Id: literal
+    expect:
+      status: 200
+YML
+probe run --project "$D"; accept "E4 control: a literal header over http: is accepted"
+
+mk_many() { # mk_many <dir> <n> <kind: tcp|pair> -> a file with n probes
+  rm -rf "$1"; mkdir -p "$1/.a1"
+  node -e 'const [n,kind,h,p]=process.argv.slice(1);let o="version: 1\nhosts:\n  - name: "+h+"\n    class: staging\nprobes:\n";
+    for(let i=0;i<+n;i++){ if(kind==="tcp") o+=`  - id: p${i}\n    kind: tcp\n    host: ${h}\n    port: ${p}\n    expect: open\n`;
+      else o+=`  - id: p${i}\n    kind: pair\n    allow:\n      kind: tcp\n      host: ${h}\n      port: ${p}\n      expect: open\n    deny:\n      kind: tcp\n      host: ${h}\n      port: ${p}\n      expect: closed\n`; }
+    process.stdout.write(o)' "$2" "$3" "$H" "$TCP_PORT" > "$1/.a1/live-probes.yaml"
+}
+mk_many "$WORK/m-50" 50 tcp; probe run --project "$WORK/m-50"; accept "M1 50 probes are accepted"
+mk_many "$WORK/m-51" 51 tcp; probe run --project "$WORK/m-51"; reject "M2 51 probes" "too_many_probes"
+mk_many "$WORK/m-50p" 50 pair; probe run --project "$WORK/m-50p"; accept "M3 50 pairs count as 50 (a pair is one probe)"
+mk_many "$WORK/m-51p" 51 pair; probe run --project "$WORK/m-51p"; reject "M4 51 pairs" "too_many_probes"
 
 expect "Z1 the server counted zero requests over the whole part" "0" "$(srv_total)"

@@ -32,6 +32,7 @@ const ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const JSON_PATH_RE = /^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*$/;
 const SECRET_KEY_RE = /authorization|token|secret|password|key|cookie/i;
 const UNSAFE_NAMES = ['__proto__', 'constructor', 'prototype'];
+const MAX_PROBES = 50;
 const MAX_VALUE = 1024;
 const MAX_LINE_BYTES = 4096;
 const HTTP_KEYS = ['kind', 'url', 'method', 'headers', 'query', 'expect', 'timeout_ms'];
@@ -248,9 +249,12 @@ function validateHttp(p, where, hosts) {
   const method = p.method === undefined ? 'GET' : p.method;
   if (!METHODS.includes(method)) fail('method_refused', `${where}.method`);
   if (MUTATING.includes(method) && host.class === 'production') fail('mutating_method_on_production', `${where}.method`);
+  const headers = p.headers === undefined ? {} : validateKv(p.headers, `${where}.headers`, HEADER_NAME_RE);
+  // SEC-7a: a secret taken from the environment must not travel in clear text, not even to an allow_http host.
+  if (url.startsWith('http:')) for (const [k, v] of Object.entries(headers)) if (v.env !== undefined) fail('env_header_over_http', `${where}.headers.${k}`);
   return {
     kind: 'http', url, host: host.name, host_class: host.class, method,
-    headers: p.headers === undefined ? {} : validateKv(p.headers, `${where}.headers`, HEADER_NAME_RE),
+    headers,
     query: p.query === undefined ? {} : validateKv(p.query, `${where}.query`, QUERY_NAME_RE),
     expect: validateHttpExpect(need(p, 'expect', where), `${where}.expect`),
     timeout_ms: timeoutOf(p, where),
@@ -290,6 +294,7 @@ function validatePair(p, where, hosts) {
 function validateProbes(list, hosts) {
   if (list === undefined) return [];
   if (!Array.isArray(list)) fail('not_a_list', 'probes');
+  if (list.length > MAX_PROBES) fail('too_many_probes', 'probes'); // SEC-7b: a pair counts as one entry
   const seen = new Set();
   return list.map((p, i) => {
     const where = `probes[${i}]`;
