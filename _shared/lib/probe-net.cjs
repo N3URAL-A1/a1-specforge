@@ -175,7 +175,7 @@ function mapNetError(err) {
   if (code === 'ECONNREFUSED') return 'unreachable';
   if (code === 'ENOTFOUND' || code === 'EAI_AGAIN' || code === 'EAI_FAIL' || code === 'ENODATA') return 'dns_error';
   if (code === 'ECONNRESET' || code === 'EPIPE') return 'reset';
-  if (/CERT|TLS|SSL|ERR_TLS|DEPTH_ZERO|SELF_SIGNED|UNABLE_TO_VERIFY|HOSTNAME_MISMATCH/i.test(String(code))) return 'tls_error';
+  if (code === 'EPROTO' || /CERT|TLS|SSL|ERR_TLS|DEPTH_ZERO|SELF_SIGNED|UNABLE_TO_VERIFY|HOSTNAME_MISMATCH/i.test(String(code))) return 'tls_error';
   if (code === 'ERR_INVALID_CHAR' || code === 'ERR_HTTP_INVALID_HEADER_VALUE' || code === 'ERR_INVALID_HTTP_TOKEN') return 'bad_request';
   return 'unreachable';
 }

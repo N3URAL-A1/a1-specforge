@@ -158,3 +158,14 @@ R="$(nh tcp "$(tp "$DEAD" open)" 1)"
 expect "T4 closed port, expect open fails" "false" "$(jf "$R" pass)"
 expect "T4 reason unexpected_closed" "unexpected_closed" "$(jf "$R" reason)"
 expect "T4 duration present" "number" "$(node -e 'process.stdout.write(typeof JSON.parse(process.argv[1]).duration_ms)' "$R")"
+
+# --- SEC-6 (review round): a plaintext server behind https:// is a tls_error, not "unreachable" ---
+PT_OUT="$WORK/plain-tls.out"
+node -e 'const s=require("net").createServer(c=>{c.on("error",()=>{});c.end("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")}).listen(0,"127.0.0.1",()=>process.stdout.write(String(s.address().port)))' > "$PT_OUT" 2>&1 &
+PT_PID=$!
+for _ in $(seq 1 50); do [[ -s "$PT_OUT" ]] && break; sleep 0.1; done
+PT_PORT="$(cat "$PT_OUT")"
+R="$(nh http "{\"kind\":\"http\",\"url\":\"https://127.0.0.1:$PT_PORT/\",\"host\":\"127.0.0.1\",\"host_class\":\"staging\",\"method\":\"GET\",\"headers\":{},\"query\":{},\"expect\":{\"status\":[200]},\"timeout_ms\":3000}" 1)"
+kill "$PT_PID" 2>/dev/null; wait "$PT_PID" 2>/dev/null
+expect "TLS1 plaintext server behind https:// is not a pass" "false" "$(jf "$R" pass)"
+expect "TLS1 reason tls_error" "tls_error" "$(jf "$R" reason)"
