@@ -93,6 +93,11 @@ FINDING, not a PASS). **You may not write PASS while `verify run` exits non-zero
 `verify run --out` call right after it (cached when nothing changed), so `verify_run` is in the
 final file. Never type a `verify_run` block by hand.
 
+**Rule "verified live" (spec 020).** Write "verified live" only when VERIFICATION.md holds the result line of a
+`probe run` for this spec (section `## Live probes`, summary `pass=N fail=0 not_measured=0`). Without a probe result line,
+or with a `no_probes` note, write "not verified live (no_probes)" or "not verified live" - never "verified live". A failed or
+not measured probe is a FINDING. Never type a probe result line by hand.
+
 ## Step 4.5: Phantom check (enforces — not warning-only)
 
 Run phantom detection over the completed plan to catch tasks claimed done but never built.

@@ -61,6 +61,9 @@
  *   a1-tools metrics cost [--project <slug>] [--last <N>] [--json]
  *       Token total per phase VERIFICATION.md and fixed fix report, with unreported runs (spec 018).
  *
+ *   a1-tools probe run --project <dir> [--phase <scope>] [--wait <seconds>] [--json]
+ *       Live probes from <dir>/.a1/live-probes.yaml (spec 020). Exit 0 pass or no_probes / 1 fail / 2 usage or hostile file.
+ *
  *   a1-tools fix count-postmortems-since --since <ISO-timestamp>
  *       → JSON { count, since, files: [...] }
  *         Counts postmortem files in project/<slug>/postmortems/ modified after the given timestamp.
@@ -728,13 +731,18 @@ function main() {
       // owns every exit code (0 / 1 / 2). Lazy require.
       require(path.join(__dirname, 'lib', 'metrics.cjs')).cmdMetrics(sub, rest);
       return;
+    } else if (group === 'probe') {
+      // Spec 020-live-probes, Wave 1: lib/probe.cjs owns `probe run` and every exit code (0 / 1 / 2). Lazy
+      // require: the network module is loaded only after the probe file parsed.
+      require(path.join(__dirname, 'lib', 'probe.cjs')).cmdProbe(sub, rest);
+      return;
     } else if (group === 'git') {
       // Spec 011 Wave 6 (FR-048): git for the intent child only, through a
       // fixed grammar and hardened options; exit 2 outside child mode.
       require(path.join(__dirname, 'lib', 'intent-git.cjs')).cmdGit(sub, rest);
       return;
     } else {
-      usage(`unknown command group: ${group} (expected "spec", "fix", "analyze", "check", "checklist", "constitution", "worktree", "pr", "phantom", "reconcile", "modernize", "schema-check", "cost", "pack", "product", "quick", "learnings", "retro", "workflow", "gates", "verify", "test-fidelity", "disposition", "intent", "metrics", "git", or "realpath-check"). fix supports: next-suffix, update-status, list, find-duplicates, integrity-check, init-postmortem, validate-postmortem, count-postmortems-since, update-promote-state, write-suggestion. Spec 018 adds: fix validate-postmortem, metrics escaped, metrics cost`);
+      usage(`unknown command group: ${group} (expected "spec", "fix", "analyze", "check", "checklist", "constitution", "worktree", "pr", "phantom", "reconcile", "modernize", "schema-check", "cost", "pack", "product", "quick", "learnings", "retro", "workflow", "gates", "verify", "test-fidelity", "disposition", "intent", "metrics", "probe", "git", or "realpath-check"). fix supports: next-suffix, update-status, list, find-duplicates, integrity-check, init-postmortem, validate-postmortem, count-postmortems-since, update-promote-state, write-suggestion. Spec 018 adds: fix validate-postmortem, metrics escaped, metrics cost. Spec 020 adds: probe run`);
     }
   } catch (e) {
     // Input-validation errors (e.g. path-traversal guard) are user errors,

@@ -74,6 +74,10 @@ Runs started from inside an agent session (a `claude` process is an ancestor, or
 
 `_test-fixtures/a1-metrics/run-tests.sh` covers `metrics escaped`, `metrics cost` and the postmortem `found_by` / `should_have_caught` fields. Its fixtures are byte copies of real vault files (the byte check runs only where `~/N3URAL-Vault` exists). Usage errors of both commands exit 1 (`help.cjs` `usage()`), a missing vault or I/O error exits 2. Before a PR, run it in `docker run --rm -u 1000:1000 -e HOME=/tmp -v <git-archive snapshot>:/w -w /w node:20 bash _test-fixtures/a1-metrics/run-tests.sh`.
 
+### Live-probes suite (spec 020)
+
+`_test-fixtures/a1-probe/run-tests.sh` (suite `a1-probe`) covers `probe run`: the probe-file reader and its static policy, the HTTP and TCP executors, the address guard, the `pr merge-check` block on a changed `.a1/live-probes.yaml`, the runner with pairs and `--wait`, the leak proof, and the wiring (registry row, call sites, intent-child refusal). Cases live in `parts/NN-*.sh`, sourced in order; the harness file stays untouched. The only network is the suite's own loopback server (`server.cjs`, ephemeral ports, killed by PID); `A1_PROBE_ALLOW_LOOPBACK=1` is set per call and never exported. No workflow runs the probe CLI against a network. The offline case runs only where the host has no network; before a PR run it once in Docker: `docker run --rm --network none -u 1000:1000 -v <git-archive snapshot>:/w:ro node:20 bash /w/_test-fixtures/a1-probe/run-tests.sh`.
+
 ## Self-checks: `verify run`, `test-fidelity`, dispositions (spec 017)
 
 Run these before a PR; CI and the a1 skills run the same commands. Replace `<phase>` with a scope name

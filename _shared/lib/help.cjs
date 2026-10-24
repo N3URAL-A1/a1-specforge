@@ -16,6 +16,7 @@ const { DISPOSITION_HELP } = require('./help-disposition.cjs');
 const { FIX_SWEEP_HELP } = require('./help-fix-sweep.cjs');
 const { MERGE_CHECK_HELP } = require('./help-merge-check.cjs');
 const { METRICS_HELP } = require('./help-metrics.cjs');
+const { PROBE_HELP } = require('./help-probe.cjs');
 
 function usage(msg) {
   process.stderr.write(`usage error: ${msg}\n`);
@@ -636,6 +637,8 @@ ${FIX_SWEEP_HELP}
 ${MERGE_CHECK_HELP}
 
 ${METRICS_HELP}
+
+${PROBE_HELP}
 
 ${XPROV_HELP}
 
