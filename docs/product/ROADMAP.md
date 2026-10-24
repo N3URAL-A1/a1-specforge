@@ -4,7 +4,7 @@ type: roadmap
 project: a1-specforge
 title: "a1-specforge — Roadmap"
 status: active
-updated: 2026-10-23
+updated: 2026-10-24
 source: "migrated from docs/roadmap.md v3.0 (2026-07-10)"
 milestones:
   - id: m0-repo-extract
@@ -225,11 +225,11 @@ features:
   - id: 020-live-probes
     milestone: continuous
     title: "Live probes: measure the real effect after merge or deploy"
-    status: in-flight
-    stage: verify
+    status: done
+    stage: done
     depends_on: []
     started: 2026-10-23
-    finished: null
+    finished: 2026-10-24
     spec_path: project/a1-specforge/spec/020-live-probes.md
     plan_path: null
   - id: 021-dashboard
@@ -427,6 +427,9 @@ None.
 - **2026-10-23** — 020-live-probes -> complete — stage transition via `product stage`
 - **2026-10-23** — 020-live-probes -> review — stage transition via `product stage`
 - **2026-10-23** — 020-live-probes -> verify — stage transition via `product stage`
+- **2026-10-24** — 020-live-probes -> merge — stage transition via `product stage`
+- **2026-10-24** — 020-live-probes -> origin-cleanup — stage transition via `product stage`
+- **2026-10-24** — 020-live-probes -> done — stage transition via `product stage`
 
 ## Appendix — migrated details
 
