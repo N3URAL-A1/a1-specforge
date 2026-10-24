@@ -1,0 +1,11 @@
+# Fixture sources (suite a1-dashboard, spec 021). Real files copied; edits listed here.
+
+fixtures/repo/docs/product/ROADMAP.md
+  Source: docs/product/ROADMAP.md of this repo (byte copy, 2026-10-24).
+  Edit: the frontmatter line "project: a1-specforge" became "project: fixture-slug" (the slug rule
+  reads this key). Nothing else changed.
+
+fixtures/vault/project/fixture-slug.md
+  Source: ~/N3URAL-Vault/project/a1-specforge.md (hub note), frontmatter plus the first heading.
+  Edits: a1_writer_host macbook -> fx-writer; title, permalink and heading a1-specforge -> fixture-slug;
+  the body below the heading dropped. The hub declares the writer that the suite sets as A1_HOST_ID.
