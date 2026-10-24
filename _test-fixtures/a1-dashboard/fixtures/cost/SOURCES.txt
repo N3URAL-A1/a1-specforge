@@ -1,0 +1,11 @@
+Cost-panel fixtures (spec 021 wave 4).
+Copied byte-for-byte from the real vault, ~/N3URAL-Vault/project/a1-specforge/phases/<dir>/VERIFICATION.md, 2026-10-24:
+  phases/M6-works-for-rob/VERIFICATION.md   cost line "Cost: 35267619 tokens (...)"          -> with (35,267,619)
+  phases/M7-oss-ready/VERIFICATION.md       cost line "Cost: 65314797 tokens (...)" at bottom,
+                                            plus a non-matching "**Cost:** see cost line at bottom" at the top -> with (65,314,797)
+  phases/M9-robustness/VERIFICATION.md      no cost line at all                                  -> without
+  phases/M13-residuals/VERIFICATION.md      "**Cost:** ~39,500,000 tokens delta ..."             -> with, approximate (~)
+Constructed (no real file carries these forms yet; shapes per 03-verify.md fallback rule and 018 parser):
+  variants/unavailable.md   "Cost: unavailable (<reason>)"
+  variants/ambiguous.md     "Cost: 1,23,456 tokens" (unparseable digit groups)
+Exact sum of M6+M7: 100,582,416.

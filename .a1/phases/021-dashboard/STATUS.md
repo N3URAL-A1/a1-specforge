@@ -21,3 +21,17 @@ Completed: 2026-10-24
 - vault root via `peekVaultRoot()` (same tier rule as `externalVaultRoot()`), because the latter announces the learnings root on stderr.
 - README runner count 49 -> 50 in this wave (gates-lint suite checks it). Wave 5 must not bump it again.
 - Skip branch for non-writer implemented in dashboard.cjs now.
+
+## Wave 4 — Cost panel on the 018 parser
+Completed: 2026-10-24
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| parseCost/costOfFile export, dashboard-cost.cjs, parts/04-cost.sh, fixtures/cost | DONE | see git log (feat(dashboard): cost panel) | part 04: 24 cases; suite 93/93 before W2/W3 parts landed; a1-metrics 333/0; a1-exit2-audit 31/0 |
+
+### Mutation proofs (git-archive snapshot)
+Parse failure counted as with-cost, sum not accumulated, symlinked phase dir followed, read seam bypassed, missing folder -> none, empty folder -> ok, unsorted opens: each turns at least one 04.x case red. Against the stub: 04.2/04.3/04.4/04.6 red.
+
+### Deviations
+- None against the plan. Fixture "unavailable" and "ambiguous" files are constructed (no real file carries them); recorded in fixtures/cost/SOURCES.txt.
+- Output wording (`N tokens across K runs with a cost line`, `M runs without cost line`) follows the spec example; 04.5-04.10/04.17 assert substrings of the rendered note, so a Wave 2 escaping change could affect them.
