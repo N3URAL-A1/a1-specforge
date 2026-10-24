@@ -235,11 +235,11 @@ features:
   - id: 021-dashboard
     milestone: continuous
     title: "a1-dashboard: local read-only view of pipeline state"
-    status: planned
-    stage: null
+    status: in-flight
+    stage: started
     depends_on:
       - 018-pipeline-metrics
-    started: null
+    started: 2026-10-24
     finished: null
     spec_path: project/a1-specforge/spec/021-dashboard.md
     plan_path: null
@@ -430,6 +430,7 @@ None.
 - **2026-10-24** — 020-live-probes -> merge — stage transition via `product stage`
 - **2026-10-24** — 020-live-probes -> origin-cleanup — stage transition via `product stage`
 - **2026-10-24** — 020-live-probes -> done — stage transition via `product stage`
+- **2026-10-24** — 021-dashboard -> started — stage transition via `product stage`
 
 ## Appendix — migrated details
 

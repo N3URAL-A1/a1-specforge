@@ -3,11 +3,11 @@ id: 021-dashboard
 project: a1-specforge
 milestone: continuous
 title: "a1-dashboard: local read-only view of pipeline state"
-status: planned
-stage: null
+status: in-flight
+stage: started
 depends_on:
   - 018-pipeline-metrics
-started: null
+started: 2026-10-24
 finished: null
 spec_path: project/a1-specforge/spec/021-dashboard.md
 plan_path: null
