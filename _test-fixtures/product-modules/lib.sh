@@ -87,3 +87,77 @@ build_case() {
   NODE_OPTIONS="$pin" node "$TOOLS" product stage --by 001-first-feature --set started --dir "$pdir" >/dev/null 2>&1 || return 1
   NODE_OPTIONS="$pin" node "$TOOLS" product changelog --entry "golden regen" --why "byte-identity baseline" --dir "$pdir" >/dev/null 2>&1 || return 1
 }
+
+# check_index_against_schema <index.json> <schema.json>
+# Copied from _test-fixtures/product-schema-v11/run.sh (check_index_against_schema,
+# ~line 575). NOTE: it only checks top-level required/unknown keys and the
+# vision/audits required keys; nested `additionalProperties` is NOT enforced.
+check_index_against_schema() {
+  local index_file="$1" schema_file="$2"
+  node -e '
+    const fs = require("fs");
+    const data = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const schema = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+    for (const k of schema.required) {
+      if (!(k in data)) { console.error("missing required key: " + k); process.exit(1); }
+    }
+    const allowedTop = new Set(Object.keys(schema.properties));
+    for (const k of Object.keys(data)) {
+      if (!allowedTop.has(k)) { console.error("unexpected top-level key: " + k); process.exit(1); }
+    }
+    if ("vision" in data && data.vision !== null) {
+      const visionDef = schema.$defs.vision;
+      for (const k of visionDef.required) {
+        if (!(k in data.vision)) { console.error("vision missing required key: " + k); process.exit(1); }
+      }
+    }
+    if ("audits" in data) {
+      if (!Array.isArray(data.audits)) { console.error("audits must be an array"); process.exit(1); }
+      const auditDef = schema.$defs.audit;
+      for (const entry of data.audits) {
+        for (const k of auditDef.required) {
+          if (!(k in entry)) { console.error("audits[] entry missing required key: " + k); process.exit(1); }
+        }
+      }
+    }
+    process.exit(0);
+  ' "$index_file" "$schema_file"
+}
+
+# check_index_deep <index.json> <schema.json>: recursive validator for the JSON
+# Schema subset index.schema.json uses (type, const, enum, pattern, minLength,
+# required, properties, additionalProperties:false, items, $ref). Unlike the
+# helper above it enforces nested additionalProperties and nested types, so a
+# stray key inside `modules[]` or a milestone fails. Prints the first violation.
+check_index_deep() {
+  node -e '
+    const fs = require("fs");
+    const data = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const root = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+    const typeOf = (v) => (v === null ? "null" : Array.isArray(v) ? "array" : Number.isInteger(v) ? "integer" : typeof v);
+    const fail = (p, m) => { console.error((p || "$") + ": " + m); process.exit(1); };
+    function check(s, v, p) {
+      if (s.$ref) s = { ...root.$defs[s.$ref.split("/").pop()], ...s, $ref: undefined };
+      if (s.type) {
+        const types = [].concat(s.type); const t = typeOf(v);
+        if (!types.includes(t) && !(t === "integer" && types.includes("number"))) fail(p, "type " + t + " not in " + types);
+      }
+      if (s.const !== undefined && v !== s.const) fail(p, "const");
+      if (s.enum && !s.enum.includes(v)) fail(p, "enum");
+      if (typeof v === "string") {
+        if (s.pattern && !new RegExp(s.pattern).test(v)) fail(p, "pattern " + s.pattern + " vs " + v);
+        if (s.minLength && v.length < s.minLength) fail(p, "minLength");
+      }
+      if (v && typeof v === "object" && !Array.isArray(v)) {
+        for (const k of s.required || []) if (!(k in v)) fail(p, "missing required key " + k);
+        const props = s.properties || {};
+        for (const k of Object.keys(v)) {
+          if (props[k]) check(props[k], v[k], p + "." + k);
+          else if (s.additionalProperties === false) fail(p, "unexpected key " + k);
+        }
+      }
+      if (Array.isArray(v) && s.items) v.forEach((x, i) => check(s.items, x, p + "[" + i + "]"));
+    }
+    check(root, data, "$");
+  ' "$1" "$2"
+}

@@ -236,6 +236,9 @@ function regenerateDerived(productDir, roadmapFm, visionFmOverride, auditFmOverr
   // depends_on are all 'done' among sibling features; null if none qualify.
   const cursor = mods.firstEligible(features, mods.statusMap(features));
 
+  const modulesSummary = mods.modulesSummary(roadmapFm, features);
+  const modulesActive = modulesSummary !== null;
+
   const indexJson = {
     schema_version: 1,
     generated: nowIso(),
@@ -249,6 +252,8 @@ function regenerateDerived(productDir, roadmapFm, visionFmOverride, auditFmOverr
       title: m.title,
       status: m.status,
       target: m.target !== undefined ? m.target : null,
+      // Spec 023 FR-011: `module` only when a module is in use (never absent-as-null noise).
+      ...(modulesActive ? { module: mods.moduleOfMilestone(m) } : {}),
     })),
     features,
     next: roadmapFm.next !== undefined ? roadmapFm.next : null,
@@ -260,6 +265,8 @@ function regenerateDerived(productDir, roadmapFm, visionFmOverride, auditFmOverr
     // extension (FR-016) for the byte-identical-when-absent contract.
     vision: readVisionBlock(productDir, visionFmOverride),
     audits: readAuditsBlock(productDir, auditFmOverride),
+    // Schema v1.2 (spec 023 FR-011): present only when a module is in use.
+    ...(modulesActive ? { modules: modulesSummary } : {}),
   };
 
   const milestonesInProgress = milestones.filter((m) => m.status === 'in-progress');

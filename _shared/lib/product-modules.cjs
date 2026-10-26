@@ -72,6 +72,21 @@ function moduleFeatures(moduleId, features, milestones) {
   return features.filter((f) => moduleOfFeature(f, byId) === moduleId);
 }
 
+/** index.json / `product status` `modules` summary (FR-011/FR-012): one
+ * `{ id, milestones, cursor }` per module in use, in `modulesInUse` order;
+ * `milestones` = ids of the milestones tagged with it, in roadmap order. Returns `null` when no
+ * module is in use so callers can omit the key entirely. */
+function modulesSummary(roadmapFm, features) {
+  const inUse = modulesInUse(roadmapFm);
+  if (inUse.length === 0) return null;
+  const milestones = Array.isArray(roadmapFm.milestones) ? roadmapFm.milestones : [];
+  return inUse.map((id) => ({
+    id,
+    milestones: milestones.filter((m) => moduleOfMilestone(m) === id).map((m) => m.id),
+    cursor: moduleCursor(id, features, milestones),
+  }));
+}
+
 /** Per-module cursor id or null. Derived only, never stored in frontmatter. */
 function moduleCursor(moduleId, features, milestones) {
   return firstEligible(moduleFeatures(moduleId, features, milestones), statusMap(features));
@@ -205,8 +220,10 @@ module.exports = {
   firstEligible,
   statusMap,
   modulesInUse,
+  moduleOfMilestone,
   moduleOfFeature,
   moduleCursor,
+  modulesSummary,
   blockedReason,
   blockedText,
   cursorLine,

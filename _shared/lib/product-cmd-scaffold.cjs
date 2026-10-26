@@ -10,6 +10,7 @@ const { usage } = require('./help.cjs');
 const { productMirrorHook } = require('./vault-product-hook.cjs');
 const { PRODUCT_ROADMAP_KEY_ORDER, PRODUCT_FEATURE_KEY_ORDER } = require('./product-schema.cjs');
 const { regenerateDerived } = require('./product-derived.cjs');
+const { validateRoadmapFm } = require('./product-validate.cjs');
 const { assertSlug, derivedWrites, productDirFromFlags, buildRoadmapWritesWithChangelog } = require('./product-txn.cjs');
 
 /** product init --project <slug> --title <t> [--dir]: scaffold a brand-new
@@ -68,9 +69,9 @@ function cmdProductInit(args) {
 /** product add-milestone --id <slug> --title <t> [--target YYYY-MM] [--goal <s>]:
  * append a new milestone entry to an existing ROADMAP.md's milestones[] list. */
 function cmdProductAddMilestone(args) {
-  const flags = parseFlags(args, { id: 'value', title: 'value', target: 'value', goal: 'value', status: 'value', dir: 'value' });
+  const flags = parseFlags(args, { id: 'value', title: 'value', target: 'value', goal: 'value', status: 'value', module: 'value', dir: 'value' });
   if (!flags.id || !flags.title) {
-    usage('product add-milestone requires --id <slug> --title <title>');
+    usage('product add-milestone requires --id <slug> --title <title> [--module <slug>]');
   }
   assertSlug(flags.id, 'milestone');
   const dir = productDirFromFlags(flags);
@@ -93,12 +94,21 @@ function cmdProductAddMilestone(args) {
     title: flags.title,
     status: flags.status || 'planned',
     target: flags.target || null,
+    ...(flags.module !== undefined ? { module: flags.module } : {}),
   };
   const updatedRoadmapFm = {
     ...roadmapFm,
     updated: nowIso().slice(0, 10),
     milestones: [...milestones, newMilestone],
   };
+  if (flags.module !== undefined) {
+    // Spec 023 FR-017: slug + membership rules come from the validator (single source), before any write.
+    const prefix = `milestones[${milestones.length}].module:`;
+    const moduleErrors = validateRoadmapFm(updatedRoadmapFm).errors.filter((e) => e.startsWith(prefix));
+    if (moduleErrors.length > 0) {
+      failWithLock(lockPath, `product add-milestone: --module ${JSON.stringify(flags.module)} rejected — ${moduleErrors.join('; ')}`);
+    }
+  }
 
   const { writes } = buildRoadmapWritesWithChangelog(
     dir,

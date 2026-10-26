@@ -11,6 +11,7 @@ const { productMirrorHook } = require('./vault-product-hook.cjs');
 const { CODE_SCOPE_STAGES } = require('./code-scope.cjs');
 const { PRODUCT_ROADMAP_KEY_ORDER, PRODUCT_FEATURE_KEY_ORDER } = require('./product-schema.cjs');
 const { readProductRoadmap, readProductFeature, regenerateDerived } = require('./product-derived.cjs');
+const mods = require('./product-modules.cjs');
 const { derivedWrites, productDirFromFlags, buildRoadmapWritesWithChangelog } = require('./product-txn.cjs');
 
 function cmdProductStatus(args) {
@@ -32,7 +33,10 @@ function cmdProductStatus(args) {
     features,
     next: fm.next !== undefined ? fm.next : null,
   };
-  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+  // Spec 023 FR-012: same summary as index.json, only when a module is in use.
+  const modulesSummary = mods.modulesSummary(fm, features);
+  const outWithModules = modulesSummary === null ? out : { ...out, modules: modulesSummary };
+  process.stdout.write(JSON.stringify(outWithModules, null, 2) + '\n');
   process.exit(0);
 }
 

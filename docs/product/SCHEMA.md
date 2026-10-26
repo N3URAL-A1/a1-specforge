@@ -1,17 +1,19 @@
-# docs/product/ — Schema v1.1 (binding contract)
+# docs/product/ — Schema v1.2 (binding contract)
 
-Status: **binding** (promoted from draft 2026-07-10; extended to v1.1 2026-07-13 — see §6/§7).
+Status: **binding** (promoted from draft 2026-07-10; extended to v1.1 2026-07-13 — see §6/§7; to v1.2 2026-10-26 — see §8).
 Any writer (human, skill, or CLI) MUST conform to this document. `docs/product/index.schema.json`
 is the machine-checkable twin of the `index.json` section below — field names are identical in
 both.
 
 `docs/product` uses a single, lockstep `schema_version` across every file type in this
 directory (`ROADMAP.md`, `feature.md`, `VISION.md`, `audits/*.md`) — there is no independent
-per-document-type versioning. This document currently describes **schema v1.1**: v1's
+per-document-type versioning. This document currently describes **schema v1.2**: v1's
 `ROADMAP.md`/`feature.md`/`index.json` contract (§1-§4, unchanged) plus the v1.1 additions in
-§6 (`VISION.md`) and §7 (`audits/<date>-<focus>.md`). Both v1.1 additions are **optional
-files** — a project with only v1 content (no `VISION.md`, no `audits/`) remains fully valid;
-see §6/§7 and the Edge Cases note at the end of each section.
+§6 (`VISION.md`) and §7 (`audits/<date>-<focus>.md`) and the v1.2 additions in §8 (modules).
+Both v1.1 additions are **optional files** — a project with only v1 content (no `VISION.md`,
+no `audits/`) remains fully valid; see §6/§7 and the Edge Cases note at the end of each
+section. The v1.2 additions are **optional keys**: a project that uses no module produces
+the same files as before (§8). `schema_version` stays `1`.
 
 This directory is the single source of truth for a project's roadmap, milestones, and
 in-flight features, readable by ProOrg and by every a1 skill. It replaces ad-hoc
@@ -361,10 +363,65 @@ Rules:
 presence with zero files) is valid under schema v1.1 and MUST NOT cause `product validate` or
 any other CLI command to fail for a project that has not published an audit yet.
 
-## 8. Vault mirror (spec 010)
+## 8. Modules (v1.2)
 
-> Prose only — no schema change. Section 7 already holds the audits contract, so the mirror
-> section is numbered 8. The sets below are defined in `_shared/lib/vault-contract.cjs`
+Optional module dimension. A milestone acts as the Epic of one module; the generator derives
+per-module views and a per-module cursor from the single `ROADMAP.md`. `schema_version` stays
+`1`; every addition is an optional key (same precedent as v1.1).
+
+**ROADMAP.md frontmatter**
+- `milestones[].module` (optional): kebab-case slug. A feature belongs to the module of its
+  milestone; it lives in exactly one module.
+- `modules:` (optional, top-level, emitted directly before `milestones`): list of kebab-case
+  slugs. When present, every `module:` value MUST be a member (the project's own list only).
+  When absent, any kebab-case `module:` value is accepted. A module is *in use* when at
+  least one milestone carries it.
+- Every `product` command that rewrites the frontmatter keeps both keys unchanged.
+  `product import` never writes either key.
+
+**Generated views** (only for modules in use; machine-owned, never hand-edited, header
+`<!-- generated file — do not hand-edit. ... -->`)
+- `docs/product/modules/<module>/ROADMAP.md`: one `## <milestone-id> — <title>` section per
+  milestone of the module with a feature table.
+- `docs/product/modules/<module>/NEXT.md`: in-flight features of the module and the module
+  cursor (first open feature in roadmap order whose `depends_on` are all done; a dependency in
+  another module counts as unmet until done).
+- Project `NEXT.md` gains `## Next per module` and `## Unassigned milestones`.
+- Directories of modules no longer in use are removed in the same transaction; with no module
+  in use there is no `modules/` directory.
+- When no module is in use, `index.json` and `NEXT.md` are byte-identical to v1.1 output.
+
+**`index.json` additions** (only when at least one module is in use; otherwise neither key appears)
+```jsonc
+{
+  "milestones": [
+    { "id": "<m-slug>", "title": "<short>", "status": "planned", "target": "2026-09",
+      "module": "<module>" }                 // slug, or null for an untagged milestone
+  ],
+  "modules": [                               // modules:-list order, else first appearance
+    { "id": "<module>", "milestones": ["<m-slug>"], "cursor": "<feature-id>" }   // cursor or null
+  ]
+}
+```
+`index.schema.json` mirrors this: `$defs/milestone.module` (`string|null`, slug pattern) and the
+top-level `modules` array (`additionalProperties: false`, required `id`, `milestones`, `cursor`).
+`product status` exposes `module` per milestone exactly as in the frontmatter and, when a
+module is in use, the same top-level `modules` array.
+
+**`product add-milestone --module <slug>`** validates the slug and the `modules:` membership
+before any write; on failure it exits 1 naming the value and writes nothing.
+
+**Validator messages** (`product validate`)
+- error: `milestones[<i>].module: must be kebab-case slug, got "<value>"`
+- error: `milestones[<i>].module: '<value>' is not in modules`
+- error: `modules[<i>]: must be kebab-case slug, got "<value>"`
+- warning (valid stays true): `milestones[<i>].module: milestone '<id>' has no module; it appears only under "Unassigned milestones" in NEXT.md`
+- warning: `modules: list present but no milestone has a module`
+
+## 9. Vault mirror (spec 010)
+
+> Prose only — no schema change. Section 8 holds the modules contract, so the mirror
+> section is numbered 9. The sets below are defined in `_shared/lib/vault-contract.cjs`
 > (`PRODUCT_MIRROR_SET`, `PHASES_MIRROR_SET`, `MIRROR_EXCLUDES`) and nowhere else;
 > `a1-tools schema export --json` prints them under `mirror`.
 
