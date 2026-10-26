@@ -29,11 +29,11 @@ if (cmd === 'read') {
   process.stdout.write(JSON.stringify({ ...res, trace: ctx.trace }) + '\n');
 } else if (cmd === 'walk') {
   const ctx = ctxFor(a, b, c);
-  const read = []; let refused = 0; let text = '';
+  const read = []; const refusedList = []; let refused = 0; let text = '';
   for (const f of [...listFiles(a, []), ...listFiles(path.join(b, 'project'), [])]) {
-    try { text += readSource(f, ctx) + '\n'; read.push(f); } catch (_e) { refused += 1; }
+    try { text += readSource(f, ctx) + '\n'; read.push(f); } catch (_e) { refused += 1; refusedList.push(f); }
   }
-  process.stdout.write(JSON.stringify({ read, refused, text, trace: ctx.trace }) + '\n');
+  process.stdout.write(JSON.stringify({ read, refused, refusedList, text, trace: ctx.trace }) + '\n');
 } else if (cmd === 'clean') {
   process.stdout.write(cleanText(a));
 } else if (cmd === 'writer') {

@@ -74,7 +74,11 @@ WALK="$POUT"
 expect "03.2 walk finished" "0" "$PRC"
 expect "03.2 walk read honest files (count > 0)" "true" "$(pj "$WALK" 'j.read.length>0')"
 NMARK=$(wc -w <<<"$MARKERS" | tr -d ' ')
-expect "03.2 walk refused exactly the planted files (count = $NMARK)" "$NMARK" "$(pj "$WALK" 'j.refused')"
+# Refused = planted files + the vault hub note (outside the allowed roots). On a case-insensitive
+# filesystem (APFS) .env and .ENV are one file, on GNU/Linux two: count what was really planted.
+NREFUSED=$((NMARK + 1))
+if [ "$R3/.env" -ef "$R3/.ENV" ]; then NREFUSED=$((NREFUSED - 1)); fi
+expect "03.2 walk refused exactly the planted files plus the hub note (count = $NREFUSED)" "$NREFUSED" "$(pj "$WALK" 'j.refused')"
 for m in $MARKERS; do
   expect "03.2 marker $m: 0 occurrences in all text the seam returned" "0" "$(grep -o "LEAKMARK_$m" <<<"$WALK" | wc -l | tr -d ' ')"
 done
