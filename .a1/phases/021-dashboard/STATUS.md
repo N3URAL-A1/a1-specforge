@@ -35,3 +35,17 @@ Parse failure counted as with-cost, sum not accumulated, symlinked phase dir fol
 ### Deviations
 - None against the plan. Fixture "unavailable" and "ambiguous" files are constructed (no real file carries them); recorded in fixtures/cost/SOURCES.txt.
 - Output wording (`N tokens across K runs with a cost line`, `M runs without cost line`) follows the spec example; 04.5-04.10/04.17 assert substrings of the rendered note, so a Wave 2 escaping change could affect them.
+
+## Wave 2 — Section readers, renderer, degradation, size cap
+Completed: 2026-10-26
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| dashboard-sources.cjs, dashboard-render.cjs, parts/02-sections.sh, fixtures/sections | DONE | 839706d | part 02: 45 cases pass, 0 fail; full suite 281/0 (incl. W3 part 03 as landed) |
+
+### Deviations
+- Learnings count: `learnings.cjs` runs process.exit and is not callable as a lib, so `dashboard-sources.cjs` reimplements the vault-mode count; part 02 cross-checks it against `learnings count-since-watermark` on the same vault (02.21, equal).
+- Reads outside the repo and project/<slug>/ (pattern/a1-learnings, postmortems of any project) are allowed read-only by the Wave 3 seam (`allowedRoots`); needed for Learnings.
+- Reason codes emitted: no_product_docs, no_phases, no_watermark, unreadable (all already in the frozen set; Cost owns no_phases_mirror). No help-text change needed.
+- Test fix: 02.44 expected id 199-*, but the generated ids top out at 189 (n%90); expectation corrected to the first Specs line.
+- Per-section cap 40 lines, total 400 lines incl. frontmatter; `and N more` is exact.
