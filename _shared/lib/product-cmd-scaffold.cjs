@@ -10,7 +10,7 @@ const { usage } = require('./help.cjs');
 const { productMirrorHook } = require('./vault-product-hook.cjs');
 const { PRODUCT_ROADMAP_KEY_ORDER, PRODUCT_FEATURE_KEY_ORDER } = require('./product-schema.cjs');
 const { regenerateDerived } = require('./product-derived.cjs');
-const { assertSlug, productDirFromFlags, buildRoadmapWritesWithChangelog } = require('./product-txn.cjs');
+const { assertSlug, derivedWrites, productDirFromFlags, buildRoadmapWritesWithChangelog } = require('./product-txn.cjs');
 
 /** product init --project <slug> --title <t> [--dir]: scaffold a brand-new
  * docs/product/ROADMAP.md skeleton (schema v1, empty milestones/features) +
@@ -52,12 +52,11 @@ function cmdProductInit(args) {
 
   const roadmapFmStr = serializeNestedFrontmatter(roadmapFm, PRODUCT_ROADMAP_KEY_ORDER);
   const roadmapContent = `---\n${roadmapFmStr}\n---\n${body}`;
-  const { indexJson, nextMd } = regenerateDerived(dir, roadmapFm);
+  const derived = regenerateDerived(dir, roadmapFm);
 
   const writes = [
     { target: roadmapFile, content: roadmapContent },
-    { target: path.join(dir, 'index.json'), content: JSON.stringify(indexJson, null, 2) + '\n' },
-    { target: path.join(dir, 'NEXT.md'), content: nextMd },
+    ...derivedWrites(dir, derived),
   ];
   const vaultMirror = writeAllOrNothing(lockPath, writes, 'product init', productMirrorHook(dir));
 

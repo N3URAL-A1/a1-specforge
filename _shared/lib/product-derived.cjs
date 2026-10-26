@@ -6,7 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 const { parseNestedFrontmatter, nowIso } = require('./io.cjs');
-const { parseInlineFlowObject } = require('./product-schema.cjs');
+const { parseInlineFlowObject, PRODUCT_SLUG_RE } = require('./product-schema.cjs');
 const mods = require('./product-modules.cjs');
 
 function readProductRoadmap(dir) {
@@ -149,6 +149,52 @@ function readAuditsBlock(productDir, auditFmOverride) {
   return entries;
 }
 
+
+const MODULES_DIR = 'modules';
+
+/** Module files to write and stale module paths to delete (spec 023 FR-006,
+ * FR-007, FR-013). Only fs read: the existing `modules/` listing. A stale
+ * module dir (on disk, not in use) contributes its regular files, then the
+ * dir; `modules/` itself goes when nothing is left in it. A sub-directory,
+ * symlink or other non-regular entry inside a stale dir yields `error`
+ * (nothing is deleted or written by the caller). Dirs whose name is not a
+ * valid slug are never touched. */
+function deriveModuleOutputs(productDir, roadmapFm, features, milestones, today) {
+  const inUse = mods.modulesInUse(roadmapFm);
+  const moduleFiles = [];
+  for (const id of inUse) {
+    if (!PRODUCT_SLUG_RE.test(id)) {
+      return { moduleFiles: [], moduleDeletes: [], error: `module id ${JSON.stringify(id)} is not a kebab-case slug` };
+    }
+    moduleFiles.push(
+      { rel: `${MODULES_DIR}/${id}/ROADMAP.md`, content: mods.renderModuleRoadmap(id, milestones, features, today) },
+      { rel: `${MODULES_DIR}/${id}/NEXT.md`, content: mods.renderModuleNext(id, { features, milestones }, today) }
+    );
+  }
+  const root = path.join(productDir, MODULES_DIR);
+  if (!fs.existsSync(root)) return { moduleFiles, moduleDeletes: [], error: null };
+
+  const moduleDeletes = [];
+  let leftover = 0;
+  for (const entry of fs.readdirSync(root, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    if (inUse.includes(entry.name)) { leftover++; continue; }
+    if (!entry.isDirectory() || !PRODUCT_SLUG_RE.test(entry.name)) { leftover++; continue; }
+    const staleDir = path.join(root, entry.name);
+    const children = fs.readdirSync(staleDir, { withFileTypes: true });
+    const foreign = children.find((c) => !c.isFile());
+    if (foreign) {
+      return {
+        moduleFiles: [], moduleDeletes: [],
+        error: `stale module directory ${path.join(MODULES_DIR, entry.name)} contains a sub-directory or non-regular entry "${foreign.name}" — remove it by hand; nothing was written`,
+      };
+    }
+    for (const c of children) moduleDeletes.push({ target: path.join(staleDir, c.name), delete: true });
+    moduleDeletes.push({ target: staleDir, rmdir: true });
+  }
+  if (leftover === 0 && inUse.length === 0) moduleDeletes.push({ target: root, rmdir: true });
+  return { moduleFiles, moduleDeletes, error: null };
+}
+
 /** Pure/side-effect-free: compute regenerated index.json and NEXT.md content
  * strings from the ROADMAP frontmatter (source of truth) and productDir (only
  * read to fill spec_path/plan_path from feature.md when present — never
@@ -247,7 +293,14 @@ function regenerateDerived(productDir, roadmapFm, visionFmOverride, auditFmOverr
   nextMdLines.push('');
   const nextMd = nextMdLines.join('\n');
 
-  return { indexJson, nextMd };
+  const modOut = deriveModuleOutputs(productDir, roadmapFm, features, milestones, today);
+  return {
+    indexJson,
+    nextMd,
+    moduleFiles: modOut.moduleFiles,
+    moduleDeletes: modOut.moduleDeletes,
+    moduleError: modOut.error,
+  };
 }
 
 module.exports = {

@@ -11,7 +11,7 @@ const { productMirrorHook } = require('./vault-product-hook.cjs');
 const { CODE_SCOPE_STAGES } = require('./code-scope.cjs');
 const { PRODUCT_ROADMAP_KEY_ORDER, PRODUCT_FEATURE_KEY_ORDER } = require('./product-schema.cjs');
 const { readProductRoadmap, readProductFeature, regenerateDerived } = require('./product-derived.cjs');
-const { productDirFromFlags, buildRoadmapWritesWithChangelog } = require('./product-txn.cjs');
+const { derivedWrites, productDirFromFlags, buildRoadmapWritesWithChangelog } = require('./product-txn.cjs');
 
 function cmdProductStatus(args) {
   const flags = parseFlags(args, { dir: 'value' });
@@ -158,14 +158,13 @@ function cmdProductStage(args) {
         'stage transition via `product stage`'
       )
     : (() => {
-        const { indexJson, nextMd } = regenerateDerived(dir, updatedRoadmapFm);
+        const derived = regenerateDerived(dir, updatedRoadmapFm);
         const roadmapFmStr = serializeNestedFrontmatter(updatedRoadmapFm, PRODUCT_ROADMAP_KEY_ORDER);
         const content = `---\n${roadmapFmStr}\n---\n${roadmapBody.startsWith('\n') ? '' : '\n'}${roadmapBody}`;
         return {
           writes: [
             { target: roadmapFile, content },
-            { target: path.join(dir, 'index.json'), content: JSON.stringify(indexJson, null, 2) + '\n' },
-            { target: path.join(dir, 'NEXT.md'), content: nextMd },
+            ...derivedWrites(dir, derived),
           ],
           roadmapContent: content,
         };

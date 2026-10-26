@@ -150,6 +150,34 @@ function renderModuleNext(moduleId, data, today) {
   return lines.join('\n');
 }
 
+function tableCell(text) {
+  return String(text).replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
+}
+
+/** Module ROADMAP.md text (FR-006): one section per milestone of the module
+ * in ROADMAP order, each with a status/target line and a feature table.
+ * Done and cancelled features stay listed. `features` are derived entries. */
+function renderModuleRoadmap(moduleId, milestones, features, today) {
+  const lines = [
+    `# Module roadmap — ${moduleId}`, '', GENERATED_HEADER, '', `updated: ${today}`, '',
+  ];
+  for (const m of milestones.filter((x) => moduleOfMilestone(x) === moduleId)) {
+    lines.push(`## ${m.id} — ${m.title}`, '', `Status: ${m.status} · Target: ${m.target || 'unset'}`, '');
+    const own = features.filter((f) => f.milestone === m.id);
+    if (own.length === 0) {
+      lines.push('(no features)', '');
+      continue;
+    }
+    lines.push('| Feature | Title | Status | Stage | Depends on |', '| --- | --- | --- | --- | --- |');
+    for (const f of own) {
+      const deps = (f.depends_on || []).length > 0 ? f.depends_on.join(', ') : '—';
+      lines.push(`| ${tableCell(f.id)} | ${tableCell(f.title)} | ${f.status} | ${f.stage || 'none'} | ${deps} |`);
+    }
+    lines.push('');
+  }
+  return lines.join('\n');
+}
+
 /** Lines for the project NEXT.md between `## Next cursor` and `## How to
  * continue` (FR-010). Empty array when no module is in use. */
 function projectModuleSections(roadmapFm, features) {
@@ -185,5 +213,6 @@ module.exports = {
   inFlightLines,
   howToContinueLine,
   renderModuleNext,
+  renderModuleRoadmap,
   projectModuleSections,
 };

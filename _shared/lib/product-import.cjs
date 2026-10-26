@@ -9,7 +9,7 @@ const { acquireReservationsLock, exitWithLock, failWithLock, writeAllOrNothing }
 const { usage } = require('./help.cjs');
 const { PRODUCT_ROADMAP_KEY_ORDER, YYYY_MM_DD_RE } = require('./product-schema.cjs');
 const { regenerateDerived } = require('./product-derived.cjs');
-const { productDirFromFlags } = require('./product-txn.cjs');
+const { derivedWrites, productDirFromFlags } = require('./product-txn.cjs');
 const { validateRoadmapFm } = require('./product-validate.cjs');
 
 // ---------------------------------------------------------------------------
@@ -435,12 +435,11 @@ function cmdProductImport(args) {
 
   const roadmapFmStr = serializeNestedFrontmatter(parsed.roadmapFm, PRODUCT_ROADMAP_KEY_ORDER);
   const roadmapContent = `---\n${roadmapFmStr}\n---\n${parsed.body}`;
-  const { indexJson, nextMd } = regenerateDerived(dir, parsed.roadmapFm);
+  const derived = regenerateDerived(dir, parsed.roadmapFm);
 
   const writes = [
     { target: roadmapFile, content: roadmapContent },
-    { target: path.join(dir, 'index.json'), content: JSON.stringify(indexJson, null, 2) + '\n' },
-    { target: path.join(dir, 'NEXT.md'), content: nextMd },
+    ...derivedWrites(dir, derived),
   ];
   writeAllOrNothing(lockPath, writes, 'product import');
 
