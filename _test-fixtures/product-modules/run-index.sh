@@ -85,9 +85,19 @@ for bad in "Bad/Slug" "platform"; do
   run add-milestone --id p11-test --title "Test" --module "$bad" --dir "$AP"; RC=$?
   ck "add-milestone-module-$(echo "$bad" | tr -c 'a-zA-Z\n' _)-exit-1" "$([[ $RC -eq 1 ]] && echo true || echo false)"
   ck "add-milestone-module-$(echo "$bad" | tr -c 'a-zA-Z\n' _)-names-value" "$(grep -qF "$bad" "$WORK/last.out" && echo true || echo false)"
-  ck "add-milestone-module-$(echo "$bad" | tr -c 'a-zA-Z\n' _)-validator-text" "$(grep -qE "must be kebab-case slug|is not in modules" "$WORK/last.out" && echo true || echo false)"
+  ck "add-milestone-module-$(echo "$bad" | tr -c 'a-zA-Z\n' _)-validator-text" "$(grep -qE "must be kebab-case slug|milestone 'p11-test' has module 'platform' which is not in modules" "$WORK/last.out" && echo true || echo false)"
   ck "add-milestone-module-$(echo "$bad" | tr -c 'a-zA-Z\n' _)-tree-unchanged" "$([[ "$(tree_hash "$AP")" == "$before" ]] && echo true || echo false)"
   ck "add-milestone-module-$(echo "$bad" | tr -c 'a-zA-Z\n' _)-no-lock-left" "$([[ -z "$(find "$AP" -name '*.lock*' | head -1)" ]] && echo true || echo false)"
+done
+# Spec 023 FR-017: a bare --module (no value / empty value) is invalid, not silently ignored.
+before="$(tree_hash "$AP")"
+for bare in "--module" "--module="; do
+  tag="$(echo "$bare" | tr -c 'a-z\n' _)"
+  run add-milestone --id p13-bare --title "Bare" --dir "$AP" "$bare"; RC=$?
+  ck "add-milestone-bare-$tag-exit-non-zero" "$([[ $RC -ne 0 ]] && echo true || echo false)"
+  ck "add-milestone-bare-$tag-names-flag" "$(grep -q -- '--module' "$WORK/last.out" && echo true || echo false)"
+  ck "add-milestone-bare-$tag-tree-unchanged" "$([[ "$(tree_hash "$AP")" == "$before" ]] && echo true || echo false)"
+  ck "add-milestone-bare-$tag-no-lock-left" "$([[ -z "$(find "$AP" -name '*.lock*' | head -1)" ]] && echo true || echo false)"
 done
 run add-milestone --id p11-test --title "Test" --module immobilien --dir "$AP"; RC=$?
 ck "add-milestone-valid-module-exit-0" "$([[ $RC -eq 0 ]] && echo true || echo false)"

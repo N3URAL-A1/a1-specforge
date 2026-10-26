@@ -33,7 +33,7 @@ function cmdProductStatus(args) {
     features,
     next: fm.next !== undefined ? fm.next : null,
   };
-  // Spec 023 FR-012: same summary as index.json, only when a module is in use.
+  // Spec 023 FR-018: same summary as index.json, only when a module is in use.
   const modulesSummary = mods.modulesSummary(fm, features);
   const outWithModules = modulesSummary === null ? out : { ...out, modules: modulesSummary };
   process.stdout.write(JSON.stringify(outWithModules, null, 2) + '\n');
@@ -159,7 +159,7 @@ function cmdProductStage(args) {
         updatedRoadmapFm,
         roadmapBody,
         `${id} -> ${targetStage}`,
-        'stage transition via `product stage`'
+        'stage transition via `product stage`', lockPath
       )
     : (() => {
         const derived = regenerateDerived(dir, updatedRoadmapFm);
@@ -168,7 +168,7 @@ function cmdProductStage(args) {
         return {
           writes: [
             { target: roadmapFile, content },
-            ...derivedWrites(dir, derived),
+            ...derivedWrites(dir, derived, lockPath),
           ],
           roadmapContent: content,
         };
@@ -367,7 +367,7 @@ function cmdProductMarkersSet(flags) {
     updatedRoadmapFm,
     roadmapBody,
     changelogWhat,
-    'marker set via `product markers --set`'
+    'marker set via `product markers --set`', lockPath
   );
   const vaultMirror = writeAllOrNothing(lockPath, writes, 'product markers', productMirrorHook(dir));
 
@@ -406,7 +406,7 @@ function cmdProductChangelog(args) {
   const today = nowIso().slice(0, 10);
   const updatedRoadmapFm = { ...roadmapFm, updated: today };
 
-  const { writes } = buildRoadmapWritesWithChangelog(dir, updatedRoadmapFm, roadmapBody, flags.entry, flags.why);
+  const { writes } = buildRoadmapWritesWithChangelog(dir, updatedRoadmapFm, roadmapBody, flags.entry, flags.why, lockPath);
   const vaultMirror = writeAllOrNothing(lockPath, writes, 'product changelog', productMirrorHook(dir));
 
   const out = { status: 'OK', entry: flags.entry, why: flags.why, files_written: writes.map((w) => w.target), vault_mirror: vaultMirror };

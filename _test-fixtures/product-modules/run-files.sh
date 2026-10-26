@@ -24,6 +24,19 @@ has_line() { grep -qxF -- "$2" "$1" 2>/dev/null; }
 exists() { [[ -e "$1" ]] && echo true || echo false; }
 absent() { [[ ! -e "$1" ]] && echo true || echo false; }
 
+# gen_file <module-id> <ROADMAP.md|NEXT.md> <dest>: a file exactly as the module
+# generator writes it (stale-module cleanup only deletes such files).
+gen_file() {
+  node -e '
+    const m = require(process.argv[1]);
+    const [id, kind] = process.argv.slice(2, 4);
+    const out = kind === "NEXT.md" ? m.renderModuleNext(id, { features: [], milestones: [] }, "2026-01-01")
+      : m.renderModuleRoadmap(id, [], [], "2026-01-01");
+    process.stdout.write(out);
+  ' "$GUARD_LIB/product-modules.cjs" "$1" "$2" > "$3"
+}
+mode_of() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }
+
 mk_workdir WORK modules-w3
 n=0
 # fresh <name>: tagged fixture (alpha: m1, beta: m2); echoes the product dir.
@@ -128,13 +141,13 @@ check_modules "audit-set" "$pd" "$want_alpha_001"
 # init and import cannot produce module files (no tags yet), so their wiring is
 # proven through the delete entries: a stale modules/ dir in the target dir.
 n=$((n + 1)); pd="$WORK/init-$n/docs/product"; mkdir -p "$pd/modules/legacy"
-echo old > "$pd/modules/legacy/ROADMAP.md"
+gen_file legacy ROADMAP.md "$pd/modules/legacy/ROADMAP.md"
 run init --project w3 --title W3 --dir "$pd"; rc=$?
 ck "site scaffold.cjs init: exit 0" "$([[ $rc -eq 0 ]] && echo true || echo false)"
 ck "site init: stale modules/ removed" "$(absent "$pd/modules")"
 
 n=$((n + 1)); pd="$WORK/import-$n/docs/product"; mkdir -p "$pd/modules/legacy"
-echo old > "$pd/modules/legacy/NEXT.md"
+gen_file legacy NEXT.md "$pd/modules/legacy/NEXT.md"
 cat > "$WORK/legacy.json" <<'EOJ'
 {
   "meta": { "title": "Legacy", "version": "v1", "totalSP": 1 },
@@ -172,7 +185,7 @@ ck "hand-edit on module ROADMAP is overwritten" "$([[ -f "$R" ]] && ! grep -q 'h
 ck "hand-edit on module NEXT is overwritten" "$([[ -f "$pd/modules/beta/NEXT.md" ]] && ! grep -q 'hand edit' "$pd/modules/beta/NEXT.md" && echo true || echo false)"
 
 # ---- (3) stale directories (AC-7a) -----------------------------------------
-pd="$(fresh stale)"; mkdir -p "$pd/modules/legacy"; echo a > "$pd/modules/legacy/ROADMAP.md"; echo b > "$pd/modules/legacy/NEXT.md"
+pd="$(fresh stale)"; mkdir -p "$pd/modules/legacy"; gen_file legacy ROADMAP.md "$pd/modules/legacy/ROADMAP.md"; gen_file legacy NEXT.md "$pd/modules/legacy/NEXT.md"
 run changelog --entry e --why w --dir "$pd"; rc=$?
 ck "stale: exit 0" "$([[ $rc -eq 0 ]] && echo true || echo false)"
 ck "stale: modules/legacy removed" "$(absent "$pd/modules/legacy")"
@@ -184,14 +197,72 @@ run changelog --entry e --why w --dir "$pd"; rc=$?
 ck "untag: exit 0" "$([[ $rc -eq 0 ]] && echo true || echo false)"
 ck "untag: no modules/ directory at all" "$(absent "$pd/modules")"
 
-# a foreign sub-directory in a stale dir aborts and writes nothing
-pd="$(fresh foreign)"; mkdir -p "$pd/modules/legacy/sub"; echo a > "$pd/modules/legacy/ROADMAP.md"; echo x > "$pd/modules/legacy/sub/keep.md"
+# B1: foreign entries are never deleted. A sub-directory (or any non-generated
+# file) in a stale dir stays; the generated files go; the dir stays; one stderr
+# warning line names each kept path; the command carries on (exit 0).
+pd="$(fresh foreign)"; mkdir -p "$pd/modules/legacy/sub"; gen_file legacy ROADMAP.md "$pd/modules/legacy/ROADMAP.md"
+echo x > "$pd/modules/legacy/sub/keep.md"; echo "my notes" > "$pd/modules/legacy/notes.md"
+run changelog --entry e --why w --dir "$pd"; rc=$?
+ck "foreign entries: exit 0 (warn and continue)" "$([[ $rc -eq 0 ]] && echo true || echo false)"
+ck "foreign entries: sub-directory file survives" "$(has_line "$pd/modules/legacy/sub/keep.md" x && echo true || echo false)"
+ck "foreign entries: user note survives byte-for-byte" "$(has_line "$pd/modules/legacy/notes.md" 'my notes' && echo true || echo false)"
+ck "foreign entries: generated legacy/ROADMAP.md removed" "$(absent "$pd/modules/legacy/ROADMAP.md")"
+ck "foreign entries: stale dir NOT removed (not empty)" "$([[ -d "$pd/modules/legacy" ]] && echo true || echo false)"
+ck "foreign entries: warning names modules/legacy/notes.md" "$(grep -q 'warning:.*modules/legacy/notes.md' "$WORK/last.out" && echo true || echo false)"
+ck "foreign entries: warning names modules/legacy/sub" "$(grep -q 'warning:.*modules/legacy/sub' "$WORK/last.out" && echo true || echo false)"
+ck "foreign entries: alpha/beta still regenerated" "$(exists "$pd/modules/alpha/NEXT.md")"
+ck "foreign entries: lock released" "$(absent "$pd/.product-stage.lock.json.lock")"
+
+# a generated-looking name with non-generated content is foreign too
+pd="$(fresh lookalike)"; mkdir -p "$pd/modules/legacy"; echo "old" > "$pd/modules/legacy/ROADMAP.md"
+run changelog --entry e --why w --dir "$pd"; rc=$?
+ck "lookalike: exit 0" "$([[ $rc -eq 0 ]] && echo true || echo false)"
+ck "lookalike: ROADMAP.md with foreign content survives" "$(has_line "$pd/modules/legacy/ROADMAP.md" old && echo true || echo false)"
+
+# FR-005 / US-023-3: no module in use -> a pre-existing modules/ with foreign content is untouched
+n=$((n + 1)); pd="$WORK/nomod-$n/docs/product"; write_roadmap "$pd" w3 "" "" ""
+mkdir -p "$pd/modules/foo"; echo "keep me" > "$pd/modules/foo/notes.md"; echo "top" > "$pd/modules/README.md"
+before="$(tree_hash "$pd/modules")"
+run changelog --entry e --why w --dir "$pd"; rc=$?
+ck "no module: exit 0" "$([[ $rc -eq 0 ]] && echo true || echo false)"
+ck "no module: foreign modules/ byte-identical" "$([[ "$(tree_hash "$pd/modules")" == "$before" ]] && echo true || echo false)"
+ck "no module: modules/foo directory kept" "$([[ -d "$pd/modules/foo" ]] && echo true || echo false)"
+
+# B1: symlinks are never followed. Reproductions P7 (modules/ -> outside) and
+# P4 (module dir -> outside): abort, nothing written, lock released, outside untouched.
+sym_case() { # sym_case <root|moduledir>: the link target is <case>/outside, outside the product dir
+  local nm="$1" pd out
+  pd="$(fresh "sym-$nm")"; out="$(dirname "$(dirname "$pd")")/outside"
+  mkdir -p "$out/alpha"; echo "user file" > "$out/alpha/ROADMAP.md"; echo "user file" > "$out/alpha/keepme.md"
+  if [[ "$nm" == root ]]; then ln -s "$out" "$pd/modules"
+  else mkdir -p "$pd/modules"; ln -s "$out/alpha" "$pd/modules/alpha"; fi
+  local before outbefore; before="$(tree_hash "$pd")"; outbefore="$(tree_hash "$out")"
+  run changelog --entry e --why w --dir "$pd"; rc=$?
+  ck "symlink $nm: exit non-zero" "$([[ $rc -ne 0 ]] && echo true || echo false)"
+  ck "symlink $nm: message mentions symbolic link" "$(grep -q 'symbolic link' "$WORK/last.out" && echo true || echo false)"
+  ck "symlink $nm: product tree unchanged (nothing written)" "$([[ "$(tree_hash "$pd")" == "$before" ]] && echo true || echo false)"
+  ck "symlink $nm: outside target untouched" "$([[ "$(tree_hash "$out")" == "$outbefore" && -f "$out/alpha/keepme.md" ]] && echo true || echo false)"
+  ck "symlink $nm: no lock left" "$(absent "$pd/.product-stage.lock.json.lock")"
+}
+sym_case root
+sym_case moduledir
+
+# B1 / minor 2: modules is a regular file -> clean error (no crash, no lock left)
+pd="$(fresh modfile)"; echo "i am a file" > "$pd/modules"
 before="$(tree_hash "$pd")"
 run changelog --entry e --why w --dir "$pd"; rc=$?
-ck "foreign subdir: exit non-zero" "$([[ $rc -ne 0 ]] && echo true || echo false)"
-ck "foreign subdir: message names the sub-directory" "$(grep -q 'sub' "$WORK/last.out" && grep -q 'modules/legacy' "$WORK/last.out" && echo true || echo false)"
-ck "foreign subdir: tree unchanged (nothing written)" "$([[ "$(tree_hash "$pd")" == "$before" ]] && echo true || echo false)"
-ck "foreign subdir: lock released" "$(absent "$pd/.product-stage.lock.json.lock")"
+ck "modules is a file: exit non-zero" "$([[ $rc -ne 0 ]] && echo true || echo false)"
+ck "modules is a file: clean message, no internal error" "$(grep -q 'not a directory' "$WORK/last.out" && ! grep -qi 'internal error' "$WORK/last.out" && echo true || echo false)"
+ck "modules is a file: tree unchanged" "$([[ "$(tree_hash "$pd")" == "$before" ]] && echo true || echo false)"
+ck "modules is a file: no lock left" "$(absent "$pd/.product-stage.lock.json.lock")"
+
+# minor 1: rollback restores the MODE of a deleted file (0600 stays 0600)
+pd="$(fresh mode)"; setup_stale_gen() { mkdir -p "$1/modules/legacy"; gen_file legacy ROADMAP.md "$1/modules/legacy/ROADMAP.md"; gen_file legacy NEXT.md "$1/modules/legacy/NEXT.md"; }
+setup_stale_gen "$pd"; chmod 600 "$pd/modules/legacy/NEXT.md" "$pd/modules/legacy/ROADMAP.md"
+A1_TEST_FAIL_RENAME_AT_INDEX=9 node "$TOOLS" product changelog --entry e --why w --dir "$pd" >"$WORK/last.out" 2>&1; rc=$?
+ck "mode restore: injected failure at the last op fails the command" "$([[ $rc -ne 0 ]] && echo true || echo false)"
+ck "mode restore: deleted NEXT.md is back with mode 600 (got $(mode_of "$pd/modules/legacy/NEXT.md"))" "$([[ "$(mode_of "$pd/modules/legacy/NEXT.md")" == 600 ]] && echo true || echo false)"
+ck "mode restore: deleted ROADMAP.md is back with mode 600" "$([[ "$(mode_of "$pd/modules/legacy/ROADMAP.md")" == 600 ]] && echo true || echo false)"
 
 # ---- (2) fault injection at every operation index --------------------------
 # fault_sweep <name> <expected-op-count> <setup-fn>: for i in 0..: fresh copy,
@@ -217,7 +288,7 @@ fault_sweep() {
   ck "fault sweep $nm: every injected index leaves all originals unchanged" "$allok"
 }
 setup_plain() { :; }
-setup_stale() { mkdir -p "$1/modules/legacy"; echo a > "$1/modules/legacy/ROADMAP.md"; echo b > "$1/modules/legacy/NEXT.md"; }
+setup_stale() { mkdir -p "$1/modules/legacy"; gen_file legacy ROADMAP.md "$1/modules/legacy/ROADMAP.md"; gen_file legacy NEXT.md "$1/modules/legacy/NEXT.md"; }
 # 3 base files + 4 module files = 7
 fault_sweep plain 7 setup_plain
 # + 2 file deletes + 1 rmdir = 10
@@ -227,7 +298,7 @@ pd="$WORK/sweep-nomodules/docs/product"; write_roadmap "$pd" w3 "modules: [alpha
 A1_TEST_FAIL_RENAME_AT_INDEX=6 node "$TOOLS" product stage --by 001-first-feature --set done --dir "$pd" >/dev/null 2>&1
 ck "fault at last op: no half-written modules/ directory remains" "$(absent "$pd/modules")"
 # last module-file position when ALL modules go away (rmdir of modules/ itself)
-setup_all_stale() { mkdir -p "$1/modules/a" "$1/modules/b"; echo 1 > "$1/modules/a/NEXT.md"; echo 2 > "$1/modules/b/ROADMAP.md"; }
+setup_all_stale() { mkdir -p "$1/modules/a" "$1/modules/b"; gen_file a NEXT.md "$1/modules/a/NEXT.md"; gen_file b ROADMAP.md "$1/modules/b/ROADMAP.md"; }
 all_ok=true; i=0
 while [[ $i -lt 20 ]]; do
   pd="$WORK/sweep-allstale-$i/docs/product"; write_roadmap "$pd" w3 "" "" ""; setup_all_stale "$pd"
@@ -241,7 +312,7 @@ ck "fault sweep all-stale (rmdir of modules/ included, $i positions): dirs and f
 ck "fault sweep all-stale: operation count is 8 (3 files + 2 deletes + 2 dir rmdirs + modules/ rmdir; got $i)" "$([[ $i -eq 8 ]] && echo true || echo false)"
 
 # ---- static caller guard ---------------------------------------------------
-callers="$(grep -n 'regenerateDerived(' "$GUARD_LIB"/*.cjs | grep -v '/product-derived.cjs:' | grep -v '^\s*//' | grep -vc '^\S*:[0-9]*:\s*\(//\|\*\)')"
+callers="$(grep -n 'regenerateDerived(' "$GUARD_LIB"/*.cjs | grep -v '/product-derived.cjs:' | grep -vc '^\S*:[0-9]*:\s*\(//\|\*\)')"
 uses="$(grep -n 'derivedWrites(' "$GUARD_LIB"/*.cjs | grep -v 'function derivedWrites' | grep -vc '^\S*:[0-9]*:\s*\(//\|\*\)')"
 ck "static guard: regenerateDerived call sites ($callers) == derivedWrites uses ($uses), both 8" "$([[ "$callers" -eq "$uses" && "$callers" -eq 8 ]] && echo true || echo false)"
 

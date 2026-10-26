@@ -376,6 +376,9 @@ per-module views and a per-module cursor from the single `ROADMAP.md`. `schema_v
   slugs. When present, every `module:` value MUST be a member (the project's own list only).
   When absent, any kebab-case `module:` value is accepted. A module is *in use* when at
   least one milestone carries it.
+- `module: null` and `module: ""` are validator errors (`must be kebab-case slug`); the
+  generator itself treats both as "no module" (the milestone is unassigned), so a hand-edited
+  file never crashes it before `product validate` reports the error.
 - Every `product` command that rewrites the frontmatter keeps both keys unchanged.
   `product import` never writes either key.
 
@@ -387,8 +390,14 @@ per-module views and a per-module cursor from the single `ROADMAP.md`. `schema_v
   cursor (first open feature in roadmap order whose `depends_on` are all done; a dependency in
   another module counts as unmet until done).
 - Project `NEXT.md` gains `## Next per module` and `## Unassigned milestones`.
-- Directories of modules no longer in use are removed in the same transaction; with no module
-  in use there is no `modules/` directory.
+- Cleanup of modules no longer in use runs in the same transaction but deletes ONLY the
+  generator's own files: a `ROADMAP.md` / `NEXT.md` whose content starts with the module title
+  line + the generated header. A stale directory is removed once it is empty; any other entry
+  is left in place and reported with one `warning:` line on stderr (the command continues).
+  `modules/` is removed only when empty and no module is in use, so a project without modules
+  keeps a foreign `modules/` untouched. `modules/` or an in-use module directory that is a
+  symbolic link, not a directory, or resolves outside `docs/product/` aborts the command with
+  a non-zero exit and nothing written.
 - When no module is in use, `index.json` and `NEXT.md` are byte-identical to v1.1 output.
 
 **`index.json` additions** (only when at least one module is in use; otherwise neither key appears)
@@ -413,7 +422,7 @@ before any write; on failure it exits 1 naming the value and writes nothing.
 
 **Validator messages** (`product validate`)
 - error: `milestones[<i>].module: must be kebab-case slug, got "<value>"`
-- error: `milestones[<i>].module: '<value>' is not in modules`
+- error: `milestones[<i>].module: milestone '<id>' has module '<value>' which is not in modules`
 - error: `modules[<i>]: must be kebab-case slug, got "<value>"`
 - warning (valid stays true): `milestones[<i>].module: milestone '<id>' has no module; it appears only under "Unassigned milestones" in NEXT.md`
 - warning: `modules: list present but no milestone has a module`

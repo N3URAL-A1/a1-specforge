@@ -57,7 +57,7 @@ function cmdProductInit(args) {
 
   const writes = [
     { target: roadmapFile, content: roadmapContent },
-    ...derivedWrites(dir, derived),
+    ...derivedWrites(dir, derived, lockPath),
   ];
   const vaultMirror = writeAllOrNothing(lockPath, writes, 'product init', productMirrorHook(dir));
 
@@ -74,6 +74,10 @@ function cmdProductAddMilestone(args) {
     usage('product add-milestone requires --id <slug> --title <title> [--module <slug>]');
   }
   assertSlug(flags.id, 'milestone');
+  // Spec 023 FR-017: a bare `--module` / `--module=` is invalid input, never silently ignored.
+  if ('module' in flags && (flags.module === undefined || flags.module === '')) {
+    usage('product add-milestone: --module requires a kebab-case slug value (e.g. --module billing)');
+  }
   const dir = productDirFromFlags(flags);
   const lockFile = path.join(dir, '.product-stage.lock.json');
   const lockPath = acquireReservationsLock(lockFile);
@@ -115,7 +119,7 @@ function cmdProductAddMilestone(args) {
     updatedRoadmapFm,
     roadmapBody,
     `milestone '${flags.id}' added`,
-    flags.goal || 'new milestone via `product add-milestone`'
+    flags.goal || 'new milestone via `product add-milestone`', lockPath
   );
   const vaultMirror = writeAllOrNothing(lockPath, writes, 'product add-milestone', productMirrorHook(dir));
 
@@ -184,7 +188,7 @@ function cmdProductAddFeature(args) {
     updatedRoadmapFm,
     roadmapBody,
     `feature '${flags.id}' added`,
-    flags.goal || 'new feature via `product add-feature`'
+    flags.goal || 'new feature via `product add-feature`', lockPath
   );
   const vaultMirror = writeAllOrNothing(lockPath, writes, 'product add-feature', productMirrorHook(dir));
 
@@ -258,7 +262,7 @@ function cmdProductFeatureInit(args) {
     updatedRoadmapFm,
     roadmapBody,
     `feature.md created for '${flags.id}'`,
-    'formal spec/plan attached via `product feature-init`'
+    'formal spec/plan attached via `product feature-init`', lockPath
   );
   writes.push({ target: featureFile, content: featureContent });
   const vaultMirror = writeAllOrNothing(lockPath, writes, 'product feature-init', productMirrorHook(dir));

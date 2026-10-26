@@ -222,7 +222,7 @@ function cmdProductAuditMirror(args) {
     updatedRoadmapFm,
     roadmapBody,
     `audit-mirror: ${newFeatures.length} feature(s) mirrored from ${path.basename(auditFile)}`,
-    `finding(s) ${mirrored.map((m) => m.finding).join(', ')} mirrored into milestone '${flags.milestone}' via \`product audit-mirror\``
+    `finding(s) ${mirrored.map((m) => m.finding).join(', ')} mirrored into milestone '${flags.milestone}' via \`product audit-mirror\``, lockPath
   );
   const vaultMirror = writeAllOrNothing(lockPath, writes, 'product audit-mirror', productMirrorHook(dir));
 

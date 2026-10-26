@@ -7,7 +7,7 @@ const PRODUCT_MODULES_HELP = `  Product modules (spec 023-module-roadmap-views).
                     modules: [<slug>, ...]    Optional vocabulary list of kebab-case slugs, emitted directly before milestones.
                     module: <slug>            Optional key on a milestone (kebab-case), emitted directly after target.
                   Validation ('product validate'): a malformed slug is an error. When \`modules:\` is present, a milestone
-                  whose module is not listed fails with "module: '<slug>' is not in modules". Without \`modules:\` the
+                  whose module is not listed fails with "module: milestone '<id>' has module '<slug>' which is not in modules". Without \`modules:\` the
                   tagged milestones define the modules in use. Warnings (exit unchanged): some milestones are tagged and
                   others not (the untagged ones show only under "Unassigned milestones"), or \`modules:\` is listed but no
                   milestone has a module.

@@ -157,7 +157,7 @@ function validateRoadmapFm(fm) {
         req(`${p}.module`, okSlug, `must be kebab-case slug, got ${JSON.stringify(m.module)}`);
         // Membership is checked against the project's own list only (never a code-side vocabulary).
         if (okSlug && hasModulesList && !allowedModules.has(m.module)) {
-          errors.push(`${p}.module: '${m.module}' is not in modules`);
+          errors.push(`${p}.module: milestone '${m.id}' has module '${m.module}' which is not in modules`);
         }
       }
     });

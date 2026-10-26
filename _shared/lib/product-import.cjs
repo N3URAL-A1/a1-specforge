@@ -439,7 +439,7 @@ function cmdProductImport(args) {
 
   const writes = [
     { target: roadmapFile, content: roadmapContent },
-    ...derivedWrites(dir, derived),
+    ...derivedWrites(dir, derived, lockPath),
   ];
   writeAllOrNothing(lockPath, writes, 'product import');
 

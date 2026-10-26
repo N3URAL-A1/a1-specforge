@@ -10,6 +10,7 @@ const [name, what, id] = process.argv.slice(2);
 const fm = cases[name];
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dq-'));
 const { indexJson, nextMd } = regenerateDerived(dir, fm);
+fs.rmSync(dir, { recursive: true, force: true });
 if (what === 'project-next') process.stdout.write(nextMd);
 else if (what === 'module-next') process.stdout.write(m.renderModuleNext(id, { features: indexJson.features, milestones: fm.milestones }, '2026-01-01'));
 else if (what === 'cursors') {

@@ -147,6 +147,19 @@ function howToContinueLine(cursorId) {
     : 'Run `a1-plan` to create an executable plan for the next-cursor feature, or `a1-execute` if a plan already exists.';
 }
 
+/** Title line of a generated module file (`fileName` = 'ROADMAP.md' | 'NEXT.md'). */
+function moduleFileTitle(fileName, moduleId) {
+  return fileName === 'NEXT.md' ? `# NEXT.md — module ${moduleId}` : `# Module roadmap — ${moduleId}`;
+}
+
+/** True only for a file the module generator itself wrote: ROADMAP.md / NEXT.md
+ * whose content starts with the module title line + GENERATED_HEADER. The
+ * stale-module cleanup deletes nothing else (spec 023 FR-007). */
+function isGeneratedModuleFile(fileName, moduleId, content) {
+  if (fileName !== 'ROADMAP.md' && fileName !== 'NEXT.md') return false;
+  return content.startsWith(`${moduleFileTitle(fileName, moduleId)}\n\n${GENERATED_HEADER}\n`);
+}
+
 /** Module NEXT.md text (FR-009). `data` = { features, milestones } where
  * features are the derived feature entries (with milestone/status/depends_on). */
 function renderModuleNext(moduleId, data, today) {
@@ -154,7 +167,7 @@ function renderModuleNext(moduleId, data, today) {
   const own = moduleFeatures(moduleId, features, milestones);
   const cursor = moduleCursor(moduleId, features, milestones);
   const lines = [
-    `# NEXT.md — module ${moduleId}`, '', GENERATED_HEADER, '', `updated: ${today}`, '',
+    moduleFileTitle('NEXT.md', moduleId), '', GENERATED_HEADER, '', `updated: ${today}`, '',
     '## In-flight features', '', ...inFlightLines(own),
     '', '## Next cursor', '',
     cursor === null
@@ -174,7 +187,7 @@ function tableCell(text) {
  * Done and cancelled features stay listed. `features` are derived entries. */
 function renderModuleRoadmap(moduleId, milestones, features, today) {
   const lines = [
-    `# Module roadmap — ${moduleId}`, '', GENERATED_HEADER, '', `updated: ${today}`, '',
+    moduleFileTitle('ROADMAP.md', moduleId), '', GENERATED_HEADER, '', `updated: ${today}`, '',
   ];
   for (const m of milestones.filter((x) => moduleOfMilestone(x) === moduleId)) {
     lines.push(`## ${m.id} — ${m.title}`, '', `Status: ${m.status} · Target: ${m.target || 'unset'}`, '');
@@ -229,6 +242,8 @@ module.exports = {
   cursorLine,
   inFlightLines,
   howToContinueLine,
+  moduleFileTitle,
+  isGeneratedModuleFile,
   renderModuleNext,
   renderModuleRoadmap,
   projectModuleSections,

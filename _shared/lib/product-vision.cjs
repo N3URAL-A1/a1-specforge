@@ -128,7 +128,7 @@ function cmdProductVisionInit(args) {
   const derived = regenerateDerived(dir, roadmapFm, visionFm);
   const writes = [
     { target: visionFile, content: visionContent },
-    ...derivedWrites(dir, derived),
+    ...derivedWrites(dir, derived, lockPath),
   ];
   const vaultMirror = writeAllOrNothing(lockPath, writes, 'product vision-init', productMirrorHook(dir));
 
@@ -204,7 +204,7 @@ function cmdProductVisionTouch(args) {
 
   const writes = [
     { target: visionFile, content: visionContentAfter },
-    ...derivedWrites(dir, derived),
+    ...derivedWrites(dir, derived, lockPath),
   ];
   const vaultMirror = writeAllOrNothing(lockPath, writes, 'product vision-touch', productMirrorHook(dir));
 

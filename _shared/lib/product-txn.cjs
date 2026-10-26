@@ -84,18 +84,18 @@ function productDirFromFlags(flags) {
 
 // writeAllOrNothing lives in lib/locks.cjs
 
-// Same file every product writer locks on; acquireReservationsLock appends `.lock`.
-const PRODUCT_LOCK_PATH_SUFFIX = '.product-stage.lock.json.lock';
-
 /** The derived part of every product write set: index.json, NEXT.md, the
  * module files and the stale-module delete/rmdir entries (spec 023). Every
  * caller of regenerateDerived goes through here so module files share the
- * all-or-nothing transaction. A stale module dir holding a sub-directory
- * aborts the command (lock released, nothing written). */
-function derivedWrites(dir, derived) {
+ * all-or-nothing transaction. A module error (symlinked or unreadable
+ * `modules/`, bad module id) aborts the command: `lockPath` — the lock the
+ * CALLER holds — is released, nothing is written. Foreign entries under
+ * `modules/` are left alone and reported as one stderr line each. */
+function derivedWrites(dir, derived, lockPath) {
   if (derived.moduleError) {
-    failWithLock(path.join(dir, PRODUCT_LOCK_PATH_SUFFIX), `product: ${derived.moduleError}`);
+    failWithLock(lockPath, `product: ${derived.moduleError}`);
   }
+  for (const w of derived.moduleWarnings || []) process.stderr.write(`[a1-tools] warning: ${w}\n`);
   return [
     { target: path.join(dir, 'index.json'), content: JSON.stringify(derived.indexJson, null, 2) + '\n' },
     { target: path.join(dir, 'NEXT.md'), content: derived.nextMd },
@@ -106,11 +106,11 @@ function derivedWrites(dir, derived) {
 
 /** Build the writes[] entries for ROADMAP.md (with an appended changelog
  * line) + regenerated index.json/NEXT.md, given the ALREADY-updated
- * roadmap frontmatter + body. Handles the >100-entry archive rotation
+ * roadmap frontmatter + body (`lockPath` = the lock the caller holds). Handles the >100-entry archive rotation
  * (FR-010) by adding a 4th write when rotation occurs. Returns
  * { writes, roadmapContent } for the caller to push onto its own writes[]
  * (e.g. feature.md, reservations.json) before calling writeAllOrNothing. */
-function buildRoadmapWritesWithChangelog(dir, updatedRoadmapFm, roadmapBody, what, why) {
+function buildRoadmapWritesWithChangelog(dir, updatedRoadmapFm, roadmapBody, what, why, lockPath) {
   const { body: bodyWithEntry, archiveAppend } = appendChangelogEntry(roadmapBody, what, why);
   const derived = regenerateDerived(dir, updatedRoadmapFm);
 
@@ -119,7 +119,7 @@ function buildRoadmapWritesWithChangelog(dir, updatedRoadmapFm, roadmapBody, wha
 
   const writes = [
     { target: path.join(dir, 'ROADMAP.md'), content: roadmapContent },
-    ...derivedWrites(dir, derived),
+    ...derivedWrites(dir, derived, lockPath),
   ];
   if (archiveAppend !== null) {
     const archiveFile = path.join(dir, 'CHANGELOG-archive.md');

@@ -215,7 +215,7 @@ function cmdProductAuditPublish(args) {
   const derived = regenerateDerived(dir, roadmapFm, undefined, { name: fileName, fm: auditFm });
   const writes = [
     { target: auditFile, content: auditContent },
-    ...derivedWrites(dir, derived),
+    ...derivedWrites(dir, derived, lockPath),
   ];
   const vaultMirror = writeAllOrNothing(lockPath, writes, 'product audit-publish', productMirrorHook(dir));
 
@@ -446,7 +446,7 @@ function cmdProductAuditSet(args) {
 
   const writes = [
     { target: auditFile, content: auditContentAfter },
-    ...derivedWrites(dir, derived),
+    ...derivedWrites(dir, derived, lockPath),
   ];
   const vaultMirror = writeAllOrNothing(lockPath, writes, 'product audit-set', productMirrorHook(dir));
 

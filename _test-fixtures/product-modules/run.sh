@@ -73,7 +73,7 @@ V1="$WORK/v1/docs/product"
 write_roadmap "$V1" v1 "modules: [immobilien, crm-core]" "immobilien" "platform"
 OUT="$(validate "$V1")"; RC=$?
 assert_rc "validate-unknown-module-exit-1" 1 "$RC" "$OUT"
-assert_true "validate-unknown-module-error-text" "$([[ "$(jget "$OUT" 'd.errors.filter(e=>e==="milestones[1].module: '"'"'platform'"'"' is not in modules")')" != "[]" ]] && echo true || echo false)"
+assert_true "validate-unknown-module-error-text" "$([[ "$(jget "$OUT" 'd.errors.filter(e=>e==="milestones[1].module: milestone '"'"'m2-second'"'"' has module '"'"'platform'"'"' which is not in modules")')" != "[]" ]] && echo true || echo false)"
 assert_true "validate-unknown-module-valid-false" "$([[ "$(jget "$OUT" 'd.valid')" == "false" ]] && echo true || echo false)"
 
 # V2: unsafe / non-kebab slugs each give an error naming the value.
