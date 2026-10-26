@@ -256,10 +256,10 @@ features:
   - id: 023-module-roadmap-views
     milestone: continuous
     title: "Module dimension for docs/product: per-module roadmap views and cursors"
-    status: planned
-    stage: null
+    status: in-flight
+    stage: started
     depends_on: []
-    started: null
+    started: 2026-10-26
     finished: null
     spec_path: project/a1-specforge/spec/023-module-roadmap-views.md
     plan_path: null
@@ -443,6 +443,7 @@ None.
 - **2026-10-24** — 021-dashboard -> started — stage transition via `product stage`
 - **2026-10-26** — feature '023-module-roadmap-views' added — Optional milestone.module plus modules: vocabulary in ROADMAP.md; generated docs/product/modules/<module>/ROADMAP.md + NEXT.md with a derived per-module cursor, backward compatible for projects without modules.
 - **2026-10-26** — feature.md created for '023-module-roadmap-views' — formal spec/plan attached via `product feature-init`
+- **2026-10-26** — 023-module-roadmap-views -> started — stage transition via `product stage`
 
 ## Appendix — migrated details
 

@@ -3,10 +3,10 @@ id: 023-module-roadmap-views
 project: a1-specforge
 milestone: continuous
 title: "Module dimension for docs/product: per-module roadmap views and cursors"
-status: planned
-stage: null
+status: in-flight
+stage: started
 depends_on: []
-started: null
+started: 2026-10-26
 finished: null
 spec_path: project/a1-specforge/spec/023-module-roadmap-views.md
 plan_path: null

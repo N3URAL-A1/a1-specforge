@@ -26,6 +26,30 @@
       "by": "021-dashboard",
       "at": "2026-10-24T03:04:31.033Z",
       "stage": "started"
+    },
+    {
+      "type": "code_scope",
+      "paths": [
+        "_shared/lib/product-schema.cjs",
+        "_shared/lib/product-validate.cjs",
+        "_shared/lib/product-modules.cjs",
+        "_shared/lib/product-derived.cjs",
+        "_shared/lib/product-txn.cjs",
+        "_shared/lib/product-cmd-scaffold.cjs",
+        "_shared/lib/product-cmd-progress.cjs",
+        "_shared/lib/product-vision.cjs",
+        "_shared/lib/product-audit.cjs",
+        "_shared/lib/product-import.cjs",
+        "_shared/lib/locks.cjs",
+        "_shared/lib/help-product.cjs",
+        "docs/product/SCHEMA.md",
+        "docs/product/index.schema.json",
+        "docs/vault.md",
+        "_test-fixtures/product-modules/"
+      ],
+      "by": "023-module-roadmap-views",
+      "at": "2026-10-26T14:31:14.404Z",
+      "stage": "started"
     }
   ]
 }
