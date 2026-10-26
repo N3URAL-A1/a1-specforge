@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "generated": "MASKED",
+  "project": {
+    "id": "p",
+    "title": "Plain",
+    "status": "active"
+  },
+  "milestones": [
+    {
+      "id": "P1",
+      "title": "T-P1",
+      "status": "in-progress",
+      "target": "2027-01"
+    },
+    {
+      "id": "P2",
+      "title": "T-P2",
+      "status": "planned",
+      "target": "2027-01"
+    }
+  ],
+  "features": [
+    {
+      "id": "001",
+      "milestone": "P1",
+      "title": "F-001",
+      "status": "done",
+      "stage": null,
+      "depends_on": [],
+      "started": null,
+      "finished": null,
+      "spec_path": null,
+      "plan_path": null
+    },
+    {
+      "id": "002",
+      "milestone": "P1",
+      "title": "F-002",
+      "status": "in-flight",
+      "stage": "plan",
+      "depends_on": [
+        "001"
+      ],
+      "started": null,
+      "finished": null,
+      "spec_path": null,
+      "plan_path": null
+    },
+    {
+      "id": "003",
+      "milestone": "P1",
+      "title": "F-003",
+      "status": "planned",
+      "stage": null,
+      "depends_on": [
+        "001"
+      ],
+      "started": null,
+      "finished": null,
+      "spec_path": null,
+      "plan_path": null
+    },
+    {
+      "id": "004",
+      "milestone": "P2",
+      "title": "F-004",
+      "status": "planned",
+      "stage": null,
+      "depends_on": [
+        "003"
+      ],
+      "started": null,
+      "finished": null,
+      "spec_path": null,
+      "plan_path": null
+    }
+  ],
+  "next": "002",
+  "cursor": "002",
+  "vision": null,
+  "audits": []
+}

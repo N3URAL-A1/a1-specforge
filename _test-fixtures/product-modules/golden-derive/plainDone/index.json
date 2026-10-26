@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "generated": "MASKED",
+  "project": {
+    "id": "p",
+    "title": "PlainDone",
+    "status": "active"
+  },
+  "milestones": [
+    {
+      "id": "P1",
+      "title": "T-P1",
+      "status": "done",
+      "target": "2027-01"
+    }
+  ],
+  "features": [
+    {
+      "id": "001",
+      "milestone": "P1",
+      "title": "F-001",
+      "status": "done",
+      "stage": null,
+      "depends_on": [],
+      "started": null,
+      "finished": null,
+      "spec_path": null,
+      "plan_path": null
+    },
+    {
+      "id": "002",
+      "milestone": "P1",
+      "title": "F-002",
+      "status": "cancelled",
+      "stage": null,
+      "depends_on": [],
+      "started": null,
+      "finished": null,
+      "spec_path": null,
+      "plan_path": null
+    }
+  ],
+  "next": null,
+  "cursor": null,
+  "vision": null,
+  "audits": []
+}
