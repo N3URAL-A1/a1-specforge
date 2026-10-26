@@ -75,6 +75,15 @@ Notes:
   paths recorded in the feature's own `feature.md` frontmatter (see §2) and in `index.json` (§3).
 - Every feature belongs to exactly one milestone. IDs (milestone and feature) are never recycled.
 
+### Write safety (v1.2, all `product` commands)
+
+Every file the `product` commands write — `ROADMAP.md`, `NEXT.md`, `index.json`, `VISION.md`,
+`features/*/feature.md`, audits and the module views — goes through one all-or-nothing
+transaction. A write target that is itself a symbolic link, or whose parent directory resolves
+outside `docs/product/`, aborts the transaction with a non-zero exit before any write. This holds
+in projects without modules too (before v1.2 a symlinked `ROADMAP.md` was silently replaced by a
+regular file). Module-specific rules: §8.
+
 ### Body structure
 
 ```markdown
