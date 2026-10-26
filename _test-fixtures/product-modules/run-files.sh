@@ -37,7 +37,7 @@ gen_file() {
     process.stdout.write(out);
   ' "$GUARD_LIB/product-modules.cjs" "$1" "$2" > "$3"
 }
-mode_of() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }
+mode_of() { python3 -c "import os, sys; print(oct(os.stat(sys.argv[1]).st_mode & 0o777)[2:])" "$1"; }
 
 mk_workdir WORK modules-w3
 n=0
