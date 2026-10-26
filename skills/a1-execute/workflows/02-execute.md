@@ -323,7 +323,8 @@ carry this wave's STATUS.md (same silent failure as the commit-landed gate).
 Multi-lane runs: once per lane wave, from that lane's `$WORK_PATH`.
 
 `<project-slug>` is the `project:` of `docs/product/ROADMAP.md`; a repo
-without a roadmap passes `--slug <slug>` instead (phases only). Skipped
+without a roadmap passes `--slug <slug>` instead, to the `vault sync` line (phases
+only) and to the `dashboard build` line alike. Skipped
 silently when `A1_VAULT_ROOT` is not set (tier repo-local). A failed sync is a
 warning in the 2c summary, never a reason to stop the wave:
 

@@ -162,3 +162,37 @@ if [[ -d "$REAL_HOME/N3URAL-Vault" ]]; then
 else
   echo "SKIP  05.44 real vault absent ($REAL_HOME/N3URAL-Vault) — check skipped"
 fi
+
+# ---- Wave 6: call-site prose, a1-progress line hardening --------------------------------------------------
+# RED before the fix: the prose told roadmap-less repos to pass --slug without saying the dashboard step takes
+# it too (the CLI rejected the flag); the progress line printed any `generated:` text, doubled `head`, and
+# printed an empty "(generated )" for a note without the key.
+for wf in skills/a1-execute/workflows/02-execute.md skills/a1-execute/workflows/03-verify.md skills/a1-plan/workflows/04-audit.md; do
+  para="$(node -e '
+    const t = require("fs").readFileSync(process.argv[1], "utf8").split(/\n\s*\n/);
+    const hit = t.filter((p) => p.includes("--slug <slug>"));
+    process.stdout.write(hit.length === 1 ? hit[0] : "paragraphs:" + hit.length);' "$REPO_ROOT/$wf")"
+  expect "05.45 $wf: exactly one --slug paragraph" "true" "$([[ "$para" != paragraphs:* ]] && echo true || echo false)"
+  expect_has "05.46 $wf: the --slug paragraph names the dashboard build step" "$para" "dashboard build"
+done
+# the documented promise holds: a roadmap-less repo passes --slug to both steps
+mk_fixture_repo W6P; mk_fixture_vault W6PV
+rm -f "$W6P/docs/product/ROADMAP.md"
+mkdir -p "$WORK/iso6" && rm -rf "$WORK/iso6/repo" && cp -R "$W6P" "$WORK/iso6/repo"
+vault_run "$WORK/iso6/repo" "$W6PV" dashboard build --slug fixture-slug
+expect "05.47 roadmap-less: dashboard build --slug <slug> exits 0 (${ERR:0:120})" "0" "$RC"
+
+# a1-progress line: printed only with a generated value, sanitized to timestamp characters
+progress_run6() { (cd "$R5" && A1_TOOLS="$TOOLS" A1_VAULT_ROOT="$V5" A1_HOST_ID=fx-writer bash "$SCAN_BLOCK" 2>&1); }
+cp "$T5" "$T5.keep"
+printf -- '---\ntype: dashboard\ngenerated_by: a1-tools dashboard\ngenerated: 2026-10-26T10:00:00Z\033[31m `evil` $(id) ;x\n---\nbody\n' > "$T5"
+hostile="$(progress_run6 | grep '^dashboard: ')"
+expect "05.48 hostile generated value: one dashboard line (count 1)" "1" "$(printf '%s\n' "$hostile" | grep -c '^dashboard: ')"
+expect "05.49 hostile generated value: only timestamp characters survive" "dashboard: $T5 (generated 2026-10-26T10:00:00Z31)" "$hostile"
+expect "05.50 no control character in the printed line (count 0)" "0" "$(printf '%s' "$hostile" | LC_ALL=C grep -c "[$(printf '\001-\037\177')]")"
+printf -- '---\ntype: dashboard\ngenerated_by: a1-tools dashboard\n---\nbody\n' > "$T5"
+nokey="$(progress_run6)"
+expect "05.51 a note without a generated key: no dashboard line (count 0)" "0" "$(grep -c '^dashboard: ' <<<"$nokey")"
+expect "05.52 the scan block no longer doubles the head (count 0)" "0" "$(grep -c "head -n 1" <<<"$(grep 'VC_DASH' "$SCAN_BLOCK")")"
+mv "$T5.keep" "$T5"
+expect "05.53 control: the real note still prints its line (count 1)" "1" "$(progress_run6 | grep -c '^dashboard: ')"

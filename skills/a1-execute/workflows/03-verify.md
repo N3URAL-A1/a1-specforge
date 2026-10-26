@@ -241,7 +241,8 @@ After VERIFICATION.md is written and the verdict is presented — PASS,
 PARTIAL or FAIL — and before the retro, mirror the phase into the vault so the
 cockpit shows the verdict. `<project-slug>` is the `project:` of
 `docs/product/ROADMAP.md`; a repo without a roadmap passes `--slug <slug>`
-instead (phases only). Skipped silently when `A1_VAULT_ROOT` is not set (tier
+instead, to the `vault sync` line (phases only) and to the `dashboard build` line
+alike. Skipped silently when `A1_VAULT_ROOT` is not set (tier
 repo-local). A failed sync is a warning, never a change of verdict:
 
 ```bash

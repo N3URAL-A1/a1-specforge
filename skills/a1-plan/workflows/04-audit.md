@@ -36,7 +36,8 @@ Audit this PLAN.md for quality and coverage gaps. Write AUDIT.md.
   PLAN.md and AUDIT.md are final at this point, and the cockpit reads
   `project/<slug>/phases/` from the vault, never the repo. `<project-slug>` is
   the `project:` of `docs/product/ROADMAP.md`; a repo without a roadmap passes
-  `--slug <slug>` instead of the positional slug (phases only). Anything 04b
+  `--slug <slug>` instead of the positional slug, in the `vault sync` line (phases
+  only) and in the `dashboard build` line alike. Anything 04b
   writes into the phase directory is picked up by the next sync (a1-execute
   step 2b-v). The step is skipped silently when `A1_VAULT_ROOT` is not set
   (tier repo-local), and a failed sync never blocks the pipeline:

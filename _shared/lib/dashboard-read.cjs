@@ -21,7 +21,7 @@ const fs = require('fs');
 const path = require('path');
 const { redact } = require('./intent-redact.cjs');
 const { MIRROR_EXCLUDES } = require('./vault-contract.cjs');
-const { writerGateFor } = require('./vault-writer.cjs');
+const { writerGateFor, notWriterReason } = require('./vault-writer.cjs');
 
 const MAX_BYTES = 256 * 1024;
 const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/;
@@ -31,7 +31,7 @@ const REDACTED = '[REDACTED]';
 // Credential-bearing names. Shell-style globs, matched case-insensitively against the basename.
 const DENY_GLOBS = Object.freeze([
   'reservations.json', 'xprov.json', 'xprov-secret-allowlist.json', 'dispositions.json',
-  '*.lock', '.env', '.env.*', '*.pem', '*.key', ...MIRROR_EXCLUDES,
+  '*.lock', '.env*', '*.pem', '*.key', ...MIRROR_EXCLUDES,
 ]);
 
 function globRe(glob) {
@@ -45,7 +45,7 @@ const DENYLIST = Object.freeze({ globs: DENY_GLOBS, a1JsonDir: '.a1' });
 function isDenied(file) {
   const base = path.basename(file);
   if (DENY_RES.some((re) => re.test(base))) return true;
-  return path.basename(path.dirname(file)) === DENYLIST.a1JsonDir && /\.json$/i.test(base);
+  return path.basename(path.dirname(file)).toLowerCase() === DENYLIST.a1JsonDir && /\.json$/i.test(base);
 }
 
 function fail(code, reason) {
@@ -72,31 +72,37 @@ const POSTMORTEM_RE = /^project\/([a-z0-9][a-z0-9-]*)\/postmortems(?:\/|$)/;
 const realOr = (r) => { try { return fs.realpathSync(r); } catch (_e) { return r; } };
 
 /**
- * The roots a source may live under, lexical and resolved forms: the repo; project/<slug>/ of the vault;
- * and, read-only for the Learnings count (Wave 2 contract), <vault>/pattern/a1-learnings and the
- * postmortems/ folder of any project.
+ * The roots a source may live under, as { root, base, mdOnly }. `base` is where the link walk starts: the repo
+ * root for repo files, the VAULT root for vault files (a link at or above project/, pattern/ or a project folder
+ * is refused, SEC-1). The roots: the repo; project/<slug>/ of the vault; and, read-only and `*.md` only, for
+ * the Learnings count (Wave 2 contract), <vault>/pattern/a1-learnings and the postmortems/ folder of any project.
+ * Each root also appears in its resolved form when that form stays inside the resolved base.
  */
 function allowedRoots(ctx, abs) {
-  const roots = [repoRootOf(ctx)];
+  const entries = [{ root: repoRootOf(ctx), base: repoRootOf(ctx), mdOnly: false }];
   if (ctx && ctx.root) {
     const vault = path.resolve(ctx.root);
-    if (typeof ctx.slug === 'string' && SLUG_RE.test(ctx.slug)) roots.push(path.join(vault, 'project', ctx.slug));
-    roots.push(path.join(vault, ...LEARN_REL));
+    if (typeof ctx.slug === 'string' && SLUG_RE.test(ctx.slug)) {
+      entries.push({ root: path.join(vault, 'project', ctx.slug), base: vault, mdOnly: false });
+    }
+    entries.push({ root: path.join(vault, ...LEARN_REL), base: vault, mdOnly: true });
     for (const v of new Set([vault, realOr(vault)])) {
       const m = POSTMORTEM_RE.exec(path.relative(v, abs).split(path.sep).join('/'));
-      if (m) roots.push(path.join(v, 'project', m[1], 'postmortems'));
+      if (m) entries.push({ root: path.join(v, 'project', m[1], 'postmortems'), base: v, mdOnly: true });
     }
   }
-  return [...new Set([...roots, ...roots.map(realOr)])];
+  const resolved = entries.map((e) => ({ ...e, root: realOr(e.root), base: realOr(e.base) }))
+    .filter((e) => inside(e.base, e.root));
+  return [...entries, ...resolved];
 }
 
 const inside = (root, file) => file === root || file.startsWith(root.endsWith(path.sep) ? root : root + path.sep);
 
-/** Walk root -> file with lstat: a link anywhere below the root is refused; the last stat is returned. */
-function lstatWalk(root, file) {
-  let cur = root;
+/** Walk base -> file with lstat: a link anywhere below the base is refused; the last stat is returned. */
+function lstatWalk(base, file) {
+  let cur = base;
   let st = null;
-  for (const part of path.relative(root, file).split(path.sep).filter(Boolean)) {
+  for (const part of path.relative(base, file).split(path.sep).filter(Boolean)) {
     cur = path.join(cur, part);
     st = fs.lstatSync(cur); // ENOENT passes through with its own code
     if (st.isSymbolicLink()) throw fail('UNSAFE_PATH', 'a link inside the source root');
@@ -127,16 +133,18 @@ function decode(bytes) {
 function readSource(file, ctx) {
   const abs = path.resolve(String(file));
   if (isDenied(abs)) throw fail('EXCLUDED', 'credential-bearing file name');
-  const root = allowedRoots(ctx, abs).find((r) => inside(r, abs));
-  if (!root) throw fail('UNSAFE_PATH', 'outside the repo and project folder');
-  const st = lstatWalk(root, abs);
+  const hit = allowedRoots(ctx, abs).find((e) => inside(e.root, abs));
+  if (!hit) throw fail('UNSAFE_PATH', 'outside the repo and project folder');
+  if (hit.mdOnly && !/\.md$/i.test(abs)) throw fail('UNSAFE_PATH', 'only .md files are read from this folder');
+  const st = lstatWalk(hit.base, abs);
   if (!st || !st.isFile()) throw fail('NOT_FILE', 'not a regular file');
+  if (st.nlink > 1) throw fail('UNSAFE_PATH', 'a file with more than one hard link');
   let fd;
   try {
     fd = fs.openSync(abs, O_FLAGS);
     if (ctx && Array.isArray(ctx.trace)) ctx.trace.push(abs);
     const after = fs.fstatSync(fd);
-    if (!after.isFile() || after.dev !== st.dev || after.ino !== st.ino) throw fail('UNSAFE_PATH', 'file changed while opening');
+    if (!after.isFile() || after.nlink > 1 || after.dev !== st.dev || after.ino !== st.ino) throw fail('UNSAFE_PATH', 'file changed while opening');
     return decode(readBounded(fd));
   } catch (e) {
     if (e && e.code === 'ELOOP') throw fail('UNSAFE_PATH', 'a link inside the source root');
@@ -163,16 +171,47 @@ function cleanText(value) {
   return countRedacted(joined) > countRedacted(spaced) ? joined : spaced;
 }
 
+// ---------- the existing dashboard note (SEC-4) ----------
+
+/**
+ * Text of the note at `file` for the foreign-note check, read like a source: lstat first (a link, FIFO, device or
+ * directory is refused and never opened), size limit, O_NONBLOCK | O_NOFOLLOW, same inode after the open.
+ * ENOENT passes through. Throws the same coded errors as readSource.
+ */
+function readNote(file) {
+  const abs = path.resolve(String(file));
+  const st = fs.lstatSync(abs);
+  if (st.isSymbolicLink()) throw fail('UNSAFE_PATH', 'a link at the note');
+  if (!st.isFile()) throw fail('NOT_FILE', 'not a regular file');
+  if (st.nlink > 1) throw fail('UNSAFE_PATH', 'a file with more than one hard link');
+  if (st.size > MAX_BYTES) throw fail('TOO_LARGE', `larger than ${MAX_BYTES} bytes`);
+  let fd;
+  try {
+    fd = fs.openSync(abs, O_FLAGS);
+    const after = fs.fstatSync(fd);
+    if (!after.isFile() || after.dev !== st.dev || after.ino !== st.ino) throw fail('UNSAFE_PATH', 'file changed while opening');
+    return decode(readBounded(fd));
+  } catch (e) {
+    if (e && e.code === 'ELOOP') throw fail('UNSAFE_PATH', 'a link at the note');
+    throw e;
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+
 // ---------- writer verdict ----------
 
+/**
+ * The vault-writer verdict. The FR-011 line is exact for a plain non-writer host; an unreadable declaration
+ * takes the reason (and the right remedy, hub or fallback env) from notWriterReason() of vault-writer.cjs.
+ */
 function writerCheck(slug, root, env) {
   const gate = writerGateFor(slug, root, env);
   if (gate.mayWrite) return Object.freeze({ allow: true });
-  const unreadable = Boolean(gate.cls);
-  const reason = unreadable
-    ? `writer declaration unreadable (${gate.cls}) — create or repair project/${slug}.md`
+  const reason = gate.cls
+    ? notWriterReason(gate)
     : `this host is not the vault writer (${gate.host} ≠ ${gate.writerHost})`;
   return Object.freeze({ allow: false, reason });
 }
 
-module.exports = { readSource, cleanText, writerCheck, DENYLIST, isDenied };
+module.exports = { readSource, readNote, cleanText, writerCheck, DENYLIST, isDenied };

@@ -6,7 +6,8 @@
 
 const GENERATED_BY = 'a1-tools dashboard';
 const BANNER = '> Generated, do not edit; overwritten on every build.';
-/** Total line budget of the note, frontmatter included (FR-013). */
+/** Total line budget of the note, frontmatter included (FR-013). Held by SECTION_MAX: 7 sections of at most
+ *  40 body lines + heading + blank, plus the head, stay far below it (the suite asserts the cap on 103 specs). */
 const MAX_LINES = 400;
 /** Line budget of one section body, including its `and N more` line. */
 const SECTION_MAX = 40;
@@ -18,13 +19,22 @@ function frontmatter(meta) {
   return lines;
 }
 
-/** One source value as one safe line: no table pipe, no HTML tag start, no image embed, no line break. */
+const MARKER_TOKEN = '[REDACTED]';
+
+/** Link and template syntax of a source value made inert: `[`/`]` -> `(`/`)`, backtick -> `'`, `<%` -> `&lt;%`. */
+const inert = (t) => t.replace(/\[/g, '(').replace(/\]/g, ')').replace(/`/g, "'").replace(/<%/g, '&lt;%');
+
+/**
+ * One source value as one safe line: no table pipe, no HTML tag start, no image embed, no wikilink or link
+ * bracket, no code span, no template tag, no line break. The `[REDACTED]` marker of cleanText() is kept.
+ */
 function safe(text) {
   return String(text)
     .replace(/\s+/g, ' ')
+    .replace(/!(?=\[)/g, '')
+    .split(MARKER_TOKEN).map(inert).join(MARKER_TOKEN)
     .replace(/\|/g, '\\|')
     .replace(/<(?=[A-Za-z/!?])/g, '&lt;')
-    .replace(/!(?=\[)/g, '')
     .trim();
 }
 
@@ -47,28 +57,12 @@ function stateLines(section) {
   return items.length > 0 ? items : ['none'];
 }
 
-/** Split the remaining budget over the sections (equal shares, unused share is handed on). */
-function shares(lists, budget) {
-  const limits = lists.map(() => 0);
-  let left = budget;
-  let open = lists.map((_l, i) => i).sort((a, b) => lists[a].length - lists[b].length);
-  while (open.length > 0) {
-    const fair = Math.floor(left / open.length);
-    const i = open.shift();
-    limits[i] = Math.min(lists[i].length, SECTION_MAX, Math.max(fair, 1));
-    left -= limits[i];
-  }
-  return limits;
-}
-
 function render(sections, meta) {
   const head = [...frontmatter(meta), '', BANNER, ''];
   const lists = sections.map((s) => stateLines(s));
-  const trailer = sections.length * 2; // heading + blank per section
-  const limits = shares(lists, Math.max(MAX_LINES - head.length - trailer, sections.length));
   const lines = [...head];
   sections.forEach((s, i) => {
-    const shown = capped(lists[i], limits[i]);
+    const shown = capped(lists[i], SECTION_MAX);
     lines.push(`## ${safe(s.name)}`, ...shown.map((l) => `- ${l}`), '');
   });
   return `${lines.join('\n').replace(/\n+$/, '')}\n`;

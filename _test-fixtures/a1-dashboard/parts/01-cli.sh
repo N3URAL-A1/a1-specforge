@@ -145,3 +145,48 @@ vault_run "$R1" "$V9" dashboard build "$big"
 expect "01.61 10001-char slug exits 2 without crashing" "2" "$RC"
 expect "01.62 hostile slugs wrote nothing" "0" "$(find "$V9" -name dashboard.md | wc -l | tr -d ' ')"
 [[ ! -e /tmp/a1-dash-pwn ]] && ok "01.63 injection-shaped slug was never executed" || bad "01.63 injection executed"
+
+# ---- Wave 6: --slug alias, short usage errors, vault root from the env alone ------------------------------
+# RED before the fix: `--slug` exited 1 with ~141 KB help on stderr; the hint named --slug for a command
+# that did not take it; an empty A1_VAULT_ROOT went through peekVaultRoot (git child, other tiers).
+mk_fixture_repo NR; mk_fixture_vault NV
+rm -f "$NR/docs/product/ROADMAP.md"
+vault_run "$NR" "$NV" dashboard build --slug fixture-slug
+expect "01.64 roadmap-less repo: --slug <slug> exits 0 (${ERR:0:150})" "0" "$RC"
+expect "01.65 --slug writes the note of that slug (count 1)" "1" "$(find "$NV/project/fixture-slug" -name dashboard.md | wc -l | tr -d ' ')"
+rm -f "$NV/project/fixture-slug/dashboard.md"
+vault_run "$NR" "$NV" dashboard build --slug=fixture-slug
+expect "01.66 --slug=<slug> exits 0" "0" "$RC"
+rm -f "$NV/project/fixture-slug/dashboard.md"
+vault_run "$NR" "$NV" dashboard build fixture-slug
+expect "01.67 the positional slug still works" "0" "$RC"
+vault_run "$NR" "$NV" dashboard build fixture-slug --slug other-slug
+expect "01.68 positional and --slug that disagree exit 1" "1" "$RC"
+expect "01.69 the disagreement error is one short line (count 1)" "1" "$(printf '%s\n' "$ERR" | wc -l | tr -d ' ')"
+vault_run "$NR" "$NV" dashboard build --slug
+expect "01.70 --slug without a value exits 1" "1" "$RC"
+vault_run "$NR" "$NV" dashboard build --slug '../../etc'
+expect "01.71 hostile --slug exits 2" "2" "$RC"
+vault_run "$NR" "$NV" dashboard build --bogus
+expect "01.72 unknown flag exits 1" "1" "$RC"
+expect "01.73 unknown flag: one stderr line (count 1)" "1" "$(printf '%s\n' "$ERR" | wc -l | tr -d ' ')"
+expect "01.74 unknown flag: no help dump (stderr under 400 bytes)" "true" "$([[ "${#ERR}" -lt 400 ]] && echo true || echo false)"
+expect_has "01.75 unknown flag: the line names the flag" "$ERR" "unknown flag --bogus"
+vault_run "$NR" "$NV" dashboard build
+expect "01.76 roadmap-less repo without a slug exits 2" "2" "$RC"
+expect_has "01.77 the hint names both ways to pass the slug" "$ERR" "pass <slug> or --slug <slug>"
+expect_lacks "01.78 the hint no longer says phases are mirrored" "$ERR" "mirrored"
+
+# vault root: only A1_VAULT_ROOT of the request env; empty is a refusal; no git child process.
+mkdir -p "$WORK/gitstub"
+printf '#!/bin/sh\ntouch "%s/git-was-called"\nexec "%s" "$@"\n' "$WORK/gitstub" "$(command -v git)" > "$WORK/gitstub/git"
+chmod +x "$WORK/gitstub/git"
+rm -f "$WORK/gitstub/git-was-called"
+OUT="$(cd "$NR" && PATH="$WORK/gitstub:$PATH" A1_VAULT_ROOT="" A1_HOST_ID=fx-writer node "$TOOLS" dashboard build fixture-slug 2>"$WORK/err.vr")"; RC=$?; ERR="$(cat "$WORK/err.vr")"
+expect "01.79 empty A1_VAULT_ROOT exits 2" "2" "$RC"
+expect_has "01.80 reason is no_vault_root" "$ERR" "no_vault_root"
+expect "01.81 the refusal is one stderr line (count 1)" "1" "$(printf '%s\n' "$ERR" | wc -l | tr -d ' ')"
+[[ ! -e "$WORK/gitstub/git-was-called" ]] && ok "01.82 no git child process was started" || bad "01.82 a git child process was started"
+unset_out="$(cd "$NR" && env -u A1_VAULT_ROOT PATH="$WORK/gitstub:$PATH" A1_HOST_ID=fx-writer node "$TOOLS" dashboard build fixture-slug 2>&1 >/dev/null)"; unset_rc=$?
+expect "01.83 unset A1_VAULT_ROOT exits 2 with no_vault_root" "2:true" "$unset_rc:$([[ "$unset_out" == *no_vault_root* ]] && echo true || echo false)"
+[[ ! -e "$WORK/gitstub/git-was-called" ]] && ok "01.84 unset root: no git child process either" || bad "01.84 a git child process was started"

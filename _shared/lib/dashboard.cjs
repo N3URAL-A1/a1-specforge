@@ -3,7 +3,7 @@
 // dashboard — command group `dashboard` (spec 021-dashboard). `dashboard build [<slug>] [--json]` writes one
 // owner-marked, read-only overview note, <vault>/project/<slug>/dashboard.md, atomically.
 //
-// Exit contract (FR-010): 0 note written, or skipped on a non-writer host · 1 usage error (help.cjs usage())
+// Exit contract (FR-010): 0 note written, or skipped on a non-writer host · 1 usage error (a bad flag: one stderr line; no subcommand: help.cjs usage())
 // · 2 unsafe path, slug mismatch, vault root missing or not writable, foreign note, write failure, any
 // internal error. Every exit-2 message is one stderr line through redact(); no stack trace.
 //
@@ -13,21 +13,19 @@
 
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
 const { usage } = require('./help.cjs');
-const { parseFlags, parseFrontmatter, peekVaultRoot } = require('./io.cjs');
+const { parseFlags, parseFrontmatter, tmpPathFor } = require('./io.cjs');
 const { isLink, rootProblem, warnSkipped } = require('./vault-common.cjs');
 const { resolveSlug } = require('./vault-sync.cjs');
 const { redact } = require('./intent-redact.cjs');
-const { readSource, writerCheck } = require('./dashboard-read.cjs');
+const { readSource, readNote, writerCheck } = require('./dashboard-read.cjs');
 const { collectSections } = require('./dashboard-sources.cjs');
 const { costSection } = require('./dashboard-cost.cjs');
 const { render, GENERATED_BY } = require('./dashboard-render.cjs');
 
 const NOTE_NAME = 'dashboard.md';
 const ROADMAP_REL = Object.freeze(['docs', 'product', 'ROADMAP.md']);
-const FLAGS = Object.freeze({ json: 'bool' });
-const EXTERNAL_TIERS = new Set(['env', 'legacy']);
+const FLAGS = Object.freeze({ json: 'bool', slug: 'value' });
 const HEX_SHA = /^[0-9a-f]{40}$/;
 
 /** A refusal that ends the build with exit 2; `reason` is a stable code. */
@@ -64,6 +62,9 @@ function readRoadmap(repoRoot, ctx) {
 }
 
 function slugFor(requested, roadmap) {
+  if (!requested && !roadmap.exists) {
+    throw refusal('bad_slug', 'no docs/product/ROADMAP.md — pass <slug> or --slug <slug>');
+  }
   try {
     return resolveSlug(requested, roadmap);
   } catch (e) {
@@ -72,20 +73,13 @@ function slugFor(requested, roadmap) {
 }
 
 /**
- * The external vault root (tier env or legacy), checked writable. Same decision as vault-common
- * externalVaultRoot(), through the read-only lookup alone: externalVaultRoot() also announces the
- * learnings root on stderr, which would break the one-line stderr contract (FR-010, FR-011).
+ * The vault root: A1_VAULT_ROOT of the request env, nothing else (no tier lookup, no git child). Empty or
+ * unset is a refusal. Writability is checked separately, after the writer gate (a non-writer host skips first).
  */
-function vaultRootFor() {
-  const peek = peekVaultRoot();
-  if (!peek || !EXTERNAL_TIERS.has(peek.source)) {
-    const tier = peek ? `tier ${peek.source}` : 'nothing resolves';
-    throw refusal('no_vault_root', `no external vault root (${tier}); set A1_VAULT_ROOT`);
-  }
-  const root = path.resolve(peek.root);
-  const problem = rootProblem(root, fs.constants.W_OK);
-  if (problem) throw refusal('vault_not_writable', problem);
-  return root;
+function vaultRootFor(ctx) {
+  const raw = ctx.env && typeof ctx.env.A1_VAULT_ROOT === 'string' ? ctx.env.A1_VAULT_ROOT.trim() : '';
+  if (raw === '') throw refusal('no_vault_root', 'A1_VAULT_ROOT is not set; the dashboard needs an external vault root');
+  return path.resolve(ctx.cwd, raw);
 }
 
 // ---------- source_head (fs only: no child process) ----------
@@ -128,16 +122,18 @@ function sourceHead(repoRoot) {
 
 // ---------- the note ----------
 
-/** Refuse a link at project/<slug>/ or at the note; refuse a note not made by this command. */
-function checkTarget(projectDir, target, ops) {
+/** Refuse a link at project/<slug>/, at <vault>/project or at the note; refuse a note not made by this command. */
+function checkTarget(root, projectDir, target) {
+  if (isLink(path.join(root, 'project'))) throw refusal('unsafe_path', `project folder of the vault is a symbolic link: ${path.join(root, 'project')}`);
   if (isLink(projectDir)) throw refusal('unsafe_path', `project folder is a symbolic link: ${projectDir}`);
   if (isLink(target)) throw refusal('unsafe_path', `${NOTE_NAME} is a symbolic link: ${target}`);
   let text;
   try {
-    text = ops.readFileSync(target, 'utf8');
+    text = readNote(target);
   } catch (e) {
     if (e && e.code === 'ENOENT') return;
-    throw refusal('unreadable_note', `existing ${NOTE_NAME} cannot be read (${e && e.code})`);
+    if (e && e.code === 'NOT_FILE') throw refusal('foreign_note', `${target} is not a regular file; it is never overwritten`);
+    throw refusal('unreadable_note', `existing ${NOTE_NAME} cannot be read (${(e && e.code) || 'error'})`);
   }
   if (parseFrontmatter(text).fm.generated_by !== GENERATED_BY) {
     throw refusal('foreign_note', `${target} was not generated by ${GENERATED_BY}; it is never overwritten`);
@@ -146,7 +142,7 @@ function checkTarget(projectDir, target, ops) {
 
 /** tmp sibling + rename; on any failure the tmp file is removed and the old note stays. */
 function writeAtomic(target, text, ops) {
-  const tmp = `${target}.tmp.${crypto.randomBytes(6).toString('hex')}`;
+  const tmp = tmpPathFor(target);
   try {
     ops.mkdirSync(path.dirname(target), { recursive: true });
     ops.writeFileSync(tmp, text, { flag: 'wx' });
@@ -178,14 +174,16 @@ function buildDashboard(ctx) {
     const repoRoot = findRepoRoot(ctx.cwd);
     if (!repoRoot) throw refusal('not_a_git_repo', 'must run inside a git repo (the dashboard source is the repo)');
     const slug = slugFor(ctx.args.slug || null, readRoadmap(repoRoot, ctx));
-    const root = vaultRootFor();
+    const root = vaultRootFor(ctx);
     const projectDir = path.join(root, 'project', slug);
     const target = path.join(projectDir, NOTE_NAME);
-    checkTarget(projectDir, target, ops);
     const gate = (ctx.writerCheck || writerCheck)(slug, root, ctx.env);
     if (!gate.allow) {
       return Object.freeze({ exit: 0, ok: true, status: 'skipped-non-writer', path: target, degraded: [], message: gate.reason });
     }
+    const problem = rootProblem(root, fs.constants.W_OK);
+    if (problem) throw refusal('vault_not_writable', problem);
+    checkTarget(root, projectDir, target);
     const sections = [...collectSections({ ...ctx, repoRoot, slug, root }), costSection({ ...ctx, repoRoot, slug, root })];
     const text = render(sections, { slug, generated: toIso(ctx.clock), sourceHead: sourceHead(repoRoot) });
     writeAtomic(target, text, ops);
@@ -198,12 +196,21 @@ function buildDashboard(ctx) {
 
 // ---------- CLI ----------
 
+/** A usage error of a flag or argument: one stderr line, exit 1 (the full help stays for a missing subcommand). */
+function flagError(msg) {
+  process.stderr.write(`usage error: dashboard build: ${redact(msg).replace(/\s+/g, ' ').slice(0, 200)}\n`);
+  process.exit(1);
+}
+
 function parseArgs(args) {
   const flags = parseFlags(args, FLAGS);
   const stray = flags._.filter((a) => a.startsWith('--'));
-  if (stray.length > 0) usage(`dashboard build: unknown flag ${stray[0].slice(0, 40)}`);
-  if (flags._.length > 1) usage(`dashboard build takes at most one <slug>, got ${flags._.length} positional arguments`);
-  return { slug: flags._[0] || null, json: flags.json === true };
+  if (stray.length > 0) flagError(`unknown flag ${stray[0].slice(0, 40)}`);
+  if (flags._.length > 1) flagError(`takes at most one <slug>, got ${flags._.length} positional arguments`);
+  if (Object.prototype.hasOwnProperty.call(flags, 'slug') && !flags.slug) flagError('--slug needs a value');
+  const [arg] = flags._;
+  if (arg && flags.slug && arg !== flags.slug) flagError('<slug> and --slug disagree');
+  return { slug: arg || flags.slug || null, json: flags.json === true };
 }
 
 function emit(result, args) {
@@ -221,7 +228,7 @@ function emit(result, args) {
 
 /** @param {string|undefined} sub - only `build` @param {string[]} args */
 function cmdDashboard(sub, args) {
-  if (!sub) usage('dashboard requires a subcommand: dashboard build [<slug>] [--json]');
+  if (!sub) usage('dashboard requires a subcommand: dashboard build [<slug> | --slug <slug>] [--json]');
   if (sub !== 'build') usage(`unknown dashboard subcommand: ${String(sub).slice(0, 40)} (expected: dashboard build)`);
   const parsed = parseArgs(args);
   const ctx = {

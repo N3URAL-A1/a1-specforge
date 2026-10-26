@@ -37,3 +37,15 @@ fixtures/sections/vault/pattern/a1-learnings/patterns.md
 
 Generated at run time (parts/02-sections.sh): 100 extra spec files, each a sed copy of the 018 spec with
 id and title renamed; one hostile spec (title with <b>, pipes, image embed), written inline.
+
+fixtures/review/vault/project/fixture-slug/spec/{007-retro-gate-id-validator,001-roadmap-gate-parallel-features}.md
+  Source: ~/N3URAL-Vault/project/a1-specforge/spec/<same>, byte copies (2026-10-26, Wave 6). Real ids and titles
+  that hold the `gate-` token the Now/Next filter strips; the Specs section must show them whole.
+
+fixtures/review/repo/.a1/phases/007-retro-gate-id-validator/STATUS.md
+  Source: .a1/phases/007-retro-gate-id-validator/STATUS.md of this repo, byte copy. Wave 4 heading ends in
+  "⟶ done"; its body (and the Phase 6 block after it) says "Round 1 PARTIAL".
+
+Generated at run time (Wave 6): 45 filler phase dirs with a STATUS.md each (mtime set with touch -t) for the
+newest-first order; synthetic STATUS files for INCOMPLETE / "not BLOCKED"; hostile spec with link/template
+syntax; link, hard-link, FIFO and oversized-note trees for the read-seam cases.

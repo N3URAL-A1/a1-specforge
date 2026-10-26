@@ -64,7 +64,7 @@
  *   a1-tools probe run --project <dir> [--phase <scope>] [--wait <seconds>] [--json]
  *       Live probes from <dir>/.a1/live-probes.yaml (spec 020). Exit 0 pass or no_probes / 1 fail / 2 usage or hostile file.
  *
- *   a1-tools dashboard build [<slug>] [--json]
+ *   a1-tools dashboard build [<slug> | --slug <slug>] [--json]
  *       One read-only overview note, <vault>/project/<slug>/dashboard.md (spec 021). Exit 0 written or skipped on a non-writer host / 1 usage / 2 unsafe path, slug mismatch, no vault root, foreign note, write failure.
  *
  *   a1-tools fix count-postmortems-since --since <ISO-timestamp>

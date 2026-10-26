@@ -37,7 +37,7 @@ const missing = (name, reason) => section(name, 'not_available', [], reason);
 
 // ---------- plain language ----------
 
-/** Words for the owner: no path, no CLI flag, no gate id (FR-003). */
+/** Words for the owner: no path, no CLI flag, no gate id. FR-003 scopes this to Now and Next ONLY. */
 function plain(value) {
   return cleanText(value)
     .replace(/\S*\/\S*/g, '')
@@ -122,9 +122,9 @@ function readSpec(name, dir, ctx) {
   const text = readSource(path.join(dir, name), ctx);
   let fm = {};
   try { fm = parseFrontmatter(text).fm || {}; } catch (_e) { fm = {}; }
-  const id = plain(fm.id || name.replace(/\.md$/, ''));
-  const title = typeof fm.title === 'string' ? plain(fm.title) : '';
-  return { id, title, status: plain(fm.status || 'unknown'), open: openMarkers(text) };
+  const id = cleanText(fm.id || name.replace(/\.md$/, ''));
+  const title = typeof fm.title === 'string' ? cleanText(fm.title) : '';
+  return { id, title, status: cleanText(fm.status || 'unknown'), open: openMarkers(text) };
 }
 
 function specSections(ctx) {
@@ -148,20 +148,36 @@ function specSections(ctx) {
 
 // ---------- Phases (.a1/phases/<phase>/STATUS.md + VERIFICATION.md) ----------
 
+const HEADING_STATES = Object.freeze({
+  done: 'done', complete: 'done', completed: 'done', blocked: 'blocked', partial: 'partly done', 'in progress': 'in progress',
+});
+
+/** The state word after `⟶` in a wave heading; null when the heading carries no known marker. */
+function markerState(heading) {
+  const m = /⟶\s*([A-Za-z][A-Za-z ]*?)\s*$/.exec(heading);
+  return m ? (HEADING_STATES[m[1].toLowerCase()] || null) : null;
+}
+
+/** Keyword fallback for a wave block without a heading marker; whole words only, negated words ignored. */
+function keywordState(block) {
+  if (/(?<!\bnot\s)\bBLOCKED\b/.test(block)) return 'blocked';
+  if (/\bPARTIAL\b/.test(block)) return 'partly done';
+  return /\b(DONE|COMPLETE)\b|\bCompleted:/.test(block) ? 'done' : 'in progress';
+}
+
 /** `wave N done` from the last `## Wave N` heading of a STATUS.md; null when there is none. */
 function waveState(text) {
   const parts = text.split(/^(?=## Wave\s+\d+)/m).filter((p) => /^## Wave\s+\d+/.test(p));
   if (parts.length === 0) return null;
   const last = parts[parts.length - 1];
-  const n = /^## Wave\s+(\d+)/.exec(last)[1];
-  const state = /BLOCKED/.test(last) ? 'blocked' : /PARTIAL/.test(last) ? 'partly done'
-    : /DONE|Completed:|COMPLETE/.test(last) ? 'done' : 'in progress';
-  return `wave ${n} ${state}`;
+  const heading = last.split('\n', 1)[0];
+  const n = /^## Wave\s+(\d+)/.exec(heading)[1];
+  return `wave ${n} ${markerState(heading) || keywordState(last)}`;
 }
 
 function verdictOf(text) {
   const m = text && /Verdict:?\**\s*\**([A-Za-z_-]+)/.exec(text);
-  return m ? plain(m[1]).toUpperCase() : null;
+  return m ? cleanText(m[1]).toUpperCase() : null;
 }
 
 function phaseLine(name, dir, ctx) {
@@ -169,7 +185,19 @@ function phaseLine(name, dir, ctx) {
   const verification = readOrNull(path.join(dir, 'VERIFICATION.md'), ctx);
   if (status === null && verification === null) return null;
   const wave = (status && waveState(status)) || 'no wave recorded';
-  return `${plain(name)} — ${wave} — verification: ${verdictOf(verification) || 'pending'}`;
+  return `${cleanText(name)} — ${wave} — verification: ${verdictOf(verification) || 'pending'}`;
+}
+
+/** Newest mtime (ms) of STATUS.md / VERIFICATION.md of a phase (links count as 0); 0 when neither exists. */
+function phaseMtime(dir) {
+  let newest = 0;
+  for (const f of ['STATUS.md', 'VERIFICATION.md']) {
+    try {
+      const st = fs.lstatSync(path.join(dir, f));
+      if (st.isFile()) newest = Math.max(newest, st.mtimeMs);
+    } catch (_e) { /* absent file */ }
+  }
+  return newest;
 }
 
 function phasesSection(ctx) {
@@ -177,7 +205,10 @@ function phasesSection(ctx) {
   if (!fs.existsSync(base)) return missing('Phases', 'no_phases');
   const lines = [];
   try {
-    for (const name of listDirs(base).filter((n) => !n.startsWith('_')).sort(byNewest)) {
+    const names = listDirs(base).filter((n) => !n.startsWith('_'))
+      .map((name) => ({ name, at: phaseMtime(path.join(base, name)) }))
+      .sort((a, b) => b.at - a.at || byNewest(a.name, b.name)).map((p) => p.name);
+    for (const name of names) {
       const line = phaseLine(name, path.join(base, name), ctx);
       if (line) lines.push(line);
     }
@@ -241,7 +272,7 @@ function learningsSection(ctx) {
   try {
     const count = retroCount(ctx.root, watermark[1], ctx) + postmortemCount(ctx.root, watermark[1], ctx);
     const noun = count === 1 ? 'new learning' : 'new learnings';
-    return section('Learnings', 'ok', [`${count} ${noun} since the last evolve run (${plain(watermark[1])})`]);
+    return section('Learnings', 'ok', [`${count} ${noun} since the last evolve run (${cleanText(watermark[1])})`]);
   } catch (_e) {
     return missing('Learnings', 'unreadable');
   }
