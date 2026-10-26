@@ -67,3 +67,19 @@ D1 drop dispositions.json + generic .a1/*.json rule: 8 red (D1b generic rule onl
 - Repo root for the seam = ctx.repoRoot, else nearest `.git` above ctx.cwd (dashboard.cjs passes bare ctx for ROADMAP). No dashboard.cjs edit needed.
 - writerCheck builds the FR-011 line itself (no `of <slug>`; notWriterReason adds it); unreadable declaration reason keeps the vault-writer wording.
 - Removed stray parts/03-safety.sh.bak.
+
+## Wave 5 — Hook call sites, a1-progress line, intent-child classification, vault contract, suite audit, docs
+Completed: 2026-10-26
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| Three workflow call sites (04-audit, 02-execute from $WORK_PATH, 03-verify), a1-progress line + SKILL text, INTENT_CHILD_EXCLUSIONS (plan, execute) with DASHBOARD reason, exit2-audit D10/B entry, parts/05-wiring.sh, CONTRIBUTING + README | DONE | 286b997 | a1-dashboard 325/0 (part 05: 44 cases); a1-intent 1105/0; a1-exit2-audit 36/0; full loop 50/50 rc=0 (A1_VAULT_ROOT unset); workflow lint, gates lint, verify-install-sync green |
+
+### Deviations
+- Docker `node:20` run NOT done: Docker CLI present, daemon not running (cannot connect to ~/.docker/run/docker.sock).
+- FR-016 refusal already worked via the generic guardDispatch (exit 77, `intent_child_refused`, reason `child_context_invalid` without a child lock); no dashboard code change. Only the classification (H7) needed the sandbox entries.
+- Vault-contract cases run in an isolated parent dir (`$WORK/iso`): `vault sync` scans sibling repos and failed with "two repos claim project" otherwise.
+- a1-progress case runs the documented scan block extracted from 01-scan.md as written (not a re-implementation).
+- Case inventory (FR-018) counts FR-001..FR-021 named in section headers/case lines across parts; the real-vault check uses a `touch -t` start stamp derived from `$SECONDS` (portable, harness untouched).
+- The full loop ran with stale foreign processes from earlier waves still alive in the same worktree (an old xprov/cockpit chain, PIDs not mine, not killed); the loop still passed.
+- Not run: mutation of the call-site order in a snapshot; covered by controls 05.31/05.32 (checker turns red on a dropped warn line and on a misplaced call). H7 red-state checked by scan: plan and execute workflows contain `dashboard build`, so removing the exclusions leaves it unclassified.
