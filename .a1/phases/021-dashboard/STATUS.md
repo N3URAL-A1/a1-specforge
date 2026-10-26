@@ -83,3 +83,30 @@ Completed: 2026-10-26
 - Case inventory (FR-018) counts FR-001..FR-021 named in section headers/case lines across parts; the real-vault check uses a `touch -t` start stamp derived from `$SECONDS` (portable, harness untouched).
 - The full loop ran with stale foreign processes from earlier waves still alive in the same worktree (an old xprov/cockpit chain, PIDs not mine, not killed); the loop still passed.
 - Not run: mutation of the call-site order in a snapshot; covered by controls 05.31/05.32 (checker turns red on a dropped warn line and on a misplaced call). H7 red-state checked by scan: plan and execute workflows contain `dashboard build`, so removing the exclusions leaves it unclassified.
+
+## Wave 6 — Review fixes (Reinhard, Samuel, Victor)
+Completed: 2026-10-26
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| 14 review fixes (MAJOR 1-2, MINOR 3-14) with red-first tests in parts 01/02/03/05 | DONE | 6b6b57c | a1-dashboard 423/0 (was 325); a1-intent 1105/0; a1-exit2-audit 36/0; a1-metrics 333/0; gates lint, workflow lint, verify-install-sync green |
+| VERIFICATION.md (Victor, PARTIAL, no PASS claimed) + observations.jsonl committed | DONE | see git log | |
+
+RED proof: the new suite run against a `git archive` snapshot of d3ca2d6 (pre-fix code, live tests) gave 373 passed, 50 failed (01.64-84, 02.48-72, 03.14-38, 05.47). The prose and progress-line cases (05.46, 05.49-05.52) were red on the live tree before the doc edits.
+
+### Deviations
+- Item 9 (FR-011): the plain non-writer line keeps the exact FR-011 wording (no `of <slug>`); only the unreadable case takes `notWriterReason(gate)`, which fixes the remedy for the env source ("fallback writer of <slug> unreadable: A1_VAULT_WRITER_HOST is not a valid host id"). `notWriterReason` itself says "the vault writer of <slug>" for the plain case, so full reuse would change the FR-011 line. For the spec owner: FR-011 and `notWriterReason` wording differ by "of <slug>".
+- Item 2: only flag errors (unknown flag, `--slug` without value, positional/`--slug` disagreement, too many positionals) print one short line. A missing or unknown subcommand still goes through `usage()` with the full help (FR-014 says `usage()`).
+- Item 5: a non-regular existing note (FIFO) is reported as `foreign_note`; link, hard link, oversize, bad UTF-8 as `unreadable_note`. Exit 2 either way.
+- Item 3: the read seam walks from the vault root for vault sources, from the repo root for repo sources; the vault root itself may be a link (only components below it are checked). Resolved-form roots are kept only when they stay inside the resolved base.
+- Item 6: the `[REDACTED]` marker is kept verbatim in `safe()`; every other `[`/`]` becomes `(`/`)`.
+- Item 7: a non-`.md` file under the widened roots is refused as `UNSAFE_PATH`.
+- Item 11: `vaultRootFor(ctx)` resolves `ctx.env.A1_VAULT_ROOT` against `ctx.cwd`; `peekVaultRoot` and the `io.cjs` tier lookup are gone from the module. Writability (W_OK) is checked after the writer gate.
+- Item 13: phases sort by newest mtime of STATUS.md/VERIFICATION.md (links count 0); ties fall back to name, descending (same as Specs).
+- FR-015 `crypto`: removed. The tmp name now comes from the in-repo `tmpPathFor` (io.cjs, same `.tmp.<12 hex>` shape).
+- Item 14 NIT: `shares()` removed from dashboard-render.cjs; the per-section cap alone (7 x 42 lines plus head stays below 400) holds the total; the 103-spec case (02.41) stays green. `MAX_LINES` is still exported.
+- Fixture additions: `fixtures/review/` (real copies of specs 001 and 007 and the 007 STATUS.md, listed in SOURCES.txt). Existing cases were not changed except that the helper functions in part 03 were added.
+
+### Follow-ups (not in this wave)
+- Extract `countSinceWatermark` from `learnings.cjs` so the Learnings section stops duplicating the vault-mode count (the suite cross-checks both numbers today).
+- Docker `node:20` run still open (daemon was down in Wave 5; not attempted here).
