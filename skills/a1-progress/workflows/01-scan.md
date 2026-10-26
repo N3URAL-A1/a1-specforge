@@ -82,9 +82,16 @@ else
   else
     node -e 'const c=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).counts;const k=Object.keys(c).sort();console.log(k.length?`vault lint: ${k.map((x)=>`${c[x]} ${x}`).join(", ")}`:"vault lint: 0 findings")' "$VC_DIR/lint.json"
   fi
+  VC_DASH="$A1_VAULT_ROOT/project/$VC_SLUG/dashboard.md"
+  if [ -f "$VC_DASH" ]; then echo "dashboard: $VC_DASH (generated $(grep -m1 '^generated:' "$VC_DASH" | head -n 1 | sed 's/^generated:[[:space:]]*//'))"; fi
 fi
 rm -rf "$VC_DIR"
 ```
+
+The optional `dashboard:` line (spec 021 FR-019) appears only when the generated
+note `project/<slug>/dashboard.md` already exists in the vault; it is a plain
+`grep` of the note's `generated:` frontmatter, no `a1-tools` call, and this
+skill never runs `dashboard build`.
 
 Print the resulting line(s) verbatim in the report. `vault: not configured`
 is a normal state (vault-free installs), not a warning. Drift counts above 0

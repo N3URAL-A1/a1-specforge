@@ -46,6 +46,8 @@ Audit this PLAN.md for quality and coverage gaps. Write AUDIT.md.
     VSYNC_OUT="$(mktemp)"
     node <repo>/_shared/a1-tools.cjs vault sync <project-slug> --phases > "$VSYNC_OUT"; RC=$?
     if [ $RC -ne 0 ]; then echo "⚠ vault sync --phases exit=$RC — vault mirror not updated, continuing (stderr above, JSON in $VSYNC_OUT)"; fi
+    node <repo>/_shared/a1-tools.cjs dashboard build <project-slug> >/dev/null; RC=$?
+    if [ $RC -ne 0 ]; then echo "⚠ dashboard build exit=$RC — dashboard not refreshed, continuing"; fi
   fi
   ```
 
