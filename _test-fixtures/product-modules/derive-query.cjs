@@ -2,6 +2,8 @@
 // usage: node derive-query.cjs <case> cursors|module-next <id>|project-next
 // Drives the REAL exported functions on the in-memory cases.
 const path = require('path'); const fs = require('fs'); const os = require('os');
+// Never mirror into the real vault: point it at a path that is never created.
+process.env.A1_VAULT_ROOT = path.join(os.tmpdir(), `a1-no-vault-${process.pid}`);
 const root = path.resolve(__dirname, '../../_shared/lib');
 const { regenerateDerived } = require(path.join(root, 'product-derived.cjs'));
 const m = require(path.join(root, 'product-modules.cjs'));

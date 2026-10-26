@@ -6,6 +6,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 LIB="$ROOT/_shared/lib"
 . "$HERE/lib.sh"
+A1_VAULT_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/a1-help-vault.XXXXXX")"; export A1_VAULT_ROOT; trap 'rm -rf "$A1_VAULT_ROOT"' EXIT   # never mirror into the real vault
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); echo "ok   - $1"; }
 bad() { FAIL=$((FAIL+1)); echo "FAIL - $1"; }

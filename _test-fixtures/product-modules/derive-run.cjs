@@ -3,6 +3,8 @@
 // Runs regenerateDerived on an in-memory case; writes masked index.json +
 // NEXT.md (generated / updated masked) to <outDir>.
 const fs = require('fs'); const path = require('path'); const os = require('os');
+// Never mirror into the real vault: point it at a path that is never created.
+process.env.A1_VAULT_ROOT = path.join(os.tmpdir(), `a1-no-vault-${process.pid}`);
 const root = path.resolve(__dirname, '../../_shared/lib');
 const { regenerateDerived } = require(path.join(root, 'product-derived.cjs'));
 if (typeof regenerateDerived !== 'function') process.exit(2);

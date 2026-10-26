@@ -9,7 +9,8 @@ set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 Q="node $HERE/derive-query.cjs"
 R="node $HERE/derive-run.cjs"
-TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/a1-derive.XXXXXX")"; trap 'rm -rf "$TMP"' EXIT
+A1_VAULT_ROOT="$TMP/vault-root"; mkdir -p "$A1_VAULT_ROOT"; export A1_VAULT_ROOT   # never mirror into the real vault
 PASS=0; FAIL=0
 ok()   { PASS=$((PASS+1)); echo "ok   - $1"; }
 bad()  { FAIL=$((FAIL+1)); echo "FAIL - $1"; }

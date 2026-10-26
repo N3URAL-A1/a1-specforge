@@ -37,7 +37,7 @@ function build(dir, tagged) {
 function timeStage(dir, i) {
   const t0 = process.hrtime.bigint();
   const r = spawnSync('node', [tools, 'product', 'stage', '--by', `${String(i + 1).padStart(3, '0')}-feat-${i}`,
-    '--set', 'started', '--dir', dir], { encoding: 'utf8' });
+    '--set', 'started', '--dir', dir], { encoding: 'utf8', env: { ...process.env, A1_VAULT_ROOT: path.join(work, 'vault-root') } });
   const ms = Number(process.hrtime.bigint() - t0) / 1e6;
   if (r.status !== 0) { process.stderr.write(r.stderr + r.stdout); process.exit(2); }
   return ms;

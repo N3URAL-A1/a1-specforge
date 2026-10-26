@@ -6,7 +6,9 @@
 # to show each assertion red against the pre-wave tree.
 set -u
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
-unset A1_VAULT_ROOT A1_VAULT_WRITER_HOST A1_HOST_ID
+unset A1_VAULT_WRITER_HOST A1_HOST_ID
+mk_workdir A1_VAULT_ROOT vault-root   # never mirror into the real vault; removed with the suite root
+export A1_VAULT_ROOT
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC="${SRC_OVERRIDE:-$(cd "$DIR/../.." && pwd)}"

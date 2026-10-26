@@ -7,7 +7,9 @@
 # repo (used to show each assertion red against the pre-wave tree).
 set -u
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
-unset A1_VAULT_ROOT A1_VAULT_WRITER_HOST A1_HOST_ID
+unset A1_VAULT_WRITER_HOST A1_HOST_ID
+mk_workdir A1_VAULT_ROOT vault-root   # never mirror into the real vault; removed with the suite root
+export A1_VAULT_ROOT
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$DIR/../.." && pwd)"
@@ -310,6 +312,112 @@ while [[ $i -lt 20 ]]; do
 done
 ck "fault sweep all-stale (rmdir of modules/ included, $i positions): dirs and files restored" "$all_ok"
 ck "fault sweep all-stale: operation count is 8 (3 files + 2 deletes + 2 dir rmdirs + modules/ rmdir; got $i)" "$([[ $i -eq 8 ]] && echo true || echo false)"
+
+# ---- (4) hardening: symlinks, case collisions, unreadable entries, rollback fidelity
+# Final rework after the security review (SEC-1..5). Every check drives the real tool.
+fresh_plain() { n=$((n + 1)); local d="$WORK/$1-$n/docs/product"; write_roadmap "$d" w3 "" "" ""; echo "$d"; }
+sub_of() { dirname "$(dirname "$1")"; }   # product dir -> its fixture root
+unchanged() { [[ "$(tree_hash "$1")" == "$2" ]] && echo true || echo false; }
+case_insensitive=false
+mkdir -p "$WORK/casefs/Probe"; [[ -d "$WORK/casefs/probe" ]] && case_insensitive=true
+
+# SEC-1: symlink spelled with a different case than the in-use module id
+pd="$(fresh case-link)"; out="$(sub_of "$pd")/outside"; mkdir -p "$out" "$pd/modules"; echo VICTIM > "$out/ROADMAP.md"
+ln -s "$out" "$pd/modules/Alpha"
+run changelog --entry x --why y --dir "$pd"; rc=$?
+ck "SEC-1: case-variant symlink to an outside dir: exit 1" "$([[ $rc -eq 1 ]] && echo true || echo false)"
+ck "SEC-1: outside/ROADMAP.md still VICTIM" "$([[ "$(cat "$out/ROADMAP.md")" == "VICTIM" ]] && echo true || echo false)"
+ck "SEC-1: nothing else written outside" "$([[ "$(ls "$out")" == "ROADMAP.md" ]] && echo true || echo false)"
+ck "SEC-1: no lock left behind" "$([[ -z "$(ls "$pd"/*.lock* 2>/dev/null)" ]] && echo true || echo false)"
+# SEC-1 counter-test: a REAL directory with the other spelling is the same dir on a case-insensitive FS
+if [[ "$case_insensitive" == "true" ]]; then
+  pd="$(fresh case-real)"; mkdir -p "$pd/modules/Alpha"
+  run changelog --entry x --why y --dir "$pd"; rc=$?
+  ck "SEC-1 counter: real dir modules/Alpha (same dir as alpha) is still written, exit 0" "$([[ $rc -eq 0 && -f "$pd/modules/alpha/ROADMAP.md" ]] && echo true || echo false)"
+else
+  echo "SKIP  SEC-1 counter: filesystem is case-sensitive"
+fi
+# case collision on any filesystem: a case-variant FILE next to an in-use id that is not the same dir
+if [[ "$case_insensitive" == "false" ]]; then
+  pd="$(fresh case-coll)"; mkdir -p "$pd/modules/alpha" "$pd/modules/Alpha"
+  run changelog --entry x --why y --dir "$pd"; rc=$?
+  ck "SEC-1: distinct case-variant dir next to an in-use id: exit 1 (collision)" "$([[ $rc -eq 1 ]] && grep -q 'collides' "$WORK/last.out" && echo true || echo false)"
+fi
+
+# SEC-2: write target that is a symlink (also under fault injection / rollback)
+for idx in none 3 6; do
+  pd="$(fresh sym-target)"; out="$(sub_of "$pd")/o.md"; echo "SECRET" > "$out"; mkdir -p "$pd/modules/alpha"; ln -s "$out" "$pd/modules/alpha/ROADMAP.md"
+  if [[ "$idx" == "none" ]]; then run changelog --entry x --why y --dir "$pd"; rc=$?
+  else A1_TEST_FAIL_RENAME_AT_INDEX=$idx node "$TOOLS" product changelog --entry x --why y --dir "$pd" >"$WORK/last.out" 2>&1; rc=$?; fi
+  ck "SEC-2 [$idx]: symlink write target: exit 1" "$([[ $rc -eq 1 ]] && echo true || echo false)"
+  ck "SEC-2 [$idx]: link still a symlink, outside file intact, no regular file materialised" "$([[ -L "$pd/modules/alpha/ROADMAP.md" && "$(cat "$out")" == "SECRET" ]] && echo true || echo false)"
+  ck "SEC-2 [$idx]: nothing from the transaction was written (index.json absent)" "$(absent "$pd/index.json")"
+  ck "SEC-2 [$idx]: no leftover tmp" "$([[ -z "$(find "$pd" -name '*.tmp.*')" ]] && echo true || echo false)"
+done
+# target is a directory: no tmp left behind (Reinhard N7)
+pd="$(fresh dir-target)"; mkdir -p "$pd/modules/alpha/ROADMAP.md"; h="$(tree_hash "$pd")"
+run changelog --entry x --why y --dir "$pd"; rc=$?
+ck "N7: directory as write target: exit 1, tree unchanged, no .tmp left" "$([[ $rc -eq 1 && "$(unchanged "$pd" "$h")" == "true" && -z "$(find "$pd" -name '*.tmp.*')" ]] && echo true || echo false)"
+
+# SEC-3: unreadable entries are foreign, never an abort (name checked before reading)
+for mode in module plain; do
+  if [[ "$mode" == "module" ]]; then pd="$(fresh unread)"; else pd="$(fresh_plain unread)"; fi
+  mkdir -p "$pd/modules/legacy"; echo s > "$pd/modules/legacy/secret.md"; chmod 000 "$pd/modules/legacy/secret.md"
+  echo s > "$pd/modules/legacy/ROADMAP.md"; chmod 000 "$pd/modules/legacy/ROADMAP.md"
+  run changelog --entry x --why y --dir "$pd"; rc=$?
+  ck "SEC-3 [$mode]: unreadable files in a stale dir: exit 0" "$([[ $rc -eq 0 ]] && echo true || echo false)"
+  ck "SEC-3 [$mode]: both files kept" "$([[ -e "$pd/modules/legacy/secret.md" && -e "$pd/modules/legacy/ROADMAP.md" ]] && echo true || echo false)"
+  chmod 600 "$pd/modules/legacy/secret.md" "$pd/modules/legacy/ROADMAP.md"
+done
+# the name check precedes the read: a non-ROADMAP/NEXT name is never opened (000 file, no warning difference needed)
+# and the read covers only the header prefix: a huge generated-looking file is still recognised
+pd="$(fresh_plain prefix)"; mkdir -p "$pd/modules/legacy"; gen_file legacy NEXT.md "$pd/modules/legacy/NEXT.md"; head -c 3000000 /dev/zero | tr '\0' 'x' >> "$pd/modules/legacy/NEXT.md"
+run changelog --entry x --why y --dir "$pd"; rc=$?
+ck "SEC-3: generated-header file with a big body is still deleted (prefix check), stale dir gone" "$([[ $rc -eq 0 && ! -e "$pd/modules/legacy" ]] && echo true || echo false)"
+
+# SEC-4: rmdir rollback keeps the directory mode
+all_ok=true; seen_fail=0
+for i in 0 1 2 3 4 5 6 7 8 9; do
+  pd="$(fresh_plain rmdirmode)"; mkdir -p "$pd/modules/gamma"; gen_file gamma ROADMAP.md "$pd/modules/gamma/ROADMAP.md"; chmod 600 "$pd/modules/gamma/ROADMAP.md"; chmod 700 "$pd/modules/gamma"
+  A1_TEST_FAIL_RENAME_AT_INDEX=$i node "$TOOLS" product changelog --entry x --why y --dir "$pd" >/dev/null 2>&1; rc=$?
+  [[ $rc -eq 0 ]] && continue
+  seen_fail=$((seen_fail + 1))
+  [[ "$(mode_of "$pd/modules/gamma")" == "700" && "$(mode_of "$pd/modules/gamma/ROADMAP.md")" == "600" ]] || { all_ok=false; echo "  index $i: dir=$(mode_of "$pd/modules/gamma") file=$(mode_of "$pd/modules/gamma/ROADMAP.md")"; }
+done
+ck "SEC-4: rolled-back stale dir keeps mode 700 (file 600) at every fault index ($seen_fail failing positions)" "$([[ "$all_ok" == "true" && $seen_fail -gt 0 ]] && echo true || echo false)"
+
+# SEC-5: binary-safe backups
+pd="$(fresh bin)"; mkdir -p "$pd/modules/alpha"; printf '\x00\xff\xfe\x80binary\x00\xff' > "$pd/modules/alpha/ROADMAP.md"; cp "$pd/modules/alpha/ROADMAP.md" "$WORK/bin.orig"
+A1_TEST_FAIL_RENAME_AT_INDEX=6 node "$TOOLS" product changelog --entry x --why y --dir "$pd" >/dev/null 2>&1; rc=$?
+ck "SEC-5: write target with 0x00/0xFF bytes is byte-identical after rollback" "$([[ $rc -eq 1 ]] && cmp -s "$WORK/bin.orig" "$pd/modules/alpha/ROADMAP.md" && echo true || echo false)"
+
+# Policy: no module in use never aborts because of modules/ (FR-005 priority)
+pd="$(fresh_plain nomod-link)"; out="$(sub_of "$pd")/out"; mkdir -p "$out/legacy"; gen_file legacy ROADMAP.md "$out/legacy/ROADMAP.md"; ln -s "$out" "$pd/modules"; h="$(tree_hash "$out")"
+run changelog --entry x --why y --dir "$pd"; rc=$?
+ck "policy: no module, modules/ is a symlink: exit 0" "$([[ $rc -eq 0 ]] && echo true || echo false)"
+ck "policy: ... target tree untouched (nothing read through, written or deleted)" "$(unchanged "$out" "$h")"
+ck "policy: ... exactly one modules/ warning" "$([[ "$(grep -c 'modules/ skipped' "$WORK/last.out")" == "1" ]] && echo true || echo false)"
+pd="$(fresh_plain nomod-quiet)"; mkdir -p "$pd/modules/foo" "$(sub_of "$pd")/t"; echo k > "$pd/modules/foo/notes.md"; ln -s "$(sub_of "$pd")/t" "$pd/modules/shared"
+echo x > "$pd/modules/loose.txt"
+run changelog --entry x --why y --dir "$pd"; rc=$?
+ck "policy: no module, foreign entries and stale symlink: exit 0, no warning noise" "$([[ $rc -eq 0 ]] && ! grep -q 'warning' "$WORK/last.out" && [[ -f "$pd/modules/foo/notes.md" && -L "$pd/modules/shared" && -f "$pd/modules/loose.txt" ]] && echo true || echo false)"
+pd="$(fresh stale-link)"; out="$(sub_of "$pd")/t"; mkdir -p "$out" "$pd/modules"; ln -s "$out" "$pd/modules/shared"
+run changelog --entry x --why y --dir "$pd"; rc=$?
+ck "policy: module in use, stale slug-named symlink: exit 0, kept, warned once" "$([[ $rc -eq 0 && -L "$pd/modules/shared" && "$(grep -c 'modules/shared' "$WORK/last.out")" == "1" ]] && echo true || echo false)"
+
+# Defense in depth (locks.prepareOps): a target whose parent resolves outside `within` aborts before any write,
+# even when the planner was fooled. Drives the real exported writeAllOrNothing.
+did="$WORK/did"; mkdir -p "$did/prod" "$did/outside"; ln -s "$did/outside" "$did/prod/linked"
+node -e '
+  const L = require(process.argv[1] + "/locks.cjs"); const path = require("path");
+  const prod = process.argv[2];
+  L.writeAllOrNothing(path.join(prod, "x.lock"), [
+    { target: path.join(prod, "ok.txt"), content: "ok", within: prod },
+    { target: path.join(prod, "linked", "evil.txt"), content: "evil", within: prod },
+  ], "probe");
+' "$GUARD_LIB" "$did/prod" >"$WORK/last.out" 2>&1; rc=$?
+ck "defense in depth: parent resolving outside the allowed root aborts (exit 1)" "$([[ $rc -eq 1 ]] && echo true || echo false)"
+ck "defense in depth: nothing written outside, nothing written before the abort" "$([[ -z "$(ls "$did/outside")" ]] && absent "$did/prod/ok.txt" | grep -q true && echo true || echo false)"
 
 # ---- static caller guard ---------------------------------------------------
 callers="$(grep -n 'regenerateDerived(' "$GUARD_LIB"/*.cjs | grep -v '/product-derived.cjs:' | grep -vc '^\S*:[0-9]*:\s*\(//\|\*\)')"
