@@ -257,7 +257,7 @@ features:
     milestone: continuous
     title: "Module dimension for docs/product: per-module roadmap views and cursors"
     status: in-flight
-    stage: review
+    stage: verify
     depends_on: []
     started: 2026-10-26
     finished: null
@@ -446,6 +446,7 @@ None.
 - **2026-10-26** — 023-module-roadmap-views -> started — stage transition via `product stage`
 - **2026-10-26** — 023-module-roadmap-views -> complete — stage transition via `product stage`
 - **2026-10-26** — 023-module-roadmap-views -> review — stage transition via `product stage`
+- **2026-10-26** — 023-module-roadmap-views -> verify — stage transition via `product stage`
 
 ## Appendix — migrated details
 

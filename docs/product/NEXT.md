@@ -16,7 +16,7 @@ updated: 2026-10-26
 - **010-vault-cockpit-contract** — Vault cockpit contract — every a1 status readable in Obsidian on Mac, server and phone (milestone: continuous, stage: started) — scope: project/a1-specforge/spec/010-vault-cockpit-contract.md
 - **011-intent-queue-consumer** — Intent queue consumer — the a1 half of triggering skills from the phone via the vault (milestone: continuous, stage: started) — scope: project/a1-specforge/spec/011-intent-queue-consumer.md
 - **021-dashboard** — a1-dashboard: local read-only view of pipeline state (milestone: continuous, stage: started) — scope: project/a1-specforge/spec/021-dashboard.md
-- **023-module-roadmap-views** — Module dimension for docs/product: per-module roadmap views and cursors (milestone: continuous, stage: review) — scope: project/a1-specforge/spec/023-module-roadmap-views.md
+- **023-module-roadmap-views** — Module dimension for docs/product: per-module roadmap views and cursors (milestone: continuous, stage: verify) — scope: project/a1-specforge/spec/023-module-roadmap-views.md
 
 ## Next cursor
 
