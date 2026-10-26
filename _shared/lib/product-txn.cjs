@@ -87,8 +87,8 @@ function productDirFromFlags(flags) {
 /** The derived part of every product write set: index.json, NEXT.md, the
  * module files and the stale-module delete/rmdir entries (spec 023). Every
  * caller of regenerateDerived goes through here so module files share the
- * all-or-nothing transaction. A module error (symlinked or unreadable
- * `modules/`, bad module id) aborts the command: `lockPath` — the lock the
+ * all-or-nothing transaction. A module error (module in use and `modules/` or a module dir
+ * symlinked / unreadable / case-colliding, bad module id) aborts the command: `lockPath` — the lock the
  * CALLER holds — is released, nothing is written. Foreign entries under
  * `modules/` are left alone and reported as one stderr line each. */
 function derivedWrites(dir, derived, lockPath) {
@@ -97,10 +97,10 @@ function derivedWrites(dir, derived, lockPath) {
   }
   for (const w of derived.moduleWarnings || []) process.stderr.write(`[a1-tools] warning: ${w}\n`);
   return [
-    { target: path.join(dir, 'index.json'), content: JSON.stringify(derived.indexJson, null, 2) + '\n' },
-    { target: path.join(dir, 'NEXT.md'), content: derived.nextMd },
-    ...derived.moduleFiles.map((f) => ({ target: path.join(dir, f.rel), content: f.content })),
-    ...derived.moduleDeletes,
+    { target: path.join(dir, 'index.json'), content: JSON.stringify(derived.indexJson, null, 2) + '\n', within: dir },
+    { target: path.join(dir, 'NEXT.md'), content: derived.nextMd, within: dir },
+    ...derived.moduleFiles.map((f) => ({ target: path.join(dir, f.rel), content: f.content, within: dir })),
+    ...derived.moduleDeletes.map((d) => ({ ...d, within: dir })),
   ];
 }
 

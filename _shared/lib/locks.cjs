@@ -272,31 +272,65 @@ function writeAllOrNothing(lockPath, writes, errPrefix, opts) {
   return runAfterCommit(opts, errPrefix);
 }
 
-/** Write the .tmp files and record, per write entry, the original content and
- * mode (from lstat) needed to revert it. Delete entries back up the original
- * BEFORE the rename phase so a later failure can restore it byte for byte and
- * with its mode. Pushes into `staged` / `createdDirs` as it goes, so a throw
- * midway still leaves rollback everything it needs. */
+/** Nearest existing ancestor of `dir` (resolved), for targets whose parent
+ * directories do not exist yet. */
+function realExistingAncestor(dir) {
+  let cur = dir;
+  while (!fs.existsSync(cur)) {
+    const parent = path.dirname(cur);
+    if (parent === cur) break;
+    cur = parent;
+  }
+  return fs.realpathSync(cur);
+}
+
+/** Defense in depth: when an op carries `within` (the allowed root), the
+ * target's parent must resolve inside realpath(within) — a symlink anywhere in
+ * the chain pointing out aborts before any write. A symlink as the target
+ * itself is refused too (never read or replace through it). */
+function guardTarget(w) {
+  let st = null;
+  try { st = fs.lstatSync(w.target); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+  if (st && st.isSymbolicLink()) {
+    throw new Error(`${w.target} is a symbolic link — refusing to read or replace it; nothing was written`);
+  }
+  if (w.within !== undefined) {
+    const base = fs.realpathSync(w.within);
+    const parent = realExistingAncestor(path.dirname(w.target));
+    if (parent !== base && !parent.startsWith(base + path.sep)) {
+      throw new Error(`${w.target} resolves outside ${w.within} (${parent}) — nothing was written`);
+    }
+  }
+  return st;
+}
+
+/** Write the .tmp files and record, per write entry, the original content
+ * (as a Buffer, binary-safe) and mode (from lstat) needed to revert it.
+ * Every target is checked first (guardTarget). Delete entries back up the
+ * original BEFORE the rename phase so a later failure can restore it byte for
+ * byte and with its mode; rmdir entries remember the dir mode. The original is
+ * read before the .tmp is written, so a failing read leaves no tmp behind.
+ * Pushes into `staged` / `createdDirs` as it goes, so a throw midway still
+ * leaves rollback everything it needs. */
 function prepareOps(writes, staged, createdDirs) {
   for (const w of writes) {
+    const st = guardTarget(w);
     if (w.delete) {
-      const mode = fs.lstatSync(w.target).mode & 0o7777;
-      staged.push({ kind: 'delete', target: w.target, original: fs.readFileSync(w.target), mode });
+      staged.push({ kind: 'delete', target: w.target, original: fs.readFileSync(w.target), mode: st.mode & 0o7777 });
       continue;
     }
     if (w.rmdir) {
-      staged.push({ kind: 'rmdir', target: w.target });
+      staged.push({ kind: 'rmdir', target: w.target, mode: st ? st.mode & 0o7777 : null });
       continue;
     }
     const tmp = `${w.target}.tmp.${process.pid}`;
     const wdir = path.dirname(w.target);
     for (const d of missingDirs(wdir)) createdDirs.push(d);
     if (!fs.existsSync(wdir)) fs.mkdirSync(wdir, { recursive: true });
+    const existed = st !== null;
+    const original = existed ? fs.readFileSync(w.target) : null;
     fs.writeFileSync(tmp, w.content, 'utf8');
-    const existed = fs.existsSync(w.target);
-    const original = existed ? fs.readFileSync(w.target, 'utf8') : null;
-    const mode = existed ? fs.lstatSync(w.target).mode & 0o7777 : null;
-    staged.push({ kind: 'write', tmp, target: w.target, existed, original, mode });
+    staged.push({ kind: 'write', tmp, target: w.target, existed, original, mode: existed ? st.mode & 0o7777 : null });
   }
 }
 
@@ -332,11 +366,17 @@ function executeOps(ops, done) {
 
 /** Recreate `file` with `content` and its original `mode` (writeFileSync's
  * mode only applies to a NEW file, so chmod covers the existing-file case). */
-function restoreFile(file, content, mode, encoding) {
-  const opts = encoding ? { encoding } : {};
+function restoreFile(file, content, mode) {
+  const opts = {};
   if (mode !== null && mode !== undefined) opts.mode = mode;
   fs.writeFileSync(file, content, opts);
   if (mode !== null && mode !== undefined) fs.chmodSync(file, mode);
+}
+
+/** Recreate a removed directory with its original mode. */
+function restoreDir(dir, mode) {
+  fs.mkdirSync(dir, { recursive: true });
+  if (mode !== null && mode !== undefined) fs.chmodSync(dir, mode);
 }
 
 /** Revert every operation that already succeeded, in reverse order — this is
@@ -350,9 +390,9 @@ function rollbackOps(done, staged, createdDirs) {
   for (let i = done.length - 1; i >= 0; i--) {
     const s = done[i];
     try {
-      if (s.kind === 'rmdir') fs.mkdirSync(s.target, { recursive: true });
+      if (s.kind === 'rmdir') restoreDir(s.target, s.mode);
       else if (s.kind === 'delete') restoreFile(s.target, s.original, s.mode);
-      else if (s.existed) restoreFile(s.target, s.original, s.mode, 'utf8');
+      else if (s.existed) restoreFile(s.target, s.original, s.mode);
       else fs.unlinkSync(s.target);
     } catch (e2) {
       revertFailures.push({ file: s.target, error: e2.message });

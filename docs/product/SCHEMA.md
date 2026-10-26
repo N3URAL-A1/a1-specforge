@@ -392,12 +392,20 @@ per-module views and a per-module cursor from the single `ROADMAP.md`. `schema_v
 - Project `NEXT.md` gains `## Next per module` and `## Unassigned milestones`.
 - Cleanup of modules no longer in use runs in the same transaction but deletes ONLY the
   generator's own files: a `ROADMAP.md` / `NEXT.md` whose content starts with the module title
-  line + the generated header. A stale directory is removed once it is empty; any other entry
-  is left in place and reported with one `warning:` line on stderr (the command continues).
-  `modules/` is removed only when empty and no module is in use, so a project without modules
-  keeps a foreign `modules/` untouched. `modules/` or an in-use module directory that is a
-  symbolic link, not a directory, or resolves outside `docs/product/` aborts the command with
-  a non-zero exit and nothing written.
+  line + the generated header (name checked first; only that prefix is read). A stale directory
+  is removed once it is empty; any other entry (foreign files, symbolic links, unreadable
+  entries) is left in place. With a module in use each such entry is reported once with a
+  `warning:` line on stderr (the command continues); with no module in use they stay
+  silently.
+- Safety, module in use: `modules/` or an in-use module directory that is a symbolic link, not a
+  directory, resolves outside `docs/product/`, or collides by case with another entry (a
+  differently spelled name that is not the same directory) aborts the command with a non-zero
+  exit and nothing written. Every write target that is itself a symbolic link, or whose parent
+  resolves outside `docs/product/`, aborts the transaction before any write.
+- Safety, no module in use (FR-005 has priority): never an abort because of `modules/`. A
+  symbolic-link or non-directory `modules/` yields one warning and is skipped entirely (nothing
+  read through it, written or deleted). `modules/` is removed only when empty and no module is
+  in use, so a project without modules keeps a non-empty foreign `modules/` untouched.
 - When no module is in use, `index.json` and `NEXT.md` are byte-identical to v1.1 output.
 
 **`index.json` additions** (only when at least one module is in use; otherwise neither key appears)
