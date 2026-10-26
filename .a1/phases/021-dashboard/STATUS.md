@@ -49,3 +49,21 @@ Completed: 2026-10-26
 - Reason codes emitted: no_product_docs, no_phases, no_watermark, unreadable (all already in the frozen set; Cost owns no_phases_mirror). No help-text change needed.
 - Test fix: 02.44 expected id 199-*, but the generated ids top out at 189 (n%90); expectation corrected to the first Specs line.
 - Per-section cap 40 lines, total 400 lines incl. frontmatter; `and N more` is exact.
+
+## Wave 3 — Input boundary
+Completed: 2026-10-26
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| dashboard-read.cjs (denylist, link/realpath refusal, size cap, FIFO, UTF-8, cleanText, writerCheck), parts/03-safety.sh, fixtures/leak | DONE | b327775 | part 03: 143 PASS, 0 FAIL; suite 281/0 |
+
+### Mutation proofs (git-archive snapshot, live tree untouched)
+D1 drop dispositions.json + generic .a1/*.json rule: 8 red (D1b generic rule only: fidelity red, 5) · D2 denylist after open/trace: 17 red · D3 drop `.env.*`: 6 red · D4 drop case-insensitivity: 2 red (.ENV) · C1 cleanText = String(v): 10 red · W1 writer always allows: 10 red · N1 `require('http')` planted: 1 red (03.17) · L1 no link refusal: 5 red · R1 no root check: 4 red. RED against the Wave 1 stub: leak/trace/link/redaction cases red (143 cases, ~100 failed before).
+
+### Deviations
+- Test helper `pj` was missing in the part; added (tolerant json_get). 03.2 threshold `>= 17` was wrong (16 planted refusals); now exact count from `$MARKERS`.
+- Seam allows read-only roots beyond repo and project/<slug>/: `<vault>/pattern/a1-learnings` and `<vault>/project/<any>/postmortems` (Wave 2 Learnings count reads them through the seam). Other projects' spec folders and hub notes stay refused (03.5).
+- Denylist adds any `*.json` directly in `.a1/` (03.1 plants `.a1/fidelity.json`), `*.pem`, `*.key` beyond the plan's list.
+- Repo root for the seam = ctx.repoRoot, else nearest `.git` above ctx.cwd (dashboard.cjs passes bare ctx for ROADMAP). No dashboard.cjs edit needed.
+- writerCheck builds the FR-011 line itself (no `of <slug>`; notWriterReason adds it); unreadable declaration reason keeps the vault-writer wording.
+- Removed stray parts/03-safety.sh.bak.
