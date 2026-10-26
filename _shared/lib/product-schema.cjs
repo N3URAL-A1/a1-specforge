@@ -7,7 +7,7 @@
 
 const PRODUCT_ROADMAP_KEY_ORDER = [
   'schema_version', 'type', 'project', 'title', 'status', 'updated', 'source',
-  'milestones', 'features', 'next',
+  'modules', 'milestones', 'features', 'next',
 ];
 
 const PRODUCT_FEATURE_KEY_ORDER = [

@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "generated": "MASKED",
+  "project": {
+    "id": "golden-c",
+    "title": "golden-c — Roadmap",
+    "status": "active"
+  },
+  "milestones": [
+    {
+      "id": "m1-first",
+      "title": "First Milestone",
+      "status": "in-progress",
+      "target": "2026-08"
+    },
+    {
+      "id": "m2-second",
+      "title": "Second Milestone",
+      "status": "planned",
+      "target": "2026-09"
+    }
+  ],
+  "features": [
+    {
+      "id": "001-first-feature",
+      "milestone": "m1-first",
+      "title": "First Feature",
+      "status": "in-flight",
+      "stage": "started",
+      "depends_on": [],
+      "started": "2026-07-14",
+      "finished": null,
+      "spec_path": null,
+      "plan_path": null
+    },
+    {
+      "id": "002-second-feature",
+      "milestone": "m1-first",
+      "title": "Second Feature",
+      "status": "planned",
+      "stage": null,
+      "depends_on": [
+        "001-first-feature"
+      ],
+      "started": null,
+      "finished": null,
+      "spec_path": null,
+      "plan_path": null
+    },
+    {
+      "id": "003-third-feature",
+      "milestone": "m2-second",
+      "title": "Third Feature",
+      "status": "planned",
+      "stage": null,
+      "depends_on": [],
+      "started": null,
+      "finished": null,
+      "spec_path": null,
+      "plan_path": null
+    }
+  ],
+  "next": "001-first-feature",
+  "cursor": "001-first-feature",
+  "vision": null,
+  "audits": []
+}

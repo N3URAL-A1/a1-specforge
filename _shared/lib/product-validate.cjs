@@ -119,6 +119,7 @@ function validateAuditFm(fm) {
  * trips through schema validation"). */
 function validateRoadmapFm(fm) {
   const errors = [];
+  const warnings = [];
   const req = (key, ok, msg) => {
     if (!ok) errors.push(`${key}: ${msg}`);
   };
@@ -131,6 +132,15 @@ function validateRoadmapFm(fm) {
   req('updated', typeof fm.updated === 'string' && YYYY_MM_DD_RE.test(fm.updated), `must be YYYY-MM-DD, got ${JSON.stringify(fm.updated)}`);
   req('source', typeof fm.source === 'string' && fm.source.length > 0, 'must be a non-empty provenance string');
 
+  // Spec 023 (FR-002/FR-003): optional `modules:` list of kebab-case slugs.
+  const hasModulesList = fm.modules !== undefined;
+  const modulesList = Array.isArray(fm.modules) ? fm.modules : [];
+  if (hasModulesList && !Array.isArray(fm.modules)) errors.push(`modules: must be an array of kebab-case slugs, got ${JSON.stringify(fm.modules)}`);
+  modulesList.forEach((entry, i) => {
+    req(`modules[${i}]`, typeof entry === 'string' && PRODUCT_SLUG_RE.test(entry), `must be kebab-case slug, got ${JSON.stringify(entry)}`);
+  });
+  const allowedModules = new Set(modulesList.filter((e) => typeof e === 'string'));
+
   const milestones = Array.isArray(fm.milestones) ? fm.milestones : null;
   req('milestones', milestones !== null, 'must be an array');
   const milestoneIds = new Set();
@@ -142,7 +152,26 @@ function validateRoadmapFm(fm) {
       req(`${p}.status`, MILESTONE_STATUSES.has(m.status), `must be one of ${[...MILESTONE_STATUSES].join('|')}, got ${JSON.stringify(m.status)}`);
       req(`${p}.target`, m.target === null || (typeof m.target === 'string' && YYYY_MM_RE.test(m.target)), `must be YYYY-MM or null, got ${JSON.stringify(m.target)}`);
       if (typeof m.id === 'string') milestoneIds.add(m.id);
+      if (m.module !== undefined) {
+        const okSlug = typeof m.module === 'string' && PRODUCT_SLUG_RE.test(m.module);
+        req(`${p}.module`, okSlug, `must be kebab-case slug, got ${JSON.stringify(m.module)}`);
+        // Membership is checked against the project's own list only (never a code-side vocabulary).
+        if (okSlug && hasModulesList && !allowedModules.has(m.module)) {
+          errors.push(`${p}.module: '${m.module}' is not in modules`);
+        }
+      }
     });
+    // Spec 023 (FR-004): warnings only; they never change `valid`.
+    const tagged = milestones.filter((m) => m && m.module !== undefined);
+    if (tagged.length > 0) {
+      milestones.forEach((m, i) => {
+        if (m && m.module === undefined) {
+          warnings.push(`milestones[${i}].module: milestone '${m.id}' has no module; it appears only under "Unassigned milestones" in NEXT.md`);
+        }
+      });
+    } else if (hasModulesList) {
+      warnings.push('modules: list present but no milestone has a module');
+    }
   }
 
   const features = Array.isArray(fm.features) ? fm.features : null;
@@ -174,7 +203,7 @@ function validateRoadmapFm(fm) {
 
   req('next', fm.next === null || (typeof fm.next === 'string' && featureIds.has(fm.next)), `must be null or an existing features[].id, got ${JSON.stringify(fm.next)}`);
 
-  return { valid: errors.length === 0, errors };
+  return { valid: errors.length === 0, errors, warnings };
 }
 
 // German-marker heuristic (FR-016 English-only lint) — reuses the exact
@@ -247,7 +276,7 @@ function cmdProductValidate(args) {
   const { fm } = parseNestedFrontmatter(content);
   const roadmapResult = validateRoadmapFm(fm);
   const errors = [...roadmapResult.errors];
-  const warnings = [];
+  const warnings = [...(roadmapResult.warnings || [])];
   const germanWarning = detectGermanMarkers(content, path.basename(roadmapFile));
   if (germanWarning) warnings.push(germanWarning);
 
