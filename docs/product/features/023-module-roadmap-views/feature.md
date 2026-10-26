@@ -1,0 +1,16 @@
+---
+id: 023-module-roadmap-views
+project: a1-specforge
+milestone: continuous
+title: "Module dimension for docs/product: per-module roadmap views and cursors"
+status: planned
+stage: null
+depends_on: []
+started: null
+finished: null
+spec_path: project/a1-specforge/spec/023-module-roadmap-views.md
+plan_path: null
+schema_version: 1
+---
+
+Module dimension for docs/product: per-module roadmap views and cursors — feature summary (fill in).

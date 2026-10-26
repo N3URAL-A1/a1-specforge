@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated": "2026-10-24T03:04:31.128Z",
+  "generated": "2026-10-26T14:23:44.823Z",
   "project": {
     "id": "a1-specforge",
     "title": "a1-specforge — Roadmap",
@@ -317,6 +317,18 @@
       "started": null,
       "finished": null,
       "spec_path": "project/a1-specforge/spec/022-spec-driven-tests.md",
+      "plan_path": null
+    },
+    {
+      "id": "023-module-roadmap-views",
+      "milestone": "continuous",
+      "title": "Module dimension for docs/product: per-module roadmap views and cursors",
+      "status": "planned",
+      "stage": null,
+      "depends_on": [],
+      "started": null,
+      "finished": null,
+      "spec_path": "project/a1-specforge/spec/023-module-roadmap-views.md",
       "plan_path": null
     }
   ],
