@@ -4,7 +4,7 @@ project: a1-specforge
 milestone: continuous
 title: "Module dimension for docs/product: per-module roadmap views and cursors"
 status: in-flight
-stage: started
+stage: review
 depends_on: []
 started: 2026-10-26
 finished: null
