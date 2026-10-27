@@ -1,0 +1,144 @@
+{
+  "schema_version": 1,
+  "generated": "2026-10-24T03:04:31.128Z",
+  "project": {
+    "id": "a1-specforge",
+    "title": "a1-specforge — Roadmap",
+    "status": "active"
+  },
+  "milestones": [
+    {
+      "id": "m0-repo-extract",
+      "title": "Repo Extract",
+      "status": "done",
+      "target": "2026-05"
+    },
+    {
+      "id": "m1-integrity-gates",
+      "title": "Integrity Gates",
+      "status": "done",
+      "target": "2026-05"
+    },
+    {
+      "id": "m2-phantom-proof-execution",
+      "title": "Phantom-Proof Execution",
+      "status": "done",
+      "target": "2026-05"
+    },
+    {
+      "id": "m3-quality-surface-expansion",
+      "title": "Quality Surface Expansion",
+      "status": "done",
+      "target": "2026-05"
+    },
+    {
+      "id": "m4-self-learning-loop",
+      "title": "Self-Learning Loop",
+      "status": "done",
+      "target": "2026-05"
+    },
+    {
+      "id": "m5-brownfield-modernization",
+      "title": "Brownfield Modernization",
+      "status": "done",
+      "target": "2026-05"
+    },
+    {
+      "id": "m6-works-for-rob",
+      "title": "Works for Rob",
+      "status": "done",
+      "target": "2026-07"
+    },
+    {
+      "id": "m7-oss-ready",
+      "title": "OSS-Ready",
+      "status": "done",
+      "target": "2026-08"
+    },
+    {
+      "id": "m8-launch-community",
+      "title": "Launch & Community",
+      "status": "in-progress",
+      "target": "2026-09"
+    },
+    {
+      "id": "continuous",
+      "title": "Continuous / Unscheduled",
+      "status": "in-progress",
+      "target": null
+    }
+  ],
+  "features": [
+    {
+      "id": "006-specforge-kritis-profile",
+      "milestone": "continuous",
+      "title": "SpecForge into a1 as an optional --profile kritis lane",
+      "status": "planned",
+      "stage": null,
+      "depends_on": [],
+      "started": null,
+      "finished": null,
+      "spec_path": "project/a1-specforge/spec/006-specforge-kritis-profile.md",
+      "plan_path": null
+    },
+    {
+      "id": "010-vault-cockpit-contract",
+      "milestone": "continuous",
+      "title": "Vault cockpit contract — every a1 status readable in Obsidian on Mac, server and phone",
+      "status": "in-flight",
+      "stage": "started",
+      "depends_on": [],
+      "started": "2026-10-14",
+      "finished": null,
+      "spec_path": "project/a1-specforge/spec/010-vault-cockpit-contract.md",
+      "plan_path": null
+    },
+    {
+      "id": "011-intent-queue-consumer",
+      "milestone": "continuous",
+      "title": "Intent queue consumer — the a1 half of triggering skills from the phone via the vault",
+      "status": "in-flight",
+      "stage": "started",
+      "depends_on": [
+        "010-vault-cockpit-contract"
+      ],
+      "started": "2026-09-26",
+      "finished": null,
+      "spec_path": "project/a1-specforge/spec/011-intent-queue-consumer.md",
+      "plan_path": null
+    },
+    {
+      "id": "018-pipeline-metrics",
+      "milestone": "continuous",
+      "title": "Measure the pipeline: escaped-defect attribution and cost per feature",
+      "status": "done",
+      "stage": "done",
+      "depends_on": [
+        "017-enforced-self-checks"
+      ],
+      "started": "2026-10-23",
+      "finished": "2026-10-23",
+      "spec_path": "project/a1-specforge/spec/018-pipeline-metrics.md",
+      "plan_path": "project/a1-specforge/plans/018-pipeline-metrics-wave-plan.md"
+    }
+  ],
+  "next": "006-specforge-kritis-profile",
+  "cursor": "006-specforge-kritis-profile",
+  "vision": null,
+  "audits": [
+    {
+      "path": "docs/product/audits/2026-10-08-general.md",
+      "date": "2026-10-08",
+      "focus": "general",
+      "verdict": "general analysis of a1-specforge",
+      "counts": {
+        "blocker": 0,
+        "major": 15,
+        "minor": 25
+      },
+      "open": 33,
+      "fixed": 7,
+      "last_validated": "2026-10-08"
+    }
+  ]
+}

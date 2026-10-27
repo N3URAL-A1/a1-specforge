@@ -241,7 +241,8 @@ After VERIFICATION.md is written and the verdict is presented — PASS,
 PARTIAL or FAIL — and before the retro, mirror the phase into the vault so the
 cockpit shows the verdict. `<project-slug>` is the `project:` of
 `docs/product/ROADMAP.md`; a repo without a roadmap passes `--slug <slug>`
-instead (phases only). Skipped silently when `A1_VAULT_ROOT` is not set (tier
+instead, to the `vault sync` line (phases only) and to the `dashboard build` line
+alike. Skipped silently when `A1_VAULT_ROOT` is not set (tier
 repo-local). A failed sync is a warning, never a change of verdict:
 
 ```bash
@@ -249,6 +250,8 @@ if [ -n "${A1_VAULT_ROOT:-}" ]; then
   VSYNC_OUT="$(mktemp)"
   node <repo>/_shared/a1-tools.cjs vault sync <project-slug> --phases > "$VSYNC_OUT"; RC=$?
   if [ $RC -ne 0 ]; then echo "⚠ vault sync --phases exit=$RC — vault mirror not updated, continuing (stderr above, JSON in $VSYNC_OUT)"; fi
+  node <repo>/_shared/a1-tools.cjs dashboard build <project-slug> >/dev/null; RC=$?
+  if [ $RC -ne 0 ]; then echo "⚠ dashboard build exit=$RC — dashboard not refreshed, continuing"; fi
 fi
 ```
 

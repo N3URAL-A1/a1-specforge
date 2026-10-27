@@ -4,7 +4,7 @@ type: roadmap
 project: a1-specforge
 title: "a1-specforge — Roadmap"
 status: active
-updated: 2026-10-26
+updated: 2026-10-27
 source: "migrated from docs/roadmap.md v3.0 (2026-07-10)"
 milestones:
   - id: m0-repo-extract
@@ -235,12 +235,12 @@ features:
   - id: 021-dashboard
     milestone: continuous
     title: "a1-dashboard: local read-only view of pipeline state"
-    status: in-flight
-    stage: started
+    status: done
+    stage: done
     depends_on:
       - 018-pipeline-metrics
     started: 2026-10-24
-    finished: null
+    finished: 2026-10-27
     spec_path: project/a1-specforge/spec/021-dashboard.md
     plan_path: null
   - id: 022-spec-driven-tests
@@ -447,6 +447,7 @@ None.
 - **2026-10-26** — 023-module-roadmap-views -> complete — stage transition via `product stage`
 - **2026-10-26** — 023-module-roadmap-views -> review — stage transition via `product stage`
 - **2026-10-26** — 023-module-roadmap-views -> verify — stage transition via `product stage`
+- **2026-10-27** — 021-dashboard -> done — stage transition via `product stage`
 
 ## Appendix — migrated details
 

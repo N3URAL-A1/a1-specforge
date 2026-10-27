@@ -265,6 +265,7 @@ const ROW_R = 'row R (progress) has no Bash';
 const OWN_FINDINGS = 'an autonomous child must not clear its own findings (reviewed human or reviewer decision)';
 const DISPOSITIONS = Object.freeze({ 'disposition add': OWN_FINDINGS, 'disposition review': OWN_FINDINGS });
 const SPAWNS_PROCESSES = 'spawns non-git processes; runs owner-side (SEC-5)';
+const DASHBOARD = 'writes the generated vault note project/<slug>/dashboard.md; vault writes run owner-side on the writer host (spec 021)';
 const NETWORK = 'opens outbound network connections to declared hosts; runs owner-side after the merge (spec 020 FR-018)';
 const NEW_FEATURE_EXCLUDED = Object.freeze({
   'cost run': TRANSCRIPTS,
@@ -278,9 +279,9 @@ const NEW_FEATURE_EXCLUDED = Object.freeze({
 const INTENT_CHILD_EXCLUSIONS = Object.freeze({
   'new-feature': NEW_FEATURE_EXCLUDED,
   'continue-feature': NEW_FEATURE_EXCLUDED,
-  plan: Object.freeze({ ...DISPOSITIONS, 'retro validate': OUTSIDE_STORE, 'vault sync': VAULT_WIDE, 'xprov consent': XPROV_CONSENT, 'xprov dispose': XPROV_DISPOSE, 'xprov gate': XPROV, 'xprov permit-check': XPROV_CONSENT, 'xprov waive': XPROV }),
+  plan: Object.freeze({ ...DISPOSITIONS, 'dashboard build': DASHBOARD, 'retro validate': OUTSIDE_STORE, 'vault sync': VAULT_WIDE, 'xprov consent': XPROV_CONSENT, 'xprov dispose': XPROV_DISPOSE, 'xprov gate': XPROV, 'xprov permit-check': XPROV_CONSENT, 'xprov waive': XPROV }),
   execute: Object.freeze({
-    ...DISPOSITIONS, 'cost run': TRANSCRIPTS, 'retro validate': OUTSIDE_STORE, 'vault sync': VAULT_WIDE, 'verify run': SPAWNS_PROCESSES,
+    ...DISPOSITIONS, 'cost run': TRANSCRIPTS, 'dashboard build': DASHBOARD, 'retro validate': OUTSIDE_STORE, 'vault sync': VAULT_WIDE, 'verify run': SPAWNS_PROCESSES,
     'xprov consent': XPROV_CONSENT, 'xprov dispose': XPROV_DISPOSE, 'xprov gate': XPROV, 'xprov load-check': XPROV_STORE, 'xprov permit-check': XPROV_CONSENT, 'xprov waive': XPROV, 'xprov wave-status': XPROV_STORE,
   }),
   fix: Object.freeze({
