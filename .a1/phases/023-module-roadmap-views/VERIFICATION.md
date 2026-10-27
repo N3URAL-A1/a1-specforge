@@ -53,3 +53,8 @@ Evidence = fixture suites run on this tree (exit 0 each), the independent CLI-on
 
 ## Rebase note (pre-merge, 2026-10-27)
 The branch was rebased onto `origin/main` c348e6f (two scope-stage chores, no file overlap) after the verify run. SHAs above are pre-rebase; mapping (old → new): wave 1 c57fa61 → 356462e · wave 2 8560571 → 3ab142e · wave 3 86831a3 → 85078d3 · wave 4 96a9f28 → 27f8fa9 · wave 5 b8f4462 → 7671a18 · refactor(locks) ec4840e → 1ca7079 · fix B1 b66f58b → 4370198 · fix SEC-1..5 3b764bd → a603cd8 · hardening suite 0a063d6 → a375a84 · verify rework fda3936 → bbb0813 · docs ba3e1c7 → 4a930e0. `git diff fda3936 bbb0813` touches only main's five docs/product + reservations files, so the verified tree equals the shipped code. The frontmatter `verify_run` keeps the original head/base SHAs of the run.
+
+Update 2026-10-27, after the merge check: `origin/main` moved to a59cff9 (spec 021 dashboard, #59, plus its stage chore)
+and conflicted with this branch in `README.md` (runner count: main 50 after 021 added one runner, branch 54 after 023 added
+five). Resolved by merging `origin/main` into the branch (commit 2071f42, count 55 = `ls _test-fixtures/*/run*.sh | wc -l`
+on the merged tree); all branch SHAs above stay valid. `a1-gates-lint` run-tests and run-wave13 exit 0 on the merged tree.

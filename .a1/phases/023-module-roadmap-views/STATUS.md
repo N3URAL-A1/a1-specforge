@@ -115,3 +115,9 @@ Branch: feature/023-module-roadmap-views · Worktree: a1-worktrees/023-module-ro
 - SEC-1..5 fix re-probed on HEAD with temp `A1_VAULT_ROOT` (case-variant symlink, lowercase symlinked files, in-use dir as file, foreign header, chmod 000, real-dir case variant, symlinked product dir; no-module: symlinked/unreadable `modules/`, symlinked stale slug): all as policy. Suites run 51/0 · run-derive 29/0 · run-files 174/0 · run-index 59/0 · run-help 25/0 · a1-gates-lint 90/0. Real vault unchanged.
 - 0 BLOCKER, 0 MAJOR, 3 MINOR: (1) records cite pre-rebase SHAs → rebase note added to VERIFICATION.md; (2) spec FR-013 not reconciled with the agreed foreign-entry/symlink policy → follow-up: Clarification entry or `a1-reconcile` before the spec moves to `done` (spec is `implementing`, not edited mid-flight); (3) repo-wide symlink-target refusal documented only in SCHEMA §8 → general "Write safety" paragraph added in SCHEMA §1 and named in the PR body as an intended behaviour change.
 - Codex (`pr-diff-xprov`): not_applicable, external review denied for this repo (2026-10-19).
+
+## origin/main merged into the branch before landing (2026-10-27)
+
+origin/main a59cff9 (spec 021) conflicted in README.md (fixture runner count). Resolved in merge commit 2071f42 to 55 =
+actual count; a1-gates-lint suites exit 0. Branch SHAs unchanged, review verdict unchanged (README-only resolution);
+the merge check is re-run on the new head before the squash.
