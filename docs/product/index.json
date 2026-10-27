@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated": "2026-10-26T23:05:18.877Z",
+  "generated": "2026-10-27T02:36:58.994Z",
   "project": {
     "id": "a1-specforge",
     "title": "a1-specforge — Roadmap",
@@ -297,13 +297,13 @@
       "id": "021-dashboard",
       "milestone": "continuous",
       "title": "a1-dashboard: local read-only view of pipeline state",
-      "status": "in-flight",
-      "stage": "started",
+      "status": "done",
+      "stage": "done",
       "depends_on": [
         "018-pipeline-metrics"
       ],
       "started": "2026-10-24",
-      "finished": null,
+      "finished": "2026-10-27",
       "spec_path": "project/a1-specforge/spec/021-dashboard.md",
       "plan_path": null
     },
