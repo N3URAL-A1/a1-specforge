@@ -1,0 +1,51 @@
+# Fixture sources (suite a1-dashboard, spec 021). Real files copied; edits listed here.
+
+fixtures/repo/docs/product/ROADMAP.md
+  Source: docs/product/ROADMAP.md of this repo (byte copy, 2026-10-24).
+  Edit: the frontmatter line "project: a1-specforge" became "project: fixture-slug" (the slug rule
+  reads this key). Nothing else changed.
+
+fixtures/vault/project/fixture-slug.md
+  Source: ~/N3URAL-Vault/project/a1-specforge.md (hub note), frontmatter plus the first heading.
+  Edits: a1_writer_host macbook -> fx-writer; title, permalink and heading a1-specforge -> fixture-slug;
+  the body below the heading dropped. The hub declares the writer that the suite sets as A1_HOST_ID.
+
+fixtures/sections/repo/docs/product/index.json
+  Source: docs/product/index.json of this repo (copy, 2026-10-24).
+  Edit: features reduced to 006, 010, 011, 018 (two in-flight, one planned cursor, one done); everything
+  else byte-identical (milestones, next, cursor).
+
+fixtures/sections/repo/.a1/phases/M13-residuals/{STATUS,VERIFICATION}.md
+fixtures/sections/repo/.a1/phases/021-dashboard/STATUS.md
+  Source: .a1/phases/<same> of this repo, byte copies. 021-dashboard has no VERIFICATION.md (pending case).
+
+fixtures/sections/vault/project/fixture-slug/spec/{006-specforge-kritis-profile,018-pipeline-metrics,021-dashboard}.md
+  Source: ~/N3URAL-Vault/project/a1-specforge/spec/<same>, byte copies.
+  Edit: 006 gets two planted open markers appended ([NEEDS CLARIFICATION: ...], 2 lines at the end).
+  Real markers in the corpus sit in backticks (checklist lines); the reader must not count those.
+
+fixtures/sections/vault/project/fixture-slug/postmortems/{2026-10-21-suite-tmpdir-leak,2026-10-15-quick-gate-env-sentences}.md
+  Source: ~/N3URAL-Vault/project/a1-specforge/postmortems/<same>, byte copies.
+
+fixtures/sections/vault/pattern/a1-learnings/a1-pr-review.md
+  Source: ~/N3URAL-Vault/pattern/a1-learnings/a1-pr-review.md, byte copy.
+
+fixtures/sections/vault/pattern/a1-learnings/patterns.md
+  Source: frontmatter shape of ~/N3URAL-Vault/pattern/a1-learnings/patterns.md (type, updated) plus the
+  first heading; body dropped. Edit: updated 2026-10-22 -> 2026-10-18 so the retros and one postmortem
+  count (the suite cross-checks the number against `learnings count-since-watermark`).
+
+Generated at run time (parts/02-sections.sh): 100 extra spec files, each a sed copy of the 018 spec with
+id and title renamed; one hostile spec (title with <b>, pipes, image embed), written inline.
+
+fixtures/review/vault/project/fixture-slug/spec/{007-retro-gate-id-validator,001-roadmap-gate-parallel-features}.md
+  Source: ~/N3URAL-Vault/project/a1-specforge/spec/<same>, byte copies (2026-10-26, Wave 6). Real ids and titles
+  that hold the `gate-` token the Now/Next filter strips; the Specs section must show them whole.
+
+fixtures/review/repo/.a1/phases/007-retro-gate-id-validator/STATUS.md
+  Source: .a1/phases/007-retro-gate-id-validator/STATUS.md of this repo, byte copy. Wave 4 heading ends in
+  "⟶ done"; its body (and the Phase 6 block after it) says "Round 1 PARTIAL".
+
+Generated at run time (Wave 6): 45 filler phase dirs with a STATUS.md each (mtime set with touch -t) for the
+newest-first order; synthetic STATUS files for INCOMPLETE / "not BLOCKED"; hostile spec with link/template
+syntax; link, hard-link, FIFO and oversized-note trees for the read-seam cases.

@@ -134,6 +134,12 @@ Every new command exits 2 on an internal error and never 0. Details: [`docs/adr/
 
 The file format, the policy per host class and every reason code: `a1-tools --help` (section `probe run`). Secrets only as `{env: NAME}`; the run prints codes and numbers only, never a response body or a secret value.
 
+### Dashboard (spec 021)
+
+| Command | What it does |
+|---|---|
+| `dashboard build [<slug>] [--json]` | Writes one generated, read-only overview note `<vault>/project/<slug>/dashboard.md` (now, next, specs, phases, learnings, open points, cost). Runs on the project's vault writer host only; refreshed after the `vault sync --phases` calls of plan, execute and verify. Exit 0 written or skipped, 1 usage, 2 unsafe path or no vault. Owner-side only (an intent child gets exit 77). |
+
 ### Pipeline metrics (spec 018)
 
 Two read-only reports over vault markdown. They need `A1_VAULT_ROOT`, make no network call and write nothing.
@@ -176,7 +182,7 @@ English-first; German trigger phrases remain supported as aliases. Some workflow
 
 ## Testing
 
-49 fixture runners live under `_test-fixtures/*/run*.sh` (counted with `ls _test-fixtures/*/run*.sh | wc -l`; this includes the vault-fallback, phantom and `run-wave13.sh` runners) plus one nested runner, `_test-fixtures/a1-schema-check/parser/run-parser.sh`. Run them all:
+50 fixture runners live under `_test-fixtures/*/run*.sh` (counted with `ls _test-fixtures/*/run*.sh | wc -l`; this includes the vault-fallback, phantom and `run-wave13.sh` runners) plus one nested runner, `_test-fixtures/a1-schema-check/parser/run-parser.sh`. Run them all:
 
 ```bash
 for r in _test-fixtures/*/run*.sh; do bash "$r" || break; done

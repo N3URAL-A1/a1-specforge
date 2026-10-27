@@ -141,6 +141,11 @@ command, never behind a pipe) is step 7 of `workflows/01-scan.md`. Both
 commands are read-only; this skill never runs `vault sync` or `--fix-type`
 itself — it only names them as the next action.
 
+When the generated note `project/<slug>/dashboard.md` exists in the vault, one
+more line follows: `dashboard: <path> (generated <timestamp>)` (spec 021
+FR-019). Without the note no line is printed. This skill never runs
+`dashboard build`; the plan, execute and verify workflows refresh the note.
+
 ## Implementation
 
 1. Detect project root (look for `.a1/`, `docs/product/`, `CLAUDE.md`, `.git`)

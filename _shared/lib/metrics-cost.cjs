@@ -179,4 +179,4 @@ function cmdMetricsCost(args) {
   process.stdout.write(body);
 }
 
-module.exports = { cmdMetricsCost };
+module.exports = { cmdMetricsCost, parseCost, costOfFile };

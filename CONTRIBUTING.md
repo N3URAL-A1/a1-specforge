@@ -78,6 +78,10 @@ Runs started from inside an agent session (a `claude` process is an ancestor, or
 
 `_test-fixtures/a1-probe/run-tests.sh` (suite `a1-probe`) covers `probe run`: the probe-file reader and its static policy, the HTTP and TCP executors, the address guard, the `pr merge-check` block on a changed `.a1/live-probes.yaml`, the runner with pairs and `--wait`, the leak proof, and the wiring (registry row, call sites, intent-child refusal). Cases live in `parts/NN-*.sh`, sourced in order; the harness file stays untouched. The only network is the suite's own loopback server (`server.cjs`, ephemeral ports, killed by PID); `A1_PROBE_ALLOW_LOOPBACK=1` is set per call and never exported. No workflow runs the probe CLI against a network. The offline case runs only where the host has no network; before a PR run it once in Docker: `docker run --rm --network none -u 1000:1000 -v <git-archive snapshot>:/w:ro node:20 bash /w/_test-fixtures/a1-probe/run-tests.sh`.
 
+### Dashboard suite (spec 021)
+
+`_test-fixtures/a1-dashboard/run-tests.sh` (suite `a1-dashboard`) covers `dashboard build`: the CLI and exit contract, the atomic owner-marked write, the section readers and the phone-readable renderer, the secret denylist and redaction, the writer gate, the cost panel, and the wiring (three workflow call sites, the a1-progress line, intent-child refusal, the vault contract). Cases live in `parts/NN-*.sh`; the harness file stays untouched. Fixtures are copies of real files (`fixtures/*/SOURCES.txt`). The suite unsets all vault env, sets it per call only and uses a temp `HOME`; a last case checks that no `dashboard.md` under the real `~/N3URAL-Vault` is newer than the suite start. Before a PR run it once in Docker as a non-root user: `docker run --rm -u 1000:1000 -v <git-archive snapshot>:/w:ro node:20 bash /w/_test-fixtures/a1-dashboard/run-tests.sh`.
+
 ## Self-checks: `verify run`, `test-fidelity`, dispositions (spec 017)
 
 Run these before a PR; CI and the a1 skills run the same commands. Replace `<phase>` with a scope name

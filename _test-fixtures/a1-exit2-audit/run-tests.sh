@@ -44,7 +44,7 @@ expect "A1 no spec 017 'not implemented' stub path remains in the facade or lib 
 # B help lists each new subcommand
 help="$(node "$TOOLS" --help 2>&1)"
 n=0
-for cmd in 'gates lint' 'gates fired' 'verify run' 'verify check' 'test-fidelity' 'disposition add' 'disposition review' 'fix class-sweep' 'pr merge-check' 'probe run'; do
+for cmd in 'gates lint' 'gates fired' 'verify run' 'verify check' 'test-fidelity' 'disposition add' 'disposition review' 'fix class-sweep' 'pr merge-check' 'probe run' 'dashboard build'; do
   n=$((n + 1))
   if grep -q "a1-tools $cmd" <<<"$help"; then ok "B$n help lists '$cmd'"; else bad "B$n help lists '$cmd'"; fi
 done
@@ -86,6 +86,13 @@ rm .a1/live-probes.yaml; mkdir .a1/live-probes.yaml
 expect "D9b probe run with a directory as .a1/live-probes.yaml exits 2" "2" "$(rc probe run --project "$WORK/repo")"
 rmdir .a1/live-probes.yaml; git checkout -q -- .a1/live-probes.yaml
 expect "D9c probe run without --project exits 2" "2" "$(rc probe run)"
+
+# D10 dashboard build (spec 021): vault root unset -> 2 (never 0); unknown flag -> 1 (usage); no stub path (A1 scans dashboard*.cjs too)
+expect "D10a dashboard build without a vault root exits 2" "2" "$(rc dashboard build)"
+expect "D10b dashboard build with an unknown flag exits 1" "1" "$(rc dashboard build fixture-slug --frobnicate)"
+dstub="$(grep -c 'not_implemented\|not implemented' "$SHARED"/lib/dashboard*.cjs | awk -F: '{s+=$2} END {print s+0}')"
+expect "D10c no not_implemented path in dashboard*.cjs (0 hits)" "0" "$dstub"
+[[ "$(ls "$SHARED"/lib/dashboard*.cjs | wc -l | tr -d ' ')" -ge 5 ]] && ok "D10d count assert: at least 5 dashboard*.cjs scanned" || bad "D10d too few dashboard*.cjs scanned"
 
 # E hostile input never exits 0
 expect "E1 verify run with --project pointing at a missing dir exits 2" "2" "$(rc verify run --project "$WORK/nope")"
