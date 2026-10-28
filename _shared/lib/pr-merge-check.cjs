@@ -36,7 +36,7 @@ const PENDING_BUCKET = 'pending';
 // gh prints "no required checks" when checks exist but none is required, and
 // "no checks reported on the '<branch>' branch" when the repo has no PR check at all;
 // both mean zero required checks (the merge check then rests on the local suites).
-const NO_REQUIRED_RE = /no required checks|no checks reported/i;
+const NO_REQUIRED_RE = /^no (required )?checks reported on the '[^'\n]*' branch\s*$/m; // per line: gh may print an update notice on stderr too
 
 class MergeCheckError extends Error {
   constructor(reason, message) { super(message || reason); this.reason = reason; }
