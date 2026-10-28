@@ -102,10 +102,10 @@ features:
   - id: 006-specforge-kritis-profile
     milestone: continuous
     title: "SpecForge into a1 as an optional --profile kritis lane"
-    status: planned
-    stage: null
+    status: in-flight
+    stage: started
     depends_on: []
-    started: null
+    started: 2026-10-28
     finished: null
     spec_path: project/a1-specforge/spec/006-specforge-kritis-profile.md
     plan_path: null
@@ -349,7 +349,6 @@ None.
 
 ## Changelog
 
-- **2026-07-10** — added 002-product-docs-layer (in-flight, next) — combined feature from brainstorm: docs/product layer + adopt mode + HTML import.
 - **2026-07-10** — Migrated from `docs/roadmap.md` v3.0 (markdown) to `docs/product/ROADMAP.md` schema v1 — new machine-readable roadmap contract; source file left untouched.
 - **2026-07-10** — Added **001-roadmap-gate-parallel-features** (shipped) — first feature under the schema-v1 feature index; roadmap gate + parallel feature lifecycle merged (56e0fa4/e55addf).
 - **2026-09-12** — feature '007-retro-gate-id-validator' added — new feature via `product add-feature`
@@ -449,6 +448,7 @@ None.
 - **2026-10-26** — 023-module-roadmap-views -> verify — stage transition via `product stage`
 - **2026-10-27** — 021-dashboard -> done — stage transition via `product stage`
 - **2026-10-28** — 023-module-roadmap-views -> done — stage transition via `product stage`
+- **2026-10-28** — 006-specforge-kritis-profile -> started — stage transition via `product stage`
 
 ## Appendix — migrated details
 

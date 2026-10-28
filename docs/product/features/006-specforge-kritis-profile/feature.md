@@ -3,10 +3,10 @@ id: 006-specforge-kritis-profile
 project: a1-specforge
 milestone: continuous
 title: "SpecForge into a1 as an optional --profile kritis lane"
-status: planned
-stage: null
+status: in-flight
+stage: started
 depends_on: []
-started: null
+started: 2026-10-28
 finished: null
 spec_path: project/a1-specforge/spec/006-specforge-kritis-profile.md
 plan_path: null
