@@ -46,3 +46,20 @@ set-size/update-status scenarios. None of these are derived from the parser
 under test — they are built by running other real, already-tested CLI
 commands, the same pattern as ../a1-vault-fallback/golden/scenarios.sh's
 g_roadmap().
+
+fixtures/stride/*.md (Wave 5, FR-003, suite part 05-stride.sh)
+  Not copied from a real file: authored from scratch following the shape of
+  _shared/profiles/kritis/threat-model-template.md (this wave's own
+  template, migrated from the archived SpecForge Anhang E, STRIDE output
+  table). Authored, not derived from profile-stride.cjs's parser (contract
+  item 2) — the template was fixed in prose first, the fixtures were then
+  hand-written to that prose, and the checker was written after both. Files:
+  complete.md (all six categories, passes), category-missing-D.md (Denial
+  of Service row removed), unmitigated-high-open.md (a high/open row with
+  no matching "## Accepted risks" entry), accepted-high-open.md (the same
+  high/open row, now accepted by name — must still pass, since "open" plus
+  a matching acceptance is not "unmitigated"), bad-risk.md ("critical" is
+  not in the low/medium/high vocabulary), bad-status.md ("closed" is not in
+  the open/mitigated/accepted vocabulary), not-applicable-no-reason.md
+  (Spoofing marked "Relevant: no" with an empty Finding cell),
+  section-missing-actors.md ("## Actors" omitted).
