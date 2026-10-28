@@ -441,9 +441,13 @@ const MERGE_PASSING = Object.freeze([STATES.ABSENT, STATES.DENIED]);
 // same validators the owner commands use (validateBy = C.validatePlainBy, validateRecord), which
 // reject control characters (newline included), `..` segments and anything off-pattern. A field
 // that does not pass yields NO command: a refusal the owner can see beats a line they might paste.
-// `--repo` is an absolute path, so it is refused on control characters and shell metacharacters too
-// (a path is never quoted here; one that would need quoting is not printed).
+// `--repo` is refused on control characters and shell metacharacters (a path is never quoted here;
+// one that would need quoting is not printed), and it must be an absolute, normalised path: a
+// relative `--repo` would resolve against whatever cwd the owner happens to be in on the target
+// host, which is the one thing a handover must not leave open (security review SEC-3).
 const UNSAFE_PATH_RE = /[\0-\x1f\x7f]|[;&|<>$`"'\\(){}[\]*?!#~\s]/;
+const safeTargetRepo = (p) => typeof p === 'string' && p !== '' && path.isAbsolute(p)
+  && !UNSAFE_PATH_RE.test(p) && !p.split('/').includes('..') && path.normalize(p) === p;
 
 /** The single-line owner command that settles <targetRepo> on the target host, or null when none can be printed safely. */
 function ownerCommand(rec, targetRepo) {
@@ -456,13 +460,16 @@ function ownerCommand(rec, targetRepo) {
   } catch (_e) {
     return null; // an off-pattern decided_by or record: say nothing rather than print it
   }
-  if (typeof targetRepo !== 'string' || targetRepo === '' || UNSAFE_PATH_RE.test(targetRepo)) return null;
+  if (!safeTargetRepo(targetRepo)) return null;
   const parts = ['a1-tools xprov permit'];
   if (rec.external_review === DENIED) parts.push('--deny');
   parts.push(`--by ${by}`);
   if (record) parts.push(`--record ${record}`);
   parts.push(`--repo ${targetRepo}`);
-  return parts.join(' ');
+  const line = parts.join(' ');
+  // Backstop: whatever the parts were, what is printed is one line without control characters.
+  // A field added to this command later cannot reopen the injection without tripping this.
+  return /[\0-\x1f\x7f]/.test(line) ? null : line;
 }
 
 /** What a host with no owner store reaches for this repository: { target_state, blocks_merge, owner_command, … }. */
@@ -479,12 +486,20 @@ function handoverCheck(opts) {
     local_state: local.state,
     file: permitPath(root),
     file_decision: decided ? fileState.kind : null,
-    file_detail: decided ? null : fileState.detail,
+    // Why the record is unusable (the field name of a missing key, for instance). It is derived from
+    // file content, so it goes through C.oneLine like every other untrusted detail in this module.
+    file_detail: decided || !fileState.detail ? null : C.oneLine(fileState.detail),
     blocks_merge: !MERGE_PASSING.includes(target),
-    target_repo: targetRepo,
+    // The accepted path verbatim, or null when it did not pass: a consumer never sees a raw
+    // rejected value it might render as instructions (security review SEC-2/SEC-3).
+    target_repo: safeTargetRepo(targetRepo) ? targetRepo : null,
+    target_repo_rejected: safeTargetRepo(targetRepo) ? null : C.oneLine(String(targetRepo)),
     store_path: STORE_LABEL,
     owner_command: ownerCommand(decided ? fileState.rec : null, targetRepo),
-    hint: permitHint(target),
+    // permitHint() speaks for permit-check, where `absent` means "the owner still has to decide".
+    // Here `absent` is the success case ("nothing to carry"), so that hint would contradict ok:true
+    // for a consumer reading the field (code review MAJOR). No hint when there is nothing to do.
+    hint: target === STATES.ABSENT ? null : permitHint(target),
   });
 }
 
@@ -504,13 +519,19 @@ function cmdXprovHandoverCheck(args) {
       + `The owner store ${STORE_LABEL} is host-local and keyed by the git-common-dir path, so copying it to another host cannot work.\n`
       + (r.owner_command === null
         // No printable command: either the record is unparseable, or decided_by/record/--target-repo
-        // did not pass the owner-command validators. Never print an unvalidated line (SEC, ownerCommand).
-        ? `No owner command can be printed from this record — the owner settles ${r.target_repo} on the target host with \`a1-tools xprov permit --help\`.\n`
+        // did not pass the owner-command validators. Never print an unvalidated line (SEC-1), and never
+        // echo the rejected value as prose either: a newline in it would forge an instruction block at
+        // the same indentation the real command uses (SEC-2). C.oneLine strips line breakers and clips.
+        ? 'No owner command can be printed: the record or the target path did not pass the owner-command '
+          + `validators (${C.oneLine(r.target_state)}). The owner settles the target repository there with `
+          + '`a1-tools xprov permit --help`; --target-repo must be an absolute, normalised path.\n'
         : 'The owner runs this once on the target host, in a real terminal (never through an agent):\n'
           + `  ${r.owner_command}\n`));
-  } else {
-    process.stderr.write(`handover-check: a fresh host reaches ${r.target_state} — merges are not blocked, but the record is unusable (${r.file_detail})\n`);
   }
+  // No third arm: measured over TARGET_STATE_OF_FILE x MERGE_PASSING, `absent` is the only reachable
+  // target state with blocks_merge false, and it is the first branch — `denied` needs a store the
+  // fresh host does not have. A dead arm that prints file-sourced text is risk without use (SEC-1);
+  // a future state that is neither must add its own arm here deliberately.
   return finish(r, r.ok ? xprov.EXIT_PASS : xprov.EXIT_FAIL);
 }
 

@@ -19,7 +19,6 @@
 #   H1  file `denied` (the real a1-specforge case) → exit 1, target_state
 #       denial_mismatch, blocks_merge true, the owner command is printed with
 #       --deny and carries the record from the file.
-#       Red if the prediction is taken from the LOCAL store instead of the file.
 #   H2  file `allowed` → exit 1, target_state permit_mismatch, the command has
 #       no --deny but keeps --record (a permit needs the record).
 #   H3  no file at all → exit 0, target_state absent, blocks_merge false,
@@ -30,6 +29,9 @@
 #   H5  the local host is reported next to the target: a Mac with a matching
 #       store reads local_state denied while the target still predicts the
 #       mismatch — the two fields never collapse into one.
+#       Red if the prediction is taken from the LOCAL store instead of the file
+#       (verified by mutation: only this arm catches that change — H1 runs with an
+#       empty store, where file-sourced and store-sourced predictions coincide).
 #   H6  `--repo` works from outside the repository, and the predicted command
 #       names the TARGET path when `--target-repo` is given (the clone usually
 #       sits at another absolute path than the Mac checkout).
@@ -101,6 +103,13 @@ caseH3() {
   assert_json "H3 target_state absent" "$G_OUT" "j.target_state" "absent"
   assert_json "H3 nothing is blocked" "$G_OUT" "JSON.stringify(j.blocks_merge)" "false"
   assert_json "H3 no owner command is needed" "$G_OUT" "JSON.stringify(j.owner_command)" "null"
+  # permitHint() reads `absent` as "the owner still has to decide" — true for permit-check, wrong
+  # here, where absent IS the success case. A hint next to ok:true would contradict it (code review).
+  assert_json "H3 no hint either, so nothing contradicts ok:true" "$G_OUT" "JSON.stringify(j.hint)" "null"
+  assert_json "H3 ok is true" "$G_OUT" "JSON.stringify(j.ok)" "true"
+  # control: a state that IS a problem still carries its hint
+  file33 denied robert 2026-10-19 record/x.md; hc33
+  assert_json "H3 control: a blocking state still carries a hint" "$G_OUT" "j.hint === null ? 'null' : 'present'" "present"
 }
 
 caseH4() {
@@ -170,4 +179,40 @@ caseH8() {
     && ok "H8d a clean record on a clean path still prints the full command" || bad "H8d expected the clean command, got: $cmd"
 }
 
-caseH1; caseH2; caseH3; caseH4; caseH5; caseH6; caseH7; caseH8
+# H9 — security review SEC-2/SEC-3 (2026-10-28). Two residual holes of the SEC-1 fix:
+#   a) the REFUSAL line echoed the rejected --target-repo verbatim, so a newline in it forged an
+#      instruction block at the same indentation the real command uses. Measured before the fix:
+#        No owner command can be printed … the owner settles /tmp/ok
+#          <attacker line> on the target host with …
+#      Red if the refusal interpolates the raw value again, or if target_repo returns it unfiltered.
+#   b) --target-repo was never required to be absolute and normalised, so the printed command could
+#      carry `--repo relative/path`, which resolves against whatever cwd the owner is in on the
+#      target host — the one thing a handover must not leave open.
+caseH9() {
+  prep33; file33 denied robert 2026-10-19 record/x.md
+  hc33 --target-repo '/tmp/ok
+  a1-tools xprov permit --by attacker --record record/x.md --repo /tmp/elsewhere'
+  assert_json "H9a a newline in --target-repo yields no command" "$G_OUT" "JSON.stringify(j.owner_command)" "null"
+  assert_json "H9a the accepted target_repo is null, not the rejected value" "$G_OUT" "JSON.stringify(j.target_repo)" "null"
+  assert_json "H9a the rejected value is reported as one line (no line breakers)" "$G_OUT" "String(j.target_repo_rejected).includes('\n')" "false"
+  # the refusal prose must not reproduce a pasteable-looking command line
+  [[ "$G_ERR" != *"--by attacker"* ]] && ok "H9a the refusal does not echo the forged command line" || bad "H9a forged line in stderr: $G_ERR"
+  local refusal_lines; refusal_lines="$(printf '%s' "$G_ERR" | grep -c '^' || true)"
+  [[ "$refusal_lines" -le 4 ]] && ok "H9a stderr stays at its three intended lines ($refusal_lines)" || bad "H9a stderr grew to $refusal_lines lines: $G_ERR"
+  # b) absolute + normalised is required; a clean absolute path still prints
+  # A leading dash is argument injection, not a path: `--repo --deny` would turn the pasted line into
+  # a different decision. Caught by the absolute-path requirement (code review MAJOR).
+  for bad_path in 'relative/not/absolute' '/a/../b' '/tmp/x/../y' '--deny' '-X'; do
+    hc33 --target-repo "$bad_path"
+    assert_json "H9b --target-repo '$bad_path' yields no command" "$G_OUT" "JSON.stringify(j.owner_command)" "null"
+  done
+  # An EMPTY --target-repo is not an attack: it falls back to the checked repository itself
+  # (measured — `(opts && opts.targetRepo) || root`), which is an absolute git toplevel.
+  hc33 --target-repo ''
+  assert_json "H9b an empty --target-repo falls back to the local repo, so a command is printed" "$G_OUT" "j.owner_command === null ? 'null' : 'printed'" "printed"
+  hc33 --target-repo /home/rob/claude-projects/a1-specforge
+  assert_json "H9b a clean absolute path is accepted" "$G_OUT" "j.target_repo" "/home/rob/claude-projects/a1-specforge"
+  assert_json "H9b ... and nothing is reported as rejected" "$G_OUT" "JSON.stringify(j.target_repo_rejected)" "null"
+}
+
+caseH1; caseH2; caseH3; caseH4; caseH5; caseH6; caseH7; caseH8; caseH9
