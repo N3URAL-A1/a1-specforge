@@ -22,6 +22,11 @@ export GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0
 # shellcheck source=../lib/tmp.sh
 . "$(cd "$HERE/../lib" && pwd)/tmp.sh" || exit 2
 
+# Shared bounded-run helper: portable replacement for the GNU `timeout`
+# command, which stock macOS does not have (fix gnu-only-fixture-idioms).
+# shellcheck source=../lib/bounded.sh
+. "$(cd "$HERE/../lib" && pwd)/bounded.sh" || exit 2
+
 pass=0
 fail=0
 results=()

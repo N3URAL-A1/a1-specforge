@@ -288,10 +288,11 @@ caseProductValidateProfile() {
   local repo out
   r_repo repo "w2-pv"
   (cd "$repo" && env -u A1_VAULT_ROOT node "$TOOLS" product init --project demo --title Demo --dir "$repo/docs/product" >/dev/null 2>"$repo/init.err")
-  sed -i '/^status: active$/a profile: kritis' "$repo/docs/product/ROADMAP.md"
+  sed -i.bak '/^status: active$/a\
+profile: kritis' "$repo/docs/product/ROADMAP.md" && rm -f "$repo/docs/product/ROADMAP.md.bak"
   out="$(env -u A1_VAULT_ROOT node "$TOOLS" product validate --dir "$repo/docs/product" 2>"$repo/err")"
   local rc_ok=$?
-  sed -i 's/^profile: kritis$/profile: kritiss/' "$repo/docs/product/ROADMAP.md"
+  sed -i.bak 's/^profile: kritis$/profile: kritiss/' "$repo/docs/product/ROADMAP.md" && rm -f "$repo/docs/product/ROADMAP.md.bak"
   local out_bad
   out_bad="$(env -u A1_VAULT_ROOT node "$TOOLS" product validate --dir "$repo/docs/product" 2>"$repo/err2")"
   local rc_bad=$?
@@ -359,9 +360,11 @@ caseHostileSpecInjectionShaped
 
 # ---------- hostile: a 10,000-character --repo-root does not hang or crash ----------
 caseHostileRepoRootOversized() {
-  local long out
+  local long
   long="/tmp/$(head -c 10000 /dev/zero | tr '\0' 'x')"
-  out="$(timeout 10 node "$TOOLS" profile resolve --repo-root "$long" 2>&1)"
+  mk_tmpfile hro_out "resolve-hostile-oversized-out"
+  mk_tmpfile hro_err "resolve-hostile-oversized-err"
+  run_bounded 10 "$hro_out" "$hro_err" -- node "$TOOLS" profile resolve --repo-root "$long"
   local rc=$?
   if [[ "$rc" -eq 2 ]]; then
     ok "02 hostile: a 10,000-character --repo-root is refused within 10s, no hang/crash (exit 2)"

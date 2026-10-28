@@ -282,8 +282,8 @@ caseInstallerMutationBakInsideSkills() {
     bad "I-mut bak-inside-skills: anchor line not found in installer (mutation cannot be applied — report, do not skip)"
     return
   fi
-  sed -i 's#ARCHIVE_DIR="\$HOME/\.claude/skills-archive"#ARCHIVE_DIR="$HOME/.claude/skills"#' \
-    "$work/mutrepo/bin/install-specforge-alias.sh"
+  sed -i.bak 's#ARCHIVE_DIR="\$HOME/\.claude/skills-archive"#ARCHIVE_DIR="$HOME/.claude/skills"#' \
+    "$work/mutrepo/bin/install-specforge-alias.sh" && rm -f "$work/mutrepo/bin/install-specforge-alias.sh.bak"
   seedOldSkill "$work/home"
   HOME="$work/home" bash "$work/mutrepo/bin/install-specforge-alias.sh" --apply >"$work/out" 2>"$work/err"
   local extra

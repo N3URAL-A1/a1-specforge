@@ -154,7 +154,9 @@ caseHOversized() {
   cp "$STRIDE_FX/complete.md" "$dir/docs/product/features/$id/threat-model.md"
   head -c 600000 /dev/zero | tr '\0' 'x' >>"$dir/docs/product/features/$id/threat-model.md"
   mk_tmpfile errf "stride-err-oversized"
-  timeout 10 node "$TOOLS" profile threat-model-check --id "$id" --repo-root "$dir" >/dev/null 2>"$errf"; rc=$?
+  mk_tmpfile outf "stride-out-oversized"
+  run_bounded 10 "$outf" "$errf" \
+    -- node "$TOOLS" profile threat-model-check --id "$id" --repo-root "$dir"; rc=$?
   if [[ $rc -eq 2 ]]; then
     ok "H oversized: a threat-model.md >= 512 KiB is refused within 10s, exit 2"
   else

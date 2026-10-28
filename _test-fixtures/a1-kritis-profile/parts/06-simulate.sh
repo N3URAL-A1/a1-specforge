@@ -190,7 +190,9 @@ caseHOversized() {
   cp "$SIM_FX/spec-006-with-simulation.md" "$big"
   head -c 1100000 /dev/zero | tr '\0' 'x' >>"$big"
   mk_tmpfile errf "sim-h-oversized-err"
-  timeout 10 env A1_VAULT_ROOT="$work" node "$TOOLS" profile simulate-check --spec "$big" --roles dpo >/dev/null 2>"$errf"; rc=$?
+  mk_tmpfile outf "sim-h-oversized-out"
+  run_bounded 10 "$outf" "$errf" \
+    -- env A1_VAULT_ROOT="$work" node "$TOOLS" profile simulate-check --spec "$big" --roles dpo; rc=$?
   if [[ $rc -eq 2 ]]; then
     ok "H oversized --spec: a spec >= 1 MiB is refused within 10s, exit 2"
   else
@@ -213,7 +215,12 @@ caseHTraversal() {
   local work rc errf out
   mk_workdir work "sim-h-traversal"
   mk_tmpfile errf "sim-h-traversal-err"
-  out="$(A1_VAULT_ROOT="$work" node "$TOOLS" profile simulate-check --spec "$work/../../../../etc/passwd" --roles dpo 2>"$errf")"; rc=$?
+  # The traversal prefix is computed from $work's actual depth: a fixed
+  # '../../../..' reaches / from /tmp/x on Linux but stops inside
+  # /var/folders/<a>/<b>/T/x on macOS, where the target would not exist and
+  # the case would fail on ENOENT instead of exercising the traversal.
+  local up; up="$(printf '%s' "$work" | awk -F/ '{for(i=2;i<=NF;i++) printf "../"}')"
+  out="$(A1_VAULT_ROOT="$work" node "$TOOLS" profile simulate-check --spec "${work}/${up}etc/passwd" --roles dpo 2>"$errf")"; rc=$?
   if [[ $rc -eq 1 ]] && printf '%s' "$out" | grep -q 'section_missing'; then
     ok "H traversal --spec: resolves to a real file outside the fixture tree, evaluated (no section found), exit 1 — never a crash or a false exit 0"
   else

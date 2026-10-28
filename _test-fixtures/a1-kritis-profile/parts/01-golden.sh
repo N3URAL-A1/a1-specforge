@@ -85,7 +85,7 @@ caseGMutSpecUpdateStatus() {
     rm -rf "$mutroot"
     return
   fi
-  sed -E 's/^(\s*)status: fm\.status,$/\1STATUS_MUTATED: fm.status,/' \
+  sed -E 's/^([[:space:]]*)status: fm\.status,$/\1STATUS_MUTATED: fm.status,/' \
     "$mutroot/_shared/lib/spec.cjs" >"$mutroot/_shared/lib/spec.cjs.new"
   mv "$mutroot/_shared/lib/spec.cjs.new" "$mutroot/_shared/lib/spec.cjs"
   work="$(g_mktemp w1k-mutcase)"; g_need_dir work "$work"
@@ -344,7 +344,8 @@ caseStripGuards() {
     head -c 10000 /dev/zero | tr '\0' 'x'
     printf '\n%s\n%s\n' '<!-- /a1-profile:kritis -->' 'tail'
   } >"$work/oversized.md"
-  if timeout 10 node "$HERE/fixtures/strip-blocks.cjs" "$work/oversized.md" >"$work/oversized.out" 2>"$work/oversized.err" \
+  if run_bounded 10 "$work/oversized.out" "$work/oversized.err" \
+       -- node "$HERE/fixtures/strip-blocks.cjs" "$work/oversized.md" \
      && [[ "$(cat "$work/oversized.out")" == "tail" ]]; then
     ok "strip-blocks: a >= 10,000 char block body strips cleanly within 10s, no hang/crash"
   else
