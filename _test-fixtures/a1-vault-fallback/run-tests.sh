@@ -311,7 +311,17 @@ l1b_re() {
   printf '%s' "$sedre|$sedcls|$tmore|${pre}da""te[[:space:]]+-d[[:space:]]|${pre}st""at[[:space:]]+-c[[:space:]]"
 }
 l1b_filter() {
-  grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' | grep -vE '^[^:]+:[0-9]+:[[:space:]]*["'"'"']' || true
+  # Two exemptions, both anchored on the WHOLE line, never on its first
+  # character. A "starts with a quote" test would also drop a real invocation
+  # inside a command substitution whose line opens with a quoted argument
+  # (1378 lines under _test-fixtures have that shape) -- precisely the class
+  # this case exists to catch. So: a whole-line comment, or a whole-line
+  # string literal, i.e. an element of a data array such as
+  # a1-xprov/parts/25-consent-hook.sh:539.
+  local pos='^[^:]+:[0-9]+:[[:space:]]*'
+  local com="${pos}#"
+  local lit="${pos}\"[^\"]*\",?[[:space:]]*\$|${pos}'[^']*',?[[:space:]]*\$"
+  grep -vE "$com" | grep -vE "$lit" || true
 }
 caseL1b() {
   local re bad_planted good_planted hits n total
@@ -327,6 +337,8 @@ da''te -d yesterday +%s
 x=$(da''te -d "@1" +%F)
 st''at -c %s f
 x=$(st''at -c %Y f)
+"$out" = "$(se''d -i '"'"'s/a/b/'"'"' f)" && echo ok
+"$(ti''meout 5 node x)" > log
 se''d -E '"'"'s/^(\\s*)x/\\1y/'"'"' f
 se''d -i.bak "s/\\w+/y/" f'
   good_planted='ok "L1b ... ti''meout 2000 ms ..."
