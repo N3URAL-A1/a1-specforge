@@ -1,3 +1,44 @@
 {
-  "reservations": []
+  "reservations": [
+    {
+      "type": "code_scope",
+      "paths": [
+        "_shared/a1-tools.cjs",
+        "_shared/lib/help.cjs",
+        "_shared/lib/help-profile.cjs",
+        "_shared/lib/profile.cjs",
+        "_shared/lib/profile-resolve.cjs",
+        "_shared/lib/profile-ears.cjs",
+        "_shared/lib/profile-nfr.cjs",
+        "_shared/lib/profile-stride.cjs",
+        "_shared/lib/profile-simulate.cjs",
+        "_shared/lib/profile-triggers.cjs",
+        "_shared/lib/spec.cjs",
+        "_shared/lib/product-schema.cjs",
+        "_shared/lib/product-derived.cjs",
+        "_shared/lib/product-validate.cjs",
+        "_shared/lib/intent-sandbox.cjs",
+        "_shared/gates-registry.md",
+        "_shared/profiles/kritis/",
+        "docs/product/index.schema.json",
+        "docs/product/SCHEMA.md",
+        "docs/adr/",
+        "skills/a1-new-feature/SKILL.md",
+        "skills/a1-new-feature/workflows/02-specify.md",
+        "skills/a1-new-feature/workflows/03-clarify.md",
+        "skills/a1-new-feature/workflows/04.5-consistency-gate.md",
+        "agents/a1-rene-requirement-engineer.md",
+        "agents/a1-samuel-security.md",
+        "_extras/specforge-alias/",
+        "bin/install-specforge-alias.sh",
+        "_test-fixtures/a1-kritis-profile/",
+        "_test-fixtures/a1-exit2-audit/run-tests.sh",
+        "README.md",
+        "CONTRIBUTING.md"
+      ],
+      "by": "006-specforge-kritis-profile",
+      "at": "2026-10-28T06:15:56.316Z",
+      "stage": "started"
+    }
+  ]
 }
