@@ -436,13 +436,31 @@ const TARGET_STATE_OF_FILE = Object.freeze({
 // Exactly the two states xprov-hook-merge.cjs (reinhardOnly) lets through.
 const MERGE_PASSING = Object.freeze([STATES.ABSENT, STATES.DENIED]);
 
-/** The single-line owner command that settles <targetRepo> on the target host, or null when none is needed. */
+// SEC: `.a1/xprov.json` is a working-tree file any contributor can edit in a PR, and this command
+// prints a line a HUMAN pastes into a terminal. `decided_by` / `record` therefore go through the
+// same validators the owner commands use (validateBy = C.validatePlainBy, validateRecord), which
+// reject control characters (newline included), `..` segments and anything off-pattern. A field
+// that does not pass yields NO command: a refusal the owner can see beats a line they might paste.
+// `--repo` is an absolute path, so it is refused on control characters and shell metacharacters too
+// (a path is never quoted here; one that would need quoting is not printed).
+const UNSAFE_PATH_RE = /[\0-\x1f\x7f]|[;&|<>$`"'\\(){}[\]*?!#~\s]/;
+
+/** The single-line owner command that settles <targetRepo> on the target host, or null when none can be printed safely. */
 function ownerCommand(rec, targetRepo) {
   if (!rec) return null;
+  let by;
+  let record;
+  try {
+    by = validateBy(rec.decided_by);
+    record = rec.record === undefined ? undefined : validateRecord(rec.record);
+  } catch (_e) {
+    return null; // an off-pattern decided_by or record: say nothing rather than print it
+  }
+  if (typeof targetRepo !== 'string' || targetRepo === '' || UNSAFE_PATH_RE.test(targetRepo)) return null;
   const parts = ['a1-tools xprov permit'];
   if (rec.external_review === DENIED) parts.push('--deny');
-  parts.push(`--by ${rec.decided_by}`);
-  if (rec.record) parts.push(`--record ${rec.record}`);
+  parts.push(`--by ${by}`);
+  if (record) parts.push(`--record ${record}`);
   parts.push(`--repo ${targetRepo}`);
   return parts.join(' ');
 }
@@ -484,8 +502,12 @@ function cmdXprovHandoverCheck(args) {
   } else if (r.blocks_merge) {
     process.stderr.write(`handover-check: a fresh host reaches ${r.target_state}, and its merge hook denies every merge there.\n`
       + `The owner store ${STORE_LABEL} is host-local and keyed by the git-common-dir path, so copying it to another host cannot work.\n`
-      + 'The owner runs this once on the target host, in a real terminal (never through an agent):\n'
-      + `  ${r.owner_command}\n`);
+      + (r.owner_command === null
+        // No printable command: either the record is unparseable, or decided_by/record/--target-repo
+        // did not pass the owner-command validators. Never print an unvalidated line (SEC, ownerCommand).
+        ? `No owner command can be printed from this record — the owner settles ${r.target_repo} on the target host with \`a1-tools xprov permit --help\`.\n`
+        : 'The owner runs this once on the target host, in a real terminal (never through an agent):\n'
+          + `  ${r.owner_command}\n`));
   } else {
     process.stderr.write(`handover-check: a fresh host reaches ${r.target_state} — merges are not blocked, but the record is unusable (${r.file_detail})\n`);
   }

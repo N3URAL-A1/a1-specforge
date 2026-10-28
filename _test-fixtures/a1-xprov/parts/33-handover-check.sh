@@ -137,4 +137,37 @@ caseH7() {
   assert_json "H7 the store path is named for the human, not guessed by them" "$G_OUT" "j.store_path.endsWith('.a1-xprov') || j.store_path.includes('.a1-xprov')" "true"
 }
 
-caseH1; caseH2; caseH3; caseH4; caseH5; caseH6; caseH7
+# H8 — SEC: the printed line is pasted into a terminal by a human, and .a1/xprov.json is a
+# working-tree file any contributor can edit in a PR. Found by running the real command against a
+# crafted record on 2026-10-28: before the fix it printed
+#   … --by robert; rm -rf /tmp/pwned --record record/x.md\n echo INJECTED --repo …
+# Red if ownerCommand() stops applying validateBy/validateRecord, or stops refusing an unsafe
+# --target-repo: then one of these arms prints a command instead of null.
+caseH8() {
+  prep33
+  # a) shell metacharacters in decided_by, and a newline + payload in record
+  file33 denied 'robert; rm -rf /tmp/pwned' 2026-10-19 'record/x.md
+ echo INJECTED'
+  hc33
+  assert_json "H8a a crafted decided_by/record yields NO command (null), not a pasteable line" "$G_OUT" "JSON.stringify(j.owner_command)" "null"
+  assert_json "H8a the state is still reported truthfully" "$G_OUT" "j.target_state" "denial_mismatch"
+  [[ "$G_ERR" == *"No owner command can be printed"* ]] && ok "H8a stderr says why no command is printed" || bad "H8a stderr: $G_ERR"
+  [[ "$G_ERR" != *"rm -rf"* && "$G_ERR" != *"INJECTED"* ]] && ok "H8a the crafted payload never reaches stderr either" || bad "H8a payload leaked to stderr: $G_ERR"
+  # b) a record that escapes the vault with .. is refused by validateRecord
+  prep33; file33 denied robert 2026-10-19 'record/../../../etc/passwd.md'
+  hc33
+  assert_json "H8b a .. record yields no command" "$G_OUT" "JSON.stringify(j.owner_command)" "null"
+  # c) an unsafe --target-repo is refused (the path is never quoted, so it must be printable as-is)
+  prep33; file33 denied robert 2026-10-19 record/x.md
+  for bad_path in '/tmp/x; echo BAD' '/tmp/x$(id)' '/tmp/with space'; do
+    hc33 --target-repo "$bad_path"
+    assert_json "H8c --target-repo $bad_path yields no command" "$G_OUT" "JSON.stringify(j.owner_command)" "null"
+  done
+  # d) the legitimate case still prints, so the guard is not simply off
+  hc33 --target-repo /home/rob/claude-projects/a1-specforge
+  local cmd; cmd="$(json_get "$G_OUT" "j.owner_command")"
+  [[ "$cmd" == "a1-tools xprov permit --deny --by robert --record record/x.md --repo /home/rob/claude-projects/a1-specforge" ]] \
+    && ok "H8d a clean record on a clean path still prints the full command" || bad "H8d expected the clean command, got: $cmd"
+}
+
+caseH1; caseH2; caseH3; caseH4; caseH5; caseH6; caseH7; caseH8
