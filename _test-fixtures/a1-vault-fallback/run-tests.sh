@@ -303,8 +303,12 @@ l1b_re() {
   # Assembled from pieces so this very file does not match.
   local pre='(^|[^_A-Za-z0-9-])' q="['\"]"
   local sedre="${pre}se""d([[:space:]]+-[a-zA-Z]+)*[[:space:]]+-i[[:space:]]+([^[:space:]'\"]|${q}[^'\"[:space:]]|${q}${q}[^[:space:]])"
+  # GNU sed accepts the Perl classes \s \w \d \b inside an expression;
+  # BSD sed does not, so the substitution matches nothing and a mutation
+  # built on it silently never applies (fix gnu-only-fixture-idioms).
+  local sedcls="${pre}se""d([[:space:]]+-[a-zA-Z][a-zA-Z.]*)*[[:space:]]+${q}[^'\"]*\\\\[sSwWdDbB]"
   local tmore='(^|[;&|(]|&&|\|\||\$\(|(^|[[:space:]])(if|then|else|do|while|until|!))[[:space:]]*ti''meout[[:space:]]+(-[a-zA-Z-]+[[:space:]]+)*[0-9]'
-  printf '%s' "$sedre|$tmore|${pre}da""te[[:space:]]+-d[[:space:]]|${pre}st""at[[:space:]]+-c[[:space:]]"
+  printf '%s' "$sedre|$sedcls|$tmore|${pre}da""te[[:space:]]+-d[[:space:]]|${pre}st""at[[:space:]]+-c[[:space:]]"
 }
 l1b_filter() {
   grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' | grep -vE '^[^:]+:[0-9]+:[[:space:]]*["'"'"']' || true
@@ -322,7 +326,9 @@ se''d -n -i "s/a/b/" f
 da''te -d yesterday +%s
 x=$(da''te -d "@1" +%F)
 st''at -c %s f
-x=$(st''at -c %Y f)'
+x=$(st''at -c %Y f)
+se''d -E '"'"'s/^(\\s*)x/\\1y/'"'"' f
+se''d -i.bak "s/\\w+/y/" f'
   good_planted='ok "L1b ... ti''meout 2000 ms ..."
 '"'"'Bash(ti''meout *)'"'"'
 se''d -i.bak '"'"'s/a/b/'"'"' f
@@ -335,7 +341,9 @@ da''te -j -f %s 1 +%F
   # ti''meout 5 cmd in a comment
   "ti''meout 5 cmd" in a data array
   '"'"'se''d -i s/a/b/ f'"'"',
-mytime''out 5 cmd'
+mytime''out 5 cmd
+se''d -E '"'"'s/^([[:space:]]*)x/\\1y/'"'"' f
+grep -E "\\s+" f'
   total="$(printf '%s\n' "$bad_planted" | grep -c '')"
   n="$(printf '%s\n' "$bad_planted" | grep -HnE --label=p "$re" | l1b_filter | grep -c '' || true)"
   if [[ "$n" -eq "$total" ]]; then ok "L1b-self matcher hits all $total planted GNU-only lines"
