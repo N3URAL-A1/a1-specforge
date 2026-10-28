@@ -33,7 +33,10 @@ const SLUG_RE = /^[a-z0-9][a-z0-9._-]{0,100}$/;
 const BRANCH_RE = /^[A-Za-z0-9][A-Za-z0-9._\/-]{0,200}$/;
 const GREEN_BUCKETS = Object.freeze(['pass', 'skipping']);
 const PENDING_BUCKET = 'pending';
-const NO_REQUIRED_RE = /no required checks/i;
+// gh prints "no required checks" when checks exist but none is required, and
+// "no checks reported on the '<branch>' branch" when the repo has no PR check at all;
+// both mean zero required checks (the merge check then rests on the local suites).
+const NO_REQUIRED_RE = /no required checks|no checks reported/i;
 
 class MergeCheckError extends Error {
   constructor(reason, message) { super(message || reason); this.reason = reason; }
