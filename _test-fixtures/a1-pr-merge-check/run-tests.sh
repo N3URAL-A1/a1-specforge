@@ -186,6 +186,8 @@ OUT="$(cd "$P" && A1_FX_CHECKS_ERR="no checks reported on the 'feat' branch" A1_
 expect "C6b 'no checks reported' (branch without any CI run): exit 0 (nothing required)" "0|0" "$RC|$(js 'j.required_checks.total')"
 OUT="$(cd "$P" && A1_FX_CHECKS_ERR="HTTP 502: no checks reported (bad gateway)" A1_FX_CHECKS_RC=1 A1_GH_BIN="$WORK/bin/gh" A1_FX_CHECKS="" node "$TOOLS" pr merge-check --pr 7 --base main --phase fx-w10 2>"$WORK/err")"; RC=$?
 expect "C6c stderr that only contains the phrase is a gh failure, not zero checks: exit 2 gh_failed" "2|gh_failed" "$RC|$(js 'j.error')"
+OUT="$(cd "$P" && A1_FX_CHECKS_ERR="no checks reported on the 'feat' branch (truncated)" A1_FX_CHECKS_RC=1 A1_GH_BIN="$WORK/bin/gh" A1_FX_CHECKS="" node "$TOOLS" pr merge-check --pr 7 --base main --phase fx-w10 2>"$WORK/err")"; RC=$?
+expect "C6e text after 'branch' is not gh's line: exit 2 gh_failed" "2|gh_failed" "$RC|$(js 'j.error')"
 OUT="$(cd "$P" && A1_FX_CHECKS_ERR="$(printf "A new release of gh is available: 2.86.0 -> 2.90.0\nno checks reported on the 'feat' branch")" A1_FX_CHECKS_RC=1 A1_GH_BIN="$WORK/bin/gh" A1_FX_CHECKS="" node "$TOOLS" pr merge-check --pr 7 --base main --phase fx-w10 2>"$WORK/err")"; RC=$?
 expect "C6d gh update notice before the message: still exit 0 (nothing required)" "0|0" "$RC|$(js 'j.required_checks.total')"
 OUT="$(cd "$P" && A1_FX_CHECKS_ERR="HTTP 502" A1_FX_CHECKS_RC=1 A1_GH_BIN="$WORK/bin/gh" A1_FX_CHECKS="" node "$TOOLS" pr merge-check --pr 7 --base main --phase fx-w10 2>"$WORK/err")"; RC=$?
