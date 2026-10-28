@@ -281,10 +281,73 @@ caseL1() {
   # The pattern is assembled from pieces so this very case does not match it.
   re="mk""temp[^#]*[[:space:]]-t([[:space:]]|\$)|mk""temp[^#]*[[:space:]]-[a-zA-Z]*t[[:space:]]+[^[:space:]-]+"
   re="$re|se""d -i ''|se""d -i \"\"|st""at -f |da""te -[jv] "
-  hits="$(cd "$REPO_ROOT" && find _test-fixtures -name '*.sh' -type f -print0 \
+  hits="$(cd "$REPO_ROOT" && find _test-fixtures bin -name '*.sh' -type f -print0 \
     | xargs -0 grep -nE "$re" | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' || true)"
-  if [[ -z "$hits" ]]; then ok "L1 no BSD-only shell idioms in _test-fixtures/**/*.sh"
+  if [[ -z "$hits" ]]; then ok "L1 no BSD-only shell idioms in _test-fixtures/**/*.sh and bin/*.sh"
   else bad "L1 BSD-only shell idioms found"; while IFS= read -r l; do results+=("      $l"); done <<<"$hits"; fi
+}
+
+# ---------- Case L1b: no GNU-only shell idioms in the fixture suites ----------
+# The mirror of L1. The development machine is macOS (BSD userland), so a suite that only
+# runs on GNU coreutils breaks there while CI stays green: `timeout <n> <cmd>` (absent on
+# macOS, rc=127), `sed -i <script>` (BSD takes the next word as the backup suffix: rc=1, file
+# unchanged), `date -d <str>` and `stat -c <fmt>` (illegal option). The portable forms
+# `sed -i.bak`, `sed -i ''`, `stat -f`, `date -j/-v` are not hit (L1 guards those as BSD-only).
+# Two post-filters: comment lines (as L1), and lines that start with a quote after
+# whitespace (a string literal in a data array, never a command).
+# Scans _test-fixtures/**/*.sh and bin/*.sh.
+# Red-making change: putting `timeout 5 <cmd>`, `sed -i 's/a/b/' f`, `date -d yesterday` or
+# `stat -c %s f` into any suite script. L1b-self is the matcher self-test: it must hit all
+# planted bad lines and miss all planted good ones, so L1b cannot pass by matching nothing.
+l1b_re() {
+  # Assembled from pieces so this very file does not match.
+  local pre='(^|[^_A-Za-z0-9-])' q="['\"]"
+  local sedre="${pre}se""d([[:space:]]+-[a-zA-Z]+)*[[:space:]]+-i[[:space:]]+([^[:space:]'\"]|${q}[^'\"[:space:]]|${q}${q}[^[:space:]])"
+  local tmore='(^|[;&|(]|&&|\|\||\$\(|(^|[[:space:]])(if|then|else|do|while|until|!))[[:space:]]*ti''meout[[:space:]]+(-[a-zA-Z-]+[[:space:]]+)*[0-9]'
+  printf '%s' "$sedre|$tmore|${pre}da""te[[:space:]]+-d[[:space:]]|${pre}st""at[[:space:]]+-c[[:space:]]"
+}
+l1b_filter() {
+  grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' | grep -vE '^[^:]+:[0-9]+:[[:space:]]*["'"'"']' || true
+}
+caseL1b() {
+  local re bad_planted good_planted hits n total
+  re="$(l1b_re)"
+  bad_planted='ti''meout 5 cmd
+x=$(ti''meout 10 foo)
+if ti''meout 3 foo; then :; fi
+a && ti''meout -k 1 5 foo
+se''d -i '"'"'s/a/b/'"'"' f
+se''d -i -e s/a/b/ f
+se''d -n -i "s/a/b/" f
+da''te -d yesterday +%s
+x=$(da''te -d "@1" +%F)
+st''at -c %s f
+x=$(st''at -c %Y f)'
+  good_planted='ok "L1b ... ti''meout 2000 ms ..."
+'"'"'Bash(ti''meout *)'"'"'
+se''d -i.bak '"'"'s/a/b/'"'"' f
+se''d -i.tmp "s/a/b/" f
+se''d -i '"''"' '"'"'s/a/b/'"'"' f
+se''d -i "" "s/a/b/" f
+st''at -f %z f
+da''te -v-1d +%F
+da''te -j -f %s 1 +%F
+  # ti''meout 5 cmd in a comment
+  "ti''meout 5 cmd" in a data array
+  '"'"'se''d -i s/a/b/ f'"'"',
+mytime''out 5 cmd'
+  total="$(printf '%s\n' "$bad_planted" | grep -c '')"
+  n="$(printf '%s\n' "$bad_planted" | grep -HnE --label=p "$re" | l1b_filter | grep -c '' || true)"
+  if [[ "$n" -eq "$total" ]]; then ok "L1b-self matcher hits all $total planted GNU-only lines"
+  else bad "L1b-self matcher hit $n of $total planted GNU-only lines"; fi
+  total="$(printf '%s\n' "$good_planted" | grep -c '')"
+  n="$(printf '%s\n' "$good_planted" | grep -HnE --label=p "$re" | l1b_filter | grep -c '' || true)"
+  if [[ "$n" -eq 0 ]]; then ok "L1b-self matcher misses all $total portable/unrelated lines"
+  else bad "L1b-self matcher hit $n of $total portable/unrelated lines (false positives)"; fi
+  hits="$(cd "$REPO_ROOT" && find _test-fixtures bin -name '*.sh' -type f -print0 \
+    | xargs -0 grep -nE "$re" | l1b_filter)"
+  if [[ -z "$hits" ]]; then ok "L1b no GNU-only shell idioms in _test-fixtures/**/*.sh and bin/*.sh"
+  else bad "L1b GNU-only shell idioms found (breaks on macOS; use portable forms)"; while IFS= read -r l; do results+=("      $l"); done <<<"$hits"; fi
 }
 
 # ---------- Case L2: no bare mktemp in the fixture suites (suite-tmpdir-leak) ----------
@@ -344,6 +407,7 @@ caseG G4b checklist-full run_checklist_full
 caseP1
 caseP2
 caseL1
+caseL1b
 caseL2
 
 printf '\n--- a1-vault-fallback fixture results ---\n'
