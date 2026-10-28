@@ -181,6 +181,9 @@ OUT="$(cd "$P" && A1_FX_CHECKS_RC=1 A1_GH_BIN="$WORK/bin/gh" A1_FX_CHECKS="$CHK"
 expect "C5 gh exit 1 WITH the JSON list (real gh behaviour for a red check) is read, not an error: exit 1 required_check_red" "1|required_check_red" "$RC|$(reasons)"
 OUT="$(cd "$P" && A1_FX_CHECKS_ERR="no required checks reported on the 'feat' branch" A1_FX_CHECKS_RC=1 A1_GH_BIN="$WORK/bin/gh" A1_FX_CHECKS="" node "$TOOLS" pr merge-check --pr 7 --base main --phase fx-w10 2>"$WORK/err")"; RC=$?
 expect "C6 'no required checks reported': exit 0 (nothing required)" "0|0" "$RC|$(js 'j.required_checks.total')"
+OUT="$(cd "$P" && A1_FX_CHECKS_ERR="no checks reported on the 'feat' branch" A1_FX_CHECKS_RC=1 A1_GH_BIN="$WORK/bin/gh" A1_FX_CHECKS="" node "$TOOLS" pr merge-check --pr 7 --base main --phase fx-w10 2>"$WORK/err")"; RC=$?
+# Real gh 2.86 text for a branch that never ran any check, even with --required (measured on PRs 1, 2, 3, 5 of this repo).
+expect "C6b 'no checks reported' (branch without any CI run): exit 0 (nothing required)" "0|0" "$RC|$(js 'j.required_checks.total')"
 OUT="$(cd "$P" && A1_FX_CHECKS_ERR="HTTP 502" A1_FX_CHECKS_RC=1 A1_GH_BIN="$WORK/bin/gh" A1_FX_CHECKS="" node "$TOOLS" pr merge-check --pr 7 --base main --phase fx-w10 2>"$WORK/err")"; RC=$?
 expect "C7 gh failure without a list: exit 2, error gh_failed" "2|gh_failed" "$RC|$(js 'j.error')"
 OUT="$(cd "$P" && A1_GH_BIN="$WORK/no-such-gh" node "$TOOLS" pr merge-check --pr 7 --base main --phase fx-w10 2>"$WORK/err")"; RC=$?
