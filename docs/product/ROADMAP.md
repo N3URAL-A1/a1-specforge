@@ -4,7 +4,7 @@ type: roadmap
 project: a1-specforge
 title: "a1-specforge — Roadmap"
 status: active
-updated: 2026-10-27
+updated: 2026-10-28
 source: "migrated from docs/roadmap.md v3.0 (2026-07-10)"
 milestones:
   - id: m0-repo-extract
@@ -256,11 +256,11 @@ features:
   - id: 023-module-roadmap-views
     milestone: continuous
     title: "Module dimension for docs/product: per-module roadmap views and cursors"
-    status: in-flight
-    stage: verify
+    status: done
+    stage: done
     depends_on: []
     started: 2026-10-26
-    finished: null
+    finished: 2026-10-28
     spec_path: project/a1-specforge/spec/023-module-roadmap-views.md
     plan_path: null
 next: 006-specforge-kritis-profile
@@ -448,6 +448,7 @@ None.
 - **2026-10-26** — 023-module-roadmap-views -> review — stage transition via `product stage`
 - **2026-10-26** — 023-module-roadmap-views -> verify — stage transition via `product stage`
 - **2026-10-27** — 021-dashboard -> done — stage transition via `product stage`
+- **2026-10-28** — 023-module-roadmap-views -> done — stage transition via `product stage`
 
 ## Appendix — migrated details
 
