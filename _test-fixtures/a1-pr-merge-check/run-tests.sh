@@ -24,6 +24,12 @@
 #   pr-merge-check.cjs requiredChecks(): only bucket `fail` counts red (cancel / no-shape pass)        : C3
 #   pr-merge-check.cjs requiredChecks(): `--required` dropped from the gh args                         : A1
 #   pr-merge-check.cjs requiredChecks(): "no required checks reported" branch removed                  : C6
+#   pr-merge-check.cjs NO_REQUIRED_RE: reverted to the unanchored substring form                       : C6c, C6f
+#   pr-merge-check.cjs NO_REQUIRED_RE: leading ^ dropped                                               : C6f
+#   pr-merge-check.cjs NO_REQUIRED_RE: branch segment narrowed to a quote-free class                   : C6g
+#   pr-merge-check.cjs NO_REQUIRED_RE: trailing $ dropped                                              : C6e
+#   pr-merge-check.cjs NO_REQUIRED_RE: /m flag dropped                                                 : C6d
+#   pr-merge-check.cjs NO_REQUIRED_RE: "required " made mandatory                                      : C6b, C6g
 #   pr-merge-check.cjs resolveBaseRef(): always `main` (gh pr view not asked)                          : C9
 #   pr-merge-check.cjs mergeCheck(): flakyBaseReasons not added                                        : D1, D3
 #   pr-merge-check.cjs mergeCheck(): pendingOrOverturned not added                                     : E1, E3
@@ -188,8 +194,17 @@ OUT="$(cd "$P" && A1_FX_CHECKS_ERR="HTTP 502: no checks reported (bad gateway)" 
 expect "C6c stderr that only contains the phrase is a gh failure, not zero checks: exit 2 gh_failed" "2|gh_failed" "$RC|$(js 'j.error')"
 OUT="$(cd "$P" && A1_FX_CHECKS_ERR="no checks reported on the 'feat' branch (truncated)" A1_FX_CHECKS_RC=1 A1_GH_BIN="$WORK/bin/gh" A1_FX_CHECKS="" node "$TOOLS" pr merge-check --pr 7 --base main --phase fx-w10 2>"$WORK/err")"; RC=$?
 expect "C6e text after 'branch' is not gh's line: exit 2 gh_failed" "2|gh_failed" "$RC|$(js 'j.error')"
-OUT="$(cd "$P" && A1_FX_CHECKS_ERR="$(printf "A new release of gh is available: 2.86.0 -> 2.90.0\nno checks reported on the 'feat' branch")" A1_FX_CHECKS_RC=1 A1_GH_BIN="$WORK/bin/gh" A1_FX_CHECKS="" node "$TOOLS" pr merge-check --pr 7 --base main --phase fx-w10 2>"$WORK/err")"; RC=$?
-expect "C6d gh update notice before the message: still exit 0 (nothing required)" "0|0" "$RC|$(js 'j.required_checks.total')"
+OUT="$(cd "$P" && A1_FX_CHECKS_ERR="$(printf "failed to start pager: exec: \"less\": executable file not found in \$PATH\nno checks reported on the 'feat' branch")" A1_FX_CHECKS_RC=1 A1_GH_BIN="$WORK/bin/gh" A1_FX_CHECKS="" node "$TOOLS" pr merge-check --pr 7 --base main --phase fx-w10 2>"$WORK/err")"; RC=$?
+expect "C6d a pager warning on its own line before the message: still exit 0 (nothing required)" "0|0" "$RC|$(js 'j.required_checks.total')"
+OUT="$(cd "$P" && A1_FX_CHECKS_ERR="HTTP 502: no checks reported on the 'feat' branch" A1_FX_CHECKS_RC=1 A1_GH_BIN="$WORK/bin/gh" A1_FX_CHECKS="" node "$TOOLS" pr merge-check --pr 7 --base main --phase fx-w10 2>"$WORK/err")"; RC=$?
+# Pins the leading ^: this carries gh's WHOLE genuine line, so only the anchor rejects it.
+# Without ^ the merge gate would read an HTTP 5xx as "nothing required" (main's behaviour).
+expect "C6f the full genuine line behind an HTTP 502 prefix: exit 2 gh_failed (pins the ^ anchor)" "2|gh_failed" "$RC|$(js 'j.error')"
+OUT="$(cd "$P" && A1_FX_CHECKS_ERR="no checks reported on the 'rob's-fix' branch" A1_FX_CHECKS_RC=1 A1_GH_BIN="$WORK/bin/gh" A1_FX_CHECKS="" node "$TOOLS" pr merge-check --pr 7 --base main --phase fx-w10 2>"$WORK/err")"; RC=$?
+# git accepts an apostrophe in a branch name (verified: git check-ref-format --branch "rob's-fix")
+# and gh interpolates it unescaped. A quote-free branch class rejected this genuine message and
+# turned a legitimate zero-checks PR into gh_failed. Pins the `.*` branch segment.
+expect "C6g apostrophe in the branch name is still the genuine gh line: exit 0 (nothing required)" "0|0" "$RC|$(js 'j.required_checks.total')"
 OUT="$(cd "$P" && A1_FX_CHECKS_ERR="HTTP 502" A1_FX_CHECKS_RC=1 A1_GH_BIN="$WORK/bin/gh" A1_FX_CHECKS="" node "$TOOLS" pr merge-check --pr 7 --base main --phase fx-w10 2>"$WORK/err")"; RC=$?
 expect "C7 gh failure without a list: exit 2, error gh_failed" "2|gh_failed" "$RC|$(js 'j.error')"
 OUT="$(cd "$P" && A1_GH_BIN="$WORK/no-such-gh" node "$TOOLS" pr merge-check --pr 7 --base main --phase fx-w10 2>"$WORK/err")"; RC=$?
