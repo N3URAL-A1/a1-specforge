@@ -1,0 +1,408 @@
+---
+name: a1-new-feature
+description: >
+  End-to-end pipeline for taking a new feature idea from raw concept to verified implementation.
+  Seven phases: Discover → Specify → Clarify → Plan → Consistency Gate → Implement → Verify. State lives in the spec
+  file's YAML frontmatter and progresses through: discovering → draft → clarified → planned →
+  implementing → done (or cancelled). Every feature is size-triaged (S/M/L,
+  spec frontmatter `size:`) at Discover: Size-S features run the same phases
+  and ALL deterministic gates in compact form (mini-spec, 3-question clarify,
+  single-wave plan, one checkpoint) — small changes stay cheap without
+  skipping the pipeline. Specs are stored repo-local (external vault via
+  `A1_VAULT_ROOT`, e.g. Obsidian) under project/<slug>/spec/<###>-<feature-slug>.md,
+  wave plans under project/<slug>/plans/.
+  MUST trigger when the user says: "new feature for <project>" (alias: "neues Feature für
+  <projekt>"), "spec for <project>" (alias: "spec für <projekt>"), "feature pipeline",
+  "a1-new-feature", "create a new feature" (alias: "neues Feature anlegen"), "feature from
+  idea to verify" (alias: "Feature von Idee bis Verify"), or any request to start a feature
+  from scratch and walk it through requirements, planning, implementation, and verification. This skill orchestrates
+  sub-agents (Rene for phases 1–3, Vincente for phase 4, code agents for phase 5); it does NOT
+  replace them. Do not activate for: pure spec writing on an existing feature (use Rene
+  directly), bug fixes (use a1-fix), or wave planning of an already-specified
+  feature (use Vincente directly).
+allowed-tools:
+  - Read
+  - Write
+  - Edit
+  - Bash
+  - Glob
+  - Grep
+  - Agent
+---
+
+# a1-new-feature — Feature Pipeline (Discover → Verify)
+
+Language: English-first; German trigger aliases supported.
+
+This skill is a thin orchestrator. The phase logic lives in `workflows/`. The shared CLI
+helper (`<repo>/_shared/a1-tools.cjs`) handles deterministic file ops (sequence
+numbers, status updates, listing) under the `spec` subcommand group. Sub-agents do the
+actual thinking.
+
+## When to use
+
+Activate when the user wants to take a new feature **from idea to verified implementation**,
+not just write a spec or plan a wave. If the feature is already specified or already planned,
+delegate directly to the relevant agent (Rene / Vincente / code agents) and skip this skill.
+
+## Spawn Policy (HARD RULE)
+
+Spawn a1 agents by `subagent_type` without `name` (else pass `model` explicitly); briefs carry
+paths, not documents. Details + self-check: `_shared/spawn-policy.md`.
+
+## Phases
+
+| # | Phase | Workflow | Model | Status after |
+|---|---|---|---|---|
+| 0 | Roadmap Gate | `workflows/00-roadmap-gate.md` | — (deterministic, no LLM) | (no status change; hard/soft gate) |
+| 1 | Discover | `workflows/01-discover.md` | Sonnet | discovering |
+| 2 | Specify | `workflows/02-specify.md` | Sonnet | draft |
+| 3 | Clarify | `workflows/03-clarify.md` | **reasoning-tier** | clarified |
+| 4 | Plan | `workflows/04-plan.md` | **reasoning-tier** | planned |
+| 4.5 | Consistency Gate | `workflows/04.5-consistency-gate.md` | Sonnet (CLI only) | planned (PASS) / awaiting-consistency-fix (FAIL) |
+| 5 | Implement | `workflows/05-implement.md` | Sonnet | implementing → done |
+| 6 | Verify + Retro | `workflows/06-verify.md` | Sonnet | done (or implementing if failures) |
+
+> **Consistency Gate (Phase 4.5)** is a deterministic CLI gate (no LLM) that
+> verifies the wave-plan structurally covers the spec (bijective FR coverage,
+> frontmatter link, no phantom FRs). It is a **hard gate**: Phase 5 does not
+> start on FAIL. On FAIL the spec status moves to `awaiting-consistency-fix`
+> and re-invocation routes back to Phase 4.5 automatically.
+
+> **Clarify (Phase 3)** runs on the **pinned reasoning-tier model** and includes a **10-category proactive scope scan**
+> (covering navigation context, duplicate submit, permissions, empty states, and more) plus
+> — for frontend features — **UX Mockups from Uwe**: at least 2–3 variants per screen,
+> based on the project-specific design-system skill, for user approval before the
+> wave plan is built. Phase 3 ends with **Gate C — the AC dry-run walkthrough** (hard gate,
+> before status flips to `clarified`): a cheap read-only agent pass narrates each FR-AC's
+> user path against the app's *real* nav/routes and FAILs any AC that needs an invented
+> element, operates on ambiguous context, or has an unreachable entry point — closing the
+> spec-level blindness that let 15+ nav/context bugs escape. Text walkthrough only; live
+> verification stays with Gate 3.
+
+> **Plan (Phase 4)** runs on the **pinned reasoning-tier model** for deeper wave-dependency analysis.
+
+A spec abandoned at any phase is moved to status `cancelled`; its sequence number is **not**
+recycled.
+
+## Size triage & fast path (S/M/L)
+
+Every feature gets a size class at the end of Discover (Phase 1), written to
+the spec frontmatter as `size: S|M|L` (Phase 2 writes it). **Phases are never
+skipped — depth scales inside them.** Deterministic gates (Roadmap Gate,
+Gate C, Gate 4.5, Scope-Claim, Isolation) run at every size: they are cheap
+and they catch the bug classes this corpus actually shipped.
+
+**S (small) — ALL criteria must hold; any doubt → M:**
+
+- ≤ 2 FRs expected
+- No new data model, no migration
+- No new route/screen (changes to existing surfaces only)
+- No auth / payment / tenant-boundary surface touched
+- Expected change ≤ ~3 files
+
+The user can override the triage in either direction at any point ("treat as
+small" / "run the full pipeline") — say the class and its consequence out
+loud when triaging.
+
+**What shrinks on the S path:**
+
+| Phase | Full run (M/L) | Size-S run |
+|---|---|---|
+| 1+2 Discover/Specify | Rene interview + full spec | Combined mini-spec: 1–2 FRs with ACs (FRs stay mandatory — Gate 4.5 checks them) |
+| 3 Clarify | 12-category proactive scan, UX mockups, Gate C | The 3 sharpest categories for this feature; mockups only on request; **Gate C runs unchanged** |
+| 4 Plan | Multi-wave plan | Single-wave plan (one wave, all FRs) |
+| 4.5 Consistency Gate | runs | **runs unchanged** |
+| 5 Implement | Checkpoint per wave | One wave → one closing checkpoint |
+| 6 Verify | Full scenario matrix + edge-case spot checks | Every AC once + project regression suite; edge-case spot check reduced to the single riskiest case. Retro stays mandatory |
+
+M and L both run the full structure; the distinction only calibrates the
+Clarify question budget (M: focus on the categories the feature plausibly
+touches; L: all 12).
+
+## Roadmap Gate (HARD RULE — before Phase 1 Discover)
+
+Every invocation of this skill runs `workflows/00-roadmap-gate.md` first —
+before any Discover work starts. It deterministically (grep/parse, no LLM)
+checks that a project roadmap exists — preferring `docs/product/ROADMAP.md`
+(schema v1), falling back to the legacy `.a1/roadmap.md` — and, once the
+feature's `roadmap_entry` is known, that it maps to a real roadmap entry. See
+`workflows/00-roadmap-gate.md` for exact checks and outcomes:
+
+- both roadmap files missing → **halt**, route to `a1-roadmap`
+- roadmap file exists but unparseable → **halt** (treated as missing), but warn
+  the user explicitly and get confirmation before routing to `a1-roadmap`
+  (never silently overwrite an existing file)
+- only `.a1/roadmap.md` (legacy) found → **pass** (fallback), but note the
+  recommended on-touch migration to `docs/product/ROADMAP.md` (see "On-touch
+  migration rule" below)
+- roadmap parseable but the feature's `roadmap_entry` doesn't match any
+  entry → **soft stop**, surface a mismatch notice, user confirms to continue
+
+The linkage convention (`<!-- entry: <slug> -->` markers in the roadmap file,
+`roadmap_entry:` frontmatter field in the spec) is defined in
+`a1-roadmap`'s SKILL.md.
+
+## docs/product Wiring (HARD RULE — CLI-only mutations)
+
+When the project uses `docs/product/` (schema v1), all mutations to
+`ROADMAP.md`, `NEXT.md`, `index.json`, and `features/<###>-<slug>/feature.md`
+go through `node <repo>/_shared/a1-tools.cjs product ...` — **never**
+hand-edited frontmatter (same rule as `spec update-status`, extended to the
+product-docs layer). Concrete insertion points in this skill:
+
+- **Phase 3 (Clarify) → status `clarified`:** create the feature's product-docs
+  entry via the CLI, which writes `docs/product/features/<###>-<slug>/feature.md`
+  and updates the matching `features[]` entry in `docs/product/ROADMAP.md`
+  frontmatter in one call:
+
+  ```bash
+  node <repo>/_shared/a1-tools.cjs product feature-init \
+    --id <###-feature-slug> \
+    [--spec-path "project/<slug>/spec/<###>-<feature-slug>.md"] \
+    [--plan-path "project/<slug>/plans/<###>-<feature-slug>-wave-plan.md"]
+  ```
+
+  Skip this call entirely if the project has no `docs/product/` directory yet
+  (legacy-only project — see on-touch rule below).
+
+- **Phase 5 (Implement) and Phase 6 (Verify) lifecycle transitions:** every
+  `code-scope stage --by <spec-id> --set <stage>` call in the Lifecycle
+  Completion Gate below is mirrored by `product stage` when `docs/product/`
+  exists, so the feature's `stage` stays in sync across
+  `reservations.json` / `feature.md` / `ROADMAP.md` in one invocation:
+
+  ```bash
+  node <repo>/_shared/a1-tools.cjs product stage --by <spec-id> --set <stage>
+  ```
+
+  This is one CLI call, not two — do not run `code-scope stage` and expect
+  `docs/product/` to update on its own.
+
+## On-touch Migration Rule (HARD RULE — never big-bang)
+
+If this skill encounters a project that has only the legacy `.a1/roadmap.md`
+(no `docs/product/` directory) — whether at the Roadmap Gate or at Phase 3's
+`product feature-init` insertion point — it does **not** silently convert the
+project. Offer adopt-mode migration instead:
+
+> This project's roadmap is still on the legacy `.a1/roadmap.md` format.
+> Want me to migrate it to `docs/product/ROADMAP.md` (schema v1) now via
+> `a1-roadmap`'s adopt mode, or continue on the legacy path for this feature?
+
+- **User accepts** → hand off to `a1-roadmap` in `adopt` mode (see `a1-roadmap`
+  SKILL.md), then resume this feature once migration completes.
+- **User declines / defers** → continue on the legacy `.a1/roadmap.md` path for
+  this feature; do not force it. Re-offer on the next touch, don't nag mid-run.
+
+Never migrate without asking. Never do a partial/silent conversion.
+
+## Scope Claim Gate (HARD RULE — before Phase 5 Implement)
+
+Before the first wave of Phase 5, the feature MUST claim its declared code
+scope so parallel features cannot silently collide on the same files. The
+claim runs in the primary checkout, right after the sync point of
+`_shared/push-cadence.md` P3 (start step), because `code-scope` reads only
+the local reservations file:
+
+```bash
+node <repo>/_shared/a1-tools.cjs code-scope claim \
+  --by <spec-id> --scope <code_scope from wave-plan frontmatter> --phase <spec-id>
+```
+
+- **CONFLICT (exit 1)** → Implementation does NOT start. The CLI output names
+  the in-flight feature(s) holding the overlapping path(s) — surface that to
+  the user verbatim and ask how to proceed (wait for the holder to release,
+  narrow this feature's scope, or escalate).
+- **OK (exit 0)** → commit the claim and push it (or merge its chore PR) as
+  the last action before the worktree is created and Wave 1 starts
+  (`_shared/push-cadence.md` P3). The claim is idempotent if this feature
+  re-claims the same scope after a restart.
+
+`<spec-id>` is the feature's stable id (e.g. `<###>-<feature-slug>`) — the
+same id used for `code-scope stage`/`release` in the Completion Gate below.
+
+## Lifecycle Completion Gate (HARD RULE — a feature reaches `done` only through all five confirmed transitions)
+
+A feature's spec status moving to `done` is not just "Phase 6 passed" — it
+requires each of five lifecycle stages to be **explicitly confirmed**, in
+order, with the CLI driven at every transition:
+
+| Transition | When | Command |
+|---|---|---|
+| **Complete** | all waves in Phase 5 marked `⟶ status: done` | `code-scope stage --by <spec-id> --set complete` |
+| **Review** | code review (Reinhard or equivalent) confirmed | `code-scope stage --by <spec-id> --set review` |
+| **Verify** | Phase 6 scenario walkthrough all-green | `code-scope stage --by <spec-id> --set verify` |
+| **Merge** | feature branch merged to `main`, build green post-merge | `code-scope stage --by <spec-id> --set merge` |
+| **Origin cleanup** | remote branch deleted (see `a1-worktree` Step 4.5) | `code-scope stage --by <spec-id> --set origin-cleanup` |
+| **Done** | all of the above confirmed | `code-scope release --by <spec-id>` (frees the scope), then `spec update-status <spec-path> done` |
+
+**Remote-branch gate (hard block):** before running `code-scope stage --set
+origin-cleanup` (and therefore before `done`), check:
+
+```bash
+git -C <repo> ls-remote --heads origin <feature-branch>
+```
+
+Non-empty output → the remote branch still exists → **refuse** to advance to
+`origin-cleanup`/`done`. Route back to `a1-worktree`'s Exit workflow (Step
+4.5) to delete the remote branch first. Only empty output (or an explicit,
+confirmed `git push origin --delete` having just run) permits the
+transition.
+
+Each transition needs an explicit confirmation signal (a passing gate, a
+user "yes", a green build) — never advance the stage speculatively "because
+the next step is probably fine." See `workflows/05-implement.md` and
+`workflows/06-verify.md` for exactly where each `code-scope stage` call sits
+in the phase flow.
+
+## Marketing Gate (after `done` — customer-visible features only)
+
+A feature that reached `done` is not automatically known to the public landing. Before the run
+ends, decide once whether it belongs there. Applies **only** to projects whose product is
+A1//office (`n3ural-platform`); skip silently for every other project.
+
+Ask these five questions (do not delegate the judgement, answer them from the spec and
+the acceptance record — VERIFICATION.md when a phase folder exists, otherwise the spec
+frontmatter: `status: done` + `verify_failures: []`):
+
+1. Would a customer notice this **without an explanation**?
+2. Is it usable **at no extra cost** in the customer's existing tier?
+3. Is it **live in production** — not merely merged? (Deployed image contains the merge commit.)
+4. Does it change **what the customer can delegate**, or how reliably?
+5. Is the claim true **without an asterisk** (no "planned", "in preparation", "provided that")?
+
+**Any "no" → stop here.** Note the failing criterion in one line and end the run. Internal
+refactorings, migrations, test infrastructure, bug fixes and compliance work are never
+customer-visible in this sense — do not even ask the user.
+
+**All five "yes" → hand off** (do not write landing files from this skill):
+
+    Skill: a1-landing-feature
+    Args: --spec "project/<slug>/spec/<###>-<feature-slug>.md" --phase "<phase-dir>"
+
+`a1-landing-feature` owns the landing repo end to end (register via `product` CLI, bilingual
+copy, Bertram voice review, `pnpm build`, branch + PR, subagent review, merge). This skill does
+not edit `a1-office-landing` itself. Report in German what was merged — the user does not
+review PRs (see `a1-pr-review` hand-offs).
+
+## Isolation Gate (HARD RULE — before Phase 5 Implement)
+
+No feature code is written in the primary checkout. Before the first wave of
+Phase 5, the feature MUST be moved into its own git worktree on a fresh branch off
+`main`. This prevents the parallel-session corruption class: two sessions editing
+the same working tree overwrite each other's files and push half-finished work
+(e.g. a referenced type that was never committed) to `main`, leaving it build-red.
+
+1. **Create the worktree** (delegate to the `a1-worktree` skill, or inline):
+   ```bash
+   git -C <repo> fetch origin main
+   git -C <repo> worktree add ../a1-worktrees/<feature-slug> -b feature/<feature-slug> origin/main
+   ```
+   Every wave's edits, builds, and tests happen inside that worktree path.
+2. **Implement wave by wave** there. After each wave, build + tests must be GREEN
+   in the worktree before the next wave.
+3. **Merge via PR** only after the final wave is GREEN (typically after Phase 6
+   Verify passes): hand the worktree to `a1-pr-review`
+   (`a1-worktree exit --mode handoff`). It pushes the branch, opens the PR, runs
+   the review, and squash-merges (`gh pr merge <n> --squash --delete-branch`). No
+   local merge into `main`, no `git push origin main`.
+   If `origin/main` no longer builds for reasons unrelated to this feature:
+   STOP, do NOT layer on top, report to Robert.
+4. **Tear down** the worktree: done by `a1-pr-review` after the merge — do not
+   exit it a second time here.
+
+**Never** cherry-pick commits onto a fresh main branch as a merge workaround.
+**Never** push a build-red `main`. **Never** edit the primary checkout mid-feature
+while another session may hold it.
+
+When the branch and the shared-state files are pushed:
+`_shared/push-cadence.md`. Full cross-skill convention incl. scope-claim order:
+`_shared/parallel-spec-isolation.md`.
+
+## Routing — pick the right phase
+
+0. **Always run the Roadmap Gate first** (`workflows/00-roadmap-gate.md`) —
+   before touching Discover or reading spec status. Only proceed past it on
+   PASS or explicit user confirmation on a soft stop.
+1. Read the spec frontmatter `status` field if a spec path is given.
+2. If no spec exists yet for the feature: start at Phase 1 (Discover) — call the helper to get
+   the next sequence number, create the spec file from the template with status `discovering`.
+3. Otherwise route by status:
+   - `discovering` → Phase 1 (continue interview) or Phase 2 (if Discover complete)
+   - `draft` → Phase 3 (Clarify) when `[NEEDS CLARIFICATION]` markers exist, otherwise Phase 4
+   - `clarified` → Phase 4 (Plan)
+   - `planned` → **Phase 4.5 (Consistency Gate)** — must PASS before Phase 5
+   - `awaiting-consistency-fix` → Phase 4.5 (re-run gate after user fix), or the
+     phase the user chose for the fix path (Phase 3 / Phase 4 / targeted edit)
+   - `implementing` → Phase 5 (next wave) or Phase 6 (Verify) when waves complete
+   - `done` → no work; ask user if they want a re-verify or a new feature
+   - `cancelled` → no work; confirm and stop
+
+## State mechanics
+
+State is persisted in the spec frontmatter. Update it via the CLI helper, never with raw
+string-replace on the file:
+
+```bash
+node <repo>/_shared/a1-tools.cjs spec update-status \
+  "project/<slug>/spec/<###>-<feature-slug>.md" <new-status>
+```
+
+The helper performs an atomic frontmatter rewrite (read → modify → write-temp → rename) and
+appends a `phase_history` entry with the completion timestamp.
+
+## Storage
+
+All artifacts default repo-local; external vault via `A1_VAULT_ROOT` (e.g. Obsidian):
+
+- Specs: `project/<slug>/spec/<###>-<feature-slug>.md`
+- Wave plans: `project/<slug>/plans/<###>-<feature-slug>-wave-plan.md`
+
+The `<###>` sequence is per-project, zero-padded to 3 digits, monotonically increasing.
+Cancelled specs keep their number; the helper picks the next unused number via glob.
+
+Learning store defaults to repo-local `.a1/learnings/`; set `A1_VAULT_ROOT` to use an external vault (e.g. Obsidian).
+Override via env var `A1_VAULT_ROOT` if testing.
+
+## Agent integration
+
+| Phase | Agent | Source |
+|---|---|---|
+| 1–3 | Rene | `~/.claude/agents/a1-rene-requirement-engineer.md` (see `agents/rene-link.md`) |
+| 3 (UX) | **Uwe** — frontend features only | global `a1-uwe-ux-expert`; uses project design-system skill (see below) |
+| 4 | Vincente | global `a1-vincente-vibe-optimizer` |
+| 5 | Code agents | Agent pool: read from target project's CLAUDE.md → Agent Workflow table. Fallbacks: a1-walter-web-developer, backend-bernd, a1-aik-ai-engineer, felix-flutter-engineer, a1-alex-architekt. **User confirms** per wave brief. |
+| 6 | The skill itself (and Tobi, optional) | — |
+
+### Design-System Skill per Project
+
+| Project | Skill |
+|---|---|
+| Projects using n3ural design system | `n3urala1-design` (`~/.claude/skills/n3urala1-design`) |
+| Other projects | Check project CLAUDE.md for design system skill reference; fallback: `frontend-design` (if available; otherwise proceed without) |
+
+The skill **proposes** code agents in Phase 5 based on the wave-plan brief; the user dispatches.
+
+## Hard rules
+
+- **Never write feature code outside an isolated worktree on a feature branch.**
+  The Isolation Gate runs before Phase 5. Merge to `main` only when build + tests
+  are GREEN. Never cherry-pick as a merge workaround. Never push a build-red `main`.
+- Never edit the spec frontmatter directly with Edit/Write — always use `a1-tools spec update-status`.
+- Never skip a phase. Depth scales with the spec's `size` class instead (see
+  "Size triage & fast path") — a Size-S feature runs every phase in compact
+  form, never zero phases, and every deterministic gate still runs.
+- Never recycle sequence numbers. Cancelled specs keep their slot.
+- Never modify a spec while it is in `implementing` without surfacing the change to the user
+  first; spec drift mid-implementation breaks Phase 6 verify.
+- All file artifacts (spec frontmatter, FR/SC IDs, wave plans, verification notes) stay in
+  English. User-facing communication follows the project's language convention.
+- One question per turn during Discover and Clarify. No wall-of-text interviews.
+
+## Hand-offs (out of scope for this skill)
+
+- Bug fixes: `a1-fix` skill.
+- Cross-feature roadmap planning: Frank or Vincente directly.
+- Deployment execution: `a1-dario-devops` (preview deploys per Gate 2; production
+  deploys only on explicit user instruction, after Phase 6 done).

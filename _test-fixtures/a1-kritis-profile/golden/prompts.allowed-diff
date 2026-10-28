@@ -1,0 +1,29 @@
+# Allowed differences from the golden prompt copies for spec
+# 006-specforge-kritis-profile — a DOCUMENTED exception to FR-008/SC-002:
+# exactly ONE line may be added anywhere in the six golden prompt files
+# (plan Commit 2+/Wave 8), the German alias "erstelle eine Spezifikation"
+# added to the a1-new-feature description (wave-plan Wave 1 brief item 3).
+# Every OTHER line of every prompt file must be byte-identical once the
+# `<!-- a1-profile:kritis -->` ... `<!-- /a1-profile:kritis -->` blocks are
+# stripped (fixtures/strip-blocks.cjs) — this file carries no allowance for
+# anything inside those blocks; blocks are compared by their own mechanism
+# (strip, then cmp), not by this allowed-diff.
+#
+# Format: <file><TAB><ext><TAB><op><TAB><text>
+#   insert-after: the golden line <text> must occur exactly once in the
+#   named file; the following "line" rules are inserted after it, so the
+#   current file must carry exactly those lines there. Applied with
+#   golden/apply-prompts-allowed.cjs, which exits 3 when an allowance
+#   matches zero or two lines — an allowance that no longer matches cannot
+#   pass silently.
+#
+# Anchor note: this anchors on the existing alias-list line of SKILL.md's
+# `description:` block (a YAML folded scalar — each physical line below is
+# literal text, not a logical sentence). Wave 8 owns the exact wording; if
+# it inserts the alias at a different point in the description, or phrases
+# it differently, THIS FILE must be updated in the same commit as that
+# prompt edit (the wiring wave's own acceptance: "the only edit outside a
+# block is the allowed description alias", checked by parts/08-wiring.sh's
+# `git diff "$GOLDEN_COMMIT"...HEAD` on the six prompt files).
+SKILL.md	md	insert-after	  <projekt>"), "spec for <project>" (alias: "spec für <projekt>"), "feature pipeline",
+SKILL.md	md	line	  "a1-new-feature", "erstelle eine Spezifikation" (German alias for "spec for <project>"),

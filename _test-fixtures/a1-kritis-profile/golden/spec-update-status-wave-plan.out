@@ -1,0 +1,13 @@
+# golden: commit cb3fd99a6be44891d52b96cc4223f4897823e7c9, captured by: bash _test-fixtures/a1-kritis-profile/golden/capture.sh
+## spec update-status <REPO>/.a1/learnings/project/demo/spec/001-kritis-golden-sample.md clarified --wave-plan-path project/demo/plans/001-kritis-golden-sample-wave-plan.md rc=0
+{
+  "spec_path": "<REPO>/.a1/learnings/project/demo/spec/001-kritis-golden-sample.md",
+  "status": "clarified",
+  "phase_history": [
+    "phase=discover completed=<ISO>",
+    "phase=specify completed=<ISO>",
+    "phase=clarify completed=<ISO>"
+  ],
+  "wave_plan_path": "project/demo/plans/001-kritis-golden-sample-wave-plan.md",
+  "verify_failures": []
+}

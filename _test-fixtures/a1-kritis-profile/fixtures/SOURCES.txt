@@ -1,0 +1,48 @@
+# Fixture sources (suite a1-kritis-profile, spec 006). Real files copied; edits listed here.
+
+golden/prompts/SKILL.md
+golden/prompts/02-specify.md
+golden/prompts/03-clarify.md
+golden/prompts/04.5-consistency-gate.md
+golden/prompts/a1-rene-requirement-engineer.md
+golden/prompts/a1-samuel-security.md
+  Source: `git show cb3fd99a6be44891d52b96cc4223f4897823e7c9:<path>` for
+  skills/a1-new-feature/SKILL.md, skills/a1-new-feature/workflows/02-specify.md,
+  skills/a1-new-feature/workflows/03-clarify.md,
+  skills/a1-new-feature/workflows/04.5-consistency-gate.md,
+  agents/a1-rene-requirement-engineer.md, agents/a1-samuel-security.md
+  (GOLDEN_COMMIT = the post-023-merge HEAD at Wave 1 time, identical to the
+  working tree when these copies were made, 2026-10-28). Byte copies, no edits.
+  Verified against the working tree with `diff` before commit (all six
+  identical, since no production file has been edited yet at this commit).
+
+fixtures/plan-depth-check/021-dashboard-wave-plan.md
+  Source: ~/N3URAL-Vault/project/a1-specforge/plans/021-dashboard-wave-plan.md,
+  byte copy, 2026-10-28 (`diff` confirmed identical after copy). This is the
+  "real spec/plan pair that passes #9/#10" named in the wave-plan Wave 1
+  brief — used as the --plan input for the plan-depth-check golden scenario.
+  No edits.
+
+golden/*.out, golden/*.err, golden/*.files (the 12 CLI scenario goldens)
+  Generated, not copied: `bash golden/capture.sh` runs golden/scenarios.sh
+  against the a1-tools.cjs of GOLDEN_COMMIT (git archive, never the working
+  tree — testing.md class 4) and writes these files. Re-running capture.sh
+  reproduces them byte for byte (verified 2026-10-28, two runs diffed
+  identical).
+
+_test-fixtures/a1-checklist/pass/project/demo/{spec/001-login.md,plans/001-login-wave-plan.md,CLAUDE.md}
+  Not copied into this suite — reused in place from its own checked-in
+  location (../a1-checklist/pass/project) by golden/scenarios.sh's
+  checklist-run scenario, which `cp -R`s it into a temp dir at run time. No
+  second copy was made here to avoid duplicating an existing fixture; see
+  golden/scenarios.sh's G_CHECKLIST_FIXTURE comment.
+
+Generated at run time (golden/scenarios.sh, every scenario): one fresh git
+repo + one fresh HOME per scenario under mk_workdir-managed temp dirs; a
+docs/product tree built by the real `product init`/`add-milestone`/
+`add-feature` CLI (not hand-authored) for the product feature-init/stage
+scenarios; a spec file built by the real `spec init` CLI for the spec
+set-size/update-status scenarios. None of these are derived from the parser
+under test — they are built by running other real, already-tested CLI
+commands, the same pattern as ../a1-vault-fallback/golden/scenarios.sh's
+g_roadmap().
