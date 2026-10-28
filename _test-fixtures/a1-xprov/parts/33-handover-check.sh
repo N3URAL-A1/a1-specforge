@@ -213,6 +213,26 @@ caseH9() {
   hc33 --target-repo /home/rob/claude-projects/a1-specforge
   assert_json "H9b a clean absolute path is accepted" "$G_OUT" "j.target_repo" "/home/rob/claude-projects/a1-specforge"
   assert_json "H9b ... and nothing is reported as rejected" "$G_OUT" "JSON.stringify(j.target_repo_rejected)" "null"
+  # c) the backstop must be STATELESS. C.LINE_BREAKERS_RE carries /g, so `.test()` on the shared
+  # regex alternates via lastIndex and would refuse only every SECOND hostile value — measured
+  # while hardening this. The guard therefore uses a local non-global regex. Red if it goes back
+  # to a /g regex: the second of these three identical calls starts printing a command.
+  # A literal newline, not  : `printf '\uXXXX'` is a bash-ism the CI shell may not share
+  # (CLAUDE.md "CI runs on GNU/Linux"), while a newline exercises the same code path.
+  local leaked=0 i
+  for i in 1 2 3; do
+    hc33 --target-repo '/tmp/x
+y'
+    [[ "$(json_get "$G_OUT" "JSON.stringify(j.owner_command)")" == "null" ]] || leaked=$((leaked + 1))
+  done
+  [[ "$leaked" -eq 0 ]] && ok "H9c the same hostile path is refused on every call (the backstop is stateless)" \
+    || bad "H9c $leaked of 3 identical hostile calls printed a command — the backstop is stateful (/g regex?)"
+  # d) the length cap and bare `/`, for symmetry with the other validators of the module
+  local long; long="/$(node -e 'process.stdout.write("a".repeat(5000))')"
+  hc33 --target-repo "$long"
+  assert_json "H9d a path past PATH_MAX yields no command" "$G_OUT" "JSON.stringify(j.owner_command)" "null"
+  hc33 --target-repo /
+  assert_json "H9d bare / yields no command (permit would refuse it as not-a-repository)" "$G_OUT" "JSON.stringify(j.owner_command)" "null"
 }
 
 caseH1; caseH2; caseH3; caseH4; caseH5; caseH6; caseH7; caseH8; caseH9

@@ -446,8 +446,12 @@ const MERGE_PASSING = Object.freeze([STATES.ABSENT, STATES.DENIED]);
 // relative `--repo` would resolve against whatever cwd the owner happens to be in on the target
 // host, which is the one thing a handover must not leave open (security review SEC-3).
 const UNSAFE_PATH_RE = /[\0-\x1f\x7f]|[;&|<>$`"'\\(){}[\]*?!#~\s]/;
-const safeTargetRepo = (p) => typeof p === 'string' && p !== '' && path.isAbsolute(p)
-  && !UNSAFE_PATH_RE.test(p) && !p.split('/').includes('..') && path.normalize(p) === p;
+// PATH_MAX, for symmetry with the other validators of this module (BY_RE bounds to 64 chars,
+// validateRecord clips at 80). `/` alone is refused too: `permit` would reject it as not inside a
+// git repository, so printing it would hand the owner a line that refuses itself.
+const TARGET_REPO_MAX = 4096;
+const safeTargetRepo = (p) => typeof p === 'string' && p !== '' && p !== '/' && p.length <= TARGET_REPO_MAX
+  && path.isAbsolute(p) && !UNSAFE_PATH_RE.test(p) && !p.split('/').includes('..') && path.normalize(p) === p;
 
 /** The single-line owner command that settles <targetRepo> on the target host, or null when none can be printed safely. */
 function ownerCommand(rec, targetRepo) {
@@ -467,9 +471,12 @@ function ownerCommand(rec, targetRepo) {
   if (record) parts.push(`--record ${record}`);
   parts.push(`--repo ${targetRepo}`);
   const line = parts.join(' ');
-  // Backstop: whatever the parts were, what is printed is one line without control characters.
-  // A field added to this command later cannot reopen the injection without tripping this.
-  return /[\0-\x1f\x7f]/.test(line) ? null : line;
+  // Backstop after the join, so it sees the final bytes whichever part introduced them: a field
+  // added to this command later cannot reopen the injection without tripping it. Same character set
+  // as C.LINE_BREAKERS_RE (C0/DEL + C1, U+2028/2029, the bidi block and the isolates), but a LOCAL
+  // non-global regex: the shared one carries /g, so `.test()` on it is stateful via lastIndex and
+  // would return false on every second hostile call (measured).
+  return /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]/.test(line) ? null : line;
 }
 
 /** What a host with no owner store reaches for this repository: { target_state, blocks_merge, owner_command, … }. */
