@@ -97,6 +97,13 @@ caseAliasShape
 #      unchanged per wave-contract item 10;
 #   2. a sentence that DOCUMENTS the non-port ("... are not migrated", "not ported").
 # Counting those made the check red for the very sentence proving FR-006 is honoured.
+# Measured after Wave 6 landed: zero hits remain even without these three
+# exemptions, because Wave 6 renamed GP-04's heading at the source
+# ("ExecPlan requirement" -> "Execution-plan requirement"). The exemptions are
+# kept anyway: the grep cannot tell Modus 8 jargon from an Anhang F name that
+# legitimately carried the same word before migration, so the next migrated
+# file hits the same wall. M-neg below is what makes keeping them defensible —
+# it proves the guard still fires on real ported content.
 # What must still turn it red: actual Modus 8 content — the traceability chain
 # (Constitution -> ... -> Work Items), ExecPlan management under plans/active|completed,
 # or a tech-debt register. The negative control below proves the check still fires.

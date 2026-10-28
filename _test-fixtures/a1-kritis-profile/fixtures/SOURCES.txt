@@ -122,6 +122,33 @@ fixtures/skills/old-specforge/SKILL.md (Wave 7, FR-006/FR-007, part 07-alias.sh)
   null — caught by part 07-alias.sh's own T old-skill-present case going
   green when it should discriminate; fixed to 1-14 before commit.
 
+fixtures/simulate/spec-006-with-simulation.md (Wave 6, FR-005, part 06-simulate.sh)
+  Source: ~/N3URAL-Vault/project/a1-specforge/spec/006-specforge-kritis-profile.md, byte copy
+  verified identical via `diff` before editing, 2026-10-28. Edit: appended a
+  `## Stakeholder Simulation` section with three `### <role-id>` blocks
+  (security-officer, dpo, ops — the FR-005 worked example's own role list),
+  each with a required `Assumption challenged:` line. Used as the
+  simulate-check pass fixture.
+
+fixtures/simulate/spec-006-no-section.md (Wave 6, FR-005, part 06-simulate.sh)
+  Source: ~/N3URAL-Vault/project/a1-specforge/spec/006-specforge-kritis-profile.md, byte copy
+  verified identical via `diff`, 2026-10-28. No edits (the real spec 006 has
+  no `## Stakeholder Simulation` section yet). Used as the
+  section_missing fixture.
+
+fixtures/simulate/spec-006-block-missing-ops.md (Wave 6, FR-005, part 06-simulate.sh)
+  Derived from fixtures/simulate/spec-006-with-simulation.md (this wave's
+  own fixture, not the parser): the `### ops` block (its own heading plus
+  body) and the preceding blank line were removed, leaving the
+  security-officer and dpo blocks intact. Used as the block_missing fixture.
+
+fixtures/simulate/spec-006-assumption-missing-ops.md (Wave 6, FR-005, part 06-simulate.sh)
+  Derived from fixtures/simulate/spec-006-with-simulation.md (this wave's
+  own fixture): the `### ops` block's body was replaced with prose that
+  discusses the same topic but carries no `Assumption challenged:` line.
+  Used as the assumption_missing fixture.
+
+
 fixtures/skills/old-specforge-full/SKILL.md (Wave 7, FR-007, part 07-alias.sh)
   Source: ~/.claude/skills/specforge/SKILL.md, the FULL file (2933 lines),
   byte copy, 2026-10-28. sha256 verified identical to the pinned
