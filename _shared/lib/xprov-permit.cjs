@@ -411,7 +411,88 @@ function cmdXprovPermit(args) {
   return finish(r, xprov.EXIT_PASS);
 }
 
+// ---------- handover-check (bug 2026-10-28-handover-xprov-owner-store) ----------
+// The owner store is host-local AND keyed by the realpath of the git-common-dir
+// (xprov-denials.cjs header, C.commonDirOf), so it can never travel to another
+// host: the key would not match. A clone on a fresh host therefore reads the
+// committed `.a1/xprov.json` against an EMPTY store, which `classify` turns into
+// `denial_mismatch` (file `denied`) or `permit_mismatch` (file `allowed`) — and
+// `xprov-hook-merge.cjs` lets only `absent`/`denied` through, so every merge
+// there is denied. Until now that surfaced hours later, at the merge.
+//
+// This command predicts the target host's state WITHOUT ssh and without reading
+// the local store: the prediction is a pure function of the committed file, which
+// is identical in every clone. The local state is reported next to it, never
+// merged into it — a healthy local host says nothing about the target.
+
+// The store directory as a human-readable label; the real path is $HOME-relative on each host.
+const STORE_LABEL = '~/.a1-xprov';
+const TARGET_STATE_OF_FILE = Object.freeze({
+  [ALLOWED]: STATES.PERMIT_MISMATCH, // store empty, file allowed → spec 014 FR-002
+  [DENIED]: STATES.DENIAL_MISMATCH, // store empty, file denied → spec 012 FR-001
+  missing: STATES.ABSENT,
+  invalid: STATES.INVALID,
+});
+// Exactly the two states xprov-hook-merge.cjs (reinhardOnly) lets through.
+const MERGE_PASSING = Object.freeze([STATES.ABSENT, STATES.DENIED]);
+
+/** The single-line owner command that settles <targetRepo> on the target host, or null when none is needed. */
+function ownerCommand(rec, targetRepo) {
+  if (!rec) return null;
+  const parts = ['a1-tools xprov permit'];
+  if (rec.external_review === DENIED) parts.push('--deny');
+  parts.push(`--by ${rec.decided_by}`);
+  if (rec.record) parts.push(`--record ${rec.record}`);
+  parts.push(`--repo ${targetRepo}`);
+  return parts.join(' ');
+}
+
+/** What a host with no owner store reaches for this repository: { target_state, blocks_merge, owner_command, … }. */
+function handoverCheck(opts) {
+  const root = (opts && opts.repoRoot) || io.repoRoot();
+  const targetRepo = (opts && opts.targetRepo) || root;
+  const fileState = readPermitFile(permitPath(root));
+  const decided = fileState.kind === ALLOWED || fileState.kind === DENIED;
+  const target = TARGET_STATE_OF_FILE[fileState.kind];
+  const local = permitCheck({ repoRoot: root });
+  return Object.freeze({
+    ok: target === STATES.ABSENT, // only a repository without any record needs nothing on the target host
+    target_state: target,
+    local_state: local.state,
+    file: permitPath(root),
+    file_decision: decided ? fileState.kind : null,
+    file_detail: decided ? null : fileState.detail,
+    blocks_merge: !MERGE_PASSING.includes(target),
+    target_repo: targetRepo,
+    store_path: STORE_LABEL,
+    owner_command: ownerCommand(decided ? fileState.rec : null, targetRepo),
+    hint: permitHint(target),
+  });
+}
+
+function cmdXprovHandoverCheck(args) {
+  const flags = io.parseFlags(args || [], { repo: 'string', 'target-repo': 'string' });
+  if (flags._.length) return usageExit(`handover-check: unexpected argument ${JSON.stringify(String(flags._[0]).slice(0, 80))}`);
+  let root;
+  try { root = resolveRoot(flags); } catch (e) {
+    if (e && e.code === 'A1_INPUT') return usageExit(`handover-check: ${e.message}`);
+    throw e;
+  }
+  const r = handoverCheck({ repoRoot: root, targetRepo: flags['target-repo'] });
+  if (r.target_state === STATES.ABSENT) {
+    process.stderr.write('handover-check: no permit record in this repository — a fresh host runs Reinhard-only, nothing to carry\n');
+  } else if (r.blocks_merge) {
+    process.stderr.write(`handover-check: a fresh host reaches ${r.target_state}, and its merge hook denies every merge there.\n`
+      + `The owner store ${STORE_LABEL} is host-local and keyed by the git-common-dir path, so copying it to another host cannot work.\n`
+      + 'The owner runs this once on the target host, in a real terminal (never through an agent):\n'
+      + `  ${r.owner_command}\n`);
+  } else {
+    process.stderr.write(`handover-check: a fresh host reaches ${r.target_state} — merges are not blocked, but the record is unusable (${r.file_detail})\n`);
+  }
+  return finish(r, r.ok ? xprov.EXIT_PASS : xprov.EXIT_FAIL);
+}
+
 module.exports = {
   PERMIT_FILE, ENFORCEMENT, DENY_MESSAGE, EXPOSURE_SENTENCE, HINT_PERMIT_MISMATCH, STATES, permitPath, permitCheck, permitHint, permit, permitDeny, isValidBranchName, validateRecord,
-  cmdXprovPermitCheck, cmdXprovPermit,
+  cmdXprovPermitCheck, cmdXprovPermit, handoverCheck, cmdXprovHandoverCheck,
 };

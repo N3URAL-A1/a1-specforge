@@ -119,6 +119,23 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   The allowed line prints what leaves: the full tracked tree of
                   the reviewed commit, the base-side blobs of changed files,
                   PLAN.md and the dispositions (read-only sandbox).
+    handover-check [--repo <git-toplevel>] [--target-repo <abs path on the target host>]
+                  (xprov-permit.cjs) read-only: the state a FRESH host (one with no
+                  owner store) reaches for this repository — for a handover to another
+                  machine. No ssh, nothing written. The owner stores are host-local AND
+                  keyed by the realpath of the git-common-dir, so they cannot be copied
+                  to another host: the key would not match. The prediction is therefore a
+                  pure function of the committed .a1/xprov.json, which is identical in
+                  every clone: file denied → target_state denial_mismatch, allowed →
+                  permit_mismatch, no file → absent, unparseable → invalid.
+                  \`blocks_merge\` is true for every state the merge hook
+                  (xprov-hook-merge.cjs) does not let through, i.e. all but absent and
+                  denied. \`owner_command\` is the single line the owner runs once on the
+                  target host, in a real terminal, to settle it (null when nothing is
+                  needed). \`local_state\` is this host's permit-check state, reported
+                  next to the prediction and never merged into it — a healthy local host
+                  says nothing about the target. Exit 0 only when the repository holds
+                  no permit record at all (nothing to carry).
     permit --by <name> --record <vault-path> [--repo <git-toplevel>]
            [--default-branch <name>]
     permit --deny --by <name> [--record <vault-path>] [--repo <git-toplevel>]
