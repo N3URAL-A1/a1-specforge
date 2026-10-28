@@ -67,6 +67,13 @@
  *   a1-tools dashboard build [<slug> | --slug <slug>] [--json]
  *       One read-only overview note, <vault>/project/<slug>/dashboard.md (spec 021). Exit 0 written or skipped on a non-writer host / 1 usage / 2 unsafe path, slug mismatch, no vault root, foreign note, write failure.
  *
+ *   a1-tools profile resolve|set|ears-check|nfr-inject|threat-model-check|simulate-roles|simulate-check|trigger-check ...
+ *       SpecForge folded into a1 as an opt-in `kritis` profile (spec 006): fail-closed profile
+ *       resolution/persistence, EARS check, NIS2/KRITIS NFR injection, STRIDE threat-model check,
+ *       stakeholder simulation, trigger-collision check. See `a1-tools --help` for the full
+ *       per-subcommand contract. Wave 1: all eight subcommands are stubs in six modules (exit 2,
+ *       `profile <sub>: not_implemented`); Waves 2-7 replace them one at a time.
+ *
  *   a1-tools fix count-postmortems-since --since <ISO-timestamp>
  *       → JSON { count, since, files: [...] }
  *         Counts postmortem files in project/<slug>/postmortems/ modified after the given timestamp.
@@ -743,13 +750,21 @@ function main() {
       // Spec 021-dashboard, Wave 1: lib/dashboard.cjs owns `dashboard build` and every exit code (0 / 1 / 2). Lazy require.
       require(path.join(__dirname, 'lib', 'dashboard.cjs')).cmdDashboard(sub, rest);
       return;
+    } else if (group === 'profile') {
+      // Spec 006-specforge-kritis-profile, Wave 1: lib/profile.cjs owns the `profile`
+      // dispatch table (resolve, set, ears-check, nfr-inject, threat-model-check,
+      // simulate-roles, simulate-check, trigger-check) and every exit code (0 / 1 / 2).
+      // All eight subcommands are still stubs, carried by six modules (Waves 2-7 replace them one at a
+      // time). Lazy require: a call to one subcommand never loads another's module.
+      require(path.join(__dirname, 'lib', 'profile.cjs')).cmdProfile(sub, rest);
+      return;
     } else if (group === 'git') {
       // Spec 011 Wave 6 (FR-048): git for the intent child only, through a
       // fixed grammar and hardened options; exit 2 outside child mode.
       require(path.join(__dirname, 'lib', 'intent-git.cjs')).cmdGit(sub, rest);
       return;
     } else {
-      usage(`unknown command group: ${group} (expected "spec", "fix", "analyze", "check", "checklist", "constitution", "worktree", "pr", "phantom", "reconcile", "modernize", "schema-check", "cost", "pack", "product", "quick", "learnings", "retro", "workflow", "gates", "verify", "test-fidelity", "disposition", "intent", "metrics", "probe", "dashboard", "git", or "realpath-check"). fix supports: next-suffix, update-status, list, find-duplicates, integrity-check, init-postmortem, validate-postmortem, count-postmortems-since, update-promote-state, write-suggestion. Spec 018 adds: fix validate-postmortem, metrics escaped, metrics cost. Spec 020 adds: probe run. Spec 021 adds: dashboard build`);
+      usage(`unknown command group: ${group} (expected "spec", "fix", "analyze", "check", "checklist", "constitution", "worktree", "pr", "phantom", "reconcile", "modernize", "schema-check", "cost", "pack", "product", "quick", "learnings", "retro", "workflow", "gates", "verify", "test-fidelity", "disposition", "intent", "metrics", "probe", "dashboard", "profile", "git", or "realpath-check"). fix supports: next-suffix, update-status, list, find-duplicates, integrity-check, init-postmortem, validate-postmortem, count-postmortems-since, update-promote-state, write-suggestion. Spec 018 adds: fix validate-postmortem, metrics escaped, metrics cost. Spec 020 adds: probe run. Spec 021 adds: dashboard build. Spec 006 adds: profile resolve, profile set, profile ears-check, profile nfr-inject, profile threat-model-check, profile simulate-roles, profile simulate-check, profile trigger-check`);
     }
   } catch (e) {
     // Input-validation errors (e.g. path-traversal guard) are user errors,
