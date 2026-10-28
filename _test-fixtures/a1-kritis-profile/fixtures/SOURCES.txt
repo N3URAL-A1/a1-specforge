@@ -63,3 +63,150 @@ fixtures/stride/*.md (Wave 5, FR-003, suite part 05-stride.sh)
   the open/mitigated/accepted vocabulary), not-applicable-no-reason.md
   (Spoofing marked "Relevant: no" with an empty Finding cell),
   section-missing-actors.md ("## Actors" omitted).
+
+fixtures/resolve/spec-no-profile.md (Wave 2, FR-001, suite part 02-resolve.sh)
+  Source: ~/N3URAL-Vault/project/a1-specforge/spec/006-specforge-kritis-profile.md,
+  byte copy, 2026-10-28 (`diff` confirmed identical after copy). No edits.
+
+fixtures/resolve/spec-with-profile.md
+  Derived from spec-no-profile.md: one line `profile: kritis` inserted
+  immediately after the `status: implementing` frontmatter line (sed
+  `/^status: implementing$/a profile: kritis`). No other byte changed.
+
+fixtures/resolve/spec-with-unknown-profile.md
+  Derived from spec-no-profile.md: one line `profile: krits` inserted at the
+  same position, for the fail-closed (unknown value) case. No other byte
+  changed.
+
+fixtures/resolve/index-no-profile.json
+  Source: docs/product/index.json (this repo's own real, CLI-generated
+  manifest), byte copy, 2026-10-28. No edits.
+
+fixtures/resolve/index-with-profile.json
+  Derived from index-no-profile.json: `project.profile` set to `"kritis"`
+  via a small Python json.load/dump round-trip (re-serializes the whole
+  file with 2-space indent -- every other key/value is unchanged, verified
+  by `diff` ignoring whitespace-only reflow). No other value changed.
+
+fixtures/resolve/index-with-unknown-profile.json
+  Derived from index-no-profile.json the same way, `project.profile` set to
+  `"kritiss"`, for the fail-closed (unknown value) case.
+
+fixtures/resolve/index-broken-with-profile-text.json
+fixtures/resolve/index-broken-no-profile-text.json
+  Not copied from a real file -- both are deliberately truncated, unparseable
+  JSON (an open `{` with no closing brace), authored from scratch to exercise
+  the "broken index.json" fail-closed rule (ADR section 3): the first
+  contains the literal substring `"profile"` and must exit 2
+  (index_json_unreadable_with_profile); the second contains no such
+  substring and must resolve to profile: null, exit 0, same as today. Same
+  class of adversarial fixture as part 01's strip-blocks.cjs hostile cases
+  (hand-authored, not derived from the parser under test).
+
+parts/02-resolve.sh -- constitution.md fixtures (generated inline, not static
+files): no real `<repo>/constitution.md` exists anywhere reachable on this
+host (checked: this repo, the vault, `~`), so the marker-line cases
+(`a1-profile: kritis`, `a1-profile: krits`, absent file, a SpecForge-shaped
+constitution without the marker) are written directly by the part script
+with `printf` into a per-case temp dir, not stored under fixtures/resolve/.
+
+fixtures/skills/old-specforge/SKILL.md (Wave 7, FR-006/FR-007, part 07-alias.sh)
+  Source: ~/.claude/skills/specforge/SKILL.md, lines 1-14 only (the full YAML
+  frontmatter block, both the opening and the closing `---`), byte copy via
+  `sed -n '1,14p'`, 2026-10-28 (`diff` confirmed identical to the same line
+  range of the real file). Not under git; this is the real, installed
+  retired skill, measured on this host. No edits. Used where only the
+  frontmatter/description matters (not the sha-sensitive installer cases,
+  which use old-specforge-full/ instead). First copied as 1-13 (missing the
+  closing `---`, so readDescription() saw an unclosed block and returned
+  null — caught by part 07-alias.sh's own T old-skill-present case going
+  green when it should discriminate; fixed to 1-14 before commit.
+
+fixtures/skills/old-specforge-full/SKILL.md (Wave 7, FR-007, part 07-alias.sh)
+  Source: ~/.claude/skills/specforge/SKILL.md, the FULL file (2933 lines),
+  byte copy, 2026-10-28. sha256 verified identical to the pinned
+  32026458dc537a78c2ab29e74af887a17dbc33b8bddb347311160d85beb86d54
+  (`sha256sum` run on both the source and the copy; part 07-alias.sh's own
+  caseInstallerFixtureShaPinned re-checks this on every run). No edits. Used
+  so every installer test case seeds HOME from this checked-in fixture
+  instead of ever reading the real ~/.claude/skills/specforge/ — no case in
+  this suite touches the real HOME.
+
+fixtures/skills/specforge-alias-copy/SKILL.md (Wave 7, FR-007, part 07-alias.sh)
+  Source: _extras/specforge-alias/SKILL.md (this wave's own production
+  alias), byte copy, 2026-10-28 (`diff` confirmed identical). No edits. A
+  separate copy, not a reference to the production file, so a future edit
+  to the production alias cannot silently change what the "alias present"
+  trigger-check case exercises without a deliberate fixture update.
+
+(Wave 7, part 07-alias.sh) The a1-new-feature entry of every --skills-dir
+fixture tree reuses golden/prompts/SKILL.md (Wave 1's own golden copy of
+skills/a1-new-feature/SKILL.md) in place, copied into a temp
+<skills-dir>/a1-new-feature/SKILL.md at run time by buildSkillsDir() — no
+second static copy was added under fixtures/skills/ for this, same
+reuse-in-place pattern as the a1-checklist fixture reuse noted above.
+
+fixtures/ears/spec-006-unmodified.md (Wave 3, FR-002, part 03-ears.sh)
+  Source: ~/N3URAL-Vault/project/a1-specforge/spec/006-specforge-kritis-profile.md,
+  frontmatter trimmed to 5 keys and the body trimmed to "## Functional
+  Requirements" + "## Success Criteria" only (every other section dropped --
+  Discovery, Clarifications, Review Checklist), 2026-10-28. Every FR-001..
+  FR-008 line kept byte-identical to the real spec (checked by eye against
+  the real file, including FR-001's 3-line wrap). Edits: non-ASCII em dash in
+  the title replaced with "->", "<=" used instead of "≤"/">=" instead of "≥"
+  in SC-001 (ASCII-only fixture, no semantic change). This is the AC's
+  "unmodified copy of spec 006" -- unmodified with respect to its FR text and
+  shape, trimmed only for fixture size. Used to assert the AC's exact-8
+  no_tag count.
+
+fixtures/ears/spec-006-ears-tagged.md
+  Derived from spec-006-unmodified.md: every FR-001..FR-008 line rewritten
+  into one of the five canonical EARS patterns (ears.md) with an
+  `[EARS: <pattern>]` tag, each with exactly one "shall". FR-001 keeps its
+  3-line wrap (now carrying the tag on the continuation) -- this is also the
+  mutation-proof-2 case (continuation-line joining). Positive, full-coverage
+  fixture: checked == 8, 0 findings.
+
+fixtures/ears/bare-fr-shape.md (FR shape family: bare `**FR-NNN**`, lazy
+flush-left paragraph continuation)
+  Source: ~/N3URAL-Vault/project/n3ural-contentbot/spec/014-preview-bypass-token.md,
+  "## Functional Requirements" section (FR-014, FR-015, their AC-1..AC-3
+  bullets) plus a 4-key frontmatter and a one-line title, 2026-10-28. Edits:
+  FR-014 and FR-015 bodies rewritten into EARS form (event-driven,
+  ubiquitous) with tags; AC bullets kept byte-identical to the real file.
+  This file is why the bare-shape continuation reader had to be
+  lazy-paragraph (flush-left), not indented -- the real source wraps flush
+  left, unlike spec 006's indented bullet convention (see profile-ears.cjs
+  readBareEntry).
+
+fixtures/ears/heading-fr-shape.md (FR shape family: `### FR-NNN` heading,
+body = first paragraph)
+  Source: ~/N3URAL-Vault/project/maison-muelhens/spec/007-premium-redesign-slider.md,
+  FR-001 and FR-002 only (truncated from the file's full FR-001..FR-005 run),
+  plus a 4-key frontmatter and the "## Functional Requirements" heading,
+  2026-10-28. Edits: both FR bodies rewritten into EARS form (ubiquitous,
+  event-driven) with tags; titles kept byte-identical to the real file. A
+  first attempt reused 020-claudia-account-connection.md's FR-001/FR-002
+  (Title:/Description:/Acceptance Criteria: sub-labelled shape) and was
+  replaced: that shape's EARS-taggable text sits in a sub-paragraph below the
+  heading's literal first paragraph ("**Title:** ..."), which does not fit
+  the AC's "whose body is the first paragraph" wording -- this file's plain
+  heading + single paragraph shape does.
+
+fixtures/ears/structure-mismatch.md, fixtures/ears/german-form.md,
+fixtures/ears/vague-warnings.md, fixtures/ears/no-frs.md,
+fixtures/ears/table-rows-ignored.md, fixtures/ears/multiple-shall.md,
+fixtures/ears/nfr-section.md
+  Not copied from a real file: authored from scratch, synthetic fixtures
+  with a `9NN-` id so they are never mistaken for a real vault spec. Each
+  exercises exactly one finding/warning class named in the AC (structure
+  mismatch, the German "Wenn ..." EARS form carrying a literal "shall" so the
+  pattern-opener mutation proof is meaningful, the ears.md vague-term list,
+  no_frs, traceability-table rows under "## Functional Requirements",
+  multiple_shall, and FR-NFR-### lines read from the profile's NFR section).
+  german-form.md's body: migrated almost verbatim from the archived SpecForge
+  Anhang C event-driven example (line ~1465), kept in German, with one
+  English "shall" inserted mid-sentence -- a plausible half-migrated
+  artifact, and the only way to make mutation-proof 1 (widening the
+  event-driven opener to accept "Wenn") actually flip the case's exit code,
+  since German has no native "shall" to classify in the first place.
