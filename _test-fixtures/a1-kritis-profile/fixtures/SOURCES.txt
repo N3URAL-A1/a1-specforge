@@ -210,3 +210,26 @@ fixtures/ears/nfr-section.md
   artifact, and the only way to make mutation-proof 1 (widening the
   event-driven opener to accept "Wenn") actually flip the case's exit code,
   since German has no native "shall" to classify in the first place.
+
+fixtures/skills/old-specforge-full/SKILL.md (Wave 7, FR-006/FR-007, part 07-alias.sh)
+  Source: ~/.claude/skills/specforge/SKILL.md, byte copy taken 2026-10-28,
+  sha256 32026458dc537a78c2ab29e74af887a17dbc33b8bddb347311160d85beb86d54,
+  2933 lines. This is the retired upstream skill the alias replaces; it is
+  not under git anywhere, so the fixture is its only committed record. No
+  edits. part 07-alias.sh pins that sha256 and refuses to run on a drifted
+  copy, so the installer tests always act on the real retired file and never
+  on the live ~/.claude (HOME is redirected to a temp tree for every case).
+
+fixtures/skills/old-specforge/SKILL.md (Wave 7, FR-007, part 07-alias.sh)
+  Lines 1-14 of fixtures/skills/old-specforge-full/SKILL.md, byte-identical
+  (verified with `diff <(sed -n '1,14p' <real>) <fixture>`, 2026-10-28). The
+  frontmatter alone is enough for the trigger-check cases and keeps the
+  per-case temp trees small. The truncation boundary was initially 13 lines,
+  which cut the closing `---` and made the frontmatter unparseable; the suite
+  itself caught it, and the fixture was rebuilt at 14 lines.
+
+fixtures/skills/specforge-alias-copy/SKILL.md (Wave 7, FR-007, part 07-alias.sh)
+  Byte copy of _extras/specforge-alias/SKILL.md, this repo's own new alias
+  (verified identical with `diff`, 2026-10-28). Copied rather than referenced
+  so the trigger-check cases run against a fixed artifact: a later edit to
+  the shipped alias must turn this part red deliberately, not silently.
