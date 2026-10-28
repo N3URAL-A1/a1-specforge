@@ -33,10 +33,17 @@ const SLUG_RE = /^[a-z0-9][a-z0-9._-]{0,100}$/;
 const BRANCH_RE = /^[A-Za-z0-9][A-Za-z0-9._\/-]{0,200}$/;
 const GREEN_BUCKETS = Object.freeze(['pass', 'skipping']);
 const PENDING_BUCKET = 'pending';
-// gh prints "no required checks" when checks exist but none is required, and
-// "no checks reported on the '<branch>' branch" when the repo has no PR check at all;
-// both mean zero required checks (the merge check then rests on the local suites).
-const NO_REQUIRED_RE = /no required checks|no checks reported/i;
+// gh has exactly two wordings here (cli/cli pkg/cmd/pr/checks/checks.go:303 and :308):
+//   no checks reported on the '<branch>' branch            — the repo has no PR check at all
+//   no required checks reported on the '<branch>' branch   — checks exist, none is required
+// Both mean zero required checks (the merge check then rests on the local suites). Matched
+// per line (/m) because a pager warning can precede the message on its own line, and anchored
+// at both ends so a gh failure that merely CONTAINS the sentence (an HTTP 5xx body, say) stays
+// a gh_failed instead of being read as "nothing required". The branch segment is `.*`, not a
+// quote-free class: git accepts an apostrophe in a branch name ("rob's-fix") and gh
+// interpolates it unescaped, so a quote-free class would reject the genuine message and block
+// a legitimate merge. `.` cannot cross a newline, so the per-line guarantee is unchanged.
+const NO_REQUIRED_RE = /^no (required )?checks reported on the '.*' branch\s*$/m;
 
 class MergeCheckError extends Error {
   constructor(reason, message) { super(message || reason); this.reason = reason; }
