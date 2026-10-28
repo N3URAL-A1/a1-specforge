@@ -1,0 +1,30 @@
+diff --git a/_shared/lib/help.cjs b/_shared/lib/help.cjs
+index 6dec055..6ab5d17 100644
+--- a/_shared/lib/help.cjs
++++ b/_shared/lib/help.cjs
+@@ -17,6 +17,7 @@ const { FIX_SWEEP_HELP } = require('./help-fix-sweep.cjs');
+ const { MERGE_CHECK_HELP } = require('./help-merge-check.cjs');
+ const { METRICS_HELP } = require('./help-metrics.cjs');
+ const { PROBE_HELP } = require('./help-probe.cjs');
++const { PRODUCT_MODULES_HELP } = require('./help-product.cjs');
+ 
+ function usage(msg) {
+   process.stderr.write(`usage error: ${msg}\n`);
+@@ -361,7 +362,7 @@ ${SPEC_INIT_HELP}
+                   instead. Exit: 0 ok, 1 usage/already-exists/write error.
+   a1-tools product add-milestone --id <slug> --title <title>
+                   [--target YYYY-MM] [--goal <text>] [--status <status>]
+-                  [--dir docs/product]
++                  [--module <slug>] [--dir docs/product]
+                   Append a new milestone to an existing ROADMAP.md
+                   milestones[] list; auto-appends a changelog line and
+                   regenerates index.json/NEXT.md. Exit: 0 ok, 1 usage/
+@@ -468,6 +469,8 @@ ${SPEC_INIT_HELP}
+                   must name its spec_path. No roadmap = exit 0.
+                   --require-vault (FR-034, implies --spec-status): exit 2
+                   when A1_VAULT_ROOT is unset; excludes --ci.
++
++${PRODUCT_MODULES_HELP}
+   a1-tools product import --file <path> --project <slug>
+                   [--title <text>] [--dir docs/product]
+                   Migrate a legacy hand-rolled roadmap into a fresh

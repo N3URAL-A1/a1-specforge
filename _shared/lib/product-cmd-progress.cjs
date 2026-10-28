@@ -11,7 +11,8 @@ const { productMirrorHook } = require('./vault-product-hook.cjs');
 const { CODE_SCOPE_STAGES } = require('./code-scope.cjs');
 const { PRODUCT_ROADMAP_KEY_ORDER, PRODUCT_FEATURE_KEY_ORDER } = require('./product-schema.cjs');
 const { readProductRoadmap, readProductFeature, regenerateDerived } = require('./product-derived.cjs');
-const { productDirFromFlags, buildRoadmapWritesWithChangelog } = require('./product-txn.cjs');
+const mods = require('./product-modules.cjs');
+const { derivedWrites, productDirFromFlags, buildRoadmapWritesWithChangelog } = require('./product-txn.cjs');
 
 function cmdProductStatus(args) {
   const flags = parseFlags(args, { dir: 'value' });
@@ -32,7 +33,10 @@ function cmdProductStatus(args) {
     features,
     next: fm.next !== undefined ? fm.next : null,
   };
-  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+  // Spec 023 FR-018: same summary as index.json, only when a module is in use.
+  const modulesSummary = mods.modulesSummary(fm, features);
+  const outWithModules = modulesSummary === null ? out : { ...out, modules: modulesSummary };
+  process.stdout.write(JSON.stringify(outWithModules, null, 2) + '\n');
   process.exit(0);
 }
 
@@ -155,17 +159,16 @@ function cmdProductStage(args) {
         updatedRoadmapFm,
         roadmapBody,
         `${id} -> ${targetStage}`,
-        'stage transition via `product stage`'
+        'stage transition via `product stage`', lockPath
       )
     : (() => {
-        const { indexJson, nextMd } = regenerateDerived(dir, updatedRoadmapFm);
+        const derived = regenerateDerived(dir, updatedRoadmapFm);
         const roadmapFmStr = serializeNestedFrontmatter(updatedRoadmapFm, PRODUCT_ROADMAP_KEY_ORDER);
         const content = `---\n${roadmapFmStr}\n---\n${roadmapBody.startsWith('\n') ? '' : '\n'}${roadmapBody}`;
         return {
           writes: [
             { target: roadmapFile, content },
-            { target: path.join(dir, 'index.json'), content: JSON.stringify(indexJson, null, 2) + '\n' },
-            { target: path.join(dir, 'NEXT.md'), content: nextMd },
+            ...derivedWrites(dir, derived, lockPath),
           ],
           roadmapContent: content,
         };
@@ -364,7 +367,7 @@ function cmdProductMarkersSet(flags) {
     updatedRoadmapFm,
     roadmapBody,
     changelogWhat,
-    'marker set via `product markers --set`'
+    'marker set via `product markers --set`', lockPath
   );
   const vaultMirror = writeAllOrNothing(lockPath, writes, 'product markers', productMirrorHook(dir));
 
@@ -403,7 +406,7 @@ function cmdProductChangelog(args) {
   const today = nowIso().slice(0, 10);
   const updatedRoadmapFm = { ...roadmapFm, updated: today };
 
-  const { writes } = buildRoadmapWritesWithChangelog(dir, updatedRoadmapFm, roadmapBody, flags.entry, flags.why);
+  const { writes } = buildRoadmapWritesWithChangelog(dir, updatedRoadmapFm, roadmapBody, flags.entry, flags.why, lockPath);
   const vaultMirror = writeAllOrNothing(lockPath, writes, 'product changelog', productMirrorHook(dir));
 
   const out = { status: 'OK', entry: flags.entry, why: flags.why, files_written: writes.map((w) => w.target), vault_mirror: vaultMirror };

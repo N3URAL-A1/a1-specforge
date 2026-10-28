@@ -84,23 +84,42 @@ function productDirFromFlags(flags) {
 
 // writeAllOrNothing lives in lib/locks.cjs
 
+/** The derived part of every product write set: index.json, NEXT.md, the
+ * module files and the stale-module delete/rmdir entries (spec 023). Every
+ * caller of regenerateDerived goes through here so module files share the
+ * all-or-nothing transaction. A module error (module in use and `modules/` or a module dir
+ * symlinked / unreadable / case-colliding, bad module id) aborts the command: `lockPath` — the lock the
+ * CALLER holds — is released, nothing is written. Foreign entries under
+ * `modules/` are left alone and reported as one stderr line each. */
+function derivedWrites(dir, derived, lockPath) {
+  if (derived.moduleError) {
+    failWithLock(lockPath, `product: ${derived.moduleError}`);
+  }
+  for (const w of derived.moduleWarnings || []) process.stderr.write(`[a1-tools] warning: ${w}\n`);
+  return [
+    { target: path.join(dir, 'index.json'), content: JSON.stringify(derived.indexJson, null, 2) + '\n', within: dir },
+    { target: path.join(dir, 'NEXT.md'), content: derived.nextMd, within: dir },
+    ...derived.moduleFiles.map((f) => ({ target: path.join(dir, f.rel), content: f.content, within: dir })),
+    ...derived.moduleDeletes.map((d) => ({ ...d, within: dir })),
+  ];
+}
+
 /** Build the writes[] entries for ROADMAP.md (with an appended changelog
  * line) + regenerated index.json/NEXT.md, given the ALREADY-updated
- * roadmap frontmatter + body. Handles the >100-entry archive rotation
+ * roadmap frontmatter + body (`lockPath` = the lock the caller holds). Handles the >100-entry archive rotation
  * (FR-010) by adding a 4th write when rotation occurs. Returns
  * { writes, roadmapContent } for the caller to push onto its own writes[]
  * (e.g. feature.md, reservations.json) before calling writeAllOrNothing. */
-function buildRoadmapWritesWithChangelog(dir, updatedRoadmapFm, roadmapBody, what, why) {
+function buildRoadmapWritesWithChangelog(dir, updatedRoadmapFm, roadmapBody, what, why, lockPath) {
   const { body: bodyWithEntry, archiveAppend } = appendChangelogEntry(roadmapBody, what, why);
-  const { indexJson, nextMd } = regenerateDerived(dir, updatedRoadmapFm);
+  const derived = regenerateDerived(dir, updatedRoadmapFm);
 
   const roadmapFmStr = serializeNestedFrontmatter(updatedRoadmapFm, PRODUCT_ROADMAP_KEY_ORDER);
   const roadmapContent = `---\n${roadmapFmStr}\n---\n${bodyWithEntry.startsWith('\n') ? '' : '\n'}${bodyWithEntry}`;
 
   const writes = [
     { target: path.join(dir, 'ROADMAP.md'), content: roadmapContent },
-    { target: path.join(dir, 'index.json'), content: JSON.stringify(indexJson, null, 2) + '\n' },
-    { target: path.join(dir, 'NEXT.md'), content: nextMd },
+    ...derivedWrites(dir, derived, lockPath),
   ];
   if (archiveAppend !== null) {
     const archiveFile = path.join(dir, 'CHANGELOG-archive.md');
@@ -119,6 +138,7 @@ function buildRoadmapWritesWithChangelog(dir, updatedRoadmapFm, roadmapBody, wha
 
 module.exports = {
   assertSlug,
+  derivedWrites,
   productDirFromFlags,
   buildRoadmapWritesWithChangelog,
 };

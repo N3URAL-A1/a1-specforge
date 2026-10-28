@@ -10,7 +10,8 @@ const { usage } = require('./help.cjs');
 const { productMirrorHook } = require('./vault-product-hook.cjs');
 const { PRODUCT_ROADMAP_KEY_ORDER, PRODUCT_FEATURE_KEY_ORDER } = require('./product-schema.cjs');
 const { regenerateDerived } = require('./product-derived.cjs');
-const { assertSlug, productDirFromFlags, buildRoadmapWritesWithChangelog } = require('./product-txn.cjs');
+const { validateRoadmapFm } = require('./product-validate.cjs');
+const { assertSlug, derivedWrites, productDirFromFlags, buildRoadmapWritesWithChangelog } = require('./product-txn.cjs');
 
 /** product init --project <slug> --title <t> [--dir]: scaffold a brand-new
  * docs/product/ROADMAP.md skeleton (schema v1, empty milestones/features) +
@@ -52,12 +53,11 @@ function cmdProductInit(args) {
 
   const roadmapFmStr = serializeNestedFrontmatter(roadmapFm, PRODUCT_ROADMAP_KEY_ORDER);
   const roadmapContent = `---\n${roadmapFmStr}\n---\n${body}`;
-  const { indexJson, nextMd } = regenerateDerived(dir, roadmapFm);
+  const derived = regenerateDerived(dir, roadmapFm);
 
   const writes = [
     { target: roadmapFile, content: roadmapContent },
-    { target: path.join(dir, 'index.json'), content: JSON.stringify(indexJson, null, 2) + '\n' },
-    { target: path.join(dir, 'NEXT.md'), content: nextMd },
+    ...derivedWrites(dir, derived, lockPath),
   ];
   const vaultMirror = writeAllOrNothing(lockPath, writes, 'product init', productMirrorHook(dir));
 
@@ -69,11 +69,15 @@ function cmdProductInit(args) {
 /** product add-milestone --id <slug> --title <t> [--target YYYY-MM] [--goal <s>]:
  * append a new milestone entry to an existing ROADMAP.md's milestones[] list. */
 function cmdProductAddMilestone(args) {
-  const flags = parseFlags(args, { id: 'value', title: 'value', target: 'value', goal: 'value', status: 'value', dir: 'value' });
+  const flags = parseFlags(args, { id: 'value', title: 'value', target: 'value', goal: 'value', status: 'value', module: 'value', dir: 'value' });
   if (!flags.id || !flags.title) {
-    usage('product add-milestone requires --id <slug> --title <title>');
+    usage('product add-milestone requires --id <slug> --title <title> [--module <slug>]');
   }
   assertSlug(flags.id, 'milestone');
+  // Spec 023 FR-017: a bare `--module` / `--module=` is invalid input, never silently ignored.
+  if ('module' in flags && (flags.module === undefined || flags.module === '')) {
+    usage('product add-milestone: --module requires a kebab-case slug value (e.g. --module billing)');
+  }
   const dir = productDirFromFlags(flags);
   const lockFile = path.join(dir, '.product-stage.lock.json');
   const lockPath = acquireReservationsLock(lockFile);
@@ -94,19 +98,28 @@ function cmdProductAddMilestone(args) {
     title: flags.title,
     status: flags.status || 'planned',
     target: flags.target || null,
+    ...(flags.module !== undefined ? { module: flags.module } : {}),
   };
   const updatedRoadmapFm = {
     ...roadmapFm,
     updated: nowIso().slice(0, 10),
     milestones: [...milestones, newMilestone],
   };
+  if (flags.module !== undefined) {
+    // Spec 023 FR-017: slug + membership rules come from the validator (single source), before any write.
+    const prefix = `milestones[${milestones.length}].module:`;
+    const moduleErrors = validateRoadmapFm(updatedRoadmapFm).errors.filter((e) => e.startsWith(prefix));
+    if (moduleErrors.length > 0) {
+      failWithLock(lockPath, `product add-milestone: --module ${JSON.stringify(flags.module)} rejected — ${moduleErrors.join('; ')}`);
+    }
+  }
 
   const { writes } = buildRoadmapWritesWithChangelog(
     dir,
     updatedRoadmapFm,
     roadmapBody,
     `milestone '${flags.id}' added`,
-    flags.goal || 'new milestone via `product add-milestone`'
+    flags.goal || 'new milestone via `product add-milestone`', lockPath
   );
   const vaultMirror = writeAllOrNothing(lockPath, writes, 'product add-milestone', productMirrorHook(dir));
 
@@ -175,7 +188,7 @@ function cmdProductAddFeature(args) {
     updatedRoadmapFm,
     roadmapBody,
     `feature '${flags.id}' added`,
-    flags.goal || 'new feature via `product add-feature`'
+    flags.goal || 'new feature via `product add-feature`', lockPath
   );
   const vaultMirror = writeAllOrNothing(lockPath, writes, 'product add-feature', productMirrorHook(dir));
 
@@ -249,7 +262,7 @@ function cmdProductFeatureInit(args) {
     updatedRoadmapFm,
     roadmapBody,
     `feature.md created for '${flags.id}'`,
-    'formal spec/plan attached via `product feature-init`'
+    'formal spec/plan attached via `product feature-init`', lockPath
   );
   writes.push({ target: featureFile, content: featureContent });
   const vaultMirror = writeAllOrNothing(lockPath, writes, 'product feature-init', productMirrorHook(dir));

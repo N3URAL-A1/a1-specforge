@@ -10,7 +10,7 @@ const { acquireReservationsLock, exitWithLock, failWithLock, writeAllOrNothing }
 const { usage } = require('./help.cjs');
 const { productMirrorHook } = require('./vault-product-hook.cjs');
 const { roadmapFeatureIdSet, regenerateDerived } = require('./product-derived.cjs');
-const { productDirFromFlags } = require('./product-txn.cjs');
+const { derivedWrites, productDirFromFlags } = require('./product-txn.cjs');
 
 const PRODUCT_AUDIT_KEY_ORDER = [
   'schema_version', 'type', 'project', 'focus', 'date', 'source', 'verdict',
@@ -212,11 +212,10 @@ function cmdProductAuditPublish(args) {
   // happens below, via writeAllOrNothing) — pass the in-memory frontmatter
   // so THIS SAME index.json regeneration already reflects it (FR-007's own
   // "index.json's audits[] gains a matching entry" AC), not one call behind.
-  const { indexJson, nextMd } = regenerateDerived(dir, roadmapFm, undefined, { name: fileName, fm: auditFm });
+  const derived = regenerateDerived(dir, roadmapFm, undefined, { name: fileName, fm: auditFm });
   const writes = [
     { target: auditFile, content: auditContent },
-    { target: path.join(dir, 'index.json'), content: JSON.stringify(indexJson, null, 2) + '\n' },
-    { target: path.join(dir, 'NEXT.md'), content: nextMd },
+    ...derivedWrites(dir, derived, lockPath),
   ];
   const vaultMirror = writeAllOrNothing(lockPath, writes, 'product audit-publish', productMirrorHook(dir));
 
@@ -438,7 +437,7 @@ function cmdProductAuditSet(args) {
   const roadmapFile = path.join(dir, 'ROADMAP.md');
   const roadmapContent = fs.readFileSync(roadmapFile, 'utf8');
   const { fm: roadmapFm } = parseNestedFrontmatter(roadmapContent);
-  const { indexJson, nextMd } = regenerateDerived(
+  const derived = regenerateDerived(
     dir,
     roadmapFm,
     undefined,
@@ -447,8 +446,7 @@ function cmdProductAuditSet(args) {
 
   const writes = [
     { target: auditFile, content: auditContentAfter },
-    { target: path.join(dir, 'index.json'), content: JSON.stringify(indexJson, null, 2) + '\n' },
-    { target: path.join(dir, 'NEXT.md'), content: nextMd },
+    ...derivedWrites(dir, derived, lockPath),
   ];
   const vaultMirror = writeAllOrNothing(lockPath, writes, 'product audit-set', productMirrorHook(dir));
 

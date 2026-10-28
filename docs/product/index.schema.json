@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://a1-specforge.dev/schemas/docs-product-index.schema.json",
-  "title": "docs/product/index.json — schema v1.1",
+  "title": "docs/product/index.json — schema v1.2",
   "description": "Machine-owned manifest generated from docs/product/ROADMAP.md and docs/product/features/<###>-<slug>/feature.md, plus (v1.1, optional) docs/product/VISION.md and docs/product/audits/<date>-<focus>.md. See docs/product/SCHEMA.md section 3 for the authoritative prose contract; field names here are identical. `vision`/`audits` are OPTIONAL properties (not in `required`) so a v1-only document (no VISION.md, no audits/) that omits them entirely still validates (FR-016) — when present, they follow the shapes in $defs/vision and $defs/audit.",
   "type": "object",
   "additionalProperties": false,
@@ -62,6 +62,11 @@
       "type": "array",
       "items": { "$ref": "#/$defs/audit" },
       "description": "v1.1, OPTIONAL: one entry per docs/product/audits/<date>-<focus>.md file, [] when none exist (FR-015). Absent entirely from a strict v1-only document is also valid (this property is not in `required`)."
+    },
+    "modules": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/module" },
+      "description": "v1.2, OPTIONAL: one entry per module in use (spec 023 FR-011), in `modules:` list order, else first appearance in milestones. Absent entirely when no milestone carries a `module` (this property is not in `required`)."
     }
   },
   "$defs": {
@@ -87,6 +92,32 @@
           "type": ["string", "null"],
           "pattern": "^[0-9]{4}-[0-9]{2}$",
           "description": "Target month YYYY-MM, or null if unscheduled."
+        },
+        "module": {
+          "type": ["string", "null"],
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "description": "v1.2, OPTIONAL: module slug of this milestone, or null for an untagged milestone. Emitted on every milestone only when at least one module is in use; absent otherwise."
+        }
+      }
+    },
+    "module": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "milestones", "cursor"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "description": "Module slug."
+        },
+        "milestones": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Ids of the milestones tagged with this module, in ROADMAP.md order."
+        },
+        "cursor": {
+          "type": ["string", "null"],
+          "description": "Module cursor: first open feature of the module whose depends_on are all done; null if none. Derived, never stored in ROADMAP.md."
         }
       }
     },

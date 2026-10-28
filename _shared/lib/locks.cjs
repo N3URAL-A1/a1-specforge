@@ -248,70 +248,20 @@ function failWithLock(lockPath, msg) {
  * failWithLock(lockPath, msg) is called. Leftover .tmp files (both the ones
  * never renamed and the one that failed mid-rename) are best-effort
  * unlinked. Mirrors cmdProductStage's proven all-or-nothing pattern so every
- * product-mutating command shares one transaction implementation. */
+ * product-mutating command shares one transaction implementation. Entries
+ * `{ target, delete: true }` and `{ target, rmdir: true }` (spec 023) delete a
+ * file / empty dir inside the same transaction: originals are backed up first,
+ * rmdirs run last (deepest first), the fault seam index covers them, and
+ * rollback restores files and recreates dirs. */
 function writeAllOrNothing(lockPath, writes, errPrefix, opts) {
   const staged = [];
-  const renamed = [];
+  const done = [];
+  const createdDirs = [];
   try {
-    for (const w of writes) {
-      const tmp = `${w.target}.tmp.${process.pid}`;
-      const wdir = path.dirname(w.target);
-      if (!fs.existsSync(wdir)) fs.mkdirSync(wdir, { recursive: true });
-      fs.writeFileSync(tmp, w.content, 'utf8');
-      const existed = fs.existsSync(w.target);
-      const original = existed ? fs.readFileSync(w.target, 'utf8') : null;
-      staged.push({ tmp, target: w.target, existed, original });
-    }
-    // Test-only fault injection seam (FR-009 rename-phase coverage): when
-    // A1_TEST_FAIL_RENAME_AT_INDEX is set to a rename-loop index, throw
-    // AFTER the real rename at that index has already completed on disk,
-    // simulating fs.renameSync failing partway through a multi-file write
-    // set (the exact shape of the original atomicity bug). No-op unless the
-    // env var is explicitly set, so production behavior is unchanged.
-    const failAtIdx = process.env.A1_TEST_FAIL_RENAME_AT_INDEX;
-    const failAtIdxNum = failAtIdx !== undefined ? Number(failAtIdx) : -1;
-    for (let idx = 0; idx < staged.length; idx++) {
-      const s = staged[idx];
-      fs.renameSync(s.tmp, s.target);
-      renamed.push(s);
-      if (idx === failAtIdxNum) {
-        throw new Error(`A1_TEST_FAIL_RENAME_AT_INDEX injected failure at index ${idx}`);
-      }
-    }
+    prepareOps(writes, staged, createdDirs);
+    executeOps(orderOps(staged), done);
   } catch (e) {
-    // Revert every rename that already succeeded, in reverse order, before
-    // reporting failure — this is what makes the rename phase itself
-    // transactional rather than just the tmp-write phase. Revert failures
-    // are collected (not swallowed): if the rollback itself can't fully
-    // complete, the repo is left in a partially-reverted state and the
-    // operator needs to know exactly which files still need a manual check,
-    // rather than seeing only the original write error and assuming the
-    // rollback silently succeeded.
-    const revertFailures = [];
-    for (let i = renamed.length - 1; i >= 0; i--) {
-      const s = renamed[i];
-      try {
-        if (s.existed) {
-          fs.writeFileSync(s.target, s.original, 'utf8');
-        } else {
-          fs.unlinkSync(s.target);
-        }
-      } catch (e2) {
-        // best-effort revert — if this also fails there is nothing more we
-        // can safely do automatically, but the failure is surfaced below
-        // instead of discarded so the operator knows this file was NOT
-        // restored to its pre-write state.
-        revertFailures.push({ file: s.target, error: e2.message });
-      }
-    }
-    for (const s of staged) {
-      try {
-        fs.unlinkSync(s.tmp);
-      } catch (_e2) {
-        // ignore ENOENT etc — best-effort cleanup (covers both tmp files
-        // never renamed and the one tmp file consumed by a failed rename)
-      }
-    }
+    const revertFailures = rollbackOps(done, staged, createdDirs);
     let msg = `${errPrefix}: write failed, all changes rolled back: ${e.message}`;
     if (revertFailures.length > 0) {
       const detail = revertFailures.map((f) => `${f.file} (${f.error})`).join(', ');
@@ -320,6 +270,156 @@ function writeAllOrNothing(lockPath, writes, errPrefix, opts) {
     failWithLock(lockPath, msg);
   }
   return runAfterCommit(opts, errPrefix);
+}
+
+/** Nearest existing ancestor of `dir` (resolved), for targets whose parent
+ * directories do not exist yet. */
+function realExistingAncestor(dir) {
+  let cur = dir;
+  while (!fs.existsSync(cur)) {
+    const parent = path.dirname(cur);
+    if (parent === cur) break;
+    cur = parent;
+  }
+  return fs.realpathSync(cur);
+}
+
+/** Defense in depth: when an op carries `within` (the allowed root), the
+ * target's parent must resolve inside realpath(within) — a symlink anywhere in
+ * the chain pointing out aborts before any write. A symlink as the target
+ * itself is refused too (never read or replace through it). */
+function guardTarget(w) {
+  let st = null;
+  try { st = fs.lstatSync(w.target); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+  if (st && st.isSymbolicLink()) {
+    throw new Error(`${w.target} is a symbolic link — refusing to read or replace it; nothing was written`);
+  }
+  if (w.within !== undefined) {
+    const base = fs.realpathSync(w.within);
+    const parent = realExistingAncestor(path.dirname(w.target));
+    if (parent !== base && !parent.startsWith(base + path.sep)) {
+      throw new Error(`${w.target} resolves outside ${w.within} (${parent}) — nothing was written`);
+    }
+  }
+  return st;
+}
+
+/** Write the .tmp files and record, per write entry, the original content
+ * (as a Buffer, binary-safe) and mode (from lstat) needed to revert it.
+ * Every target is checked first (guardTarget). Delete entries back up the
+ * original BEFORE the rename phase so a later failure can restore it byte for
+ * byte and with its mode; rmdir entries remember the dir mode. The original is
+ * read before the .tmp is written, so a failing read leaves no tmp behind.
+ * Pushes into `staged` / `createdDirs` as it goes, so a throw midway still
+ * leaves rollback everything it needs. */
+function prepareOps(writes, staged, createdDirs) {
+  for (const w of writes) {
+    const st = guardTarget(w);
+    if (w.delete) {
+      staged.push({ kind: 'delete', target: w.target, original: fs.readFileSync(w.target), mode: st.mode & 0o7777 });
+      continue;
+    }
+    if (w.rmdir) {
+      staged.push({ kind: 'rmdir', target: w.target, mode: st ? st.mode & 0o7777 : null });
+      continue;
+    }
+    const tmp = `${w.target}.tmp.${process.pid}`;
+    const wdir = path.dirname(w.target);
+    for (const d of missingDirs(wdir)) createdDirs.push(d);
+    if (!fs.existsSync(wdir)) fs.mkdirSync(wdir, { recursive: true });
+    const existed = st !== null;
+    const original = existed ? fs.readFileSync(w.target) : null;
+    fs.writeFileSync(tmp, w.content, 'utf8');
+    staged.push({ kind: 'write', tmp, target: w.target, existed, original, mode: existed ? st.mode & 0o7777 : null });
+  }
+}
+
+/** rmdirs last, deepest first; the stable sort keeps writes/deletes in caller order. */
+function orderOps(staged) {
+  const rank = (s) => (s.kind === 'rmdir' ? 1 : 0);
+  return staged
+    .map((s, i) => ({ s, i }))
+    .sort((x, y) => rank(x.s) - rank(y.s) || (rank(x.s) === 1 ? y.s.target.length - x.s.target.length : x.i - y.i))
+    .map((x) => x.s);
+}
+
+/** Run the rename / delete / rmdir phase, recording each completed op in `done`.
+ * Test-only fault injection seam (FR-009 rename-phase coverage): when
+ * A1_TEST_FAIL_RENAME_AT_INDEX is set to a loop index, throw AFTER the real
+ * operation at that index has completed on disk, simulating fs.renameSync
+ * failing partway through a multi-file write set. The index covers renames,
+ * deletes and rmdirs. No-op unless the env var is explicitly set. */
+function executeOps(ops, done) {
+  const failAtIdx = process.env.A1_TEST_FAIL_RENAME_AT_INDEX;
+  const failAtIdxNum = failAtIdx !== undefined ? Number(failAtIdx) : -1;
+  for (let idx = 0; idx < ops.length; idx++) {
+    const s = ops[idx];
+    if (s.kind === 'write') fs.renameSync(s.tmp, s.target);
+    else if (s.kind === 'delete') fs.unlinkSync(s.target);
+    else fs.rmdirSync(s.target);
+    done.push(s);
+    if (idx === failAtIdxNum) {
+      throw new Error(`A1_TEST_FAIL_RENAME_AT_INDEX injected failure at index ${idx}`);
+    }
+  }
+}
+
+/** Recreate `file` with `content` and its original `mode` (writeFileSync's
+ * mode only applies to a NEW file, so chmod covers the existing-file case). */
+function restoreFile(file, content, mode) {
+  const opts = {};
+  if (mode !== null && mode !== undefined) opts.mode = mode;
+  fs.writeFileSync(file, content, opts);
+  if (mode !== null && mode !== undefined) fs.chmodSync(file, mode);
+}
+
+/** Recreate a removed directory with its original mode. */
+function restoreDir(dir, mode) {
+  fs.mkdirSync(dir, { recursive: true });
+  if (mode !== null && mode !== undefined) fs.chmodSync(dir, mode);
+}
+
+/** Revert every operation that already succeeded, in reverse order — this is
+ * what makes the rename phase itself transactional. Revert failures are
+ * collected (not swallowed) and returned: if the rollback cannot fully
+ * complete, the operator must learn exactly which files need a manual check.
+ * Also unlinks leftover .tmp files and removes directories this call created
+ * (deepest first; a non-empty dir is left alone, never forced). */
+function rollbackOps(done, staged, createdDirs) {
+  const revertFailures = [];
+  for (let i = done.length - 1; i >= 0; i--) {
+    const s = done[i];
+    try {
+      if (s.kind === 'rmdir') restoreDir(s.target, s.mode);
+      else if (s.kind === 'delete') restoreFile(s.target, s.original, s.mode);
+      else if (s.existed) restoreFile(s.target, s.original, s.mode);
+      else fs.unlinkSync(s.target);
+    } catch (e2) {
+      revertFailures.push({ file: s.target, error: e2.message });
+    }
+  }
+  for (const s of staged) {
+    if (s.kind !== 'write') continue;
+    try { fs.unlinkSync(s.tmp); } catch (_e2) { /* tmp never renamed or consumed by a failed rename */ }
+  }
+  for (const d of createdDirs.sort((x, y) => y.length - x.length)) {
+    try { fs.rmdirSync(d); } catch (_e3) { /* not empty or already gone */ }
+  }
+  return revertFailures;
+}
+
+/** Directories from `dir` upward that do not exist yet (what mkdirSync
+ * -p would create). */
+function missingDirs(dir) {
+  const out = [];
+  let cur = dir;
+  while (!fs.existsSync(cur)) {
+    out.push(cur);
+    const parent = path.dirname(cur);
+    if (parent === cur) break;
+    cur = parent;
+  }
+  return out;
 }
 
 /** Optional `{afterCommit}` (spec 010 FR-007): runs once the rename phase has

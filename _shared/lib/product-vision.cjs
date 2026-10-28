@@ -9,7 +9,7 @@ const { acquireReservationsLock, exitWithLock, failWithLock, writeAllOrNothing }
 const { usage } = require('./help.cjs');
 const { productMirrorHook } = require('./vault-product-hook.cjs');
 const { regenerateDerived } = require('./product-derived.cjs');
-const { assertSlug, productDirFromFlags } = require('./product-txn.cjs');
+const { assertSlug, derivedWrites, productDirFromFlags } = require('./product-txn.cjs');
 
 const PRODUCT_VISION_KEY_ORDER = ['schema_version', 'type', 'project', 'title', 'updated', 'pillars'];
 
@@ -125,11 +125,10 @@ function cmdProductVisionInit(args) {
   const visionFmStr = serializeNestedFrontmatter(visionFm, PRODUCT_VISION_KEY_ORDER);
   const visionContent = `---\n${visionFmStr}\n---\n\n# ${flags.title}\n\n(fill in the vision narrative here.)\n`;
 
-  const { indexJson, nextMd } = regenerateDerived(dir, roadmapFm, visionFm);
+  const derived = regenerateDerived(dir, roadmapFm, visionFm);
   const writes = [
     { target: visionFile, content: visionContent },
-    { target: path.join(dir, 'index.json'), content: JSON.stringify(indexJson, null, 2) + '\n' },
-    { target: path.join(dir, 'NEXT.md'), content: nextMd },
+    ...derivedWrites(dir, derived, lockPath),
   ];
   const vaultMirror = writeAllOrNothing(lockPath, writes, 'product vision-init', productMirrorHook(dir));
 
@@ -201,12 +200,11 @@ function cmdProductVisionTouch(args) {
 
   const roadmapContent = fs.readFileSync(roadmapFile, 'utf8');
   const { fm: roadmapFm } = parseNestedFrontmatter(roadmapContent);
-  const { indexJson, nextMd } = regenerateDerived(dir, roadmapFm, updatedVisionFm);
+  const derived = regenerateDerived(dir, roadmapFm, updatedVisionFm);
 
   const writes = [
     { target: visionFile, content: visionContentAfter },
-    { target: path.join(dir, 'index.json'), content: JSON.stringify(indexJson, null, 2) + '\n' },
-    { target: path.join(dir, 'NEXT.md'), content: nextMd },
+    ...derivedWrites(dir, derived, lockPath),
   ];
   const vaultMirror = writeAllOrNothing(lockPath, writes, 'product vision-touch', productMirrorHook(dir));
 
