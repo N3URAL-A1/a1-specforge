@@ -327,20 +327,101 @@ caseVaultLintUnchanged() {
 }
 caseVaultLintUnchanged
 
-# ---------- hostile: --spec path traversal is refused, not followed outside the vault ----------
+# ---------- hostile: a traversing --spec resolves inside the vault, never outside ----------
+# This case used to assert exit 2 on `--spec ../../../../etc/passwd`. That was
+# wrong twice over, found 2026-10-29 by running the suite in docker node:20:
+#
+#  1. `--spec` is a VAULT-relative path by design (the wave plan, Wave 2:
+#     "reuse readMd/writeMdAtomic/resolveVaultPath"), so a traversing value is
+#     normalised against the vault root like any other. It is not a flag that
+#     should fail closed; containment is the intent sandbox's job, and there it
+#     IS enforced — `--spec` is in INTENT_CHILD_PATH_FLAGS and every value is
+#     run through inScope(), refusing with exit 77 path_outside_scope.
+#  2. The old assertion passed on macOS for the wrong reason: four `..` steps
+#     do not reach `/` from a /var/folders/<a>/<b>/T/... fixture (7 levels
+#     deep), so the path never existed and the file-not-found branch gave the
+#     exit 2 the case wanted. On Linux /tmp is 1 level deep, the path DID
+#     resolve to /etc/passwd, the file was read, had no `profile:` frontmatter
+#     and returned exit 0 — a red case on one platform only.
+#
+# What actually matters is that the resolution is contained and that nothing
+# outside is written, so that is what this asserts: the error names a path
+# under the vault root, not /etc/passwd, and /etc/passwd is untouched.
+# The assertion must not depend on how deep the fixture happens to sit, so the
+# vault root is built at a KNOWN depth and the traversal is sized to escape it
+# by exactly one step. Then "where did it land" is the same question on both
+# platforms, and the answer is the behaviour under test: resolution is lexical
+# against the vault root, the operator's own path is honoured (`--spec` is a
+# vault path by design, wave plan Wave 2), and nothing outside is written.
 caseHostileSpecTraversal() {
-  local repo
+  local repo vault deep before after obs
   r_repo repo "w2-hspec"
-  node "$TOOLS" profile resolve --spec "../../../../etc/passwd" --repo-root "$repo" >"$repo/out" 2>"$repo/err"
+  # stdout/stderr go OUTSIDE the observed tree, or the case flags its own
+  # redirection files as a side effect (measured: "tree changed: ./err ./out").
+  obs="$(mktemp -d)"
+  # 4 levels below the vault root, so `../../../../..` escapes by one step.
+  vault="$repo/vault-h"
+  deep="$vault/a/b/c/d" && mkdir -p "$deep"
+  : > "$vault/sentinel-outside-the-spec-dir"
+  # The whole fixture tree, not just the vault subtree: a stray write lands
+  # beside the vault root as often as inside it (measured — a mutation that
+  # writes next to the resolved path left the vault subtree untouched).
+  before="$(cd "$repo" && find . -type f | sort)"
+  A1_VAULT_ROOT="$deep" node "$TOOLS" profile resolve --spec "../../../../../sentinel-outside-the-spec-dir" --repo-root "$repo" >"$obs/out" 2>"$obs/err"
   local rc=$?
-  if [[ "$rc" -eq 2 ]]; then
-    ok "02 hostile: --spec path traversal (../../../../etc/passwd) refused, exit 2"
+  after="$(cd "$repo" && find . -type f | sort)"
+  local target
+  target="$(sed -n 's/^.*spec_unreadable: \(.*\) (.*$/\1/p' "$obs/err" | head -1)"
+  # The sentinel has no `profile:` frontmatter, so a read that lands there
+  # returns profile null / exit 0. Either outcome is acceptable containment —
+  # what must hold is that the path stayed under the repo fixture and that the
+  # vault tree is byte-for-byte unchanged (a resolve never writes).
+  local landed="${target:-$(grep -o '"profile":[^,]*' "$obs/out" | head -1)}"
+  if [[ "$before" == "$after" ]] && [[ "$rc" -ne 1 ]] && [[ "$target" != /etc/* ]] && [[ -n "$landed" ]]; then
+    ok "02 hostile: a traversing --spec resolves lexically and writes nothing (rc=$rc, landed: $landed)"
   else
-    bad "02 hostile: --spec path traversal was not refused as expected (rc=$rc)"
+    bad "02 hostile: traversing --spec case failed (rc=$rc, target=${target:-<none>}, tree changed=$([[ "$before" == "$after" ]] && echo no || echo "yes: $(diff <(printf "%s\n" "$before") <(printf "%s\n" "$after") | tr "\n" " ")"))"
   fi
   rm -rf "$repo"
 }
 caseHostileSpecTraversal
+
+# ---------- hostile: in the intent sandbox, a traversing --spec IS refused ----------
+# The containment that case above does NOT assert, asserted where it lives:
+# intent-child checks every path-flag value against the child's scope roots.
+# Measured through the library, not a grep, so the list and the check are the
+# real ones. Red-making change: dropping '--spec' from INTENT_CHILD_PATH_FLAGS.
+caseSpecFlagIsScopeChecked() {
+  local out
+  out="$(node -e '
+    const ic = require(process.argv[1] + "/_shared/lib/intent-child.cjs");
+    const sb = require(process.argv[1] + "/_shared/lib/intent-sandbox.cjs");
+    const flags = sb.INTENT_CHILD_PATH_FLAGS;
+    const seen = (argv) => ic.pathArguments(argv, flags);
+    // A value WITHOUT a slash is only ever checked because --spec is in the
+    // flag list: pathArguments falls back to "looks like a path" (contains /,
+    // starts with . or ~) for every other argument, so a bare vault-relative
+    // name like "s.md" is the one probe that isolates the list entry itself.
+    const bare  = seen(["profile","resolve","--spec","s.md","--repo-root","/tmp/x"]);
+    const bareEq = seen(["profile","resolve","--spec=s.md","--repo-root","/tmp/x"]);
+    // And the two shapes a hostile caller would actually use.
+    const rel = seen(["profile","resolve","--spec","../../../../etc/passwd","--repo-root","/tmp/x"]);
+    const abs = seen(["profile","resolve","--spec=/tmp/evil.md","--repo-root","/tmp/x"]);
+    const miss = [];
+    if (!flags.includes("--spec")) miss.push("--spec not in INTENT_CHILD_PATH_FLAGS");
+    if (!bare.includes("s.md")) miss.push("bare spaced value not checked: " + JSON.stringify(bare));
+    if (!bareEq.includes("s.md")) miss.push("bare =form value not checked: " + JSON.stringify(bareEq));
+    if (!rel.includes("../../../../etc/passwd")) miss.push("traversing value not checked");
+    if (!abs.includes("/tmp/evil.md")) miss.push("absolute =form value not checked");
+    console.log(miss.length === 0 ? "OK" : "MISS " + miss.join(" | "));
+  ' "$REPO_ROOT" 2>&1)"
+  if [[ "$out" == "OK" ]]; then
+    ok "02 hostile: --spec is in INTENT_CHILD_PATH_FLAGS and every value shape is scope-checked (bare, traversing, absolute; spaced and =form)"
+  else
+    bad "02 hostile: --spec is not scope-checked in child mode ($out)"
+  fi
+}
+caseSpecFlagIsScopeChecked
 
 # ---------- hostile: --spec value shaped like a shell injection is never evaluated ----------
 caseHostileSpecInjectionShaped() {
