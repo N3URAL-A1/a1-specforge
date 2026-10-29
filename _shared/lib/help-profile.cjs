@@ -31,13 +31,16 @@ const PROFILE_HELP = `  a1-tools profile resolve [--profile <name>] [--spec <pat
                   or unsafe --spec path, oversized file, or internal error.
   a1-tools profile nfr-inject --spec <path>
                   Appends every uncovered item of the NIS2/KRITIS NFR catalogue
-                  (_shared/profiles/kritis/nfr-catalogue.md, 41 items) into the spec as an
-                  EARS-form FR-NFR-### entry, numbered after the highest existing FR-NFR. An item
-                  already covered (an existing FR tagged "(covers kritis-nfr:<ID>)", or an
-                  existing FR-NFR line whose source names <ID>) is skipped. A second run adds 0
-                  and leaves the file byte-identical (idempotent, tag-based dedup only).
-                  Exit 0 written (incl. 0 added) / 2 catalogue_invalid, unreadable catalogue, or
-                  unreadable/unsafe --spec path.
+                  (_shared/profiles/kritis/nfr-catalogue.md, 41 items) to the spec as ordinary
+                  EARS-form FR-### lines under "## Non-Functional Requirements (KRITIS profile)",
+                  placed after "## Functional Requirements" and numbered after the spec's
+                  highest FR-###. The catalogue id travels as "Source: kritis-nfr:<ID>". An item
+                  is skipped when that tag is already a source tag, or an existing FR carries
+                  "(covers kritis-nfr:<ID>)" (tag-based dedup only). Open thresholds ([X ms])
+                  become [NEEDS CLARIFICATION: ...]. A second run adds 0 and leaves the file
+                  byte-identical.
+                  Exit 0 written (incl. 0 added) / 2 catalogue_invalid, no Functional
+                  Requirements heading, or unreadable/unsafe --spec path.
   a1-tools profile threat-model-check --id <###-slug> --repo-root <dir> [--phase <spec-id>] [--json]
                   Proves docs/product/features/<id>/threat-model.md
                   (_shared/profiles/kritis/threat-model-template.md shape) covers all six STRIDE
