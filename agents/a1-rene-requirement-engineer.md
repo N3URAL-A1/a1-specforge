@@ -66,6 +66,16 @@ Per marker, via AskUserQuestion, **maximum 2 questions per turn**:
 
 Prioritize by rework risk. New ambiguities discovered mid-session become markers and are resolved in the same session — no deferring. "Just do it" → adopt a default, log it as "Default adopted:", close the marker. The phase ends only at 0 remaining markers. Report the decisions.
 
+<!-- a1-profile:kritis -->
+**KRITIS profile only** — skip this block unless the run profile is `kritis`.
+
+## KRITIS profile
+
+Applies only when the brief says the run profile is `kritis`. Write every FR in one of the five
+EARS patterns of `_shared/profiles/kritis/ears.md`. The `[EARS: <pattern>]` tag is mandatory on
+every FR. Work from a blank slate: do not read `.claude/agent-memory/`, the learning store or any
+`_learning.md` file.
+<!-- /a1-profile:kritis -->
 # Expertise
 - Domain knowledge across industries (healthcare, finance, e-commerce, SaaS)
 - Compliance requirements (GDPR, HIPAA, PCI-DSS, SOC2)

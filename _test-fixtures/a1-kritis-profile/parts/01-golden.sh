@@ -3,7 +3,8 @@
 # Three guards:
 #   G  the 12 CLI scenarios equal their goldens from GOLDEN_COMMIT (SC-002:
 #      no-profile behaviour of every touched CLI path stays byte-identical).
-#   I  the call-site inventory recomputes the 22-subcommand grep and asserts
+#   I  the call-site inventory recomputes the 29-subcommand grep (22 at plan
+#      time + the 7 `profile` call sites Wave 8 wires in) and asserts
 #      set equality plus the exact count 22 (= 11 covered + 11 excluded).
 #   P  every golden prompt file, stripped of `a1-profile:kritis` blocks,
 #      equals its golden copy (prompts.allowed-diff lists the one exception).
@@ -103,7 +104,10 @@ caseGMutSpecUpdateStatus
 
 # ---------- I: call-site inventory ----------
 caseI() {
-  local recomputed expected_count=22
+  # 22 at plan time; Wave 8 added 7 `profile` call sites (resolve, set,
+  # ears-check, nfr-inject, threat-model-check, simulate-roles,
+  # simulate-check). Any further growth is a finding, not a count to bump.
+  local recomputed expected_count=29
   recomputed="$(cd "$REPO_ROOT" && grep -rhoE "a1-tools\.cjs [a-z-]+ [a-z-]+" skills/a1-new-feature | sort -u)"
   local recomputed_count
   recomputed_count="$(printf '%s\n' "$recomputed" | grep -c .)"
@@ -131,16 +135,31 @@ caseI() {
       < <(comm -13 <(printf '%s\n' "$inv_subs") <(printf '%s\n' "$regrepped_sorted"))
   fi
 
-  # Every row must be covered:<x> or excluded:<x> — no row left undisposed.
+  # Every row must carry a disposition: covered:<scenario> (a golden exercises
+  # it), excluded:<reason> (outside spec 006's code_scope) or, for the 7 call
+  # sites Wave 8 wires in, profile:<fixture part> (a part of this very suite
+  # exercises it — these have no CLI golden because the profile did not exist
+  # at GOLDEN_COMMIT). No row may be left undisposed.
   local undisposed
-  undisposed="$(grep -v '^#' "$GOLDEN/inventory.txt" | grep . | grep -vcE '	(covered|excluded):')"
+  undisposed="$(grep -v '^#' "$GOLDEN/inventory.txt" | grep . | grep -vcE '	(covered|excluded|profile):')"
   if [[ "$undisposed" -eq 0 ]]; then
-    ok "I inventory disposition: every row is covered:<x> or excluded:<x>"
+    ok "I inventory disposition: every row is covered:<x>, excluded:<x> or profile:<x>"
   else
-    bad "I inventory disposition: $undisposed row(s) have neither covered: nor excluded:"
+    bad "I inventory disposition: $undisposed row(s) have none of covered:/excluded:/profile:"
   fi
 
-  # Exactly 11 covered + 11 excluded.
+  # Exactly 7 profile rows — the Wave 8 wiring, nothing more. This keeps the
+  # new category as tight as the 11+11 assertion below keeps the old ones.
+  local profile_count
+  profile_count="$(grep -c '	profile:' "$GOLDEN/inventory.txt")"
+  if [[ "$profile_count" -eq 7 ]]; then
+    ok "I inventory profile rows: exactly 7 (the Wave 8 profile wiring)"
+  else
+    bad "I inventory profile rows: got $profile_count, want 7"
+  fi
+
+  # Exactly 11 covered + 11 excluded — the 22 pre-profile rows. Deliberately
+  # unchanged by Wave 8: the profile rows carry profile: and are counted above.
   local covered_count excluded_count
   covered_count="$(grep -c '	covered:' "$GOLDEN/inventory.txt")"
   excluded_count="$(grep -c '	excluded:' "$GOLDEN/inventory.txt")"
