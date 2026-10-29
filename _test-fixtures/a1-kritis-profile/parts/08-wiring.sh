@@ -260,7 +260,11 @@ caseWireAlias
 # ---------- M: MIGRATION.md completeness ----------
 caseWireMigration() {
   local mig="$REPO_ROOT/_shared/profiles/kritis/MIGRATION.md" out rc
-  if [[ ! -f "$mig" ]]; then ok "M MIGRATION.md absent: guard skipped"; return; fi
+  # A missing MIGRATION.md is a finding, not a skip: Wave 1 writes it as the
+  # ONLY provenance of the retired SpecForge SKILL.md (2933 lines, not under
+  # git, replaced by the alias skill in Wave 7). A green "guard skipped" would
+  # hide exactly the loss this guard exists to catch.
+  if [[ ! -f "$mig" ]]; then bad "M MIGRATION.md is missing at _shared/profiles/kritis/MIGRATION.md (Wave 1 artefact, the only provenance of the retired SpecForge SKILL.md)"; return; fi
   out="$(node -e '
     const fs = require("fs"), path = require("path");
     const root = process.argv[2], dir = path.dirname(process.argv[1]);
