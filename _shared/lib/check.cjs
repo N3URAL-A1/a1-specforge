@@ -18,10 +18,43 @@
 // flat IDs (the convention everywhere in this repo) matching exactly as before.
 const FR_PATTERN = /\bFR-\d{3,}(?:-\d+)?\b/g;
 
+// A fenced code block is sample text, not requirement text. Plans and specs
+// quote tool output, example plans and parser behaviour inside ``` blocks;
+// 006-specforge-kritis-profile documents THIS parser there, printing
+// `"- **FR-012**: text" -> [ 'FR-012' ]`. Read raw, those sample ids became a
+// phantom FR and a false "FR-001 in two waves" on an otherwise clean plan.
+// Measured 2026-10-29 over all 37 plan/spec pairs in the vault: 15 files carry
+// FR ids inside fences, and exactly one pair changed verdict, so skipping
+// fences fixes the hole without moving any other project's gate result.
+//
+// Lines are BLANKED, never dropped: scanWaveSections reports heading problems
+// by line number, and a shorter body would misreport every line after the
+// first fence. CommonMark fences: three or more backticks or tildes, up to
+// three leading spaces, an optional info string; a closing fence must use the
+// same character and be at least as long, which is why a ~~~ inside a ```
+// block does not close it. An unclosed fence runs to the end of the file.
+const FENCE_RE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
+
+function stripFences(body) {
+  let marker = null; // the open fence's run, e.g. '```' or '~~~~'
+  return body.split('\n').map((line) => {
+    const m = line.match(FENCE_RE);
+    if (marker === null) {
+      if (m) { marker = m[1]; return ''; }
+      return line;
+    }
+    // Inside a block: only a same-character run of at least the opening
+    // length closes it, and a closing fence carries no info string.
+    if (m && m[1][0] === marker[0] && m[1].length >= marker.length && m[2].trim() === '') marker = null;
+    return '';
+  }).join('\n');
+}
+
 function extractSpecFRs(specBody) {
-  // Spec FR-IDs can appear anywhere in the body. Collect unique set.
+  // Spec FR-IDs can appear anywhere in the body EXCEPT a fenced block. Collect
+  // unique set.
   const set = new Set();
-  const matches = specBody.match(FR_PATTERN) || [];
+  const matches = stripFences(specBody).match(FR_PATTERN) || [];
   for (const m of matches) set.add(m);
   return set;
 }
@@ -48,7 +81,10 @@ function scanWaveSections(planBody) {
   const problems = [];
   const seen = new Set();
   let current = null;
-  planBody.split('\n').forEach((line, idx) => {
+  // Fenced lines are blanked first: an example plan quoted in a ``` block must
+  // not add a wave section, and its FR ids belong to no wave. Blanking keeps
+  // idx aligned with the real file so `problems[].line` stays usable.
+  stripFences(planBody).split('\n').forEach((line, idx) => {
     const h = line.match(WAVE_HEADING_RE);
     if (h) {
       current = { id: h[1], label: `Wave ${h[1]}`, lines: [] };
