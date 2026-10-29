@@ -50,7 +50,7 @@ function cmdProfile(sub, rest) {
     return;
   }
   if (sub === 'nfr-inject') {
-    require(path.join(__dirname, 'profile-nfr.cjs')).planInjection(rest);
+    require(path.join(__dirname, 'profile-nfr.cjs')).injectNfr(rest);
     return;
   }
   if (sub === 'threat-model-check') {

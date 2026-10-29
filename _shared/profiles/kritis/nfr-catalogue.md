@@ -22,6 +22,13 @@ the source, per the Standard wave contract item 10.
 | `source` | Primary-text articles only (NIS2 = Directive (EU) 2022/2555, GDPR = Regulation (EU) 2016/679). Empty means: no article was verified for this item. Empty is not "no legal basis". |
 | `question` | The question the item puts to a spec (SpecForge: "Frage an Spec"). |
 
+**NIS2 is a directive, not directly applicable law.** Every `NIS2 Art. …` reference here points at
+Directive (EU) 2022/2555 itself. What binds an entity is its member state's transposition — in
+Germany the NIS2UmsuCG / new BSIG — which may set different deadlines, a different scope of
+addressees and additional duties. Before this catalogue feeds a customer spec, check the article
+against the applicable national act, not only against the directive. GDPR references need no such
+step: a regulation applies directly.
+
 **Open thresholds.** A `[X ...]` placeholder in the `requirement (EARS)` and `baseline` cells
 (PER-01, PER-02, PER-03) marks a value the spec author must supply. The injector turns the
 placeholder into `[NEEDS CLARIFICATION: ...]`. No other item carries a placeholder.
@@ -47,20 +54,20 @@ placeholder into `[NEEDS CLARIFICATION: ...]`. No other item carries a placehold
 | SEC-07 | Security (SEC) | The system shall protect sessions with a timeout, session identifier rotation and secure cookie flags. | SpecForge baseline, not a legal minimum: timeout, rotation, secure flags | | Are session requirements documented? |
 | SEC-08 | Security (SEC) | The system shall protect its API with rate limiting, API key or OAuth authentication and a CORS policy. | SpecForge baseline, not a legal minimum: rate limiting, API keys/OAuth, CORS | | Are API security requirements defined? |
 | SEC-09 | Security (SEC) | The system shall scan for known vulnerabilities (CVE) weekly and remediate critical findings within 48 h. | SpecForge baseline, not a legal minimum: weekly CVE scan, critical findings fixed within 48 h | NIS2 Art. 21(2)(e) | Is the patch process described? |
-| SEC-10 | Security (SEC) | The system shall undergo a penetration test by an external provider every year. | SpecForge baseline, not a legal minimum: annual test by an external provider | | Is penetration testing planned? |
+| SEC-10 | Security (SEC) | The system shall undergo a penetration test by an external provider every year. | SpecForge baseline, not a legal minimum: annual test by an external provider | NIS2 Art. 21(2)(f); GDPR Art. 32(1)(d) | Is penetration testing planned? |
 | AUD-01 | Audit and logging (AUD) | The system shall log every write operation and every authentication event. | SpecForge baseline, not a legal minimum: all write operations and auth events | | Which events are logged? |
 | AUD-02 | Audit and logging (AUD) | The system shall retain logs for at least 90 days and security-event logs for at least 1 year. | SpecForge baseline, not a legal minimum: >= 90 days; >= 1 year for security events | | Is the retention period defined? |
 | AUD-03 | Audit and logging (AUD) | The system shall store logs tamper-proof (append-only or signed). | SpecForge baseline, not a legal minimum: tamper-proof (append-only, signing) | | Is log integrity ensured? |
 | AUD-04 | Audit and logging (AUD) | The system shall forward logs to a central SIEM. | SpecForge baseline, not a legal minimum: SIEM integration | | Are logs aggregated centrally? |
 | AUD-05 | Audit and logging (AUD) | The system shall record for every change the actor, the timestamp and the change. | SpecForge baseline, not a legal minimum: actor, timestamp, change | | Is the audit granularity defined? |
-| AUD-06 | Audit and logging (AUD) | The system shall support reporting a significant security incident with an early warning within 24 h and an incident notification within 72 h. | Primary text: early warning within 24 h, incident notification within 72 h (NIS2 Art. 23(4)) | NIS2 Art. 23(4) | Is the reporting process considered? |
+| AUD-06 | Audit and logging (AUD) | The system shall support reporting a significant security incident with an early warning within 24 h, an incident notification within 72 h and a final report within one month of that notification. | Primary text: early warning within 24 h, incident notification within 72 h, final report within 1 month of that notification (NIS2 Art. 23(4)(a),(b),(d)) | NIS2 Art. 23(4)(a),(b),(d) | Is the reporting process considered? |
 | PER-01 | Performance (PER) | The system shall answer critical operations with a p95 response time of at most [X ms]. | SpecForge baseline, not a legal minimum: p95 <= [X ms] for critical operations (open threshold) | | Are latency targets defined? |
 | PER-02 | Performance (PER) | The system shall sustain [X] requests per second under load. | SpecForge baseline, not a legal minimum: [X] requests/second under load (open threshold) | | Is the throughput specified? |
 | PER-03 | Performance (PER) | The system shall support [X] concurrent users. | SpecForge baseline, not a legal minimum: [X] concurrent users (open threshold) | | Is the concurrent-user count defined? |
 | PER-04 | Performance (PER) | The system shall scale horizontally or vertically, with a defined auto-scaling trigger. | SpecForge baseline, not a legal minimum: horizontal/vertical scaling, auto-scaling trigger | | Is scaling behaviour described? |
 | PER-05 | Performance (PER) | The system shall enforce a CPU, RAM and storage budget per service. | SpecForge baseline, not a legal minimum: CPU, RAM, storage budgets per service | | Are resource limits defined? |
 | DAT-01 | Data protection (DAT) | The system shall classify all processed data into data categories. | SpecForge baseline, not a legal minimum: classification of all processed data | | Which data categories are processed? |
-| DAT-02 | Data protection (DAT) | The system shall document a legal basis under GDPR Art. 6 for each processing purpose. | Primary text: a legal basis under Art. 6 GDPR per processing purpose | GDPR Art. 6 | Is the legal basis documented? |
+| DAT-02 | Data protection (DAT) | The system shall document a legal basis under GDPR Art. 6 for each processing purpose. | SpecForge baseline, not a legal minimum: documented legal basis per processing purpose | GDPR Art. 6, Art. 5(2) | Is the legal basis documented? |
 | DAT-03 | Data protection (DAT) | The system shall delete personal data automatically once its purpose is fulfilled. | SpecForge baseline, not a legal minimum: automatic deletion after purpose fulfilment | GDPR Art. 5(1)(e) | Are deletion periods defined? |
 | DAT-04 | Data protection (DAT) | The system shall collect only the personal data that is necessary for the purpose. | Primary text: data minimisation (GDPR Art. 5(1)(c)) | GDPR Art. 5(1)(c) | Is data minimisation observed? |
 | DAT-05 | Data protection (DAT) | The system shall support data subject requests for access, erasure and portability. | SpecForge baseline, not a legal minimum: access, erasure and portability implementable in the system | GDPR Art. 15, Art. 17, Art. 20 | Are data subject rights considered technically? |

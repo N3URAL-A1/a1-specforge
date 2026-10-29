@@ -152,10 +152,6 @@ function trimBlankTail(lines, from, to) {
  * `no_fr_section` when the spec has no `## Functional Requirements`.
  */
 function planInjection(specText, catalogue) {
-  if (Array.isArray(specText)) {
-    injectNfr(specText);
-    return undefined;
-  }
   const text = String(specText == null ? '' : specText);
   const covered = coveredIds(text);
   const todo = catalogue.filter((it) => !covered.has(it.id));
