@@ -17,7 +17,7 @@ const { XPROV_HELP } = require(path.join(LIB, 'help-xprov.cjs'));
 const { HELP } = require(path.join(LIB, 'help.cjs'));
 
 const INTENT_SUBS = ['validate', 'device', 'claim', 'reject', 'complete', 'run', 'tick', 'watch', 'list', 'schema', 'doctor', 'approve', 'install-agent', 'seal', 'post-update'];
-const XPROV_SUBS = ['normalize', 'gc', 'preflight', 'init-home', 'permit-check', 'permit', 'observe', 'snapshot', 'run', 'gate', 'load-check', 'wave-status', 'waive', 'allowlist', 'consent', 'scope', 'dispose'];
+const XPROV_SUBS = ['normalize', 'gc', 'preflight', 'init-home', 'permit-check', 'permit', 'handover-check', 'observe', 'snapshot', 'run', 'gate', 'load-check', 'wave-status', 'waive', 'allowlist', 'consent', 'scope', 'dispose'];
 const VAULT_SUBS = ['sync', 'status', 'lint', 'link-hub', 'writer'];
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\-]/g, '\\$&');
 const BLOCKS = { INTENT_HELP, SPEC_INIT_HELP, VAULT_HELP, XPROV_HELP };

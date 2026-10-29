@@ -56,6 +56,9 @@ const SUBCOMMANDS = Object.freeze({
   'init-home': Object.freeze({ module: 'xprov-preflight.cjs', fn: 'cmdXprovInitHome', wave: 4 }),
   'permit-check': Object.freeze({ module: 'xprov-permit.cjs', fn: 'cmdXprovPermitCheck', wave: 4 }),
   permit: Object.freeze({ module: 'xprov-permit.cjs', fn: 'cmdXprovPermit', wave: 4 }),
+  // Read-only host-boundary prediction (bug 2026-10-28-handover-xprov-owner-store): the state a
+  // FRESH host reaches for this repository, reported before a handover instead of at the merge.
+  'handover-check': Object.freeze({ module: 'xprov-permit.cjs', fn: 'cmdXprovHandoverCheck', wave: 4 }),
   observe: Object.freeze({ module: 'xprov-observe.cjs', fn: 'cmdXprovObserve', wave: 4 }),
   snapshot: Object.freeze({ module: 'xprov-snapshot.cjs', fn: 'cmdXprovSnapshot', wave: 5 }),
   run: Object.freeze({ module: 'xprov-run.cjs', fn: 'cmdXprovRun', wave: 5 }),
