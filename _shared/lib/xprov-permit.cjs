@@ -427,6 +427,13 @@ function cmdXprovPermit(args) {
 
 // The store directory as a human-readable label; the real path is $HOME-relative on each host.
 const STORE_LABEL = '~/.a1-xprov';
+// What the prediction assumes about the target host: a well-formed one, i.e. its $HOME equals
+// the OS user's home. permitCheck() returns home_mismatch before classify() ever runs (line ~177),
+// and that state is not in this table, so on a host where $HOME differs AND no .a1/xprov.json
+// exists the prediction says 'absent' / blocks_merge false while the host itself would reach
+// home_mismatch, which reinhardOnly() does not pass. Every other state predicts the blocking
+// verdict correctly; this is the one corner where the prediction is optimistic rather than
+// fail-safe. A host with a mismatched $HOME has a bigger problem than this handover.
 const TARGET_STATE_OF_FILE = Object.freeze({
   [ALLOWED]: STATES.PERMIT_MISMATCH, // store empty, file allowed → spec 014 FR-002
   [DENIED]: STATES.DENIAL_MISMATCH, // store empty, file denied → spec 012 FR-001

@@ -154,9 +154,12 @@ caseH7() {
 # --target-repo: then one of these arms prints a command instead of null.
 caseH8() {
   prep33
-  # a) shell metacharacters in decided_by, and a newline + payload in record
-  file33 denied 'robert; rm -rf /tmp/pwned' 2026-10-19 'record/x.md
- echo INJECTED'
+  # a) shell metacharacters in decided_by and in record, with NO control character anywhere:
+  # only validateBy/validateRecord can refuse this, never the post-join backstop. Measured
+  # (review 2026-10-29): with both validators stubbed out, the earlier payload — which carried a
+  # newline in `record` — still passed H8a because the backstop caught it, so the arm proved the
+  # backstop, not the validators it names. This payload fails only when a validator runs.
+  file33 denied 'robert; rm -rf /tmp/pwned' 2026-10-19 'record/x.md && echo INJECTED'
   hc33
   assert_json "H8a a crafted decided_by/record yields NO command (null), not a pasteable line" "$G_OUT" "JSON.stringify(j.owner_command)" "null"
   assert_json "H8a the state is still reported truthfully" "$G_OUT" "j.target_state" "denial_mismatch"
@@ -214,19 +217,29 @@ caseH9() {
   assert_json "H9b a clean absolute path is accepted" "$G_OUT" "j.target_repo" "/home/rob/claude-projects/a1-specforge"
   assert_json "H9b ... and nothing is reported as rejected" "$G_OUT" "JSON.stringify(j.target_repo_rejected)" "null"
   # c) the backstop must be STATELESS. C.LINE_BREAKERS_RE carries /g, so `.test()` on the shared
-  # regex alternates via lastIndex and would refuse only every SECOND hostile value — measured
-  # while hardening this. The guard therefore uses a local non-global regex. Red if it goes back
-  # to a /g regex: the second of these three identical calls starts printing a command.
-  # A literal newline, not  : `printf '\uXXXX'` is a bash-ism the CI shell may not share
-  # (CLAUDE.md "CI runs on GNU/Linux"), while a newline exercises the same code path.
-  local leaked=0 i
-  for i in 1 2 3; do
-    hc33 --target-repo '/tmp/x
-y'
-    [[ "$(json_get "$G_OUT" "JSON.stringify(j.owner_command)")" == "null" ]] || leaked=$((leaked + 1))
-  done
-  [[ "$leaked" -eq 0 ]] && ok "H9c the same hostile path is refused on every call (the backstop is stateless)" \
-    || bad "H9c $leaked of 3 identical hostile calls printed a command — the backstop is stateful (/g regex?)"
+  # regex alternates via lastIndex and refuses only every SECOND hostile value. Two things make
+  # this testable at all, and the first version of this case had neither (review 2026-10-29):
+  #   - the three calls must share ONE process. `hc33` spawns a fresh node each time, and
+  #     lastIndex is per-process, so three CLI runs can never show statefulness.
+  #   - the value must REACH the backstop. A newline is rejected by UNSAFE_PATH_RE
+  #     (it matches \s) long before the join, so it exercises the validator, not the backstop.
+  #     The reachable set is exactly C1 (U+0080-U+009F) and U+202A-202E / U+2066-2069: they
+  #     pass UNSAFE_PATH_RE and path.normalize, and only the post-join backstop catches them.
+  # Measured with the /g mutation applied in-process: null, BEFEHL, null — the second call leaks.
+  local probe; probe="$TMP33/h9c-probe.cjs"
+  cat >"$probe" <<'PROBE'
+const path = require('path');
+const m = require(path.resolve(process.argv[2], '_shared/lib/xprov-permit.cjs'));
+const out = [];
+for (let i = 0; i < 3; i++) {
+  out.push(m.handoverCheck({ repoRoot: process.argv[3], targetRepo: '/tmp/x‮y' }).owner_command);
+}
+process.stdout.write(JSON.stringify(out.map((c) => (c === null ? 'null' : 'command'))));
+PROBE
+  local h9c_out
+  h9c_out="$(node "$probe" "$TREE" "$PHASE_REPO" 2>"$TMP33/h9c-err.txt")"
+  assert_json "H9c three calls in ONE process all refuse the same hostile path (stateless backstop)" \
+    "$h9c_out" "JSON.stringify(j)" '["null","null","null"]'
   # d) the length cap and bare `/`, for symmetry with the other validators of the module
   local long; long="/$(node -e 'process.stdout.write("a".repeat(5000))')"
   hc33 --target-repo "$long"
