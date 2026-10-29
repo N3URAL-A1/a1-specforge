@@ -293,8 +293,9 @@ caseL1() {
 # macOS, rc=127), `sed -i <script>` (BSD takes the next word as the backup suffix: rc=1, file
 # unchanged), `date -d <str>` and `stat -c <fmt>` (illegal option). The portable forms
 # `sed -i.bak`, `sed -i ''`, `stat -f`, `date -j/-v` are not hit (L1 guards those as BSD-only).
-# Two post-filters: comment lines (as L1), and lines that start with a quote after
-# whitespace (a string literal in a data array, never a command).
+# Three post-filters, each anchored on the WHOLE line, never on its first character:
+# a whole-line comment (as L1), a whole-line string literal (an element of a data
+# array), and prose naming a duration with its unit.
 # Scans _test-fixtures/**/*.sh and bin/*.sh.
 # Red-making change: putting `timeout 5 <cmd>`, `sed -i 's/a/b/' f`, `date -d yesterday` or
 # `stat -c %s f` into any suite script. L1b-self is the matcher self-test: it must hit all
@@ -302,12 +303,16 @@ caseL1() {
 l1b_re() {
   # Assembled from pieces so this very file does not match.
   local pre='(^|[^_A-Za-z0-9-])' q="['\"]"
-  local sedre="${pre}se""d([[:space:]]+-[a-zA-Z]+)*[[:space:]]+-i[[:space:]]+([^[:space:]'\"]|${q}[^'\"[:space:]]|${q}${q}[^[:space:]])"
+  local sedre="${pre}se""d([[:space:]]+-[a-zA-Z]+)*[[:space:]]+(-i|--in-place)[[:space:]]+([^[:space:]'\"]|${q}[^'\"[:space:]]|${q}${q}[^[:space:]])"
   # GNU sed accepts the Perl classes \s \w \d \b inside an expression;
   # BSD sed does not, so the substitution matches nothing and a mutation
   # built on it silently never applies (fix gnu-only-fixture-idioms).
   local sedcls="${pre}se""d([[:space:]]+-[a-zA-Z][a-zA-Z.]*)*[[:space:]]+${q}[^'\"]*\\\\[sSwWdDbB]"
-  local tmore='(^|[;&|(]|&&|\|\||\$\(|(^|[[:space:]])(if|then|else|do|while|until|!))[[:space:]]*ti''meout[[:space:]]+(-[a-zA-Z-]+[[:space:]]+)*[0-9]'
+  # Same permissive prefix as date/stat below: a restrictive leader list missed
+  # `sudo`, `env X=1`, `command`, `xargs -0`, `{ ...; }`, a backtick and `eval '...'`
+  # (all measured rc=127 on macOS, which has no timeout binary at all).
+  # `[[:space:]=]` in the flag loop accepts `--kill-after=1`.
+  local tmore="${pre}ti""meout[[:space:]]+(-[a-zA-Z-]+[[:space:]=]+)*[0-9]"
   printf '%s' "$sedre|$sedcls|$tmore|${pre}da""te[[:space:]]+-d[[:space:]]|${pre}st""at[[:space:]]+-c[[:space:]]"
 }
 l1b_filter() {
@@ -321,7 +326,12 @@ l1b_filter() {
   local pos='^[^:]+:[0-9]+:[[:space:]]*'
   local com="${pos}#"
   local lit="${pos}\"[^\"]*\",?[[:space:]]*\$|${pos}'[^']*',?[[:space:]]*\$"
-  grep -vE "$com" | grep -vE "$lit" || true
+  # Prose, not an invocation: a duration with its unit ("ti''meout 2000 ms") and a
+  # number closing a string ("... done ti''meout 0\""). Measured on the real tree:
+  # 5 such lines, 0 real invocations, so this cannot mask the defect class.
+  local prose="ti""meout[[:space:]]+[0-9]+[[:space:]]+(ms|s|sec|secs|seconds|minute|minutes)([[:space:],.)]|\$)"
+  prose="$prose|ti""meout[[:space:]]+[0-9]+[\"']"
+  grep -vE "$com" | grep -vE "$lit" | grep -vE "$prose" || true
 }
 caseL1b() {
   local re bad_planted good_planted hits n total
@@ -340,7 +350,16 @@ x=$(st''at -c %Y f)
 "$out" = "$(se''d -i '"'"'s/a/b/'"'"' f)" && echo ok
 "$(ti''meout 5 node x)" > log
 se''d -E '"'"'s/^(\\s*)x/\\1y/'"'"' f
-se''d -i.bak "s/\\w+/y/" f'
+se''d -i.bak "s/\\w+/y/" f
+ti''meout --kill-after=1 5 foo
+ti''meout -k=1 5 foo
+{ ti''meout 5 foo; }
+sudo ti''meout 5 foo
+env FOO=1 ti''meout 5 foo
+command ti''meout 5 foo
+xargs -0 ti''meout 5 foo
+eval '"'"'ti''meout 5 foo'"'"'
+se''d --in-place '"'"'s/a/b/'"'"' f'
   good_planted='ok "L1b ... ti''meout 2000 ms ..."
 '"'"'Bash(ti''meout *)'"'"'
 se''d -i.bak '"'"'s/a/b/'"'"' f
@@ -351,11 +370,14 @@ st''at -f %z f
 da''te -v-1d +%F
 da''te -j -f %s 1 +%F
   # ti''meout 5 cmd in a comment
-  "ti''meout 5 cmd" in a data array
+  "ti''meout 5 cmd:::M5",
   '"'"'se''d -i s/a/b/ f'"'"',
 mytime''out 5 cmd
 se''d -E '"'"'s/^([[:space:]]*)x/\\1y/'"'"' f
-grep -E "\\s+" f'
+grep -E "\\s+" f
+  ok "B4 ... ti''meout 2000 ms, grace 500 ms -> both gone"
+if [[ "$x" == "yes none gone done ti''meout 0" ]]; then
+se''d --in-place=.bak '"'"'s/a/b/'"'"' f'
   total="$(printf '%s\n' "$bad_planted" | grep -c '')"
   n="$(printf '%s\n' "$bad_planted" | grep -HnE --label=p "$re" | l1b_filter | grep -c '' || true)"
   if [[ "$n" -eq "$total" ]]; then ok "L1b-self matcher hits all $total planted GNU-only lines"
