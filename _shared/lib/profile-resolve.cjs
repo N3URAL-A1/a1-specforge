@@ -48,6 +48,33 @@ function isSymlink(p) {
 }
 
 /**
+ * Fail-closed handling of a symlinked rung file (ADR section 3). The link is
+ * never trusted as a source of the profile value, but it must not let a
+ * declared profile silently vanish either: the target is only PEEKED at, with
+ * the rung's own declaration test, and a declaration (or an unreadable
+ * target) is an error naming the file. No declaration -> the rung is skipped
+ * and not reported as checked.
+ */
+function refuseSymlink(file, declares) {
+  let text;
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch (e) {
+    return { error: { code: 'rung_unreadable', file, reason: `symlinked and unreadable (${e.code || e.message})` } };
+  }
+  if (declares(text)) {
+    return { error: { code: 'rung_unreadable', file, reason: 'symlinked file declares a profile; refusing to follow a symlink' } };
+  }
+  return { profile: null, checked: false, skipped: true };
+}
+
+/** A read error other than ENOENT must not read as "no profile declared". */
+function readError(file, e) {
+  if (e && e.code === 'ENOENT') return { profile: null, checked: false };
+  return { error: { code: 'rung_unreadable', file, reason: (e && e.code) || (e && e.message) || 'read failed' } };
+}
+
+/**
  * Resolve the `index.json` rung: `{ profile, checked }` on success, or
  * `{ error }` when the file's raw text names a profile but cannot be parsed
  * (ADR section 3 / brief: "index_json_unreadable_with_profile").
@@ -57,13 +84,12 @@ function isSymlink(p) {
  */
 function resolveFromIndexJson(repoRoot) {
   const indexPath = path.join(repoRoot, 'docs', 'product', 'index.json');
-  if (!fs.existsSync(indexPath)) return { profile: null, checked: false };
-  if (isSymlink(indexPath)) return { profile: null, checked: false };
+  if (isSymlink(indexPath)) return refuseSymlink(indexPath, (t) => t.includes('"profile"'));
   let raw;
   try {
     raw = fs.readFileSync(indexPath, 'utf8');
-  } catch (_e) {
-    return { profile: null, checked: false };
+  } catch (e) {
+    return readError(indexPath, e);
   }
   let parsed;
   try {
@@ -122,13 +148,14 @@ function resolveFromSpec(specPath) {
  */
 function resolveFromConstitution(repoRoot) {
   const constPath = path.join(repoRoot, 'constitution.md');
-  if (!fs.existsSync(constPath)) return { profile: null, checked: false };
-  if (isSymlink(constPath)) return { profile: null, checked: false };
+  if (isSymlink(constPath)) {
+    return refuseSymlink(constPath, (t) => t.split('\n').some((l) => CONSTITUTION_MARKER_RE.test(l)));
+  }
   let content;
   try {
     content = fs.readFileSync(constPath, 'utf8');
-  } catch (_e) {
-    return { profile: null, checked: false };
+  } catch (e) {
+    return readError(constPath, e);
   }
   const lines = content.split('\n');
   for (const line of lines) {
@@ -163,6 +190,7 @@ function assertRepoRoot(repoRoot) {
 function rungErrorMessage(e) {
   if (e.code === 'index_json_unreadable_with_profile') return `index_json_unreadable_with_profile: ${e.file}`;
   if (e.code === 'spec_unreadable') return `spec_unreadable: ${e.file} (${e.reason})`;
+  if (e.code === 'rung_unreadable') return `rung_unreadable: ${e.file} (${e.reason})`;
   return `unknown profile value ${JSON.stringify(e.value)} in ${e.file}`;
 }
 
@@ -196,11 +224,12 @@ function resolveProfile(argv) {
   }
 
   for (const rung of FILE_RUNGS) {
-    sourcesChecked.push(rung.source);
     const result = rung.resolve(repoRoot, flags.spec);
     if (result.error) {
       internalExit(rungErrorMessage(result.error));
     }
+    // A rung that was refused (symlink) was not read: do not report it.
+    if (!result.skipped) sourcesChecked.push(rung.source);
     if (result.profile) {
       emit({ profile: result.profile, source: rung.source, isolation: 'blank_slate', sources_checked: sourcesChecked }, 0);
       return;

@@ -471,3 +471,76 @@ caseHostileSpecSymlink() {
   rm -rf "$repo"
 }
 caseHostileSpecSymlink
+
+# ---------- fail-closed rung files (review M4): a declared kritis must never read as null ----------
+# resolve_rc <repo> -> sets RC, OUT, ERR for a resolve with no flag/spec.
+resolve_rc() {
+  OUT="$(node "$TOOLS" profile resolve --repo-root "$1" 2>"$1/err")"
+  RC=$?
+  ERR="$(cat "$1/err")"
+}
+
+caseSymlinkedIndexJsonDeclaring() {
+  local repo
+  r_repo repo "w2-m4-idxlink"
+  printf '{"project":{"profile":"kritis"}}\n' >"$repo/real-index.json"
+  ln -s "$repo/real-index.json" "$repo/docs/product/index.json"
+  resolve_rc "$repo"
+  if [[ "$RC" -eq 2 && "$ERR" == *"docs/product/index.json"* && "$OUT" != *kritis* ]]; then
+    ok "02 M4: symlinked index.json declaring kritis -> exit 2 naming the file (not null/0)"
+  else
+    bad "02 M4: symlinked index.json declaring kritis gave rc=$RC out=[$OUT] err=[$ERR]"
+  fi
+}
+caseSymlinkedIndexJsonDeclaring
+
+caseSymlinkedConstitutionDeclaring() {
+  local repo
+  r_repo repo "w2-m4-conlink"
+  printf 'a1-profile: kritis\n' >"$repo/real-constitution.md"
+  ln -s "$repo/real-constitution.md" "$repo/constitution.md"
+  resolve_rc "$repo"
+  if [[ "$RC" -eq 2 && "$ERR" == *"constitution.md"* && "$OUT" != *kritis* ]]; then
+    ok "02 M4: symlinked constitution.md with the marker -> exit 2 naming the file"
+  else
+    bad "02 M4: symlinked constitution.md gave rc=$RC out=[$OUT] err=[$ERR]"
+  fi
+}
+caseSymlinkedConstitutionDeclaring
+
+caseSymlinkedRungsNotDeclaring() {
+  local repo
+  r_repo repo "w2-m4-nodecl"
+  printf '{"project":{}}\n' >"$repo/real-index.json"
+  ln -s "$repo/real-index.json" "$repo/docs/product/index.json"
+  printf 'no marker here\n' >"$repo/real-constitution.md"
+  ln -s "$repo/real-constitution.md" "$repo/constitution.md"
+  resolve_rc "$repo"
+  if [[ "$RC" -eq 0 && "$OUT" == '{"profile":null,"source":null,"isolation":null,"sources_checked":["spec"]}' ]]; then
+    ok "02 M4: symlinked non-declaring rungs are skipped and NOT listed in sources_checked"
+  else
+    bad "02 M4: non-declaring symlinked rungs gave rc=$RC out=[$OUT]"
+  fi
+}
+caseSymlinkedRungsNotDeclaring
+
+caseUnreadableRungFiles() {
+  local repo f
+  if [[ "$(id -u)" -eq 0 ]]; then
+    ok "02 M4: unreadable-file cases skipped (running as root, chmod 000 is not enforced)"
+    return
+  fi
+  for f in docs/product/index.json constitution.md; do
+    r_repo repo "w2-m4-unread"
+    if [[ "$f" == constitution.md ]]; then printf 'a1-profile: kritis\n' >"$repo/$f"; else printf '{"project":{"profile":"kritis"}}\n' >"$repo/$f"; fi
+    chmod 000 "$repo/$f"
+    resolve_rc "$repo"
+    chmod 600 "$repo/$f"
+    if [[ "$RC" -eq 2 && "$ERR" == *"$f"* && "$OUT" != *kritis* ]]; then
+      ok "02 M4: unreadable $f -> exit 2 naming the file"
+    else
+      bad "02 M4: unreadable $f gave rc=$RC out=[$OUT] err=[$ERR]"
+    fi
+  done
+}
+caseUnreadableRungFiles
