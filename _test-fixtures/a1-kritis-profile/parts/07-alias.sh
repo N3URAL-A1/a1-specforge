@@ -282,7 +282,10 @@ caseInstallerMutationBakInsideSkills() {
     bad "I-mut bak-inside-skills: anchor line not found in installer (mutation cannot be applied — report, do not skip)"
     return
   fi
-  sed -i.bak 's#ARCHIVE_DIR="\$HOME/\.claude/skills-archive"#ARCHIVE_DIR="$HOME/.claude/skills"#' \
+  # The mutation also removes the archive-inside-skills guard (S8), or the
+  # guard would refuse the mutated path and mask the original red proof.
+  sed -i.bak -e 's#ARCHIVE_DIR="\$HOME/\.claude/skills-archive"#ARCHIVE_DIR="$HOME/.claude/skills"#' \
+    -e '/^# BEGIN archive-inside-skills guard$/,/^# END archive-inside-skills guard$/d' \
     "$work/mutrepo/bin/install-specforge-alias.sh" && rm -f "$work/mutrepo/bin/install-specforge-alias.sh.bak"
   seedOldSkill "$work/home"
   HOME="$work/home" bash "$work/mutrepo/bin/install-specforge-alias.sh" --apply >"$work/out" 2>"$work/err"
@@ -440,3 +443,41 @@ caseTriggerMutationSubstring() {
   fi
 }
 caseTriggerMutationSubstring
+
+# ---------- I (review S8): a skills-archive that leads back into skills/ is refused ----------
+caseInstallerArchiveSymlinkIntoSkills() {
+  local work rc inside
+  mk_workdir work i07-archsym
+  seedOldSkill "$work/home"
+  ln -s "$work/home/.claude/skills" "$work/home/.claude/skills-archive"
+  HOME="$work/home" bash "$INSTALLER" --apply --expect-sha "$REAL_SHA" >"$work/out" 2>"$work/err"
+  rc=$?
+  inside="$(find "$work/home/.claude/skills" -mindepth 1 -maxdepth 1 ! -name specforge | grep -c .)"
+  if [[ "$rc" -eq 1 && "$inside" == "0" ]] && grep -qi 'archive dir.*symlink' "$work/err" && [[ -d "$work/home/.claude/skills/specforge" && ! -L "$work/home/.claude/skills/specforge" ]]; then
+    ok "I archive-symlink: skills-archive -> skills is refused, exit 1, named, nothing moved"
+  else
+    bad "I archive-symlink: rc=$rc inside=$inside err=[$(cat "$work/err")]"
+  fi
+}
+caseInstallerArchiveSymlinkIntoSkills
+
+caseInstallerExpectShaNoValue() {
+  local work rc
+  mk_workdir work i07-shanoval
+  seedOldSkill "$work/home"
+  HOME="$work/home" bash "$INSTALLER" --apply --expect-sha >"$work/out" 2>"$work/err"
+  rc=$?
+  if [[ "$rc" -eq 1 ]] && grep -q -- '--expect-sha needs a sha256 value' "$work/err" && [[ -d "$work/home/.claude/skills/specforge" && ! -L "$work/home/.claude/skills/specforge" ]]; then
+    ok "I expect-sha: --expect-sha without a value is a named usage error, exit 1, nothing changed"
+  else
+    bad "I expect-sha: rc=$rc err=[$(cat "$work/err")]"
+  fi
+  HOME="$work/home" bash "$INSTALLER" --expect-sha --apply >"$work/out" 2>"$work/err"
+  rc=$?
+  if [[ "$rc" -eq 1 ]] && grep -q -- '--expect-sha needs a sha256 value' "$work/err"; then
+    ok "I expect-sha: a following flag is not taken as the value"
+  else
+    bad "I expect-sha: '--expect-sha --apply' rc=$rc err=[$(cat "$work/err")]"
+  fi
+}
+caseInstallerExpectShaNoValue

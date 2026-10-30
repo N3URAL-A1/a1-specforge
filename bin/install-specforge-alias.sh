@@ -38,7 +38,12 @@ EXPECT_SHA="$DEFAULT_SHA"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --apply) APPLY=1; shift ;;
-    --expect-sha) EXPECT_SHA="${2:-}"; shift 2 ;;
+    --expect-sha)
+      if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == --* ]]; then
+        echo "install-specforge-alias: --expect-sha needs a sha256 value (usage: --expect-sha <sha256>)" >&2
+        exit 1
+      fi
+      EXPECT_SHA="$2"; shift 2 ;;
     *) echo "install-specforge-alias: unknown argument: $1" >&2; exit 1 ;;
   esac
 done
@@ -115,6 +120,27 @@ if [[ "$actual_sha" != "$EXPECT_SHA" ]]; then
   echo "  actual:   $actual_sha" >&2
   exit 1
 fi
+
+# BEGIN archive-inside-skills guard
+# The archive must live OUTSIDE the skills tree, or the retired skill is still
+# discoverable. A symlinked skills-archive can quietly point back into skills/,
+# so refuse a symlink outright and compare real paths for everything else.
+if [[ -L "$ARCHIVE_DIR" ]]; then
+  echo "install-specforge-alias: archive dir $ARCHIVE_DIR is a symlink — refusing (it could point back into $SKILLS_DIR)" >&2
+  exit 1
+fi
+skills_real="$(cd "$SKILLS_DIR" && pwd -P)"
+archive_parent_real="$(cd "$(dirname "$ARCHIVE_DIR")" 2>/dev/null && pwd -P)" || archive_parent_real=""
+if [[ -z "$archive_parent_real" ]]; then
+  echo "install-specforge-alias: parent of archive dir $ARCHIVE_DIR is not a directory — refusing" >&2
+  exit 1
+fi
+archive_real="$archive_parent_real/$(basename "$ARCHIVE_DIR")"
+if [[ "$archive_real" == "$skills_real" || "$archive_real" == "$skills_real"/* ]]; then
+  echo "install-specforge-alias: archive dir $ARCHIVE_DIR resolves inside $SKILLS_DIR ($archive_real) — refusing" >&2
+  exit 1
+fi
+# END archive-inside-skills guard
 
 today="$(date -u +%Y-%m-%d)"
 ARCHIVE_TARGET="$ARCHIVE_DIR/specforge-$today"
