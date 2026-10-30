@@ -358,7 +358,7 @@ caseHostileSpecTraversal() {
   r_repo repo "w2-hspec"
   # stdout/stderr go OUTSIDE the observed tree, or the case flags its own
   # redirection files as a side effect (measured: "tree changed: ./err ./out").
-  obs="$(mktemp -d)"
+  mk_workdir obs "w2-hspec-obs"
   # 4 levels below the vault root, so `../../../../..` escapes by one step.
   vault="$repo/vault-h"
   deep="$vault/a/b/c/d" && mkdir -p "$deep"
