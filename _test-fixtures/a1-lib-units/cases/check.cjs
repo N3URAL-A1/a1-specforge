@@ -122,16 +122,23 @@ check('C8 no ref in prose without an id', C.extractWaveRefs('the next wave of wo
 }
 
 // C10 — fence mechanics: tildes, more than three marks, an info string, and an
-// unclosed fence (everything after it is code, not requirements). A fence may
-// be indented inside a list item. An inline single backtick is NOT a fence.
+// unclosed fence (read as plain text, see C12). A fence may be indented inside
+// a list item. An inline single backtick is NOT a fence.
 {
   eq('C10 tilde fence', sorted(C.extractSpecFRs('FR-001\n~~~\nFR-099\n~~~\n')), ['FR-001']);
   eq('C10 four backticks', sorted(C.extractSpecFRs('FR-001\n````\nFR-099\n````\n')), ['FR-001']);
   eq('C10 info string', sorted(C.extractSpecFRs('FR-001\n```js\nFR-099\n```\n')), ['FR-001']);
-  eq('C10 unclosed fence swallows the rest', sorted(C.extractSpecFRs('FR-001\n```\nFR-099\nFR-098\n')), ['FR-001']);
+  eq('C10 unclosed fence is read as text', sorted(C.extractSpecFRs('FR-001\n```\nFR-099\nFR-098\n')), ['FR-001', 'FR-098', 'FR-099']);
   eq('C10 indented fence in a list item', sorted(C.extractSpecFRs('- FR-001\n  ```\n  FR-099\n  ```\n')), ['FR-001']);
   eq('C10 inline backticks are not a fence', sorted(C.extractSpecFRs('`FR-001` and FR-002')), ['FR-001', 'FR-002']);
   eq('C10 a tilde fence does not close a backtick fence', sorted(C.extractSpecFRs('FR-001\n```\nFR-099\n~~~\nFR-098\n```\nFR-003')), ['FR-001', 'FR-003']);
+  // Negative directions: each pins one clause of the closing rule or the opener.
+  eq('C10 a shorter run does not close a longer fence', sorted(C.extractSpecFRs('FR-001\n````\nFR-099\n```\nFR-098\n````\nFR-003')), ['FR-001', 'FR-003']);
+  eq('C10 a closer with an info string does not close', sorted(C.extractSpecFRs('FR-001\n```\nFR-099\n```js\nFR-098\n```\nFR-003')), ['FR-001', 'FR-003']);
+  eq('C10 a backtick in a backtick info string is inline code', sorted(C.extractSpecFRs('```FR-001``` and FR-002\nFR-003\n```\n')), ['FR-001', 'FR-002', 'FR-003']);
+  eq('C10 a tilde info string may hold a backtick', sorted(C.extractSpecFRs('FR-001\n~~~ a`b\nFR-099\n~~~\n')), ['FR-001']);
+  eq('C10 CRLF fence', sorted(C.extractSpecFRs('FR-001\r\n```\r\nFR-099\r\n```\r\nFR-002')), ['FR-001', 'FR-002']);
+  eq('C10 LF opener, CRLF closer', sorted(C.extractSpecFRs('FR-001\n```js\nFR-099\n```\r\nFR-002')), ['FR-001', 'FR-002']);
 }
 
 // C11 — a wave heading inside a fenced block is not a wave heading. A plan that
@@ -149,5 +156,15 @@ check('C8 no ref in prose without an id', C.extractWaveRefs('the next wave of wo
   eq('C11 no heading problem is reported for a fenced heading', C.scanWaveSections(plan).problems, []);
 }
 
+// C12 — a forgotten closer must not hide requirements. Review of 7715ac9: with
+// an unclosed fence running to the end of the file, FR-002 vanished from the
+// spec, the plan below (FR-001 only) passed check #9, and on main the same
+// input failed with FR-002 missing. Red-making change: an unclosed fence
+// blanking its tail again.
+{
+  const spec = 'FR-001 login\n```\nexample\n\nFR-002 must audit-log';
+  const d = C.diffFRCoverage(C.extractSpecFRs(spec), C.extractWaveFRs('## Wave 1\ncovers FR-001'));
+  eq('C12 the id after an unclosed fence is still missing', d.missingInPlan, ['FR-002']);
+}
 
 done();

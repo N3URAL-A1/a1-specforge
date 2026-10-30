@@ -98,7 +98,9 @@ Fenced code blocks are skipped since 2026-10-29: a plan that quoted this
 parser's own sample output produced a phantom FR and a false "FR in two waves"
 on an otherwise clean plan. So a token inside ``` is already invisible to the
 gate — but where the sentence is prose, rewriting the prose is the better fix
-than fencing it.
+than fencing it. Only a CLOSED fence is skipped: a fence without its closing
+line is read as plain text, so a forgotten closer shows up as missing or
+phantom FRs instead of silently hiding the rest of the document.
 
 ### Exit 2 — ERROR (setup)
 
