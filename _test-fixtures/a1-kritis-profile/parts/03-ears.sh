@@ -309,4 +309,26 @@ caseUnparsedProseAndFences() {
   fi
   rm -rf "$work"
 }
+
+# ---------- E5c (final review MINOR-1): wrapped FR lines stay findings ----------
+# A blockquote, a task box, backticks and italics around the id. E5b's
+# "id opens the line" rule first let these four slip through silently
+# (checked 1, exit 0); at 592c56d they were no_tag findings.
+caseUnparsedWrappedShapes() {
+  local work out err rc checked no_tag
+  mk_workdir work "w3e-wrapped"
+  out="$work/out.json"; err="$work/err.txt"
+  A1_VAULT_ROOT="$work" node "$REPO_ROOT/_shared/a1-tools.cjs" profile ears-check \
+    --spec "$EARS_FX/unparsed-wrapped-shapes.md" --json >"$out" 2>"$err"
+  rc=$?
+  checked="$(node -e "console.log(JSON.parse(require('fs').readFileSync('$out','utf8')).checked)" 2>/dev/null)"
+  no_tag="$(node -e "console.log(JSON.parse(require('fs').readFileSync('$out','utf8')).findings.filter(f=>f.code==='no_tag').map(f=>f.id).join(','))" 2>/dev/null)"
+  if [[ "$rc" -eq 1 && "$checked" == "5" && "$no_tag" == "FR-002,FR-003,FR-004,FR-005" ]]; then
+    ok "E5c wrapped shapes: exit 1, checked 5, no_tag on FR-002..FR-005"
+  else
+    bad "E5c wrapped shapes: exit=$rc checked=$checked no_tag=[$no_tag] (want 1, 5, FR-002,FR-003,FR-004,FR-005)"
+  fi
+  rm -rf "$work"
+}
 caseUnparsedProseAndFences
+caseUnparsedWrappedShapes

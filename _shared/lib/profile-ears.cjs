@@ -98,8 +98,11 @@ const TABLE_ROW_RE = /^\s*\|/;
 // `1.`, `1)`) and optional bold. Used to catch FR lines written in a shape no
 // reader above understands, so they are never skipped silently. An id later in
 // the line is prose (`Notes: FR-010 from spec 005 ...`), not a requirement
-// (re-review R2: those were flagged as no_tag and blocked Gate 4.5).
-const LEAD_FR_ID_RE = /^\s*(?:(?:[-*+]|\d+[.)])\s+)?(?:\*\*)?(FR(?:-NFR)?-\d{3,}(?:-\d+)?)\b/;
+// (re-review R2: those were flagged as no_tag and blocked Gate 4.5). The
+// prefix also admits blockquote markers, a task box and a backtick, `*` or
+// `_` wrapper, so `> - FR-002`, `- [ ] FR-002`, ``- `FR-002` `` and
+// `- *FR-002*` stay findings (final review MINOR-1).
+const LEAD_FR_ID_RE = /^\s*(?:>\s*)*(?:(?:[-*+]|\d+[.)])\s+)?(?:\[[ xX]\]\s+)?(?:\*\*|[*_`])?(FR(?:-NFR)?-\d{3,}(?:-\d+)?)\b/;
 // CommonMark fence opener/closer, same rule as _shared/lib/check.cjs: a
 // backtick info string holds no backtick, a trailing \r is tolerated.
 const FENCE_RE = /^ {0,3}(?:(`{3,})([^`\r]*)|(~{3,})([^\r]*))\r?$/;
