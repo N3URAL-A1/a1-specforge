@@ -263,3 +263,26 @@ caseNodeCheck() {
   fi
 }
 caseNodeCheck
+
+# ---------- E5 (review M3): FR lines in unparsed shapes are findings, never skipped ----------
+# Four distinct FR ids, three of them in shapes no reader understands. The old
+# parser reported checked=1 / 0 findings / exit 0. Now every distinct id is
+# checked and the three unreadable ones are no_tag findings.
+caseUnparsedShapes() {
+  local work out err rc checked ids no_tag distinct
+  mk_workdir work "w3e-unparsed"
+  out="$work/out.json"; err="$work/err.txt"
+  A1_VAULT_ROOT="$work" node "$REPO_ROOT/_shared/a1-tools.cjs" profile ears-check \
+    --spec "$EARS_FX/unparsed-shapes.md" --json >"$out" 2>"$err"
+  rc=$?
+  distinct="$(grep -oE '\bFR-[0-9]{3,}\b' "$EARS_FX/unparsed-shapes.md" | sort -u | grep -c .)"
+  checked="$(node -e "console.log(JSON.parse(require('fs').readFileSync('$out','utf8')).checked)" 2>/dev/null)"
+  no_tag="$(node -e "console.log(JSON.parse(require('fs').readFileSync('$out','utf8')).findings.filter(f=>f.code==='no_tag').map(f=>f.id).join(','))" 2>/dev/null)"
+  if [[ "$rc" -eq 1 && "$checked" == "$distinct" && "$no_tag" == "FR-002,FR-003,FR-004" ]]; then
+    ok "E5 unparsed shapes: exit 1, checked == $distinct distinct FR ids, no_tag on FR-002,FR-003,FR-004"
+  else
+    bad "E5 unparsed shapes: exit=$rc checked=$checked (distinct=$distinct) no_tag=[$no_tag]"
+  fi
+  rm -rf "$work"
+}
+caseUnparsedShapes

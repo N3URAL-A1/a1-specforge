@@ -94,6 +94,10 @@ const BULLET_RE = new RegExp(`^-\\s+\\*\\*(${FR_ID})\\*\\*:?\\s*(.*)$`);
 const BARE_RE = new RegExp(`^\\*\\*(${FR_ID})\\*\\*\\s*[:—-]?\\s*(.*)$`);
 const HEADING_RE = new RegExp(`^#{3,4}\\s+(${FR_ID})\\b.*$`);
 const TABLE_ROW_RE = /^\s*\|/;
+// Any FR id on any line (same shape as _shared/lib/check.cjs FR_PATTERN, plus
+// the NFR infix this checker already accepts). Used to catch FR lines written
+// in a shape no reader above understands, so they are never skipped silently.
+const ANY_FR_ID_RE = /\bFR(?:-NFR)?-\d{3,}(?:-\d+)?\b/g;
 
 /** True while `bodyLines[j]` continues a lazy (flush-left) paragraph: not
  * blank, not a new heading/bullet/table row. Shared by the bare-`**FR-NNN**`
@@ -149,11 +153,29 @@ function readHeadingEntry(bodyLines, i, m) {
   return { id: m[1], text: parts.join(' ').trim(), line: i + 1, next };
 }
 
+/** Entries for FR ids found on lines no shape reader consumed (e.g.
+ * `- FR-002: ...`, `* **FR-003**: ...`, `1. **FR-004** ...`). Each becomes an
+ * entry flagged `unparsedShape`, which classifyEntry turns into a finding. */
+function collectUnparsedIds(bodyLines, consumed, seenIds) {
+  const extra = [];
+  bodyLines.forEach((raw, idx) => {
+    if (consumed.has(idx) || TABLE_ROW_RE.test(raw)) return;
+    for (const id of raw.match(ANY_FR_ID_RE) || []) {
+      if (seenIds.has(id)) continue;
+      seenIds.add(id);
+      extra.push({ id, text: raw.trim(), line: idx + 1, unparsedShape: true });
+    }
+  });
+  return extra;
+}
+
 /** Parse one section's body lines into FR entries: { id, text, line }.
  * Table rows are ignored outright. See the three shape readers above for
- * how each entry's body is assembled. */
+ * how each entry's body is assembled; any FR id left on a line they did not
+ * consume is returned as an `unparsedShape` entry (never silently dropped). */
 function parseSection(bodyLines) {
   const entries = [];
+  const consumed = new Set();
   let i = 0;
   while (i < bodyLines.length) {
     const raw = bodyLines[i];
@@ -170,12 +192,14 @@ function parseSection(bodyLines) {
 
     if (result) {
       entries.push({ id: result.id, text: result.text, line: result.line });
+      for (let k = i; k < result.next; k += 1) consumed.add(k);
       i = result.next;
       continue;
     }
     i += 1;
   }
-  return entries;
+  const seenIds = new Set(entries.map((e) => e.id));
+  return [...entries, ...collectUnparsedIds(bodyLines, consumed, seenIds)];
 }
 
 function countShall(text) {
@@ -196,6 +220,9 @@ function findVagueTerms(text) {
  * that applies, or null when the entry passes. */
 function classifyEntry(entry) {
   const { id, text: reqText, line } = entry;
+  if (entry.unparsedShape) {
+    return { id, code: 'no_tag', line, message: `${id} is written in a shape the checker does not read (use "- **${id}**: ..."); it cannot be verified` };
+  }
   const tagM = reqText.match(TAG_RE);
 
   if (!tagM) {
