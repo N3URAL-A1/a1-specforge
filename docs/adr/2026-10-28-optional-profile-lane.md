@@ -14,6 +14,8 @@ Every profile addition to a prompt file sits between `<!-- a1-profile:kritis -->
 
 This turns FR-008 ("byte-identical without the profile") from a promise into a measurement. It is already built and green: suite `_test-fixtures/a1-kritis-profile/run-tests.sh` reports 35 passed / 0 failed, and a line inserted outside a block was verified to turn the prompt-golden case red. The stripper itself fails closed — an unbalanced, nested or unguarded block exits 2 and strips nothing, so a malformed marker can never produce a passing comparison.
 
+Amendment 2026-10-30 (approved by Robert in the PR review of spec 006, spec FR-008 amended): the `profile resolve` step is the one sanctioned unguarded line. It decides the run profile, so it cannot sit inside a block whose guard says "skip unless kritis" — there it was unreachable without `--profile`, and FR-001's auto-enable from `index.json` or the constitution marker never fired. It is read-only, prints `profile: null` without a declaration, and stops the run only on a broken or unreadable declaration (§3). `_test-fixtures/a1-kritis-profile/golden/prompts.allowed-diff` is the enforced register of every line outside a block (today: the German alias line and the resolve line with its blank separator); the prompt-golden case compares against it, so any other unguarded edit stays red.
+
 ### 3. Fail-closed resolution with a fixed precedence
 Precedence, resolved per run and never cached: **flag > spec frontmatter > `index.json` > constitution marker**. With no source the result is `profile: null`, exit 0, repo tree hash unchanged.
 
@@ -42,7 +44,7 @@ The source skill is not under git. Once the alias replaces it, the only provenan
 | **Resolve the profile from heuristics** (SpecForge-shaped constitution, folder names, keywords) | Guessing a regulated mode is both directions wrong: a false negative drops the evidence silently, a false positive imposes it. Only an explicit declaration enables the lane. |
 
 ## Consequences
-+ "Unchanged without the profile" is a byte comparison against the base commit, not a claim — and a prompt edit outside a guarded block is CI-red.
++ "Unchanged without the profile" is a byte comparison against the base commit, not a claim — and a prompt edit outside a guarded block is CI-red unless it is listed in `prompts.allowed-diff` (see the §2 amendment).
 + A typo in a profile declaration stops the run instead of quietly producing an unregulated spec.
 + One spec format, one set of gates, one learning loop; the KRITIS lane is data plus guarded prose, so a1 changes do not have to be ported twice.
 − Prompt files carry marker comments and a repeated guard sentence. That is visible noise in exchange for a measurable baseline, and it is the only way the strip-and-compare test can exist.
