@@ -544,3 +544,85 @@ caseUnreadableRungFiles() {
   done
 }
 caseUnreadableRungFiles
+
+# ---------- hostile rung files (review R1): never read a device, FIFO or huge file ----------
+# Every case runs under a 10 s watchdog: the defect was an unbounded read (28 GB RSS).
+# Portable on purpose: macOS has no GNU timeout binary (a1-vault-fallback L1b), so the
+# child runs in the background and only its own PID is killed. RC=124 marks a hang.
+resolve_rc_t() {
+  local pid waited=0
+  node "$TOOLS" profile resolve --repo-root "$1" >"$1/out" 2>"$1/err" &
+  pid=$!
+  while kill -0 "$pid" 2>/dev/null && [[ $waited -lt 100 ]]; do
+    sleep 0.1
+    waited=$((waited + 1))
+  done
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -9 "$pid" 2>/dev/null
+    wait "$pid" 2>/dev/null
+    RC=124
+  else
+    wait "$pid"
+    RC=$?
+  fi
+  OUT="$(cat "$1/out")"
+  ERR="$(cat "$1/err")"
+}
+
+caseRungDevZeroSymlink() {
+  local repo f
+  for f in docs/product/index.json constitution.md; do
+    r_repo repo "w2-r1-zero"
+    ln -s /dev/zero "$repo/$f"
+    resolve_rc_t "$repo"
+    if [[ "$RC" -eq 2 && "$ERR" == *"$f"* && "$OUT" != *kritis* ]]; then
+      ok "02 R1: $f -> /dev/zero returns promptly, exit 2 naming the file"
+    else
+      bad "02 R1: $f -> /dev/zero gave rc=$RC (124 = hang) out=[$OUT] err=[$ERR]"
+    fi
+  done
+}
+caseRungDevZeroSymlink
+
+caseRungFifo() {
+  local repo f
+  for f in docs/product/index.json constitution.md; do
+    r_repo repo "w2-r1-fifo"
+    mkfifo "$repo/$f"
+    resolve_rc_t "$repo"
+    if [[ "$RC" -eq 2 && "$ERR" == *"$f"* ]]; then
+      ok "02 R1: FIFO as $f returns promptly, exit 2 naming the file"
+    else
+      bad "02 R1: FIFO as $f gave rc=$RC (124 = hang) err=[$ERR]"
+    fi
+  done
+}
+caseRungFifo
+
+caseRungOversized() {
+  local repo
+  r_repo repo "w2-r1-big"
+  head -c 600000 /dev/zero | tr '\0' ' ' >"$repo/constitution.md"
+  resolve_rc_t "$repo"
+  if [[ "$RC" -eq 2 && "$ERR" == *"constitution.md"* && "$ERR" == *"cap"* ]]; then
+    ok "02 R1: an oversized constitution.md is refused, exit 2, cap named"
+  else
+    bad "02 R1: oversized constitution.md gave rc=$RC err=[$ERR]"
+  fi
+}
+caseRungOversized
+
+caseSymlinkedIndexJsonEscapedKey() {
+  local repo
+  r_repo repo "w2-r1-esc"
+  # "profile" is the key "profile" once parsed; the raw text has no "profile" substring.
+  printf '{"project":{"pro\\u0066ile":"kritis"}}\n' >"$repo/real-index.json"
+  ln -s "$repo/real-index.json" "$repo/docs/product/index.json"
+  resolve_rc_t "$repo"
+  if [[ "$RC" -eq 2 && "$ERR" == *"docs/product/index.json"* ]]; then
+    ok "02 R1: symlinked index.json declaring profile via a JSON escape -> exit 2 (parsed, not substring)"
+  else
+    bad "02 R1: JSON-escaped profile key behind a symlink gave rc=$RC out=[$OUT] err=[$ERR]"
+  fi
+}
+caseSymlinkedIndexJsonEscapedKey

@@ -47,6 +47,44 @@ function isSymlink(p) {
   }
 }
 
+// Cap on any rung file we read (mirrors MAX_BYTES of profile-stride.cjs).
+const MAX_RUNG_BYTES = 512 * 1024;
+
+/**
+ * Check BEFORE any read of a rung file: stat (following a link) must say
+ * regular file within the size cap. /dev/zero behind a symlink, a FIFO or a
+ * huge file would otherwise hang or exhaust memory. ENOENT on a plain path
+ * means "no such rung" ({ missing: true }); anything else wrong is an error.
+ */
+function guardRungFile(file) {
+  let st;
+  try {
+    st = fs.statSync(file);
+  } catch (e) {
+    if (e.code === 'ENOENT' && !isSymlink(file)) return { missing: true };
+    return { error: { code: 'rung_unreadable', file, reason: `cannot stat (${e.code || e.message})` } };
+  }
+  if (!st.isFile()) {
+    return { error: { code: 'rung_unreadable', file, reason: 'not a regular file' } };
+  }
+  if (st.size > MAX_RUNG_BYTES) {
+    return { error: { code: 'rung_unreadable', file, reason: `exceeds the ${MAX_RUNG_BYTES}-byte cap (${st.size} bytes)` } };
+  }
+  return { ok: true };
+}
+
+/** index.json declaration test for the symlink peek: parse and look at
+ * project.profile; only when parsing fails fall back to the substring. */
+function indexDeclaresProfile(text) {
+  try {
+    const parsed = JSON.parse(text);
+    const proj = parsed && typeof parsed === 'object' ? parsed.project : undefined;
+    return Boolean(proj && typeof proj === 'object' && proj.profile !== undefined && proj.profile !== null);
+  } catch (_e) {
+    return text.includes('"profile"');
+  }
+}
+
 /**
  * Fail-closed handling of a symlinked rung file (ADR section 3). The link is
  * never trusted as a source of the profile value, but it must not let a
@@ -56,6 +94,8 @@ function isSymlink(p) {
  * and not reported as checked.
  */
 function refuseSymlink(file, declares) {
+  const guard = guardRungFile(file);
+  if (guard.error) return guard;
   let text;
   try {
     text = fs.readFileSync(file, 'utf8');
@@ -84,7 +124,10 @@ function readError(file, e) {
  */
 function resolveFromIndexJson(repoRoot) {
   const indexPath = path.join(repoRoot, 'docs', 'product', 'index.json');
-  if (isSymlink(indexPath)) return refuseSymlink(indexPath, (t) => t.includes('"profile"'));
+  if (isSymlink(indexPath)) return refuseSymlink(indexPath, indexDeclaresProfile);
+  const guard = guardRungFile(indexPath);
+  if (guard.error) return guard;
+  if (guard.missing) return { profile: null, checked: false };
   let raw;
   try {
     raw = fs.readFileSync(indexPath, 'utf8');
@@ -151,6 +194,9 @@ function resolveFromConstitution(repoRoot) {
   if (isSymlink(constPath)) {
     return refuseSymlink(constPath, (t) => t.split('\n').some((l) => CONSTITUTION_MARKER_RE.test(l)));
   }
+  const guard = guardRungFile(constPath);
+  if (guard.error) return guard;
+  if (guard.missing) return { profile: null, checked: false };
   let content;
   try {
     content = fs.readFileSync(constPath, 'utf8');
