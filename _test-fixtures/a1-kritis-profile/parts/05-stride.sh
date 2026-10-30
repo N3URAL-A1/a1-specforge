@@ -82,6 +82,12 @@ runCaseT "bad-risk"                   "bad-risk.md"                  1 "bad_risk
 runCaseT "bad-status"                 "bad-status.md"                1 "bad_status"
 runCaseT "not-applicable-no-reason"   "not-applicable-no-reason.md"  1 "not_applicable_without_reason"
 runCaseT "section-missing-actors"     "section-missing-actors.md"    1 "section_missing"
+# Review M2: acceptance is cross-checked for EVERY risk level, not just high/open.
+runCaseT "accepted-no-entry"          "accepted-no-entry.md"         1 "unmitigated"
+runCaseT "accepted-entry-no-date"     "accepted-entry-no-date.md"    1 "unmitigated"
+runCaseT "accepted-medium-with-entry" "accepted-medium-with-entry.md" 0 ""
+runCaseT "mitigated-no-mitigation"    "mitigated-no-mitigation.md"   1 "unmitigated"
+runCaseT "bad-relevant"               "bad-relevant.md"              1 "bad_relevant"
 
 # category-missing-D's finding must additionally name the missing category
 # letter (D), not just the generic code — checked separately so the
@@ -253,3 +259,31 @@ caseRedProofAcceptedLookup() {
   fi
 }
 caseRedProofAcceptedLookup
+
+# ---------- RED proof 3 (review M2): drop the accepted-row cross-check ----------
+# The live loophole was "only high+open is cross-checked". Mutation: the
+# cross-check is skipped for Status "accepted"; accepted-no-entry.md must then
+# flip from exit 1 to exit 0, proving the new rule is load bearing.
+caseRedProofAcceptedRowCrossCheck() {
+  local mutdir mutfile fxdir errf rc
+  mk_workdir mutdir "stride-redproof3"
+  cp -R "$REPO_ROOT/_shared" "$mutdir/_shared"
+  mutfile="$mutdir/_shared/lib/profile-stride.cjs"
+  if ! grep -q "status === 'accepted' && !acceptedByName" "$mutfile"; then
+    bad "RED-3: anchor \"status === 'accepted' && !acceptedByName\" not found in profile-stride.cjs (mutation cannot be applied — report, do not skip)"
+    return
+  fi
+  sed -E "s/status === 'accepted' && !acceptedByName/false \&\& !acceptedByName/" "$mutfile" >"$mutfile.new"
+  mv "$mutfile.new" "$mutfile"
+  mk_workdir fxdir "stride-redproof3-fx"
+  mkdir -p "$fxdir/docs/product/features/006-sample"
+  cp "$STRIDE_FX/accepted-no-entry.md" "$fxdir/docs/product/features/006-sample/threat-model.md"
+  mk_tmpfile errf "stride-redproof3-err"
+  node "$mutdir/_shared/a1-tools.cjs" profile threat-model-check --id "006-sample" --repo-root "$fxdir" >/dev/null 2>"$errf"; rc=$?
+  if [[ $rc -eq 0 ]]; then
+    ok "RED-3: dropping the accepted-row cross-check turns accepted-no-entry from exit 1 to exit 0 (mutation proves the rule is load bearing)"
+  else
+    bad "RED-3: mutation did not flip accepted-no-entry to exit 0 (got rc=$rc)"
+  fi
+}
+caseRedProofAcceptedRowCrossCheck

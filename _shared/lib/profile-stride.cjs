@@ -28,6 +28,11 @@ const REQUIRED_CATEGORIES = Object.freeze([
 ]);
 const RISK_VALUES = Object.freeze(['low', 'medium', 'high']);
 const STATUS_VALUES = Object.freeze(['open', 'mitigated', 'accepted']);
+const RELEVANT_VALUES = Object.freeze(['yes', 'no']);
+// A Mitigation cell that only holds a dash says nothing.
+const EMPTY_MITIGATION_RE = /^[\s\-\u2010-\u2015\u2212]*$/;
+// `- <category>: <risk> — accepted by <name> on YYYY-MM-DD`
+const ACCEPTANCE_RE = /^-\s*([^:]+):.*\baccepted by\s+\S.*?\s+on\s+\d{4}-\d{2}-\d{2}\s*$/i;
 
 function categoryKey(name) {
   return name.trim().toLowerCase();
@@ -72,7 +77,7 @@ function parseStrideTable(text) {
   return rows;
 }
 
-/** `- <category>: <risk> — accepted by <name> on <date>` lines under
+/** `- <category>: <risk> — accepted by <name> on YYYY-MM-DD` lines under
  * `## Accepted risks`. Returns the lowercased set of accepted categories. */
 function parseAcceptedRisks(text) {
   const lines = text.split('\n');
@@ -82,7 +87,7 @@ function parseAcceptedRisks(text) {
   for (let i = start + 1; i < lines.length; i++) {
     const line = lines[i];
     if (/^##\s/.test(line)) break;
-    const m = line.match(/^-\s*([^:]+):.*accepted by\s+\S/i);
+    const m = line.match(ACCEPTANCE_RE);
     if (m) accepted.push(categoryKey(m[1]));
   }
   return accepted;
@@ -124,14 +129,25 @@ function evaluateThreatModel(text) {
       continue; // a not-applicable row is not also checked for risk/status
     }
 
+    const letter = shortLetter(row.category);
+    if (!RELEVANT_VALUES.includes(relevant)) {
+      findings.push({ code: 'bad_relevant', category: letter, detail: `${row.category}: Relevant "${row.relevant}" is not one of ${RELEVANT_VALUES.join('/')}` });
+    }
     if (!RISK_VALUES.includes(risk)) {
-      findings.push({ code: 'bad_risk', category: shortLetter(row.category), detail: `${row.category}: Risk "${row.risk}" is not one of ${RISK_VALUES.join('/')}` });
+      findings.push({ code: 'bad_risk', category: letter, detail: `${row.category}: Risk "${row.risk}" is not one of ${RISK_VALUES.join('/')}` });
     }
     if (!STATUS_VALUES.includes(status)) {
-      findings.push({ code: 'bad_status', category: shortLetter(row.category), detail: `${row.category}: Status "${row.status}" is not one of ${STATUS_VALUES.join('/')}` });
+      findings.push({ code: 'bad_status', category: letter, detail: `${row.category}: Status "${row.status}" is not one of ${STATUS_VALUES.join('/')}` });
     }
-    if (risk === 'high' && status === 'open' && !acceptedCategories.includes(categoryKey(row.category))) {
-      findings.push({ code: 'unmitigated', category: shortLetter(row.category), detail: `${row.category}: high risk, open, no matching entry under ## Accepted risks` });
+    const acceptedByName = acceptedCategories.includes(categoryKey(row.category));
+    if (status === 'accepted' && !acceptedByName) {
+      findings.push({ code: 'unmitigated', category: letter, detail: `${row.category}: Status is accepted, no matching "accepted by <name> on YYYY-MM-DD" entry under ## Accepted risks` });
+    }
+    if (risk === 'high' && status === 'open' && !acceptedByName) {
+      findings.push({ code: 'unmitigated', category: letter, detail: `${row.category}: high risk, open, no matching entry under ## Accepted risks` });
+    }
+    if (status === 'mitigated' && relevant !== 'no' && EMPTY_MITIGATION_RE.test(row.mitigation)) {
+      findings.push({ code: 'unmitigated', category: letter, detail: `${row.category}: Status is mitigated but the Mitigation cell is empty` });
     }
   }
 

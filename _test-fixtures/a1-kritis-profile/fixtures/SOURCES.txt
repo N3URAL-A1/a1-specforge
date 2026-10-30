@@ -48,6 +48,12 @@ commands, the same pattern as ../a1-vault-fallback/golden/scenarios.sh's
 g_roadmap().
 
 fixtures/stride/*.md (Wave 5, FR-003, suite part 05-stride.sh)
+  Review M2 (2026-10-30): the "—" Mitigation cells on `mitigated` rows in all
+  files were replaced by "Control in place and verified" (the old checker let
+  a mitigated row carry no mitigation); added accepted-no-entry.md,
+  accepted-entry-no-date.md, accepted-medium-with-entry.md,
+  mitigated-no-mitigation.md, bad-relevant.md (each = complete.md plus one row
+  or line edit).
   Not copied from a real file: authored from scratch following the shape of
   _shared/profiles/kritis/threat-model-template.md (this wave's own
   template, migrated from the archived SpecForge Anhang E, STRIDE output

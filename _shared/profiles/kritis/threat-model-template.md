@@ -26,7 +26,7 @@ Copy this file, fill every section, do not add or remove the six STRIDE rows.
 
 | Category | Relevant | Finding | Risk | Mitigation | Status |
 |---|---|---|---|---|---|
-| Spoofing | yes/no | <finding, or the reason if Relevant is no> | low/medium/high | <mitigation, or "—"> | open/mitigated/accepted |
+| Spoofing | yes/no | <finding, or the reason if Relevant is no> | low/medium/high | <mitigation; required when Status is mitigated> | open/mitigated/accepted |
 | Tampering | yes/no | … | low/medium/high | … | open/mitigated/accepted |
 | Repudiation | yes/no | … | low/medium/high | … | open/mitigated/accepted |
 | Information Disclosure | yes/no | … | low/medium/high | … | open/mitigated/accepted |
@@ -35,7 +35,7 @@ Copy this file, fill every section, do not add or remove the six STRIDE rows.
 
 ## Accepted risks
 
-- <category>: <risk> — accepted by <name> on <date>
+- <category>: <risk> — accepted by <name> on YYYY-MM-DD
 ```
 
 ## Rules the checker enforces
@@ -47,13 +47,17 @@ Copy this file, fill every section, do not add or remove the six STRIDE rows.
   none renamed (`category_missing` for any that is absent).
 - `Relevant: no` requires a non-empty `Finding` cell stating the reason
   (`not_applicable_without_reason` otherwise).
+- `Relevant` is `yes` or `no` (`bad_relevant` otherwise).
 - `Risk` is one of `low`, `medium`, `high` (`bad_risk` otherwise).
 - `Status` is one of `open`, `mitigated`, `accepted` (`bad_status` otherwise).
-- A row with `Risk: high` and `Status: open` must have a matching entry under
-  `## Accepted risks` naming that category, or the check fails with `unmitigated`. An
-  unmitigated threat is only closed when a named person accepts it — per
-  `agents/a1-samuel-security.md`'s rule that an unmitigated threat is only closed when the user
-  accepts it by name.
+- A row with `Status: accepted` (any risk level), and a row with `Risk: high` and `Status: open`,
+  must have a matching entry under `## Accepted risks` naming that category in the exact shape
+  `- <category>: <risk> — accepted by <name> on YYYY-MM-DD`, or the check fails with
+  `unmitigated`. An unmitigated threat is only closed when a named person accepts it, with a
+  date — per `agents/a1-samuel-security.md`'s rule that an unmitigated threat is only closed
+  when the user accepts it by name.
+- A row with `Status: mitigated` needs a non-empty Mitigation cell (a lone dash does not count)
+  unless `Relevant` is `no` (`unmitigated` otherwise).
 
 ## Relation to `stride.md`'s free-form table
 
