@@ -12,7 +12,7 @@
 // containment, lstat symlink refusal, size cap, id validation) and never
 // passes anything but the file's text into the pure function. Finding codes
 // form a closed, frozen set: section_missing, category_missing, bad_risk,
-// bad_status, unmitigated, not_applicable_without_reason. Exit 0 pass / 1
+// bad_status, bad_relevant, unmitigated, not_applicable_without_reason. Exit 0 pass / 1
 // finding / 2 unreadable, unsafe path or hostile input (house contract).
 
 const fs = require('fs');

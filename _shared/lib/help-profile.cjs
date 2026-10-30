@@ -47,7 +47,7 @@ const PROFILE_HELP = `  a1-tools profile resolve [--profile <name>] [--spec <pat
                   categories (S/T/R/I/D/E) and leaves no "high" risk "open" without a matching
                   entry under "## Accepted risks".
                   Exit 0 complete and no unmitigated high risk / 1 category_missing, bad_risk,
-                  bad_status, unmitigated, or not_applicable_without_reason / 2 missing file,
+                  bad_status, bad_relevant, unmitigated, or not_applicable_without_reason / 2 missing file,
                   symlinked file, id outside ^[0-9]{3}-[a-z0-9-]+$, or internal error.
   a1-tools profile simulate-roles --roles <csv>
                   Renders one role card (id, focus, method, the mandatory "name one assumption
