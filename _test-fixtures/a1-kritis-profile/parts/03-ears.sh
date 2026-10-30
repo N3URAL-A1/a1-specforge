@@ -286,3 +286,27 @@ caseUnparsedShapes() {
   rm -rf "$work"
 }
 caseUnparsedShapes
+
+# ---------- E5b (re-review R2): prose cross-references and fenced examples are not FR lines ----------
+# FR-010 is named in a prose note, FR-011 inside a closed ``` fence: neither is a
+# requirement of this spec. FR-002 is a real FR line in an unread shape, and
+# FR-003 follows an UNCLOSED ~~~ fence, which is read as text (same rule as
+# _shared/lib/check.cjs), so both stay findings. Before the fix: checked=5,
+# no_tag on FR-002,FR-003,FR-010,FR-011.
+caseUnparsedProseAndFences() {
+  local work out err rc checked no_tag
+  mk_workdir work "w3e-prose"
+  out="$work/out.json"; err="$work/err.txt"
+  A1_VAULT_ROOT="$work" node "$REPO_ROOT/_shared/a1-tools.cjs" profile ears-check \
+    --spec "$EARS_FX/unparsed-prose-and-fences.md" --json >"$out" 2>"$err"
+  rc=$?
+  checked="$(node -e "console.log(JSON.parse(require('fs').readFileSync('$out','utf8')).checked)" 2>/dev/null)"
+  no_tag="$(node -e "console.log(JSON.parse(require('fs').readFileSync('$out','utf8')).findings.filter(f=>f.code==='no_tag').map(f=>f.id).join(','))" 2>/dev/null)"
+  if [[ "$rc" -eq 1 && "$checked" == "3" && "$no_tag" == "FR-002,FR-003" ]]; then
+    ok "E5b prose and fenced ids ignored: exit 1, checked 3, no_tag on FR-002,FR-003 only"
+  else
+    bad "E5b prose/fences: exit=$rc checked=$checked no_tag=[$no_tag] (want 1, 3, FR-002,FR-003)"
+  fi
+  rm -rf "$work"
+}
+caseUnparsedProseAndFences

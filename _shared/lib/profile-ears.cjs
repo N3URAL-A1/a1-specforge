@@ -94,10 +94,36 @@ const BULLET_RE = new RegExp(`^-\\s+\\*\\*(${FR_ID})\\*\\*:?\\s*(.*)$`);
 const BARE_RE = new RegExp(`^\\*\\*(${FR_ID})\\*\\*\\s*[:—-]?\\s*(.*)$`);
 const HEADING_RE = new RegExp(`^#{3,4}\\s+(${FR_ID})\\b.*$`);
 const TABLE_ROW_RE = /^\s*\|/;
-// Any FR id on any line (same shape as _shared/lib/check.cjs FR_PATTERN, plus
-// the NFR infix this checker already accepts). Used to catch FR lines written
-// in a shape no reader above understands, so they are never skipped silently.
-const ANY_FR_ID_RE = /\bFR(?:-NFR)?-\d{3,}(?:-\d+)?\b/g;
+// An FR id that OPENS a line, after an optional list marker (`-`, `*`, `+`,
+// `1.`, `1)`) and optional bold. Used to catch FR lines written in a shape no
+// reader above understands, so they are never skipped silently. An id later in
+// the line is prose (`Notes: FR-010 from spec 005 ...`), not a requirement
+// (re-review R2: those were flagged as no_tag and blocked Gate 4.5).
+const LEAD_FR_ID_RE = /^\s*(?:(?:[-*+]|\d+[.)])\s+)?(?:\*\*)?(FR(?:-NFR)?-\d{3,}(?:-\d+)?)\b/;
+// CommonMark fence opener/closer, same rule as _shared/lib/check.cjs: a
+// backtick info string holds no backtick, a trailing \r is tolerated.
+const FENCE_RE = /^ {0,3}(?:(`{3,})([^`\r]*)|(~{3,})([^\r]*))\r?$/;
+
+/** Indexes of the lines inside CLOSED fences, fence lines included. An
+ * unclosed fence is read as text, so a forgotten closer cannot hide an FR
+ * line (same rule as check.cjs closedFenceLines). */
+function closedFenceLines(lines) {
+  const fenced = new Set();
+  let open = null;
+  lines.forEach((line, idx) => {
+    const m = line.match(FENCE_RE);
+    const f = m && (m[1] ? { run: m[1], info: m[2] } : { run: m[3], info: m[4] });
+    if (open === null) {
+      if (f) open = { run: f.run, at: idx };
+      return;
+    }
+    if (f && f.run[0] === open.run[0] && f.run.length >= open.run.length && f.info.trim() === '') {
+      for (let i = open.at; i <= idx; i += 1) fenced.add(i);
+      open = null;
+    }
+  });
+  return fenced;
+}
 
 /** True while `bodyLines[j]` continues a lazy (flush-left) paragraph: not
  * blank, not a new heading/bullet/table row. Shared by the bare-`**FR-NNN**`
@@ -153,18 +179,19 @@ function readHeadingEntry(bodyLines, i, m) {
   return { id: m[1], text: parts.join(' ').trim(), line: i + 1, next };
 }
 
-/** Entries for FR ids found on lines no shape reader consumed (e.g.
+/** Entries for FR ids that open a line no shape reader consumed (e.g.
  * `- FR-002: ...`, `* **FR-003**: ...`, `1. **FR-004** ...`). Each becomes an
- * entry flagged `unparsedShape`, which classifyEntry turns into a finding. */
+ * entry flagged `unparsedShape`, which classifyEntry turns into a finding.
+ * Lines inside closed fences and ids in prose are not FR lines. */
 function collectUnparsedIds(bodyLines, consumed, seenIds) {
+  const fenced = closedFenceLines(bodyLines);
   const extra = [];
   bodyLines.forEach((raw, idx) => {
-    if (consumed.has(idx) || TABLE_ROW_RE.test(raw)) return;
-    for (const id of raw.match(ANY_FR_ID_RE) || []) {
-      if (seenIds.has(id)) continue;
-      seenIds.add(id);
-      extra.push({ id, text: raw.trim(), line: idx + 1, unparsedShape: true });
-    }
+    if (consumed.has(idx) || fenced.has(idx) || TABLE_ROW_RE.test(raw)) return;
+    const m = raw.match(LEAD_FR_ID_RE);
+    if (!m || seenIds.has(m[1])) return;
+    seenIds.add(m[1]);
+    extra.push({ id: m[1], text: raw.trim(), line: idx + 1, unparsedShape: true });
   });
   return extra;
 }
