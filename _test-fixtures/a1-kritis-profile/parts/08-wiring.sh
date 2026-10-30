@@ -36,6 +36,7 @@ unset A1_VAULT_ROOT A1_VAULT_WRITER_HOST A1_HOST_ID
 WIRE_GOLDEN="cb3fd99a6be44891d52b96cc4223f4897823e7c9"
 WIRE_GUARD='**KRITIS profile only** — skip this block unless the run profile is `kritis`.'
 WIRE_ALIAS='  "a1-new-feature", "erstelle eine Spezifikation" (German alias for "spec for <project>"),'
+WIRE_RESOLVE='**Profile resolve (every run, before Phase 1).** Run `node <repo>/_shared/a1-tools.cjs profile resolve [--profile <name>] --repo-root <repo> [--spec <path>]`; exit 1 or 2 stops the run. When the printed `profile` is `kritis`, the blocks marked `a1-profile:kritis` apply to this run; otherwise ignore them.'
 WIRE_STRIP="$HERE/fixtures/strip-blocks.cjs"
 WIRE_SIX=(
   "skills/a1-new-feature/SKILL.md:1"
@@ -133,7 +134,7 @@ caseWireNoStub
 
 # ---------- D: block discipline against the golden commit ----------
 caseWireDiscipline() {
-  local work entry rel d lt gt want_gt
+  local work entry rel d lt gt want_d
   mk_workdir work "w8-disc"
   for entry in "${WIRE_SIX[@]}"; do
     rel="${entry%%:*}"
@@ -143,10 +144,11 @@ caseWireDiscipline() {
     lt="$(grep -c '^<' "$work/d")"; gt="$(grep -c '^>' "$work/d")"
     if [[ "$rel" == "skills/a1-new-feature/SKILL.md" ]]; then
       d="$(grep '^>' "$work/d")"
-      if [[ "$lt" == "0" && "$gt" == "1" && "$d" == "> $WIRE_ALIAS" ]]; then
-        ok "D $rel: stripped text differs from golden by exactly the German alias line"
+      want_d="> $WIRE_ALIAS"$'\n'"> "$'\n'"> $WIRE_RESOLVE"
+      if [[ "$lt" == "0" && "$gt" == "3" && "$d" == "$want_d" ]]; then
+        ok "D $rel: stripped text differs from golden by exactly the German alias line and the unguarded resolve line (+ its blank)"
       else
-        bad "D $rel: removed=$lt added=$gt line=[$d] (expected 0 removed, 1 added = the alias)"
+        bad "D $rel: removed=$lt added=$gt lines=[$d] (expected 0 removed, 3 added = alias, blank, resolve line)"
       fi
     else
       if [[ "$lt" == "0" && "$gt" == "0" ]]; then ok "D $rel: stripped text identical to golden (0 lines differ)"; else bad "D $rel: removed=$lt added=$gt vs golden"; fi
@@ -155,6 +157,52 @@ caseWireDiscipline() {
   rm -rf "$work"
 }
 caseWireDiscipline
+
+# ---------- R (review M1): the resolve step is reachable WITHOUT --profile ----------
+# FR-001 auto-enable means a run that carries no --profile must still resolve.
+# So the one `profile resolve` line in SKILL.md must sit OUTSIDE every
+# a1-profile:kritis block (whose guard says "skip unless the run profile is
+# kritis") and must show --profile as optional. Red: move it into the block.
+wire_resolve_reachable() {  # <file> -> prints "<lines> <outside> <optional>"
+  node -e '
+    const L = require("fs").readFileSync(process.argv[1], "utf8").split("\n");
+    let inb = false, n = 0, outside = 0, optional = 0;
+    for (const raw of L) {
+      const t = raw.trim();
+      if (t === "<!-- a1-profile:kritis -->") inb = true;
+      else if (t === "<!-- /a1-profile:kritis -->") inb = false;
+      if (raw.includes("a1-tools.cjs profile resolve")) { n++; if (!inb) outside++; if (raw.includes("[--profile <name>]")) optional++; }
+    }
+    console.log(n + " " + outside + " " + optional);
+  ' "$1"
+}
+caseWireResolveReachable() {
+  local got work
+  got="$(wire_resolve_reachable "$REPO_ROOT/skills/a1-new-feature/SKILL.md")"
+  if [[ "$got" == "1 1 1" ]]; then
+    ok "R resolve step: one 'profile resolve' line in SKILL.md, outside every kritis block, --profile optional"
+  else
+    bad "R resolve step: lines/outside/optional=[$got], expected 1 1 1 (a resolve inside the guarded block never runs without --profile)"
+  fi
+  # Mutation: put the line back inside a block -> the assert must go red.
+  mk_workdir work "w8-resolve-mut"
+  node -e '
+    const fs = require("fs"); const L = fs.readFileSync(process.argv[1], "utf8").split("\n");
+    const i = L.findIndex((l) => l.includes("a1-tools.cjs profile resolve"));
+    const [line] = L.splice(i, 1);
+    const open = L.findIndex((l) => l.trim() === "<!-- a1-profile:kritis -->");
+    L.splice(open + 2, 0, line);
+    fs.writeFileSync(process.argv[2], L.join("\n"));
+  ' "$REPO_ROOT/skills/a1-new-feature/SKILL.md" "$work/mut.md"
+  got="$(wire_resolve_reachable "$work/mut.md")"
+  if [[ "$got" == "1 0 1" ]]; then
+    ok "R resolve step (mutation): moving the line into the guarded block is detected (outside=0)"
+  else
+    bad "R resolve step (mutation): expected 1 0 1, got [$got] — the reachability assert does not discriminate"
+  fi
+  rm -rf "$work"
+}
+caseWireResolveReachable
 
 # ---------- G: gates registered and wired ----------
 caseWireGates() {

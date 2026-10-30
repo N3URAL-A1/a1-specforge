@@ -243,7 +243,12 @@ casePAllowedSimulated() {
   work="$(g_mktemp w1k-pallow)"; g_need_dir work "$work"
   sed '/  <projekt>"), "spec for <project>" (alias: "spec für <projekt>"), "feature pipeline",/a\
   "a1-new-feature", "erstelle eine Spezifikation" (German alias for "spec for <project>"),' \
-    "$GOLDEN/prompts/SKILL.md" >"$work/simulated-current.stripped"
+    "$GOLDEN/prompts/SKILL.md" >"$work/simulated-current.alias"
+  # Review fix M1: the second allowed addition, the unguarded resolve line and its blank.
+  sed "/^\`a1-roadmap\`'s SKILL.md\.\$/a\\
+\\
+$(grep -F 'Profile resolve (every run' "$HERE/golden/prompts.allowed-diff" | cut -f4- | sed 's/[&/\\]/\\&/g')" \
+    "$work/simulated-current.alias" >"$work/simulated-current.stripped"
   cp "$GOLDEN/prompts/SKILL.md" "$work/golden.body"
   if ! node "$GOLDEN/apply-prompts-allowed.cjs" "$GOLDEN/prompts.allowed-diff" "SKILL.md" \
        "$work/golden.body" "$work/simulated-current.stripped" "$work/golden.applied" "$work/current.applied" 2>"$work/apply.err"; then

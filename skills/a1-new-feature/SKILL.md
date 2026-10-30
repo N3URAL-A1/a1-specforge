@@ -144,6 +144,8 @@ The linkage convention (`<!-- entry: <slug> -->` markers in the roadmap file,
 `roadmap_entry:` frontmatter field in the spec) is defined in
 `a1-roadmap`'s SKILL.md.
 
+**Profile resolve (every run, before Phase 1).** Run `node <repo>/_shared/a1-tools.cjs profile resolve [--profile <name>] --repo-root <repo> [--spec <path>]`; exit 1 or 2 stops the run. When the printed `profile` is `kritis`, the blocks marked `a1-profile:kritis` apply to this run; otherwise ignore them.
+
 <!-- a1-profile:kritis -->
 **KRITIS profile only** — skip this block unless the run profile is `kritis`.
 
@@ -154,12 +156,11 @@ The linkage convention (`<!-- entry: <slug> -->` markers in the roadmap file,
 `_shared/profiles/kritis/stakeholder-roles.md`) for the optional simulation in Phase 3 Step 2c.
 Both are ignored when the run profile is not `kritis`.
 
-**Resolve (after the Roadmap Gate, before Phase 1).** The precedence is fail-closed: flag, then
-spec frontmatter, then `docs/product/index.json`, then the constitution marker.
-
-```bash
-node <repo>/_shared/a1-tools.cjs profile resolve [--profile <name>] --repo-root <repo> [--spec <path>]
-```
+**Resolve (after the Roadmap Gate, before Phase 1).** The resolve step is the unguarded
+"Profile resolve" line above this block: it runs on every run, with or without `--profile`, so a
+profile declared in `docs/product/index.json` or the constitution is found (FR-001). The
+precedence is fail-closed: flag, then spec frontmatter, then `docs/product/index.json`, then the
+constitution marker.
 
 Exit 0 prints `{profile, source, isolation, ...}`; `profile: null` means no profile and this
 whole section is skipped. Exit 1 or 2 stops the run and shows the message. Phases 2 to 6 started
