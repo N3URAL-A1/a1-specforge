@@ -143,9 +143,14 @@ caseWireDiscipline() {
     diff "$work/gold" "$work/cur" >"$work/d" || true
     lt="$(grep -c '^<' "$work/d")"; gt="$(grep -c '^>' "$work/d")"
     if [[ "$rel" == "skills/a1-new-feature/SKILL.md" ]]; then
-      d="$(grep '^>' "$work/d")"
-      want_d="> $WIRE_ALIAS"$'\n'"> "$'\n'"> $WIRE_RESOLVE"
-      if [[ "$lt" == "0" && "$gt" == "3" && "$d" == "$want_d" ]]; then
+      # Where diff places the added blank line (before or after the resolve line)
+      # depends on the implementation when its neighbours are blank too: GNU diff
+      # puts it first, Apple diff last. So the non-blank lines are compared in
+      # order and the blank line is counted on its own.
+      d="$(grep '^>' "$work/d" | grep -v '^> *$')"
+      local blanks; blanks="$(grep -c '^> *$' "$work/d")"
+      want_d="> $WIRE_ALIAS"$'\n'"> $WIRE_RESOLVE"
+      if [[ "$lt" == "0" && "$gt" == "3" && "$blanks" == "1" && "$d" == "$want_d" ]]; then
         ok "D $rel: stripped text differs from golden by exactly the German alias line and the unguarded resolve line (+ its blank)"
       else
         bad "D $rel: removed=$lt added=$gt lines=[$d] (expected 0 removed, 3 added = alias, blank, resolve line)"
