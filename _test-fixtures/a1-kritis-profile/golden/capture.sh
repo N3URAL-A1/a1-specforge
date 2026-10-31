@@ -35,3 +35,31 @@ for entry in "${G_SCENARIOS[@]}"; do
   rm -rf "$work"
   printf 'captured %s\n' "$name"
 done
+
+# Committed inputs for the run-time cases that must work without .git (the
+# pr merge-check runs every suite on a git-archive snapshot, no .git):
+#   prompts/<basename>  the six prompt files, byte-identical to GOLDEN_COMMIT
+#                       (caseP in part 01, caseWireDiscipline D in part 08)
+#   spec.cjs.golden     GOLDEN_COMMIT's _shared/lib/spec.cjs (G-mut, part 01)
+#   provenance.sha256   "<sha256>  <name>" per copy, for the drift guard
+PROMPT_RELS=(
+  skills/a1-new-feature/SKILL.md
+  skills/a1-new-feature/workflows/02-specify.md
+  skills/a1-new-feature/workflows/03-clarify.md
+  skills/a1-new-feature/workflows/04.5-consistency-gate.md
+  agents/a1-rene-requirement-engineer.md
+  agents/a1-samuel-security.md
+)
+mkdir -p "$HERE/prompts"
+for rel in "${PROMPT_RELS[@]}"; do
+  cp "$PRE/$rel" "$HERE/prompts/$(basename "$rel")"
+done
+cp "$PRE/_shared/lib/spec.cjs" "$HERE/spec.cjs.golden"
+node -e '
+  const fs = require("fs"), crypto = require("crypto"), path = require("path");
+  const here = process.argv[1];
+  const names = fs.readdirSync(path.join(here, "prompts")).sort().map((n) => "prompts/" + n).concat(["spec.cjs.golden"]);
+  const lines = names.map((n) => crypto.createHash("sha256").update(fs.readFileSync(path.join(here, n))).digest("hex") + "  " + n);
+  fs.writeFileSync(path.join(here, "provenance.sha256"), lines.join("\n") + "\n");
+' "$HERE"
+printf 'captured prompts, spec.cjs.golden, provenance.sha256\n'

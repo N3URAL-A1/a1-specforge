@@ -138,7 +138,10 @@ caseWireDiscipline() {
   mk_workdir work "w8-disc"
   for entry in "${WIRE_SIX[@]}"; do
     rel="${entry%%:*}"
-    if ! git -C "$REPO_ROOT" show "$WIRE_GOLDEN:$rel" >"$work/gold" 2>"$work/gerr"; then bad "D $rel: golden copy unreadable: $(cat "$work/gerr")"; continue; fi
+    # The committed golden copy (golden/prompts/, captured once from GOLDEN_COMMIT by
+    # golden/capture.sh, drift-checked by part 01 P-prov): D must run without .git,
+    # because pr merge-check runs every suite on a git-archive snapshot.
+    if ! cp "$HERE/golden/prompts/$(basename "$rel")" "$work/gold" 2>"$work/gerr"; then bad "D $rel: committed golden copy unreadable: $(cat "$work/gerr")"; continue; fi
     if ! node "$WIRE_STRIP" "$REPO_ROOT/$rel" >"$work/cur" 2>"$work/serr"; then bad "D $rel: strip-blocks refused: $(cat "$work/serr")"; continue; fi
     diff "$work/gold" "$work/cur" >"$work/d" || true
     lt="$(grep -c '^<' "$work/d")"; gt="$(grep -c '^>' "$work/d")"

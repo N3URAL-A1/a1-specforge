@@ -76,7 +76,25 @@ done
 caseGMutSpecUpdateStatus() {
   local mutroot work
   mutroot="$(g_mktemp w1k-mut)"; g_need_dir mutroot "$mutroot"
-  git -C "$REPO_ROOT" archive cb3fd99a6be44891d52b96cc4223f4897823e7c9 | tar -x -C "$mutroot"
+  # No .git here (merge-check snapshot): the golden-commit spec.cjs is the
+  # committed copy golden/spec.cjs.golden (capture.sh, drift-checked by P-prov).
+  # It is laid over a scratch copy of the current _shared/ and the spec template
+  # (spec init reads skills/a1-new-feature/templates), which supply the modules around it. The control run below proves the overlay reproduces the
+  # golden, so a mutated overlay that merely crashes cannot pass for "caught".
+  mkdir "$mutroot/_shared"
+  cp -R "$REPO_ROOT/_shared/." "$mutroot/_shared/"
+  mkdir -p "$mutroot/skills/a1-new-feature"
+  cp -R "$REPO_ROOT/skills/a1-new-feature/templates" "$mutroot/skills/a1-new-feature/templates"
+  cp "$GOLDEN/spec.cjs.golden" "$mutroot/_shared/lib/spec.cjs"
+  work="$(g_mktemp w1k-mutcase)"; g_need_dir work "$work"
+  run_spec_update_status "$mutroot/_shared/a1-tools.cjs" "$work/ctl"
+  g_cleanup
+  tail -n +2 "$GOLDEN/spec-update-status.out" >"$work/golden.out"
+  if ! cmp -s "$work/golden.out" "$work/ctl.out"; then
+    bad "G-mut spec-update-status: control (unmutated golden spec.cjs over the current _shared) does not reproduce the golden — the overlay is incompatible, the mutation proof would be void (report, do not skip)"
+    rm -rf "$mutroot" "$work"
+    return
+  fi
   # The mutation: rename the JSON key `status` to `STATUS_MUTATED` in
   # cmdSpecUpdateStatus's return object (the literal `    status: fm.status,`
   # line) — a single-token change to the command's own stdout shape, the
@@ -89,10 +107,8 @@ caseGMutSpecUpdateStatus() {
   sed -E 's/^([[:space:]]*)status: fm\.status,$/\1STATUS_MUTATED: fm.status,/' \
     "$mutroot/_shared/lib/spec.cjs" >"$mutroot/_shared/lib/spec.cjs.new"
   mv "$mutroot/_shared/lib/spec.cjs.new" "$mutroot/_shared/lib/spec.cjs"
-  work="$(g_mktemp w1k-mutcase)"; g_need_dir work "$work"
   run_spec_update_status "$mutroot/_shared/a1-tools.cjs" "$work/mut"
   g_cleanup
-  tail -n +2 "$GOLDEN/spec-update-status.out" >"$work/golden.out"
   if cmp -s "$work/golden.out" "$work/mut.out"; then
     bad "G-mut spec-update-status: mutated stdout wording (status -> STATUS_MUTATED) did NOT turn the golden comparison red — the guard proves nothing"
   else
@@ -379,3 +395,51 @@ caseStripGuards() {
   rm -rf "$work"
 }
 caseStripGuards
+
+# ---------- P-prov: the committed golden copies are what GOLDEN_COMMIT holds ----------
+# Run-time cases (P, D, G-mut) read the committed copies and need no git. This
+# guard keeps those copies honest. Two layers:
+#   always   sha256 of every copy equals golden/provenance.sha256 (written by
+#            capture.sh from git archive of GOLDEN_COMMIT) — works in a snapshot.
+#   with .git  each copy is also byte-identical to git show GOLDEN_COMMIT:<path>.
+# Without .git the second layer cannot run; the case then says so in its PASS
+# line instead of passing silently. Red: edit one byte of a golden/prompts/ file
+# (layer 1 and 2), or edit the file and the manifest together (layer 2 only).
+caseProvenance() {
+  local out rc git_state pairs rel
+  pairs=""
+  for rel in "${PROMPT_FILES_REPO[@]}"; do pairs="$pairs$rel=prompts/$(basename "$rel")"$'\n'; done
+  pairs="${pairs}_shared/lib/spec.cjs=spec.cjs.golden"
+  out="$(node -e '
+    const fs = require("fs"), cp = require("child_process"), crypto = require("crypto"), path = require("path");
+    const [golden, repo, commit] = process.argv.slice(1, 4), pairs = process.argv[4].split("\n");
+    const man = new Map(fs.readFileSync(path.join(golden, "provenance.sha256"), "utf8").trim().split("\n").map((l) => { const m = /^([0-9a-f]{64})  (.+)$/.exec(l); return m ? [m[2], m[1]] : ["?", l]; }));
+    const hasGit = cp.spawnSync("git", ["-C", repo, "rev-parse", "--git-dir"], { stdio: "ignore" }).status === 0
+      && cp.spawnSync("git", ["-C", repo, "cat-file", "-e", commit + "^{commit}"], { stdio: "ignore" }).status === 0;
+    const bad = []; let n = 0;
+    if (man.size !== pairs.length) bad.push("manifest has " + man.size + " rows, expected " + pairs.length);
+    for (const p of pairs) {
+      const i = p.lastIndexOf("="), rel = p.slice(0, i), copy = p.slice(i + 1);
+      let buf; try { buf = fs.readFileSync(path.join(golden, copy)); } catch (e) { bad.push(copy + ": unreadable"); continue; }
+      n++;
+      if (man.get(copy) !== crypto.createHash("sha256").update(buf).digest("hex")) bad.push(copy + ": sha256 differs from provenance.sha256");
+      if (hasGit) {
+        const r = cp.spawnSync("git", ["-C", repo, "show", commit + ":" + rel], { maxBuffer: 1 << 26 });
+        if (r.status !== 0) bad.push(copy + ": git show failed: " + String(r.stderr).trim());
+        else if (!r.stdout.equals(buf)) bad.push(copy + ": differs from git show " + commit.slice(0, 7) + ":" + rel);
+      }
+    }
+    console.log((hasGit ? "git" : "nogit") + " " + n + (bad.length ? "\n" + bad.join("\n") : ""));
+  ' "$GOLDEN" "$REPO_ROOT" cb3fd99a6be44891d52b96cc4223f4897823e7c9 "$pairs" 2>&1)"; rc=$?
+  git_state="$(printf '%s\n' "$out" | head -n 1)"
+  if [[ $rc -ne 0 || "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" -gt 1 ]]; then
+    bad "P-prov golden copies: $(printf '%s' "$out" | tr '\n' ';')"
+  elif [[ "$git_state" == "git 7" ]]; then
+    ok "P-prov golden copies: 7 copies match provenance.sha256 and are byte-identical to git show GOLDEN_COMMIT"
+  elif [[ "$git_state" == "nogit 7" ]]; then
+    ok "P-prov golden copies: 7 copies match provenance.sha256; no .git (or GOLDEN_COMMIT absent) so the git-show layer was NOT run — provenance rests on the capture-time manifest"
+  else
+    bad "P-prov golden copies: unexpected checker output: $git_state"
+  fi
+}
+caseProvenance
