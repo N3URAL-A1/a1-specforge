@@ -6,7 +6,7 @@
 
 // A vault-wide foreign writer (Basic-Memory daemon, PyYAML `yaml.dump`) folds
 // long scalars at ~80 columns onto an indented continuation line. Measured
-// 2026-09-24: reading only the first line let `spec update-status` persist
+// 2026-09-24: reading only the first line let the spec status writer persist
 // truncated title/consumer/phase_history values in three specs. Measured
 // 2026-10-31: the same fold on PLAIN scalars was truncated too (33 a1-specforge
 // notes). Join continuation lines with one space (YAML folding semantics):
