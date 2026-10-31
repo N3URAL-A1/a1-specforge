@@ -166,6 +166,15 @@ vmc --bug 2026-10-21-vault-bug --slug other
 expect "B8 same id under another project slug does not resolve: exit 1" "1|bug_unresolved" "$RC|$(reasons)"
 vmc --bug 2026-10-21-old --slug demo
 expect "N4 a vault file with the old frontmatter shape does not resolve: exit 1 bug_unresolved" "1|bug_unresolved" "$RC|$(reasons)"
+# R1: a fix report as basic-memory re-dumps it (PyYAML: folded title, unindented lists, permalink appended). The files are
+# byte copies of real vault notes (a1-lib-units/real/); the nested parser rejects them, the flat one must accept them.
+REAL="$REPO_ROOT/_test-fixtures/a1-lib-units/real"
+cp "$REAL/specforge-locks-empty-lockfile-stolen.md" "$V/project/demo/fixes/2026-10-21-locks-empty-lockfile-stolen.md"
+cp "$REAL/office-briefing-agent-def-id-mismatch.md" "$V/project/demo/fixes/2026-07-22-briefing-agent-def-id-mismatch.md"
+vmc --bug 2026-10-21-locks-empty-lockfile-stolen --slug demo
+expect "R1 a PyYAML-rewritten vault fix report (folded title, unindented lists) resolves: exit 0, no bug_unresolved" "0|" "$RC|$(reasons)"
+vmc --bug 2026-07-22-briefing-agent-def-id-mismatch --slug demo
+expect "R2 a rewritten vault fix report with a folded plain title and folded quoted verify_result resolves: exit 0" "0|" "$RC|$(reasons)"
 # M1 mutation proof: flip the head suite back to green and the same call goes green
 new_pr m1 0 1; mc; r1=$RC
 printf '#!/usr/bin/env bash\nexit 0\n' > "$P/suite.sh"; g "$P" commit -q -am revert; mc; r2=$RC
