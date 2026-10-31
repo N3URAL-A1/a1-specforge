@@ -4,7 +4,7 @@ type: roadmap
 project: a1-specforge
 title: "a1-specforge — Roadmap"
 status: active
-updated: 2026-10-28
+updated: 2026-10-31
 source: "migrated from docs/roadmap.md v3.0 (2026-07-10)"
 milestones:
   - id: m0-repo-extract
@@ -263,6 +263,16 @@ features:
     finished: 2026-10-28
     spec_path: project/a1-specforge/spec/023-module-roadmap-views.md
     plan_path: null
+  - id: 024-new-project-github-remote
+    milestone: continuous
+    title: "GitHub remote in a1-new-project bootstrap"
+    status: planned
+    stage: null
+    depends_on: []
+    started: null
+    finished: null
+    spec_path: null
+    plan_path: null
 next: 006-specforge-kritis-profile
 ---
 
@@ -349,7 +359,6 @@ None.
 
 ## Changelog
 
-- **2026-07-10** — Migrated from `docs/roadmap.md` v3.0 (markdown) to `docs/product/ROADMAP.md` schema v1 — new machine-readable roadmap contract; source file left untouched.
 - **2026-07-10** — Added **001-roadmap-gate-parallel-features** (shipped) — first feature under the schema-v1 feature index; roadmap gate + parallel feature lifecycle merged (56e0fa4/e55addf).
 - **2026-09-12** — feature '007-retro-gate-id-validator' added — new feature via `product add-feature`
 - **2026-09-12** — feature.md created for '007-retro-gate-id-validator' — formal spec/plan attached via `product feature-init`
@@ -449,6 +458,7 @@ None.
 - **2026-10-27** — 021-dashboard -> done — stage transition via `product stage`
 - **2026-10-28** — 023-module-roadmap-views -> done — stage transition via `product stage`
 - **2026-10-28** — 006-specforge-kritis-profile -> started — stage transition via `product stage`
+- **2026-10-31** — feature '024-new-project-github-remote' added — a1-new-project Phase 1 asks once for the GitHub remote (owner/org, private) and creates it with gh after confirmation, instead of leaving the repo local-only until a later checkpoint
 
 ## Appendix — migrated details
 
