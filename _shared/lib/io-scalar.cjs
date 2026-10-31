@@ -12,19 +12,28 @@
 // notes). Join continuation lines with one space (YAML folding semantics):
 // quoted scalars until the closing quote, plain scalars while the next line is
 // indented. Flow/block-scalar/anchor/tag starts are not joined.
+//
+// List-of-maps (`  - id: review` + `    waves: [1]` + `    owns:`): the flat parser has no shape for
+// it (items are strings). Decision 2026-10-31, measured on the vault: joining made
+// `lanes` read as one string per item with all later items kept (43 files, 463 list
+// elements vs 272 on main) - a different shape than before for 85 fields, and
+// fix.cjs/spec.cjs write them back. A plain list item therefore stops at a continuation line that
+// looks like a map key (the old reading: item 1 = first line only, list ends there).
+// An indented comment line also ends a plain scalar. Pinned by the F10 unit case.
 const NOT_PLAIN_START = /^[[{|>&*!%@`#]/;
 
 // Is the quoted scalar `v` (opening quote included) closed? A trailing `''` inside single quotes is an escaped
 // apostrophe, and `\"` inside double quotes an escaped quote - neither closes the scalar (measured 2026-10-31:
 // a folded item ending in `(prioritized)''` stopped the join one line early).
 function isClosedQuoted(v, q) {
-  if (v.length < 2) return false;
-  const body = v.slice(1);
+  const t = v.trimEnd();
+  if (t.length < 2) return false;
+  const body = t.slice(1);
   if (q === "'") { const t = body.match(/'+$/); return t !== null && t[0].length % 2 === 1; }
   return body.endsWith('"') && ((body.slice(0, -1).match(/\\+$/) || [''])[0].length % 2 === 0);
 }
 
-function joinFoldedScalar(lines, i, first) {
+function joinFoldedScalar(lines, i, first, inList = false) {
   if (first === '') return { value: first, index: i };
   const q = first[0];
   const quoted = q === '"' || q === "'";
@@ -32,7 +41,9 @@ function joinFoldedScalar(lines, i, first) {
   let v = first;
   let j = i;
   while (!(quoted && isClosedQuoted(v, q))
-      && j + 1 < lines.length && /^\s+\S/.test(lines[j + 1]) && !/^\s*-\s/.test(lines[j + 1])) {
+      && j + 1 < lines.length && /^\s+\S/.test(lines[j + 1]) && !/^\s*-\s/.test(lines[j + 1])
+      && !/^\s+#/.test(lines[j + 1])
+      && !(inList && !quoted && /^\s+[A-Za-z_][\w-]*:(\s|$)/.test(lines[j + 1]))) {
     j += 1;
     v = `${v} ${lines[j].trim()}`;
   }

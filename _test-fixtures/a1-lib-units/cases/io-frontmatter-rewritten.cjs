@@ -2,8 +2,14 @@
 
 // io-frontmatter.cjs (flat parser) on vault notes that basic-memory re-dumped with
 // PyYAML (`yaml.dump`: 80-column folding, unindented lists, `''` escapes). The
-// fixtures under ../real/ are byte copies of real rewritten vault files
-// (CONVENTIONS.md: never derive a fixture from the parser). Bug report
+// fixtures under ../real/ come from real rewritten vault files (CONVENTIONS.md: never derive a fixture from the
+// parser). Whole-file byte copies: specforge-locks-empty-lockfile-stolen.md (project/a1-specforge/fixes/2026-10-21-locks-empty-lockfile-stolen.md),
+// specforge-verify-merge-check-review-minors.md (fixes/2026-10-22-verify-merge-check-review-minors.md).
+// Byte-exact frontmatter excerpts (leading slice of the file): office-briefing-agent-def-id-mismatch.md
+// (project/a1-office/fixes/2026-07-22-briefing-agent-def-id-mismatch.md), specforge-analysis-quality-findings.md
+// (project/a1-specforge/analyses/2026-07-12-quality.md), specforge-postmortem-gnu-only-fixture-idioms.md
+// (project/a1-specforge/postmortems/2026-10-28-gnu-only-fixture-idioms.md), office-wave-plan-lanes.md
+// (project/a1-office/plans/067-claudia-invoice-intake-wave-plan.md, lines 1-35 plus a closing `---`). Bug report
 // 2026-10-31-vault-frontmatter-rewrite-2.
 
 const fs = require('fs');
@@ -100,6 +106,33 @@ check('F7 nested parser unchanged: still rejects a rewritten note', (() => {
     [f5.includes("description=VISION.md's 'Creative directions (prioritized)' table ranks a1-dashboard"),
       f5.includes('shipped in M7/M8. The prioritization signal'),
       f5.endsWith('pointing to docs/roadmap.md as the authoritative sequencing.')], [true, true, true]);
+}
+
+// F10 - list-of-maps: the flat parser has no shape for it, so an item stops at a map-key continuation line (old
+// reading kept). Excerpt = byte-exact leading slice of a real a1-office wave plan (`lanes:`).
+// Red-making change: drop the `inList` map-key stop in joinFoldedScalar (item becomes "id: review waves: [1, 7, 8] owns:").
+{
+  const fm = parseFrontmatter(real('office-wave-plan-lanes.md')).fm;
+  eq('F10 lanes keeps the pre-fix reading (item 1, first line only)', fm.lanes, ['id: review']);
+  eq('F10 keys before it intact', [fm.type, fm.waves], ['wave-plan', '9']);
+}
+
+// F11 - an indented comment line ends a plain scalar.
+{
+  const fm = parseFrontmatter('---\na: x\n  # note\nb: y\n---\n').fm;
+  eq('F11 comment not joined into the value', [fm.a, fm.b], ['x', 'y']);
+}
+
+// F12 - isClosedQuoted edge cases, driven through the real parser.
+// Red-making change: drop trimEnd / the backslash-parity test.
+{
+  const rd = (v) => parseFrontmatter(`---\nk: ${v}\nz: end\n---\n`).fm;
+  eq("F12 '' alone is closed (empty string)", [rd("''").k, rd("''").z], ['', 'end']);
+  eq("F12 'a''' closes after the escaped pair + quote", rd("'a'''").k, "a'");
+  eq('F12 "x\\"" is an escaped quote, so the fold continues', rd('"x\\"\n  tail"').k, 'x\\" tail');
+  eq('F12 "x\\\\" (escaped backslash) is closed', [rd('"x\\\\"').k, rd('"x\\\\"').z], ['x\\\\', 'end']);
+  eq('F12 trailing whitespace after the closing quote still closes (no join of the indented line)', rd("'a'   \n  more").k.includes('more'), false);
+  eq("F12 '''' (one escaped apostrophe) is closed", rd("''''").k, "'");
 }
 
 done();

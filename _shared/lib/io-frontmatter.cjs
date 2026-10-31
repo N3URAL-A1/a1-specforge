@@ -61,7 +61,7 @@ function parseFrontmatter(content) {
         (lines[j].startsWith('  - ') || lines[j].startsWith('- '))
       ) {
         let item = lines[j].replace(/^\s*-\s*/, '');
-        ({ value: item, index: j } = joinFoldedScalar(lines, j, item));
+        ({ value: item, index: j } = joinFoldedScalar(lines, j, item, true));
         if (
           (item.startsWith('"') && item.endsWith('"')) ||
           (item.startsWith("'") && item.endsWith("'"))
