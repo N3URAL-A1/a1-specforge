@@ -126,7 +126,10 @@
     "reason": "the strict parser's own definition; it stays strict on purpose (F-017 rejections N2-N5), vault notes are now read by the flat parser",
     "date": "2026-10-31",
     "by": "claude-a1-fix",
-    "review": "pending"
+    "review": "upheld",
+    "review_reason": "io-nested-frontmatter.cjs:54 is the parser definition itself; it stays strict on purpose (F-017).",
+    "reviewed_at": "2026-10-31T09:15:20.690Z",
+    "reviewed_by": "a1-reinhard-reviewer"
   },
   {
     "kind": "class_sweep",
@@ -134,7 +137,10 @@
     "reason": "projectSlug reads the repo's docs/product/ROADMAP.md, written by a1 product writers in the fixed two-space layout and not watched by basic-memory; strict parse intended (F-017)",
     "date": "2026-10-31",
     "by": "claude-a1-fix",
-    "review": "pending"
+    "review": "upheld",
+    "review_reason": "pr-merge-check.cjs:121 projectSlug reads <project>/docs/product/ROADMAP.md, an a1-written repo file; parse error falls back to the directory name.",
+    "reviewed_at": "2026-10-31T09:15:20.747Z",
+    "reviewed_by": "a1-reinhard-reviewer"
   },
   {
     "kind": "class_sweep",
@@ -142,7 +148,10 @@
     "reason": "reads a repo docs/product file (ROADMAP, VISION, features/<id>/feature.md or audits/) written by a1 product writers in the fixed two-space layout, not a vault note, not watched by basic-memory; strict parse intended (F-017)",
     "date": "2026-10-31",
     "by": "claude-a1-fix",
-    "review": "pending"
+    "review": "upheld",
+    "review_reason": "product-audit-mirror.cjs:119 reads the --audit file that audit-publish writes under docs/product/audits; parse error is loud.",
+    "reviewed_at": "2026-10-31T09:15:20.803Z",
+    "reviewed_by": "a1-reinhard-reviewer"
   },
   {
     "kind": "class_sweep",
@@ -150,7 +159,10 @@
     "reason": "reads a repo docs/product file (ROADMAP, VISION, features/<id>/feature.md or audits/) written by a1 product writers in the fixed two-space layout, not a vault note, not watched by basic-memory; strict parse intended (F-017)",
     "date": "2026-10-31",
     "by": "claude-a1-fix",
-    "review": "pending"
+    "review": "upheld",
+    "review_reason": "product-audit-mirror.cjs:127 reads <productDir>/ROADMAP.md.",
+    "reviewed_at": "2026-10-31T09:15:20.862Z",
+    "reviewed_by": "a1-reinhard-reviewer"
   },
   {
     "kind": "class_sweep",
@@ -158,7 +170,10 @@
     "reason": "reads a repo docs/product file (ROADMAP, VISION, features/<id>/feature.md or audits/) written by a1 product writers in the fixed two-space layout, not a vault note, not watched by basic-memory; strict parse intended (F-017)",
     "date": "2026-10-31",
     "by": "claude-a1-fix",
-    "review": "pending"
+    "review": "upheld",
+    "review_reason": "product-audit.cjs:148/286/439 read the product dir's ROADMAP.md.",
+    "reviewed_at": "2026-10-31T09:15:20.925Z",
+    "reviewed_by": "a1-reinhard-reviewer"
   },
   {
     "kind": "class_sweep",
@@ -166,7 +181,10 @@
     "reason": "reads a repo docs/product file (ROADMAP, VISION, features/<id>/feature.md or audits/) written by a1 product writers in the fixed two-space layout, not a vault note, not watched by basic-memory; strict parse intended (F-017)",
     "date": "2026-10-31",
     "by": "claude-a1-fix",
-    "review": "pending"
+    "review": "upheld",
+    "review_reason": "product-audit.cjs:298 re-reads the docs/product audit file this command writes.",
+    "reviewed_at": "2026-10-31T09:15:20.982Z",
+    "reviewed_by": "a1-reinhard-reviewer"
   },
   {
     "kind": "class_sweep",
@@ -174,7 +192,10 @@
     "reason": "reads a repo docs/product file (ROADMAP, VISION, features/<id>/feature.md or audits/) written by a1 product writers in the fixed two-space layout, not a vault note, not watched by basic-memory; strict parse intended (F-017)",
     "date": "2026-10-31",
     "by": "claude-a1-fix",
-    "review": "pending"
+    "review": "upheld",
+    "review_reason": "product-cmd-progress.cjs:68/313/404 read the product dir's ROADMAP.md.",
+    "reviewed_at": "2026-10-31T09:15:21.040Z",
+    "reviewed_by": "a1-reinhard-reviewer"
   },
   {
     "kind": "class_sweep",
@@ -182,7 +203,10 @@
     "reason": "reads a repo docs/product file (ROADMAP, VISION, features/<id>/feature.md or audits/) written by a1 product writers in the fixed two-space layout, not a vault note, not watched by basic-memory; strict parse intended (F-017)",
     "date": "2026-10-31",
     "by": "claude-a1-fix",
-    "review": "pending"
+    "review": "upheld",
+    "review_reason": "product-cmd-scaffold.cjs:90/153/220 read the product dir's ROADMAP.md.",
+    "reviewed_at": "2026-10-31T09:15:21.097Z",
+    "reviewed_by": "a1-reinhard-reviewer"
   },
   {
     "kind": "class_sweep",
@@ -190,7 +214,10 @@
     "reason": "reads a repo docs/product file (ROADMAP, VISION, features/<id>/feature.md or audits/) written by a1 product writers in the fixed two-space layout, not a vault note, not watched by basic-memory; strict parse intended (F-017)",
     "date": "2026-10-31",
     "by": "claude-a1-fix",
-    "review": "pending"
+    "review": "upheld",
+    "review_reason": "product-derived.cjs:16/24 read <productDir>/ROADMAP.md and features/<id>/feature.md.",
+    "reviewed_at": "2026-10-31T09:15:21.155Z",
+    "reviewed_by": "a1-reinhard-reviewer"
   },
   {
     "kind": "class_sweep",
@@ -198,7 +225,10 @@
     "reason": "reads a repo docs/product file (ROADMAP, VISION, features/<id>/feature.md or audits/) written by a1 product writers in the fixed two-space layout, not a vault note, not watched by basic-memory; strict parse intended (F-017)",
     "date": "2026-10-31",
     "by": "claude-a1-fix",
-    "review": "pending"
+    "review": "upheld",
+    "review_reason": "product-derived.cjs:69/140 read <productDir>/VISION.md and audits/*.md.",
+    "reviewed_at": "2026-10-31T09:15:21.211Z",
+    "reviewed_by": "a1-reinhard-reviewer"
   },
   {
     "kind": "class_sweep",
@@ -206,7 +236,10 @@
     "reason": "reads a repo docs/product file (ROADMAP, VISION, features/<id>/feature.md or audits/) written by a1 product writers in the fixed two-space layout, not a vault note, not watched by basic-memory; strict parse intended (F-017)",
     "date": "2026-10-31",
     "by": "claude-a1-fix",
-    "review": "pending"
+    "review": "upheld",
+    "review_reason": "product-validate-ci.cjs:22 reads <dir>/features/<id>/feature.md; parse error returns null.",
+    "reviewed_at": "2026-10-31T09:15:21.270Z",
+    "reviewed_by": "a1-reinhard-reviewer"
   },
   {
     "kind": "class_sweep",
@@ -214,7 +247,10 @@
     "reason": "reads a repo docs/product file (ROADMAP, VISION, features/<id>/feature.md or audits/) written by a1 product writers in the fixed two-space layout, not a vault note, not watched by basic-memory; strict parse intended (F-017)",
     "date": "2026-10-31",
     "by": "claude-a1-fix",
-    "review": "pending"
+    "review": "upheld",
+    "review_reason": "product-validate.cjs:276 reads the product dir's ROADMAP.md; the F-017 validator itself.",
+    "reviewed_at": "2026-10-31T09:15:21.333Z",
+    "reviewed_by": "a1-reinhard-reviewer"
   },
   {
     "kind": "class_sweep",
@@ -222,7 +258,10 @@
     "reason": "reads a repo docs/product file (ROADMAP, VISION, features/<id>/feature.md or audits/) written by a1 product writers in the fixed two-space layout, not a vault note, not watched by basic-memory; strict parse intended (F-017)",
     "date": "2026-10-31",
     "by": "claude-a1-fix",
-    "review": "pending"
+    "review": "upheld",
+    "review_reason": "product-validate.cjs:310 reads <dir>/VISION.md.",
+    "reviewed_at": "2026-10-31T09:15:21.390Z",
+    "reviewed_by": "a1-reinhard-reviewer"
   },
   {
     "kind": "class_sweep",
@@ -230,7 +269,10 @@
     "reason": "reads a repo docs/product file (ROADMAP, VISION, features/<id>/feature.md or audits/) written by a1 product writers in the fixed two-space layout, not a vault note, not watched by basic-memory; strict parse intended (F-017)",
     "date": "2026-10-31",
     "by": "claude-a1-fix",
-    "review": "pending"
+    "review": "upheld",
+    "review_reason": "product-validate.cjs:336 reads <dir>/audits/*.md.",
+    "reviewed_at": "2026-10-31T09:15:21.447Z",
+    "reviewed_by": "a1-reinhard-reviewer"
   },
   {
     "kind": "class_sweep",
@@ -238,7 +280,10 @@
     "reason": "reads a repo docs/product file (ROADMAP, VISION, features/<id>/feature.md or audits/) written by a1 product writers in the fixed two-space layout, not a vault note, not watched by basic-memory; strict parse intended (F-017)",
     "date": "2026-10-31",
     "by": "claude-a1-fix",
-    "review": "pending"
+    "review": "upheld",
+    "review_reason": "product-vision.cjs:114/202 read the product dir's ROADMAP.md.",
+    "reviewed_at": "2026-10-31T09:15:21.503Z",
+    "reviewed_by": "a1-reinhard-reviewer"
   },
   {
     "kind": "class_sweep",
@@ -246,7 +291,10 @@
     "reason": "reads a repo docs/product file (ROADMAP, VISION, features/<id>/feature.md or audits/) written by a1 product writers in the fixed two-space layout, not a vault note, not watched by basic-memory; strict parse intended (F-017)",
     "date": "2026-10-31",
     "by": "claude-a1-fix",
-    "review": "pending"
+    "review": "upheld",
+    "review_reason": "product-vision.cjs:164 re-reads the product dir's VISION.md, which this command writes.",
+    "reviewed_at": "2026-10-31T09:15:21.561Z",
+    "reviewed_by": "a1-reinhard-reviewer"
   },
   {
     "kind": "class_sweep",
@@ -254,6 +302,9 @@
     "reason": "readRoadmapAt reads a repo docs/product/ROADMAP.md, written by a1 product writers and not watched by basic-memory; strict parse intended (F-017)",
     "date": "2026-10-31",
     "by": "claude-a1-fix",
-    "review": "pending"
+    "review": "upheld",
+    "review_reason": "spec-coherence.cjs:194 reads docs/product/ROADMAP.md and the vault mirror project/<slug>/product/ROADMAP.md; product/ is in ~/.basic-memory/.bmignore, all 19 mirror files parse strictly, failure is reported as broken.",
+    "reviewed_at": "2026-10-31T09:15:21.619Z",
+    "reviewed_by": "a1-reinhard-reviewer"
   }
 ]
