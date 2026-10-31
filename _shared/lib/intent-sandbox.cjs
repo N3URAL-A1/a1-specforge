@@ -222,7 +222,9 @@ const SELF_CHECKS = ['verify check', 'test-fidelity'];
 const GATES_READ = ['gates fired'];
 const NEW_FEATURE_ALLOW = Object.freeze([
   'check reservations', 'checklist run', 'code-scope check', 'code-scope claim', 'code-scope release', 'code-scope stage',
-  'plan depth-check', 'product feature-init', 'product stage', 'quick eligibility', 'realpath-check run', 'schema-check run',
+  'plan depth-check', 'product feature-init', 'product stage', 'profile ears-check', 'profile nfr-inject', 'profile resolve',
+  'profile set', 'profile simulate-check', 'profile simulate-roles', 'profile threat-model-check',
+  'quick eligibility', 'realpath-check run', 'schema-check run',
   'spec init', 'spec set-size', 'spec update-status', ...SELF_CHECKS, ...GATES_READ, ...GIT_READ,
 ]);
 const INTENT_CHILD_ALLOWLIST = Object.freeze({

@@ -1,0 +1,138 @@
+# golden: commit cb3fd99a6be44891d52b96cc4223f4897823e7c9, captured by: bash _test-fixtures/a1-kritis-profile/golden/capture.sh
+== repo/.a1/
+== repo/.a1/learnings/
+== repo/.a1/learnings/project/
+== repo/.a1/learnings/project/demo/
+== repo/.a1/learnings/project/demo/spec/
+== repo/.a1/learnings/project/demo/spec/001-kritis-golden-sample.md
+---
+id: 001-kritis-golden-sample
+project: demo
+feature_slug: kritis-golden-sample
+title: "Kritis Golden Sample"
+status: clarified
+created: <DATE>
+phase_history:
+  - "phase=discover completed=<ISO>"
+  - "phase=specify completed=<ISO>"
+  - "phase=clarify completed=<ISO>"
+wave_plan_path: project/demo/plans/001-kritis-golden-sample-wave-plan.md
+verify_failures: []
+size: null
+type: spec
+---
+
+# Kritis Golden Sample
+
+> Spec ID: `001-kritis-golden-sample` · Project: `demo` · Status: `clarified`
+
+---
+
+## Discovery — Problem
+
+- <bullet>
+
+## Discovery — Primary User
+
+- <bullet>
+
+## Discovery — User Journey
+
+- <bullet>
+
+## Discovery — Acceptance Criteria
+
+- <bullet>
+
+## Discovery — Success Metrics
+
+- <bullet>
+
+## Discovery — Out of Scope
+
+- <bullet>
+
+## Discovery — Edge Cases
+
+- <bullet>
+
+## Discovery — Compliance
+
+- <bullet>
+
+## Discovery — Dependencies
+
+- <bullet>
+
+## Discovery — Priority
+
+- <bullet>
+
+---
+
+<!--
+  Phase 2 (Specify) appends from here downward. Until Phase 2 runs, the sections below are
+  placeholders and may be empty.
+-->
+
+## Overview
+
+<2–4 sentences describing what the feature is and why.>
+
+## User Stories
+
+### P1 (Must-have)
+
+**US-001-1** — **As a** <role>, **I want** <action>, **So that** <outcome>.
+
+### P2 (Should-have)
+
+<optional>
+
+### P3 (Nice-to-have)
+
+<optional>
+
+## Functional Requirements
+
+- **FR-001** — <binary, testable statement>
+- **FR-002** — <…>
+
+## Success Criteria
+
+- **SC-001** — <measurable, outcome-oriented>
+- **SC-002** — <…>
+
+## Acceptance Scenarios
+
+### US-001-1
+
+**Given** <preconditions>
+**When** <action>
+**Then** <observable outcome>
+
+## Edge Cases
+
+- <case>
+
+## Out of Scope
+
+- <item>
+
+## Dependencies
+
+- <feature, API, ADR, migration — or "none">
+
+## Clarifications
+
+<!-- Filled by Phase 3. Format: -->
+<!-- - **YYYY-MM-DD** — <topic>: <decision>. Reason: <one-sentence>. -->
+
+## Review Checklist
+
+- [ ] All P1 stories have at least one Acceptance Scenario
+- [ ] All FRs are binary and testable
+- [ ] All SCs are measurable
+- [ ] No `[NEEDS CLARIFICATION]` markers remain
+- [ ] Out of Scope is non-empty (be explicit, not implicit)
+- [ ] Dependencies are listed or explicitly "none"

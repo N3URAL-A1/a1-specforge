@@ -158,6 +158,31 @@ grep -c "UX/" <spec-path>
 
 Must return ≥ 1 per screen identified in 2b-1.
 
+<!-- a1-profile:kritis -->
+**KRITIS profile only** — skip this block unless the run profile is `kritis`.
+
+## Step 2c — Stakeholder simulation (only with `--simulate`)
+
+Runs only when `--simulate <csv>` was given. Render the role cards, brief Rene, then check:
+
+```bash
+node <repo>/_shared/a1-tools.cjs profile simulate-roles --roles <csv>
+```
+
+Spawn Rene (`subagent_type: "a1-rene-requirement-engineer"`, no `name`) with: the role cards,
+the spec path, and the instruction to write `## Stakeholder Simulation` with one `### <role-id>`
+block per role, each with an `Assumption challenged:` line. Append this clause to the brief:
+
+> Blank slate for this run: do not read `.claude/agent-memory/`, the learning store
+> (`pattern/a1-learnings/`, `.a1/learnings/`) or any `_learning.md` file.
+
+```bash
+node <repo>/_shared/a1-tools.cjs profile simulate-check --spec <spec-path> --roles <csv>
+```
+
+Exit 1 names the roles without a block: send them back to Rene. Every gap that remains becomes a
+`[NEEDS CLARIFICATION: ...]` marker, then loop back to Step 2. Exit 2 is an error: show it and stop.
+<!-- /a1-profile:kritis -->
 ## Step 3 — Verify all markers resolved
 
 ```bash
@@ -233,6 +258,34 @@ grep -c "FAIL" <spec-path>   # within the ## AC Dry-Run section
 The gate **PASSES** only when every AC line reads `PASS`. Do not proceed to Step 4 while any
 `FAIL` remains.
 
+<!-- a1-profile:kritis -->
+**KRITIS profile only** — skip this block unless the run profile is `kritis`.
+
+### 3.5-4 — KRITIS threat model (STRIDE pass)
+
+Runs after the AC dry-run is all PASS and before Step 4.
+
+1. Require `docs/product/`. If it is absent, use the on-touch adopt offer of `SKILL.md`. If the
+   user declines, stop with: "KRITIS profile needs docs/product for the threat model".
+2. Spawn `a1-samuel-security` by `subagent_type: "a1-samuel-security"` without `name`. Brief: use
+   `_shared/profiles/kritis/threat-model-template.md`, cover all six STRIDE categories, write to
+   `docs/product/features/<id>/threat-model.md` (create the folder; `product feature-init` runs
+   later and only refuses an existing `feature.md`). Append this clause to the brief:
+
+   > Blank slate for this run: do not read `.claude/agent-memory/`, the learning store
+   > (`pattern/a1-learnings/`, `.a1/learnings/`) or any `_learning.md` file.
+
+3. Check the result:
+
+   ```bash
+   node <repo>/_shared/a1-tools.cjs profile threat-model-check --id <id> --repo-root <repo> --phase <spec-id>
+   ```
+
+   Exit 1 lists the findings: send them back to Samuel in a revision brief (at most 2). Exit 2
+   is an error: show it and stop. A high risk that stays open becomes a
+   `[NEEDS CLARIFICATION: ...]` marker until it is mitigated or accepted by name under
+   `## Accepted risks`; then loop back to Step 2.
+<!-- /a1-profile:kritis -->
 ## Step 4 — Status update
 
 ```bash

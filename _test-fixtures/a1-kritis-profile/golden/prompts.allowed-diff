@@ -1,0 +1,37 @@
+# Allowed differences from the golden prompt copies for spec
+# 006-specforge-kritis-profile — a DOCUMENTED exception to FR-008/SC-002:
+# two additions are allowed in SKILL.md, none elsewhere (plan Commit 2+/Wave 8):
+# (1) the German alias "erstelle eine Spezifikation"
+# added to the a1-new-feature description (wave-plan Wave 1 brief item 3); (2) review fix M1 (2026-10-30): one
+# unguarded "Profile resolve" line, with its blank separator, after the Roadmap
+# Gate. FR-001 auto-enable needs resolve to run on a run WITHOUT --profile, so it
+# cannot sit inside a block whose guard says "skip unless the run profile is
+# kritis". The line only reads (profile resolve writes nothing) and prints
+# profile:null for a project that never declared one.
+# Every OTHER line of every prompt file must be byte-identical once the
+# `<!-- a1-profile:kritis -->` ... `<!-- /a1-profile:kritis -->` blocks are
+# stripped (fixtures/strip-blocks.cjs) — this file carries no allowance for
+# anything inside those blocks; blocks are compared by their own mechanism
+# (strip, then cmp), not by this allowed-diff.
+#
+# Format: <file><TAB><ext><TAB><op><TAB><text>
+#   insert-after: the golden line <text> must occur exactly once in the
+#   named file; the following "line" rules are inserted after it, so the
+#   current file must carry exactly those lines there. Applied with
+#   golden/apply-prompts-allowed.cjs, which exits 3 when an allowance
+#   matches zero or two lines — an allowance that no longer matches cannot
+#   pass silently.
+#
+# Anchor note: this anchors on the existing alias-list line of SKILL.md's
+# `description:` block (a YAML folded scalar — each physical line below is
+# literal text, not a logical sentence). Wave 8 owns the exact wording; if
+# it inserts the alias at a different point in the description, or phrases
+# it differently, THIS FILE must be updated in the same commit as that
+# prompt edit (the wiring wave's own acceptance: "the only edit outside a
+# block is the allowed description alias", checked by parts/08-wiring.sh's
+# `git diff "$GOLDEN_COMMIT"...HEAD` on the six prompt files).
+SKILL.md	md	insert-after	  <projekt>"), "spec for <project>" (alias: "spec für <projekt>"), "feature pipeline",
+SKILL.md	md	line	  "a1-new-feature", "erstelle eine Spezifikation" (German alias for "spec for <project>"),
+SKILL.md	md	insert-after	`a1-roadmap`'s SKILL.md.
+SKILL.md	md	line	
+SKILL.md	md	line	**Profile resolve (every run, before Phase 1).** Run `node <repo>/_shared/a1-tools.cjs profile resolve [--profile <name>] --repo-root <repo> [--spec <path>]`; exit 1 or 2 stops the run. When the printed `profile` is `kritis`, the blocks marked `a1-profile:kritis` apply to this run; otherwise ignore them.

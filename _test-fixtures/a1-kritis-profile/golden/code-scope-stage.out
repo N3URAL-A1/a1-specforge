@@ -1,0 +1,15 @@
+# golden: commit cb3fd99a6be44891d52b96cc4223f4897823e7c9, captured by: bash _test-fixtures/a1-kritis-profile/golden/capture.sh
+## code-scope stage --by 001-kritis-golden-sample --set started rc=0
+{
+  "status": "OK",
+  "file": "<REPO>/.a1/reservations.json",
+  "reservation": {
+    "type": "code_scope",
+    "paths": [
+      "_shared/lib/kritis-golden-sample.cjs"
+    ],
+    "by": "001-kritis-golden-sample",
+    "at": "<ISO>",
+    "stage": "started"
+  }
+}

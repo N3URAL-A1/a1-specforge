@@ -63,6 +63,17 @@ Use the **Agent** tool with `subagent_type: "a1-rene-requirement-engineer"` and 
 >     - [ ] Out of Scope is non-empty (be explicit, not implicit)
 >     - [ ] Dependencies are listed or explicitly "none"
 >
+<!-- a1-profile:kritis -->
+**KRITIS profile only** — skip this block unless the run profile is `kritis`.
+
+Under `kritis` add this to the brief above, verbatim:
+
+> **KRITIS profile.** Write every FR in exactly one of the five EARS patterns of
+> `_shared/profiles/kritis/ears.md` and tag it `[EARS: <pattern>]`. Also add the sections of
+> `_shared/profiles/kritis/spec-sections.md`. Blank slate for this run: do not read
+> `.claude/agent-memory/`, the learning store (`pattern/a1-learnings/`, `.a1/learnings/`) or any
+> `_learning.md` file.
+<!-- /a1-profile:kritis -->
 > **Important rule:** When you are unsure about something while writing (numbers, thresholds,
 > business rules, exact error messages), mark the spot inline with
 > `[NEEDS CLARIFICATION: <specific question>]`. Do not invent values. Phase 3 (Clarify)
@@ -73,6 +84,21 @@ Use the **Agent** tool with `subagent_type: "a1-rene-requirement-engineer"` and 
 >
 > When done: report "Spec draft complete, N FRs, N SCs, N open clarifications."
 
+<!-- a1-profile:kritis -->
+**KRITIS profile only** — skip this block unless the run profile is `kritis`.
+
+**After the draft, before Step 2**, inject the NIS2/KRITIS NFR catalogue and check the EARS form
+in report mode. Findings go back to Rene now, not at Gate 4.5:
+
+```bash
+node <repo>/_shared/a1-tools.cjs profile nfr-inject --spec <spec-path>
+node <repo>/_shared/a1-tools.cjs profile ears-check --spec <spec-path> --phase <spec-id>
+```
+
+`nfr-inject` is idempotent. For `ears-check`, exit 1 lists findings: send them to Rene
+(same blank-slate clause) to rewrite the named FRs, then re-run. Exit 2 is an error: show it and
+stop.
+<!-- /a1-profile:kritis -->
 ## Step 2 — Status update
 
 After Rene reports completion:

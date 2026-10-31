@@ -1,0 +1,268 @@
+# Fixture sources (suite a1-kritis-profile, spec 006). Real files copied; edits listed here.
+
+golden/prompts/SKILL.md
+golden/prompts/02-specify.md
+golden/prompts/03-clarify.md
+golden/prompts/04.5-consistency-gate.md
+golden/prompts/a1-rene-requirement-engineer.md
+golden/prompts/a1-samuel-security.md
+  Source: `git show cb3fd99a6be44891d52b96cc4223f4897823e7c9:<path>` for
+  skills/a1-new-feature/SKILL.md, skills/a1-new-feature/workflows/02-specify.md,
+  skills/a1-new-feature/workflows/03-clarify.md,
+  skills/a1-new-feature/workflows/04.5-consistency-gate.md,
+  agents/a1-rene-requirement-engineer.md, agents/a1-samuel-security.md
+  (GOLDEN_COMMIT = the post-023-merge HEAD at Wave 1 time, identical to the
+  working tree when these copies were made, 2026-10-28). Byte copies, no edits.
+  Verified against the working tree with `diff` before commit (all six
+  identical, since no production file has been edited yet at this commit).
+
+fixtures/plan-depth-check/021-dashboard-wave-plan.md
+  Source: ~/N3URAL-Vault/project/a1-specforge/plans/021-dashboard-wave-plan.md,
+  byte copy, 2026-10-28 (`diff` confirmed identical after copy). This is the
+  "real spec/plan pair that passes #9/#10" named in the wave-plan Wave 1
+  brief — used as the --plan input for the plan-depth-check golden scenario.
+  No edits.
+
+golden/*.out, golden/*.err, golden/*.files (the 12 CLI scenario goldens)
+  Generated, not copied: `bash golden/capture.sh` runs golden/scenarios.sh
+  against the a1-tools.cjs of GOLDEN_COMMIT (git archive, never the working
+  tree — testing.md class 4) and writes these files. Re-running capture.sh
+  reproduces them byte for byte (verified 2026-10-28, two runs diffed
+  identical).
+
+_test-fixtures/a1-checklist/pass/project/demo/{spec/001-login.md,plans/001-login-wave-plan.md,CLAUDE.md}
+  Not copied into this suite — reused in place from its own checked-in
+  location (../a1-checklist/pass/project) by golden/scenarios.sh's
+  checklist-run scenario, which `cp -R`s it into a temp dir at run time. No
+  second copy was made here to avoid duplicating an existing fixture; see
+  golden/scenarios.sh's G_CHECKLIST_FIXTURE comment.
+
+Generated at run time (golden/scenarios.sh, every scenario): one fresh git
+repo + one fresh HOME per scenario under mk_workdir-managed temp dirs; a
+docs/product tree built by the real `product init`/`add-milestone`/
+`add-feature` CLI (not hand-authored) for the product feature-init/stage
+scenarios; a spec file built by the real `spec init` CLI for the spec
+set-size/update-status scenarios. None of these are derived from the parser
+under test — they are built by running other real, already-tested CLI
+commands, the same pattern as ../a1-vault-fallback/golden/scenarios.sh's
+g_roadmap().
+
+fixtures/stride/*.md (Wave 5, FR-003, suite part 05-stride.sh)
+  Review M2 (2026-10-30): the "—" Mitigation cells on `mitigated` rows in all
+  files were replaced by "Control in place and verified" (the old checker let
+  a mitigated row carry no mitigation); added accepted-no-entry.md,
+  accepted-entry-no-date.md, accepted-medium-with-entry.md,
+  mitigated-no-mitigation.md, bad-relevant.md (each = complete.md plus one row
+  or line edit).
+  Not copied from a real file: authored from scratch following the shape of
+  _shared/profiles/kritis/threat-model-template.md (this wave's own
+  template, migrated from the archived SpecForge Anhang E, STRIDE output
+  table). Authored, not derived from profile-stride.cjs's parser (contract
+  item 2) — the template was fixed in prose first, the fixtures were then
+  hand-written to that prose, and the checker was written after both. Files:
+  complete.md (all six categories, passes), category-missing-D.md (Denial
+  of Service row removed), unmitigated-high-open.md (a high/open row with
+  no matching "## Accepted risks" entry), accepted-high-open.md (the same
+  high/open row, now accepted by name — must still pass, since "open" plus
+  a matching acceptance is not "unmitigated"), bad-risk.md ("critical" is
+  not in the low/medium/high vocabulary), bad-status.md ("closed" is not in
+  the open/mitigated/accepted vocabulary), not-applicable-no-reason.md
+  (Spoofing marked "Relevant: no" with an empty Finding cell),
+  section-missing-actors.md ("## Actors" omitted).
+
+fixtures/resolve/spec-no-profile.md (Wave 2, FR-001, suite part 02-resolve.sh)
+  Source: ~/N3URAL-Vault/project/a1-specforge/spec/006-specforge-kritis-profile.md,
+  byte copy, 2026-10-28 (`diff` confirmed identical after copy). No edits.
+
+fixtures/resolve/spec-with-profile.md
+  Derived from spec-no-profile.md: one line `profile: kritis` inserted
+  immediately after the `status: implementing` frontmatter line (sed
+  `/^status: implementing$/a profile: kritis`). No other byte changed.
+
+fixtures/resolve/spec-with-unknown-profile.md
+  Derived from spec-no-profile.md: one line `profile: krits` inserted at the
+  same position, for the fail-closed (unknown value) case. No other byte
+  changed.
+
+fixtures/resolve/index-no-profile.json
+  Source: docs/product/index.json (this repo's own real, CLI-generated
+  manifest), byte copy, 2026-10-28. No edits.
+
+fixtures/resolve/index-with-profile.json
+  Derived from index-no-profile.json: `project.profile` set to `"kritis"`
+  via a small Python json.load/dump round-trip (re-serializes the whole
+  file with 2-space indent -- every other key/value is unchanged, verified
+  by `diff` ignoring whitespace-only reflow). No other value changed.
+
+fixtures/resolve/index-with-unknown-profile.json
+  Derived from index-no-profile.json the same way, `project.profile` set to
+  `"kritiss"`, for the fail-closed (unknown value) case.
+
+fixtures/resolve/index-broken-with-profile-text.json
+fixtures/resolve/index-broken-no-profile-text.json
+  Not copied from a real file -- both are deliberately truncated, unparseable
+  JSON (an open `{` with no closing brace), authored from scratch to exercise
+  the "broken index.json" fail-closed rule (ADR section 3): the first
+  contains the literal substring `"profile"` and must exit 2
+  (index_json_unreadable_with_profile); the second contains no such
+  substring and must resolve to profile: null, exit 0, same as today. Same
+  class of adversarial fixture as part 01's strip-blocks.cjs hostile cases
+  (hand-authored, not derived from the parser under test).
+
+parts/02-resolve.sh -- constitution.md fixtures (generated inline, not static
+files): no real `<repo>/constitution.md` exists anywhere reachable on this
+host (checked: this repo, the vault, `~`), so the marker-line cases
+(`a1-profile: kritis`, `a1-profile: krits`, absent file, a SpecForge-shaped
+constitution without the marker) are written directly by the part script
+with `printf` into a per-case temp dir, not stored under fixtures/resolve/.
+
+fixtures/skills/old-specforge/SKILL.md (Wave 7, FR-006/FR-007, part 07-alias.sh)
+  Source: ~/.claude/skills/specforge/SKILL.md, lines 1-14 only (the full YAML
+  frontmatter block, both the opening and the closing `---`), byte copy via
+  `sed -n '1,14p'`, 2026-10-28 (`diff` confirmed identical to the same line
+  range of the real file). Not under git; this is the real, installed
+  retired skill, measured on this host. No edits. Used where only the
+  frontmatter/description matters (not the sha-sensitive installer cases,
+  which use old-specforge-full/ instead). First copied as 1-13 (missing the
+  closing `---`, so readDescription() saw an unclosed block and returned
+  null — caught by part 07-alias.sh's own T old-skill-present case going
+  green when it should discriminate; fixed to 1-14 before commit.
+
+fixtures/simulate/spec-006-with-simulation.md (Wave 6, FR-005, part 06-simulate.sh)
+  Source: ~/N3URAL-Vault/project/a1-specforge/spec/006-specforge-kritis-profile.md, byte copy
+  verified identical via `diff` before editing, 2026-10-28. Edit: appended a
+  `## Stakeholder Simulation` section with three `### <role-id>` blocks
+  (security-officer, dpo, ops — the FR-005 worked example's own role list),
+  each with a required `Assumption challenged:` line. Used as the
+  simulate-check pass fixture.
+
+fixtures/simulate/spec-006-no-section.md (Wave 6, FR-005, part 06-simulate.sh)
+  Source: ~/N3URAL-Vault/project/a1-specforge/spec/006-specforge-kritis-profile.md, byte copy
+  verified identical via `diff`, 2026-10-28. No edits (the real spec 006 has
+  no `## Stakeholder Simulation` section yet). Used as the
+  section_missing fixture.
+
+fixtures/simulate/spec-006-block-missing-ops.md (Wave 6, FR-005, part 06-simulate.sh)
+  Derived from fixtures/simulate/spec-006-with-simulation.md (this wave's
+  own fixture, not the parser): the `### ops` block (its own heading plus
+  body) and the preceding blank line were removed, leaving the
+  security-officer and dpo blocks intact. Used as the block_missing fixture.
+
+fixtures/simulate/spec-006-assumption-missing-ops.md (Wave 6, FR-005, part 06-simulate.sh)
+  Derived from fixtures/simulate/spec-006-with-simulation.md (this wave's
+  own fixture): the `### ops` block's body was replaced with prose that
+  discusses the same topic but carries no `Assumption challenged:` line.
+  Used as the assumption_missing fixture.
+
+
+fixtures/skills/old-specforge-full/SKILL.md (Wave 7, FR-007, part 07-alias.sh)
+  Source: ~/.claude/skills/specforge/SKILL.md, the FULL file (2933 lines),
+  byte copy, 2026-10-28. sha256 verified identical to the pinned
+  32026458dc537a78c2ab29e74af887a17dbc33b8bddb347311160d85beb86d54
+  (`sha256sum` run on both the source and the copy; part 07-alias.sh's own
+  caseInstallerFixtureShaPinned re-checks this on every run). No edits. Used
+  so every installer test case seeds HOME from this checked-in fixture
+  instead of ever reading the real ~/.claude/skills/specforge/ — no case in
+  this suite touches the real HOME.
+
+fixtures/skills/specforge-alias-copy/SKILL.md (Wave 7, FR-007, part 07-alias.sh)
+  Source: _extras/specforge-alias/SKILL.md (this wave's own production
+  alias), byte copy, 2026-10-28 (`diff` confirmed identical). No edits. A
+  separate copy, not a reference to the production file, so a future edit
+  to the production alias cannot silently change what the "alias present"
+  trigger-check case exercises without a deliberate fixture update.
+
+(Wave 7, part 07-alias.sh) The a1-new-feature entry of every --skills-dir
+fixture tree reuses golden/prompts/SKILL.md (Wave 1's own golden copy of
+skills/a1-new-feature/SKILL.md) in place, copied into a temp
+<skills-dir>/a1-new-feature/SKILL.md at run time by buildSkillsDir() — no
+second static copy was added under fixtures/skills/ for this, same
+reuse-in-place pattern as the a1-checklist fixture reuse noted above.
+
+fixtures/ears/spec-006-unmodified.md (Wave 3, FR-002, part 03-ears.sh)
+  Source: ~/N3URAL-Vault/project/a1-specforge/spec/006-specforge-kritis-profile.md,
+  frontmatter trimmed to 5 keys and the body trimmed to "## Functional
+  Requirements" + "## Success Criteria" only (every other section dropped --
+  Discovery, Clarifications, Review Checklist), 2026-10-28. Every FR-001..
+  FR-008 line kept byte-identical to the real spec (checked by eye against
+  the real file, including FR-001's 3-line wrap). Edits: non-ASCII em dash in
+  the title replaced with "->", "<=" used instead of "≤"/">=" instead of "≥"
+  in SC-001 (ASCII-only fixture, no semantic change). This is the AC's
+  "unmodified copy of spec 006" -- unmodified with respect to its FR text and
+  shape, trimmed only for fixture size. Used to assert the AC's exact-8
+  no_tag count.
+
+fixtures/ears/spec-006-ears-tagged.md
+  Derived from spec-006-unmodified.md: every FR-001..FR-008 line rewritten
+  into one of the five canonical EARS patterns (ears.md) with an
+  `[EARS: <pattern>]` tag, each with exactly one "shall". FR-001 keeps its
+  3-line wrap (now carrying the tag on the continuation) -- this is also the
+  mutation-proof-2 case (continuation-line joining). Positive, full-coverage
+  fixture: checked == 8, 0 findings.
+
+fixtures/ears/bare-fr-shape.md (FR shape family: bare `**FR-NNN**`, lazy
+flush-left paragraph continuation)
+  Source: ~/N3URAL-Vault/project/n3ural-contentbot/spec/014-preview-bypass-token.md,
+  "## Functional Requirements" section (FR-014, FR-015, their AC-1..AC-3
+  bullets) plus a 4-key frontmatter and a one-line title, 2026-10-28. Edits:
+  FR-014 and FR-015 bodies rewritten into EARS form (event-driven,
+  ubiquitous) with tags; AC bullets kept byte-identical to the real file.
+  This file is why the bare-shape continuation reader had to be
+  lazy-paragraph (flush-left), not indented -- the real source wraps flush
+  left, unlike spec 006's indented bullet convention (see profile-ears.cjs
+  readBareEntry).
+
+fixtures/ears/heading-fr-shape.md (FR shape family: `### FR-NNN` heading,
+body = first paragraph)
+  Source: ~/N3URAL-Vault/project/maison-muelhens/spec/007-premium-redesign-slider.md,
+  FR-001 and FR-002 only (truncated from the file's full FR-001..FR-005 run),
+  plus a 4-key frontmatter and the "## Functional Requirements" heading,
+  2026-10-28. Edits: both FR bodies rewritten into EARS form (ubiquitous,
+  event-driven) with tags; titles kept byte-identical to the real file. A
+  first attempt reused 020-claudia-account-connection.md's FR-001/FR-002
+  (Title:/Description:/Acceptance Criteria: sub-labelled shape) and was
+  replaced: that shape's EARS-taggable text sits in a sub-paragraph below the
+  heading's literal first paragraph ("**Title:** ..."), which does not fit
+  the AC's "whose body is the first paragraph" wording -- this file's plain
+  heading + single paragraph shape does.
+
+fixtures/ears/structure-mismatch.md, fixtures/ears/german-form.md,
+fixtures/ears/vague-warnings.md, fixtures/ears/no-frs.md,
+fixtures/ears/table-rows-ignored.md, fixtures/ears/multiple-shall.md,
+fixtures/ears/nfr-section.md
+  Not copied from a real file: authored from scratch, synthetic fixtures
+  with a `9NN-` id so they are never mistaken for a real vault spec. Each
+  exercises exactly one finding/warning class named in the AC (structure
+  mismatch, the German "Wenn ..." EARS form carrying a literal "shall" so the
+  pattern-opener mutation proof is meaningful, the ears.md vague-term list,
+  no_frs, traceability-table rows under "## Functional Requirements",
+  multiple_shall, and FR-NFR-### lines read from the profile's NFR section).
+  german-form.md's body: migrated almost verbatim from the archived SpecForge
+  Anhang C event-driven example (line ~1465), kept in German, with one
+  English "shall" inserted mid-sentence -- a plausible half-migrated
+  artifact, and the only way to make mutation-proof 1 (widening the
+  event-driven opener to accept "Wenn") actually flip the case's exit code,
+  since German has no native "shall" to classify in the first place.
+
+fixtures/skills/old-specforge-full/SKILL.md (Wave 7, FR-006/FR-007, part 07-alias.sh)
+  Source: ~/.claude/skills/specforge/SKILL.md, byte copy taken 2026-10-28,
+  sha256 32026458dc537a78c2ab29e74af887a17dbc33b8bddb347311160d85beb86d54,
+  2933 lines. This is the retired upstream skill the alias replaces; it is
+  not under git anywhere, so the fixture is its only committed record. No
+  edits. part 07-alias.sh pins that sha256 and refuses to run on a drifted
+  copy, so the installer tests always act on the real retired file and never
+  on the live ~/.claude (HOME is redirected to a temp tree for every case).
+
+fixtures/skills/old-specforge/SKILL.md (Wave 7, FR-007, part 07-alias.sh)
+  Lines 1-14 of fixtures/skills/old-specforge-full/SKILL.md, byte-identical
+  (verified with `diff <(sed -n '1,14p' <real>) <fixture>`, 2026-10-28). The
+  frontmatter alone is enough for the trigger-check cases and keeps the
+  per-case temp trees small. The truncation boundary was initially 13 lines,
+  which cut the closing `---` and made the frontmatter unparseable; the suite
+  itself caught it, and the fixture was rebuilt at 14 lines.
+
+fixtures/skills/specforge-alias-copy/SKILL.md (Wave 7, FR-007, part 07-alias.sh)
+  Byte copy of _extras/specforge-alias/SKILL.md, this repo's own new alias
+  (verified identical with `diff`, 2026-10-28). Copied rather than referenced
+  so the trigger-check cases run against a fixed artifact: a later edit to
+  the shipped alias must turn this part red deliberately, not silently.

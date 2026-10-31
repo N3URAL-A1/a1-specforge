@@ -145,6 +145,10 @@ Two read-only reports over vault markdown. They need `A1_VAULT_ROOT`, make no ne
 
 `fix init-postmortem` takes `--found-by` and `--should-have-caught`; `fix validate-postmortem <file>` checks them. Usage errors exit 1, a missing vault or an I/O error exits 2.
 
+### KRITIS profile (spec 006)
+
+`a1-new-feature --profile kritis` (also resolved from the spec, `docs/product/index.json` or a constitution marker) adds the three building blocks of the retired SpecForge to the normal pipeline: EARS requirements (checked by `profile ears-check`), the NIS2/KRITIS NFR catalogue (`profile nfr-inject`) and a STRIDE threat model at Gate C written by `a1-samuel-security` (checked by `profile threat-model-check`), plus an optional stakeholder simulation (`--simulate <csv>`). A run without the profile behaves as before: every profile edit sits in a guarded block that the run skips. A KRITIS run reads no agent memory or learning store, but a skill cannot unload context the harness already injected (project `CLAUDE.md`, auto-memory): start such runs in a fresh session with auto-memory off. The old `specforge` trigger stays as a deprecated alias skill (`_extras/specforge-alias`, installed by `bin/install-specforge-alias.sh`, dry run by default, `--apply` to install).
+
 ### Vault mirror and cockpit (spec 010)
 
 With `A1_VAULT_ROOT` set, the CLI keeps a one-way, read-only copy of each project's product and phase state in an external vault. Two machines can share one vault through a per-project writer host. Commands, rules and variables are in [`docs/vault.md`](docs/vault.md).
@@ -176,7 +180,7 @@ English-first; German trigger phrases remain supported as aliases. Some workflow
 
 ## Testing
 
-55 fixture runners live under `_test-fixtures/*/run*.sh` (counted with `ls _test-fixtures/*/run*.sh | wc -l`; this includes the vault-fallback, phantom and `run-wave13.sh` runners) plus one nested runner, `_test-fixtures/a1-schema-check/parser/run-parser.sh`. Run them all:
+56 fixture runners live under `_test-fixtures/*/run*.sh` (counted with `ls _test-fixtures/*/run*.sh | wc -l`; this includes the vault-fallback, phantom and `run-wave13.sh` runners) plus one nested runner, `_test-fixtures/a1-schema-check/parser/run-parser.sh`. Run them all:
 
 ```bash
 for r in _test-fixtures/*/run*.sh; do bash "$r" || break; done

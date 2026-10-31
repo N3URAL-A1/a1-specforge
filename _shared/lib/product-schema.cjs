@@ -6,9 +6,13 @@
 
 
 const PRODUCT_ROADMAP_KEY_ORDER = [
-  'schema_version', 'type', 'project', 'title', 'status', 'updated', 'source',
+  'schema_version', 'type', 'project', 'title', 'status', 'profile', 'updated', 'source',
   'modules', 'milestones', 'features', 'next',
 ];
+
+// Spec 006-specforge-kritis-profile (FR-001): the only known profile value
+// accepted in ROADMAP.md frontmatter / index.json `project.profile`.
+const PRODUCT_PROFILE_VALUES = Object.freeze(['kritis']);
 
 const PRODUCT_FEATURE_KEY_ORDER = [
   'id', 'project', 'milestone', 'title', 'status', 'stage', 'depends_on',
@@ -71,4 +75,5 @@ module.exports = {
   YYYY_MM_RE,
   YYYY_MM_DD_RE,
   parseInlineFlowObject,
+  PRODUCT_PROFILE_VALUES,
 };
