@@ -67,6 +67,22 @@ function inIntentChild() {
   try { return require('./intent-child.cjs').inChildMode() === true; } catch (_e) { return false; }
 }
 
+/**
+ * Gives the snapshot the project's node_modules. A copy, not a symlink: Next 16 Turbopack refuses a node_modules
+ * symlink that points outside the snapshot root, so `next build` fails in the snapshot only (ccc PR #1). darwin clones
+ * (APFS clonefile), elsewhere reflink where the filesystem has it, else a plain copy. The symlink stays as fallback.
+ */
+function provideNodeModules(project, dir) {
+  const nm = path.join(project, 'node_modules');
+  const target = path.join(dir, 'node_modules');
+  if (!fs.existsSync(nm) || fs.existsSync(target)) return;
+  const args = process.platform === 'darwin' ? ['-cR', nm, target] : ['-R', '--reflink=auto', nm, target];
+  const c = spawnSync('cp', args, { shell: false, stdio: 'ignore', timeout: ARCHIVE_TIMEOUT_MS });
+  if (c.status === 0) return;
+  fs.rmSync(target, { recursive: true, force: true });
+  fs.symlinkSync(nm, target);
+}
+
 /** Extracts `git archive <sha>` into a fresh guarded temp dir (a1-fx-verify-<label>-*); returns the dir. Caller removes it. */
 function extractSnapshot(project, sha, label = 'base') {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `a1-fx-verify-${label}-`)));
@@ -79,8 +95,7 @@ function extractSnapshot(project, sha, label = 'base') {
       const x = spawnSync('tar', ['-xf', tar, '-C', dir], { shell: false, stdio: 'ignore', timeout: ARCHIVE_TIMEOUT_MS });
       if (x.status !== 0) throw new VerifyError('internal', 'tar extraction of the base snapshot failed');
     } finally { fs.rmSync(tar, { force: true }); }
-    const nm = path.join(project, 'node_modules');
-    if (fs.existsSync(nm) && !fs.existsSync(path.join(dir, 'node_modules'))) fs.symlinkSync(nm, path.join(dir, 'node_modules'));
+    provideNodeModules(project, dir);
     release[1]();
     return dir;
   } catch (e) {
