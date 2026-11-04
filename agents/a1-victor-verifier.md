@@ -116,6 +116,7 @@ node "$A1_TOOLS" phantom check ".a1/phases/<phase>/PLAN.md" --format json
 ```
 
 The CLI always exits 0 — enforcement lives in YOUR contract, not the exit code:
+- **`total_completed: 0` on a plan with code tasks** → not clean, no input. Write `Phantom check: no input (0 completed tasks)` under `### Verify manually (weak phantom matches)`, then trace each wave's claimed files with `git log --name-only <base>..HEAD` instead; never cite this run as phantom evidence.
 - **PHANTOM on a task NOT tagged `# no-code`** → BLOCKER finding under `### Phantom BLOCKERs` (task name + claimed-but-missing artifact). Overall verdict **cannot be PASS** while one is unresolved — route to FAIL (or PARTIAL only if the user explicitly accepts the gap).
 - **PHANTOM on a `# no-code` task** → informational only (docs/analysis tasks legitimately produce no code).
 - **Weak match (matched only on weak/ambiguous tokens)** → list under `### Verify manually (weak phantom matches)` so a human confirms the artifact is real. Not a BLOCKER.
