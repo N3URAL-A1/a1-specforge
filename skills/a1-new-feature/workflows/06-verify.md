@@ -73,6 +73,8 @@ node <repo>/_shared/a1-tools.cjs verify run --project <dir> --out .a1/phases/<sp
 echo "verify run exit=$RUN_RC"
 ```
 
+Start `verify run` under the same quiet-host rule as `a1-pr-review` `workflows/05-merge.md` §5.3 (owner of that rule).
+
 Exit 1 or 2 stops Phase 6: fix the failing command (or `.a1/verify.json`), re-run. After the
 walkthrough result is written to VERIFICATION.md (keep the `verify_run` key), and again before
 any verdict `PASS` is reported:

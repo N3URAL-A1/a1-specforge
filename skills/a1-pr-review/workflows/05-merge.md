@@ -58,6 +58,16 @@ To clear one: `node <repo>/_shared/a1-tools.cjs disposition add --kind config_ch
 `<author>` records `disposition review <fp> --verdict upheld --reason "<why>" --by <reviewer>` (5.1); commit and push `.a1/dispositions.json`;
 run 5.3 again. The fingerprint covers the exact head content: change the config again and the verdict no longer matches.
 The suites run fresh on every merge check (`--no-cache`); no result cache is trusted.
+Start it only on a quiet host: no other `verify run` or `pr merge-check` running and the 5-minute load below the CPU count.
+A red `reasons[]` entry from a run that started above that bar (timeout, `spawn_failed`, a timing test green in CI) is re-run
+once on a quiet host before it counts; write the host and both load values next to any red claim.
+The lines below (an `sh` block, not a gate block) print `WAIT` and do not stop the run (a precondition of the registered gate `pr-merge-check`, not a new gate).
+
+```sh
+pgrep -f '^node .*a1-tools[.]cjs (verify run|pr merge-check)' >/dev/null && echo "WAIT: another verify run or merge check is active"
+node -e 'const os=require("os");const l=os.loadavg()[1],n=os.cpus().length;console.log(`load5=${l.toFixed(2)} cpus=${n}`);process.exit(l<n?0:1)' || echo "WAIT: host load above CPU count"
+```
+
 On a host new to this project, run the host check of a1-new-feature `workflows/06-verify.md` Step 0.6 first (owner of that check).
 
 ```bash
