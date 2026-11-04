@@ -59,6 +59,9 @@ Use the **Agent** tool with `subagent_type: "a1-vincente-vibe-optimizer"` and
 >     duplicate — the `diffs.duplicated_in_plan` display is misleading in the last-wave trap
 >     above. Fix the missing coverage before chasing a "duplicate."
 > - SC-### → kept for Phase 6; use them only as a fitness check per wave.
+> - `## Edge Cases` → each bullet lands in exactly one wave's `**Edge cases covered:**` line, named by its
+>   text (no new ID token, Gate 4.5 parses only FR-###), with the test that goes red when it breaks. An edge
+>   case no wave can cover goes into a `## Deferred edge cases` list above Wave 1 for the user to decide.
 > - Dependencies → determine the order.
 >
 > **Depth Pass requirement:** read `<repo>/_shared/depth-pass.md` first. The wave plan

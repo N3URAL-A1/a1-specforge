@@ -106,7 +106,7 @@ this brief:
 > Phase 3/Phase 4 rework).
 >
 > File ownership: <from wave brief>.
-> Tests: write or extend the tests that correspond to the FR-### of this wave.
+> Tests: write or extend the tests that correspond to the FR-### and the `**Edge cases covered:**` of this wave.
 > **Discriminating tests per AC (mandatory):** for every AC that states a styling or
 > content property, a language, an ORDER ("A then B then C"), or a success-path side
 > effect ("clicking X launches Y"), write a test IN THIS WAVE that fails specifically
