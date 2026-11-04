@@ -79,6 +79,7 @@ function provideNodeModules(project, dir) {
   const args = process.platform === 'darwin' ? ['-cR', nm, target] : ['-R', '--reflink=auto', nm, target];
   const c = spawnSync('cp', args, { shell: false, stdio: 'ignore', timeout: ARCHIVE_TIMEOUT_MS });
   if (c.status === 0) return;
+  process.stderr.write(`verify: node_modules copy failed (status ${c.status}, signal ${c.signal}), snapshot uses a symlink\n`);
   fs.rmSync(target, { recursive: true, force: true });
   fs.symlinkSync(nm, target);
 }
