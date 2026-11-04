@@ -54,6 +54,10 @@ If `has_uncommitted=true`:
 > will be lost. With `keep` and `handoff` the worktree content is preserved —
 > would you like to commit first?"
 
+For `keep` and `discard`, also list `ls <path>/.a1/phases/*/gate-log.jsonl <path>/.a1-review 2>/dev/null`.
+Gate logs and review state are never committed and go with the worktree: if a retro that reads them
+is not written yet, stop and write it first.
+
 ## Step 4 — Run exit
 
 ```bash

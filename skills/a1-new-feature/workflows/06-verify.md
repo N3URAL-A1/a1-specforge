@@ -279,8 +279,10 @@ Completion Gate), each after its own confirmation:
    git -C <repo> ls-remote --heads origin <feature-branch>
    ```
    Non-empty output → the remote branch still exists → **refuse** to set
-   `origin-cleanup` or `done`. Go run `a1-worktree` exit (discard mode) to
-   delete the remote branch, then re-check. Only once empty:
+   `origin-cleanup` or `done`. Before the discard, run Step 6 (Retro, incl.
+   `retro validate --gate-log`) from inside the worktree: the gate log is
+   gitignored (FR-008) and is deleted with it. Then go run `a1-worktree` exit
+   (discard mode) to delete the remote branch, then re-check. Only once empty:
    ```bash
    node <repo>/_shared/a1-tools.cjs code-scope stage --by <spec-id> --set origin-cleanup
    ```
