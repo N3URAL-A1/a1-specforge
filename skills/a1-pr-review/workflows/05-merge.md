@@ -84,12 +84,16 @@ PR bodies go in with `--body-file`, never inline. `<head_sha>` is `head_sha` fro
 that commit or refuses, so a push between the check and the merge cannot slip in (spec 017 review SEC-1).
 
 ```bash
-gh pr merge <n> --squash --delete-branch --match-head-commit <head_sha>
+gh pr merge <n> --squash --match-head-commit <head_sha>
 ```
 
+No `--delete-branch`: run from a worktree it removes the folder behind the registry or fails locally after the remote merge.
 Then verify it landed (`gh pr view <n> --json state,mergedAt`), sync the primary checkout's `main`
 with `_shared/push-cadence.md` P3 (never a bare `git pull`) and advance the registry
-(`a1-tools pr mark-status`). Report what was merged and which findings there were.
+(`a1-tools pr mark-status`). Close out in this order: retro of this skill (reads the worktree gate log),
+`a1-worktree` exit with origin cleanup (03-exit Step 4.5 deletes the remote branch), then the caller's
+remaining lifecycle stages (a1-new-feature `workflows/06-verify.md` §5 steps 3-5). The merge ends the PR, not the feature.
+Report what was merged and which findings there were.
 Production deploys and migrations on a production database still need the user's word.
 
 ## 5.5 Live probes (spec 020)

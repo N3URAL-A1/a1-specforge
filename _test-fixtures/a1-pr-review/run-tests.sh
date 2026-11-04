@@ -186,7 +186,7 @@ if grep -q '"matcher": "Bash"' "$SK/../hooks/hooks.json"; then
 else
   fail_case "hooks/hooks.json has no Bash matcher: the merge check is not enforced"
 fi
-if grep -q 'gh pr merge <n> --squash --delete-branch' "$SK/a1-pr-review/SKILL.md" && grep -q 'exactly ONE command' "$REV"; then
+if grep -q 'gh pr merge <n> --squash` (no `--delete-branch`' "$SK/a1-pr-review/SKILL.md" && grep -q 'exactly ONE command' "$REV"; then
   pass_case "the merge step uses the canonical form the hook allows"
 else
   fail_case "the a1-pr-review merge step does not name the canonical gh pr merge form"
@@ -225,7 +225,7 @@ if [ "$order" = "DCMGP" ]; then pass_case "block order: disposition review, cohe
 if [ "$(bj 'b.filter(x=>/gh pr merge/.test(x)).length')" = "1" ] && [ "$(bj 'b.findIndex(x=>/gh pr merge/.test(x))')" = "3" ]; then
   pass_case "no gh pr merge before the three checks: exactly one merge command, in the fourth block (the probe block follows it)"
 else fail_case "gh pr merge appears outside the fourth fenced block"; fi
-if [ "$(bj 'b[3].trim()')" = "gh pr merge <n> --squash --delete-branch --match-head-commit <head_sha>" ]; then pass_case "the merge block is exactly the canonical form the hook allows, with the head pin (only command, no other flags)"
+if [ "$(bj 'b[3].trim()')" = "gh pr merge <n> --squash --match-head-commit <head_sha>" ]; then pass_case "the merge block is exactly the canonical form the hook allows, with the head pin (only command, no other flags)"
 else fail_case "merge block is not the byte-exact canonical form: $(bj 'JSON.stringify(b[3])')"; fi
 if [ "$(bj 'b.slice(0,3).filter(x=>/RC=\$\?/.test(x)&&/-ne 0/.test(x)&&/exit "\$RC"/.test(x)).length')" = "3" ]; then pass_case "each check block tests its exit code explicitly and stops on non-zero (count 3)"
 else fail_case "a check block does not test \$? and exit"; fi
