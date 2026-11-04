@@ -259,12 +259,24 @@ one_line_learning: <from postmortem>
 ---
 EOF
 GATE_LOG=".a1/phases/fix-<bug-slug>/gate-log.jsonl"
-node <repo>/_shared/a1-tools.cjs gates fired --log "$GATE_LOG"; RC=$?
-if [ $RC -ne 0 ]; then echo "gate log unreadable or broken (exit $RC) - fix it before the entry counts"; exit $RC; fi
-node <repo>/_shared/a1-tools.cjs retro validate "$RETRO_FILE" --gate-log "$GATE_LOG" --phase retro-fix-<bug-slug>; RC=$?
+if [ -f "$GATE_LOG" ]; then
+  node <repo>/_shared/a1-tools.cjs gates fired --log "$GATE_LOG"; RC=$?
+  if [ $RC -ne 0 ]; then echo "gate log unreadable or broken (exit $RC) - fix it before the entry counts"; exit $RC; fi
+  node <repo>/_shared/a1-tools.cjs retro validate "$RETRO_FILE" --gate-log "$GATE_LOG" --phase retro-fix-<bug-slug>; RC=$?
+else
+  echo "gate log gone (worktree discarded?) - validating without --gate-log; name the missing log in evidence:"
+  node <repo>/_shared/a1-tools.cjs retro validate "$RETRO_FILE" --phase retro-fix-<bug-slug>; RC=$?
+fi
 if [ $RC -ne 0 ]; then echo "fix the gates_fired block above before the entry counts"; exit $RC; fi
 cat "$RETRO_FILE" >> "$VAULT/pattern/a1-learnings/a1-fix.md"
+grep -q "^task: <bug-slug> " "$VAULT/pattern/a1-learnings/a1-fix.md" || { echo "STOP: retro for <bug-slug> not in a1-fix.md - the terminal verdict is not complete"; exit 1; }
 ```
+
+A gate log that is gone (worktree already discarded) is no reason to skip the entry. Measured 2026-11-04:
+`gates fired` and `retro validate --gate-log` both exit 2 on a missing file, which ended this block before the
+append (4 of 9 postmortems stranded in evolve run 9). Without `--gate-log`, or with an existing log, an entry
+that omits a gate line validates (exit 0); an entry that claims a gate with no log line exits 1. So: list only
+the gates you can still prove, and say in `evidence:` which log was lost.
 
 `evidence:` is required (invariant 3) — it is what the retro-integrity
 cross-check reads. If promote-lessons later runs, it does NOT re-append these
