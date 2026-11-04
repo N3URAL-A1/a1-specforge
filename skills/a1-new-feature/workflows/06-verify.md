@@ -282,7 +282,9 @@ Completion Gate), each after its own confirmation:
    `origin-cleanup` or `done`. Before the discard, run Step 6 (Retro, incl.
    `retro validate --gate-log`) from inside the worktree: the gate log is
    gitignored (FR-008) and is deleted with it. Then go run `a1-worktree` exit
-   (discard mode) to delete the remote branch, then re-check. Only once empty:
+   (discard mode; after the squash merge `--force-discard` needs no confirmation when
+   `git diff HEAD origin/<base>` is empty, see its Step 4) to delete the remote branch,
+   then re-check. Only once empty:
    ```bash
    node <repo>/_shared/a1-tools.cjs code-scope stage --by <spec-id> --set origin-cleanup
    ```

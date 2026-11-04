@@ -87,6 +87,18 @@ JSON on success:
 Exit 0 on success, 1 on user/usage error (e.g. discard with unmerged commits
 and no `--force-discard`), 2 on internal error.
 
+**After a squash merge (owner decision 2026-11-04, evolve run 9):** a squash leaves the feature commits
+unmerged by SHA, so `discard` refuses with `branch_ahead > 0`. When the PR is verified merged
+(`gh pr view <n> --json state,mergedAt` shows MERGED) and the branch content is already on the base,
+pass `--force-discard` WITHOUT asking the user. Prove the second condition first; do not assume it:
+
+```sh
+git -C <path> fetch origin && git -C <path> diff --quiet HEAD origin/<base>; echo "branch content on base: rc=$? (0 = identical)"
+```
+
+Empty diff (rc 0) means `--force-discard` without confirmation. Non-empty diff or no verified merge:
+the unmerged-commits hard rule below applies in full (confirmation required). This is prose only; the CLI is unchanged.
+
 ## Step 4.5 — Origin cleanup (remote branch deletion, `discard`/`handoff`→merged only)
 
 This is the third leg of "Origin cleanup" alongside local `git branch -D` and
@@ -150,6 +162,8 @@ those modes intentionally preserve the branch.
 - Never run `git worktree remove --force` without user confirmation.
 - `discard` with unmerged commits requires `--force-discard` AND explicit
   user confirmation. Default: refuse and suggest `handoff` instead.
+  Exception: a verified squash merge whose branch content is identical to the base
+  (`git diff HEAD origin/<base>` empty, see Step 4) needs no confirmation.
 - Never delete a branch outside the CLI (local) or without explicit
   confirmation (remote). Registry must stay consistent.
 - Never run `git push origin --delete <branch>` without the Step 4.5

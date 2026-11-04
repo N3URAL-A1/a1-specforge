@@ -91,7 +91,7 @@ No `--delete-branch`: run from a worktree it removes the folder behind the regis
 Then verify it landed (`gh pr view <n> --json state,mergedAt`), sync the primary checkout's `main`
 with `_shared/push-cadence.md` P3 (never a bare `git pull`) and advance the registry
 (`a1-tools pr mark-status`). Close out in this order: retro of this skill (reads the worktree gate log),
-`a1-worktree` exit with origin cleanup (03-exit Step 4.5 deletes the remote branch), then the caller's
+`a1-worktree` exit with origin cleanup (03-exit Step 4.5 deletes the remote branch; after the squash, `discard` takes `--force-discard` without asking when `git diff HEAD origin/<base>` is empty, see 03-exit Step 4), then the caller's
 remaining lifecycle stages (a1-new-feature `workflows/06-verify.md` §5 steps 3-5). The merge ends the PR, not the feature.
 Report what was merged and which findings there were.
 Production deploys and migrations on a production database still need the user's word.
