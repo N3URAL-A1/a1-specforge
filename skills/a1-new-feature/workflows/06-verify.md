@@ -52,6 +52,17 @@ See `_shared/agent-lessons.md#verify-stale-server`.
 
 ## Step 0.6 — Build/test evidence (`verify run`, then `verify check`)
 
+On a host that has not run this project's gates yet (new machine, after a handover, fresh worktree), check the host first:
+every binary that `.a1/verify.json` starts is on PATH, gitignored workspace builds (`dist/`) exist, host-bound baselines
+were made on this host. A red caused by the host is fixed on the host, never reported as a code finding.
+The check prints `HOST:` lines and does not stop the run (a precondition of the registered gate, not a new gate).
+
+```bash
+for b in $(node -e 'for (const c of require("./.a1/verify.json").commands||[]) console.log(c.argv[0])' | sort -u); do
+  command -v -- "$b" >/dev/null || echo "HOST: $b not on PATH"
+done
+```
+
 Before the walkthrough, record the build and test result in the spec's VERIFICATION.md (path:
 `.a1/phases/<spec-id>/VERIFICATION.md`, create the directory). The `verify_run` frontmatter block
 is written only by this command:

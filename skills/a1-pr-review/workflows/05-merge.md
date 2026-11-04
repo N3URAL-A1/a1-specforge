@@ -58,6 +58,7 @@ To clear one: `node <repo>/_shared/a1-tools.cjs disposition add --kind config_ch
 `<author>` records `disposition review <fp> --verdict upheld --reason "<why>" --by <reviewer>` (5.1); commit and push `.a1/dispositions.json`;
 run 5.3 again. The fingerprint covers the exact head content: change the config again and the verdict no longer matches.
 The suites run fresh on every merge check (`--no-cache`); no result cache is trusted.
+On a host new to this project, run the host check of a1-new-feature `workflows/06-verify.md` Step 0.6 first (owner of that check).
 
 ```bash
 node <repo>/_shared/a1-tools.cjs pr merge-check --pr <n> --phase pr-<n>; RC=$?
