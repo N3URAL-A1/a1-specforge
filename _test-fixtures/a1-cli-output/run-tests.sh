@@ -127,6 +127,8 @@ fs.writeFileSync(p, src.slice(0, m.index) + process.argv[3] + src.slice(m.index 
 mutate_module "quick.cjs" "_shared/lib/quick.cjs" "return emitExit\\(0, JSON.stringify\\(out, null, 2\\) \\+ .\\\\n., ..\\);" "process.stdout.write(JSON.stringify(out, null, 2) + String.fromCharCode(10));\\n  process.exit(0);"
 mutate_module "locks-based code-scope.cjs" "_shared/lib/code-scope.cjs" "return emitExitWithLock\\(lockPath, 0, JSON.stringify\\(out, null, 2\\) \\+ .\\\\n., ..\\);" "process.stdout.write(JSON.stringify(out, null, 2) + String.fromCharCode(10));\\n  exitWithLock(lockPath, 0);"
 # a file the old hand-kept target list never named
+# cross-function shape: helper writes, the caller exits on the next line (profile-ears.cjs, round 3)
+mutate_module "profile-ears.cjs cross-function print helper" "_shared/lib/profile-ears.cjs" "return emitExit\\(result.findings.length > 0 \\? 1 : 0, formatResult\\(result, flags.json\\), ..\\);" $'printResult(result, flags.json);\n  process.exit(result.findings.length > 0 ? 1 : 0);\n}\nfunction printResult(r, j) {\n  process.stdout.write(formatResult(r, j));'
 mutate_module "gates-cli.cjs (not in the old target list)" "_shared/lib/gates-cli.cjs" "return emitExit\\(0, firedYaml\\(log.records\\), ..\\);" "process.stdout.write(firedYaml(log.records));\\n  process.exit(0);"
 
 echo "a1-cli-output: $pass passed, $fail failed"

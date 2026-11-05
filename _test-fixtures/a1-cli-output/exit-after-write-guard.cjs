@@ -59,6 +59,32 @@ for (const [rel, streams] of Object.entries(TARGETS)) {
   }
 }
 
+// Cross-function shape (found in profile-ears: printResult() writes, its caller exits next line).
+// Same-file only: a top-level function whose body writes to stdout, called as a statement on a line
+// directly followed by process.exit( / exitWithLock(. Helpers imported from other files are not
+// followed (the guard does not resolve requires); the repo sweep found none that matter
+// (xprov-common emitJson writes with fs.writeSync, which is synchronous and safe).
+for (const rel of Object.keys(TARGETS)) {
+  const lines = fs.readFileSync(path.join(root, rel), 'utf8').split('\n');
+  const writers = new Set();
+  for (let i = 0; i < lines.length; i++) {
+    const fm = /^(?:async )?function (\w+)\(/.exec(lines[i]);
+    if (!fm) continue;
+    let j = i;
+    while (j < lines.length && !/^}/.test(lines[j])) j++;
+    if (lines.slice(i, j + 1).some((x) => /process\.stdout\.write\(/.test(x) && !/^\s*(\/\/|\*)/.test(x))) writers.add(fm[1]);
+  }
+  for (let i = 0; i < lines.length - 1; i++) {
+    const c = /^\s*(?:return\s+)?(\w+)\(.*\);\s*$/.exec(lines[i]);
+    if (!c || !writers.has(c[1])) continue;
+    let k = i + 1;
+    while (k < lines.length && (lines[k].trim() === '' || /^\s*\/\//.test(lines[k]))) k++;
+    if (/^\s*(process\.exit|exitWithLock)\(/.test(lines[k]) && !EXCEPTIONS[`${rel}:${lines[i].trim()}`]) {
+      violations.push(`${rel}:${i + 1}: ${c[1]}() writes to stdout and process.exit() follows (line ${k + 1})`);
+    }
+  }
+}
+
 if (violations.length) {
   console.error(violations.join('\n'));
   process.exit(1);
