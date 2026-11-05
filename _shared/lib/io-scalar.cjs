@@ -4,21 +4,57 @@
 // io-nested-frontmatter.cjs): folded quoted values, inline arrays, and the
 // scalar serializer/parser pair. Split out of io.cjs.
 
-// A vault-wide foreign writer (Basic-Memory daemon) folds long quoted values at
-// ~80 columns onto an indented continuation line. Measured 2026-09-24: reading
-// only the first line let `spec update-status` persist truncated title/consumer/
-// phase_history values in three specs. Join continuation lines with one space
-// (YAML folding semantics) until the closing quote.
-function joinFoldedScalar(lines, i, first) {
+// A vault-wide foreign writer (Basic-Memory daemon, PyYAML `yaml.dump`) folds
+// long scalars at ~80 columns onto an indented continuation line. Measured
+// 2026-09-24: reading only the first line let the spec status writer persist
+// truncated title/consumer/phase_history values in three specs. Measured
+// 2026-10-31: the same fold on PLAIN scalars was truncated too (33 a1-specforge
+// notes). Join continuation lines with one space (YAML folding semantics):
+// quoted scalars until the closing quote, plain scalars while the next line is
+// indented. Flow/block-scalar/anchor/tag starts are not joined.
+//
+// List-of-maps (`  - id: review` + `    waves: [1]` + `    owns:`): the flat parser has no shape for
+// it (items are strings). Decision 2026-10-31, measured on the vault: joining made
+// `lanes` read as one string per item with all later items kept (43 files, 463 list
+// elements vs 272 on main) - a different shape than before for 85 fields, and
+// fix.cjs/spec.cjs write them back. A plain list item therefore stops at a continuation line that
+// looks like a map key (the old reading: item 1 = first line only, list ends there).
+// An indented comment line also ends a plain scalar. Pinned by the F10 unit case.
+const NOT_PLAIN_START = /^[[{|>&*!%@`#]/;
+
+// Is the quoted scalar `v` (opening quote included) closed? A trailing `''` inside single quotes is an escaped
+// apostrophe, and `\"` inside double quotes an escaped quote - neither closes the scalar (measured 2026-10-31:
+// a folded item ending in `(prioritized)''` stopped the join one line early).
+function isClosedQuoted(v, q) {
+  const t = v.trimEnd();
+  if (t.length < 2) return false;
+  const body = t.slice(1);
+  if (q === "'") { const t = body.match(/'+$/); return t !== null && t[0].length % 2 === 1; }
+  return body.endsWith('"') && ((body.slice(0, -1).match(/\\+$/) || [''])[0].length % 2 === 0);
+}
+
+function joinFoldedScalar(lines, i, first, inList = false) {
+  if (first === '') return { value: first, index: i };
   const q = first[0];
+  const quoted = q === '"' || q === "'";
+  if (!quoted && NOT_PLAIN_START.test(first)) return { value: first, index: i };
   let v = first;
   let j = i;
-  while ((q === '"' || q === "'") && !(v.length > 1 && v.endsWith(q))
-      && j + 1 < lines.length && /^\s+\S/.test(lines[j + 1]) && !/^\s*-\s/.test(lines[j + 1])) {
+  while (!(quoted && isClosedQuoted(v, q))
+      && j + 1 < lines.length && /^\s+\S/.test(lines[j + 1]) && !/^\s*-\s/.test(lines[j + 1])
+      && !/^\s+#/.test(lines[j + 1])
+      && !(inList && !quoted && /^\s+[A-Za-z_][\w-]*:(\s|$)/.test(lines[j + 1]))) {
     j += 1;
     v = `${v} ${lines[j].trim()}`;
   }
   return { value: v, index: j };
+}
+
+// Unwrap a quoted scalar the way YAML does: `''` is one apostrophe inside
+// single quotes. Only the flat parser calls this; parseScalarToken (shared with
+// the nested parser) is deliberately left as it was.
+function unquoteSingle(v) {
+  return v.slice(1, -1).replace(/''/g, "'");
 }
 
 // Split an inline array on top-level commas only — a quoted element may
@@ -74,4 +110,4 @@ function parseScalarToken(raw) {
   return raw;
 }
 
-module.exports = { joinFoldedScalar, splitInlineArray, serializeScalar, parseScalarToken };
+module.exports = { joinFoldedScalar, unquoteSingle, splitInlineArray, serializeScalar, parseScalarToken };

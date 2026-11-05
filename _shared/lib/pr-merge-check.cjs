@@ -16,7 +16,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { parseFlags, peekVaultRoot, parseNestedFrontmatter } = require('./io.cjs');
+const { parseFlags, peekVaultRoot, parseNestedFrontmatter, parseFrontmatter } = require('./io.cjs');
 const { VerifyError, runVerify } = require('./verify-run.cjs');
 const { resolveMergeBase, flakyBaseGrown } = require('./verify-base.cjs');
 const { gitRaw } = require('./verify-check.cjs');
@@ -127,11 +127,16 @@ function projectSlug(opts) {
 const BUG_REPORT_TYPE = 'bug-report';
 const NONEMPTY = (v) => typeof v === 'string' && v.trim() !== '';
 
-/** SEC-6: only a real a1-fix report counts: frontmatter type bug-report with bug_slug and status. */
+/**
+ * SEC-6: only a real a1-fix report counts: frontmatter type bug-report with bug_slug and status. Read with the FLAT
+ * parser: fix reports live in the vault, where basic-memory re-dumps them with PyYAML (folded scalars, unindented
+ * lists) - valid YAML that the strict nested parser (docs/product/ contract, F-017) rejects. The three keys checked
+ * here are plain scalars, so the flat parser is sufficient.
+ */
 function isFixReportText(text) {
   if (typeof text !== 'string' || !text.startsWith('---')) return false;
   let fm = null;
-  try { fm = parseNestedFrontmatter(text).fm; } catch (_e) { return false; }
+  try { fm = parseFrontmatter(text).fm; } catch (_e) { return false; }
   return !!fm && fm.type === BUG_REPORT_TYPE && NONEMPTY(fm.bug_slug) && NONEMPTY(fm.status);
 }
 
