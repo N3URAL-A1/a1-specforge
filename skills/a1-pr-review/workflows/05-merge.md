@@ -95,8 +95,8 @@ with `_shared/push-cadence.md` P3 (never a bare `git pull`) and advance the regi
 (`a1-tools pr mark-status`). Close out in this order; the gate logs are gitignored and go with the worktree:
 
 1. Retros, each with `retro validate --gate-log`, from inside the worktree: the retro of this skill (one retro, written
-   now, after the merge, see `04-submit.md` Retro) and the caller's retro (a1-new-feature `workflows/06-verify.md` Step 6,
-   a1-fix `workflows/04-verify.md` Step 2b).
+   now, after the merge, see `04-submit.md` Retro) and the caller's retro (a1-new-feature `workflows/06-verify.md` Step 6, written now;
+   a1-fix: already written in `workflows/04-verify.md` Step 2b before the handoff, only check that its entry is present, do not append it again).
 2. `a1-worktree` exit `discard`, then origin cleanup (03-exit Step 4.5 deletes the remote branch). Both need no
    confirmation when PR merged, `git diff HEAD origin/<base>` empty and `git status --porcelain` empty hold (03-exit Step 4);
    otherwise confirm.

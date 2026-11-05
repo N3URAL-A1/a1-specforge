@@ -170,7 +170,7 @@ those modes intentionally preserve the branch.
 
 ## Hard rules
 
-- Never run `git worktree remove --force` without user confirmation.
+- Never run `git worktree remove --force` without user confirmation (exception: the three conditions of Step 4 hold).
 - `discard` with unmerged commits requires `--force-discard` AND explicit
   user confirmation. Default: refuse and suggest `handoff` instead.
   Exception: the three conditions of Step 4 (PR merged, `git diff HEAD origin/<base>`
