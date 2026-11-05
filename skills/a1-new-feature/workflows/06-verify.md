@@ -58,7 +58,9 @@ were made on this host. A red caused by the host is fixed on the host, never rep
 The check prints `HOST:` lines and does not stop the run (a precondition of the registered gate, not a new gate).
 
 ```bash
-for b in $(node -e 'for (const c of require("./.a1/verify.json").commands||[]) console.log(c.argv[0])' | sort -u); do
+BINS="$(node -e 'let c;try{c=JSON.parse(require("fs").readFileSync(require("path").resolve(process.argv[1],".a1/verify.json"),"utf8")).commands||[]}catch(e){console.log("HOST: no verify.json");process.exit(0)}for(const x of c){const a=x&&x.argv;if(Array.isArray(a)&&a[0])console.log(a[0])}' <dir>)"
+echo "$BINS" | grep '^HOST:'
+for b in $(echo "$BINS" | grep -v '^HOST:' | sort -u); do
   command -v -- "$b" >/dev/null || echo "HOST: $b not on PATH"
 done
 ```
@@ -73,7 +75,7 @@ node <repo>/_shared/a1-tools.cjs verify run --project <dir> --out .a1/phases/<sp
 echo "verify run exit=$RUN_RC"
 ```
 
-Start `verify run` under the same quiet-host rule as `a1-pr-review` `workflows/05-merge.md` §5.3 (owner of that rule).
+Start `verify run` under the same quiet-host rule as `a1-pr-review` `workflows/05-merge.md` §5.3 (owner of that rule, including the 15-minute cap and the `host_busy` record).
 
 Exit 1 or 2 stops Phase 6: fix the failing command (or `.a1/verify.json`), re-run. After the
 walkthrough result is written to VERIFICATION.md (keep the `verify_run` key), and again before
@@ -279,11 +281,12 @@ Completion Gate), each after its own confirmation:
    git -C <repo> ls-remote --heads origin <feature-branch>
    ```
    Non-empty output → the remote branch still exists → **refuse** to set
-   `origin-cleanup` or `done`. Before the discard, run Step 6 (Retro, incl.
-   `retro validate --gate-log`) from inside the worktree: the gate log is
-   gitignored (FR-008) and is deleted with it. Then go run `a1-worktree` exit
-   (discard mode; after the squash merge `--force-discard` needs no confirmation when
-   `git diff HEAD origin/<base>` is empty, see its Step 4) to delete the remote branch,
+   `origin-cleanup` or `done`. Order after the merge (`a1-pr-review` `workflows/05-merge.md` 5.4):
+   first the retros from inside the worktree, this skill's Step 6 (incl. `retro validate --gate-log`)
+   and the `a1-pr-review` retro, because the gate logs are gitignored (FR-008) and are deleted with the
+   worktree. Only then go run `a1-worktree` exit (discard mode; after the squash merge `--force-discard`
+   and the remote delete need no confirmation when the PR is merged, `git diff HEAD origin/<base>` is
+   empty and `git status --porcelain` is empty, see its Step 4) to delete the remote branch,
    then re-check. Only once empty:
    ```bash
    node <repo>/_shared/a1-tools.cjs code-scope stage --by <spec-id> --set origin-cleanup
