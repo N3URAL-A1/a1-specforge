@@ -498,7 +498,7 @@ const noGit = ['stage', 'progress', 'approve', 'cancel'].every((a) => !C.INTENT_
 console.log(`${out.join(' ')} ${noGit ? 'nogit-ok' : 'nogit-bad'}`);
 JS
 )"
-if [[ "$h7e_got" == "new-feature=2 continue-feature=2 plan=0 execute=4 fix=1 progress=2 nogit-ok" ]]; then ok "5b-H7e every raw git call of an action's skill (and its executor agent) is classified as a git subcommand; stage/progress list none [FR-048]"
+if [[ "$h7e_got" == "new-feature=3 continue-feature=3 plan=0 execute=4 fix=1 progress=2 nogit-ok" ]]; then ok "5b-H7e every raw git call of an action's skill (and its executor agent) is classified as a git subcommand; stage/progress list none [FR-048]"
 else bad "5b-H7e every raw git call of an action's skill (and its executor agent) is classified as a git subcommand; stage/progress list none [FR-048]" "$h7e_got"; fi
 
 # ---------- P: a refusal writes nothing, for every allowlisted subcommand ----------
