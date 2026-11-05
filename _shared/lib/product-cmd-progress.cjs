@@ -5,14 +5,14 @@
 const fs = require('fs');
 const path = require('path');
 const { parseNestedFrontmatter, serializeNestedFrontmatter, parseFlags, fail, nowIso } = require('./io.cjs');
-const { acquireReservationsLock, exitWithLock, failWithLock, writeAllOrNothing, loadReservations } = require('./locks.cjs');
+const { emitExit } = require('./emit-exit.cjs');
+const { acquireReservationsLock, exitWithLock, failWithLock, writeAllOrNothing, loadReservations, emitExitWithLock } = require('./locks.cjs');
 const { usage } = require('./help.cjs');
 const { productMirrorHook } = require('./vault-product-hook.cjs');
 const { CODE_SCOPE_STAGES } = require('./code-scope.cjs');
 const { PRODUCT_ROADMAP_KEY_ORDER, PRODUCT_FEATURE_KEY_ORDER } = require('./product-schema.cjs');
 const { readProductRoadmap, readProductFeature, regenerateDerived } = require('./product-derived.cjs');
 const mods = require('./product-modules.cjs');
-const { emitExit } = require('./emit-exit.cjs');
 const { derivedWrites, productDirFromFlags, buildRoadmapWritesWithChangelog } = require('./product-txn.cjs');
 
 function cmdProductStatus(args) {
@@ -196,8 +196,7 @@ function cmdProductStage(args) {
     files_written: writes.map((w) => w.target),
     vault_mirror: vaultMirror,
   };
-  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-  exitWithLock(lockPath, 0);
+  return emitExitWithLock(lockPath, 0, JSON.stringify(out, null, 2) + '\n', '');
 }
 
 const MILESTONE_STATUS_VALUES = ['planned', 'in-progress', 'done'];
@@ -378,8 +377,7 @@ function cmdProductMarkersSet(flags) {
     files_written: writes.map((w) => w.target),
     vault_mirror: vaultMirror,
   };
-  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-  exitWithLock(lockPath, 0);
+  return emitExitWithLock(lockPath, 0, JSON.stringify(out, null, 2) + '\n', '');
 }
 
 /** product changelog --entry "<what>" --why "<why>" [--dir]: appends a
@@ -409,8 +407,7 @@ function cmdProductChangelog(args) {
   const vaultMirror = writeAllOrNothing(lockPath, writes, 'product changelog', productMirrorHook(dir));
 
   const out = { status: 'OK', entry: flags.entry, why: flags.why, files_written: writes.map((w) => w.target), vault_mirror: vaultMirror };
-  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-  exitWithLock(lockPath, 0);
+  return emitExitWithLock(lockPath, 0, JSON.stringify(out, null, 2) + '\n', '');
 }
 
 module.exports = {

@@ -4,6 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { nowIso, fail } = require('./io.cjs');
+const { emitExit } = require('./emit-exit.cjs');
 const { hostIdentity } = require('./vault-common.cjs');
 
 // ---------------------------------------------------------------------------
@@ -230,6 +231,12 @@ function exitWithLock(lockPath, code) {
   process.exit(code);
 }
 
+/** Release the lock, then emitExit(): the payload drains before the process ends. Callers `return` it. */
+function emitExitWithLock(lockPath, code, stdoutText, stderrText) {
+  releaseReservationsLock(lockPath);
+  return emitExit(code, stdoutText, stderrText);
+}
+
 /** Same idea as exitWithLock, but for the fail()/usage() error paths inside a
  * locked section: release the lock first, then print the error and exit 1. */
 function failWithLock(lockPath, msg) {
@@ -442,6 +449,7 @@ module.exports = {
   acquireReservationsLock,
   releaseReservationsLock,
   exitWithLock,
+  emitExitWithLock,
   failWithLock,
   reservationsFile,
   loadReservations,

@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { gitSafe, assertNoShellMetachar } = require('./git-safe.cjs');
+const { emitExit } = require('./emit-exit.cjs');
 const { usage } = require('./help.cjs');
 
 // ---------------------------------------------------------------------------
@@ -258,11 +259,9 @@ function cmdPhantomCheck(rest) {
           lines.push(`      searched: ${p.keywords.join(', ')}`);
       }
     }
-    process.stdout.write(lines.join('\n') + '\n');
-    process.exit(0);
+    return emitExit(0, lines.join('\n') + '\n', '');
   }
-  process.stdout.write(JSON.stringify(result, null, 2) + '\n');
-  process.exit(0);
+  return emitExit(0, JSON.stringify(result, null, 2) + '\n', '');
 }
 
 function cmdPhantomListTasks(rest) {

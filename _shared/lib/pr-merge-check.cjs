@@ -17,6 +17,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { parseFlags, peekVaultRoot, parseNestedFrontmatter, parseFrontmatter } = require('./io.cjs');
+const { emitExit } = require('./emit-exit.cjs');
 const { VerifyError, runVerify } = require('./verify-run.cjs');
 const { resolveMergeBase, flakyBaseGrown } = require('./verify-base.cjs');
 const { gitRaw } = require('./verify-check.cjs');
@@ -226,8 +227,7 @@ function cmdPrMergeCheck(_sub, rest) {
     if (e instanceof DispositionError) fail2(e.code, e.message);
     fail2('internal', e && e.message ? e.message : String(e));
   }
-  process.stdout.write(`${JSON.stringify(result.report)}\n`);
-  process.exit(result.exit);
+  return emitExit(result.exit, `${JSON.stringify(result.report)}\n`, '');
 }
 
 module.exports = { cmdPrMergeCheck, mergeCheck, requiredChecks, bugResolves, MergeCheckError };

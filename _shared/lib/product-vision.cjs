@@ -5,7 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const { parseNestedFrontmatter, serializeNestedFrontmatter, parseFlags, nowIso } = require('./io.cjs');
-const { acquireReservationsLock, exitWithLock, failWithLock, writeAllOrNothing } = require('./locks.cjs');
+const { acquireReservationsLock, exitWithLock, failWithLock, writeAllOrNothing, emitExitWithLock } = require('./locks.cjs');
 const { usage } = require('./help.cjs');
 const { productMirrorHook } = require('./vault-product-hook.cjs');
 const { regenerateDerived } = require('./product-derived.cjs');
@@ -133,8 +133,7 @@ function cmdProductVisionInit(args) {
   const vaultMirror = writeAllOrNothing(lockPath, writes, 'product vision-init', productMirrorHook(dir));
 
   const out = { status: 'OK', title: flags.title, pillars: pillars.map((p) => p.id), files_written: writes.map((w) => w.target), vault_mirror: vaultMirror };
-  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-  exitWithLock(lockPath, 0);
+  return emitExitWithLock(lockPath, 0, JSON.stringify(out, null, 2) + '\n', '');
 }
 
 /** product vision-touch [--dir]: bump VISION.md's frontmatter `updated`
@@ -209,8 +208,7 @@ function cmdProductVisionTouch(args) {
   const vaultMirror = writeAllOrNothing(lockPath, writes, 'product vision-touch', productMirrorHook(dir));
 
   const out = { status: 'OK', updated: today, files_written: writes.map((w) => w.target), vault_mirror: vaultMirror };
-  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-  exitWithLock(lockPath, 0);
+  return emitExitWithLock(lockPath, 0, JSON.stringify(out, null, 2) + '\n', '');
 }
 
 module.exports = {

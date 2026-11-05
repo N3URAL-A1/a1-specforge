@@ -5,7 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const { parseNestedFrontmatter, parseFlags, nowIso } = require('./io.cjs');
-const { acquireReservationsLock, exitWithLock, failWithLock, writeAllOrNothing } = require('./locks.cjs');
+const { acquireReservationsLock, exitWithLock, failWithLock, writeAllOrNothing, emitExitWithLock } = require('./locks.cjs');
 const { usage } = require('./help.cjs');
 const { productMirrorHook } = require('./vault-product-hook.cjs');
 const { productDirFromFlags, buildRoadmapWritesWithChangelog } = require('./product-txn.cjs');
@@ -206,8 +206,7 @@ function cmdProductAuditMirror(args) {
       files_written: [],
       vault_mirror: productMirrorHook(dir).afterCommit(),
     };
-    process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-    exitWithLock(lockPath, 0);
+    return emitExitWithLock(lockPath, 0, JSON.stringify(out, null, 2) + '\n', '');
     return;
   }
 
@@ -235,8 +234,7 @@ function cmdProductAuditMirror(args) {
     files_written: writes.map((w) => w.target),
     vault_mirror: vaultMirror,
   };
-  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-  exitWithLock(lockPath, 0);
+  return emitExitWithLock(lockPath, 0, JSON.stringify(out, null, 2) + '\n', '');
 }
 
 module.exports = {

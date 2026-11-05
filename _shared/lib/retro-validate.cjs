@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { parseFrontmatter, fail, parseFlags, repoRoot } = require('./io.cjs');
+const { emitExit } = require('./emit-exit.cjs');
 const { parseRegistryIds, expandRangeIds, resolveGateId } = require('./gate-ids.cjs');
 const { checkRetroAgainstLog } = require('./retro-gatelog.cjs');
 const { ENFORCED_SINCE } = require('./enforced-since.cjs');
@@ -314,8 +315,7 @@ function cmdRetroValidate(argv) {
     // (retro-template.md). Nothing to validate; still print the JSON shape
     // so callers can rely on a stable contract regardless of exit path.
     const out = { file: retroPath, entries: [], valid: 0, drift: 0, unknown: 0, ...(gateLog ? { gate_log: gateLog } : {}) };
-    process.stdout.write(JSON.stringify(out) + '\n');
-    process.exit(gateLog && gateLog.problems.length > 0 ? 1 : 0);
+    return emitExit(gateLog && gateLog.problems.length > 0 ? 1 : 0, JSON.stringify(out) + '\n', '');
   }
 
   const results = rawEntries.map((entry, idx) => {

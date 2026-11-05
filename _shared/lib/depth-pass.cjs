@@ -22,6 +22,7 @@
 const fs = require('fs');
 const path = require('path');
 const { parseFlags } = require('./io.cjs');
+const { emitExit } = require('./emit-exit.cjs');
 const { resolveVaultPath } = require('./io-roots.cjs');
 
 const USAGE = 'usage: a1-tools plan depth-check --plan <path/to/PLAN.md>\n';
@@ -277,8 +278,7 @@ function cmdPlanDepthCheck(args) {
   if (flags._.length > 0) usageError(`unexpected argument: ${flags._[0]}`);
   if (!flags.plan) usageError('missing --plan');
   const report = { plan: flags.plan, ...checkDepthPass(readPlan(flags.plan)) };
-  process.stdout.write(JSON.stringify(report, null, 2) + '\n');
-  process.exit(report.verdict === 'pass' ? 0 : 1);
+  return emitExit(report.verdict === 'pass' ? 0 : 1, JSON.stringify(report, null, 2) + '\n', '');
 }
 
 module.exports = { ORACLE_DENYLIST, ORACLE_STOPWORDS, PLACEHOLDER_TOKENS, checkDepthPass, tokenise, cmdPlanDepthCheck };

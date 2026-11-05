@@ -5,7 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const { parseNestedFrontmatter, serializeNestedFrontmatter, parseFlags, nowIso } = require('./io.cjs');
-const { acquireReservationsLock, exitWithLock, failWithLock, writeAllOrNothing } = require('./locks.cjs');
+const { acquireReservationsLock, exitWithLock, failWithLock, writeAllOrNothing, emitExitWithLock } = require('./locks.cjs');
 const { usage } = require('./help.cjs');
 const { productMirrorHook } = require('./vault-product-hook.cjs');
 const { PRODUCT_ROADMAP_KEY_ORDER, PRODUCT_FEATURE_KEY_ORDER } = require('./product-schema.cjs');
@@ -62,8 +62,7 @@ function cmdProductInit(args) {
   const vaultMirror = writeAllOrNothing(lockPath, writes, 'product init', productMirrorHook(dir));
 
   const out = { status: 'OK', project: flags.project, files_written: writes.map((w) => w.target), vault_mirror: vaultMirror };
-  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-  exitWithLock(lockPath, 0);
+  return emitExitWithLock(lockPath, 0, JSON.stringify(out, null, 2) + '\n', '');
 }
 
 /** product add-milestone --id <slug> --title <t> [--target YYYY-MM] [--goal <s>]:
@@ -124,8 +123,7 @@ function cmdProductAddMilestone(args) {
   const vaultMirror = writeAllOrNothing(lockPath, writes, 'product add-milestone', productMirrorHook(dir));
 
   const out = { status: 'OK', milestone: flags.id, files_written: writes.map((w) => w.target), vault_mirror: vaultMirror };
-  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-  exitWithLock(lockPath, 0);
+  return emitExitWithLock(lockPath, 0, JSON.stringify(out, null, 2) + '\n', '');
 }
 
 /** product add-feature --id <###-slug> --milestone <m> --title <t>
@@ -193,8 +191,7 @@ function cmdProductAddFeature(args) {
   const vaultMirror = writeAllOrNothing(lockPath, writes, 'product add-feature', productMirrorHook(dir));
 
   const out = { status: 'OK', feature: flags.id, files_written: writes.map((w) => w.target), vault_mirror: vaultMirror };
-  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-  exitWithLock(lockPath, 0);
+  return emitExitWithLock(lockPath, 0, JSON.stringify(out, null, 2) + '\n', '');
 }
 
 /** product feature-init --id <###-slug> [--spec-path <p>] [--plan-path <p>]:
@@ -268,8 +265,7 @@ function cmdProductFeatureInit(args) {
   const vaultMirror = writeAllOrNothing(lockPath, writes, 'product feature-init', productMirrorHook(dir));
 
   const out = { status: 'OK', feature: flags.id, files_written: writes.map((w) => w.target), vault_mirror: vaultMirror };
-  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-  exitWithLock(lockPath, 0);
+  return emitExitWithLock(lockPath, 0, JSON.stringify(out, null, 2) + '\n', '');
 }
 
 module.exports = {

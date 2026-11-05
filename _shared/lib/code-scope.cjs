@@ -13,6 +13,7 @@
 // ---------------------------------------------------------------------------
 
 const { parseFlags, nowIso } = require('./io.cjs');
+const { emitExit } = require('./emit-exit.cjs');
 const { usage } = require('./help.cjs');
 const {
   reservationsFile,
@@ -20,8 +21,7 @@ const {
   acquireReservationsLock,
   exitWithLock,
   failWithLock,
-  writeJsonAtomic,
-} = require('./locks.cjs');
+  writeJsonAtomic, emitExitWithLock } = require('./locks.cjs');
 const {
   scopePathsOverlap,
   validateScopePath,
@@ -135,20 +135,15 @@ function cmdCodeScopeClaim(args) {
       const merged = widenStoredPaths(existingSame.paths || [], paths);
       if (merged === null) {
         const out = { status: 'OK', idempotent: true, file, reservation: existingSame };
-        process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-        exitWithLock(lockPath, 0);
+        return emitExitWithLock(lockPath, 0, JSON.stringify(out, null, 2) + '\n', '');
       }
       // The candidate adds a directory signal the stored form lacks: check the
       // widened scope against every other feature before storing it (fail safe).
       const widenOverlaps = findScopeOverlaps(data.reservations, merged, by);
       if (widenOverlaps.length > 0) {
         const out = { status: 'CONFLICT', file, claim: { by, paths: merged }, overlaps: widenOverlaps };
-        process.stdout.write(JSON.stringify(out, null, 2) + '\n');
         const featureIds = [...new Set(widenOverlaps.map((o) => o.feature))];
-        process.stderr.write(
-          `conflict: widened scope overlaps in-flight feature(s): ${featureIds.join(', ')}\n`
-        );
-        exitWithLock(lockPath, 1);
+        return emitExitWithLock(lockPath, 1, JSON.stringify(out, null, 2) + '\n', `conflict: widened scope overlaps in-flight feature(s): ${featureIds.join(', ')}\n`);
       }
       const widened = { ...existingSame, paths: merged };
       const next = {
@@ -156,20 +151,15 @@ function cmdCodeScopeClaim(args) {
       };
       writeJsonAtomic(file, next);
       const out = { status: 'OK', idempotent: true, widened: true, file, reservation: widened };
-      process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-      exitWithLock(lockPath, 0);
+      return emitExitWithLock(lockPath, 0, JSON.stringify(out, null, 2) + '\n', '');
     }
   }
 
   const overlaps = findScopeOverlaps(data.reservations, paths, by);
   if (overlaps.length > 0) {
     const out = { status: 'CONFLICT', file, claim: { by, paths }, overlaps };
-    process.stdout.write(JSON.stringify(out, null, 2) + '\n');
     const featureIds = [...new Set(overlaps.map((o) => o.feature))];
-    process.stderr.write(
-      `conflict: scope overlaps in-flight feature(s): ${featureIds.join(', ')}\n`
-    );
-    exitWithLock(lockPath, 1);
+    return emitExitWithLock(lockPath, 1, JSON.stringify(out, null, 2) + '\n', `conflict: scope overlaps in-flight feature(s): ${featureIds.join(', ')}\n`);
   }
 
   const reservation = { type: 'code_scope', paths, by, at: nowIso(), stage: 'started' };
@@ -177,8 +167,7 @@ function cmdCodeScopeClaim(args) {
   const next = { reservations: [...remaining, reservation] };
   writeJsonAtomic(file, next);
   const out = { status: 'OK', idempotent: false, file, reservation };
-  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-  exitWithLock(lockPath, 0);
+  return emitExitWithLock(lockPath, 0, JSON.stringify(out, null, 2) + '\n', '');
 }
 
 function cmdCodeScopeStage(args) {
@@ -223,8 +212,7 @@ function cmdCodeScopeStage(args) {
   writeJsonAtomic(file, next);
   const out = { status: 'OK', file, reservation: updated };
   if (skipped.length > 0) out.skipped = skipped;
-  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-  exitWithLock(lockPath, 0);
+  return emitExitWithLock(lockPath, 0, JSON.stringify(out, null, 2) + '\n', '');
 }
 
 function cmdCodeScopeRelease(args) {
@@ -239,15 +227,13 @@ function cmdCodeScopeRelease(args) {
   const existing = data.reservations.find((r) => r.type === 'code_scope' && r.by === by);
   if (!existing) {
     const out = { status: 'OK', file, released: false };
-    process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-    exitWithLock(lockPath, 0);
+    return emitExitWithLock(lockPath, 0, JSON.stringify(out, null, 2) + '\n', '');
   }
   const remaining = data.reservations.filter((r) => !(r.type === 'code_scope' && r.by === by));
   const next = { reservations: remaining };
   writeJsonAtomic(file, next);
   const out = { status: 'OK', file, released: true, reservation: existing };
-  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-  exitWithLock(lockPath, 0);
+  return emitExitWithLock(lockPath, 0, JSON.stringify(out, null, 2) + '\n', '');
 }
 
 function cmdCodeScopeList(args) {
@@ -275,8 +261,7 @@ function cmdCodeScopeList(args) {
     });
   }
   const out = { file, count: reservations.length, reservations };
-  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-  process.exit(0);
+  return emitExit(0, JSON.stringify(out, null, 2) + '\n', '');
 }
 
 function cmdCodeScopeCheck(args) {
@@ -295,16 +280,11 @@ function cmdCodeScopeCheck(args) {
   const overlaps = findScopeOverlaps(data.reservations, paths, by);
   if (overlaps.length > 0) {
     const out = { status: 'CONFLICT', file, claim: { by, paths }, overlaps };
-    process.stdout.write(JSON.stringify(out, null, 2) + '\n');
     const featureIds = [...new Set(overlaps.map((o) => o.feature))];
-    process.stderr.write(
-      `conflict: scope overlaps in-flight feature(s): ${featureIds.join(', ')}\n`
-    );
-    process.exit(1);
+    return emitExit(1, JSON.stringify(out, null, 2) + '\n', `conflict: scope overlaps in-flight feature(s): ${featureIds.join(', ')}\n`);
   }
   const out = { status: 'OK', file, claim: { by, paths }, overlaps: [] };
-  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-  process.exit(0);
+  return emitExit(0, JSON.stringify(out, null, 2) + '\n', '');
 }
 
 module.exports = {

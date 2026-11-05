@@ -83,7 +83,7 @@ mk_workdir MUT cli-output-mutation
 mkdir -p "$MUT/_shared/lib"
 cp "$ROOT/_shared/a1-tools.cjs" "$MUT/_shared/a1-tools.cjs"
 cp "$ROOT"/_shared/lib/*.cjs "$MUT/_shared/lib/"
-# Re-insert the defect into the dispatcher tail (replace the emitExit call).
+# Put the defect back into the dispatcher tail (replace the emitExit call).
 node -e '
 const fs = require("fs"); const p = process.argv[1];
 const src = fs.readFileSync(p, "utf8");
@@ -96,7 +96,7 @@ if [[ "$mrc" -ne 0 ]]; then bad "G2 mutation applied" "rc=$mrc"; else
   node "$GUARD" "$MUT" >/dev/null 2>&1; grc=$?
   if [[ "$grc" -eq 1 ]]; then ok "G2 guard is red on the re-inserted defect (dispatcher tail)"; else bad "G2 guard red on mutation" "guard rc=$grc"; fi
 fi
-# Second mutation in a converted module.
+# Further mutations in modules converted in the class sweep (quick.cjs, realpath-check.cjs, locks-based code-scope.cjs).
 node -e '
 const fs = require("fs"); const p = process.argv[1];
 const src = fs.readFileSync(p, "utf8");
@@ -108,6 +108,26 @@ if [[ "$mrc" -ne 0 ]]; then bad "G2 module mutation applied" "rc=$mrc"; else
   node "$GUARD" "$MUT" >/dev/null 2>&1; grc=$?
   if [[ "$grc" -eq 1 ]]; then ok "G2 guard is red on the re-inserted defect (checklist module)"; else bad "G2 guard red on module mutation" "guard rc=$grc"; fi
 fi
+
+mutate_module() { # <label> <file> <regex-source> <replacement-source>
+  local label="$1" rel="$2"
+  cp "$ROOT/$rel" "$MUT/$rel"
+  node -e '
+const fs = require("fs"); const p = process.argv[1];
+const src = fs.readFileSync(p, "utf8");
+const m = new RegExp(process.argv[2]).exec(src);
+if (!m) { console.error("marker not found"); process.exit(3); }
+fs.writeFileSync(p, src.slice(0, m.index) + process.argv[3] + src.slice(m.index + m[0].length));
+' "$MUT/$rel" "$3" "$4"; local mrc=$?
+  if [[ "$mrc" -ne 0 ]]; then bad "G2 mutation applied ($label)" "rc=$mrc"; return; fi
+  node "$GUARD" "$MUT" >/dev/null 2>&1; local grc=$?
+  if [[ "$grc" -eq 1 ]]; then ok "G2 guard is red on the re-inserted defect ($label)"; else bad "G2 guard red on mutation ($label)" "guard rc=$grc"; fi
+  cp "$ROOT/$rel" "$MUT/$rel"
+}
+mutate_module "quick.cjs" "_shared/lib/quick.cjs" "return emitExit\\(0, JSON.stringify\\(out, null, 2\\) \\+ .\\\\n., ..\\);" "process.stdout.write(JSON.stringify(out, null, 2) + String.fromCharCode(10));\\n  process.exit(0);"
+mutate_module "locks-based code-scope.cjs" "_shared/lib/code-scope.cjs" "return emitExitWithLock\\(lockPath, 0, JSON.stringify\\(out, null, 2\\) \\+ .\\\\n., ..\\);" "process.stdout.write(JSON.stringify(out, null, 2) + String.fromCharCode(10));\\n  exitWithLock(lockPath, 0);"
+# a file the old hand-kept target list never named
+mutate_module "gates-cli.cjs (not in the old target list)" "_shared/lib/gates-cli.cjs" "return emitExit\\(0, firedYaml\\(log.records\\), ..\\);" "process.stdout.write(firedYaml(log.records));\\n  process.exit(0);"
 
 echo "a1-cli-output: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

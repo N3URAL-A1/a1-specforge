@@ -12,6 +12,7 @@
 const fs = require('fs');
 const path = require('path');
 const { parseFlags, repoRoot } = require('./io.cjs');
+const { emitExit } = require('./emit-exit.cjs');
 const { lintGates } = require('./gates-lint.cjs');
 const { verifyChain } = require('./gate-log.cjs');
 const { readGateLog, firedYaml } = require('./retro-gatelog.cjs');
@@ -98,8 +99,7 @@ function cmdGatesFired(argv) {
   } catch (e) {
     die(e.message);
   }
-  process.stdout.write(firedYaml(log.records));
-  process.exit(0);
+  return emitExit(0, firedYaml(log.records), '');
 }
 
 function cmdGatesLint(argv) {

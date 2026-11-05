@@ -19,6 +19,7 @@
 const fs = require('fs');
 const path = require('path');
 const { parseFlags, vaultRoot, readMd } = require('./io.cjs');
+const { emitExit } = require('./emit-exit.cjs');
 const {
   reservationsFile,
   loadReservations,
@@ -296,13 +297,11 @@ function cmdQuickEligibility(args) {
 
   if (reasons.length > 0) {
     const out = { status: 'NOT_ELIGIBLE', reasons };
-    process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-    process.exit(1);
+    return emitExit(1, JSON.stringify(out, null, 2) + '\n', '');
   }
 
   const out = { status: 'ELIGIBLE', reasons: [] };
-  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-  process.exit(0);
+  return emitExit(0, JSON.stringify(out, null, 2) + '\n', '');
 }
 
 // ---------------------------------------------------------------------------
@@ -471,8 +470,7 @@ function cmdQuickStats(args) {
     summary,
   };
 
-  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-  process.exit(0);
+  return emitExit(0, JSON.stringify(out, null, 2) + '\n', '');
 }
 
 module.exports = {

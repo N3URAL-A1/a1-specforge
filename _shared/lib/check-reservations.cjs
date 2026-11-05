@@ -1,14 +1,14 @@
 'use strict';
 
 const { parseFlags, nowIso } = require('./io.cjs');
+const { emitExit } = require('./emit-exit.cjs');
 const { usage } = require('./help.cjs');
 const {
   reservationsFile,
   loadReservations,
   acquireReservationsLock,
   exitWithLock,
-  writeJsonAtomic,
-} = require('./locks.cjs');
+  writeJsonAtomic, emitExitWithLock } = require('./locks.cjs');
 
 function cmdCheckReservations(args) {
   const flags = parseFlags(args, {
@@ -23,8 +23,7 @@ function cmdCheckReservations(args) {
   if (flags.list) {
     const data = loadReservations(file);
     const out = { file, count: data.reservations.length, reservations: data.reservations };
-    process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-    process.exit(0);
+    return emitExit(0, JSON.stringify(out, null, 2) + '\n', '');
   }
 
   if (flags.release) {
@@ -54,11 +53,7 @@ function cmdCheckReservations(args) {
           claim: { type, value, by },
           held_by: existing.by,
         };
-        process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-        process.stderr.write(
-          `cannot release: ${type}:${value} is held by ${existing.by}, not ${by}\n`
-        );
-        exitWithLock(lockPath, 1);
+        return emitExitWithLock(lockPath, 1, JSON.stringify(out, null, 2) + '\n', `cannot release: ${type}:${value} is held by ${existing.by}, not ${by}\n`);
       }
     }
 
@@ -68,8 +63,7 @@ function cmdCheckReservations(args) {
 
     if (matches.length === 0) {
       const out = { status: 'OK', file, released: [], idempotent: true, note: 'nothing to release' };
-      process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-      exitWithLock(lockPath, 0);
+      return emitExitWithLock(lockPath, 0, JSON.stringify(out, null, 2) + '\n', '');
     }
 
     const removed = matches.filter((r) => r.by === by);
@@ -78,8 +72,7 @@ function cmdCheckReservations(args) {
     );
     writeJsonAtomic(file, { ...data, reservations: remaining });
     const out = { status: 'OK', file, released: removed, idempotent: false };
-    process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-    exitWithLock(lockPath, 0);
+    return emitExitWithLock(lockPath, 0, JSON.stringify(out, null, 2) + '\n', '');
   }
 
   if (!flags.claim || !flags.by) {
@@ -99,8 +92,7 @@ function cmdCheckReservations(args) {
   if (existing) {
     if (existing.by === by) {
       const out = { status: 'OK', idempotent: true, file, reservation: existing };
-      process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-      process.exit(0);
+      return emitExit(0, JSON.stringify(out, null, 2) + '\n', '');
     }
     const out = {
       status: 'CONFLICT',
@@ -109,19 +101,14 @@ function cmdCheckReservations(args) {
       held_by: existing.by,
       holder: existing,
     };
-    process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-    process.stderr.write(
-      `conflict: ${type}:${value} already reserved by ${existing.by} (at ${existing.at})\n`
-    );
-    process.exit(1);
+    return emitExit(1, JSON.stringify(out, null, 2) + '\n', `conflict: ${type}:${value} already reserved by ${existing.by} (at ${existing.at})\n`);
   }
 
   const reservation = { type, value, by, at: nowIso() };
   const next = { reservations: [...data.reservations, reservation] };
   writeJsonAtomic(file, next);
   const out = { status: 'OK', idempotent: false, file, reservation };
-  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-  process.exit(0);
+  return emitExit(0, JSON.stringify(out, null, 2) + '\n', '');
 }
 
 module.exports = { cmdCheckReservations };

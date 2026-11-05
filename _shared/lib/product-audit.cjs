@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const io = require('./io.cjs');
 const { parseNestedFrontmatter, serializeNestedFrontmatter, parseFlags, fail, nowIso } = require('./io.cjs');
-const { acquireReservationsLock, exitWithLock, failWithLock, writeAllOrNothing } = require('./locks.cjs');
+const { acquireReservationsLock, exitWithLock, failWithLock, writeAllOrNothing, emitExitWithLock } = require('./locks.cjs');
 const { usage } = require('./help.cjs');
 const { productMirrorHook } = require('./vault-product-hook.cjs');
 const { roadmapFeatureIdSet, regenerateDerived } = require('./product-derived.cjs');
@@ -228,8 +228,7 @@ function cmdProductAuditPublish(args) {
     files_written: writes.map((w) => w.target),
     vault_mirror: vaultMirror,
   };
-  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-  exitWithLock(lockPath, 0);
+  return emitExitWithLock(lockPath, 0, JSON.stringify(out, null, 2) + '\n', '');
 }
 
 const AUDIT_SET_STATUS_VALUES = ['open', 'fixed', 'obsolete', 'accepted'];
@@ -460,8 +459,7 @@ function cmdProductAuditSet(args) {
     files_written: writes.map((w) => w.target),
     vault_mirror: vaultMirror,
   };
-  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-  exitWithLock(lockPath, 0);
+  return emitExitWithLock(lockPath, 0, JSON.stringify(out, null, 2) + '\n', '');
 }
 
 module.exports = {

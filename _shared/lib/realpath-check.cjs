@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { parseFlags } = require('./io.cjs');
+const { emitExit } = require('./emit-exit.cjs');
 
 // ---------------------------------------------------------------------------
 // realpath-check — Gate 0.7: deterministic real-backend evidence check.
@@ -182,9 +183,7 @@ function cmdRealpathCheckRun(args) {
 
   if (surfaces.size === 0) {
     const out = { status: 'PASS', surfaces: [], message: 'no real-path surfaces in diff' };
-    if (flags.json) process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-    else process.stdout.write('realpath-check: PASS — no real-path surfaces in diff\n');
-    process.exit(0);
+    return emitExit(0, flags.json ? JSON.stringify(out, null, 2) + '\n' : 'realpath-check: PASS — no real-path surfaces in diff\n', '');
   }
 
   const evidencePath = flags.evidence
@@ -209,12 +208,8 @@ function cmdRealpathCheckRun(args) {
       evidence_path: evidencePath,
       message: `evidence file missing: ${evidencePath}`,
     };
-    if (flags.json) process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-    else {
-      process.stdout.write(`realpath-check: FAIL — evidence file missing: ${evidencePath}\n`);
-      process.stdout.write(`  detected surfaces needing proof: ${detected.join(', ')}\n`);
-    }
-    process.exit(1);
+    return emitExit(1, flags.json ? JSON.stringify(out, null, 2) + '\n'
+      : `realpath-check: FAIL — evidence file missing: ${evidencePath}\n  detected surfaces needing proof: ${detected.join(', ')}\n`, '');
   }
 
   const evidenceText = fs.readFileSync(evidencePath, 'utf8');
@@ -254,21 +249,16 @@ function cmdRealpathCheckRun(args) {
     reasons,
     evidence_path: evidencePath,
   };
+  let text;
   if (flags.json) {
-    process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+    text = JSON.stringify(out, null, 2) + '\n';
   } else if (status === 'PASS') {
-    process.stdout.write(
-      `realpath-check: PASS — real-backend evidence found for: ${detected.join(', ')}\n`
-    );
+    text = `realpath-check: PASS — real-backend evidence found for: ${detected.join(', ')}\n`;
   } else {
-    process.stdout.write(
-      `realpath-check: FAIL — ${lacking.length} surface category(ies) lack proof\n`
-    );
-    for (const cat of lacking) {
-      process.stdout.write(`  - ${cat}: ${reasons[cat]}\n`);
-    }
+    text = `realpath-check: FAIL — ${lacking.length} surface category(ies) lack proof\n`
+      + lacking.map((cat) => `  - ${cat}: ${reasons[cat]}\n`).join('');
   }
-  process.exit(status === 'PASS' ? 0 : 1);
+  emitExit(status === 'PASS' ? 0 : 1, text, '');
 }
 
 module.exports = { cmdRealpathCheckRun };

@@ -14,6 +14,7 @@
 const fs = require('fs');
 const path = require('path');
 const { usage } = require('./help.cjs');
+const { emitExit } = require('./emit-exit.cjs');
 const { parseFlags, parseFrontmatter, tmpPathFor } = require('./io.cjs');
 const { isLink, rootProblem, warnSkipped } = require('./vault-common.cjs');
 const { resolveSlug } = require('./vault-sync.cjs');
@@ -222,8 +223,7 @@ function emit(result, args) {
   const out = args.json
     ? JSON.stringify({ ok: result.ok, path: result.path, status: result.status, degraded: result.degraded })
     : (result.status === 'written' ? result.path : '');
-  if (out) process.stdout.write(`${out}\n`);
-  process.exit(0);
+  return emitExit(0, out ? `${out}\n` : '', '');
 }
 
 /** @param {string|undefined} sub - only `build` @param {string[]} args */
