@@ -1,0 +1,2 @@
+# golden: commit cb3fd99a6be44891d52b96cc4223f4897823e7c9, captured by: bash _test-fixtures/a1-kritis-profile/golden/capture.sh
+## spec update-status <REPO>/.a1/learnings/project/demo/spec/001-kritis-golden-sample.md clarified --wave-plan-path project/demo/plans/001-kritis-golden-sample-wave-plan.md rc=0

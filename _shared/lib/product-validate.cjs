@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const { parseNestedFrontmatter, parseFlags } = require('./io.cjs');
 const { PROJECT_STATUSES, MILESTONE_STATUSES, FEATURE_STATUSES, FEATURE_STAGES } = require('./status-constants.cjs');
-const { PRODUCT_SLUG_RE, FEATURE_ID_RE, YYYY_MM_RE, YYYY_MM_DD_RE, parseInlineFlowObject } = require('./product-schema.cjs');
+const { PRODUCT_SLUG_RE, FEATURE_ID_RE, YYYY_MM_RE, YYYY_MM_DD_RE, parseInlineFlowObject, PRODUCT_PROFILE_VALUES } = require('./product-schema.cjs');
 const { roadmapFeatureIdSet } = require('./product-derived.cjs');
 const { productDirFromFlags } = require('./product-txn.cjs');
 
@@ -131,6 +131,13 @@ function validateRoadmapFm(fm) {
   req('status', PROJECT_STATUSES.has(fm.status), `must be one of ${[...PROJECT_STATUSES].join('|')}, got ${JSON.stringify(fm.status)}`);
   req('updated', typeof fm.updated === 'string' && YYYY_MM_DD_RE.test(fm.updated), `must be YYYY-MM-DD, got ${JSON.stringify(fm.updated)}`);
   req('source', typeof fm.source === 'string' && fm.source.length > 0, 'must be a non-empty provenance string');
+
+  // Spec 006 (FR-001): optional `profile:`, enum ["kritis"]. Absent is valid
+  // (byte-identical no-profile output is exactly what the FR-008 golden
+  // holds); present but unknown is a validation error, not a silent pass.
+  if (fm.profile !== undefined) {
+    req('profile', PRODUCT_PROFILE_VALUES.includes(fm.profile), `must be one of ${PRODUCT_PROFILE_VALUES.join('|')}, got ${JSON.stringify(fm.profile)}`);
+  }
 
   // Spec 023 (FR-002/FR-003): optional `modules:` list of kebab-case slugs.
   const hasModulesList = fm.modules !== undefined;

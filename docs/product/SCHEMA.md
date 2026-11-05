@@ -1,6 +1,6 @@
 # docs/product/ — Schema v1.2 (binding contract)
 
-Status: **binding** (promoted from draft 2026-07-10; extended to v1.1 2026-07-13 — see §6/§7; to v1.2 2026-10-26 — see §8).
+Status: **binding** (promoted from draft 2026-07-10; extended to v1.1 2026-07-13 — see §6/§7; to v1.2 2026-10-26 — see §8; the optional `profile` key added 2026-10-28 — see §10).
 Any writer (human, skill, or CLI) MUST conform to this document. `docs/product/index.schema.json`
 is the machine-checkable twin of the `index.json` section below — field names are identical in
 both.
@@ -9,11 +9,13 @@ both.
 directory (`ROADMAP.md`, `feature.md`, `VISION.md`, `audits/*.md`) — there is no independent
 per-document-type versioning. This document currently describes **schema v1.2**: v1's
 `ROADMAP.md`/`feature.md`/`index.json` contract (§1-§4, unchanged) plus the v1.1 additions in
-§6 (`VISION.md`) and §7 (`audits/<date>-<focus>.md`) and the v1.2 additions in §8 (modules).
+§6 (`VISION.md`) and §7 (`audits/<date>-<focus>.md`), the v1.2 additions in §8 (modules), and the
+optional `profile` key in §10 (spec 006-specforge-kritis-profile).
 Both v1.1 additions are **optional files** — a project with only v1 content (no `VISION.md`,
 no `audits/`) remains fully valid; see §6/§7 and the Edge Cases note at the end of each
-section. The v1.2 additions are **optional keys**: a project that uses no module produces
-the same files as before (§8). `schema_version` stays `1`.
+section. The v1.2 additions and the §10 `profile` key are all **optional keys**: a project
+that uses no module and no profile produces the same files as before (§8, §10). `schema_version`
+stays `1`.
 
 This directory is the single source of truth for a project's roadmap, milestones, and
 in-flight features, readable by ProOrg and by every a1 skill. It replaces ad-hoc
@@ -41,6 +43,8 @@ type: roadmap                    # const "roadmap"
 project: <slug>                  # kebab-case project identifier
 title: <Product name — Roadmap>  # human title, English
 status: active                   # active | paused | done
+profile: kritis                  # OPTIONAL (spec 006, see §10): enum ["kritis"]. Absent
+                                  # by default — a project with no profile omits this key entirely.
 updated: YYYY-MM-DD              # last-write date, ISO 8601
 source: <string>                 # provenance, e.g. "migrated from docs/roadmap.html (2026-07-10)"
 milestones:                      # machine index; mirrors body "## Milestones" sections
@@ -175,7 +179,8 @@ to that schema.
   "project": {
     "id": "<slug>",
     "title": "<Product name>",
-    "status": "active"                    // active | paused | done
+    "status": "active",                   // active | paused | done
+    "profile": "kritis"                   // OPTIONAL (§10): absent when ROADMAP.md has no profile:
   },
   "milestones": [
     {
@@ -227,7 +232,9 @@ to that schema.
 ```
 
 Field-by-field mapping to §1/§2/§6/§7:
-- `project.*` ← `ROADMAP.md` frontmatter `project`/`title`/`status`.
+- `project.*` ← `ROADMAP.md` frontmatter `project`/`title`/`status`/`profile`. `profile` (§10)
+  is OPTIONAL in `index.schema.json` — present only when ROADMAP.md frontmatter carries
+  the key, absent entirely otherwise (byte-identical output without it, FR-008).
 - `milestones[]` ← `ROADMAP.md` frontmatter `milestones[]`, verbatim.
 - `features[]` ← `ROADMAP.md` frontmatter `features[]`, verbatim, with `spec_path`/`plan_path`
   filled from the corresponding `features/<###>-<slug>/feature.md` frontmatter when present.
@@ -513,3 +520,41 @@ permanent), else the lowercased `os.hostname()`. Fallback rule: a hub without th
 mirrors; a hub whose key cannot be read (or a project folder without a hub) blocks every host.
 `a1-tools vault writer --json` lists the resolved writer of every project, and
 `a1-tools vault writer <slug> --set <id>` on the current writer hands a project over.
+
+## 10. Profile (spec 006-specforge-kritis-profile)
+
+Optional project-level flag. The fail-closed resolution mechanism (precedence, unknown-value
+behaviour, the `isolation` field) lives in `docs/adr/2026-10-28-optional-profile-lane.md`
+section 3 and `_shared/lib/profile-resolve.cjs` — this section only fixes the two places the
+profile is *stored*, not how a run resolves it. `schema_version` stays `1`; this is an optional
+key (same precedent as v1.1/v1.2).
+
+**ROADMAP.md frontmatter**
+- `profile` (optional, top-level, right after `status`): one of `["kritis"]` (frozen set — no
+  other value is accepted). Absence means no profile; a value outside the enum is a
+  `product validate` error (`profile: must be one of kritis, got "<value>"`), never silently
+  dropped or coerced.
+
+**`index.json` addition** (only when ROADMAP.md frontmatter carries the key; otherwise absent)
+```jsonc
+{
+  "project": {
+    "id": "<slug>", "title": "<Product name>", "status": "active",
+    "profile": "kritis"
+  }
+}
+```
+`index.schema.json` mirrors this: `project.profile` (`enum: ["kritis"]`), OPTIONAL — not in
+`project`'s `required` list, so a project with no profile produces a `project` object identical
+to schema v1.2 (FR-008: byte-identical no-profile output).
+
+**Constitution marker** (an independent, lower-precedence source — not stored in `docs/product/`
+at all): the vault constitution body carries the line `a1-profile: kritis`, and
+`constitution write-mirror` carries it verbatim to `<repo>/constitution.md`. See
+`_shared/profiles/kritis/constitution-addendum.md` for the regulatory frame this marker lets a
+project declare.
+
+**Spec frontmatter** (the highest-precedence source after the `--profile` CLI flag): a spec's
+own `profile: kritis` key, written by `a1-tools profile set --spec <path> kritis` and read by
+`a1-tools profile resolve`. Not part of the `docs/product/` schema — see the spec frontmatter
+contract (`_shared/lib/spec.cjs`) for its key order.
