@@ -4,7 +4,7 @@
 // markdown read/write helpers. Split out of io.cjs, which re-exports it.
 
 const fs = require('fs');
-const { joinFoldedScalar, splitInlineArray, serializeScalar, parseScalarToken } = require('./io-scalar.cjs');
+const { joinFoldedScalar, unquoteSingle, splitInlineArray, serializeScalar, parseScalarToken } = require('./io-scalar.cjs');
 const { assertVaultWriteContained, writeViaTmp } = require('./fs-safe.cjs');
 
 // ---------- frontmatter parser (line-based, minimal) ----------
@@ -61,14 +61,14 @@ function parseFrontmatter(content) {
         (lines[j].startsWith('  - ') || lines[j].startsWith('- '))
       ) {
         let item = lines[j].replace(/^\s*-\s*/, '');
-        ({ value: item, index: j } = joinFoldedScalar(lines, j, item));
+        ({ value: item, index: j } = joinFoldedScalar(lines, j, item, true));
         if (
           (item.startsWith('"') && item.endsWith('"')) ||
           (item.startsWith("'") && item.endsWith("'"))
         ) {
           try {
             if (item.startsWith('"')) item = JSON.parse(item);
-            else item = item.slice(1, -1);
+            else item = unquoteSingle(item);
           } catch (_e) {
             item = item.slice(1, -1);
           }
@@ -114,7 +114,7 @@ function parseFrontmatter(content) {
       (v.startsWith('"') && v.endsWith('"')) ||
       (v.startsWith("'") && v.endsWith("'"))
     ) {
-      v = v.slice(1, -1);
+      v = v.startsWith("'") ? unquoteSingle(v) : v.slice(1, -1);
     }
     fm[key] = v;
     i++;

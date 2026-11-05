@@ -82,6 +82,10 @@ Runs started from inside an agent session (a `claude` process is an ancestor, or
 
 `_test-fixtures/a1-dashboard/run-tests.sh` (suite `a1-dashboard`) covers `dashboard build`: the CLI and exit contract, the atomic owner-marked write, the section readers and the phone-readable renderer, the secret denylist and redaction, the writer gate, the cost panel, and the wiring (three workflow call sites, the a1-progress line, intent-child refusal, the vault contract). Cases live in `parts/NN-*.sh`; the harness file stays untouched. Fixtures are copies of real files (`fixtures/*/SOURCES.txt`). The suite unsets all vault env, sets it per call only and uses a temp `HOME`; a last case checks that no `dashboard.md` under the real `~/N3URAL-Vault` is newer than the suite start. Before a PR run it once in Docker as a non-root user: `docker run --rm -u 1000:1000 -v <git-archive snapshot>:/w:ro node:20 bash /w/_test-fixtures/a1-dashboard/run-tests.sh`.
 
+### KRITIS profile suite (spec 006)
+
+`_test-fixtures/a1-kritis-profile/run-tests.sh` (suite `a1-kritis-profile`) covers the `profile` command group (resolver, EARS check, NFR injection, STRIDE check, simulation, trigger check, alias installer) and freezes the no-profile behaviour of `a1-new-feature`: golden copies of the six prompt files and of the CLI outputs at the golden commit. Every profile edit of a prompt file sits inside an `<!-- a1-profile:kritis -->` block that starts with the guard sentence. Cases live in `parts/NN-*.sh`; do not edit the golden files to make a case pass. Run it with `unset A1_VAULT_ROOT`.
+
 ## Self-checks: `verify run`, `test-fidelity`, dispositions (spec 017)
 
 Run these before a PR; CI and the a1 skills run the same commands. Replace `<phase>` with a scope name

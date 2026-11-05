@@ -18,6 +18,7 @@ const { MERGE_CHECK_HELP } = require('./help-merge-check.cjs');
 const { METRICS_HELP } = require('./help-metrics.cjs');
 const { PROBE_HELP } = require('./help-probe.cjs');
 const { DASHBOARD_HELP } = require('./help-dashboard.cjs');
+const { PROFILE_HELP } = require('./help-profile.cjs');
 
 function usage(msg) {
   process.stderr.write(`usage error: ${msg}\n`);
@@ -642,6 +643,8 @@ ${METRICS_HELP}
 ${PROBE_HELP}
 
 ${DASHBOARD_HELP}
+
+${PROFILE_HELP}
 
 ${XPROV_HELP}
 

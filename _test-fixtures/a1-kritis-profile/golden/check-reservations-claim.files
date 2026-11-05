@@ -1,0 +1,13 @@
+# golden: commit cb3fd99a6be44891d52b96cc4223f4897823e7c9, captured by: bash _test-fixtures/a1-kritis-profile/golden/capture.sh
+== repo/.a1/
+== repo/.a1/reservations.json
+{
+  "reservations": [
+    {
+      "type": "migration-number",
+      "value": "042",
+      "by": "001-kritis-golden-sample",
+      "at": "<ISO>"
+    }
+  ]
+}

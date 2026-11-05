@@ -1,0 +1,15 @@
+# golden: commit cb3fd99a6be44891d52b96cc4223f4897823e7c9, captured by: bash _test-fixtures/a1-kritis-profile/golden/capture.sh
+## spec init demo kritis-golden-sample --title Kritis Golden Sample rc=0
+{
+  "spec_path": "<REPO>/.a1/learnings/project/demo/spec/001-kritis-golden-sample.md",
+  "id": "001-kritis-golden-sample",
+  "project": "demo",
+  "feature_slug": "kritis-golden-sample",
+  "title": "Kritis Golden Sample",
+  "status": "discovering",
+  "size": null,
+  "created": "<DATE>",
+  "hub": "missing",
+  "hub_path": "<REPO>/.a1/learnings/project/demo.md",
+  "relation_line": "- references [[project/demo/spec/001-kritis-golden-sample]]"
+}

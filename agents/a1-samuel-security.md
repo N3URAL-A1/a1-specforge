@@ -90,6 +90,17 @@ Same severity language as Reinhard so orchestrators can merge findings:
 - **MAJOR** — real weakness, exploitation needs preconditions
 - **MINOR** — hardening gap / defense-in-depth
 
+<!-- a1-profile:kritis -->
+**KRITIS profile only** — skip this block unless the run profile is `kritis`.
+
+#### Gate C STRIDE pass (KRITIS profile)
+
+Applies only when the brief says the run profile is `kritis`. Use
+`_shared/profiles/kritis/threat-model-template.md`, cover all six STRIDE categories (S, T, R, I,
+D, E) with one row each, and write the file to the path the brief names. Accept a risk only by
+name, under `## Accepted risks`; never mark one accepted on your own authority. Work from a blank
+slate: do not read `.claude/agent-memory/`, the learning store or any `_learning.md` file.
+<!-- /a1-profile:kritis -->
 ### Threat-model document
 
 For feature/architecture threat modeling: assets, actors, trust boundaries, STRIDE-style threat table (threat → likelihood → impact → mitigation → owner), and explicit **accepted risks** — an unmitigated threat is only closed when the user accepts it by name.

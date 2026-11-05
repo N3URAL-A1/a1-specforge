@@ -383,6 +383,10 @@ function regenerateDerived(productDir, roadmapFm, visionFmOverride, auditFmOverr
       id: roadmapFm.project,
       title: roadmapFm.title,
       status: roadmapFm.status,
+      // Spec 006 (FR-001), v1.3: optional, present only when ROADMAP.md
+      // frontmatter carries it — absent entirely otherwise (no key means
+      // byte-identical no-profile output, FR-008).
+      ...(roadmapFm.profile !== undefined && roadmapFm.profile !== null ? { profile: roadmapFm.profile } : {}),
     },
     milestones: milestones.map((m) => ({
       id: m.id,
