@@ -39,6 +39,7 @@
 #   verify-run.cjs runHeadSide(): dirty-tree check removed                                         : K4, K4b
 #   verify-base.cjs commandHash(): timeout left out of the hash                                    : K6
 #   verify-base.cjs withSnapshot(): rmSync removed                                                 : F5c
+#   verify-base.cjs provideNodeModules(): copy replaced by the old symlink (measured 2026-11-02)   : R4c
 #   verify-base.cjs resolveMergeBase(): merge-base failure check removed                           : S2
 #   verify-base.cjs flakyBaseGrown(): `!had.has(i)` -> false                                       : G6, G6e
 #
@@ -602,6 +603,15 @@ mkdir -p "$WORK/tmp-r4"
   const vb=require(process.argv[1]); const sha=require("child_process").execFileSync("git",["-C",process.argv[2],"rev-parse","HEAD"],{encoding:"utf8"}).trim();
   vb.withSnapshot(process.argv[2], sha, () => process.exit(77));' "$REPO_ROOT/_shared/lib/verify-base.cjs" "$P" >/dev/null 2>&1); RC=$?
 [[ $RC -eq 77 && -z "$(ls -A "$WORK/tmp-r4")" ]] && ok "R4b exit 77 inside the base snapshot: snapshot dir and tar removed" || bad "R4b rc=$RC leftovers: $(ls -A "$WORK/tmp-r4")"
+# The snapshot gets a real node_modules copy: Next 16 Turbopack refuses a symlink that leaves the snapshot root
+mkdir -p "$P/node_modules/pkg" && printf 'x\n' > "$P/node_modules/pkg/index.js"
+NMS="$(cd "$P" && node -e '
+  const fs=require("fs"), path=require("path"); const vb=require(process.argv[1]);
+  const sha=require("child_process").execFileSync("git",["-C",process.argv[2],"rev-parse","HEAD"],{encoding:"utf8"}).trim();
+  vb.withSnapshot(process.argv[2], sha, (d) => { const t=path.join(d,"node_modules");
+    process.stdout.write([fs.lstatSync(t).isSymbolicLink(), fs.readFileSync(path.join(t,"pkg","index.js"),"utf8").trim()].join()); });' "$REPO_ROOT/_shared/lib/verify-base.cjs" "$P" 2>&1)"
+[[ "$NMS" == "false,x" ]] && ok "R4c snapshot node_modules is a real copy, not a symlink" || bad "R4c $NMS"
+rm -rf "$P/node_modules"
 
 # m7: an intent child writes neither info/exclude nor cache files
 newproj r5; stub ok 'exit 0'; cfg '{"commands":[{"id":"unit","argv":["./bin/ok"]}]}'; seal
