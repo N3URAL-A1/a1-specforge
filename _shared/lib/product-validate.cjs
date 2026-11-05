@@ -9,6 +9,7 @@ const { PROJECT_STATUSES, MILESTONE_STATUSES, FEATURE_STATUSES, FEATURE_STAGES }
 const { PRODUCT_SLUG_RE, FEATURE_ID_RE, YYYY_MM_RE, YYYY_MM_DD_RE, parseInlineFlowObject, PRODUCT_PROFILE_VALUES } = require('./product-schema.cjs');
 const { roadmapFeatureIdSet } = require('./product-derived.cjs');
 const { productDirFromFlags } = require('./product-txn.cjs');
+const { emitExit } = require('./emit-exit.cjs');
 
 // ---------------------------------------------------------------------------
 // product validate — schema-v1 frontmatter validation (FR-021 round-trip
@@ -248,10 +249,9 @@ function requireVaultOrExit(flags) {
   try { ok = Boolean(root) && fs.statSync(root).isDirectory(); } catch (_e) { ok = false; }
   const why = flags.ci ? '--require-vault and --ci exclude each other'
     : ok ? null : 'A1_VAULT_ROOT is unset or not a directory; the merge-time coherence check needs the vault';
-  if (why === null) return;
-  process.stdout.write(JSON.stringify({ valid: false, error: 'vault_required', message: why }) + '\n');
-  process.stderr.write(`product validate: ${why}\n`);
-  process.exit(2);
+  if (why === null) return false;
+  emitExit(2, JSON.stringify({ valid: false, error: 'vault_required', message: why }) + '\n', `product validate: ${why}\n`);
+  return true; // the caller must stop: the exit happens after the streams flush
 }
 
 /** product validate [--dir docs/product]: read-only schema check of
@@ -267,17 +267,15 @@ function requireVaultOrExit(flags) {
  * Never writes any file. Exit: 0 valid, 1 invalid or ROADMAP.md missing. */
 function cmdProductValidate(args) {
   const flags = parseFlags(args, { dir: 'value', 'spec-status': 'bool', ci: 'bool', 'require-vault': 'bool' });
-  if (flags['require-vault']) requireVaultOrExit(flags);
+  if (flags['require-vault'] && requireVaultOrExit(flags)) return;
   const dir = productDirFromFlags(flags);
   const roadmapFile = path.join(dir, 'ROADMAP.md');
   if (flags.ci && !fs.existsSync(roadmapFile)) {
     // Spec 017 FR-033: no roadmap in the repo -> the CI check does not apply.
-    process.stdout.write(JSON.stringify({ valid: true, errors: [], warnings: [], file: null, ci: require('./product-validate-ci.cjs').ciSection({ roadmapFm: null, dir }) }, null, 2) + '\n');
-    process.exit(0);
+    return emitExit(0, JSON.stringify({ valid: true, errors: [], warnings: [], file: null, ci: require('./product-validate-ci.cjs').ciSection({ roadmapFm: null, dir }) }, null, 2) + '\n', '');
   }
   if (!fs.existsSync(roadmapFile)) {
-    process.stdout.write(JSON.stringify({ valid: false, errors: [`ROADMAP.md not found at ${roadmapFile}`] }, null, 2) + '\n');
-    process.exit(1);
+    return emitExit(1, JSON.stringify({ valid: false, errors: [`ROADMAP.md not found at ${roadmapFile}`] }, null, 2) + '\n', '');
   }
   const content = fs.readFileSync(roadmapFile, 'utf8');
   const { fm } = parseNestedFrontmatter(content);
@@ -374,8 +372,7 @@ function cmdProductValidate(args) {
     ? { ci: require('./product-validate-ci.cjs').ciSection({ roadmapFm: fm, dir }) }
     : flags['spec-status'] || flags['require-vault'] ? { spec_status: require('./spec-coherence.cjs').specStatusSection(fm) } : {};
   const coherenceViolations = (coherence.spec_status || coherence.ci || { violations: [] }).violations.length;
-  process.stdout.write(JSON.stringify({ valid, errors, warnings, file: roadmapFile, ...coherence }, null, 2) + '\n');
-  process.exit(valid && coherenceViolations === 0 ? 0 : 1);
+  emitExit(valid && coherenceViolations === 0 ? 0 : 1, JSON.stringify({ valid, errors, warnings, file: roadmapFile, ...coherence }, null, 2) + '\n', '');
 }
 
 module.exports = {

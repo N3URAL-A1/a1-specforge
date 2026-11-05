@@ -193,6 +193,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { emitExit } = require(path.join(__dirname, 'lib', 'emit-exit.cjs'));
 
 // Spec 011 FR-041 — intent child mode. Runs before any other module loads and
 // before any subcommand code: in a child of `intent run` only the action's
@@ -501,8 +502,7 @@ function main() {
         return; // unreachable — cmdPlanDepthCheck calls process.exit()
       }
       // Usage errors are exit 2 (usage() exits 1, the "finding" branch of a gate).
-      process.stderr.write(`plan: unknown subcommand: ${sub || '(none)'}\nusage: a1-tools plan depth-check --plan <path/to/PLAN.md>\n`);
-      process.exit(2);
+      return emitExit(2, '', `plan: unknown subcommand: ${sub || '(none)'}\nusage: a1-tools plan depth-check --plan <path/to/PLAN.md>\n`);
     } else if (group === 'checklist') {
       if (sub === 'run') {
         // checklist run owns its own exit code (0/1/2) and report format.
@@ -770,12 +770,10 @@ function main() {
     // Input-validation errors (e.g. path-traversal guard) are user errors,
     // not internal faults — same exit 2, honest prefix.
     const prefix = e && e.code === 'A1_INPUT' ? 'error' : 'internal error';
-    process.stderr.write(`${prefix}: ${e.message}\n`);
-    if (process.env.A1_DEBUG) process.stderr.write(`${e.stack}\n`);
-    process.exit(2);
+    emitExit(2, '', `${prefix}: ${e.message}\n` + (process.env.A1_DEBUG ? `${e.stack}\n` : ''));
+    return;
   }
-  process.stdout.write(JSON.stringify(result, null, 2) + '\n');
-  process.exit(0);
+  emitExit(0, JSON.stringify(result, null, 2) + '\n');
 }
 
 main();

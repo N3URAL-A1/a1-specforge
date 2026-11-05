@@ -5,6 +5,7 @@ const path = require('path');
 const { vaultRoot, readMd, parseFlags, projectsPath } = require('./io.cjs');
 const { extractSpecFRs, scanWaveSections, extractWaveFRs, extractWaveRefs, diffFRCoverage } = require('./check.cjs');
 const { usage } = require('./help.cjs');
+const { emitExit } = require('./emit-exit.cjs');
 
 // ---------- checklist subcommands ----------
 //
@@ -782,12 +783,8 @@ function cmdChecklistRun(args) {
 }
 
 function emitChecklistReport(report, format) {
-  if (format === 'human') {
-    process.stdout.write(formatChecklistHumanReport(report) + '\n');
-  } else {
-    process.stdout.write(JSON.stringify(report, null, 2) + '\n');
-  }
-  process.exit(report.exit_code);
+  const text = format === 'human' ? formatChecklistHumanReport(report) + '\n' : JSON.stringify(report, null, 2) + '\n';
+  emitExit(report.exit_code, text, '');
 }
 
 function cmdChecklistList(args) {

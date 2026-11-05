@@ -12,6 +12,7 @@ const { CODE_SCOPE_STAGES } = require('./code-scope.cjs');
 const { PRODUCT_ROADMAP_KEY_ORDER, PRODUCT_FEATURE_KEY_ORDER } = require('./product-schema.cjs');
 const { readProductRoadmap, readProductFeature, regenerateDerived } = require('./product-derived.cjs');
 const mods = require('./product-modules.cjs');
+const { emitExit } = require('./emit-exit.cjs');
 const { derivedWrites, productDirFromFlags, buildRoadmapWritesWithChangelog } = require('./product-txn.cjs');
 
 function cmdProductStatus(args) {
@@ -36,8 +37,7 @@ function cmdProductStatus(args) {
   // Spec 023 FR-018: same summary as index.json, only when a module is in use.
   const modulesSummary = mods.modulesSummary(fm, features);
   const outWithModules = modulesSummary === null ? out : { ...out, modules: modulesSummary };
-  process.stdout.write(JSON.stringify(outWithModules, null, 2) + '\n');
-  process.exit(0);
+  emitExit(0, JSON.stringify(outWithModules, null, 2) + '\n', '');
 }
 
 function cmdProductStage(args) {
@@ -281,8 +281,7 @@ function cmdProductMarkers(args) {
     }
   }
 
-  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-  process.exit(0);
+  emitExit(0, JSON.stringify(out, null, 2) + '\n', '');
 }
 
 /** Write path for `product markers --set` (FR-007). Split out of

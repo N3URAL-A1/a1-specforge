@@ -5,6 +5,7 @@ const path = require('path');
 
 const { usage } = require('./help.cjs');
 const { parseFlags, nowIso, copyDirRecursive } = require('./io.cjs');
+const { emitExit } = require('./emit-exit.cjs');
 
 // worktree registry + git helpers live in lib/worktree-registry.cjs
 const {
@@ -109,8 +110,7 @@ function cmdWorktreePrepare(args) {
 
   const blocker = checks.some((c) => c.result === 'FAIL');
   if (blocker) {
-    process.stdout.write(JSON.stringify({ status: 'BLOCKER', checks }, null, 2) + '\n');
-    process.exit(1);
+    return emitExit(1, JSON.stringify({ status: 'BLOCKER', checks }, null, 2) + '\n', '');
   }
 
   // All green — write registry entry
@@ -462,14 +462,10 @@ function cmdWorktreeAdopt(args) {
   }
 
   if (matches.length === 0) {
-    process.stderr.write('error: no git worktree matches; candidates:\n');
-    process.stdout.write(JSON.stringify({ status: 'NOT_FOUND', candidates: wts }, null, 2) + '\n');
-    process.exit(1);
+    return emitExit(1, JSON.stringify({ status: 'NOT_FOUND', candidates: wts }, null, 2) + '\n', 'error: no git worktree matches; candidates:\n');
   }
   if (matches.length > 1) {
-    process.stderr.write('error: multiple git worktrees match — pass --worktree-path to disambiguate\n');
-    process.stdout.write(JSON.stringify({ status: 'AMBIGUOUS', candidates: wts }, null, 2) + '\n');
-    process.exit(1);
+    return emitExit(1, JSON.stringify({ status: 'AMBIGUOUS', candidates: wts }, null, 2) + '\n', 'error: multiple git worktrees match — pass --worktree-path to disambiguate\n');
   }
   const match = matches[0];
 
