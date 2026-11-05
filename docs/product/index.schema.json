@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://a1-specforge.dev/schemas/docs-product-index.schema.json",
   "title": "docs/product/index.json — schema v1.2",
-  "description": "Machine-owned manifest generated from docs/product/ROADMAP.md and docs/product/features/<###>-<slug>/feature.md, plus (v1.1, optional) docs/product/VISION.md and docs/product/audits/<date>-<focus>.md. See docs/product/SCHEMA.md section 3 for the authoritative prose contract; field names here are identical. `vision`/`audits` are OPTIONAL properties (not in `required`) so a v1-only document (no VISION.md, no audits/) that omits them entirely still validates (FR-016) — when present, they follow the shapes in $defs/vision and $defs/audit.",
+  "description": "Machine-owned manifest generated from docs/product/ROADMAP.md and docs/product/features/<###>-<slug>/feature.md, plus (v1.1, optional) docs/product/VISION.md and docs/product/audits/<date>-<focus>.md, plus (optional, spec 006 FR-001) `project.profile`. See docs/product/SCHEMA.md section 3 for the authoritative prose contract; field names here are identical. `vision`/`audits`/`project.profile` are OPTIONAL properties (not in `required`) so a v1-only document (no VISION.md, no audits/, no profile) that omits them entirely still validates (FR-016) — when present, `vision`/`audits` follow the shapes in $defs/vision and $defs/audit.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "generated", "project", "milestones", "features", "next", "cursor"],
@@ -35,6 +35,11 @@
         "status": {
           "type": "string",
           "enum": ["active", "paused", "done"]
+        },
+        "profile": {
+          "type": "string",
+          "enum": ["kritis"],
+          "description": "OPTIONAL (spec 006 FR-001): the KRITIS/NIS2 profile lane, mirrored from ROADMAP.md frontmatter `profile:` when present. Absent entirely when ROADMAP.md carries no `profile:` key (this property is not in `required`); schema v1 output is unchanged (FR-008)."
         }
       }
     },

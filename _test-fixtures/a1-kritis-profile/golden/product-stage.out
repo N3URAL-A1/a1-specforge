@@ -1,0 +1,15 @@
+# golden: commit cb3fd99a6be44891d52b96cc4223f4897823e7c9, captured by: bash _test-fixtures/a1-kritis-profile/golden/capture.sh
+## product stage --by 001-demo --set started --dir <REPO>/pd rc=0
+{
+  "status": "OK",
+  "feature": "001-demo",
+  "stage": "started",
+  "derived_status": "in-flight",
+  "skipped": [],
+  "files_written": [
+    "<REPO>/pd/ROADMAP.md",
+    "<REPO>/pd/index.json",
+    "<REPO>/pd/NEXT.md",
+    "<REPO>/pd/features/001-demo/feature.md"
+  ]
+}

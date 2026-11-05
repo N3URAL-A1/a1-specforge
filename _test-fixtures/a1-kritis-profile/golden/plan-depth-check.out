@@ -1,0 +1,31 @@
+# golden: commit cb3fd99a6be44891d52b96cc4223f4897823e7c9, captured by: bash _test-fixtures/a1-kritis-profile/golden/capture.sh
+## plan depth-check --plan <PLAN_FIXTURE>/021-dashboard-wave-plan.md rc=0
+{
+  "plan": "<PLAN_FIXTURE>/021-dashboard-wave-plan.md",
+  "verdict": "pass",
+  "checks": [
+    {
+      "check": "section",
+      "status": "pass",
+      "findings": []
+    },
+    {
+      "check": "subheadings",
+      "status": "pass",
+      "findings": []
+    },
+    {
+      "check": "placeholders",
+      "status": "pass",
+      "findings": []
+    },
+    {
+      "check": "oracle",
+      "status": "pass",
+      "findings": []
+    }
+  ],
+  "offending": [],
+  "duplicate_sections": 0,
+  "notes": []
+}

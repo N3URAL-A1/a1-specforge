@@ -119,5 +119,16 @@
     "review_reason": "Only timeout_ms rises (30 -> 120 min per suite, well under MAX_TIMEOUT_MS 24 h); commands, flaky_base and every other field are unchanged, so no test or command is hidden; the fingerprint matches configChange(null, head).",
     "reviewed_at": "2026-10-22T16:53:00.998Z",
     "reviewed_by": "a1-reinhard-reviewer"
+  },
+  {
+    "kind": "class_sweep",
+    "fingerprint": "class-sweep:_test-fixtures/a1-xprov/parts/25-consent-hook.sh:d5a00ad4aea58e80",
+    "reason": "Not an invocation: line 539 is one element of an array of example command strings the xprov consent hook must recognise (context lines 528-545, each entry shaped '<command>:::<marker>'). No sed runs here, so there is no GNU/BSD portability defect to fix. The L1b linter shipped with this fix exempts the same line via its quoted-test-data post-filter.",
+    "date": "2026-10-28",
+    "by": "fix-gnu-only-fixture-idioms",
+    "review": "upheld",
+    "review_reason": "Traced end to end: line 539 is an element of the RDENY25 array (declared :527, closed :564, each entry shaped '<command>:::<mutant-ids>'). The consumer at :590-592 splits off the command text and hands it to rh_run (:498-500), which wraps it with JSON.stringify into tool_input.command and pipes it to the hook's STDIN. The hook (.claude/hooks/xprov-deny-allowlist-approve.sh:38 -> xprov-bash-class.cjs) only reads and pattern-matches the text; neither file holds an execution primitive (no eval, exec, spawnSync, child_process). Nothing runs, so there is no GNU/BSD portability defect. Rewriting it to sed -i.bak would also move the M5 coverage point: xprov-bash-class.cjs:61 treats only 'sed -n <range>p' as read-only, and M5 exists to prove a writing sed is denied. Verified independently of the L1b linter, whose own exemption was found too coarse in the same review and hardened in ced38e8.",
+    "reviewed_at": "2026-10-28T23:06:37.634Z",
+    "reviewed_by": "a1-reinhard-reviewer"
   }
 ]

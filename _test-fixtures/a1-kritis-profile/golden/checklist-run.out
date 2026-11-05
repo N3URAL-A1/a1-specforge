@@ -1,0 +1,47 @@
+# golden: commit cb3fd99a6be44891d52b96cc4223f4897823e7c9, captured by: bash _test-fixtures/a1-kritis-profile/golden/capture.sh
+## checklist run demo/001-login --only 9,10,11 --format json rc=0
+{
+  "status": "PASS",
+  "exit_code": 0,
+  "project": "demo",
+  "feature": "001-login",
+  "only": [
+    9,
+    10,
+    11
+  ],
+  "paths": {
+    "spec": "project/demo/spec/001-login.md",
+    "plan": "project/demo/plans/001-login-wave-plan.md",
+    "claudemd": "project/demo/CLAUDE.md"
+  },
+  "checks": [
+    {
+      "id": 9,
+      "name": "fr_coverage_bijective",
+      "severity": "BLOCKER",
+      "result": "PASS",
+      "detail": "Every spec FR maps to exactly one wave (2 FRs)."
+    },
+    {
+      "id": 10,
+      "name": "plan_spec_path_link",
+      "severity": "BLOCKER",
+      "result": "PASS",
+      "detail": "Plan frontmatter spec_path resolves to project/demo/spec/001-login.md."
+    },
+    {
+      "id": 11,
+      "name": "spec_roadmap_status_coherent",
+      "severity": "BLOCKER",
+      "result": "PASS",
+      "detail": "No roadmap with project \"demo\" found — nothing to compare."
+    }
+  ],
+  "summary": {
+    "blockers": 0,
+    "majors": 0,
+    "minors": 0
+  },
+  "errors": []
+}
