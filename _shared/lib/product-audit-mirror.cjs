@@ -207,7 +207,6 @@ function cmdProductAuditMirror(args) {
       vault_mirror: productMirrorHook(dir).afterCommit(),
     };
     return emitExitWithLock(lockPath, 0, JSON.stringify(out, null, 2) + '\n', '');
-    return;
   }
 
   const updatedRoadmapFm = {

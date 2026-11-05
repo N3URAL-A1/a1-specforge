@@ -16,6 +16,7 @@
 // finding / 2 unreadable, unsafe path or hostile input (house contract).
 
 const fs = require('fs');
+const { emitExit } = require('./emit-exit.cjs');
 const path = require('path');
 
 const MAX_BYTES = 512 * 1024; // 512 KiB cap (wave-plan brief)
@@ -245,17 +246,15 @@ function checkThreatModel(argv) {
   const text = resolveThreatModelText(flags.id, flags.repoRoot);
   const result = evaluateThreatModel(text);
 
+  let outText;
   if (flags.json) {
-    process.stdout.write(`${JSON.stringify(result)}\n`);
+    outText = `${JSON.stringify(result)}\n`;
   } else if (result.ok) {
-    process.stdout.write(`profile threat-model-check: pass (${flags.id})\n`);
+    outText = `profile threat-model-check: pass (${flags.id})\n`;
   } else {
-    for (const f of result.findings) {
-      const cat = f.category ? ` ${f.category}` : '';
-      process.stdout.write(`${f.code}${cat}: ${f.detail}\n`);
-    }
+    outText = result.findings.map((f) => `${f.code}${f.category ? ` ${f.category}` : ''}: ${f.detail}\n`).join('');
   }
-  process.exit(result.ok ? 0 : 1);
+  return emitExit(result.ok ? 0 : 1, outText, '');
 }
 
 module.exports = { checkThreatModel, evaluateThreatModel };

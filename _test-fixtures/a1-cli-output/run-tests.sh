@@ -54,6 +54,22 @@ else bad "P1 slow pipe output identical to file output" "file=$file_bytes pipe=$
 if node -e 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))' "$WORK/pipe.json" 2>/dev/null; then ok "P1 piped output parses as JSON"
 else bad "P1 piped output parses as JSON"; fi
 
+# --- P1b: cost run --json (Reinhard's measurement: 356038 bytes to a file vs 65536 through a pipe) ---
+mkdir -p "$WORK/costlogs" || exit 2
+node -e '
+const fs = require("fs"); const dir = process.argv[1];
+for (let i = 0; i < 700; i++) {
+  const line = JSON.stringify({ type: "assistant", timestamp: "2026-01-01T00:00:00Z", message: { id: "m" + i, model: "fixture-model", usage: { input_tokens: 10 + i, output_tokens: 5, cache_read_input_tokens: 3, cache_creation_input_tokens: 1 } } });
+  fs.writeFileSync(dir + "/session-" + String(i).padStart(4, "0") + ".jsonl", line + "\n");
+}
+' "$WORK/costlogs" || exit 2
+node "$TOOLS" cost run --project "$WORK/costlogs" --json > "$WORK/cost-file.json"; crc=$?
+node "$TOOLS" cost run --project "$WORK/costlogs" --json | (sleep 1; cat) > "$WORK/cost-pipe.json"
+cb_file=$(wc -c < "$WORK/cost-file.json" | tr -d ' ')
+cb_pipe=$(wc -c < "$WORK/cost-pipe.json" | tr -d ' ')
+if [[ "$crc" -eq 0 && "$cb_file" -gt 70000 ]]; then ok "P1b cost run --json fixture exceeds 64 KiB ($cb_file bytes)"; else bad "P1b cost fixture exceeds 64 KiB" "rc=$crc bytes=$cb_file"; fi
+if cmp -s "$WORK/cost-file.json" "$WORK/cost-pipe.json" && node -e 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))' "$WORK/cost-pipe.json" 2>/dev/null; then ok "P1b cost run --json slow pipe identical to file output and parses ($cb_pipe bytes)"; else bad "P1b cost run --json slow pipe" "file=$cb_file pipe=$cb_pipe"; fi
+
 # --- P2 / P3: the helper itself -------------------------------------------
 HELPER="$ROOT/_shared/lib/emit-exit.cjs"
 big_prog='const { emitExit } = require(process.argv[1]); const n = 200000;
@@ -73,9 +89,19 @@ done
 node -e 'const { emitExit } = require(process.argv[1]); emitExit(0, "", "");' "$HELPER" >/dev/null 2>&1; rc=$?
 if [[ "$rc" -eq 0 ]]; then ok "P3 helper with empty payload exits 0"; else bad "P3 helper with empty payload exits 0" "rc=$rc"; fi
 
+# P4: a reader that goes away early (EPIPE) must not change the exit code
+node -e "$big_prog" "$HELPER" 3 2>/dev/null | head -c 10 >/dev/null
+rc=${PIPESTATUS[0]}
+if [[ "$rc" -eq 3 ]]; then ok "P4 helper keeps exit code 3 when the reader closes early (EPIPE)"; else bad "P4 helper EPIPE keeps exit code" "rc=$rc"; fi
+# P5: stdout is written before stderr when both go to one pipe (the order of the replaced sites)
+node -e 'const { emitExit } = require(process.argv[1]); emitExit(0, "OUT\n", "ERR\n");' "$HELPER" 2>&1 | tr -d '\n' > "$WORK/order.txt"
+if [[ "$(cat "$WORK/order.txt")" == "OUTERR" ]]; then ok "P5 stdout before stderr"; else bad "P5 stdout before stderr" "$(cat "$WORK/order.txt")"; fi
+node -e 'const { emitExit } = require(process.argv[1]); emitExit(0, "OUT\n", "ERR\n", { stderrFirst: true });' "$HELPER" 2>&1 | tr -d '\n' > "$WORK/order.txt"
+if [[ "$(cat "$WORK/order.txt")" == "ERROUT" ]]; then ok "P5 stderrFirst option writes stderr before stdout"; else bad "P5 stderrFirst" "$(cat "$WORK/order.txt")"; fi
+
 # --- G1 / G2: source guard --------------------------------------------------
 out=$(node "$GUARD" "$ROOT" 2>&1); rc=$?
-if [[ "$rc" -eq 0 ]]; then ok "G1 no process.exit() right after a stdout write in dispatcher tail / converted modules"
+if [[ "$rc" -eq 0 ]]; then ok "G1 no function in _shared/**/*.cjs exits after writing output (function-scoped guard, EXCEPTIONS explicit)"
 else bad "G1 source guard" "$out"; fi
 
 mk_workdir MUT cli-output-mutation
@@ -129,6 +155,12 @@ mutate_module "locks-based code-scope.cjs" "_shared/lib/code-scope.cjs" "return 
 # a file the old hand-kept target list never named
 # cross-function shape: helper writes, the caller exits on the next line (profile-ears.cjs, round 3)
 mutate_module "profile-ears.cjs cross-function print helper" "_shared/lib/profile-ears.cjs" "return emitExit\\(result.findings.length > 0 \\? 1 : 0, formatResult\\(result, flags.json\\), ..\\);" $'printResult(result, flags.json);\n  process.exit(result.findings.length > 0 ? 1 : 0);\n}\nfunction printResult(r, j) {\n  process.stdout.write(formatResult(r, j));'
+# cost shape: stdout write, then a stderr loop, then the exit (the shape the next-line guard missed)
+mutate_module "cost.cjs write -> stderr loop -> exit" "_shared/lib/cost.cjs" "return emitExit\\(0, text, ..\\);" $'process.stdout.write(text);\n  for (const s of sessions) process.stderr.write(`${s.session}\\n`);\n  process.exit(0);'
+# if/else writes with one shared exit after the branches
+mutate_module "schema-check.cjs if/else writes -> shared exit" "_shared/lib/schema-check.cjs" "return emitExit\\(findings.length === 0 \\? 0 : 1, outText, ..\\);" $'if (flags.json) {\n    process.stdout.write(outText);\n  } else {\n    process.stdout.write(outText);\n  }\n  process.exit(findings.length === 0 ? 0 : 1);'
+# exiting helper called after a write (fail2-style helper, discovered not hand-listed)
+mutate_module "pr-merge-check.cjs write -> exiting helper" "_shared/lib/pr-merge-check.cjs" "return emitExit\\(result.exit, .*\\n" $'process.stdout.write(JSON.stringify(result.report));\n  process.exit(result.exit);\n'
 mutate_module "gates-cli.cjs (not in the old target list)" "_shared/lib/gates-cli.cjs" "return emitExit\\(0, firedYaml\\(log.records\\), ..\\);" "process.stdout.write(firedYaml(log.records));\\n  process.exit(0);"
 
 echo "a1-cli-output: $pass passed, $fail failed"

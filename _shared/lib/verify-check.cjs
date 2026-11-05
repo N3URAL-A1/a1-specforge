@@ -14,6 +14,7 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { parseFrontmatter } = require('./io-frontmatter.cjs');
+const { emitExit } = require('./emit-exit.cjs');
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const GIT_MAX_BUFFER = 64 * 1024 * 1024;
@@ -84,17 +85,14 @@ function cmdVerifyCheck(args) {
   const files = args.filter((a) => !a.startsWith('--'));
   const extra = args.filter((a) => a.startsWith('--'));
   if (files.length !== 1 || extra.length > 0 || files[0].includes('\0')) {
-    process.stderr.write('usage: verify check <VERIFICATION.md>\n');
-    process.exit(2);
+    return emitExit(2, '', 'usage: verify check <VERIFICATION.md>\n');
   }
   let res;
   try { res = checkVerification(files[0]); } catch (e) {
-    process.stderr.write(`verify check: ${e.message}\n`);
-    process.exit(2);
+    return emitExit(2, '', `verify check: ${e.message}\n`);
   }
-  process.stdout.write(`${JSON.stringify({ ok: res.exit === 0, ...res, exit: undefined })}\n`);
-  if (res.exit === 1) process.stderr.write(`verify check: refused - ${res.reasons.join(', ')}\n`);
-  process.exit(res.exit);
+  const err = res.exit === 1 ? `verify check: refused - ${res.reasons.join(', ')}\n` : '';
+  return emitExit(res.exit, `${JSON.stringify({ ok: res.exit === 0, ...res, exit: undefined })}\n`, err);
 }
 
 module.exports = { gitRaw, headSha, splitNul, diffNames, readVerifyRun, checkVerification, cmdVerifyCheck, SHA_RE };

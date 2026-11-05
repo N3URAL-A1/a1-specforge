@@ -237,15 +237,12 @@ function cmdPackValidate(rest) {
   }
   const res = packValidateDir(dir);
   if (res.fatal) {
-    for (const e of res.errors) process.stderr.write(`error: ${e}\n`);
-    process.exit(2);
+    return emitExit(2, '', res.errors.map((e) => `error: ${e}\n`).join(''));
   }
   if (res.ok) {
     return emitExit(0, `pack: VALID — ${res.manifest.name}@${res.manifest.version} (${(res.manifest.patterns || []).length} patterns)\n`, '');
   }
-  process.stderr.write(`pack: INVALID — ${res.errors.length} problem(s):\n`);
-  for (const e of res.errors) process.stderr.write(`  - ${e}\n`);
-  process.exit(1);
+  return emitExit(1, '', `pack: INVALID — ${res.errors.length} problem(s):\n` + res.errors.map((e) => `  - ${e}\n`).join(''));
 }
 
 function rmDirRecursive(p) {
@@ -261,13 +258,10 @@ function cmdPackImport(rest) {
   }
   const res = packValidateDir(dir);
   if (res.fatal) {
-    for (const e of res.errors) process.stderr.write(`error: ${e}\n`);
-    process.exit(2);
+    return emitExit(2, '', res.errors.map((e) => `error: ${e}\n`).join(''));
   }
   if (!res.ok) {
-    process.stderr.write(`pack: INVALID — refusing import (${res.errors.length} problem(s)):\n`);
-    for (const e of res.errors) process.stderr.write(`  - ${e}\n`);
-    process.exit(1);
+    return emitExit(1, '', `pack: INVALID — refusing import (${res.errors.length} problem(s)):\n` + res.errors.map((e) => `  - ${e}\n`).join(''));
   }
   const name = String(res.manifest.name);
   const version = String(res.manifest.version);
@@ -418,9 +412,7 @@ function cmdPackExport(rest) {
     }
   }
   if (leaks.length > 0) {
-    process.stderr.write(`pack export: ANONYMIZATION FAILURE — ${leaks.length} leak(s), refusing to write:\n`);
-    for (const l of leaks) process.stderr.write(`  - ${l}\n`);
-    process.exit(1);
+    return emitExit(1, '', `pack export: ANONYMIZATION FAILURE — ${leaks.length} leak(s), refusing to write:\n` + leaks.map((l) => `  - ${l}\n`).join(''));
   }
 
   // Clean; write.

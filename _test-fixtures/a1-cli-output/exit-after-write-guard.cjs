@@ -1,22 +1,30 @@
 'use strict';
 // Source guard for fix 2026-11-05-stdout-pipe-truncation.
 // Usage: node exit-after-write-guard.cjs <repo-root>
-// Exit 0 = clean, 1 = a stdout/stderr write is followed directly by process.exit().
-// Platform neutral: reads source text, so it also catches the defect on Linux where
-// pipes are synchronous and the truncation itself cannot be reproduced.
+// Exit 0 = clean, 1 = violations, 2 = usage.
+//
+// Rule (function scoped, whole _shared/**/*.cjs): inside one function body, a stdout write
+// (or a stderr write inside a loop) that is followed LATER in the same body by an exit is a
+// violation. An exit is `process.exit(`, `exitWithLock(`, or a call to an exiting helper.
+// Exiting helpers are discovered, not hand-listed: every function in _shared whose body
+// exits or calls an exiting helper (fixpoint), minus emitExit / emitExitWithLock, which drain
+// first and are the sanctioned way out. Output emitted before a later exit is cut at one pipe
+// buffer on macOS, whatever sits between the write and the exit (a stderr loop, a branch).
+// Platform neutral: reads source text, so it works on Linux where the truncation cannot happen.
+//
+// Limits (honest): top-level `function name(` declarations only (closing `}` at column 0);
+// nested closures count as part of the enclosing function; helpers are matched by name, not
+// by resolved require; an exit on a branch exclusive to the write is a false positive and
+// needs an EXCEPTIONS entry. Exits BEFORE the first write are not flagged (nothing queued).
 const fs = require('fs');
 const path = require('path');
 
 const root = process.argv[2];
 if (!root) { console.error('usage: exit-after-write-guard.cjs <repo-root>'); process.exit(2); }
 
-// Every _shared/**/*.cjs file is scanned (no hand-kept target list). stdout is checked everywhere:
-// that is where large payloads go. stderr is checked only where the stream carries the whole
-// failure report of the dispatcher; the short usage/fail messages elsewhere stay on
-// process.exit() (follow-up sweep, each is far below one pipe buffer).
-const STDERR_FILES = new Set(['_shared/a1-tools.cjs']);
-// Explicit exceptions: "file:statement-start-line-text" -> reason. Empty on purpose.
+// "file:function" -> reason. Keep explicit; one reason per entry.
 const EXCEPTIONS = {};
+const DRAINING = new Set(['emitExit', 'emitExitWithLock']);
 
 function listCjs(dir, out) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -26,67 +34,103 @@ function listCjs(dir, out) {
   }
   return out;
 }
-const sharedDir = path.join(root, '_shared');
-const TARGETS = {};
-for (const f of listCjs(sharedDir, [])) {
+const isCode = (l) => !/^\s*(\/\/|\*|\/\*)/.test(l);
+
+const fns = [];
+for (const f of listCjs(path.join(root, '_shared'), [])) {
   const rel = path.relative(root, f).split(path.sep).join('/');
-  TARGETS[rel] = STDERR_FILES.has(rel) ? ['stdout', 'stderr'] : ['stdout'];
+  const L = fs.readFileSync(f, 'utf8').split('\n');
+  for (let i = 0; i < L.length; i++) {
+    const m = /^(?:async )?function (\w+)\(/.exec(L[i]);
+    if (!m) continue;
+    let j = i;
+    while (j < L.length && !/^}/.test(L[j])) j++;
+    fns.push({ rel, name: m[1], start: i + 1, body: L.slice(i, j + 1) });
+  }
 }
-// the emit helper itself must exist, or the scan proves nothing
-if (!TARGETS['_shared/lib/emit-exit.cjs']) { console.error('emit-exit.cjs missing'); process.exit(1); }
+if (!fns.some((f) => f.name === 'emitExit')) { console.error('emit-exit.cjs missing'); process.exit(1); }
+
+const reCache = new Map();
+const callRe = (n) => { if (!reCache.has(n)) reCache.set(n, new RegExp(`(^|[^.\\w])${n}\\(`)); return reCache.get(n); };
+// A name resolves to the helper defined in the SAME file when there is one (so two files that
+// each define their own `fail2` do not collide); otherwise to the repo-wide set (imported helpers).
+const localNames = new Map();
+for (const fn of fns) { if (!localNames.has(fn.rel)) localNames.set(fn.rel, new Set()); localNames.get(fn.rel).add(fn.name); }
+const exitingLocal = new Map(); // rel -> Set(name)
+const exitingGlobal = new Set(); // names
+const markExiting = (fn) => {
+  if (!exitingLocal.has(fn.rel)) exitingLocal.set(fn.rel, new Set());
+  exitingLocal.get(fn.rel).add(fn.name); exitingGlobal.add(fn.name);
+};
+const callsExit = (fn, l) => {
+  if (!/\w\(/.test(l)) return false;
+  const loc = localNames.get(fn.rel); const ex = exitingLocal.get(fn.rel);
+  for (const n of exitingGlobal) {
+    const hit = loc.has(n) ? ex && ex.has(n) : true;
+    if (hit && l.includes(n) && callRe(n).test(l)) return true;
+  }
+  return false;
+};
+for (const fn of fns) {
+  if (DRAINING.has(fn.name)) continue;
+  if (fn.body.some((l) => isCode(l) && /process\.exit\(/.test(l))) markExiting(fn);
+}
+for (let changed = true; changed;) {
+  changed = false;
+  for (const fn of fns) {
+    const ex = exitingLocal.get(fn.rel);
+    if ((ex && ex.has(fn.name)) || DRAINING.has(fn.name)) continue;
+    if (fn.body.slice(1).some((l) => isCode(l) && callsExit(fn, l))) { markExiting(fn); changed = true; }
+  }
+}
+const isExit = (fn, l) => isCode(l) && (/process\.exit\(/.test(l) || callsExit(fn, l));
+
+function firstWrite(body) {
+  for (let i = 0; i < body.length; i++) {
+    const l = body[i];
+    if (!isCode(l)) continue;
+    if (/process\.stdout\.write\(/.test(l)) return i;
+    if (!/process\.stderr\.write\(/.test(l)) continue;
+    if (/^\s*(for|while)\b.*process\.stderr\.write\(|\.forEach\(.*process\.stderr\.write\(/.test(l)) return i; // one-line loop
+    // stderr counts only inside a loop: the nearest less-indented line is the loop head
+    const ind = l.match(/^\s*/)[0].length;
+    for (let k = i - 1; k >= 0; k--) {
+      const kl = body[k];
+      if (kl.trim() === '' || kl.match(/^\s*/)[0].length >= ind) continue;
+      if (/^\s*(for|while)\b|\.forEach\(/.test(kl)) return i;
+      break;
+    }
+  }
+  return -1;
+}
 
 const violations = [];
-for (const [rel, streams] of Object.entries(TARGETS)) {
-  const file = path.join(root, rel);
-  if (!fs.existsSync(file)) { violations.push(`${rel}: file missing`); continue; }
-  const lines = fs.readFileSync(file, 'utf8').split('\n');
-  const writeRe = new RegExp(`process\\.(${streams.join('|')})\\.write\\(`);
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (/^\s*(\/\/|\*|\/\*)/.test(line)) continue; // comments
-    // same line: `write(...); process.exit(` (the verify-run one-liner)
-    if (writeRe.test(line) && /process\.exit\(/.test(line)) { violations.push(`${rel}:${i + 1}: write and process.exit on one line`); continue; }
-    if (!writeRe.test(line)) continue;
-    // A write statement may span lines; find its last line by paren balance, then the next code line.
-    let depth = 0; let j = i; let started = false;
-    for (; j < lines.length; j++) {
-      for (const ch of lines[j]) { if (ch === '(') { depth++; started = true; } else if (ch === ')') depth--; }
-      if (started && depth <= 0) break;
-    }
-    let k = j + 1;
-    while (k < lines.length && (lines[k].trim() === '' || lines[k].trim().startsWith('//'))) k++;
-    if (k < lines.length && /^\s*(process\.exit|exitWithLock)\(/.test(lines[k])) if (!EXCEPTIONS[`${rel}:${line.trim()}`]) violations.push(`${rel}:${i + 1}: process.exit() directly after a ${line.includes('stderr') ? 'stderr' : 'stdout'} write (line ${k + 1})`);
-  }
+for (const fn of fns) {
+  if (DRAINING.has(fn.name)) continue;
+  const w = firstWrite(fn.body);
+  if (w < 0) continue;
+  const hit = fn.body.findIndex((l, i) => i > w && isExit(fn, l));
+  if (hit < 0) continue;
+  if (EXCEPTIONS[`${fn.rel}:${fn.name}`]) continue;
+  violations.push(`${fn.rel}:${fn.start + w}: ${fn.name}() writes output, then exits at line ${fn.start + hit}: ${fn.body[hit].trim().slice(0, 70)}`);
 }
 
-// Cross-function shape (found in profile-ears: printResult() writes, its caller exits next line).
-// Same-file only: a top-level function whose body writes to stdout, called as a statement on a line
-// directly followed by process.exit( / exitWithLock(. Helpers imported from other files are not
-// followed (the guard does not resolve requires); the repo sweep found none that matter
-// (xprov-common emitJson writes with fs.writeSync, which is synchronous and safe).
-for (const rel of Object.keys(TARGETS)) {
-  const lines = fs.readFileSync(path.join(root, rel), 'utf8').split('\n');
-  const writers = new Set();
-  for (let i = 0; i < lines.length; i++) {
-    const fm = /^(?:async )?function (\w+)\(/.exec(lines[i]);
-    if (!fm) continue;
-    let j = i;
-    while (j < lines.length && !/^}/.test(lines[j])) j++;
-    if (lines.slice(i, j + 1).some((x) => /process\.stdout\.write\(/.test(x) && !/^\s*(\/\/|\*)/.test(x))) writers.add(fm[1]);
-  }
-  for (let i = 0; i < lines.length - 1; i++) {
-    const c = /^\s*(?:return\s+)?(\w+)\(.*\);\s*$/.exec(lines[i]);
-    if (!c || !writers.has(c[1])) continue;
-    let k = i + 1;
-    while (k < lines.length && (lines[k].trim() === '' || /^\s*\/\//.test(lines[k]))) k++;
-    if (/^\s*(process\.exit|exitWithLock)\(/.test(lines[k]) && !EXCEPTIONS[`${rel}:${lines[i].trim()}`]) {
-      violations.push(`${rel}:${i + 1}: ${c[1]}() writes to stdout and process.exit() follows (line ${k + 1})`);
-    }
+// A file that calls emitExit / emitExitWithLock must import it (a missing import is a ReferenceError
+// that only shows when the path runs; workflow-lint shipped that way once in this fix).
+for (const f of listCjs(path.join(root, '_shared'), [])) {
+  const rel = path.relative(root, f).split(path.sep).join('/');
+  const src = fs.readFileSync(f, 'utf8').split('\n').filter(isCode).join('\n');
+  for (const name of DRAINING) {
+    if (!new RegExp(`(^|[^.\\w])${name}\\(`).test(src)) continue;
+    const defined = new RegExp(`function ${name}\\(`).test(src);
+    const imported = new RegExp(`\\b${name}\\b[^;]*require\\(|\\{[^}]*\\b${name}\\b[^}]*\\}\\s*=\\s*require\\(`).test(src);
+    if (!defined && !imported) violations.push(`${rel}: calls ${name}() without importing it`);
   }
 }
 
 if (violations.length) {
   console.error(violations.join('\n'));
+  console.error(`exit-after-write guard: ${violations.length} violation(s)`);
   process.exit(1);
 }
 console.log('exit-after-write guard: clean');

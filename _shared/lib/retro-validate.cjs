@@ -375,33 +375,25 @@ function reportAndExit(retroPath, results, gateLog) {
       ? { id: r.id, status: r.status, canonical: r.canonical, line: r.line }
       : { id: r.id, status: r.status, line: r.line };
 
-  process.stdout.write(
-    JSON.stringify({ file: retroPath, entries: results.map(toEntry), valid, drift, unknown, ...(gateLog ? { gate_log: gateLog } : {}) }) + '\n'
-  );
+  const text = JSON.stringify({ file: retroPath, entries: results.map(toEntry), valid, drift, unknown, ...(gateLog ? { gate_log: gateLog } : {}) }) + '\n';
 
   const logProblems = gateLog ? gateLog.problems : [];
-  for (const p of logProblems) {
-    process.stderr.write(`fix: gate log ${p.rule}: ${p.id} - ${p.reason}.\n`);
-  }
+  let err = logProblems.map((p) => `fix: gate log ${p.rule}: ${p.id} - ${p.reason}.\n`).join('');
   if (drift === 0 && unknown === 0 && logProblems.length === 0) {
-    process.exit(0);
+    return emitExit(0, text, err);
   }
 
   for (const r of results) {
     if (r.status === 'drift') {
-      process.stderr.write(
-        `fix: "${r.id}" is not a registered gate id — use \`${r.canonical}\` instead ` +
-          `(gates_fired entry ${r.line}).\n`
-      );
+      err += `fix: "${r.id}" is not a registered gate id — use \`${r.canonical}\` instead ` +
+        `(gates_fired entry ${r.line}).\n`;
     } else if (r.status === 'unknown') {
-      process.stderr.write(
-        `fix: "${r.id}" is not registered and has no known canonical id — add a row to ` +
-          `_shared/gates-registry.md per invariant 7 (gates are registered), or correct ` +
-          `the id if this was a typo (gates_fired entry ${r.line}).\n`
-      );
+      err += `fix: "${r.id}" is not registered and has no known canonical id — add a row to ` +
+        `_shared/gates-registry.md per invariant 7 (gates are registered), or correct ` +
+        `the id if this was a typo (gates_fired entry ${r.line}).\n`;
     }
   }
-  process.exit(1);
+  return emitExit(1, text, err);
 }
 
 module.exports = { cmdRetroValidate, parseGatesFired, registryPath };

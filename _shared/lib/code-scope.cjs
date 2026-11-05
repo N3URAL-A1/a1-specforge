@@ -71,18 +71,19 @@ function parseScopeList(raw) {
 }
 
 /** Fail closed (rc 1, INVALID_SCOPE) when a --scope path violates the input
- * bounds. Shared by claim and check. */
+ * bounds. Shared by claim and check. Returns true when it emitted the failure:
+ * the caller must then return. */
 function exitOnInvalidScope(paths, file, by) {
   for (const sp of paths) {
     const limitErr = validateScopePath(sp);
     if (limitErr) {
-      process.stdout.write(
-        JSON.stringify({ status: 'INVALID_SCOPE', file, claim: { by, paths }, error: limitErr }, null, 2) + '\n'
-      );
-      process.stderr.write(`invalid scope (fail closed): ${limitErr}\n`);
-      process.exit(1);
+      emitExit(1,
+        JSON.stringify({ status: 'INVALID_SCOPE', file, claim: { by, paths }, error: limitErr }, null, 2) + '\n',
+        `invalid scope (fail closed): ${limitErr}\n`);
+      return true; // the caller must stop: the exit happens after the streams flush
     }
   }
+  return false;
 }
 
 const CODE_SCOPE_STAGES = ['started', 'complete', 'review', 'verify', 'merge', 'origin-cleanup', 'done'];
@@ -119,7 +120,7 @@ function cmdCodeScopeClaim(args) {
     usage('code-scope claim requires at least one --scope path');
   }
   const by = flags.by;
-  exitOnInvalidScope(paths, file, by);
+  if (exitOnInvalidScope(paths, file, by)) return;
 
   const lockPath = acquireReservationsLock(file);
   const data = loadReservations(file);
@@ -275,7 +276,7 @@ function cmdCodeScopeCheck(args) {
     usage('code-scope check requires at least one --scope path');
   }
   const by = flags.by;
-  exitOnInvalidScope(paths, file, by);
+  if (exitOnInvalidScope(paths, file, by)) return;
   const data = loadReservations(file);
   const overlaps = findScopeOverlaps(data.reservations, paths, by);
   if (overlaps.length > 0) {

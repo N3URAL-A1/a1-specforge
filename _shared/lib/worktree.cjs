@@ -462,10 +462,10 @@ function cmdWorktreeAdopt(args) {
   }
 
   if (matches.length === 0) {
-    return emitExit(1, JSON.stringify({ status: 'NOT_FOUND', candidates: wts }, null, 2) + '\n', 'error: no git worktree matches; candidates:\n');
+    return emitExit(1, JSON.stringify({ status: 'NOT_FOUND', candidates: wts }, null, 2) + '\n', 'error: no git worktree matches; candidates:\n', { stderrFirst: true });
   }
   if (matches.length > 1) {
-    return emitExit(1, JSON.stringify({ status: 'AMBIGUOUS', candidates: wts }, null, 2) + '\n', 'error: multiple git worktrees match — pass --worktree-path to disambiguate\n');
+    return emitExit(1, JSON.stringify({ status: 'AMBIGUOUS', candidates: wts }, null, 2) + '\n', 'error: multiple git worktrees match — pass --worktree-path to disambiguate\n', { stderrFirst: true });
   }
   const match = matches[0];
 

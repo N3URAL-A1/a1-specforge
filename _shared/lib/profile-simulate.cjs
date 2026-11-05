@@ -27,6 +27,7 @@
 // input (house contract).
 
 const fs = require('fs');
+const { emitExit } = require('./emit-exit.cjs');
 const { resolveVaultPath, parseFlags } = require('./io.cjs');
 const { usage } = require('./help.cjs');
 
@@ -139,21 +140,10 @@ function renderRoles(argv) {
   const result = renderRoleCards(ids, ROLE_CATALOGUE);
 
   if (!result.ok) {
-    if (flags.json) {
-      process.stdout.write(`${JSON.stringify(result)}\n`);
-    } else {
-      process.stdout.write(`${result.code}: ${result.detail}\n`);
-    }
-    process.exit(1);
-    return;
+    return emitExit(1, flags.json ? `${JSON.stringify(result)}\n` : `${result.code}: ${result.detail}\n`, '');
   }
 
-  if (flags.json) {
-    process.stdout.write(`${JSON.stringify({ ok: true, roles: ids })}\n`);
-  } else {
-    process.stdout.write(result.text);
-  }
-  process.exit(0);
+  return emitExit(0, flags.json ? `${JSON.stringify({ ok: true, roles: ids })}\n` : result.text, '');
 }
 
 // ---------------------------------------------------------------------------
@@ -295,16 +285,15 @@ function checkSimulation(argv) {
     return;
   }
 
+  let outText;
   if (flags.json) {
-    process.stdout.write(`${JSON.stringify(result)}\n`);
+    outText = `${JSON.stringify(result)}\n`;
   } else if (result.ok) {
-    process.stdout.write(`profile simulate-check: pass (${ids.join(',')})\n`);
+    outText = `profile simulate-check: pass (${ids.join(',')})\n`;
   } else {
-    for (const f of result.findings) {
-      process.stdout.write(`${f.code} ${f.role}: ${f.detail}\n`);
-    }
+    outText = result.findings.map((f) => `${f.code} ${f.role}: ${f.detail}\n`).join('');
   }
-  process.exit(result.ok ? 0 : 1);
+  return emitExit(result.ok ? 0 : 1, outText, '');
 }
 
 module.exports = {
