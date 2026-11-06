@@ -54,6 +54,10 @@ If `has_uncommitted=true`:
 > will be lost. With `keep` and `handoff` the worktree content is preserved —
 > would you like to commit first?"
 
+For `keep` and `discard`, also list `ls <path>/.a1/phases/*/gate-log.jsonl <path>/.a1-review 2>/dev/null`.
+Gate logs and review state are never committed and go with the worktree: if a retro that reads them
+is not written yet, stop and write it first.
+
 ## Step 4 — Run exit
 
 ```bash
@@ -83,6 +87,27 @@ JSON on success:
 Exit 0 on success, 1 on user/usage error (e.g. discard with unmerged commits
 and no `--force-discard`), 2 on internal error.
 
+**After a squash merge (owner decision 2026-11-04, evolve run 9; narrowed after review):** a squash leaves the
+feature commits unmerged by SHA, so `discard` refuses with `branch_ahead > 0`. `--force-discard` then runs
+`git worktree remove --force`, which also deletes modified and untracked files (measured in the review probe).
+So the exception needs ALL THREE conditions; check them, do not assume them:
+
+1. The PR is merged: `gh pr view <n> --json state,mergedAt` shows MERGED.
+2. The branch content is already on the base: `git diff --quiet HEAD origin/<base>` is silent (rc 0).
+3. The working tree is clean: `git status --porcelain` prints nothing (no modified, no untracked file).
+
+```sh
+git -C <path> fetch origin \
+  && git -C <path> diff --quiet HEAD origin/<base> \
+  && [ -z "$(git -C <path> status --porcelain)" ]; echo "squash exception, git conditions: rc=$? (0 = both hold)"
+```
+
+All three hold: pass `--force-discard` WITHOUT asking, and Step 4.5 deletes the remote branch WITHOUT asking
+(owner decision, same day). Evaluate once, here, before the exit: after the exit the worktree is gone and
+Step 4.5 reuses this result. Any one fails: the unmerged-commits hard rule below applies in full (confirmation
+required). A base that moved after the merge makes the diff non-empty; the fallback to confirmation is safe and
+expected. Prose only; the CLI is unchanged.
+
 ## Step 4.5 — Origin cleanup (remote branch deletion, `discard`/`handoff`→merged only)
 
 This is the third leg of "Origin cleanup" alongside local `git branch -D` and
@@ -107,7 +132,9 @@ those modes intentionally preserve the branch.
    skip straight to reporting (no error, no retry).
 
 2. **If present, ask for explicit confirmation before deleting the remote
-   branch** — same "never force without confirmation" rule as local discard:
+   branch** — same "never force without confirmation" rule as local discard.
+   Exception: when the three conditions of Step 4 (PR merged, empty diff to
+   `origin/<base>`, clean working tree) held, skip the question and go to 3.
 
    > "Also delete the remote branch `origin/<branch>`? This cannot be undone
    > locally by anyone still tracking it. (yes/no)"
@@ -143,13 +170,17 @@ those modes intentionally preserve the branch.
 
 ## Hard rules
 
-- Never run `git worktree remove --force` without user confirmation.
+- Never run `git worktree remove --force` without user confirmation (exception: the three conditions of Step 4 hold).
 - `discard` with unmerged commits requires `--force-discard` AND explicit
   user confirmation. Default: refuse and suggest `handoff` instead.
+  Exception: the three conditions of Step 4 (PR merged, `git diff HEAD origin/<base>`
+  empty, `git status --porcelain` empty) need no confirmation. Without the clean-tree
+  condition `--force-discard` would delete uncommitted work.
 - Never delete a branch outside the CLI (local) or without explicit
-  confirmation (remote). Registry must stay consistent.
+  confirmation (remote; exception: the three conditions of Step 4).
+  Registry must stay consistent.
 - Never run `git push origin --delete <branch>` without the Step 4.5
-  confirmation step. Treat "remote ref does not exist" as success, never as
+  confirmation step (or the three conditions of Step 4). Treat "remote ref does not exist" as success, never as
   an error to retry or force through.
 - After `handoff`, this skill is done. Do not call `a1-pr-review` directly —
   inform the user and let them invoke it.

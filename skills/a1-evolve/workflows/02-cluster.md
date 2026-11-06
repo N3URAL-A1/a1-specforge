@@ -86,6 +86,9 @@ is not reaching the skills, or the gate-ROI machinery should be retired
 ids not in the registry are ignored.
 
 For each registered gate, across all `gates_fired` entries:
+- Entries with `verdict: not_applicable` are not firings: report them as a separate `skipped` count and leave
+  them out of the fired count and the retirement rule. A gate that is skipped in every run is its own finding
+  (invariant 8: a gate that cannot fail is documentation), not a retirement candidate.
 - **Catch score** = Σ over its `caught: true` entries of the run's severity weight
   (minor=1, major=3, critical=5).
 - **Cost class** = the gate's `cost` column in gates-registry.md (cheap/med/high).

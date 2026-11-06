@@ -17,7 +17,7 @@ branches had 21–23 CI runs because review fixes were pushed one at a time.
 1. **First push = PR opening.** The branch is pushed once, directly before
    `gh pr create` (`a1-pr-review` Phase 4.2). Until then it stays local.
    Changes reach `main` only through that PR and its squash merge
-   (`gh pr merge --squash --delete-branch`), never through a local merge plus
+   (`gh pr merge --squash`, no `--delete-branch`, see `a1-pr-review` `workflows/05-merge.md` 5.4), never through a local merge plus
    `git push origin main`.
 2. **Then one push per completed review-fix round.** A round is all
    BLOCKER/MAJOR findings of one review pass. Findings from reviewers that ran

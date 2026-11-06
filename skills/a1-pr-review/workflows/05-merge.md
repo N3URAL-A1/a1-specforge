@@ -58,6 +58,19 @@ To clear one: `node <repo>/_shared/a1-tools.cjs disposition add --kind config_ch
 `<author>` records `disposition review <fp> --verdict upheld --reason "<why>" --by <reviewer>` (5.1); commit and push `.a1/dispositions.json`;
 run 5.3 again. The fingerprint covers the exact head content: change the config again and the verdict no longer matches.
 The suites run fresh on every merge check (`--no-cache`); no result cache is trusted.
+Start it only on a quiet host: no other `verify run` or `pr merge-check` running and the 5-minute load below the CPU count.
+If a `WAIT` line persists, re-check for at most 15 minutes, then start anyway and record `host_busy` plus the load values
+(`load5`, `cpus`) next to the result. A red `reasons[]` entry from a run that started above that bar (timeout, `spawn_failed`,
+a timing test green in CI) is re-run once on a quiet host before it counts; write the host and both load values next to any red claim.
+The lines below (an `sh` block, not a gate block) print `WAIT` and do not stop the run (a precondition of the registered gate `pr-merge-check`, not a new gate).
+
+```sh
+command -v pgrep >/dev/null || echo "HOST: pgrep missing, quiet-host process check skipped"
+pgrep -f '(^|/)node .*a1-tools[.]cjs (verify run|pr merge-check)' >/dev/null && echo "WAIT: another verify run or merge check is active"
+node -e 'const os=require("os");const l=os.loadavg()[1],n=os.cpus().length;console.log(`load5=${l.toFixed(2)} cpus=${n}`);if(l>=n)console.log("WAIT: host load above CPU count")'
+```
+
+On a host new to this project, run the host check of a1-new-feature `workflows/06-verify.md` Step 0.6 first (owner of that check).
 
 ```bash
 node <repo>/_shared/a1-tools.cjs pr merge-check --pr <n> --phase pr-<n>; RC=$?
@@ -73,12 +86,23 @@ PR bodies go in with `--body-file`, never inline. `<head_sha>` is `head_sha` fro
 that commit or refuses, so a push between the check and the merge cannot slip in (spec 017 review SEC-1).
 
 ```bash
-gh pr merge <n> --squash --delete-branch --match-head-commit <head_sha>
+gh pr merge <n> --squash --match-head-commit <head_sha>
 ```
 
+No `--delete-branch`: run from a worktree it removes the folder behind the registry or fails locally after the remote merge.
 Then verify it landed (`gh pr view <n> --json state,mergedAt`), sync the primary checkout's `main`
 with `_shared/push-cadence.md` P3 (never a bare `git pull`) and advance the registry
-(`a1-tools pr mark-status`). Report what was merged and which findings there were.
+(`a1-tools pr mark-status`). Close out in this order; the gate logs are gitignored and go with the worktree:
+
+1. Retros, each with `retro validate --gate-log`, from inside the worktree: the retro of this skill (one retro, written
+   now, after the merge, see `04-submit.md` Retro) and the caller's retro (a1-new-feature `workflows/06-verify.md` Step 6, written now;
+   a1-fix: already written in `workflows/04-verify.md` Step 2b before the handoff, only check that its entry is present, do not append it again).
+2. `a1-worktree` exit `discard`, then origin cleanup (03-exit Step 4.5 deletes the remote branch). Both need no
+   confirmation when PR merged, `git diff HEAD origin/<base>` empty and `git status --porcelain` empty hold (03-exit Step 4);
+   otherwise confirm.
+3. The caller's remaining lifecycle stages (a1-new-feature `workflows/06-verify.md` §5 steps 3-5).
+
+The merge ends the PR, not the feature. Report what was merged and which findings there were.
 Production deploys and migrations on a production database still need the user's word.
 
 ## 5.5 Live probes (spec 020)

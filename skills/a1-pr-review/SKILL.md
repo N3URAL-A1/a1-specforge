@@ -137,7 +137,7 @@ JSON which the workflow then writes to `findings.json` via the CLI.
   reviews the diff as a subagent, fix every BLOCKER and MAJOR (one push per
   round, `_shared/push-cadence.md`), then follow `workflows/05-merge.md`
   (disposition review state, vault-backed coherence, `pr merge-check`, then
-  `gh pr merge <n> --squash --delete-branch`; any exit 1 or 2 stops before the merge).
+  `gh pr merge <n> --squash` (no `--delete-branch`, see 05-merge 5.4); any exit 1 or 2 stops before the merge).
   Do not ask the user to review, and do not hand the PR back as "ready for
   your review". Report what was merged, not what awaits them.
   The one thing that still needs the user's word is a **production deploy or

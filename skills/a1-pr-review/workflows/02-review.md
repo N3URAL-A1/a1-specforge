@@ -166,6 +166,14 @@ Show counts: "Reinhard reviewed: X BLOCKER, Y MAJOR, Z MINOR." Then:
 
 - If only MAJOR/MINOR or zero findings: proceed to Phase 3 automatically.
 
+### 2.6b Fix rounds
+
+Every fix commit for a BLOCKER or MAJOR gets a re-review of the fix diff (spawn as in 2.2, range = fix commits) that
+re-runs every probe and red-before test of the earlier rounds against the new head, and checks every caller of a changed
+shared predicate, not only the path of the finding. A fix the reviewer suggested is tested like any other fix.
+Second round on the same symptom: stop patching; the author writes down the state model (which value each path or view
+holds, and when it changes), the reviewer checks the model, then one fix replaces the patches.
+
 ### 2.7 Merge check (code, before `gh pr merge`)
 
 Immediately before the merge (Phase 4 hand-off), after the final push and after `git fetch origin`:

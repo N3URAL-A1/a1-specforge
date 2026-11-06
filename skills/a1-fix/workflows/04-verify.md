@@ -263,8 +263,18 @@ node <repo>/_shared/a1-tools.cjs gates fired --log "$GATE_LOG"; RC=$?
 if [ $RC -ne 0 ]; then echo "gate log unreadable or broken (exit $RC) - fix it before the entry counts"; exit $RC; fi
 node <repo>/_shared/a1-tools.cjs retro validate "$RETRO_FILE" --gate-log "$GATE_LOG" --phase retro-fix-<bug-slug>; RC=$?
 if [ $RC -ne 0 ]; then echo "fix the gates_fired block above before the entry counts"; exit $RC; fi
-cat "$RETRO_FILE" >> "$VAULT/pattern/a1-learnings/a1-fix.md"
+STORE="$VAULT/pattern/a1-learnings/a1-fix.md"
+N_BEFORE="$(grep -cF -- "task: <bug-slug> " "$STORE" 2>/dev/null || true)"
+cat "$RETRO_FILE" >> "$STORE"
+N_AFTER="$(grep -cF -- "task: <bug-slug> " "$STORE" 2>/dev/null || true)"
+[ "${N_AFTER:-0}" -eq $(( ${N_BEFORE:-0} + 1 )) ] || { echo "STOP: retro for <bug-slug> not appended exactly once to a1-fix.md - the terminal verdict is not complete"; exit 1; }
 ```
+
+Run this step from inside the worktree, **before** the handoff and before any discard exit: the gate log is
+gitignored and is deleted with the worktree (close-out order: `a1-pr-review` `workflows/05-merge.md` 5.4). A missing
+log exits 2 at `gates fired` (measured 2026-11-04; 4 of 9 postmortems were stranded this way in evolve run 9). Do not
+work around it with a `retro validate` call without `--gate-log`: that drops the spec-017 check
+(`_shared/retro-template.md` owns the contract). Fix the cwd or write the entry before the worktree goes.
 
 `evidence:` is required (invariant 3) — it is what the retro-integrity
 cross-check reads. If promote-lessons later runs, it does NOT re-append these

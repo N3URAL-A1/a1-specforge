@@ -78,7 +78,9 @@ a1-pr-review is complete. Registry status: `pr-open`.
 
 Write one retro entry exactly as defined in `_shared/retro-template.md`
 (entry format + write targets: learning store first, dev cache best-effort),
-with skill = `a1-pr-review`.
+with skill = `a1-pr-review`. Write it once, after the merge, as step 1 of the close-out in
+`05-merge.md` 5.4 (the merge-check gate-log lines only exist after 5.3, and the worktree exit deletes the log).
+A run that stops before the merge writes it at the stop.
 
 - task wording: <short description, e.g. "PR review for auth-rework, 0 BLOCKER, 2 MAJOR">
 - issue tags: [<relevant tags, e.g. reinhard-no-json, push-rejected, gh-auth, blocker-overridden>]

@@ -186,7 +186,7 @@ if grep -q '"matcher": "Bash"' "$SK/../hooks/hooks.json"; then
 else
   fail_case "hooks/hooks.json has no Bash matcher: the merge check is not enforced"
 fi
-if grep -q 'gh pr merge <n> --squash --delete-branch' "$SK/a1-pr-review/SKILL.md" && grep -q 'exactly ONE command' "$REV"; then
+if grep -q 'gh pr merge <n> --squash` (no `--delete-branch`' "$SK/a1-pr-review/SKILL.md" && grep -q 'exactly ONE command' "$REV"; then
   pass_case "the merge step uses the canonical form the hook allows"
 else
   fail_case "the a1-pr-review merge step does not name the canonical gh pr merge form"
@@ -225,7 +225,7 @@ if [ "$order" = "DCMGP" ]; then pass_case "block order: disposition review, cohe
 if [ "$(bj 'b.filter(x=>/gh pr merge/.test(x)).length')" = "1" ] && [ "$(bj 'b.findIndex(x=>/gh pr merge/.test(x))')" = "3" ]; then
   pass_case "no gh pr merge before the three checks: exactly one merge command, in the fourth block (the probe block follows it)"
 else fail_case "gh pr merge appears outside the fourth fenced block"; fi
-if [ "$(bj 'b[3].trim()')" = "gh pr merge <n> --squash --delete-branch --match-head-commit <head_sha>" ]; then pass_case "the merge block is exactly the canonical form the hook allows, with the head pin (only command, no other flags)"
+if [ "$(bj 'b[3].trim()')" = "gh pr merge <n> --squash --match-head-commit <head_sha>" ]; then pass_case "the merge block is exactly the canonical form the hook allows, with the head pin (only command, no other flags)"
 else fail_case "merge block is not the byte-exact canonical form: $(bj 'JSON.stringify(b[3])')"; fi
 if [ "$(bj 'b.slice(0,3).filter(x=>/RC=\$\?/.test(x)&&/-ne 0/.test(x)&&/exit "\$RC"/.test(x)).length')" = "3" ]; then pass_case "each check block tests its exit code explicitly and stops on non-zero (count 3)"
 else fail_case "a check block does not test \$? and exit"; fi
@@ -282,6 +282,22 @@ if ! grep -q 'accept-config-change' "$MRG"; then pass_case "05-merge names no --
 else fail_case "05-merge still mentions --accept-config-change"; fi
 if grep -q 'disposition review' "$MRG" && grep -q -e '--by a1-reinhard-reviewer' "$MRG"; then pass_case "05-merge disposition review lines carry --by (required since round C)"
 else fail_case "05-merge disposition review line lacks --by"; fi
+
+# Review round (evolve run 9): advisory snippets in 05-merge live in non-bash fences (sh): they print WAIT/HOST lines and
+# must neither run the merge command nor exit, else they would become a hidden gate or a second merge path.
+nb="$(node -e '
+  const t=require("fs").readFileSync(process.argv[1],"utf8"); let bad=0, n=0; const re=/^```([a-z]*)\n([\s\S]*?)^```/gm; let m;
+  while((m=re.exec(t))){ if(m[1]==="bash") continue; n++; if(/gh pr merge/.test(m[2])||/\bexit\b/.test(m[2])) bad++; }
+  console.log(n+":"+bad);' "$MRG")"
+if [ "${nb#*:}" = "0" ] && [ "${nb%%:*}" -ge 1 ]; then pass_case "05-merge non-bash fences (${nb%%:*}) contain neither the merge command nor exit"
+else fail_case "05-merge non-bash fences: count:bad = $nb (want >=1 fence, 0 bad)"; fi
+# No stale squash command with --delete-branch in skills/ or _shared/*.md. Excluded on purpose:
+#   skills/a1-new-feature/SKILL.md - held by the 006-specforge-kritis-profile code-scope claim; follow-up: change it to
+#   the form without --delete-branch once 006 releases the claim, then drop this exclusion.
+#   _test-fixtures/a1-gates-lint/corpus/ is not scanned (static corpus copies).
+stale="$(grep -rIl -e '--squash --delete-branch' "$SK" "$(dirname "$SK")"/_shared/*.md 2>/dev/null | grep -v 'skills/a1-new-feature/SKILL.md$' || true)"
+if [ -z "$stale" ]; then pass_case "no stale squash merge command with --delete-branch in skills/ and _shared/*.md (a1-new-feature/SKILL.md excluded: 006 claim)"
+else fail_case "stale squash merge command with --delete-branch in: $stale"; fi
 
 echo ""
 echo "a1-pr-review: $pass passed, $fail failed"
