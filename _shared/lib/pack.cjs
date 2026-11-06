@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { parseFlags, vaultRoot, copyDirRecursive } = require('./io.cjs');
+const { emitExit } = require('./emit-exit.cjs');
 
 // ---------------------------------------------------------------------------
 // pack — Gate-Pack system (ADR 2026-07-05-gate-pack-format).
@@ -236,16 +237,12 @@ function cmdPackValidate(rest) {
   }
   const res = packValidateDir(dir);
   if (res.fatal) {
-    for (const e of res.errors) process.stderr.write(`error: ${e}\n`);
-    process.exit(2);
+    return emitExit(2, '', res.errors.map((e) => `error: ${e}\n`).join(''));
   }
   if (res.ok) {
-    process.stdout.write(`pack: VALID — ${res.manifest.name}@${res.manifest.version} (${(res.manifest.patterns || []).length} patterns)\n`);
-    process.exit(0);
+    return emitExit(0, `pack: VALID — ${res.manifest.name}@${res.manifest.version} (${(res.manifest.patterns || []).length} patterns)\n`, '');
   }
-  process.stderr.write(`pack: INVALID — ${res.errors.length} problem(s):\n`);
-  for (const e of res.errors) process.stderr.write(`  - ${e}\n`);
-  process.exit(1);
+  return emitExit(1, '', `pack: INVALID — ${res.errors.length} problem(s):\n` + res.errors.map((e) => `  - ${e}\n`).join(''));
 }
 
 function rmDirRecursive(p) {
@@ -261,13 +258,10 @@ function cmdPackImport(rest) {
   }
   const res = packValidateDir(dir);
   if (res.fatal) {
-    for (const e of res.errors) process.stderr.write(`error: ${e}\n`);
-    process.exit(2);
+    return emitExit(2, '', res.errors.map((e) => `error: ${e}\n`).join(''));
   }
   if (!res.ok) {
-    process.stderr.write(`pack: INVALID — refusing import (${res.errors.length} problem(s)):\n`);
-    for (const e of res.errors) process.stderr.write(`  - ${e}\n`);
-    process.exit(1);
+    return emitExit(1, '', `pack: INVALID — refusing import (${res.errors.length} problem(s)):\n` + res.errors.map((e) => `  - ${e}\n`).join(''));
   }
   const name = String(res.manifest.name);
   const version = String(res.manifest.version);
@@ -285,15 +279,13 @@ function cmdPackImport(rest) {
     }
     if (existingVersion === version) {
       // Idempotent re-import of same version.
-      process.stdout.write(`pack ${name}@${version} already staged at ${stagedDir} — idempotent, apply via a1-evolve\n`);
-      process.exit(0);
+      return emitExit(0, `pack ${name}@${version} already staged at ${stagedDir} — idempotent, apply via a1-evolve\n`, '');
     }
     note = `replaced ${existingVersion || 'unknown'} → ${version}`;
     rmDirRecursive(stagedDir);
   }
   copyDirRecursive(path.resolve(dir), stagedDir);
-  process.stdout.write(`pack ${name}@${version} staged at ${stagedDir} (${note}), apply via a1-evolve\n`);
-  process.exit(0);
+  emitExit(0, `pack ${name}@${version} staged at ${stagedDir} (${note}), apply via a1-evolve\n`, '');
 }
 
 // Parse the Vault patterns.md "Applied" + "Monitoring" tables into records so
@@ -420,9 +412,7 @@ function cmdPackExport(rest) {
     }
   }
   if (leaks.length > 0) {
-    process.stderr.write(`pack export: ANONYMIZATION FAILURE — ${leaks.length} leak(s), refusing to write:\n`);
-    for (const l of leaks) process.stderr.write(`  - ${l}\n`);
-    process.exit(1);
+    return emitExit(1, '', `pack export: ANONYMIZATION FAILURE — ${leaks.length} leak(s), refusing to write:\n` + leaks.map((l) => `  - ${l}\n`).join(''));
   }
 
   // Clean; write.
@@ -431,8 +421,7 @@ function cmdPackExport(rest) {
   for (const id of ids) {
     fs.writeFileSync(path.join(outDir, 'patterns', `${id}.md`), patternFiles[id], 'utf8');
   }
-  process.stdout.write(`pack exported: ${packName} (${ids.length} patterns, ${anon}) → ${outDir}\n`);
-  process.exit(0);
+  emitExit(0, `pack exported: ${packName} (${ids.length} patterns, ${anon}) → ${outDir}\n`, '');
 }
 
 module.exports = { cmdPackValidate, cmdPackImport, cmdPackExport };

@@ -193,6 +193,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { emitExit } = require(path.join(__dirname, 'lib', 'emit-exit.cjs'));
 
 // Spec 011 FR-041 — intent child mode. Runs before any other module loads and
 // before any subcommand code: in a child of `intent run` only the action's
@@ -406,10 +407,8 @@ function main() {
   // gets `--phase <scope>` stripped and one gate-log line appended at exit.
   const argv = installGateLog(process.argv.slice(2), readRegistryText());
   if (argv.length === 0 || argv[0] === '--help' || argv[0] === '-h') {
-    // No process.exit() here: the help text is larger than a pipe buffer
-    // (64 KiB), and exiting before stdout drains cuts it off.
-    process.stdout.write(`${HELP}\n`);
-    return;
+    // The help text can exceed a pipe buffer (64 KiB): emitExit exits only after stdout drained.
+    return emitExit(0, `${HELP}\n`, '');
   }
   const [group, sub, ...rest] = argv;
   let result;
@@ -453,7 +452,7 @@ function main() {
       // `check reservations` is an independent subcommand (owns exit 0/1).
       if (sub === 'reservations') {
         cmdCheckReservations(rest);
-        return; // unreachable — cmdCheckReservations calls process.exit()
+        return; // the command emits its result and sets the exit code itself (emitExit)
       }
       usage(
         `unknown check subcommand: ${sub} (the spec↔plan gate moved to "checklist run <slug>/<feature> --only 9,10,11" in M13)`
@@ -462,19 +461,19 @@ function main() {
       // code-scope claim/check own their exit code (0/1) and JSON output.
       if (sub === 'claim') {
         cmdCodeScopeClaim(rest);
-        return; // unreachable — cmdCodeScopeClaim calls process.exit()
+        return; // the command emits its result and sets the exit code itself (emitExit)
       } else if (sub === 'check') {
         cmdCodeScopeCheck(rest);
-        return; // unreachable — cmdCodeScopeCheck calls process.exit()
+        return; // the command emits its result and sets the exit code itself (emitExit)
       } else if (sub === 'stage') {
         cmdCodeScopeStage(rest);
-        return; // unreachable — cmdCodeScopeStage calls process.exit()
+        return; // the command emits its result and sets the exit code itself (emitExit)
       } else if (sub === 'release') {
         cmdCodeScopeRelease(rest);
-        return; // unreachable — cmdCodeScopeRelease calls process.exit()
+        return; // the command emits its result and sets the exit code itself (emitExit)
       } else if (sub === 'list') {
         cmdCodeScopeList(rest);
-        return; // unreachable — cmdCodeScopeList calls process.exit()
+        return; // the command emits its result and sets the exit code itself (emitExit)
       } else {
         usage(`unknown code-scope subcommand: ${sub}`);
       }
@@ -482,7 +481,7 @@ function main() {
       if (sub === 'run') {
         // owns its own exit code (0 pass / 1 findings / 2 error) and stdout
         cmdRealpathCheckRun(rest);
-        return; // unreachable — cmdRealpathCheckRun calls process.exit()
+        return; // the command emits its result and sets the exit code itself (emitExit)
       } else usage(`unknown realpath-check subcommand: ${sub}`);
     } else if (group === 'lane-split') {
       if (sub === 'check') {
@@ -490,7 +489,7 @@ function main() {
         const { cmdLaneSplitCheck } = require(path.join(__dirname, 'lib', 'lane-split.cjs'));
         // owns its own exit code (0 pass / 1 blockers / 2 error) and stdout
         cmdLaneSplitCheck(rest);
-        return; // unreachable — cmdLaneSplitCheck calls process.exit()
+        return; // the command emits its result and sets the exit code itself (emitExit)
       } else usage(`unknown lane-split subcommand: ${sub}`);
     } else if (group === 'plan') {
       if (sub === 'depth-check') {
@@ -498,16 +497,15 @@ function main() {
         const { cmdPlanDepthCheck } = require(path.join(__dirname, 'lib', 'depth-pass.cjs'));
         // owns its own exit code (0 pass / 1 finding / 2 usage error) and stdout
         cmdPlanDepthCheck(rest);
-        return; // unreachable — cmdPlanDepthCheck calls process.exit()
+        return; // the command emits its result and sets the exit code itself (emitExit)
       }
       // Usage errors are exit 2 (usage() exits 1, the "finding" branch of a gate).
-      process.stderr.write(`plan: unknown subcommand: ${sub || '(none)'}\nusage: a1-tools plan depth-check --plan <path/to/PLAN.md>\n`);
-      process.exit(2);
+      return emitExit(2, '', `plan: unknown subcommand: ${sub || '(none)'}\nusage: a1-tools plan depth-check --plan <path/to/PLAN.md>\n`);
     } else if (group === 'checklist') {
       if (sub === 'run') {
         // checklist run owns its own exit code (0/1/2) and report format.
         cmdChecklistRun(rest);
-        return; // unreachable — cmdChecklistRun calls process.exit()
+        return; // the command emits its result and sets the exit code itself (emitExit)
       } else if (sub === 'list') {
         result = cmdChecklistList(rest);
       } else {
@@ -582,13 +580,13 @@ function main() {
       else if (sub === 'run') {
         // owns its own exit code (0 pass / 1 findings / 2 error) and stdout
         cmdSchemaCheckRun(rest);
-        return; // unreachable — cmdSchemaCheckRun calls process.exit()
+        return; // the command emits its result and sets the exit code itself (emitExit)
       } else usage(`unknown schema-check subcommand: ${sub}`);
     } else if (group === 'cost') {
       if (sub === 'run') {
         // owns its own exit code (0 ok / 2 error) and stdout (table or json)
         cmdCostRun(rest);
-        return; // unreachable — cmdCostRun calls process.exit()
+        return; // the command emits its result and sets the exit code itself (emitExit)
       } else usage(`unknown cost subcommand: ${sub}`);
     } else if (group === 'product') {
       // Lazy require — only paid when `product ...` is actually invoked.
@@ -596,49 +594,49 @@ function main() {
       // product status/stage own their exit code (0/1) and JSON output.
       if (sub === 'status') {
         product.cmdProductStatus(rest);
-        return; // unreachable — cmdProductStatus calls process.exit()
+        return; // the command emits its result and sets the exit code itself (emitExit)
       } else if (sub === 'stage') {
         product.cmdProductStage(rest);
-        return; // unreachable — cmdProductStage calls process.exit()
+        return; // the command emits its result and sets the exit code itself (emitExit)
       } else if (sub === 'markers') {
         product.cmdProductMarkers(rest);
-        return; // unreachable — cmdProductMarkers calls process.exit()
+        return; // the command emits its result and sets the exit code itself (emitExit)
       } else if (sub === 'changelog') {
         product.cmdProductChangelog(rest);
-        return; // unreachable — cmdProductChangelog calls process.exit()
+        return; // the command emits its result and sets the exit code itself (emitExit)
       } else if (sub === 'init') {
         product.cmdProductInit(rest);
-        return; // unreachable — cmdProductInit calls process.exit()
+        return; // the command emits its result and sets the exit code itself (emitExit)
       } else if (sub === 'add-milestone') {
         product.cmdProductAddMilestone(rest);
-        return; // unreachable — cmdProductAddMilestone calls process.exit()
+        return; // the command emits its result and sets the exit code itself (emitExit)
       } else if (sub === 'add-feature') {
         product.cmdProductAddFeature(rest);
-        return; // unreachable — cmdProductAddFeature calls process.exit()
+        return; // the command emits its result and sets the exit code itself (emitExit)
       } else if (sub === 'feature-init') {
         product.cmdProductFeatureInit(rest);
-        return; // unreachable — cmdProductFeatureInit calls process.exit()
+        return; // the command emits its result and sets the exit code itself (emitExit)
       } else if (sub === 'vision-init') {
         product.cmdProductVisionInit(rest);
-        return; // unreachable — cmdProductVisionInit calls process.exit()
+        return; // the command emits its result and sets the exit code itself (emitExit)
       } else if (sub === 'vision-touch') {
         product.cmdProductVisionTouch(rest);
-        return; // unreachable — cmdProductVisionTouch calls process.exit()
+        return; // the command emits its result and sets the exit code itself (emitExit)
       } else if (sub === 'audit-publish') {
         product.cmdProductAuditPublish(rest);
-        return; // unreachable — cmdProductAuditPublish calls process.exit()
+        return; // the command emits its result and sets the exit code itself (emitExit)
       } else if (sub === 'audit-set') {
         product.cmdProductAuditSet(rest);
-        return; // unreachable — cmdProductAuditSet calls process.exit()
+        return; // the command emits its result and sets the exit code itself (emitExit)
       } else if (sub === 'audit-mirror') {
         product.cmdProductAuditMirror(rest);
-        return; // unreachable — cmdProductAuditMirror calls process.exit()
+        return; // the command emits its result and sets the exit code itself (emitExit)
       } else if (sub === 'import') {
         product.cmdProductImport(rest);
-        return; // unreachable — cmdProductImport calls process.exit()
+        return; // the command emits its result and sets the exit code itself (emitExit)
       } else if (sub === 'validate') {
         product.cmdProductValidate(rest);
-        return; // unreachable — cmdProductValidate calls process.exit()
+        return; // the command emits its result and sets the exit code itself (emitExit)
       } else {
         usage(`unknown product subcommand: ${sub}`);
       }
@@ -646,13 +644,13 @@ function main() {
       // pack subcommands own their exit codes (0/1/2) and stdout.
       if (sub === 'validate') {
         cmdPackValidate(rest);
-        return; // unreachable — cmdPackValidate calls process.exit()
+        return; // the command emits its result and sets the exit code itself (emitExit)
       } else if (sub === 'import') {
         cmdPackImport(rest);
-        return; // unreachable — cmdPackImport calls process.exit()
+        return; // the command emits its result and sets the exit code itself (emitExit)
       } else if (sub === 'export') {
         cmdPackExport(rest);
-        return; // unreachable — cmdPackExport calls process.exit()
+        return; // the command emits its result and sets the exit code itself (emitExit)
       } else usage(`unknown pack subcommand: ${sub}`);
     } else if (group === 'quick') {
       // Lazy require — only paid when `quick ...` is actually invoked.
@@ -661,12 +659,12 @@ function main() {
       // eligible) and JSON output (spec 004-xs-quick-lane, Wave 1).
       if (sub === 'eligibility') {
         quick.cmdQuickEligibility(rest);
-        return; // unreachable — cmdQuickEligibility calls process.exit()
+        return; // the command emits its result and sets the exit code itself (emitExit)
       } else if (sub === 'stats') {
         // quick stats owns its own exit code (always 0 — a report, not a
         // gate) and JSON output (spec 004-xs-quick-lane, Wave 5, FR-018).
         quick.cmdQuickStats(rest);
-        return; // unreachable — cmdQuickStats calls process.exit()
+        return; // the command emits its result and sets the exit code itself (emitExit)
       } else {
         usage(`unknown quick subcommand: ${sub}`);
       }
@@ -675,12 +673,12 @@ function main() {
         // owns its own exit code (0 ok / 2 malformed watermark field / 3
         // watermark source missing/unreadable) and JSON stdout
         cmdLearningsCountSinceWatermark(rest);
-        return; // unreachable — cmdLearningsCountSinceWatermark calls process.exit()
+        return; // the command emits its result and sets the exit code itself (emitExit)
       } else if (sub === 'roots') {
         // owns its own exit code (0 roots found / 3 nothing resolved) and JSON
         // stdout — a1-evolve's collect phase asks instead of hardcoding a path.
         cmdLearningsRoots(rest);
-        return; // unreachable — cmdLearningsRoots calls process.exit()
+        return; // the command emits its result and sets the exit code itself (emitExit)
       } else usage(`unknown learnings subcommand: ${sub}`);
     } else if (group === 'retro') {
       if (sub === 'validate') {
@@ -688,20 +686,20 @@ function main() {
         // 2 usage-or-unreadable-or-malformed) and JSON stdout — spec
         // 007-retro-gate-id-validator, Wave 2.
         cmdRetroValidate(rest);
-        return; // unreachable — cmdRetroValidate calls process.exit()
+        return; // the command emits its result and sets the exit code itself (emitExit)
       } else usage(`unknown retro subcommand: ${sub}`);
     } else if (group === 'workflow') {
       if (sub === 'lint') {
         // owns its own exit code (0 clean / 1 finding / 2 usage-or-hostile-root)
         // and JSON stdout — spec 007-retro-gate-id-validator, Wave 3.
         cmdWorkflowLint(rest);
-        return; // unreachable — cmdWorkflowLint calls process.exit()
+        return; // the command emits its result and sets the exit code itself (emitExit)
       } else usage(`unknown workflow subcommand: ${sub}`);
     } else if (group === 'gates') {
       // Spec 017-enforced-self-checks, Wave 1: lib/gates-cli.cjs owns the
       // group's dispatch and every exit code (0 / 1 / 2). Lazy require.
       require(path.join(__dirname, 'lib', 'gates-cli.cjs')).cmdGates(sub, rest);
-      return; // unreachable — every gates subcommand calls process.exit()
+      return; // the command emits its result and sets the exit code itself (emitExit)
     } else if (group === 'verify') {
       // Spec 017 Wave 2: fail-closed stub (exit 2); wave 3 builds run/check.
       require(path.join(__dirname, 'lib', 'verify-cli.cjs')).cmdVerify(sub, rest);
@@ -720,7 +718,7 @@ function main() {
       // require: unrelated commands never load the adapter modules.
       const { cmdXprov } = require(path.join(__dirname, 'lib', 'xprov.cjs'));
       cmdXprov(sub, rest);
-      return; // unreachable — every xprov subcommand calls process.exit()
+      return; // the command emits its result and sets the exit code itself (emitExit)
     } else if (group === 'vault') {
       // Spec 010-vault-cockpit-contract, Wave 1 — the facade's ONLY edits for
       // that spec are this branch and the next. lib/vault-cli.cjs owns both
@@ -770,12 +768,10 @@ function main() {
     // Input-validation errors (e.g. path-traversal guard) are user errors,
     // not internal faults — same exit 2, honest prefix.
     const prefix = e && e.code === 'A1_INPUT' ? 'error' : 'internal error';
-    process.stderr.write(`${prefix}: ${e.message}\n`);
-    if (process.env.A1_DEBUG) process.stderr.write(`${e.stack}\n`);
-    process.exit(2);
+    emitExit(2, '', `${prefix}: ${e.message}\n` + (process.env.A1_DEBUG ? `${e.stack}\n` : ''));
+    return;
   }
-  process.stdout.write(JSON.stringify(result, null, 2) + '\n');
-  process.exit(0);
+  emitExit(0, JSON.stringify(result, null, 2) + '\n');
 }
 
 main();

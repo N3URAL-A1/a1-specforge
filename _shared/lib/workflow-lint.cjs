@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { parseFlags, repoRoot } = require('./io.cjs');
+const { emitExit } = require('./emit-exit.cjs');
 
 // ---------------------------------------------------------------------------
 // workflow lint — Wave 3 of spec 007-retro-gate-id-validator.
@@ -407,13 +408,8 @@ function cmdWorkflowLint(argv) {
     vault_sync_checked: vaultSync.checked,
     findings,
   };
-  process.stdout.write(JSON.stringify(out) + '\n');
-
-  if (findings.length > 0) {
-    for (const f of findings) process.stderr.write(formatFinding(f) + '\n');
-    process.exit(1);
-  }
-  process.exit(0);
+  const err = findings.map((f) => formatFinding(f) + '\n').join('');
+  return emitExit(findings.length > 0 ? 1 : 0, JSON.stringify(out) + '\n', err);
 }
 
 module.exports = {

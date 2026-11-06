@@ -22,6 +22,7 @@
 const fs = require('fs');
 const path = require('path');
 const { parseFlags } = require('./io.cjs');
+const { emitExit } = require('./emit-exit.cjs');
 const { scopePathsOverlap } = require('./code-scope.cjs');
 const { ScopeLimitError } = require('./segment-glob.cjs');
 
@@ -335,8 +336,7 @@ function cmdLaneSplitCheck(args) {
       note: 'no lanes declared — phase runs sequentially (the default)',
       findings: [],
     };
-    process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-    process.exit(0);
+    return emitExit(0, JSON.stringify(out, null, 2) + '\n', '');
   }
 
   // 5. schema
@@ -477,8 +477,7 @@ function cmdLaneSplitCheck(args) {
     blockers,
     findings,
   };
-  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-  process.exit(blockers === 0 ? 0 : 1);
+  return emitExit(blockers === 0 ? 0 : 1, JSON.stringify(out, null, 2) + '\n', '');
 }
 
 module.exports = { cmdLaneSplitCheck, parseLanes, parseWaves, isCutoverWave, declaredDeps };

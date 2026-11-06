@@ -5,7 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const { serializeNestedFrontmatter, parseFlags, fail, nowIso } = require('./io.cjs');
-const { acquireReservationsLock, exitWithLock, failWithLock, writeAllOrNothing } = require('./locks.cjs');
+const { acquireReservationsLock, exitWithLock, failWithLock, writeAllOrNothing, emitExitWithLock } = require('./locks.cjs');
 const { usage } = require('./help.cjs');
 const { PRODUCT_ROADMAP_KEY_ORDER, YYYY_MM_DD_RE } = require('./product-schema.cjs');
 const { regenerateDerived } = require('./product-derived.cjs');
@@ -451,8 +451,7 @@ function cmdProductImport(args) {
     features: parsed.roadmapFm.features.length,
     files_written: writes.map((w) => w.target),
   };
-  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-  exitWithLock(lockPath, 0);
+  return emitExitWithLock(lockPath, 0, JSON.stringify(out, null, 2) + '\n', '');
 }
 
 module.exports = {

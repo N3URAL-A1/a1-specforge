@@ -16,6 +16,7 @@
 const fs = require('fs');
 const { resolveVaultPath, parseFlags } = require('./io.cjs');
 const { usage } = require('./help.cjs');
+const { emitExit } = require('./emit-exit.cjs');
 
 const MAX_SPEC_BYTES = 1024 * 1024; // 1 MiB (contract: size cap 1 MiB)
 
@@ -351,15 +352,13 @@ function readSpecOrExit(specFlag) {
   }
 }
 
-/** Print the verdict in the requested format. */
-function printResult(result, asJson) {
-  if (asJson) {
-    process.stdout.write(JSON.stringify(result, null, 2) + '\n');
-    return;
-  }
-  process.stdout.write(`checked ${result.checked} requirement(s), ${result.findings.length} finding(s), ${result.warnings.length} warning(s)\n`);
-  for (const f of result.findings) process.stdout.write(`  FINDING ${f.code} ${f.id || ''} (line ${f.line}): ${f.message}\n`);
-  for (const w of result.warnings) process.stdout.write(`  WARNING ${w.code} ${w.id || ''} (line ${w.line}): ${w.message}\n`);
+/** Render the verdict in the requested format (the caller emits it with emitExit). */
+function formatResult(result, asJson) {
+  if (asJson) return JSON.stringify(result, null, 2) + '\n';
+  const head = `checked ${result.checked} requirement(s), ${result.findings.length} finding(s), ${result.warnings.length} warning(s)\n`;
+  const findings = result.findings.map((f) => `  FINDING ${f.code} ${f.id || ''} (line ${f.line}): ${f.message}\n`);
+  const warnings = result.warnings.map((w) => `  WARNING ${w.code} ${w.id || ''} (line ${w.line}): ${w.message}\n`);
+  return head + findings.join('') + warnings.join('');
 }
 
 /**
@@ -387,8 +386,7 @@ function checkEars(args) {
     return;
   }
 
-  printResult(result, flags.json);
-  process.exit(result.findings.length > 0 ? 1 : 0);
+  return emitExit(result.findings.length > 0 ? 1 : 0, formatResult(result, flags.json), '');
 }
 
 module.exports = { checkEars, evaluateEars, FINDING_CODES };

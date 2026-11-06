@@ -24,6 +24,7 @@
 const fs = require('fs');
 const path = require('path');
 const { resolveVaultPath, parseFlags, readMd, writeMdAtomic } = require('./io.cjs');
+const { emitExit } = require('./emit-exit.cjs');
 const { usage } = require('./help.cjs');
 
 const MAX_SPEC_BYTES = 1024 * 1024; // 1 MiB (same cap as profile-ears.cjs)
@@ -255,8 +256,7 @@ function injectNfr(argv) {
   if (plan.added.length > 0) {
     writeMdAtomic(abs, parsed.fm, plan.text);
   }
-  process.stdout.write(`profile nfr-inject: added ${plan.added.length}, skipped ${plan.skipped.length}\n`);
-  process.exit(0);
+  return emitExit(0, `profile nfr-inject: added ${plan.added.length}, skipped ${plan.skipped.length}\n`, '');
 }
 
 module.exports = { planInjection, parseCatalogue, injectNfr, EXPECTED_ITEMS, NFR_HEADING };

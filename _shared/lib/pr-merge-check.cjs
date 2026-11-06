@@ -17,6 +17,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { parseFlags, peekVaultRoot, parseNestedFrontmatter, parseFrontmatter } = require('./io.cjs');
+const { emitExit } = require('./emit-exit.cjs');
 const { VerifyError, runVerify } = require('./verify-run.cjs');
 const { resolveMergeBase, flakyBaseGrown } = require('./verify-base.cjs');
 const { gitRaw } = require('./verify-check.cjs');
@@ -49,10 +50,9 @@ class MergeCheckError extends Error {
   constructor(reason, message) { super(message || reason); this.reason = reason; }
 }
 
+/** Report a failure and exit 2 once the streams drained. Callers `return fail2(...)`. */
 function fail2(reason, message) {
-  process.stdout.write(`${JSON.stringify({ ok: false, error: reason, message })}\n`);
-  process.stderr.write(`pr merge-check: ${reason}: ${message}\n`);
-  process.exit(2);
+  return emitExit(2, `${JSON.stringify({ ok: false, error: reason, message })}\n`, `pr merge-check: ${reason}: ${message}\n`);
 }
 
 function parseArgs(args) {
@@ -222,12 +222,11 @@ function cmdPrMergeCheck(_sub, rest) {
     if (process.env.A1_GH_BIN) process.stderr.write(`pr merge-check: gh from A1_GH_BIN=${process.env.A1_GH_BIN.replace(/[\u0000-\u001f\u007f]/g, '?')}\n`);
     result = mergeCheck(parseArgs(rest));
   } catch (e) {
-    if (e instanceof MergeCheckError || e instanceof VerifyError) fail2(e.reason, e.message);
-    if (e instanceof DispositionError) fail2(e.code, e.message);
-    fail2('internal', e && e.message ? e.message : String(e));
+    if (e instanceof MergeCheckError || e instanceof VerifyError) return fail2(e.reason, e.message);
+    if (e instanceof DispositionError) return fail2(e.code, e.message);
+    return fail2('internal', e && e.message ? e.message : String(e));
   }
-  process.stdout.write(`${JSON.stringify(result.report)}\n`);
-  process.exit(result.exit);
+  return emitExit(result.exit, `${JSON.stringify(result.report)}\n`, '');
 }
 
 module.exports = { cmdPrMergeCheck, mergeCheck, requiredChecks, bugResolves, MergeCheckError };

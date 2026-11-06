@@ -42,6 +42,7 @@ const {
   parseFrontmatter, writeTextAtomic, assertSafeSegment, parseFlags,
 } = require('./io.cjs');
 const { emitJson, writeStdoutSync } = require('./xprov-common.cjs');
+const { emitExit } = require('./emit-exit.cjs');
 const {
   isConflictCopy, isLink, externalVaultRoot, rootProblem, warnSkipped,
 } = require('./vault-common.cjs');
@@ -401,13 +402,10 @@ function cmdVaultLint(args) {
   };
   const code = findings.length > 0 ? EXIT_FINDINGS : EXIT_CLEAN;
   if (flags.json) {
-    // FR-019: every rewritten path is printed — on stderr when stdout is JSON.
-    report.fixed.forEach((p) => process.stderr.write(`fixed\t${p}\n`));
-    emitJson(report, code);
-  } else {
-    writeStdoutSync(humanReport(report, dryRun));
+    // FR-019: every rewritten path is printed — on stderr when stdout is JSON (stderr first, as before).
+    return emitExit(code, `${JSON.stringify(report, null, 2)}\n`, report.fixed.map((p) => `fixed\t${p}\n`).join(''), { stderrFirst: true });
   }
-  process.exit(code);
+  return emitExit(code, humanReport(report, dryRun), '');
 }
 
 module.exports = { cmdVaultLint, lintContent, foldedKeys, withTypeStamped, CLASSES };

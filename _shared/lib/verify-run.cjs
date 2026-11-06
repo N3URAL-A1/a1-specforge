@@ -15,6 +15,7 @@ const { spawnSync, spawn } = require('child_process');
 const { gitRaw, headSha, splitNul, diffNames } = require('./verify-check.cjs');
 const rep = require('./verify-reporters.cjs');
 const vb = require('./verify-base.cjs');
+const { emitExit } = require('./emit-exit.cjs');
 const { loadEntries, entriesAt, clearedFingerprints, fingerprintOf, isSelfReviewed } = require('./disposition-store.cjs');
 
 const { VerifyError } = vb;
@@ -230,7 +231,7 @@ function suiteEnv(env) {
 
 function groupRunnerMain() {
   const spec = JSON.parse(fs.readFileSync(0, 'utf8'));
-  const emit = (o) => { process.stdout.write(JSON.stringify(o)); process.exit(0); };
+  const emit = (o) => emitExit(0, JSON.stringify(o), '');
   const fd = fs.openSync(spec.stdoutFile, 'w');
   const child = spawn(spec.argv[0], spec.argv.slice(1), { cwd: spec.cwd, env: suiteEnv(process.env), shell: false, detached: true, stdio: ['ignore', fd, 'ignore'] });
   let timedOut = false;

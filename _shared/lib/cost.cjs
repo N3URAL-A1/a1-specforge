@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { parseFlags } = require('./io.cjs');
+const { emitExit } = require('./emit-exit.cjs');
 const { usage } = require('./help.cjs');
 
 // ---------------------------------------------------------------------------
@@ -164,9 +165,9 @@ function cmdCostRun(args) {
   const total = grand.input + grand.output + grand.cacheRead + grand.cacheCreation;
   const summaryLine = `Cost: ${total} tokens (in ${grand.input}, out ${grand.output}, cache ${grand.cacheRead + grand.cacheCreation})`;
 
+  let text;
   if (flags.json) {
-    process.stdout.write(
-      JSON.stringify(
+    text = JSON.stringify(
         {
           project: dir,
           since: flags.since || null,
@@ -185,19 +186,16 @@ function cmdCostRun(args) {
         },
         null,
         2
-      ) + '\n'
-    );
+      ) + '\n';
   } else {
-    process.stdout.write('SESSION                               MODELS                          IN        OUT       CACHE\n');
+    text = 'SESSION                               MODELS                          IN        OUT       CACHE\n';
     for (const s of sessions) {
-      process.stdout.write(
-        `${s.session.padEnd(38)}${s.models.join(',').padEnd(32)}${String(s.input).padEnd(10)}${String(s.output).padEnd(10)}${s.cacheRead + s.cacheCreation}\n`
-      );
+      text += `${s.session.padEnd(38)}${s.models.join(',').padEnd(32)}${String(s.input).padEnd(10)}${String(s.output).padEnd(10)}${s.cacheRead + s.cacheCreation}\n`;
     }
-    if (skippedLines > 0) process.stdout.write(`WARN: ${skippedLines} malformed line(s) skipped\n`);
-    process.stdout.write(`${summaryLine}\n`);
+    if (skippedLines > 0) text += `WARN: ${skippedLines} malformed line(s) skipped\n`;
+    text += `${summaryLine}\n`;
   }
-  process.exit(0);
+  return emitExit(0, text, '');
 }
 
 module.exports = { cmdCostRun };

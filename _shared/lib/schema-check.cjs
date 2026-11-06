@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('fs');
+const { emitExit } = require('./emit-exit.cjs');
 const path = require('path');
 const { parseFlags } = require('./io.cjs');
 const { usage } = require('./help.cjs');
@@ -424,29 +425,26 @@ function cmdSchemaCheckRun(args) {
   }
 
   const status = findings.length === 0 ? 'PASS' : 'FAIL';
+  let outText;
   if (flags.json) {
-    process.stdout.write(
-      JSON.stringify(
-        {
-          status,
-          migrations: dir,
-          tables_checked: tableNames,
-          findings,
-          warnings,
-          skipped_statements: model.skippedStatements,
-        },
-        null,
-        2
-      ) + '\n'
-    );
+    outText = JSON.stringify(
+      {
+        status,
+        migrations: dir,
+        tables_checked: tableNames,
+        findings,
+        warnings,
+        skipped_statements: model.skippedStatements,
+      },
+      null,
+      2
+    ) + '\n';
   } else {
-    for (const l of lines) process.stdout.write(`${l}\n`);
-    for (const w of warnings) process.stdout.write(`WARN  [${w.check}] ${w.message}\n`);
-    process.stdout.write(
-      `schema-check: ${status} — ${tableNames.length} table(s), ${findings.length} finding(s), ${warnings.length} warning(s)\n`
-    );
+    outText = lines.map((l) => `${l}\n`).join('')
+      + warnings.map((w) => `WARN  [${w.check}] ${w.message}\n`).join('')
+      + `schema-check: ${status} — ${tableNames.length} table(s), ${findings.length} finding(s), ${warnings.length} warning(s)\n`;
   }
-  process.exit(findings.length === 0 ? 0 : 1);
+  return emitExit(findings.length === 0 ? 0 : 1, outText, '');
 }
 
 module.exports = { cmdSchemaCheckParse, cmdSchemaCheckRun };

@@ -6,6 +6,7 @@ const os = require('os');
 
 const { usage } = require('./help.cjs');
 const { codeRoots, parseFrontmatter } = require('./io.cjs');
+const { emitExit } = require('./emit-exit.cjs');
 
 // ---------- learnings subcommands ----------
 //
@@ -304,8 +305,7 @@ function cmdLearningsCountSinceWatermarkVault(vault, json) {
     // (feature-note, record). Reported, never silently dropped.
     excluded_non_defect_entries: nonDefects,
   };
-  process.stdout.write(JSON.stringify(output, null, 2) + '\n');
-  process.exit(0);
+  emitExit(0, JSON.stringify(output, null, 2) + '\n', '');
 }
 
 function cmdLearningsCountSinceWatermark(argv) {
@@ -364,8 +364,7 @@ function cmdLearningsCountSinceWatermark(argv) {
     excluded_non_defect_entries: nonDefects,
   };
 
-  process.stdout.write(JSON.stringify(output, null, 2) + '\n');
-  process.exit(0);
+  emitExit(0, JSON.stringify(output, null, 2) + '\n', '');
 }
 
 /**
@@ -401,12 +400,10 @@ function cmdLearningsRoots(argv) {
 
   if (roots.length === 0) {
     const err = { ...output, error: 'no project roots resolved' };
-    process.stdout.write(JSON.stringify(err, ...(compact ? [] : [null, 2])) + '\n');
-    process.exit(3);
+    return emitExit(3, JSON.stringify(err, ...(compact ? [] : [null, 2])) + '\n', '');
   }
 
-  process.stdout.write(JSON.stringify(output, ...(compact ? [] : [null, 2])) + '\n');
-  process.exit(0);
+  emitExit(0, JSON.stringify(output, ...(compact ? [] : [null, 2])) + '\n', '');
 }
 
 module.exports = { cmdLearningsCountSinceWatermark, cmdLearningsRoots };

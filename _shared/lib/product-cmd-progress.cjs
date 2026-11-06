@@ -5,7 +5,8 @@
 const fs = require('fs');
 const path = require('path');
 const { parseNestedFrontmatter, serializeNestedFrontmatter, parseFlags, fail, nowIso } = require('./io.cjs');
-const { acquireReservationsLock, exitWithLock, failWithLock, writeAllOrNothing, loadReservations } = require('./locks.cjs');
+const { emitExit } = require('./emit-exit.cjs');
+const { acquireReservationsLock, exitWithLock, failWithLock, writeAllOrNothing, loadReservations, emitExitWithLock } = require('./locks.cjs');
 const { usage } = require('./help.cjs');
 const { productMirrorHook } = require('./vault-product-hook.cjs');
 const { CODE_SCOPE_STAGES } = require('./code-scope.cjs');
@@ -36,8 +37,7 @@ function cmdProductStatus(args) {
   // Spec 023 FR-018: same summary as index.json, only when a module is in use.
   const modulesSummary = mods.modulesSummary(fm, features);
   const outWithModules = modulesSummary === null ? out : { ...out, modules: modulesSummary };
-  process.stdout.write(JSON.stringify(outWithModules, null, 2) + '\n');
-  process.exit(0);
+  emitExit(0, JSON.stringify(outWithModules, null, 2) + '\n', '');
 }
 
 function cmdProductStage(args) {
@@ -196,8 +196,7 @@ function cmdProductStage(args) {
     files_written: writes.map((w) => w.target),
     vault_mirror: vaultMirror,
   };
-  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-  exitWithLock(lockPath, 0);
+  return emitExitWithLock(lockPath, 0, JSON.stringify(out, null, 2) + '\n', '');
 }
 
 const MILESTONE_STATUS_VALUES = ['planned', 'in-progress', 'done'];
@@ -281,8 +280,7 @@ function cmdProductMarkers(args) {
     }
   }
 
-  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-  process.exit(0);
+  emitExit(0, JSON.stringify(out, null, 2) + '\n', '');
 }
 
 /** Write path for `product markers --set` (FR-007). Split out of
@@ -379,8 +377,7 @@ function cmdProductMarkersSet(flags) {
     files_written: writes.map((w) => w.target),
     vault_mirror: vaultMirror,
   };
-  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-  exitWithLock(lockPath, 0);
+  return emitExitWithLock(lockPath, 0, JSON.stringify(out, null, 2) + '\n', '');
 }
 
 /** product changelog --entry "<what>" --why "<why>" [--dir]: appends a
@@ -410,8 +407,7 @@ function cmdProductChangelog(args) {
   const vaultMirror = writeAllOrNothing(lockPath, writes, 'product changelog', productMirrorHook(dir));
 
   const out = { status: 'OK', entry: flags.entry, why: flags.why, files_written: writes.map((w) => w.target), vault_mirror: vaultMirror };
-  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
-  exitWithLock(lockPath, 0);
+  return emitExitWithLock(lockPath, 0, JSON.stringify(out, null, 2) + '\n', '');
 }
 
 module.exports = {

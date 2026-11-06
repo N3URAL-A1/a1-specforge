@@ -12,6 +12,7 @@
 const fs = require('fs');
 const path = require('path');
 const { parseFlags, repoRoot } = require('./io.cjs');
+const { emitExit } = require('./emit-exit.cjs');
 const { lintGates } = require('./gates-lint.cjs');
 const { verifyChain } = require('./gate-log.cjs');
 const { readGateLog, firedYaml } = require('./retro-gatelog.cjs');
@@ -81,9 +82,9 @@ function cmdGatesLintLog(file) {
   } catch (_e) {
     die(`gate log unreadable: ${logPath}`);
   }
-  process.stdout.write(`${JSON.stringify({ log: logPath, lines: result.lines, problems: result.problems })}\n`);
-  for (const p of result.problems) process.stderr.write(`finding: ${p.rule} at line ${p.line}: ${p.reason}\n`);
-  process.exit(result.ok ? 0 : 1);
+  const text = `${JSON.stringify({ log: logPath, lines: result.lines, problems: result.problems })}\n`;
+  const err = result.problems.map((p) => `finding: ${p.rule} at line ${p.line}: ${p.reason}\n`).join('');
+  return emitExit(result.ok ? 0 : 1, text, err);
 }
 
 /** `gates fired --log <file>`: print the gates_fired YAML block derived from the log. */
@@ -98,8 +99,7 @@ function cmdGatesFired(argv) {
   } catch (e) {
     die(e.message);
   }
-  process.stdout.write(firedYaml(log.records));
-  process.exit(0);
+  return emitExit(0, firedYaml(log.records), '');
 }
 
 function cmdGatesLint(argv) {
@@ -116,10 +116,9 @@ function cmdGatesLint(argv) {
     root: inputs.root, registry: inputs.registry, today: inputs.today,
     rows: report.rows, wired: report.wired, exemptions: report.exemptions, findings: report.findings,
   };
-  process.stdout.write(`${JSON.stringify(out)}\n`);
-  for (const e of report.exemptions) process.stderr.write(`exemption: ${e.gate} until ${e.until} — ${e.reason}\n`);
-  for (const f of report.findings) process.stderr.write(`${formatFinding(f)}\n`);
-  process.exit(report.findings.length > 0 ? 1 : 0);
+  const err = report.exemptions.map((e) => `exemption: ${e.gate} until ${e.until} — ${e.reason}\n`).join('')
+    + report.findings.map((f) => `${formatFinding(f)}\n`).join('');
+  return emitExit(report.findings.length > 0 ? 1 : 0, `${JSON.stringify(out)}\n`, err);
 }
 
 /** @param {string} sub @param {string[]} rest */
