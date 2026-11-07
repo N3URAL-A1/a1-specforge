@@ -65,6 +65,7 @@ plan and wave `scope_exempt`: it reviews the real diff `merge-base(remote base, 
 ```bash
 git -C "<worktree_path>" fetch origin
 mkdir -p "<worktree_path>/.a1-review"
+printf '*\n' > "<worktree_path>/.a1-review/.gitignore"   # self-ignoring (see 01-detect 1.4)
 node <repo>/_shared/a1-tools.cjs xprov gate --gate pr-diff-xprov --work-path "<worktree_path>" [--base <remote base sha>] [--pr <n>] [--spec <spec path from the hand-off>] > "<worktree_path>/.a1-review/xprov-gate.last-run.json"; RC=$?
 echo "xprov gate pr-diff-xprov exit=$RC"
 ```
