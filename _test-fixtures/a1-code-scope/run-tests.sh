@@ -251,6 +251,17 @@ else
   echo "FAIL  keep-stage: stage reset or paths not updated"; echo "$OUT"; fail=$((fail + 1))
 fi
 
+# --- a re-claim after the lifecycle ended (done) starts again at "started" ---
+OUT="$(node "$TOOLS" code-scope stage --by feature-keep --set done --file "$KEEP_FILE" 2>&1)"
+assert_rc "keep-stage-to-done" 0 $? "$OUT"
+OUT="$(node "$TOOLS" code-scope claim --by feature-keep --scope "src/keep/,docs/other.md" --file "$KEEP_FILE" 2>&1)"
+assert_rc "keep-stage-reclaim-after-done" 0 $? "$OUT"
+if grep -q '"stage": "started"' <<<"$OUT"; then
+  echo "PASS  keep-stage: re-claim after done resets to started"; pass=$((pass + 1))
+else
+  echo "FAIL  keep-stage: stage not reset after done"; echo "$OUT"; fail=$((fail + 1))
+fi
+
 # --- end-to-end auto-unblock: claim A -> claim B blocked -> release A -> claim B succeeds ---
 E2E_FILE="$WORK/e2e-reservations.json"
 OUT="$(node "$TOOLS" code-scope claim --by feature-x --scope "src/payments/" --file "$E2E_FILE" 2>&1)"

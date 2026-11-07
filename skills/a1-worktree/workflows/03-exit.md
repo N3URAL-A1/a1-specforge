@@ -94,7 +94,7 @@ itself: after `git fetch origin <base>` it runs `git merge-tree --write-tree ori
 tree equals the tree of `origin/<base>`, the branch adds nothing (also after the base moved on with unrelated commits),
 and when the worktree is clean (`git status --porcelain` empty), a plain `discard` succeeds and deletes the branch with `-D`.
 A merge conflict, a differing tree (real unmerged change, or a base that dropped part of the feature), a dirty
-worktree, or a missing `origin/<base>` still refuse with exit 1. Measured on git 2.50.1 (`--write-tree` needs >= 2.38).
+worktree, a detached HEAD or a rebase/merge in progress, or a missing `origin/<base>` still refuse with exit 1, naming the reason. The clean check counts untracked files whatever `status.showUntrackedFiles` says. The exit deletes ignored files too (local `.env`, `.a1-review/`, gate logs), so retros and gate-log backups happen before it. Measured on git 2.50.1 (`--write-tree` needs >= 2.38).
 
 The PR-merged condition stays with the caller:
 
@@ -176,7 +176,7 @@ those modes intentionally preserve the branch.
   confirmation (remote; exception: merged PR and a passing plain `discard`, Step 4).
   Registry must stay consistent.
 - Never run `git push origin --delete <branch>` without the Step 4.5
-  confirmation step (or the three conditions of Step 4). Treat "remote ref does not exist" as success, never as
+  confirmation step (or a merged PR and a passing plain `discard`, Step 4). Treat "remote ref does not exist" as success, never as
   an error to retry or force through.
 - After `handoff`, this skill is done. Do not call `a1-pr-review` directly —
   inform the user and let them invoke it.
