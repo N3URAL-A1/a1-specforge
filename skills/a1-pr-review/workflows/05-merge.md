@@ -98,8 +98,8 @@ with `_shared/push-cadence.md` P3 (never a bare `git pull`) and advance the regi
    now, after the merge, see `04-submit.md` Retro) and the caller's retro (a1-new-feature `workflows/06-verify.md` Step 6, written now;
    a1-fix: already written in `workflows/04-verify.md` Step 2b before the handoff, only check that its entry is present, do not append it again).
 2. `a1-worktree` exit `discard`, then origin cleanup (03-exit Step 4.5 deletes the remote branch). Both need no
-   confirmation when PR merged, `git diff HEAD origin/<base>` empty and `git status --porcelain` empty hold (03-exit Step 4);
-   otherwise confirm.
+   confirmation when the PR is merged and a plain `discard` (no `--force-discard`) passes: the CLI verifies the
+   branch content is on `origin/<base>` and the tree is clean (03-exit Step 4). If it refuses, confirm.
 3. The caller's remaining lifecycle stages (a1-new-feature `workflows/06-verify.md` §5 steps 3-5).
 
 The merge ends the PR, not the feature. Report what was merged and which findings there were.
