@@ -78,7 +78,7 @@ function cmdCostRun(args) {
     json: 'bool',
   });
   const dir = flags.project;
-  if (!dir) usage('cost run requires --project <claude-projects-dir>');
+  if (!dir) usage('cost run requires --project ~/.claude/projects/<project-dir> (the flattened-cwd folder of the session logs)');
 
   let sinceMs = null;
   let untilMs = null;
@@ -106,7 +106,7 @@ function cmdCostRun(args) {
       .readdirSync(dir)
       .filter((f) => f.endsWith('.jsonl') && fs.statSync(path.join(dir, f)).isFile())
       .sort();
-    if (mainLogs.length === 0) throw new Error(`no .jsonl session logs in: ${dir}`);
+    if (mainLogs.length === 0) throw new Error(`no .jsonl session logs in: ${dir} (pass the session-log folder ~/.claude/projects/<project-dir>, not the repository)`);
   } catch (e) {
     process.stderr.write(`error: ${e.message}\n`);
     process.exit(2);

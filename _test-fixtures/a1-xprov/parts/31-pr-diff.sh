@@ -362,6 +362,35 @@ scen_hk7() { # post-merge verify and other commands that only CONTAIN the letter
   prep31; commit31 src/auth/login.js 'export const login = 1;'; ghstub31 7
   echo "$(hk31 'gh pr view 12 --json state,mergedAt')|$(hk31 'gh pr view 12 --json mergeable,mergeStateStatus')|$(hk31 'gh pr list --state merged')|$(hk31 'git merge-base main HEAD && gh pr view 12')|$(hk31 'gh pr create --title t --body-file body.md')"
 }
+scen_hk9() { # evolve run 10: the close-out chain (fetch, fast-forward, verify) passes; any chain holding a merge or a loosened segment is denied
+  prep31; commit31 src/auth/login.js 'export const login = 1;'; ghstub31 7
+  local out="" c
+  local ALLOWED=(
+    'git fetch origin && git merge --ff-only origin/main && gh pr view 12 --json state,mergedAt'
+    'git fetch origin main; git merge --ff-only origin/main; gh pr view 12'
+    'git pull --ff-only origin main && git merge --ff-only origin/main && gh pr view 12'
+    'git merge --ff-only origin/main && git fetch --prune && git status -sb && gh pr view 12'
+  )
+  local DENIED=(
+    'gh pr view 12 && gh pr merge 12'
+    'git fetch origin && gh pr merge 12 --squash'
+    'git fetch origin && git merge --ff-only origin/main && gh pr merge 12'
+    'git merge feature/x && gh pr view 12'
+    'git merge --no-ff origin/main && gh pr view 12'
+    'git fetch --upload-pack touch && git merge --ff-only origin/main && gh pr view 12'
+    'git fetch origin && gh api -X PUT repos/o/r/pulls/12/merge'
+    'git fetch origin; gh pr view 12 --json mergedAt $(gh pr merge 12)'
+    'git merge --ff-only origin/main && git pull origin main && gh pr view 12'
+    'git merge --ff-only -s ours origin/main && gh pr view 12'
+    'git merge --ff-only origin/main && git fetch origin refs/pull/12/head:x && gh pr view 12'
+    'git merge --ff-only origin/main && gh pr view 12 --web'
+    'git merge --ff-only origin/main && gh pr view 12 --json "a|b"'
+  )
+  for c in "${ALLOWED[@]}"; do out="$out$(hk31 "$c" | sed 's/^allow$/A/;s/^deny:merge_not_canonical$/D/;s/^deny:.*$/d/')"; done
+  out="$out|"
+  for c in "${DENIED[@]}"; do out="$out$(hk31 "$c" | sed 's/^allow$/A/;s/^deny:merge_not_canonical$/D/;s/^deny:.*$/d/')"; done
+  echo "$out"
+}
 scen_hk8() { # N-1: the branch-merge API (repos/o/r/merges) is merge intent and no canonical form
   prep31; commit31 src/auth/login.js 'export const login = 1;'; ghstub31 7
   echo "$(hk31 'gh api -X POST repos/o/r/merges -f base=main -f head=feat' | sed 's/^deny:merge_not_canonical$/D/')|$(hk31 'gh api repos/o/r/merges --method POST' | sed 's/^deny:merge_not_canonical$/D/')|$(hk31 'gh pr view 12 --json mergedAt')"
@@ -388,6 +417,7 @@ caseHK() {
   assert_eq "HK3 the merge check exits 2 / 77 / 1: deny (fail closed)" "$(scen_hk3)" "deny:merge_blocked|deny:merge_blocked|deny:merge_blocked|"
   assert_eq "HK4 every probe string (cd, grouping, substitution, flag values, GH_REPO, --repo, gh api, GraphQL, wrappers) is denied as non-canonical; read-only mentions and other commands pass" "$(scen_hk4)" "DDDDDDDDDDDDDDDDDDDD|allow|allow|allow|allow|allow"
   assert_eq "HK7 whole-word intent: mergedAt, mergeable, merged, merge-base and --body-file are no merge intent (the a1-pr-review verify step passes)" "$(scen_hk7)" "allow|allow|allow|allow|allow"
+  assert_eq "HK9 evolve run 10: close-out chains (fetch, ff-only merge/pull, gh pr view, status) pass; chains with a merge, a plain git merge, --upload-pack, a refspec or a loosened flag are denied" "$(scen_hk9)" "AAAA|DDDDDDDDDDDDD"
   assert_eq "HK8 the branch-merge API path /merges is merge intent and denied" "$(scen_hk8)" "D|D|allow"
   assert_eq "HK6 the canonical forms are allowed when the merge check passes" "$(scen_hk6)" "allow|allow|allow"
   assert_eq "HK5 node unavailable: a non-merge Bash call is allowed (shell early-out), a merge payload is denied (exit 2)" "$(scen_hk5)" "0|2"
@@ -401,6 +431,8 @@ caseHK() {
   redproof31 "HK4a" scen_hk4 "DDDDDDDDDDDDDDDDDDDD|allow|allow|allow|allow|allow" $HMN "return readOnlyMention(text) ? { kind: 'readonly' } : { kind: 'other' };" "return { kind: 'readonly' };"
   redproof31 "HK4b" scen_hk4 "DDDDDDDDDDDDDDDDDDDD|allow|allow|allow|allow|allow" $HMN "  return segments.length > 0 && segments.every(" "  return false && segments.every("
   redproof31 "HK7a" scen_hk7 "allow|allow|allow|allow|allow" $HMN "const MERGE_WORD_RE = /(?<![\\w-])merges?(?![\\w-])|mergePullRequest|enablePullRequestAutoMerge/;" "const MERGE_WORD_RE = /merge|mergePullRequest|enablePullRequestAutoMerge|Merge/;"
+  redproof31 "HK9a" scen_hk9 "AAAA|DDDDDDDDDDDDD" $HMN "SYNC_SEGMENTS.some((re) => re.test(seg))" "false"
+  redproof31 "HK9b" scen_hk9 "AAAA|DDDDDDDDDDDDD" $HMN "SYNC_SEGMENTS.some((re) => re.test(seg))" "/^(git|gh) /.test(seg)"
   redproof31 "HK8a" scen_hk8 "D|D|allow" $HMN "/(?<![\\w-])merges?(?![\\w-])|mergePullRequest" "/(?<![\\w-])merge(?![\\w-])|mergePullRequest"
   redproof31 "HK6a" scen_hk6 "allow|allow|allow" $HMN "const CANONICAL_RE = /^gh pr merge ([1-9][0-9]{0,8})((?: --squash| --merge| --rebase| --delete-branch| -d| --match-head-commit [0-9a-f]{40})*)\$/;" "const CANONICAL_RE = /^nothing\$/;"
 }

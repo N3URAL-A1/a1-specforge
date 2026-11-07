@@ -107,7 +107,7 @@ by id; a slug shared by several repos is rejected ("pass id instead").
 | Mode | Behavior |
 |---|---|
 | `keep` | Worktree removed, branch kept. Use when feature continues on `main` checkout. |
-| `discard` | Worktree removed, branch deleted. Only allowed if branch has no unmerged commits. Otherwise CLI refuses; after a squash merge `--force-discard` is allowed without asking only when the PR is merged, `git diff HEAD origin/<base>` is empty and `git status --porcelain` is empty (`workflows/03-exit.md` Step 4). |
+| `discard` | Worktree removed, branch deleted. Only allowed if branch has no unmerged commits. Otherwise CLI refuses. A squash-merged branch counts as merged: the CLI checks with `git merge-tree` that its content is already on `origin/<base>` and that the worktree is clean, so a plain `discard` succeeds (`workflows/03-exit.md` Step 4). |
 | `handoff` | Worktree stays, registry status set to `handoff`. Signals to `a1-pr-review` that the branch is ready for PR review. |
 
 ## Origin cleanup (Step 4.5 of Exit)
@@ -115,7 +115,7 @@ by id; a slug shared by several repos is rejected ("pass id instead").
 After local `git worktree remove` + `git branch -D` (in `discard`, or for an
 already-merged branch on request), the exit workflow additionally deletes the
 **remote** branch: `git push origin --delete <branch>`, guarded by explicit
-user confirmation (none needed when the three squash conditions of `workflows/03-exit.md` Step 4 hold). A remote branch that is already gone
+user confirmation (none needed when the PR is merged and `discard` passed without `--force-discard`, `workflows/03-exit.md` Step 4). A remote branch that is already gone
 (`git ls-remote --heads origin <branch>` empty, or the delete fails with
 "remote ref does not exist") is treated as **success**, never as an error to
 retry or force through. See `workflows/03-exit.md` Step 4.5 for the full
@@ -138,9 +138,8 @@ None. This skill is pure lifecycle management. Other skills (notably
 - Pre-Flight checks are mandatory before `enter` — never skip Prepare.
 - User must confirm before any destructive action (`exit --mode discard`,
   any branch deletion — local or remote, origin cleanup included —
-  force-remove of a dirty worktree). Only exception: the three squash
-  conditions of `workflows/03-exit.md` Step 4 (PR merged, empty diff to
-  `origin/<base>`, clean working tree).
+  force-remove of a dirty worktree). Only exception: a merged PR whose plain
+  `discard` passed (the CLI verified the content is on `origin/<base>` and the tree is clean, `workflows/03-exit.md` Step 4).
 - User-facing output language: see `_shared/language-policy.md` (artifacts English,
   conversation in the user's language).
 - One worktree per `<repo-root, slug>` tuple. If a registry entry already

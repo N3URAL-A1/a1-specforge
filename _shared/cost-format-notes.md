@@ -75,7 +75,7 @@ Notes:
 ## CLI interface (v1)
 
 ```
-a1-tools cost run --project <claude-projects-dir> [--since ISO] [--until ISO] [--json]
+a1-tools cost run --project ~/.claude/projects/<project-dir> [--since ISO] [--until ISO] [--json]
 ```
 
 - `--project`: directory containing `*.jsonl` (+ optional `*/subagents/*.jsonl`).
