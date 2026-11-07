@@ -163,7 +163,9 @@ function cmdCodeScopeClaim(args) {
     return emitExitWithLock(lockPath, 1, JSON.stringify(out, null, 2) + '\n', `conflict: scope overlaps in-flight feature(s): ${featureIds.join(', ')}\n`);
   }
 
-  const reservation = { type: 'code_scope', paths, by, at: nowIso(), stage: 'started' };
+  // A re-claim by the same feature with other paths keeps the stage already reached (evolve run 10).
+  const keptStage = existingSame && CODE_SCOPE_STAGES.includes(existingSame.stage) ? existingSame.stage : 'started';
+  const reservation = { type: 'code_scope', paths, by, at: nowIso(), stage: keptStage };
   const remaining = data.reservations.filter((r) => !(r.type === 'code_scope' && r.by === by));
   const next = { reservations: [...remaining, reservation] };
   writeJsonAtomic(file, next);

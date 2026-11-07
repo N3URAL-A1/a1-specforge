@@ -237,6 +237,20 @@ else
   echo "FAIL  stage-forward-skip: expected skipped list not present/correct"; echo "----- output -----"; echo "$OUT"; echo "------------------"; fail=$((fail + 1))
 fi
 
+# --- re-claim by the same feature with other paths keeps the stage reached (evolve run 10) ---
+KEEP_FILE="$WORK/keep-stage-reservations.json"
+OUT="$(node "$TOOLS" code-scope claim --by feature-keep --scope "src/keep/" --file "$KEEP_FILE" 2>&1)"
+assert_rc "keep-stage-claim" 0 $? "$OUT"
+OUT="$(node "$TOOLS" code-scope stage --by feature-keep --set review --file "$KEEP_FILE" 2>&1)"
+assert_rc "keep-stage-advance" 0 $? "$OUT"
+OUT="$(node "$TOOLS" code-scope claim --by feature-keep --scope "src/keep/,docs/keep.md" --file "$KEEP_FILE" 2>&1)"
+assert_rc "keep-stage-reclaim-other-paths" 0 $? "$OUT"
+if grep -q '"stage": "review"' <<<"$OUT" && grep -q 'docs/keep.md' <<<"$OUT"; then
+  echo "PASS  keep-stage: re-claim with other paths keeps stage review and takes the new paths"; pass=$((pass + 1))
+else
+  echo "FAIL  keep-stage: stage reset or paths not updated"; echo "$OUT"; fail=$((fail + 1))
+fi
+
 # --- end-to-end auto-unblock: claim A -> claim B blocked -> release A -> claim B succeeds ---
 E2E_FILE="$WORK/e2e-reservations.json"
 OUT="$(node "$TOOLS" code-scope claim --by feature-x --scope "src/payments/" --file "$E2E_FILE" 2>&1)"
