@@ -14,11 +14,22 @@
 //
 // Order: stdout is written before stderr (what almost every replaced site did).
 // `{ stderrFirst: true }` keeps the two sites that wrote stderr first.
+// The writes run in sequence: the second starts in the first one's callback. Started together,
+// the second write slips into the shared pipe between the chunks of the first one on macOS,
+// so under `2>&1` stderr lands inside stdout at byte 65536.
 // Errors: EPIPE (the reader went away) keeps `code`; any other stream error (ENOSPC, EIO)
-// means the payload was lost, so the exit code becomes 2.
+// means the payload was lost, so the exit code becomes 2 and one best-effort line names the cause.
+// A failed first stream does not stop the second.
+
+const fs = require('fs');
 
 const STREAM_ERROR_EXIT = 2;
+const STDERR_FD = 2;
 let done = false;
+
+function reportStreamError(name, err) {
+  try { fs.writeSync(STDERR_FD, `a1-tools: ${name} write failed: ${err.code || err.message}\n`); } catch { /* nothing left to tell */ }
+}
 
 function emitExit(code, stdoutText, stderrText, opts) {
   if (done) return; // first emit wins, like the process.exit() it replaces
@@ -26,21 +37,20 @@ function emitExit(code, stdoutText, stderrText, opts) {
   process.exitCode = code;
   const stderrFirst = Boolean(opts && opts.stderrFirst);
   const all = stderrFirst
-    ? [[process.stderr, stderrText], [process.stdout, stdoutText]]
-    : [[process.stdout, stdoutText], [process.stderr, stderrText]];
-  const parts = all.filter(([, t]) => typeof t === 'string' && t.length > 0);
-  if (parts.length === 0) { process.exit(code); return; }
+    ? [['stderr', process.stderr, stderrText], ['stdout', process.stdout, stdoutText]]
+    : [['stdout', process.stdout, stdoutText], ['stderr', process.stderr, stderrText]];
+  const parts = all.filter(([, , t]) => typeof t === 'string' && t.length > 0);
   let exitWith = code;
-  let pending = parts.length;
-  const finish = (err) => {
-    if (err && err.code !== 'EPIPE') exitWith = STREAM_ERROR_EXIT;
-    pending -= 1;
-    if (pending === 0) process.exit(exitWith);
-  };
-  for (const [stream, text] of parts) {
+  const step = (i) => {
+    if (i >= parts.length) { process.exit(exitWith); return; }
+    const [name, stream, text] = parts[i];
     stream.on('error', () => {}); // reported through the write callback, not as an uncaught event
-    stream.write(text, finish);
-  }
+    stream.write(text, (err) => {
+      if (err && err.code !== 'EPIPE') { exitWith = STREAM_ERROR_EXIT; reportStreamError(name, err); }
+      step(i + 1);
+    });
+  };
+  step(0);
 }
 
 module.exports = { emitExit };

@@ -10,7 +10,17 @@
 #   G1  source guard: no process.exit() directly after a stdout write in the
 #       dispatcher tail and the converted modules (platform neutral: Linux
 #       pipes are synchronous and never reproduce the truncation)
-#   G2  mutation: the guard goes red when the defect is re-inserted
+#   G2  mutation: the guard goes red when the defect is re-inserted. Every case starts from a
+#       pristine copy of its file and must find a probe-specific needle (function name) in the
+#       guard output, so one case cannot go green on another case's leftovers
+#   P4  emitExit keeps exit code 3 when the reader closes early (EPIPE)
+#   P5  stdout before stderr by default; the stderrFirst option reverses it
+#   D1  merged (2>&1) pipe: stderr block position, default order and stderrFirst.
+#       D1-stderrFirst is a regression guard only (green on the old code too)
+#   D2  non-EPIPE stream error (ENOSPC) exits 2 and names its cause.
+#       D2-second-stream (second stream still attempted) is a regression guard only (green on old code)
+#   D3  guard sees write-then-exit in top-level arrow / function-expression bodies, and stays
+#       clean on the unmodified tree
 set -u
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
 
@@ -99,6 +109,26 @@ if [[ "$(cat "$WORK/order.txt")" == "OUTERR" ]]; then ok "P5 stdout before stder
 node -e 'const { emitExit } = require(process.argv[1]); emitExit(0, "OUT\n", "ERR\n", { stderrFirst: true });' "$HELPER" 2>&1 | tr -d '\n' > "$WORK/order.txt"
 if [[ "$(cat "$WORK/order.txt")" == "ERROUT" ]]; then ok "P5 stderrFirst option writes stderr before stdout"; else bad "P5 stderrFirst" "$(cat "$WORK/order.txt")"; fi
 
+# --- D1: stderr must not land inside a merged (2>&1) stdout payload on a slow pipe -----
+d1_prog='const { emitExit } = require(process.argv[1]); const o = "A".repeat(200000) + "\n";
+emitExit(0, o, "STDERR-LINE\n", process.argv[2] === "first" ? { stderrFirst: true } : undefined);'
+node -e "$d1_prog" "$HELPER" last 2>&1 | (sleep 1; cat) > "$WORK/d1-last.txt"
+node -e "$d1_prog" "$HELPER" first 2>&1 | (sleep 1; cat) > "$WORK/d1-first.txt"
+d1_last=$(grep -bo STDERR-LINE "$WORK/d1-last.txt" | head -1 | cut -d: -f1)
+d1_first=$(grep -bo STDERR-LINE "$WORK/d1-first.txt" | head -1 | cut -d: -f1)
+d1_first_tail=$(tail -c +13 "$WORK/d1-first.txt" | wc -c | tr -d ' ')
+if [[ "$d1_last" == 200001 ]]; then ok "D1 merged pipe: stderr block starts right after the 200001-byte stdout payload"; else bad "D1 merged pipe stderr offset (default order)" "offset=${d1_last:-none} want=200001"; fi
+if [[ "$d1_first" == 0 && "$d1_first_tail" == 200001 ]]; then ok "D1 merged pipe with stderrFirst: stderr at offset 0, stdout intact after it"; else bad "D1 merged pipe stderrFirst" "offset=${d1_first:-none} tail=$d1_first_tail"; fi
+
+# --- D2: a non-EPIPE stream error exits 2 AND names its cause --------------------------
+cat > "$WORK/enospc-stub.cjs" <<'STUB'
+process.stdout.write = (t, cb) => { process.nextTick(cb, Object.assign(new Error('no space left'), { code: 'ENOSPC' })); return true; };
+STUB
+node -r "$WORK/enospc-stub.cjs" -e 'const { emitExit } = require(process.argv[1]); emitExit(0, "OUT\n", "ERR\n");' "$HELPER" >/dev/null 2> "$WORK/d2.err"; rc=$?
+if [[ "$rc" -eq 2 ]]; then ok "D2 ENOSPC on stdout exits 2"; else bad "D2 ENOSPC exit code" "rc=$rc"; fi
+if grep -q 'ENOSPC' "$WORK/d2.err"; then ok "D2 ENOSPC cause is printed on stderr"; else bad "D2 ENOSPC cause on stderr" "stderr=$(cat "$WORK/d2.err")"; fi
+if grep -q 'ERR' "$WORK/d2.err"; then ok "D2 second stream is still attempted after the first failed"; else bad "D2 second stream attempted" "stderr=$(cat "$WORK/d2.err")"; fi
+
 # --- G1 / G2: source guard --------------------------------------------------
 out=$(node "$GUARD" "$ROOT" 2>&1); rc=$?
 if [[ "$rc" -eq 0 ]]; then ok "G1 no function in _shared/**/*.cjs exits after writing output (function-scoped guard, EXCEPTIONS explicit)"
@@ -109,34 +139,9 @@ mk_workdir MUT cli-output-mutation
 mkdir -p "$MUT/_shared/lib"
 cp "$ROOT/_shared/a1-tools.cjs" "$MUT/_shared/a1-tools.cjs"
 cp "$ROOT"/_shared/lib/*.cjs "$MUT/_shared/lib/"
-# Put the defect back into the dispatcher tail (replace the emitExit call).
-node -e '
-const fs = require("fs"); const p = process.argv[1];
-const src = fs.readFileSync(p, "utf8");
-const marker = "emitExit(0, JSON.stringify(result, null, 2) + \x27\\n\x27);";
-const i = src.lastIndexOf(marker);
-if (i < 0) { console.error("marker not found"); process.exit(3); }
-fs.writeFileSync(p, src.slice(0, i) + "process.stdout.write(JSON.stringify(result, null, 2) + \"\\n\");\n  process.exit(0);" + src.slice(i + marker.length));
-' "$MUT/_shared/a1-tools.cjs"; mrc=$?
-if [[ "$mrc" -ne 0 ]]; then bad "G2 mutation applied" "rc=$mrc"; else
-  node "$GUARD" "$MUT" >/dev/null 2>&1; grc=$?
-  if [[ "$grc" -eq 1 ]]; then ok "G2 guard is red on the re-inserted defect (dispatcher tail)"; else bad "G2 guard red on mutation" "guard rc=$grc"; fi
-fi
-# Further mutations in modules converted in the class sweep (quick.cjs, realpath-check.cjs, locks-based code-scope.cjs).
-node -e '
-const fs = require("fs"); const p = process.argv[1];
-const src = fs.readFileSync(p, "utf8");
-const m = /return emitExit\(report\.exit_code, [^\n]*\n/.exec(src) || /emitExit\(report\.exit_code[^\n]*\n/.exec(src);
-if (!m) { console.error("marker not found"); process.exit(3); }
-fs.writeFileSync(p, src.slice(0, m.index) + "process.stdout.write(JSON.stringify(report, null, 2) + \"\\n\");\n  process.exit(report.exit_code);\n" + src.slice(m.index + m[0].length));
-' "$MUT/_shared/lib/checklist.cjs"; mrc=$?
-if [[ "$mrc" -ne 0 ]]; then bad "G2 module mutation applied" "rc=$mrc"; else
-  node "$GUARD" "$MUT" >/dev/null 2>&1; grc=$?
-  if [[ "$grc" -eq 1 ]]; then ok "G2 guard is red on the re-inserted defect (checklist module)"; else bad "G2 guard red on module mutation" "guard rc=$grc"; fi
-fi
-
-mutate_module() { # <label> <file> <regex-source> <replacement-source>
-  local label="$1" rel="$2"
+mutate_module() { # <label> <file> <regex-source> <replacement-source> <needle that must appear in the guard output>
+  local label="$1" rel="$2" needle="${5:-}"
+  [[ -n "$needle" ]] || { bad "G2 case has no probe needle ($label)"; return; }
   cp "$ROOT/$rel" "$MUT/$rel"
   node -e '
 const fs = require("fs"); const p = process.argv[1];
@@ -146,22 +151,34 @@ if (!m) { console.error("marker not found"); process.exit(3); }
 fs.writeFileSync(p, src.slice(0, m.index) + process.argv[3] + src.slice(m.index + m[0].length));
 ' "$MUT/$rel" "$3" "$4"; local mrc=$?
   if [[ "$mrc" -ne 0 ]]; then bad "G2 mutation applied ($label)" "rc=$mrc"; return; fi
-  node "$GUARD" "$MUT" >/dev/null 2>&1; local grc=$?
-  if [[ "$grc" -eq 1 ]]; then ok "G2 guard is red on the re-inserted defect ($label)"; else bad "G2 guard red on mutation ($label)" "guard rc=$grc"; fi
+  local gout; gout=$(node "$GUARD" "$MUT" 2>&1); local grc=$?
+  if [[ "$grc" -eq 1 && "$gout" == *"$needle"* ]]; then ok "G2 guard is red on the re-inserted defect ($label)"; else bad "G2 guard red on mutation ($label)" "guard rc=$grc, needle '$needle' not in: $gout"; fi
   cp "$ROOT/$rel" "$MUT/$rel"
 }
-mutate_module "quick.cjs" "_shared/lib/quick.cjs" "return emitExit\\(0, JSON.stringify\\(out, null, 2\\) \\+ .\\\\n., ..\\);" "process.stdout.write(JSON.stringify(out, null, 2) + String.fromCharCode(10));\\n  process.exit(0);"
-mutate_module "locks-based code-scope.cjs" "_shared/lib/code-scope.cjs" "return emitExitWithLock\\(lockPath, 0, JSON.stringify\\(out, null, 2\\) \\+ .\\\\n., ..\\);" "process.stdout.write(JSON.stringify(out, null, 2) + String.fromCharCode(10));\\n  exitWithLock(lockPath, 0);"
+# Every case: pristine file in, one mutation, the guard must exit 1 AND name the probe in its output.
+# Defect put back into the dispatcher tail (replace the emitExit call)
+mutate_module "dispatcher tail (a1-tools.cjs)" "_shared/a1-tools.cjs" 'emitExit\(0, JSON\.stringify\(result, null, 2\) \+ .\\n.\);' $'process.stdout.write(JSON.stringify(result, null, 2) + String.fromCharCode(10));\n  process.exit(0);' "main() writes output"
+# Further mutations in modules converted in the class sweep (checklist.cjs, quick.cjs, code-scope.cjs).
+mutate_module "checklist module" "_shared/lib/checklist.cjs" 'emitExit\(report\.exit_code[^\n]*\n' $'process.stdout.write(JSON.stringify(report, null, 2) + String.fromCharCode(10));\n  process.exit(report.exit_code);\n' "emitChecklistReport() writes output"
+mutate_module "quick.cjs" "_shared/lib/quick.cjs" "return emitExit\\(0, JSON.stringify\\(out, null, 2\\) \\+ .\\\\n., ..\\);" $'process.stdout.write(JSON.stringify(out, null, 2) + String.fromCharCode(10));\n  process.exit(0);' "cmdQuickEligibility() writes output"
+mutate_module "locks-based code-scope.cjs" "_shared/lib/code-scope.cjs" "return emitExitWithLock\\(lockPath, 0, JSON.stringify\\(out, null, 2\\) \\+ .\\\\n., ..\\);" $'process.stdout.write(JSON.stringify(out, null, 2) + String.fromCharCode(10));\n  exitWithLock(lockPath, 0);' "cmdCodeScopeClaim() writes output"
 # a file the old hand-kept target list never named
-# cross-function shape: helper writes, the caller exits on the next line (profile-ears.cjs, round 3)
-mutate_module "profile-ears.cjs cross-function print helper" "_shared/lib/profile-ears.cjs" "return emitExit\\(result.findings.length > 0 \\? 1 : 0, formatResult\\(result, flags.json\\), ..\\);" $'printResult(result, flags.json);\n  process.exit(result.findings.length > 0 ? 1 : 0);\n}\nfunction printResult(r, j) {\n  process.stdout.write(formatResult(r, j));'
+# (cross-function shape - helper writes, caller exits - is a documented limit of the guard; its former case here was only green through leftover mutations)
 # cost shape: stdout write, then a stderr loop, then the exit (the shape the next-line guard missed)
-mutate_module "cost.cjs write -> stderr loop -> exit" "_shared/lib/cost.cjs" "return emitExit\\(0, text, ..\\);" $'process.stdout.write(text);\n  for (const s of sessions) process.stderr.write(`${s.session}\\n`);\n  process.exit(0);'
+mutate_module "cost.cjs write -> stderr loop -> exit" "_shared/lib/cost.cjs" "return emitExit\\(0, text, ..\\);" $'process.stdout.write(text);\n  for (const s of sessions) process.stderr.write(`${s.session}\\n`);\n  process.exit(0);' "cmdCostRun() writes output"
 # if/else writes with one shared exit after the branches
-mutate_module "schema-check.cjs if/else writes -> shared exit" "_shared/lib/schema-check.cjs" "return emitExit\\(findings.length === 0 \\? 0 : 1, outText, ..\\);" $'if (flags.json) {\n    process.stdout.write(outText);\n  } else {\n    process.stdout.write(outText);\n  }\n  process.exit(findings.length === 0 ? 0 : 1);'
+mutate_module "schema-check.cjs if/else writes -> shared exit" "_shared/lib/schema-check.cjs" "return emitExit\\(findings.length === 0 \\? 0 : 1, outText, ..\\);" $'if (flags.json) {\n    process.stdout.write(outText);\n  } else {\n    process.stdout.write(outText);\n  }\n  process.exit(findings.length === 0 ? 0 : 1);' "cmdSchemaCheckRun() writes output"
 # exiting helper called after a write (fail2-style helper, discovered not hand-listed)
-mutate_module "pr-merge-check.cjs write -> exiting helper" "_shared/lib/pr-merge-check.cjs" "return emitExit\\(result.exit, .*\\n" $'process.stdout.write(JSON.stringify(result.report));\n  process.exit(result.exit);\n'
-mutate_module "gates-cli.cjs (not in the old target list)" "_shared/lib/gates-cli.cjs" "return emitExit\\(0, firedYaml\\(log.records\\), ..\\);" "process.stdout.write(firedYaml(log.records));\\n  process.exit(0);"
+mutate_module "pr-merge-check.cjs write -> exiting helper" "_shared/lib/pr-merge-check.cjs" "return emitExit\\(result.exit, .*\\n" $'process.stdout.write(JSON.stringify(result.report));\n  process.exit(result.exit);\n' "cmdPrMergeCheck() writes output"
+mutate_module "gates-cli.cjs (not in the old target list)" "_shared/lib/gates-cli.cjs" "return emitExit\\(0, firedYaml\\(log.records\\), ..\\);" $'process.stdout.write(firedYaml(log.records));\n  process.exit(0);' "cmdGatesFired() writes output"
+
+# D3: write-then-exit inside a top-level arrow function / function expression (the guard once saw only declarations)
+mutate_module "D3 control: function declaration" "_shared/lib/cost.cjs" "module\\.exports" $'function probeDecl(t) {\n  process.stdout.write(t);\n  process.exit(0);\n}\nmodule.exports' "probeDecl() writes output"
+mutate_module "D3 top-level arrow function" "_shared/lib/cost.cjs" "module\\.exports" $'const probeArrow = (t) => {\n  process.stdout.write(t);\n  process.exit(0);\n};\nmodule.exports' "probeArrow() writes output"
+mutate_module "D3 top-level async function expression" "_shared/lib/cost.cjs" "module\\.exports" $'const probeExpr = async function (t) {\n  process.stdout.write(t);\n  process.exit(0);\n};\nmodule.exports' "probeExpr() writes output"
+mutate_module "D3 top-level single-parameter arrow" "_shared/lib/cost.cjs" "module\\.exports" $'let probeOne = t => {\n  process.stdout.write(t);\n  process.exit(0);\n};\nmodule.exports' "probeOne() writes output"
+node "$GUARD" "$ROOT" >/dev/null 2>&1; grc=$?
+if [[ "$grc" -eq 0 ]]; then ok "D3 guard stays clean on the unmodified tree (no false positive, e.g. xprov-gate finish)"; else bad "D3 unmodified tree clean" "guard rc=$grc"; fi
 
 echo "a1-cli-output: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

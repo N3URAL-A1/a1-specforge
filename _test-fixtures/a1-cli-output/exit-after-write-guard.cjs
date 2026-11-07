@@ -12,10 +12,21 @@
 // buffer on macOS, whatever sits between the write and the exit (a stderr loop, a branch).
 // Platform neutral: reads source text, so it works on Linux where the truncation cannot happen.
 //
-// Limits (honest): top-level `function name(` declarations only (closing `}` at column 0);
-// nested closures count as part of the enclosing function; helpers are matched by name, not
-// by resolved require; an exit on a branch exclusive to the write is a false positive and
-// needs an EXCEPTIONS entry. Exits BEFORE the first write are not flagged (nothing queued).
+// Limits (honest): top-level bodies only, closing `}` / `};` at column 0: `function name(`
+// declarations plus `const|let|var name = [async] function (...) {`, `= (...) => {` and
+// `= x => {` (parameters on one line; a trailing `// comment` after the `{` is allowed).
+// Known false negatives (the function is not seen at all, so a write-then-exit in it passes):
+//   - parentheses inside default parameters: `= (a = f()) => {`
+//   - `exports.x = function (...) {` / `module.exports.x = ...` (not a const|let|var binding)
+//   - parameters spread over several lines
+//   - a body written on one line: `const f = () => { write(); process.exit(0); };`
+// Nested closures count as part of the enclosing function, and are never collected on their own
+// (a local `finish` in one file must not become a repo-wide exiting helper). emit-exit.cjs is
+// scanned like every other file. Helpers are matched by name, not by resolved require.
+// Cross-function gap: a print helper that only writes (the caller exits) is NOT followed; ticket
+// idea/a1-specforge-guard-cross-function-write-exit.md (vault). An exit on a branch exclusive to
+// the write is a false positive and needs an EXCEPTIONS entry. Exits BEFORE the first write are
+// not flagged (nothing queued).
 const fs = require('fs');
 const path = require('path');
 
@@ -34,6 +45,9 @@ function listCjs(dir, out) {
   }
   return out;
 }
+const DECL_RE = /^(?:async )?function (\w+)\(/;
+// const|let|var name = [async] function [id](...) {   |   = [async] (...) => {   |   = [async] x => {
+const EXPR_RE = /^(?:const|let|var) (\w+) = (?:async )?(?:function\b[^(]*\(.*\{|(?:\([^)]*\)|\w+) => \{)\s*(?:\/\/.*)?$/;
 const isCode = (l) => !/^\s*(\/\/|\*|\/\*)/.test(l);
 
 const fns = [];
@@ -41,7 +55,7 @@ for (const f of listCjs(path.join(root, '_shared'), [])) {
   const rel = path.relative(root, f).split(path.sep).join('/');
   const L = fs.readFileSync(f, 'utf8').split('\n');
   for (let i = 0; i < L.length; i++) {
-    const m = /^(?:async )?function (\w+)\(/.exec(L[i]);
+    const m = DECL_RE.exec(L[i]) || EXPR_RE.exec(L[i]);
     if (!m) continue;
     let j = i;
     while (j < L.length && !/^}/.test(L[j])) j++;
