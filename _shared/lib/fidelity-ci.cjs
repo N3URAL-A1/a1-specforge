@@ -13,7 +13,7 @@
 const fs = require('fs');
 const path = require('path');
 const { globMatch, FidelityConfigError } = require('./fidelity-resolve.cjs');
-const { readText, joinDir, parentOf, buildMatcher, judge } = require('./fidelity-ci-runners.cjs');
+const { readText, joinDir, parentOf, buildMatcher, judge, judgeWhy } = require('./fidelity-ci-runners.cjs');
 
 const WORKFLOW_DIR = '.github/workflows';
 const MAX_DEPTH = 6;
@@ -147,7 +147,6 @@ function unwrap(t) {
     while (a[0] && a[0].startsWith('-')) a = a.slice(1);
     return a[0] ? [a[0].replace(/^(?:@playwright\/test|playwright)(?:@[^/]*)?$/, 'playwright'), ...a.slice(1)] : a;
   }
-  if ((t[0] === 'pnpm' || t[0] === 'yarn') && t[1] === 'playwright') return t.slice(1);
   if ((t[0] === 'pnpm' || t[0] === 'yarn') && (t[1] === 'exec' || t[1] === 'dlx')) return t.slice(2);
   if (t[0] === 'npm' && t[1] === 'exec') return t[2] === '--' ? t.slice(3) : t.slice(2);
   return t;
@@ -164,9 +163,13 @@ function managerCmd(mgr, args) {
   }
   if (wide) return { kind: 'opaque', head: `${mgr} (workspace-wide run)` };
   const sub = args[i];
-  if (sub === 'run' || sub === 'run-script') return args[i + 1] ? { kind: 'script', script: args[i + 1], cwd, optional: false } : null;
-  if (sub === 'test' || sub === 't' || sub === 'tst') return { kind: 'script', script: 'test', cwd, optional: false };
-  if (mgr !== 'npm' && sub && !sub.startsWith('-')) return { kind: 'script', script: sub, cwd, optional: true };
+  // Arguments after the script name reach the script's last command (npm only after `--`); they are not modelled, so the run is unresolved.
+  const extra = (rest) => (mgr === 'npm' ? (rest.includes('--') ? rest.slice(rest.indexOf('--') + 1)[0] : undefined) : rest[0]);
+  if (sub === 'run' || sub === 'run-script') return args[i + 1] ? { kind: 'script', script: args[i + 1], cwd, optional: false, extra: extra(args.slice(i + 2)) } : null;
+  if (sub === 'test' || sub === 't' || sub === 'tst') return { kind: 'script', script: 'test', cwd, optional: false, extra: extra(args.slice(i + 1)) };
+  if (mgr !== 'npm' && sub && !sub.startsWith('-')) {
+    return { kind: 'script', script: sub, cwd, optional: true, extra: extra(args.slice(i + 1)), bin: sub === 'playwright' ? args.slice(i) : undefined };
+  }
   return null;
 }
 
@@ -216,6 +219,15 @@ function followScript(state, cmd, cwd, depth) {
   const found = findPackage(state, dir);
   const scripts = found && found.pkg.scripts && typeof found.pkg.scripts === 'object' ? found.pkg.scripts : {};
   const body = scripts[cmd.script];
+  if (typeof body === 'string' && cmd.extra !== undefined) {
+    state.unresolved.push(`script "${cmd.script}" gets extra arguments (${JSON.stringify(cmd.extra)}...) that are not modelled`);
+    return;
+  }
+  if (typeof body !== 'string' && cmd.bin) { // `yarn|pnpm playwright test` without a script of that name runs the binary
+    const bin = classify(cmd.bin);
+    if (bin !== null) applyCmd(state, bin, dir, depth + 1);
+    return;
+  }
   if (typeof body !== 'string') {
     if (!cmd.optional) state.unresolved.push(`script "${cmd.script}" not found from ${dir || '.'}`);
     return;
@@ -261,10 +273,12 @@ function startState(root, runs) {
   return state;
 }
 
-function fileFinding(file, verdicts, state, ciGlobs) {
+function fileFinding(file, verdicts, state, ciGlobs, matchers) {
   if (ciGlobs.some((g) => globMatch(g, file)) || verdicts.includes('yes')) return [];
   if (verdicts.includes('unknown') || state.unresolved.length > 0) {
-    const why = verdicts.includes('unknown') ? 'a runner reaches this file only through a dynamic filter or config' : state.unresolved[0];
+    const m = matchers[verdicts.indexOf('unknown')];
+    const cause = m ? judgeWhy(m, file) : '';
+    const why = verdicts.includes('unknown') ? (cause || 'a runner reaches this file only through a dynamic filter or config') : state.unresolved[0];
     return [{ rule: 'unresolved_ci_match', file, line: 1, text: why, detail: why }];
   }
   return [{ rule: 'test-not-in-ci', file, line: 1, detail: 'no workflow-reachable runner glob or ci_globs entry matches this test file' }];
@@ -287,7 +301,7 @@ function testNotInCi(ctx) {
   if (tests.length === 0) return missing;
   const state = startState(ctx.projectRoot, runs);
   const matchers = state.invocations.map((inv) => buildMatcher(state, inv));
-  const perFile = tests.flatMap((f) => fileFinding(f, matchers.map((m) => judge(m, f)), state, verified));
+  const perFile = tests.flatMap((f) => fileFinding(f, matchers.map((m) => judge(m, f)), state, verified, matchers));
   return [...missing, ...perFile];
 }
 

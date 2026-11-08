@@ -364,6 +364,10 @@ function readPlaywrightConfig(text) {
   const close = closeOf(code, open);
   // defineConfig(a, b) merges the later arguments over the first: only a single object argument is read.
   if (close < 0 || (m[1] && !/^\s*\)/.test(code.slice(close)))) return dynamic;
+  // A second export or merge after the literal (module.exports[k] = ..., Object.assign(module.exports, x), module.exports = require(..)) can override it;
+  // a string literal naming a reserved key can be a bracket-notation write.
+  const exportsSeen = (code.match(/(?<![\w$.])exports\b|module\.exports\b|export\s+default\b/g) || []).length;
+  if (exportsSeen > 1 || /\bObject\s*\.\s*assign\b/.test(code) || [...strings.values()].some((v) => RESERVED.includes(v))) return dynamic;
   const mem = members(code, open);
   if (mem === null) return dynamic;
   // A reserved name that appears more often than as its own member key (mutation, shorthand, spread source) cannot be followed.
@@ -412,6 +416,7 @@ function playwrightArgs(args) {
     const flag = a.split('=')[0];
     if (a === '--config' || a === '-c') config = args[++i];
     else if (a.startsWith('--config=')) config = a.slice(9);
+    else if (a.startsWith('-c') && a.length > 2 && a[1] !== '-') config = a.slice(2);
     else if (a.startsWith('-')) {
       if (PLAYWRIGHT_SUBSET_FLAGS.has(flag)) subset = true;
       if (!a.includes('=') && PLAYWRIGHT_VALUE_FLAGS.has(a)) i++;
@@ -424,15 +429,17 @@ const caseless = (res) => res.map((re) => new RegExp(re.source, 'i'));
 
 function playwrightMatcher(state, inv) {
   const { config, positional, subset } = playwrightArgs(inv.args);
-  const m = { root: inv.cwd, full: true, dynamic: false, include: [], exclude: [], filters: [], dynamicFilter: positional.length > 0 || subset };
+  const filterWhy = positional.length > 0 ? `playwright: positional filter ${JSON.stringify(positional[0])}` : subset ? 'playwright: subset flag (--last-failed, --only-changed or --test-list)' : '';
+  const m = { root: inv.cwd, full: true, dynamic: false, include: [], exclude: [], filters: [], dynamicFilter: filterWhy !== '', why: filterWhy };
   const loc = playwrightConfigFile(state, inv, config);
-  if (loc === undefined) return { ...m, dynamic: true };
+  if (loc === undefined) return { ...m, dynamic: true, why: `playwright: config ${JSON.stringify(config || '.')} not found` };
   const parsed = loc.file === null ? { dynamic: false, testDir: '', match: PLAYWRIGHT_MATCH, ignore: [], risky: false } : readPlaywrightConfig(readCached(state, loc.file) || '');
   const root = joinDir(loc.dir, parsed.testDir || '.');
   const inc = compileAll(parsed.match);
   const exc = compileAll([...parsed.ignore, '**/node_modules/**']);
-  if (parsed.dynamic || root === null || inc === null || exc === null) return { ...m, dynamic: true };
-  return { ...m, root, include: caseless(inc), exclude: caseless(exc), risky: parsed.risky };
+  if (parsed.dynamic || root === null || inc === null || exc === null) return { ...m, dynamic: true, why: `playwright: dynamic config ${loc.file || loc.dir}` };
+  const risky = parsed.risky ? `playwright: directory testIgnore pattern ${JSON.stringify(parsed.ignore.join(' '))} may match above the repo root` : '';
+  return { ...m, root, include: caseless(inc), exclude: caseless(exc), risky: parsed.risky, riskWhy: risky };
 }
 
 function buildMatcher(state, inv) {
@@ -456,4 +463,11 @@ function judge(m, rel) {
   return m.dynamicFilter ? 'unknown' : 'no';
 }
 
-module.exports = { readText, joinDir, parentOf, buildMatcher, judge, globToRegex };
+/** The concrete cause of an 'unknown' verdict of one runner invocation ('' when the matcher names none). */
+function judgeWhy(m, rel) {
+  if (m.dynamic && !(m.root && rel !== m.root && !rel.startsWith(`${m.root}/`))) return m.why || '';
+  if (m.risky && !m.dynamicFilter) return m.riskWhy || '';
+  return m.why || '';
+}
+
+module.exports = { readText, joinDir, parentOf, buildMatcher, judge, judgeWhy, globToRegex };
