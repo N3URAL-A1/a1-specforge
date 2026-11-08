@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated": "2026-10-31T07:42:45.748Z",
+  "generated": "2026-11-08T16:00:26.619Z",
   "project": {
     "id": "a1-specforge",
     "title": "a1-specforge — Roadmap",
@@ -342,6 +342,18 @@
       "finished": null,
       "spec_path": null,
       "plan_path": null
+    },
+    {
+      "id": "024-ux-studio",
+      "milestone": "continuous",
+      "title": "a1-ux-studio: taste-driven UX/UI skill (diverge/converge, Impeccable gate)",
+      "status": "planned",
+      "stage": null,
+      "depends_on": [],
+      "started": null,
+      "finished": null,
+      "spec_path": "project/a1-specforge/spec/024-ux-studio.md",
+      "plan_path": "project/a1-specforge/plans/024-ux-studio-wave-plan.md"
     }
   ],
   "next": "006-specforge-kritis-profile",

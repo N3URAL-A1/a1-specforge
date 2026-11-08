@@ -4,7 +4,7 @@ type: roadmap
 project: a1-specforge
 title: "a1-specforge — Roadmap"
 status: active
-updated: 2026-10-31
+updated: 2026-11-08
 source: "migrated from docs/roadmap.md v3.0 (2026-07-10)"
 milestones:
   - id: m0-repo-extract
@@ -273,6 +273,16 @@ features:
     finished: null
     spec_path: null
     plan_path: null
+  - id: 024-ux-studio
+    milestone: continuous
+    title: "a1-ux-studio: taste-driven UX/UI skill (diverge/converge, Impeccable gate)"
+    status: planned
+    stage: null
+    depends_on: []
+    started: null
+    finished: null
+    spec_path: project/a1-specforge/spec/024-ux-studio.md
+    plan_path: project/a1-specforge/plans/024-ux-studio-wave-plan.md
 next: 006-specforge-kritis-profile
 ---
 
@@ -359,8 +369,6 @@ None.
 
 ## Changelog
 
-- **2026-07-10** — Added **001-roadmap-gate-parallel-features** (shipped) — first feature under the schema-v1 feature index; roadmap gate + parallel feature lifecycle merged (56e0fa4/e55addf).
-- **2026-09-12** — feature '007-retro-gate-id-validator' added — new feature via `product add-feature`
 - **2026-09-12** — feature.md created for '007-retro-gate-id-validator' — formal spec/plan attached via `product feature-init`
 - **2026-09-12** — 007-retro-gate-id-validator -> complete — stage transition via `product stage`
 - **2026-09-12** — 007-retro-gate-id-validator -> verify — stage transition via `product stage`
@@ -459,6 +467,8 @@ None.
 - **2026-10-28** — 023-module-roadmap-views -> done — stage transition via `product stage`
 - **2026-10-28** — 006-specforge-kritis-profile -> started — stage transition via `product stage`
 - **2026-10-31** — feature '024-new-project-github-remote' added — a1-new-project Phase 1 asks once for the GitHub remote (owner/org, private) and creates it with gh after confirmation, instead of leaving the repo local-only until a later checkpoint
+- **2026-11-08** — feature '024-ux-studio' added — new feature via `product add-feature`
+- **2026-11-08** — feature.md created for '024-ux-studio' — formal spec/plan attached via `product feature-init`
 
 ## Appendix — migrated details
 
