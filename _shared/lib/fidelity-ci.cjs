@@ -145,8 +145,9 @@ function unwrap(t) {
   if (t[0] === 'npx' || t[0] === 'bunx') {
     let a = t.slice(1);
     while (a[0] && a[0].startsWith('-')) a = a.slice(1);
-    return a;
+    return a[0] ? [a[0].replace(/^(?:@playwright\/test|playwright)(?:@[^/]*)?$/, 'playwright'), ...a.slice(1)] : a;
   }
+  if ((t[0] === 'pnpm' || t[0] === 'yarn') && t[1] === 'playwright') return t.slice(1);
   if ((t[0] === 'pnpm' || t[0] === 'yarn') && (t[1] === 'exec' || t[1] === 'dlx')) return t.slice(2);
   if (t[0] === 'npm' && t[1] === 'exec') return t[2] === '--' ? t.slice(3) : t.slice(2);
   return t;
@@ -176,10 +177,17 @@ function classify(raw) {
   if (head === 'vitest' || head === 'jest') return { kind: head, args: t.slice(1) };
   if (head === 'pytest' || head === 'py.test') return { kind: 'pytest', args: t.slice(1) };
   if (/^python3?$/.test(head) && t[1] === '-m' && t[2] === 'pytest') return { kind: 'pytest', args: t.slice(3) };
-  if (head === 'playwright') return t[1] === 'test' ? { kind: 'playwright', args: t.slice(2) } : null; // install, show-report, codegen: no tests run
+  if (head === 'playwright') return playwrightCmd(t);
   if (MANAGERS.has(head)) return managerCmd(head, t.slice(1));
   if (ALWAYS_OPAQUE.has(head) || (OPAQUE_WITH_TEST.has(head) && t[1] === 'test')) return { kind: 'opaque', head };
   return null;
+}
+
+/** `playwright test ...` runs tests; install, show-report, codegen and `test --list` do not. */
+function playwrightCmd(t) {
+  if (t[1] !== 'test') return null;
+  const args = t.slice(2);
+  return args.includes('--list') ? null : { kind: 'playwright', args };
 }
 
 function findPackage(state, dir) {
@@ -257,7 +265,7 @@ function fileFinding(file, verdicts, state, ciGlobs) {
   if (ciGlobs.some((g) => globMatch(g, file)) || verdicts.includes('yes')) return [];
   if (verdicts.includes('unknown') || state.unresolved.length > 0) {
     const why = verdicts.includes('unknown') ? 'a runner reaches this file only through a dynamic filter or config' : state.unresolved[0];
-    return [{ rule: 'unresolved_ci_match', file, line: 1, detail: why }];
+    return [{ rule: 'unresolved_ci_match', file, line: 1, text: why, detail: why }];
   }
   return [{ rule: 'test-not-in-ci', file, line: 1, detail: 'no workflow-reachable runner glob or ci_globs entry matches this test file' }];
 }
