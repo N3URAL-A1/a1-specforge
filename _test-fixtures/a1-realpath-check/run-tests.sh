@@ -131,6 +131,10 @@ expect_scan() {
 # Run the gate on a prepared repo (HEAD~1 = base). want=1 additionally pins surfaces == ["sql"].
 scan_repo() {
   local name="$1" want="$2" repo="$3" out rc surf
+  if [[ -n "${SCAN_CFG:-}" ]]; then # user git config that rewrites diff output must not hide surfaces
+    git -C "$repo" config color.ui always; git -C "$repo" config color.diff always
+    git -C "$repo" config diff.external /usr/bin/false
+  fi
   out="$(node "$TOOLS" realpath-check run --diff-base HEAD~1 --project "$repo" --json 2>/dev/null)"
   rc=$?
   if [[ "$want" -eq 1 && $rc -eq 1 ]]; then
@@ -187,6 +191,9 @@ expect_scan sql-rpc 1 a.ts "" "const { data } = await supabase.rpc('get_stats', 
 scan_files two-hunks 0 'q.py|a\nb\nc\nd\ne|a\nselect id,\nc\nfrom users\ne'
 scan_files sql-then-prose-nonascii 0 'm.sql|-- a|-- a\n-- b' 'ä.ts|x|# Re-insert the defect'
 scan_files file-boundary-ends-hunk 0 'a.py|x|select id,' 'b.py|y|from users'
+scan_files file-boundary-judged-under-own-name 1 'a.ts|x|const q = `\n  SELECT id\n  FROM api.users`;' 'b.md|y|hello'
+expect_scan sql-grant-multiline 1 a.ts "" $'const g = `GRANT SELECT\n  ON api.users TO anon`;'
+SCAN_CFG=1 expect_scan sql-with-color-and-ext-diff-config 1 a.ts "" 'const r = await db.query(`select * from users where id=$1`, [id]);'
 scan_files sql-then-prose 0 'm.sql|-- a|-- a\n-- b' 'n.ts|x|echo "Re-insert the defect"'
 scan_files space-in-path-sql 1 '001 init.sql|select id\nfrom t|select id\nfrom t\n   and due_at < now()'
 scan_files plusplus-content-is-not-header 0 't.sh|x|++ b/m.sql\necho "insert it"'
@@ -220,7 +227,8 @@ redos_case() {
   node -e 'const n=3000,R=(x)=>x.repeat(n);const L={grant:"GRANT "+" ".repeat(n)+"x",parens:R("("),where:R(".where("),sel:"SELECT "+R("a ")};
     const l=L[process.argv[2]];require("fs").writeFileSync(process.argv[1]+"/p.ts",Array(8).fill(l).join("\n")+"\n")' "$repo" "$line"
   git -C "$repo" add -A && git -C "$repo" commit -qm feat
-  ms="$(node -e 'const t=Date.now();require("child_process").spawnSync("node",[process.argv[1],"realpath-check","run","--diff-base","HEAD~1","--project",process.argv[2]]);process.stdout.write(String(Date.now()-t))' "$TOOLS" "$repo")"
+  # timeout 10 s: a regression fails (signal/timeout => 10000 ms) instead of hanging CI
+  ms="$(node -e 'const t=Date.now();const r=require("child_process").spawnSync("node",[process.argv[1],"realpath-check","run","--diff-base","HEAD~1","--project",process.argv[2]],{timeout:10000,killSignal:"SIGKILL"});process.stdout.write(String(r.error||r.signal?10000:Date.now()-t))' "$TOOLS" "$repo")"
   if [[ "$ms" -lt 2000 ]]; then echo "PASS  g-redos-$name (${ms} ms < 2000)"; pass=$((pass + 1)); else echo "FAIL  g-redos-$name (${ms} ms >= 2000)"; fail=$((fail + 1)); fi
 }
 redos_case grant grant

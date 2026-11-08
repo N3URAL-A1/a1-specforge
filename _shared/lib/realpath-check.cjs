@@ -102,7 +102,7 @@ const SQL_CLAUSES = [
   /\b(VALUES\s*\(|RETURNING\b|ON\s+CONFLICT\b|WHERE\s+[\w."]+\s*(=|IN\b|IS\b))/,
 ];
 const SQL_CALLS = [
-  /\b(GRANT|REVOKE)\s+[\w,]+(?:[ \t]+[\w,]+){0,20}?[ \t]+ON\s/i,
+  /\b(GRANT|REVOKE)\s+[\w,]+(?:\s+[\w,]+){0,20}?\s+ON\s/i,
   /\b\w+\.(insert|update|delete)\s*\(\s*\w+\s*\)\s*\.\s*(values|set|where|returning|onConflict\w*)\s*\(/,
   /\.select\s*\([^)]*\)\s*\.\s*from\s*\(\s*\w/,
   /\.execute\s*\(\s*[`'"]/,
@@ -301,7 +301,7 @@ function cmdRealpathCheckRun(args) {
     process.exit(2);
   }
 
-  const diffRes = runGit(['-c', 'core.quotePath=false', 'diff', `${base}..HEAD`, '--unified=0'], projectDir);
+  const diffRes = runGit(['-c', 'core.quotePath=false', 'diff', '--no-color', '--no-ext-diff', `${base}..HEAD`, '--unified=0'], projectDir);
   if (!diffRes.ok) {
     process.stderr.write(`error: git diff failed: ${diffRes.stderr.trim() || 'unknown'}\n`);
     process.exit(2);
