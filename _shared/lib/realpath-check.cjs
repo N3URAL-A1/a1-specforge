@@ -17,9 +17,15 @@ const { emitExit } = require('./emit-exit.cjs');
 //   1. `git diff <base>..HEAD --unified=0` in the project dir.
 //   2. Scan ADDED lines (lines starting with '+', not '+++') for surface
 //      signatures grouped into 3 categories:
-//        - sql : SELECT|INSERT|UPDATE|DELETE|CREATE TABLE|ALTER TABLE
-//                (case-insensitive) in code files. Diff hunks touching *.md or
-//                *.sql migration COMMENT lines (-- …) are excluded.
+//        - sql : SQL SHAPES, not English words (see SQL_SHAPES / SQL_CALLS):
+//                statements (INSERT INTO x, UPDATE x SET, SELECT … FROM, DDL),
+//                strings opening with an uppercase verb, UPPERCASE clause tokens
+//                on continuation lines (WHERE col =, VALUES (, RETURNING …) and
+//                driver calls (.query(, sql`, $queryRaw, PostgREST .from(..).insert(,
+//                .rpc(). Pure comment lines and trailing `// …` comments are
+//                stripped in code files; *.md is excluded; every added
+//                non-comment line of a .sql/.psql/.pgsql file counts. Shapes are
+//                matched over an 8-line window of contiguous added lines (one hunk).
 //        - rls : ROW LEVEL SECURITY | \brls\b
 //        - http: external HTTP calls — fetch( | axios | http.request — that
 //                carry a non-localhost literal URL (http(s)://<host>) on the
@@ -40,18 +46,79 @@ const { emitExit } = require('./emit-exit.cjs');
 //   Bad args / no git repo / git failure => exit 2.
 //
 // KNOWN LIMITS (deliberately simple, line-based, no SQL/JS parsing):
-//   - Signature scan is per-added-line; multi-line statements only trigger on
-//     the line carrying the keyword. String literals containing keywords can
-//     false-positive (conservative: a spurious evidence requirement, never a
-//     silent miss). SQL inside comments on non-.md files is NOT stripped.
+//   - A silent miss IS possible. The scan sees only ADDED lines (`--unified=0`).
+//     Residual risk: (1) a lowercase continuation line with no clause token
+//     (e.g. `  due_at < $1` or `  and x = 1`) added inside an existing query;
+//     (2) a hunk that starts mid-literal, so the opening `select`/`sql\`` line
+//     is not part of the added lines. Firestore `docRef.update(` is not SQL and
+//     is deliberately not flagged.
+//   - Prose can still false-positive when it mimics a shape, e.g. a string
+//     "Select x from the list", "INSERT INTO t" or SQL text inside a test assertion (conservative:
+//     a spurious evidence requirement).
 //   - Category<->section matching is by heading text only; it does not verify
 //     the command actually exercises that category's surface.
 //   - "command line" / "output block" detection is heuristic (markers, not a
 //     shell parser). Evidence is a human+CLI contract, not a sandbox.
 // ---------------------------------------------------------------------------
 
+// SQL shape matching (ported from the measured reference design, bug
+// 2026-11-08-realpath-sql-prose-false-positive).
+const SQL_FILE = /\.(sql|psql|pgsql)$/i;
+const COMMENT_LINE = /^\s*(\/\/|#(?!!)|\/\*|\*(?!\s*FROM)|\*\/|--)/; // pure comment lines (code files)
+const TRAIL_COMMENT = /(^|\s)\/\/\s.*$/; // `code; // prose`
+const SQL_SHAPES = [
+  /\bINSERT\s+INTO\s+["\w.]+/i,
+  /\bUPDATE\s+["\w.]+\s+SET\b/i,
+  /\bDELETE\s+FROM\s+["\w.]+/i,
+  /\bSELECT\s+[^;{}]{1,400}?\bFROM\s+["\w.(]/i,
+  /\b(CREATE|ALTER|DROP)\s+(OR\s+REPLACE\s+)?(TABLE|VIEW|MATERIALIZED\s+VIEW|FUNCTION|POLICY|INDEX|UNIQUE\s+INDEX|TRIGGER|SCHEMA|TYPE|SEQUENCE)\b/i,
+  /\bTRUNCATE\s+(TABLE\s+)?["\w.]+/i,
+  /[`'"]\s*(SELECT|WITH|INSERT|UPDATE|DELETE)\s/,                 // string opens with UPPERCASE keyword
+  /[`'"]\s*select\s+(\d|\*|[\w.]+\s*\()/i,                           // `select 1`, `select count(`, `select fn(`
+];
+const SQL_CALLS = [
+  /\b(GRANT|REVOKE)\s+[\w, ]+?\s+ON\s+/i,
+  /\b(FROM|JOIN)\s+([\w"]+\.[\w"]+|unnest\s*\(|[\w"]+\s+[a-z]{1,3}\b\s*(WHERE|JOIN|ON|$|`))|\bWHERE\s+[\w."]+\s*(=|<|>|IN\b|IS\b|\()|\bDO\s+(UPDATE\s+SET|NOTHING)\b|\bORDER\s+BY\b|\bGROUP\s+BY\b|\b(AND|OR)\s+[\w.]+\s*(=|<>|<|>|IN\b|IS\b)|\b(AND|OR)\s+\(?\w+\(|\(\s*(NULL|\$\d+(::\w+)?)\s*,\s*(NULL|\$\d+|')/,
+  /\b\w+\.(insert|update|delete)\s*\(\s*\w+\s*\)\s*\.\s*(values|set|where|returning|onConflict\w*)\s*\(/,
+  /\.select\s*\([^)]*\)\s*\.\s*from\s*\(\s*\w/,
+  /\.execute\s*\(\s*[`'"]/,
+  /\.query\s*\(/,
+  /\b(VALUES\s*\(|RETURNING\b|ON\s+CONFLICT\b|WHERE\s+[\w."]+\s*(=|IN\b|IS\b))/,
+  /\bsql\s*`/, /\bsql\.(unsafe|raw)\s*\(/, /\$(queryRaw|executeRaw)(Unsafe)?\b/,
+  /\b(knex|db|trx|tx)\.raw\s*\(/,
+  /\.query\s*\(\s*[`'"]/,
+  /\.from\s*\(\s*[`'"][\w.]+[`'"]\s*\)\s*\.\s*(select|insert|upsert|update|delete)\s*\(/,
+  /\.rpc\s*\(\s*[`'"]/,
+  /\.(insert|upsert)\s*\(\s*[\[{]/,
+  /\.update\s*\(\s*\{[\s\S]{0,400}?\}\s*\)\s*\.\s*(eq|neq|match|in|is|filter|gt|gte|lt|lte|like|ilike|or|select|where)\s*\(/,
+  /\.delete\s*\(\s*\)\s*\.\s*(eq|neq|match|in|is|filter|gt|gte|lt|lte|like|ilike|or|where)\s*\(/,
+  /\.where(In)?\s*\([^;]*?\)\s*\.\s*(update|delete|del)\s*\(/,
+];
+const PATTERNS = [...SQL_SHAPES, ...SQL_CALLS];
+function cleanLine(file, s) {
+  if (/^\s*--/.test(s)) return null;
+  if (SQL_FILE.test(file)) return s;
+  if (COMMENT_LINE.test(s)) return null;
+  return s.replace(TRAIL_COMMENT, '');
+}
+// hunk = array of added lines (already in same file, contiguous). Returns indexes of lines in a matching window.
+function hunkHits(file, lines) {
+  const cleaned = lines.map((l) => cleanLine(file, l));
+  if (SQL_FILE.test(file)) return cleaned.map((c, i) => (c !== null && c.trim() ? i : -1)).filter((i) => i >= 0);
+  const hits = new Set();
+  const W = SQL_WINDOW;
+  for (let i = 0; i < cleaned.length; i++) {
+    if (cleaned[i] === null) continue;
+    const win = []; for (let j = i; j < Math.min(cleaned.length, i + W); j++) win.push(cleaned[j] === null ? '' : cleaned[j]);
+    const text = win.join('\n');
+    for (const p of PATTERNS) { const m = text.match(p); if (m && m.index < cleaned[i].length + 1) { hits.add(i); break; } }
+  }
+  return [...hits];
+}
+
+const SQL_WINDOW = 8; // lines of one hunk examined together (multi-line literals)
+
 const REALPATH_SIGNATURES = {
-  sql: /\b(SELECT|INSERT\s+INTO|INSERT|UPDATE|DELETE|CREATE\s+TABLE|ALTER\s+TABLE)\b/i,
   rls: /(ROW\s+LEVEL\s+SECURITY|\brls\b)/i,
   http: /(fetch\s*\(|axios|http\.request)/i,
 };
@@ -75,27 +142,34 @@ function runGit(args, cwd) {
 }
 
 // Scan a unified-diff for real-backend surfaces. Returns Set of category names.
+// Added lines are grouped into hunks (contiguous '+' lines of one file) so SQL
+// shapes can span lines.
 function scanDiffForSurfaces(diff) {
   const found = new Set();
-  const lines = diff.split('\n');
   let currentFile = null;
-  let fileIsMd = false;
-  for (const line of lines) {
-    // Track the file the following added lines belong to.
+  let hunk = [];
+  const flush = () => {
+    if (hunk.length && currentFile && !/\.md$/i.test(currentFile) && hunkHits(currentFile, hunk).length > 0) {
+      found.add('sql');
+    }
+    hunk = [];
+  };
+  for (const line of diff.split('\n')) {
     const fm = line.match(/^\+\+\+ b\/(.+)$/);
     if (fm) {
+      flush();
       currentFile = fm[1];
-      fileIsMd = /\.md$/i.test(currentFile);
       continue;
     }
     if (line.startsWith('+++') || line.startsWith('---')) continue;
-    if (!line.startsWith('+')) continue; // only ADDED lines
+    if (!line.startsWith('+')) {
+      flush(); // hunk header, context or removed line ends the contiguous run
+      continue;
+    }
     const added = line.slice(1);
-    if (fileIsMd) continue; // exclude markdown docs entirely
-    // Exclude SQL-migration comment lines (-- …) for the sql category.
-    const isSqlComment = /^\s*--/.test(added);
+    if (currentFile && /\.md$/i.test(currentFile)) continue; // exclude markdown docs entirely
+    hunk.push(added);
 
-    if (!isSqlComment && REALPATH_SIGNATURES.sql.test(added)) found.add('sql');
     if (REALPATH_SIGNATURES.rls.test(added)) found.add('rls');
     if (REALPATH_SIGNATURES.http.test(added)) {
       const urlMatch = added.match(REALPATH_URL);
@@ -104,6 +178,7 @@ function scanDiffForSurfaces(diff) {
       }
     }
   }
+  flush();
   return found;
 }
 
@@ -261,4 +336,4 @@ function cmdRealpathCheckRun(args) {
   emitExit(status === 'PASS' ? 0 : 1, text, '');
 }
 
-module.exports = { cmdRealpathCheckRun };
+module.exports = { cmdRealpathCheckRun, scanDiffForSurfaces, hunkHits, cleanLine, SQL_PATTERNS: PATTERNS };

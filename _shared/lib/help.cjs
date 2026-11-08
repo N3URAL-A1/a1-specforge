@@ -274,7 +274,8 @@ ${SPEC_INIT_HELP}
   a1-tools realpath-check run --diff-base <git-ref> [--project <dir>]
                               [--evidence <file>] [--real-markers <pattern>] [--json]
                   Gate 0.7: scan the diff <base>..HEAD for real-backend surfaces
-                  (SQL / RLS / external non-localhost HTTP). If found, require a
+                  (SQL shapes / RLS / external non-localhost HTTP; SQL means statements,
+                  clause tokens and driver calls, not English words). If found, require a
                   test-evidence file (default .a1/realpath-evidence.md) with a
                   '## <category>' section per detected surface, containing a
                   command + non-mock output + a real-execution marker (default

@@ -230,7 +230,7 @@ echo "realpath-check exit=$RC"
 if [ $RC -ne 0 ]; then echo "STOP: realpath-check red, wave not signed off"; fi
 ```
 
-The check greps the wave diff for SQL/fetch signatures and requires the executor to have produced
+The check scans the wave diff for SQL shapes (statements, clause lines, driver calls; not English words) and external fetch signatures, and requires the executor to have produced
 `.a1/realpath-evidence.md` — one entry per touched surface category (SQL, RLS, external HTTP)
 containing the command run AND its real (non-mock) output. **Exit 1 = wave NOT signed off.**
 

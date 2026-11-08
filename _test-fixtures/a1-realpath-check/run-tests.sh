@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Scenario suite for `a1-tools realpath-check run` (Gate 0.7).
-# Builds throwaway git repos in mktemp dirs. 5 scenarios:
+# Builds throwaway git repos in mktemp dirs. Scenarios a-f below, plus (g) sql shape regressions:
 #   (a) diff without surfaces          -> 0
 #   (b) SQL in diff + valid evidence   -> 0
 #   (c) SQL in diff + mock-only evid.  -> 1
@@ -110,6 +110,44 @@ if [[ $RC -eq 1 && "$GOT" == "gate-0.7-realpath|fail|1|w1" && "$(printf '%s\n' "
 else
   echo "FAIL  f-gate-log-line (rc=$RC got=$GOT out=$OUT)"; fail=$((fail + 1))
 fi
+
+# --- (g) sql shape regressions (bug 2026-11-08-realpath-sql-prose-false-positive) ---
+# Real exported scanner, real git diffs. Prose must not need evidence; real SQL must.
+# base: committed first (may be empty); body: the HEAD version of <file>.
+expect_scan() {
+  local name="$1" want="$2" file="$3" base="$4" body="$5" repo
+  mk_workdir repo scan
+  git -C "$repo" init -q
+  git -C "$repo" config user.email t@t.dev
+  git -C "$repo" config user.name test
+  mkdir -p "$repo/$(dirname "$file")"
+  printf '%s\n' "${base:-seed}" > "$repo/$file"
+  git -C "$repo" add -A && git -C "$repo" commit -qm base
+  printf '%s\n' "$body" > "$repo/$file"
+  git -C "$repo" add -A && git -C "$repo" commit -qm feat
+  local out
+  out="$(node "$TOOLS" realpath-check run --diff-base HEAD~1 --project "$repo" 2>&1)"
+  assert_rc "g-$name" "$want" $? "$out"
+}
+export -n A1_VAULT_ROOT 2>/dev/null; unset A1_VAULT_ROOT
+
+# prose: exit 0
+expect_scan prose-hash-comment 0 t.sh "" '  # Re-insert the defect'
+expect_scan prose-echo 0 t.sh "" 'echo "Re-insert the defect"'
+expect_scan prose-map-delete 0 a.js "" 'map.delete(k);'
+expect_scan prose-js-delete 0 a.js "" 'delete obj.x;'
+expect_scan prose-update-status 0 a.js "" 'run update-status and delete-branch'
+expect_scan prose-jsx-select 0 a.tsx "" '<select id="x"><option>a</option></select>'
+expect_scan prose-line-comment 0 a.js "" '// update the cache, then delete stale entries'
+expect_scan prose-string 0 a.js "" 'const m = "Select a project to continue";'
+# real SQL: exit 1
+expect_scan sql-lower-template 1 a.ts "" 'const r = await db.query(`select * from users where id=$1`, [id]);'
+expect_scan sql-lower-template-bare 1 a.ts "" 'const r = await sql`select * from users where id=$1`;'
+expect_scan sql-multiline-literal 1 a.ts "" $'const q = `\n  SELECT id, name\n  FROM api.users\n  WHERE id = $1`;'
+expect_scan sql-continuation-only 1 a.ts $'const q = `\n  SELECT id FROM t\n`;' $'const q = `\n  SELECT id FROM t\n  WHERE due_at < $1\n`;'
+expect_scan sql-file-continuation 1 m.sql $'select id\nfrom t' $'select id\nfrom t\n   and due_at < now()'
+expect_scan sql-postgrest-chain 1 a.ts "" "await supabase.from('todos').insert({ title });"
+expect_scan sql-rpc 1 a.ts "" "const { data } = await supabase.rpc('get_stats', { p });"
 
 echo "realpath-check fixtures: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]
