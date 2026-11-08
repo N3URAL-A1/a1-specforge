@@ -5,7 +5,7 @@
 // unresolved_ci_match, ci_glob_not_in_workflow). Reads `.github/workflows/*.yml`
 // `run:` lines with a minimal YAML reader, follows npm|pnpm|yarn scripts into
 // package.json, and matches each changed test file against the include globs of
-// the runner a command reaches (vitest, jest, pytest), or a `ci_globs` entry of
+// the runner a command reaches (vitest, jest, playwright, pytest), or a `ci_globs` entry of
 // `.a1/fidelity.json` that appears literally in a `run:` line. Nothing is
 // executed. What cannot be resolved fails closed (`unresolved_ci_match`).
 // ---------------------------------------------------------------------------
@@ -22,7 +22,7 @@ const KEY_RE = /^( *)(- +)?([A-Za-z_][\w-]*) *:(?: +(.*))?$/;
 const BLOCK_RE = /^[|>][+-]?[0-9]*(?: +#.*)?$/;
 const SKIP_WORDS = new Set(['do', 'then', 'else', 'if', '!', 'time', 'sudo', 'exec', 'command', 'nohup']);
 const MANAGERS = new Set(['npm', 'pnpm', 'yarn']);
-const ALWAYS_OPAQUE = new Set(['make', 'tox', 'nox', 'turbo', 'nx', 'lerna', 'mocha', 'ava', 'playwright', 'cypress', 'bats']);
+const ALWAYS_OPAQUE = new Set(['make', 'tox', 'nox', 'turbo', 'nx', 'lerna', 'mocha', 'ava', 'cypress', 'bats']);
 const OPAQUE_WITH_TEST = new Set(['bun', 'deno', 'go', 'cargo']);
 
 // ---------- files ----------
@@ -176,6 +176,7 @@ function classify(raw) {
   if (head === 'vitest' || head === 'jest') return { kind: head, args: t.slice(1) };
   if (head === 'pytest' || head === 'py.test') return { kind: 'pytest', args: t.slice(1) };
   if (/^python3?$/.test(head) && t[1] === '-m' && t[2] === 'pytest') return { kind: 'pytest', args: t.slice(3) };
+  if (head === 'playwright') return t[1] === 'test' ? { kind: 'playwright', args: t.slice(2) } : null; // install, show-report, codegen: no tests run
   if (MANAGERS.has(head)) return managerCmd(head, t.slice(1));
   if (ALWAYS_OPAQUE.has(head) || (OPAQUE_WITH_TEST.has(head) && t[1] === 'test')) return { kind: 'opaque', head };
   return null;

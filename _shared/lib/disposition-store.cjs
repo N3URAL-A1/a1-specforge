@@ -22,7 +22,7 @@ const { sleepSyncMs } = require('./locks.cjs');
 const FILE_REL = path.join('.a1', 'dispositions.json');
 const FILE_GIT = '.a1/dispositions.json';
 const KINDS = Object.freeze({
-  fidelity: Object.freeze(['mock-of-subject', 'skipped-test', 'early-return-guard', 'test-not-in-ci']),
+  fidelity: Object.freeze(['mock-of-subject', 'skipped-test', 'early-return-guard', 'test-not-in-ci', 'unresolved_ci_match']),
   skip_increase: Object.freeze(['skip-increase']),
   class_sweep: Object.freeze(['class-sweep']),
   // Spec 017 review (SEC-2): a changed .a1/fidelity.json (rule fidelity-config, merge-check) or .a1/verify.json (rule verify-config,

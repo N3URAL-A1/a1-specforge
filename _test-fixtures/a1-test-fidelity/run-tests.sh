@@ -570,5 +570,40 @@ expect "CI12d hostile workflow (20000 steps, deep ../, unbalanced \$( ): defined
 new_repo; ci_base; wf '      - run: npx vitest run --config ../../etc/vitest.config.ts' '      - run: cd "$X" && npx vitest run'; put tests/a.test.ts; head_commit; run_tf
 expect "CI12e config path outside the repo / dynamic cd: fail closed" "unresolved_ci_match:tests/a.test.ts" "$(rules_of)"
 
+# CI13  Playwright: `playwright test` (direct, npx, via script) reads playwright.config testDir/testMatch/testIgnore.
+#       Real lomberg config (testDir tests/e2e, projects without own testDir). RED: playwright stays an opaque command.
+pw_repo() { new_repo; ci_base; cp "$CI/lomberg-playwright.config.ts" "$R/playwright.config.ts"; printf '{"scripts":{"test:e2e":"playwright test"}}\n' > "$R/package.json"; }
+pw_repo; wf '      - run: npm run test:e2e'; put tests/e2e/shell.spec.ts; put tests/e2e/deep/nav.test.ts; head_commit; run_tf
+expect "CI13a spec under testDir reached via npm script: exit 0" 0 "$RC"
+pw_repo; wf '      - run: npx playwright test'; put tests/e2e/shell.spec.ts; put src/outside.spec.ts; head_commit; run_tf
+expect "CI13b npx playwright test: file outside testDir is test-not-in-ci (not unresolved)" "test-not-in-ci:src/outside.spec.ts" "$(rules_of)"
+pw_repo; wf '      - run: npx playwright install --with-deps chromium' '      - run: npx playwright test'; put tests/e2e/helper.ts; put tests/e2e/a.spec.ts; head_commit; run_tf
+expect "CI13c playwright install is no test command; non-spec file under testDir is not a test file" 0 "$RC"
+pw_repo; wf '      - run: npx playwright test'; put tests/e2e/a.spec.ts; head_commit
+printf 'import { defineConfig } from "@playwright/test";\nconst dir = process.env.DIR;\nexport default defineConfig({ testDir: dir });\n' > "$R/playwright.config.ts"; head_commit; run_tf
+expect "CI13d dynamic testDir: fail closed (unresolved_ci_match)" "unresolved_ci_match:tests/e2e/a.spec.ts" "$(rules_of)"
+pw_repo; wf '      - run: npx playwright test shell'; put tests/e2e/a.spec.ts; head_commit; run_tf
+expect "CI13e CLI filter argument: fail closed (unresolved_ci_match)" "unresolved_ci_match:tests/e2e/a.spec.ts" "$(rules_of)"
+pw_repo; wf '      - run: npx playwright test'; put tests/e2e/a.spec.ts; head_commit
+printf 'export default { testDir: "tests/e2e", testIgnore: ["**/legacy/**"], testMatch: "**/*.spec.ts" };\n' > "$R/playwright.config.ts"; head_commit; put tests/e2e/legacy/c.spec.ts; put tests/e2e/b.test.ts; head_commit; run_tf
+expect "CI13f custom testMatch/testIgnore literals: only a.spec.ts runs (legacy/c.spec.ts and b.test.ts do not)" "test-not-in-ci:tests/e2e/b.test.ts|test-not-in-ci:tests/e2e/legacy/c.spec.ts" "$(rules_of)"
+pw_repo; wf '      - run: npx playwright test'; put tests/e2e/a.spec.ts; head_commit
+printf 'import base from "./base";\nexport default { ...base, testDir: "tests/e2e" };\n' > "$R/playwright.config.ts"; head_commit; run_tf
+expect "CI13g spread in the config object: fail closed" "unresolved_ci_match:tests/e2e/a.spec.ts" "$(rules_of)"
+pw_repo; wf '      - run: npx playwright test'; put tests/e2e/a.spec.ts; head_commit
+printf 'export default { testDir: "tests/e2e", projects: [{ name: "x", testDir: "other" }] };\n' > "$R/playwright.config.ts"; head_commit; run_tf
+expect "CI13h per-project testDir: fail closed" "unresolved_ci_match:tests/e2e/a.spec.ts" "$(rules_of)"
+new_repo; ci_base; wf '      - run: npx playwright test'; put e2e/a.spec.ts; put e2e/b.ts; head_commit; run_tf
+expect "CI13i no config: testDir defaults to the call dir" 0 "$RC"
+pw_repo; wf '      - run: npx playwright test --project=mobile --grep @smoke --workers=2'; put tests/e2e/a.spec.ts; head_commit; run_tf
+expect "CI13j value flags (--project, --grep, --workers) are no file filters" 0 "$RC"
+
+# CI14  unresolved_ci_match is file-level dispositionable (kind fidelity), like test-not-in-ci.
+new_repo; ci_base; wf '      - run: make check'; put tests/a.test.ts; head_commit; run_tf
+expect "CI14a unresolved before the disposition" "unresolved_ci_match:tests/a.test.ts" "$(rules_of)"
+(cd "$R" && node "$TOOLS" disposition add --kind fidelity --rule unresolved_ci_match --file tests/a.test.ts --reason "fixture: make check runs it, checked by hand" --by fx >/dev/null); DRC=$?
+G add -A; G commit -q -m disp >/dev/null; run_tf
+expect "CI14b disposition accepted (file-level) and clears the finding: exit 0" "0|0" "$DRC|$RC"
+
 echo "a1-test-fidelity: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

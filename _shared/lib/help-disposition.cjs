@@ -8,7 +8,7 @@ const DISPOSITION_HELP = `  a1-tools disposition add --kind <fidelity|skip_incre
                   with review: pending. The fingerprint is <rule>:<file>:<16 hex of the
                   whitespace-normalised line>; it clears exactly one rule in one file for one line
                   content. --line reads the line from the file. Rules per kind: fidelity =
-                  mock-of-subject | skipped-test | early-return-guard | test-not-in-ci (file-level,
+                  mock-of-subject | skipped-test | early-return-guard | test-not-in-ci | unresolved_ci_match (file-level,
                   no --line); skip_increase = skip-increase (file = verify command id, text =
                   "<base>-><head>" skipped counts); class_sweep = class-sweep; config_change =
                   fidelity-config (file = .a1/fidelity.json) | verify-config (file = .a1/verify.json) | probes-config (file = .a1/live-probes.yaml); the

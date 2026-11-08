@@ -21,6 +21,11 @@ const JEST_CONFIGS = ['jest.config.ts', 'jest.config.js', 'jest.config.mjs', 'je
 const VITEST_INCLUDE = ['**/*.{test,spec}.?(c|m)[jt]s?(x)'];
 const VITEST_EXCLUDE = ['**/node_modules/**', '**/dist/**', '**/.git/**'];
 const JEST_MATCH = ['**/__tests__/**/*.[jt]s?(x)', '**/?(*.)+(spec|test).[jt]s?(x)'];
+const PLAYWRIGHT_CONFIGS = ['playwright.config.ts', 'playwright.config.js', 'playwright.config.mjs', 'playwright.config.cjs', 'playwright.config.mts', 'playwright.config.cts'];
+const PLAYWRIGHT_MATCH = ['**/*.@(spec|test).?(c|m)[jt]s?(x)'];
+const PLAYWRIGHT_VALUE_FLAGS = new Set(['--config', '-c', '--project', '--grep', '-g', '--grep-invert', '--reporter', '--workers', '-j', '--shard',
+  '--retries', '--timeout', '--output', '--max-failures', '-x', '--repeat-each', '--browser', '--tsconfig', '--trace', '--global-timeout',
+  '--ui-host', '--ui-port', '--update-snapshots', '--update-source-method', '--pass-with-no-tests', '--fail-on-flaky-tests']);
 const PYTEST_SOURCES = [['pytest.ini', 'pytest'], ['pyproject.toml', 'tool.pytest.ini_options'], ['tox.ini', 'pytest'], ['setup.cfg', 'tool:pytest']];
 const PYTEST_FILES = ['test_*.py', '*_test.py'];
 
@@ -85,7 +90,7 @@ function topKeys(code, open) {
   for (let i = open; i < end; i++) {
     const c = code[i];
     if (c === '{' || c === '(' || c === '[') depth++;
-    else if (c === '}' || c === ')' || c === ']') { depth--; if (depth === 0) break; } else if (depth === 1 && /[A-Za-z_$]/.test(c) && !isWordChar(code[i - 1] || ' ')) {
+    else if (c === '}' || c === ')' || c === ']') { depth--; if (depth === 0) break; } else if (depth === 1 && c === '.' && code.startsWith('...', i)) { keys.set('...', i); i += 2; } else if (depth === 1 && /[A-Za-z_$]/.test(c) && !isWordChar(code[i - 1] || ' ')) {
       let j = i;
       while (j < end && isWordChar(code[j])) j++;
       let k = j;
@@ -257,7 +262,104 @@ function pytestMatcher(state, inv) {
   return { py: true, dynamic: false, paths, files: cfg.files && cfg.files.length > 0 ? cfg.files : PYTEST_FILES, root: '' };
 }
 
+// ---------- playwright.config (testDir, testMatch, testIgnore) ----------
+
+/** Index after the bracket that closes the one at `open` (masked code), or -1. */
+function closeOf(code, open) {
+  let depth = 0;
+  for (let i = open; i < Math.min(code.length, open + MAX_SCAN); i++) {
+    if ('{(['.includes(code[i])) depth++;
+    else if ('})]'.includes(code[i])) { depth--; if (depth === 0) return i + 1; }
+  }
+  return -1;
+}
+
+/** A single plain string literal value at `pos` (nothing else in the expression), or null. */
+function stringValue(code, strings, pos) {
+  let p = pos;
+  while (/\s/.test(code[p] || '')) p++;
+  const v = strings.get(p);
+  if (!'"\'`'.includes(code[p] || '\0') || typeof v !== 'string') return null;
+  const close = code.indexOf(code[p], p + 1);
+  let q = close + 1;
+  while (/\s/.test(code[q] || '')) q++;
+  return close > 0 && (code[q] === ',' || code[q] === '}') ? v : null;
+}
+
+/** Playwright matches patterns against the absolute path; only leading-wildcard literals are the same relative to testDir. */
+const plainPattern = (g) => !g.startsWith('!') && (g.startsWith('**/') || g.startsWith('*'));
+
+function readPlaywrightConfig(text) {
+  const { code, strings } = mask(text, 'js');
+  const out = { dynamic: true, testDir: '', match: PLAYWRIGHT_MATCH, ignore: [] };
+  const m = /(?:\bdefineConfig\s*\(|export\s+default|module\.exports\s*=)\s*\{/.exec(code);
+  if (m === null) return out;
+  const open = m.index + m[0].length - 1;
+  const keys = topKeys(code, open);
+  if (keys.has('...')) return out;
+  if (keys.has('projects')) {
+    const from = keys.get('projects');
+    const to = closeOf(code, code.indexOf('[', from));
+    if (to < 0 || /\b(?:testDir|testMatch|testIgnore)\b/.test(code.slice(from, to))) return out;
+  }
+  if (keys.has('testDir')) {
+    const v = stringValue(code, strings, keys.get('testDir'));
+    if (v === null || /[$~`]/.test(v)) return out;
+    out.testDir = v;
+  }
+  for (const [key, field] of [['testMatch', 'match'], ['testIgnore', 'ignore']]) {
+    if (!keys.has(key)) continue;
+    const one = stringValue(code, strings, keys.get(key));
+    const list = one !== null ? [one] : stringArray(code, strings, keys.get(key));
+    if (list === null || !list.every(plainPattern)) return out;
+    out[field] = list;
+  }
+  return { ...out, dynamic: false };
+}
+
+function playwrightConfigFile(state, inv, config) {
+  if (config) {
+    const rel = joinDir(inv.cwd, config);
+    return rel !== null && readCached(state, rel) !== null ? rel : undefined;
+  }
+  let d = inv.cwd;
+  for (;;) {
+    const hit = firstExisting(state, d, PLAYWRIGHT_CONFIGS);
+    if (hit !== null) return hit;
+    if (d === '') return null;
+    d = parentOf(d);
+  }
+}
+
+function playwrightArgs(args) {
+  let config = null;
+  const positional = [];
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '--config' || a === '-c') config = args[++i];
+    else if (a.startsWith('--config=')) config = a.slice(9);
+    else if (a.startsWith('-')) { if (PLAYWRIGHT_VALUE_FLAGS.has(a)) i++; } else positional.push(a);
+  }
+  return { config, positional };
+}
+
+function playwrightMatcher(state, inv) {
+  const { config, positional } = playwrightArgs(inv.args);
+  const m = { root: inv.cwd, dynamic: false, include: [], exclude: [], filters: [], dynamicFilter: positional.length > 0 };
+  const cfg = playwrightConfigFile(state, inv, config);
+  if (cfg === undefined) return { ...m, dynamic: true };
+  let parsed = { dynamic: false, testDir: '', match: PLAYWRIGHT_MATCH, ignore: [] };
+  let base = inv.cwd;
+  if (cfg !== null) { parsed = readPlaywrightConfig(readCached(state, cfg) || ''); base = parentOf(cfg); }
+  const root = joinDir(base, parsed.testDir || '.');
+  const inc = compileAll(parsed.match);
+  const exc = compileAll([...parsed.ignore, '**/node_modules/**']);
+  if (parsed.dynamic || root === null || inc === null || exc === null) return { ...m, dynamic: true };
+  return { ...m, root, include: inc, exclude: exc };
+}
+
 function buildMatcher(state, inv) {
+  if (inv.kind === 'playwright') return playwrightMatcher(state, inv);
   return inv.kind === 'pytest' ? pytestMatcher(state, inv) : nodeMatcher(state, inv);
 }
 
