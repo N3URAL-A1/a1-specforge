@@ -712,5 +712,15 @@ expect "CI13at detail names the dynamic config file" "playwright: dynamic config
 new_repo; ci_base; wf '      - run: make check'; put tests/a.test.ts; head_commit
 (cd "$R" && node "$TOOLS" disposition add --kind fidelity --rule unresolved_ci_match --file tests/a.test.ts --line 1 --reason "fixture" --by fx >/dev/null 2>&1); expect "CI14e --line is refused for unresolved_ci_match: exit 2" 2 "$?"
 
+# CI13au-  Review round 3 (Reinhard, 376438b): npm forwards positional args without `--`; defineConfig from a custom wrapper.
+pw_repo; wf '      - run: npm run test:e2e e2e/smoke'; put e2e/a.spec.ts; pwc 'export default { testDir: "e2e" };'; run_tf
+expect "CI13au npm run script <positional> (npm forwards it without --): unresolved" "unresolved_ci_match:e2e/a.spec.ts" "$(rules_of)"
+new_repo; ci_base; printf '{"scripts":{"test":"vitest run"}}\n' > "$R/package.json"; wf '      - run: npm test tests/smoke'; put tests/a.test.ts; head_commit; run_tf
+expect "CI13av npm test <positional> for vitest: unresolved" "unresolved_ci_match:tests/a.test.ts" "$(rules_of)"
+pw1; pwc 'import { defineConfig } from "./my-wrapper"; export default defineConfig({ testDir: "e2e" });'; run_tf
+expect "CI13aw defineConfig from a custom wrapper can rewrite testDir: unresolved" "unresolved_ci_match:e2e/a.spec.ts" "$(rules_of)"
+pw1; pwc 'import { defineConfig, devices } from "@playwright/test"; export default defineConfig({ testDir: "e2e" });'; run_tf
+expect "CI13ax defineConfig from @playwright/test is read" 0 "$RC"
+
 echo "a1-test-fidelity: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

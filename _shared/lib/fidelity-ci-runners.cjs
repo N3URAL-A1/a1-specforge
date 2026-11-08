@@ -355,6 +355,8 @@ function playwrightPattern(g) {
   return g.startsWith('**/') ? g : `**/${g}`;
 }
 
+const PLAYWRIGHT_DEFINE = /(?:import\s*\{[^}]*\bdefineConfig\b[^}]*\}\s*from|require\s*\()\s*['"](?:@playwright\/test|playwright\/test)['"]/;
+
 function readPlaywrightConfig(text) {
   const dynamic = { dynamic: true, testDir: '', match: PLAYWRIGHT_MATCH, ignore: [], risky: false };
   const { code, strings } = mask(text, 'js');
@@ -364,6 +366,8 @@ function readPlaywrightConfig(text) {
   const close = closeOf(code, open);
   // defineConfig(a, b) merges the later arguments over the first: only a single object argument is read.
   if (close < 0 || (m[1] && !/^\s*\)/.test(code.slice(close)))) return dynamic;
+  // A defineConfig that does not come from Playwright (own wrapper) can rewrite the object.
+  if (m[1] && !PLAYWRIGHT_DEFINE.test(text)) return dynamic;
   // A second export or merge after the literal (module.exports[k] = ..., Object.assign(module.exports, x), module.exports = require(..)) can override it;
   // a string literal naming a reserved key can be a bracket-notation write.
   const exportsSeen = (code.match(/(?<![\w$.])exports\b|module\.exports\b|export\s+default\b/g) || []).length;

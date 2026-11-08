@@ -163,8 +163,14 @@ function managerCmd(mgr, args) {
   }
   if (wide) return { kind: 'opaque', head: `${mgr} (workspace-wide run)` };
   const sub = args[i];
-  // Arguments after the script name reach the script's last command (npm only after `--`); they are not modelled, so the run is unresolved.
-  const extra = (rest) => (mgr === 'npm' ? (rest.includes('--') ? rest.slice(rest.indexOf('--') + 1)[0] : undefined) : rest[0]);
+  // Arguments after the script name reach the script's last command; they are not modelled, so the run is unresolved.
+  // npm forwards non-dash tokens before `--` too (dash tokens there are npm's own options) and everything after `--`.
+  const extra = (rest) => {
+    if (mgr !== 'npm') return rest[0];
+    const sep = rest.indexOf('--');
+    const before = (sep < 0 ? rest : rest.slice(0, sep)).find((a) => !a.startsWith('-'));
+    return before !== undefined ? before : (sep < 0 ? undefined : rest[sep + 1]);
+  };
   if (sub === 'run' || sub === 'run-script') return args[i + 1] ? { kind: 'script', script: args[i + 1], cwd, optional: false, extra: extra(args.slice(i + 2)) } : null;
   if (sub === 'test' || sub === 't' || sub === 'tst') return { kind: 'script', script: 'test', cwd, optional: false, extra: extra(args.slice(i + 1)) };
   if (mgr !== 'npm' && sub && !sub.startsWith('-')) {
