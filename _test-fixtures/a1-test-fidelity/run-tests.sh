@@ -75,6 +75,16 @@
 #   fidelity-ci-runners.cjs globToRegex(): extglob `?(...)` not translated        -> CI4, CI5a, CI5b, CI7, CI11b, CI11c, Wave 4 green cases
 #   fidelity-ci-runners.cjs pytestMatcher(): default python_files replaced        -> CI8, CI8b
 #
+# PR #75 review (playwright runner), measured red 2026-11-08 by running the new cases against the previous lib:
+#   fidelity-ci-runners.cjs members(): non `ident: value` member (shorthand/quoted/computed/spread) -> dynamic   -> CI13k-n
+#   fidelity-ci-runners.cjs readPlaywrightConfig(): defineConfig(a, b), exported-object check, stray reserved names -> CI13o, CI13p
+#   fidelity-ci-runners.cjs projectsAreSimple(): projects must be a literal array of plain objects              -> CI13q
+#   fidelity-ci-runners.cjs PLAYWRIGHT_VALUE_FLAGS / subset flags / --list                                      -> CI13r-w, CI13af, CI13ag
+#   fidelity-ci-runners.cjs playwrightPattern()/judge(): `**/` prefix, case-insensitive, absolute-path risk     -> CI13x-aa
+#   fidelity-ci-runners.cjs playwrightConfigFile(): no parent walk-up, --config directory                      -> CI13ab-ad, CI13ai
+#   fidelity-ci.cjs unwrap(): pnpm/yarn direct, versioned npx                                                   -> CI13ah
+#   fidelity-ci.cjs fileFinding() text + disposition.cjs FILE_LEVEL_RULES: cause-bound disposition             -> CI14c, CI14d
+#
 # Wave 8 (Q21), measured red 2026-10-21 the same way:
 #   test-fidelity.cjs scan(): dispositions not applied                            -> H4b (corrected claudia test stays flagged)
 unset A1_VAULT_ROOT A1_VAULT_WRITER_HOST A1_HOST_ID
@@ -569,6 +579,148 @@ expect "CI12d hostile workflow (20000 steps, deep ../, unbalanced \$( ): defined
 [[ $((SECONDS - START)) -lt 20 ]] && ok "CI12d finished in $((SECONDS - START))s (< 20s)" || bad "CI12d too slow"
 new_repo; ci_base; wf '      - run: npx vitest run --config ../../etc/vitest.config.ts' '      - run: cd "$X" && npx vitest run'; put tests/a.test.ts; head_commit; run_tf
 expect "CI12e config path outside the repo / dynamic cd: fail closed" "unresolved_ci_match:tests/a.test.ts" "$(rules_of)"
+
+# CI13  Playwright: `playwright test` (direct, npx, via script) reads playwright.config testDir/testMatch/testIgnore.
+#       Real lomberg config (testDir tests/e2e, projects without own testDir). RED: playwright stays an opaque command.
+pw_repo() { new_repo; ci_base; cp "$CI/lomberg-playwright.config.ts" "$R/playwright.config.ts"; printf '{"scripts":{"test:e2e":"playwright test"}}\n' > "$R/package.json"; }
+pw_repo; wf '      - run: npm run test:e2e'; put tests/e2e/shell.spec.ts; put tests/e2e/deep/nav.test.ts; head_commit; run_tf
+expect "CI13a spec under testDir reached via npm script: exit 0" 0 "$RC"
+pw_repo; wf '      - run: npx playwright test'; put tests/e2e/shell.spec.ts; put src/outside.spec.ts; head_commit; run_tf
+expect "CI13b npx playwright test: file outside testDir is test-not-in-ci (not unresolved)" "test-not-in-ci:src/outside.spec.ts" "$(rules_of)"
+pw_repo; wf '      - run: npx playwright install --with-deps chromium' '      - run: npx playwright test'; put tests/e2e/helper.ts; put tests/e2e/a.spec.ts; head_commit; run_tf
+expect "CI13c playwright install is no test command; non-spec file under testDir is not a test file" 0 "$RC"
+pw_repo; wf '      - run: npx playwright test'; put tests/e2e/a.spec.ts; head_commit
+printf 'import { defineConfig } from "@playwright/test";\nconst dir = process.env.DIR;\nexport default defineConfig({ testDir: dir });\n' > "$R/playwright.config.ts"; head_commit; run_tf
+expect "CI13d dynamic testDir: fail closed (unresolved_ci_match)" "unresolved_ci_match:tests/e2e/a.spec.ts" "$(rules_of)"
+pw_repo; wf '      - run: npx playwright test shell'; put tests/e2e/a.spec.ts; head_commit; run_tf
+expect "CI13e CLI filter argument: fail closed (unresolved_ci_match)" "unresolved_ci_match:tests/e2e/a.spec.ts" "$(rules_of)"
+pw_repo; wf '      - run: npx playwright test'; put tests/e2e/a.spec.ts; head_commit
+printf 'export default { testDir: "tests/e2e", testIgnore: ["*.old.spec.ts"], testMatch: "**/*.spec.ts" };\n' > "$R/playwright.config.ts"; head_commit; put tests/e2e/c.old.spec.ts; put tests/e2e/b.test.ts; head_commit; run_tf
+expect "CI13f custom testMatch/testIgnore literals: only a.spec.ts runs (c.old.spec.ts and b.test.ts do not)" "test-not-in-ci:tests/e2e/b.test.ts|test-not-in-ci:tests/e2e/c.old.spec.ts" "$(rules_of)"
+pw_repo; wf '      - run: npx playwright test'; put tests/e2e/a.spec.ts; head_commit
+printf 'import base from "./base";\nexport default { ...base, testDir: "tests/e2e" };\n' > "$R/playwright.config.ts"; head_commit; run_tf
+expect "CI13g spread in the config object: fail closed" "unresolved_ci_match:tests/e2e/a.spec.ts" "$(rules_of)"
+pw_repo; wf '      - run: npx playwright test'; put tests/e2e/a.spec.ts; head_commit
+printf 'export default { testDir: "tests/e2e", projects: [{ name: "x", testDir: "other" }] };\n' > "$R/playwright.config.ts"; head_commit; run_tf
+expect "CI13h per-project testDir: fail closed" "unresolved_ci_match:tests/e2e/a.spec.ts" "$(rules_of)"
+new_repo; ci_base; wf '      - run: npx playwright test'; put e2e/a.spec.ts; put e2e/b.ts; head_commit; run_tf
+expect "CI13i no config: testDir defaults to the call dir" 0 "$RC"
+pw_repo; wf '      - run: npx playwright test --project=mobile --grep @smoke --workers=2'; put tests/e2e/a.spec.ts; head_commit; run_tf
+expect "CI13j value flags (--project, --grep, --workers) are no file filters" 0 "$RC"
+
+# CI14  unresolved_ci_match is file-level dispositionable (kind fidelity), like test-not-in-ci.
+new_repo; ci_base; wf '      - run: make check'; put tests/a.test.ts; head_commit; run_tf
+expect "CI14a unresolved before the disposition" "unresolved_ci_match:tests/a.test.ts" "$(rules_of)"
+(cd "$R" && node "$TOOLS" disposition add --kind fidelity --rule unresolved_ci_match --file tests/a.test.ts --text "unmodelled test command: make" --reason "fixture: make check runs it, checked by hand" --by fx >/dev/null); DRC=$?
+G add -A; G commit -q -m disp >/dev/null; run_tf
+expect "CI14b disposition accepted (cause-bound via --text) and clears the finding: exit 0" "0|0" "$DRC|$RC"
+
+
+# CI13k-ae  Review of PR #75 (Reinhard BLOCK): every probe was fail-open (file judged "in CI" though Playwright does not run it).
+# pwc <config source>: playwright.config.ts with exactly this source (testDir "e2e" unless the source says otherwise), committed.
+pwc() { printf '%s\n' "$1" > "$R/playwright.config.ts"; head_commit; }
+pw1() { pw_repo; wf "      - run: ${1:-npx playwright test}"; put e2e/a.spec.ts; }
+pw1; pwc 'const testDir = "e2e"; export default { testDir };'; put src/x.spec.ts; head_commit; run_tf
+expect "CI13k shorthand testDir: unresolved, not silently the call dir" "unresolved_ci_match:e2e/a.spec.ts|unresolved_ci_match:src/x.spec.ts" "$(rules_of)"
+pw1; pwc 'const testIgnore = ["**/legacy/**"]; export default { testDir: "e2e", testIgnore };'; put e2e/legacy/b.spec.ts; head_commit; run_tf
+expect "CI13l shorthand testIgnore: unresolved" "unresolved_ci_match:e2e/a.spec.ts|unresolved_ci_match:e2e/legacy/b.spec.ts" "$(rules_of)"
+pw1; pwc 'export default { "testDir": "e2e" };'; put src/x.spec.ts; head_commit; run_tf
+expect "CI13m quoted key: unresolved" "unresolved_ci_match:e2e/a.spec.ts|unresolved_ci_match:src/x.spec.ts" "$(rules_of)"
+pw1; pwc 'export default { ["testDir"]: "e2e" };'; put src/x.spec.ts; head_commit; run_tf
+expect "CI13n computed key: unresolved" "unresolved_ci_match:e2e/a.spec.ts|unresolved_ci_match:src/x.spec.ts" "$(rules_of)"
+pw1; pwc 'export default defineConfig({ testDir: "e2e" }, { testDir: "other" });'; head_commit; run_tf
+expect "CI13o defineConfig(a, b): later argument overrides, unresolved" "unresolved_ci_match:e2e/a.spec.ts" "$(rules_of)"
+pw1; pwc 'const c = defineConfig({ testDir: "e2e" }); c.testDir = "x"; export default c;'; run_tf
+expect "CI13p config object mutated after defineConfig: unresolved" "unresolved_ci_match:e2e/a.spec.ts" "$(rules_of)"
+for body in 'projects: list' 'projects' 'projects: [mobile]' 'projects: [...p]' 'projects: [{ name: "a" }, ...p]'; do
+  pw1; pwc "import { list, mobile, p } from './p'; const projects = list; export default defineConfig({ testDir: \"e2e\", $body });"; run_tf
+  expect "CI13q projects not a literal array of plain objects ($body): unresolved" "unresolved_ci_match:e2e/a.spec.ts" "$(rules_of)"
+done
+pw1 'npx playwright test -x e2e/smoke'; pwc 'export default { testDir: "e2e" };'; run_tf
+expect "CI13r -x is boolean: the next token is a file filter, unresolved" "unresolved_ci_match:e2e/a.spec.ts" "$(rules_of)"
+pw1 'npx playwright test --pass-with-no-tests e2e/smoke'; pwc 'export default { testDir: "e2e" };'; run_tf
+expect "CI13s --pass-with-no-tests is boolean: unresolved" "unresolved_ci_match:e2e/a.spec.ts" "$(rules_of)"
+pw1 'npx playwright test --fail-on-flaky-tests e2e/smoke'; pwc 'export default { testDir: "e2e" };'; run_tf
+expect "CI13t --fail-on-flaky-tests is boolean: unresolved" "unresolved_ci_match:e2e/a.spec.ts" "$(rules_of)"
+pw1 'npx playwright test --debug cli e2e/smoke'; pwc 'export default { testDir: "e2e" };'; run_tf
+expect "CI13u optional-value flag (--debug) followed by a token: fail closed" "unresolved_ci_match:e2e/a.spec.ts" "$(rules_of)"
+pw1 'npx playwright test --list'; pwc 'export default { testDir: "e2e" };'; run_tf
+expect "CI13v --list runs no test: test-not-in-ci" "test-not-in-ci:e2e/a.spec.ts" "$(rules_of)"
+pw1 'npx playwright test --only-changed'; pwc 'export default { testDir: "e2e" };'; run_tf
+expect "CI13w --only-changed runs a subset: unresolved" "unresolved_ci_match:e2e/a.spec.ts" "$(rules_of)"
+pw1; pwc 'export default { testDir: "tests/e2e", testIgnore: "**/tests/**" };'; put tests/e2e/b.spec.ts; head_commit; run_tf
+expect "CI13x testIgnore **/tests/** ignores everything under tests/ (Playwright tests the absolute path): b.spec.ts not run" "test-not-in-ci:e2e/a.spec.ts|test-not-in-ci:tests/e2e/b.spec.ts" "$(rules_of)"
+pw1; pwc 'export default { testDir: "e2e", testIgnore: "*.old.spec.ts" };'; put e2e/sub/a.old.spec.ts; head_commit; run_tf
+expect "CI13y testIgnore without **/ gets the prefix: nested a.old.spec.ts is ignored" "test-not-in-ci:e2e/sub/a.old.spec.ts" "$(rules_of)"
+pw1; pwc 'export default { testDir: "e2e", testIgnore: "**/*.OLD.spec.ts" };'; put e2e/sub/a.old.spec.ts; head_commit; run_tf
+expect "CI13z testIgnore is case-insensitive" "test-not-in-ci:e2e/sub/a.old.spec.ts" "$(rules_of)"
+pw1; pwc 'export default { testDir: "e2e", testIgnore: "**/legacy/**" }; // the real path may contain legacy above the repo'; put e2e/Legacy/b.spec.ts; head_commit; run_tf
+expect "CI13aa directory ignore pattern: hit is no (case-insensitive), a miss is unknown (could match above the repo root)" "test-not-in-ci:e2e/Legacy/b.spec.ts|unresolved_ci_match:e2e/a.spec.ts" "$(rules_of)"
+pw_repo; wf '      - run: cd web/sub && npx playwright test'; mkdir -p "$R/web/sub"; pwc 'export default { testDir: "web" };'; put web/other.spec.ts; head_commit; run_tf
+expect "CI13ab no config walk-up: no config in web/sub means testDir web/sub, web/other.spec.ts is not run" "test-not-in-ci:web/other.spec.ts" "$(rules_of)"
+pw_repo; wf '      - run: npx playwright test --config conf'; mkdir -p "$R/conf"; put e2e/a.spec.ts; put conf/b.spec.ts; head_commit; run_tf
+expect "CI13ac --config <dir> without a config file: testDir is that dir (no crash)" "test-not-in-ci:e2e/a.spec.ts" "$(rules_of)"
+pw_repo; wf '      - run: npx playwright test --config conf'; mkdir -p "$R/conf"; printf 'export default { testDir: "../e2e" };\n' > "$R/conf/playwright.config.ts"; put e2e/a.spec.ts; head_commit; run_tf
+expect "CI13ad --config <dir> with a config file: read, testDir relative to it" 0 "$RC"
+pw1; pwc 'export default { testDir: "e2e", testMatch: /.*\.e2e\.ts/ };'; run_tf
+expect "CI13ae regex testMatch: unresolved" "unresolved_ci_match:e2e/a.spec.ts" "$(rules_of)"
+pw1 'npx playwright test --project mobile desktop'; pwc 'export default { testDir: "e2e" };'; run_tf
+expect "CI13af variadic --project: the extra names count as filters, unresolved" "unresolved_ci_match:e2e/a.spec.ts" "$(rules_of)"
+pw1 'npx playwright test -G slow --add-reporter dot'; pwc 'export default { testDir: "e2e" };'; run_tf
+expect "CI13ag -G and --add-reporter take a value" 0 "$RC"
+for c in 'pnpm exec playwright test' 'yarn playwright test' 'pnpm playwright test' 'npx playwright@1.50.0 test' 'npx --yes @playwright/test test'; do
+  pw1 "$c"; pwc 'export default { testDir: "e2e" };'; run_tf
+  expect "CI13ah $c is modelled" 0 "$RC"
+done
+pw1; printf 'export default { testDir: "wrong" };\n' > "$R/playwright.config.js"; pwc 'export default { testDir: "e2e" };'; run_tf
+expect "CI13ai config extension order: .ts wins over .js" 0 "$RC"
+
+# CI14c  the unresolved_ci_match disposition is bound to its cause: a changed cause resurfaces.
+new_repo; ci_base; wf '      - run: make check'; put tests/a.test.ts; head_commit
+(cd "$R" && node "$TOOLS" disposition add --kind fidelity --rule unresolved_ci_match --file tests/a.test.ts --text "unmodelled test command: make" --reason "fixture" --by fx >/dev/null)
+(cd "$R" && node "$TOOLS" disposition add --kind fidelity --rule unresolved_ci_match --file tests/a.test.ts --reason "fixture" --by fx >/dev/null 2>&1); expect "CI14c file-level disposition (no --text) is refused: exit 2" 2 "$?"
+G add -A; G commit -q -m disp >/dev/null; wf '      - run: tox'; G add -A; G commit -q -m cause >/dev/null; run_tf
+expect "CI14d the cause changed (make -> tox): the finding resurfaces" "unresolved_ci_match:tests/a.test.ts" "$(rules_of)"
+
+
+# CI13aj-  Review round 2 (Reinhard, bc21e6a): CJS mutation after the literal, attached -c<path>, script arguments, yarn/pnpm script precedence.
+pwjs() { rm -f "$R/playwright.config.ts"; printf '%s\n' "$1" > "$R/playwright.config.js"; head_commit; }
+pw1; pwjs 'module.exports = { testDir: "e2e" }; module.exports["testDir"] = "other";'; run_tf
+expect "CI13aj CJS bracket-string mutation after the literal: unresolved" "unresolved_ci_match:e2e/a.spec.ts" "$(rules_of)"
+pw1; pwjs 'module.exports = { testDir: "e2e" }; Object.assign(module.exports, require("./o"));'; run_tf
+expect "CI13ak Object.assign(module.exports, ...): unresolved" "unresolved_ci_match:e2e/a.spec.ts" "$(rules_of)"
+pw1; pwjs 'module.exports = { testDir: "e2e" }; module.exports = require("./other");'; run_tf
+expect "CI13al module.exports reassigned: unresolved" "unresolved_ci_match:e2e/a.spec.ts" "$(rules_of)"
+pw1; pwjs 'module.exports = { testDir: "e2e" }; const k = "test" + "Dir"; module.exports[k] = "o";'; run_tf
+expect "CI13am computed key write: unresolved" "unresolved_ci_match:e2e/a.spec.ts" "$(rules_of)"
+pw1 'npx playwright test -cconf/pw.config.ts'; pwc 'export default { testDir: "src" };'; mkdir -p "$R/conf"; printf 'export default { testDir: "../e2e" };\n' > "$R/conf/pw.config.ts"; put src/x.spec.ts; head_commit; run_tf
+expect "CI13an attached -c<path> is --config: conf/pw.config.ts (testDir ../e2e) decides, not the call-dir config (testDir src): src/x.spec.ts is not run" "test-not-in-ci:src/x.spec.ts" "$(rules_of)"
+for extra in '--list' '--only-changed' '-x e2e/smoke'; do
+  pw_repo; wf "      - run: npm run test:e2e -- $extra"; put e2e/a.spec.ts; pwc 'export default { testDir: "e2e" };'; run_tf
+  expect "CI13ao npm run script -- $extra: arguments not modelled, unresolved" "unresolved_ci_match:e2e/a.spec.ts" "$(rules_of)"
+done
+new_repo; ci_base; printf '{"scripts":{"t":"vitest run"}}\n' > "$R/package.json"; wf '      - run: npm run t -- tests/smoke'; put tests/a.test.ts; head_commit; run_tf
+expect "CI13ap vitest script with a filter after --: unresolved (was silently yes)" "unresolved_ci_match:tests/a.test.ts" "$(rules_of)"
+new_repo; ci_base; printf '{"scripts":{"t":"vitest run"}}\n' > "$R/package.json"; wf '      - run: npm run t --silent'; put tests/a.test.ts; head_commit; run_tf
+expect "CI13aq npm flag without -- is no script argument: still modelled" 0 "$RC"
+pw_repo; printf '{"scripts":{"playwright":"echo skip"}}\n' > "$R/package.json"; wf '      - run: yarn playwright test'; put e2e/a.spec.ts; pwc 'export default { testDir: "e2e" };'; run_tf
+expect "CI13ar yarn playwright runs the package.json script of that name (echo skip, gets `test` as argument): unresolved, not the binary" "unresolved_ci_match:e2e/a.spec.ts" "$(rules_of)"
+pw1 'npx playwright test shell'; pwc 'export default { testDir: "e2e" };'; run_tf
+expect "CI13as detail names runner and cause (positional filter)" "playwright: positional filter \"shell\"" "$(js 'j.findings[0].detail')"
+pw1; pwc 'const d = 1; export default { testDir: d };'; run_tf
+expect "CI13at detail names the dynamic config file" "playwright: dynamic config playwright.config.ts" "$(js 'j.findings[0].detail')"
+new_repo; ci_base; wf '      - run: make check'; put tests/a.test.ts; head_commit
+(cd "$R" && node "$TOOLS" disposition add --kind fidelity --rule unresolved_ci_match --file tests/a.test.ts --line 1 --reason "fixture" --by fx >/dev/null 2>&1); expect "CI14e --line is refused for unresolved_ci_match: exit 2" 2 "$?"
+
+# CI13au-  Review round 3 (Reinhard, 376438b): npm forwards positional args without `--`; defineConfig from a custom wrapper.
+pw_repo; wf '      - run: npm run test:e2e e2e/smoke'; put e2e/a.spec.ts; pwc 'export default { testDir: "e2e" };'; run_tf
+expect "CI13au npm run script <positional> (npm forwards it without --): unresolved" "unresolved_ci_match:e2e/a.spec.ts" "$(rules_of)"
+new_repo; ci_base; printf '{"scripts":{"test":"vitest run"}}\n' > "$R/package.json"; wf '      - run: npm test tests/smoke'; put tests/a.test.ts; head_commit; run_tf
+expect "CI13av npm test <positional> for vitest: unresolved" "unresolved_ci_match:tests/a.test.ts" "$(rules_of)"
+pw1; pwc 'import { defineConfig } from "./my-wrapper"; export default defineConfig({ testDir: "e2e" });'; run_tf
+expect "CI13aw defineConfig from a custom wrapper can rewrite testDir: unresolved" "unresolved_ci_match:e2e/a.spec.ts" "$(rules_of)"
+pw1; pwc 'import { defineConfig, devices } from "@playwright/test"; export default defineConfig({ testDir: "e2e" });'; run_tf
+expect "CI13ax defineConfig from @playwright/test is read" 0 "$RC"
 
 echo "a1-test-fidelity: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

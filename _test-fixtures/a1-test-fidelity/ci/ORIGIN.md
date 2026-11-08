@@ -10,6 +10,7 @@ Byte copies unless noted. Plants in the suite are string edits of these copies.
 | office-vitest.config.ts | `~/claude-projects/a1-office/vitest.config.ts` (`exclude` holds `**/tests/e2e/**`, `**/*.spec.ts`) |
 | office-package.json | `~/claude-projects/a1-office/package.json` (`"test": "vitest run"`) |
 | smart-home-pyproject.toml | `~/claude-projects/my-smart-home/pyproject.toml` (`[tool.pytest.ini_options] testpaths = ["tests"]`) |
+| lomberg-playwright.config.ts | `~/claude-projects/lomberg-duesseldorf/playwright.config.ts` (`testDir: 'tests/e2e'`, two `projects` without own testDir; CI runs `npm run test:e2e` = `playwright test`) |
 
 No local repository has a pytest workflow, a jest config or a monorepo with two runner
 configs: those workflow files and configs are written inline in `run-tests.sh` (synthetic,

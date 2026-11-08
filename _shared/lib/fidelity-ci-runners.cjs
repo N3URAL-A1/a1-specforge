@@ -21,6 +21,20 @@ const JEST_CONFIGS = ['jest.config.ts', 'jest.config.js', 'jest.config.mjs', 'je
 const VITEST_INCLUDE = ['**/*.{test,spec}.?(c|m)[jt]s?(x)'];
 const VITEST_EXCLUDE = ['**/node_modules/**', '**/dist/**', '**/.git/**'];
 const JEST_MATCH = ['**/__tests__/**/*.[jt]s?(x)', '**/?(*.)+(spec|test).[jt]s?(x)'];
+// Not modelled (the verdict stays 'yes' although fewer tests may run): --grep/-g/-G title filters, `grep` options, `respectGitIgnore`, project
+// `dependencies`/`teardown`. Playwright's file selection itself (testDir, testMatch, testIgnore) is modelled as in playwright 1.65 (util.js
+// createFileMatcher, configLoader resolveConfigFile): config from --config or the call dir only, `**/` prefix, case-insensitive, dot:true.
+// Playwright resolves a config dir in this order (common/configLoader resolveConfigFile).
+const PLAYWRIGHT_CONFIGS = ['playwright.config.ts', 'playwright.config.js', 'playwright.config.mts', 'playwright.config.mjs', 'playwright.config.cts', 'playwright.config.cjs'];
+const PLAYWRIGHT_MATCH = ['**/*.@(spec|test).?(c|m)[jt]s?(x)'];
+// Flags that take exactly one value token (program.js testOptions). Boolean flags (-x, --pass-with-no-tests, --fail-on-flaky-tests, ...) are
+// NOT listed: a following token is a positional file filter. Optional-value flags (--debug, -u, --only-changed, --shuffle) are treated as boolean:
+// a token after them counts as a filter, which fails closed. --project is variadic: only its first value is consumed, the rest count as filters.
+const PLAYWRIGHT_VALUE_FLAGS = new Set(['--config', '-c', '--project', '--grep', '-g', '--grep-invert', '-G', '--reporter', '--add-reporter', '--workers', '-j',
+  '--shard', '--retries', '--timeout', '--output', '--max-failures', '--repeat-each', '--browser', '--tsconfig', '--trace', '--global-timeout',
+  '--ui-host', '--ui-port', '--update-source-method', '--last-failed-file', '--run-agents', '--test-list', '--test-list-invert']);
+// Flags that run only part of the files: the verdict for a file is unknown.
+const PLAYWRIGHT_SUBSET_FLAGS = new Set(['--last-failed', '--only-changed', '--test-list', '--test-list-invert']);
 const PYTEST_SOURCES = [['pytest.ini', 'pytest'], ['pyproject.toml', 'tool.pytest.ini_options'], ['tox.ini', 'pytest'], ['setup.cfg', 'tool:pytest']];
 const PYTEST_FILES = ['test_*.py', '*_test.py'];
 
@@ -257,7 +271,183 @@ function pytestMatcher(state, inv) {
   return { py: true, dynamic: false, paths, files: cfg.files && cfg.files.length > 0 ? cfg.files : PYTEST_FILES, root: '' };
 }
 
+// ---------- playwright.config (testDir, testMatch, testIgnore) ----------
+
+/** Index after the bracket that closes the one at `open` (masked code), or -1. */
+function closeOf(code, open) {
+  let depth = 0;
+  for (let i = open; i < Math.min(code.length, open + MAX_SCAN); i++) {
+    if ('{(['.includes(code[i])) depth++;
+    else if ('})]'.includes(code[i])) { depth--; if (depth === 0) return i + 1; }
+  }
+  return -1;
+}
+
+/** Depth-1 comma-separated segments [{start, end}] between the bracket at `open` and its match, or null. */
+function segments(code, open) {
+  const close = closeOf(code, open);
+  if (close < 0) return null;
+  const out = [];
+  let depth = 0;
+  let start = open + 1;
+  for (let i = open + 1; i < close - 1; i++) {
+    const c = code[i];
+    if ('{(['.includes(c)) depth++;
+    else if ('})]'.includes(c)) depth--;
+    else if (c === ',' && depth === 0) { out.push({ start, end: i }); start = i + 1; }
+  }
+  out.push({ start, end: close - 1 });
+  return out.filter((sg) => code.slice(sg.start, sg.end).trim() !== '');
+}
+
+/** {key: {start, end}} of an object literal at `open`; null when any member is not a plain `ident: value` (shorthand, quoted, computed, spread, method). */
+function members(code, open) {
+  const segs = segments(code, open);
+  if (segs === null) return null;
+  const out = {};
+  for (const sg of segs) {
+    const m = /^\s*([A-Za-z_$][\w$]*)\s*:/.exec(code.slice(sg.start, sg.end));
+    if (m === null) return null;
+    out[m[1]] = { start: sg.start + m[0].length, end: sg.end };
+  }
+  return out;
+}
+
+/** A single plain string literal value in [start,end), or null. */
+function literal(code, strings, { start, end }) {
+  const t = code.slice(start, end);
+  const p = start + (t.length - t.trimStart().length);
+  const body = t.trim();
+  const v = strings.get(p);
+  if (body.length < 2 || !'"\'`'.includes(body[0]) || body[body.length - 1] !== body[0] || !/^\s*$/.test(body.slice(1, -1)) || typeof v !== 'string') return null;
+  return v;
+}
+
+/** String or array of strings; null when anything else (regex, call, identifier, concat). */
+function patternList(code, strings, span) {
+  const one = literal(code, strings, span);
+  if (one !== null) return [one];
+  const t = code.slice(span.start, span.end);
+  const p = span.start + (t.length - t.trimStart().length);
+  if (code[p] !== '[' || closeOf(code, p) !== span.start + t.trimEnd().length) return null;
+  return stringArray(code, strings, p);
+}
+
+const RESERVED = ['testDir', 'testMatch', 'testIgnore', 'projects'];
+const SELECTION = ['testDir', 'testMatch', 'testIgnore'];
+
+/** Projects must be an array literal of object literals with plain members and no own file selection. */
+function projectsAreSimple(code, span) {
+  const t = code.slice(span.start, span.end);
+  const p = span.start + (t.length - t.trimStart().length);
+  if (code[p] !== '[' || closeOf(code, p) !== span.start + t.trimEnd().length) return false;
+  const elements = segments(code, p);
+  return elements !== null && elements.every((el) => {
+    const q = el.start + (code.slice(el.start, el.end).length - code.slice(el.start, el.end).trimStart().length);
+    const mem = code[q] === '{' && closeOf(code, q) === el.start + code.slice(el.start, el.end).trimEnd().length ? members(code, q) : null;
+    return mem !== null && SELECTION.every((k) => !(k in mem));
+  });
+}
+
+/** Playwright prefixes `**\/` to patterns lacking it and matches case-insensitively with dot:true (util.js createFileMatcher). */
+function playwrightPattern(g) {
+  if (g === '' || /^[!/.]/.test(g) || g.includes('\\')) return null;
+  return g.startsWith('**/') ? g : `**/${g}`;
+}
+
+const PLAYWRIGHT_DEFINE = /(?:import\s*\{[^}]*\bdefineConfig\b[^}]*\}\s*from|require\s*\()\s*['"](?:@playwright\/test|playwright\/test)['"]/;
+
+function readPlaywrightConfig(text) {
+  const dynamic = { dynamic: true, testDir: '', match: PLAYWRIGHT_MATCH, ignore: [], risky: false };
+  const { code, strings } = mask(text, 'js');
+  const m = /(?:export\s+default|module\.exports\s*=)\s*(defineConfig\s*\(\s*)?\{/.exec(code);
+  if (m === null) return dynamic;
+  const open = m.index + m[0].length - 1;
+  const close = closeOf(code, open);
+  // defineConfig(a, b) merges the later arguments over the first: only a single object argument is read.
+  if (close < 0 || (m[1] && !/^\s*\)/.test(code.slice(close)))) return dynamic;
+  // A defineConfig that does not come from Playwright (own wrapper) can rewrite the object.
+  if (m[1] && !PLAYWRIGHT_DEFINE.test(text)) return dynamic;
+  // A second export or merge after the literal (module.exports[k] = ..., Object.assign(module.exports, x), module.exports = require(..)) can override it;
+  // a string literal naming a reserved key can be a bracket-notation write.
+  const exportsSeen = (code.match(/(?<![\w$.])exports\b|module\.exports\b|export\s+default\b/g) || []).length;
+  if (exportsSeen > 1 || /\bObject\s*\.\s*assign\b/.test(code) || [...strings.values()].some((v) => RESERVED.includes(v))) return dynamic;
+  const mem = members(code, open);
+  if (mem === null) return dynamic;
+  // A reserved name that appears more often than as its own member key (mutation, shorthand, spread source) cannot be followed.
+  const count = (k) => (code.match(new RegExp(`(?<![\\w$])${k}(?![\\w$])`, 'g')) || []).length;
+  if (RESERVED.some((k) => count(k) > (k in mem ? 1 : 0))) return dynamic;
+  const out = { ...dynamic, dynamic: false };
+  if ('projects' in mem && !projectsAreSimple(code, mem.projects)) return dynamic;
+  if ('testDir' in mem) {
+    const v = literal(code, strings, mem.testDir);
+    if (v === null || /[$~`]/.test(v)) return dynamic;
+    out.testDir = v;
+  }
+  for (const [key, field] of [['testMatch', 'match'], ['testIgnore', 'ignore']]) {
+    if (!(key in mem)) continue;
+    const list = patternList(code, strings, mem[key]);
+    const pats = list === null ? null : list.map(playwrightPattern);
+    if (pats === null || pats.includes(null)) return dynamic;
+    out[field] = pats;
+  }
+  // An ignore pattern with a directory part could also match a directory above the repo root (it is tested on the absolute path).
+  out.risky = out.ignore.some((g) => g.slice(3).includes('/') || g.endsWith('**'));
+  return out;
+}
+
+/** {file, dir}: Playwright reads --config (file or directory) or else only the call dir, never a parent. undefined: path missing. */
+function playwrightConfigFile(state, inv, config) {
+  const target = config ? joinDir(inv.cwd, config) : inv.cwd;
+  if (target === null) return undefined;
+  const isDir = isDirectory(path.join(state.root, target));
+  if (config && !isDir) return readCached(state, target) !== null ? { file: target, dir: parentOf(target) } : undefined;
+  const hit = firstExisting(state, target, PLAYWRIGHT_CONFIGS);
+  if (hit !== null) return { file: hit, dir: target };
+  return { file: null, dir: target };
+}
+
+function isDirectory(abs) {
+  try { return fs.statSync(abs).isDirectory(); } catch (_e) { return false; }
+}
+
+function playwrightArgs(args) {
+  let config = null;
+  let subset = false;
+  const positional = [];
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    const flag = a.split('=')[0];
+    if (a === '--config' || a === '-c') config = args[++i];
+    else if (a.startsWith('--config=')) config = a.slice(9);
+    else if (a.startsWith('-c') && a.length > 2 && a[1] !== '-') config = a.slice(2);
+    else if (a.startsWith('-')) {
+      if (PLAYWRIGHT_SUBSET_FLAGS.has(flag)) subset = true;
+      if (!a.includes('=') && PLAYWRIGHT_VALUE_FLAGS.has(a)) i++;
+    } else positional.push(a);
+  }
+  return { config, positional, subset };
+}
+
+const caseless = (res) => res.map((re) => new RegExp(re.source, 'i'));
+
+function playwrightMatcher(state, inv) {
+  const { config, positional, subset } = playwrightArgs(inv.args);
+  const filterWhy = positional.length > 0 ? `playwright: positional filter ${JSON.stringify(positional[0])}` : subset ? 'playwright: subset flag (--last-failed, --only-changed or --test-list)' : '';
+  const m = { root: inv.cwd, full: true, dynamic: false, include: [], exclude: [], filters: [], dynamicFilter: filterWhy !== '', why: filterWhy };
+  const loc = playwrightConfigFile(state, inv, config);
+  if (loc === undefined) return { ...m, dynamic: true, why: `playwright: config ${JSON.stringify(config || '.')} not found` };
+  const parsed = loc.file === null ? { dynamic: false, testDir: '', match: PLAYWRIGHT_MATCH, ignore: [], risky: false } : readPlaywrightConfig(readCached(state, loc.file) || '');
+  const root = joinDir(loc.dir, parsed.testDir || '.');
+  const inc = compileAll(parsed.match);
+  const exc = compileAll([...parsed.ignore, '**/node_modules/**']);
+  if (parsed.dynamic || root === null || inc === null || exc === null) return { ...m, dynamic: true, why: `playwright: dynamic config ${loc.file || loc.dir}` };
+  const risky = parsed.risky ? `playwright: directory testIgnore pattern ${JSON.stringify(parsed.ignore.join(' '))} may match above the repo root` : '';
+  return { ...m, root, include: caseless(inc), exclude: caseless(exc), risky: parsed.risky, riskWhy: risky };
+}
+
 function buildMatcher(state, inv) {
+  if (inv.kind === 'playwright') return playwrightMatcher(state, inv);
   return inv.kind === 'pytest' ? pytestMatcher(state, inv) : nodeMatcher(state, inv);
 }
 
@@ -269,11 +459,19 @@ function judge(m, rel) {
   }
   if (m.root && rel !== m.root && !rel.startsWith(`${m.root}/`)) return 'no';
   if (m.dynamic) return 'unknown';
-  const r = m.root ? rel.slice(m.root.length + 1) : rel;
+  const r = m.full || !m.root ? rel : rel.slice(m.root.length + 1);
   if (!m.include.some((re) => re.test(r)) || m.exclude.some((re) => re.test(r))) return 'no';
+  if (m.risky) return 'unknown'; // an ignore pattern with a directory part may also match above the repo root
   if (m.filters.length > 0 && m.filters.some((f) => rel.includes(f))) return 'yes';
   if (m.filters.length === 0 && !m.dynamicFilter) return 'yes';
   return m.dynamicFilter ? 'unknown' : 'no';
 }
 
-module.exports = { readText, joinDir, parentOf, buildMatcher, judge, globToRegex };
+/** The concrete cause of an 'unknown' verdict of one runner invocation ('' when the matcher names none). */
+function judgeWhy(m, rel) {
+  if (m.dynamic && !(m.root && rel !== m.root && !rel.startsWith(`${m.root}/`))) return m.why || '';
+  if (m.risky && !m.dynamicFilter) return m.riskWhy || '';
+  return m.why || '';
+}
+
+module.exports = { readText, joinDir, parentOf, buildMatcher, judge, judgeWhy, globToRegex };

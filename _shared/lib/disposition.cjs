@@ -19,6 +19,7 @@ const S = require('./disposition-store.cjs');
 const SNIPPET_MAX = 160; // the same cut test-fidelity applies to a finding's line text
 const ADD_FLAGS = { kind: 'string', fingerprint: 'string', rule: 'string', file: 'string', line: 'string', text: 'string', reason: 'string', by: 'string', project: 'string' };
 const REVIEW_FLAGS = { verdict: 'string', reason: 'string', by: 'string', project: 'string' };
+const CAUSE_RULES = Object.freeze(['unresolved_ci_match']); // bound to the finding's detail via --text, never to a line
 const FILE_LEVEL_RULES = Object.freeze(['test-not-in-ci']);
 const USAGE = 'usage: a1-tools disposition add --kind <fidelity|skip_increase|class_sweep|config_change> (--fingerprint <fp> | --rule <id> --file <path> [--line <n> | --text <t>]) --reason <t> --by <who> [--project <dir>]\n'
   + '       a1-tools disposition review <fingerprint> --verdict <upheld|overturned> --reason <t> --by <who> [--project <dir>]\n';
@@ -70,6 +71,7 @@ function fingerprintFromFlags(flags, project) {
   }
   if (flags.rule === undefined || flags.file === undefined) throw new UsageError('give --fingerprint or both --rule and --file');
   if (flags.line !== undefined && flags.text !== undefined) throw new UsageError('give --line or --text, not both');
+  if (CAUSE_RULES.includes(flags.rule) && (flags.line !== undefined || flags.text === undefined)) throw new UsageError(`rule ${flags.rule} needs --text <the detail of the finding> (no --line)`);
   const fileLevel = FILE_LEVEL_RULES.includes(flags.rule);
   if (fileLevel && (flags.line !== undefined || flags.text !== undefined)) throw new UsageError(`rule ${flags.rule} is file-level: no --line or --text`);
   if (!fileLevel && flags.line === undefined && flags.text === undefined) throw new UsageError(`rule ${flags.rule} needs --line <n> or --text <t>`);

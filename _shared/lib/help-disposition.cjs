@@ -9,7 +9,7 @@ const DISPOSITION_HELP = `  a1-tools disposition add --kind <fidelity|skip_incre
                   whitespace-normalised line>; it clears exactly one rule in one file for one line
                   content. --line reads the line from the file. Rules per kind: fidelity =
                   mock-of-subject | skipped-test | early-return-guard | test-not-in-ci (file-level,
-                  no --line); skip_increase = skip-increase (file = verify command id, text =
+                  no --line); unresolved_ci_match (needs --text <the finding's detail>, so a changed cause resurfaces; prefer a ci_globs entry in .a1/fidelity.json when the runner is only unmodelled); skip_increase = skip-increase (file = verify command id, text =
                   "<base>-><head>" skipped counts); class_sweep = class-sweep; config_change =
                   fidelity-config (file = .a1/fidelity.json) | verify-config (file = .a1/verify.json) | probes-config (file = .a1/live-probes.yaml); the
                   fingerprint is printed by \`pr merge-check\` (fidelity_config_changed, probes_config_changed, suites.config_changed).
