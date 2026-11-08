@@ -249,7 +249,7 @@ ${SPEC_INIT_HELP}
                   SECURITY, CREATE TRIGGER … ON <table> (header only). Unsupported
                   constructs are skipped, never crash.
 
-  a1-tools cost run --project <claude-projects-dir> [--since ISO] [--until ISO] [--json]
+  a1-tools cost run --project ~/.claude/projects/<project-dir> [--since ISO] [--until ISO] [--json]
                   Aggregate token spend from Claude Code session JSONL logs
                   (~/.claude/projects/<flattened-cwd>/). Dedups streamed
                   assistant events by message.id, includes sub-agent logs

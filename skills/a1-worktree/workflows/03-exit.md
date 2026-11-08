@@ -67,7 +67,8 @@ node <repo>/_shared/a1-tools.cjs worktree exit <id> --mode <keep|discard|handoff
 The CLI:
 
 - `keep`: `git worktree remove <path>`, leave branch alone. Registry → `cleaned`.
-- `discard`: refuse if `branch_ahead > 0` unless `--force-discard`. Else
+- `discard`: refuse if `branch_ahead > 0` unless `--force-discard` or the branch content is already on
+  `origin/<base>` (squash-merged, Step 4). Else
   `git worktree remove <path>` + `git branch -D <branch>`. Registry → `cleaned`.
 - `handoff`: leave both worktree and branch alone. Registry → `handoff`.
   Sets `agent_brief: null` so a1-pr-review can pick it up.
@@ -87,26 +88,22 @@ JSON on success:
 Exit 0 on success, 1 on user/usage error (e.g. discard with unmerged commits
 and no `--force-discard`), 2 on internal error.
 
-**After a squash merge (owner decision 2026-11-04, evolve run 9; narrowed after review):** a squash leaves the
-feature commits unmerged by SHA, so `discard` refuses with `branch_ahead > 0`. `--force-discard` then runs
-`git worktree remove --force`, which also deletes modified and untracked files (measured in the review probe).
-So the exception needs ALL THREE conditions; check them, do not assume them:
+**After a squash merge (owner decision 2026-11-04, evolve run 9; mechanical since evolve run 10):** a squash leaves the
+feature commits unmerged by SHA, so `rev-list <base>..<branch>` stays above 0. The CLI therefore checks the content
+itself: after `git fetch origin <base>` it runs `git merge-tree --write-tree origin/<base> <branch>`. When the merged
+tree equals the tree of `origin/<base>`, the branch adds nothing (also after the base moved on with unrelated commits),
+and when the worktree is clean (`git status --porcelain` empty), a plain `discard` succeeds and deletes the branch with `-D`.
+A merge conflict, a differing tree (real unmerged change, or a base that dropped part of the feature), a dirty
+worktree, a detached HEAD or a rebase/merge in progress, or a missing `origin/<base>` still refuse with exit 1, naming the reason. The clean check counts untracked files whatever `status.showUntrackedFiles` says. The exit deletes ignored files too (local `.env`, `.a1-review/`, gate logs), so retros and gate-log backups happen before it. Measured on git 2.50.1 (`--write-tree` needs >= 2.38).
+
+The PR-merged condition stays with the caller:
 
 1. The PR is merged: `gh pr view <n> --json state,mergedAt` shows MERGED.
-2. The branch content is already on the base: `git diff --quiet HEAD origin/<base>` is silent (rc 0).
-3. The working tree is clean: `git status --porcelain` prints nothing (no modified, no untracked file).
+2. Run `worktree exit <id> --mode discard` WITHOUT `--force-discard`. Exit 0 means the content is on the base and the tree was clean.
 
-```sh
-git -C <path> fetch origin \
-  && git -C <path> diff --quiet HEAD origin/<base> \
-  && [ -z "$(git -C <path> status --porcelain)" ]; echo "squash exception, git conditions: rc=$? (0 = both hold)"
-```
-
-All three hold: pass `--force-discard` WITHOUT asking, and Step 4.5 deletes the remote branch WITHOUT asking
-(owner decision, same day). Evaluate once, here, before the exit: after the exit the worktree is gone and
-Step 4.5 reuses this result. Any one fails: the unmerged-commits hard rule below applies in full (confirmation
-required). A base that moved after the merge makes the diff non-empty; the fallback to confirmation is safe and
-expected. Prose only; the CLI is unchanged.
+Exit 0 after a merged PR: Step 4.5 deletes the remote branch WITHOUT asking (owner decision, same day).
+Exit 1 (refused): the unmerged-commits hard rule below applies in full (confirmation required before
+`--force-discard`, which also deletes modified and untracked files via `worktree remove --force`).
 
 ## Step 4.5 — Origin cleanup (remote branch deletion, `discard`/`handoff`→merged only)
 
@@ -133,8 +130,7 @@ those modes intentionally preserve the branch.
 
 2. **If present, ask for explicit confirmation before deleting the remote
    branch** — same "never force without confirmation" rule as local discard.
-   Exception: when the three conditions of Step 4 (PR merged, empty diff to
-   `origin/<base>`, clean working tree) held, skip the question and go to 3.
+   Exception: when the PR is merged and the plain `discard` of Step 4 passed, skip the question and go to 3.
 
    > "Also delete the remote branch `origin/<branch>`? This cannot be undone
    > locally by anyone still tracking it. (yes/no)"
@@ -170,17 +166,17 @@ those modes intentionally preserve the branch.
 
 ## Hard rules
 
-- Never run `git worktree remove --force` without user confirmation (exception: the three conditions of Step 4 hold).
+- Never run `git worktree remove --force` without user confirmation (the CLI does it only under `--force-discard`; a squash-merged clean branch needs neither).
 - `discard` with unmerged commits requires `--force-discard` AND explicit
   user confirmation. Default: refuse and suggest `handoff` instead.
-  Exception: the three conditions of Step 4 (PR merged, `git diff HEAD origin/<base>`
-  empty, `git status --porcelain` empty) need no confirmation. Without the clean-tree
-  condition `--force-discard` would delete uncommitted work.
+  Exception: a merged PR whose plain `discard` passed (the CLI checked content on
+  `origin/<base>` and a clean tree, Step 4) needs no `--force-discard` and no confirmation.
+  `--force-discard` would delete uncommitted work.
 - Never delete a branch outside the CLI (local) or without explicit
-  confirmation (remote; exception: the three conditions of Step 4).
+  confirmation (remote; exception: merged PR and a passing plain `discard`, Step 4).
   Registry must stay consistent.
 - Never run `git push origin --delete <branch>` without the Step 4.5
-  confirmation step (or the three conditions of Step 4). Treat "remote ref does not exist" as success, never as
+  confirmation step (or a merged PR and a passing plain `discard`, Step 4). Treat "remote ref does not exist" as success, never as
   an error to retry or force through.
 - After `handoff`, this skill is done. Do not call `a1-pr-review` directly —
   inform the user and let them invoke it.

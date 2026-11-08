@@ -42,7 +42,7 @@ Pass one `--guard <fingerprint>=<test-file>` per remaining sibling site that a n
 A site that is intentionally left gets `disposition add --kind class_sweep` first.
 
 ```bash
-node <repo>/_shared/a1-tools.cjs fix class-sweep --verify "<bug-path>" --diff-base <fix-base> --phase fix-<bug-slug>; RC=$?
+node <repo>/_shared/a1-tools.cjs fix class-sweep --verify "<bug-path>" --project "<worktree_path>" --diff-base <fix-base> --phase fix-<bug-slug>; RC=$?
 if [ "$RC" -ne 0 ]; then echo "STOP: fix class-sweep --verify exit=$RC (class_sweep_open: a sibling site is neither guarded nor accepted); status stays fixing"; exit "$RC"; fi
 ```
 
@@ -93,6 +93,7 @@ Only after Step 0 exited 0 on all three blocks. If reproduction confirms symptom
 ```bash
 node <repo>/_shared/a1-tools.cjs fix update-status \
   "<bug-path>" fixed \
+  --project "<worktree_path>" \
   --verify-result "<verify_result_string>"; RC=$?
 if [ "$RC" -ne 0 ]; then echo "STOP: fix update-status fixed exit=$RC (class_sweep_open: a sibling site is neither guarded nor accepted - back to Step 0.3; class_query_missing: fill class_query and root_site); status stays fixing"; exit "$RC"; fi
 ```
@@ -110,7 +111,7 @@ valid `class_query` (Phase 2 fills it). The report stays at `fixing`; do not tel
    `<fix-start>` is the ISO time the fix began (the report's `fixing` entry in `phase_history`):
 
 ```bash
-node <repo>/_shared/a1-tools.cjs cost run --project <claude-projects-dir> --since <fix-start>; RC=$?
+node <repo>/_shared/a1-tools.cjs cost run --project ~/.claude/projects/<project-dir> --since <fix-start>; RC=$?
 if [ "$RC" -ne 0 ]; then echo "cost run exit=$RC; write 'Cost: unavailable (<reason>)' instead"; fi
 ```
 

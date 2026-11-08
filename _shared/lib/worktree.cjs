@@ -238,7 +238,7 @@ function cmdWorktreeStatus(args) {
   };
 
   if (result.worktree_exists_on_disk && entry.status === 'active') {
-    const status = git(entry.worktree_path, ['status', '--porcelain'], { allowFail: true });
+    const status = git(entry.worktree_path, STATUS_ARGS, { allowFail: true });
     result.has_uncommitted = typeof status === 'string' ? status.length > 0 : null;
 
     const range = `${entry.base_branch}..${entry.branch}`;
@@ -259,6 +259,46 @@ function cmdWorktreeStatus(args) {
 
   return result;
 }
+
+const STATUS_ARGS = Object.freeze(['status', '--porcelain', '--untracked-files=all', '--ignore-submodules=none']);
+
+/**
+ * Returns 'ok' when merging the branch into origin/<base> changes nothing (the branch was squash-merged,
+ * also after the base moved on) and the worktree is clean. Enforcement point of the squash rule in
+ * skills/a1-worktree/workflows/03-exit.md Step 4. Conservative: any git failure, a merge conflict or
+ * a differing tree is "not on base".
+ */
+function contentOnBase(entry) {
+  git(entry.repo_root, ['fetch', '--quiet', 'origin', entry.base_branch], { allowFail: true });
+  const baseTree = git(entry.repo_root, ['rev-parse', '--verify', '--quiet', `origin/${entry.base_branch}^{tree}`], {
+    allowFail: true,
+  });
+  if (typeof baseTree !== 'string') return 'no-base';
+  const merged = git(entry.repo_root, ['merge-tree', '--write-tree', `origin/${entry.base_branch}`, entry.branch], {
+    allowFail: true,
+  });
+  if (typeof merged !== 'string') return merged && merged.__code === 1 ? 'differs' : 'git-failed';
+  if (merged.split('\n')[0] !== baseTree) return 'differs';
+  if (!fs.existsSync(entry.worktree_path)) return 'ok';
+  // HEAD must be on the branch: a detached HEAD may hold commits that no branch reaches.
+  const head = git(entry.worktree_path, ['symbolic-ref', '-q', 'HEAD'], { allowFail: true });
+  if (head !== `refs/heads/${entry.branch}`) return 'detached';
+  for (const marker of ['rebase-merge', 'rebase-apply', 'MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'BISECT_LOG']) {
+    const p = git(entry.worktree_path, ['rev-parse', '--path-format=absolute', '--git-path', marker], { allowFail: true });
+    if (typeof p === 'string' && fs.existsSync(p)) return 'dirty';
+  }
+  const status = git(entry.worktree_path, STATUS_ARGS, { allowFail: true });
+  if (typeof status !== 'string') return 'git-failed';
+  return status.length === 0 ? 'ok' : 'dirty';
+}
+
+const REFUSAL_REASONS = Object.freeze({
+  dirty: 'the worktree has uncommitted, untracked or in-progress changes (--force-discard would delete them)',
+  differs: `its content is not on the base branch on origin`,
+  'no-base': 'origin/<base> could not be read (no origin remote, or fetch failed)',
+  detached: 'the worktree HEAD is not on the branch (commits there would become unreachable)',
+  'git-failed': 'a git check failed (git older than 2.38 has no merge-tree --write-tree)',
+});
 
 function cmdWorktreeExit(args) {
   const flags = parseFlags(args, {
@@ -304,16 +344,20 @@ function cmdWorktreeExit(args) {
 
   // For keep / discard, we need to remove the worktree.
   // For discard, also check unmerged commits unless --force-discard.
+  let squashed = false;
   if (mode === 'discard' && !flags['force-discard']) {
     if (gitBranchExists(entry.repo_root, entry.branch)) {
       const aheadOut = git(entry.repo_root, ['rev-list', '--count', `${entry.base_branch}..${entry.branch}`], {
         allowFail: true,
       });
       const ahead = typeof aheadOut === 'string' ? parseInt(aheadOut, 10) : 0;
-      if (ahead > 0) {
+      const reason = ahead > 0 ? contentOnBase(entry) : 'ok';
+      squashed = ahead > 0 && reason === 'ok';
+      if (ahead > 0 && !squashed) {
         process.stderr.write(
           `error: branch "${entry.branch}" is ${ahead} commit(s) ahead of "${entry.base_branch}". ` +
-            `Refusing discard. Re-run with --force-discard, or use --mode handoff.\n`
+            `Refusing discard (${reason}: ${REFUSAL_REASONS[reason]}). ` +
+            `Re-run with --force-discard only after checking that, or use --mode handoff.\n`
         );
         process.exit(1);
       }
@@ -339,7 +383,7 @@ function cmdWorktreeExit(args) {
 
   if (mode === 'discard') {
     if (gitBranchExists(entry.repo_root, entry.branch)) {
-      const delArgs = ['branch', flags['force-discard'] ? '-D' : '-d', entry.branch];
+      const delArgs = ['branch', flags['force-discard'] || squashed ? '-D' : '-d', entry.branch];
       const res = git(entry.repo_root, delArgs, { allowFail: true });
       if (res && typeof res === 'object' && res.__error) {
         process.stderr.write(`error: git branch delete failed: ${res.__error}\n`);

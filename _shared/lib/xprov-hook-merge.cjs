@@ -13,7 +13,10 @@
 //      to the check: the whole text is exactly `gh pr merge <number> [--squash|--merge|--rebase] [--delete-branch|-d] [--match-head-commit <40 hex>]`
 //      (no cd, env assignment, wrapper, grouping, substitution, repo flag or other flag). Everything else is denied with a hint, except a
 //      read-only mention: every segment starts with grep, rg, git log, git grep, git show or git diff, and the text has no `$(`, `<(`, `>(`, backtick, `eval`,
-//      `bash -c` / `sh -c`. The session `cwd` is the repository of the canonical form (it has no `cd`).
+//      `bash -c` / `sh -c`. Evolve run 10: a segment of the close-out chain (fetch, fast-forward, verify) also passes, in a strict
+//      form that cannot merge a pull request: `git fetch [--prune|-q] [remote [ref]]`, `git merge --ff-only <ref>`, `git pull --ff-only [remote [ref]]`,
+//      `git status [-s|-sb|--short]`, `gh pr view [<number>] [--json <fields>]` (refs and remotes never start with `-`, no quotes, no `:` refspec).
+//      A `gh pr merge` or `gh api` segment is on no list, so a chain holding it is denied. The session `cwd` is the repository of the canonical form (it has no `cd`).
 //   2. The repository: the session `payload.cwd` -> `git rev-parse --show-toplevel`. Not a git repository: allow (no a1 context).
 //   3. The permit context, from the same lookup the gate uses (`permitCheck`): state `absent` or `denied` = Reinhard-only = allow, so
 //      merges in repositories that never joined xprov are untouched. Every other state (allowed, a voided permit, a broken store) is a
@@ -40,19 +43,28 @@ const MERGE_WORD_RE = /(?<![\w-])merges?(?![\w-])|mergePullRequest|enablePullReq
 const CANONICAL_RE = /^gh pr merge ([1-9][0-9]{0,8})((?: --squash| --merge| --rebase| --delete-branch| -d| --match-head-commit [0-9a-f]{40})*)$/;
 const READONLY_FIRST = Object.freeze(['grep', 'rg']);
 const READONLY_GIT = Object.freeze(['log', 'grep', 'show', 'diff']);
+const REF = '[A-Za-z0-9._][A-Za-z0-9._/@^~-]*';
+// Close-out segments (evolve run 10). Each is anchored and takes plain words only: nothing that starts with `-` besides the listed flags.
+const SYNC_SEGMENTS = Object.freeze([
+  new RegExp(`^git fetch(?: --prune| --quiet| -q| -p)*(?: ${REF}(?: ${REF})?)?$`),
+  new RegExp(`^git merge --ff-only ${REF}$`),
+  new RegExp(`^git pull --ff-only(?: ${REF}(?: ${REF})?)?$`),
+  /^git status(?: -s| -sb| --short)?$/,
+  /^gh pr view(?: [1-9][0-9]{0,8})?(?: --json [A-Za-z]+(?:,[A-Za-z]+)*)?$/,
+]);
 const SUBSTITUTION_RE = /\$\(|<\(|>\(|`|\beval\b|\b(?:bash|sh|zsh)\s+-c\b/;
 const CANONICAL_HINT = 'run exactly `gh pr merge <number> [--squash|--merge|--rebase] [--delete-branch|-d] [--match-head-commit <sha>]` as the only command (no cd, env prefix, wrapper, grouping, --repo or other flags), from the PR\'s worktree or the primary checkout';
 
 const allow = () => Object.freeze({ action: 'allow' });
 const deny = (reason, detail) => Object.freeze({ action: 'deny', reason, detail });
 
-/** True when every segment starts with a read-only program and the text has no substitution, eval or shell -c: it only prints or searches text. */
+/** True when every segment starts with a read-only program or is a strict close-out segment, and the text has no substitution, eval or shell -c: it prints, searches or syncs, never merges a PR. */
 function readOnlyMention(text) {
   if (SUBSTITUTION_RE.test(text)) return false;
   const segments = text.split(/[;&|\n\r]+/).map((x) => x.trim()).filter(Boolean);
   return segments.length > 0 && segments.every((seg) => {
     const w = seg.split(/\s+/);
-    return READONLY_FIRST.includes(w[0]) || (w[0] === 'git' && READONLY_GIT.includes(w[1]));
+    return READONLY_FIRST.includes(w[0]) || (w[0] === 'git' && READONLY_GIT.includes(w[1])) || SYNC_SEGMENTS.some((re) => re.test(seg));
   });
 }
 

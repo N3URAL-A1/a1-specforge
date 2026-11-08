@@ -225,6 +225,9 @@ function prReviewDir(worktreePath) {
 function ensurePrReviewDir(worktreePath) {
   const d = prReviewDir(worktreePath);
   if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
+  // Self-ignoring: clean-tree checks never list review files (evolve run 10).
+  const ig = path.join(d, '.gitignore');
+  if (!fs.existsSync(ig)) fs.writeFileSync(ig, '*\n');
   return d;
 }
 

@@ -755,6 +755,104 @@ assert_eq "adopt-both-ids-taken-exit" "1" "$RC"
 assert_eq "adopt-both-ids-taken-message" "yes" "$(printf '%s' "$OUT" | grep -q 'retry in a minute' && echo yes || echo no)"
 
 # ----------------------------------------------------------------------------
+# CASE: discard after a squash merge (evolve run 10): content already on origin/<base>
+# ----------------------------------------------------------------------------
+sq_setup() {
+  # $1 = name. Repo with a bare origin, an entered worktree and one feature commit.
+  SQ_REPO="$WORK/sq-$1"; SQ_ORIGIN="$WORK/sq-$1-origin.git"
+  make_repo "$SQ_REPO"
+  git init -q --bare -b main "$SQ_ORIGIN"
+  git -C "$SQ_REPO" remote add origin "$SQ_ORIGIN"
+  git -C "$SQ_REPO" push -q origin main
+  local out; out=$(node "$TOOLS" worktree prepare "$SQ_REPO" "sq-$1" 2>&1)
+  SQ_ID=$(extract_field id "$out")
+  node "$TOOLS" worktree enter "$SQ_ID" >/dev/null 2>&1
+  SQ_WT="$WORK/a1-worktrees/sq-$1"
+  echo "feature" > "$SQ_WT/FEAT.md"
+  git -C "$SQ_WT" add FEAT.md
+  git -C "$SQ_WT" -c commit.gpgsign=false commit -q -m "feat: squash me"
+}
+sq_squash() {
+  # Squash-merge the feature branch into main and push (what GitHub does), without moving the branch.
+  git -C "$SQ_REPO" merge -q --squash "feature/sq-$1" >/dev/null 2>&1
+  git -C "$SQ_REPO" -c commit.gpgsign=false commit -q -m "squash: feature"
+  git -C "$SQ_REPO" push -q origin main
+}
+
+sq_setup unmoved; sq_squash unmoved
+OUT=$(node "$TOOLS" worktree exit "$SQ_ID" --mode discard 2>&1); EX=$?
+assert_eq "squash-unmoved-discard-exit" "0" "$EX"
+assert_eq "squash-unmoved-branch-deleted" "no" "$(git -C "$SQ_REPO" rev-parse --verify --quiet refs/heads/feature/sq-unmoved >/dev/null && echo yes || echo no)"
+
+sq_setup moved; sq_squash moved
+echo "u" > "$SQ_REPO/UNRELATED.md"; git -C "$SQ_REPO" add UNRELATED.md
+git -C "$SQ_REPO" -c commit.gpgsign=false commit -q -m "chore: unrelated"; git -C "$SQ_REPO" push -q origin main
+OUT=$(node "$TOOLS" worktree exit "$SQ_ID" --mode discard 2>&1); EX=$?
+assert_eq "squash-moved-discard-exit" "0" "$EX"
+assert_eq "squash-moved-branch-deleted" "no" "$(git -C "$SQ_REPO" rev-parse --verify --quiet refs/heads/feature/sq-moved >/dev/null && echo yes || echo no)"
+
+sq_setup dirty; sq_squash dirty
+echo "wip" > "$SQ_WT/WIP.md"
+OUT=$(node "$TOOLS" worktree exit "$SQ_ID" --mode discard 2>&1); EX=$?
+assert_eq "squash-dirty-tree-refused" "1" "$EX"
+assert_eq "squash-dirty-file-kept" "yes" "$([[ -f "$SQ_WT/WIP.md" ]] && echo yes || echo no)"
+
+sq_setup partial; sq_squash partial
+git -C "$SQ_REPO" rm -q FEAT.md; git -C "$SQ_REPO" -c commit.gpgsign=false commit -q -m "revert: drop feature"; git -C "$SQ_REPO" push -q origin main
+OUT=$(node "$TOOLS" worktree exit "$SQ_ID" --mode discard 2>&1); EX=$?
+assert_eq "squash-base-dropped-content-refused" "1" "$EX"
+
+# Review round 1: detached HEAD with a commit made after the squash must be refused, the commit stays reachable.
+sq_setup detached; sq_squash detached
+git -C "$SQ_WT" checkout -q --detach
+echo "late" > "$SQ_WT/LATE.md"; git -C "$SQ_WT" add LATE.md
+git -C "$SQ_WT" -c commit.gpgsign=false commit -q -m "wip: after squash"
+LATE_SHA=$(git -C "$SQ_WT" rev-parse HEAD)
+OUT=$(node "$TOOLS" worktree exit "$SQ_ID" --mode discard 2>&1); EX=$?
+assert_eq "squash-detached-head-refused" "1" "$EX"
+assert_eq "squash-detached-reason-named" "yes" "$(printf '%s' "$OUT" | grep -q 'detached' && echo yes || echo no)"
+assert_eq "squash-detached-commit-reachable" "yes" "$(git -C "$SQ_WT" cat-file -e "$LATE_SHA" 2>/dev/null && [[ -d "$SQ_WT" ]] && echo yes || echo no)"
+
+# An untracked file stays visible to the clean check even with status.showUntrackedFiles=no.
+sq_setup untracked; sq_squash untracked
+git -C "$SQ_WT" config status.showUntrackedFiles no
+echo "wip" > "$SQ_WT/NOTES.md"
+OUT=$(node "$TOOLS" worktree exit "$SQ_ID" --mode discard 2>&1); EX=$?
+assert_eq "squash-untracked-hidden-config-refused" "1" "$EX"
+assert_eq "squash-untracked-reason-named" "yes" "$(printf '%s' "$OUT" | grep -q 'dirty' && echo yes || echo no)"
+assert_eq "squash-untracked-file-kept" "yes" "$([[ -f "$SQ_WT/NOTES.md" ]] && echo yes || echo no)"
+
+# Fail closed without an origin remote.
+sq_setup noorigin; sq_squash noorigin
+git -C "$SQ_REPO" remote remove origin
+OUT=$(node "$TOOLS" worktree exit "$SQ_ID" --mode discard 2>&1); EX=$?
+assert_eq "squash-no-origin-refused" "1" "$EX"
+assert_eq "squash-no-origin-reason-named" "yes" "$(printf '%s' "$OUT" | grep -q 'no-base' && echo yes || echo no)"
+
+# Fail closed when git has no `merge-tree --write-tree` (stub git on PATH that fails that call).
+sq_setup oldgit; sq_squash oldgit
+STUB_BIN="$WORK/stub-bin"; mkdir -p "$STUB_BIN"
+REAL_GIT=$(command -v git)
+cat > "$STUB_BIN/git" <<STUB
+#!/usr/bin/env bash
+for a in "\$@"; do
+  if [[ "\$a" == "--write-tree" ]]; then echo "error: unknown option 'write-tree'" >&2; exit 129; fi
+done
+exec "$REAL_GIT" "\$@"
+STUB
+chmod +x "$STUB_BIN/git"
+OUT=$(PATH="$STUB_BIN:$PATH" node "$TOOLS" worktree exit "$SQ_ID" --mode discard 2>&1); EX=$?
+assert_eq "squash-old-git-refused" "1" "$EX"
+assert_eq "squash-old-git-reason-named" "yes" "$(printf '%s' "$OUT" | grep -q 'git-failed' && echo yes || echo no)"
+
+sq_setup real
+echo "extra" > "$SQ_WT/EXTRA.md"; git -C "$SQ_WT" add EXTRA.md
+git -C "$SQ_WT" -c commit.gpgsign=false commit -q -m "feat: more"
+git -C "$SQ_WT" push -q origin "feature/sq-real:feature/sq-real" 2>/dev/null
+OUT=$(node "$TOOLS" worktree exit "$SQ_ID" --mode discard 2>&1); EX=$?
+assert_eq "unmerged-real-change-refused" "1" "$EX"
+
+# ----------------------------------------------------------------------------
 # Report
 # ----------------------------------------------------------------------------
 echo ""

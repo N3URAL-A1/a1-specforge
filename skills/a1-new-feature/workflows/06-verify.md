@@ -284,9 +284,9 @@ Completion Gate), each after its own confirmation:
    `origin-cleanup` or `done`. Order after the merge (`a1-pr-review` `workflows/05-merge.md` 5.4):
    first the retros from inside the worktree, this skill's Step 6 (incl. `retro validate --gate-log`)
    and the `a1-pr-review` retro, because the gate logs are gitignored (FR-008) and are deleted with the
-   worktree. Only then go run `a1-worktree` exit (discard mode; after the squash merge `--force-discard`
-   and the remote delete need no confirmation when the PR is merged, `git diff HEAD origin/<base>` is
-   empty and `git status --porcelain` is empty, see its Step 4) to delete the remote branch,
+   worktree. Only then go run `a1-worktree` exit (discard mode; after the squash merge a plain `discard` succeeds
+   when the content is on `origin/<base>` and the tree is clean, and the remote delete needs no
+   confirmation when the PR is merged, see its Step 4) to delete the remote branch,
    then re-check. Only once empty:
    ```bash
    node <repo>/_shared/a1-tools.cjs code-scope stage --by <spec-id> --set origin-cleanup

@@ -40,6 +40,7 @@ If the worktree path is gone (registry drift), tell the user. Suggest
 
 ```bash
 mkdir -p "<worktree_path>/.a1-review"
+printf '*\n' > "<worktree_path>/.a1-review/.gitignore"   # self-ignoring: clean-tree checks never list review files
 ```
 
 ### 1.5 Update registry

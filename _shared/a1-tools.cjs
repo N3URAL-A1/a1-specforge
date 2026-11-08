@@ -160,7 +160,7 @@
  *       → JSON schema model { files, tables, triggers, rls, skippedStatements }
  *         Debug mode for the bounded SQL parser (see supported subset in HELP).
  *
- *   a1-tools cost run --project <claude-projects-dir> [--since ISO] [--until ISO] [--json]
+ *   a1-tools cost run --project ~/.claude/projects/<project-dir> [--since ISO] [--until ISO] [--json]
  *       Token spend aggregation per session (+ sub-agent logs), dedup by
  *       message.id. Contract: _shared/cost-format-notes.md.
  *       Owns exit code: 0 ok, 2 error.
