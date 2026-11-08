@@ -186,6 +186,7 @@ expect_scan sql-rpc 1 a.ts "" "const { data } = await supabase.rpc('get_stats', 
 # hunk and file boundaries (a hunk ends at @@, a file ends at its diff header)
 scan_files two-hunks 0 'q.py|a\nb\nc\nd\ne|a\nselect id,\nc\nfrom users\ne'
 scan_files sql-then-prose-nonascii 0 'm.sql|-- a|-- a\n-- b' 'ä.ts|x|# Re-insert the defect'
+scan_files file-boundary-ends-hunk 0 'a.py|x|select id,' 'b.py|y|from users'
 scan_files sql-then-prose 0 'm.sql|-- a|-- a\n-- b' 'n.ts|x|echo "Re-insert the defect"'
 scan_files space-in-path-sql 1 '001 init.sql|select id\nfrom t|select id\nfrom t\n   and due_at < now()'
 scan_files plusplus-content-is-not-header 0 't.sh|x|++ b/m.sql\necho "insert it"'
