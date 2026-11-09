@@ -4,7 +4,7 @@ type: roadmap
 project: a1-specforge
 title: "a1-specforge — Roadmap"
 status: active
-updated: 2026-11-08
+updated: 2026-11-09
 source: "migrated from docs/roadmap.md v3.0 (2026-07-10)"
 milestones:
   - id: m0-repo-extract
@@ -283,6 +283,16 @@ features:
     finished: null
     spec_path: project/a1-specforge/spec/024-ux-studio.md
     plan_path: project/a1-specforge/plans/024-ux-studio-wave-plan.md
+  - id: 025-codex-architecture-only
+    milestone: continuous
+    title: "Codex (xprov) reviews only architecture plans and solution designs"
+    status: planned
+    stage: null
+    depends_on: []
+    started: null
+    finished: null
+    spec_path: project/a1-specforge/spec/025-codex-architecture-only.md
+    plan_path: project/a1-specforge/plans/025-codex-architecture-only-wave-plan.md
 next: 006-specforge-kritis-profile
 ---
 
@@ -369,8 +379,6 @@ None.
 
 ## Changelog
 
-- **2026-09-12** — feature.md created for '007-retro-gate-id-validator' — formal spec/plan attached via `product feature-init`
-- **2026-09-12** — 007-retro-gate-id-validator -> complete — stage transition via `product stage`
 - **2026-09-12** — 007-retro-gate-id-validator -> verify — stage transition via `product stage`
 - **2026-09-12** — 007-retro-gate-id-validator -> merge — stage transition via `product stage`
 - **2026-09-12** — 007-retro-gate-id-validator -> origin-cleanup — stage transition via `product stage`
@@ -469,6 +477,8 @@ None.
 - **2026-10-31** — feature '024-new-project-github-remote' added — a1-new-project Phase 1 asks once for the GitHub remote (owner/org, private) and creates it with gh after confirmation, instead of leaving the repo local-only until a later checkpoint
 - **2026-11-08** — feature '024-ux-studio' added — new feature via `product add-feature`
 - **2026-11-08** — feature.md created for '024-ux-studio' — formal spec/plan attached via `product feature-init`
+- **2026-11-09** — feature '025-codex-architecture-only' added — new feature via `product add-feature`
+- **2026-11-09** — feature.md created for '025-codex-architecture-only' — formal spec/plan attached via `product feature-init`
 
 ## Appendix — migrated details
 

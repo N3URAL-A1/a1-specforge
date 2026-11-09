@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated": "2026-11-08T16:00:26.619Z",
+  "generated": "2026-11-09T19:47:36.622Z",
   "project": {
     "id": "a1-specforge",
     "title": "a1-specforge — Roadmap",
@@ -354,6 +354,18 @@
       "finished": null,
       "spec_path": "project/a1-specforge/spec/024-ux-studio.md",
       "plan_path": "project/a1-specforge/plans/024-ux-studio-wave-plan.md"
+    },
+    {
+      "id": "025-codex-architecture-only",
+      "milestone": "continuous",
+      "title": "Codex (xprov) reviews only architecture plans and solution designs",
+      "status": "planned",
+      "stage": null,
+      "depends_on": [],
+      "started": null,
+      "finished": null,
+      "spec_path": "project/a1-specforge/spec/025-codex-architecture-only.md",
+      "plan_path": "project/a1-specforge/plans/025-codex-architecture-only-wave-plan.md"
     }
   ],
   "next": "006-specforge-kritis-profile",
