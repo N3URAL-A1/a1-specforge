@@ -1,0 +1,2 @@
+# Fixture sources (suite a1-ux-studio, spec 024). Real files copied; edits listed here.
+# Wave 1 (parts/01-skeleton.sh) reads production files directly and needs no fixtures.

@@ -12,7 +12,7 @@ Claude Code is powerful, but without structure every session restarts from scrat
 <!--
   README scope note (keeps the bijective install/README check honest):
   bin/install.sh is the single source of truth for the installed set. Its
-  grepped set = 17 skills + 21 agent names + the project slug. This README names
+  grepped set = 18 skills + 21 agent names + the project slug. This README names
   exactly that set (skills AND agents both with the shared prefix) and no other
   matching token. The shared CLI is referenced only as the _shared/
   path, never by its filename, to avoid introducing a non-installed token. The
@@ -42,7 +42,7 @@ claude plugin install a1-specforge@a1-specforge
 claude plugin list        # confirm a1-specforge@a1-specforge is installed
 ```
 
-All 17 skills and 21 agents load from the plugin. To remove: `claude plugin uninstall a1-specforge` then `claude plugin marketplace remove a1-specforge`. Contributors who want to edit skills in place should use `./bin/install.sh` above instead.
+All 18 skills and 21 agents load from the plugin. To remove: `claude plugin uninstall a1-specforge` then `claude plugin marketplace remove a1-specforge`. Contributors who want to edit skills in place should use `./bin/install.sh` above instead.
 
 Then just describe what you want in Claude Code; the matching skill activates:
 
@@ -54,9 +54,9 @@ Then just describe what you want in Claude Code; the matching skill activates:
 
 **Requirements:** Claude Code CLI, Node.js ≥ 18, git.
 
-## Skills (17)
+## Skills (18)
 
-All 17 skills below match the `SKILLS` array in `bin/install.sh` exactly.
+All 18 skills below match the `SKILLS` array in `bin/install.sh` exactly.
 
 | Skill | Phase | Purpose |
 |---|---|---|
@@ -77,6 +77,7 @@ All 17 skills below match the `SKILLS` array in `bin/install.sh` exactly.
 | `a1-pr-review` | Review | Turns a finished branch into a reviewed PR: Detect → Review (reviewer sub-agent) → Draft → Submit. BLOCKER findings halt. |
 | `a1-worktree` | Isolation | Isolated Git worktree lifecycle: Prepare → Enter → Exit (keep / discard / handoff), so agents work in a parallel checkout. |
 | `a1-evolve` | Learn | Self-optimization engine — reads accumulated observations and `_learning.md` files, clusters recurring patterns, scores by impact, proposes concrete skill diffs. |
+| `a1-ux-studio` | Design | UX/UI design studio: brief, diverge into rendered design variants, converge, assets, a11y gate and handoff. Writes only to the vault run folder, never into the target repo. |
 
 ## Agents (21)
 

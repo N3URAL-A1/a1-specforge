@@ -10,7 +10,7 @@ vault: "[[project/a1-specforge]]"
 
 ## WHAT — Das Projekt
 
-**a1-specforge** — Spec-driven Development Pipeline für Claude Code: 17 Skills + 21 Agents, von der Idee bis zum reviewten PR, mit deterministischen Gates und Self-Learning-Loop. Open Source, für Claude-Code-Nutzer.
+**a1-specforge** — Spec-driven Development Pipeline für Claude Code: 18 Skills + 21 Agents, von der Idee bis zum reviewten PR, mit deterministischen Gates und Self-Learning-Loop. Open Source, für Claude-Code-Nutzer.
 
 **Tech Stack:** Node.js ≥ 18 (CLI `_shared/a1-tools.cjs` + `_shared/lib/`), Bash (Tests, Install), Markdown (Skills, Agents, Specs)
 **Repository:** `~/claude-projects/a1-specforge/` (GitHub `N3URAL-A1/a1-specforge`)

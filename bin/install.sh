@@ -53,6 +53,7 @@ SKILLS=(
   "a1-evolve"
   "a1-modernize"
   "a1-new-project"
+  "a1-ux-studio"
 )
 
 echo "Skills:"
