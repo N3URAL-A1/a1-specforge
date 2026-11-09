@@ -17,6 +17,9 @@ const MAX_REF_BYTES = 20 * 1024 * 1024;
 const REF_TIMEOUT_MS = 5000;
 const MAX_BRIEF_BYTES = 1024 * 1024;
 const MAX_FOLDER_SUFFIX = 999;
+const REF_DEADLINE_MS = 5000;
+// eslint-disable-next-line no-control-regex
+const CTRL_RE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u2028\u2029]/g;
 const TEMPLATE = path.join(__dirname, '..', '..', 'templates', 'run.md');
 
 class Refusal extends Error {
@@ -59,7 +62,9 @@ function loadBrief(file) {
   if (!file) throw new Refusal(2, 'missing --brief <json-file>');
   let raw;
   try {
-    if (fs.statSync(file).size > MAX_BRIEF_BYTES) throw new Refusal(2, 'brief file too large');
+    const st = fs.statSync(file);
+    if (!st.isFile()) throw new Refusal(2, 'brief must be a regular file');
+    if (st.size > MAX_BRIEF_BYTES) throw new Refusal(2, 'brief file too large');
     raw = fs.readFileSync(file, 'utf8');
   } catch (e) {
     if (e instanceof Refusal) throw e;
@@ -96,25 +101,36 @@ function normalizeBrief(data) {
   });
 }
 
-function head(url, method) {
+function head(url, method, budgetMs) {
   return new Promise((resolve) => {
     const lib = url.protocol === 'https:' ? https : http;
+    let timer = null;
+    const done = (r) => { clearTimeout(timer); resolve(r); };
     const req = lib.request(url, { method, timeout: REF_TIMEOUT_MS }, (res) => {
       res.resume();
-      resolve({ status: res.statusCode });
+      done({ status: res.statusCode });
     });
-    req.on('timeout', () => { req.destroy(); resolve({ cause: 'timeout' }); });
-    req.on('error', (e) => resolve({ cause: e.code || 'network error' }));
+    // Total deadline on top of the socket idle timeout: a server that trickles bytes
+    // keeps the socket alive and would otherwise hold init open.
+    timer = setTimeout(() => { req.destroy(); done({ cause: 'timeout' }); }, Math.max(budgetMs, 1));
+    req.on('timeout', () => { req.destroy(); done({ cause: 'timeout' }); });
+    req.on('error', (e) => done({ cause: e.code || 'network error' }));
     req.end();
   });
+}
+
+// Drops user:pass@ from an http(s) URL; every other reference is returned unchanged.
+function redactCredentials(ref) {
+  return ref.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/?#\s]*@/i, '$1');
 }
 
 async function checkUrl(ref) {
   let url;
   try { url = new URL(ref); } catch (e) { return 'invalid URL'; }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return 'unsupported scheme';
-  let r = await head(url, 'HEAD');
-  if (r.status === 405 || r.status === 501) r = await head(url, 'GET');
+  const start = Date.now();
+  let r = await head(url, 'HEAD', REF_DEADLINE_MS);
+  if (r.status === 405 || r.status === 501) r = await head(url, 'GET', REF_DEADLINE_MS - (Date.now() - start));
   if (r.cause) return `unreachable: ${r.cause}`;
   // Redirects are never followed: a 3xx proves the host answers and nothing more.
   return r.status >= 400 ? `http ${r.status}` : null;
@@ -132,15 +148,31 @@ function checkPath(ref) {
 async function checkReference(ref) {
   if (ref === '') return 'reference unusable: (empty) (empty)';
   const cause = /^[a-z][a-z0-9+.-]*:\/\//i.test(ref) ? await checkUrl(ref) : checkPath(ref);
-  return cause ? `reference unusable: ${ref.slice(0, 200)} (${cause})` : null;
+  return cause ? `reference unusable: ${clean(ref).slice(0, 200)} (${cause})` : null;
 }
 
+// One line, no control characters (stderr echo, log-injection safe).
+function clean(v) { return String(v).replace(CTRL_RE, '').replace(/\s+/g, ' ').trim(); }
+
+// Keeps brief text from forging run.md structure: no comment markers, headings or frontmatter fences.
+function neutralize(text) {
+  return text
+    .replace(CTRL_RE, '')
+    .replace(/<!--/g, '&lt;!--')
+    .replace(/-->/g, '--&gt;')
+    .split(/\r\n|\r|\n/)
+    .map((line) => (/^\s*-{3,}\s*$/.test(line) ? `\\${line.trim()}` : line.replace(/^(\s*)#/, '$1\\#')))
+    .join('\n');
+}
+
+const oneLine = (v) => neutralize(String(v).replace(/\s*[\r\n]+\s*/g, ' '));
+
 function templateVars(b) {
-  const bullets = (xs) => (xs.length ? xs.map((x) => `- ${x}`).join('\n') : '- none');
+  const bullets = (xs) => (xs.length ? xs.map((x) => `- ${oneLine(x)}`).join('\n') : '- none');
   return {
-    aesthetic: b.aesthetic || 'none',
-    reference: b.reference || 'none',
-    intent_text: b.intent.text,
+    aesthetic: oneLine(b.aesthetic) || 'none',
+    reference: oneLine(b.reference) || 'none',
+    intent_text: neutralize(b.intent.text),
     intent_context: b.intent.context,
     intent_viewport: b.intent.viewport,
     guardrails_always: bullets(b.guardrails.always),
@@ -165,6 +197,32 @@ function createRunDir(base, name) {
   throw new Refusal(1, 'too many run folders for this screen and date');
 }
 
+const inside = (rootReal, p) => p === rootReal || p.startsWith(rootReal + path.sep);
+
+// Resolves symlinks of the deepest existing ancestor of `target` (a dangling link is refused)
+// and demands it stays under the real vault root. Call BEFORE anything is created.
+function assertInsideVault(root, target) {
+  const refuse = () => new Refusal(1, 'path resolves outside A1_VAULT_ROOT; nothing written');
+  let rootReal;
+  try { rootReal = fs.realpathSync(root); } catch (e) { throw refuse(); }
+  let cur = target;
+  for (;;) {
+    try {
+      fs.lstatSync(cur);
+      let real;
+      try { real = fs.realpathSync(cur); } catch (e) { throw refuse(); }
+      if (!inside(rootReal, real)) throw refuse();
+      return;
+    } catch (e) {
+      if (e instanceof Refusal) throw e;
+      if (e.code !== 'ENOENT') throw refuse();
+      const up = path.dirname(cur);
+      if (up === cur) throw refuse();
+      cur = up;
+    }
+  }
+}
+
 function vaultProject(project) {
   const root = process.env.A1_VAULT_ROOT;
   if (!root) throw new Refusal(1, 'A1_VAULT_ROOT is not set; nothing written');
@@ -172,6 +230,7 @@ function vaultProject(project) {
   if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
     throw new Refusal(1, `vault project folder missing under A1_VAULT_ROOT: project/${project}; nothing written`);
   }
+  assertInsideVault(root, dir);
   return dir;
 }
 
@@ -187,13 +246,18 @@ async function init(args) {
   const projectDir = vaultProject(project);
   if (brief.intent.text === '') throw new Refusal(1, 'Intent is empty: ask the user for the Intent (what the screen is for); no run folder created');
 
-  const warning = await checkReference(brief.reference);
-  if (warning) process.stderr.write(`warning: ${warning}\n`);
+  const safeRef = redactCredentials(brief.reference);
+  const warning = await checkReference(safeRef);
+  if (warning) process.stderr.write(`warning: ${clean(warning)}\n`);
 
   let tpl;
   try { tpl = fs.readFileSync(TEMPLATE, 'utf8'); } catch (e) { throw new Refusal(2, 'templates/run.md missing'); }
-  const dir = createRunDir(path.join(projectDir, 'ux', specId), `${date}-${screen}`);
-  const body = renderRun(tpl, { spec_id: specId, project, screen, created: date, status: 'brief', ...templateVars(brief) });
+  const base = path.join(projectDir, 'ux', specId);
+  assertInsideVault(process.env.A1_VAULT_ROOT, base);
+  const dir = createRunDir(base, `${date}-${screen}`);
+  try { assertInsideVault(process.env.A1_VAULT_ROOT, dir); } catch (e) { fs.rmdirSync(dir); throw e; }
+  const shown = { ...brief, reference: safeRef };
+  const body = renderRun(tpl, { spec_id: specId, project, screen, created: date, status: 'brief', ...templateVars(shown) });
   fs.writeFileSync(path.join(dir, 'run.md'), body, { flag: 'wx' });
   process.stdout.write(`${dir}\n`);
   return 0;
@@ -208,8 +272,8 @@ async function main(argv) {
 main(process.argv.slice(2)).then(
   (code) => process.exit(code),
   (e) => {
-    if (e instanceof Refusal) { process.stderr.write(`error: ${e.message}\n`); process.exit(e.code); }
-    process.stderr.write(`error: ${e && e.message ? e.message : e}\n`);
+    if (e instanceof Refusal) { process.stderr.write(`error: ${clean(e.message)}\n`); process.exit(e.code); }
+    process.stderr.write(`error: ${clean(e && e.message ? e.message : e)}\n`);
     process.exit(3);
   },
 );

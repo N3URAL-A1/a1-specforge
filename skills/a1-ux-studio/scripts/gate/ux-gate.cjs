@@ -10,6 +10,8 @@
 // can never produce `pass`. This script never computes contrast; the detector decides.
 
 const fs = require('node:fs');
+const crypto = require('node:crypto');
+const tty = require('node:tty');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { checkFonts } = require('./font-check.cjs');
@@ -101,9 +103,15 @@ function mapFindings(entries) {
   }, { seen: {}, list: [] }).list;
 }
 
+/** Explicit env: every IMPECCABLE_* variable removed (DO_NOT_TRACK stays), so no outer setting steers the detector. */
+function detectorEnv(env) {
+  return Object.fromEntries(Object.entries(env).filter(([k]) => !/^IMPECCABLE_/i.test(k) || k === 'DO_NOT_TRACK'));
+}
+
 function spawnDetector(target, scratch) {
-  const res = spawnSync('npx', [CONFIG.pin, 'detect', '--json', target], {
+  const res = spawnSync('npx', [CONFIG.pin, 'detect', ...CONFIG.detect_flags, '--json', target], {
     cwd: scratch,
+    env: detectorEnv(process.env),
     encoding: 'utf8',
     timeout: CONFIG.timeout_ms,
     maxBuffer: 32 * 1024 * 1024,
@@ -137,7 +145,7 @@ function interpret(res) {
   return { exit_code: code, status: 'findings', cause: 'detector reported primary findings', findings: withFallback };
 }
 
-function buildRecord(target, scan, fonts) {
+function buildRecord(target, scan, fonts, sha) {
   let status = scan.status;
   let cause = scan.cause;
   if (status === 'pass' && fonts.status === 'fail') { status = 'findings'; cause = 'font check failed'; }
@@ -146,6 +154,7 @@ function buildRecord(target, scan, fonts) {
     impeccable_version: CONFIG.version,
     scan_mode: CONFIG.scan_mode,
     target,
+    target_sha256: sha,
     exit_code: scan.exit_code,
     status,
     cause,
@@ -189,16 +198,23 @@ function requireRunMd(runDir) {
   if (!fs.existsSync(md) || !fs.statSync(md).isFile()) throw new UsageError('--run-dir has no run.md (not a run folder)');
 }
 
+function sha256Of(file) {
+  try { return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex'); } catch (_) { return null; }
+}
+
 function cmdRun(opts) {
   const runDir = resolveRunDir(opts['run-dir']);
   const target = resolveTarget(opts.target);
   requireRunMd(runDir);
-  const html = fs.readFileSync(target, 'utf8');
+  const bytes = fs.readFileSync(target);
+  const sha = crypto.createHash('sha256').update(bytes).digest('hex');
+  const html = bytes.toString('utf8');
   if (WAIVER_RE.test(html)) throw new UsageError('target carries an impeccable ignore/waiver marker; findings must be fixed, not waived in the file');
   const scratch = fs.mkdtempSync(path.join(runDir, '.gate-scratch-'));
   let scan;
   try { scan = interpret(spawnDetector(target, scratch)); } finally { fs.rmSync(scratch, { recursive: true, force: true }); }
-  const rec = buildRecord(target, scan, checkFonts(html, ALLOWLIST));
+  if (scan.status !== 'error' && sha256Of(target) !== sha) scan = { exit_code: scan.exit_code, status: 'error', cause: 'target changed while the detector ran', findings: [] };
+  const rec = buildRecord(target, scan, checkFonts(html, ALLOWLIST), sha);
   persist(runDir, rec);
   process.stdout.write(`ux-studio-gate: ${rec.status}${rec.cause ? ` (${rec.cause})` : ''}\n`);
   if (rec.status === 'pass') return EXIT.PASS;
@@ -214,13 +230,13 @@ function applyAccept(rec, id, reason) {
     const hits = rec.font_check.failures.filter((x) => x.font === name);
     if (hits.length === 0) throw new UsageError(`no font failure "${name}"`);
     if (hits.every((x) => x.state !== 'open')) throw new UsageError(`font failure "${name}" is already ${hits[0].state}`);
-    const failures = rec.font_check.failures.map((x) => (x.font === name && x.state === 'open' ? { ...x, state: 'accepted', reason_text: reason } : x));
+    const failures = rec.font_check.failures.map((x) => (x.font === name && x.state === 'open' ? { ...x, state: 'accepted', reason_text: reason, accepted_by: 'tty' } : x));
     return { ...rec, font_check: { ...rec.font_check, failures } };
   }
   const hit = rec.findings.find((f) => f.id === id);
   if (!hit) throw new UsageError(`no finding "${id}"`);
   if (hit.state !== 'open') throw new UsageError(`finding "${id}" is already ${hit.state}`);
-  return { ...rec, findings: rec.findings.map((f) => (f.id === id ? { ...f, state: 'accepted', reason } : f)) };
+  return { ...rec, findings: rec.findings.map((f) => (f.id === id ? { ...f, state: 'accepted', reason, accepted_by: 'tty' } : f)) };
 }
 
 function validFindingId(id) {
@@ -229,7 +245,33 @@ function validFindingId(id) {
   return ID_RE.test(id);
 }
 
+function shq(v) { return `'${String(v).replace(/'/g, `'\\''`)}'`; }
+
+const CONTEXT_GUARD = '../../../../_shared/lib/xprov-approve.cjs';
+
+/** Null when no Claude Code context is detected; a reason string otherwise (fails closed). The repo's
+ *  own guard (the one `xprov permit` uses) is reused: skills/_shared are symlinked side by side by
+ *  bin/install.sh, and node resolves this script to the repo path, so the relative path holds in both places. */
+function claudeContext() {
+  try {
+    return require(CONTEXT_GUARD).claudeContextRefusal(process.env);
+  } catch (err) {
+    return `the Claude Code context guard could not be loaded (${safeText(err && err.message, 120)})`;
+  }
+}
+
+/** accept is Robert's decision: it needs a real terminal AND no Claude Code context (a pty alone is fakeable). */
+function requireTerminal(opts) {
+  const noTty = !(tty.isatty(0) && tty.isatty(1));
+  const ctx = noTty ? null : claudeContext();
+  if (!noTty && ctx === null) return;
+  const why = noTty ? 'stdin and stdout are not both a terminal' : `a Claude Code context was detected (${ctx})`;
+  const cmd = `node ${shq(__filename)} accept --run-dir ${shq(opts['run-dir'] || '<run-dir>')} --finding ${shq(opts.finding || '<finding-id>')} --reason ${shq('<written reason>')}`;
+  throw new UsageError(`accept needs Robert at a real terminal outside Claude Code: ${why}. Do not run it yourself; hand Robert this exact command for his own terminal:\n${cmd}`);
+}
+
 function cmdAccept(opts) {
+  requireTerminal(opts);
   const runDir = resolveRunDir(opts['run-dir']);
   requireRunMd(runDir);
   const id = opts.finding;

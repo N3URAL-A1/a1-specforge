@@ -20,10 +20,12 @@ cat > "$GT_STUBDIR/npx" <<'STUB'
 # Test stub for npx. Never touches the network. STUB_MODE picks the replay.
 { printf 'CWD=%s\n' "$(pwd -P)"; for a in "$@"; do printf 'ARG=%s\n' "$a"; done; echo '---'; } >> "$STUB_LOG"
 echo "stub cache" > .stub-cache
+printf 'ENV_IMP=%s DNT=%s\n' "$(env | grep -c '^IMPECCABLE_')" "${DO_NOT_TRACK:-unset}" >> "$STUB_LOG"
 case "${STUB_MODE:-}" in
   low)      cat "$STUB_FIX/impeccable-4.8.1-low.json"; exit "$(cat "$STUB_FIX/impeccable-4.8.1-low.exit")" ;;
   high)     cat "$STUB_FIX/impeccable-4.8.1-high.json"; exit "$(cat "$STUB_FIX/impeccable-4.8.1-high.exit")" ;;
   advisory) cat "$STUB_FIX/impeccable-4.8.1-advisory.json"; exit "$(cat "$STUB_FIX/impeccable-4.8.1-advisory.exit")" ;;
+  mutate)   for last in "$@"; do :; done; echo '<!-- changed -->' >> "$last"; cat "$STUB_FIX/impeccable-4.8.1-high.json"; exit 0 ;;
   exit1)    echo "boom" >&2; exit 1 ;;
   blocked)  echo "npm error code ENOTFOUND: getaddrinfo ENOTFOUND registry.npmjs.org" >&2; exit 1 ;;
   nosev)    grep -v '"severity"' "$STUB_FIX/impeccable-4.8.1-low.json"; exit 2 ;;
@@ -34,6 +36,43 @@ case "${STUB_MODE:-}" in
 esac
 STUB
 chmod +x "$GT_STUBDIR/npx"
+
+# Real pseudo-terminal driver for `accept` (SEC-1): python3 pty.fork gives the child a tty on
+# stdin, stdout and stderr (portable across GNU and BSD, unlike script(1) flag variants).
+cat > "$GT_ROOT/pty-run.py" <<'PYE'
+import os, pty, select, signal, sys, time
+out = sys.argv[1]
+argv = sys.argv[2:]
+pid, fd = pty.fork()
+if pid == 0:
+    os.execvp(argv[0], argv)
+chunks = []
+deadline = time.time() + 60
+while time.time() < deadline:
+    r, _, _ = select.select([fd], [], [], 1)
+    if r:
+        try:
+            data = os.read(fd, 65536)
+        except OSError:
+            break
+        if not data:
+            break
+        chunks.append(data)
+open(out, 'wb').write(b''.join(chunks))
+status = None
+grace = time.time() + 20
+while time.time() < grace:
+    done, st = os.waitpid(pid, os.WNOHANG)
+    if done:
+        status = st
+        break
+    time.sleep(0.05)
+if status is None:
+    os.kill(pid, signal.SIGKILL)
+    os.waitpid(pid, 0)
+    sys.exit(124)
+sys.exit(os.WEXITSTATUS(status) if os.WIFEXITED(status) else 126)
+PYE
 
 # gt_run_dir <var> — fresh run folder with run.md (one marker pair) and result/.
 gt_run_dir() {
@@ -47,6 +86,7 @@ gt_run_dir() {
 # gt_gate <stub-mode> <args...> — runs ux-gate.cjs with the stub first on PATH; sets GT_RC GT_OUT GT_ERR.
 gt_gate() {
   local mode="$1"; shift
+  GT_SKIP=0
   GT_N=$((GT_N + 1))
   GT_OUT="$GT_ROOT/out-$GT_N"; GT_ERR="$GT_ROOT/err-$GT_N"
   run_bounded 60 "$GT_OUT" "$GT_ERR" -- env STUB_MODE="$mode" STUB_LOG="$GT_ROOT/stub.log" STUB_FIX="$GT_FIX" \
@@ -54,12 +94,35 @@ gt_gate() {
   GT_RC=$?
 }
 
+# Claude Code context (SEC-1): `accept` refuses inside it, so the cases that need accept to SUCCEED
+# (or to refuse for their own reason) print `SKIP (claude-code ancestor)` when this suite itself runs
+# under Claude Code, and run fully elsewhere (precedent: a1-xprov parts/08-allowlist.sh). CI=true: a SKIP is a FAIL.
+GT_NOCLAUDE=(env)
+for v in $(env | cut -d= -f1 | grep -E '^(CLAUDECODE|CLAUDE_PID|CLAUDE_CODE_.*)$'); do GT_NOCLAUDE+=(-u "$v"); done
+# The probe runs the REAL guard with the env arm off, so only the process ancestry can answer.
+if "${GT_NOCLAUDE[@]}" "$GT_NODE" -e 'process.exit(require(process.argv[1]).claudeContextRefusal({}) === null ? 0 : 1)' "$REPO_ROOT/_shared/lib/xprov-approve.cjs"; then GT_UNDER_CLAUDE=0; else GT_UNDER_CLAUDE=1; fi
+GT_SKIP=0
+
+# gt_accept <args...> — runs `ux-gate.cjs accept` on a real pty with the Claude env stripped; sets GT_RC GT_OUT GT_ERR.
+# Under a Claude Code ancestor it does not run: GT_SKIP=1 makes the following gt_check/gt_hostile print SKIP.
+gt_accept() {
+  GT_N=$((GT_N + 1)); GT_OUT="$GT_ROOT/out-$GT_N"; GT_ERR="$GT_OUT"; : > "$GT_OUT"
+  if [[ "$GT_UNDER_CLAUDE" == "1" ]]; then GT_SKIP=1; GT_RC=-1; return 0; fi
+  GT_SKIP=0
+  run_bounded 90 "$GT_ROOT/pty-status-$GT_N" "$GT_ROOT/pty-err-$GT_N" -- "${GT_NOCLAUDE[@]}" python3 -I "$GT_ROOT/pty-run.py" "$GT_OUT" "$GT_NODE" "$GT_GATE" accept "$@"
+  GT_RC=$?
+}
+gt_skip() {
+  if [[ "${CI:-}" == "true" ]]; then bad "$1: SKIP (claude-code ancestor) is not allowed when CI=true"
+  else results+=("SKIP (claude-code ancestor)  $1"); fi
+}
+
 gt_reset_log() { : > "$GT_ROOT/stub.log"; }
 gt_calls() { grep -c '^---$' "$GT_ROOT/stub.log" || true; }
 # gt_j <record> <js-expr over r> — evaluate against the parsed record.
-gt_j() { "$GT_NODE" -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(String('"$2"'))' "$1"; }
+gt_j() { "$GT_NODE" -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(String('"$2"'))' "$1" 2>/dev/null || true; }
 # gt_check <name> <got> <want>
-gt_check() { if [[ "$2" == "$3" ]]; then ok "$1"; else bad "$1 (got '$2', want '$3')"; fi; }
+gt_check() { if [[ "$GT_SKIP" == "1" ]]; then gt_skip "$1"; elif [[ "$2" == "$3" ]]; then ok "$1"; else bad "$1 (got '$2', want '$3')"; fi; }
 
 # gt_target <rundir> <html-fixture> — copies a real fixture into result/result.html, sets GT_T.
 gt_target() { cp "$GT_FIX/$2" "$1/result/result.html"; GT_T="$1/result/result.html"; }
@@ -76,7 +139,7 @@ gt_check "G1 low-contrast: rule id from detector JSON" "$(gt_j "$REC" 'r.finding
 gt_check "G1 low-contrast: location from detector JSON (file:line)" "$(gt_j "$REC" 'r.findings[0].location')" "low-contrast.html:0"
 gt_check "G1 low-contrast: severity primary, state open" "$(gt_j "$REC" 'r.findings[0].severity+"/"+r.findings[0].state')" "primary/open"
 gt_check "G1 low-contrast: detector exit code recorded" "$(gt_j "$REC" r.exit_code)" "2"
-gt_check "G1 record field names" "$(gt_j "$REC" 'Object.keys(r).sort().join(",")')" "cause,created,exit_code,findings,font_check,gate_id,impeccable_version,scan_mode,status,target"
+gt_check "G1 record field names" "$(gt_j "$REC" 'Object.keys(r).sort().join(",")')" "cause,created,exit_code,findings,font_check,gate_id,impeccable_version,scan_mode,status,target,target_sha256"
 gt_check "G1 run.md block: one start and one end marker (count)" "$(grep -c 'gate-record:' "$R/run.md")" "2"
 gt_check "G1 run.md block names the rule" "$(grep -c 'low-contrast' "$R/run.md")" "1"
 
@@ -163,12 +226,12 @@ gt_gate high run --run-dir "$R" --target "$R/result/result.html"
 gt_check "G6d font shorthand family is checked" "$(gt_j "$R/gate-record.json" 'r.font_check.failures.map(f=>f.font).join(",")')" "Brush Script MT"
 
 # ---------------------------------------------------------------- G7
-# RED: change the pin in impeccable.json / argv to unpinned `impeccable`.
+# RED: change the pin in impeccable.json / argv to unpinned `impeccable`, or drop `--no-config` from detect_flags (SEC-3).
 gt_run_dir R; gt_target "$R" low-contrast.html; gt_reset_log
 gt_gate low run --run-dir "$R" --target "$GT_T"
 REAL_T="$(cd "$R/result" && pwd -P)/result.html"
 gt_check "G7 stub called once (count)" "$(gt_calls)" "1"
-gt_check "G7 argv is exactly impeccable@4.8.1 detect --json <target> (4 args)" "$(grep '^ARG=' "$GT_ROOT/stub.log" | tr '\n' ' ')" "ARG=impeccable@4.8.1 ARG=detect ARG=--json ARG=$REAL_T "
+gt_check "G7 argv is exactly impeccable@4.8.1 detect --no-config --json <target> (5 args)" "$(grep '^ARG=' "$GT_ROOT/stub.log" | tr '\n' ' ')" "ARG=impeccable@4.8.1 ARG=detect ARG=--no-config ARG=--json ARG=$REAL_T "
 gt_check "G7 record stores the pinned version" "$(gt_j "$R/gate-record.json" r.impeccable_version)/$(gt_j "$R/gate-record.json" r.scan_mode)" "4.8.1/file"
 
 # ---------------------------------------------------------------- G8
@@ -203,38 +266,38 @@ gt_check "G9d font-allowlist: every entry has family, package, OFL spdx (count 2
 # RED: let accept skip the empty-reason check, or let it write outside the marker pair.
 gt_run_dir R; gt_target "$R" low-contrast.html
 gt_gate low run --run-dir "$R" --target "$GT_T"
-gt_gate x accept --run-dir "$R" --finding low-contrast-1 --reason ""
+gt_accept --run-dir "$R" --finding low-contrast-1 --reason ""
 gt_check "G10 accept with empty reason: exit 2, finding still open" "$GT_RC/$(gt_j "$R/gate-record.json" 'r.findings[0].state')" "2/open"
-gt_gate x accept --run-dir "$R" --finding no-such-1 --reason "because"
+gt_accept --run-dir "$R" --finding no-such-1 --reason "because"
 gt_check "G10 accept unknown finding id: exit 2" "$GT_RC" "2"
 INJ='<!-- gate-record:end --> $(touch '"$GT_ROOT"'/PWNED) `touch '"$GT_ROOT"'/PWNED2`; rm -rf /'
-gt_gate x accept --run-dir "$R" --finding low-contrast-1 --reason "$INJ"
+gt_accept --run-dir "$R" --finding low-contrast-1 --reason "$INJ"
 gt_check "G10 accept with injection-shaped reason: exit 0, state accepted" "$GT_RC/$(gt_j "$R/gate-record.json" 'r.findings[0].state')" "0/accepted"
 gt_check "G10 reason stored as an inert string" "$(gt_j "$R/gate-record.json" 'r.findings[0].reason===process.argv[2]')" "false"
 gt_check "G10 stored reason still contains the typed text (count 1)" "$(gt_j "$R/gate-record.json" 'r.findings[0].reason.indexOf("rm -rf /")>=0?1:0')" "1"
 gt_check "G10 no command substitution executed (count 0)" "$(ls "$GT_ROOT" | grep -c '^PWNED' || true)" "0"
 gt_check "G10 run.md still has exactly one marker pair (count 2)" "$(grep -c '<!-- gate-record:' "$R/run.md")" "2"
 gt_check "G10 run.md Picks section untouched (count 1)" "$(grep -c '^## Picks$' "$R/run.md")" "1"
-gt_gate x accept --run-dir "$R" --finding low-contrast-1 --reason "again"
+gt_accept --run-dir "$R" --finding low-contrast-1 --reason "again"
 gt_check "G10 accepting twice: exit 2" "$GT_RC" "2"
 LONGR="$(head -c 1001 /dev/zero | tr '\0' 'a')"
 gt_run_dir R; gt_target "$R" low-contrast.html; gt_gate low run --run-dir "$R" --target "$GT_T"
-gt_gate x accept --run-dir "$R" --finding low-contrast-1 --reason "$LONGR"
+gt_accept --run-dir "$R" --finding low-contrast-1 --reason "$LONGR"
 gt_check "G10 accept with oversized reason (1001 chars): exit 2, still open" "$GT_RC/$(gt_j "$R/gate-record.json" 'r.findings[0].state')" "2/open"
 gt_run_dir R; gt_target "$R" low-contrast.html
 sed 's#<style>#<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora">\n<style>#' "$GT_FIX/low-contrast.html" > "$R/result/result.html"
 gt_gate low run --run-dir "$R" --target "$R/result/result.html"
 # RED: re-add a refusal for `font:` ids in applyAccept() (ux-gate.cjs).
-gt_gate x accept --run-dir "$R" --finding "font:Lora" --reason ""
+gt_accept --run-dir "$R" --finding "font:Lora" --reason ""
 gt_check "G10b font accept with empty reason: exit 2, failure still open" "$GT_RC/$(gt_j "$R/gate-record.json" 'r.font_check.failures[0].state')" "2/open"
-gt_gate x accept --run-dir "$R" --finding "font:Lora" --reason "$LONGR"
+gt_accept --run-dir "$R" --finding "font:Lora" --reason "$LONGR"
 gt_check "G10b font accept with 1001-char reason: exit 2, still open" "$GT_RC/$(gt_j "$R/gate-record.json" 'r.font_check.failures[0].state')" "2/open"
-gt_gate x accept --run-dir "$R" --finding "font:Nope" --reason "x"
+gt_accept --run-dir "$R" --finding "font:Nope" --reason "x"
 gt_check "G10b font accept of unknown family: exit 2" "$GT_RC" "2"
-gt_gate x accept --run-dir "$R" --finding "font:Lora" --reason "Robert approved: self-hosted copy follows in W4"
+gt_accept --run-dir "$R" --finding "font:Lora" --reason "Robert approved: self-hosted copy follows in W4"
 gt_check "G10b font accept: exit 0, state accepted, reason_text stored (failures count 1)" "$GT_RC/$(gt_j "$R/gate-record.json" 'r.font_check.failures.length+"/"+r.font_check.failures[0].state+"/"+r.font_check.failures[0].reason_text')" "0/1/accepted/Robert approved: self-hosted copy follows in W4"
 gt_check "G10b accepted font shown in run.md block (count 1)" "$(grep -c 'font Lora remote_url' "$R/run.md")" "1"
-gt_gate x accept --run-dir "$R" --finding "font:Lora" --reason "again"
+gt_accept --run-dir "$R" --finding "font:Lora" --reason "again"
 gt_check "G10b font accepted twice: exit 2" "$GT_RC" "2"
 
 # ---------------------------------------------------------------- G11 (hostile inputs, run)
@@ -243,8 +306,9 @@ gt_run_dir R; gt_target "$R" high-contrast.html; gt_reset_log
 LONG10K="$(head -c 10001 /dev/zero | tr '\0' 'a')"
 gt_hostile() { # <name> <args...> — exit 2, stderr text, stub never called
   local name="$1"; shift
-  gt_gate high "$@"
-  if [[ "$GT_RC" == "2" && -s "$GT_ERR" && "$(gt_calls)" == "0" ]]; then ok "G11 $name: exit 2, stderr set, detector not spawned"; else bad "G11 $name (rc=$GT_RC calls=$(gt_calls) err=$(head -c 120 "$GT_ERR"))"; fi
+  if [[ "$1" == "accept" ]]; then shift; gt_accept "$@"; else GT_SKIP=0; gt_gate high "$@"; fi
+  if [[ "$GT_SKIP" == "1" ]]; then gt_skip "G11 $name"
+  elif [[ "$GT_RC" == "2" && -s "$GT_ERR" && "$(gt_calls)" == "0" ]]; then ok "G11 $name: exit 2, stderr set, detector not spawned"; else bad "G11 $name (rc=$GT_RC calls=$(gt_calls) err=$(head -c 120 "$GT_ERR"))"; fi
 }
 gt_hostile "--run-dir path traversal" run --run-dir "../../etc" --target "$GT_T"
 gt_hostile "--run-dir injection-shaped" run --run-dir '; rm -rf /' --target "$GT_T"
@@ -267,12 +331,76 @@ gt_hostile "accept --run-dir traversal" accept --run-dir "../../etc" --finding x
 gt_hostile "accept --finding injection-shaped" accept --run-dir "$R" --finding '$(touch PWNED)' --reason r
 gt_hostile "accept --finding 10001 chars" accept --run-dir "$R" --finding "$LONG10K" --reason r
 gt_hostile "accept --reason 10001 chars" accept --run-dir "$R" --finding x-1 --reason "$LONG10K"
+GT_SKIP=0
 gt_check "G11 no gate-record written by any rejected call (count 0)" "$(ls "$R" | grep -c '^gate-record.json$' || true)" "0"
 
+GT_SKIP=0
 # inert file name: shell metacharacters in a REAL target name are passed as one argv element
 gt_run_dir R; gt_reset_log
 mkdir -p "$GT_ROOT/inert"; INERT="$GT_ROOT/inert/a b\$(touch PWNED3);x.html"
 cp "$GT_FIX/high-contrast.html" "$INERT"
 ( cd "$GT_ROOT/inert" && STUB_MODE=high STUB_LOG="$GT_ROOT/stub.log" STUB_FIX="$GT_FIX" PATH="$GT_STUBDIR:$PATH" "$GT_NODE" "$GT_GATE" run --run-dir "$R" --target "$INERT" >/dev/null 2>&1 ); rc=$?
 gt_check "G11b shell-metacharacter file name: gate exit 0, no command executed (count 0)" "$rc/$(find "$GT_ROOT" -name 'PWNED3' | grep -c . || true)" "0/0"
-gt_check "G11b argv carries the name as one element (count 4 ARG lines)" "$(grep -c '^ARG=' "$GT_ROOT/stub.log")" "4"
+gt_check "G11b argv carries the name as one element (count 5 ARG lines)" "$(grep -c '^ARG=' "$GT_ROOT/stub.log")" "5"
+
+# ---------------------------------------------------------------- G12 (SEC-1: accept needs a real terminal)
+# RED: remove the requireTerminal(opts) call from cmdAccept() in ux-gate.cjs.
+if command -v python3 >/dev/null 2>&1; then ok "G12 python3 available for the pty driver"; else bad "G12 python3 missing: pty cases cannot run"; fi
+gt_run_dir R; gt_target "$R" low-contrast.html
+gt_gate low run --run-dir "$R" --target "$GT_T"
+SUM_BEFORE="$(cksum < "$R/gate-record.json") $(cksum < "$R/run.md")"
+gt_gate x accept --run-dir "$R" --finding low-contrast-1 --reason "agent tries to self-approve" < /dev/null
+gt_check "G12 accept with stdin/stdout not a tty: exit 2" "$GT_RC" "2"
+gt_check "G12 refusal tells the agent to hand Robert the command (count 1)" "$(grep -c 'hand Robert this exact command' "$GT_ERR")" "1"
+gt_check "G12 record and run.md unchanged after the refused accept" "$(cksum < "$R/gate-record.json") $(cksum < "$R/run.md")" "$SUM_BEFORE"
+gt_check "G12 finding still open (count 1)" "$(gt_j "$R/gate-record.json" 'r.findings.filter(f=>f.state==="open").length')" "1"
+gt_accept --run-dir "$R" --finding low-contrast-1 --reason "Robert approved at the terminal"
+gt_check "G12 accept on a real pty: exit 0, accepted, accepted_by tty" "$GT_RC/$(gt_j "$R/gate-record.json" 'r.findings[0].state+"/"+r.findings[0].accepted_by')" "0/accepted/tty"
+
+# ---------------------------------------------------------------- G13 (SEC-2: target_sha256 and change-during-scan)
+# RED: store a constant instead of the hash, or drop the post-scan re-hash in cmdRun().
+gt_run_dir R; gt_target "$R" high-contrast.html
+gt_gate high run --run-dir "$R" --target "$GT_T"
+WANT_SHA="$("$GT_NODE" -e 'console.log(require("crypto").createHash("sha256").update(require("fs").readFileSync(process.argv[1])).digest("hex"))' "$GT_T")"
+gt_check "G13 target_sha256 is the sha256 of the target bytes" "$(gt_j "$R/gate-record.json" r.target_sha256)" "$WANT_SHA"
+gt_check "G13 sha256 is 64 hex chars (count 64)" "$(gt_j "$R/gate-record.json" r.target_sha256.length)" "64"
+gt_run_dir R; gt_target "$R" high-contrast.html
+gt_gate mutate run --run-dir "$R" --target "$GT_T"
+gt_check "G13b target changed while the detector ran: exit 3, error" "$GT_RC/$(gt_j "$R/gate-record.json" r.status)" "3/error"
+
+# ---------------------------------------------------------------- G14 (SEC-4: font check bypasses)
+# RED: drop the SVG attribute regex / normalize() / scriptFailures() in font-check.cjs.
+gt_font_case() { # <name> <html-snippet-after-style> <want fonts joined by ,>
+  gt_run_dir R
+  sed "s#<style>#$2<style>#" "$GT_FIX/high-contrast.html" > "$R/result/result.html"
+  gt_gate high run --run-dir "$R" --target "$R/result/result.html"
+  gt_check "G14 $1: font_check fail (count of failures 1)" "$(gt_j "$R/gate-record.json" 'r.font_check.status+"/"+r.font_check.failures.length+"/"+r.font_check.failures[0].font')" "fail/1/$3"
+}
+gt_font_case "SVG font-family attribute" '<svg width="10" height="10"><text font-family="Papyrus">x</text></svg>' "Papyrus"
+gt_font_case "CSS escape in family name" '<style>.e{font-family:\\50 apyrus}</style>' "Papyrus"
+gt_font_case "FontFace in script" '<script>new FontFace("x","url(a.woff2)")</script>' "FontFace (script)"
+gt_font_case "escaped remote URL in @font-face" '<style>@font-face{font-family:Inter;src:url("https:\\2f\\2f cdn.example.com/a.woff2")}</style>' "Inter"
+gt_run_dir R
+sed 's#<style>#<script>document.fonts.add(f)</script><style>#' "$GT_FIX/high-contrast.html" > "$R/result/result.html"
+gt_gate high run --run-dir "$R" --target "$R/result/result.html"
+gt_check "G14b document.fonts in script: fail (count 1)" "$(gt_j "$R/gate-record.json" 'r.font_check.failures.length+"/"+r.font_check.failures[0].reason')" "1/not_allowlisted"
+
+# ---------------------------------------------------------------- G15 (SEC-6: detector env)
+# RED: pass process.env unfiltered to spawnSync in spawnDetector().
+gt_run_dir R; gt_target "$R" high-contrast.html; gt_reset_log
+IMPECCABLE_CONFIG=/evil IMPECCABLE_X=1 DO_NOT_TRACK=1 gt_gate high run --run-dir "$R" --target "$GT_T"
+gt_check "G15 detector sees no IMPECCABLE_* variable and keeps DO_NOT_TRACK" "$(grep '^ENV_IMP=' "$GT_ROOT/stub.log")" "ENV_IMP=0 DNT=1"
+
+# ---------------------------------------------------------------- G16 (SEC-1b: a pty inside a Claude Code context is refused)
+# RED: remove the claudeContext() check from requireTerminal() in ux-gate.cjs.
+# Runs everywhere (the env arm of the guard answers); a faked terminal plus CLAUDECODE=1 must be refused.
+gt_run_dir R; gt_target "$R" low-contrast.html
+gt_gate low run --run-dir "$R" --target "$GT_T"
+SUM_BEFORE="$(cksum < "$R/gate-record.json") $(cksum < "$R/run.md")"
+GT_N=$((GT_N + 1)); GT_OUT="$GT_ROOT/out-$GT_N"
+run_bounded 90 "$GT_ROOT/pty-status-$GT_N" "$GT_ROOT/pty-err-$GT_N" -- env CLAUDECODE=1 python3 -I "$GT_ROOT/pty-run.py" "$GT_OUT" "$GT_NODE" "$GT_GATE" accept --run-dir "$R" --finding low-contrast-1 --reason "agent on a faked pty"
+GT_RC=$?; GT_SKIP=0
+gt_check "G16 accept on a pty with CLAUDECODE=1: exit 2" "$GT_RC" "2"
+gt_check "G16 refusal names the Claude Code context and hands Robert the command (count 1)" "$(grep -c 'Claude Code context was detected.*CLAUDECODE' "$GT_OUT")/$(grep -c 'hand Robert this exact command' "$GT_OUT")" "1/1"
+gt_check "G16 record and run.md unchanged" "$(cksum < "$R/gate-record.json") $(cksum < "$R/run.md")" "$SUM_BEFORE"
+gt_check "G16 finding still open (count 1)" "$(gt_j "$R/gate-record.json" 'r.findings.filter(f=>f.state==="open").length')" "1"

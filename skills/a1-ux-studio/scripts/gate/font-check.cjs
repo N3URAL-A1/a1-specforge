@@ -13,6 +13,22 @@ const REMOTE = /^\s*(?:https?:)?\/\//i;
 const SIZE_UNIT = '(?:px|rem|em|pt|%|vw|vh|ch|ex)';
 const MAX_FAILURES = 200;
 
+const NAMED_ENTITIES = { quot: '"', apos: "'", amp: '&', lt: '<', gt: '>', sol: '/', colon: ':' };
+const MAX_CODEPOINT = 0x10ffff;
+
+function safeFromCodePoint(n) {
+  return Number.isInteger(n) && n > 0 && n <= MAX_CODEPOINT && !(n >= 0xd800 && n <= 0xdfff) ? String.fromCodePoint(n) : '\ufffd';
+}
+
+/** Decode CSS escapes (`\2f `, `\/`) and HTML character references so escaped URLs and names cannot hide. */
+function normalize(html) {
+  const ents = html
+    .replace(/&#x([0-9a-f]{1,6});?/gi, (_, h) => safeFromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d{1,7});?/g, (_, d) => safeFromCodePoint(parseInt(d, 10)))
+    .replace(/&([a-z]+);/gi, (m, n) => (NAMED_ENTITIES[n.toLowerCase()] !== undefined ? NAMED_ENTITIES[n.toLowerCase()] : m));
+  return ents.replace(/\\([0-9a-f]{1,6})[ \t\n\r\f]?|\\([^\n\r\f0-9a-f])/gi, (_, h, c) => (h ? safeFromCodePoint(parseInt(h, 16)) : c));
+}
+
 /** Split a CSS family list on commas outside quotes; returns unquoted names. */
 function splitFamilies(list) {
   const out = [];
@@ -43,6 +59,7 @@ function collectFamilyLists(html) {
   for (const m of html.matchAll(/font-family\s*:\s*((?:[^;}"<]|"[^"]*")+)/gi)) lists.push(m[1]);
   const shorthand = new RegExp(`(?:^|[;{\\s"'])font\\s*:\\s*[^;}]*?\\d(?:[\\d.]*)${SIZE_UNIT}?(?:\\s*\\/\\s*[^\\s;}]+)?\\s+([^;}<]+)`, 'gi');
   for (const m of html.matchAll(shorthand)) lists.push(m[1]);
+  for (const m of html.matchAll(/\bfont-family\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)) lists.push(m[1] ?? m[2]);
   for (const m of html.matchAll(/--([\w-]*font[\w-]*)\s*:\s*([^;}<]+)/gi)) {
     if (!NON_FAMILY_VAR.test(m[1]) && !isNumericLike(m[2])) lists.push(m[2]);
   }
@@ -104,10 +121,19 @@ function allowlistFailures(html, allowlist) {
   return out;
 }
 
+const SCRIPT_FONT_RE = /\bFontFace\b|document\s*\.\s*fonts\b|\bfonts\s*\.\s*(?:add|load)\s*\(/;
+
+/** Fonts registered from script bypass every static check, so they fail outright. */
+function scriptFailures(html) {
+  if (!SCRIPT_FONT_RE.test(html)) return [];
+  return [failureFor('FontFace (script)', 'not_allowlisted', 'script registers fonts at run time (FontFace / document.fonts); only static @font-face from font-allowlist.json is allowed')];
+}
+
 /** @returns {{status: 'pass'|'fail', failures: object[]}} */
-function checkFonts(html, allowlist) {
+function checkFonts(rawHtml, allowlist) {
+  const html = normalize(rawHtml);
   const seen = new Set();
-  const failures = [...remoteFailures(html), ...allowlistFailures(html, allowlist)].filter((f) => {
+  const failures = [...remoteFailures(html), ...allowlistFailures(html, allowlist), ...scriptFailures(html)].filter((f) => {
     const k = `${f.font}|${f.reason}`;
     if (seen.has(k)) return false;
     seen.add(k);

@@ -2,6 +2,7 @@
   "pin": "impeccable@4.8.1",
   "version": "4.8.1",
   "scan_mode": "file",
+  "detect_flags": ["--no-config"],
   "install_scope": "global",
   "install_command": "npx impeccable@4.8.1 install -y --providers=claude --scope=global",
   "timeout_ms": 180000,
