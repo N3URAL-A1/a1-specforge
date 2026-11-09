@@ -1,2 +1,20 @@
 # Fixture sources (suite a1-ux-studio, spec 024). Real files copied; edits listed here.
 # Wave 1 (parts/01-skeleton.sh) reads production files directly and needs no fixtures.
+
+## Wave 2 (run)
+fixtures/run/brief-*.json: hand-authored briefs (four-part contract; brief-complete.json holds REFPATH, replaced by the test).
+fixtures/run/brief-malformed.json: hand-authored invalid JSON.
+fixtures/run/reference-1x1.png: hand-built 1x1 RGBA PNG (valid per file(1)); the oversize case uses a sparse 20 MB + 1 file made at run time.
+
+## Wave 3 (gate)
+Captured 2026-11-09 on Robert's Mac (darwin, node v24.1.0, npm 11.8.0) with real `npx impeccable@4.8.1`, run from fixtures/gate/ (so the "file" field in the JSON holds that machine's absolute path; the gate only uses its basename):
+  npx impeccable@4.8.1 detect --help   > fixtures/gate/impeccable-4.8.1-detect-help.txt
+  npx impeccable@4.8.1 install --help  > fixtures/gate/impeccable-4.8.1-install-help.txt   (shows --scope=<scope>: project or global; --user/--global)
+  npx impeccable@4.8.1 detect --json low-contrast.html   > impeccable-4.8.1-low.json   (+ .exit = 2)
+  npx impeccable@4.8.1 detect --json high-contrast.html  > impeccable-4.8.1-high.json  (+ .exit = 0, output [])
+  npx impeccable@4.8.1 detect --json advisory.html       > impeccable-4.8.1-advisory.json (+ .exit = 0; bounce-easing, severity advisory)
+fixtures/gate/low-contrast.html: hand-written page, text #9a9a9a on #ffffff; independently computed WCAG ratio 2.81:1 (detector snippet says 2.8:1).
+fixtures/gate/high-contrast.html: same page, text #1a1a1a on #ffffff; independently computed ratio 17.40:1.
+fixtures/gate/advisory.html: high-contrast page plus a cubic-bezier(.68,-.55,.27,1.55) hover transition.
+Measured: scan_mode `file` fires the contrast rule (no loopback URL needed). Also measured: a `<!-- impeccable-disable low-contrast -->` comment in the file and a .impeccable/config.json in the detector cwd each silence the finding (exit 0, []); the gate refuses targets with a waiver marker and runs the detector in an empty scratch cwd.
+Font and hostile-input case pages are derived at run time from high-contrast.html with sed (see parts/03-gate.sh).

@@ -1,0 +1,120 @@
+{
+  "_comment": "OFL families available as @fontsource/*. SPDX ids as reported by `npm view @fontsource/<pkg> license` on 2026-11-09. Only SIL-OFL-or-equivalent; foundry and OS fonts never belong here (font-licensing rule).",
+  "families": [
+    {
+      "family": "Inter",
+      "package": "@fontsource/inter",
+      "spdx": "OFL-1.1"
+    },
+    {
+      "family": "Roboto",
+      "package": "@fontsource/roboto",
+      "spdx": "OFL-1.1"
+    },
+    {
+      "family": "Open Sans",
+      "package": "@fontsource/open-sans",
+      "spdx": "OFL-1.1"
+    },
+    {
+      "family": "Lato",
+      "package": "@fontsource/lato",
+      "spdx": "OFL-1.1"
+    },
+    {
+      "family": "Montserrat",
+      "package": "@fontsource/montserrat",
+      "spdx": "OFL-1.1"
+    },
+    {
+      "family": "Source Sans 3",
+      "package": "@fontsource/source-sans-3",
+      "spdx": "OFL-1.1"
+    },
+    {
+      "family": "Source Serif 4",
+      "package": "@fontsource/source-serif-4",
+      "spdx": "OFL-1.1"
+    },
+    {
+      "family": "IBM Plex Sans",
+      "package": "@fontsource/ibm-plex-sans",
+      "spdx": "OFL-1.1"
+    },
+    {
+      "family": "IBM Plex Serif",
+      "package": "@fontsource/ibm-plex-serif",
+      "spdx": "OFL-1.1"
+    },
+    {
+      "family": "IBM Plex Mono",
+      "package": "@fontsource/ibm-plex-mono",
+      "spdx": "OFL-1.1"
+    },
+    {
+      "family": "JetBrains Mono",
+      "package": "@fontsource/jetbrains-mono",
+      "spdx": "OFL-1.1"
+    },
+    {
+      "family": "DM Sans",
+      "package": "@fontsource/dm-sans",
+      "spdx": "OFL-1.1"
+    },
+    {
+      "family": "DM Serif Display",
+      "package": "@fontsource/dm-serif-display",
+      "spdx": "OFL-1.1"
+    },
+    {
+      "family": "Playfair Display",
+      "package": "@fontsource/playfair-display",
+      "spdx": "OFL-1.1"
+    },
+    {
+      "family": "Lora",
+      "package": "@fontsource/lora",
+      "spdx": "OFL-1.1"
+    },
+    {
+      "family": "Work Sans",
+      "package": "@fontsource/work-sans",
+      "spdx": "OFL-1.1"
+    },
+    {
+      "family": "Space Grotesk",
+      "package": "@fontsource/space-grotesk",
+      "spdx": "OFL-1.1"
+    },
+    {
+      "family": "Space Mono",
+      "package": "@fontsource/space-mono",
+      "spdx": "OFL-1.1"
+    },
+    {
+      "family": "Manrope",
+      "package": "@fontsource/manrope",
+      "spdx": "OFL-1.1"
+    },
+    {
+      "family": "Fraunces",
+      "package": "@fontsource/fraunces",
+      "spdx": "OFL-1.1"
+    },
+    {
+      "family": "Instrument Serif",
+      "package": "@fontsource/instrument-serif",
+      "spdx": "OFL-1.1"
+    },
+    {
+      "family": "Bricolage Grotesque",
+      "package": "@fontsource/bricolage-grotesque",
+      "spdx": "OFL-1.1"
+    },
+    {
+      "family": "EB Garamond",
+      "package": "@fontsource/eb-garamond",
+      "spdx": "OFL-1.1"
+    }
+  ]
+}

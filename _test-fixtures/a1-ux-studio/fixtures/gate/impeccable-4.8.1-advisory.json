@@ -1,0 +1,13 @@
+[
+  {
+    "antipattern": "bounce-easing",
+    "name": "Bounce or elastic easing",
+    "description": "Bounce and elastic easing feel dated and tacky. Real objects decelerate smoothly — use exponential easing (ease-out-quart/quint/expo) instead.",
+    "severity": "advisory",
+    "category": "slop",
+    "file": "/Users/rob/claude-projects/a1-worktrees/ux-studio/_test-fixtures/a1-ux-studio/fixtures/gate/advisory.html",
+    "line": 0,
+    "snippet": "cubic-bezier(.68, -.55, .27, 1.55)",
+    "advisory": true
+  }
+]

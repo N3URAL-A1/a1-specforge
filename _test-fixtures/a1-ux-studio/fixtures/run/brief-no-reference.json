@@ -1,0 +1,6 @@
+{
+  "aesthetic": "Playful, rounded shapes",
+  "reference": "",
+  "intent": { "text": "Onboarding welcome screen", "context": "product", "viewport": "desktop-first" },
+  "guardrails": { "always": ["Large tap targets"], "never": [] }
+}

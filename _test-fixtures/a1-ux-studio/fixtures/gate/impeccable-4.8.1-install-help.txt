@@ -1,0 +1,13 @@
+Usage: impeccable install [options]
+
+Install compiled Impeccable skills into project or user-level harness folders.
+
+Options:
+  -y, --yes              Accept detected defaults without prompting
+  --providers=<names>    Comma-separated harnesses to install
+  --scope=<scope>        Install scope: project or global
+  --project              Install into the current project
+  --user, --global       Install at the user level
+  --no-hooks             Install skills without provider hook manifests
+  --force                Replace an existing installation
+  -h, --help             Show this help message

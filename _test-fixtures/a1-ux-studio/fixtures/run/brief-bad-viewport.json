@@ -1,0 +1,6 @@
+{
+  "aesthetic": "Playful",
+  "reference": "",
+  "intent": { "text": "Landing page", "context": "brand", "viewport": "tablet" },
+  "guardrails": { "always": [], "never": [] }
+}
