@@ -147,28 +147,30 @@ if kill -0 "$LK_SLEEPER" 2>/dev/null; then ok "K4d the unrelated process was not
 kill "$LK_SLEEPER" 2>/dev/null; wait "$LK_SLEEPER" 2>/dev/null
 
 # ---- K5: takeover is atomic: racing runners against the same stale lock, exactly one runs ----
-# Four runners per round start at once on a lock held by a live unrelated process (the pid check runs
-# ps, which widens the race window); three rounds. Each round: the suite starts once, one runner exits 0.
+# Six runners per round start at once on a lock held by a live unrelated process (the pid check runs
+# ps, which widens the race window); five rounds (a mutant without the takeover guard fails a round in about 4 of 10, measured). Each round: the suite starts once, one runner exits 0.
 sleep 120 &
 LK_RACE_SLEEPER=$!
 mk_tree T_K5 k5
 mk_workdir W_K5 k5w
 plant_suite "$T_K5" r/run-tests.sh "$(lk_holder_body "$W_K5/p" 2)"
 LK_ROUND=1
-while [[ $LK_ROUND -le 3 ]]; do
+while [[ $LK_ROUND -le 5 ]]; do
   rm -f "$W_K5/p.ran"
   lk_plant_lock "$W_K5/lock" "$LK_RACE_SLEEPER"
-  lk_start "$T_K5" "$W_K5/lock" "$W_K5/tmp-a$LK_ROUND" "$W_K5/out-a$LK_ROUND.txt"; LK_PA="$LK_PID"
-  lk_start "$T_K5" "$W_K5/lock" "$W_K5/tmp-b$LK_ROUND" "$W_K5/out-b$LK_ROUND.txt"; LK_PB="$LK_PID"
-  lk_start "$T_K5" "$W_K5/lock" "$W_K5/tmp-c$LK_ROUND" "$W_K5/out-c$LK_ROUND.txt"; LK_PC="$LK_PID"
-  lk_start "$T_K5" "$W_K5/lock" "$W_K5/tmp-d$LK_ROUND" "$W_K5/out-d$LK_ROUND.txt"; LK_PD="$LK_PID"
-  lk_finish "$LK_PA"; LK_RCA="$LK_RC"
-  lk_finish "$LK_PB"; LK_RCB="$LK_RC"
-  lk_finish "$LK_PC"; LK_RCC="$LK_RC"
-  lk_finish "$LK_PD"; LK_RCD="$LK_RC"
+  LK_RACERS=""; LK_NR=0
+  for LK_K in 1 2 3 4 5 6; do
+    lk_start "$T_K5" "$W_K5/lock" "$W_K5/tmp-$LK_ROUND-$LK_K" "$W_K5/out-$LK_ROUND-$LK_K.txt"
+    LK_RACERS="$LK_RACERS $LK_PID"
+  done
+  LK_ZERO=0
+  for LK_PR in $LK_RACERS; do
+    lk_finish "$LK_PR"
+    LK_NR=$((LK_NR + 1))
+    [[ $LK_RC -eq 0 ]] && LK_ZERO=$((LK_ZERO + 1))
+  done
   assert_eq "K5a round $LK_ROUND: the suite started exactly once" "$(grep -c '' "$W_K5/p.ran" 2>/dev/null)" "1"
-  assert_eq "K5b round $LK_ROUND: exactly one of four runners exited 0" \
-    "$(( (LK_RCA == 0) + (LK_RCB == 0) + (LK_RCC == 0) + (LK_RCD == 0) ))" "1"
+  assert_eq "K5b round $LK_ROUND: exactly one of six runners exited 0" "$LK_ZERO" "1"
   assert_eq "K5c round $LK_ROUND: no lock or stale copy is left behind" "$(find "$W_K5" -maxdepth 1 -name 'lock*' | grep -c '')" "0"
   LK_ROUND=$((LK_ROUND + 1))
 done
