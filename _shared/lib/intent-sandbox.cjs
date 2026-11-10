@@ -120,7 +120,7 @@ const INTENT_CHILD_SYSTEM_PROMPT_TEMPLATE = [
   'Git erreichst du nur so: node <T> git status, node <T> git diff, node <T> git add, node <T> git commit, node <T> git log.',
   'Erlaubt sind nur diese Formen: status [--porcelain] [--short]; diff [--cached|--staged] [--stat] [--name-only] [-- <Pfad>…]; add <Pfad>…; commit -m <Nachricht>; log [-n <N>] [--oneline] [-- <Pfad>…].',
   'Rohes git wird verweigert. Verlangt ein Skill git <x>, führe es als node <T> git <x> aus; liegt die Form außerhalb dieser Formen, überspring den Schritt und nenne ihn in deiner Schlussantwort.',
-  'Nur für execute: xprov load-check und xprov wave-status sind dir gesperrt (Exit 77). Der Auftrag endet deshalb im Load-Schritt vor dem Isolation Gate: Starte keine Welle und nenne in deiner Schlussantwort, dass der Owner execute in der interaktiven Sitzung ausführt.',
+  'Nur für execute: xprov load-check ist dir gesperrt (Exit 77). Der Auftrag endet deshalb im Load-Schritt vor dem Isolation Gate: Starte keine Welle und nenne in deiner Schlussantwort, dass der Owner execute in der interaktiven Sitzung ausführt.',
 ].join('\n');
 
 // -> the prompt with <T> spelled out. `a1ToolsPath` must be absolute.
@@ -252,7 +252,7 @@ const INTENT_CHILD_ALLOWLIST = Object.freeze({
 const OUTSIDE_STORE = 'reads or writes the learning store pattern/a1-learnings/ outside project/<slug>/';
 const VAULT_WIDE = 'writes vault files outside project/<slug>/ (mirror, hub, lint over the whole vault)';
 const XPROV = 'starts a second model provider (Codex) from inside the child';
-// load-check / wave-status start no provider; they read the owner's waiver store ~/.a1-xprov/ outside
+// load-check starts no provider; they read the owner's waiver store ~/.a1-xprov/ outside
 // project/<slug>/. Excluded until spec round 10 decides how an execute intent passes the blocking
 // xprov gates (Reinhard W11 MAJOR).
 const XPROV_STORE = 'reads the xprov waiver store ~/.a1-xprov/ outside project/<slug>/ (starts no provider; spec round 10 decides the execute path)';
@@ -284,7 +284,7 @@ const INTENT_CHILD_EXCLUSIONS = Object.freeze({
   plan: Object.freeze({ ...DISPOSITIONS, 'dashboard build': DASHBOARD, 'retro validate': OUTSIDE_STORE, 'vault sync': VAULT_WIDE, 'xprov consent': XPROV_CONSENT, 'xprov dispose': XPROV_DISPOSE, 'xprov gate': XPROV, 'xprov permit-check': XPROV_CONSENT, 'xprov waive': XPROV }),
   execute: Object.freeze({
     ...DISPOSITIONS, 'cost run': TRANSCRIPTS, 'dashboard build': DASHBOARD, 'retro validate': OUTSIDE_STORE, 'vault sync': VAULT_WIDE, 'verify run': SPAWNS_PROCESSES,
-    'xprov consent': XPROV_CONSENT, 'xprov dispose': XPROV_DISPOSE, 'xprov gate': XPROV, 'xprov load-check': XPROV_STORE, 'xprov permit-check': XPROV_CONSENT, 'xprov waive': XPROV, 'xprov wave-status': XPROV_STORE,
+    'xprov consent': XPROV_CONSENT, 'xprov dispose': XPROV_DISPOSE, 'xprov gate': XPROV, 'xprov load-check': XPROV_STORE, 'xprov permit-check': XPROV_CONSENT, 'xprov waive': XPROV,
   }),
   fix: Object.freeze({
     ...DISPOSITIONS,

@@ -62,7 +62,7 @@ prep19() {
   make_tree
   node -e '
     const fs = require("fs"); const file = process.argv[1];
-    const ids = ["plan-review-xprov", "wave-inspect-xprov"];
+    const ids = ["plan-review-xprov"];
     const lines = fs.readFileSync(file, "utf8").split("\n").map((l) => ids.some((id) => l.startsWith("| `" + id + "` |")) ? l.replace(/\| (warning|blocking) \|/, "| warning |") : l);
     fs.writeFileSync(file, lines.join("\n"));
   ' "$TREE/_shared/gates-registry.md" || bad "prep19: could not reset the registry copy"

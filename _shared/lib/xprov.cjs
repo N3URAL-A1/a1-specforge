@@ -64,7 +64,6 @@ const SUBCOMMANDS = Object.freeze({
   run: Object.freeze({ module: 'xprov-run.cjs', fn: 'cmdXprovRun', wave: 5 }),
   gate: Object.freeze({ module: 'xprov-gate.cjs', fn: 'cmdXprovGate', wave: 6 }),
   'load-check': Object.freeze({ module: 'xprov-gate.cjs', fn: 'cmdXprovLoadCheck', wave: 6 }),
-  'wave-status': Object.freeze({ module: 'xprov-gate.cjs', fn: 'cmdXprovWaveStatus', wave: 6 }),
   waive: Object.freeze({ module: 'xprov-gate.cjs', fn: 'cmdXprovWaive', wave: 6 }),
   allowlist: Object.freeze({ module: 'xprov-approve.cjs', fn: 'cmdXprovAllowlist', wave: '6b' }),
   // Spec 016 (wave 1): the modules ship in waves 2, 6 and 9. Until then the missing-module branch of cmdXprov fails closed (exit 2).
@@ -82,7 +81,6 @@ const REASON_LIST = Object.freeze([
   'preflight_failed', // added Wave 4: preflight exit-1 without not_logged_in
   // Documented freeze exceptions (main, 2026-09-24), Wave 6 — constants, not dispatch changes:
   'plan_review_missing', // load-check: no plan-review-xprov pass entry matches the current PLAN.md sha (FR-003)
-  'wave_inspect_missing', // wave-status: a completed wave lacks a wave-inspect-xprov pass or waiver (FR-004)
   // Wave 6b (FR-030): both map to `fail` before dispatch.
   'allowlist_invalid', // the anchor's allowlist is unreadable, off-schema, over the cap, owner-mismatched, not a separate commit or unapproved
   'allowlist_modified', // the reviewed range adds, changes, deletes or renames the allowlist
@@ -101,7 +99,6 @@ const REASON_LIST = Object.freeze([
   'snapshot_changed_after_scan',
   // Spec 016 (wave 1): reason constants only; the behavior behind them ships in the named waves.
   'owner_home_mismatch', // $HOME differs from the OS user's home: no owner store is written, permit-check is not ok (FR-009)
-  'scope_exempt', // wave 7: placement rule says this review does not apply
   'codex_blocked_fallback', // wave 8: blocked twice, Reinhard-only
   'secret_declined', // wave 9: owner declined the allowlist question for a changed-line hit
   'pr_anchor_unavailable', // wave 10: the real target base (gh pr view / ls-remote) could not be resolved or fetched
@@ -118,10 +115,10 @@ const VERDICTS = Object.freeze({ PASS: 'pass', FAIL_WITH_FINDINGS: 'fail-with-fi
 const VERDICT_NOT_APPLICABLE = 'not_applicable';
 
 // ---------- gate ids (rows in _shared/gates-registry.md) ----------
-const GATE_IDS = Object.freeze({ PLAN_REVIEW: 'plan-review-xprov', WAVE_INSPECT: 'wave-inspect-xprov' });
+const GATE_IDS = Object.freeze({ PLAN_REVIEW: 'plan-review-xprov' });
 const GATE_ID_LIST = Object.freeze(Object.values(GATE_IDS));
-// Gate ids that no longer exist (spec 025 W3). Stored rows that carry one stay in the owner stores byte for byte; no reader acts on them and none throws.
-const RETIRED_GATE_IDS = Object.freeze(['pr-diff-xprov']);
+// Gate ids that no longer exist (spec 025 W3, W4). Stored rows that carry one stay in the owner stores byte for byte; no reader acts on them and none throws.
+const RETIRED_GATE_IDS = Object.freeze(['pr-diff-xprov', 'wave-inspect-xprov']);
 
 // ---------- runner usage limits (FR-024) ----------
 const RUNNER_MODES = Object.freeze(['review', 'inspect']); // `check` is the runner's own consistency mode; a1 has no caller for it
@@ -131,7 +128,7 @@ const RUNNER_DEFAULT_TIMEOUT_SECONDS = 600; // the runner's own default; also th
 
 // ---------- numeric limits shared by later waves ----------
 const ARTIFACT_MAX_AGE_DAYS = 14; // decided 2026-09-24 (FR-020)
-// A run dir holding a completed APPROVED result is a pass load-check/wave-status
+// A run dir holding a completed APPROVED result is a pass load-check
 // read (Wave 7, rows are pointers): kept this long, then a re-review is needed.
 const PASS_RUN_MAX_AGE_DAYS = 180; // team-lead decision 2026-10-04
 const ROUND_CAP = 2; // FR-006

@@ -73,7 +73,6 @@ EXPECTED_RUNNER_VERSION="2.1.0"
 EXPECTED_UPSTREAM_COMMIT="8cf5e2c1771c5151d90c12642391d0ba8fa71b0e"
 EXPECTED_CLI_VERSION="codex-cli 0.155.1"
 GATE_PLAN="plan-review-xprov"
-GATE_WAVE="wave-inspect-xprov"
 # The compliant config measured in ~/.codex-a1-review/config.toml (2026-09-24):
 # comment header, the two runtime keys, and — added the same day after Wave 4
 # measured that Codex auto-installs remote plugins unless `features.plugins`

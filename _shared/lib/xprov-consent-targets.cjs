@@ -6,8 +6,7 @@
 // The waiver question lists exactly these targets and `consent waive` writes exactly these records; both call `collectTargets` and
 // nothing else decides. The facts come from the phase's `xreview/index.json` and from the run records it points to, never from
 // agent arguments. An index row is only a POINTER (index.json is agent-writable, see xprov-runrecord.cjs): a row counts as a failure
-// only when its run dir lies in this repository's artifacts dir and holds a readable result.json; head and base of a wave come
-// from the run dir's a1-reviewed.json, never from the row.
+// only when its run dir lies in this repository's artifacts dir and holds a readable result.json.
 //
 // A target is (gate, wave, lane) at the CURRENT PLAN.md sha. It is failed when
 //   - the newest failing row (`fail` | `fail-with-findings`, not a `waived` mirror) of that scope and sha is BOUND to a run record
@@ -15,10 +14,8 @@
 //     the same gate, wave and lane; a row that is not bound counts for nothing, and
 //   - the row's verdict and reason equal what the normalizer's total mapping (`classify`) derives from result.json, else the whole
 //     phase is refused (`index_row_mismatch`, SEC-3), and
-//   - no valid pass of that scope and sha exists (plan: planPassValid, wave: inspectPass), and
+//   - no valid pass of that scope and sha exists (planPassValid), and
 //   - the owner's waiver store holds no waiver for exactly that key.
-// A wave without a reviewed head and base (the inspection never completed: blocked, runner_failed) cannot be keyed by the waiver
-// store; it is reported in `skipped` and left to the terminal `xprov waive`.
 // Open BLOCKER and MAJOR titles are the ones the verified a1-findings.json KEEPS (the quarantine hook already ran), confirmed by the
 // run record's response; quarantined finding text is never shown (SEC-7). Without a verified findings record (a fail/blocked row, or a
 // hash mismatch) `findings` is null and the question prints a fixed line. A fail/quarantined or fail/secret_in_output row is `skipped`.
@@ -38,8 +35,8 @@ const AC = require('./xprov-accept.cjs');
 const { PRIOR_FINDINGS_FILE, classify } = require('./xprov-normalize.cjs');
 
 const FAIL_VERDICTS = Object.freeze([X.VERDICTS.FAIL, X.VERDICTS.FAIL_WITH_FINDINGS]);
-const GATE_ORDER = Object.freeze([X.GATE_IDS.PLAN_REVIEW, X.GATE_IDS.WAVE_INSPECT]);
-const WANT_MODE = Object.freeze({ [X.GATE_IDS.PLAN_REVIEW]: 'review', [X.GATE_IDS.WAVE_INSPECT]: 'inspect' }); // the runner mode of each gate (normalize's own rule)
+const GATE_ORDER = Object.freeze([X.GATE_IDS.PLAN_REVIEW]);
+const WANT_MODE = Object.freeze({ [X.GATE_IDS.PLAN_REVIEW]: 'review' }); // the runner mode of each gate (normalize's own rule)
 const SEVERITY_BUCKETS = Object.freeze(['blocker', 'major']);
 const FINDINGS_PER_BUCKET_MAX = 50; // read bound; the question lists fewer
 const ID_MAX_CHARS = 40;
@@ -49,15 +46,9 @@ const NOT_DERIVABLE = Object.freeze(['quarantined', 'secret_in_output']); // fai
 const refuse = (reason, detail) => Object.freeze({ ok: false, reason, detail });
 const str = (v) => (typeof v === 'string' ? v : '');
 
-/** The `<work-path>/.a1-review` state dir as a phase context. It holds no gate row any more (spec 025 W3): a scan of it lists no target. */
-function prCtx(workPath) {
-  const phaseDir = C.reviewDirOf(workPath, false);
-  return { phase: C.PR_PHASE, phaseDir, workPath: C.realWorkPath(workPath), planPath: path.join(phaseDir, 'PLAN.md'), indexPath: path.join(phaseDir, 'xreview', 'index.json') };
-}
-
 /** The phase directory under `root`, as { phase, phaseDir, planPath, indexPath }; a typed input error for a traversal-shaped or missing phase. */
 function phaseOf(root, phaseFlag) {
-  const phase = assertSafeSegment(phaseFlag, '--phase');
+  const phase = C.rejectReservedPhase(assertSafeSegment(phaseFlag, '--phase'));
   const phasesDir = path.join(root, '.a1', 'phases');
   const phaseDir = path.join(phasesDir, phase);
   let st = null;
@@ -127,19 +118,16 @@ const planRows = (index, planSha, phaseDir) => {
 /** True when the scope holds a pass whose run dir proves it. */
 function passed(rows, gate, planSha, root) {
   return rows.some((e) => e.verdict === X.VERDICTS.PASS && typeof e.result_path === 'string'
-    && (gate === X.GATE_IDS.PLAN_REVIEW ? RR.planPassValid(e.result_path, planSha, root) : RR.inspectPass(e.result_path, planSha, root) !== null));
+    && gate === X.GATE_IDS.PLAN_REVIEW && RR.planPassValid(e.result_path, planSha, root));
 }
 
 /** True when a1's own side record closes the scope (spec 016): the twice-BLOCKED fallback or the round-cap dispositions — nothing is left to waive. */
-function sideClosed(index, gate, wave, lane, planSha, root) {
-  if (gate === X.GATE_IDS.PLAN_REVIEW) return AC.planSideRecord(index, gate, planSha, root) !== null;
-  const side = AC.waveSideCandidates(index, gate, { wave, lane }, planSha, root);
-  return side.length > 0;
+function sideClosed(index, gate, planSha, root) {
+  return gate === X.GATE_IDS.PLAN_REVIEW && AC.planSideRecord(index, gate, planSha, root) !== null;
 }
 
 function covered(store, key) {
-  if (key.gate === X.GATE_IDS.PLAN_REVIEW) return WV.planWaiver(store, key) !== null;
-  return WV.waveWaivers(store, key).some((w) => w.head === key.head && w.base === key.base);
+  return key.gate === X.GATE_IDS.PLAN_REVIEW && WV.planWaiver(store, key) !== null;
 }
 
 /** One target for the newest failing row of a scope, or { skipped } / null. */
@@ -159,9 +147,7 @@ function targetOf(scopeRows, base, root, store) {
   if (doc !== null && Number.isInteger(row.round) && doc.round !== row.round) {
     return { refuse: refuse('index_row_mismatch', `the index row for ${row.gate}${wave === null ? '' : ` wave ${wave}`} names round ${row.round} but its findings record names round ${nullable(doc.round)}; no chat waiver is offered for this phase; nothing written`) };
   }
-  const hb = wave === null ? { head: null, base: null } : RR.reviewedHeadBase(row.result_path, rec, root);
-  const key = { repo: base.repo, phase: base.phase, gate: row.gate, plan_sha256: base.planSha, wave, lane, head: hb.head, base: hb.base };
-  if (wave !== null && hb.head === null) return { skipped: { gate: row.gate, wave, lane, why: 'no reviewed head and base' } };
+  const key = { repo: base.repo, phase: base.phase, gate: row.gate, plan_sha256: base.planSha, wave, lane, head: null, base: null };
   if (covered(store, key)) return null;
   return { target: Object.freeze({
     key: Object.freeze(key), verdict: derived.verdict, reason: typeof derived.reason === 'string' && X.REASON_LIST.includes(derived.reason) ? derived.reason : null,
@@ -177,11 +163,10 @@ const order = (a, b) => GATE_ORDER.indexOf(a.key.gate) - GATE_ORDER.indexOf(b.ke
  * possibly empty) or a refusal { ok: false, reason, detail }. Throws a typed input error for a traversal-shaped or unknown phase.
  */
 function collectTargets(o) {
-  const ctx = o.workPath === undefined ? phaseOf(o.root, o.phase) : prCtx(o.workPath);
+  const ctx = phaseOf(o.root, o.phase);
   const repo = C.commonDirOf(o.root);
   if (repo === null) return refuse('not_a_repository', `${o.root} is not a git repository`);
   const planBytes = C.readNoFollow(ctx.planPath, X.MAX_RESULT_BYTES * 4);
-  if (!planBytes && o.workPath !== undefined && (C.readIndex(ctx.indexPath) || [null]).length === 0) return Object.freeze({ ok: true, repo, phase: ctx.phase, planSha: null, ctx, targets: Object.freeze([]), skipped: Object.freeze([]) }); // a PR review that never ran has nothing to waive
   if (!planBytes) return refuse('plan_missing', `PLAN.md not found (or not a regular file) in the phase ${C.clip(ctx.phase, 80)}`);
   const index = C.readIndex(ctx.indexPath);
   if (index === null) return refuse('index_unreadable', 'xreview/index.json is unparseable or not an array of objects');
@@ -199,7 +184,7 @@ function collectTargets(o) {
   const skipped = [];
   for (const scopeRows of scopes.values()) {
     const gate = scopeRows[0].gate;
-    if (passed(scopeRows, gate, planSha, o.root) || sideClosed(index, gate, C.waveNumber(scopeRows[0].wave), laneOf(scopeRows[0].lane), planSha, o.root)) continue;
+    if (passed(scopeRows, gate, planSha, o.root) || sideClosed(index, gate, planSha, o.root)) continue;
     const t = targetOf(scopeRows, base, o.root, store);
     if (t === null) continue;
     if (t.refuse) return t.refuse;

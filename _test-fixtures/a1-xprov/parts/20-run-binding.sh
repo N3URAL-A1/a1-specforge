@@ -331,13 +331,14 @@ RB_PATH=""
 }
 
 # ---------- Wave 6 security-review conditions (Samuel, 2026-10-09) ----------
-# Literals from the review: SEC-1 `run --gate` takes only the two xprov gates; SEC-2 the
+# Literals from the review: SEC-1 `run --gate` takes only the registered xprov gate (spec 025: plan-review-xprov); SEC-2 the
 # snapshot's git metadata (config, hooks, info) is bound by a hash in the scan record and
 # every a1 git call on a snapshot pins four keys; SEC-3 the realpath is used from the
 # binding on. Arm -> the single production change that turns it red:
 #
 #   RF1  --gate phantom / reconcile-probe + record gitleaks:false -> exit 2, 0 spawns;
-#        wave-inspect-xprov still runs.         Red if any registered gate id is accepted.
+#        plan-review-xprov still runs; the removed wave-inspect-xprov is a usage error too (spec 025).
+#                                               Red if any unregistered gate id is accepted.
 #   RF2  fsmonitor script appended to the snapshot's .git/config -> snapshot_changed_after_scan
 #        / git_meta_mismatch, marker file absent, 0 spawns.
 #                                               Red if the config is not bound by a hash.
@@ -377,12 +378,12 @@ rf_plant_fsmonitor() {
   printf '[core]\n\tfsmonitor = %s\n' "$script" >> "$1/.git/config"
 }
 
-# ---------- RF1: only the two xprov gates may drive `run` ----------
+# ---------- RF1: only the registered xprov gate may drive `run` ----------
 if [[ -n "$NOGL_PATH" ]]; then
   rb_arm blocking; RB_PATH="$NOGL_PATH"; rb_snap
   assert_rc "RF1 setup: snapshot without gitleaks exits 0" 0 "$RB_SRC" "$RB_SERR"
   assert_json "RF1 setup: the record says gitleaks:false" "$RB_SOUT" "j.gitleaks" "false"
-  for g in phantom reconcile-probe nonexistent-gate; do
+  for g in phantom reconcile-probe nonexistent-gate wave-inspect-xprov; do
     rf_run_gate "$g"
     assert_rc "RF1 --gate $g is a usage error" 2 "$RB_RC" "$RB_ERR"
     assert_eq "RF1 --gate $g: the fake runner was invoked 0 times" "$(rb_invoked)" "0"
@@ -391,8 +392,8 @@ if [[ -n "$NOGL_PATH" ]]; then
 fi
 {
   rb_arm blocking; rb_snap
-  rf_run_gate wave-inspect-xprov
-  assert_rc "RF1 control: --gate wave-inspect-xprov still runs" 0 "$RB_RC" "$RB_ERR"
+  rf_run_gate "$GATE_PLAN"
+  assert_rc "RF1 control: --gate $GATE_PLAN still runs" 0 "$RB_RC" "$RB_ERR"
   assert_eq "RF1 control: the fake runner was invoked once" "$(rb_invoked)" "1"
 }
 

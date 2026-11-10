@@ -273,7 +273,6 @@ caseOS7() {
     FAKE_RUNNER_ARGV_FILE="$argv" fake_runner_env
     G_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov gate --phase p22 --gate "$GATE_PLAN" 2>"$TMP22/err.txt")"; G_RC=$?
     assert_rc "OS7 [$v] plan gate exits 1 (no valid permit)" 1 "$G_RC"
-    G_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov gate --phase p22 --gate "$GATE_WAVE" --wave 1 --base "$PHASE_HEAD" 2>"$TMP22/err.txt")"
     [[ ! -e "$argv" ]] && ok "OS7 [$v] the fake runner recorded zero calls" || bad "OS7 [$v] the runner was invoked"
     [[ -z "$(ls -A "$HOME/.a1-xprov/snapshots" 2>/dev/null)" ]] && ok "OS7 [$v] no snapshot was built" || bad "OS7 [$v] a snapshot exists"
   done
@@ -407,7 +406,6 @@ caseOS10() {
   local argv="$TMP22/argv10.json"; rm -f "$argv"; FAKE_RUNNER_ARGV_FILE="$argv" fake_runner_env
   G_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov gate --phase p22 --gate "$GATE_PLAN" 2>"$TMP22/err.txt")"; G_RC=$?
   assert_rc "OS10f the plan gate refuses on an unbound entry" 1 "$G_RC"
-  G_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov gate --phase p22 --gate "$GATE_WAVE" --wave 1 --base "$PHASE_HEAD" 2>"$TMP22/err.txt")"
   [[ ! -e "$argv" ]] && ok "OS10f the fake runner recorded zero calls" || bad "OS10f the runner was invoked"
   [[ -z "$(ls -A "$HOME/.a1-xprov/snapshots" 2>/dev/null)" ]] && ok "OS10f no snapshot was built" || bad "OS10f a snapshot exists"
   FAKE_RUNNER_ARGV_FILE="" fake_runner_env

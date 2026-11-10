@@ -9,16 +9,12 @@
 //               observe → cleanupSnapshot, in that order, stopping at the
 //               first non-zero step; every outcome appends one entry to
 //               .a1/phases/<name>/PLAN-REVIEW-LOG.md naming the step and
-//               reason. Plan review snapshots the primary checkout at HEAD;
-//               wave inspect snapshots $WORK_PATH at its HEAD.
+//               reason. Plan review snapshots the primary checkout at HEAD.
 //   load-check  sha256(PLAN.md) must equal the newest plan-review-xprov PASS
 //               entry's plan_sha256, or a waiver in the guarded store must be
 //               bound to that sha (xprov-waivers.cjs), else plan_review_missing.
 //               --expect-sha <sha>: the plan accepted at Load (a1-execute
 //               re-runs this before every wave; FR-003 TOCTOU).
-//   wave-status every completed wave (STATUS*.md `## Wave N` headings, or
-//               --waves) needs a wave-inspect-xprov pass or a store waiver
-//               for that wave, lane, plan sha and a head in --work-path's history.
 //   waive       HUMAN ONLY (FR-007): the guards of the allowlist owner
 //               approval (TTY, no CLAUDE* env, no Claude Code ancestor), the
 //               key computed here, the gate id typed back, then one record in
@@ -58,7 +54,7 @@ const { parseRegistryRow } = require('./gate-ids.cjs');
 const X = require('./xprov.cjs');
 const C = require('./xprov-common.cjs');
 // Shared helpers — one definition each, in xprov-common.cjs.
-const { REGISTRY_PATH, LANE_RE, DETAIL_MAX_CHARS, inputError, clip, parsePositive, parseWave, waveNumber, sha256, isPlainObject, readIndex, sameWave, sameLane, writeStdoutSync, gitOut } = C;
+const { REGISTRY_PATH, LANE_RE, DETAIL_MAX_CHARS, inputError, clip, parsePositive, sha256, isPlainObject, readIndex, sameWave, sameLane, writeStdoutSync, gitOut } = C;
 const { permitCheck, permitHint, STATES: PERMIT_STATES } = require('./xprov-permit.cjs');
 const { preflight, resolveTool } = require('./xprov-preflight.cjs');
 const { snapshot, cleanupSnapshot, INPUTS_SUFFIX, INPUT_FILES } = require('./xprov-snapshot.cjs');
@@ -67,11 +63,9 @@ const HC = require('./xprov-hit-cover.cjs');
 const R = require('./xprov-recover.cjs');
 const WV = require('./xprov-waivers.cjs');
 const NP = require('./xprov-gate-nopermit.cjs');
-const PL = require('./xprov-placement.cjs');
 const RR = require('./xprov-runrecord.cjs');
 const DL = require('./xprov-delta.cjs');
 const AC = require('./xprov-accept.cjs');
-const { completedWavesFromStatus, parseWavesFlag, kindWaves, laneTips } = require('./xprov-wave-helpers.cjs');
 const { guardRefusal, readTypedLine, writeGuardedStore } = require('./xprov-approve.cjs');
 const { appendXreviewNote } = require('./xprov-normalize.cjs');
 const { dispositionsPath, priorRound, writeFeedback } = require('./xprov-feedback.cjs');
@@ -89,10 +83,9 @@ const RETRO_ISSUE_NOT_APPLICABLE = 'xprov_not_applicable';
 const APPLIES_TO = Object.freeze({ ALL: 'all', PERMITTED_REPOS: 'permitted-repos' });
 const NOT_APPLICABLE_ACCEPTED = 'not_applicable';
 const NOT_APPLICABLE_NOTICE = 'not_applicable — the owner recorded that no external review applies to this repository; no code leaves, the pipeline continues';
-const noticeOf = (state, placement) => (placement ? PL.NOTICE : NP.isNoPermitState(state) ? NP.noticeFor(state) : NOT_APPLICABLE_NOTICE); // spec 016 FR-012: no permit has its own one-line notice
+const noticeOf = (state) => (NP.isNoPermitState(state) ? NP.noticeFor(state) : NOT_APPLICABLE_NOTICE); // spec 016 FR-012: no permit has its own one-line notice
 const EXTERNAL_AGENT = 'xprov-codex';
 const SUB_MAX_BUFFER = 64 * 1024 * 1024;
-const BASE_HEX_RE = /^[0-9a-f]{7,40}$/i; // same rule as `run`: a resolved sha, never a symbolic ref
 // A round is a review that produced a verdict to act on (pass or
 // fail-with-findings); every other outcome (blocked, runner_failed, secret_*,
 // quarantined, plan_changed, tripwire, …) is an attempt that does not consume
@@ -105,7 +98,6 @@ const BY_MAX_CHARS = 64;
 // Spec 014 FR-011: a blocking gate needs gitleaks; the detail starts with the code `run` reports as well.
 const GITLEAKS_MISSING_DETAIL = 'gitleaks_missing — gitleaks is required for blocking gates — install it (brew install gitleaks) and re-run';
 const GITLEAKS_WARNING_LINE = 'xprov gate: warning gitleaks not on PATH — patterns-only secret scan';
-const SIZE_FLAG_GONE = 'gate: no flag sets the size or the placement — the size is read from the spec named in PLAN.md (spec 016 FR-019)';
 const RESUME_GONE = 'gate: --resume/--feedback are not accepted — every round is a fresh session; round N ≥ 2 builds its feedback from the round N−1 findings and the dispositions file';
 
 // ---------- small helpers ----------
@@ -137,7 +129,7 @@ function appliesToFor(gateId) {
   return cell;
 }
 
-/** The ONE predicate for gate, load-check and wave-status: the permit result and whether this gate is
+/** The ONE predicate for gate and load-check: the permit result and whether this gate is
  * not applicable — the state is `denied` (file and the owner's store agree) or "no permit" (spec 016 FR-012, xprov-gate-nopermit.cjs)
  * AND the row applies to permitted repos only. */
 function permitFor(root, gateId) {
@@ -154,7 +146,7 @@ function enforcementFor(gateId) {
 }
 
 function phaseContext(phaseFlag) {
-  const phase = assertSafeSegment(phaseFlag, '--phase');
+  const phase = C.rejectReservedPhase(assertSafeSegment(phaseFlag, '--phase'));
   const root = repoRoot();
   const phaseDir = path.join(root, '.a1', 'phases', phase);
   if (!fs.existsSync(phaseDir) || !fs.statSync(phaseDir).isDirectory()) throw inputError(`phase dir not found: ${phaseDir}`);
@@ -167,23 +159,19 @@ function requireGateId(gateFlag) {
   return gate;
 }
 
-const scopeOf = (wave) => (wave === null ? 'plan' : `wave-${wave}`);
-const obsSkill = (ctx) => (ctx.isPlan ? 'a1-plan' : 'a1-execute');
+const scopeOf = () => 'plan';
+const obsSkill = () => 'a1-plan';
 
 // ---------- gate driver ----------
 
 function resolveGateArgs(o) {
   const ctx = phaseContext(o.phase);
   const gate = requireGateId(o.gate);
-  const isPlan = gate === X.GATE_IDS.PLAN_REVIEW;
-  if (isPlan && (o.wave !== undefined || o.base !== undefined || o.lane !== undefined)) throw inputError('plan-review-xprov takes no --wave, --base or --lane');
-  if (!isPlan && (o.wave === undefined || o.base === undefined)) throw inputError('wave-inspect-xprov requires --wave <N> and --base <PRE_WAVE_HEAD>');
-  const wave = isPlan ? null : parseWave(o.wave, 'wave');
-  if (!isPlan && !BASE_HEX_RE.test(String(o.base))) throw inputError(`--base must be a resolved commit sha (7–40 hex), got ${JSON.stringify(clip(o.base, 80))}`);
-  const lane = C.parseLane(o.lane);
+  if (o.wave !== undefined || o.base !== undefined || o.lane !== undefined || o.workPath !== undefined) throw inputError('plan-review-xprov takes no --wave, --base, --lane or --work-path');
+  const wave = null;
+  const lane = null;
   const pluginAllowlist = o.allowPlugins === undefined ? [] : String(o.allowPlugins).split(',').map((s) => s.trim()).filter(Boolean);
-  const workPath = o.workPath === undefined ? ctx.root : path.resolve(String(o.workPath));
-  if (!fs.existsSync(workPath) || !fs.statSync(workPath).isDirectory()) throw inputError(`--work-path is not a directory: ${workPath}`);
+  const workPath = ctx.root;
   if (!fs.existsSync(ctx.planPath)) throw inputError(`PLAN.md not found in ${ctx.phaseDir}`);
   const index = readIndex(ctx.indexPath);
   if (index === null) throw inputError(`index.json unparseable or not an array of objects: ${ctx.indexPath}`);
@@ -194,8 +182,8 @@ function resolveGateArgs(o) {
   const taken = index.find((e) => e.gate === gate && sameWave(e, wave) && sameLane(e, lane) && Number(e.round) === round);
   if (o.round !== undefined && taken) throw inputError(`index.json already holds ${gate} ${scopeOf(wave)}${lane ? ` lane ${lane}` : ''} round ${round} (verdict ${taken.verdict}) — omit --round to take the next one`);
   return Object.freeze({
-    ...ctx, gate, isPlan, mode: isPlan ? 'review' : 'inspect', wave, lane,
-    base: isPlan ? null : String(o.base), workPath, round, prior, pluginAllowlist,
+    ...ctx, gate, isPlan: true, mode: 'review', wave, lane,
+    base: null, workPath, round, explicitRound: o.round !== undefined, prior, pluginAllowlist,
     timeout: o.timeout === undefined ? null : parsePositive(o.timeout, 'timeout'),
     enforcement: enforcementFor(gate),
   });
@@ -224,7 +212,7 @@ function headOf(repo) {
 }
 
 function stepSnapshot(ctx, feedback) {
-  const source = ctx.isPlan ? ctx.root : ctx.workPath;
+  const source = ctx.root;
   const commit = headOf(source);
   if (!commit) return { ok: false, reason: X.REASONS.snapshot_failed, detail: `git rev-parse HEAD failed in ${source}` };
   // `base` (null for plan review) sizes the depth-limited fetch in snapshot():
@@ -233,7 +221,7 @@ function stepSnapshot(ctx, feedback) {
   // measure this line — contract from xprov-snapshot.cjs (Samuel W5 MAJOR 6).
   // FR-030 (b): every allowlist read runs against the PRIMARY checkout; the
   // gate kind decides the first-parent step (plan review only).
-  const s = snapshot({ sourceRepo: source, commit, base: ctx.base, primaryRoot: ctx.root, gateKind: ctx.isPlan ? 'plan' : 'inspect', inputs: snapshotInputs(ctx, feedback) });
+  const s = snapshot({ sourceRepo: source, commit, base: ctx.base, primaryRoot: ctx.root, gateKind: 'plan', inputs: snapshotInputs(ctx, feedback) });
   const allowlist = allowlistFields(s);
   return s.ok ? { ok: true, snapshot: s.snapshot, commit: s.commit, inputs: s.inputs, gitleaks: s.gitleaks === true, allowlist } : { ok: false, reason: s.reason, detail: s.reason_detail || s.detail || s.secret_pattern || null, allowlist };
 }
@@ -278,10 +266,6 @@ function noteAllowlist(ctx, al) {
 
 function stepRun(ctx, snap, inputs) {
   const argv = ['run', '--mode', ctx.mode, '--snapshot', snap, '--plan', inputs.plan, '--phase', ctx.phase, '--gate', ctx.gate, '--round', String(ctx.round)];
-  if (ctx.wave !== null) argv.push('--wave', String(ctx.wave));
-  if (ctx.lane !== null) argv.push('--lane', ctx.lane);
-  if (ctx.base !== null) argv.push('--base', ctx.base);
-  if (ctx.workPath !== ctx.root) argv.push('--work-path', ctx.workPath);
   if (ctx.timeout !== null) argv.push('--timeout', String(ctx.timeout));
   if (NO_LOG_FLAG) argv.push(`--${NO_LOG_FLAG}`); // one log entry per gate call: the driver's
   if (inputs.feedback) argv.push('--feedback', inputs.feedback);
@@ -298,9 +282,6 @@ function stepNormalize(ctx, resultPath, al) {
   const argv = ['normalize', resultPath, '--phase', ctx.phase, '--gate', ctx.gate, '--round', String(ctx.round), '--allowlisted-hits', String(al.allowlisted_hits)];
   if (al.allowlist_anchor) argv.push('--allowlist-anchor', al.allowlist_anchor);
   if (al.allowlist_approved_blob) argv.push('--allowlist-approved-blob', al.allowlist_approved_blob);
-  if (ctx.wave !== null) argv.push('--wave', String(ctx.wave));
-  if (ctx.lane !== null) argv.push('--lane', ctx.lane);
-  if (ctx.workPath !== ctx.root) argv.push('--work-path', ctx.workPath);
   const r = runSub(ctx, argv);
   if (!r.json || !Object.values(X.VERDICTS).includes(r.json.verdict)) {
     return { ok: false, reason: X.REASONS.malformed, detail: r.stderr || `normalize exited ${r.status} without a verdict` };
@@ -317,7 +298,6 @@ function stepNormalize(ctx, resultPath, al) {
 function nextFor(ctx, verdict) {
   if (verdict !== X.VERDICTS.FAIL_WITH_FINDINGS || ctx.round >= X.ROUND_CAP) return null;
   const disp = dispositionsPath(ctx, ctx.round);
-  if (!ctx.isPlan) return { fix_round: ctx.round, dispositions_path: disp };
   return {
     round_cmd: `node ${A1_TOOLS} xprov gate --phase ${ctx.phase} --gate ${ctx.gate} --round ${ctx.round + 1}`,
     dispositions_path: disp,
@@ -388,6 +368,16 @@ function gate(o) {
   return state.logged ? finishRun(ctx, state, out) : out;
 }
 
+/** The newest index pass whose run dir proves an APPROVED review of exactly the current PLAN.md, or null. */
+function passFor(ctx) {
+  const index = readIndex(ctx.indexPath);
+  const buf = C.readNoFollow(ctx.planPath, X.MAX_RESULT_BYTES * 4);
+  if (index === null || !buf) return null;
+  const planSha = C.sha256(buf);
+  const hits = index.filter((e) => e.gate === ctx.gate && e.verdict === X.VERDICTS.PASS && e.waived !== true && e.plan_sha256 === planSha && RR.planPassValid(e.result_path, planSha));
+  return hits.length ? hits[hits.length - 1] : null;
+}
+
 function driveGate(ctx, state) {
   const base = Object.freeze({ verdict: X.VERDICTS.FAIL, reason: null, reason_detail: null, step: null, gate: ctx.gate, phase: ctx.phase, wave: ctx.wave, lane: ctx.lane, round: ctx.round, mode: ctx.mode, enforcement: ctx.enforcement, findings_path: null, xreview_path: null, result_path: null, next: null, gitleaks: null, ...allowlistFields({}) });
   // A failing step is a FAIL whatever was reached so far — after normalize
@@ -397,16 +387,17 @@ function driveGate(ctx, state) {
   // permit-check FIRST and outside the logged section: a repository without a
   // permission record gets no a1 write at all — no PLAN-REVIEW-LOG.md entry, no
   // xreview/ (Reinhard, PR review MAJOR 1; the W5 rule for every xprov writer).
-  // placement BEFORE the permit branch (spec 016 D-1, FR-019/FR-020): a review that does not apply asks nobody and writes nothing
-  const placed = ctx.isPlan ? PL.planPlacement(ctx.root, ctx.planPath) : PL.wavePlacement(ctx.planPath, ctx.wave, ctx.workPath, ctx.base);
-  if (!placed.run) return PL.result(base, placed);
+  // spec 025: no placement rule any more — every plan reaches this permit branch first (no permit and denied stay not_applicable)
   const { permit, notApplicable: na } = permitFor(ctx.root, ctx.gate);
   if (na) return NP.isNoPermit(permit) ? NP.result(base, permit) : recordNotApplicable(ctx, base, permit);
   if (!permit.ok) {
     const everyRepo = permit.state === PERMIT_STATES.DENIED; // `denied` on an `applies_to: all` row still fails
     return fail('permit-check', everyRepo ? X.REASONS.external_review_not_permitted : permit.reason, everyRepo ? `external_review: denied, but ${ctx.gate} applies to every repository` : permit.detail, { permit_state: permit.state });
   }
-  const dl = ctx.isPlan ? DL.prepare(ctx) : null; // FR-030: after a passed plan review only the changed sections go out; a cosmetic edit sends nothing
+  // spec 025 W4 (one run per state): an unchanged PLAN.md that already holds a valid pass is answered from it, no runner call (same proof as load-check)
+  const reused = ctx.explicitRound ? null : passFor(ctx); // an explicit --round is a deliberate re-run and is never answered from a pass
+  if (reused) { const r = Object.freeze({ ...base, verdict: X.VERDICTS.PASS, step: 'reuse', reason: null, reason_detail: 'unchanged_plan_pass_reused', result_path: reused.result_path || null, xreview_path: reused.xreview_path || null, next: null }); state.logged = true; state.observed = true; appendLog(ctx, r, 'none', state); return r; } // observed = true: no run, so no run observation
+  const dl = DL.prepare(ctx); // FR-030: after a passed plan review only the changed sections go out; a cosmetic edit sends nothing
   if (dl && dl.kind === 'cosmetic') { const r = DL.passResult(base, dl); state.logged = true; appendLog(ctx, r, 'none', state); return r; }
   if (ctx.round > X.ROUND_CAP) { DL.cleanup(dl); const r = fail('round', X.REASONS.round_cap, `round ${ctx.round} > cap ${X.ROUND_CAP}`); state.logged = true; appendLog(ctx, r, 'none', state); return r; }
   const prior = priorRound(ctx); // usage errors surface before any side effect (exit 2 writes nothing)
@@ -507,11 +498,6 @@ function loadCheck(o) {
   const planSha = sha256(fs.readFileSync(ctx.planPath));
   const moved = o.expectSha !== undefined && o.expectSha !== planSha;
   const movedDetail = `PLAN.md changed since Load: accepted ${o.expectSha}, now ${planSha}`;
-  // placement first (spec 016 D-1): a plan the rule exempts needs no review and no permit
-  const placed = PL.planPlacement(ctx.root, ctx.planPath);
-  if (!placed.run) {
-    return Object.freeze({ ok: !moved, gate, enforcement, phase: ctx.phase, plan_sha256: planSha, accepted: moved ? null : NOT_APPLICABLE_ACCEPTED, matched_entry: null, matched_waiver: null, newest_pass: null, permit_state: null, placement: moved ? null : PL.REASON, reason: moved ? X.REASONS.plan_changed : null, detail: moved ? movedDetail : null });
-  }
   // A denied repository is read at check time from the permit state, never from an index row (spec 012 FR-005).
   const np = permitFor(ctx.root, gate);
   if (np.notApplicable) {
@@ -542,71 +528,6 @@ function loadCheck(o) {
   });
 }
 
-// ---------- wave-status ----------
-
-/** Coverage key is (wave, lane): a lane wave needs its own pass or a store
- * waiver (FR-004, FR-007), both bound to this phase's PLAN.md sha and chained
- * per lane (xprov-waivers.cjs chainCoverage): base ⊑ head, head of each wave =
- * base of the next completed wave, last wave's head = the lane work path's
- * HEAD up to commits under `.a1/phases/<phase>/`. Lane work paths come from
- * --lane-work-path L=dir[,…]; a lane without one lacks (fail closed). An
- * index.json `waived: true` row counts for nothing. */
-function waveStatus(o) {
-  const ctx = phaseContext(o.phase);
-  const gate = X.GATE_IDS.WAVE_INSPECT;
-  const enforcement = enforcementFor(gate);
-  if (o.lane !== undefined && o.waves === undefined) throw inputError('--lane qualifies --waves');
-  const completed = o.waves === undefined ? completedWavesFromStatus(ctx.phaseDir) : parseWavesFlag(o.waves, C.parseLane(o.lane));
-  if (!completed.length) throw inputError(`no completed waves: no \`## Wave N\` heading in ${ctx.phaseDir}/STATUS*.md and no --waves given`);
-  const index = readIndex(ctx.indexPath);
-  if (index === null) throw inputError(`index.json unparseable or not an array of objects: ${ctx.indexPath}`);
-  const workPath = o.workPath === undefined ? ctx.root : path.resolve(String(o.workPath));
-  const planSha = fs.existsSync(ctx.planPath) ? sha256(fs.readFileSync(ctx.planPath)) : null;
-  if (o.expectSha !== undefined && !/^[0-9a-f]{64}$/.test(String(o.expectSha))) throw inputError('--expect-sha must be a lowercase sha256');
-  if (o.expectSha !== undefined && o.expectSha !== planSha) {
-    return Object.freeze({ ok: false, gate, enforcement, phase: ctx.phase, completed_waves: [...new Set(completed.map((p) => p.wave))], completed_detail: completed, lacking: [], lacking_detail: [], scope_exempt: [], head: null, reason: X.REASONS.plan_changed, detail: `PLAN.md changed since Load: accepted ${o.expectSha}, now ${planSha}` });
-  }
-  // placement (FR-020, WP-2): only for the PLAN.md accepted at Load (--expect-sha) and with the wave's real diff (--wave-range); a wave with a gate row is judged on its rows
-  const ex = PL.exemptKeys({ planPath: ctx.planPath, phase: ctx.phase, planShaOk: o.expectSha !== undefined, completed, rangesText: o.waveRange, workPath, hasRow: (p) => index.some((e) => e.gate === gate && waveNumber(e.wave) === p.wave) }); const exempt = ex.keys;
-  const exemptWaves = [...new Set(completed.filter((p) => exempt.has(`${p.wave}|${p.lane || ''}`)).map((p) => p.wave))];
-  if (exempt.size === completed.length) {
-    return Object.freeze({ ok: true, gate, enforcement, phase: ctx.phase, completed_waves: [...new Set(completed.map((p) => p.wave))], completed_detail: completed, lacking: [], lacking_detail: [], not_applicable: exemptWaves, scope_exempt: exemptWaves, deferred_to_pr: ex.deferred, placement: PL.REASON, head: null, reason: null });
-  }
-  const ws = permitFor(ctx.root, gate);
-  if (ws.notApplicable) {
-    // No head/base chain is computed: nothing was reviewed, and nothing leaves (spec 012 FR-005).
-    return Object.freeze({
-      ok: true, gate, enforcement, phase: ctx.phase, completed_waves: [...new Set(completed.map((p) => p.wave))], completed_detail: completed,
-      lacking: [], lacking_detail: [], not_applicable: [...new Set(completed.map((p) => p.wave))], head: null, reason: null, permit_state: ws.permit.state,
-    });
-  }
-  const repo = C.commonDirOf(ctx.root);
-  const h = WV.headIn(workPath, repo);
-  if (h.problem) throw inputError(h.problem);
-  const store = WV.readWaivers();
-  const tips = laneTips(o.laneWorkPaths, repo);
-  tips[''] = { workPath, head: h.head };
-  const candidates = (p) => (planSha === null ? [] : [
-    // head/base come from the run dir (a1-reviewed.json), never from the row (Reinhard M1)
-    ...index.filter((e) => e.gate === gate && waveNumber(e.wave) === p.wave && sameLane(e, p.lane) && e.verdict === X.VERDICTS.PASS && e.waived !== true && e.plan_sha256 === planSha)
-      .map((e) => RR.inspectPass(e.result_path, planSha)).filter(Boolean).map((hb) => ({ kind: 'pass', head: hb.head, base: hb.base })),
-    ...WV.waveWaivers(store, { repo, phase: ctx.phase, plan_sha256: planSha, wave: p.wave, lane: p.lane }).map((w) => ({ kind: 'waiver', head: w.head, base: w.base })),
-    // twice BLOCKED (FR-026) or round_cap closed by dispositions (FR-025): head/base from the run dir like a pass, accepted only with a1's marker
-    ...AC.waveSideCandidates(index, gate, p, planSha, ctx.root),
-  ]);
-  const chosen = WV.chainCoverage(completed, candidates, tips, ctx.phase, exempt, ex.ranges);
-  const covered = (p) => exempt.has(`${p.wave}|${p.lane || ''}`) || chosen.get(`${p.wave}|${p.lane || ''}`) != null;
-  const lackingDetail = completed.filter((p) => !covered(p));
-  const lacking = [...new Set(lackingDetail.map((p) => p.wave))];
-  return Object.freeze({
-    ok: lacking.length === 0, gate, enforcement, phase: ctx.phase,
-    completed_waves: [...new Set(completed.map((p) => p.wave))], completed_detail: completed, lacking, lacking_detail: lackingDetail,
-    head: h.head, scope_exempt: exemptWaves, deferred_to_pr: ex.deferred, exempt_refused: ex.refused,
-    blocked_fallback: kindWaves(completed, chosen, 'fallback'), disposed: kindWaves(completed, chosen, AC.DISPOSITIONS), declined: kindWaves(completed, chosen, AC.DECLINED),
-    reason: lacking.length ? X.REASONS.wave_inspect_missing : null,
-  });
-}
-
 // ---------- waive (human only) ----------
 
 /** The single-line text flags of a waiver (`--reason`, `--by`). */
@@ -618,19 +539,13 @@ function oneLineFlag(value, name, max) {
   return s;
 }
 
-/** Every key part, computed here (FR-007 binding) — never from a flag value but --base/--work-path. */
-function waiverKey(ctx, gate, wave, lane, o) {
+/** Every key part, computed here (FR-007 binding) — never from a flag value. */
+function waiverKey(ctx, gate) {
   const repo = C.commonDirOf(ctx.root);
   if (!repo) throw inputError(`no git-common-dir for ${ctx.root}`);
   if (!fs.existsSync(ctx.planPath)) throw inputError(`PLAN.md not found in ${ctx.phaseDir}`);
-  const key = { repo, phase: ctx.phase, gate, plan_sha256: WV.planShaOf(ctx.planPath), wave, lane, head: null, base: null };
-  if (gate === X.GATE_IDS.PLAN_REVIEW) return key;
-  const workPath = o.workPath === undefined ? ctx.root : path.resolve(String(o.workPath));
-  const h = WV.headIn(workPath, repo);
-  if (h.problem) throw Object.assign(new Error(h.problem), { code: 'A1_WAIVE_KEY' });
-  const b = gitOut(['-C', workPath, 'rev-parse', '--verify', '--quiet', `${String(o.base)}^{commit}`]);
-  if (b === null || !BASE_HEX_RE.test(String(o.base))) throw inputError(`--base must be a commit sha that resolves in ${workPath}`);
-  return { ...key, head: h.head, base: b.trim() };
+  const key = { repo, phase: ctx.phase, gate, plan_sha256: WV.planShaOf(ctx.planPath), wave: null, lane: null, head: null, base: null };
+  return key;
 }
 
 /** Mirror without authority: index.json row, XREVIEW section, observation. */
@@ -656,19 +571,15 @@ function waive(o) {
   const ctx = phaseContext(o.phase);
   const gate = requireGateId(o.gate);
   enforcementFor(gate);
-  const isPlan = gate === X.GATE_IDS.PLAN_REVIEW;
-  if (isPlan && (o.wave !== undefined || o.lane !== undefined || o.base !== undefined || o.workPath !== undefined)) throw inputError('plan-review-xprov takes no --wave, --lane, --base or --work-path');
-  if (!isPlan && (o.wave === undefined || o.base === undefined)) throw inputError('wave-inspect-xprov requires --wave <N> and --base <PRE_WAVE_HEAD>');
-  const wave = isPlan ? null : parseWave(o.wave, 'wave');
-  const lane = isPlan ? null : C.parseLane(o.lane);
+  if (o.wave !== undefined || o.lane !== undefined || o.base !== undefined || o.workPath !== undefined) throw inputError('plan-review-xprov takes no --wave, --lane, --base or --work-path');
   const reason = oneLineFlag(o.reason, 'reason', REASON_MAX_CHARS);
   const by = C.validatePlainBy(oneLineFlag(o.by, 'by', BY_MAX_CHARS)); // spec 016 FR-011, SEC-4
   const refusal = guardRefusal(); // the owner-approval guards, one implementation (xprov-approve.cjs)
   if (refusal) return { code: X.EXIT_USAGE, msg: `${refusal}. Run it yourself in a separate terminal (not through an agent and not via the ! prefix). Nothing written.` };
   let key;
-  try { key = waiverKey(ctx, gate, wave, lane, o); } catch (e) { if (e.code === 'A1_WAIVE_KEY') return { code: X.EXIT_FAIL, msg: `${e.message}; nothing written` }; throw e; }
+  try { key = waiverKey(ctx, gate); } catch (e) { if (e.code === 'A1_WAIVE_KEY') return { code: X.EXIT_FAIL, msg: `${e.message}; nothing written` }; throw e; }
   const err = (line) => process.stderr.write(`${line}\n`);
-  err(`Waiver for ${gate} · phase ${ctx.phase}${wave === null ? '' : ` · wave ${wave}${lane ? ` · lane ${lane}` : ''}`}`);
+  err(`Waiver for ${gate} · phase ${ctx.phase}`);
   for (const k of ['repo', 'plan_sha256', 'head', 'base']) if (key[k] !== null) err(`  ${k}: ${key[k]}`);
   err(`  reason: ${reason}`); err(`  by: ${by}`);
   err('A waiver is not a pass; it unblocks only this key, and only until PLAN.md (or the head) changes.');
@@ -680,7 +591,7 @@ function waive(o) {
   // spec 016 FR-010 + R-4: the chain line first; the store is read and written back inside the owner-store lock (a parallel chat waiver survives)
   const file = AU.withStoreLock(() => { AU.appendAudit({ repo: key.repo, action: AU.ACTION.WAIVE }); return WV.appendWaiver(rec, writeGuardedStore); });
   const m = mirrorWaiver(ctx, rec);
-  return { code: X.EXIT_PASS, msg: `recorded a human waiver for ${gate} ${scopeOf(wave)} in ${file} — add ${RETRO_ISSUE_WAIVED} to the retro's issues and keep gates_fired verdict as it was — a waiver is not a pass`,
+  return { code: X.EXIT_PASS, msg: `recorded a human waiver for ${gate} ${scopeOf()} in ${file} — add ${RETRO_ISSUE_WAIVED} to the retro's issues and keep gates_fired verdict as it was — a waiver is not a pass`,
     out: { ok: true, waiver: rec, store: file, entry: m.entry, index_path: ctx.indexPath, xreview_path: m.xreviewPath, observation_file: m.observationFile, retro_issue: RETRO_ISSUE_WAIVED } };
 }
 
@@ -699,7 +610,6 @@ function withFlags(args, known, sub, body) {
 }
 
 function cmdXprovGate(args) {
-  if ((args || []).some((a) => /^--(size|spec|scope|placement)(=|$)/.test(String(a)))) return usageExit(SIZE_FLAG_GONE);
   if ((args || []).some((a) => /^--(resume|feedback)(=|$)/.test(String(a)))) return usageExit(RESUME_GONE);
   const known = { phase: 'str', gate: 'str', wave: 'str', lane: 'str', base: 'str', 'work-path': 'str', round: 'str', timeout: 'str', 'allow-plugins': 'str' };
   return withFlags(args, known, 'gate', (f) => {
@@ -707,7 +617,7 @@ function cmdXprovGate(args) {
     const r = gate({ phase: f.phase, gate: f.gate, wave: f.wave, lane: f.lane, base: f.base, workPath: f['work-path'], round: f.round, timeout: f.timeout, allowPlugins: f['allow-plugins'] });
     if (r.gitleaks === false) process.stderr.write(`${GITLEAKS_WARNING_LINE}\n`);
     process.stderr.write(`xprov gate ${r.gate} ${scopeOf(r.wave)} round ${r.round}: ${r.verdict}${r.reason ? ` (${r.reason} at ${r.step})` : ''} — enforcement ${r.enforcement}\n`);
-    if (r.verdict === X.VERDICT_NOT_APPLICABLE) process.stderr.write(`xprov gate: ${r.reason === X.REASONS.codex_blocked_fallback ? R.BLOCKED_NOTICE : noticeOf(r.permit_state, r.placement)}\n`);
+    if (r.verdict === X.VERDICT_NOT_APPLICABLE) process.stderr.write(`xprov gate: ${r.reason === X.REASONS.codex_blocked_fallback ? R.BLOCKED_NOTICE : noticeOf(r.permit_state)}\n`);
     for (const x of r.recovery || []) process.stderr.write(`xprov gate: recovery ${x.action}: ${x.ok ? 'worked' : 'did not help'}\n`);
     if (r.step === 'permit-check' && permitHint(r.permit_state)) process.stderr.write(`xprov gate: ${permitHint(r.permit_state)}\n`);
     if (r.allowlist_note) process.stderr.write(`xprov gate: allowlist not applied: ${r.allowlist_note}\n`);
@@ -721,24 +631,14 @@ function cmdXprovLoadCheck(args) {
   return withFlags(args, { phase: 'str', 'expect-sha': 'str' }, 'load-check', (f) => {
     if (!f.phase) return usageExit('load-check requires --phase <name> [--expect-sha <sha256>]');
     const r = loadCheck({ phase: f.phase, expectSha: f['expect-sha'] });
-    process.stderr.write(r.ok ? `xprov load-check: ${r.accepted === NOT_APPLICABLE_ACCEPTED ? noticeOf(r.permit_state, r.placement) : (AC.sideNotice(r.carried_from ? 'carried' : r.accepted, R.BLOCKED_NOTICE) || `PLAN.md matches ${r.accepted === 'waiver' ? `a store waiver for ${r.gate} (not a pass)` : `the newest ${r.gate} pass`}`)}\n` : `xprov load-check: ${r.reason} — ${r.detail} (enforcement ${r.enforcement})\n`);
-    return finish(r, r.ok ? X.EXIT_PASS : X.EXIT_FAIL);
-  });
-}
-
-function cmdXprovWaveStatus(args) {
-  return withFlags(args, { phase: 'str', waves: 'str', lane: 'str', 'work-path': 'str', 'lane-work-path': 'str', 'expect-sha': 'str', 'wave-range': 'str' }, 'wave-status', (f) => {
-    if (!f.phase) return usageExit('wave-status requires --phase <name> [--waves 1,2 [--lane <id>]] [--expect-sha <sha256>] [--wave-range <n>=<base>..<head>,…] [--work-path <dir>] [--lane-work-path <lane>=<dir>[,…]]');
-    const r = waveStatus({ phase: f.phase, waves: f.waves, lane: f.lane, workPath: f['work-path'], laneWorkPaths: f['lane-work-path'], expectSha: f['expect-sha'], waveRange: f['wave-range'] });
-    process.stderr.write(r.ok ? `xprov wave-status: ${r.not_applicable ? `waves ${r.not_applicable.join(', ')}: ${noticeOf(r.permit_state, r.placement)}` : `waves ${r.completed_waves.join(', ')} inspected or waived`}\n` : `xprov wave-status: waves lacking a ${r.gate} pass or waiver: ${r.lacking.join(', ')} (enforcement ${r.enforcement})\n`);
-    if (Array.isArray(r.blocked_fallback) && r.blocked_fallback.length) process.stderr.write(`xprov wave-status: waves ${r.blocked_fallback.join(', ')}: ${R.BLOCKED_NOTICE}\n`);
+    process.stderr.write(r.ok ? `xprov load-check: ${r.accepted === NOT_APPLICABLE_ACCEPTED ? noticeOf(r.permit_state) : (AC.sideNotice(r.carried_from ? 'carried' : r.accepted, R.BLOCKED_NOTICE) || `PLAN.md matches ${r.accepted === 'waiver' ? `a store waiver for ${r.gate} (not a pass)` : `the newest ${r.gate} pass`}`)}\n` : `xprov load-check: ${r.reason} — ${r.detail} (enforcement ${r.enforcement})\n`);
     return finish(r, r.ok ? X.EXIT_PASS : X.EXIT_FAIL);
   });
 }
 
 function cmdXprovWaive(args) {
   return withFlags(args, { phase: 'str', gate: 'str', wave: 'str', lane: 'str', base: 'str', 'work-path': 'str', reason: 'str', by: 'str' }, 'waive', (f) => {
-    if (!f.phase || !f.gate || f.reason === undefined || f.by === undefined) return usageExit('waive requires --phase <name> --gate <id> [--wave N [--lane <id>] --base <sha> [--work-path <dir>]] --reason "<text>" --by <name>');
+    if (!f.phase || !f.gate || f.reason === undefined || f.by === undefined) return usageExit('waive requires --phase <name> --gate <id> --reason "<text>" --by <name>');
     const r = waive({ phase: f.phase, gate: f.gate, wave: f.wave, lane: f.lane, base: f.base, workPath: f['work-path'], reason: f.reason, by: f.by });
     process.stderr.write(`xprov waive: ${r.msg}\n`);
     if (r.out) return finish(r.out, r.code);
@@ -748,6 +648,6 @@ function cmdXprovWaive(args) {
 }
 
 module.exports = {
-  registryEnforcement, appliesToFor, readIndex, sameWave, gate, loadCheck, waveStatus, waive, mirrorWaiver, ownerHandoffs,
-  cmdXprovGate, cmdXprovLoadCheck, cmdXprovWaveStatus, cmdXprovWaive,
+  registryEnforcement, appliesToFor, readIndex, sameWave, gate, loadCheck, waive, mirrorWaiver, ownerHandoffs,
+  cmdXprovGate, cmdXprovLoadCheck, cmdXprovWaive,
 };

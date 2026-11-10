@@ -6,7 +6,7 @@
 // A repository the owner never permitted (state `absent`), whose permit the repository change voided (`origin_changed`, FR-006) or whose
 // permit entry carries no evidence (`unbound_legacy`, plan R-3 / spec 016 clarification of 2026-10-14) is not a failure: nothing may
 // leave, and the pipeline continues with the Reinhard review. `xprov gate` returns `not_applicable` with reason
-// `external_review_not_permitted`, `xprov load-check` and `xprov wave-status` accept it (exit 0).
+// `external_review_not_permitted`, `xprov load-check` accepts it (exit 0).
 //
 // Fail closed stays for every other state: a denial next to a permit, a permit without its file, an unusable store, a broken audit
 // chain, a corrupt `.a1/xprov.json`, an owner-home mismatch. Only the listed states below are "no permit"; the list is closed.

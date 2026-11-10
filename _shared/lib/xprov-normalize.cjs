@@ -2,7 +2,7 @@
 
 // ---------------------------------------------------------------------------
 // xprov-normalize — `a1-tools xprov normalize <result.json> --phase <name>
-// --gate <id> [--wave N] [--round N] [--work-path <dir>]`
+// --gate <id> [--round N]`
 // (spec 009-cross-provider-review-gate, Wave 2; hardened after Reinhard's
 // mutation review, 2026-09-24).
 //
@@ -38,12 +38,12 @@ const { parseFlags, repoRoot, assertSafeSegment, writeTextAtomic, nowIso } = req
 const { parseRegistryIds } = require('./gate-ids.cjs');
 const X = require('./xprov.cjs');
 const C = require('./xprov-common.cjs');
-const { inOwnArtifacts, reviewedHeadBase, PASS_MARKER_FILE, mapDelta, writePlanCopy } = require('./xprov-runrecord.cjs');
+const { inOwnArtifacts, PASS_MARKER_FILE, mapDelta, writePlanCopy } = require('./xprov-runrecord.cjs');
 // Shared helpers — one definition each, in xprov-common.cjs.
-const { REGISTRY_PATH, sha256, isPlainObject, parsePositive, parseWave, parseLane, writeStdoutSync, readIndex, sameWave, sameLane, DETAIL_MAX_CHARS } = C;
+const { REGISTRY_PATH, sha256, isPlainObject, parsePositive, writeStdoutSync, readIndex, sameWave, sameLane, DETAIL_MAX_CHARS } = C;
 
 const FLAGS = Object.freeze({
-  phase: 'str', gate: 'str', wave: 'str', round: 'str', lane: 'str', 'work-path': 'str',
+  phase: 'str', gate: 'str', round: 'str',
   // Wave 6b (FR-030 g): the gate hands over the snapshot's allowlist result so
   // that this ONE index write carries it; absent flags leave the entry as before.
   'allowlisted-hits': 'str', 'allowlist-anchor': 'str', 'allowlist-approved-blob': 'str',
@@ -447,19 +447,17 @@ function resolveArgs(args) {
   const phase = assertSafeSegment(flags.phase, '--phase');
   const root = repoRoot();
   let phaseDir;
-  try { phaseDir = C.phaseDirOf(root, phase, flags['work-path'] ? path.resolve(flags['work-path']) : undefined); } catch (e) { if (e && e.code === 'A1_INPUT') usage(e.message); throw e; } // the reserved PR phase lives in <work-path>/.a1-review
+  try { phaseDir = C.phaseDirOf(root, phase); } catch (e) { if (e && e.code === 'A1_INPUT') usage(e.message); throw e; } // the reserved PR phase lives in <work-path>/.a1-review
   if (!fs.existsSync(phaseDir) || !fs.statSync(phaseDir).isDirectory()) usage(`phase dir not found: ${phaseDir}`);
   let ids;
   try { ids = parseRegistryIds(fs.readFileSync(REGISTRY_PATH, 'utf8')); } catch (_e) { usage(`registry unreadable: ${REGISTRY_PATH}`); }
   if (!ids.includes(flags.gate)) usage(`--gate ${JSON.stringify(String(flags.gate).slice(0, 80))} is not a registered gate id`);
-  const wave = flags.wave === undefined ? null : parseWave(flags.wave, 'wave');
-  const workPath = flags['work-path'] ? path.resolve(flags['work-path']) : root;
-  if (!fs.existsSync(workPath) || !fs.statSync(workPath).isDirectory()) usage(`--work-path is not a directory: ${workPath}`);
+  const wave = null; // a plan review is the only gate target (spec 025)
+  const workPath = root;
   const indexPath = path.join(phaseDir, 'xreview', 'index.json');
   const existing = readIndex(indexPath);
   if (existing === null) usage(`index.json unparseable or not an array of objects: ${indexPath} — repair or move it before re-running`);
-  // Round key = gate + wave + lane: two lanes of one wave each get their own round 1.
-  const lane = parseLane(flags.lane); // LANE_RE like gate and run (was assertSafeSegment: `foo bar` slipped into the index)
+  const lane = null;
   // Rounds vs attempts (Reinhard W6): only pass | fail-with-findings consume a
   // round (FR-006 caps REVISE rounds); every other fail is an `attempt` — a
   // provider outage must never drive a wave into round_cap.
@@ -494,8 +492,8 @@ function evaluate(ctx, read) {
   const secret = secretScan(filter, { ...ctx, raw: read.raw });
   if (secret) return secret;
   // The record's mode must be the gate's (Codex R1 on cf5a86e): an APPROVED plan
-  // review normalized as wave-inspect-xprov would otherwise become a wave pass.
-  const want = ctx.gate === X.GATE_IDS.PLAN_REVIEW ? 'review' : 'inspect';
+  // review normalized under another gate id would otherwise become a pass of it.
+  const want = 'review';
   if (read.record.status === 'completed' && RUNNER_MODES.has(read.record.mode) && read.record.mode !== want) {
     return fail(X.REASONS.wrong_mode, { reason_detail: `mode=${read.record.mode} for ${ctx.gate} (needs ${want})` });
   }
@@ -514,11 +512,11 @@ function refuseReplay(args0) {
 }
 
 /** The index row: a pointer to the run dir plus what normalize decided. */
-function indexEntry(ctx, outcome, model, findingsSha, record, tainted, quarantinedBlocking) {
+function indexEntry(ctx, outcome, model, findingsSha, quarantinedBlocking) {
   return {
     gate: ctx.gate, wave: ctx.wave, lane: ctx.lane, ...(ctx.isRound ? { round: ctx.round } : { attempt: ctx.attempt }), verdict: outcome.verdict, reason: outcome.reason,
     plan_sha256: ctx.planSha, result_path: ctx.resultPath, ...(findingsSha ? { findings_sha256: findingsSha } : {}),
-    ...(ctx.wave !== null ? reviewedHeadBase(ctx.resultPath, tainted ? null : record) : {}), ts: ctx.ts,
+    ts: ctx.ts,
     model_requested: model.model_requested, model_observed: model.model_observed, cli_version: model.cli_version,
     ...(outcome.verdict === X.VERDICTS.FAIL_WITH_FINDINGS ? { quarantined_blocking: quarantinedBlocking } : {}), // FR-014: a REVISE only
     ...(ctx.allowlist || {}),
@@ -557,11 +555,11 @@ function cmdXprovNormalize(args) {
   }
   const pin = X.checkRunnerPin();
   const xreviewPath = appendToXreview(ctx.phaseDir, renderSection(ctx, outcome, model, pin.actual || `unverified (${pin.reason})`));
-  const entry = indexEntry(ctx, outcome, model, findingsSha, record, tainted, quarantinedBlocking);
+  const entry = indexEntry(ctx, outcome, model, findingsSha, quarantinedBlocking);
   const index = readIndex(ctx.indexPath);
   if (index === null) usage(`index.json changed underneath the run: ${ctx.indexPath}`);
   // a1's own proof that THIS run was accepted (after the output filter and every check above):
-  // the pass retention in gc and the row validation in load-check/wave-status need it.
+  // the pass retention in gc and the row validation in load-check needs it.
   if (outcome.verdict === X.VERDICTS.PASS && inOwnArtifacts(ctx.resultPath)) {
     fs.writeFileSync(path.join(path.dirname(ctx.resultPath), PASS_MARKER_FILE), `${JSON.stringify({ gate: ctx.gate, plan_sha256: ctx.planSha, ts: ctx.ts }, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
     if (ctx.gate === X.GATE_IDS.PLAN_REVIEW) writePlanCopy(ctx.resultPath, ctx.planPath, ctx.planSha); // FR-030: the approved text, the base of a later delta

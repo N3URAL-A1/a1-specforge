@@ -51,7 +51,7 @@ paths, not documents. Details + self-check: `_shared/spawn-policy.md`.
 **Audit loop:** If AUDIT.md verdict is FAIL, route back to Phase 3 (a1-pablo-planner in revision mode) with the AUDIT.md findings. Maximum 2 revision cycles.
 
 **Cross-provider review (Phase 4b, gate `plan-review-xprov`):** runs only after a
-PASS audit. Routing by the driver's stdout `verdict` and `enforcement` — `pass` →
+PASS audit, for every plan in a permitted repository (spec 025: no size or surface exemption). Routing by the driver's stdout `verdict` and `enforcement` — `pass` →
 "plan ready, cross-provider approved"; `fail-with-findings` → one revision round
 (Pablo with the findings, Adam again, host-authored dispositions, `--round 2`);
 any other fail → warning block while the registry row says `warning`, halt once

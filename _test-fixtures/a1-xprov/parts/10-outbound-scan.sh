@@ -132,18 +132,34 @@ SAVED_HOME_10="$HOME"
 
 # feat10 — R8 on a feature branch off the pushed main tip; sets BASE10.
 feat10() { push8; BASE10="$(head8)"; git -C "$R8" checkout -q -b feat; }
-inspect10() { gate8 --gate "$GATE_WAVE" --wave 1 --base "$BASE10" "$@"; }
+# inspect10 — the base-side (inspect) scan, driven through `xprov snapshot --base`: the wave gate that
+# used to call it is gone (spec 025 W4), the snapshot module keeps the base-side scan. Sets G_OUT, G_ERR, G_RC.
+inspect10() {
+  FAKE_RUNNER_CASE="${FAKE_RUNNER_CASE:-approved}" fake_runner_env
+  G_OUT="$(cd "$R8" && node "$TREE_TOOLS" xprov snapshot --repo "$R8" --commit HEAD --base "$BASE10" 2>"$TMP10/snap-err.txt")"; G_RC=$?
+  G_ERR="$(cat "$TMP10/snap-err.txt")"
+}
+# expect10 <name> <reason[/detail]> — inspect10 failed (exit 1) with that reason (and detail when given as reason/detail).
+expect10() {
+  local name="$1" want="$2" got
+  if [[ "$want" == */* ]]; then got="$(json_get "$G_OUT" "j.reason + '/' + j.reason_detail")"; else got="$(json_get "$G_OUT" "j.reason")"; fi
+  [[ "$G_RC" -eq 1 && "$got" == "$want" ]] && ok "$name → $want" || bad "$name: want $want (exit 1), got $got (exit $G_RC) — $(printf '%s' "$G_ERR" | tail -n 2)"
+}
+# pass10 <name> — inspect10 succeeded (exit 0, ok true).
+pass10() {
+  [[ "$G_RC" -eq 0 && "$(json_get "$G_OUT" "String(j.ok)")" == "true" ]] && ok "$1 → pass" || bad "$1: want ok, got $(json_get "$G_OUT" "j.reason + '/' + j.reason_detail") (exit $G_RC)"
+}
 
 caseO1() {
   new8; plant8 k.txt "id: $FAKE_AK1"; c8 "key at base"; feat10
   git -C "$R8" rm -q k.txt; c8 "delete key file"
-  inspect10; expect8 "O1 deleted file with a fake key" secret_in_snapshot
+  inspect10; expect10 "O1 deleted file with a fake key" secret_in_snapshot
 }
 
 caseO2() {
   new8; plant8 f.txt "keep" "id: $FAKE_AK1"; c8 "key at base"; feat10
   plant8 f.txt "keep"; c8 "remove key line"
-  inspect10; expect8 "O2 removed key line in a surviving file" secret_in_snapshot
+  inspect10; expect10 "O2 removed key line in a surviving file" secret_in_snapshot
 }
 
 caseO3() {
@@ -151,13 +167,13 @@ caseO3() {
   local i lines=(); for i in $(seq 1 20); do lines+=("line $i of a long, stable file"); done
   plant8 a.txt "${lines[@]}" "id: $FAKE_AK1"; c8 "key at base"; feat10
   git -C "$R8" mv a.txt b.txt; plant8 b.txt "${lines[@]}"; c8 "rename and drop key"
-  inspect10; expect8 "O3 renamed file whose key line was removed" secret_in_snapshot
+  inspect10; expect10 "O3 renamed file whose key line was removed" secret_in_snapshot
 }
 
 caseO4() {
   new8; plant8 AGENTS.md "# agents" "id: $FAKE_AK1"; c8 "AGENTS.md with a key"; feat10
   printf '// feature\n' >> "$R8/src/add.js"; c8 "feature"
-  inspect10; expect8 "O4 stripped AGENTS.md with a fake key at the base" secret_in_snapshot
+  inspect10; expect10 "O4 stripped AGENTS.md with a fake key at the base" secret_in_snapshot
 }
 
 caseO5() {
@@ -167,7 +183,7 @@ caseO5() {
   al_commit8 "$(al_doc "$(al_ent f.sh aws_access_key_id 1 fixture_fake "$(fp8 "$line")")")"
   push8; store8 "$(blobsha8)"; BASE10="$(head8)"
   git -C "$R8" checkout -q -b feat; plant8 f.sh "keep"; c8 "remove the allowlisted line"
-  inspect10; pass8 "O5 a removed, allowlisted fake line"
+  inspect10; pass10 "O5 a removed, allowlisted fake line"
   assert_json "O5 the base-side hit is reported as allowlisted" "$G_OUT" \
     "(j.allowlisted || []).filter(a => a.side === 'base').map(a => a.path + ':' + a.pattern).join(',')" "f.sh:aws_access_key_id"
 }
@@ -202,7 +218,7 @@ caseO8() {
   # (git_meta_mismatch), so the runner-side difference comes from the fake runner itself.
   local argv="$TMP10/o8-argv.json"
   FAKE_RUNNER_ARGV_FILE="$argv" FAKE_RUNNER_CASE=approved FAKE_RUNNER_DIFF_SALT=salt fake_runner_env
-  local u; u="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov run --mode inspect --snapshot "$snap" --plan "$snap.inputs/PLAN.md" --phase p10 --gate "$GATE_WAVE" --wave 1 --base "$base" --timeout 7 2>/dev/null)"
+  local u; u="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov run --mode inspect --snapshot "$snap" --plan "$snap.inputs/PLAN.md" --phase p10 --gate "$GATE_PLAN" --wave 1 --base "$base" --timeout 7 2>/dev/null)"
   assert_json "O8 a snapshot diff changed after the scan → tripwire, result discarded" "$u" "j.reason + '/' + String(j.result_path)" "tripwire/null"
   [[ -f "$argv" ]] && ok "O8 (detective) the runner ran; its result was discarded" || bad "O8 the runner never ran — the arm did not reach the comparison"
 }
@@ -240,7 +256,7 @@ caseO12() {
   new8; plant8 m.txt "$needle"; c8 "marker at base"; feat10
   git -C "$R8" rm -q m.txt; c8 "delete marker file"
   FAKE_GITLEAKS_NEEDLE="$needle" inspect10
-  expect8 "O12 a gitleaks finding only in a base-side blob" "secret_in_snapshot/gitleaks"
+  expect10 "O12 a gitleaks finding only in a base-side blob" "secret_in_snapshot/gitleaks"
   new8; printf '%s\n' "$needle" >> "$P8DIR/PLAN.md"
   FAKE_GITLEAKS_NEEDLE="$needle" gate8 --gate "$GATE_PLAN"
   expect8 "O12b a gitleaks finding only in the PLAN.md copy" "secret_in_snapshot/gitleaks"
@@ -291,7 +307,7 @@ caseFR() {
   FAKE_RUNNER_CASE=revise gate8 --gate "$GATE_PLAN" --round 2; usage10 "FR6 a1-findings.json rewritten after round 1"
 
   fr10; local other="$(dirname "$(dirname "$FR_PREV")")/claudex-other1"; cp -R "$(dirname "$FR_PREV")" "$other"
-  node -e 'const fs=require("fs");const f=process.argv[1];const j=JSON.parse(fs.readFileSync(f,"utf8"));j.gate="wave-inspect-xprov";fs.writeFileSync(f,JSON.stringify(j,null,2)+"\n");' "$other/a1-findings.json"
+  node -e 'const fs=require("fs");const f=process.argv[1];const j=JSON.parse(fs.readFileSync(f,"utf8"));j.gate="pr-diff-xprov";fs.writeFileSync(f,JSON.stringify(j,null,2)+"\n");' "$other/a1-findings.json"
   local osha; osha="$( (shasum -a 256 "$other/a1-findings.json" 2>/dev/null || sha256sum "$other/a1-findings.json") | cut -d' ' -f1)"
   node -e 'const fs=require("fs");const [f,r,s]=process.argv.slice(1);const j=JSON.parse(fs.readFileSync(f,"utf8"));for(const e of j)if(e.round===1){e.result_path=r;e.findings_sha256=s;}fs.writeFileSync(f,JSON.stringify(j,null,2)+"\n");' "$P8DIR/xreview/index.json" "$other/result.json" "$osha"
   FAKE_RUNNER_CASE=revise gate8 --gate "$GATE_PLAN" --round 2; usage10 "FR7 index entry re-pointed at another gate's findings (sha matching)"
@@ -340,7 +356,7 @@ caseRI() {
   ri10
   local log="$PHASE_REPO/.a1/phases/pri/PLAN-REVIEW-LOG.md"; local n0; n0="$(grep -c 'verdict: fail/snapshot_not_scanned' "$log" 2>/dev/null || true)"; n0="${n0:-0}"
   RI_ARGV="$TMP10/ri-argv-$RANDOM.json"; FAKE_RUNNER_ARGV_FILE="$RI_ARGV" FAKE_RUNNER_CASE=approved fake_runner_env
-  RI_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov run --mode inspect --snapshot "$RI_SNAP" --plan "$RI_SNAP.inputs/PLAN.md" --base "$(git -C "$PHASE_REPO" rev-parse HEAD)" --phase pri --gate "$GATE_WAVE" --wave 1 --timeout 7 2>/dev/null)"
+  RI_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov run --mode inspect --snapshot "$RI_SNAP" --plan "$RI_SNAP.inputs/PLAN.md" --base "$(git -C "$PHASE_REPO" rev-parse HEAD)" --phase pri --gate "$GATE_PLAN" --wave 1 --timeout 7 2>/dev/null)"
   assert_json "RI4 inspect on a review snapshot → refused by the scan binding" "$RI_OUT" "j.reason + '/' + j.reason_detail" "snapshot_not_scanned/record_mismatch"
   [[ ! -f "$RI_ARGV" ]] && ok "RI4: runner never invoked" || bad "RI4: runner WAS invoked"
   assert_eq "RI4 the refusal is logged in PLAN-REVIEW-LOG.md" "$(grep -c 'verdict: fail/snapshot_not_scanned' "$log" 2>/dev/null || true)" "$((n0 + 1))"
@@ -354,6 +370,11 @@ noecho10() { # <name> <secret-name>
   grep -qrF -- "$2" "$P8DIR/PLAN-REVIEW-LOG.md" "$P8DIR/XREVIEW.md" 2>/dev/null && where="$where phase-files"
   [[ -z "$where" ]] && ok "$1: the name is echoed nowhere" || bad "$1: the secret-shaped name leaked into$where"
 }
+pathfail10i() { # <name> <secret-name> — the inspect (snapshot CLI) variant of pathfail10
+  local got; got="$(json_get "$G_OUT" "j.reason + ':' + j.reason_detail")"
+  [[ "$G_RC" -eq 1 && "$got" == "secret_in_snapshot:path_name" ]] && ok "$1 → secret_in_snapshot (path name)" || bad "$1: want secret_in_snapshot:path_name, got $got (exit $G_RC)"
+  noecho10 "$1" "$2"
+}
 pathfail10() { # <name> <secret-name>
   local got; got="$(json_get "$G_OUT" "j.step + ':' + j.reason + ':' + j.reason_detail")"
   [[ "$G_RC" -eq 1 && "$got" == "snapshot:secret_in_snapshot:path_name" ]] && ok "$1 → secret_in_snapshot (path name)" || bad "$1: want snapshot:secret_in_snapshot:path_name, got $got (exit $G_RC)"
@@ -365,15 +386,15 @@ caseP() {
   new8; : > "$R8/$nm"; c8 "tracked empty secret-named file"
   gate8 --gate "$GATE_PLAN"; pathfail10 "P1 a tracked secret-shaped name in a plan review" "$nm"
   new8; feat10; : > "$R8/$nm"; c8 "add empty secret-named file"
-  inspect10; pathfail10 "P1b an added, empty file with a secret-shaped name" "$nm"
+  inspect10; pathfail10i "P1b an added, empty file with a secret-shaped name" "$nm"
   new8; : > "$R8/$nm"; c8 "secret-named file at base"; feat10
   git -C "$R8" rm -q -- "$nm"; c8 "delete it"
-  inspect10; pathfail10 "P2 a deleted, empty file with a secret-shaped name" "$nm"
+  inspect10; pathfail10i "P2 a deleted, empty file with a secret-shaped name" "$nm"
   new8; printf 'stable content\n' > "$R8/$nm"; c8 "secret-named file at base"; feat10
   git -C "$R8" mv -- "$nm" benign.txt; c8 "rename to a benign name"
-  inspect10; pathfail10 "P3 a secret-shaped name renamed to a benign one" "$nm"
+  inspect10; pathfail10i "P3 a secret-shaped name renamed to a benign one" "$nm"
   new8; feat10; : > "$R8/benign-empty.txt"; c8 "add a benign empty file"
-  inspect10; pass8 "P0 control: a benign added name passes"
+  inspect10; pass10 "P0 control: a benign added name passes"
   new8; : > "$R8/$nm"; c8 "tracked empty secret-named file"
   local so; so="$(cd "$R8" && node "$TREE_TOOLS" xprov snapshot --repo "$R8" --commit HEAD 2>"$TMP10/p4-err.txt")"
   assert_json "P4 snapshot CLI → secret_in_snapshot (path name)" "$so" "j.reason + ':' + j.reason_detail" "secret_in_snapshot:path_name"

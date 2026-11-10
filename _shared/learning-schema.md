@@ -24,8 +24,8 @@ One JSON object per line. Written to `.a1/phases/<name>/observations.jsonl`.
 `agent:` names an a1 agent by full name (constitution invariant 5:
 `a1-<vorname>-<rolle>`). **One documented exception: `xprov-codex`** — the single
 allowed non-`a1-*` value, written by `a1-tools xprov observe` when the cross-provider
-review gate relays what an external reviewer found (registry ids `plan-review-xprov` /
-`wave-inspect-xprov` in `gates-registry.md`; spec `009-cross-provider-review-gate`,
+review gate relays what an external reviewer found (registry id `plan-review-xprov` in
+`gates-registry.md`; `wave-inspect-xprov` was removed 2026-11, spec 025; spec `009-cross-provider-review-gate`,
 FR-025 / FR-026). This file OWNS the exception; `docs/CONSTITUTION.md` only links here
 (invariant 1). Any other non-`a1-*` value is rejected by the writer (exit 1) and would be
 invisible to a1-evolve. `skill`, `phase`, `wave` (`null` at Plan), `type`

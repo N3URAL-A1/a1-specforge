@@ -250,7 +250,7 @@ caseR20() {
   [[ ! -d "$art/claudex-old" && -d "$art/claudex-young" && -d "$art/not-a-run" ]] && ok "R20i filesystem matches: old run gone, young run and non-run dir present" \
                                                                                     || bad "R20i filesystem state wrong"
   # GC1–GC3 (team-lead decision 2026-10-04): a pass run dir — its OWN result.json is a
-  # completed APPROVED review/inspect — is what load-check / wave-status read; kept 180 days.
+  # completed APPROVED review/inspect — is what load-check reads; kept 180 days.
   #   GC1 a pass dir 15 days old → kept.            Red if gc ignores the pass rule.
   #   GC2 a non-pass dir (REVISE) 15 days old → removed.  Red if every dir with a result.json is kept.
   #   GC3 a pass dir 181 days old → removed.        Red if passes are kept forever.

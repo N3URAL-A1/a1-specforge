@@ -2,11 +2,11 @@
 # Part 32 — spec 016 Wave 12: one fixture phase end to end, measured (SC-001, SC-004, SC-005) and the real-store snapshot (FR-036).
 # Sourced by run-tests.sh. Part-local helpers only (suffix 32). Mutants run on tree copies only (rule 4b).
 #
-# PH  one phase in a permitted repo: plan gate and wave gate pass; one chat allowlist approval (a secret in a changed line)
+# PH  one phase in a permitted repo: the plan gate passes (spec 025 W4: the wave gate is gone); one chat allowlist approval (a secret in a file of the plan snapshot)
 #     is answered in the chat (consent-sim plays the plugin hook). Spec 025 W3: the PR diff gate and its chat waiver case (PH3) are gone.
 #     SC-001  the observation sum owner_handoffs counts chat questions only; no output of any step names a terminal command
 #             (`xprov permit`, `xprov waive`, `allowlist approve`); every Codex run is counted once                                  [mutants H1, H2]
-# SW  the sweep over the two gates and the states no permit, owner No, no answer, headless (no chat), denied:
+# SW  the sweep over the plan gate and the states no permit, owner No, no answer, headless (no chat), denied:
 #     SC-004  zero bytes: no runner call, no snapshot, nothing written under the phase or the review worktree
 #     SC-005  every run ends not_applicable (never a blocking fail)                                                                  [mutant N1]
 # RS  real-store snapshot: the owner's real ~/.a1-xprov (sha256 + mtime) is the same before and after this part
@@ -73,7 +73,6 @@ run32() {
   [[ -n "${DEBUG32:-}" ]] && { echo "== $* (rc=$G_RC)"; echo "$G_OUT" | head -c 1800; echo "$G_ERR" | head -c 800; } >> "$DEBUG32"
 }
 plan32() { run32 "${1:-approved}" gate --gate plan-review-xprov --phase p32 --timeout 7; }
-wave32() { run32 "${1:-approved}" gate --gate wave-inspect-xprov --phase p32 --wave 1 --base "$PHASE_HEAD" --timeout 7; }
 f32() { json_get "$G_OUT" "$1"; }
 sim32() { node "$SIM32" "$1" 2>/dev/null; }
 # obs32 — all observation lines of the phase (the review-worktree file is still read: a leftover one must not count)
@@ -81,13 +80,12 @@ obs32() { cat "$PHASE_DIR/observations.jsonl" "$PHASE_REPO/.a1-review/xreview/ob
 sum32() { obs32 | node -e 'let t="";process.stdin.on("data",d=>t+=d).on("end",()=>{const l=t.split("\n").filter(Boolean).map(JSON.parse);process.stdout.write(l.reduce((a,x)=>a+(x.owner_handoffs||0),0)+"/"+l.reduce((a,x)=>a+(x.codex_runs||0),0)+"/"+l.length);});'; }
 terminal32() { grep -Eci 'xprov permit|xprov waive|allowlist approve' "$OUT32" || true; }
 
-scen_ph1() { # plan and wave gates pass in a permitted repo: zero owner hand-offs, zero terminal commands, 2 Codex runs
+scen_ph1() { # the plan gate passes in a permitted repo: zero owner hand-offs, zero terminal commands, 1 Codex run
   prep32; plan32; local a; a="$(f32 j.verdict)"
-  commit32 src/more.js 'export const m = 1;'; wave32; local b; b="$(f32 j.verdict)"
-  echo "$a/$b|$(sum32)|terminal=$(terminal32)"
+  echo "$a|$(sum32)|terminal=$(terminal32)"
 }
-# stop32 — a wave gate run that stops on a secret in a changed line; sets SCAN32 (the scan record) and prints rc/reason
-stop32() { commit32 src/auth/login.js "${1:-k = \"$EXK32\"}"; wave32; SCAN32="$(f32 j.scan_record)"; echo "$G_RC/$(f32 j.reason)"; }
+# stop32 — a plan gate run that stops on a secret in the snapshot (plan review has no diff: every repo file hit stops); sets SCAN32 (the scan record) and prints rc/reason
+stop32() { commit32 src/auth/login.js "${1:-k = \"$EXK32\"}"; plan32; SCAN32="$(f32 j.scan_record)"; echo "$G_RC/$(f32 j.reason)"; }
 # chat32 — the owner's chat Yes for the allowlist question of SCAN32, then `consent allowlist` writes the hit approvals; prints the question/approve exit codes
 chat32() {
   local sim="{\"tree\":\"$TREE\",\"root\":\"$PHASE_REPO\",\"kind\":\"allowlist\",\"phase\":\"p32\",\"scan\":\"$SCAN32\",\"tool_use\":\"toolu_c32\",\"session\":\"sess_c32\""
@@ -100,7 +98,7 @@ store32() { node -p 'try{JSON.parse(require("fs").readFileSync(process.argv[1],"
 scen_ph2() { # a secret in a changed line: one CHAT allowlist question (counted as 1); the chat yes writes the approval; the NEXT run proceeds (SC-001 end to end)
   prep32; stop32 >"$TMP32/first.txt"; local first; first="$(cat "$TMP32/first.txt")"; chat32
   local recs; recs="$(store32)"
-  wave32; local then="$G_RC/$(f32 j.verdict)"
+  plan32; local then="$G_RC/$(f32 j.verdict)"
   echo "$first|question=$CHAT_Q32|approve=$CHAT_A32|records=$recs|then=$then|$(sum32)|terminal=$(terminal32)"
 }
 # scen_hc <variant> — approve in the chat, then change one thing, then run again (covered hits proceed; anything else stops)
@@ -125,7 +123,7 @@ scen_hc() {
     shape) tamper32 'd.approvals[0].extra=1' ;;                                              # a wrong record shape
     *) echo "bad variant"; return ;;
   esac
-  wave32
+  plan32
   local dir; dir="$(f32 j.result_path)"; local rec=none; [[ -n "$dir" && -e "$(dirname "$dir")/a1-hit-approved.json" ]] && rec=recorded
   local leak=clean; [[ "$G_OUT$G_ERR" == *"$EXK32"* ]] && leak=LEAK
   echo "$G_RC/$(f32 j.verdict)/$(f32 j.reason)|listed=$(f32 '(j.approved_hits||[]).map((x) => x.path + ":" + x.rule + ":" + (x.audit.length)).join(",")')|$rec|$leak|handoffs$(sum32 | cut -d/ -f1)"
@@ -144,20 +142,20 @@ state32() {
     changed) git -C "$PHASE_REPO" remote set-url origin "$TMP32/elsewhere.git" ;;  # a permit voided by an origin change
   esac
 }
-scen_sw() { # <state> — both gates: verdicts, runner calls, snapshots, bytes written
+scen_sw() { # <state> — the plan gate: verdicts, runner calls, snapshots, bytes written
   local st="$1" permit=none; [[ "$st" == changed ]] && permit=permit
   prep32 "$permit"; commit32 src/auth/login.js 'export const login = 1;'; state32 "$st"
-  plan32; local a="$(f32 j.verdict)/$(f32 j.reason)"; wave32; local b="$(f32 j.verdict)/$(f32 j.reason)"
+  plan32; local a="$(f32 j.verdict)/$(f32 j.reason)"
   local snaps; snaps="$(ls "$STORE32/snapshots" 2>/dev/null | wc -l | tr -d ' ')"
   local wrote=none; [[ -e "$PHASE_REPO/.a1-review" || -e "$PHASE_DIR/xreview" || -e "$PHASE_DIR/observations.jsonl" ]] && wrote=wrote
-  echo "$a|$b|runs$(runs32)|snaps$snaps|$wrote"
+  echo "$a|runs$(runs32)|snaps$snaps|$wrote"
 }
 
 casePH() {
   fresh32
-  assert_eq "PH1 SC-001: plan and wave gates pass; owner_handoffs 0, 2 Codex runs counted once, no terminal command named" "$(scen_ph1)" "pass/pass|0/2/2|terminal=0"
+  assert_eq "PH1 SC-001: the plan gate passes; owner_handoffs 0, 1 Codex run counted once, no terminal command named" "$(scen_ph1)" "pass|0/1/1|terminal=0"
   assert_eq "PH2 SC-001: a secret in a changed line is one CHAT hand-off; the chat approval is written and the NEXT run proceeds; no terminal command named" "$(scen_ph2)" "1/secret_in_snapshot|question=0|approve=0|records=1|then=0/pass|1/1/2|terminal=0"
-  redproof32 "PH1a" scen_ph1 "pass/pass|0/2/2|terminal=0" xprov-gate.cjs "codexRuns: first ? 1 : 0" "codexRuns: 0"
+  redproof32 "PH1a" scen_ph1 "pass|0/1/1|terminal=0" xprov-gate.cjs "codexRuns: first ? 1 : 0" "codexRuns: 0"
   redproof32 "PH2a" scen_ph2 "1/secret_in_snapshot|question=0|approve=0|records=1|then=0/pass|1/1/2|terminal=0" xprov-gate.cjs "(Array.isArray(out.uncovered) && out.uncovered.length ? 1 : 0)" "0"
 }
 casePH
@@ -195,12 +193,12 @@ caseHC
 caseSW() {
   local s want="not_applicable/external_review_not_permitted"
   for s in absent unanswered offline changed; do
-    assert_eq "SW $s: plan and wave gate end not_applicable / external_review_not_permitted (SC-005); zero bytes: no runner call, no snapshot, nothing written (SC-004)" "$(scen_sw $s)" "$want|$want|runs0|snaps0|none"
+    assert_eq "SW $s: the plan gate ends not_applicable / external_review_not_permitted (SC-005); zero bytes: no runner call, no snapshot, nothing written (SC-004)" "$(scen_sw $s)" "$want|runs0|snaps0|none"
   done
   want="not_applicable/external_review_denied"
-  assert_eq "SW no: after the owner's No both gates end not_applicable / external_review_denied; zero bytes to Codex (the denial itself is logged)" "$(scen_sw no)" "$want|$want|runs0|snaps0|wrote"
+  assert_eq "SW no: after the owner's No the plan gate ends not_applicable / external_review_denied; zero bytes to Codex (the denial itself is logged)" "$(scen_sw no)" "$want|runs0|snaps0|wrote"
   want="not_applicable/external_review_not_permitted"
-  redproof32 "SW1" scen_sw_absent "$want|$want|runs0|snaps0|none" xprov-gate-nopermit.cjs "const NO_PERMIT_STATES = Object.freeze([STATES.ABSENT, STATES.ORIGIN_CHANGED, STATES.UNBOUND_LEGACY]);" "const NO_PERMIT_STATES = Object.freeze([]);"
+  redproof32 "SW1" scen_sw_absent "$want|runs0|snaps0|none" xprov-gate-nopermit.cjs "const NO_PERMIT_STATES = Object.freeze([STATES.ABSENT, STATES.ORIGIN_CHANGED, STATES.UNBOUND_LEGACY]);" "const NO_PERMIT_STATES = Object.freeze([]);"
 }
 scen_sw_absent() { scen_sw absent; }
 caseSW

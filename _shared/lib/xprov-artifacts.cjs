@@ -117,7 +117,7 @@ function gc(opts) {
   const maxAgeDays = typeof o.maxAgeDays === 'number' ? o.maxAgeDays : X.ARTIFACT_MAX_AGE_DAYS;
   const root = assertArtifactsRoot(path.resolve(o.root || X.artifactsDir(o.slug === undefined ? repoSlug() : assertSafeSegment(o.slug, 'artifacts slug'))));
   const cutoff = now - maxAgeDays * MS_PER_DAY;
-  // A pass run dir is what load-check / wave-status count (rows are pointers):
+  // A pass run dir is what load-check counts (rows are pointers):
   // it stays PASS_RUN_MAX_AGE_DAYS, decided from its OWN result.json, no phase knowledge.
   const passMax = typeof o.passMaxAgeDays === 'number' ? o.passMaxAgeDays : X.PASS_RUN_MAX_AGE_DAYS;
   const passCutoff = now - Math.max(maxAgeDays, passMax) * MS_PER_DAY;

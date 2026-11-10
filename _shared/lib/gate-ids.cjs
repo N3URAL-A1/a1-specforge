@@ -161,6 +161,14 @@ const KNOWN_ALIASES = Object.freeze({
   'full-regression-gate': 'gate-1-build',
 });
 
+// Gate ids removed from the registry whose firings still sit in old retros
+// (spec 025: `pr-diff-xprov` in W3, `wave-inspect-xprov` in W4). A retro entry
+// citing one is history, not a typo: it resolves `retired` (neither drift nor unknown) so
+// the store does not turn `unknown` when a row goes. Same frozen-list rule as
+// KNOWN_ALIASES: adding an id is a reviewed source change. Mirrors
+// RETIRED_GATE_IDS in xprov.cjs; the registry alias section carries the prose.
+const RETIRED_IDS = Object.freeze(['pr-diff-xprov', 'wave-inspect-xprov']);
+
 /**
  * Resolve a `gates_fired[].id` string against the registered set, in exactly
  * three statuses:
@@ -187,11 +195,14 @@ const KNOWN_ALIASES = Object.freeze({
  * @param {{literal: Set<string>, ranges: {prefix: string, from: number, to: number}[]}} expanded
  *   - the SAME shape isRegisteredId() takes (expandRangeIds(parseRegistryIds(text))),
  *   not a bare Set — that was the mismatch this signature change fixes.
- * @returns {{status: 'ok'|'drift'|'unknown', id: string, canonical?: string}}
+ * @returns {{status: 'ok'|'drift'|'unknown'|'retired', id: string, canonical?: string}}
  */
 function resolveGateId(id, expanded) {
   if (isRegisteredId(id, expanded)) {
     return { status: 'ok', id };
+  }
+  if (RETIRED_IDS.includes(id)) {
+    return { status: 'retired', id };
   }
   if (Object.prototype.hasOwnProperty.call(KNOWN_ALIASES, id)) {
     return { status: 'drift', id, canonical: KNOWN_ALIASES[id] };
@@ -372,6 +383,7 @@ module.exports = {
   expandRangeIds,
   isRegisteredId,
   KNOWN_ALIASES,
+  RETIRED_IDS,
   resolveGateId,
   parseInvokeCell,
   parseRegistryRows,

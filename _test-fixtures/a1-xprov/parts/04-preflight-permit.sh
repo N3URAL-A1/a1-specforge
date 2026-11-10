@@ -377,20 +377,19 @@ caseR26() {
   cat > "$retro" <<'EOF'
 ---
 date: 2026-09-24
-task: R26 fixture — retro carrying both xprov gate ids
+task: R26 fixture — retro carrying the xprov plan gate id
 project: a1-specforge
 result: pass
 issues: []
 evidence: fixture
 gates_fired:
   - {id: plan-review-xprov, verdict: pass, caught: false}
-  - {id: wave-inspect-xprov, verdict: fail, caught: true}
 one_line_learning: n/a — fixture.
 ---
 EOF
   local rc
   (cd "$REPO_ROOT" && node "$TOOLS" retro validate "$retro" >/dev/null 2>&1); rc=$?
-  assert_rc "R26a retro validate exits 0 with plan-review-xprov and wave-inspect-xprov" 0 "$rc"
+  assert_rc "R26a retro validate exits 0 with plan-review-xprov" 0 "$rc"
   sed -i.bak 's/plan-review-xprov/xprov-review/' "$retro"
   (cd "$REPO_ROOT" && node "$TOOLS" retro validate "$retro" >/dev/null 2>&1); rc=$?
   assert_rc "R26b retro validate exits 1 with the unregistered id xprov-review" 1 "$rc"

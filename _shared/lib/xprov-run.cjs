@@ -155,9 +155,9 @@ function porcelain(repo, pinned) {
 
 // ---------- argument resolution ----------
 
-/** The phase dir; for the reserved PR phase `<work-path>/.a1-review` (a typed input error becomes a usage error). */
-function phaseDirOrUsage(root, phase, workPathFlag) {
-  try { return C.phaseDirOf(root, phase, workPathFlag === undefined ? undefined : path.resolve(workPathFlag)); } catch (e) { if (e && e.code === 'A1_INPUT') return usage(e.message); throw e; }
+/** The phase dir (a typed input error, e.g. the reserved name pr-review, becomes a usage error). */
+function phaseDirOrUsage(root, phase) {
+  try { return C.phaseDirOf(root, phase); } catch (e) { if (e && e.code === 'A1_INPUT') return usage(e.message); throw e; }
 }
 
 function resolveArgs(args) {
@@ -180,7 +180,7 @@ function resolveArgs(args) {
   if (!flags.phase) usage('--phase is required');
   const phase = assertSafeSegment(flags.phase, '--phase');
   const root = repoRoot();
-  const phaseDir = phaseDirOrUsage(root, phase, flags['work-path']);
+  const phaseDir = phaseDirOrUsage(root, phase);
   if (!isDir(phaseDir)) usage(`phase dir not found: ${phaseDir}`);
   if (!flags.gate) usage('--gate is required');
   let ids;

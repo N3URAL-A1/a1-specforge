@@ -588,7 +588,7 @@ const SP = [
   `Git erreichst du nur so: node ${T} git status, node ${T} git diff, node ${T} git add, node ${T} git commit, node ${T} git log.`,
   'Erlaubt sind nur diese Formen: status [--porcelain] [--short]; diff [--cached|--staged] [--stat] [--name-only] [-- <Pfad>…]; add <Pfad>…; commit -m <Nachricht>; log [-n <N>] [--oneline] [-- <Pfad>…].',
   `Rohes git wird verweigert. Verlangt ein Skill git <x>, führe es als node ${T} git <x> aus; liegt die Form außerhalb dieser Formen, überspring den Schritt und nenne ihn in deiner Schlussantwort.`,
-  'Nur für execute: xprov load-check und xprov wave-status sind dir gesperrt (Exit 77). Der Auftrag endet deshalb im Load-Schritt vor dem Isolation Gate: Starte keine Welle und nenne in deiner Schlussantwort, dass der Owner execute in der interaktiven Sitzung ausführt.',
+  'Nur für execute: xprov load-check ist dir gesperrt (Exit 77). Der Auftrag endet deshalb im Load-Schritt vor dem Isolation Gate: Starte keine Welle und nenne in deiner Schlussantwort, dass der Owner execute in der interaktiven Sitzung ausführt.',
 ].join('\n');
 const WRAP = ['Bash(nohup *)', 'Bash(nice *)', 'Bash(timeout *)', 'Bash(time *)', 'Bash(stdbuf *)', 'Bash(gstdbuf *)'];
 const WT = ['.git', '.git/**', '.husky/**', '.githooks/**', '.pre-commit-config.yaml', '.gitattributes', '.gitmodules', '.claude/**', '.mcp.json', '**/.git/**', '**/.gitattributes', '**/.gitmodules']

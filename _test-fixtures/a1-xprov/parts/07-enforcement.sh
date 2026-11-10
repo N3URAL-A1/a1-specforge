@@ -3,7 +3,7 @@
 # from the wave plan's Wave 7 fixture table). Sourced by run-tests.sh.
 #
 # Each arm runs the check against a temp root holding a copy of the REAL
-# registry and ADR, reset by root07 to a fixed baseline (both rows `warning`,
+# registry and ADR, reset by root07 to a fixed baseline (the plan row `warning`,
 # the live-smoke placeholder), then one edit: a row flipped to `blocking`, or
 # the ADR's live-smoke section replaced. The arms therefore hold before AND
 # after the real flip; only R5h reads the real rollout state. The expectations
@@ -15,15 +15,15 @@
 #
 # Arm → the single production change that turns it red:
 #   R5a  blocking row + ADR placeholder → exit 1.       Red if the check never reads the ADR when a row is blocking.
-#   R5b  placeholder next to both commands → exit 1.    Red if the "pending Wave 7" test is dropped.
-#   R5c  only the plan-review command → exit 1.         Red if only one gate's command is required.
-#   R5d  complete evidence, both rows blocking → 0.     Red if the check fails whenever a row is blocking.
-#   R5e  both rows warning, placeholder → exit 0.       Red if the placeholder fails the check without a blocking row.
-#   R5f  wave-inspect row alone blocking → exit 1.      Red if only plan-review-xprov's cell is read.
+#   R5b  placeholder next to the plan command → exit 1. Red if the "pending Wave 7" test is dropped.
+#   R5c  the plan-review command missing → exit 1.      Red if the command is not required.
+#   R5d  complete evidence, plan row blocking → 0.      Red if the check fails whenever a row is blocking.
+#   R5e  plan row warning, placeholder → exit 0.        Red if the placeholder fails the check without a blocking row.
+#   (R5f, the wave-inspect row alone blocking, went with the wave gate in spec 025 W4.)
 #   R5g  a row missing from the registry → exit 1.      Red if a missing row is treated as `warning`.
 #   R5h  the real tree → exit 0.                        Red if the real registry flips before the ADR holds the evidence.
 #   R5i  root without registry/ADR → exit 2, no stdout. Red if a bad root is reported as a pass or a fail.
-#   R5k  a placeholder spelled "Pending: Wave 7" next to both commands → exit 1.
+#   R5k  a placeholder spelled "Pending: Wave 7" next to the plan command → exit 1.
 #        Red if PLACEHOLDER_RE only matches the literal "pending wave 7".
 #   R5j  test.yml runs the check as its own step AFTER `Fixtures`.
 #        Red if the step is removed, merged into Fixtures, or moved before it.
@@ -37,7 +37,7 @@ ADR_REL07="docs/adr/2026-09-24-cross-provider-review-gate.md"
 N07=0
 
 # root07 — fresh temp root with copies of the real registry and ADR, reset to
-# a fixed baseline: both xprov rows `warning`, the live-smoke section the
+# a fixed baseline: the xprov plan row `warning`, the live-smoke section the
 # placeholder. Without the reset every arm would inherit the real rollout
 # state, and the legitimate flip commit would turn R5a/R5e/R5f and flip07 red
 # (found by the Wave 7 live inspect, Codex R1, 2026-10-02; reproduced on a
@@ -47,7 +47,7 @@ root07() {
   mkdir -p "$R07/_shared" "$R07/docs/adr"
   cp "$REGISTRY" "$R07/_shared/gates-registry.md"
   cp "$ADR" "$R07/$ADR_REL07"
-  cell07 plan-review-xprov warning; cell07 wave-inspect-xprov warning
+  cell07 plan-review-xprov warning
   smoke07 "$PLACEHOLDER07"
 }
 
@@ -106,17 +106,16 @@ check07() {
 }
 
 PLACEHOLDER07="$TMP07/placeholder.md"
-printf '%s\n' 'Pending Wave 7. This section will carry the command and output of one live `review` run and one live `inspect` run.' '' > "$PLACEHOLDER07"
+printf '%s\n' 'Pending Wave 7. This section will carry the command and output of one live `review` run.' '' > "$PLACEHOLDER07"
 EVIDENCE07="$TMP07/evidence.md"
 printf '%s\n' '' \
   '```' \
   'a1-tools xprov gate --phase M13-residuals --gate plan-review-xprov' \
-  'a1-tools xprov gate --phase M13-residuals --gate wave-inspect-xprov --wave 2 --base 7f9d6cf' \
   '```' '' > "$EVIDENCE07"
 PENDING_BOTH07="$TMP07/pending-both.md"
-{ cat "$EVIDENCE07"; printf 'Pending Wave 7 for the inspect half.\n'; } > "$PENDING_BOTH07"
-PLAN_ONLY07="$TMP07/plan-only.md"
-printf '%s\n' '' 'a1-tools xprov gate --phase M13-residuals --gate plan-review-xprov' '' > "$PLAN_ONLY07"
+{ cat "$EVIDENCE07"; printf 'Pending Wave 7 for the live run.\n'; } > "$PENDING_BOTH07"
+NO_COMMAND07="$TMP07/no-command.md"
+printf '%s\n' '' 'The live run is described in prose only.' '' > "$NO_COMMAND07"
 
 # R5a
 root07; flip07 plan-review-xprov; check07
@@ -124,39 +123,35 @@ assert_rc "R5a blocking row while the ADR says pending → exit 1" 1 "$C_RC"
 assert_json "R5a stdout names the blocking row" "$C_OUT" 'j.rows["plan-review-xprov"]' "blocking"
 
 # R5b
-root07; flip07 plan-review-xprov; flip07 wave-inspect-xprov; smoke07 "$PENDING_BOTH07"; check07
-assert_rc "R5b both commands present but still pending Wave 7 → exit 1" 1 "$C_RC"
+root07; flip07 plan-review-xprov; smoke07 "$PENDING_BOTH07"; check07
+assert_rc "R5b plan command present but still pending Wave 7 → exit 1" 1 "$C_RC"
 assert_json "R5b the only problem is the placeholder" "$C_OUT" 'j.problems.length + ":" + /pending Wave 7/.test(j.problems[0])' "1:true"
 
 # R5k — the placeholder in another spelling
 PENDING_ALT07="$TMP07/pending-alt.md"
-{ cat "$EVIDENCE07"; printf 'Pending: Wave 7 (inspect half).\n'; } > "$PENDING_ALT07"
-root07; flip07 plan-review-xprov; flip07 wave-inspect-xprov; smoke07 "$PENDING_ALT07"; check07
-assert_rc "R5k \"Pending: Wave 7\" next to both commands → exit 1" 1 "$C_RC"
+{ cat "$EVIDENCE07"; printf 'Pending: Wave 7 (live run).\n'; } > "$PENDING_ALT07"
+root07; flip07 plan-review-xprov; smoke07 "$PENDING_ALT07"; check07
+assert_rc "R5k \"Pending: Wave 7\" next to the plan command → exit 1" 1 "$C_RC"
 
 # R5c
-root07; flip07 plan-review-xprov; flip07 wave-inspect-xprov; smoke07 "$PLAN_ONLY07"; check07
-assert_rc "R5c inspect command missing → exit 1" 1 "$C_RC"
-assert_json "R5c the problem names wave-inspect-xprov" "$C_OUT" 'j.problems.length + ":" + j.problems[0].endsWith("wave-inspect-xprov")' "1:true"
+root07; flip07 plan-review-xprov; smoke07 "$NO_COMMAND07"; check07
+assert_rc "R5c plan-review command missing → exit 1" 1 "$C_RC"
+assert_json "R5c the problem names plan-review-xprov" "$C_OUT" 'j.problems.length + ":" + j.problems[0].endsWith("plan-review-xprov")' "1:true"
 
 # R5d
-root07; flip07 plan-review-xprov; flip07 wave-inspect-xprov; smoke07 "$EVIDENCE07"; check07
-assert_rc "R5d evidence complete, both rows blocking → exit 0" 0 "$C_RC"
+root07; flip07 plan-review-xprov; smoke07 "$EVIDENCE07"; check07
+assert_rc "R5d evidence complete, plan row blocking → exit 0" 0 "$C_RC"
 assert_json "R5d ok true" "$C_OUT" 'String(j.ok)' "true"
 
 # R5e
 root07; check07
-assert_rc "R5e both rows warning, ADR placeholder → exit 0" 0 "$C_RC"
-assert_json "R5e rows read as warning" "$C_OUT" 'j.rows["plan-review-xprov"] + "," + j.rows["wave-inspect-xprov"]' "warning,warning"
-
-# R5f
-root07; flip07 wave-inspect-xprov; check07
-assert_rc "R5f wave-inspect-xprov alone blocking → exit 1" 1 "$C_RC"
+assert_rc "R5e plan row warning, ADR placeholder → exit 0" 0 "$C_RC"
+assert_json "R5e rows read as warning" "$C_OUT" 'j.rows["plan-review-xprov"]' "warning"
 
 # R5g
-root07; drop07 wave-inspect-xprov; check07
+root07; drop07 plan-review-xprov; check07
 assert_rc "R5g row missing from the registry → exit 1" 1 "$C_RC"
-assert_json "R5g missing row reads null" "$C_OUT" 'String(j.rows["wave-inspect-xprov"])' "null"
+assert_json "R5g missing row reads null" "$C_OUT" 'String(j.rows["plan-review-xprov"])' "null"
 
 # R5h — the real tree (today: warning; after the flip: blocking with evidence)
 check07 "$REPO_ROOT"

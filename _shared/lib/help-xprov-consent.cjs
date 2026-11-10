@@ -8,7 +8,7 @@ const CONSENT_HELP = `    consent question|ensure|record|revoke  --kind consent|
     consent question --kind consent|classification --phase <name>
                   (ask once per phase, spec 016 wave 5; xprov-consent-asked.cjs)
     consent question|ensure --kind waiver|allowlist, consent waive, consent allowlist
-          (--phase <name> | --work-path <worktree> | --scan <snap-basename>) [--repo <git-toplevel>]
+          (--phase <name> | --scan <snap-basename>) [--repo <git-toplevel>]
                   (spec 016 FR-002, FR-003, FR-005, FR-007, FR-008; xprov-consent*.cjs)
                   The owner's yes to "may this repo go to Codex" as a chat answer,
                   no terminal. question: prints the canonical AskUserQuestion input
@@ -69,8 +69,8 @@ const CONSENT_HELP = `    consent question|ensure|record|revoke  --kind consent|
                   markers whatever channel wrote them; the next send asks again. An
                   unusable consent or denial store is reported (exit 1,
                   revoke_partial) and left alone; the permit is removed anyway.
-                  waive (wave 3, FR-013): question|ensure --kind waiver (--phase <name> |
-                  --work-path <worktree>) puts ONE xprov-Waiver question per phase
+                  waive (wave 3, FR-013): question|ensure --kind waiver --phase <name>
+                  puts ONE xprov-Waiver question per phase
                   listing every gate target that is failed now, read by the command
                   from xreview/index.json and the run records (never from arguments):
                   gate, repo, phase, PLAN.md sha256, wave, lane, head, base, the fail

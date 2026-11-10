@@ -7,10 +7,10 @@
 # only while the ADR's live-smoke section holds the evidence. Exit 1 when any
 # xprov row says `blocking` and the section (`## Live smoke` or `### 6. Live
 # smoke`) is missing, still says "pending Wave 7", or lacks the `xprov gate`
-# command of either gate. A row that is missing or holds neither `warning` nor
+# command of the gate. A row that is missing or holds neither `warning` nor
 # `blocking` is also exit 1, because the flip state cannot be read. Exit 2 when
 # repo-root does not hold the registry and the ADR. Exit 0 otherwise, including
-# while both rows are still `warning`.
+# while the row is still `warning`.
 #
 # "The suite is red" is guarded by step order, not here: this runs as its own
 # CI step AFTER `Fixtures`, so a red a1-xprov suite stops the job first. R5 in
@@ -38,7 +38,7 @@ fi
 SELF_ROOT="$SELF_ROOT" GATE_IDS_LIB="$SELF_ROOT/_shared/lib/gate-ids.cjs" REGISTRY="$REGISTRY" ADR="$ADR" node -e '
 const fs = require("fs");
 const { parseRegistryRow } = require(process.env.GATE_IDS_LIB);
-const GATES = ["plan-review-xprov", "wave-inspect-xprov"];
+const GATES = ["plan-review-xprov"];
 const ENFORCEMENTS = ["warning", "blocking"];
 const SECTION_RE = /^#{2,3}\s+(?:\d+\.\s+)?Live smoke\b/i;
 const NEXT_HEADING_RE = /^#{1,3}\s/;

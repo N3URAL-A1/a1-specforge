@@ -25,7 +25,6 @@ const path = require('path');
 const X = require('./xprov.cjs');
 const C = require('./xprov-common.cjs');
 const PF = require('./xprov-preflight.cjs');
-const WR = require('./xprov-wave-ranges.cjs');
 const RR = require('./xprov-runrecord.cjs');
 const HM = require('./xprov-homemark.cjs');
 
@@ -34,6 +33,7 @@ const FETCH_TIMEOUT_MS = 60000;
 const BRANCH_RE = /^[A-Za-z0-9][A-Za-z0-9._\/-]{0,100}$/;
 const FETCH_BRANCHES = Object.freeze(['main', 'master']);
 const REMOTE = 'origin';
+const DEFAULT_BRANCH_REFS = Object.freeze(['refs/remotes/origin/main', 'refs/remotes/origin/master', 'refs/heads/main', 'refs/heads/master']);
 const FETCH_SSH_COMMAND = 'ssh -o BatchMode=yes'; // no ssh prompt (host key, passphrase) may stall an unattended fetch; GIT_TERMINAL_PROMPT=0 covers https
 const BLOCKED_NOTICE = 'not_applicable — Codex answered BLOCKED twice; the Reinhard review is the only review for this target, no owner question is asked';
 const CAUSES = Object.freeze({ TIMEOUT: 'timeout', NETWORK: 'network', HTTP_5XX: 'http_5xx' });
@@ -111,7 +111,7 @@ function runnerRecovery(rv) {
 /** A recovery worked somewhere in this run (FR-035 `recovered`). */
 const recovered = (notes) => notes.some((n) => n.ok === true);
 
-/** a1's own marker in the run dir of the second BLOCKED answer: load-check and wave-status accept the fallback only with it. */
+/** a1's own marker in the run dir of the second BLOCKED answer: load-check accepts the fallback only with it. */
 function markFallback(resultPath, gate, planSha, root) {
   if (typeof planSha !== 'string' || !RR.inOwnArtifacts(resultPath, root)) return false;
   const file = path.join(path.dirname(path.resolve(resultPath)), RR.BLOCKED_MARKER_FILE);
@@ -120,6 +120,22 @@ function markFallback(resultPath, gate, planSha, root) {
 }
 
 // ---------- base recompute (FR-027) ----------
+
+function resolveCommit(workPath, rev) {
+  const out = C.gitOut(['-C', workPath, 'rev-parse', '--verify', '--quiet', `${rev}^{commit}`]);
+  return out === null ? null : out.trim();
+}
+
+/** The merge-base of the default branch (first of DEFAULT_BRANCH_REFS that resolves) and `tip`, or null. Moved here from the deleted xprov-wave-ranges.cjs (spec 025). */
+function anchorOf(workPath, tip) {
+  for (const ref of DEFAULT_BRANCH_REFS) {
+    const def = resolveCommit(workPath, ref);
+    if (def === null) continue;
+    const mb = C.gitOut(['-C', workPath, 'merge-base', def, tip]);
+    return mb === null ? null : mb.trim();
+  }
+  return null;
+}
 
 const BASE_UNRESOLVED_RE = /^base \S+ does not resolve in /;
 
@@ -134,9 +150,9 @@ function fetchDefaultBranch(workPath) {
 function recomputeBase(workPath) {
   const head = C.gitOut(['-C', workPath, 'rev-parse', '--verify', '--quiet', 'HEAD^{commit}']);
   if (head === null) return null;
-  let base = WR.anchorOf(workPath, head.trim());
+  let base = anchorOf(workPath, head.trim());
   let fetched = false;
-  if (base === null && fetchDefaultBranch(workPath)) { fetched = true; base = WR.anchorOf(workPath, head.trim()); }
+  if (base === null && fetchDefaultBranch(workPath)) { fetched = true; base = anchorOf(workPath, head.trim()); }
   return base === null || !/^[0-9a-f]{40,64}$/.test(base) ? null : { base, fetched };
 }
 
@@ -220,5 +236,5 @@ function preflightWithRepair(opts, pre0) {
 
 module.exports = {
   RETRY_DELAYS_MS, RECOVERABLE_REASONS, REPAIRABLE_CHECKS, BLOCKED_NOTICE, CAUSES,
-  isRecoverable, causeOf, sleepSync, removePlugins, runWithRetry, reviewSteps, runnerRecovery, recovered, markFallback, snapshotWithBase, recomputeBase, preflightWithRepair, reviewHomeProblem,
+  isRecoverable, causeOf, sleepSync, removePlugins, runWithRetry, reviewSteps, runnerRecovery, recovered, markFallback, snapshotWithBase, recomputeBase, anchorOf, preflightWithRepair, reviewHomeProblem,
 };
