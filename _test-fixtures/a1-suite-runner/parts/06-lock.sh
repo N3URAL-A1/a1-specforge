@@ -147,18 +147,20 @@ if kill -0 "$LK_SLEEPER" 2>/dev/null; then ok "K4d the unrelated process was not
 kill "$LK_SLEEPER" 2>/dev/null; wait "$LK_SLEEPER" 2>/dev/null
 
 # ---- K5: takeover is atomic: racing runners against the same stale lock, exactly one runs ----
-# Four runners per round start at once on a lock held by a live unrelated process. The runners find a
-# slowed-down ps first on PATH (it sleeps, then runs the real ps), which widens the window between
-# "judged stale" and "renamed away" the way a loaded machine does; no production hook is involved.
+# Four runners per round start at once on a lock held by a live unrelated process. The runners find
+# slowed-down ps and mv first on PATH (each sleeps, then runs the real tool), which widens the windows
+# between "judged stale", "renamed away" and "pid written" the way a loaded machine does; no production
+# hook is involved.
 # Three rounds. Each round: the suite starts once and exactly one runner exits 0.
 sleep 120 &
 LK_RACE_SLEEPER=$!
 mk_tree T_K5 k5
 mk_workdir W_K5 k5w
-LK_REAL_PS="$(command -v ps)"
 mkdir "$W_K5/slowbin"
-printf '#!/bin/bash\nsleep 0.15\nexec %s "$@"\n' "$LK_REAL_PS" > "$W_K5/slowbin/ps"
-chmod +x "$W_K5/slowbin/ps"
+for LK_TOOL in ps mv; do
+  printf '#!/bin/bash\nsleep 0.15\nexec %s "$@"\n' "$(command -v "$LK_TOOL")" > "$W_K5/slowbin/$LK_TOOL"
+  chmod +x "$W_K5/slowbin/$LK_TOOL"
+done
 plant_suite "$T_K5" r/run-tests.sh "$(lk_holder_body "$W_K5/p" 3)"
 LK_ROUND=1
 while [[ $LK_ROUND -le 3 ]]; do
