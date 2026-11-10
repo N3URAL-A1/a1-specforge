@@ -147,7 +147,7 @@ if kill -0 "$LK_SLEEPER" 2>/dev/null; then ok "K4d the unrelated process was not
 kill "$LK_SLEEPER" 2>/dev/null; wait "$LK_SLEEPER" 2>/dev/null
 
 # ---- K5: takeover is atomic: racing runners against the same stale lock, exactly one runs ----
-# Four runners per round start at once on a lock held by a live unrelated process. The runners find
+# Eight runners per round start at once on a lock held by a live unrelated process. The runners find
 # slowed-down ps and mv first on PATH (each sleeps, then runs the real tool), which widens the windows
 # between "judged stale", "renamed away" and "pid written" the way a loaded machine does; no production
 # hook is involved.
@@ -161,13 +161,13 @@ for LK_TOOL in ps mv; do
   printf '#!/bin/bash\nsleep 0.15\nexec %s "$@"\n' "$(command -v "$LK_TOOL")" > "$W_K5/slowbin/$LK_TOOL"
   chmod +x "$W_K5/slowbin/$LK_TOOL"
 done
-plant_suite "$T_K5" r/run-tests.sh "$(lk_holder_body "$W_K5/p" 3)"
+plant_suite "$T_K5" r/run-tests.sh "$(lk_holder_body "$W_K5/p" 4)"
 LK_ROUND=1
 while [[ $LK_ROUND -le 3 ]]; do
   rm -f "$W_K5/p.ran"
   lk_plant_lock "$W_K5/lock" "$LK_RACE_SLEEPER"
   LK_RACERS=""
-  for LK_K in 1 2 3 4; do
+  for LK_K in 1 2 3 4 5 6 7 8; do
     LK_ENV="PATH=$W_K5/slowbin:$PATH" lk_start "$T_K5" "$W_K5/lock" "$W_K5/tmp-$LK_ROUND-$LK_K" "$W_K5/out-$LK_ROUND-$LK_K.txt"
     LK_RACERS="$LK_RACERS $LK_PID"
   done
@@ -177,7 +177,7 @@ while [[ $LK_ROUND -le 3 ]]; do
     [[ $LK_RC -eq 0 ]] && LK_ZERO=$((LK_ZERO + 1))
   done
   assert_eq "K5a round $LK_ROUND: the suite started exactly once" "$(grep -c '' "$W_K5/p.ran" 2>/dev/null)" "1"
-  assert_eq "K5b round $LK_ROUND: exactly one of four runners exited 0" "$LK_ZERO" "1"
+  assert_eq "K5b round $LK_ROUND: exactly one of eight runners exited 0" "$LK_ZERO" "1"
   assert_eq "K5c round $LK_ROUND: no lock or stale copy is left behind" "$(find "$W_K5" -maxdepth 1 -name 'lock*' | grep -c '')" "0"
   LK_ROUND=$((LK_ROUND + 1))
 done
