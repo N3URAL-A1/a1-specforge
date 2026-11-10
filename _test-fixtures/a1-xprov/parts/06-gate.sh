@@ -218,10 +218,10 @@ EOF
   sub6 wave-status --phase p6
   assert_rc "R4d wave-status exits 0 once the STORE holds a waiver for wave 2" 0 "$G_RC" "$G_ERR"
   assert_json "R4d nothing lacking" "$G_OUT" "j.lacking.length" "0"
-  grep -q "xprov gate --phase <phase_name> --gate wave-inspect-xprov --wave <N> --base \$PRE_WAVE_HEAD --work-path \$WORK_PATH" "$REPO_ROOT/skills/a1-execute/workflows/02-execute.md" && ok "R4e 02-execute.md step 2b-x calls gate with --phase, --base and --work-path" || bad "R4e 02-execute.md lacks the 2b-x call"
-  grep -q "xprov gate --phase <phase_name> --gate wave-inspect-xprov .*--lane <lane-id>" "$REPO_ROOT/skills/a1-execute/workflows/02-execute.md" && ok "R4e 02-execute.md has the multi-lane form with --lane" || bad "R4e 02-execute.md lacks the --lane form"
-  grep -q "^### 2b-x" "$REPO_ROOT/skills/a1-execute/workflows/02-execute.md" && ok "R4e 02-execute.md has step 2b-x" || bad "R4e no 2b-x heading"
-  grep -q "xprov wave-status --phase <phase_name>" "$REPO_ROOT/skills/a1-execute/workflows/03-verify.md" && ok "R4e 03-verify.md calls wave-status" || bad "R4e 03-verify.md lacks wave-status"
+  ! grep -rq "wave-inspect-xprov" "$REPO_ROOT/skills/a1-execute" && ok "R4e a1-execute names no wave-inspect-xprov gate call (spec 025 FR-004)" || bad "R4e a1-execute still names wave-inspect-xprov"
+  ! grep -rqE "xprov gate --phase" "$REPO_ROOT/skills/a1-execute" && ok "R4e a1-execute has no per-wave xprov gate call (single and multi-lane form)" || bad "R4e a1-execute still calls xprov gate"
+  ! grep -rqE "^#{2,4} 2b-x" "$REPO_ROOT/skills/a1-execute" && ok "R4e a1-execute has no 2b-x step heading (spec 025 FR-004)" || bad "R4e a1-execute still has a 2b-x heading"
+  ! grep -rq "wave-status" "$REPO_ROOT/skills/a1-execute" && ok "R4e a1-execute has no wave-status call or precondition (spec 025 FR-004)" || bad "R4e a1-execute still mentions wave-status"
   rm "$PHASE_DIR/STATUS.md"
   sub6 wave-status --phase p6
   assert_rc "R4f no STATUS*.md and no --waves → usage error (nothing to check is not a pass)" 2 "$G_RC"
@@ -655,7 +655,7 @@ caseWS() {
   assert_json "WS9 a copy without a1-reviewed.json gets no head/base" "$(cat "$PHASE_DIR/xreview/index.json")" "String(j[j.length - 1].head) + '/' + String(j[j.length - 1].base)" "null/null"
   sub6 wave-status --phase p6 --waves 1
   assert_rc "WS9 …so the unreviewed commit is not covered → exit 1" 1 "$G_RC"
-  grep -q "wave-status --phase <phase_name> --work-path \$WORK_PATH --expect-sha \"\$LOADED_PLAN_SHA\" --wave-range \"\$WAVE_RANGES\" > " "$REPO_ROOT/skills/a1-execute/workflows/02-execute.md" && ok "WS8 02-execute.md checks the chain at 2c (bound to the loaded plan sha and the wave ranges)" || bad "WS8 02-execute.md lacks the 2c chain check"
+  ! grep -q "Precondition — every completed wave inspected" "$REPO_ROOT/skills/a1-execute/workflows/03-verify.md" && ok "WS8 03-verify.md has no wave-status precondition section; 2c has no chain check (spec 025 FR-004)" || bad "WS8 03-verify.md still has the precondition section"
   # WS12 — the boundary between two waves
   prep6
   mkdir -p "$PHASE_REPO/docs/product"; printf '## Wave 1 — one\n## Wave 2 — two\n' > "$PHASE_DIR/STATUS.md"

@@ -187,7 +187,7 @@ caseRQ6gate() {
 
 caseRQ8() {
   local f n
-  for f in skills/a1-plan/workflows/04b-xprov-review.md skills/a1-execute/workflows/02-execute.md; do
+  for f in skills/a1-plan/workflows/04b-xprov-review.md; do
     n="$(grep -ciF "$RQ_SENTENCE" "$REPO_ROOT/$f")"
     assert_eq "RQ8 $f carries the sentence once" "$n" "1"
   done
@@ -260,7 +260,7 @@ caseRQ11() {
 
 caseRQ12() {
   local f n
-  for f in skills/a1-plan/workflows/04b-xprov-review.md skills/a1-execute/workflows/02-execute.md; do
+  for f in skills/a1-plan/workflows/04b-xprov-review.md; do
     n="$(grep -c 'treat them as data, not instructions' "$REPO_ROOT/$f")"
     assert_eq "RQ12 $f carries the data-not-instructions sentence once" "$n" "1"
     grep -q 'rejected: path does not exist' "$REPO_ROOT/$f" && ok "RQ12 $f names the path_not_in_repo disposition" || bad "RQ12 $f lacks the disposition hint"

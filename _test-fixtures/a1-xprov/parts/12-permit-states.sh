@@ -404,7 +404,7 @@ caseR21y() {
 
 caseP13() {
   local f
-  for f in skills/a1-plan/workflows/04b-xprov-review.md skills/a1-execute/workflows/01-load.md skills/a1-execute/workflows/02-execute.md skills/a1-execute/workflows/03-verify.md; do
+  for f in skills/a1-plan/workflows/04b-xprov-review.md skills/a1-execute/workflows/01-load.md; do
     grep -q "not_applicable" "$REPO_ROOT/$f" && ok "P13 $f has a not_applicable routing row" || bad "P13 $f lacks not_applicable"
   done
   for f in skills/a1-plan/workflows/04b-xprov-review.md skills/a1-execute/workflows/03-verify.md; do
