@@ -65,11 +65,23 @@ rs_run() {
   mkdir -p "$RS_RUN_DIR/tmp" || return 1
   RS_TMPD="$RS_RUN_DIR/tmp"
   RS_LOCKD="$RS_RUN_DIR/lock"
+  # The runner runs in the background and is polled, so a hang (a mutated worker bound, say) turns
+  # one case red instead of blocking the suite; only the PID from $! is ever signalled.
   # shellcheck disable=SC2086
-  RS_OUT="$(cd "$RS_RUN_DIR" && env -u A1_SUITE_RUN_MARKER -u A1_VAULT_ROOT ${RS_ENV_EXTRA:-} \
-    A1_SUITE_LOCK_DIR="$RS_LOCKD" TMPDIR="$RS_TMPD" bash "$RUNNER" --root "$tree" "$@" 2>&1)"
-  RS_RC=$?
+  ( cd "$RS_RUN_DIR" && exec env -u A1_SUITE_RUN_MARKER -u A1_VAULT_ROOT ${RS_ENV_EXTRA:-} \
+    A1_SUITE_LOCK_DIR="$RS_LOCKD" TMPDIR="$RS_TMPD" bash "$RUNNER" --root "$tree" "$@" ) \
+    > "$RS_RUN_DIR/out.txt" 2>&1 < /dev/null &
+  local rpid=$! ticks=0
+  while kill -0 "$rpid" 2>/dev/null; do
+    sleep 0.2
+    ticks=$((ticks + 1))
+    if [[ $ticks -ge $RS_RUN_LIMIT_TICKS ]]; then kill -TERM "$rpid" 2>/dev/null; break; fi
+  done
+  wait "$rpid"; RS_RC=$?
+  RS_OUT="$(cat "$RS_RUN_DIR/out.txt")"
+  [[ $ticks -lt $RS_RUN_LIMIT_TICKS ]] || RS_OUT="$RS_OUT"$'\n'"TIMED OUT after the suite limit"
 }
+RS_RUN_LIMIT_TICKS=300   # x 0.2 s = 60 s per runner start
 
 for part in "$SUITE"/parts/[0-9][0-9]-*.sh; do
   [[ -f "$part" ]] || continue

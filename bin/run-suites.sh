@@ -208,7 +208,7 @@ rs_run_batch() {
   rs_slots_reset "$width"
   while [ "$next" -lt "$total" ] || [ "$RS_RUNNING" -gt 0 ]; do
     while [ "$next" -lt "$total" ] && [ "$RS_RUNNING" -lt "$width" ]; do
-      rs_start_suite "${ids[$next]}"
+      rs_start_suite "${ids[$next]}" || break
       next=$((next + 1))
     done
     rs_wait_any
