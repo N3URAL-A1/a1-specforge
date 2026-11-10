@@ -2,8 +2,8 @@
 # bin/run-suites-proc.sh — process side of the fixture-suite runner (spec 026). Sourced by
 # bin/run-suites.sh; defines functions and globals only, nothing runs at source time.
 #
-# Wave 1 holds minimal working versions behind the contract names; Wave 3 replaces the lock, marker and
-# signal parts (rs_lock_*, rs_export_marker, rs_on_signal) and must keep rs_default_workers,
+# Wave 3 holds the lock, run marker and signal parts (rs_lock_*, rs_export_marker, rs_on_signal); keep
+# rs_default_workers (part 02 sources it),
 # rs_is_posint and the slot functions.
 #
 # Portability: Bash 3.2 and GNU. Indexed arrays only, no `wait -n`, no `setsid`, no associative arrays.
@@ -103,19 +103,37 @@ rs_wait_any() {
   if [ "$RS_REAPED" -eq 0 ] && [ "$RS_RUNNING" -gt 0 ]; then sleep "$RS_POLL_INTERVAL"; fi
 }
 
-# rs_kill_workers — SIGTERM every recorded worker process group, wait, then SIGKILL stragglers.
+# rs_group_gone <pgid> — true when no process of the group is left.
+rs_group_gone() { ! kill -0 -- "-$1" 2>/dev/null; }
+
+# rs_leader_settle <pid> — reaps a worker leader that already ended (a zombie still answers kill -0).
+rs_leader_settle() {
+  local st
+  st="$(ps -o stat= -p "$1" 2>/dev/null)"
+  case "$st" in Z*) wait "$1" 2>/dev/null ;; esac
+  return 0
+}
+
+# rs_kill_workers — SIGTERM every recorded worker process group (never a bare pid, so grandchildren
+# go too), poll until the groups are empty, then SIGKILL stragglers. Only groups recorded from `$!`
+# in a slot are signalled; a slot is cleared once its group is empty.
 rs_kill_workers() {
-  local i tick alive
+  local i tick alive pid
   i=0
   while [ "$i" -lt "$RS_N_SLOTS" ]; do
-    [ -n "${RS_SLOT_PID[$i]:-}" ] && kill -TERM -- "-${RS_SLOT_PID[$i]}" 2>/dev/null
+    pid="${RS_SLOT_PID[$i]:-}"
+    [ -n "$pid" ] && kill -TERM -- "-$pid" 2>/dev/null
     i=$((i + 1))
   done
   tick=0
   while [ "$tick" -lt "$RS_KILL_GRACE_TICKS" ]; do
     alive=0; i=0
     while [ "$i" -lt "$RS_N_SLOTS" ]; do
-      if [ -n "${RS_SLOT_PID[$i]:-}" ] && kill -0 "${RS_SLOT_PID[$i]}" 2>/dev/null; then alive=1; fi
+      pid="${RS_SLOT_PID[$i]:-}"
+      if [ -n "$pid" ]; then
+        rs_leader_settle "$pid"
+        if rs_group_gone "$pid"; then RS_SLOT_PID[$i]=""; else alive=1; fi
+      fi
       i=$((i + 1))
     done
     [ "$alive" -eq 0 ] && break
@@ -124,13 +142,18 @@ rs_kill_workers() {
   done
   i=0
   while [ "$i" -lt "$RS_N_SLOTS" ]; do
-    [ -n "${RS_SLOT_PID[$i]:-}" ] && kill -KILL -- "-${RS_SLOT_PID[$i]}" 2>/dev/null
+    pid="${RS_SLOT_PID[$i]:-}"
+    if [ -n "$pid" ]; then
+      kill -KILL -- "-$pid" 2>/dev/null
+      rs_leader_settle "$pid"
+      RS_SLOT_PID[$i]=""
+    fi
     i=$((i + 1))
   done
+  RS_RUNNING=0
 }
 
-# rs_on_signal <INT|TERM> — W1 minimum: stop the workers, exit 130/143 (the EXIT trap cleans up).
-# Wave 3 owns the full version (lock release only when the run id is ours, grandchild proof).
+# rs_on_signal <INT|TERM> — stop the workers, exit 130/143 (the EXIT trap releases the lock).
 rs_on_signal() {
   trap '' INT TERM
   echo "run-suites: $1 received, stopping workers" >&2
@@ -138,7 +161,119 @@ rs_on_signal() {
   case "$1" in INT) exit 130 ;; *) exit 143 ;; esac
 }
 
-# Lock and run marker: Wave 3 (FR-008..010, FR-026). Wave 1 places them behind the contract names.
-rs_lock_acquire() { return 0; }
-rs_lock_release() { return 0; }
-rs_export_marker() { return 0; }
+# ---- per-machine lock (FR-008, FR-009, FR-026) ----
+RS_LOCK_RUNNER_NAME="run-suites.sh"
+RS_LOCK_INIT_TICKS=10      # x 0.1 s a fresh lock may lack its pid file
+RS_LOCK_ATTEMPTS=4
+RS_LOCK_DIR=""
+RS_LOCK_HELD=0
+RS_RUN_ID=""
+
+# rs_lock_path — the fixed per-user path (never from the temp-dir variable); the seam overrides it.
+rs_lock_path() { printf '%s\n' "${A1_SUITE_LOCK_DIR:-/tmp/a1-suite-runner-$(id -u)}"; }
+
+# rs_lock_is_runner <pid> — alive AND its command line contains the runner name (PID reuse proof).
+rs_lock_is_runner() {
+  local cmd
+  case "${1:-}" in ''|*[!0-9]*) return 1 ;; esac
+  kill -0 "$1" 2>/dev/null || return 1
+  cmd="$(ps -o command= -p "$1" 2>/dev/null)"
+  case "$cmd" in *"$RS_LOCK_RUNNER_NAME"*) return 0 ;; esac
+  return 1
+}
+
+# rs_lock_read_pid <lockdir> — the holder pid; a fresh lock gets a moment to write it.
+rs_lock_read_pid() {
+  local n=0 p=""
+  while [ "$n" -lt "$RS_LOCK_INIT_TICKS" ]; do
+    p=""
+    [ -f "$1/pid" ] && read -r p < "$1/pid"
+    [ -n "$p" ] && break
+    sleep 0.1
+    n=$((n + 1))
+  done
+  printf '%s\n' "$p"
+}
+
+rs_lock_file_line() { local v=""; [ -f "$1" ] && read -r v < "$1"; printf '%s\n' "$v"; }
+
+# rs_lock_write <lockdir> — run id and runner first, the pid last (atomic rename).
+rs_lock_write() {
+  printf '%s\n' "$RS_RUN_ID" > "$1/run_id" || return 1
+  printf '%s\n' "$RS_BIN_DIR/$RS_LOCK_RUNNER_NAME" > "$1/runner" || return 1
+  printf '%s\n' "$$" > "$1/pid.tmp" || return 1
+  mv "$1/pid.tmp" "$1/pid"
+}
+
+# rs_lock_drop_dir <dir> — removes a lock directory this runner moved aside or created (flat files only).
+rs_lock_drop_dir() {
+  [ -n "$1" ] && [ -d "$1" ] && [ ! -L "$1" ] || return 0
+  rm -f "$1/pid" "$1/pid.tmp" "$1/run_id" "$1/runner"
+  rmdir "$1" 2>/dev/null || true
+}
+
+# rs_lock_acquire — 0 = held. 2 = refused or unusable (message on stderr). Stale locks (dead PID, or a
+# live PID that is not the runner) are taken over: rename the old directory away, then mkdir; only the
+# winner of mkdir proceeds. A rename that grabbed a competitor's fresh lock is detected by the pid in
+# the moved directory and put back.
+rs_lock_acquire() {
+  local lock holder moved stale attempt=0
+  lock="$(rs_lock_path)"
+  [ -n "${RS_RUN_ID:-}" ] || RS_RUN_ID="$(date +%Y%m%d-%H%M%S)-$$"
+  while [ "$attempt" -lt "$RS_LOCK_ATTEMPTS" ]; do
+    attempt=$((attempt + 1))
+    if [ -L "$lock" ]; then
+      echo "run-suites: lock path $lock is a symbolic link; refusing to use it" >&2; return 2
+    fi
+    if mkdir "$lock" 2>/dev/null; then
+      if rs_lock_write "$lock"; then RS_LOCK_DIR="$lock"; RS_LOCK_HELD=1; return 0; fi
+      rs_lock_drop_dir "$lock"
+      echo "run-suites: cannot write the lock files in $lock" >&2; return 2
+    fi
+    if [ ! -d "$lock" ]; then
+      echo "run-suites: cannot create the lock directory $lock" >&2; return 2
+    fi
+    if [ ! -O "$lock" ]; then
+      echo "run-suites: lock $lock is not owned by the current user; refusing to use it" >&2; return 2
+    fi
+    holder="$(rs_lock_read_pid "$lock")"
+    if rs_lock_is_runner "$holder"; then
+      echo "run-suites: another run holds the lock $lock (holder PID $holder, run $(rs_lock_file_line "$lock/run_id")); no suite started" >&2
+      return 2
+    fi
+    stale="$lock.stale.$$.$attempt"
+    if mv "$lock" "$stale" 2>/dev/null; then
+      moved="$(rs_lock_file_line "$stale/pid")"
+      if [ "$moved" != "$holder" ] && rs_lock_is_runner "$moved"; then
+        [ -e "$lock" ] || mv "$stale" "$lock" 2>/dev/null
+        echo "run-suites: another run took the lock at the same moment (holder PID $moved); no suite started" >&2
+        return 2
+      fi
+      rs_lock_drop_dir "$stale"
+      echo "run-suites: took over a stale lock at $lock (holder PID ${holder:-unknown} is not a running runner)"
+    fi
+  done
+  echo "run-suites: could not take the lock $lock after $RS_LOCK_ATTEMPTS attempts" >&2
+  return 2
+}
+
+# rs_lock_release — EXIT path: stop workers still recorded (normal exit has none), then remove the
+# lock only while it is still ours (pid and run id match).
+rs_lock_release() {
+  local lock="$RS_LOCK_DIR"
+  if [ "${RS_RUNNING:-0}" -gt 0 ]; then rs_kill_workers; fi
+  [ "$RS_LOCK_HELD" -eq 1 ] || return 0
+  RS_LOCK_HELD=0
+  [ -n "$lock" ] && [ -d "$lock" ] && [ ! -L "$lock" ] || return 0
+  [ "$(rs_lock_file_line "$lock/run_id")" = "$RS_RUN_ID" ] || return 0
+  [ "$(rs_lock_file_line "$lock/pid")" = "$$" ] || return 0
+  rs_lock_drop_dir "$lock"
+  return 0
+}
+
+# rs_export_marker — workers see "<lock file path>:<run id>" (consumed by a1-vault-cockpit I1).
+rs_export_marker() {
+  [ -n "$RS_LOCK_DIR" ] || return 0
+  A1_SUITE_RUN_MARKER="$RS_LOCK_DIR/run_id:$RS_RUN_ID"
+  export A1_SUITE_RUN_MARKER
+}

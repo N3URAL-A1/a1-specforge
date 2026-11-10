@@ -295,7 +295,7 @@ rs_main() {
 
   RS_TMP="$(mktemp -d "${TMPDIR:-/tmp}/a1-suite-XXXXXX")" || rs_die "cannot create a work directory under ${TMPDIR:-/tmp}"
   [ -n "$RS_TMP" ] && [ -d "$RS_TMP" ] || rs_die "work directory missing"
-  RS_LOGDIR="${TMPDIR:-/tmp}/a1-suite-runs/$(date +%Y%m%d-%H%M%S)-$$"
+  RS_LOGDIR="${TMPDIR:-/tmp}/a1-suite-runs/${RS_RUN_ID:-$(date +%Y%m%d-%H%M%S)-$$}"
   mkdir -p "$RS_LOGDIR" || rs_die "cannot create the log directory $RS_LOGDIR"
   rs_export_marker
 
