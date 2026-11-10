@@ -52,7 +52,7 @@ i_suites() {
 }
 
 caseI1() {
-  local s sentinel home leaked rc n=0 t0=$SECONDS restore=""
+  local s sentinel home childlog leaked rc n=0 t0=$SECONDS restore=""
   if git -C "$REPO_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
      && git -C "$REPO_ROOT" diff --quiet -- "$I_RESTORE_REL" 2>/dev/null; then restore=yes; fi
   while IFS= read -r s; do
@@ -61,9 +61,21 @@ caseI1() {
     if [[ -z "$sentinel" || ! -d "$sentinel" || -z "$home" || ! -d "$home" ]]; then
       bad "I1 $s: mktemp gave no directory — suite not run"; continue
     fi
-    env -u A1_VAULT_WRITER_HOST A1_HOST_ID=leak A1_VAULT_ROOT="$sentinel" HOME="$home" bash "$REPO_ROOT/_test-fixtures/$s" >/dev/null 2>&1
+    # The child's output goes to a log outside the sentinel (the sentinel must stay empty) so a
+    # non-zero exit can name the failing cases instead of only "run it on its own" (2026-11-10:
+    # CI red on ubuntu-26.04 with no visible child FAIL line).
+    mk_workdir childlog childlog
+    if [[ -z "$childlog" || ! -d "$childlog" ]]; then
+      bad "I1 $s: mktemp gave no log directory — suite not run"; rm -rf "$sentinel" "$home"; continue
+    fi
+    env -u A1_VAULT_WRITER_HOST A1_HOST_ID=leak A1_VAULT_ROOT="$sentinel" HOME="$home" bash "$REPO_ROOT/_test-fixtures/$s" >"$childlog/out.txt" 2>&1
     rc=$?
-    assert_rc "I1 $s exits 0 under the sentinel vault" 0 "$rc" "run it on its own to see the failures"
+    if [[ $rc -ne 0 ]]; then
+      echo "I1 $s exit $rc — child FAIL lines (max 20):"
+      grep -E '^(FAIL|not ok)|[[:space:]]FAIL[[:space:]]|passed, [0-9]+ failed' "$childlog/out.txt" | head -20 | sed 's/^/    /'
+    fi
+    assert_rc "I1 $s exits 0 under the sentinel vault" 0 "$rc" "child FAIL lines printed above"
+    rm -rf "$childlog"
     leaked="$(cd "$sentinel" && find . -mindepth 1 | sed 's#^\./##' | LC_ALL=C sort | head -3 | tr '\n' ' ' | sed 's/ $//')"
     if [[ -e "$sentinel/project" ]]; then bad "I1 $s created project/ in the sentinel vault ($leaked)"
     else ok "I1 $s: no project/ in the sentinel vault"; fi
