@@ -115,7 +115,7 @@ const VERDICTS = Object.freeze({ PASS: 'pass', FAIL_WITH_FINDINGS: 'fail-with-fi
 const VERDICT_NOT_APPLICABLE = 'not_applicable';
 
 // ---------- gate ids (rows in _shared/gates-registry.md) ----------
-const GATE_IDS = Object.freeze({ PLAN_REVIEW: 'plan-review-xprov' });
+const GATE_IDS = Object.freeze({ PLAN_REVIEW: 'plan-review-xprov', DESIGN_REVIEW: 'design-review-xprov' }); // spec 025 W5: the design-file review joins the plan review
 const GATE_ID_LIST = Object.freeze(Object.values(GATE_IDS));
 // Gate ids that no longer exist (spec 025 W3, W4). Stored rows that carry one stay in the owner stores byte for byte; no reader acts on them and none throws.
 const RETIRED_GATE_IDS = Object.freeze(['pr-diff-xprov', 'wave-inspect-xprov']);

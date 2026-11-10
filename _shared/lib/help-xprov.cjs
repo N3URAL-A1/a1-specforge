@@ -269,7 +269,7 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   --resume is refused (exit 2): no session is ever resumed, a
                   resumed one replays rollout files the tripwire does not
                   cover; --feedback is review-only.
-                  Spec 014: --gate takes plan-review-xprov only (else exit 2). After the permit check \`run\` binds the
+                  Spec 014: --gate takes plan-review-xprov or design-review-xprov (else exit 2). After the permit check \`run\` binds the
                   snapshot to its scan record: a direct snap-* child of
                   ~/.a1-xprov/snapshots by realpath (the realpath is used from
                   then on), a record that matches commit, base, tree, diff hash
@@ -298,6 +298,18 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   loaded. On runner_failed, reason_detail carries the runner's
                   own reason (the codex error event, else result.json error,
                   else stderr), secret- or instruction-shaped text withheld.
+    gate --phase <name> --gate design-review-xprov --doc <repo-relative path> [--timeout N]
+                  (spec 025 W5) reviews ONE design file per call. --doc must be
+                  repo-relative, without .., match docs/adr/** or
+                  docs/architecture/**, be a regular file whose realpath stays
+                  inside the repository (else exit 2, nothing written). One run
+                  per body state: the body hash (frontmatter removed, line-edge
+                  whitespace normalized) is looked up in every phase's
+                  xreview/index.json; a recorded pass is returned with no runner
+                  call (step reuse). Only the named file goes into the snapshot,
+                  through the same secret scan and tripwire. No --round, no
+                  revision round, no round cap. Same permit branch as the plan
+                  gate (no permit: not_applicable). Enforcement: warning.
     gate --phase <name> --gate plan-review-xprov [--round N] [--timeout N]
                   (xprov-gate.cjs, wave 6) the driver the workflows call once:
                   permit-check → preflight → snapshot → run → normalize →

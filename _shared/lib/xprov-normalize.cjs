@@ -38,12 +38,13 @@ const { parseFlags, repoRoot, assertSafeSegment, writeTextAtomic, nowIso } = req
 const { parseRegistryIds } = require('./gate-ids.cjs');
 const X = require('./xprov.cjs');
 const C = require('./xprov-common.cjs');
+const DS = require('./xprov-design.cjs');
 const { inOwnArtifacts, PASS_MARKER_FILE, mapDelta, writePlanCopy } = require('./xprov-runrecord.cjs');
 // Shared helpers — one definition each, in xprov-common.cjs.
 const { REGISTRY_PATH, sha256, isPlainObject, parsePositive, writeStdoutSync, readIndex, sameWave, sameLane, DETAIL_MAX_CHARS } = C;
 
 const FLAGS = Object.freeze({
-  phase: 'str', gate: 'str', round: 'str',
+  phase: 'str', gate: 'str', round: 'str', doc: 'str', // doc: spec 025 W5, the repo-relative design file of a design-review-xprov run
   // Wave 6b (FR-030 g): the gate hands over the snapshot's allowlist result so
   // that this ONE index write carries it; absent flags leave the entry as before.
   'allowlisted-hits': 'str', 'allowlist-anchor': 'str', 'allowlist-approved-blob': 'str',
@@ -372,7 +373,7 @@ const clip = (v, max) => (typeof v === 'string' ? C.clip(v, max) : v);
 const echoQuarantined = (q) => ({ id: q.id, file: q.file, line: q.line === undefined ? null : q.line, reason: q.reason, marker: q.marker === undefined ? null : q.marker, title: clip(q.title, X.TITLE_MAX_CHARS) });
 
 function renderSection(ctx, outcome, model, runnerSha) {
-  const scope = ctx.wave === null ? 'plan' : `wave ${ctx.wave}`;
+  const scope = ctx.doc ? `design ${ctx.doc}` : (ctx.wave === null ? 'plan' : `wave ${ctx.wave}`);
   const resp = outcome.reason === X.REASONS.secret_in_output ? {} : (ctx.response || {});
   const lines = [
     `## ${ctx.gate} · ${scope} · ${ctx.isRound ? `round ${ctx.round}` : `attempt ${ctx.attempt}`} · ${ctx.ts}`, '',
@@ -461,22 +462,27 @@ function resolveArgs(args) {
   // Rounds vs attempts (Reinhard W6): only pass | fail-with-findings consume a
   // round (FR-006 caps REVISE rounds); every other fail is an `attempt` — a
   // provider outage must never drive a wave into round_cap.
-  const sameKey = existing.filter((e) => e.gate === flags.gate && sameWave(e, wave) && sameLane(e, lane));
+  const isDesign = flags.gate === X.GATE_IDS.DESIGN_REVIEW;
+  if (isDesign !== (flags.doc !== undefined)) usage(isDesign ? `${flags.gate} requires --doc <repo-relative design file>` : `--doc belongs to ${X.GATE_IDS.DESIGN_REVIEW} only`);
+  let design = null; // spec 025 W5: the reviewed target is the design file, not PLAN.md; its rounds are counted per doc
+  if (isDesign) { try { design = DS.resolveDoc(root, flags.doc); } catch (e) { if (e && e.code === 'A1_INPUT') usage(e.message); throw e; } }
+  const sameKey = existing.filter((e) => e.gate === flags.gate && sameWave(e, wave) && sameLane(e, lane) && (design === null || e.doc === design.rel));
   const priorRounds = sameKey.filter((e) => Number.isInteger(e.round));
   const priorAttempts = sameKey.filter((e) => !Number.isInteger(e.round));
   const round = flags.round === undefined ? 1 + priorRounds.length : parsePositive(flags.round, 'round');
   const attempt = 1 + priorAttempts.length;
   const roundTaken = priorRounds.some((e) => Number(e.round) === round);
-  const scope = `${wave === null ? 'plan' : `wave-${wave}`}${lane ? `-${lane}` : ''}`;
+  const scope = design ? DS.docScope(design.rel) : `${wave === null ? 'plan' : `wave-${wave}`}${lane ? `-${lane}` : ''}`;
   const findingsPath = path.join(phaseDir, 'xreview', `${flags.gate}-${scope}-r${round}.findings.json`);
-  const roundKey = `${flags.gate} ${wave === null ? 'plan' : `wave ${wave}`}${lane ? ` lane ${lane}` : ''} round ${round}`;
-  const planPath = path.join(phaseDir, 'PLAN.md');
-  if (!fs.existsSync(planPath)) usage(`PLAN.md not found in ${phaseDir}`);
+  const roundKey = `${flags.gate} ${design ? design.rel : (wave === null ? 'plan' : `wave ${wave}`)}${lane ? ` lane ${lane}` : ''} round ${round}`;
+  const planPath = design ? design.abs : path.join(phaseDir, 'PLAN.md');
+  if (!design && !fs.existsSync(planPath)) usage(`PLAN.md not found in ${phaseDir}`);
   const allowlist = allowlistFlags(flags);
   return {
     allowlist,
     resultPath: path.resolve(flags._[0]), phase, phaseDir, gate: flags.gate, wave, lane, round, attempt, roundTaken, roundKey, workPath, indexPath, findingsPath,
-    planPath, planRel: path.relative(root, planPath), planSha: sha256(fs.readFileSync(planPath)), ts: nowIso(),
+    planPath, planRel: design ? design.rel : path.relative(root, planPath), planSha: sha256(design ? design.bytes : fs.readFileSync(planPath)), ts: nowIso(),
+    doc: design ? design.rel : null, docBodySha: design ? DS.bodyHash(design.bytes.toString('utf8')) : null,
   };
 }
 
@@ -515,7 +521,7 @@ function refuseReplay(args0) {
 function indexEntry(ctx, outcome, model, findingsSha, quarantinedBlocking) {
   return {
     gate: ctx.gate, wave: ctx.wave, lane: ctx.lane, ...(ctx.isRound ? { round: ctx.round } : { attempt: ctx.attempt }), verdict: outcome.verdict, reason: outcome.reason,
-    plan_sha256: ctx.planSha, result_path: ctx.resultPath, ...(findingsSha ? { findings_sha256: findingsSha } : {}),
+    plan_sha256: ctx.planSha, ...(ctx.doc ? { doc: ctx.doc, doc_body_sha256: ctx.docBodySha } : {}), result_path: ctx.resultPath, ...(findingsSha ? { findings_sha256: findingsSha } : {}),
     ts: ctx.ts,
     model_requested: model.model_requested, model_observed: model.model_observed, cli_version: model.cli_version,
     ...(outcome.verdict === X.VERDICTS.FAIL_WITH_FINDINGS ? { quarantined_blocking: quarantinedBlocking } : {}), // FR-014: a REVISE only

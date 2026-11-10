@@ -65,6 +65,7 @@ const WV = require('./xprov-waivers.cjs');
 const NP = require('./xprov-gate-nopermit.cjs');
 const RR = require('./xprov-runrecord.cjs');
 const DL = require('./xprov-delta.cjs');
+const DS = require('./xprov-design.cjs');
 const AC = require('./xprov-accept.cjs');
 const { guardRefusal, readTypedLine, writeGuardedStore } = require('./xprov-approve.cjs');
 const { appendXreviewNote } = require('./xprov-normalize.cjs');
@@ -167,7 +168,9 @@ const obsSkill = () => 'a1-plan';
 function resolveGateArgs(o) {
   const ctx = phaseContext(o.phase);
   const gate = requireGateId(o.gate);
-  if (o.wave !== undefined || o.base !== undefined || o.lane !== undefined || o.workPath !== undefined) throw inputError('plan-review-xprov takes no --wave, --base, --lane or --work-path');
+  if (o.wave !== undefined || o.base !== undefined || o.lane !== undefined || o.workPath !== undefined) throw inputError(`${gate} takes no --wave, --base, --lane or --work-path`);
+  if (gate === X.GATE_IDS.DESIGN_REVIEW) return resolveDesignArgs(ctx, gate, o);
+  if (o.doc !== undefined) throw inputError(`--doc belongs to ${X.GATE_IDS.DESIGN_REVIEW}; ${gate} reviews PLAN.md`);
   const wave = null;
   const lane = null;
   const pluginAllowlist = o.allowPlugins === undefined ? [] : String(o.allowPlugins).split(',').map((s) => s.trim()).filter(Boolean);
@@ -189,11 +192,30 @@ function resolveGateArgs(o) {
   });
 }
 
+/**
+ * spec 025 W5 — `design-review-xprov`: one design file per call (`--doc`, validated by xprov-design), no PLAN.md needed, no `--round` (every body
+ * state is one run; the round number only keys the findings file per doc and never reaches the cap).
+ */
+function resolveDesignArgs(ctx, gate, o) {
+  if (o.round !== undefined) throw inputError(`${gate} takes no --round (one run per document state)`);
+  const doc = DS.resolveDoc(ctx.root, o.doc);
+  const index = readIndex(ctx.indexPath);
+  if (index === null) throw inputError(`index.json unparseable or not an array of objects: ${ctx.indexPath}`);
+  const prior = index.filter((e) => e.gate === gate && e.doc === doc.rel && /^\d+$/.test(String(e.round)));
+  const pluginAllowlist = o.allowPlugins === undefined ? [] : String(o.allowPlugins).split(',').map((s) => s.trim()).filter(Boolean);
+  return Object.freeze({
+    ...ctx, gate, isPlan: true, isDesign: true, mode: 'review', wave: null, lane: null, base: null, workPath: ctx.root, round: 1 + prior.length, explicitRound: false, prior, pluginAllowlist,
+    planPath: doc.abs, doc: doc.rel, docBytes: doc.bytes, docBodySha: DS.bodyHash(doc.bytes.toString('utf8')),
+    timeout: o.timeout === undefined ? null : parsePositive(o.timeout, 'timeout'),
+    enforcement: enforcementFor(gate),
+  });
+}
+
 /** What the snapshot copies and scans besides the tree (Wave 7, Samuel): the
  * PLAN.md the runner will read and, for round N ≥ 2 after a REVISE, the
  * feedback file. The runner only ever gets these COPIES (`snapshot().inputs`). */
 function snapshotInputs(ctx, feedback) {
-  const inputs = [{ key: 'plan', source: ctx.deltaFile || ctx.planPath, label: `.a1/phases/${ctx.phase}/PLAN.md` }];
+  const inputs = [{ key: 'plan', source: ctx.deltaFile || ctx.planPath, label: ctx.isDesign ? ctx.doc : `.a1/phases/${ctx.phase}/PLAN.md` }];
   if (feedback) inputs.push({ key: 'feedback', source: feedback, label: `round-${ctx.round - 1} findings + dispositions` });
   return inputs;
 }
@@ -221,7 +243,9 @@ function stepSnapshot(ctx, feedback) {
   // measure this line — contract from xprov-snapshot.cjs (Samuel W5 MAJOR 6).
   // FR-030 (b): every allowlist read runs against the PRIMARY checkout; the
   // gate kind decides the first-parent step (plan review only).
-  const s = snapshot({ sourceRepo: source, commit, base: ctx.base, primaryRoot: ctx.root, gateKind: 'plan', inputs: snapshotInputs(ctx, feedback) });
+  // spec 025 W5: a design review snapshots the named file only (gate kind `design`: a1's own one-file commit, no allowlist anchor)
+  const only = ctx.isDesign ? { rel: ctx.doc, source: ctx.planPath } : undefined;
+  const s = snapshot({ sourceRepo: source, commit, base: ctx.base, primaryRoot: ctx.root, gateKind: ctx.isDesign ? 'design' : 'plan', inputs: snapshotInputs(ctx, feedback), ...(only ? { only } : {}) });
   const allowlist = allowlistFields(s);
   return s.ok ? { ok: true, snapshot: s.snapshot, commit: s.commit, inputs: s.inputs, gitleaks: s.gitleaks === true, allowlist } : { ok: false, reason: s.reason, detail: s.reason_detail || s.detail || s.secret_pattern || null, allowlist };
 }
@@ -280,6 +304,7 @@ function stepRun(ctx, snap, inputs) {
  * travels as flags so no second write of index.json is needed (Reinhard R-M5). */
 function stepNormalize(ctx, resultPath, al) {
   const argv = ['normalize', resultPath, '--phase', ctx.phase, '--gate', ctx.gate, '--round', String(ctx.round), '--allowlisted-hits', String(al.allowlisted_hits)];
+  if (ctx.isDesign) argv.push('--doc', ctx.doc);
   if (al.allowlist_anchor) argv.push('--allowlist-anchor', al.allowlist_anchor);
   if (al.allowlist_approved_blob) argv.push('--allowlist-approved-blob', al.allowlist_approved_blob);
   const r = runSub(ctx, argv);
@@ -296,7 +321,7 @@ function stepNormalize(ctx, resultPath, al) {
 }
 
 function nextFor(ctx, verdict) {
-  if (verdict !== X.VERDICTS.FAIL_WITH_FINDINGS || ctx.round >= X.ROUND_CAP) return null;
+  if (ctx.isDesign || verdict !== X.VERDICTS.FAIL_WITH_FINDINGS || ctx.round >= X.ROUND_CAP) return null; // a design review has no revision round (spec 025 W5)
   const disp = dispositionsPath(ctx, ctx.round);
   return {
     round_cmd: `node ${A1_TOOLS} xprov gate --phase ${ctx.phase} --gate ${ctx.gate} --round ${ctx.round + 1}`,
@@ -326,6 +351,7 @@ function appendLog(ctx, out, snapState, state) {
   const none = C.oneLine;
   const entry = [
     `## gate ${ctx.gate} · ${scopeOf(ctx.wave)}${ctx.lane ? ` · lane ${ctx.lane}` : ''} · round ${ctx.round} · ${nowIso()}`, '',
+    ...(ctx.isDesign ? [`- doc: ${none(ctx.doc)}`, `- doc_body_sha256: ${none(ctx.docBodySha)}`] : []),
     `- step: ${none(out.step)}`, `- verdict: ${none(out.verdict)}`, `- reason: ${none(out.reason)}`, `- detail: ${none(clip(out.reason_detail, DETAIL_MAX_CHARS))}`,
     `- enforcement: ${ctx.enforcement}`, `- xreview: ${none(out.xreview_path)}`, `- result: ${none(out.result_path)}`, `- findings: ${none(out.findings_path)}`,
     `- snapshot: ${none(snapState)}`, ...(state && state.recovery.length ? [`- recovery: ${none(JSON.stringify(state.recovery))}`] : []), '',
@@ -339,7 +365,7 @@ function reviewedOutcome(ctx, base, al, ran, norm) {
     ...base, ...al, run_porcelain: ran.porcelain, result_path: ran.resultPath, findings_path: norm.findingsPath, xreview_path: norm.xreviewPath, step: 'normalize',
     verdict: norm.verdict, reason: norm.reason, reason_detail: norm.detail, quarantined_blocking: norm.quarantinedBlocking, next: nextFor(ctx, norm.verdict),
   });
-  return norm.verdict === X.VERDICTS.FAIL_WITH_FINDINGS && ctx.round >= X.ROUND_CAP
+  return !ctx.isDesign && norm.verdict === X.VERDICTS.FAIL_WITH_FINDINGS && ctx.round >= X.ROUND_CAP
     ? Object.freeze({ ...reviewed, verdict: X.VERDICTS.FAIL, reason: X.REASONS.round_cap, reason_detail: `REVISE at round ${ctx.round} = cap`, next: null })
     : reviewed;
 }
@@ -378,8 +404,13 @@ function passFor(ctx) {
   return hits.length ? hits[hits.length - 1] : null;
 }
 
+/** spec 025 W5: the newest pass for exactly this doc body in any phase (xprov-design.findPass), shaped like passFor's entry. Request-scoped, no cache. */
+function designPassReuse(ctx) {
+  return DS.findPass(ctx.root, ctx.doc, ctx.docBodySha);
+}
+
 function driveGate(ctx, state) {
-  const base = Object.freeze({ verdict: X.VERDICTS.FAIL, reason: null, reason_detail: null, step: null, gate: ctx.gate, phase: ctx.phase, wave: ctx.wave, lane: ctx.lane, round: ctx.round, mode: ctx.mode, enforcement: ctx.enforcement, findings_path: null, xreview_path: null, result_path: null, next: null, gitleaks: null, ...allowlistFields({}) });
+  const base = Object.freeze({ verdict: X.VERDICTS.FAIL, reason: null, reason_detail: null, step: null, gate: ctx.gate, phase: ctx.phase, wave: ctx.wave, lane: ctx.lane, round: ctx.round, mode: ctx.mode, enforcement: ctx.enforcement, findings_path: null, xreview_path: null, result_path: null, next: null, gitleaks: null, ...(ctx.isDesign ? { doc: ctx.doc, doc_body_sha256: ctx.docBodySha } : {}), ...allowlistFields({}) });
   // A failing step is a FAIL whatever was reached so far — after normalize
   // produced a pass, a broken observe step must not leave `pass` in stdout.
   // `extra` carries the fields already known at that step (e.g. result_path).
@@ -395,12 +426,12 @@ function driveGate(ctx, state) {
     return fail('permit-check', everyRepo ? X.REASONS.external_review_not_permitted : permit.reason, everyRepo ? `external_review: denied, but ${ctx.gate} applies to every repository` : permit.detail, { permit_state: permit.state });
   }
   // spec 025 W4 (one run per state): an unchanged PLAN.md that already holds a valid pass is answered from it, no runner call (same proof as load-check)
-  const reused = ctx.explicitRound ? null : passFor(ctx); // an explicit --round is a deliberate re-run and is never answered from a pass
-  if (reused) { const r = Object.freeze({ ...base, verdict: X.VERDICTS.PASS, step: 'reuse', reason: null, reason_detail: 'unchanged_plan_pass_reused', result_path: reused.result_path || null, xreview_path: reused.xreview_path || null, next: null }); state.logged = true; state.observed = true; appendLog(ctx, r, 'none', state); return r; } // observed = true: no run, so no run observation
-  const dl = DL.prepare(ctx); // FR-030: after a passed plan review only the changed sections go out; a cosmetic edit sends nothing
+  const reused = ctx.isDesign ? designPassReuse(ctx) : (ctx.explicitRound ? null : passFor(ctx)); // an explicit --round is a deliberate re-run and is never answered from a pass
+  if (reused) { const r = Object.freeze({ ...base, verdict: X.VERDICTS.PASS, step: 'reuse', reason: null, reason_detail: ctx.isDesign ? 'unchanged_design_pass_reused' : 'unchanged_plan_pass_reused', result_path: reused.result_path || null, xreview_path: reused.xreview_path || null, next: null }); state.logged = true; state.observed = true; appendLog(ctx, r, 'none', state); return r; } // observed = true: no run, so no run observation
+  const dl = ctx.isDesign ? null : DL.prepare(ctx); // FR-030: after a passed plan review only the changed sections go out; a cosmetic edit sends nothing
   if (dl && dl.kind === 'cosmetic') { const r = DL.passResult(base, dl); state.logged = true; appendLog(ctx, r, 'none', state); return r; }
-  if (ctx.round > X.ROUND_CAP) { DL.cleanup(dl); const r = fail('round', X.REASONS.round_cap, `round ${ctx.round} > cap ${X.ROUND_CAP}`); state.logged = true; appendLog(ctx, r, 'none', state); return r; }
-  const prior = priorRound(ctx); // usage errors surface before any side effect (exit 2 writes nothing)
+  if (!ctx.isDesign && ctx.round > X.ROUND_CAP) { DL.cleanup(dl); const r = fail('round', X.REASONS.round_cap, `round ${ctx.round} > cap ${X.ROUND_CAP}`); state.logged = true; appendLog(ctx, r, 'none', state); return r; }
+  const prior = ctx.isDesign ? null : priorRound(ctx); // usage errors surface before any side effect (exit 2 writes nothing)
   const dctx = dl ? Object.freeze({ ...ctx, deltaFile: dl.file }) : ctx;
   let snap = null;
   let feedback = null;
@@ -570,6 +601,7 @@ function mirrorWaiver(ctx, rec) {
 function waive(o) {
   const ctx = phaseContext(o.phase);
   const gate = requireGateId(o.gate);
+  if (gate !== X.GATE_IDS.PLAN_REVIEW) throw inputError(`waive serves ${X.GATE_IDS.PLAN_REVIEW} only (${gate} is a warning review of a design file; there is nothing to waive)`);
   enforcementFor(gate);
   if (o.wave !== undefined || o.lane !== undefined || o.base !== undefined || o.workPath !== undefined) throw inputError('plan-review-xprov takes no --wave, --lane, --base or --work-path');
   const reason = oneLineFlag(o.reason, 'reason', REASON_MAX_CHARS);
@@ -611,10 +643,10 @@ function withFlags(args, known, sub, body) {
 
 function cmdXprovGate(args) {
   if ((args || []).some((a) => /^--(resume|feedback)(=|$)/.test(String(a)))) return usageExit(RESUME_GONE);
-  const known = { phase: 'str', gate: 'str', wave: 'str', lane: 'str', base: 'str', 'work-path': 'str', round: 'str', timeout: 'str', 'allow-plugins': 'str' };
+  const known = { phase: 'str', gate: 'str', wave: 'str', lane: 'str', base: 'str', 'work-path': 'str', round: 'str', timeout: 'str', 'allow-plugins': 'str', doc: 'str' };
   return withFlags(args, known, 'gate', (f) => {
     if (!f.gate || !f.phase) return usageExit('gate requires --phase <name> --gate <id>');
-    const r = gate({ phase: f.phase, gate: f.gate, wave: f.wave, lane: f.lane, base: f.base, workPath: f['work-path'], round: f.round, timeout: f.timeout, allowPlugins: f['allow-plugins'] });
+    const r = gate({ phase: f.phase, gate: f.gate, doc: f.doc, wave: f.wave, lane: f.lane, base: f.base, workPath: f['work-path'], round: f.round, timeout: f.timeout, allowPlugins: f['allow-plugins'] });
     if (r.gitleaks === false) process.stderr.write(`${GITLEAKS_WARNING_LINE}\n`);
     process.stderr.write(`xprov gate ${r.gate} ${scopeOf(r.wave)} round ${r.round}: ${r.verdict}${r.reason ? ` (${r.reason} at ${r.step})` : ''} — enforcement ${r.enforcement}\n`);
     if (r.verdict === X.VERDICT_NOT_APPLICABLE) process.stderr.write(`xprov gate: ${r.reason === X.REASONS.codex_blocked_fallback ? R.BLOCKED_NOTICE : noticeOf(r.permit_state)}\n`);

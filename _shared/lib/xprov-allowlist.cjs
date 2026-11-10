@@ -750,6 +750,8 @@ function evaluate(o) {
     ...sides.flatMap((s) => [...s.pairs.values()].map((p) => tag(s.side, { path: p.path, pattern: p.pattern }))),
   ];
   const result = (fields) => Object.freeze({ ...NO_ALLOWLIST, uncovered: all, ...fields });
+  // spec 025 W5: a design snapshot is a1's own one-file commit, not part of the repo's history — no anchor, no allowlist; every hit stays uncovered
+  if (o.gateKind === 'design') return result({});
   const anc = resolveAnchor(o.root, o.commitSha, o.gateKind);
   if (!anc.ok) return result({ unresolved: true, note: anc.note });
   const diff = git(['-C', o.root, 'diff', '--no-renames', '--name-only', '-z', anc.anchor, o.commitSha]);
