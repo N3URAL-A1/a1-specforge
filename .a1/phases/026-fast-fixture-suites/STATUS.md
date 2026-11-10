@@ -139,7 +139,7 @@ was only started on planted trees with `A1_SUITE_LOCK_DIR` set; `/tmp/a1-suite-r
 ### Assert counts (W3 parts)
 | File | Asserts | FRs |
 |---|---|---|
-| parts/06-lock.sh | 50 (K5 loops: 3 rounds x 3) | FR-008, FR-009, FR-026 |
+| parts/06-lock.sh | 51 (K5 loops: 3 rounds x 3) | FR-008, FR-009, FR-026 |
 | parts/07-interrupt.sh | 22 (3 signal cases x 7, plus X8) | FR-010 |
 
 ### SIGINT decision
