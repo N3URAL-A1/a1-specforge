@@ -72,7 +72,8 @@ caseI1() {
     rc=$?
     if [[ $rc -ne 0 ]]; then
       echo "I1 $s exit $rc — child FAIL lines (max 20):"
-      grep -E '^(FAIL|not ok)|[[:space:]]FAIL[[:space:]]|passed, [0-9]+ failed' "$childlog/out.txt" | head -20 | sed 's/^/    /'
+      grep -E '^(FAIL|not ok)|[[:space:]]FAIL[[:space:]]|passed, [0-9]+ failed' "$childlog/out.txt" \
+        | grep -vE '^[[:space:]]*(PASS|ok)[[:space:]]' | head -20 | sed 's/^/    /'
     fi
     assert_rc "I1 $s exits 0 under the sentinel vault" 0 "$rc" "child FAIL lines printed above"
     rm -rf "$childlog"
