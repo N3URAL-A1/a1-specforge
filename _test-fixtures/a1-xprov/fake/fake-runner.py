@@ -58,6 +58,9 @@ environment when the file is absent (direct `python3 fake-runner.py` calls).
   FAKE_RUNNER_SEQUENCE         JSON list of knob objects, one per CALL (the last repeats): the n-th call
                                runs with those FAKE_RUNNER_* values on top of the others (spec 016 Wave 8)
   FAKE_RUNNER_COUNT_FILE       one line is appended per call; its line count selects the sequence entry
+                               (counting needs FAKE_RUNNER_SEQUENCE, `[{}]` counts without changing a knob)
+  FAKE_RUNNER_REPO_LIST_FILE   write {"files": [...], "tracked": [...]} of --repo here: every path outside .git and the paths
+                               `git ls-files` names — what the reviewer can read in the snapshot (spec 025 W5, design snapshot scope)
 
 A resume is checked like runner.py:257-269 (same repo, plan, provider, mode,
 model, effort; status completed; a session UUID) — the check whose absence
@@ -293,6 +296,12 @@ def main(argv: list[str]) -> int:
         root = Path(os.environ.get("HOME", "/nonexistent")) / ".agents" / "skills"
         names = sorted(p.name for p in root.iterdir()) if root.is_dir() else []
         Path(skills_file).write_text(json.dumps(names), encoding="utf-8")
+    list_file = k.get("FAKE_RUNNER_REPO_LIST_FILE")
+    if list_file and flag(argv, "--repo"):
+        repo_dir = Path(flag(argv, "--repo"))
+        listed = sorted(str(p.relative_to(repo_dir)) for p in repo_dir.rglob("*") if p.is_file() and ".git" not in p.relative_to(repo_dir).parts)
+        tracked = subprocess.run(["git", "-C", str(repo_dir), "ls-files"], capture_output=True, text=True).stdout.split()
+        Path(list_file).write_text(json.dumps({"files": listed, "tracked": sorted(tracked)}), encoding="utf-8")
     system_probe = k.get("FAKE_RUNNER_SYSTEM_PROBE")
     if system_probe:
         sysdir = Path(os.environ["CODEX_HOME"]) / "skills" / ".system"
