@@ -26,7 +26,7 @@ plant_suite "$T_DISC" a1-x/helper.sh ": > \"$PROBE_DISC.helper\""          # not
 plant_suite "$T_DISC" a1-x/sub/run-deep.sh ": > \"$PROBE_DISC.deep\""      # one directory level too deep
 plant_suite "$T_DISC" a1-schema-check/parser/other.sh ": > \"$PROBE_DISC.other\""
 rs_run "$T_DISC"
-DISC_LIST="$(printf '%s\n' "$RS_OUT" | grep -E '^[^ ]+/run[^ /]*\.sh$')"
+DISC_LIST="$(printf '%s\n' "$RS_OUT" | grep -E '^[^ ]+\.sh$')"
 DISC_EXPECTED='a1-schema-check/parser/run-parser.sh
 a1-x/run-other.sh
 a1-x/run-tests.sh'
