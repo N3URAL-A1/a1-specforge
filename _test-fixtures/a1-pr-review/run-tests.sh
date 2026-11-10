@@ -153,49 +153,71 @@ else
   fail_case "positional slug did not reach registry lookup — flags._[0] may be broken"
 fi
 
-echo "== Test 12: spec 016 wave 10 - pr-diff-xprov wiring in the skill text"
+echo "== Test 12: spec 025 wave 1 - Claude-only review (Reinhard always, Samuel on security surface), no Codex step"
 SK="$(cd "$(dirname "$0")/../.." && pwd)/skills"
 REV="$SK/a1-pr-review/workflows/02-review.md"
-if grep -q "xprov gate --gate pr-diff-xprov" "$REV" && grep -q "2.2b" "$REV"; then
-  pass_case "step 2.2b runs the pr-diff-xprov gate next to the Reinhard spawn"
-else
-  fail_case "02-review.md lacks step 2.2b / the pr-diff-xprov gate call"
-fi
-if grep -q -- "--merge-check" "$REV"; then
-  pass_case "the merge check (--merge-check) is a step of the review workflow"
-else
-  fail_case "02-review.md lacks the --merge-check step"
-fi
-if grep -q '`source` field' "$REV" && grep -q '"codex"' "$REV" && grep -q '"reinhard"' "$REV"; then
-  pass_case "findings are tagged by source (reinhard / codex)"
-else
-  fail_case "02-review.md does not describe the findings source tag"
-fi
-if grep -q "Cross-provider review" "$SK/a1-pr-review/workflows/03-draft.md"; then
-  pass_case "the PR body carries a Cross-provider review section"
-else
-  fail_case "03-draft.md lacks the Cross-provider review section"
-fi
-if grep -q "Merge only on exit 0" "$REV" && grep -q "exit 77" "$REV"; then
-  pass_case "step 2.7 says: merge only on exit 0, exits 1/2/77 named"
-else
-  fail_case "02-review.md 2.7 lacks the merge-only-on-exit-0 rule"
-fi
+MRG="$SK/a1-pr-review/workflows/05-merge.md"
+sec() { # sec <file> <heading prefix>: text of one "### " section, up to the next "### " or "## "
+  node -e '
+    const t=require("fs").readFileSync(process.argv[1],"utf8").split("\n"); const out=[]; let on=false;
+    for (const l of t) { if (l.startsWith(process.argv[2])) { on=true; out.push(l); continue; } if (on && /^##+ /.test(l)) break; if (on) out.push(l); }
+    process.stdout.write(out.join("\n"));' "$1" "$2"
+}
+gate_hits="$(grep -n 'xprov gate\|pr-diff-xprov\|merge-check' "$REV" "$MRG" | grep -v 'pr merge-check\|pr-merge-check' || true)"
+if [ -z "$gate_hits" ]; then
+  pass_case "02-review.md and 05-merge.md name no xprov gate, no pr-diff-xprov, no gate --merge-check (only pr merge-check remains)"
+else fail_case "02-review.md / 05-merge.md still name an xprov gate or merge-check: $(printf '%s' "$gate_hits" | head -3)"; fi
+if grep -q 'pr merge-check' "$MRG" && ! grep -q 'merge-check' "$REV"; then pass_case "05-merge keeps pr merge-check (5.3); 02-review has no merge-check step (2.7 gone)"
+else fail_case "pr merge-check missing in 05-merge or a merge-check step survives in 02-review"; fi
+if ! grep -q '^### 2.2c' "$REV" && ! grep -q '^### 2.7' "$REV" && ! grep -q 'Cross-provider' "$REV"; then pass_case "steps 2.2c and 2.7 and the Cross-provider step are gone from 02-review"
+else fail_case "02-review.md still holds step 2.2c, 2.7 or a Cross-provider step"; fi
+S22="$(sec "$REV" '### 2.2 ')"
+if printf '%s' "$S22" | grep -q 'subagent_type: "a1-reinhard-reviewer"' && ! printf '%s' "$S22" | grep -q -i -E '^\s*(if|when|only)\b|security_surface|xprov'; then
+  pass_case "step 2.2 spawns a1-reinhard-reviewer unconditionally (no if/when/surface condition in the step)"
+else fail_case "step 2.2 spawn of Reinhard is missing or sits behind a condition"; fi
+S22B="$(sec "$REV" '### 2.2b')"
+if printf '%s' "$S22B" | grep -q 'xprov scope --repo' && printf '%s' "$S22B" | grep -q -e '--base' && printf '%s' "$S22B" | grep -q -e '--head HEAD' && printf '%s' "$S22B" | grep -q 'baseRefOid'; then
+  pass_case "2.2b runs xprov scope --repo/--base/--head against the remote base sha (baseRefOid)"
+else fail_case "2.2b lacks the xprov scope call with --repo/--base/--head or the baseRefOid source"; fi
+if printf '%s' "$S22B" | grep -q 'subagent_type: "a1-specforge:a1-samuel-security"' && printf '%s' "$S22B" | grep -q 'security_surface' && printf '%s' "$S22B" | grep -q -i 'no `name`'; then
+  pass_case "2.2b spawns a1-specforge:a1-samuel-security (no name) keyed on security_surface"
+else fail_case "2.2b lacks the conditional Samuel spawn (subagent_type a1-specforge:a1-samuel-security, no name, security_surface)"; fi
+if printf '%s' "$S22B" | grep -q 'no Samuel spawn'; then pass_case "2.2b says: surface false means no Samuel spawn"
+else fail_case "2.2b does not state that no surface means no Samuel spawn"; fi
+si="$(printf '%s' "$S22B" | grep -n 'subagent_type: "a1-specforge:a1-samuel-security"' | head -1 | cut -d: -f1)"
+st="$(printf '%s' "$S22B" | grep -n 'STOP' | tail -1 | cut -d: -f1)"
+if [ -n "$si" ] && [ -n "$st" ] && [ "$st" -gt "$si" ] && printf '%s' "$S22B" | grep -q -i 'spawn fail\|no JSON'; then pass_case "2.2b ends with STOP when the Samuel spawn fails or returns no JSON block (no silent merge)"
+else fail_case "2.2b has no STOP line after the Samuel spawn (failed spawn / missing JSON)"; fi
+if printf '%s' "$S22B" | grep -q 'RC=\$?' && printf '%s' "$S22B" | grep -q 'xprov scope exit=\$RC'; then pass_case "2.2b tests the exit code of xprov scope and stops on non-zero"
+else fail_case "2.2b does not stop on a non-zero xprov scope exit"; fi
+S24="$(sec "$REV" '### 2.4 ')"
+if printf '%s' "$S24" | grep -q '"reinhard"' && printf '%s' "$S24" | grep -q '"samuel"' && printf '%s' "$S24" | grep -q '"reinhard+samuel"' && ! printf '%s' "$S24" | grep -q 'codex'; then
+  pass_case "findings are tagged by source reinhard / samuel / reinhard+samuel; no codex source"
+else fail_case "2.4 does not describe the source tags reinhard/samuel/reinhard+samuel or still names codex"; fi
+if grep -q 'Security review (Samuel)' "$SK/a1-pr-review/workflows/03-draft.md" && ! grep -q 'Cross-provider' "$SK/a1-pr-review/workflows/03-draft.md"; then
+  pass_case "the PR body carries a Security review (Samuel) section, no Cross-provider section"
+else fail_case "03-draft.md lacks the Security review (Samuel) section or still has Cross-provider review"; fi
+codex_hits="$(grep -n -i 'codex\|pr-diff-xprov\|xprov gate' "$SK/a1-pr-review/SKILL.md" "$SK/a1-pr-review/workflows/"*.md || true)"
+if [ -z "$codex_hits" ]; then pass_case "no Codex / xprov gate mention in the a1-pr-review skill text (static)"
+else fail_case "a1-pr-review text still mentions Codex or an xprov gate: $(printf '%s' "$codex_hits" | head -3)"; fi
+if grep -q 'Samuel reviewed the diff when step 2.2b reported' "$MRG" && grep -q 'every BLOCKER and MAJOR of both reviewers is fixed' "$MRG"; then
+  pass_case "05-merge precondition: Samuel reviewed when 2.2b reported surface; every BLOCKER and MAJOR of both reviewers fixed"
+else fail_case "05-merge lacks the Samuel precondition or the both-reviewers fix rule"; fi
 if grep -q '"matcher": "Bash"' "$SK/../hooks/hooks.json"; then
   pass_case "the plugin hooks.json carries the Bash matcher of the merge hook"
 else
   fail_case "hooks/hooks.json has no Bash matcher: the merge check is not enforced"
 fi
-if grep -q 'gh pr merge <n> --squash` (no `--delete-branch`' "$SK/a1-pr-review/SKILL.md" && grep -q 'exactly ONE command' "$REV"; then
-  pass_case "the merge step uses the canonical form the hook allows"
+if grep -q 'gh pr merge <n> --squash` (no `--delete-branch`' "$SK/a1-pr-review/SKILL.md"; then
+  pass_case "the a1-pr-review SKILL names the squash merge form without --delete-branch"
 else
-  fail_case "the a1-pr-review merge step does not name the canonical gh pr merge form"
+  fail_case "the a1-pr-review SKILL does not name the gh pr merge squash form"
 fi
 leak=0
-for f in "$SK/a1-new-feature/workflows/05-implement.md" "$SK/a1-fix/SKILL.md"; do
-  if grep -q "xprov gate" "$f"; then leak=1; fail_case "$f calls the cross-provider gate; it is reached only through a1-pr-review 2.2b"; fi
+for f in "$SK/a1-new-feature/workflows/05-implement.md" "$SK/a1-fix/SKILL.md" "$SK/a1-new-feature/workflows/06-verify.md"; do
+  if grep -q "xprov gate\|pr-diff-xprov" "$f"; then leak=1; fail_case "$f names a cross-provider gate for code"; fi
 done
-[ "$leak" -eq 0 ] && pass_case "a1-new-feature 05-implement and a1-fix call no cross-provider gate (static)"
+[ "$leak" -eq 0 ] && pass_case "a1-new-feature 05/06 and a1-fix name no cross-provider gate for code (static)"
 
 # `consent waive` takes no --kind (and needs --phase or --work-path): the shorthand `ensure|waive --kind waiver` exits 2 (Reinhard 2026-10-19)
 bad_waive="$(grep -rnE 'consent (ensure\|)?waive --kind|ensure\|waive' "$SK" 2>/dev/null | head -3)"
@@ -235,11 +257,9 @@ if printf '%s' "$HAND" | grep -q 'workflows/05-merge.md'; then pass_case "SKILL.
 else fail_case "SKILL.md Hand-offs does not point to 05-merge.md"; fi
 if [ "$(printf '%s' "$HAND" | grep -c 'gh pr merge')" = "1" ]; then pass_case "the Hand-offs prose carries no second merge sequence (one gh pr merge mention, the pointer; count)"
 else fail_case "Hand-offs still holds merge prose beyond the pointer"; fi
-if grep -q 'Step 2.7' "$MRG" && grep -q -- '--merge-check' "$MRG" && grep -q -- '--body-file' "$MRG"; then
-  pass_case "05-merge.md keeps the spec 016 precondition (step 2.7 merge check) and the --body-file rule"
-else fail_case "05-merge.md lost the spec 016 precondition or the --body-file rule"; fi
-if grep -q '2.2b' "$REV" && grep -q 'pr-diff-xprov' "$REV"; then pass_case "the Codex PR diff review step (2.2b) is still in 02-review.md"
-else fail_case "02-review.md lost the Codex review step"; fi
+if grep -q -- '--body-file' "$MRG" && ! grep -q 'Step 2.7' "$MRG"; then
+  pass_case "05-merge.md keeps the --body-file rule and names no step 2.7 (spec 025: the Codex merge check is gone)"
+else fail_case "05-merge.md lost the --body-file rule or still names step 2.7"; fi
 
 # ---------- spec 017 wave 12 (FR-025): disposition review in 02-review.md + Reinhard ----------
 # Measured red 2026-10-21 (git-archive snapshot, one line changed, suite run):
@@ -255,7 +275,7 @@ if [ "$(rbj 'b.filter(x=>/disposition review /.test(x)).length')" = "1" ]; then 
 if [ "$(rbj 'b.filter(x=>/disposition review <fingerprint> --verdict <upheld\|overturned> --reason /.test(x)&&/--by a1-reinhard-reviewer/.test(x)).length')" = "1" ]; then pass_case "the call uses the real flags (--verdict upheld|overturned, --reason, --by)"; else fail_case "disposition review call lacks --verdict/--reason/--by"; fi
 if [ "$(rbj 'b.filter(x=>/disposition review /.test(x)&&/--phase/.test(x)).length')" = "0" ]; then pass_case "disposition review passes no --phase (the command rejects it with exit 2)"; else fail_case "disposition review call passes --phase"; fi
 if [ "$(rbj 'b.filter(x=>/disposition review /.test(x)&&/RC=\$\?/.test(x)&&/-ne 0/.test(x)&&/exit "\$RC"/.test(x)).length')" = "1" ]; then pass_case "the disposition review block tests its exit code explicitly"; else fail_case "disposition review block does not test \$?"; fi
-if [ "$(rbj 'b.findIndex(x=>/disposition review /.test(x))>b.findIndex(x=>/xprov gate --gate pr-diff-xprov --work-path/.test(x))')" = "true" ] && grep -q '^### 2.3b' "$REV" && [ "$(grep -n '^### 2.3b' "$REV" | cut -d: -f1)" -lt "$(grep -n '^### 2.4 ' "$REV" | cut -d: -f1)" ]; then pass_case "the disposition step sits between 2.3 and 2.4, after the Codex step"; else fail_case "disposition step 2.3b is missing or misplaced"; fi
+if [ "$(rbj 'b.findIndex(x=>/disposition review /.test(x))>b.findIndex(x=>/xprov scope --repo/.test(x))&&b.findIndex(x=>/xprov scope --repo/.test(x))>=0')" = "true" ] && grep -q '^### 2.3b' "$REV" && [ "$(grep -n '^### 2.3b' "$REV" | cut -d: -f1)" -lt "$(grep -n '^### 2.4 ' "$REV" | cut -d: -f1)" ]; then pass_case "the disposition step sits between 2.2b (security surface) and 2.4"; else fail_case "disposition step 2.3b is missing or misplaced"; fi
 if grep -q 'Dispositions changed between base and head' "$REV"; then pass_case "the Reinhard brief carries the changed dispositions"; else fail_case "Reinhard brief lacks the changed-dispositions line"; fi
 if grep -q 'overturned' "$AGT" && grep -q 'upheld' "$AGT" && grep -q 'Disposition Review' "$AGT"; then pass_case "Reinhard agent file states the disposition review duty with upheld/overturned"; else fail_case "agents/a1-reinhard-reviewer.md lacks the disposition review duty"; fi
 if [ "$(wc -l < "$AGT")" -le 260 ]; then pass_case "Reinhard agent file stays short (<= 260 lines)"; else fail_case "Reinhard agent file grew past 260 lines"; fi

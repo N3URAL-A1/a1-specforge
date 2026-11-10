@@ -45,11 +45,10 @@ Reinhard reviewed this branch. <X> BLOCKER, <Y> MAJOR, <Z> MINOR.
 
 <If MAJOR list is empty, omit this section entirely.>
 
-### Cross-provider review (omit when `pr-diff-xprov` did not apply or passed cleanly)
+### Security review (Samuel) (omit when step 2.2b reported no security surface)
 
-<One bullet per item: the waves `xprov wave-status` listed under `deferred_to_pr` ("wave N: surface diff, reviewed by the PR diff gate"); a `codex_blocked_fallback`
-("Codex answered BLOCKED twice on this diff; the owner is asked for a waiver"); a `secret_declined` ("secret-shaped string declined from Codex review"); every
-line of `pr_body[]` from the merge check (2.7). Reason names only, never a matched value.>
+<One bullet per Samuel finding: title - file:line, with its severity. If Samuel found nothing: "Samuel reviewed the security-surface diff: no findings."
+Reason and paths only, never a secret value.>
 
 ## Test Plan
 
