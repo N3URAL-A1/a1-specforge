@@ -11,7 +11,7 @@
 #  T1e: table skipping a row (row count != discovered count).
 #  F1a-F1d: failure line without the log path · signal exit not reported as "signal 15" (rc>128 branch
 #           in rs_on_suite_done) · runner stopping at the first failure (the later suites vanish).
-#  K1a-K1c: identity shortened to the basename in the row or the failure line.
+#  U1a-U1e: identity shortened to the basename in the row or the failure line.
 
 # Sample line shapes below are the echo lines of the real runners, e.g.
 # `echo "a1-intent: $pass passed, $fail failed"` in _test-fixtures/a1-intent/run-tests.sh.
@@ -79,16 +79,16 @@ for fid in f-exit g-term; do
 done
 assert_eq "F1h table shows 4 rows (2 FAIL)" "$(rows "$RS_OUT" | grep -c '')/$(rows "$RS_OUT" | grep -c '^  FAIL')" "4/2"
 
-# ---- K1: identity with directory part, two runners in one directory ----
+# ---- U1: identity with directory part, two runners in one directory ----
 mk_tree T_IDN idn
 plant_suite "$T_IDN" a1-gates-lint/run-wave13.sh 'echo "w13: 1 passed, 1 failed"; exit 1'
 plant_suite "$T_IDN" a1-gates-lint/run-tests.sh 'echo "lint: 3 passed, 0 failed"'
 plant_suite "$T_IDN" other/run-wave13.sh 'echo "other: 1 passed, 0 failed"'
 rs_run "$T_IDN" --workers 3
 IDN_ID="a1-gates-lint/run-wave13.sh"
-assert_eq "K1a identity verbatim in the discovery list (1x)" "$(printf '%s\n' "$RS_OUT" | grep -cx "$IDN_ID")" "1"
-assert_eq "K1b identity verbatim in the table row (1x)" "$(rows "$RS_OUT" | grep -c " $IDN_ID\$")" "1"
-assert_eq "K1c identity verbatim in the failure line (1x)" "$(printf '%s\n' "$RS_OUT" | grep -c "^FAILED: $IDN_ID ")" "1"
-assert_eq "K1d three distinct rows for three runners (two in one directory)" \
+assert_eq "U1a identity verbatim in the discovery list (1x)" "$(printf '%s\n' "$RS_OUT" | grep -cx "$IDN_ID")" "1"
+assert_eq "U1b identity verbatim in the table row (1x)" "$(rows "$RS_OUT" | grep -c " $IDN_ID\$")" "1"
+assert_eq "U1c identity verbatim in the failure line (1x)" "$(printf '%s\n' "$RS_OUT" | grep -c "^FAILED: $IDN_ID ")" "1"
+assert_eq "U1d three distinct rows for three runners (two in one directory)" \
   "$(rows "$RS_OUT" | awk '{print $NF}' | sort -u | grep -c '')" "3"
-assert_eq "K1e same basename in two directories gives two rows" "$(rows "$RS_OUT" | grep -c 'run-wave13.sh$')" "2"
+assert_eq "U1e same basename in two directories gives two rows" "$(rows "$RS_OUT" | grep -c 'run-wave13.sh$')" "2"
