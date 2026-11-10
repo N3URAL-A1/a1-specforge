@@ -125,7 +125,7 @@ function phaseFile(root, phase) {
   return path.join(dir, OBSERVATIONS_FILE);
 }
 
-/** The `pr-diff-xprov` target `<worktree>/.a1-review/xreview/observations.jsonl` (spec 016 FR-035): an absolute worktree path without `..`,
+/** The review-worktree target `<worktree>/.a1-review/xreview/observations.jsonl` (spec 016 FR-035): an absolute worktree path without `..`,
  * a real directory, and no link anywhere below it (the file is agent-reachable, so a link would redirect the append). */
 function reviewFile(worktree) {
   const w = String(worktree == null ? '' : worktree);

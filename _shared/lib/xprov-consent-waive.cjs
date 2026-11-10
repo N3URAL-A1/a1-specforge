@@ -14,7 +14,7 @@
 //       nothing written, a new question is needed. A No, free text or a missing answer writes nothing. The consent to send never implies it.
 //
 // Per phase (or per PR review run): marker kind `waiver`, one per repository. `--work-path` names a worktree of the same repository for the
-// PR diff gate; the waiver store cannot key a pr-diff-xprov target yet (wave 10), so it lists no target and writes nothing.
+// retired PR diff gate (spec 025 W3): its state dir holds no gate row any more, so it lists no target and writes nothing.
 // Order of every write (SEC-6): the question text, run-record reads and git work OUTSIDE the lock; inside the store lock: the marker, the audit
 // line FIRST (consent-waive, the marker's tool_use_id and session_id), then the store (read again inside), then the mirror (index row, XREVIEW note, observation: no authority, failures are reported, not hidden). Tier 0: see help-xprov-consent.cjs.
 // Request-scoped: clock and paths are parameters.
@@ -44,7 +44,7 @@ const PHASE_LINE_RE = /^Phase: (.*)$/m;
 const WORKTREE_LINE_RE = /^Worktree: (.*)$/m;
 
 const { refuse } = R;
-const scopeLabel = (k) => (k.gate === X.GATE_IDS.PR_DIFF ? 'PR-Diff' : k.wave === null ? 'Plan' : `Wave ${k.wave}${k.lane ? `, Lane ${Q.clean(k.lane)}` : ''}`);
+const scopeLabel = (k) => (k.wave === null ? 'Plan' : `Wave ${k.wave}${k.lane ? `, Lane ${Q.clean(k.lane)}` : ''}`);
 const shortSha = (s) => (s === null ? '-' : s);
 
 function targetLines(t, i, n) {

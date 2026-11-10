@@ -10,7 +10,7 @@
 //     PostToolUse AskUserQuestion    -> 'ignored' (no open marker for this tool_use_id: any other question) | 'recorded' (decision yes|no, the
 //                                       marker now holds the owner's answer) | 'refused' (reason)
 //     PreToolUse  Edit|Write|NotebookEdit|MultiEdit -> 'allow' | 'deny' (reason: store_path | settings_forgery | bad_payload)
-//     PreToolUse  Bash               -> 'allow' | 'deny' (reason: merge_*): `gh pr merge` only after the PR diff merge check exits 0 (xprov-hook-merge.cjs)
+//     PreToolUse  Bash               -> 'allow' (no decision: hooks.json holds no Bash matcher since spec 025 W3; a Bash payload that reaches this code is never judged)
 //     anything else                  -> 'deny' (reason: unguarded_event): a call that cannot be classified counts as guarded (plan D-5).
 //   hookOutput(decision, event) -> { exit, stdout, stderr }          the Claude Code wire form (deny = permissionDecision JSON, exit 0).
 //
@@ -160,7 +160,7 @@ function decide(payload, o) {
   if (event === 'PreToolUse' && tool === ASK) return preAsk(payload, o);
   if (event === 'PostToolUse' && tool === ASK) return postAsk(payload, o);
   if (event === 'PreToolUse' && EDIT_TOOLS.includes(tool)) return preEdit(payload);
-  if (event === 'PreToolUse' && tool === 'Bash') return require('./xprov-hook-merge.cjs').decideMerge(payload);
+  if (event === 'PreToolUse' && tool === 'Bash') return Object.freeze({ action: 'allow' }); // no pull request block any more (spec 025 W3): no decision, same as no hook
   return deny('unguarded_event', `the hook does not handle ${C.clip(String(event), 40)} for ${C.clip(String(tool), 40)}`);
 }
 

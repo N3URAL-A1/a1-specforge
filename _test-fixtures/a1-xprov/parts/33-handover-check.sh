@@ -24,8 +24,9 @@
 #   H3  no file at all → exit 0, target_state absent, blocks_merge false,
 #       no owner command (an unpermitted repo runs Reinhard-only everywhere).
 #   H4  invalid file → exit 1, target_state invalid, blocks_merge TRUE. Measured in
-#       xprov-hook-merge.cjs (reinhardOnly): only `absent` and `denied` pass, so an
-#       unparseable record blocks merges on the target host exactly like a mismatch.
+#       the removed Bash hook (reinhardOnly, spec 025 W3): only `absent` and `denied` passed, so an
+#       unparseable record blocked merges on the target host exactly like a mismatch;
+#       `blocks_merge` keeps that verdict, no hook acts on it any more.
 #   H5  the local host is reported next to the target: a Mac with a matching
 #       store reads local_state denied while the target still predicts the
 #       mismatch — the two fields never collapse into one.

@@ -50,7 +50,7 @@ function validRecord(r) {
   if (!AL.exactKeys(r, RECORD_KEYS)) return null;
   const str = (v) => typeof v === 'string' && v !== '';
   if (![r.repo, r.phase, r.gate, r.reason, r.by, r.ts].every(str) || !SHA256_HEX_RE.test(r.plan_sha256)) return null;
-  const isWave = r.gate === X.GATE_IDS.WAVE_INSPECT || r.gate === X.GATE_IDS.PR_DIFF; // the PR diff gate is keyed like a wave (wave 0, lane pr<head>)
+  const isWave = r.gate === X.GATE_IDS.WAVE_INSPECT;
   if (isWave && !(Number.isInteger(r.wave) && r.wave >= 0 && SHA_RE.test(String(r.head)) && SHA_RE.test(String(r.base)))) return null;
   if (isWave && r.lane !== null && !C.LANE_RE.test(String(r.lane))) return null;
   if (!isWave && (r.wave !== null || r.lane !== null || r.head !== null || r.base !== null)) return null;
@@ -59,7 +59,8 @@ function validRecord(r) {
 
 function parseWaiversDoc(doc) {
   if (!AL.exactKeys(doc, ['version', 'waivers']) || doc.version !== 1 || !Array.isArray(doc.waivers)) return null;
-  const list = doc.waivers.map(validRecord);
+  // a record of a retired gate id is kept verbatim and inert (the lookups below filter by gate): it must neither invalidate the store nor vanish on the next write
+  const list = doc.waivers.map((r) => (r !== null && typeof r === 'object' && X.RETIRED_GATE_IDS.includes(r.gate) ? { ...r } : validRecord(r)));
   return list.some((r) => r === null) ? null : list;
 }
 
@@ -93,7 +94,7 @@ function planWaiver(store, key) {
 
 /** Store waivers for (repo, phase, plan sha, wave, lane), oldest first. */
 function waveWaivers(store, key) {
-  return store.waivers.filter((w) => w.gate === (key.gate === X.GATE_IDS.PR_DIFF ? X.GATE_IDS.PR_DIFF : X.GATE_IDS.WAVE_INSPECT) && w.repo === key.repo && w.phase === key.phase
+  return store.waivers.filter((w) => w.gate === X.GATE_IDS.WAVE_INSPECT && w.repo === key.repo && w.phase === key.phase
     && w.plan_sha256 === key.plan_sha256 && w.wave === key.wave && w.lane === (key.lane || null));
 }
 

@@ -365,6 +365,18 @@ caseR7() {
   sub6 load-check --phase p6; assert_rc "R7i a waiver of another phase → exit 1" 1 "$G_RC"
   rm -f "$HOME/.a1-xprov/waivers.json"; waiver6 "$GATE_WAVE" 1 "" "$PHASE_HEAD" "$PHASE_HEAD"
   sub6 load-check --phase p6; assert_rc "R7i a waiver of the wave gate → exit 1" 1 "$G_RC"
+  # R7k (spec 025 W3) — a stored row of the retired PR diff gate is inert: it covers nothing and must not invalidate the store beside a real record
+  rm -f "$HOME/.a1-xprov/waivers.json"; waiver6 "pr-diff-xprov" 0 "pr0123456789ab" "$PHASE_HEAD" "$PHASE_HEAD"
+  sub6 load-check --phase p6; assert_rc "R7k a retired-gate row alone covers nothing → exit 1 (no throw)" 1 "$G_RC"
+  waiver6 "$GATE_PLAN"
+  sub6 load-check --phase p6; assert_rc "R7k a plan record beside a retired-gate row still covers → exit 0" 0 "$G_RC" "$G_ERR"
+  assert_eq "R7k the retired row is still in the store (a read never rewrites it)" "$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).waivers.filter((w) => w.gate === "pr-diff-xprov").length' "$HOME/.a1-xprov/waivers.json")" "1"
+  # RED [mutant]: the retired-row tolerance removed (every row validated as a live gate) invalidates the whole store, so the real record stops covering
+  local wf6="$TREE/_shared/lib/xprov-waivers.cjs"; cp "$wf6" "$wf6.orig"
+  node -e 'const fs=require("fs");const f=process.argv[1];const s=fs.readFileSync(f,"utf8");const a="(r !== null && typeof r === \x27object\x27 && X.RETIRED_GATE_IDS.includes(r.gate) ? { ...r } : validRecord(r))";if(s.split(a).length!==2){console.error("needle");process.exit(3);}fs.writeFileSync(f,s.replace(a,"validRecord(r)"));' "$wf6" || bad "R7k harness: mutation failed"
+  sub6 load-check --phase p6; local r7k_mut="$G_RC"; mv "$wf6.orig" "$wf6"
+  [[ "$r7k_mut" == "1" ]] && ok "R7k RED [mutant]: without the retired-row tolerance the plan record no longer covers (exit 1)" || bad "R7k RED [mutant]: the tolerance is dead, the mutant still gives exit $r7k_mut"
+  rm -f "$HOME/.a1-xprov/waivers.json"
   # R7j — TOCTOU: the plan accepted at Load is the plan of every wave
   rm -f "$HOME/.a1-xprov/waivers.json"; waiver6 "$GATE_PLAN"
   sub6 load-check --phase p6 --expect-sha "$(json_get "$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov load-check --phase p6 2>/dev/null)" "j.plan_sha256")"

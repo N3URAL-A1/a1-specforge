@@ -127,7 +127,8 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   .a1/xprov.json only — rationale in the module header. Mapping: file
                   denied → target_state denial_mismatch, allowed → permit_mismatch, no
                   file → absent, unparseable → invalid. \`blocks_merge\` is true for every
-                  state the merge hook does not pass (all but absent and denied).
+                  state the removed Bash hook did not pass (all but absent and denied);
+                  no hook acts on it any more.
                   \`owner_command\` is the one line the owner runs on the target host in a
                   real terminal, or null when none can be printed safely — the record
                   fields and --target-repo must pass the owner-command validators, and
@@ -169,8 +170,8 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   itself: owner hand-offs, Codex runs (1 only for the first
                   line of a gate target: rounds and retries collapse), abort
                   reason, recovered. --review-worktree writes to
-                  <dir>/.a1-review/xreview/observations.jsonl (the PR diff
-                  review); an absolute path without .., no link on the way.
+                  <dir>/.a1-review/xreview/observations.jsonl (a review
+                  worktree); an absolute path without .., no link on the way.
     snapshot --repo <path> --commit <sha> [--base <sha>] [--plan <file>] [--feedback <file>] | --remove <dir>
                   (xprov-snapshot.cjs, wave 5) fresh depth-limited fetch under
                   ~/.a1-xprov/snapshots/ (git init + fetch --depth 1 + checkout

@@ -106,7 +106,7 @@ const REASON_LIST = Object.freeze([
   'secret_declined', // wave 9: owner declined the allowlist question for a changed-line hit
   'pr_anchor_unavailable', // wave 10: the real target base (gh pr view / ls-remote) could not be resolved or fetched
   'pr_base_mismatch', // wave 10: --base is not the remote base the gate resolved itself
-  'pr_merge_blocked', // wave 10: the merge check refuses (surface diff without an accepted pr-diff-xprov result for the head sha)
+  'pr_merge_blocked', // wave 10, retired with the PR diff gate (spec 025 W3): kept so old log lines stay readable
 ]);
 const REASONS = Object.freeze(Object.fromEntries(REASON_LIST.map((r) => [r, r])));
 
@@ -118,8 +118,10 @@ const VERDICTS = Object.freeze({ PASS: 'pass', FAIL_WITH_FINDINGS: 'fail-with-fi
 const VERDICT_NOT_APPLICABLE = 'not_applicable';
 
 // ---------- gate ids (rows in _shared/gates-registry.md) ----------
-const GATE_IDS = Object.freeze({ PLAN_REVIEW: 'plan-review-xprov', WAVE_INSPECT: 'wave-inspect-xprov', PR_DIFF: 'pr-diff-xprov' }); // PR_DIFF: spec 016 wave 10, a1-pr-review step 2.2b
+const GATE_IDS = Object.freeze({ PLAN_REVIEW: 'plan-review-xprov', WAVE_INSPECT: 'wave-inspect-xprov' });
 const GATE_ID_LIST = Object.freeze(Object.values(GATE_IDS));
+// Gate ids that no longer exist (spec 025 W3). Stored rows that carry one stay in the owner stores byte for byte; no reader acts on them and none throws.
+const RETIRED_GATE_IDS = Object.freeze(['pr-diff-xprov']);
 
 // ---------- runner usage limits (FR-024) ----------
 const RUNNER_MODES = Object.freeze(['review', 'inspect']); // `check` is the runner's own consistency mode; a1 has no caller for it
@@ -417,7 +419,7 @@ module.exports = {
   EXIT_PASS, EXIT_FAIL, EXIT_USAGE,
   SUBCOMMANDS, SUBCOMMAND_NAMES,
   REASONS, REASON_LIST, VERDICTS, VERDICT_NOT_APPLICABLE,
-  GATE_IDS, GATE_ID_LIST,
+  GATE_IDS, GATE_ID_LIST, RETIRED_GATE_IDS,
   RUNNER_MODES, FORBIDDEN_RUNNER_TOKENS, RUNNER_HOST, RUNNER_DEFAULT_TIMEOUT_SECONDS,
   ARTIFACT_MAX_AGE_DAYS, PASS_RUN_MAX_AGE_DAYS, ROUND_CAP, MAX_FIELD_CHARS, MAX_RESULT_BYTES, TITLE_MAX_CHARS,
   MODEL_REQUESTED_DEFAULT, MODEL_OBSERVED_UNKNOWN,

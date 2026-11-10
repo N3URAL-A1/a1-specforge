@@ -361,7 +361,7 @@ caseF1() {
   assert_json "F1h3 pattern list has 23 entries (8 spec + 8 amended + 7 spec 014)" "$out2" "j.count" "23"
   assert_json "F1h4 ReDoS probe: worst pattern × adversarial input (incl. 300 000-char abc://, min of 3 runs) stays under 1 s" "$out2" "j.worst < 1000 ? 'ok' : 'slow ' + j.worstName + ' ' + j.worst + 'ms'" "ok"
   assert_json "F1i INSTRUCTION_MARKERS carry the multi-word markers" "$out" "j.markers" "true"
-  assert_json "F1j GATE_ID_LIST is the three registered ids (spec 016 wave 10 adds pr-diff-xprov)" "$out" "j.gates" "$GATE_PLAN,$GATE_WAVE,pr-diff-xprov"
+  assert_json "F1j GATE_ID_LIST is the two registered ids (plan, wave); the retired PR diff gate id is not a gate (spec 025 W3)" "$out" "j.gates" "$GATE_PLAN,$GATE_WAVE"
   assert_json "F1k codexHome() honours A1_XPROV_CODEX_HOME and defaults to .codex-a1-review" "$out" "j.home" "/x/override .codex-a1-review"
 
   # Samuel's Wave 1 review (MINOR 1): the override must be absolute, is

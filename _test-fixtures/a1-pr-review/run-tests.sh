@@ -203,10 +203,27 @@ else fail_case "a1-pr-review text still mentions Codex or an xprov gate: $(print
 if grep -q 'Samuel reviewed the diff when step 2.2b reported' "$MRG" && grep -q 'every BLOCKER and MAJOR of both reviewers is fixed' "$MRG"; then
   pass_case "05-merge precondition: Samuel reviewed when 2.2b reported surface; every BLOCKER and MAJOR of both reviewers fixed"
 else fail_case "05-merge lacks the Samuel precondition or the both-reviewers fix rule"; fi
-if grep -q '"matcher": "Bash"' "$SK/../hooks/hooks.json"; then
-  pass_case "the plugin hooks.json carries the Bash matcher of the merge hook"
+HJ="$SK/../hooks/hooks.json"
+# spec 025 W3: the plugin carries NO Bash hook. Parsed, not grepped: a Bash entry in any spelling, any command naming the removed hook script,
+# and the consent matchers that must survive (AskUserQuestion pre+post, the four edit tools).
+hk="$(node -e '
+  const j = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+  const pre = j.hooks.PreToolUse || [], post = j.hooks.PostToolUse || [];
+  const all = [...pre, ...post];
+  const cmds = all.flatMap((e) => (e.hooks || []).map((h) => String(h.command)));
+  const bash = all.filter((e) => String(e.matcher).split("|").includes("Bash")).length;
+  const mergeScript = cmds.filter((c) => /merge-hook/.test(c)).length;
+  const consent = pre.some((e) => e.matcher === "AskUserQuestion") && post.some((e) => e.matcher === "AskUserQuestion") && pre.some((e) => e.matcher === "Edit|Write|NotebookEdit|MultiEdit");
+  process.stdout.write([bash, mergeScript, consent, all.length].join("/"));' "$HJ")"
+if [ "$hk" = "0/0/true/3" ]; then
+  pass_case "hooks.json has no Bash matcher and no merge-hook command; the three consent entries remain (bash/merge/consent/total = $hk)"
 else
-  fail_case "hooks/hooks.json has no Bash matcher: the merge check is not enforced"
+  fail_case "hooks.json shape wrong (bash/merge/consent/total = $hk, want 0/0/true/3)"
+fi
+if [ ! -e "$SK/../hooks/xprov-merge-hook.sh" ] && [ ! -e "$SK/../_shared/lib/xprov-hook-merge.cjs" ]; then
+  pass_case "the removed merge hook script and its decision module are gone from the tree"
+else
+  fail_case "hooks/xprov-merge-hook.sh or _shared/lib/xprov-hook-merge.cjs still exists"
 fi
 if grep -q 'gh pr merge <n> --squash` (no `--delete-branch`' "$SK/a1-pr-review/SKILL.md"; then
   pass_case "the a1-pr-review SKILL names the squash merge form without --delete-branch"

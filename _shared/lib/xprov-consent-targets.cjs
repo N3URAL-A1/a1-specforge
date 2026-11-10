@@ -38,8 +38,8 @@ const AC = require('./xprov-accept.cjs');
 const { PRIOR_FINDINGS_FILE, classify } = require('./xprov-normalize.cjs');
 
 const FAIL_VERDICTS = Object.freeze([X.VERDICTS.FAIL, X.VERDICTS.FAIL_WITH_FINDINGS]);
-const GATE_ORDER = Object.freeze([X.GATE_IDS.PLAN_REVIEW, X.GATE_IDS.WAVE_INSPECT, X.GATE_IDS.PR_DIFF]);
-const WANT_MODE = Object.freeze({ [X.GATE_IDS.PLAN_REVIEW]: 'review', [X.GATE_IDS.WAVE_INSPECT]: 'inspect', [X.GATE_IDS.PR_DIFF]: 'inspect' }); // the runner mode of each gate (normalize's own rule)
+const GATE_ORDER = Object.freeze([X.GATE_IDS.PLAN_REVIEW, X.GATE_IDS.WAVE_INSPECT]);
+const WANT_MODE = Object.freeze({ [X.GATE_IDS.PLAN_REVIEW]: 'review', [X.GATE_IDS.WAVE_INSPECT]: 'inspect' }); // the runner mode of each gate (normalize's own rule)
 const SEVERITY_BUCKETS = Object.freeze(['blocker', 'major']);
 const FINDINGS_PER_BUCKET_MAX = 50; // read bound; the question lists fewer
 const ID_MAX_CHARS = 40;
@@ -49,7 +49,7 @@ const NOT_DERIVABLE = Object.freeze(['quarantined', 'secret_in_output']); // fai
 const refuse = (reason, detail) => Object.freeze({ ok: false, reason, detail });
 const str = (v) => (typeof v === 'string' ? v : '');
 
-/** The PR diff gate's state dir `<work-path>/.a1-review` as a phase context (spec 016 wave 10). */
+/** The `<work-path>/.a1-review` state dir as a phase context. It holds no gate row any more (spec 025 W3): a scan of it lists no target. */
 function prCtx(workPath) {
   const phaseDir = C.reviewDirOf(workPath, false);
   return { phase: C.PR_PHASE, phaseDir, workPath: C.realWorkPath(workPath), planPath: path.join(phaseDir, 'PLAN.md'), indexPath: path.join(phaseDir, 'xreview', 'index.json') };
@@ -134,7 +134,7 @@ function passed(rows, gate, planSha, root) {
 function sideClosed(index, gate, wave, lane, planSha, root) {
   if (gate === X.GATE_IDS.PLAN_REVIEW) return AC.planSideRecord(index, gate, planSha, root) !== null;
   const side = AC.waveSideCandidates(index, gate, { wave, lane }, planSha, root);
-  return (gate === X.GATE_IDS.PR_DIFF ? side.filter((c) => c.kind === AC.DISPOSITIONS) : side).length > 0; // on a PR diff the blocked fallback is no result: it stays waivable
+  return side.length > 0;
 }
 
 function covered(store, key) {
