@@ -88,7 +88,7 @@ symptom:
 node <repo>/_shared/a1-tools.cjs quick eligibility \
   --intent "<1-2 sentence symptom description>" --files <n> --diff-lines <estimate> \
   --scope <path>[,<path>...] --no-migration --no-new-route --no-new-dep \
-  --by fix-<bug-slug>
+  --by fix-<bug-slug> --phase fix-<bug-slug>
 ```
 
 - **Exit 0 (ELIGIBLE)** → skip Pre-Flight entirely (including the Isolation
@@ -163,9 +163,9 @@ through the worktree unconditionally.) The flow:
 2. **Work the fix** there (Phases 1–4). Build + test must be GREEN in the worktree.
 3. **Merge via PR** only after GREEN: hand the worktree to `a1-pr-review`
    (`a1-worktree exit --mode handoff`). It pushes the branch, opens the PR,
-   runs the review, and squash-merges (`gh pr merge <n> --squash --delete-branch`).
+   runs the review, and squash-merges (`gh pr merge <n> --squash`; no `--delete-branch`, see a1-pr-review 05-merge 5.4).
    No local merge into `main`, no `git push origin main`.
-   The cross-provider (Codex) review of the fix diff runs only inside `a1-pr-review` (step 2.2b, `pr-diff-xprov`); this skill never runs a cross-provider gate itself.
+   The fix diff is reviewed in `a1-pr-review` by Reinhard (and Samuel on security surface); no cross-provider gate runs on code.
    If `origin/main` is broken (build fails for reasons unrelated to your fix):
    STOP, do NOT layer your fix on top, report to Robert.
 4. **Tear down** the worktree: done by `a1-pr-review` after the merge — do not
@@ -249,6 +249,11 @@ Falk is spawned via the `Agent` tool. Falk never edits code.
   Gate runs before everything. Merge to `main` only when build + tests are GREEN.
   Never cherry-pick as a merge workaround. Never push a build-red `main`.
 - Never edit bug-report frontmatter with Edit/Write — always use `fix update-status`.
+  One documented exception: `class_query` and `root_site` (the defect-class query, spec 017) are
+  descriptive data that no CLI flag carries. The main session writes them with Edit/Write at Phase 1
+  or Phase 2 (shape: `workflows/01-report.md` Step 4); `fix class-sweep --record` validates them
+  before the status flips, and `fix update-status` refuses a file without them (`class_query_missing`).
+  `status`, `phase_history`, `fix_commit`, `verify_result` and `recommended_code_agent` stay CLI-only.
 - Never skip Phase 0 (Pre-Flight). If integrity-check fails: STOP immediately.
 - Never skip Phase 1 (Report). Structured triage prevents diagnosis on incomplete info.
 - Never let Falk fix code. Falk diagnoses; code agents fix.
