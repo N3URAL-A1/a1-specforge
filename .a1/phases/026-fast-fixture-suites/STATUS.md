@@ -124,3 +124,65 @@ Deviations from the plan:
 - Identity cases are named `U1*` (my `K1*` collided with W3's K-case names; renamed in a follow-up commit).
 - `no_count` measured statically (see above), not from a W1 measurement run.
 - `no_count` report line is printed at the end of `rs_print_table` (no new entry call site).
+
+## Wave 3 — Per-machine lock, takeover, process groups, seam (Tasks 3.1 and 3.2 done)
+
+Date: 2026-11-10. `/bin/bash` 3.2.57 (arm64 macOS). Only `a1-suite-runner`, `a1-vault-fallback`, `verify-install-sync` ran; the runner
+was only started on planted trees with `A1_SUITE_LOCK_DIR` set; `/tmp/a1-suite-runner-<uid>` was absent before and after
+(part 06 K10 and part 07 X8 compare its state read-only). No process outside this wave's `$!` PIDs was signalled.
+
+### Red -> green
+- Task 3.1 red (`9e0ae3f`, parts 06 + 07 against the W1 stubs): `a1-suite-runner: 170 passed, 30 failed` (the 30: K1a-l, K2a/b, K3b/d, K4b, K5, K6b, K7, K8, K9b/c, X1-*).
+- Task 3.2 green (`a705882`): `a1-suite-runner: 200 passed, 0 failed`; after the takeover fix and fixture widening: `206 passed, 0 failed`, 3 consecutive runs, about 45 s (budget 60 s).
+- `a1-vault-fallback`: `Total: 21 passed, 0 failed`; `verify-install-sync`: PASS.
+
+### Assert counts (W3 parts)
+| File | Asserts | FRs |
+|---|---|---|
+| parts/06-lock.sh | 50 (K5 loops: 3 rounds x 3) | FR-008, FR-009, FR-026 |
+| parts/07-interrupt.sh | 22 (3 signal cases x 7, plus X8) | FR-010 |
+
+### SIGINT decision
+Part 07 proves SIGINT itself, not SIGTERM in its place. The runner of the SIGINT case is started under `set -m` (own process
+group, default SIGINT disposition, as a terminal's Ctrl-C finds it) via `lk_start` with `LK_MONITOR=1`; the fixture signals only the
+runner PID (`kill -s INT`), never the group. SIGTERM runs twice: under `set -m` and plain (no job control). All three cases assert:
+lock existed before, worker and grandchild alive before, runner + worker + grandchild gone within 10 s, exit code 130/143, lock
+and `a1-suite-XXXXXX` work dir removed, control `sleep` outside the runner alive afterwards.
+
+### Finding fixed in this wave: takeover race
+The first version (rename stale lock away, then mkdir, verify moved pid) let two runners both take over: measured with a four-runner
+script, 3 of 12 rounds ran the suite twice (the rename grabbed a competitor's fresh lock, which could not be put back because the
+path was already re-created). Fix (`d0e3a68`): takeovers are serialised by a `mkdir <lock>.takeover` guard (owner pid inside; a guard
+whose owner is not a running runner is removed), the state is re-judged under the guard, then rename + mkdir + write. Afterwards 8
+of 8 and 15 of 15 rounds ran exactly once. Residual: a runner that crashes between guard creation and writing its pid file leaves a
+guard that costs the next runner about 1 s (pid-less guard counts as stale after the read wait).
+
+### Mutation proof (git archive snapshot of HEAD, parts 01-05 removed for speed, one mutation each; control 73/0)
+| # | Mutation | Red cases |
+|---|---|---|
+| m1 | command-line check dropped (live `sleep` PID blocks) | K4a, K4b, K4c |
+| m2 | takeover guard dropped (`rs_guard_take` returns 0); probabilistic: 3 of 3 runs red with 8 racers (4 racers: 2 of 4 runs) | K5a, K5b (K5c in one run) |
+| m3 | TERM and KILL to `$pid` instead of the process group (TERM alone stays green: the later group KILL ends the grandchild after 5 s) | X3-sigint, X3-sigterm, X3-sigterm-plain |
+| m4 | release not guarded by run id | K6b |
+| m5 | symlink check dropped | K7b only (the other defences still refuse; K7a/K7c stay green) |
+| m6 | seam ignored (fixed path redirected to scratch first, real lock never touched) | 27 cases incl. K1, K3, K9, K2a/b |
+| m7 | lock never released at exit | K1n, K3d, K5c, K9e, X5-* |
+| m8 | default path built from the temp-dir variable | K2a, K2c |
+| m9 | refusal without holder PID | K1i (first version of K1i stayed green: the run id contains the PID; assert tightened to `holder PID <pid>`) |
+| m10 | log dir created before the lock | K1j |
+| m11 | marker not exported | K1e |
+| m12 | interrupt exit code not 130/143 | X4-* |
+| m13 | SIGINT trap missing | X3-sigint, X4-sigint |
+Not provable here: the "not owned by the current user" refusal (needs a second user; `[ -O ]` guard is unmeasured).
+Scripts: scratchpad (`mutrun.sh`, `m3.sh`, `m9.sh`, `race.sh`), not in the repo.
+
+### Deviations from the plan
+- `bin/run-suites.sh` touched by one line: the log dir name uses `${RS_RUN_ID:-...}` so it equals the lock's run id (Contract: log dir `<run id>`).
+- `rs_kill_workers`/`rs_on_signal` (W1 code) reworked in `bin/run-suites-proc.sh`: group-level liveness (`kill -0 -- -pgid`), zombie leaders
+  reaped via `ps -o stat=` + `wait` (a zombie leader answers `kill -0`, which made the W1 version wait the full 5 s grace); `rs_lock_release` also
+  stops workers still recorded (FR-010 "normal exit").
+- Takeover uses a guard directory (`<lock>.takeover`) in addition to rename+mkdir (see finding). The takeover message line is `took over a stale lock`.
+- Refusal exit code is 2 (the entry's `rs_lock_acquire || exit 2`); symlink, foreign owner, uncreatable dir also 2. W4 owns message wording checks.
+- Run id format `YYYYmmdd-HHMMSS-<pid>`; marker `A1_SUITE_RUN_MARKER=<lock>/run_id:<run id>` (W4 must split on the last colon).
+- K5 uses slowed `ps`/`mv` wrappers on PATH (fixture-owned) to widen the race window; no production test hook.
+- Not run (instruction): `a1-tmp-hygiene`, any full run. Samuel review not done by this agent.
