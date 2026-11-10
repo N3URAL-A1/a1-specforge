@@ -77,3 +77,50 @@ Scripts: `<scratchpad>/mutate.sh`, `<scratchpad>/mutlist.sh` (not in the repo).
 - **W4**: unknown positional arguments exit 2 today ("unknown argument"); subset selection replaces that branch in `rs_main`.
 - Harness differences from the Contract: the final lines follow CONVENTIONS (summary echo, then `[[ $fail -eq 0 ]]`);
   `rs_run` starts the runner in the background and polls it with a 60 s limit (kills only its own `$!`), so a hung runner turns one case red.
+
+## Wave 2 — Logs, timing table, failure output, assert summaries (done)
+
+Date: 2026-11-10. Commits: `217661c` (red parts 04/05), `342c05a` (report helper + 2-line entry hook), rename commit (U1 case ids).
+Red: `a1-suite-runner: 116 passed, 17 failed` (parts 04/05 on the W1 report stub). Green: `133 passed, 0 failed`
+(W1+W2); live tree with W3 parts present: `206 passed, 0 failed`. `a1-vault-fallback` 21/0, `verify-install-sync` PASS.
+No real suite and no full run was started.
+
+| File | Asserts | FRs |
+|---|---|---|
+| parts/04-report.sh | 32 | FR-004, FR-005, FR-006, FR-024 |
+| parts/05-summary.sh | 33 | FR-007 |
+
+Count = passed + failed of the last summary line (formats: `N passed, M failed` anywhere in the line, `pass=N fail=M`,
+`passed: N  failed: M`). All 58 real `run*.sh` echo templates parse (checked by substituting the vars); only
+`a1-schema-check/parser/run-parser.sh` has none -> `no_count` stays `[that one]` (static check, not the W1 log
+directory: Task 1.3 has not run). Table row: `status seconds count identity` (identity last).
+
+Mutation proof (git archive snapshot of HEAD, W3 parts removed, one mutation each; control 133/0):
+| # | Mutation | Red cases |
+|---|---|---|
+| m1/m2/m3 | drop regex format 1 / 2 / 3 | C1a-d, N1c2 (+ most runs) / C1b / C1c, C1c2 |
+| m4 | first instead of last match | C1d, C1d2 |
+| m5 | accept `PASS:` line | C1e |
+| m6 | drop no_count lookup | N1b, N1b2, N1c |
+| m16 | drop the whole no-summary guard | N1a, N1a2, N1a3 |
+| m17 | no no_count report line | N1c2 |
+| m7 | sort ascending | T1a, T1d, T1h |
+| m10 | count column fixed `n/a` | T1d |
+| m11 | table skips a row | T1a, T1e, T1d, T1h, F1h, U1d, N1b2 |
+| m8 | log stdout only | G1b |
+| m9 | log name = basename | G1e, G1c |
+| m19 | log dir line not printed first | G1d (+G1a-c, G1e) |
+| m12 | failure line without log path | F1g, N1d |
+| m13 | signal note dropped (rc>128 branch) | F1f |
+| m18c | stop starting suites after the first failure | F1b, F1c, F1d, F1f, F1g, F1h |
+| m14/m15 | identity basename in row / failure line | T1a, U1b, U1d, N1b2 / F1e, F1f, F1g, U1c, N1a2, N1d |
+(m18 first attempt was a no-op mutation and stayed green; replaced by m18c.) Scripts in the scratchpad, not in the repo.
+
+Deviations from the plan:
+- `bin/run-suites.sh` touched (2 lines in `rs_on_suite_done`: `rs_summary_note`), because the live `done:` line is
+  printed before the result is recorded; without it a no-summary suite would print `done: PASS` and fail only in the table.
+- FR-004 "git status of the repo unchanged" is asserted for the planted tree only: the repo worktree is edited concurrently
+  by Wave 3, so a repo-wide porcelain compare would be racy. The runner never writes outside `--root` copies/TMPDIR.
+- Identity cases are named `U1*` (my `K1*` collided with W3's K-case names; renamed in a follow-up commit).
+- `no_count` measured statically (see above), not from a W1 measurement run.
+- `no_count` report line is printed at the end of `rs_print_table` (no new entry call site).
