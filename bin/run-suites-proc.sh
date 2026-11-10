@@ -183,20 +183,25 @@ rs_lock_is_runner() {
   return 1
 }
 
+# rs_lock_file_line <file> — first line, at most 32 bytes. Only a regular file owned by the user and not a
+# symlink is read, so a FIFO or a link swapped in cannot block or redirect the read.
+rs_lock_file_line() {
+  local v=""
+  if [ -f "$1" ] && [ ! -L "$1" ] && [ -O "$1" ]; then v="$(head -c 32 "$1" 2>/dev/null | head -n 1)"; fi
+  printf '%s\n' "$v"
+}
+
 # rs_lock_read_pid <lockdir> — the holder pid; a fresh lock gets a moment to write it.
 rs_lock_read_pid() {
   local n=0 p=""
   while [ "$n" -lt "$RS_LOCK_INIT_TICKS" ]; do
-    p=""
-    [ -f "$1/pid" ] && read -r p < "$1/pid"
+    p="$(rs_lock_file_line "$1/pid")"
     [ -n "$p" ] && break
     sleep 0.1
     n=$((n + 1))
   done
   printf '%s\n' "$p"
 }
-
-rs_lock_file_line() { local v=""; [ -f "$1" ] && read -r v < "$1"; printf '%s\n' "$v"; }
 
 # rs_lock_write <lockdir> — run id and runner first, the pid last (atomic rename).
 rs_lock_write() {
@@ -207,18 +212,36 @@ rs_lock_write() {
 }
 
 # rs_lock_drop_dir <dir> — removes a lock directory this runner moved aside or created (flat files only).
+# Acts only on a user-owned non-symlink directory, re-checked from inside it: cd, then pwd -P must equal
+# the parent's real path plus the name, and the files go by relative name.
 rs_lock_drop_dir() {
-  [ -n "$1" ] && [ -d "$1" ] && [ ! -L "$1" ] || return 0
-  rm -f "$1/pid" "$1/pid.tmp" "$1/run_id" "$1/runner"
-  rmdir "$1" 2>/dev/null || true
+  local d="$1" parent real
+  [ -n "$d" ] && [ -d "$d" ] && [ ! -L "$d" ] && [ -O "$d" ] || return 0
+  parent="${d%/*}"; [ -n "$parent" ] || parent="/"
+  real="$(cd "$parent" 2>/dev/null && pwd -P)" || return 0
+  [ "$real" = "/" ] && real=""
+  ( cd "$d" 2>/dev/null && [ "$(pwd -P)" = "$real/${d##*/}" ] && [ -O . ] && rm -f pid pid.tmp run_id runner )
+  [ -d "$d" ] && [ ! -L "$d" ] && [ -O "$d" ] || return 0
+  rmdir "$d" 2>/dev/null || true
+}
+
+# rs_lock_foreign <dir> — true when the directory holds anything but the four lock files.
+rs_lock_foreign() {
+  [ -n "$(find "$1" -mindepth 1 -maxdepth 1 ! -name pid ! -name pid.tmp ! -name run_id ! -name runner 2>/dev/null)" ]
 }
 
 # rs_guard_take <guarddir> — serialises takeovers: only one runner at a time may rename a lock away.
-# A guard whose owner is not a running runner (crash) is removed. 0 = guard is ours.
+# A guard is judged like the lock: a symlink or a path not owned by the user is refused (never deleted);
+# a user-owned guard whose owner is not a running runner (crash) is removed. 0 = guard is ours.
 rs_guard_take() {
   local g="$1" n=0 p
   while [ "$n" -lt "$RS_GUARD_TICKS" ]; do
     if mkdir "$g" 2>/dev/null; then printf '%s\n' "$$" > "$g/pid" && return 0; rs_lock_drop_dir "$g"; return 1; fi
+    if [ -L "$g" ]; then echo "run-suites: takeover guard $g is a symbolic link; refusing to use it" >&2; return 1; fi
+    if [ ! -d "$g" ] || [ ! -O "$g" ]; then
+      echo "run-suites: takeover guard $g is not a directory owned by the current user; refusing to use it" >&2; return 1
+    fi
+    if rs_lock_foreign "$g"; then echo "run-suites: takeover guard $g holds foreign files; refusing to use it" >&2; return 1; fi
     p="$(rs_lock_read_pid "$g")"
     if ! rs_lock_is_runner "$p"; then rs_lock_drop_dir "$g"; fi
     sleep 0.1
@@ -234,17 +257,28 @@ rs_lock_takeover() {
   local lock="$1" stale holder run
   rs_guard_take "$lock.takeover" || { echo "run-suites: could not take the takeover guard for $lock" >&2; return 2; }
   if [ -d "$lock" ] && [ ! -L "$lock" ]; then
+    if [ ! -O "$lock" ] || rs_lock_foreign "$lock"; then
+      rs_guard_drop "$lock.takeover"
+      echo "run-suites: $lock is not a lock directory of this user (foreign owner or files); refusing to replace it" >&2
+      return 2
+    fi
     holder="$(rs_lock_read_pid "$lock")"; run="$(rs_lock_file_line "$lock/run_id")"
     if rs_lock_is_runner "$holder"; then
       rs_guard_drop "$lock.takeover"
       echo "run-suites: another run holds the lock $lock (holder PID $holder, run $run); no suite started" >&2
       return 2
     fi
-    stale="$lock.stale.$$.$2"
-    if mv "$lock" "$stale" 2>/dev/null; then
-      rs_lock_drop_dir "$stale"
+    stale="$(mktemp -d "$lock.stale.XXXXXX" 2>/dev/null)"
+    if [ -z "$stale" ] || [ ! -d "$stale" ]; then
+      rs_guard_drop "$lock.takeover"
+      echo "run-suites: cannot create a private directory next to the lock $lock" >&2
+      return 2
+    fi
+    if mv "$lock" "$stale/old" 2>/dev/null; then
+      rs_lock_drop_dir "$stale/old"
       echo "run-suites: took over a stale lock at $lock (holder PID ${holder:-unknown} is not a running runner)"
     fi
+    rs_lock_drop_dir "$stale"
   fi
   if mkdir "$lock" 2>/dev/null && rs_lock_write "$lock" 2>/dev/null; then
     RS_LOCK_DIR="$lock"; RS_LOCK_HELD=1; rs_guard_drop "$lock.takeover"; return 0
@@ -259,6 +293,10 @@ rs_lock_takeover() {
 rs_lock_acquire() {
   local lock holder run attempt=0 rc
   lock="$(rs_lock_path)"
+  case "$lock" in
+    /*) [ -d "${lock%/*}/" ] || { echo "run-suites: the parent directory of the lock path $lock does not exist" >&2; return 2; } ;;
+    *) echo "run-suites: the lock path $lock is not absolute (A1_SUITE_LOCK_DIR must be an absolute path)" >&2; return 2 ;;
+  esac
   [ -n "${RS_RUN_ID:-}" ] || RS_RUN_ID="$(date +%Y%m%d-%H%M%S)-$$"
   while [ "$attempt" -lt "$RS_LOCK_ATTEMPTS" ]; do
     attempt=$((attempt + 1))

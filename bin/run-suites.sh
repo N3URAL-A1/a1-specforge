@@ -41,6 +41,23 @@ RS_N_DISCOVERED=0
 
 rs_die() { echo "run-suites: $*" >&2; exit 2; }
 
+# rs_make_logdir — sets RS_LOGDIR to a fresh run leaf under the per-user base
+# ${TMPDIR:-/tmp}/a1-suite-runs-<uid> (mode 700). The base must be a real directory owned by the user and
+# not group/world-writable; the leaf is created without -p, so an existing leaf is refused (exit 2).
+rs_make_logdir() {
+  local base="${TMPDIR:-/tmp}/a1-suite-runs-$(id -u)"
+  [ -d "${TMPDIR:-/tmp}" ] || rs_die "temp directory ${TMPDIR:-/tmp} does not exist"
+  if [ ! -e "$base" ] && [ ! -L "$base" ]; then mkdir -m 700 "$base" 2>/dev/null || true; fi
+  if [ -L "$base" ]; then rs_die "log base $base is a symbolic link; refusing to write logs through it"; fi
+  [ -d "$base" ] || rs_die "cannot create the log base directory $base"
+  [ -O "$base" ] || rs_die "log base $base is not owned by the current user; refusing to use it"
+  if [ -n "$(find "$base" -maxdepth 0 \( -perm -020 -o -perm -002 \) 2>/dev/null)" ]; then
+    rs_die "log base $base is group- or world-writable; refusing to use it"
+  fi
+  RS_LOGDIR="$base/${RS_RUN_ID:-$(date +%Y%m%d-%H%M%S)-$$}"
+  mkdir -m 700 "$RS_LOGDIR" 2>/dev/null || rs_die "cannot create the log directory $RS_LOGDIR (it may already exist)"
+}
+
 rs_cleanup() {
   rs_lock_release
   if [ -n "${RS_TMP:-}" ] && [ -d "$RS_TMP" ]; then
@@ -295,8 +312,7 @@ rs_main() {
 
   RS_TMP="$(mktemp -d "${TMPDIR:-/tmp}/a1-suite-XXXXXX")" || rs_die "cannot create a work directory under ${TMPDIR:-/tmp}"
   [ -n "$RS_TMP" ] && [ -d "$RS_TMP" ] || rs_die "work directory missing"
-  RS_LOGDIR="${TMPDIR:-/tmp}/a1-suite-runs/${RS_RUN_ID:-$(date +%Y%m%d-%H%M%S)-$$}"
-  mkdir -p "$RS_LOGDIR" || rs_die "cannot create the log directory $RS_LOGDIR"
+  rs_make_logdir
   rs_export_marker
 
   echo "log dir: $RS_LOGDIR"

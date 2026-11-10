@@ -31,7 +31,7 @@ rs_run "$T_LOG"
 assert_eq "G1z green run exits 0" "$RS_RC" "0"
 LOG_DIR_LINE="$(printf '%s\n' "$RS_OUT" | sed -n '1p')"
 LOG_DIR="${LOG_DIR_LINE#log dir: }"
-assert_contains "G1d first output line names the log directory" "$LOG_DIR_LINE" "log dir: $RS_TMPD/a1-suite-runs/"
+assert_contains "G1d first output line names the log directory" "$LOG_DIR_LINE" "log dir: $RS_TMPD/a1-suite-runs-$(id -u)/"
 assert_eq "G1e exactly one log per suite (3 suites)" "$(find "$LOG_DIR" -type f -name '*.log' 2>/dev/null | grep -c '')" "3"
 assert_eq "G1c the two run-one.sh suites have distinct logs" \
   "$(find "$LOG_DIR" -type f -name '*run-one.sh.log' 2>/dev/null | grep -c '')" "2"

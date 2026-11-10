@@ -186,3 +186,34 @@ Scripts: scratchpad (`mutrun.sh`, `m3.sh`, `m9.sh`, `race.sh`), not in the repo.
 - Run id format `YYYYmmdd-HHMMSS-<pid>`; marker `A1_SUITE_RUN_MARKER=<lock>/run_id:<run id>` (W4 must split on the last colon).
 - K5 uses slowed `ps`/`mv` wrappers on PATH (fixture-owned) to widen the race window; no production test hook.
 - Not run (instruction): `a1-tmp-hygiene`, any full run. Samuel review not done by this agent.
+
+## Security fixes (Samuel SEC-1..5)
+Files: `bin/run-suites.sh` (`rs_make_logdir`), `bin/run-suites-proc.sh`, new part `_test-fixtures/a1-suite-runner/parts/08-security.sh`;
+G1d (04) and K1j (06) adjusted to the new log base name. Log dir is now `${TMPDIR:-/tmp}/a1-suite-runs-<uid>/<run id>` (base 700, leaf 700).
+
+| Finding | Fix | Red (before) -> green (after) |
+|---|---|---|
+| SEC-1 | per-user base `mkdir -m 700`, then `-L` / `-O` / group-world-writable (`find -perm`) checks -> exit 2; leaf `mkdir -m 700` without -p | new S1a-S1q (symlink base, modes 770/702/777, fresh base 700, leaf race via spy mkdir): red against the old code (no per-user base), green now |
+| SEC-2 | guard judged like the lock (`-L`, not dir, `! -O`, foreign files: refuse, never delete); `rs_lock_drop_dir` only on user-owned non-symlink dirs, `cd` + `pwd -P` == parent real path + name, relative names | S2a-S2j green; dead owner's own guard still cleaned (S2h) |
+| SEC-3 | `mktemp -d "$lock.stale.XXXXXX"`, then `mv "$lock" "$stale/old"` | S3a-S3d (spy mv records the target: random dir, mode 700, none left) |
+| SEC-4 | takeover only if the dir holds nothing but pid/pid.tmp/run_id/runner, else exit 2; seam absolute with existing parent else exit 2 | S4a-S4i |
+| SEC-5 | `rs_lock_file_line` reads `head -c 32` of a regular, user-owned, non-symlink file only; `rs_lock_read_pid` uses it | S5a-S5e (pid symlink to a live holder not followed; FIFO as pid does not hang) |
+
+Totals: a1-suite-runner 260/0 (was 195 + 65 new asserts incl. K/G adjustments), a1-vault-fallback 21/0, a1-tmp-hygiene 21/0, verify-install-sync PASS.
+Runtime of the suite about 61 s (part 08 adds about 25 s; budget was 60 s, watch it).
+
+### Mutation proof (copy of the tree, parts 01-03/05/07 removed, one mutation each; every mutation red)
+| Mutation | Red cases |
+|---|---|
+| base without the uid suffix | G1d, S1a-S1q (19) |
+| symlink check on the base dropped | S1a-S1d, S1i (7) |
+| writable check dropped | S1f-S1i (12) |
+| leaf made with `mkdir -p` | S1m, S1o-S1q |
+| guard symlink check dropped | S2b |
+| guard foreign-files check dropped | S2e2 (first version of S2e stayed green: the flat-file drop plus the guard timeout also end in exit 2; message assert added) |
+| stale target predictable | S3b |
+| takeover contents check dropped | S4a-S4c, S4e, S4i |
+| relative seam accepted | S4f-S4i |
+| pid read through a symlink | S5a, S5b |
+Not provable here: refusal of foreign-owned base/guard/lock (`-O`, needs a second user); the 32-byte bound itself (no observable difference);
+the TOCTOU windows (narrowed by owner check + `cd`/`pwd -P`, not removable in shell).
