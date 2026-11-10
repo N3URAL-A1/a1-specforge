@@ -4,7 +4,7 @@ type: roadmap
 project: a1-specforge
 title: "a1-specforge — Roadmap"
 status: active
-updated: 2026-11-09
+updated: 2026-11-10
 source: "migrated from docs/roadmap.md v3.0 (2026-07-10)"
 milestones:
   - id: m0-repo-extract
@@ -293,6 +293,16 @@ features:
     finished: null
     spec_path: project/a1-specforge/spec/025-codex-architecture-only.md
     plan_path: project/a1-specforge/plans/025-codex-architecture-only-wave-plan.md
+  - id: 026-fast-fixture-suites
+    milestone: continuous
+    title: "Fast fixture suites without quality loss (parallel runner, lock, CI split)"
+    status: planned
+    stage: null
+    depends_on: []
+    started: null
+    finished: null
+    spec_path: project/a1-specforge/spec/026-fast-fixture-suites.md
+    plan_path: project/a1-specforge/plans/026-fast-fixture-suites-wave-plan.md
 next: 006-specforge-kritis-profile
 ---
 
@@ -379,8 +389,6 @@ None.
 
 ## Changelog
 
-- **2026-09-12** — 007-retro-gate-id-validator -> verify — stage transition via `product stage`
-- **2026-09-12** — 007-retro-gate-id-validator -> merge — stage transition via `product stage`
 - **2026-09-12** — 007-retro-gate-id-validator -> origin-cleanup — stage transition via `product stage`
 - **2026-09-12** — 007-retro-gate-id-validator -> done — stage transition via `product stage`
 - **2026-09-13** — feature '008-false-green-test-guards' added — new feature via `product add-feature`
@@ -479,6 +487,8 @@ None.
 - **2026-11-08** — feature.md created for '024-ux-studio' — formal spec/plan attached via `product feature-init`
 - **2026-11-09** — feature '025-codex-architecture-only' added — new feature via `product add-feature`
 - **2026-11-09** — feature.md created for '025-codex-architecture-only' — formal spec/plan attached via `product feature-init`
+- **2026-11-10** — feature '026-fast-fixture-suites' added — new feature via `product add-feature`
+- **2026-11-10** — feature.md created for '026-fast-fixture-suites' — formal spec/plan attached via `product feature-init`
 
 ## Appendix — migrated details
 
