@@ -23,6 +23,9 @@
 #   R5g  a row missing from the registry → exit 1.      Red if a missing row is treated as `warning`.
 #   R5h  the real tree → exit 0.                        Red if the real registry flips before the ADR holds the evidence.
 #   R5i  root without registry/ADR → exit 2, no stdout. Red if a bad root is reported as a pass or a fail.
+#   R5l-o spec 025 W5: design row warning next to a blocking plan row → 0; design blocking without its command → 1;
+#        both blocking with both commands → 0; design row missing → 1.
+#        Red if GATES lacks the design id, or the live-smoke loop checks warning rows.
 #   R5k  a placeholder spelled "Pending: Wave 7" next to the plan command → exit 1.
 #        Red if PLACEHOLDER_RE only matches the literal "pending wave 7".
 #   R5j  test.yml runs the check as its own step AFTER `Fixtures`.
@@ -152,6 +155,27 @@ assert_json "R5e rows read as warning" "$C_OUT" 'j.rows["plan-review-xprov"]' "w
 root07; drop07 plan-review-xprov; check07
 assert_rc "R5g row missing from the registry → exit 1" 1 "$C_RC"
 assert_json "R5g missing row reads null" "$C_OUT" 'String(j.rows["plan-review-xprov"])' "null"
+
+# R5l — spec 025 W5: plan blocking with its evidence, design warning without any design command → exit 0 (the live-smoke loop checks blocking rows only)
+root07; flip07 plan-review-xprov; smoke07 "$EVIDENCE07"; check07
+assert_rc "R5l plan blocking + design warning, only the plan command in the live smoke → exit 0" 0 "$C_RC"
+assert_json "R5l rows read blocking/warning" "$C_OUT" 'j.rows["plan-review-xprov"] + "/" + j.rows["design-review-xprov"]' "blocking/warning"
+
+# R5m — the design row flipped to blocking without its command in the ADR → exit 1
+root07; flip07 plan-review-xprov; flip07 design-review-xprov; smoke07 "$EVIDENCE07"; check07
+assert_rc "R5m design row blocking without its live-smoke command → exit 1" 1 "$C_RC"
+assert_json "R5m the only problem names design-review-xprov" "$C_OUT" 'j.problems.length + ":" + j.problems[0].endsWith("design-review-xprov")' "1:true"
+
+# R5n — both rows blocking, both commands present → exit 0
+BOTH07="$TMP07/both.md"
+printf '%s\n' '' '```' 'a1-tools xprov gate --phase M13-residuals --gate plan-review-xprov' 'a1-tools xprov gate --phase M13-residuals --gate design-review-xprov --doc docs/adr/x.md' '```' '' > "$BOTH07"
+root07; flip07 plan-review-xprov; flip07 design-review-xprov; smoke07 "$BOTH07"; check07
+assert_rc "R5n both rows blocking, both commands in the live smoke → exit 0" 0 "$C_RC"
+
+# R5o — the design row missing from the registry → exit 1
+root07; drop07 design-review-xprov; check07
+assert_rc "R5o design row missing from the registry → exit 1" 1 "$C_RC"
+assert_json "R5o missing design row reads null" "$C_OUT" 'String(j.rows["design-review-xprov"])' "null"
 
 # R5h — the real tree (today: warning; after the flip: blocking with evidence)
 check07 "$REPO_ROOT"

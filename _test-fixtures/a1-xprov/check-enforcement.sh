@@ -3,11 +3,11 @@
 #
 # Usage: check-enforcement.sh [repo-root]   (default: this checkout)
 #
-# The two cross-provider rows in _shared/gates-registry.md may read `blocking`
+# The cross-provider rows (plan-review-xprov, design-review-xprov) in _shared/gates-registry.md may read `blocking`
 # only while the ADR's live-smoke section holds the evidence. Exit 1 when any
 # xprov row says `blocking` and the section (`## Live smoke` or `### 6. Live
 # smoke`) is missing, still says "pending Wave 7", or lacks the `xprov gate`
-# command of the gate. A row that is missing or holds neither `warning` nor
+# command of each `blocking` gate (a `warning` row needs none). A row that is missing or holds neither `warning` nor
 # `blocking` is also exit 1, because the flip state cannot be read. Exit 2 when
 # repo-root does not hold the registry and the ADR. Exit 0 otherwise, including
 # while the row is still `warning`.
@@ -38,7 +38,7 @@ fi
 SELF_ROOT="$SELF_ROOT" GATE_IDS_LIB="$SELF_ROOT/_shared/lib/gate-ids.cjs" REGISTRY="$REGISTRY" ADR="$ADR" node -e '
 const fs = require("fs");
 const { parseRegistryRow } = require(process.env.GATE_IDS_LIB);
-const GATES = ["plan-review-xprov"];
+const GATES = ["plan-review-xprov","design-review-xprov"]; // spec 025 W5; the live-smoke evidence is required for `blocking` rows only
 const ENFORCEMENTS = ["warning", "blocking"];
 const SECTION_RE = /^#{2,3}\s+(?:\d+\.\s+)?Live smoke\b/i;
 const NEXT_HEADING_RE = /^#{1,3}\s/;
@@ -64,7 +64,7 @@ if (GATES.some((id) => rows[id] === "blocking")) {
     const end = rest.findIndex((l) => NEXT_HEADING_RE.test(l));
     const section = (end === -1 ? rest : rest.slice(0, end)).join("\n");
     if (PLACEHOLDER_RE.test(section)) problems.push("a row is blocking but the ADR Live smoke section still says pending Wave 7");
-    for (const id of GATES) {
+    for (const id of GATES.filter((g) => rows[g] === "blocking")) {
       const cmd = new RegExp(`xprov gate[^\\n]*--gate ${id}\\b`);
       if (!cmd.test(section)) problems.push(`a row is blocking but the ADR Live smoke section lacks the xprov gate command for ${id}`);
     }
