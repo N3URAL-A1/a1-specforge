@@ -111,7 +111,7 @@ LK_ELAPSED=$((SECONDS - LK_T0))
 LK_OUT2="$(cat "$W_K1/out2.txt")"
 if [[ $LK_RC -ne 0 && $LK_RC -ne 124 ]]; then ok "K1g second run exits non-zero ($LK_RC)"; else bad "K1g second run exits non-zero" "rc: $LK_RC"; fi
 if [[ $LK_ELAPSED -le 5 ]]; then ok "K1h refused within 5 s (${LK_ELAPSED}s)"; else bad "K1h refused within 5 s" "took ${LK_ELAPSED}s"; fi
-assert_contains "K1i the refusal names the holder PID" "$LK_OUT2" "$LK_P1"
+assert_contains "K1i the refusal names the holder PID" "$LK_OUT2" "holder PID $LK_P1"
 assert_eq "K1j the refused run created no log directory" "$(find "$W_K1/tmp2" -maxdepth 1 -name 'a1-suite-runs' | grep -c '')" "0"
 assert_eq "K1k the refused run started no suite (one start in the probe)" "$(grep -c '' "$W_K1/p1.ran")" "1"
 assert_eq "K1l the holder is untouched by the refusal" "$(head -n 1 "$LK_LOCK1/pid" 2>/dev/null)" "$LK_P1"
