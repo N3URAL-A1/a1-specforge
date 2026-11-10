@@ -9,7 +9,7 @@
 #      creates its log dir · K1d: lock files missing (pid / run_id / runner) · K1e: marker not exported
 #  K2: static: the default path built from the temp-dir variable
 #  K3: dead-PID lock not taken over · K4: command-line check dropped (live `sleep` PID blocks)
-#  K5: non-atomic takeover (rm -rf then mkdir, no verification): both racing runners run
+#  K5: takeover guard dropped (rs_guard_take always succeeds): racing runners both take the lock
 #  K6: release not guarded by the run id (a lock re-owned by someone else is removed)
 #  K7: symlink at the lock path not refused · K8: uncreatable lock dir not exit 2
 #  K9: seam ignored (nested run refused, or the seam directory stays empty)
@@ -146,20 +146,33 @@ assert_eq "K4c the suite ran" "$(grep -c '' "$W_K3/p.ran" 2>/dev/null)" "1"
 if kill -0 "$LK_SLEEPER" 2>/dev/null; then ok "K4d the unrelated process was not signalled"; else bad "K4d the unrelated process was not signalled" "sleeper $LK_SLEEPER is gone"; fi
 kill "$LK_SLEEPER" 2>/dev/null; wait "$LK_SLEEPER" 2>/dev/null
 
-# ---- K5: takeover is atomic: two runners against the same stale lock, exactly one runs ----
+# ---- K5: takeover is atomic: racing runners against the same stale lock, exactly one runs ----
+# Four runners per round start at once on a lock held by a live unrelated process (the pid check runs
+# ps, which widens the race window); three rounds. Each round: the suite starts once, one runner exits 0.
+sleep 120 &
+LK_RACE_SLEEPER=$!
 mk_tree T_K5 k5
 mk_workdir W_K5 k5w
-plant_suite "$T_K5" r/run-tests.sh "$(lk_holder_body "$W_K5/p" 3)"
-( exit 0 ) & LK_DEAD2=$!
-wait "$LK_DEAD2"
-lk_plant_lock "$W_K5/lock" "$LK_DEAD2"
-lk_start "$T_K5" "$W_K5/lock" "$W_K5/tmp-a" "$W_K5/out-a.txt"; LK_PA="$LK_PID"
-lk_start "$T_K5" "$W_K5/lock" "$W_K5/tmp-b" "$W_K5/out-b.txt"; LK_PB="$LK_PID"
-lk_finish "$LK_PA"; LK_RCA="$LK_RC"
-lk_finish "$LK_PB"; LK_RCB="$LK_RC"
-assert_eq "K5a the suite started exactly once" "$(grep -c '' "$W_K5/p.ran" 2>/dev/null)" "1"
-assert_eq "K5b exactly one runner exited 0" "$(( (LK_RCA == 0) + (LK_RCB == 0) ))" "1"
-assert_eq "K5c no lock or stale copy is left behind" "$(find "$W_K5" -maxdepth 1 -name 'lock*' | grep -c '')" "0"
+plant_suite "$T_K5" r/run-tests.sh "$(lk_holder_body "$W_K5/p" 2)"
+LK_ROUND=1
+while [[ $LK_ROUND -le 3 ]]; do
+  rm -f "$W_K5/p.ran"
+  lk_plant_lock "$W_K5/lock" "$LK_RACE_SLEEPER"
+  lk_start "$T_K5" "$W_K5/lock" "$W_K5/tmp-a$LK_ROUND" "$W_K5/out-a$LK_ROUND.txt"; LK_PA="$LK_PID"
+  lk_start "$T_K5" "$W_K5/lock" "$W_K5/tmp-b$LK_ROUND" "$W_K5/out-b$LK_ROUND.txt"; LK_PB="$LK_PID"
+  lk_start "$T_K5" "$W_K5/lock" "$W_K5/tmp-c$LK_ROUND" "$W_K5/out-c$LK_ROUND.txt"; LK_PC="$LK_PID"
+  lk_start "$T_K5" "$W_K5/lock" "$W_K5/tmp-d$LK_ROUND" "$W_K5/out-d$LK_ROUND.txt"; LK_PD="$LK_PID"
+  lk_finish "$LK_PA"; LK_RCA="$LK_RC"
+  lk_finish "$LK_PB"; LK_RCB="$LK_RC"
+  lk_finish "$LK_PC"; LK_RCC="$LK_RC"
+  lk_finish "$LK_PD"; LK_RCD="$LK_RC"
+  assert_eq "K5a round $LK_ROUND: the suite started exactly once" "$(grep -c '' "$W_K5/p.ran" 2>/dev/null)" "1"
+  assert_eq "K5b round $LK_ROUND: exactly one of four runners exited 0" \
+    "$(( (LK_RCA == 0) + (LK_RCB == 0) + (LK_RCC == 0) + (LK_RCD == 0) ))" "1"
+  assert_eq "K5c round $LK_ROUND: no lock or stale copy is left behind" "$(find "$W_K5" -maxdepth 1 -name 'lock*' | grep -c '')" "0"
+  LK_ROUND=$((LK_ROUND + 1))
+done
+kill "$LK_RACE_SLEEPER" 2>/dev/null; wait "$LK_RACE_SLEEPER" 2>/dev/null
 
 # ---- K6: release only removes a lock that is still ours ----
 mk_tree T_K6 k6

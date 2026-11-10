@@ -164,7 +164,8 @@ rs_on_signal() {
 # ---- per-machine lock (FR-008, FR-009, FR-026) ----
 RS_LOCK_RUNNER_NAME="run-suites.sh"
 RS_LOCK_INIT_TICKS=10      # x 0.1 s a fresh lock may lack its pid file
-RS_LOCK_ATTEMPTS=4
+RS_LOCK_ATTEMPTS=8
+RS_GUARD_TICKS=50         # x 0.1 s to wait for another takeover
 RS_LOCK_DIR=""
 RS_LOCK_HELD=0
 RS_RUN_ID=""
@@ -212,12 +213,51 @@ rs_lock_drop_dir() {
   rmdir "$1" 2>/dev/null || true
 }
 
-# rs_lock_acquire — 0 = held. 2 = refused or unusable (message on stderr). Stale locks (dead PID, or a
-# live PID that is not the runner) are taken over: rename the old directory away, then mkdir; only the
-# winner of mkdir proceeds. A rename that grabbed a competitor's fresh lock is detected by the pid in
-# the moved directory and put back.
+# rs_guard_take <guarddir> — serialises takeovers: only one runner at a time may rename a lock away.
+# A guard whose owner is not a running runner (crash) is removed. 0 = guard is ours.
+rs_guard_take() {
+  local g="$1" n=0 p
+  while [ "$n" -lt "$RS_GUARD_TICKS" ]; do
+    if mkdir "$g" 2>/dev/null; then printf '%s\n' "$$" > "$g/pid" && return 0; rs_lock_drop_dir "$g"; return 1; fi
+    p="$(rs_lock_read_pid "$g")"
+    if ! rs_lock_is_runner "$p"; then rs_lock_drop_dir "$g"; fi
+    sleep 0.1
+    n=$((n + 1))
+  done
+  return 1
+}
+rs_guard_drop() { [ "$(rs_lock_file_line "$1/pid")" = "$$" ] && rs_lock_drop_dir "$1"; return 0; }
+
+# rs_lock_takeover <lockdir> <attempt> — under the takeover guard: re-judge, rename the stale directory
+# away, mkdir, write. 0 = held, 1 = try again, 2 = refused (held by a running runner, or guard stuck).
+rs_lock_takeover() {
+  local lock="$1" stale holder run
+  rs_guard_take "$lock.takeover" || { echo "run-suites: could not take the takeover guard for $lock" >&2; return 2; }
+  if [ -d "$lock" ] && [ ! -L "$lock" ]; then
+    holder="$(rs_lock_read_pid "$lock")"; run="$(rs_lock_file_line "$lock/run_id")"
+    if rs_lock_is_runner "$holder"; then
+      rs_guard_drop "$lock.takeover"
+      echo "run-suites: another run holds the lock $lock (holder PID $holder, run $run); no suite started" >&2
+      return 2
+    fi
+    stale="$lock.stale.$$.$2"
+    if mv "$lock" "$stale" 2>/dev/null; then
+      rs_lock_drop_dir "$stale"
+      echo "run-suites: took over a stale lock at $lock (holder PID ${holder:-unknown} is not a running runner)"
+    fi
+  fi
+  if mkdir "$lock" 2>/dev/null && rs_lock_write "$lock" 2>/dev/null; then
+    RS_LOCK_DIR="$lock"; RS_LOCK_HELD=1; rs_guard_drop "$lock.takeover"; return 0
+  fi
+  rs_guard_drop "$lock.takeover"
+  return 1
+}
+
+# rs_lock_acquire — 0 = held. 2 = refused or unusable (message on stderr). A fresh path is taken with
+# one atomic mkdir. An existing lock counts as held only when its PID is alive AND is the runner;
+# otherwise it is stale and rs_lock_takeover replaces it.
 rs_lock_acquire() {
-  local lock holder moved stale attempt=0
+  local lock holder run attempt=0 rc
   lock="$(rs_lock_path)"
   [ -n "${RS_RUN_ID:-}" ] || RS_RUN_ID="$(date +%Y%m%d-%H%M%S)-$$"
   while [ "$attempt" -lt "$RS_LOCK_ATTEMPTS" ]; do
@@ -226,9 +266,8 @@ rs_lock_acquire() {
       echo "run-suites: lock path $lock is a symbolic link; refusing to use it" >&2; return 2
     fi
     if mkdir "$lock" 2>/dev/null; then
-      if rs_lock_write "$lock"; then RS_LOCK_DIR="$lock"; RS_LOCK_HELD=1; return 0; fi
-      rs_lock_drop_dir "$lock"
-      echo "run-suites: cannot write the lock files in $lock" >&2; return 2
+      if rs_lock_write "$lock" 2>/dev/null; then RS_LOCK_DIR="$lock"; RS_LOCK_HELD=1; return 0; fi
+      continue   # never delete here: the path may already hold another runner's lock
     fi
     if [ ! -d "$lock" ]; then
       echo "run-suites: cannot create the lock directory $lock" >&2; return 2
@@ -236,22 +275,13 @@ rs_lock_acquire() {
     if [ ! -O "$lock" ]; then
       echo "run-suites: lock $lock is not owned by the current user; refusing to use it" >&2; return 2
     fi
-    holder="$(rs_lock_read_pid "$lock")"
+    holder="$(rs_lock_read_pid "$lock")"; run="$(rs_lock_file_line "$lock/run_id")"
     if rs_lock_is_runner "$holder"; then
-      echo "run-suites: another run holds the lock $lock (holder PID $holder, run $(rs_lock_file_line "$lock/run_id")); no suite started" >&2
+      echo "run-suites: another run holds the lock $lock (holder PID $holder, run $run); no suite started" >&2
       return 2
     fi
-    stale="$lock.stale.$$.$attempt"
-    if mv "$lock" "$stale" 2>/dev/null; then
-      moved="$(rs_lock_file_line "$stale/pid")"
-      if [ "$moved" != "$holder" ] && rs_lock_is_runner "$moved"; then
-        [ -e "$lock" ] || mv "$stale" "$lock" 2>/dev/null
-        echo "run-suites: another run took the lock at the same moment (holder PID $moved); no suite started" >&2
-        return 2
-      fi
-      rs_lock_drop_dir "$stale"
-      echo "run-suites: took over a stale lock at $lock (holder PID ${holder:-unknown} is not a running runner)"
-    fi
+    rs_lock_takeover "$lock" "$attempt"; rc=$?
+    [ "$rc" -eq 1 ] || return "$rc"
   done
   echo "run-suites: could not take the lock $lock after $RS_LOCK_ATTEMPTS attempts" >&2
   return 2
