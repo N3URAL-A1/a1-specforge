@@ -182,6 +182,7 @@ caseD12() {
   usage34 "missing --doc"
   usage34 "absolute --doc" --doc "$PHASE_REPO/docs/adr/x.md"
   usage34 "--doc with .." --doc docs/adr/../../src/add.js
+  usage34 "--doc with .. that still resolves to a valid ADR" --doc docs/adr/../adr/x.md
   usage34 "--doc outside the design globs" --doc src/add.js
   usage34 "--doc that does not exist" --doc docs/adr/nope.md
   usage34 "--doc that is a directory" --doc docs/adr/sub
