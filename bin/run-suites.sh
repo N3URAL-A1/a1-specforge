@@ -156,6 +156,8 @@ rs_on_suite_done() {
       if [ -n "$p" ]; then echo "  leaked: $p"; fi
     done <<< "$leaked"
   fi
+  p="$(rs_summary_note "$id" "$rc" "$log")"
+  if [ -n "$p" ]; then note="${note:+$note; }$p"; fi
   st=PASS
   if [ "$rc" -ne 0 ] || [ -n "$note" ]; then st=FAIL; fi
   echo "done: $st $id (${elapsed}s)"
