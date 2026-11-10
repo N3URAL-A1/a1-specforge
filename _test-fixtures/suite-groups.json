@@ -1,0 +1,6 @@
+{
+  "serial": [],
+  "no_count": ["a1-schema-check/parser/run-parser.sh"],
+  "ci_jobs": {},
+  "timings": { "measured": null, "seconds": {} }
+}
