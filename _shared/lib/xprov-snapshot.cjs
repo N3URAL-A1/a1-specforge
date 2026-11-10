@@ -615,7 +615,7 @@ function cloneOnly(only) {
   const dir = fs.mkdtempSync(path.join(root, SNAP_PREFIX));
   fs.chmodSync(dir, DIR_MODE);
   const failed = (detail) => { removeDir(dir); return { ok: false, reason: X.REASONS.snapshot_failed, dir: null, detail }; };
-  const buf = C.readNoFollow(only.source, X.MAX_RESULT_BYTES * 4);
+  const buf = Buffer.isBuffer(only.bytes) ? only.bytes : C.readNoFollow(only.source, X.MAX_RESULT_BYTES * 4); // SEC-2: the bytes the gate already hashed
   if (buf === null) return failed(`design file ${only.rel} is not a readable regular file`);
   const init = git(['init', '--quiet', '--template=', dir], { env: C.pinnedGitEnv(null) });
   if (init.status !== 0) return failed(`init: ${tail(init.stderr || String(init.error))}`);
@@ -700,10 +700,9 @@ function copyInputs(dir, inputs) {
   const copies = {};
   const labels = [];
   for (const i of inputs || []) {
-    const st = fs.lstatSync(i.source);
-    if (!st.isFile()) throw C.inputError(`${i.source}: not a regular file`, 'input_not_a_file');
+    if (!Buffer.isBuffer(i.bytes) && !fs.lstatSync(i.source).isFile()) throw C.inputError(`${i.source}: not a regular file`, 'input_not_a_file');
     const dest = path.join(inputsDir, INPUT_FILES[i.key]);
-    fs.writeFileSync(dest, fs.readFileSync(i.source), { mode: FILE_MODE });
+    fs.writeFileSync(dest, Buffer.isBuffer(i.bytes) ? i.bytes : fs.readFileSync(i.source), { mode: FILE_MODE }); // a design review passes the bytes it already read (SEC-2)
     copies[i.key] = dest;
     labels.push({ dest, label: i.label });
   }

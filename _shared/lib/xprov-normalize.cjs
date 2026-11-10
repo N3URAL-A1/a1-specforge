@@ -39,7 +39,7 @@ const { parseRegistryIds } = require('./gate-ids.cjs');
 const X = require('./xprov.cjs');
 const C = require('./xprov-common.cjs');
 const DS = require('./xprov-design.cjs');
-const { inOwnArtifacts, PASS_MARKER_FILE, mapDelta, writePlanCopy } = require('./xprov-runrecord.cjs');
+const { inOwnArtifacts, PASS_MARKER_FILE, mapDelta, writePlanCopy, writeDocCopy } = require('./xprov-runrecord.cjs');
 // Shared helpers — one definition each, in xprov-common.cjs.
 const { REGISTRY_PATH, sha256, isPlainObject, parsePositive, writeStdoutSync, readIndex, sameWave, sameLane, DETAIL_MAX_CHARS } = C;
 
@@ -482,7 +482,7 @@ function resolveArgs(args) {
     allowlist,
     resultPath: path.resolve(flags._[0]), phase, phaseDir, gate: flags.gate, wave, lane, round, attempt, roundTaken, roundKey, workPath, indexPath, findingsPath,
     planPath, planRel: design ? design.rel : path.relative(root, planPath), planSha: sha256(design ? design.bytes : fs.readFileSync(planPath)), ts: nowIso(),
-    doc: design ? design.rel : null, docBodySha: design ? DS.bodyHash(design.bytes.toString('utf8')) : null,
+    doc: design ? design.rel : null, docBytes: design ? design.bytes : null, docBodySha: design ? DS.bodyHash(design.bytes.toString('utf8')) : null,
   };
 }
 
@@ -567,8 +567,9 @@ function cmdXprovNormalize(args) {
   // a1's own proof that THIS run was accepted (after the output filter and every check above):
   // the pass retention in gc and the row validation in load-check needs it.
   if (outcome.verdict === X.VERDICTS.PASS && inOwnArtifacts(ctx.resultPath)) {
-    fs.writeFileSync(path.join(path.dirname(ctx.resultPath), PASS_MARKER_FILE), `${JSON.stringify({ gate: ctx.gate, plan_sha256: ctx.planSha, ts: ctx.ts }, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
+    fs.writeFileSync(path.join(path.dirname(ctx.resultPath), PASS_MARKER_FILE), `${JSON.stringify({ gate: ctx.gate, plan_sha256: ctx.planSha, ...(ctx.doc ? { doc: ctx.doc, doc_body_sha256: ctx.docBodySha } : {}), ts: ctx.ts }, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
     if (ctx.gate === X.GATE_IDS.PLAN_REVIEW) writePlanCopy(ctx.resultPath, ctx.planPath, ctx.planSha); // FR-030: the approved text, the base of a later delta
+    if (ctx.gate === X.GATE_IDS.DESIGN_REVIEW) writeDocCopy(ctx.resultPath, ctx.docBytes, ctx.planSha); // SEC-1: the approved text a later reuse is checked against
   }
   writeTextAtomic(ctx.indexPath, JSON.stringify([...index, entry], null, 2) + '\n');
   runGcIfPresent();

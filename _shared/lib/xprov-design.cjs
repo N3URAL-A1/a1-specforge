@@ -27,11 +27,20 @@ const MAX_DOC_BYTES = 2 * 1024 * 1024;
 const MAX_DOC_PATH_CHARS = 300;
 const SCOPE_SLUG_MAX = 60;
 const FRONTMATTER_RE = /^---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/;
+const MAX_FRONTMATTER_BYTES = 4 * 1024; // SEC-4: a longer leading block is body
+// one YAML-shaped line: blank, comment, `key: value` / `key:`, or list item (indented continuation lines included)
+const YAML_LINE_RE = /^(?:\s*|\s*#.*|[A-Za-z_][\w.-]*[ \t]*:(?:[ \t].*)?|\s*-(?:[ \t].*)?|\s+\S.*)$/;
 
 const inGlobs = (rel) => DESIGN_FILE_GLOBS.some((g) => matchesGlob(g, rel));
 
-/** The text without a leading `---` … `---` frontmatter block. */
-const stripFrontmatter = (text) => String(text).replace(FRONTMATTER_RE, '');
+/** The text without a leading `---` … `---` frontmatter block — only a short block of YAML-shaped lines counts (SEC-4). */
+function stripFrontmatter(text) {
+  const t = String(text);
+  const m = FRONTMATTER_RE.exec(t);
+  if (m === null || Buffer.byteLength(m[0], 'utf8') > MAX_FRONTMATTER_BYTES) return t;
+  const inner = m[0].replace(/\r?\n$/, '').split(/\r?\n/).slice(1, -1); // between the two `---` lines
+  return inner.every((l) => YAML_LINE_RE.test(l)) ? t.slice(m[0].length) : t;
+}
 
 /** sha256 of the body in comparison form: frontmatter and line-edge whitespace never change it, a word does. */
 function bodyHash(text) {
@@ -43,6 +52,8 @@ function shapeProblem(doc) {
   if (doc.length > MAX_DOC_PATH_CHARS || /[\x00-\x1f\x7f]/.test(doc)) return '--doc must be a short single-line path';
   if (path.isAbsolute(doc) || /^[A-Za-z]:[\\/]/.test(doc) || doc.startsWith('\\') ) return '--doc must be repo-relative, not absolute';
   if (doc.split(/[\\/]/).includes('..')) return '--doc must not contain ..';
+  if (doc !== doc.trim()) return '--doc must not have leading or trailing whitespace';
+  if (doc.split(/[\\/]/).some((seg) => seg === '.' || seg === '')) return '--doc must be written canonically (no ./ segment, no //, no trailing /)';
   if (!inGlobs(doc)) return `--doc must match ${DESIGN_FILE_GLOBS.join(' or ')}`;
   return null;
 }
@@ -51,17 +62,19 @@ function shapeProblem(doc) {
 function resolveDoc(root, doc) {
   const bad = shapeProblem(doc);
   if (bad) throw C.inputError(bad, 'bad_doc');
-  const rel = path.posix.normalize(doc.replace(/\\/g, '/'));
+  const spelled = doc.replace(/\\/g, '/');
   let realRoot;
   let real;
-  try { realRoot = fs.realpathSync(root); real = fs.realpathSync(path.join(realRoot, rel)); } catch (_e) { throw C.inputError(`--doc ${rel} does not exist`, 'bad_doc'); }
+  try { realRoot = fs.realpathSync(root); real = fs.realpathSync(path.join(realRoot, spelled)); } catch (_e) { throw C.inputError(`--doc ${spelled} does not exist`, 'bad_doc'); }
   const back = path.relative(realRoot, real);
-  if (back === '' || back.startsWith('..') || path.isAbsolute(back)) throw C.inputError(`--doc ${rel} resolves outside the repository`, 'bad_doc');
+  if (back === '' || back.startsWith('..') || path.isAbsolute(back)) throw C.inputError(`--doc ${spelled} resolves outside the repository`, 'bad_doc');
   const realRel = back.split(path.sep).join('/');
-  if (!inGlobs(realRel)) throw C.inputError(`--doc ${rel} resolves to ${realRel}, outside ${DESIGN_FILE_GLOBS.join(' or ')}`, 'bad_doc');
+  if (!inGlobs(realRel)) throw C.inputError(`--doc ${spelled} resolves to ${realRel}, outside ${DESIGN_FILE_GLOBS.join(' or ')}`, 'bad_doc');
+  const st = fs.lstatSync(real);
+  if (st.nlink > 1) throw C.inputError(`--doc ${realRel} has ${st.nlink} hard links; a hard link may point at a file outside the repository`, 'bad_doc');
   const bytes = C.readNoFollow(real, MAX_DOC_BYTES);
-  if (bytes === null) throw C.inputError(`--doc ${rel} is not a readable regular file of at most ${MAX_DOC_BYTES} bytes`, 'bad_doc');
-  return Object.freeze({ rel, abs: real, bytes });
+  if (bytes === null) throw C.inputError(`--doc ${realRel} is not a readable regular file of at most ${MAX_DOC_BYTES} bytes`, 'bad_doc');
+  return Object.freeze({ rel: realRel, abs: real, bytes }); // the reuse key is the realpath-relative form (SEC-5)
 }
 
 /** Findings-file scope of one doc: readable slug + 8 hex of the path hash (two docs never share a round key). */
@@ -87,11 +100,24 @@ function findPass(root, doc, hash) {
     if (index === null) continue;
     for (const e of index) {
       if (e.gate === X.GATE_IDS.DESIGN_REVIEW && e.doc === doc && e.doc_body_sha256 === hash && e.verdict === X.VERDICTS.PASS && e.waived !== true
-        && typeof e.result_path === 'string' && typeof e.plan_sha256 === 'string' && RR.planPassValid(e.result_path, e.plan_sha256, root)) hits.push(e);
+        && typeof e.result_path === 'string' && typeof e.plan_sha256 === 'string'
+        && RR.planPassValid(e.result_path, e.plan_sha256, root, X.GATE_IDS.DESIGN_REVIEW) && passBoundToDoc(e.result_path, e.plan_sha256, doc, hash)) hits.push(e);
     }
   }
   hits.sort((a, b) => String(a.ts || '').localeCompare(String(b.ts || '')));
   return hits.length ? hits[hits.length - 1] : null;
+}
+
+/**
+ * SEC-1: the index row is only a pointer; the run dir must prove WHICH text was approved. a1's pass marker names the doc and its body hash, and
+ * the approved text kept next to it hashes to the run's plan_sha256 and to the body hash the caller looks for.
+ */
+function passBoundToDoc(resultPath, planSha, doc, hash) {
+  const runDir = path.dirname(path.resolve(resultPath));
+  const marker = RR.readJsonNoFollow(path.join(runDir, RR.PASS_MARKER_FILE));
+  if (marker === null || marker.gate !== X.GATE_IDS.DESIGN_REVIEW || marker.doc !== doc || marker.doc_body_sha256 !== hash) return false;
+  const copy = C.readNoFollow(path.join(runDir, RR.DOC_COPY_FILE), MAX_DOC_BYTES);
+  return copy !== null && C.sha256(copy) === planSha && bodyHash(copy.toString('utf8')) === hash;
 }
 
 const BACKTICK_RE = /`([^`\n]+)`/g;

@@ -215,7 +215,7 @@ function resolveDesignArgs(ctx, gate, o) {
  * PLAN.md the runner will read and, for round N ≥ 2 after a REVISE, the
  * feedback file. The runner only ever gets these COPIES (`snapshot().inputs`). */
 function snapshotInputs(ctx, feedback) {
-  const inputs = [{ key: 'plan', source: ctx.deltaFile || ctx.planPath, label: ctx.isDesign ? ctx.doc : `.a1/phases/${ctx.phase}/PLAN.md` }];
+  const inputs = [{ key: 'plan', source: ctx.deltaFile || ctx.planPath, ...(ctx.isDesign ? { bytes: ctx.docBytes } : {}), label: ctx.isDesign ? ctx.doc : `.a1/phases/${ctx.phase}/PLAN.md` }];
   if (feedback) inputs.push({ key: 'feedback', source: feedback, label: `round-${ctx.round - 1} findings + dispositions` });
   return inputs;
 }
@@ -244,7 +244,7 @@ function stepSnapshot(ctx, feedback) {
   // FR-030 (b): every allowlist read runs against the PRIMARY checkout; the
   // gate kind decides the first-parent step (plan review only).
   // spec 025 W5: a design review snapshots the named file only (gate kind `design`: a1's own one-file commit, no allowlist anchor)
-  const only = ctx.isDesign ? { rel: ctx.doc, source: ctx.planPath } : undefined;
+  const only = ctx.isDesign ? { rel: ctx.doc, source: ctx.planPath, bytes: ctx.docBytes } : undefined;
   const s = snapshot({ sourceRepo: source, commit, base: ctx.base, primaryRoot: ctx.root, gateKind: ctx.isDesign ? 'design' : 'plan', inputs: snapshotInputs(ctx, feedback), ...(only ? { only } : {}) });
   const allowlist = allowlistFields(s);
   return s.ok ? { ok: true, snapshot: s.snapshot, commit: s.commit, inputs: s.inputs, gitleaks: s.gitleaks === true, allowlist } : { ok: false, reason: s.reason, detail: s.reason_detail || s.detail || s.secret_pattern || null, allowlist };
@@ -400,7 +400,7 @@ function passFor(ctx) {
   const buf = C.readNoFollow(ctx.planPath, X.MAX_RESULT_BYTES * 4);
   if (index === null || !buf) return null;
   const planSha = C.sha256(buf);
-  const hits = index.filter((e) => e.gate === ctx.gate && e.verdict === X.VERDICTS.PASS && e.waived !== true && e.plan_sha256 === planSha && RR.planPassValid(e.result_path, planSha));
+  const hits = index.filter((e) => e.gate === ctx.gate && e.verdict === X.VERDICTS.PASS && e.waived !== true && e.plan_sha256 === planSha && RR.planPassValid(e.result_path, planSha, undefined, ctx.gate));
   return hits.length ? hits[hits.length - 1] : null;
 }
 
@@ -542,7 +542,7 @@ function loadCheck(o) {
   if (index === null) throw inputError(`index.json unparseable or not an array of objects: ${ctx.indexPath}`);
   // index.json rows are pointers (Reinhard M1): a pass row counts only when its run dir in
   // our artifacts holds a completed APPROVED review of this PLAN.md; `waived: true` never counts.
-  const passes = index.filter((e) => e.gate === gate && e.verdict === X.VERDICTS.PASS && e.waived !== true && RR.planPassValid(e.result_path, planSha));
+  const passes = index.filter((e) => e.gate === gate && e.verdict === X.VERDICTS.PASS && e.waived !== true && RR.planPassValid(e.result_path, planSha, undefined, gate));
   const newest = passes.length ? [...passes].sort((a, b) => String(a.ts || '').localeCompare(String(b.ts || '')))[passes.length - 1] : null;
   const store = WV.readWaivers();
   const waiver = newest !== null && newest.plan_sha256 === planSha ? null : WV.planWaiver(store, { repo: C.commonDirOf(ctx.root), phase: ctx.phase, plan_sha256: planSha });

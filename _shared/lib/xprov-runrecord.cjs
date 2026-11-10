@@ -54,14 +54,17 @@ function readJsonNoFollow(p) {
 
 /** The run dir holds a1's pass marker (regular file, O_NOFOLLOW) — bound to
  * `planSha` when given: the marker names the PLAN.md the pass was normalized for. */
-function hasPassMarker(runDir, planSha) {
+function hasPassMarker(runDir, planSha, gate) {
   const m = readJsonNoFollow(path.join(runDir, PASS_MARKER_FILE));
-  return m !== null && (planSha === undefined || m.plan_sha256 === planSha);
+  return m !== null && (planSha === undefined || m.plan_sha256 === planSha) && (gate === undefined || markerGate(m) === gate);
 }
+// a marker written before the gate field existed belongs to the plan gate (the only gate then)
+const markerGate = (m) => (m.gate === undefined ? X.GATE_IDS.PLAN_REVIEW : m.gate);
 
 // Spec 016 FR-030: a delta plan review sends the changed sections only, so the runner records the sha of THAT text. a1's marker in the run dir
 // (written by the gate before normalize) maps it back to the PLAN.md sha it stands for; `runRecord` and normalize read the record through it.
 const DELTA_MARKER_FILE = 'a1-delta.json';
+const DOC_COPY_FILE = 'a1-doc.md'; // spec 025 SEC-1: the approved design file next to its pass marker
 const PLAN_COPY_FILE = 'a1-plan.md'; // the approved PLAN.md next to the pass marker (the base of a later delta or cosmetic carry)
 const SHA256_RE = /^[0-9a-f]{64}$/;
 
@@ -89,6 +92,11 @@ function writePlanCopy(resultPath, planPath, planSha, root) {
   return buf !== null && C.sha256(buf) === planSha && writeRunDirFile(resultPath, PLAN_COPY_FILE, buf, root);
 }
 
+/** Keep the approved design file next to the pass marker, only when its bytes hash to the sha the pass names (`buf` = the bytes already read, never a re-read). */
+function writeDocCopy(resultPath, buf, docSha, root) {
+  return Buffer.isBuffer(buf) && C.sha256(buf) === docSha && writeRunDirFile(resultPath, DOC_COPY_FILE, buf, root);
+}
+
 /** result.json of a run dir in our artifacts, or null (read through the delta marker). */
 function runRecord(resultPath, root) {
   return inOwnArtifacts(resultPath, root) ? mapDelta(readJsonNoFollow(path.resolve(resultPath)), resultPath, root) : null;
@@ -99,9 +107,9 @@ const approvedAs = (rec, mode, planSha) => C.isPlainObject(rec) && rec.status ==
 
 /** A plan-review pass row counts only when its run dir holds a completed,
  * APPROVED review of exactly this PLAN.md (load-check, FR-003). */
-function planPassValid(resultPath, planSha, root) {
+function planPassValid(resultPath, planSha, root, gate) {
   const rec = runRecord(resultPath, root);
-  return approvedAs(rec, 'review', planSha) && hasPassMarker(path.dirname(path.resolve(resultPath)), planSha);
+  return approvedAs(rec, 'review', planSha) && hasPassMarker(path.dirname(path.resolve(resultPath)), planSha, gate);
 }
 
 /** The run dir holds a BLOCKED answer for exactly this PLAN.md and gate, with a1's twice-blocked marker (mode review, the plan gate). */
@@ -163,4 +171,4 @@ function declinedMarker(resultPath, want, root) {
   return m;
 }
 
-module.exports = { DELTA_MARKER_FILE, PLAN_COPY_FILE, mapDelta, writeDeltaMarker, writePlanCopy, declinedMarker, EXCLUDED_FILE, writeExcluded, REVIEWED_FILE, PASS_MARKER_FILE, BLOCKED_MARKER_FILE, DISPOSED_MARKER_FILE, FINDINGS_FILE, verifiedFindings, disposedMarker, planDisposed, blockedFallbackValid, hasPassMarker, inOwnArtifacts, readJsonNoFollow, runRecord, planPassValid };
+module.exports = { DELTA_MARKER_FILE, PLAN_COPY_FILE, DOC_COPY_FILE, writeDocCopy, mapDelta, writeDeltaMarker, writePlanCopy, declinedMarker, EXCLUDED_FILE, writeExcluded, REVIEWED_FILE, PASS_MARKER_FILE, BLOCKED_MARKER_FILE, DISPOSED_MARKER_FILE, FINDINGS_FILE, verifiedFindings, disposedMarker, planDisposed, blockedFallbackValid, hasPassMarker, inOwnArtifacts, readJsonNoFollow, runRecord, planPassValid };
