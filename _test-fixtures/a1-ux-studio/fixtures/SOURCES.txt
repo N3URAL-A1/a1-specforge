@@ -27,3 +27,12 @@ fixtures/boards/render-fixtures.cjs: one-off renderer; run once on 2026-11-09 as
   converge-colour-only.html (3 Lora tiles with identical structure, background colour only).
 Fonts for these boards are NOT stored here: parts/04-boards.sh copies the shipped files from skills/a1-ux-studio/templates/fonts/ into each temp run folder's boards/fonts/. Hostile and variant boards (variant0, 6 tiles, remote URL, missing font) are derived at run time from diverge.html with sed/node.
 Shipped font sources: skills/a1-ux-studio/templates/fonts/SOURCES.txt.
+
+## Wave 6 (handoff)
+fixtures/handoff/screenshot.png: byte copy of fixtures/run/reference-1x1.png (a valid 1x1 RGBA PNG); parts/06-handoff.sh copies it to screenshots/<board|result>-<1280|390>.png as stand-in evidence (playwright-cli itself is never run in CI).
+Gate records are NOT stored: parts/06-handoff.sh produces them with the real ux-gate.cjs `run` against a PATH-first npx stub that replays the captured fixtures/gate/ detector output (W3), then edits single fields with node where a case needs a state the TTY-only `accept` would write.
+Boards for the evidence cases are copied from fixtures/boards/ (W4).
+
+## Wave 5 (families and assets)
+fixtures/imagegen/generate.py: hand-written stub of ~/.claude/skills/imagegen/scripts/generate.py. Flag surface (--prompt, --out, --slug, --n; out = target file, sidecar <stem>.json next to it) taken from `python3 ~/.claude/skills/imagegen/scripts/generate.py --help` and its sidecar code (line ~402) on 2026-11-11. A prompt containing FAIL-IMAGEGEN makes it exit 1. parts/05-families-assets.sh copies it into a temp HOME's .claude/skills/imagegen/scripts/.
+Vault taste entries, CLAUDE.md files and result pages for part 05 are written at run time with printf (no stored copies).

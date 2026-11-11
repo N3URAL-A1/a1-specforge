@@ -4,7 +4,9 @@
 // HTML target plus a font-license check, and writes gate-record.json + the run.md block.
 //
 //   run    --run-dir <d> --target <html>            exit 0 pass / 1 blocking / 2 usage|hostile / 3 gate error
-//   accept --run-dir <d> --finding <id> --reason <text>   exit 0 / 2
+//   accept --run-dir <d> --finding <id> --reason <text>   exit 0 / 2   (TTY only)
+//   handoff-check --run-dir <d>                     exit 0 allowed / 1 blocked (one reason per line) / 2 usage
+//   A new `run` rewrites the record, so earlier acceptances are reset (fail closed).
 //
 // Fail closed: a spawn error, a signal, exit 1, an unparseable result or a missing severity
 // can never produce `pass`. This script never computes contrast; the detector decides.
@@ -15,6 +17,7 @@ const tty = require('node:tty');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { checkFonts } = require('./font-check.cjs');
+const { checkHandoff } = require('./handoff-check.cjs');
 
 const RECORD_FILE = 'gate-record.json';
 const MARK_START = '<!-- gate-record:start -->';
@@ -287,12 +290,23 @@ function cmdAccept(opts) {
   return EXIT.PASS;
 }
 
+function cmdHandoffCheck(opts) {
+  const runDir = resolveRunDir(opts['run-dir']);
+  requireRunMd(runDir);
+  const { blockers, notes } = checkHandoff(runDir);
+  for (const n of notes) process.stdout.write(`${n}\n`);
+  if (blockers.length === 0) { process.stdout.write('handoff allowed\n'); return EXIT.PASS; }
+  for (const b of blockers) process.stdout.write(`blocked: ${b}\n`);
+  return EXIT.BLOCKING;
+}
+
 function main(argv) {
   try {
     const { cmd, opts } = parseArgs(argv);
     if (cmd === 'run') return cmdRun(opts);
     if (cmd === 'accept') return cmdAccept(opts);
-    throw new UsageError('usage: ux-gate.cjs run --run-dir <d> --target <html> | accept --run-dir <d> --finding <id> --reason <text>');
+    if (cmd === 'handoff-check') return cmdHandoffCheck(opts);
+    throw new UsageError('usage: ux-gate.cjs run --run-dir <d> --target <html> | accept --run-dir <d> --finding <id> --reason <text> | handoff-check --run-dir <d>');
   } catch (err) {
     if (err instanceof UsageError) { process.stderr.write(`ux-gate: ${err.message}\n`); return EXIT.USAGE; }
     process.stderr.write(`ux-gate: gate error: ${safeText(err && err.message, 300)}\n`);
