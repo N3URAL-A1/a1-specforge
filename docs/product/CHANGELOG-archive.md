@@ -10,3 +10,8 @@ Rotated entries beyond the 100-entry ROADMAP.md Changelog window (append-only, o
 - **2026-09-12** — 007-retro-gate-id-validator -> complete — stage transition via `product stage`
 - **2026-09-12** — 007-retro-gate-id-validator -> verify — stage transition via `product stage`
 - **2026-09-12** — 007-retro-gate-id-validator -> merge — stage transition via `product stage`
+- **2026-09-12** — 007-retro-gate-id-validator -> origin-cleanup — stage transition via `product stage`
+- **2026-09-12** — 007-retro-gate-id-validator -> done — stage transition via `product stage`
+- **2026-09-13** — feature '008-false-green-test-guards' added — new feature via `product add-feature`
+- **2026-09-13** — feature.md created for '008-false-green-test-guards' — formal spec/plan attached via `product feature-init`
+- **2026-09-13** — feature '005-vault-first-artifacts' added — new feature via `product add-feature`

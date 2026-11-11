@@ -4,7 +4,7 @@ type: roadmap
 project: a1-specforge
 title: "a1-specforge — Roadmap"
 status: active
-updated: 2026-11-10
+updated: 2026-11-11
 source: "migrated from docs/roadmap.md v3.0 (2026-07-10)"
 milestones:
   - id: m0-repo-extract
@@ -286,10 +286,10 @@ features:
   - id: 025-codex-architecture-only
     milestone: continuous
     title: "Codex (xprov) reviews only architecture plans and solution designs"
-    status: planned
-    stage: null
+    status: in-flight
+    stage: origin-cleanup
     depends_on: []
-    started: null
+    started: 2026-11-11
     finished: null
     spec_path: project/a1-specforge/spec/025-codex-architecture-only.md
     plan_path: project/a1-specforge/plans/025-codex-architecture-only-wave-plan.md
@@ -389,11 +389,6 @@ None.
 
 ## Changelog
 
-- **2026-09-12** — 007-retro-gate-id-validator -> origin-cleanup — stage transition via `product stage`
-- **2026-09-12** — 007-retro-gate-id-validator -> done — stage transition via `product stage`
-- **2026-09-13** — feature '008-false-green-test-guards' added — new feature via `product add-feature`
-- **2026-09-13** — feature.md created for '008-false-green-test-guards' — formal spec/plan attached via `product feature-init`
-- **2026-09-13** — feature '005-vault-first-artifacts' added — new feature via `product add-feature`
 - **2026-09-13** — feature '006-specforge-kritis-profile' added — new feature via `product add-feature`
 - **2026-09-13** — feature.md created for '005-vault-first-artifacts' — formal spec/plan attached via `product feature-init`
 - **2026-09-13** — feature.md created for '006-specforge-kritis-profile' — formal spec/plan attached via `product feature-init`
@@ -489,6 +484,11 @@ None.
 - **2026-11-09** — feature.md created for '025-codex-architecture-only' — formal spec/plan attached via `product feature-init`
 - **2026-11-10** — feature '026-fast-fixture-suites' added — new feature via `product add-feature`
 - **2026-11-10** — feature.md created for '026-fast-fixture-suites' — formal spec/plan attached via `product feature-init`
+- **2026-11-11** — 025-codex-architecture-only -> complete — stage transition via `product stage`
+- **2026-11-11** — 025-codex-architecture-only -> review — stage transition via `product stage`
+- **2026-11-11** — 025-codex-architecture-only -> verify — stage transition via `product stage`
+- **2026-11-11** — 025-codex-architecture-only -> merge — stage transition via `product stage`
+- **2026-11-11** — 025-codex-architecture-only -> origin-cleanup — stage transition via `product stage`
 
 ## Appendix — migrated details
 
