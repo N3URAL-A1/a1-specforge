@@ -49,3 +49,7 @@ gate3: FR-025-AC1 PASS @wave5 2026-11-11 (family-catalog.md 8 rows equal familie
 gate3: FR-014-AC1 PASS @wave6 2026-11-11 (real run folder: 05-gate.md screenshot commands produced 6 PNGs 8–92 KB; handoff-check exit 1 for each missing screenshot before, exit 0 "handoff allowed" after)
 gate3: FR-013-AC1 PASS @wave6 2026-11-11 (real impeccable 4.8.1 on linux: low-contrast result → run exit 1, handoff-check "blocked: open: finding low-contrast-1"; result edited after gate → blocked by mtime and sha mismatch; accept outside a TTY → exit 2 with the exact command for Robert)
 gate2: SKIPPED preview deploy (local offline HTML, no web app)
+
+## Waves 1–3 (Mac, 2026-11-09)
+
+gate0: marked done on 2026-11-11 from committed code (fb333da, 14862a1, security fixes da5ad0e) and their green suite parts 01–03 in every run since; the Mac session left no gate0/gate3 lines, so per-AC smoke evidence for FR of W1–W3 is re-run in Phase 6
