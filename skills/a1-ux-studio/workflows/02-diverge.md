@@ -12,22 +12,47 @@ Claude Code `/design` is optional and never required; without it nothing changes
 
 ## 1. Choose 5 families
 
-<!-- W5-HOOK: family selection rules (design system, brand/product filter,
-taste vault, built-in fallback via `run.cjs families`) replace this section. -->
+The script decides the candidates; do not pick families by hand. Built-in
+list and skill mapping: [../templates/family-catalog.md](../templates/family-catalog.md).
 
-Until the selection rules land, use the built-in list and take the first 5,
-unless the brief's Guardrails exclude one (then take the next):
+1. Read the brief from `run.md ## Brief`: `Context` (`brand` or `product`)
+   and the Guardrails. Write the Guardrails to a temp JSON file
+   (`GR="$(mktemp)"`), e.g. `{"always":["dark mode"],"never":["Inter"]}`.
+   Never into the target repo; delete it after the call.
+2. Run:
 
-| Family id | Descriptor |
-|-----------|------------|
-| `print-tech-paper` | Paper tones, technical print grid, mono captions |
-| `dither-mono` | One ink colour, dithered imagery, hard edges |
-| `vast-quiet-cinematic` | Large calm surfaces, wide spacing, one strong image |
-| `technical-systems` | Dense data grid, rules and labels, instrument feel |
-| `product-led-minimalism` | Product first, neutral surfaces, few accents |
-| `luminous-futurism` | Dark ground, glow accents, soft gradients |
-| `monumental-editorial` | Huge display type, magazine rhythm |
-| `classical-remix` | Classical serif and proportions, modern twist |
+   ```bash
+   node <skill-dir>/scripts/run/run.cjs families \
+     --context <brand|product> \
+     --project-claude-md <target-repo>/CLAUDE.md \
+     --vault-root "$A1_VAULT_ROOT" \
+     --guardrails "$GR"
+   ```
+
+   Drop `--project-claude-md` only when there is no target repo (standalone
+   run outside a project).
+3. Read the JSON output: `candidates` (5 entries, each with `id`,
+   `descriptor` and `skills`; the first entry of `skills` is the skill to
+   load), `source`, `token_source` and `warnings`.
+
+   | Source | Meaning |
+   |--------|---------|
+   | `design-system` | The project's `CLAUDE.md` names `n3urala1-design` or `vf-brand`. Every candidate's `skills` is that design system alone; all 5 tiles use its tokens and fonts. |
+   | `vault` | Families from `pattern/taste-vault/`, topped up from the catalog if fewer than 5 fit. |
+   | `builtin` | No design system and no or an empty vault: the 8 catalog families. |
+
+   For `product`, the script drops every family that lists
+   `design-taste-frontend`; no candidate loads it.
+4. Tell the user every warning in German, one line each (e.g. a Guardrail
+   that conflicts with the design system: the design system wins).
+5. Source `design-system`: load the design-system skill now with the Skill
+   tool (`n3urala1-design` or `vf-brand`), before rendering, so all tiles
+   use its tokens.
+6. Exit non-zero: read the reason line, fix the input (path, JSON), rerun.
+   Never fall back to a hand-picked list.
+
+The 5 candidates, in output order, become the 5 tiles. Each candidate's
+`descriptor` is the tile's direction.
 
 ## 2. Render the board
 
@@ -119,7 +144,7 @@ If the user rejects all 5 families:
 1. Ask what was wrong. Turn the answer into changed Guardrails or a new
    Aesthetic hint; say the change back in German.
 2. Run `node <skill-dir>/scripts/run/run.cjs reroll --board diverge --run-dir <run-dir>`.
-   Exit 0: choose 5 families again with the changed input, render a new
+   Exit 0: rerun section 1 with the changed Guardrails, render a new
    board (sections 2–4), ask again.
 3. Exit 1 means the one re-roll is used up. Stop rendering. Ask the user how
    to continue (adopt a default, sharpen the brief in step 1, or end the run).
@@ -131,8 +156,23 @@ If the user rejects all 5 families:
 node <skill-dir>/scripts/run/run.cjs require-pick --board diverge --run-dir <run-dir>
 ```
 
-Exit 0: go to step 3. Exit 1: no pick is recorded — go back to 4. Step 3
+Exit 0: go to 8. Exit 1: no pick is recorded — go back to 4. Step 3
 never starts without exit 0 here.
+
+## 8. Load the chosen family's skill
+
+1. Take the picked family id from `run.md ## Picks` (for `variant0`, its
+   `data-family`). Its skill is the first entry of that candidate's
+   `skills` in the section 1 output (catalog fallback:
+   [../templates/family-catalog.md](../templates/family-catalog.md)).
+2. Name it to the user in German, one line, e.g.
+   "Family `dither-mono` → lade `industrial-brutalist-ui`."
+3. Load it with the Skill tool. It guides steps 3 and 4 (layout, type,
+   colour, imagery). A loaded design system still wins over it.
+4. The skill is not installed: say so, continue with the catalog
+   descriptor alone, and note `Skill missing: <skill>` to the user.
+
+Then go to step 3.
 
 ## Done when
 
@@ -141,3 +181,5 @@ never starts without exit 0 here.
 - Every font the board references exists under `boards/fonts/`.
 - `run.md ## Picks` holds the diverge pick (or `Default adopted:`), and
   `require-pick --board diverge` exits 0.
+- The 5 tiles are the candidates from `run.cjs families`, and the chosen
+  family's skill is named and loaded.

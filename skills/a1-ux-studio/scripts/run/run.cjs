@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 'use strict';
 // a1-ux-studio run folder script (spec 024, FR-002/003/018/031).
-// Commands: init (W2); pick, require-pick, reroll, board-check (W4, logic in picks.cjs / boards.cjs).
+// Commands: init (W2); pick, require-pick, reroll, board-check (W4, picks.cjs / boards.cjs);
+// families, asset-slot, asset-missing (W5, families.cjs / assets.cjs).
 // Exit codes: 0 ok, 1 refusal (env, empty Intent, no pick, board problems), 2 usage/hostile input.
-// Node core only. Later waves add `asset-slot` (W5).
+// Node core only.
 
 const fs = require('fs');
 const path = require('path');
@@ -12,6 +13,8 @@ const https = require('https');
 
 const picks = require('./picks.cjs');
 const boardCheck = require('./boards.cjs');
+const assets = require('./assets.cjs');
+const families = require('./families.cjs');
 const { CTRL_RE, Refusal, parseArgs, requireSlug, resolveDate, clean } = require('./common.cjs');
 const CONTEXTS = Object.freeze(['brand', 'product']);
 const VIEWPORTS = Object.freeze(['desktop-first', 'mobile parity']);
@@ -228,16 +231,23 @@ const USAGE = 'usage: run.cjs init --project <slug> (--spec <id> | --topic <slug
   + '       run.cjs pick --run-dir <d> --board diverge|converge (--option <id> | --default-adopted <id>) [--date YYYY-MM-DD]\n'
   + '       run.cjs require-pick --run-dir <d> --board diverge|converge\n'
   + '       run.cjs reroll --run-dir <d> --board diverge|converge [--date YYYY-MM-DD]\n'
-  + '       run.cjs board-check --run-dir <d> --kind diverge|converge';
+  + '       run.cjs board-check --run-dir <d> --kind diverge|converge\n'
+  + '       run.cjs families [--context brand|product] [--project-claude-md <file>] [--vault-root <dir>] [--guardrails <json-file>]\n'
+  + '       run.cjs asset-slot --run-dir <d> --name <slug> --prompt <text> [--approved]\n'
+  + '       run.cjs asset-missing --run-dir <d> [--name <slug> --reason <text>]';
 
 const COMMANDS = Object.freeze({
   init, pick: picks.pick, 'require-pick': picks.requirePick, reroll: picks.reroll, 'board-check': boardCheck.boardCheck,
+  families: families.families, 'asset-slot': assets.assetSlot, 'asset-missing': assets.assetMissing,
 });
 
 async function main(argv) {
   const [cmd, ...rest] = argv;
   if (!Object.prototype.hasOwnProperty.call(COMMANDS, cmd)) throw new Refusal(2, USAGE);
-  return COMMANDS[cmd](parseArgs(rest));
+  // --approved is the only value-less flag (asset-slot cap override).
+  const approved = cmd === 'asset-slot' && rest.includes('--approved');
+  const args = parseArgs(approved ? rest.filter((a) => a !== '--approved') : rest);
+  return COMMANDS[cmd](approved ? { ...args, approved: true } : args);
 }
 
 main(process.argv.slice(2)).then(

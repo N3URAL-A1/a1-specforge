@@ -1,0 +1,17 @@
+{
+  "_comment": "Built-in family list for run.cjs families (spec 024 FR-016/017/025). Ids are the stable contract with templates/family-catalog.md; keep both files in step. A family whose skills include design-taste-frontend is never offered for Context: product.",
+  "families": [
+    { "id": "print-tech-paper", "name": "Print tech paper", "descriptor": "Warm paper tones, fine rules, technical-manual typography", "skills": ["minimalist-ui", "wada-farben"], "contexts": ["brand", "product"] },
+    { "id": "dither-mono", "name": "Dither mono", "descriptor": "Monochrome, dithered textures, raw grid", "skills": ["industrial-brutalist-ui"], "contexts": ["brand", "product"] },
+    { "id": "vast-quiet-cinematic", "name": "Vast quiet cinematic", "descriptor": "Wide space, slow pacing, large imagery", "skills": ["design-taste-frontend", "frontend-design"], "contexts": ["brand", "product"] },
+    { "id": "technical-systems", "name": "Technical systems", "descriptor": "Dense, legible, tool-like interfaces", "skills": ["industrial-brutalist-ui", "ui-ux-pro-max"], "contexts": ["product"] },
+    { "id": "product-led-minimalism", "name": "Product-led minimalism", "descriptor": "The product is the hero, chrome stays quiet", "skills": ["minimalist-ui", "ui-ux-pro-max"], "contexts": ["product"] },
+    { "id": "luminous-futurism", "name": "Luminous futurism", "descriptor": "Glow, gradients, forward-looking surfaces", "skills": ["design-taste-frontend", "frontend-design"], "contexts": ["brand"] },
+    { "id": "monumental-editorial", "name": "Monumental editorial", "descriptor": "Oversized type, magazine rhythm", "skills": ["design-taste-frontend", "frontend-design"], "contexts": ["brand"] },
+    { "id": "classical-remix", "name": "Classical remix", "descriptor": "Serif heritage with a modern twist", "skills": ["frontend-design", "wada-farben"], "contexts": ["brand", "product"] }
+  ],
+  "designSystems": [
+    { "skill": "n3urala1-design", "fonts": ["Inter"] },
+    { "skill": "vf-brand", "fonts": ["Inter"] }
+  ]
+}
