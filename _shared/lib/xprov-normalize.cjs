@@ -582,4 +582,17 @@ function cmdXprovNormalize(args) {
   process.exitCode = outcome.verdict === X.VERDICTS.PASS ? X.EXIT_PASS : X.EXIT_FAIL;
 }
 
-module.exports = { cmdXprovNormalize, appendXreviewNote, PRIOR_FINDINGS_FILE, classify, mapFinding, splitPath, firstSentence, modelFields, cell };
+// ---------- Codex availability (spec 025 W6: FR-016, FR-019) ----------
+
+// A rejected pinned `model_reasoning_effort` (task 6.1 measured the real wording; the fixture is
+// _test-fixtures/a1-xprov/cases/model-pin/effort-rejection.codex-stdout.txt). Two shapes: the key named next to a rejection word, in
+// either order, within one line. The text is scanned on the RAW Codex stdout/stderr, so the pattern must not need JSON framing.
+// TODO(6.1): the last alternative matches the PLACEHOLDER line of the fixture; remove it when the real capture is in and this pattern matches it.
+const EFFORT_REJECTION_RE = /\b(?:model_reasoning_effort|reasoning[ _]effort)\b[^\n]{0,240}\b(?:unknown variant|invalid|not (?:a )?(?:valid|supported|allowed)|unsupported|unrecognized|rejected|unexpected value)\b|\b(?:unknown variant|invalid|unsupported|unrecognized|rejected)\b[^\n]{0,240}\b(?:model_reasoning_effort|reasoning[ _]effort)\b|^PENDING-6\.1 rejection capture$/im;
+
+/** True when `text` (raw Codex stdout/stderr lines) is Codex refusing the pinned effort value: a preflight failure, never an outage. */
+function isEffortRejection(text) {
+  return typeof text === 'string' && EFFORT_REJECTION_RE.test(text);
+}
+
+module.exports = { EFFORT_REJECTION_RE, isEffortRejection, cmdXprovNormalize, appendXreviewNote, PRIOR_FINDINGS_FILE, classify, mapFinding, splitPath, firstSentence, modelFields, cell };

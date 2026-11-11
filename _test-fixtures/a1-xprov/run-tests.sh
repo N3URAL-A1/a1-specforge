@@ -73,6 +73,12 @@ EXPECTED_RUNNER_VERSION="2.1.0"
 EXPECTED_UPSTREAM_COMMIT="8cf5e2c1771c5151d90c12642391d0ba8fa71b0e"
 EXPECTED_CLI_VERSION="codex-cli 0.155.1"
 GATE_PLAN="plan-review-xprov"
+# Spec 025 Wave 6 (FR-016): the model pin is a frozen literal; the effort pin is READ from the one constant of the module under test
+# (EFFORT_PINNED in _shared/lib/xprov.cjs), so the measured value (task 6.1) is edited in exactly one place. Every compliant-config
+# literal below and in the parts is built from these two variables.
+PIN_MODEL="gpt-6-astra"
+PIN_EFFORT="$(node -p "require(process.argv[1]).EFFORT_PINNED" "$XPROV_LIB" 2>/dev/null)"
+[[ -n "$PIN_EFFORT" ]] || PIN_EFFORT="UNREADABLE-EFFORT_PINNED"
 # The compliant config measured in ~/.codex-a1-review/config.toml (2026-09-24):
 # comment header, the two runtime keys, and — added the same day after Wave 4
 # measured that Codex auto-installs remote plugins unless `features.plugins`
@@ -91,6 +97,8 @@ COMPLIANT_CONFIG='# a1-specforge — dedicated Codex home for cross-provider REV
 sandbox_mode = "read-only"
 approval_policy = "on-request"
 cli_auth_credentials_store = "file"
+model = "'"$PIN_MODEL"'"
+model_reasoning_effort = "'"$PIN_EFFORT"'"
 
 [features]
 plugins = false
@@ -210,6 +218,13 @@ make_tree() {
     if (s.split(from).length !== 2) { console.error("RETRY_DELAYS_MS line not found exactly once"); process.exit(3); }
     fs.writeFileSync(f, s.replace(from, "const RETRY_DELAYS_MS = Object.freeze([1, 2]);"));
   ' "$TREE/_shared/lib/xprov-recover.cjs" || { echo "FAIL  harness: could not rewrite RETRY_DELAYS_MS in the tree copy" >&2; exit 2; }
+  # Spec 025 W6 SEC-1: review gates refuse --timeout below GATE_MIN_TIMEOUT_SECONDS (60); the fixtures call the gate with --timeout 7 against the fake runner,
+  # so the COPY gets 1. Part 35 puts the real constant back in its own copy to prove the refusal. A copy that keeps 60 would refuse every fixture call: refuse here.
+  node -e '
+    const fs = require("fs"); const f = process.argv[1]; const s = fs.readFileSync(f, "utf8"); const from = "const GATE_MIN_TIMEOUT_SECONDS = 60;";
+    if (s.split(from).length !== 2) { console.error("GATE_MIN_TIMEOUT_SECONDS line not found exactly once"); process.exit(3); }
+    fs.writeFileSync(f, s.replace(from, "const GATE_MIN_TIMEOUT_SECONDS = 1;"));
+  ' "$TREE/_shared/lib/xprov.cjs" || { echo "FAIL  harness: could not rewrite GATE_MIN_TIMEOUT_SECONDS in the tree copy" >&2; exit 2; }
 }
 
 # make_phase <name> [plan-file] — builds a temp git checkout with one commit

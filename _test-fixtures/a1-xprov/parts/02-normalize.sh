@@ -209,8 +209,8 @@ caseR13() {
   prep_tree; make_phase p13 "$CASES/approved.PLAN.md"
   run_normalize "$CASES/approved.result.json" p13 "$GATE_PLAN"
   assert_json "R13a captured approved → index entry model_requested literal, model_observed unknown" \
-    "$(cat "$PHASE_DIR/xreview/index.json")" "j[0].model_requested + ' | ' + j[0].model_observed" "CLI default (unresolved) | unknown"
-  grep -q "model_requested.*CLI default (unresolved)" "$PHASE_DIR/XREVIEW.md" && grep -q "model_observed.*unknown" "$PHASE_DIR/XREVIEW.md" \
+    "$(cat "$PHASE_DIR/xreview/index.json")" "j[0].model_requested + ' | ' + j[0].model_observed" "$PIN_MODEL | unknown"
+  grep -q "model_requested.*$PIN_MODEL" "$PHASE_DIR/XREVIEW.md" && grep -q "model_observed.*unknown" "$PHASE_DIR/XREVIEW.md" \
     && grep -q "cli_version.*codex-cli 0.155.1" "$PHASE_DIR/XREVIEW.md" \
     && ok "R13b XREVIEW section carries model_requested, model_observed and the copied cli_version" \
     || bad "R13b XREVIEW section lacks a model/cli field"

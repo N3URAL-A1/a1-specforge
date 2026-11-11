@@ -126,24 +126,8 @@ ARGV9_DIR="$TMP09/argv"; mkdir -p "$ARGV9_DIR"; ARGV9_N=0
 
 # The eight pins, measured: `codex features disable <f>` writes the first seven
 # (memories is default-off, Codex omits it, a1 pins it explicitly).
-COMPLIANT_CONFIG_W7='# a1-specforge — dedicated Codex home for cross-provider REVIEW runs only.
-# Created 2026-09-24 (analysis finding F-049, spec 009-cross-provider-review-gate).
-# Invariants: read-only sandbox, on-request approvals, NO MCP servers, NO plugins.
-# The claudex-loop runner overrides approval_policy per call; the sandbox and the
-# absence of MCP servers are what this file guarantees.
-sandbox_mode = "read-only"
-approval_policy = "on-request"
-cli_auth_credentials_store = "file"
-
-[features]
-plugins = false
-remote_plugin = false
-apps = false
-browser_use = false
-computer_use = false
-hooks = false
-skill_mcp_dependency_install = false
-memories = false'
+# Spec 025 W6: eight feature pins plus the two model pins = the harness's COMPLIANT_CONFIG (PIN_MODEL / PIN_EFFORT), compared byte-for-byte in RF2 and RF3.
+COMPLIANT_CONFIG_W7="$COMPLIANT_CONFIG"
 
 # The pre-Wave-7 home (two pins): what ~/.codex-a1-review held on 2026-10-02.
 OLD_CONFIG_W7='# a1-specforge — dedicated Codex home for cross-provider REVIEW runs only.
@@ -307,7 +291,7 @@ caseRF() {
   local up; up="$(cd "$PHASE_REPO" && A1_XPROV_CODEX_HOME="$old" node "$TREE_TOOLS" xprov init-home --pin-features 2>/dev/null)"; local up_rc=$?
   assert_rc "RF3 init-home --pin-features exits 0 on a two-pin home" 0 "$up_rc"
   assert_eq "RF3 the upgraded config equals the eight-pin literal" "$(cat "$old/config.toml")" "$COMPLIANT_CONFIG_W7"
-  assert_json "RF3 stdout names the seven appended pins (auth store first)" "$up" "(j.pinned || []).join(',')" "cli_auth_credentials_store,apps,browser_use,computer_use,hooks,skill_mcp_dependency_install,memories"
+  assert_json "RF3 stdout names the nine appended pins (auth store and the two model pins first)" "$up" "(j.pinned || []).join(',')" "cli_auth_credentials_store,model,model_reasoning_effort,apps,browser_use,computer_use,hooks,skill_mcp_dependency_install,memories"
   assert_eq "RF3 the config stays 0600" "$(mode_of "$old/config.toml")" "600"
   up="$(cd "$PHASE_REPO" && A1_XPROV_CODEX_HOME="$old" node "$TREE_TOOLS" xprov init-home --pin-features 2>/dev/null)"
   assert_json "RF3 a second run changes nothing" "$up" "String(j.changed) + '/' + (j.pinned || []).length" "false/0"

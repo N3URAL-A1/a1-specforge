@@ -57,7 +57,7 @@ const C = require('./xprov-common.cjs');
 const { REGISTRY_PATH, LANE_RE, DETAIL_MAX_CHARS, inputError, clip, parsePositive, sha256, isPlainObject, readIndex, sameWave, sameLane, writeStdoutSync, gitOut } = C;
 const { permitCheck, permitHint, STATES: PERMIT_STATES } = require('./xprov-permit.cjs');
 const { preflight, resolveTool } = require('./xprov-preflight.cjs');
-const { snapshot, cleanupSnapshot, INPUTS_SUFFIX, INPUT_FILES } = require('./xprov-snapshot.cjs');
+const { snapshot, cleanupSnapshot, storedInputHashes, INPUTS_SUFFIX, INPUT_FILES } = require('./xprov-snapshot.cjs');
 const { observe, MODEL_RE, runsCounted } = require('./xprov-observe.cjs');
 const HC = require('./xprov-hit-cover.cjs');
 const R = require('./xprov-recover.cjs');
@@ -68,7 +68,8 @@ const DL = require('./xprov-delta.cjs');
 const DS = require('./xprov-design.cjs');
 const AC = require('./xprov-accept.cjs');
 const { guardRefusal, readTypedLine, writeGuardedStore } = require('./xprov-approve.cjs');
-const { appendXreviewNote } = require('./xprov-normalize.cjs');
+const NZ = require('./xprov-normalize.cjs');
+const { appendXreviewNote } = NZ;
 const { dispositionsPath, priorRound, writeFeedback } = require('./xprov-feedback.cjs');
 // Owned by run (one header text, one flag name): the `--no-log` flag keeps `run`
 // from writing its own log entry when the driver writes the one entry per call.
@@ -187,7 +188,7 @@ function resolveGateArgs(o) {
   return Object.freeze({
     ...ctx, gate, isPlan: true, mode: 'review', wave, lane,
     base: null, workPath, round, explicitRound: o.round !== undefined, prior, pluginAllowlist,
-    timeout: o.timeout === undefined ? null : parsePositive(o.timeout, 'timeout'),
+    timeout: gateTimeout(o.timeout),
     enforcement: enforcementFor(gate),
   });
 }
@@ -206,7 +207,7 @@ function resolveDesignArgs(ctx, gate, o) {
   return Object.freeze({
     ...ctx, gate, isPlan: true, isDesign: true, mode: 'review', wave: null, lane: null, base: null, workPath: ctx.root, round: 1 + prior.length, explicitRound: false, prior, pluginAllowlist,
     planPath: doc.abs, doc: doc.rel, docBytes: doc.bytes, docBodySha: DS.bodyHash(doc.bytes.toString('utf8')),
-    timeout: o.timeout === undefined ? null : parsePositive(o.timeout, 'timeout'),
+    timeout: gateTimeout(o.timeout),
     enforcement: enforcementFor(gate),
   });
 }
@@ -288,6 +289,14 @@ function noteAllowlist(ctx, al) {
   appendXreviewNote(ctx.phaseDir, `Allowlisted snapshot hits · ${ctx.gate} · ${scopeOf(ctx.wave)}`, lines);
 }
 
+/** `--timeout` of a review gate: null (the runner default) or at least GATE_MIN_TIMEOUT_SECONDS (SEC-1: a tiny timeout would fake an outage). */
+function gateTimeout(value) {
+  if (value === undefined) return null;
+  const n = parsePositive(value, 'timeout');
+  if (n < X.GATE_MIN_TIMEOUT_SECONDS) throw inputError(`--timeout must be at least ${X.GATE_MIN_TIMEOUT_SECONDS} seconds for a review gate (got ${n}); a shorter limit would only make the Codex run time out`);
+  return n;
+}
+
 function stepRun(ctx, snap, inputs) {
   const argv = ['run', '--mode', ctx.mode, '--snapshot', snap, '--plan', inputs.plan, '--phase', ctx.phase, '--gate', ctx.gate, '--round', String(ctx.round)];
   if (ctx.timeout !== null) argv.push('--timeout', String(ctx.timeout));
@@ -295,7 +304,7 @@ function stepRun(ctx, snap, inputs) {
   if (inputs.feedback) argv.push('--feedback', inputs.feedback);
   const r = runSub(ctx, argv);
   if (r.status !== 0 || !r.json || typeof r.json.result_path !== 'string') {
-    return { ok: false, reason: (r.json && r.json.reason) || X.REASONS.runner_failed, detail: (r.json && r.json.reason_detail) || r.stderr || `run exited ${r.status}`, porcelain: (r.json && r.json.porcelain) || null };
+    return { ok: false, reason: (r.json && r.json.reason) || X.REASONS.runner_failed, detail: (r.json && r.json.reason_detail) || r.stderr || `run exited ${r.status}`, porcelain: (r.json && r.json.porcelain) || null, outage: (r.json && typeof r.json.outage_cause === 'string') ? r.json.outage_cause : null };
   }
   return { ok: true, resultPath: r.json.result_path, porcelain: r.json.porcelain || null };
 }
@@ -456,7 +465,11 @@ function driveGate(ctx, state) {
      (p) => stepNormalize(ctx, p, al));
     state.recovery = R.runnerRecovery(rv).reduce(addRecovery, state.recovery);
     const { ran, norm } = rv;
-    if (!ran.ok) return (result = fail('run', ran.reason, ran.detail, { ...al, run_porcelain: ran.porcelain || null }));
+    if (!ran.ok) {
+      // spec 025 W6 (FR-019): a failed Codex run (usage limit, transport error, timeout — after the bounded retries) ends Claude-only, recorded, no waiver
+      if (ran.reason === X.REASONS.runner_failed && ran.outage) { const un = recordUnavailable(ctx, base, al, ran, sentPlanSha(dl, snap)); if (un) return (result = un); }
+      return (result = fail('run', ran.reason, ran.detail, { ...al, run_porcelain: ran.porcelain || null }));
+    }
     if (al.excluded.length && !RR.writeExcluded(ran.resultPath, al.excluded, ctx.root)) return (result = fail('run', X.REASONS.malformed, 'the excluded-files record could not be written next to the run record', { ...al, result_path: ran.resultPath }));
     if (al.approved_hits.length && !HC.writeApproved(ran.resultPath, al.approved_hits, ctx.root)) return (result = fail('run', X.REASONS.malformed, 'the approved-hits record could not be written next to the run record', { ...al, result_path: ran.resultPath }));
     if (!norm.ok) return (result = fail('normalize', norm.reason, norm.detail, { ...al, result_path: ran.resultPath }));
@@ -475,6 +488,38 @@ function driveGate(ctx, state) {
     // write nothing, and an internal error must not pose as a gate entry.
     if (result) { state.logged = true; appendLog(ctx, result, snapState, state); }
   }
+}
+
+/**
+ * spec 025 W6 (FR-019): the Codex run failed. Writes a1's marker run dir and ONE index row `{verdict: not_applicable, reason: codex_unavailable}` bound to the
+ * PLAN.md sha (plan gate) or the doc + body hash (design gate), and returns the not_applicable outcome; null when the marker or the index cannot be written
+ * (the caller then keeps the plain `runner_failed`). load-check accepts the row only through the marker (xprov-accept.cjs).
+ */
+function recordUnavailable(ctx, base, al, ran, sentSha) {
+  if (!ctx.isDesign && !/^[0-9a-f]{64}$/.test(String(sentSha))) return null; // no recorded hash of what was sent: keep the plain failure
+  const key = ctx.isDesign ? { doc: ctx.doc, doc_body_sha256: ctx.docBodySha } : { plan_sha256: sentSha };
+  const index = readIndex(ctx.indexPath);
+  if (index === null) return null;
+  const resultPath = RR.writeUnavailableMarker(ctx.root, { gate: ctx.gate, ...key });
+  if (resultPath === null) return null;
+  const detail = clip(ran.detail, DETAIL_MAX_CHARS);
+  const entry = Object.freeze({ gate: ctx.gate, wave: ctx.wave, lane: ctx.lane, round: ctx.round, ts: nowIso(), verdict: X.VERDICT_NOT_APPLICABLE, reason: X.REASONS.codex_unavailable, ...key, model_requested: X.MODEL_PINNED, result_path: resultPath, reason_detail: detail });
+  fs.mkdirSync(path.dirname(ctx.indexPath), { recursive: true });
+  writeTextAtomic(ctx.indexPath, `${JSON.stringify([...index, entry], null, 2)}\n`);
+  return Object.freeze({ ...base, ...al, run_porcelain: ran.porcelain || null, result_path: resultPath, xreview_path: null, step: 'run', verdict: X.VERDICT_NOT_APPLICABLE, reason: X.REASONS.codex_unavailable, reason_detail: detail, next: null });
+}
+
+/** The sha of the PLAN.md the run was sent (SEC-5: never the live file after the run): the delta's full-plan sha, else the input hash the snapshot recorded. */
+function sentPlanSha(dl, snap) {
+  if (dl) return dl.planSha;
+  const rec = storedInputHashes(snap);
+  return rec && typeof rec.plan === 'string' ? rec.plan : null;
+}
+
+/** The stderr notice line of a not_applicable result. */
+function notApplicableNotice(r) {
+  if (r.reason === X.REASONS.codex_blocked_fallback) return R.BLOCKED_NOTICE;
+  return r.reason === X.REASONS.codex_unavailable ? AC.UNAVAILABLE_NOTICE : noticeOf(r.permit_state);
 }
 
 /** The blocked fallback is real only with a1's marker in the run dir of the second BLOCKED answer (bound to the plan sha normalize recorded). */
@@ -649,7 +694,7 @@ function cmdXprovGate(args) {
     const r = gate({ phase: f.phase, gate: f.gate, doc: f.doc, wave: f.wave, lane: f.lane, base: f.base, workPath: f['work-path'], round: f.round, timeout: f.timeout, allowPlugins: f['allow-plugins'] });
     if (r.gitleaks === false) process.stderr.write(`${GITLEAKS_WARNING_LINE}\n`);
     process.stderr.write(`xprov gate ${r.gate} ${scopeOf(r.wave)} round ${r.round}: ${r.verdict}${r.reason ? ` (${r.reason} at ${r.step})` : ''} — enforcement ${r.enforcement}\n`);
-    if (r.verdict === X.VERDICT_NOT_APPLICABLE) process.stderr.write(`xprov gate: ${r.reason === X.REASONS.codex_blocked_fallback ? R.BLOCKED_NOTICE : noticeOf(r.permit_state)}\n`);
+    if (r.verdict === X.VERDICT_NOT_APPLICABLE) process.stderr.write(`xprov gate: ${notApplicableNotice(r)}\n`);
     for (const x of r.recovery || []) process.stderr.write(`xprov gate: recovery ${x.action}: ${x.ok ? 'worked' : 'did not help'}\n`);
     if (r.step === 'permit-check' && permitHint(r.permit_state)) process.stderr.write(`xprov gate: ${permitHint(r.permit_state)}\n`);
     if (r.allowlist_note) process.stderr.write(`xprov gate: allowlist not applied: ${r.allowlist_note}\n`);

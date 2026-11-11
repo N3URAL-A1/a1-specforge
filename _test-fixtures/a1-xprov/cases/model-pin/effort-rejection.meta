@@ -1,0 +1,7 @@
+# Sibling of effort-rejection.codex-stdout.txt — provenance record (spec 025 task 6.3).
+case: effort-rejection
+origin: PLACEHOLDER (task 6.1 not done)
+what: the Codex stdout of a `codex exec` that rejected the pinned model_reasoning_effort value
+status: the stdout file holds ONE placeholder line, `PENDING-6.1 rejection capture`. The main session replaces it with the verbatim rejection
+        text measured live in task 6.1 (record/2026-11-11-gpt-6-astra-effort-measurement.md) and re-runs parts/35 (cases M9). The effort-rejection
+        pattern of xprov-normalize.cjs (EFFORT_REJECTION_RE) must match the real text; if M9 is red afterwards the pattern, not the text, is wrong.

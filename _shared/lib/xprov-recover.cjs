@@ -50,6 +50,50 @@ const TIMEOUT_RE = /\bRun timed out or was interrupted; no approval recorded\b/;
 const HTTP_5XX_RE = /\b(?:unexpected status|status(?: code)?|http(?: error)?|error)[: ]+5\d\d\b|\b5\d\d (?:Internal Server Error|Bad Gateway|Service Unavailable|Gateway Timeout)\b/i;
 const NETWORK_RE = /\b(?:error sending request|stream disconnected|connection (?:reset|refused|closed|aborted)|dns error|failed to lookup address|network is unreachable|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN)\b/i;
 
+// ---------- outage classification (spec 025 W6, FR-019; Samuel SEC-2, SEC-6) ----------
+// `codex_unavailable` is an ALLOWLIST over the RAW record of a failed run (never over the display-safe detail, in which a refusal can lose its
+// `claudex-loop: ` prefix and a validation error can look like anything): only what means "Codex itself could not answer" counts. Everything else the runner
+// records — schema, integrity and validation errors ("Invalid review verdict.", "Review must contain exactly…", "APPROVED cannot contain unresolved…",
+// "Plan changed during the run…", "CLI resumed a different session…", "CLI version probe failed…") and every pre-run refusal — stays `runner_failed` (fail).
+const TIMEOUT_MESSAGE = 'Run timed out or was interrupted; no approval recorded.'; // runner.py's own text for a killed/timed-out Codex process
+const CODEX_EXIT_RE = /^codex exited \d+(?:;|$)/; // runner.py:366 — the Codex process itself ended non-zero (usage limit, transport error, any Codex error event)
+const KILLED_RE = /^runner killed by \w+ after \d+ s$/; // xprov-run.cjs spawnRunner: the runner did not return within timeout + grace
+const USAGE_LIMIT_RE = /\busage limit\b/i;
+const OUTAGE_CAUSES = Object.freeze({ ...CAUSES, USAGE_LIMIT: 'usage_limit' });
+// SEC-7: a timeout is only a timeout when the run really lasted that long (a SIGINT or an early kill makes runner.py write the same message); small slack for rounding.
+const TIMEOUT_ELAPSED_SLACK_SECONDS = 2;
+const reachedTimeout = (r) => Number.isFinite(r.elapsedSeconds) && Number.isFinite(r.timeoutSeconds) && r.elapsedSeconds >= r.timeoutSeconds - TIMEOUT_ELAPSED_SLACK_SECONDS;
+
+/** The error texts Codex wrote itself: `{"type":"error"|"turn.failed"}` event messages of stdout.txt and plain `ERROR: …` lines. */
+function codexErrorTexts(stdoutText) {
+  const out = [];
+  for (const line of String(stdoutText || '').split('\n')) {
+    try {
+      const ev = JSON.parse(line);
+      if (ev && ev.type === 'error' && typeof ev.message === 'string') out.push(ev.message);
+      else if (ev && ev.type === 'turn.failed' && ev.error && typeof ev.error.message === 'string') out.push(ev.error.message);
+    } catch (_e) { if (/^ERROR: /.test(line)) out.push(line); }
+  }
+  return out;
+}
+
+/**
+ * The outage cause of a failed run (one of OUTAGE_CAUSES' values) or null when it is not a Codex outage. `raw` = { resultError (result.json `error`, raw), elapsedSeconds, timeoutSeconds (SEC-7),
+ * stdout (stdout.txt), stderr (stderr.txt + the runner's own stderr), runnerStderr (the runner's own stderr), status }. Pure.
+ */
+function outageCause(raw) {
+  const r = raw || {};
+  const err = typeof r.resultError === 'string' ? r.resultError.trim() : '';
+  if (err === TIMEOUT_MESSAGE) return reachedTimeout(r) ? OUTAGE_CAUSES.TIMEOUT : null;
+  if (err === '' && r.status === null && KILLED_RE.test(String(r.runnerStderr || '').trim())) return reachedTimeout(r) ? OUTAGE_CAUSES.TIMEOUT : null;
+  if (!CODEX_EXIT_RE.test(err)) return null;
+  const text = [...codexErrorTexts(r.stdout), String(r.stderr || '')].join('\n');
+  if (USAGE_LIMIT_RE.test(text)) return OUTAGE_CAUSES.USAGE_LIMIT;
+  if (HTTP_5XX_RE.test(text)) return OUTAGE_CAUSES.HTTP_5XX;
+  if (NETWORK_RE.test(text)) return OUTAGE_CAUSES.NETWORK;
+  return null; // SEC-2b: a generic Codex error (e.g. a context-window error a plan author can provoke with a bloated PLAN.md) is no proven outage: it stays runner_failed
+}
+
 /** The retryable cause of a `runner_failed` detail, or null. */
 function causeOf(reason, detail) {
   if (reason !== X.REASONS.runner_failed || typeof detail !== 'string') return null;
@@ -174,10 +218,10 @@ function snapshotWithBase(ctx, snap) {
 
 // ---------- preflight repair (FR-028) ----------
 
-// The checks the three actions fix: remove plugins/ (plugins_cache_empty), `init-home --pin-features` (the pins and the auth store key),
+// The checks the three actions fix: remove plugins/ (plugins_cache_empty), `init-home --pin-features` (the pins, the auth store key and the model/effort pins),
 // and --prune-marketplaces. A failing check outside this list — a human-set `true` stays failing, etc_codex_absent, auth_present (not_logged_in),
 // plugins_disabled, mcp_servers_absent, … — means nothing is touched.
-const REPAIRABLE_CHECKS = Object.freeze(['plugins_cache_empty', 'remote_plugin_switch', 'features_pinned_off', 'auth_store_file']);
+const REPAIRABLE_CHECKS = Object.freeze(['plugins_cache_empty', 'remote_plugin_switch', 'features_pinned_off', 'auth_store_file', 'model_pinned']); // model_pinned: spec 025 W6 — absent keys are appended; another value stays a pin_conflict
 const PLUGINS_DIR = 'plugins';
 
 /**
@@ -229,6 +273,7 @@ function preflightWithRepair(opts, pre0) {
   if (first.failed.includes('plugins_cache_empty') && !keepPlugins && removePlugins(first.codex_home)) actions.push('remove_plugins');
   const init = PF.initHome({ codexHome: first.codex_home, homedir, env: o.env, pinFeatures: true, pruneMarketplaces: true });
   if (init.pinned && init.pinned.length) actions.push('pin_features');
+  if (init.upgraded && init.upgraded.length) actions.push('upgrade_pins'); // SEC-4: a value an earlier a1 release wrote for model / effort
   if (init.pruned && init.pruned.attempted) actions.push('prune_marketplaces');
   const second = run();
   return Object.freeze({ pre: second, recovery: Object.freeze({ action: 'preflight_repair', ok: second.ok, actions, failed_before: first.failed, failed_after: second.failed }) });
@@ -236,5 +281,5 @@ function preflightWithRepair(opts, pre0) {
 
 module.exports = {
   RETRY_DELAYS_MS, RECOVERABLE_REASONS, REPAIRABLE_CHECKS, BLOCKED_NOTICE, CAUSES,
-  isRecoverable, causeOf, sleepSync, removePlugins, runWithRetry, reviewSteps, runnerRecovery, recovered, markFallback, snapshotWithBase, recomputeBase, anchorOf, preflightWithRepair, reviewHomeProblem,
+  isRecoverable, causeOf, outageCause, TIMEOUT_MESSAGE, OUTAGE_CAUSES, sleepSync, removePlugins, runWithRetry, reviewSteps, runnerRecovery, recovered, markFallback, snapshotWithBase, recomputeBase, anchorOf, preflightWithRepair, reviewHomeProblem,
 };

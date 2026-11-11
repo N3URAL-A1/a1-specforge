@@ -1,0 +1,18 @@
+# a1-specforge — dedicated Codex home for cross-provider REVIEW runs only.
+# Created 2026-09-24 (analysis finding F-049, spec 009-cross-provider-review-gate).
+# Invariants: read-only sandbox, on-request approvals, NO MCP servers, NO plugins.
+# The claudex-loop runner overrides approval_policy per call; the sandbox and the
+# absence of MCP servers are what this file guarantees.
+sandbox_mode = "read-only"
+approval_policy = "on-request"
+cli_auth_credentials_store = "file"
+
+[features]
+plugins = false
+remote_plugin = false
+apps = false
+browser_use = false
+computer_use = false
+hooks = false
+skill_mcp_dependency_install = false
+memories = false

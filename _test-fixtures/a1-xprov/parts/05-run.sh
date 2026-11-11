@@ -88,7 +88,7 @@ caseR11() {
     "j[1] + '/' + j.slice(-2).join(' ') + '/' + j.includes('--resume') + '/' + j.includes('--log')" "inspect/--base $PHASE_HEAD/false/false"
   local log="$PHASE_DIR/PLAN-REVIEW-LOG.md"
   [[ -f "$log" ]] && assert_eq "R11j PLAN-REVIEW-LOG.md gained one entry per run (verdict: pending)" "$(grep -c 'verdict: pending' "$log")" "2" || bad "R11j PLAN-REVIEW-LOG.md missing"
-  grep -q "model_requested: CLI default (unresolved)" "$log" && grep -q "gate: $GATE_PLAN" "$log" && grep -q "result: " "$log" \
+  grep -q "model_requested: $PIN_MODEL" "$log" && grep -q "gate: $GATE_PLAN" "$log" && grep -q "result: " "$log" \
     && ok "R11k log entry carries gate, model_requested and the result path" || bad "R11k log entry incomplete"
   printf 'accepted: R1\n' > "$TMP05/dispositions.md"
   # Wave 7 (Samuel MAJOR): no session is resumed; a later round is a fresh

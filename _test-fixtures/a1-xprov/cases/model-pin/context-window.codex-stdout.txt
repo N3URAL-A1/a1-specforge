@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"01a10178-bf2e-7c62-9896-d64dc02ff63e"}
+{"type":"turn.started"}
+{"type":"error","message":"Your input exceeds the context window of this model. Please adjust your input and try again."}
+{"type":"turn.failed","error":{"message":"Your input exceeds the context window of this model. Please adjust your input and try again."}}

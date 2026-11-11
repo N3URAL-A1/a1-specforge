@@ -55,6 +55,10 @@ environment when the file is absent (direct `python3 fake-runner.py` calls).
   FAKE_RUNNER_EXIT             exit code (default 0)
   FAKE_RUNNER_FAIL_ERROR       the runner's own failure: result.json status failed with this `error`
                                text (no codex stdout), exit 1 — e.g. the timeout message
+  FAKE_RUNNER_FAIL_ERROR + FAKE_RUNNER_CODEX_STDOUT together: the failed record carries the FAIL_ERROR text and stdout.txt holds the Codex output (SEC-2)
+  FAKE_RUNNER_ELAPSED          seconds written as `elapsed_seconds` into a failed record (the real runner always writes it, runner.py:380).
+                               Default: the --timeout value for the runner's own timeout message, absent otherwise (spec 025 W6 SEC-7)
+  FAKE_RUNNER_SELF_KILL=1      SIGKILL this process right after the run dir exists: the runner dies by a signal long before its timeout (SEC-7)
   FAKE_RUNNER_SEQUENCE         JSON list of knob objects, one per CALL (the last repeats): the n-th call
                                runs with those FAKE_RUNNER_* values on top of the others (spec 016 Wave 8)
   FAKE_RUNNER_COUNT_FILE       one line is appended per call; its line count selects the sequence entry
@@ -351,10 +355,24 @@ def main(argv: list[str]) -> int:
         target = Path(write_path)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text("tripwire probe\n", encoding="utf-8")
+    if k.get("FAKE_RUNNER_SELF_KILL") == "1":
+        import signal
+        os.kill(os.getpid(), signal.SIGKILL)
     fail_error = k.get("FAKE_RUNNER_FAIL_ERROR")
     if fail_error and run_dir is not None:
         failed = {"status": "failed", "mode": mode, "provider": "codex", "repo": str(Path(repo).resolve()) if repo else None,
                   "error": fail_error, "exit_code": 1}
+        codex_out = k.get("FAKE_RUNNER_CODEX_STDOUT")  # a failed record together with Codex output: the runner's own error text, Codex's events in stdout.txt
+        if codex_out:
+            src = Path(codex_out)
+            if not src.is_file() and k.get("FAKE_RUNNER_CASES_DIR"):
+                src = Path(k["FAKE_RUNNER_CASES_DIR"]) / f"{codex_out}.codex-stdout.txt"
+            shutil.copyfile(src, run_dir / "stdout.txt")
+        elapsed = k.get("FAKE_RUNNER_ELAPSED")
+        if elapsed is None and fail_error == "Run timed out or was interrupted; no approval recorded." and flag(argv, "--timeout"):
+            elapsed = flag(argv, "--timeout")
+        if elapsed is not None:
+            failed["elapsed_seconds"] = float(elapsed)
         (run_dir / "result.json").write_text(json.dumps(failed, indent=2) + "\n", encoding="utf-8")
         print(json.dumps({"provider": "codex", "model": "CLI default (unresolved)", "mode": mode, "artifacts": str(run_dir)}), flush=True)
         print(json.dumps(failed, indent=2))

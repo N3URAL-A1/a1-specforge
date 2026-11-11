@@ -33,6 +33,9 @@ const BLOCKED_MARKER_FILE = 'a1-blocked.json';
 // accepts the `accepted: dispositions` index row only through it. FINDINGS_FILE is the run-dir findings record normalize writes
 // (xprov-normalize.cjs PRIOR_FINDINGS_FILE; a fixture asserts both names stay equal).
 const DISPOSED_MARKER_FILE = 'a1-disposed.json';
+// Spec 025 W6 (FR-019): a1's marker of a gate run whose Codex call failed (usage limit, transport error, timeout). There is no result.json — the run dir
+// is created by the gate itself (`claudex-unavailable-*`, so gc sweeps it) just to hold this marker; load-check accepts `codex_unavailable` only through it.
+const UNAVAILABLE_MARKER_FILE = 'a1-unavailable.json';
 const FINDINGS_FILE = 'a1-findings.json';
 const EXCLUDED_FILE = 'a1-excluded.json'; // FR-029: unchanged files left out of the snapshot (path + rule id), next to the run record
 
@@ -112,6 +115,30 @@ function planPassValid(resultPath, planSha, root, gate) {
   return approvedAs(rec, 'review', planSha) && hasPassMarker(path.dirname(path.resolve(resultPath)), planSha, gate);
 }
 
+/**
+ * Creates the marker run dir for one `codex_unavailable` outcome in THIS repository's artifacts dir (0700, a1-unavailable.json inside, 0600) and
+ * returns the `result_path` the index row points at (`<dir>/result.json`, never written). `doc` carries gate, plan_sha256 (plan gate) or doc +
+ * doc_body_sha256 (design gate). Returns null when the dir or the marker cannot be written (the caller keeps the plain fail then).
+ */
+function writeUnavailableMarker(root, doc) {
+  try {
+    const A = require('./xprov-artifacts.cjs');
+    const dir = A.ensureArtifactsDir(A.repoSlug(root));
+    const runDir = fs.mkdtempSync(path.join(dir, 'claudex-unavailable-'));
+    fs.writeFileSync(path.join(runDir, UNAVAILABLE_MARKER_FILE), `${JSON.stringify({ version: 1, codex_unavailable: true, ...doc, ts: new Date().toISOString() }, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
+    return path.join(runDir, 'result.json');
+  } catch (_e) {
+    return null;
+  }
+}
+
+/** The run dir of `resultPath` holds a1's codex_unavailable marker for exactly this PLAN.md sha and gate, in this repository's artifacts dir. */
+function unavailableValid(resultPath, planSha, gate, root) {
+  if (!inOwnArtifacts(resultPath, root)) return false;
+  const m = readJsonNoFollow(path.join(path.dirname(path.resolve(resultPath)), UNAVAILABLE_MARKER_FILE));
+  return m !== null && m.codex_unavailable === true && m.plan_sha256 === planSha && m.gate === gate;
+}
+
 /** The run dir holds a BLOCKED answer for exactly this PLAN.md and gate, with a1's twice-blocked marker (mode review, the plan gate). */
 function blockedFallbackValid(resultPath, planSha, mode, gate, root) {
   const rec = runRecord(resultPath, root);
@@ -171,4 +198,4 @@ function declinedMarker(resultPath, want, root) {
   return m;
 }
 
-module.exports = { DELTA_MARKER_FILE, PLAN_COPY_FILE, DOC_COPY_FILE, writeDocCopy, mapDelta, writeDeltaMarker, writePlanCopy, declinedMarker, EXCLUDED_FILE, writeExcluded, REVIEWED_FILE, PASS_MARKER_FILE, BLOCKED_MARKER_FILE, DISPOSED_MARKER_FILE, FINDINGS_FILE, verifiedFindings, disposedMarker, planDisposed, blockedFallbackValid, hasPassMarker, inOwnArtifacts, readJsonNoFollow, runRecord, planPassValid };
+module.exports = { UNAVAILABLE_MARKER_FILE, writeUnavailableMarker, unavailableValid, DELTA_MARKER_FILE, PLAN_COPY_FILE, DOC_COPY_FILE, writeDocCopy, mapDelta, writeDeltaMarker, writePlanCopy, declinedMarker, EXCLUDED_FILE, writeExcluded, REVIEWED_FILE, PASS_MARKER_FILE, BLOCKED_MARKER_FILE, DISPOSED_MARKER_FILE, FINDINGS_FILE, verifiedFindings, disposedMarker, planDisposed, blockedFallbackValid, hasPassMarker, inOwnArtifacts, readJsonNoFollow, runRecord, planPassValid };

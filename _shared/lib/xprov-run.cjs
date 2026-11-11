@@ -90,7 +90,9 @@ const { REGISTRY_PATH, LANE_RE, sha256, isDir, isFile, gitOut, writeStdoutSync, 
 const tail = C.stderrTail;
 const none = C.oneLine;
 const { ensureArtifactsDir, isUnder, sweepRunHomes } = require('./xprov-artifacts.cjs');
-const { appendXreviewNote } = require('./xprov-normalize.cjs');
+const NZ = require('./xprov-normalize.cjs');
+const RC = require('./xprov-recover.cjs');
+const { appendXreviewNote } = NZ;
 const { filterOutput, instructionMarker } = require('./xprov-filter.cjs');
 const { permitCheck } = require('./xprov-permit.cjs');
 const { homeSymlinks, skillsDirsProblem, resolveTool } = require('./xprov-preflight.cjs');
@@ -526,16 +528,41 @@ function runnerFailureDetail(run) {
   return `runner exited ${run.status}${line ? `: ${line}` : ''}`;
 }
 
+const REJECTION_SCAN_MAX_BYTES = 256 * 1024; // how much of Codex's own stdout/stderr is scanned for an effort rejection
+
+/** The raw text a failed Codex run left (stdout.txt, stderr.txt of the run dir, the runner's own stderr), bounded; only ever matched, never reported. */
+function rejectionText(run) {
+  const part = (p) => readIfFile(p).slice(0, REJECTION_SCAN_MAX_BYTES);
+  const files = run.runDir ? ['stdout.txt', 'stderr.txt'].map((n) => part(path.join(run.runDir, n))) : [];
+  return [...files, String(run.stderr || '').slice(0, REJECTION_SCAN_MAX_BYTES)].join('\n');
+}
+
+/** The RAW record of a failed run for RC.outageCause (spec 025 W6 SEC-2): result.json `error` as written by the runner, stdout.txt, stderr.txt + the runner's stderr. Bounded; never reported. */
+function rawFailure(run) {
+  const part = (n) => (run.runDir ? readIfFile(path.join(run.runDir, n)).slice(0, REJECTION_SCAN_MAX_BYTES) : '');
+  let resultError = null;
+  let elapsed = run.elapsedSeconds; // the runner's own measure (result.json) wins over the wall time of the spawn
+  try {
+    const rec = JSON.parse(part('result.json') || 'null');
+    if (rec && typeof rec.error === 'string') resultError = rec.error;
+    if (rec && typeof rec.elapsed_seconds === 'number') elapsed = rec.elapsed_seconds;
+  } catch (_e) { resultError = null; }
+  const runnerStderr = String(run.stderr || '').slice(0, REJECTION_SCAN_MAX_BYTES);
+  return { resultError, stdout: part('stdout.txt'), stderr: `${part('stderr.txt')}\n${runnerStderr}`, runnerStderr, status: run.status, elapsedSeconds: elapsed, timeoutSeconds: run.timeoutSeconds };
+}
+
 /** The snapshot root must be stripped: its own `.agents/skills` would be a skill root. */
 function unstrippedEntries(snapshot) {
   return REPO_LOCAL_STRIP.filter((name) => fs.existsSync(path.join(snapshot, name)));
 }
 
 function spawnRunner(argv, ctx, artifactsDir, runHome) {
+  const t0 = Date.now();
   const r = spawnSync(argv[0], argv.slice(1), spawnOptions(ctx, runHome));
-  if (r.error) return { status: null, stdout: r.stdout || '', stderr: `spawn failed: ${r.error.code || r.error.message}`, runDir: runDirFromStdout(r.stdout, artifactsDir) };
-  if (r.signal) return { status: null, stdout: r.stdout || '', stderr: `runner killed by ${r.signal} after ${ctx.timeout + SPAWN_GRACE_SECONDS} s`, runDir: runDirFromStdout(r.stdout, artifactsDir) };
-  return { status: r.status, stdout: r.stdout || '', stderr: r.stderr || '', runDir: runDirFromStdout(r.stdout, artifactsDir) };
+  const timing = { elapsedSeconds: (Date.now() - t0) / 1000, timeoutSeconds: ctx.timeout }; // measured wall time: SEC-7 counts a kill or the timeout message as a timeout only after that long
+  if (r.error) return { status: null, stdout: r.stdout || '', stderr: `spawn failed: ${r.error.code || r.error.message}`, runDir: runDirFromStdout(r.stdout, artifactsDir), ...timing };
+  if (r.signal) return { status: null, stdout: r.stdout || '', stderr: `runner killed by ${r.signal} after ${ctx.timeout + SPAWN_GRACE_SECONDS} s`, runDir: runDirFromStdout(r.stdout, artifactsDir), ...timing };
+  return { status: r.status, stdout: r.stdout || '', stderr: r.stderr || '', runDir: runDirFromStdout(r.stdout, artifactsDir), ...timing };
 }
 
 function removeRunDir(dir, artifactsDir) {
@@ -572,7 +599,7 @@ function appendLog(ctx, entry) {
   const lines = [
     `## ${ctx.ts} · ${ctx.gate} · ${ctx.mode} · round ${ctx.round}${ctx.wave === null ? '' : ` · wave ${ctx.wave}`}${ctx.lane ? ` · lane ${none(ctx.lane)}` : ''}`,
     `- gate: ${ctx.gate}`, `- mode: ${ctx.mode}`, `- round: ${ctx.round}`, `- lane: ${none(ctx.lane)}`,
-    `- roles: ${none(entry.roles)}`, `- model_requested: ${X.MODEL_REQUESTED_DEFAULT}`,
+    `- roles: ${none(entry.roles)}`, `- model_requested: ${X.MODEL_PINNED}`,
     `- result: ${none(entry.result_path)}`, `- verdict: ${none(entry.verdict)}`,
     `- snapshot: ${none(ctx.snapshot)}`,
     ...Object.entries(entry.notes).map(([k, v]) => `- ${k}: ${v}`),
@@ -729,9 +756,15 @@ function judgeRun(ctx, o, run, artifactsDir, delta, baselinePath, seen) {
   // the phase dir must never read as a reviewer write.
   noteRunHome(ctx, seen.run_home_manifest);
   if (run.status !== 0) {
+    // spec 025 W6 (FR-016): Codex refusing the pinned effort value is a preflight failure (a1's pin is wrong), not an outage; the detail is fixed text, never Codex's
+    if (NZ.isEffortRejection(rejectionText(run))) {
+      const pinned = `Codex rejected the pinned model_reasoning_effort "${X.EFFORT_PINNED}" for model "${X.MODEL_PINNED}"; fix EFFORT_PINNED in xprov.cjs`;
+      process.stderr.write(`xprov run: ${pinned}\n`);
+      return o.failWith(X.REASONS.preflight_failed, pinned, run.runDir, false, seen);
+    }
     const why = runnerFailureDetail(run);
     process.stderr.write(`xprov run: runner failed: ${why}\n`);
-    return o.failWith(X.REASONS.runner_failed, why, run.runDir, false, seen);
+    return o.failWith(X.REASONS.runner_failed, why, run.runDir, false, { ...seen, outage_cause: RC.outageCause(rawFailure(run)) }); // the gate maps a non-null cause to codex_unavailable
   }
   const bad = resultFileProblem(run);
   if (bad) return o.failWith(bad.reason, bad.detail, run.runDir, bad.keep, seen);

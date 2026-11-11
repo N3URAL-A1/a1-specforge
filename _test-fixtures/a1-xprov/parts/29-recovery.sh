@@ -10,7 +10,7 @@
 #   RC0  the real delays are 30 s then 120 s; the harness rewrote the copy; sleepSync waits                              [mutants D1, D2]
 #   RC1  network failure, then ok: two runner calls, pass, attempts recorded                                              [mutant R1]
 #   RC2  two failures, then ok: three calls, waited 0/1/2 ms (the delay of retry n is delays[n-1])                        [mutant R2]
-#   RC3  three failures: stops with runner_failed after exactly three calls, the record says so                          [mutant R3]
+#   RC3  three failures: stops after exactly three calls, ends not_applicable/codex_unavailable (spec 025 W6), the record says so                          [mutant R3]
 #   RC4  timeout message and HTTP 503 are retried                                                                         [mutants R4, R5]
 #   RC5  usage limit, runner refusal, malformed result: one call, no recovery                                             [mutant R6]
 #   RC6  hostile: instruction-shaped error, oversized error                                                                [mutant R7]
@@ -139,16 +139,16 @@ caseRC1() {
   redproof29 "RC1" scen_rc1 "$RETRY1" xprov-recover.cjs "i < RETRY_DELAYS_MS.length && !r.ok" "i < 0 && !r.ok"
   assert_eq "RC2 two failures, then ok: three calls, the delay of retry n is delays[n-1]" "$(scen_rc2)" "0/pass/null/3/runner_retry:runner_failed@0,runner_failed@1,ok@2"
   redproof29 "RC2" scen_rc2 "0/pass/null/3/runner_retry:runner_failed@0,runner_failed@1,ok@2" xprov-recover.cjs "const ms = RETRY_DELAYS_MS[i];" "const ms = RETRY_DELAYS_MS[0];"
-  assert_eq "RC3 three failures stop after exactly three calls with runner_failed" "$(scen_rc3)" "1/fail/runner_failed/3/runner_retry:runner_failed@0,runner_failed@1,runner_failed@2"
-  redproof29 "RC3" scen_rc3 "1/fail/runner_failed/3/runner_retry:runner_failed@0,runner_failed@1,runner_failed@2" xprov-recover.cjs "i < RETRY_DELAYS_MS.length && !r.ok" "i < 9 && !r.ok"
+  assert_eq "RC3 three failures stop after exactly three calls and end not_applicable/codex_unavailable (spec 025 W6)" "$(scen_rc3)" "1/not_applicable/codex_unavailable/3/runner_retry:runner_failed@0,runner_failed@1,runner_failed@2"
+  redproof29 "RC3" scen_rc3 "1/not_applicable/codex_unavailable/3/runner_retry:runner_failed@0,runner_failed@1,runner_failed@2" xprov-recover.cjs "i < RETRY_DELAYS_MS.length && !r.ok" "i < 9 && !r.ok"
   assert_eq "RC4a the runner's timeout message is retried" "$(scen_rc4a)" "$RETRY1"
   redproof29 "RC4a" scen_rc4a "$RETRY1" xprov-recover.cjs "if (TIMEOUT_RE.test(detail)) return CAUSES.TIMEOUT;" "if (false) return CAUSES.TIMEOUT;"
   assert_eq "RC4b an HTTP 503 answer is retried" "$(scen_rc4b)" "$RETRY1"
   redproof29 "RC4b" scen_rc4b "$RETRY1" xprov-recover.cjs "if (HTTP_5XX_RE.test(detail)) return CAUSES.HTTP_5XX;" "if (false) return CAUSES.HTTP_5XX;" xprov-recover.cjs "if (NETWORK_RE.test(detail)) return CAUSES.NETWORK;" "if (false) return CAUSES.NETWORK;"
 }
 caseRC5() {
-  assert_eq "RC5a the usage limit is not retried (one call)" "$(scen_rc5a)" "1/fail/runner_failed/1/none"
-  redproof29 "RC5a" scen_rc5a "1/fail/runner_failed/1/none" xprov-recover.cjs "const NETWORK_RE = /\\b(?:error sending request" "const NETWORK_RE = /(?:|error sending request"
+  assert_eq "RC5a the usage limit is not retried (one call) and ends codex_unavailable" "$(scen_rc5a)" "1/not_applicable/codex_unavailable/1/none"
+  redproof29 "RC5a" scen_rc5a "1/not_applicable/codex_unavailable/1/none" xprov-recover.cjs "const NETWORK_RE = /\\b(?:error sending request" "const NETWORK_RE = /(?:|error sending request"
   assert_eq "RC5b a refusal of the runner (local error) is not retried" "$(scen_rc5b)" "1/fail/runner_failed/1/none"
   assert_eq "RC5c a malformed result is not a runner failure and is not retried" "$(scen_rc5c)" "1/fail/malformed/1/none"
 }
@@ -445,8 +445,8 @@ scen_ob9() { node -e "const G = require(process.argv[1] + '/_shared/lib/xprov-ga
 caseOB() {
   assert_eq "OB1 a passing run appends one line with the four fields" "$(scen_ob1)" "$OB1"
   redproof29 "OB1" scen_ob1 "$OB1" xprov-observe.cjs "return Object.freeze({ ...obs, ...runFieldsOf(o) });" "return Object.freeze({ ...obs });"
-  assert_eq "OB2 three runner failures: one line, abort_reason runner_failed, recovered false" "$(scen_ob2)" "1/plan-review-xprov/0/1/runner_failed/false"
-  redproof29 "OB2" scen_ob2 "1/plan-review-xprov/0/1/runner_failed/false" xprov-gate.cjs "if (!state.observed) {" "if (false) {"
+  assert_eq "OB2 three runner failures: one line, no abort_reason (not_applicable/codex_unavailable is no failure), recovered false" "$(scen_ob2)" "1/plan-review-xprov/0/1/null/false"
+  redproof29 "OB2" scen_ob2 "1/plan-review-xprov/0/1/null/false" xprov-gate.cjs "if (!state.observed) {" "if (false) {"
   assert_eq "OB3 a recovery that worked: recovered true, still one Codex run" "$(scen_ob3)" "1/plan-review-xprov/0/1/null/true"
   redproof29 "OB3" scen_ob3 "1/plan-review-xprov/0/1/null/true" xprov-recover.cjs "const recovered = (notes) => notes.some((n) => n.ok === true);" "const recovered = (notes) => false;"
   assert_eq "OB4 a preflight failure: one line, no Codex run, abort_reason preflight_failed" "$(scen_ob4)" "1/plan-review-xprov/0/0/preflight_failed/false"

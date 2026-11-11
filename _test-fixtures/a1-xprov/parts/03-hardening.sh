@@ -65,7 +65,7 @@ caseR18() {
   make_phase p18t "$CASES/approved.PLAN.md"; run_n3 "$TMP03/r18-taint.result.json" p18t
   assert_json "R18t1 tainted record → secret_in_output; model fields fall back to the literals, cli_version null" "$N_OUT" \
     "j.reason + '/' + j.index_entry.model_requested + '/' + j.index_entry.model_observed + '/' + j.index_entry.cli_version" \
-    "secret_in_output/CLI default (unresolved)/unknown/null"
+    "secret_in_output/$PIN_MODEL/unknown/null"
   local leaks=0; for tok in "$t1" "$t2" "$t3"; do
     [[ "$N_OUT" == *"$tok"* ]] && leaks=$((leaks + 1)); grep -q "$tok" "$PHASE_DIR/XREVIEW.md" && leaks=$((leaks + 1)); grep -q "$tok" "$PHASE_DIR/xreview/index.json" && leaks=$((leaks + 1))
   done

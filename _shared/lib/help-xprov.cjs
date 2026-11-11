@@ -321,13 +321,19 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   artifacts dir) + the dispositions file, scanned and copied
                   like the PLAN.md; next.round_cmd shows the call. Enforcement (warning|blocking) is READ
                   from the registry row and echoed in stdout, never applied here.
-                  --round and --timeout count from 1.
+                  --round counts from 1; --timeout is at least 60 seconds (a shorter limit is a usage error, exit 2).
                   Self-recovery (spec 016 FR-024..028, FR-031; xprov-recover.cjs;
                   recovery in stdout and in the log entry): runner_failed caused
                   by network, timeout or HTTP 5xx is retried twice (30 s, 120 s);
                   a blocked answer is repeated once, a second one is not_applicable /
                   codex_blocked_fallback (load-check accepts it,
-                  Reinhard is the only review, nobody is asked); a snapshot whose
+                  Reinhard is the only review, nobody is asked); a failed Codex
+                  run (usage limit, transport error, timeout; after those retries)
+                  ends not_applicable / codex_unavailable only for a Codex outage — usage limit,
+                  transport error, timeout; every runner validation or integrity error
+                  stays a failure (spec 025 FR-019:
+                  recorded in index.json, load-check accepts it, no waiver; a
+                  rejected pinned effort stays fail / preflight_failed); a snapshot whose
                   base does not resolve is retried once on the merge-base with the
                   default branch (fetched when missing); a preflight_failed that
                   only plugins/ removal, init-home --pin-features and
