@@ -229,3 +229,8 @@ gate0: selector parsing (Samuel) → PASS: exact string match against discovered
 gate0: a1-vault-cockpit run directly under LC_ALL=en_US.UTF-8 aborts at parts/05b-writer.sh:247 (`H_LOCKS: unbound variable`) because the parts glob orders 05b-writer.sh before 05-hosts.sh; under LC_ALL=C (CI, runner via FR-027) the order is right and the suite is green; same on a clean `git archive HEAD` → not caused by this wave
 gate0: flake noted → K10/X8 (parts/06, 07) compare the real per-uid lock dir and fail while another real runner run is active
 gate2: SKIPPED preview deploy (test tooling, no web app)
+
+## Wave 5 — P1 close-out (in progress, 2026-11-11, aiserver)
+
+gate0: 5.1 CONVENTIONS.md documents the runner; documented commands re-run by the main session → dir selector `a1-gates-lint` exit 0, unknown selector exit 2, `--help` and `a1-gates-lint/run-wave13.sh` PASS
+gate0: README.md:183 runner count 57 → 58 (this branch adds a1-suite-runner/run-tests.sh; a1-gates-lint N1 then 90/0). Cross-scope one-line edit in a file held by spec 024, which also sets 58 on its branch: whichever of the two PRs lands second sets 59 (N1 catches it)

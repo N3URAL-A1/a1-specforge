@@ -3,11 +3,19 @@
 Every CLI change needs fixture coverage. Suites live at
 `_test-fixtures/<suite>/run-tests.sh` — this is the standardized name across
 all suites (the historical mix of `run.sh` / `run-test.sh` / `run-tests.sh`
-was unified 2026-07-12). Run all of them with:
+was unified 2026-07-12). Run them with the parallel runner (spec 026-fast-fixture-suites):
 
 ```bash
-for r in _test-fixtures/*/run*.sh; do bash "$r" || break; done
+bash bin/run-suites.sh                                   # full run, all discovered suites
+bash bin/run-suites.sh a1-gates-lint                     # subset: every runner in one directory
+bash bin/run-suites.sh a1-gates-lint/run-wave13.sh       # subset: one suite identity
 ```
+
+The runner prints the log directory first (`log dir: ...`, one log per suite) and ends with a timing
+table. Exit codes: 0 all green, 1 a suite failed (or the leak/reconcile check), 2 usage or
+configuration error (nothing started). Workers run with `LC_ALL=C` and an isolated HOME and vault
+(empty sentinel `A1_VAULT_ROOT`), like CI. `bash bin/run-suites.sh --help` lists the options.
+Fallback, sequential: `for r in _test-fixtures/*/run*.sh; do bash "$r" || break; done`
 
 ## Runner pattern
 
@@ -230,3 +238,33 @@ fresh plan-review rounds, input boundary, path names) carry their arm → mutati
 `a1-xprov/parts/09-runner-isolation.sh` and `a1-xprov/parts/10-outbound-scan.sh`; each
 mutation there was run on a tar copy and killed its named arm (control runs without an
 edit stayed green).
+
+## RED proof instances (spec 026-fast-fixture-suites)
+
+Each guard was proven red by one production-code change on a `git archive` snapshot (copied from the
+part headers; the runner suite is `_test-fixtures/a1-suite-runner/`, parts under `parts/`).
+
+| Guard | Case ids | Red-making change |
+|---|---|---|
+| Discovery (glob + parser runner) | D1a-e | drop the `run-parser.sh` append; widen glob to `*/*/run*.sh`; bare `*.sh` glob |
+| Declaration file | D3, D4-D6 | key shape unchecked; no exit 2 on missing/invalid file, or exit 2 after the pool started |
+| Worker count | P1a-f, P2a-c | drop `- 2`, clamp to 6, clamp to 1, sysctl fallback; accept 0 / non-number / negative |
+| Pool bound, serial group | P3a/b, P4a-d | widen or remove the pool bound; run sequentially; `serial` entries treated as pool members |
+| Isolation environment | I1a-f | keep outer HOME; drop `A1_HOST_ID=leak`; drop `-u A1_VAULT_WRITER_HOST`; shared or pass-through sentinel vault |
+| Sentinel leak check, work dir | L1a-d, H1 | drop the emptiness check or `head -3`; keep the work dir |
+| a1-reconcile restore | R1a-c, R2-R4 | drop the `git checkout HEAD -- _test-fixtures/a1-reconcile` restore; restore over local edits; no skip line outside git; run unselected |
+| Logs, table, failure output | G1a-d, T1a-e, F1a-d, U1a-e | stdout-only log; log name without dir; ascending sort; drop count column or a row; failure line without log path; no `signal 15`; stop at first failure; identity shortened to basename |
+| Assert-summary parser | C1a-e, N1a-c | drop one of the three regexes; first instead of last match; accept the parser PASS line; drop the `no_count` lookup or its report line |
+| Lock | K1-K10 | lock ignored; holder PID not named; refused run creates logs; dead PID or live unrelated PID blocks; takeover guard dropped; unguarded release; symlink lock path accepted; seam ignored; lock never released |
+| Interrupts | X1-X5 | signal `$!` not the process group; lock never created/released; SIGINT trap missing; wrong exit code; work dir left |
+| Security (SEC-1..5) | S1-S5 | base without per-user suffix or with link/writable base; guard link accepted; predictable stale target; takeover without contents check or relative seam; pid read through a symlink |
+| Subset selection | U1-U6 | arguments ignored; no header; directory selector matches too little; unknown selector not exit 2; selection after lock/dirs; empty selector tolerated |
+| Worker locale (FR-027) | U8 | remove `export LC_ALL=C` in `bin/run-suites.sh` |
+| Real stores untouched | V1, V2, V4, V5 | `A1_SUITE_REAL_VAULT` not exported; exported empty / stale; worker keeps the runner's HOME; V5 detector self-proof (a write into the outer vault changes the digest) |
+| Failure and read-only dirs | F1, F2, F4-F6 | exit 0 after a failure; `FAILED:` line without identity or log path; read-only TMPDIR / log base / lock parent not exit 2 |
+| I1 handshake (`a1-vault-cockpit` 04d) | valid, absent, dead PID, mismatch, unrelated, decoy | drop the early `return 0`; skip when marker unset; drop `rs_lock_is_runner`; drop `held == id`; drop the command-line check; drop `i_is_ancestor` |
+| Suite isolation (`a1-vault-cockpit` 04c, pre-026) | I1, I1-exit, I2 | delete `unset A1_VAULT_ROOT` from a product suite; drop the rc assertion; drop the a1-reconcile restore |
+
+No dedicated mutation exists for U7 (overlapping selectors start a suite twice), F3 (failing suite
+dropped from the table) and V3 (A1_SUITE_REAL_VAULT exported after the sentinel replaced it). The
+part headers list a change, but STATUS records them as covered only indirectly.
