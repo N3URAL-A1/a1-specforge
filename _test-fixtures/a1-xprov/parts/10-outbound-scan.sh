@@ -230,8 +230,8 @@ caseO9() {
   local out; out="$(cd "$R8" && node "$TREE_TOOLS" xprov snapshot --repo "$R8" --commit HEAD --base "$BASE10" 2>/dev/null)"
   local snap; snap="$(json_get "$out" "j.snapshot || ''")"
   if [[ -n "$snap" && -d "$snap/.git" ]]; then
-    git -C "$snap" cat-file -e "$mid^{commit}" 2>/dev/null && bad "O9 the intermediate commit holding the key is in the snapshot" || ok "O9 the intermediate commit is not in the snapshot"
-    git -C "$snap" cat-file -e "$BASE10^{commit}" 2>/dev/null && ok "O9 base is in the snapshot" || bad "O9 base missing from the snapshot"
+    git_in "$snap" cat-file -e "$mid^{commit}" 2>/dev/null && bad "O9 the intermediate commit holding the key is in the snapshot" || ok "O9 the intermediate commit is not in the snapshot"
+    git_in "$snap" cat-file -e "$BASE10^{commit}" 2>/dev/null && ok "O9 base is in the snapshot" || bad "O9 base missing from the snapshot"
   else
     assert_json "O9 or the snapshot fails" "$out" "j.ok" "false"
   fi

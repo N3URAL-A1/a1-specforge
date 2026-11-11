@@ -28,6 +28,9 @@ If `main..HEAD` is empty: BLOCKER, no commits to review. Abort.
 
 ### 2.2 Spawn a1-reinhard-reviewer via Agent tool
 
+Run the 2.2b scope check FIRST (it only reads git, no spawn), then spawn Reinhard here and, when the surface is hit, Samuel in the same
+turn, so both review in parallel.
+
 Use the `Agent` tool with `subagent_type: "a1-reinhard-reviewer"`. The brief MUST
 include:
 
@@ -54,7 +57,7 @@ handling, input validation. Use the project's CLAUDE.md and rules as the
 review baseline.
 ```
 
-Wait for a1-reinhard-reviewer's response.
+The spawn of a1-reinhard-reviewer is issued together with the 2.2b one; wait for the responses of both in 2.3.
 
 ### 2.2b Security-surface check -> a1-samuel-security
 
@@ -77,7 +80,7 @@ Read the JSON field `security_surface`:
   frontmatter). Start it in the same turn as the 2.2 spawn so both review in parallel. Brief: worktree path, branch, diff range
   `<BASE_SHA>...HEAD` (run from the worktree), the `matched` paths of the scope output, and "return one JSON block at the end of your
   response, fenced with ```json, with the arrays `blocker`, `major`, `minor`; each entry `{file, line, title, detail}`; add a one-paragraph `summary`".
-  Wait for the response and parse the fenced block like 2.3. STOP when the Samuel spawn fails or the response holds no JSON block:
+  Parse the fenced block like 2.3 once the response is in. STOP when the Samuel spawn fails or the response holds no JSON block:
   print `STOP: samuel review missing (spawn failed or no JSON block), no merge`, report it to the user, and do not go to Phase 3 or 5.
   A silent skip is not allowed: the detector fired.
 - `false`: no Samuel spawn. Reinhard-only. Note `security surface: none` for the PR body (03-draft omits the Samuel section).

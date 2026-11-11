@@ -48,7 +48,7 @@ redproof32() { # <name> <scenario fn> <expected> <lib-file> <from> <to>
 # prep32 [permit|none] — a repo with a phase p32, a local bare origin on main, a review home; the feature branch `feat` is checked out
 prep32() {
   make_phase p32
-  ORIGIN32="$(mktemp -d "$TMP32/origin.XXXXXX")"; git init -q --bare "$ORIGIN32"; git -C "$ORIGIN32" symbolic-ref HEAD refs/heads/main
+  ORIGIN32="$(mktemp -d "$TMP32/origin.XXXXXX")"; git init -q --bare "$ORIGIN32"; git_in "$ORIGIN32" symbolic-ref HEAD refs/heads/main
   git -C "$PHASE_REPO" remote add origin "$ORIGIN32"; git -C "$PHASE_REPO" branch -M main
   printf '## Wave 1 — one\n' > "$PHASE_DIR/STATUS.md"
   rm -rf "$STORE32"

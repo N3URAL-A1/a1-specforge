@@ -97,9 +97,8 @@ const SUB_MAX_BUFFER = 64 * 1024 * 1024;
 // uses for its own collision check, which keeps both sides on one number.
 const REASON_MAX_CHARS = DETAIL_MAX_CHARS;
 const BY_MAX_CHARS = 64;
-// Spec 014 FR-011: a blocking gate needs gitleaks; the detail starts with the code `run` reports as well.
-const GITLEAKS_MISSING_DETAIL = 'gitleaks_missing — gitleaks is required for blocking gates — install it (brew install gitleaks) and re-run';
-const GITLEAKS_WARNING_LINE = 'xprov gate: warning gitleaks not on PATH — patterns-only secret scan';
+// Spec 014 FR-011, SEC-2: every gate that sends to Codex needs gitleaks; the detail starts with the code `run` reports as well.
+const GITLEAKS_MISSING_DETAIL = 'gitleaks_missing — gitleaks is required for every gate that sends to Codex — install it (brew install gitleaks) and re-run';
 const RESUME_GONE = 'gate: --resume/--feedback are not accepted — every round is a fresh session; round N ≥ 2 builds its feedback from the round N−1 findings and the dispositions file';
 
 // ---------- small helpers ----------
@@ -413,9 +412,9 @@ function passFor(ctx) {
   return hits.length ? hits[hits.length - 1] : null;
 }
 
-/** spec 025 W5: the newest pass for exactly this doc body in any phase (xprov-design.findPass), shaped like passFor's entry. Request-scoped, no cache. */
+/** spec 025 W5/FR-014: the newest recorded real Codex verdict (pass or fail-with-findings) for exactly this doc body in any phase (xprov-design.findRecorded). Request-scoped, no cache. */
 function designPassReuse(ctx) {
-  return DS.findPass(ctx.root, ctx.doc, ctx.docBodySha);
+  return DS.findRecorded(ctx.root, ctx.doc, ctx.docBodySha);
 }
 
 function driveGate(ctx, state) {
@@ -435,8 +434,14 @@ function driveGate(ctx, state) {
     return fail('permit-check', everyRepo ? X.REASONS.external_review_not_permitted : permit.reason, everyRepo ? `external_review: denied, but ${ctx.gate} applies to every repository` : permit.detail, { permit_state: permit.state });
   }
   // spec 025 W4 (one run per state): an unchanged PLAN.md that already holds a valid pass is answered from it, no runner call (same proof as load-check)
-  const reused = ctx.isDesign ? designPassReuse(ctx) : (ctx.explicitRound ? null : passFor(ctx)); // an explicit --round is a deliberate re-run and is never answered from a pass
-  if (reused) { const r = Object.freeze({ ...base, verdict: X.VERDICTS.PASS, step: 'reuse', reason: null, reason_detail: ctx.isDesign ? 'unchanged_design_pass_reused' : 'unchanged_plan_pass_reused', result_path: reused.result_path || null, xreview_path: reused.xreview_path || null, next: null }); state.logged = true; state.observed = true; appendLog(ctx, r, 'none', state); return r; } // observed = true: no run, so no run observation
+  const reusedDesign = ctx.isDesign ? designPassReuse(ctx) : null;
+  const reused = ctx.isDesign ? (reusedDesign && reusedDesign.entry) : (ctx.explicitRound ? null : passFor(ctx)); // an explicit --round is a deliberate re-run and is never answered from a pass
+  if (reused) {
+    const failed = reusedDesign !== null && reusedDesign.kind === X.VERDICTS.FAIL_WITH_FINDINGS; // FR-014: an unchanged doc with a recorded REVISE is answered from it, findings included
+    const detail = ctx.isDesign ? (failed ? 'unchanged_design_result_reused' : 'unchanged_design_pass_reused') : 'unchanged_plan_pass_reused';
+    const r = Object.freeze({ ...base, verdict: failed ? X.VERDICTS.FAIL_WITH_FINDINGS : X.VERDICTS.PASS, step: 'reuse', reason: null, reason_detail: detail, findings_path: failed ? reusedDesign.findings_path : null, result_path: reused.result_path || null, xreview_path: reused.xreview_path || null, next: null });
+    state.logged = true; state.observed = true; appendLog(ctx, r, 'none', state); return r; // observed = true: no run, so no run observation
+  }
   const dl = ctx.isDesign ? null : DL.prepare(ctx); // FR-030: after a passed plan review only the changed sections go out; a cosmetic edit sends nothing
   if (dl && dl.kind === 'cosmetic') { const r = DL.passResult(base, dl); state.logged = true; appendLog(ctx, r, 'none', state); return r; }
   if (!ctx.isDesign && ctx.round > X.ROUND_CAP) { DL.cleanup(dl); const r = fail('round', X.REASONS.round_cap, `round ${ctx.round} > cap ${X.ROUND_CAP}`); state.logged = true; appendLog(ctx, r, 'none', state); return r; }
@@ -450,8 +455,8 @@ function driveGate(ctx, state) {
     state.recovery = addRecovery(state.recovery, fixed.recovery);
     const pre = fixed.pre;
     if (!pre.ok) return (result = fail('preflight', pre.reason, pre.failed.join(', ')));
-    // FR-011: a blocking gate does not degrade to patterns-only; no snapshot is made without gitleaks.
-    if (ctx.enforcement === 'blocking' && resolveTool('gitleaks') === null) return (result = fail('preflight', X.REASONS.preflight_failed, GITLEAKS_MISSING_DETAIL));
+    // FR-011 / SEC-2: no gate that sends to Codex degrades to patterns-only (blocking or warning, plan or design); no snapshot is made without gitleaks.
+    if (resolveTool('gitleaks') === null) return (result = fail('preflight', X.REASONS.preflight_failed, GITLEAKS_MISSING_DETAIL));
     if (prior) feedback = writeFeedback(prior);
     const sb = R.snapshotWithBase(ctx, (b) => stepSnapshot(b === ctx.base ? dctx : Object.freeze({ ...dctx, base: b }), feedback));
     state.recovery = addRecovery(state.recovery, sb.recovery);
@@ -692,7 +697,6 @@ function cmdXprovGate(args) {
   return withFlags(args, known, 'gate', (f) => {
     if (!f.gate || !f.phase) return usageExit('gate requires --phase <name> --gate <id>');
     const r = gate({ phase: f.phase, gate: f.gate, doc: f.doc, wave: f.wave, lane: f.lane, base: f.base, workPath: f['work-path'], round: f.round, timeout: f.timeout, allowPlugins: f['allow-plugins'] });
-    if (r.gitleaks === false) process.stderr.write(`${GITLEAKS_WARNING_LINE}\n`);
     process.stderr.write(`xprov gate ${r.gate} ${scopeOf(r.wave)} round ${r.round}: ${r.verdict}${r.reason ? ` (${r.reason} at ${r.step})` : ''} — enforcement ${r.enforcement}\n`);
     if (r.verdict === X.VERDICT_NOT_APPLICABLE) process.stderr.write(`xprov gate: ${notApplicableNotice(r)}\n`);
     for (const x of r.recovery || []) process.stderr.write(`xprov gate: recovery ${x.action}: ${x.ok ? 'worked' : 'did not help'}\n`);

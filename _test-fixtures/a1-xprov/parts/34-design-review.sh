@@ -12,7 +12,7 @@
 #   D5  body edit: exactly 1 new call, new hash                              Red if the hash ignores the body.
 #   D6  pass reused from ANOTHER phase's index                               Red if the lookup reads the current phase only.
 #   D7  plan gate re-run on an unchanged PLAN.md: 0 calls                    Red if the plan reuse is lost.
-#   D8  fail-with-findings is not reused, no round cap, no next round        Red if a design REVISE is reused, capped or offered a round 2.
+#   D8  unchanged fail-with-findings is reused (0 calls, findings path), body edit re-sends, malformed retries   Red if findRecorded reuses passes only, or reuses a non-verdict.
 #   D9  planted secret -> secret_in_snapshot, 0 calls; tripwire -> tripwire  Red if the doc skips the snapshot scan or the tripwire path.
 #   D10 snapshot holds only the named file                                   Red if the whole tree goes into the snapshot.
 #   D11 no permit: design and plan gate side by side                         Red if the design gate skips the permit branch.
@@ -21,6 +21,10 @@
 #   D14 forged index rows: plan pass as design pass, design pass of x.md for another doc, design run dir for the plan gate   Red if findPass/planPassValid stop checking marker gate + doc + hash (mutation-proved on a snapshot).
 #   D15 frontmatter: non-YAML dashes block and oversize block are body                                              Red if FRONTMATTER_RE alone decides.
 #   D16 snapshot + input copy come from the bytes already read                                                      Red if cloneOnly/copyInputs re-read the disk file.
+#   D18 only `key: scalar` lines (<= 200 chars) are frontmatter; lists, comments, continuations, block scalars are body   Red if the shape check is dropped (mutant in the case).
+#   D19 readPinned: dev/ino of the opened descriptor must equal the checked lstat                                      Red if the comparison is dropped.
+#   D20 design gate without gitleaks: preflight_failed, 0 calls                                                        Red if the blocking-only gitleaks check returns.
+#   D21 reused REVISE: findings path = intact xreview copy, else the run-dir record; round must be an integer >= 1   Red if either check is dropped (mutants in the case).
 #   D17 hardlinked doc, ./ and // and whitespace spellings are usage errors                                         Red if resolveDoc skips nlink or the spelling check.
 
 mk_workdir TMP34 tmp34
@@ -118,11 +122,27 @@ caseD8() {
   FAKE_RUNNER_CASE=revise design34 docs/adr/y.md
   assert_rc "D8 a REVISE is a fail exit (1)" 1 "$G_RC"
   assert_json "D8 verdict fail-with-findings, no next round offered" "$G_OUT" "j.verdict + '/' + String(j.next)" "fail-with-findings/null"
+  assert_eq "D8 first review: one runner call" "$(calls34)" "1"
+  local first_findings; first_findings="$(json_get "$G_OUT" "j.findings_path")"
+  [[ -f "$first_findings" ]] && ok "D8 the first run wrote a findings file" || bad "D8 no findings file at '$first_findings'"
+  # FR-014: an unchanged doc with a recorded REVISE is answered from it (0 runner calls), findings included
   FAKE_RUNNER_CASE=revise design34 docs/adr/y.md
-  assert_eq "D8 a failed state is not reused: the second run calls the runner again (count 2)" "$(calls34)" "2"
+  assert_rc "D8 the unchanged failed doc is still a fail exit (1)" 1 "$G_RC"
+  assert_eq "D8 an unchanged failed doc is not re-sent: still one runner call" "$(calls34)" "1"
+  assert_json "D8 …verdict fail-with-findings, step reuse, no next round" "$G_OUT" "[j.verdict, j.step, j.reason_detail, String(j.next)].join('/')" "fail-with-findings/reuse/unchanged_design_result_reused/null"
+  assert_json "D8 …the reused result carries the findings path of the first run" "$G_OUT" "j.findings_path" "$first_findings"
   FAKE_RUNNER_CASE=revise design34 docs/adr/y.md
-  assert_json "D8 a third run of the same doc is no round_cap (one run per state, no cap)" "$G_OUT" "j.verdict + '/' + String(j.reason)" "fail-with-findings/null"
-  assert_eq "D8 …three runner calls in total" "$(calls34)" "3"
+  assert_eq "D8 a third call is still answered from the record (no round_cap, one call)" "$(calls34)" "1"
+  assert_json "D8 …and the index holds exactly the one real run" "$(index34)" "j.length" "1"
+  # a body edit is a new state: exactly one new call
+  printf '\nA new decision sentence.\n' >> "$PHASE_REPO/docs/adr/y.md"
+  FAKE_RUNNER_CASE=revise design34 docs/adr/y.md
+  assert_eq "D8 a body edit of the failed doc is reviewed again (count 2)" "$(calls34)" "2"
+  # an outcome that is not a Codex verdict is never reused: it retries
+  cp "$DESIGN_CASES/adr-body-change.md" "$PHASE_REPO/docs/adr/z.md"; printf 'zz\n' >> "$PHASE_REPO/docs/adr/z.md"
+  FAKE_RUNNER_CASE=malformed design34 docs/adr/z.md
+  FAKE_RUNNER_CASE=malformed design34 docs/adr/z.md
+  assert_eq "D8 a malformed outcome is no verdict: both calls reach the runner (count 4)" "$(calls34)" "4"
 }
 
 # ---------- D9: secrets and the tripwire ----------
@@ -266,17 +286,122 @@ caseD15() {
   printf -- '---\nthe real design decision was reversed in this line\n---\n\n# Title\n\nbody text\n' > "$PHASE_REPO/docs/adr/fm.md"
   design34 docs/adr/fm.md
   assert_eq "D15 a change between non-YAML dashes is a body change: reviewed again (count 2)" "$(calls34)" "2"
-  printf -- '---\nstatus: accepted\ntags:\n  - a\n# note\n\n---\n\n# Title\n\nbody text\n' > "$PHASE_REPO/docs/adr/yaml.md"
+  printf -- '---\nstatus: accepted\ndeciders: alex\n\n---\n\n# Title\n\nbody text\n' > "$PHASE_REPO/docs/adr/yaml.md"
   design34 docs/adr/yaml.md
-  printf -- '---\nstatus: superseded\ntags:\n  - b\n# note\n\n---\n\n# Title\n\nbody text\n' > "$PHASE_REPO/docs/adr/yaml.md"
+  printf -- '---\nstatus: superseded\ndeciders: robert\n\n---\n\n# Title\n\nbody text\n' > "$PHASE_REPO/docs/adr/yaml.md"
   design34 docs/adr/yaml.md
-  assert_eq "D15 a YAML-shaped frontmatter edit stays free (count 3: one review for yaml.md)" "$(calls34)" "3"
+  assert_eq "D15 a metadata-only (key: scalar) frontmatter edit stays free (count 3: one review for yaml.md)" "$(calls34)" "3"
   { printf -- '---\n'; for i in $(seq 1 400); do printf 'key%s: value-that-makes-the-block-long-enough\n' "$i"; done; printf -- '---\n\n# Big\n\nbody\n'; } > "$PHASE_REPO/docs/adr/big.md"
   design34 docs/adr/big.md
   local before; before="$(calls34)"
   sed 's/^key7: .*/key7: changed/' "$PHASE_REPO/docs/adr/big.md" > "$TMP34/big2.md"; cp "$TMP34/big2.md" "$PHASE_REPO/docs/adr/big.md"
   design34 docs/adr/big.md
   assert_eq "D15 an oversize leading block is not frontmatter: its edit is reviewed again" "$(calls34)" "$((before + 1))"
+}
+
+# ---------- D18: only `key: scalar` metadata is frontmatter (SEC-3) ----------
+m34_mutate() { # <tree> <lib-file> <from> <to> — refuses unless <from> occurs exactly once
+  node -e '
+    const fs = require("fs"); const [tree, name, from, to] = process.argv.slice(1);
+    const f = tree + "/_shared/lib/" + name; const s = fs.readFileSync(f, "utf8");
+    const n = s.split(from).length - 1;
+    if (n !== 1) { process.stderr.write("mutation target occurs " + n + " times: " + from + "\n"); process.exit(3); }
+    fs.writeFileSync(f, s.split(from).join(to));
+  ' "$@" || { echo "FAIL  harness: mutation failed ($2: $3)" >&2; exit 2; }
+}
+# hashpair34 <tools-tree> <text-a> <text-b> — same | differ (bodyHash of the two texts)
+hashpair34() {
+  node -e 'const D = require(process.argv[1] + "/_shared/lib/xprov-design.cjs"); process.stdout.write(D.bodyHash(process.argv[2]) === D.bodyHash(process.argv[3]) ? "same" : "differ")' "$1" "$2" "$3"
+}
+fm34() { printf -- '---\n%b\n---\n\n# T\n\nbody\n' "$1"; }
+LONG200="$(printf 'a%.0s' $(seq 1 200))"; LONG201="$(printf 'a%.0s' $(seq 1 201))"
+caseD18() {
+  make_tree
+  local t="$TREE"
+  assert_eq "D18 metadata line edit (key: short scalar): same body hash" "$(hashpair34 "$t" "$(fm34 'status: a\ndate: 1')" "$(fm34 'status: b\ndate: 2')")" "same"
+  assert_eq "D18 a value of exactly 200 characters is still metadata" "$(hashpair34 "$t" "$(fm34 "k: $LONG200")" "$(fm34 "k: ${LONG200%a}b")")" "same"
+  assert_eq "D18 a value of 201 characters is body: an edit changes the hash" "$(hashpair34 "$t" "$(fm34 "k: $LONG201")" "$(fm34 "k: ${LONG201%a}b")")" "differ"
+  assert_eq "D18 list items are body" "$(hashpair34 "$t" "$(fm34 'tags:\n  - a')" "$(fm34 'tags:\n  - b')")" "differ"
+  assert_eq "D18 an unindented list item is body" "$(hashpair34 "$t" "$(fm34 'status: a\n- one')" "$(fm34 'status: a\n- two')")" "differ"
+  assert_eq "D18 comment lines are body" "$(hashpair34 "$t" "$(fm34 'status: a\n# prose one')" "$(fm34 'status: a\n# prose two')")" "differ"
+  assert_eq "D18 an indented continuation line is body" "$(hashpair34 "$t" "$(fm34 'summary: x\n  prose one')" "$(fm34 'summary: x\n  prose two')")" "differ"
+  assert_eq "D18 a block scalar is body" "$(hashpair34 "$t" "$(fm34 'note: |\n  prose one')" "$(fm34 'note: |\n  prose two')")" "differ"
+  assert_eq "D18 a folded-scalar indicator alone is body" "$(hashpair34 "$t" "$(fm34 'note: >')" "$(fm34 'note: |')")" "differ"
+  # RED proof: with every leading block stripped (the shape check removed) the same list edit keeps the hash
+  mk_workdir M34 mtree34; cp -R "$TREE/_shared" "$M34/_shared"
+  m34_mutate "$M34" xprov-design.cjs "inner.every(isMetadataLine) ?" "true ?"
+  assert_eq "D18 RED: without the shape check a list edit is invisible (same)" "$(hashpair34 "$M34" "$(fm34 'tags:\n  - a')" "$(fm34 'tags:\n  - b')")" "same"
+}
+
+# ---------- D19: the doc is read through one descriptor that matches the checked file (SEC-4) ----------
+pinned34() { # <tree> <mode: real|swap> — prints readPinned's result for a file whose descriptor is, or is not, the lstat'd one
+  node -e '
+    const fs = require("fs"), path = require("path"), os = require("os");
+    const D = require(process.argv[1] + "/_shared/lib/xprov-design.cjs");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "d19-"));
+    const a = path.join(dir, "a.md"), b = path.join(dir, "b.md");
+    fs.writeFileSync(a, "checked\n"); fs.writeFileSync(b, "swapped in\n");
+    const before = fs.lstatSync(a);
+    const io = process.argv[2] === "swap" ? { ...fs, openSync: (_p, flags) => fs.openSync(b, flags), fstatSync: fs.fstatSync, readFileSync: fs.readFileSync, closeSync: fs.closeSync } : fs;
+    const got = D.readPinned(a, before, 1024, io);
+    process.stdout.write(got === null ? "null" : got.toString().trim());
+    fs.rmSync(dir, { recursive: true, force: true });
+  ' "$1" "$2"
+}
+caseD19() {
+  make_tree
+  assert_eq "D19 the lstat'd file itself is read" "$(pinned34 "$TREE" real)" "checked"
+  assert_eq "D19 a file swapped in between the checks and the open (other dev/ino) is refused: null" "$(pinned34 "$TREE" swap)" "null"
+  mk_workdir M34 mtree34; cp -R "$TREE/_shared" "$M34/_shared"
+  m34_mutate "$M34" xprov-design.cjs "|| st.dev !== before.dev || st.ino !== before.ino" ""
+  assert_eq "D19 RED: without the dev/ino comparison the swapped file is read" "$(pinned34 "$M34" swap)" "swapped in"
+  prep34
+  assert_eq "D19 resolveDoc still reads a regular doc" "$(node -e 'const D=require(process.argv[1]+"/_shared/lib/xprov-design.cjs");const r=D.resolveDoc(process.argv[2],"docs/adr/x.md");process.stdout.write(r.rel+":"+(r.bytes.length>0))' "$TREE" "$PHASE_REPO")" "docs/adr/x.md:true"
+}
+
+# ---------- D20: the design gate needs gitleaks like every gate that sends to Codex (SEC-2) ----------
+gate_nogl34() { # <tools> — design gate with gitleaks off PATH; prints rc/step/reason/calls
+  local before; before="$(calls34)"
+  local out; out="$( export PATH="$NOGL34"; cd "$PHASE_REPO" && FAKE_RUNNER_CASE=approved FAKE_RUNNER_BIND_PLAN=1 FAKE_RUNNER_COUNT_FILE="$COUNT34" node "$1" xprov gate --phase p34 --gate "$GATE_DESIGN" --doc docs/adr/x.md --timeout 7 2>/dev/null )"; local rc=$?
+  echo "$rc/$(json_get "$out" "[j.step, j.reason].join('/')")/$(( $(calls34) - before ))"
+}
+caseD20() {
+  prep34   # make_tree has put the fake bin (with its stub gitleaks) on PATH; rb_nogl_path (part 20) shadows every PATH entry holding a gitleaks
+  NOGL34="$(rb_nogl_path "$TMP34")"
+  if [[ -z "$NOGL34" ]]; then bad "D20 setup: a PATH without gitleaks could not be built"; return; fi
+  FAKE_RUNNER_CASE=approved FAKE_RUNNER_BIND_PLAN=1 FAKE_RUNNER_COUNT_FILE="$COUNT34" FAKE_RUNNER_SEQUENCE='[{}]' fake_runner_env
+  assert_eq "D20 design gate (warning row) without gitleaks: preflight_failed, runner not called" "$(gate_nogl34 "$TREE_TOOLS")" "1/preflight/preflight_failed/0"
+  mk_workdir M34 mtree34; cp -R "$TREE/_shared" "$M34/_shared"
+  m34_mutate "$M34" xprov-gate.cjs "if (resolveTool('gitleaks') === null) return" "if (ctx.enforcement === 'blocking' && resolveTool('gitleaks') === null) return"
+  m34_mutate "$M34" xprov-run.cjs "if (rec.gitleaks === false) return refuse(" "if (false) return refuse("   # the run step re-checks the snapshot record: both checks must go for a warning gate to send
+  assert_eq "D20 RED: restoring the blocking-only checks lets the warning gate send with a patterns-only scan" "$(gate_nogl34 "$M34/_shared/a1-tools.cjs" | sed 's#^[0-9]*/[^/]*/[^/]*/#X/#')" "X/1"
+}
+
+# ---------- D21: where a reused REVISE's findings live (round must be a real round; the xreview copy must match the run-dir record) ----------
+fpbase34() { # <tools> — the basename of the findings_path the design gate answers y.md with, from the cwd repo
+  local out; out="$(cd "$PHASE_REPO" && FAKE_RUNNER_CASE=revise FAKE_RUNNER_BIND_PLAN=1 FAKE_RUNNER_COUNT_FILE="$COUNT34" node "$1" xprov gate --phase p34 --gate "$GATE_DESIGN" --doc docs/adr/y.md --timeout 7 2>/dev/null)"
+  json_get "$out" "require('path').basename(String(j.findings_path))"
+}
+caseD21() {
+  prep34
+  cp "$DESIGN_CASES/adr-body-change.md" "$PHASE_REPO/docs/adr/y.md"
+  FAKE_RUNNER_CASE=revise design34 docs/adr/y.md
+  local first idx rundir; first="$(json_get "$G_OUT" "j.findings_path")"; idx="$PHASE_REPO/.a1/phases/p34/xreview/index.json"
+  rundir="$(dirname "$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"))[0].result_path' "$idx")")"
+  assert_eq "D21 setup: the first run's findings are the xreview copy of round 1" "$([[ "$first" == */xreview/*-r1.findings.json && -f "$first" ]] && echo yes || echo no)" "yes"
+  assert_eq "D21 the reuse points at the intact xreview copy" "$(fpbase34 "$TREE_TOOLS")" "$(basename "$first")"
+  # an xreview copy that no longer says what the run-dir record says (a finding added, summary kept) is not returned
+  node -e 'const fs=require("fs");const j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));j.major.push({id:"X9",file:"x",line:1,title:"t",detail:"d",severity:"high"});fs.writeFileSync(process.argv[1],JSON.stringify(j,null,2)+"\n")' "$first"
+  assert_eq "D21 a tampered xreview copy is replaced by the run-dir record" "$(fpbase34 "$TREE_TOOLS")" "a1-findings.json"
+  mk_workdir M34 mtree34; cp -R "$TREE/_shared" "$M34/_shared"
+  m34_mutate "$M34" xprov-design.cjs "FINDING_BUCKETS.every((k) => same(copy[k], record[k]))" "true"
+  assert_eq "D21 RED: without the finding comparison the tampered copy is returned" "$(fpbase34 "$M34/_shared/a1-tools.cjs")" "$(basename "$first")"
+  # a row whose round is not an integer >= 1 never names an xreview file: even a matching file at that name is ignored
+  node -e 'const fs=require("fs");const [idx,rec,out]=process.argv.slice(1);const rows=JSON.parse(fs.readFileSync(idx,"utf8"));rows[0].round=0;fs.writeFileSync(idx,JSON.stringify(rows,null,2)+"\n");fs.copyFileSync(rec,out)' "$idx" "$rundir/a1-findings.json" "${first%-r1.findings.json}-r0.findings.json"
+  assert_eq "D21 round 0 in the row: the findings are the run-dir record" "$(fpbase34 "$TREE_TOOLS")" "a1-findings.json"
+  mk_workdir M34 mtree34; cp -R "$TREE/_shared" "$M34/_shared"
+  m34_mutate "$M34" xprov-design.cjs "if (Number.isInteger(e.round) && e.round >= 1) {" "if (true) {"
+  assert_eq "D21 RED: without the round check the r0 file is returned" "$(fpbase34 "$M34/_shared/a1-tools.cjs")" "$(basename "${first%-r1.findings.json}-r0.findings.json")"
 }
 
 # ---------- D16: the snapshot is built from the bytes already read (SEC-2) ----------
@@ -310,5 +435,5 @@ caseD17() {
   assert_json "D17 control: canonical --doc passes and the entry doc is the canonical path" "$(index34)" "j[0].doc" "docs/adr/x.md"
 }
 
-caseD1; caseD8; caseD9; caseD10; caseD11; caseD12; caseD13; caseD14; caseD15; caseD16; caseD17
+caseD1; caseD8; caseD9; caseD10; caseD11; caseD12; caseD13; caseD14; caseD15; caseD16; caseD17; caseD18; caseD19; caseD20; caseD21
 export HOME="$SAVED_HOME_34"; unset A1_XPROV_CODEX_HOME

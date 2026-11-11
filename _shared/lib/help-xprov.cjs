@@ -218,13 +218,12 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   --untracked-files=all --ignored (status), sha256 of the
                   snapshot's git metadata (.git/config, hooks/, info/), diff
                   hash, input hashes, gitleaks (bool), a nonce. gitleaks is
-                  REQUIRED for a blocking registry row, resolved to an absolute
-                  path: snapshot itself still runs without it and records
-                  gitleaks:false; gate refuses a blocking row at step preflight
-                  (preflight_failed / gitleaks_missing, brew install gitleaks)
-                  before it snapshots, and run refuses such a record on a
-                  blocking row. On a warning row gate degrades — one stderr
-                  warning line, stdout gitleaks:false. Every a1 git call on a
+                  REQUIRED for every gate that sends to Codex (blocking or warning
+                  row), resolved to an absolute path: snapshot itself still runs
+                  without it and records gitleaks:false; gate refuses at step
+                  preflight (preflight_failed / gitleaks_missing, brew install
+                  gitleaks) before it snapshots, and run refuses such a record.
+                  Every a1 git call on a
                   snapshot (and the runner's env) is hermetic: every inherited
                   GIT_* variable is dropped, then a1 sets GIT_CONFIG_GLOBAL=
                   /dev/null, GIT_CONFIG_NOSYSTEM, GIT_ATTR_NOSYSTEM,
@@ -274,7 +273,7 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   ~/.a1-xprov/snapshots by realpath (the realpath is used from
                   then on), a record that matches commit, base, tree, diff hash
                   and nonce, the same repository, unchanged git metadata, and for
-                  a blocking row a gitleaks-checked scan. Refusals (exit 1, no
+                  a gitleaks-checked scan. Refusals (exit 1, no
                   spawn): snapshot_not_scanned (not_under_snapshots_dir |
                   no_scan_record | record_mismatch | repo_mismatch),
                   snapshot_changed_after_scan (git_dir_forbidden_entry |
@@ -459,7 +458,8 @@ ${CONSENT_HELP}
                   registry row, nothing written. Lists the design files a review
                   still owes: paths matching docs/adr/** or docs/architecture/**
                   (DESIGN_FILE_GLOBS) that exist in the repo and have no recorded
-                  pass on their current body. --plan: only the paths PLAN.md names
+                  pass on their current body (a recorded REVISE stays listed: the
+                  gate answers it from the record, 0 runner calls). --plan: only the paths PLAN.md names
                   in backticks (an ADR PLAN.md does not name is never listed).
                   --base: the files changed in <base>..<head> (default HEAD); a
                   deleted file is not listed. Code paths never appear. One document

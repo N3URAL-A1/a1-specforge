@@ -50,8 +50,8 @@ paths, not documents. Details + self-check: `_shared/spawn-policy.md`.
 
 ## Cross-provider review gates (spec 009, HARD RULE — enforcement lives in the registry)
 
-Only the plan goes to a second provider (Codex, through the vendored
-claudex-loop runner). There is no cross-provider step on waves; the load check is deterministic:
+Only the plan and design files go to a second provider (Codex, through the vendored
+claudex-loop runner); never a code diff. There is no cross-provider code step on waves; the load check is deterministic:
 
 - **Load precondition** (`workflows/01-load.md` Step 0c): `xprov load-check`
   — the current PLAN.md sha256 must match the newest `plan-review-xprov` pass

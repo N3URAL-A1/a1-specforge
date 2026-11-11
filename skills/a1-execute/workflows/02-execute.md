@@ -157,24 +157,30 @@ design files are reviewed: ADRs under `docs/adr/` and documents under `docs/arch
 changed. A code diff is never sent. `design-targets` reads the wave diff against `"$PRE_WAVE_HEAD"` and lists
 only those design files that have no pass on their current body; an empty list means skip this block.
 
+Run the block from the wave's own worktree: both commands resolve the repo from the current directory, so from
+the primary checkout they would diff and read the wrong tree and the review would silently miss the wave's files.
+
 ```bash
+( cd "$WORK_PATH" || { echo "STOP: cannot enter WORK_PATH=$WORK_PATH"; exit 2; }
 XREVIEW_DIR=".a1/phases/<phase_name>/xreview"
 mkdir -p "$XREVIEW_DIR"
 TARGETS_JSON="$XREVIEW_DIR/design-targets.wave.last-run.json"
 TARGETS_LIST="$XREVIEW_DIR/design-targets.wave.list"
 node <repo>/_shared/a1-tools.cjs xprov design-targets --phase <phase_name> --base "$PRE_WAVE_HEAD" > "$TARGETS_JSON"; RC=$?
 echo "xprov design-targets exit=$RC"
-if [ $RC -ne 0 ]; then echo "STOP: design-targets usage error, fix the call"; fi
+if [ $RC -ne 0 ]; then echo "STOP: design-targets usage error, fix the call"; exit "$RC"; fi
 node -e 'for (const t of JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).targets) console.log(t)' "$TARGETS_JSON" > "$TARGETS_LIST"
 while IFS= read -r f; do
   OUT="$XREVIEW_DIR/design-review-$(printf '%s' "$f" | tr '/' '_').wave.last-run.json"
   node <repo>/_shared/a1-tools.cjs xprov gate --gate design-review-xprov --phase <phase_name> --doc "$f" > "$OUT"; RC=$?
   echo "xprov gate design-review-xprov $f exit=$RC"
-  if [ $RC -eq 2 ]; then echo "STOP: usage error for $f, fix the call (not a review result)"; break; fi
+  if [ $RC -eq 2 ]; then echo "STOP: usage error for $f, fix the call (not a review result)"; exit 2; fi
 done < "$TARGETS_LIST"
+); RC=$?
+echo "design review block exit=$RC"
 ```
 
-Only exit 2 stops the wave. Routing per file (`verdict` in the stdout JSON): `pass` → continue; `fail` → print
+Only exit 2 stops the wave (a non-zero exit of the block means stop, fix the call). Routing per file (`verdict` in the stdout JSON): `pass` → continue; `fail` or `fail-with-findings` (also when the gate answers an unchanged file from its recorded result with no Codex call) → print
 `⚠ Design review did not pass (gate design-review-xprov, enforcement: warning) — <file>: <reason>, details <xreview_path>`
 and continue (the row is `warning`); `not_applicable` (no permit, `codex_unavailable`, any other reason) → print one line
 `ℹ Design review not applicable for <file> — <reason>; Reinhard-only, continuing.` and continue. No consent question is asked

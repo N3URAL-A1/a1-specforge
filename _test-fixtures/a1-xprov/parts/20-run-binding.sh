@@ -30,9 +30,9 @@
 #   GL1  gate, blocking row, no gitleaks on PATH -> exit 1, step preflight,
 #        preflight_failed, detail gitleaks_missing + brew install gitleaks, no
 #        snapshot, runner 0; with the stub on PATH the same call reaches the runner.
-#   GL2  gate, warning row, no gitleaks -> stderr warning line, stdout gitleaks:false.
+#   GL2  gate, warning row, no gitleaks -> preflight_failed / gitleaks_missing, runner 0 (SEC-2).
 #   GL3  snapshot + run without gitleaks, blocking row -> preflight_failed /
-#        gitleaks_missing, 0 invocations; warning row -> runner reached.
+#        gitleaks_missing, 0 invocations; warning row -> the same (SEC-2).
 #   GL4  bin/ci-install-gitleaks.sh: checksum mismatch -> non-zero and nothing
 #        extracted; match -> extracted and executable.
 #   GL5  test.yml: the pinned install step precedes "Fixtures", with the Wave 0
@@ -48,28 +48,6 @@ RB_N=0
 RB_GITLEAKS_VERSION="8.30.1"
 RB_GITLEAKS_SHA256="551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
 RB_PATH=""
-
-# rb_nogl_path — prints a PATH without any gitleaks (see rule 7), or nothing when that cannot be reached.
-rb_nogl_path() {
-  local out="" d f name shadow np
-  local IFS=':'
-  for d in $PATH; do
-    [[ -z "$d" ]] && continue
-    if [[ -e "$d/gitleaks" ]]; then
-      shadow="$(mktemp -d "$TMP20/shadow.XXXXXX")"
-      for f in "$d"/* "$d"/.[!.]*; do
-        [[ -e "$f" || -L "$f" ]] || continue
-        name="$(basename "$f")"
-        [[ "$name" == gitleaks ]] && continue
-        ln -s "$f" "$shadow/$name"
-      done
-      d="$shadow"
-    fi
-    out="${out:+$out:}$d"
-  done
-  np="$out"
-  if ( hash -r; PATH="$np"; ! command -v gitleaks >/dev/null 2>&1 ); then printf '%s' "$np"; fi
-}
 
 # rb_pin_row <warning|blocking> — sets the plan-review-xprov row of the TREE copy's registry.
 rb_pin_row() {
@@ -121,6 +99,22 @@ rb_expect() {
 # rb_commit <msg> — commit everything in $PHASE_REPO; updates PHASE_HEAD.
 rb_commit() { ( cd "$PHASE_REPO" && git add -A && git commit -qm "$1" ); PHASE_HEAD="$(cd "$PHASE_REPO" && git rev-parse HEAD)"; }
 
+# ---------- RB0: git_in refuses an empty or relative directory (the 2026-11 leak: an empty RB_SNAP made `git -C ""` commit into the repo under test) ----------
+{
+  guard_repo="$TMP20/guard-repo"; mkdir -p "$guard_repo"
+  ( cd "$guard_repo" && git init -q && git -c user.name=x -c user.email=x@example.invalid -c commit.gpgsign=false commit -q --allow-empty -m base )
+  guard_head() { git -C "$guard_repo" rev-parse HEAD; }
+  guard_before="$(guard_head)"
+  # the hazard itself, on the scratch repo only: a bare `git -C ""` run with the repo as cwd commits into it
+  ( cd "$guard_repo" && git -C "" -c user.name=x -c user.email=x@example.invalid -c commit.gpgsign=false commit -q --allow-empty -m leak ) >/dev/null 2>&1
+  [[ "$(guard_head)" != "$guard_before" ]] && ok "RB0 setup: a bare git -C \"\" does commit into the cwd repository (the hazard is real)" || bad "RB0 setup: the hazard did not reproduce"
+  guard_before="$(guard_head)"
+  for guard_arg in "" "." "relative/dir" "$TMP20/not-a-repo"; do
+    ( cd "$guard_repo" && git_in "$guard_arg" -c user.name=x -c user.email=x@example.invalid -c commit.gpgsign=false commit -q --allow-empty -m leak ) >/dev/null 2>&1; guard_rc=$?
+    assert_eq "RB0 git_in '${guard_arg:-<empty>}' is refused (exit 1) and the cwd repository keeps its HEAD" "$guard_rc/$([[ "$(guard_head)" == "$guard_before" ]] && echo same || echo moved)" "1/same"
+  done
+}
+
 # ---------- RB1: a hand-made clone is not a scanned snapshot ----------
 {
   rb_arm
@@ -151,7 +145,7 @@ rb_commit() { ( cd "$PHASE_REPO" && git add -A && git commit -qm "$1" ); PHASE_H
 {
   rb_arm; rb_snap
   assert_rc "RB3 setup: snapshot exits 0" 0 "$RB_SRC" "$RB_SERR"
-  git -C "$RB_SNAP" -c user.name=x -c user.email=x@example.invalid -c commit.gpgsign=false commit -q --allow-empty -m "planted commit"
+  git_in "$RB_SNAP" -c user.name=x -c user.email=x@example.invalid -c commit.gpgsign=false commit -q --allow-empty -m "planted commit"
   rb_run review
   rb_expect "RB3 commit inside the snapshot" snapshot_not_scanned record_mismatch
 }
@@ -188,8 +182,8 @@ rb_commit() { ( cd "$PHASE_REPO" && git add -A && git commit -qm "$1" ); PHASE_H
 {
   rb_arm; rb_snap
   assert_rc "RB6 setup: snapshot exits 0" 0 "$RB_SRC" "$RB_SERR"
-  other="$(printf 'something else\n' | git -C "$RB_SNAP" hash-object -w --stdin)"
-  git -C "$RB_SNAP" update-index --cacheinfo "100644,$other,src/add.js"
+  other="$(printf 'something else\n' | git_in "$RB_SNAP" hash-object -w --stdin)"
+  git_in "$RB_SNAP" update-index --cacheinfo "100644,$other,src/add.js"
   rb_run review
   rb_expect "RB6 update-index swap" snapshot_changed_after_scan index_mismatch
 
@@ -258,13 +252,14 @@ else
     assert_json "GL1 control: stdout carries gitleaks:true" "$G20_OUT" "j.gitleaks" "true"
   }
 
-  # ---------- GL2: warning gate degrades with one stderr line ----------
+  # ---------- GL2: a warning gate needs gitleaks too (SEC-2: every gate that sends to Codex) ----------
   {
     rb_arm warning; RB_PATH="$NOGL_PATH"
     rb_gate
-    assert_rc "GL2 warning gate without gitleaks passes" 0 "$G20_RC" "$G20_ERR"
-    assert_json "GL2 stdout has gitleaks:false and the chain reached normalize" "$G20_OUT" "[j.gitleaks, j.step].join('/')" "false/normalize"
-    assert_eq "GL2 stderr holds the warning line once" "$(grep -c '^xprov gate: warning gitleaks not on PATH — patterns-only secret scan$' <<<"$G20_ERR")" "1"
+    assert_rc "GL2 warning gate without gitleaks exits 1" 1 "$G20_RC" "$G20_ERR"
+    assert_json "GL2 step preflight, preflight_failed, detail gitleaks_missing" "$G20_OUT" "[j.step, j.reason, String(j.reason_detail).includes('gitleaks_missing')].join('/')" "preflight/preflight_failed/true"
+    assert_eq "GL2 the fake runner was invoked 0 times" "$(rb_invoked)" "0"
+    assert_eq "GL2 no patterns-only warning line (nothing was sent)" "$(grep -c 'patterns-only secret scan' <<<"$G20_ERR")" "0"
   }
 
   # ---------- GL3: direct snapshot + run ----------
@@ -277,8 +272,7 @@ else
 
     rb_arm warning; RB_PATH="$NOGL_PATH"; rb_snap
     rb_run review
-    assert_rc "GL3 warning row: the same run is allowed" 0 "$RB_RC" "$RB_ERR"
-    assert_eq "GL3 warning row: the fake runner was invoked once" "$(rb_invoked)" "1"
+    rb_expect "GL3 warning row, gitleaks-free snapshot (SEC-2)" preflight_failed gitleaks_missing
   }
 fi
 RB_PATH=""
@@ -593,8 +587,8 @@ rh_same_size_edit() { # <orig copy> <target>: same length, a secret-shaped line
   base="$PHASE_HEAD"; printf 'export function add(a, b) { return a + b + 0; }\n' > "$PHASE_REPO/src/add.js"; rb_commit "wave"
   rb_snap "$base"
   assert_rc "RH3 setup: snapshot exits 0" 0 "$RB_SRC" "$RB_SERR"
-  oldblob="$(git -C "$RB_SNAP" rev-parse "$base:src/add.js")"
-  newblob="$(printf 'AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYzEXAMPLEKEY1\n' | git -C "$RB_SNAP" hash-object -w --stdin)"
+  oldblob="$(git_in "$RB_SNAP" rev-parse "$base:src/add.js")"
+  newblob="$(printf 'AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYzEXAMPLEKEY1\n' | git_in "$RB_SNAP" hash-object -w --stdin)"
   mkdir -p "$RB_SNAP/.git/refs/replace"; echo "$newblob" > "$RB_SNAP/.git/refs/replace/$oldblob"
   rb_run inspect --base "$base"
   rb_expect "RH3 a loose refs/replace/<base blob> (inspect)" snapshot_changed_after_scan git_dir_forbidden_entry
@@ -686,8 +680,8 @@ rh_same_size_edit() { # <orig copy> <target>: same length, a secret-shaped line
     assert_json "RI1 PATH='$badpath': gitBin() and resolveTool('git') are the real git" "$got" "j.bin === '$realgit' && j.tool === '$realgit'" "true"
     assert_eq "RI1 PATH='$badpath': the fake git in the cwd never ran" "$([[ -e $marker ]] && echo RAN || echo none)" "none"
   done
-  head="$(git -C "$RB_SNAP" rev-parse HEAD)"; tree="$(git -C "$RB_SNAP" rev-parse 'HEAD^{tree}')"
-  other="$(GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t git -C "$RB_SNAP" commit-tree "$tree" -p "$head" -m other)"
+  head="$(git_in "$RB_SNAP" rev-parse HEAD)"; tree="$(git_in "$RB_SNAP" rev-parse 'HEAD^{tree}')"
+  other="$(GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t git_in "$RB_SNAP" commit-tree "$tree" -p "$head" -m other)"
   scanjson="$(node -e 'const {readScanRecord}=require(process.argv[1]+"/_shared/lib/xprov-scan-records.cjs"); process.stdout.write(JSON.stringify(readScanRecord(require("path").basename(process.argv[2])).value))' "$TREE" "$RB_SNAP")"
   printf '%s\n' "$other" > "$RB_SNAP/.git/HEAD"
   got="$(node -e '

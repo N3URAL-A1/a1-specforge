@@ -24,10 +24,10 @@ export HOME="$TMP17/home"; mkdir -p "$HOME"
 NOCLAUDE17=(env)
 for v17 in $(env | cut -d= -f1 | grep -E '^(CLAUDECODE|CLAUDE_PID|CLAUDE_CODE_.*)$'); do NOCLAUDE17+=(-u "$v17"); done
 
-g17() { git -C "$1" -c user.name=fixture -c user.email=fixture@example.invalid -c commit.gpgsign=false "${@:2}"; }
+g17() { git_in "$1" -c user.name=fixture -c user.email=fixture@example.invalid -c commit.gpgsign=false "${@:2}"; }
 # commit17 <repo> <message> <file> <content> — one commit that writes exactly one file
 commit17() { mkdir -p "$(dirname "$1/$3")"; printf '%s\n' "$4" > "$1/$3"; g17 "$1" add "$3" && g17 "$1" commit -qm "$2"; }
-newrepo17() { rm -rf "$1"; git init -q "$1" && git -C "$1" symbolic-ref HEAD refs/heads/main; }
+newrepo17() { rm -rf "$1"; git init -q "$1" && git_in "$1" symbolic-ref HEAD refs/heads/main; }
 # prob17 <repo> <anchor> — separateCommitProblem(root, anchor) as JSON text of the return value
 prob17() {
   node -e '

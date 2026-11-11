@@ -129,7 +129,7 @@ TARGETS_JSON="$XREVIEW_DIR/design-targets.last-run.json"
 TARGETS_LIST="$XREVIEW_DIR/design-targets.list"
 node <repo>/_shared/a1-tools.cjs xprov design-targets --phase <phase_name> --plan .a1/phases/<phase_name>/PLAN.md > "$TARGETS_JSON"; RC=$?
 echo "xprov design-targets exit=$RC"
-if [ $RC -ne 0 ]; then echo "STOP: design-targets usage error, fix the call"; fi
+if [ $RC -ne 0 ]; then echo "STOP: design-targets usage error, fix the call"; exit "$RC"; fi
 node -e 'for (const t of JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).targets) console.log(t)' "$TARGETS_JSON" > "$TARGETS_LIST"
 ```
 
@@ -142,17 +142,17 @@ while IFS= read -r f; do
   OUT="$XREVIEW_DIR/design-review-$(printf '%s' "$f" | tr '/' '_').last-run.json"
   node <repo>/_shared/a1-tools.cjs xprov gate --gate design-review-xprov --phase <phase_name> --doc "$f" > "$OUT"; RC=$?
   echo "xprov gate design-review-xprov $f exit=$RC"
-  if [ $RC -eq 2 ]; then echo "STOP: usage error for $f, fix the call (not a review result)"; break; fi
+  if [ $RC -eq 2 ]; then echo "STOP: usage error for $f, fix the call (not a review result)"; exit 2; fi
 done < "$TARGETS_LIST"
 ```
 
-Only exit 2 stops. Route each file by its stdout JSON (`verdict`, `reason`):
+Only exit 2 stops (both blocks `exit` on it; a non-zero exit of a block means stop, fix the call). Route each file by its stdout JSON (`verdict`, `reason`):
 
 | `verdict` | Action |
 |---|---|
 | `pass` | Continue. |
 | `fail` / `fail-with-findings` | Print the warning block below for that file and continue (the row is `warning`). No revision round for design files; list the findings with the plan summary. |
-| `not_applicable` (`external_review_not_permitted`, `external_review_denied`, `codex_unavailable`, `codex_blocked_fallback`, `secret_declined`) | Print one line: `ℹ Design review not applicable for <file> — <reason> (gate design-review-xprov); Reinhard-only, continuing.` Continue. |
+| `not_applicable` (`external_review_not_permitted`, `external_review_denied`, `codex_unavailable`, `codex_blocked_fallback`) | Print one line: `ℹ Design review not applicable for <file> — <reason> (gate design-review-xprov); Reinhard-only, continuing.` Continue. A secret hit in a design file is not a `not_applicable` row: `design-review-xprov` has no dispose round (`dispose` accepts only `plan-review-xprov`), so the run ends `fail` with reason `secret_in_snapshot`, which is the warning row above. |
 
 ```
 ⚠ Design review did not pass (gate design-review-xprov, enforcement: warning)

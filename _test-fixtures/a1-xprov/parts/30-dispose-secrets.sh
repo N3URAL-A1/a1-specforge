@@ -282,10 +282,10 @@ scen_ex() {
   local excl blob diff new leak
   excl="$(json_get "$EX_OUT" "(j.excluded || []).map((x) => x.path + ':' + x.rule).join(',')")"
   if [[ -n "$EX_DIR" && -d "$EX_DIR" ]]; then
-    git -C "$EX_DIR" cat-file -e "HEAD:src/old.js" 2>/dev/null && blob=present || blob=gone
-    diff="$(git -C "$EX_DIR" diff --name-only "$EX_BASE" 2>/dev/null | tr '\n' ',')"
-    git -C "$EX_DIR" cat-file -e "HEAD:src/new.js" 2>/dev/null && new=present || new=gone
-    leak="$(git -C "$EX_DIR" cat-file --batch-all-objects --batch 2>/dev/null | grep -ac "$EXK30")"
+    git_in "$EX_DIR" cat-file -e "HEAD:src/old.js" 2>/dev/null && blob=present || blob=gone
+    diff="$(git_in "$EX_DIR" diff --name-only "$EX_BASE" 2>/dev/null | tr '\n' ',')"
+    git_in "$EX_DIR" cat-file -e "HEAD:src/new.js" 2>/dev/null && new=present || new=gone
+    leak="$(git_in "$EX_DIR" cat-file --batch-all-objects --batch 2>/dev/null | grep -ac "$EXK30")"
     ( cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov snapshot --remove "$EX_DIR" >/dev/null 2>&1 )
   else blob=-; diff=-; new=-; leak=-; fi
   local out_leak=0; [[ "$EX_OUT$EX_ERR" == *"$EXK30"* ]] && out_leak=1

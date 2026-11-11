@@ -82,7 +82,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { parseFlags, repoRoot, assertSafeSegment, writeTextAtomic, nowIso } = require('./io.cjs');
-const { parseRegistryIds, parseRegistryRow } = require('./gate-ids.cjs'); // parseRegistryRow: NOT xprov-gate.cjs (it requires this module)
+const { parseRegistryIds } = require('./gate-ids.cjs');
 const X = require('./xprov.cjs');
 const C = require('./xprov-common.cjs');
 // Shared helpers — one definition each, in xprov-common.cjs.
@@ -614,7 +614,6 @@ const BINDING = Object.freeze({
   not_under_snapshots_dir: 'not_under_snapshots_dir', no_scan_record: 'no_scan_record', record_mismatch: 'record_mismatch', repo_mismatch: 'repo_mismatch',
   index_mismatch: 'index_mismatch', git_meta_mismatch: 'git_meta_mismatch', git_dir_forbidden_entry: 'git_dir_forbidden_entry', untracked_or_modified_file: 'untracked_or_modified_file', content_mismatch: 'content_mismatch', diff_mismatch: 'diff_mismatch', gitleaks_missing: 'gitleaks_missing',
 });
-const ENFORCEMENT_WARNING = 'warning';
 
 /** (a) `--snapshot` is a real direct `snap-*` child of the snapshots root: no symlink at the leaf, and its
  * realpath is `<realpath of the root>/<basename>` (the rule of cleanupSnapshot). → { dir } or { detail }. */
@@ -641,13 +640,6 @@ function recordMismatch(ctx, rec, realDir) {
   return null;
 }
 
-/** Enforcement cell of the `--gate` row. Anything but `warning` counts as blocking (fail closed). */
-function gateIsBlocking(gate) {
-  let row = null;
-  try { row = parseRegistryRow(fs.readFileSync(REGISTRY_PATH, 'utf8'), gate); } catch (_e) { row = null; }
-  return !row || String(row.enforcement || '').trim() !== ENFORCEMENT_WARNING;
-}
-
 /** SEC-2: the snapshot's git metadata (config, hooks, info) is still what the scan recorded. → detail or null.
  * Runs BEFORE the first git call on the snapshot in the binding, and again right before the spawn. */
 function gitMetaMismatch(dir, rec) {
@@ -668,7 +660,7 @@ function scanBinding(ctx) {
   const mismatch = recordMismatch(ctx, rec, under.dir);
   if (mismatch) return refuse(X.REASONS.snapshot_not_scanned, mismatch);
   if (rec.repo_key !== C.commonDirOf(ctx.root)) return refuse(X.REASONS.snapshot_not_scanned, BINDING.repo_mismatch);
-  if (rec.gitleaks === false && gateIsBlocking(ctx.gate)) return refuse(X.REASONS.preflight_failed, BINDING.gitleaks_missing);
+  if (rec.gitleaks === false) return refuse(X.REASONS.preflight_failed, BINDING.gitleaks_missing); // SEC-2: every gate that sends to Codex needs gitleaks, whatever its enforcement cell
   return { problem: null, record: rec, snapshot: under.dir };
 }
 

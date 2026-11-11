@@ -571,6 +571,8 @@ function cmdXprovNormalize(args) {
     if (ctx.gate === X.GATE_IDS.PLAN_REVIEW) writePlanCopy(ctx.resultPath, ctx.planPath, ctx.planSha); // FR-030: the approved text, the base of a later delta
     if (ctx.gate === X.GATE_IDS.DESIGN_REVIEW) writeDocCopy(ctx.resultPath, ctx.docBytes, ctx.planSha); // SEC-1: the approved text a later reuse is checked against
   }
+  // FR-014: a design REVISE is a recorded verdict too; the kept copy of the reviewed text lets a later call prove which body it answered
+  if (outcome.verdict === X.VERDICTS.FAIL_WITH_FINDINGS && ctx.gate === X.GATE_IDS.DESIGN_REVIEW && inOwnArtifacts(ctx.resultPath)) writeDocCopy(ctx.resultPath, ctx.docBytes, ctx.planSha);
   writeTextAtomic(ctx.indexPath, JSON.stringify([...index, entry], null, 2) + '\n');
   runGcIfPresent();
   const limitations = tainted ? [] : (outcome.limitations || []).map((l) => clip(l, DETAIL_MAX_CHARS));
