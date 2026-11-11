@@ -54,6 +54,33 @@ list and skill mapping: [../templates/family-catalog.md](../templates/family-cat
 The 5 candidates, in output order, become the 5 tiles. Each candidate's
 `descriptor` is the tile's direction.
 
+## Taste-vault pool
+
+Applies only to candidates whose `source` is `vault`. Built-in top-ups and
+design-system candidates carry no entry and skip this section. Entries come
+from step 7 ([07-taste-vault.md](07-taste-vault.md)) and live at
+`$A1_VAULT_ROOT/pattern/taste-vault/<family>/<id>.md`.
+
+1. For each vault candidate, take its `entry_ids` from the `families`
+   output (same list as `vault_entries.<family>`) and pick one entry per tile (the one closest to the brief's
+   Aesthetic). Read that entry file,
+   `$A1_VAULT_ROOT/pattern/taste-vault/<family>/<entry-id>.md`.
+2. Draw the tile's look from the entry's `keywords`, `image_prompt` and
+   `copy_brief`, inside the family's descriptor and every Guardrail.
+   Match the feeling, do not copy the source.
+3. The tile names the entry it traces to with one attribute:
+
+   ```html
+   <section data-a1-tile data-option-id="dither-mono" data-family="dither-mono" data-layout="<layout-slug>" data-taste-entry="<entry-id>">
+   ```
+
+   The value is the bare entry id (a slug), nothing else.
+4. Never put on a board: a vault path (`pattern/taste-vault/…` or any
+   `$A1_VAULT_ROOT` path), the entry's screenshot or a copy of it, or its
+   `source_url`. Screenshots are internal reference only. `board-check`
+   fails a board that references a `pattern/taste-vault` path, and any
+   `http(s)://` text fails as a remote resource.
+
 ## 2. Render the board
 
 1. Create `<run-dir>/boards/` and write `<run-dir>/boards/diverge.html`

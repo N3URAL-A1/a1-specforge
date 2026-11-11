@@ -15,6 +15,7 @@ const picks = require('./picks.cjs');
 const boardCheck = require('./boards.cjs');
 const assets = require('./assets.cjs');
 const families = require('./families.cjs');
+const { withTasteVaultRule } = require('../taste/board-guard.cjs');
 const { CTRL_RE, Refusal, parseArgs, requireSlug, resolveDate, clean } = require('./common.cjs');
 const CONTEXTS = Object.freeze(['brand', 'product']);
 const VIEWPORTS = Object.freeze(['desktop-first', 'mobile parity']);
@@ -237,7 +238,7 @@ const USAGE = 'usage: run.cjs init --project <slug> (--spec <id> | --topic <slug
   + '       run.cjs asset-missing --run-dir <d> [--name <slug> --reason <text>]';
 
 const COMMANDS = Object.freeze({
-  init, pick: picks.pick, 'require-pick': picks.requirePick, reroll: picks.reroll, 'board-check': boardCheck.boardCheck,
+  init, pick: picks.pick, 'require-pick': picks.requirePick, reroll: picks.reroll, 'board-check': withTasteVaultRule(boardCheck.boardCheck),
   families: families.families, 'asset-slot': assets.assetSlot, 'asset-missing': assets.assetMissing,
 });
 

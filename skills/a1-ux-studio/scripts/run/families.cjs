@@ -47,26 +47,43 @@ function parseGuardrails(raw) {
   return Object.freeze({ never });
 }
 
-/** Vault family ids with entry counts: Map<id, n>. Missing or empty folder gives an empty map. */
+const ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
+const ID_KEY_RE = /^id:\s*([a-z0-9][a-z0-9-]{0,63})\s*$/m;
+
+/** Entry file names of one folder: regular .md files only (no symlinks), size-capped. */
+function entryFiles(dir) {
+  return fs.readdirSync(dir).filter((n) => n.endsWith('.md')).sort().map((n) => path.join(dir, n))
+    .filter((f) => { const st = fs.lstatSync(f); return st.isFile() && st.size <= MAX_ENTRY_BYTES; });
+}
+
+/**
+ * Vault entries: Map<family id, entry ids[]>. Reads pattern/taste-vault/<family>/<id>.md (W8 layout, the folder name
+ * is the family) and, for older vaults, flat pattern/taste-vault/<id>.md with a `family:` frontmatter key.
+ */
 function vaultFamilies(vaultRoot, warnings) {
-  const counts = new Map();
-  if (vaultRoot === undefined) return counts;
+  const found = new Map();
+  if (vaultRoot === undefined) return found;
   const dir = path.join(vaultRoot, 'pattern', 'taste-vault');
   let rootReal; let dirReal;
-  try { rootReal = fs.realpathSync(vaultRoot); dirReal = fs.realpathSync(dir); } catch (e) { return counts; }
+  try { rootReal = fs.realpathSync(vaultRoot); dirReal = fs.realpathSync(dir); } catch (e) { return found; }
   if (dirReal !== rootReal && !dirReal.startsWith(rootReal + path.sep)) {
     warnings.push('taste vault folder resolves outside the vault root; ignored');
-    return counts;
+    return found;
   }
-  const names = fs.readdirSync(dirReal).filter((n) => n.endsWith('.md')).sort().slice(0, MAX_VAULT_ENTRIES);
-  for (const n of names) {
-    const file = path.join(dirReal, n);
-    const st = fs.lstatSync(file);
-    if (!st.isFile() || st.size > MAX_ENTRY_BYTES) continue;
-    const m = FAMILY_KEY_RE.exec(fs.readFileSync(file, 'utf8').split(/^---\s*$/m)[1] || '');
-    if (m) counts.set(m[1], (counts.get(m[1]) || 0) + 1);
+  const add = (family, file) => {
+    const front = fs.readFileSync(file, 'utf8').split(/^---\s*$/m)[1] || '';
+    const m = ID_KEY_RE.exec(front);
+    const id = m ? m[1] : path.basename(file, '.md');
+    if (found.size >= MAX_VAULT_ENTRIES && !found.has(family)) return;
+    found.set(family, [...(found.get(family) || []), id]);
+  };
+  for (const f of entryFiles(dirReal)) {
+    const m = FAMILY_KEY_RE.exec(fs.readFileSync(f, 'utf8').split(/^---\s*$/m)[1] || '');
+    if (m) add(m[1], f);
   }
-  return counts;
+  const subs = fs.readdirSync(dirReal).sort().filter((n) => ID_RE.test(n) && fs.lstatSync(path.join(dirReal, n)).isDirectory());
+  for (const sub of subs) for (const f of entryFiles(path.join(dirReal, sub)).slice(0, MAX_VAULT_ENTRIES)) add(sub, f);
+  return found;
 }
 
 const loadsTaste = (f) => f.skills.includes(TASTE_SKILL);
@@ -116,7 +133,7 @@ function poolResult(vault, ctx, warnings) {
     pool: orderForContext(known, ctx).map((f) => f.id),
     source: 'vault', designSystem: null, tokenSource: 'vault',
     candidates: [
-      ...fromVault.map((f) => candidate(f, 'vault', f.skills, { entries: vault.get(f.id) })),
+      ...fromVault.map((f) => candidate(f, 'vault', f.skills, { entries: vault.get(f.id).length, entry_ids: Object.freeze([...vault.get(f.id)]) })),
       ...topUp.map((f) => candidate(f, 'builtin', f.skills, {})),
     ],
   };
@@ -131,12 +148,12 @@ function families(args) {
   const vaultRoot = vaultRaw === undefined || vaultRaw === '' ? undefined : noDotDot('--vault-root', requireText('--vault-root', vaultRaw));
   const warnings = [];
   const systems = detectDesignSystems(claudeText);
-  const r = systems.length > 0
-    ? designSystemResult(systems, ctx, guardrails, warnings)
-    : poolResult(vaultFamilies(vaultRoot, warnings), ctx, warnings);
+  const vault = vaultFamilies(vaultRoot, warnings);
+  const base = systems.length > 0 ? designSystemResult(systems, ctx, guardrails, warnings) : poolResult(vault, ctx, warnings);
+  const r = { ...base, vaultEntries: Object.fromEntries([...vault.entries()].filter(([id]) => DATA.families.some((f) => f.id === id))) };
   process.stdout.write(`${JSON.stringify({
     source: r.source, context: ctx, design_system: r.designSystem, token_source: r.tokenSource,
-    pool: r.pool, candidates: r.candidates, warnings,
+    pool: r.pool, candidates: r.candidates, vault_entries: r.vaultEntries, warnings,
   }, null, 2)}\n`);
   return 0;
 }
