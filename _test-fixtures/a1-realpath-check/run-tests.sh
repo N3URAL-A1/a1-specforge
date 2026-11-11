@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Scenario suite for `a1-tools realpath-check run` (Gate 0.7).
-# Builds throwaway git repos in mktemp dirs. 5 scenarios:
+# Builds throwaway git repos in mktemp dirs. Scenarios a-f below, plus (g) sql shape regressions:
 #   (a) diff without surfaces          -> 0
 #   (b) SQL in diff + valid evidence   -> 0
 #   (c) SQL in diff + mock-only evid.  -> 1
@@ -110,6 +110,131 @@ if [[ $RC -eq 1 && "$GOT" == "gate-0.7-realpath|fail|1|w1" && "$(printf '%s\n' "
 else
   echo "FAIL  f-gate-log-line (rc=$RC got=$GOT out=$OUT)"; fail=$((fail + 1))
 fi
+
+# --- (g) sql shape regressions (bug 2026-11-08-realpath-sql-prose-false-positive) ---
+# Cases drive the CLI on real git repos. Prose must not need evidence; real SQL must.
+# want=1 cases also assert surfaces == ["sql"] (--json), so rls/http cannot carry them.
+# base: committed first (may be empty); body: the HEAD version of <file>.
+expect_scan() {
+  local name="$1" want="$2" file="$3" base="$4" body="$5" repo
+  mk_workdir repo scan
+  git -C "$repo" init -q
+  git -C "$repo" config user.email t@t.dev
+  git -C "$repo" config user.name test
+  mkdir -p "$repo/$(dirname "$file")"
+  printf '%s\n' "${base:-seed}" > "$repo/$file"
+  git -C "$repo" add -A && git -C "$repo" commit -qm base
+  printf '%s\n' "$body" > "$repo/$file"
+  git -C "$repo" add -A && git -C "$repo" commit -qm feat
+  scan_repo "$name" "$want" "$repo"
+}
+# Run the gate on a prepared repo (HEAD~1 = base). want=1 additionally pins surfaces == ["sql"].
+scan_repo() {
+  local name="$1" want="$2" repo="$3" out rc surf
+  if [[ -n "${SCAN_CFG:-}" ]]; then # user git config that rewrites diff output must not hide surfaces
+    git -C "$repo" config color.ui always; git -C "$repo" config color.diff always
+    git -C "$repo" config diff.external /usr/bin/false
+  fi
+  out="$(node "$TOOLS" realpath-check run --diff-base HEAD~1 --project "$repo" --json 2>/dev/null)"
+  rc=$?
+  if [[ "$want" -eq 1 && $rc -eq 1 ]]; then
+    surf="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).surfaces.join(","))' "$out" 2>&1)"
+    [[ "$surf" == "sql" ]] || { rc=99; out="surfaces=$surf :: $out"; }
+  fi
+  assert_rc "g-$name" "$want" "$rc" "$out"
+}
+# Multi-file repo: scan_files <name> <want> then "path|base|body" triples (printf %b escapes).
+scan_files() {
+  local name="$1" want="$2"; shift 2
+  local repo spec f b c
+  mk_workdir repo scanf
+  git -C "$repo" init -q
+  git -C "$repo" config user.email t@t.dev
+  git -C "$repo" config user.name test
+  for spec in "$@"; do
+    f="${spec%%|*}"; b="${spec#*|}"; b="${b%%|*}"
+    mkdir -p "$repo/$(dirname "$f")"; printf '%b\n' "$b" > "$repo/$f"
+  done
+  git -C "$repo" add -A && git -C "$repo" commit -qm base
+  for spec in "$@"; do
+    f="${spec%%|*}"; c="${spec##*|}"
+    printf '%b\n' "$c" > "$repo/$f"
+  done
+  git -C "$repo" add -A && git -C "$repo" commit -qm feat
+  scan_repo "$name" "$want" "$repo"
+}
+export -n A1_VAULT_ROOT 2>/dev/null; unset A1_VAULT_ROOT
+
+# prose: exit 0
+expect_scan prose-hash-comment 0 t.sh "" '  # Re-insert the defect'
+expect_scan prose-echo 0 t.sh "" 'echo "Re-insert the defect"'
+expect_scan prose-map-delete 0 a.js "" 'map.delete(k);'
+expect_scan prose-js-delete 0 a.js "" 'delete obj.x;'
+expect_scan prose-update-status 0 a.js "" 'run update-status and delete-branch'
+expect_scan prose-jsx-select 0 a.tsx "" '<select id="x"><option>a</option></select>'
+expect_scan prose-line-comment 0 a.js "" '// update the cache, then delete stale entries'
+expect_scan prose-string 0 a.js "" 'const m = "Select a project to continue";'
+expect_scan prose-comment-with-shape 0 a.js "" '// INSERT INTO users is slow here'
+expect_scan prose-trailing-comment-shape 0 a.js "" 'const n = 1; // SELECT id FROM users is mentioned'
+expect_scan prose-hash-comment-shape 0 t.sh "" '# DELETE FROM sessions is the old way'
+# real SQL: exit 1
+expect_scan sql-window-only 1 a.py "" $'rows = run(\n  select id,\n    name\n  from users'
+expect_scan sql-lower-template 1 a.ts "" 'const r = await db.query(`select * from users where id=$1`, [id]);'
+expect_scan sql-lower-template-bare 1 a.ts "" 'const r = await sql`select * from users where id=$1`;'
+expect_scan sql-multiline-literal 1 a.ts "" $'const q = `\n  SELECT id, name\n  FROM api.users\n  WHERE id = $1`;'
+expect_scan sql-continuation-only 1 a.ts $'const q = `\n  SELECT id FROM t\n`;' $'const q = `\n  SELECT id FROM t\n  WHERE due_at < $1\n`;'
+expect_scan sql-file-continuation 1 m.sql $'select id\nfrom t' $'select id\nfrom t\n   and due_at < now()'
+expect_scan sql-postgrest-chain 1 a.ts "" "await supabase.from('todos').insert({ title });"
+expect_scan sql-rpc 1 a.ts "" "const { data } = await supabase.rpc('get_stats', { p });"
+
+# hunk and file boundaries (a hunk ends at @@, a file ends at its diff header)
+scan_files two-hunks 0 'q.py|a\nb\nc\nd\ne|a\nselect id,\nc\nfrom users\ne'
+scan_files sql-then-prose-nonascii 0 'm.sql|-- a|-- a\n-- b' 'ä.ts|x|# Re-insert the defect'
+scan_files file-boundary-ends-hunk 0 'a.py|x|select id,' 'b.py|y|from users'
+scan_files file-boundary-judged-under-own-name 1 'a.ts|x|const q = `\n  SELECT id\n  FROM api.users`;' 'b.md|y|hello'
+expect_scan sql-grant-multiline 1 a.ts "" $'const g = `GRANT SELECT\n  ON api.users TO anon`;'
+SCAN_CFG=1 expect_scan sql-with-color-and-ext-diff-config 1 a.ts "" 'const r = await db.query(`select * from users where id=$1`, [id]);'
+scan_files sql-then-prose 0 'm.sql|-- a|-- a\n-- b' 'n.ts|x|echo "Re-insert the defect"'
+scan_files space-in-path-sql 1 '001 init.sql|select id\nfrom t|select id\nfrom t\n   and due_at < now()'
+scan_files plusplus-content-is-not-header 0 't.sh|x|++ b/m.sql\necho "insert it"'
+expect_scan sql-quoted-slashes 1 a.ts "" 'const s = "a // b"; db.query("UPDATE t SET a = 1");'
+expect_scan sql-python-division 1 a.py "" 'x = a // b; cur.execute("update t set a = 1")'
+
+# scanner unit cases on synthetic diffs (a removed `--- c` ends a hunk; headers only before the first @@)
+SCAN_UNITS="$(node -e '
+const { scanDiffForSurfaces: scan } = require(process.argv[1]);
+const hdr = (f) => `diff --git a/${f} b/${f}\n--- a/${f}\n+++ b/${f}\n`;
+const cases = [
+  ["removed-line-ends-hunk", hdr("a.py") + "@@ -1 +1 @@\n+select id,\n--- c\n+from users\n", false],
+  ["plusplus-in-hunk-is-content", hdr("t.sh") + "@@ -0,0 +1,2 @@\n+++ b/m.sql\n+echo hi\n", false],
+  ["tab-after-path", "diff --git a/d x/a b.sql b/d x/a b.sql\n--- a/d x/a b.sql\t\n+++ b/d x/a b.sql\t\n@@ -0,0 +1 @@\n+select 1\n", true],
+  ["quoted-octal-path", "diff --git \"a/\\303\\244.sql\" \"b/\\303\\244.sql\"\n--- \"a/\\303\\244.sql\"\n+++ \"b/\\303\\244.sql\"\n@@ -0,0 +1 @@\n+select 1\n", true],
+  ["new-diff-resets-file", hdr("m.sql") + "@@ -0,0 +1 @@\n+-- c\ndiff --git a/x b/x\nBinary files differ\n", false],
+];
+let bad = [];
+for (const [n, d, want] of cases) if (scan(d).has("sql") !== want) bad.push(n);
+process.stdout.write(bad.join(","));
+' "$REPO_ROOT/_shared/lib/realpath-check.cjs" 2>&1)"
+if [[ -z "$SCAN_UNITS" ]]; then echo "PASS  g-scanner-units (5 synthetic diffs)"; pass=$((pass + 1)); else echo "FAIL  g-scanner-units: $SCAN_UNITS"; fail=$((fail + 1)); fi
+
+# ReDoS guard: pathological lines must not stall the CLI (old GRANT pattern: 15 s at 3000 spaces).
+# Timing is measured in node so the bound is the same on macOS and GNU.
+redos_case() {
+  local name="$1" line="$2" repo ms
+  mk_workdir repo redos
+  git -C "$repo" init -q; git -C "$repo" config user.email t@t.dev; git -C "$repo" config user.name test
+  echo seed > "$repo/seed.txt"; git -C "$repo" add -A && git -C "$repo" commit -qm base
+  node -e 'const n=3000,R=(x)=>x.repeat(n);const L={grant:"GRANT "+" ".repeat(n)+"x",parens:R("("),where:R(".where("),sel:"SELECT "+R("a ")};
+    const l=L[process.argv[2]];require("fs").writeFileSync(process.argv[1]+"/p.ts",Array(8).fill(l).join("\n")+"\n")' "$repo" "$line"
+  git -C "$repo" add -A && git -C "$repo" commit -qm feat
+  # timeout 10 s: a regression fails (signal/timeout => 10000 ms) instead of hanging CI
+  ms="$(node -e 'const t=Date.now();const r=require("child_process").spawnSync("node",[process.argv[1],"realpath-check","run","--diff-base","HEAD~1","--project",process.argv[2]],{timeout:10000,killSignal:"SIGKILL"});process.stdout.write(String(r.error||r.signal?10000:Date.now()-t))' "$TOOLS" "$repo")"
+  if [[ "$ms" -lt 2000 ]]; then echo "PASS  g-redos-$name (${ms} ms < 2000)"; pass=$((pass + 1)); else echo "FAIL  g-redos-$name (${ms} ms >= 2000)"; fail=$((fail + 1)); fi
+}
+redos_case grant grant
+redos_case parens parens
+redos_case where where
+redos_case select sel
 
 echo "realpath-check fixtures: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]
