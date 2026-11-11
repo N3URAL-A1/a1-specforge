@@ -17,9 +17,15 @@ const { emitExit } = require('./emit-exit.cjs');
 //   1. `git diff <base>..HEAD --unified=0` in the project dir.
 //   2. Scan ADDED lines (lines starting with '+', not '+++') for surface
 //      signatures grouped into 3 categories:
-//        - sql : SELECT|INSERT|UPDATE|DELETE|CREATE TABLE|ALTER TABLE
-//                (case-insensitive) in code files. Diff hunks touching *.md or
-//                *.sql migration COMMENT lines (-- …) are excluded.
+//        - sql : SQL SHAPES, not English words (see SQL_SHAPES / SQL_CALLS):
+//                statements (INSERT INTO x, UPDATE x SET, SELECT … FROM, DDL),
+//                strings opening with an uppercase verb, UPPERCASE clause tokens
+//                on continuation lines (WHERE col =, VALUES (, RETURNING …) and
+//                driver calls (.query(, sql`, $queryRaw, PostgREST .from(..).insert(,
+//                .rpc(). Pure comment lines and trailing `// …` comments are
+//                stripped in code files; *.md is excluded; every added
+//                non-comment line of a .sql/.psql/.pgsql file counts. Shapes are
+//                matched over an 8-line window of contiguous added lines (one hunk).
 //        - rls : ROW LEVEL SECURITY | \brls\b
 //        - http: external HTTP calls — fetch( | axios | http.request — that
 //                carry a non-localhost literal URL (http(s)://<host>) on the
@@ -40,18 +46,112 @@ const { emitExit } = require('./emit-exit.cjs');
 //   Bad args / no git repo / git failure => exit 2.
 //
 // KNOWN LIMITS (deliberately simple, line-based, no SQL/JS parsing):
-//   - Signature scan is per-added-line; multi-line statements only trigger on
-//     the line carrying the keyword. String literals containing keywords can
-//     false-positive (conservative: a spurious evidence requirement, never a
-//     silent miss). SQL inside comments on non-.md files is NOT stripped.
+//   - A silent miss IS possible. The scan sees only ADDED lines (`--unified=0`).
+//     Residual risk: (1) a lowercase continuation line with no clause token
+//     (e.g. `  due_at < $1` or `  and x = 1`) added inside an existing query;
+//     (2) a hunk that starts mid-literal, so the opening `select`/`sql\`` line
+//     is not part of the added lines. Firestore `docRef.update(` is not SQL and
+//     is deliberately not flagged.
+//   - Regressions against the old keyword gate (62f642c), all lowercase SQL:
+//     (a) an interpolated identifier breaks the shape: `insert into ${table}`,
+//         f"select {cols} from {table}";
+//     (b) concatenation: "update " + t + " set a = 1";
+//     (c) a lowercase SELECT whose FROM is more than 8 lines below;
+//     (d) fixed here, residual stays: a trailing `// …` is stripped only when no
+//         quote precedes it and never in .py/.sh (division). A real comment after
+//         a quoted string is therefore kept (conservative: false positive only).
+//   - Prose can still false-positive when it mimics a shape, e.g. a string
+//     "Select x from the list", "INSERT INTO t" or SQL text inside a test
+//     assertion (conservative: a spurious evidence requirement).
 //   - Category<->section matching is by heading text only; it does not verify
 //     the command actually exercises that category's surface.
 //   - "command line" / "output block" detection is heuristic (markers, not a
 //     shell parser). Evidence is a human+CLI contract, not a sandbox.
 // ---------------------------------------------------------------------------
 
+// SQL shape matching (ported from the measured reference design, bug
+// 2026-11-08-realpath-sql-prose-false-positive).
+const SQL_FILE = /\.(sql|psql|pgsql)$/i;
+// `//` and `#` trailing comments are not recognised in these (division, shell, string-heavy).
+const NO_TRAIL_STRIP_FILE = /\.(py|sh|bash|zsh)$/i;
+const COMMENT_LINE = /^\s*(\/\/|#(?!!)|\/\*|\*(?!\s*FROM)|\*\/|--)/; // pure comment lines (code files)
+const TRAIL_COMMENT_AT = /(^|\s)\/\/\s/; // `code; // prose`
+const QUOTE_CHAR = /['"`]/;
+// ReDoS rule: every quantifier is bounded or its neighbours are disjoint. The
+// scanner runs on added lines of arbitrary diffs (minified bundles, lockfiles).
+const SQL_SHAPES = [
+  /\bINSERT\s+INTO\s+["\w.]+/i,
+  /\bUPDATE\s+["\w.]+\s+SET\b/i,
+  /\bDELETE\s+FROM\s+["\w.]+/i,
+  /\bSELECT\s+[^;{}]{1,400}?\bFROM\s+["\w.(]/i,
+  /\b(CREATE|ALTER|DROP)\s+(OR\s+REPLACE\s+)?(TABLE|VIEW|MATERIALIZED\s+VIEW|FUNCTION|POLICY|INDEX|UNIQUE\s+INDEX|TRIGGER|SCHEMA|TYPE|SEQUENCE)\b/i,
+  /\bTRUNCATE\s+(TABLE\s+)?["\w.]+/i,
+  /[`'"]\s*(SELECT|WITH|INSERT|UPDATE|DELETE)\s/,                 // string opens with UPPERCASE keyword
+  /[`'"]\s*select\s+(\d|\*|[\w.]+\s*\()/i,                           // `select 1`, `select count(`, `select fn(`
+];
+// UPPERCASE clause tokens, for continuation lines of a multi-line query.
+const SQL_CLAUSES = [
+  /\b(FROM|JOIN)\s+([\w"]+\.[\w"]+|unnest\s*\(|[\w"]+\s+[a-z]{1,3}\b\s*(WHERE|JOIN|ON|$|`))/,
+  /\bWHERE\s+[\w."]+\s*(=|<|>|IN\b|IS\b|\()/,
+  /\bDO\s+(UPDATE\s+SET|NOTHING)\b/,
+  /\bORDER\s+BY\b/,
+  /\bGROUP\s+BY\b/,
+  /\b(AND|OR)\s+[\w.]+\s*(=|<>|<|>|IN\b|IS\b)/,
+  /\b(AND|OR)\s+\(?\w+\(/,
+  /\(\s*(NULL|\$\d+(::\w+)?)\s*,\s*(NULL|\$\d+|')/,
+  /\b(VALUES\s*\(|RETURNING\b|ON\s+CONFLICT\b|WHERE\s+[\w."]+\s*(=|IN\b|IS\b))/,
+];
+const SQL_CALLS = [
+  /\b(GRANT|REVOKE)\s+[\w,]+(?:\s+[\w,]+){0,20}?\s+ON\s/i,
+  /\b\w+\.(insert|update|delete)\s*\(\s*\w+\s*\)\s*\.\s*(values|set|where|returning|onConflict\w*)\s*\(/,
+  /\.select\s*\([^)]*\)\s*\.\s*from\s*\(\s*\w/,
+  /\.execute\s*\(\s*[`'"]/,
+  /\.query\s*\(/,
+  /\bsql\s*`/, /\bsql\.(unsafe|raw)\s*\(/, /\$(queryRaw|executeRaw)(Unsafe)?\b/,
+  /\b(knex|db|trx|tx)\.raw\s*\(/,
+  /\.from\s*\(\s*[`'"][\w.]+[`'"]\s*\)\s*\.\s*(select|insert|upsert|update|delete)\s*\(/,
+  /\.rpc\s*\(\s*[`'"]/,
+  /\.(insert|upsert)\s*\(\s*[\[{]/,
+  /\.update\s*\(\s*\{[\s\S]{0,400}?\}\s*\)\s*\.\s*(eq|neq|match|in|is|filter|gt|gte|lt|lte|like|ilike|or|select|where)\s*\(/,
+  /\.delete\s*\(\s*\)\s*\.\s*(eq|neq|match|in|is|filter|gt|gte|lt|lte|like|ilike|or|where)\s*\(/,
+  /\.where(In)?\s*\([^;]{0,300}?\)\s*\.\s*(update|delete|del)\s*\(/,
+];
+const PATTERNS = [...SQL_SHAPES, ...SQL_CLAUSES, ...SQL_CALLS];
+function stripTrailingComment(file, line) {
+  if (NO_TRAIL_STRIP_FILE.test(file)) return line;
+  const at = line.search(TRAIL_COMMENT_AT);
+  if (at < 0) return line;
+  // A quote before the `//` means it may sit inside a string literal: keep the line.
+  if (QUOTE_CHAR.test(line.slice(0, at))) return line;
+  return line.slice(0, at);
+}
+function cleanLine(file, s) {
+  if (/^\s*--/.test(s)) return null;
+  if (SQL_FILE.test(file)) return s;
+  if (COMMENT_LINE.test(s)) return null;
+  return stripTrailingComment(file, s);
+}
+// hunk = array of added lines (same file, contiguous). True when any window of
+// SQL_WINDOW lines starting at a non-comment line holds a SQL shape that starts
+// on that line.
+function hunkHits(file, lines) {
+  const cleaned = lines.map((l) => cleanLine(file, l));
+  if (SQL_FILE.test(file)) return cleaned.some((c) => c !== null && c.trim() !== '');
+  for (let i = 0; i < cleaned.length; i++) {
+    if (cleaned[i] === null) continue;
+    const win = [];
+    for (let j = i; j < Math.min(cleaned.length, i + SQL_WINDOW); j++) win.push(cleaned[j] === null ? '' : cleaned[j]);
+    const text = win.join('\n');
+    for (const p of PATTERNS) {
+      const m = text.match(p);
+      if (m && m.index < cleaned[i].length + 1) return true;
+    }
+  }
+  return false;
+}
+const SQL_WINDOW = 8; // lines of one hunk examined together (multi-line literals)
+
 const REALPATH_SIGNATURES = {
-  sql: /\b(SELECT|INSERT\s+INTO|INSERT|UPDATE|DELETE|CREATE\s+TABLE|ALTER\s+TABLE)\b/i,
   rls: /(ROW\s+LEVEL\s+SECURITY|\brls\b)/i,
   http: /(fetch\s*\(|axios|http\.request)/i,
 };
@@ -74,28 +174,55 @@ function runGit(args, cwd) {
   };
 }
 
+// Path of a `+++ ` header line: strips the trailing TAB git adds after paths
+// with spaces, unquotes a C-quoted path and drops the `b/` prefix. null for /dev/null.
+function headerPath(raw) {
+  let p = raw.replace(/\t.*$/, '');
+  if (p.startsWith('"') && p.endsWith('"') && p.length >= 2) {
+    p = p.slice(1, -1).replace(/\\(?:([0-7]{3})|(.))/g, (m, oct, ch) => {
+      if (oct) return String.fromCharCode(parseInt(oct, 8));
+      return { t: '\t', n: '\n', r: '\r' }[ch] || ch;
+    });
+  }
+  if (p === '/dev/null') return null;
+  return p.replace(/^b\//, '');
+}
+
 // Scan a unified-diff for real-backend surfaces. Returns Set of category names.
+// File headers count only between a `diff --git` line and the first `@@`; inside
+// a hunk every `+` line is content (even `+++ b/x`). Added lines form a hunk
+// (contiguous '+' lines of one file) so SQL shapes can span lines.
 function scanDiffForSurfaces(diff) {
   const found = new Set();
-  const lines = diff.split('\n');
   let currentFile = null;
-  let fileIsMd = false;
-  for (const line of lines) {
-    // Track the file the following added lines belong to.
-    const fm = line.match(/^\+\+\+ b\/(.+)$/);
-    if (fm) {
-      currentFile = fm[1];
-      fileIsMd = /\.md$/i.test(currentFile);
+  let inHeader = false;
+  let hunk = [];
+  const flush = () => {
+    if (hunk.length && currentFile && !/\.md$/i.test(currentFile) && hunkHits(currentFile, hunk)) {
+      found.add('sql');
+    }
+    hunk = [];
+  };
+  for (const line of diff.split('\n')) {
+    if (line.startsWith('diff --git ')) {
+      flush();
+      currentFile = null;
+      inHeader = true;
       continue;
     }
-    if (line.startsWith('+++') || line.startsWith('---')) continue;
-    if (!line.startsWith('+')) continue; // only ADDED lines
+    if (inHeader) {
+      if (line.startsWith('+++ ')) currentFile = headerPath(line.slice(4));
+      else if (line.startsWith('@@')) inHeader = false;
+      continue;
+    }
+    if (!line.startsWith('+')) {
+      flush(); // hunk header, context or removed line ends the contiguous run
+      continue;
+    }
+    if (!currentFile || /\.md$/i.test(currentFile)) continue; // exclude markdown docs entirely
     const added = line.slice(1);
-    if (fileIsMd) continue; // exclude markdown docs entirely
-    // Exclude SQL-migration comment lines (-- …) for the sql category.
-    const isSqlComment = /^\s*--/.test(added);
+    hunk.push(added);
 
-    if (!isSqlComment && REALPATH_SIGNATURES.sql.test(added)) found.add('sql');
     if (REALPATH_SIGNATURES.rls.test(added)) found.add('rls');
     if (REALPATH_SIGNATURES.http.test(added)) {
       const urlMatch = added.match(REALPATH_URL);
@@ -104,6 +231,7 @@ function scanDiffForSurfaces(diff) {
       }
     }
   }
+  flush();
   return found;
 }
 
@@ -173,7 +301,7 @@ function cmdRealpathCheckRun(args) {
     process.exit(2);
   }
 
-  const diffRes = runGit(['diff', `${base}..HEAD`, '--unified=0'], projectDir);
+  const diffRes = runGit(['-c', 'core.quotePath=false', 'diff', '--no-color', '--no-ext-diff', `${base}..HEAD`, '--unified=0'], projectDir);
   if (!diffRes.ok) {
     process.stderr.write(`error: git diff failed: ${diffRes.stderr.trim() || 'unknown'}\n`);
     process.exit(2);
@@ -261,4 +389,4 @@ function cmdRealpathCheckRun(args) {
   emitExit(status === 'PASS' ? 0 : 1, text, '');
 }
 
-module.exports = { cmdRealpathCheckRun };
+module.exports = { cmdRealpathCheckRun, scanDiffForSurfaces, hunkHits, cleanLine, SQL_PATTERNS: PATTERNS };
