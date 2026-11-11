@@ -36,11 +36,11 @@ invisible to a1-evolve. `skill`, `phase`, `wave` (`null` at Plan), `type`
 | `agent` | required | `xprov-codex` |
 | `pattern` | required | `xprov_finding` — one relayed reviewer finding; `xprov_waived` — a gate result set aside by a recorded waiver (FR-007); `xprov_disposed` — a round-cap result closed by recorded dispositions (spec 016 FR-025) |
 | `provider` | optional | `codex` — the provider CLI the runner drove. No fallback provider is ever recorded. |
-| `model_requested` | optional | the `--model` value passed to the runner, or the literal `CLI default (unresolved)` when none was passed (a1 passes none — ADR 2026-09-24) |
+| `model_requested` | optional | the model a1 pinned in the isolated Codex config (`gpt-6-astra` since spec 025; the CLI default effort applies). Older entries carry the literal `CLI default (unresolved)`, written while a1 pinned no model |
 | `model_observed` | optional | ONLY a value measured from the runner record or a captured CLI event stream; otherwise the literal `unknown`. Never copied from `model_requested`. Runner 2.1.0 reports `observed_models: []` for Codex, so today this is always `unknown` — the parser follows a captured fixture, never precedes it. |
 
 ```jsonl
-{"ts":"...","agent":"xprov-codex","skill":"a1-plan","phase":"M1-P2-auth","wave":null,"type":"gap","severity":"major","msg":"PLAN.md Wave 2 writes the migration but no task registers it in the router","pattern":"xprov_finding","provider":"codex","model_requested":"CLI default (unresolved)","model_observed":"unknown"}
+{"ts":"...","agent":"xprov-codex","skill":"a1-plan","phase":"M1-P2-auth","wave":null,"type":"gap","severity":"major","msg":"PLAN.md Wave 2 writes the migration but no task registers it in the router","pattern":"xprov_finding","provider":"codex","model_requested":"gpt-6-astra","model_observed":"unknown"}
 ```
 
 ### Observation types

@@ -31,7 +31,7 @@
 # `… remote_plugin` (2026-09-24), plus the six Wave 7 pins (2026-10-02: what
 # `codex features disable` appends, and a1's explicit `memories = false`).
 # Frozen literal, compared byte-for-byte in R14e.
-# Spec 025 W6: the two model pins joined the file; the literal is now the harness's COMPLIANT_CONFIG (built from PIN_MODEL / PIN_EFFORT), still compared byte-for-byte in R14e.
+# Spec 025 W6: the model pin joined the file; the literal is now the harness's COMPLIANT_CONFIG (built from PIN_MODEL), still compared byte-for-byte in R14e.
 COMPLIANT_CONFIG_W4="$COMPLIANT_CONFIG"
 
 EXPECTED_PREFLIGHT_CHECKS="codex_home_is_global home_exists config_exists config_is_symlink home_mode_0700 sandbox_read_only auth_store_file model_pinned mcp_servers_absent plugins_disabled remote_plugin_switch features_pinned_off unexpected_config_key plugins_cache_empty skills_system_only skills_real_dirs home_no_symlinks session_tools_exec_only etc_codex_absent auth_present runner_pin python_version codex_cli"
@@ -417,7 +417,7 @@ web_search = true
 experimental_use_unified_exec_tool = true|keys: shell_environment_policy, shell_environment_policy.inherit, tools, tools.experimental_use_unified_exec_tool, tools.web_search|0'
     'M multi-line inline table|mcp_servers = {
   x = { command = "npx" }
-}|keys: mcp_servers, x; unparsed lines: 13|1'
+}|keys: mcp_servers, x; unparsed lines: 12|1'
   )
   # Case M's line number is the head length + 3: the head grew by one line in
   # Wave 7 (cli_auth_credentials_store), so the unparsed `}` moved from 10 to 11.

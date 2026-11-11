@@ -20,7 +20,8 @@ gate0: spec clarifications 2026-11-11 added (FR-019 outage scope; accepted risk:
 gate0: FINDING test leak → a file `UNPARSEABLE` was committed in wave 4 (`64ddcc7`); tests that take `dirname` of an unparseable JSON path write into the cwd (e.g. parts/10 line 299, parts/30 line 435) during mutation runs. Removed in this wave; root-cause guard is open (see below)
 gate2: SKIPPED preview deploy (CLI library, no web app)
 
-Open: task 6.1 (measure effort, replace placeholder and rejection fixture, re-run M9).
+Task 6.1 DROPPED 2026-11-11 (owner decision): effort stays at the Codex CLI default; follow-up vault `idea/a1-specforge-codex-effort-pin.md`; spec FR-016/SC-004 amended.
+gate0: effort unpinned → isolated config pins only `model`; prior value `PENDING-6.1` removed by repair (logged `upgrade_pins`), any other effort value fails `model_pinned`; part 35 75/0, part 04 126/0; new mutation M1b (effort key written again) flips; M1, M2b, M3, M9, M13c still flip; lib-units 513/0; gates lint []; check-enforcement ok; rejection fixture is constructed (meta says so)
 
 ## Wave 7 — Design review wiring and legacy state (2026-11-11, aiserver)
 
@@ -31,3 +32,8 @@ gate0: 7.2 skill wiring → 04b Step 1b and 02-execute 2b-d call design-targets 
 gate0: full a1-xprov 4160 passed, 1 failed (CA10 locale, known); lib-units 513/0; a1-intent 12 failed vs 13 on main (environment, see wave 6); verify-install-sync PASS; workflow lint []; gates lint []; realpath-check PASS
 gate0: test-leak root cause found → parts/19-review-quality.sh:177 wrote `printf … > "$(json_get …)"`, i.e. into the cwd as UNPARSEABLE when json_get failed; guarded (target must be absolute, under the suite TMPDIR, not UNPARSEABLE/undefined/null), failure path of the guard not separately exercised; no stray file after the final runs
 gate2: SKIPPED preview deploy (CLI library, no web app)
+
+## Wave 8 — ADR addendum (2026-11-11, aiserver)
+
+gate0: `docs/adr/2026-09-24-cross-provider-review-gate.md` L1067–1075 `## Addendum 2026-11-09 — Codex reviews only architecture (spec 025)`; §6 Live smoke sha256 74301757…b88d before = after; check-enforcement exit 0; hook file name `hooks/xprov-merge-hook.sh` verified on origin/main
+gate3: FR-023-AC1 PASS @wave8 2026-11-11 (addendum names removed gates + hook, design-review-xprov warning, model pin with effort at CLI default and the follow-up, codex_unavailable fallback; no measurement record exists, by owner decision)

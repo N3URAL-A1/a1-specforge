@@ -138,12 +138,12 @@ const ROUND_CAP = 2; // FR-006
 const MAX_FIELD_CHARS = 10000; // FR-028 size guard for one string field
 const MAX_RESULT_BYTES = 5 * 1024 * 1024; // FR-028 bound on the JSON read
 const TITLE_MAX_CHARS = 120; // FR-012
-// Spec 025 W6 (FR-016): every Codex call runs this model at this effort, written into the isolated CODEX_HOME config by the preflight pin
-// writer (xprov-preflight.cjs ROOT_PINS) and checked there (model_pinned). The effort lives in exactly ONE place: this constant.
+// Spec 025 W6 (FR-016): every Codex call runs this model, written into the isolated CODEX_HOME config by the preflight pin writer
+// (xprov-preflight.cjs ROOT_PINS) and checked there (model_pinned). The config carries NO model_reasoning_effort key: the Codex CLI default effort applies
+// (owner decision 2026-11-11, task 6.1 dropped), so no effort literal exists in production code.
 const MODEL_PINNED = 'gpt-6-astra';
-// TODO(6.1): replace with the measured value; record ~/N3URAL-Vault/record/2026-11-11-gpt-6-astra-effort-measurement.md
-const EFFORT_PINNED = 'PENDING-6.1';
-// Values an earlier a1 release wrote for the pins and that preflight repairs to the current pin (a1-managed keys; any other foreign value stays a pin_conflict).
+// Values an earlier a1 release wrote that preflight repairs: a prior model value is rewritten to the pin; a prior model_reasoning_effort value is REMOVED
+// (a1-managed keys; any other foreign value stays a pin_conflict). 'PENDING-6.1' is the placeholder an interim a1 build wrote for the effort.
 const PRIOR_MODEL_PINS = Object.freeze([]);
 const PRIOR_EFFORT_PINS = Object.freeze(['PENDING-6.1']);
 // Review gates refuse a --timeout below this (spec 025 W6 SEC-1): a 1 s timeout would make every run end `codex_unavailable` on purpose. The suite rewrites it in its tree COPY (like RETRY_DELAYS_MS).
@@ -432,7 +432,7 @@ module.exports = {
   GATE_IDS, GATE_ID_LIST, RETIRED_GATE_IDS,
   RUNNER_MODES, FORBIDDEN_RUNNER_TOKENS, RUNNER_HOST, RUNNER_DEFAULT_TIMEOUT_SECONDS,
   ARTIFACT_MAX_AGE_DAYS, PASS_RUN_MAX_AGE_DAYS, ROUND_CAP, MAX_FIELD_CHARS, MAX_RESULT_BYTES, TITLE_MAX_CHARS,
-  MODEL_PINNED, EFFORT_PINNED, PRIOR_MODEL_PINS, PRIOR_EFFORT_PINS, GATE_MIN_TIMEOUT_SECONDS, MODEL_REQUESTED_DEFAULT, MODEL_OBSERVED_UNKNOWN,
+  MODEL_PINNED, PRIOR_MODEL_PINS, PRIOR_EFFORT_PINS, GATE_MIN_TIMEOUT_SECONDS, MODEL_REQUESTED_DEFAULT, MODEL_OBSERVED_UNKNOWN,
   ALLOWLIST_FILE, ALLOWLIST_MAX_ENTRIES, ALLOWLIST_MAX_COUNT, ALLOWLIST_MAX_SCOPES, ALLOWLIST_SCOPE_MAX_COUNT, ALLOWLIST_CLASSES, ALLOWLIST_APPROVALS_FILE, HIT_APPROVALS_FILE,
   ALLOWLIST_DETAILS, HIGH_CONFIDENCE_PATTERNS,
   SECRET_PATTERNS, TOKEN_BOUNDARY, PATH_NAME_BOUNDARY_PATTERNS, INSTRUCTION_MARKERS, INSTRUCTION_MARKER_PATTERNS,

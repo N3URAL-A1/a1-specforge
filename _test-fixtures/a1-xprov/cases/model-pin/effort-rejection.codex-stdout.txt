@@ -1,1 +1,1 @@
-PENDING-6.1 rejection capture
+{"type":"error","message":"Error loading config.toml: unknown variant `ultra`, expected one of `minimal`, `low`, `medium`, `high`, `xhigh` in `model_reasoning_effort`"}

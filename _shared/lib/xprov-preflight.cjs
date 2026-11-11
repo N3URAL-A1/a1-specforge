@@ -79,8 +79,8 @@ const REQUIRED_FEATURES_OFF = Object.freeze(['plugins', 'remote_plugin']);
 const FEATURE_PINS = Object.freeze(['apps', 'browser_use', 'computer_use', 'hooks', 'skill_mcp_dependency_install', 'memories']);
 const ALL_FEATURE_PINS = Object.freeze([...REQUIRED_FEATURES_OFF, ...FEATURE_PINS]);
 // Root keys a1 pins (key → required value), inserted after the last root entry.
-const ROOT_PINS = Object.freeze({ cli_auth_credentials_store: 'file', model: xprov.MODEL_PINNED, model_reasoning_effort: xprov.EFFORT_PINNED });
-const MODEL_PIN_KEYS = Object.freeze(['model', 'model_reasoning_effort']); // the two ROOT_PINS keys model_pinned checks (spec 025 W6)
+const ROOT_PINS = Object.freeze({ cli_auth_credentials_store: 'file', model: xprov.MODEL_PINNED });
+const EFFORT_KEY = 'model_reasoning_effort'; // never written by a1 (spec 025 FR-016: the CLI default effort applies); a stored value is repaired away or a conflict
 const SKILLS_DIR = 'skills';
 // The one measured place Codex itself puts symlinks (2026-10-03, codex-cli
 // 0.155.1): tmp/arg0/codex-arg0<random>/{apply_patch,applypatch,
@@ -111,7 +111,6 @@ sandbox_mode = "read-only"
 approval_policy = "on-request"
 cli_auth_credentials_store = "file"
 model = "${ROOT_PINS.model}"
-model_reasoning_effort = "${ROOT_PINS.model_reasoning_effort}"
 
 [features]
 plugins = false
@@ -274,16 +273,18 @@ function configChecks(text) {
   const features = REQUIRED_FEATURES_OFF.map(featureState);
   const featuresOff = features.every((f) => f.off);
   const pins = FEATURE_PINS.map(featureState);
-  // spec 025 W6 (FR-016): model and effort must each be present, once, with exactly the pinned value (a missing key is repaired additively; another value is a conflict)
-  const modelPinned = MODEL_PIN_KEYS.map((k) => ({ key: k, values: entries.filter((e) => e.table === '' && e.key === k).map((e) => e.value) }));
-  const modelPinnedOk = modelPinned.every((m) => m.values.length === 1 && m.values[0] === ROOT_PINS[m.key]);
+  // spec 025 W6 (FR-016): `model` present once with exactly the pin, and NO model_reasoning_effort key (the CLI default effort applies). A missing model and a
+  // prior a1 effort value are repaired by the gate; another model or effort value is a conflict.
+  const modelValues = entries.filter((e) => e.table === '' && e.key === 'model').map((e) => e.value);
+  const effortValues = entries.filter((e) => e.table === '' && e.key === EFFORT_KEY).map((e) => e.value);
+  const modelPinnedOk = modelValues.length === 1 && modelValues[0] === ROOT_PINS.model && effortValues.length === 0;
+  const modelPinnedMeasured = `model = ${modelValues.length ? modelValues.map((v) => `"${v}"`).join('/') : 'absent'} (pinned "${ROOT_PINS.model}"), ${EFFORT_KEY} ${effortValues.length ? `= ${effortValues.map((v) => `"${v}"`).join('/')} (must be absent)` : 'absent'}`;
   return [
     check('sandbox_read_only', Boolean(sandbox) && sandbox.value === 'read-only',
       sandbox ? `sandbox_mode = "${sandbox.value}"` : 'sandbox_mode absent'),
     check('auth_store_file', authStore.length > 0 && authStore.every((v) => v === ROOT_PINS.cli_auth_credentials_store),
       authStore.length ? `cli_auth_credentials_store = "${authStore.join('/')}"` : 'cli_auth_credentials_store absent (Codex default may use a keyring)'),
-    check('model_pinned', modelPinnedOk,
-      modelPinned.map((m) => `${m.key} = ${m.values.length ? m.values.map((v) => `"${v}"`).join('/') : 'absent'} (pinned "${ROOT_PINS[m.key]}")`).join(', ')),
+    check('model_pinned', modelPinnedOk, modelPinnedMeasured),
     check('mcp_servers_absent', mcp.length === 0, mcp.length ? mcp.join(', ') : 'no mcp_servers table or key'),
     check('plugins_disabled', enabledPlugins.length === 0,
       enabledPlugins.length ? enabledPlugins.map((t) => `[${t.name}] enabled = true`).join(', ')
@@ -622,6 +623,7 @@ function createFreshHome(home, homedir) {
 /** Appends the missing pins: root keys (ROOT_PINS) after the last root entry,
  * `<pin> = false` to [features] (or a new [features] table at the end).
  * Returns { text, added, conflicts }; never edits an existing line. */
+const REMOVED_LINE = '\u0000removed';
 function pinFeaturesText(text) {
   const parsed = parseTomlLines(text);
   const featureTables = parsed.tables.filter((t) => t.name === 'features');
@@ -636,11 +638,13 @@ function pinFeaturesText(text) {
   }
   const valuesOf = (p) => parsed.entries.filter((e) => e.path === p).map((e) => e.value);
   const rootKeys = Object.keys(ROOT_PINS);
-  // a1-managed pins: a value an earlier a1 release wrote (PRIOR_*_PINS) is upgraded in place; any other foreign value is a conflict
-  const prior = (k) => (k === 'model' ? xprov.PRIOR_MODEL_PINS : k === 'model_reasoning_effort' ? xprov.PRIOR_EFFORT_PINS : []);
+  // a1-managed pins: a model value an earlier a1 release wrote (PRIOR_MODEL_PINS) is rewritten in place; a prior model_reasoning_effort value
+  // (PRIOR_EFFORT_PINS) is REMOVED (the CLI default effort applies); any other foreign value is a conflict
+  const prior = (k) => (k === 'model' ? xprov.PRIOR_MODEL_PINS : []);
   const foreign = (k, v) => v !== ROOT_PINS[k] && !prior(k).includes(v);
   const conflicts = [
     ...rootKeys.filter((k) => valuesOf(k).some((v) => foreign(k, v))).map((k) => `${k} = ${valuesOf(k).join('/')}`),
+    ...(valuesOf(EFFORT_KEY).some((v) => !xprov.PRIOR_EFFORT_PINS.includes(v)) ? [`${EFFORT_KEY} = ${valuesOf(EFFORT_KEY).join('/')}`] : []),
     ...ALL_FEATURE_PINS.filter((k) => valuesOf(`features.${k}`).some((v) => v !== 'false')).map((k) => `features.${k} = ${valuesOf(`features.${k}`).join('/')}`),
   ];
   if (conflicts.length) return { text, added: [], upgraded: [], conflicts };
@@ -648,9 +652,11 @@ function pinFeaturesText(text) {
   const featAdd = ALL_FEATURE_PINS.filter((k) => valuesOf(`features.${k}`).length === 0);
   const added = [...rootAdd, ...featAdd];
   const upgrades = parsed.entries.filter((e) => rootKeys.includes(e.path) && e.value !== ROOT_PINS[e.path]); // only prior values are left after the conflict check
-  if (added.length === 0 && upgrades.length === 0) return { text, added, upgraded: [], conflicts };
+  const removals = parsed.entries.filter((e) => e.path === EFFORT_KEY); // only prior a1 values are left after the conflict check
+  if (added.length === 0 && upgrades.length === 0 && removals.length === 0) return { text, added, upgraded: [], conflicts };
   const lines = String(text).replace(/\n$/, '').split('\n');
   for (const e of upgrades) lines[e.line - 1] = `${e.path} = "${ROOT_PINS[e.path]}"`;
+  for (const e of removals) lines[e.line - 1] = REMOVED_LINE; // dropped at the end, so the line numbers of the insertions below stay valid
   const featLines = featAdd.map((k) => `${k} = false`);
   if (featLines.length) {
     if (featureTables.length === 0) lines.push('', '[features]', ...featLines);
@@ -667,7 +673,7 @@ function pinFeaturesText(text) {
     const at = rootEntries.length ? Math.max(...rootEntries) : firstTable;
     lines.splice(at, 0, ...rootAdd.map((k) => `${k} = "${ROOT_PINS[k]}"`));
   }
-  return { text: `${lines.join('\n')}\n`, added, upgraded: upgrades.map((e) => e.path), conflicts };
+  return { text: `${lines.filter((l) => l !== REMOVED_LINE).join('\n')}\n`, added, upgraded: [...upgrades, ...removals].map((e) => e.path), conflicts };
 }
 
 /** `init-home --pin-features` on an existing home: additive, atomic, 0600 kept. */
@@ -711,7 +717,8 @@ function initHome(opts) {
     const after = parseTomlLines(fs.readFileSync(configPath, 'utf8'));
     const paths = [...Object.keys(ROOT_PINS), ...ALL_FEATURE_PINS.map((k) => `features.${k}`)];
     pinned = paths.filter((p) => !before.entries.some((e) => e.path === p) && after.entries.some((e) => e.path === p)).map((p) => p.replace(/^features\./, ''));
-    upgraded = Object.keys(ROOT_PINS).filter((k) => before.entries.some((e) => e.path === k && e.value !== ROOT_PINS[k]) && after.entries.every((e) => e.path !== k || e.value === ROOT_PINS[k]));
+    upgraded = [...Object.keys(ROOT_PINS).filter((k) => before.entries.some((e) => e.path === k && e.value !== ROOT_PINS[k]) && after.entries.every((e) => e.path !== k || e.value === ROOT_PINS[k])),
+      ...(before.entries.some((e) => e.path === EFFORT_KEY) && !after.entries.some((e) => e.path === EFFORT_KEY) ? [EFFORT_KEY] : [])];
   }
   const configExists = fs.existsSync(configPath);
   const checks = [

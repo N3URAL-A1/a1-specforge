@@ -73,12 +73,9 @@ EXPECTED_RUNNER_VERSION="2.1.0"
 EXPECTED_UPSTREAM_COMMIT="8cf5e2c1771c5151d90c12642391d0ba8fa71b0e"
 EXPECTED_CLI_VERSION="codex-cli 0.155.1"
 GATE_PLAN="plan-review-xprov"
-# Spec 025 Wave 6 (FR-016): the model pin is a frozen literal; the effort pin is READ from the one constant of the module under test
-# (EFFORT_PINNED in _shared/lib/xprov.cjs), so the measured value (task 6.1) is edited in exactly one place. Every compliant-config
-# literal below and in the parts is built from these two variables.
+# Spec 025 Wave 6 (FR-016): the model pin is a frozen literal. The isolated config carries NO model_reasoning_effort key (owner decision 2026-11-11: the
+# Codex CLI default effort applies), so there is no effort variable. Every compliant-config literal below and in the parts is built from PIN_MODEL.
 PIN_MODEL="gpt-6-astra"
-PIN_EFFORT="$(node -p "require(process.argv[1]).EFFORT_PINNED" "$XPROV_LIB" 2>/dev/null)"
-[[ -n "$PIN_EFFORT" ]] || PIN_EFFORT="UNREADABLE-EFFORT_PINNED"
 # The compliant config measured in ~/.codex-a1-review/config.toml (2026-09-24):
 # comment header, the two runtime keys, and — added the same day after Wave 4
 # measured that Codex auto-installs remote plugins unless `features.plugins`
@@ -98,7 +95,6 @@ sandbox_mode = "read-only"
 approval_policy = "on-request"
 cli_auth_credentials_store = "file"
 model = "'"$PIN_MODEL"'"
-model_reasoning_effort = "'"$PIN_EFFORT"'"
 
 [features]
 plugins = false

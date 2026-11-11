@@ -758,7 +758,7 @@ function judgeRun(ctx, o, run, artifactsDir, delta, baselinePath, seen) {
   if (run.status !== 0) {
     // spec 025 W6 (FR-016): Codex refusing the pinned effort value is a preflight failure (a1's pin is wrong), not an outage; the detail is fixed text, never Codex's
     if (NZ.isEffortRejection(rejectionText(run))) {
-      const pinned = `Codex rejected the pinned model_reasoning_effort "${X.EFFORT_PINNED}" for model "${X.MODEL_PINNED}"; fix EFFORT_PINNED in xprov.cjs`;
+      const pinned = `Codex rejected the model_reasoning_effort setting for model "${X.MODEL_PINNED}"; the isolated config pins no effort, so a model_reasoning_effort key in the review home or the Codex defaults is the cause`;
       process.stderr.write(`xprov run: ${pinned}\n`);
       return o.failWith(X.REASONS.preflight_failed, pinned, run.runDir, false, seen);
     }

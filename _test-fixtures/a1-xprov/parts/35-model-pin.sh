@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Part 35 — spec 025 Wave 6: the model + effort pin (FR-016, FR-017) and the `codex_unavailable` fallback (FR-019).
-# Sourced by run-tests.sh. Every expectation is a literal or comes from PIN_MODEL / PIN_EFFORT (run-tests.sh: the model is a frozen literal,
-# the effort is read from the ONE constant EFFORT_PINNED, so task 6.1's measured value is edited in exactly one place). No real Codex: the fake
+# Sourced by run-tests.sh. Every expectation is a literal or comes from PIN_MODEL (run-tests.sh: a frozen literal). The isolated config pins NO
+# model_reasoning_effort (owner decision 2026-11-11: the CLI default effort applies; task 6.1 dropped). No real Codex: the fake
 # runner replays captured/transcribed Codex stdout (cases/usage-limit.codex-stdout.txt = real capture; cases/model-pin/usage-limit-plain =
-# the live 2026-11-11 text; cases/model-pin/effort-rejection = PLACEHOLDER until task 6.1 drops in the real text).
+# the live 2026-11-11 text; cases/model-pin/effort-rejection = a CONSTRUCTED serde-shaped config error, see its .meta).
 #
 # Arm -> the single production change that turns it red (each is run once for real on a tree copy: the "RED [mutant]" lines):
-#   M1  fresh init-home writes model + model_reasoning_effort from the constants        Red if ROOT_PINS / COMPLIANT_CONFIG lose the two keys.
+#   M1  fresh init-home writes `model` and NO model_reasoning_effort                   Red if ROOT_PINS lose the model key, or if the effort key is written again.
 #   M2  an old home without the pins is upgraded additively, in order                   Red if pinFeaturesText skips the two root pins.
 #   M3  preflight model_pinned: other model, other effort, missing -> FAIL; matching -> PASS   Red if modelPinnedCheck accepts any value.
 #   M4  gate on a home with another model: fail/preflight_failed, 0 runner calls        Red if the preflight check is not enforced by the gate.
@@ -15,7 +15,7 @@
 #                                                                                       Red if the mapping or the load-check acceptance is missing.
 #   M7  hard stops stay fail: tripwire, malformed, secret_in_snapshot, a runner refusal (claudex-loop: ...)   Red if the mapping swallows more than a failed Codex run.
 #   M8  a forged codex_unavailable row proves nothing: no marker / other plan sha / other gate -> load-check refuses   Red if the marker check is dropped.
-#   M9  [PENDING 6.1] the effort-rejection text ends fail/preflight_failed, never codex_unavailable   Red if EFFORT_REJECTION_RE does not match the text.
+#   M9  the (constructed) effort-rejection text ends fail/preflight_failed, never codex_unavailable   Red if EFFORT_REJECTION_RE does not match the text.
 
 mk_workdir TMP35 tmp35
 SAVED_HOME_35="$HOME"
@@ -83,35 +83,40 @@ scen_m1() {
   prep35
   local fresh="$TMP35/fresh-home"; rm -rf "$fresh"
   ( cd "$PHASE_REPO" && A1_XPROV_CODEX_HOME="$fresh" node "$TREE_TOOLS" xprov init-home >/dev/null 2>&1 </dev/null )
-  echo "$(grep -c "^model = \"$PIN_MODEL\"\$" "$fresh/config.toml" 2>/dev/null)/$(grep -c "^model_reasoning_effort = \"$PIN_EFFORT\"\$" "$fresh/config.toml" 2>/dev/null)"
+  echo "$(grep -c "^model = \"$PIN_MODEL\"\$" "$fresh/config.toml" 2>/dev/null)/$(grep -c '^model_reasoning_effort' "$fresh/config.toml" 2>/dev/null)"
 }
-scen_m2() {
+scen_m2() { # <effort line to append to the old config, or none>
   prep35
   local old="$TMP35/old-home"; rm -rf "$old"; mkdir -p "$old"; chmod 700 "$old"; cp "$PIN_CASES/old-config.toml" "$old/config.toml"; chmod 600 "$old/config.toml"
+  [[ "${1:-none}" != none ]] && sed -i.bak "s/^cli_auth_credentials_store = .*/&\nmodel_reasoning_effort = \"$1\"/" "$old/config.toml" && rm -f "$old/config.toml.bak"
   local up; up="$(cd "$PHASE_REPO" && A1_XPROV_CODEX_HOME="$old" node "$TREE_TOOLS" xprov init-home --pin-features 2>/dev/null </dev/null)"
-  echo "$(json_get "$up" "(j.pinned || []).join(',')")/$(grep -c '^model' "$old/config.toml")"
+  echo "$(json_get "$up" "(j.pinned || []).join(',') + '|' + (j.upgraded || []).join(',')")/$(grep -c '^model = ' "$old/config.toml")/$(grep -c '^model_reasoning_effort' "$old/config.toml")"
 }
-scen_m3() { # model_pinned result for: matching, other model, other effort, both missing
+scen_m3() { # model_pinned result for: matching, other model, an effort key, model missing
   prep35
   local out="" pf
   pf="$(pf35)"; out="$(check35 "$pf" model_pinned | cut -d'|' -f1)"
   sed -i.bak "s/^model = .*/model = \"gpt-5-codex\"/" "$XHOME/config.toml"; pf="$(pf35)"; out="$out,$(check35 "$pf" model_pinned | cut -d'|' -f1)"
   cp "$XHOME/config.toml.bak" "$XHOME/config.toml"
-  sed -i.bak "s/^model_reasoning_effort = .*/model_reasoning_effort = \"low\"/" "$XHOME/config.toml"; pf="$(pf35)"; out="$out,$(check35 "$pf" model_pinned | cut -d'|' -f1)"
+  sed -i.bak "s/^model = .*/&\nmodel_reasoning_effort = \"low\"/" "$XHOME/config.toml"; pf="$(pf35)"; out="$out,$(check35 "$pf" model_pinned | cut -d'|' -f1)"
   grep -v '^model' "$XHOME/config.toml.bak" > "$XHOME/config.toml"; pf="$(pf35)"; out="$out,$(check35 "$pf" model_pinned | cut -d'|' -f1)"
   rm -f "$XHOME/config.toml.bak"
   echo "$out"
 }
 caseM1() {
-  [[ -n "$PIN_EFFORT" && "$PIN_EFFORT" != UNREADABLE-EFFORT_PINNED ]] && ok "M0 EFFORT_PINNED is readable from xprov.cjs ($PIN_EFFORT$([[ "$PIN_EFFORT" == PENDING-6.1 ]] && echo " - PENDING task 6.1, not measured yet"))" || bad "M0 EFFORT_PINNED could not be read from xprov.cjs"
-  assert_eq "M1 init-home writes model and model_reasoning_effort (one line each) from the two constants" "$(scen_m1)" "1/1"
-  redproof35 "M1" scen_m1 "1/1" xprov-preflight.cjs "const ROOT_PINS = Object.freeze({ cli_auth_credentials_store: 'file', model: xprov.MODEL_PINNED, model_reasoning_effort: xprov.EFFORT_PINNED });" "const ROOT_PINS = Object.freeze({ cli_auth_credentials_store: 'file' });"
+  assert_eq "M0 the module exports no effort constant (the CLI default effort applies)" "$(node -p "String(require(process.argv[1]).EFFORT_PINNED)" "$XPROV_LIB")" "undefined"
+  assert_eq "M1 init-home writes the model line (one) and no model_reasoning_effort key" "$(scen_m1)" "1/0"
+  redproof35 "M1" scen_m1 "1/0" xprov-preflight.cjs "const ROOT_PINS = Object.freeze({ cli_auth_credentials_store: 'file', model: xprov.MODEL_PINNED });" "const ROOT_PINS = Object.freeze({ cli_auth_credentials_store: 'file' });"
+  redproof35 "M1b" scen_m1 "1/0" xprov-preflight.cjs 'model = "${ROOT_PINS.model}"' 'model = "${ROOT_PINS.model}"
+model_reasoning_effort = "high"'
 }
 caseM2() {
-  assert_eq "M2 an old home gets the two pins appended after the auth store key, in order; the file then holds two model lines" "$(scen_m2)" "model,model_reasoning_effort/2"
+  assert_eq "M2 an old home (no model key) gets the model pin appended; no effort key appears" "$(scen_m2)" "model|/1/0"
+  assert_eq "M2b a home with the prior a1 effort value (PENDING-6.1): the model pin is added, the effort key is removed and reported as upgraded" "$(scen_m2 PENDING-6.1)" "model|model_reasoning_effort/1/0"
+  redproof35 "M2b" "scen_m2 PENDING-6.1" "model|model_reasoning_effort/1/0" xprov-preflight.cjs "for (const e of removals) lines[e.line - 1] = REMOVED_LINE;" "for (const e of []) lines[e.line - 1] = REMOVED_LINE;"
 }
 caseM3() {
-  assert_eq "M3 model_pinned: matching PASS; other model, other effort and missing keys FAIL" "$(scen_m3)" "PASS,FAIL,FAIL,FAIL"
+  assert_eq "M3 model_pinned: matching PASS; another model, any effort key and a missing model FAIL" "$(scen_m3)" "PASS,FAIL,FAIL,FAIL"
   redproof35 "M3" scen_m3 "PASS,FAIL,FAIL,FAIL" xprov-preflight.cjs "check('model_pinned', modelPinnedOk," "check('model_pinned', true || modelPinnedOk,"
 }
 
@@ -129,7 +134,7 @@ caseM4() {
   prep35; cp "$PIN_CASES/old-config.toml" "$XHOME/config.toml"; chmod 600 "$XHOME/config.toml"
   plan35
   assert_eq "M4 an old home (no pins) is repaired by the gate and the review passes" "$(sum35)" "0/pass/null/1"
-  assert_eq "M4 …the config now holds both pins" "$(grep -c "^model = \"$PIN_MODEL\"\$\|^model_reasoning_effort = \"$PIN_EFFORT\"\$" "$XHOME/config.toml")" "2"
+  assert_eq "M4 …the config now holds the model pin" "$(grep -c "^model = \"$PIN_MODEL\"\$" "$XHOME/config.toml")" "1"
 }
 
 # ---------- M5: the requested model is recorded (FR-017) ----------
@@ -229,16 +234,15 @@ caseM8() {
   redproof35 "M8e" "scen_m8 othergate" "1/false/null/plan_review_missing" xprov-runrecord.cjs "m.codex_unavailable === true && m.plan_sha256 === planSha && m.gate === gate;" "m.codex_unavailable === true && m.plan_sha256 === planSha;"
 }
 
-# ---------- M9: [PENDING 6.1] a rejected effort value is a preflight failure ----------
-# The stdout file is ONE placeholder line until task 6.1 replaces it with the real rejection text. Re-run this arm after the replacement:
-# if it is red then, EFFORT_REJECTION_RE (xprov-normalize.cjs) does not match the real text.
+# ---------- M9: a rejected effort value is a preflight failure ----------
+# The stdout file is a CONSTRUCTED serde-shaped config error (cases/model-pin/effort-rejection.meta); no real rejection text exists since task 6.1 was dropped.
 scen_m9() {
   prep35
   FAKE_RUNNER_CODEX_STDOUT="$PIN_CASES/effort-rejection.codex-stdout.txt" plan35
   echo "$(sum35)/$(loadcheck35)"
 }
 caseM9() {
-  assert_eq "M9 [PENDING-6.1 placeholder text] a rejected effort value ends fail/preflight_failed (not codex_unavailable); load-check accepts nothing" "$(scen_m9)" "1/fail/preflight_failed/1/1/false/null/plan_review_missing"
+  assert_eq "M9 [constructed serde-shaped config error] a rejected effort value ends fail/preflight_failed (not codex_unavailable); load-check accepts nothing" "$(scen_m9)" "1/fail/preflight_failed/1/1/false/null/plan_review_missing"
   redproof35 "M9" scen_m9 "1/fail/preflight_failed/1/1/false/null/plan_review_missing" xprov-run.cjs "if (NZ.isEffortRejection(rejectionText(run))) {" "if (false) {"
 }
 
@@ -315,28 +319,25 @@ scen_m13h() { # <variant: header|dotted>
   prep35
   local head; head="$(grep -v '^model' "$XHOME/config.toml" | sed '/^\[features\]/,$d')"
   local feat; feat="$(sed -n '/^\[features\]/,$p' "$XHOME/config.toml")"
-  if [[ "$1" == header ]]; then printf '%s\n[""]\nmodel = "%s"\nmodel_reasoning_effort = "%s"\n\n%s\n' "$head" "$PIN_MODEL" "$PIN_EFFORT" "$feat" > "$XHOME/config.toml"
-  else printf '%s\n""."model" = "%s"\n""."model_reasoning_effort" = "%s"\n\n%s\n' "$head" "$PIN_MODEL" "$PIN_EFFORT" "$feat" > "$XHOME/config.toml"; fi
+  if [[ "$1" == header ]]; then printf '%s\n[""]\nmodel = "%s"\n\n%s\n' "$head" "$PIN_MODEL" "$feat" > "$XHOME/config.toml"
+  else printf '%s\n""."model" = "%s"\n\n%s\n' "$head" "$PIN_MODEL" "$feat" > "$XHOME/config.toml"; fi
   local pf; pf="$(pf35)"
   echo "$(check35 "$pf" model_pinned | cut -d'|' -f1),$(check35 "$pf" unexpected_config_key | cut -d'|' -f1)"
 }
-set_effort35() { # <value> — the tree copy's EFFORT_PINNED
-  node -e 'const fs=require("fs"); const f=process.argv[1]+"/_shared/lib/xprov.cjs"; const s=fs.readFileSync(f,"utf8"); const r=/const EFFORT_PINNED = \x27[^\x27]*\x27;/; if (!r.test(s)) process.exit(3); fs.writeFileSync(f,s.replace(r,"const EFFORT_PINNED = \x27"+process.argv[2]+"\x27;"));' "$TREE" "$1" || bad "M13 harness: could not set EFFORT_PINNED in the tree copy"
-}
-scen_m13u() { # <value in the home> — the tree pins "zz-test"; PENDING-6.1 is a prior a1 value, anything else is foreign
-  prep35; set_effort35 zz-test
-  sed -i.bak "s/^model_reasoning_effort = .*/model_reasoning_effort = \"$1\"/" "$XHOME/config.toml"; rm -f "$XHOME/config.toml.bak"
+scen_m13u() { # <effort value in the home> — PENDING-6.1 is a prior a1 value (removed by the repair), anything else is foreign (a conflict)
+  prep35
+  sed -i.bak "s/^model = .*/&\nmodel_reasoning_effort = \"$1\"/" "$XHOME/config.toml"; rm -f "$XHOME/config.toml.bak"
   plan35
-  echo "$(sum35)/$(grep '^model_reasoning_effort' "$XHOME/config.toml")/$(json_get "$G_OUT" "(j.recovery || []).map((r) => (r.actions || []).join('+')).join(';')")"
+  echo "$(sum35)/$(grep -c '^model_reasoning_effort' "$XHOME/config.toml")/$(json_get "$G_OUT" "(j.recovery || []).map((r) => (r.actions || []).join('+')).join(';')")"
 }
 caseM13() {
   assert_eq "M13a [\"\"] header: model_pinned FAIL and unexpected_config_key FAIL (the keys under it are not root keys)" "$(scen_m13h header)" "FAIL,FAIL"
   assert_eq "M13b \"\".model dotted key: model_pinned FAIL and unexpected_config_key FAIL" "$(scen_m13h dotted)" "FAIL,FAIL"
   redproof35 "M13a" "scen_m13h header" "FAIL,FAIL" xprov-preflight.cjs "if (header && splitDotted(header[1], true).some((seg) => seg === '')) {" "if (false) {"
   redproof35 "M13b" "scen_m13h dotted" "FAIL,FAIL" xprov-preflight.cjs "if (kv && splitDotted(kv[1], true).some((seg) => seg === '')) {" "if (false) {"
-  assert_eq "M13c a prior a1 effort value (PENDING-6.1) is upgraded to the current pin by the gate's repair, logged as upgrade_pins, and the review runs" "$(scen_m13u PENDING-6.1)" "0/pass/null/1/model_reasoning_effort = \"zz-test\"/upgrade_pins"
-  assert_eq "M13d a foreign effort value stays a pin_conflict: fail/preflight_failed, the file untouched, no runner call" "$(scen_m13u low)" "1/fail/preflight_failed/0/model_reasoning_effort = \"low\"/"
-  redproof35 "M13c" "scen_m13u PENDING-6.1" "0/pass/null/1/model_reasoning_effort = \"zz-test\"/upgrade_pins" xprov.cjs "const PRIOR_EFFORT_PINS = Object.freeze(['PENDING-6.1']);" "const PRIOR_EFFORT_PINS = Object.freeze([]);"
+  assert_eq "M13c a prior a1 effort value (PENDING-6.1) is removed by the gate's repair (logged as upgrade_pins) and the review runs without an effort key" "$(scen_m13u PENDING-6.1)" "0/pass/null/1/0/upgrade_pins"
+  assert_eq "M13d a foreign effort value stays a pin_conflict: fail/preflight_failed, the file untouched (the key is still there), no runner call" "$(scen_m13u low)" "1/fail/preflight_failed/0/1/"
+  redproof35 "M13c" "scen_m13u PENDING-6.1" "0/pass/null/1/0/upgrade_pins" xprov.cjs "const PRIOR_EFFORT_PINS = Object.freeze(['PENDING-6.1']);" "const PRIOR_EFFORT_PINS = Object.freeze([]);"
 }
 
 # ---------- M14: SEC-5 — the outage marker binds to the PLAN.md that was SENT, not to the live file after the run ----------
