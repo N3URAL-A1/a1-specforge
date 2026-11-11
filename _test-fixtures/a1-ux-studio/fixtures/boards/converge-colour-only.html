@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pick a layout</title>
+<style>
+@font-face { font-family: "Lora"; font-weight: 400; font-style: normal; font-display: swap; src: url("fonts/lora/lora-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "Lora"; font-weight: 700; font-style: normal; font-display: swap; src: url("fonts/lora/lora-latin-700-normal.woff2") format("woff2"); }
+:root { color-scheme: light; --a1-gap: 1.25rem; --a1-edge: #d4d4d8; --a1-ink: #18181b; --a1-muted: #52525b; --a1-paper: #fafafa; }
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body { font-family: system-ui, sans-serif; color: var(--a1-ink); background: var(--a1-paper); line-height: 1.5; overflow-wrap: anywhere; }
+.a1-board { max-width: 80rem; margin: 0 auto; padding: 1.5rem; }
+.a1-board > header h1 { margin: 0 0 .25rem; font-size: 1.5rem; }
+.a1-board > header p { margin: 0 0 1.5rem; color: var(--a1-muted); }
+.a1-grid { display: grid; gap: var(--a1-gap); grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); }
+[data-a1-tile] { min-width: 0; display: flex; flex-direction: column; border: 1px solid var(--a1-edge); border-radius: .5rem; background: #fff; overflow: hidden; }
+[data-a1-tile] > header, [data-a1-tile] > footer { padding: .75rem 1rem; background: var(--a1-paper); }
+[data-a1-tile] > header h2 { margin: 0; font-size: 1rem; font-family: system-ui, sans-serif; }
+[data-a1-tile] > footer { border-top: 1px solid var(--a1-edge); }
+.a1-tile-body { flex: 1; min-width: 0; padding: 1rem; }
+.a1-tile-body img, .a1-tile-body svg, .a1-tile-body table { max-width: 100%; }
+.a1-pick-hint { margin: 0; font-size: .875rem; color: var(--a1-muted); }
+@media (max-width: 600px) {
+  .a1-board { padding: 1rem; }
+  .a1-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<main class="a1-board">
+<header>
+<h1>Pick a layout</h1>
+<p>Say which tile you want: pick <id>.</p>
+</header>
+<div class="a1-grid">
+<section data-a1-tile data-option-id="l0" data-family="lora" data-layout="layout-0">
+  <header><h2>l0</h2></header>
+  <div class="a1-tile-body" style="font-family: 'Lora', serif;"><div style="background:#fff3d6"><h3>Pricing</h3><p>Three plans, one trial.</p><button type="button">Start trial</button></div></div>
+  <footer><p class="a1-pick-hint">To pick this one, say: pick l0</p></footer>
+</section>
+<section data-a1-tile data-option-id="l1" data-family="lora" data-layout="layout-1">
+  <header><h2>l1</h2></header>
+  <div class="a1-tile-body" style="font-family: 'Lora', serif;"><div style="background:#dff0e4"><h3>Pricing</h3><p>Three plans, one trial.</p><button type="button">Start trial</button></div></div>
+  <footer><p class="a1-pick-hint">To pick this one, say: pick l1</p></footer>
+</section>
+<section data-a1-tile data-option-id="l2" data-family="lora" data-layout="layout-2">
+  <header><h2>l2</h2></header>
+  <div class="a1-tile-body" style="font-family: 'Lora', serif;"><div style="background:#e3e8fb"><h3>Pricing</h3><p>Three plans, one trial.</p><button type="button">Start trial</button></div></div>
+  <footer><p class="a1-pick-hint">To pick this one, say: pick l2</p></footer>
+</section>
+</div>
+</main>
+</body>
+</html>

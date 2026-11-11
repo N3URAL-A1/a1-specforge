@@ -1,0 +1,7 @@
+# Shipped board fonts (spec 024, wave 4). Real files from `npm pack @fontsource/<family>` (latin subset, normal style, weights 400 and 700), packed 2026-11-09, extracted unchanged.
+inter: @fontsource/inter@5.3.0, license OFL-1.1 (OFL.txt is the package LICENSE file)
+lora: @fontsource/lora@5.3.0, license OFL-1.1 (OFL.txt is the package LICENSE file)
+space-grotesk: @fontsource/space-grotesk@5.3.0, license OFL-1.1 (OFL.txt is the package LICENSE file)
+ibm-plex-mono: @fontsource/ibm-plex-mono@5.3.0, license OFL-1.1 (OFL.txt is the package LICENSE file)
+playfair-display: @fontsource/playfair-display@5.3.0, license OFL-1.1 (OFL.txt is the package LICENSE file)
+dm-sans: @fontsource/dm-sans@5.3.0, license OFL-1.1 (OFL.txt is the package LICENSE file)

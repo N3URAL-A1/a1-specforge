@@ -19,3 +19,11 @@ fixtures/gate/advisory.html: high-contrast page plus a cubic-bezier(.68,-.55,.27
 Measured: scan_mode `file` fires the contrast rule (no loopback URL needed). Also measured: a `<!-- impeccable-disable low-contrast -->` comment in the file and a .impeccable/config.json in the detector cwd each silence the finding (exit 0, []); the gate refuses targets with a waiver marker and runs the detector in an empty scratch cwd.
 Font and hostile-input case pages are derived at run time from high-contrast.html with sed (see parts/03-gate.sh).
 Re-measured 2026-11-09 with `npx impeccable@4.8.1 detect --no-config --json` (SEC-3, the gate's argv): low, high and advisory outputs and exit codes are byte-identical to the captures above, so the captures were kept. --no-config also makes the detector ignore in-file impeccable-disable comments (measured: the waived page reports the finding again); the gate keeps its waiver-marker refusal and empty scratch cwd as second layers.
+
+## Wave 4 (boards)
+fixtures/boards/render-fixtures.cjs: one-off renderer; run once on 2026-11-09 as `node render-fixtures.cjs .` from fixtures/boards/. It fills the real skills/a1-ux-studio/templates/board.html (comment header stripped, placeholders replaced) and writes:
+  diverge.html (5 tiles, one per shipped font family, brief text from fixtures/run/brief-complete.json),
+  converge.html (3 tiles of Lora with layouts stacked/split/cards and different element structures),
+  converge-colour-only.html (3 Lora tiles with identical structure, background colour only).
+Fonts for these boards are NOT stored here: parts/04-boards.sh copies the shipped files from skills/a1-ux-studio/templates/fonts/ into each temp run folder's boards/fonts/. Hostile and variant boards (variant0, 6 tiles, remote URL, missing font) are derived at run time from diverge.html with sed/node.
+Shipped font sources: skills/a1-ux-studio/templates/fonts/SOURCES.txt.

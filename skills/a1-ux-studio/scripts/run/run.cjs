@@ -1,16 +1,18 @@
 #!/usr/bin/env node
 'use strict';
 // a1-ux-studio run folder script (spec 024, FR-002/003/018/031).
-// Subcommand: init. Exit codes: 0 ok, 1 refusal (env, empty Intent), 2 usage/hostile input.
-// Node core only. Later waves add `pick` (W4) and `asset-slot` (W5).
+// Commands: init (W2); pick, require-pick, reroll, board-check (W4, logic in picks.cjs / boards.cjs).
+// Exit codes: 0 ok, 1 refusal (env, empty Intent, no pick, board problems), 2 usage/hostile input.
+// Node core only. Later waves add `asset-slot` (W5).
 
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const https = require('https');
 
-const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const picks = require('./picks.cjs');
+const boardCheck = require('./boards.cjs');
+const { CTRL_RE, Refusal, parseArgs, requireSlug, resolveDate, clean } = require('./common.cjs');
 const CONTEXTS = Object.freeze(['brand', 'product']);
 const VIEWPORTS = Object.freeze(['desktop-first', 'mobile parity']);
 const MAX_REF_BYTES = 20 * 1024 * 1024;
@@ -18,45 +20,7 @@ const REF_TIMEOUT_MS = 5000;
 const MAX_BRIEF_BYTES = 1024 * 1024;
 const MAX_FOLDER_SUFFIX = 999;
 const REF_DEADLINE_MS = 5000;
-// eslint-disable-next-line no-control-regex
-const CTRL_RE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u2028\u2029]/g;
 const TEMPLATE = path.join(__dirname, '..', '..', 'templates', 'run.md');
-
-class Refusal extends Error {
-  constructor(code, message) { super(message); this.code = code; }
-}
-
-function parseArgs(argv) {
-  const out = {};
-  for (let i = 0; i < argv.length; i += 1) {
-    const a = argv[i];
-    if (!a.startsWith('--')) throw new Refusal(2, `unexpected argument: ${a.slice(0, 80)}`);
-    const val = argv[i + 1];
-    if (val === undefined || val.startsWith('--')) throw new Refusal(2, `missing value for ${a.slice(0, 40)}`);
-    out[a.slice(2)] = val;
-    i += 1;
-  }
-  return out;
-}
-
-function requireSlug(name, value) {
-  if (typeof value !== 'string' || !SLUG_RE.test(value)) {
-    throw new Refusal(2, `invalid ${name}: must match ${SLUG_RE.source}`);
-  }
-  return value;
-}
-
-function today() {
-  const d = new Date();
-  const p = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
-
-function resolveDate(raw) {
-  if (raw === undefined) return today();
-  if (!DATE_RE.test(raw) || Number.isNaN(Date.parse(raw))) throw new Refusal(2, 'invalid --date: want YYYY-MM-DD');
-  return raw;
-}
 
 function loadBrief(file) {
   if (!file) throw new Refusal(2, 'missing --brief <json-file>');
@@ -150,9 +114,6 @@ async function checkReference(ref) {
   const cause = /^[a-z][a-z0-9+.-]*:\/\//i.test(ref) ? await checkUrl(ref) : checkPath(ref);
   return cause ? `reference unusable: ${clean(ref).slice(0, 200)} (${cause})` : null;
 }
-
-// One line, no control characters (stderr echo, log-injection safe).
-function clean(v) { return String(v).replace(CTRL_RE, '').replace(/\s+/g, ' ').trim(); }
 
 // Keeps brief text from forging run.md structure: no comment markers, headings or frontmatter fences.
 function neutralize(text) {
@@ -263,10 +224,20 @@ async function init(args) {
   return 0;
 }
 
+const USAGE = 'usage: run.cjs init --project <slug> (--spec <id> | --topic <slug>) --screen <slug> --brief <json-file> [--date YYYY-MM-DD]\n'
+  + '       run.cjs pick --run-dir <d> --board diverge|converge (--option <id> | --default-adopted <id>) [--date YYYY-MM-DD]\n'
+  + '       run.cjs require-pick --run-dir <d> --board diverge|converge\n'
+  + '       run.cjs reroll --run-dir <d> --board diverge|converge [--date YYYY-MM-DD]\n'
+  + '       run.cjs board-check --run-dir <d> --kind diverge|converge';
+
+const COMMANDS = Object.freeze({
+  init, pick: picks.pick, 'require-pick': picks.requirePick, reroll: picks.reroll, 'board-check': boardCheck.boardCheck,
+});
+
 async function main(argv) {
   const [cmd, ...rest] = argv;
-  if (cmd !== 'init') throw new Refusal(2, 'usage: run.cjs init --project <slug> (--spec <id> | --topic <slug>) --screen <slug> --brief <json-file> [--date YYYY-MM-DD]');
-  return init(parseArgs(rest));
+  if (!Object.prototype.hasOwnProperty.call(COMMANDS, cmd)) throw new Refusal(2, USAGE);
+  return COMMANDS[cmd](parseArgs(rest));
 }
 
 main(process.argv.slice(2)).then(
