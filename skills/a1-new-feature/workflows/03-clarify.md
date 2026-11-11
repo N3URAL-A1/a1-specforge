@@ -108,6 +108,41 @@ Screen 2: …
 Check target project CLAUDE.md. Use the mapping from SKILL.md → `Design-System Skill per Project`.
 Fallback if no design system is specified: `frontend-design`.
 
+### 2b-2a — Rendered options via a1-ux-studio (size M/L)
+
+Read `size:` from the spec frontmatter. A missing or unclear value counts as M
+(the size triage rule "any doubt → M").
+
+| `size:` | What happens |
+|---|---|
+| M or L | Run the studio for every screen from 2b-1 (this sub-step). |
+| S | Size S only on request: skip this sub-step and go to 2b-3 (ASCII wireframes), unless the user asks for rendered variants. Then run it like M. |
+
+For each screen from 2b-1, the main session (this orchestrator) uses the
+Skill tool to invoke `a1-specforge:a1-ux-studio`. Pass the spec id, the project
+slug, the screen name, the design-system skill from 2b-2 and the relevant FRs.
+The studio runs in this session with the user, one run folder per screen.
+
+After the studio's step 6 (handoff check exit 0), the main session appends to
+`## Clarifications` in `<spec-path>`, one entry per screen:
+
+```
+- **YYYY-MM-DD** — UX/<screen-name>: Variant <X> chosen. Reason: <1-sentence>.
+  Run: <link to the run folder's run.md>
+```
+
+Write no entry for a screen whose handoff stays blocked; ask the user how to proceed.
+
+**Effect on 2b-3:** when 2b-2a ran for a screen, Uwe receives the chosen
+direction (the entry above and the run link) and writes the UX Decision instead
+of drawing ASCII variants: he confirms the entry matches the chosen variant and
+adds his handoff notes beneath it, without a second `UX/` line. Screens the
+studio did not cover go through 2b-3 unchanged.
+
+**Fallback:** if the studio is unavailable (skill not installed, or it stops
+because `A1_VAULT_ROOT` is unset), tell the user why and run 2b-3 with ASCII
+wireframes as before.
+
 ### 2b-3 — Spawn Uwe
 
 Use the **Agent** tool with `subagent_type: "a1-uwe-ux-expert"` and this brief:

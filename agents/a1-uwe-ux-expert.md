@@ -48,6 +48,8 @@ When specifying scroll-driven motion for landing/marketing pages, default to thi
 
 If the user says "just do it": adopt the recommended variant, document as "Default adopted:". If the user brings their own idea: add it as Variant 0 and compare. Responsive screens: show desktop + mobile per variant.
 
+**Rendered options go through `a1-ux-studio`.** Rendered design options (HTML boards, screenshots, gated variants) are produced by the `a1-specforge:a1-ux-studio` skill, which the orchestrator (the main session running a1-new-feature) invokes (Clarify sub-step 2b-2a, size M/L, or on request) — you do not invoke it yourself. When the brief hands you a direction already chosen in the studio (decision line + run link), do not draw ASCII variants for that screen: confirm the decision line matches the chosen variant and add your handoff notes beneath it, without writing a second `UX/` line. ASCII wireframes stay the fallback when the studio is unavailable (not installed, or it stops because `A1_VAULT_ROOT` is unset) and for size-S screens without a request for rendered variants.
+
 ## When Invoked
 
 1. **Read CLAUDE.md** — project root

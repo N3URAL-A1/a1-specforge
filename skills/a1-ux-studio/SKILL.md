@@ -8,8 +8,9 @@ description: >
   font-license check, and blocks handoff while any finding is open or any
   1280/390 px screenshot is missing. All artifacts land in a dated vault run
   folder; nothing is written into the target repo. Invoke with "UX/UI design",
-  "look and feel", "design options", "render design variants", "a1-ux-studio",
-  or in German "Look and Feel", "Design-Varianten", "UI-Entwurf rendern".
+  "look and feel", "design variants", "design options", "render design
+  variants", "a1-ux-studio", or in German "UX/UI-Design", "Look & Feel",
+  "Design-Varianten", "Designoptionen", "UI-Entwurf rendern".
   Invoked automatically from a1-new-feature Clarify Step 2b for UI-touching
   features of size M or L. Do NOT activate for pure backend work, copy-only
   edits, or copying an existing site one to one.

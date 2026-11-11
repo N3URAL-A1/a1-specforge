@@ -29,6 +29,7 @@ allowed-tools:
   - Glob
   - Grep
   - Agent
+  - Skill
 ---
 
 # a1-new-feature — Feature Pipeline (Discover → Verify)
@@ -422,6 +423,7 @@ Override via env var `A1_VAULT_ROOT` if testing.
 | Project | Skill |
 |---|---|
 | Projects using n3ural design system | `n3urala1-design` (`~/.claude/skills/n3urala1-design`) |
+| Projects using the Vodafone brand design system | `vf-brand` (`~/.claude/skills/vf-brand`) |
 | Other projects | Check project CLAUDE.md for design system skill reference; fallback: `frontend-design` (if available; otherwise proceed without) |
 
 The skill **proposes** code agents in Phase 5 based on the wave-plan brief; the user dispatches.
