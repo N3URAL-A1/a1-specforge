@@ -26,7 +26,7 @@ const layouts = {
 const colourOnly = (c) => `<div style="background:${c}"><h3>Pricing</h3><p>Three plans, one trial.</p><button type="button">Start trial</button></div>`;
 
 function page(tpl, title, ids, tiles) {
-  return fill(tpl, { title, heading: title, instruction: 'Say which tile you want: pick <id>.', font_faces: faces(ids), tiles: tiles.join('\n') });
+  return fill(tpl, { title, heading: title, instruction: 'Say which tile you want: pick &lt;id&gt;.', font_faces: faces(ids), tiles: tiles.join('\n') });
 }
 
 const out = process.argv[2];

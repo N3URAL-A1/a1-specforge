@@ -44,7 +44,8 @@ compares the tag-name sequence per tile and fails such a board.
 ## 3. Render the board
 
 1. Write `<run-dir>/boards/converge.html` from the template, replacing each
-   placeholder exactly once (as in step 2).
+   placeholder exactly once and HTML-escape every inserted text value
+   (rules in `02-diverge.md`, "Render the board", step 1).
 2. `{{tiles}}`: 3 tiles with the template's tile markup:
 
    ```html

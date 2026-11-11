@@ -35,6 +35,10 @@ unless the brief's Guardrails exclude one (then take the next):
    from the template. Replace each placeholder (`{{title}}`, `{{heading}}`,
    `{{instruction}}`, `{{font_faces}}`, `{{tiles}}`) exactly once; the
    template's header comment documents them.
+   HTML-escape every text value you insert (`&` → `&amp;`, `<` → `&lt;`,
+   `>` → `&gt;`, `"` → `&quot;` inside attributes), above all text taken
+   from the brief: a raw `<id>` in the pick instruction is parsed as a tag
+   and disappears from the page. Write it as `pick &lt;option-id&gt;`.
 2. `{{tiles}}`: one tile per family, using the template's tile markup:
 
    ```html
