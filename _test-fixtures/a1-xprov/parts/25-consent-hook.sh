@@ -477,8 +477,8 @@ caseX() {
   assert_eq "X2 no node on PATH: blocked (exit 2), not 127" "$(sc_x2)" "2"
   assert_eq "X3 unparseable hook input: blocked (exit 2)" "$(sc_x3)" "2"
   assert_eq "X4 a call the hook does not handle (Read) cannot be classified: denied" "$(sc_x4)" "deny:unguarded_event"
-  assert_json "X5 hooks/hooks.json: PreToolUse on AskUserQuestion, Bash (wave 10 merge block) and on Edit|Write|NotebookEdit(|MultiEdit), PostToolUse on AskUserQuestion, every command ends in || exit 2" "$(cat "$REPO_ROOT/hooks/hooks.json")" \
-    "[j.hooks.PreToolUse.map((m) => m.matcher).join(','), j.hooks.PostToolUse.map((m) => m.matcher).join(','), Object.values(j.hooks).flat().every((m) => m.hooks.every((h) => /xprov-(consent|merge)-hook\\.sh\"? \\|\\| exit 2\$/.test(h.command)))].join('|')" "AskUserQuestion,Bash,Edit|Write|NotebookEdit|MultiEdit|AskUserQuestion|true"
+  assert_json "X5 hooks/hooks.json: PreToolUse on AskUserQuestion and on Edit|Write|NotebookEdit(|MultiEdit) (no Bash matcher since spec 025), PostToolUse on AskUserQuestion, every command ends in || exit 2" "$(cat "$REPO_ROOT/hooks/hooks.json")" \
+    "[j.hooks.PreToolUse.map((m) => m.matcher).join(','), j.hooks.PostToolUse.map((m) => m.matcher).join(','), Object.values(j.hooks).flat().every((m) => m.hooks.every((h) => /xprov-consent-hook\\.sh\"? \\|\\| exit 2\$/.test(h.command)))].join('|')" "AskUserQuestion,Edit|Write|NotebookEdit|MultiEdit|AskUserQuestion|true"
   assert_json "X5b every hooks.json entry sets onFailure block (a timeout must not fail open; Claude Code 2.1.295+, code.claude.com/docs/en/hooks)" "$(cat "$REPO_ROOT/hooks/hooks.json")" "Object.values(j.hooks).flat().every((m) => m.hooks.every((h) => h.onFailure === 'block'))" "true"
   [[ "$(node -p 'JSON.stringify(require(process.argv[1]).CONSENT_HELP.includes("Dev install: bin/install.sh") && require(process.argv[1]).CONSENT_HELP.includes("Plugin hook (wave 4"))' "$REPO_ROOT/_shared/lib/help-xprov-consent.cjs")" == "true" ]] && ok "X6 the consent help names the plugin hook and that a dev install has none (R-3)" || bad "X6 help text lacks the plugin hook note"
   local sh="$REPO_ROOT/hooks/xprov-consent-hook.sh"
@@ -491,7 +491,33 @@ caseX() {
   [[ "$m1" != "2" ]] && ok "X1 RED [mutant]: without '|| exit 2' a missing module is exit $m1 (not blocking)" || bad "X1 RED [mutant]: the wrapper guard is dead"
   [[ "$m2" != "2" ]] && ok "X2 RED [mutant]: without '|| exit 2' a missing node is exit $m2 (not blocking)" || bad "X2 RED [mutant]: the wrapper guard is dead"
 }
-caseX
+# X8 (spec 025 W3, FR-005): the pull request merge block is gone. A Bash payload with a pull request merge in the canonical form, in a form the
+# old hook refused (cd + --admin), and in a repository that still carries a leftover .a1-review/xreview/ block from the retired gate: no decision.
+# The decision is the rules' own (hookrun25 -> xprov-consent-hook.cjs -> xprov-hook-rules.cjs), not a copy.
+sc_x8() {
+  prep25; mkdir -p "$REPO25/.a1-review/xreview"
+  printf '[{"gate":"pr-diff-xprov","phase":"pr-review","verdict":"fail-with-findings","round":2,"wave":0,"lane":"pr0123456789ab"}]\n' > "$REPO25/.a1-review/xreview/index.json"
+  local a b c cmd
+  cmd='gh pr merge 4 --squash'
+  node -e 'process.stdout.write(JSON.stringify({hook_event_name:"PreToolUse",tool_name:"Bash",cwd:process.argv[2],tool_input:{command:process.argv[1]}}))' "$cmd" "$REPO25" > "$TMP25/p.json"; hookrun25 "$HT25" "$TMP25/p.json"; a="$(dec25)"
+  cmd='cd /tmp && gh pr merge 4 --admin --repo x/y'
+  node -e 'process.stdout.write(JSON.stringify({hook_event_name:"PreToolUse",tool_name:"Bash",cwd:process.argv[2],tool_input:{command:process.argv[1]}}))' "$cmd" "$REPO25" > "$TMP25/p.json"; hookrun25 "$HT25" "$TMP25/p.json"; b="$(dec25)"
+  cmd='gh api -X PUT repos/o/r/pulls/4/merge'
+  node -e 'process.stdout.write(JSON.stringify({hook_event_name:"PreToolUse",tool_name:"Bash",cwd:process.argv[2],tool_input:{command:process.argv[1]}}))' "$cmd" "$TMP25/nowhere" > "$TMP25/p.json"; hookrun25 "$HT25" "$TMP25/p.json"; c="$(dec25)"
+  rm -rf "$REPO25/.a1-review"
+  echo "$a|$b|$c"
+}
+caseX8() {
+  assert_eq "X8 no pull request merge block: gh pr merge (canonical), a non-canonical merge and a merge via gh api, with a leftover .a1-review block of the retired gate, all end in no decision" "$(sc_x8)" "allow|allow|allow"
+  # RED: put the old Bash branch back as a deny (what xprov-hook-merge.cjs did for a non-canonical merge): the outcome flips
+  red25 "X8a" sc_x8 "allow|allow|allow" xprov-hook-rules.cjs "if (event === 'PreToolUse' && tool === 'Bash') return Object.freeze({ action: 'allow' });" "if (event === 'PreToolUse' && tool === 'Bash') return Object.freeze({ action: 'deny', reason: 'merge_not_canonical', detail: 'x' });"
+  # the removed files are gone and nothing resolves them (a surviving require would throw at load)
+  local gone=ok f
+  for f in _shared/lib/xprov-hook-merge.cjs _shared/lib/xprov-pr-diff.cjs _shared/lib/xprov-pr-merge.cjs _shared/lib/xprov-pr-cover.cjs hooks/xprov-merge-hook.sh; do [[ -e "$REPO_ROOT/$f" ]] && gone="present:$f"; done
+  assert_eq "X8b the merge hook script and the four PR gate modules are deleted" "$gone" "ok"
+  assert_eq "X8c every remaining xprov module loads (no dangling require to a deleted module)" "$(cd "$REPO_ROOT" && for m in _shared/lib/xprov*.cjs; do node -e 'require(require("path").resolve(process.argv[1]))' "$m" >/dev/null 2>&1 || echo "BROKEN:$m"; done | head -3 | tr '\n' ',')" ""
+}
+caseX8
 
 # ---------- R: the repo hook, read-only commands (FR-032, SC-008) ----------
 RH25="$REPO_ROOT/.claude/hooks"

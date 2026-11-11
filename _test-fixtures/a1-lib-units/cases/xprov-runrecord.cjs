@@ -3,7 +3,7 @@
 // xprov-runrecord.cjs — what a run dir proves (spec 009 Wave 7). index.json
 // rows are agent-writable pointers; a pass counts only through a run dir in
 // THIS repository's artifacts dir, read with O_NOFOLLOW, carrying a1's own
-// pass marker and (for inspect) a matching a1-reviewed.json.
+// pass marker.
 // HOME is the suite's temp home; cwd is a throwaway git repo `demo-repo`.
 
 const fs = require('fs');
@@ -28,11 +28,7 @@ const RR = require(path.join(process.argv[2], 'xprov-runrecord.cjs'));
 const root = path.join(os.homedir(), '.a1-xprov', 'artifacts', 'demo-repo');
 
 const PLAN = 'a'.repeat(64);
-const HEAD = 'b'.repeat(40);
-const BASE = 'c'.repeat(40);
-const DIFF = 'd'.repeat(64);
 const review = { status: 'completed', mode: 'review', plan_sha256: PLAN, response: { verdict: 'APPROVED' } };
-const inspect = { status: 'completed', mode: 'inspect', plan_sha256: PLAN, response: { verdict: 'APPROVED' }, snapshot: { base: BASE, diff_sha256: DIFF } };
 
 let n = 0;
 function runDir(result, { marker = { plan_sha256: PLAN }, reviewed = null, under = root } = {}) {
@@ -95,20 +91,6 @@ eq('R0 file names', [RR.REVIEWED_FILE, RR.PASS_MARKER_FILE], ['a1-reviewed.json'
   check('R3 hasPassMarker bound to the plan sha', RR.hasPassMarker(d, PLAN) === true && RR.hasPassMarker(d, 'f'.repeat(64)) === false);
 }
 
-// R4 — inspectPass: head/base only from a1-reviewed.json, only when it agrees
-// with the record's snapshot.
-// Red-making change: dropping the diff_sha256 comparison in reviewedHeadBase.
-{
-  const reviewed = { commit: HEAD, base: BASE, diff_sha256: DIFF };
-  eq('R4 valid inspect pass', RR.inspectPass(runDir(inspect, { reviewed }), PLAN), { head: HEAD, base: BASE });
-  eq('R4 no a1-reviewed.json', RR.inspectPass(runDir(inspect), PLAN), null);
-  eq('R4 reviewed base differs from snapshot', RR.inspectPass(runDir(inspect, { reviewed: { ...reviewed, base: 'e'.repeat(40) } }), PLAN), null);
-  eq('R4 reviewed diff sha differs', RR.inspectPass(runDir(inspect, { reviewed: { ...reviewed, diff_sha256: 'e'.repeat(64) } }), PLAN), null);
-  eq('R4 commit is not a sha', RR.inspectPass(runDir(inspect, { reviewed: { ...reviewed, commit: 'HEAD; rm -rf /' } }), PLAN), null);
-  eq('R4 uppercase sha refused', RR.inspectPass(runDir(inspect, { reviewed: { ...reviewed, commit: HEAD.toUpperCase() } }), PLAN), null);
-  eq('R4 review record is not an inspect pass', RR.inspectPass(runDir({ ...inspect, mode: 'review' }, { reviewed }), PLAN), null);
-  eq('R4 no pass marker', RR.inspectPass(runDir(inspect, { reviewed, marker: null }), PLAN), null);
-  eq('R4 snapshot missing', RR.reviewedHeadBase(runDir({ ...inspect, snapshot: undefined }, { reviewed })), { head: null, base: null });
-}
+// R4 (inspectPass / reviewedHeadBase: 9 cases) removed in spec 025 W4: the wave-gate helpers are gone.
 
 done();

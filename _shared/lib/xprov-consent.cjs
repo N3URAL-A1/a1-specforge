@@ -14,9 +14,9 @@
 //   revoke   [--repo <toplevel>]
 //       removes the repository's permit, denial, evidence and unused markers whatever channel wrote them; an unusable consent or
 //       denial store is reported and left alone (exit 1, `reason: revoke_partial`), the permit goes anyway.
-//   question|ensure --kind waiver (--phase <name> | --work-path <worktree>)   the xprov-Waiver question for the gate targets that are failed now
+//   question|ensure --kind waiver --phase <name>   the xprov-Waiver question for the gate targets that are failed now
 //   question|ensure --kind allowlist --scan <snap-basename>                    the xprov-Allowlist question for one scan's hits (masked)
-//   waive (--phase <name> | --work-path <worktree>)    one waiver record per LISTED target (by owner-chat), against a matching owner yes
+//   waive --phase <name>    one waiver record per LISTED target (by owner-chat), against a matching owner yes
 //   allowlist --scan <snap-basename>                    one hit approval per listed hit (hit-approvals.json, never the blob-approval store), against a matching owner yes
 // Exit contract: 0 ok · 1 refused (stdout JSON names `reason`) · 2 usage error.
 // The answer is NEVER an argument: it comes from the marker the plugin hook wrote from the real tool result.
@@ -41,26 +41,26 @@ const RECORD_KINDS = Object.freeze(['consent', 'classification']);
 const usage = (msg) => C.usageExit('consent', msg);
 const shown = (v) => JSON.stringify(String(v).slice(0, ECHO_MAX));
 
-const SCOPE_FLAGS = { phase: 'string', 'work-path': 'string', scan: 'string' };
+const SCOPE_FLAGS = { phase: 'string', scan: 'string' };
 const FLAGS = Object.freeze({
   question: { kind: 'string', repo: 'string', 'ludwig-record': 'string', run: 'string', ...SCOPE_FLAGS },
   ensure: { kind: 'string', repo: 'string', 'ludwig-record': 'string', ...SCOPE_FLAGS },
   record: { kind: 'string', repo: 'string', 'ludwig-record': 'string' },
   revoke: { repo: 'string' },
-  waive: { repo: 'string', phase: 'string', 'work-path': 'string' },
+  waive: { repo: 'string', phase: 'string' },
   allowlist: { repo: 'string', scan: 'string' },
 });
 
-/** The text of a wrong phase / work-path / scan flag combination, or null. */
+/** The text of a wrong phase / scan flag combination, or null. */
 function scopeFlagProblem(sub, flags) {
   const kind = sub === 'waive' ? 'waiver' : (sub === 'allowlist' ? 'allowlist' : flags.kind);
   const has = (n) => flags[n] !== undefined;
   const asksOnce = sub === 'question' && AK.ASK_KINDS.includes(kind); // spec 016 wave 5: --phase <name> | --run <id> scope the one ask
   if (has('run') && !asksOnce) return '--run belongs to `question --kind consent|classification`';
-  if (asksOnce) return has('work-path') || has('scan') ? '--work-path and --scan belong to --kind waiver|allowlist' : null;
-  if (kind === 'waiver') return has('phase') === has('work-path') ? 'give exactly one of --phase <name> or --work-path <worktree>' : (has('scan') ? '--scan belongs to --kind allowlist' : null);
-  if (kind === 'allowlist') return !has('scan') ? '--scan <snap-basename> is required' : (has('phase') || has('work-path') ? '--phase and --work-path belong to --kind waiver' : null);
-  return has('phase') || has('work-path') || has('scan') ? '--phase, --work-path and --scan belong to --kind waiver|allowlist' : null;
+  if (asksOnce) return has('scan') ? '--scan belongs to --kind waiver|allowlist' : null;
+  if (kind === 'waiver') return !has('phase') ? '--phase <name> is required' : (has('scan') ? '--scan belongs to --kind allowlist' : null);
+  if (kind === 'allowlist') return !has('scan') ? '--scan <snap-basename> is required' : (has('phase') ? '--phase belongs to --kind waiver' : null);
+  return has('phase') || has('scan') ? '--phase and --scan belong to --kind waiver|allowlist' : null;
 }
 
 /** { flags, root } or null after a usage error (already printed). */
@@ -100,7 +100,7 @@ function facts(root, ludwigRecord) {
 /** The built question of a waiver / allowlist kind ({ ok: true, key, question, ... }), or null after a refusal printed as JSON (exit 1). Throws typed input errors (exit 2). */
 function scopedBuild(kind, a, sub) {
   const base = { root: a.root };
-  const r = kind === 'waiver' ? W.buildFor({ ...base, phase: a.flags.phase, workPath: a.flags['work-path'] }) : A.buildFor({ ...base, scan: a.flags.scan });
+  const r = kind === 'waiver' ? W.buildFor({ ...base, phase: a.flags.phase }) : A.buildFor({ ...base, scan: a.flags.scan });
   if (r.ok) return r;
   process.stderr.write(`consent ${sub}: ${r.detail}\n`);
   return C.emitJson({ ok: false, reason: r.reason, detail: r.detail }, xprov.EXIT_FAIL, false);
@@ -211,7 +211,7 @@ function cmdScopedWrite(sub, args) {
   if (a === null) return null;
   let r;
   try {
-    r = sub === 'waive' ? W.waive({ root: a.root, phase: a.flags.phase, workPath: a.flags['work-path'] }) : A.approve({ root: a.root, scan: a.flags.scan });
+    r = sub === 'waive' ? W.waive({ root: a.root, phase: a.flags.phase }) : A.approve({ root: a.root, scan: a.flags.scan });
   } catch (e) {
     if (e && e.code === 'A1_INPUT') return usage(`${sub}: ${e.message}`);
     throw e;

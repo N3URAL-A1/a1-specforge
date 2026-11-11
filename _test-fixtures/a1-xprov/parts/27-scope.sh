@@ -269,7 +269,7 @@ mk_workdir SC_REPO sc_repo
   echo three >> docs/readme.md; echo x > 'docs/space name.md'; printf 'x\n' > "$(printf 'docs/new\nline.md')"
   git add -A && git commit -qm c3
 )
-SC_C1="$(git -C "$SC_REPO" rev-parse HEAD~2)"; SC_C2="$(git -C "$SC_REPO" rev-parse HEAD~1)"
+SC_C1="$(git_in "$SC_REPO" rev-parse HEAD~2)"; SC_C2="$(git_in "$SC_REPO" rev-parse HEAD~1)"
 sc_run "$TOOLS" --repo "$SC_REPO" --base "$SC_C1" --head "$SC_C2"
 assert_rc "SC8 range c1..c2" 0 "$SC_RC" "$SC_ERR"
 assert_json "SC8 range: CI file and the file renamed OUT of auth/ are both seen" "$SC_OUT" "[j.security_surface, j.total, j.matched.map(m=>m.path+'|'+m.category).join(';')].join('#')" "true#5#.github/workflows/ci.yml|ci;auth/old.ts|forbidden_surface"

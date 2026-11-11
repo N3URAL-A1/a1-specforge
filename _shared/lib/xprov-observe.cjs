@@ -25,7 +25,7 @@ const io = require('./io.cjs');
 const xprov = require('./xprov.cjs');
 const C = require('./xprov-common.cjs');
 // Shared helpers — one definition each, in xprov-common.cjs.
-const { LANE_RE, inputError, parseWave } = C;
+const { LANE_RE, inputError, parseWave, rejectReservedPhase } = C;
 const usageExit = (msg) => C.usageExit('', msg);
 const finish = (report, code) => C.emitJson(report, code, false);
 const resolveRepoFlag = (flag) => (flag === undefined ? undefined : C.resolveRepoFlag(flag));
@@ -42,9 +42,6 @@ const DEFAULT_PROVIDER = 'codex';
 const REQUIRED_FLAGS = Object.freeze(['agent', 'skill', 'phase', 'type', 'severity', 'msg']);
 const OBSERVATIONS_FILE = 'observations.jsonl';
 const OWNER_HANDOFFS_MAX = 99;
-const REVIEW_DIR = '.a1-review';
-const REVIEW_SUBDIR = 'xreview';
-const DIR_MODE = 0o700;
 
 function validateAgent(agent) {
   const a = String(agent == null ? '' : agent);
@@ -120,36 +117,16 @@ function buildObservation(o) {
 
 /** `.a1/phases/<name>/observations.jsonl`; the phase directory must already exist. */
 function phaseFile(root, phase) {
+  rejectReservedPhase(phase);
   const dir = path.join(root, '.a1', 'phases', phase);
   if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) throw inputError(`phase directory does not exist: ${dir}`, 'phase_missing');
   return path.join(dir, OBSERVATIONS_FILE);
 }
 
-/** The `pr-diff-xprov` target `<worktree>/.a1-review/xreview/observations.jsonl` (spec 016 FR-035): an absolute worktree path without `..`,
- * a real directory, and no link anywhere below it (the file is agent-reachable, so a link would redirect the append). */
-function reviewFile(worktree) {
-  const w = String(worktree == null ? '' : worktree);
-  if (!path.isAbsolute(w) || /[\0-\x1f]/.test(w) || w.split(/[\\/]/).includes('..')) throw inputError('--review-worktree must be an absolute path without `..` or control characters', 'worktree_invalid');
-  let real;
-  try { real = fs.realpathSync(w); } catch (_e) { throw inputError(`--review-worktree does not exist: ${w.slice(0, 120)}`, 'worktree_invalid'); }
-  if (!fs.statSync(real).isDirectory()) throw inputError('--review-worktree is not a directory', 'worktree_invalid');
-  let dir = real;
-  for (const part of [REVIEW_DIR, REVIEW_SUBDIR]) {
-    dir = path.join(dir, part);
-    let st = null;
-    try { st = fs.lstatSync(dir); } catch (_e) { st = null; }
-    if (st === null) fs.mkdirSync(dir, { mode: DIR_MODE });
-    else if (st.isSymbolicLink() || !st.isDirectory()) throw inputError(`${dir} is not a plain directory`, 'worktree_invalid');
-  }
-  const file = path.join(dir, OBSERVATIONS_FILE);
-  try { if (!fs.lstatSync(file).isFile()) throw inputError(`${file} is not a regular file`, 'worktree_invalid'); } catch (e) { if (e && e.code === 'A1_INPUT') throw e; }
-  return file;
-}
-
 /** How many lines of the phase file already count a Codex run for this gate target (gate, wave, lane): `codex_runs` is 1 only for the first (FR-022). */
 function runsCounted(o) {
   let text = '';
-  try { text = fs.readFileSync(o.reviewWorktree === undefined ? phaseFile(o.repoRoot || io.repoRoot(), io.assertSafeSegment(o.phase, '--phase')) : reviewFile(o.reviewWorktree), 'utf8'); } catch (_e) { return 0; }
+  try { text = fs.readFileSync(phaseFile(o.repoRoot || io.repoRoot(), io.assertSafeSegment(o.phase, '--phase')), 'utf8'); } catch (_e) { return 0; }
   const lane = o.lane || null;
   return text.split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch (_e) { return null; } })
     .filter((l) => l && l.gate === o.gate && (l.wave === undefined ? null : l.wave) === (o.wave === undefined ? null : o.wave) && (l.lane || null) === lane && l.codex_runs >= 1).length;
@@ -161,7 +138,7 @@ function observe(opts) {
   const o = opts || {};
   const root = o.repoRoot || io.repoRoot();
   const obs = buildObservation(o);
-  const file = o.reviewWorktree === undefined ? phaseFile(root, obs.phase) : reviewFile(o.reviewWorktree);
+  const file = phaseFile(root, obs.phase);
   const line = JSON.stringify(obs);
   fs.appendFileSync(file, `${line}\n`, 'utf8');
   return Object.freeze({ ok: true, file, observation: obs });
@@ -176,7 +153,7 @@ function cmdXprovObserve(args) {
     agent: 'string', skill: 'string', phase: 'string', wave: 'string', lane: 'string',
     type: 'string', severity: 'string', msg: 'string', pattern: 'string', provider: 'string',
     'model-requested': 'string', 'model-observed': 'string', repo: 'string',
-    gate: 'string', 'owner-handoffs': 'string', 'codex-runs': 'string', 'abort-reason': 'string', recovered: 'string', 'review-worktree': 'string',
+    gate: 'string', 'owner-handoffs': 'string', 'codex-runs': 'string', 'abort-reason': 'string', recovered: 'string',
   });
   if (flags._.length) return usageExit(`observe: unexpected argument ${JSON.stringify(String(flags._[0]).slice(0, 80))}`);
   const missing = REQUIRED_FLAGS.filter((f) => flags[f] === undefined);
@@ -193,7 +170,7 @@ function cmdXprovObserve(args) {
       agent: flags.agent, skill: flags.skill, phase: flags.phase, wave: flags.wave, lane: flags.lane,
       type: flags.type, severity: flags.severity, msg: flags.msg, pattern: flags.pattern, provider: flags.provider,
       modelRequested: flags['model-requested'], modelObserved: flags['model-observed'],
-      gate: flags.gate, ownerHandoffs: flags['owner-handoffs'], codexRuns: flags['codex-runs'], reviewWorktree: flags['review-worktree'],
+      gate: flags.gate, ownerHandoffs: flags['owner-handoffs'], codexRuns: flags['codex-runs'],
       abortReason: flags['abort-reason'] === undefined ? undefined : (flags['abort-reason'] === 'none' ? null : flags['abort-reason']),
       recovered: flags.recovered === undefined ? undefined : (flags.recovered === 'true' ? true : flags.recovered === 'false' ? false : flags.recovered),
     });

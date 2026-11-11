@@ -273,7 +273,6 @@ caseOS7() {
     FAKE_RUNNER_ARGV_FILE="$argv" fake_runner_env
     G_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov gate --phase p22 --gate "$GATE_PLAN" 2>"$TMP22/err.txt")"; G_RC=$?
     assert_rc "OS7 [$v] plan gate exits 1 (no valid permit)" 1 "$G_RC"
-    G_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov gate --phase p22 --gate "$GATE_WAVE" --wave 1 --base "$PHASE_HEAD" 2>"$TMP22/err.txt")"
     [[ ! -e "$argv" ]] && ok "OS7 [$v] the fake runner recorded zero calls" || bad "OS7 [$v] the runner was invoked"
     [[ -z "$(ls -A "$HOME/.a1-xprov/snapshots" 2>/dev/null)" ]] && ok "OS7 [$v] no snapshot was built" || bad "OS7 [$v] a snapshot exists"
   done
@@ -290,9 +289,9 @@ caseOS8() {
     assert_rc "OS8a xprov ${sub%%:*} without its module fails closed (exit 2)" 2 "$rc"
     [[ "$out" == *"not implemented yet (planned wave $wave)"* ]] && ok "OS8a ${sub%%:*}: 'not implemented yet (planned wave $wave)'" || bad "OS8a ${sub%%:*}: $out"
   done
-  out="$(node -e 'const x = require(process.argv[1]); process.stdout.write(JSON.stringify({ s: x.SUBCOMMAND_NAMES.slice(-3), r: x.REASON_LIST.slice(-4) }));' "$XPROV_LIB")"
-  assert_json "OS8b dispatch entries consent, scope, dispose" "$out" "j.s.join(',')" "consent,scope,dispose"
-  assert_json "OS8b new reason codes" "$out" "j.r.join(',')" "secret_declined,pr_anchor_unavailable,pr_base_mismatch,pr_merge_blocked"
+  out="$(node -e 'const x = require(process.argv[1]); process.stdout.write(JSON.stringify({ s: x.SUBCOMMAND_NAMES.slice(-4), r: x.REASON_LIST.slice(-5) }));' "$XPROV_LIB")"
+  assert_json "OS8b dispatch entries consent, scope, dispose, design-targets" "$out" "j.s.join(',')" "consent,scope,dispose,design-targets"
+  assert_json "OS8b new reason codes (the last one: codex_unavailable, spec 025 W6)" "$out" "j.r.join(',')" "secret_declined,pr_anchor_unavailable,pr_base_mismatch,pr_merge_blocked,codex_unavailable"
   local help; help="$(node "$TOOLS" xprov --help 2>&1; node "$TOOLS" --help 2>&1)"
   grep -qiE 'unforgeable|tamper[- ]?proof' <<<"$help" && bad "OS8c a help text claims unforgeable/tamper-proof" || ok "OS8c no help text claims unforgeable or tamper-proof"
   grep -q 'enforcement: unenforced' <<<"$help" && ok "OS8c help states enforcement: unenforced" || bad "OS8c help lacks the tier-0 statement"
@@ -407,7 +406,6 @@ caseOS10() {
   local argv="$TMP22/argv10.json"; rm -f "$argv"; FAKE_RUNNER_ARGV_FILE="$argv" fake_runner_env
   G_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov gate --phase p22 --gate "$GATE_PLAN" 2>"$TMP22/err.txt")"; G_RC=$?
   assert_rc "OS10f the plan gate refuses on an unbound entry" 1 "$G_RC"
-  G_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov gate --phase p22 --gate "$GATE_WAVE" --wave 1 --base "$PHASE_HEAD" 2>"$TMP22/err.txt")"
   [[ ! -e "$argv" ]] && ok "OS10f the fake runner recorded zero calls" || bad "OS10f the runner was invoked"
   [[ -z "$(ls -A "$HOME/.a1-xprov/snapshots" 2>/dev/null)" ]] && ok "OS10f no snapshot was built" || bad "OS10f a snapshot exists"
   FAKE_RUNNER_ARGV_FILE="" fake_runner_env

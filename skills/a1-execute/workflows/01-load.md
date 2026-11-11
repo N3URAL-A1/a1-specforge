@@ -69,20 +69,16 @@ place the check fails with that reason, which is the correct answer.)
   and record `{id: plan-review-xprov, verdict: not_applicable, caught: false}`
   in the retro (issue tag `xprov_not_applicable`). It is not a pass.
   **Spec 016 accepted verdicts.** Step 0c never asks the owner anything: the
-  consent question belongs to a1-plan `04b-xprov-review.md` Step 1.0 and
-  `02-execute.md` 2b-x.0. `accepted: "not_applicable"` is exit 0 for a denied
+  consent question belongs to a1-plan `04b-xprov-review.md` Step 1.0. `accepted: "not_applicable"` is exit 0 for a denied
   repository (`permit_state: denied`) and for a repository with no permit
   (`permit_state: absent`, `origin_changed` or `unbound_legacy`): **continue**,
   print `ℹ Plan review not applicable — no Codex permit for this repository; Reinhard-only, continuing.`
   (denied: the line above). When `permit_state` is `origin_changed` or `unbound_legacy`, the
   line names it instead — `ℹ Codex review skipped: permit void (<permit_state>) — the owner should re-consent; Reinhard-only, continuing.` —
   and the retro records the state; Reinhard-only must never look like a plain absent permit. Record `{id: plan-review-xprov, verdict: not_applicable, caught: false}`
-  with the issue tag `xprov_not_applicable`. `accepted: "not_applicable"` with `placement: "scope_exempt"` (spec 016
-  FR-019: the spec is not size L and the plan names no security surface) is exit 0 as well: print
-  `ℹ Plan review not applicable — scope_exempt: spec is not size L and the plan names no security surface; Reinhard-only, continuing.`
-  and record the same retro entry with reason `scope_exempt`. `accepted: "codex_blocked_fallback"` (spec 016 FR-026: Codex answered BLOCKED
+  with the issue tag `xprov_not_applicable`. `accepted: "codex_blocked_fallback"` (spec 016 FR-026: Codex answered BLOCKED
   twice for exactly this PLAN.md) is exit 0 too: print `ℹ Plan review not applicable — Codex answered BLOCKED twice; the Reinhard review is the only review for this plan, continuing.`
-  and record the retro entry with reason `codex_blocked_fallback` (issue tag `xprov_not_applicable`). `accepted: "dispositions"` (FR-025: round 2 closed by recorded dispositions, no BLOCKER) and `accepted: "secret_declined"` (FR-029: the owner declined the allowlist question for a changed-line secret hit) are exit 0 too: record `xprov_disposed` respectively `xprov_not_applicable` (reason `secret_declined`) in the retro. `wave-status` lists such waves under `disposed` and `declined` next to `blocked_fallback`; a `carried_from` field in the `load-check` output means a whitespace- or heading-only PLAN.md edit kept the earlier pass (FR-030). A mismatch or broken state
+  and record the retro entry with reason `codex_blocked_fallback` (issue tag `xprov_not_applicable`). `accepted: "codex_unavailable"` (spec 025 FR-019: the Codex run failed for exactly this PLAN.md — usage limit, transport error or timeout) is exit 0 too, like `codex_blocked_fallback`: print `ℹ Plan review not applicable — the Codex run failed (usage limit or runner error); the Claude-only review is the review for this plan, continuing.` and record the retro entry `{id: plan-review-xprov, verdict: not_applicable, caught: false}` with reason `codex_unavailable` (issue tag `xprov_not_applicable`); no waiver. `accepted: "dispositions"` (FR-025: round 2 closed by recorded dispositions, no BLOCKER) and `accepted: "secret_declined"` (FR-029: the owner declined the allowlist question for a changed-line secret hit) are exit 0 too: record `xprov_disposed` respectively `xprov_not_applicable` (reason `secret_declined`) in the retro. A `carried_from` field in the `load-check` output means a whitespace- or heading-only PLAN.md edit kept the earlier pass (FR-030). A mismatch or broken state
   (`*_mismatch`, `audit_broken`, `invalid`) stays exit 1.
 - **Exit 1, `reason: plan_review_missing`** → read `enforcement` from the
   stdout JSON (it echoes the `plan-review-xprov` row of

@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 // xprov dispose — the round-cap dispositions (spec 016 Wave 9, FR-025; owner decision 2026-10-14).
 //
-//   a1-tools xprov dispose --phase <name> --gate plan-review-xprov|wave-inspect-xprov [--wave N [--lane L] --work-path <dir>]
+//   a1-tools xprov dispose --phase <name> --gate plan-review-xprov
 //
 // Round 2 of a gate target ended without APPROVED (`round_cap`). When round 2 holds NO blocker, the agent writes the host-authored
 // dispositions file `xreview/<gate>-<target>-r2.dispositions.md` — one line per finding id:
@@ -11,10 +11,10 @@
 // and runs this command. It succeeds only when EVERY major, minor and quarantined id of round 2 carries one of the two with a non-empty
 // reason (secret- and instruction-shaped reasons do not count). Then it
 //   - writes a1's marker `a1-disposed.json` (0600, flag wx) into the run dir of the round-2 answer (plan sha after the fixes, findings hash,
-//     for a wave the work path's HEAD now and the reviewed base),
+//     the row's head and base stay null),
 //   - appends the index row { gate, wave, lane, accepted: 'dispositions', … } (no `verdict`, no `round`: it is no round and no verdict),
 //   - appends an XREVIEW.md section and one observation (pattern xprov_disposed).
-// `load-check` and `wave-status` accept the row ONLY through the marker (xprov-runrecord.cjs disposedMarker), like a pass: the index is a
+// `load-check` accepts the row ONLY through the marker (xprov-runrecord.cjs disposedMarker), like a pass: the index is a
 // pointer. A blocker keeps the hard stop (refused `blocker_open`); an id without a usable disposition refuses `undisposed` and the target
 // goes to the per-phase waiver question. The facts come from the round-2 run dir in a1's artifacts dir, not from the index row or the
 // phase-dir findings file. No owner store is read or written; a hostile dispositions file never reaches a path (ids are opaque strings).
@@ -26,7 +26,6 @@ const { parseFlags, repoRoot, assertSafeSegment, writeTextAtomic, nowIso } = req
 const X = require('./xprov.cjs');
 const C = require('./xprov-common.cjs');
 const RR = require('./xprov-runrecord.cjs');
-const WV = require('./xprov-waivers.cjs');
 const { dispositionsPath } = require('./xprov-feedback.cjs');
 const { filterOutput, instructionMarker } = require('./xprov-filter.cjs');
 const { appendXreviewNote } = require('./xprov-normalize.cjs');
@@ -42,7 +41,7 @@ const ID_SHOWN_CHARS = 60;
 const EXTERNAL_AGENT = 'xprov-codex';
 const REFUSALS = Object.freeze({
   not_at_cap: 'round_cap_not_reached', not_a_revise: 'not_a_revise', blocker_open: 'blocker_open', undisposed: 'undisposed', run_unbound: 'round_unbound',
-  already: 'already_disposed', no_base: 'no_reviewed_base', head_moved: 'head_not_descendant', unwritable: 'dispose_unwritable',
+  already: 'already_disposed', unwritable: 'dispose_unwritable',
 });
 
 const refuse = (code, detail, extra) => Object.freeze({ ok: false, refused: code, detail, ...(extra || {}) });
@@ -100,7 +99,7 @@ function capRound(ctx, index) {
   if (!row) return refuse(REFUSALS.not_at_cap, `${ctx.gate} ${scopeOf(ctx.wave, ctx.lane)} holds ${rows.length} completed round(s); dispositions close round ${X.ROUND_CAP} only`);
   if (row.verdict !== X.VERDICTS.FAIL_WITH_FINDINGS) return refuse(REFUSALS.not_a_revise, `round ${X.ROUND_CAP} of ${ctx.gate} ${scopeOf(ctx.wave, ctx.lane)} is ${row.verdict}; there is nothing to dispose`);
   const rec = RR.runRecord(row.result_path, ctx.root);
-  const mode = ctx.gate === X.GATE_IDS.PLAN_REVIEW ? 'review' : 'inspect';
+  const mode = 'review';
   const runDir = typeof row.result_path === 'string' ? path.dirname(path.resolve(row.result_path)) : null;
   const doc = rec === null || runDir === null ? null : RR.verifiedFindings(runDir, row.findings_sha256);
   if (rec === null || doc === null || rec.mode !== mode || rec.status !== 'completed' || !C.isPlainObject(rec.response) || rec.response.verdict !== 'REVISE'
@@ -110,38 +109,28 @@ function capRound(ctx, index) {
   return Object.freeze({ ok: true, row, rec, doc, runDir });
 }
 
-/** The binding of the target at dispose time: the plan sha now and, for a wave, the work path's HEAD and the reviewed base. */
-function bindingOf(ctx, cap) {
+/** The binding of the target at dispose time: the plan sha now (head and base are null for a plan review). */
+function bindingOf(ctx) {
   const planSha = C.sha256(fs.readFileSync(ctx.planPath));
-  if (ctx.wave === null) return Object.freeze({ ok: true, planSha, head: null, base: null });
-  const repo = C.commonDirOf(ctx.root);
-  const h = WV.headIn(ctx.workPath, repo);
-  if (h.problem) return refuse(REFUSALS.unwritable, h.problem);
-  const hb = RR.reviewedHeadBase(cap.row.result_path, cap.rec, ctx.root);
-  if (hb.base === null) return refuse(REFUSALS.no_base, 'the round-2 run dir holds no reviewed head and base');
-  if (!WV.inHistory(ctx.workPath, hb.head, h.head)) return refuse(REFUSALS.head_moved, 'the work path HEAD does not contain the commit round 2 reviewed');
-  return Object.freeze({ ok: true, planSha, head: h.head, base: hb.base });
+  return Object.freeze({ ok: true, planSha, head: null, base: null });
 }
 
 // ---------- the command ----------
 
 function context(o) {
   const phase = assertSafeSegment(o.phase, '--phase');
-  if (![X.GATE_IDS.PLAN_REVIEW, X.GATE_IDS.WAVE_INSPECT, X.GATE_IDS.PR_DIFF].includes(o.gate)) throw C.inputError(`--gate must be ${X.GATE_IDS.PLAN_REVIEW}, ${X.GATE_IDS.WAVE_INSPECT} or ${X.GATE_IDS.PR_DIFF}, got ${JSON.stringify(C.clip(String(o.gate), 80))}`);
-  const isPlan = o.gate === X.GATE_IDS.PLAN_REVIEW;
-  if (isPlan && (o.wave !== undefined || o.lane !== undefined || o.workPath !== undefined)) throw C.inputError('plan-review-xprov takes no --wave, --lane or --work-path');
-  if (!isPlan && o.wave === undefined) throw C.inputError('wave-inspect-xprov and pr-diff-xprov require --wave <N> (and --work-path <dir> for a worktree)');
+  if (o.gate !== X.GATE_IDS.PLAN_REVIEW) throw C.inputError(`--gate must be ${X.GATE_IDS.PLAN_REVIEW}, got ${JSON.stringify(C.clip(String(o.gate), 80))}`);
+  if (o.wave !== undefined || o.lane !== undefined || o.workPath !== undefined) throw C.inputError('plan-review-xprov takes no --wave, --lane or --work-path');
   const root = repoRoot();
-  const workPath = o.workPath === undefined ? root : path.resolve(String(o.workPath));
-  if (!fs.existsSync(workPath) || !fs.statSync(workPath).isDirectory()) throw C.inputError(`--work-path is not a directory: ${workPath}`);
-  const phaseDir = C.phaseDirOf(root, phase, workPath); // the reserved PR phase keeps its state in <work-path>/.a1-review (pr-diff-xprov)
+  const workPath = root;
+  const phaseDir = C.phaseDirOf(root, phase);
   if (!fs.existsSync(phaseDir) || !fs.statSync(phaseDir).isDirectory()) throw C.inputError(`phase dir not found: ${phaseDir}`);
   const planPath = path.join(phaseDir, 'PLAN.md');
   if (!fs.existsSync(planPath)) throw C.inputError(`PLAN.md not found in ${phaseDir}`);
   const indexPath = path.join(phaseDir, 'xreview', 'index.json');
   const index = C.readIndex(indexPath);
   if (index === null) throw C.inputError(`index.json unparseable or not an array of objects: ${indexPath}`);
-  return Object.freeze({ phase, root, phaseDir, planPath, indexPath, index, workPath, gate: o.gate, isPlan, wave: isPlan ? null : C.parseWave(o.wave, 'wave'), lane: isPlan ? null : C.parseLane(o.lane) });
+  return Object.freeze({ phase, root, phaseDir, planPath, indexPath, index, workPath, gate: o.gate, isPlan: true, wave: null, lane: null });
 }
 
 /** a1's marker in the round-2 run dir, then the index row; the marker is `wx`: a second dispose of the same round is an `already_disposed`. */
@@ -156,7 +145,7 @@ function record(ctx, cap, bind, judged, dispositionsSha) {
   }
   const entry = Object.freeze({
     gate: ctx.gate, wave: ctx.wave, lane: ctx.lane, accepted: ACCEPTED, reason: X.REASONS.round_cap, plan_sha256: bind.planSha, result_path: cap.row.result_path,
-    ...(ctx.wave === null ? {} : { head: bind.head, base: bind.base }), fixed: marker.fixed, accepted_count: marker.accepted, ts: marker.ts,
+    fixed: marker.fixed, accepted_count: marker.accepted, ts: marker.ts,
   });
   const fresh = C.readIndex(ctx.indexPath);
   if (fresh === null) return refuse(REFUSALS.unwritable, 'index.json changed underneath the command');
@@ -191,7 +180,7 @@ function dispose(o) {
   if (!bytes) return refuse(REFUSALS.undisposed, `the dispositions file ${file} is missing (a regular file is required)`, { undisposed: open.others.slice(0, SHOWN_IDS_MAX).map((id) => ({ id: shown(id), why: 'no_file' })) });
   const judged = judgeDispositions(bytes.toString('utf8'), open.others);
   if (judged.problems.length) return refuse(REFUSALS.undisposed, `${judged.problems.length} of ${open.others.length} finding id(s) carry no usable fixed|accepted line — the target goes to the waiver question`, { undisposed: judged.problems.slice(0, SHOWN_IDS_MAX) });
-  const bind = bindingOf(ctx, cap);
+  const bind = bindingOf(ctx);
   if (!bind.ok) return bind;
   const done = record(ctx, cap, bind, judged, C.sha256(bytes));
   if (!done.ok) return done;
@@ -203,15 +192,14 @@ function dispose(o) {
 }
 
 function cmdXprovDispose(args) {
-  const flags = parseFlags(args || [], { phase: 'str', gate: 'str', wave: 'str', lane: 'str', 'work-path': 'str', 'secret-declined': 'str', base: 'str' });
+  const flags = parseFlags(args || [], { phase: 'str', gate: 'str', wave: 'str', lane: 'str', 'work-path': 'str', 'secret-declined': 'str' });
   const usage = (m) => C.usageExit('dispose', m);
   if (flags._.length) return usage(`unexpected argument ${JSON.stringify(C.clip(String(flags._[0]), 80))}`);
-  if (!flags.phase || !flags.gate) return usage('requires --phase <name> --gate <id> [--wave N [--lane <id>] --work-path <dir>]');
-  if (flags.base !== undefined && flags['secret-declined'] === undefined) return usage('--base belongs to --secret-declined');
+  if (!flags.phase || !flags.gate) return usage('requires --phase <name> --gate <id>');
   let r;
   try {
     const target = { phase: flags.phase, gate: flags.gate, wave: flags.wave, lane: flags.lane, workPath: flags['work-path'] };
-    r = flags['secret-declined'] === undefined ? dispose(target) : require('./xprov-decline.cjs').decline(context(target), { scan: flags['secret-declined'], base: flags.base });
+    r = flags['secret-declined'] === undefined ? dispose(target) : require('./xprov-decline.cjs').decline(context(target), { scan: flags['secret-declined'] });
   } catch (e) {
     if (e && e.code === 'A1_INPUT') return usage(e.message);
     throw e;

@@ -65,7 +65,7 @@ caseR18() {
   make_phase p18t "$CASES/approved.PLAN.md"; run_n3 "$TMP03/r18-taint.result.json" p18t
   assert_json "R18t1 tainted record → secret_in_output; model fields fall back to the literals, cli_version null" "$N_OUT" \
     "j.reason + '/' + j.index_entry.model_requested + '/' + j.index_entry.model_observed + '/' + j.index_entry.cli_version" \
-    "secret_in_output/CLI default (unresolved)/unknown/null"
+    "secret_in_output/$PIN_MODEL/unknown/null"
   local leaks=0; for tok in "$t1" "$t2" "$t3"; do
     [[ "$N_OUT" == *"$tok"* ]] && leaks=$((leaks + 1)); grep -q "$tok" "$PHASE_DIR/XREVIEW.md" && leaks=$((leaks + 1)); grep -q "$tok" "$PHASE_DIR/xreview/index.json" && leaks=$((leaks + 1))
   done
@@ -250,7 +250,7 @@ caseR20() {
   [[ ! -d "$art/claudex-old" && -d "$art/claudex-young" && -d "$art/not-a-run" ]] && ok "R20i filesystem matches: old run gone, young run and non-run dir present" \
                                                                                     || bad "R20i filesystem state wrong"
   # GC1–GC3 (team-lead decision 2026-10-04): a pass run dir — its OWN result.json is a
-  # completed APPROVED review/inspect — is what load-check / wave-status read; kept 180 days.
+  # completed APPROVED review/inspect — is what load-check reads; kept 180 days.
   #   GC1 a pass dir 15 days old → kept.            Red if gc ignores the pass rule.
   #   GC2 a non-pass dir (REVISE) 15 days old → removed.  Red if every dir with a result.json is kept.
   #   GC3 a pass dir 181 days old → removed.        Red if passes are kept forever.

@@ -5,8 +5,8 @@
 # output recorded before the fix is in the wave report (plan 012 §4 Wave 2).
 #
 #   P1  file `denied`, store EMPTY (the agent-edit case) → gate fails
-#       external_review_denial_mismatch, writes nothing; load-check and
-#       wave-status stay red.   Red if a file-only `denied` counts.
+#       external_review_denial_mismatch, writes nothing; load-check
+#       stays red.   Red if a file-only `denied` counts.
 #   P2  store denial + file `allowed` → mismatch, nothing leaves.
 #   P3  unusable store (mode 0644 / unknown format) → mismatch.
 #   P4  half write (store ok, file step fails) → mismatch (fail closed).
@@ -16,7 +16,7 @@
 #   P8  absent → not_applicable / external_review_not_permitted (spec 016 FR-012, flipped from fail in wave 5) + hint, no writes;
 #       invalid → still a fail.
 #   P9  permit-check: state + exit codes + the exposure sentence (FR-016).
-#   P10 registry: applies_to precedes the last column (invoke, spec 017), both xprov rows permitted-repos.
+#   P10 registry: applies_to precedes the last column (invoke, spec 017), the xprov plan row permitted-repos.
 #   P11 library rules of permit / permit --deny (record optional only for deny,
 #       an unusable store is never overwritten, deny refuses without --by).
 #   P12 hook: denies `xprov permit`, `permit --deny`, the denial-store path;
@@ -93,10 +93,10 @@ gate12() { G_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov gate --phase p1
 sub12() { G_OUT="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov "$@" 2>"$TMP12/err.txt")"; G_RC=$?; G_ERR="$(cat "$TMP12/err.txt")"; }
 nothing12() { [[ ! -e "$PHASE_DIR/PLAN-REVIEW-LOG.md" && ! -e "$PHASE_DIR/xreview" && ! -e "$PHASE_DIR/observations.jsonl" && ! -e "$PHASE_DIR/XREVIEW.md" ]]; }
 status12() { printf '## Wave 1 — one\n' > "$PHASE_DIR/STATUS.md"; }
-setapplies12() { # <value> — sets the applies_to cell of both xprov rows in the TREE copy's registry
+setapplies12() { # <value> — sets the applies_to cell of the xprov row in the TREE copy's registry
   node -e '
     const fs = require("fs"); const f = process.argv[1]; const v = process.argv[2];
-    const ids = ["plan-review-xprov", "wave-inspect-xprov"];
+    const ids = ["plan-review-xprov"];
     const out = fs.readFileSync(f, "utf8").split("\n").map((l) => (ids.some((id) => l.startsWith("| `" + id + "` |")) ? l.replace(/\|\s*[a-z-]*\s*(\|[^|]*\|\s*)$/, "| " + v + " $1") : l));
     fs.writeFileSync(f, out.join("\n"));
   ' "$TREE/_shared/gates-registry.md" "$1"
@@ -109,14 +109,9 @@ caseP1() {
   assert_json "P1 reason external_review_denial_mismatch, step permit-check, verdict fail" "$G_OUT" "[j.reason, j.step, j.verdict].join('/')" "external_review_denial_mismatch/permit-check/fail"
   nothing12 && ok "P1 the gate wrote nothing (no log, no xreview/, no observation)" || bad "P1 the gate wrote into the repo: $(ls "$PHASE_DIR")"
   [[ "$(sum12 "$STORE12")" == absent ]] && ok "P1 no store was created by the gate" || bad "P1 the gate created a store"
-  gate12 --gate "$GATE_WAVE" --wave 1 --base "$PHASE_HEAD"
-  assert_json "P1 the wave gate fails the same way" "$G_OUT" "[j.reason, j.verdict].join('/')" "external_review_denial_mismatch/fail"
   sub12 load-check --phase p12
   assert_rc "P1 load-check stays red (exit 1)" 1 "$G_RC"
   assert_json "P1 load-check reason plan_review_missing, not accepted" "$G_OUT" "[j.reason, String(j.accepted)].join('/')" "plan_review_missing/null"
-  sub12 wave-status --phase p12
-  assert_rc "P1 wave-status stays red (exit 1)" 1 "$G_RC"
-  assert_json "P1 wave-status reason wave_inspect_missing" "$G_OUT" "j.reason" "wave_inspect_missing"
   sub12 permit-check
   assert_rc "P1 permit-check exit 1" 1 "$G_RC"
   assert_json "P1 permit-check state denial_mismatch" "$G_OUT" "j.state + '/' + j.reason" "denial_mismatch/external_review_denial_mismatch"
@@ -205,14 +200,9 @@ caseP6() {
   grep -q "step: permit-check" "$PHASE_DIR/PLAN-REVIEW-LOG.md" 2>/dev/null && grep -q "verdict: not_applicable" "$PHASE_DIR/PLAN-REVIEW-LOG.md" && ok "P6 one log entry names step permit-check and verdict not_applicable" || bad "P6 log entry missing"
   [[ ! -e "$PHASE_DIR/xreview" ]] && ok "P6 no xreview/ (no run happened)" || bad "P6 xreview/ exists"
   [[ "$(ls "$HOME/.a1-xprov/snapshots" 2>/dev/null | wc -l | tr -d ' ')" == 0 ]] && ok "P6 no snapshot, no runner call" || bad "P6 a snapshot exists"
-  gate12 --gate "$GATE_WAVE" --wave 1 --base "$PHASE_HEAD"
-  assert_json "P6 the wave gate is not_applicable too" "$G_OUT" "j.verdict + '/' + j.wave" "not_applicable/1"
   sub12 load-check --phase p12
   assert_rc "P6 load-check exit 0 for a denied repo" 0 "$G_RC" "$G_ERR"
   assert_json "P6 load-check ok true, accepted not_applicable" "$G_OUT" "j.ok + '/' + j.accepted" "true/not_applicable"
-  sub12 wave-status --phase p12
-  assert_rc "P6 wave-status exit 0 for a denied repo" 0 "$G_RC" "$G_ERR"
-  assert_json "P6 wave-status ok true, completed waves listed under not_applicable, none lacking" "$G_OUT" "[j.ok, JSON.stringify(j.not_applicable), j.lacking.length].join('/')" 'true/[1]/0'
   sub12 load-check --phase p12 --expect-sha "$(printf '0%.0s' {1..64})"
   assert_rc "P6 --expect-sha still guards the plan (a different sha → exit 1)" 1 "$G_RC"
   # the same repo, then tampered: the file flipped back to a different decision
@@ -278,13 +268,13 @@ caseP10() {
     const row = (id) => G.parseRegistryRow(text, id);
     const header = text.split("\n").find((l) => /^\|\s*id\s*\|/i.test(l));
     const cols = header.split("|").slice(1, -1).map((c) => c.trim().toLowerCase());
-    process.stdout.write(JSON.stringify({ last: cols[cols.length - 2], invoke: cols[cols.length - 1], plan: row("plan-review-xprov").applies_to, wave: row("wave-inspect-xprov").applies_to, audit: row("plan-audit").applies_to }));
+    process.stdout.write(JSON.stringify({ last: cols[cols.length - 2], invoke: cols[cols.length - 1], plan: row("plan-review-xprov").applies_to, audit: row("plan-audit").applies_to }));
   ' "$REPO_ROOT")"
   assert_json "P10 applies_to is the column before the last one, and invoke (spec 017) is last" "$j" "j.last + '/' + j.invoke" "applies_to/invoke"
-  assert_json "P10 both xprov rows carry permitted-repos" "$j" "j.plan + '/' + j.wave" "permitted-repos/permitted-repos"
+  assert_json "P10 the xprov plan row carries permitted-repos" "$j" "j.plan" "permitted-repos"
   assert_json "P10 another row leaves the cell empty (= all)" "$j" "JSON.stringify(j.audit)" '""'
   local n; n="$(grep -c 'not_applicable' "$REGISTRY")"
-  [[ "$n" -ge 2 ]] && ok "P10 the registry names the not_applicable outcome on both xprov rows ($n)" || bad "P10 registry lacks the not_applicable routing sentence ($n)"
+  [[ "$n" -ge 1 ]] && ok "P10 the registry names the not_applicable outcome on the xprov plan row ($n)" || bad "P10 registry lacks the not_applicable routing sentence ($n)"
 }
 
 caseP11() {
@@ -404,7 +394,7 @@ caseR21y() {
 
 caseP13() {
   local f
-  for f in skills/a1-plan/workflows/04b-xprov-review.md skills/a1-execute/workflows/01-load.md skills/a1-execute/workflows/02-execute.md skills/a1-execute/workflows/03-verify.md; do
+  for f in skills/a1-plan/workflows/04b-xprov-review.md skills/a1-execute/workflows/01-load.md; do
     grep -q "not_applicable" "$REPO_ROOT/$f" && ok "P13 $f has a not_applicable routing row" || bad "P13 $f lacks not_applicable"
   done
   for f in skills/a1-plan/workflows/04b-xprov-review.md skills/a1-execute/workflows/03-verify.md; do

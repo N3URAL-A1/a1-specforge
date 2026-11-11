@@ -8,8 +8,8 @@ ends the run on a non-zero exit. `gh pr merge` runs only after all three exited 
 Preconditions:
 
 - Reinhard reviewed the diff, every BLOCKER and MAJOR is fixed, the last push is done (`_shared/push-cadence.md`).
-- Step 2.7 of `workflows/02-review.md` (`xprov gate --gate pr-diff-xprov --merge-check`) exited 0 after `git fetch origin`.
-  The plugin Bash hook runs that check again on the merge command in step 4 and denies the merge when it is not 0.
+- Samuel reviewed the diff when step 2.2b reported `security_surface: true` (`workflows/02-review.md`); every BLOCKER and MAJOR of both reviewers is fixed
+  (`reinhard`, `samuel`, `reinhard+samuel` findings alike).
 - `A1_VAULT_ROOT` is set: step 2 reads the vault. An unset root exits 2 and ends the run.
 
 ## 5.1 Disposition review state (FR-025)
@@ -81,8 +81,7 @@ Exit 1 names every red reason in `reasons[]`. Fix the cause and run 5.1 to 5.3 a
 
 ## 5.4 Merge
 
-Run this as the only command of the Bash call (the hook allows one canonical form, `_shared/lib/xprov-hook-merge.cjs`).
-PR bodies go in with `--body-file`, never inline. `<head_sha>` is `head_sha` from the stdout of 5.3 (40 hex): GitHub then merges
+Run this as the only command of the Bash call. PR bodies go in with `--body-file`, never inline. `<head_sha>` is `head_sha` from the stdout of 5.3 (40 hex): GitHub then merges
 that commit or refuses, so a push between the check and the merge cannot slip in (spec 017 review SEC-1).
 
 ```bash
@@ -121,4 +120,3 @@ if [ "$RC" -ne 0 ]; then echo "STOP: probe run exit=$RC (1 = a probe failed or w
 
 - Any of 5.1 to 5.3 exits 1 or 2: no merge. Report the reason, fix, repeat from 5.1.
 - 5.5 exits 1 or 2: the merge stays done; report "not verified live" with the failing probe ids, fix forward.
-- `gh pr merge` denied by the hook: read the hint, fix the cause (head sha moved: run 5.3 again and use the new `head_sha`; local ref differs). Do not rephrase the command.

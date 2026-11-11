@@ -46,24 +46,17 @@ paths, not documents. Details + self-check: `_shared/spawn-policy.md`.
 |---|---|---|---|---|
 | 1 | Load (incl. Roadmap Gate + plan-review check `load-check`) | `workflows/01-load.md` | — (orchestrator) | Always |
 | 2 | Execute | `workflows/02-execute.md` | a1-erik-executor (per wave) | Per wave |
-| 2b-x | Cross-provider wave inspection (gate `wave-inspect-xprov`) | `workflows/02-execute.md` step 2b-x | — (orchestrator; `a1-tools xprov gate`, Codex via vendored runner) | Per wave, after the commit-landed gate, before the checkpoint |
-| 3 | Verify (precondition `wave-status`) | `workflows/03-verify.md` | a1-victor-verifier | After all waves |
+| 3 | Verify | `workflows/03-verify.md` | a1-victor-verifier | After all waves |
 
 ## Cross-provider review gates (spec 009, HARD RULE — enforcement lives in the registry)
 
-Two gates send work to a second provider (Codex, through the vendored
-claudex-loop runner) via one deterministic driver, `a1-tools xprov gate`:
+Only the plan goes to a second provider (Codex, through the vendored
+claudex-loop runner). There is no cross-provider step on waves; the load check is deterministic:
 
 - **Load precondition** (`workflows/01-load.md` Step 0c): `xprov load-check`
   — the current PLAN.md sha256 must match the newest `plan-review-xprov` pass
   entry from a1-plan Phase 4b. No match → `plan_review_missing`.
-- **Per wave** (`workflows/02-execute.md` step 2b-x): `xprov gate --phase
-  <phase_name> --gate wave-inspect-xprov --wave <N> --base <pre-wave HEAD>
-  --work-path <worktree>` on the wave diff; `fail-with-findings` → one Erik fix
-  round in the same wave, then a fresh inspection; a second REVISE is `round_cap`.
-- **Before Victor** (`workflows/03-verify.md` precondition): `xprov wave-status`
-  — every completed wave has a pass or a human waiver from the guarded store
-  (`~/.a1-xprov/waivers.json`, bound to PLAN.md sha, wave, lane and head).
+- **Design files only** (`workflows/02-execute.md` 2b-d, gate `design-review-xprov`): a wave that changed an ADR or `docs/architecture/` document gets those files reviewed (`xprov design-targets --base "$PRE_WAVE_HEAD"`); never a code diff, `warning` row.
 - **Before every wave** (`workflows/02-execute.md`): `xprov load-check
   --expect-sha <sha accepted at Load>` — a PLAN.md edited mid-phase halts.
 
@@ -183,7 +176,7 @@ N lanes = N worktrees, same rules as N phases, no new convention.
    completed waves' code exists, so the import check can actually run:
    ```bash
    node <repo>/_shared/a1-tools.cjs lane-split check \
-     --plan <plan path> --imports <repo root>
+     --plan <plan path> --imports <repo root> --phase <phase_name>
    ```
    Exit 1 → do not start any lane; back to `a1-plan`.
 
@@ -234,5 +227,5 @@ rejects it inside a lane, and that rejection is not to be worked around.
 - Always show the diff summary after each wave (`git log --oneline -5`)
 - If a wave is BLOCKED (a1-erik-executor reports blocked tasks), surface to user before continuing
 - Never re-execute already-committed tasks — check STATUS.md first
-- Never start the first wave (Wave 0 if the plan has one) while `xprov load-check` reports `plan_review_missing` under `blocking`; never spawn Victor while `xprov wave-status` exits 1 under `blocking`
+- Never start the first wave (Wave 0 if the plan has one) while `xprov load-check` reports `plan_review_missing` under `blocking`; Victor is spawned after the last wave with no Codex precondition
 - Never run `xprov waive` from this skill — the human runs it, the skill only prints the command

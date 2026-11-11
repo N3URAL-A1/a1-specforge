@@ -1,3 +1,5 @@
+<!-- FROZEN HISTORICAL CORPUS SNAPSHOT (pre-spec-025). Do not recopy from skills/a1-execute/workflows/02-execute.md: the gates-lint cases R1/R1b/R1c/R4b depend on this older text. -->
+
 # Phase 2: Execute Waves
 
 Execute each wave via a1-erik-executor, with checkpoints between waves.

@@ -47,9 +47,9 @@ D14="-----"
 PEM14="${D14}BEGIN"                                # pem_begin shape (not high confidence)
 
 # ---------- repo, origin, HOME ----------
-c14() { git -C "$R14" add -A && git -C "$R14" commit -qm "$1"; }
-push14() { git -C "$R14" push -q origin HEAD:refs/heads/main && git -C "$R14" fetch -q origin; }
-head14() { git -C "$R14" rev-parse "${1:-HEAD}"; }
+c14() { git_in "$R14" add -A && git_in "$R14" commit -qm "$1"; }
+push14() { git_in "$R14" push -q origin HEAD:refs/heads/main && git_in "$R14" fetch -q origin; }
+head14() { git_in "$R14" rev-parse "${1:-HEAD}"; }
 
 # new14 — fresh HOME, bare origin O14, primary checkout R14 on main with the permit record
 # (decided_by robert, committed: the owner check reads it at the anchor), src/add.js, tests/
@@ -58,20 +58,20 @@ new14() {
   N14=$((N14 + 1)); A14="$TMP14/a$N14"; mkdir -p "$A14"
   export HOME="$A14/home"; mkdir -p "$HOME"
   O14="$A14/origin.git"; R14="$A14/repo"
-  git init -q --bare "$O14" && git -C "$O14" symbolic-ref HEAD refs/heads/main
-  git init -q "$R14" && git -C "$R14" symbolic-ref HEAD refs/heads/main
-  git -C "$R14" config user.name fixture; git -C "$R14" config user.email fixture@example.invalid; git -C "$R14" config commit.gpgsign false
+  git init -q --bare "$O14" && git_in "$O14" symbolic-ref HEAD refs/heads/main
+  git init -q "$R14" && git_in "$R14" symbolic-ref HEAD refs/heads/main
+  git_in "$R14" config user.name fixture; git_in "$R14" config user.email fixture@example.invalid; git_in "$R14" config commit.gpgsign false
   mkdir -p "$R14/src" "$R14/tests" "$R14/lib"
   printf 'export function add(a, b) { return a + b; }\n' > "$R14/src/add.js"
   printf 'plain\n' > "$R14/tests/plain.txt"; printf 'plain\n' > "$R14/lib/plain.txt"
   write_permit "$R14" robert record/2026-10-06-fixture.md
   c14 "base"
-  git -C "$R14" remote add origin "$O14"; rebind_permit "$R14"; push14
+  git_in "$R14" remote add origin "$O14"; rebind_permit "$R14"; push14
 }
 
 # store14 — approves the allowlist blob at origin/main (store written directly, documented format).
 store14() {
-  git -C "$R14" show "origin/main:$AL14" > "$A14/blob"
+  git_in "$R14" show "origin/main:$AL14" > "$A14/blob"
   local sha key; sha="$(sha256_of "$A14/blob")"; key="$(cd "$R14" && cd "$(git rev-parse --git-common-dir)" && pwd -P)"
   mkdir -p "$HOME/.a1-xprov"; chmod 700 "$HOME/.a1-xprov"
   node -e 'const [f, k, ...s] = process.argv.slice(1); require("fs").writeFileSync(f, JSON.stringify({ version: 1, repos: { [k]: s } }, null, 2) + "\n");' "$HOME/.a1-xprov/$STORE14" "$key" "$sha"
@@ -90,14 +90,14 @@ doc14() { printf '{"version":%s,"owner":"%s","entries":[%s],"scopes":[%s]}\n' "$
 al14() {
   printf '%s' "$1" > "$R14/$AL14"
   # an unchanged file is not an error (a variant may rewrite the same document); any other git failure is
-  git -C "$R14" add "$AL14" || bad "part 14 al14: git add failed"
-  if ! git -C "$R14" diff --cached --quiet; then git -C "$R14" commit -qm "allowlist" || bad "part 14 al14: commit failed"; fi
+  git_in "$R14" add "$AL14" || bad "part 14 al14: git add failed"
+  if ! git_in "$R14" diff --cached --quiet; then git_in "$R14" commit -qm "allowlist" || bad "part 14 al14: commit failed"; fi
   push14 || bad "part 14 al14: push failed"
   if [[ "${2:-1}" == 1 ]]; then store14; fi
 }
 
 # feat14 — branch feat from main; leaves the caller to change files, then commit with c14.
-feat14() { git -C "$R14" checkout -q -B feat main; }
+feat14() { git_in "$R14" checkout -q -B feat main; }
 
 # snap14 <commit> [flags…] — `xprov snapshot` from inside R14. Sets S_OUT S_ERR S_RC; removes an ok snapshot.
 snap14() {
@@ -122,7 +122,7 @@ pass14() {
 VARIANT14_N=0
 variant14() {
   VARIANT14_N=$((VARIANT14_N + 1))
-  git -C "$R14" checkout -q main; al14 "$2"
+  git_in "$R14" checkout -q main; al14 "$2"
   feat14; printf '// v%s\n' "$VARIANT14_N" >> "$R14/src/add.js"; c14 "feature $VARIANT14_N"
   snap14 feat
   if [[ "$3" == pass ]]; then pass14 "$1"; else expect14 "$1" "$3"; fi
@@ -131,7 +131,7 @@ variant14() {
     local det; det="$(json_get "$S_OUT" "j.detail")"
     [[ "$det" == *"$4"* ]] && ok "$1: detail names the rule ($4)" || bad "$1: detail lacks '$4' (got: ${det:0:120})"
   fi
-  git -C "$R14" checkout -q main
+  git_in "$R14" checkout -q main
 }
 
 # ---------- D1: schema of allowlist v2 (FR-019) ----------
@@ -155,11 +155,11 @@ caseD1() {
   variant14 "D1 v prefix that is a file" "$(doc14 "$(sc14 src/add.js/ password_assignment 1)")" "allowlist_invalid" "not a directory at the anchor"
   variant14 "D1 v prefix that is a tree (second level)" "$(doc14 "$(sc14 d/ password_assignment 1)")" pass
   # (v) the tree is read at the ANCHOR, not at the reviewed commit: a directory the feature adds does not count
-  git -C "$R14" checkout -q main; al14 "$(doc14 "$(sc14 later/ password_assignment 1)")"
+  git_in "$R14" checkout -q main; al14 "$(doc14 "$(sc14 later/ password_assignment 1)")"
   feat14; mkdir -p "$R14/later"; printf 'x\n' > "$R14/later/f.txt"; c14 "feature adds later/"
   snap14 feat; expect14 "D1 v prefix that is a tree only at the reviewed commit" "allowlist_invalid"
   [[ "$(json_get "$S_OUT" "j.detail")" == *"not a directory at the anchor"* ]] && ok "D1 v …names the anchor rule" || bad "D1 v …lacks the anchor rule"
-  git -C "$R14" checkout -q main
+  git_in "$R14" checkout -q main
   # (vi) prefix shape: root, glob, escape, relative segments, missing slash
   local p
   for p in '/' './' '' 'tests' '*/' 'te*/' 't?sts/' 'tests//' '../' '/tests/' 'tests/./' 'tests/../' 'tests\\/' '{tests}/' '[t]ests/'; do
@@ -206,7 +206,7 @@ caseD1c() {
   local v1; v1="$(printf '{"version":1,"owner":"robert","entries":[]}\n')"
   al14 "$v1"
   local v1sha="$BLOB14"
-  git -C "$R14" checkout -q main; al14 "$(doc14 "$(sc14 tests/ password_assignment 5)")" 0
+  git_in "$R14" checkout -q main; al14 "$(doc14 "$(sc14 tests/ password_assignment 5)")" 0
   # the store still holds only the v1 blob's sha
   mkdir -p "$HOME/.a1-xprov"; chmod 700 "$HOME/.a1-xprov"
   node -e 'const [f, k, s] = process.argv.slice(1); require("fs").writeFileSync(f, JSON.stringify({ version: 1, repos: { [k]: [s] } }) + "\n");' "$HOME/.a1-xprov/$STORE14" "$(cd "$R14" && cd "$(git rev-parse --git-common-dir)" && pwd -P)" "$v1sha"
@@ -214,7 +214,7 @@ caseD1c() {
   feat14; printf '// f\n' >> "$R14/src/add.js"; c14 "feature"
   snap14 feat
   expect14 "D1c x a v2 blob whose sha is not approved (the v1 blob is)" "allowlist_invalid/allowlist_unapproved"
-  git -C "$R14" checkout -q main; store14
+  git_in "$R14" checkout -q main; store14
   feat14; printf '// g\n' >> "$R14/src/add.js"; c14 "feature 2"
   snap14 feat
   pass14 "D1c x after approving the v2 blob's own sha"
@@ -268,7 +268,7 @@ caseD3() {
   scen14 "$sc"; sed -n '2p' "$R14/tests/fix.txt" >> "$R14/tests/fix.txt"; c14 "duplicate a covered line"; snap14 feat
   expect14 "D3 ii-d a covered line DUPLICATED" "secret_in_snapshot"
   # (iii) a renamed or copied file: every line strict
-  scen14 "$sc"; git -C "$R14" mv tests/fix.txt tests/moved.txt; c14 "rename"; snap14 feat
+  scen14 "$sc"; git_in "$R14" mv tests/fix.txt tests/moved.txt; c14 "rename"; snap14 feat
   expect14 "D3 iii renamed file, content identical" "secret_in_snapshot"
   assert_eq "D3 iii both hits count as changed_line" "$(unc14)" "tests/|password_assignment|2|changed_line"
   scen14 "$sc"; cp "$R14/tests/fix.txt" "$R14/tests/copy.txt"; c14 "copy"; snap14 feat
@@ -287,11 +287,11 @@ caseD3() {
   scen14 "$(sc14 tests/ password_assignment 2)"; printf '// f\n' >> "$R14/src/add.js"; c14 "feature"; snap14 feat
   pass14 "D3 vii exactly max_count hits are fine"
   scen14 "$(sc14 tests/ password_assignment 2)"
-  git -C "$R14" checkout -q main; mkdir -p "$R14/tests/unit"; printf '%s\n' "$(pwline14 fixtureval07)" > "$R14/tests/unit/y.txt"; c14 "second file"; push14
+  git_in "$R14" checkout -q main; mkdir -p "$R14/tests/unit"; printf '%s\n' "$(pwline14 fixtureval07)" > "$R14/tests/unit/y.txt"; c14 "second file"; push14
   al14 "$(doc14 "$(sc14 tests/ password_assignment 2)")"; feat14; printf '// f\n' >> "$R14/src/add.js"; c14 "feature"; snap14 feat
   expect14 "D3 vii the count is per (prefix, pattern) across files (2 + 1 > 2)" "secret_in_snapshot"
   # the most specific scope takes the match: tests/unit/ counts its own, tests/ keeps room
-  git -C "$R14" checkout -q main
+  git_in "$R14" checkout -q main
   al14 "$(doc14 "$(sc14 tests/ password_assignment 2),$(sc14 tests/unit/ password_assignment 1)")"; feat14; printf '// g\n' >> "$R14/src/add.js"; c14 "feature"; snap14 feat
   pass14 "D3 nested scopes: the longest matching prefix counts the match"
   assert_eq "D3 nested scopes: one hit each" "$(hits14)" "tests/|password_assignment|2,tests/unit/|password_assignment|1"
@@ -305,7 +305,7 @@ caseD3b() {
   pwline14 fixtureval03 >> "$R14/tests/fix.txt"; printf '\n' >> "$R14/tests/fix.txt"; c14 "wave 1 adds a hit"; w1="$(head14)"
   sed -i.bak '$d' "$R14/tests/fix.txt"; rm -f "$R14/tests/fix.txt.bak"; c14 "wave 2 removes it again"
   # the file now equals the anchor's: the head side is clean; only the base blob carries the changed line
-  [[ "$(git -C "$R14" diff --name-only main HEAD -- tests/fix.txt)" == "" ]] && ok "D3 ix fixture: head equals the anchor for tests/fix.txt" || bad "D3 ix fixture: head differs from the anchor"
+  [[ "$(git_in "$R14" diff --name-only main HEAD -- tests/fix.txt)" == "" ]] && ok "D3 ix fixture: head equals the anchor for tests/fix.txt" || bad "D3 ix fixture: head differs from the anchor"
   snap14 feat --base "$w1"
   expect14 "D3 ix base blob with a hit on a line changed in the base" "secret_in_snapshot"
   assert_eq "D3 ix the failing side is base" "$(J14 j.secret_side)" "base"
@@ -330,7 +330,7 @@ caseD3b() {
   assert_eq "D3 utf-16 file: reported as no_line" "$(unc14)" "tests/|password_assignment|1|no_line"
   # the input side: a PLAN copy under a scoped prefix is never covered
   new14; al14 "$(doc14 "$(sc14 .a1/ password_assignment 5)")"; feat14; mkdir -p "$R14/.a1/phases/p14"; printf '%s\n' "$(pwline14 fixtureval10)" > "$R14/.a1/phases/p14/PLAN.md"
-  printf '// f\n' >> "$R14/src/add.js"; git -C "$R14" add src/add.js; git -C "$R14" commit -qm "feature"
+  printf '// f\n' >> "$R14/src/add.js"; git_in "$R14" add src/add.js; git_in "$R14" commit -qm "feature"
   snap14 feat; pass14 "D3 input control: without --plan nothing matches"
   # the label is the path relative to the primary checkout's REAL path (macOS: /var is a symlink to /private/var)
   snap14 feat --plan "$(cd "$R14" && pwd -P)/.a1/phases/p14/PLAN.md"
@@ -352,7 +352,7 @@ caseD3g() {
   scen14 "$(sc14 tests/ password_assignment 5)"
   export HOME="$A14/home"; mkdir -p "$HOME/.codex"; printf '{"fixture":true}\n' > "$HOME/.codex/auth.json"; chmod 600 "$HOME/.codex/auth.json"
   make_home; ln -s "$HOME/.codex/auth.json" "$XHOME/auth.json"; export A1_XPROV_CODEX_HOME="$XHOME"
-  git -C "$R14" checkout -q main
+  git_in "$R14" checkout -q main
   mkdir -p "$R14/.a1/phases/p14"; cp "$CASES/approved.PLAN.md" "$R14/.a1/phases/p14/PLAN.md"
   printf '.a1/phases/p14/XREVIEW.md\n.a1/phases/p14/PLAN-REVIEW-LOG.md\n.a1/phases/p14/xreview/\n.a1/phases/p14/observations.jsonl\n' > "$R14/.gitignore"
   c14 "phase p14"; push14
@@ -498,7 +498,7 @@ casePropose() {
   assert_json "D4 high-confidence matches are not scopable: listed with their count, flagged in the list" "$P_OUT" "j.not_scopable.map((n) => n.pattern + '|' + n.count).join(',') + '/' + j.unclassified.filter((u) => u.high_confidence).length + '/' + j.root_files" "aws_access_key_id|1/1/1"
   [[ "$P_OUT$P_ERR" != *fixtureval* && "$P_OUT$P_ERR" != *"$FAKE_AK14"* ]] && ok "D4 no matched value in stdout or stderr" || bad "D4 a matched value leaked"
   [[ "$P_ERR" == *"tests/d.txt:1"* && "$P_ERR" == *"tests/ "* ]] && ok "D4 stderr carries the human listing" || bad "D4 stderr lacks the listing"
-  [[ -z "$(git -C "$R14" status --porcelain)" && ! -e "$R14/$AL14" ]] && ok "D4 nothing written" || bad "D4 propose wrote a file"
+  [[ -z "$(git_in "$R14" status --porcelain)" && ! -e "$R14/$AL14" ]] && ok "D4 nothing written" || bad "D4 propose wrote a file"
   prop14
   assert_json "D4 without --scopes the output is the per-match listing (unchanged)" "$P_OUT" "[Array.isArray(j.matches), j.scopes === undefined].join('/')" "true/true"
   prop14 --scopes --json
@@ -550,7 +550,7 @@ caseApproveTty() {
   [[ ! -e "$HOME/.a1-xprov/$STORE14" ]] && ok "D4 …no store written" || bad "D4 …a store was written"
   PTY_TYPED=2 pty14 "${NOCLAUDE14[@]}" node "$TREE_TOOLS" xprov allowlist approve --repo "$R14"; rc=$?
   assert_rc "D4 typing 2 (entries + scopes) → exit 0" 0 "$rc" "$(tail -n 3 "$TMP14/pty-out.txt")"
-  git -C "$R14" show "origin/main:$AL14" > "$A14/blob"
+  git_in "$R14" show "origin/main:$AL14" > "$A14/blob"
   assert_json "D4 the store holds the v2 blob's sha" "$(cat "$HOME/.a1-xprov/$STORE14")" "Object.values(j.repos)[0].join(',')" "$(sha256_of "$A14/blob")"
 }
 
@@ -559,11 +559,11 @@ caseApproveTty() {
 caseS2() {
   scen14 "$(sc14 tests/ password_assignment 5)"
   printf '%s\n' "$(pwline14 fixtureval20)" >> "$R14/tests/fix.txt"; c14 "add a hit"
-  git -C "$R14" replace "$(git -C "$R14" rev-parse 'feat^{tree}')" "$(git -C "$R14" rev-parse 'main^{tree}')"
+  git_in "$R14" replace "$(git_in "$R14" rev-parse 'feat^{tree}')" "$(git_in "$R14" rev-parse 'main^{tree}')"
   snap14 feat
   expect14 "S2 a replace ref makes anchor..commit look empty: the added line is still changed" "secret_in_snapshot"
   assert_eq "S2 …reported as changed_line, the two old hits stay covered" "$(hits14) $(unc14)" "tests/|password_assignment|2 tests/|password_assignment|1|changed_line"
-  git -C "$R14" replace -d "$(git -C "$R14" rev-parse 'main^{tree}' | head -n1)" >/dev/null 2>&1
+  git_in "$R14" replace -d "$(git_in "$R14" rev-parse 'main^{tree}' | head -n1)" >/dev/null 2>&1
 }
 
 # ---------- S8 (Samuel SEC-8): a git read that hangs is bounded and refuses coverage ----------
@@ -585,7 +585,7 @@ caseS8() {
 # Mutation: M22 drop --inter-hunk-context=0 from the diff arguments → the two edits merge and the hits between them look changed.
 caseR11() {
   scen14 "$(sc14 tests/ password_assignment 5)"
-  git -C "$R14" config diff.interHunkContext 10
+  git_in "$R14" config diff.interHunkContext 10
   sed -i.bak -e 's/^alpha$/alpha2/' -e 's/^gamma$/gamma2/' "$R14/tests/fix.txt"; rm -f "$R14/tests/fix.txt.bak"; c14 "edit the first and last line"
   snap14 feat
   pass14 "R11 a configured diff.interHunkContext: the two hits between two edits stay covered"
@@ -636,7 +636,7 @@ caseS1() {
 # S1u — the cross-check against the primary checkout's own diff (SEC-2): the id of the scanned blob must be the anchor's / the diff's new id.
 caseS1u() {
   scen14 "$(sc14 tests/ password_assignment 5)"; printf '// f\n' >> "$R14/tests/fix.txt"; c14 "edit"
-  local anchor; anchor="$(git -C "$R14" rev-parse origin/main)"
+  local anchor; anchor="$(git_in "$R14" rev-parse origin/main)"
   local out; out="$(node -e '
     const AL = require(process.argv[1] + "/_shared/lib/xprov-allowlist.cjs");
     const [root, anchor, feat, fixNew, addSame, wrong] = process.argv.slice(2);
@@ -648,7 +648,7 @@ caseS1u() {
       wrongOutside: bad([["src/add.js", wrong]]),
       missing: bad([["nope.txt", wrong]]),
     }));
-  ' "$TREE" "$R14" "$anchor" "$(head14 feat)" "$(git -C "$R14" rev-parse feat:tests/fix.txt)" "$(git -C "$R14" rev-parse feat:src/add.js)" "$(printf '%040d' 7)")"
+  ' "$TREE" "$R14" "$anchor" "$(head14 feat)" "$(git_in "$R14" rev-parse feat:tests/fix.txt)" "$(git_in "$R14" rev-parse feat:src/add.js)" "$(printf '%040d' 7)")"
   assert_json "S1u right ids: nothing mismatched" "$out" "j.right" ""
   assert_json "S1u a wrong id for a path in the diff" "$out" "j.wrongInDiff" "tests/fix.txt"
   assert_json "S1u a wrong id for a path outside the diff (anchor blob differs)" "$out" "j.wrongOutside" "src/add.js"
@@ -683,9 +683,9 @@ caseS4() {
   local order
   for order in "Case.txt:case.txt" "case.txt:Case.txt"; do
     new14
-    local hit plain; hit="$(printf '%s\n' "$(pwline14 fixtureval42)" | git -C "$R14" hash-object -w --stdin)"; plain="$(printf 'plain\n' | git -C "$R14" hash-object -w --stdin)"
-    git -C "$R14" update-index --add --cacheinfo "100644,$hit,tests/${order%%:*}" --cacheinfo "100644,$plain,tests/${order##*:}"
-    git -C "$R14" commit -qm "case-colliding paths"; push14
+    local hit plain; hit="$(printf '%s\n' "$(pwline14 fixtureval42)" | git_in "$R14" hash-object -w --stdin)"; plain="$(printf 'plain\n' | git_in "$R14" hash-object -w --stdin)"
+    git_in "$R14" update-index --add --cacheinfo "100644,$hit,tests/${order%%:*}" --cacheinfo "100644,$plain,tests/${order##*:}"
+    git_in "$R14" commit -qm "case-colliding paths"; push14
     snap14 main
     expect14 "S4 hit at tests/${order%%:*}, plain at tests/${order##*:}" "secret_in_snapshot"
   done
@@ -770,17 +770,17 @@ caseR14() {
 caseSA() {
   new14
   al14 "$(doc14 "$(sc14 tests/ password_assignment 5)")"
-  local m1 m0 t x1 x2 idx; m0="$(git -C "$R14" rev-parse main~1)"; m1="$(git -C "$R14" rev-parse main)"
+  local m1 m0 t x1 x2 idx; m0="$(git_in "$R14" rev-parse main~1)"; m1="$(git_in "$R14" rev-parse main)"
   # X1: child of main~1 with exactly main's tree (the allowlist is the only difference to main~1);
   # X2: child of X1 that also carries a secret-shaped line under tests/
-  x1="$(git -C "$R14" commit-tree "$m1^{tree}" -p "$m0" -m x1)"
+  x1="$(git_in "$R14" commit-tree "$m1^{tree}" -p "$m0" -m x1)"
   idx="$A14/idx"; rm -f "$idx"
-  GIT_INDEX_FILE="$idx" git -C "$R14" read-tree "$m1^{tree}"
-  local blob; blob="$(printf '%s\n' "$(pwline14 fixtureval71)" | git -C "$R14" hash-object -w --stdin)"
-  GIT_INDEX_FILE="$idx" git -C "$R14" update-index --add --cacheinfo "100644,$blob,tests/leak.txt"
-  t="$(GIT_INDEX_FILE="$idx" git -C "$R14" write-tree)"
-  x2="$(git -C "$R14" commit-tree "$t" -p "$x1" -m x2)"
-  git -C "$R14" checkout -q -B feat "$x2"; printf '// f\n' >> "$R14/src/add.js"; c14 "feature on the forged line"
+  GIT_INDEX_FILE="$idx" git_in "$R14" read-tree "$m1^{tree}"
+  local blob; blob="$(printf '%s\n' "$(pwline14 fixtureval71)" | git_in "$R14" hash-object -w --stdin)"
+  GIT_INDEX_FILE="$idx" git_in "$R14" update-index --add --cacheinfo "100644,$blob,tests/leak.txt"
+  t="$(GIT_INDEX_FILE="$idx" git_in "$R14" write-tree)"
+  x2="$(git_in "$R14" commit-tree "$t" -p "$x1" -m x2)"
+  git_in "$R14" checkout -q -B feat "$x2"; printf '// f\n' >> "$R14/src/add.js"; c14 "feature on the forged line"
   # the graft: main claims X2 as a second parent, so merge-base(main, feat) becomes X2
   printf '%s %s %s\n' "$m1" "$m0" "$x2" > "$R14/.git/info/grafts"
   snap14 feat

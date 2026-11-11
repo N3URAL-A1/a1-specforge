@@ -65,6 +65,13 @@ export TMPDIR="$SUITE_ROOT/tmp"; mkdir -p "$TMPDIR"
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
 SUITE_ROOT_REAL="$(cd "$SUITE_ROOT" && pwd -P)" || exit 2   # macOS: /var is a symlink to /private/var and the helper root is a realpath
 [[ "$A1_FX_ROOT" == "$SUITE_ROOT_REAL"/* ]] || { echo "FAIL  harness: the temp helper root $A1_FX_ROOT is not inside $SUITE_ROOT_REAL" >&2; exit 2; }
+# Root cause of the 2026-11 leak (a planted commit landed in the repo under test): an empty path in `git -C "$X"` acts on the cwd. Run every part from
+# inside the suite temp root, so a relative or empty path can never reach the repo; parts that need the repo use $REPO_ROOT explicitly.
+cd "$SUITE_ROOT" || exit 2
+# No git call from inside the suite may walk up out of the temp root into a real repository: the ceiling is the parent of the REAL suite root, and the
+# root itself must not be inside any repository (verified, not assumed).
+export GIT_CEILING_DIRECTORIES="$(dirname "$SUITE_ROOT_REAL")"
+if git -C "$SUITE_ROOT" rev-parse --git-dir >/dev/null 2>&1; then echo "FAIL  harness: $SUITE_ROOT is inside a git repository despite GIT_CEILING_DIRECTORIES; refusing to run" >&2; exit 2; fi
 export HOME="$SUITE_ROOT/home"; mkdir -p "$HOME/.codex"
 printf '{"fixture":true}\n' > "$HOME/.codex/auth.json"; chmod 600 "$HOME/.codex/auth.json"
 
@@ -73,7 +80,9 @@ EXPECTED_RUNNER_VERSION="2.1.0"
 EXPECTED_UPSTREAM_COMMIT="8cf5e2c1771c5151d90c12642391d0ba8fa71b0e"
 EXPECTED_CLI_VERSION="codex-cli 0.155.1"
 GATE_PLAN="plan-review-xprov"
-GATE_WAVE="wave-inspect-xprov"
+# Spec 025 Wave 6 (FR-016): the model pin is a frozen literal. The isolated config carries NO model_reasoning_effort key (owner decision 2026-11-11: the
+# Codex CLI default effort applies), so there is no effort variable. Every compliant-config literal below and in the parts is built from PIN_MODEL.
+PIN_MODEL="gpt-6-astra"
 # The compliant config measured in ~/.codex-a1-review/config.toml (2026-09-24):
 # comment header, the two runtime keys, and — added the same day after Wave 4
 # measured that Codex auto-installs remote plugins unless `features.plugins`
@@ -92,6 +101,7 @@ COMPLIANT_CONFIG='# a1-specforge — dedicated Codex home for cross-provider REV
 sandbox_mode = "read-only"
 approval_policy = "on-request"
 cli_auth_credentials_store = "file"
+model = "'"$PIN_MODEL"'"
 
 [features]
 plugins = false
@@ -106,6 +116,39 @@ memories = false'
 pass=0; fail=0; results=()
 ok()  { results+=("PASS  $1"); pass=$((pass + 1)); }
 bad() { results+=("FAIL  $1"); fail=$((fail + 1)); }
+
+# git_in <dir> <git args...> — `git -C <dir>` that refuses an empty, relative or non-repository <dir>. A bare `git -C ""` acts on the cwd; the
+# 2026-11 leak (a planted commit in the repo under test) came from an empty RB_SNAP. Failure is a FAIL line and a non-zero status.
+git_in() {
+  local d="${1:-}"; shift
+  if [[ -z "$d" || "$d" != /* || ! ( -e "$d/.git" || ( -f "$d/HEAD" && -d "$d/objects" ) ) ]]; then bad "git_in: refused to run git in '${d:-<empty>}' (empty, relative or not a repository)"; return 1; fi
+  git -C "$d" "$@"
+}
+
+# rb_nogl_path [workdir] (moved here from part 20 so any part can use it) — prints a PATH without any gitleaks (see rule 7), or nothing when that cannot be reached. The shadow dirs go under
+# [workdir] (default the suite $TMPDIR); an unusable one prints nothing — an empty $shadow would make the ln below write into the filesystem root.
+rb_nogl_path() {
+  local out="" d f name shadow np base="${1:-${TMPDIR:-}}"
+  [[ -n "$base" && -d "$base" ]] || return 0
+  local IFS=':'
+  for d in $PATH; do
+    [[ -z "$d" ]] && continue
+    if [[ -e "$d/gitleaks" ]]; then
+      shadow="$(mktemp -d "$base/shadow.XXXXXX")"
+      [[ -n "$shadow" && -d "$shadow" ]] || return 0
+      for f in "$d"/* "$d"/.[!.]*; do
+        [[ -e "$f" || -L "$f" ]] || continue
+        name="$(basename "$f")"
+        [[ "$name" == gitleaks ]] && continue
+        ln -s "$f" "$shadow/$name"
+      done
+      d="$shadow"
+    fi
+    out="${out:+$out:}$d"
+  done
+  np="$out"
+  if ( hash -r; PATH="$np"; ! command -v gitleaks >/dev/null 2>&1 ); then printf '%s' "$np"; fi
+}
 
 # assert_rc <name> <expected> <actual> [detail]
 assert_rc() {
@@ -211,6 +254,13 @@ make_tree() {
     if (s.split(from).length !== 2) { console.error("RETRY_DELAYS_MS line not found exactly once"); process.exit(3); }
     fs.writeFileSync(f, s.replace(from, "const RETRY_DELAYS_MS = Object.freeze([1, 2]);"));
   ' "$TREE/_shared/lib/xprov-recover.cjs" || { echo "FAIL  harness: could not rewrite RETRY_DELAYS_MS in the tree copy" >&2; exit 2; }
+  # Spec 025 W6 SEC-1: review gates refuse --timeout below GATE_MIN_TIMEOUT_SECONDS (60); the fixtures call the gate with --timeout 7 against the fake runner,
+  # so the COPY gets 1. Part 35 puts the real constant back in its own copy to prove the refusal. A copy that keeps 60 would refuse every fixture call: refuse here.
+  node -e '
+    const fs = require("fs"); const f = process.argv[1]; const s = fs.readFileSync(f, "utf8"); const from = "const GATE_MIN_TIMEOUT_SECONDS = 60;";
+    if (s.split(from).length !== 2) { console.error("GATE_MIN_TIMEOUT_SECONDS line not found exactly once"); process.exit(3); }
+    fs.writeFileSync(f, s.replace(from, "const GATE_MIN_TIMEOUT_SECONDS = 1;"));
+  ' "$TREE/_shared/lib/xprov.cjs" || { echo "FAIL  harness: could not rewrite GATE_MIN_TIMEOUT_SECONDS in the tree copy" >&2; exit 2; }
 }
 
 # make_phase <name> [plan-file] — builds a temp git checkout with one commit
@@ -365,6 +415,8 @@ if [[ ${#parts[@]} -eq 0 ]]; then
   fail=1
 fi
 for p in "${parts[@]}"; do
+  # Dev aid: A1_XPROV_ONLY="20 34 36" runs only the parts with those NN prefixes (never set in CI; the full run is the gate).
+  if [[ -n "${A1_XPROV_ONLY:-}" && " $A1_XPROV_ONLY " != *" $(basename "$p" | cut -c1-2) "* ]]; then continue; fi
   # Harness gap A.3 (plan 012): a syntax error in a part used to drop the whole
   # part silently while the suite still printed "N passed, 0 failed".
   if ! bash -n "$p" 2>"$SUITE_ROOT/syntax.err"; then bad "harness: $(basename "$p") has a bash syntax error: $(head -n 1 "$SUITE_ROOT/syntax.err")"; continue; fi
@@ -382,5 +434,9 @@ else bad "harness: the suite changed the real ~/.a1-xprov: $(diff <(printf '%s\n
 
 printf '%s\n' "${results[@]}"
 echo "----"
+if [[ -n "${A1_XPROV_ONLY:-}" ]]; then
+  echo "PARTIAL RUN (A1_XPROV_ONLY=$A1_XPROV_ONLY): not a gate result, the full suite is"
+  if [[ -n "${CI:-}" ]]; then echo "FAIL  harness: A1_XPROV_ONLY is set in CI"; fail=$((fail + 1)); fi
+fi
 echo "a1-xprov: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

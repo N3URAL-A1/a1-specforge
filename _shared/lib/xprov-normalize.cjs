@@ -2,7 +2,7 @@
 
 // ---------------------------------------------------------------------------
 // xprov-normalize — `a1-tools xprov normalize <result.json> --phase <name>
-// --gate <id> [--wave N] [--round N] [--work-path <dir>]`
+// --gate <id> [--round N]`
 // (spec 009-cross-provider-review-gate, Wave 2; hardened after Reinhard's
 // mutation review, 2026-09-24).
 //
@@ -38,12 +38,13 @@ const { parseFlags, repoRoot, assertSafeSegment, writeTextAtomic, nowIso } = req
 const { parseRegistryIds } = require('./gate-ids.cjs');
 const X = require('./xprov.cjs');
 const C = require('./xprov-common.cjs');
-const { inOwnArtifacts, reviewedHeadBase, PASS_MARKER_FILE, mapDelta, writePlanCopy } = require('./xprov-runrecord.cjs');
+const DS = require('./xprov-design.cjs');
+const { inOwnArtifacts, PASS_MARKER_FILE, mapDelta, writePlanCopy, writeDocCopy } = require('./xprov-runrecord.cjs');
 // Shared helpers — one definition each, in xprov-common.cjs.
-const { REGISTRY_PATH, sha256, isPlainObject, parsePositive, parseWave, parseLane, writeStdoutSync, readIndex, sameWave, sameLane, DETAIL_MAX_CHARS } = C;
+const { REGISTRY_PATH, sha256, isPlainObject, parsePositive, writeStdoutSync, readIndex, sameWave, sameLane, DETAIL_MAX_CHARS } = C;
 
 const FLAGS = Object.freeze({
-  phase: 'str', gate: 'str', wave: 'str', round: 'str', lane: 'str', 'work-path': 'str',
+  phase: 'str', gate: 'str', round: 'str', doc: 'str', // doc: spec 025 W5, the repo-relative design file of a design-review-xprov run
   // Wave 6b (FR-030 g): the gate hands over the snapshot's allowlist result so
   // that this ONE index write carries it; absent flags leave the entry as before.
   'allowlisted-hits': 'str', 'allowlist-anchor': 'str', 'allowlist-approved-blob': 'str',
@@ -372,7 +373,7 @@ const clip = (v, max) => (typeof v === 'string' ? C.clip(v, max) : v);
 const echoQuarantined = (q) => ({ id: q.id, file: q.file, line: q.line === undefined ? null : q.line, reason: q.reason, marker: q.marker === undefined ? null : q.marker, title: clip(q.title, X.TITLE_MAX_CHARS) });
 
 function renderSection(ctx, outcome, model, runnerSha) {
-  const scope = ctx.wave === null ? 'plan' : `wave ${ctx.wave}`;
+  const scope = ctx.doc ? `design ${ctx.doc}` : (ctx.wave === null ? 'plan' : `wave ${ctx.wave}`);
   const resp = outcome.reason === X.REASONS.secret_in_output ? {} : (ctx.response || {});
   const lines = [
     `## ${ctx.gate} · ${scope} · ${ctx.isRound ? `round ${ctx.round}` : `attempt ${ctx.attempt}`} · ${ctx.ts}`, '',
@@ -447,38 +448,41 @@ function resolveArgs(args) {
   const phase = assertSafeSegment(flags.phase, '--phase');
   const root = repoRoot();
   let phaseDir;
-  try { phaseDir = C.phaseDirOf(root, phase, flags['work-path'] ? path.resolve(flags['work-path']) : undefined); } catch (e) { if (e && e.code === 'A1_INPUT') usage(e.message); throw e; } // the reserved PR phase lives in <work-path>/.a1-review
+  try { phaseDir = C.phaseDirOf(root, phase); } catch (e) { if (e && e.code === 'A1_INPUT') usage(e.message); throw e; } // the reserved PR phase lives in <work-path>/.a1-review
   if (!fs.existsSync(phaseDir) || !fs.statSync(phaseDir).isDirectory()) usage(`phase dir not found: ${phaseDir}`);
   let ids;
   try { ids = parseRegistryIds(fs.readFileSync(REGISTRY_PATH, 'utf8')); } catch (_e) { usage(`registry unreadable: ${REGISTRY_PATH}`); }
   if (!ids.includes(flags.gate)) usage(`--gate ${JSON.stringify(String(flags.gate).slice(0, 80))} is not a registered gate id`);
-  const wave = flags.wave === undefined ? null : parseWave(flags.wave, 'wave');
-  const workPath = flags['work-path'] ? path.resolve(flags['work-path']) : root;
-  if (!fs.existsSync(workPath) || !fs.statSync(workPath).isDirectory()) usage(`--work-path is not a directory: ${workPath}`);
+  const wave = null; // a plan review is the only gate target (spec 025)
+  const workPath = root;
   const indexPath = path.join(phaseDir, 'xreview', 'index.json');
   const existing = readIndex(indexPath);
   if (existing === null) usage(`index.json unparseable or not an array of objects: ${indexPath} — repair or move it before re-running`);
-  // Round key = gate + wave + lane: two lanes of one wave each get their own round 1.
-  const lane = parseLane(flags.lane); // LANE_RE like gate and run (was assertSafeSegment: `foo bar` slipped into the index)
+  const lane = null;
   // Rounds vs attempts (Reinhard W6): only pass | fail-with-findings consume a
   // round (FR-006 caps REVISE rounds); every other fail is an `attempt` — a
   // provider outage must never drive a wave into round_cap.
-  const sameKey = existing.filter((e) => e.gate === flags.gate && sameWave(e, wave) && sameLane(e, lane));
+  const isDesign = flags.gate === X.GATE_IDS.DESIGN_REVIEW;
+  if (isDesign !== (flags.doc !== undefined)) usage(isDesign ? `${flags.gate} requires --doc <repo-relative design file>` : `--doc belongs to ${X.GATE_IDS.DESIGN_REVIEW} only`);
+  let design = null; // spec 025 W5: the reviewed target is the design file, not PLAN.md; its rounds are counted per doc
+  if (isDesign) { try { design = DS.resolveDoc(root, flags.doc); } catch (e) { if (e && e.code === 'A1_INPUT') usage(e.message); throw e; } }
+  const sameKey = existing.filter((e) => e.gate === flags.gate && sameWave(e, wave) && sameLane(e, lane) && (design === null || e.doc === design.rel));
   const priorRounds = sameKey.filter((e) => Number.isInteger(e.round));
   const priorAttempts = sameKey.filter((e) => !Number.isInteger(e.round));
   const round = flags.round === undefined ? 1 + priorRounds.length : parsePositive(flags.round, 'round');
   const attempt = 1 + priorAttempts.length;
   const roundTaken = priorRounds.some((e) => Number(e.round) === round);
-  const scope = `${wave === null ? 'plan' : `wave-${wave}`}${lane ? `-${lane}` : ''}`;
+  const scope = design ? DS.docScope(design.rel) : `${wave === null ? 'plan' : `wave-${wave}`}${lane ? `-${lane}` : ''}`;
   const findingsPath = path.join(phaseDir, 'xreview', `${flags.gate}-${scope}-r${round}.findings.json`);
-  const roundKey = `${flags.gate} ${wave === null ? 'plan' : `wave ${wave}`}${lane ? ` lane ${lane}` : ''} round ${round}`;
-  const planPath = path.join(phaseDir, 'PLAN.md');
-  if (!fs.existsSync(planPath)) usage(`PLAN.md not found in ${phaseDir}`);
+  const roundKey = `${flags.gate} ${design ? design.rel : (wave === null ? 'plan' : `wave ${wave}`)}${lane ? ` lane ${lane}` : ''} round ${round}`;
+  const planPath = design ? design.abs : path.join(phaseDir, 'PLAN.md');
+  if (!design && !fs.existsSync(planPath)) usage(`PLAN.md not found in ${phaseDir}`);
   const allowlist = allowlistFlags(flags);
   return {
     allowlist,
     resultPath: path.resolve(flags._[0]), phase, phaseDir, gate: flags.gate, wave, lane, round, attempt, roundTaken, roundKey, workPath, indexPath, findingsPath,
-    planPath, planRel: path.relative(root, planPath), planSha: sha256(fs.readFileSync(planPath)), ts: nowIso(),
+    planPath, planRel: design ? design.rel : path.relative(root, planPath), planSha: sha256(design ? design.bytes : fs.readFileSync(planPath)), ts: nowIso(),
+    doc: design ? design.rel : null, docBytes: design ? design.bytes : null, docBodySha: design ? DS.bodyHash(design.bytes.toString('utf8')) : null,
   };
 }
 
@@ -494,8 +498,8 @@ function evaluate(ctx, read) {
   const secret = secretScan(filter, { ...ctx, raw: read.raw });
   if (secret) return secret;
   // The record's mode must be the gate's (Codex R1 on cf5a86e): an APPROVED plan
-  // review normalized as wave-inspect-xprov would otherwise become a wave pass.
-  const want = ctx.gate === X.GATE_IDS.PLAN_REVIEW ? 'review' : 'inspect';
+  // review normalized under another gate id would otherwise become a pass of it.
+  const want = 'review';
   if (read.record.status === 'completed' && RUNNER_MODES.has(read.record.mode) && read.record.mode !== want) {
     return fail(X.REASONS.wrong_mode, { reason_detail: `mode=${read.record.mode} for ${ctx.gate} (needs ${want})` });
   }
@@ -514,11 +518,11 @@ function refuseReplay(args0) {
 }
 
 /** The index row: a pointer to the run dir plus what normalize decided. */
-function indexEntry(ctx, outcome, model, findingsSha, record, tainted, quarantinedBlocking) {
+function indexEntry(ctx, outcome, model, findingsSha, quarantinedBlocking) {
   return {
     gate: ctx.gate, wave: ctx.wave, lane: ctx.lane, ...(ctx.isRound ? { round: ctx.round } : { attempt: ctx.attempt }), verdict: outcome.verdict, reason: outcome.reason,
-    plan_sha256: ctx.planSha, result_path: ctx.resultPath, ...(findingsSha ? { findings_sha256: findingsSha } : {}),
-    ...(ctx.wave !== null ? reviewedHeadBase(ctx.resultPath, tainted ? null : record) : {}), ts: ctx.ts,
+    plan_sha256: ctx.planSha, ...(ctx.doc ? { doc: ctx.doc, doc_body_sha256: ctx.docBodySha } : {}), result_path: ctx.resultPath, ...(findingsSha ? { findings_sha256: findingsSha } : {}),
+    ts: ctx.ts,
     model_requested: model.model_requested, model_observed: model.model_observed, cli_version: model.cli_version,
     ...(outcome.verdict === X.VERDICTS.FAIL_WITH_FINDINGS ? { quarantined_blocking: quarantinedBlocking } : {}), // FR-014: a REVISE only
     ...(ctx.allowlist || {}),
@@ -557,15 +561,18 @@ function cmdXprovNormalize(args) {
   }
   const pin = X.checkRunnerPin();
   const xreviewPath = appendToXreview(ctx.phaseDir, renderSection(ctx, outcome, model, pin.actual || `unverified (${pin.reason})`));
-  const entry = indexEntry(ctx, outcome, model, findingsSha, record, tainted, quarantinedBlocking);
+  const entry = indexEntry(ctx, outcome, model, findingsSha, quarantinedBlocking);
   const index = readIndex(ctx.indexPath);
   if (index === null) usage(`index.json changed underneath the run: ${ctx.indexPath}`);
   // a1's own proof that THIS run was accepted (after the output filter and every check above):
-  // the pass retention in gc and the row validation in load-check/wave-status need it.
+  // the pass retention in gc and the row validation in load-check needs it.
   if (outcome.verdict === X.VERDICTS.PASS && inOwnArtifacts(ctx.resultPath)) {
-    fs.writeFileSync(path.join(path.dirname(ctx.resultPath), PASS_MARKER_FILE), `${JSON.stringify({ gate: ctx.gate, plan_sha256: ctx.planSha, ts: ctx.ts }, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
+    fs.writeFileSync(path.join(path.dirname(ctx.resultPath), PASS_MARKER_FILE), `${JSON.stringify({ gate: ctx.gate, plan_sha256: ctx.planSha, ...(ctx.doc ? { doc: ctx.doc, doc_body_sha256: ctx.docBodySha } : {}), ts: ctx.ts }, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
     if (ctx.gate === X.GATE_IDS.PLAN_REVIEW) writePlanCopy(ctx.resultPath, ctx.planPath, ctx.planSha); // FR-030: the approved text, the base of a later delta
+    if (ctx.gate === X.GATE_IDS.DESIGN_REVIEW) writeDocCopy(ctx.resultPath, ctx.docBytes, ctx.planSha); // SEC-1: the approved text a later reuse is checked against
   }
+  // FR-014: a design REVISE is a recorded verdict too; the kept copy of the reviewed text lets a later call prove which body it answered
+  if (outcome.verdict === X.VERDICTS.FAIL_WITH_FINDINGS && ctx.gate === X.GATE_IDS.DESIGN_REVIEW && inOwnArtifacts(ctx.resultPath)) writeDocCopy(ctx.resultPath, ctx.docBytes, ctx.planSha);
   writeTextAtomic(ctx.indexPath, JSON.stringify([...index, entry], null, 2) + '\n');
   runGcIfPresent();
   const limitations = tainted ? [] : (outcome.limitations || []).map((l) => clip(l, DETAIL_MAX_CHARS));
@@ -577,4 +584,16 @@ function cmdXprovNormalize(args) {
   process.exitCode = outcome.verdict === X.VERDICTS.PASS ? X.EXIT_PASS : X.EXIT_FAIL;
 }
 
-module.exports = { cmdXprovNormalize, appendXreviewNote, PRIOR_FINDINGS_FILE, classify, mapFinding, splitPath, firstSentence, modelFields, cell };
+// ---------- Codex availability (spec 025 W6: FR-016, FR-019) ----------
+
+// Codex refusing a `model_reasoning_effort` value (a1 pins none since 2026-11-11, so the value comes from the owner's review home or the Codex defaults; the fixture is the
+// CONSTRUCTED _test-fixtures/a1-xprov/cases/model-pin/effort-rejection.codex-stdout.txt). Two shapes: the key named next to a rejection word, in
+// either order, within one line. The text is scanned on the RAW Codex stdout/stderr, so the pattern must not need JSON framing.
+const EFFORT_REJECTION_RE = /\b(?:model_reasoning_effort|reasoning[ _]effort)\b[^\n]{0,240}\b(?:unknown variant|invalid|not (?:a )?(?:valid|supported|allowed)|unsupported|unrecognized|rejected|unexpected value)\b|\b(?:unknown variant|invalid|unsupported|unrecognized|rejected)\b[^\n]{0,240}\b(?:model_reasoning_effort|reasoning[ _]effort)\b/i;
+
+/** True when `text` (raw Codex stdout/stderr lines) is Codex refusing the pinned effort value: a preflight failure, never an outage. */
+function isEffortRejection(text) {
+  return typeof text === 'string' && EFFORT_REJECTION_RE.test(text);
+}
+
+module.exports = { EFFORT_REJECTION_RE, isEffortRejection, cmdXprovNormalize, appendXreviewNote, PRIOR_FINDINGS_FILE, classify, mapFinding, splitPath, firstSentence, modelFields, cell };

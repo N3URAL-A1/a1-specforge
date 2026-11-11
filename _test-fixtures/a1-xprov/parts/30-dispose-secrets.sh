@@ -11,7 +11,7 @@
 #   DP4  hostile dispositions: traversal id, injection-shaped, secret-shaped, 10 000 chars, a symlink                    [mutants H1..H4]
 #   DP5  not at the cap / a pass at round 2: refused                                                                      [mutants N1, N2]
 #   DP6  twice: already_disposed; forged rows and tampered run dirs are not accepted                                      [mutants F1..F4]
-#   DP7  waves: the head after the fixes, the reviewed base; wave-status accepts; a moved-away head does not             [mutants W1, W2]
+#   (DP7, the wave dispositions with head/base and wave-status, was removed with the wave gate: spec 025 W4)
 
 mk_workdir TMP30 "a1x30"
 [[ -n "$TMP30" && -d "$TMP30" ]] || { echo "FAIL  part 30: mktemp failed" >&2; fail=$((fail + 1)); return 0 2>/dev/null || exit 1; }
@@ -23,7 +23,7 @@ OK30='approved'
 
 pin30() {
   node -e '
-    const fs = require("fs"); const file = process.argv[1]; const ids = ["plan-review-xprov", "wave-inspect-xprov"];
+    const fs = require("fs"); const file = process.argv[1]; const ids = ["plan-review-xprov"];
     fs.writeFileSync(file, fs.readFileSync(file, "utf8").split("\n").map((l) => (ids.some((id) => l.startsWith("| `" + id + "` |")) ? l.replace(/\| (warning|blocking) \|/, "| warning |") : l)).join("\n"));
   ' "$TREE/_shared/gates-registry.md" || bad "pin30: could not pin the registry copy"
 }
@@ -209,38 +209,7 @@ scen_dp6e() { # the marker is there, the findings record names a blocker (forged
   ' "$(dirname "$R2_RESULT30")"; lc30
 }
 scen_dp6f() { dp30 "$GOOD30" >/dev/null; printf '\nA later edit.\n' >> "$PHASE_PLAN"; lc30; }
-WDISP30() { echo "$PHASE_DIR/xreview/wave-inspect-xprov-wave-2-r2.dispositions.md"; }
-# wavecap30 "<round-2 specs>" — wave 2 reviewed twice (a feature commit above the base), REVISE both times; Erik's fix is a further commit
-wavecap30() {
-  prep30; printf '## Wave 2 — two\n' > "$PHASE_DIR/STATUS.md"
-  printf 'export const w2 = 1;\n' > "$PHASE_REPO/src/w2.js"; git -C "$PHASE_REPO" add src; git -C "$PHASE_REPO" commit -qm "feat: wave 2"
-  W2HEAD30="$(git -C "$PHASE_REPO" rev-parse HEAD)"
-  mk_result30 "$TMP30/w1.json" M1:medium L1:low
-  FAKE_RUNNER_CASE="$TMP30/w1.json" gate30 --gate "$GATE_WAVE" --wave 2 --base "$PHASE_HEAD"
-  printf 'R1 fixed\n' > "$(json_get "$G_OUT" "j.next.dispositions_path")"
-  mk_result30 "$TMP30/w2.json" ${1:-M1:medium L1:low}
-  FAKE_RUNNER_CASE="$TMP30/w2.json" gate30 --gate "$GATE_WAVE" --wave 2 --base "$PHASE_HEAD"
-  R2_RESULT30="$(json_get "$G_OUT" "j.result_path")"
-  printf 'export const w2 = 2;\n' > "$PHASE_REPO/src/w2.js"; git -C "$PHASE_REPO" add src; git -C "$PHASE_REPO" commit -qm "fix: wave 2"
-  printf '%s\n' "$GOOD30" > "$(WDISP30)"
-}
-ws30() { sub30 wave-status --phase p30 --waves 2 --work-path "$PHASE_REPO"; json_get "$G_OUT" "[j.ok, j.lacking.join(','), (j.disposed || []).join(',')].join('/')"; }
-wdispose30() { sub30 dispose --phase p30 --gate "$GATE_WAVE" --wave 2 --work-path "$PHASE_REPO"; }
-scen_dp7a() { wavecap30; wdispose30; echo "$G_RC/$(json_get "$G_OUT" "j.ok ? 'ok' : j.refused")/$([[ "$(json_get "$G_OUT" "j.head")" == "$(git -C "$PHASE_REPO" rev-parse HEAD)" && "$(json_get "$G_OUT" "j.base")" == "$PHASE_HEAD" ]] && echo head-base-ok || echo head-base-wrong)/$(ws30)"; }
-scen_dp7b() { wavecap30; ws30; }
-scen_dp7c() { wavecap30; wdispose30; printf 'export const more = 1;\n' > "$PHASE_REPO/src/more.js"; git -C "$PHASE_REPO" add src; git -C "$PHASE_REPO" commit -qm "feat: after the dispose"; ws30; }
-scen_dp7d() { wavecap30; git -C "$PHASE_REPO" checkout -q --detach "$PHASE_HEAD"; wdispose30; echo "$G_RC/$(json_get "$G_OUT" "j.refused")"; }
-scen_dp7e() { wavecap30 "M1:medium B1:high"; wdispose30; echo "$G_RC/$(json_get "$G_OUT" "j.refused")/$(ws30)"; }
 caseDP() {
-  assert_eq "DP7a a wave closed by dispositions: ok, bound to the work path HEAD after the fix and the reviewed base; wave-status accepts it and lists it under disposed" "$(scen_dp7a)" "0/ok/head-base-ok/true//2"
-  assert_eq "DP7b before the dispose the wave lacks" "$(scen_dp7b)" "false/2/"
-  assert_eq "DP7c a commit after the dispose is not covered" "$(scen_dp7c)" "false/2/"
-  assert_eq "DP7d a work path HEAD that does not contain the reviewed commit: refused head_not_descendant" "$(scen_dp7d)" "1/head_not_descendant"
-  assert_eq "DP7e a blocker in wave round 2: refused, the wave still lacks" "$(scen_dp7e)" "1/blocker_open/false/2/"
-  redproof30 "DP7a" scen_dp7a "0/ok/head-base-ok/true//2" xprov-accept.cjs "map((e) => RR.waveDisposedHeadBase(e.result_path, planSha, gate, p.wave, p.lane, root)).filter(Boolean)" "map((e) => null).filter(Boolean)"
-  redproof30 "DP7f" scen_dp7a "0/ok/head-base-ok/true//2" xprov-dispose.cjs "return Object.freeze({ ok: true, planSha, head: h.head, base: hb.base });" "return Object.freeze({ ok: true, planSha, head: hb.head, base: hb.base });"
-  redproof30 "DP7d" scen_dp7d "1/head_not_descendant" xprov-dispose.cjs "if (!WV.inHistory(ctx.workPath, hb.head, h.head)) return" "if (false) return"
-  redproof30 "DP7e" scen_dp7e "1/blocker_open/false/2/" xprov-dispose.cjs "if (open.blockers.length) return refuse(" "if (false) return refuse("
   assert_eq "DP1 every id disposed: exit 0, marker, one row; load-check accepts dispositions; XREVIEW section and observation written" "$(scen_dp1)" "0/ok/present/1/true/dispositions//xreview=1/obs=1"
   assert_eq "DP1b the disposition binds the PLAN.md sha after the fixes" "$(scen_dp1b)" "0/bound-now/true/dispositions//changed"
   assert_eq "DP2 a blocker in round 2: refused blocker_open, no marker, no row, load-check still fails, the blocker id is named" "$(scen_dp2)" "1/blocker_open/absent/0/false//plan_review_missing/B1"
@@ -271,7 +240,7 @@ caseDP() {
   redproof30 "DP2" scen_dp2 "1/blocker_open/absent/0/false//plan_review_missing/B1" $DPN "if (open.blockers.length) return refuse(" "if (false) return refuse("
   redproof30 "DP3a" scen_dp3 "1/undisposed/absent/0/false//plan_review_missing/L1:no_line" $DPN "if (judged.problems.length) return refuse(" "if (false) return refuse("
   redproof30 "DP3b" scen_dp3b "1/undisposed/1/current-sha" xprov-consent-targets.cjs "(carry && capCarry(e))));" "false));"
-  redproof30 "DP3c" scen_dp3d "0/none" xprov-consent-targets.cjs "|| sideClosed(index, gate, C.waveNumber(scopeRows[0].wave), laneOf(scopeRows[0].lane), planSha, o.root)) continue;" ") continue;"
+  redproof30 "DP3c" scen_dp3d "0/none" xprov-consent-targets.cjs "|| sideClosed(index, gate, planSha, o.root)) continue;" ") continue;"
   redproof30 "DP4a" scen_dp4h "0/ok/1+1/present/contained" $DPN $'id.replace(/[.*+?^${}()|[\\]\\\\]/g, \'\\\\$&\')' "id"
   redproof30 "DP4b" scen_dp4b "1/undisposed/L1:reason_instruction_shaped/absent" $DPN "if (instructionMarker({ id: '', evidence: reason, fix: '' }, []) !== null) return { ok: false, why: 'reason_instruction_shaped' };" ""
   redproof30 "DP4c" scen_dp4c "1/undisposed/L1:reason_secret_shaped/absent" $DPN "if (secret && secret.hit) return { ok: false, why: 'reason_secret_shaped' };" ""
@@ -292,7 +261,7 @@ caseDP() {
 caseDP
 # ---------- EX: FR-029 — a secret hit in a file the diff does not change is excluded; a hit in a changed file stops ----------
 EXK30="AKIA""QQQQQQQQQQQQQQQQ" # aws_access_key_id shape, assembled at run time
-# ex_repo30 <name> <leak in old.js 0|1> <leak in new.js 0|1> — base commit holds src/old.js; the wave commit adds src/new.js. Sets PHASE_*, EX_BASE.
+# ex_repo30 <name> <leak in old.js 0|1> <leak in new.js 0|1> — base commit holds src/old.js; the next commit adds src/new.js. Sets PHASE_*, EX_BASE.
 ex_repo30() {
   make_phase "$1"
   if [[ "$2" == 1 ]]; then printf 'k = "%s"\n' "$EXK30" > "$PHASE_REPO/src/old.js"; else printf 'k = 1\n' > "$PHASE_REPO/src/old.js"; fi
@@ -313,10 +282,10 @@ scen_ex() {
   local excl blob diff new leak
   excl="$(json_get "$EX_OUT" "(j.excluded || []).map((x) => x.path + ':' + x.rule).join(',')")"
   if [[ -n "$EX_DIR" && -d "$EX_DIR" ]]; then
-    git -C "$EX_DIR" cat-file -e "HEAD:src/old.js" 2>/dev/null && blob=present || blob=gone
-    diff="$(git -C "$EX_DIR" diff --name-only "$EX_BASE" 2>/dev/null | tr '\n' ',')"
-    git -C "$EX_DIR" cat-file -e "HEAD:src/new.js" 2>/dev/null && new=present || new=gone
-    leak="$(git -C "$EX_DIR" cat-file --batch-all-objects --batch 2>/dev/null | grep -ac "$EXK30")"
+    git_in "$EX_DIR" cat-file -e "HEAD:src/old.js" 2>/dev/null && blob=present || blob=gone
+    diff="$(git_in "$EX_DIR" diff --name-only "$EX_BASE" 2>/dev/null | tr '\n' ',')"
+    git_in "$EX_DIR" cat-file -e "HEAD:src/new.js" 2>/dev/null && new=present || new=gone
+    leak="$(git_in "$EX_DIR" cat-file --batch-all-objects --batch 2>/dev/null | grep -ac "$EXK30")"
     ( cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov snapshot --remove "$EX_DIR" >/dev/null 2>&1 )
   else blob=-; diff=-; new=-; leak=-; fi
   local out_leak=0; [[ "$EX_OUT$EX_ERR" == *"$EXK30"* ]] && out_leak=1
@@ -336,17 +305,6 @@ scen_ex_gl() { # fake gitleaks (needle) finds the key in the unchanged file only
   FAKE_GITLEAKS_NEEDLE="QQQQQQQQQQQQQQQQ" ex_snap30 --base "$EX_BASE"
   echo "$EX_RC/$(json_get "$EX_OUT" "j.reason || 'ok'")/$(json_get "$EX_OUT" "(j.excluded || []).length")"
 }
-scen_ex7() { # the wave gate with a secret hit in an unchanged file: the reviewer's input names the excluded path (never the value)
-  clearhits30; prep30; printf '## Wave 2 — two\n' > "$PHASE_DIR/STATUS.md"
-  printf 'k = "%s"\n' "$EXK30" > "$PHASE_REPO/src/old.js"; git -C "$PHASE_REPO" add src; git -C "$PHASE_REPO" commit -qm "fixture: old.js"
-  local base; base="$(git -C "$PHASE_REPO" rev-parse HEAD)"
-  printf 'export const w2 = 1;\n' > "$PHASE_REPO/src/w2.js"; git -C "$PHASE_REPO" add src; git -C "$PHASE_REPO" commit -qm "feat: wave 2"
-  rm -f "$TMP30/prompt-ex.txt"
-  FAKE_RUNNER_PROMPT_FILE="$TMP30/prompt-ex.txt" gate30 --gate "$GATE_WAVE" --wave 2 --base "$base"
-  local p; p="$(cat "$TMP30/prompt-ex.txt" 2>/dev/null)"
-  local line=no key=no; [[ "$p" == *"excluded (unchanged, secret hit): src/old.js"* ]] && line=yes; [[ "$p$G_OUT" == *"$EXK30"* ]] && key=LEAK
-  echo "line=$line/key=$key"
-}
 caseEX() {
   unmtree30 2>/dev/null; fresh30
   local X1="0/ok/src/old.js:aws_access_key_id/gone/src/new.js,/present/0/out0/hits0"
@@ -357,13 +315,11 @@ caseEX() {
   assert_eq "EX5 gitleaks and the patterns find the key in the unchanged file only: excluded (two entries: pattern and gitleaks rule), ok" "$(scen_ex_gl 1)" "0/ok/2"
   assert_eq "EX6 gitleaks finds the key in the changed file: hard stop" "$(scen_ex_gl 0)" "1/secret_in_snapshot/0"
   local SX=xprov-snapshot-exclude.cjs SN=xprov-snapshot.cjs
-  assert_eq "EX7 the reviewer's input carries 'excluded (unchanged, secret hit): <path>' and no value" "$(scen_ex7)" "line=yes/key=no"
   redproof30 "EX1a" scen_ex_10 "$X1" $SX "'--skip-worktree'" "'--no-skip-worktree'"
   redproof30 "EX1b" scen_ex_10 "$X1" $SX "new Set(ids)" "new Set()" $SX "if (gitRun(dir, ['cat-file', '-e', id]).status === 0) return" "if (false) return"
   redproof30 "EX2" scen_ex_01 "1/secret_in_snapshot//-/-/-/-/out0/hits1" $SX "&& !ctx.changed.has(h.path) &&" "&&"
   redproof30 "EX3" scen_ex_11 "1/secret_in_snapshot//-/-/-/-/out0/hits1" $SX "const all = changed.length === 0 && excludable.length > 0" "const all = excludable.length > 0"
   redproof30 "EX4" scen_ex_plan "1/secret_in_snapshot/0" $SN "canExclude: exclude === null && cl.base !== null" "canExclude: exclude === null"
-  redproof30 "EX7a" scen_ex7 "line=yes/key=no" $SN "inputs: note.inputs" "inputs: opts.inputs"
   redproof30 "EX6" scen_ex_gl0 "1/secret_in_snapshot/0" $SX "&& !ctx.changed.has(h.path) &&" "&&"
 }
 caseEX

@@ -25,7 +25,6 @@ const path = require('path');
 const X = require('./xprov.cjs');
 const C = require('./xprov-common.cjs');
 const PF = require('./xprov-preflight.cjs');
-const WR = require('./xprov-wave-ranges.cjs');
 const RR = require('./xprov-runrecord.cjs');
 const HM = require('./xprov-homemark.cjs');
 
@@ -34,6 +33,7 @@ const FETCH_TIMEOUT_MS = 60000;
 const BRANCH_RE = /^[A-Za-z0-9][A-Za-z0-9._\/-]{0,100}$/;
 const FETCH_BRANCHES = Object.freeze(['main', 'master']);
 const REMOTE = 'origin';
+const DEFAULT_BRANCH_REFS = Object.freeze(['refs/remotes/origin/main', 'refs/remotes/origin/master', 'refs/heads/main', 'refs/heads/master']);
 const FETCH_SSH_COMMAND = 'ssh -o BatchMode=yes'; // no ssh prompt (host key, passphrase) may stall an unattended fetch; GIT_TERMINAL_PROMPT=0 covers https
 const BLOCKED_NOTICE = 'not_applicable — Codex answered BLOCKED twice; the Reinhard review is the only review for this target, no owner question is asked';
 const CAUSES = Object.freeze({ TIMEOUT: 'timeout', NETWORK: 'network', HTTP_5XX: 'http_5xx' });
@@ -49,6 +49,50 @@ const isRecoverable = (reason) => RECOVERABLE_REASONS.includes(reason);
 const TIMEOUT_RE = /\bRun timed out or was interrupted; no approval recorded\b/;
 const HTTP_5XX_RE = /\b(?:unexpected status|status(?: code)?|http(?: error)?|error)[: ]+5\d\d\b|\b5\d\d (?:Internal Server Error|Bad Gateway|Service Unavailable|Gateway Timeout)\b/i;
 const NETWORK_RE = /\b(?:error sending request|stream disconnected|connection (?:reset|refused|closed|aborted)|dns error|failed to lookup address|network is unreachable|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN)\b/i;
+
+// ---------- outage classification (spec 025 W6, FR-019; Samuel SEC-2, SEC-6) ----------
+// `codex_unavailable` is an ALLOWLIST over the RAW record of a failed run (never over the display-safe detail, in which a refusal can lose its
+// `claudex-loop: ` prefix and a validation error can look like anything): only what means "Codex itself could not answer" counts. Everything else the runner
+// records — schema, integrity and validation errors ("Invalid review verdict.", "Review must contain exactly…", "APPROVED cannot contain unresolved…",
+// "Plan changed during the run…", "CLI resumed a different session…", "CLI version probe failed…") and every pre-run refusal — stays `runner_failed` (fail).
+const TIMEOUT_MESSAGE = 'Run timed out or was interrupted; no approval recorded.'; // runner.py's own text for a killed/timed-out Codex process
+const CODEX_EXIT_RE = /^codex exited \d+(?:;|$)/; // runner.py:366 — the Codex process itself ended non-zero (usage limit, transport error, any Codex error event)
+const KILLED_RE = /^runner killed by \w+ after \d+ s$/; // xprov-run.cjs spawnRunner: the runner did not return within timeout + grace
+const USAGE_LIMIT_RE = /\busage limit\b/i;
+const OUTAGE_CAUSES = Object.freeze({ ...CAUSES, USAGE_LIMIT: 'usage_limit' });
+// SEC-7: a timeout is only a timeout when the run really lasted that long (a SIGINT or an early kill makes runner.py write the same message); small slack for rounding.
+const TIMEOUT_ELAPSED_SLACK_SECONDS = 2;
+const reachedTimeout = (r) => Number.isFinite(r.elapsedSeconds) && Number.isFinite(r.timeoutSeconds) && r.elapsedSeconds >= r.timeoutSeconds - TIMEOUT_ELAPSED_SLACK_SECONDS;
+
+/** The error texts Codex wrote itself: `{"type":"error"|"turn.failed"}` event messages of stdout.txt and plain `ERROR: …` lines. */
+function codexErrorTexts(stdoutText) {
+  const out = [];
+  for (const line of String(stdoutText || '').split('\n')) {
+    try {
+      const ev = JSON.parse(line);
+      if (ev && ev.type === 'error' && typeof ev.message === 'string') out.push(ev.message);
+      else if (ev && ev.type === 'turn.failed' && ev.error && typeof ev.error.message === 'string') out.push(ev.error.message);
+    } catch (_e) { if (/^ERROR: /.test(line)) out.push(line); }
+  }
+  return out;
+}
+
+/**
+ * The outage cause of a failed run (one of OUTAGE_CAUSES' values) or null when it is not a Codex outage. `raw` = { resultError (result.json `error`, raw), elapsedSeconds, timeoutSeconds (SEC-7),
+ * stdout (stdout.txt), stderr (stderr.txt + the runner's own stderr), runnerStderr (the runner's own stderr), status }. Pure.
+ */
+function outageCause(raw) {
+  const r = raw || {};
+  const err = typeof r.resultError === 'string' ? r.resultError.trim() : '';
+  if (err === TIMEOUT_MESSAGE) return reachedTimeout(r) ? OUTAGE_CAUSES.TIMEOUT : null;
+  if (err === '' && r.status === null && KILLED_RE.test(String(r.runnerStderr || '').trim())) return reachedTimeout(r) ? OUTAGE_CAUSES.TIMEOUT : null;
+  if (!CODEX_EXIT_RE.test(err)) return null;
+  const text = [...codexErrorTexts(r.stdout), String(r.stderr || '')].join('\n');
+  if (USAGE_LIMIT_RE.test(text)) return OUTAGE_CAUSES.USAGE_LIMIT;
+  if (HTTP_5XX_RE.test(text)) return OUTAGE_CAUSES.HTTP_5XX;
+  if (NETWORK_RE.test(text)) return OUTAGE_CAUSES.NETWORK;
+  return null; // SEC-2b: a generic Codex error (e.g. a context-window error a plan author can provoke with a bloated PLAN.md) is no proven outage: it stays runner_failed
+}
 
 /** The retryable cause of a `runner_failed` detail, or null. */
 function causeOf(reason, detail) {
@@ -111,7 +155,7 @@ function runnerRecovery(rv) {
 /** A recovery worked somewhere in this run (FR-035 `recovered`). */
 const recovered = (notes) => notes.some((n) => n.ok === true);
 
-/** a1's own marker in the run dir of the second BLOCKED answer: load-check and wave-status accept the fallback only with it. */
+/** a1's own marker in the run dir of the second BLOCKED answer: load-check accepts the fallback only with it. */
 function markFallback(resultPath, gate, planSha, root) {
   if (typeof planSha !== 'string' || !RR.inOwnArtifacts(resultPath, root)) return false;
   const file = path.join(path.dirname(path.resolve(resultPath)), RR.BLOCKED_MARKER_FILE);
@@ -120,6 +164,22 @@ function markFallback(resultPath, gate, planSha, root) {
 }
 
 // ---------- base recompute (FR-027) ----------
+
+function resolveCommit(workPath, rev) {
+  const out = C.gitOut(['-C', workPath, 'rev-parse', '--verify', '--quiet', `${rev}^{commit}`]);
+  return out === null ? null : out.trim();
+}
+
+/** The merge-base of the default branch (first of DEFAULT_BRANCH_REFS that resolves) and `tip`, or null. Moved here from the deleted xprov-wave-ranges.cjs (spec 025). */
+function anchorOf(workPath, tip) {
+  for (const ref of DEFAULT_BRANCH_REFS) {
+    const def = resolveCommit(workPath, ref);
+    if (def === null) continue;
+    const mb = C.gitOut(['-C', workPath, 'merge-base', def, tip]);
+    return mb === null ? null : mb.trim();
+  }
+  return null;
+}
 
 const BASE_UNRESOLVED_RE = /^base \S+ does not resolve in /;
 
@@ -134,9 +194,9 @@ function fetchDefaultBranch(workPath) {
 function recomputeBase(workPath) {
   const head = C.gitOut(['-C', workPath, 'rev-parse', '--verify', '--quiet', 'HEAD^{commit}']);
   if (head === null) return null;
-  let base = WR.anchorOf(workPath, head.trim());
+  let base = anchorOf(workPath, head.trim());
   let fetched = false;
-  if (base === null && fetchDefaultBranch(workPath)) { fetched = true; base = WR.anchorOf(workPath, head.trim()); }
+  if (base === null && fetchDefaultBranch(workPath)) { fetched = true; base = anchorOf(workPath, head.trim()); }
   return base === null || !/^[0-9a-f]{40,64}$/.test(base) ? null : { base, fetched };
 }
 
@@ -146,7 +206,7 @@ function recomputeBase(workPath) {
  */
 function snapshotWithBase(ctx, snap) {
   const first = snap(ctx.base);
-  if (first.ok || first.reason !== X.REASONS.snapshot_failed || ctx.isPlan || ctx.review || !BASE_UNRESOLVED_RE.test(String(first.detail || ''))) return Object.freeze({ snapped: first, base: ctx.base, recovery: null });
+  if (first.ok || first.reason !== X.REASONS.snapshot_failed || ctx.isPlan || !BASE_UNRESOLVED_RE.test(String(first.detail || ''))) return Object.freeze({ snapped: first, base: ctx.base, recovery: null });
   const re = recomputeBase(ctx.workPath);
   const note = (ok, to) => Object.freeze({ action: 'base_recomputed', from: ctx.base, to: to || null, fetched: re !== null && re.fetched, ok });
   if (re === null || re.base === ctx.base) return Object.freeze({ snapped: first, base: ctx.base, recovery: note(false, null) });
@@ -158,10 +218,10 @@ function snapshotWithBase(ctx, snap) {
 
 // ---------- preflight repair (FR-028) ----------
 
-// The checks the three actions fix: remove plugins/ (plugins_cache_empty), `init-home --pin-features` (the pins and the auth store key),
+// The checks the three actions fix: remove plugins/ (plugins_cache_empty), `init-home --pin-features` (the pins, the auth store key and the model/effort pins),
 // and --prune-marketplaces. A failing check outside this list — a human-set `true` stays failing, etc_codex_absent, auth_present (not_logged_in),
 // plugins_disabled, mcp_servers_absent, … — means nothing is touched.
-const REPAIRABLE_CHECKS = Object.freeze(['plugins_cache_empty', 'remote_plugin_switch', 'features_pinned_off', 'auth_store_file']);
+const REPAIRABLE_CHECKS = Object.freeze(['plugins_cache_empty', 'remote_plugin_switch', 'features_pinned_off', 'auth_store_file', 'model_pinned']); // model_pinned: spec 025 W6 — absent keys are appended; another value stays a pin_conflict
 const PLUGINS_DIR = 'plugins';
 
 /**
@@ -213,6 +273,7 @@ function preflightWithRepair(opts, pre0) {
   if (first.failed.includes('plugins_cache_empty') && !keepPlugins && removePlugins(first.codex_home)) actions.push('remove_plugins');
   const init = PF.initHome({ codexHome: first.codex_home, homedir, env: o.env, pinFeatures: true, pruneMarketplaces: true });
   if (init.pinned && init.pinned.length) actions.push('pin_features');
+  if (init.upgraded && init.upgraded.length) actions.push('upgrade_pins'); // SEC-4: a value an earlier a1 release wrote for model / effort
   if (init.pruned && init.pruned.attempted) actions.push('prune_marketplaces');
   const second = run();
   return Object.freeze({ pre: second, recovery: Object.freeze({ action: 'preflight_repair', ok: second.ok, actions, failed_before: first.failed, failed_after: second.failed }) });
@@ -220,5 +281,5 @@ function preflightWithRepair(opts, pre0) {
 
 module.exports = {
   RETRY_DELAYS_MS, RECOVERABLE_REASONS, REPAIRABLE_CHECKS, BLOCKED_NOTICE, CAUSES,
-  isRecoverable, causeOf, sleepSync, removePlugins, runWithRetry, reviewSteps, runnerRecovery, recovered, markFallback, snapshotWithBase, recomputeBase, preflightWithRepair, reviewHomeProblem,
+  isRecoverable, causeOf, outageCause, TIMEOUT_MESSAGE, OUTAGE_CAUSES, sleepSync, removePlugins, runWithRetry, reviewSteps, runnerRecovery, recovered, markFallback, snapshotWithBase, recomputeBase, anchorOf, preflightWithRepair, reviewHomeProblem,
 };

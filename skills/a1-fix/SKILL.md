@@ -165,7 +165,7 @@ through the worktree unconditionally.) The flow:
    (`a1-worktree exit --mode handoff`). It pushes the branch, opens the PR,
    runs the review, and squash-merges (`gh pr merge <n> --squash`; no `--delete-branch`, see a1-pr-review 05-merge 5.4).
    No local merge into `main`, no `git push origin main`.
-   The cross-provider (Codex) review of the fix diff runs only inside `a1-pr-review` (step 2.2b, `pr-diff-xprov`); this skill never runs a cross-provider gate itself.
+   The fix diff is reviewed in `a1-pr-review` by Reinhard (and Samuel on security surface); no cross-provider gate runs on code.
    If `origin/main` is broken (build fails for reasons unrelated to your fix):
    STOP, do NOT layer your fix on top, report to Robert.
 4. **Tear down** the worktree: done by `a1-pr-review` after the merge — do not

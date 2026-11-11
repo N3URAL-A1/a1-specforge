@@ -417,8 +417,9 @@ function cmdXprovPermit(args) {
 // host: the key would not match. A clone on a fresh host therefore reads the
 // committed `.a1/xprov.json` against an EMPTY store, which `classify` turns into
 // `denial_mismatch` (file `denied`) or `permit_mismatch` (file `allowed`) — and
-// `xprov-hook-merge.cjs` lets only `absent`/`denied` through, so every merge
-// there is denied. Until now that surfaced hours later, at the merge.
+// the removed Bash hook (spec 025 W3) let only `absent`/`denied` through, so every
+// pull request there was denied; `blocks_merge` keeps that verdict for the owner's
+// handover report. No hook acts on it any more.
 //
 // This command predicts the target host's state WITHOUT ssh and without reading
 // the local store: the prediction is a pure function of the committed file, which
@@ -440,7 +441,7 @@ const TARGET_STATE_OF_FILE = Object.freeze({
   missing: STATES.ABSENT,
   invalid: STATES.INVALID,
 });
-// Exactly the two states xprov-hook-merge.cjs (reinhardOnly) lets through.
+// Exactly the two states the removed Bash hook (reinhardOnly) let through.
 const MERGE_PASSING = Object.freeze([STATES.ABSENT, STATES.DENIED]);
 
 // SEC: `.a1/xprov.json` is a working-tree file any contributor can edit in a PR, and this command

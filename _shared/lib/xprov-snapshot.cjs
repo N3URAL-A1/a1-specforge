@@ -605,6 +605,34 @@ function cloneSnapshot(sourceRepo, commit, base) {
   return { ok: true, dir, commit: head.stdout.trim(), base: baseSha, depth: 1, repo_local_removed: stripRepoLocal(dir) };
 }
 
+/**
+ * Spec 025 W5, design review: a snapshot that holds ONLY the named design file. A fresh `git init` (empty template, pinned config) plus one
+ * commit of that single file — no other path, no other blob, no history from the repo. `only` = { rel, source } (repo-relative path inside
+ * the snapshot, absolute realpath of the file to copy). Same result shape as cloneSnapshot (base null).
+ */
+function cloneOnly(only) {
+  const root = ensureSnapshotsRoot();
+  const dir = fs.mkdtempSync(path.join(root, SNAP_PREFIX));
+  fs.chmodSync(dir, DIR_MODE);
+  const failed = (detail) => { removeDir(dir); return { ok: false, reason: X.REASONS.snapshot_failed, dir: null, detail }; };
+  const buf = Buffer.isBuffer(only.bytes) ? only.bytes : C.readNoFollow(only.source, X.MAX_RESULT_BYTES * 4); // SEC-2: the bytes the gate already hashed
+  if (buf === null) return failed(`design file ${only.rel} is not a readable regular file`);
+  const init = git(['init', '--quiet', '--template=', dir], { env: C.pinnedGitEnv(null) });
+  if (init.status !== 0) return failed(`init: ${tail(init.stderr || String(init.error))}`);
+  const dest = path.join(dir, only.rel);
+  fs.mkdirSync(path.dirname(dest), { recursive: true, mode: DIR_MODE });
+  fs.writeFileSync(dest, buf, { mode: FILE_MODE });
+  const who = { GIT_AUTHOR_NAME: 'a1-xprov', GIT_AUTHOR_EMAIL: 'xprov@invalid', GIT_COMMITTER_NAME: 'a1-xprov', GIT_COMMITTER_EMAIL: 'xprov@invalid' };
+  const env = { ...C.pinnedGitEnv(null, dir), ...who };
+  const add = git(['-C', dir, '--literal-pathspecs', 'add', '--', only.rel], { env });
+  if (add.status !== 0) return failed(`add: ${tail(add.stderr)}`);
+  const commit = git(['-C', dir, 'commit', '--quiet', '--no-verify', '--no-gpg-sign', '-m', 'a1-xprov design snapshot'], { env });
+  if (commit.status !== 0) return failed(`commit: ${tail(commit.stderr)}`);
+  const head = snapGit(['-C', dir, 'rev-parse', 'HEAD'], dir);
+  if (head.status !== 0) return failed(`rev-parse: ${tail(head.stderr)}`);
+  return { ok: true, dir, commit: head.stdout.trim(), base: null, depth: 1, repo_local_removed: [] };
+}
+
 // ---------- outbound sides: base blobs, input copies, the diff hash (Wave 7) ----------
 
 /** git with the environment the runner's own git runs under: an empty HOME (no
@@ -672,10 +700,9 @@ function copyInputs(dir, inputs) {
   const copies = {};
   const labels = [];
   for (const i of inputs || []) {
-    const st = fs.lstatSync(i.source);
-    if (!st.isFile()) throw C.inputError(`${i.source}: not a regular file`, 'input_not_a_file');
+    if (!Buffer.isBuffer(i.bytes) && !fs.lstatSync(i.source).isFile()) throw C.inputError(`${i.source}: not a regular file`, 'input_not_a_file');
     const dest = path.join(inputsDir, INPUT_FILES[i.key]);
-    fs.writeFileSync(dest, fs.readFileSync(i.source), { mode: FILE_MODE });
+    fs.writeFileSync(dest, Buffer.isBuffer(i.bytes) ? i.bytes : fs.readFileSync(i.source), { mode: FILE_MODE }); // a design review passes the bytes it already read (SEC-2)
     copies[i.key] = dest;
     labels.push({ dest, label: i.label });
   }
@@ -884,7 +911,7 @@ function snapshotPass(opts, exclude) {
   }
   // Read before ensureSnapshotsRoot() tightens ~/.a1-xprov: a 0755 directory must count as "no store" (FR-030 j).
   const approvals = AL.readApprovals();
-  const cl = cloneSnapshot(sourceRepo, commit, base);
+  const cl = opts.only ? cloneOnly(opts.only) : cloneSnapshot(sourceRepo, commit, base); // spec 025 W5: a design review snapshots the one named file only
   if (!cl.ok) return { ok: false, reason: cl.reason, snapshot: null, commit, detail: cl.detail, ...none };
   const dir = cl.dir;
   const failed = (extra) => { removeSnapshotDirs(dir); return { ok: false, snapshot: null, commit, ...extra }; };

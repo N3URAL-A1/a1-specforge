@@ -90,7 +90,6 @@ State is split across two locations:
 | Worktree status (`handoff` → `in-review` → `reviewed` → `pr-open`) | `~/.a1-worktrees-registry.json` |
 | Review findings (BLOCKER / MAJOR / MINOR arrays) | `<worktree>/.a1-review/findings.json` |
 | PR draft (title + body markdown) | `<worktree>/.a1-review/pr-draft.md` |
-| Cross-provider PR diff review (`pr-diff-xprov`, step 2.2b): index, run records, dispositions, observations | `<worktree>/.a1-review/xreview/` (target = head sha; the merge check of 2.7 reads it) |
 
 Update via CLI only — never write the registry directly:
 
@@ -102,7 +101,7 @@ node <repo>/_shared/a1-tools.cjs pr mark-pr-open <slug> <pr-url>
 
 ## Agent integration
 
-Phase 2 spawns the global `a1-reinhard-reviewer` agent via the `Agent` tool, and next to it (step 2.2b) runs `xprov gate --gate pr-diff-xprov` for the Codex review of the same diff; before `gh pr merge` the code check of step 2.7 (`xprov gate --gate pr-diff-xprov --merge-check`) must exit 0 and `workflows/05-merge.md` runs. Reinhard's
+Phase 2 spawns the global `a1-reinhard-reviewer` agent via the `Agent` tool on every PR. Step 2.2b runs `xprov scope`; when it reports `security_surface: true` it also spawns `a1-specforge:a1-samuel-security` on the same diff. No code goes to a third-party reviewer. Every BLOCKER and MAJOR of both reviewers is fixed before `workflows/05-merge.md` runs. Reinhard's
 brief is structured (worktree path, branch, diff range, scope hint from
 the last `phase_history` entry). Reinhard returns findings as inline
 JSON which the workflow then writes to `findings.json` via the CLI.

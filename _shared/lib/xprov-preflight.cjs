@@ -79,7 +79,8 @@ const REQUIRED_FEATURES_OFF = Object.freeze(['plugins', 'remote_plugin']);
 const FEATURE_PINS = Object.freeze(['apps', 'browser_use', 'computer_use', 'hooks', 'skill_mcp_dependency_install', 'memories']);
 const ALL_FEATURE_PINS = Object.freeze([...REQUIRED_FEATURES_OFF, ...FEATURE_PINS]);
 // Root keys a1 pins (key → required value), inserted after the last root entry.
-const ROOT_PINS = Object.freeze({ cli_auth_credentials_store: 'file' });
+const ROOT_PINS = Object.freeze({ cli_auth_credentials_store: 'file', model: xprov.MODEL_PINNED });
+const EFFORT_KEY = 'model_reasoning_effort'; // never written by a1 (spec 025 FR-016: the CLI default effort applies); a stored value is repaired away or a conflict
 const SKILLS_DIR = 'skills';
 // The one measured place Codex itself puts symlinks (2026-10-03, codex-cli
 // 0.155.1): tmp/arg0/codex-arg0<random>/{apply_patch,applypatch,
@@ -109,6 +110,7 @@ const COMPLIANT_CONFIG = `# a1-specforge — dedicated Codex home for cross-prov
 sandbox_mode = "read-only"
 approval_policy = "on-request"
 cli_auth_credentials_store = "file"
+model = "${ROOT_PINS.model}"
 
 [features]
 plugins = false
@@ -145,7 +147,7 @@ function unquote(v) {
 /** Splits a dotted TOML path on `.` outside quotes and strips the quotes of
  * every segment, so `"mcp_servers".x`, `mcp_servers."x"` and `mcp_servers.x`
  * all normalise to `mcp_servers.x` (Samuel, Waves 3+4 review). */
-function splitDotted(str) {
+function splitDotted(str, keepEmpty) {
   const segs = [];
   let cur = '';
   let quote = null;
@@ -156,7 +158,7 @@ function splitDotted(str) {
     else cur += ch;
   }
   segs.push(cur.trim());
-  return segs.filter((s) => s !== '');
+  return keepEmpty ? segs : segs.filter((s) => s !== '');
 }
 
 const KEY_SEGMENT = String.raw`(?:[A-Za-z0-9_-]+|"[^"]*"|'[^']*')`;
@@ -168,6 +170,7 @@ const KEY_VALUE_RE = new RegExp(`^(${KEY_SEGMENT}(?:\\s*\\.\\s*${KEY_SEGMENT})*)
  * header nor `key = value` lands in `unparsed`: the compliant file holds only
  * scalars, so a continuation line of an inline table or array is never
  * legitimate and the allowlist check reports it. */
+const INVALID_TABLE = '<invalid table header>';
 function parseTomlLines(text) {
   const tables = [];
   const entries = [];
@@ -177,12 +180,16 @@ function parseTomlLines(text) {
     const line = stripComment(raw).trim();
     if (line === '') return;
     const header = line.match(/^\[\[?\s*([^\]]+?)\s*\]\]?$/);
+    // SEC-4: an empty path segment (`[""]`, `"".model`) names a table or key Codex reads differently from a1's flattened path — never a pin; the line is `unparsed`
+    // (unexpected_config_key) and the entries that follow no longer count as root keys
+    if (header && splitDotted(header[1], true).some((seg) => seg === '')) { unparsed.push(idx + 1); table = INVALID_TABLE; return; }
     if (header) {
       table = splitDotted(header[1]).join('.');
       tables.push(Object.freeze({ name: table, line: idx + 1 }));
       return;
     }
     const kv = line.match(KEY_VALUE_RE);
+    if (kv && splitDotted(kv[1], true).some((seg) => seg === '')) { unparsed.push(idx + 1); return; }
     if (kv) {
       const key = splitDotted(kv[1]).join('.');
       entries.push(Object.freeze({ table, key, path: table ? `${table}.${key}` : key, value: unquote(kv[2]), line: idx + 1 }));
@@ -266,11 +273,18 @@ function configChecks(text) {
   const features = REQUIRED_FEATURES_OFF.map(featureState);
   const featuresOff = features.every((f) => f.off);
   const pins = FEATURE_PINS.map(featureState);
+  // spec 025 W6 (FR-016): `model` present once with exactly the pin, and NO model_reasoning_effort key (the CLI default effort applies). A missing model and a
+  // prior a1 effort value are repaired by the gate; another model or effort value is a conflict.
+  const modelValues = entries.filter((e) => e.table === '' && e.key === 'model').map((e) => e.value);
+  const effortValues = entries.filter((e) => e.table === '' && e.key === EFFORT_KEY).map((e) => e.value);
+  const modelPinnedOk = modelValues.length === 1 && modelValues[0] === ROOT_PINS.model && effortValues.length === 0;
+  const modelPinnedMeasured = `model = ${modelValues.length ? modelValues.map((v) => `"${v}"`).join('/') : 'absent'} (pinned "${ROOT_PINS.model}"), ${EFFORT_KEY} ${effortValues.length ? `= ${effortValues.map((v) => `"${v}"`).join('/')} (must be absent)` : 'absent'}`;
   return [
     check('sandbox_read_only', Boolean(sandbox) && sandbox.value === 'read-only',
       sandbox ? `sandbox_mode = "${sandbox.value}"` : 'sandbox_mode absent'),
     check('auth_store_file', authStore.length > 0 && authStore.every((v) => v === ROOT_PINS.cli_auth_credentials_store),
       authStore.length ? `cli_auth_credentials_store = "${authStore.join('/')}"` : 'cli_auth_credentials_store absent (Codex default may use a keyring)'),
+    check('model_pinned', modelPinnedOk, modelPinnedMeasured),
     check('mcp_servers_absent', mcp.length === 0, mcp.length ? mcp.join(', ') : 'no mcp_servers table or key'),
     check('plugins_disabled', enabledPlugins.length === 0,
       enabledPlugins.length ? enabledPlugins.map((t) => `[${t.name}] enabled = true`).join(', ')
@@ -609,30 +623,40 @@ function createFreshHome(home, homedir) {
 /** Appends the missing pins: root keys (ROOT_PINS) after the last root entry,
  * `<pin> = false` to [features] (or a new [features] table at the end).
  * Returns { text, added, conflicts }; never edits an existing line. */
+const REMOVED_LINE = '\u0000removed';
 function pinFeaturesText(text) {
   const parsed = parseTomlLines(text);
   const featureTables = parsed.tables.filter((t) => t.name === 'features');
-  if (featureTables.length > 1) return { text, added: [], conflicts: ['more than one [features] table'] };
+  if (featureTables.length > 1) return { text, added: [], upgraded: [], conflicts: ['more than one [features] table'] };
   if (featureTables.length === 1) {
     // A multi-line value inside [features] (continuation lines parse as `unparsed`)
     // has no safe insertion point after its last entry: refuse, never guess.
     const start = featureTables[0].line;
     const next = parsed.tables.find((tb) => tb.line > start);
     const end = next ? next.line : Infinity;
-    if (parsed.unparsed.some((n) => n > start && n < end)) return { text, added: [], conflicts: ['[features] holds a multi-line value'] };
+    if (parsed.unparsed.some((n) => n > start && n < end)) return { text, added: [], upgraded: [], conflicts: ['[features] holds a multi-line value'] };
   }
   const valuesOf = (p) => parsed.entries.filter((e) => e.path === p).map((e) => e.value);
   const rootKeys = Object.keys(ROOT_PINS);
+  // a1-managed pins: a model value an earlier a1 release wrote (PRIOR_MODEL_PINS) is rewritten in place; a prior model_reasoning_effort value
+  // (PRIOR_EFFORT_PINS) is REMOVED (the CLI default effort applies); any other foreign value is a conflict
+  const prior = (k) => (k === 'model' ? xprov.PRIOR_MODEL_PINS : []);
+  const foreign = (k, v) => v !== ROOT_PINS[k] && !prior(k).includes(v);
   const conflicts = [
-    ...rootKeys.filter((k) => valuesOf(k).some((v) => v !== ROOT_PINS[k])).map((k) => `${k} = ${valuesOf(k).join('/')}`),
+    ...rootKeys.filter((k) => valuesOf(k).some((v) => foreign(k, v))).map((k) => `${k} = ${valuesOf(k).join('/')}`),
+    ...(valuesOf(EFFORT_KEY).some((v) => !xprov.PRIOR_EFFORT_PINS.includes(v)) ? [`${EFFORT_KEY} = ${valuesOf(EFFORT_KEY).join('/')}`] : []),
     ...ALL_FEATURE_PINS.filter((k) => valuesOf(`features.${k}`).some((v) => v !== 'false')).map((k) => `features.${k} = ${valuesOf(`features.${k}`).join('/')}`),
   ];
-  if (conflicts.length) return { text, added: [], conflicts };
+  if (conflicts.length) return { text, added: [], upgraded: [], conflicts };
   const rootAdd = rootKeys.filter((k) => valuesOf(k).length === 0);
   const featAdd = ALL_FEATURE_PINS.filter((k) => valuesOf(`features.${k}`).length === 0);
   const added = [...rootAdd, ...featAdd];
-  if (added.length === 0) return { text, added, conflicts };
+  const upgrades = parsed.entries.filter((e) => rootKeys.includes(e.path) && e.value !== ROOT_PINS[e.path]); // only prior values are left after the conflict check
+  const removals = parsed.entries.filter((e) => e.path === EFFORT_KEY); // only prior a1 values are left after the conflict check
+  if (added.length === 0 && upgrades.length === 0 && removals.length === 0) return { text, added, upgraded: [], conflicts };
   const lines = String(text).replace(/\n$/, '').split('\n');
+  for (const e of upgrades) lines[e.line - 1] = `${e.path} = "${ROOT_PINS[e.path]}"`;
+  for (const e of removals) lines[e.line - 1] = REMOVED_LINE; // dropped at the end, so the line numbers of the insertions below stay valid
   const featLines = featAdd.map((k) => `${k} = false`);
   if (featLines.length) {
     if (featureTables.length === 0) lines.push('', '[features]', ...featLines);
@@ -649,7 +673,7 @@ function pinFeaturesText(text) {
     const at = rootEntries.length ? Math.max(...rootEntries) : firstTable;
     lines.splice(at, 0, ...rootAdd.map((k) => `${k} = "${ROOT_PINS[k]}"`));
   }
-  return { text: `${lines.join('\n')}\n`, added, conflicts };
+  return { text: `${lines.filter((l) => l !== REMOVED_LINE).join('\n')}\n`, added, upgraded: [...upgrades, ...removals].map((e) => e.path), conflicts };
 }
 
 /** `init-home --pin-features` on an existing home: additive, atomic, 0600 kept. */
@@ -659,7 +683,7 @@ function pinFeatures(home, configPath) {
   const before = fs.readFileSync(configPath, 'utf8');
   const r = pinFeaturesText(before);
   if (r.conflicts.length) return Object.freeze({ ok: false, changed: false, codex_home: home, reason: 'pin_conflict', failed: ['features_pinned_off'], pinned: [], conflicts: r.conflicts });
-  if (r.added.length) { io.writeTextAtomic(configPath, r.text); fs.chmodSync(configPath, CONFIG_MODE); }
+  if (r.text !== before) { io.writeTextAtomic(configPath, r.text); fs.chmodSync(configPath, CONFIG_MODE); }
   return null;
 }
 
@@ -685,6 +709,7 @@ function initHome(opts) {
       plugins_found: scanPluginCache(home), pruned: o.pruneMarketplaces ? tryPruneMarketplace(home, env) : { attempted: false, reason: 'not requested' } });
   }
   let pinned = [];
+  let upgraded = [];
   if (o.pinFeatures && fs.existsSync(configPath)) {
     const before = parseTomlLines(fs.readFileSync(configPath, 'utf8'));
     const refused = pinFeatures(home, configPath);
@@ -692,6 +717,8 @@ function initHome(opts) {
     const after = parseTomlLines(fs.readFileSync(configPath, 'utf8'));
     const paths = [...Object.keys(ROOT_PINS), ...ALL_FEATURE_PINS.map((k) => `features.${k}`)];
     pinned = paths.filter((p) => !before.entries.some((e) => e.path === p) && after.entries.some((e) => e.path === p)).map((p) => p.replace(/^features\./, ''));
+    upgraded = [...Object.keys(ROOT_PINS).filter((k) => before.entries.some((e) => e.path === k && e.value !== ROOT_PINS[k]) && after.entries.every((e) => e.path !== k || e.value === ROOT_PINS[k])),
+      ...(before.entries.some((e) => e.path === EFFORT_KEY) && !after.entries.some((e) => e.path === EFFORT_KEY) ? [EFFORT_KEY] : [])];
   }
   const configExists = fs.existsSync(configPath);
   const checks = [
@@ -702,7 +729,7 @@ function initHome(opts) {
   ];
   const failed = checks.filter((c) => c.result === 'FAIL').map((c) => c.name);
   return Object.freeze({
-    ok: failed.length === 0, changed: pinned.length > 0, codex_home: home, checks, failed, pinned,
+    ok: failed.length === 0, changed: pinned.length > 0 || upgraded.length > 0, codex_home: home, checks, failed, pinned, upgraded,
     plugins_found: scanPluginCache(home),
     pruned: o.pruneMarketplaces ? tryPruneMarketplace(home, env) : { attempted: false, reason: 'not requested' },
   });

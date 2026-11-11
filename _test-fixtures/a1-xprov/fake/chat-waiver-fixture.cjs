@@ -5,8 +5,10 @@
 // plan_sha256 of every row, result_path of every row, plan_sha256 inside the pass run dir. Everything else stays as measured.
 //
 //   node chat-waiver-fixture.cjs '<json>'      json: { cmd, repo, home, cases, ... }
-//   build   { sets: ['plan','wave'] }   writes xreview/index.json (rows of the sets) + the run dirs under <home>/.a1-xprov/artifacts/<repo basename>/
+//   build   { sets: ['plan'] }   writes xreview/index.json (rows of the sets) + the run dirs under <home>/.a1-xprov/artifacts/<repo basename>/
 //   add     { sets: [...] }             appends the rows (and run dirs) of more sets to the existing index
+//   Sets: 'plan' = the rows of plan-review-xprov. 'wave' = the stored rows of the REMOVED gate wave-inspect-xprov (spec 025 W4); only the
+//   legacy cases of part 24 use it (they prove that such rows are ignored) — no live gate writes or reads them any more.
 //   rewrite { file: 'row', index, field, value }   sets one field of one index row (a forged or tampered row)
 //   retitle { run, title }              replaces the evidence (so the title) of the first high finding in the run record's result.json
 //   forge-findings { run, title }       a1-findings.json with another title AND a matching findings_sha256 in the index row

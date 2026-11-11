@@ -1,0 +1,5 @@
+# Sibling of context-window.codex-stdout.txt — provenance record (spec 025 W6 SEC-2b).
+case: context-window
+origin: CONSTRUCTED in the event shape of cases/usage-limit.codex-stdout.txt (no capture of a context-window error exists on disk)
+what: a generic Codex error event (not a usage limit, not transport, not 5xx) that a plan author can provoke with a bloated PLAN.md; the runner records `codex exited 1;`
+expectation: fail/runner_failed — a provoked, generic Codex error is not a proven outage and never earns codex_unavailable

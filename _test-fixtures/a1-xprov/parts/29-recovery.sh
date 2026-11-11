@@ -10,12 +10,13 @@
 #   RC0  the real delays are 30 s then 120 s; the harness rewrote the copy; sleepSync waits                              [mutants D1, D2]
 #   RC1  network failure, then ok: two runner calls, pass, attempts recorded                                              [mutant R1]
 #   RC2  two failures, then ok: three calls, waited 0/1/2 ms (the delay of retry n is delays[n-1])                        [mutant R2]
-#   RC3  three failures: stops with runner_failed after exactly three calls, the record says so                          [mutant R3]
+#   RC3  three failures: stops after exactly three calls, ends not_applicable/codex_unavailable (spec 025 W6), the record says so                          [mutant R3]
 #   RC4  timeout message and HTTP 503 are retried                                                                         [mutants R4, R5]
 #   RC5  usage limit, runner refusal, malformed result: one call, no recovery                                             [mutant R6]
 #   RC6  hostile: instruction-shaped error, oversized error                                                                [mutant R7]
-# BL  blocked: one repeat, then not_applicable/codex_blocked_fallback, loaders accept it, no owner question
-# SB  snapshot_failed on an unresolvable base: recompute against the default branch (fetching when missing), once
+# BL  blocked: one repeat, then not_applicable/codex_blocked_fallback, load-check accepts it, no owner question
+# SB  snapshot_failed on an unresolvable base: recompute against the default branch (fetching when missing), once. Spec 025: the plan gate has no
+#     base, so every SB case drives the exported snapshotWithBase() of xprov-recover.cjs directly (real git repos, a stub snapshot step)
 # PF  preflight_failed: three additive actions, only in the dedicated review home, once
 # HS  hard stops are never retried, never recovered (FR-031)
 # OB  one observation line per gate run with owner_handoffs, codex_runs, abort_reason, recovered; no secret, no repo content
@@ -38,7 +39,7 @@ OK29='{"FAKE_RUNNER_CASE":"approved"}'
 
 pin29() {
   node -e '
-    const fs = require("fs"); const file = process.argv[1]; const ids = ["plan-review-xprov", "wave-inspect-xprov"];
+    const fs = require("fs"); const file = process.argv[1]; const ids = ["plan-review-xprov"];
     fs.writeFileSync(file, fs.readFileSync(file, "utf8").split("\n").map((l) => (ids.some((id) => l.startsWith("| `" + id + "` |")) ? l.replace(/\| (warning|blocking) \|/, "| warning |") : l)).join("\n"));
   ' "$TREE/_shared/gates-registry.md" || bad "pin29: could not pin the registry copy"
 }
@@ -138,16 +139,16 @@ caseRC1() {
   redproof29 "RC1" scen_rc1 "$RETRY1" xprov-recover.cjs "i < RETRY_DELAYS_MS.length && !r.ok" "i < 0 && !r.ok"
   assert_eq "RC2 two failures, then ok: three calls, the delay of retry n is delays[n-1]" "$(scen_rc2)" "0/pass/null/3/runner_retry:runner_failed@0,runner_failed@1,ok@2"
   redproof29 "RC2" scen_rc2 "0/pass/null/3/runner_retry:runner_failed@0,runner_failed@1,ok@2" xprov-recover.cjs "const ms = RETRY_DELAYS_MS[i];" "const ms = RETRY_DELAYS_MS[0];"
-  assert_eq "RC3 three failures stop after exactly three calls with runner_failed" "$(scen_rc3)" "1/fail/runner_failed/3/runner_retry:runner_failed@0,runner_failed@1,runner_failed@2"
-  redproof29 "RC3" scen_rc3 "1/fail/runner_failed/3/runner_retry:runner_failed@0,runner_failed@1,runner_failed@2" xprov-recover.cjs "i < RETRY_DELAYS_MS.length && !r.ok" "i < 9 && !r.ok"
+  assert_eq "RC3 three failures stop after exactly three calls and end not_applicable/codex_unavailable (spec 025 W6)" "$(scen_rc3)" "1/not_applicable/codex_unavailable/3/runner_retry:runner_failed@0,runner_failed@1,runner_failed@2"
+  redproof29 "RC3" scen_rc3 "1/not_applicable/codex_unavailable/3/runner_retry:runner_failed@0,runner_failed@1,runner_failed@2" xprov-recover.cjs "i < RETRY_DELAYS_MS.length && !r.ok" "i < 9 && !r.ok"
   assert_eq "RC4a the runner's timeout message is retried" "$(scen_rc4a)" "$RETRY1"
   redproof29 "RC4a" scen_rc4a "$RETRY1" xprov-recover.cjs "if (TIMEOUT_RE.test(detail)) return CAUSES.TIMEOUT;" "if (false) return CAUSES.TIMEOUT;"
   assert_eq "RC4b an HTTP 503 answer is retried" "$(scen_rc4b)" "$RETRY1"
   redproof29 "RC4b" scen_rc4b "$RETRY1" xprov-recover.cjs "if (HTTP_5XX_RE.test(detail)) return CAUSES.HTTP_5XX;" "if (false) return CAUSES.HTTP_5XX;" xprov-recover.cjs "if (NETWORK_RE.test(detail)) return CAUSES.NETWORK;" "if (false) return CAUSES.NETWORK;"
 }
 caseRC5() {
-  assert_eq "RC5a the usage limit is not retried (one call)" "$(scen_rc5a)" "1/fail/runner_failed/1/none"
-  redproof29 "RC5a" scen_rc5a "1/fail/runner_failed/1/none" xprov-recover.cjs "const NETWORK_RE = /\\b(?:error sending request" "const NETWORK_RE = /(?:|error sending request"
+  assert_eq "RC5a the usage limit is not retried (one call) and ends codex_unavailable" "$(scen_rc5a)" "1/not_applicable/codex_unavailable/1/none"
+  redproof29 "RC5a" scen_rc5a "1/not_applicable/codex_unavailable/1/none" xprov-recover.cjs "const NETWORK_RE = /\\b(?:error sending request" "const NETWORK_RE = /(?:|error sending request"
   assert_eq "RC5b a refusal of the runner (local error) is not retried" "$(scen_rc5b)" "1/fail/runner_failed/1/none"
   assert_eq "RC5c a malformed result is not a runner failure and is not retried" "$(scen_rc5c)" "1/fail/malformed/1/none"
 }
@@ -180,12 +181,6 @@ scen_bl6() { # PLAN.md changed after the fallback: it covers the old plan only
   printf '\nOne more line.\n' >> "$PHASE_PLAN"
   sub29 load-check --phase p29; echo "$G_RC/$(json_get "$G_OUT" "j.reason")"
 }
-scen_bl7() { # a wave: wave-status accepts it, and names it
-  prep29; blockedseq29; SEQ29="[$BL_CASE29]"; gate29 --gate "$GATE_WAVE" --wave 1 --base "$PHASE_HEAD"
-  local s; s="$(sum29)"
-  sub29 wave-status --phase p29 --waves 1 --work-path "$PHASE_REPO"
-  echo "$s/$G_RC/$(json_get "$G_OUT" "j.ok + '/' + JSON.stringify(j.blocked_fallback)")"
-}
 caseBL() {
   assert_eq "BL1 blocked once, then approved: a repeat is all it takes, the pass stands" "$(scen_bl1)" "0/pass/null/2/blocked_retry:true"
   assert_eq "BL2 blocked twice: not_applicable/codex_blocked_fallback after exactly two runs" "$(scen_bl2)" "$BLOCKED_NA"
@@ -197,11 +192,9 @@ caseBL() {
   redproof29 "BL5" scen_bl5 "1/plan_review_missing" xprov-runrecord.cjs "return m !== null && m.blocked_twice === true && m.plan_sha256 === planSha && m.gate === gate;" "return true;"
   assert_eq "BL6 a PLAN.md changed after the fallback is not covered" "$(scen_bl6)" "1/plan_review_missing"
   redproof29 "BL6" scen_bl6 "1/plan_review_missing" xprov-runrecord.cjs "rec.plan_sha256 !== planSha ||" "false ||" xprov-accept.cjs "e.reason === X.REASONS.blocked && e.plan_sha256 === planSha && RR.blockedFallbackValid" "e.reason === X.REASONS.blocked && RR.blockedFallbackValid" xprov-runrecord.cjs "m.blocked_twice === true && m.plan_sha256 === planSha &&" "m.blocked_twice === true &&"
-  assert_eq "BL7 a wave blocked twice: wave-status accepts it and names the wave" "$(scen_bl7)" "$BLOCKED_NA/0/true/[1]"
-  redproof29 "BL7" scen_bl7 "$BLOCKED_NA/0/true/[1]" xprov-accept.cjs ".map((hb) => ({ kind: 'fallback', head: hb.head, base: hb.base }))" ".slice(0, 0)"
 }
 
-# ---------- SB: the base of an inspect ----------
+# ---------- SB: the base recompute (module level) ----------
 BOGUS_BASE=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef
 # base29 [remote] — a phase on a feature branch one commit past the default branch
 base29() {
@@ -211,25 +204,27 @@ base29() {
   printf 'export const x = 1;\n' > "$PHASE_REPO/src/x.js"; git -C "$PHASE_REPO" add -A; git -C "$PHASE_REPO" commit -qm "feat: x"
 }
 argv_base29() { json_get "$(cat "$ARGV29_FILE" 2>/dev/null || echo '[]')" "j[j.indexOf('--base') + 1] || 'none'"; }
-scen_sb1() { base29; gate29 --gate "$GATE_WAVE" --wave 1 --base "$BOGUS_BASE" --work-path "$PHASE_REPO"; echo "$(sum29)/$([[ "$(argv_base29)" == "$PHASE_HEAD" ]] && echo base-is-merge-base || echo "base=$(argv_base29)")"; }
+# recsb29 <accepted base> — snapshotWithBase() over the phase repo (WP): the stub snapshot step accepts only the base WANT (a resolvable one) and refuses
+# every other base as unresolvable; prints calls / final ok / fetched / which base won
+recsb29() { WP="$PHASE_REPO" WANT="$1" mod29 "(() => { let n = 0; const out = R.snapshotWithBase({ base: '$BOGUS_BASE', isPlan: false, workPath: process.env.WP }, (b) => { n += 1; return b === process.env.WANT ? { ok: true } : { ok: false, reason: 'snapshot_failed', detail: 'base ' + b.slice(0, 7) + ' does not resolve in /x' }; }); return [n, out.snapped.ok, out.recovery ? out.recovery.fetched : 'none', out.base === process.env.WANT ? 'base-is-merge-base' : 'base=' + out.base].join('/'); })()"; }
+scen_sb1() { base29; recsb29 "$PHASE_HEAD"; }
 scen_sb2() {
   local bare="$TMP29/bare.git"; rm -rf "$bare"; git init -q --bare "$bare"
   base29 "$bare"
   git -C "$PHASE_REPO" push -q origin "HEAD~1:refs/heads/main" 2>/dev/null
   git -C "$PHASE_REPO" update-ref -d refs/remotes/origin/main 2>/dev/null
   git -C "$PHASE_REPO" branch -q -D "$DEFB29"
-  gate29 --gate "$GATE_WAVE" --wave 1 --base "$BOGUS_BASE" --work-path "$PHASE_REPO"
-  echo "$(sum29)/$(json_get "$G_OUT" "j.recovery ? j.recovery[0].fetched : 'none'")/$([[ "$(argv_base29)" == "$PHASE_HEAD" ]] && echo base-is-merge-base || echo "base=$(argv_base29)")"
+  recsb29 "$PHASE_HEAD"
 }
-scen_sb3() { base29; git -C "$PHASE_REPO" branch -q -D "$DEFB29"; gate29 --gate "$GATE_WAVE" --wave 1 --base "$BOGUS_BASE" --work-path "$PHASE_REPO"; echo "$(sum29)/$(json_get "$G_OUT" "j.step + '/' + /does not resolve/.test(j.reason_detail)")/$(snaps29)"; }
-scen_sb4() { base29; gate29 --gate "$GATE_WAVE" --wave 1 --base "$PHASE_HEAD" --work-path "$PHASE_REPO"; sum29; }
-SB1="0/pass/null/1/base_recomputed:true/base-is-merge-base"
+scen_sb3() { base29; git -C "$PHASE_REPO" branch -q -D "$DEFB29"; recsb29 "$PHASE_HEAD"; }
+scen_sb4() { base29; recsb29 "$BOGUS_BASE"; }
+SB1="2/true/false/base-is-merge-base"
 scen_sb8() { # the base fetch runs with git's ssh in batch mode and the terminal prompt off, even when the caller's environment names another ssh command
   base29 "ssh://git@example.invalid/repo.git"; git -C "$PHASE_REPO" branch -q -D "$DEFB29"
   local dir="$TMP29/sshstub"; rm -rf "$dir"; mkdir -p "$dir"; rm -f "$TMP29/ssh-log"
   printf '#!/bin/sh\nprintf "%%s|prompt=%%s\\n" "$*" "$GIT_TERMINAL_PROMPT" >> "%s/ssh-log"\nexit 255\n' "$TMP29" > "$dir/ssh"; chmod +x "$dir/ssh"
   printf '#!/bin/sh\nprintf "caller-ssh\\n" >> "%s/ssh-log"\nexit 255\n' "$TMP29" > "$dir/caller-ssh"; chmod +x "$dir/caller-ssh"
-  local keep="$PATH"; PATH="$dir:$PATH"; GIT_SSH_COMMAND="$dir/caller-ssh" gate29 --gate "$GATE_WAVE" --wave 1 --base "$BOGUS_BASE" --work-path "$PHASE_REPO"; PATH="$keep"
+  local keep="$PATH"; PATH="$dir:$PATH"; GIT_SSH_COMMAND="$dir/caller-ssh" recsb29 "$PHASE_HEAD" >/dev/null; PATH="$keep"
   sort -u "$TMP29/ssh-log" 2>/dev/null | head -2 | sed -E 's/^.*(BatchMode=yes).*(prompt=.*)$/\1 \2/' | tr '\n' ';'
 }
 # modsb29 <ctx js> <snap stub js> — snapshotWithBase over the phase repo (WP), counting the stub calls
@@ -238,15 +233,15 @@ scen_sb5() { base29; modsb29 "{}" "{ ok: false, reason: 'snapshot_failed', detai
 scen_sb6() { base29; modsb29 "{}" "{ ok: false, reason: 'snapshot_failed', detail: 'fetch base abc123456789 (depth 1): network' }"; }
 scen_sb7() { base29; modsb29 "{ isPlan: true }" "{ ok: false, reason: 'snapshot_failed', detail: 'base ' + b.slice(0, 7) + ' does not resolve in /x' }"; }
 caseSB() {
-  assert_eq "SB1 an unresolvable base is recomputed against the default branch and the inspect runs on it" "$(scen_sb1)" "$SB1"
-  redproof29 "SB1" scen_sb1 "$SB1" xprov-recover.cjs "ctx.isPlan || ctx.review || !BASE_UNRESOLVED_RE.test" "true || ctx.review || !BASE_UNRESOLVED_RE.test"
-  assert_eq "SB2 a default branch that is only on the remote is fetched, then the base is recomputed" "$(scen_sb2)" "0/pass/null/1/base_recomputed:true/true/base-is-merge-base" 
-  redproof29 "SB2" scen_sb2 "0/pass/null/1/base_recomputed:true/true/base-is-merge-base" xprov-recover.cjs "if (base === null && fetchDefaultBranch(workPath))" "if (false && fetchDefaultBranch(workPath))"
-  assert_eq "SB3 no default branch to recompute from: the run stops with the original reason and detail, no runner call, no snapshot left" "$(scen_sb3)" "1/fail/snapshot_failed/0/base_recomputed:false/snapshot/true/0"
-  redproof29 "SB3" scen_sb3 "1/fail/snapshot_failed/0/base_recomputed:false/snapshot/true/0" xprov-recover.cjs "if (re === null || re.base === ctx.base) return" "if (false) return"
+  assert_eq "SB1 an unresolvable base is recomputed against the default branch (merge-base) and the snapshot runs on it" "$(scen_sb1)" "$SB1"
+  redproof29 "SB1" scen_sb1 "$SB1" xprov-recover.cjs "ctx.isPlan || !BASE_UNRESOLVED_RE.test" "true || !BASE_UNRESOLVED_RE.test"
+  assert_eq "SB2 a default branch that is only on the remote is fetched, then the base is recomputed" "$(scen_sb2)" "2/true/true/base-is-merge-base" 
+  redproof29 "SB2" scen_sb2 "2/true/true/base-is-merge-base" xprov-recover.cjs "if (base === null && fetchDefaultBranch(workPath))" "if (false && fetchDefaultBranch(workPath))"
+  assert_eq "SB3 no default branch to recompute from: one snapshot call, the original failure stands, no recomputed base" "$(scen_sb3)" "1/false/false/base=$BOGUS_BASE"
+  redproof29 "SB3" scen_sb3 "1/false/false/base=$BOGUS_BASE" xprov-recover.cjs "if (re === null || re.base === ctx.base) return" "if (false) return"
   assert_eq "SB8 the base fetch sets GIT_SSH_COMMAND to batch mode and GIT_TERMINAL_PROMPT=0 even when the caller's environment has another ssh command" "$(scen_sb8)" "BatchMode=yes prompt=0;"
   redproof29 "SB8" scen_sb8 "BatchMode=yes prompt=0;" xprov-recover.cjs "GIT_SSH_COMMAND: FETCH_SSH_COMMAND" "GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND"
-  assert_eq "SB4 a base that resolves is never recomputed" "$(scen_sb4)" "0/pass/null/1/none"
+  assert_eq "SB4 a base that resolves is never recomputed (one call, no recovery note)" "$(scen_sb4)" "1/true/none/base-is-merge-base"
   assert_eq "SB5 the recomputed base fails too: two snapshot calls, the ORIGINAL failure is returned" "$(scen_sb5)" "2/snapshot_failed/base deadbee does not resolve in /x/false"
   redproof29 "SB5" scen_sb5 "2/snapshot_failed/base deadbee does not resolve in /x/false" xprov-recover.cjs "? Object.freeze({ snapped: second, base: re.base, recovery: note(true, re.base) })
     : Object.freeze({ snapped: first, base: ctx.base, recovery: note(false, re.base) });" "? Object.freeze({ snapped: second, base: re.base, recovery: note(true, re.base) })
@@ -369,7 +364,7 @@ casePF() {
 }
 
 # ---------- HS: the hard stops (FR-031) ----------
-HARD29="secret_in_snapshot secret_in_output tripwire quarantined run_home_unsafe snapshot_changed_after_scan snapshot_not_scanned allowlist_invalid allowlist_modified external_review_permit_mismatch external_review_denial_mismatch external_review_not_permitted external_review_denied owner_home_mismatch round_cap plan_changed wrong_mode malformed not_logged_in scope_exempt secret_declined"
+HARD29="secret_in_snapshot secret_in_output tripwire quarantined run_home_unsafe snapshot_changed_after_scan snapshot_not_scanned allowlist_invalid allowlist_modified external_review_permit_mismatch external_review_denial_mismatch external_review_not_permitted external_review_denied owner_home_mismatch round_cap plan_changed wrong_mode malformed not_logged_in secret_declined"
 # every wrapper, fed a hard-stop reason with a retry-shaped detail, is called exactly once
 # hs2one29 <reason> — the four wrappers, each fed this reason with a retry-shaped detail; prints the call counts (runner, normalize, snapshot, preflight-untouched)
 hs2one29() {
@@ -450,8 +445,8 @@ scen_ob9() { node -e "const G = require(process.argv[1] + '/_shared/lib/xprov-ga
 caseOB() {
   assert_eq "OB1 a passing run appends one line with the four fields" "$(scen_ob1)" "$OB1"
   redproof29 "OB1" scen_ob1 "$OB1" xprov-observe.cjs "return Object.freeze({ ...obs, ...runFieldsOf(o) });" "return Object.freeze({ ...obs });"
-  assert_eq "OB2 three runner failures: one line, abort_reason runner_failed, recovered false" "$(scen_ob2)" "1/plan-review-xprov/0/1/runner_failed/false"
-  redproof29 "OB2" scen_ob2 "1/plan-review-xprov/0/1/runner_failed/false" xprov-gate.cjs "if (!state.observed) {" "if (false) {"
+  assert_eq "OB2 three runner failures: one line, no abort_reason (not_applicable/codex_unavailable is no failure), recovered false" "$(scen_ob2)" "1/plan-review-xprov/0/1/null/false"
+  redproof29 "OB2" scen_ob2 "1/plan-review-xprov/0/1/null/false" xprov-gate.cjs "if (!state.observed) {" "if (false) {"
   assert_eq "OB3 a recovery that worked: recovered true, still one Codex run" "$(scen_ob3)" "1/plan-review-xprov/0/1/null/true"
   redproof29 "OB3" scen_ob3 "1/plan-review-xprov/0/1/null/true" xprov-recover.cjs "const recovered = (notes) => notes.some((n) => n.ok === true);" "const recovered = (notes) => false;"
   assert_eq "OB4 a preflight failure: one line, no Codex run, abort_reason preflight_failed" "$(scen_ob4)" "1/plan-review-xprov/0/0/preflight_failed/false"
@@ -480,23 +475,25 @@ scen_obx2() { # every off-format value is refused and nothing is appended
   echo "$out/$(lines29)"
 }
 mkwt29() { WT29="$TMP29/wt"; rm -rf "$WT29"; mkdir -p "$WT29"; }
-scen_obx3() { prep29; mkwt29; obsx29 --review-worktree "$WT29" --gate plan-review-xprov 2>/dev/null; echo "$G_RC/$([[ -f "$WT29/.a1-review/xreview/observations.jsonl" ]] && echo wrote || echo no)"; }
-scen_obx4() { # traversal, a relative path, a link as .a1-review, a link as the file: all refused, nothing appended
-  prep29; mkwt29; mkdir -p "$TMP29/target"; local out=""
-  obsx29 --review-worktree "$WT29/../wt" --gate plan-review-xprov; out="$out$G_RC"
-  obsx29 --review-worktree "wt" --gate plan-review-xprov; out="$out$G_RC"
-  ln -s "$TMP29/target" "$WT29/.a1-review"; obsx29 --review-worktree "$WT29" --gate plan-review-xprov; out="$out$G_RC"
-  rm -f "$WT29/.a1-review"; mkdir -p "$WT29/.a1-review/xreview"; ln -s "$TMP29/target/log" "$WT29/.a1-review/xreview/observations.jsonl"; obsx29 --review-worktree "$WT29" --gate plan-review-xprov; out="$out$G_RC"
-  echo "$out/$(ls "$TMP29/target" | wc -l | tr -d ' ')"
+scen_obx3() { # spec 025: the review-worktree target (.a1-review/xreview) went with the PR diff gate; the flag is refused, nothing is created in the worktree, and the reserved phase pr-review is refused too
+  prep29; mkwt29; local out=""
+  obsx29 --review-worktree "$WT29" --gate plan-review-xprov 2>/dev/null; out="$G_RC"
+  obsx29 --phase pr-review --gate plan-review-xprov 2>/dev/null; out="$out$G_RC"
+  echo "$out/$([[ -e "$WT29/.a1-review" ]] && echo wrote || echo no)/$(lines29)"
+}
+scen_obx4() { # the remaining target is the phase file in --repo: traversal in --phase (to a directory that exists) and a --repo that is not the toplevel are refused; nothing is written outside the phase
+  prep29; mkdir -p "$PHASE_REPO/.a1/wt"; local out=""
+  obsx29 --phase "../wt" --gate plan-review-xprov; out="$out$G_RC"
+  obsx29 --repo "$PHASE_REPO/.a1" --gate plan-review-xprov; out="$out$G_RC"
+  echo "$out/$([[ -e "$PHASE_REPO/.a1/wt/observations.jsonl" ]] && echo wrote || echo no)"
 }
 caseOBX() {
   assert_eq "OBX1 observe takes the four fields and the gate id" "$(scen_obx1)" "0/plan-review-xprov/2/1/null/true"
   assert_eq "OBX2 off-format values are refused (exit 1 each) and nothing is appended" "$(scen_obx2)" "1111111/0"
   redproof29 "OBX2" scen_obx2 "1111111/0" xprov-observe.cjs "n < 0 || n > max)" "n < 0 || n > 1e9)"
-  assert_eq "OBX3 the review-worktree target is <worktree>/.a1-review/xreview/observations.jsonl" "$(scen_obx3)" "0/wrote"
-  assert_eq "OBX4 traversal, a relative worktree and a link anywhere on the path are refused; nothing reaches the link target" "$(scen_obx4)" "1111/0"
-  redproof29 "OBX4a" scen_obx4 "1111/0" xprov-observe.cjs "|| w.split(/[\\\\/]/).includes('..'))" "|| false)"
-  redproof29 "OBX4b" scen_obx4 "1111/0" xprov-observe.cjs "else if (st.isSymbolicLink() || !st.isDirectory())" "else if (!st.isDirectory())" xprov-observe.cjs "try { if (!fs.lstatSync(file).isFile())" "try { if (false)"
+  assert_eq "OBX3 the retired review-worktree target and the reserved phase are refused; nothing is created in the worktree or the phase" "$(scen_obx3)" "21/no/0"
+  assert_eq "OBX4 traversal in --phase and a --repo that is not the toplevel are refused; nothing is written outside the phase" "$(scen_obx4)" "12/no"
+  redproof29 "OBX4a" scen_obx4 "12/no" io-roots.cjs "    v.includes('/') ||" "    false ||"
 }
 
 caseRC0

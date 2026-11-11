@@ -1,3 +1,5 @@
+> Superseded by spec 025 (2026-11): Codex now reviews only the plan and design files (ADRs, architecture documents), never code diffs; wave inspection is removed. Do not apply this proposal as written; the rule file follows spec 025's scope.
+
 # Vorschlag: neuer Text für `~/.claude/rules/common/xprov-codex.md`
 
 > Status: **Vorschlag, nicht aktiv.** Spec 016 (xprov-Autonomie), Wave 12, FR-034.

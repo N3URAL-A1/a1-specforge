@@ -145,7 +145,14 @@ gate8() {
   G_OUT="$(cd "$R8" && node "$TREE_TOOLS" xprov gate --phase p8 --timeout 7 "$@" 2>"$TMP08/gate-err.txt")"; G_RC=$?
   G_ERR="$(cat "$TMP08/gate-err.txt")"
 }
-plan8() { gate8 --gate "$GATE_PLAN" "$@"; }
+# spec 025 W4: a second plan gate call on an unchanged PLAN.md that holds a pass is answered from that pass (no run, no snapshot scan).
+# These cases need a FRESH run each time (they plant or change a file and expect the snapshot scan), so the call names the next round
+# explicitly (1 + the plan rows in index.json, what the default would take); an explicit --round is never answered from a pass.
+plan8() {
+  local a; for a in "$@"; do [[ "$a" == --round ]] && { gate8 --gate "$GATE_PLAN" "$@"; return; }; done
+  local n; n="$(node -e 'try{const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(String(1+j.filter((e)=>e.gate===process.argv[2]).length))}catch(e){process.stdout.write("1")}' "$R8/.a1/phases/p8/xreview/index.json" "$GATE_PLAN")"
+  gate8 --gate "$GATE_PLAN" --round "$n" "$@"
+}
 
 # never_ran8 <name> — the fake runner was not invoked for the last gate8 call.
 never_ran8() { [[ ! -f "$ARGV8_FILE" ]] && ok "$1: runner never invoked" || bad "$1: runner WAS invoked"; }
@@ -212,19 +219,9 @@ caseR30a() {
 }
 
 # ---------- R30b: the reviewed range is checked from the merge-base ----------
-# Mutations: read the allowlist at --base instead of the merge-base (b1); drop
-# the first-parent step for plan review on the tip (b2).
+# Mutation: drop the first-parent step for plan review on the tip (b2).
+# (b1, the wave inspected with --base, went with the wave gate in spec 025 W4.)
 caseR30b() {
-  scen8
-  local a_sha; a_sha="$(blobsha8)"
-  # wave 1 commits A plus an entry for a planted fake, wave 2 is inspected with --base = wave-1 HEAD
-  L_AK2="id: $FAKE_AK2"; plant8 g.sh "$L_AK2"
-  printf '%s' "$(al_doc "$(al_ent f.sh aws_access_key_id 1 fixture_fake "$(fp8 "$L_AK1")"),$(al_ent g.sh aws_access_key_id 1 fixture_fake "$(fp8 "$L_AK2")")")" > "$R8/$AL_FILE"
-  c8 "wave 1"; local w1; w1="$(head8)"
-  store8 "$a_sha" "$(blobsha8 HEAD)"   # both blobs approved: under the mutation the arm would PASS
-  printf '// wave 2\n' >> "$R8/src/add.js"; c8 "wave 2"
-  gate8 --gate "$GATE_WAVE" --wave 2 --base "$w1"
-  expect8 "R30b1 wave 2 inspected with --base = wave-1 HEAD, range touches the allowlist" "allowlist_modified"
   # plan review on the default-branch tip whose last commit added the allowlist and the fake together
   new8
   L_AK1="id: $FAKE_AK1"; plant8 f.sh "$L_AK1"
@@ -236,8 +233,8 @@ caseR30b() {
 # ---------- R30b2: anchor resolution ----------
 # Mutations: resolve via refs/remotes/origin/HEAD (arm 1); fall back to local
 # main, and separately read the allowlist from the snapshot (arm 2); skip the
-# ls-remote comparison (arm 3); apply the first-parent step to wave-inspect
-# (arm 4); skip the git-common-dir comparison (arm 5).
+# ls-remote comparison (arm 3). (Arms 4 and 5, wave-inspect of a default-branch
+# commit and --work-path in a foreign clone, went with the wave gate, spec 025 W4.)
 caseR30b2() {
   # arm 1: origin/HEAD points at feature/x, which holds the allowlist commit
   new8
@@ -262,19 +259,6 @@ caseR30b2() {
   git -C "$R8" update-ref refs/remotes/origin/main "$(head8)"; store8 "$(blobsha8)"
   plant8 f.sh "$L_AK1"; c8 "fake"
   plan8; expect8 "R30b2-3 local origin/main ≠ ls-remote → unresolved" "secret_in_snapshot/allowlist_anchor_unresolved"
-  # arm 4: wave-inspect of a commit that is an ancestor of (here: equal to) origin/main
-  new8
-  L_AK1="id: $FAKE_AK1"
-  al_commit8 "$(al_doc "$(al_ent f.sh aws_access_key_id 1 fixture_fake "$(fp8 "$L_AK1")")")"
-  local base4; base4="$(head8)"
-  plant8 f.sh "$L_AK1"; c8 "fake"; push8; store8 "$(blobsha8)"
-  gate8 --gate "$GATE_WAVE" --wave 1 --base "$base4"
-  expect8 "R30b2-4 wave-inspect of a default-branch commit → unresolved" "secret_in_snapshot/allowlist_anchor_unresolved"
-  # arm 5: --work-path points at a foreign clone (other git-common-dir)
-  scen8
-  local foreign="$A8/foreign"; git clone -q "$O8" "$foreign"
-  gate8 --gate "$GATE_WAVE" --wave 1 --base "$(head8 origin/main)" --work-path "$foreign"
-  expect8 "R30b2-5 --work-path in a foreign clone" "snapshot_failed"
 }
 
 # ---------- R30b3: ref hygiene ----------

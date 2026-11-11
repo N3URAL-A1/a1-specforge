@@ -22,8 +22,7 @@
 #       load-check exit 0 with accepted: waiver.          Red if the key drops plan_sha256 / waive writes verdict.
 #   W6  (owner path) a wrong typed gate id → exit 2, store unchanged.
 #       Red if the typed id is not compared.
-#   W7  (owner path) wave waiver: head = HEAD of --work-path, base = full sha →
-#       wave-status exit 0.                                Red if the wave key drops head.
+#   W7  (owner path) a second plan waiver in another phase → exit 0, both records kept.   (the wave waiver arm went with the wave gate, spec 025 W4)
 #   W8  (owner path) a second waiver is written by temp file + rename: the
 #       store's inode changes and the first record survives.
 # The owner-path arms need a process tree that does not descend from Claude
@@ -128,7 +127,7 @@ caseW() {
   [[ "$hv" != *deny* ]] && ok "W4b hook without node lets git status through" || bad "W4b hook without node denied git status"
 
   if claude_ancestor11; then
-    skip11 "W5 owner waiver for the plan gate"; skip11 "W6 wrong typed gate id"; skip11 "W7 owner waiver for a wave"; skip11 "W8 atomic second write"
+    skip11 "W5 owner waiver for the plan gate"; skip11 "W6 wrong typed gate id"; skip11 "W7 a second owner waiver in another phase"; skip11 "W8 atomic second write"
     return 0
   fi
   # spec 016 FR-012: a repo WITHOUT a permit is not_applicable and load-check accepts that before it looks at any waiver; the waiver path
@@ -151,22 +150,18 @@ caseW() {
   assert_json "W5 load-check accepted: waiver" "$lc" "j.accepted" "waiver"
 
   before="$(storesum11)"
-  PTY_TYPED="wave-inspect-xprov" pty11 "${NOCLAUDE11[@]}" sh -c 'cd "$1" && node "$2" xprov waive --phase p11 --gate "$3" --reason again --by owner-fixture' sh "$PHASE_REPO" "$tools" "$GATE_PLAN"; rc=$?
+  PTY_TYPED="not-the-gate-id" pty11 "${NOCLAUDE11[@]}" sh -c 'cd "$1" && node "$2" xprov waive --phase p11 --gate "$3" --reason again --by owner-fixture' sh "$PHASE_REPO" "$tools" "$GATE_PLAN"; rc=$?
   assert_rc "W6 a wrong typed gate id → exit 2" 2 "$rc"
   assert_eq "W6 the store is byte-identical" "$(storesum11)" "$before"
 
-  printf '## Wave 1 — one\n' > "$PHASE_DIR/STATUS.md"
-  ( cd "$PHASE_REPO" && git add -A && git commit -qm "wave 1" ); local h7; h7="$(git -C "$PHASE_REPO" rev-parse HEAD)"
+  # W7 (was: a wave waiver, removed with the wave gate in spec 025 W4): a second plan waiver in another phase of the same repo
+  mkdir -p "$PHASE_REPO/.a1/phases/p11b" && cp "$PHASE_PLAN" "$PHASE_REPO/.a1/phases/p11b/PLAN.md"
   local ino; ino="$(ls -i "$STORE11" | awk '{print $1}')"
-  PTY_TYPED="$GATE_WAVE" pty11 "${NOCLAUDE11[@]}" sh -c 'cd "$1" && node "$2" xprov waive --phase p11 --gate "$3" --wave 1 --base "$4" --reason "codex quota" --by owner-fixture' sh "$PHASE_REPO" "$tools" "$GATE_WAVE" "$PHASE_HEAD"; rc=$?
-  assert_rc "W7 owner waiver for wave 1 → exit 0" 0 "$rc"
-  assert_json "W7 the wave record carries head = HEAD and the full base" "$(cat "$STORE11")" \
-    "(j.waivers.find((w) => w.gate === '$GATE_WAVE') || {}).head + '/' + (j.waivers.find((w) => w.gate === '$GATE_WAVE') || {}).base" "$h7/$PHASE_HEAD"
-  ( cd "$PHASE_REPO" && node "$tools" xprov wave-status --phase p11 >/dev/null 2>&1 ); rc=$?
-  assert_rc "W7 wave-status exit 0 on the store waiver" 0 "$rc"
-  assert_json "W7 …accepted through the waiver: the wave is not reported not_applicable" "$(cd "$PHASE_REPO" && node "$tools" xprov wave-status --phase p11 2>/dev/null)" "[(j.not_applicable || []).length, j.lacking.length].join('/')" "0/0"
+  PTY_TYPED="$GATE_PLAN" pty11 "${NOCLAUDE11[@]}" sh -c 'cd "$1" && node "$2" xprov waive --phase p11b --gate "$3" --reason "codex quota" --by owner-fixture' sh "$PHASE_REPO" "$tools" "$GATE_PLAN"; rc=$?
+  assert_rc "W7 a second owner waiver for the plan gate in phase p11b → exit 0" 0 "$rc"
+  assert_json "W7 the store now holds a record for each phase" "$(cat "$STORE11")" "j.waivers.map((w) => w.phase).join(',')" "p11,p11b"
   [[ "$(ls -i "$STORE11" | awk '{print $1}')" != "$ino" ]] && ok "W8 the second write replaced the file (temp + rename)" || bad "W8 the store was written in place"
-  assert_json "W8 the first record survives" "$(cat "$STORE11")" "j.waivers.map((w) => w.gate).join(',')" "$GATE_PLAN,$GATE_WAVE"
+  assert_json "W8 the first record survives" "$(cat "$STORE11")" "j.waivers.map((w) => w.gate).join(',')" "$GATE_PLAN,$GATE_PLAN"
 }
 
 caseW

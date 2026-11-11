@@ -2,13 +2,13 @@
 # Part 26 — spec 016 Wave 5: no permit is not a block (FR-012) and "ask once per phase" is enforced in code (FR-002).
 # Sourced by run-tests.sh. Part-local helpers only (no helper of another part is used).
 #
-# NP  A repo without permit (never asked / asked and unanswered / owner No / headless): `xprov gate` for the plan and the wave gate returns
+# NP  A repo without permit (never asked / asked and unanswered / owner No / headless): `xprov gate` for the plan gate returns
 #     `not_applicable` (exit 1, the existing contract), reason `external_review_not_permitted` (a No: `external_review_denied`), with ZERO
-#     runner calls, no snapshot, no a1 write (no log, no xreview/, no observation, no owner-store byte); `load-check` and `wave-status` exit 0.
+#     runner calls, no snapshot, no a1 write (no log, no xreview/, no observation, no owner-store byte); `load-check` exits 0.
 #     A store mismatch (denial next to a permit, permit without file, bad file, changed origin) and an `applies_to: all` row stay a fail.
 #   NP1  never asked / headless          Red if permitFor() stops counting state `absent` as not applicable           [mutant M1]
 #   NP2  the absent branch writes nothing Red if the absent result is logged like a denial (recordNotApplicable)        [mutant M2]
-#   NP3  load-check / wave-status        Red if the loaders keep accepting only state `denied`                          [mutant M3]
+#   NP3  load-check                      Red if the loaders keep accepting only state `denied`                          [mutant M3]
 #   NP4  `invalid` file stays a fail     Red if the predicate widens from `absent` to every not-permitted state         [mutant M4]
 # AQ  "Ask once per phase": `consent question --kind consent|classification` needs --phase <name> (an existing .a1/phases/<name>) or
 #     --run <id>; the first call records the ask in the owner store consent-asked.json (audit line `consent-asked`); a second question for the
@@ -39,10 +39,10 @@ ASKED26="$STORE26/consent-asked.json"
 SNAPS26="$STORE26/snapshots"
 
 
-# pin26 <value> — both xprov rows of the TREE copy's registry to `blocking` (the strictest enforcement: not_applicable must still continue)
+# pin26 <value> — the xprov row of the TREE copy's registry to `blocking` (the strictest enforcement: not_applicable must still continue)
 pin26() {
   node -e '
-    const fs = require("fs"); const file = process.argv[1]; const ids = ["plan-review-xprov", "wave-inspect-xprov"];
+    const fs = require("fs"); const file = process.argv[1]; const ids = ["plan-review-xprov"];
     fs.writeFileSync(file, fs.readFileSync(file, "utf8").split("\n").map((l) => (ids.some((id) => l.startsWith("| `" + id + "` |")) ? l.replace(/\| (warning|blocking) \|/, "| blocking |") : l)).join("\n"));
   ' "$TREE/_shared/gates-registry.md" || bad "pin26: could not pin the registry copy"
 }
@@ -120,16 +120,9 @@ caseNP1() {
   assert_eq "NP1 no snapshot" "$(snaps26)" "0"
   nothing26 && ok "NP1 zero bytes: no log, no xreview/, no observation, no owner-store file" || bad "NP1 something was written: $(ls "$PHASE_DIR") / $(ls -A "$STORE26" 2>/dev/null)"
   [[ "$G_ERR" == *"no external review permit"* ]] && ok "NP1 stderr carries the one-line no-permit notice" || bad "NP1 notice missing: $G_ERR"
-  gate26 --gate "$GATE_WAVE" --wave 1 --base "$PHASE_HEAD"
-  assert_json "NP1 wave gate: not_applicable / external_review_not_permitted" "$G_OUT" "[j.verdict, j.reason, j.wave].join('/')" "not_applicable/external_review_not_permitted/1"
-  assert_eq "NP1 wave gate: the runner was never called" "$(runner_calls26)" "no"
-  nothing26 && ok "NP1 wave gate wrote nothing either" || bad "NP1 wave gate wrote: $(ls "$PHASE_DIR")"
   sub26 load-check --phase p26
   assert_rc "NP1 load-check exit 0 for a repo without permit" 0 "$G_RC" "$G_ERR"
   assert_json "NP1 load-check ok, accepted not_applicable, permit_state absent" "$G_OUT" "[j.ok, j.accepted, j.permit_state, j.reason].join('/')" "true/not_applicable/absent/"
-  sub26 wave-status --phase p26
-  assert_rc "NP1 wave-status exit 0 for a repo without permit" 0 "$G_RC" "$G_ERR"
-  assert_json "NP1 wave-status ok, wave 1 listed under not_applicable, none lacking" "$G_OUT" "[j.ok, JSON.stringify(j.not_applicable), j.lacking.length, j.permit_state].join('/')" "true/[1]/0/absent"
   sub26 load-check --phase p26 --expect-sha "$(printf '0%.0s' {1..64})"
   assert_rc "NP1 --expect-sha still guards the plan (a different sha: exit 1)" 1 "$G_RC"
   assert_json "NP1 …reason plan_changed" "$G_OUT" "j.reason" "plan_changed"
@@ -158,9 +151,6 @@ caseNP2() {
   gate26 --gate "$GATE_PLAN"
   assert_json "NP2 after the No: not_applicable / external_review_denied" "$G_OUT" "[j.verdict, j.reason].join('/')" "not_applicable/external_review_denied"
   assert_eq "NP2 after the No: the runner was never called" "$(runner_calls26)" "no"
-  gate26 --gate "$GATE_WAVE" --wave 1 --base "$PHASE_HEAD"
-  assert_json "NP2 after the No: the wave gate is not_applicable too" "$G_OUT" "j.verdict + '/' + j.reason" "not_applicable/external_review_denied"
-  sub26 wave-status --phase p26; assert_rc "NP2 after the No: wave-status exit 0" 0 "$G_RC" "$G_ERR"
 }
 
 # ---------- NP3: mismatch and unusable states stay fail-closed ----------
@@ -171,7 +161,6 @@ caseNP3() {
   assert_json "NP3 an allowed file without the owner's permit entry: fail / external_review_permit_mismatch" "$G_OUT" "[j.verdict, j.reason].join('/')" "fail/external_review_permit_mismatch"
   assert_eq "NP3 …no runner call" "$(runner_calls26)" "no"
   sub26 load-check --phase p26; assert_rc "NP3 …load-check stays red (exit 1)" 1 "$G_RC"
-  sub26 wave-status --phase p26; assert_rc "NP3 …wave-status stays red (exit 1)" 1 "$G_RC"
   prep26; key="$(key26)"
   write_permit "$PHASE_REPO" fixture record/2026-09-24-fixture.md
   node -e 'const fs=require("fs"); const [dir,key]=process.argv.slice(1); fs.writeFileSync(dir+"/permit-denials.json", JSON.stringify({version:1,denials:{[key]:{decided_by:"robert",decided_on:"2026-10-05",ts:"2026-10-05T00:00:00.000Z"}}},null,2)+"\n",{mode:0o600});' "$STORE26" "$key"
@@ -215,7 +204,6 @@ caseNP4() {
     sub26 gate --phase "$ph" --gate "$GATE_PLAN"; assert_rc "NP4 gate --phase '${ph:0:24}' is a usage error" 2 "$G_RC"
     [[ -z "$G_OUT" ]] && ok "NP4 …no stdout JSON" || bad "NP4 stdout for hostile phase: ${G_OUT:0:80}"
     sub26 load-check --phase "$ph"; assert_rc "NP4 load-check --phase '${ph:0:24}' is a usage error" 2 "$G_RC"
-    sub26 wave-status --phase "$ph"; assert_rc "NP4 wave-status --phase '${ph:0:24}' is a usage error" 2 "$G_RC"
   done
   (( ${#G_ERR} < 800 )) && ok "NP4 the message for a 10 000-char name is clipped (${#G_ERR} chars)" || bad "NP4 stderr ${#G_ERR} chars"
   [[ ! -e "$TMP26/pwned26" ]] && ok "NP4 the injection-shaped phase name is inert" || bad "NP4 a command in the phase name ran"
@@ -226,11 +214,11 @@ caseNP5() {
   assert_eq "NP1 RED proof setup: the real tree gives not_applicable and no runner call" "$(scen_np1)" "1/not_applicable/external_review_not_permitted/no"
   redproof26 "NP1" scen_np1 "1/not_applicable/external_review_not_permitted/no" xprov-gate.cjs "permit.state === PERMIT_STATES.DENIED || NP.isNoPermit(permit);" "permit.state === PERMIT_STATES.DENIED;"
   redproof26 "NP2" scen_np2 "yes" xprov-gate.cjs "NP.isNoPermit(permit) ? NP.result(base, permit) :" "false ? NP.result(base, permit) :"
-  redproof26 "NP3" scen_np3 "0/0" xprov-gate.cjs "if (np.notApplicable) {" "if (np.notApplicable && np.permit.state === PERMIT_STATES.DENIED) {"
+  redproof26 "NP3" scen_np3 "0" xprov-gate.cjs "if (np.notApplicable) {" "if (np.notApplicable && np.permit.state === PERMIT_STATES.DENIED) {"
   redproof26 "NP4" scen_np4 "fail" xprov-gate-nopermit.cjs "permit.ok === false && NO_PERMIT_STATES.includes(permit.state)" "permit.ok === false && permit.reason === 'external_review_not_permitted'"
 }
 scen_np2() { prep26; gate26 --gate "$GATE_PLAN"; nothing26 && echo yes || echo no; }
-scen_np3() { prep26; sub26 load-check --phase p26; local a="$G_RC"; sub26 wave-status --phase p26; echo "$a/$G_RC"; }
+scen_np3() { prep26; sub26 load-check --phase p26; echo "$G_RC"; }
 scen_np4() { prep26; mkdir -p "$PHASE_REPO/.a1"; printf '{not json\n' > "$PHASE_REPO/.a1/xprov.json"; gate26 --gate "$GATE_PLAN"; json_get "$G_OUT" "j.verdict"; }
 
 # ---------- AQ: ask once per phase, enforced in code ----------
@@ -285,8 +273,6 @@ caseNP6() {
   [[ "$G_ERR" == *"permit void (origin_changed)"* && "$G_ERR" == *"re-consent"* ]] && ok "NP6 the gate notice says: Codex review skipped, permit void (origin_changed), re-consent" || bad "NP6 notice: $G_ERR"
   sub26 load-check --phase p26
   [[ "$G_ERR" == *"permit void (origin_changed)"* ]] && ok "NP6 the load-check notice names the state" || bad "NP6 load-check notice: $G_ERR"
-  sub26 wave-status --phase p26
-  [[ "$G_ERR" == *"permit void (origin_changed)"* ]] && ok "NP6 the wave-status notice names the state" || bad "NP6 wave-status notice: $G_ERR"
   prep26; gate26 --gate "$GATE_PLAN"
   [[ "$G_ERR" != *"permit void"* ]] && ok "NP6 state absent: the plain no-permit notice (not a void permit)" || bad "NP6 absent notice: $G_ERR"
 }

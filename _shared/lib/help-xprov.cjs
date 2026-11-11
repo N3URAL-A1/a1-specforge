@@ -10,8 +10,7 @@ const { CONSENT_HELP } = require('./help-xprov-consent.cjs');
 const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   Spec 009-cross-provider-review-gate. Cross-provider review
                   gate: sends a phase's PLAN.md (gate plan-review-xprov, a1-plan
-                  Phase 4b) or a wave diff (gate wave-inspect-xprov, a1-execute
-                  step 2b-x) to Codex through the VENDORED claudex-loop runner
+                  Phase 4b) to Codex through the VENDORED claudex-loop runner
                   (_shared/vendor/claudex-loop/runner.py, sha-pinned in
                   SHA256SUMS next to it, resolved relative to lib/xprov.cjs —
                   never from a plugin cache) and maps the result fail-closed
@@ -27,8 +26,8 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   yet (planned wave N)") — no stdout JSON on 2. Human text
                   goes to stderr only; stdout is the machine contract.
                   Subcommands (module → wave it ships in):
-    normalize <result.json> --phase <name> --gate <id> [--wave N] [--round N]
-              [--lane <id>] [--work-path <dir>] [--allowlisted-hits N]
+    normalize <result.json> --phase <name> --gate <id> [--round N]
+              [--allowlisted-hits N]
               [--allowlist-anchor <sha>] [--allowlist-approved-blob <sha256>]
                   (xprov-normalize.cjs, wave 2) total mapping of a runner
                   record: status!=completed → runner_failed; mode not
@@ -54,8 +53,8 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   (lstat, same owner, symlinks never followed). A run dir
                   that carries a1's own pass marker (a1-pass.json, written by
                   normalize only on a pass) and whose result.json is a completed
-                  APPROVED review or inspect is a pass load-check/wave-status
-                  still read: kept 180 days (--pass-max-age-days N overrides;
+                  APPROVED review or inspect is a pass load-check
+                  still reads: kept 180 days (--pass-max-age-days N overrides;
                   then a re-review is needed). A run a1 discarded keeps 14.
     preflight [--allow-plugins <name>[,<name>…]]
                   (xprov-preflight.cjs, wave 4) proves the dedicated home is
@@ -127,7 +126,8 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   .a1/xprov.json only — rationale in the module header. Mapping: file
                   denied → target_state denial_mismatch, allowed → permit_mismatch, no
                   file → absent, unparseable → invalid. \`blocks_merge\` is true for every
-                  state the merge hook does not pass (all but absent and denied).
+                  state the removed Bash hook did not pass (all but absent and denied);
+                  no hook acts on it any more.
                   \`owner_command\` is the one line the owner runs on the target host in a
                   real terminal, or null when none can be printed safely — the record
                   fields and --target-repo must pass the owner-command validators, and
@@ -163,14 +163,12 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   (xprov-observe.cjs, wave 4) one observations.jsonl line with
                   pattern xprov_finding, model_requested, model_observed.
             [--gate <id>] [--owner-handoffs 0..99] [--codex-runs 0|1]
+            (--wave N on observe, run and normalize counts from 0 (0..9999); --round and --timeout from 1.)
             [--abort-reason none|<reason code>] [--recovered true|false]
-            [--review-worktree <abs dir>]
                   (spec 016 FR-035, wave 8) the run fields xprov gate writes
                   itself: owner hand-offs, Codex runs (1 only for the first
                   line of a gate target: rounds and retries collapse), abort
-                  reason, recovered. --review-worktree writes to
-                  <dir>/.a1-review/xreview/observations.jsonl (the PR diff
-                  review); an absolute path without .., no link on the way.
+                  reason, recovered.
     snapshot --repo <path> --commit <sha> [--base <sha>] [--plan <file>] [--feedback <file>] | --remove <dir>
                   (xprov-snapshot.cjs, wave 5) fresh depth-limited fetch under
                   ~/.a1-xprov/snapshots/ (git init + fetch --depth 1 + checkout
@@ -220,13 +218,12 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   --untracked-files=all --ignored (status), sha256 of the
                   snapshot's git metadata (.git/config, hooks/, info/), diff
                   hash, input hashes, gitleaks (bool), a nonce. gitleaks is
-                  REQUIRED for a blocking registry row, resolved to an absolute
-                  path: snapshot itself still runs without it and records
-                  gitleaks:false; gate refuses a blocking row at step preflight
-                  (preflight_failed / gitleaks_missing, brew install gitleaks)
-                  before it snapshots, and run refuses such a record on a
-                  blocking row. On a warning row gate degrades — one stderr
-                  warning line, stdout gitleaks:false. Every a1 git call on a
+                  REQUIRED for every gate that sends to Codex (blocking or warning
+                  row), resolved to an absolute path: snapshot itself still runs
+                  without it and records gitleaks:false; gate refuses at step
+                  preflight (preflight_failed / gitleaks_missing, brew install
+                  gitleaks) before it snapshots, and run refuses such a record.
+                  Every a1 git call on a
                   snapshot (and the runner's env) is hermetic: every inherited
                   GIT_* variable is dropped, then a1 sets GIT_CONFIG_GLOBAL=
                   /dev/null, GIT_CONFIG_NOSYSTEM, GIT_ATTR_NOSYSTEM,
@@ -271,13 +268,12 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   --resume is refused (exit 2): no session is ever resumed, a
                   resumed one replays rollout files the tripwire does not
                   cover; --feedback is review-only.
-                  Spec 014: --gate takes plan-review-xprov or wave-inspect-xprov
-                  only (else exit 2). After the permit check \`run\` binds the
+                  Spec 014: --gate takes plan-review-xprov or design-review-xprov (else exit 2). After the permit check \`run\` binds the
                   snapshot to its scan record: a direct snap-* child of
                   ~/.a1-xprov/snapshots by realpath (the realpath is used from
                   then on), a record that matches commit, base, tree, diff hash
                   and nonce, the same repository, unchanged git metadata, and for
-                  a blocking row a gitleaks-checked scan. Refusals (exit 1, no
+                  a gitleaks-checked scan. Refusals (exit 1, no
                   spawn): snapshot_not_scanned (not_under_snapshots_dir |
                   no_scan_record | record_mismatch | repo_mismatch),
                   snapshot_changed_after_scan (git_dir_forbidden_entry |
@@ -301,8 +297,19 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   loaded. On runner_failed, reason_detail carries the runner's
                   own reason (the codex error event, else result.json error,
                   else stderr), secret- or instruction-shaped text withheld.
-    gate --phase <name> --gate <id> [--wave N --base <sha> --work-path <p>]
-         [--lane <id>] [--round N] [--timeout N]
+    gate --phase <name> --gate design-review-xprov --doc <repo-relative path> [--timeout N]
+                  (spec 025 W5) reviews ONE design file per call. --doc must be
+                  repo-relative, without .., match docs/adr/** or
+                  docs/architecture/**, be a regular file whose realpath stays
+                  inside the repository (else exit 2, nothing written). One run
+                  per body state: the body hash (frontmatter removed, line-edge
+                  whitespace normalized) is looked up in every phase's
+                  xreview/index.json; a recorded pass is returned with no runner
+                  call (step reuse). Only the named file goes into the snapshot,
+                  through the same secret scan and tripwire. No --round, no
+                  revision round, no round cap. Same permit branch as the plan
+                  gate (no permit: not_applicable). Enforcement: warning.
+    gate --phase <name> --gate plan-review-xprov [--round N] [--timeout N]
                   (xprov-gate.cjs, wave 6) the driver the workflows call once:
                   permit-check → preflight → snapshot → run → normalize →
                   observe → cleanup, stopping at the first non-zero step;
@@ -313,13 +320,19 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   artifacts dir) + the dispositions file, scanned and copied
                   like the PLAN.md; next.round_cmd shows the call. Enforcement (warning|blocking) is READ
                   from the registry row and echoed in stdout, never applied here.
-                  --wave N counts from 0 (0..9999); --round and --timeout from 1.
+                  --round counts from 1; --timeout is at least 60 seconds (a shorter limit is a usage error, exit 2).
                   Self-recovery (spec 016 FR-024..028, FR-031; xprov-recover.cjs;
                   recovery in stdout and in the log entry): runner_failed caused
                   by network, timeout or HTTP 5xx is retried twice (30 s, 120 s);
                   a blocked answer is repeated once, a second one is not_applicable /
-                  codex_blocked_fallback (load-check and wave-status accept it,
-                  Reinhard is the only review, nobody is asked); a snapshot whose
+                  codex_blocked_fallback (load-check accepts it,
+                  Reinhard is the only review, nobody is asked); a failed Codex
+                  run (usage limit, transport error, timeout; after those retries)
+                  ends not_applicable / codex_unavailable only for a Codex outage — usage limit,
+                  transport error, timeout; every runner validation or integrity error
+                  stays a failure (spec 025 FR-019:
+                  recorded in index.json, load-check accepts it, no waiver; a
+                  rejected pinned effort stays fail / preflight_failed); a snapshot whose
                   base does not resolve is retried once on the merge-base with the
                   default branch (fetched when missing); a preflight_failed that
                   only plugins/ removal, init-home --pin-features and
@@ -328,42 +341,16 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   run_home_unsafe, snapshot_changed_after_scan, allowlist_invalid,
                   allowlist_modified, every permit or store mismatch and round_cap
                   are never retried. One observation line per run that got past
-                  placement and permit (owner_handoffs, codex_runs, abort_reason,
+                  the permit check (owner_handoffs, codex_runs, abort_reason,
                   recovered).
                   A repository whose permit state is denied, on a registry row
                   with applies_to: permitted-repos, gets verdict not_applicable
                   (reason external_review_denied, exit 1, one log entry and one
                   xprov_not_applicable observation, no run); on an applies_to:
                   all row it fails external_review_not_permitted.
-                  Spec 016 FR-019/FR-020 placement, checked BEFORE the permit: a plan
-                  review runs only when the spec named by PLAN.md (frontmatter spec:
-                  or spec_path:, a relative .md path in the repo or the vault) has
-                  size: L, or the backtick-quoted paths of the plan's ## Wave
-                  sections are security surface (xprov scope); size unknown is
-                  decided by surface alone, a plan without ## Wave sections runs. A
-                  wave inspection runs only when a LATER wave names the wave in its
-                  Depends on line and the wave's plan files or its diff (--base to
-                  HEAD) are surface; an unlisted wave or a diff git cannot produce
-                  runs. Otherwise: not_applicable, reason scope_exempt, step
-                  placement, exit 1, nothing run, nothing written, no consent
-                  question. No flag sets the size (--size, --spec: exit 2).
-                  load-check accepts an exempt plan (placement scope_exempt);
-                  wave-status lists exempt waves under scope_exempt only for the
-                  PLAN.md bound by --expect-sha (a different sha fails plan_changed;
-                  without it nothing is exempt). A wave no later wave depends on is
-                  exempt; a depended-on wave is exempt only when the plan names no
-                  surface for it AND its real diff is none. The ranges (--wave-range
-                  <n>=<base>..<head>, one per completed wave) are verified against git:
-                  base != head and an ancestor of head, the ranges tile (only the
-                  workflow's own files between them), the last head leads to the tip,
-                  the first base is reached from git merge-base <default branch> <tip>;
-                  any mismatch refuses every exemption (exempt_refused: reason). A
-                  wave nobody depends on whose diff is surface is exempt and listed
-                  under deferred_to_pr (the PR diff gate reviews it). A wave with a
-                  gate row is judged on its rows. Across an exempt wave the reviewed
-                  head must still be an ancestor of the next base / the tip. The plan
-                  placement reads every path-shaped token of the whole PLAN.md (also
-                  absolute, ../, path:12 and file:path forms; only :// URLs are skipped).
+                  Spec 025: every plan review in a permitted repository runs (no size or
+                  surface placement); the permit check is the first branch. No flag sets
+                  a size (--size, --spec, --placement: exit 2).
                   Spec 016 FR-012: a repository with NO permit (permit state absent,
                   origin_changed or unbound_legacy) on an applies_to: permitted-repos
                   row also gets not_applicable, reason external_review_not_permitted,
@@ -386,24 +373,6 @@ const XPROV_HELP = `  a1-tools xprov <sub> [flags]
                   time, never from an index row). Spec 016: the same for a
                   repository with no permit (permit_state absent, origin_changed,
                   unbound_legacy).
-    wave-status --phase <name> [--waves 0,1,2 [--lane <id>]] [--work-path <dir>]
-                [--lane-work-path <lane>=<dir>[,…]]
-                  (xprov-gate.cjs, wave 6) waves are numbered from 0. A denied
-                  repository (applies_to: permitted-repos) → exit 0 with every
-                  completed wave under not_applicable, no chain computed. Spec 016:
-                  the same for a repository with no permit.
-                  Otherwise every completed wave needs a
-                  wave-inspect-xprov pass or a store waiver, both bound to this
-                  PLAN.md's sha and chained per lane: base an ancestor of head,
-                  head of wave N = base of the next completed wave, the last
-                  wave's head = the lane work path's HEAD; between waves and
-                  after the last one only commits writing the measured
-                  workflow files (phase STATUS*/VERIFICATION/observations/
-                  XREVIEW/PLAN-REVIEW-LOG/xreview, product-stage files) as
-                  mode 100644 may sit. Pass rows are pointers: head/base come from
-                  the run dir's a1-reviewed.json (written by xprov run); a lane
-                  without --lane-work-path lacks. index.json waived: true rows
-                  count for nothing.
     allowlist propose --commit <rev> [--json] [--scopes] [--repo <git-toplevel>]
                   (xprov-approve.cjs, wave 6b) every secret-pattern match at
                   <rev> as path:line:column, pattern, proposed class, masked
@@ -484,8 +453,24 @@ ${CONSENT_HELP}
                   category "unclassifiable". Matching is case-insensitive.
                   Any input or glob-file problem exits 2 with an empty stdout:
                   treat a non-zero exit as "guarded".
-    dispose --phase <name> --gate plan-review-xprov|wave-inspect-xprov
-            [--wave <N> [--lane <id>] --work-path <dir>]
+    design-targets --phase <name> (--plan <PLAN.md> | --base <sha> [--head <sha>])
+                  (spec 025 FR-013, xprov-design.cjs) Not a gate: no Codex call, no
+                  registry row, nothing written. Lists the design files a review
+                  still owes: paths matching docs/adr/** or docs/architecture/**
+                  (DESIGN_FILE_GLOBS) that exist in the repo and have no recorded
+                  pass on their current body (a recorded REVISE stays listed: the
+                  gate answers it from the record, 0 runner calls). --plan: only the paths PLAN.md names
+                  in backticks (an ADR PLAN.md does not name is never listed).
+                  --base: the files changed in <base>..<head> (default HEAD); a
+                  deleted file is not listed. Code paths never appear. One document
+                  state is listed once, however many commits touched it.
+                  stdout (exit 0): {targets:[path], skipped:[{path, reason}]};
+                  reason pass_recorded or invalid_doc (symlink out of the repo,
+                  missing file). Usage errors exit 2 with an empty stdout: no or
+                  both of --plan/--base, --head without --base, a --base that is not
+                  a commit sha or HEAD, an unreadable --plan. Callers run
+                  xprov gate --gate design-review-xprov --doc <path> once per path.
+    dispose --phase <name> --gate plan-review-xprov
                   (spec 016 FR-025, xprov-dispose.cjs) Round 2 ended REVISE without a
                   BLOCKER (round_cap). The agent writes
                   xreview/<gate>-<target>-r2.dispositions.md, one line per finding id:
@@ -493,18 +478,15 @@ ${CONSENT_HELP}
                   non-empty, one line, at most 1000 chars, no secret or instruction
                   shape). Every major, minor and quarantined id of round 2 needs one.
                   Success (exit 0): a1's marker a1-disposed.json in the round-2 run dir
-                  (bound to the PLAN.md sha now; a wave also to the work path HEAD and
-                  the reviewed base), the index row accepted: dispositions, an XREVIEW
-                  section and an observation (pattern xprov_disposed); load-check and
-                  wave-status accept the row only through the marker. Refusal (exit 1,
+                  (bound to the PLAN.md sha now), the index row accepted: dispositions, an XREVIEW
+                  section and an observation (pattern xprov_disposed); load-check
+                  accepts the row only through the marker. Refusal (exit 1,
                   JSON refused/detail): round_cap_not_reached, not_a_revise,
                   blocker_open (the hard stop stays), undisposed (the target goes to
                   the waiver question), round_unbound, already_disposed (one dispose
-                  per round-2 run dir), no_reviewed_base, head_not_descendant,
-                  dispose_unwritable. Facts come from a1's artifacts dir, not from the
+                  per round-2 run dir), dispose_unwritable. Facts come from a1's artifacts dir, not from the
                   phase files.
-    dispose --phase <name> --gate <id> [--wave <N> [--lane <id>] --work-path <dir>
-            --base <sha>] --secret-declined <snap-basename>
+    dispose --phase <name> --gate plan-review-xprov --secret-declined <snap-basename>
                   (spec 016 FR-029) The owner declined the allowlist question for a
                   changed-line secret hit (or no answer, no chat). Needs the hits
                   record the failed scan wrote for this repository and the exact HEAD
@@ -512,18 +494,16 @@ ${CONSENT_HELP}
                   and the index row accepted: secret_declined; the target ends
                   not_applicable (Reinhard-only review). A PLAN.md edit or a moved
                   head needs a fresh review.
-    waive --phase <name> --gate <id> [--wave <N> [--lane <id>] --base <sha>
-          [--work-path <dir>]] --reason "<text>" --by <name>
+    waive --phase <name> --gate plan-review-xprov --reason "<text>" --by <name>
                   (spec 016) --by owner-chat is reserved for chat-written entries
                   and rejected in the terminal commands permit, permit --deny and
                   waive (exit 2). Every owner write appends a hash-chained line to
                   ~/.a1-xprov/consent-audit.jsonl first.
-                  (xprov-gate.cjs + xprov-waivers.cjs, wave 7; --wave 0 is valid) HUMAN-only, in a
+                  (xprov-gate.cjs + xprov-waivers.cjs, wave 7) HUMAN-only, in a
                   separate terminal: the owner-approval guards (TTY on stdin
                   and stdout, no CLAUDECODE/CLAUDE_PID/CLAUDE_CODE_*, no Claude
                   Code ancestor; else exit 2, nothing written), the key
-                  computed here (git-common-dir, phase, gate, PLAN.md sha256;
-                  for a wave also lane, head of --work-path and full base),
+                  computed here (git-common-dir, phase, gate, PLAN.md sha256),
                   the gate id typed back, then one record in
                   ~/.a1-xprov/waivers.json (0600, atomic) plus an index.json /
                   XREVIEW.md mirror without authority — never verdict: pass.
@@ -531,11 +511,11 @@ ${CONSENT_HELP}
                   Reasons (stdout \`reason\` on exit 1): runner_failed,
                   malformed, wrong_mode, blocked, plan_changed, tripwire,
                   secret_in_snapshot, secret_in_output, quarantined, round_cap,
-                  external_review_not_permitted, external_review_denied, scope_exempt,
+                  external_review_not_permitted, external_review_denied,
                   external_review_denial_mismatch, external_review_permit_mismatch,
                   snapshot_failed, snapshot_not_scanned, snapshot_changed_after_scan,
                   run_home_unsafe, not_logged_in,
-                  preflight_failed, plan_review_missing, wave_inspect_missing,
+                  preflight_failed, plan_review_missing,
                   allowlist_invalid, allowlist_modified.
                   Paths a1 owns: ~/.a1-xprov/artifacts/<repo-slug>/ (0700,
                   runner --artifacts, never inside a checkout or under

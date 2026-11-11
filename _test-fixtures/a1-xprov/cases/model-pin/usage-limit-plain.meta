@@ -1,0 +1,5 @@
+# Sibling of usage-limit-plain.codex-stdout.txt — provenance record (spec 025 task 6.3).
+case: usage-limit-plain
+origin: transcribed from the message the live CLI printed on 2026-11-11 (not a byte capture of a run dir; the plain `ERROR: ` form, no JSON event)
+what: the usage-limit text in the plain form; the runner records it as a failed run exactly like cases/usage-limit.codex-stdout.txt (JSON event form)
+note: typographic apostrophe (U+2019) in "You’ve" as printed by the CLI

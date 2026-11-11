@@ -171,7 +171,7 @@ issues: []
 evidence: fixture
 gates_fired:
   - {id: $GATE_PLAN, verdict: pass, caught: false}
-  - {id: $GATE_WAVE, verdict: fail, caught: true}
+  - {id: pr-diff-xprov, verdict: fail, caught: true}
 one_line_learning: n/a — fixture.
 ---
 MD
@@ -190,18 +190,18 @@ one_line_learning: n/a — fixture.
 MD
   ( cd "$REPO_ROOT" && node "$TOOLS" retro validate "$t/retro-both.md" >/dev/null 2>&1 ); rc_ok=$?
   ( cd "$REPO_ROOT" && node "$TOOLS" retro validate "$t/retro-drift.md" >/dev/null 2>&1 ); rc_bad=$?
-  assert_rc "R1a retro validate with $GATE_PLAN + $GATE_WAVE" 0 "$rc_ok" "both rows must exist in gates-registry.md"
+  assert_rc "R1a retro validate with $GATE_PLAN + the retired id pr-diff-xprov (history, not unknown)" 0 "$rc_ok" "the plan row must exist in gates-registry.md; a retired id resolves retired"
   assert_rc "R1b retro validate with xprov-review (not a registered id)" 1 "$rc_bad"
 
   local rows; rows="$(node -e "
     const gi = require(process.argv[1]); const fs = require('fs');
     const ids = gi.parseRegistryIds(fs.readFileSync(process.argv[2], 'utf8'));
-    process.stdout.write(String(ids.includes(process.argv[3]) && ids.includes(process.argv[4])));
-  " "$REPO_ROOT/_shared/lib/gate-ids.cjs" "$REGISTRY" "$GATE_PLAN" "$GATE_WAVE" 2>&1)"
-  assert_eq "R1c both ids sit inside the registry's anchored id table (not an alias)" "$rows" "true"
+    process.stdout.write(String(ids.includes(process.argv[3]) && !ids.includes(process.argv[4])));
+  " "$REPO_ROOT/_shared/lib/gate-ids.cjs" "$REGISTRY" "$GATE_PLAN" "pr-diff-xprov" 2>&1)"
+  assert_eq "R1c the plan id sits inside the registry's anchored id table, the retired id does not" "$rows" "true"
 
-  local enf; enf="$(grep -E "^\| \`($GATE_PLAN|$GATE_WAVE)\` " "$REGISTRY" | awk -F'|' '{gsub(/ /,"",$7); print $7}' | sort -u | tr '\n' ',')"
-  assert_eq "R1d both rows carry enforcement blocking since the Wave 7 flip (ADR §6, 2026-10-03)" "$enf" "blocking,"
+  local enf; enf="$(grep -E "^\| \`$GATE_PLAN\` " "$REGISTRY" | awk -F'|' '{gsub(/ /,"",$7); print $7}' | sort -u | tr '\n' ',')"
+  assert_eq "R1d the plan row carries enforcement blocking since the Wave 7 flip (ADR §6, 2026-10-03)" "$enf" "blocking,"
 }
 
 # ---------- R29: the ADR exists with the six decision headings ----------
@@ -212,11 +212,10 @@ caseR29() {
   # number is optional here, the heading text is verbatim from the plan.
   local n; n="$(grep -cE '^#{2,3} ([0-9]+\. )?(Runner-only use|Dedicated CODEX_HOME|Snapshot, not checkout|Fail-closed mapping|Vendoring decision|Live smoke)$' "$ADR")"
   assert_eq "R29a ADR has the six decision headings" "$n" "6"
-  # post-flip (Wave 7, 2026-10-03): the placeholder is gone and §6 holds both live commands
+  # post-flip (Wave 7, 2026-10-03): the placeholder is gone and §6 holds the live plan command (the wave command stays in the ADR as history, spec 025)
   if ! grep -qiE 'pending Wave 7' "$ADR" \
-     && grep -q 'xprov gate --phase M13-residuals --gate plan-review-xprov' "$ADR" \
-     && grep -q 'xprov gate --phase M13-residuals --gate wave-inspect-xprov' "$ADR"; then
-    ok "R29b Live smoke section records both live gate commands, no placeholder left"
+     && grep -q 'xprov gate --phase M13-residuals --gate plan-review-xprov' "$ADR"; then
+    ok "R29b Live smoke section records the live plan gate command, no placeholder left"
   else bad "R29b Live smoke section is still the placeholder or lacks a live gate command"; fi
   # The repo has no .env.example, so the ADR is where the ENV var is documented
   # (wave plan, deployment chain).
@@ -256,12 +255,12 @@ caseF1() {
 
   local help; help="$(node "$TOOLS" --help 2>/dev/null)"
   local sub missing_help=""
-  for sub in normalize gc preflight init-home permit-check permit observe snapshot run gate load-check wave-status waive allowlist; do
+  for sub in normalize gc preflight init-home permit-check permit observe snapshot run gate load-check waive allowlist; do
     grep -qE "^    $sub( |$)" <<<"$help" || missing_help="$missing_help $sub"
   done
   grep -q "A1_XPROV_CODEX_HOME" <<<"$help" || missing_help="$missing_help A1_XPROV_CODEX_HOME"
   grep -q "a1-tools xprov <sub>" <<<"$help" || missing_help="$missing_help header"
-  [[ -z "$missing_help" ]] && ok "F1e --help names all 14 xprov subcommands and A1_XPROV_CODEX_HOME" \
+  [[ -z "$missing_help" ]] && ok "F1e --help names all 13 listed xprov subcommands and A1_XPROV_CODEX_HOME" \
                             || bad "F1e --help is missing:$missing_help"
   # Reinhard PR review: every flag a module declares in a parseFlags table (or a
   # frozen FLAGS object) must appear as `--<flag>` in the xprov help block —
@@ -308,9 +307,9 @@ caseF1() {
     const home = x.codexHome({ A1_XPROV_CODEX_HOME: '/x/override' }) + ' ' + require('path').basename(x.codexHome({}));
     process.stdout.write(JSON.stringify({ subs, reasons, ghp, akia, assign, clean, markers, gates, home }));
   " "$XPROV_LIB" 2>&1)"
-  assert_json "F1f dispatch table has 18 entries (allowlist added in Wave 6b; consent, scope, dispose in spec 016 wave 1; handover-check with the 2026-10-28 handover fix)" "$out" "j.subs" "18"
-  assert_json "F1g REASON_LIST is the spec's thirteen reason codes plus the documented freeze exceptions (preflight_failed W4, plan_review_missing + wave_inspect_missing W6, allowlist_invalid + allowlist_modified W6b, run_home_unsafe W7, external_review_denied + external_review_denial_mismatch spec 012, external_review_permit_mismatch + snapshot_not_scanned + snapshot_changed_after_scan spec 014, owner_home_mismatch + scope_exempt + codex_blocked_fallback + secret_declined + pr_anchor_unavailable + pr_base_mismatch + pr_merge_blocked spec 016)" "$out" "j.reasons" \
-    "runner_failed,malformed,wrong_mode,blocked,plan_changed,tripwire,secret_in_snapshot,secret_in_output,quarantined,round_cap,external_review_not_permitted,snapshot_failed,not_logged_in,preflight_failed,plan_review_missing,wave_inspect_missing,allowlist_invalid,allowlist_modified,run_home_unsafe,external_review_denied,external_review_denial_mismatch,external_review_permit_mismatch,snapshot_not_scanned,snapshot_changed_after_scan,owner_home_mismatch,scope_exempt,codex_blocked_fallback,secret_declined,pr_anchor_unavailable,pr_base_mismatch,pr_merge_blocked"
+  assert_json "F1f dispatch table has 18 entries (allowlist added in Wave 6b; consent, scope, dispose in spec 016 wave 1; handover-check with the 2026-10-28 handover fix; wave-status removed in spec 025 W4; design-targets added in spec 025 W7)" "$out" "j.subs" "18"
+  assert_json "F1g REASON_LIST is the spec's thirteen reason codes plus the documented freeze exceptions (preflight_failed W4, plan_review_missing W6 (wave_inspect_missing removed spec 025 W4), allowlist_invalid + allowlist_modified W6b, run_home_unsafe W7, external_review_denied + external_review_denial_mismatch spec 012, external_review_permit_mismatch + snapshot_not_scanned + snapshot_changed_after_scan spec 014, owner_home_mismatch + codex_blocked_fallback + secret_declined + pr_anchor_unavailable + pr_base_mismatch + pr_merge_blocked spec 016)" "$out" "j.reasons" \
+    "runner_failed,malformed,wrong_mode,blocked,plan_changed,tripwire,secret_in_snapshot,secret_in_output,quarantined,round_cap,external_review_not_permitted,snapshot_failed,not_logged_in,preflight_failed,plan_review_missing,allowlist_invalid,allowlist_modified,run_home_unsafe,external_review_denied,external_review_denial_mismatch,external_review_permit_mismatch,snapshot_not_scanned,snapshot_changed_after_scan,owner_home_mismatch,codex_blocked_fallback,secret_declined,pr_anchor_unavailable,pr_base_mismatch,pr_merge_blocked,codex_unavailable"
   assert_json "F1h SECRET_PATTERNS hit ghp_/AKIA/assignment shapes and not plain text" "$out" \
     "[j.ghp, j.akia, j.assign, j.clean].join('/')" "true/true/true/false"
 
@@ -361,7 +360,7 @@ caseF1() {
   assert_json "F1h3 pattern list has 23 entries (8 spec + 8 amended + 7 spec 014)" "$out2" "j.count" "23"
   assert_json "F1h4 ReDoS probe: worst pattern × adversarial input (incl. 300 000-char abc://, min of 3 runs) stays under 1 s" "$out2" "j.worst < 1000 ? 'ok' : 'slow ' + j.worstName + ' ' + j.worst + 'ms'" "ok"
   assert_json "F1i INSTRUCTION_MARKERS carry the multi-word markers" "$out" "j.markers" "true"
-  assert_json "F1j GATE_ID_LIST is the three registered ids (spec 016 wave 10 adds pr-diff-xprov)" "$out" "j.gates" "$GATE_PLAN,$GATE_WAVE,pr-diff-xprov"
+  assert_json "F1j GATE_ID_LIST is the plan and the design review gate; the retired PR diff and wave gate ids are not gates (spec 025 W3/W4/W5)" "$out" "j.gates" "plan-review-xprov,design-review-xprov"
   assert_json "F1k codexHome() honours A1_XPROV_CODEX_HOME and defaults to .codex-a1-review" "$out" "j.home" "/x/override .codex-a1-review"
 
   # Samuel's Wave 1 review (MINOR 1): the override must be absolute, is

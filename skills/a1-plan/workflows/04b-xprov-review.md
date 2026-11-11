@@ -29,12 +29,12 @@ driver never does (the flip changes one registry cell and no code).
   in `xreview/index.json`; a1-execute's Load check compares against it).
 - `<repo>` — the a1-specforge checkout that owns `_shared/a1-tools.cjs`.
 
-## Step 1.0 — Consent and placement (spec 016)
+## Step 1.0 — Consent (spec 016)
 
 The owner's chat consent is the permit (spec 016 FR-002). It is asked at most
 once per phase, only here (never in a1-execute `01-load.md` Step 0c or
 `03-verify.md`), and only when a question can reach the owner. Order (plan
-decision D-1): permit-check, then the gate, then the question, then the gate.
+decision D-1; spec 025): permit-check, then the gate, then the question, then the gate.
 
 1. **Permit state.** Capture it, then read `state`:
    ```bash
@@ -53,10 +53,7 @@ decision D-1): permit-check, then the gate, then the question, then the gate.
    When `permit_state` is `origin_changed` or `unbound_legacy`, the permit is void,
    not absent: print `ℹ Codex review skipped: permit void (<permit_state>) — the owner should re-consent; Reinhard-only.`
    and name the state in the retro, so the lower review level is never silent.
-   **Placement first (spec 016 FR-019, plan decision D-1).** The same call returns `not_applicable` with
-   `reason: scope_exempt` when the spec named by PLAN.md is not size L and the files the plan names are no
-   security surface. That is not a missing permit: no question is asked, nothing is written.
-3. **Ask once.** Only after the gate call returned `reason: external_review_not_permitted` (never after `scope_exempt`),
+3. **Ask once.** Only after the gate call returned `reason: external_review_not_permitted`
    and only if this session can ask the owner (the AskUserQuestion tool
    exists; this is not a headless run, a CI run or a subagent) and this phase has
    not asked yet, print the canonical question — never write it yourself:
@@ -118,6 +115,55 @@ The driver has already appended verdict, XREVIEW.md path and result path to
 `.a1/phases/<phase_name>/PLAN-REVIEW-LOG.md` and written one observation
 (`agent: xprov-codex`, `pattern: xprov_finding`) — do not duplicate either.
 
+## Step 1b — Design review (design-review-xprov)
+
+Spec 025 FR-013. ADRs under `docs/adr/` and documents under `docs/architecture/` that PLAN.md names are
+reviewed by Codex, one file per gate call, after Step 1 has routed (any outcome except a halt). A code path
+never goes into this loop. Registry row `design-review-xprov` (enforcement `warning`). The Step 1.0 consent
+rules apply as they are; no question is asked here.
+
+```bash
+XREVIEW_DIR=".a1/phases/<phase_name>/xreview"
+mkdir -p "$XREVIEW_DIR"
+TARGETS_JSON="$XREVIEW_DIR/design-targets.last-run.json"
+TARGETS_LIST="$XREVIEW_DIR/design-targets.list"
+node <repo>/_shared/a1-tools.cjs xprov design-targets --phase <phase_name> --plan .a1/phases/<phase_name>/PLAN.md > "$TARGETS_JSON"; RC=$?
+echo "xprov design-targets exit=$RC"
+if [ $RC -ne 0 ]; then echo "STOP: design-targets usage error, fix the call"; exit "$RC"; fi
+node -e 'for (const t of JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).targets) console.log(t)' "$TARGETS_JSON" > "$TARGETS_LIST"
+```
+
+`targets` lists only the design files PLAN.md names that have no pass on their current body; `skipped[]`
+(path and reason) is informational. An empty list means nothing to review: skip the rest of this step. Per
+listed file, one call:
+
+```bash
+while IFS= read -r f; do
+  OUT="$XREVIEW_DIR/design-review-$(printf '%s' "$f" | tr '/' '_').last-run.json"
+  node <repo>/_shared/a1-tools.cjs xprov gate --gate design-review-xprov --phase <phase_name> --doc "$f" > "$OUT"; RC=$?
+  echo "xprov gate design-review-xprov $f exit=$RC"
+  if [ $RC -eq 2 ]; then echo "STOP: usage error for $f, fix the call (not a review result)"; exit 2; fi
+done < "$TARGETS_LIST"
+```
+
+Only exit 2 stops (both blocks `exit` on it; a non-zero exit of a block means stop, fix the call). Route each file by its stdout JSON (`verdict`, `reason`):
+
+| `verdict` | Action |
+|---|---|
+| `pass` | Continue. |
+| `fail` / `fail-with-findings` | Print the warning block below for that file and continue (the row is `warning`). No revision round for design files; list the findings with the plan summary. |
+| `not_applicable` (`external_review_not_permitted`, `external_review_denied`, `codex_unavailable`, `codex_blocked_fallback`) | Print one line: `ℹ Design review not applicable for <file> — <reason> (gate design-review-xprov); Reinhard-only, continuing.` Continue. A secret hit in a design file is not a `not_applicable` row: `design-review-xprov` has no dispose round (`dispose` accepts only `plan-review-xprov`), so the run ends `fail` with reason `secret_in_snapshot`, which is the warning row above. |
+
+```
+⚠ Design review did not pass (gate design-review-xprov, enforcement: warning)
+   file:     <file>
+   reason:   <reason>
+   details:  <xreview_path>
+```
+
+Retro: one `gates_fired` line per file, `{id: design-review-xprov, verdict: <pass|fail|not_applicable>, caught: <true if a
+finding changed the design file>}`; for `not_applicable` add `xprov_not_applicable` to `issues` and name the reason.
+
 ## Step 2 — Route by `verdict` and `enforcement`
 
 | `verdict` | `enforcement` | Action |
@@ -126,15 +172,15 @@ The driver has already appended verdict, XREVIEW.md path and result path to
 | `fail-with-findings` | any | REVISE — go to Step 3 (one revision round, then Step 4). |
 | `not_applicable` (exit 1, `reason: external_review_denied`) | any | The owner recorded that no external review applies to this repository (a chat No or `xprov permit --deny`, confirmed by the owner's store). **Continue — do not halt.** Print the one-line notice below and treat the plan as ready; no Codex call happened. The retro records `verdict: not_applicable` and the issue tag `xprov_not_applicable`. A record the owner's store does not confirm (`external_review_denial_mismatch`, `external_review_permit_mismatch`) is a `fail`, not this row. |
 | `not_applicable` (exit 1, `reason: external_review_not_permitted`) | any | The repository has no permit and the owner gave none (never asked, No, unanswered, or no chat: Step 1.0). **Continue — do not halt.** Print the no-permit notice below and treat the plan as ready with the Reinhard review only; no Codex call happened. The retro records `verdict: not_applicable` and the issue tag `xprov_not_applicable`. |
-| `not_applicable` (exit 1, `reason: scope_exempt`) | any | The placement rule says the plan review does not apply (spec size not L, no security surface in the files the plan names). **Continue — do not halt.** Print the scope notice below and treat the plan as ready with the Reinhard review only; no consent question is asked, no Codex call happened, nothing was written. The retro records `verdict: not_applicable` with the reason `scope_exempt` and the issue tag `xprov_not_applicable`. |
 | `not_applicable` (exit 1, `reason: codex_blocked_fallback`) | any | Codex answered BLOCKED twice (the gate repeated the run once by itself, spec 016 FR-026). **Continue — do not halt.** Print the blocked notice below: the Reinhard review is the only review for this plan. No consent question is asked. `xprov load-check` accepts it (`accepted: "codex_blocked_fallback"`) for this PLAN.md sha. The retro records `verdict: not_applicable` with the reason `codex_blocked_fallback` and the issue tag `xprov_not_applicable`. |
+| `not_applicable` (exit 1, `reason: codex_unavailable`) | any | The Codex run itself failed — usage limit, transport error or timeout, after the gate's bounded retries (spec 025 FR-019). **Continue — do not halt, no waiver, no owner question.** Print the unavailable notice below: the Claude-only review (Reinhard; Samuel when the security surface is touched) is the review for this plan. `xprov load-check` accepts it (`accepted: "codex_unavailable"`) for this PLAN.md sha. The retro records `{id: plan-review-xprov, verdict: not_applicable, caught: false}` with the reason `codex_unavailable` and the issue tag `xprov_not_applicable`. A model pin conflict or an effort value the Codex CLI rejects is **not** this row: it stays `fail` / `preflight_failed` (the isolated config pins only `model`; remove a foreign `model_reasoning_effort` from it); so do `tripwire`, `secret_in_snapshot` and every other preflight failure. |
 | `not_applicable` (exit 1, `reason: secret_declined`) | any | A secret hit sat in a changed line and the owner declined the allowlist question (or gave no answer, or there is no chat; Step 5.4). **Continue — do not halt.** Reinhard is the only review; nothing was sent. `xprov load-check` accepts it (`accepted: "secret_declined"`). The retro records `verdict: not_applicable` with the reason `secret_declined` and the issue tag `xprov_not_applicable`. |
 | `fail` (any `reason`) | `warning` | Print the warning block below, then treat the plan as ready **with the warning attached** to the summary. The retro records `verdict: fail`. |
 | `fail` (any `reason`) | `blocking` | **HALT.** Print the block below as an error; do not suggest `a1-execute`. Surface the `reason` and the two ways out: fix the cause (e.g. `preflight_failed`, `not_logged_in`, `external_review_permit_mismatch`) and re-run Step 1, or an owner waiver by chat (Step 5). |
 
 Notice for `not_applicable` (one line): `ℹ Cross-provider plan review not applicable — the owner denied external review for this repository (gate plan-review-xprov); continuing.`
 For `codex_blocked_fallback`: `ℹ Cross-provider plan review not applicable — Codex answered BLOCKED twice (gate plan-review-xprov); the Reinhard review is the only review for this plan, continuing.`
-For `scope_exempt`: `ℹ Cross-provider plan review not applicable — scope_exempt: spec is not size L and the plan names no security surface (gate plan-review-xprov); Reinhard-only, continuing.`
+For `codex_unavailable`: `ℹ Cross-provider plan review not applicable — the Codex run failed (usage limit or runner error; gate plan-review-xprov); the Claude-only review is the review for this plan, continuing.`
 For `external_review_not_permitted`: `ℹ Cross-provider plan review not applicable — no Codex permit for this repository (gate plan-review-xprov); Reinhard-only, continuing.`
 For `permit_state` `origin_changed` or `unbound_legacy`: `ℹ Codex review skipped: permit void (<permit_state>) — the owner should re-consent; Reinhard-only, continuing.`
 
@@ -220,7 +266,7 @@ gates_fired:
 
 `verdict: fail` for every non-pass outcome except `not_applicable`, including `round_cap` and a
 `warning`-enforced continue. For `not_applicable` write `verdict: not_applicable, caught: false`
-and add `xprov_not_applicable` to `issues`. If the round cap was closed by `xprov dispose`, keep `verdict: fail` and add `xprov_disposed`. If a waiver exists for this gate (Step 5), add
+and add `xprov_not_applicable` to `issues`; name the gate's `reason` (e.g. `codex_unavailable`, spec 025 FR-019) in the retro text so a quota outage never looks like a denied or unpermitted repository. If the round cap was closed by `xprov dispose`, keep `verdict: fail` and add `xprov_disposed`. If a waiver exists for this gate (Step 5), add
 `xprov_waived` to `issues` — the base field of `_shared/retro-template.md`
 (a1-execute uses its own `issue_classes` instead; a1-evolve reads both).
 Validate with `retro validate` before appending, as `04-audit.md` describes.
@@ -269,7 +315,7 @@ owner sees.
    `xprov consent allowlist --scan <snap-basename>` after the answer. No, no
    answer or no chat: nothing is approved and nothing goes to Codex. Close the target with
    `xprov dispose --phase <phase_name> --gate plan-review-xprov --secret-declined <snap-basename>`
-   (wave gate: `--wave <N> --work-path <dir> --base <sha>` too). a1 checks that the scan record for this repo and this exact HEAD exists and writes
+   a1 checks that the scan record for this repo and this exact HEAD exists and writes
    the marker; the target ends `not_applicable` / `secret_declined` and the Reinhard review is the only review.
 5. **Headless or no AskUserQuestion:** no question. The gate stays failed; halt per Step 2.
 6. The terminal commands (`xprov waive`, `xprov permit`, `xprov allowlist approve`)
@@ -291,10 +337,7 @@ owner sees.
 - **Delta review and exclusion (spec 016 FR-029, FR-030).** After a PASSED plan review a changed PLAN.md goes out as a delta: frontmatter, Goal,
   Success Criteria and the changed sections (a1 keeps the approved text as `a1-plan.md` in the pass run dir; without it the review is full). A
   whitespace- or heading-only edit sends nothing: the gate returns `pass` with `delta.kind: cosmetic` and `load-check` reports `carried_from`.
-  In a wave inspection a secret hit in a file the diff does not change is excluded and listed in the result (`excluded`: path and rule id) and in
-  XREVIEW.md; read that list, the reviewer did not see those files. A hit in a changed file stays a stop.
-- **Multi-lane plans.** One review of the whole PLAN.md; lanes are inspected
-  per wave by `wave-inspect-xprov` in a1-execute, not here.
+- **Multi-lane plans.** One review of the whole PLAN.md.
 - **Self-recovery (spec 016 FR-024..028, FR-031).** The gate repairs four failures by itself and says so in `recovery` (stdout) and in the
   log entry of `PLAN-REVIEW-LOG.md`: a `runner_failed` caused by network, timeout or an HTTP 5xx answer is retried twice (30 s, then 120 s;
   every attempt is listed); a `blocked` answer is repeated once, and a second one ends as `not_applicable` / `codex_blocked_fallback`; a
