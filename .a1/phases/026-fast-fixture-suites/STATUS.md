@@ -217,3 +217,15 @@ Runtime of the suite about 61 s (part 08 adds about 25 s; budget was 60 s, watch
 | pid read through a symlink | S5a, S5b |
 Not provable here: refusal of foreign-owned base/guard/lock (`-O`, needs a second user); the 32-byte bound itself (no observable difference);
 the TOCTOU windows (narrowed by owner check + `cd`/`pwd -P`, not removable in shell).
+
+## Wave 4 — Subset runs, real-store guard, failure fixture, I1 handshake, worker locale (Tasks 4.1 and 4.2 done, 2026-11-11, aiserver)
+
+Agents: 4.1 Walter, 4.2 Walter, security fixes Walter; review Samuel. Scope addition FR-027 (worker `LC_ALL=C`, decided by Robert 2026-11-11).
+gate0: runner subset `a1-suite-runner a1-vault-cockpit a1-gates-lint a1-vault-fallback a1-tmp-hygiene` → 5 of 6 PASS; a1-gates-lint FAIL only `N1 README says '57', real count 58` (this branch adds a1-suite-runner/run-tests.sh; README count fixed in wave 5)
+gate0: after security fixes, runner (LC_ALL=C) → a1-suite-runner 350/0, a1-vault-cockpit 881/0 in 23 s (I1 delegates via the handshake instead of re-running every suite)
+gate0: red-first 4.1 → runner suite 330 passed / 14 failed before the runner change; mutations U1–U6, V1, V2, V4, F1, F2, F4–F6, U8 (FR-027) each flip their cases; no dedicated mutation for U7 (dedupe), F3 (table rows) and V3 (sentinel vault) — covered indirectly
+gate0: security review (Samuel) → 0 BLOCKER, 0 MAJOR, 2 MINOR: SEC-1 marker forgeable by any live process named run-suites.sh (holder PID not bound to the I1 process) → fixed: holder must be an ancestor (PPID walk, 64 steps), decoy case in 04d, RED proof (ancestor check removed → decoy case 3 FAIL); SEC-2 real vault never listed → fixed: read-only name listing + digest of `$A1_SUITE_REAL_VAULT` before/after, skip line when absent, V6 self-proof; NOTE: workers see the real-vault path (by spec, nothing reads it)
+gate0: selector parsing (Samuel) → PASS: exact string match against discovered ids, `../x`, absolute paths and globs exit 2 before lock/work/log dirs exist
+gate0: a1-vault-cockpit run directly under LC_ALL=en_US.UTF-8 aborts at parts/05b-writer.sh:247 (`H_LOCKS: unbound variable`) because the parts glob orders 05b-writer.sh before 05-hosts.sh; under LC_ALL=C (CI, runner via FR-027) the order is right and the suite is green; same on a clean `git archive HEAD` → not caused by this wave
+gate0: flake noted → K10/X8 (parts/06, 07) compare the real per-uid lock dir and fail while another real runner run is active
+gate2: SKIPPED preview deploy (test tooling, no web app)

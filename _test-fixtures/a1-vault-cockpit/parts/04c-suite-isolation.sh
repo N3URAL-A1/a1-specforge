@@ -39,6 +39,49 @@
 # exits 1, e.g. B1 on ubuntu, turns nothing red); I2 — dropping the
 # a1-reconcile restore (its 2 fixture files stay modified after the arm).
 
+# Spec 026 FR-023 (handshake): when the fixture-suite runner started this suite it exports
+# A1_SUITE_RUN_MARKER="<lock dir>/run_id:<run id>". I1 then skips its re-run of every other
+# suite AND the I2 restore (the runner does both once, FR-021) and prints one `ok` line — but only
+# when ALL hold: the named file is a regular user-owned file, it holds the same run id, and the
+# holder PID in the sibling `pid` file is alive AND its command line contains run-suites.sh
+# (rs_lock_is_runner, sourced from bin/run-suites-proc.sh, so the two checks cannot drift). Any
+# other state — absent, stale PID, other process, other run id — runs I1 and I2 as before (04d).
+# Security review MINOR (SEC-1): the command-line check alone is forgeable (any process named
+# *run-suites.sh* plus a planted marker file), so the holder PID must also be an ANCESTOR of this
+# process (PPID chain via `ps -o ppid= -p`, portable). A decoy that did not start us is no ancestor.
+# Red-making changes: dropping the rs_lock_is_runner call (stale and unrelated-process cases skip),
+# dropping the run-id comparison (mismatch case skips), dropping the early return before I2
+# (valid case still prints I2), or dropping the i_is_ancestor call (decoy-not-ancestor case skips).
+I_PROC_LIB="$REPO_ROOT/bin/run-suites-proc.sh"
+
+# i_is_ancestor <pid> — rc 0 when <pid> is a (transitive) parent of this process.
+i_is_ancestor() {
+  local want="$1" p="${BASHPID:-$$}" n=0
+  case "$want" in ''|*[!0-9]*) return 1 ;; esac
+  while [[ -n "$p" && "$p" -gt 1 && $n -lt 64 ]]; do
+    p="$(ps -o ppid= -p "$p" 2>/dev/null | tr -d '[:space:]')"
+    [[ "$p" == "$want" ]] && return 0
+    n=$((n + 1))
+  done
+  return 1
+}
+
+# i_marker_run_id — prints the run id when A1_SUITE_RUN_MARKER names a live runner's lock; else nothing, rc 1.
+i_marker_run_id() {
+  local m="${A1_SUITE_RUN_MARKER:-}" file id held dir pid
+  [[ -n "$m" && "$m" == *:* ]] || return 1
+  file="${m%:*}"; id="${m##*:}"
+  [[ -n "$id" && "$file" == /* && -f "$file" && ! -L "$file" && -O "$file" ]] || return 1
+  held="$(head -c 64 "$file" 2>/dev/null | head -n 1)"
+  [[ "$held" == "$id" ]] || return 1
+  dir="${file%/*}"
+  [[ -f "$dir/pid" && ! -L "$dir/pid" && -O "$dir/pid" && -f "$I_PROC_LIB" ]] || return 1
+  pid="$(head -c 32 "$dir/pid" 2>/dev/null | head -n 1)"
+  ( . "$I_PROC_LIB" && rs_lock_is_runner "$pid" ) || return 1
+  i_is_ancestor "$pid" || return 1
+  printf '%s\n' "$id"
+}
+
 I_OWN_SUITE="a1-vault-cockpit"
 I_RESTORE_REL="_test-fixtures/a1-reconcile/"
 
@@ -52,7 +95,11 @@ i_suites() {
 }
 
 caseI1() {
-  local s sentinel home childlog leaked rc n=0 t0=$SECONDS restore=""
+  local s sentinel home childlog leaked rc n=0 t0=$SECONDS restore="" run_id
+  if run_id="$(i_marker_run_id)"; then
+    ok "I1 run $run_id: leak check delegated to the runner"
+    return 0
+  fi
   if git -C "$REPO_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
      && git -C "$REPO_ROOT" diff --quiet -- "$I_RESTORE_REL" 2>/dev/null; then restore=yes; fi
   while IFS= read -r s; do

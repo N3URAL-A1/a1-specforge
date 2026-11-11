@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # bin/run-suites.sh — parallel runner for the fixture suites (spec 026-fast-fixture-suites).
 #
-#   bash bin/run-suites.sh [--workers N] [--root <repo root>]
+#   bash bin/run-suites.sh [--workers N] [--root <repo root>] [<selector>...]
 #
-# Runs every discovered suite exactly once (glob _test-fixtures/*/run*.sh plus
+# A selector with "/" is a suite identity (e.g. a1-intent/run-tests.sh); one without is a directory under
+# _test-fixtures/ (selects every discovered runner in it). A selector that selects nothing exits 2 before
+# the lock, the work dir, the log dir and any suite exist. Without selectors: full run.
+# Runs every selected suite exactly once (glob _test-fixtures/*/run*.sh plus
 # _test-fixtures/a1-schema-check/parser/run-parser.sh) in a bounded, longest-first worker pool, each
 # under an isolated environment (own empty sentinel A1_VAULT_ROOT, own fresh HOME, A1_HOST_ID=leak,
 # A1_VAULT_WRITER_HOST unset). Suites under "serial" in _test-fixtures/suite-groups.json run one at a
@@ -38,6 +41,8 @@ RS_TIMING_LINES=""
 RS_RECON_MODE="none"
 RS_DISCOVERED=()
 RS_N_DISCOVERED=0
+RS_SELECTORS=()
+RS_SUBSET=0
 
 rs_die() { echo "run-suites: $*" >&2; exit 2; }
 
@@ -131,6 +136,40 @@ rs_discover() {
     RS_DISCOVERED[$RS_N_DISCOVERED]="$id"
     RS_N_DISCOVERED=$((RS_N_DISCOVERED + 1))
   done <<< "$sorted"
+}
+
+# rs_select — narrows RS_DISCOVERED to the suites picked by RS_SELECTORS (no-op for a full run). Runs before
+# the lock, work dir and log dir, so a selector that selects nothing exits 2 with nothing left behind.
+rs_select() {
+  local s id i picked="" kept=() n=0
+  [ "${#RS_SELECTORS[@]}" -gt 0 ] || return 0
+  for s in "${RS_SELECTORS[@]}"; do
+    [ -n "$s" ] || rs_die "empty selector argument; nothing selected, no suite started"
+    i=0; n=0
+    while [ "$i" -lt "$RS_N_DISCOVERED" ]; do
+      id="${RS_DISCOVERED[$i]}"
+      case "$s" in
+        */*) [ "$id" = "$s" ] && n=$((n + 1)) && picked="$picked$id"$'\n' ;;
+        *) [ "${id%%/*}" = "$s" ] && n=$((n + 1)) && picked="$picked$id"$'\n' ;;
+      esac
+      i=$((i + 1))
+    done
+    if [ "$n" -eq 0 ]; then
+      rs_die "selector '$s' matches no discovered suite (identity: <dir>/<runner>, or a directory under _test-fixtures/); no suite started"
+    fi
+  done
+  i=0
+  while [ "$i" -lt "$RS_N_DISCOVERED" ]; do
+    id="${RS_DISCOVERED[$i]}"
+    if [[ "$picked" == *"$id"$'\n'* ]]; then
+      # exact line match: a name that is a suffix of another identity must not count
+      if printf '%s' "$picked" | grep -qxF -- "$id"; then kept[${#kept[@]}]="$id"; fi
+    fi
+    i=$((i + 1))
+  done
+  RS_DISCOVERED=("${kept[@]}")
+  RS_N_DISCOVERED="${#kept[@]}"
+  RS_SUBSET=1
 }
 
 # rs_timing_of <id> — reference seconds, or the "unknown" key (unknown suites start first).
@@ -287,8 +326,9 @@ rs_main() {
       --workers) [ $# -ge 2 ] || rs_die "--workers needs a value"; workers="$2"; shift 2 ;;
       --workers=*) workers="${1#--workers=}"; shift ;;
       --root) [ $# -ge 2 ] || rs_die "--root needs a directory"; RS_ROOT="$2"; shift 2 ;;
-      -h|--help) sed -n '2,15p' "$RS_SELF"; exit 0 ;;
-      *) rs_die "unknown argument: $1" ;;
+      -h|--help) sed -n '2,19p' "$RS_SELF"; exit 0 ;;
+      -*) rs_die "unknown argument: $1" ;;
+      *) RS_SELECTORS[${#RS_SELECTORS[@]}]="$1"; shift ;;
     esac
   done
   if [ -z "$workers" ]; then workers="${A1_SUITE_WORKERS:-}"; fi
@@ -304,6 +344,12 @@ rs_main() {
   rs_load_groups
   rs_discover
   [ "$RS_N_DISCOVERED" -gt 0 ] || rs_die "no suites discovered under $RS_ROOT/_test-fixtures"
+  rs_select
+
+  # The runner's own outer vault, kept for the real-store guard; set before any per-worker env is built.
+  if [ -n "${A1_VAULT_ROOT:-}" ]; then export A1_SUITE_REAL_VAULT="$A1_VAULT_ROOT"; else unset A1_SUITE_REAL_VAULT; fi
+  # FR-027: every worker collates, sorts and globs like CI (C locale), whatever the machine's locale is.
+  export LC_ALL=C
 
   rs_lock_acquire || exit 2
   trap rs_cleanup EXIT
@@ -316,7 +362,13 @@ rs_main() {
   rs_export_marker
 
   echo "log dir: $RS_LOGDIR"
-  echo "full run"
+  if [ "$RS_SUBSET" -eq 1 ]; then
+    i=0; id=""
+    while [ "$i" -lt "$RS_N_DISCOVERED" ]; do id="$id${id:+ }${RS_DISCOVERED[$i]}"; i=$((i + 1)); done
+    echo "subset run: $id"
+  else
+    echo "full run"
+  fi
   echo "workers: $workers"
   echo "discovered $RS_N_DISCOVERED suites"
   i=0
