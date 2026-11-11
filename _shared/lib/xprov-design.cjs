@@ -10,6 +10,9 @@
 //   findPass(root, doc, hash) a valid pass of exactly this doc body in ANY phase's xreview/index.json (read-only), or null
 //   docScope(rel)             the file-name scope of a doc's findings files (`design-<slug>-<8 hex>`)
 //   pathsIn(text)             backtick-quoted path candidates (moved verbatim out of the deleted xprov-placement.cjs in W4)
+//   designTargets(root, o)    W7 selection: the design files a review still owes — plan mode (named in PLAN.md) or base mode (changed in a
+//                             range), minus those with a recorded pass on the current body → { targets, skipped }
+//   cmdXprovDesignTargets     `xprov design-targets` (not a gate: no registry row, read-only)
 //
 // Pure apart from the reads named above; request-scoped, no module-level state.
 // ---------------------------------------------------------------------------
@@ -136,4 +139,84 @@ function pathsIn(text) {
   return [...out];
 }
 
-module.exports = { DESIGN_FILE_GLOBS, stripFrontmatter, bodyHash, resolveDoc, docScope, findPass, pathsIn };
+const MAX_CANDIDATES = 500; // design-file candidates one call looks at
+const MAX_PLAN_BYTES = 4 * 1024 * 1024;
+const MAX_DIFF_PATHS = 20000;
+const REV_RE = /^(?:[0-9a-fA-F]{4,64}|HEAD)$/; // a commit sha or HEAD: never option-shaped (git would take `--output=<file>` as an option)
+
+/** Plan mode candidates: the path tokens PLAN.md names. Nothing else — never a scan of docs/adr/. */
+function planCandidates(planText) {
+  return pathsIn(planText);
+}
+
+/** Base mode candidates: the paths `git diff --name-only <base> <head>` reports (argv array, no shell). */
+function rangeCandidates(root, base, head) {
+  for (const [flag, rev] of [['--base', base], ['--head', head]]) {
+    if (!REV_RE.test(String(rev))) throw C.inputError(`${flag} must be a commit sha (4-64 hex digits) or HEAD, got ${JSON.stringify(C.clip(rev, 80))}`, 'bad_rev');
+  }
+  const r = C.gitSpawn(['-C', root, 'diff', '--name-only', '-z', '--no-renames', '--no-ext-diff', base, head, '--'], { env: C.pinnedGitEnv(null) });
+  if (r.status !== 0) throw C.inputError(`git diff ${C.clip(base, 20)} ${C.clip(head, 20)} failed: ${C.clip(r.stderr, 200)}`, 'diff_failed');
+  const names = r.stdout.split('\0').filter((n) => n !== '');
+  if (names.length > MAX_DIFF_PATHS) throw C.inputError(`more than ${MAX_DIFF_PATHS} changed paths`, 'too_many_paths');
+  return names;
+}
+
+/**
+ * The design files a review still owes. `candidates` are repo-relative path strings; only those matching DESIGN_FILE_GLOBS are looked at
+ * (code and hostile tokens are never mentioned). Each is validated like `gate --doc` (realpath inside the repo and the globs) and deduplicated by
+ * its realpath-relative form; one with a pass on the current body hash is skipped. → { targets: [rel…], skipped: [{path, reason}] }.
+ */
+function designTargets(root, candidates) {
+  const wanted = candidates.filter(inGlobs);
+  if (wanted.length > MAX_CANDIDATES) throw C.inputError(`more than ${MAX_CANDIDATES} design-file candidates`, 'too_many_paths');
+  const targets = [];
+  const skipped = [];
+  const seen = new Set();
+  for (const cand of wanted) {
+    let doc;
+    try { doc = resolveDoc(root, cand); } catch (e) {
+      if (e && e.code === 'A1_INPUT') { skipped.push(Object.freeze({ path: cand, reason: 'invalid_doc' })); continue; }
+      throw e;
+    }
+    if (seen.has(doc.rel)) continue;
+    seen.add(doc.rel);
+    if (findPass(root, doc.rel, bodyHash(doc.bytes.toString('utf8'))) !== null) skipped.push(Object.freeze({ path: doc.rel, reason: 'pass_recorded' }));
+    else targets.push(doc.rel);
+  }
+  return Object.freeze({ targets, skipped });
+}
+
+function selectionMode(f) {
+  const plan = f.plan !== undefined;
+  const range = f.base !== undefined;
+  if (plan === range) throw C.inputError('design-targets requires exactly one of --plan <PLAN.md> or --base <sha> [--head <sha>]', 'bad_mode');
+  if (plan && f.head !== undefined) throw C.inputError('--head belongs to --base mode', 'bad_mode');
+  return plan ? 'plan' : 'range';
+}
+
+/** `xprov design-targets --phase <p> (--plan <PLAN.md> | --base <sha> [--head <sha>])` — stdout JSON {targets, skipped}, exit 0; usage errors exit 2. */
+function cmdXprovDesignTargets(args) {
+  const { parseFlags, repoRoot, assertSafeSegment } = require('./io.cjs');
+  try {
+    const f = parseFlags(args || [], { phase: 'str', plan: 'str', base: 'str', head: 'str' });
+    if (f._.length) throw C.inputError(`unexpected argument ${JSON.stringify(C.clip(f._[0], 80))}`);
+    if (typeof f.phase !== 'string' || f.phase === '') throw C.inputError('design-targets requires --phase <name>');
+    C.rejectReservedPhase(assertSafeSegment(f.phase, '--phase'));
+    const mode = selectionMode(f);
+    const root = repoRoot();
+    let candidates;
+    if (mode === 'plan') {
+      const bytes = typeof f.plan === 'string' && f.plan !== '' ? C.readNoFollow(path.resolve(f.plan), MAX_PLAN_BYTES) : null;
+      if (bytes === null) throw C.inputError(`--plan is not a readable regular file of at most ${MAX_PLAN_BYTES} bytes: ${JSON.stringify(C.clip(f.plan, 120))}`);
+      candidates = planCandidates(bytes.toString('utf8'));
+    } else {
+      candidates = rangeCandidates(root, f.base, f.head === undefined ? 'HEAD' : f.head);
+    }
+    return C.emitJson(designTargets(root, candidates), X.EXIT_PASS, true);
+  } catch (e) {
+    if (e && e.code === 'A1_INPUT') return C.usageExit('design-targets', e.message);
+    throw e;
+  }
+}
+
+module.exports = { DESIGN_FILE_GLOBS, stripFrontmatter, bodyHash, resolveDoc, docScope, findPass, pathsIn, designTargets, cmdXprovDesignTargets };

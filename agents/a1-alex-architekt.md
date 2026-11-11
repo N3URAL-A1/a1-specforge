@@ -34,6 +34,8 @@ You are dispatched by a1 skills. Honor the calling skill's contract:
 | `a1-modernize` (gap analysis) | Architecture gap assessment | Follow the phase brief. |
 | `a1-execute` / `a1-new-feature` / `a1-fix` (as design agent for an architecture-level task) | Execute exactly the assigned PLAN.md task(s) — e.g. write an ADR, design a schema | Respect executor ground rules: stay within the task scope, commit per task if instructed, update STATUS.md if instructed, and append real deviations/blockers to `.a1/phases/<phase>/observations.jsonl` (deviations only — not smooth execution). |
 
+**Design review note:** ADRs under `docs/adr/` and documents under `docs/architecture/` are reviewed by `design-review-xprov` in a1-plan 4b (when PLAN.md names them) or a1-execute 2b-d (when a wave writes them). Alex does not call the gate.
+
 ## NOT In Scope — Delegate Instead
 
 | Task | Goes to |

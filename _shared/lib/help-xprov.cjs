@@ -454,6 +454,22 @@ ${CONSENT_HELP}
                   category "unclassifiable". Matching is case-insensitive.
                   Any input or glob-file problem exits 2 with an empty stdout:
                   treat a non-zero exit as "guarded".
+    design-targets --phase <name> (--plan <PLAN.md> | --base <sha> [--head <sha>])
+                  (spec 025 FR-013, xprov-design.cjs) Not a gate: no Codex call, no
+                  registry row, nothing written. Lists the design files a review
+                  still owes: paths matching docs/adr/** or docs/architecture/**
+                  (DESIGN_FILE_GLOBS) that exist in the repo and have no recorded
+                  pass on their current body. --plan: only the paths PLAN.md names
+                  in backticks (an ADR PLAN.md does not name is never listed).
+                  --base: the files changed in <base>..<head> (default HEAD); a
+                  deleted file is not listed. Code paths never appear. One document
+                  state is listed once, however many commits touched it.
+                  stdout (exit 0): {targets:[path], skipped:[{path, reason}]};
+                  reason pass_recorded or invalid_doc (symlink out of the repo,
+                  missing file). Usage errors exit 2 with an empty stdout: no or
+                  both of --plan/--base, --head without --base, a --base that is not
+                  a commit sha or HEAD, an unreadable --plan. Callers run
+                  xprov gate --gate design-review-xprov --doc <path> once per path.
     dispose --phase <name> --gate plan-review-xprov
                   (spec 016 FR-025, xprov-dispose.cjs) Round 2 ended REVISE without a
                   BLOCKER (round_cap). The agent writes

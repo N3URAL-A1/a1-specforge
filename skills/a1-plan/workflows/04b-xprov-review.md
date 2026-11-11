@@ -115,6 +115,55 @@ The driver has already appended verdict, XREVIEW.md path and result path to
 `.a1/phases/<phase_name>/PLAN-REVIEW-LOG.md` and written one observation
 (`agent: xprov-codex`, `pattern: xprov_finding`) — do not duplicate either.
 
+## Step 1b — Design review (design-review-xprov)
+
+Spec 025 FR-013. ADRs under `docs/adr/` and documents under `docs/architecture/` that PLAN.md names are
+reviewed by Codex, one file per gate call, after Step 1 has routed (any outcome except a halt). A code path
+never goes into this loop. Registry row `design-review-xprov` (enforcement `warning`). The Step 1.0 consent
+rules apply as they are; no question is asked here.
+
+```bash
+XREVIEW_DIR=".a1/phases/<phase_name>/xreview"
+mkdir -p "$XREVIEW_DIR"
+TARGETS_JSON="$XREVIEW_DIR/design-targets.last-run.json"
+TARGETS_LIST="$XREVIEW_DIR/design-targets.list"
+node <repo>/_shared/a1-tools.cjs xprov design-targets --phase <phase_name> --plan .a1/phases/<phase_name>/PLAN.md > "$TARGETS_JSON"; RC=$?
+echo "xprov design-targets exit=$RC"
+if [ $RC -ne 0 ]; then echo "STOP: design-targets usage error, fix the call"; fi
+node -e 'for (const t of JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).targets) console.log(t)' "$TARGETS_JSON" > "$TARGETS_LIST"
+```
+
+`targets` lists only the design files PLAN.md names that have no pass on their current body; `skipped[]`
+(path and reason) is informational. An empty list means nothing to review: skip the rest of this step. Per
+listed file, one call:
+
+```bash
+while IFS= read -r f; do
+  OUT="$XREVIEW_DIR/design-review-$(printf '%s' "$f" | tr '/' '_').last-run.json"
+  node <repo>/_shared/a1-tools.cjs xprov gate --gate design-review-xprov --phase <phase_name> --doc "$f" > "$OUT"; RC=$?
+  echo "xprov gate design-review-xprov $f exit=$RC"
+  if [ $RC -eq 2 ]; then echo "STOP: usage error for $f, fix the call (not a review result)"; break; fi
+done < "$TARGETS_LIST"
+```
+
+Only exit 2 stops. Route each file by its stdout JSON (`verdict`, `reason`):
+
+| `verdict` | Action |
+|---|---|
+| `pass` | Continue. |
+| `fail` / `fail-with-findings` | Print the warning block below for that file and continue (the row is `warning`). No revision round for design files; list the findings with the plan summary. |
+| `not_applicable` (`external_review_not_permitted`, `external_review_denied`, `codex_unavailable`, `codex_blocked_fallback`, `secret_declined`) | Print one line: `ℹ Design review not applicable for <file> — <reason> (gate design-review-xprov); Reinhard-only, continuing.` Continue. |
+
+```
+⚠ Design review did not pass (gate design-review-xprov, enforcement: warning)
+   file:     <file>
+   reason:   <reason>
+   details:  <xreview_path>
+```
+
+Retro: one `gates_fired` line per file, `{id: design-review-xprov, verdict: <pass|fail|not_applicable>, caught: <true if a
+finding changed the design file>}`; for `not_applicable` add `xprov_not_applicable` to `issues` and name the reason.
+
 ## Step 2 — Route by `verdict` and `enforcement`
 
 | `verdict` | `enforcement` | Action |

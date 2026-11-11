@@ -174,7 +174,13 @@ caseRQ6gate() {
   assert_json "RQ3 run-dir findings: the long item holds display_detail (480), the marker item none" "$(cat "$rd" 2>/dev/null || echo UNPARSEABLE)" \
     "j.quarantined.map((q) => q.id + ':' + q.severity + ':' + (q.display_detail ? q.display_detail.length : 'none')).join(',')" "H1:high:480,M1:high:none"
   [[ "$(cat "$rd" "$PHASE_DIR/XREVIEW.md" "$(json_get "$G_OUT" "j.findings_path")" 2>/dev/null)" != *DETAILCANARY* ]] && ok "RQ4 the marker detail is in no file (run-dir findings, XREVIEW, findings file)" || bad "RQ4 marker detail leaked into a file"
-  printf 'H1: rejected — fixture\n' > "$(json_get "$G_OUT" "j.next.dispositions_path")"
+  # the write target comes from parsed output: refuse an empty, UNPARSEABLE/undefined or out-of-temp-dir value instead of writing into the cwd
+  local disp_path; disp_path="$(json_get "$G_OUT" "j.next.dispositions_path")"
+  if [[ -n "$disp_path" && "$disp_path" != UNPARSEABLE && "$disp_path" != undefined && "$disp_path" != null && "$disp_path" == /* && "$disp_path" != *..* ]] && [[ "$(cd "$(dirname "$disp_path")" 2>/dev/null && pwd -P)" == "$(cd "$TMPDIR" && pwd -P)"/* ]]; then
+    printf 'H1: rejected — fixture\n' > "$disp_path"
+  else
+    bad "RQ4 harness: the gate output gave no usable dispositions_path under the suite temp dir (got: ${disp_path:0:80}); nothing written"
+  fi
   local prompt="$TMP19/r2-prompt.txt"; rm -f "$prompt"
   FAKE_RUNNER_PROMPT_FILE="$prompt" FAKE_RUNNER_CASE="$TMP19/m.json" gate19 --gate "$GATE_PLAN" --round 2
   local p; p="$(cat "$prompt" 2>/dev/null)"

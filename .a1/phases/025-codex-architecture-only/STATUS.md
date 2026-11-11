@@ -20,4 +20,14 @@ gate0: spec clarifications 2026-11-11 added (FR-019 outage scope; accepted risk:
 gate0: FINDING test leak → a file `UNPARSEABLE` was committed in wave 4 (`64ddcc7`); tests that take `dirname` of an unparseable JSON path write into the cwd (e.g. parts/10 line 299, parts/30 line 435) during mutation runs. Removed in this wave; root-cause guard is open (see below)
 gate2: SKIPPED preview deploy (CLI library, no web app)
 
-Open: task 6.1 (measure effort, replace placeholder and rejection fixture, re-run M9); test-leak guard (suite must refuse to write into the repo cwd).
+Open: task 6.1 (measure effort, replace placeholder and rejection fixture, re-run M9).
+
+## Wave 7 — Design review wiring and legacy state (2026-11-11, aiserver)
+
+Agents: 7.1, 7.2, 7.3 Walter in parallel (disjoint write sets).
+gate0: 7.1 `xprov design-targets` → parts/36 red first 20 passed / 22 failed, final 42/0; mutants M1 (pass filter), M2 (glob filter), M3 (rev regex), M4 (plan mode scans docs/adr), M5 (deleted file listed), M6 (dedupe) each flip
+gate0: 7.3 legacy state → parts/37 63/0; every command's exit/stdout/stderr equals the baseline without seeds, sha256 of all 6 seeded files unchanged; no reader needed a fix; mutants M1 (waiver passthrough), M2 (round counter), M4 (index writer drops unknown rows), M5 (readIndex rejects retired id) each flip
+gate0: 7.2 skill wiring → 04b Step 1b and 02-execute 2b-d call design-targets then `xprov gate --gate design-review-xprov --doc` per target; gates-lint 90/0, wave13 10/0; corpus 02-execute.md deliberately not refreshed (frozen older snapshot, refreshing it unwires the a1-execute gate pairs R1/R1b/R1c/R4b)
+gate0: full a1-xprov 4160 passed, 1 failed (CA10 locale, known); lib-units 513/0; a1-intent 12 failed vs 13 on main (environment, see wave 6); verify-install-sync PASS; workflow lint []; gates lint []; realpath-check PASS
+gate0: test-leak root cause found → parts/19-review-quality.sh:177 wrote `printf … > "$(json_get …)"`, i.e. into the cwd as UNPARSEABLE when json_get failed; guarded (target must be absolute, under the suite TMPDIR, not UNPARSEABLE/undefined/null), failure path of the guard not separately exercised; no stray file after the final runs
+gate2: SKIPPED preview deploy (CLI library, no web app)

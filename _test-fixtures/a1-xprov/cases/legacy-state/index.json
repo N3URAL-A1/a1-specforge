@@ -1,0 +1,57 @@
+[
+  {
+    "gate": "wave-inspect-xprov",
+    "wave": 3,
+    "lane": null,
+    "round": 1,
+    "verdict": "pass",
+    "reason": null,
+    "plan_sha256": "9d1f0c7a5b3e2f4a6c8d0e1b2a3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5",
+    "result_path": "/home/rob/.a1-xprov/artifacts/tmp.LEGACY3/result.json",
+    "reviewed_head": "6b5a2be0f1c3d4e5a6b7c8d9e0f1a2b3c4d5e6f7",
+    "reviewed_base": "dca8f32a1b2c3d4e5f60718293a4b5c6d7e8f901",
+    "ts": "2026-10-20T09:14:02.511Z",
+    "model_requested": "gpt-5.5",
+    "model_observed": "gpt-5.5",
+    "cli_version": "codex-cli 0.155.1"
+  },
+  {
+    "gate": "wave-inspect-xprov",
+    "wave": 4,
+    "lane": "a",
+    "attempt": 1,
+    "verdict": "fail",
+    "reason": "runner_failed",
+    "plan_sha256": "9d1f0c7a5b3e2f4a6c8d0e1b2a3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5",
+    "result_path": "/home/rob/.a1-xprov/artifacts/tmp.LEGACY4/result.json",
+    "ts": "2026-10-20T10:02:44.090Z",
+    "model_requested": "gpt-5.5",
+    "model_observed": null,
+    "cli_version": null
+  },
+  {
+    "gate": "pr-diff-xprov",
+    "wave": 0,
+    "lane": "pr0123456789ab",
+    "round": 1,
+    "verdict": "pass",
+    "reason": null,
+    "plan_sha256": "9d1f0c7a5b3e2f4a6c8d0e1b2a3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5",
+    "result_path": "/home/rob/.a1-xprov/artifacts/tmp.LEGACYPR/result.json",
+    "reviewed_head": "6b5a2be0f1c3d4e5a6b7c8d9e0f1a2b3c4d5e6f7",
+    "reviewed_base": "dca8f32a1b2c3d4e5f60718293a4b5c6d7e8f901",
+    "ts": "2026-10-21T08:30:00.000Z",
+    "model_requested": "gpt-5.5",
+    "model_observed": "gpt-5.5",
+    "cli_version": "codex-cli 0.155.1"
+  },
+  {
+    "gate": "wave-inspect-xprov",
+    "wave": 3,
+    "lane": null,
+    "waived": true,
+    "reason": "Codex quota outage",
+    "by": "robert",
+    "ts": "2026-10-20T11:00:00.000Z"
+  }
+]

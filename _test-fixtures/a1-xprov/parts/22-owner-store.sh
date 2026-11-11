@@ -289,8 +289,8 @@ caseOS8() {
     assert_rc "OS8a xprov ${sub%%:*} without its module fails closed (exit 2)" 2 "$rc"
     [[ "$out" == *"not implemented yet (planned wave $wave)"* ]] && ok "OS8a ${sub%%:*}: 'not implemented yet (planned wave $wave)'" || bad "OS8a ${sub%%:*}: $out"
   done
-  out="$(node -e 'const x = require(process.argv[1]); process.stdout.write(JSON.stringify({ s: x.SUBCOMMAND_NAMES.slice(-3), r: x.REASON_LIST.slice(-5) }));' "$XPROV_LIB")"
-  assert_json "OS8b dispatch entries consent, scope, dispose" "$out" "j.s.join(',')" "consent,scope,dispose"
+  out="$(node -e 'const x = require(process.argv[1]); process.stdout.write(JSON.stringify({ s: x.SUBCOMMAND_NAMES.slice(-4), r: x.REASON_LIST.slice(-5) }));' "$XPROV_LIB")"
+  assert_json "OS8b dispatch entries consent, scope, dispose, design-targets" "$out" "j.s.join(',')" "consent,scope,dispose,design-targets"
   assert_json "OS8b new reason codes (the last one: codex_unavailable, spec 025 W6)" "$out" "j.r.join(',')" "secret_declined,pr_anchor_unavailable,pr_base_mismatch,pr_merge_blocked,codex_unavailable"
   local help; help="$(node "$TOOLS" xprov --help 2>&1; node "$TOOLS" --help 2>&1)"
   grep -qiE 'unforgeable|tamper[- ]?proof' <<<"$help" && bad "OS8c a help text claims unforgeable/tamper-proof" || ok "OS8c no help text claims unforgeable or tamper-proof"

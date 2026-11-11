@@ -70,6 +70,8 @@ const SUBCOMMANDS = Object.freeze({
   consent: Object.freeze({ module: 'xprov-consent.cjs', fn: 'cmdXprovConsent', wave: 2 }),
   scope: Object.freeze({ module: 'xprov-scope.cjs', fn: 'cmdXprovScope', wave: 6 }),
   dispose: Object.freeze({ module: 'xprov-dispose.cjs', fn: 'cmdXprovDispose', wave: 9 }),
+  // Spec 025 (wave 7): the design files a review still owes — selection only, not a gate (no registry row).
+  'design-targets': Object.freeze({ module: 'xprov-design.cjs', fn: 'cmdXprovDesignTargets', wave: 7 }),
 });
 const SUBCOMMAND_NAMES = Object.freeze(Object.keys(SUBCOMMANDS));
 

@@ -56,6 +56,7 @@ claudex-loop runner). There is no cross-provider step on waves; the load check i
 - **Load precondition** (`workflows/01-load.md` Step 0c): `xprov load-check`
   — the current PLAN.md sha256 must match the newest `plan-review-xprov` pass
   entry from a1-plan Phase 4b. No match → `plan_review_missing`.
+- **Design files only** (`workflows/02-execute.md` 2b-d, gate `design-review-xprov`): a wave that changed an ADR or `docs/architecture/` document gets those files reviewed (`xprov design-targets --base "$PRE_WAVE_HEAD"`); never a code diff, `warning` row.
 - **Before every wave** (`workflows/02-execute.md`): `xprov load-check
   --expect-sha <sha accepted at Load>` — a PLAN.md edited mid-phase halts.
 

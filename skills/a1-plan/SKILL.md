@@ -59,6 +59,8 @@ it says `blocking`. A waiver is a human action only (see the workflow, Step 5).
 a1-execute refuses to start Wave 1 without a pass entry matching the current
 PLAN.md sha256.
 
+**Design review (Phase 4b Step 1b, gate `design-review-xprov`):** each ADR (`docs/adr/`) or architecture document (`docs/architecture/`) that PLAN.md names and that has no pass goes to Codex, one file per call (`xprov design-targets --plan`); `warning` row, never a halt.
+
 **Retro:** the run closes with a mandatory Retro after Phase 4b — see
 `workflows/04-audit.md` (owner) and `04b-xprov-review.md` Step 4 for the
 `plan-review-xprov` `gates_fired` line — feeding `a1-evolve`'s pattern clustering.

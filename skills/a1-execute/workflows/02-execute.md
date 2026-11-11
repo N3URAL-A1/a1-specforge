@@ -150,6 +150,37 @@ if [ $RC -ne 0 ]; then echo "STOP: gate-1-build red (verdict fail or no test com
 
 Multi-lane: run the block per lane with the lane's own `$WORK_PATH` and `$PRE_WAVE_HEAD`.
 
+### 2b-d. Design review (only waves that changed a design file)
+
+Spec 025 FR-013. Runs once per wave in the COMPLETE branch, after 2b-g has passed and before 2b-v. Only
+design files are reviewed: ADRs under `docs/adr/` and documents under `docs/architecture/` that the wave
+changed. A code diff is never sent. `design-targets` reads the wave diff against `"$PRE_WAVE_HEAD"` and lists
+only those design files that have no pass on their current body; an empty list means skip this block.
+
+```bash
+XREVIEW_DIR=".a1/phases/<phase_name>/xreview"
+mkdir -p "$XREVIEW_DIR"
+TARGETS_JSON="$XREVIEW_DIR/design-targets.wave.last-run.json"
+TARGETS_LIST="$XREVIEW_DIR/design-targets.wave.list"
+node <repo>/_shared/a1-tools.cjs xprov design-targets --phase <phase_name> --base "$PRE_WAVE_HEAD" > "$TARGETS_JSON"; RC=$?
+echo "xprov design-targets exit=$RC"
+if [ $RC -ne 0 ]; then echo "STOP: design-targets usage error, fix the call"; fi
+node -e 'for (const t of JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).targets) console.log(t)' "$TARGETS_JSON" > "$TARGETS_LIST"
+while IFS= read -r f; do
+  OUT="$XREVIEW_DIR/design-review-$(printf '%s' "$f" | tr '/' '_').wave.last-run.json"
+  node <repo>/_shared/a1-tools.cjs xprov gate --gate design-review-xprov --phase <phase_name> --doc "$f" > "$OUT"; RC=$?
+  echo "xprov gate design-review-xprov $f exit=$RC"
+  if [ $RC -eq 2 ]; then echo "STOP: usage error for $f, fix the call (not a review result)"; break; fi
+done < "$TARGETS_LIST"
+```
+
+Only exit 2 stops the wave. Routing per file (`verdict` in the stdout JSON): `pass` → continue; `fail` → print
+`⚠ Design review did not pass (gate design-review-xprov, enforcement: warning) — <file>: <reason>, details <xreview_path>`
+and continue (the row is `warning`); `not_applicable` (no permit, `codex_unavailable`, any other reason) → print one line
+`ℹ Design review not applicable for <file> — <reason>; Reinhard-only, continuing.` and continue. No consent question is asked
+here. Record one `gates_fired` line per file in the retro: `{id: design-review-xprov, verdict: <pass|fail|not_applicable>, caught: false}`.
+Multi-lane: run per lane with the lane's own `$PRE_WAVE_HEAD` and `$WORK_PATH`.
+
 ### 2b-v. Vault phase mirror (spec 010, FR-008)
 
 Runs once per wave in the COMPLETE branch — after 2b-g has passed and before the 2c
