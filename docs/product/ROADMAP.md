@@ -286,11 +286,11 @@ features:
   - id: 025-codex-architecture-only
     milestone: continuous
     title: "Codex (xprov) reviews only architecture plans and solution designs"
-    status: in-flight
-    stage: origin-cleanup
+    status: done
+    stage: done
     depends_on: []
     started: 2026-11-11
-    finished: null
+    finished: 2026-11-11
     spec_path: project/a1-specforge/spec/025-codex-architecture-only.md
     plan_path: project/a1-specforge/plans/025-codex-architecture-only-wave-plan.md
   - id: 026-fast-fixture-suites
@@ -389,7 +389,6 @@ None.
 
 ## Changelog
 
-- **2026-09-13** — feature '006-specforge-kritis-profile' added — new feature via `product add-feature`
 - **2026-09-13** — feature.md created for '005-vault-first-artifacts' — formal spec/plan attached via `product feature-init`
 - **2026-09-13** — feature.md created for '006-specforge-kritis-profile' — formal spec/plan attached via `product feature-init`
 - **2026-09-13** — feature '004-xs-quick-lane' added — new feature via `product add-feature`
@@ -489,6 +488,7 @@ None.
 - **2026-11-11** — 025-codex-architecture-only -> verify — stage transition via `product stage`
 - **2026-11-11** — 025-codex-architecture-only -> merge — stage transition via `product stage`
 - **2026-11-11** — 025-codex-architecture-only -> origin-cleanup — stage transition via `product stage`
+- **2026-11-11** — 025-codex-architecture-only -> done — stage transition via `product stage`
 
 ## Appendix — migrated details
 

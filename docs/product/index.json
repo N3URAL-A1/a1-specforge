@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated": "2026-11-11T21:12:25.288Z",
+  "generated": "2026-11-11T21:12:54.100Z",
   "project": {
     "id": "a1-specforge",
     "title": "a1-specforge — Roadmap",
@@ -359,11 +359,11 @@
       "id": "025-codex-architecture-only",
       "milestone": "continuous",
       "title": "Codex (xprov) reviews only architecture plans and solution designs",
-      "status": "in-flight",
-      "stage": "origin-cleanup",
+      "status": "done",
+      "stage": "done",
       "depends_on": [],
       "started": "2026-11-11",
-      "finished": null,
+      "finished": "2026-11-11",
       "spec_path": "project/a1-specforge/spec/025-codex-architecture-only.md",
       "plan_path": "project/a1-specforge/plans/025-codex-architecture-only-wave-plan.md"
     },
