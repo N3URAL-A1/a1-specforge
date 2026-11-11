@@ -93,6 +93,22 @@
       "by": "025-codex-architecture-only",
       "at": "2026-11-09T20:01:05.074Z",
       "stage": "started"
+    },
+    {
+      "type": "code_scope",
+      "paths": [
+        "bin/run-suites.sh",
+        "bin/run-suites-proc.sh",
+        "bin/run-suites-report.sh",
+        "_test-fixtures/suite-groups.json",
+        "_test-fixtures/a1-suite-runner/",
+        "_test-fixtures/a1-vault-cockpit/parts/04c-suite-isolation.sh",
+        "_test-fixtures/a1-vault-cockpit/parts/04d-runner-handshake.sh",
+        "_test-fixtures/CONVENTIONS.md"
+      ],
+      "by": "026-fast-fixture-suites",
+      "at": "2026-11-10T14:07:50.667Z",
+      "stage": "started"
     }
   ]
 }
