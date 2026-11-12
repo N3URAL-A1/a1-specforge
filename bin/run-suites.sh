@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
 # bin/run-suites.sh — parallel runner for the fixture suites (spec 026-fast-fixture-suites).
 #
-#   bash bin/run-suites.sh [--workers N] [--root <repo root>] [<selector>...]
+#   bash bin/run-suites.sh [--workers N] [--root <repo root>] [--job <name> | <selector>...]
+#   bash bin/run-suites.sh [--root <repo root>] --check-groups
 #
 # A selector with "/" is a suite identity (e.g. a1-intent/run-tests.sh); one without is a directory under
 # _test-fixtures/ (selects every discovered runner in it). A selector that selects nothing exits 2 before
 # the lock, the work dir, the log dir and any suite exist. Without selectors: full run.
+# --job <name> runs the identities listed under ci_jobs.<name> in suite-groups.json (one CI job; the name is a
+# literal in .github/workflows/test.yml); it cannot be combined with selectors. --check-groups starts nothing
+# and exits 1 naming the entry when a runner is in zero or two ci_jobs, a path listed in the declaration file
+# no longer exists, or the workflow's `run-suites.sh --job <name>` calls and ci_jobs disagree.
 # Runs every selected suite exactly once (glob _test-fixtures/*/run*.sh plus
 # _test-fixtures/a1-schema-check/parser/run-parser.sh) in a bounded, longest-first worker pool, each
 # under an isolated environment (own empty sentinel A1_VAULT_ROOT, own fresh HOME, A1_HOST_ID=leak,
@@ -38,6 +43,9 @@ RS_FAILED=0
 RS_SEQ=0
 RS_SERIAL_LIST=""
 RS_TIMING_LINES=""
+RS_JOB_LINES=""
+RS_JOB=""
+RS_CHECK_GROUPS=0
 RS_RECON_MODE="none"
 RS_DISCOVERED=()
 RS_N_DISCOVERED=0
@@ -77,7 +85,8 @@ rs_cleanup() {
 }
 
 # ---- declaration file (FR-025) ----
-# Prints S<TAB>id (serial), N<TAB>id (no_count), T<TAB>id<TAB>seconds (timings); exit 2 on any problem.
+# Prints S<TAB>id (serial), N<TAB>id (no_count), J<TAB>job<TAB>id (ci_jobs), T<TAB>id<TAB>seconds (timings);
+# exit 2 on any problem.
 rs_read_groups() {
   node -e '
 const fs = require("fs");
@@ -92,11 +101,16 @@ if (!isList(j.serial)) fail("\"serial\" must be a list of suite identities");
 if (!isList(j.no_count)) fail("\"no_count\" must be a list of suite identities");
 if (!isObj(j.ci_jobs)) fail("\"ci_jobs\" must be an object");
 if (!isObj(j.timings)) fail("\"timings\" must be an object");
+for (const k of Object.keys(j.ci_jobs)) {
+  if (!/^[A-Za-z0-9_-]+$/.test(k)) fail("ci_jobs name " + JSON.stringify(k) + " must match [A-Za-z0-9_-]+");
+  if (!isList(j.ci_jobs[k])) fail("ci_jobs." + k + " must be a list of suite identities");
+}
 const sec = j.timings.seconds === undefined ? {} : j.timings.seconds;
 if (!isObj(sec)) fail("\"timings.seconds\" must be an object");
 const out = [];
 for (const id of j.serial) out.push("S\t" + id);
 for (const id of j.no_count) out.push("N\t" + id);
+for (const k of Object.keys(j.ci_jobs)) for (const id of j.ci_jobs[k]) out.push("J\t" + k + "\t" + id);
 for (const id of Object.keys(sec)) {
   if (typeof sec[id] !== "number" || !(sec[id] >= 0)) fail("timing of " + id + " must be a number >= 0");
   out.push("T\t" + id + "\t" + Math.round(sec[id]));
@@ -114,6 +128,7 @@ rs_load_groups() {
     case "$kind" in
       S) RS_SERIAL_LIST="$RS_SERIAL_LIST$a"$'\n' ;;
       T) RS_TIMING_LINES="$RS_TIMING_LINES$a"$'\t'"$b"$'\n' ;;
+      J) RS_JOB_LINES="$RS_JOB_LINES$a"$'\t'"$b"$'\n' ;;
     esac
   done <<< "$out"
   RS_SERIAL_LIST=$'\n'"$RS_SERIAL_LIST"
@@ -136,6 +151,57 @@ rs_discover() {
     RS_DISCOVERED[$RS_N_DISCOVERED]="$id"
     RS_N_DISCOVERED=$((RS_N_DISCOVERED + 1))
   done <<< "$sorted"
+}
+
+# rs_select_job — --job <name>: turns the identities of ci_jobs.<name> into the selectors (before the lock).
+rs_select_job() {
+  local k id n=0
+  [ -n "$RS_JOB" ] || return 0
+  [ "${#RS_SELECTORS[@]}" -eq 0 ] || rs_die "--job cannot be combined with selectors"
+  while IFS=$'\t' read -r k id; do
+    if [ "$k" = "$RS_JOB" ]; then RS_SELECTORS[${#RS_SELECTORS[@]}]="$id"; n=$((n + 1)); fi
+  done <<< "$RS_JOB_LINES"
+  [ "$n" -gt 0 ] || rs_die "ci job '$RS_JOB' is not listed (or empty) under ci_jobs in _test-fixtures/suite-groups.json; no suite started"
+}
+
+# rs_check_groups — FR-017. Reads the declaration file, the discovered set (stdin) and the workflow line calls;
+# prints one line per finding. Exit 0 consistent, 1 findings, 2 unreadable workflow.
+rs_check_groups() {
+  local wf="$RS_ROOT/.github/workflows/test.yml"
+  [ -f "$wf" ] || rs_die "check-groups: workflow $wf missing"
+  printf '%s\n' "${RS_DISCOVERED[@]}" | node -e '
+const fs = require("fs");
+const [groups, wf] = process.argv.slice(1);
+const found = new Set(fs.readFileSync(0, "utf8").split("\n").filter(Boolean));
+const j = JSON.parse(fs.readFileSync(groups, "utf8"));
+const out = [];
+const jobsOf = new Map();
+for (const [name, ids] of Object.entries(j.ci_jobs)) {
+  for (const id of ids) {
+    if (!found.has(id)) { out.push(id + ": listed under ci_jobs but no such suite (job " + name + ")"); continue; }
+    jobsOf.set(id, (jobsOf.get(id) || []).concat(name));
+  }
+}
+for (const id of [...found].sort()) {
+  const js = [...new Set(jobsOf.get(id) || [])];
+  if (js.length === 0) out.push(id + ": in no ci job (list it in exactly one ci_jobs entry)");
+  if ((jobsOf.get(id) || []).length > 1) out.push(id + ": in two ci jobs (" + jobsOf.get(id).join(", ") + ")");
+}
+for (const list of ["serial", "no_count"]) for (const id of j[list]) if (!found.has(id)) out.push(id + ": listed under " + list + " but no such suite");
+for (const id of Object.keys(j.timings.seconds || {})) if (!found.has(id)) out.push(id + ": listed under timings but no such suite");
+const called = new Set();
+for (const l of fs.readFileSync(wf, "utf8").split("\n")) {
+  if (/^\s*#/.test(l)) continue;
+  const m = l.match(/run-suites\.sh --job ([A-Za-z0-9_-]+)/);
+  if (!m) continue;
+  called.add(m[1]);
+  if (!Object.prototype.hasOwnProperty.call(j.ci_jobs, m[1])) out.push("workflow calls --job " + m[1] + " but ci_jobs has no such job");
+}
+for (const name of Object.keys(j.ci_jobs)) if (!called.has(name)) out.push("ci job " + name + " is called by no workflow line");
+for (const l of out) console.log("check-groups: " + l);
+console.log("check-groups: " + (out.length ? out.length + " finding(s)" : "ok, " + found.size + " suites in " + Object.keys(j.ci_jobs).length + " ci jobs"));
+process.exit(out.length ? 1 : 0);
+' "$RS_ROOT/_test-fixtures/suite-groups.json" "$wf"
 }
 
 # rs_select — narrows RS_DISCOVERED to the suites picked by RS_SELECTORS (no-op for a full run). Runs before
@@ -325,8 +391,11 @@ rs_main() {
     case "$1" in
       --workers) [ $# -ge 2 ] || rs_die "--workers needs a value"; workers="$2"; shift 2 ;;
       --workers=*) workers="${1#--workers=}"; shift ;;
+      --job) [ $# -ge 2 ] || rs_die "--job needs a ci job name"; RS_JOB="$2"; shift 2 ;;
+      --job=*) RS_JOB="${1#--job=}"; shift ;;
+      --check-groups) RS_CHECK_GROUPS=1; shift ;;
       --root) [ $# -ge 2 ] || rs_die "--root needs a directory"; RS_ROOT="$2"; shift 2 ;;
-      -h|--help) sed -n '2,19p' "$RS_SELF"; exit 0 ;;
+      -h|--help) sed -n '2,24p' "$RS_SELF"; exit 0 ;;
       -*) rs_die "unknown argument: $1" ;;
       *) RS_SELECTORS[${#RS_SELECTORS[@]}]="$1"; shift ;;
     esac
@@ -344,6 +413,12 @@ rs_main() {
   rs_load_groups
   rs_discover
   [ "$RS_N_DISCOVERED" -gt 0 ] || rs_die "no suites discovered under $RS_ROOT/_test-fixtures"
+  if [ "$RS_CHECK_GROUPS" -eq 1 ]; then
+    [ -z "$RS_JOB" ] && [ "${#RS_SELECTORS[@]}" -eq 0 ] || rs_die "--check-groups takes no --job and no selector"
+    rs_check_groups
+    exit $?
+  fi
+  rs_select_job
   rs_select
 
   # The runner's own outer vault, kept for the real-store guard; set before any per-worker env is built.
