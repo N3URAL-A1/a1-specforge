@@ -36,3 +36,6 @@ Boards for the evidence cases are copied from fixtures/boards/ (W4).
 ## Wave 5 (families and assets)
 fixtures/imagegen/generate.py: hand-written stub of ~/.claude/skills/imagegen/scripts/generate.py. Flag surface (--prompt, --out, --slug, --n; out = target file, sidecar <stem>.json next to it) taken from `python3 ~/.claude/skills/imagegen/scripts/generate.py --help` and its sidecar code (line ~402) on 2026-11-11. A prompt containing FAIL-IMAGEGEN makes it exit 1. parts/05-families-assets.sh copies it into a temp HOME's .claude/skills/imagegen/scripts/.
 Vault taste entries, CLAUDE.md files and result pages for part 05 are written at run time with printf (no stored copies).
+
+## Wave 10 (tweaks)
+fixtures/tweaks/spec.md: first 19 lines (frontmatter) copied from the real vault spec 024-ux-studio.md, then a `## Clarifications` section whose `UX/login-screen:` decision line follows the format in workflows/06-handoff.md, then a short `## Requirements` tail. The result page for the cases is fixtures/gate/high-contrast.html.

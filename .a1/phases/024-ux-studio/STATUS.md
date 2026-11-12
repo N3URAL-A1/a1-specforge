@@ -53,3 +53,10 @@ gate2: SKIPPED preview deploy (local offline HTML, no web app)
 ## Waves 1–3 (Mac, 2026-11-09)
 
 gate0: marked done on 2026-11-11 from committed code (fb333da, 14862a1, security fixes da5ad0e) and their green suite parts 01–03 in every run since; the Mac session left no gate0/gate3 lines, so per-AC smoke evidence for FR of W1–W3 is re-run in Phase 6
+
+## Wave 10 (2026-11-12, aiserver) — tweaks panel and token export
+gate0: a1-ux-studio suite → 307 passed, 0 failed (cases TW0, TW1, TW1b, TW2–TW6)
+gate0: mutation re-run, one per RED case, each turned the named case red and was restored: TW1 (dev written to result.html), TW1b (panel-in-result refusal removed), TW2 (block spliced one line late), TW3 (append instead of replace), TW4 (no-UX-line refusal removed), TW4b (frontmatter searched), TW5 (accent regex dropped), TW5b (font regex dropped), TW6 (`</script` added to panel template). First TW6 version survived its mutation (the escape it guarded was dead code) → escape removed, test changed to assert the template holds no closing script tag
+gate0: workflow lint exit 0 (76 files, 0 findings); verify-install-sync PASS
+gate3: FR-026-AC1 PASS @wave10 2026-11-12 (real playwright-cli chromium: result.dev.html → 1 panel, controls font,size,accent,motion,reset,compare,values; result.html → 0 data-a1-tweaks)
+gate3: FR-027-AC1 PASS @wave10 2026-11-12 (suite TW2/TW3 on a copy of the real spec 024 frontmatter: block directly under UX/login-screen, second export replaces)
