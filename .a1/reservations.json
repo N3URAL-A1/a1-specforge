@@ -1,3 +1,42 @@
 {
-  "reservations": []
+  "reservations": [
+    {
+      "type": "code_scope",
+      "paths": [
+        "_shared/a1-tools.cjs",
+        "_shared/lib/gate-log.cjs",
+        "_shared/lib/project-slug.cjs",
+        "_shared/lib/pr-merge-check.cjs",
+        "_shared/lib/retro-gatelog.cjs",
+        "_shared/lib/run-record.cjs",
+        "_shared/lib/help-run.cjs",
+        "_shared/lib/help.cjs",
+        "_shared/lib/metrics.cjs",
+        "_shared/lib/metrics-phase-time.cjs",
+        "_shared/lib/help-metrics.cjs",
+        "_test-fixtures/a1-metrics/**",
+        "_test-fixtures/a1-gates-lint/run-tests.sh",
+        "_test-fixtures/a1-pr-merge-check/run-tests.sh",
+        "_test-fixtures/a1-pr-review/run-tests.sh",
+        "skills/a1-pr-review/workflows/05-merge.md",
+        "docs/adr/2026-10-14-gate-invoke-and-log.md",
+        "_shared/lib/verify-run.cjs",
+        "_test-fixtures/a1-verify/**",
+        "_shared/gates-registry.md",
+        "_shared/quality-invariants.json",
+        "_shared/lib/quality-invariants.cjs",
+        "_shared/lib/gates-cli.cjs",
+        "_shared/lib/help-gates.cjs",
+        "skills/a1-pr-review/workflows/02-review.md",
+        "skills/a1-pr-review/SKILL.md",
+        "_test-fixtures/a1-gates-lint/run-wave14.sh",
+        "_test-fixtures/suite-groups.json",
+        ".a1/phases/027-lean-pipeline/",
+        ".a1/phases/027-lean-pipeline-s1/"
+      ],
+      "by": "027-lean-pipeline",
+      "at": "2026-11-12T21:27:28.511Z",
+      "stage": "started"
+    }
+  ]
 }
