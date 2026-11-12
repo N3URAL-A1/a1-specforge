@@ -204,7 +204,10 @@ caseLG4() {
   local pat='(migrat|upgrade|convert|rename|unlink|rmSync|delete|writeFile|rewrite)'
   # lines that name a removed id (literal or the constants) AND a rewriting verb, in the code the CLI runs
   local hits
-  hits="$(cd "$REPO_ROOT" && git grep -n --untracked -i -E "(wave-inspect-xprov|pr-diff-xprov|RETIRED_GATE_IDS|RETIRED_IDS)" -- '_shared/a1-tools.cjs' '_shared/lib/*.cjs' 'bin' 'hooks' 2>/dev/null | grep -i -E "$pat" || true)"
+  # Plain grep, not git grep: the merge check runs the suite on a `git archive` snapshot without .git, where git grep
+  # finds nothing (this check then passed empty and the count below failed).
+  hits="$(cd "$REPO_ROOT" && { grep -n -i -E "(wave-inspect-xprov|pr-diff-xprov|RETIRED_GATE_IDS|RETIRED_IDS)" _shared/a1-tools.cjs /dev/null; grep -rn -i -E --include='*.cjs' "(wave-inspect-xprov|pr-diff-xprov|RETIRED_GATE_IDS|RETIRED_IDS)" _shared/lib; grep -rn -i -E "(wave-inspect-xprov|pr-diff-xprov|RETIRED_GATE_IDS|RETIRED_IDS)" bin hooks; } 2>/dev/null | grep -i -E "$pat" || true)"
+  [[ -f "$REPO_ROOT/_shared/a1-tools.cjs" && -d "$REPO_ROOT/_shared/lib" && -d "$REPO_ROOT/bin" && -d "$REPO_ROOT/hooks" ]] || bad "LG4 a scanned path is missing under $REPO_ROOT (the scan would pass empty)"
   assert_eq "LG4 no line in the CLI code names a removed gate id together with a migrate/rewrite/delete verb" "$hits" ""
   # control: the same filter finds a planted migration line (a grep that cannot match proves nothing)
   mk_workdir LG4_REPO lg4repo
@@ -216,7 +219,7 @@ caseLG4() {
   assert_eq "LG4 control: a planted migration line is found by the same filter" "$planted" "1"
   # the one reader of the retired ids in the store code only keeps records inert
   local reads
-  reads="$(cd "$REPO_ROOT" && git grep -c "RETIRED_GATE_IDS" -- '_shared/lib/*.cjs' | tr '\n' ' ')"
+  reads="$(cd "$REPO_ROOT" && grep -rc --include='*.cjs' "RETIRED_GATE_IDS" _shared/lib | grep -v ':0$' | LC_ALL=C sort | tr '\n' ' ')"
   assert_eq "LG4 RETIRED_GATE_IDS appears only in a comment of gate-ids.cjs, its definition and export, and the waiver reader" "$reads" "_shared/lib/gate-ids.cjs:1 _shared/lib/xprov-waivers.cjs:1 _shared/lib/xprov.cjs:2 "
 }
 

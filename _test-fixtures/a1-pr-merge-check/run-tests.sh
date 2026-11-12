@@ -65,10 +65,16 @@ printf '%s\n' "$*" >> "${A1_FX_GH_LOG:?}"
 case "$1 $2" in
   "pr view")
     case "$*" in
-      *headRefOid*) printf '{"headRefOid":"%s"}\n' "${A1_FX_HEAD:-$(git rev-parse HEAD)}"; exit 0 ;;
+      *headRefOid*)
+        if [ -n "${A1_FX_HEAD2:-}" ]; then n=$(wc -l < "${A1_FX_HEADCNT:?}"); echo x >> "$A1_FX_HEADCNT"; [ "$n" -ge 1 ] && { printf '{"headRefOid":"%s"}\n' "$A1_FX_HEAD2"; exit 0; }; fi
+        printf '{"headRefOid":"%s"}\n' "${A1_FX_HEAD:-$(git rev-parse HEAD)}"; exit 0 ;;
       *) printf '{"baseRefName":"main"}\n'; exit 0 ;;
     esac ;;
   "pr checks")
+    case "$*" in
+      *--required*) if [ -n "${A1_FX_REQUIRED_NONE:-}" ]; then echo "no required checks reported on the 'feat' branch" >&2; exit 1; fi ;;
+      *) if [ -n "${A1_FX_ALL_FAIL:-}" ]; then echo "HTTP 502: Bad Gateway" >&2; exit 1; fi ;;
+    esac
     [ -n "${A1_FX_CHECKS_ERR:-}" ] && printf '%s\n' "$A1_FX_CHECKS_ERR" >&2
     [ -n "${A1_FX_CHECKS:-}" ] && cat "$A1_FX_CHECKS"
     exit "${A1_FX_CHECKS_RC:-0}" ;;
@@ -483,6 +489,173 @@ new_pr j2 0 0
 printf '{"commands":[{"id":"unit","argv":["bash","suite.sh"]}],"flaky_base":["unit"]}\n' > "$P/.a1/verify.json"
 mc
 expect "J2 an uncommitted flaky_base edit in the working tree is not read as the head's list (no flaky_base_grown)" "false" "$(js "j.reasons.some(r=>r.reason==='flaky_base_grown')")"
+
+# ---------- CE: CI-evidence shortcut (.a1/verify.json ci_evidence) ----------
+# Cases through the CLI use the gh STUB FIRST ON PATH (A1_GH_BIN unset): an A1_GH_BIN override never takes the shortcut (CE20), so the
+# override seam cannot prove it. The decision itself is also driven in node on the real exported decide() with real temp git repos (CE30+).
+# The suite command appends to $MARK: a marker line proves the local run happened, no marker proves it was skipped.
+# Measured red 2026-11-12: first round against the code before pr-ci-evidence.cjs (K cases); fix round against the first-round code (CE cases:
+# workflow/event/link filter, unlisted jobs, pending-missing, gh_override, base tip, head_moved, skipping), see the wave report.
+MARK="$WORK/ran-marker"
+printf '%s\n' 'const[,, out, ...specs]=process.argv;' 'const l=specs.map(s=>{const[name,bucket,kind]=s.split(":");const ci=kind!=="status";' 'return{name,bucket,state:"X",workflow:kind==="other"?"lint":ci?"test":"",event:kind==="push"?"push":ci?"pull_request":"",link:ci?"https://github.com/o/r/actions/runs/1/job/2":"https://github.com/o/r/runs/3"}});' 'require("fs").writeFileSync(out,JSON.stringify(l));' > "$WORK/mkchk.js"
+chk() { local f="$1"; shift; node "$WORK/mkchk.js" "$f" "$@"; }
+chk "$WORK/ci-green.json" checks:pass fx:pass
+chk "$WORK/ci-extra-ok.json" checks:pass fx:pass unlisted:pass
+chk "$WORK/ci-red.json" checks:pass fx:fail
+chk "$WORK/ci-cancel.json" checks:pass fx:cancel
+chk "$WORK/ci-skip.json" checks:pass fx:skipping
+chk "$WORK/ci-pending.json" checks:pass fx:pending
+chk "$WORK/ci-unlisted-red.json" checks:pass fx:pass unlisted:fail
+chk "$WORK/ci-unlisted-pend.json" checks:pass fx:pass unlisted:pending
+chk "$WORK/ci-unlisted-skip.json" checks:pass fx:pass unlisted:skipping
+chk "$WORK/ci-missing.json" checks:pass
+chk "$WORK/ci-missing-pend.json" checks:pass other-job:pending
+chk "$WORK/ci-dup.json" checks:pass fx:pass fx:pass
+chk "$WORK/ci-status-only.json" checks:pass:status fx:pass:status
+chk "$WORK/ci-wrongev.json" checks:pass:push fx:pass:push
+chk "$WORK/ci-otherwf.json" checks:pass:other fx:pass:other
+chk "$WORK/ci-mixed.json" checks:pass fx:pass fx:fail:status
+: > "$WORK/gh-empty.json"
+CIEV='{"workflow":"test","checks":["checks","fx"],"unchanged":[".github/","guard.txt"]}'
+cihook() { # $1 = project; CIEV = the ci_evidence value ("" = key absent)
+  mkdir -p "$1/.github/workflows"; echo wf > "$1/.github/workflows/ci.yml"; echo g > "$1/guard.txt"
+  local extra=''; [[ -n "$CIEV" ]] && extra=",\"ci_evidence\":$CIEV"
+  printf '{"commands":[{"id":"unit","argv":["bash","-c","echo ran >> %s; exit 0"]}]%s}\n' "$MARK" "$extra" > "$1/.a1/verify.json"
+}
+ci_pr() { BASE_HOOK=cihook new_pr "$1" 0 0; BASE_HOOK=; }
+ran() { if [[ -s "$MARK" ]]; then echo yes; else echo no; fi; }
+# mcp: the check with the stub first on PATH and no override
+mcp() {
+  OUT="$(cd "$P" && env -u A1_GH_BIN PATH="$WORK/bin:$PATH" A1_FX_CHECKS="${CHK:-$WORK/checks-green.json}" node "$TOOLS" pr merge-check --pr 7 --base main --phase fx-w10 "$@" 2>"$WORK/err")"; RC=$?
+  ERR="$(cat "$WORK/err")"
+}
+ce() { : > "$MARK"; CHK="$1" mcp "${@:2}"; }
+why() { js 'j.ci_evidence.why'; }
+reasonlist() { js "j.reasons.filter(r=>r.reason==='$1').map(r=>r.check).join()"; }
+
+ci_pr ce1
+ce "$WORK/ci-green.json"
+expect "CE1 CI green on the configured checks: exit 0, verdict ci_evidence, suites did not run" "0|ci_evidence|no|true|ok" "$RC|$(js 'j.suites.verdict')|$(ran)|$(js 'j.ci_evidence.used')|$(why)"
+expect "CE1b head_sha is the PR head, both checks reported pass (count)" "$(git -C "$P" rev-parse HEAD)|2" "$(js 'j.head_sha')|$(js 'j.ci_evidence.checks.filter(c=>c.bucket==="pass").length')"
+ce "$WORK/ci-extra-ok.json"
+expect "CE1c an unlisted but passing job of the workflow does not hurt" "0|no" "$RC|$(ran)"
+ce "$WORK/ci-red.json"
+expect "CE2 configured check red: exit 1 ci_check_red for fx (the stub also lists it as required), no local run" "1|ci_check_red,required_check_red|fx|no" "$RC|$(reasons)|$(reasonlist ci_check_red)|$(ran)"
+ce "$WORK/ci-cancel.json"
+expect "CE2b configured check cancelled: ci_check_red, no local run" "1|fx|no" "$RC|$(reasonlist ci_check_red)|$(ran)"
+ce "$WORK/ci-skip.json"
+expect "CE2c configured check skipped: ci_check_red (a skipped job is no proof), no local run" "1|fx|no" "$RC|$(reasonlist ci_check_red)|$(ran)"
+ce "$WORK/ci-pending.json"
+expect "CE3 configured check pending: exit 1 ci_check_pending, no local run" "1|fx|no" "$RC|$(reasonlist ci_check_pending)|$(ran)"
+ce "$WORK/ci-unlisted-red.json"
+expect "CE4 SEC-2 an UNLISTED red job of the workflow: ci_check_red for it, no local run" "1|unlisted|no" "$RC|$(reasonlist ci_check_red)|$(ran)"
+ce "$WORK/ci-unlisted-pend.json"
+expect "CE4b an UNLISTED pending job of the workflow: ci_check_pending, no local run" "1|unlisted|no" "$RC|$(reasonlist ci_check_pending)|$(ran)"
+ce "$WORK/ci-unlisted-skip.json"
+expect "CE4c an unlisted skipped job: no shortcut, local run (workflow_entry_not_pass)" "yes|workflow_entry_not_pass" "$(ran)|$(why)"
+ce "$WORK/ci-missing-pend.json"
+expect "CE5 SEC-2 configured name absent while the workflow still has a pending job: ci_check_pending for it, no local run" "1|fx|no" "$RC|$(reasonlist ci_check_pending | tr ',' '\n' | grep -x fx)|$(ran)"
+ce "$WORK/ci-missing.json"
+expect "CE5b configured name absent, nothing pending: local run, check_missing" "0|yes|false|check_missing" "$RC|$(ran)|$(js 'j.ci_evidence.used')|$(why)"
+ce "$WORK/ci-dup.json"
+expect "CE5c configured check duplicated: local run" "yes|check_missing" "$(ran)|$(why)"
+ce "$WORK/ci-status-only.json"
+expect "CE6 SEC-1 only commit statuses (workflow empty) carry the four names: no shortcut, local run" "yes|check_missing" "$(ran)|$(why)"
+ce "$WORK/ci-wrongev.json"
+expect "CE6b entries of the workflow but event push (not pull_request): no shortcut" "yes|check_missing" "$(ran)|$(why)"
+ce "$WORK/ci-otherwf.json"
+expect "CE6c entries of another workflow: no shortcut" "yes|check_missing" "$(ran)|$(why)"
+ce "$WORK/ci-mixed.json"
+expect "CE6d a red commit status with a configured name next to a real passing run is ignored by the shortcut: shortcut taken (the stub lists it as required, so exit 1 stays with required_check_red)" "no|ok|required_check_red" "$(ran)|$(why)|$(reasons)"
+: > "$MARK"; CHK="$WORK/gh-empty.json" A1_FX_CHECKS_ERR="no checks reported on the 'feat' branch" A1_FX_CHECKS_RC=1 mcp
+expect "CE7 gh reports no checks at all: local run" "yes|check_missing" "$(ran)|$(why)"
+ci_pr ce8; echo changed > "$P/guard.txt"; g "$P" commit -q -am "touch guard"; ce "$WORK/ci-green.json"
+expect "CE8 protected path changed on the branch: local run" "yes|protected_path_changed|pass" "$(ran)|$(why)|$(js 'j.suites.verdict')"
+ci_pr ce8b; echo changed >> "$P/.github/workflows/ci.yml"; g "$P" commit -q -am "touch workflow"; ce "$WORK/ci-green.json"
+expect "CE8b protected directory prefix (.github/) changed: local run" "yes|protected_path_changed" "$(ran)|$(why)"
+ci_pr ce9; sed -i.bak 's/"unit"/"unit2"/' "$P/.a1/verify.json"; rm -f "$P/.a1/verify.json.bak"; g "$P" commit -q -am "edit verify.json"; ce "$WORK/ci-green.json"
+expect "CE9 verify.json changed on the branch (ci_evidence itself equal): no shortcut, the local run happened" "false|verify_config_changed|1|yes" "$(js 'j.ci_evidence.used')|$(why)|$RC|$(ran)"
+ci_pr ce10; ce "$WORK/ci-green.json" --no-ci-evidence
+expect "CE10 --no-ci-evidence forces the local run" "0|yes|disabled_by_flag" "$RC|$(ran)|$(why)"
+CIEV='' ci_pr ce11; ce "$WORK/ci-green.json"
+expect "CE11 no ci_evidence key: local run, not_configured" "0|yes|not_configured|pass" "$RC|$(ran)|$(why)|$(js 'j.suites.verdict')"
+for bad in '[]' '"x"' 'null' '{"workflow":"test","checks":[]}' '{"workflow":"test","checks":[""]}' '{"workflow":"test","checks":[1]}' '{"checks":["a"]}' '{"workflow":"","checks":["a"]}' '{"workflow":1,"checks":["a"]}' '{"workflow":"t","checks":["a"],"unchanged":"x"}' '{"workflow":"t","checks":["a"],"unchanged":["../x"]}' '{"workflow":"t","checks":["a"],"unchanged":["/etc"]}' '{"workflow":"t","checks":["a"],"extra":1}' '{"workflow":"t","unchanged":[]}'; do
+  CIEV="$bad" ci_pr ceb; ce "$WORK/ci-green.json"
+  expect "CE12 invalid ci_evidence $bad: exit 2 bad_config, no local run" "2|bad_config|no" "$RC|$(js 'j.error')|$(ran)"
+done
+# SEC-3: a gh override binary never yields the shortcut, even when everything is green
+ci_pr ce20; : > "$MARK"; CHK="$WORK/ci-green.json" mc
+expect "CE20 A1_GH_BIN override + green stub: exit 0 through the LOCAL run, gh_override" "0|yes|gh_override|override" "$RC|$(ran)|$(why)|$(js 'j.gh_bin')"
+# SEC-5: the base tip must carry the same ci_evidence
+CIEV='' ci_pr ce21; sed -i.bak 's/}$/,"ci_evidence":{"workflow":"test","checks":["checks","fx"]}}/' "$P/.a1/verify.json"; rm -f "$P/.a1/verify.json.bak"; g "$P" commit -q -am "opt in on the branch"; ce "$WORK/ci-green.json"
+expect "CE21 SEC-5 base tip has no ci_evidence (the PR opts itself in): no shortcut, local run" "yes|base_not_configured" "$(ran)|$(why)"
+ci_pr ce22; sed -i.bak 's/"checks","fx"/"checks"/' "$P/.a1/verify.json"; rm -f "$P/.a1/verify.json.bak"; g "$P" commit -q -am "weaken checks"; ce "$WORK/ci-green.json"
+expect "CE22 SEC-5 branch weakens the check list: no shortcut, local run" "yes|base_config_differs" "$(ran)|$(why)"
+nocfg() { rm -f "$1/.a1/verify.json"; }
+BASE_HOOK=nocfg new_pr ce23 0 0; BASE_HOOK=
+printf '{"commands":[{"id":"unit","argv":["bash","-c","echo ran >> %s; exit 0"]}],"ci_evidence":%s}\n' "$MARK" "$CIEV" > "$P/.a1/verify.json"; g "$P" add -A; g "$P" commit -q -m "config appears on the branch"
+ce "$WORK/ci-green.json"
+expect "CE23 SEC-5 base tip without verify.json: no shortcut, local run, exit 1 (config added)" "1|false|base_not_configured|yes" "$RC|$(js 'j.ci_evidence.used' 2>&1 | tail -n 1)|$(why 2>&1 | tail -n 1)|$(ran)"
+# SEC-6: the PR head moved between the guard read and the check read
+ci_pr ce24; : > "$WORK/headcnt"; : > "$MARK"
+OUT="$(cd "$P" && env -u A1_GH_BIN PATH="$WORK/bin:$PATH" A1_FX_HEADCNT="$WORK/headcnt" A1_FX_HEAD2="$(printf '%040d' 1)" A1_FX_CHECKS="$WORK/ci-green.json" node "$TOOLS" pr merge-check --pr 7 --base main --phase fx-w10 2>"$WORK/err")"; RC=$?
+expect "CE24 SEC-6 headRefOid differs on the second read: exit 1 head_moved, no local run" "1|head_moved|no" "$RC|$(reasons)|$(ran)"
+
+# R-2: the forced local run never parses ci_evidence
+CIEV='{"workflow":"test","checks":[],"bogus":1}' ci_pr ce13; ce "$WORK/ci-green.json" --no-ci-evidence
+expect "CE13 R-2 malformed ci_evidence at HEAD and base + --no-ci-evidence: local run, no exit 2" "0|yes|disabled_by_flag" "$RC|$(ran)|$(why)"
+# R-4: pathspec magic in unchanged
+for bad in '":(exclude)x"' '":/"'; do
+  CIEV="{\"workflow\":\"t\",\"checks\":[\"a\"],\"unchanged\":[$bad]}" ci_pr ce14; ce "$WORK/ci-green.json"
+  expect "CE14 R-4 unchanged $bad (pathspec magic): exit 2 bad_config, no local run" "2|bad_config|no" "$RC|$(js 'j.error')|$(ran)"
+done
+# R-1: counting reporters exist only in verify run
+cihook_rep() { # a real node --test command with the counting reporter node-test; the test file only leaves the marker
+  cihook "$1"; printf 'require("fs").appendFileSync(%s, "ran\\n");\n' "\"$MARK\"" > "$1/mt.test.js"
+  printf '{"commands":[{"id":"unit","reporter":"node-test","argv":["node","--test","mt.test.js"]}],"ci_evidence":%s}\n' "$CIEV" > "$1/.a1/verify.json"
+}
+BASE_HOOK=cihook_rep new_pr ce15 0 0; BASE_HOOK=
+ce "$WORK/ci-green.json"
+expect "CE15 plan with a counting reporter + CI all green: no shortcut, the local run happens" "yes|counting_reporter|false" "$(ran)|$(why)|$(js 'j.ci_evidence.used')"
+ci_pr ce15b; sed -i.bak 's/"argv":\["bash","-c"/"reporter":"none","argv":["bash","-c"/' "$P/.a1/verify.json"; rm -f "$P/.a1/verify.json.bak"
+git -C "$P" checkout -q main; sed -i.bak 's/"argv":\["bash","-c"/"reporter":"none","argv":["bash","-c"/' "$P/.a1/verify.json"; rm -f "$P/.a1/verify.json.bak"; g "$P" commit -q -am "reporter none on base"; g "$P" checkout -q feat; g "$P" reset -q --hard main
+ce "$WORK/ci-green.json"
+expect "CE15b plan with reporter none: shortcut taken" "no|ok" "$(ran)|$(why)"
+# R-5a: the full list comes from the non-required call
+: > "$MARK"; ci_pr ce16; CHK="$WORK/ci-green.json" A1_FX_REQUIRED_NONE=1 mcp
+expect "CE16 R-5a no required checks at all, the full list is green: shortcut taken, exit 0" "0|no|ok" "$RC|$(ran)|$(why)"
+# R-5d: gh fails on the non-required call
+: > "$MARK"; CHK="$WORK/ci-green.json" A1_FX_ALL_FAIL=1 mcp
+expect "CE17 R-5d gh fails (HTTP 502) on the full-list call: exit 2 gh_failed, never 0" "2|gh_failed|no" "$RC|$(js 'j.error')|$(ran)"
+
+# ---------- CE30+: the decision driven in node on the real exported decide() and parseCiEvidence() ----------
+printf '%s\n' 'const CE=require(process.argv[2]+"/_shared/lib/pr-ci-evidence.cjs");const{execFileSync}=require("child_process");' \
+ 'const [,,,proj,expr]=process.argv;const base=execFileSync("git",["-C",proj,"rev-parse","main"],{encoding:"utf8"}).trim();' \
+ 'const t=eval("("+expr+")");const raw=t.raw;const ev=CE.parseCiEvidence({ci_evidence:raw});' \
+ 'const mk=(n,b,x)=>({name:n,bucket:b,state:"X",workflow:"test",event:"pull_request",link:"https://github.com/o/r/actions/runs/1",...(x||{})});' \
+ 'let listed=0;const r=CE.decide({project:proj,baseSha:base,evidence:ev,rawEvidence:raw,baseEvidence:"base" in t?t.base:raw,baseUnreadable:!!t.unreadable,disabled:!!t.disabled,override:!!t.override,hasCountingReporter:()=>!!t.counting,listChecks:()=>{listed++;return t.list(mk)}});' \
+ 'console.log(JSON.stringify({used:r.used,why:r.why,reasons:r.reasons.map(x=>x.reason+":"+x.check),listed}))' > "$WORK/dec.js"
+LIBROOT="$(cd "$(dirname "$TOOLS")/.." && pwd)"
+dec() { node "$WORK/dec.js" "$LIBROOT" "$P" "$1" 2>&1; }
+decwhy() { dec "$1" | sed 's/.*"why":"\([a-z_]*\)".*/\1/'; }
+ci_pr cd; RAW='{workflow:"test",checks:["a","b"],unchanged:["guard.txt"]}'
+expect "CE30 decide: all pass -> used, no reasons" '{"used":true,"why":"ok","reasons":[],"listed":1}' "$(dec "{raw:$RAW,list:m=>[m('a','pass'),m('b','pass')]}")"
+expect "CE31 decide: override -> no shortcut and gh never asked" '{"used":false,"why":"gh_override","reasons":[],"listed":0}' "$(dec "{raw:$RAW,override:true,list:m=>[m('a','pass'),m('b','pass')]}")"
+expect "CE32 decide: disabled -> no shortcut and gh never asked" '{"used":false,"why":"disabled_by_flag","reasons":[],"listed":0}' "$(dec "{raw:$RAW,disabled:true,list:m=>[]}")"
+expect "CE33 decide: base without the key -> base_not_configured, gh never asked" '{"used":false,"why":"base_not_configured","reasons":[],"listed":0}' "$(dec "{raw:$RAW,base:undefined,list:m=>[]}")"
+expect "CE34 decide: unreadable base config -> base_not_configured" "base_not_configured" "$(decwhy "{raw:$RAW,unreadable:true,list:m=>[]}")"
+expect "CE35 decide: base differs (deep-equal fails) -> base_config_differs" "base_config_differs" "$(decwhy "{raw:$RAW,base:{workflow:'test',checks:['a'],unchanged:['guard.txt']},list:m=>[]}")"
+expect "CE36 decide: base key order differs but equal content -> still used" "ok" "$(decwhy "{raw:$RAW,base:{unchanged:['guard.txt'],checks:['a','b'],workflow:'test'},list:m=>[m('a','pass'),m('b','pass')]}")"
+expect "CE37 decide: a non-github.com link is not counted (b would be the only missing one)" "check_missing" "$(decwhy "{raw:$RAW,list:m=>[m('a','pass'),m('b','pass',{link:'https://evil.example/actions/runs/1'})]}")"
+expect "CE37c decide: event push is not counted" "check_missing" "$(decwhy "{raw:$RAW,list:m=>[m('a','pass'),m('b','pass',{event:'push'})]}")"
+expect "CE37d decide: another workflow is not counted" "check_missing" "$(decwhy "{raw:$RAW,list:m=>[m('a','pass'),m('b','pass',{workflow:'lint'})]}")"
+expect "CE37b link without /actions/runs/ is not counted" "check_missing" "$(decwhy "{raw:$RAW,list:m=>[m('a','pass'),m('b','pass',{link:'https://github.com/o/r/runs/3'})]}")"
+expect "CE38 decide: listed skipping -> ci_check_red" '"reasons":["ci_check_red:b"]' "$(dec "{raw:$RAW,list:m=>[m('a','pass'),m('b','skipping')]}" | sed 's/.*\("reasons":[^]]*]\).*/\1/')"
+echo changed > "$P/guard.txt"; g "$P" commit -q -am g
+expect "CE39 decide: guarded path changed -> protected_path_changed, gh never asked" "protected_path_changed|0" "$(decwhy "{raw:$RAW,list:m=>[]}")|$(dec "{raw:$RAW,list:m=>[]}" | sed 's/.*"listed":\([0-9]*\).*/\1/')"
+expect "CE41 decide: counting reporter in the plan -> counting_reporter, gh never asked" '{"used":false,"why":"counting_reporter","reasons":[],"listed":0}' "$(dec "{raw:{workflow:'test',checks:['a','b']},counting:true,list:m=>[m('a','pass'),m('b','pass')]}")"
+expect "CE42 R-4 pathsChanged is literal: a glob and pathspec magic do not match the changed guard.txt, the exact name does" "false|false|true" "$(node -e 'const CE=require(process.argv[1]+"/_shared/lib/pr-ci-evidence.cjs");const b=require("child_process").execFileSync("git",["-C",process.argv[2],"rev-parse","main"],{encoding:"utf8"}).trim();console.log([["gua*.txt"],[":(top)guard.txt"],["guard.txt"]].map(p=>CE.pathsChanged(process.argv[2],b,p)).join("|"))' "$LIBROOT" "$P")"
+expect "CE40 parseCiEvidence: workflow is required" "bad_config" "$(node -e 'const CE=require(process.argv[1]+"/_shared/lib/pr-ci-evidence.cjs");try{CE.parseCiEvidence({ci_evidence:{checks:["a"]}})}catch(e){console.log(e.reason||e.code)}' "$LIBROOT")"
 
 echo "a1-pr-merge-check: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

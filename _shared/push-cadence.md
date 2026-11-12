@@ -22,9 +22,12 @@ branches had 21–23 CI runs because review fixes were pushed one at a time.
 2. **Then one push per completed review-fix round.** A round is all
    BLOCKER/MAJOR findings of one review pass. Findings from reviewers that ran
    in parallel on the same pass (e.g. Reinhard and Samuel) are one round.
-   Commit each fix locally; push once when the whole round is fixed. If the
-   round rebased the branch onto `origin/main`, that push is
-   `--force-with-lease`, never plain `--force`.
+   Commit each fix locally; push once when the whole round is fixed. A branch
+   that is already pushed catches up with `main` by `git merge origin/main`,
+   not by a rebase: the PR is squash-merged, so the branch history does not
+   reach `main`, and a merge needs no force push (a force push may be blocked
+   for agents and then waits for the owner). If a round rebased the branch
+   anyway, that push is `--force-with-lease`, never plain `--force`.
 3. **Never per commit, per wave, or per single finding.** Executors (Erik,
    Walter, any code agent) commit; they do not push.
 4. **Push without a PR** only if the repo's CI does not trigger on branch

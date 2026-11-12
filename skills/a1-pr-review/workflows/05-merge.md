@@ -58,6 +58,8 @@ To clear one: `node <repo>/_shared/a1-tools.cjs disposition add --kind config_ch
 `<author>` records `disposition review <fp> --verdict upheld --reason "<why>" --by <reviewer>` (5.1); commit and push `.a1/dispositions.json`;
 run 5.3 again. The fingerprint covers the exact head content: change the config again and the verdict no longer matches.
 The suites run fresh on every merge check (`--no-cache`); no result cache is trusted.
+When `.a1/verify.json` carries `ci_evidence` (same value at the base ref tip) and every job of the named workflow (`ci_evidence.workflow`, pull_request runs only) is green on the PR head, the check takes that as the suite result and skips the local runs (report field `ci_evidence.used`). A PR that changes `.a1/verify.json` or a path under `ci_evidence.unchanged`, a missing check name, `--no-ci-evidence` and an `A1_GH_BIN` override still run locally. The shortcut exists only for plans without counting reporters (reporter `none` everywhere); a base-red suite cleared with `--bug` needs `--no-ci-evidence` (CI red stays `ci_check_red`). Wait for CI before starting it.
+List every CI job that waits on another job (`needs:`) under `ci_evidence.checks`: a job gh does not list yet cannot be judged, only a listed name is waited for.
 Start it only on a quiet host: no other `verify run` or `pr merge-check` running and the 5-minute load below the CPU count.
 If a `WAIT` line persists, re-check for at most 15 minutes, then start anyway and record `host_busy` plus the load values
 (`load5`, `cpus`) next to the result. A red `reasons[]` entry from a run that started above that bar (timeout, `spawn_failed`,

@@ -18,13 +18,15 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { parseFlags, peekVaultRoot, parseNestedFrontmatter, parseFrontmatter } = require('./io.cjs');
 const { emitExit } = require('./emit-exit.cjs');
-const { VerifyError, runVerify } = require('./verify-run.cjs');
-const { resolveMergeBase, flakyBaseGrown } = require('./verify-base.cjs');
+const { VerifyError, runVerify, resolveCommands, gitSource } = require('./verify-run.cjs');
+const vb = require('./verify-base.cjs');
+const { resolveMergeBase, flakyBaseGrown } = vb;
 const { gitRaw } = require('./verify-check.cjs');
 const { pendingOrOverturned, reviewIntegrity, entriesAt, DispositionError } = require('./disposition-store.cjs');
 const G = require('./pr-merge-guards.cjs');
+const CE = require('./pr-ci-evidence.cjs');
 
-const KNOWN_FLAGS = { pr: 'string', base: 'string', bug: 'string', project: 'string', slug: 'string' };
+const KNOWN_FLAGS = { pr: 'string', base: 'string', bug: 'string', project: 'string', slug: 'string', 'no-ci-evidence': 'bool' };
 const MAX_ARG_LENGTH = 4096;
 const GH_TIMEOUT_MS = 60 * 1000;
 const GH_MAX_BYTES = 8 * 1024 * 1024;
@@ -59,12 +61,12 @@ function parseArgs(args) {
   const flags = parseFlags(args, KNOWN_FLAGS);
   if (flags._.length > 0) throw new MergeCheckError('usage', `unexpected argument ${JSON.stringify(flags._[0])}`);
   for (const [k, v] of Object.entries(flags)) {
-    if (k !== '_' && (typeof v !== 'string' || v === '' || v.length > MAX_ARG_LENGTH || v.includes('\0'))) throw new MergeCheckError('usage', `--${k} needs a plain value`);
+    if (k !== '_' && k !== 'no-ci-evidence' && (typeof v !== 'string' || v === '' || v.length > MAX_ARG_LENGTH || v.includes('\0'))) throw new MergeCheckError('usage', `--${k} needs a plain value`);
   }
   if (!PR_RE.test(flags.pr || '')) throw new MergeCheckError('usage', '--pr <number> is required (a positive integer)');
   if (flags.bug !== undefined && !BUG_RE.test(flags.bug)) throw new MergeCheckError('usage', '--bug must be a plain fix-report id (letters, digits, dot, dash, underscore)');
   if (flags.slug !== undefined && !SLUG_RE.test(flags.slug)) throw new MergeCheckError('usage', '--slug must be a plain project slug');
-  return { pr: flags.pr, base: flags.base, bug: flags.bug, slug: flags.slug, project: path.resolve(process.cwd(), flags.project || '.') };
+  return { pr: flags.pr, base: flags.base, bug: flags.bug, slug: flags.slug, noCiEvidence: flags['no-ci-evidence'] === true, project: path.resolve(process.cwd(), flags.project || '.') };
 }
 
 /** Runs the gh seam. Returns { status, stdout, stderr }; a binary that cannot start is a MergeCheckError (exit 2). */
@@ -94,6 +96,15 @@ function requiredChecks(pr, cwd) {
     pending: list.filter((c) => bucket(c) === PENDING_BUCKET).map(name),
     total: list.length,
   };
+}
+
+/** All checks of the PR (not only required ones) for the CI-evidence shortcut; null = gh reports no checks at all. */
+function allChecks(pr, cwd) {
+  const r = runGh(['pr', 'checks', pr, '--json', 'name,bucket,state,workflow,event,link'], cwd);
+  const list = parseJsonOrNull(r.stdout);
+  if (Array.isArray(list)) return list;
+  if (NO_REQUIRED_RE.test(r.stderr) && r.stdout.trim() === '') return null;
+  throw new MergeCheckError('gh_failed', `gh pr checks gave no JSON list (exit ${r.status}): ${r.stderr.trim().slice(0, 200)}`);
 }
 
 /** The PR head commit gh reports (headRefOid): the commit a merge would take. */
@@ -180,14 +191,38 @@ function ghBinMode() { return process.env.A1_GH_BIN ? 'override' : 'default'; }
 
 /** The reasons of the pinning guards (head, committed dispositions, self review, config files: fidelity.json, live-probes.yaml) plus what the report must log. */
 function guardReasons(opts, baseSha) {
-  const head = G.headReasons(opts.project, prHeadSha(opts.pr, opts.project));
+  const prHead = prHeadSha(opts.pr, opts.project);
+  const head = G.headReasons(opts.project, prHead);
   if (head === null) throw new MergeCheckError('git_failed', 'cannot read HEAD or git status of the project');
   const integrity = reviewIntegrity(opts.project, baseSha, 'HEAD');
   const config = G.configChangeChecks(opts.project, baseSha, entriesAt(opts.project, 'HEAD'));
   return {
+    prHead,
     reasons: [...head.reasons, ...G.dispositionsUncommitted(opts.project), ...integrity.selfReviewed, ...config.reasons],
     upheld: integrity.upheld,
   };
+}
+
+/** Does any command of the HEAD plan have a counting reporter (kind other than none)? An unresolvable plan counts as yes. */
+function headPlanCounts(project, rawCfg) {
+  try { return resolveCommands(project, rawCfg, gitSource(project, 'HEAD')).commands.some((c) => c.kind !== 'none'); } catch (_e) { return true; }
+}
+
+/** The CI-evidence decision: head config from HEAD, base config from the tip of the base ref; no shortcut under a gh override. */
+function ciDecision(opts, baseRef, baseSha) {
+  if (opts.noCiEvidence) return { used: false, why: 'disabled_by_flag', checks: [], reasons: [] }; // the forced local run never parses ci_evidence
+  const raw = vb.parseVerifyJson(gitRaw(opts.project, ['show', 'HEAD:.a1/verify.json']), 'head'); // the committed head, never the working tree
+  const evidence = CE.parseCiEvidence(raw);
+  let baseEvidence;
+  let baseUnreadable = false;
+  if (evidence !== null) {
+    const baseText = gitRaw(opts.project, ['show', `${baseRef}:.a1/verify.json`]);
+    try { const b = baseText === null ? null : vb.parseVerifyJson(baseText, 'base'); baseEvidence = b && typeof b === 'object' ? b.ci_evidence : undefined; } catch (_e) { baseUnreadable = true; }
+  }
+  return CE.decide({
+    project: opts.project, baseSha, evidence, rawEvidence: evidence === null ? undefined : raw.ci_evidence, baseEvidence, baseUnreadable,
+    disabled: false, hasCountingReporter: () => headPlanCounts(opts.project, raw), override: !!process.env.A1_GH_BIN, listChecks: () => allChecks(opts.pr, opts.project),
+  });
 }
 
 /** @returns {{exit:number, report:object}}; throws VerifyError / MergeCheckError / DispositionError (exit 2). */
@@ -195,12 +230,17 @@ function mergeCheck(opts) {
   const baseRef = resolveBaseRef(opts);
   const baseSha = resolveMergeBase(opts.project, baseRef);
   const guards = guardReasons(opts, baseSha);
-  const record = runVerify({ project: opts.project, base: baseRef, noCache: true });
+  const ci = ciDecision(opts, baseRef, baseSha);
+  const headMoved = ci.used && prHeadSha(opts.pr, opts.project) !== guards.prHead; // TOCTOU: CI was read for a head that is no longer the PR head
+  const record = ci.used
+    ? { verdict: 'ci_evidence', cache: null, pre_existing_red: [], flaky: [], config_changed: null, suite_removed: null, head_sha: guards.prHead, commands: [] }
+    : runVerify({ project: opts.project, base: baseRef, noCache: true });
   const checks = requiredChecks(opts.pr, opts.project);
   const bugOk = opts.bug !== undefined && bugResolves(opts, baseSha);
   const reasons = [
     ...guards.reasons,
-    ...suiteReasons(record, bugOk, opts.bug),
+    ...(headMoved ? [{ reason: 'head_moved', was: guards.prHead }] : []),
+    ...(ci.used ? ci.reasons : suiteReasons(record, bugOk, opts.bug)),
     ...checks.red.map((name) => ({ reason: 'required_check_red', check: name })),
     ...checks.pending.map((name) => ({ reason: 'required_check_pending', check: name })),
     ...flakyBaseReasons(opts.project, baseSha),
@@ -209,6 +249,7 @@ function mergeCheck(opts) {
   const report = {
     ok: reasons.length === 0, pr: Number(opts.pr), base: baseRef, base_sha: baseSha, head_sha: record.head_sha, gh_bin: ghBinMode(), reasons,
     suites: { verdict: record.verdict, cache: record.cache, pre_existing_red: record.pre_existing_red, flaky: record.flaky, config_changed: record.config_changed || null, suite_removed: record.suite_removed || null },
+    ci_evidence: { used: ci.used, why: ci.why, checks: ci.checks },
     required_checks: { total: checks.total, red: checks.red.length, pending: checks.pending.length },
     upheld_dispositions: guards.upheld,
   };
