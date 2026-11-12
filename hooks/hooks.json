@@ -1,5 +1,5 @@
 {
-  "description": "a1-specforge xprov consent hook (spec 016 FR-004): canonical consent questions only, pending-yes from the real answer, store and settings-forgery deny, fail closed. No Bash matcher: nothing blocks a pull request merge (spec 025).",
+  "description": "a1-specforge xprov consent hook (spec 016 FR-004): canonical consent questions only, pending-yes from the real answer, store and settings-forgery deny (also gate-record.json and the ux-studio gate store, spec 024), fail closed. No Bash matcher: nothing blocks a pull request merge (spec 025).",
   "hooks": {
     "PreToolUse": [
       {

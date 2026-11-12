@@ -87,8 +87,9 @@ Then list the folder:
 ls -l <run-dir>/screenshots/
 ```
 
-Every expected file must exist and be larger than 0 bytes; take a missing
-or empty file again. Look at each 390 px image: a board must be readable
+Every expected file must exist and be a PNG exactly as wide as its name says
+(1280 or 390 px, or twice that at deviceScaleFactor 2); take a missing,
+empty or wrongly sized file again. Look at each 390 px image: a board must be readable
 at 390 px; the result follows the brief's `Viewport` (`desktop-first` or
 `mobile parity`), and you tell the user in German which one applies.
 
@@ -126,7 +127,7 @@ node <skill-dir>/scripts/gate/ux-gate.cjs run --run-dir <run-dir> --target <run-
 Read `<run-dir>/gate-record.json` (never the `run.md` block). List in German:
 
 - each finding with `severity: primary` and `state: open`: `id`, `rule`, `location`;
-- each font failure with `state: open`: `font` and `reason` (`remote_url` or `not_allowlisted`);
+- each font failure with `state: open`: `font` and `reason` (`remote_url`, `not_allowlisted`, `local_src` or `font_file_mismatch`);
 - advisories as information only. They never block.
 
 For each blocking item the user picks one of two paths:
@@ -150,6 +151,42 @@ For each blocking item the user picks one of two paths:
 
 Say this before every new gate run: **a new gate run resets all earlier
 acceptances**; Robert must accept again whatever is still open afterwards.
+
+## 7. What protects the record (and what does not)
+
+`gate-record.json` is not trusted on its own. Two facts live outside the run
+folder, in a per-user store `<passwd home>/.a1-ux-studio/gate-store.jsonl`
+(directory mode 0700; a symlink, a foreign owner or a group- or
+world-writable directory or file is refused; append-only, each line carries
+the sha256 of the line before it):
+
+- `ux-gate.cjs run` writes a digest of its result (target sha256, status,
+  findings, font failures). `handoff-check` recomputes the digest of the
+  record and compares it with the latest `run` line of the run folder. A
+  hand-written `pass`, a removed finding or a demoted severity is blocked
+  with "does not match the recorded gate run".
+- `ux-gate.cjs accept` (real terminal only) writes one line per acceptance
+  (run folder, target sha256, finding id, reason). Every `accepted` item of
+  the record needs a stored line of the latest run with the same reason; a
+  new `run` makes older lines void. A broken chain, a truncated file or a
+  store directory that fails the checks above blocks the handoff, and a
+  `run` or `accept` then exits 3 without writing a record.
+
+The plugin hook (`hooks/hooks.json`, the same hook as the xprov consent)
+denies Edit, Write and MultiEdit of every `gate-record.json` and of the
+store.
+
+**Residual risk (tier 0).** An agent with raw Bash can still write the store
+and its chain, or call the store module directly. This is the same residual
+risk as the xprov consent store (decision record
+`2026-10-14-a1-autonomy-chat-consent`): the same OS user can always do it.
+The controls stop accidental and tool-level self-acceptance, not a
+determined shell. The terminal guard of `accept` (a pty plus no Claude Code
+ancestor) can also be fooled by a double-forked pseudo-terminal; that guard
+is shared with the xprov owner step and tracked in its own bug report, so
+the store and the hook are the control here. Never write the store,
+`gate-record.json` or a `gate-record` marker block by hand, and never run
+`accept` yourself.
 
 ## Done when
 

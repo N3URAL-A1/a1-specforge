@@ -7,7 +7,7 @@
 
 unset A1_VAULT_ROOT A1_VAULT_WRITER_HOST A1_HOST_ID
 
-GT_GATE="$REPO_ROOT/skills/a1-ux-studio/scripts/gate/ux-gate.cjs"
+GT_GATE="$UX_GATE"   # tree copy with the fake owner home (run-tests.sh): the gate store never lands in the real home
 GT_FIX="$HERE/fixtures/gate"
 GT_NODE="$(command -v node)"
 mk_workdir GT_ROOT ux-gate
@@ -20,7 +20,7 @@ cat > "$GT_STUBDIR/npx" <<'STUB'
 # Test stub for npx. Never touches the network. STUB_MODE picks the replay.
 { printf 'CWD=%s\n' "$(pwd -P)"; for a in "$@"; do printf 'ARG=%s\n' "$a"; done; echo '---'; } >> "$STUB_LOG"
 echo "stub cache" > .stub-cache
-printf 'ENV_IMP=%s DNT=%s\n' "$(env | grep -c '^IMPECCABLE_')" "${DO_NOT_TRACK:-unset}" >> "$STUB_LOG"
+printf 'ENV_IMP=%s NPM=%s DNT=%s\n' "$(env | grep -c '^IMPECCABLE_')" "$(env | grep -ci '^npm_config_')" "${DO_NOT_TRACK:-unset}" >> "$STUB_LOG"
 case "${STUB_MODE:-}" in
   low)      cat "$STUB_FIX/impeccable-4.8.1-low.json"; exit "$(cat "$STUB_FIX/impeccable-4.8.1-low.exit")" ;;
   high)     cat "$STUB_FIX/impeccable-4.8.1-high.json"; exit "$(cat "$STUB_FIX/impeccable-4.8.1-high.exit")" ;;
@@ -225,13 +225,33 @@ sed 's#<style>#<style>.x{font:16px/1.4 "Brush Script MT",cursive}#' "$GT_FIX/hig
 gt_gate high run --run-dir "$R" --target "$R/result/result.html"
 gt_check "G6d font shorthand family is checked" "$(gt_j "$R/gate-record.json" 'r.font_check.failures.map(f=>f.font).join(",")')" "Brush Script MT"
 
+# G6e..G6k (PR review MAJOR font-check): `font:` shorthand with keyword, var() and calc() sizes and a var() line-height.
+# RED: put the old shorthand regex back in collectFamilyLists() (it needs a digit size, so these shorthands name no family).
+gt_short() { # <name> <css value after "font:"> <want font>
+  gt_run_dir R
+  sed "s#<style>#<style>.x{font:$2}</style><style>#" "$GT_FIX/high-contrast.html" > "$R/result/result.html"
+  gt_gate high run --run-dir "$R" --target "$R/result/result.html"
+  gt_check "G6e $1: shorthand family is checked (failures count/name)" "$(gt_j "$R/gate-record.json" 'r.font_check.failures.length+"/"+(r.font_check.failures[0]||{}).font')" "$3"
+}
+gt_short "keyword size small" 'small "Papyrus",serif' "1/Papyrus"
+gt_short "keyword size xx-large with style, weight and line-height" 'italic 700 xx-large/1.2 "Papyrus",serif' "1/Papyrus"
+gt_short "relative keyword smaller" 'smaller "Papyrus",serif' "1/Papyrus"
+gt_short "var() size" 'var(--fs) "Papyrus",serif' "1/Papyrus"
+gt_short "var() size and var() line-height with spaces around the slash" 'var(--fs) / var(--lh) "Papyrus",serif' "1/Papyrus"
+gt_short "px size with var() line-height" '16px/var(--lh) "Papyrus",serif' "1/Papyrus"
+gt_short "calc() size with a space inside" 'calc(1rem + 2px)/1.5 "Papyrus",serif' "1/Papyrus"
+gt_short "unquoted two-word family after a keyword size" 'large Papyrus Display,serif' "1/Papyrus Display"
+gt_short "control: allowlisted family after a keyword size" 'large Inter,serif' "0/undefined"
+gt_short "control: system font keyword has no family list" 'caption' "0/undefined"
+
+
 # ---------------------------------------------------------------- G7
-# RED: change the pin in impeccable.json / argv to unpinned `impeccable`, or drop `--no-config` from detect_flags (SEC-3).
+# RED: change the pin in impeccable.json / argv to unpinned `impeccable`, drop `--no-config` from detect_flags (SEC-3), or drop `--registry=` from spawnDetector() (PR review MINOR).
 gt_run_dir R; gt_target "$R" low-contrast.html; gt_reset_log
 gt_gate low run --run-dir "$R" --target "$GT_T"
 REAL_T="$(cd "$R/result" && pwd -P)/result.html"
 gt_check "G7 stub called once (count)" "$(gt_calls)" "1"
-gt_check "G7 argv is exactly impeccable@4.8.1 detect --no-config --json <target> (5 args)" "$(grep '^ARG=' "$GT_ROOT/stub.log" | tr '\n' ' ')" "ARG=impeccable@4.8.1 ARG=detect ARG=--no-config ARG=--json ARG=$REAL_T "
+gt_check "G7 argv is exactly --registry=<npmjs> impeccable@4.8.1 detect --no-config --json <target> (6 args)" "$(grep '^ARG=' "$GT_ROOT/stub.log" | tr '\n' ' ')" "ARG=--registry=https://registry.npmjs.org ARG=impeccable@4.8.1 ARG=detect ARG=--no-config ARG=--json ARG=$REAL_T "
 gt_check "G7 record stores the pinned version" "$(gt_j "$R/gate-record.json" r.impeccable_version)/$(gt_j "$R/gate-record.json" r.scan_mode)" "4.8.1/file"
 
 # ---------------------------------------------------------------- G8
@@ -341,7 +361,7 @@ mkdir -p "$GT_ROOT/inert"; INERT="$GT_ROOT/inert/a b\$(touch PWNED3);x.html"
 cp "$GT_FIX/high-contrast.html" "$INERT"
 ( cd "$GT_ROOT/inert" && STUB_MODE=high STUB_LOG="$GT_ROOT/stub.log" STUB_FIX="$GT_FIX" PATH="$GT_STUBDIR:$PATH" "$GT_NODE" "$GT_GATE" run --run-dir "$R" --target "$INERT" >/dev/null 2>&1 ); rc=$?
 gt_check "G11b shell-metacharacter file name: gate exit 0, no command executed (count 0)" "$rc/$(find "$GT_ROOT" -name 'PWNED3' | grep -c . || true)" "0/0"
-gt_check "G11b argv carries the name as one element (count 5 ARG lines)" "$(grep -c '^ARG=' "$GT_ROOT/stub.log")" "5"
+gt_check "G11b argv carries the name as one element (count 6 ARG lines)" "$(grep -c '^ARG=' "$GT_ROOT/stub.log")" "6"
 
 # ---------------------------------------------------------------- G12 (SEC-1: accept needs a real terminal)
 # RED: remove the requireTerminal(opts) call from cmdAccept() in ux-gate.cjs.
@@ -385,11 +405,22 @@ sed 's#<style>#<script>document.fonts.add(f)</script><style>#' "$GT_FIX/high-con
 gt_gate high run --run-dir "$R" --target "$R/result/result.html"
 gt_check "G14b document.fonts in script: fail (count 1)" "$(gt_j "$R/gate-record.json" 'r.font_check.failures.length+"/"+r.font_check.failures[0].reason')" "1/not_allowlisted"
 
+# G6l RED: drop the `local(` test in localFailures() (font-check.cjs). Fonts that load from the visitor's machine are unlicensed by definition.
+gt_font_case "@font-face src: local()" '<style>@font-face{font-family:"Inter";src:local("Inter"),url(fonts/inter/inter-latin-400-normal.woff2)}</style>' "Inter"
+# G6m RED: drop fileNameFailures() (font-check.cjs): a font file must live under fonts/<family-id>/ and start with the family id.
+gt_font_case "@font-face file name of another family" '<style>@font-face{font-family:"Inter";src:url(fonts/inter/lora-latin-400-normal.woff2)}</style>' "Inter"
+gt_font_case "@font-face folder of another family" '<style>@font-face{font-family:"Inter";src:url(fonts/lora/inter-latin-400-normal.woff2)}</style>' "Inter"
+gt_font_case "@font-face file outside fonts/<family-id>/" '<style>@font-face{font-family:"Inter";src:url(inter.woff2)}</style>' "Inter"
+gt_run_dir R
+sed 's#<style>#<style>@font-face{font-family:"Source Sans 3";src:url(../boards/fonts/source-sans-3/source-sans-3-latin-400-normal.woff2)}.x{font-family:"Source Sans 3"}#' "$GT_FIX/high-contrast.html" > "$R/result/result.html"
+gt_gate high run --run-dir "$R" --target "$R/result/result.html"
+gt_check "G6n control: multi-word family id (source-sans-3) and a ../boards/fonts path pass" "$(gt_j "$R/gate-record.json" 'r.font_check.status+"/"+r.font_check.failures.length')" "pass/0"
+
 # ---------------------------------------------------------------- G15 (SEC-6: detector env)
-# RED: pass process.env unfiltered to spawnSync in spawnDetector().
+# RED: pass process.env unfiltered to spawnSync in spawnDetector(); or keep npm_config_* / NPM_CONFIG_* (PR review MINOR).
 gt_run_dir R; gt_target "$R" high-contrast.html; gt_reset_log
-IMPECCABLE_CONFIG=/evil IMPECCABLE_X=1 DO_NOT_TRACK=1 gt_gate high run --run-dir "$R" --target "$GT_T"
-gt_check "G15 detector sees no IMPECCABLE_* variable and keeps DO_NOT_TRACK" "$(grep '^ENV_IMP=' "$GT_ROOT/stub.log")" "ENV_IMP=0 DNT=1"
+IMPECCABLE_CONFIG=/evil IMPECCABLE_X=1 npm_config_registry=http://evil.example NPM_CONFIG_USERCONFIG=/evil DO_NOT_TRACK=1 gt_gate high run --run-dir "$R" --target "$GT_T"
+gt_check "G15 detector sees no IMPECCABLE_* and no npm_config_* variable and keeps DO_NOT_TRACK" "$(grep '^ENV_IMP=' "$GT_ROOT/stub.log")" "ENV_IMP=0 NPM=0 DNT=1"
 
 # ---------------------------------------------------------------- G16 (SEC-1b: a pty inside a Claude Code context is refused)
 # RED: remove the claudeContext() check from requireTerminal() in ux-gate.cjs.

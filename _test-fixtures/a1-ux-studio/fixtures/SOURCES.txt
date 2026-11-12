@@ -38,7 +38,9 @@ fixtures/imagegen/generate.py: hand-written stub of ~/.claude/skills/imagegen/sc
 Vault taste entries, CLAUDE.md files and result pages for part 05 are written at run time with printf (no stored copies).
 
 ## Wave 10 (tweaks)
-fixtures/tweaks/spec.md: first 19 lines (frontmatter) copied from the real vault spec 024-ux-studio.md, then a `## Clarifications` section whose `UX/login-screen:` decision line follows the format in workflows/06-handoff.md, then a short `## Requirements` tail. The result page for the cases is fixtures/gate/high-contrast.html.
+fixtures/tweaks/spec.md: first 19 lines (frontmatter) copied from the real vault spec 024-ux-studio.md; the `## Clarifications` section holds three lines copied verbatim from the real spec lomberg-duesseldorf/spec/001-foundation.md (lines 274, 275 and 278: a plain decision, the bullet `- **2026-11-07** — UX/Header: ...` and a Gate C fix) around one entry written in the format of skills/a1-new-feature/workflows/03-clarify.md 2b-2a/2b-3 (`- **YYYY-MM-DD** — UX/<screen>: ...` plus the indented `  Run:` line and one indented handoff-notes line, as Uwe adds them), then a short `## Requirements` tail. The result page for the cases is fixtures/gate/high-contrast.html.
+
+fixtures/handoff/make-png.cjs: source (not data) that writes a one-row PNG of a given width with Node's zlib; the handoff cases generate their screenshots with it so the IHDR width matches the file name (PR review: width check). fixtures/handoff/screenshot.png stays the real capture used by the taste cases.
 
 ## Wave 11 (remix)
 No new fixture files. parts/11-remix.sh builds its run folder with the real run.cjs init (brief from fixtures/run style, written inline), adds the converge pick line to `## Picks` in the exact format picks.cjs writes, and builds taste entries with the real taste.cjs add and fixtures/handoff/screenshot.png.

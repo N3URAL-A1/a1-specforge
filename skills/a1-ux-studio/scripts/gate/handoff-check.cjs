@@ -2,12 +2,14 @@
 // ux-studio handoff check (spec 024, FR-013, FR-014). Pure evaluation of a run folder: returns the
 // list of blockers (one reason each); an empty list means handoff is allowed. It never writes.
 //
-// Fail closed. The ONLY status source is gate-record.json (never run.md). Every finding and every
-// font failure is judged on its own, because `accept` does not recompute `status`.
+// Fail closed. The ONLY status source is gate-record.json (never run.md), and that file is not trusted alone:
+// gate-store.cjs holds, outside the run folder, the digest of what `run` produced and every acceptance `accept`
+// recorded. Every finding and every font failure is judged on its own, because `accept` does not recompute `status`.
 
 const fs = require('node:fs');
 const crypto = require('node:crypto');
 const path = require('node:path');
+const store = require('./gate-store.cjs');
 
 const RECORD_FILE = 'gate-record.json';
 const WIDTHS = [1280, 390];
@@ -79,23 +81,36 @@ function boardNames(runDir) {
   return names.filter((n) => /^[A-Za-z0-9._-]+\.html$/.test(n)).map((n) => n.slice(0, -5)).sort();
 }
 
-function isPng(file) {
+const IHDR_WIDTH_OFFSET = 16;
+const IHDR_END = IHDR_WIDTH_OFFSET + 4;
+const DEVICE_SCALE_FACTORS = [1, 2];
+
+/** The IHDR width of a regular PNG file, or null when the file is no PNG (magic bytes) or its header is cut off. Never follows a symlink. */
+function pngWidth(file) {
   try {
     const st = fs.lstatSync(file);
-    if (!st.isFile() || st.size <= PNG_MAGIC.length) return false;
+    if (!st.isFile() || st.size < IHDR_END) return null;
     const fd = fs.openSync(file, 'r');
-    try { const buf = Buffer.alloc(PNG_MAGIC.length); fs.readSync(fd, buf, 0, buf.length, 0); return buf.equals(PNG_MAGIC); } finally { fs.closeSync(fd); }
-  } catch (_) { return false; }
+    try {
+      const buf = Buffer.alloc(IHDR_END);
+      fs.readSync(fd, buf, 0, buf.length, 0);
+      return buf.subarray(0, PNG_MAGIC.length).equals(PNG_MAGIC) ? buf.readUInt32BE(IHDR_WIDTH_OFFSET) : null;
+    } finally { fs.closeSync(fd); }
+  } catch (_) { return null; }
 }
 
-/** Evidence is file presence only: it holds (and blocks) whether or not playwright-cli is installed. */
+/** One reason per screenshot that is missing, no PNG, or not as wide as its name says (N px, or N * deviceScaleFactor). */
+function screenshotProblem(runDir, rel, w) {
+  const name = `screenshots/${path.basename(rel, '.html')}-${w}.png`;
+  const width = pngWidth(path.join(runDir, name));
+  if (width === null) return `missing screenshot ${name} (evidence for ${rel})`;
+  return DEVICE_SCALE_FACTORS.some((f) => width === w * f) ? null : `screenshot ${name} is ${width} px wide, want ${w} (or ${w * 2} at deviceScaleFactor 2) (evidence for ${rel})`;
+}
+
+/** Evidence is the PNG files themselves (magic bytes and IHDR width): it holds (and blocks) whether or not playwright-cli is installed. */
 function checkScreenshots(runDir) {
   const subjects = [...boardNames(runDir).map((n) => `boards/${n}.html`), RESULT_REL.replace(path.sep, '/')];
-  return subjects.flatMap((rel) => {
-    const base = path.basename(rel, '.html');
-    return WIDTHS.filter((w) => !isPng(path.join(runDir, 'screenshots', `${base}-${w}.png`)))
-      .map((w) => `missing screenshot screenshots/${base}-${w}.png (evidence for ${rel})`);
-  });
+  return subjects.flatMap((rel) => WIDTHS.map((w) => screenshotProblem(runDir, rel, w)).filter(Boolean));
 }
 
 function advisoryNotes(rec) {
@@ -109,7 +124,7 @@ function checkHandoff(runDir) {
   if (!rec) return { blockers: [...blockers, ...shots], notes: [] };
   const recFile = path.join(runDir, RECORD_FILE);
   return {
-    blockers: [...checkStatus(rec), ...checkTarget(runDir, rec, recFile), ...checkFindings(rec), ...checkFonts(rec), ...shots],
+    blockers: [...checkStatus(rec), ...store.verifyRecord(runDir, rec), ...checkTarget(runDir, rec, recFile), ...checkFindings(rec), ...checkFonts(rec), ...shots],
     notes: advisoryNotes(rec),
   };
 }

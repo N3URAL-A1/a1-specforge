@@ -4,8 +4,10 @@
 //   build         --run-dir <dir>
 //   export-tokens --spec <file> --screen <slug> --values <json>
 // build writes result/result.dev.html = result/result.html + the tweaks panel. result.html is never changed.
-// export-tokens writes one token block directly under the `UX/<screen>:` line of the spec; a second export replaces it.
-// Exit codes: 0 ok, 1 refusal (no result page, spec without the UX line), 2 usage or hostile input, 3 internal error.
+// export-tokens writes one token block under the decision entry Clarify writes (`- **YYYY-MM-DD** — UX/<screen>: ...`, its indented
+// continuation lines, e.g. `  Run: ...`), after those lines; a second export replaces it. A bare `UX/<screen>:` line still counts.
+// Fonts come from scripts/gate/font-allowlist.json only: the panel lists them, export-tokens refuses any other.
+// Exit codes: 0 ok, 1 refusal (no result page, spec without the UX line, font off the allowlist), 2 usage or hostile input, 3 internal error.
 
 const fs = require('fs');
 const path = require('path');
@@ -14,6 +16,8 @@ const { resolveRunDir, isRegularFile } = require('../run/rundir.cjs');
 
 const MARK = 'data-a1-tweaks';
 const PANEL_JS = path.join(__dirname, '..', '..', 'templates', 'tweaks-panel.js');
+const FONT_PLACEHOLDER = '/*A1_FONTS*/[]';
+const ALLOWED_FONTS = Object.freeze(require('../gate/font-allowlist.json').families.map((f) => f.family));
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const TOKEN_START = (screen) => `<!-- a1-ux-tokens:start ${screen} -->`;
 const TOKEN_END = (screen) => `<!-- a1-ux-tokens:end ${screen} -->`;
@@ -37,7 +41,9 @@ function build(args) {
   const src = path.join(runDir, 'result', 'result.html');
   const html = readBounded(src, 'result/result.html');
   if (html.includes(MARK)) throw new Refusal(1, `result/result.html already contains ${MARK}; the exported page must stay free of the panel`);
-  const js = fs.readFileSync(PANEL_JS, 'utf8');
+  const template = fs.readFileSync(PANEL_JS, 'utf8');
+  if (!template.includes(FONT_PLACEHOLDER)) throw new Refusal(3, 'tweaks-panel.js has no font list placeholder');
+  const js = template.replace(FONT_PLACEHOLDER, () => JSON.stringify(ALLOWED_FONTS.filter((f) => FONT_RE.test(f))));
   if (/<\/script/i.test(js)) throw new Refusal(3, 'tweaks-panel.js contains a closing script tag');
   const block = `<script ${MARK}="script">\n${js}\n</script>\n`;
   const at = html.toLowerCase().lastIndexOf('</body>');
@@ -59,6 +65,7 @@ function parseValues(raw) {
   if (extra.length) throw new Refusal(2, `invalid --values: unknown key ${clean(extra[0]).slice(0, 40)}`);
   const font = v.font === undefined ? '' : v.font;
   if (typeof font !== 'string' || (font !== '' && !FONT_RE.test(font))) throw new Refusal(2, 'invalid --values.font: letters, digits and spaces only');
+  if (font !== '' && !ALLOWED_FONTS.includes(font)) throw new Refusal(1, `--values.font "${clean(font).slice(0, 40)}" is not in scripts/gate/font-allowlist.json (OFL families only); nothing written`);
   if (!Number.isFinite(v.size) || v.size < 8 || v.size > 96) throw new Refusal(2, 'invalid --values.size: want a number from 8 to 96');
   if (typeof v.accent !== 'string' || !ACCENT_RE.test(v.accent)) throw new Refusal(2, 'invalid --values.accent: want #rrggbb');
   if (!Number.isFinite(v.motion) || v.motion < 0 || v.motion > 2) throw new Refusal(2, 'invalid --values.motion: want a number from 0 to 2');
@@ -79,23 +86,36 @@ function bodyStart(lines) {
   return close === -1 ? lines.length : close + 1;
 }
 
+const isContinuation = (line) => /^\s+\S/.test(line);
+
+/** Index of the decision line: the Clarify bullet `- **YYYY-MM-DD** — UX/<screen>:` (or a bare `UX/<screen>:` line) after the frontmatter, or -1. */
+function findDecision(lines, screen) {
+  const from = bodyStart(lines);
+  const bullet = new RegExp(`^(?:- \\*\\*\\d{4}-\\d{2}-\\d{2}\\*\\* — )?UX/${screen}:`);
+  return lines.findIndex((l, i) => i >= from && bullet.test(l));
+}
+
+/** The spec lines without any existing token block of this screen; throws when a block is damaged. */
+function withoutBlock(lines, screen) {
+  const s = lines.findIndex((l) => l === TOKEN_START(screen));
+  if (s === -1) return lines;
+  const e = lines.findIndex((l, i) => i > s && l === TOKEN_END(screen));
+  if (e === -1) throw new Refusal(1, `spec has a token block start for ${screen} without its end marker; nothing written`);
+  return [...lines.slice(0, s), ...lines.slice(e + 1)];
+}
+
 function exportTokens(args) {
   const screen = requireSlug('--screen', args.screen);
   const values = parseValues(args.values);
   const specPath = requireText('--spec', args.spec);
-  const lines = readBounded(specPath, 'spec').split('\n');
-  const from = bodyStart(lines);
-  const decision = lines.findIndex((l, i) => i >= from && l.startsWith(`UX/${screen}:`));
+  const original = readBounded(specPath, 'spec').split('\n');
+  // an existing block for this screen is replaced, not duplicated: it is removed first, the decision entry is located afterwards
+  const lines = withoutBlock(original, screen);
+  const decision = findDecision(lines, screen);
   if (decision === -1) throw new Refusal(1, `spec has no "UX/${screen}:" decision line; nothing written`);
-  const start = TOKEN_START(screen);
-  const end = TOKEN_END(screen);
-  const rest = lines.slice(decision + 1);
-  const s = rest.findIndex((l) => l === start);
-  const e = s === -1 ? -1 : rest.findIndex((l, i) => i > s && l === end);
-  if (s !== -1 && e === -1) throw new Refusal(1, `spec has a token block start for ${screen} without its end marker; nothing written`);
-  // an existing block for this screen anywhere after the decision line is replaced, not duplicated
-  const kept = s !== -1 && e !== -1 ? [...rest.slice(0, s), ...rest.slice(e + 1)] : rest;
-  const next = [...lines.slice(0, decision + 1), ...tokenBlock(screen, values), ...kept];
+  let end = decision + 1;
+  while (end < lines.length && isContinuation(lines[end])) end += 1;
+  const next = [...lines.slice(0, end), ...tokenBlock(screen, values), ...lines.slice(end)];
   writeAtomic(specPath, next.join('\n'));
   process.stdout.write(`tokens written under UX/${screen}\n`);
   return 0;

@@ -28,6 +28,17 @@ export GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0
 mk_workdir FX_HOME ux-home
 export HOME="$FX_HOME"
 
+# Gate-store seam (spec 024 PR review): the store lives under the passwd home, no environment variable can redirect it in production.
+# The gate parts therefore run the gate from a tree COPY whose owner-home module is swapped for fake/xprov-owner-home.cjs
+# (same seam as the a1-xprov suite). UX_GATE is the copy's ux-gate.cjs; the real tree is never written by a gate case.
+mk_workdir UX_TREE ux-tree
+mkdir -p "$UX_TREE/skills" "$UX_TREE/_shared"
+cp -R "$REPO_ROOT/skills/a1-ux-studio" "$UX_TREE/skills/a1-ux-studio"
+cp -R "$REPO_ROOT/_shared/lib" "$UX_TREE/_shared/lib"
+cp "$HERE/fake/xprov-owner-home.cjs" "$UX_TREE/_shared/lib/xprov-owner-home.cjs"
+UX_GATE="$UX_TREE/skills/a1-ux-studio/scripts/gate/ux-gate.cjs"
+UX_STORE_DIR="$FX_HOME/.a1-ux-studio"
+
 pass=0
 fail=0
 results=()

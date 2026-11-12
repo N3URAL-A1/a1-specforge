@@ -4,9 +4,11 @@
 // HTML target plus a font-license check, and writes gate-record.json + the run.md block.
 //
 //   run    --run-dir <d> --target <html>            exit 0 pass / 1 blocking / 2 usage|hostile / 3 gate error
-//   accept --run-dir <d> --finding <id> --reason <text>   exit 0 / 2   (TTY only)
+//   accept --run-dir <d> --finding <id> --reason <text>   exit 0 / 2   (TTY only; writes the acceptance into the gate store)
 //   handoff-check --run-dir <d>                     exit 0 allowed / 1 blocked (one reason per line) / 2 usage
 //   A new `run` rewrites the record, so earlier acceptances are reset (fail closed).
+//   gate-record.json is not trusted on its own: `run` and `accept` also write the gate store (gate-store.cjs, outside the run
+//   folder) and handoff-check compares the record with it.
 //
 // Fail closed: a spawn error, a signal, exit 1, an unparseable result or a missing severity
 // can never produce `pass`. This script never computes contrast; the detector decides.
@@ -18,6 +20,8 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { checkFonts } = require('./font-check.cjs');
 const { checkHandoff } = require('./handoff-check.cjs');
+const store = require('./gate-store.cjs');
+const { resultTasteVaultProblems } = require('../taste/board-guard.cjs');
 
 const RECORD_FILE = 'gate-record.json';
 const MARK_START = '<!-- gate-record:start -->';
@@ -106,13 +110,16 @@ function mapFindings(entries) {
   }, { seen: {}, list: [] }).list;
 }
 
-/** Explicit env: every IMPECCABLE_* variable removed (DO_NOT_TRACK stays), so no outer setting steers the detector. */
+const REGISTRY_FLAG = '--registry=https://registry.npmjs.org';
+const STEERING_ENV_RE = /^(?:IMPECCABLE_|npm_config_)/i;
+
+/** Explicit env: every IMPECCABLE_* and npm_config_* / NPM_CONFIG_* variable removed, so no outer setting steers the detector or the registry npx downloads it from. */
 function detectorEnv(env) {
-  return Object.fromEntries(Object.entries(env).filter(([k]) => !/^IMPECCABLE_/i.test(k) || k === 'DO_NOT_TRACK'));
+  return Object.fromEntries(Object.entries(env).filter(([k]) => !STEERING_ENV_RE.test(k)));
 }
 
 function spawnDetector(target, scratch) {
-  const res = spawnSync('npx', [CONFIG.pin, 'detect', ...CONFIG.detect_flags, '--json', target], {
+  const res = spawnSync('npx', [REGISTRY_FLAG, CONFIG.pin, 'detect', ...CONFIG.detect_flags, '--json', target], {
     cwd: scratch,
     env: detectorEnv(process.env),
     encoding: 'utf8',
@@ -213,11 +220,14 @@ function cmdRun(opts) {
   const sha = crypto.createHash('sha256').update(bytes).digest('hex');
   const html = bytes.toString('utf8');
   if (WAIVER_RE.test(html)) throw new UsageError('target carries an impeccable ignore/waiver marker; findings must be fixed, not waived in the file');
+  const vaultHits = resultTasteVaultProblems(path.join(runDir, 'result'), html, process.env.A1_VAULT_ROOT);
+  if (vaultHits.length > 0) throw new UsageError(`result breaks the taste-vault rule: ${safeText(vaultHits.join('; '), 400)}`);
   const scratch = fs.mkdtempSync(path.join(runDir, '.gate-scratch-'));
   let scan;
   try { scan = interpret(spawnDetector(target, scratch)); } finally { fs.rmSync(scratch, { recursive: true, force: true }); }
   if (scan.status !== 'error' && sha256Of(target) !== sha) scan = { exit_code: scan.exit_code, status: 'error', cause: 'target changed while the detector ran', findings: [] };
   const rec = buildRecord(target, scan, checkFonts(html, ALLOWLIST), sha);
+  store.recordRun(runDir, rec); // the store line first: a record without it never passes handoff, and a failing store aborts the run (exit 3)
   persist(runDir, rec);
   process.stdout.write(`ux-studio-gate: ${rec.status}${rec.cause ? ` (${rec.cause})` : ''}\n`);
   if (rec.status === 'pass') return EXIT.PASS;
@@ -285,7 +295,12 @@ function cmdAccept(opts) {
   let rec;
   try { rec = JSON.parse(fs.readFileSync(path.join(runDir, RECORD_FILE), 'utf8')); } catch (_) { throw new UsageError('no readable gate-record.json; run the gate first'); }
   if (!rec || rec.gate_id !== 'ux-studio-gate' || !Array.isArray(rec.findings) || !rec.font_check || !Array.isArray(rec.font_check.failures)) throw new UsageError('gate-record.json is not a ux-studio-gate record');
-  persist(runDir, applyAccept(rec, id, safeText(reason, MAX_REASON)));
+  const mismatch = store.recordMismatch(runDir, rec);
+  if (mismatch) throw new UsageError(`${mismatch}; nothing accepted`);
+  const text = safeText(reason, MAX_REASON);
+  const next = applyAccept(rec, id, text);
+  store.recordAccept(runDir, rec, id, text); // the store line first: an accepted record without it never passes handoff
+  persist(runDir, next);
   process.stdout.write(`accepted ${safeText(id, 120)}\n`);
   return EXIT.PASS;
 }

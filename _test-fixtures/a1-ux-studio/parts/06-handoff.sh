@@ -10,7 +10,8 @@
 
 unset A1_VAULT_ROOT A1_VAULT_WRITER_HOST A1_HOST_ID
 
-HC_GATE="$REPO_ROOT/skills/a1-ux-studio/scripts/gate/ux-gate.cjs"
+HC_GATE="$UX_GATE"   # tree copy with the fake owner home (run-tests.sh): the gate store never lands in the real home
+HC_STORE_CJS="$UX_TREE/skills/a1-ux-studio/scripts/gate/gate-store.cjs"
 HC_FIX="$HERE/fixtures/handoff"
 HC_GFIX="$HERE/fixtures/gate"
 HC_BFIX="$HERE/fixtures/boards"
@@ -84,17 +85,24 @@ hc_j() { "$HC_NODE" -e 'const r=JSON.parse(require("fs").readFileSync(process.ar
 # hc_edit <rundir> <js body over r, returning the new record>
 hc_edit() { "$HC_NODE" -e 'const fs=require("fs");const f=process.argv[1]+"/gate-record.json";const r=JSON.parse(fs.readFileSync(f,"utf8"));const n=new Function("r","return ("+process.argv[2]+")")(r);fs.writeFileSync(f,JSON.stringify(n,null,2))' "$1" "$2"; }
 
+# hc_seed <rundir> <finding-key> <reason> — the gate-store line `accept` writes (the real recordAccept of the tree copy, real record).
+# The terminal check of `accept` is exercised by the pty cases (H3b and part 13); the cases that only need an accepted state seed it here.
+hc_seed() { "$HC_NODE" -e 'const s=require(process.argv[1]);const fs=require("fs");const r=JSON.parse(fs.readFileSync(process.argv[2]+"/gate-record.json","utf8"));s.recordAccept(process.argv[2],r,process.argv[3],process.argv[4])' "$HC_STORE_CJS" "$1" "$2" "$3"; }
+
 # hc_gate <rundir> <stub-mode> — real `run` on result/result.html.
 hc_gate() {
   HC_N=$((HC_N + 1))
-  run_bounded 60 "$HC_ROOT/g-out-$HC_N" "$HC_ROOT/g-err-$HC_N" -- env STUB_MODE="$2" STUB_FIX="$HC_GFIX" PATH="$HC_STUBDIR:$PATH" "$HC_NODE" "$HC_GATE" run --run-dir "$1" --target "$1/result/result.html"
+  run_bounded 60 "$HC_ROOT/g-out-$HC_N" "$HC_ROOT/g-err-$HC_N" -- env STUB_MODE="$2" STUB_FIX="${HC_STUB_FIX:-$HC_GFIX}" PATH="$HC_STUBDIR:$PATH" "$HC_NODE" "$HC_GATE" run --run-dir "$1" --target "$1/result/result.html"
   HC_GRC=$?
 }
 # hc_shots <rundir> — stand-in screenshots for every board and the result at both widths.
+# The shots are tiny real PNGs whose IHDR width is the name's width (fixtures/handoff/make-png.cjs, no binary blob).
+mkdir -p "$HC_ROOT/png"
+for w in 390 777 780 1280 2560; do "$HC_NODE" "$HC_FIX/make-png.cjs" "$w" "$HC_ROOT/png/w$w.png"; done
 hc_shots() {
   mkdir -p "$1/screenshots"
   local s w
-  for s in diverge converge result; do for w in 1280 390; do cp "$HC_FIX/screenshot.png" "$1/screenshots/$s-$w.png"; done; done
+  for s in diverge converge result; do for w in 1280 390; do cp "$HC_ROOT/png/w$w.png" "$1/screenshots/$s-$w.png"; done; done
 }
 # hc_make <var> <stub-mode> <html-fixture> — run folder, two boards, gated result, full evidence.
 hc_make() {
@@ -103,7 +111,7 @@ hc_make() {
   mkdir -p "$d/result" "$d/boards"
   printf '# run\n\n## Brief\nx\n\n<!-- gate-record:start -->\n<!-- gate-record:end -->\n\n## Picks\n' > "$d/run.md"
   cp "$HC_BFIX/diverge.html" "$HC_BFIX/converge.html" "$d/boards/"
-  cp "$HC_GFIX/$3" "$d/result/result.html"
+  if [[ "$3" == /* ]]; then cp "$3" "$d/result/result.html"; else cp "$HC_GFIX/$3" "$d/result/result.html"; fi
   hc_gate "$d" "$2"
   hc_shots "$d"
   eval "$1=\$d"
@@ -134,6 +142,7 @@ hc_check "H1 blocker names finding low-contrast-1 and its rule (count 1) [FR-013
 
 # H1b accepted finding unblocks. RED: checkItem treats every state as open (handoff-check.cjs, the `state === 'accepted'` line).
 hc_edit "$R" '{...r,findings:r.findings.map(f=>({...f,state:"accepted",reason:"Robert: brand colour, contrast reviewed"}))}'
+hc_seed "$R" low-contrast-1 "Robert: brand colour, contrast reviewed"
 hc_hand --run-dir "$R"
 hc_check "H1b every open finding accepted with a reason: exit 0, 0 blocker lines [FR-013]" "$HC_RC/$HC_BLOCKS" "0/0"
 # accepted without a reason, and an unknown state, still block (fail closed)
@@ -145,22 +154,31 @@ hc_hand --run-dir "$R"
 hc_check "H1d state 'fixed' (nothing legitimate writes it): exit 1 [FR-013]" "$HC_RC/$HC_BLOCKS/$(hc_say 'unknown state')" "1/1/1"
 
 # H1e each finding judged individually. RED: checkFindings stops after the first finding (e.g. .slice(0,1)).
-hc_edit "$R" '{...r,findings:[{...r.findings[0],state:"accepted",reason:"ok"},{...r.findings[0],id:"low-contrast-2",location:"low-contrast.html:9",state:"open",reason:null}]}'
+# Two REAL findings: the captured detector output with its single entry duplicated at another line (the record is not hand-written any more).
+mkdir -p "$HC_ROOT/fix2"; cp "$HC_GFIX/impeccable-4.8.1-low.exit" "$HC_ROOT/fix2/"
+"$HC_NODE" -e 'const fs=require("fs");const a=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));fs.writeFileSync(process.argv[2],JSON.stringify([...a,{...a[0],line:9}]))' "$HC_GFIX/impeccable-4.8.1-low.json" "$HC_ROOT/fix2/impeccable-4.8.1-low.json"
+HC_STUB_FIX="$HC_ROOT/fix2" hc_make R low low-contrast.html
+hc_seed "$R" low-contrast-1 "ok"
+hc_edit "$R" '{...r,findings:[{...r.findings[0],state:"accepted",reason:"ok"},r.findings[1]]}'
 hc_hand --run-dir "$R"
 hc_check "H1e two findings, one accepted: exit 1, only low-contrast-2 named (blockers 1, hits 1) [FR-013]" "$HC_RC/$HC_BLOCKS/$(hc_say 'low-contrast-2')" "1/1/1"
 
 # ---------------------------------------------------------------- H2 open font failure
 # RED: checkFonts ignores rec.font_check.failures (handoff-check.cjs, the flatMap in checkFonts).
-hc_make R high high-contrast.html
-hc_edit "$R" '{...r,font_check:{status:"fail",failures:[{font:"Lora",reason:"remote_url",state:"open"},{font:"Comic Neue",reason:"not_allowlisted",state:"open"}]}}'
+# Two REAL font failures from the real gate: Lora from a remote link, Comic Neue not on the allowlist.
+mkdir -p "$HC_ROOT/variants"
+sed 's#<style>#<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora"><style>.cn{font-family:"Comic Neue"}#' "$HC_GFIX/high-contrast.html" > "$HC_ROOT/variants/two-fonts.html"
+hc_make R high "$HC_ROOT/variants/two-fonts.html"
 hc_hand --run-dir "$R"
 hc_check "H2 two open font failures: exit 1, 2 blocker lines [FR-013]" "$HC_RC/$HC_BLOCKS" "1/2"
 hc_check "H2 each font named (Lora 1, Comic Neue 1) [FR-013]" "$(hc_say 'font failure Lora')/$(hc_say 'font failure Comic Neue')" "1/1"
 # H2b one accepted, the other still blocks. RED: same line; an `every`-style shortcut turns it red.
 hc_edit "$R" '{...r,font_check:{...r.font_check,failures:r.font_check.failures.map(x=>x.font==="Lora"?{...x,state:"accepted",reason_text:"Robert: self-hosted copy follows"}:x)}}'
+hc_seed "$R" "font:Lora" "Robert: self-hosted copy follows"
 hc_hand --run-dir "$R"
 hc_check "H2b Lora accepted, Comic Neue open: exit 1, only Comic Neue named (blockers 1, Comic 1, Lora 0) [FR-013]" "$HC_RC/$HC_BLOCKS/$(hc_say 'font failure Comic Neue')/$(hc_say 'font failure Lora')" "1/1/1/0"
 hc_edit "$R" '{...r,font_check:{...r.font_check,failures:r.font_check.failures.map(x=>({...x,state:"accepted",reason_text:"Robert: ok"}))}}'
+hc_seed "$R" "font:Lora" "Robert: ok"; hc_seed "$R" "font:Comic Neue" "Robert: ok"
 hc_hand --run-dir "$R"
 hc_check "H2c all font failures accepted with a reason: exit 0 [FR-013]" "$HC_RC/$HC_BLOCKS" "0/0"
 hc_edit "$R" '{...r,font_check:{status:"fail",failures:[]}}'
@@ -313,12 +331,13 @@ hc_check "H11c gate-record.json is not a ux-studio-gate record: exit 1 [FR-013]"
 hc_make R low low-contrast.html
 hc_edit "$R" '{...r,findings:[{...r.findings[0],id:"x\nblocked: forged line"}]}'
 hc_hand --run-dir "$R"
-hc_check "H11d newline in a finding id: exactly 1 blocker line, no forged line starts a line (count 0) [FR-013]" "$HC_BLOCKS/$(grep -c '^blocked: forged' "$HC_OUT" || true)" "1/0"
+hc_check "H11d newline in a finding id: 2 blocker lines (open finding + forged record), no forged line starts a line (count 0) [FR-013]" "$HC_BLOCKS/$(grep -c '^blocked: forged' "$HC_OUT" || true)" "2/0"
 
 # ---------------------------------------------------------------- H12 a new run resets acceptances
 # RED: ux-gate.cjs cmdRun carries the previous record's accepted states into the new record.
 hc_make R low low-contrast.html
 hc_edit "$R" '{...r,findings:r.findings.map(f=>({...f,state:"accepted",reason:"Robert: ok"}))}'
+hc_seed "$R" low-contrast-1 "Robert: ok"
 hc_hand --run-dir "$R"
 hc_check "H12 precondition: accepted record allows handoff (exit 0) [FR-013]" "$HC_RC" "0"
 hc_gate "$R" low

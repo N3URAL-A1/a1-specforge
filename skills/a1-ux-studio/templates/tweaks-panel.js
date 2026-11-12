@@ -2,7 +2,8 @@
    Injected by scripts/tweaks/tweaks.cjs build into result/result.dev.html. Never part of result.html. */
 (function () {
   'use strict';
-  var FONTS = ['Inter', 'Roboto', 'Open Sans', 'Lato', 'Montserrat', 'Source Sans 3', 'Lora', 'Georgia'];
+  // The build step (scripts/tweaks/tweaks.cjs) replaces the placeholder with the families of scripts/gate/font-allowlist.json.
+  var FONTS = /*A1_FONTS*/[];
   var DEFAULTS = { font: '', size: 16, accent: '#3355ff', motion: 1 };
   var root = document.documentElement;
   var state = Object.assign({}, DEFAULTS);
@@ -13,7 +14,7 @@
   style.textContent =
     ':root[data-a1-tweaks-on] body{font-family:var(--a1-font,inherit);font-size:var(--a1-size,inherit)}' +
     ':root[data-a1-tweaks-on]{accent-color:var(--a1-accent,auto);--accent:var(--a1-accent)}' +
-    ':root[data-a1-tweaks-on] *{animation-duration:calc(var(--a1-motion,1) * 1s)!important;transition-duration:calc(var(--a1-motion,1) * .3s)!important}' +
+    ':root[data-a1-tweaks-on][data-a1-motion-on] *{animation-duration:calc(var(--a1-motion,1) * 1s)!important;transition-duration:calc(var(--a1-motion,1) * .3s)!important}' +
     '[data-a1-tweaks=panel]{position:fixed;right:12px;bottom:12px;z-index:2147483647;width:220px;padding:10px;' +
     'font:12px/1.4 system-ui,sans-serif;color:#111;background:#fff;border:1px solid #888;border-radius:6px}' +
     '[data-a1-tweaks=panel] label{display:block;margin:6px 0 2px}' +
@@ -22,8 +23,10 @@
   document.head.appendChild(style);
 
   function apply() {
-    if (comparing) { root.removeAttribute('data-a1-tweaks-on'); return; }
+    if (comparing) { root.removeAttribute('data-a1-tweaks-on'); root.removeAttribute('data-a1-motion-on'); return; }
     root.setAttribute('data-a1-tweaks-on', '');
+    // The duration override replaces the page's own timings, so it applies only while the control moved off its default.
+    if (state.motion !== DEFAULTS.motion) root.setAttribute('data-a1-motion-on', ''); else root.removeAttribute('data-a1-motion-on');
     if (state.font) root.style.setProperty('--a1-font', '"' + state.font + '", sans-serif'); else root.style.removeProperty('--a1-font');
     root.style.setProperty('--a1-size', state.size + 'px');
     root.style.setProperty('--a1-accent', state.accent);
