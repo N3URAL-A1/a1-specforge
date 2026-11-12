@@ -21,7 +21,7 @@ vault: "[[project/a1-specforge]]"
 - Produktname ist `a1-specforge` (Festlegung 2026-07-04); Hardcodes werden auf den Namen angeglichen.
 - `bin/install.sh` ist die Single Source of Truth für das installierte Set; README muss dazu passen (Wächter `bin/verify-install-sync.sh`).
 - Gates sind deterministisch (Code, nicht Prompt). Jede Gate-ID muss in `_shared/gates-registry.md` stehen.
-- xprov-Gate schickt Code nur mit Repo-Freigabe an Codex (Regel `xprov-codex.md`); Allowlist-PRs nur per `--rebase` mergen.
+- xprov-Gates schicken nur Plan- und Architektur-Dokumente an Codex, und nur mit Repo-Freigabe (Regel `xprov-codex.md`); Code-Diffs und UX-Design nie (Spec 025); Allowlist-PRs nur per `--rebase` mergen.
 
 ## HOW — Der praktische Betrieb
 
