@@ -14,6 +14,7 @@ RS_WORKER_RESERVE=2
 RS_CORES_FALLBACK=2
 RS_POLL_INTERVAL=0.2
 RS_KILL_GRACE_TICKS=50   # x 0.1 s between SIGTERM and SIGKILL of a worker group
+RS_LEFTOVER_GRACE_TICKS=20   # x 0.1 s a finished suite's helpers get to end on their own before the first SIGTERM
 
 # Worker slots (parallel indexed arrays, index = slot).
 RS_N_SLOTS=0
@@ -107,10 +108,22 @@ rs_drain_group() {
   return 2
 }
 
+# rs_grace_group <pgid> — polls (bounded, RS_LEFTOVER_GRACE_TICKS) until the group is empty, so a helper that
+# finishes right after its suite (a watchdog sleep) is not counted as a leftover.
+rs_grace_group() {
+  local tick=0
+  while [ "$tick" -lt "$RS_LEFTOVER_GRACE_TICKS" ]; do
+    rs_group_gone "$1" && return 0
+    sleep 0.1
+    tick=$((tick + 1))
+  done
+  return 1
+}
+
 # rs_reap — collects every finished worker: kill -0 polling on the group leader, `wait <pid>` for the
-# status, then rs_drain_group so grandchildren that outlive the leader end before the leak check and the
+# status, a grace period (rs_grace_group), then rs_drain_group so grandchildren that outlive the leader end before the leak check and the
 # slot-dir removal. Calls rs_on_suite_done <slot> <rc> <left> (defined by the entry script; left = 0 when
-# the group was empty at leader exit, 1 or 2 otherwise). Sets RS_REAPED.
+# the group emptied within the grace period, 1 = leftovers were ended, 2 = some survived SIGKILL). Sets RS_REAPED.
 rs_reap() {
   local i=0 pid rc left
   RS_REAPED=0
@@ -118,7 +131,12 @@ rs_reap() {
     pid="${RS_SLOT_PID[$i]:-}"
     if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
       wait "$pid"; rc=$?
-      rs_drain_group "$pid"; left=$?
+      left=0
+      RS_LEFT_COUNT=0
+      if ! rs_grace_group "$pid"; then
+        RS_LEFT_COUNT="$(ps -eo pgid= 2>/dev/null | awk -v g="$pid" '$1 == g' | grep -c '')"
+        rs_drain_group "$pid"; left=$?
+      fi
       RS_SLOT_PID[$i]=""
       RS_RUNNING=$((RS_RUNNING - 1))
       RS_REAPED=$((RS_REAPED + 1))

@@ -144,6 +144,23 @@ cg_one refuse-coe '      - name: Fixtures
 assert_contains "Q9-refuse-coe says why" "$RS_OUT" "continue-on-error"
 cg_one refuse-or-true '      - name: Fixtures
         run: bash bin/run-suites.sh --job j1 || true' 1 "j1"
+cg_one refuse-or-echo '      - name: Fixtures
+        run: bash bin/run-suites.sh --job j1 || echo failed' 1 "j1"
+cg_one refuse-exit0 '      - name: Fixtures
+        run: bash bin/run-suites.sh --job j1; exit 0' 1 "j1"
+cg_one refuse-set-e '      - name: Fixtures
+        run: |
+          set +e
+          bash bin/run-suites.sh --job j1' 1 "j1"
+assert_contains "Q9-refuse-set-e says why" "$RS_OUT" "set +e"
+cg_one refuse-amp '      - name: Fixtures
+        run: bash bin/run-suites.sh --job j1 &' 1 "j1"
+cg_one refuse-bang '      - name: Fixtures
+        run: ! bash bin/run-suites.sh --job j1' 1 "j1"
+assert_contains "Q9-refuse-allowlist says why" "$RS_OUT" "allowlist"
+cg_one accept-coe-false '      - name: Fixtures
+        continue-on-error: false
+        run: bash bin/run-suites.sh --job j1' 0
 cg_one refuse-echo '      - name: Fixtures
         run: echo bash bin/run-suites.sh --job j1' 1 "j1"
 cg_one refuse-job-coe '      - name: Fixtures

@@ -192,6 +192,9 @@ for (const id of Object.keys(j.timings.seconds || {})) if (!found.has(id)) out.p
 const called = new Set();
 const seenGhost = new Set();
 const lines = fs.readFileSync(wf, "utf8").split("\n");
+// The allowlist for a call line (FR-017): the line, minus a leading `- ` / `run:` / `run: |`, must be exactly this.
+const ALLOWED_CALL = /^bash bin\/run-suites\.sh( --[a-z-]+( [^ ]+)?)* --job[= ]"?[A-Za-z0-9_-]+"?$/;
+const callText = (l) => l.trim().replace(/^-\s+/, "").replace(/^run:\s*(\|[-+]?)?\s*/, "");
 const indentOf = (l) => l.match(/^\s*/)[0].length;
 // The text of the step (or job) that holds line n: from its opening line to the line before the next sibling.
 const blockAround = (n, opener, ind) => {
@@ -213,12 +216,16 @@ for (let n = 0; n < lines.length; n++) {
   let why = "";
   if (/\b(echo|printf)\b/.test(before)) why = "inside an echo/printf";
   else if (/\|\|\s*(true|:|exit\s+0)\b/.test(after)) why = "behind `|| true`";
+  else if (!ALLOWED_CALL.test(callText(l))) why = "call line is not `bash bin/run-suites.sh [--flag [value]]... --job <name>` alone (allowlist)";
   else {
     const step = blockAround(n, (x) => /^\s*-\s/.test(x), (x) => indentOf(x));
+    if (/\bset\s+\+e\b/.test(step)) why = "in a run block with `set +e`";
     const jobb = blockAround(n, (x) => /^  [A-Za-z0-9_-]+:\s*$/.test(x), () => 2);
-    const stepOwn = step.split("\n").filter((x) => /^\s*(-\s+)?(if|continue-on-error):/.test(x));
-    const jobOwn = jobb.split("\n").filter((x) => /^    (if|continue-on-error):/.test(x));
-    if (stepOwn.length) why = "in a step with " + stepOwn[0].trim().replace(/^-\s+/, "").split(":")[0] + ":";
+    const gating = (x) => /^\s*(-\s+)?(if|continue-on-error):/.test(x) && !/continue-on-error:\s*["\x27]?false["\x27]?\s*$/.test(x);
+    const stepOwn = step.split("\n").filter(gating);
+    const jobOwn = jobb.split("\n").filter((x) => /^    (if|continue-on-error):/.test(x) && gating(x));
+    if (why) { /* set +e */ }
+    else if (stepOwn.length) why = "in a step with " + stepOwn[0].trim().replace(/^-\s+/, "").split(":")[0] + ":";
     else if (jobOwn.length) why = "in a job with " + jobOwn[0].trim().split(":")[0] + ":";
   }
   if (why) { out.push("workflow call of --job " + job + " cannot gate (" + why + ")"); continue; }
@@ -296,14 +303,16 @@ rs_order() {
 
 # ---- one finished suite: result, leak check, isolation dirs removed ----
 rs_on_suite_done() {
-  local slot="$1" rc="$2" left="${3:-0}" id log dir vault elapsed note="" leaked st p
+  local slot="$1" rc="$2" left="${3:-0}" id log dir vault elapsed note="" warn="" leaked st p
   id="${RS_SLOT_ID[$slot]}"; log="${RS_SLOT_LOG[$slot]}"; dir="${RS_SLOT_DIR[$slot]}"
   vault="$dir/vault"
   elapsed=$((SECONDS - ${RS_SLOT_START[$slot]}))
   if [ "$rc" -gt 128 ]; then note="killed by signal $((rc - 128))"; fi
   if [ "$left" -ne 0 ]; then
-    note="${note:+$note; }left processes running (the runner ended them)"
-    if [ "$left" -ge 2 ]; then note="$note; some survived SIGKILL"; fi
+    # Leftovers are a warning, not a failure: the suite's own exit and the leak check below decide.
+    echo "warning: suite $id left ${RS_LEFT_COUNT:-?} process(es) running after it finished; the runner ended them"
+    warn="ended ${RS_LEFT_COUNT:-?} leftover processes"
+    if [ "$left" -ge 2 ]; then warn="$warn; some survived SIGKILL"; fi
   fi
   if [ -d "$vault" ] && [ -n "$(ls -A "$vault" 2>/dev/null)" ]; then
     note="${note:+$note; }wrote into its sentinel vault"
@@ -318,7 +327,7 @@ rs_on_suite_done() {
   st=PASS
   if [ "$rc" -ne 0 ] || [ -n "$note" ]; then st=FAIL; fi
   echo "done: $st $id (${elapsed}s)"
-  rs_record_result "$id" "$rc" "$elapsed" "$log" "$note"
+  rs_record_result "$id" "$rc" "$elapsed" "$log" "$note" "$warn"
   rs_remove_slot_dir "$dir"
   RS_SLOT_ID[$slot]=""; RS_SLOT_DIR[$slot]=""
 }

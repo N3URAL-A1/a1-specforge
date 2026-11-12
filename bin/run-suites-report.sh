@@ -13,6 +13,7 @@ RS_RES_RC=()
 RS_RES_SEC=()
 RS_RES_LOG=()
 RS_RES_NOTE=()
+RS_RES_WARN=()
 RS_RES_CNT=()
 
 RS_NO_SUMMARY_NOTE="no assert summary"
@@ -69,6 +70,7 @@ rs_record_result() {
   RS_RES_SEC[$RS_N_RES]="$3"
   RS_RES_LOG[$RS_N_RES]="$4"
   RS_RES_NOTE[$RS_N_RES]="$5"
+  RS_RES_WARN[$RS_N_RES]="${6:-}"
   RS_RES_CNT[$RS_N_RES]="$(rs_parse_count "$4")"
   RS_N_RES=$((RS_N_RES + 1))
 }
@@ -90,7 +92,8 @@ rs_print_table() {
     [ -n "$idx" ] || continue
     st=PASS
     if rs_result_failed "$idx"; then st=FAIL; fi
-    printf '  %-4s %5ss %5s  %s\n' "$st" "${RS_RES_SEC[$idx]}" "${RS_RES_CNT[$idx]}" "${RS_RES_ID[$idx]}"
+    printf '  %-4s %5ss %5s  %s%s\n' "$st" "${RS_RES_SEC[$idx]}" "${RS_RES_CNT[$idx]}" "${RS_RES_ID[$idx]}" \
+      "${RS_RES_WARN[$idx]:+  (${RS_RES_WARN[$idx]})}"
   done <<< "$(printf '%s' "$lines" | LC_ALL=C sort -t"$(printf '\t')" -k1,1nr -k2,2)"
   rs_print_nocount_report
 }

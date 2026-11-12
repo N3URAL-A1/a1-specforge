@@ -54,27 +54,44 @@ lk_interrupt sigterm-plain TERM 143 0
 
 assert_eq "X8 the real lock is in the same state as before the lock part" "$(lk_real_state)" "$LK_REAL_BEFORE"
 
-# ---- PR review fix round, MAJOR-1: a suite is done when its whole process group is gone ----
-# G1: the suite leaves a background writer behind and exits. Red-making change: reap on the leader alone
-# (no group TERM/KILL before the leak check and the slot-dir removal): the runner passes, the orphan
-# outlives the run and the work directory.
+# ---- PR review fix rounds, MAJOR-1: a suite is done when its whole process group is gone ----
+# G1: leftovers are ended before the leak check and the slot-dir removal, and are a warning, not a failure.
+# Red-making change: reap on the leader alone (no group TERM/KILL): the late writer is not stopped.
+# G1a-e: a late writer (3 s) left behind: its write lands before the drain would end it only if the grace
+# period is skipped; here it is ended (so no leak) and the run is green with a warning.
 mk_tree T_LG lg
 mk_workdir W_LG lgw
-plant_suite "$T_LG" g/run-tests.sh "( sleep 3; mkdir -p \"\$A1_VAULT_ROOT/late\" ) &
+plant_suite "$T_LG" g/run-tests.sh "( sleep 30; mkdir -p \"\$A1_VAULT_ROOT/late\" ) &
 echo \$! > \"$W_LG/bg\"
 echo 'g: 1 passed, 0 failed'"
 rs_run "$T_LG"
 LG_BG="$(cat "$W_LG/bg" 2>/dev/null)"
-assert_eq "G1a a suite that leaves a process running is red (exit 1)" "$RS_RC" "1"
-assert_contains "G1b the table says why" "$RS_OUT" "left processes running"
-assert_contains "G1c the FAILED line names the suite" "$RS_OUT" "FAILED: g/run-tests.sh"
-if [[ -n "$LG_BG" ]] && lk_pid_gone "$LG_BG"; then ok "G1d the background writer is gone when the run ends"
-else bad "G1d the background writer is gone when the run ends" "pid [$LG_BG] still alive"; fi
+assert_eq "G1a a harmless leftover keeps the suite green (exit 0)" "$RS_RC" "0"
+assert_contains "G1b a warning line names the suite" "$RS_OUT" "warning: suite g/run-tests.sh left"
+assert_contains "G1c the table notes the ended processes" "$RS_OUT" " leftover processes)"
+if [[ -n "$LG_BG" ]] && lk_pid_gone "$LG_BG"; then ok "G1d the background process is gone when the run ends"
+else bad "G1d the background process is gone when the run ends" "pid [$LG_BG] still alive"; fi
 assert_eq "G1e no runner work directory is left" "$(find "$RS_TMPD" -maxdepth 1 -name 'a1-suite-??????' | grep -c '')" "0"
 LG_N=0; while [[ -n "$LG_BG" ]] && ! lk_pid_gone "$LG_BG" && [[ $LG_N -lt 60 ]]; do sleep 0.1; LG_N=$((LG_N + 1)); done
-plant_ok "$T_LG" g/run-tests.sh
-rs_run "$T_LG"
-assert_eq "G1f a green suite without leftovers stays green" "$RS_RC" "0"
+assert_absent "G1f no FAILED line for a harmless leftover" "$RS_OUT" "FAILED:"
+
+# G1g-i: a writer that writes into the sentinel vault inside the grace period: the leak check is red.
+mk_tree T_LW lw
+mk_workdir W_LW lww
+plant_suite "$T_LW" g/run-tests.sh "( sleep 0.5; mkdir -p \"\$A1_VAULT_ROOT/late\" ) &
+echo 'g: 1 passed, 0 failed'"
+rs_run "$T_LW"
+assert_eq "G1g a late writer inside the grace period turns the suite red" "$RS_RC" "1"
+assert_contains "G1h the leak check names the sentinel vault" "$RS_OUT" "wrote into its sentinel vault"
+
+# G1j-k: a helper that finishes within the grace period: green, no warning.
+mk_tree T_LS ls
+mk_workdir W_LS lsw
+plant_suite "$T_LS" g/run-tests.sh "( sleep 0.5 ) &
+echo 'g: 1 passed, 0 failed'"
+rs_run "$T_LS"
+assert_eq "G1j a helper that ends within the grace period stays green" "$RS_RC" "0"
+assert_absent "G1k and produces no warning" "$RS_OUT" "warning:"
 
 # ---- PR review fix round, MAJOR-2: a stale takeover ends the dead holder's worker groups first ----
 # G2: kill -9 of the holder leaves the worker group (its own group) running; the next run must not run
