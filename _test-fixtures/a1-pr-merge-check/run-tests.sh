@@ -484,5 +484,57 @@ printf '{"commands":[{"id":"unit","argv":["bash","suite.sh"]}],"flaky_base":["un
 mc
 expect "J2 an uncommitted flaky_base edit in the working tree is not read as the head's list (no flaky_base_grown)" "false" "$(js "j.reasons.some(r=>r.reason==='flaky_base_grown')")"
 
+# ---------- K: CI-evidence shortcut (.a1/verify.json ci_evidence) ----------
+# The suite command appends to $MARK: a marker line proves the local run happened, no marker proves it was skipped.
+# Measured red 2026-11-12 (code without pr-ci-evidence.cjs, this suite overlaid): K1..K13 (the shortcut, its refusals and the config validation).
+MARK="$WORK/ran-marker"
+printf '[{"name":"checks","bucket":"pass","state":"SUCCESS"},{"name":"fx","bucket":"pass","state":"SUCCESS"}]\n' > "$WORK/ci-green.json"
+printf '[{"name":"checks","bucket":"pass","state":"SUCCESS"},{"name":"fx","bucket":"fail","state":"FAILURE"}]\n' > "$WORK/ci-red.json"
+printf '[{"name":"checks","bucket":"pass","state":"SUCCESS"},{"name":"fx","bucket":"cancel","state":"CANCELLED"}]\n' > "$WORK/ci-cancel.json"
+printf '[{"name":"checks","bucket":"pass","state":"SUCCESS"},{"name":"fx","bucket":"pending","state":"IN_PROGRESS"}]\n' > "$WORK/ci-pending.json"
+printf '[{"name":"checks","bucket":"pass","state":"SUCCESS"}]\n' > "$WORK/ci-missing.json"
+printf '[{"name":"checks","bucket":"pass","state":"SUCCESS"},{"name":"fx","bucket":"pass","state":"SUCCESS"},{"name":"fx","bucket":"pass","state":"SUCCESS"}]\n' > "$WORK/ci-dup.json"
+CIEV='{"checks":["checks","fx"],"unchanged":[".github/workflows/","guard.txt"]}'
+cihook() { # $1 = project; CIEV = the ci_evidence value ("" = key absent)
+  mkdir -p "$1/.github/workflows"; echo wf > "$1/.github/workflows/ci.yml"; echo g > "$1/guard.txt"
+  local extra=''; [[ -n "$CIEV" ]] && extra=",\"ci_evidence\":$CIEV"
+  printf '{"commands":[{"id":"unit","argv":["bash","-c","echo ran >> %s; exit 0"]}]%s}\n' "$MARK" "$extra" > "$1/.a1/verify.json"
+}
+ci_pr() { BASE_HOOK=cihook new_pr "$1" 0 0; BASE_HOOK=; }
+ran() { if [[ -s "$MARK" ]]; then echo yes; else echo no; fi; }
+: > "$WORK/gh-empty.json"
+
+: > "$MARK"; ci_pr k1; CHK="$WORK/ci-green.json" mc
+expect "K1 CI green on the configured checks: exit 0, verdict ci_evidence, suites did not run" "0|ci_evidence|no|true|ok" "$RC|$(js 'j.suites.verdict')|$(ran)|$(js 'j.ci_evidence.used')|$(js 'j.ci_evidence.why')"
+expect "K1b head_sha is the PR head, both checks reported pass (count)" "$(git -C "$P" rev-parse HEAD)|2" "$(js 'j.head_sha')|$(js 'j.ci_evidence.checks.filter(c=>c.bucket==="pass").length')"
+: > "$MARK"; ci_pr k2; CHK="$WORK/ci-red.json" mc
+expect "K2 configured check red: exit 1 ci_check_red for fx (the stub also lists it as required), no local run" "1|ci_check_red,required_check_red|fx|no" "$RC|$(reasons)|$(js 'j.reasons[0].check')|$(ran)"
+: > "$MARK"; CHK="$WORK/ci-cancel.json" mc
+expect "K2b configured check cancelled: ci_check_red" "1|ci_check_red,required_check_red|no" "$RC|$(reasons)|$(ran)"
+: > "$MARK"; CHK="$WORK/ci-pending.json" mc
+expect "K3 configured check pending: exit 1 ci_check_pending, no local run" "1|ci_check_pending,required_check_pending|no" "$RC|$(reasons)|$(ran)"
+: > "$MARK"; CHK="$WORK/ci-missing.json" mc
+expect "K4 configured check missing: local run happens, no shortcut" "0|yes|false|check_missing" "$RC|$(ran)|$(js 'j.ci_evidence.used')|$(js 'j.ci_evidence.why')"
+: > "$MARK"; CHK="$WORK/ci-dup.json" mc
+expect "K4b configured check duplicated: local run happens" "yes|check_missing" "$(ran)|$(js 'j.ci_evidence.why')"
+: > "$MARK"; CHK="$WORK/gh-empty.json" A1_FX_CHECKS_ERR="no checks reported on the 'feat' branch" A1_FX_CHECKS_RC=1 mc
+expect "K4c gh reports no checks at all: local run happens" "yes|check_missing" "$(ran)|$(js 'j.ci_evidence.why')"
+: > "$MARK"; ci_pr k5; echo changed > "$P/guard.txt"; g "$P" commit -q -am "touch guard"; CHK="$WORK/ci-green.json" mc
+expect "K5 protected path changed on the branch: local run, verdict not ci_evidence" "yes|protected_path_changed|pass" "$(ran)|$(js 'j.ci_evidence.why')|$(js 'j.suites.verdict')"
+: > "$MARK"; ci_pr k5b; echo changed >> "$P/.github/workflows/ci.yml"; g "$P" commit -q -am "touch workflow"; CHK="$WORK/ci-green.json" mc
+expect "K5b protected directory prefix (.github/workflows/) changed: local run" "yes|protected_path_changed" "$(ran)|$(js 'j.ci_evidence.why')"
+: > "$MARK"; ci_pr k6; sed -i.bak 's/"unit"/"unit2"/' "$P/.a1/verify.json"; rm -f "$P/.a1/verify.json.bak"; g "$P" commit -q -am "edit verify.json"; CHK="$WORK/ci-green.json" mc
+expect "K6 verify.json changed on the branch: no shortcut (verify_config_changed stays in charge)" "false|verify_config_changed|1" "$(js 'j.ci_evidence.used')|$(js 'j.ci_evidence.why')|$RC"
+: > "$MARK"; ci_pr k7; CHK="$WORK/ci-green.json" mc --no-ci-evidence
+expect "K7 --no-ci-evidence forces the local run" "0|yes|disabled_by_flag" "$RC|$(ran)|$(js 'j.ci_evidence.why')"
+: > "$MARK"; CIEV='' ci_pr k8; CHK="$WORK/ci-green.json" mc
+expect "K8 no ci_evidence key: local run, not_configured" "0|yes|not_configured|pass" "$RC|$(ran)|$(js 'j.ci_evidence.why')|$(js 'j.suites.verdict')"
+for bad in '[]' '"x"' '{"checks":[]}' '{"checks":[""]}' '{"checks":[1]}' '{"checks":["a"],"unchanged":"x"}' '{"checks":["a"],"unchanged":["../x"]}' '{"checks":["a"],"unchanged":["/etc"]}' '{"checks":["a"],"extra":1}' '{"unchanged":[]}' 'null'; do
+  : > "$MARK"; CIEV="$bad" ci_pr kb; CHK="$WORK/ci-green.json" mc
+  expect "K9 invalid ci_evidence $bad: exit 2 bad_config, no local run" "2|bad_config|no" "$RC|$(js 'j.error')|$(ran)"
+done
+: > "$MARK"; ci_pr k10; printf '{"commands":[{"id":"unit","argv":["bash","-c","exit 0"]}],"ci_evidence":{"checks":["fx"]}}\n' > "$P/.a1/verify.json"; CHK="$WORK/ci-green.json" mc
+expect "K10 uncommitted verify.json edit: head_mismatch (dirty tree), the committed config rules; ci_evidence checks come from HEAD" "head_mismatch|checks,fx" "$(reasons | cut -d, -f1)|$(js 'j.ci_evidence.checks.map(c=>c.name).join()')"
+
 echo "a1-pr-merge-check: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

@@ -1,11 +1,16 @@
 'use strict';
 
 // Help text of `pr merge-check` (spec 017 FR-036/FR-037). Kept out of help.cjs (size).
-const MERGE_CHECK_HELP = `  a1-tools pr merge-check --pr <n> [--base <ref>] [--bug <fix-report-id>] [--project <dir>] [--slug <project>]
+const MERGE_CHECK_HELP = `  a1-tools pr merge-check --pr <n> [--base <ref>] [--bug <fix-report-id>] [--project <dir>] [--slug <project>] [--no-ci-evidence]
                   Spec 017-enforced-self-checks. The last check before \`gh pr merge\`. Runs the suites on head and on the
                   merge-base of <ref> (verify run --base --no-cache: a result cache is never trusted), reads \`gh pr checks <n> --required\` (binary
                   seam A1_GH_BIN; an override is announced on stderr and reported as gh_bin: "override"), compares
                   .a1/verify.json flaky_base with the base and reads the disposition review state.
+                  CI evidence (opt-in): .a1/verify.json key ci_evidence {checks:[names], unchanged:[repo-relative paths]}. When every named check
+                  is present exactly once and passes on the PR head (gh pr checks <n>, all checks), and neither .a1/verify.json nor any
+                  unchanged path differs from the merge-base, the local suite runs are skipped (suites.verdict ci_evidence). A named check
+                  red or pending gives ci_check_red / ci_check_pending (no local run); a missing or duplicated one, or a changed config or
+                  path, falls back to the local run. --no-ci-evidence forces the local run. The report carries ci_evidence {used, why, checks}.
                   Exit 0 nothing red; exit 1 reasons[] on stdout: head_mismatch (local HEAD is not the PR head from gh, or the tree is
                   dirty), dispositions_uncommitted (.a1/dispositions.json differs from HEAD: commit and push it), suite_red_on_head,
                   base_red_unreported, bug_unresolved, required_check_red, required_check_pending, flaky_base_grown,

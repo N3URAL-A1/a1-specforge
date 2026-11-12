@@ -5,6 +5,7 @@
   ],
   "ci_jobs": {
     "fixtures-xprov": [
+      "a1-xprov/run-tests-b.sh",
       "a1-xprov/run-tests.sh"
     ],
     "fixtures-rest": [
@@ -72,7 +73,8 @@
   "timings": {
     "measured": "2026-11-12",
     "seconds": {
-      "a1-xprov/run-tests.sh": 631,
+      "a1-xprov/run-tests-b.sh": 316,
+      "a1-xprov/run-tests.sh": 310,
       "a1-intent/run-tests.sh": 285,
       "a1-suite-runner/run-tests.sh": 91,
       "a1-probe/run-tests.sh": 50,

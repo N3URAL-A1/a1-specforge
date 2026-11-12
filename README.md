@@ -181,7 +181,7 @@ English-first; German trigger phrases remain supported as aliases. Some workflow
 
 ## Testing
 
-59 fixture runners live under `_test-fixtures/*/run*.sh` (counted with `ls _test-fixtures/*/run*.sh | wc -l`; this includes the vault-fallback, phantom and `run-wave13.sh` runners) plus one nested runner, `_test-fixtures/a1-schema-check/parser/run-parser.sh`. Run them all:
+60 fixture runners live under `_test-fixtures/*/run*.sh` (counted with `ls _test-fixtures/*/run*.sh | wc -l`; this includes the vault-fallback, phantom and `run-wave13.sh` runners) plus one nested runner, `_test-fixtures/a1-schema-check/parser/run-parser.sh`. Run them all:
 
 ```bash
 bash bin/run-suites.sh

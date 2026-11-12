@@ -318,14 +318,16 @@ git -C <repo> log --oneline <feature-branch>..origin/main        # non-empty →
 git -C <repo> ls-tree origin/main automation/db/migrations/ | grep -E '<your-new-numbers>'
 ```
 
-- If behind: `git rebase origin/main`, resolve conflicts (keep BOTH sides for additive files
-  like a capability manifest or a shared route's imports — never drop the other feature's lines).
+- If behind: `git rebase origin/main` while the branch is still unpushed; once it is pushed, use
+  `git merge origin/main` instead (no force push; `_shared/push-cadence.md` P1 rule 2). Resolve
+  conflicts (keep BOTH sides for additive files like a capability manifest or a shared route's
+  imports — never drop the other feature's lines).
 - If migration numbers collide: renumber YOUR migrations (up + down + every in-file and in-code
   comment reference) to the next free numbers AFTER origin/main's highest. Re-run the dry-run.
 - "main looks build-red after pull": first rebuild gitignored package `dist/` (`pnpm --filter <pkg> build`)
   before concluding main is broken — a stale local build masquerades as a red main.
 
-Only after a clean rebase + no number collision + green build on the rebased tree do you hand
+Only after a clean rebase or merge + no number collision + green build on the rebased tree do you hand
 the branch to `a1-pr-review`, which makes its first push (`_shared/push-cadence.md` P1).
 The hand-off carries the worktree and branch; `a1-pr-review` reviews the diff (Reinhard always, Samuel on security surface). No cross-provider gate runs on code.
 
