@@ -595,7 +595,7 @@ nocfg() { rm -f "$1/.a1/verify.json"; }
 BASE_HOOK=nocfg new_pr ce23 0 0; BASE_HOOK=
 printf '{"commands":[{"id":"unit","argv":["bash","-c","echo ran >> %s; exit 0"]}],"ci_evidence":%s}\n' "$MARK" "$CIEV" > "$P/.a1/verify.json"; g "$P" add -A; g "$P" commit -q -m "config appears on the branch"
 ce "$WORK/ci-green.json"
-expect "CE23 SEC-5 base tip without verify.json: no shortcut" "false|base_not_configured" "$(js 'j.ci_evidence.used' 2>/dev/null || echo false)|$(why 2>/dev/null || echo base_not_configured)"
+expect "CE23 SEC-5 base tip without verify.json: no shortcut, local run, exit 1 (config added)" "1|false|base_not_configured|yes" "$RC|$(js 'j.ci_evidence.used' 2>&1 | tail -n 1)|$(why 2>&1 | tail -n 1)|$(ran)"
 # SEC-6: the PR head moved between the guard read and the check read
 ci_pr ce24; : > "$WORK/headcnt"; : > "$MARK"
 OUT="$(cd "$P" && env -u A1_GH_BIN PATH="$WORK/bin:$PATH" A1_FX_HEADCNT="$WORK/headcnt" A1_FX_HEAD2="$(printf '%040d' 1)" A1_FX_CHECKS="$WORK/ci-green.json" node "$TOOLS" pr merge-check --pr 7 --base main --phase fx-w10 2>"$WORK/err")"; RC=$?

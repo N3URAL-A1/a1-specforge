@@ -317,5 +317,16 @@
     "review_reason": "spec-coherence.cjs:194 reads docs/product/ROADMAP.md and the vault mirror project/<slug>/product/ROADMAP.md; product/ is in ~/.basic-memory/.bmignore, all 19 mirror files parse strictly, failure is reported as broken.",
     "reviewed_at": "2026-10-31T09:15:21.619Z",
     "reviewed_by": "a1-reinhard-reviewer"
+  },
+  {
+    "kind": "config_change",
+    "fingerprint": "verify-config:.a1/verify.json:ca19ee503f902c96",
+    "reason": "Adds the opt-in key ci_evidence (workflow test; checks checks, fixtures-xprov, fixtures-rest, enforcement; protected paths) for the pr merge-check CI-evidence shortcut of PR #87. The command set (each, argv_prefix, commands, timeout_ms, flaky_base) is unchanged.",
+    "date": "2026-11-12",
+    "by": "claude-main",
+    "review": "upheld",
+    "review_reason": "Only ci_evidence is added (configChange fields [ci_evidence], fingerprint matches; each/argv_prefix/commands/timeout_ms/flaky_base canon-equal to merge-base). workflow 'test' and checks checks/fixtures-xprov/fixtures-rest/enforcement are exactly the four jobs of .github/workflows/test.yml; unchanged covers .github/, suite-groups.json, run-suites*.sh, ci-install-gitleaks.sh and check-enforcement.sh, the CI-only harness. Plan is reporter none (61/61), so the shortcut is admissible.",
+    "reviewed_at": "2026-11-12T15:58:00.426Z",
+    "reviewed_by": "a1-reinhard-reviewer"
   }
 ]
