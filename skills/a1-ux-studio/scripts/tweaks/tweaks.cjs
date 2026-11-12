@@ -6,7 +6,8 @@
 // build writes result/result.dev.html = result/result.html + the tweaks panel. result.html is never changed.
 // export-tokens writes one token block under the decision entry Clarify writes (`- **YYYY-MM-DD** — UX/<screen>: ...`, its indented
 // continuation lines, e.g. `  Run: ...`), after those lines; a second export replaces it. A bare `UX/<screen>:` line still counts.
-// Fonts come from scripts/gate/font-allowlist.json only: the panel lists them, export-tokens refuses any other.
+// Fonts come from scripts/gate/font-allowlist.json only: export-tokens refuses any other; the panel lists only the allowlisted
+// families that really ship (an @font-face in result.html or a folder under templates/fonts).
 // Exit codes: 0 ok, 1 refusal (no result page, spec without the UX line, font off the allowlist), 2 usage or hostile input, 3 internal error.
 
 const fs = require('fs');
@@ -18,6 +19,7 @@ const MARK = 'data-a1-tweaks';
 const PANEL_JS = path.join(__dirname, '..', '..', 'templates', 'tweaks-panel.js');
 const FONT_PLACEHOLDER = '/*A1_FONTS*/[]';
 const ALLOWED_FONTS = Object.freeze(require('../gate/font-allowlist.json').families.map((f) => f.family));
+const FONT_DIR = path.join(__dirname, '..', '..', 'templates', 'fonts');
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const TOKEN_START = (screen) => `<!-- a1-ux-tokens:start ${screen} -->`;
 const TOKEN_END = (screen) => `<!-- a1-ux-tokens:end ${screen} -->`;
@@ -36,6 +38,16 @@ function writeAtomic(target, text) {
   fs.renameSync(tmp, target);
 }
 
+const slugOf = (family) => family.toLowerCase().replace(/ +/g, '-');
+const FONT_FACE_RE = /@font-face\s*\{[^}]*?font-family\s*:\s*(?:"([^"]+)"|'([^']+)'|([^;}"']+))/gi;
+
+/** Allowlisted families that really ship: an @font-face in the result page, or a folder under templates/fonts. The panel offers only these. */
+function shippedFamilies(html) {
+  const faces = new Set([...html.matchAll(FONT_FACE_RE)].map((m) => (m[1] || m[2] || m[3] || '').trim().toLowerCase()));
+  const dirs = new Set(fs.existsSync(FONT_DIR) ? fs.readdirSync(FONT_DIR, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name) : []);
+  return ALLOWED_FONTS.filter((f) => FONT_RE.test(f) && (faces.has(f.toLowerCase()) || dirs.has(slugOf(f))));
+}
+
 function build(args) {
   const runDir = resolveRunDir(args['run-dir']);
   const src = path.join(runDir, 'result', 'result.html');
@@ -43,7 +55,7 @@ function build(args) {
   if (html.includes(MARK)) throw new Refusal(1, `result/result.html already contains ${MARK}; the exported page must stay free of the panel`);
   const template = fs.readFileSync(PANEL_JS, 'utf8');
   if (!template.includes(FONT_PLACEHOLDER)) throw new Refusal(3, 'tweaks-panel.js has no font list placeholder');
-  const js = template.replace(FONT_PLACEHOLDER, () => JSON.stringify(ALLOWED_FONTS.filter((f) => FONT_RE.test(f))));
+  const js = template.replace(FONT_PLACEHOLDER, () => JSON.stringify(shippedFamilies(html)));
   if (/<\/script/i.test(js)) throw new Refusal(3, 'tweaks-panel.js contains a closing script tag');
   const block = `<script ${MARK}="script">\n${js}\n</script>\n`;
   const at = html.toLowerCase().lastIndexOf('</body>');
@@ -88,11 +100,17 @@ function bodyStart(lines) {
 
 const isContinuation = (line) => /^\s+\S/.test(line);
 
-/** Index of the decision line: the Clarify bullet `- **YYYY-MM-DD** — UX/<screen>:` (or a bare `UX/<screen>:` line) after the frontmatter, or -1. */
+/** Index of the decision line: the Clarify bullet `- **YYYY-MM-DD** — UX/<screen>:` (or a bare `UX/<screen>:` line) after the frontmatter, or -1.
+ *  The screen name matches case-insensitively and may be followed by a parenthetical before the colon: `UX/Task-Detail:`, `UX/invite-screen (FR-001, FR-005):`. */
+const DECISION_LINE = /^(?:- \*\*\d{4}-\d{2}-\d{2}\*\* — )?UX\/([^\s(:]+)(?:\s*\([^)]*\))?:/;
 function findDecision(lines, screen) {
   const from = bodyStart(lines);
-  const bullet = new RegExp(`^(?:- \\*\\*\\d{4}-\\d{2}-\\d{2}\\*\\* — )?UX/${screen}:`);
-  return lines.findIndex((l, i) => i >= from && bullet.test(l));
+  const want = String(screen).toLowerCase();
+  return lines.findIndex((l, i) => {
+    if (i < from) return false;
+    const m = DECISION_LINE.exec(l);
+    return m !== null && m[1].toLowerCase() === want;
+  });
 }
 
 /** The spec lines without any existing token block of this screen; throws when a block is damaged. */

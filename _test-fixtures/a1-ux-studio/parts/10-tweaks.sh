@@ -57,14 +57,24 @@ else
     ok "TW2 [FR-027] export-tokens: the block follows the Clarify bullet's two continuation lines and precedes the next bullet"
   else bad "TW2 [FR-027] export (rc=$rc_e1 ux=$ux_line c1=$cont1 c2=$cont2 start=$start_line after=$after_end blocks=$n_blk err=$ERR)"; fi
 
-  # TW2b RED: as TW2 (a bullet without continuation lines: block directly under it, before the next bullet).
-  # The real bullet is spelled `UX/Header:`; screen slugs are lower-case, so the case lower-cases that one word in a temp copy.
-  mk_workdir TW_DH ux-tw-spec-h; sed 's#UX/Header:#UX/header:#' "$TW_SPEC" > "$TW_DH/spec.md"
+  # TW2b RED: in tweaks.cjs findDecision() match `UX/${screen}:` case-sensitively again (the real bullet is spelled `UX/Header:`).
+  # TW2b: a real Clarify bullet without continuation lines, with the capital letter as written in the spec (no lower-casing of the line).
+  mk_workdir TW_DH ux-tw-spec-h; cp "$TW_SPEC" "$TW_DH/spec.md"
   twx export-tokens --spec "$TW_DH/spec.md" --screen header --values "$TW_V1"; rc_hdr=$RC
-  hdr_line="$(grep -n 'UX/header:' "$TW_DH/spec.md" | cut -d: -f1)"
+  hdr_line="$(grep -n 'UX/Header:' "$TW_DH/spec.md" | cut -d: -f1)"
   if [[ $rc_hdr -eq 0 && "$(sed -n "$((hdr_line + 1))p" "$TW_DH/spec.md")" == '<!-- a1-ux-tokens:start header -->' && "$(sed -n "$((hdr_line + 10))p" "$TW_DH/spec.md")" == '- **2026-11-11** — UX/login-screen:'* ]]; then
-    ok "TW2b [FR-027] a real Clarify bullet without continuation lines: block directly under it"
+    ok "TW2b [FR-027] a real Clarify bullet UX/Header: (capital) without continuation lines: block directly under it"
   else bad "TW2b [FR-027] header export (rc=$rc_hdr err=$ERR)"; fi
+
+  # TW2c RED: as TW2b, and drop the optional parenthetical from DECISION_LINE in tweaks.cjs.
+  mk_workdir TW_DP ux-tw-spec-p
+  printf '%s\n' '# Spec' '' '## Clarify' '' '- **2026-11-12** — UX/Task-Detail: Variant A chosen.' '- **2026-11-12** — UX/invite-screen (FR-001, FR-005): Variant B chosen.' '  Run: x' '- **2026-11-12** — Other: text.' > "$TW_DP/spec.md"
+  twx export-tokens --spec "$TW_DP/spec.md" --screen task-detail --values "$TW_V1"; rc_td=$RC
+  twx export-tokens --spec "$TW_DP/spec.md" --screen invite-screen --values "$TW_V1"; rc_inv=$RC
+  inv_line="$(grep -n 'UX/invite-screen (FR-001' "$TW_DP/spec.md" | cut -d: -f1)"
+  if [[ $rc_td -eq 0 && $rc_inv -eq 0 && "$(grep -c 'a1-ux-tokens:start task-detail' "$TW_DP/spec.md")" == 1 && "$(sed -n "$((inv_line + 2))p" "$TW_DP/spec.md")" == '<!-- a1-ux-tokens:start invite-screen -->' ]]; then
+    ok "TW2c [FR-027] UX/Task-Detail: and UX/invite-screen (FR-001, FR-005): both found, block after the continuation line"
+  else bad "TW2c [FR-027] capitals / parenthetical (td=$rc_td inv=$rc_inv err=$ERR)"; fi
 
   # TW3 RED: in tweaks.cjs exportTokens() replace `kept` by `rest` (append instead of replace).
   twx export-tokens --spec "$TW_S" --screen login-screen --values "$TW_V2"; rc_e2=$RC
@@ -110,18 +120,28 @@ else
   if [[ $rc_ok -eq 0 && $rc_orig -eq 0 ]] && grep -q 'font: "original"' "$TW_S"; then ok "TW7b [FR-027] control: an allowlisted multi-word family and the empty (original) font export"
   else bad "TW7b [FR-027] allowlisted fonts (sans3=$rc_ok orig=$rc_orig err=$ERR)"; fi
 
-  # TW8 RED: in tweaks.cjs build() leave the FONTS placeholder of templates/tweaks-panel.js unreplaced, or put Georgia back into the template.
+  # TW8 RED: in tweaks.cjs build() offer the whole allowlist again instead of shippedFamilies(html), or put Georgia back into the template.
+  # The panel lists only allowlisted families that ship: a folder under templates/fonts (6) or an @font-face in result.html (the page fixture has none).
   TW_DEV="$TW_RUN/result/result.dev.html"
   n_font_match="$(node -e '
-    const fs = require("fs");
+    const fs = require("fs"), path = require("path");
     const html = fs.readFileSync(process.argv[1], "utf8");
     const m = /var FONTS = (\[[^\]]*\]);/.exec(html);
-    const want = require(process.argv[2]).families.map((f) => f.family);
+    const allow = require(process.argv[2]).families.map((f) => f.family);
+    const dirs = fs.readdirSync(process.argv[3], { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
+    const want = allow.filter((f) => dirs.includes(f.toLowerCase().replace(/ +/g, "-")));
     const got = m ? JSON.parse(m[1]) : [];
-    process.stdout.write(JSON.stringify(got) === JSON.stringify(want) && !got.includes("Georgia") && want.length === 23 ? "same" : "differs:" + got.length);
-  ' "$TW_DEV" "$REPO_ROOT/skills/a1-ux-studio/scripts/gate/font-allowlist.json")"
-  if [[ "$n_font_match" == "same" ]] && ! grep -q 'Georgia' "$TW_JS"; then ok "TW8 [FR-026] the panel's font list is the allowlist (23 families, no Georgia), template holds no font names"
+    process.stdout.write(JSON.stringify(got) === JSON.stringify(want) && got.length === dirs.length && !got.includes("Georgia") && got.length < allow.length ? "same" : "differs:" + got.length + "/" + want.length + "/" + dirs.length);
+  ' "$TW_DEV" "$REPO_ROOT/skills/a1-ux-studio/scripts/gate/font-allowlist.json" "$REPO_ROOT/skills/a1-ux-studio/templates/fonts")"
+  if [[ "$n_font_match" == "same" ]] && ! grep -q 'Georgia' "$TW_JS"; then ok "TW8 [FR-026] the panel lists exactly the allowlisted families that ship (templates/fonts folders), not the whole allowlist, no Georgia"
   else bad "TW8 [FR-026] panel fonts ($n_font_match)"; fi
+  # TW8b RED: as TW8, and drop the @font-face scan from shippedFamilies(): a family shipped by the page itself is not offered.
+  mk_workdir TW_RUN3 ux-tw-run3
+  mkdir -p "$TW_RUN3/result"; : > "$TW_RUN3/run.md"
+  sed 's#<style>#<style>@font-face{font-family:"Source Sans 3";src:url(fonts/source-sans-3/source-sans-3-latin-400-normal.woff2)}#' "$TW_PAGE" > "$TW_RUN3/result/result.html"
+  twx build --run-dir "$TW_RUN3"
+  if grep -q '"Source Sans 3"' "$TW_RUN3/result/result.dev.html" && ! grep -q '"Roboto"' "$TW_RUN3/result/result.dev.html"; then ok "TW8b [FR-026] an @font-face in result.html adds that family to the panel; a family that does not ship (Roboto) stays out"
+  else bad "TW8b [FR-026] panel fonts for a shipped @font-face"; fi
 
   # TW9 RED: in templates/tweaks-panel.js apply() set the motion attribute unconditionally (duration override always on).
   PANEL_OUT="$(node "$HERE/fixtures/tweaks/panel-harness.cjs" "$TW_DEV" 2>&1)"

@@ -127,7 +127,7 @@ node <skill-dir>/scripts/gate/ux-gate.cjs run --run-dir <run-dir> --target <run-
 Read `<run-dir>/gate-record.json` (never the `run.md` block). List in German:
 
 - each finding with `severity: primary` and `state: open`: `id`, `rule`, `location`;
-- each font failure with `state: open`: `font` and `reason` (`remote_url`, `not_allowlisted`, `local_src` or `font_file_mismatch`);
+- each font failure with `state: open`: `font` and `reason` (`remote_url`, `not_allowlisted`, `local_src`, `data_src` or `font_file_mismatch`);
 - advisories as information only. They never block.
 
 For each blocking item the user picks one of two paths:
@@ -157,8 +157,9 @@ acceptances**; Robert must accept again whatever is still open afterwards.
 `gate-record.json` is not trusted on its own. Two facts live outside the run
 folder, in a per-user store `<passwd home>/.a1-ux-studio/gate-store.jsonl`
 (directory mode 0700; a symlink, a foreign owner or a group- or
-world-writable directory or file is refused; append-only, each line carries
-the sha256 of the line before it):
+world-writable directory or file is refused; append-only by convention, not
+enforced by the file system: the code only appends, but the same OS user can
+rewrite the file; each line carries the sha256 of the line before it):
 
 - `ux-gate.cjs run` writes a digest of its result (target sha256, status,
   findings, font failures). `handoff-check` recomputes the digest of the
@@ -168,9 +169,12 @@ the sha256 of the line before it):
 - `ux-gate.cjs accept` (real terminal only) writes one line per acceptance
   (run folder, target sha256, finding id, reason). Every `accepted` item of
   the record needs a stored line of the latest run with the same reason; a
-  new `run` makes older lines void. A broken chain, a truncated file or a
-  store directory that fails the checks above blocks the handoff, and a
-  `run` or `accept` then exits 3 without writing a record.
+  new `run` makes older lines void. A broken chain, a file cut inside a line, an
+  oversized file (more than 8 MiB) or a store directory that fails the
+  checks above blocks the handoff, and a `run` or `accept` then exits 3
+  without writing a record. The store module also refuses `recordAccept`
+  for any caller that is not a real terminal outside Claude Code, so a script
+  cannot call it directly.
 
 The plugin hook (`hooks/hooks.json`, the same hook as the xprov consent)
 denies Edit, Write and MultiEdit of every `gate-record.json` and of the
@@ -181,12 +185,27 @@ and its chain, or call the store module directly. This is the same residual
 risk as the xprov consent store (decision record
 `2026-10-14-a1-autonomy-chat-consent`): the same OS user can always do it.
 The controls stop accidental and tool-level self-acceptance, not a
-determined shell. The terminal guard of `accept` (a pty plus no Claude Code
-ancestor) can also be fooled by a double-forked pseudo-terminal; that guard
-is shared with the xprov owner step and tracked in its own bug report, so
-the store and the hook are the control here. Never write the store,
+determined shell. A file truncated exactly at a line boundary leaves a valid chain
+and simply loses the newest lines (for example an acceptance, or a newer run
+that voids it); this is not detected and stays a tier-0 residual risk. The
+terminal guard of `accept` (a pty plus no Claude Code ancestor) can be fooled
+by a double-forked, detached pseudo-terminal. That guard is shared with the
+xprov owner step; until it is fixed (bug report in the vault,
+`project/a1-specforge/fixes/2026-11-12-terminal-guard-detached-pty-bypass.md`)
+there is currently no protection against that bypass: neither the store nor
+the hook stops it. Never write the store,
 `gate-record.json` or a `gate-record` marker block by hand, and never run
 `accept` yourself.
+
+**When the store blocks every gate (owner recovery).** An oversized file or a
+damaged chain makes every `run`, `accept` and `handoff-check` fail with
+"gate store is not trustworthy ... Ask the owner, do not delete the store".
+Do not delete, truncate or edit the store and do not work around it. Tell
+Robert. He recovers it at his own terminal: move the file aside under a dated
+name (`mv ~/.a1-ux-studio/gate-store.jsonl ~/.a1-ux-studio/gate-store.jsonl.2026-11-12.bak`, using
+the passwd home), then run the gate again and re-accept whatever is still
+open. Moving the file aside voids all earlier runs and acceptances; no
+rotation is needed.
 
 ## Done when
 

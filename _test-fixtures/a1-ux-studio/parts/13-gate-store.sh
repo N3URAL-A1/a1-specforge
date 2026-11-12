@@ -76,6 +76,8 @@ hc_check "S3 store file mode 600 and directory mode 700 [FR-013]" "$("$HC_NODE" 
 s3_tamper 'lines.map((l,i)=>i===0?l.replace(/"digest":"(.)/,(m,c)=>"\"digest\":\""+(c==="0"?"1":"0")):l).join("\n")+"\n"'
 hc_hand --run-dir "$R"
 hc_check "S3b first store line edited: the next line no longer chains, exit 1 naming the chain (count 1) [FR-013]" "$HC_RC/$(hc_say 'does not chain')" "1/1"
+# RED (S3b recovery text): drop the RECOVERY sentence from StoreError (gate-store.cjs): the blocker no longer tells the agent to ask the owner.
+hc_check "S3b2 the damaged-chain blocker says 'ask the owner, do not delete the store' (count 1) [FR-013]" "$(hc_say 'Ask the owner; do not delete the store')" "1"
 s3_home; s3_accepted_run
 s3_tamper 'lines.join("\n")+"\n"+lines[1].replace(/"prev":"[0-9a-f]+"/,"\"prev\":\""+"0".repeat(64)+"\"")+"\n"'
 hc_hand --run-dir "$R"
@@ -234,3 +236,31 @@ hc_check "S9b board: @font-face src local(): exit 1, 'font check: Inter (local_s
 new_run; put_board diverge "$B_FX/diverge.html" "${DIV_FAMS[@]}"
 bx board-check --run-dir "$B_RUN" --kind diverge
 hc_check "S9c control: the real diverge board with shipped fonts still passes [FR-009]" "$RC" "0"
+
+# ---------------------------------------------------------------- S10 store function refuses a script; vault rule at handoff; hook text
+HC_SKIP=0
+# RED: delete the acceptGuard.terminalProblem() check at the top of recordAccept() (gate-store.cjs): the call below writes a line.
+# The module runs from a second tree copy (fake owner home, REAL guard) so that even the red run writes into the suite home, never the real one.
+mk_workdir S10T ux-s10-tree; mkdir -p "$S10T/skills" "$S10T/_shared"
+cp -R "$REPO_ROOT/skills/a1-ux-studio" "$S10T/skills/a1-ux-studio"; cp -R "$REPO_ROOT/_shared/lib" "$S10T/_shared/lib"
+cp "$HERE/fake/xprov-owner-home.cjs" "$S10T/_shared/lib/xprov-owner-home.cjs"
+S10_STORE_MOD="$S10T/skills/a1-ux-studio/scripts/gate/gate-store.cjs"
+S10_REC="$HC_ROOT/s10-rec"; mkdir -p "$S10_REC"; printf '{"target_sha256":"%064d"}' 0 > "$S10_REC/gate-record.json"
+S10_STORE_FILE="$("$HC_NODE" -e 'console.log(require(process.argv[1]).storeFile())' "$S10_STORE_MOD")"
+s10_state() { stat -c '%s/%Y' "$S10_STORE_FILE" 2>/dev/null || echo none; }
+S10_BEFORE="$(s10_state)"; S10_OUT="$HC_ROOT/s10-out"; S10_RC=0
+"${HC_NOCLAUDE[@]}" "$HC_NODE" -e 'const s=require(process.argv[1]);const r=JSON.parse(require("fs").readFileSync(process.argv[2]+"/gate-record.json","utf8"));s.recordAccept(process.argv[2],r,"low-contrast-1","I accept this myself")' "$S10_STORE_MOD" "$S10_REC" < /dev/null > "$S10_OUT" 2>&1 || S10_RC=$?
+hc_check "S10 recordAccept called from a script (store module with the real guard, no terminal): exits non-zero, names the real terminal, writes nothing [FR-013]" "$([[ $S10_RC -ne 0 ]] && echo threw || echo wrote)/$([[ "$(grep -c 'real terminal' "$S10_OUT" || true)" -ge 1 ]] && echo named || echo silent)/$([[ "$(s10_state)" == "$S10_BEFORE" ]] && echo same || echo changed)" "threw/named/same"
+
+# RED (S10b): delete the checkVaultRule() call from checkHandoff() (handoff-check.cjs): a vault PNG copied in after the passing run is not noticed.
+hc_make R high high-contrast.html
+hc_hand --run-dir "$R"
+hc_check "S10b control: clean passing run, handoff allowed [FR-024]" "$HC_RC/$HC_BLOCKS" "0/0"
+cp "$S8_PNG" "$R/result/copied.png"
+A1_VAULT_ROOT="$S8V" hc_hand --run-dir "$R"
+hc_check "S10b vault PNG copied into result/ after the run: handoff exit 1, 1 blocker naming the taste vault (count 1) [FR-024]" "$HC_RC/$HC_BLOCKS/$(hc_say 'is a byte copy of a taste-vault image')" "1/1/1"
+hc_hand --run-dir "$R"
+hc_check "S10b control: same folder, no vault in the environment: handoff allowed [FR-024]" "$HC_RC" "0"
+
+# RED (S10c): drop the global-deny sentence from hooks/hooks.json description.
+hc_check "S10c hook description states that the gate-record.json deny is global (count 1) [FR-013]" "$(grep -c 'the gate-record.json deny is global' "$REPO_ROOT/hooks/hooks.json" || true)" "1"

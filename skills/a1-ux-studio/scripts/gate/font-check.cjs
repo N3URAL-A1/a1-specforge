@@ -94,10 +94,13 @@ const isSizeToken = (t) => SIZE_KEYWORDS.has(t.toLowerCase()) || SIZE_FUNCTION_R
  */
 function shorthandFamilies(value) {
   const toks = tokenize(value);
+  const sizeOf = (t) => { const slash = topLevelSlash(t); return slash === -1 ? t : t.slice(0, slash); };
   for (let i = 0; i < toks.length; i += 1) {
+    if (!isSizeToken(sizeOf(toks[i].text))) continue;
+    // `font: var(--w) var(--s) Georgia`: a run of var()/calc() tokens is size-capable; the LAST one of the run is the size, the family follows it.
+    while (SIZE_FUNCTION_RE.test(sizeOf(toks[i].text)) && topLevelSlash(toks[i].text) === -1 && toks[i + 1] && !toks[i + 1].text.startsWith('/') && isSizeToken(sizeOf(toks[i + 1].text))) i += 1;
     const t = toks[i].text;
     const slash = topLevelSlash(t);
-    if (!isSizeToken(slash === -1 ? t : t.slice(0, slash))) continue;
     let next = i + 1;
     if (slash === t.length - 1) next += 1; // `16px/ 1.4`
     else if (slash === -1 && toks[next] && toks[next].text.startsWith('/')) next += toks[next].text === '/' ? 2 : 1; // `16px /1.4`, `16px / 1.4`
@@ -189,7 +192,7 @@ function fontFaces(html) {
 }
 
 /**
- * @font-face sources that cannot be licence-checked: `src: local(...)` loads a font from the visitor's machine, and a file
+ * @font-face sources that cannot be licence-checked: `src: local(...)` loads a font from the visitor's machine, `url(data:...)` hides the file, and a file
  * outside fonts/<family-id>/ or one that does not start with the family id could be any font under an allowlisted name.
  */
 function fontFaceFailures(html) {
@@ -200,7 +203,8 @@ function fontFaceFailures(html) {
     const id = family ? slugOf(family) : '';
     for (const u of css.matchAll(/url\(\s*["']?([^"')]+)/gi)) {
       const url = u[1].trim();
-      if (REMOTE.test(url) || /^data:/i.test(url) || url === '') continue;
+      if (/^data:/i.test(url)) { out.push(failureFor(name, 'data_src', `@font-face for "${name}" embeds the font as a data: URI; the file cannot be licence-checked, ship it under fonts/${id || '<family-id>'}/`)); continue; }
+      if (REMOTE.test(url) || url === '') continue;
       const m = FONT_PATH_RE.exec(url.split(/[?#]/)[0]);
       if (id !== '' && m && m[1] === id && m[2].toLowerCase().startsWith(id)) continue;
       out.push(failureFor(name, 'font_file_mismatch', `font file "${url.slice(0, 120)}" is not fonts/${id || '<family-id>'}/${id || '<family-id>'}*; ship each family under its own folder and name`));

@@ -10,6 +10,7 @@ const fs = require('node:fs');
 const crypto = require('node:crypto');
 const path = require('node:path');
 const store = require('./gate-store.cjs');
+const { resultTasteVaultProblems } = require('../taste/board-guard.cjs');
 
 const RECORD_FILE = 'gate-record.json';
 const WIDTHS = [1280, 390];
@@ -117,9 +118,16 @@ function advisoryNotes(rec) {
   return rec.findings.filter((f) => f && f.severity === 'advisory').map((f) => `advisory (informational): ${safe(f.id)} ${safe(f.rule)}`);
 }
 
+/** The taste-vault rule again at handoff: a vault PNG copied into result/ after a passing run must block. Vault absent: only the path-text rule. */
+function checkVaultRule(runDir) {
+  let html;
+  try { html = fs.readFileSync(path.join(runDir, RESULT_REL), 'utf8'); } catch (_) { return []; }
+  return resultTasteVaultProblems(path.join(runDir, 'result'), html, process.env.A1_VAULT_ROOT).map((p) => `result breaks the taste-vault rule: ${safe(p, 200)}`);
+}
+
 /** @returns {{blockers: string[], notes: string[]}} */
 function checkHandoff(runDir) {
-  const shots = checkScreenshots(runDir);
+  const shots = [...checkScreenshots(runDir), ...checkVaultRule(runDir)];
   const { rec, blockers } = readRecord(runDir);
   if (!rec) return { blockers: [...blockers, ...shots], notes: [] };
   const recFile = path.join(runDir, RECORD_FILE);

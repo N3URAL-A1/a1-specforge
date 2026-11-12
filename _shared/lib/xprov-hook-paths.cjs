@@ -52,7 +52,7 @@
 //       /System/Volumes/Data/Users/<u>/.a1-xprov is no symlink). When the store directory does not exist yet, an ancestor named `.a1-xprov`
 //       (case-insensitive) whose parent is the home directory (inode) is guarded too.
 //       Also (spec 024): every file named gate-record.json, and everything under <owner home>/.a1-ux-studio/ (the ux-studio gate store), same string and
-//       inode judgement; the result carries a `hint` for the deny text. Tier 0: a Bash write of either stays outside this hook.
+//       inode judgement; the gate-record.json deny is GLOBAL (any repo, any directory: a project file of that name is denied too); the result carries a `hint` for the deny text. Tier 0: a Bash write of either stays outside this hook.
 // settingsForgery(file, cwd, tool, input) -> { forged: true, why } | { forged: false }       the class rule above.
 //
 // Tier 0 stays: a Bash command that writes any of these is outside this hook (the same OS user can always do it).
@@ -65,7 +65,7 @@ const path = require('path');
 const X = require('./xprov.cjs');
 
 const STORE_DIR_NAME = '.a1-xprov';
-// spec 024 (ux-studio gate): the gate store under the owner home and every gate-record.json are guarded the same way (tier 0 residual:
+// spec 024 (ux-studio gate): the gate store under the owner home and every gate-record.json (global, all repos) are guarded the same way (tier 0 residual:
 // a Bash write; the controls stop accidental and tool-level self-acceptance).
 const UX_STORE_DIR_NAME = '.a1-ux-studio';
 const GATE_RECORD_NAME = 'gate-record.json';

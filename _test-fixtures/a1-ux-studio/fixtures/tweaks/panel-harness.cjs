@@ -58,5 +58,5 @@ expect('compare off restores the override', 'data-a1-motion-on' in root.attrs);
 ctl('reset').fire('click');
 expect('reset switches the override off', !('data-a1-motion-on' in root.attrs) && 'data-a1-tweaks-on' in root.attrs);
 const options = ctl('font').children.map((o) => o.value);
-expect('font select lists the original plus the allowlist', options[0] === '' && options.length === 24 && !options.includes('Georgia') && options.includes('Source Sans 3'));
+expect('font select lists the original plus only the families that ship', options[0] === '' && options.length === 7 && !options.includes('Georgia') && !options.includes('Source Sans 3') && options.includes('Inter') && options.includes('Space Grotesk'));
 console.log('ok');

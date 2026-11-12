@@ -15,12 +15,12 @@
 
 const fs = require('node:fs');
 const crypto = require('node:crypto');
-const tty = require('node:tty');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { checkFonts } = require('./font-check.cjs');
 const { checkHandoff } = require('./handoff-check.cjs');
 const store = require('./gate-store.cjs');
+const { terminalProblem } = require('./terminal-guard.cjs');
 const { resultTasteVaultProblems } = require('../taste/board-guard.cjs');
 
 const RECORD_FILE = 'gate-record.json';
@@ -260,25 +260,11 @@ function validFindingId(id) {
 
 function shq(v) { return `'${String(v).replace(/'/g, `'\\''`)}'`; }
 
-const CONTEXT_GUARD = '../../../../_shared/lib/xprov-approve.cjs';
-
-/** Null when no Claude Code context is detected; a reason string otherwise (fails closed). The repo's
- *  own guard (the one `xprov permit` uses) is reused: skills/_shared are symlinked side by side by
- *  bin/install.sh, and node resolves this script to the repo path, so the relative path holds in both places. */
-function claudeContext() {
-  try {
-    return require(CONTEXT_GUARD).claudeContextRefusal(process.env);
-  } catch (err) {
-    return `the Claude Code context guard could not be loaded (${safeText(err && err.message, 120)})`;
-  }
-}
-
-/** accept is Robert's decision: it needs a real terminal AND no Claude Code context (a pty alone is fakeable). */
+/** accept is Robert's decision: it needs a real terminal AND no Claude Code context (a pty alone is fakeable). The check lives in
+ *  terminal-guard.cjs because gate-store.cjs recordAccept runs the same one. */
 function requireTerminal(opts) {
-  const noTty = !(tty.isatty(0) && tty.isatty(1));
-  const ctx = noTty ? null : claudeContext();
-  if (!noTty && ctx === null) return;
-  const why = noTty ? 'stdin and stdout are not both a terminal' : `a Claude Code context was detected (${ctx})`;
+  const why = terminalProblem();
+  if (why === null) return;
   const cmd = `node ${shq(__filename)} accept --run-dir ${shq(opts['run-dir'] || '<run-dir>')} --finding ${shq(opts.finding || '<finding-id>')} --reason ${shq('<written reason>')}`;
   throw new UsageError(`accept needs Robert at a real terminal outside Claude Code: ${why}. Do not run it yourself; hand Robert this exact command for his own terminal:\n${cmd}`);
 }

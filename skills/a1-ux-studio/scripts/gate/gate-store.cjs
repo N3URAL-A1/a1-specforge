@@ -19,6 +19,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const OH = require('../../../../_shared/lib/xprov-owner-home.cjs');
+const acceptGuard = require('./store-accept-guard.cjs');
 
 const DIR_NAME = '.a1-ux-studio';
 const FILE_NAME = 'gate-store.jsonl';
@@ -36,7 +37,10 @@ const sha256 = (text) => crypto.createHash('sha256').update(text).digest('hex');
 const storeDir = () => path.join(OH.ownerHome(), DIR_NAME);
 const storeFile = () => path.join(storeDir(), FILE_NAME);
 
-class StoreError extends Error {}
+const RECOVERY = 'Ask the owner; do not delete the store (workflows/05-gate.md section 7 has the owner recovery).';
+class StoreError extends Error {
+  constructor(message) { super(`${message}. ${RECOVERY}`); }
+}
 
 const ownedByMe = (st) => typeof process.getuid !== 'function' || st.uid === process.getuid();
 
@@ -147,6 +151,8 @@ function recordRun(runDir, rec) {
 }
 
 function recordAccept(runDir, rec, finding, reason) {
+  const why = acceptGuard.terminalProblem(); // Robert's decision: refused for any caller that is not a real terminal outside Claude Code
+  if (why !== null) throw new StoreError(`an acceptance can only be recorded by Robert at a real terminal: ${why}`);
   return append({ kind: 'accept', run_dir: realDir(runDir), target_sha256: rec.target_sha256, finding, reason });
 }
 

@@ -241,6 +241,10 @@ gt_short "var() size and var() line-height with spaces around the slash" 'var(--
 gt_short "px size with var() line-height" '16px/var(--lh) "Papyrus",serif' "1/Papyrus"
 gt_short "calc() size with a space inside" 'calc(1rem + 2px)/1.5 "Papyrus",serif' "1/Papyrus"
 gt_short "unquoted two-word family after a keyword size" 'large Papyrus Display,serif' "1/Papyrus Display"
+# RED: take the first size-capable token as the size again in shorthandFamilies() (font-check.cjs): `var(--w)` is read as the size and Georgia is hidden in "var(--s) Georgia".
+gt_short "two var() tokens before an unlisted family" 'var(--w) var(--s) Georgia' "1/Georgia"
+gt_short "weight word, then two var() tokens, then an unlisted family" '700 var(--w) var(--s) Georgia' "1/Georgia"
+gt_short "control: two var() tokens before an allowlisted family" 'var(--w) var(--s) Inter' "0/undefined"
 gt_short "control: allowlisted family after a keyword size" 'large Inter,serif' "0/undefined"
 gt_short "control: system font keyword has no family list" 'caption' "0/undefined"
 
@@ -407,6 +411,9 @@ gt_check "G14b document.fonts in script: fail (count 1)" "$(gt_j "$R/gate-record
 
 # G6l RED: drop the `local(` test in localFailures() (font-check.cjs). Fonts that load from the visitor's machine are unlicensed by definition.
 gt_font_case "@font-face src: local()" '<style>@font-face{font-family:"Inter";src:local("Inter"),url(fonts/inter/inter-latin-400-normal.woff2)}</style>' "Inter"
+# RED: delete the data: branch in fontFaceFailures() (font-check.cjs): a url(data:...) source is skipped and the font cannot be licence-checked.
+gt_font_case "@font-face src url(data:...)" '<style>@font-face{font-family:"Inter";src:url(data:font/woff2;base64,AAAA)}</style>' "Inter"
+gt_check "G6n the reason is data_src" "$(gt_j "$R/gate-record.json" 'r.font_check.failures[0].reason')" "data_src"
 # G6m RED: drop fileNameFailures() (font-check.cjs): a font file must live under fonts/<family-id>/ and start with the family id.
 gt_font_case "@font-face file name of another family" '<style>@font-face{font-family:"Inter";src:url(fonts/inter/lora-latin-400-normal.woff2)}</style>' "Inter"
 gt_font_case "@font-face folder of another family" '<style>@font-face{font-family:"Inter";src:url(fonts/lora/inter-latin-400-normal.woff2)}</style>' "Inter"
