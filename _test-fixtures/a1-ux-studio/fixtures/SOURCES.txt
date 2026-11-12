@@ -39,3 +39,6 @@ Vault taste entries, CLAUDE.md files and result pages for part 05 are written at
 
 ## Wave 10 (tweaks)
 fixtures/tweaks/spec.md: first 19 lines (frontmatter) copied from the real vault spec 024-ux-studio.md, then a `## Clarifications` section whose `UX/login-screen:` decision line follows the format in workflows/06-handoff.md, then a short `## Requirements` tail. The result page for the cases is fixtures/gate/high-contrast.html.
+
+## Wave 11 (remix)
+No new fixture files. parts/11-remix.sh builds its run folder with the real run.cjs init (brief from fixtures/run style, written inline), adds the converge pick line to `## Picks` in the exact format picks.cjs writes, and builds taste entries with the real taste.cjs add and fixtures/handoff/screenshot.png.

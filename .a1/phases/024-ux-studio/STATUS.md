@@ -60,3 +60,10 @@ gate0: mutation re-run, one per RED case, each turned the named case red and was
 gate0: workflow lint exit 0 (76 files, 0 findings); verify-install-sync PASS
 gate3: FR-026-AC1 PASS @wave10 2026-11-12 (real playwright-cli chromium: result.dev.html → 1 panel, controls font,size,accent,motion,reset,compare,values; result.html → 0 data-a1-tweaks)
 gate3: FR-027-AC1 PASS @wave10 2026-11-12 (suite TW2/TW3 on a copy of the real spec 024 frontmatter: block directly under UX/login-screen, second export replaces)
+
+## Wave 11 (2026-11-12, aiserver) — remix mode
+gate0: a1-ux-studio suite → 315 passed, 0 failed (cases RM0–RM7)
+gate0: mutation re-run, each turned the named case red and was restored: RM1 (amplitude refusal removed; RM1b `in` operator instead of hasOwnProperty also red, proto name `constructor`), RM2 (unknown-anchor refusal removed), RM3 (family not the original's), RM4 (keywords dropped from run.md), RM5 (old Remix section not replaced), RM6 (no-pick refusal removed), RM7 (anchor id regex removed), RM7b (duplicate check removed)
+gate0: workflow lint findings [] ; verify-install-sync PASS
+gate3: FR-028-AC1 PASS @wave11 2026-11-12 (suite on a temp vault: unknown amplitude exit 2, unknown anchor exit 1, zero anchors → family equals original, one anchor → its 3 keywords in JSON and run.md; plan recorded under run.md ## Remix between Picks and Assets)
+gate0: design note: with anchors the planned family is the first anchor's family (spec FR-028 only fixes the zero-anchor case); stated to the user in 09-remix.md
