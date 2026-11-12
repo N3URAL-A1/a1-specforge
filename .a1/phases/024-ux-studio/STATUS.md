@@ -78,3 +78,11 @@ gate3: FR-029-AC1 PASS @wave12 2026-11-12 (real playwright-cli 0.1.24, chromium,
 gate0: a1-ux-studio suite → 299 passed, 0 failed (exit 0, A1_VAULT_ROOT unset, LC_ALL=C); new case T7 RED on the old parser (298 passed, 1 failed: T7 lint "missing field keywords"), green after the fix
 gate0: mutation re-run, each turned T7 red and was restored: block-list branch disabled (lint fails), continuation-line fold removed (folded image_prompt truncated), '' unescape removed
 gate0: real vault `taste.cjs lint --root $HOME/N3URAL-Vault/pattern/taste-vault --min-entries 23 --families 8` → ok (23 entries, 8 families)
+
+## Wave 9 (2026-11-12, aiserver; vault only, no repo code)
+
+Agents: Uwe (research + screenshots, two rounds: 32 + 12 candidates). Curation: Robert, family by family via chat (screens opened on his Mac).
+gate0: Robert's approval: round 1 kept 23 of 32 (dropped commit-mono, practical-typography, dither-it, posthog, clickhouse, flighty, wallpaper, paris-review, monocle); round 2 kept 8 of 12 (dropped klim, resend, national-gallery, analogue). Dropped entries moved out of the vault.
+gate0: FINDING real vault indexer rewrites entry frontmatter (block lists, folded lines, permalink) → lint read 0 keywords; fixed in 02915f6 (parseEntry, case T7 with byte copies of real entries, RED proven)
+gate3: FR-023-AC1 PASS @wave9 2026-11-12 (taste.cjs lint --root $A1_VAULT_ROOT/pattern/taste-vault --min-entries 30 --families 8 → "ok (31 entries, 8 families)", exit 0; per family 3-4 entries)
+gate3: FR-023 pool PASS @wave9 2026-11-12 (run.cjs families --vault-root ~/N3URAL-Vault → source vault, 5 candidates, warnings [])
