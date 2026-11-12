@@ -6,5 +6,5 @@
   ],
   "timeout_ms": 7200000,
   "flaky_base": [],
-  "ci_evidence": { "checks": ["checks", "fixtures-xprov", "fixtures-rest", "enforcement"], "unchanged": [".github/workflows/", "_test-fixtures/suite-groups.json", "bin/run-suites.sh", "bin/run-suites-proc.sh", "bin/run-suites-report.sh"] }
+  "ci_evidence": { "workflow": "test", "checks": ["checks", "fixtures-xprov", "fixtures-rest", "enforcement"], "unchanged": [".github/", "_test-fixtures/suite-groups.json", "bin/run-suites.sh", "bin/run-suites-proc.sh", "bin/run-suites-report.sh", "bin/ci-install-gitleaks.sh", "_test-fixtures/a1-xprov/check-enforcement.sh"] }
 }

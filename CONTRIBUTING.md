@@ -72,7 +72,7 @@ worker count). One run per user and machine: a second start is refused while the
 `${TMPDIR:-/tmp}/a1-suite-runs-<uid>/<run id>/` (printed first as `log dir:`). `bash bin/run-suites.sh <dir|dir/runner.sh>`
 runs a subset.
 
-`a1-xprov` runs as two runner files, `run-tests.sh` (shard a) and `run-tests-b.sh` (shard b, the parts in `XP_SHARD_B`); the suite runner starts both side by side. `A1_XPROV_SHARD=all bash _test-fixtures/a1-xprov/run-tests.sh` runs every part in one shell.
+`a1-xprov` runs as two runner files, `run-tests.sh` (shard a) and `run-tests-b.sh` (shard b, the parts in `XP_SHARD_B`); the suite runner starts both side by side. `bash _test-fixtures/a1-xprov/run-tests.sh --shard all` runs every part in one shell.
 
 Runs started from inside an agent session (a `claude` process is an ancestor, or `CLAUDECODE` is set) skip the owner-terminal cases of `a1-xprov` (parts 08, 11, 12, 14; part 15 swaps in a library driver); CI never skips them. Before a PR, run the suite once outside the agent as a non-root user, for example in Docker with gitleaks 8.30.1 on `PATH`: copy a `git archive` snapshot (with `git init` and a commit) to `/work`, `chown -R node:node /work`, then `docker run --rm -v <snapshot>:/src:ro node:20 su node -s /bin/bash -c 'cd /work && bash _test-fixtures/a1-xprov/run-tests.sh'`. The container must not see the real owner home.
 

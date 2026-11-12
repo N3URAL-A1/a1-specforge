@@ -327,7 +327,7 @@ git -C <repo> ls-tree origin/main automation/db/migrations/ | grep -E '<your-new
 - "main looks build-red after pull": first rebuild gitignored package `dist/` (`pnpm --filter <pkg> build`)
   before concluding main is broken — a stale local build masquerades as a red main.
 
-Only after a clean rebase or merge + no number collision + green build on the rebased tree do you hand
+Only after a clean rebase or merge + no number collision + green build on the rebased or merged tree do you hand
 the branch to `a1-pr-review`, which makes its first push (`_shared/push-cadence.md` P1).
 The hand-off carries the worktree and branch; `a1-pr-review` reviews the diff (Reinhard always, Samuel on security surface). No cross-provider gate runs on code.
 

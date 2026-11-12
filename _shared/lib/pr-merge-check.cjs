@@ -18,7 +18,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { parseFlags, peekVaultRoot, parseNestedFrontmatter, parseFrontmatter } = require('./io.cjs');
 const { emitExit } = require('./emit-exit.cjs');
-const { VerifyError, runVerify } = require('./verify-run.cjs');
+const { VerifyError, runVerify, resolveCommands, gitSource } = require('./verify-run.cjs');
 const vb = require('./verify-base.cjs');
 const { resolveMergeBase, flakyBaseGrown } = vb;
 const { gitRaw } = require('./verify-check.cjs');
@@ -100,7 +100,7 @@ function requiredChecks(pr, cwd) {
 
 /** All checks of the PR (not only required ones) for the CI-evidence shortcut; null = gh reports no checks at all. */
 function allChecks(pr, cwd) {
-  const r = runGh(['pr', 'checks', pr, '--json', 'name,bucket,state'], cwd);
+  const r = runGh(['pr', 'checks', pr, '--json', 'name,bucket,state,workflow,event,link'], cwd);
   const list = parseJsonOrNull(r.stdout);
   if (Array.isArray(list)) return list;
   if (NO_REQUIRED_RE.test(r.stderr) && r.stdout.trim() === '') return null;
@@ -203,15 +203,35 @@ function guardReasons(opts, baseSha) {
   };
 }
 
+/** Does any command of the HEAD plan have a counting reporter (kind other than none)? An unresolvable plan counts as yes. */
+function headPlanCounts(project, rawCfg) {
+  try { return resolveCommands(project, rawCfg, gitSource(project, 'HEAD')).commands.some((c) => c.kind !== 'none'); } catch (_e) { return true; }
+}
+
+/** The CI-evidence decision: head config from HEAD, base config from the tip of the base ref; no shortcut under a gh override. */
+function ciDecision(opts, baseRef, baseSha) {
+  if (opts.noCiEvidence) return { used: false, why: 'disabled_by_flag', checks: [], reasons: [] }; // the forced local run never parses ci_evidence
+  const raw = vb.parseVerifyJson(gitRaw(opts.project, ['show', 'HEAD:.a1/verify.json']), 'head'); // the committed head, never the working tree
+  const evidence = CE.parseCiEvidence(raw);
+  let baseEvidence;
+  let baseUnreadable = false;
+  if (evidence !== null) {
+    const baseText = gitRaw(opts.project, ['show', `${baseRef}:.a1/verify.json`]);
+    try { const b = baseText === null ? null : vb.parseVerifyJson(baseText, 'base'); baseEvidence = b && typeof b === 'object' ? b.ci_evidence : undefined; } catch (_e) { baseUnreadable = true; }
+  }
+  return CE.decide({
+    project: opts.project, baseSha, evidence, rawEvidence: evidence === null ? undefined : raw.ci_evidence, baseEvidence, baseUnreadable,
+    disabled: false, hasCountingReporter: () => headPlanCounts(opts.project, raw), override: !!process.env.A1_GH_BIN, listChecks: () => allChecks(opts.pr, opts.project),
+  });
+}
+
 /** @returns {{exit:number, report:object}}; throws VerifyError / MergeCheckError / DispositionError (exit 2). */
 function mergeCheck(opts) {
   const baseRef = resolveBaseRef(opts);
   const baseSha = resolveMergeBase(opts.project, baseRef);
   const guards = guardReasons(opts, baseSha);
-  const ci = CE.decide({
-    project: opts.project, baseSha, disabled: opts.noCiEvidence, listChecks: () => allChecks(opts.pr, opts.project),
-    evidence: CE.parseCiEvidence(vb.parseVerifyJson(gitRaw(opts.project, ['show', 'HEAD:.a1/verify.json']), 'head')), // the committed head, never the working tree
-  });
+  const ci = ciDecision(opts, baseRef, baseSha);
+  const headMoved = ci.used && prHeadSha(opts.pr, opts.project) !== guards.prHead; // TOCTOU: CI was read for a head that is no longer the PR head
   const record = ci.used
     ? { verdict: 'ci_evidence', cache: null, pre_existing_red: [], flaky: [], config_changed: null, suite_removed: null, head_sha: guards.prHead, commands: [] }
     : runVerify({ project: opts.project, base: baseRef, noCache: true });
@@ -219,6 +239,7 @@ function mergeCheck(opts) {
   const bugOk = opts.bug !== undefined && bugResolves(opts, baseSha);
   const reasons = [
     ...guards.reasons,
+    ...(headMoved ? [{ reason: 'head_moved', was: guards.prHead }] : []),
     ...(ci.used ? ci.reasons : suiteReasons(record, bugOk, opts.bug)),
     ...checks.red.map((name) => ({ reason: 'required_check_red', check: name })),
     ...checks.pending.map((name) => ({ reason: 'required_check_pending', check: name })),

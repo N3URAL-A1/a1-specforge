@@ -417,12 +417,22 @@ fi
 # Shards: the parts run from two runner files, so the suite runner (bin/run-suites.sh) can run them side by side.
 #   run-tests.sh     shard a = every part NOT listed in XP_SHARD_B (a new part lands here by default)
 #   run-tests-b.sh   shard b = the parts listed in XP_SHARD_B
-#   A1_XPROV_SHARD=all bash run-tests.sh   every part in one shell, as before the split
+#   bash run-tests.sh --shard all   every part in one shell, as before the split
+# The shard comes from the argument only, never from the environment: an exported variable would make both
+# runner files run the same shard and leave the other one unrun without a red line.
 # Measured 2026-11-12 (each part run alone against the full run): parts 10 and 18 need the helpers of part 08, part 21
 # needs make_fake_global_home of part 04; every other part gives the same result alone. Keep those in one shard.
 XP_SHARD_B="22 23 24 27 29 30 34 35"
-XP_SHARD="${A1_XPROV_SHARD:-a}"
-case "$XP_SHARD" in a|b|all) ;; *) echo "FAIL  harness: A1_XPROV_SHARD must be a, b or all (got '$XP_SHARD')" >&2; exit 2 ;; esac
+XP_SHARD=a
+if [[ $# -gt 0 ]]; then
+  if [[ $# -eq 2 && "$1" == "--shard" ]]; then XP_SHARD="$2"; else echo "FAIL  harness: usage: run-tests.sh [--shard a|b|all]" >&2; exit 2; fi
+fi
+case "$XP_SHARD" in a|b|all) ;; *) echo "FAIL  harness: --shard must be a, b or all (got '$XP_SHARD')" >&2; exit 2 ;; esac
+# The two runner files together are the suite: exactly run-tests.sh (shard a) and run-tests-b.sh (shard b, by its exact call line).
+xp_runners="$(cd "$SUITE" && ls run*.sh | tr '\n' ' ')"
+[[ "$xp_runners" == "run-tests-b.sh run-tests.sh " ]] || bad "harness: runner files are [$xp_runners], want exactly run-tests-b.sh and run-tests.sh"
+[[ "$(grep -cxF 'exec bash "$(dirname "$0")/run-tests.sh" --shard b' "$SUITE/run-tests-b.sh")" -eq 1 && "$(grep -cvE '^(#|$)' "$SUITE/run-tests-b.sh")" -eq 1 ]] \
+  || bad "harness: run-tests-b.sh must consist of the one call line 'exec bash \"\$(dirname \"\$0\")/run-tests.sh\" --shard b'"
 xp_in_shard() {
   [[ "$XP_SHARD" == all ]] && return 0
   if [[ " $XP_SHARD_B " == *" $1 "* ]]; then [[ "$XP_SHARD" == b ]]; else [[ "$XP_SHARD" == a ]]; fi

@@ -512,4 +512,4 @@ function runVerify(opts) {
 
 if (require.main === module && process.argv[2] === GROUP_RUNNER_FLAG) groupRunnerMain();
 
-module.exports = { VerifyError, runCommand, resolveCommands, expandEach, runVerify, commandReason, isSourcePath, MAX_TIMEOUT_MS };
+module.exports = { VerifyError, runCommand, resolveCommands, gitSource, expandEach, runVerify, commandReason, isSourcePath, MAX_TIMEOUT_MS };
