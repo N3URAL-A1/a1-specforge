@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated": "2026-11-11T21:12:54.100Z",
+  "generated": "2026-11-12T08:21:19.434Z",
   "project": {
     "id": "a1-specforge",
     "title": "a1-specforge — Roadmap",
@@ -378,6 +378,18 @@
       "finished": null,
       "spec_path": "project/a1-specforge/spec/026-fast-fixture-suites.md",
       "plan_path": "project/a1-specforge/plans/026-fast-fixture-suites-wave-plan.md"
+    },
+    {
+      "id": "027-closeout-cleanup",
+      "milestone": "continuous",
+      "title": "Full cleanup after a feature/spec closeout (squash-merged branches, worktrees, registry, all hosts)",
+      "status": "planned",
+      "stage": null,
+      "depends_on": [],
+      "started": null,
+      "finished": null,
+      "spec_path": null,
+      "plan_path": null
     }
   ],
   "next": "006-specforge-kritis-profile",
