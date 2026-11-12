@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated": "2026-11-12T14:55:24.039Z",
+  "generated": "2026-11-12T19:14:37.548Z",
   "project": {
     "id": "a1-specforge",
     "title": "a1-specforge — Roadmap",
@@ -378,6 +378,18 @@
       "finished": "2026-11-12",
       "spec_path": "project/a1-specforge/spec/026-fast-fixture-suites.md",
       "plan_path": "project/a1-specforge/plans/026-fast-fixture-suites-wave-plan.md"
+    },
+    {
+      "id": "027-lean-pipeline",
+      "milestone": "continuous",
+      "title": "Lean pipeline: fewer repeated runs, stops and spawns with the load-bearing gates intact",
+      "status": "planned",
+      "stage": null,
+      "depends_on": [],
+      "started": null,
+      "finished": null,
+      "spec_path": "project/a1-specforge/spec/027-lean-pipeline.md",
+      "plan_path": null
     }
   ],
   "next": "006-specforge-kritis-profile",
