@@ -4,7 +4,7 @@ type: roadmap
 project: a1-specforge
 title: "a1-specforge — Roadmap"
 status: active
-updated: 2026-11-11
+updated: 2026-11-12
 source: "migrated from docs/roadmap.md v3.0 (2026-07-10)"
 milestones:
   - id: m0-repo-extract
@@ -296,11 +296,11 @@ features:
   - id: 026-fast-fixture-suites
     milestone: continuous
     title: "Fast fixture suites without quality loss (parallel runner, lock, CI split)"
-    status: planned
-    stage: null
+    status: done
+    stage: done
     depends_on: []
-    started: null
-    finished: null
+    started: 2026-11-12
+    finished: 2026-11-12
     spec_path: project/a1-specforge/spec/026-fast-fixture-suites.md
     plan_path: project/a1-specforge/plans/026-fast-fixture-suites-wave-plan.md
 next: 006-specforge-kritis-profile
@@ -389,12 +389,6 @@ None.
 
 ## Changelog
 
-- **2026-09-13** — feature.md created for '005-vault-first-artifacts' — formal spec/plan attached via `product feature-init`
-- **2026-09-13** — feature.md created for '006-specforge-kritis-profile' — formal spec/plan attached via `product feature-init`
-- **2026-09-13** — feature '004-xs-quick-lane' added — new feature via `product add-feature`
-- **2026-09-13** — feature.md created for '004-xs-quick-lane' — formal spec/plan attached via `product feature-init`
-- **2026-09-13** — feature '003-product-schema-v11-vision-audits' added — new feature via `product add-feature`
-- **2026-09-13** — feature.md created for '003-product-schema-v11-vision-audits' — formal spec/plan attached via `product feature-init`
 - **2026-09-13** — 008-false-green-test-guards -> done — stage transition via `product stage`
 - **2026-09-13** — 002-product-docs-layer -> done — stage transition via `product stage`
 - **2026-09-24** — feature '009-cross-provider-review-gate' added — Codex (claudex-loop) becomes a registered a1 gate at PLAN.md and per wave with findings adapter, retro attribution, hardened CODEX_HOME and git tripwire — per Option D decision 2026-09-03
@@ -489,6 +483,12 @@ None.
 - **2026-11-11** — 025-codex-architecture-only -> merge — stage transition via `product stage`
 - **2026-11-11** — 025-codex-architecture-only -> origin-cleanup — stage transition via `product stage`
 - **2026-11-11** — 025-codex-architecture-only -> done — stage transition via `product stage`
+- **2026-11-12** — 026-fast-fixture-suites -> complete — stage transition via `product stage`
+- **2026-11-12** — 026-fast-fixture-suites -> review — stage transition via `product stage`
+- **2026-11-12** — 026-fast-fixture-suites -> verify — stage transition via `product stage`
+- **2026-11-12** — 026-fast-fixture-suites -> merge — stage transition via `product stage`
+- **2026-11-12** — 026-fast-fixture-suites -> origin-cleanup — stage transition via `product stage`
+- **2026-11-12** — 026-fast-fixture-suites -> done — stage transition via `product stage`
 
 ## Appendix — migrated details
 

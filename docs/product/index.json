@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated": "2026-11-11T21:12:54.100Z",
+  "generated": "2026-11-12T11:07:01.639Z",
   "project": {
     "id": "a1-specforge",
     "title": "a1-specforge — Roadmap",
@@ -371,11 +371,11 @@
       "id": "026-fast-fixture-suites",
       "milestone": "continuous",
       "title": "Fast fixture suites without quality loss (parallel runner, lock, CI split)",
-      "status": "planned",
-      "stage": null,
+      "status": "done",
+      "stage": "done",
       "depends_on": [],
-      "started": null,
-      "finished": null,
+      "started": "2026-11-12",
+      "finished": "2026-11-12",
       "spec_path": "project/a1-specforge/spec/026-fast-fixture-suites.md",
       "plan_path": "project/a1-specforge/plans/026-fast-fixture-suites-wave-plan.md"
     }

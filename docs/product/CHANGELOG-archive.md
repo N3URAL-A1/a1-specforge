@@ -16,3 +16,9 @@ Rotated entries beyond the 100-entry ROADMAP.md Changelog window (append-only, o
 - **2026-09-13** — feature.md created for '008-false-green-test-guards' — formal spec/plan attached via `product feature-init`
 - **2026-09-13** — feature '005-vault-first-artifacts' added — new feature via `product add-feature`
 - **2026-09-13** — feature '006-specforge-kritis-profile' added — new feature via `product add-feature`
+- **2026-09-13** — feature.md created for '005-vault-first-artifacts' — formal spec/plan attached via `product feature-init`
+- **2026-09-13** — feature.md created for '006-specforge-kritis-profile' — formal spec/plan attached via `product feature-init`
+- **2026-09-13** — feature '004-xs-quick-lane' added — new feature via `product add-feature`
+- **2026-09-13** — feature.md created for '004-xs-quick-lane' — formal spec/plan attached via `product feature-init`
+- **2026-09-13** — feature '003-product-schema-v11-vision-audits' added — new feature via `product add-feature`
+- **2026-09-13** — feature.md created for '003-product-schema-v11-vision-audits' — formal spec/plan attached via `product feature-init`
