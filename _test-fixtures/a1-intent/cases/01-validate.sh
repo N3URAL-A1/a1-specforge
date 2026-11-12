@@ -269,6 +269,7 @@ v6_files=(
 )
 before="$(tree_listing "$VAULT" "$FHOME")"
 touch "$SB/marker"
+# deliberate-timeout: file mtime granularity: the touch must be older than the next write
 sleep 1
 v6_json_bad=""
 v6_code_bad=""

@@ -612,12 +612,16 @@ caseCC17() {
 
 # two writers at once: the first pauses between its read of the stores and its write (the window of a lost update), the second runs meanwhile
 scen_par_record23() { twoRepos23 no; sim_bg23 "{\"cmd\":\"slow-record\",\"tree\":\"$TREE\",\"root\":\"$A23\",\"kind\":\"consent\",\"ms\":1500}" "$TMP23/par1"; local p=$BG_PID
+  # deliberate-timeout: lets the first writer (paused 1500 ms inside its lock) be inside its window before the second one starts; the overlap is the thing under test
   sleep 0.5; PHASE_REPO="$B23"; cli23 record --kind consent >/dev/null; wait "$p"; echo "$(state_of23 "$A23")/$(state_of23 "$B23")"; }
 scen_par_revoke23() { twoRepos23 yes; sim_bg23 "{\"cmd\":\"slow-record\",\"tree\":\"$TREE\",\"root\":\"$B23\",\"kind\":\"consent\",\"ms\":1500}" "$TMP23/par1"; local p=$BG_PID
+  # deliberate-timeout: lets the first writer (paused 1500 ms inside its lock) be inside its window before the second one starts; the overlap is the thing under test
   sleep 0.5; PHASE_REPO="$A23"; cli23 revoke >/dev/null; wait "$p"; echo "$(state_of23 "$A23")/$(state_of23 "$B23")"; }
 scen_par_permit23() { twoRepos23 no; sim_bg23 "{\"cmd\":\"slow-permit\",\"tree\":\"$TREE\",\"root\":\"$A23\",\"ms\":1500}" "$TMP23/par1"; local p=$BG_PID
+  # deliberate-timeout: lets the first writer (paused 1500 ms inside its lock) be inside its window before the second one starts; the overlap is the thing under test
   sleep 0.5; PHASE_REPO="$B23"; cli23 record --kind consent >/dev/null; wait "$p"; echo "$(state_of23 "$A23")/$(state_of23 "$B23")"; }
 scen_par_deny23() { twoRepos23 yes; sim_bg23 "{\"cmd\":\"slow-permit\",\"deny\":true,\"tree\":\"$TREE\",\"root\":\"$A23\",\"ms\":1500}" "$TMP23/par1"; local p=$BG_PID
+  # deliberate-timeout: lets the first writer (paused 1500 ms inside its lock) be inside its window before the second one starts; the overlap is the thing under test
   sleep 0.5; PHASE_REPO="$B23"; cli23 record --kind consent >/dev/null; wait "$p"; echo "$(state_of23 "$A23")/$(state_of23 "$B23")"; }
 caseCC18() {
   assert_eq "CC18a two parallel records (A paused inside record): both repositories stay permitted" "$(scen_par_record23)" "allowed/allowed"

@@ -414,15 +414,30 @@ if [[ ${#parts[@]} -eq 0 ]]; then
   echo "FAIL  harness: no parts/*.sh found under $SUITE" >&2
   fail=1
 fi
+timed_parts=(); : > "$SUITE_ROOT/part-times.txt"
 for p in "${parts[@]}"; do
   # Dev aid: A1_XPROV_ONLY="20 34 36" runs only the parts with those NN prefixes (never set in CI; the full run is the gate).
   if [[ -n "${A1_XPROV_ONLY:-}" && " $A1_XPROV_ONLY " != *" $(basename "$p" | cut -c1-2) "* ]]; then continue; fi
   # Harness gap A.3 (plan 012): a syntax error in a part used to drop the whole
   # part silently while the suite still printed "N passed, 0 failed".
   if ! bash -n "$p" 2>"$SUITE_ROOT/syntax.err"; then bad "harness: $(basename "$p") has a bash syntax error: $(head -n 1 "$SUITE_ROOT/syntax.err")"; continue; fi
+  # Spec 026 FR-018: elapsed seconds per part. Same shell, same order — only SECONDS deltas around the source.
+  # Parts are sourced into this shell and some reuse `p`: capture the name before sourcing, under names no part uses.
+  xp_name="$(basename "$p")"; xp_t0=$SECONDS
   # shellcheck disable=SC1090
   source "$p"
+  xp_dt=$((SECONDS - xp_t0))
+  echo "time  $xp_name ${xp_dt}s"
+  printf '%s %s %s\n' "time" "$xp_name" "$xp_dt" >> "$SUITE_ROOT/part-times.txt"
+  timed_parts+=("$xp_name")
 done
+# Self-check (assert-neutral when green): the parts that ran are exactly parts/*.sh in NN order, none skipped, none reordered.
+if [[ -z "${A1_XPROV_ONLY:-}" && "$fail" == 0 ]]; then
+  expected_parts=(); for p in "${parts[@]}"; do expected_parts+=("$(basename "$p")"); done
+  [[ "${timed_parts[*]}" == "${expected_parts[*]}" ]] || bad "harness: the timed parts (${#timed_parts[@]}) differ from parts/*.sh (${#expected_parts[@]}) or from their NN order"
+fi
+echo "---- part times, slowest first ----"
+sort -k3,3nr "$SUITE_ROOT/part-times.txt" 2>/dev/null | awk '{printf "time  %-34s %ss\n", $2, $3}'
 
 # The live tree's vendored runner must still be the audited one (a part that wrote into the real tree would show here).
 live_runner_sha="$(shasum -a 256 "$VENDOR/runner.py" 2>/dev/null | cut -d' ' -f1)"

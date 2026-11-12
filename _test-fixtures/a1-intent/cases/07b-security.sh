@@ -16,8 +16,10 @@ w6_sandbox w7-sec
 # ---------- B26 (K1): a timeout whose leader dies on SIGTERM, a grandchild that ignores it and holds no pipe ----------
 w6_claim action=progress
 cat >"$FHOME/.a1-intents/tmp/stub-script" <<'S'
+# deliberate-timeout: stand-in process the case tracks or kills; its length is never waited for
 ( trap '' TERM; exec sleep 30 ) </dev/null >/dev/null 2>&1 &
 echo $! >"$HOME/.a1-intents/tmp/k1-gc.pid"
+# deliberate-timeout: stand-in process the case tracks or kills; its length is never waited for
 sleep 30
 S
 rm -f "$FHOME/.a1-intents/tmp/k1-gc.pid"
@@ -31,6 +33,7 @@ for _ in $(seq 1 200); do
     [[ "$(w7_locks)" == 0 ]] && { b26_window=locks-gone-gc-alive; break; }
   fi
   kill -0 "$b26_pid" 2>/dev/null || break
+  # deliberate-timeout: sampler loop whose fixed interval is the measurement
   sleep 0.05
 done
 wait "$b26_pid"
@@ -47,6 +50,7 @@ else bad "B26 timeout 1500 ms, grace 3000 ms: the leader dies on SIGTERM, its gr
 # ---------- B27 (K3): exit 0 with a descendant left in the group ----------
 w6_claim action=progress
 cat >"$FHOME/.a1-intents/tmp/stub-script" <<'S'
+# deliberate-timeout: stand-in process the case tracks or kills; its length is never waited for
 ( exec sleep 30 ) </dev/null >/dev/null 2>&1 &
 echo $! >"$HOME/.a1-intents/tmp/k3-gc.pid"
 S
@@ -82,10 +86,12 @@ if [[ "$b28" == "done cancelled 0 1 started false  0" ]]; then
 else bad "B28 a cancel that lands after the running rewrite but before the spawn -> failed cancelled with 0 spawns (run: false), marker and both locks gone [FR-028, S-MAJOR-2]" "$b28" "rs: ${RS:0:200}"; fi
 
 # ---------- B29: child.json binding (S-MAJOR-3) ----------
+# deliberate-timeout: short-lived stand-in whose pid must be dead when the case reads it
 sleep 0 & b29_dead=$!
 wait "$b29_dead"
 b19_bad=""
 # a: a LIVE holder with a valid child.json -> executor_busy, its group untouched
+# deliberate-timeout: live stand-in lock holder; never waited for
 sleep 600 & b29_holder=$!
 b29a_id="$(w7b_uuid)"; b29a_grp="$(b19_live_group)"
 w7_record "$b29a_id" "$b29a_grp"
@@ -111,6 +117,7 @@ b29d="$(node -e '
   const code = `const S = require(${JSON.stringify(lib + "/intent-spawn.cjs")}); const fs = require("fs"); const dir = process.argv[1];
     fs.mkdirSync(dir + "/own", { recursive: true }); fs.mkdirSync(dir + "/other", { recursive: true });
     S.recordChild(dir + "/own", process.pid);
+    // deliberate-timeout: stand-in process the case tracks or kills; its length is never waited for
     const o = cp.spawn("/bin/sleep", ["30"], { detached: true, stdio: "ignore" }); S.recordChild(dir + "/other", o.pid);
     process.stdout.write(String(S.recordedGroup(dir + "/own")) + " " + String(S.recordedGroup(dir + "/other") === o.pid)); o.kill("SIGKILL");`;
   const r = cp.spawnSync(process.execPath, ["-e", "const cp = require(\"child_process\"); " + code, dir], { encoding: "utf8", detached: true, timeout: 10000 });
@@ -120,6 +127,7 @@ b29d="$(node -e '
 b29e="$(node -e '
   const cp = require("child_process"); const S = require(process.argv[1] + "/intent-spawn.cjs");
   const b = S.createBudget({ timeoutMs: 60000, graceMs: 200 });
+  // deliberate-timeout: stand-in process the case tracks or kills; its length is never waited for
   const reused = cp.spawn("/bin/sleep", ["30"], { detached: true, stdio: "ignore" }); const own = b.spawn("/bin/sleep", ["30"]);
   b.track(reused.pid, "t:1"); // the start token recorded for another process
   setTimeout(() => {
@@ -136,6 +144,7 @@ else bad "B29 child.json binding: a live holder WITH a child.json -> executor_bu
 w6_claim action=plan target=M2-P1-x
 A1_INTENT_KILL_GRACE_MS=500 w7_steps gate-sigterm
 b30_pid="$(node -e 'const ev = require("fs").readFileSync(process.argv[1], "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)).find((e) => e.event === "gate"); console.log(ev ? ev.pid : 999999)' "$SB/.spy")"
+# deliberate-timeout: settle time after a kill/stop; the case asserts the process state after it, not a condition worth polling
 sleep 0.3
 b30="$RS_RC $( [[ "$b30_pid" != 999999 ]] && echo started) $(w7_alive "$b30_pid") $(w6_where "$W6_ID") $(w6_fm "$VAULT/inbox/intents/done/$W6_ID.md" failure_reason) $(w7_locks)"
 kill -9 "$b30_pid" 2>/dev/null
@@ -149,12 +158,15 @@ b30b_t0="$(w7_now)"
 w7_steps gate-leftover
 b30b_ms=$(( $(w7_now) - b30b_t0 ))
 b30b_pid="$(node -e 'const ev = require("fs").readFileSync(process.argv[1], "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)).find((e) => e.event === "gate"); console.log(ev ? ev.pid : 999999)' "$SB/.spy")"
+# deliberate-timeout: settle time after a kill/stop; the case asserts the process state after it, not a condition worth polling
 sleep 0.3
 b30b="$( [[ "$b30b_pid" != 999999 ]] && echo started) $(w7_alive "$b30b_pid") $(w6_where "$W6_ID") $(w6_fm "$VAULT/inbox/intents/done/$W6_ID.md" status) $(w7_locks)"
 kill -9 "$b30b_pid" 2>/dev/null
 # the driver's event loop waits for its own child, so a process left alive
 # would only end with its 30 s sleep: the time bound tells the two apart
+# deliberate-timeout: the message text names the 30 s stand-in; the 15 s bound is a time threshold under test
 if [[ "$b30b" == "started gone done done 0" && "$b30b_ms" -lt 15000 ]]; then ok "B30b a post-step that leaves a tracked process (sleep 30) and returns ok -> run kills it and returns well before 30 s; intent done, both locks gone [FR-051, S-MAJOR-1]"
+# deliberate-timeout: same message text as above, naming the 30 s stand-in; no wait
 else bad "B30b a post-step that leaves a tracked process (sleep 30) and returns ok -> run kills it and returns well before 30 s; intent done, both locks gone [FR-051, S-MAJOR-1]" "$b30b in ${b30b_ms} ms"; fi
 
 # ---------- B31: Samuel's minors ----------
@@ -206,6 +218,7 @@ else bad "B32 the real fix.cjs integrity check with no learning-store root exits
 # ---------- B33: boot-relative identity parsing (Samuel MINOR-1), from the measured outputs ----------
 b33="$(node -e '
   const S = require(process.argv[1] + "/intent-spawn.cjs");
+  // deliberate-timeout: data string of a /proc stat sample, not a wait
   const measured = "9 (sleep) R 1 1 1 0 -1 4194560 102 0 0 0 0 0 0 0 20 0 1 0 93403079 2162688 64 18446744073709551615 187650374762496";
   const tricky = "9 (a) b c) R 1 1 1 0 -1 4194560 102 0 0 0 0 0 0 0 20 0 1 0 93403079 2162688 64";
   const boot = S.bootId(); const me = S.processInfo(process.pid);
@@ -215,6 +228,7 @@ if [[ "$b33" == "t:93403079 t:93403079  true string" ]]; then
 else bad "B33 identity parsing: /proc/<pid>/stat field 22 from the measured node:20 line and from a comm holding ') ', none from a short line; the boot id is a uuid on this host; every live pid has a start token [FR-025, Samuel MINOR-1]" "$b33"; fi
 
 # ---------- B34: reclaim kills only for a well-formed intent id (Reinhard NIT) ----------
+# deliberate-timeout: short-lived stand-in whose pid must be dead when the case reads it
 sleep 0 & b34_dead=$!
 wait "$b34_dead"
 b34_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" # 36 hex/dash characters, not an intent id (no v4 nibbles)

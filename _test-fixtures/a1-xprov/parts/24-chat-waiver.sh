@@ -306,6 +306,7 @@ scen_race24() {
   phase24 plan; write_permit "$PHASE_REPO"; yes24 waiver >/dev/null
   mkdir -p "$PHASE_REPO/.a1/phases/p24b"; { cat "$PHASE_PLAN"; printf '\nA second phase.\n'; } > "$PHASE_REPO/.a1/phases/p24b/PLAN.md"
   sim24 "{\"cmd\":\"chat-waive-slow\",\"tree\":\"$TREE\",\"root\":\"$PHASE_REPO\",\"phase\":\"p24\",\"ms\":1500}" & local pid=$!
+  # deliberate-timeout: lets the first writer (paused 1500 ms inside its lock) be inside its window before the second one starts; the overlap is the thing under test
   sleep 0.5
   ( cd "$PHASE_REPO" && node "$SIM24" "{\"cmd\":\"term-waive\",\"tree\":\"$TREE\",\"phase\":\"p24b\",\"gate\":\"$PLANGATE24\"}" >/dev/null 2>&1 )
   wait "$pid" 2>/dev/null
@@ -616,6 +617,7 @@ scen_arace24() {
   prep24; lockdir24; local old; old="$(printf 'c%.0s' $(seq 1 64))"
   node -e 'const fs = require("fs"); const d = process.env.HOME + "/.a1-xprov"; fs.writeFileSync(d + "/allowlist-approvals.json", JSON.stringify({ version: 1, repos: { [process.argv[1]]: [process.argv[2]] } }) + "\n", { mode: 0o600 });' "$(key24)" "$old"
   sim24 "{\"cmd\":\"term-approve\",\"tree\":\"$TREE\",\"root\":\"$PHASE_REPO\",\"ms\":1500}" & local pid=$!
+  # deliberate-timeout: lets the first writer (paused 1500 ms inside its lock) be inside its window before the second one starts; the overlap is the thing under test
   sleep 0.5
   node "$SIM24" "{\"cmd\":\"term-revoke\",\"tree\":\"$TREE\",\"root\":\"$PHASE_REPO\",\"sha\":\"$old\"}" >/dev/null 2>&1
   wait "$pid" 2>/dev/null

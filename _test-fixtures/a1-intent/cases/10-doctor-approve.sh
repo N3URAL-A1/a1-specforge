@@ -119,13 +119,10 @@ w10_feed() {
   local answer="$1" i=0
   [[ -n "$W10_EARLY" ]] && printf '%s\n' "$W10_EARLY" 2>/dev/null
   [[ -n "$W10_EARLY_NONL" ]] && printf '%s' "$W10_EARLY_NONL" 2>/dev/null
-  while [[ $i -lt 150 ]]; do
-    grep -qE 'Approve\? \(yes/no\)|"approved":|usage error|[Nn]othing (was written|changed)' "$SB/.pty" 2>/dev/null && break
-    sleep 0.1
-    i=$((i + 1))
-  done
+  poll_until 15 grep -qsE 'Approve\? \(yes/no\)|"approved":|usage error|[Nn]othing (was written|changed)' "$SB/.pty"
   [[ -n "$W10_HOOK" ]] && eval "$W10_HOOK"
   printf '%s\n' "$answer" 2>/dev/null
+  # deliberate-timeout: keeps the pty open after the answer so the child can finish
   sleep 1
 }
 
@@ -477,8 +474,10 @@ w10_sandbox w10-m7a
 RJ="$(w10_rejected signature_invalid)"
 BEFORE="$(tree_listing "$VAULT")"
 if [[ "$(uname -s)" == "Darwin" ]]; then
+  # deliberate-timeout: pty feed timing: the delay lets the child reach its prompt, the tail keeps stdin open until it ends
   { sleep 1; } | script -q /dev/null bash -c 'echo yes | env HOME="$1" A1_VAULT_ROOT="$2" node "$3" "$1" - "$4" intent approve "$5"; echo "rc=$?"' _ "$FHOME" "$VAULT" "$A1_AS" "$A1_TOOLS" "$RJ" >"$SB/.pty" 2>&1
 else
+  # deliberate-timeout: pty feed timing: the delay lets the child reach its prompt, the tail keeps stdin open until it ends
   { sleep 1; } | script -qec "$(printf '%q ' bash -c 'echo yes | env HOME="$1" A1_VAULT_ROOT="$2" node "$3" "$1" - "$4" intent approve "$5"; echo "rc=$?"' _ "$FHOME" "$VAULT" "$A1_AS" "$A1_TOOLS" "$RJ")" /dev/null >"$SB/.pty" 2>&1
 fi
 if grep -q 'rc=1' "$SB/.pty" && grep -q 'must be a TTY' "$SB/.pty" && [[ "$(tree_listing "$VAULT")" == "$BEFORE" ]]; then ok "M7a stdin a pipe, stdout a TTY -> exit 1, nothing written [FR-015]"

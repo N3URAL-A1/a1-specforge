@@ -247,3 +247,14 @@ gate0: RED proof on a snapshot copy: sentinel emptiness check dropped in bin/run
 gate0: `test-fidelity --diff-base HEAD~1` → 0 findings (ci_glob literal kept in a run: line)
 gate0: a1-xprov not in the subset run: wave 8 (parallel agent) edits it; CI read after push not done (no push by order)
 Note: runner still exports A1_SUITE_RUN_MARKER and keeps rs_lock_is_runner (used by the lock); only the I1 consumer is gone.
+
+## Wave 8 — a1-xprov per-part timing, sleep to bounded polling (done, 2026-11-12, aiserver, LC_ALL=C, A1_VAULT_ROOT unset)
+
+Tasks 8.1 (xprov part timing), 8.2 (xprov sleeps), 8.3 (intent sleeps), 8.4 (part 12 audit) done by one executor in one commit.
+Ledger (runner subset, same host, concurrent a1-xprov + a1-intent): a1-xprov before 4213/0 623 s, after 4213/0 617 s (alone); a1-intent before 1107 passed / 12 failed 281 s, after 1107 / 12 283 s, failing id set identical (B19g-i B22 B23 B24 B25 B6d SM4 T10 T21 T22 T5 X11, env-red on aiserver). a1-suite-runner 350 -> 364/0 (14 new part 12 asserts SA1..SA6c).
+FR-018: a1-xprov prints `time  <part> <s>s` per part (34 lines = ls parts/*.sh) and a summary sorted by elapsed descending; same shell and order. A self-check (assert-neutral when green) compares timed parts with parts/*.sh. It caught a real bug in the first draft: parts reuse `$p`, so the name is captured into `xp_name` before sourcing.
+FR-019: 59 sleep code lines in the two suites. Converted to `poll_until <bound> <cmd>` (defined in a1-intent/lib.sh): 8 loops in a1-intent (06-run X3, 06b, 07-bounds x2, 08-tick x2, 10-doctor w10_feed; 06-run counts as one). Annotated `# deliberate-timeout: <reason>`: 59 lines (xprov 21: pty feed, race window, hang under timeout, mtime granularity; intent 38: stand-in processes, dead pids, mtime granularity, settle after kill, sampler loops). Part 12 asserts polled + annotated = total.
+Honest note: no xprov sleep is a plain condition wait (pty feed delays cannot be observed by the harness); the 0.3 s settle sleeps and sampler loops in intent were annotated, not converted. Wall-clock gain of the wave is small (a few seconds); the value is the audit and the per-part times (slowest: 30-dispose-secrets 83 s, 08-allowlist 58 s, 25-consent-hook 57 s, 23-consent-cli 53 s, 29-recovery 50 s).
+gate0: part 12 red-first: SA2 failed on the unannotated tree (one bare line, 07b-security.sh), green after annotation; SA5a-e prove the scanner on planted files.
+gate0: first full xprov run after the change had one RI3 failure (part 10, "runner WAS invoked"); not reproducible (part 10 with 08 twice 383/0, full rerun 4213/0), part 10 untouched by this wave; noted as a possible flake under concurrent load.
+gate0: test-fidelity --diff-base HEAD 0 findings; verify-install-sync PASS; lane-split check findings [].

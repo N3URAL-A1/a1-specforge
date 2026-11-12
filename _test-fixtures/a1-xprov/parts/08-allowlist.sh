@@ -613,8 +613,10 @@ for v8 in $(env | cut -d= -f1 | grep -E '^(CLAUDECODE|CLAUDE_PID|CLAUDE_CODE_.*)
 pty8() {
   local cmd; cmd="$(printf '%q ' "$@")"
   if [[ "$(uname)" == Darwin ]]; then
+    # deliberate-timeout: pty feed timing: the delay lets the child reach its prompt, the tail keeps stdin open until it ends; not a condition the harness can observe
     ( sleep 1; [[ -n "${PTY_TYPED:-}" ]] && printf '%s\n' "$PTY_TYPED"; sleep 2 ) | script -q /dev/null "$@" > "$TMP08/pty-out.txt" 2>&1
   else
+    # deliberate-timeout: pty feed timing: the delay lets the child reach its prompt, the tail keeps stdin open until it ends; not a condition the harness can observe
     ( sleep 1; [[ -n "${PTY_TYPED:-}" ]] && printf '%s\n' "$PTY_TYPED"; sleep 2 ) | script -qec "$cmd" /dev/null > "$TMP08/pty-out.txt" 2>&1
   fi
 }
@@ -827,6 +829,7 @@ caseR30b3ssh() {
 batch=0; last=""
 for a in "$@"; do [ "$a" = "BatchMode=yes" ] && batch=1; last="$a"; done
 if [ "$batch" = 1 ] && [ "${GIT_TERMINAL_PROMPT:-}" = "0" ]; then exec sh -c "$last"; fi
+# deliberate-timeout: fake ssh that hangs: the timeout under test must cut it off
 sleep 60
 SSH
   chmod +x "$bin/ssh"

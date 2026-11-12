@@ -140,7 +140,9 @@ rm -f "${Q:?}"/*.md "${I:?}"/rejected/*.md
 c9="$(node -e '
   const cp = require("child_process"); const S = require(process.argv[1] + "/intent-spawn.cjs");
   const b = S.createBudget({ timeoutMs: 60000, graceMs: 200 });
+  // deliberate-timeout: stand-in process the case tracks or kills; its length is never waited for
   const mine = cp.spawn("/bin/sleep", ["30"], { detached: true, stdio: "ignore" });
+  // deliberate-timeout: stand-in process the case tracks or kills; its length is never waited for
   const foreign = cp.spawn("/bin/sleep", ["30"], { detached: true, stdio: "ignore" });
   b.track(mine.pid, null, mine); // ps failed at tracking time, but it is our own child
   b.track(foreign.pid, null); // no token and no child handle: may be a reused pid

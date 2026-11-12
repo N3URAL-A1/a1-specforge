@@ -281,11 +281,12 @@ w6_claim action=progress
 stub_mode slow
 HOME="$FHOME" A1_VAULT_ROOT="$VAULT" PATH="$STUB_DIR:$PATH" node "$A1_AS" "$FHOME" - "$A1_TOOLS" intent run "$W6_FILE" >"$SB/.out" 2>"$SB/.err" &
 x40f_pid=$!
-for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do [[ -f "$W6_STUB/stub.pid" ]] && break; sleep 0.1; done
+poll_until 2 test -f "$W6_STUB/stub.pid"
 x40f_stub="$(cat "$W6_STUB/stub.pid" 2>/dev/null)"
 kill -TERM "$x40f_pid"
 wait "$x40f_pid"
 x40f_rc=$?
+# deliberate-timeout: settle time after a kill/stop; the case asserts the process state after it, not a condition worth polling
 sleep 0.3
 stub_mode ok
 x40f="$x40f_rc $( [[ -e "$FHOME/.a1-intents/executor.lock" ]] && echo exec-lock) $( [[ -e "$FHOME/.a1-intents/locks/real-proj.lock" ]] && echo project-lock) $( [[ -n "$x40f_stub" ]] && kill -0 "$x40f_stub" 2>/dev/null && echo child-alive)"
