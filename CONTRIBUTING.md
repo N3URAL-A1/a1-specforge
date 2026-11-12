@@ -66,7 +66,11 @@ must know about (M12 decision, doc 7.4 MAP c).
 Any change to `_shared/a1-tools.cjs` requires fixture coverage per
 [`_test-fixtures/CONVENTIONS.md`](_test-fixtures/CONVENTIONS.md), including the mandatory
 hostile-input rejection case for every new CLI subcommand. Run the full suite before
-opening a PR: `for r in _test-fixtures/*/run*.sh; do bash "$r" || break; done`.
+opening a PR: `bash bin/run-suites.sh` (parallel; `--workers N` or `A1_SUITE_WORKERS` sets the
+worker count). One run per user and machine: a second start is refused while the lock
+`/tmp/a1-suite-runner-<uid>` is held, and the lock of a dead run is taken over. Logs: one per suite under
+`${TMPDIR:-/tmp}/a1-suite-runs/<run id>/` (printed first as `log dir:`). `bash bin/run-suites.sh <dir|dir/runner.sh>`
+runs a subset.
 
 Runs started from inside an agent session (a `claude` process is an ancestor, or `CLAUDECODE` is set) skip the owner-terminal cases of `a1-xprov` (parts 08, 11, 12, 14; part 15 swaps in a library driver); CI never skips them. Before a PR, run the suite once outside the agent as a non-root user, for example in Docker with gitleaks 8.30.1 on `PATH`: copy a `git archive` snapshot (with `git init` and a commit) to `/work`, `chown -R node:node /work`, then `docker run --rm -v <snapshot>:/src:ro node:20 su node -s /bin/bash -c 'cd /work && bash _test-fixtures/a1-xprov/run-tests.sh'`. The container must not see the real owner home.
 
@@ -102,7 +106,7 @@ node _shared/a1-tools.cjs test-fidelity --diff-base main --phase <phase>
 node _shared/a1-tools.cjs gates lint && node _shared/a1-tools.cjs workflow lint
 ```
 
-`.a1/verify.json` declares the commands (one per `_test-fixtures/*/run*.sh`, so a new suite is picked up without an edit).
+`.a1/verify.json` declares the commands (one per `_test-fixtures/*/run*.sh`, so a new suite is picked up without an edit); its `each` glob must stay consistent with the discovery of `bin/run-suites.sh` (same runners, plus `a1-schema-check/parser/run-parser.sh`).
 `.a1/fidelity.json` holds `db_wrappers`, `test_globs` and `ci_globs`.
 
 A finding is never switched off by a flag. Record a reason instead; the entry starts as `review: pending` and the

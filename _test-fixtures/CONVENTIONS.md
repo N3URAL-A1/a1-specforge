@@ -262,8 +262,7 @@ part headers; the runner suite is `_test-fixtures/a1-suite-runner/`, parts under
 | Worker locale (FR-027) | U8 | remove `export LC_ALL=C` in `bin/run-suites.sh` |
 | Real stores untouched | V1, V2, V4, V5 | `A1_SUITE_REAL_VAULT` not exported; exported empty / stale; worker keeps the runner's HOME; V5 detector self-proof (a write into the outer vault changes the digest) |
 | Failure and read-only dirs | F1, F2, F4-F6 | exit 0 after a failure; `FAILED:` line without identity or log path; read-only TMPDIR / log base / lock parent not exit 2 |
-| I1 handshake (`a1-vault-cockpit` 04d) | valid, absent, dead PID, mismatch, unrelated, decoy | drop the early `return 0`; skip when marker unset; drop `rs_lock_is_runner`; drop `held == id`; drop the command-line check; drop `i_is_ancestor` |
-| Suite isolation (`a1-vault-cockpit` 04c, pre-026) | I1, I1-exit, I2 | delete `unset A1_VAULT_ROOT` from a product suite; drop the rc assertion; drop the a1-reconcile restore |
+| Suite isolation self-test (`a1-vault-cockpit` 04c, spec 026 FR-022) | I1a-I1c, I2 | drop the sentinel emptiness check in `bin/run-suites.sh` (I1a red); drop the a1-reconcile restore (I2 red) |
 
 No dedicated mutation exists for U7 (overlapping selectors start a suite twice), F3 (failing suite
 dropped from the table) and V3 (A1_SUITE_REAL_VAULT exported after the sentinel replaced it). The

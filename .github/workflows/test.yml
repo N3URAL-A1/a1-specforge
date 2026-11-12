@@ -47,14 +47,15 @@ jobs:
           echo "$RUNNER_TEMP/gitleaks-bin" >> "$GITHUB_PATH"
 
       - name: Fixtures
+        # Spec 026 FR-022: the runner executes every discovered suite once, in parallel, each under
+        # an isolated HOME and an empty sentinel vault (leak check per suite, a1-reconcile restore
+        # check once per run). It replaces the sequential `for` loop, so CI keeps the leak guarantee
+        # that a1-vault-cockpit I1 used to give. The `ls` line keeps the literal glob that the
+        # test-fidelity gate reads from this file (ci_globs in .a1/fidelity.json).
         run: |
           set -e
-          for r in _test-fixtures/*/run*.sh; do
-            echo "== $r"
-            bash "$r"
-          done
-          echo "== _test-fixtures/a1-schema-check/parser/run-parser.sh"
-          bash _test-fixtures/a1-schema-check/parser/run-parser.sh
+          echo "glob count: $(ls _test-fixtures/*/run*.sh | wc -l)"
+          bash bin/run-suites.sh
 
       - name: Cross-provider enforcement flip
         # Spec 009 FR-005. The row plan-review-xprov may read `blocking`

@@ -29,7 +29,7 @@ vault: "[[project/a1-specforge]]"
 
 ```bash
 ./bin/install.sh                                              # Dev-Install (Symlinks nach ~/.claude)
-for r in _test-fixtures/*/run*.sh; do bash "$r" || break; done  # alle Fixture-Suites (vor jedem PR)
+bash bin/run-suites.sh                                        # alle Fixture-Suites parallel (vor jedem PR); --workers N / A1_SUITE_WORKERS
 bash bin/verify-install-sync.sh                               # Install-Set ↔ README
 node _shared/a1-tools.cjs <subcommand>                        # CLI (Hooks/launchd rufen sie direkt)
 claude plugin update a1-specforge                             # Plugin nach Push aktualisieren
