@@ -11,6 +11,19 @@
 # Expectations are typed as literals in the case files. Nothing here imports a
 # value from the modules under test (testing.md class 4).
 
+# poll_until <bound-seconds> <cmd...> — run cmd every 0.1 s until it succeeds or the bound passes (spec 026 FR-019);
+# returns the last status of cmd, so a caller that needs the condition still checks it after the call.
+poll_until() {
+  local bound="$1" i n; shift
+  n=$(( bound * 10 ))
+  for ((i = 0; i < n; i++)); do "$@" && return 0; sleep 0.1; done
+  "$@"
+}
+
+# pid_gone <pid> — true when the process is gone; an empty pid or 0 counts as gone here (nothing to wait for;
+# the case checks the state itself afterwards).
+pid_gone() { [[ -n "${1:-}" && "$1" != 0 ]] || return 0; ! kill -0 "$1" 2>/dev/null; }
+
 A1_TOOLS="$REPO_ROOT/_shared/a1-tools.cjs"
 INTENT_LIB="$REPO_ROOT/_shared/lib"
 STUB_DIR="$SUITE_DIR/stub"

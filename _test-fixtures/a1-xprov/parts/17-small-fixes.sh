@@ -118,8 +118,10 @@ pty17() {
   local typed="$1"; shift
   local cmd; cmd="$(printf '%q ' "$@")"
   if [[ "$(uname)" == Darwin ]]; then
+    # deliberate-timeout: pty feed timing: the delay lets the child reach its prompt, the tail keeps stdin open until it ends; not a condition the harness can observe
     ( sleep 1; [[ -n "$typed" ]] && printf '%s\n' "$typed"; sleep 2 ) | script -q /dev/null "$@" > "$TMP17/pty.txt" 2>&1
   else
+    # deliberate-timeout: pty feed timing: the delay lets the child reach its prompt, the tail keeps stdin open until it ends; not a condition the harness can observe
     ( sleep 1; [[ -n "$typed" ]] && printf '%s\n' "$typed"; sleep 2 ) | script -qec "$cmd" /dev/null > "$TMP17/pty.txt" 2>&1
   fi
 }

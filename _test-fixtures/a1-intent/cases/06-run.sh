@@ -178,13 +178,9 @@ stub_mode slow
 ( w6_run ) &
 x3_pid=$!
 x3_seen=""
-for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
-  if [[ -f "$W6_STUB/stub.pid" && -f "$W6_FILE" ]]; then
-    x3_seen="$(w6_fm "$W6_FILE" status) $( [[ -n "$(w6_fm "$W6_FILE" started_at)" ]] && echo started)"
-    break
-  fi
-  sleep 0.1
-done
+if poll_until 2 test -f "$W6_STUB/stub.pid" -a -f "$W6_FILE"; then
+  x3_seen="$(w6_fm "$W6_FILE" status) $( [[ -n "$(w6_fm "$W6_FILE" started_at)" ]] && echo started)"
+fi
 wait "$x3_pid"
 stub_mode ok
 if [[ "$x3_seen" == "running started" && "$(w6_where "$W6_ID")" == done ]]; then ok "X3 while the child runs the claimed file has status running and started_at [FR-020]"
@@ -379,6 +375,7 @@ x10_lock() { # <pid> <hostname>
   printf '{"pid":%s,"hostname":"%s","createdAt":"%s","intent_id":"3f2b8c1e-5d4a-4e6f-9a7b-1c2d3e4f5a6b","token":"00"}' "$1" "$2" "$(node -e 'process.stdout.write(new Date().toISOString())')" >"$FHOME/.a1-intents/locks/real-proj.lock"
   chmod 600 "$FHOME/.a1-intents/locks/real-proj.lock"
 }
+# deliberate-timeout: short-lived stand-in whose pid must be dead when the case reads it
 sleep 0 & x10_dead=$!
 wait "$x10_dead"
 w6_claim action=progress

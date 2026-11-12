@@ -534,7 +534,9 @@ caseApproveListing() {
 # The owner approval under a pseudo-TTY: a v2 blob, typed count = entries + scopes (skipped under Claude Code, as part 08).
 pty14() {
   local cmd; cmd="$(printf '%q ' "$@")"
+  # deliberate-timeout: pty feed timing: the delay lets the child reach its prompt, the tail keeps stdin open until it ends; not a condition the harness can observe
   if [[ "$(uname)" == Darwin ]]; then ( sleep 1; [[ -n "${PTY_TYPED:-}" ]] && printf '%s\n' "$PTY_TYPED"; sleep 2 ) | script -q /dev/null "$@" > "$TMP14/pty-out.txt" 2>&1
+  # deliberate-timeout: pty feed timing: the delay lets the child reach its prompt, the tail keeps stdin open until it ends; not a condition the harness can observe
   else ( sleep 1; [[ -n "${PTY_TYPED:-}" ]] && printf '%s\n' "$PTY_TYPED"; sleep 2 ) | script -qec "$cmd" /dev/null > "$TMP14/pty-out.txt" 2>&1; fi
 }
 caseApproveTty() {
@@ -571,6 +573,7 @@ caseS2() {
 caseS8() {
   scen14 "$(sc14 tests/ password_assignment 5)"; printf '// f\n' >> "$R14/src/add.js"; c14 "feature"
   local real fb="$TMP14/fakebin"; real="$(command -v git)"; mkdir -p "$fb"
+  # deliberate-timeout: fake git that hangs 5 s: the timeout under test must cut it off
   printf '#!/bin/sh\ncase " $* " in *" --no-abbrev "*) exec sleep 5;; esac\nexec %s "$@"\n' "$real" > "$fb/git"; chmod +x "$fb/git"
   local t0 t1; t0=$SECONDS
   PATH="$fb:$PATH" XPROV_GIT_TIMEOUT_MS=1000 snap14 feat

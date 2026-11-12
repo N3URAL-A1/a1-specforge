@@ -91,6 +91,7 @@ w8_empty_queue
 t5_lines0="$(grep -c '"command":"tick"' "$FHOME/.a1-intents/log.jsonl")"
 ( HOME="$FHOME" A1_VAULT_ROOT="$VAULT" PATH="$STUB_DIR:$PATH" node "$A1_AS" "$FHOME" - "$A1_TOOLS" intent watch --interval 1 >"$SB/.watch-out" 2>"$SB/.watch-err"; echo $? >"$SB/.watch-rc" ) &
 t5_pid=$!
+# deliberate-timeout: lets the watch loop (interval 1 s) run more than one pass; the elapsed time is the thing under test
 sleep 2.5
 t5_node="$(pgrep -P "$t5_pid" node | head -1)"
 t5_t0="$(w8_now)"
@@ -185,10 +186,11 @@ w8_gone_within() {
     alive=0; for p in "$@"; do kill -0 "$p" 2>/dev/null && alive=1; done
     [[ "$alive" == 0 ]] && { echo $(( $(w8_now) - t0 )); return; }
     (( $(w8_now) - t0 > limit )) && { echo alive; return; }
+    # deliberate-timeout: sampler loop whose fixed interval is the measurement
     sleep 0.05
   done
 }
-w8_wait_file() { for _ in $(seq 1 100); do [[ -s "$1" ]] && return 0; sleep 0.1; done; return 1; }
+w8_wait_file() { poll_until 10 test -s "$1"; }
 
 # ---------- T10: cancel of the running intent through run's poll; cancel of a claimed one in the pass (FR-032) ----------
 w8_empty_queue
@@ -218,6 +220,7 @@ t11_done="$(ls "$VAULT"/inbox/intents/done/*.md | head -1)"; t11_done_id="$(base
 w8_mk action=cancel target="$(w8_uuid)"; t11_u="$W8_ID"
 w8_mk action=cancel target="$t11_done_id"; t11_d="$W8_ID"
 t12_c="$(w8_uuid)"; w8_mk action=cancel id="$t12_c" target="$t12_c"
+# deliberate-timeout: file mtime granularity: the touch must be older than the next write
 touch "$SB/t11.marker"; sleep 1
 w8_tick
 t11_moved="$(find "$VAULT/inbox/intents" -type f -newer "$SB/t11.marker" | sed 's#.*/inbox/intents/##' | sort | paste -sd, -)"
@@ -253,7 +256,7 @@ w8_mk action=plan target=M2-P1-x; t13_a="$W8_ID"
 ( A1_INTENT_CANCEL_POLL_MS=500 A1_INTENT_KILL_GRACE_MS=500 A1_INTENT_TIMEOUT_MS=20000 HOME="$FHOME" A1_VAULT_ROOT="$VAULT" PATH="$STUB_DIR:$PATH" \
     node "$STUB_DIR/tick-lib.cjs" "$INTENT_LIB" "$FHOME" gate-hang "$SB/.spy" >"$SB/.t13.out" 2>"$SB/.t13.err" ) &
 t13_bg=$!
-for _ in $(seq 1 100); do grep -q '"event":"gate"' "$SB/.spy" && break; sleep 0.1; done
+poll_until 10 grep -q '"event":"gate"' "$SB/.spy"
 t13_gate="$(node -e 'const ev = require("fs").readFileSync(process.argv[1], "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)).find((e) => e.event === "gate"); console.log(ev ? ev.pid : 999999)' "$SB/.spy")"
 w8_mk action=cancel target="$t13_a"; t13_x="$W8_ID"
 t13_ms="$(w8_gone_within 2000 "$t13_gate")"
@@ -297,6 +300,7 @@ t15_sha="$(sha256_of "$VAULT/inbox/intents/rejected/$t15_ta.md") $(sha256_of "$V
 w8_approve "$t15_ta" "$VAULT/inbox/intents/rejected/$t15_ta.md"; t15_a1="$W8_ID"
 w8_approve "$t15_tc" "$VAULT/inbox/intents/rejected/$t15_tc.md"; t15_a2="$W8_ID"
 w8_approve "$t16_t" "$VAULT/inbox/intents/rejected/$t16_t.md"; t16_a="$W8_ID"
+# deliberate-timeout: file mtime granularity: the touch must be older than the next write
 touch "$SB/t15.marker"; sleep 1
 w8_tick
 t15_moved="$(find "$VAULT/inbox/intents" -type f -newer "$SB/t15.marker" | sed 's#.*/inbox/intents/##' | sort | paste -sd, -)"
@@ -340,6 +344,7 @@ else bad "T18 a claimed cancel edited after its claim -> finishQueueControl refu
 # ---------- T19: a claim refused ledger_busy leaves the file in queued/ (FR-032) ----------
 w8_empty_queue
 w8_mk action=progress; t19_id="$W8_ID"; t19_sha="$(sha256_of "$W8_F")"
+# deliberate-timeout: live stand-in lock holder; never waited for
 sleep 600 & t19_holder=$!
 printf '{"pid":%s,"hostname":"%s","acquired_at":"%s","token":"fixture"}' "$t19_holder" "$W5B_HOST" "$(w8_ago 0)" >"$FHOME/.a1-intents/ledger.lock"; chmod 600 "$FHOME/.a1-intents/ledger.lock"
 w8_tick
@@ -350,6 +355,7 @@ else bad "T19 the ledger lock held by a live process -> claim refuses ledger_bus
 
 # ---------- T20: a stale executor.lock does not stall the queue (Reinhard W8-M1) ----------
 w8_empty_queue
+# deliberate-timeout: short-lived stand-in whose pid must be dead when the case reads it
 sleep 0 & t20_dead=$!
 wait "$t20_dead"
 w7_exlock "$(w7_ctxlock "$t20_dead" "$W5B_HOST")"

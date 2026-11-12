@@ -13,7 +13,7 @@ probe() {
   local out="$WORK/probe.out.$$" wd
   A1_FX_SHARED="$SHARED" node "$PROBE" "$@" >"$out" 2>"$WORK/probe.err.$$" &
   local pid=$!
-  ( sleep 20; kill "$pid" 2>/dev/null ) & wd=$!
+  ( trap 'kill "$sl" 2>/dev/null' TERM; sleep 20 & sl=$!; wait "$sl"; kill "$pid" 2>/dev/null ) & wd=$!
   wait "$pid" 2>/dev/null; PRC=$?
   kill "$wd" 2>/dev/null; wait "$wd" 2>/dev/null
   POUT="$(cat "$out")"; PERR="$(cat "$WORK/probe.err.$$")"; rm -f "$out" "$WORK/probe.err.$$"
@@ -312,7 +312,7 @@ run_cli() {
   A1_VAULT_ROOT="$3" A1_HOST_ID="$1" node "$TOOLS" dashboard build >/dev/null 2>"$errf" &
   pid=$!
   popd >/dev/null || return
-  ( sleep 8; kill "$pid" 2>/dev/null ) & wd=$!
+  ( trap 'kill "$sl" 2>/dev/null' TERM; sleep 8 & sl=$!; wait "$sl"; kill "$pid" 2>/dev/null ) & wd=$!
   wait "$pid" 2>/dev/null; RC=$?
   kill "$wd" 2>/dev/null; wait "$wd" 2>/dev/null
   ERR="$(cat "$errf")"

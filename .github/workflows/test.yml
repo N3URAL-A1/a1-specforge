@@ -9,12 +9,16 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 concurrency:
   group: test-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  test:
+  # Everything except the fixture suites. The fixture jobs below run in parallel with it.
+  checks:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -46,23 +50,11 @@ jobs:
           bash bin/ci-install-gitleaks.sh "$GITLEAKS_VERSION" "$GITLEAKS_SHA256" "$RUNNER_TEMP/gitleaks-bin"
           echo "$RUNNER_TEMP/gitleaks-bin" >> "$GITHUB_PATH"
 
-      - name: Fixtures
-        run: |
-          set -e
-          for r in _test-fixtures/*/run*.sh; do
-            echo "== $r"
-            bash "$r"
-          done
-          echo "== _test-fixtures/a1-schema-check/parser/run-parser.sh"
-          bash _test-fixtures/a1-schema-check/parser/run-parser.sh
-
-      - name: Cross-provider enforcement flip
-        # Spec 009 FR-005. The row plan-review-xprov may read `blocking`
-        # only while the ADR's live-smoke section holds its
-        # `xprov gate` command and no "pending Wave 7". This step runs
-        # after Fixtures, so a red a1-xprov suite stops the job before it.
-        # Case R5 (parts/07-enforcement.sh) asserts this order.
-        run: bash _test-fixtures/a1-xprov/check-enforcement.sh
+      - name: Fixture group coverage
+        # Spec 026 FR-017: every runner under _test-fixtures/ sits in exactly one ci_jobs entry, no listed
+        # path has vanished, and every `run-suites.sh --job <name>` call below names a ci_jobs entry (and
+        # every entry is called). Exit 1 names the entry. Fixture: a1-suite-runner parts/11-check-groups.sh.
+        run: bash bin/run-suites.sh --check-groups
 
       - name: Vault cockpit validators
         # Spec 010: `vault lint` must exit 1 on planted defects and `vault
@@ -145,3 +137,97 @@ jobs:
             printf '{"tool_name":"Bash","tool_input":{"command":"%s"}}' "$cmd" \
               | bash .claude/hooks/xprov-deny-allowlist-approve.sh | grep -q '"permissionDecision":"deny"'
           done
+
+  # Fixture jobs: one per ci_jobs name, literal --job argument (see the Fixtures step).
+  fixtures-xprov:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install gitleaks (pinned, checksum-checked)
+        # Spec 014 FR-011: gitleaks is required for blocking xprov gates. The version and the sha256 of
+        # gitleaks_<version>_linux_x64.tar.gz are constants of this step (Wave 0 measurement, 2026-10-08);
+        # a mismatch fails the job. The dir is prepended to PATH on its own, so the fixtures (stub gitleaks
+        # first on PATH) and their gitleaks-free PATH helper can still tell it apart.
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          set -e
+          bash bin/ci-install-gitleaks.sh "$GITLEAKS_VERSION" "$GITLEAKS_SHA256" "$RUNNER_TEMP/gitleaks-bin"
+          echo "$RUNNER_TEMP/gitleaks-bin" >> "$GITHUB_PATH"
+
+      - name: Fixtures
+        # Spec 026 FR-016/FR-022: one literal job per ci_jobs entry in _test-fixtures/suite-groups.json
+        # (balanced by timings.seconds, largest first; sums in .a1/phases/026-fast-fixture-suites/STATUS.md).
+        # `bin/run-suites.sh --job <name>` runs exactly the identities listed under that name, each under an
+        # isolated HOME and an empty sentinel vault; the runner fails a suite that leaves files in its sentinel vault
+        # and the run when `.a1/learnings` changed (the fallback store of a suite that unsets A1_VAULT_ROOT). The job name must be a LITERAL:
+        # `bin/run-suites.sh --check-groups` reads this file with a line regex and cannot parse a matrix
+        # expression. The `ls` line keeps the literal glob that the test-fixtures gate reads (ci_globs).
+        run: |
+          set -e
+          echo "glob count: $(ls _test-fixtures/*/run*.sh | wc -l)"
+          bash bin/run-suites.sh --job fixtures-xprov
+
+  fixtures-rest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install gitleaks (pinned, checksum-checked)
+        # Spec 014 FR-011: gitleaks is required for blocking xprov gates. The version and the sha256 of
+        # gitleaks_<version>_linux_x64.tar.gz are constants of this step (Wave 0 measurement, 2026-10-08);
+        # a mismatch fails the job. The dir is prepended to PATH on its own, so the fixtures (stub gitleaks
+        # first on PATH) and their gitleaks-free PATH helper can still tell it apart.
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          set -e
+          bash bin/ci-install-gitleaks.sh "$GITLEAKS_VERSION" "$GITLEAKS_SHA256" "$RUNNER_TEMP/gitleaks-bin"
+          echo "$RUNNER_TEMP/gitleaks-bin" >> "$GITHUB_PATH"
+
+      - name: Fixtures
+        # Spec 026 FR-016/FR-022: one literal job per ci_jobs entry in _test-fixtures/suite-groups.json
+        # (balanced by timings.seconds, largest first; sums in .a1/phases/026-fast-fixture-suites/STATUS.md).
+        # `bin/run-suites.sh --job <name>` runs exactly the identities listed under that name, each under an
+        # isolated HOME and an empty sentinel vault; the runner fails a suite that leaves files in its sentinel vault
+        # and the run when `.a1/learnings` changed (the fallback store of a suite that unsets A1_VAULT_ROOT). The job name must be a LITERAL:
+        # `bin/run-suites.sh --check-groups` reads this file with a line regex and cannot parse a matrix
+        # expression. The `ls` line keeps the literal glob that the test-fixtures gate reads (ci_globs).
+        run: |
+          set -e
+          echo "glob count: $(ls _test-fixtures/*/run*.sh | wc -l)"
+          bash bin/run-suites.sh --job fixtures-rest
+
+  # Spec 009 FR-005, case R5j: after every fixture job (needs:) and after them in this file.
+  enforcement:
+    runs-on: ubuntu-latest
+    needs: [fixtures-xprov, fixtures-rest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Cross-provider enforcement flip
+        # Spec 009 FR-005. The row plan-review-xprov may read `blocking`
+        # only while the ADR's live-smoke section holds its
+        # `xprov gate` command and no "pending Wave 7". This step runs
+        # after the Fixtures jobs (needs:), so a red suite stops the job before it.
+        # Case R5 (parts/07-enforcement.sh) asserts this order.
+        run: bash _test-fixtures/a1-xprov/check-enforcement.sh

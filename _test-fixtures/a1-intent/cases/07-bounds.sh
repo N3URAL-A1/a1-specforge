@@ -73,6 +73,7 @@ b1_lock=""
 for _ in $(seq 1 40); do
   [[ -z "$b1_lock" && -f "$FHOME/.a1-intents/executor.lock" ]] && b1_lock="$(node -e 'try { console.log(Object.keys(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))).join(",")); } catch (e) {}' "$FHOME/.a1-intents/executor.lock")"
   [[ -f "$SB/.bg-a.rc" && -f "$SB/.bg-b.rc" ]] && break
+  # deliberate-timeout: poll of two files plus a lock snapshot taken each pass; the interval is the sampling rate
   sleep 0.1
 done
 wait
@@ -201,6 +202,7 @@ else bad "B11 six runs on a tampered seal end sandbox_invalid, each with both lo
 
 # ---------- B12: executor_busy before any precondition ----------
 w6_claim action=plan target=M2-P1-x
+# deliberate-timeout: live stand-in lock holder; never waited for
 sleep 600 & b12_live=$! # a live holder that is no ancestor of run (an ancestor's lock would put run itself in child mode)
 printf '{"pid":%s,"hostname":"%s","createdAt":"%s","intent_id":"3f2b8c1e-5d4a-4e6f-9a7b-1c2d3e4f5a6b","action":"progress","project":"proj-x","vault_root":"/nowhere","anchor":"/nowhere"}' "$b12_live" "$W5B_HOST" "$(node -e 'process.stdout.write(new Date().toISOString())')" >"$FHOME/.a1-intents/executor.lock"
 chmod 600 "$FHOME/.a1-intents/executor.lock"
@@ -227,6 +229,7 @@ done
 # pid whose parent is itself a stub process is that stub's subshell)
 b9_alive() { local pids p n=0; pids=" $(pgrep -f "$STUB_DIR/claude" | tr '\n' ' ') "
   for p in $pids; do [[ "$pids" == *" $(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ') "* ]] || n=$((n + 1)); done; echo "$n"; }
+# deliberate-timeout: sampler loop whose fixed interval is the measurement
 ( max=0; for _ in $(seq 1 200); do n="$(b9_alive)"; [[ "$n" -gt "$max" ]] && max="$n"; echo "$max" >"$SB/b9.max"; sleep 0.05; done ) &
 b9_sampler=$!
 for batch in 0 10 20 30 40; do
@@ -335,6 +338,7 @@ w7_record() {
     if (patch) { const o = JSON.parse(fs.readFileSync(f, "utf8")); eval(patch); fs.writeFileSync(f, JSON.stringify(o)); }' \
     "$INTENT_LIB" "$FHOME/.a1-intents/runs/$1" "$2" "${3:-}"
 }
+# deliberate-timeout: short-lived stand-in whose pid must be dead when the case reads it
 sleep 0 & b19_dead=$!
 wait "$b19_dead"
 b19_bad=""
@@ -347,6 +351,7 @@ b19_try() { # <label> <want: runs|busy>
 }
 w7_exlock empty 60;                                        b19_try "empty, 60 s old" runs
 w7_exlock "$(w7_ctxlock "$b19_dead" "$W5B_HOST")";         b19_try "dead pid, this host" runs
+# deliberate-timeout: live stand-in lock holder; never waited for
 sleep 600 & b19_live=$! # alive, and no ancestor of run
 w7_exlock "$(w7_ctxlock "$b19_live" "$W5B_HOST")";         b19_try "live pid" busy
 kill "$b19_live" 2>/dev/null; wait "$b19_live" 2>/dev/null
@@ -355,12 +360,13 @@ w7_exlock empty;                                           b19_try "empty, young
 rm -f "$FHOME/.a1-intents/executor.lock"
 # a surviving child of the dead run: its process group is ended before the lock goes
 b19_old="$(node -e 'process.stdout.write(require("crypto").randomUUID())')"
+# deliberate-timeout: stand-in process the case tracks or kills; its length is never waited for
 node -e 'const cp = require("child_process"); const c = cp.spawn("/bin/sleep", ["30"], { detached: true, stdio: "ignore" }); c.unref(); process.stdout.write(String(c.pid));' >"$SB/b19.orphan"
 b19_orphan="$(cat "$SB/b19.orphan")"
 w7_record "$b19_old" "$b19_orphan"
 w7_exlock "$(w7_ctxlock "$b19_dead" "$W5B_HOST" "$b19_old")"
 b19_try "dead run with a surviving child" runs
-sleep 0.3
+poll_until 5 pid_gone "$b19_orphan"
 [[ "$(w7_alive "$b19_orphan")" == gone ]] || { b19_bad="$b19_bad | the dead run's child survived"; kill -9 "$b19_orphan" 2>/dev/null; }
 if [[ -z "$b19_bad" ]]; then
   ok "B19 an empty lock past the stale bound and a dead same-host holder are reclaimed (a surviving child of that run is killed first); a live, a foreign-host and a young empty lock -> executor_busy, untouched [FR-025]"
@@ -388,7 +394,7 @@ w6_claim action=progress
 stub_mode hang
 A1_INTENT_KILL_GRACE_MS=500 w7_bg "$W6_FILE" b22
 b22_pid=$W7_BG_PID
-for _ in $(seq 1 40); do [[ -f "$W6_STUB/grandchild.pid" ]] && break; sleep 0.1; done
+poll_until 4 test -f "$W6_STUB/grandchild.pid"
 b22_node="$(pgrep -P "$b22_pid" node | head -1)"
 kill -TERM "${b22_node:-$b22_pid}"
 wait "$b22_pid"
@@ -401,7 +407,7 @@ else bad "B22 SIGTERM to run while the child ignores SIGTERM -> the child and it
 w6_claim action=progress
 stub_mode hang
 A1_INTENT_KILL_GRACE_MS=500 w7_bg "$W6_FILE" b23
-for _ in $(seq 1 40); do [[ -f "$W6_STUB/grandchild.pid" ]] && break; sleep 0.1; done
+poll_until 4 test -f "$W6_STUB/grandchild.pid"
 b23_cancel="$(node -e 'process.stdout.write(require("crypto").randomUUID())')"
 b23_r="$(HOME="$FHOME" A1_VAULT_ROOT="$VAULT" node -e '
   const [lib, home, file, id] = process.argv.slice(1);
@@ -445,7 +451,9 @@ if [[ "$b6d" == "1 done expired 0 " ]]; then ok "B6d a started intent (status ru
 else bad "B6d a started intent (status running, row started_at) with a leftover run dir, claimed 7 h ago -> failed expired, the run dir taken over and removed, 0 spawns [FR-028, review W7-M1]" "$b6d" "out: ${OUT:0:200} err: ${ERR:0:200}"; fi
 
 # ---------- B19g-i: process identity before any kill or live verdict (review W7-M2) ----------
+# deliberate-timeout: stand-in process the case tracks or kills; its length is never waited for
 b19_live_group() { node -e 'const cp = require("child_process"); const c = cp.spawn("/bin/sleep", ["600"], { detached: true, stdio: "ignore" }); c.unref(); process.stdout.write(String(c.pid));'; }
+# deliberate-timeout: short-lived stand-in whose pid must be dead when the case reads it
 sleep 0 & b19_dead2=$!
 wait "$b19_dead2"
 b19_bad=""
@@ -474,7 +482,7 @@ w6_claim action=progress
 stub_mode bg
 w6_run
 stub_mode ok
-sleep 0.3
+poll_until 5 pid_gone "$(cat "$W6_STUB/bg.pid" 2>/dev/null)"
 b24="$RC $(w6_where "$W6_ID") $(w7_alive "$(cat "$W6_STUB/bg.pid" 2>/dev/null || echo 0)")"
 if [[ "$b24" == "0 done gone" ]]; then ok "B24 a child that exits 0 but leaves a background process in its group -> run ends that group after the close [FR-025, review m1]"
 else bad "B24 a child that exits 0 but leaves a background process in its group -> run ends that group after the close [FR-025, review m1]" "$b24"; kill -9 "$(cat "$W6_STUB/bg.pid" 2>/dev/null)" 2>/dev/null; fi

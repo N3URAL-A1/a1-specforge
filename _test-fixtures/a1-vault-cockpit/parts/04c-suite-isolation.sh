@@ -17,83 +17,119 @@
 # a1-quick (no product writer reaches a docs/product dir there today, or every
 # call already sets its own vault). Their arms guard the day that changes.
 
-# Wave 5 (security review MINOR 2): generic — every suite runner
-# _test-fixtures/*/run-tests.sh and */run.sh except this suite, found by glob,
-# so a new suite is covered the day it lands (no list to forget). Each runs
-# with A1_VAULT_WRITER_HOST unset (a declared other host would hide a leak).
-# Runtime measured 2026-09-26: 121 s for 33 suites, a1-xprov 78 s of it.
-# Red-making changes: deleting `unset A1_VAULT_ROOT` from product-docs (red,
-# as before), or adding a suite that runs `product init` without it (red —
-# the fixed list could not see it).
+# Spec 026 FR-022: the arm no longer runs the real suite set. The fixture-suite runner
+# (bin/run-suites.sh) runs every suite exactly once under the same isolation (empty sentinel
+# A1_VAULT_ROOT, fresh HOME, A1_HOST_ID=leak, A1_VAULT_WRITER_HOST unset), fails a suite whose
+# sentinel is non-empty, does the a1-reconcile restore/clean check and compares `.a1/learnings` before and
+# after once per run; CI calls the runner in its `Fixtures` jobs, so exactly these checks hold there too.
+# What the runner checks: sentinel vault, fresh HOME, learnings fallback store (and reconcile).
+# It does NOT check anything else a suite might write outside its isolation. What remains here
+# is a self-test of that check on a copied tree, so a runner that stops detecting leaks turns this
+# suite red:
+#   I1a  a planted suite that writes into its sentinel vault: runner exits 1 and names the leaked path
+#   I1b  the planted clean suite of the same run passes, and a clean suite alone exits 0
+#   I2   a planted suite that modifies a committed file under the copied a1-reconcile/ path: the
+#        runner restores it, reports it and ends clean (the copy is a git repo with one commit,
+#        so "committed state" exists; local git identity, never the global one)
+# The runner starts with the seam A1_SUITE_LOCK_DIR under this arm's workdir, so a run inside a worker
+# of an outer run does not meet the outer lock (FR-026).
+# Red-making changes (in bin/run-suites.sh): dropping the sentinel emptiness check (I1a red);
+# dropping the exit-1 on a leak (I1a rc red); dropping the a1-reconcile restore (I2 red).
 
-# Review 010 m7 (2026-09-26): the arm ignored each suite's exit code, which
-# hid B1 (the fallback suite failed on GNU mktemp and then ran its scenarios
-# in the checkout). Now a non-zero exit is a FAIL next to the leak check
-# (I1 "... exits 0"). And a1-reconcile rewrites timestamps in its own tracked
-# fixtures on every run, so the arm restores exactly that path afterwards —
-# only when it was clean before (a developer's own edits there are never
-# discarded) — and then checks that the path is clean again (I2). Scoped to
-# that path on purpose: a whole-tree before/after compare turns red whenever
-# someone edits the checkout while the suite runs (measured 2026-09-26).
-# Red-making changes: I1-exit — dropping the rc assertion (a child suite that
-# exits 1, e.g. B1 on ubuntu, turns nothing red); I2 — dropping the
-# a1-reconcile restore (its 2 fixture files stay modified after the arm).
+I_RECONCILE_REL="_test-fixtures/a1-reconcile"
 
-I_OWN_SUITE="a1-vault-cockpit"
-I_RESTORE_REL="_test-fixtures/a1-reconcile/"
-
-i_suites() {
-  local r
-  for r in "$REPO_ROOT"/_test-fixtures/*/run-tests.sh "$REPO_ROOT"/_test-fixtures/*/run.sh; do
-    [[ -f "$r" ]] || continue
-    [[ "$(basename "$(dirname "$r")")" == "$I_OWN_SUITE" ]] && continue
-    printf '%s\n' "${r#"$REPO_ROOT/_test-fixtures/"}"
+# i_run_runner <tree> — runs the real runner on <tree> in the background, polled (a hang turns one
+# case red instead of blocking the suite; only the PID from $! is signalled). Sets I_OUT, I_RC.
+i_run_runner() {
+  local tree="$1" rd rpid ticks=0
+  mk_workdir rd i-run
+  mkdir -p "$rd/tmp" || { I_OUT="no run dir"; I_RC=99; return; }
+  ( cd "$rd" && exec env -u A1_SUITE_RUN_MARKER -u A1_VAULT_ROOT \
+      A1_SUITE_LOCK_DIR="$rd/lock" TMPDIR="$rd/tmp" LC_ALL=C \
+      bash "$REPO_ROOT/bin/run-suites.sh" --root "$tree" --workers 2 ) >"$rd/out.txt" 2>&1 </dev/null &
+  rpid=$!
+  while kill -0 "$rpid" 2>/dev/null; do
+    sleep 0.2; ticks=$((ticks + 1))
+    if [[ $ticks -ge 300 ]]; then kill -TERM "$rpid" 2>/dev/null; break; fi
   done
+  wait "$rpid"; I_RC=$?
+  I_OUT="$(cat "$rd/out.txt")"
+  [[ $ticks -lt 300 ]] || I_OUT="$I_OUT"$'\n'"TIMED OUT after 60 s"
+}
+
+# i_has <name> <haystack> <needle> — a substring assert (the harness has assert_eq/assert_rc only).
+i_has() {
+  if [[ "$2" == *"$3"* ]]; then ok "$1"; else bad "$1 (missing: $3)"; fi
+}
+
+# i_commit <tree> — commits every planted file so the a1-reconcile path starts clean.
+i_commit() {
+  git -C "$1" add -A >/dev/null 2>&1
+  git -C "$1" -c commit.gpgsign=false commit -q -m plant >/dev/null 2>&1
+}
+
+# i_plant <tree> <identity> <body> — a planted suite runner.
+i_plant() {
+  mkdir -p "$(dirname "$1/_test-fixtures/$2")"
+  printf '#!/usr/bin/env bash\n%s\n' "$3" > "$1/_test-fixtures/$2"
+}
+
+# i_git_tree VAR — a git copy: the real a1-reconcile/ path, one commit, local identity only.
+i_git_tree() {
+  mk_workdir "$1" i-tree
+  local t="${!1}"
+  [[ -n "$t" && -d "$t" ]] || return 1
+  mkdir -p "$t/_test-fixtures"
+  # the runner's declaration file (empty groups, no timings): required in every tree it runs on
+  printf '{"serial":[],"no_count":[],"ci_jobs":{},"timings":{"measured":"2026-01-01","seconds":{}}}\n' > "$t/_test-fixtures/suite-groups.json"
+  cp -R "$REPO_ROOT/$I_RECONCILE_REL" "$t/_test-fixtures/a1-reconcile"
+  git init -q "$t" 2>/dev/null
+  git -C "$t" config user.name fixture
+  git -C "$t" config user.email fixture@example.invalid
+  git -C "$t" add -A >/dev/null 2>&1
+  git -C "$t" -c commit.gpgsign=false commit -q -m base >/dev/null 2>&1
 }
 
 caseI1() {
-  local s sentinel home childlog leaked rc n=0 t0=$SECONDS restore=""
-  if git -C "$REPO_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
-     && git -C "$REPO_ROOT" diff --quiet -- "$I_RESTORE_REL" 2>/dev/null; then restore=yes; fi
-  while IFS= read -r s; do
-    n=$((n + 1))
-    mk_workdir sentinel sentinel; mk_workdir home home
-    if [[ -z "$sentinel" || ! -d "$sentinel" || -z "$home" || ! -d "$home" ]]; then
-      bad "I1 $s: mktemp gave no directory — suite not run"; continue
-    fi
-    # The child's output goes to a log outside the sentinel (the sentinel must stay empty) so a
-    # non-zero exit can name the failing cases instead of only "run it on its own" (2026-11-10:
-    # CI red on ubuntu-26.04 with no visible child FAIL line).
-    mk_workdir childlog childlog
-    if [[ -z "$childlog" || ! -d "$childlog" ]]; then
-      bad "I1 $s: mktemp gave no log directory — suite not run"; rm -rf "$sentinel" "$home"; continue
-    fi
-    env -u A1_VAULT_WRITER_HOST A1_HOST_ID=leak A1_VAULT_ROOT="$sentinel" HOME="$home" bash "$REPO_ROOT/_test-fixtures/$s" >"$childlog/out.txt" 2>&1
-    rc=$?
-    if [[ $rc -ne 0 ]]; then
-      echo "I1 $s exit $rc — child FAIL lines (max 20):"
-      grep -E '^(FAIL|not ok)|[[:space:]]FAIL[[:space:]]|passed, [0-9]+ failed' "$childlog/out.txt" \
-        | grep -vE '^[[:space:]]*(PASS|ok)[[:space:]]' | head -20 | sed 's/^/    /'
-    fi
-    assert_rc "I1 $s exits 0 under the sentinel vault" 0 "$rc" "child FAIL lines printed above"
-    rm -rf "$childlog"
-    leaked="$(cd "$sentinel" && find . -mindepth 1 | sed 's#^\./##' | LC_ALL=C sort | head -3 | tr '\n' ' ' | sed 's/ $//')"
-    if [[ -e "$sentinel/project" ]]; then bad "I1 $s created project/ in the sentinel vault ($leaked)"
-    else ok "I1 $s: no project/ in the sentinel vault"; fi
-    assert_eq "I1 $s leaves the sentinel vault empty" "$leaked" ""
-    rm -rf "$sentinel" "$home"
-  done < <(i_suites)
-  # the glob must see at least the nine suites the fixed list named before Wave 5
-  if [[ $n -ge 9 ]]; then ok "I1 glob found $n suites ($((SECONDS - t0)) s)"; else bad "I1 glob found only $n suites"; fi
-  if [[ -n "$restore" ]]; then
-    git -C "$REPO_ROOT" checkout -q -- "$I_RESTORE_REL"
-    if git -C "$REPO_ROOT" diff --quiet -- "$I_RESTORE_REL"; then ok "I2 $I_RESTORE_REL is clean again after the arm"
-    else bad "I2 $I_RESTORE_REL still modified after the arm: $(git -C "$REPO_ROOT" diff --name-only -- "$I_RESTORE_REL" | tr '\n' ' ')"; fi
-  else
-    ok "I2 skipped: $I_RESTORE_REL had local edits before the arm (or no git tree) — left untouched"
-  fi
+  local t probe leaked_n
+  i_git_tree t || { bad "I1 could not build the planted git tree"; return; }
+  probe="$t/clean-ran"
+  i_plant "$t" a1-reconcile/run-tests.sh 'echo "a1-reconcile: 1 passed, 0 failed"'
+  i_plant "$t" leaker/run-tests.sh 'mkdir -p "$A1_VAULT_ROOT/project/x"; : > "$A1_VAULT_ROOT/project/x/f1"
+echo "leaker: 1 passed, 0 failed"'
+  i_plant "$t" clean/run-tests.sh ": > \"$probe\"; echo 'clean: 1 passed, 0 failed'"
+  i_commit "$t"
+  i_run_runner "$t"
+  assert_eq "I1a a planted leaking suite makes the runner exit 1" "$I_RC" "1"
+  i_has "I1a the leaker is named" "$I_OUT" "FAIL leaker/run-tests.sh"
+  i_has "I1a the leaked path is named" "$I_OUT" "/project"
+  leaked_n="$(printf '%s\n' "$I_OUT" | grep -c 'leaked: ')"
+  if [[ "$leaked_n" -ge 1 ]]; then ok "I1a a leaked: line is printed ($leaked_n)"; else bad "I1a a leaked: line is printed" "none in the runner output"; fi
+  if [[ -e "$probe" ]]; then ok "I1b the clean suite of the same run ran"; else bad "I1b the clean suite of the same run ran" "no probe file"; fi
+  i_has "I1b the clean suite passed" "$I_OUT" "PASS clean/run-tests.sh"
+  # clean alone → exit 0
+  rm -rf "$t/_test-fixtures/leaker"
+  i_commit "$t"
+  i_run_runner "$t"
+  assert_eq "I1c a clean run exits 0" "$I_RC" "0"
 }
 caseI1
+
+caseI2() {
+  local t
+  i_git_tree t || { bad "I2 could not build the planted git tree"; return; }
+  # the planted a1-reconcile suite modifies a committed file (like the real one rewrites timestamps)
+  local target="fixture.txt"
+  printf 'committed\n' > "$t/$I_RECONCILE_REL/$target"
+  i_plant "$t" a1-reconcile/run-tests.sh "echo dirtied >> \"\$(dirname \"\$0\")/$target\"
+echo 'a1-reconcile: 1 passed, 0 failed'"
+  i_commit "$t"
+  i_run_runner "$t"
+  assert_eq "I2 the run exits 0" "$I_RC" "0"
+  i_has "I2 the restore is reported" "$I_OUT" "restored $I_RECONCILE_REL"
+  assert_eq "I2 the a1-reconcile path is clean again in the copy" "$(git -C "$t" status --porcelain -- "$I_RECONCILE_REL")" ""
+}
+caseI2
 
 # X1 — Wave 10 (spec 010 edge case "Test isolation"): the host id A1_HOST_ID
 # (FR-039) must not reach a suite's child processes either. The I1 arm above

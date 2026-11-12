@@ -356,6 +356,7 @@ rf_run_gate() { # <gate> [mode] — like rb_run, with an explicit --gate
 # index entry stopped being racy (git re-reads a file whose mtime is not older than the index).
 rf_flip_first_byte() {
   local ref="$TMP20/flip-ref"
+  # deliberate-timeout: file mtime granularity: the index entry must stop being racy
   sleep 1.1; git -C "$(dirname "$1")" update-index --refresh -q >/dev/null 2>&1
   cp -p "$1" "$ref"
   node -e '
