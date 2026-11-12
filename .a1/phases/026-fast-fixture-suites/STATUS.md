@@ -325,3 +325,7 @@ Lock: during run 2 a second full run from a git archive snapshot with a differen
 Real stores around run 3: ~/.a1-xprov 85 files sha256 identical before/after, vault 2322 files sha256 identical before/after, no fixture-slug path.
 Timings: `timings.seconds` = median of the three runs per suite (xprov 631, intent 285, suite-runner 91, probe 50, ...), `measured` 2026-11-12; Σ 1262 s; fixtures-rest 631 s, fixtures-xprov 631 s, both under 900: no rebalance. check-groups ok (59 suites in 2 ci jobs), lane-split check findings [], verify-install-sync PASS.
 Open for owner: a1-intent timing flakes B5/T7/T14 under the parallel runner (plus env-red 12); decide whether to harden them or accept the id-set rule with a tolerance.
+
+## Close-out verdict (orchestrator, 2026-11-12)
+
+gate0: Wave 5 Task 5.3 + Wave 9 accepted with one documented host exception: a1-intent shows 1-2 extra timing ids per run on aiserver (B5 499 ms vs 500 ms, T7, T14) beside the 12 known env-red ids; B5 also fails in the sequential pass (1106/13), so it is host timing, not the runner. Tracked in vault fixes/2026-11-11-intent-suite-signal-cases-aiserver.md. All other 58 suites green in 3/3 runs (631/632/628 s), assert ledger equal for 59/59, lock refusal 0.04 s, kill -9 takeover reaps groups, real stores byte-identical. Binding green run: GitHub CI on the PR.
