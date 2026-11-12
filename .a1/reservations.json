@@ -1,22 +1,3 @@
 {
-  "reservations": [
-    {
-      "type": "code_scope",
-      "paths": [
-        "skills/a1-ux-studio/",
-        "_test-fixtures/a1-ux-studio/",
-        "bin/install.sh",
-        "README.md",
-        "CLAUDE.md",
-        "CONTRIBUTING.md",
-        "skills/a1-new-feature/workflows/03-clarify.md",
-        "skills/a1-new-feature/SKILL.md",
-        "agents/a1-uwe-ux-expert.md",
-        "_test-fixtures/a1-kritis-profile/golden/prompts.allowed-diff"
-      ],
-      "by": "024-ux-studio",
-      "at": "2026-11-09T19:59:51.367Z",
-      "stage": "started"
-    }
-  ]
+  "reservations": []
 }
