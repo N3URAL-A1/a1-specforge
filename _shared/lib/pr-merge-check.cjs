@@ -16,7 +16,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { parseFlags, peekVaultRoot, parseNestedFrontmatter, parseFrontmatter } = require('./io.cjs');
+const { parseFlags, peekVaultRoot, parseFrontmatter } = require('./io.cjs');
 const { emitExit } = require('./emit-exit.cjs');
 const { VerifyError, runVerify, resolveCommands, gitSource } = require('./verify-run.cjs');
 const vb = require('./verify-base.cjs');
@@ -32,7 +32,7 @@ const GH_TIMEOUT_MS = 60 * 1000;
 const GH_MAX_BYTES = 8 * 1024 * 1024;
 const PR_RE = /^[1-9][0-9]{0,8}$/;
 const BUG_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,200}$/;
-const SLUG_RE = /^[a-z0-9][a-z0-9._-]{0,100}$/;
+const { SLUG_RE, projectSlug } = require('./project-slug.cjs');
 const BRANCH_RE = /^[A-Za-z0-9][A-Za-z0-9._\/-]{0,200}$/;
 const GREEN_BUCKETS = Object.freeze(['pass', 'skipping']);
 const PENDING_BUCKET = 'pending';
@@ -124,15 +124,6 @@ function resolveBaseRef(opts) {
   const name = info && typeof info.baseRefName === 'string' ? info.baseRefName : '';
   if (r.status !== 0 || !BRANCH_RE.test(name)) throw new MergeCheckError('base_unresolved', 'gh pr view gave no base branch; pass --base <ref>');
   return gitRaw(opts.project, ['rev-parse', '--verify', `origin/${name}^{commit}`]) !== null ? `origin/${name}` : name;
-}
-
-function projectSlug(opts) {
-  if (opts.slug) return opts.slug;
-  try {
-    const fm = parseNestedFrontmatter(fs.readFileSync(path.join(opts.project, 'docs', 'product', 'ROADMAP.md'), 'utf8')).fm;
-    if (fm && typeof fm.project === 'string' && SLUG_RE.test(fm.project)) return fm.project;
-  } catch (_e) { /* no roadmap: fall through to the directory name */ }
-  return path.basename(opts.project);
 }
 
 const BUG_REPORT_TYPE = 'bug-report';
