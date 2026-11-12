@@ -9,6 +9,9 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 concurrency:
   group: test-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -140,6 +143,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
@@ -162,7 +167,8 @@ jobs:
         # Spec 026 FR-016/FR-022: one literal job per ci_jobs entry in _test-fixtures/suite-groups.json
         # (balanced by timings.seconds, largest first; sums in .a1/phases/026-fast-fixture-suites/STATUS.md).
         # `bin/run-suites.sh --job <name>` runs exactly the identities listed under that name, each under an
-        # isolated HOME and an empty sentinel vault (leak check per suite). The job name must be a LITERAL:
+        # isolated HOME and an empty sentinel vault; the runner fails a suite that leaves files in its sentinel vault
+        # and the run when `.a1/learnings` changed (the fallback store of a suite that unsets A1_VAULT_ROOT). The job name must be a LITERAL:
         # `bin/run-suites.sh --check-groups` reads this file with a line regex and cannot parse a matrix
         # expression. The `ls` line keeps the literal glob that the test-fixtures gate reads (ci_globs).
         run: |
@@ -174,6 +180,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
@@ -196,7 +204,8 @@ jobs:
         # Spec 026 FR-016/FR-022: one literal job per ci_jobs entry in _test-fixtures/suite-groups.json
         # (balanced by timings.seconds, largest first; sums in .a1/phases/026-fast-fixture-suites/STATUS.md).
         # `bin/run-suites.sh --job <name>` runs exactly the identities listed under that name, each under an
-        # isolated HOME and an empty sentinel vault (leak check per suite). The job name must be a LITERAL:
+        # isolated HOME and an empty sentinel vault; the runner fails a suite that leaves files in its sentinel vault
+        # and the run when `.a1/learnings` changed (the fallback store of a suite that unsets A1_VAULT_ROOT). The job name must be a LITERAL:
         # `bin/run-suites.sh --check-groups` reads this file with a line regex and cannot parse a matrix
         # expression. The `ls` line keeps the literal glob that the test-fixtures gate reads (ci_globs).
         run: |

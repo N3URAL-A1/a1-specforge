@@ -43,7 +43,7 @@ assert_contains "SA4b poll_until loops a finite number of times and sleeps betwe
 assert_contains "SA4c poll_until counts its iterations from the bound" "$SA_HELPER" 'n=$(( bound * 10 ))'
 
 # the audit itself catches a bare sleep and an annotation without a reason
-SA_TMP="$(mktemp -d "${TMPDIR:-/tmp}/sa12.XXXXXX")"
+mk_workdir SA_TMP sa12   # the guarded temp helper (lib/tmp.sh); its EXIT trap removes it
 printf 'x\nsleep 1\n' > "$SA_TMP/bare.sh"
 printf '# deliberate-timeout: because\nsleep 1\n' > "$SA_TMP/ann.sh"
 printf '# deliberate-timeout:\nsleep 1\n' > "$SA_TMP/noreason.sh"
@@ -54,10 +54,15 @@ assert_eq "SA5b an annotated sleep passes" "$(sa_scan "$SA_TMP/ann.sh")" "1 1 0"
 assert_eq "SA5c an annotation without a reason is flagged" "$(sa_scan "$SA_TMP/noreason.sh")" "1 1 1"
 assert_eq "SA5d a JS-style annotation covers a /bin/sleep spawn" "$(sa_scan "$SA_TMP/js.sh")" "1 1 0"
 assert_eq "SA5e comments and words like sleeps are not sleep calls" "$(sa_scan "$SA_TMP/none.sh")" "0 0 0"
-rm -rf "$SA_TMP"
 
 # FR-018: a1-xprov times every part in the same shell and prints a sorted summary
 SA_XR="$SA_FIX/a1-xprov/run-tests.sh"
 assert_contains "SA6a a1-xprov times each sourced part with SECONDS" "$(cat "$SA_XR")" 'xp_dt=$((SECONDS - xp_t0))'
 assert_contains "SA6b a1-xprov prints a per-part time line" "$(cat "$SA_XR")" 'echo "time  $xp_name ${xp_dt}s"'
 assert_contains "SA6c a1-xprov prints the summary sorted by elapsed descending" "$(cat "$SA_XR")" 'sort -k3,3nr'
+
+# PR review fix round: a wait for a process to be gone is a bounded poll, not a settle sleep (FR-019)
+assert_eq "SA7 no 'settle time after a kill/stop' sleep is left in the a1-intent cases" \
+  "$(cat "$SA_FIX"/a1-intent/cases/*.sh | grep -c 'settle time after a kill/stop')" "0"
+assert_eq "SA8 this part makes its temp dir with the guarded helper (no raw temp call)" \
+  "$(grep -c '^SA_TMP=.*mk''temp' "${BASH_SOURCE[0]}")" "0"

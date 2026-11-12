@@ -112,3 +112,56 @@ assert_eq "Q6f no workflow file: exit 2" "$RS_RC" "2"
 # the real tree
 rs_run "$REPO_ROOT" --check-groups
 assert_eq "Q8 the real tree is consistent (exit 0)" "$RS_RC" "0"
+
+# ---- PR review fix round (SEC-4): the call regex and calls that cannot gate ----
+# cg_wf_raw <tree> <job-block> — a workflow whose single job holds the given step text (indented 6).
+cg_wf_raw() { printf 'jobs:\n  fx:\n    runs-on: ubuntu-latest\n    steps:\n%s\n' "$2" > "$1/.github/workflows/test.yml"; }
+cg_one() { # label step-text want-rc want-text — a tree with one ci job j1 and one workflow step
+  cg_tree T_CGS "cgs-$1" '{"serial":[],"no_count":[],"ci_jobs":{"j1":["a/run-tests.sh"]},"timings":{"measured":null,"seconds":{}}}'
+  cg_probe "$T_CGS" a/run-tests.sh
+  cg_wf_raw "$T_CGS" "$2"
+  rs_run "$T_CGS" --check-groups
+  assert_eq "Q9-$1 exit code" "$RS_RC" "$3"
+  [[ -z "${4:-}" ]] || assert_contains "Q9-$1 names the job" "$RS_OUT" "$4"
+}
+cg_one accept-eq   '      - name: Fixtures
+        run: bash bin/run-suites.sh --job=j1' 0
+cg_one accept-quote '      - name: Fixtures
+        run: bash bin/run-suites.sh --job "j1"' 0
+cg_one accept-flags '      - name: Fixtures
+        run: bash bin/run-suites.sh --workers 2 --job j1' 0
+cg_one accept-dup '      - name: Fixtures
+        run: |
+          bash bin/run-suites.sh --job j1
+          bash bin/run-suites.sh --job j1' 0
+cg_one refuse-if '      - name: Fixtures
+        if: ${{ always() }}
+        run: bash bin/run-suites.sh --job j1' 1 "j1"
+assert_contains "Q9-refuse-if says why" "$RS_OUT" "if:"
+cg_one refuse-coe '      - name: Fixtures
+        continue-on-error: true
+        run: bash bin/run-suites.sh --job j1' 1 "j1"
+assert_contains "Q9-refuse-coe says why" "$RS_OUT" "continue-on-error"
+cg_one refuse-or-true '      - name: Fixtures
+        run: bash bin/run-suites.sh --job j1 || true' 1 "j1"
+cg_one refuse-echo '      - name: Fixtures
+        run: echo bash bin/run-suites.sh --job j1' 1 "j1"
+cg_one refuse-job-coe '      - name: Fixtures
+        run: bash bin/run-suites.sh --job j1
+    continue-on-error: true' 1 "j1"
+# an `if:` on ANOTHER step does not taint the call
+cg_one other-step-if '      - name: Other
+        if: always()
+        run: echo hi
+      - name: Fixtures
+        run: bash bin/run-suites.sh --job j1' 0
+# a ghost job called twice is one finding
+cg_tree T_CGD cgd '{"serial":[],"no_count":[],"ci_jobs":{"j1":["a/run-tests.sh"]},"timings":{"measured":null,"seconds":{}}}'
+cg_probe "$T_CGD" a/run-tests.sh
+cg_wf_raw "$T_CGD" '      - name: Fixtures
+        run: |
+          bash bin/run-suites.sh --job j1
+          bash bin/run-suites.sh --job ghost
+          bash bin/run-suites.sh --job=ghost'
+rs_run "$T_CGD" --check-groups
+assert_eq "Q9-dedupe a ghost job called twice is reported once" "$(printf '%s\n' "$RS_OUT" | grep -c 'calls --job ghost')" "1"

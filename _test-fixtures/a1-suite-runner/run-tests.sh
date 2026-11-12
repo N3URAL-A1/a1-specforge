@@ -1,14 +1,19 @@
 #!/usr/bin/env bash
 # Fixture: the parallel fixture-suite runner bin/run-suites.sh (spec 026-fast-fixture-suites).
 #
-# One part file per wave (parts/NN-*.sh, sourced in NN order, so waves never share a part):
-#   01 discovery + declaration file · 02 worker pool + serial group · 03 isolation env + leak check
+# One part file per topic (parts/NN-*.sh, sourced in NN order; a later fix round adds a part, it does not
+# edit an older one): 01 discovery + declaration file · 02 worker pool + serial group · 03 isolation env +
+# leak check · 04 report · 05 summary · 06 lock · 07 interrupts + leftover process groups · 08 security,
+# subset · 09 real stores · 10 failure · 11 --job / --check-groups · 12 sleep audit · 13 PR review fixes.
 # Every runner start goes through rs_run: it sets the lock seam (A1_SUITE_LOCK_DIR) and TMPDIR under a
-# fresh mk_workdir and clears an inherited run marker, so a run inside a worker of an outer runner
-# is neither refused by the outer lock nor mistaken for it, and nothing touches /tmp/a1-suite-runner-<uid>.
-# The runner is only ever started on PLANTED trees (--root), never on the real _test-fixtures/ set.
-# Runtime budget: <= 60 s (this suite runs nested inside a1-vault-cockpit I1 under the sequential loop).
+# fresh mk_workdir, so a run inside a worker of an outer runner is not refused by the outer lock and
+# nothing touches /tmp/a1-suite-runner-<uid>.
+# The runner is only ever started on PLANTED trees (--root), never on the real _test-fixtures/ set; the one
+# exception is the read-only `--check-groups` on the real tree (part 11, Q8).
+# Runtime: about 90 s alone on a 24-core host (the lock and interrupt cases wait on real processes). It runs
+# as one suite of the runner pool (bin/run-suites.sh), not nested inside another suite.
 set -u
+SR_OUTER_VAULT_ROOT="${A1_VAULT_ROOT:-}"   # kept for the real-store guard of part 09 (SEC-7d)
 unset A1_VAULT_ROOT A1_VAULT_WRITER_HOST A1_HOST_ID
 SUITE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SUITE/../.." && pwd)"

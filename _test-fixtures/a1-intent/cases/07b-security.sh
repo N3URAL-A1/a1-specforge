@@ -144,8 +144,7 @@ else bad "B29 child.json binding: a live holder WITH a child.json -> executor_bu
 w6_claim action=plan target=M2-P1-x
 A1_INTENT_KILL_GRACE_MS=500 w7_steps gate-sigterm
 b30_pid="$(node -e 'const ev = require("fs").readFileSync(process.argv[1], "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)).find((e) => e.event === "gate"); console.log(ev ? ev.pid : 999999)' "$SB/.spy")"
-# deliberate-timeout: settle time after a kill/stop; the case asserts the process state after it, not a condition worth polling
-sleep 0.3
+poll_until 5 pid_gone "$b30_pid"
 b30="$RS_RC $( [[ "$b30_pid" != 999999 ]] && echo started) $(w7_alive "$b30_pid") $(w6_where "$W6_ID") $(w6_fm "$VAULT/inbox/intents/done/$W6_ID.md" failure_reason) $(w7_locks)"
 kill -9 "$b30_pid" 2>/dev/null
 if [[ "$b30" == "143 started gone done cancelled 0" ]]; then
@@ -158,8 +157,7 @@ b30b_t0="$(w7_now)"
 w7_steps gate-leftover
 b30b_ms=$(( $(w7_now) - b30b_t0 ))
 b30b_pid="$(node -e 'const ev = require("fs").readFileSync(process.argv[1], "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)).find((e) => e.event === "gate"); console.log(ev ? ev.pid : 999999)' "$SB/.spy")"
-# deliberate-timeout: settle time after a kill/stop; the case asserts the process state after it, not a condition worth polling
-sleep 0.3
+poll_until 5 pid_gone "$b30b_pid"
 b30b="$( [[ "$b30b_pid" != 999999 ]] && echo started) $(w7_alive "$b30b_pid") $(w6_where "$W6_ID") $(w6_fm "$VAULT/inbox/intents/done/$W6_ID.md" status) $(w7_locks)"
 kill -9 "$b30b_pid" 2>/dev/null
 # the driver's event loop waits for its own child, so a process left alive

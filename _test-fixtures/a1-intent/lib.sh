@@ -20,6 +20,10 @@ poll_until() {
   "$@"
 }
 
+# pid_gone <pid> — true when the process is gone; an empty pid or 0 counts as gone here (nothing to wait for;
+# the case checks the state itself afterwards).
+pid_gone() { [[ -n "${1:-}" && "$1" != 0 ]] || return 0; ! kill -0 "$1" 2>/dev/null; }
+
 A1_TOOLS="$REPO_ROOT/_shared/a1-tools.cjs"
 INTENT_LIB="$REPO_ROOT/_shared/lib"
 STUB_DIR="$SUITE_DIR/stub"

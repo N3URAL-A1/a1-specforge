@@ -2,9 +2,8 @@
 # bin/run-suites-proc.sh — process side of the fixture-suite runner (spec 026). Sourced by
 # bin/run-suites.sh; defines functions and globals only, nothing runs at source time.
 #
-# Wave 3 holds the lock, run marker and signal parts (rs_lock_*, rs_export_marker, rs_on_signal); keep
-# rs_default_workers (part 02 sources it),
-# rs_is_posint and the slot functions.
+# Holds the worker pool (slots, process groups), the per-machine lock (rs_lock_*) and the signal part
+# (rs_on_signal). rs_default_workers (part 02 sources it) and rs_is_posint stay pure.
 #
 # Portability: Bash 3.2 and GNU. Indexed arrays only, no `wait -n`, no `setsid`, no associative arrays.
 # Never `pkill`/`killall`: only process groups this runner started are signalled.
@@ -61,9 +60,12 @@ rs_slots_reset() {
 # (the group leader's pid, from $!); it cannot print it, because a command substitution would make
 # the worker a child of a subshell and `wait` could no longer collect its status.
 rs_spawn_worker() {
-  local id="$1" log="$2" home="$3" vault="$4"
+  local id="$1" log="$2" home="$3" vault="$4" drop_real="-u A1_SUITE_REAL_VAULT"
+  # Only the runner's own fixture reads the outer vault path (real-store guard, part 09); no other suite sees it.
+  case "$id" in a1-suite-runner/run-tests.sh) drop_real="" ;; esac
   set -m
-  ( cd "$RS_ROOT" && exec env -u A1_VAULT_WRITER_HOST A1_HOST_ID=leak A1_VAULT_ROOT="$vault" HOME="$home" \
+  # shellcheck disable=SC2086
+  ( cd "$RS_ROOT" && exec env -u A1_VAULT_WRITER_HOST $drop_real A1_HOST_ID=leak A1_VAULT_ROOT="$vault" HOME="$home" \
       bash "_test-fixtures/$id" </dev/null >"$log" 2>&1 ) &
   RS_LAST_PGID=$!
   set +m
@@ -79,19 +81,49 @@ rs_free_slot() {
   return 1
 }
 
-# rs_reap — collects every finished worker: kill -0 polling, then `wait <pid>` for the status.
-# Calls rs_on_suite_done <slot> <rc> (defined by the entry script). Sets RS_REAPED.
+# rs_group_gone <pgid> — true when no process of the group is left.
+rs_group_gone() { ! kill -0 -- "-$1" 2>/dev/null; }
+
+# rs_drain_group <pgid> — a suite is done only when its whole process group is gone. SIGTERM the group,
+# poll (bounded), SIGKILL what is left, poll again. 0 = the group was already empty, 1 = members were
+# running and are gone now, 2 = members survived the SIGKILL. Only a group this runner (or, for the takeover,
+# a dead run of it) started is ever signalled.
+rs_drain_group() {
+  local pgid="$1" tick=0
+  rs_group_gone "$pgid" && return 0
+  kill -TERM -- "-$pgid" 2>/dev/null
+  while [ "$tick" -lt "$RS_KILL_GRACE_TICKS" ]; do
+    rs_group_gone "$pgid" && return 1
+    sleep 0.1
+    tick=$((tick + 1))
+  done
+  kill -KILL -- "-$pgid" 2>/dev/null
+  tick=0
+  while [ "$tick" -lt "$RS_KILL_GRACE_TICKS" ]; do
+    rs_group_gone "$pgid" && return 1
+    sleep 0.1
+    tick=$((tick + 1))
+  done
+  return 2
+}
+
+# rs_reap — collects every finished worker: kill -0 polling on the group leader, `wait <pid>` for the
+# status, then rs_drain_group so grandchildren that outlive the leader end before the leak check and the
+# slot-dir removal. Calls rs_on_suite_done <slot> <rc> <left> (defined by the entry script; left = 0 when
+# the group was empty at leader exit, 1 or 2 otherwise). Sets RS_REAPED.
 rs_reap() {
-  local i=0 pid rc
+  local i=0 pid rc left
   RS_REAPED=0
   while [ "$i" -lt "$RS_N_SLOTS" ]; do
     pid="${RS_SLOT_PID[$i]:-}"
     if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
       wait "$pid"; rc=$?
+      rs_drain_group "$pid"; left=$?
       RS_SLOT_PID[$i]=""
       RS_RUNNING=$((RS_RUNNING - 1))
       RS_REAPED=$((RS_REAPED + 1))
-      rs_on_suite_done "$i" "$rc"
+      rs_lock_pgids_sync
+      rs_on_suite_done "$i" "$rc" "$left"
     fi
     i=$((i + 1))
   done
@@ -102,9 +134,6 @@ rs_wait_any() {
   rs_reap
   if [ "$RS_REAPED" -eq 0 ] && [ "$RS_RUNNING" -gt 0 ]; then sleep "$RS_POLL_INTERVAL"; fi
 }
-
-# rs_group_gone <pgid> — true when no process of the group is left.
-rs_group_gone() { ! kill -0 -- "-$1" 2>/dev/null; }
 
 # rs_leader_settle <pid> — reaps a worker leader that already ended (a zombie still answers kill -0).
 rs_leader_settle() {
@@ -151,6 +180,7 @@ rs_kill_workers() {
     i=$((i + 1))
   done
   RS_RUNNING=0
+  rs_lock_pgids_sync
 }
 
 # rs_on_signal <INT|TERM> — stop the workers, exit 130/143 (the EXIT trap releases the lock).
@@ -163,7 +193,7 @@ rs_on_signal() {
 
 # ---- per-machine lock (FR-008, FR-009, FR-026) ----
 RS_LOCK_RUNNER_NAME="run-suites.sh"
-RS_LOCK_INIT_TICKS=10      # x 0.1 s a fresh lock may lack its pid file
+RS_LOCK_INIT_BOUND=10      # seconds a lock directory without any pid entry still counts as being written
 RS_LOCK_ATTEMPTS=8
 RS_GUARD_TICKS=50         # x 0.1 s to wait for another takeover
 RS_LOCK_DIR=""
@@ -191,14 +221,30 @@ rs_lock_file_line() {
   printf '%s\n' "$v"
 }
 
-# rs_lock_read_pid <lockdir> — the holder pid; a fresh lock gets a moment to write it.
+# rs_dir_age <dir> — whole seconds since the directory's mtime (node, already required by the runner; stat flags
+# differ between GNU and BSD); the bound itself when it cannot be read, so an unreadable mtime never holds a lock.
+rs_dir_age() {
+  local a
+  a="$(node -e 'process.stdout.write(String(Math.floor((Date.now() - require("fs").statSync(process.argv[1]).mtimeMs) / 1000)))' "$1" 2>/dev/null)"
+  case "$a" in ''|*[!0-9]*) a="$RS_LOCK_INIT_BOUND" ;; esac
+  printf '%s\n' "$a"
+}
+
+# rs_lock_read_pid <lockdir> — the holder pid. A directory with no pid entry at all is a lock being written
+# (mkdir comes before the pid file) and counts as held until its mtime is RS_LOCK_INIT_BOUND seconds old.
+# A pid entry that exists but reads empty (link, FIFO, foreign owner, empty file) is not that and ends the wait.
 rs_lock_read_pid() {
-  local n=0 p=""
-  while [ "$n" -lt "$RS_LOCK_INIT_TICKS" ]; do
-    p="$(rs_lock_file_line "$1/pid")"
-    [ -n "$p" ] && break
+  local n=0 p="" max=0 age
+  p="$(rs_lock_file_line "$1/pid")"
+  if [ -z "$p" ] && [ ! -e "$1/pid" ] && [ ! -L "$1/pid" ]; then
+    age="$(rs_dir_age "$1")"
+    if [ "$age" -lt "$RS_LOCK_INIT_BOUND" ]; then max=$(( (RS_LOCK_INIT_BOUND - age) * 10 )); fi
+  fi
+  while [ -z "$p" ] && [ "$n" -lt "$max" ]; do
     sleep 0.1
     n=$((n + 1))
+    p="$(rs_lock_file_line "$1/pid")"
+    if [ -e "$1/pid" ] || [ -L "$1/pid" ]; then break; fi
   done
   printf '%s\n' "$p"
 }
@@ -211,23 +257,26 @@ rs_lock_write() {
   mv "$1/pid.tmp" "$1/pid"
 }
 
-# rs_lock_drop_dir <dir> — removes a lock directory this runner moved aside or created (flat files only).
+# rs_lock_drop_dir <dir> [expected-pid] — removes a lock directory this runner moved aside or created (flat files only).
+# With an expected pid the files go only while the pid file still holds it when they are about to be removed.
 # Acts only on a user-owned non-symlink directory, re-checked from inside it: cd, then pwd -P must equal
 # the parent's real path plus the name, and the files go by relative name.
 rs_lock_drop_dir() {
-  local d="$1" parent real
+  local d="$1" exp="${2:-}" parent real
   [ -n "$d" ] && [ -d "$d" ] && [ ! -L "$d" ] && [ -O "$d" ] || return 0
   parent="${d%/*}"; [ -n "$parent" ] || parent="/"
   real="$(cd "$parent" 2>/dev/null && pwd -P)" || return 0
   [ "$real" = "/" ] && real=""
-  ( cd "$d" 2>/dev/null && [ "$(pwd -P)" = "$real/${d##*/}" ] && [ -O . ] && rm -f pid pid.tmp run_id runner )
+  ( cd "$d" 2>/dev/null && [ "$(pwd -P)" = "$real/${d##*/}" ] && [ -O . ] \
+    && { [ -z "$exp" ] || [ "$(head -c 32 pid 2>/dev/null | head -n 1)" = "$exp" ]; } \
+    && rm -f pid pid.tmp run_id runner pgids pgids.tmp )
   [ -d "$d" ] && [ ! -L "$d" ] && [ -O "$d" ] || return 0
   rmdir "$d" 2>/dev/null || true
 }
 
-# rs_lock_foreign <dir> — true when the directory holds anything but the four lock files.
+# rs_lock_foreign <dir> — true when the directory holds anything but the lock files (pid, run_id, runner, pgids).
 rs_lock_foreign() {
-  [ -n "$(find "$1" -mindepth 1 -maxdepth 1 ! -name pid ! -name pid.tmp ! -name run_id ! -name runner 2>/dev/null)" ]
+  [ -n "$(find "$1" -mindepth 1 -maxdepth 1 ! -name pid ! -name pid.tmp ! -name run_id ! -name runner ! -name pgids ! -name pgids.tmp 2>/dev/null)" ]
 }
 
 # rs_guard_take <guarddir> — serialises takeovers: only one runner at a time may rename a lock away.
@@ -249,7 +298,51 @@ rs_guard_take() {
   done
   return 1
 }
-rs_guard_drop() { [ "$(rs_lock_file_line "$1/pid")" = "$$" ] && rs_lock_drop_dir "$1"; return 0; }
+# The pid read here must still be ours when the files are removed (re-read inside rs_lock_drop_dir).
+rs_guard_drop() {
+  local p
+  p="$(rs_lock_file_line "$1/pid")"
+  [ "$p" = "$$" ] && rs_lock_drop_dir "$1" "$p"
+  return 0
+}
+
+# ---- worker groups of a run (MAJOR-2): recorded in the lock, ended by the next run's takeover ----
+# rs_lock_pgids_sync — writes the live worker group ids into <lock>/pgids (one line, atomic rename).
+rs_lock_pgids_sync() {
+  local i=0 line="" pid
+  [ "$RS_LOCK_HELD" -eq 1 ] && [ -n "$RS_LOCK_DIR" ] && [ -d "$RS_LOCK_DIR" ] || return 0
+  while [ "$i" -lt "$RS_N_SLOTS" ]; do
+    pid="${RS_SLOT_PID[$i]:-}"
+    if [ -n "$pid" ]; then line="$line${line:+ }$pid"; fi
+    i=$((i + 1))
+  done
+  if printf '%s\n' "$line" > "$RS_LOCK_DIR/pgids.tmp" 2>/dev/null; then mv -f "$RS_LOCK_DIR/pgids.tmp" "$RS_LOCK_DIR/pgids" 2>/dev/null; fi
+  return 0
+}
+
+# rs_group_is_fixture <pgid> — true when a member of the group runs a command line with _test-fixtures/
+# (a recorded group id can have been reused by an unrelated process group since).
+rs_group_is_fixture() {
+  ps -eo pgid=,command= 2>/dev/null | awk -v g="$1" '$1 == g && index($0, "_test-fixtures/") { f = 1 } END { exit f ? 0 : 1 }'
+}
+
+# rs_lock_reap_groups <lockdir> — before a stale lock is replaced: end every recorded worker group of the dead
+# holder that still runs fixture commands (SIGTERM, bounded wait, SIGKILL). 0 = none left, 1 = one survived.
+rs_lock_reap_groups() {
+  local f="$1/pgids" line g ended=""
+  if [ -f "$f" ] && [ ! -L "$f" ] && [ -O "$f" ]; then line="$(head -c 4096 "$f" 2>/dev/null | head -n 1)"; else line=""; fi
+  for g in $line; do
+    case "$g" in ''|*[!0-9]*) continue ;; esac
+    [ "$g" -gt 1 ] || continue
+    rs_group_gone "$g" && continue
+    rs_group_is_fixture "$g" || continue
+    rs_drain_group "$g"
+    if [ "$?" -ge 2 ]; then echo "run-suites: worker group $g of the dead holder survived SIGKILL" >&2; return 1; fi
+    ended="$ended${ended:+ }$g"
+  done
+  if [ -n "$ended" ]; then echo "run-suites: ended worker group(s) $ended left by the dead holder"; fi
+  return 0
+}
 
 # rs_lock_takeover <lockdir> <attempt> — under the takeover guard: re-judge, rename the stale directory
 # away, mkdir, write. 0 = held, 1 = try again, 2 = refused (held by a running runner, or guard stuck).
@@ -266,6 +359,11 @@ rs_lock_takeover() {
     if rs_lock_is_runner "$holder"; then
       rs_guard_drop "$lock.takeover"
       echo "run-suites: another run holds the lock $lock (holder PID $holder, run $run); no suite started" >&2
+      return 2
+    fi
+    if ! rs_lock_reap_groups "$lock"; then
+      rs_guard_drop "$lock.takeover"
+      echo "run-suites: a worker group of the dead holder of $lock is still running; no suite started" >&2
       return 2
     fi
     stale="$(mktemp -d "$lock.stale.XXXXXX" 2>/dev/null)"
@@ -337,11 +435,4 @@ rs_lock_release() {
   [ "$(rs_lock_file_line "$lock/pid")" = "$$" ] || return 0
   rs_lock_drop_dir "$lock"
   return 0
-}
-
-# rs_export_marker — workers see "<lock file path>:<run id>" (consumed by a1-vault-cockpit I1).
-rs_export_marker() {
-  [ -n "$RS_LOCK_DIR" ] || return 0
-  A1_SUITE_RUN_MARKER="$RS_LOCK_DIR/run_id:$RS_RUN_ID"
-  export A1_SUITE_RUN_MARKER
 }

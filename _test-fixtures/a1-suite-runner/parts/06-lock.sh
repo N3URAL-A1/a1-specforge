@@ -6,7 +6,7 @@
 # Red-making changes (one production-code line each, on a git archive snapshot; for the seam
 # mutation the fixed path is first redirected to a scratch path so the real lock is never created):
 #  K1: second run not refused (lock ignored) · K1b: holder PID not named · K1c: refused run still
-#      creates its log dir · K1d: lock files missing (pid / run_id / runner) · K1e: marker not exported
+#      creates its log dir · K1d: lock files missing (pid / run_id / runner) · K1e: a run marker exported again
 #  K2: static: the default path built from the temp-dir variable
 #  K3: dead-PID lock not taken over · K4: command-line check dropped (live `sleep` PID blocks)
 #  K5: takeover guard dropped (rs_guard_take always succeeds): racing runners both take the lock
@@ -100,8 +100,8 @@ assert_eq "K1b lock holds the holder PID" "$(head -n 1 "$LK_LOCK1/pid" 2>/dev/nu
 assert_eq "K1c lock holds a run id" "$([[ -s "$LK_LOCK1/run_id" ]] && echo yes || echo no)" "yes"
 assert_contains "K1d lock holds the runner path" "$(cat "$LK_LOCK1/runner" 2>/dev/null)" "run-suites.sh"
 LK_RUN_ID1="$(head -n 1 "$LK_LOCK1/run_id" 2>/dev/null)"
-assert_eq "K1e workers got the run marker (lock file path:run id)" \
-  "$(head -n 1 "$W_K1/p1.marker" 2>/dev/null)" "$LK_LOCK1/run_id:$LK_RUN_ID1"
+assert_eq "K1e workers get no run marker (nothing reads one; the lock is the only record)" \
+  "$(head -n 1 "$W_K1/p1.marker" 2>/dev/null)" ""
 assert_eq "K1f the suite saw the lock under the seam directory" "$(cat "$W_K1/p1.seam" 2>/dev/null)" "seam"
 LK_T0=$SECONDS
 lk_start "$T_K1" "$LK_LOCK1" "$W_K1/tmp2" "$W_K1/out2.txt"

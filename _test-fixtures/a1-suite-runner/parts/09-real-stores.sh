@@ -30,7 +30,7 @@ rs_digest_of() {
 # the variable is unset/empty or the directory is missing, else "<entries> <sha256 of the sorted find listing>".
 # Names only (no file reads): the real vault is large and this fixture must never touch its content.
 rs_real_vault_digest() {
-  local t="${A1_SUITE_REAL_VAULT:-}" sum n
+  local t="${A1_SUITE_REAL_VAULT:-${SR_OUTER_VAULT_ROOT:-}}" sum n
   [[ -n "$t" && -d "$t" ]] || { echo ABSENT; return 0; }
   if command -v sha256sum >/dev/null 2>&1; then sum="sha256sum"; else sum="shasum -a 256"; fi
   ( cd "$t" && find . 2>/dev/null | LC_ALL=C sort ) | { $sum | cut -d' ' -f1; } | { read -r h; n="$(cd "$t" && find . 2>/dev/null | grep -c '')"; echo "$n $h"; }
@@ -50,11 +50,14 @@ mk_workdir W_VR vrw
 mk_workdir W_VRH vrh          # the HOME the runner is started with
 mk_workdir VR_VAULT vault     # the outer vault of the runner (planted stand-in for the real one)
 mkdir -p "$VR_VAULT/project" && echo note > "$VR_VAULT/project/a.md" && echo two > "$VR_VAULT/b.md"
-plant_suite "$T_VR" p/run-tests.sh "{
+VR_PROBE_BODY="{
   echo \"real=\${A1_SUITE_REAL_VAULT-UNSET}\"; echo \"vault=\${A1_VAULT_ROOT-UNSET}\"; echo \"home=\$HOME\"
-} > \"$W_VR/probe\"
+} > \"__F__\"
 mkdir -p \"\$HOME/.a1-xprov\" && echo x > \"\$HOME/.a1-xprov/planted\"
 echo 'p: 1 passed, 0 failed'"
+# Only the runner's own identity gets A1_SUITE_REAL_VAULT (SEC-2); every other suite must not see it.
+plant_suite "$T_VR" a1-suite-runner/run-tests.sh "${VR_PROBE_BODY//__F__/$W_VR/probe}"
+plant_suite "$T_VR" p/run-tests.sh "${VR_PROBE_BODY//__F__/$W_VR/probe-p}"
 
 VR_R_BEFORE="$(rs_real_vault_digest)"
 VR_X_BEFORE="$(rs_digest_of "$RS_XPROV_DIR")"
@@ -64,6 +67,8 @@ RS_ENV_EXTRA="A1_VAULT_ROOT=$VR_VAULT HOME=$W_VRH" rs_run "$T_VR"
 assert_eq "V1a run on planted suites exits 0" "$RS_RC" "0"
 assert_eq "V1b the probe saw the runner's start value of A1_VAULT_ROOT" \
   "$(grep '^real=' "$W_VR/probe" 2>/dev/null)" "real=$VR_VAULT"
+assert_eq "V1c another suite does not see A1_SUITE_REAL_VAULT (SEC-2)" \
+  "$(grep '^real=' "$W_VR/probe-p" 2>/dev/null)" "real=UNSET"
 assert_eq "V3a the worker's A1_VAULT_ROOT is a sentinel, not the outer vault" \
   "$([[ "$(grep '^vault=' "$W_VR/probe" | cut -d= -f2-)" != "$VR_VAULT" ]] && echo sentinel || echo outer)" "sentinel"
 assert_eq "V4a the worker's HOME is not the runner's HOME" \
@@ -95,3 +100,9 @@ rs_guard "FR-012 real vault after all runs (A1_SUITE_REAL_VAULT)" "${A1_SUITE_RE
 VR_SELF="$(A1_SUITE_REAL_VAULT="$VR_VAULT" rs_real_vault_digest)"; echo z > "$VR_VAULT/new.md"
 assert_eq "V6 the real-vault digest sees a new file" \
   "$([[ "$(A1_SUITE_REAL_VAULT="$VR_VAULT" rs_real_vault_digest)" != "$VR_SELF" ]] && echo changed || echo same)" "changed"
+
+# V7 (SEC-7d): started without A1_SUITE_REAL_VAULT, the guard falls back to the outer A1_VAULT_ROOT that
+# run-tests.sh captured before it cleared it, instead of silently skipping.
+VR_FB="$(A1_SUITE_REAL_VAULT='' SR_OUTER_VAULT_ROOT="$VR_VAULT" rs_real_vault_digest)"
+assert_eq "V7 without A1_SUITE_REAL_VAULT the outer A1_VAULT_ROOT is guarded" \
+  "$([[ "$VR_FB" != ABSENT ]] && echo guarded || echo skipped)" "guarded"

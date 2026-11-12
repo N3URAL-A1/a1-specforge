@@ -107,12 +107,20 @@ rs_print_nocount_report() {
   return 0
 }
 
-# rs_print_failures — every failing suite with its log path and reason.
+RS_TAIL_LINES=40
+RS_TAIL_WIDTH=300
+
+# rs_print_failures — every failing suite with its log path and reason, then the last RS_TAIL_LINES lines of
+# its log (each cut to RS_TAIL_WIDTH characters), so a red run explains itself without opening the log.
 rs_print_failures() {
   local i=0
   while [ "$i" -lt "$RS_N_RES" ]; do
     if rs_result_failed "$i"; then
       echo "FAILED: ${RS_RES_ID[$i]} (rc=${RS_RES_RC[$i]}${RS_RES_NOTE[$i]:+, ${RS_RES_NOTE[$i]}}) log: ${RS_RES_LOG[$i]}"
+      if [ -f "${RS_RES_LOG[$i]}" ]; then
+        echo "  last $RS_TAIL_LINES lines of the log:"
+        tail -n "$RS_TAIL_LINES" "${RS_RES_LOG[$i]}" | cut -c1-"$RS_TAIL_WIDTH" | sed 's/^/  | /'
+      fi
     fi
     i=$((i + 1))
   done

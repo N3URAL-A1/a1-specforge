@@ -286,8 +286,7 @@ x40f_stub="$(cat "$W6_STUB/stub.pid" 2>/dev/null)"
 kill -TERM "$x40f_pid"
 wait "$x40f_pid"
 x40f_rc=$?
-# deliberate-timeout: settle time after a kill/stop; the case asserts the process state after it, not a condition worth polling
-sleep 0.3
+poll_until 5 pid_gone "$x40f_stub"   # bounded wait for the stand-in child to be gone
 stub_mode ok
 x40f="$x40f_rc $( [[ -e "$FHOME/.a1-intents/executor.lock" ]] && echo exec-lock) $( [[ -e "$FHOME/.a1-intents/locks/real-proj.lock" ]] && echo project-lock) $( [[ -n "$x40f_stub" ]] && kill -0 "$x40f_stub" 2>/dev/null && echo child-alive)"
 if [[ "$x40f" == "143   " ]]; then ok "X40f SIGTERM to run during the child -> exit 143, the child's process group gone, executor and project lock released [FR-024, FR-025, review m5]"

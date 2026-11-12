@@ -15,12 +15,15 @@
 # line, and therefore precautionary: product-import (`product import` is not a
 # FR-007 hooked command), a1-checklist, a1-vault-fallback, roadmap-gate and
 # a1-quick (no product writer reaches a docs/product dir there today, or every
+# call already sets its own vault). Their arms guard the day that changes.
 
 # Spec 026 FR-022: the arm no longer runs the real suite set. The fixture-suite runner
 # (bin/run-suites.sh) runs every suite exactly once under the same isolation (empty sentinel
 # A1_VAULT_ROOT, fresh HOME, A1_HOST_ID=leak, A1_VAULT_WRITER_HOST unset), fails a suite whose
-# sentinel is non-empty and does the a1-reconcile restore/clean check once per run; CI calls the
-# runner in its `Fixtures` step, so the per-suite leak guarantee holds there too. What remains here
+# sentinel is non-empty, does the a1-reconcile restore/clean check and compares `.a1/learnings` before and
+# after once per run; CI calls the runner in its `Fixtures` jobs, so exactly these checks hold there too.
+# What the runner checks: sentinel vault, fresh HOME, learnings fallback store (and reconcile).
+# It does NOT check anything else a suite might write outside its isolation. What remains here
 # is a self-test of that check on a copied tree, so a runner that stops detecting leaks turns this
 # suite red:
 #   I1a  a planted suite that writes into its sentinel vault: runner exits 1 and names the leaked path
@@ -28,9 +31,8 @@
 #   I2   a planted suite that modifies a committed file under the copied a1-reconcile/ path: the
 #        runner restores it, reports it and ends clean (the copy is a git repo with one commit,
 #        so "committed state" exists; local git identity, never the global one)
-# The runner starts with the seam A1_SUITE_LOCK_DIR under this arm's workdir and the inherited
-# A1_SUITE_RUN_MARKER cleared, so a run inside a worker of an outer run neither meets the outer
-# lock nor is taken for the outer run (FR-026).
+# The runner starts with the seam A1_SUITE_LOCK_DIR under this arm's workdir, so a run inside a worker
+# of an outer run does not meet the outer lock (FR-026).
 # Red-making changes (in bin/run-suites.sh): dropping the sentinel emptiness check (I1a red);
 # dropping the exit-1 on a leak (I1a rc red); dropping the a1-reconcile restore (I2 red).
 

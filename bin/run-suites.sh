@@ -190,12 +190,43 @@ for (const id of [...found].sort()) {
 for (const list of ["serial", "no_count"]) for (const id of j[list]) if (!found.has(id)) out.push(id + ": listed under " + list + " but no such suite");
 for (const id of Object.keys(j.timings.seconds || {})) if (!found.has(id)) out.push(id + ": listed under timings but no such suite");
 const called = new Set();
-for (const l of fs.readFileSync(wf, "utf8").split("\n")) {
-  if (/^\s*#/.test(l)) continue;
-  const m = l.match(/run-suites\.sh --job ([A-Za-z0-9_-]+)/);
+const seenGhost = new Set();
+const lines = fs.readFileSync(wf, "utf8").split("\n");
+const indentOf = (l) => l.match(/^\s*/)[0].length;
+// The text of the step (or job) that holds line n: from its opening line to the line before the next sibling.
+const blockAround = (n, opener, ind) => {
+  let a = n;
+  while (a >= 0 && !(opener(lines[a]) && indentOf(lines[a]) <= ind(lines[n]))) a--;
+  if (a < 0) return "";
+  const base = indentOf(lines[a]);
+  let z = a + 1;
+  while (z < lines.length && (lines[z].trim() === "" || indentOf(lines[z]) > base || (/^\s*#/.test(lines[z])))) z++;
+  return lines.slice(a, z).filter((l) => !/^\s*#/.test(l)).join("\n");
+};
+for (let n = 0; n < lines.length; n++) {
+  const l = lines[n].replace(/(^|\s)#.*$/, "$1");
+  const m = l.match(/run-suites\.sh\b.*?--job(?:=|\s+)["\x27]?([A-Za-z0-9_-]+)/);
   if (!m) continue;
-  called.add(m[1]);
-  if (!Object.prototype.hasOwnProperty.call(j.ci_jobs, m[1])) out.push("workflow calls --job " + m[1] + " but ci_jobs has no such job");
+  const job = m[1];
+  const before = l.slice(0, l.indexOf("run-suites.sh"));
+  const after = l.slice(l.indexOf("run-suites.sh"));
+  let why = "";
+  if (/\b(echo|printf)\b/.test(before)) why = "inside an echo/printf";
+  else if (/\|\|\s*(true|:|exit\s+0)\b/.test(after)) why = "behind `|| true`";
+  else {
+    const step = blockAround(n, (x) => /^\s*-\s/.test(x), (x) => indentOf(x));
+    const jobb = blockAround(n, (x) => /^  [A-Za-z0-9_-]+:\s*$/.test(x), () => 2);
+    const stepOwn = step.split("\n").filter((x) => /^\s*(-\s+)?(if|continue-on-error):/.test(x));
+    const jobOwn = jobb.split("\n").filter((x) => /^    (if|continue-on-error):/.test(x));
+    if (stepOwn.length) why = "in a step with " + stepOwn[0].trim().replace(/^-\s+/, "").split(":")[0] + ":";
+    else if (jobOwn.length) why = "in a job with " + jobOwn[0].trim().split(":")[0] + ":";
+  }
+  if (why) { out.push("workflow call of --job " + job + " cannot gate (" + why + ")"); continue; }
+  called.add(job);
+  if (!Object.prototype.hasOwnProperty.call(j.ci_jobs, job) && !seenGhost.has(job)) {
+    seenGhost.add(job);
+    out.push("workflow calls --job " + job + " but ci_jobs has no such job");
+  }
 }
 for (const name of Object.keys(j.ci_jobs)) if (!called.has(name)) out.push("ci job " + name + " is called by no workflow line");
 for (const l of out) console.log("check-groups: " + l);
@@ -265,11 +296,15 @@ rs_order() {
 
 # ---- one finished suite: result, leak check, isolation dirs removed ----
 rs_on_suite_done() {
-  local slot="$1" rc="$2" id log dir vault elapsed note="" leaked st p
+  local slot="$1" rc="$2" left="${3:-0}" id log dir vault elapsed note="" leaked st p
   id="${RS_SLOT_ID[$slot]}"; log="${RS_SLOT_LOG[$slot]}"; dir="${RS_SLOT_DIR[$slot]}"
   vault="$dir/vault"
   elapsed=$((SECONDS - ${RS_SLOT_START[$slot]}))
   if [ "$rc" -gt 128 ]; then note="killed by signal $((rc - 128))"; fi
+  if [ "$left" -ne 0 ]; then
+    note="${note:+$note; }left processes running (the runner ended them)"
+    if [ "$left" -ge 2 ]; then note="$note; some survived SIGKILL"; fi
+  fi
   if [ -d "$vault" ] && [ -n "$(ls -A "$vault" 2>/dev/null)" ]; then
     note="${note:+$note; }wrote into its sentinel vault"
     echo "suite $id left files in its sentinel vault (first $RS_MAX_LEAK_PATHS):"
@@ -320,6 +355,7 @@ rs_start_suite() {
   RS_SLOT_LOG[$slot]="$log"
   RS_SLOT_DIR[$slot]="$d"
   RS_RUNNING=$((RS_RUNNING + 1))
+  rs_lock_pgids_sync
 }
 
 # rs_run_batch <width> <id>... — at most <width> suites at once; returns when all have ended.
@@ -383,6 +419,43 @@ rs_reconcile_post() {
   esac
 }
 
+# ---- learnings check (SEC-1b): a suite must not write the fallback learning store of the repo root ----
+# A worker that unsets A1_VAULT_ROOT writes to <root>/.a1/learnings (gitignored). Listing (ignored files
+# included, one line per file) plus a checksum per file, before and after the run; any difference is red.
+RS_LEARN_PATH=".a1/learnings"
+RS_LEARN_MODE="none"
+RS_LEARN_FILE_MAX_LINES=10
+rs_learn_state() {
+  git -C "$RS_ROOT" status --porcelain --ignored -uall -- "$RS_LEARN_PATH" 2>/dev/null
+  if [ -d "$RS_ROOT/$RS_LEARN_PATH" ]; then
+    ( cd "$RS_ROOT" && find "$RS_LEARN_PATH" -type f -exec cksum {} + 2>/dev/null | LC_ALL=C sort -k3 )
+  fi
+  return 0
+}
+rs_learn_pre() {
+  if ! rs_root_is_git_toplevel; then
+    RS_LEARN_MODE=nogit
+    return 0
+  fi
+  RS_LEARN_MODE=check
+  rs_learn_state > "$RS_TMP/learn.before"
+}
+rs_learn_post() {
+  case "$RS_LEARN_MODE" in
+    nogit) echo "learnings check skipped: $RS_ROOT is not a git top-level directory" ;;
+    check)
+      rs_learn_state > "$RS_TMP/learn.after"
+      if cmp -s "$RS_TMP/learn.before" "$RS_TMP/learn.after"; then
+        echo "learnings check: $RS_LEARN_PATH unchanged"
+      else
+        echo "learnings check FAILED: $RS_LEARN_PATH changed during the run (a suite wrote the fallback store):"
+        diff "$RS_TMP/learn.before" "$RS_TMP/learn.after" | head -n "$RS_LEARN_FILE_MAX_LINES" | sed 's/^/  /'
+        RS_FAILED=1
+      fi
+      ;;
+  esac
+}
+
 # ---- main ----
 rs_main() {
   local workers="" order i key id kind
@@ -434,7 +507,6 @@ rs_main() {
   RS_TMP="$(mktemp -d "${TMPDIR:-/tmp}/a1-suite-XXXXXX")" || rs_die "cannot create a work directory under ${TMPDIR:-/tmp}"
   [ -n "$RS_TMP" ] && [ -d "$RS_TMP" ] || rs_die "work directory missing"
   rs_make_logdir
-  rs_export_marker
 
   echo "log dir: $RS_LOGDIR"
   if [ "$RS_SUBSET" -eq 1 ]; then
@@ -456,10 +528,12 @@ rs_main() {
   done < "$order.sorted"
 
   rs_reconcile_pre
+  rs_learn_pre
   RS_T0="$SECONDS"
   if [ "${#pool[@]}" -gt 0 ]; then rs_run_batch "$workers" "${pool[@]}"; fi
   if [ "${#serial[@]}" -gt 0 ]; then rs_run_batch 1 "${serial[@]}"; fi
   rs_reconcile_post
+  rs_learn_post
 
   rs_print_table
   rs_print_failures

@@ -202,4 +202,37 @@ STEPS07="$(node -e '
 ' "$REPO_ROOT/.github/workflows/test.yml")"
 assert_eq "R5j CI runs check-enforcement.sh as its own step after Fixtures" "${STEPS07##*:}" "true"
 
+# R5j2 (PR review fix round) — the job that runs check-enforcement.sh lists, under `needs:`, every job that has a
+# `run-suites.sh --job` call (a new fixture job cannot be left out of the ordering).
+needs07() { # <workflow> — prints "ok" or "missing: <jobs>" (or "no enforcement job")
+  node -e '
+    const lines = require("fs").readFileSync(process.argv[1], "utf8").split("\n");
+    const jobs = []; let cur = null; let inJobs = false;
+    for (const l of lines) {
+      if (/^jobs:\s*$/.test(l)) { inJobs = true; continue; }
+      if (inJobs && /^\S/.test(l)) inJobs = false;
+      const m = inJobs && l.match(/^  ([A-Za-z0-9_-]+):\s*$/);
+      if (m) { cur = { name: m[1], body: [] }; jobs.push(cur); continue; }
+      if (cur && inJobs) cur.body.push(l);
+    }
+    const code = (j) => j.body.filter((l) => !/^\s*#/.test(l));
+    const callers = jobs.filter((j) => code(j).some((l) => /run-suites\.sh.*--job/.test(l))).map((j) => j.name);
+    const enf = jobs.find((j) => code(j).some((l) => l.includes("_test-fixtures/a1-xprov/check-enforcement.sh")));
+    if (!enf) { process.stdout.write("no enforcement job"); process.exit(0); }
+    const body = code(enf).join("\n");
+    const inline = body.match(/^\s*needs:\s*(.*)$/m);
+    let needs = [];
+    if (inline && inline[1].trim() !== "") needs = inline[1].replace(/[\[\]"]/g, "").split(",").map((x) => x.trim());
+    else if (inline) needs = [...body.matchAll(/^\s*-\s+([A-Za-z0-9_-]+)\s*$/gm)].map((x) => x[1]);
+    const missing = callers.filter((c) => !needs.includes(c));
+    process.stdout.write(callers.length === 0 ? "no fixture job calls" : missing.length ? "missing: " + missing.join(" ") : "ok");
+  ' "$1"
+}
+assert_eq "R5j2 the enforcement job needs every job with a run-suites.sh --job call" "$(needs07 "$REPO_ROOT/.github/workflows/test.yml")" "ok"
+mkdir -p "$TMP07/wf"
+grep -v '^    needs:' "$REPO_ROOT/.github/workflows/test.yml" > "$TMP07/wf/no-needs.yml"
+assert_eq "R5j3 without the needs line the guard names the fixture jobs" "$(needs07 "$TMP07/wf/no-needs.yml")" "missing: fixtures-xprov fixtures-rest"
+sed 's/^    needs: .*/    needs: [fixtures-xprov]/' "$REPO_ROOT/.github/workflows/test.yml" > "$TMP07/wf/one-needs.yml"
+assert_eq "R5j4 a needs list without one fixture job names it" "$(needs07 "$TMP07/wf/one-needs.yml")" "missing: fixtures-rest"
+
 rm -rf "$TMP07"

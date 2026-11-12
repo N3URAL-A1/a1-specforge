@@ -366,8 +366,7 @@ b19_orphan="$(cat "$SB/b19.orphan")"
 w7_record "$b19_old" "$b19_orphan"
 w7_exlock "$(w7_ctxlock "$b19_dead" "$W5B_HOST" "$b19_old")"
 b19_try "dead run with a surviving child" runs
-# deliberate-timeout: settle time after a kill/stop; the case asserts the process state after it, not a condition worth polling
-sleep 0.3
+poll_until 5 pid_gone "$b19_orphan"
 [[ "$(w7_alive "$b19_orphan")" == gone ]] || { b19_bad="$b19_bad | the dead run's child survived"; kill -9 "$b19_orphan" 2>/dev/null; }
 if [[ -z "$b19_bad" ]]; then
   ok "B19 an empty lock past the stale bound and a dead same-host holder are reclaimed (a surviving child of that run is killed first); a live, a foreign-host and a young empty lock -> executor_busy, untouched [FR-025]"
@@ -483,8 +482,7 @@ w6_claim action=progress
 stub_mode bg
 w6_run
 stub_mode ok
-# deliberate-timeout: settle time after a kill/stop; the case asserts the process state after it, not a condition worth polling
-sleep 0.3
+poll_until 5 pid_gone "$(cat "$W6_STUB/bg.pid" 2>/dev/null)"
 b24="$RC $(w6_where "$W6_ID") $(w7_alive "$(cat "$W6_STUB/bg.pid" 2>/dev/null || echo 0)")"
 if [[ "$b24" == "0 done gone" ]]; then ok "B24 a child that exits 0 but leaves a background process in its group -> run ends that group after the close [FR-025, review m1]"
 else bad "B24 a child that exits 0 but leaves a background process in its group -> run ends that group after the close [FR-025, review m1]" "$b24"; kill -9 "$(cat "$W6_STUB/bg.pid" 2>/dev/null)" 2>/dev/null; fi

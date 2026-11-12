@@ -69,7 +69,7 @@ hostile-input rejection case for every new CLI subcommand. Run the full suite be
 opening a PR: `bash bin/run-suites.sh` (parallel; `--workers N` or `A1_SUITE_WORKERS` sets the
 worker count). One run per user and machine: a second start is refused while the lock
 `/tmp/a1-suite-runner-<uid>` is held, and the lock of a dead run is taken over. Logs: one per suite under
-`${TMPDIR:-/tmp}/a1-suite-runs/<run id>/` (printed first as `log dir:`). `bash bin/run-suites.sh <dir|dir/runner.sh>`
+`${TMPDIR:-/tmp}/a1-suite-runs-<uid>/<run id>/` (printed first as `log dir:`). `bash bin/run-suites.sh <dir|dir/runner.sh>`
 runs a subset.
 
 Runs started from inside an agent session (a `claude` process is an ancestor, or `CLAUDECODE` is set) skip the owner-terminal cases of `a1-xprov` (parts 08, 11, 12, 14; part 15 swaps in a library driver); CI never skips them. Before a PR, run the suite once outside the agent as a non-root user, for example in Docker with gitleaks 8.30.1 on `PATH`: copy a `git archive` snapshot (with `git init` and a commit) to `/work`, `chown -R node:node /work`, then `docker run --rm -v <snapshot>:/src:ro node:20 su node -s /bin/bash -c 'cd /work && bash _test-fixtures/a1-xprov/run-tests.sh'`. The container must not see the real owner home.

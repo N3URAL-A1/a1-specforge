@@ -53,3 +53,46 @@ lk_interrupt sigterm TERM 143 1
 lk_interrupt sigterm-plain TERM 143 0
 
 assert_eq "X8 the real lock is in the same state as before the lock part" "$(lk_real_state)" "$LK_REAL_BEFORE"
+
+# ---- PR review fix round, MAJOR-1: a suite is done when its whole process group is gone ----
+# G1: the suite leaves a background writer behind and exits. Red-making change: reap on the leader alone
+# (no group TERM/KILL before the leak check and the slot-dir removal): the runner passes, the orphan
+# outlives the run and the work directory.
+mk_tree T_LG lg
+mk_workdir W_LG lgw
+plant_suite "$T_LG" g/run-tests.sh "( sleep 3; mkdir -p \"\$A1_VAULT_ROOT/late\" ) &
+echo \$! > \"$W_LG/bg\"
+echo 'g: 1 passed, 0 failed'"
+rs_run "$T_LG"
+LG_BG="$(cat "$W_LG/bg" 2>/dev/null)"
+assert_eq "G1a a suite that leaves a process running is red (exit 1)" "$RS_RC" "1"
+assert_contains "G1b the table says why" "$RS_OUT" "left processes running"
+assert_contains "G1c the FAILED line names the suite" "$RS_OUT" "FAILED: g/run-tests.sh"
+if [[ -n "$LG_BG" ]] && lk_pid_gone "$LG_BG"; then ok "G1d the background writer is gone when the run ends"
+else bad "G1d the background writer is gone when the run ends" "pid [$LG_BG] still alive"; fi
+assert_eq "G1e no runner work directory is left" "$(find "$RS_TMPD" -maxdepth 1 -name 'a1-suite-??????' | grep -c '')" "0"
+LG_N=0; while [[ -n "$LG_BG" ]] && ! lk_pid_gone "$LG_BG" && [[ $LG_N -lt 60 ]]; do sleep 0.1; LG_N=$((LG_N + 1)); done
+plant_ok "$T_LG" g/run-tests.sh
+rs_run "$T_LG"
+assert_eq "G1f a green suite without leftovers stays green" "$RS_RC" "0"
+
+# ---- PR review fix round, MAJOR-2: a stale takeover ends the dead holder's worker groups first ----
+# G2: kill -9 of the holder leaves the worker group (its own group) running; the next run must not run
+# the same suite beside it. Red-making change: no pgids recorded, or the takeover not signalling them.
+mk_tree T_TO to
+mk_workdir W_TO tow
+plant_suite "$T_TO" g/run-tests.sh "echo start >> \"$W_TO/log\"; sleep 3 & echo \$! >> \"$W_TO/sp\"; wait; echo end >> \"$W_TO/log\"
+echo 'g: 1 passed, 0 failed'"
+lk_start "$T_TO" "$W_TO/lock" "$W_TO/tmp1" "$W_TO/out1.txt"
+TO_H="$LK_PID"
+lk_wait_file "$W_TO/sp"
+TO_N=0; while [[ ! -s "$W_TO/lock/pgids" && $TO_N -lt 20 ]]; do sleep 0.1; TO_N=$((TO_N + 1)); done
+kill -9 "$TO_H"; wait "$TO_H" 2>/dev/null
+lk_start "$T_TO" "$W_TO/lock" "$W_TO/tmp2" "$W_TO/out2.txt"
+lk_finish "$LK_PID"
+assert_eq "G2a the second run completes (exit 0)" "$LK_RC" "0"
+assert_eq "G2b the dead holder's suite never finished beside the new run" "$(grep -c '^end$' "$W_TO/log")" "1"
+assert_contains "G2c the takeover is announced" "$(cat "$W_TO/out2.txt")" "took over a stale lock"
+TO_ALIVE=0
+while IFS= read -r p; do [[ -n "$p" ]] && ! lk_pid_gone "$p" && TO_ALIVE=$((TO_ALIVE + 1)); done < "$W_TO/sp"
+assert_eq "G2d no worker process of the dead holder is left" "$TO_ALIVE" "0"
