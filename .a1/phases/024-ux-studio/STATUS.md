@@ -73,3 +73,8 @@ gate0: a1-ux-studio suite → 298 passed, 0 failed, 23 SKIP (the G10–G12/H3 ac
 gate0: mutation re-run, each turned the named case red and was restored: MO1 (one template removed → 2), MO2 (reduced-motion block removed from scroll-fade), MO3 (mobile still hidden in ambient-loop), MO4 (keyframe `left` in hero-reveal; transition on `width` in scroll-fade), MO5 (remote stylesheet link), MO6 (checker's animation/transition test weakened)
 gate0: workflow lint findings [] ; verify-install-sync PASS
 gate3: FR-029-AC1 PASS @wave12 2026-11-12 (real playwright-cli 0.1.24, chromium, set-reduced-motion reduce, counting elements with animation-name != none or transition-duration > 0: hero-reveal normal 4 → reduced 0; scroll-fade normal 2 → reduced 0; ambient-loop normal 2 → reduced 0. Mobile: .a1-motion-still display block at 390 px and none at 1280 px in all three)
+
+## Wave 8 fix (2026-11-12, aiserver) — parseEntry reads the vault-indexer frontmatter
+gate0: a1-ux-studio suite → 299 passed, 0 failed (exit 0, A1_VAULT_ROOT unset, LC_ALL=C); new case T7 RED on the old parser (298 passed, 1 failed: T7 lint "missing field keywords"), green after the fix
+gate0: mutation re-run, each turned T7 red and was restored: block-list branch disabled (lint fails), continuation-line fold removed (folded image_prompt truncated), '' unescape removed
+gate0: real vault `taste.cjs lint --root $HOME/N3URAL-Vault/pattern/taste-vault --min-entries 23 --families 8` → ok (23 entries, 8 families)

@@ -105,21 +105,60 @@ function formatEntry(entry, created) {
   ].join('\n');
 }
 
+const KNOWN_KEYS = new Set(['type', 'id', 'family', 'created', ...FIELDS]);
+const MAX_FM_LINES = 400;
+const MAX_LIST_ITEMS = 64;
+const MAX_SCALAR_CHARS = 8192;
+
+/** One scalar: JSON ("..." or [...]), YAML single-quoted ('' escape), or plain. Never evaluates anchors, tags or flow maps. */
 function scalar(raw) {
   const v = raw.trim();
   if (/^["[]/.test(v)) { try { return JSON.parse(v); } catch (e) { return v; } }
+  if (v.length >= 2 && v[0] === "'" && v.endsWith("'")) {
+    const inner = v.slice(1, -1);
+    if (!inner.replace(/''/g, '').includes("'")) return inner.replace(/''/g, "'");
+  }
   return v;
 }
 
-/** Frontmatter of an entry file as a plain object (flat `key: value` lines; JSON or plain scalars). */
+/** Joins a scalar's indented continuation lines with a single space (YAML line folding). */
+const fold = (parts) => parts.map((x) => x.trim()).filter((x) => x.length > 0).join(' ').slice(0, MAX_SCALAR_CHARS);
+
+/**
+ * Frontmatter of an entry file as a plain object. Reads the flat `key: value` lines that `add` writes and the YAML subset the
+ * vault indexer rewrites them into: block lists (`key:` then `- item`), wrapped scalars on indented continuation lines,
+ * single-quoted scalars. Only the known entry keys are kept; a duplicate key keeps its first value.
+ */
 function parseEntry(source) {
   const m = /^---\r?\n([\s\S]*?)\r?\n---/.exec(source);
   const out = {};
   if (!m) return out;
-  for (const line of m[1].split(/\r?\n/)) {
-    const kv = /^([a-z_]+):\s*(.*)$/.exec(line);
-    if (kv && !Object.prototype.hasOwnProperty.call(out, kv[1])) out[kv[1]] = scalar(kv[2]);
+  let cur = null; // { key, parts, items, keep }
+  const flush = () => {
+    if (cur && cur.keep) {
+      if (cur.items) out[cur.key] = Object.freeze(cur.items.map((it) => scalar(fold(it))));
+      else out[cur.key] = scalar(fold(cur.parts));
+    }
+    cur = null;
+  };
+  for (const line of m[1].split(/\r?\n/, MAX_FM_LINES)) {
+    const kv = /^([a-z_]+):(?:[ \t]+(.*)|[ \t]*)$/.exec(line);
+    if (kv) {
+      flush();
+      const keep = KNOWN_KEYS.has(kv[1]) && !Object.prototype.hasOwnProperty.call(out, kv[1]);
+      const rest = kv[2] === undefined ? '' : kv[2];
+      cur = { key: kv[1], keep, parts: [rest], items: rest.trim() === '' ? [] : null };
+      continue;
+    }
+    if (!cur) continue;
+    const item = /^[ \t]*-(?:[ \t]+(.*))?$/.exec(line);
+    if (item && cur.items && (!/^[ \t]/.test(line) || cur.items.length > 0 || /^[ \t]*- /.test(line))) {
+      if (cur.items.length < MAX_LIST_ITEMS) cur.items.push([item[1] === undefined ? '' : item[1]]);
+    } else if (/^[ \t]+\S/.test(line)) {
+      if (cur.items) { if (cur.items.length > 0) cur.items[cur.items.length - 1].push(line); } else cur.parts.push(line);
+    }
   }
+  flush();
   return out;
 }
 

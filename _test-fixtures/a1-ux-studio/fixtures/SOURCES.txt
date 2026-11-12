@@ -42,3 +42,6 @@ fixtures/tweaks/spec.md: first 19 lines (frontmatter) copied from the real vault
 
 ## Wave 11 (remix)
 No new fixture files. parts/11-remix.sh builds its run folder with the real run.cjs init (brief from fixtures/run style, written inline), adds the converge pick line to `## Picks` in the exact format picks.cjs writes, and builds taste entries with the real taste.cjs add and fixtures/handoff/screenshot.png.
+
+## Wave 8 fix (taste-reformatted)
+fixtures/taste-reformatted/pattern/taste-vault/technical-systems/linear.md and luminous-futurism/stripe.md: byte-for-byte copies of the real vault entries $HOME/N3URAL-Vault/pattern/taste-vault/<family>/<id>.md after the vault indexer rewrote their frontmatter (permalink added, keywords as block list, wrapped image_prompt/copy_brief, single-quoted copy_brief with '' escapes). The two .png files are copies of fixtures/handoff/screenshot.png (placeholders; lint only checks the file exists).

@@ -153,4 +153,25 @@ else
   if [[ $rc_link -eq 2 && $n_out -eq 0 && $rc_dup -eq 1 && "$before" == "$after" && $rc_unset -eq 2 && "$ERR" == *A1_VAULT_ROOT* ]]; then
     ok "T6b [FR-024] symlinked family dir out of the vault: exit 2, 0 files outside; duplicate id exit 1, original intact; no vault root exit 2"
   else bad "T6b [FR-024] write guard (link=$rc_link out=$n_out dup=$rc_dup unset=$rc_unset err=$ERR)"; fi
+  # T7 RED: in entry.cjs parseEntry() drop the block-list branch (the `item` match) or the continuation-line fold: real reformatted entries read as missing fields.
+  T_RF="$HERE/fixtures/taste-reformatted/pattern/taste-vault"
+  tx lint --root "$T_RF" --min-entries 2 --families 2; rc_rf=$RC; out_rf="$OUT"; err_rf="$ERR"
+  pe="$(node -e '
+    const { parseEntry } = require(process.argv[1]);
+    const e = parseEntry(require("fs").readFileSync(process.argv[2], "utf8"));
+    const r = parseEntry(require("fs").readFileSync(process.argv[3], "utf8"));
+    const ok = e.id === "linear" && Array.isArray(e.keywords) && e.keywords.length === 5 && e.keywords[0] === "dark UI"
+      && e.image_prompt === "A dark issue tracker interface with dense rows, thin dividers, small status icons and a command palette"
+      && e.copy_brief === "Direct, product-builder voice, short claims. Example: Plan and build products. Move faster."
+      && e.screenshot === "pattern/taste-vault/technical-systems/linear.png" && e.permalink === undefined
+      && r.image_prompt === "A flowing purple, orange and blue gradient ribbon behind a floating payments dashboard card with soft glow";
+    process.stdout.write(ok ? "ok" : JSON.stringify([e, r]));' "$REPO_ROOT/skills/a1-ux-studio/scripts/taste/entry.cjs" "$T_RF/technical-systems/linear.md" "$T_RF/luminous-futurism/stripe.md" 2>&1)"
+  # single-quote escape, plain, duplicate key, anchors/tags stay inert text
+  pq="$(node -e '
+    const { parseEntry } = require(process.argv[1]);
+    const e = parseEntry("---\nid: a\nid: b\ncopy_brief: \x27it\x27\x27s fine\x27\nimage_prompt: &x !!str *y\nbogus: 1\nkeywords:\n  - \"q w\"\n  - \x27a\x27\x27b\x27\n---\n");
+    process.stdout.write(e.id === "a" && e.copy_brief === "it\x27s fine" && e.image_prompt === "&x !!str *y" && e.bogus === undefined && e.keywords.join("|") === "q w|a\x27b" ? "ok" : JSON.stringify(e));' "$REPO_ROOT/skills/a1-ux-studio/scripts/taste/entry.cjs" 2>&1)"
+  if [[ $rc_rf -eq 0 && "$out_rf" == *"ok (2 entries, 2 families)"* && "$pe" == ok && "$pq" == ok ]]; then
+    ok "T7 [FR-024] parseEntry/lint read the vault-indexer format (block lists, folded lines, '' escapes, permalink) from two real entries"
+  else bad "T7 [FR-024] reformatted entries (rc=$rc_rf out=$out_rf err=$err_rf parse=$pe quote=$pq)"; fi
 fi
