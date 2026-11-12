@@ -1,0 +1,3 @@
+{"ts":"2026-10-28T08:27:48.197Z","gate":"spec-roadmap-status-coherent","verdict":"pass","exit":0,"head_sha":"cb3fd99a6be44891d52b96cc4223f4897823e7c9","scope":"_unscoped","prev":"0000000000000000000000000000000000000000000000000000000000000000"}
+{"ts":"2026-10-28T14:35:59.726Z","gate":"fix-class-sweep","verdict":"error","exit":2,"head_sha":"cb3fd99a6be44891d52b96cc4223f4897823e7c9","scope":"_unscoped","prev":"1cdb322db3ae2e4cd14de138f8cc336d6118383527b3afce96a77e95d5b0f71b"}
+{"ts":"2026-10-28T17:15:53.963Z","gate":"depth-pass","verdict":"pass","exit":0,"head_sha":"cb3fd99a6be44891d52b96cc4223f4897823e7c9","scope":"_unscoped","prev":"f451f33e7fb770bf2ea0e24251d58d42db6f7bfc38172d92a15ad7c429a3d417"}
