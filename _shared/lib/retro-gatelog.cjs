@@ -59,6 +59,12 @@ function lastVerdicts(records) {
   return { last, failed };
 }
 
+/** @param {Object[]} records @returns {{id: string, verdict: string, caught: boolean}[]} */
+function gatesFired(records) {
+  const { last, failed } = lastVerdicts(records);
+  return [...last.entries()].map(([id, verdict]) => ({ id, verdict, caught: failed.has(id) }));
+}
+
 function entryProblems(entries, rows, last) {
   const problems = [];
   for (const e of entries) {
@@ -97,10 +103,10 @@ function checkRetroAgainstLog({ logPath, registryText, blocks, since = ENFORCED_
 
 /** The `gates_fired` YAML block the retro template tells the writer to paste. */
 function firedYaml(records) {
-  const { last, failed } = lastVerdicts(records);
-  if (last.size === 0) return 'gates_fired: []\n';
-  const items = [...last.entries()].map(([id, verdict]) => `  - {id: ${id}, verdict: ${verdict}, caught: ${failed.has(id)}}`);
+  const fired = gatesFired(records);
+  if (fired.length === 0) return 'gates_fired: []\n';
+  const items = fired.map(({ id, verdict, caught }) => `  - {id: ${id}, verdict: ${verdict}, caught: ${caught}}`);
   return `gates_fired:\n${items.join('\n')}\n`;
 }
 
-module.exports = { checkRetroAgainstLog, firedYaml, readGateLog, isLegacy, retroVerdict };
+module.exports = { checkRetroAgainstLog, firedYaml, readGateLog, isLegacy, retroVerdict, lastVerdicts, gatesFired };
