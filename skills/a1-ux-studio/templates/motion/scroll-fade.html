@@ -1,0 +1,49 @@
+<!-- a1-ux-studio motion template: scroll-fade
+Use: paste the <style> block, the .a1-motion-fade items and the script into result/result.html.
+Animates: transform + opacity only, as a transition triggered once by IntersectionObserver.
+Without JavaScript every item stays visible (the hidden state needs the .a1-js class the script sets).
+House rules: prefers-reduced-motion stops all animation and transition; at max-width 640px items show at once and a still image replaces the section figure.
+Optional asset slot: an image-to-video clip may replace the figure; keep the still as its poster.
+No remote resources. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Motion template: scroll fade</title>
+<style>
+  .a1-motion-fade { margin: 6rem auto; max-width: 40rem; padding: 0 1.5rem; }
+  .a1-js .a1-motion-fade { opacity: 0; transform: translateY(2rem); transition: opacity .7s ease-out, transform .7s ease-out; }
+  .a1-js .a1-motion-fade.is-visible { opacity: 1; transform: translateY(0); }
+  .a1-motion-still { display: none; width: 100%; height: auto; }
+  @media (max-width: 640px) {
+    .a1-js .a1-motion-fade { opacity: 1; transform: none; transition: none; }
+    .a1-motion-still { display: block; }
+    .a1-motion-live { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+    .a1-js .a1-motion-fade { opacity: 1; transform: none; }
+  }
+</style>
+</head>
+<body>
+<article class="a1-motion-fade"><h2>First block</h2><p>Copy.</p></article>
+<article class="a1-motion-fade">
+  <h2>Second block</h2>
+  <div class="a1-motion-live" role="img" aria-label="Scene">Live figure slot</div>
+  <img class="a1-motion-still" src="../assets/motion-still.png" data-a1-asset="motion-still" alt="Still image of the scene">
+</article>
+<script>
+  (function () {
+    var items = document.querySelectorAll('.a1-motion-fade');
+    if (!('IntersectionObserver' in window)) { return; }
+    document.documentElement.classList.add('a1-js');
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('is-visible'); io.unobserve(e.target); } });
+    }, { threshold: 0.2 });
+    items.forEach(function (el) { io.observe(el); });
+  })();
+</script>
+</body>
+</html>

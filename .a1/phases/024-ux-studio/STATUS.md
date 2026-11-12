@@ -67,3 +67,9 @@ gate0: mutation re-run, each turned the named case red and was restored: RM1 (am
 gate0: workflow lint findings [] ; verify-install-sync PASS
 gate3: FR-028-AC1 PASS @wave11 2026-11-12 (suite on a temp vault: unknown amplitude exit 2, unknown anchor exit 1, zero anchors → family equals original, one anchor → its 3 keywords in JSON and run.md; plan recorded under run.md ## Remix between Picks and Assets)
 gate0: design note: with anchors the planned family is the first anchor's family (spec FR-028 only fixes the zero-anchor case); stated to the user in 09-remix.md
+
+## Wave 12 (2026-11-12, aiserver) — motion templates
+gate0: a1-ux-studio suite → 298 passed, 0 failed, 23 SKIP (the G10–G12/H3 accept/pty cases skip when the shell has a claude-code ancestor; the W10 and W11 runs started detached and ran them: 307 and 315 passed, 0 failed; 315 + 6 new MO cases = 321 = 298 + 23)
+gate0: mutation re-run, each turned the named case red and was restored: MO1 (one template removed → 2), MO2 (reduced-motion block removed from scroll-fade), MO3 (mobile still hidden in ambient-loop), MO4 (keyframe `left` in hero-reveal; transition on `width` in scroll-fade), MO5 (remote stylesheet link), MO6 (checker's animation/transition test weakened)
+gate0: workflow lint findings [] ; verify-install-sync PASS
+gate3: FR-029-AC1 PASS @wave12 2026-11-12 (real playwright-cli 0.1.24, chromium, set-reduced-motion reduce, counting elements with animation-name != none or transition-duration > 0: hero-reveal normal 4 → reduced 0; scroll-fade normal 2 → reduced 0; ambient-loop normal 2 → reduced 0. Mobile: .a1-motion-still display block at 390 px and none at 1280 px in all three)

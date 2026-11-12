@@ -1,0 +1,41 @@
+<!-- a1-ux-studio motion template: hero-reveal
+Use: paste the <style> block and the .a1-motion-hero markup into result/result.html; rename nothing else.
+Animates: transform + opacity only (fade-up of headline, copy and action, staggered).
+House rules: prefers-reduced-motion stops all animation and transition; at max-width 640px a still image replaces the animated block.
+Optional asset slot: an image-to-video clip may replace the still; give it the same data-a1-asset slot name and keep the still as its poster.
+No remote resources. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Motion template: hero reveal</title>
+<style>
+  .a1-motion-hero { max-width: 40rem; margin: 4rem auto; padding: 0 1.5rem; }
+  .a1-motion-hero > * { opacity: 0; transform: translateY(1.5rem); animation: a1-hero-reveal .8s ease-out forwards; }
+  .a1-motion-hero > :nth-child(2) { animation-delay: .15s; }
+  .a1-motion-hero > :nth-child(3) { animation-delay: .3s; }
+  .a1-motion-still { display: none; width: 100%; height: auto; }
+  @keyframes a1-hero-reveal {
+    from { opacity: 0; transform: translateY(1.5rem); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @media (max-width: 640px) {
+    .a1-motion-hero > * { animation: none; opacity: 1; transform: none; }
+    .a1-motion-hero .a1-motion-still { display: block; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+    .a1-motion-hero > * { opacity: 1; transform: none; }
+  }
+</style>
+</head>
+<body>
+<section class="a1-motion-hero">
+  <h1>Headline that arrives</h1>
+  <p>One calm sentence of supporting copy.</p>
+  <a href="#start">Primary action</a>
+  <img class="a1-motion-still" src="../assets/motion-still.png" data-a1-asset="motion-still" alt="Still image of the hero scene">
+</section>
+</body>
+</html>

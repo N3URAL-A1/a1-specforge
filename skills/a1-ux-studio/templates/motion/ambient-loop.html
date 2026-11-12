@@ -1,0 +1,40 @@
+<!-- a1-ux-studio motion template: ambient-loop
+Use: paste the <style> block and the .a1-motion-ambient markup into result/result.html.
+Animates: transform + opacity only (two slow drifting soft shapes behind the content, 24 s loop).
+House rules: prefers-reduced-motion stops all animation and transition; at max-width 640px the shapes are removed and a still image is shown.
+Optional asset slot: an image-to-video loop may replace the shapes; keep the still as its poster.
+No remote resources. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Motion template: ambient loop</title>
+<style>
+  .a1-motion-ambient { position: relative; overflow: hidden; min-height: 24rem; padding: 4rem 1.5rem; }
+  .a1-motion-ambient > .a1-motion-shape { position: absolute; width: 20rem; height: 20rem; border-radius: 50%; background: currentColor; opacity: .08; will-change: transform, opacity; animation: a1-ambient-drift 24s ease-in-out infinite alternate; }
+  .a1-motion-ambient > .a1-motion-shape:nth-of-type(2) { right: 0; bottom: 0; animation-duration: 31s; animation-delay: -9s; }
+  .a1-motion-ambient > .a1-motion-content { position: relative; max-width: 40rem; margin: 0 auto; }
+  .a1-motion-still { display: none; width: 100%; height: auto; }
+  @keyframes a1-ambient-drift {
+    from { opacity: .05; transform: translate(0, 0) scale(1); }
+    to { opacity: .12; transform: translate(3rem, 2rem) scale(1.15); }
+  }
+  @media (max-width: 640px) {
+    .a1-motion-ambient > .a1-motion-shape { display: none; animation: none; }
+    .a1-motion-ambient .a1-motion-still { display: block; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<section class="a1-motion-ambient">
+  <span class="a1-motion-shape" aria-hidden="true"></span>
+  <span class="a1-motion-shape" aria-hidden="true"></span>
+  <div class="a1-motion-content"><h1>Quiet headline</h1><p>Copy over a slow ambient background.</p></div>
+  <img class="a1-motion-still" src="../assets/motion-still.png" data-a1-asset="motion-still" alt="Still image of the ambient scene">
+</section>
+</body>
+</html>
