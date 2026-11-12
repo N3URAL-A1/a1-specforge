@@ -234,3 +234,16 @@ gate2: SKIPPED preview deploy (test tooling, no web app)
 
 gate0: 5.1 CONVENTIONS.md documents the runner; documented commands re-run by the main session → dir selector `a1-gates-lint` exit 0, unknown selector exit 2, `--help` and `a1-gates-lint/run-wave13.sh` PASS
 gate0: README.md:183 runner count 57 → 58 (this branch adds a1-suite-runner/run-tests.sh; a1-gates-lint N1 then 90/0). Cross-scope one-line edit in a file held by spec 024, which also sets 58 on its branch: whichever of the two PRs lands second sets 59 (N1 catches it)
+
+## Wave 6 — CI runs the runner; I1/I2 become a self-test (done, 2026-11-12, aiserver) — commit b8db005
+
+Precondition: spec 025 (PR #80) merged, branch rebased on origin/main. FR-022 + FR-015 (owner decision 2026-11-10: doc edit in W6).
+Changes: `.github/workflows/test.yml` Fixtures step = `echo "glob count: $(ls _test-fixtures/*/run*.sh | wc -l)"` + `bash bin/run-suites.sh` (name, gitleaks step before, Cross-provider flip after unchanged); `a1-vault-cockpit` 04c I1/I2 = self-test on a git copy (planted leaker → exit 1 + leaked path, clean run → 0, planted a1-reconcile edit → restored + clean); 04d handshake part removed; `CLAUDE.md` commands line, `CONTRIBUTING.md` pre-PR line + verify.json sentence, `_test-fixtures/CONVENTIONS.md` RED table.
+Case ledger a1-vault-cockpit (assert count, baseline run directly, LC_ALL=C): before 1038 (1036 pass, 2 fail = I1 a1-intent exit 1, I1 a1-xprov exit 2, env-red on aiserver) → after 860/0.
+Removed: 158 asserts of 04c I1/I2 old arm (per suite "I1 <suite> exits 0 / no project/ / leaves sentinel empty" over 52 suites, "I1 glob found 52 suites", "I2 a1-reconcile clean again") and 30 asserts of 04d (cases H valid, absent, dead PID, mismatch, unrelated, decoy). Reason: superseded by the self-test that the spec mandates. Added: 10 (I1a x4, I1b x2, I1c, I2 x3). 1038 - 158 - 30 + 10 = 860. X1 untouched.
+gate0: runner subset `a1-vault-cockpit a1-test-fidelity a1-gates-lint a1-suite-runner a1-vault-fallback a1-tmp-hygiene` (LC_ALL=C, TMPDIR in ~/.cache) → 7 runners PASS (cockpit 860, test-fidelity 212, gates-lint 90+10, suite-runner 364, fallback 21, tmp-hygiene 21), 60 s wall; verify-install-sync PASS
+gate0: cockpit run time 24 s (was 1194 s for the I1 loop under load)
+gate0: RED proof on a snapshot copy: sentinel emptiness check dropped in bin/run-suites.sh → I1a x4 red; a1-reconcile checkout dropped → I2 x2 red
+gate0: `test-fidelity --diff-base HEAD~1` → 0 findings (ci_glob literal kept in a run: line)
+gate0: a1-xprov not in the subset run: wave 8 (parallel agent) edits it; CI read after push not done (no push by order)
+Note: runner still exports A1_SUITE_RUN_MARKER and keeps rs_lock_is_runner (used by the lock); only the I1 consumer is gone.
