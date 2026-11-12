@@ -117,16 +117,20 @@ caseI6
 
 # I7 [FR-021] Uwe's `tools:` line is byte-equal to the line on origin/main (no tool, no Agent, added).
 # Red: append ", Skill" to the tools: line of agents/a1-uwe-ux-expert.md.
+# Without a base ref (shallow CI checkout of the PR merge commit, or a snapshot without .git) the
+# line is compared with the pinned main value below — still a real assertion, never a skip.
+IN_UWE_PINNED_TOOLS='tools: [Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch]'
 caseI7() {
   local ref="" r base cur
-  for r in origin/main main; do
+  for r in origin/main main HEAD^1; do
     if git -C "$REPO_ROOT" cat-file -e "$r:$IN_UWE_REL" 2>/dev/null; then ref="$r"; break; fi
   done
   if [[ -z "$ref" ]]; then
-    if git -C "$REPO_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
-      bad "I7 [FR-021] neither origin/main nor main holds $IN_UWE_REL — cannot compare the tools: line"
+    cur="$(grep -E '^tools:' "$IN_UWE")"
+    if [[ "$(grep -cE '^tools:' "$IN_UWE")" -eq 1 && "$cur" == "$IN_UWE_PINNED_TOOLS" ]]; then
+      ok "I7 [FR-021] no base ref (shallow checkout or snapshot): tools: line equals the pinned main line ($cur)"
     else
-      ok "I7 [FR-021] no .git (snapshot): tools: line comparison against origin/main NOT run; asserting the pinned line instead"
+      bad "I7 [FR-021] no base ref: tools: line [$cur] differs from the pinned main line [$IN_UWE_PINNED_TOOLS]"
     fi
     return
   fi
