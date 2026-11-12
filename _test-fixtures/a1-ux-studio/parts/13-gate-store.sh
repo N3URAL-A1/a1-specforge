@@ -247,7 +247,10 @@ cp "$HERE/fake/xprov-owner-home.cjs" "$S10T/_shared/lib/xprov-owner-home.cjs"
 S10_STORE_MOD="$S10T/skills/a1-ux-studio/scripts/gate/gate-store.cjs"
 S10_REC="$HC_ROOT/s10-rec"; mkdir -p "$S10_REC"; printf '{"target_sha256":"%064d"}' 0 > "$S10_REC/gate-record.json"
 S10_STORE_FILE="$("$HC_NODE" -e 'console.log(require(process.argv[1]).storeFile())' "$S10_STORE_MOD")"
-s10_state() { stat -c '%s/%Y' "$S10_STORE_FILE" 2>/dev/null || echo none; }
+# Size and mtime via node: portable (GNU `stat -c` breaks on macOS, case L1b of a1-vault-fallback).
+s10_state() {
+  "$HC_NODE" -e 'try { const s = require("fs").statSync(process.argv[1]); console.log(s.size + "/" + s.mtimeMs); } catch (e) { console.log("none"); }' "$S10_STORE_FILE"
+}
 S10_BEFORE="$(s10_state)"; S10_OUT="$HC_ROOT/s10-out"; S10_RC=0
 "${HC_NOCLAUDE[@]}" "$HC_NODE" -e 'const s=require(process.argv[1]);const r=JSON.parse(require("fs").readFileSync(process.argv[2]+"/gate-record.json","utf8"));s.recordAccept(process.argv[2],r,"low-contrast-1","I accept this myself")' "$S10_STORE_MOD" "$S10_REC" < /dev/null > "$S10_OUT" 2>&1 || S10_RC=$?
 hc_check "S10 recordAccept called from a script (store module with the real guard, no terminal): exits non-zero, names the real terminal, writes nothing [FR-013]" "$([[ $S10_RC -ne 0 ]] && echo threw || echo wrote)/$([[ "$(grep -c 'real terminal' "$S10_OUT" || true)" -ge 1 ]] && echo named || echo silent)/$([[ "$(s10_state)" == "$S10_BEFORE" ]] && echo same || echo changed)" "threw/named/same"
