@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated": "2026-11-12T11:07:01.639Z",
+  "generated": "2026-11-12T14:55:24.039Z",
   "project": {
     "id": "a1-specforge",
     "title": "a1-specforge — Roadmap",
@@ -347,11 +347,11 @@
       "id": "024-ux-studio",
       "milestone": "continuous",
       "title": "a1-ux-studio: taste-driven UX/UI skill (diverge/converge, Impeccable gate)",
-      "status": "planned",
-      "stage": null,
+      "status": "done",
+      "stage": "done",
       "depends_on": [],
-      "started": null,
-      "finished": null,
+      "started": "2026-11-12",
+      "finished": "2026-11-12",
       "spec_path": "project/a1-specforge/spec/024-ux-studio.md",
       "plan_path": "project/a1-specforge/plans/024-ux-studio-wave-plan.md"
     },

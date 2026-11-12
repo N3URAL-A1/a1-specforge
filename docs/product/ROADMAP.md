@@ -276,11 +276,11 @@ features:
   - id: 024-ux-studio
     milestone: continuous
     title: "a1-ux-studio: taste-driven UX/UI skill (diverge/converge, Impeccable gate)"
-    status: planned
-    stage: null
+    status: done
+    stage: done
     depends_on: []
-    started: null
-    finished: null
+    started: 2026-11-12
+    finished: 2026-11-12
     spec_path: project/a1-specforge/spec/024-ux-studio.md
     plan_path: project/a1-specforge/plans/024-ux-studio-wave-plan.md
   - id: 025-codex-architecture-only
@@ -389,12 +389,6 @@ None.
 
 ## Changelog
 
-- **2026-09-13** — 008-false-green-test-guards -> done — stage transition via `product stage`
-- **2026-09-13** — 002-product-docs-layer -> done — stage transition via `product stage`
-- **2026-09-24** — feature '009-cross-provider-review-gate' added — Codex (claudex-loop) becomes a registered a1 gate at PLAN.md and per wave with findings adapter, retro attribution, hardened CODEX_HOME and git tripwire — per Option D decision 2026-09-03
-- **2026-09-24** — feature '010-vault-cockpit-contract' added — One-way mirror of docs/product and phase state into project/<slug>/, CLI-stamped type:, vault lint, hub spec links, host-aware locks; supersedes 005
-- **2026-09-24** — feature '011-intent-queue-consumer' added — Signed, default-deny intent notes in inbox/intents/ consumed by a1-owned CLI on the Mac; closed action enum, single-flight, ledger outside the vault
-- **2026-09-25** — spec 009 waves 1–6 merged (#10, 4ee46d9): xprov modules, Phase 4b / step 2b-x wiring, gates at warning — Codex becomes a registered read-only reviewer; Wave 7 (live smoke + blocking flip) awaits Robert's xprov permit
 - **2026-09-26** — 011-intent-queue-consumer -> started — stage transition via `product stage`
 - **2026-10-08** — feature '014-xprov-egress-hardening' added — Code leaves for Codex only with an owner-store permit, from a scanned snapshot, with gitleaks as a second layer; closes F-001/002/003/006/007/011/028/029
 - **2026-10-08** — feature.md created for '014-xprov-egress-hardening' — formal spec/plan attached via `product feature-init`
@@ -489,6 +483,12 @@ None.
 - **2026-11-12** — 026-fast-fixture-suites -> merge — stage transition via `product stage`
 - **2026-11-12** — 026-fast-fixture-suites -> origin-cleanup — stage transition via `product stage`
 - **2026-11-12** — 026-fast-fixture-suites -> done — stage transition via `product stage`
+- **2026-11-12** — 024-ux-studio -> complete — stage transition via `product stage`
+- **2026-11-12** — 024-ux-studio -> review — stage transition via `product stage`
+- **2026-11-12** — 024-ux-studio -> verify — stage transition via `product stage`
+- **2026-11-12** — 024-ux-studio -> merge — stage transition via `product stage`
+- **2026-11-12** — 024-ux-studio -> origin-cleanup — stage transition via `product stage`
+- **2026-11-12** — 024-ux-studio -> done — stage transition via `product stage`
 
 ## Appendix — migrated details
 
