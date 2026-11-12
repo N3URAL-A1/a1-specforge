@@ -317,5 +317,16 @@
     "review_reason": "spec-coherence.cjs:194 reads docs/product/ROADMAP.md and the vault mirror project/<slug>/product/ROADMAP.md; product/ is in ~/.basic-memory/.bmignore, all 19 mirror files parse strictly, failure is reported as broken.",
     "reviewed_at": "2026-10-31T09:15:21.619Z",
     "reviewed_by": "a1-reinhard-reviewer"
+  },
+  {
+    "kind": "config_change",
+    "fingerprint": "fidelity-config:.a1/fidelity.json:eea60c038c2826b6",
+    "reason": "False positive on the aiserver: neither .a1/fidelity.json nor any .gitattributes changed on this branch (docs/product only); known bug project/a1-specforge/fixes/2026-11-11-merge-guard-attr-exdev.md (/tmp on another filesystem)",
+    "date": "2026-11-12",
+    "by": "claude-main",
+    "review": "upheld",
+    "review_reason": "False positive verified: diff origin/main...HEAD touches only docs/product/* (no .a1/fidelity.json, no .gitattributes); git read-tree --index-output into tmpfs /tmp fails rc 128 (EXDEV, bug merge-guard-attr-exdev), rc 0 on same fs; configChangeChecks yields exactly this fingerprint with /tmp and zero reasons with TMPDIR=~/.cache/a1-tmp",
+    "reviewed_at": "2026-11-12T09:40:00.042Z",
+    "reviewed_by": "reinhard"
   }
 ]

@@ -4,7 +4,7 @@ type: roadmap
 project: a1-specforge
 title: "a1-specforge — Roadmap"
 status: active
-updated: 2026-11-11
+updated: 2026-11-12
 source: "migrated from docs/roadmap.md v3.0 (2026-07-10)"
 milestones:
   - id: m0-repo-extract
@@ -303,6 +303,16 @@ features:
     finished: null
     spec_path: project/a1-specforge/spec/026-fast-fixture-suites.md
     plan_path: project/a1-specforge/plans/026-fast-fixture-suites-wave-plan.md
+  - id: 027-closeout-cleanup
+    milestone: continuous
+    title: "Full cleanup after a feature/spec closeout (squash-merged branches, worktrees, registry, all hosts)"
+    status: planned
+    stage: null
+    depends_on: []
+    started: null
+    finished: null
+    spec_path: null
+    plan_path: null
 next: 006-specforge-kritis-profile
 ---
 
@@ -389,7 +399,6 @@ None.
 
 ## Changelog
 
-- **2026-09-13** — feature.md created for '005-vault-first-artifacts' — formal spec/plan attached via `product feature-init`
 - **2026-09-13** — feature.md created for '006-specforge-kritis-profile' — formal spec/plan attached via `product feature-init`
 - **2026-09-13** — feature '004-xs-quick-lane' added — new feature via `product add-feature`
 - **2026-09-13** — feature.md created for '004-xs-quick-lane' — formal spec/plan attached via `product feature-init`
@@ -489,6 +498,7 @@ None.
 - **2026-11-11** — 025-codex-architecture-only -> merge — stage transition via `product stage`
 - **2026-11-11** — 025-codex-architecture-only -> origin-cleanup — stage transition via `product stage`
 - **2026-11-11** — 025-codex-architecture-only -> done — stage transition via `product stage`
+- **2026-11-12** — feature '027-closeout-cleanup' added — After every feature or spec closeout, a1 removes all leftovers without asking: local branches of merged PRs including squash-merged ones (verified by PR state MERGED or an empty diff against origin/main), worktrees and registry entries (worktree exit must not stop half-way when git refuses -d on a squash-merged branch), stale remote-tracking refs, and the same in other clones (e.g. Mac and aiserver). Branches with unmerged commits are reported, never deleted. Requested by Robert 2026-11-12 after PR #9 in ai-harness left squash-merged branches behind.
 
 ## Appendix — migrated details
 
