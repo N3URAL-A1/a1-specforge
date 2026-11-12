@@ -1,0 +1,13 @@
+{
+  "aesthetic": "Quiet editorial minimalism, warm paper tones, generous whitespace",
+  "reference": "REFPATH",
+  "intent": {
+    "text": "Pricing screen for a B2B SaaS; the visitor compares three plans and starts a trial. Marker $& and {{status}} stay literal.",
+    "context": "brand",
+    "viewport": "mobile parity"
+  },
+  "guardrails": {
+    "always": ["Keep contrast at WCAG AA", "One primary action per section"],
+    "never": ["Stock photos of handshakes", "Gradients on buttons"]
+  }
+}

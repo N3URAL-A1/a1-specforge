@@ -152,11 +152,28 @@ caseWireDiscipline() {
       # order and the blank line is counted on its own.
       d="$(grep '^>' "$work/d" | grep -v '^> *$')"
       local blanks; blanks="$(grep -c '^> *$' "$work/d")"
-      want_d="> $WIRE_ALIAS"$'\n'"> $WIRE_RESOLVE"
-      if [[ "$lt" == "0" && "$gt" == "3" && "$blanks" == "1" && "$d" == "$want_d" ]]; then
-        ok "D $rel: stripped text differs from golden by exactly the German alias line and the unguarded resolve line (+ its blank)"
+      # Spec 024 (a1-ux-studio, W7) adds two more pure insertions here (see prompts.allowed-diff):
+      # the `  - Skill` allowed-tools line and the vf-brand design-system row. In file order the
+      # added lines are: alias, Skill, resolve, vf-brand row.
+      want_d="> $WIRE_ALIAS"$'\n'">   - Skill"$'\n'"> $WIRE_RESOLVE"$'\n'"> | Projects using the Vodafone brand design system | \`vf-brand\` (\`~/.claude/skills/vf-brand\`) |"
+      if [[ "$lt" == "0" && "$gt" == "5" && "$blanks" == "1" && "$d" == "$want_d" ]]; then
+        ok "D $rel: stripped text differs from golden by exactly the German alias line, the unguarded resolve line (+ its blank) and the two spec-024 insertions"
       else
-        bad "D $rel: removed=$lt added=$gt lines=[$d] (expected 0 removed, 3 added = alias, blank, resolve line)"
+        bad "D $rel: removed=$lt added=$gt lines=[$d] (expected 0 removed, 5 added = alias, Skill, blank, resolve line, vf-brand row)"
+      fi
+    elif [[ "$rel" == "skills/a1-new-feature/workflows/03-clarify.md" ]]; then
+      # Spec 024 (a1-ux-studio, W7): sub-step 2b-2a, a pure insertion of 35 lines. The added text
+      # must equal the 03-clarify.md rows of prompts.allowed-diff (P proves the position).
+      # Blank lines are counted on their own (GNU and Apple diff place the edge blank differently,
+      # see the SKILL.md branch above); the non-blank lines are compared in order.
+      d="$(grep '^>' "$work/d" | grep -v '^> *$' | sed 's/^> \{0,1\}//')"
+      want_d="$(awk -F'\t' '$1 == "03-clarify.md" && $3 == "line" && $4 != "" { print $4 }' "$HERE/golden/prompts.allowed-diff")"
+      local want_blanks; want_blanks="$(awk -F'\t' '$1 == "03-clarify.md" && $3 == "line" && $4 == "" { n++ } END { print n + 0 }' "$HERE/golden/prompts.allowed-diff")"
+      blanks="$(grep -c '^> *$' "$work/d")"
+      if [[ "$lt" == "0" && "$gt" == "35" && "$blanks" == "$want_blanks" && "$d" == "$want_d" ]]; then
+        ok "D $rel: stripped text differs from golden by exactly the 35 spec-024 sub-step 2b-2a lines (0 removed)"
+      else
+        bad "D $rel: removed=$lt added=$gt vs golden (expected 0 removed, the 35 lines of the spec-024 2b-2a sub-step)"
       fi
     else
       if [[ "$lt" == "0" && "$gt" == "0" ]]; then ok "D $rel: stripped text identical to golden (0 lines differ)"; else bad "D $rel: removed=$lt added=$gt vs golden"; fi

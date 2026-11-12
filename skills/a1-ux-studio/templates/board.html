@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{title}}</title>
+<!--
+a1-ux-studio board shell (spec 024, FR-004/FR-005). Rendered by workflows/02-diverge.md and
+03-converge.md into boards/diverge.html or boards/converge.html; board-check reads the result.
+Placeholders (double-brace tokens, each replaced exactly once):
+  title         page title, plain text
+  heading       one-line board heading, plain text
+  instruction   one sentence telling the user how to pick
+  font_faces    one font-face block per family and weight (400, 700), each src a relative
+                fonts/<family-id>/<family-id>-latin-<weight>-normal.woff2 reference with format woff2;
+                copy exactly those files from templates/fonts/ into boards/fonts/
+  tiles         one tile per option (markup below)
+Tile markup, one per option. data-variant0 only on a tile built from the user's own reference.
+Diverge: 5 tiles, 5 different data-family values, data-option-id is the family id.
+Converge: 3 tiles, one data-family, 3 different data-layout values and 3 different element structures.
+<section data-a1-tile data-option-id="{{option_id}}" data-family="{{family_id}}" data-layout="{{layout}}">
+  <header><h2>{{label}}</h2></header>
+  <div class="a1-tile-body">{{tile_body}}</div>
+  <footer><p class="a1-pick-hint">To pick this one, say: pick {{option_id}}</p></footer>
+</section>
+Rules: no http or https reference of any kind, no script, no remote font; local font-face only.
+-->
+<style>
+{{font_faces}}
+:root { color-scheme: light; --a1-gap: 1.25rem; --a1-edge: #d4d4d8; --a1-ink: #18181b; --a1-muted: #52525b; --a1-paper: #fafafa; }
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body { font-family: system-ui, sans-serif; color: var(--a1-ink); background: var(--a1-paper); line-height: 1.5; overflow-wrap: anywhere; }
+.a1-board { max-width: 80rem; margin: 0 auto; padding: 1.5rem; }
+.a1-board > header h1 { margin: 0 0 .25rem; font-size: 1.5rem; }
+.a1-board > header p { margin: 0 0 1.5rem; color: var(--a1-muted); }
+.a1-grid { display: grid; gap: var(--a1-gap); grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); }
+[data-a1-tile] { min-width: 0; display: flex; flex-direction: column; border: 1px solid var(--a1-edge); border-radius: .5rem; background: #fff; overflow: hidden; }
+[data-a1-tile] > header, [data-a1-tile] > footer { padding: .75rem 1rem; background: var(--a1-paper); }
+[data-a1-tile] > header h2 { margin: 0; font-size: 1rem; font-family: system-ui, sans-serif; }
+[data-a1-tile] > footer { border-top: 1px solid var(--a1-edge); }
+.a1-tile-body { flex: 1; min-width: 0; padding: 1rem; }
+.a1-tile-body img, .a1-tile-body svg, .a1-tile-body table { max-width: 100%; }
+.a1-pick-hint { margin: 0; font-size: .875rem; color: var(--a1-muted); }
+@media (max-width: 600px) {
+  .a1-board { padding: 1rem; }
+  .a1-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<main class="a1-board">
+<header>
+<h1>{{heading}}</h1>
+<p>{{instruction}}</p>
+</header>
+<div class="a1-grid">
+{{tiles}}
+</div>
+</main>
+</body>
+</html>

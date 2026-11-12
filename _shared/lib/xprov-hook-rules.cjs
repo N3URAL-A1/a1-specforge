@@ -146,7 +146,7 @@ function preEdit(payload) {
   if (typeof file !== 'string' || file === '') return deny('bad_payload', 'the tool input names no file');
   const cwd = typeof payload.cwd === 'string' && payload.cwd.startsWith('/') ? payload.cwd : process.cwd();
   const g = P.guardedPath(file, cwd);
-  if (g.guarded) return deny('store_path', `${g.why} is the owner's: agents never edit it; use \`a1-tools xprov consent ...\` or ask the owner`);
+  if (g.guarded) return deny('store_path', `${g.why} is the owner's: agents never edit it; ${g.hint || 'use `a1-tools xprov consent ...` or ask the owner'}`);
   const f = P.settingsForgery(file, cwd, tool, input);
   if (f.forged) return deny('settings_forgery', f.why);
   return Object.freeze({ action: 'allow' });

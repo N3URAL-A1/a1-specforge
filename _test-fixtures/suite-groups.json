@@ -48,6 +48,7 @@
       "a1-suite-runner/run-tests.sh",
       "a1-test-fidelity/run-tests.sh",
       "a1-tmp-hygiene/run-tests.sh",
+      "a1-ux-studio/run-tests.sh",
       "a1-vault-cockpit/run-tests.sh",
       "a1-vault-fallback/run-tests.sh",
       "a1-verify/run-tests.sh",

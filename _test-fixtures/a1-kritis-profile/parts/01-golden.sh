@@ -265,6 +265,14 @@ casePAllowedSimulated() {
 \\
 $(grep -F 'Profile resolve (every run' "$HERE/golden/prompts.allowed-diff" | cut -f4- | sed 's/[&/\\]/\\&/g')" \
     "$work/simulated-current.alias" >"$work/simulated-current.stripped"
+  # Spec 024 (W7): the two further allowed SKILL.md insertions, written out literally here (not
+  # read from prompts.allowed-diff, so the simulation stays independent of the file under test).
+  sed -e '/^  - Agent$/a\
+  - Skill' \
+      -e '/^| Projects using n3ural design system | /a\
+| Projects using the Vodafone brand design system | `vf-brand` (`~/.claude/skills/vf-brand`) |' \
+    "$work/simulated-current.stripped" >"$work/simulated-current.024"
+  mv "$work/simulated-current.024" "$work/simulated-current.stripped"
   cp "$GOLDEN/prompts/SKILL.md" "$work/golden.body"
   if ! node "$GOLDEN/apply-prompts-allowed.cjs" "$GOLDEN/prompts.allowed-diff" "SKILL.md" \
        "$work/golden.body" "$work/simulated-current.stripped" "$work/golden.applied" "$work/current.applied" 2>"$work/apply.err"; then

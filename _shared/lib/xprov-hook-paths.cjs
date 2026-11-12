@@ -45,12 +45,14 @@
 // content as empty. The class is matched on the lexical path and on the realpath, and `$CLAUDE_CONFIG_DIR` counts as `~/.claude`.
 // A file that is the same device + inode as a settings*.json of ~/.claude, <cwd>/.claude or $CLAUDE_CONFIG_DIR (dotfiles symlinks) is in the class.
 //
-// guardedPath(file, cwd)   -> { guarded: true, why } | { guarded: false }
+// guardedPath(file, cwd)   -> { guarded: true, why, hint? } | { guarded: false }
 //       The owner stores: everything under <owner home>/.a1-xprov/, and `.a1/xprov.json` in any checkout. The path is judged as a string
 //       (two forms: `..` collapsed, and as the operating system walks it; realpath through the deepest existing ancestor; `~` and `$HOME`
 //       expanded; NFC + lower case) AND by device + inode of every existing ancestor (a macOS firmlink such as
 //       /System/Volumes/Data/Users/<u>/.a1-xprov is no symlink). When the store directory does not exist yet, an ancestor named `.a1-xprov`
 //       (case-insensitive) whose parent is the home directory (inode) is guarded too.
+//       Also (spec 024): every file named gate-record.json, and everything under <owner home>/.a1-ux-studio/ (the ux-studio gate store), same string and
+//       inode judgement; the gate-record.json deny is GLOBAL (any repo, any directory: a project file of that name is denied too); the result carries a `hint` for the deny text. Tier 0: a Bash write of either stays outside this hook.
 // settingsForgery(file, cwd, tool, input) -> { forged: true, why } | { forged: false }       the class rule above.
 //
 // Tier 0 stays: a Bash command that writes any of these is outside this hook (the same OS user can always do it).
@@ -63,6 +65,11 @@ const path = require('path');
 const X = require('./xprov.cjs');
 
 const STORE_DIR_NAME = '.a1-xprov';
+// spec 024 (ux-studio gate): the gate store under the owner home and every gate-record.json (global, all repos) are guarded the same way (tier 0 residual:
+// a Bash write; the controls stop accidental and tool-level self-acceptance).
+const UX_STORE_DIR_NAME = '.a1-ux-studio';
+const GATE_RECORD_NAME = 'gate-record.json';
+const UX_HINT = 'only `ux-gate.cjs run` writes gate-record.json and only `ux-gate.cjs accept`, run by the owner at a terminal, writes the gate store; fix the result and run the gate again';
 const MAX_FILE_BYTES = 4 * 1024 * 1024;
 const OWN_REPO_ROOT = realish(path.resolve(__dirname, '..', '..')); // the checkout this module lives in (not a name field of an editable file)
 
@@ -112,14 +119,39 @@ const idOf = (p) => { try { const st = fs.statSync(p); return `${st.dev}:${st.in
 const idsOf = (list) => new Set(list.map(idOf).filter((id) => id !== null));
 
 /** True when `p` or an existing ancestor is the same directory (device + inode) as a store root, or is a `.a1-xprov` entry of a home directory. */
-function sameInodeUnder(p, storeIds, homeIds) {
+function sameInodeUnder(p, storeIds, homeIds, dirName = STORE_DIR_NAME) {
   for (let cur = p; ; cur = path.dirname(cur)) {
     const id = idOf(cur);
     if (id !== null && storeIds.has(id)) return true;
     const parent = path.dirname(cur);
-    if (fold(path.basename(cur)) === STORE_DIR_NAME && idOf(parent) !== null && homeIds.has(idOf(parent))) return true; // the store dir is not created yet
+    if (fold(path.basename(cur)) === dirName && idOf(parent) !== null && homeIds.has(idOf(parent))) return true; // the store dir is not created yet
     if (parent === cur) return false;
   }
+}
+
+/** The gate store roots (owner home by the resolver, and the process home; equal in production). */
+function uxRootCandidates() {
+  const roots = [path.join(path.dirname(X.xprovHome()), UX_STORE_DIR_NAME)];
+  const h = safeHome();
+  if (h !== '') roots.push(path.join(h, UX_STORE_DIR_NAME));
+  return roots.map((r) => path.resolve(r));
+}
+
+/** { guarded, why, hint } when `file` is a gate-record.json (any directory) or lies in the gate store; { guarded: false } otherwise. */
+function uxGuardedPath(file, cwd) {
+  const cands = uxRootCandidates();
+  const roots = [...new Set(cands.flatMap((r) => [r, realish(r)]))].map(fold);
+  const ids = idsOf(cands);
+  const homeIds = idsOf(cands.map((r) => path.dirname(r)));
+  const why = (w) => ({ guarded: true, why: w, hint: UX_HINT });
+  for (const raw of forms(file, cwd)) {
+    if (sameInodeUnder(raw, ids, homeIds, UX_STORE_DIR_NAME)) return why('the ux-studio gate store directory (~/.a1-ux-studio, same device and inode)');
+  }
+  for (const f of forms(file, cwd).map(fold)) {
+    if (roots.find((r) => isUnder(f, r)) !== undefined) return why('the ux-studio gate store directory (~/.a1-ux-studio)');
+    if (path.basename(f) === GATE_RECORD_NAME) return why('a gate-record.json (the ux-studio gate record)');
+  }
+  return { guarded: false };
 }
 
 /** { guarded, why } for one file path (see header). */
@@ -135,7 +167,7 @@ function guardedPath(file, cwd) {
     if (roots.some((r) => isUnder(f, r))) return { guarded: true, why: 'the owner store directory (~/.a1-xprov)' };
     if (path.basename(f) === 'xprov.json' && path.basename(path.dirname(f)) === '.a1') return { guarded: true, why: '.a1/xprov.json (the repository permit file)' };
   }
-  return { guarded: false };
+  return uxGuardedPath(file, cwd);
 }
 
 // ---- the hook-source class ----
@@ -266,4 +298,4 @@ function settingsForgery(file, cwd, tool, input) {
   return why === null ? { forged: false } : { forged: true, why };
 }
 
-module.exports = { STORE_DIR_NAME, guardedPath, settingsForgery, fileClass, forms, storeRoots };
+module.exports = { STORE_DIR_NAME, UX_STORE_DIR_NAME, guardedPath, settingsForgery, fileClass, forms, storeRoots };

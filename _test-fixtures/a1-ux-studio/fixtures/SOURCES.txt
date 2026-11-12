@@ -1,0 +1,49 @@
+# Fixture sources (suite a1-ux-studio, spec 024). Real files copied; edits listed here.
+# Wave 1 (parts/01-skeleton.sh) reads production files directly and needs no fixtures.
+
+## Wave 2 (run)
+fixtures/run/brief-*.json: hand-authored briefs (four-part contract; brief-complete.json holds REFPATH, replaced by the test).
+fixtures/run/brief-malformed.json: hand-authored invalid JSON.
+fixtures/run/reference-1x1.png: hand-built 1x1 RGBA PNG (valid per file(1)); the oversize case uses a sparse 20 MB + 1 file made at run time.
+
+## Wave 3 (gate)
+Captured 2026-11-09 on Robert's Mac (darwin, node v24.1.0, npm 11.8.0) with real `npx impeccable@4.8.1`, run from fixtures/gate/ (so the "file" field in the JSON holds that machine's absolute path; the gate only uses its basename):
+  npx impeccable@4.8.1 detect --help   > fixtures/gate/impeccable-4.8.1-detect-help.txt
+  npx impeccable@4.8.1 install --help  > fixtures/gate/impeccable-4.8.1-install-help.txt   (shows --scope=<scope>: project or global; --user/--global)
+  npx impeccable@4.8.1 detect --json low-contrast.html   > impeccable-4.8.1-low.json   (+ .exit = 2)
+  npx impeccable@4.8.1 detect --json high-contrast.html  > impeccable-4.8.1-high.json  (+ .exit = 0, output [])
+  npx impeccable@4.8.1 detect --json advisory.html       > impeccable-4.8.1-advisory.json (+ .exit = 0; bounce-easing, severity advisory)
+fixtures/gate/low-contrast.html: hand-written page, text #9a9a9a on #ffffff; independently computed WCAG ratio 2.81:1 (detector snippet says 2.8:1).
+fixtures/gate/high-contrast.html: same page, text #1a1a1a on #ffffff; independently computed ratio 17.40:1.
+fixtures/gate/advisory.html: high-contrast page plus a cubic-bezier(.68,-.55,.27,1.55) hover transition.
+Measured: scan_mode `file` fires the contrast rule (no loopback URL needed). Also measured: a `<!-- impeccable-disable low-contrast -->` comment in the file and a .impeccable/config.json in the detector cwd each silence the finding (exit 0, []); the gate refuses targets with a waiver marker and runs the detector in an empty scratch cwd.
+Font and hostile-input case pages are derived at run time from high-contrast.html with sed (see parts/03-gate.sh).
+Re-measured 2026-11-09 with `npx impeccable@4.8.1 detect --no-config --json` (SEC-3, the gate's argv): low, high and advisory outputs and exit codes are byte-identical to the captures above, so the captures were kept. --no-config also makes the detector ignore in-file impeccable-disable comments (measured: the waived page reports the finding again); the gate keeps its waiver-marker refusal and empty scratch cwd as second layers.
+
+## Wave 4 (boards)
+fixtures/boards/render-fixtures.cjs: one-off renderer; run once on 2026-11-09 as `node render-fixtures.cjs .` from fixtures/boards/. It fills the real skills/a1-ux-studio/templates/board.html (comment header stripped, placeholders replaced) and writes:
+  diverge.html (5 tiles, one per shipped font family, brief text from fixtures/run/brief-complete.json),
+  converge.html (3 tiles of Lora with layouts stacked/split/cards and different element structures),
+  converge-colour-only.html (3 Lora tiles with identical structure, background colour only).
+Fonts for these boards are NOT stored here: parts/04-boards.sh copies the shipped files from skills/a1-ux-studio/templates/fonts/ into each temp run folder's boards/fonts/. Hostile and variant boards (variant0, 6 tiles, remote URL, missing font) are derived at run time from diverge.html with sed/node.
+Shipped font sources: skills/a1-ux-studio/templates/fonts/SOURCES.txt.
+
+## Wave 6 (handoff)
+fixtures/handoff/screenshot.png: byte copy of fixtures/run/reference-1x1.png (a valid 1x1 RGBA PNG); parts/06-handoff.sh copies it to screenshots/<board|result>-<1280|390>.png as stand-in evidence (playwright-cli itself is never run in CI).
+Gate records are NOT stored: parts/06-handoff.sh produces them with the real ux-gate.cjs `run` against a PATH-first npx stub that replays the captured fixtures/gate/ detector output (W3), then edits single fields with node where a case needs a state the TTY-only `accept` would write.
+Boards for the evidence cases are copied from fixtures/boards/ (W4).
+
+## Wave 5 (families and assets)
+fixtures/imagegen/generate.py: hand-written stub of ~/.claude/skills/imagegen/scripts/generate.py. Flag surface (--prompt, --out, --slug, --n; out = target file, sidecar <stem>.json next to it) taken from `python3 ~/.claude/skills/imagegen/scripts/generate.py --help` and its sidecar code (line ~402) on 2026-11-11. A prompt containing FAIL-IMAGEGEN makes it exit 1. parts/05-families-assets.sh copies it into a temp HOME's .claude/skills/imagegen/scripts/.
+Vault taste entries, CLAUDE.md files and result pages for part 05 are written at run time with printf (no stored copies).
+
+## Wave 10 (tweaks)
+fixtures/tweaks/spec.md: first 19 lines (frontmatter) copied from the real vault spec 024-ux-studio.md; the `## Clarifications` section holds three lines copied verbatim from the real spec lomberg-duesseldorf/spec/001-foundation.md (lines 274, 275 and 278: a plain decision, the bullet `- **2026-11-07** — UX/Header: ...` and a Gate C fix) around one entry written in the format of skills/a1-new-feature/workflows/03-clarify.md 2b-2a/2b-3 (`- **YYYY-MM-DD** — UX/<screen>: ...` plus the indented `  Run:` line and one indented handoff-notes line, as Uwe adds them), then a short `## Requirements` tail. The result page for the cases is fixtures/gate/high-contrast.html.
+
+fixtures/handoff/make-png.cjs: source (not data) that writes a one-row PNG of a given width with Node's zlib; the handoff cases generate their screenshots with it so the IHDR width matches the file name (PR review: width check). fixtures/handoff/screenshot.png stays the real capture used by the taste cases.
+
+## Wave 11 (remix)
+No new fixture files. parts/11-remix.sh builds its run folder with the real run.cjs init (brief from fixtures/run style, written inline), adds the converge pick line to `## Picks` in the exact format picks.cjs writes, and builds taste entries with the real taste.cjs add and fixtures/handoff/screenshot.png.
+
+## Wave 8 fix (taste-reformatted)
+fixtures/taste-reformatted/pattern/taste-vault/technical-systems/linear.md and luminous-futurism/stripe.md: byte-for-byte copies of the real vault entries $HOME/N3URAL-Vault/pattern/taste-vault/<family>/<id>.md after the vault indexer rewrote their frontmatter (permalink added, keywords as block list, wrapped image_prompt/copy_brief, single-quoted copy_brief with '' escapes). The two .png files are copies of fixtures/handoff/screenshot.png (placeholders; lint only checks the file exists).

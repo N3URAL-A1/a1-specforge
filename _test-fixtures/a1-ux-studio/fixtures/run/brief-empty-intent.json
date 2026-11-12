@@ -1,0 +1,6 @@
+{
+  "aesthetic": "Dense terminal look",
+  "reference": "",
+  "intent": { "text": "   ", "context": "product", "viewport": "desktop-first" },
+  "guardrails": { "always": [], "never": [] }
+}

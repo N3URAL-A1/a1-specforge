@@ -35,3 +35,49 @@ SKILL.md	md	line	  "a1-new-feature", "erstelle eine Spezifikation" (German alias
 SKILL.md	md	insert-after	`a1-roadmap`'s SKILL.md.
 SKILL.md	md	line	
 SKILL.md	md	line	**Profile resolve (every run, before Phase 1).** Run `node <repo>/_shared/a1-tools.cjs profile resolve [--profile <name>] --repo-root <repo> [--spec <path>]`; exit 1 or 2 stops the run. When the printed `profile` is `kritis`, the blocks marked `a1-profile:kritis` apply to this run; otherwise ignore them.
+#
+# Spec 024-ux-studio (a1-ux-studio, Wave 7) — pure insertions, no golden line touched:
+# (1) SKILL.md: `  - Skill` in allowed-tools (FR-015: the main session invokes the studio via the Skill tool).
+# (2) SKILL.md: one vf-brand row in "Design-System Skill per Project" (design-system routing for Vodafone projects).
+# (3) 03-clarify.md: sub-step 2b-2a "Rendered options via a1-ux-studio (size M/L)" between 2b-2 and 2b-3 (FR-015).
+# None of it sits inside an a1-profile:kritis block. Anchors are golden lines that occur exactly once.
+SKILL.md	md	insert-after	  - Agent
+SKILL.md	md	line	  - Skill
+SKILL.md	md	insert-after	| Projects using n3ural design system | `n3urala1-design` (`~/.claude/skills/n3urala1-design`) |
+SKILL.md	md	line	| Projects using the Vodafone brand design system | `vf-brand` (`~/.claude/skills/vf-brand`) |
+03-clarify.md	md	insert-after	Fallback if no design system is specified: `frontend-design`.
+03-clarify.md	md	line	
+03-clarify.md	md	line	### 2b-2a — Rendered options via a1-ux-studio (size M/L)
+03-clarify.md	md	line	
+03-clarify.md	md	line	Read `size:` from the spec frontmatter. A missing or unclear value counts as M
+03-clarify.md	md	line	(the size triage rule "any doubt → M").
+03-clarify.md	md	line	
+03-clarify.md	md	line	| `size:` | What happens |
+03-clarify.md	md	line	|---|---|
+03-clarify.md	md	line	| M or L | Run the studio for every screen from 2b-1 (this sub-step). |
+03-clarify.md	md	line	| S | Size S only on request: skip this sub-step and go to 2b-3 (ASCII wireframes), unless the user asks for rendered variants. Then run it like M. |
+03-clarify.md	md	line	
+03-clarify.md	md	line	For each screen from 2b-1, the main session (this orchestrator) uses the
+03-clarify.md	md	line	Skill tool to invoke `a1-specforge:a1-ux-studio`. Pass the spec id, the project
+03-clarify.md	md	line	slug, the screen name, the design-system skill from 2b-2 and the relevant FRs.
+03-clarify.md	md	line	The studio runs in this session with the user, one run folder per screen.
+03-clarify.md	md	line	
+03-clarify.md	md	line	After the studio's step 6 (handoff check exit 0), the main session appends to
+03-clarify.md	md	line	`## Clarifications` in `<spec-path>`, one entry per screen:
+03-clarify.md	md	line	
+03-clarify.md	md	line	```
+03-clarify.md	md	line	- **YYYY-MM-DD** — UX/<screen-name>: Variant <X> chosen. Reason: <1-sentence>.
+03-clarify.md	md	line	  Run: <link to the run folder's run.md>
+03-clarify.md	md	line	```
+03-clarify.md	md	line	
+03-clarify.md	md	line	Write no entry for a screen whose handoff stays blocked; ask the user how to proceed.
+03-clarify.md	md	line	
+03-clarify.md	md	line	**Effect on 2b-3:** when 2b-2a ran for a screen, Uwe receives the chosen
+03-clarify.md	md	line	direction (the entry above and the run link) and writes the UX Decision instead
+03-clarify.md	md	line	of drawing ASCII variants: he confirms the entry matches the chosen variant and
+03-clarify.md	md	line	adds his handoff notes beneath it, without a second `UX/` line. Screens the
+03-clarify.md	md	line	studio did not cover go through 2b-3 unchanged.
+03-clarify.md	md	line	
+03-clarify.md	md	line	**Fallback:** if the studio is unavailable (skill not installed, or it stops
+03-clarify.md	md	line	because `A1_VAULT_ROOT` is unset), tell the user why and run 2b-3 with ASCII
+03-clarify.md	md	line	wireframes as before.

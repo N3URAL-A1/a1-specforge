@@ -1,0 +1,19 @@
+{
+  "pin": "impeccable@4.8.1",
+  "version": "4.8.1",
+  "scan_mode": "file",
+  "detect_flags": ["--no-config"],
+  "install_scope": "global",
+  "install_command": "npx impeccable@4.8.1 install -y --providers=claude --scope=global",
+  "timeout_ms": 180000,
+  "exit_codes": { "pass": 0, "scan_failed": 1, "primary_findings": 2 },
+  "fields": {
+    "rule": "antipattern",
+    "severity": "severity",
+    "file": "file",
+    "line": "line",
+    "detail": "snippet",
+    "advisory_severity_value": "advisory"
+  },
+  "measured": "2026-11-09 on npx impeccable@4.8.1 (npm 11.8.0, node 24.1.0, darwin); see _test-fixtures/a1-ux-studio/fixtures/SOURCES.txt"
+}
