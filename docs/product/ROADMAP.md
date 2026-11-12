@@ -303,6 +303,16 @@ features:
     finished: 2026-11-12
     spec_path: project/a1-specforge/spec/026-fast-fixture-suites.md
     plan_path: project/a1-specforge/plans/026-fast-fixture-suites-wave-plan.md
+  - id: 027-lean-pipeline
+    milestone: continuous
+    title: "Lean pipeline: fewer repeated runs, stops and spawns with the load-bearing gates intact"
+    status: planned
+    stage: null
+    depends_on: []
+    started: null
+    finished: null
+    spec_path: project/a1-specforge/spec/027-lean-pipeline.md
+    plan_path: null
 next: 006-specforge-kritis-profile
 ---
 
@@ -389,8 +399,6 @@ None.
 
 ## Changelog
 
-- **2026-09-26** — 011-intent-queue-consumer -> started — stage transition via `product stage`
-- **2026-10-08** — feature '014-xprov-egress-hardening' added — Code leaves for Codex only with an owner-store permit, from a scanned snapshot, with gitleaks as a second layer; closes F-001/002/003/006/007/011/028/029
 - **2026-10-08** — feature.md created for '014-xprov-egress-hardening' — formal spec/plan attached via `product feature-init`
 - **2026-10-12** — 014-xprov-egress-hardening -> done — stage transition via `product stage`
 - **2026-10-12** — 014-xprov-egress-hardening started date corrected to 2026-10-08 (claim date); code_scope claim released — product stage stamped today; the stage started on 2026-10-08
@@ -489,6 +497,8 @@ None.
 - **2026-11-12** — 024-ux-studio -> merge — stage transition via `product stage`
 - **2026-11-12** — 024-ux-studio -> origin-cleanup — stage transition via `product stage`
 - **2026-11-12** — 024-ux-studio -> done — stage transition via `product stage`
+- **2026-11-12** — feature '027-lean-pipeline' added — new feature via `product add-feature`
+- **2026-11-12** — feature.md created for '027-lean-pipeline' — formal spec/plan attached via `product feature-init`
 
 ## Appendix — migrated details
 
