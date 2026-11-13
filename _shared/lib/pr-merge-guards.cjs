@@ -138,7 +138,9 @@ function attrKeyOf(project, rev, paths) {
   try {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'a1-attr-'));
     const idx = path.join(dir, 'index');
-    execFileSync('git', ['-C', project, 'read-tree', `--index-output=${idx}`, rev], { stdio: ['ignore', 'ignore', 'ignore'], maxBuffer: GIT_MAX_BUFFER, shell: false });
+    // GIT_INDEX_FILE (not --index-output): git then locks `<idx>.lock` beside the temporary index; --index-output renames the repo-side lock
+    // onto it and fails with EXDEV when TMPDIR is on another filesystem than the repository.
+    execFileSync('git', ['-C', project, 'read-tree', rev], { stdio: ['ignore', 'ignore', 'ignore'], maxBuffer: GIT_MAX_BUFFER, shell: false, env: { ...process.env, GIT_INDEX_FILE: idx } });
     const out = execFileSync('git', ['-C', project, 'check-attr', '-z', '--cached', ...CONTENT_ATTRS, '--', ...paths],
       { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: GIT_MAX_BUFFER, shell: false, env: { ...process.env, GIT_INDEX_FILE: idx } });
     const f = out.split('\0');
@@ -150,13 +152,13 @@ function attrKeyOf(project, rev, paths) {
   }
 }
 
-/** Attribute keys of base and head for the guard's paths. An unreadable side yields a distinct marker, so it counts as changed. */
+/** Attribute keys of base and head for the guard's paths. `unreadable` is true when either side could not be read (the caller blocks, fail-closed). */
 function attrKeys(project, baseSha, guard, baseSide, headSide) {
   const paths = [...new Set([guard.rel, ...baseSide.matched.map((t) => t.path), ...headSide.matched.map((t) => t.path)])];
   const b = attrKeyOf(project, baseSha, paths);
   const h = attrKeyOf(project, 'HEAD', paths);
-  if (b === null || h === null) return { base: b === null ? 'unreadable' : b, head: h === null ? 'unreadable-head' : h };
-  return { base: b, head: h };
+  if (b === null || h === null) return { base: b === null ? 'unreadable' : b, head: h === null ? 'unreadable-head' : h, unreadable: true };
+  return { base: b, head: h, unreadable: false };
 }
 
 /** Fingerprint text of the head side: the plain content when the exact path is the only match (unchanged from before), else path+mode+content of every match. */
@@ -186,10 +188,12 @@ function configChangeCheck(project, baseSha, entriesAtHead, guard, trees) {
   const special = head.special || base.special;
   const attrs = unreadable ? { base: '', head: '' } : attrKeys(project, baseSha, guard, base, head);
   // An attribute change only matters while the guarded file exists on a side (no file, nothing for the loader to read).
-  const attrsChanged = attrs.base !== attrs.head && (base.matched.length > 0 || head.matched.length > 0);
-  if (!unreadable && !special && !attrsChanged && base.key === head.key) return { reasons: [] };
+  const fileOnASide = base.matched.length > 0 || head.matched.length > 0;
+  const attrsUnreadable = Boolean(attrs.unreadable) && fileOnASide;
+  const attrsChanged = !attrsUnreadable && attrs.base !== attrs.head && fileOnASide;
+  if (!unreadable && !special && !attrsChanged && !attrsUnreadable && base.key === head.key) return { reasons: [] };
   // The attribute set is part of the fingerprint only when attributes changed, so the plain case keeps its golden fingerprint.
-  const attrPart = attrsChanged ? `\nattributes:\n${attrs.head}` : '';
+  const attrPart = attrsChanged ? `\nattributes:\n${attrs.head}` : (attrsUnreadable ? '\nattributes:\nunreadable' : '');
   const fingerprint = D.fingerprintOf(guard.rule, guard.rel, unreadable ? 'unreadable-tree' : headFingerprintText(guard, head) + attrPart);
   const cleared = entriesAtHead.some((e) => e.kind === CONFIG_KIND && e.fingerprint === fingerprint && e.review === 'upheld' && !D.isSelfReviewed(e));
   if (cleared) return { reasons: [] };
@@ -198,6 +202,7 @@ function configChangeCheck(project, baseSha, entriesAtHead, guard, trees) {
   else if (special) change = special;
   else if (base.matched.length === 0) change = 'added';
   else if (head.matched.length === 0) change = 'removed';
+  if (change === 'changed' && attrsUnreadable && base.key === head.key) change = 'attributes_unreadable';
   if (change === 'changed' && attrsChanged && base.key === head.key) change = 'attributes';
   const file = !unreadable && !special && head.matched.length > 0 ? head.matched.map((t) => t.path).join(', ') : (!unreadable && !special && base.matched.length > 0 ? base.matched.map((t) => t.path).join(', ') : guard.rel);
   return { reasons: [{ reason: guard.reason, file, change, fingerprint, hint: `disposition add --kind ${CONFIG_KIND} --fingerprint ${fingerprint} --reason <why> --by <you>; a second reviewer runs disposition review ${fingerprint} --verdict upheld --by <reviewer>; commit and push .a1/dispositions.json; run the merge check again` }] };

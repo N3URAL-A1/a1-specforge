@@ -247,3 +247,19 @@ mg_commit "attrs committed"
 MG_G30B="$(cd "$MG_P" && TMPDIR="$MG_T30" node -e 'const G=require(process.argv[1]);const b=require("child_process").execFileSync("git",["rev-parse","main"],{encoding:"utf8"}).trim();console.log(G.configChangeChecks(process.cwd(),b,[]).reasons.map(r=>r.change).join(","))' "$SHARED/lib/pr-merge-guards.cjs")"
 expect "G30b the same attribute committed: blocks via the temporary index" "attributes" "$MG_G30B"
 expect "G30b no temporary index left behind" "0" "$(find "$MG_T30" -mindepth 1 | wc -l | tr -d ' ')"
+
+# --- 2026-11-11-merge-guard-attr-exdev: the temporary index must work when TMPDIR is on another filesystem than the repo ----------------
+# `git read-tree --index-output=<tmp>` renames the repo-side index.lock across devices (EXDEV) and failed; GIT_INDEX_FILE keeps the lock
+# next to the temporary index. An unreadable attribute side still blocks (SEC-10) but under its own label, not as `attributes`.
+mg_guard() { # <tmpdir> -> comma-joined change values of the guard run (cwd = $MG_P, base = main)
+  (cd "$MG_P" && TMPDIR="$1" node -e 'const G=require(process.argv[1]);const b=require("child_process").execFileSync("git",["rev-parse","main"],{encoding:"utf8"}).trim();console.log(G.configChangeChecks(process.cwd(),b,[]).reasons.map(r=>r.change).join(","))' "$SHARED/lib/pr-merge-guards.cjs")
+}
+mg_pr g31 mg_base_both; mg_attr README unrelated
+MG_XDEV=/dev/shm
+if [[ -d "$MG_XDEV" && -w "$MG_XDEV" && "$(stat -c %d "$MG_XDEV" 2>/dev/null)" != "$(stat -c %d "$MG_P" 2>/dev/null)" ]]; then
+  expect "G31 TMPDIR on another filesystem than the repo, nothing changed: no block (no EXDEV, no false attributes)" "" "$(mg_guard "$MG_XDEV")"
+else
+  echo "SKIP G31 (no writable $MG_XDEV on a different device than the work dir)"
+fi
+MG_G32T="$WORK/mg-no-such-tmp"; rm -rf "$MG_G32T"
+expect "G32 attribute side unreadable (mkdtemp fails): still blocks, labelled attributes_unreadable (both guards)" "attributes_unreadable,attributes_unreadable" "$(mg_guard "$MG_G32T")"
