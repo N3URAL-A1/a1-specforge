@@ -11,116 +11,32 @@
   "gates": [
     {
       "gate": "gate-0.7-realpath",
-      "runs": 7,
+      "runs": 8,
       "duration_ms_sum": 8,
-      "no_duration": 6
+      "no_duration": 7
     },
     {
       "gate": "test-fidelity",
-      "runs": 7,
+      "runs": 8,
       "duration_ms_sum": 5,
-      "no_duration": 6
+      "no_duration": 7
     },
     {
       "gate": "lane-split",
-      "runs": 362,
-      "duration_ms_sum": 711,
+      "runs": 2,
+      "duration_ms_sum": 3,
       "no_duration": 1
     },
     {
       "gate": "gate-1-build",
-      "runs": 9,
-      "duration_ms_sum": 6601815,
-      "no_duration": 6
+      "runs": 8,
+      "duration_ms_sum": 0,
+      "no_duration": 8
     },
     {
       "gate": "depth-pass",
-      "runs": 941,
-      "duration_ms_sum": 2970,
-      "no_duration": 0
-    },
-    {
-      "gate": "kritis-ears-check",
-      "runs": 460,
-      "duration_ms_sum": 432,
-      "no_duration": 0
-    },
-    {
-      "gate": "kritis-threat-model",
-      "runs": 580,
-      "duration_ms_sum": 428,
-      "no_duration": 0
-    },
-    {
-      "gate": "workflow-pipeline-exit",
-      "runs": 761,
-      "duration_ms_sum": 1247,
-      "no_duration": 0
-    },
-    {
-      "gate": "retro-gate-ids",
-      "runs": 958,
-      "duration_ms_sum": 2877,
-      "no_duration": 0
-    },
-    {
-      "gate": "live-probes",
-      "runs": 105,
-      "duration_ms_sum": 144,
-      "no_duration": 0
-    },
-    {
-      "gate": "check-reservations",
-      "runs": 612,
-      "duration_ms_sum": 403,
-      "no_duration": 0
-    },
-    {
-      "gate": "collect-roots",
-      "runs": 180,
-      "duration_ms_sum": 48,
-      "no_duration": 0
-    },
-    {
-      "gate": "fix-integrity",
-      "runs": 108,
-      "duration_ms_sum": 108,
-      "no_duration": 0
-    },
-    {
-      "gate": "scope-claim",
-      "runs": 810,
-      "duration_ms_sum": 739,
-      "no_duration": 0
-    },
-    {
-      "gate": "quick-eligibility",
-      "runs": 432,
-      "duration_ms_sum": 1281,
-      "no_duration": 0
-    },
-    {
-      "gate": "gate-4.5-fr-consistency",
-      "runs": 342,
-      "duration_ms_sum": 881,
-      "no_duration": 0
-    },
-    {
-      "gate": "phantom",
-      "runs": 108,
-      "duration_ms_sum": 415,
-      "no_duration": 0
-    },
-    {
-      "gate": "modernize-parity",
-      "runs": 18,
-      "duration_ms_sum": 18,
-      "no_duration": 0
-    },
-    {
-      "gate": "gate-0.6-schema",
-      "runs": 90,
-      "duration_ms_sum": 116,
+      "runs": 1,
+      "duration_ms_sum": 2,
       "no_duration": 0
     }
   ],

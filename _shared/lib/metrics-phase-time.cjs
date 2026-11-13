@@ -10,7 +10,10 @@
 // `--baseline` writes <repo>/.a1/phases/027-lean-pipeline/BASELINE.json from two existing `verify run`
 // reports plus a host-context file; it never starts a run itself.
 // Exit: 0 report / 1 usage error or a refused baseline input / 2 unreadable repo or refused write path.
-// No process spawning and no network: a1-metrics AU4b enforces it.
+// `_unscoped` (gate lines written outside a phase: suites, verify runs) is left out of the report and the
+// baseline unless --include-unscoped is given or --scope _unscoped names it.
+// This file spawns no process and opens no network connection (a1-metrics AU4b enforces it); the only
+// spawn on its path is the vault-root lookup in io-roots.cjs (`git rev-parse`, when A1_VAULT_ROOT is unset).
 // ---------------------------------------------------------------------------
 
 const fs = require('fs');
@@ -24,7 +27,7 @@ const { usage } = require('./help.cjs');
 const { emitExit } = require('./emit-exit.cjs');
 
 const FLAGS = {
-  repo: 'string', scope: 'string', last: 'string', json: 'bool', baseline: 'bool', force: 'bool',
+  repo: 'string', scope: 'string', last: 'string', json: 'bool', baseline: 'bool', force: 'bool', 'include-unscoped': 'bool',
   'verify-report': 'string', 'merge-report': 'string', 'host-context': 'string', 'host-label': 'string',
 };
 const BASELINE_ONLY = ['verify-report', 'merge-report', 'host-context', 'host-label'];
@@ -36,6 +39,7 @@ const MAX_STORE_BYTES = 20 * 1024 * 1024;
 const LABEL_RE = /^[a-z][a-z0-9-]{0,39}$/;
 const SHA_RE = /^[0-9a-f]{40}$/;
 const MERGE_CHECK = 'pr-merge-check';
+const UNSCOPED = '_unscoped';
 const RUN_KEYS = ['load5_start', 'load5_end', 'cpus', 'host_busy', 'checks'];
 const CTX_KEYS = ['verify_head_only', 'merge_check_long_path'];
 
@@ -75,7 +79,7 @@ function parseArgs(args) {
   if (!f.baseline && given.length > 0) usage(`metrics phase-time: --${given[0]} needs --baseline`);
   if (f.force && !f.baseline) usage('metrics phase-time: --force needs --baseline');
   if (f.baseline && !LABEL_RE.test(String(f['host-label']))) usage('metrics phase-time: --host-label must match ^[a-z][a-z0-9-]{0,39}$');
-  return { f, last, scope: f.scope };
+  return { f, last, scope: f.scope, includeUnscoped: f['include-unscoped'] === true };
 }
 
 /** @returns {string} the repo root @throws PTError exit 2 */
@@ -116,12 +120,21 @@ function readLive(repo) {
     }
     const gates = res.records.reduce((acc, r) => addGate(acc, r.gate, r), new Map());
     for (const [gate, g] of gates) out.rows.push({ source: 'live', scope, gate, runs: g.runs, duration_ms_sum: g.timed === 0 ? null : g.sum, no_duration: g.noDuration });
-    out.stamps.set(scope, Math.max(...res.records.map((r) => Date.parse(r.ts)).filter((n) => !Number.isNaN(n)), 0));
-    const why = {};
+    out.stamps.set(scope, res.records.map((r) => Date.parse(r.ts)).filter((n) => !Number.isNaN(n)).reduce((a, b) => Math.max(a, b), 0));
+    const why = Object.create(null);
     for (const r of res.records.filter((x) => x.gate === MERGE_CHECK)) { const k = typeof r.ci_evidence_why === 'string' ? r.ci_evidence_why : 'unknown'; why[k] = (why[k] || 0) + 1; }
     out.why.set(scope, why);
   }
   return out;
+}
+
+const isCount = (v) => Number.isInteger(v) && v >= 0;
+/** @returns {boolean} true when a store row has the shape `run record` writes: counts are non-negative integers or null */
+function validStoreRow(o) {
+  if (!isObj(o) || typeof o.scope !== 'string' || !Array.isArray(o.gates)) return false;
+  return o.gates.every((g) => isObj(g) && typeof g.id === 'string' && isCount(g.runs)
+    && (g.duration_ms_sum === undefined || g.duration_ms_sum === null || isCount(g.duration_ms_sum))
+    && (g.no_duration === undefined || isCount(g.no_duration)));
 }
 
 /** @returns {{rows: Object[], unparsable: number, stamps: Map<string, number>, why: Map<string, Object>}} */
@@ -139,10 +152,10 @@ function readStore(repo) {
   for (const line of text.split('\n').filter(Boolean)) {
     let o = null;
     try { o = JSON.parse(line); } catch (_e) { out.unparsable += 1; continue; }
-    if (!isObj(o) || typeof o.scope !== 'string' || !Array.isArray(o.gates)) { out.unparsable += 1; continue; }
+    if (!validStoreRow(o)) { out.unparsable += 1; continue; }
     out.stamps.set(o.scope, Math.max(out.stamps.get(o.scope) || 0, Date.parse(o.recorded_at) || 0));
-    const why = out.why.get(o.scope) || {};
-    for (const g of o.gates.filter(isObj)) {
+    const why = out.why.get(o.scope) || Object.create(null);
+    for (const g of o.gates) {
       out.rows.push({ source: 'store', scope: o.scope, pr: o.pr === undefined ? null : o.pr, gate: g.id, runs: g.runs, duration_ms_sum: g.duration_ms_sum === undefined ? null : g.duration_ms_sum, no_duration: g.no_duration || 0 });
       if (isObj(g.ci_evidence_why)) for (const [k, n] of Object.entries(g.ci_evidence_why)) why[k] = (why[k] || 0) + (Number.isInteger(n) ? n : 0);
     }
@@ -161,14 +174,15 @@ function buildReport(repo, opts) {
   const live = readLive(repo);
   const store = readStore(repo);
   const stamps = new Map([...live.stamps, ...store.stamps].map(([k]) => [k, Math.max(live.stamps.get(k) || 0, store.stamps.get(k) || 0)]));
-  let scopes = [...stamps.keys()].filter((s) => opts.scope === undefined || s === opts.scope);
+  const wanted = (s) => (opts.scope === undefined ? opts.includeUnscoped || s !== UNSCOPED : s === opts.scope);
+  let scopes = [...stamps.keys()].filter(wanted);
   if (opts.last !== null) scopes = scopes.sort((a, b) => stamps.get(b) - stamps.get(a)).slice(0, opts.last);
   const keep = new Set(scopes);
   const stored = new Set(store.rows.map((r) => r.scope));
   const liveRows = live.rows.filter((r) => keep.has(r.scope)).map((r) => ({ ...r, also_in_store: stored.has(r.scope) }));
   const storeRows = store.rows.filter((r) => keep.has(r.scope));
   const counted = liveRows.filter((r) => !r.also_in_store);
-  const why = {};
+  const why = Object.create(null);
   for (const s of scopes) addWhy(why, stored.has(s) ? (store.why.get(s) || {}) : (live.why.get(s) || {}));
   const totals = { live: sumRows(counted), store: sumRows(storeRows) };
   return {
@@ -293,10 +307,10 @@ function writeBaseline(repo, f, rep) {
  * @param {string[]} args - metrics phase-time flags
  */
 function cmdMetricsPhaseTime(args) {
-  const { f, last, scope } = parseArgs(args);
+  const { f, last, scope, includeUnscoped } = parseArgs(args);
   try {
     const repo = resolveRepo(f.repo);
-    const rep = buildReport(repo, { last, scope });
+    const rep = buildReport(repo, { last, scope, includeUnscoped });
     if (f.baseline) { const r = writeBaseline(repo, f, rep); return emitExit(0, r.out, r.err); }
     return emitExit(0, f.json ? `${JSON.stringify(rep)}\n` : printText(rep), '');
   } catch (e) {

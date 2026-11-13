@@ -9,6 +9,9 @@
 #   --force check removed (baselineTarget)                           : PT9 red
 #   host-context key check removed (sameKeys)                        : PT10 extra-key case red
 #   `host: os.hostname()` written into the baseline                  : PT8 hostname case red
+#   _unscoped no longer left out (wanted() in buildReport)           : PT14a, PT14b red
+#   validStoreRow() accepts everything                               : PT15a red
+#   why counts in a plain {} (not Object.create(null))               : PT15b red
 
 PT_GL="$SHARED/lib/gate-log.cjs"
 PT_SHA="$(printf 'd%.0s' $(seq 1 40))"
@@ -52,7 +55,7 @@ mk_workdir PT_NOSTORE pt-nostore
 pt_repo PT1P pt1 fx-proj
 mkdir -p "$PT1P/.a1/phases/_unscoped"; cp "$FIXT/gatelog/old-format.jsonl" "$PT1P/.a1/phases/_unscoped/gate-log.jsonl"
 pt_plant "$PT1P" _unscoped '[{"gate":"depth-pass","exit":0,"dur":100},{"gate":"depth-pass","exit":0,"dur":250}]'
-pt_run "$PT_NOSTORE" "$PT1P" --repo "$PT1P" --json
+pt_run "$PT_NOSTORE" "$PT1P" --repo "$PT1P" --json --include-unscoped
 assert_rc "PT1a exit 0" 0 "$RC" "$ERR"
 assert_eq "PT1b runs 5, sum 350, no_duration 3, source live" "$(pt_j 'j.rows.reduce((a,r)=>a+r.runs,0)+"|"+j.totals.live.duration_ms_sum+"|"+j.totals.live.no_duration+"|"+[...new Set(j.rows.map(r=>r.source))].join()')" "5|350|3|live"
 assert_eq "PT1c the depth-pass row: 3 runs, sum 350, 1 without duration" "$(pt_j 'JSON.stringify(j.rows.filter(r=>r.gate==="depth-pass").map(r=>[r.runs,r.duration_ms_sum,r.no_duration]))')" "[[3,350,1]]"
@@ -206,3 +209,27 @@ assert_eq "PT12 facade-written scope: no_duration 0, one row" "$(pt_j 'j.no_dura
 pt_repo PT13P pt13
 pt_run "$PT_NOSTORE" "$PT13P" --repo . --json
 assert_eq "PT13 --repo . yields the folder name as project" "$(pt_j 'j.project')" "$(basename "$PT13P")"
+
+# ---- PT14: _unscoped is left out by default, in the report and in the baseline (review R1 MAJOR) ----
+pt_repo PT14P pt14 fx-proj
+pt_plant "$PT14P" _unscoped '[{"gate":"depth-pass","exit":0,"dur":100}]'
+pt_plant "$PT14P" pr-3 '[{"gate":"verify-run","exit":0,"dur":7}]'
+pt_run "$PT_NOSTORE" "$PT14P" --repo "$PT14P" --json
+assert_eq "PT14a default report holds pr-3 only, _unscoped left out" "$(pt_j '[...new Set(j.rows.map(r=>r.scope))].join()+"|"+j.totals.live.duration_ms_sum')" "pr-3|7"
+pt_run "$PT_NOSTORE" "$PT14P" --repo "$PT14P" --json --include-unscoped
+assert_eq "PT14c --include-unscoped brings it back" "$(pt_j '[...new Set(j.rows.map(r=>r.scope))].sort().join()+"|"+j.totals.live.duration_ms_sum')" "_unscoped,pr-3|107"
+pt_run "$PT_NOSTORE" "$PT14P" --repo "$PT14P" --json --scope _unscoped
+assert_eq "PT14d --scope _unscoped names it explicitly" "$(pt_j '[...new Set(j.rows.map(r=>r.scope))].join()')" "_unscoped"
+pt_bl "$PT14P" "$PT_W/ctx-good.json"
+assert_eq "PT14b baseline gates section has no _unscoped gate" "$(pt_file "$PT14P/.a1/phases/027-lean-pipeline/BASELINE.json" 'JSON.stringify(j.gates.map(g=>[g.gate,g.duration_ms_sum]))')" '[["verify-run",7]]'
+
+# ---- PT15: store rows are schema-checked; a prototype key is a plain why-code (review R1 minors) ----
+pt_repo PT15P pt15 fx-proj
+pt_store PT15V fx-proj '{"schema":1,"recorded_at":"2026-11-01T10:00:00.000Z","project":"fx-proj","scope":"pr-5","pr":5,"head_sha":"'"$PT_SHA"'","gates":[{"id":"verify-run","verdict":"pass","caught":false,"runs":"2","duration_ms_sum":-40,"no_duration":0}]}'
+printf '%s\n' '{"schema":1,"recorded_at":"2026-11-01T10:00:00.000Z","project":"fx-proj","scope":"pr-6","pr":6,"head_sha":"x","gates":[{"id":"verify-run","runs":1,"duration_ms_sum":3,"no_duration":0}]}' >> "$PT15V/pattern/a1-learnings/_runs/fx-proj.jsonl"
+pt_run "$PT15V" "$PT15P" --repo "$PT15P" --json
+assert_eq "PT15a bad row counted unparsable, good row summed" "$(pt_j 'j.store_unparsable+"|"+j.totals.store.duration_ms_sum')" "1|3"
+pt_repo PT15Q pt15q
+pt_plant "$PT15Q" pr-9 '[{"gate":"pr-merge-check","exit":0,"dur":1,"why":"constructor"},{"gate":"pr-merge-check","exit":0,"dur":1,"why":"constructor"}]'
+pt_run "$PT_NOSTORE" "$PT15Q" --repo "$PT15Q" --json
+assert_eq "PT15b why-code constructor counts as 2" "$(pt_j 'JSON.stringify(j.ci_evidence_why)')" '{"constructor":2}'

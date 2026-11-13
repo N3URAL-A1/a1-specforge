@@ -22,7 +22,7 @@ const METRICS_HELP = `  a1-tools fix validate-postmortem <file> [<file>...]
                   the unreported runs. Without --project: every project in the vault.
                   --last N keeps the newest N phases AND the newest N fixes (up to 2N runs), by date.
                   Exit 0 / 1 usage error / 2 vault absent or I/O error.
-  a1-tools metrics phase-time [--repo <path>] [--scope <scope>] [--last <N>] [--json] [--baseline --verify-report <file> --merge-report <file> --host-context <file> --host-label <label> [--force]]
+  a1-tools metrics phase-time [--repo <path>] [--scope <scope>] [--last <N>] [--json] [--include-unscoped] [--baseline --verify-report <file> --merge-report <file> --host-context <file> --host-label <label> [--force]]
                   Spec 027. Sums the measured duration_ms per scope and gate from two sources: live
                   (<repo>/.a1/phases/*/gate-log.jsonl) and store (pattern/a1-learnings/_runs/<project>.jsonl,
                   written by run record). A record without duration_ms is counted in no_duration, never as 0.
