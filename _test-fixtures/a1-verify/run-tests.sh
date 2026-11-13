@@ -770,5 +770,7 @@ mkdir -p "$WORK/d4vault"
 OUT="$(cd "$P" && A1_VAULT_ROOT="$WORK/d4vault" A1_VAULT_WRITER_HOST=h A1_HOST_ID=h node -e 'const r=require(process.argv[1]); const v=r.runVerify({project:process.argv[2], noCache:true}); process.stdout.write(JSON.stringify(v))' "$REPO_ROOT/_shared/lib/verify-run.cjs" "$P" 2>"$WORK/err")"; RC=$?
 check "D4 A1_VAULT_ROOT / A1_VAULT_WRITER_HOST / A1_HOST_ID are set in the owner env but unset in the suite: pass" 0 'j.verdict' "pass"
 
+. "$(dirname "${BASH_SOURCE[0]}")/cases-durations.sh"
+
 echo "a1-verify: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

@@ -258,7 +258,9 @@ function runCommand(cmd, cwd, tmp, label) {
   const reportFile = path.join(tmp, `report-${label}`);
   const stdoutFile = path.join(tmp, `stdout-${label}`);
   const argv = rep.injectFlags(cmd.kind, cmd.argv, reportFile, cmd.viaScript);
+  const t0 = process.hrtime.bigint();
   const r = spawnGroup(argv, cwd, stdoutFile, cmd.timeoutMs);
+  const durationMs = Math.round(Number(process.hrtime.bigint() - t0) / 1e6);
   // FR-041: a command that cannot start (unknown runner) is an error of the tool, never a verdict.
   if (r.spawnError === true) throw new VerifyError('spawn_failed', `cannot start ${JSON.stringify(cmd.argv.join(' ').slice(0, 200))} (unknown runner or not executable) in ${path.basename(cwd)}`);
   const counts = rep.parseReport(cmd.kind, readCapped(reportFile, false), cmd.kind === 'node-test' ? readCapped(stdoutFile, true) : null, cwd);
@@ -267,6 +269,7 @@ function runCommand(cmd, cwd, tmp, label) {
     spawn_error: r.spawnError === true,
     passed: counts ? counts.passed : null, failed: counts ? counts.failed : null, skipped: counts ? counts.skipped : null,
     failed_ids: counts ? counts.failedIds : [],
+    duration_ms: durationMs,
   };
 }
 
@@ -333,7 +336,8 @@ function runBaseSide(project, plan, baseSha, hash, touches, tmp, noCache) {
   if (!cached && !noCache) vb.writeCache(project, baseSha, hash, results);
   const ids = new Map(plan.commands.map((c) => [c.id, results[c.id].raw.absent ? new Set() : vb.idSet(finishCommand(results[c.id].raw, touches))]));
   const skipped = new Map(plan.commands.map((c) => [c.id, typeof results[c.id].raw.skipped === 'number' ? results[c.id].raw.skipped : null])); // absent-on-base: no count, not compared
-  return { ids, skipped, cache: noCache ? 'off' : (cached ? 'hit' : 'miss') };
+  const durations = new Map(plan.commands.map((c) => [c.id, cached || results[c.id].raw.absent || typeof results[c.id].raw.duration_ms !== 'number' ? null : results[c.id].raw.duration_ms]));
+  return { ids, skipped, durations, cache: noCache ? 'off' : (cached ? 'hit' : 'miss') };
 }
 
 /** Head side: cached or fresh first runs, retry once on failure, settle against base and flaky_base. ctx.cwd: where the commands run (a HEAD snapshot with --base). */
@@ -344,13 +348,16 @@ function runHeadSide(project, plan, head, hash, ctx) {
   let ranLive = false;
   const settled = plan.commands.map((c, i) => {
     const entry = cached ? cached[c.id] : null;
-    const raw = entry ? entry.raw : (ranLive = true, runCommand(c, ctx.cwd, ctx.tmp, `h${i}`));
-    results[c.id] = { raw, retry: entry && entry.retry ? entry.retry : null };
+    const raw = entry ? { ...entry.raw, duration_ms: null } : (ranLive = true, runCommand(c, ctx.cwd, ctx.tmp, `h${i}`)); // FR-002: a cache hit has no duration (null, never 0)
+    results[c.id] = { raw, retry: entry && entry.retry ? { ...entry.retry, duration_ms: null } : null };
     const retry = () => {
       if (!results[c.id].retry) { ranLive = true; results[c.id] = { raw, retry: runCommand(c, ctx.cwd, ctx.tmp, `r${i}`) }; }
       return finishCommand(results[c.id].retry, ctx.touches);
     };
-    return vb.settle(finishCommand(raw, ctx.touches), retry, ctx.baseIds ? (ctx.baseIds.get(c.id) || new Set()) : null, plan.flakyBase);
+    const done = vb.settle(finishCommand(raw, ctx.touches), retry, ctx.baseIds ? (ctx.baseIds.get(c.id) || new Set()) : null, plan.flakyBase);
+    const retryRaw = results[c.id].retry;
+    // D3: duration_ms is the first run, retry_duration_ms the retry (never overwrites the first).
+    return { ...done, duration_ms: typeof raw.duration_ms === 'number' ? raw.duration_ms : null, retry_duration_ms: retryRaw && typeof retryRaw.duration_ms === 'number' ? retryRaw.duration_ms : null };
   });
   const stillClean = clean && vb.dirtyPaths(statusPaths(project)).length === 0;
   if (stillClean && ranLive) vb.writeCache(project, head, hash, results);
@@ -470,6 +477,8 @@ const pairs = (commands, key) => commands.flatMap((c) => c[key].map((id) => ({ c
  * @returns {object} the verify_run record; throws VerifyError (exit 2)
  */
 function runVerify(opts) {
+  const tTotal = process.hrtime.bigint();
+  const msSince = (t) => Math.round(Number(process.hrtime.bigint() - t) / 1e6);
   const project = fs.realpathSync(opts.project);
   const head = headSha(project);
   if (opts.base !== undefined && head === null) throw new VerifyError('base_unresolved', '--base needs a git repository with a commit');
@@ -491,11 +500,16 @@ function runVerify(opts) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'a1-verify-'));
   const release = vb.cleanupOnExit(tmp);
   try {
+    const tBase = process.hrtime.bigint();
     const base = sel.compareBase ? runBaseSide(project, timed, baseSha, baseHash, touches, tmp, opts.noCache === true) : null;
     const runHead = (cwd) => runHeadSide(project, headTimed, head, hash, { tmp, touches, baseIds: base ? base.ids : null, cwd, noCache: opts.noCache === true });
+    const baseMs = base ? msSince(tBase) : null;
+    const tHead = process.hrtime.bigint();
     // --base: HEAD runs from a git-archive snapshot like the base side, so git-ignored local files cannot change the verdict.
     const side = opts.base !== undefined ? vb.withSnapshot(project, head, runHead, 'head') : runHead(project);
-    const settled = base ? vb.applySkipIncrease(side.settled, base.skipped, skipIncreaseDispositions(project)) : side.settled;
+    const headMs = msSince(tHead);
+    const skipped = base ? vb.applySkipIncrease(side.settled, base.skipped, skipIncreaseDispositions(project)) : side.settled;
+    const settled = skipped.map((c) => ({ ...c, base_duration_ms: base ? base.durations.get(c.id) ?? null : null }));
     const configChanged = configChangeRecord(project, sel.change, head);
     const removed = suiteRemovedRecord(project, headSet.removed, head);
     const extra = [...(configChanged && !configChanged.dispositioned ? ['verify_config_changed'] : []), ...(removed && !removed.dispositioned ? ['suite_removed'] : [])];
@@ -503,6 +517,7 @@ function runVerify(opts) {
       ...withReasons(overall(settled, plan.noTestsReason), extra), source: plan.source, head_sha: head, base_sha: baseSha,
       touches_source: touches, changed_files: changed.length, flaky: pairs(side.settled, 'flaky_ids'), pre_existing_red: pairs(side.settled, 'pre_existing_red_ids'),
       cache: { head: side.cache, base: base ? base.cache : 'none' }, ...(configChanged ? { config_changed: configChanged } : {}), ...(removed ? { suite_removed: removed } : {}), commands: settled,
+      duration_ms: { head: headMs, base: baseMs, total: msSince(tTotal) },
     };
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
