@@ -8,7 +8,7 @@
 #   mainCheckoutDir() returns the worktree itself      : RR9 red
 #   no lock around read+write (lockRuns removed)       : RR12 red (lost lines)
 #   runs-file cap / unsafe name throw exit 2           : RR13a, RR14 red
-#   gate log lstat/isFile/size check removed           : RR13b, RR15 red (FIFO hangs, caught by timeout 20)
+#   gate log lstat/isFile/size check removed           : RR13b, RR15 red (FIFO hangs, caught by the 20 s spawnSync timeout, exit 124)
 #   why counts in a plain {}                           : RR16 red
 
 RR_GL="$SHARED/lib/gate-log.cjs"
@@ -190,7 +190,7 @@ assert_eq "RR14b no _runs directory created" "$([[ -e "$RR14V/pattern/a1-learnin
 # RR15 — a FIFO as gate log does not hang run record
 rr_repo RR15P rr15; rr_store RR15V rr15v
 mkdir -p "$RR15P/.a1/phases/pr-2"; mkfifo "$RR15P/.a1/phases/pr-2/gate-log.jsonl"
-OUT="$(cd "$RR_CWD" && A1_VAULT_ROOT="$RR15V" timeout 20 node "$TOOLS" run record --repo "$RR15P" --scope pr-2 --pr 2 2>&1)"; RC=$?
+OUT="$(cd "$RR_CWD" && A1_VAULT_ROOT="$RR15V" node -e 'const r=require("child_process").spawnSync(process.execPath,process.argv.slice(1),{timeout:20000,encoding:"utf8"});process.stdout.write(String(r.stdout)+String(r.stderr));process.exit(r.error?124:r.status)' "$TOOLS" run record --repo "$RR15P" --scope pr-2 --pr 2 2>&1)"; RC=$?
 assert_rc "RR15 FIFO gate log: exit 1 (124 = hung)" 1 "$RC" "$OUT"; assert_has "RR15 reason" "$OUT" "gate_log_untrusted"
 
 # RR16 — the why-code "constructor" is a plain key, not a prototype member
