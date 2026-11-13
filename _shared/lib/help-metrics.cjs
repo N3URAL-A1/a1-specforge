@@ -21,6 +21,17 @@ const METRICS_HELP = `  a1-tools fix validate-postmortem <file> [<file>...]
                   and of each fixed fix report. Prints one row per run, the total, coverage r/t (p%) and
                   the unreported runs. Without --project: every project in the vault.
                   --last N keeps the newest N phases AND the newest N fixes (up to 2N runs), by date.
-                  Exit 0 / 1 usage error / 2 vault absent or I/O error.`;
+                  Exit 0 / 1 usage error / 2 vault absent or I/O error.
+  a1-tools metrics phase-time [--repo <path>] [--scope <scope>] [--last <N>] [--json] [--include-unscoped] [--baseline --verify-report <file> --merge-report <file> --host-context <file> --host-label <label> [--force]]
+                  Spec 027. Sums the measured duration_ms per scope and gate from two sources: live
+                  (<repo>/.a1/phases/*/gate-log.jsonl) and store (pattern/a1-learnings/_runs/<project>.jsonl,
+                  written by run record). A record without duration_ms is counted in no_duration, never as 0.
+                  A scope that the store holds is shown from live with also_in_store and left out of the totals.
+                  Prints the pr-merge-check ci_evidence_why counts (unknown = record without the field).
+                  --baseline writes <repo>/.a1/phases/027-lean-pipeline/BASELINE.json from two existing verify run
+                  reports (head-only, and with --base), a host-context JSON file and a host label. The file
+                  host-context holds exactly {verify_head_only, merge_check_long_path}, each {load5_start,
+                  load5_end, cpus, host_busy, checks}. A second write needs --force. No run is started.
+                  Exit 0 / 1 usage error or refused baseline input / 2 unreadable repo or refused write path.`;
 
 module.exports = { METRICS_HELP };

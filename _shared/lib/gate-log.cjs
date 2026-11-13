@@ -6,7 +6,7 @@
 //
 // One JSON line per invocation of a subcommand named in a registry `invoke`
 // cell, appended to <repo>/.a1/phases/<scope>/gate-log.jsonl:
-//   {ts, gate, verdict, exit, head_sha, scope, prev}
+//   {ts, gate, verdict, exit, head_sha, scope, started_at, duration_ms, [input_hash, reused, ci_evidence_why], prev}
 // `prev` is the sha256 (hex) of the previous line's bytes WITHOUT its newline
 // (first line: 64 zeros). Appends run under an exclusive lock with ONE
 // O_APPEND write per record. The lock is a directory made with mkdir (atomic,
@@ -42,6 +42,56 @@ const SCOPE_RE = /^[A-Za-z0-9_][A-Za-z0-9._-]{0,99}$/;
 const HEX64_RE = /^[0-9a-f]{64}$/;
 const VERDICTS = Object.freeze(['pass', 'fail', 'error']);
 const GIT_TIMEOUT_MS = 10000;
+const WHY_RE = /^[a-z][a-z0-9_]{0,63}$/;
+// Spec 027 D1: the only extras a running gate may hand to the hook.
+const EXTRA_RULES = Object.freeze({
+  input_hash: (v) => typeof v === 'string' && HEX64_RE.test(v),
+  reused: (v) => typeof v === 'boolean',
+  ci_evidence_why: (v) => typeof v === 'string' && WHY_RE.test(v),
+});
+const CORE_KEYS = Object.freeze(['ts', 'gate', 'verdict', 'exit', 'head_sha', 'scope', 'prev', 'started_at', 'duration_ms']);
+const KEY_NOTE_MAX = 40;
+
+// Request-scoped enough for a CLI process: set only after the hook installed, taken and reset in the exit handler.
+let hookInstalled = false;
+let pendingExtra = null;
+
+/**
+ * @param {*} fields
+ * @returns {{accepted: Object, rejected: {key: string, reason: string}[]}}
+ */
+function sanitizeExtra(fields) {
+  if (fields === null || typeof fields !== 'object' || Array.isArray(fields)) {
+    return { accepted: Object.freeze({}), rejected: [{ key: '(value)', reason: 'not_an_object' }] };
+  }
+  const rejected = [];
+  const ok = {};
+  for (const key of Object.keys(fields)) {
+    if (CORE_KEYS.includes(key)) rejected.push({ key, reason: 'core_field' });
+    else if (!Object.prototype.hasOwnProperty.call(EXTRA_RULES, key)) rejected.push({ key, reason: 'unknown_key' });
+    else if (!EXTRA_RULES[key](fields[key])) rejected.push({ key, reason: 'bad_value' });
+    else ok[key] = fields[key];
+  }
+  const accepted = {};
+  for (const key of Object.keys(EXTRA_RULES)) if (key in ok) accepted[key] = ok[key];
+  return { accepted: Object.freeze(accepted), rejected };
+}
+
+/**
+ * Hands allowlisted extra fields to the hook record of this process (D1). A no-op when the hook did not install.
+ * @param {Object} fields
+ * @returns {{active: boolean, accepted: string[], rejected: {key: string, reason: string}[]}}
+ */
+function setRecordExtra(fields) {
+  const { accepted, rejected } = sanitizeExtra(fields);
+  for (const r of rejected) {
+    const k = String(r.key).replace(/[^A-Za-z0-9_.-]/g, '').slice(0, KEY_NOTE_MAX);
+    process.stderr.write(`gate-log: setRecordExtra ignored ${k} (${r.reason})\n`);
+  }
+  if (!hookInstalled) return { active: false, accepted: [], rejected };
+  pendingExtra = Object.freeze({ ...(pendingExtra || {}), ...accepted });
+  return { active: true, accepted: Object.keys(accepted), rejected };
+}
 
 function inputError(msg) {
   const err = new Error(msg);
@@ -208,8 +258,11 @@ function appendGateLine(rec) {
       exit: rec.exitCode,
       head_sha: rec.headSha || 'none',
       scope,
-      prev: prevLine === null ? ZERO_HASH : sha256(prevLine),
     };
+    if (typeof rec.startedAt === 'string' && rec.startedAt.endsWith('Z') && !Number.isNaN(Date.parse(rec.startedAt))) record.started_at = rec.startedAt;
+    if (Number.isInteger(rec.durationMs) && rec.durationMs >= 0) record.duration_ms = rec.durationMs;
+    Object.assign(record, sanitizeExtra(rec.extra || {}).accepted);
+    record.prev = prevLine === null ? ZERO_HASH : sha256(prevLine);
     const line = JSON.stringify(record);
     const lead = existing === '' || existing.endsWith('\n') ? '' : '\n';
     const fd = fs.openSync(file, fs.constants.O_WRONLY | fs.constants.O_APPEND | fs.constants.O_CREAT | (fs.constants.O_NOFOLLOW || 0), 0o644);
@@ -229,6 +282,11 @@ function shapeProblem(rec) {
   if (typeof rec.head_sha !== 'string' || rec.head_sha === '') return 'head_sha is missing';
   if (typeof rec.scope !== 'string' || rec.scope === '') return 'scope is missing';
   if (typeof rec.prev !== 'string' || !HEX64_RE.test(rec.prev)) return 'prev is not a sha256';
+  if ('started_at' in rec && (typeof rec.started_at !== 'string' || Number.isNaN(Date.parse(rec.started_at)))) return 'started_at is not a UTC timestamp';
+  if ('duration_ms' in rec && !(Number.isInteger(rec.duration_ms) && rec.duration_ms >= 0)) return 'duration_ms is not a non-negative integer';
+  if ('input_hash' in rec && !EXTRA_RULES.input_hash(rec.input_hash)) return 'input_hash is not a sha256';
+  if ('reused' in rec && !EXTRA_RULES.reused(rec.reused)) return 'reused is not a boolean';
+  if ('ci_evidence_why' in rec && !EXTRA_RULES.ci_evidence_why(rec.ci_evidence_why)) return 'ci_evidence_why is malformed';
   return null;
 }
 
@@ -314,7 +372,7 @@ function projectDirOf(argv) {
   return process.cwd();
 }
 
-function recordRun(gateId, scope, exitCode, dir) {
+function recordRun(gateId, scope, exitCode, dir, timing) {
   const ctx = gitContext(dir || process.cwd());
   if (!ctx) {
     process.stderr.write(`gate-log: not inside a git work tree, ${gateId} (exit ${exitCode}) was not logged\n`);
@@ -327,6 +385,9 @@ function recordRun(gateId, scope, exitCode, dir) {
     root: ctx.root, commonDir: ctx.commonDir, scope, gateId, exitCode,
     verdict: verdictForExit(exitCode),
     headSha: git(['rev-parse', 'HEAD'], ctx.root) || 'none',
+    startedAt: timing && timing.startedAt,
+    durationMs: timing && timing.durationMs,
+    extra: timing && timing.extra,
   });
 }
 
@@ -357,8 +418,14 @@ function installGateLog(argv, registryText) {
   if (require('./intent-child.cjs').inChildMode()) return stripped.argv;
   const scope = stripped.scope || UNSCOPED;
   const dir = projectDirOf(stripped.argv);
+  const startedAt = new Date().toISOString();
+  const t0 = process.hrtime.bigint();
+  hookInstalled = true;
   process.on('exit', (code) => {
-    try { recordRun(gateId, scope, code, dir); } catch (e) {
+    const durationMs = Number((process.hrtime.bigint() - t0) / 1000000n);
+    const extra = pendingExtra;
+    pendingExtra = null;
+    try { recordRun(gateId, scope, code, dir, { startedAt, durationMs, extra }); } catch (e) {
       process.stderr.write(`gate-log: could not append the line for ${gateId}: ${e.message}\n`);
     }
   });
@@ -368,5 +435,6 @@ function installGateLog(argv, registryText) {
 module.exports = {
   ZERO_HASH, UNSCOPED, EXCLUDE_PATTERN, SCOPE_RE,
   validateScope, verdictForExit, appendGateLine, verifyChain, matchInvoke, stripPhase,
-  installGateLog, gitContext, ensureExcluded, projectDirOf, stealStaleLock, assertContained,
+  installGateLog, setRecordExtra, gitContext, ensureExcluded, projectDirOf, stealStaleLock, assertContained,
+  acquireLock, releaseLock,
 };

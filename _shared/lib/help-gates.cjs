@@ -13,6 +13,11 @@ const GATES_HELP = `  a1-tools gates lint [--root <path>] [--registry <path>] [-
                   Findings: no_invoke_column, malformed_row, invoke_invalid,
                   blocking_unwired, prompt_names_command, duplicate_subcommand,
                   unknown_skill, unwired, exemption_expired.
+                  Spec 027 FR-034: also checks _shared/quality-invariants.json
+                  (keep-list gates + CI steps), resolved from the root, never the
+                  install dir. Findings: invariant_file_missing, _file_invalid,
+                  _missing, _class_changed, _unwired_until, _unwired,
+                  _owner_lost, _ci_step_missing.
                   Exit: 0 all wired / 1 at least one finding / 2 usage, unknown
                   flag, hostile value, unreadable root or registry.
                   --registry and --today are test escape hatches (a fixture

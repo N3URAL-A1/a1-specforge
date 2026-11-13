@@ -275,7 +275,8 @@ SHAPE="$(node -e '
   const fs=require("fs"); const t=fs.readFileSync(process.argv[1],"utf8"); const lines=t.split("\n").filter(Boolean);
   const r=JSON.parse(lines[0]);
   process.stdout.write([lines.length, Object.keys(r).join(","), r.gate, r.verdict, r.exit, r.head_sha===process.argv[2], r.scope, r.prev==="0".repeat(64), !Number.isNaN(Date.parse(r.ts))&&r.ts.endsWith("Z")].join("|"));' "$GL" "$HEAD_SHA" 2>&1)"
-[[ $RC -eq 0 && "$SHAPE" == "1|ts,gate,verdict,exit,head_sha,scope,prev|gate-0.7-realpath|pass|0|true|w1|true|true" ]] \
+# spec 027 FR-001: started_at, duration_ms added to the record
+[[ $RC -eq 0 && "$SHAPE" == "1|ts,gate,verdict,exit,head_sha,scope,started_at,duration_ms,prev|gate-0.7-realpath|pass|0|true|w1|true|true" ]] \
   && ok "F1 one line with ts, gate id, verdict, exit, head sha, scope, 64-zero prev" || bad "F1 (rc=$RC shape=$SHAPE err=$(cat "$WORK/err"))"
 
 # F2 never committed: clean porcelain, exclude entry present exactly once even after a second call

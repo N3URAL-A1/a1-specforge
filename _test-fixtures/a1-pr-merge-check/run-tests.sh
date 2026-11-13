@@ -657,5 +657,21 @@ expect "CE41 decide: counting reporter in the plan -> counting_reporter, gh neve
 expect "CE42 R-4 pathsChanged is literal: a glob and pathspec magic do not match the changed guard.txt, the exact name does" "false|false|true" "$(node -e 'const CE=require(process.argv[1]+"/_shared/lib/pr-ci-evidence.cjs");const b=require("child_process").execFileSync("git",["-C",process.argv[2],"rev-parse","main"],{encoding:"utf8"}).trim();console.log([["gua*.txt"],[":(top)guard.txt"],["guard.txt"]].map(p=>CE.pathsChanged(process.argv[2],b,p)).join("|"))' "$LIBROOT" "$P")"
 expect "CE40 parseCiEvidence: workflow is required" "bad_config" "$(node -e 'const CE=require(process.argv[1]+"/_shared/lib/pr-ci-evidence.cjs");try{CE.parseCiEvidence({ci_evidence:{checks:["a"]}})}catch(e){console.log(e.reason||e.code)}' "$LIBROOT")"
 
+# ---------- CEW: ci_evidence_why in the gate-log record (spec 027 FR-004, Task 3.1) ----------
+# RED-proof: remove the setRecordExtra line in cmdPrMergeCheck -> CEW1 and CEW2 red.
+cew_last() { tail -n 1 "$P/.a1/phases/fx-w10/gate-log.jsonl" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const r=JSON.parse(s);console.log(eval(process.argv[1]))})' "$1"; }
+new_pr cew1 0 0; mc --no-ci-evidence
+CEW1_STDOUT="$(js 'j.ci_evidence.why')"
+expect "CEW1 --no-ci-evidence: record ci_evidence_why equals the report why (disabled_by_flag)" "disabled_by_flag|disabled_by_flag" "$(cew_last 'r.ci_evidence_why')|$CEW1_STDOUT"
+CEW1_DUR="$(cew_last 'Number.isInteger(r.duration_ms)&&r.duration_ms>=0')"
+mc
+CEW2_WHY="$(js 'j.ci_evidence.why')"
+expect "CEW2 default run: record ci_evidence_why equals the report why" "$CEW2_WHY" "$(cew_last 'r.ci_evidence_why')"
+CEW2_DUR="$(cew_last 'Number.isInteger(r.duration_ms)&&r.duration_ms>=0')"
+mc --slug 'BAD SLUG'
+expect "CEW3 usage error: exit 2, verdict error, no ci_evidence_why key" "2|error|false" "$RC|$(cew_last 'r.verdict')|$(cew_last '"ci_evidence_why" in r')"
+CEW3_DUR="$(cew_last 'Number.isInteger(r.duration_ms)&&r.duration_ms>=0')"
+expect "CEW4 every record of CEW1-3 has an integer duration_ms" "true|true|true" "$CEW1_DUR|$CEW2_DUR|$CEW3_DUR"
+
 echo "a1-pr-merge-check: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

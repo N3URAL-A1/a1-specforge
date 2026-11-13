@@ -11,16 +11,17 @@ const { usage } = require('./help.cjs');
 const SUBCOMMANDS = Object.freeze({
   escaped: ['metrics-escaped.cjs', 'cmdMetricsEscaped'],
   cost: ['metrics-cost.cjs', 'cmdMetricsCost'],
+  'phase-time': ['metrics-phase-time.cjs', 'cmdMetricsPhaseTime'],
 });
 
 /**
- * @param {string|undefined} sub - 'escaped' | 'cost'
+ * @param {string|undefined} sub - 'escaped' | 'cost' | 'phase-time'
  * @param {string[]} args
  */
 function cmdMetrics(sub, args) {
-  if (!sub) usage('metrics requires a subcommand: metrics escaped | metrics cost');
+  if (!sub) usage('metrics requires a subcommand: metrics escaped | metrics cost | metrics phase-time');
   const entry = Object.prototype.hasOwnProperty.call(SUBCOMMANDS, sub) ? SUBCOMMANDS[sub] : null;
-  if (!entry) usage(`unknown metrics subcommand: ${sub} (expected: metrics escaped, metrics cost)`);
+  if (!entry) usage(`unknown metrics subcommand: ${sub} (expected: metrics escaped, metrics cost, metrics phase-time)`);
   require(path.join(__dirname, entry[0]))[entry[1]](args);
 }
 

@@ -14,6 +14,7 @@ const path = require('path');
 const { parseFlags, repoRoot } = require('./io.cjs');
 const { emitExit } = require('./emit-exit.cjs');
 const { lintGates } = require('./gates-lint.cjs');
+const { checkInvariants } = require('./quality-invariants.cjs');
 const { verifyChain } = require('./gate-log.cjs');
 const { readGateLog, firedYaml } = require('./retro-gatelog.cjs');
 
@@ -69,7 +70,7 @@ function resolveInputs(flags) {
 }
 
 function formatFinding(f) {
-  const where = [f.skill ? `skill ${f.skill}` : '', f.searched ? `searched ${f.searched.join(', ')}` : ''].filter(Boolean).join('; ');
+  const where = [f.step && !f.gate ? `step ${f.step}` : '', f.skill ? `skill ${f.skill}` : '', f.searched ? `searched ${f.searched.join(', ')}` : ''].filter(Boolean).join('; ');
   return `finding: ${f.gate || '-'} — ${f.rule}: ${f.reason}${where ? ` (${where})` : ''}`;
 }
 
@@ -112,13 +113,16 @@ function cmdGatesLint(argv) {
     skillsRoot: path.join(inputs.root, 'skills'),
     today: inputs.today,
   });
+  const inv = checkInvariants({ root: inputs.root, defaultRoot: flags.root === undefined, registryText: inputs.registryText, lintReport: report });
+  const findings = report.findings.concat(inv.findings);
   const out = {
     root: inputs.root, registry: inputs.registry, today: inputs.today,
-    rows: report.rows, wired: report.wired, exemptions: report.exemptions, findings: report.findings,
+    rows: report.rows, wired: report.wired, exemptions: report.exemptions, findings,
+    invariants: { status: inv.status, file: inv.file, ids: inv.ids, ci_steps: inv.ci_steps },
   };
   const err = report.exemptions.map((e) => `exemption: ${e.gate} until ${e.until} — ${e.reason}\n`).join('')
-    + report.findings.map((f) => `${formatFinding(f)}\n`).join('');
-  return emitExit(report.findings.length > 0 ? 1 : 0, `${JSON.stringify(out)}\n`, err);
+    + findings.map((f) => `${formatFinding(f)}\n`).join('');
+  return emitExit(findings.length > 0 ? 1 : 0, `${JSON.stringify(out)}\n`, err);
 }
 
 /** @param {string} sub @param {string[]} rest */

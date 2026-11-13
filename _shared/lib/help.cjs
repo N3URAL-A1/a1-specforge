@@ -16,6 +16,7 @@ const { DISPOSITION_HELP } = require('./help-disposition.cjs');
 const { FIX_SWEEP_HELP } = require('./help-fix-sweep.cjs');
 const { MERGE_CHECK_HELP } = require('./help-merge-check.cjs');
 const { METRICS_HELP } = require('./help-metrics.cjs');
+const { RUN_HELP } = require('./help-run.cjs');
 const { PROBE_HELP } = require('./help-probe.cjs');
 const { DASHBOARD_HELP } = require('./help-dashboard.cjs');
 const { PROFILE_HELP } = require('./help-profile.cjs');
@@ -640,6 +641,7 @@ ${FIX_SWEEP_HELP}
 ${MERGE_CHECK_HELP}
 
 ${METRICS_HELP}
+${RUN_HELP}
 
 ${PROBE_HELP}
 

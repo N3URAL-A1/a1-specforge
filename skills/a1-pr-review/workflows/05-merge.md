@@ -98,10 +98,27 @@ with `_shared/push-cadence.md` P3 (never a bare `git pull`) and advance the regi
 1. Retros, each with `retro validate --gate-log`, from inside the worktree: the retro of this skill (one retro, written
    now, after the merge, see `04-submit.md` Retro) and the caller's retro (a1-new-feature `workflows/06-verify.md` Step 6, written now;
    a1-fix: already written in `workflows/04-verify.md` Step 2b before the handoff, only check that its entry is present, do not append it again).
-2. `a1-worktree` exit `discard`, then origin cleanup (03-exit Step 4.5 deletes the remote branch). Both need no
+2. Run record (the worktree exit deletes the gate logs):
+
+Persist the run record (spec 027 FR-035). `run record` keeps scope, head sha, last verdict, `caught` and summed durations per gate in the learning store, once per scope and PR. Exit 1 (no learning store, no or untrusted gate log) does not stop the close-out: report it. Exit 2 is STOP before the worktree exit. Set `PHASE` to the phase name the caller handed over (a1-new-feature spec id, a1-execute phase); when a1-pr-review runs on its own, set it to `none`. The block skips the second call for an empty value, `none` or an unreplaced placeholder.
+
+```bash
+node <repo>/_shared/a1-tools.cjs run record --repo "<worktree_path>" --scope pr-<n> --pr <n>; RC=$?
+if [ "$RC" -eq 2 ]; then echo "STOP: run record pr-<n> exit=2, worktree stays"; exit 2; fi
+if [ "$RC" -ne 0 ]; then echo "WARN: run record pr-<n> exit=$RC, durations not persisted"; fi
+PHASE='<phase_name>'
+case "$PHASE" in
+  ""|none|"<"*) echo "SKIP: run record, no caller phase handed over" ;;
+  *) node <repo>/_shared/a1-tools.cjs run record --repo "<worktree_path>" --scope "$PHASE" --pr <n>; RC=$?
+     if [ "$RC" -eq 2 ]; then echo "STOP: run record $PHASE exit=2, worktree stays"; exit 2; fi
+     if [ "$RC" -ne 0 ]; then echo "WARN: run record $PHASE exit=$RC, durations not persisted"; fi ;;
+esac
+```
+
+3. `a1-worktree` exit `discard`, then origin cleanup (03-exit Step 4.5 deletes the remote branch). Both need no
    confirmation when the PR is merged and a plain `discard` (no `--force-discard`) passes: the CLI verifies the
    branch content is on `origin/<base>` and the tree is clean (03-exit Step 4). If it refuses, confirm.
-3. The caller's remaining lifecycle stages (a1-new-feature `workflows/06-verify.md` §5 steps 3-5).
+4. The caller's remaining lifecycle stages (a1-new-feature `workflows/06-verify.md` §5 steps 3-5).
 
 The merge ends the PR, not the feature. Report what was merged and which findings there were.
 Production deploys and migrations on a production database still need the user's word.
