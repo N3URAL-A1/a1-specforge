@@ -339,7 +339,7 @@ else fail_case "stale squash merge command with --delete-branch in: $stale"; fi
 
 # ---------- spec 027 FR-035: run record guard (RR-guard) ----------
 RRB="$(bj 'b.find(x=>/run record/.test(x))')"
-RRT="$(mktemp -d)"; mkdir -p "$RRT/repo/_shared" "$RRT/wt"
+mk_workdir RRT rr-guard; mkdir -p "$RRT/repo/_shared" "$RRT/wt"
 cat > "$RRT/repo/_shared/a1-tools.cjs" <<'STUB'
 require("fs").appendFileSync(process.env.RR_LOG, process.argv.slice(2).join(" ") + "\n");
 STUB
@@ -351,7 +351,6 @@ rc="$(rr_run "")"
 if [ "$rc" = "0" ] && grep -q 'SKIP: run record' "$RRT/out" && [ "$(wc -l < "$RRT/log")" = "1" ] && grep -q -- '--scope pr-7' "$RRT/log"; then pass_case "RR-guard: unreplaced <phase_name> skips the second call (stub ran once, --scope pr-7)"; else fail_case "RR-guard: placeholder case rc=$rc log=$(cat "$RRT/log")"; fi
 rc="$(rr_run fx-phase)"
 if [ "$rc" = "0" ] && [ "$(wc -l < "$RRT/log")" = "2" ] && sed -n 2p "$RRT/log" | grep -q -- '--scope fx-phase'; then pass_case "RR-guard: a real phase name runs the second call with --scope fx-phase"; else fail_case "RR-guard: phase case rc=$rc log=$(cat "$RRT/log")"; fi
-rm -rf "$RRT"
 
 echo ""
 echo "a1-pr-review: $pass passed, $fail failed"
