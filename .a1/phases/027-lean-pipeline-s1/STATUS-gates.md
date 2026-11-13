@@ -15,3 +15,24 @@ Task 4.1 lists no RED-proof mutations; the discrimination is in-suite: W14b (cal
 
 ### Deviations
 - [Rule 2] README.md fixture-runner count 60 -> 61 (a1-gates-lint N1 went red because the new runner makes 61); one-number fix.
+
+## Wave 6 — Quality-invariant lint
+Completed: 2026-11-13
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| 6.1 quality-invariants.json, invariant_* rules, FR-034 fixture | DONE | 2959388 | |
+
+RED-proof 6.1 JSON/test.yml resolved from __dirname instead of root -> W14l-a, W14l-b, W14k, W14k2, W14m red (rc=1)
+RED-proof 6.1 invariant_unwired check removed -> W14h (6 deterministic ids) red (rc=1)
+RED-proof 6.1 job-scope check removed -> W14k2 red (rc=1)
+RED-proof 6.1 step name compared via unescaped new RegExp(name) -> W14f, W14n, W14k3 (and W14a) red (rc=1)
+
+### Done-when evidence
+- run-wave14.sh: 42 passed, 0 failed (12 W14g + 12 W14h per-id asserts = 24). run-tests.sh and run-wave13.sh exit 0 unchanged.
+- gates lint exit 0 on the real tree (invariants checked, 12 ids, 2 ci steps); workflow lint exit 0; --check-groups ok (62 suites).
+- Full run-suites: only a1-intent red (known env-red). Line counts: quality-invariants.cjs 138, gates-cli.cjs 135, a1-tools.cjs 778.
+- suite-groups.json: run-wave14.sh timing 1 -> 4 s (measured 3.4 s).
+
+### Deviations
+- None.
