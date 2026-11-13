@@ -436,4 +436,5 @@ module.exports = {
   ZERO_HASH, UNSCOPED, EXCLUDE_PATTERN, SCOPE_RE,
   validateScope, verdictForExit, appendGateLine, verifyChain, matchInvoke, stripPhase,
   installGateLog, setRecordExtra, gitContext, ensureExcluded, projectDirOf, stealStaleLock, assertContained,
+  acquireLock, releaseLock,
 };

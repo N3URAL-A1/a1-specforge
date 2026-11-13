@@ -4,8 +4,9 @@
 // run record (spec 027-lean-pipeline, FR-035, D5, D10). Keeps the gate-log result and the
 // measured durations of one scope in the learning store, so they outlive the worktree.
 //   <store>/_runs/<project>.jsonl   one JSON line per (scope, pr); owner: this module
-// Exit: 0 recorded or already recorded / 1 precondition not met (nothing changes) / 2 usage,
-// hostile value, I/O error or refused write path.
+// Exit: 0 recorded or already recorded / 1 precondition not met, nothing changes (no store, no or untrusted
+// gate log, runs file over 20 MB, unusable project file name) / 2 usage, hostile value, I/O error or refused
+// write path. The read-check-write of the runs file runs under a mkdir lock (the gate-log lock).
 // ---------------------------------------------------------------------------
 
 const fs = require('fs');
@@ -13,13 +14,14 @@ const path = require('path');
 const { parseFlags } = require('./io.cjs');
 const { peekVaultRoot } = require('./io-roots.cjs');
 const { assertAncestorInside, writeTextAtomic } = require('./fs-safe.cjs');
-const { validateScope, assertContained } = require('./gate-log.cjs');
+const { validateScope, assertContained, acquireLock, releaseLock } = require('./gate-log.cjs');
 const { readGateLog, gatesFired } = require('./retro-gatelog.cjs');
 const { repoProjectSlug } = require('./project-slug.cjs');
 const { emitExit } = require('./emit-exit.cjs');
 
 const MAX_REPO_CHARS = 4096;
 const MAX_RUNS_FILE_BYTES = 20 * 1024 * 1024;
+const MAX_GATE_LOG_BYTES = 20 * 1024 * 1024;
 const PR_RE = /^[1-9][0-9]{0,6}$/;
 const FILE_SLUG_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,100}$/;
 const MERGE_CHECK = 'pr-merge-check';
@@ -57,21 +59,26 @@ function storeDir() {
   return dir;
 }
 
-/** @returns {{file: string, existing: string}} the runs file, refused when a link or too big @throws RunError exit 2 */
-function runsFile(store, project) {
-  const runsDir = path.join(store, '_runs');
-  const file = path.join(runsDir, `${project}.jsonl`);
+/**
+ * @param {boolean} read - also read the current content (done again under the lock)
+ * @returns {{dir: string, file: string, existing: string}} the runs file, refused when a link
+ * @throws RunError exit 2 for a link or a non-regular file, exit 1 when the file is over 20 MB
+ */
+function runsFile(store, project, read) {
+  const dir = path.join(store, '_runs');
+  const file = path.join(dir, `${project}.jsonl`);
   try {
-    assertAncestorInside(runsDir, fs.realpathSync(store));
+    assertAncestorInside(dir, fs.realpathSync(store));
     let st = null;
-    try { st = fs.lstatSync(runsDir); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+    try { st = fs.lstatSync(dir); } catch (e) { if (e.code !== 'ENOENT') throw e; }
     if (st && (st.isSymbolicLink() || !st.isDirectory())) throw new Error('_runs is not a real directory');
     let fst = null;
     try { fst = fs.lstatSync(file); } catch (e) { if (e.code !== 'ENOENT') throw e; }
     if (fst && (!fst.isFile() || fst.isSymbolicLink())) throw new Error('the runs file is not a regular file');
-    if (fst && fst.size > MAX_RUNS_FILE_BYTES) throw new Error('the runs file is larger than 20 MB');
-    return { file, existing: fst ? fs.readFileSync(file, 'utf8') : '' };
+    if (fst && fst.size > MAX_RUNS_FILE_BYTES) throw new RunError(1, 'runs_file_too_large', `${path.basename(file)} is larger than 20 MB; nothing was written`);
+    return { dir, file, existing: fst && read ? fs.readFileSync(file, 'utf8') : '' };
   } catch (e) {
+    if (e instanceof RunError) throw e;
     throw new RunError(2, 'refused_write_path', `refusing ${path.basename(file)}: ${e.message}`);
   }
 }
@@ -87,7 +94,7 @@ function gateEntries(records) {
       no_duration: own.length - timed.length,
     };
     if (id !== MERGE_CHECK) return entry;
-    const why = {};
+    const why = Object.create(null);
     for (const r of own) {
       const k = typeof r.ci_evidence_why === 'string' ? r.ci_evidence_why : 'unknown';
       why[k] = (why[k] || 0) + 1;
@@ -100,7 +107,10 @@ function gateEntries(records) {
 function readRecords(repo, scope) {
   const logPath = path.join(repo, '.a1', 'phases', scope, 'gate-log.jsonl');
   try { assertContained(repo, scope, logPath); } catch (e) { throw new RunError(2, 'refused_log_path', e.message); }
-  if (!fs.existsSync(logPath)) throw new RunError(1, 'no_gate_log', `no gate log for scope ${scope}`);
+  let st = null;
+  try { st = fs.lstatSync(logPath); } catch (e) { if (e.code !== 'ENOENT') throw new RunError(2, 'io', e.message); }
+  if (st === null) throw new RunError(1, 'no_gate_log', `no gate log for scope ${scope}`);
+  if (!st.isFile() || st.size > MAX_GATE_LOG_BYTES) throw new RunError(1, 'gate_log_untrusted', `the gate log of ${scope} is not a regular file of at most 20 MB`);
   let log;
   try { log = readGateLog(logPath); } catch (e) {
     if (e.code === 'A1_GATELOG') throw new RunError(1, 'gate_log_untrusted', e.message);
@@ -120,21 +130,33 @@ function alreadyRecorded(existing, scope, pr) {
   return false;
 }
 
+/** Locks the runs file for one read-check-write; the caller releases it. */
+function lockRuns(dir, project) {
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    return acquireLock(path.join(dir, `${project}.lock.d`));
+  } catch (e) { throw new RunError(2, 'io', e.message); }
+}
+
 /** @param {{repo: string, scope: string, pr: number|null}} a @returns {{exit: number, out: Object}} */
 function record(a) {
   const project = repoProjectSlug(a.repo);
-  if (!FILE_SLUG_RE.test(project)) throw usageErr('the derived project name is not a safe file name');
+  if (!FILE_SLUG_RE.test(project)) throw new RunError(1, 'unsafe_project_name', 'the derived project name is not a safe file name; nothing was written');
   const store = storeDir();
-  const { file, existing } = runsFile(store, project);
+  const { dir, file } = runsFile(store, project, false);
   const records = readRecords(a.repo, a.scope);
-  if (alreadyRecorded(existing, a.scope, a.pr)) return { exit: 0, out: { status: 'already_recorded', file, project, scope: a.scope, pr: a.pr } };
   const line = {
     schema: 1, recorded_at: new Date().toISOString(), project, scope: a.scope, pr: a.pr,
     head_sha: records[records.length - 1].head_sha, gates: gateEntries(records),
   };
-  const sep = existing === '' || existing.endsWith('\n') ? '' : '\n';
-  try { writeTextAtomic(file, `${existing}${sep}${JSON.stringify(line)}\n`); } catch (e) { throw new RunError(2, 'io', e.message); }
-  return { exit: 0, out: { status: 'recorded', file, project, scope: a.scope, pr: a.pr, gates: line.gates.length } };
+  const lock = lockRuns(dir, project);
+  try {
+    const { existing } = runsFile(store, project, true);
+    if (alreadyRecorded(existing, a.scope, a.pr)) return { exit: 0, out: { status: 'already_recorded', file, project, scope: a.scope, pr: a.pr } };
+    const sep = existing === '' || existing.endsWith('\n') ? '' : '\n';
+    try { writeTextAtomic(file, `${existing}${sep}${JSON.stringify(line)}\n`); } catch (e) { throw new RunError(2, 'io', e.message); }
+    return { exit: 0, out: { status: 'recorded', file, project, scope: a.scope, pr: a.pr, gates: line.gates.length } };
+  } finally { releaseLock(lock); }
 }
 
 /**

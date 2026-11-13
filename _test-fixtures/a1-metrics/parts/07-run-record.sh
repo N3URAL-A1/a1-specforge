@@ -6,6 +6,10 @@
 #   idempotence check (alreadyRecorded) removed        : RR2 red
 #   storeDir() creates the store (vaultRoot-style)     : RR4 red (dirs created)
 #   mainCheckoutDir() returns the worktree itself      : RR9 red
+#   no lock around read+write (lockRuns removed)       : RR12 red (lost lines)
+#   runs-file cap / unsafe name throw exit 2           : RR13a, RR14 red
+#   gate log lstat/isFile/size check removed           : RR13b, RR15 red (FIFO hangs, caught by timeout 20)
+#   why counts in a plain {}                           : RR16 red
 
 RR_GL="$SHARED/lib/gate-log.cjs"
 RR_SHA="$(printf 'c%.0s' $(seq 1 40))"
@@ -147,3 +151,50 @@ rr_plant "$RR11P" pr-3 '[{"gate":"verify-run","exit":0,"dur":3}]'
 OUT="$(cd "$RR11P" && A1_VAULT_ROOT="$RR11V" node "$TOOLS" run record --repo . --scope pr-3 2>&1)"; RC=$?
 assert_rc "RR11a --repo . from inside the repo" 0 "$RC" "$OUT"
 assert_eq "RR11b the runs file is named after the folder" "$(ls "$RR11V/pattern/a1-learnings/_runs" 2>/dev/null | tr '\n' ',')" "$(basename "$RR11P").jsonl,"
+
+# RR12 — concurrent run record calls lose no line (review R1: lost update)
+rr_repo RR12P rr12 fx-proj; rr_store RR12V rr12v
+RR12PIDS=()
+for i in 1 2 3 4 5 6 7 8 9 10 11 12; do rr_plant "$RR12P" "pr-$i" '[{"gate":"verify-run","exit":0,"dur":3}]'; done
+for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+  (cd "$RR_CWD" && A1_VAULT_ROOT="$RR12V" node "$TOOLS" run record --repo "$RR12P" --scope "pr-$i" --pr "$i" >/dev/null 2>&1) &
+  RR12PIDS+=("$!")
+done
+for pid in "${RR12PIDS[@]}"; do wait "$pid"; done
+RR12F="$RR12V/pattern/a1-learnings/_runs/fx-proj.jsonl"
+assert_eq "RR12a 12 parallel calls leave 12 distinct lines" "$(rr_json "$RR12F" 'l.length+":"+new Set(l.map(x=>x.pr)).size')" "12:12"
+assert_eq "RR12b no lock directory is left behind" "$(ls "$RR12V/pattern/a1-learnings/_runs" | tr '\n' ',')" "fx-proj.jsonl,"
+
+# RR13 — a runs file or gate log over 20 MB is a report (exit 1), not a permanent STOP (exit 2)
+rr_repo RR13P rr13 fx-proj; rr_store RR13V rr13v
+rr_plant "$RR13P" pr-2 '[{"gate":"verify-run","exit":0,"dur":3}]'
+mkdir -p "$RR13V/pattern/a1-learnings/_runs"
+node -e 'require("fs").writeFileSync(process.argv[1], "");require("fs").truncateSync(process.argv[1], 21*1024*1024)' "$RR13V/pattern/a1-learnings/_runs/fx-proj.jsonl"
+rr_run "$RR13V" --repo "$RR13P" --scope pr-2 --pr 2
+assert_rc "RR13a runs file over 20 MB: exit 1" 1 "$RC" "$OUT"; assert_has "RR13a reason" "$OUT" "runs_file_too_large"
+rr_repo RR13Q rr13q; rr_store RR13W rr13w
+rr_plant "$RR13Q" pr-2 '[{"gate":"verify-run","exit":0,"dur":3}]'
+node -e 'require("fs").truncateSync(process.argv[1], 21*1024*1024)' "$RR13Q/.a1/phases/pr-2/gate-log.jsonl"
+rr_run "$RR13W" --repo "$RR13Q" --scope pr-2 --pr 2
+assert_rc "RR13b gate log over 20 MB: exit 1" 1 "$RC" "$OUT"; assert_has "RR13b reason" "$OUT" "gate_log_untrusted"
+
+# RR14 — a project folder name that is no safe file name: exit 1, nothing written
+mk_workdir RR14B rr14; RR14P="$RR14B/we ird"; mkdir -p "$RR14P"; rr_store RR14V rr14v
+git -C "$RR14P" init -q -b main; echo a > "$RR14P/a.txt"; git -C "$RR14P" add -A
+git -C "$RR14P" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -qm one
+rr_plant "$RR14P" pr-2 '[{"gate":"verify-run","exit":0,"dur":3}]'
+rr_run "$RR14V" --repo "$RR14P" --scope pr-2 --pr 2
+assert_rc "RR14a unsafe project name: exit 1" 1 "$RC" "$OUT"; assert_has "RR14a reason" "$OUT" "unsafe_project_name"
+assert_eq "RR14b no _runs directory created" "$([[ -e "$RR14V/pattern/a1-learnings/_runs" ]] && echo yes || echo no)" "no"
+
+# RR15 — a FIFO as gate log does not hang run record
+rr_repo RR15P rr15; rr_store RR15V rr15v
+mkdir -p "$RR15P/.a1/phases/pr-2"; mkfifo "$RR15P/.a1/phases/pr-2/gate-log.jsonl"
+OUT="$(cd "$RR_CWD" && A1_VAULT_ROOT="$RR15V" timeout 20 node "$TOOLS" run record --repo "$RR15P" --scope pr-2 --pr 2 2>&1)"; RC=$?
+assert_rc "RR15 FIFO gate log: exit 1 (124 = hung)" 1 "$RC" "$OUT"; assert_has "RR15 reason" "$OUT" "gate_log_untrusted"
+
+# RR16 — the why-code "constructor" is a plain key, not a prototype member
+rr_repo RR16P rr16 fx-proj; rr_store RR16V rr16v
+rr_plant "$RR16P" pr-2 '[{"gate":"pr-merge-check","exit":0,"dur":1,"why":"constructor"},{"gate":"pr-merge-check","exit":0,"dur":1,"why":"constructor"}]'
+rr_run "$RR16V" --repo "$RR16P" --scope pr-2 --pr 2
+assert_eq "RR16 ci_evidence_why is {constructor:2}" "$(rr_json "$RR16V/pattern/a1-learnings/_runs/fx-proj.jsonl" 'JSON.stringify(l[0].gates[0].ci_evidence_why)')" '{"constructor":2}'
