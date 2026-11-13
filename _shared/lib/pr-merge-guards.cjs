@@ -136,7 +136,7 @@ const CONTENT_ATTRS = ['text', 'eol', 'crlf', 'working-tree-encoding', 'filter',
 function attrKeyOf(project, rev, paths) {
   let dir = null;
   try {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'a1-attr-'));
+    dir = fs.mkdtempSync(path.join(path.resolve(os.tmpdir()), 'a1-attr-')); // absolute: git resolves GIT_INDEX_FILE after -C
     const idx = path.join(dir, 'index');
     // GIT_INDEX_FILE (not --index-output): git then locks `<idx>.lock` beside the temporary index; --index-output renames the repo-side lock
     // onto it and fails with EXDEV when TMPDIR is on another filesystem than the repository.
