@@ -198,3 +198,8 @@ rr_repo RR16P rr16 fx-proj; rr_store RR16V rr16v
 rr_plant "$RR16P" pr-2 '[{"gate":"pr-merge-check","exit":0,"dur":1,"why":"constructor"},{"gate":"pr-merge-check","exit":0,"dur":1,"why":"constructor"}]'
 rr_run "$RR16V" --repo "$RR16P" --scope pr-2 --pr 2
 assert_eq "RR16 ci_evidence_why is {constructor:2}" "$(rr_json "$RR16V/pattern/a1-learnings/_runs/fx-proj.jsonl" 'JSON.stringify(l[0].gates[0].ci_evidence_why)')" '{"constructor":2}'
+
+# RR17 — the unknown-group usage message names the run group and its subcommand (review R1 NIT)
+OUT="$(cd "$RR_CWD" && node "$TOOLS" bogus-group 2>&1)"; RC=$?
+assert_has "RR17a usage lists the run group" "$OUT" '"metrics", "run", "probe"'
+assert_has "RR17b usage names run record" "$OUT" 'Spec 027 adds: run record'
