@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "source": "spec 027-lean-pipeline FR-034; shrink only with an owner-approved line in the spec ## Clarifications",
+  "gates": [
+    { "id": "fix-integrity", "kind": "deterministic" },
+    { "id": "scope-claim", "kind": "deterministic" },
+    { "id": "test-fidelity", "kind": "deterministic" },
+    { "id": "fix-class-sweep", "kind": "deterministic" },
+    { "id": "pr-merge-check", "kind": "deterministic" },
+    { "id": "pr-security-surface", "kind": "deterministic" },
+    { "id": "pr-reinhard", "kind": "prompt", "owner_skill": "a1-pr-review", "owner_ref": "skills/a1-pr-review/workflows/02-review.md", "must_contain": "a1-reinhard-reviewer" },
+    { "id": "phase-6-verify", "kind": "prompt", "owner_skill": "a1-execute", "owner_ref": "skills/a1-execute/workflows/03-verify.md", "must_contain": "a1-victor-verifier" },
+    { "id": "plan-audit", "kind": "prompt", "owner_skill": "a1-plan", "owner_ref": "skills/a1-plan/workflows/04-audit.md", "must_contain": "a1-adam-auditor" },
+    { "id": "gate-c-ac-dryrun", "kind": "prompt", "owner_skill": "a1-new-feature", "owner_ref": "skills/a1-new-feature/workflows/03-clarify.md", "must_contain": "Gate C: AC dry-run walkthrough" },
+    { "id": "plan-review-xprov", "kind": "prompt", "owner_skill": "a1-plan", "owner_ref": "skills/a1-plan/workflows/04b-xprov-review.md", "must_contain": "--gate plan-review-xprov" },
+    { "id": "design-review-xprov", "kind": "prompt", "owner_skill": "a1-plan", "owner_ref": "skills/a1-plan/workflows/04b-xprov-review.md", "must_contain": "--gate design-review-xprov" }
+  ],
+  "ci_steps": [
+    { "file": ".github/workflows/test.yml", "job": "checks", "name": "xprov allowlist approve guard (committed wiring)" },
+    { "file": ".github/workflows/test.yml", "job": "enforcement", "name": "Cross-provider enforcement flip" }
+  ]
+}
