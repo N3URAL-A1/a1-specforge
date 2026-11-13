@@ -136,3 +136,43 @@ Completed: 2026-11-13
 
 ### Deviations
 - None.
+
+## Wave 8 — Record the baseline
+Completed: 2026-11-13
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| 8.1 BASELINE.json | DONE | 5566a57 | host_label aiserver, sha = HEAD 39cd38d |
+
+### Measurements
+- MB (merge base on main): 526160ec711f39f7d1975a053ff955cdc0e62b92
+- Head-only run (verify run --no-cache): verdict fail (only a1-intent and a1-vault-cockpit exit 1, env-red on this host and on main), total_ms 1812686
+- Long path (verify run --base MB --no-cache): verdict pass, head_ms 1506026, base_ms 1483995, total_ms 2990052
+- host_load verify_head_only: {"load5_start":6.16,"load5_end":2.18,"cpus":24,"host_busy":true,"checks":2}
+- host_load merge_check_long_path: {"load5_start":2.16,"load5_end":2.97,"cpus":24,"host_busy":false,"checks":1}
+
+### Busy host and risks
+- The first head-only run ended with post check proc_busy true: another session on this host started pr merge-check --pr 20 during it (load5 5.63 on 24 CPUs). It was repeated once (first-run files kept out of the repo). The repeat's pre check waited one minute (the other merge-check was still active), then started quiet; the post check was quiet. Because the waiting pre line counts, host_busy is true for verify_head_only per the ctx rule, and BASELINE.json carries host_busy true for that run (stderr line of --baseline). The measured run itself started and ended on a quiet host (load5 6.16 start, 2.18 end on 24 CPUs; load5 6.16 was left over from the first run). No further repeat, per the plan.
+- Shared-host risk: another session on this host can start run-suites or verify run during a run; slice 1 has no lock (FR-018, slice 3). The post check is the only detection. The long-path run had no busy lines.
+- Host label aiserver equals hostname(); the only grep hit in BASELINE.json is the label field itself (plan-chosen).
+
+### quiet.sh output lines (final runs)
+pre-head.jsonl:
+    {"ts":"2026-11-13T13:34:45.544Z","load5":5.61,"cpus":24,"proc_busy":true,"wait":true}
+    {"ts":"2026-11-13T13:35:45.570Z","load5":6.16,"cpus":24,"proc_busy":false,"wait":false}
+post-head.jsonl:
+    {"ts":"2026-11-13T14:05:58.317Z","load5":2.18,"cpus":24,"proc_busy":false,"wait":false}
+pre-merge.jsonl:
+    {"ts":"2026-11-13T14:06:03.492Z","load5":2.16,"cpus":24,"proc_busy":false,"wait":false}
+post-merge.jsonl:
+    {"ts":"2026-11-13T14:55:53.609Z","load5":2.97,"cpus":24,"proc_busy":false,"wait":false}
+first (busy) head run, discarded:
+    pre-head: {"ts":"2026-11-13T13:04:19.983Z","load5":2.06,"cpus":24,"proc_busy":false,"wait":false}
+    post-head: {"ts":"2026-11-13T13:34:22.735Z","load5":5.63,"cpus":24,"proc_busy":true,"wait":true}
+
+### Done-when
+- Baseline commit 5566a57 lists exactly .a1/phases/027-lean-pipeline/BASELINE.json; git branch --contains lists only feature/027-lean-pipeline-s1.
+- Action 7: host_label aiserver, cpus 24, sha == HEAD, base_sha == MB, base_ms/head_ms integers, commands 62 == 62 (61 run*.sh + 1), host_load equals ctx.json.
+
+### Deviations
+- None (busy repeat per plan action 5).
