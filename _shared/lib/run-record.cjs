@@ -44,7 +44,7 @@ function parseArgs(args) {
   if (typeof f.scope !== 'string') throw usageErr('--scope is required');
   try { validateScope(f.scope); } catch (e) { throw usageErr(e.message); }
   if (f.pr !== undefined && !PR_RE.test(String(f.pr))) throw usageErr('--pr must be a positive integer of at most 7 digits');
-  return { repo, scope: f.scope, pr: f.pr === undefined ? null : Number(f.pr) };
+  return { repo: path.resolve(repo), scope: f.scope, pr: f.pr === undefined ? null : Number(f.pr) };
 }
 
 /** @returns {string} the learning-store directory @throws RunError exit 1 when there is none */

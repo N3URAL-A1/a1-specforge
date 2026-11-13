@@ -201,3 +201,8 @@ echo b >> "$PT12P/a.txt"; git -C "$PT12P" add -A; pt_git "$PT12P" commit -qm two
 (cd "$PT12P" && A1_VAULT_ROOT="" node "$TOOLS" realpath-check run --phase w1 --diff-base HEAD~1 --project . >/dev/null 2>&1)
 pt_run "$PT_NOSTORE" "$PT12P" --repo "$PT12P" --json --scope w1
 assert_eq "PT12 facade-written scope: no_duration 0, one row" "$(pt_j 'j.no_duration+"|"+j.rows.length')" "0|1"
+
+# ---- PT13: a relative --repo resolves against the cwd (verification gap 1) ----
+pt_repo PT13P pt13
+pt_run "$PT_NOSTORE" "$PT13P" --repo . --json
+assert_eq "PT13 --repo . yields the folder name as project" "$(pt_j 'j.project')" "$(basename "$PT13P")"

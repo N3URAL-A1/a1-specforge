@@ -84,7 +84,7 @@ function resolveRepo(given) {
   let ok = false;
   try { ok = repo !== null && fs.statSync(repo).isDirectory(); } catch (_e) { /* missing */ }
   if (!ok) throw new PTError(2, 'repo_unreadable', 'metrics phase-time: --repo is not a readable directory (and no git repository above the current directory)');
-  return repo;
+  return path.resolve(repo);
 }
 
 // ---------- sources ----------

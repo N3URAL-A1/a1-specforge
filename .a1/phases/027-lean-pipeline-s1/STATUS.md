@@ -176,3 +176,12 @@ first (busy) head run, discarded:
 
 ### Deviations
 - None (busy repeat per plan action 5).
+
+## Gap fix (post-verification)
+
+Gap 1 (relative `--repo`): `path.resolve(repo)` in `run-record.cjs` parseArgs and `metrics-phase-time.cjs` resolveRepo; cases PT13 (06-phase-time.sh) and RR11 (07-run-record.sh).
+
+- RED-proof PT13: resolve removed on a git-archive scratch copy -> `FAIL PT13 ... (want=pt13.d8kzLN got=.)`
+- RED-proof RR11: resolve removed on the same copy -> `FAIL RR11a ... exit 2 — the derived project name is not a safe file name` (and RR11b red)
+
+Green with the fix: a1-metrics 441/0, a1-vault-fallback 21/0, a1-lib-units 513/0.

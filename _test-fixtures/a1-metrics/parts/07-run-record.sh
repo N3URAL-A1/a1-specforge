@@ -140,3 +140,10 @@ RR10="$(GL="$SHARED/lib/retro-gatelog.cjs" node -e '
   const items=r.gatesFired(recs).map(g=>`  - {id: ${g.id}, verdict: ${g.verdict}, caught: ${g.caught}}`);
   console.log(r.firedYaml(recs)===`gates_fired:\n${items.join("\n")}\n`, r.gatesFired(recs).map(g=>g.id+g.caught).join())')"
 assert_eq "RR10 gatesFired equals the firedYaml items" "$RR10" "true atrue,btrue,cfalse"
+
+# RR11 — a relative --repo resolves against the cwd (verification gap 1)
+rr_repo RR11P rr11; rr_store RR11V rr11v
+rr_plant "$RR11P" pr-3 '[{"gate":"verify-run","exit":0,"dur":3}]'
+OUT="$(cd "$RR11P" && A1_VAULT_ROOT="$RR11V" node "$TOOLS" run record --repo . --scope pr-3 2>&1)"; RC=$?
+assert_rc "RR11a --repo . from inside the repo" 0 "$RC" "$OUT"
+assert_eq "RR11b the runs file is named after the folder" "$(ls "$RR11V/pattern/a1-learnings/_runs" 2>/dev/null | tr '\n' ',')" "$(basename "$RR11P").jsonl,"
