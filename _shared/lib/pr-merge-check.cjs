@@ -258,6 +258,7 @@ function cmdPrMergeCheck(_sub, rest) {
     if (e instanceof DispositionError) return fail2(e.code, e.message);
     return fail2('internal', e && e.message ? e.message : String(e));
   }
+  require('./gate-log.cjs').setRecordExtra({ ci_evidence_why: result.report.ci_evidence.why });
   return emitExit(result.exit, `${JSON.stringify(result.report)}\n`, '');
 }
 
