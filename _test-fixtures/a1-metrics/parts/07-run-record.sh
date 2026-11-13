@@ -88,7 +88,7 @@ rr_repo RR5P rr5 fx-proj; rr_store RR5V rr5v
 rr_run "$RR5V" --repo "$RR5P" --scope pr-3 --pr 3
 assert_rc "RR5a missing log: exit 1" 1 "$RC" "$OUT"; assert_has "RR5a reason" "$OUT" "no_gate_log"
 rr_plant "$RR5P" pr-3 '[{"gate":"verify-run","exit":0,"dur":3},{"gate":"verify-run","exit":0,"dur":4}]'
-sed -i 's/"prev":"[0-9a-f]\{64\}"}$/"prev":"'"$(printf '1%.0s' $(seq 1 64))"'"}/' "$RR5P/.a1/phases/pr-3/gate-log.jsonl"
+node -e 'const fs=require("fs");const f=process.argv[1];const a=fs.readFileSync(f,"utf8").split("\n").filter(Boolean);const r=JSON.parse(a[a.length-1]);r.prev="1".repeat(64);a[a.length-1]=JSON.stringify(r);fs.writeFileSync(f,a.join("\n")+"\n")' "$RR5P/.a1/phases/pr-3/gate-log.jsonl"
 rr_run "$RR5V" --repo "$RR5P" --scope pr-3 --pr 3
 assert_rc "RR5b tampered chain: exit 1" 1 "$RC" "$OUT"; assert_has "RR5b reason" "$OUT" "gate_log_untrusted"
 assert_eq "RR5c store file not created" "$([[ -e "$RR5V/pattern/a1-learnings/_runs/fx-proj.jsonl" ]] && echo yes || echo no)" "no"

@@ -42,7 +42,7 @@ assert_rc "AU3f workflow lint stays green" 0 "$RC" "${OUT:0:300}"
 
 # ---- AU4 FR-014 no network or process access in the metrics modules ----
 MODS=("$SHARED"/lib/metrics*.cjs "$SHARED/lib/postmortem-fields.cjs" "$SHARED/lib/help-metrics.cjs")
-assert_eq "AU4a metrics module files found (count 6)" "${#MODS[@]}" "6"
+assert_eq "AU4a metrics module files found (count 7)" "${#MODS[@]}" "7"
 NET_RE="(require|import)[ (]*['\"](node:)?(https?|http2|net|dns|dgram|tls|child_process|cluster|worker_threads|vm)(/[a-z]+)?['\"]|\\bfetch[ ]*\\(|\\bXMLHttpRequest\\b|process\\.binding"
 NET_N="$(grep -Ec "$NET_RE" "${MODS[@]}" | awk -F: '{n+=$NF} END{print n+0}')"
 assert_eq "AU4b no http/https/net/dns/child_process require or fetch (count 0)" "$NET_N" "0"
