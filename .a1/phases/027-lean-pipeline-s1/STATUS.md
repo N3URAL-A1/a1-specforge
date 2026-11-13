@@ -115,3 +115,24 @@ RED-proof 6.1 step name compared via unescaped new RegExp(name) -> W14f, W14n, W
 ### Deviations
 - None.
 
+
+## Wave 7 — Carry-over and integration gate
+Completed: 2026-11-13
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| 7.1 carry-over + full-tree checks | DONE | (no carry-over commit: no-op) | all 8 paths already on origin/main, `cmp -s` identical to the primary checkout |
+
+### Done-when evidence
+- Action 1: branch feature/027-lean-pipeline-s1, toplevel = worktree; `git fetch origin main` done.
+- Action 2: carry-over is a no-op (GOAL decision 2): 8 of 8 paths present and byte-identical, no commit.
+- Action 3: `bin/run-suites.sh` (62 suites, 330 s): only a1-intent red, 1107 passed / 12 failed. Same on main in a clean a1-worktree (027-main-compare, HEAD 526160e): a1-intent 1107 passed / 12 failed. a1-vault-cockpit: PASS inside run-suites on the branch; run directly on main it aborts with `H_LOCKS: unbound variable` (05b-writer.sh:247), pre-existing env issue. Compare worktree exited with `--mode discard`.
+- Action 4: gates lint, workflow lint, --check-groups, verify-install-sync, lane-split check, plan depth-check: all rc=0.
+- Action 5: numstat a1-pr-merge-check + a1-verify = 0; a1-xprov changed files = 0.
+- Action 6: a1-tools.cjs 778 lines; 14 changed _shared/lib/*.cjs, none above 800.
+- Action 7: diff on xprov-scope, verify-base, pr-ci-evidence, quick, xprov-scope-globs.json is empty.
+- Action 8: xprov scope integration run exit 0, log gate pr-security-surface, verdict pass, duration_ms 11 (integer).
+- Action 9: RED-proof lines in this file: 19 (1.1:4, 2.1:2, 3.1:1, 3.2:3, 3.3:5, 6.1:4).
+
+### Deviations
+- None.
