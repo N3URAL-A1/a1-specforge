@@ -95,6 +95,21 @@ Then verify it landed (`gh pr view <n> --json state,mergedAt`), sync the primary
 with `_shared/push-cadence.md` P3 (never a bare `git pull`) and advance the registry
 (`a1-tools pr mark-status`). Close out in this order; the gate logs are gitignored and go with the worktree:
 
+Persist the run record first (spec 027 FR-035). The gate logs are gitignored and leave with the worktree; `run record` keeps scope, head sha, last verdict, `caught` and summed durations per gate in the learning store, once per scope and PR. Exit 1 (no learning store, no or untrusted gate log) does not stop the close-out: report it. Exit 2 is STOP before the worktree exit. Set `PHASE` to the phase name the caller handed over (a1-new-feature spec id, a1-execute phase); when a1-pr-review runs on its own, set it to `none`. The block skips the second call for an empty value, `none` or an unreplaced placeholder.
+
+```bash
+node <repo>/_shared/a1-tools.cjs run record --repo "<worktree_path>" --scope pr-<n> --pr <n>; RC=$?
+if [ "$RC" -eq 2 ]; then echo "STOP: run record pr-<n> exit=2, worktree stays"; exit 2; fi
+if [ "$RC" -ne 0 ]; then echo "WARN: run record pr-<n> exit=$RC, durations not persisted"; fi
+PHASE="<phase_name>"
+case "$PHASE" in
+  ""|none|"<"*) echo "SKIP: run record, no caller phase handed over" ;;
+  *) node <repo>/_shared/a1-tools.cjs run record --repo "<worktree_path>" --scope "$PHASE" --pr <n>; RC=$?
+     if [ "$RC" -eq 2 ]; then echo "STOP: run record $PHASE exit=2, worktree stays"; exit 2; fi
+     if [ "$RC" -ne 0 ]; then echo "WARN: run record $PHASE exit=$RC, durations not persisted"; fi ;;
+esac
+```
+
 1. Retros, each with `retro validate --gate-log`, from inside the worktree: the retro of this skill (one retro, written
    now, after the merge, see `04-submit.md` Retro) and the caller's retro (a1-new-feature `workflows/06-verify.md` Step 6, written now;
    a1-fix: already written in `workflows/04-verify.md` Step 2b before the handoff, only check that its entry is present, do not append it again).

@@ -258,9 +258,10 @@ BJ="$(blocks_json "$MRG")"
 bj() { printf '%s' "$BJ" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const b=JSON.parse(s);console.log(eval(process.argv[1]))})' "$1"; }
 HAND="$(awk '/^## Hand-offs/{f=1} f' "$SK/a1-pr-review/SKILL.md")"
 # Spec 020 wave 6: 5.5 adds the fifth block (probe run, after the merge); the first four are unchanged.
-if [ "$(bj 'b.length')" = "5" ]; then pass_case "05-merge.md has exactly 5 fenced bash blocks (count)"; else fail_case "05-merge.md fenced bash blocks: $(bj 'b.length') (want 5)"; fi
-order="$(bj 'b.map(x=>/disposition review/.test(x)?"D":/product validate --spec-status --require-vault/.test(x)?"C":/pr merge-check/.test(x)?"M":/^gh pr merge /m.test(x)?"G":/probe run/.test(x)?"P":"?").join("")')"
-if [ "$order" = "DCMGP" ]; then pass_case "block order: disposition review, coherence (--require-vault), merge-check, gh pr merge, live probes"; else fail_case "05-merge.md block order is '$order' (want DCMGP)"; fi
+# spec 027 FR-035: run record block after the merge, before probes
+if [ "$(bj 'b.length')" = "6" ]; then pass_case "05-merge.md has exactly 6 fenced bash blocks (count)"; else fail_case "05-merge.md fenced bash blocks: $(bj 'b.length') (want 6)"; fi
+order="$(bj 'b.map(x=>/disposition review/.test(x)?"D":/product validate --spec-status --require-vault/.test(x)?"C":/pr merge-check/.test(x)?"M":/^gh pr merge /m.test(x)?"G":/run record/.test(x)?"R":/probe run/.test(x)?"P":"?").join("")')"
+if [ "$order" = "DCMGRP" ]; then pass_case "block order: disposition review, coherence (--require-vault), merge-check, gh pr merge, run record, live probes"; else fail_case "05-merge.md block order is '$order' (want DCMGRP)"; fi
 if [ "$(bj 'b.filter(x=>/gh pr merge/.test(x)).length')" = "1" ] && [ "$(bj 'b.findIndex(x=>/gh pr merge/.test(x))')" = "3" ]; then
   pass_case "no gh pr merge before the three checks: exactly one merge command, in the fourth block (the probe block follows it)"
 else fail_case "gh pr merge appears outside the fourth fenced block"; fi
@@ -335,6 +336,22 @@ else fail_case "05-merge non-bash fences: count:bad = $nb (want >=1 fence, 0 bad
 stale="$(grep -rIl -e '--squash --delete-branch' "$SK" "$(dirname "$SK")"/_shared/*.md 2>/dev/null | grep -v 'skills/a1-new-feature/SKILL.md$' || true)"
 if [ -z "$stale" ]; then pass_case "no stale squash merge command with --delete-branch in skills/ and _shared/*.md (a1-new-feature/SKILL.md excluded: 006 claim)"
 else fail_case "stale squash merge command with --delete-branch in: $stale"; fi
+
+# ---------- spec 027 FR-035: run record guard (RR-guard) ----------
+RRB="$(bj 'b.find(x=>/run record/.test(x))')"
+RRT="$(mktemp -d)"; mkdir -p "$RRT/repo/_shared" "$RRT/wt"
+cat > "$RRT/repo/_shared/a1-tools.cjs" <<'STUB'
+require("fs").appendFileSync(process.env.RR_LOG, process.argv.slice(2).join(" ") + "\n");
+STUB
+rr_run() { # $1 = phase value
+  printf '%s' "$RRB" | sed -e "s#<repo>#$RRT/repo#g" -e "s#<worktree_path>#$RRT/wt#g" -e "s#<n>#7#g" ${1:+-e "s#<phase_name>#$1#g"} > "$RRT/blk.sh"
+  : > "$RRT/log"; RR_LOG="$RRT/log" bash "$RRT/blk.sh" > "$RRT/out" 2>&1; echo $?
+}
+rc="$(rr_run "")"
+if [ "$rc" = "0" ] && grep -q 'SKIP: run record' "$RRT/out" && [ "$(wc -l < "$RRT/log")" = "1" ] && grep -q -- '--scope pr-7' "$RRT/log"; then pass_case "RR-guard: unreplaced <phase_name> skips the second call (stub ran once, --scope pr-7)"; else fail_case "RR-guard: placeholder case rc=$rc log=$(cat "$RRT/log")"; fi
+rc="$(rr_run fx-phase)"
+if [ "$rc" = "0" ] && [ "$(wc -l < "$RRT/log")" = "2" ] && sed -n 2p "$RRT/log" | grep -q -- '--scope fx-phase'; then pass_case "RR-guard: a real phase name runs the second call with --scope fx-phase"; else fail_case "RR-guard: phase case rc=$rc log=$(cat "$RRT/log")"; fi
+rm -rf "$RRT"
 
 echo ""
 echo "a1-pr-review: $pass passed, $fail failed"
