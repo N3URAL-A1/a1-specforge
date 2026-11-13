@@ -258,7 +258,9 @@ BJ="$(blocks_json "$MRG")"
 bj() { printf '%s' "$BJ" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const b=JSON.parse(s);console.log(eval(process.argv[1]))})' "$1"; }
 HAND="$(awk '/^## Hand-offs/{f=1} f' "$SK/a1-pr-review/SKILL.md")"
 # Spec 020 wave 6: 5.5 adds the fifth block (probe run, after the merge); the first four are unchanged.
-# spec 027 FR-035: run record block after the merge, before probes
+# spec 027 FR-035: run record block after the merge and the retros, before the worktree exit (review R1)
+RR_POS="$(node -e 'const t=require("fs").readFileSync(process.argv[1],"utf8");const i=(re)=>t.search(re);const r=i(/^1\. Retros, each with/m),b=i(/^node .*run record /m),w=i(/^\d\. `a1-worktree` exit `discard`/m);process.stdout.write(r>0&&r<b&&b<w?"ok":"bad:"+[r,b,w].join(","))' "$MRG")"
+if [ "$RR_POS" = "ok" ]; then pass_case "run record block sits after the retros step and before the worktree exit step"; else fail_case "run record block position: $RR_POS (want retros < run record < worktree exit)"; fi
 if [ "$(bj 'b.length')" = "6" ]; then pass_case "05-merge.md has exactly 6 fenced bash blocks (count)"; else fail_case "05-merge.md fenced bash blocks: $(bj 'b.length') (want 6)"; fi
 order="$(bj 'b.map(x=>/disposition review/.test(x)?"D":/product validate --spec-status --require-vault/.test(x)?"C":/pr merge-check/.test(x)?"M":/^gh pr merge /m.test(x)?"G":/run record/.test(x)?"R":/probe run/.test(x)?"P":"?").join("")')"
 if [ "$order" = "DCMGRP" ]; then pass_case "block order: disposition review, coherence (--require-vault), merge-check, gh pr merge, run record, live probes"; else fail_case "05-merge.md block order is '$order' (want DCMGRP)"; fi
@@ -345,12 +347,14 @@ require("fs").appendFileSync(process.env.RR_LOG, process.argv.slice(2).join(" ")
 STUB
 rr_run() { # $1 = phase value
   printf '%s' "$RRB" | sed -e "s#<repo>#$RRT/repo#g" -e "s#<worktree_path>#$RRT/wt#g" -e "s#<n>#7#g" ${1:+-e "s#<phase_name>#$1#g"} > "$RRT/blk.sh"
-  : > "$RRT/log"; RR_LOG="$RRT/log" bash "$RRT/blk.sh" > "$RRT/out" 2>&1; echo $?
+  : > "$RRT/log"; (cd "$RRT" && RR_LOG="$RRT/log" bash "$RRT/blk.sh" > "$RRT/out" 2>&1); echo $?
 }
 rc="$(rr_run "")"
 if [ "$rc" = "0" ] && grep -q 'SKIP: run record' "$RRT/out" && [ "$(wc -l < "$RRT/log")" = "1" ] && grep -q -- '--scope pr-7' "$RRT/log"; then pass_case "RR-guard: unreplaced <phase_name> skips the second call (stub ran once, --scope pr-7)"; else fail_case "RR-guard: placeholder case rc=$rc log=$(cat "$RRT/log")"; fi
 rc="$(rr_run fx-phase)"
 if [ "$rc" = "0" ] && [ "$(wc -l < "$RRT/log")" = "2" ] && sed -n 2p "$RRT/log" | grep -q -- '--scope fx-phase'; then pass_case "RR-guard: a real phase name runs the second call with --scope fx-phase"; else fail_case "RR-guard: phase case rc=$rc log=$(cat "$RRT/log")"; fi
+rc="$(rr_run '$(touch PWNED)')"
+if [ -z "$(find "$RRT" -name PWNED)" ] && [ "$(wc -l < "$RRT/log")" = "2" ] && sed -n 2p "$RRT/log" | grep -qF -- '--scope $(touch PWNED)'; then pass_case "RR-guard: a \$(touch PWNED) phase value is not executed (no PWNED file, passed on literally)"; else fail_case "RR-guard: command substitution case rc=$rc found=$(find "$RRT" -name PWNED) log=$(cat "$RRT/log")"; fi
 
 echo ""
 echo "a1-pr-review: $pass passed, $fail failed"
