@@ -65,11 +65,13 @@ Reinhard (2.2) reviews every PR. This step adds a second reviewer when the diff 
 code `xprov scope` (`_shared/lib/xprov-scope.cjs`); it reads git only and sends nothing to a third party. Remote base sha:
 `gh pr view <n> --json baseRefOid`.
 
+This call is the registered gate `pr-security-surface` (spec 027 FR-033): the facade hook appends one line to `.a1/phases/pr-<n>/gate-log.jsonl` of the worktree, so the call runs inside the worktree (`cd`) and carries `--phase pr-<n>`.
+
 ```bash
 git -C "<worktree_path>" fetch origin
 BASE_SHA="$(gh pr view <n> --json baseRefOid --jq .baseRefOid)"; RC=$?
 if [ "$RC" -ne 0 ]; then echo "STOP: gh pr view exit=$RC"; exit "$RC"; fi
-SURF="$(node <repo>/_shared/a1-tools.cjs xprov scope --repo "<worktree_path>" --base "$BASE_SHA" --head HEAD)"; RC=$?
+SURF="$(cd "<worktree_path>" && node <repo>/_shared/a1-tools.cjs xprov scope --repo "<worktree_path>" --base "$BASE_SHA" --head HEAD --phase pr-<n>)"; RC=$?
 if [ "$RC" -ne 0 ]; then echo "STOP: xprov scope exit=$RC"; exit "$RC"; fi
 node -e 'console.log("security_surface=" + JSON.parse(process.argv[1]).security_surface)' "$SURF"
 ```

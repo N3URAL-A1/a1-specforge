@@ -101,7 +101,7 @@ node <repo>/_shared/a1-tools.cjs pr mark-pr-open <slug> <pr-url>
 
 ## Agent integration
 
-Phase 2 spawns the global `a1-reinhard-reviewer` agent via the `Agent` tool on every PR. Step 2.2b runs `xprov scope`; when it reports `security_surface: true` it also spawns `a1-specforge:a1-samuel-security` on the same diff. No code goes to a third-party reviewer. Every BLOCKER and MAJOR of both reviewers is fixed before `workflows/05-merge.md` runs. Reinhard's
+Phase 2 spawns the global `a1-reinhard-reviewer` agent via the `Agent` tool on every PR. Step 2.2b runs `xprov scope` (registered gate `pr-security-surface`); when it reports `security_surface: true` it also spawns `a1-specforge:a1-samuel-security` on the same diff. No code goes to a third-party reviewer. Every BLOCKER and MAJOR of both reviewers is fixed before `workflows/05-merge.md` runs. Reinhard's
 brief is structured (worktree path, branch, diff range, scope hint from
 the last `phase_history` entry). Reinhard returns findings as inline
 JSON which the workflow then writes to `findings.json` via the CLI.
