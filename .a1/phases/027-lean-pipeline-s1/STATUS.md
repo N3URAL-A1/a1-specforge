@@ -185,3 +185,37 @@ Gap 1 (relative `--repo`): `path.resolve(repo)` in `run-record.cjs` parseArgs an
 - RED-proof RR11: resolve removed on the same copy -> `FAIL RR11a ... exit 2 — the derived project name is not a safe file name` (and RR11b red)
 
 Green with the fix: a1-metrics 441/0, a1-vault-fallback 21/0, a1-lib-units 513/0.
+
+## Review fix round 1
+
+Findings fixed (HEAD before the round: 5c5072e). One commit per finding group, not pushed.
+
+| Commit | Findings |
+|---|---|
+| 95e3e09 | Reinhard MAJOR (`_unscoped` out of phase-time and baseline, `--include-unscoped` opt-in), minors 4, 5, 6 (reduce, header claim, store-row schema check), Samuel minor 1 (null-prototype why counts), BASELINE.json gates section regenerated |
+| 4eef233 | Reinhard minors 2 and 3, Samuel minors 1, 2, 3: mkdir lock around read-check-write, 20 MB cap and unsafe name exit 1, lstat/isFile/size check of the gate log before verifyChain (exit 1 `gate_log_untrusted`) |
+| 5f20480 | Reinhard NIT usage message (the `run` group was already listed; the per-spec list lacked `run record`) |
+| 6af19ee | Reinhard minor 1 (run record block after the retros, before the worktree exit), Samuel minor 4 (`PHASE='<phase_name>'`), Reinhard NIT duplicated sentence |
+
+Deferred, as ordered: Reinhard minor 7 (hardcoded 027 baseline path), Samuel minor 5 (`xprov-scope-globs.json`, protected by the plan).
+
+### BASELINE.json gates regeneration (exact command)
+The CLI `--baseline` rewrites the whole file and needs the two verify reports, so only the section was rebuilt:
+copy `.a1/phases` to a scratch repo dir without `911-chain` (fixture scope, see below), run
+`A1_VAULT_ROOT= node _shared/a1-tools.cjs metrics phase-time --repo <scratch> --json` with the fixed code (default leaves `_unscoped` out),
+aggregate the `rows` per gate exactly like `baselineDoc` (runs summed, duration_ms_sum with null as 0, no_duration summed) and replace only `gates`
+in the file. Result: scope `027-lean-pipeline-s1` only, 5 gate rows. `git diff` shows changes in `gates` only; `sha`, `base_sha`, `verify_head_only`, `merge_check_long_path` (with `host_load`) untouched.
+
+### Source of the `911-chain` scope
+`_test-fixtures/a1-kritis-profile/parts/08-wiring.sh` `caseWireChain` (id `911-chain`, added by spec 006 / PR #65, not by this PR) calls `profile ears-check --phase 911-chain` and
+`profile threat-model-check --phase 911-chain` with cwd = the checkout; the gate-log hook writes `.a1/phases/911-chain/gate-log.jsonl` into the repo tree (gitignored) although the case works in a mk_workdir.
+Not a one-line leak of this PR; left unfixed.
+
+### Lock proof note
+RR12 spawns 12 parallel `run record` calls for 12 scopes.
+
+### RED-proof lines (fixed file reverted via `git stash push <file>`, suite run, restored)
+- metrics-phase-time.cjs reverted: `FAIL PT14a (want=pr-3|7 got=_unscoped,pr-3|107)`, `FAIL PT14b (want=[["verify-run",7]] got=[["depth-pass",100],["verify-run",7]])`, `FAIL PT15a (want=1|3 got=0|-37)`, `FAIL PT15b (got={"constructor":"function Object() { [native code] }11"})`, PT14c/PT1 fail on the unknown flag.
+- run-record.cjs and gate-log.cjs reverted: `FAIL RR12a (want=12:12 got=7:7)`, `FAIL RR13a exit 1 (got 2)`, `FAIL RR14a exit 1 (got 2)`, `FAIL RR15 FIFO gate log (got 124, hung)`, `FAIL RR16 (got {"constructor":"function Object() { [native code] }11"})`. RR13b (gate log over 20 MB) stays green on the old code too (the zero-filled file fails verifyChain, exit 1); it is a regression guard, not RED-proof.
+- a1-tools.cjs reverted: `FAIL RR17b usage names run record`.
+- 05-merge.md reverted: `FAIL run record block position: bad:9227,8517,9629` and `FAIL RR-guard: command substitution case ... found=<rr-guard dir>/PWNED` (the double-quoted PHASE ran the substitution).
