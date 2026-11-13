@@ -38,3 +38,14 @@ Completed: 2026-11-13
 - metrics-phase-time.cjs header comment reworded so the plan's grep for child_process is 0.
 - PT1 asserts the plan's "runs 5" as the sum of row runs (rows are per gate), plus the depth-pass row (3 runs, 350 ms, 1 without duration).
 - Full run-suites.sh: only a1-intent red (known env-red); a1-vault-cockpit was green here.
+
+## Wave 5 — 05-merge.md call and ADR note (lane measure)
+Completed: 2026-11-13
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| 5.1 run record in merge close-out | DONE | 4b29c13 | block order DCMGRP, RR-guard case added |
+| 5.2 ADR note 3a + invariant sentence | DONE | 4b29c13 | section 7 lines |
+
+### Deviations
+- None. Tasks 5.1 and 5.2 committed together (one atomic wave commit).
