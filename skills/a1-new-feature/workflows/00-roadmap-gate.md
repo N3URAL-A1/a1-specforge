@@ -34,11 +34,16 @@ user-facing prompt wordings verbatim. Caller-specific values for this skill:
 
 ## `<spec-id>`: the one id for `--by` and `--phase`
 
-Every a1-new-feature and a1-execute call that takes `--by` or `--phase` (`code-scope`, `product stage`, `verify run`,
-gates, `retro validate`) uses the roadmap feature id: the spec's `roadmap_entry` (`<###-slug>`, as in `a1-roadmap`
-`product add-feature --id`). Before a roadmap entry exists it is the spec's `<###>-<feature-slug>`. Never mix in another
-spelling (such as `<project>-<feature>`): the feature then logs to one `.a1/phases/<spec-id>/gate-log.jsonl` and
-`product stage --by <spec-id>` finds its reservation (`a1-pr-review` logs under `pr-<n>`).
+`<spec-id>` is the product-CLI feature id: the `- id: <###-slug>` entry that `product add-feature --id` wrote to
+`docs/product/ROADMAP.md` (the same id `product stage --by` takes). It is required before the first `--by` claim
+(Phase 4 scope claim): without it run `a1-roadmap` / `product add-feature` first. Do not use the spec number: the spec
+number and the feature id can differ, and `product stage` then silently skips the reservation mirror (the 004/016 split).
+`roadmap_entry` is not the id when it is a legacy slug that several features share (`m1-p1-auth-setup`).
+A project without `docs/product/` (legacy `.a1/roadmap.md`) uses the spec's `id:` frontmatter (`<###>-<slug>`) in every
+call, consistently.
+
+Every `--by` and `--phase` of a1-new-feature and a1-execute uses it, with two deliberate exceptions: `retro validate`
+runs under `--phase retro-<spec-id>`, and `a1-pr-review` logs under `pr-<n>`.
 
 On PASS, load `workflows/01-discover.md` (or the phase indicated by the
 spec's current `status`, per the Routing table in SKILL.md).

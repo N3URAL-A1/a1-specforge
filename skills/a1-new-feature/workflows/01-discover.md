@@ -114,13 +114,16 @@ Use the **Agent** tool with `subagent_type: "a1-rene-requirement-engineer"` and 
 > After each user turn: append the answer as a bullet under the matching
 > `## Discovery — <Topic>` header in the spec file. Raw notes are fine for now.
 > When all ten topics are done, report "Discovery complete. Ready for Phase 2 (Specify)?"
+>
+> If `AskUserQuestion` is unavailable in this run: stop and return a numbered question queue (one line each, with options and a
+> recommendation) instead of guessing; the orchestrator asks and resumes you (`01-discover.md` Step 3, question relay).
 
 Rene appends to the spec file directly while the interview runs.
 
-**Question relay (owner of this rule; applies to Phases 1-3, so also `03-clarify.md`, and to Vincente in Phase 4).**
-`AskUserQuestion` is not available in every subagent run. When Rene cannot ask, he stops and returns a numbered question
-queue (one line each, with options and a recommendation) instead of guessing. The orchestrator asks the user
-(`AskUserQuestion`) and resumes the same agent with `SendMessage` and the answers, so the normal path spawns nothing extra.
+**Question relay (owner of this rule; the Clarify brief in `03-clarify.md` and the Vincente brief in `04-plan.md` point here).**
+`AskUserQuestion` is not available in every subagent run. The agent returns the numbered question queue and stops. The
+orchestrator asks the user (`AskUserQuestion`) and resumes the returned agent by its agent id via `SendMessage` with the
+answers, never a new named spawn (`_shared/spawn-policy.md` S1), so the normal path spawns nothing extra.
 
 ## Step 3b — Size triage (S/M/L)
 

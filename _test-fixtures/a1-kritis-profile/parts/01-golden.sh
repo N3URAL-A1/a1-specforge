@@ -269,6 +269,8 @@ $(grep -F 'Profile resolve (every run' "$HERE/golden/prompts.allowed-diff" | cut
   # read from prompts.allowed-diff, so the simulation stays independent of the file under test).
   sed -e '/^  - Agent$/a\
   - Skill' \
+      -e '/^same id used for `code-scope stage`\/`release` in the Completion Gate below\.$/a\
+Single definition (it supersedes the example): `workflows/00-roadmap-gate.md`, section `<spec-id>`.' \
       -e '/^| Projects using n3ural design system | /a\
 | Projects using the Vodafone brand design system | `vf-brand` (`~/.claude/skills/vf-brand`) |' \
     "$work/simulated-current.stripped" >"$work/simulated-current.024"

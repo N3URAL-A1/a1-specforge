@@ -43,8 +43,13 @@ SKILL.md	md	line	**Profile resolve (every run, before Phase 1).** Run `node <rep
 # None of it sits inside an a1-profile:kritis block. Anchors are golden lines that occur exactly once.
 SKILL.md	md	insert-after	  - Agent
 SKILL.md	md	line	  - Skill
+SKILL.md	md	insert-after	same id used for `code-scope stage`/`release` in the Completion Gate below.
+SKILL.md	md	line	Single definition (it supersedes the example): `workflows/00-roadmap-gate.md`, section `<spec-id>`.
 SKILL.md	md	insert-after	| Projects using n3ural design system | `n3urala1-design` (`~/.claude/skills/n3urala1-design`) |
 SKILL.md	md	line	| Projects using the Vodafone brand design system | `vf-brand` (`~/.claude/skills/vf-brand`) |
+03-clarify.md	md	insert-after	> - Phase 3 ends only when ALL markers are gone (0 remaining).
+03-clarify.md	md	line	> - If `AskUserQuestion` is unavailable in this run: return a numbered question queue and stop; the orchestrator asks and
+03-clarify.md	md	line	>   resumes you (`01-discover.md` Step 3, question relay).
 03-clarify.md	md	insert-after	Fallback if no design system is specified: `frontend-design`.
 03-clarify.md	md	line	
 03-clarify.md	md	line	### 2b-2a — Rendered options via a1-ux-studio (size M/L)

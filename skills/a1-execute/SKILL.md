@@ -109,7 +109,7 @@ mirrors its stage transition through the CLI — never a hand-edited
 node <repo>/_shared/a1-tools.cjs product stage --by <spec-id> --set <stage>
 ```
 
-`<spec-id>` is the roadmap feature id (definition: `a1-new-feature` `workflows/00-roadmap-gate.md`).
+`<spec-id>` is the product-CLI feature id (definition: `a1-new-feature` `workflows/00-roadmap-gate.md`).
 
 Call this at each wave checkpoint (`workflows/02-execute.md`, Step 2c) — it
 keeps `reservations.json` / `feature.md` / `ROADMAP.md` in sync in one

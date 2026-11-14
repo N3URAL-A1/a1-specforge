@@ -84,6 +84,8 @@ Use the **Agent** tool with `subagent_type: "a1-rene-requirement-engineer"` and
 > - If the user says "just do it": document the chosen default as a Clarification entry
 >   with "Default adopted:" and close the marker.
 > - Phase 3 ends only when ALL markers are gone (0 remaining).
+> - If `AskUserQuestion` is unavailable in this run: return a numbered question queue and stop; the orchestrator asks and
+>   resumes you (`01-discover.md` Step 3, question relay).
 >
 > When done: report "Clarify complete. N clarifications saved. Spec is
 > implementation-ready." and briefly list the decisions.

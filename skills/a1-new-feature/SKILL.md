@@ -264,6 +264,7 @@ node <repo>/_shared/a1-tools.cjs code-scope claim \
 
 `<spec-id>` is the feature's stable id (e.g. `<###>-<feature-slug>`) — the
 same id used for `code-scope stage`/`release` in the Completion Gate below.
+Single definition (it supersedes the example): `workflows/00-roadmap-gate.md`, section `<spec-id>`.
 
 ## Lifecycle Completion Gate (HARD RULE — a feature reaches `done` only through all five confirmed transitions)
 

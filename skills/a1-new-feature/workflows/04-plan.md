@@ -190,6 +190,8 @@ Use the **Agent** tool with `subagent_type: "a1-vincente-vibe-optimizer"` and
 > - No wave without an explicit acceptance reference.
 > - If a wave carries > 5 FRs: split into two waves.
 > - If the right agent is unclear: suggest with comment `(uncertain: …)`.
+> - If you need an answer from the user and `AskUserQuestion` is unavailable, return a numbered question queue instead of guessing
+>   (`01-discover.md` Step 3, question relay).
 > - No wave may introduce a DB schema change without a migration task in that same wave.
 >
 > When done: report "Wave plan complete: N waves, M FRs distributed, K parallelizable."
