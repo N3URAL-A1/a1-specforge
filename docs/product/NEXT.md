@@ -16,7 +16,7 @@ updated: 2026-11-14
 - **006-specforge-kritis-profile** — SpecForge into a1 as an optional --profile kritis lane (milestone: continuous, stage: started) — scope: project/a1-specforge/spec/006-specforge-kritis-profile.md
 - **010-vault-cockpit-contract** — Vault cockpit contract — every a1 status readable in Obsidian on Mac, server and phone (milestone: continuous, stage: started) — scope: project/a1-specforge/spec/010-vault-cockpit-contract.md
 - **011-intent-queue-consumer** — Intent queue consumer — the a1 half of triggering skills from the phone via the vault (milestone: continuous, stage: started) — scope: project/a1-specforge/spec/011-intent-queue-consumer.md
-- **028-measured-gap-checks** — Measured gap checks: cheap deterministic checks for the code-side gaps of evolve run 11 (milestone: continuous, stage: started) — scope: project/a1-specforge/spec/028-measured-gap-checks.md, project/a1-specforge/plans/028-measured-gap-checks-wave-plan.md
+- **028-measured-gap-checks** — Measured gap checks: cheap deterministic checks for the code-side gaps of evolve run 11 (milestone: continuous, stage: complete) — scope: project/a1-specforge/spec/028-measured-gap-checks.md, project/a1-specforge/plans/028-measured-gap-checks-wave-plan.md
 
 ## Next cursor
 

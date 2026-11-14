@@ -4,7 +4,7 @@ project: a1-specforge
 milestone: continuous
 title: "Measured gap checks: cheap deterministic checks for the code-side gaps of evolve run 11"
 status: in-flight
-stage: started
+stage: complete
 depends_on: []
 started: 2026-11-14
 finished: null
