@@ -106,13 +106,25 @@ g "$P" add -A; g "$P" commit -q -m "review"
 vrun "$P" --base main
 check "FC3b once the disposition is committed and upheld the guard clears (the fingerprint and clearing are unchanged)" 0 'j.verdict+"/"+j.config_changed.dispositioned' "pass/true"
 
-# ---- all commands skipped on this host: warn only ----
+# ---- review round M1: --base requested but the merge-base has no plan: env_red excuses nothing ----
+newproj er7; stub unit 'exit 1'; stub ok 'exit 0'; seal
+ERCFG "$ENVR_LINUX"; g "$P" add -A; g "$P" commit -q -m "head adds verify.json with a failing command and its env_red entry"
+vnode "$P" "$LINUX" main
+check "ER7 --base with no plan on the merge-base (verify_config_first): the failing command is NOT excused: verdict fail, command_failed kept in reasons, env_red empty" 1 \
+  'j.verdict+"/"+j.reasons.includes("command_failed")+"/"+j.reasons.includes("verify_config_first")+"/"+(j.env_red===undefined)' "fail/true/true/true"
+
+# ---- review round M2: every command skipped on this host (nothing ran): fail ----
 newproj as1; stub mac 'exit 1'
 cfg '{"commands":[{"id":"mac","argv":["./bin/mac"],"requires_host":["darwin"]}]}'; seal
 vnode "$P" "$LINUX"
-check "AS1 every commands[] entry skipped on this host: verdict stays pass (warn-only, A-003) and hints carries all_commands_skipped_on_host" 0 \
-  'j.verdict+"/"+j.commands.length+"/"+j.hints.length+"/"+j.hints.some(h=>h.startsWith("all_commands_skipped_on_host"))' "pass/0/2/true"
+check "AS1 every commands[] entry skipped on this host and nothing ran: verdict fail, reason all_commands_skipped_on_host (exit 1), hints carries the all-skipped hint" 1 \
+  'j.verdict+"/"+j.reason+"/"+j.commands.length+"/"+j.hints.some(h=>h.startsWith("all_commands_skipped_on_host"))' "fail/all_commands_skipped_on_host/0/true"
+newproj as1b; stub mac 'exit 1'
+cfg '{"commands":[{"id":"mac","argv":["./bin/mac"],"requires_host":["darwin"]}]}'; seal
+printf 'module.exports = 2;\n' > "$P/src/app.js"; g "$P" commit -q -am "head change"
+vnode "$P" "$LINUX" main
+check "AS1b the same with --base: verdict fail, reason all_commands_skipped_on_host" 1 'j.verdict+"/"+j.reason' "fail/all_commands_skipped_on_host"
 newproj as2; stub mac 'exit 1'; stub ok 'exit 0'
 cfg '{"commands":[{"id":"mac","argv":["./bin/mac"],"requires_host":["darwin"]},{"id":"fine","argv":["./bin/ok"]}]}'; seal
 vnode "$P" "$LINUX"
-check "AS2 control: one command still runs: no all_commands_skipped_on_host hint" 0 'j.hints.some(h=>h.startsWith("all_commands_skipped_on_host"))+""' "false"
+check "AS2 control: one command still runs (partial skip stays warn-only, A-003): verdict pass, no all_commands_skipped_on_host hint" 0 'j.verdict+"/"+j.hints.some(h=>h.startsWith("all_commands_skipped_on_host"))' "pass/false"

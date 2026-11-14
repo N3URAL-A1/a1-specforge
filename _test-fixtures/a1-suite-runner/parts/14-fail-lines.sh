@@ -7,7 +7,8 @@
 #  FL3: no cut to RS_TAIL_WIDTH · FL4: a case-insensitive match (the lowercase line shows) · FL5: the section comes after the tail
 
 mk_tree T_FLN fln
-plant_suite "$T_FLN" big/run-tests.sh 'echo "FAIL long $(printf "x%.0s" $(seq 1 400)) TAILEND"
+plant_suite "$T_FLN" big/run-tests.sh 'echo "PASS  FL9 INTENT_FAILURE_REASONS is listed (a passing line with a longer word)"
+echo "FAIL long $(printf "x%.0s" $(seq 1 400)) TAILEND"
 echo "FAIL first-marker"
 echo "fail lowercase-marker"
 i=3; while [ $i -le 30 ]; do echo "FAIL case $i"; i=$((i + 1)); done
@@ -23,6 +24,7 @@ assert_absent "FL2b the 21st FAIL line is not (cap of 20)" "$RS_OUT" "FAIL case 
 assert_contains "FL3a a long FAIL line is shown" "$RS_OUT" "FAIL long xxxx"
 assert_absent "FL3b a long FAIL line is cut to RS_TAIL_WIDTH (the end of it is gone)" "$RS_OUT" "TAILEND"
 assert_absent "FL4 the match is case-sensitive: a lowercase 'fail' line is not shown" "$RS_OUT" "lowercase-marker"
+assert_absent "FL9 review round m10: a PASS line containing FAILURE is not listed (FAIL matches as a whole word)" "$RS_OUT" "INTENT_FAILURE_REASONS"
 assert_absent "FL6 a green suite's log is not scanned for FAIL lines" "$RS_OUT" "FAIL in a green suite marker"
 assert_eq "FL7 exactly one FAIL lines heading (one failing suite)" "$(printf '%s\n' "$RS_OUT" | grep -c 'FAIL lines:')" "1"
 FL_HEAD_AT="$(printf '%s\n' "$RS_OUT" | grep -n 'FAIL lines:' | head -1 | cut -d: -f1)"

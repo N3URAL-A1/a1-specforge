@@ -603,6 +603,11 @@ run_fix_retro_entry() {
   out=$(A1_VAULT_ROOT="$v" node "$TOOLS" fix integrity-check --fix-id 2026-11-13-login-crash --phase fix-login-crash 2>/dev/null); rc=$?
   assert_rc "fix-id same slug other date: exit 1" 1 "$rc" "$out"
 
+  # review round m1: the id must match with boundaries, a prefix of a longer id is missing.
+  out=$(A1_VAULT_ROOT="$v" node "$TOOLS" fix integrity-check --fix-id 2026-11-14-login --phase fix-login 2>/dev/null); rc=$?
+  assert_rc "fix-id prefix of a longer stored id (2026-11-14-login vs ...-login-crash): exit 1" 1 "$rc" "$out"
+  assert "fix-id prefix: retro_entry missing" "$(printf '%s' "$out" | grep -c '"retro_entry": "missing"')"
+
   # no a1-fix.md at all: missing, exit 1.
   local v2="$WORK/retro-vault-empty"; mkdir -p "$v2/pattern/a1-learnings"
   out=$(A1_VAULT_ROOT="$v2" node "$TOOLS" fix integrity-check --fix-id 2026-11-14-login-crash --phase fix-login-crash 2>/dev/null); rc=$?

@@ -36,3 +36,12 @@ new_pr mh3 1 1; mc
 expect "MH3 base_red_unreported carries the --bug hint" "base_red_unreported|re-run with --bug <fix-report-id> on the first run" "$(reasons)|$(js 'j.reasons[0].hint')"
 new_pr mh4 0 1; mc
 expect "MH4 control: suite_red_on_head carries no base-red hint" "suite_red_on_head|true" "$(reasons)|$(js 'j.reasons[0].hint===undefined')"
+
+# review round m2: the skill prose states the exit-code rule accurately
+PROSE_OLD=0; PROSE_NEW=0
+for wf in skills/a1-pr-review/workflows/05-merge.md skills/a1-execute/workflows/02-execute.md skills/a1-new-feature/workflows/05-implement.md; do
+  grep -qF "None of them changes the exit code" "$REPO_ROOT/$wf" && PROSE_OLD=$((PROSE_OLD+1))
+  grep -qF "all_commands_skipped_on_host" "$REPO_ROOT/$wf" && grep -qF "takes its id out of the verdict" "$REPO_ROOT/$wf" && PROSE_NEW=$((PROSE_NEW+1))
+done
+expect "MH9 the three workflow paragraphs no longer claim every record field leaves the exit code alone; each names env_red and all_commands_skipped_on_host" "0|3" "$PROSE_OLD|$PROSE_NEW"
+expect "MH9a 05-merge STOP text for test-fidelity names status findings and no_scan (hint, test_like)" "1" "$(grep -cF 'Read status: findings -> findings[] (rule, file, line); no_scan -> hint and test_like.' "$REPO_ROOT/skills/a1-pr-review/workflows/05-merge.md")"

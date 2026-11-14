@@ -57,9 +57,9 @@ check "HC2b empty array on darwin runs too" 0 'j.commands.map(c=>c.id).join()+"/
 newproj hc2c; stub ok 'exit 0'
 cfg '{"commands":[{"id":"u","argv":["./bin/ok"],"requires_host":["plan9"]}]}'; seal
 vrun "$P"
-check "HC2c unknown platform string is accepted (not bad_config) and skipped on this host" 0 'j.skipped_on_host.map(s=>s.id+":"+s.requires_host.join()).join()' "u:plan9"
+check "HC2c unknown platform string is accepted (not bad_config) and skipped on this host" 1 'j.skipped_on_host.map(s=>s.id+":"+s.requires_host.join()).join()' "u:plan9"
 vnode "$P" "$DARWIN"
-check "HC2d unknown platform skipped on darwin as well" 0 'j.skipped_on_host.map(s=>s.id).join()' "u"
+check "HC2d unknown platform skipped on darwin as well" 1 'j.skipped_on_host.map(s=>s.id).join()' "u"
 
 newproj hc3; stub ok 'exit 0'
 cfg '{"commands":[{"id":"u","argv":["./bin/ok"],"requires_host":"darwin"}]}'; seal
@@ -81,11 +81,11 @@ BC="$WORK/hb-count"
 newproj hb1; rm -f "$HM" "$BC"; stub five 'if [ "$1" = "-c" ]; then echo 5; else echo ran >> '"$HM"'; fi'
 cfg '{"commands":[{"id":"x-bash32","argv":["./bin/five","run.sh"]}]}'; seal
 vnode "$P" "$LINUX"
-check "HB1 stub argv[0] printing 5: -bash32 id skipped with reason shell_major_mismatch, requires_host null, a detail" 0 \
+check "HB1 stub argv[0] printing 5: -bash32 id skipped with reason shell_major_mismatch, requires_host null, a detail" 1 \
   'const s=j.skipped_on_host[0]; Object.keys(s).sort().join()+"/"+s.id+"/"+s.requires_host+"/"+s.host_platform+"/"+s.reason+"/"+(typeof s.detail==="string"&&s.detail.includes("5"))' \
   "detail,host_platform,id,reason,requires_host/x-bash32/null/linux/shell_major_mismatch/true"
-check "HB1a SC-004: the skipped id is never reported as pass (not in commands) and never ran (marker 0)" 0 'j.commands.length+"/"+"'"$(lines "$HM")"'"' "0/0"
-check "HB1b the hint lists the id" 0 'j.hints[0]' "run these ids on the target OS before merge: x-bash32"
+check "HB1a SC-004: the skipped id is never reported as pass (not in commands) and never ran (marker 0)" 1 'j.commands.length+"/"+"'"$(lines "$HM")"'"' "0/0"
+check "HB1b the hint lists the id" 1 'j.hints[0]' "run these ids on the target OS before merge: x-bash32"
 
 newproj hb2; rm -f "$HM"; stub three 'if [ "$1" = "-c" ]; then echo 3; else echo ran >> '"$HM"'; fi'
 cfg '{"commands":[{"id":"x-bash32","argv":["./bin/three","run.sh"]}]}'; seal
@@ -95,26 +95,26 @@ check "HB2 control: probe prints 3 -> the id runs and passes, nothing skipped" 0
 newproj hb3; stub weird 'if [ "$1" = "-c" ]; then echo x; fi'
 cfg '{"commands":[{"id":"x-bash32","argv":["./bin/weird","run.sh"]}]}'; seal
 vnode "$P" "$LINUX"
-check "HB3 non-numeric probe output: skipped as shell_major_mismatch, detail names the output, never passed" 0 'const s=j.skipped_on_host[0]; s.reason+"/"+s.detail.includes("x")+"/"+j.commands.length' "shell_major_mismatch/true/0"
+check "HB3 non-numeric probe output: skipped as shell_major_mismatch, detail names the output, never passed" 1 'const s=j.skipped_on_host[0]; s.reason+"/"+s.detail.includes("x")+"/"+j.commands.length' "shell_major_mismatch/true/0"
 
 newproj hb4; stub ok 'exit 0'
 cfg '{"commands":[{"id":"x-bash32","argv":["./bin/does-not-exist","run.sh"]}]}'; seal
 vnode "$P" "$LINUX"
-check "HB4 missing binary: skipped as shell_major_mismatch with the error text, exit 0 (no spawn_failed), never passed" 0 'const s=j.skipped_on_host[0]; s.reason+"/"+(s.detail.length>0)+"/"+j.commands.length' "shell_major_mismatch/true/0"
+check "HB4 missing binary: skipped as shell_major_mismatch with the error text, exit 1 (all skipped, no spawn_failed), never passed" 1 'const s=j.skipped_on_host[0]; s.reason+"/"+(s.detail.length>0)+"/"+j.commands.length' "shell_major_mismatch/true/0"
 
 newproj hb5; stub slow 'if [ "$1" = "-c" ]; then exec sleep 5; fi'
 cfg '{"commands":[{"id":"x-bash32","argv":["./bin/slow","run.sh"]}]}'; seal
 vnode "$P" '{"platform":"linux","probeTimeoutMs":200}'
-check "HB5 probe past the (injected) timeout: skipped as shell_major_mismatch, detail names the timeout, never passed" 0 'const s=j.skipped_on_host[0]; s.reason+"/"+/timed? ?out/i.test(s.detail)+"/"+j.commands.length' "shell_major_mismatch/true/0"
+check "HB5 probe past the (injected) timeout: skipped as shell_major_mismatch, detail names the timeout, never passed" 1 'const s=j.skipped_on_host[0]; s.reason+"/"+/timed? ?out/i.test(s.detail)+"/"+j.commands.length' "shell_major_mismatch/true/0"
 
 # probe runs once per distinct argv[0]
 newproj hb6; rm -f "$BC" "$BC-b"
 stub five 'if [ "$1" = "-c" ]; then echo p >> '"$BC"'; echo 5; fi'; stub six 'if [ "$1" = "-c" ]; then echo p >> '"$BC-b"'; echo 5; fi'
 cfg '{"commands":[{"id":"x-bash32","argv":["./bin/five","a.sh"]},{"id":"y-bash32","argv":["./bin/five","b.sh"]},{"id":"z-bash32","argv":["./bin/six","c.sh"]}]}'; seal
 vnode "$P" "$LINUX"
-check "HB6 three -bash32 ids, two distinct argv[0]: both skipped" 0 'j.skipped_on_host.map(s=>s.id).join()' "x-bash32,y-bash32,z-bash32"
-check "HB6a two ids sharing argv[0] probe it once (counter 1)" 0 '"'"$(lines "$BC")"'"' "1"
-check "HB6b a different argv[0] is probed once too (counter 1)" 0 '"'"$(lines "$BC-b")"'"' "1"
+check "HB6 three -bash32 ids, two distinct argv[0]: both skipped" 1 'j.skipped_on_host.map(s=>s.id).join()' "x-bash32,y-bash32,z-bash32"
+check "HB6a two ids sharing argv[0] probe it once (counter 1)" 1 '"'"$(lines "$BC")"'"' "1"
+check "HB6b a different argv[0] is probed once too (counter 1)" 1 '"'"$(lines "$BC-b")"'"' "1"
 
 # non-empty requires_host: no probe; empty array: probed
 newproj hb7; rm -f "$BC" "$HM"; stub five 'if [ "$1" = "-c" ]; then echo p >> '"$BC"'; echo 5; else echo ran >> '"$HM"'; fi'
@@ -124,7 +124,7 @@ check "HB7 -bash32 id with a non-empty requires_host is not probed (counter 0) a
 newproj hb7b; rm -f "$BC" "$HM"; stub five 'if [ "$1" = "-c" ]; then echo p >> '"$BC"'; echo 5; else echo ran >> '"$HM"'; fi'
 cfg '{"commands":[{"id":"x-bash32","argv":["./bin/five","a.sh"],"requires_host":[]}]}'; seal
 vnode "$P" "$LINUX"
-check "HB7b empty requires_host on a -bash32 id: probed (counter 1) and skipped" 0 '"'"$(lines "$BC")"'"+"/"+j.skipped_on_host.map(s=>s.reason).join()' "1/shell_major_mismatch"
+check "HB7b empty requires_host on a -bash32 id: probed (counter 1) and skipped" 1 '"'"$(lines "$BC")"'"+"/"+j.skipped_on_host.map(s=>s.reason).join()' "1/shell_major_mismatch"
 newproj hb7c; rm -f "$BC"; stub five 'if [ "$1" = "-c" ]; then echo p >> '"$BC"'; echo 5; fi'; stub ok 'exit 0'
 cfg '{"commands":[{"id":"plain","argv":["./bin/five","a.sh"]}]}'; seal
 vnode "$P" "$LINUX"

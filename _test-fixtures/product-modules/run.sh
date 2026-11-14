@@ -234,6 +234,23 @@ OUT="$(node "$TOOLS" product cancel --by 099-nope --dir "$PD" 2>&1)"; RC=$?
 assert_rc "cancel-unknown-id-refused-exit-1" 1 "$RC" "$OUT"
 assert_true "cancel-refusals-write-nothing" "$([[ "$(tree_hash "$PD")" == "$H1" ]] && echo true || echo false)"
 
+# review round m5: cancel lists a code_scope reservation held by the feature (no automatic release); edit refuses a cancelled dependency
+PD="$(fresh28 cancel5)"; RW="$WORK/cancel5-cwd"; mkdir -p "$RW/.a1"
+printf '%s\n' '{"reservations":[{"type":"code_scope","paths":["src/a.js"],"by":"001-first-feature","at":"2026-11-14T00:00:00.000Z","stage":"in-flight"},{"type":"code_scope","paths":["src/b.js"],"by":"003-third-feature","at":"2026-11-14T00:00:00.000Z","stage":"in-flight"}]}' > "$RW/.a1/reservations.json"
+RH1="$(sha256sum "$RW/.a1/reservations.json" | cut -d' ' -f1)"
+OUT="$(cd "$RW" && node "$TOOLS" product cancel --by 001-first-feature --dir "$PD" 2>/dev/null)"; RC=$?
+assert_rc "cancel-reservation-exit-0" 0 "$RC" "$OUT"
+assert_true "cancel-lists-held-code-scope-reservation-with-release-hint" "$([[ "$(jget "$OUT" 'd.held_reservations.map(r=>r.by+"|"+r.paths.join()+"|"+r.hint).join(";")')" == "001-first-feature|src/a.js|code-scope release --by 001-first-feature" ]] && echo true || echo false)"
+assert_true "cancel-release-hint-also-in-hints" "$([[ "$(jget "$OUT" 'd.hints.includes("code-scope release --by 001-first-feature")')" == "true" ]] && echo true || echo false)"
+assert_true "cancel-never-releases-the-reservation" "$([[ "$(sha256sum "$RW/.a1/reservations.json" | cut -d' ' -f1)" == "$RH1" ]] && echo true || echo false)"
+PD="$(fresh28 cancel6)"
+OUT="$(cd "$RW" && node "$TOOLS" product cancel --by 002-second-feature --dir "$PD" 2>/dev/null)"; RC=$?
+assert_true "cancel-without-own-reservation-lists-none" "$([[ "$(jget "$OUT" 'd.held_reservations.length')" == "0" ]] && echo true || echo false)"
+PD="$(fresh28 edit3)"; node "$TOOLS" product cancel --by 003-third-feature --dir "$PD" >/dev/null 2>&1; H1="$(tree_hash "$PD")"
+OUT="$(node "$TOOLS" product edit --by 002-second-feature --depends-on "003-third-feature" --dir "$PD" 2>&1)"; RC=$?
+assert_rc "edit-depends-on-cancelled-feature-refused-exit-1" 1 "$RC" "$OUT"
+assert_true "edit-cancelled-dependency-message-and-writes-nothing" "$([[ "$OUT" == *"cancelled"* && "$OUT" == *"003-third-feature"* && "$(tree_hash "$PD")" == "$H1" ]] && echo true || echo false)"
+
 # edit --depends-on
 PD="$(fresh28 edit1)"; feat28 "$PD" 002-second-feature '[001-first-feature]'
 OUT="$(node "$TOOLS" product edit --by 002-second-feature --depends-on "003-third-feature" --dir "$PD" 2>&1)"; RC=$?

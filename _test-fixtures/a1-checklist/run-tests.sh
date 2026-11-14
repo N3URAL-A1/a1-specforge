@@ -302,6 +302,10 @@ cl5_vault f2 "$SCB" '## Wave 1 — A\n\n**FRs covered:** FR-001\n\nExport lists.
 cl5_assert "CL5f2 SC clause absent from the plan: warning id SC-001" '"SC-001"' "$(cl5_c9 'c.warnings[0].id')"
 cl5_assert "CL5f2 SC warning leaves result PASS" "PASS|0" "$(cl5_c9 'c.result' | tr -d '"')|$CL5_RC"
 
+# CL5m9 — review round m9: FR-001 is not carried by a wave that only covers FR-001-2 (red-making: the id lookup ended at \b, so "-2" still matched).
+cl5_vault h "$FRB" '## Wave 1 — Export\n\n**FRs covered:** FR-001-2\n\nBuild the export of the list.\n'
+cl5_assert "CL5m9 a wave naming only FR-001-2 does not carry FR-001: no clause warning for FR-001" null "$(cl5_c9 'c.warnings')"
+
 # CL5g — FR-014 edge cases: count, warning when the plan never says "edge" (red-making: no edge_cases key).
 EDGEB='\n## Edge Cases\n\n- Empty export list returns an empty file.\n- Owner address missing.\n\n## Other\n\n- not an edge bullet\n'
 cl5_vault g '- **FR-001** — Users can export lists.\n' '## Wave 1 — A\n\n**FRs covered:** FR-001\n\nExport lists.\n' "$EDGEB"

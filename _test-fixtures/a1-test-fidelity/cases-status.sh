@@ -36,6 +36,13 @@ new_repo; change_src README.md; head_commit; run_tf
 expect "ST3a not_applicable: scanned 0, no test-like file -> ok true, exit 0, no hint" "not_applicable|true|0|0|false" "$(st 'j.status')|$(st 'j.ok')|$RC|$(st 'j.scanned')|$(st '"hint" in j')"
 new_repo; mkdir -p "$R/tests"; printf '{"a":1}\n' > "$R/tests/data.json"; head_commit; run_tf
 expect "ST3b changed tests/data.json (non-code under tests/) is not test-like: not_applicable, exit 0" "not_applicable|0" "$(st 'j.status')|$RC"
+# review round M3: helper files and look-alike names are not test-like
+new_repo; mkdir -p "$R/tests" "$R/src"; printf 'x = 1\n' > "$R/tests/conftest.py"; printf 'export const t = 1;\n' > "$R/src/testimonial.ts"; head_commit; run_tf
+expect "ST3c a diff touching only tests/conftest.py and src/testimonial.ts is not no_scan: not_applicable, exit 0, no test_like" "not_applicable|0|false" "$(st 'j.status')|$RC|$(st '"test_like" in j')"
+new_repo; mkdir -p "$R/tests/fixtures" "$R/tests/utils" "$R/tests/helpers"; printf 'x\n' > "$R/tests/fixtures/data.ts"; printf 'x\n' > "$R/tests/utils/io.ts"; printf 'x\n' > "$R/tests/__init__.py"; printf 'x\n' > "$R/tests/setup_env.ts"; printf 'x\n' > "$R/tests/helpers_db.ts"; head_commit; run_tf
+expect "ST3d fixtures/ and utils/ segments, __init__.py, setup*.* and helpers*.* are excluded from test-like" "not_applicable|0" "$(st 'j.status')|$RC"
+new_repo; mkdir -p "$R/src"; printf 'x\n' > "$R/src/test-util.ts"; head_commit; run_tf
+expect "ST3e control: a genuine test-shaped name (test-util.ts) is still test-like: no_scan" "no_scan|1" "$(st 'j.status')|$RC"
 new_repo; mkdir -p "$R/spec"; printf 'x\n' > "$R/spec/foo_test.js"; printf 'x\n' > "$R/tests/testutil.ts"; head_commit; run_tf
 expect "ST4a no_scan: scanned 0 beside test-like files -> status no_scan, ok false, exit 1" "no_scan|false|1|0" "$(st 'j.status')|$(st 'j.ok')|$RC|$(st 'j.scanned')"
 expect "ST4a hint text names the config key and file" "add test_globs to .a1/fidelity.json" "$(st 'j.hint')"
@@ -61,7 +68,7 @@ LT="$(node -e '
   const bad = [];
   for (const e of exts) {
     for (const s of segs) if (!looksLikeTest(`${s}/helper.${e}`)) bad.push(`seg ${s}.${e}`);
-    for (const b of [`testx.${e}`, `x_test.${e}`, `x.test.${e}`, `x.spec.${e}`]) if (!looksLikeTest(`src/${b}`)) bad.push(`base ${b}`);
+    for (const b of [`test-x.${e}`, `x_test.${e}`, `x.test.${e}`, `x.spec.${e}`]) if (!looksLikeTest(`src/${b}`)) bad.push(`base ${b}`);
   }
   if (!looksLikeTest("a/b/tests/c/helper.ts")) bad.push("nested segment");
   process.stdout.write(bad.length ? "MISSED:" + bad.join(";") : "all");

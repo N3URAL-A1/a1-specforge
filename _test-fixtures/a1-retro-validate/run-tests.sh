@@ -913,6 +913,15 @@ gl_retro "$GL_WORK/l13l.md" 2026-09-12 "$E_BUILD"
 gl_validate "$GL_WORK/l13l.md" "$LOG_A" --gate-log "$LOG_B" --enforced-since $SINCE
 gl_check "L13i legacy retro with two logs: checked=false, exit 0 (the skip path still works)" 0 'j.gate_log.checked' "false"
 
+# L13j review round m3: records of several logs are ordered by ts (not by argv order) before the last verdict is taken.
+# FAIL_LOG's realpath line was written after PASS_LOG's: the last verdict is fail whatever the flag order.
+E_RPF='{id: gate-0.7-realpath, verdict: fail, caught: true}'
+gl_retro "$GL_WORK/l13j.md" 2026-10-20 "$E_RPF"
+gl_validate "$GL_WORK/l13j.md" "$PASS_LOG" --gate-log "$FAIL_LOG" --enforced-since $SINCE
+gl_check "L13j two logs holding the same gate (pass at t1, fail at t2), older log first: the later ts wins, exit 0, 0 problems" 0 'j.gate_log.problems.length+""' "0"
+gl_validate "$GL_WORK/l13j.md" "$FAIL_LOG" --gate-log "$PASS_LOG" --enforced-since $SINCE
+gl_check "L13k the same two logs with the flags swapped: same result (the order of the flags does not decide)" 0 'j.gate_log.problems.length+""' "0"
+
 printf '%s\n' "${results[@]}"
 echo "----"
 echo "a1-retro-validate: $pass passed, $fail failed"

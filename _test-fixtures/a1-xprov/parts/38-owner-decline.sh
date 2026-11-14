@@ -63,8 +63,8 @@ caseOD1() {
   prep38; cli38 question --kind decline --phase p38
   assert_rc "OD1 question --kind decline exits 0" 0 "$G_RC" "$G_ERR"
   assert_json "OD1 header, two labels (No first), one question, multiSelect false" "$G_OUT" "[j.kind, j.labels.length, j.labels[0], j.labels[1], j.multiSelect, j.options.length].join('|')" "decline|2|$NO38|$YES38|false|2"
-  assert_json "OD1 the question names repo, phase, target, PLAN.md sha256 and head" "$G_OUT" \
-    "[j.question.includes('Repo: '), j.question.includes('Phase: p38'), j.question.includes('$GATE38'), j.question.includes('$(sha38 "$PHASE_PLAN")'), j.question.includes('$PHASE_HEAD')].every(Boolean)" "true"
+  assert_json "OD1 the question names repo, phase, target and PLAN.md sha256, and makes no claim about the head (review round m4)" "$G_OUT" \
+    "[j.question.includes('Repo: '), j.question.includes('Phase: p38'), j.question.includes('$GATE38'), j.question.includes('$(sha38 "$PHASE_PLAN")'), !j.question.includes('$PHASE_HEAD'), !/Head:/.test(j.question)].every(Boolean)" "true"
   assert_json "OD1 the question says nothing is sent to Codex" "$G_OUT" "/nichts an Codex gesendet/.test(j.question)" "true"
   local first="$G_OUT"; cli38 question --kind decline --phase p38
   assert_eq "OD1 deterministic: same state, same bytes" "$G_OUT" "$first"
@@ -154,12 +154,11 @@ caseOD5() {
   prep38; yes38; printf '\nAn edit after the owner said yes.\n' >> "$PHASE_PLAN"; before="$(state38)"; dec38
   assert_json "OD5 PLAN.md edited after the yes: decline_not_confirmed" "$G_OUT" "j.reason" "decline_not_confirmed"
   [[ "$(state38)" == "$before" && "$(declined_dirs38)" == 0 ]] && ok "OD5 edited PLAN.md: nothing written" || bad "OD5 edited PLAN.md: something was written"
-  # a moved head after the yes
-  prep38; yes38; git -C "$PHASE_REPO" commit -q --allow-empty -m "moved head"; before="$(state38)"; dec38
-  assert_json "OD5 head moved after the yes: decline_not_confirmed" "$G_OUT" "j.reason" "decline_not_confirmed"
-  [[ "$(state38)" == "$before" && "$(declined_dirs38)" == 0 ]] && ok "OD5 moved head: nothing written" || bad "OD5 moved head: something was written"
-  cli38 question --kind decline --phase p38
-  assert_json "OD5 the question after the move names the new head" "$G_OUT" "j.question.includes('$(git -C "$PHASE_REPO" rev-parse HEAD)')" "true"
+  # a moved head after the yes: the decline binds the PLAN.md content, not the head (review round m4)
+  prep38; yes38; git -C "$PHASE_REPO" commit -q --allow-empty -m "moved head"; dec38
+  assert_json "OD5 head moved after the yes: the yes still stands (bound to the PLAN.md sha, not the head)" "$G_OUT" "[j.ok, j.accepted].join('|')" "true|owner_declined"
+  prep38; cli38 question --kind decline --phase p38; local q1="$G_OUT"; git -C "$PHASE_REPO" commit -q --allow-empty -m "moved head again"; cli38 question --kind decline --phase p38
+  assert_eq "OD5 the question (text and hash) is byte-identical after the head moves" "$q1" "$G_OUT"
 }
 caseOD5
 
@@ -186,5 +185,40 @@ caseOD6() {
   assert_json "OD6 the hook rules rebuild the decline question byte for byte" "$hook" "[j.kind, j.action, j.same].join('|')" "decline||true"
 }
 caseOD6
+
+# ---------- OD7/OD8: review round m4 ----------
+# OD7: a row for the target appears between the question build and the owner-store lock (the window the lock exists for): refuse, write nothing.
+# The real exported decline() runs; only the lock wrapper plants the row, exactly once, right before the locked body.
+caseOD7() {
+  prep38; yes38 >/dev/null; local before out; before="$(state38)"
+  out="$(cd "$PHASE_REPO" && TREE="$TREE" PLAN_SHA="$(sha38 "$PHASE_PLAN")" IDX="$PHASE_DIR/xreview/index.json" node -e '
+    const fs = require("fs"), path = require("path"); const lib = (n) => require(process.env.TREE + "/_shared/lib/" + n);
+    const R = lib("xprov-consent-record.cjs"); const orig = R.locked;
+    R.locked = (fn) => orig(() => {
+      fs.mkdirSync(path.dirname(process.env.IDX), { recursive: true });
+      fs.writeFileSync(process.env.IDX, JSON.stringify([{ gate: "plan-review-xprov", wave: null, lane: null, verdict: "pass", plan_sha256: process.env.PLAN_SHA, result_path: "/nowhere/result.json", ts: "2026-11-14T00:00:00.000Z" }]) + "\n");
+      return fn();
+    });
+    const r = lib("xprov-consent-decline.cjs").decline({ root: process.cwd(), phase: "p38" });
+    process.stdout.write(JSON.stringify({ ok: r.ok, reason: r.reason || null }));
+  ' 2>&1 </dev/null)"
+  assert_json "OD7 a row appearing after the build and before the lock: refused target_already_run" "$out" "[j.ok, j.reason].join('|')" "false|target_already_run"
+  [[ "$(declined_dirs38)" == 0 ]] && ok "OD7 no marker dir written" || bad "OD7 a marker dir was written"
+  local idx; idx="$(cat "$PHASE_DIR/xreview/index.json")"
+  assert_json "OD7 the index keeps only the planted row (no owner_declined row)" "$idx" "j.map(e=>e.accepted||e.verdict).join()" "pass"
+}
+caseOD7
+# OD8: an owner_declined row never clears open findings (fail_with_findings at the same sha), like the outage path (SEC-3)
+caseOD8() {
+  prep38; plant_stores38; yes38 >/dev/null; dec38
+  node -e '
+    const fs = require("fs"); const ix = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    ix.push({ gate: "plan-review-xprov", wave: null, lane: null, verdict: "fail-with-findings", plan_sha256: ix[0].plan_sha256, result_path: "/nowhere/result.json", ts: "2026-11-14T00:00:01.000Z" });
+    fs.writeFileSync(process.argv[1], JSON.stringify(ix, null, 2) + "\n");
+  ' "$PHASE_DIR/xreview/index.json"
+  local lc; lc="$(cd "$PHASE_REPO" && node "$TREE_TOOLS" xprov load-check --phase p38 2>/dev/null </dev/null)"
+  assert_json "OD8 owner_declined row plus a fail_with_findings row at the same sha: load-check does not accept the plan" "$lc" "[j.ok, j.accepted === 'owner_declined'].join('|')" "false|false"
+}
+caseOD8
 
 rm -rf "$TMP38"

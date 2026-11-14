@@ -62,9 +62,10 @@ add_base_set() {
 # line_count <text> <fixed-string> — count of lines containing the string.
 line_count() { grep -cF -- "$2" <<<"$1"; }
 # stack_frames <text> — count of V8 stack-frame lines ("    at fn (file.cjs:12:3)", "    at file.cjs:12:3"): four spaces, "at", and a line:column end.
-# Spec 028 FR-030: the check used to count the fixed string '    at ', which also matches the wrapped help line "                  at least 12
-# characters" that a usage error prints after the whole help text. Whether that line was in the captured output depended on how much of the
-# ~1200-line help the pipe delivered before the process exited, so ES8e/ES8i failed in 2 of 20 parallel runs (0 of 2 in a quiet run).
+# Spec 028 FR-030: the check used to count the fixed string '    at ', which also matches the indented help line "                  at least 12
+# characters" that the usage error prints inside the help text. The old match counted that help line as a stack frame; the frame regex
+# below matches only a line that ends in line:column. (Flake rate before 2/20 parallel runs, after 0/20; the cause of the intermittence
+# was not isolated, so this comment makes no claim about pipe truncation.)
 stack_frames() { grep -cE -- '^ {4}at .*:[0-9]+:[0-9]+\)?$' <<<"$1"; }
 # json_get <expr over j> — evaluates against $OUT parsed as JSON.
 json_get() { printf '%s' "$OUT" | node -e 'const j=JSON.parse(require("fs").readFileSync(0,"utf8"));process.stdout.write(String('"$1"'))'; }
@@ -250,7 +251,7 @@ assert_has "ES11b found_by: User counts as escaped" "$OUT" "escaped: 1"
 ES8X_FRAMES="$(printf 'Error: boom\n    at Object.<anonymous> (/x/a1-tools.cjs:12:3)\n    at node:internal/modules/cjs/loader:1:2\n')"
 assert_eq "ES8x two V8 frames are counted" "$(stack_frames "$ES8X_FRAMES")" "2"
 assert_eq "ES8x a wrapped help line starting with 'at least' is not a frame" "$(stack_frames "                  at least 12 characters of [A-Za-z0-9+/_.~=-] with a digit); all-letter")" "0"
-# the full usage error, captured whole to a file (no pipe truncation): the help text holds that wrapped line, the check must still see no frame
+# the full usage error, captured whole to a file: the help text holds that indented line, the check must still see no frame
 ES8X_FILE="$(mktemp "${TMPDIR:-/tmp}/es8x.XXXXXX")"
 A1_VAULT_ROOT="$V6" node "$TOOLS" metrics escaped --project demo --bogus > "$ES8X_FILE" 2>&1
 assert_eq "ES8x the whole usage error holds the wrapped 'at least' help line (the old check's false positive)" "$(grep -cF -- '    at ' "$ES8X_FILE" | awk '{print ($1 > 0) ? "yes" : "no"}')" "yes"
