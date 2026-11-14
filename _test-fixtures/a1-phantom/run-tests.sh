@@ -108,6 +108,51 @@ check_case clean        clean           0 0
 check_case phantoms     phantoms_found  2 0
 check_case no-code-tag  clean           0 2
 
+# ---------- spec 028 FR-010: no_input on zero completed tasks ----------
+# Plans live in a temp git repo (never the fixture trees, whose bootstrap owns their history).
+unset A1_VAULT_ROOT
+mk_workdir PH_WORK ph_work
+PH_REPO="$PH_WORK/repo"; mkdir -p "$PH_REPO/src"
+git -C "$PH_REPO" init -q
+echo 'module.exports = {};' > "$PH_REPO/src/a.js"
+git -C "$PH_REPO" add -A
+git -C "$PH_REPO" -c user.email=ci@test -c user.name=ci commit -qm init
+
+ph_run() { # <plan-text> -> sets PH_OUT, PH_RC
+  printf '%s' "$1" > "$PH_WORK/plan.md"
+  PH_OUT="$(cd "$PH_WORK" && node "$TOOLS" phantom check "$PH_WORK/plan.md" --repo-path "$PH_REPO" --since HEAD --format "${2:-json}" --phase ph-028 2>/dev/null)"; PH_RC=$?
+}
+ph_field() { printf '%s' "$PH_OUT" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const v=JSON.parse(s)[process.argv[1]];process.stdout.write(String(v))}catch(e){process.stdout.write("UNPARSEABLE")}})' "$1"; }
+ph_assert() { # <label> <want> <got>
+  if [[ "$2" == "$3" ]]; then results+=("PASS  $1 ($3)"); pass=$((pass + 1))
+  else results+=("FAIL  $1 want=[$2] got=[$3]"); fail=$((fail + 1)); fi
+}
+
+# P1a — red-making: status staying `clean` at total_completed 0 (the vacuous pass).
+ph_run $'# Plan\n\n- [ ] Add `login` handler\n'
+ph_assert "P1a zero completed tasks: status no_input" no_input "$(ph_field status)"
+ph_assert "P1a zero completed tasks: exit 0" 0 "$PH_RC"
+ph_assert "P1a zero completed tasks: hint text" "plan has no completed tasks to check" "$(ph_field hint)"
+ph_assert "P1a zero completed tasks: checked 0" 0 "$(ph_field checked)"
+# P1b — empty plan.
+ph_run ''
+ph_assert "P1b empty plan: status no_input" no_input "$(ph_field status)"
+ph_assert "P1b empty plan: exit 0" 0 "$PH_RC"
+# P1c — human format prints Status and the hint.
+ph_run $'# Plan\n\n- [ ] Add `login` handler\n' human
+case "$PH_OUT" in *"Status: no_input"*"plan has no completed tasks to check"*) ph_assert "P1c human format names status and hint" yes yes;; *) ph_assert "P1c human format names status and hint" yes "no: $PH_OUT";; esac
+# P2 negative control — completed tasks all tagged # no-code keep `clean`, checked 0.
+ph_run $'- [x] Update release notes # no-code\n- [x] Send mail # no-code\n'
+ph_assert "P2 all completed tasks no-code: status clean" clean "$(ph_field status)"
+ph_assert "P2 all completed tasks no-code: checked 0" 0 "$(ph_field checked)"
+# P3 edge — a `* [x]` plan: the unchanged parser counts it, so no no_input.
+ph_run $'* [x] Add `module.exports` stub in `src/a.js`\n'
+ph_assert "P3 star-bullet completed task: total_completed 1" 1 "$(ph_field total_completed)"
+ph_assert "P3 star-bullet completed task: status is not no_input" no "$([[ "$(ph_field status)" == no_input ]] && echo yes || echo no)"
+# P4 negative control — a clean plan with one checked task reports checked 1.
+ph_run $'- [x] Add `module.exports` in `src/a.js`\n'
+ph_assert "P4 one checked task reports checked 1" 1 "$(ph_field checked)"
+
 printf '\n--- a1-phantom fixture results ---\n'
 for r in "${results[@]}"; do printf '%s\n' "$r"; done
 printf '\nTotal: %d passed, %d failed\n' "$pass" "$fail"

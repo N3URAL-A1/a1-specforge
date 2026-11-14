@@ -580,12 +580,60 @@ run_review_m4() {
   assert "m4 SKILL.md: the frontmatter rule names the class_query/root_site exception" "$(grep -A4 'Never edit bug-report frontmatter' "$REPO_ROOT/skills/a1-fix/SKILL.md" | grep -c 'class_query' | awk '{print ($1>=1)?1:0}')"
 }
 
+# ---------------------------------------------------------------------------
+# Spec 028 FR-012: fix integrity-check --fix-id <date>-<bug-slug> (retro entry present in a1-fix.md)
+# ---------------------------------------------------------------------------
+run_fix_retro_entry() {
+  local v="$WORK/retro-vault" out rc store
+  store="$v/pattern/a1-learnings"
+  mkdir -p "$store"
+  printf -- '---\ndate: 2026-11-14\ntask: login-crash — fixed\nevidence: project/demo/postmortems/2026-11-14-login-crash.md; fix_commit abc1234\n---\n' > "$store/a1-fix.md"
+
+  # present: red-making = the flag ignored (agent-hash path answers instead, no retro_entry key).
+  out=$(A1_VAULT_ROOT="$v" node "$TOOLS" fix integrity-check --fix-id 2026-11-14-login-crash --phase fix-login-crash 2>/dev/null); rc=$?
+  assert_rc "fix-id present: exit 0" 0 "$rc" "$out"
+  assert "fix-id present: retro_entry present" "$(printf '%s' "$out" | grep -c '"retro_entry": "present"')"
+
+  # missing: another slug is not carried by the store (negative control for the substring match).
+  out=$(A1_VAULT_ROOT="$v" node "$TOOLS" fix integrity-check --fix-id 2026-11-14-other-bug --phase fix-other-bug 2>&1); rc=$?
+  assert_rc "fix-id missing: exit 1" 1 "$rc" "$out"
+  assert "fix-id missing: retro_entry missing" "$(printf '%s' "$out" | grep -c '"retro_entry": "missing"')"
+  assert "fix-id missing: hint names workflows/04-verify.md Step 2b" "$(printf '%s' "$out" | grep -q 'write the retro via a1-fix workflows/04-verify.md Step 2b' && echo 1 || echo 0)"
+  # same slug, other date: the stem includes the date, so this is missing too.
+  out=$(A1_VAULT_ROOT="$v" node "$TOOLS" fix integrity-check --fix-id 2026-11-13-login-crash --phase fix-login-crash 2>/dev/null); rc=$?
+  assert_rc "fix-id same slug other date: exit 1" 1 "$rc" "$out"
+
+  # no a1-fix.md at all: missing, exit 1.
+  local v2="$WORK/retro-vault-empty"; mkdir -p "$v2/pattern/a1-learnings"
+  out=$(A1_VAULT_ROOT="$v2" node "$TOOLS" fix integrity-check --fix-id 2026-11-14-login-crash --phase fix-login-crash 2>/dev/null); rc=$?
+  assert_rc "fix-id no store file: exit 1" 1 "$rc" "$out"
+
+  # bad stems exit 2 through assertSafeSegment.
+  out=$(A1_VAULT_ROOT="$v" node "$TOOLS" fix integrity-check --fix-id '../etc/passwd' --phase fix-x 2>&1); rc=$?
+  assert_rc "fix-id traversal stem: exit 2" 2 "$rc" "$out"
+  out=$(A1_VAULT_ROOT="$v" node "$TOOLS" fix integrity-check --fix-id 'a/b' --phase fix-x 2>&1); rc=$?
+  assert_rc "fix-id separator stem: exit 2" 2 "$rc" "$out"
+
+  # writes nothing: no lock bootstrap, the vault tree is unchanged.
+  local before after
+  before=$(cd "$v" && find . -type f | sort | tr '\n' ' ')
+  A1_VAULT_ROOT="$v" node "$TOOLS" fix integrity-check --fix-id 2026-11-14-login-crash --phase fix-login-crash >/dev/null 2>&1
+  A1_VAULT_ROOT="$v" node "$TOOLS" fix integrity-check --fix-id 2026-11-14-other-bug --phase fix-other-bug >/dev/null 2>&1
+  after=$(cd "$v" && find . -type f | sort | tr '\n' ' ')
+  assert "fix-id writes nothing (no _canonical lock, no new file)" "$([[ "$before" == "$after" && ! -e "$store/_canonical/agents.lock.json" ]] && echo 1 || echo 0)"
+
+  # skill text: Step 2b ends with the call line.
+  local wf="$REPO_ROOT/skills/a1-fix/workflows/04-verify.md"
+  assert "04-verify Step 2b carries the fix-id call line" "$(awk '/^### Step 2b/{on=1;next} /^### Step 3/{on=0} on' "$wf" | grep -c 'fix integrity-check --fix-id <date>-<bug-slug> --phase fix-<bug-slug>')"
+}
+
 # ---------- run all ----------
 run_next_suffix
 run_update_status
 run_class_query_gate
 run_find_duplicates
 run_integrity_check
+run_fix_retro_entry
 run_init_postmortem
 run_init_postmortem_hostile
 run_count_postmortems_since
