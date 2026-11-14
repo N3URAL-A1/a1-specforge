@@ -674,6 +674,7 @@ CEW3_DUR="$(cew_last 'Number.isInteger(r.duration_ms)&&r.duration_ms>=0')"
 expect "CEW4 every record of CEW1-3 has an integer duration_ms" "true|true|true" "$CEW1_DUR|$CEW2_DUR|$CEW3_DUR"
 
 . "$(dirname "${BASH_SOURCE[0]}")/cases-host.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/cases-envred.sh"
 
 echo "a1-pr-merge-check: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]
