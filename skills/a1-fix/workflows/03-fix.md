@@ -97,7 +97,7 @@ Spawn the code agent via the `Agent` tool with this brief:
 > - Do NOT manually edit the bug report frontmatter — the skill handles that.
 > - Commit message: `fix(<scope>): <one-line> — <bug-report-filename>`
 > - After the commit: report the commit hash back to the skill.
-> - Fakes/stubs in your regression test reproduce the real failure mode (silent empty output, lag, multi-line error, deadline).
+> - Fakes/stubs in your regression test reproduce the real failure mode (silent empty output, lag, multi-line error, deadline; see `_shared/agent-lessons.md#fake-real-failure-modes`).
 >
 > **Expected output:** Commit hash + one-sentence description of what changed
 > + confirmation that the reproduction steps no longer apply (or explanation

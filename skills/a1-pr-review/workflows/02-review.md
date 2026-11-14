@@ -169,8 +169,8 @@ re-runs every probe and red-before test of the earlier rounds against the new he
 shared predicate, not only the path of the finding. A fix the reviewer suggested is tested like any other fix.
 An empty fix hand-back or a "flaky / pre-existing" claim: Gate 0 in `a1-new-feature/workflows/05-implement.md` applies first.
 Before fixing a finding, enumerate the same field/path class (grep) and fix the class, not the instance.
-Second round on the same symptom: stop patching and take a spec question to the spec owner; the author writes down the state model (which value each path or view
-holds, and when it changes), the reviewer checks the model, then one fix replaces the patches.
+Second round on the same symptom: stop patching; the author writes down the state model (which value each path or view
+holds, and when it changes), the reviewer checks the model, then one fix replaces the patches. If the symptom is a spec question, take it to the spec owner instead.
 
 ## Failure modes
 
