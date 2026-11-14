@@ -321,8 +321,8 @@ features:
     depends_on: []
     started: null
     finished: null
-    spec_path: null
-    plan_path: null
+    spec_path: project/a1-specforge/spec/028-measured-gap-checks.md
+    plan_path: project/a1-specforge/plans/028-measured-gap-checks-wave-plan.md
 next: 006-specforge-kritis-profile
 ---
 
@@ -409,7 +409,6 @@ None.
 
 ## Changelog
 
-- **2026-10-12** — 014-xprov-egress-hardening -> done — stage transition via `product stage`
 - **2026-10-12** — 014-xprov-egress-hardening started date corrected to 2026-10-08 (claim date); code_scope claim released — product stage stamped today; the stage started on 2026-10-08
 - **2026-10-12** — 009-cross-provider-review-gate -> done — stage transition via `product stage`; dates corrected to real span 2026-09-24 .. 2026-10-04 (Wave 7 merged in #18 / 26e79c3; blocking flip 2026-10-03), spec_path set after reconcile (all 30 FRs present)
 - **2026-10-12** — 005-vault-first-artifacts -> cancelled (obsolete) — Spec closed itself 2026-09-13 as obsolete: the planned separate vault sink is superseded by A1_VAULT_ROOT, which delivers FR-001..003; cancelled (not done) because the spec premise no longer holds; a1-reconcile 2026-10-12 confirmed nothing to build
@@ -509,6 +508,7 @@ None.
 - **2026-11-12** — feature '027-lean-pipeline' added — new feature via `product add-feature`
 - **2026-11-12** — feature.md created for '027-lean-pipeline' — formal spec/plan attached via `product feature-init`
 - **2026-11-14** — feature '028-measured-gap-checks' added — new feature via `product add-feature`
+- **2026-11-14** — feature.md created for '028-measured-gap-checks' — formal spec/plan attached via `product feature-init`
 
 ## Appendix — migrated details
 
