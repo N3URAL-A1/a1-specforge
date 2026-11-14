@@ -61,6 +61,11 @@ add_base_set() {
 
 # line_count <text> <fixed-string> — count of lines containing the string.
 line_count() { grep -cF -- "$2" <<<"$1"; }
+# stack_frames <text> — count of V8 stack-frame lines ("    at fn (file.cjs:12:3)", "    at file.cjs:12:3"): four spaces, "at", and a line:column end.
+# Spec 028 FR-030: the check used to count the fixed string '    at ', which also matches the wrapped help line "                  at least 12
+# characters" that a usage error prints after the whole help text. Whether that line was in the captured output depended on how much of the
+# ~1200-line help the pipe delivered before the process exited, so ES8e/ES8i failed in 2 of 20 parallel runs (0 of 2 in a quiet run).
+stack_frames() { grep -cE -- '^ {4}at .*:[0-9]+:[0-9]+\)?$' <<<"$1"; }
 # json_get <expr over j> — evaluates against $OUT parsed as JSON.
 json_get() { printf '%s' "$OUT" | node -e 'const j=JSON.parse(require("fs").readFileSync(0,"utf8"));process.stdout.write(String('"$1"'))'; }
 
@@ -189,7 +194,7 @@ assert_rc "ES7d --fail-above 0 with 1 escaped in window: exit 1" 1 "$RC" "$OUT"
 check_err() { # name expected-substring [expected-rc, default 2]
   assert_rc "$1 exits ${3:-2}" "${3:-2}" "$RC" "$OUT"
   assert_has "$1 message" "$OUT" "$2"
-  assert_eq "$1 no stack trace (count 0)" "$(line_count "$OUT" '    at ')" "0"
+  assert_eq "$1 no stack trace (count 0)" "$(stack_frames "$OUT")" "0"
 }
 OUT="$(env -u A1_VAULT_ROOT node "$TOOLS" metrics escaped --project demo 2>&1)"; RC=$?
 check_err "ES8a vault unset" "A1_VAULT_ROOT"
@@ -240,3 +245,14 @@ mk_pm "$V8" 2026-10-12-upper.md "$BASE_C" date=2026-10-12 found_by=User should_h
 run_tools "$V8" metrics escaped --project demo
 assert_rc "ES11a upper-case found_by" 0 "$RC" "$OUT"
 assert_has "ES11b found_by: User counts as escaped" "$OUT" "escaped: 1"
+
+# ---- ES8x the stack-frame check itself (spec 028 FR-030): it counts a real V8 frame and ignores wrapped help prose ----
+ES8X_FRAMES="$(printf 'Error: boom\n    at Object.<anonymous> (/x/a1-tools.cjs:12:3)\n    at node:internal/modules/cjs/loader:1:2\n')"
+assert_eq "ES8x two V8 frames are counted" "$(stack_frames "$ES8X_FRAMES")" "2"
+assert_eq "ES8x a wrapped help line starting with 'at least' is not a frame" "$(stack_frames "                  at least 12 characters of [A-Za-z0-9+/_.~=-] with a digit); all-letter")" "0"
+# the full usage error, captured whole to a file (no pipe truncation): the help text holds that wrapped line, the check must still see no frame
+ES8X_FILE="$(mktemp "${TMPDIR:-/tmp}/es8x.XXXXXX")"
+A1_VAULT_ROOT="$V6" node "$TOOLS" metrics escaped --project demo --bogus > "$ES8X_FILE" 2>&1
+assert_eq "ES8x the whole usage error holds the wrapped 'at least' help line (the old check's false positive)" "$(grep -cF -- '    at ' "$ES8X_FILE" | awk '{print ($1 > 0) ? "yes" : "no"}')" "yes"
+assert_eq "ES8x ... and still no stack frame" "$(stack_frames "$(cat "$ES8X_FILE")")" "0"
+rm -f "$ES8X_FILE"

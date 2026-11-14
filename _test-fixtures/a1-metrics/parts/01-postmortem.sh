@@ -108,7 +108,7 @@ hostile() {
   run_tools "$V1" fix init-postmortem "$slug" a1-specforge --date 2026-10-22 --should-have-caught "$val"
   [[ $RC -ne 0 && $RC -le 2 ]] && ok "$name exits non-zero (exit $RC)" || bad "$name: exit $RC"
   assert_eq "$name creates no file" "$(ls "$PMDIR" | grep -c -- "-$slug.md")" "0"
-  grep -q 'Traceback\|    at ' <<<"$OUT" && bad "$name prints no stack trace" || ok "$name prints no stack trace"
+  grep -qE 'Traceback|^ {4}at .*:[0-9]+:[0-9]+\)?$' <<<"$OUT" && bad "$name prints no stack trace" || ok "$name prints no stack trace"
 }
 hostile "PM4a newline in the value" h-nl "$(printf 'gate-0.6-schema\ntype: injected')"
 hostile "PM4b '--- x' value" h-dash '--- x'

@@ -97,7 +97,7 @@ assert_has "CO7c --last 2 total" "$OUT" "total: 122601654 tokens"
 run_tools "" metrics cost --project demo
 assert_rc "CO8a vault unset" 2 "$RC" "$OUT"
 assert_has "CO8b one-line message, no stack" "$OUT" "A1_VAULT_ROOT is not set"
-assert_eq "CO8c no stack trace (count)" "$(count_lines '^\s+at ' "$OUT")" "0"
+assert_eq "CO8c no stack trace (count)" "$(count_lines '^\s+at .*:[0-9]+:[0-9]+\)?$' "$OUT")" "0"
 run_tools "$CV/does-not-exist" metrics cost --project demo
 assert_rc "CO8d vault is not a directory" 2 "$RC" "$OUT"
 run_tools "$CV" metrics cost --project '../x'
