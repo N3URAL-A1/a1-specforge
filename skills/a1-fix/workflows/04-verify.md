@@ -273,6 +273,8 @@ N_AFTER="$(grep -cF -- "task: <bug-slug> " "$STORE" 2>/dev/null || true)"
 [ "${N_AFTER:-0}" -eq $(( ${N_BEFORE:-0} + 1 )) ] || { echo "STOP: retro for <bug-slug> not appended exactly once to a1-fix.md - the terminal verdict is not complete"; exit 1; }
 ```
 
+The read-back (`N_AFTER` = `N_BEFORE` + 1) is mandatory for every project, including one without a repo-local store: that entry goes to `$A1_VAULT_ROOT/pattern/a1-learnings/a1-fix.md` (set `A1_VAULT_ROOT`; the postmortem alone is invisible to a1-evolve).
+
 Run this step from inside the worktree, **before** the handoff and before any discard exit: the gate log is
 gitignored and is deleted with the worktree (close-out order: `a1-pr-review` `workflows/05-merge.md` 5.4). A missing
 log exits 2 at `gates fired` (measured 2026-11-04; 4 of 9 postmortems were stranded this way in evolve run 9). Do not
