@@ -70,7 +70,7 @@ opening a PR: `bash bin/run-suites.sh` (parallel; `--workers N` or `A1_SUITE_WOR
 worker count). One run per user and machine: a second start is refused while the lock
 `/tmp/a1-suite-runner-<uid>` is held, and the lock of a dead run is taken over. Logs: one per suite under
 `${TMPDIR:-/tmp}/a1-suite-runs-<uid>/<run id>/` (printed first as `log dir:`). `bash bin/run-suites.sh <dir|dir/runner.sh>`
-runs a subset.
+runs a subset. A failing suite prints its log path, up to 20 log lines containing the word FAIL (`RS_FAIL_LINES`), then the last lines of the log.
 
 `a1-xprov` runs as two runner files, `run-tests.sh` (shard a) and `run-tests-b.sh` (shard b, the parts in `XP_SHARD_B`); the suite runner starts both side by side. `bash _test-fixtures/a1-xprov/run-tests.sh --shard all` runs every part in one shell.
 
@@ -113,6 +113,7 @@ node _shared/a1-tools.cjs gates lint && node _shared/a1-tools.cjs workflow lint
 ```
 
 `.a1/verify.json` declares the commands (one per `_test-fixtures/*/run*.sh`, so a new suite is picked up without an edit); its `each` glob must stay consistent with the discovery of `bin/run-suites.sh` (same runners, plus `a1-schema-check/parser/run-parser.sh`).
+A `commands[]` entry may carry `requires_host: ["darwin"]` (os.platform values); on other hosts it is skipped and reported as `skipped_on_host`. A top-level `env_red: [{id, host, reason}]` names suites known red on a platform; under `--base` only a suite red on base and head is excused, and the base config judges. The first PR that adds `.a1/verify.json` reports `verify_config_first`; clear it with a reviewed `config_change` disposition for `suites.config_changed.fingerprint`.
 `.a1/fidelity.json` holds `db_wrappers`, `test_globs` and `ci_globs`.
 
 A finding is never switched off by a flag. Record a reason instead; the entry starts as `review: pending` and the

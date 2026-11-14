@@ -79,6 +79,8 @@ node <repo>/_shared/a1-tools.cjs worktree enter <id>
 node <repo>/_shared/a1-tools.cjs worktree exit <id> --mode <keep|discard|handoff>
 ```
 
+`keep` and `discard` exit 1 with `gate_log_unpreserved` while a phase gate log has no `run record`; record it first (the refusal prints the command). `--force-discard` skips the check.
+
 Registry writes are atomic (read → modify → write-tmp → rename).
 
 ## Storage

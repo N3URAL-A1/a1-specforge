@@ -119,11 +119,11 @@ Nine commands turn the pipeline's self-reports into measured results. Only calls
 |---|---|
 | `gates lint` | Every blocking deterministic gate in `_shared/gates-registry.md` has a skill that calls it (`invoke` column). CI step. |
 | `gates fired --log <file>` | Prints the `gates_fired` block of a retro from the gate log. |
-| `verify run` / `verify check` | Runs the project's suites (`.a1/verify.json`), records exit codes in `VERIFICATION.md`, and rejects a PASS claim without a green `verify_run`. |
-| `test-fidelity --diff-base <ref>` | Flags tests that mock the subject, skip, return early, or no CI run reaches. |
+| `verify run` / `verify check` | Runs the project's suites (`.a1/verify.json`), records exit codes in `VERIFICATION.md`, and rejects a PASS claim without a green `verify_run`. Commands with `requires_host` (and `*-bash32` ids off bash 3) are skipped on other hosts and listed as `skipped_on_host`; a run that skips every command fails (`all_commands_skipped_on_host`); suites listed in `env_red` for this platform are named, not hidden. |
+| `test-fidelity --diff-base <ref>` | Flags tests that mock the subject, skip, return early, or no CI run reaches. Reports `status` clean, findings, not_applicable or no_scan; no_scan (changed test-like files, none scanned) exits 1 until `test_globs` covers them. |
 | `disposition add` / `review` | The only way to clear a finding: a committed, reviewed entry in `.a1/dispositions.json`. No `--skip` flag exists. |
 | `fix class-sweep` | a1-fix lists every sibling site of a defect class before a bug may be marked fixed. |
-| `pr merge-check` | The last check before `gh pr merge`: suites on head and base, required checks, flaky list, dispositions. |
+| `pr merge-check` | The last check before `gh pr merge`: suites on head and base, required checks, flaky list, dispositions. Reports `skipped_on_host` with a run-on-target-OS hint and names environment-red suites (red on head and base) under `suites.env_red`; the first PR adding `.a1/verify.json` reports `verify_config_first`. |
 
 Every new command exits 2 on an internal error and never 0. Details: [`docs/adr/2026-10-14-gate-invoke-and-log.md`](docs/adr/2026-10-14-gate-invoke-and-log.md); how to run them as a contributor: [`CONTRIBUTING.md`](CONTRIBUTING.md).
 

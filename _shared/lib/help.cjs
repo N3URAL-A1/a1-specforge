@@ -63,6 +63,8 @@ ${SPEC_INIT_HELP}
                   release own claims; foreign claim -> exit 1; missing claim -> idempotent exit 0
   a1-tools code-scope claim --by <feature-id> --scope <path>[,<path>...] [--file <path>]
                   Path-list scope claim (same .a1/reservations.json registry).
+                  Warns on stderr (exit unchanged) when --by is not a ROADMAP.md
+                  features[].id; silent without a roadmap.
                   Deterministic prefix/glob overlap check against every other
                   in-flight feature's code_scope. Overlap -> exit 1, JSON
                   {status:"CONFLICT", overlaps:[...]}, stderr names holder(s).
@@ -114,6 +116,9 @@ ${SPEC_INIT_HELP}
                   1 FAIL (BLOCKER), 2 ERROR (setup). #11 is new with spec
                   010 (FR-029): its entry in the JSON output is a documented
                   FR-037 exception to "no vault, no change".
+                  Check #9 also adds non-blocking warnings (clause_not_carried: an FR/SC
+                  clause without a content token in the plan) and an edge_cases count,
+                  both only when non-empty; they never change result or exit code.
                   Pre-flight checklist: 11 structural checks before implementation.
                   Severities: BLOCKER (exit 1), MAJOR/MINOR (exit 0, warnings).
                   Exit: 0 PASS or PASS_WITH_WARNINGS, 1 FAIL (blocker), 2 ERROR (setup).
@@ -122,6 +127,8 @@ ${SPEC_INIT_HELP}
                   List recent saved checklist reports for a project.
 
   a1-tools constitution init <project-slug> [--title <text>]
+                  The initial version continues the history (same value as
+                  next-version) instead of starting at 1.
   a1-tools constitution discover <project-slug> [--project-path <abs>]
   a1-tools constitution update-status <constitution-path> <new-status>
   a1-tools constitution set-body <constitution-path> --body-file <path>
@@ -163,7 +170,9 @@ ${SPEC_INIT_HELP}
   a1-tools phantom check <plan-path> [--repo-path <abs>] [--since <git-ref>]
                           [--format json|human]
                   Detect [X]-tasks in PLAN.md that have no corresponding code-change
-                  in git diff. Warning-level: always exits 0. Tasks tagged with
+                  in git diff. Warning-level: always exits 0. Status is clean,
+                  phantoms_found or no_input (no completed tasks, nothing checked;
+                  hint "plan has no completed tasks to check"). Tasks tagged with
                   "# no-code" are skipped. Default --since is the commit before the
                   one that last modified the PLAN file.
   a1-tools phantom list-tasks <plan-path>
