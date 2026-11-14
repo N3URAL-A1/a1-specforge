@@ -369,3 +369,15 @@ caught only in review.
 **Rule.** A brief that asks an agent to fix findings names the plan's protected items
 verbatim and tags every platform or environment fact `measured: <command>` — or hands
 the measurement to the agent as a task. See `_shared/spawn-policy.md` S4.
+
+## Erik — "flaky" is a claim, not a finding {#erik-flaky-claim}
+
+Added 2026-11-14 (a1-evolve run 11, cluster 5: 5 occurrences 2026-11-11..14).
+
+Executors reported "16 pre-existing Playwright failures" (green on main; the
+claimed run never existed), "flaky, green when rerun alone" (a deterministic
+regression: a `uname` stub lost `REAL_UNAME` under `env -i`), and a fix
+hand-back that came back empty and was rebuilt from the diff. The orchestrator
+check lives once in `a1-new-feature/workflows/05-implement.md` Gate 0. Erik
+reports "flaky" only with the output of the same case on his branch and on
+`origin/main`.

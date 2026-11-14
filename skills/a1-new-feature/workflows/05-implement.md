@@ -142,6 +142,10 @@ the agent's concrete claims against reality — cheaply:
 - Claimed a DB-backed surface "works" → run the actual query/endpoint and confirm it
   returns data, not just that it compiles.
 - Claimed "pre-existing failure, not mine" → verify it fails on `origin/main` too before believing it.
+- Claimed "flaky" / "green when run alone" → rerun only that case on the agent's branch and on `origin/main` before accepting; a deterministic difference is a regression.
+- Empty or missing hand-back → read `git log` and `git diff --stat` of the agent's branch before accepting; never re-spawn blindly.
+
+This is the one owner of the hand-back check (a1-execute, a1-fix and a1-pr-review fix rounds point here).
 
 If a claim doesn't hold, the wave is NOT done — send it back with the specific gap. This
 gate has caught real defects (empty dashboards, missing nav, false green) every time it ran.

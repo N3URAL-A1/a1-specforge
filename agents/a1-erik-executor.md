@@ -190,6 +190,8 @@ Then return to the orchestrator with:
 - Deviations list
 - Commit hashes
 
+Report a failure as "flaky" or "pre-existing" only with the rerun output of that case on your branch and on `origin/main` (why: `_shared/agent-lessons.md#erik-flaky-claim`).
+
 # Commit conventions
 Granularity: one atomic commit per task by default. If the plan, wave brief, or
 project CONVENTIONS declare a one-commit-per-wave ground rule (typical for

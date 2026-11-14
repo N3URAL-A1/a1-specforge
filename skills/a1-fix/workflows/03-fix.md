@@ -104,6 +104,9 @@ Spawn the code agent via the `Agent` tool with this brief:
 
 ## Step 4 — Record the fix commit
 
+Empty hand-back or a "flaky / pre-existing" claim: apply the checks in
+`a1-new-feature/workflows/05-implement.md` Gate 0 first (`git log`/`git diff --stat` of the fix branch, branch-vs-main rerun).
+
 When the agent (or the user) returns with a commit hash:
 
 ```bash
