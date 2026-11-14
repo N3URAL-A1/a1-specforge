@@ -245,7 +245,7 @@ function fixRetroEntryCheck(fixId) {
   const storeFile = peek ? path.join(peek.root, 'pattern', 'a1-learnings', 'a1-fix.md') : null;
   let text = '';
   try { if (storeFile) text = fs.readFileSync(storeFile, 'utf8'); } catch (_e) { /* no store file: missing */ }
-  const present = text.includes(fixId);
+  const present = new RegExp(`(^|[^A-Za-z0-9-])${fixId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^A-Za-z0-9-])`, 'm').test(text); // id with boundaries: a prefix of a longer id is not a match
   const result = {
     fix_id: fixId,
     store_file: storeFile,

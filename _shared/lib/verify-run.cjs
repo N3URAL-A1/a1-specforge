@@ -529,9 +529,10 @@ function runVerify(opts) {
     const settled = skipped.map((c) => ({ ...c, base_duration_ms: base ? base.durations.get(c.id) ?? null : null }));
     const firstConfig = cfgGuard !== null && cfgGuard.base === null && cfgGuard.head !== null;
     const configChanged = configChangeRecord(project, sel.change, head, firstConfig);
-    const env = hostLib.applyEnvRed(plan.envRed, hostLib.hostRecord(opts.host).platform, settled, [...settled.map((c) => c.id), ...plan.skipped.map((s) => s.id)], sel.compareBase);
+    const env = hostLib.applyEnvRed(plan.envRed, hostLib.hostRecord(opts.host).platform, settled, [...settled.map((c) => c.id), ...plan.skipped.map((s) => s.id)], sel.compareBase, opts.base !== undefined);
     const removed = suiteRemovedRecord(project, headSet.removed, head);
-    const extra = [...(configChanged && !configChanged.dispositioned ? [firstConfig ? 'verify_config_first' : 'verify_config_changed'] : []), ...(removed && !removed.dispositioned ? ['suite_removed'] : [])];
+    const extra = [...(configChanged && !configChanged.dispositioned ? [firstConfig ? 'verify_config_first' : 'verify_config_changed'] : []), ...(removed && !removed.dispositioned ? ['suite_removed'] : []),
+      ...(plan.skipped.length > 0 && settled.length === 0 && plan.noTestsReason === null ? [hostLib.ALL_SKIPPED_REASON] : [])];
     const hints = hostLib.skipHints(plan.skipped, settled.length);
     return {
       ...withReasons(overall(settled, plan.noTestsReason, env.excused), extra), host: hostLib.hostRecord(opts.host), skipped_on_host: plan.skipped, ...(hints.length > 0 ? { hints } : {}), ...(env.envRed.length > 0 ? { env_red: env.envRed } : {}), ...(env.warnings.length > 0 ? { warnings: env.warnings } : {}), source: plan.source, head_sha: head, base_sha: baseSha,

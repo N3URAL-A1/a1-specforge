@@ -30,7 +30,8 @@ function planSideRecord(index, gate, planSha, root, planText) {
   if (disposed) return Object.freeze({ accepted: DISPOSITIONS, entry: disposed });
   const declined = index.find((e) => e.gate === gate && e.accepted === DECLINED && e.plan_sha256 === planSha && RR.declinedMarker(e.result_path, { planSha, gate, wave: null, lane: null }, root));
   if (declined) return Object.freeze({ accepted: DECLINED, entry: declined });
-  const ownerDeclined = index.find((e) => e.gate === gate && e.accepted === OWNER_DECLINED && e.plan_sha256 === planSha && RR.declinedMarker(e.result_path, { planSha, gate, wave: null, lane: null, kind: OWNER_DECLINED }, root));
+  // like the outage path (SEC-3): an owner decline never clears open findings at the same PLAN.md sha
+  const ownerDeclined = openFindings ? undefined : index.find((e) => e.gate === gate && e.accepted === OWNER_DECLINED && e.plan_sha256 === planSha && RR.declinedMarker(e.result_path, { planSha, gate, wave: null, lane: null, kind: OWNER_DECLINED }, root));
   if (ownerDeclined) return Object.freeze({ accepted: OWNER_DECLINED, entry: ownerDeclined });
   // FR-030: a whitespace- or heading-only edit of a PLAN.md that passed review keeps the pass (the earlier text is a1's own copy in the pass run dir)
   const carry = typeof planText === 'string' ? DL.cosmeticCarry(index, gate, planText, planSha, root) : null;

@@ -4,15 +4,16 @@
 // xprov-consent-decline — the owner says "no Codex" for ONE unrun plan-review-xprov target (spec 028 FR-022, FR-023, FR-024; wave 6).
 //
 //   buildFor({ root, phase })  -> { ok: true, key, question, planSha, head, phaseCtx } | a refusal
-//       The canonical xprov-Decline question for the plan-review-xprov target of the phase: repo, phase, target, PLAN.md sha256 and head, and the
+//       The canonical xprov-Decline question for the plan-review-xprov target of the phase: repo, phase, target and PLAN.md sha256, and the
 //       sentence that nothing is sent to Codex. Only for a target with NO index row at the current PLAN.md sha: a row means the target already ran
 //       (or was closed), `target_already_run`. The target is never an argument; design-review-xprov is not offered.
 //   decline({ root, phase, now? })  -> { ok: true, ... } | { ok: false, reason, detail }
 //       Acts only on a recorded canonical yes bound to the question hash (`claimDecision`, the claim path of the chat waiver). Any other answer, a
-//       missing answer, an edited PLAN.md or a moved head: `decline_not_confirmed`, nothing written. A yes writes a1's marker `a1-declined.json`
+//       missing answer or an edited PLAN.md: `decline_not_confirmed`, nothing written. The decline covers the PLAN.md content (its sha), not the head: a moved head
+//       leaves the yes valid (the marker records the head it was written at, for information only). A yes writes a1's marker `a1-declined.json`
 //       (kind owner_declined) into a new `declined-` run dir of the artifacts dir and appends the index row { accepted: 'owner_declined', … }
 //       (no verdict), exactly like `xprov dispose --secret-declined`; load-check reads the row only through that marker. A second call for the same
-//       PLAN.md sha and head: `already_declined` (ok, nothing written).
+//       PLAN.md sha: `already_declined` (ok, nothing written).
 //
 // What it never does (FR-024): write `.a1/xprov.json`, the permit store or the waiver store, create a waiver, or send anything to Codex. This module
 // imports neither the guarded store writer nor the waiver appender; it reads no Codex endpoint. Request-scoped: clock and paths are parameters.
@@ -53,9 +54,8 @@ function buildText(ctx) {
     `Phase: ${Q.clean(d.phase)}`,
     `Ziel: ${GATE} (Plan)`,
     `PLAN.md sha256: ${d.planSha}`,
-    `Head: ${d.head}`,
     'Das Ja heisst: für dieses Ziel wird nichts an Codex gesendet. Es läuft nur die Claude-Prüfung (Reinhard, bei Sicherheitsfläche Samuel).',
-    'Das Ja gilt nur für genau dieses Ziel, diesen PLAN.md-sha und diesen Head. Eine geänderte PLAN.md oder ein neuer Head braucht eine neue Frage.',
+    'Das Ja gilt nur für genau dieses Ziel und diesen PLAN.md-sha (den Inhalt der PLAN.md). Eine geänderte PLAN.md braucht eine neue Frage.',
     'Es ist kein Waiver und keine Freigabe zum Senden; die Freigabe des Repos bleibt davon unberührt.',
     'Ein Nein oder keine Antwort heisst: Codex-Prüfung wie vorgesehen.',
   ].join('\n');
@@ -92,21 +92,25 @@ function buildFor(o) {
   return Object.freeze({ ok: true, key, question: Q.buildQuestion(KIND, dctx), planSha, head, phaseCtx: ctx });
 }
 
-/** The index row + marker of an earlier decline for exactly this sha and head, or null. */
+/** The index row + marker of an earlier decline for exactly this PLAN.md sha (the head is not part of the binding), or null. */
 function earlierDecline(o) {
   const ctx = T.phaseOf(o.root, o.phase);
   const planBytes = C.readNoFollow(ctx.planPath, X.MAX_RESULT_BYTES * 4);
   const index = planBytes ? C.readIndex(ctx.indexPath) : null;
-  const head = headOf(o.root);
-  if (!planBytes || index === null || head === null) return null;
+  if (!planBytes || index === null) return null;
   const planSha = C.sha256(planBytes);
   const row = index.find((e) => e.gate === GATE && e.accepted === ACCEPTED && e.plan_sha256 === planSha
-    && (RR.declinedMarker(e.result_path, { planSha, gate: GATE, wave: null, lane: null, kind: ACCEPTED }, o.root) || { head: null }).head === head);
-  return row ? { row, planSha, head, ctx } : null;
+    && RR.declinedMarker(e.result_path, { planSha, gate: GATE, wave: null, lane: null, kind: ACCEPTED }, o.root) !== null);
+  const marker = row ? RR.declinedMarker(row.result_path, { planSha, gate: GATE, wave: null, lane: null, kind: ACCEPTED }, o.root) : null;
+  return row ? { row, planSha, head: marker.head, ctx } : null;
 }
 
 /** Inside the owner-store lock only: the claim of the recorded yes, then marker and index row. `b` is the question built OUTSIDE the lock. */
 function declineLocked(o, b) {
+  // the target may have run between the question build (outside the lock) and now: re-read the index under the lock before the yes is spent
+  const now = C.readIndex(b.phaseCtx.indexPath);
+  if (now === null) return refuse('index_unreadable', 'xreview/index.json is unparseable or not an array of objects; nothing written');
+  if (now.some((e) => e.gate === GATE && e.plan_sha256 === b.planSha)) return refuse('target_already_run', `${GATE} got an index row at the current PLAN.md sha while the decline was prepared; nothing written`);
   const claim = R.claimDecision({ repo: b.key, kind: KIND, hash: b.question.hash, now: o.now }, { reason: 'decline_not_confirmed', detail: 'the owner did not confirm the decline' });
   if (!claim.ok) return refuse('decline_not_confirmed', `the owner's yes is not recorded for this question (${claim.reason}); nothing written`);
   const m = claim.marker;

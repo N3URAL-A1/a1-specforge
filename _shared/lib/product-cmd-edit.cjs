@@ -40,6 +40,8 @@ function dependsOnError(features, id, deps) {
   const known = new Set(features.map((f) => f.id));
   const unknown = deps.filter((d) => !known.has(d));
   if (unknown.length > 0) return `unknown feature id(s) in --depends-on: ${unknown.join(', ')}`;
+  const cancelled = deps.filter((d) => features.some((f) => f.id === d && f.status === 'cancelled'));
+  if (cancelled.length > 0) return `--depends-on names cancelled feature(s): ${cancelled.join(', ')} (a cancelled feature never completes; remove it from the list)`;
   if (deps.includes(id)) return `feature '${id}' cannot depend on itself`;
   const graph = new Map(features.map((f) => [f.id, f.id === id ? deps : (f.depends_on || [])]));
   const cyc = deps.find((d) => reaches(graph, d, id));

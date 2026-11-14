@@ -30,7 +30,7 @@ const MERGE_CHECK_HELP = `  a1-tools pr merge-check --pr <n> [--base <ref>] [--b
                   exit 2 usage, gh failure, unresolvable base. The report carries head_sha (pass it to
                   \`gh pr merge --match-head-commit\`), upheld_dispositions[] (entries new/changed on the branch that were upheld).
                   suites.host {platform, arch, node} and suites.skipped_on_host come from the local run (spec 028; null on the ci_evidence path); a non-empty
-                  skipped_on_host adds suites.hints ["run these ids on the target OS before merge: <ids>"], exit code unchanged. On the ci_evidence path a head
+                  skipped_on_host adds suites.hints ["run these ids on the target OS before merge: <ids>"]; the skip alone does not change the exit code, but a run where every command was skipped fails (all_commands_skipped_on_host). On the ci_evidence path a head
                   plan with any requires_host or -bash32 id adds the hint "ci_evidence used: host-specific ids were not run locally: <ids>".
                   suites.env_red {id, reason, result_reason}[] (spec 028, from .a1/verify.json env_red at the base): an id red on head AND base on this platform is named there and
                   left out of base_red_unreported (no --bug); red on head but green on base stays suite_red_on_head. suites.warnings carries env_red_stale. The ci_evidence path

@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const { parseNestedFrontmatter, serializeNestedFrontmatter, parseFlags, fail, nowIso } = require('./io.cjs');
 const { emitExit } = require('./emit-exit.cjs');
-const { acquireReservationsLock, exitWithLock, failWithLock, writeAllOrNothing, loadReservations, emitExitWithLock } = require('./locks.cjs');
+const { acquireReservationsLock, exitWithLock, failWithLock, writeAllOrNothing, loadReservations, reservationsFile, emitExitWithLock } = require('./locks.cjs');
 const { usage } = require('./help.cjs');
 const { productMirrorHook } = require('./vault-product-hook.cjs');
 const { CODE_SCOPE_STAGES } = require('./code-scope.cjs');
@@ -229,9 +229,12 @@ function cmdProductCancel(args) {
   const featureMd = featureMdWrite(dir, id, { status: 'cancelled', stage: null });
   if (featureMd !== null) writes.push(featureMd);
   const dependents = updatedFeatures.filter((f) => f.id !== id && f.status !== 'done' && f.status !== 'cancelled' && (f.depends_on || []).includes(id)).map((f) => f.id);
-  const hints = dependents.map((d) => `product edit --by ${d} --depends-on <ids>`);
+  // a code_scope reservation held by the cancelled feature is listed with the release command, never released here
+  const held = loadReservations(reservationsFile({})).reservations.filter((r) => r && r.type === 'code_scope' && r.by === id)
+    .map((r) => ({ type: r.type, by: r.by, paths: Array.isArray(r.paths) ? r.paths : [], stage: r.stage === undefined ? null : r.stage, hint: `code-scope release --by ${id}` }));
+  const hints = [...dependents.map((d) => `product edit --by ${d} --depends-on <ids>`), ...held.map((r) => r.hint)];
   const vaultMirror = writeAllOrNothing(lockPath, writes, 'product cancel', productMirrorHook(dir));
-  const out = { status: 'OK', feature: id, next: updatedFm.next === undefined ? null : updatedFm.next, dependents, hints, files_written: writes.map((w) => w.target), vault_mirror: vaultMirror };
+  const out = { status: 'OK', feature: id, next: updatedFm.next === undefined ? null : updatedFm.next, dependents, held_reservations: held, hints, files_written: writes.map((w) => w.target), vault_mirror: vaultMirror };
   return emitExitWithLock(lockPath, 0, JSON.stringify(out, null, 2) + '\n', '');
 }
 

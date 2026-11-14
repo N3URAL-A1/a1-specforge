@@ -312,7 +312,12 @@ function refuseUnpreservedGateLogs(entry) {
   const { listGateLogs, unpreservedScopes } = require('./worktree-gatelog.cjs');
   if (listGateLogs(entry.worktree_path).length === 0) return;
   let store = null;
-  try { store = require('./run-record.cjs').storeDir(); } catch (_e) { /* no store resolves */ }
+  try { store = require('./run-record.cjs').storeDir(); } catch (e) {
+    if (!e || e.code !== 'no_learning_store') { // anything but "no store" is a failed lookup: refuse, never guess the log is safe to lose
+      process.stderr.write(`error: ${GATE_LOG_UNPRESERVED}: the learning-store lookup failed (${e && e.message ? e.message : e}). Nothing was removed.\n`);
+      process.exit(1);
+    }
+  }
   if (store === null) {
     process.stderr.write(
       `warning: ${GATE_LOG_UNPRESERVED}: no learning store resolves, the gate log in ${entry.worktree_path} is lost with the worktree. ` +

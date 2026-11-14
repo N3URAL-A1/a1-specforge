@@ -62,7 +62,7 @@ function clauseWarnings(specBody, planBody, waveSections) {
   const warnings = [];
   const planLower = planBody.toLowerCase();
   for (const { id, text } of specLines(specBody, FR_LINE_RE)) {
-    const idRe = new RegExp(`\\b${id}\\b`);
+    const idRe = new RegExp(`\\b${id}(?![-\\d])`); // FR-001 is not carried by a wave that only names FR-001-2
     const carrying = waveSections.filter((sec) => idRe.test(sec.lines.join('\n')));
     if (carrying.length === 0) continue;
     const waveLower = carrying.map((sec) => sec.lines.join('\n')).join('\n').toLowerCase();

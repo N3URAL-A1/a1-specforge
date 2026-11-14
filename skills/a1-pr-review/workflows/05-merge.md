@@ -58,7 +58,7 @@ To clear one: `node <repo>/_shared/a1-tools.cjs disposition add --kind config_ch
 `<author>` records `disposition review <fp> --verdict upheld --reason "<why>" --by <reviewer>` (5.1); commit and push `.a1/dispositions.json`;
 run 5.3 again. The fingerprint covers the exact head content: change the config again and the verdict no longer matches.
 The suites run fresh on every merge check (`--no-cache`); no result cache is trusted.
-Reading the `pr merge-check` suites record (spec 028): name every `skipped_on_host` id in the merge report (`suites.skipped_on_host`, `suites.env_red`, `suites.warnings`, `suites.hints`) and never count a skipped id as a pass (it did not run on this host); name every `env_red` entry (a known environment-red suite, excused on this platform only, never on a head-only red) and every `env_red_stale` warning (`warnings[]`: the entry is green or names no command, remove it from `.a1/verify.json`); copy each `hints` line into the report. None of them changes the exit code and none adds a step.
+Reading the `pr merge-check` suites record (spec 028): name every `skipped_on_host` id in the merge report (`suites.skipped_on_host`, `suites.env_red`, `suites.warnings`, `suites.hints`) and never count a skipped id as a pass (it did not run on this host); name every `env_red` entry (a known environment-red suite, excused on this platform only, never on a head-only red) and every `env_red_stale` warning (`warnings[]`: the entry is green or names no command, remove it from `.a1/verify.json`); copy each `hints` line into the report. `skipped_on_host`, `env_red_stale` and `hints` do not change the exit code; an `env_red` entry takes its id out of the verdict on this platform (under `--base` only when the id is red on base and head), and a run where zero commands ran fails with `all_commands_skipped_on_host`. None of this adds a step.
 When `.a1/verify.json` carries `ci_evidence` (same value at the base ref tip) and every job of the named workflow (`ci_evidence.workflow`, pull_request runs only) is green on the PR head, the check takes that as the suite result and skips the local runs (report field `ci_evidence.used`). A PR that changes `.a1/verify.json` or a path under `ci_evidence.unchanged`, a missing check name, `--no-ci-evidence` and an `A1_GH_BIN` override still run locally. The shortcut exists only for plans without counting reporters (reporter `none` everywhere); a base-red suite cleared with `--bug` needs `--no-ci-evidence` (CI red stays `ci_check_red`). Wait for CI before starting it.
 List every CI job that waits on another job (`needs:`) under `ci_evidence.checks`: a job gh does not list yet cannot be judged, only a listed name is waited for.
 Start it only on a quiet host: no other `verify run` or `pr merge-check` running and the 5-minute load below the CPU count.
@@ -85,7 +85,7 @@ On a host new to this project, run the host check of a1-new-feature `workflows/0
 
 ```bash
 node <repo>/_shared/a1-tools.cjs test-fidelity --diff-base "$(git merge-base origin/<base> HEAD)" --phase pr-<n>; RC=$?
-if [ "$RC" -ne 0 ]; then echo "STOP: test-fidelity exit=$RC, no merge. Read the findings (rule, file, line) on stdout."; exit "$RC"; fi
+if [ "$RC" -ne 0 ]; then echo "STOP: test-fidelity exit=$RC, no merge. Read status: findings -> findings[] (rule, file, line); no_scan -> hint and test_like."; exit "$RC"; fi
 node <repo>/_shared/a1-tools.cjs pr merge-check --pr <n> --phase pr-<n>; RC=$?
 if [ "$RC" -ne 0 ]; then echo "STOP: pr merge-check exit=$RC, no merge. Read reasons[] on stdout."; exit "$RC"; fi
 ```

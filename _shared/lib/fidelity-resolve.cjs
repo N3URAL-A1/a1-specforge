@@ -15,7 +15,9 @@ const EXTENSIONS = ['.ts', '.tsx', '.js', '.mjs', '.cjs', '.py'];
 const DEFAULT_TEST_GLOBS = ['*.test.*', '*.spec.*', 'test_*.py', '*_test.py', 'test-*.sh', '*_test.sh'];
 const TEST_LIKE_EXT = /\.(?:sh|bash|js|cjs|mjs|jsx|ts|tsx|py)$/;
 const TEST_DIR_SEGMENTS = new Set(['test', 'tests', '__tests__', 'spec']);
-const TEST_BASENAME = /^test|_test\.|\.test\.|\.spec\./;
+const TEST_BASENAME = /^test[_.-]|_test\.|\.test\.|\.spec\./; // test-file shapes only: `testimonial.ts` is not one
+const HELPER_BASENAME = /^(?:conftest\.py|__init__\.py)$|^(?:setup|helpers)[^/]*\.[^/]+$/; // fixtures, not tests
+const HELPER_DIR_SEGMENTS = new Set(['fixtures', 'utils']);
 const MAX_CONFIG_BYTES = 1024 * 1024;
 const MAX_GLOB_LENGTH = 256;
 const REEXPORT_RE = /\bexport\b[^;'"`]{0,300}?\bfrom[ \t\r\n]{0,64}['"]/g;
@@ -247,7 +249,9 @@ function looksLikeTest(rel) {
   if (typeof rel !== 'string' || !TEST_LIKE_EXT.test(rel)) return false;
   const segs = rel.split('/');
   const base = segs[segs.length - 1];
-  return segs.slice(0, -1).some((s) => TEST_DIR_SEGMENTS.has(s)) || TEST_BASENAME.test(base);
+  const dirs = segs.slice(0, -1);
+  if (HELPER_BASENAME.test(base) || dirs.some((s) => HELPER_DIR_SEGMENTS.has(s))) return false;
+  return dirs.some((s) => TEST_DIR_SEGMENTS.has(s)) || TEST_BASENAME.test(base);
 }
 
 module.exports = {

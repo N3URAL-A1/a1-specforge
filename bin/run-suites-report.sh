@@ -115,7 +115,7 @@ RS_TAIL_WIDTH=300
 RS_FAIL_LINES=20
 
 # rs_print_failures — every failing suite with its log path and reason, then (spec 028 FR-029) up to RS_FAIL_LINES log lines that
-# contain FAIL (case-sensitive, fixed string), then the last RS_TAIL_LINES lines of its log (each cut to RS_TAIL_WIDTH characters),
+# contain FAIL as a whole word (case-sensitive, fixed string), then the last RS_TAIL_LINES lines of its log (each cut to RS_TAIL_WIDTH characters),
 # so a red run explains itself without opening the log: an early FAIL line of a long log is not lost behind the tail.
 rs_print_failures() {
   local i=0 fl
@@ -124,7 +124,7 @@ rs_print_failures() {
       echo "FAILED: ${RS_RES_ID[$i]} (rc=${RS_RES_RC[$i]}${RS_RES_NOTE[$i]:+, ${RS_RES_NOTE[$i]}}) log: ${RS_RES_LOG[$i]}"
       if [ -f "${RS_RES_LOG[$i]}" ]; then
         # `|| true`: grep exits 1 when no line matches; neither that nor head closing the pipe early is an error here
-        fl="$( { grep -F -- 'FAIL' "${RS_RES_LOG[$i]}" || true; } | head -n "$RS_FAIL_LINES" | cut -c1-"$RS_TAIL_WIDTH" )"
+        fl="$( { grep -Fw -- 'FAIL' "${RS_RES_LOG[$i]}" || true; } | head -n "$RS_FAIL_LINES" | cut -c1-"$RS_TAIL_WIDTH" )"
         if [ -n "$fl" ]; then
           echo "  FAIL lines:"
           printf '%s\n' "$fl" | sed 's/^/  | /'

@@ -115,7 +115,7 @@ const KINDS = Object.freeze({
   decline: Object.freeze({
     header: 'xprov-Decline', build: (ctx) => require('./xprov-consent-decline.cjs').buildText(ctx),
     labels: Object.freeze({ no: 'Nein, Codex-Prüfung wie vorgesehen', yes: 'Ja, für dieses Ziel nichts an Codex senden' }),
-    descriptions: Object.freeze({ no: 'Die Codex-Prüfung läuft wie vorgesehen.', yes: 'Für dieses Ziel (PLAN.md-sha, Head) wird nichts an Codex gesendet; es prüft nur Claude.' }),
+    descriptions: Object.freeze({ no: 'Die Codex-Prüfung läuft wie vorgesehen.', yes: 'Für dieses Ziel (PLAN.md-sha) wird nichts an Codex gesendet; es prüft nur Claude.' }),
   }),
 });
 

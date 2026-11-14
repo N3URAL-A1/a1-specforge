@@ -87,7 +87,8 @@ const CONSENT_HELP = `    consent question|ensure|record|revoke  --kind consent|
                   <name> puts ONE xprov-Decline question for the plan-review-xprov
                   target of the phase when it has no index row at the current PLAN.md
                   sha (else target_already_run, exit 1). The text names repo, phase,
-                  target, PLAN.md sha256 and head and says nothing goes to Codex.
+                  target and PLAN.md sha256 and says nothing goes to Codex; the yes binds the
+                  PLAN.md content, not the head.
                   Labels: "Nein, Codex-Prüfung wie vorgesehen" / "Ja, für dieses Ziel
                   nichts an Codex senden". \`consent decline --phase <name>\` acts only
                   on a recorded yes bound to the question hash: it writes a1's marker
@@ -95,8 +96,8 @@ const CONSENT_HELP = `    consent question|ensure|record|revoke  --kind consent|
                   the index row { accepted: owner_declined }; load-check then accepts
                   the plan without Codex (Reinhard-only review). Any other answer:
                   decline_not_confirmed (exit 1, nothing written); a second call for
-                  the same sha and head: already_declined (exit 0, nothing written); a
-                  new PLAN.md or head needs a new question. It never writes
+                  the same sha: already_declined (exit 0, nothing written); a
+                  new PLAN.md needs a new question. It never writes
                   .a1/xprov.json, the permit store or the waiver store, creates no
                   waiver and sends nothing to Codex. design-review-xprov is not offered.
                   allowlist (wave 3, FR-014): question|ensure --kind allowlist --scan

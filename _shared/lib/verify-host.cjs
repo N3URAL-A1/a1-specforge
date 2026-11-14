@@ -18,6 +18,7 @@ const EXPECTED_BASH_MAJOR = 3;
 const SHELL_MISMATCH = 'shell_major_mismatch';
 const TARGET_OS_HINT = 'run these ids on the target OS before merge: ';
 const CI_HINT = 'ci_evidence used: host-specific ids were not run locally: ';
+const ALL_SKIPPED_REASON = 'all_commands_skipped_on_host'; // verdict fail: zero commands ran on this host (review round M2)
 const ALL_SKIPPED_HINT = 'all_commands_skipped_on_host: every command of .a1/verify.json is pinned to another host or shell, so nothing was checked on this host; run the skipped ids on the target OS';
 const ENV_RED_STALE = 'env_red_stale';
 const ENV_RED_STALE_HINT = 'remove the entry from .a1/verify.json';
@@ -120,9 +121,11 @@ function validateEnvRed(cfg) {
  * @param {object[]} settled settled head command records
  * @param {Iterable<string>} knownIds every resolved id of the plan, including the ones skipped on this host
  * @param {boolean} compareBase true when a base side was compared
+ * @param {boolean} [baseRequested] true when --base was given; with no base compare (the merge-base has no plan) an entry then excuses nothing,
+ *   because the PR itself supplies both the failing command and the excuse
  * @returns {{envRed: object[], excused: Set<string>, warnings: object[]}}
  */
-function applyEnvRed(entries, platform, settled, knownIds, compareBase) {
+function applyEnvRed(entries, platform, settled, knownIds, compareBase, baseRequested = false) {
   const byId = new Map(settled.map((c) => [c.id, c]));
   const known = new Set(knownIds);
   const envRed = [];
@@ -132,7 +135,8 @@ function applyEnvRed(entries, platform, settled, knownIds, compareBase) {
   for (const e of entries.filter((x) => x.host === platform)) {
     const c = byId.get(e.id);
     if (!c) { if (!known.has(e.id)) stale(e.id); continue; }
-    const red = compareBase ? c.reason === null && Array.isArray(c.pre_existing_red_ids) && c.pre_existing_red_ids.length > 0 : c.reason !== null;
+    const noExcuse = baseRequested && !compareBase;
+    const red = noExcuse ? false : compareBase ? c.reason === null && Array.isArray(c.pre_existing_red_ids) && c.pre_existing_red_ids.length > 0 : c.reason !== null;
     if (red) {
       envRed.push({ id: e.id, reason: e.reason, result_reason: c.reason || BASE_AND_HEAD_RED });
       excused.add(e.id);
@@ -156,4 +160,4 @@ function ciSkipHints(ids) {
   return ids.length === 0 ? [] : [`${CI_HINT}${ids.join(', ')}`];
 }
 
-module.exports = { validateEnvRed, applyEnvRed, validateRequiresHost, hostRecord, probeBashMajor, hostFilter, skipHints, hostSpecificIds, ciSkipHints };
+module.exports = { ALL_SKIPPED_REASON, validateEnvRed, applyEnvRed, validateRequiresHost, hostRecord, probeBashMajor, hostFilter, skipHints, hostSpecificIds, ciSkipHints };

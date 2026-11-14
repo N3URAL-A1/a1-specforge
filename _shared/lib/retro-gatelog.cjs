@@ -79,6 +79,15 @@ function entryProblems(entries, rows, last) {
 }
 
 /**
+ * Stable sort by `ts` (argv order on equal or unparsable timestamps), so the last verdict of a gate does not depend on the
+ * order of the --gate-log flags. A single log is already in time order and comes out unchanged.
+ */
+function mergeByTs(records) {
+  const time = (r) => { const t = Date.parse(r && r.ts); return Number.isNaN(t) ? null : t; };
+  return records.map((r, i) => ({ r, i, t: time(r) })).sort((a, b) => (a.t !== null && b.t !== null && a.t !== b.t ? a.t - b.t : a.i - b.i)).map((x) => x.r);
+}
+
+/**
  * @param {{logPath?: string, logPaths?: string[], registryText: string, blocks: {date: any, isEntry: boolean, entries: {id: string, verdict?: string}[]}[], since?: string}} args
  * @returns {{checked: boolean, skipped?: string, lines?: number, problems: {id: string, rule: string, reason: string}[]}}
  * @throws Error code A1_GATELOG when the log is missing, malformed or its chain is broken
@@ -88,7 +97,7 @@ function checkRetroAgainstLog({ logPath, logPaths, registryText, blocks, since =
   if (enforced.length === 0) return { checked: false, skipped: 'legacy', problems: [] };
   // Spec 028 FR-016: several logs (a run that crossed scopes) are merged in argument order; any unreadable one throws.
   const reads = (logPaths && logPaths.length > 0 ? logPaths : [logPath]).map(readGateLog);
-  const records = reads.flatMap((r) => r.records);
+  const records = mergeByTs(reads.flatMap((r) => r.records));
   const lines = reads.reduce((n, r) => n + r.lines, 0);
   const rows = new Map(parseRegistryRows(registryText).map((r) => [r.id, r]));
   const entries = enforced.flatMap((b) => b.entries);
