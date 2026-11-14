@@ -245,7 +245,6 @@ per terminal verdict — full contract and exit codes in
 `_shared/retro-template.md`, which is the owner of this instruction:
 
 ```bash
-[ -n "$A1_VAULT_ROOT" ] || [ -n "$CI" ] || { echo 'STOP: A1_VAULT_ROOT unset - retro would land in the gitignored repo store'; exit 1; }
 VAULT="${A1_VAULT_ROOT:-$(git rev-parse --show-toplevel)/.a1/learnings}"
 mkdir -p "$VAULT/pattern/a1-learnings"
 RETRO_FILE="$(mktemp)"
@@ -274,7 +273,7 @@ N_AFTER="$(grep -cF -- "task: <bug-slug> " "$STORE" 2>/dev/null || true)"
 [ "${N_AFTER:-0}" -eq $(( ${N_BEFORE:-0} + 1 )) ] || { echo "STOP: retro for <bug-slug> not appended exactly once to a1-fix.md - the terminal verdict is not complete"; exit 1; }
 ```
 
-The read-back (`N_AFTER` = `N_BEFORE` + 1) is mandatory for every project, including one without a repo-local store: that entry goes to `$A1_VAULT_ROOT/pattern/a1-learnings/a1-fix.md`. The guard at the top of the snippet stops when `A1_VAULT_ROOT` is unset (outside CI): the repo store is gitignored, so a1-evolve would never see the entry.
+The read-back (`N_AFTER` = `N_BEFORE` + 1) is mandatory for every project, whichever store `$VAULT` resolves to (the vault when `A1_VAULT_ROOT` is set, else the repo-local `.a1/learnings/`; a1-evolve collects both). A project without a repo checkout of its own still writes to the resolved store; the step is never skipped.
 
 Run this step from inside the worktree, **before** the handoff and before any discard exit: the gate log is
 gitignored and is deleted with the worktree (close-out order: `a1-pr-review` `workflows/05-merge.md` 5.4). A missing

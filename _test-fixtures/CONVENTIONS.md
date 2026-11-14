@@ -72,7 +72,7 @@ suite are green, exit 1 means at least one case failed.
 - Git fixtures: `cd` into the temp root first, set `GIT_CEILING_DIRECTORIES` to its parent so a stray `git`
   never finds the real repo, and never write `git -C "$VAR"` with a variable that can be empty (an empty path
   is the current directory: a fixture once committed into the feature branch; the `a1-vault-fallback` L3 lint flags
-  the statically empty forms, `git_in` in `a1-xprov` guards the rest). A fixture or mutant that
+  the statically empty forms; where the variable can be empty, use a guard such as `git_in` in `a1-xprov`). A fixture or mutant that
   writes under `$HOME` runs with its own `HOME` inside the temp root.
 - After touching any fixture script, also run `_test-fixtures/a1-vault-fallback/run-tests.sh` (portability
   lint L1b/L2b, a few seconds).

@@ -35,8 +35,8 @@ user-facing prompt wordings verbatim. Caller-specific values for this skill:
 ## `<spec-id>`: the one id for `--by` and `--phase`
 
 `<spec-id>` is the product-CLI feature id: the `- id: <###-slug>` entry that `product add-feature --id` wrote to
-`docs/product/ROADMAP.md` (the same id `product stage --by` takes). It is required before the first `--by` claim
-(Phase 4 scope claim): without it run `a1-roadmap` / `product add-feature` first. Do not use the spec number: the spec
+`docs/product/ROADMAP.md` (the same id `product stage --by` takes). It is required before the first `--by` or `--phase`
+call (Phase 2 ears-check): without it run `a1-roadmap` / `product add-feature` first. Do not use the spec number: the spec
 number and the feature id can differ, and `product stage` then silently skips the reservation mirror (the 004/016 split).
 `roadmap_entry` is not the id when it is a legacy slug that several features share (`m1-p1-auth-setup`).
 A project without `docs/product/` (legacy `.a1/roadmap.md`) uses the spec's `id:` frontmatter (`<###>-<slug>`) in every
