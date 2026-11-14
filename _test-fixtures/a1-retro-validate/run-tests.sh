@@ -878,6 +878,41 @@ WIRING="$(node -e '
   process.stdout.write(out.join(" "));' "$REPO_ROOT")"
 [[ "$WIRING" == "03-verify.md:1/1 04-verify.md:1/1 06-verify.md:1/1 04-audit.md:1/1 04-apply.md:1/1 retro-template.md:1/1" ]] && ok "L12 each of the 5 skill call sites and the template: one retro-validate block, all with gates fired + --gate-log + --phase retro-<scope>" || bad "L12 ($WIRING)"
 
+
+# L13 spec 028 FR-016 (wave 2): several --gate-log values are read together (a run that crossed two scopes).
+# Red-making changes: only the last --gate-log read (L13a, L13e); no dedupe by resolved path (L13c, L13d); a broken or
+# missing second log skipped instead of exit 2 (L13f, L13g); a valueless second flag accepted (L13h).
+ML_A="$(gl_repo mla src/util.js 'export const add = (a, b) => a + b;')" || exit 1
+ML_B="$(gl_repo mlb src/util.js 'export const add = (a, b) => a + b;')" || exit 1
+gl_run "$ML_A" schema-check run --phase s --migrations "$REPO_ROOT/_test-fixtures/a1-schema-check/pass/migrations"
+gl_run "$ML_B" realpath-check run --phase r --diff-base HEAD~1 --project .
+LOG_A="$ML_A/.a1/phases/s/gate-log.jsonl"; LOG_B="$ML_B/.a1/phases/r/gate-log.jsonl"
+gl_retro "$GL_WORK/l13.md" 2026-10-20 "$E_RP" "$E_SC"
+gl_validate "$GL_WORK/l13.md" "$LOG_A" --enforced-since $SINCE
+gl_check "L13z control: only the schema log, the retro also names the realpath gate: exit 1 no_log_line:gate-0.7-realpath" 1 \
+  'j.gate_log.problems.map(p=>p.rule+":"+p.id).join(",")' "no_log_line:gate-0.7-realpath"
+gl_validate "$GL_WORK/l13.md" "$LOG_A" --gate-log "$LOG_B" --enforced-since $SINCE
+gl_check "L13a two logs (schema + realpath): exit 0, no no_log_line, lines 2 (1+1), 0 problems" 0 \
+  'j.gate_log.checked+"/"+j.gate_log.lines+"/"+j.gate_log.problems.length' "true/2/0"
+gl_validate "$GL_WORK/l13.md" "$LOG_B" --gate-log "$LOG_A" --enforced-since $SINCE
+gl_check "L13b the same two logs in the other order: same result" 0 'j.gate_log.lines+"/"+j.gate_log.problems.length' "2/0"
+gl_validate "$GL_WORK/l1.md" "$PASS_LOG" --gate-log "$PASS_LOG" --enforced-since $SINCE
+gl_check "L13c the same path twice counts lines once (equals the single-log count of L1: 2, not 4)" 0 \
+  'j.gate_log.checked+"/"+j.gate_log.lines+"/"+j.gate_log.problems.length' "true/2/0"
+OUT="$(cd "$(dirname "$PASS_LOG")" && node "$TOOLS" retro validate "$GL_WORK/l1.md" --gate-log gate-log.jsonl --gate-log ./gate-log.jsonl --gate-log "$PASS_LOG" --enforced-since $SINCE 2>"$GL_WORK/err")"; RC=$?; ERR="$(cat "$GL_WORK/err")"
+gl_check "L13d relative, ./relative and absolute spelling of one file read once (lines 2)" 0 'j.gate_log.lines' "2"
+OUT="$(node "$TOOLS" retro validate "$GL_WORK/l13.md" "--gate-log=$LOG_A" "--gate-log=$LOG_B" --enforced-since $SINCE 2>"$GL_WORK/err")"; RC=$?; ERR="$(cat "$GL_WORK/err")"
+gl_check "L13e --gate-log=<path> form repeated: both read (lines 2, 0 problems)" 0 'j.gate_log.lines+"/"+j.gate_log.problems.length' "2/0"
+gl_validate "$GL_WORK/l13.md" "$LOG_A" --gate-log "$GL_WORK/tampered.jsonl" --enforced-since $SINCE
+[[ $RC -eq 2 && -z "$OUT" && "$ERR" == *"not trustworthy"* ]] && ok "L13f a good log plus a chain-broken second log: exit 2, no report, message names the log" || bad "L13f (rc=$RC out=$OUT err=$ERR)"
+gl_validate "$GL_WORK/l13.md" "$LOG_A" --gate-log "$GL_WORK/no-such.jsonl" --enforced-since $SINCE
+[[ $RC -eq 2 && "$ERR" == *"unreadable"* ]] && ok "L13g a good log plus a missing second log: exit 2 unreadable" || bad "L13g (rc=$RC err=$ERR)"
+OUT="$(node "$TOOLS" retro validate "$GL_WORK/l13.md" --gate-log "$LOG_A" --gate-log 2>"$GL_WORK/err")"; RC=$?; ERR="$(cat "$GL_WORK/err")"
+[[ $RC -eq 2 && "$ERR" == *"needs a plain path"* ]] && ok "L13h a second --gate-log without a value: exit 2, usage message" || bad "L13h (rc=$RC err=$ERR)"
+gl_retro "$GL_WORK/l13l.md" 2026-09-12 "$E_BUILD"
+gl_validate "$GL_WORK/l13l.md" "$LOG_A" --gate-log "$LOG_B" --enforced-since $SINCE
+gl_check "L13i legacy retro with two logs: checked=false, exit 0 (the skip path still works)" 0 'j.gate_log.checked' "false"
+
 printf '%s\n' "${results[@]}"
 echo "----"
 echo "a1-retro-validate: $pass passed, $fail failed"
