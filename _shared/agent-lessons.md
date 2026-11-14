@@ -395,3 +395,14 @@ and could never be empty. A fake that cannot produce the real failure cannot
 turn the test red. Rule: the fake reproduces silent empty output, lag,
 multi-line errors and deadlines; a remote probe that gates a disruptive action
 prints a sentinel line, and "empty output" means postpone, with a test for it.
+
+## Pablo — an AC carries every clause; contradictions go to clarify {#spec-clause-in-plan}
+
+Added 2026-11-14 (a1-evolve run 11, cluster 6: 5 occurrences 2026-11-08..12).
+
+lomberg 001 diluted SC-005 with `--skip-audits=is-crawlable` instead of routing
+the spec contradiction back; a1-office 099 plan R-4 silently resolved the FR-006
+contradiction; obsidian-lumen 020 lost the FR-016 clause "all text stays
+readable" from the plan AC. Victor caught each, but only in Phase 6, after the
+code existed. Rule: an AC repeats every clause of its FR/SC sentence; a spec
+contradiction goes back to clarify (the spec owner), never into the plan.

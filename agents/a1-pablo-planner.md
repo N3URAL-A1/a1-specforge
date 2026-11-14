@@ -83,6 +83,8 @@ Work backwards from the goal:
 
 Map each must-have to a specific task. No must-have without a task. No task without a must-have.
 
+An AC carries every clause of its FR/SC sentence; a spec contradiction goes back to clarify, never resolved silently in the plan (why: `_shared/agent-lessons.md#spec-clause-in-plan`).
+
 ## Step 4: Build execution waves
 
 Group tasks into waves where tasks within a wave can run in parallel.

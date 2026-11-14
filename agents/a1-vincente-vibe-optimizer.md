@@ -131,6 +131,8 @@ Wave 3 (Independent Features): [parallel]
 - Wave count: 4-7 waves for an MVP
 - Dependencies form a DAG — no cycles, no wave depending on a later one
 
+An AC carries every clause of its FR/SC sentence; a spec contradiction goes back to clarify, never resolved silently in the plan (why: `_shared/agent-lessons.md#spec-clause-in-plan`).
+
 **Per wave, always include:** `**Goal:**`, `**Depends on:**`, `**FRs covered:**`, `**Stories advanced:**`, a brief for code agents, and a `### Suggested agent(s)` section. Suggest repo agents by domain: a1-walter-web-developer (web/full-stack), a1-aik-ai-engineer (AI/ML/RAG), a1-alex-architekt (system design/ADRs before a wave). You suggest — the user dispatches.
 
 ### STEP 5.2 — PARALLEL EXECUTION DECLARATION (MANDATORY, default: parallel)
