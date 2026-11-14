@@ -165,4 +165,4 @@ function diffFRCoverage(specFRs, waveMap) {
   return { missingInPlan, phantomInPlan, duplicatedInPlan, planFRs };
 }
 
-module.exports = { extractSpecFRs, scanWaveSections, extractWaveFRs, extractWaveRefs, diffFRCoverage };
+module.exports = { stripFences, extractSpecFRs, scanWaveSections, extractWaveFRs, extractWaveRefs, diffFRCoverage };

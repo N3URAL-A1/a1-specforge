@@ -176,4 +176,4 @@ function cmdRun(sub, args) {
   }
 }
 
-module.exports = { cmdRun, gateEntries };
+module.exports = { cmdRun, gateEntries, storeDir };

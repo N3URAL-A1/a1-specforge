@@ -285,6 +285,12 @@ work around it with a `retro validate` call without `--gate-log`: that drops the
 cross-check reads. If promote-lessons later runs, it does NOT re-append these
 entries; it only writes suggestions.
 
+Close Step 2b with the read-only retro check (exit 1 and the hint when the entry is missing):
+
+```bash
+node <repo>/_shared/a1-tools.cjs fix integrity-check --fix-id <date>-<bug-slug> --phase fix-<bug-slug>
+```
+
 ### Step 3 — Check promote-lessons threshold
 
 ```bash

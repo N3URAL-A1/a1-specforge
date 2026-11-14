@@ -43,6 +43,8 @@ ${SPEC_INIT_HELP}
   a1-tools fix update-status <bug-path> <new-status> [flags]
   a1-tools fix list <project-slug> [--status=<s>] [--severity=<s>]
   a1-tools fix find-duplicates <project-slug> <keyword> [<keyword>...]
+  a1-tools fix integrity-check --fix-id <YYYY-MM-DD>-<bug-slug>
+                  Read-only: retro_entry present|missing in <store>/a1-fix.md; exit 1 + hint when missing, exit 2 on a bad stem.
 
   a1-tools analyze next-slot <project-slug> <focus> [--date YYYY-MM-DD]
   a1-tools analyze init <project-slug> <focus> [--project-path /abs] [--date YYYY-MM-DD] [--title <text>]
@@ -139,6 +141,7 @@ ${SPEC_INIT_HELP}
                   Reports commit_count, has_uncommitted, branch_ahead/behind.
   a1-tools worktree exit <id> --mode <keep|discard|handoff> [--force-discard]
                   keep: remove worktree, keep branch. discard: remove both (refuses on unmerged commits without --force-discard). handoff: keep both for a1-pr-review.
+                  keep/discard also refuse (exit 1) while a gate log has no 'run record' (gate_log_unpreserved); --force-discard skips that check.
   a1-tools worktree list [--status=<s>] [--repo-root=<abs>]
   a1-tools worktree gc [--dry-run]
                   Reconcile registry with on-disk state. Mark missing worktrees as cleaned.

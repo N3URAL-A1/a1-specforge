@@ -300,6 +300,36 @@ const REFUSAL_REASONS = Object.freeze({
   'git-failed': 'a git check failed (git older than 2.38 has no merge-tree --write-tree)',
 });
 
+const GATE_LOG_UNPRESERVED = 'gate_log_unpreserved';
+
+/**
+ * Exits 1 (nothing removed) when the worktree holds a non-empty gate log whose scope has no line in the
+ * learning-store runs file. No folder, no gate log: nothing to lose, no check. No learning store: warn on
+ * stderr and let the exit proceed (refusing would trap `--mode keep` on a machine without a store).
+ */
+function refuseUnpreservedGateLogs(entry) {
+  if (!fs.existsSync(entry.worktree_path)) return;
+  const { listGateLogs, unpreservedScopes } = require('./worktree-gatelog.cjs');
+  if (listGateLogs(entry.worktree_path).length === 0) return;
+  let store = null;
+  try { store = require('./run-record.cjs').storeDir(); } catch (_e) { /* no store resolves */ }
+  if (store === null) {
+    process.stderr.write(
+      `warning: ${GATE_LOG_UNPRESERVED}: no learning store resolves, the gate log in ${entry.worktree_path} is lost with the worktree. ` +
+        `Hint: set A1_VAULT_ROOT, then run run record\n`
+    );
+    return;
+  }
+  const scopes = unpreservedScopes(entry.worktree_path, store);
+  if (scopes.length === 0) return;
+  const cmds = scopes.map((scope) => `  a1-tools run record --repo ${entry.worktree_path} --scope ${scope}`).join('\n');
+  process.stderr.write(
+    `error: ${GATE_LOG_UNPRESERVED}: ${scopes.length} gate log(s) in ${entry.worktree_path} have no run record and would be deleted with the worktree. ` +
+      `Nothing was removed. Record them, then exit again (or use --mode handoff, or --mode discard --force-discard):\n${cmds}\n`
+  );
+  process.exit(1);
+}
+
 function cmdWorktreeExit(args) {
   const flags = parseFlags(args, {
     mode: 'string',
@@ -341,6 +371,9 @@ function cmdWorktreeExit(args) {
       branch_kept: true,
     };
   }
+
+  // Spec 028 FR-011: keep / discard delete the gate logs with the worktree; refuse while one is unrecorded.
+  if (!(mode === 'discard' && flags['force-discard'])) refuseUnpreservedGateLogs(entry);
 
   // For keep / discard, we need to remove the worktree.
   // For discard, also check unmerged commits unless --force-discard.
