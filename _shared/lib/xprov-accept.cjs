@@ -15,6 +15,7 @@ const RR = require('./xprov-runrecord.cjs');
 const DL = require('./xprov-delta.cjs');
 
 const DISPOSITIONS = 'dispositions';
+const OWNER_DECLINED = 'owner_declined'; // spec 028 FR-023: the owner declined the plan-review target in chat (xprov consent decline)
 const DECLINED = 'secret_declined'; // FR-029: the owner declined the allowlist question for a changed-line hit (xprov dispose --secret-declined)
 
 /** The plan-review side record for `planSha`: { accepted, entry } or null. */
@@ -29,6 +30,8 @@ function planSideRecord(index, gate, planSha, root, planText) {
   if (disposed) return Object.freeze({ accepted: DISPOSITIONS, entry: disposed });
   const declined = index.find((e) => e.gate === gate && e.accepted === DECLINED && e.plan_sha256 === planSha && RR.declinedMarker(e.result_path, { planSha, gate, wave: null, lane: null }, root));
   if (declined) return Object.freeze({ accepted: DECLINED, entry: declined });
+  const ownerDeclined = index.find((e) => e.gate === gate && e.accepted === OWNER_DECLINED && e.plan_sha256 === planSha && RR.declinedMarker(e.result_path, { planSha, gate, wave: null, lane: null, kind: OWNER_DECLINED }, root));
+  if (ownerDeclined) return Object.freeze({ accepted: OWNER_DECLINED, entry: ownerDeclined });
   // FR-030: a whitespace- or heading-only edit of a PLAN.md that passed review keeps the pass (the earlier text is a1's own copy in the pass run dir)
   const carry = typeof planText === 'string' ? DL.cosmeticCarry(index, gate, planText, planSha, root) : null;
   return carry ? Object.freeze({ accepted: 'pass', entry: carry, carried_from: carry.plan_sha256 }) : null;
@@ -39,9 +42,10 @@ const UNAVAILABLE_NOTICE = 'not_applicable — the Codex run failed (usage limit
 const sideNotice = (accepted, blockedNotice) => {
   if (accepted === X.REASONS.codex_unavailable) return UNAVAILABLE_NOTICE;
   if (accepted === 'carried') return 'PLAN.md differs from the passed review only in whitespace or heading text; the earlier pass carries (delta review, nothing sent)';
+  if (accepted === OWNER_DECLINED) return 'PLAN.md accepted without Codex: the owner declined the Codex review of this target (Reinhard-only review; xprov consent decline)';
   if (accepted === DECLINED) return 'PLAN.md accepted without Codex: the owner declined the secret-hit allowlist question (Reinhard-only review; xprov dispose --secret-declined)';
   if (accepted === DISPOSITIONS) return 'PLAN.md accepted by recorded round-cap dispositions (no BLOCKER; xprov dispose)';
   return accepted === X.REASONS.codex_blocked_fallback ? blockedNotice : null;
 };
 
-module.exports = { UNAVAILABLE_NOTICE, DECLINED, DISPOSITIONS, planSideRecord, sideNotice };
+module.exports = { UNAVAILABLE_NOTICE, OWNER_DECLINED, DECLINED, DISPOSITIONS, planSideRecord, sideNotice };

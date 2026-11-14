@@ -17,6 +17,8 @@
 //   question|ensure --kind waiver --phase <name>   the xprov-Waiver question for the gate targets that are failed now
 //   question|ensure --kind allowlist --scan <snap-basename>                    the xprov-Allowlist question for one scan's hits (masked)
 //   waive --phase <name>    one waiver record per LISTED target (by owner-chat), against a matching owner yes
+//   question|ensure --kind decline --phase <name>   the xprov-Decline question for the unrun plan-review-xprov target of the phase (spec 028 FR-022)
+//   decline --phase <name>   marker + index row owner_declined against a matching owner yes; writes no xprov.json, permit or waiver (FR-023, FR-024)
 //   allowlist --scan <snap-basename>                    one hit approval per listed hit (hit-approvals.json, never the blob-approval store), against a matching owner yes
 // Exit contract: 0 ok · 1 refused (stdout JSON names `reason`) · 2 usage error.
 // The answer is NEVER an argument: it comes from the marker the plugin hook wrote from the real tool result.
@@ -33,10 +35,12 @@ const R = require('./xprov-consent-record.cjs');
 const L = require('./xprov-consent-ludwig.cjs');
 const W = require('./xprov-consent-waive.cjs');
 const A = require('./xprov-consent-allowlist.cjs');
+const D = require('./xprov-consent-decline.cjs');
 const AK = require('./xprov-consent-asked.cjs');
 
 const ECHO_MAX = 80;
-const SCOPED = Object.freeze({ waiver: W, allowlist: A }); // kinds whose question is built from the phase / scan state (wave 3)
+const SCOPED = Object.freeze({ waiver: W, allowlist: A, decline: D }); // kinds whose question is built from the phase / scan state (wave 3; decline: spec 028 FR-022)
+const KINDLESS = Object.freeze(['revoke', 'waive', 'allowlist', 'decline']); // subcommands whose kind is fixed by the subcommand itself
 const RECORD_KINDS = Object.freeze(['consent', 'classification']);
 const usage = (msg) => C.usageExit('consent', msg);
 const shown = (v) => JSON.stringify(String(v).slice(0, ECHO_MAX));
@@ -49,17 +53,19 @@ const FLAGS = Object.freeze({
   revoke: { repo: 'string' },
   waive: { repo: 'string', phase: 'string' },
   allowlist: { repo: 'string', scan: 'string' },
+  decline: { repo: 'string', phase: 'string' },
 });
 
 /** The text of a wrong phase / scan flag combination, or null. */
 function scopeFlagProblem(sub, flags) {
-  const kind = sub === 'waive' ? 'waiver' : (sub === 'allowlist' ? 'allowlist' : flags.kind);
+  const kind = sub === 'waive' ? 'waiver' : (sub === 'allowlist' || sub === 'decline' ? sub : flags.kind);
   const has = (n) => flags[n] !== undefined;
   const asksOnce = sub === 'question' && AK.ASK_KINDS.includes(kind); // spec 016 wave 5: --phase <name> | --run <id> scope the one ask
   if (has('run') && !asksOnce) return '--run belongs to `question --kind consent|classification`';
   if (asksOnce) return has('scan') ? '--scan belongs to --kind waiver|allowlist' : null;
   if (kind === 'waiver') return !has('phase') ? '--phase <name> is required' : (has('scan') ? '--scan belongs to --kind allowlist' : null);
   if (kind === 'allowlist') return !has('scan') ? '--scan <snap-basename> is required' : (has('phase') ? '--phase belongs to --kind waiver' : null);
+  if (kind === 'decline') return !has('phase') ? '--phase <name> is required' : (has('scan') ? '--scan belongs to --kind allowlist' : null);
   return has('phase') || has('scan') ? '--phase and --scan belong to --kind waiver|allowlist' : null;
 }
 
@@ -70,7 +76,7 @@ function parse(sub, args) {
   for (const name of Object.keys(FLAGS[sub])) {
     if (name in flags && (typeof flags[name] !== 'string' || flags[name] === '')) return usage(`${sub}: --${name} needs a value`);
   }
-  if (sub !== 'revoke' && sub !== 'waive' && sub !== 'allowlist') {
+  if (!KINDLESS.includes(sub)) {
     if (flags.kind === undefined) return usage(`${sub}: --kind <${Q.kindNames().join('|')}> is required`);
     const allowed = sub === 'question' ? Q.kindNames() : (sub === 'ensure' ? [...RECORD_KINDS, ...Object.keys(SCOPED)] : RECORD_KINDS);
     if (Q.kindDef(flags.kind) === null || !allowed.includes(flags.kind)) return usage(`${sub}: unknown --kind ${shown(flags.kind)} (one of ${allowed.join(', ')})`);
@@ -100,7 +106,7 @@ function facts(root, ludwigRecord) {
 /** The built question of a waiver / allowlist kind ({ ok: true, key, question, ... }), or null after a refusal printed as JSON (exit 1). Throws typed input errors (exit 2). */
 function scopedBuild(kind, a, sub) {
   const base = { root: a.root };
-  const r = kind === 'waiver' ? W.buildFor({ ...base, phase: a.flags.phase }) : A.buildFor({ ...base, scan: a.flags.scan });
+  const r = SCOPED[kind].buildFor({ ...base, phase: a.flags.phase, scan: a.flags.scan });
   if (r.ok) return r;
   process.stderr.write(`consent ${sub}: ${r.detail}\n`);
   return C.emitJson({ ok: false, reason: r.reason, detail: r.detail }, xprov.EXIT_FAIL, false);
@@ -146,7 +152,7 @@ function questionScoped(a) {
   if (r === null) return null; // a refusal, already printed
   const q = r.question;
   process.stderr.write(`consent question: put exactly this question with AskUserQuestion (header ${q.header}, labels ${q.labels.map((l) => JSON.stringify(l)).join(' / ')}); the hash is ${q.hash.slice(0, 12)}…\n`);
-  const listed = r.targets ? r.targets.length : r.hits.length;
+  const listed = r.targets ? r.targets.length : (r.hits ? r.hits.length : 1); // decline: the one target
   return C.emitJson({ ok: true, repo: r.key, kind: q.kind, header: q.header, question: q.question, labels: q.labels, options: q.options, multiSelect: q.multiSelect, hash: q.hash, listed }, xprov.EXIT_PASS, false);
 }
 
@@ -157,7 +163,7 @@ function ensureReport(key, kind, hash) {
   const ready = answered && !stale;
   const ask = stale || p.state === M.STATE.NONE || p.state === M.STATE.EXPIRED || p.state === M.STATE.USED;
   const report = { ok: ready, repo: key, kind, state: p.state, ask, ...(stale ? { reason: 'question_changed' } : {}), ...(ready ? { decision: p.marker.answer.decision } : {}) };
-  const verb = kind === 'waiver' ? 'waive' : 'allowlist';
+  const verb = kind === 'waiver' ? 'waive' : kind; // allowlist | decline
   process.stderr.write(ready ? `consent ensure: the owner answered (${p.marker.answer.decision}); run \`xprov consent ${verb}\` with the same flags\n`
     : (ask ? `consent ensure: no open question (${p.state}); ask it (consent question, then AskUserQuestion)\n` : 'consent ensure: the question is open; poll again, do not ask a second time\n'));
   return C.emitJson(report, ready ? xprov.EXIT_PASS : xprov.EXIT_FAIL, false);
@@ -211,12 +217,14 @@ function cmdScopedWrite(sub, args) {
   if (a === null) return null;
   let r;
   try {
-    r = sub === 'waive' ? W.waive({ root: a.root, phase: a.flags.phase }) : A.approve({ root: a.root, scan: a.flags.scan });
+    if (sub === 'decline') r = D.decline({ root: a.root, phase: a.flags.phase });
+    else r = sub === 'waive' ? W.waive({ root: a.root, phase: a.flags.phase }) : A.approve({ root: a.root, scan: a.flags.scan });
   } catch (e) {
     if (e && e.code === 'A1_INPUT') return usage(`${sub}: ${e.message}`);
     throw e;
   }
-  return reportResult(r, (x) => (sub === 'waive' ? `${x.waived.length} waiver record(s) written for phase ${x.phase}; the owner typed nothing in a terminal; a waiver is not a pass`
+  return reportResult(r, (x) => (sub === 'decline' ? (x.reason === 'already_declined' ? `${x.gate} was already declined for this PLAN.md sha and head; nothing written` : `${x.gate} declined for phase ${x.phase}: nothing is sent to Codex; the owner typed nothing in a terminal; not a waiver, not a pass`)
+    : sub === 'waive' ? `${x.waived.length} waiver record(s) written for phase ${x.phase}; the owner typed nothing in a terminal; a waiver is not a pass`
     : `${x.approved.length} hit approval(s) written to hit-approvals.json; the owner typed nothing in a terminal`));
 }
 
@@ -235,8 +243,8 @@ function cmdXprovConsent(args) {
   if (sub === 'ensure') return cmdEnsure(rest);
   if (sub === 'record') return cmdRecord(rest);
   if (sub === 'revoke') return cmdRevoke(rest);
-  if (sub === 'waive' || sub === 'allowlist') return cmdScopedWrite(sub, rest);
-  return usage(sub === undefined ? '<question|ensure|record|revoke|waive|allowlist> is required' : `unknown subcommand ${shown(sub)} (question, ensure, record, revoke, waive, allowlist)`);
+  if (sub === 'waive' || sub === 'allowlist' || sub === 'decline') return cmdScopedWrite(sub, rest);
+  return usage(sub === undefined ? '<question|ensure|record|revoke|waive|allowlist|decline> is required' : `unknown subcommand ${shown(sub)} (question, ensure, record, revoke, waive, allowlist, decline)`);
 }
 
 module.exports = { cmdXprovConsent };

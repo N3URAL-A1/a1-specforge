@@ -189,11 +189,14 @@ function writeExcluded(resultPath, excluded, root) {
   } catch (e) { return e.code === 'EEXIST'; }
 }
 
-/** FR-029: a1's `secret_declined` marker (xprov-decline.cjs) at `resultPath`, bound to the gate, scope and PLAN.md sha. → the marker or null. */
+/**
+ * FR-029: a1's `secret_declined` marker (xprov-decline.cjs) at `resultPath`, bound to the gate, scope and PLAN.md sha. → the marker or null.
+ * Spec 028 FR-023: `want.kind: 'owner_declined'` asks for the marker of the owner decline (xprov-consent-decline.cjs) instead; a marker of the other kind never backs the row.
+ */
 function declinedMarker(resultPath, want, root) {
   if (!inOwnArtifacts(resultPath, root)) return null;
   const m = readJsonNoFollow(path.resolve(resultPath));
-  if (m === null || m.kind !== 'secret_declined' || m.gate !== want.gate || m.plan_sha256 !== want.planSha) return null;
+  if (m === null || m.kind !== (want.kind || 'secret_declined') || m.gate !== want.gate || m.plan_sha256 !== want.planSha) return null;
   if (C.waveNumber(m.wave) !== C.waveNumber(want.wave) || laneOrNull(m.lane) !== laneOrNull(want.lane)) return null;
   return m;
 }

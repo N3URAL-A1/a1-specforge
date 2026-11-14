@@ -8,6 +8,8 @@ const CONSENT_HELP = `    consent question|ensure|record|revoke  --kind consent|
     consent question --kind consent|classification --phase <name>
                   (ask once per phase, spec 016 wave 5; xprov-consent-asked.cjs)
     consent question|ensure --kind waiver|allowlist, consent waive, consent allowlist
+    consent question|ensure --kind decline --phase <name>, consent decline --phase <name>
+                  (spec 028 FR-022..024: the owner declines Codex for one unrun plan-review-xprov target)
           (--phase <name> | --scan <snap-basename>) [--repo <git-toplevel>]
                   (spec 016 FR-002, FR-003, FR-005, FR-007, FR-008; xprov-consent*.cjs)
                   The owner's yes to "may this repo go to Codex" as a chat answer,
@@ -81,6 +83,22 @@ const CONSENT_HELP = `    consent question|ensure|record|revoke  --kind consent|
                   gate that failed after the question changes the question: nothing
                   is written, a new question is needed. The consent to send never
                   implies a waiver. A waiver is not a pass.
+                  decline (spec 028 FR-022..024): question|ensure --kind decline --phase
+                  <name> puts ONE xprov-Decline question for the plan-review-xprov
+                  target of the phase when it has no index row at the current PLAN.md
+                  sha (else target_already_run, exit 1). The text names repo, phase,
+                  target, PLAN.md sha256 and head and says nothing goes to Codex.
+                  Labels: "Nein, Codex-Prüfung wie vorgesehen" / "Ja, für dieses Ziel
+                  nichts an Codex senden". \`consent decline --phase <name>\` acts only
+                  on a recorded yes bound to the question hash: it writes a1's marker
+                  a1-declined.json (kind owner_declined) in a new declined- run dir and
+                  the index row { accepted: owner_declined }; load-check then accepts
+                  the plan without Codex (Reinhard-only review). Any other answer:
+                  decline_not_confirmed (exit 1, nothing written); a second call for
+                  the same sha and head: already_declined (exit 0, nothing written); a
+                  new PLAN.md or head needs a new question. It never writes
+                  .a1/xprov.json, the permit store or the waiver store, creates no
+                  waiver and sends nothing to Codex. design-review-xprov is not offered.
                   allowlist (wave 3, FR-014): question|ensure --kind allowlist --scan
                   <snap-basename> lists the hits of one secret scan (path, line, rule,
                   blob sha256, a fixed mask instead of an excerpt; the matched text is

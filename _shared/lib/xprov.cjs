@@ -107,6 +107,7 @@ const REASON_LIST = Object.freeze([
   'pr_base_mismatch', // wave 10: --base is not the remote base the gate resolved itself
   'pr_merge_blocked', // wave 10, retired with the PR diff gate (spec 025 W3): kept so old log lines stay readable
   'codex_unavailable', // spec 025 W6 (FR-019): the Codex run itself failed (usage limit, transport, timeout) — verdict not_applicable, the pipeline continues Claude-only
+  'owner_declined', // spec 028 W6 (FR-023): the owner answered yes to the decline question for one unrun plan-review target — nothing goes to Codex, accepted only through a1's marker
 ]);
 const REASONS = Object.freeze(Object.fromEntries(REASON_LIST.map((r) => [r, r])));
 

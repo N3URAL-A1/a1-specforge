@@ -35,6 +35,7 @@ const A = require('./xprov-consent-answer.cjs');
 const L = require('./xprov-consent-ludwig.cjs');
 const W = require('./xprov-consent-waive.cjs');
 const AL = require('./xprov-consent-allowlist.cjs');
+const DC = require('./xprov-consent-decline.cjs');
 const P = require('./xprov-hook-paths.cjs');
 
 const ASK = 'AskUserQuestion';
@@ -67,6 +68,11 @@ function rebuild(kind, text) {
       const s = W.scopeFromText(text);
       const b = s ? W.buildFor({ root, phase: s.phase }) : null;
       return b && b.ok ? { kind, key: b.key, q: b.question } : deny('consent_unresolvable', 'no waivable target for the phase this question names');
+    }
+    if (kind === 'decline') {
+      const s = DC.scopeFromText(text);
+      const b = s ? DC.buildFor({ root, phase: s.phase }) : null;
+      return b && b.ok ? { kind, key: b.key, q: b.question } : deny('consent_unresolvable', 'no unrun plan-review target for the phase this question names');
     }
     if (kind === 'allowlist') {
       const s = AL.scopeFromText(text);
