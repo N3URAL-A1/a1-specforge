@@ -106,7 +106,7 @@ rb_commit() { ( cd "$PHASE_REPO" && git add -A && git commit -qm "$1" ); PHASE_H
   guard_head() { git -C "$guard_repo" rev-parse HEAD; }
   guard_before="$(guard_head)"
   # the hazard itself, on the scratch repo only: a bare `git -C ""` run with the repo as cwd commits into it
-  ( cd "$guard_repo" && git -C "" -c user.name=x -c user.email=x@example.invalid -c commit.gpgsign=false commit -q --allow-empty -m leak ) >/dev/null 2>&1
+  ( cd "$guard_repo" && git -C "" -c user.name=x -c user.email=x@example.invalid -c commit.gpgsign=false commit -q --allow-empty -m leak ) >/dev/null 2>&1  # l3-allow: the hazard itself, scratch repo only
   [[ "$(guard_head)" != "$guard_before" ]] && ok "RB0 setup: a bare git -C \"\" does commit into the cwd repository (the hazard is real)" || bad "RB0 setup: the hazard did not reproduce"
   guard_before="$(guard_head)"
   for guard_arg in "" "." "relative/dir" "$TMP20/not-a-repo"; do
