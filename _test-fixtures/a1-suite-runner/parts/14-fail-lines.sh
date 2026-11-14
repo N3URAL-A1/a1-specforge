@@ -31,3 +31,13 @@ FL_HEAD_AT="$(printf '%s\n' "$RS_OUT" | grep -n 'FAIL lines:' | head -1 | cut -d
 FL_TAIL_AT="$(printf '%s\n' "$RS_OUT" | grep -n 'last 40 lines of the log:' | head -1 | cut -d: -f1)"
 if [[ -n "$FL_HEAD_AT" && -n "$FL_TAIL_AT" && "$FL_HEAD_AT" -lt "$FL_TAIL_AT" ]]; then ok "FL5 the FAIL lines come before the 40-line tail"; else bad "FL5 order" "heading at line [$FL_HEAD_AT], tail heading at line [$FL_TAIL_AT]"; fi
 assert_contains "FL8 the tail is still printed" "$RS_OUT" "L200 end"
+
+# FL10 (PR #94 CI): only lines that START with FAIL are failure lines; a PASS line ending in "-> FAIL" is not listed, an indented "FAIL:" is
+mk_tree T_FL2 fl2
+plant_suite "$T_FL2" two/run-tests.sh 'echo "PASS  FL10 a wait without a cell -> FAIL"
+echo "  FAIL: indented-marker"
+echo "two: 1 passed, 1 failed"; exit 1'
+rs_run "$T_FL2"
+FL10_SEC="$(printf '%s\n' "$RS_OUT" | sed -n '/FAIL lines:/,/last [0-9]* lines of the log:/p')"
+assert_absent "FL10a a PASS line that names FAIL is not a failure line" "$FL10_SEC" "FL10 a wait"
+assert_contains "FL10b an indented FAIL: line is a failure line" "$FL10_SEC" "indented-marker"

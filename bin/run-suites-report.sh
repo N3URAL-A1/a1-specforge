@@ -124,7 +124,8 @@ rs_print_failures() {
       echo "FAILED: ${RS_RES_ID[$i]} (rc=${RS_RES_RC[$i]}${RS_RES_NOTE[$i]:+, ${RS_RES_NOTE[$i]}}) log: ${RS_RES_LOG[$i]}"
       if [ -f "${RS_RES_LOG[$i]}" ]; then
         # `|| true`: grep exits 1 when no line matches; neither that nor head closing the pipe early is an error here
-        fl="$( { grep -Fw -- 'FAIL' "${RS_RES_LOG[$i]}" || true; } | head -n "$RS_FAIL_LINES" | cut -c1-"$RS_TAIL_WIDTH" )"
+        # a failure line starts with FAIL after an optional indent (`FAIL  <case>`, `FAIL: <case>`); a PASS line naming FAIL is not one
+        fl="$( { grep -E -- '^[[:space:]]*FAIL([^A-Za-z0-9_]|$)' "${RS_RES_LOG[$i]}" || true; } | head -n "$RS_FAIL_LINES" | cut -c1-"$RS_TAIL_WIDTH" )"
         if [ -n "$fl" ]; then
           echo "  FAIL lines:"
           printf '%s\n' "$fl" | sed 's/^/  | /'

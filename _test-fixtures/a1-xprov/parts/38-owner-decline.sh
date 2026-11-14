@@ -54,6 +54,8 @@ plant_stores38() {
   printf '{"external_review":"allowed","decided_by":"fixture"}\n' > "$PHASE_REPO/.a1/xprov.json"
   printf '{"version":1,"permits":{}}\n' > "$HOME/.a1-xprov/permits.json"
   printf '{"version":1,"waivers":[]}\n' > "$HOME/.a1-xprov/waivers.json"
+  # the guarded stores must be 0700/0600 owned by the user, independent of the runner's umask (CI runs with 022)
+  chmod 700 "$HOME/.a1-xprov"; chmod 600 "$HOME/.a1-xprov/permits.json" "$HOME/.a1-xprov/waivers.json"
 }
 stores_sum38() { local f; for f in "$PHASE_REPO/.a1/xprov.json" "$HOME/.a1-xprov/permits.json" "$HOME/.a1-xprov/waivers.json"; do sha38 "$f"; done | tr -d '\n'; }
 reason38() { json_get "$G_OUT" "j.reason"; }
