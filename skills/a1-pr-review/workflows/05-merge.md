@@ -72,6 +72,14 @@ pgrep -f '(^|/)node .*a1-tools[.]cjs (verify run|pr merge-check)' >/dev/null && 
 node -e 'const os=require("os");const l=os.loadavg()[1],n=os.cpus().length;console.log(`load5=${l.toFixed(2)} cpus=${n}`);if(l>=n)console.log("WAIT: host load above CPU count")'
 ```
 
+Preflight, before the long run (each miss costs a full re-run of 10+ minutes; run only the lines that apply):
+
+- A suite that is red on base and has an a1-fix report: pass `--bug <report-id>` on the first run.
+- The first PR that adds `.a1/verify.json` (none at base): expect `verify_config_changed`; prepare the `config_change` disposition first.
+- `disposition add --kind skip_increase` and config-change dispositions are committed and pushed before the run, so the head matches (`gh pr view <n> --json headRefOid`).
+- A suite that needs `.git` must tolerate the base run from a `git archive` snapshot (no `.git`); a split suite moves a known base-red case to a new id, so name it in the report.
+- Never redirect stderr into an unset variable (`2>"$TMPDIR/x"`); guard the path first.
+
 On a host new to this project, run the host check of a1-new-feature `workflows/06-verify.md` Step 0.6 first (owner of that check).
 
 ```bash

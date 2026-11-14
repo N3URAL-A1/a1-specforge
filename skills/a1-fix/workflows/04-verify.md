@@ -48,6 +48,8 @@ if [ "$RC" -ne 0 ]; then echo "STOP: fix class-sweep --verify exit=$RC (class_sw
 
 Exit 1 with `class_sweep_open`: fix the sibling sites (back to Phase 3), then run Step 0 again.
 
+A fix for a suite that is red on base carries this bug report's id forward: the PR's merge check runs with `--bug <report-id>` (`a1-pr-review` `workflows/05-merge.md` 5.3).
+
 ## Step 1 — Re-run reproduction
 
 Read the bug report's `## Reproduction Steps` section. Walk the user through
