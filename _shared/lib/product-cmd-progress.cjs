@@ -13,7 +13,7 @@ const { CODE_SCOPE_STAGES } = require('./code-scope.cjs');
 const { PRODUCT_ROADMAP_KEY_ORDER, PRODUCT_FEATURE_KEY_ORDER } = require('./product-schema.cjs');
 const { readProductRoadmap, readProductFeature, regenerateDerived } = require('./product-derived.cjs');
 const mods = require('./product-modules.cjs');
-const { derivedWrites, productDirFromFlags, buildRoadmapWritesWithChangelog } = require('./product-txn.cjs');
+const { derivedWrites, productDirFromFlags, buildRoadmapWritesWithChangelog, featureMdWrite, assertSlug } = require('./product-txn.cjs');
 
 function cmdProductStatus(args) {
   const flags = parseFlags(args, { dir: 'value' });
@@ -196,6 +196,42 @@ function cmdProductStage(args) {
     files_written: writes.map((w) => w.target),
     vault_mirror: vaultMirror,
   };
+  return emitExitWithLock(lockPath, 0, JSON.stringify(out, null, 2) + '\n', '');
+}
+
+const CANCEL_DEFAULT_REASON = 'via product cancel';
+
+/** product cancel --by <feature-id> [--reason <text>] [--dir docs/product] (spec 028 FR-025/FR-027).
+ * One product-lock transaction: ROADMAP.md, feature.md (when present), the next cursor, NEXT.md,
+ * index.json and the module views, with exactly one changelog line. Dependents stay blocked and are listed. */
+function cmdProductCancel(args) {
+  const flags = parseFlags(args, { by: 'value', reason: 'value', dir: 'value' });
+  if (!flags.by) usage('product cancel requires --by <feature-id> [--reason <text>]');
+  assertSlug(flags.by, 'feature-id');
+  const id = flags.by;
+  const dir = productDirFromFlags(flags);
+  const reason = typeof flags.reason === 'string' && flags.reason.trim() !== '' ? flags.reason.replace(/\s+/g, ' ').trim() : CANCEL_DEFAULT_REASON;
+  const lockPath = acquireReservationsLock(path.join(dir, '.product-stage.lock.json'));
+  const roadmapFile = path.join(dir, 'ROADMAP.md');
+  if (!fs.existsSync(roadmapFile)) failWithLock(lockPath, `product cancel: ${roadmapFile} not found`);
+  const { fm: roadmapFm, body: roadmapBody } = parseNestedFrontmatter(fs.readFileSync(roadmapFile, 'utf8'));
+  const features = Array.isArray(roadmapFm.features) ? roadmapFm.features : [];
+  const existing = features.find((f) => f.id === id);
+  if (!existing) failWithLock(lockPath, `product cancel: feature '${id}' not found in ${roadmapFile}`);
+  if (existing.status === 'done') failWithLock(lockPath, `product cancel: feature '${id}' is done and cannot be cancelled`);
+  if (existing.status === 'cancelled') {
+    return emitExitWithLock(lockPath, 0, JSON.stringify({ status: 'already_cancelled', feature: id }, null, 2) + '\n', '');
+  }
+  const updatedFeatures = features.map((f) => (f.id === id ? { ...f, status: 'cancelled', stage: null } : f));
+  const next = roadmapFm.next === id ? mods.firstEligible(updatedFeatures, mods.statusMap(updatedFeatures)) : roadmapFm.next;
+  const updatedFm = { ...roadmapFm, updated: nowIso().slice(0, 10), features: updatedFeatures, ...(next === undefined ? {} : { next }) };
+  const { writes } = buildRoadmapWritesWithChangelog(dir, updatedFm, roadmapBody, `feature '${id}' cancelled`, reason, lockPath);
+  const featureMd = featureMdWrite(dir, id, { status: 'cancelled', stage: null });
+  if (featureMd !== null) writes.push(featureMd);
+  const dependents = updatedFeatures.filter((f) => f.id !== id && f.status !== 'done' && f.status !== 'cancelled' && (f.depends_on || []).includes(id)).map((f) => f.id);
+  const hints = dependents.map((d) => `product edit --by ${d} --depends-on <ids>`);
+  const vaultMirror = writeAllOrNothing(lockPath, writes, 'product cancel', productMirrorHook(dir));
+  const out = { status: 'OK', feature: id, next: updatedFm.next === undefined ? null : updatedFm.next, dependents, hints, files_written: writes.map((w) => w.target), vault_mirror: vaultMirror };
   return emitExitWithLock(lockPath, 0, JSON.stringify(out, null, 2) + '\n', '');
 }
 
@@ -413,6 +449,7 @@ function cmdProductChangelog(args) {
 module.exports = {
   cmdProductStatus,
   cmdProductStage,
+  cmdProductCancel,
   cmdProductMarkers,
   cmdProductMarkersSet,
   cmdProductChangelog,

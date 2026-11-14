@@ -239,7 +239,7 @@ PD="$(fresh28 edit1)"; feat28 "$PD" 002-second-feature '[001-first-feature]'
 OUT="$(node "$TOOLS" product edit --by 002-second-feature --depends-on "003-third-feature" --dir "$PD" 2>&1)"; RC=$?
 assert_rc "edit-depends-on-exit-0" 0 "$RC" "$OUT"
 assert_true "edit-depends-on-replaces-list" "$([[ "$(jget "$(st28 "$PD")" 'JSON.stringify(d.features[1].depends_on)')" == '["003-third-feature"]' ]] && echo true || echo false)"
-assert_true "edit-depends-on-feature-md-mirrored" "$(grep -q '^depends_on: \[003-third-feature\]$' "$PD/features/002-second-feature/feature.md" && echo true || echo false)"
+assert_true "edit-depends-on-feature-md-mirrored" "$(grep -A1 '^depends_on:' "$PD/features/002-second-feature/feature.md" | grep -qxF '  - 003-third-feature' && echo true || echo false)"
 assert_true "edit-one-changelog-line" "$([[ "$(sed -n '/## Changelog/,$p' "$PD/ROADMAP.md" | grep -c '002-second-feature')" == "1" ]] && echo true || echo false)"
 assert_true "edit-lock-released" "$([[ ! -e "$PD/.product-stage.lock.json" ]] && echo true || echo false)"
 OUT="$(node "$TOOLS" product edit --by 002-second-feature --depends-on "" --dir "$PD" 2>&1)"; RC=$?

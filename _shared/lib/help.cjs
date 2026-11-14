@@ -332,6 +332,25 @@ ${SPEC_INIT_HELP}
                   first and renamed only after every tmp write succeeds —
                   any failure rolls back with none of the originals
                   touched. Exit: 0 ok, 1 usage/validation/write error.
+  a1-tools product cancel --by <feature-id> [--reason <text>] [--dir docs/product]
+                  Sets status 'cancelled' and stage null in ROADMAP.md and
+                  features/<id>/feature.md (when present), resets a 'next'
+                  cursor that names the feature to the first eligible
+                  feature (or null), regenerates NEXT.md/index.json and
+                  appends "feature '<id>' cancelled — <reason, or via
+                  product cancel>". Dependents stay blocked and are listed
+                  with the hint 'product edit --by <id> --depends-on <ids>'.
+                  Unknown id or a done feature: exit 1, nothing written.
+                  Second call: status already_cancelled, exit 0, nothing
+                  written. One product lock + all-or-nothing transaction.
+  a1-tools product edit --by <feature-id> --depends-on <ids> [--dir docs/product]
+  a1-tools product edit --milestone <m-slug> --target <YYYY-MM|null> [--dir docs/product]
+                  Replaces a feature's depends_on (comma list; an empty value
+                  clears it) in ROADMAP.md and feature.md, or a milestone's
+                  target in ROADMAP.md and index.json. Unknown ids,
+                  self-dependency, cycles and a bad target: exit 1, nothing
+                  written. Identical values: status unchanged, exit 0,
+                  nothing written. One changelog line per call.
   a1-tools product markers [--dir docs/product] [--level project|milestone|feature --id <id>]
                   Read-only report (no --set) of the 3 marker levels:
                   project-level 'next' cursor + 'status', per-milestone

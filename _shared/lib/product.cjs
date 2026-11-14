@@ -6,7 +6,8 @@
 
 const { PRODUCT_SLUG_RE } = require('./product-schema.cjs');
 const { cmdProductValidate } = require('./product-validate.cjs');
-const { cmdProductStatus, cmdProductStage, cmdProductMarkers, cmdProductChangelog } = require('./product-cmd-progress.cjs');
+const { cmdProductStatus, cmdProductStage, cmdProductCancel, cmdProductMarkers, cmdProductChangelog } = require('./product-cmd-progress.cjs');
+const { cmdProductEdit } = require('./product-cmd-edit.cjs');
 const { cmdProductInit, cmdProductAddMilestone, cmdProductAddFeature, cmdProductFeatureInit } = require('./product-cmd-scaffold.cjs');
 const { cmdProductVisionInit, cmdProductVisionTouch } = require('./product-vision.cjs');
 const { cmdProductAuditPublish, cmdProductAuditSet } = require('./product-audit.cjs');
@@ -17,6 +18,8 @@ module.exports = {
   PRODUCT_SLUG_RE, // vault-sync.cjs validates CLI slugs with the same shape
   cmdProductStatus,
   cmdProductStage,
+  cmdProductCancel,
+  cmdProductEdit,
   cmdProductMarkers,
   cmdProductChangelog,
   cmdProductInit,

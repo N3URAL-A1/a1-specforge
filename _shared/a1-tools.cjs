@@ -598,6 +598,12 @@ function main() {
       } else if (sub === 'stage') {
         product.cmdProductStage(rest);
         return; // the command emits its result and sets the exit code itself (emitExit)
+      } else if (sub === 'cancel') {
+        product.cmdProductCancel(rest);
+        return; // the command emits its result and sets the exit code itself (emitExit)
+      } else if (sub === 'edit') {
+        product.cmdProductEdit(rest);
+        return; // the command emits its result and sets the exit code itself (emitExit)
       } else if (sub === 'markers') {
         product.cmdProductMarkers(rest);
         return; // the command emits its result and sets the exit code itself (emitExit)

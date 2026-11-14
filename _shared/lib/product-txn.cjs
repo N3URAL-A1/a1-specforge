@@ -7,8 +7,8 @@ const fs = require('fs');
 const path = require('path');
 const { serializeNestedFrontmatter, fail, nowIso } = require('./io.cjs');
 const { failWithLock } = require('./locks.cjs');
-const { PRODUCT_ROADMAP_KEY_ORDER, PRODUCT_SLUG_RE, FEATURE_ID_RE } = require('./product-schema.cjs');
-const { regenerateDerived } = require('./product-derived.cjs');
+const { PRODUCT_ROADMAP_KEY_ORDER, PRODUCT_FEATURE_KEY_ORDER, PRODUCT_SLUG_RE, FEATURE_ID_RE } = require('./product-schema.cjs');
+const { regenerateDerived, readProductFeature } = require('./product-derived.cjs');
 
 const CHANGELOG_ROTATION_LIMIT = 100;
 
@@ -136,7 +136,26 @@ function buildRoadmapWritesWithChangelog(dir, updatedRoadmapFm, roadmapBody, wha
   return { writes, roadmapContent };
 }
 
+/** Write entry for features/<id>/feature.md with `patch` merged over its frontmatter,
+ * or null when the file does not exist (cancel/edit never create one). Pure. */
+function featureMdWrite(dir, id, patch) {
+  const featureMd = readProductFeature(dir, id);
+  if (!featureMd) return null;
+  const fmStr = serializeNestedFrontmatter({ ...featureMd.fm, ...patch }, PRODUCT_FEATURE_KEY_ORDER);
+  const content = `---\n${fmStr}\n---\n${featureMd.body.startsWith('\n') ? '' : '\n'}${featureMd.body}`;
+  return { target: featureMd.file, content };
+}
+
+/** The ROADMAP.md frontmatter + body of a product dir, or null. */
+function parseRoadmapFile(dir) {
+  const file = path.join(dir, 'ROADMAP.md');
+  if (!fs.existsSync(file)) return null;
+  return { file, ...require('./io.cjs').parseNestedFrontmatter(fs.readFileSync(file, 'utf8')) };
+}
+
 module.exports = {
+  featureMdWrite,
+  parseRoadmapFile,
   assertSlug,
   derivedWrites,
   productDirFromFlags,

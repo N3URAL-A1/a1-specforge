@@ -12,6 +12,7 @@
 // Deterministic: no filesystem reads beyond the registry file itself, no git.
 // ---------------------------------------------------------------------------
 
+const path = require('path');
 const { parseFlags, nowIso } = require('./io.cjs');
 const { emitExit } = require('./emit-exit.cjs');
 const { usage } = require('./help.cjs');
@@ -109,6 +110,20 @@ function widenStoredPaths(stored, candidate) {
   return widened ? merged : null;
 }
 
+/** spec 028 FR-015: stderr warning when `by` is no ROADMAP.md features[].id. Silent without a readable roadmap or features. */
+function warnIfNotProductFeatureId(file, by) {
+  try {
+    const dir = path.dirname(file);
+    const root = path.basename(dir) === '.a1' ? path.dirname(dir) : dir;
+    const roadmap = require('./product-derived.cjs').readProductRoadmap(path.join(root, 'docs', 'product'));
+    const features = roadmap && Array.isArray(roadmap.fm.features) ? roadmap.fm.features : [];
+    if (features.length === 0 || features.some((f) => f && f.id === by)) return;
+    process.stderr.write(`[a1-tools] warning: id is not a product-CLI feature id: ${by}; use a ROADMAP.md features[].id (product status)\n`);
+  } catch (_e) {
+    // an unreadable roadmap gives no check and no warning
+  }
+}
+
 function cmdCodeScopeClaim(args) {
   const flags = parseFlags(args, { by: 'value', scope: 'value', file: 'value' });
   const file = reservationsFile(flags);
@@ -121,6 +136,7 @@ function cmdCodeScopeClaim(args) {
   }
   const by = flags.by;
   if (exitOnInvalidScope(paths, file, by)) return;
+  warnIfNotProductFeatureId(file, by);
 
   const lockPath = acquireReservationsLock(file);
   const data = loadReservations(file);

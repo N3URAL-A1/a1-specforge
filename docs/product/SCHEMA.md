@@ -88,6 +88,21 @@ outside `docs/product/`, aborts the transaction with a non-zero exit before any 
 in projects without modules too (before v1.2 a symlinked `ROADMAP.md` was silently replaced by a
 regular file). Module-specific rules: §8.
 
+### Lifecycle commands: `cancel` and `edit` (spec 028)
+
+- `product cancel --by <feature-id> [--reason <text>]` sets `status: cancelled` and `stage: null` in
+  `ROADMAP.md` and in `feature.md` when present, resets a `next` that names the feature to the first
+  eligible feature (or `null`), regenerates `NEXT.md`, `index.json` and the module views, and appends
+  `feature '<id>' cancelled — <reason | via product cancel>` to the changelog. Dependents stay blocked
+  and are listed with the hint `product edit --by <id> --depends-on <ids>`. An unknown id or a `done`
+  feature exits 1; a second call returns `already_cancelled` (exit 0). Nothing is written in these cases.
+- `product edit --by <feature-id> --depends-on <ids>` replaces `depends_on` (an empty value clears it) in
+  `ROADMAP.md` and `feature.md`; `product edit --milestone <m-slug> --target <YYYY-MM|null>` replaces the
+  milestone `target`. Unknown ids, self-dependency, cycles and a bad target exit 1; identical values return
+  `unchanged` (exit 0). Nothing is written in these cases.
+- Both take `.product-stage.lock.json` and write every output file in one all-or-nothing transaction
+  with exactly one changelog line per call.
+
 ### Body structure
 
 ```markdown
@@ -481,9 +496,9 @@ as errors. A source that is a symbolic link, or that resolves outside `docs/prod
 refused with one stderr line and never copied. The hub note `project/<slug>.md` and
 sync-conflict copies are never written or deleted.
 
-**The `vault_mirror` result key.** Twelve product-mutating commands mirror the **product set
+**The `vault_mirror` result key.** Fourteen product-mutating commands mirror the **product set
 only**, after their repo write and before their lock is released: `init`, `add-milestone`,
-`add-feature`, `stage`, `markers --set`, `changelog`, `feature-init`, `vision-init`,
+`add-feature`, `stage`, `cancel`, `edit`, `markers --set`, `changelog`, `feature-init`, `vision-init`,
 `vision-touch`, `audit-publish`, `audit-set` and `audit-mirror`. (`product import` does not
 mirror; run `vault sync` afterwards.) Each adds one key to its JSON result:
 
