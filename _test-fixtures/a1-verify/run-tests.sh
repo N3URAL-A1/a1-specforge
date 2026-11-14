@@ -771,6 +771,7 @@ OUT="$(cd "$P" && A1_VAULT_ROOT="$WORK/d4vault" A1_VAULT_WRITER_HOST=h A1_HOST_I
 check "D4 A1_VAULT_ROOT / A1_VAULT_WRITER_HOST / A1_HOST_ID are set in the owner env but unset in the suite: pass" 0 'j.verdict' "pass"
 
 . "$(dirname "${BASH_SOURCE[0]}")/cases-durations.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/cases-host.sh"
 
 echo "a1-verify: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]
