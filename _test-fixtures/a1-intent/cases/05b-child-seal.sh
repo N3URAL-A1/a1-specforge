@@ -474,7 +474,7 @@ h7_c="$(w5b_scan "$h7_copy" 2>&1)"
 if [[ "${h7_c##*| }" == "fix: worktree gc" ]]; then ok "5b-H7c control: an unclassified invocation added to a skill copy is reported [FR-041]"
 else bad "5b-H7c control: an unclassified invocation added to a skill copy is reported [FR-041]" "${h7_c:0:300}"; fi
 
-# H7e (FR-048): every raw `git <status|diff|add|commit|log>` call in an
+# H7e (FR-048; fix=2 since evolve run 11: Gate 0 pointer names git log): every raw `git <status|diff|add|commit|log>` call in an
 # action's skill (and, for execute, in the executor agent it starts, which
 # commits per wave) is classified as `git <sub>` on that action's allowlist
 # or in its exclusions. stage and progress list no git subcommand.
@@ -498,7 +498,7 @@ const noGit = ['stage', 'progress', 'approve', 'cancel'].every((a) => !C.INTENT_
 console.log(`${out.join(' ')} ${noGit ? 'nogit-ok' : 'nogit-bad'}`);
 JS
 )"
-if [[ "$h7e_got" == "new-feature=2 continue-feature=2 plan=0 execute=4 fix=1 progress=2 nogit-ok" ]]; then ok "5b-H7e every raw git call of an action's skill (and its executor agent) is classified as a git subcommand; stage/progress list none [FR-048]"
+if [[ "$h7e_got" == "new-feature=2 continue-feature=2 plan=0 execute=4 fix=2 progress=2 nogit-ok" ]]; then ok "5b-H7e every raw git call of an action's skill (and its executor agent) is classified as a git subcommand; stage/progress list none [FR-048]"
 else bad "5b-H7e every raw git call of an action's skill (and its executor agent) is classified as a git subcommand; stage/progress list none [FR-048]" "$h7e_got"; fi
 
 # ---------- P: a refusal writes nothing, for every allowlisted subcommand ----------

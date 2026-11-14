@@ -177,9 +177,9 @@ After the executor has filled the skeletons, review the wave's tests read-only: 
 
 **Mutation question (per test, HARD).** Name the single production-code change
 that turns this test red. If the answer does not fit in one sentence, the test
-proves nothing — report it as MAJOR. The criteria above do not see these four
-classes; all four shipped green in one phase (see
-`_shared/agent-lessons.md#theo-mutation-question`):
+proves nothing — report it as MAJOR. The criteria above do not see these
+classes; classes 1-4 shipped green in one phase (see
+`_shared/agent-lessons.md#theo-mutation-question`), class 5 recurred across projects:
 
 1. **The test never enters the branch it names** — empty collection, or a
    `sleep` process that obeys SIGTERM in a test named for the SIGKILL follow-up.
@@ -191,12 +191,13 @@ classes; all four shipped green in one phase (see
    green.
 4. **The expectation is imported from the module under test** — raising the
    constant moves the expectation with it.
+5. **The fake cannot fail like the real system** — it answers instantly, never returns silent empty output, a multi-line error or a deadline failure (see `_shared/agent-lessons.md#fake-real-failure-modes`).
 
 Rule owner: `~/.claude/rules/common/testing.md` — do not restate it here.
 One corollary for the skeletons you write: a test that greps a file also
 matches the comment above the code, so read only the effective section.
 
-**When the thing under test is itself a guard**, the same four classes apply to
+**When the thing under test is itself a guard**, the same classes apply to
 it: measure it once against the real store/repo and report the count it found,
 and justify any exclusion by the property it actually uses — see
 `_shared/agent-lessons.md#guard-self-proof`.

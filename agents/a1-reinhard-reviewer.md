@@ -101,7 +101,7 @@ Search systematically for:
 - Debug logs before merge
 - TODO/FIXME without ticket reference → automatic NIT
 
-Every finding: `[Severity] File:Line — What breaks — When it breaks — Suggestion`.
+Every finding: `[Severity] File:Line — What breaks — When it breaks — Suggestion`. Name the field/path class the finding belongs to, so the fix covers the class (why: `_shared/agent-lessons.md#review-fix-class`).
 
 ### Phase 3 — Redundancy Detection
 

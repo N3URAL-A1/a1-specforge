@@ -434,6 +434,42 @@ q="$(mk''temp -d "$R/y.XXXXXX" 2>/dev/null)"'
   else bad "L2b bare mktemp found (use mk_workdir / mk_tmpfile from _test-fixtures/lib/tmp.sh)"; while IFS= read -r l; do results+=("      $l"); done <<<"$hits"; fi
 }
 
+# ---------- Case L3: no `git -C` on an empty path in the fixture suites ----------
+# `git -C ""` acts on the current directory: a fixture once committed an empty "planted commit" into the
+# feature branch that way (an empty snapshot variable). This lint flags the statically empty forms
+# (`git -C ""`, `git -C ''`, `git -C "${VAR:-}"`) outside comments; a deliberate demonstration of the hazard
+# carries `l3-allow` on its line. A plain `git -C "$VAR"` (hundreds of sites) is not decidable here; use the
+# guarded helper `git_in` (a1-xprov/run-tests.sh) where the variable can be empty.
+# L3-self is the matcher self-test: it hits all planted bad lines and misses the good ones.
+l3_re() {
+  printf '%s' '(^|[^_A-Za-z0-9-])gi''t[[:space:]]+-C[[:space:]]+(""|'"''"'|"\$\{[A-Za-z_0-9]+:-\}")'
+}
+l3_filter() { grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' | grep -v 'l3-allow' || true; }
+caseL3() {
+  local re bad_planted good_planted hits n total
+  re="$(l3_re)"
+  bad_planted='gi''t -C "" status
+x=$(gi''t -C "" rev-parse HEAD)
+gi''t -C '"''"' commit -m x
+( cd "$r" && gi''t -C "${SNAP:-}" log )'
+  good_planted='gi''t -C "$WORK" status
+gi''t -C "${SNAP:?}" log
+gi''t -C . status
+echo "# gi''t -C empty path"'
+  total="$(printf '%s\n' "$bad_planted" | grep -c '')"
+  n="$(printf '%s\n' "$bad_planted" | grep -HnE --label=p "$re" | l3_filter | grep -c '' || true)"
+  if [[ "$n" -eq "$total" ]]; then ok "L3-self matcher hits all $total planted empty git -C lines"
+  else bad "L3-self matcher hit $n of $total planted empty git -C lines"; fi
+  total="$(printf '%s\n' "$good_planted" | grep -c '')"
+  n="$(printf '%s\n' "$good_planted" | grep -HnE --label=p "$re" | l3_filter | grep -c '' || true)"
+  if [[ "$n" -eq 0 ]]; then ok "L3-self matcher misses all $total guarded/unrelated lines"
+  else bad "L3-self matcher hit $n of $total guarded/unrelated lines (false positives)"; fi
+  hits="$(cd "$REPO_ROOT" && find _test-fixtures bin -name '*.sh' -type f -print0 \
+    | xargs -0 grep -nE "$re" | l3_filter)"
+  if [[ -z "$hits" ]]; then ok "L3 no git -C on an empty path in _test-fixtures/**/*.sh and bin/*.sh"
+  else bad "L3 git -C on an empty path found (acts on the cwd; guard the variable or mark l3-allow)"; while IFS= read -r l; do results+=("      $l"); done <<<"$hits"; fi
+}
+
 caseA
 caseB
 caseC
@@ -451,6 +487,7 @@ caseP2
 caseL1
 caseL1b
 caseL2
+caseL3
 
 printf '\n--- a1-vault-fallback fixture results ---\n'
 for r in "${results[@]}"; do printf '%s\n' "$r"; done

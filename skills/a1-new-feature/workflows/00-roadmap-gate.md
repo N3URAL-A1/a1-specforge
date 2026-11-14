@@ -32,5 +32,19 @@ user-facing prompt wordings verbatim. Caller-specific values for this skill:
 | roadmap parseable, `roadmap_entry` matches | PASS | Proceed |
 | roadmap parseable, `roadmap_entry` mismatch | SOFT STOP | Surface mismatch notice, user confirms to continue |
 
+## `<spec-id>`: the one id for `--by` and `--phase`
+
+`<spec-id>` is the product-CLI feature id: the `- id: <###-slug>` entry that `product add-feature --id` wrote to
+`docs/product/ROADMAP.md` (the same id `product stage --by` takes). It is required before the first `--by` or `--phase`
+call after Discover (Phase 2 onward): without it run `a1-roadmap` / `product add-feature` first. Do not use the spec number: the spec
+number and the feature id can differ, and `product stage` then silently skips the reservation mirror (the 004/016 split).
+`roadmap_entry` is not the id when it is a legacy slug that several features share (`m1-p1-auth-setup`).
+A project without `docs/product/` (legacy `.a1/roadmap.md`) uses the spec's `id:` frontmatter (`<###>-<slug>`) in every
+call, consistently.
+
+Every `--by` and `--phase` of a1-new-feature and a1-execute uses it, with three deliberate exceptions: `retro validate`
+runs under `--phase retro-<spec-id>`, `a1-pr-review` logs under `pr-<n>`, and Phase 1 Step 2b (`quick eligibility`)
+runs before any feature id exists.
+
 On PASS, load `workflows/01-discover.md` (or the phase indicated by the
 spec's current `status`, per the Routing table in SKILL.md).

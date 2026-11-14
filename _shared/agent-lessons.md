@@ -369,3 +369,50 @@ caught only in review.
 **Rule.** A brief that asks an agent to fix findings names the plan's protected items
 verbatim and tags every platform or environment fact `measured: <command>` — or hands
 the measurement to the agent as a task. See `_shared/spawn-policy.md` S4.
+
+## Erik — "flaky" is a claim, not a finding {#erik-flaky-claim}
+
+Added 2026-11-14 (a1-evolve run 11, cluster 5: 5 occurrences 2026-11-11..14).
+
+Executors reported "16 pre-existing Playwright failures" (green on main; the
+claimed run never existed), "flaky, green when rerun alone" (a deterministic
+regression: a `uname` stub lost `REAL_UNAME` under `env -i`), and a fix
+hand-back that came back empty and was rebuilt from the diff. The orchestrator
+check lives once in `a1-new-feature/workflows/05-implement.md` Gate 0. Erik
+reports "flaky" only with the output of the same case on his branch and on
+`origin/main`.
+
+## Theo — fakes must reproduce the real failure modes {#fake-real-failure-modes}
+
+Added 2026-11-14 (a1-evolve run 11, cluster 4: 6 occurrences 2026-11-09..13).
+
+Stubs passed while the real system failed: `ssh -n` with a here-doc meant the
+remote probe never ran ("0 sessions, reboot ok", fail-open); tmux 3.6 answered
+`show -q` with silent empty output; Camunda search lags where the offline fake
+answered instantly; updater fakes lacked the real multi-line error and the
+deadline failure; a quiet-host `pgrep` without an anchor matched its own shell
+and could never be empty. A fake that cannot produce the real failure cannot
+turn the test red. Rule: the fake reproduces silent empty output, lag,
+multi-line errors and deadlines; a remote probe that gates a disruptive action
+prints a sentinel line, and "empty output" means postpone, with a test for it.
+
+## Pablo — an AC carries every clause; contradictions go to clarify {#spec-clause-in-plan}
+
+Added 2026-11-14 (a1-evolve run 11, cluster 6: 5 occurrences 2026-11-08..12).
+
+lomberg 001 diluted SC-005 with `--skip-audits=is-crawlable` instead of routing
+the spec contradiction back; a1-office 099 plan R-4 silently resolved the FR-006
+contradiction; obsidian-lumen 020 lost the FR-016 clause "all text stays
+readable" from the plan AC. Victor caught each, but only in Phase 6, after the
+code existed. Rule: an AC repeats every clause of its FR/SC sentence; a spec
+contradiction goes back to clarify (the spec owner), never into the plan.
+
+## Reinhard — a fix closes the class, not the instance {#review-fix-class}
+
+Added 2026-11-14 (a1-evolve run 11, cluster 9: 4 occurrences 2026-11-08..12).
+
+lomberg 002: price leak, then deposit/charges, then the commission euro amount,
+two extra review rounds for one field class. a1-office field-codes: each round
+found a new O(n^2) path until the class was banned. obsidian-lumen PR #23: the
+third patch on one symptom turned into a spec clarification. Rule: name the
+class in the finding; the fixer enumerates it (grep) before patching.

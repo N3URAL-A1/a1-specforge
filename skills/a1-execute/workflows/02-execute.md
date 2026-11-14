@@ -95,6 +95,9 @@ sat uncommitted in a worktree and was only noticed by Wave 2's agent — one
 discarded worktree away from silent total loss. The next run (009) explicitly
 demanded commit proof and was clean, so this gate is cheap and it works.
 
+**Hand-back claims.** An empty hand-back, or a "flaky / pre-existing / green alone" claim: run the checks in
+`a1-new-feature/workflows/05-implement.md` Gate 0 before accepting (only when the claim occurs).
+
 **Audit auto-close (FR-022):** if the project has `docs/product/audits/*.md`,
 check each new wave commit message for the explicit closing convention before
 moving to the checkpoint — see "Audit Auto-Close" below.
