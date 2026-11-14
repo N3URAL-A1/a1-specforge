@@ -117,6 +117,11 @@ Use the **Agent** tool with `subagent_type: "a1-rene-requirement-engineer"` and 
 
 Rene appends to the spec file directly while the interview runs.
 
+**Question relay (owner of this rule; applies to Phases 1-3, so also `03-clarify.md`, and to Vincente in Phase 4).**
+`AskUserQuestion` is not available in every subagent run. When Rene cannot ask, he stops and returns a numbered question
+queue (one line each, with options and a recommendation) instead of guessing. The orchestrator asks the user
+(`AskUserQuestion`) and resumes the same agent with `SendMessage` and the answers, so the normal path spawns nothing extra.
+
 ## Step 3b — Size triage (S/M/L)
 
 Classify the feature using the criteria in SKILL.md ("Size triage & fast
