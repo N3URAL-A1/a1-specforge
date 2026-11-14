@@ -381,3 +381,17 @@ hand-back that came back empty and was rebuilt from the diff. The orchestrator
 check lives once in `a1-new-feature/workflows/05-implement.md` Gate 0. Erik
 reports "flaky" only with the output of the same case on his branch and on
 `origin/main`.
+
+## Theo — fakes must reproduce the real failure modes {#fake-real-failure-modes}
+
+Added 2026-11-14 (a1-evolve run 11, cluster 4: 6 occurrences 2026-11-09..13).
+
+Stubs passed while the real system failed: `ssh -n` with a here-doc meant the
+remote probe never ran ("0 sessions, reboot ok", fail-open); tmux 3.6 answered
+`show -q` with silent empty output; Camunda search lags where the offline fake
+answered instantly; updater fakes lacked the real multi-line error and the
+deadline failure; a quiet-host `pgrep` without an anchor matched its own shell
+and could never be empty. A fake that cannot produce the real failure cannot
+turn the test red. Rule: the fake reproduces silent empty output, lag,
+multi-line errors and deadlines; a remote probe that gates a disruptive action
+prints a sentinel line, and "empty output" means postpone, with a test for it.

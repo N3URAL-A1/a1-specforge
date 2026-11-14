@@ -192,6 +192,8 @@ classes; all four shipped green in one phase (see
 4. **The expectation is imported from the module under test** — raising the
    constant moves the expectation with it.
 
+5. **The fake cannot fail like the real system** — it answers instantly, never returns silent empty output, a multi-line error or a deadline failure (see `_shared/agent-lessons.md#fake-real-failure-modes`).
+
 Rule owner: `~/.claude/rules/common/testing.md` — do not restate it here.
 One corollary for the skeletons you write: a test that greps a file also
 matches the comment above the code, so read only the effective section.

@@ -75,6 +75,7 @@ Always read the target project's `CLAUDE.md` first and apply its conventions.
 - Minimum 80% test coverage on code you write
 - A test for a guard, leak or error classifier drives the real exported function with real library objects — never a copy of the logic in the test file, never a grep of SQL text — and your wave report names the defect you re-inserted to prove the test fails (see `_shared/agent-lessons.md#guard-self-proof`)
 - A probe or e2e test counts as evidence only after one run against the real target in the same wave (read-only request to the running app, the real content, selectors read from the component source); name that run in your wave report
+- A fake or stub reproduces the real system's failure modes (silent empty output, lag, multi-line errors, deadlines), or the test cannot go red there (see `_shared/agent-lessons.md#fake-real-failure-modes`)
 
 ### Security by Default
 - Input validation on every layer using schema-based validation (Zod)
