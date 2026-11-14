@@ -32,5 +32,13 @@ user-facing prompt wordings verbatim. Caller-specific values for this skill:
 | roadmap parseable, `roadmap_entry` matches | PASS | Proceed |
 | roadmap parseable, `roadmap_entry` mismatch | SOFT STOP | Surface mismatch notice, user confirms to continue |
 
+## `<spec-id>`: the one id for `--by` and `--phase`
+
+Every a1-new-feature and a1-execute call that takes `--by` or `--phase` (`code-scope`, `product stage`, `verify run`,
+gates, `retro validate`) uses the roadmap feature id: the spec's `roadmap_entry` (`<###-slug>`, as in `a1-roadmap`
+`product add-feature --id`). Before a roadmap entry exists it is the spec's `<###>-<feature-slug>`. Never mix in another
+spelling (such as `<project>-<feature>`): the feature then logs to one `.a1/phases/<spec-id>/gate-log.jsonl` and
+`product stage --by <spec-id>` finds its reservation (`a1-pr-review` logs under `pr-<n>`).
+
 On PASS, load `workflows/01-discover.md` (or the phase indicated by the
 spec's current `status`, per the Routing table in SKILL.md).
