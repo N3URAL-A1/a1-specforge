@@ -555,7 +555,7 @@ ${SPEC_INIT_HELP}
                   Exit: 0 ok, 2 watermark file found but 'updated:' field
                   missing/malformed, 3 watermark source missing or unreadable.
 
-  a1-tools retro validate <retro-path> [--registry <path>] [--gate-log <path>] [--enforced-since YYYY-MM-DD]
+  a1-tools retro validate <retro-path> [--registry <path>] [--gate-log <path>]... [--enforced-since YYYY-MM-DD]
                   Spec 007-retro-gate-id-validator, Wave 2. Parses every
                   gates_fired[].id in <retro-path> and checks it against
                   _shared/gates-registry.md's id table (gate-ids.cjs, Wave 1):
@@ -580,7 +580,10 @@ ${SPEC_INIT_HELP}
                   registry unreadable / gates_fired present but unparseable.
                   --gate-log <path> (spec 017 FR-009) also compares every
                   deterministic entry with the gate log; call sites pass the
-                  scope's log and run under --phase retro-<scope>.
+                  scope's log and run under --phase retro-<scope>. Repeat
+                  --gate-log for a run that crossed two scopes (spec 028):
+                  the logs are read together, the same file twice counts once,
+                  a missing or broken log is exit 2.
                   --registry overrides the repo-resolved
                   _shared/gates-registry.md — test-only escape hatch (SC-002),
                   production call sites never pass it.

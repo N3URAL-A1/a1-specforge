@@ -15,7 +15,9 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const { parseFlags } = require('./io.cjs');
 const { mask, lineIndex, lineOf } = require('./fidelity-tokenizer.cjs');
-const { loadAliases, isTestFile, FidelityConfigError } = require('./fidelity-resolve.cjs');
+const { loadAliases, isTestFile, looksLikeTest, FidelityConfigError } = require('./fidelity-resolve.cjs');
+const { ciJobsFor } = require('./fidelity-ci.cjs');
+const { setRecordExtra } = require('./gate-log.cjs');
 const { FILE_RULES, REPO_RULES, DEFAULT_DB_WRAPPERS } = require('./fidelity-rules.cjs');
 const D = require('./disposition-store.cjs');
 
@@ -27,6 +29,8 @@ const GIT_MAX_BUFFER = 64 * 1024 * 1024;
 const SCAN_DEADLINE_MS = 30000;
 const CONFIG_REL = path.join('.a1', 'fidelity.json');
 const SNIPPET_MAX = 160;
+const TEST_LIKE_MAX = 20;
+const NO_SCAN_HINT = 'add test_globs to .a1/fidelity.json';
 
 class UsageError extends Error {}
 
@@ -133,7 +137,7 @@ function compareFindings(a, b) {
   return a.file.localeCompare(b.file) || a.line - b.line || a.rule.localeCompare(b.rule);
 }
 
-/** @returns {{findings: object[], scanned: number}} */
+/** @returns {{findings: object[], scanned: number, dispositioned: number, testLike: string[], ciJobs: object}} */
 function scan(project, base) {
   const cfg = loadConfig(project);
   const files = changedFiles(project, base);
@@ -155,7 +159,9 @@ function scan(project, base) {
   // FR-025: only a committed `fidelity` disposition with this exact fingerprint clears a finding (an overturned one clears nothing).
   const cleared = D.clearedFingerprints(D.loadEntries(project), 'fidelity');
   const findings = all.filter((f) => !cleared.has(f.fingerprint));
-  return { findings, scanned: tests.length, dispositioned: all.length - findings.length };
+  // FR-019: test-like changed files, only needed when nothing was scanned (a vacuous pass must not read as clean).
+  const testLike = tests.length === 0 ? files.filter(looksLikeTest).sort() : [];
+  return { findings, scanned: tests.length, dispositioned: all.length - findings.length, testLike, ciJobs: ciJobsFor(ctx) };
 }
 
 function fail2(message) {
@@ -163,17 +169,28 @@ function fail2(message) {
   process.exitCode = 2;
 }
 
+/** FR-019: the status, exit code and extra keys of one report. Pure. */
+function summarize({ findings, scanned, testLike }) {
+  if (findings.length > 0) return { status: 'findings', exit: 1, extra: {} };
+  if (scanned > 0) return { status: 'clean', exit: 0, extra: {} };
+  if (testLike.length === 0) return { status: 'not_applicable', exit: 0, extra: {} };
+  return { status: 'no_scan', exit: 1, extra: { hint: NO_SCAN_HINT, test_like: testLike.slice(0, TEST_LIKE_MAX) } };
+}
+
 /** @param {string|undefined} sub @param {string[]} rest */
 function cmdTestFidelity(sub, rest) {
   try {
     const { base, project } = parseArgs(sub === undefined ? rest : [sub, ...rest]);
-    const { findings, scanned, dispositioned } = scan(project, base);
-    process.stdout.write(`${JSON.stringify({ ok: findings.length === 0, base, scanned, count: findings.length, dispositioned, findings })}\n`);
-    process.exitCode = findings.length === 0 ? 0 : 1;
+    const r = scan(project, base);
+    const { status, exit, extra } = summarize(r);
+    setRecordExtra({ scanned: r.scanned });
+    const report = { ok: exit === 0, status, base, scanned: r.scanned, count: r.findings.length, dispositioned: r.dispositioned, findings: r.findings, ci_jobs: r.ciJobs, ...extra };
+    process.stdout.write(`${JSON.stringify(report)}\n`);
+    process.exitCode = exit;
   } catch (e) {
     if (e instanceof UsageError || e instanceof FidelityConfigError || e instanceof D.DispositionError) fail2(e.message);
     else fail2(`internal error: ${e && e.message ? e.message : String(e)}`);
   }
 }
 
-module.exports = { cmdTestFidelity, scan };
+module.exports = { cmdTestFidelity, scan, summarize };

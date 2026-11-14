@@ -106,15 +106,40 @@ function parseSteps(text) {
   return steps;
 }
 
+/** Job id per line: the key under `jobs:` whose block holds the line. Returns [{line, id}] sorted by line. */
+function jobStarts(text) {
+  const lines = text.split(/\r?\n/);
+  const at = lines.findIndex((l) => /^jobs *:\s*(#.*)?$/.test(l));
+  if (at < 0) return [];
+  const starts = [];
+  let jobIndent = -1;
+  for (let i = at + 1; i < lines.length; i++) {
+    if (/^\s*(#|$)/.test(lines[i])) continue;
+    const ind = indentOf(lines[i]);
+    if (ind === 0) break; // next top-level key ends the jobs map
+    if (jobIndent < 0) jobIndent = ind;
+    const m = ind === jobIndent ? /^ *([A-Za-z_][\w-]*) *:/.exec(lines[i]) : null;
+    if (m) starts.push({ line: i + 1, id: m[1] });
+  }
+  return starts;
+}
+
+function jobOf(starts, line) {
+  let id = '';
+  for (const s of starts) if (s.line <= line) id = s.id;
+  return id;
+}
+
 function collectRuns(root, files) {
   const runs = [];
   for (const workflow of files) {
     const text = readText(path.join(root, workflow));
     if (text === null) continue;
+    const starts = jobStarts(text);
     for (const step of parseSteps(text)) {
       const wd = step.entries.find((e) => e.key === 'working-directory');
       for (const e of step.entries.filter((x) => x.key === 'run')) {
-        runs.push({ workflow, line: e.line, text: e.value, wd: wd ? wd.value : '' });
+        runs.push({ workflow, line: e.line, text: e.value, wd: wd ? wd.value : '', job: jobOf(starts, e.line) });
       }
     }
   }
@@ -311,4 +336,29 @@ function testNotInCi(ctx) {
   return [...missing, ...perFile];
 }
 
-module.exports = { testNotInCi, parseSteps };
+/**
+ * Spec 028 FR-021: which workflow jobs reach each scanned test file. Informational: never changes findings.
+ * @param {object} ctx {projectRoot, testFiles}
+ * @returns {Object<string, string[]>} test file -> job ids in workflow order (files no job reaches are absent)
+ */
+function ciJobsFor(ctx) {
+  const tests = ctx.testFiles || [];
+  const files = workflowFiles(ctx.projectRoot);
+  if (tests.length === 0 || files.length === 0) return {};
+  const conf = readCiConfig(ctx.projectRoot);
+  const runs = collectRuns(ctx.projectRoot, files).filter((r) => r.job !== '');
+  const jobs = [...new Set(runs.map((r) => r.job))];
+  const out = {};
+  for (const job of jobs) {
+    const jobRuns = runs.filter((r) => r.job === job);
+    const globs = conf.ciGlobs.filter((g) => jobRuns.some((r) => r.text.includes(g)));
+    const state = startState(ctx.projectRoot, jobRuns);
+    const matchers = state.invocations.map((inv) => buildMatcher(state, inv));
+    for (const f of tests) {
+      if (globs.some((g) => globMatch(g, f)) || matchers.some((m) => judge(m, f) === 'yes')) out[f] = [...(out[f] || []), job];
+    }
+  }
+  return out;
+}
+
+module.exports = { testNotInCi, ciJobsFor, parseSteps };

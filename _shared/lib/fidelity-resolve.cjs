@@ -12,7 +12,10 @@ const path = require('path');
 const { mask } = require('./fidelity-tokenizer.cjs');
 
 const EXTENSIONS = ['.ts', '.tsx', '.js', '.mjs', '.cjs', '.py'];
-const DEFAULT_TEST_GLOBS = ['*.test.*', '*.spec.*', 'test_*.py', '*_test.py'];
+const DEFAULT_TEST_GLOBS = ['*.test.*', '*.spec.*', 'test_*.py', '*_test.py', 'test-*.sh', '*_test.sh'];
+const TEST_LIKE_EXT = /\.(?:sh|bash|js|cjs|mjs|jsx|ts|tsx|py)$/;
+const TEST_DIR_SEGMENTS = new Set(['test', 'tests', '__tests__', 'spec']);
+const TEST_BASENAME = /^test|_test\.|\.test\.|\.spec\./;
 const MAX_CONFIG_BYTES = 1024 * 1024;
 const MAX_GLOB_LENGTH = 256;
 const REEXPORT_RE = /\bexport\b[^;'"`]{0,300}?\bfrom[ \t\r\n]{0,64}['"]/g;
@@ -234,7 +237,20 @@ function isTestFile(rel, extraGlobs) {
   return [...DEFAULT_TEST_GLOBS, ...extraGlobs].some((g) => globMatch(g, rel));
 }
 
+/**
+ * Spec 028 FR-019: a changed file that looks like a test whether or not a glob matches it. A code or script
+ * extension plus a test directory segment, or a test-style basename. Independent of `test_globs`.
+ * @param {string} rel posix project-relative path
+ * @returns {boolean}
+ */
+function looksLikeTest(rel) {
+  if (typeof rel !== 'string' || !TEST_LIKE_EXT.test(rel)) return false;
+  const segs = rel.split('/');
+  const base = segs[segs.length - 1];
+  return segs.slice(0, -1).some((s) => TEST_DIR_SEGMENTS.has(s)) || TEST_BASENAME.test(base);
+}
+
 module.exports = {
-  EXTENSIONS, DEFAULT_TEST_GLOBS, FidelityConfigError,
+  EXTENSIONS, DEFAULT_TEST_GLOBS, looksLikeTest, FidelityConfigError,
   loadAliases, resolveSpecifier, subjectFiles, globMatch, isTestFile, stripJsonc,
 };
