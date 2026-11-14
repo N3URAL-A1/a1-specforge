@@ -651,14 +651,14 @@ cdisp() { # cdisp <upheld|pending|none-committed>: record a config_change dispos
 newproj c1; stub ok 'exit 0'; seal
 cfg '{"commands":[{"id":"unit","argv":["./bin/ok"]}]}'; g "$P" add -A; g "$P" commit -q -m "add verify.json"
 vrun "$P" --base main
-check "C1 base has no command set, head adds .a1/verify.json: exit 1 verify_config_changed (head set run), not exit 2" 1 'j.verdict+"/"+j.reason+"/"+j.source+"/"+j.commands[0].id+"/"+j.cache.base+"/"+j.config_changed.dispositioned' "fail/verify_config_changed/verify.json/unit/none/false"
+check "C1 base has no command set, head adds .a1/verify.json: exit 1 verify_config_first (head set run), not exit 2" 1 'j.verdict+"/"+j.reason+"/"+j.source+"/"+j.commands[0].id+"/"+j.cache.base+"/"+j.config_changed.dispositioned' "fail/verify_config_first/verify.json/unit/none/false"
 cdisp upheld; g "$P" add -A; g "$P" commit -q -m "upheld disposition"
 vrun "$P" --base main
 check "C1b the same change with a committed, upheld config_change disposition for exactly this content: exit 0, pass" 0 'j.verdict+"/"+j.config_changed.dispositioned' "pass/true"
 newproj c1c; stub red 'exit 1'; seal
 cfg '{"commands":[{"id":"unit","argv":["./bin/red"]}]}'; g "$P" add -A; g "$P" commit -q -m "add verify.json"
 vrun "$P" --base main
-check "C1c base has no command set and the head command is red: still exit 1 (config reason first, red command listed)" 1 'j.reason+"/"+j.reasons.includes("command_failed")' "verify_config_changed/true"
+check "C1c base has no command set and the head command is red: still exit 1 (config reason first, red command listed)" 1 'j.reason+"/"+j.reasons.includes("command_failed")' "verify_config_first/true"
 
 # C2: autodetect comes from the base tree (Samuel's demo: the PR sets "test":"true")
 newproj c2; printf '%s' '{"name":"x","scripts":{"test":"node -e \"process.exit(1)\""}}' > "$P/package.json"; seal

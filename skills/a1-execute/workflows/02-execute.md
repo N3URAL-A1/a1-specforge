@@ -153,6 +153,8 @@ if [ $RC -ne 0 ]; then echo "STOP: gate-1-build red (verdict fail or no test com
 
 Multi-lane: run the block per lane with the lane's own `$WORK_PATH` and `$PRE_WAVE_HEAD`.
 
+Reading the `verify run` record (spec 028): name every `skipped_on_host` id in the wave report and never count a skipped id as a pass (it did not run on this host); name every `env_red` entry (a known environment-red suite, excused on this platform only, never on a head-only red) and every `env_red_stale` warning (`warnings[]`: the entry is green or names no command, remove it from `.a1/verify.json`); copy each `hints` line into the report. None of them changes the exit code and none adds a step.
+
 ### 2b-d. Design review (only waves that changed a design file)
 
 Spec 025 FR-013. Runs once per wave in the COMPLETE branch, after 2b-g has passed and before 2b-v. Only

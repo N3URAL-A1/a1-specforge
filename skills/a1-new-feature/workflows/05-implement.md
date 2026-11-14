@@ -256,6 +256,7 @@ if [ $RC -ne 0 ]; then echo "STOP: test-fidelity red (findings as JSON above)"; 
 Exit 1 = wave not signed off: the agent fixes the tests. The only other way out is a recorded
 `disposition add --kind fidelity ... --reason <why> --by <agent>`; Reinhard reviews it at PR
 review. There is no skip flag.
+The merge step of a1-pr-review runs this scan once more on the final head (`05-merge.md` 5.3).
 
 **Gate 1 — Build**
 
@@ -271,6 +272,8 @@ node <repo>/_shared/a1-tools.cjs verify run --project <dir> --phase <spec-id>; R
 echo "verify run exit=$RC"
 if [ $RC -ne 0 ]; then echo "STOP: gate-1-build red (verdict fail or no test command)"; fi
 ```
+
+Reading the `verify run` record (spec 028): name every `skipped_on_host` id in the wave report and never count a skipped id as a pass (it did not run on this host); name every `env_red` entry (a known environment-red suite, excused on this platform only, never on a head-only red) and every `env_red_stale` warning (`warnings[]`: the entry is green or names no command, remove it from `.a1/verify.json`); copy each `hints` line into the report. None of them changes the exit code and none adds a step.
 
 Run the project-specific build command from CLAUDE.md too when it is not covered (e.g. `npm run build`).
 On build failure: wave stays `in-progress`, agent repairs it. No proceeding.

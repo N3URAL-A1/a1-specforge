@@ -18,6 +18,10 @@ const EXPECTED_BASH_MAJOR = 3;
 const SHELL_MISMATCH = 'shell_major_mismatch';
 const TARGET_OS_HINT = 'run these ids on the target OS before merge: ';
 const CI_HINT = 'ci_evidence used: host-specific ids were not run locally: ';
+const ALL_SKIPPED_HINT = 'all_commands_skipped_on_host: every command of .a1/verify.json is pinned to another host or shell, so nothing was checked on this host; run the skipped ids on the target OS';
+const ENV_RED_STALE = 'env_red_stale';
+const ENV_RED_STALE_HINT = 'remove the entry from .a1/verify.json';
+const BASE_AND_HEAD_RED = 'red_on_base_and_head';
 
 /** The `requires_host` list of one commands[] entry: null when absent or empty; bad_config for any other shape. */
 function validateRequiresHost(entry, where) {
@@ -76,9 +80,65 @@ function hostFilter(commands, host, memo) {
   return { run, skipped };
 }
 
-/** `hints` array for a non-empty skipped list; [] otherwise. */
-function skipHints(skipped) {
-  return skipped.length === 0 ? [] : [`${TARGET_OS_HINT}${skipped.map((s) => s.id).join(', ')}`];
+/**
+ * `hints` array for a non-empty skipped list; [] otherwise. With `ranCount === 0` (every command skipped on this host, spec 028
+ * orchestrator item) a second hint says nothing was checked here; warn-only, the verdict is not touched (A-003).
+ */
+function skipHints(skipped, ranCount) {
+  if (skipped.length === 0) return [];
+  return [`${TARGET_OS_HINT}${skipped.map((s) => s.id).join(', ')}`, ...(ranCount === 0 ? [ALL_SKIPPED_HINT] : [])];
+}
+
+/**
+ * The top-level `env_red` array of a parsed `.a1/verify.json` (spec 028 FR-005, FR-006): [] when absent; every entry needs a
+ * non-empty string `id`, `host` and `reason`, and an `{id, host}` pair may appear once. Anything else is bad_config (exit 2).
+ * @returns {{id: string, host: string, reason: string}[]}
+ */
+function validateEnvRed(cfg) {
+  const v = cfg && typeof cfg === 'object' ? cfg.env_red : undefined;
+  if (v === undefined) return [];
+  const fix = '(edit .a1/verify.json: env_red is an array of {id, host, reason}, each a non-empty string, one entry per id and host)';
+  if (!Array.isArray(v)) throw new VerifyError('bad_config', `env_red must be an array ${fix}`);
+  const seen = new Set();
+  return v.map((e, i) => {
+    const ok = e && typeof e === 'object' && ['id', 'host', 'reason'].every((k) => typeof e[k] === 'string' && e[k].trim() !== '');
+    if (!ok) throw new VerifyError('bad_config', `env_red[${i}]: id, host and reason must be non-empty strings ${fix}`);
+    const key = JSON.stringify([e.id, e.host]);
+    if (seen.has(key)) throw new VerifyError('bad_config', `env_red[${i}]: duplicate entry for id ${JSON.stringify(e.id)} and host ${JSON.stringify(e.host)} ${fix}`);
+    seen.add(key);
+    return { id: e.id, host: e.host, reason: e.reason };
+  });
+}
+
+/**
+ * Judge the `env_red` entries of this host's platform against the settled head results.
+ * Without a base compare an entry excuses a red command (reason set). With one it excuses only a command that is red on base AND
+ * head (settled reason null, pre_existing_red_ids set): a head-only red keeps its reason, so a regression is never masked.
+ * An entry whose command is green, or that names no command at all, is stale. Entries of other platforms have no effect.
+ * @param {{id: string, host: string, reason: string}[]} entries validated entries
+ * @param {string} platform this host's platform
+ * @param {object[]} settled settled head command records
+ * @param {Iterable<string>} knownIds every resolved id of the plan, including the ones skipped on this host
+ * @param {boolean} compareBase true when a base side was compared
+ * @returns {{envRed: object[], excused: Set<string>, warnings: object[]}}
+ */
+function applyEnvRed(entries, platform, settled, knownIds, compareBase) {
+  const byId = new Map(settled.map((c) => [c.id, c]));
+  const known = new Set(knownIds);
+  const envRed = [];
+  const excused = new Set();
+  const warnings = [];
+  const stale = (id) => warnings.push({ reason: ENV_RED_STALE, id, hint: ENV_RED_STALE_HINT });
+  for (const e of entries.filter((x) => x.host === platform)) {
+    const c = byId.get(e.id);
+    if (!c) { if (!known.has(e.id)) stale(e.id); continue; }
+    const red = compareBase ? c.reason === null && Array.isArray(c.pre_existing_red_ids) && c.pre_existing_red_ids.length > 0 : c.reason !== null;
+    if (red) {
+      envRed.push({ id: e.id, reason: e.reason, result_reason: c.reason || BASE_AND_HEAD_RED });
+      excused.add(e.id);
+    } else if (c.reason === null) stale(e.id);
+  }
+  return { envRed, excused, warnings };
 }
 
 /** Ids of a parsed `.a1/verify.json` commands[] that are host-specific (non-empty requires_host, or a bare `-bash32` id); [] when unreadable. */
@@ -96,4 +156,4 @@ function ciSkipHints(ids) {
   return ids.length === 0 ? [] : [`${CI_HINT}${ids.join(', ')}`];
 }
 
-module.exports = { validateRequiresHost, hostRecord, probeBashMajor, hostFilter, skipHints, hostSpecificIds, ciSkipHints };
+module.exports = { validateEnvRed, applyEnvRed, validateRequiresHost, hostRecord, probeBashMajor, hostFilter, skipHints, hostSpecificIds, ciSkipHints };

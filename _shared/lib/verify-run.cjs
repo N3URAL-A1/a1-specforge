@@ -26,6 +26,7 @@ const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
 const MAX_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 const MAX_CONFIG_BYTES = 1024 * 1024;
 const MAX_COMMANDS = 500;
+const FIRST_CONFIG_HINT = 'commit an upheld config_change disposition for config_changed.fingerprint (05-merge.md 5.3)';
 const BASE_CANDIDATES = Object.freeze(['origin/main', 'main', 'master']);
 const NPM_SCRIPTS = Object.freeze(['typecheck', 'build', 'test']);
 const PYTEST_FILES = Object.freeze(['pyproject.toml', 'pytest.ini', 'tox.ini']);
@@ -199,6 +200,7 @@ function detectSignature(commands) {
 function resolveCommands(project, config, src = fsSource(project), hostCtx = null) {
   const cfg = config === undefined ? readJsonFile(path.join(project, '.a1', 'verify.json'), '.a1/verify.json') : config;
   if (cfg !== null && (typeof cfg !== 'object' || Array.isArray(cfg))) throw new VerifyError('bad_config', '.a1/verify.json must be an object');
+  const envRed = hostLib.validateEnvRed(cfg);
   const requiresEnv = cfg && Array.isArray(cfg.requires_env) ? cfg.requires_env.filter((n) => typeof n === 'string') : [];
   const flakyBase = cfg && Array.isArray(cfg.flaky_base) ? cfg.flaky_base.filter((n) => typeof n === 'string') : [];
   const reason = cfg && typeof cfg.no_tests_reason === 'string' && cfg.no_tests_reason !== '' ? cfg.no_tests_reason : null;
@@ -207,10 +209,10 @@ function resolveCommands(project, config, src = fsSource(project), hostCtx = nul
     const found = get();
     if (found.length > 0) {
       const split = source === 'verify.json' && hostCtx ? hostLib.hostFilter(found, hostCtx, hostCtx.memo) : { run: found, skipped: [] };
-      return { commands: split.run, skipped: split.skipped, source, noTestsReason: null, requiresEnv, flakyBase, eachCfg: source === 'verify.json' && typeof cfg.each === 'string' ? cfg : null };
+      return { commands: split.run, skipped: split.skipped, envRed, source, noTestsReason: null, requiresEnv, flakyBase, eachCfg: source === 'verify.json' && typeof cfg.each === 'string' ? cfg : null };
     }
   }
-  if (reason) return { commands: [], skipped: [], source: 'no_tests_reason', noTestsReason: reason, requiresEnv, flakyBase, eachCfg: null };
+  if (reason) return { commands: [], skipped: [], envRed, source: 'no_tests_reason', noTestsReason: reason, requiresEnv, flakyBase, eachCfg: null };
   throw new VerifyError('no_test_command', 'no .a1/verify.json command, package.json typecheck/build/test script or pytest config found; declare no_tests_reason in .a1/verify.json if the project has no tests');
 }
 
@@ -330,8 +332,9 @@ function changeSet(project, baseSha) {
   return [...new Set([...committed, ...statusPaths(project)])];
 }
 
-function overall(commands, noTestsReason) {
-  const reasons = [...new Set(commands.map((c) => c.reason).filter((r) => r !== null))];
+/** `excused`: ids of env_red commands (spec 028 FR-005) whose red result does not count toward the verdict; the record keeps the result. */
+function overall(commands, noTestsReason, excused = new Set()) {
+  const reasons = [...new Set(commands.filter((c) => !excused.has(c.id)).map((c) => c.reason).filter((r) => r !== null))];
   return { verdict: reasons.length === 0 ? 'pass' : 'fail', reason: reasons[0] || null, reasons, no_tests_reason: noTestsReason };
 }
 
@@ -439,9 +442,13 @@ function upheldConfigFingerprints(project, headSha_) {
   try { return new Set(entriesAt(project, headSha_).filter((e) => e.kind === 'config_change' && e.review === 'upheld' && !isSelfReviewed(e)).map((e) => e.fingerprint)); } catch (e) { throw new VerifyError('bad_config', e.message); }
 }
 
-function configChangeRecord(project, change, headSha_) {
+/** FR-009: `first` = the merge-base has no .a1/verify.json and HEAD adds one; the record then names the route that clears it. */
+function configChangeRecord(project, change, headSha_, first = false) {
   if (change === null) return null;
-  return { fields: change.fields, fingerprint: change.fingerprint, dispositioned: upheldConfigFingerprints(project, headSha_).has(change.fingerprint) };
+  return {
+    fields: change.fields, fingerprint: change.fingerprint, dispositioned: upheldConfigFingerprints(project, headSha_).has(change.fingerprint),
+    ...(first ? { hint: FIRST_CONFIG_HINT } : {}),
+  };
 }
 
 function withReasons(v, extra) {
@@ -520,12 +527,14 @@ function runVerify(opts) {
     const headMs = msSince(tHead);
     const skipped = base ? vb.applySkipIncrease(side.settled, base.skipped, skipIncreaseDispositions(project)) : side.settled;
     const settled = skipped.map((c) => ({ ...c, base_duration_ms: base ? base.durations.get(c.id) ?? null : null }));
-    const configChanged = configChangeRecord(project, sel.change, head);
+    const firstConfig = cfgGuard !== null && cfgGuard.base === null && cfgGuard.head !== null;
+    const configChanged = configChangeRecord(project, sel.change, head, firstConfig);
+    const env = hostLib.applyEnvRed(plan.envRed, hostLib.hostRecord(opts.host).platform, settled, [...settled.map((c) => c.id), ...plan.skipped.map((s) => s.id)], sel.compareBase);
     const removed = suiteRemovedRecord(project, headSet.removed, head);
-    const extra = [...(configChanged && !configChanged.dispositioned ? ['verify_config_changed'] : []), ...(removed && !removed.dispositioned ? ['suite_removed'] : [])];
-    const hints = hostLib.skipHints(plan.skipped);
+    const extra = [...(configChanged && !configChanged.dispositioned ? [firstConfig ? 'verify_config_first' : 'verify_config_changed'] : []), ...(removed && !removed.dispositioned ? ['suite_removed'] : [])];
+    const hints = hostLib.skipHints(plan.skipped, settled.length);
     return {
-      ...withReasons(overall(settled, plan.noTestsReason), extra), host: hostLib.hostRecord(opts.host), skipped_on_host: plan.skipped, ...(hints.length > 0 ? { hints } : {}), source: plan.source, head_sha: head, base_sha: baseSha,
+      ...withReasons(overall(settled, plan.noTestsReason, env.excused), extra), host: hostLib.hostRecord(opts.host), skipped_on_host: plan.skipped, ...(hints.length > 0 ? { hints } : {}), ...(env.envRed.length > 0 ? { env_red: env.envRed } : {}), ...(env.warnings.length > 0 ? { warnings: env.warnings } : {}), source: plan.source, head_sha: head, base_sha: baseSha,
       touches_source: touches, changed_files: changed.length, flaky: pairs(side.settled, 'flaky_ids'), pre_existing_red: pairs(side.settled, 'pre_existing_red_ids'),
       cache: { head: side.cache, base: base ? base.cache : 'none' }, ...(configChanged ? { config_changed: configChanged } : {}), ...(removed ? { suite_removed: removed } : {}), commands: settled,
       duration_ms: { head: headMs, base: baseMs, total: msSince(tTotal) },

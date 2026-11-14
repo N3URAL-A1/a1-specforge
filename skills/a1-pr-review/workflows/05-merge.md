@@ -49,7 +49,7 @@ One `--bug` clears every base-red id; required checks red on head are never comp
 Four findings block, because a config or a deleted suite can switch checks off. No flag clears any; only a second reviewer does:
 
 - `fidelity_config_changed`: `.a1/fidelity.json` differs from the base. The reason carries the `fingerprint`.
-- `suite_red_on_head` with cause `verify_config_changed`: `.a1/verify.json` differs from the base. The fingerprint is `suites.config_changed.fingerprint` in the report.
+- `suite_red_on_head` with cause `verify_config_changed`: `.a1/verify.json` differs from the base. The fingerprint is `suites.config_changed.fingerprint` in the report. When the base has no `.a1/verify.json` the cause is `verify_config_first` (same fingerprint, same clearing).
 - `suite_red_on_head` with cause `suite_removed`: an `each` suite the base names is gone at HEAD (a deleted red suite no longer fails). The fingerprint is `suites.suite_removed.fingerprint`; it covers exactly the removed id set (`suites.suite_removed.ids`).
 - `probes_config_changed`: `.a1/live-probes.yaml` differs from the base (added, changed or deleted). The reason carries the `fingerprint`; the probe file names the hosts the next run connects to, so a PR cannot widen it unreviewed.
 
@@ -58,6 +58,7 @@ To clear one: `node <repo>/_shared/a1-tools.cjs disposition add --kind config_ch
 `<author>` records `disposition review <fp> --verdict upheld --reason "<why>" --by <reviewer>` (5.1); commit and push `.a1/dispositions.json`;
 run 5.3 again. The fingerprint covers the exact head content: change the config again and the verdict no longer matches.
 The suites run fresh on every merge check (`--no-cache`); no result cache is trusted.
+Reading the `pr merge-check` suites record (spec 028): name every `skipped_on_host` id in the merge report (`suites.skipped_on_host`, `suites.env_red`, `suites.warnings`, `suites.hints`) and never count a skipped id as a pass (it did not run on this host); name every `env_red` entry (a known environment-red suite, excused on this platform only, never on a head-only red) and every `env_red_stale` warning (`warnings[]`: the entry is green or names no command, remove it from `.a1/verify.json`); copy each `hints` line into the report. None of them changes the exit code and none adds a step.
 When `.a1/verify.json` carries `ci_evidence` (same value at the base ref tip) and every job of the named workflow (`ci_evidence.workflow`, pull_request runs only) is green on the PR head, the check takes that as the suite result and skips the local runs (report field `ci_evidence.used`). A PR that changes `.a1/verify.json` or a path under `ci_evidence.unchanged`, a missing check name, `--no-ci-evidence` and an `A1_GH_BIN` override still run locally. The shortcut exists only for plans without counting reporters (reporter `none` everywhere); a base-red suite cleared with `--bug` needs `--no-ci-evidence` (CI red stays `ci_check_red`). Wait for CI before starting it.
 List every CI job that waits on another job (`needs:`) under `ci_evidence.checks`: a job gh does not list yet cannot be judged, only a listed name is waited for.
 Start it only on a quiet host: no other `verify run` or `pr merge-check` running and the 5-minute load below the CPU count.
@@ -75,7 +76,7 @@ node -e 'const os=require("os");const l=os.loadavg()[1],n=os.cpus().length;conso
 Preflight, before the long run (each miss costs a full re-run of 10+ minutes; run only the lines that apply):
 
 - A suite that is red on base and has an a1-fix report: pass `--bug <report-id>` on the first run. The id is the report's file stem `<YYYY-MM-DD>-<bug-slug><suffix>` (vault `project/<slug>/fixes/<id>.md` or `.a1/fixes/<id>.md` committed at base; a report added by the PR branch does not count). With `ci_evidence` configured, also pass `--no-ci-evidence`.
-- A config change (the first PR that adds `.a1/verify.json`, `verify_config_changed`) or a `skip_increase` stops the first run: the fingerprint comes from its report. Expect it: add the disposition, have Reinhard review it in the same round, commit and push, run once more.
+- A config change (the first PR that adds `.a1/verify.json` reports `verify_config_first` and `suites.config_changed.hint`; every other change `verify_config_changed`) or a `skip_increase` stops the first run: the fingerprint comes from its report. Expect it: add the disposition, have Reinhard review it in the same round, commit and push, run once more.
 - Push first, so the head matches (`gh pr view <n> --json headRefOid`).
 - A suite that needs `.git` must tolerate the base run from a `git archive` snapshot (no `.git`); a split suite moves a known base-red case to a new id, so name it in the report.
 - Never redirect stderr into an unset variable (`2>"$TMPDIR/x"`); guard the path first.
@@ -83,6 +84,8 @@ Preflight, before the long run (each miss costs a full re-run of 10+ minutes; ru
 On a host new to this project, run the host check of a1-new-feature `workflows/06-verify.md` Step 0.6 first (owner of that check).
 
 ```bash
+node <repo>/_shared/a1-tools.cjs test-fidelity --diff-base "$(git merge-base origin/<base> HEAD)" --phase pr-<n>; RC=$?
+if [ "$RC" -ne 0 ]; then echo "STOP: test-fidelity exit=$RC, no merge. Read the findings (rule, file, line) on stdout."; exit "$RC"; fi
 node <repo>/_shared/a1-tools.cjs pr merge-check --pr <n> --phase pr-<n>; RC=$?
 if [ "$RC" -ne 0 ]; then echo "STOP: pr merge-check exit=$RC, no merge. Read reasons[] on stdout."; exit "$RC"; fi
 ```
