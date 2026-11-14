@@ -30,6 +30,7 @@ const key = (root) => C.commonDirOf(root);
 const question = (root, kind) => {
   if (kind === 'waiver') return lib('xprov-consent-waive.cjs').buildFor(a.work_path ? { root, workPath: a.work_path } : { root, phase: a.phase }).question;
   if (kind === 'allowlist') return lib('xprov-consent-allowlist.cjs').buildFor({ root, scan: a.scan }).question;
+  if (kind === 'decline') return lib('xprov-consent-decline.cjs').buildFor({ root, phase: a.phase }).question; // spec 028 FR-022
   return Q.buildQuestion(kind, Q.repoContext(root, RI.readOrigin(root), { ludwigRecord: kind === 'classification' && a.ludwig ? a.ludwig : undefined }));
 };
 const out = (o) => process.stdout.write(`${JSON.stringify(o)}\n`);
