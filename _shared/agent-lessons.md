@@ -406,3 +406,13 @@ contradiction; obsidian-lumen 020 lost the FR-016 clause "all text stays
 readable" from the plan AC. Victor caught each, but only in Phase 6, after the
 code existed. Rule: an AC repeats every clause of its FR/SC sentence; a spec
 contradiction goes back to clarify (the spec owner), never into the plan.
+
+## Reinhard — a fix closes the class, not the instance {#review-fix-class}
+
+Added 2026-11-14 (a1-evolve run 11, cluster 9: 4 occurrences 2026-11-08..12).
+
+lomberg 002: price leak, then deposit/charges, then the commission euro amount,
+two extra review rounds for one field class. a1-office field-codes: each round
+found a new O(n^2) path until the class was banned. obsidian-lumen PR #23: the
+third patch on one symptom turned into a spec clarification. Rule: name the
+class in the finding; the fixer enumerates it (grep) before patching.
