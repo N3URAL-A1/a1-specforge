@@ -317,7 +317,7 @@ features:
     milestone: continuous
     title: "Measured gap checks: cheap deterministic checks for the code-side gaps of evolve run 11"
     status: in-flight
-    stage: started
+    stage: verify
     depends_on: []
     started: 2026-11-14
     finished: null
@@ -409,9 +409,6 @@ None.
 
 ## Changelog
 
-- **2026-10-12** — 009-cross-provider-review-gate -> done — stage transition via `product stage`; dates corrected to real span 2026-09-24 .. 2026-10-04 (Wave 7 merged in #18 / 26e79c3; blocking flip 2026-10-03), spec_path set after reconcile (all 30 FRs present)
-- **2026-10-12** — 005-vault-first-artifacts -> cancelled (obsolete) — Spec closed itself 2026-09-13 as obsolete: the planned separate vault sink is superseded by A1_VAULT_ROOT, which delivers FR-001..003; cancelled (not done) because the spec premise no longer holds; a1-reconcile 2026-10-12 confirmed nothing to build
-- **2026-10-13** — next cursor set to 006-specforge-kritis-profile — 002-product-docs-layer is done; product markers warned that next pointed at a done feature
 - **2026-10-14** — feature '015-docs-consolidation' added — new feature via `product add-feature`
 - **2026-10-14** — feature.md created for '015-docs-consolidation' — formal spec/plan attached via `product feature-init`
 - **2026-10-14** — 010-vault-cockpit-contract -> started — stage transition via `product stage`
@@ -509,6 +506,9 @@ None.
 - **2026-11-14** — feature '028-measured-gap-checks' added — new feature via `product add-feature`
 - **2026-11-14** — feature.md created for '028-measured-gap-checks' — formal spec/plan attached via `product feature-init`
 - **2026-11-14** — 028-measured-gap-checks -> started — stage transition via `product stage`
+- **2026-11-14** — 028-measured-gap-checks -> complete — stage transition via `product stage`
+- **2026-11-14** — 028-measured-gap-checks -> review — stage transition via `product stage`
+- **2026-11-14** — 028-measured-gap-checks -> verify — stage transition via `product stage`
 
 ## Appendix — migrated details
 

@@ -33,3 +33,6 @@ Rotated entries beyond the 100-entry ROADMAP.md Changelog window (append-only, o
 - **2026-10-08** — feature.md created for '014-xprov-egress-hardening' — formal spec/plan attached via `product feature-init`
 - **2026-10-12** — 014-xprov-egress-hardening -> done — stage transition via `product stage`
 - **2026-10-12** — 014-xprov-egress-hardening started date corrected to 2026-10-08 (claim date); code_scope claim released — product stage stamped today; the stage started on 2026-10-08
+- **2026-10-12** — 009-cross-provider-review-gate -> done — stage transition via `product stage`; dates corrected to real span 2026-09-24 .. 2026-10-04 (Wave 7 merged in #18 / 26e79c3; blocking flip 2026-10-03), spec_path set after reconcile (all 30 FRs present)
+- **2026-10-12** — 005-vault-first-artifacts -> cancelled (obsolete) — Spec closed itself 2026-09-13 as obsolete: the planned separate vault sink is superseded by A1_VAULT_ROOT, which delivers FR-001..003; cancelled (not done) because the spec premise no longer holds; a1-reconcile 2026-10-12 confirmed nothing to build
+- **2026-10-13** — next cursor set to 006-specforge-kritis-profile — 002-product-docs-layer is done; product markers warned that next pointed at a done feature
