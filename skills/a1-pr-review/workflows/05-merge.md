@@ -106,6 +106,7 @@ with `_shared/push-cadence.md` P3 (never a bare `git pull`) and advance the regi
 1. Retros, each with `retro validate --gate-log`, from inside the worktree: the retro of this skill (one retro, written
    now, after the merge, see `04-submit.md` Retro) and the caller's retro (a1-new-feature `workflows/06-verify.md` Step 6, written now;
    a1-fix: already written in `workflows/04-verify.md` Step 2b before the handoff, only check that its entry is present, do not append it again).
+   The caller's retro validates against both logs of the run: `--gate-log <caller phase log> --gate-log .a1/phases/pr-<n>/gate-log.jsonl` (the flag repeats; the same file twice counts once).
 2. Run record (the worktree exit deletes the gate logs):
 
 Persist the run record (spec 027 FR-035). `run record` keeps scope, head sha, last verdict, `caught` and summed durations per gate in the learning store, once per scope and PR. Exit 1 (no learning store, no or untrusted gate log) does not stop the close-out: report it. Exit 2 is STOP before the worktree exit. Set `PHASE` to the phase name the caller handed over (a1-new-feature spec id, a1-execute phase); when a1-pr-review runs on its own, set it to `none`. The block skips the second call for an empty value, `none` or an unreplaced placeholder.
