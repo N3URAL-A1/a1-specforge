@@ -29,6 +29,10 @@ const MERGE_CHECK_HELP = `  a1-tools pr merge-check --pr <n> [--base <ref>] [--b
                   base is gone at HEAD; report suites.suite_removed.fingerprint);
                   exit 2 usage, gh failure, unresolvable base. The report carries head_sha (pass it to
                   \`gh pr merge --match-head-commit\`), upheld_dispositions[] (entries new/changed on the branch that were upheld).
+                  suites.host {platform, arch, node} and suites.skipped_on_host come from the local run (spec 028; null on the ci_evidence path); a non-empty
+                  skipped_on_host adds suites.hints ["run these ids on the target OS before merge: <ids>"], exit code unchanged. On the ci_evidence path a head
+                  plan with any requires_host or -bash32 id adds the hint "ci_evidence used: host-specific ids were not run locally: <ids>".
+                  base_red_unreported carries hint "re-run with --bug <fix-report-id> on the first run".
                   --bug <id>: a test red on head AND base needs an a1-fix report (frontmatter type: bug-report, bug_slug, status) in the
                   vault (project/<slug>/fixes/<id>.md) or committed at the base (.a1/fixes/<id>.md); a report the branch adds does not count.
                   One --bug clears ALL base-red ids of the run, it is not matched per id. Required checks that are red on head are never

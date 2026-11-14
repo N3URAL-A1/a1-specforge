@@ -18,6 +18,8 @@ const vb = require('./verify-base.cjs');
 const { emitExit } = require('./emit-exit.cjs');
 const { loadEntries, entriesAt, clearedFingerprints, fingerprintOf, isSelfReviewed } = require('./disposition-store.cjs');
 
+const hostLib = require('./verify-host.cjs');
+
 const { VerifyError } = vb;
 
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
@@ -127,7 +129,8 @@ function fromConfig(project, cfg, ref) {
   (Array.isArray(cfg.commands) ? cfg.commands : []).forEach((c, i) => {
     const argv = checkArgv(c && c.argv, `commands[${i}]`);
     if (c.reporter !== undefined && !rep.REPORTER_KINDS.includes(c.reporter)) throw new VerifyError('bad_config', `commands[${i}]: unknown reporter`);
-    out.push({ id: typeof c.id === 'string' && c.id ? c.id : argv.join(' '), argv, kind: c.reporter || rep.detectKind(argv), viaScript: false, timeoutMs: checkTimeout(c.timeout_ms === undefined ? defTimeout : c.timeout_ms, `commands[${i}]`) });
+    const requiresHost = hostLib.validateRequiresHost(c, `commands[${i}]`);
+    out.push({ id: typeof c.id === 'string' && c.id ? c.id : argv.join(' '), argv, requiresHost, kind: c.reporter || rep.detectKind(argv), viaScript: false, timeoutMs: checkTimeout(c.timeout_ms === undefined ? defTimeout : c.timeout_ms, `commands[${i}]`) });
   });
   if (typeof cfg.each === 'string') {
     out.push(...eachCommands(cfg, expandEach(project, cfg.each, ref)));
@@ -190,8 +193,10 @@ function detectSignature(commands) {
  * @param {object|null} [config] parsed `.a1/verify.json` to use instead of the file in `project`
  *   (`null` = the merge-base has none); undefined reads the file in `project`.
  * @param {{has: Function, readJson: Function}} [src] where package.json / pytest files are read from (default: the files in `project`)
+ * @param {object|null} [hostCtx] host facts + probe memo (spec 028): commands[] entries pinned to other platforms or a non-bash-3
+ *   `-bash32` id are removed from `commands` and returned in `skipped` before any hash or run; null = no host filtering
  */
-function resolveCommands(project, config, src = fsSource(project)) {
+function resolveCommands(project, config, src = fsSource(project), hostCtx = null) {
   const cfg = config === undefined ? readJsonFile(path.join(project, '.a1', 'verify.json'), '.a1/verify.json') : config;
   if (cfg !== null && (typeof cfg !== 'object' || Array.isArray(cfg))) throw new VerifyError('bad_config', '.a1/verify.json must be an object');
   const requiresEnv = cfg && Array.isArray(cfg.requires_env) ? cfg.requires_env.filter((n) => typeof n === 'string') : [];
@@ -199,10 +204,13 @@ function resolveCommands(project, config, src = fsSource(project)) {
   const reason = cfg && typeof cfg.no_tests_reason === 'string' && cfg.no_tests_reason !== '' ? cfg.no_tests_reason : null;
   const tries = [['verify.json', () => (cfg ? fromConfig(project, cfg, src.ref) : [])], ['package.json', () => fromPackageJson(src)], ['pytest', () => fromPytest(src)]];
   for (const [source, get] of tries) {
-    const commands = get();
-    if (commands.length > 0) return { commands, source, noTestsReason: null, requiresEnv, flakyBase, eachCfg: source === 'verify.json' && typeof cfg.each === 'string' ? cfg : null };
+    const found = get();
+    if (found.length > 0) {
+      const split = source === 'verify.json' && hostCtx ? hostLib.hostFilter(found, hostCtx, hostCtx.memo) : { run: found, skipped: [] };
+      return { commands: split.run, skipped: split.skipped, source, noTestsReason: null, requiresEnv, flakyBase, eachCfg: source === 'verify.json' && typeof cfg.each === 'string' ? cfg : null };
+    }
   }
-  if (reason) return { commands: [], source: 'no_tests_reason', noTestsReason: reason, requiresEnv, flakyBase, eachCfg: null };
+  if (reason) return { commands: [], skipped: [], source: 'no_tests_reason', noTestsReason: reason, requiresEnv, flakyBase, eachCfg: null };
   throw new VerifyError('no_test_command', 'no .a1/verify.json command, package.json typecheck/build/test script or pytest config found; declare no_tests_reason in .a1/verify.json if the project has no tests');
 }
 
@@ -403,16 +411,16 @@ function baseConfigGuard(project, baseSha, headSha_) {
  * and the change is forced because the PR itself supplies what judges it.
  * @returns {{plan: object, compareBase: boolean, change: {fields: string[], fingerprint: string}|null}}
  */
-function selectBasePlan(project, baseSha, headSha_, guard) {
+function selectBasePlan(project, baseSha, headSha_, guard, hostCtx) {
   const baseSrc = gitSource(project, baseSha);
   const headSrc = gitSource(project, headSha_);
   let basePlan = null;
-  try { basePlan = resolveCommands(project, guard.base, baseSrc); } catch (e) {
+  try { basePlan = resolveCommands(project, guard.base, baseSrc, hostCtx); } catch (e) {
     if (!(e instanceof VerifyError) || e.reason !== 'no_test_command') throw e;
   }
   const forced = (commands) => ({ fields: ['commands'], fingerprint: fingerprintOf(vb.CONFIG_RULE, vb.CONFIG_FILE, detectSignature(commands)) });
   if (basePlan === null) {
-    const plan = resolveCommands(project, guard.head, headSrc);
+    const plan = resolveCommands(project, guard.head, headSrc, hostCtx);
     return { plan, compareBase: false, change: guard.change || forced(plan.commands) };
   }
   if (guard.change === null && basePlan.source !== 'verify.json') {
@@ -472,7 +480,8 @@ function headCommands(project, plan, headSha_) {
 const pairs = (commands, key) => commands.flatMap((c) => c[key].map((id) => ({ command: c.id, id })));
 
 /**
- * @param {{project:string, base?:string, timeoutMs?:number, noCache?:boolean}} opts noCache: never read or write the
+ * @param {{project:string, base?:string, timeoutMs?:number, noCache?:boolean, host?:{platform?:string, probeTimeoutMs?:number, spawn?:Function}}} opts host: test injection of the platform / probe;
+ *   noCache: never read or write the
  *   sha + command-hash result cache (merge-check sets it: a cache file is writable by the code under test)
  * @returns {object} the verify_run record; throws VerifyError (exit 2)
  */
@@ -484,7 +493,8 @@ function runVerify(opts) {
   if (opts.base !== undefined && head === null) throw new VerifyError('base_unresolved', '--base needs a git repository with a commit');
   const baseSha = head ? resolveBase(project, opts.base) : null;
   const cfgGuard = opts.base !== undefined ? baseConfigGuard(project, baseSha, head) : null;
-  const sel = cfgGuard ? selectBasePlan(project, baseSha, head, cfgGuard) : { plan: resolveCommands(project), compareBase: false, change: null };
+  const hostCtx = { ...(opts.host || {}), cwd: project, memo: new Map() }; // one probe per distinct argv[0] per run
+  const sel = cfgGuard ? selectBasePlan(project, baseSha, head, cfgGuard, hostCtx) : { plan: resolveCommands(project, undefined, undefined, hostCtx), compareBase: false, change: null };
   const plan = sel.plan;
   const flakyBase = cfgGuard && sel.compareBase && cfgGuard.shrunkFlaky !== null ? cfgGuard.shrunkFlaky : plan.flakyBase;
   const missing = plan.requiresEnv.filter((n) => !process.env[n]);
@@ -513,8 +523,9 @@ function runVerify(opts) {
     const configChanged = configChangeRecord(project, sel.change, head);
     const removed = suiteRemovedRecord(project, headSet.removed, head);
     const extra = [...(configChanged && !configChanged.dispositioned ? ['verify_config_changed'] : []), ...(removed && !removed.dispositioned ? ['suite_removed'] : [])];
+    const hints = hostLib.skipHints(plan.skipped);
     return {
-      ...withReasons(overall(settled, plan.noTestsReason), extra), source: plan.source, head_sha: head, base_sha: baseSha,
+      ...withReasons(overall(settled, plan.noTestsReason), extra), host: hostLib.hostRecord(opts.host), skipped_on_host: plan.skipped, ...(hints.length > 0 ? { hints } : {}), source: plan.source, head_sha: head, base_sha: baseSha,
       touches_source: touches, changed_files: changed.length, flaky: pairs(side.settled, 'flaky_ids'), pre_existing_red: pairs(side.settled, 'pre_existing_red_ids'),
       cache: { head: side.cache, base: base ? base.cache : 'none' }, ...(configChanged ? { config_changed: configChanged } : {}), ...(removed ? { suite_removed: removed } : {}), commands: settled,
       duration_ms: { head: headMs, base: baseMs, total: msSince(tTotal) },
