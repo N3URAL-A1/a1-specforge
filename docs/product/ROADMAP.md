@@ -4,7 +4,7 @@ type: roadmap
 project: a1-specforge
 title: "a1-specforge — Roadmap"
 status: active
-updated: 2026-11-12
+updated: 2026-11-14
 source: "migrated from docs/roadmap.md v3.0 (2026-07-10)"
 milestones:
   - id: m0-repo-extract
@@ -313,6 +313,16 @@ features:
     finished: null
     spec_path: project/a1-specforge/spec/027-lean-pipeline.md
     plan_path: null
+  - id: 028-measured-gap-checks
+    milestone: continuous
+    title: "Measured gap checks: cheap deterministic checks for the code-side gaps of evolve run 11"
+    status: planned
+    stage: null
+    depends_on: []
+    started: null
+    finished: null
+    spec_path: null
+    plan_path: null
 next: 006-specforge-kritis-profile
 ---
 
@@ -399,7 +409,6 @@ None.
 
 ## Changelog
 
-- **2026-10-08** — feature.md created for '014-xprov-egress-hardening' — formal spec/plan attached via `product feature-init`
 - **2026-10-12** — 014-xprov-egress-hardening -> done — stage transition via `product stage`
 - **2026-10-12** — 014-xprov-egress-hardening started date corrected to 2026-10-08 (claim date); code_scope claim released — product stage stamped today; the stage started on 2026-10-08
 - **2026-10-12** — 009-cross-provider-review-gate -> done — stage transition via `product stage`; dates corrected to real span 2026-09-24 .. 2026-10-04 (Wave 7 merged in #18 / 26e79c3; blocking flip 2026-10-03), spec_path set after reconcile (all 30 FRs present)
@@ -499,6 +508,7 @@ None.
 - **2026-11-12** — 024-ux-studio -> done — stage transition via `product stage`
 - **2026-11-12** — feature '027-lean-pipeline' added — new feature via `product add-feature`
 - **2026-11-12** — feature.md created for '027-lean-pipeline' — formal spec/plan attached via `product feature-init`
+- **2026-11-14** — feature '028-measured-gap-checks' added — new feature via `product add-feature`
 
 ## Appendix — migrated details
 

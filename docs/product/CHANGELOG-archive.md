@@ -30,3 +30,4 @@ Rotated entries beyond the 100-entry ROADMAP.md Changelog window (append-only, o
 - **2026-09-25** — spec 009 waves 1–6 merged (#10, 4ee46d9): xprov modules, Phase 4b / step 2b-x wiring, gates at warning — Codex becomes a registered read-only reviewer; Wave 7 (live smoke + blocking flip) awaits Robert's xprov permit
 - **2026-09-26** — 011-intent-queue-consumer -> started — stage transition via `product stage`
 - **2026-10-08** — feature '014-xprov-egress-hardening' added — Code leaves for Codex only with an owner-store permit, from a scanned snapshot, with gitleaks as a second layer; closes F-001/002/003/006/007/011/028/029
+- **2026-10-08** — feature.md created for '014-xprov-egress-hardening' — formal spec/plan attached via `product feature-init`

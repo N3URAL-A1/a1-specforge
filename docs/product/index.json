@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated": "2026-11-12T19:14:37.548Z",
+  "generated": "2026-11-14T16:36:38.753Z",
   "project": {
     "id": "a1-specforge",
     "title": "a1-specforge — Roadmap",
@@ -389,6 +389,18 @@
       "started": null,
       "finished": null,
       "spec_path": "project/a1-specforge/spec/027-lean-pipeline.md",
+      "plan_path": null
+    },
+    {
+      "id": "028-measured-gap-checks",
+      "milestone": "continuous",
+      "title": "Measured gap checks: cheap deterministic checks for the code-side gaps of evolve run 11",
+      "status": "planned",
+      "stage": null,
+      "depends_on": [],
+      "started": null,
+      "finished": null,
+      "spec_path": null,
       "plan_path": null
     }
   ],
