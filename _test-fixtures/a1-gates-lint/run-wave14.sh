@@ -233,10 +233,12 @@ copy_inv m; plant m badref; lint_inv m
 # (d) consumer repo without a tools copy, tools from the real checkout -> 1 line (the MAJOR);
 # (e) tools copy without tmp.sh -> 1 line. Measured red: d585c34's skipRoot() makes (d) red.
 T="$WORK/o"; CP="$T/copy"; CONS="$T/consumer"; NOTMP="$T/notmp"; OTHER="$T/other"
-mkdir -p "$CP/_test-fixtures/lib" "$CONS" "$NOTMP" "$OTHER"
+mkdir -p "$CP/_test-fixtures/lib" "$CONS/_test-fixtures/lib" "$NOTMP" "$OTHER"
 TOOLS_SRC="$(cd "$(dirname "$TOOLS")/.." && pwd -P)"
 cp -R "$TOOLS_SRC/_shared" "$CP/_shared"; cp "$TOOLS_SRC/_test-fixtures/lib/tmp.sh" "$CP/_test-fixtures/lib/tmp.sh"
 cp -R "$TOOLS_SRC/_shared" "$NOTMP/_shared"
+# the consumer repo carries a tmp.sh too, so (d) pins the tools-own-checkout (__dirname) rule alone
+cp "$TOOLS_SRC/_test-fixtures/lib/tmp.sh" "$CONS/_test-fixtures/lib/tmp.sh"
 for r in "$CP" "$CONS" "$NOTMP"; do
   git -C "$r" init -q; echo a > "$r/a.txt"; g "$r" add -A; g "$r" commit -qm one
 done
@@ -259,7 +261,7 @@ o_call "$CP" "$CPT" "$OTHER"
 o_call "$CP" "$CPT" "$T/does-not-exist"
 [[ $RC -eq 0 && "$(o_lines "$CP")" == "1" ]] && ok "W14o-c3 unresolvable var: 1 log line" || bad "W14o-c3 (rc=$RC)"
 o_call "$CONS" "$TOOLS" "$CONS"
-[[ $RC -eq 0 && "$(o_lines "$CONS")" == "1" ]] && ok "W14o-d consumer repo (no tools copy), var = repo: 1 log line (skip inert)" || bad "W14o-d (rc=$RC)"
+[[ $RC -eq 0 && "$(o_lines "$CONS")" == "1" ]] && ok "W14o-d consumer repo (no tools copy, has tmp.sh), var = repo: 1 log line (skip inert)" || bad "W14o-d (rc=$RC)"
 o_call "$NOTMP" "$NOTMP/_shared/a1-tools.cjs" "$NOTMP"
 [[ $RC -eq 0 && "$(o_lines "$NOTMP")" == "1" ]] && ok "W14o-e tools copy without tmp.sh, var = repo: 1 log line" || bad "W14o-e (rc=$RC)"
 
