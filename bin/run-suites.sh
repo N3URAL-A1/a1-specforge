@@ -465,6 +465,42 @@ rs_learn_post() {
   esac
 }
 
+# ---- phases check: a suite must not write the gate log (or anything) under the checkout's .a1/phases ----
+# Same shape as the learnings check: listing (ignored files included) plus a checksum per file, before and after.
+RS_PHASES_PATH=".a1/phases"
+RS_PHASES_MODE="none"
+RS_PHASES_FILE_MAX_LINES=10
+rs_phases_state() {
+  git -C "$RS_ROOT" status --porcelain --ignored -uall -- "$RS_PHASES_PATH" 2>/dev/null
+  if [ -d "$RS_ROOT/$RS_PHASES_PATH" ]; then
+    ( cd "$RS_ROOT" && find "$RS_PHASES_PATH" -type f -exec cksum {} + 2>/dev/null | LC_ALL=C sort -k3 )
+  fi
+  return 0
+}
+rs_phases_pre() {
+  if ! rs_root_is_git_toplevel; then
+    RS_PHASES_MODE=nogit
+    return 0
+  fi
+  RS_PHASES_MODE=check
+  rs_phases_state > "$RS_TMP/phases.before"
+}
+rs_phases_post() {
+  case "$RS_PHASES_MODE" in
+    nogit) echo "phases check skipped: $RS_ROOT is not a git top-level directory" ;;
+    check)
+      rs_phases_state > "$RS_TMP/phases.after"
+      if cmp -s "$RS_TMP/phases.before" "$RS_TMP/phases.after"; then
+        echo "phases check: $RS_PHASES_PATH unchanged"
+      else
+        echo "phases check FAILED: $RS_PHASES_PATH changed during the run (a suite wrote the checkout's gate log):"
+        diff "$RS_TMP/phases.before" "$RS_TMP/phases.after" | head -n "$RS_PHASES_FILE_MAX_LINES" | sed 's/^/  /'
+        RS_FAILED=1
+      fi
+      ;;
+  esac
+}
+
 # ---- main ----
 rs_main() {
   local workers="" order i key id kind
@@ -538,11 +574,13 @@ rs_main() {
 
   rs_reconcile_pre
   rs_learn_pre
+  rs_phases_pre
   RS_T0="$SECONDS"
   if [ "${#pool[@]}" -gt 0 ]; then rs_run_batch "$workers" "${pool[@]}"; fi
   if [ "${#serial[@]}" -gt 0 ]; then rs_run_batch 1 "${serial[@]}"; fi
   rs_reconcile_post
   rs_learn_post
+  rs_phases_post
 
   rs_print_table
   rs_print_failures

@@ -374,12 +374,23 @@ function projectDirOf(argv) {
   return process.cwd();
 }
 
+/** True when A1_GATE_LOG_SKIP_ROOT is set, resolvable, and names the same directory as root. */
+function skipRoot(root) {
+  const v = process.env.A1_GATE_LOG_SKIP_ROOT;
+  if (typeof v !== 'string' || v === '') return false;
+  try { return fs.realpathSync(v) === fs.realpathSync(root); } catch (_e) { return false; }
+}
+
 function recordRun(gateId, scope, exitCode, dir, timing) {
   const ctx = gitContext(dir || process.cwd());
   if (!ctx) {
     process.stderr.write(`gate-log: not inside a git work tree, ${gateId} (exit ${exitCode}) was not logged\n`);
     return;
   }
+  // Test isolation: the fixture suites export A1_GATE_LOG_SKIP_ROOT (their own checkout) so their gate
+  // calls do not append to that checkout's log. Silent (a1-fix parses 2>&1). Skipping only makes the retro
+  // and merge checks refuse (a missing log), never pass. Exact realpath match only; no general off switch.
+  if (skipRoot(ctx.root)) return;
   if (scope === UNSCOPED) {
     process.stderr.write(`gate-log: no --phase given, line goes to .a1/phases/${UNSCOPED}/${LOG_NAME} (pass --phase <scope> at every call site)\n`);
   }

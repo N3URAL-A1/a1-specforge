@@ -42,6 +42,7 @@ const GATES_HELP = `  a1-tools gates lint [--root <path>] [--registry <path>] [-
                   (a1-execute: phase name; a1-new-feature: spec id; a1-fix:
                   fix-<bug-slug>; a1-pr-review: pr-<number>); without it the
                   line goes to _unscoped with one stderr notice. A bad scope is
-                  exit 2 before the command runs. The log is git-excluded.`;
+                  exit 2 before the command runs. The log is git-excluded.
+                  A1_GATE_LOG_SKIP_ROOT=<dir> (test isolation) skips the append for the work tree whose root is exactly <dir>.`;
 
 module.exports = { GATES_HELP };
