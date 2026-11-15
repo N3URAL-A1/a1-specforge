@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated": "2026-11-14T21:53:31.171Z",
+  "generated": "2026-11-15T08:28:56.077Z",
   "project": {
     "id": "a1-specforge",
     "title": "a1-specforge — Roadmap",
@@ -396,7 +396,7 @@
       "milestone": "continuous",
       "title": "Measured gap checks: cheap deterministic checks for the code-side gaps of evolve run 11",
       "status": "in-flight",
-      "stage": "verify",
+      "stage": "merge",
       "depends_on": [],
       "started": "2026-11-14",
       "finished": null,

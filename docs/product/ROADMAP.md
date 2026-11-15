@@ -4,7 +4,7 @@ type: roadmap
 project: a1-specforge
 title: "a1-specforge — Roadmap"
 status: active
-updated: 2026-11-14
+updated: 2026-11-15
 source: "migrated from docs/roadmap.md v3.0 (2026-07-10)"
 milestones:
   - id: m0-repo-extract
@@ -317,7 +317,7 @@ features:
     milestone: continuous
     title: "Measured gap checks: cheap deterministic checks for the code-side gaps of evolve run 11"
     status: in-flight
-    stage: verify
+    stage: merge
     depends_on: []
     started: 2026-11-14
     finished: null
@@ -409,7 +409,6 @@ None.
 
 ## Changelog
 
-- **2026-10-14** — feature '015-docs-consolidation' added — new feature via `product add-feature`
 - **2026-10-14** — feature.md created for '015-docs-consolidation' — formal spec/plan attached via `product feature-init`
 - **2026-10-14** — 010-vault-cockpit-contract -> started — stage transition via `product stage`
 - **2026-10-14** — 015-docs-consolidation -> started — stage transition via `product stage`
@@ -509,6 +508,7 @@ None.
 - **2026-11-14** — 028-measured-gap-checks -> complete — stage transition via `product stage`
 - **2026-11-14** — 028-measured-gap-checks -> review — stage transition via `product stage`
 - **2026-11-14** — 028-measured-gap-checks -> verify — stage transition via `product stage`
+- **2026-11-15** — 028-measured-gap-checks -> merge — stage transition via `product stage`
 
 ## Appendix — migrated details
 
