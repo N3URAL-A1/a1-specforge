@@ -475,8 +475,7 @@ function evaluateChecklistRules(slug, paths, spec, plan, planExists) {
   // window.
   {
     const specFRs = extractSpecFRs(spec.body || '');
-    const waveMap = extractWaveFRs(plan.body || '');
-    const diff = diffFRCoverage(specFRs, waveMap);
+    const diff = diffFRCoverage(specFRs, extractWaveFRs(plan.body || ''));
     // F-018/F-019: a wave heading the scanner cannot read, or a repeated one,
     // would misattribute FRs; it fails the check instead of passing silently.
     const headingProblems = scanWaveSections(plan.body || '').problems;
@@ -504,6 +503,7 @@ function evaluateChecklistRules(slug, paths, spec, plan, planExists) {
       detail: ok
         ? `Every spec FR maps to exactly one wave (${specFRs.size} FRs).`
         : `FR coverage broken: ${parts.join('; ')}.`,
+      ...require('./checklist-clauses.cjs').check9Extras(spec.body || '', plan.body || '', scanWaveSections(plan.body || '').sections), // spec 028 FR-013/014 (clauses, edge cases)
     });
   }
 

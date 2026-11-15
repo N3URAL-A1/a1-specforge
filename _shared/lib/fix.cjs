@@ -6,8 +6,10 @@ const os = require('os');
 
 const { BUG_STATUSES, BUG_SEVERITIES } = require('./status-constants.cjs');
 const { usage } = require('./help.cjs');
+const { emitExit } = require('./emit-exit.cjs');
 const {
   vaultRoot,
+  peekVaultRoot,
   resolveVaultPath,
   parseFlags,
   readMd,
@@ -231,11 +233,37 @@ function lastPromotePath() {
   return learningsMachineryDir('_state', 'last_promote.json');
 }
 
+const RETRO_MISSING_HINT = 'write the retro via a1-fix workflows/04-verify.md Step 2b';
+
+/**
+ * Spec 028 FR-012: is there a retro entry for this fix in <store>/a1-fix.md? Read-only: the store is
+ * looked up with peekVaultRoot (no directory is created, no lock is bootstrapped). Exit 1 when missing.
+ */
+function fixRetroEntryCheck(fixId) {
+  assertSafeSegment(fixId, '--fix-id'); // exit 2 on a separator, "..", NUL or an empty value
+  const peek = peekVaultRoot();
+  const storeFile = peek ? path.join(peek.root, 'pattern', 'a1-learnings', 'a1-fix.md') : null;
+  let text = '';
+  try { if (storeFile) text = fs.readFileSync(storeFile, 'utf8'); } catch (_e) { /* no store file: missing */ }
+  const present = new RegExp(`(^|[^A-Za-z0-9-])${fixId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^A-Za-z0-9-])`, 'm').test(text); // id with boundaries: a prefix of a longer id is not a match
+  const result = {
+    fix_id: fixId,
+    store_file: storeFile,
+    retro_entry: present ? 'present' : 'missing',
+    ...(present ? {} : { hint: RETRO_MISSING_HINT }),
+  };
+  if (present) return result;
+  emitExit(1, JSON.stringify(result, null, 2) + '\n', `fix integrity-check: no retro entry for ${fixId}. Hint: ${RETRO_MISSING_HINT}\n`);
+  return result;
+}
+
 function cmdFixIntegrityCheck(args) {
   const flags = parseFlags(args, {
     'agents-dir': 'value',
     'skills-dir': 'value',
+    'fix-id': 'value',
   });
+  if (flags['fix-id'] !== undefined) return fixRetroEntryCheck(flags['fix-id']);
   const agentsDir = flags['agents-dir'] || path.join(os.homedir(), '.claude', 'agents');
   const skillsDir = flags['skills-dir'] || path.join(os.homedir(), '.claude', 'skills');
   const lockPath = agentsLockPath();

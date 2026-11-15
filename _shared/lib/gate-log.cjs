@@ -48,6 +48,7 @@ const EXTRA_RULES = Object.freeze({
   input_hash: (v) => typeof v === 'string' && HEX64_RE.test(v),
   reused: (v) => typeof v === 'boolean',
   ci_evidence_why: (v) => typeof v === 'string' && WHY_RE.test(v),
+  scanned: (v) => Number.isInteger(v) && v >= 0, // spec 028 FR-017: files a scanning gate looked at
 });
 const CORE_KEYS = Object.freeze(['ts', 'gate', 'verdict', 'exit', 'head_sha', 'scope', 'prev', 'started_at', 'duration_ms']);
 const KEY_NOTE_MAX = 40;
@@ -287,6 +288,7 @@ function shapeProblem(rec) {
   if ('input_hash' in rec && !EXTRA_RULES.input_hash(rec.input_hash)) return 'input_hash is not a sha256';
   if ('reused' in rec && !EXTRA_RULES.reused(rec.reused)) return 'reused is not a boolean';
   if ('ci_evidence_why' in rec && !EXTRA_RULES.ci_evidence_why(rec.ci_evidence_why)) return 'ci_evidence_why is malformed';
+  if ('scanned' in rec && !EXTRA_RULES.scanned(rec.scanned)) return 'scanned is not a non-negative integer';
   return null;
 }
 

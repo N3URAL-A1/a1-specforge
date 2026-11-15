@@ -852,6 +852,8 @@ git -C "$SQ_WT" push -q origin "feature/sq-real:feature/sq-real" 2>/dev/null
 OUT=$(node "$TOOLS" worktree exit "$SQ_ID" --mode discard 2>&1); EX=$?
 assert_eq "unmerged-real-change-refused" "1" "$EX"
 
+. "$(dirname "${BASH_SOURCE[0]}")/cases-gatelog.sh"
+
 # ----------------------------------------------------------------------------
 # Report
 # ----------------------------------------------------------------------------

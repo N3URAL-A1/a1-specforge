@@ -11,6 +11,7 @@
 //
 // Wave 2 registers `consent` (header xprov-Freigabe) and `classification` (xprov-Einstufung).
 // Wave 3 adds `waiver` (xprov-Waiver) and `allowlist` (xprov-Allowlist) by adding entries to KINDS; nothing else changes.
+// Spec 028 W6 adds `decline` (xprov-Decline): the owner says no Codex for one unrun plan-review target.
 //
 // Texts are German (the owner reads them), one question, two labels, no markup beyond plain text.
 // Every value taken from the repository (name, path, origin) is cleaned of control, line-break and
@@ -109,6 +110,12 @@ const KINDS = Object.freeze({
     header: 'xprov-Allowlist', build: (ctx) => require('./xprov-consent-allowlist.cjs').buildText(ctx),
     labels: Object.freeze({ no: 'Nein, nichts freigeben', yes: 'Ja, diese Blobs freigeben' }),
     descriptions: Object.freeze({ no: 'Nichts wird freigegeben; die Prüfung läuft ohne Codex.', yes: 'Eine Freigabe je aufgeführtem Blob, gebunden an dessen sha256.' }),
+  }),
+  // Spec 028 FR-022: the owner declines Codex for one unrun plan-review target; built by its own module from the phase state (`ctx.decline`).
+  decline: Object.freeze({
+    header: 'xprov-Decline', build: (ctx) => require('./xprov-consent-decline.cjs').buildText(ctx),
+    labels: Object.freeze({ no: 'Nein, Codex-Prüfung wie vorgesehen', yes: 'Ja, für dieses Ziel nichts an Codex senden' }),
+    descriptions: Object.freeze({ no: 'Die Codex-Prüfung läuft wie vorgesehen.', yes: 'Für dieses Ziel (PLAN.md-sha) wird nichts an Codex gesendet; es prüft nur Claude.' }),
   }),
 });
 

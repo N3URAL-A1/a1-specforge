@@ -588,5 +588,31 @@ LIN="$(node -e '
 ' "$REPO_ROOT" 2>&1)"
 expect_eq "hasDirSignal-linear-on-long-dot-runs" "ok" "$LIN"
 
+# spec 028 FR-015: claim warns (stderr only, same exit code) on an id that is no product feature id
+mk_proj() { # name features-yaml-lines -> project root with docs/product/ROADMAP.md
+  mkdir -p "$WORK/$1/.a1" "$WORK/$1/docs/product"
+  printf -- '---\nproject: demo\nfeatures:\n%s---\n\n# Roadmap\n' "$2" > "$WORK/$1/docs/product/ROADMAP.md"
+}
+mk_proj idw '  - id: 016-x
+    status: planned
+    stage: null
+'
+OUT="$(node "$TOOLS" code-scope claim --by 004-x --scope "src/idw" --file "$WORK/idw/.a1/reservations.json" 2>"$WORK/idw.err")"
+assert_rc "id-warning-claim-exit-0" 0 $? "$OUT"
+expect_eq "id-warning-text" "yes" "$(grep -qF 'id is not a product-CLI feature id: 004-x; use a ROADMAP.md features[].id (product status)' "$WORK/idw.err" && echo yes || echo no)"
+OUT="$(node "$TOOLS" code-scope claim --by 016-x --scope "src/idw2" --file "$WORK/idw/.a1/reservations.json" 2>"$WORK/idw2.err")"
+expect_eq "id-warning-absent-for-known-id" "no" "$(grep -q 'not a product-CLI feature id' "$WORK/idw2.err" && echo yes || echo no)"
+mkdir -p "$WORK/idn/.a1"
+OUT="$(node "$TOOLS" code-scope claim --by 004-x --scope "src/idn" --file "$WORK/idn/.a1/reservations.json" 2>"$WORK/idn.err")"
+assert_rc "id-warning-no-roadmap-exit-0" 0 $? "$OUT"
+expect_eq "id-warning-no-roadmap-silent" "no" "$(grep -q 'not a product-CLI feature id' "$WORK/idn.err" && echo yes || echo no)"
+mk_proj idz ''
+node "$TOOLS" code-scope claim --by 004-x --scope "src/idz" --file "$WORK/idz/.a1/reservations.json" >/dev/null 2>"$WORK/idz.err"
+expect_eq "id-warning-zero-features-silent" "no" "$(grep -q 'not a product-CLI feature id' "$WORK/idz.err" && echo yes || echo no)"
+mkdir -p "$WORK/idu/.a1" "$WORK/idu/docs/product"; printf -- '---\n: [broken\n' > "$WORK/idu/docs/product/ROADMAP.md"
+node "$TOOLS" code-scope claim --by 004-x --scope "src/idu" --file "$WORK/idu/.a1/reservations.json" >/dev/null 2>"$WORK/idu.err"
+assert_rc "id-warning-unreadable-roadmap-exit-0" 0 $? ""
+expect_eq "id-warning-unreadable-silent" "no" "$(grep -q 'not a product-CLI feature id' "$WORK/idu.err" && echo yes || echo no)"
+
 echo "code-scope fixtures: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

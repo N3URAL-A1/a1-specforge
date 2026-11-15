@@ -266,6 +266,8 @@ function loadRegistryText(flags) {
  */
 function cmdRetroValidate(argv) {
   const flags = parseFlags(argv, { registry: 'value', 'gate-log': 'value', 'enforced-since': 'value' });
+  // Spec 028 FR-016: parseFlags keeps only the last value, so every --gate-log is collected from argv itself.
+  const gateLogs = collectGateLogs(argv);
   const retroPath = resolveRetroPath(flags);
   const registryText = loadRegistryText(flags);
   const expanded = expandRangeIds(parseRegistryIds(registryText));
@@ -308,7 +310,7 @@ function cmdRetroValidate(argv) {
     process.exit(2);
   }
 
-  const gateLog = runGateLogCheck(flags, registryText, blockInfos);
+  const gateLog = runGateLogCheck(flags, registryText, blockInfos, gateLogs);
 
   if (!present) {
     // Missing field is legitimate for read-only reporter skills
@@ -327,16 +329,30 @@ function cmdRetroValidate(argv) {
 }
 
 /**
+ * Every `--gate-log <v>` / `--gate-log=<v>` value in argv order (a flag without a value yields undefined, which
+ * runGateLogCheck refuses). Pure.
+ * @param {string[]} argv @returns {(string|undefined)[]}
+ */
+function collectGateLogs(argv) {
+  const out = [];
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === '--gate-log') out.push(argv[++i]);
+    else if (argv[i].startsWith('--gate-log=')) out.push(argv[i].slice('--gate-log='.length));
+  }
+  return out;
+}
+
+/**
  * FR-009: compare the retro with the gate log. Returns null without
  * `--gate-log`. A missing/malformed log or a bad flag value is exit 2 (a log
  * that cannot be trusted must not read as "nothing fired").
  * @param {object} flags @param {string} registryText @param {object[]} blockInfos
  */
-function runGateLogCheck(flags, registryText, blockInfos) {
+function runGateLogCheck(flags, registryText, blockInfos, gateLogs) {
   if (!('gate-log' in flags) && !('enforced-since' in flags)) return null; // present-without-value is a usage error below
-  const logPath = flags['gate-log'];
   const since = flags['enforced-since'] === undefined ? ENFORCED_SINCE : flags['enforced-since'];
-  if (logPath === undefined || typeof logPath !== 'string' || logPath === '' || logPath.length > MAX_PATH_LEN || /[\x00-\x1f\x7f]/.test(logPath)) {
+  const plain = (p) => typeof p === 'string' && p !== '' && p.length <= MAX_PATH_LEN && !/[\x00-\x1f\x7f]/.test(p);
+  if (gateLogs.length === 0 || !gateLogs.every(plain)) {
     process.stderr.write('error: --enforced-since needs --gate-log <path>; --gate-log needs a plain path\n');
     process.exit(2);
   }
@@ -345,7 +361,8 @@ function runGateLogCheck(flags, registryText, blockInfos) {
     process.exit(2);
   }
   try {
-    return checkRetroAgainstLog({ logPath: path.resolve(process.cwd(), logPath), registryText, blocks: blockInfos, since });
+    const logPaths = [...new Set(gateLogs.map((p) => path.resolve(process.cwd(), p)))];
+    return checkRetroAgainstLog({ logPaths, registryText, blocks: blockInfos, since });
   } catch (e) {
     if (e.code !== 'A1_GATELOG') throw e;
     process.stderr.write(`error: ${e.message}\n`);

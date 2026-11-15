@@ -722,5 +722,7 @@ expect "CI13aw defineConfig from a custom wrapper can rewrite testDir: unresolve
 pw1; pwc 'import { defineConfig, devices } from "@playwright/test"; export default defineConfig({ testDir: "e2e" });'; run_tf
 expect "CI13ax defineConfig from @playwright/test is read" 0 "$RC"
 
+. "$(dirname "${BASH_SOURCE[0]}")/cases-status.sh"
+
 echo "a1-test-fidelity: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

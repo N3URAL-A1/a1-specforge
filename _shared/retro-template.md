@@ -58,6 +58,10 @@ node <repo>/_shared/a1-tools.cjs retro validate "$RETRO_FILE" --gate-log "$GATE_
 if [ $RC -ne 0 ]; then echo "fix the gates_fired block above before the entry counts"; exit $RC; fi
 ```
 
+A run that crossed two scopes (a caller phase plus its `pr-<n>` review) repeats the flag:
+`--gate-log <first log> --gate-log <second log>`. The logs are read together, the same
+file twice counts once, and a missing or broken log is exit 2.
+
 `retro validate` runs under its own scope, `--phase retro-<scope>`, never under
 `<scope>`: it is a gated subcommand too (`retro-gate-ids`, blocking), and a
 first failed run logged into the scope it validates would leave a `fail` line

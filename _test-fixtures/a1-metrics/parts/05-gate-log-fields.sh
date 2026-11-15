@@ -102,3 +102,36 @@ node -e '
 run_tools "" gates lint --log "$GF8L"
 assert_rc "GF8a negative duration_ms fails lint" 1 "$RC"
 assert_has "GF8b rule malformed_line" "$OUT" "malformed_line"
+
+# Spec 028 FR-017: `scanned` extra (non-negative integer).
+# RED-proof: `scanned` removed from EXTRA_RULES -> GF9a/GF9b red; the reader check removed -> GF10 red.
+# GF9
+gf_repo GF9R gf9
+gf_node "$GF9R" 'gl.installGateLog(["pr","merge-check","--phase","w2"],registryText); gl.setRecordExtra({scanned:7}); process.exitCode=0;'
+assert_eq "GF9a scanned 7 is accepted into the record" "$(gf_last "$GF9R" w2 'r.scanned+"|"+typeof r.scanned')" "7|number"
+gf_repo GF9ZR gf9z
+gf_node "$GF9ZR" 'gl.installGateLog(["pr","merge-check","--phase","w2"],registryText); gl.setRecordExtra({scanned:0}); process.exitCode=0;'
+assert_eq "GF9b scanned 0 is accepted (zero is valid)" "$(gf_last "$GF9ZR" w2 '"scanned" in r ? r.scanned : "absent"')" "0"
+gf_repo GF9NR gf9n
+gf_node "$GF9NR" 'gl.installGateLog(["pr","merge-check","--phase","w2"],registryText); gl.setRecordExtra({scanned:-1}); gl.setRecordExtra({scanned:1.5}); gl.setRecordExtra({scanned:"3"}); process.exitCode=0;'
+assert_eq "GF9c negative, float and string scanned are dropped" "$(gf_last "$GF9NR" w2 '"scanned" in r')" "false"
+assert_eq "GF9d three ignored notes on stderr" "$(grep -c 'setRecordExtra ignored' "$GF9NR/stderr.txt")" "3"
+# GF10 — reader validation
+gf_repo GF10R gf10
+gf_node "$GF10R" 'gl.installGateLog(["pr","merge-check","--phase","w2"],registryText); gl.setRecordExtra({scanned:2});'
+GF10L="$GF10R/.a1/phases/w2/gate-log.jsonl"
+run_tools "" gates lint --log "$GF10L"
+assert_rc "GF10a a line with scanned 2 lints" 0 "$RC" "$OUT"
+for GF10V in -3 1.5 '"x"'; do
+  gf_repo GF10B gf10b
+  gf_node "$GF10B" 'gl.installGateLog(["pr","merge-check","--phase","w2"],registryText);'
+  GF10BL="$GF10B/.a1/phases/w2/gate-log.jsonl"
+  node -e '
+    const fs=require("fs"),c=require("crypto"); const f=process.argv[1];
+    const first=fs.readFileSync(f,"utf8").split("\n").filter(Boolean)[0];
+    const r=JSON.parse(first); r.prev=c.createHash("sha256").update(first).digest("hex"); r.scanned=JSON.parse(process.argv[2]);
+    fs.appendFileSync(f, JSON.stringify(r)+"\n");' "$GF10BL" "$GF10V"
+  run_tools "" gates lint --log "$GF10BL"
+  assert_rc "GF10b scanned=$GF10V fails lint" 1 "$RC"
+  assert_has "GF10c scanned=$GF10V is reported as malformed_line" "$OUT" "malformed_line"
+done

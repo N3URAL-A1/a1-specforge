@@ -185,6 +185,121 @@ for d in "$IA" "$IB"; do
   assert_true "import-writes-no-module-key-$(basename "$(dirname "$(dirname "$d")")")" "$(! grep -qE '^[[:space:]]*(module|modules):' "$d/ROADMAP.md" && ! grep -q '"module' "$d/index.json" && [[ ! -e "$d/modules" ]] && echo true || echo false)"
 done
 
+# ---------------------------------------------- spec 028 FR-025..FR-027 ------
+# product cancel / product edit: one transaction, product lock, nothing written on refusal.
+fresh28() { local d="$WORK/$1/docs/product"; write_roadmap "$d" c28 "" "" ""; echo "$d"; }
+feat28() { # feat28 <pd> <id> <depends-yaml>: hand-written feature.md mirroring the fixture entry
+  mkdir -p "$1/features/$2"
+  printf '%s\n' '---' "id: $2" 'project: c28' 'milestone: m1-first' "title: F $2" 'status: planned' 'stage: null' \
+    "depends_on: $3" 'started: null' 'finished: null' 'spec_path: null' 'plan_path: null' 'schema_version: 1' '---' '' 'Body.' > "$1/features/$2/feature.md"
+}
+st28() { node "$TOOLS" product status --dir "$1" 2>/dev/null; }
+cl_count() { grep -cE "$2" "$1/ROADMAP.md"; }
+
+# cancel: happy path with feature.md, next reset, dependents hint, one changelog line
+PD="$(fresh28 cancel2)"; feat28 "$PD" 001-first-feature '[]'
+OUT="$(node "$TOOLS" product cancel --by 001-first-feature --reason "dropped" --dir "$PD" 2>"$WORK/c.err")"; RC=$?
+assert_rc "cancel-exit-0" 0 "$RC" "$OUT"
+ST="$(st28 "$PD")"
+assert_true "cancel-roadmap-status-cancelled-stage-null" "$([[ "$(jget "$ST" 'd.features[0].status+"|"+d.features[0].stage')" == "cancelled|null" ]] && echo true || echo false)"
+assert_true "cancel-feature-md-status-cancelled" "$(grep -q '^status: cancelled$' "$PD/features/001-first-feature/feature.md" && grep -q '^stage: null$' "$PD/features/001-first-feature/feature.md" && echo true || echo false)"
+assert_true "cancel-next-reset-to-first-eligible" "$([[ "$(jget "$ST" 'd.next')" == "003-third-feature" ]] && echo true || echo false)"
+assert_true "cancel-next-md-cursor-regenerated" "$(grep -q '003-third-feature' "$PD/NEXT.md" && ! grep -q '\*\*001-first-feature\*\* — recommended' "$PD/NEXT.md" && echo true || echo false)"
+assert_true "cancel-index-json-status" "$([[ "$(jget "$(cat "$PD/index.json")" 'd.features[0].status')" == "cancelled" ]] && echo true || echo false)"
+assert_true "cancel-dependents-listed-with-edit-hint" "$([[ "$OUT" == *"002-second-feature"* && "$OUT" == *"product edit --by 002-second-feature --depends-on"* ]] && echo true || echo false)"
+assert_true "cancel-dependent-stays-blocked-and-unedited" "$([[ "$(jget "$ST" 'JSON.stringify(d.features[1].depends_on)+d.features[1].status')" == '["001-first-feature"]planned' ]] && echo true || echo false)"
+assert_true "cancel-one-changelog-line-with-reason" "$([[ "$(cl_count "$PD" "feature '001-first-feature' cancelled — dropped")" == "1" ]] && echo true || echo false)"
+assert_true "cancel-lock-released" "$([[ ! -e "$PD/.product-stage.lock.json" ]] && echo true || echo false)"
+H1="$(tree_hash "$PD")"
+OUT="$(node "$TOOLS" product cancel --by 001-first-feature --dir "$PD" 2>&1)"; RC=$?
+assert_rc "cancel-second-call-exit-0" 0 "$RC" "$OUT"
+assert_true "cancel-second-call-already_cancelled" "$([[ "$(jget "$OUT" 'd.status')" == "already_cancelled" ]] && echo true || echo false)"
+assert_true "cancel-second-call-writes-nothing" "$([[ "$(tree_hash "$PD")" == "$H1" ]] && echo true || echo false)"
+# default reason
+PD="$(fresh28 cancel3)"
+OUT="$(node "$TOOLS" product cancel --by 003-third-feature --dir "$PD" 2>&1)"; RC=$?
+assert_rc "cancel-default-reason-exit-0" 0 "$RC" "$OUT"
+assert_true "cancel-default-reason-text" "$([[ "$(cl_count "$PD" "feature '003-third-feature' cancelled — via product cancel")" == "1" ]] && echo true || echo false)"
+assert_true "cancel-next-untouched-when-other-feature" "$([[ "$(jget "$(st28 "$PD")" 'd.next')" == "001-first-feature" ]] && echo true || echo false)"
+assert_true "cancel-no-feature-md-none-created" "$([[ ! -e "$PD/features" ]] && echo true || echo false)"
+# next -> null when nothing is eligible (002 stays blocked behind cancelled 001)
+node "$TOOLS" product cancel --by 001-first-feature --dir "$PD" >/dev/null 2>&1
+assert_true "cancel-next-null-when-no-eligible" "$([[ "$(jget "$(st28 "$PD")" 'String(d.next)')" == "null" ]] && echo true || echo false)"
+# refusals write nothing
+PD="$(fresh28 cancel4)"; node "$TOOLS" product stage --by 001-first-feature --set done --dir "$PD" >/dev/null 2>&1
+H1="$(tree_hash "$PD")"
+OUT="$(node "$TOOLS" product cancel --by 001-first-feature --dir "$PD" 2>&1)"; RC=$?
+assert_rc "cancel-done-feature-refused-exit-1" 1 "$RC" "$OUT"
+OUT="$(node "$TOOLS" product cancel --by 099-nope --dir "$PD" 2>&1)"; RC=$?
+assert_rc "cancel-unknown-id-refused-exit-1" 1 "$RC" "$OUT"
+assert_true "cancel-refusals-write-nothing" "$([[ "$(tree_hash "$PD")" == "$H1" ]] && echo true || echo false)"
+
+# review round m5: cancel lists a code_scope reservation held by the feature (no automatic release); edit refuses a cancelled dependency
+PD="$(fresh28 cancel5)"; RW="$WORK/cancel5-cwd"; mkdir -p "$RW/.a1"
+printf '%s\n' '{"reservations":[{"type":"code_scope","paths":["src/a.js"],"by":"001-first-feature","at":"2026-11-14T00:00:00.000Z","stage":"in-flight"},{"type":"code_scope","paths":["src/b.js"],"by":"003-third-feature","at":"2026-11-14T00:00:00.000Z","stage":"in-flight"}]}' > "$RW/.a1/reservations.json"
+RH1="$(sha256sum "$RW/.a1/reservations.json" | cut -d' ' -f1)"
+OUT="$(cd "$RW" && node "$TOOLS" product cancel --by 001-first-feature --dir "$PD" 2>/dev/null)"; RC=$?
+assert_rc "cancel-reservation-exit-0" 0 "$RC" "$OUT"
+assert_true "cancel-lists-held-code-scope-reservation-with-release-hint" "$([[ "$(jget "$OUT" 'd.held_reservations.map(r=>r.by+"|"+r.paths.join()+"|"+r.hint).join(";")')" == "001-first-feature|src/a.js|code-scope release --by 001-first-feature" ]] && echo true || echo false)"
+assert_true "cancel-release-hint-also-in-hints" "$([[ "$(jget "$OUT" 'd.hints.includes("code-scope release --by 001-first-feature")')" == "true" ]] && echo true || echo false)"
+assert_true "cancel-never-releases-the-reservation" "$([[ "$(sha256sum "$RW/.a1/reservations.json" | cut -d' ' -f1)" == "$RH1" ]] && echo true || echo false)"
+PD="$(fresh28 cancel6)"
+OUT="$(cd "$RW" && node "$TOOLS" product cancel --by 002-second-feature --dir "$PD" 2>/dev/null)"; RC=$?
+assert_true "cancel-without-own-reservation-lists-none" "$([[ "$(jget "$OUT" 'd.held_reservations.length')" == "0" ]] && echo true || echo false)"
+PD="$(fresh28 edit3)"; node "$TOOLS" product cancel --by 003-third-feature --dir "$PD" >/dev/null 2>&1; H1="$(tree_hash "$PD")"
+OUT="$(node "$TOOLS" product edit --by 002-second-feature --depends-on "003-third-feature" --dir "$PD" 2>&1)"; RC=$?
+assert_rc "edit-depends-on-cancelled-feature-refused-exit-1" 1 "$RC" "$OUT"
+assert_true "edit-cancelled-dependency-message-and-writes-nothing" "$([[ "$OUT" == *"cancelled"* && "$OUT" == *"003-third-feature"* && "$(tree_hash "$PD")" == "$H1" ]] && echo true || echo false)"
+
+# edit --depends-on
+PD="$(fresh28 edit1)"; feat28 "$PD" 002-second-feature '[001-first-feature]'
+OUT="$(node "$TOOLS" product edit --by 002-second-feature --depends-on "003-third-feature" --dir "$PD" 2>&1)"; RC=$?
+assert_rc "edit-depends-on-exit-0" 0 "$RC" "$OUT"
+assert_true "edit-depends-on-replaces-list" "$([[ "$(jget "$(st28 "$PD")" 'JSON.stringify(d.features[1].depends_on)')" == '["003-third-feature"]' ]] && echo true || echo false)"
+assert_true "edit-depends-on-feature-md-mirrored" "$(grep -A1 '^depends_on:' "$PD/features/002-second-feature/feature.md" | grep -qxF '  - 003-third-feature' && echo true || echo false)"
+assert_true "edit-one-changelog-line" "$([[ "$(sed -n '/## Changelog/,$p' "$PD/ROADMAP.md" | grep -c '002-second-feature')" == "1" ]] && echo true || echo false)"
+assert_true "edit-lock-released" "$([[ ! -e "$PD/.product-stage.lock.json" ]] && echo true || echo false)"
+OUT="$(node "$TOOLS" product edit --by 002-second-feature --depends-on "" --dir "$PD" 2>&1)"; RC=$?
+assert_rc "edit-depends-on-empty-exit-0" 0 "$RC" "$OUT"
+assert_true "edit-depends-on-empty-clears-list" "$([[ "$(jget "$(st28 "$PD")" 'JSON.stringify(d.features[1].depends_on)')" == '[]' ]] && echo true || echo false)"
+assert_true "edit-empty-feature-md-cleared" "$(grep -q '^depends_on: \[\]$' "$PD/features/002-second-feature/feature.md" && echo true || echo false)"
+assert_true "edit-index-json-follows" "$([[ "$(jget "$(cat "$PD/index.json")" 'JSON.stringify(d.features[1].depends_on)')" == '[]' ]] && echo true || echo false)"
+H1="$(tree_hash "$PD")"
+OUT="$(node "$TOOLS" product edit --by 002-second-feature --depends-on "" --dir "$PD" 2>&1)"; RC=$?
+assert_rc "edit-identical-exit-0" 0 "$RC" "$OUT"
+assert_true "edit-identical-status-unchanged" "$([[ "$(jget "$OUT" 'd.status')" == "unchanged" ]] && echo true || echo false)"
+assert_true "edit-identical-writes-nothing" "$([[ "$(tree_hash "$PD")" == "$H1" ]] && echo true || echo false)"
+# refusals: unknown id, unknown dependency, self, cycle, bad target, unknown milestone — all write nothing
+PD="$(fresh28 edit2)"; H1="$(tree_hash "$PD")"
+OUT="$(node "$TOOLS" product edit --by 099-nope --depends-on "" --dir "$PD" 2>&1)"; RC=$?
+assert_rc "edit-unknown-feature-exit-1" 1 "$RC" "$OUT"
+OUT="$(node "$TOOLS" product edit --by 002-second-feature --depends-on "099-nope" --dir "$PD" 2>&1)"; RC=$?
+assert_rc "edit-unknown-dependency-exit-1" 1 "$RC" "$OUT"
+OUT="$(node "$TOOLS" product edit --by 002-second-feature --depends-on "002-second-feature" --dir "$PD" 2>&1)"; RC=$?
+assert_rc "edit-self-dependency-exit-1" 1 "$RC" "$OUT"
+OUT="$(node "$TOOLS" product edit --by 001-first-feature --depends-on "002-second-feature" --dir "$PD" 2>&1)"; RC=$?
+assert_rc "edit-cycle-a-b-a-exit-1" 1 "$RC" "$OUT"
+for bad in 2026-13 26-12 2026-1; do
+  OUT="$(node "$TOOLS" product edit --milestone m1-first --target "$bad" --dir "$PD" 2>&1)"; RC=$?
+  assert_rc "edit-bad-target-$bad-exit-1" 1 "$RC" "$OUT"
+done
+OUT="$(node "$TOOLS" product edit --milestone m9-none --target 2026-12 --dir "$PD" 2>&1)"; RC=$?
+assert_rc "edit-unknown-milestone-exit-1" 1 "$RC" "$OUT"
+assert_true "edit-refusals-write-nothing" "$([[ "$(tree_hash "$PD")" == "$H1" ]] && echo true || echo false)"
+# edit --milestone --target
+OUT="$(node "$TOOLS" product edit --milestone m1-first --target 2026-12 --dir "$PD" 2>&1)"; RC=$?
+assert_rc "edit-milestone-target-exit-0" 0 "$RC" "$OUT"
+assert_true "edit-milestone-target-roadmap" "$([[ "$(jget "$(st28 "$PD")" 'd.milestones[0].target')" == "2026-12" ]] && echo true || echo false)"
+assert_true "edit-milestone-target-index-json" "$([[ "$(jget "$(cat "$PD/index.json")" 'd.milestones[0].target')" == "2026-12" ]] && echo true || echo false)"
+OUT="$(node "$TOOLS" product edit --milestone m1-first --target null --dir "$PD" 2>&1)"; RC=$?
+assert_rc "edit-milestone-target-null-exit-0" 0 "$RC" "$OUT"
+assert_true "edit-milestone-target-null-value" "$([[ "$(jget "$(st28 "$PD")" 'String(d.milestones[0].target)')" == "null" ]] && echo true || echo false)"
+assert_true "edit-validate-still-valid" "$([[ "$(jget "$(node "$TOOLS" product validate --dir "$PD" 2>&1)" 'd.valid')" == "true" ]] && echo true || echo false)"
+# transaction guard: both writers use the product lock and the shared all-or-nothing write path
+for f in product-cmd-progress.cjs product-cmd-edit.cjs; do
+  assert_true "txn-$f-uses-lock-and-writeAllOrNothing" "$(grep -q 'acquireReservationsLock' "$REPO_ROOT/_shared/lib/$f" 2>/dev/null && grep -q 'writeAllOrNothing' "$REPO_ROOT/_shared/lib/$f" && grep -q 'buildRoadmapWritesWithChangelog' "$REPO_ROOT/_shared/lib/$f" && echo true || echo false)"
+done
+
 echo ""
 echo "product-modules run.sh: $pass passed, $fail failed"
 [[ "$fail" -eq 0 ]]

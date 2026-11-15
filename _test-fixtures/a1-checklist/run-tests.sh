@@ -256,6 +256,72 @@ else
   results+=("FAIL  CL4b control exit=$CL4_RC trace=[$(cat "$CL4/trace.b")]"); fail=$((fail + 1))
 fi
 
+# ---------- CL5: spec 028 FR-013/FR-014 — clause carry and edge-case warnings on check 9 ----------
+# cl5_vault <name> <spec-fr-block> <plan-waves> [<spec-extra>] — a temp vault with a clarified spec and a plan.
+cl5_vault() {
+  local base="$CL_WORK/cl5-$1"
+  mkdir -p "$base/project/demo/spec" "$base/project/demo/plans"
+  printf -- '---\nid: 001-login\nproject: demo\nfeature_slug: login\ntitle: Login\nstatus: clarified\ncreated: 2026-05-13\n---\n\n# Login — Spec\n\n## Functional Requirements\n\n%b\n%b' "$2" "${4:-}" > "$base/project/demo/spec/001-login.md"
+  printf -- '---\nspec_path: project/demo/spec/001-login.md\nspec_id: 001-login\nproject: demo\ncreated: 2026-05-13\nwaves: 2\n---\n\n# Login — Wave Plan\n\n%b' "$3" > "$base/project/demo/plans/001-login-wave-plan.md"
+  CL5_OUT=$(node "$TOOLS" checklist run demo/001-login --vault "$base" --only 9,10 --format json 2>/dev/null); CL5_RC=$?
+}
+# cl5_c9 <js-expression over c (the check-9 object)> — prints the value as JSON, UNPARSEABLE on failure.
+cl5_c9() { printf '%s' "$CL5_OUT" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const j=JSON.parse(s);const c=j.checks.find(x=>x.id===9);const v=eval(process.argv[1]);process.stdout.write(JSON.stringify(v===undefined?null:v))}catch(e){process.stdout.write("UNPARSEABLE")}})' "$1"; }
+cl5_assert() { # <label> <want> <got>
+  if [[ "$2" == "$3" ]]; then results+=("PASS  $1 ($3)"); pass=$((pass + 1))
+  else results+=("FAIL  $1 want=[$2] got=[$3]"); fail=$((fail + 1)); fi
+}
+FRB='- **FR-001** — Users can export the list and notify the owner.\n'
+WAVE_EXPORT='## Wave 1 — Export\n\n**FRs covered:** FR-001\n\nBuild the export of the list.\n\n## Wave 2 — Other\n\n**FRs covered:** none\n\nowner notification lives here.\n'
+
+# CL5a — the US-028-7 scenario. Red-making: no `warnings` key, or the clause compared with the whole plan.
+cl5_vault a "$FRB" "$WAVE_EXPORT"
+cl5_assert "CL5a clause_not_carried: reason" '"clause_not_carried"' "$(cl5_c9 'c.warnings[0].reason')"
+cl5_assert "CL5a clause_not_carried: id" '"FR-001"' "$(cl5_c9 'c.warnings[0].id')"
+cl5_assert "CL5a clause_not_carried: clause text" '"notify the owner"' "$(cl5_c9 'c.warnings[0].clause')"
+cl5_assert "CL5a clause_not_carried: one warning only (the export clause is carried)" 1 "$(cl5_c9 'c.warnings.length')"
+cl5_assert "CL5a clause_not_carried: hint text" '"name the clause in the wave acceptance text or move it out of scope"' "$(cl5_c9 'c.warnings[0].hint')"
+cl5_assert "CL5a result stays PASS, exit 0" "PASS|0" "$(cl5_c9 'c.result' | tr -d '"')|$CL5_RC"
+# CL5b — control: the wave names both clauses, so no warnings key (Default D-2: key only when non-empty).
+cl5_vault b "$FRB" '## Wave 1 — Export\n\n**FRs covered:** FR-001\n\nExport the list and notify the owner.\n'
+cl5_assert "CL5b both clauses carried: no warnings key" null "$(cl5_c9 'c.warnings')"
+# CL5c — a clause under 3 words is skipped (red-making: no word-count floor).
+cl5_vault c '- **FR-001** — Users export lists; notify owner.\n' '## Wave 1 — Export\n\n**FRs covered:** FR-001\n\nBuild lists.\n'
+cl5_assert "CL5c two-word clause skipped" null "$(cl5_c9 'c.warnings')"
+# CL5d — a clause without a 5-letter token is skipped (red-making: warn on empty token set).
+cl5_vault d '- **FR-001** — We can go on and do it now.\n' '## Wave 1 — Export\n\n**FRs covered:** FR-001\n\nBuild lists.\n'
+cl5_assert "CL5d clause without a content token skipped" null "$(cl5_c9 'c.warnings')"
+# CL5e — FR clause is compared with the carrying wave only: the token sits in Wave 2, not Wave 1.
+cl5_vault e '- **FR-001** — Users must archive stale records.\n' '## Wave 1 — A\n\n**FRs covered:** FR-001\n\nBuild lists.\n\n## Wave 2 — B\n\n**FRs covered:** none\n\narchive stale records here.\n'
+cl5_assert "CL5e token only in another wave: warning" '"clause_not_carried"' "$(cl5_c9 'c.warnings[0].reason')"
+# CL5f — an SC line is compared with the whole plan: the same token in any wave carries it.
+SCB='- **FR-001** — Users can export lists.\n- **SC-001** — Reviewers see archived warnings quickly.\n'
+cl5_vault f "$SCB" '## Wave 1 — A\n\n**FRs covered:** FR-001\n\nExport lists.\n\n## Wave 2 — B\n\n**FRs covered:** none\n\nReviewers can see archived warnings quickly.\n'
+cl5_assert "CL5f SC clause carried anywhere in the plan: no warnings" null "$(cl5_c9 'c.warnings')"
+cl5_vault f2 "$SCB" '## Wave 1 — A\n\n**FRs covered:** FR-001\n\nExport lists.\n'
+cl5_assert "CL5f2 SC clause absent from the plan: warning id SC-001" '"SC-001"' "$(cl5_c9 'c.warnings[0].id')"
+cl5_assert "CL5f2 SC warning leaves result PASS" "PASS|0" "$(cl5_c9 'c.result' | tr -d '"')|$CL5_RC"
+
+# CL5m9 — review round m9: FR-001 is not carried by a wave that only covers FR-001-2 (red-making: the id lookup ended at \b, so "-2" still matched).
+cl5_vault h "$FRB" '## Wave 1 — Export\n\n**FRs covered:** FR-001-2\n\nBuild the export of the list.\n'
+cl5_assert "CL5m9 a wave naming only FR-001-2 does not carry FR-001: no clause warning for FR-001" null "$(cl5_c9 'c.warnings')"
+
+# CL5g — FR-014 edge cases: count, warning when the plan never says "edge" (red-making: no edge_cases key).
+EDGEB='\n## Edge Cases\n\n- Empty export list returns an empty file.\n- Owner address missing.\n\n## Other\n\n- not an edge bullet\n'
+cl5_vault g '- **FR-001** — Users can export lists.\n' '## Wave 1 — A\n\n**FRs covered:** FR-001\n\nExport lists.\n' "$EDGEB"
+cl5_assert "CL5g edge_cases counts bullets under ## Edge Cases only" 2 "$(cl5_c9 'c.edge_cases')"
+cl5_assert "CL5g edge_cases_unplanned reason" '"edge_cases_unplanned"' "$(cl5_c9 'c.warnings.find(w=>w.reason==="edge_cases_unplanned").reason')"
+cl5_assert "CL5g edge_cases_unplanned hint text" '"add an edge-case task or acceptance line to the plan"' "$(cl5_c9 'c.warnings.find(w=>w.reason==="edge_cases_unplanned").hint')"
+cl5_assert "CL5g result stays PASS, exit 0" "PASS|0" "$(cl5_c9 'c.result' | tr -d '"')|$CL5_RC"
+# CL5h — control: the plan mentions "Edge" in any case: count stays, no warning.
+cl5_vault h '- **FR-001** — Users can export lists.\n' '## Wave 1 — A\n\n**FRs covered:** FR-001\n\nExport lists. Edge cases: empty list.\n' "$EDGEB"
+cl5_assert "CL5h edge mentioned: edge_cases still 2" 2 "$(cl5_c9 'c.edge_cases')"
+cl5_assert "CL5h edge mentioned: no warnings key" null "$(cl5_c9 'c.warnings')"
+# CL5i — control: spec without an Edge Cases section: neither key (Default D-2).
+cl5_vault i '- **FR-001** — Users can export lists.\n' '## Wave 1 — A\n\n**FRs covered:** FR-001\n\nExport lists.\n'
+cl5_assert "CL5i no edge section: no edge_cases key" null "$(cl5_c9 'c.edge_cases')"
+cl5_assert "CL5i no edge section: no warnings key" null "$(cl5_c9 'c.warnings')"
+
 # CL2 — red-making: Gate 4.5 workflow still reads --only 9,10.
 cl2=$(grep -c -- '--only 9,10,11' "$REPO_ROOT/skills/a1-new-feature/workflows/04.5-consistency-gate.md")
 if [[ "$cl2" -ge 1 ]]; then results+=("PASS  CL2 04.5-consistency-gate.md reads --only 9,10,11 (${cl2}x)"); pass=$((pass + 1))

@@ -35,6 +35,8 @@ const PHANTOM_STOP_WORDS = new Set([
   'fixed','impl','implementation','implementations',
 ]);
 
+const PHANTOM_NO_INPUT_HINT = 'plan has no completed tasks to check';
+
 function parsePhantomTasks(planText) {
   const lines = planText.split(/\r?\n/);
   const tasks = [];
@@ -229,14 +231,18 @@ function cmdPhantomCheck(rest) {
     }
   }
 
+  // Spec 028 FR-010: zero completed tasks is "nothing was checked", not "clean".
+  const noInput = completed.length === 0;
   const result = {
     plan: planPath,
     repo_path: repoPath,
     since,
     total_completed: completed.length,
+    checked: completed.length - docsOnlySkipped.length,
     docs_only_skipped: docsOnlySkipped,
     phantoms,
-    status: phantoms.length === 0 ? 'clean' : 'phantoms_found',
+    status: noInput ? 'no_input' : phantoms.length === 0 ? 'clean' : 'phantoms_found',
+    ...(noInput ? { hint: PHANTOM_NO_INPUT_HINT } : {}),
   };
 
   if (format === 'human') {
@@ -246,7 +252,11 @@ function cmdPhantomCheck(rest) {
     lines.push(`Completed tasks:   ${completed.length}`);
     lines.push(`Docs-only (skip):  ${docsOnlySkipped.length}`);
     lines.push(`Phantoms:          ${phantoms.length}`);
-    if (phantoms.length === 0) {
+    if (noInput) {
+      lines.push('');
+      lines.push('Status: no_input');
+      lines.push(`Hint: ${PHANTOM_NO_INPUT_HINT}`);
+    } else if (phantoms.length === 0) {
       lines.push('');
       lines.push('Status: clean — every completed task left code traces.');
     } else {

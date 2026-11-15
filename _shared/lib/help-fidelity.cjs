@@ -11,6 +11,11 @@ const FIDELITY_HELP = `  a1-tools test-fidelity --diff-base <ref> [--project <di
                   Optional .a1/fidelity.json: db_wrappers, test_globs, ci_globs, ci. A finding is cleared only by a
                   reviewed entry in .a1/dispositions.json (disposition add). Prints JSON findings (rule, file, line,
                   fingerprint). Call sites pass --phase <scope> (gate log scope).
-                  Exit 0 no findings, 1 findings, 2 usage, git failure or bad config.`;
+                  Output (spec 028) adds status: clean | findings | not_applicable (no test file scanned and no changed
+                  test-like file) | no_scan (nothing scanned beside changed test-like files: ok false, exit 1, hint "add
+                  test_globs to .a1/fidelity.json", test_like up to 20 paths), and ci_jobs {test file: [workflow job ids]}
+                  (informational, never changes ok, status or exit). Default globs include test-*.sh and *_test.sh.
+                  The gate-log line carries scanned (files checked).
+                  Exit 0 clean or not_applicable, 1 findings or no_scan, 2 usage, git failure or bad config.`;
 
 module.exports = { FIDELITY_HELP };

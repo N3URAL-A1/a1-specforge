@@ -19,6 +19,7 @@ const { spawnSync } = require('child_process');
 const { parseFlags, peekVaultRoot, parseFrontmatter } = require('./io.cjs');
 const { emitExit } = require('./emit-exit.cjs');
 const { VerifyError, runVerify, resolveCommands, gitSource } = require('./verify-run.cjs');
+const hostLib = require('./verify-host.cjs');
 const vb = require('./verify-base.cjs');
 const { resolveMergeBase, flakyBaseGrown } = vb;
 const { gitRaw } = require('./verify-check.cjs');
@@ -127,6 +128,7 @@ function resolveBaseRef(opts) {
 }
 
 const BUG_REPORT_TYPE = 'bug-report';
+const BASE_RED_HINT = 're-run with --bug <fix-report-id> on the first run';
 const NONEMPTY = (v) => typeof v === 'string' && v.trim() !== '';
 
 /**
@@ -171,9 +173,12 @@ function suiteReasons(record, bugOk, bug) {
     const failed = record.commands.filter((c) => c.reason !== null).map((c) => ({ command: c.id, cause: c.reason, ids: c.failed_ids }));
     out.push({ reason: 'suite_red_on_head', causes: record.reasons, failed });
   }
-  if (record.pre_existing_red.length > 0) {
-    if (bug === undefined) out.push({ reason: 'base_red_unreported', red_on_base_and_head: record.pre_existing_red });
-    else if (!bugOk) out.push({ reason: 'bug_unresolved', bug, red_on_base_and_head: record.pre_existing_red });
+  // spec 028 FR-005: a red-on-base-and-head command listed in env_red for this platform is named under suites.env_red, not here
+  const excused = new Set((record.env_red || []).map((e) => e.id));
+  const preRed = record.pre_existing_red.filter((p) => !excused.has(p.command));
+  if (preRed.length > 0) {
+    if (bug === undefined) out.push({ reason: 'base_red_unreported', red_on_base_and_head: preRed, hint: BASE_RED_HINT });
+    else if (!bugOk) out.push({ reason: 'bug_unresolved', bug, red_on_base_and_head: preRed });
   }
   return out;
 }
@@ -197,6 +202,13 @@ function guardReasons(opts, baseSha) {
 /** Does any command of the HEAD plan have a counting reporter (kind other than none)? An unresolvable plan counts as yes. */
 function headPlanCounts(project, rawCfg) {
   try { return resolveCommands(project, rawCfg, gitSource(project, 'HEAD')).commands.some((c) => c.kind !== 'none'); } catch (_e) { return true; }
+}
+
+/** ci_evidence path (no local run): hint naming the host-specific ids of the committed head plan; [] when none or unreadable. */
+function ciHostHints(project) {
+  let cfg = null;
+  try { cfg = vb.parseVerifyJson(gitRaw(project, ['show', 'HEAD:.a1/verify.json']), 'head'); } catch (_e) { return []; }
+  return hostLib.ciSkipHints(hostLib.hostSpecificIds(cfg));
 }
 
 /** The CI-evidence decision: head config from HEAD, base config from the tip of the base ref; no shortcut under a gh override. */
@@ -224,7 +236,7 @@ function mergeCheck(opts) {
   const ci = ciDecision(opts, baseRef, baseSha);
   const headMoved = ci.used && prHeadSha(opts.pr, opts.project) !== guards.prHead; // TOCTOU: CI was read for a head that is no longer the PR head
   const record = ci.used
-    ? { verdict: 'ci_evidence', cache: null, pre_existing_red: [], flaky: [], config_changed: null, suite_removed: null, head_sha: guards.prHead, commands: [] }
+    ? { verdict: 'ci_evidence', cache: null, pre_existing_red: [], flaky: [], config_changed: null, suite_removed: null, head_sha: guards.prHead, commands: [], host: null, skipped_on_host: null, hints: ciHostHints(opts.project) }
     : runVerify({ project: opts.project, base: baseRef, noCache: true });
   const checks = requiredChecks(opts.pr, opts.project);
   const bugOk = opts.bug !== undefined && bugResolves(opts, baseSha);
@@ -239,7 +251,11 @@ function mergeCheck(opts) {
   ];
   const report = {
     ok: reasons.length === 0, pr: Number(opts.pr), base: baseRef, base_sha: baseSha, head_sha: record.head_sha, gh_bin: ghBinMode(), reasons,
-    suites: { verdict: record.verdict, cache: record.cache, pre_existing_red: record.pre_existing_red, flaky: record.flaky, config_changed: record.config_changed || null, suite_removed: record.suite_removed || null },
+    suites: {
+      verdict: record.verdict, cache: record.cache, pre_existing_red: record.pre_existing_red, flaky: record.flaky, config_changed: record.config_changed || null, suite_removed: record.suite_removed || null,
+      host: record.host || null, skipped_on_host: record.skipped_on_host || null, ...(record.hints && record.hints.length > 0 ? { hints: record.hints } : {}),
+      ...(record.env_red && record.env_red.length > 0 ? { env_red: record.env_red } : {}), ...(record.warnings && record.warnings.length > 0 ? { warnings: record.warnings } : {}),
+    },
     ci_evidence: { used: ci.used, why: ci.why, checks: ci.checks },
     required_checks: { total: checks.total, red: checks.red.length, pending: checks.pending.length },
     upheld_dispositions: guards.upheld,

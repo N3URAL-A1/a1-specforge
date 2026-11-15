@@ -73,12 +73,14 @@ function cmdConstitutionInit(args) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
   const title = flags.title || `Constitution for ${projectSlug}`;
+  // spec 028 FR-028: continue the history sequence (same computation as next-version).
+  const version = cmdConstitutionNextVersion([projectSlug]).next;
   const fm = {
     type: 'constitution',
     project: projectSlug,
     title,
     status: 'discovering',
-    version: 1,
+    version,
     created_at: nowIso(),
     last_written_at: null,
     phase_history: [],
@@ -108,7 +110,7 @@ function cmdConstitutionInit(args) {
     path: filePath,
     project: projectSlug,
     status: 'discovering',
-    version: 1,
+    version,
   };
 }
 

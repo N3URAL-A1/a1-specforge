@@ -29,6 +29,14 @@ const MERGE_CHECK_HELP = `  a1-tools pr merge-check --pr <n> [--base <ref>] [--b
                   base is gone at HEAD; report suites.suite_removed.fingerprint);
                   exit 2 usage, gh failure, unresolvable base. The report carries head_sha (pass it to
                   \`gh pr merge --match-head-commit\`), upheld_dispositions[] (entries new/changed on the branch that were upheld).
+                  suites.host {platform, arch, node} and suites.skipped_on_host come from the local run (spec 028; null on the ci_evidence path); a non-empty
+                  skipped_on_host adds suites.hints ["run these ids on the target OS before merge: <ids>"]; the skip alone does not change the exit code, but a run where every command was skipped fails (all_commands_skipped_on_host). On the ci_evidence path a head
+                  plan with any requires_host or -bash32 id adds the hint "ci_evidence used: host-specific ids were not run locally: <ids>".
+                  suites.env_red {id, reason, result_reason}[] (spec 028, from .a1/verify.json env_red at the base): an id red on head AND base on this platform is named there and
+                  left out of base_red_unreported (no --bug); red on head but green on base stays suite_red_on_head. suites.warnings carries env_red_stale. The ci_evidence path
+                  ignores env_red. When the base has no .a1/verify.json the suite cause is verify_config_first (suites.config_changed.hint: commit an upheld config_change
+                  disposition for config_changed.fingerprint, 05-merge.md 5.3); all other config changes keep verify_config_changed.
+                  base_red_unreported carries hint "re-run with --bug <fix-report-id> on the first run".
                   --bug <id>: a test red on head AND base needs an a1-fix report (frontmatter type: bug-report, bug_slug, status) in the
                   vault (project/<slug>/fixes/<id>.md) or committed at the base (.a1/fixes/<id>.md); a report the branch adds does not count.
                   One --bug clears ALL base-red ids of the run, it is not matched per id. Required checks that are red on head are never

@@ -476,6 +476,30 @@ run_hostile_oversized() {
   fi
 }
 
+# ---------------------------------------------------------------------------
+# spec 028 FR-028: init continues the version sequence after archive-current
+# ---------------------------------------------------------------------------
+run_init_version_sequence() {
+  local out cf="$VAULT/project/seq-demo/constitution/constitution.md" hist="$VAULT/project/seq-demo/constitution/history"
+  A1_VAULT_ROOT="$VAULT" node "$TOOLS" constitution init seq-demo >/dev/null 2>&1
+  mkdir -p "$hist"
+  : > "$hist/2026-01-01-v1.md"; : > "$hist/2026-01-02-v2.md"; : > "$hist/2026-01-03-v3.md"
+  rm -f "$cf"
+  out=$(A1_VAULT_ROOT="$VAULT" node "$TOOLS" constitution init seq-demo 2>&1)
+  assert "init after history v1-v3 returns version 4" "$(printf '%s' "$out" | grep -q '"version": 4' && echo 1 || echo 0)"
+  assert "init after history v1-v3 writes frontmatter version: 4" "$(grep -q '^version: 4$' "$cf" && echo 1 || echo 0)"
+  out=$(A1_VAULT_ROOT="$VAULT" node "$TOOLS" constitution next-version seq-demo 2>&1)
+  assert "init version equals next-version" "$(printf '%s' "$out" | grep -q '"next": 4' && echo 1 || echo 0)"
+  # empty history dir -> 1
+  A1_VAULT_ROOT="$VAULT" node "$TOOLS" constitution init seq-empty >/dev/null 2>&1
+  mkdir -p "$VAULT/project/seq-empty/constitution/history"; rm -f "$VAULT/project/seq-empty/constitution/constitution.md"
+  out=$(A1_VAULT_ROOT="$VAULT" node "$TOOLS" constitution init seq-empty 2>&1)
+  assert "init with empty history dir returns version 1" "$(printf '%s' "$out" | grep -q '"version": 1' && echo 1 || echo 0)"
+  # missing history dir -> 1
+  out=$(A1_VAULT_ROOT="$VAULT" node "$TOOLS" constitution init seq-none 2>&1)
+  assert "init without history dir returns version 1" "$(printf '%s' "$out" | grep -q '"version": 1' && echo 1 || echo 0)"
+}
+
 # ---------- run all ----------
 run_init
 run_discover
@@ -483,6 +507,7 @@ run_update_status
 run_set_body
 run_next_version
 run_archive_current
+run_init_version_sequence
 run_write_mirror
 run_link_claudemd
 run_list

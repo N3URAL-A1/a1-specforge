@@ -28,7 +28,7 @@ out="$(node -e '
 const want = process.argv[2].split(",");
 const got = Object.keys(require(process.argv[1]));
 if (JSON.stringify(got) !== JSON.stringify(want)) { console.log("got  " + got.join(",")); process.exit(1); }
-' "$LIB/product.cjs" "PRODUCT_SLUG_RE,cmdProductStatus,cmdProductStage,cmdProductMarkers,cmdProductChangelog,cmdProductInit,cmdProductAddMilestone,cmdProductAddFeature,cmdProductFeatureInit,cmdProductImport,cmdProductValidate,cmdProductVisionInit,cmdProductVisionTouch,cmdProductAuditPublish,cmdProductAuditSet,cmdProductAuditMirror" 2>&1)"
+' "$LIB/product.cjs" "PRODUCT_SLUG_RE,cmdProductStatus,cmdProductStage,cmdProductCancel,cmdProductEdit,cmdProductMarkers,cmdProductChangelog,cmdProductInit,cmdProductAddMilestone,cmdProductAddFeature,cmdProductFeatureInit,cmdProductImport,cmdProductValidate,cmdProductVisionInit,cmdProductVisionTouch,cmdProductAuditPublish,cmdProductAuditSet,cmdProductAuditMirror" 2>&1)"
 check "product.cjs export list unchanged" $? "$out"
 
 out="$(node -e '
