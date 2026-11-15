@@ -80,6 +80,7 @@ a1_fx_src_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P)" || 
 if [[ -n "$a1_fx_src_dir" ]]; then
   a1_fx_top="$(git -C "$a1_fx_src_dir" rev-parse --show-toplevel 2>/dev/null)" || a1_fx_top=""
   if [[ -n "$a1_fx_top" && -d "$a1_fx_top" ]]; then
+    # Fixture-only, honoured solely in the tools' own checkout. Hooks and skills must never source this file.
     A1_GATE_LOG_SKIP_ROOT="$a1_fx_top"
     export A1_GATE_LOG_SKIP_ROOT
   fi

@@ -374,11 +374,22 @@ function projectDirOf(argv) {
   return process.cwd();
 }
 
-/** True when A1_GATE_LOG_SKIP_ROOT is set, resolvable, and names the same directory as root. */
+/**
+ * True only for the fixture suites of the tools' own source checkout. All must hold:
+ * realpath(A1_GATE_LOG_SKIP_ROOT) === realpath(root) === realpath(<this file>/../..) and
+ * <root>/_test-fixtures/lib/tmp.sh is a regular file. In a plugin install __dirname is the plugin
+ * cache, so the variable is inert in every consumer repo.
+ */
 function skipRoot(root) {
   const v = process.env.A1_GATE_LOG_SKIP_ROOT;
   if (typeof v !== 'string' || v === '') return false;
-  try { return fs.realpathSync(v) === fs.realpathSync(root); } catch (_e) { return false; }
+  try {
+    const want = fs.realpathSync(v);
+    const rootReal = fs.realpathSync(root);
+    if (want !== rootReal) return false;
+    if (rootReal !== fs.realpathSync(path.resolve(__dirname, '..', '..'))) return false;
+    return fs.statSync(path.join(rootReal, '_test-fixtures', 'lib', 'tmp.sh')).isFile();
+  } catch (_e) { return false; }
 }
 
 function recordRun(gateId, scope, exitCode, dir, timing) {
@@ -387,9 +398,10 @@ function recordRun(gateId, scope, exitCode, dir, timing) {
     process.stderr.write(`gate-log: not inside a git work tree, ${gateId} (exit ${exitCode}) was not logged\n`);
     return;
   }
-  // Test isolation: the fixture suites export A1_GATE_LOG_SKIP_ROOT (their own checkout) so their gate
-  // calls do not append to that checkout's log. Silent (a1-fix parses 2>&1). Skipping only makes the retro
-  // and merge checks refuse (a missing log), never pass. Exact realpath match only; no general off switch.
+  // Fixture-only: the suites of the tools' own checkout export A1_GATE_LOG_SKIP_ROOT so their gate calls do
+  // not append to that checkout's log. Silent (a1-fix parses 2>&1). A skipped run is invisible to retro
+  // validate and the run record (it could mask a later fail after an earlier pass), which is why skipRoot()
+  // confines it to the tools' own checkout. pr merge-check does not read the gate log.
   if (skipRoot(ctx.root)) return;
   if (scope === UNSCOPED) {
     process.stderr.write(`gate-log: no --phase given, line goes to .a1/phases/${UNSCOPED}/${LOG_NAME} (pass --phase <scope> at every call site)\n`);

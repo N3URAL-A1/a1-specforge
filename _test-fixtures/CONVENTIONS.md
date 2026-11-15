@@ -67,6 +67,11 @@ suite are green, exit 1 means at least one case failed.
   A suite with its own EXIT trap must call `a1_fx_cleanup` from it. A bare `mktemp`,
   `mktemp -d` or `mktemp -t` is a red lint case (`a1-vault-fallback` L2); the runtime check is
   `a1-tmp-hygiene`.
+- `tmp.sh` exports `A1_GATE_LOG_SKIP_ROOT=<this checkout>` so suite gate calls do not append to the
+  checkout's `.a1/phases/*/gate-log.jsonl`. Fixture-only: `gate-log.cjs` honours it only when the work
+  tree is the tools' own source checkout and `_test-fixtures/lib/tmp.sh` exists there (inert in plugin
+  installs and consumer repos). Never set it in a session, and hooks/skills must never source
+  `_test-fixtures/lib/tmp.sh`: a skipped run is invisible to retro validate and the run record.
 - CI additionally runs with `HOME=$(mktemp -d)` so suites cannot depend on a developer's
   real `~/.claude/` state.
 - Git fixtures: `cd` into the temp root first, set `GIT_CEILING_DIRECTORIES` to its parent so a stray `git`

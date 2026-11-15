@@ -493,7 +493,7 @@ rs_phases_post() {
       if cmp -s "$RS_TMP/phases.before" "$RS_TMP/phases.after"; then
         echo "phases check: $RS_PHASES_PATH unchanged"
       else
-        echo "phases check FAILED: $RS_PHASES_PATH changed during the run (a suite wrote the checkout's gate log):"
+        echo "phases check FAILED: $RS_PHASES_PATH changed during the run (a suite or a concurrent process wrote under .a1/phases):"
         diff "$RS_TMP/phases.before" "$RS_TMP/phases.after" | head -n "$RS_PHASES_FILE_MAX_LINES" | sed 's/^/  /'
         RS_FAILED=1
       fi
