@@ -316,11 +316,11 @@ features:
   - id: 028-measured-gap-checks
     milestone: continuous
     title: "Measured gap checks: cheap deterministic checks for the code-side gaps of evolve run 11"
-    status: in-flight
-    stage: merge
+    status: done
+    stage: done
     depends_on: []
     started: 2026-11-14
-    finished: null
+    finished: 2026-11-15
     spec_path: project/a1-specforge/spec/028-measured-gap-checks.md
     plan_path: project/a1-specforge/plans/028-measured-gap-checks-wave-plan.md
 next: 006-specforge-kritis-profile
@@ -409,8 +409,6 @@ None.
 
 ## Changelog
 
-- **2026-10-14** — feature.md created for '015-docs-consolidation' — formal spec/plan attached via `product feature-init`
-- **2026-10-14** — 010-vault-cockpit-contract -> started — stage transition via `product stage`
 - **2026-10-14** — 015-docs-consolidation -> started — stage transition via `product stage`
 - **2026-10-14** — 015-docs-consolidation -> done — stage transition via `product stage`
 - **2026-10-14** — feature '016-xprov-autonomy' added — new feature via `product add-feature`
@@ -509,6 +507,8 @@ None.
 - **2026-11-14** — 028-measured-gap-checks -> review — stage transition via `product stage`
 - **2026-11-14** — 028-measured-gap-checks -> verify — stage transition via `product stage`
 - **2026-11-15** — 028-measured-gap-checks -> merge — stage transition via `product stage`
+- **2026-11-15** — 028-measured-gap-checks -> origin-cleanup — stage transition via `product stage`
+- **2026-11-15** — 028-measured-gap-checks -> done — stage transition via `product stage`
 
 ## Appendix — migrated details
 
