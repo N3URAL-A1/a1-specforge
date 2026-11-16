@@ -39,3 +39,4 @@ Rotated entries beyond the 100-entry ROADMAP.md Changelog window (append-only, o
 - **2026-10-14** — feature '015-docs-consolidation' added — new feature via `product add-feature`
 - **2026-10-14** — feature.md created for '015-docs-consolidation' — formal spec/plan attached via `product feature-init`
 - **2026-10-14** — 010-vault-cockpit-contract -> started — stage transition via `product stage`
+- **2026-10-14** — 015-docs-consolidation -> started — stage transition via `product stage`
