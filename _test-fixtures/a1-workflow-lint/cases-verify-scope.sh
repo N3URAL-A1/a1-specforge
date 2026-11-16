@@ -11,6 +11,9 @@ copyFull() {
   printf '%s' "$work"
 }
 
+# Portable in-place sed (no sed -i): write to a temp file, then move it back.
+vsSed() { local f="$1"; shift; sed "$@" "$f" > "$f.new" && mv "$f.new" "$f"; }
+
 # Prints "<scope_checked> <reuse_checked> <n scope> <n reuse> <scope basenames,...>".
 vsSummary() {
   node -e '
@@ -35,7 +38,7 @@ caseVS1() {
 vsOneFinding() {
   local id="$1" rel="$2" sedexpr="$3" want="$4" work out rc sum
   work="$(copyFull)"
-  sed -i "$sedexpr" "$work/$rel"
+  vsSed "$work/$rel" -e "$sedexpr"
   out="$(vsRun "$work")"; rc=$?; sum="$(vsSummary "$out")"
   if [[ $rc -eq 1 && "$sum" == "5 2 1 0 $(basename "$rel"):$want" ]]; then ok "$id $(basename "$rel"): one verify-scope finding ($want)"
   else bad "$id $(basename "$rel") (rc=$rc sum='$sum')"; fi
@@ -97,7 +100,12 @@ caseVS6() {
 caseVS7() {
   local work out rc sum
   work="$(copyFull)"
-  sed -i '/a1-tools.cjs verify run/i # node a1-tools.cjs verify run --project x' "$work/skills/a1-execute/workflows/03-verify.md"
+  node -e '
+    const fs=require("fs"); const f=process.argv[1];
+    const L=fs.readFileSync(f,"utf8").split("\n");
+    const i=L.findIndex(l=>/a1-tools\.cjs verify run/.test(l));
+    L.splice(i,0,"# node a1-tools.cjs verify run --project x"); fs.writeFileSync(f,L.join("\n"));
+  ' "$work/skills/a1-execute/workflows/03-verify.md"
   out="$(vsRun "$work")"; rc=$?; sum="$(vsSummary "$out")"
   if [[ $rc -eq 0 && "$sum" == "5 2 0 0 " ]]; then ok "VS7 comment line in a fence is not a call"
   else bad "VS7 comment control (rc=$rc sum='$sum')"; fi
