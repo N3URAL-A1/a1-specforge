@@ -414,33 +414,42 @@ if [[ ${#parts[@]} -eq 0 ]]; then
   echo "FAIL  harness: no parts/*.sh found under $SUITE" >&2
   fail=1
 fi
-# Shards: the parts run from two runner files, so the suite runner (bin/run-suites.sh) can run them side by side.
-#   run-tests.sh     shard a = every part NOT listed in XP_SHARD_B (a new part lands here by default)
+# Shards: the parts run from three runner files, so the suite runner (bin/run-suites.sh) can run them side by side.
+#   run-tests.sh     shard a = every part in neither XP_SHARD_B nor XP_SHARD_C (a new part lands here by default)
 #   run-tests-b.sh   shard b = the parts listed in XP_SHARD_B
+#   run-tests-c.sh   shard c = the parts listed in XP_SHARD_C
 #   bash run-tests.sh --shard all   every part in one shell, as before the split
 # The shard comes from the argument only, never from the environment: an exported variable would make both
 # runner files run the same shard and leave the other one unrun without a red line.
 # Measured 2026-11-12 (each part run alone against the full run): parts 10 and 18 need the helpers of part 08, part 21
 # needs make_fake_global_home of part 04; every other part gives the same result alone. Keep those in one shard.
-XP_SHARD_B="22 23 24 27 29 30 34 35"
+XP_SHARD_B="02 03 08 09 10 16 18 23 27 34 35 36 37"
+XP_SHARD_C="04 05 12 14 15 19 21 24 25 26 33"
 XP_SHARD=a
 if [[ $# -gt 0 ]]; then
-  if [[ $# -eq 2 && "$1" == "--shard" ]]; then XP_SHARD="$2"; else echo "FAIL  harness: usage: run-tests.sh [--shard a|b|all]" >&2; exit 2; fi
+  if [[ $# -eq 2 && "$1" == "--shard" ]]; then XP_SHARD="$2"; else echo "FAIL  harness: usage: run-tests.sh [--shard a|b|c|all]" >&2; exit 2; fi
 fi
-case "$XP_SHARD" in a|b|all) ;; *) echo "FAIL  harness: --shard must be a, b or all (got '$XP_SHARD')" >&2; exit 2 ;; esac
-# The two runner files together are the suite: exactly run-tests.sh (shard a) and run-tests-b.sh (shard b, by its exact call line).
+case "$XP_SHARD" in a|b|c|all) ;; *) echo "FAIL  harness: --shard must be a, b, c or all (got '$XP_SHARD')" >&2; exit 2 ;; esac
+# The three runner files together are the suite: run-tests.sh (shard a), run-tests-b.sh and run-tests-c.sh (by their exact call lines).
 xp_runners="$(cd "$SUITE" && ls run*.sh | tr '\n' ' ')"
-[[ "$xp_runners" == "run-tests-b.sh run-tests.sh " ]] || bad "harness: runner files are [$xp_runners], want exactly run-tests-b.sh and run-tests.sh"
+[[ "$xp_runners" == "run-tests-b.sh run-tests-c.sh run-tests.sh " ]] || bad "harness: runner files are [$xp_runners], want exactly run-tests-b.sh, run-tests-c.sh and run-tests.sh"
 [[ "$(grep -cxF 'exec bash "$(dirname "$0")/run-tests.sh" --shard b' "$SUITE/run-tests-b.sh")" -eq 1 && "$(grep -cvE '^(#|$)' "$SUITE/run-tests-b.sh")" -eq 1 ]] \
   || bad "harness: run-tests-b.sh must consist of the one call line 'exec bash \"\$(dirname \"\$0\")/run-tests.sh\" --shard b'"
+[[ "$(grep -cxF 'exec bash "$(dirname "$0")/run-tests.sh" --shard c' "$SUITE/run-tests-c.sh")" -eq 1 && "$(grep -cvE '^(#|$)' "$SUITE/run-tests-c.sh")" -eq 1 ]] \
+  || bad "harness: run-tests-c.sh must consist of the one call line 'exec bash \"\$(dirname \"\$0\")/run-tests.sh\" --shard c'"
 xp_in_shard() {
   [[ "$XP_SHARD" == all ]] && return 0
-  if [[ " $XP_SHARD_B " == *" $1 "* ]]; then [[ "$XP_SHARD" == b ]]; else [[ "$XP_SHARD" == a ]]; fi
+  if [[ " $XP_SHARD_B " == *" $1 "* ]]; then [[ "$XP_SHARD" == b ]]
+  elif [[ " $XP_SHARD_C " == *" $1 "* ]]; then [[ "$XP_SHARD" == c ]]
+  else [[ "$XP_SHARD" == a ]]; fi
 }
-# Every NN of XP_SHARD_B names exactly one part file (a typo would move nothing and leave shard b short without a red line).
-for xp_nn in $XP_SHARD_B; do
+# Every NN of XP_SHARD_B and XP_SHARD_C names exactly one part file (a typo would move nothing and leave a shard short without a red line).
+for xp_nn in $XP_SHARD_B $XP_SHARD_C; do
   xp_hits=0; for p in "${parts[@]}"; do [[ "$(basename "$p" | cut -c1-2)" == "$xp_nn" ]] && xp_hits=$((xp_hits + 1)); done
-  [[ "$xp_hits" -eq 1 ]] || bad "harness: XP_SHARD_B lists $xp_nn, which matches $xp_hits part files (want 1)"
+  [[ "$xp_hits" -eq 1 ]] || bad "harness: XP_SHARD_B/XP_SHARD_C list $xp_nn, which matches $xp_hits part files (want 1)"
+done
+for xp_nn in $XP_SHARD_B; do
+  [[ " $XP_SHARD_C " != *" $xp_nn "* ]] || bad "harness: $xp_nn is in XP_SHARD_B and XP_SHARD_C"
 done
 echo "shard: $XP_SHARD"
 timed_parts=(); : > "$SUITE_ROOT/part-times.txt"

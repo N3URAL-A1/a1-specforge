@@ -6,6 +6,7 @@
   "ci_jobs": {
     "fixtures-xprov": [
       "a1-xprov/run-tests-b.sh",
+      "a1-xprov/run-tests-c.sh",
       "a1-xprov/run-tests.sh"
     ],
     "fixtures-rest": [
@@ -71,11 +72,15 @@
       "roadmap-gate/run-tests.sh"
     ]
   },
+  "ci_job_workers": {
+    "fixtures-xprov": 3
+  },
   "timings": {
     "measured": "2026-11-12",
     "seconds": {
-      "a1-xprov/run-tests-b.sh": 316,
-      "a1-xprov/run-tests.sh": 310,
+      "a1-xprov/run-tests-b.sh": 214,
+      "a1-xprov/run-tests-c.sh": 209,
+      "a1-xprov/run-tests.sh": 210,
       "a1-intent/run-tests.sh": 285,
       "a1-suite-runner/run-tests.sh": 91,
       "a1-probe/run-tests.sh": 50,
