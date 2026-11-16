@@ -10,7 +10,7 @@ const { extractBashFenceLines, joinContinuations } = require(path.join(__dirname
 
 const root = process.argv[2];
 const FLAGS = {
-  'verify run': ['project', 'base', 'out', 'timeout-ms', 'phase'],
+  'verify run': ['project', 'base', 'out', 'timeout-ms', 'affected', 'phase'],
   'verify check': [], // verify check takes one file and no flag: --phase exits 2 (Wave 13 measured)
   'test-fidelity': ['diff-base', 'project', 'phase'],
   'realpath-check run': ['diff-base', 'project', 'evidence', 'real-markers', 'json', 'phase'],
