@@ -18,3 +18,6 @@ RED-proof 7.3 (c) run-tests-c.sh calls --shard b -> exact-call-line check red (r
 Tasks 7.1 b676728, 7.2 e67e1e2, 7.3 37879dd. xprov shards measured with `--workers 3` (load ~2): a 210 s, b 214 s, c 209 s; 35 parts, each once.
 Full suite: only a1-intent (subset of accepted set) and a1-suite-runner red. vault-cockpit green (860, both locales).
 BLOCKER: a1-suite-runner D3a (parts/01-discovery.sh:45) asserts suite-groups.json has exactly keys ci_jobs,no_count,serial,timings. ci_job_workers (7.3) makes it red; Wave 8 adds ci_extra_jobs, snapshot_incompatible. No-assert-change rule forbids the edit -> needs orchestrator/owner decision.
+RED-proof 7.3-D3a ci_job_workers removed from the real suite-groups.json (scratch) -> D3a red
+✓ D3a exact-key-set assert updated (owner exception) — 7507e11 — a1-suite-runner isolated: 569 passed, 0 failed (K5a was a flake)
+Wave 7 COMPLETE. Wave 8 must extend D3a with ci_extra_jobs,snapshot_incompatible.
