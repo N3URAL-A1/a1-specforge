@@ -1,0 +1,14 @@
+{
+  "ok": true,
+  "gate": "plan-review-xprov",
+  "enforcement": "blocking",
+  "phase": "027-lean-pipeline-s2",
+  "plan_sha256": "a73f0a2cb99659d022d4278bbd92c8e85116f4080c103f98b48a806102b92835",
+  "accepted": "not_applicable",
+  "matched_entry": null,
+  "matched_waiver": null,
+  "newest_pass": null,
+  "permit_state": "denied",
+  "reason": null,
+  "detail": null
+}
