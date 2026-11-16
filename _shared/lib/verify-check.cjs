@@ -4,10 +4,12 @@
 // `verify run` shares with it. A VERIFICATION.md claiming PASS is refused when
 //   - `verify_run` is missing or unparsable,
 //   - `verify_run.verdict` is not `pass`,
-//   - `head_sha` is unknown to git (hand-edited), or
+//   - `head_sha` is unknown to git (hand-edited),
 //   - a path outside `.a1/` (other than the file itself) changed between
 //     `head_sha` and HEAD (code changed after the run; Q12: committing the
-//     VERIFICATION.md alone does not trip it).
+//     VERIFICATION.md alone does not trip it), or
+//   - `verify_run.scope` is present and not `full` (an `--affected` record; a
+//     record without `scope` predates the field and is accepted).
 // Exit 0 ok (or the file does not claim PASS) / 1 refused / 2 usage or unreadable.
 
 const fs = require('fs');
@@ -77,6 +79,7 @@ function checkVerification(file) {
   const self = path.relative(fs.realpathSync(top), fs.realpathSync(abs)).split(path.sep).join('/');
   const late = changed.filter((p) => !p.startsWith(A1_PREFIX) && p !== self);
   if (late.length > 0) return { exit: 1, reasons: ['code_changed_after_run'], changed_after_run: late.length, sample: late.slice(0, 5) };
+  if (run.scope !== undefined && run.scope !== 'full') return { exit: 1, reasons: ['scope_not_full'] };
   return { exit: 0, reasons: [] };
 }
 

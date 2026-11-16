@@ -16,7 +16,7 @@ const { readMd, writeMdAtomic } = require('./io-frontmatter.cjs');
 const { VerifyError, runVerify, MAX_TIMEOUT_MS } = require('./verify-run.cjs');
 const { cmdVerifyCheck } = require('./verify-check.cjs');
 
-const KNOWN_FLAGS = { project: 'string', base: 'string', out: 'string', 'timeout-ms': 'string', 'no-cache': 'bool' };
+const KNOWN_FLAGS = { project: 'string', base: 'string', out: 'string', 'timeout-ms': 'string', 'no-cache': 'bool', affected: 'bool' };
 const MAX_ARG_LENGTH = 4096;
 
 /** Report a failure and exit 2 once the streams drained. Callers `return fail(...)`. */
@@ -28,7 +28,7 @@ function parseArgs(args) {
   const flags = parseFlags(args, KNOWN_FLAGS);
   if (flags._.length > 0) throw new VerifyError('usage', `unexpected argument ${JSON.stringify(flags._[0])}`);
   for (const [k, v] of Object.entries(flags)) {
-    if (k === '_' || k === 'no-cache') continue;
+    if (k === '_' || k === 'no-cache' || k === 'affected') continue;
     if (typeof v !== 'string' || v === '' || v.length > MAX_ARG_LENGTH || v.includes('\0')) throw new VerifyError('usage', `--${k} needs a plain value`);
   }
   let timeoutMs;
@@ -36,7 +36,7 @@ function parseArgs(args) {
     timeoutMs = Number(flags['timeout-ms']);
     if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > MAX_TIMEOUT_MS) throw new VerifyError('usage', '--timeout-ms must be an integer in 1..86400000');
   }
-  return { project: path.resolve(process.cwd(), flags.project || '.'), base: flags.base, out: flags.out, timeoutMs, noCache: flags['no-cache'] === true };
+  return { project: path.resolve(process.cwd(), flags.project || '.'), base: flags.base, out: flags.out, timeoutMs, noCache: flags['no-cache'] === true, affected: flags.affected === true };
 }
 
 /** Writes `verify_run` into the frontmatter of `file`, keeping every other key and the body. */
@@ -56,6 +56,7 @@ function cmdVerifyRun(args) {
     if (e instanceof VerifyError) return fail(e.reason, e.message);
     throw e;
   }
+  if (opts.affected && opts.out) return fail('usage', '--affected cannot be combined with --out (an affected run is never Verify evidence)');
   let isDir = false;
   try {
     isDir = fs.statSync(opts.project).isDirectory();
@@ -80,7 +81,7 @@ function cmdVerifyRun(args) {
 function cmdVerify(sub, rest) {
   if (sub === 'run') return cmdVerifyRun(rest);
   if (sub === 'check') return cmdVerifyCheck(rest);
-  return emitExit(2, '', 'usage: a1-tools verify run [--project <dir>] [--base <ref>] [--out <VERIFICATION.md>] [--timeout-ms <n>] [--no-cache] | verify check <VERIFICATION.md>\n');
+  return emitExit(2, '', 'usage: a1-tools verify run [--project <dir>] [--base <ref>] [--out <VERIFICATION.md>] [--timeout-ms <n>] [--no-cache] [--affected] | verify check <VERIFICATION.md>\n');
 }
 
 module.exports = { cmdVerify, writeOut };

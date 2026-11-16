@@ -19,6 +19,7 @@ const { emitExit } = require('./emit-exit.cjs');
 const { loadEntries, entriesAt, clearedFingerprints, fingerprintOf, isSelfReviewed } = require('./disposition-store.cjs');
 
 const hostLib = require('./verify-host.cjs');
+const affectedLib = require('./verify-affected.cjs');
 
 const { VerifyError } = vb;
 
@@ -487,7 +488,7 @@ function headCommands(project, plan, headSha_) {
 const pairs = (commands, key) => commands.flatMap((c) => c[key].map((id) => ({ command: c.id, id })));
 
 /**
- * @param {{project:string, base?:string, timeoutMs?:number, noCache?:boolean, host?:{platform?:string, probeTimeoutMs?:number, spawn?:Function}}} opts host: test injection of the platform / probe;
+ * @param {{project:string, base?:string, affected?:boolean (run the measured subset, spec 027 FR-006; never with base), timeoutMs?:number, noCache?:boolean, host?:{platform?:string, probeTimeoutMs?:number, spawn?:Function}}} opts host: test injection of the platform / probe;
  *   noCache: never read or write the
  *   sha + command-hash result cache (merge-check sets it: a cache file is writable by the code under test)
  * @returns {object} the verify_run record; throws VerifyError (exit 2)
@@ -496,6 +497,7 @@ function runVerify(opts) {
   const tTotal = process.hrtime.bigint();
   const msSince = (t) => Math.round(Number(process.hrtime.bigint() - t) / 1e6);
   const project = fs.realpathSync(opts.project);
+  if (opts.affected === true && opts.base !== undefined) throw new VerifyError('usage', '--affected cannot be combined with --base');
   const head = headSha(project);
   if (opts.base !== undefined && head === null) throw new VerifyError('base_unresolved', '--base needs a git repository with a commit');
   const baseSha = head ? resolveBase(project, opts.base) : null;
@@ -503,14 +505,16 @@ function runVerify(opts) {
   const hostCtx = { ...(opts.host || {}), cwd: project, memo: new Map() }; // one probe per distinct argv[0] per run
   const sel = cfgGuard ? selectBasePlan(project, baseSha, head, cfgGuard, hostCtx) : { plan: resolveCommands(project, undefined, undefined, hostCtx), compareBase: false, change: null };
   const plan = sel.plan;
+  const aff = opts.affected === true ? affectedLib.planAffected(project, plan, head, baseSha, readJsonFile(path.join(project, '.a1', 'verify.json'), '.a1/verify.json'), statusPaths) : null;
+  const runPlan = aff && aff.selection === 'subset' ? { ...plan, commands: plan.commands.filter((c) => aff.ids.includes(c.id)) } : plan;
   const flakyBase = cfgGuard && sel.compareBase && cfgGuard.shrunkFlaky !== null ? cfgGuard.shrunkFlaky : plan.flakyBase;
   const missing = plan.requiresEnv.filter((n) => !process.env[n]);
   if (missing.length > 0) throw new VerifyError('env_missing', `required environment variable(s) not set: ${missing.join(', ')}`);
   const changed = head ? changeSet(project, baseSha) : [];
   const touches = changed.some(isSourcePath);
   const withTimeout = (list) => list.map((c) => (opts.timeoutMs ? { ...c, timeoutMs: opts.timeoutMs } : c));
-  const timed = { ...plan, flakyBase, commands: withTimeout(plan.commands) };
-  const headSet = headCommands(project, plan, sel.compareBase && head ? head : null);
+  const timed = { ...runPlan, flakyBase, commands: withTimeout(plan.commands) };
+  const headSet = headCommands(project, runPlan, sel.compareBase && head ? head : null);
   const headTimed = { ...timed, commands: withTimeout(headSet.commands) };
   const hash = vb.commandHash(headTimed.commands, vb.envDigest((n) => readLockfile(project, n)));
   const baseHash = baseSha ? vb.commandHash(timed.commands, vb.envDigest((n) => gitRaw(project, ['show', `${baseSha}:${n}`]))) : hash;
@@ -529,12 +533,15 @@ function runVerify(opts) {
     const settled = skipped.map((c) => ({ ...c, base_duration_ms: base ? base.durations.get(c.id) ?? null : null }));
     const firstConfig = cfgGuard !== null && cfgGuard.base === null && cfgGuard.head !== null;
     const configChanged = configChangeRecord(project, sel.change, head, firstConfig);
-    const env = hostLib.applyEnvRed(plan.envRed, hostLib.hostRecord(opts.host).platform, settled, [...settled.map((c) => c.id), ...plan.skipped.map((s) => s.id)], sel.compareBase, opts.base !== undefined);
+    const env = hostLib.applyEnvRed(plan.envRed, hostLib.hostRecord(opts.host).platform, settled, [...new Set([...settled.map((c) => c.id), ...plan.commands.map((c) => c.id), ...plan.skipped.map((s) => s.id)])], sel.compareBase, opts.base !== undefined);
     const removed = suiteRemovedRecord(project, headSet.removed, head);
     const extra = [...(configChanged && !configChanged.dispositioned ? [firstConfig ? 'verify_config_first' : 'verify_config_changed'] : []), ...(removed && !removed.dispositioned ? ['suite_removed'] : []),
       ...(plan.skipped.length > 0 && settled.length === 0 && plan.noTestsReason === null ? [hostLib.ALL_SKIPPED_REASON] : [])];
     const hints = hostLib.skipHints(plan.skipped, settled.length);
+    const ranIds = new Set(runPlan.commands.map((c) => c.id));
+    const affectedRec = aff ? { affected: { selection: aff.selection, reason: aff.reason, paths: aff.paths, changed: aff.changed ? aff.changed.length : 0, selected: runPlan.commands.length, total: plan.commands.length, not_run: plan.commands.map((c) => c.id).filter((id) => !ranIds.has(id)).sort() } } : {};
     return {
+      scope: opts.affected === true ? 'affected' : 'full', ...affectedRec,
       ...withReasons(overall(settled, plan.noTestsReason, env.excused), extra), host: hostLib.hostRecord(opts.host), skipped_on_host: plan.skipped, ...(hints.length > 0 ? { hints } : {}), ...(env.envRed.length > 0 ? { env_red: env.envRed } : {}), ...(env.warnings.length > 0 ? { warnings: env.warnings } : {}), source: plan.source, head_sha: head, base_sha: baseSha,
       touches_source: touches, changed_files: changed.length, flaky: pairs(side.settled, 'flaky_ids'), pre_existing_red: pairs(side.settled, 'pre_existing_red_ids'),
       cache: { head: side.cache, base: base ? base.cache : 'none' }, ...(configChanged ? { config_changed: configChanged } : {}), ...(removed ? { suite_removed: removed } : {}), commands: settled,
