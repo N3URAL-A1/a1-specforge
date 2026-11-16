@@ -73,6 +73,20 @@ mk_tmpfile() {
   printf -v "$__var" '%s' "$__f"
 }
 
+# Keep this checkout's gate log clean: gate CLI calls made from the repo cwd would otherwise append
+# fake runs to .a1/phases/<scope>/gate-log.jsonl (fix test-gate-log-leak). Temp git repos made by suites
+# have other toplevels and keep real logging. Unset when tmp.sh is not inside a git tree.
+a1_fx_src_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P)" || a1_fx_src_dir=""
+if [[ -n "$a1_fx_src_dir" ]]; then
+  a1_fx_top="$(git -C "$a1_fx_src_dir" rev-parse --show-toplevel 2>/dev/null)" || a1_fx_top=""
+  if [[ -n "$a1_fx_top" && -d "$a1_fx_top" ]]; then
+    # Fixture-only, honoured solely in the tools' own checkout. Hooks and skills must never source this file.
+    A1_GATE_LOG_SKIP_ROOT="$a1_fx_top"
+    export A1_GATE_LOG_SKIP_ROOT
+  fi
+fi
+unset a1_fx_src_dir a1_fx_top
+
 # Install the EXIT trap only if the suite has none (never clobber).
 if [[ -z "$(trap -p EXIT)" ]]; then
   trap 'a1_fx_cleanup' EXIT

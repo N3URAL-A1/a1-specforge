@@ -44,6 +44,19 @@ rs_run "$T_N4"
 assert_contains "N4a not a git top level: the skip is announced" "$RS_OUT" "learnings check skipped:"
 assert_eq "N4b no git work tree: exit 0" "$RS_RC" "0"
 
+# ---- PH: phases state before/after the run (fix test-gate-log-leak) ----
+mk_lt_tree T_PH1 "echo 'l: 1 passed, 0 failed'"
+rs_run "$T_PH1"
+assert_eq "PH1a a clean run: exit 0" "$RS_RC" "0"
+assert_contains "PH1b the phases check is announced" "$RS_OUT" "phases check: .a1/phases unchanged"
+mk_lt_tree T_PH2 "mkdir -p .a1/phases/x && echo '{}' > .a1/phases/x/gate-log.jsonl
+echo 'l: 1 passed, 0 failed'"
+rs_run "$T_PH2"
+assert_eq "PH2a a suite writing a gate log into the root: exit 1" "$RS_RC" "1"
+assert_contains "PH2b the check fails" "$RS_OUT" "phases check FAILED"
+assert_contains "PH2c the new file is listed" "$RS_OUT" ".a1/phases/x/gate-log.jsonl"
+assert_contains "PH3 not a git top level: the skip is announced" "$(rs_run "$T_N4"; echo "$RS_OUT")" "phases check skipped:"
+
 # ---- T: the log tail of a red suite ----
 mk_tree T_T1 tail
 plant_suite "$T_T1" t/run-tests.sh 'i=1; while [ $i -le 60 ]; do echo "L$i end"; i=$((i + 1)); done

@@ -227,5 +227,43 @@ OUT="$(cd "$LR" && node "$TOOLS" gates lint 2>"$WORK/err")"; RC=$?
 copy_inv m; plant m badref; lint_inv m
 [[ $RC -eq 1 && "$(has_find invariant_file_invalid -)" -ge 1 ]] && ok "W14m owner_ref ../../etc/passwd: exit 1, invariant_file_invalid" || bad "W14m (rc=$RC)"
 
+# W14o: A1_GATE_LOG_SKIP_ROOT (fix test-gate-log-leak, review round 1). The skip is honoured only in the
+# tools' own checkout: var == repo root == realpath(tools/..) and _test-fixtures/lib/tmp.sh is a file.
+# (a,b) temp repo holding a tools copy + tmp.sh -> skip; (c) var unset/other/missing -> 1 line;
+# (d) consumer repo without a tools copy, tools from the real checkout -> 1 line (the MAJOR);
+# (e) tools copy without tmp.sh -> 1 line. Measured red: d585c34's skipRoot() makes (d) red.
+T="$WORK/o"; CP="$T/copy"; CONS="$T/consumer"; NOTMP="$T/notmp"; OTHER="$T/other"
+mkdir -p "$CP/_test-fixtures/lib" "$CONS/_test-fixtures/lib" "$NOTMP" "$OTHER"
+TOOLS_SRC="$(cd "$(dirname "$TOOLS")/.." && pwd -P)"
+cp -R "$TOOLS_SRC/_shared" "$CP/_shared"; cp "$TOOLS_SRC/_test-fixtures/lib/tmp.sh" "$CP/_test-fixtures/lib/tmp.sh"
+cp -R "$TOOLS_SRC/_shared" "$NOTMP/_shared"
+# the consumer repo carries a tmp.sh too, so (d) pins the tools-own-checkout (__dirname) rule alone
+cp "$TOOLS_SRC/_test-fixtures/lib/tmp.sh" "$CONS/_test-fixtures/lib/tmp.sh"
+for r in "$CP" "$CONS" "$NOTMP"; do
+  git -C "$r" init -q; echo a > "$r/a.txt"; g "$r" add -A; g "$r" commit -qm one
+done
+o_call() { # <repo> <tools-cli> <skip-root or ""> -> xprov scope in the repo, 2>&1 into $WORK/o.out
+  local repo="$1" cli="$2" sk="$3" base; base="$(git -C "$repo" rev-parse HEAD)"
+  rm -rf "$repo/.a1"
+  (cd "$repo" && env -u A1_GATE_LOG_SKIP_ROOT ${sk:+A1_GATE_LOG_SKIP_ROOT="$sk"} node "$cli" xprov scope --repo "$repo" --base "$base" --head HEAD --phase pr-9 >"$WORK/o.out" 2>&1); RC=$?
+}
+o_lines() { wc -l < "$1/.a1/phases/pr-9/gate-log.jsonl" 2>/dev/null | tr -d ' '; }
+CPT="$CP/_shared/a1-tools.cjs"
+o_call "$CP" "$CPT" "$CP"
+[[ $RC -eq 0 && ! -e "$CP/.a1/phases" ]] && ok "W14o-a tools copy + tmp.sh, var = repo: no log line" || bad "W14o-a (rc=$RC log=$(ls "$CP/.a1" 2>&1))"
+grep -q "gate-log" "$WORK/o.out" && bad "W14o-a2 skip printed a gate-log notice" || ok "W14o-a2 skip is silent on stderr (2>&1 output has no gate-log text)"
+ln -s "$CP" "$T/link"; o_call "$CP" "$CPT" "$T/link"
+[[ $RC -eq 0 && ! -e "$CP/.a1/phases" ]] && ok "W14o-b var = symlink to the repo (realpath): no log line" || bad "W14o-b (rc=$RC)"
+o_call "$CP" "$CPT" ""
+[[ $RC -eq 0 && "$(o_lines "$CP")" == "1" ]] && ok "W14o-c1 var unset: 1 log line" || bad "W14o-c1 (rc=$RC)"
+o_call "$CP" "$CPT" "$OTHER"
+[[ $RC -eq 0 && "$(o_lines "$CP")" == "1" ]] && ok "W14o-c2 var = another dir: 1 log line" || bad "W14o-c2 (rc=$RC)"
+o_call "$CP" "$CPT" "$T/does-not-exist"
+[[ $RC -eq 0 && "$(o_lines "$CP")" == "1" ]] && ok "W14o-c3 unresolvable var: 1 log line" || bad "W14o-c3 (rc=$RC)"
+o_call "$CONS" "$TOOLS" "$CONS"
+[[ $RC -eq 0 && "$(o_lines "$CONS")" == "1" ]] && ok "W14o-d consumer repo (no tools copy, has tmp.sh), var = repo: 1 log line (skip inert)" || bad "W14o-d (rc=$RC)"
+o_call "$NOTMP" "$NOTMP/_shared/a1-tools.cjs" "$NOTMP"
+[[ $RC -eq 0 && "$(o_lines "$NOTMP")" == "1" ]] && ok "W14o-e tools copy without tmp.sh, var = repo: 1 log line" || bad "W14o-e (rc=$RC)"
+
 echo "a1-gates-lint wave 14: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

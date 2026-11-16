@@ -223,7 +223,9 @@ caseRedProofCategoryCount() {
   mkdir -p "$fxdir/docs/product/features/006-sample"
   cp "$STRIDE_FX/category-missing-D.md" "$fxdir/docs/product/features/006-sample/threat-model.md"
   mk_tmpfile errf "stride-redproof1-err"
-  node "$mutdir/_shared/a1-tools.cjs" profile threat-model-check --id "006-sample" --repo-root "$fxdir" >/dev/null 2>"$errf"; rc=$?
+  # cwd = the scratch fixture dir (not a git tree): a mutated tools copy is not this checkout, so the skip var does not
+  # apply and a call from the checkout cwd would append to its gate log.
+  (cd "$fxdir" && node "$mutdir/_shared/a1-tools.cjs" profile threat-model-check --id "006-sample" --repo-root "$fxdir" >/dev/null 2>"$errf"); rc=$?
   if [[ $rc -eq 0 ]]; then
     ok "RED-1: counting 5 categories as complete turns category-missing-D from exit 1 to exit 0 (mutation proves the real check discriminates)"
   else
@@ -251,7 +253,7 @@ caseRedProofAcceptedLookup() {
   mkdir -p "$fxdir/docs/product/features/006-sample"
   cp "$STRIDE_FX/accepted-high-open.md" "$fxdir/docs/product/features/006-sample/threat-model.md"
   mk_tmpfile errf "stride-redproof2-err"
-  out="$(node "$mutdir/_shared/a1-tools.cjs" profile threat-model-check --id "006-sample" --repo-root "$fxdir" 2>"$errf")"; rc=$?
+  out="$(cd "$fxdir" && node "$mutdir/_shared/a1-tools.cjs" profile threat-model-check --id "006-sample" --repo-root "$fxdir" 2>"$errf")"; rc=$?
   if [[ $rc -eq 1 ]] && printf '%s%s' "$out" "$(cat "$errf")" | grep -q 'unmitigated'; then
     ok "RED-2: skipping the accepted-risks lookup turns accepted-high-open from exit 0 to exit 1/unmitigated (mutation proves the lookup is load bearing)"
   else
@@ -279,7 +281,9 @@ caseRedProofAcceptedRowCrossCheck() {
   mkdir -p "$fxdir/docs/product/features/006-sample"
   cp "$STRIDE_FX/accepted-no-entry.md" "$fxdir/docs/product/features/006-sample/threat-model.md"
   mk_tmpfile errf "stride-redproof3-err"
-  node "$mutdir/_shared/a1-tools.cjs" profile threat-model-check --id "006-sample" --repo-root "$fxdir" >/dev/null 2>"$errf"; rc=$?
+  # cwd = the scratch fixture dir (not a git tree): a mutated tools copy is not this checkout, so the skip var does not
+  # apply and a call from the checkout cwd would append to its gate log.
+  (cd "$fxdir" && node "$mutdir/_shared/a1-tools.cjs" profile threat-model-check --id "006-sample" --repo-root "$fxdir" >/dev/null 2>"$errf"); rc=$?
   if [[ $rc -eq 0 ]]; then
     ok "RED-3: dropping the accepted-row cross-check turns accepted-no-entry from exit 1 to exit 0 (mutation proves the rule is load bearing)"
   else

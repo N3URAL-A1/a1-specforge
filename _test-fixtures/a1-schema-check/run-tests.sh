@@ -7,6 +7,9 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$DIR/../.." && pwd)"
 TOOLS="$REPO_ROOT/_shared/a1-tools.cjs"
 
+# tmp.sh first: it exports A1_GATE_LOG_SKIP_ROOT, which every gate call below needs (fix test-gate-log-leak).
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
+
 pass=0
 fail=0
 
@@ -46,7 +49,6 @@ fi
 # Spec 017 FR-008: the gate call appends one log line (gate-0.6-schema) to the repo it runs in.
 # Measured red 2026-10-20 (git-archive snapshot): gate-log.cjs recordRun() not called -> no log file;
 # verdictForExit() 0 -> fail -> verdict assert fails.
-. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
 mk_workdir LOGW schema-log
 git -C "$LOGW" init -q && git -C "$LOGW" config user.email t@t.dev && git -C "$LOGW" config user.name test
 echo seed > "$LOGW/seed.txt"; git -C "$LOGW" add -A; git -C "$LOGW" commit -qm base
