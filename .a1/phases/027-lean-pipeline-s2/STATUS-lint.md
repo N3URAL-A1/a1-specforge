@@ -17,3 +17,5 @@ Completed: 2026-11-16
 
 RED-proof: (a) PER_WAVE group dropped -> VS2 red; (b) substring --affected -> VS8 red; (c) agents/ presence condition dropped -> W11 red (+VS4); (d) REUSE_RE without verify-reuse -> VS5b red.
 Full run-suites: a1-intent 12 failed (subset of accepted set); no other failure seen in the tail. run-tests.sh diff: 3 added, 0 deleted.
+
+Wave 6 fix: GNU-only sed -i removed from cases-verify-scope.sh (vault-fallback L1b) — 0328d5a. workflow-lint 29/0, vault-fallback 24/0.
