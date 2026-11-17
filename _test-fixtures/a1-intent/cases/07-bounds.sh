@@ -395,10 +395,19 @@ stub_mode hang
 A1_INTENT_KILL_GRACE_MS=500 w7_bg "$W6_FILE" b22
 b22_pid=$W7_BG_PID
 poll_until 4 test -f "$W6_STUB/grandchild.pid"
-b22_node="$(pgrep -P "$b22_pid" node | head -1)"
-kill -TERM "${b22_node:-$b22_pid}"
-wait "$b22_pid"
+b22_node="$(poll_until 2 w_node_child "$b22_pid")"
+if [[ -z "$b22_node" ]]; then
+  # no node pid: end the subshell we started ($!) and fail the case; a surviving node is caught by SM6
+  kill -TERM "$b22_pid" 2>/dev/null
+  wait "$b22_pid" 2>/dev/null
+  b22_found=0
+else
+  b22_found=1
+  kill -TERM "$b22_node"
+  wait "$b22_pid"
+fi
 stub_mode ok
+[[ "$b22_found" == 1 ]] || echo "node child of the run subshell $b22_pid not found by command line (a1-tools-as.cjs)" >"$SB/.bg-b22.rc"
 b22="$(cat "$SB/.bg-b22.rc") $(w7_alive "$(cat "$W6_STUB/stub.pid")") $(w7_alive "$(cat "$W6_STUB/grandchild.pid")") $(w7_locks) $(w6_where "$W6_ID") $(w6_fm "$VAULT/inbox/intents/done/$W6_ID.md" failure_reason)"
 if [[ "$b22" == "143 gone gone 0 done cancelled" ]]; then ok "B22 SIGTERM to run while the child ignores SIGTERM -> the child and its grandchild are gone (SIGKILL after the grace), the intent completed failed cancelled (done/), both locks released, exit 143 [FR-027, review n2, W7-M1]"
 else bad "B22 SIGTERM to run while the child ignores SIGTERM -> the child and its grandchild are gone (SIGKILL after the grace), the intent completed failed cancelled (done/), both locks released, exit 143 [FR-027, review n2, W7-M1]" "$b22"; fi

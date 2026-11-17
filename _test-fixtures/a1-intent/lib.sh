@@ -24,6 +24,20 @@ poll_until() {
 # the case checks the state itself afterwards).
 pid_gone() { [[ -n "${1:-}" && "$1" != 0 ]] || return 0; ! kill -0 "$1" 2>/dev/null; }
 
+# w_node_child <subshell-pid> — print the pid of the a1-tools-as.cjs node process that <subshell-pid> started.
+# Matched by command line, never by process name: node 24 reports its main thread as "MainThread", so
+# `pgrep -P <pid> node` finds nothing there (bug 2026-11-11-intent-suite-signal-cases-aiserver).
+# Returns 1 with no output when there is no such child; callers must fail the case, never fall back to <subshell-pid>.
+w_node_child() {
+  local c
+  for c in $(pgrep -P "$1" 2>/dev/null); do
+    case "$(ps -o args= -p "$c" 2>/dev/null)" in
+      *a1-tools-as.cjs*) printf '%s\n' "$c"; return 0 ;;
+    esac
+  done
+  return 1
+}
+
 A1_TOOLS="$REPO_ROOT/_shared/a1-tools.cjs"
 INTENT_LIB="$REPO_ROOT/_shared/lib"
 STUB_DIR="$SUITE_DIR/stub"
