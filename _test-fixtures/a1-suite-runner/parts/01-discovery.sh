@@ -42,7 +42,7 @@ assert_absent "D1g no a1-reconcile selected: no reconcile line, no git skip line
 # ---- D3: the real declaration file ----
 REAL_GROUPS="$REPO_ROOT/_test-fixtures/suite-groups.json"
 keys="$(node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(Object.keys(j).sort().join(","))' "$REAL_GROUPS" 2>&1)"
-assert_eq "D3a real suite-groups.json has exactly the four keys" "$keys" "ci_jobs,no_count,serial,timings"
+assert_eq "D3a real suite-groups.json has exactly the seven keys" "$keys" "ci_extra_jobs,ci_job_workers,ci_jobs,no_count,serial,snapshot_incompatible,timings"
 nc="$(node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(String(j.no_count.indexOf("a1-schema-check/parser/run-parser.sh")>=0))' "$REAL_GROUPS" 2>&1)"
 assert_eq "D3b run-parser.sh is listed under no_count" "$nc" "true"
 
