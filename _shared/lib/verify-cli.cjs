@@ -84,7 +84,8 @@ function cmdVerify(sub, rest) {
   if (sub === 'run') return cmdVerifyRun(rest);
   if (sub === 'check') return cmdVerifyCheck(rest);
   if (sub === 'reuse') return cmdVerifyReuse(rest);
-  return emitExit(2, '', 'usage: a1-tools verify run [--project <dir>] [--base <ref>] [--out <VERIFICATION.md>] [--timeout-ms <n>] [--no-cache] [--affected] | verify check <VERIFICATION.md> | verify reuse --head <sha> [--project <dir>]\n');
+  if (sub === 'affected-map') return require('./verify-affected-map.cjs').cmdAffectedMap(rest);
+  return emitExit(2, '', 'usage: a1-tools verify run [--project <dir>] [--base <ref>] [--out <VERIFICATION.md>] [--timeout-ms <n>] [--no-cache] [--affected] | verify check <VERIFICATION.md> | verify reuse --head <sha> [--project <dir>] | verify affected-map (--traces <dir> [--allow-red <id,...>] | --check | --list-ids) [--project <dir>]\n');
 }
 
 module.exports = { cmdVerify, writeOut };
