@@ -93,14 +93,23 @@ t5_lines0="$(grep -c '"command":"tick"' "$FHOME/.a1-intents/log.jsonl")"
 t5_pid=$!
 # deliberate-timeout: lets the watch loop (interval 1 s) run more than one pass; the elapsed time is the thing under test
 sleep 2.5
-t5_node="$(pgrep -P "$t5_pid" node | head -1)"
+t5_node="$(poll_until 2 w_node_child "$t5_pid")"
+if [[ -z "$t5_node" ]]; then
+  # no node pid: end the subshell we started ($!) and fail the case; a surviving node is caught by SM6
+  kill -TERM "$t5_pid" 2>/dev/null
+  wait "$t5_pid" 2>/dev/null
+  t5_ms=-1; t5_lines=-1
+  echo "0" >"$SB/.watch-rc"
+  bad "T5 watch --interval 1, SIGTERM after 2.5 s -> exit 0 within ${t5_ms} ms, $t5_lines tick log lines [FR-032]" "node child of the watch subshell $t5_pid not found by command line (a1-tools-as.cjs)"
+else
 t5_t0="$(w8_now)"
-kill -TERM "${t5_node:-$t5_pid}"
+kill -TERM "$t5_node"
 wait "$t5_pid"
 t5_ms=$(( $(w8_now) - t5_t0 ))
 t5_lines=$(( $(grep -c '"command":"tick"' "$FHOME/.a1-intents/log.jsonl") - t5_lines0 ))
 if [[ "$(cat "$SB/.watch-rc")" == 0 && "$t5_ms" -lt 1000 && "$t5_lines" -ge 2 ]]; then ok "T5 watch --interval 1, SIGTERM after 2.5 s -> exit 0 within ${t5_ms} ms, $t5_lines tick log lines [FR-032]"
 else bad "T5 watch --interval 1, SIGTERM after 2.5 s -> exit 0 within ${t5_ms} ms, $t5_lines tick log lines [FR-032]" "rc $(cat "$SB/.watch-rc") err $(head -c 200 "$SB/.watch-err")"; fi
+fi
 
 # ---------- T6/T7: list rows and the tamper state (FR-034) ----------
 w8_empty_queue
