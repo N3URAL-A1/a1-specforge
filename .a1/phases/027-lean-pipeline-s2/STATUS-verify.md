@@ -52,3 +52,24 @@ RED-proof 3.1 (h) directory mode check removed -> RU17b red (rc=1)
 ### Deviations
 - `verify reuse` is not a registered gate, so the facade does not strip `--phase`; the fixture helper calls it without `--phase` (the plan's gate-call rule does not apply to it).
 - No observation written (no Rule 1-4 deviation).
+
+## Wave 4 — Tracer and map generator
+Completed: 2026-11-17
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| 4.1 verify-affected-map.cjs, bin/affected-trace.sh, CLI route, cases-affected-map.sh | DONE | 5b21154 | a1-verify 366 passed, 0 failed (AM1-AM8 incl. AM5b no-.git and AM7 real strace run; BC1/BC2, E3b/E3c PASS); verify-affected-map.cjs 344 lines; affected-trace.sh 92 lines; `verify affected-map --list-ids` = 62 = 61 run*.sh + 1 parser runner; gates lint and workflow lint clean |
+
+RED-proof 4.1 (a) cwd tracking dropped (state.get(pid) removed) -> AM1c, AM1h red (rc=1)
+RED-proof 4.1 (b) listing rule widened (listedJoins always true) -> AM3, AM3b, AM3e, AM3f red (rc=1)
+RED-proof 4.1 (c) --traces accepts a red trace -> AM4b red (rc=1)
+RED-proof 4.1 (d) checkMap skips selectors -> AM5, AM5b red (rc=1)
+RED-proof 4.1 (e) --check without the disk fallback -> AM5b, AM5c red (rc=1)
+
+Full bin/run-suites.sh: 60/62 green on the first run. a1-vault-fallback L2b was mine (bare mktemp in affected-trace.sh), fixed with explicit templates, suite 24/0. a1-intent red: accepted ids plus T7 (full run, load 2-3) and B9 (isolated rerun, load 1.8); T7 passed and B9 passed in the other run, neither touches lane files. a1-vault-cockpit green.
+
+### Deviations
+- Empty-set keys (a key no suite reads) are omitted from the map (D4 forbids an empty selector list), so such a path selects the full set. Wave 9 may decide to map them to smoke.
+- `--traces` takes alwaysIds from the red ids named in --allow-red; trace logs (<id>.log) are written next to the .paths files.
+- The tracer takes its tools from the repo that holds bin/affected-trace.sh and traces --root (needed for the planted AM7 project).
+- No observation written (no Rule 1-4 deviation).
