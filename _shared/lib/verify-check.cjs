@@ -4,10 +4,12 @@
 // `verify run` shares with it. A VERIFICATION.md claiming PASS is refused when
 //   - `verify_run` is missing or unparsable,
 //   - `verify_run.verdict` is not `pass`,
-//   - `head_sha` is unknown to git (hand-edited), or
+//   - `head_sha` is unknown to git (hand-edited),
 //   - a path outside `.a1/` (other than the file itself) changed between
 //     `head_sha` and HEAD (code changed after the run; Q12: committing the
-//     VERIFICATION.md alone does not trip it).
+//     VERIFICATION.md alone does not trip it), or
+//   - `verify_run.scope` is present and not `full` (an `--affected` record; a
+//     record without `scope` predates the field and is accepted).
 // Exit 0 ok (or the file does not claim PASS) / 1 refused / 2 usage or unreadable.
 
 const fs = require('fs');
@@ -46,6 +48,15 @@ function diffNames(cwd, from, to) {
   return splitNul(gitRaw(cwd, ['diff', '--name-only', '-z', from, to, '--']));
 }
 
+/**
+ * Paths changed between two commits that are not under `.a1/` (the one rule `verify check` and `verify reuse` share).
+ * @returns {string[]|null} repo-relative paths outside `.a1/`, or null when git cannot tell
+ */
+function changedOutsideA1(cwd, from, to) {
+  const names = diffNames(cwd, from, to);
+  return names === null ? null : names.filter((p) => !p.startsWith(A1_PREFIX));
+}
+
 function readVerifyRun(fm) {
   const raw = fm.verify_run;
   if (raw && typeof raw === 'object') return raw;
@@ -72,11 +83,12 @@ function checkVerification(file) {
   const dir = path.dirname(abs);
   const top = (gitRaw(dir, ['rev-parse', '--show-toplevel']) || '').trim();
   if (top === '') return { exit: 1, reasons: ['not_a_git_repo'] };
-  const changed = diffNames(dir, run.head_sha, 'HEAD');
-  if (changed === null) return { exit: 1, reasons: ['head_sha_unknown'] };
+  const outside = changedOutsideA1(dir, run.head_sha, 'HEAD');
+  if (outside === null) return { exit: 1, reasons: ['head_sha_unknown'] };
   const self = path.relative(fs.realpathSync(top), fs.realpathSync(abs)).split(path.sep).join('/');
-  const late = changed.filter((p) => !p.startsWith(A1_PREFIX) && p !== self);
+  const late = outside.filter((p) => p !== self);
   if (late.length > 0) return { exit: 1, reasons: ['code_changed_after_run'], changed_after_run: late.length, sample: late.slice(0, 5) };
+  if (run.scope !== undefined && run.scope !== 'full') return { exit: 1, reasons: ['scope_not_full'] };
   return { exit: 0, reasons: [] };
 }
 
@@ -95,4 +107,4 @@ function cmdVerifyCheck(args) {
   return emitExit(res.exit, `${JSON.stringify({ ok: res.exit === 0, ...res, exit: undefined })}\n`, err);
 }
 
-module.exports = { gitRaw, headSha, splitNul, diffNames, readVerifyRun, checkVerification, cmdVerifyCheck, SHA_RE };
+module.exports = { gitRaw, headSha, splitNul, diffNames, changedOutsideA1, A1_PREFIX, readVerifyRun, checkVerification, cmdVerifyCheck, SHA_RE };
