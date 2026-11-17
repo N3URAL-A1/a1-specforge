@@ -72,6 +72,38 @@
       "roadmap-gate/run-tests.sh"
     ]
   },
+  "ci_extra_jobs": {
+    "fixtures-snapshot-locale-xprov-a": {
+      "kind": "snapshot-locale",
+      "suites": [
+        "a1-xprov/run-tests.sh"
+      ]
+    },
+    "fixtures-snapshot-locale-xprov-b": {
+      "kind": "snapshot-locale",
+      "suites": [
+        "a1-xprov/run-tests-b.sh"
+      ]
+    },
+    "fixtures-snapshot-locale-xprov-c": {
+      "kind": "snapshot-locale",
+      "suites": [
+        "a1-xprov/run-tests-c.sh"
+      ]
+    },
+    "fixtures-snapshot-locale-heavy": {
+      "kind": "snapshot-locale",
+      "suites": [
+        "a1-intent/run-tests.sh",
+        "a1-ux-studio/run-tests.sh"
+      ]
+    },
+    "fixtures-snapshot-locale-rest": {
+      "kind": "snapshot-locale",
+      "suites": "rest"
+    }
+  },
+  "snapshot_incompatible": {},
   "ci_job_workers": {
     "fixtures-xprov": 3
   },
