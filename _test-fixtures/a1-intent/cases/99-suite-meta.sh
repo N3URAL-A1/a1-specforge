@@ -80,3 +80,22 @@ m5_vault_hits="$(m5_a1_writes | tr '\n' '\0' | xargs -0 grep -lF -e "$FIXTURE_SE
 m5_home_hits="$(grep -rlF -e "$FIXTURE_SECRET" "$WORK"/*/home/.a1-intents/devices.json 2>/dev/null | wc -l | tr -d ' ')"
 if [[ "$m5_vault_hits" == 0 && "$m5_files" -gt 100 && "$m5_home_hits" -gt 0 ]]; then ok "SM5 secret grep over the $m5_files intent files and result notes a1 wrote into the fixture vaults: none holds a provisioned fixture secret (the same grep finds it in $m5_home_hits devices.json files) [FR-038, FR-031]"
 else bad "SM5 secret grep over the $m5_files intent files and result notes a1 wrote into the fixture vaults: none holds a provisioned fixture secret (the same grep finds it in $m5_home_hits devices.json files) [FR-038, FR-031]" "files with a secret: $m5_vault_hits" "$(m5_a1_writes | tr '\n' '\0' | xargs -0 grep -lF -e "$FIXTURE_SECRET" -e "$FIXTURE_EXECUTOR_SECRET" 2>/dev/null | head -3)"; fi
+
+# SM6 no process of this suite outlives its cases: nothing whose command line holds the sandbox root $WORK
+# (bug 2026-11-11-intent-suite-signal-cases-aiserver: two node processes leaked on node 24 and ticked later cases).
+# The list comes from ps, WORK reaches awk through ENVIRON (not argv, so this check never matches itself);
+# this shell and its own children are excluded. A hit is recorded as a failure first, then ONLY the listed pids
+# get SIGTERM so the host stays clean; nothing is killed by pattern.
+m6_leaks() {
+  ps -eo pid=,args= | MW="$WORK" MSELF="$$" MSUB="$BASHPID" awk '
+    index($0, ENVIRON["MW"]) > 0 && $1 != ENVIRON["MSELF"] && $1 != ENVIRON["MSUB"] { print $1 }' | tr '\n' ' '
+}
+m6_none() { [[ -z "$(m6_leaks | tr -d ' ')" ]]; }
+poll_until 2 m6_none
+m6_pids="$(m6_leaks)"
+if [[ -z "${m6_pids// /}" ]]; then ok "SM6 no process whose command line holds the suite sandbox survives the cases [FR-038]"
+else
+  bad "SM6 no process whose command line holds the suite sandbox survives the cases [FR-038]" "leaked pids: $m6_pids" "$(for p in $m6_pids; do ps -o pid=,ppid=,args= -p "$p" 2>/dev/null | cut -c1-200; done)"
+  # shellcheck disable=SC2086
+  kill -TERM $m6_pids 2>/dev/null
+fi
