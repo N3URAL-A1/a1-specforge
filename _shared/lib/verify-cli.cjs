@@ -15,6 +15,7 @@ const { emitExit } = require('./emit-exit.cjs');
 const { readMd, writeMdAtomic } = require('./io-frontmatter.cjs');
 const { VerifyError, runVerify, MAX_TIMEOUT_MS } = require('./verify-run.cjs');
 const { cmdVerifyCheck } = require('./verify-check.cjs');
+const { writeReportCopy, cmdVerifyReuse } = require('./verify-reuse.cjs');
 
 const KNOWN_FLAGS = { project: 'string', base: 'string', out: 'string', 'timeout-ms': 'string', 'no-cache': 'bool', affected: 'bool' };
 const MAX_ARG_LENGTH = 4096;
@@ -69,7 +70,8 @@ function cmdVerifyRun(args) {
   try {
     record = runVerify(opts);
     const written = opts.out ? writeOut(opts.out, record) : null;
-    text = `${JSON.stringify({ ok: record.verdict === 'pass', ...record, out: written })}\n`;
+    const copy = opts.base === undefined ? writeReportCopy(opts.project, record) : null;
+    text = `${JSON.stringify({ ok: record.verdict === 'pass', ...record, out: written, report_copy: copy })}\n`;
   } catch (e) {
     if (e instanceof VerifyError) return fail(e.reason, e.message);
     return fail('internal', e.message);
@@ -81,7 +83,8 @@ function cmdVerifyRun(args) {
 function cmdVerify(sub, rest) {
   if (sub === 'run') return cmdVerifyRun(rest);
   if (sub === 'check') return cmdVerifyCheck(rest);
-  return emitExit(2, '', 'usage: a1-tools verify run [--project <dir>] [--base <ref>] [--out <VERIFICATION.md>] [--timeout-ms <n>] [--no-cache] [--affected] | verify check <VERIFICATION.md>\n');
+  if (sub === 'reuse') return cmdVerifyReuse(rest);
+  return emitExit(2, '', 'usage: a1-tools verify run [--project <dir>] [--base <ref>] [--out <VERIFICATION.md>] [--timeout-ms <n>] [--no-cache] [--affected] | verify check <VERIFICATION.md> | verify reuse --head <sha> [--project <dir>]\n');
 }
 
 module.exports = { cmdVerify, writeOut };

@@ -520,6 +520,7 @@ function runVerify(opts) {
   const baseHash = baseSha ? vb.commandHash(timed.commands, vb.envDigest((n) => gitRaw(project, ['show', `${baseSha}:${n}`]))) : hash;
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'a1-verify-'));
   const release = vb.cleanupOnExit(tmp);
+  const cleanBefore = head !== null && vb.dirtyPaths(statusPaths(project)).length === 0;
   try {
     const tBase = process.hrtime.bigint();
     const base = sel.compareBase ? runBaseSide(project, timed, baseSha, baseHash, touches, tmp, opts.noCache === true) : null;
@@ -529,6 +530,7 @@ function runVerify(opts) {
     // --base: HEAD runs from a git-archive snapshot like the base side, so git-ignored local files cannot change the verdict.
     const side = opts.base !== undefined ? vb.withSnapshot(project, head, runHead, 'head') : runHead(project);
     const headMs = msSince(tHead);
+    const cleanAfter = head !== null && vb.dirtyPaths(statusPaths(project)).length === 0;
     const skipped = base ? vb.applySkipIncrease(side.settled, base.skipped, skipIncreaseDispositions(project)) : side.settled;
     const settled = skipped.map((c) => ({ ...c, base_duration_ms: base ? base.durations.get(c.id) ?? null : null }));
     const firstConfig = cfgGuard !== null && cfgGuard.base === null && cfgGuard.head !== null;
@@ -542,7 +544,7 @@ function runVerify(opts) {
     const affectedRec = aff ? { affected: { selection: aff.selection, reason: aff.reason, paths: aff.paths, changed: aff.changed ? aff.changed.length : 0, selected: runPlan.commands.length, total: plan.commands.length, not_run: plan.commands.map((c) => c.id).filter((id) => !ranIds.has(id)).sort() } } : {};
     return {
       scope: opts.affected === true ? 'affected' : 'full', ...affectedRec,
-      ...withReasons(overall(settled, plan.noTestsReason, env.excused), extra), host: hostLib.hostRecord(opts.host), skipped_on_host: plan.skipped, ...(hints.length > 0 ? { hints } : {}), ...(env.envRed.length > 0 ? { env_red: env.envRed } : {}), ...(env.warnings.length > 0 ? { warnings: env.warnings } : {}), source: plan.source, head_sha: head, base_sha: baseSha,
+      ...withReasons(overall(settled, plan.noTestsReason, env.excused), extra), host: hostLib.hostRecord(opts.host), skipped_on_host: plan.skipped, ...(hints.length > 0 ? { hints } : {}), ...(env.envRed.length > 0 ? { env_red: env.envRed } : {}), ...(env.warnings.length > 0 ? { warnings: env.warnings } : {}), source: plan.source, head_sha: head, base_sha: baseSha, tree_clean: head === null ? null : (cleanBefore && cleanAfter),
       touches_source: touches, changed_files: changed.length, flaky: pairs(side.settled, 'flaky_ids'), pre_existing_red: pairs(side.settled, 'pre_existing_red_ids'),
       cache: { head: side.cache, base: base ? base.cache : 'none' }, ...(configChanged ? { config_changed: configChanged } : {}), ...(removed ? { suite_removed: removed } : {}), commands: settled,
       duration_ms: { head: headMs, base: baseMs, total: msSince(tTotal) },
@@ -555,4 +557,4 @@ function runVerify(opts) {
 
 if (require.main === module && process.argv[2] === GROUP_RUNNER_FLAG) groupRunnerMain();
 
-module.exports = { VerifyError, runCommand, resolveCommands, gitSource, expandEach, runVerify, commandReason, isSourcePath, MAX_TIMEOUT_MS };
+module.exports = { VerifyError, runCommand, resolveCommands, gitSource, expandEach, runVerify, commandReason, isSourcePath, statusPaths, MAX_TIMEOUT_MS };
