@@ -1,0 +1,29 @@
+{
+  "measured_sha": {
+    "full_trace": "b1ad796",
+    "retraced_vault_fallback_and_a1_verify": "287d672"
+  },
+  "date": "2026-11-17T15:43:12.301Z",
+  "load5_before": 0.26,
+  "load5_after": 1.6,
+  "note": "load5 values from /proc/loadavg before and after the 63-suite 8-job trace (host: 24 cores); full trace 2393 s wall-clock incl. serial re-runs of red ids; a1-vault-fallback and a1-verify re-traced alone after their red cause was fixed",
+  "stats": {
+    "suites": 63,
+    "keys_total": 208,
+    "keys_kept": 207,
+    "always_selected": [
+      "_test-fixtures/a1-intent/run-tests.sh",
+      "_test-fixtures/a1-probe/run-tests.sh",
+      "_test-fixtures/a1-suite-runner/run-tests.sh",
+      "_test-fixtures/a1-ux-studio/run-tests.sh"
+    ]
+  },
+  "allow_red": [
+    "_test-fixtures/a1-intent/run-tests.sh",
+    "_test-fixtures/a1-suite-runner/run-tests.sh"
+  ],
+  "empty_set_keys": 0,
+  "omitted_keys": [
+    "_test-fixtures/"
+  ]
+}
