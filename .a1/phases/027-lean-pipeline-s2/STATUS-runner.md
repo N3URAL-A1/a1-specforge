@@ -21,3 +21,12 @@ BLOCKER: a1-suite-runner D3a (parts/01-discovery.sh:45) asserts suite-groups.jso
 RED-proof 7.3-D3a ci_job_workers removed from the real suite-groups.json (scratch) -> D3a red
 ✓ D3a exact-key-set assert updated (owner exception) — 7507e11 — a1-suite-runner isolated: 569 passed, 0 failed (K5a was a flake)
 Wave 7 COMPLETE. Wave 8 must extend D3a with ci_extra_jobs,snapshot_incompatible.
+
+## Wave 8 (lane runner)
+Task 8.1 92c6752 (suite-groups.json ci_extra_jobs + snapshot_incompatible, 5 CI jobs, D3a now exact seven-key set), Task 8.2 eb81847.
+check-groups: ok, 63 suites in 2 ci jobs. test.yml diff: 0 removed lines; 5 --extra-job calls; a1-xprov 1056/0; a1-suite-runner 569/0; a1-pr-merge-check 242/0 (CU0-CU15 pass); pr-ci-evidence.cjs diff empty.
+Shard selections: xprov-a [a1-xprov/run-tests.sh], xprov-b [run-tests-b.sh], xprov-c [run-tests-c.sh], heavy [a1-intent, a1-ux-studio], rest = "rest".
+RED-proof 8.2 (a) unchanged line removed from decide (scratch) -> CU1..CU7 red
+RED-proof 8.2 (b) pathsChanged false for prefix-entry lists (scratch) -> CU1..CU7 and CU9 red
+Full suite: only a1-intent red (13 fails first run incl. T7, load 9); isolated rerun 12 fails, all within ACCEPTED-RED.
+Wave 8 COMPLETE.
