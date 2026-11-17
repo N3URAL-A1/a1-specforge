@@ -54,9 +54,24 @@ printf '%s\n' "$IDS" | node -e '
   for (const id of ids) process.stdout.write(id + "\t" + cmds.get(id).argv.join("\x1f") + "\n");
 ' "$ROOT" "$SELF" "$ONLY" > "$WORKDIR/rows" || { echo "affected-trace: cannot resolve the command argv" >&2; exit 2; }
 
+# start_of <pid>: process start time (field 22 of /proc/<pid>/stat, read after the comm), empty when gone
+start_of() { sed -n 's/^.*) //p' "/proc/$1/stat" 2>/dev/null | awk '{ print $20 }'; }
+# tracees_of <strace pid>: "<pid>:<start time>" of every process that strace currently traces
+tracees_of() {
+  local t tp
+  for t in /proc/[0-9]*; do
+    tp="$(sed -n 's/^TracerPid:[[:space:]]*//p' "$t/status" 2>/dev/null)"
+    [ "$tp" = "$1" ] && printf '%s:%s\n' "${t#/proc/}" "$(start_of "${t#/proc/}")"
+  done
+}
+# kill_tracee <pid:start>: KILL only when that pid still has the start time seen at collection (no PID reuse)
+kill_tracee() { [ -n "${1#*:}" ] && [ "$(start_of "${1%%:*}")" = "${1#*:}" ] && kill -KILL "${1%%:*}" 2>/dev/null; return 0; }
+# abort_trace <strace pid>: TERM/INT of a running trace: the tracees go first, then strace
+abort_trace() { local x; for x in $(tracees_of "$1"); do kill_tracee "$x"; done; kill "$1" 2>/dev/null; }
+
 # trace_one <id> <argv joined by 0x1f>: writes $OUT/<name>.paths and $WORKDIR/status.<name>
 trace_one() {
-  local id="$1" name argv home rc spid sink rcf waited=0 tp t leaked=""
+  local id="$1" name argv home rc spid sink rcf waited=0 t leaked=""
   name="${id//\//__}"
   IFS=$'\037' read -r -a argv <<< "$2"
   home="$(mktemp -d "${TMPDIR:-/tmp}/a1-affected-home.XXXXXX")" || return 1
@@ -68,21 +83,18 @@ trace_one() {
     bash -c '"$@"; r=$?; printf %s "$r" > "$RCF_PATH.tmp" && mv "$RCF_PATH.tmp" "$RCF_PATH"; exit "$r"' _ "${argv[@]}" \
     > "$OUT/$name.log" 2>&1 &
   spid=$!
-  trap 'kill "$spid" 2>/dev/null' TERM INT
+  trap 'abort_trace "$spid"' TERM INT
   # wait for the suite's own end (marker), for strace's end (no marker) or for the limit
   while [ ! -e "$rcf" ] && kill -0 "$spid" 2>/dev/null && [ "$waited" -lt "$LIMIT" ]; do sleep 1; waited=$((waited + 1)); done
   if [ -e "$rcf" ]; then rc="$(cat "$rcf")"; case "$rc" in ""|*[!0-9]*) rc=1 ;; esac
   elif kill -0 "$spid" 2>/dev/null; then rc=124
   else wait "$spid"; rc=$?; fi
   if kill -0 "$spid" 2>/dev/null; then
-    for t in /proc/[0-9]*; do   # leaked tracees of our own strace only
-      tp="$(sed -n 's/^TracerPid:[[:space:]]*//p' "$t/status" 2>/dev/null)"
-      [ "$tp" = "$spid" ] && leaked="$leaked ${t#/proc/}"
-    done
+    leaked="$(tracees_of "$spid")"   # leaked tracees of our own strace only
     kill -TERM "$spid" 2>/dev/null          # strace detaches every tracee and flushes the trace
     waited=0; while kill -0 "$spid" 2>/dev/null && [ "$waited" -lt 30 ]; do sleep 1; waited=$((waited + 1)); done
     kill -0 "$spid" 2>/dev/null && kill -KILL "$spid" 2>/dev/null
-    for t in $leaked; do kill -KILL "$t" 2>/dev/null; done
+    for t in $leaked; do kill_tracee "$t"; done
   fi
   wait "$spid" 2>/dev/null
   rm -rf "${home:?}"
@@ -105,7 +117,10 @@ for f in "$WORKDIR"/status.*; do
   IFS=$'\t' read -r id rc < "$f"
   if [ "$rc" != "0" ] && [ "$rc" != "124" ]; then
     argv="$(ID="$id" awk -F'\t' '$1 == ENVIRON["ID"] { print $2; exit }' "$WORKDIR/rows")"
-    trace_one "$id" "$argv"
+    ( trace_one "$id" "$argv" ) &   # subshell: its INT/TERM trap must not replace the main one
+    PIDS[${#PIDS[@]}]=$!
+    wait "$!" 2>/dev/null
+    PIDS=()
   fi
 done
 

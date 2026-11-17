@@ -195,4 +195,22 @@ if [[ "$(uname -s)" == "Linux" ]] && command -v strace >/dev/null 2>&1 && [[ "$(
   [[ "$AM7ORC" -eq 0 && -s "$AM7O/_test-fixtures__s2__run-tests.sh.paths" && ! -e "$AM7O/_test-fixtures__s1__run-tests.sh.paths" && "$AM7OMSG" == "traced 1 suites, red: none" ]] && ok "AM7d --only traces just the named suite" || bad "AM7d (rc=$AM7ORC msg=$AM7OMSG)"
   bash "$REPO_ROOT/bin/affected-trace.sh" --root "$P" --out "$AM7O" --only nope/x >/dev/null 2>&1; RC=$?; OUT=""; ERR=""; check_rc "AM7e --only with an unknown id: exit 2" 2
 fi
+# AM10: TERM while the serial re-trace of a red suite runs (review fix round): the main trap must still clean up
+# (exit 130, no work dir left) and the traced suite must not survive.
+if [[ "$(uname -s)" == "Linux" ]] && command -v strace >/dev/null 2>&1 && [[ "$(sed -n 's/^TracerPid:[[:space:]]*//p' /proc/self/status)" == "0" ]]; then
+  ampproj am10; AM10OUT="$WORK/am10-out"; AM10TMP="$WORK/am10-tmp"; AM10M="$WORK/am10.marker"; AM10F="$WORK/am10.flag"; AM10P="$WORK/am10.pid"
+  rm -rf "${AM10OUT:?}" "${AM10TMP:?}" "$AM10M" "$AM10F" "$AM10P"; mkdir -p "$AM10TMP"
+  printf 'if [ -e %q ]; then sleep 300 & echo $! > %q; touch %q; wait; fi\ntouch %q; exit 1\n' "$AM10M" "$AM10P" "$AM10F" "$AM10M" > "$P/_test-fixtures/s2/run-tests.sh"
+  TMPDIR="$AM10TMP" bash "$REPO_ROOT/bin/affected-trace.sh" --root "$P" --out "$AM10OUT" --jobs 2 >/dev/null 2>&1 &
+  AM10PID=$!; AM10I=0
+  while [[ ! -e "$AM10F" && "$AM10I" -lt 90 ]] && kill -0 "$AM10PID" 2>/dev/null; do sleep 1; AM10I=$((AM10I + 1)); done
+  kill -TERM "$AM10PID" 2>/dev/null; AM10I=0
+  while kill -0 "$AM10PID" 2>/dev/null && [[ "$AM10I" -lt 30 ]]; do sleep 1; AM10I=$((AM10I + 1)); done
+  if kill -0 "$AM10PID" 2>/dev/null; then kill -KILL "$AM10PID" 2>/dev/null; wait "$AM10PID" 2>/dev/null; AM10RC=124; else wait "$AM10PID" 2>/dev/null; AM10RC=$?; fi
+  AM10LP="$(cat "$AM10P" 2>/dev/null)"; AM10I=0
+  while [[ -n "$AM10LP" ]] && kill -0 "$AM10LP" 2>/dev/null && [[ "$AM10I" -lt 10 ]]; do sleep 1; AM10I=$((AM10I + 1)); done
+  AM10LEFT="$(ls "$AM10TMP" 2>/dev/null | grep -c '^a1-affected-trace\.')"
+  [[ -e "$AM10F" && "$AM10RC" -eq 130 && "$AM10LEFT" -eq 0 ]] && ok "AM10 TERM during the serial re-trace: exit 130 and the work dir is removed" || bad "AM10 (flag=$([[ -e "$AM10F" ]] && echo y || echo n) rc=$AM10RC workdirs=$AM10LEFT)"
+  if [[ -n "$AM10LP" ]] && kill -0 "$AM10LP" 2>/dev/null; then kill "$AM10LP" 2>/dev/null; bad "AM10b the traced suite's sleep $AM10LP outlived the TERM"; else ok "AM10b the traced suite's sleep did not outlive the TERM"; fi
+fi
 bash -n "$REPO_ROOT/bin/affected-trace.sh" && ok "AM8 bin/affected-trace.sh parses (bash -n)" || bad "AM8 bash -n"
