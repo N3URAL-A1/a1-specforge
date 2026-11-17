@@ -268,12 +268,14 @@ Record "gate-1-build: verify deferred to owner" in the wave report instead. The 
 before any merge; `pr merge-check` runs the suites itself, so a deferred gate never lets a red suite through.
 
 ```bash
-node <repo>/_shared/a1-tools.cjs verify run --project <dir> --phase <spec-id>; RC=$?
+node <repo>/_shared/a1-tools.cjs verify run --project <dir> --affected --phase <spec-id>; RC=$?
 echo "verify run exit=$RC"
 if [ $RC -ne 0 ]; then echo "STOP: gate-1-build red (verdict fail or no test command)"; fi
 ```
 
 Reading the `verify run` record (spec 028): name every `skipped_on_host` id in the wave report and never count a skipped id as a pass (it did not run on this host); name every `env_red` entry (a known environment-red suite, excused on this platform only, never on a head-only red) and every `env_red_stale` warning (`warnings[]`: the entry is green or names no command, remove it from `.a1/verify.json`); copy each `hints` line into the report. `skipped_on_host`, `env_red_stale` and `hints` do not change the exit code; an `env_red` entry takes its id out of the verdict on this platform (under `--base` only when the id is red on base and head), and a run where zero commands ran fails with `all_commands_skipped_on_host`. None of this adds a step.
+
+`--affected` runs the suites the `affected` map in `.a1/verify.json` selects for the branch's changed paths plus `smoke`; anything unmapped runs the full set. The record says `scope: "affected"` and is never Verify evidence: 06-verify.md runs the full set once. Name `affected.selection` and `affected.reason` in the wave report.
 
 Run the project-specific build command from CLAUDE.md too when it is not covered (e.g. `npm run build`).
 On build failure: wave stays `in-progress`, agent repairs it. No proceeding.
