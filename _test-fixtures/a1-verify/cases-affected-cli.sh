@@ -83,12 +83,12 @@ mkwrite() { # <record json file> <out md> [js to mutate r]
 }
 for v in a b c; do printf -- '---\nverdict: PASS\n---\nbody\n' > "$P/.a1/V$v.md"; done
 mkwrite "$WORK/ac12.json" "$P/.a1/Va.md" ""
-mkwrite "$WORK/ac12.json" "$P/.a1/Vb.md" "delete r.scope"
+mkwrite "$WORK/ac12.json" "$P/.a1/Vb.md" "delete r.scope; delete r.affected"
 mkwrite "$WORK/ac12.json" "$P/.a1/Vc.md" "r.scope='partial'"
 vcheck "$P/.a1/Va.md"
 check "AC12a a record with scope affected: refused scope_not_full" 1 'j.reasons.join()' "scope_not_full"
 vcheck "$P/.a1/Vb.md"
-check "AC12b control: the same record without scope is a legacy full record, accepted" 0 'j.ok' "true"
+check "AC12b control: the same record without scope and without affected data is a legacy full record, accepted" 0 'j.ok' "true"
 vcheck "$P/.a1/Vc.md"
 check "AC12c scope partial: refused scope_not_full" 1 'j.reasons.join()' "scope_not_full"
 vrun "$P" --no-cache --out "$P/.a1/Vd.md"

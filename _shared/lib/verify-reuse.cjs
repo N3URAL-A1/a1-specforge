@@ -12,12 +12,14 @@ const fs = require('fs');
 const path = require('path');
 const { parseFlags } = require('./io.cjs');
 const { emitExit } = require('./emit-exit.cjs');
-const { gitRaw, headSha, changedOutsideA1, SHA_RE } = require('./verify-check.cjs');
-const vb = require('./verify-base.cjs');
+const crypto = require('crypto');
+const { gitRaw, headSha, diffNames, A1_PREFIX, SHA_RE } = require('./verify-check.cjs');
 const { statusPaths } = require('./verify-run.cjs');
 
 const REPORTS_DIR = 'a1-verify-reports';
-const NAME_RE = /^[0-9a-f]{40}-(full|affected)\.json$/;
+const NAME_RE = /^[0-9a-f]{40}(-p[0-9a-f]{12})?-(full|affected)\.json$/;
+// `.a1/` files that decide what a run covers: a change to them is a code change for reuse (review fix, MAJOR 2).
+const CODE_IN_A1 = Object.freeze(['.a1/verify.json', '.a1/dispositions.json']);
 const KEEP = 100;
 const MAX_REPORT_BYTES = 2 * 1024 * 1024;
 const REUSE_WINDOW = 50;
@@ -38,6 +40,24 @@ function reportsDir(project) {
   const out = gitRaw(project, ['rev-parse', '--git-common-dir']);
   if (out === null || out.trim() === '') return null;
   return path.join(path.resolve(project, out.trim()), REPORTS_DIR);
+}
+
+/** `git rev-parse --show-prefix` of the realpath'd project ('' at the repository root), null when git cannot tell. */
+function projectPrefix(project) {
+  let real;
+  try { real = fs.realpathSync(project); } catch (_e) { return null; }
+  const out = gitRaw(real, ['rev-parse', '--show-prefix']);
+  return out === null ? null : out.trim();
+}
+
+/** File name part that binds a report to its project: '' for the repository root, `-p<12 hex>` for a subdirectory. */
+function projectKey(prefix) {
+  return prefix === '' ? '' : `-p${crypto.createHash('sha256').update(prefix).digest('hex').slice(0, 12)}`;
+}
+
+/** Paths that count as code for reuse: everything outside `.a1/` plus the command-set files inside it. */
+function isCodeForReuse(p) {
+  return !p.startsWith(A1_PREFIX) || CODE_IN_A1.includes(p);
 }
 
 function lstatOrNull(p) {
@@ -73,16 +93,19 @@ function writeReportCopy(project, record) {
   if (inIntentChild()) return { path: null };
   const dir = reportsDir(project);
   if (dir === null) return { path: null, error: 'not a git repository' };
-  const target = path.join(dir, `${record.head_sha}-${record.scope === 'affected' ? 'affected' : 'full'}.json`);
+  const prefix = projectPrefix(project);
+  if (prefix === null) return { path: null, error: 'cannot resolve the project prefix' };
+  const target = path.join(dir, `${record.head_sha}${projectKey(prefix)}-${record.scope === 'affected' ? 'affected' : 'full'}.json`);
   const st = lstatOrNull(dir);
   if (st && !st.isDirectory()) return { path: null, error: 'reports directory is a symlink or not a directory' };
+  if (st && (((st.mode & 0o777) !== DIR_MODE) || !ownedByMe(st))) return { path: null, error: 'reports directory has the wrong mode or owner (needs 0700, owned by you)' };
   let tmp = null;
   try {
     if (!st) fs.mkdirSync(dir, { mode: DIR_MODE });
     const tst = lstatOrNull(target);
     if (tst && (tst.isSymbolicLink() || !tst.isFile())) throw new Error('target is a symlink or not a regular file');
     tmp = path.join(dir, `.tmp-${process.pid}-${Date.now()}`);
-    fs.writeFileSync(tmp, `${JSON.stringify(record)}\n`, { flag: 'wx', mode: FILE_MODE });
+    fs.writeFileSync(tmp, `${JSON.stringify({ ...record, project_prefix: prefix })}\n`, { flag: 'wx', mode: FILE_MODE });
     fs.renameSync(tmp, target);
     tmp = null;
     prune(dir);
@@ -99,13 +122,14 @@ function writeReportCopy(project, record) {
  * @returns {{sha: string|null, path: string|null, a1_only_commits: number}} commits between R and HEAD in `a1_only_commits`
  */
 function findCandidate(project, head) {
+  const prefix = projectPrefix(project);
   const none = { sha: null, path: null, a1_only_commits: 0 };
   const dir = reportsDir(project);
   const list = gitRaw(project, ['rev-list', `--max-count=${REUSE_WINDOW}`, head]);
-  if (dir === null || list === null) return none;
+  if (dir === null || list === null || prefix === null) return none;
   const shas = list.split('\n').filter((s) => SHA_RE.test(s));
   for (let i = 0; i < shas.length; i++) {
-    const file = path.join(dir, `${shas[i]}-full.json`);
+    const file = path.join(dir, `${shas[i]}${projectKey(prefix)}-full.json`);
     if (lstatOrNull(file)) return { sha: shas[i], path: file, a1_only_commits: i };
   }
   return none;
@@ -128,8 +152,9 @@ function loadReport(file) {
   }
 }
 
-function reportReason(report, sha) {
+function reportReason(report, sha, prefix) {
   if (report.head_sha !== sha) return 'report_sha_mismatch';
+  if (report.project_prefix !== prefix) return 'project_mismatch';
   if (report.scope !== 'full') return 'scope_not_full';
   if (report.verdict !== 'pass') return 'verdict_not_pass';
   if (!Array.isArray(report.commands) || report.commands.length === 0) return 'no_commands';
@@ -150,15 +175,15 @@ function checkReuse(project, sha) {
   if (head !== sha) return res(1, 'head_moved', null);
   const cand = findCandidate(project, head);
   if (cand.sha === null) return res(1, 'no_report', null);
-  const outside = changedOutsideA1(project, cand.sha, 'HEAD');
-  if (outside === null) return res(1, 'report_sha_unknown', cand);
-  if (outside.length > 0) return res(1, 'code_changed_after_run', cand);
+  const names = diffNames(project, cand.sha, 'HEAD');
+  if (names === null) return res(1, 'report_sha_unknown', cand);
+  if (names.some(isCodeForReuse)) return res(1, 'code_changed_after_run', cand);
   if (!judgeDir(project)) return res(1, 'report_invalid', cand);
   const loaded = loadReport(cand.path);
   if (loaded.reason) return res(1, loaded.reason, cand);
-  const why = reportReason(loaded.report, cand.sha);
+  const why = reportReason(loaded.report, cand.sha, projectPrefix(project));
   if (why) return res(1, why, cand);
-  if (vb.dirtyPaths(statusPaths(project)).length > 0) return res(1, 'tree_dirty', cand);
+  if (statusPaths(project).some(isCodeForReuse)) return res(1, 'tree_dirty', cand);
   return res(0, null, cand);
 }
 

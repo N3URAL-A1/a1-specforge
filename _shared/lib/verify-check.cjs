@@ -89,6 +89,7 @@ function checkVerification(file) {
   const late = outside.filter((p) => p !== self);
   if (late.length > 0) return { exit: 1, reasons: ['code_changed_after_run'], changed_after_run: late.length, sample: late.slice(0, 5) };
   if (run.scope !== undefined && run.scope !== 'full') return { exit: 1, reasons: ['scope_not_full'] };
+  if (run.affected !== undefined || run.not_run !== undefined) return { exit: 1, reasons: ['scope_not_full'] };
   return { exit: 0, reasons: [] };
 }
 

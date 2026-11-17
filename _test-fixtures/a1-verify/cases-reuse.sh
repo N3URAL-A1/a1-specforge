@@ -28,8 +28,8 @@ ruproj ru1; vrun "$P" --no-cache; R1="$(rhead)"
 check "RU1 green full run: report_copy.path ends in a1-verify-reports/<sha>-full.json" 0 'j.report_copy.path.endsWith("/a1-verify-reports/"+j.head_sha+"-full.json")+"/"+j.tree_clean+"/"+j.scope' "true/true/full"
 F1="$(rdir)/$R1-full.json"
 [[ -f "$F1" && "$(modeof "$F1")" == "600" && "$(modeof "$(rdir)")" == "700" ]] && ok "RU1b copy exists, mode 600, directory mode 700" || bad "RU1b copy/modes (file=$(modeof "$F1" 2>&1) dir=$(modeof "$(rdir)" 2>&1))"
-SAME="$(node -e 'const fs=require("fs"); const a=JSON.parse(process.argv[1]); delete a.ok; delete a.out; delete a.report_copy; process.stdout.write(String(JSON.stringify(a)===JSON.stringify(JSON.parse(fs.readFileSync(process.argv[2],"utf8")))))' "$OUT" "$F1")"
-[[ "$SAME" == "true" ]] && ok "RU1c copy equals the stdout record without ok, out, report_copy" || bad "RU1c content differs"
+SAME="$(node -e 'const fs=require("fs"); const a=JSON.parse(process.argv[1]); delete a.ok; delete a.out; delete a.report_copy; const c=JSON.parse(fs.readFileSync(process.argv[2],"utf8")); const pp=c.project_prefix; delete c.project_prefix; process.stdout.write(String(pp===""&&JSON.stringify(a)===JSON.stringify(c)))' "$OUT" "$F1")"
+[[ "$SAME" == "true" ]] && ok "RU1c copy equals the stdout record without ok, out, report_copy, plus project_prefix """ || bad "RU1c content differs"
 vreuse "$P" "$R1"
 check "RU2 reuse for the same sha: exit 0, report_sha = sha, 0 later commits" 0 'j.ok+"/"+(j.report_sha==="'"$R1"'")+"/"+j.a1_only_commits+"/"+j.reason' "true/true/0/null"
 printf 'module.exports = 2;\n' > "$P/src/app.js"; g "$P" commit -q -am "code"
@@ -161,3 +161,44 @@ if [[ "$(id -u)" == "0" ]]; then ok "RU17 skipped: running as root"; else
   check "RU17b reuse with directory mode 0500: exit 1 report_invalid" 1 'j.reason' "report_invalid"
   chmod 0700 "$D"; rm -f "$WORK/ru17.red"
 fi
+
+# RU18..RU21: review fix round (a1-pr-review 2.6b)
+# RU18: a green run of a subdirectory project is not the repository's run (MAJOR 1)
+ruproj ru18; mkdir -p "$P/sub/bin" "$P/sub/.a1"; printf '#!/usr/bin/env bash\nexit 0\n' > "$P/sub/bin/ok"; chmod +x "$P/sub/bin/ok"
+printf '%s\n' "$RUCFG" > "$P/sub/.a1/verify.json"; g "$P" add -A; g "$P" commit -q -m "sub project"
+vrun "$P/sub" --no-cache; R18="$(rhead)"
+vreuse "$P/sub" "$R18"
+check "RU18 control: the subproject's own green run is reusable for that subproject" 0 'j.ok' "true"
+vreuse "$P" "$R18"
+check "RU18b the subproject's run is not reused for the repository root: exit 1" 1 'j.ok' "false"
+SUBF="$(ls "$(rdir)"/"$R18"-p*-full.json 2>/dev/null | head -1)"
+[[ -n "$SUBF" && ! -e "$(rdir)/$R18-full.json" ]] && ok "RU18c the subproject copy carries a project key in its name, no root-named file" || bad "RU18c copy name (sub=$SUBF)"
+cp "$SUBF" "$(rdir)/$R18-full.json"; chmod 600 "$(rdir)/$R18-full.json"
+vreuse "$P" "$R18"
+check "RU18d a sub record planted under the root file name: exit 1 project_mismatch" 1 'j.reason' "project_mismatch"
+
+# RU19: the command set is code for reuse (MAJOR 2)
+ruproj ru19; vrun "$P" --no-cache
+cfg '{"commands":[{"id":"u","argv":["./bin/ok"]},{"id":"bad","argv":["./bin/nope"]}]}'
+vreuse "$P" "$(rhead)"
+check "RU19 uncommitted .a1/verify.json edit: exit 1 tree_dirty" 1 'j.reason' "tree_dirty"
+g "$P" add .a1; g "$P" commit -q -m "extend command set"
+vreuse "$P" "$(rhead)"
+check "RU19b committed .a1/verify.json edit after the run: exit 1 code_changed_after_run" 1 'j.reason' "code_changed_after_run"
+ruproj ru19c; vrun "$P" --no-cache; printf '[]\n' > "$P/.a1/dispositions.json"; g "$P" add .a1; g "$P" commit -q -m "disp"
+vreuse "$P" "$(rhead)"
+check "RU19c committed .a1/dispositions.json after the run: exit 1 code_changed_after_run" 1 'j.reason' "code_changed_after_run"
+
+# RU20: an existing reports directory with a wrong mode is an error, not a silent success (MINOR)
+if [[ "$(id -u)" == "0" ]]; then ok "RU20 skipped: running as root"; else
+  ruproj ru20; vrun "$P" --no-cache; chmod 0755 "$(rdir)"
+  vrun "$P" --no-cache
+  check "RU20 reports directory mode 0755: report_copy.path null with an error" 0 '(j.report_copy.path===null)+"/"+(typeof j.report_copy.error)' "true/string"
+  chmod 0700 "$(rdir)"
+fi
+
+# RU21: verify check refuses a record that carries affected data without a scope key (MINOR)
+ruproj ru21
+printf -- '---\nverdict: PASS\nverify_run: {"verdict":"pass","head_sha":"%s","commands":[{"id":"u"}],"affected":{"selection":"mapped"}}\n---\n' "$(rhead)" > "$P/.a1/VERIFICATION.md"
+vcheck "$P/.a1/VERIFICATION.md"
+check "RU21 record with an affected key and no scope: exit 1 scope_not_full" 1 'j.reasons.join()' "scope_not_full"
