@@ -7,17 +7,18 @@
 # A trace ends when the suite's own process ends (a marker file written by the wrapper), not when every traced descendant
 # ends: a leaked background child (e.g. a watcher) would otherwise hold `strace -f` forever. Leaked tracees are detached
 # (strace gets TERM) and then killed by PID (only those whose TracerPid is our strace). --suite-timeout SECONDS (default
-# 1800) caps one suite; a suite that hits it gets status 124, is listed as "timeout: <ids>" and the script exits 1.
+# 1800) caps one suite; --only <id,...> traces just those ids (a re-trace into a fresh --out dir that the caller merges); a suite that hits it gets status 124, is listed as "timeout: <ids>" and the script exits 1.
 set -u
 
-OUT=""; JOBS=6; ROOT=""; LIMIT="${A1_AFFECTED_TRACE_TIMEOUT:-1800}"
+OUT=""; JOBS=6; ROOT=""; LIMIT="${A1_AFFECTED_TRACE_TIMEOUT:-1800}"; ONLY=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --out) OUT="${2:-}"; shift 2 || exit 2 ;;
     --jobs) JOBS="${2:-}"; shift 2 || exit 2 ;;
     --root) ROOT="${2:-}"; shift 2 || exit 2 ;;
+    --only) ONLY="${2:-}"; shift 2 || exit 2 ;;
     --suite-timeout) LIMIT="${2:-}"; shift 2 || exit 2 ;;
-    *) echo "usage: bash bin/affected-trace.sh --out <dir> [--jobs N] [--root <repo>] [--suite-timeout SECONDS]" >&2; exit 2 ;;
+    *) echo "usage: bash bin/affected-trace.sh --out <dir> [--jobs N] [--root <repo>] [--suite-timeout SECONDS] [--only <id,...>]" >&2; exit 2 ;;
   esac
 done
 [ -n "$OUT" ] || { echo "affected-trace: --out <dir> is required" >&2; exit 2; }
@@ -47,9 +48,11 @@ printf '%s\n' "$IDS" | node -e '
   let sec = {};
   try { sec = JSON.parse(fs.readFileSync(root + "/_test-fixtures/suite-groups.json", "utf8")).timings.seconds || {}; } catch (_e) { /* no timings */ }
   const w = (id) => sec[id.replace(/^_test-fixtures\//, "")] || 0;
+  const only = (process.argv[3] || "").split(",").filter(Boolean);
+  if (only.length > 0) { const bad = only.filter((o) => !ids.includes(o)); if (bad.length) { console.error("affected-trace: unknown --only id " + bad[0]); process.exit(2); } ids.splice(0, ids.length, ...only); }
   ids.sort((a, b) => w(b) - w(a) || (a < b ? -1 : 1));
   for (const id of ids) process.stdout.write(id + "\t" + cmds.get(id).argv.join("\x1f") + "\n");
-' "$ROOT" "$SELF" > "$WORKDIR/rows" || { echo "affected-trace: cannot resolve the command argv" >&2; exit 2; }
+' "$ROOT" "$SELF" "$ONLY" > "$WORKDIR/rows" || { echo "affected-trace: cannot resolve the command argv" >&2; exit 2; }
 
 # trace_one <id> <argv joined by 0x1f>: writes $OUT/<name>.paths and $WORKDIR/status.<name>
 trace_one() {

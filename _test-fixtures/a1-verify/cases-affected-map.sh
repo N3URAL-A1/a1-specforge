@@ -151,6 +151,7 @@ amrun "$P" --list-ids
 # AM7: bin/affected-trace.sh on a planted 2-suite project
 if [[ "$(uname -s)" != "Linux" ]]; then ok "AM7 skipped: host is not Linux"
 elif ! command -v strace >/dev/null 2>&1; then ok "AM7 skipped: no strace on PATH"
+elif [[ "$(sed -n 's/^TracerPid:[[:space:]]*//p' /proc/self/status)" != "0" ]]; then ok "AM7 skipped: this suite is itself traced (strace cannot nest)"
 else
   ampproj am7; AM7OUT="$WORK/am7-out"; rm -rf "${AM7OUT:?}"
   AM7MSG="$(bash "$REPO_ROOT/bin/affected-trace.sh" --root "$P" --out "$AM7OUT" --jobs 2 2>&1)"; AM7RC=$?
@@ -160,22 +161,38 @@ else
   amrun "$P" --traces "$AM7OUT"
   check "AM7c the generator accepts the measured traces" 0 'j.ok+"/"+JSON.stringify(j.affected["docs/a.md"])' 'true/["_test-fixtures/s1/"]'
 fi
+# ambounded <seconds> <cmd...>: runs the command, kills only its own PID ($!) after the limit, rc 124 then (portable: no GNU timeout)
+ambounded() {
+  local lim="$1" pid i=0; shift
+  "$@" & pid=$!
+  while kill -0 "$pid" 2>/dev/null && [[ "$i" -lt "$lim" ]]; do sleep 1; i=$((i + 1)); done
+  if kill -0 "$pid" 2>/dev/null; then kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null; return 124; fi
+  wait "$pid"
+}
 # AM9: a leaked background descendant must not block a trace; a suite over the limit is reported, never mapped
-if [[ "$(uname -s)" == "Linux" ]] && command -v strace >/dev/null 2>&1; then
+if [[ "$(uname -s)" != "Linux" ]] || ! command -v strace >/dev/null 2>&1; then ok "AM9 skipped: needs Linux and strace"
+elif [[ "$(sed -n 's/^TracerPid:[[:space:]]*//p' /proc/self/status)" != "0" ]]; then ok "AM9 skipped: this suite is itself traced (strace cannot nest)"
+else
   ampproj am9; AM9OUT="$WORK/am9-out"; AM9PID="$WORK/am9.pid"; rm -rf "${AM9OUT:?}" "$AM9PID"
   printf 'sleep 300 &\necho $! > %q\nexit 0\n' "$AM9PID" > "$P/_test-fixtures/s2/run-tests.sh"
   AM9T0=$SECONDS
-  AM9MSG="$(timeout 120 bash "$REPO_ROOT/bin/affected-trace.sh" --root "$P" --out "$AM9OUT" --jobs 2 2>&1)"; AM9RC=$?
+  AM9MSG="$(ambounded 120 bash "$REPO_ROOT/bin/affected-trace.sh" --root "$P" --out "$AM9OUT" --jobs 2 2>&1)"; AM9RC=$?
   AM9DT=$((SECONDS - AM9T0))
   [[ "$AM9RC" -eq 0 && "$AM9DT" -lt 60 && "$AM9MSG" == "traced 2 suites, red: none" && -s "$AM9OUT/_test-fixtures__s2__run-tests.sh.paths" ]] && ok "AM9 a suite that leaves a background sleep behind still finishes the trace in bounded time" || bad "AM9 (rc=$AM9RC dt=${AM9DT}s msg=$AM9MSG)"
   AM9LP="$(cat "$AM9PID" 2>/dev/null)"
   if [[ -n "$AM9LP" ]] && kill -0 "$AM9LP" 2>/dev/null; then kill "$AM9LP" 2>/dev/null; bad "AM9b the leaked sleep $AM9LP outlived the tracer"; else ok "AM9b the leaked tracee does not outlive the tracer"; fi
   printf 'sleep 300\n' > "$P/_test-fixtures/s2/run-tests.sh"; rm -rf "${AM9OUT:?}"
   AM9T0=$SECONDS
-  AM9MSG="$(timeout 120 bash "$REPO_ROOT/bin/affected-trace.sh" --root "$P" --out "$AM9OUT" --jobs 2 --suite-timeout 3 2>&1)"; AM9RC=$?
+  AM9MSG="$(ambounded 120 bash "$REPO_ROOT/bin/affected-trace.sh" --root "$P" --out "$AM9OUT" --jobs 2 --suite-timeout 3 2>&1)"; AM9RC=$?
   AM9DT=$((SECONDS - AM9T0))
   [[ "$AM9RC" -eq 1 && "$AM9DT" -lt 60 && "$AM9MSG" == *"timeout: $AMS2 "* ]] && grep -q "^$AMS2"$'\t124$' "$AM9OUT/_status.tsv" && ok "AM9c a suite over --suite-timeout: exit 1, listed as timeout, status 124" || bad "AM9c (rc=$AM9RC dt=${AM9DT}s msg=$AM9MSG)"
   amrun "$P" --traces "$AM9OUT"
   check "AM9d the generator refuses the timed-out suite (trace_red)" 1 'j.error' "trace_red"
+fi
+if [[ "$(uname -s)" == "Linux" ]] && command -v strace >/dev/null 2>&1 && [[ "$(sed -n 's/^TracerPid:[[:space:]]*//p' /proc/self/status)" == "0" ]]; then
+  ampproj am7o; AM7O="$WORK/am7o-out"; rm -rf "${AM7O:?}"
+  AM7OMSG="$(bash "$REPO_ROOT/bin/affected-trace.sh" --root "$P" --out "$AM7O" --jobs 2 --only "$AMS2" 2>&1)"; AM7ORC=$?
+  [[ "$AM7ORC" -eq 0 && -s "$AM7O/_test-fixtures__s2__run-tests.sh.paths" && ! -e "$AM7O/_test-fixtures__s1__run-tests.sh.paths" && "$AM7OMSG" == "traced 1 suites, red: none" ]] && ok "AM7d --only traces just the named suite" || bad "AM7d (rc=$AM7ORC msg=$AM7OMSG)"
+  bash "$REPO_ROOT/bin/affected-trace.sh" --root "$P" --out "$AM7O" --only nope/x >/dev/null 2>&1; RC=$?; OUT=""; ERR=""; check_rc "AM7e --only with an unknown id: exit 2" 2
 fi
 bash -n "$REPO_ROOT/bin/affected-trace.sh" && ok "AM8 bin/affected-trace.sh parses (bash -n)" || bad "AM8 bash -n"
