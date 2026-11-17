@@ -26,7 +26,7 @@ pid_gone() { [[ -n "${1:-}" && "$1" != 0 ]] || return 0; ! kill -0 "$1" 2>/dev/n
 
 # w_node_child <subshell-pid> — print the pid of the a1-tools-as.cjs node process that <subshell-pid> started.
 # Matched by command line, never by process name: node 24 reports its main thread as "MainThread", so
-# `pgrep -P <pid> node` finds nothing there (bug 2026-11-11-intent-suite-signal-cases-aiserver).
+# a pgrep name filter for "node" on the children of <pid> finds nothing there (bug 2026-11-11-intent-suite-signal-cases-aiserver).
 # Returns 1 with no output when there is no such child; callers must fail the case, never fall back to <subshell-pid>.
 w_node_child() {
   local c
