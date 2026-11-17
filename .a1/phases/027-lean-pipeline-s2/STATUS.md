@@ -156,3 +156,11 @@ RED-proof 9.1 (a) timeout_ms 7200000 -> TO4 red
 RED-proof 9.1 (a2) timeout_ms 474000 -> TO4 red
 RED-proof 9.1 (b) dead key added -> MR1 red
 RED-proof 9.1 (c) MR2 asserts subset for _shared/a1-tools.cjs -> MR2 red
+
+### Wave 9 follow-up (owner decisions 2026-11-17)
+- Task F1 89097f6: a1-suite-runner X3/X4 skip only while the suite is itself traced (`lk_traced`, TracerPid detection as in AM7/AM9). Plain run 569/0 with all 6 X3/X4 cases executed; traced run (strace -f -e trace=%file) 569/0, X4 skipped, X3 passed.
+- Task F2: re-trace with `bin/affected-trace.sh --only` of a1-suite-runner (status 0, green) and a1-intent (status 1, X11 only, trace ended normally; no leaked watcher). Merged into the full set; generator rc=0 with `--allow-red a1-intent` only.
+- Map delta: `.a1/verify.json` byte-identical to before (keys_total 208, kept 207, key-by-key ok, `verify affected-map --check` 0, check-timeout ok 427500, a1-verify 380/0). AFFECTED-MAP.json metadata updated (allow_red now a1-intent only).
+- Always-selected set did NOT change: a1-intent (allow-red), a1-probe, a1-suite-runner, a1-ux-studio. a1-suite-runner stays because its trace has one unresolvable relative path (`? statx`), the generator's second always-select rule (same for a1-probe, a1-ux-studio). Not changed (generator out of scope); owner decision needed.
+- Selection cost (sequential sum of suite timings, total 1268 s for 63 suites): always set 4 suites = 426 s (335 s without a1-suite-runner at 91 s, if it were freed). skills/a1-fix/SKILL.md 22 suites 938 s; _shared/lib/verify-affected.cjs 25 / 1188 s; bin/affected-trace.sh 20 / 1179 s; agents/*.md 14 / 682 s; _shared/a1-tools.cjs full set.
+- After runs: no `a1-tools-as.cjs` process.
