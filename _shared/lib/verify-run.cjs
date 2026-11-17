@@ -499,6 +499,7 @@ function runVerify(opts) {
   const project = fs.realpathSync(opts.project);
   if (opts.affected === true && opts.base !== undefined) throw new VerifyError('usage', '--affected cannot be combined with --base');
   const head = headSha(project);
+  const configDigest = vb.configDigest(readLockfile(project, vb.CONFIG_FILE)); // the bytes this run reads (verify reuse state rule 3)
   if (opts.base !== undefined && head === null) throw new VerifyError('base_unresolved', '--base needs a git repository with a commit');
   const baseSha = head ? resolveBase(project, opts.base) : null;
   const cfgGuard = opts.base !== undefined ? baseConfigGuard(project, baseSha, head) : null;
@@ -544,7 +545,7 @@ function runVerify(opts) {
     const affectedRec = aff ? { affected: { selection: aff.selection, reason: aff.reason, paths: aff.paths, changed: aff.changed ? aff.changed.length : 0, selected: runPlan.commands.length, total: plan.commands.length, not_run: plan.commands.map((c) => c.id).filter((id) => !ranIds.has(id)).sort() } } : {};
     return {
       scope: opts.affected === true ? 'affected' : 'full', ...affectedRec,
-      ...withReasons(overall(settled, plan.noTestsReason, env.excused), extra), host: hostLib.hostRecord(opts.host), skipped_on_host: plan.skipped, ...(hints.length > 0 ? { hints } : {}), ...(env.envRed.length > 0 ? { env_red: env.envRed } : {}), ...(env.warnings.length > 0 ? { warnings: env.warnings } : {}), source: plan.source, head_sha: head, base_sha: baseSha, tree_clean: head === null ? null : (cleanBefore && cleanAfter),
+      ...withReasons(overall(settled, plan.noTestsReason, env.excused), extra), host: hostLib.hostRecord(opts.host), skipped_on_host: plan.skipped, ...(hints.length > 0 ? { hints } : {}), ...(env.envRed.length > 0 ? { env_red: env.envRed } : {}), ...(env.warnings.length > 0 ? { warnings: env.warnings } : {}), source: plan.source, head_sha: head, config_digest: configDigest, base_sha: baseSha, tree_clean: head === null ? null : (cleanBefore && cleanAfter),
       touches_source: touches, changed_files: changed.length, flaky: pairs(side.settled, 'flaky_ids'), pre_existing_red: pairs(side.settled, 'pre_existing_red_ids'),
       cache: { head: side.cache, base: base ? base.cache : 'none' }, ...(configChanged ? { config_changed: configChanged } : {}), ...(removed ? { suite_removed: removed } : {}), commands: settled,
       duration_ms: { head: headMs, base: baseMs, total: msSince(tTotal) },

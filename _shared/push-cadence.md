@@ -60,8 +60,10 @@ node <repo>/_shared/a1-tools.cjs verify reuse --head "$(git rev-parse HEAD)"; RE
 
 Exit 0: a full, green `verify run` on a clean tree exists for this commit,
 or for an earlier commit when every commit since touches only `.a1/` (for
-example the committed VERIFICATION.md and STATUS.md) — skip the suite run
-below. Exit 1 (any reason) or 2: run the suite. Only P2 uses
+example the committed VERIFICATION.md and STATUS.md; `.a1/verify.json` and
+`.a1/dispositions.json` count as code here) — skip the suite run below. The
+report must also carry the digest of the committed `.a1/verify.json`
+(`config_mismatch` otherwise). Exit 1 (any reason) or 2: run the suite. Only P2 uses
 `verify reuse`; `pr merge-check` never does (its own rule: CI evidence,
 else a fresh run).
 

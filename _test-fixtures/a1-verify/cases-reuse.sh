@@ -29,7 +29,7 @@ check "RU1 green full run: report_copy.path ends in a1-verify-reports/<sha>-full
 F1="$(rdir)/$R1-full.json"
 [[ -f "$F1" && "$(modeof "$F1")" == "600" && "$(modeof "$(rdir)")" == "700" ]] && ok "RU1b copy exists, mode 600, directory mode 700" || bad "RU1b copy/modes (file=$(modeof "$F1" 2>&1) dir=$(modeof "$(rdir)" 2>&1))"
 SAME="$(node -e 'const fs=require("fs"); const a=JSON.parse(process.argv[1]); delete a.ok; delete a.out; delete a.report_copy; const c=JSON.parse(fs.readFileSync(process.argv[2],"utf8")); const pp=c.project_prefix; delete c.project_prefix; process.stdout.write(String(pp===""&&JSON.stringify(a)===JSON.stringify(c)))' "$OUT" "$F1")"
-[[ "$SAME" == "true" ]] && ok "RU1c copy equals the stdout record without ok, out, report_copy, plus project_prefix """ || bad "RU1c content differs"
+[[ "$SAME" == "true" ]] && ok "RU1c copy equals the stdout record without ok, out, report_copy, plus project_prefix (empty at the repository root)" || bad "RU1c content differs"
 vreuse "$P" "$R1"
 check "RU2 reuse for the same sha: exit 0, report_sha = sha, 0 later commits" 0 'j.ok+"/"+(j.report_sha==="'"$R1"'")+"/"+j.a1_only_commits+"/"+j.reason' "true/true/0/null"
 printf 'module.exports = 2;\n' > "$P/src/app.js"; g "$P" commit -q -am "code"
@@ -188,6 +188,36 @@ check "RU19b committed .a1/verify.json edit after the run: exit 1 code_changed_a
 ruproj ru19c; vrun "$P" --no-cache; printf '[]\n' > "$P/.a1/dispositions.json"; g "$P" add .a1; g "$P" commit -q -m "disp"
 vreuse "$P" "$(rhead)"
 check "RU19c committed .a1/dispositions.json after the run: exit 1 code_changed_after_run" 1 'j.reason' "code_changed_after_run"
+
+# RU19d (review round 2, MAJOR): a run made with an uncommitted verify.json edit that dropped the failing command
+# must not be reusable once the file is restored. State rule 3 (config_digest) and rule 4 (dirty command-set files).
+ruproj ru19d; stub bad "exit 1"
+cfg '{"commands":[{"id":"u","argv":["./bin/ok"]},{"id":"bad","argv":["./bin/bad"]}]}'; g "$P" add -A; g "$P" commit -q -m "two commands (bad is red)"
+cfg "$RUCFG"
+vrun "$P" --no-cache; R19D="$(rhead)"
+check "RU19d1 run with the failing command dropped (uncommitted): green, config edit visible as a dirty tree" 0 'j.verdict+"/"+j.tree_clean' "pass/false"
+g "$P" checkout -q -- .a1/verify.json
+vreuse "$P" "$R19D"
+check "RU19d2 verify.json restored to the committed two-command set: reuse exit 1" 1 'j.ok' "false"
+vrun "$P" --no-cache; check_rc "RU19d3 a real run of the committed set is red (exit 1)" 1
+# a record whose config_digest differs from the committed file (clean tree, planted record) is config_mismatch
+ruproj ru19e; vrun "$P" --no-cache; R19E="$(rhead)"; F="$(rdir)/$R19E-full.json"; ORIG="$WORK/ru19e.orig"; cp "$F" "$ORIG"
+plant 'r.config_digest="0".repeat(64)'; vreuse "$P" "$R19E"
+check "RU19e a record with another config_digest: exit 1 config_mismatch" 1 'j.reason' "config_mismatch"
+plant 'delete r.config_digest'; vreuse "$P" "$R19E"
+check "RU19f a record without config_digest: exit 1 config_mismatch" 1 'j.reason' "config_mismatch"
+plant ''; vreuse "$P" "$R19E"
+check "RU19g control: the untouched record is reusable" 0 'j.ok' "true"
+# dispositions.json uncommitted at run time
+ruproj ru19h; printf '[]\n' > "$P/.a1/dispositions.json"
+vrun "$P" --no-cache; R19H="$(rhead)"
+check "RU19h run with an untracked .a1/dispositions.json: tree_clean false" 0 'j.tree_clean' "false"
+rm -f "$P/.a1/dispositions.json"
+vreuse "$P" "$R19H"
+check "RU19i dispositions.json gone again: exit 1 run_tree_dirty" 1 'j.reason' "run_tree_dirty"
+# another .a1/ file does not matter at run time
+ruproj ru19j; printf 'x\n' > "$P/.a1/note.md"; vrun "$P" --no-cache
+check "RU19j an untracked .a1/note.md at run time: tree_clean still true" 0 'j.tree_clean' "true"
 
 # RU20: an existing reports directory with a wrong mode is an error, not a silent success (MINOR)
 if [[ "$(id -u)" == "0" ]]; then ok "RU20 skipped: running as root"; else

@@ -2,24 +2,37 @@
 
 // Report copy and `verify reuse` (spec 027 slice 2, FR-008, D7/D8).
 //   - `writeReportCopy` leaves every `verify run` record (without --base) under
-//     `<git-common-dir>/a1-verify-reports/<head_sha>-<scope>.json`, mode 0600 in a 0700 directory.
-//   - `verify reuse --head <sha>` lets the local pre-push run (push-cadence P2) skip a run when the newest full
-//     report among the last 50 commits is green and every later commit touches only `.a1/` (the `verify check`
-//     rule, one shared helper). Read-only; merge-check never calls it.
-// Exit 0 reusable / 1 not reusable (reason) / 2 usage.
+//     `<git-common-dir>/a1-verify-reports/<head_sha>[-p<prefix hash>]-<scope>.json`, mode 0600 in a 0700 directory.
+//   - `verify reuse --head <sha>` lets the local pre-push run (push-cadence P2) skip a run (read-only; merge-check never calls it).
+//
+// STATE MODEL. A report copy is reusable for (project P, head H) iff ALL of these hold; `reportReason` is the only
+// place that decides, and it checks them in this order (the first failing one names the reason):
+//   1. Commit: record.head_sha == H, and no commit between the run's commit and H changed code. Code = everything
+//      outside `.a1/` plus `.a1/verify.json` and `.a1/dispositions.json` (CODE_IN_A1, checked in checkReuse because it
+//      needs the diff; a `.a1/`-only commit of anything else, e.g. VERIFICATION.md or STATUS.md, is fine). Candidate:
+//      the newest `<R>-full.json` among the last 50 commits.        reasons: head_moved, code_changed_after_run, report_sha_mismatch
+//   2. Project: record.project_prefix == `git rev-parse --show-prefix` of P (the file name carries the same key).
+//                                                                       reason: project_mismatch
+//   3. Command set: record.config_digest == sha256 of `git show H:<prefix>.a1/verify.json` ('none' when H has none).
+//      The run records the digest of the bytes it actually read, so a run made with an uncommitted edit differs from
+//      the committed file; a record without a digest is refused too.   reason: config_mismatch
+//   4. Clean tree: tree_clean was true at run time (before and after; verify-base dirtyPaths counts
+//      CODE_IN_A1 as code, so an uncommitted verify.json or dispositions.json at run time makes it false) and no code
+//      path is dirty now.                                               reasons: run_tree_dirty, tree_dirty
+// Besides: the record is a regular 0600 file of ours in a 0700 directory, scope full, verdict pass, commands present,
+// nothing skipped on the host, no env_red excuse. Exit 0 reusable / 1 not reusable (reason) / 2 usage.
 
 const fs = require('fs');
 const path = require('path');
 const { parseFlags } = require('./io.cjs');
 const { emitExit } = require('./emit-exit.cjs');
 const crypto = require('crypto');
-const { gitRaw, headSha, diffNames, A1_PREFIX, SHA_RE } = require('./verify-check.cjs');
+const { gitRaw, headSha, diffNames, SHA_RE } = require('./verify-check.cjs');
 const { statusPaths } = require('./verify-run.cjs');
+const { isCodeForReuse, configDigest } = require('./verify-base.cjs');
 
 const REPORTS_DIR = 'a1-verify-reports';
 const NAME_RE = /^[0-9a-f]{40}(-p[0-9a-f]{12})?-(full|affected)\.json$/;
-// `.a1/` files that decide what a run covers: a change to them is a code change for reuse (review fix, MAJOR 2).
-const CODE_IN_A1 = Object.freeze(['.a1/verify.json', '.a1/dispositions.json']);
 const KEEP = 100;
 const MAX_REPORT_BYTES = 2 * 1024 * 1024;
 const REUSE_WINDOW = 50;
@@ -53,11 +66,6 @@ function projectPrefix(project) {
 /** File name part that binds a report to its project: '' for the repository root, `-p<12 hex>` for a subdirectory. */
 function projectKey(prefix) {
   return prefix === '' ? '' : `-p${crypto.createHash('sha256').update(prefix).digest('hex').slice(0, 12)}`;
-}
-
-/** Paths that count as code for reuse: everything outside `.a1/` plus the command-set files inside it. */
-function isCodeForReuse(p) {
-  return !p.startsWith(A1_PREFIX) || CODE_IN_A1.includes(p);
 }
 
 function lstatOrNull(p) {
@@ -152,16 +160,24 @@ function loadReport(file) {
   }
 }
 
-function reportReason(report, sha, prefix) {
-  if (report.head_sha !== sha) return 'report_sha_mismatch';
-  if (report.project_prefix !== prefix) return 'project_mismatch';
+/** State rules 2-4 (rule 1 is the candidate search plus the diff in checkReuse), then the record's own claims. Null = reusable. */
+function reportReason(report, ctx) {
+  if (report.head_sha !== ctx.sha) return 'report_sha_mismatch';
+  if (report.project_prefix !== ctx.prefix) return 'project_mismatch';
+  if (typeof report.config_digest !== 'string' || report.config_digest !== ctx.configDigest) return 'config_mismatch';
   if (report.scope !== 'full') return 'scope_not_full';
   if (report.verdict !== 'pass') return 'verdict_not_pass';
   if (!Array.isArray(report.commands) || report.commands.length === 0) return 'no_commands';
   if (Array.isArray(report.skipped_on_host) ? report.skipped_on_host.length > 0 : report.skipped_on_host !== undefined) return 'commands_skipped';
   if (Array.isArray(report.env_red) ? report.env_red.length > 0 : report.env_red !== undefined) return 'env_red_excused';
   if (report.tree_clean !== true) return 'run_tree_dirty';
+  if (ctx.dirtyNow) return 'tree_dirty';
   return null;
+}
+
+/** sha256 of the committed `<prefix>.a1/verify.json` at `sha` ('none' when absent there). */
+function committedConfigDigest(project, sha, prefix) {
+  return configDigest(gitRaw(project, ['show', `${sha}:${prefix}.a1/verify.json`]));
 }
 
 /**
@@ -181,10 +197,11 @@ function checkReuse(project, sha) {
   if (!judgeDir(project)) return res(1, 'report_invalid', cand);
   const loaded = loadReport(cand.path);
   if (loaded.reason) return res(1, loaded.reason, cand);
-  const why = reportReason(loaded.report, cand.sha, projectPrefix(project));
-  if (why) return res(1, why, cand);
-  if (statusPaths(project).some(isCodeForReuse)) return res(1, 'tree_dirty', cand);
-  return res(0, null, cand);
+  const prefix = projectPrefix(project);
+  const why = reportReason(loaded.report, {
+    sha: cand.sha, prefix, configDigest: committedConfigDigest(project, head, prefix), dirtyNow: statusPaths(project).some(isCodeForReuse),
+  });
+  return why ? res(1, why, cand) : res(0, null, cand);
 }
 
 function usage(msg) {

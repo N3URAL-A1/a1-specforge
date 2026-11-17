@@ -214,3 +214,19 @@ if [[ "$(uname -s)" == "Linux" ]] && command -v strace >/dev/null 2>&1 && [[ "$(
   if [[ -n "$AM10LP" ]] && kill -0 "$AM10LP" 2>/dev/null; then kill "$AM10LP" 2>/dev/null; bad "AM10b the traced suite's sleep $AM10LP outlived the TERM"; else ok "AM10b the traced suite's sleep did not outlive the TERM"; fi
 fi
 bash -n "$REPO_ROOT/bin/affected-trace.sh" && ok "AM8 bin/affected-trace.sh parses (bash -n)" || bad "AM8 bash -n"
+
+# AM11: kill_tracee only kills the process whose start time matches the one seen at collection (PID reuse guard).
+# bin/affected-trace.sh is sourced in a subshell (it defines the helpers and returns). Only the sleep started here is killed.
+AM11OUT="$(
+  set +u; . "$REPO_ROOT/bin/affected-trace.sh" 2>/dev/null
+  sleep 300 & SP=$!
+  trap 'kill "$SP" 2>/dev/null' EXIT
+  ST="$(start_of "$SP")"
+  live() { sleep 0.3; case "$(sed -n 's/^State:[[:space:]]*\(.\).*/\1/p' "/proc/$SP/status" 2>/dev/null)" in R|S|D) return 0 ;; *) return 1 ;; esac; }  # a killed, unreaped child is a zombie (Z)
+  [[ -n "$ST" ]] || { echo "nostart"; exit 0; }
+  kill_tracee "$SP:"; live && A=alive || A=dead
+  kill_tracee "$SP:$((ST + 1))"; live && B=alive || B=dead
+  kill_tracee "$SP:$ST"; live && C=alive || C=dead
+  echo "$A/$B/$C"
+)"
+[[ "$AM11OUT" == "alive/alive/dead" ]] && ok "AM11 kill_tracee: empty or wrong start time leaves the process alone, the right one kills it" || bad "AM11 kill_tracee guard (got=$AM11OUT)"

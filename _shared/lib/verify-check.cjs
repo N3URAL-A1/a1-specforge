@@ -1,7 +1,7 @@
 'use strict';
 
 // `verify check <VERIFICATION.md>` (spec 017 FR-018) plus the small git helpers
-// `verify run` shares with it. A VERIFICATION.md claiming PASS is refused when
+// `verify run` and `verify reuse` use. A VERIFICATION.md claiming PASS is refused when
 //   - `verify_run` is missing or unparsable,
 //   - `verify_run.verdict` is not `pass`,
 //   - `head_sha` is unknown to git (hand-edited),
@@ -9,7 +9,8 @@
 //     `head_sha` and HEAD (code changed after the run; Q12: committing the
 //     VERIFICATION.md alone does not trip it), or
 //   - `verify_run.scope` is present and not `full` (an `--affected` record; a
-//     record without `scope` predates the field and is accepted).
+//     record without `scope` predates the field and is accepted), or the
+//     record carries `affected` / `not_run` data (an affected run, refused as scope_not_full).
 // Exit 0 ok (or the file does not claim PASS) / 1 refused / 2 usage or unreadable.
 
 const fs = require('fs');
@@ -49,7 +50,8 @@ function diffNames(cwd, from, to) {
 }
 
 /**
- * Paths changed between two commits that are not under `.a1/` (the one rule `verify check` and `verify reuse` share).
+ * Paths changed between two commits that are not under `.a1/` (the rule `verify check` uses; `verify reuse` also counts
+ * `.a1/verify.json` and `.a1/dispositions.json` as code, see verify-reuse.cjs).
  * @returns {string[]|null} repo-relative paths outside `.a1/`, or null when git cannot tell
  */
 function changedOutsideA1(cwd, from, to) {

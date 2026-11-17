@@ -10,6 +10,24 @@
 # 1800) caps one suite; --only <id,...> traces just those ids (a re-trace into a fresh --out dir that the caller merges); a suite that hits it gets status 124, is listed as "timeout: <ids>" and the script exits 1.
 set -u
 
+# start_of <pid>: process start time (field 22 of /proc/<pid>/stat, read after the comm), empty when gone
+start_of() { sed -n 's/^.*) //p' "/proc/$1/stat" 2>/dev/null | awk '{ print $20 }'; }
+# tracees_of <strace pid>: "<pid>:<start time>" of every process that strace currently traces
+tracees_of() {
+  local t tp
+  for t in /proc/[0-9]*; do
+    tp="$(sed -n 's/^TracerPid:[[:space:]]*//p' "$t/status" 2>/dev/null)"
+    [ "$tp" = "$1" ] && printf '%s:%s\n' "${t#/proc/}" "$(start_of "${t#/proc/}")"
+  done
+}
+# kill_tracee <pid:start>: KILL only when that pid still has the start time seen at collection (no PID reuse)
+kill_tracee() { [ -n "${1#*:}" ] && [ "$(start_of "${1%%:*}")" = "${1#*:}" ] && kill -KILL "${1%%:*}" 2>/dev/null; return 0; }
+# abort_trace <strace pid>: TERM/INT of a running trace: the tracees go first, then strace
+abort_trace() { local x; for x in $(tracees_of "$1"); do kill_tracee "$x"; done; kill "$1" 2>/dev/null; }
+
+# Sourced (the fixture tests start_of/tracees_of/kill_tracee): define the helpers, run nothing.
+if [ "${BASH_SOURCE[0]}" != "$0" ]; then return 0 2>/dev/null; fi
+
 OUT=""; JOBS=6; ROOT=""; LIMIT="${A1_AFFECTED_TRACE_TIMEOUT:-1800}"; ONLY=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -53,21 +71,6 @@ printf '%s\n' "$IDS" | node -e '
   ids.sort((a, b) => w(b) - w(a) || (a < b ? -1 : 1));
   for (const id of ids) process.stdout.write(id + "\t" + cmds.get(id).argv.join("\x1f") + "\n");
 ' "$ROOT" "$SELF" "$ONLY" > "$WORKDIR/rows" || { echo "affected-trace: cannot resolve the command argv" >&2; exit 2; }
-
-# start_of <pid>: process start time (field 22 of /proc/<pid>/stat, read after the comm), empty when gone
-start_of() { sed -n 's/^.*) //p' "/proc/$1/stat" 2>/dev/null | awk '{ print $20 }'; }
-# tracees_of <strace pid>: "<pid>:<start time>" of every process that strace currently traces
-tracees_of() {
-  local t tp
-  for t in /proc/[0-9]*; do
-    tp="$(sed -n 's/^TracerPid:[[:space:]]*//p' "$t/status" 2>/dev/null)"
-    [ "$tp" = "$1" ] && printf '%s:%s\n' "${t#/proc/}" "$(start_of "${t#/proc/}")"
-  done
-}
-# kill_tracee <pid:start>: KILL only when that pid still has the start time seen at collection (no PID reuse)
-kill_tracee() { [ -n "${1#*:}" ] && [ "$(start_of "${1%%:*}")" = "${1#*:}" ] && kill -KILL "${1%%:*}" 2>/dev/null; return 0; }
-# abort_trace <strace pid>: TERM/INT of a running trace: the tracees go first, then strace
-abort_trace() { local x; for x in $(tracees_of "$1"); do kill_tracee "$x"; done; kill "$1" 2>/dev/null; }
 
 # trace_one <id> <argv joined by 0x1f>: writes $OUT/<name>.paths and $WORKDIR/status.<name>
 trace_one() {
