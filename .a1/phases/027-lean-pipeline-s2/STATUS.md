@@ -141,3 +141,18 @@ Wave 8 COMPLETE.
 | verify (waves 1-4) | f5591fd | verify run: red only a1-intent; a1-vault-cockpit green; a1-intent 1109/10, outside [] |
 
 Load flakes (a1-intent, outside ACCEPTED-RED, all green on a quiet-host rerun): T19 (wave 1; wave 8 twice at load 7.5/8.3, green at load 1.0), T13 and B9 (wave 3), T7 and B9 (wave 4). Load came from other sessions on the host. ACCEPTED-RED.md unchanged.
+
+## Wave 9 — Trace, generate, config, real-tree fixtures
+Completed: 2026-11-17
+
+Step 1 (owner-approved deviation, GOAL.md Decisions 2026-11-17): `bin/affected-trace.sh` ends a trace at the suite's own exit (wrapper writes a marker file; strace gets TERM and detaches, leaked tracees of our own strace are killed by PID), `--suite-timeout` (default 1800 s) reports a suite over the limit as status 124 + `timeout:` line + exit 1 (never mapped; generator gives `trace_red`), `--only <id,...>` for single-suite re-traces. Commit b1ad796, follow-up (portable bounded run in AM9, AM7/AM9 skip when the suite is itself traced, `--only` cases AM7d/AM7e) in the next commit.
+RED-proof 9.0 wait change reverted (scratch) -> AM9 red (rc=124), AM9c red
+Trace: 63 suites, `--jobs 8`, 2393 s wall-clock (incl. serial re-runs of red ids), load5 before 0.26, after 1.60. No leaked `a1-tools-as.cjs` watcher survives (checked after the runs: none).
+Reds after serial re-run: a1-intent (known env-red, 13 fails, allow-red), a1-suite-runner (X3/X4 SIGINT within 10 s, deterministic under strace; allow-red, OWNER QUESTION), a1-vault-fallback (L1b: my own `timeout` use in AM9, fixed, re-traced green), a1-verify (AM7/AM9 cannot run under strace + TO4/MR* needed the config; fixed by skip-when-traced, re-traced alone after the interim config, green).
+Generator: rc=0 with `--allow-red a1-intent,a1-suite-runner`. keys_total 208, kept 207 (omitted: `_test-fixtures/`, full set), always_selected: a1-intent, a1-probe, a1-suite-runner, a1-ux-studio. Empty-set keys (no non-always suite reads them): 0.
+`.a1/verify.json`: affected (207 keys), smoke (3), timeout_ms 427500, ci_evidence.checks (9). Key-by-key check ok:true (exit 0), red run on the unedited copy ok:false (changed []) exit 1. check-timeout.cjs exit 0. `verify affected-map --check` exit 0.
+Task 9.1 commit 797475b. a1-verify suite: 380 passed, 0 failed.
+RED-proof 9.1 (a) timeout_ms 7200000 -> TO4 red
+RED-proof 9.1 (a2) timeout_ms 474000 -> TO4 red
+RED-proof 9.1 (b) dead key added -> MR1 red
+RED-proof 9.1 (c) MR2 asserts subset for _shared/a1-tools.cjs -> MR2 red
