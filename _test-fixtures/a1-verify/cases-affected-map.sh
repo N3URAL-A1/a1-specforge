@@ -160,4 +160,22 @@ else
   amrun "$P" --traces "$AM7OUT"
   check "AM7c the generator accepts the measured traces" 0 'j.ok+"/"+JSON.stringify(j.affected["docs/a.md"])' 'true/["_test-fixtures/s1/"]'
 fi
+# AM9: a leaked background descendant must not block a trace; a suite over the limit is reported, never mapped
+if [[ "$(uname -s)" == "Linux" ]] && command -v strace >/dev/null 2>&1; then
+  ampproj am9; AM9OUT="$WORK/am9-out"; AM9PID="$WORK/am9.pid"; rm -rf "${AM9OUT:?}" "$AM9PID"
+  printf 'sleep 300 &\necho $! > %q\nexit 0\n' "$AM9PID" > "$P/_test-fixtures/s2/run-tests.sh"
+  AM9T0=$SECONDS
+  AM9MSG="$(timeout 120 bash "$REPO_ROOT/bin/affected-trace.sh" --root "$P" --out "$AM9OUT" --jobs 2 2>&1)"; AM9RC=$?
+  AM9DT=$((SECONDS - AM9T0))
+  [[ "$AM9RC" -eq 0 && "$AM9DT" -lt 60 && "$AM9MSG" == "traced 2 suites, red: none" && -s "$AM9OUT/_test-fixtures__s2__run-tests.sh.paths" ]] && ok "AM9 a suite that leaves a background sleep behind still finishes the trace in bounded time" || bad "AM9 (rc=$AM9RC dt=${AM9DT}s msg=$AM9MSG)"
+  AM9LP="$(cat "$AM9PID" 2>/dev/null)"
+  if [[ -n "$AM9LP" ]] && kill -0 "$AM9LP" 2>/dev/null; then kill "$AM9LP" 2>/dev/null; bad "AM9b the leaked sleep $AM9LP outlived the tracer"; else ok "AM9b the leaked tracee does not outlive the tracer"; fi
+  printf 'sleep 300\n' > "$P/_test-fixtures/s2/run-tests.sh"; rm -rf "${AM9OUT:?}"
+  AM9T0=$SECONDS
+  AM9MSG="$(timeout 120 bash "$REPO_ROOT/bin/affected-trace.sh" --root "$P" --out "$AM9OUT" --jobs 2 --suite-timeout 3 2>&1)"; AM9RC=$?
+  AM9DT=$((SECONDS - AM9T0))
+  [[ "$AM9RC" -eq 1 && "$AM9DT" -lt 60 && "$AM9MSG" == *"timeout: $AMS2 "* ]] && grep -q "^$AMS2"$'\t124$' "$AM9OUT/_status.tsv" && ok "AM9c a suite over --suite-timeout: exit 1, listed as timeout, status 124" || bad "AM9c (rc=$AM9RC dt=${AM9DT}s msg=$AM9MSG)"
+  amrun "$P" --traces "$AM9OUT"
+  check "AM9d the generator refuses the timed-out suite (trace_red)" 1 'j.error' "trace_red"
+fi
 bash -n "$REPO_ROOT/bin/affected-trace.sh" && ok "AM8 bin/affected-trace.sh parses (bash -n)" || bad "AM8 bash -n"
