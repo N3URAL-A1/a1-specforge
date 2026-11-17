@@ -203,3 +203,9 @@ ACCEPTED-RED lines collected: lane merges (a1-intent 12/12/10 fails, subset), lo
 ### Owner steps
 - Decide the narrowing miss (NARROWING.json): options are a smaller `a1-xprov` mapping (harness change, spec rules it out), freeing a1-suite-runner (generator change, slice 3), or a new pass line.
 - Push, PR, Samuel + Reinhard review, CI V13 and the merge-check long path stay owner/orchestrator steps (nothing pushed here).
+
+### Wave 10 orchestrator gates (2026-11-17)
+- realpath-check and test-fidelity (`--diff-base b1338d8`): exit 0. No leftover node stub processes (`ps` shows none).
+- `verify run` not repeated: Wave 10 changes only `NARROWING.json`, `replay-narrowing.cjs` and this file (no suite reads them); Erik's full `bin/run-suites.sh` on this tree had a1-intent X11 as its only red (inside the narrowed list).
+- vault sync `--phases`: exit 0.
+- Narrowing miss: decided in GOAL.md (2026-11-17, threshold kept, SC-6 not met, reduction to slice 3).
