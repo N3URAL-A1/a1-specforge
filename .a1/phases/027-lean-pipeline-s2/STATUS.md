@@ -164,3 +164,42 @@ RED-proof 9.1 (c) MR2 asserts subset for _shared/a1-tools.cjs -> MR2 red
 - Always-selected set did NOT change: a1-intent (allow-red), a1-probe, a1-suite-runner, a1-ux-studio. a1-suite-runner stays because its trace has one unresolvable relative path (`? statx`), the generator's second always-select rule (same for a1-probe, a1-ux-studio). Not changed (generator out of scope); owner decision needed.
 - Selection cost (sequential sum of suite timings, total 1268 s for 63 suites): always set 4 suites = 426 s (335 s without a1-suite-runner at 91 s, if it were freed). skills/a1-fix/SKILL.md 22 suites 938 s; _shared/lib/verify-affected.cjs 25 / 1188 s; bin/affected-trace.sh 20 / 1179 s; agents/*.md 14 / 682 s; _shared/a1-tools.cjs full set.
 - After runs: no `a1-tools-as.cjs` process.
+
+## Wave 10 — Integration gate, rehearsal, narrowing evidence
+Completed: 2026-11-17 (Task 10.1 PARTIAL: narrowing pass line missed, STOP to owner per D17)
+
+| Step | Result |
+|---|---|
+| 2 carry-over | RESEARCH, MAP, PLAN, AUDIT already tracked in the worktree and byte-identical (`cmp -s`) to the primary checkout: nothing to copy, no commit |
+| 3-4 `bash bin/run-suites.sh` (LANG=en_US.UTF-8, workers 6, 315 s wall) | a1-intent 1119/1 failed: X11 only (inside the narrowed list X11, B5). a1-suite-runner K5c red once under load; isolated rerun 569/0 (load flake, same family as K5a in Wave 7). a1-vault-cockpit green. No other red. No leftover `stub/a1-tools-as` process |
+| 5 snapshot rehearsal (no `.git`, native locale header present in all) | xprov-a rc=0 215 s, xprov-b rc=0 222 s, xprov-c rc=0 212 s, heavy rc=1 278 s (a1-intent X11 only), rest rc=1 115 s (a1-suite-runner X3/X4 at load ~6.5; rerun alone in the snapshot 569/0). `A1_XPROV_ONLY` count 0, no `PARTIAL RUN` line in the xprov shards |
+| 5b `LC_ALL= taskset -c 0-3 run-suites.sh --job fixtures-xprov` | workers: 3, rc=0, 235 s (plan-time single run-tests.sh: 319 s) |
+| 6 checks | workflow lint 0, lane-split check 0, plan depth-check 0, `--check-groups` 0, verify-install-sync 0, `gates lint` 0 (without `--phase`; it takes none), `verify affected-map --check` 0 (without `--phase`; flag not accepted: rc=2 with it) |
+| 7 deleted-assert scan | sum 2, not 0: `a1-suite-runner/parts/01-discovery.sh` 1 line (D3a key-set, owner exception 7507e11) and `parts/07-interrupt.sh` 1 line (X3/X4 traced-skip, owner decision 2026-11-17, 89097f6). a1-xprov diff names exactly `run-tests.sh` and `run-tests-c.sh`; every `run-tests.sh` hunk starts at old line 417-443 |
+| 8 size caps | max `_shared/lib` file 560 lines (verify-run.cjs); bin/run-suites.sh 756 |
+| 9 merge-check protection | diff of pr-merge-check, verify-base, pr-ci-evidence, verify-host is empty |
+
+### Narrowing (D17) — PASS LINE MISSED, owner decision
+`replay-narrowing.cjs` (82 lines) over the 25 first-parent commits ending 45ee7f1, 62 baseline ids:
+- **narrowed 16/25** (line >= 12: met), **mean selected 1463.5 s of 1511 s** (line <= 1306: MISSED), pass=false, exit 1. Deterministic (second run byte-identical).
+- Narrowed commits only: mean 1436.7 s (1364.8 .. 1510.9 s). All 16 select a1-xprov (622 s); with the always-selected a1-intent (289), a1-ux-studio (249), a1-suite-runner (91), a1-probe (51) the floor of a narrowed run is about 1300 s.
+- Full fallbacks (9): runner_or_config_changed 7, unmapped_path 1 (CONVENTIONS.md), path_deleted 1.
+- Plan-time estimate (V10): 17/25, mean 1244 s (with a1-intent always). Measured is worse by +219 s: a1-xprov is mapped to nearly every path class (docs/product, .a1/, release files), and a1-suite-runner stays always-selected (Wave 9 decision).
+- Script note: selection plan ids = the 62 baseline ids plus the current `a1-xprov/run-tests*.sh` runners. With baseline ids only, `run-tests-c.sh` (a selector in the map) made 14 commits `selector_unknown` (2/25); seconds still count baseline ids only (D17 xprov rule). Thresholds, map and range were not edited.
+- Red run (map-less config): narrowed 0/25, 1511 s, rc=1. Not committed.
+- Live sample: P_KEY `skills/a1-fix/`; change set asserted exactly `skills/a1-fix/SKILL.md` (TEST_OK); `verify run --affected`: scope affected, `affected.selection` subset, reason mapped, selected 22 / total 63, 41 not run, `duration_ms.total` 1470092 (serial; only a1-intent X11 red).
+- Commit: 21dc056 (`docs(027-s2): narrowing replay and measured result`).
+
+### RED-proof census
+Per task, lines in this file: 1.1 5, 2.1 6, 3.1 8, 4.1 5, 6.1 4 (one combined line, a-d), 7.1 1, 7.2 8, 7.3 3, 8.2 2, 9.1 4 = 46. Extra lines beyond the 46: 7.3-D3a, 9.0.
+ACCEPTED-RED lines collected: lane merges (a1-intent 12/12/10 fails, subset), load flakes T19, T13, B9, T7, B9 (green on quiet rerun), Wave 8 a1-intent 12 fails within the set; from the 2026-11-17 narrowing: X11 only (+ B5 never seen in Wave 10).
+
+### Deviations
+- [Rule 4-adjacent] Narrowing pass line missed (see above): reported as STOP, not tuned.
+- `gates lint` and `verify affected-map --check` run without `--phase` (the CLIs do not take it).
+- Carry-over commit not created: the four artifacts were already tracked and identical.
+- Deleted-assert sum 2 instead of 0 (two owner-sanctioned edits above).
+
+### Owner steps
+- Decide the narrowing miss (NARROWING.json): options are a smaller `a1-xprov` mapping (harness change, spec rules it out), freeing a1-suite-runner (generator change, slice 3), or a new pass line.
+- Push, PR, Samuel + Reinhard review, CI V13 and the merge-check long path stay owner/orchestrator steps (nothing pushed here).
