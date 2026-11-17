@@ -138,6 +138,6 @@ Wave 8 COMPLETE.
 |---|---|---|
 | lint (waves 5-6) | 08cb31d | verify run: red only a1-intent + a1-vault-cockpit (accepted); a1-intent 1107/12, outside [] |
 | runner (waves 7-8) | a4184f2 | verify run: red only a1-intent; a1-vault-cockpit green; a1-intent 1107/12, outside [] |
-| verify (waves 1-4) | f5591fd | pending |
+| verify (waves 1-4) | f5591fd | verify run: red only a1-intent; a1-vault-cockpit green; a1-intent 1109/10, outside [] |
 
 Load flakes (a1-intent, outside ACCEPTED-RED, all green on a quiet-host rerun): T19 (wave 1; wave 8 twice at load 7.5/8.3, green at load 1.0), T13 and B9 (wave 3), T7 and B9 (wave 4). Load came from other sessions on the host. ACCEPTED-RED.md unchanged.
