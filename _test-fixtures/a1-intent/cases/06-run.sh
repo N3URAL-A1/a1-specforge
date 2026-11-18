@@ -438,9 +438,14 @@ if [[ "$x10a" == "1 claimed 0 busy " && "$x10c" == "1 claimed 0 busy" && "$x10b"
 else bad "X10 live same-host lock -> project_busy, stays claimed, 0 spawns, executor lock released; dead pid of a FOREIGN host -> project_busy; dead pid of this host -> reclaimed, runs, lock released [FR-024]" "live: '$x10a' foreign: '$x10c' dead: '$x10b'" "out: ${OUT:0:200}"; fi
 
 # ---------- X11: spawn error (no claude on PATH) ----------
+# The PATH holds sandbox symlinks only, never a system dir: a host may install
+# claude into /usr/bin (aiserver, global npm), and /bin resolves to it via merged
+# /usr. node runs the executor; git is resolved once claude is found (X11b).
 mkdir -p "$SB/nobin"
 ln -sf "$W6_NODE" "$SB/nobin/node"
-x11_path="$SB/nobin:/usr/bin:/bin"
+x11_git="$(command -v git)"
+[[ -n "$x11_git" ]] && ln -sf "$x11_git" "$SB/nobin/git"
+x11_path="$SB/nobin"
 if [[ -z "$(PATH="$x11_path" command -v claude)" ]]; then
   w6_claim action=progress
   HOME="$FHOME" A1_VAULT_ROOT="$VAULT" PATH="$x11_path" node "$A1_AS" "$FHOME" - "$A1_TOOLS" intent run "$W6_FILE" >"$SB/.out" 2>"$SB/.err"
