@@ -11,7 +11,7 @@
 # file read and every child-process call of the CLI, so "no read outside" and
 # "0 spawns" are measured, not assumed.
 set -u
-unset A1_VAULT_ROOT A1_VAULT_WRITER_HOST A1_HOST_ID
+unset A1_VAULT_ROOT A1_VAULT_WRITER_HOST A1_HOST_ID W6_SEAL_MODE
 
 SUITE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SUITE_DIR/../.." && pwd)"
@@ -19,13 +19,41 @@ REPO_ROOT="$(cd "$SUITE_DIR/../.." && pwd)"
 pass=0
 fail=0
 
+# Defense in depth: the suite must never change the permissions of its cwd (the
+# checkout root). A case once stripped its write bit (2026-11-18 bug report).
+START_PWD="$PWD"
+# Portable permission-bit read (no stat flavour: GNU and BSD differ); empty = path gone.
+mode_of() { node -e 'try{process.stdout.write((require("fs").statSync(process.argv[1]).mode&0o777).toString(8))}catch(e){}' "$1"; }
+START_PWD_MODE="$(mode_of "$PWD")"
+CWD_CHECKED=""
+# Runs before the summary and again from the EXIT trap (covers an exit-3 abort);
+# counts at most one failure.
+cwd_guard() {
+  [[ -z "$CWD_CHECKED" ]] || return 0
+  CWD_CHECKED=1
+  local end; end="$(mode_of "$START_PWD")"
+  if [[ -z "$end" ]]; then
+    echo "FAIL  the suite's cwd vanished: $START_PWD" >&2; fail=$((fail + 1))
+  elif [[ "$end" != "$START_PWD_MODE" ]]; then
+    echo "FAIL  the suite changed the mode of its cwd $START_PWD: $START_PWD_MODE -> $end" >&2
+    chmod "$START_PWD_MODE" "$START_PWD" 2>/dev/null
+    fail=$((fail + 1))
+  fi
+}
+
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/a1-intent.XXXXXX")"
 if [[ -z "$WORK" || ! -d "$WORK" ]]; then
   echo "a1-intent: mktemp gave no directory — aborting before any case runs" >&2
   exit 3
 fi
 # seals are read-only by design; give write back before removing the work dir
-trap 'chmod -R u+w "$WORK" 2>/dev/null; rm -rf "$WORK"' EXIT
+suite_exit() {
+  local rc=$?
+  cwd_guard
+  chmod -R u+w "$WORK" 2>/dev/null; rm -rf "$WORK"
+  if [[ $rc -eq 0 && $fail -ne 0 ]]; then exit 1; fi
+}
+trap suite_exit EXIT
 
 # shellcheck source=lib.sh
 source "$SUITE_DIR/lib.sh"
@@ -36,6 +64,8 @@ for case_file in "$SUITE_DIR"/cases/*.sh; do
   # shellcheck disable=SC1090
   source "$case_file"
 done
+
+cwd_guard
 
 echo "a1-intent: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]
