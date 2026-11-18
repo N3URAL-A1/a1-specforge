@@ -114,13 +114,26 @@ function withSnapshot(project, sha, fn, label = 'base') {
   try { return fn(dir); } finally { fs.rmSync(dir, { recursive: true, force: true }); release(); }
 }
 
+// `.a1/` files that decide what a run covers: for report reuse (and the tree_clean of a run) they are code.
+const CODE_IN_A1 = Object.freeze(['.a1/verify.json', '.a1/dispositions.json']);
+
+/** True for a path outside `.a1/` and for the command-set files inside it. */
+function isCodeForReuse(p) {
+  return !p.startsWith(A1_PREFIX) || CODE_IN_A1.includes(p);
+}
+
 /**
- * Paths from `git status` that count as a dirty tree. Nothing under `.a1/` does (FR-039, Q12): the gate log,
- * the cache and phase files change on every run and are covered by the command hash where they matter
- * (`.a1/verify.json`), the same rule `verify check` applies to code changed after a run.
+ * Paths from `git status` that count as a dirty tree: everything outside `.a1/` plus CODE_IN_A1. The rest of `.a1/`
+ * does not (FR-039, Q12): the gate log, the cache and phase files change on every run. The command set cannot be
+ * exempt: a green run of an uncommitted verify.json says nothing about the committed one (review round 2).
  */
 function dirtyPaths(paths) {
-  return paths.filter((p) => !p.startsWith(A1_PREFIX));
+  return paths.filter(isCodeForReuse);
+}
+
+/** sha256 hex of the `.a1/verify.json` text; 'none' when the file does not exist. The one digest `verify run` records and `verify reuse` recomputes. */
+function configDigest(text) {
+  return text === null ? 'none' : crypto.createHash('sha256').update(text).digest('hex');
 }
 
 /**
@@ -287,6 +300,6 @@ function applySkipIncrease(commands, baseSkipped, cleared) {
 }
 
 module.exports = {
-  VerifyError, skipFingerprint, applySkipIncrease, RETRYABLE, NEVER_PRE_EXISTING, canon, CACHE_DIR, CONFIG_FILE, CONFIG_RULE, configChange, envDigest, cleanupOnExit, parseVerifyJson, resolveMergeBase, extractSnapshot, withSnapshot, dirtyPaths, commandHash,
+  VerifyError, skipFingerprint, applySkipIncrease, RETRYABLE, NEVER_PRE_EXISTING, canon, CACHE_DIR, CONFIG_FILE, CONFIG_RULE, configChange, envDigest, cleanupOnExit, parseVerifyJson, resolveMergeBase, extractSnapshot, withSnapshot, dirtyPaths, isCodeForReuse, CODE_IN_A1, configDigest, commandHash,
   readCache, writeCache, failingIds, settle, idSet, flakyBaseGrown,
 };

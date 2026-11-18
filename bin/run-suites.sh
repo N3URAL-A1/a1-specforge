@@ -11,6 +11,11 @@
 # literal in .github/workflows/test.yml); it cannot be combined with selectors. --check-groups starts nothing
 # and exits 1 naming the entry when a runner is in zero or two ci_jobs, a path listed in the declaration file
 # no longer exists, or the workflow's `run-suites.sh --job <name>` calls and ci_jobs disagree.
+# --locale-native (spec 027 FR-009) skips the `export LC_ALL=C` below and prints one `locale: native` header line.
+# --extra-job <name> runs the suites of ci_extra_jobs.<name> in suite-groups.json (kind snapshot-locale: an id
+# list or "rest"; needs --locale-native and a root without .git; no --job, no selector). snapshot_incompatible
+# (id -> reason) names suites no snapshot-locale job runs; ci_job_workers (job -> 1..6) sets the workers of a
+# --job run when neither --workers nor A1_SUITE_WORKERS is given. --check-groups checks all three keys.
 # Runs every selected suite exactly once (glob _test-fixtures/*/run*.sh plus
 # _test-fixtures/a1-schema-check/parser/run-parser.sh) in a bounded, longest-first worker pool, each
 # under an isolated environment (own empty sentinel A1_VAULT_ROOT, own fresh HOME, A1_HOST_ID=leak,
@@ -51,6 +56,12 @@ RS_DISCOVERED=()
 RS_N_DISCOVERED=0
 RS_SELECTORS=()
 RS_SUBSET=0
+RS_LOCALE_NATIVE=0
+RS_EXTRA_JOB=""
+RS_EXTRA_LINES=""
+RS_SNAPINC_LINES=""
+RS_WORKERS_LINES=""
+RS_EXTRA_KIND=""
 
 rs_die() { echo "run-suites: $*" >&2; exit 2; }
 
@@ -85,8 +96,9 @@ rs_cleanup() {
 }
 
 # ---- declaration file (FR-025) ----
-# Prints S<TAB>id (serial), N<TAB>id (no_count), J<TAB>job<TAB>id (ci_jobs), T<TAB>id<TAB>seconds (timings);
-# exit 2 on any problem.
+# Prints S<TAB>id (serial), N<TAB>id (no_count), J<TAB>job<TAB>id (ci_jobs), T<TAB>id<TAB>seconds (timings),
+# X<TAB>name<TAB>kind<TAB>id|*rest* (ci_extra_jobs), I<TAB>id<TAB>reason (snapshot_incompatible),
+# W<TAB>job<TAB>n (ci_job_workers); exit 2 on any problem.
 rs_read_groups() {
   node -e '
 const fs = require("fs");
@@ -107,6 +119,29 @@ for (const k of Object.keys(j.ci_jobs)) {
 }
 const sec = j.timings.seconds === undefined ? {} : j.timings.seconds;
 if (!isObj(sec)) fail("\"timings.seconds\" must be an object");
+const ex = j.ci_extra_jobs === undefined ? {} : j.ci_extra_jobs;
+if (!isObj(ex)) fail("\"ci_extra_jobs\" must be an object");
+const restKinds = new Set();
+for (const k of Object.keys(ex)) {
+  if (!/^[A-Za-z0-9_-]+$/.test(k)) fail("ci_extra_jobs name " + JSON.stringify(k) + " must match [A-Za-z0-9_-]+");
+  if (Object.prototype.hasOwnProperty.call(j.ci_jobs, k)) fail("ci_extra_jobs." + k + " is also a ci_jobs name");
+  const e = ex[k];
+  if (!isObj(e) || Object.keys(e).some((x) => x !== "kind" && x !== "suites")) fail("ci_extra_jobs." + k + " must be {kind, suites} and nothing else");
+  if (e.kind !== "snapshot-locale") fail("ci_extra_jobs." + k + ".kind must be \"snapshot-locale\"");
+  if (e.suites === "rest") {
+    if (restKinds.has(e.kind)) fail("more than one \"rest\" job of kind " + e.kind);
+    restKinds.add(e.kind);
+  } else if (!isList(e.suites) || e.suites.length === 0) fail("ci_extra_jobs." + k + ".suites must be a non-empty list of suite identities or \"rest\"");
+}
+const inc = j.snapshot_incompatible === undefined ? {} : j.snapshot_incompatible;
+if (!isObj(inc)) fail("\"snapshot_incompatible\" must be an object");
+for (const k of Object.keys(inc)) if (typeof inc[k] !== "string" || inc[k].trim() === "") fail("snapshot_incompatible." + k + " needs a non-empty reason");
+const wk = j.ci_job_workers === undefined ? {} : j.ci_job_workers;
+if (!isObj(wk)) fail("\"ci_job_workers\" must be an object");
+for (const k of Object.keys(wk)) {
+  if (!Object.prototype.hasOwnProperty.call(j.ci_jobs, k)) fail("ci_job_workers." + k + " is no ci_jobs name");
+  if (typeof wk[k] !== "number" || !Number.isInteger(wk[k]) || wk[k] < 1 || wk[k] > 6) fail("ci_job_workers." + k + " must be an integer from 1 to 6");
+}
 const out = [];
 for (const id of j.serial) out.push("S\t" + id);
 for (const id of j.no_count) out.push("N\t" + id);
@@ -115,18 +150,27 @@ for (const id of Object.keys(sec)) {
   if (typeof sec[id] !== "number" || !(sec[id] >= 0)) fail("timing of " + id + " must be a number >= 0");
   out.push("T\t" + id + "\t" + Math.round(sec[id]));
 }
+for (const k of Object.keys(ex)) {
+  if (ex[k].suites === "rest") out.push("X\t" + k + "\t" + ex[k].kind + "\t*rest*");
+  else for (const id of ex[k].suites) out.push("X\t" + k + "\t" + ex[k].kind + "\t" + id);
+}
+for (const id of Object.keys(inc)) out.push("I\t" + id + "\t" + inc[id].replace(/[\t\n]+/g, " "));
+for (const k of Object.keys(wk)) out.push("W\t" + k + "\t" + wk[k]);
 process.stdout.write(out.join("\n") + (out.length ? "\n" : ""));
 ' "$1"
 }
 
 rs_load_groups() {
-  local f="$RS_ROOT/_test-fixtures/suite-groups.json" out rc kind a b
+  local f="$RS_ROOT/_test-fixtures/suite-groups.json" out rc kind a b c
   [ -f "$f" ] || rs_die "$f: declaration file (suite-groups.json) missing"
   out="$(rs_read_groups "$f" 2>&1)"; rc=$?
   if [ "$rc" -ne 0 ]; then echo "$out" >&2; exit 2; fi
-  while IFS=$'\t' read -r kind a b; do
+  while IFS=$'\t' read -r kind a b c; do
     case "$kind" in
       S) RS_SERIAL_LIST="$RS_SERIAL_LIST$a"$'\n' ;;
+      X) RS_EXTRA_LINES="$RS_EXTRA_LINES$a"$'\t'"$b"$'\t'"$c"$'\n' ;;
+      I) RS_SNAPINC_LINES="$RS_SNAPINC_LINES$a"$'\t'"$b"$'\n' ;;
+      W) RS_WORKERS_LINES="$RS_WORKERS_LINES$a"$'\t'"$b"$'\n' ;;
       T) RS_TIMING_LINES="$RS_TIMING_LINES$a"$'\t'"$b"$'\n' ;;
       J) RS_JOB_LINES="$RS_JOB_LINES$a"$'\t'"$b"$'\n' ;;
     esac
@@ -164,6 +208,61 @@ rs_select_job() {
   [ "$n" -gt 0 ] || rs_die "ci job '$RS_JOB' is not listed (or empty) under ci_jobs in _test-fixtures/suite-groups.json; no suite started"
 }
 
+# rs_is_snapinc <id> — 0 when the id is listed under snapshot_incompatible.
+rs_is_snapinc() { [[ $'\n'"$RS_SNAPINC_LINES" == *$'\n'"$1"$'\t'* ]]; }
+
+# rs_job_workers — the ci_job_workers value of RS_JOB, or nothing.
+rs_job_workers() {
+  local k n
+  while IFS=$'\t' read -r k n; do
+    if [ -n "$k" ] && [ "$k" = "$RS_JOB" ]; then printf '%s\n' "$n"; return 0; fi
+  done <<< "$RS_WORKERS_LINES"
+  return 0
+}
+
+# rs_select_extra_job — --extra-job <name> (D10): refusals before the lock, then the selectors.
+rs_select_extra_job() {
+  local nm kd id explicit="" others="" rest=0 found=0 i
+  [ -n "$RS_EXTRA_JOB" ] || return 0
+  [ -z "$RS_JOB" ] && [ "${#RS_SELECTORS[@]}" -eq 0 ] || rs_die "--extra-job cannot be combined with --job or selectors"
+  while IFS=$'\t' read -r nm kd id; do
+    [ -n "$nm" ] || continue
+    if [ "$nm" = "$RS_EXTRA_JOB" ]; then
+      found=1; RS_EXTRA_KIND="$kd"
+      if [ "$id" = "*rest*" ]; then rest=1; else explicit="$explicit$id"$'\n'; fi
+    fi
+  done <<< "$RS_EXTRA_LINES"
+  [ "$found" -eq 1 ] || rs_die "extra job '$RS_EXTRA_JOB' is not listed under ci_extra_jobs in _test-fixtures/suite-groups.json; no suite started"
+  if [ "$RS_EXTRA_KIND" = "snapshot-locale" ]; then
+    [ "$RS_LOCALE_NATIVE" -eq 1 ] || rs_die "extra job '$RS_EXTRA_JOB' (snapshot-locale) needs --locale-native; no suite started"
+    [ ! -e "$RS_ROOT/.git" ] || rs_die "extra job '$RS_EXTRA_JOB' (snapshot-locale) must run from a snapshot without .git, but $RS_ROOT/.git exists; no suite started"
+  fi
+  if [ "$rest" -eq 1 ]; then
+    while IFS=$'\t' read -r nm kd id; do
+      [ -n "$nm" ] || continue
+      if [ "$nm" != "$RS_EXTRA_JOB" ] && [ "$kd" = "$RS_EXTRA_KIND" ]; then others="$others$id"$'\n'; fi
+    done <<< "$RS_EXTRA_LINES"
+    i=0
+    while [ "$i" -lt "$RS_N_DISCOVERED" ]; do
+      id="${RS_DISCOVERED[$i]}"
+      if [[ $'\n'"$others" != *$'\n'"$id"$'\n'* ]] && ! rs_is_snapinc "$id"; then RS_SELECTORS[${#RS_SELECTORS[@]}]="$id"; fi
+      i=$((i + 1))
+    done
+  else
+    while IFS= read -r id; do
+      [ -n "$id" ] || continue
+      i=0; found=0
+      while [ "$i" -lt "$RS_N_DISCOVERED" ]; do
+        if [ "${RS_DISCOVERED[$i]}" = "$id" ]; then found=1; fi
+        i=$((i + 1))
+      done
+      [ "$found" -eq 1 ] || rs_die "extra job '$RS_EXTRA_JOB' lists $id, which is no discovered suite; no suite started"
+      if ! rs_is_snapinc "$id"; then RS_SELECTORS[${#RS_SELECTORS[@]}]="$id"; fi
+    done <<< "$explicit"
+  fi
+  [ "${#RS_SELECTORS[@]}" -gt 0 ] || rs_die "extra job '$RS_EXTRA_JOB' selects no suite; no suite started"
+}
+
 # rs_check_groups — FR-017. Reads the declaration file, the discovered set (stdin) and the workflow line calls;
 # prints one line per finding. Exit 0 consistent, 1 findings, 2 unreadable workflow.
 rs_check_groups() {
@@ -194,6 +293,7 @@ const seenGhost = new Set();
 const lines = fs.readFileSync(wf, "utf8").split("\n");
 // The allowlist for a call line (FR-017): the line, minus a leading `- ` / `run:` / `run: |`, must be exactly this.
 const ALLOWED_CALL = /^bash bin\/run-suites\.sh( --[a-z-]+( [^ ]+)?)* --job[= ]"?[A-Za-z0-9_-]+"?$/;
+const ALLOWED_EXTRA = /^bash bin\/run-suites\.sh( --[a-z-]+( [^ ]+)?)* --extra-job[= ]"?[A-Za-z0-9_-]+"?$/;
 const callText = (l) => l.trim().replace(/^-\s+/, "").replace(/^run:\s*(\|[-+]?)?\s*/, "");
 const indentOf = (l) => l.match(/^\s*/)[0].length;
 // The text of the step (or job) that holds line n: from its opening line to the line before the next sibling.
@@ -206,36 +306,78 @@ const blockAround = (n, opener, ind) => {
   while (z < lines.length && (lines[z].trim() === "" || indentOf(lines[z]) > base || (/^\s*#/.test(lines[z])))) z++;
   return lines.slice(a, z).filter((l) => !/^\s*#/.test(l)).join("\n");
 };
-for (let n = 0; n < lines.length; n++) {
-  const l = lines[n].replace(/(^|\s)#.*$/, "$1");
-  const m = l.match(/run-suites\.sh\b.*?--job(?:=|\s+)["\x27]?([A-Za-z0-9_-]+)/);
-  if (!m) continue;
-  const job = m[1];
-  const before = l.slice(0, l.indexOf("run-suites.sh"));
-  const after = l.slice(l.indexOf("run-suites.sh"));
-  let why = "";
-  if (/\b(echo|printf)\b/.test(before)) why = "inside an echo/printf";
-  else if (/\|\|\s*(true|:|exit\s+0)\b/.test(after)) why = "behind `|| true`";
-  else if (!ALLOWED_CALL.test(callText(l))) why = "call line is not `bash bin/run-suites.sh [--flag [value]]... --job <name>` alone (allowlist)";
-  else {
-    const step = blockAround(n, (x) => /^\s*-\s/.test(x), (x) => indentOf(x));
-    if (/\bset\s+\+e\b/.test(step)) why = "in a run block with `set +e`";
-    const jobb = blockAround(n, (x) => /^  [A-Za-z0-9_-]+:\s*$/.test(x), () => 2);
-    const gating = (x) => /^\s*(-\s+)?(if|continue-on-error):/.test(x) && !/continue-on-error:\s*["\x27]?false["\x27]?\s*$/.test(x);
-    const stepOwn = step.split("\n").filter(gating);
-    const jobOwn = jobb.split("\n").filter((x) => /^    (if|continue-on-error):/.test(x) && gating(x));
-    if (why) { /* set +e */ }
-    else if (stepOwn.length) why = "in a step with " + stepOwn[0].trim().replace(/^-\s+/, "").split(":")[0] + ":";
-    else if (jobOwn.length) why = "in a job with " + jobOwn[0].trim().split(":")[0] + ":";
+// scanCalls — every workflow line that calls run-suites.sh with <flag>: findings for calls that cannot gate,
+// and the valid calls (name -> line numbers). Shared by --job and --extra-job.
+const scanCalls = (flag, re, allowed, known, knownIn) => {
+  const calls = new Map();
+  for (let n = 0; n < lines.length; n++) {
+    const l = lines[n].replace(/(^|\s)#.*$/, "$1");
+    const m = l.match(re);
+    if (!m) continue;
+    const job = m[1];
+    const before = l.slice(0, l.indexOf("run-suites.sh"));
+    const after = l.slice(l.indexOf("run-suites.sh"));
+    let why = "";
+    if (/\b(echo|printf)\b/.test(before)) why = "inside an echo/printf";
+    else if (/\|\|\s*(true|:|exit\s+0)\b/.test(after)) why = "behind `|| true`";
+    else if (!allowed.test(callText(l))) why = "call line is not `bash bin/run-suites.sh [--flag [value]]... --" + flag + " <name>` alone (allowlist)";
+    else {
+      const step = blockAround(n, (x) => /^\s*-\s/.test(x), (x) => indentOf(x));
+      if (/\bset\s+\+e\b/.test(step)) why = "in a run block with `set +e`";
+      const jobb = blockAround(n, (x) => /^  [A-Za-z0-9_-]+:\s*$/.test(x), () => 2);
+      const gating = (x) => /^\s*(-\s+)?(if|continue-on-error):/.test(x) && !/continue-on-error:\s*["\x27]?false["\x27]?\s*$/.test(x);
+      const stepOwn = step.split("\n").filter(gating);
+      const jobOwn = jobb.split("\n").filter((x) => /^    (if|continue-on-error):/.test(x) && gating(x));
+      if (why) { /* set +e */ }
+      else if (stepOwn.length) why = "in a step with " + stepOwn[0].trim().replace(/^-\s+/, "").split(":")[0] + ":";
+      else if (jobOwn.length) why = "in a job with " + jobOwn[0].trim().split(":")[0] + ":";
+    }
+    if (why) { out.push("workflow call of --" + flag + " " + job + " cannot gate (" + why + ")"); continue; }
+    calls.set(job, (calls.get(job) || []).concat(n));
+    if (!Object.prototype.hasOwnProperty.call(known, job) && !seenGhost.has(flag + job)) {
+      seenGhost.add(flag + job);
+      out.push("workflow calls --" + flag + " " + job + " but " + knownIn + " has no such job");
+    }
   }
-  if (why) { out.push("workflow call of --job " + job + " cannot gate (" + why + ")"); continue; }
-  called.add(job);
-  if (!Object.prototype.hasOwnProperty.call(j.ci_jobs, job) && !seenGhost.has(job)) {
-    seenGhost.add(job);
-    out.push("workflow calls --job " + job + " but ci_jobs has no such job");
+  return calls;
+};
+const jobCalls = scanCalls("job", /run-suites\.sh\b.*?--job(?:=|\s+)["\x27]?([A-Za-z0-9_-]+)/, ALLOWED_CALL, j.ci_jobs, "ci_jobs");
+for (const k of jobCalls.keys()) called.add(k);
+for (const name of Object.keys(j.ci_jobs)) if (!called.has(name)) out.push("ci job " + name + " is called by no workflow line");
+const ex = j.ci_extra_jobs || {};
+const inc = j.snapshot_incompatible || {};
+const extraCalls = scanCalls("extra-job", /run-suites\.sh\b.*?--extra-job(?:=|\s+)["\x27]?([A-Za-z0-9_-]+)/, ALLOWED_EXTRA, ex, "ci_extra_jobs");
+for (const name of Object.keys(ex)) {
+  const at = extraCalls.get(name) || [];
+  if (at.length === 0) { out.push("extra job " + name + " is called by no workflow line"); continue; }
+  if (at.length > 1) out.push("extra job " + name + " is called by " + at.length + " workflow lines (exactly one)");
+  if (!/(^|\s)--locale-native(\s|$)/.test(callText(lines[at[0]].replace(/(^|\s)#.*$/, "$1")))) {
+    out.push("workflow call of --extra-job " + name + " lacks --locale-native");
+  }
+  const jb = blockAround(at[0], (x) => /^  [A-Za-z0-9_-]+:\s*$/.test(x), () => 2);
+  if (!/\bgit archive\b/.test(jb)) out.push("extra job " + name + ": job block has no `git archive` line");
+  if (!/test ! -e[^\n]*\.git\b/.test(jb)) out.push("extra job " + name + ": job block has no `test ! -e` line naming .git");
+  if (!/\blocale -a\b/.test(jb)) out.push("extra job " + name + ": job block has no `locale -a` line");
+  if (/^\s*needs:/m.test(jb)) out.push("extra job " + name + ": job block has needs: (it must run in parallel)");
+  if (/A1_XPROV_ONLY/.test(jb)) out.push("extra job " + name + ": job block sets A1_XPROV_ONLY (the harness fails it under $CI)");
+}
+for (const id of Object.keys(inc)) if (!found.has(id)) out.push(id + ": listed under snapshot_incompatible but no such suite");
+const member = new Map();
+let hasRest = false;
+for (const [name, e] of Object.entries(ex)) {
+  if (e.suites === "rest") { hasRest = true; continue; }
+  for (const id of e.suites) {
+    if (!found.has(id)) { out.push(id + ": listed under ci_extra_jobs but no such suite (job " + name + ")"); continue; }
+    member.set(id, (member.get(id) || []).concat(name));
   }
 }
-for (const name of Object.keys(j.ci_jobs)) if (!called.has(name)) out.push("ci job " + name + " is called by no workflow line");
+if (Object.keys(ex).length) {
+  for (const id of [...found].sort()) {
+    const where = (member.get(id) || []).concat(Object.prototype.hasOwnProperty.call(inc, id) ? ["snapshot_incompatible"] : []);
+    if (where.length > 1) out.push(id + ": in two snapshot-locale places (" + where.join(", ") + ")");
+    else if (where.length === 0 && !hasRest) out.push(id + ": in no snapshot-locale job (list it in exactly one ci_extra_jobs entry or snapshot_incompatible)");
+  }
+}
 for (const l of out) console.log("check-groups: " + l);
 console.log("check-groups: " + (out.length ? out.length + " finding(s)" : "ok, " + found.size + " suites in " + Object.keys(j.ci_jobs).length + " ci jobs"));
 process.exit(out.length ? 1 : 0);
@@ -511,17 +653,18 @@ rs_main() {
       --workers=*) workers="${1#--workers=}"; shift ;;
       --job) [ $# -ge 2 ] || rs_die "--job needs a ci job name"; RS_JOB="$2"; shift 2 ;;
       --job=*) RS_JOB="${1#--job=}"; shift ;;
+      --extra-job) [ $# -ge 2 ] || rs_die "--extra-job needs an extra job name"; RS_EXTRA_JOB="$2"; shift 2 ;;
+      --extra-job=*) RS_EXTRA_JOB="${1#--extra-job=}"; shift ;;
+      --locale-native) RS_LOCALE_NATIVE=1; shift ;;
       --check-groups) RS_CHECK_GROUPS=1; shift ;;
       --root) [ $# -ge 2 ] || rs_die "--root needs a directory"; RS_ROOT="$2"; shift 2 ;;
-      -h|--help) sed -n '2,24p' "$RS_SELF"; exit 0 ;;
+      -h|--help) sed -n '2,28p' "$RS_SELF"; exit 0 ;;
       -*) rs_die "unknown argument: $1" ;;
       *) RS_SELECTORS[${#RS_SELECTORS[@]}]="$1"; shift ;;
     esac
   done
   if [ -z "$workers" ]; then workers="${A1_SUITE_WORKERS:-}"; fi
-  if [ -z "$workers" ]; then
-    workers="$(rs_default_workers "$(getconf _NPROCESSORS_ONLN 2>/dev/null)" "$(sysctl -n hw.ncpu 2>/dev/null)")"
-  elif ! rs_is_posint "$workers"; then
+  if [ -n "$workers" ] && ! rs_is_posint "$workers"; then
     rs_die "workers must be an integer from 1 to 9999 (got '$workers')"
   fi
   [ -n "$RS_ROOT" ] || RS_ROOT="$(cd "$RS_BIN_DIR/.." && pwd)"
@@ -529,20 +672,27 @@ rs_main() {
   RS_ROOT="$(cd "$RS_ROOT" && pwd -P)" || rs_die "cannot resolve $RS_ROOT"
 
   rs_load_groups
+  # workers: --workers > A1_SUITE_WORKERS > ci_job_workers of --job > default
+  if [ -z "$workers" ] && [ -n "$RS_JOB" ]; then workers="$(rs_job_workers)"; fi
+  if [ -z "$workers" ]; then
+    workers="$(rs_default_workers "$(getconf _NPROCESSORS_ONLN 2>/dev/null)" "$(sysctl -n hw.ncpu 2>/dev/null)")"
+  fi
   rs_discover
   [ "$RS_N_DISCOVERED" -gt 0 ] || rs_die "no suites discovered under $RS_ROOT/_test-fixtures"
   if [ "$RS_CHECK_GROUPS" -eq 1 ]; then
-    [ -z "$RS_JOB" ] && [ "${#RS_SELECTORS[@]}" -eq 0 ] || rs_die "--check-groups takes no --job and no selector"
+    [ -z "$RS_JOB" ] && [ -z "$RS_EXTRA_JOB" ] && [ "${#RS_SELECTORS[@]}" -eq 0 ] || rs_die "--check-groups takes no --job, no --extra-job and no selector"
     rs_check_groups
     exit $?
   fi
   rs_select_job
+  rs_select_extra_job
   rs_select
 
   # The runner's own outer vault, kept for the real-store guard; set before any per-worker env is built.
   if [ -n "${A1_VAULT_ROOT:-}" ]; then export A1_SUITE_REAL_VAULT="$A1_VAULT_ROOT"; else unset A1_SUITE_REAL_VAULT; fi
   # FR-027: every worker collates, sorts and globs like CI (C locale), whatever the machine's locale is.
-  export LC_ALL=C
+  # --locale-native (spec 027 FR-009) skips it: the snapshot-locale CI jobs run under the runner's own locale.
+  if [ "$RS_LOCALE_NATIVE" -eq 0 ]; then export LC_ALL=C; fi
 
   rs_lock_acquire || exit 2
   trap rs_cleanup EXIT
@@ -562,6 +712,15 @@ rs_main() {
     echo "full run"
   fi
   echo "workers: $workers"
+  if [ "$RS_LOCALE_NATIVE" -eq 1 ]; then
+    echo "locale: native (LANG=${LANG-unset}, LC_ALL=${LC_ALL-unset})"
+  fi
+  if [ "$RS_EXTRA_KIND" = "snapshot-locale" ]; then
+    local sk sr
+    while IFS=$'\t' read -r sk sr; do
+      if [ -n "$sk" ]; then echo "snapshot-incompatible (not run in any snapshot-locale job): $sk - $sr"; fi
+    done <<< "$RS_SNAPINC_LINES"
+  fi
   echo "discovered $RS_N_DISCOVERED suites"
   i=0
   while [ "$i" -lt "$RS_N_DISCOVERED" ]; do echo "${RS_DISCOVERED[$i]}"; i=$((i + 1)); done

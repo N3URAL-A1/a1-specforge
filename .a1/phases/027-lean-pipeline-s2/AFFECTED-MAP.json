@@ -1,0 +1,29 @@
+{
+  "measured_sha": {
+    "full_trace": "b1ad796",
+    "retraced_vault_fallback_and_a1_verify": "287d672",
+    "retraced_suite_runner_and_intent": "89097f6"
+  },
+  "date": "2026-11-17T20:10:39.102Z",
+  "load5_before": 0.26,
+  "load5_after": 1.6,
+  "note": "load5 values from /proc/loadavg before and after the 63-suite 8-job trace (host: 24 cores); full trace 2393 s wall-clock incl. serial re-runs of red ids; a1-vault-fallback and a1-verify re-traced alone after their red cause was fixed; follow-up: a1-suite-runner (X3/X4 skip when traced) and a1-intent (after the node-leak fix, PR #98) re-traced with --only; a1-suite-runner no longer allow-red, still always-selected because its trace has one unresolvable relative path (statx)",
+  "stats": {
+    "suites": 63,
+    "keys_total": 208,
+    "keys_kept": 207,
+    "always_selected": [
+      "_test-fixtures/a1-intent/run-tests.sh",
+      "_test-fixtures/a1-probe/run-tests.sh",
+      "_test-fixtures/a1-suite-runner/run-tests.sh",
+      "_test-fixtures/a1-ux-studio/run-tests.sh"
+    ]
+  },
+  "allow_red": [
+    "_test-fixtures/a1-intent/run-tests.sh"
+  ],
+  "empty_set_keys": 0,
+  "omitted_keys": [
+    "_test-fixtures/"
+  ]
+}

@@ -51,6 +51,22 @@ exists:
 2. otherwise the `run:` steps of `.github/workflows/*`;
 3. otherwise build plus test from `package.json` / `pubspec.yaml`.
 
+**Reuse of the Verify run (spec 027 FR-008).** When the project has
+`.a1/verify.json`, run this first:
+
+```bash
+node <repo>/_shared/a1-tools.cjs verify reuse --head "$(git rev-parse HEAD)"; REUSE_RC=$?
+```
+
+Exit 0: a full, green `verify run` on a clean tree exists for this commit,
+or for an earlier commit when every commit since touches only `.a1/` (for
+example the committed VERIFICATION.md and STATUS.md; `.a1/verify.json` and
+`.a1/dispositions.json` count as code here) — skip the suite run below. The
+report must also carry the digest of the committed `.a1/verify.json`
+(`config_mismatch` otherwise). Exit 1 (any reason) or 2: run the suite. Only P2 uses
+`verify reuse`; `pr merge-check` never does (its own rule: CI evidence,
+else a fresh run).
+
 - A project without GitHub CI: its deploy build (e.g. `next build`,
   `vercel build`) is the CI.
 - Local green does not cover CI's OS matrix; run the portability check where

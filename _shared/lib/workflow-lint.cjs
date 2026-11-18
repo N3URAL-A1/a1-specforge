@@ -401,11 +401,17 @@ function cmdWorkflowLint(argv) {
 
   const vaultSync = checkVaultSyncSteps(root);
   findings = findings.concat(vaultSync.findings);
+  const verifyLint = require('./workflow-lint-verify.cjs');
+  const verifyScope = verifyLint.checkVerifyScope(root, isSkillsTree, { extractBashFenceLines, joinContinuations });
+  const reuseBan = verifyLint.checkReuseBan(root, isSkillsTree);
+  findings = findings.concat(verifyScope.findings, reuseBan.findings);
 
   const out = {
     root,
     scanned: files.length,
     vault_sync_checked: vaultSync.checked,
+    verify_scope_checked: verifyScope.checked,
+    reuse_ban_checked: reuseBan.checked,
     findings,
   };
   const err = findings.map((f) => formatFinding(f) + '\n').join('');

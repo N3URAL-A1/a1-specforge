@@ -99,7 +99,8 @@ assert_json() {
 
 # ---------- parts, in NN order ----------
 shopt -s nullglob
-parts=("$SUITE"/parts/*.sh)
+parts=()
+while IFS= read -r p; do [[ -n "$p" ]] && parts[${#parts[@]}]="$p"; done < <(printf '%s\n' "$SUITE"/parts/*.sh | LC_ALL=C sort)
 shopt -u nullglob
 if [[ ${#parts[@]} -eq 0 ]]; then
   echo "FAIL  harness: no parts/*.sh found under $SUITE" >&2
