@@ -22,17 +22,16 @@ fail=0
 # Defense in depth: the suite must never change the permissions of its cwd (the
 # checkout root). A case once stripped its write bit (2026-11-18 bug report).
 START_PWD="$PWD"
-# stat flavour picked once: GNU `-c %a`, BSD `-f %Lp` only if `-c` is unsupported
-if stat -c %a / >/dev/null 2>&1; then pwd_mode() { stat -c %a "$1" 2>/dev/null; }
-else pwd_mode() { stat -f %Lp "$1" 2>/dev/null; }; fi
-START_PWD_MODE="$(pwd_mode "$PWD")"
+# Portable permission-bit read (no stat flavour: GNU and BSD differ); empty = path gone.
+mode_of() { node -e 'try{process.stdout.write((require("fs").statSync(process.argv[1]).mode&0o777).toString(8))}catch(e){}' "$1"; }
+START_PWD_MODE="$(mode_of "$PWD")"
 CWD_CHECKED=""
 # Runs before the summary and again from the EXIT trap (covers an exit-3 abort);
 # counts at most one failure.
 cwd_guard() {
   [[ -z "$CWD_CHECKED" ]] || return 0
   CWD_CHECKED=1
-  local end; end="$(pwd_mode "$START_PWD")"
+  local end; end="$(mode_of "$START_PWD")"
   if [[ -z "$end" ]]; then
     echo "FAIL  the suite's cwd vanished: $START_PWD" >&2; fail=$((fail + 1))
   elif [[ "$end" != "$START_PWD_MODE" ]]; then
