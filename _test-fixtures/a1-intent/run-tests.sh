@@ -19,6 +19,11 @@ REPO_ROOT="$(cd "$SUITE_DIR/../.." && pwd)"
 pass=0
 fail=0
 
+# Defense in depth: the suite must never change the permissions of its cwd (the
+# checkout root). A case once stripped its write bit (2026-11-18 bug report).
+START_PWD="$PWD"
+START_PWD_MODE="$(stat -c %a "$PWD" 2>/dev/null || stat -f %Lp "$PWD")"
+
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/a1-intent.XXXXXX")"
 if [[ -z "$WORK" || ! -d "$WORK" ]]; then
   echo "a1-intent: mktemp gave no directory — aborting before any case runs" >&2
@@ -36,6 +41,13 @@ for case_file in "$SUITE_DIR"/cases/*.sh; do
   # shellcheck disable=SC1090
   source "$case_file"
 done
+
+END_PWD_MODE="$(stat -c %a "$START_PWD" 2>/dev/null || stat -f %Lp "$START_PWD")"
+if [[ "$END_PWD_MODE" != "$START_PWD_MODE" ]]; then
+  echo "FAIL  the suite changed the mode of its cwd $START_PWD: $START_PWD_MODE -> $END_PWD_MODE" >&2
+  chmod "$START_PWD_MODE" "$START_PWD" 2>/dev/null
+  fail=$((fail + 1))
+fi
 
 echo "a1-intent: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

@@ -55,6 +55,36 @@ JS
   w5b_installed 9.9.0 "$src"
 }
 
+# w6_require_seal <what> — W6_SEAL must be an existing directory; else a clear
+# error naming the seal output (stdout JSON and stderr file), return 1.
+w6_require_seal() {
+  [[ -n "${W6_SEAL:-}" && -d "$W6_SEAL" ]] && return 0
+  {
+    echo "a1-intent: seal setup failed in sandbox '$1' (W6_SEAL='${W6_SEAL:-}' is not a directory)"
+    echo "  seal output: ${W6_SEAL_JSON:0:300}"
+    echo "  seal stderr: $(head -c 300 "${W6_SEAL_ERR:-/dev/null}" 2>/dev/null)"
+  } >&2
+  return 1
+}
+
+# w6_tamper_seal <file> — flips one byte of a sealed file (read-only by design)
+# to simulate a tampered seal. Refuses, with no chmod, unless <file> is a
+# non-empty regular file under $W6_SEAL or $WORK (an empty path once made
+# `dirname` give "." and stripped the write bit of the suite's cwd).
+w6_tamper_seal() {
+  local f="${1:-}" d
+  if [[ -z "$f" || ! -f "$f" || -L "$f" ]]; then
+    echo "w6_tamper_seal: '$f' is not a regular file — no chmod done" >&2; return 1
+  fi
+  d="$(dirname "$f")"
+  local under=""
+  [[ "$f" == "$WORK"/?* ]] && under=1
+  [[ -n "${W6_SEAL:-}" && "$f" == "$W6_SEAL"/?* ]] && under=1
+  [[ -n "$under" ]] || { echo "w6_tamper_seal: '$f' is outside \$W6_SEAL and \$WORK — no chmod done" >&2; return 1; }
+  [[ -d "$d" && "$d" != "." && "$d" != "/" && "$d" != "$WORK" ]] || { echo "w6_tamper_seal: bad parent '$d' — no chmod done" >&2; return 1; }
+  chmod u+w "$d" "$f" && printf 'X' >>"$f" && chmod a-w "$f" "$d"
+}
+
 # w6_sandbox <name> — sandbox, executor = this host, project real-proj,
 # sealed plugin (W6_SEAL, W6_T), the fixture's global git identity.
 w6_sandbox() {
@@ -63,8 +93,14 @@ w6_sandbox() {
   printf '[user]\n\tname = Fixture\n\temail = fixture@example.invalid\n' >"$FHOME/.gitconfig"
   w6_project real-proj
   w6_plugin
-  W6_SEAL_JSON="$(node "$STUB_DIR/seal-lib.cjs" "$INTENT_LIB" "$FHOME" "$W5B_HOST" 2>&1)"
-  W6_SEAL="$(node -e 'try { process.stdout.write(JSON.parse(process.argv[1]).seal_dir); } catch (e) {}' "$W6_SEAL_JSON")"
+  # stdout (the JSON) apart from stderr: noise or a stack trace must not spoil it
+  W6_SEAL_ERR="$SB/seal.stderr"
+  W6_SEAL_JSON="$(node "$STUB_DIR/seal-lib.cjs" "$INTENT_LIB" "$FHOME" "$W5B_HOST" ${W6_SEAL_MODE:-} 2>"$W6_SEAL_ERR")"
+  W6_SEAL="$(node -e 'try { const d = JSON.parse(process.argv[1]).seal_dir; if (typeof d === "string") process.stdout.write(d); } catch (e) {}' "$W6_SEAL_JSON")"
+  # Fail fast: every dependent case (X14/B11 tamper the seal) needs a real
+  # sealed tree. A failed seal aborts the suite instead of marking each
+  # dependent bad, because a half-built sandbox would only repeat the error.
+  w6_require_seal "$1" || exit 3
   W6_T="$W6_SEAL/_shared/a1-tools.cjs"
   W6_STUB="$FHOME/.a1-intents/tmp/stub"
   W6_PRIMARY="$(node -e 'process.stdout.write(require("fs").realpathSync(process.argv[1]))' "$FHOME/claude-projects/real-proj")"
@@ -502,9 +538,7 @@ else bad "X17 a claimed file of 9000 bytes with a matching row runs; 9217 bytes 
 w6_claim action=progress
 x14_file="$W6_SEAL/README.md"
 [[ -f "$x14_file" ]] || x14_file="$(find "$W6_SEAL/skills" -name SKILL.md | head -1)"
-chmod u+w "$(dirname "$x14_file")" "$x14_file"
-printf 'X' >>"$x14_file"
-chmod a-w "$x14_file" "$(dirname "$x14_file")"
+w6_tamper_seal "$x14_file" || bad "X14 setup: the seal could not be tampered with (file '$x14_file')" "W6_SEAL='$W6_SEAL'"
 w6_run
 x14_done="$VAULT/inbox/intents/done/$W6_ID.md"
 x14="$RC $(w6_where "$W6_ID") $(w6_fm "$x14_done" failure_reason) $W6_SPAWNS started=$(w6_fm "$x14_done" started_at) $(w6_js 'o.detail' "$(w6_log_last run)")"

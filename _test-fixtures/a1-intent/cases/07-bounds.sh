@@ -183,7 +183,7 @@ else bad "B10 reject --reason cancelled_by_user --cancelled-by <uuid> -> rejecte
 w6_sandbox w7-b11
 W6_KEEP_RUNS=1
 b11_file="$(find "$W6_SEAL/skills" -name SKILL.md | head -1)"
-chmod u+w "$(dirname "$b11_file")" "$b11_file"; printf 'X' >>"$b11_file"; chmod a-w "$b11_file" "$(dirname "$b11_file")"
+w6_tamper_seal "$b11_file" || bad "B11 setup: the seal could not be tampered with (file '$b11_file')" "W6_SEAL='$W6_SEAL'"
 b11_bad=""
 for i in 1 2 3 4 5 6; do
   w6_claim action=progress
@@ -191,8 +191,10 @@ for i in 1 2 3 4 5 6; do
   [[ "$(w6_fm "$VAULT/inbox/intents/done/$W6_ID.md" failure_reason) $(w7_locks) $(w7_row "$W6_ID" 'String(r.started_at)')" == "sandbox_invalid 0 null" ]] || b11_bad="$b11_bad | run $i: $(w6_fm "$VAULT/inbox/intents/done/$W6_ID.md" failure_reason) locks $(w7_locks)"
 done
 chmod -R u+w "$FHOME/.a1-intents-seal"; rm -rf "$FHOME/.a1-intents-seal"
-node "$STUB_DIR/seal-lib.cjs" "$INTENT_LIB" "$FHOME" "$W5B_HOST" >/dev/null 2>&1
-W6_SEAL="$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).seal_dir)' "$FHOME/.a1-intents-seal/manifest.json")"; W6_T="$W6_SEAL/_shared/a1-tools.cjs"
+W6_SEAL_JSON="$(node "$STUB_DIR/seal-lib.cjs" "$INTENT_LIB" "$FHOME" "$W5B_HOST" 2>"$W6_SEAL_ERR")"
+W6_SEAL="$(node -e 'try { const d = JSON.parse(process.argv[1]).seal_dir; if (typeof d === "string") process.stdout.write(d); } catch (e) {}' "$W6_SEAL_JSON")"
+w6_require_seal "w7-b11 re-seal" || exit 3
+W6_T="$W6_SEAL/_shared/a1-tools.cjs"
 w6_claim action=progress
 w6_run
 unset W6_KEEP_RUNS
