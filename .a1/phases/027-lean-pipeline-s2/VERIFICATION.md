@@ -96,3 +96,9 @@ none (see next section: the CLI had no input; manual trace found no phantom)
 - **`gates lint` / `verify affected-map --check` take no `--phase`:** plan text was wrong (GOAL.md row 2). Not a code issue.
 - **Live reuse on aiserver:** P2 reuse can never hit here while a1-intent X11 is red, because a full run is never `pass`. Reuse value for this repo depends on Gap 2's follow-up.
 - **Always-selected set** (a1-intent, a1-probe, a1-suite-runner, a1-ux-studio): kept by orchestrator decision (GOAL.md row 7). This is the main driver of Gap 1.
+
+## Addendum 2026-11-18 — SC-9 / V13 measured on the PR head (orchestrator)
+
+PR #99, CI run 44198936534 on head 53f8cc7, all 9 jobs `success`. V13 expression output:
+`{"bound":733,"jobs":[xprov-b 426, xprov-a 371, xprov-c 424, heavy 485, rest 373],"ok":true,"xprov":540}`.
+Five snapshot jobs exist and each is within the bound (fixtures-rest 733 s); fixtures-xprov 540 s, below the pre-change median of 716 s. One sample (audit round 2 M1). SC-9 and the FR-009 "no added wall-clock" clause: met on this sample. The verdict line above stays PARTIAL because of SC-6 (owner-delegated decision) and the aiserver env red X11 (bug report `2026-11-18-intent-x11-claude-on-path`).
