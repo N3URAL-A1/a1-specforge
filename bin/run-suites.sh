@@ -13,6 +13,7 @@
 # no longer exists, or the workflow's `run-suites.sh --job <name>` calls and ci_jobs disagree.
 # --contract prints the wire-contract line and exits 0. --json-out <abs path> writes one JSON result file (the path must
 # not exist; its parent is private). --groups-file <abs path> reads the declaration file from there instead of the root.
+# --lock-wait <ms> waits up to that long (0..3600000) for a held runner lock; --suite-timeout-ms <ms> (1..86400000) ends a hung suite.
 # --locale-native (spec 027 FR-009) skips the `export LC_ALL=C` below and prints one `locale: native` header line.
 # --extra-job <name> runs the suites of ci_extra_jobs.<name> in suite-groups.json (kind snapshot-locale: an id
 # list or "rest"; needs --locale-native and a root without .git; no --job, no selector). snapshot_incompatible
@@ -447,7 +448,7 @@ rs_order() {
 
 # ---- one finished suite: result, leak check, isolation dirs removed ----
 rs_on_suite_done() {
-  local slot="$1" rc="$2" left="${3:-0}" id log dir vault elapsed note="" warn="" leaked st p leak=""
+  local slot="$1" rc="$2" left="${3:-0}" id log dir vault elapsed note="" warn="" leaked st p leak="" timed=0
   id="${RS_SLOT_ID[$slot]}"; log="${RS_SLOT_LOG[$slot]}"; dir="${RS_SLOT_DIR[$slot]}"
   vault="$dir/vault"
   elapsed=$((SECONDS - ${RS_SLOT_START[$slot]}))
@@ -468,10 +469,11 @@ rs_on_suite_done() {
   fi
   p="$(rs_summary_note "$id" "$rc" "$log")"
   if [ -n "$p" ]; then note="${note:+$note; }$p"; fi
+  if [ -n "${RS_SLOT_TIMED[$slot]:-}" ]; then timed=1; RS_SLOT_TIMED[$slot]=""; note="${note:+$note; }timed out after ${elapsed}s"; fi
   st=PASS
   if [ "$rc" -ne 0 ] || [ -n "$note" ]; then st=FAIL; fi
   echo "done: $st $id (${elapsed}s)"
-  rs_record_result "$id" "$rc" "$elapsed" "$log" "$note" "$warn" "$leak" 0 "$p"
+  rs_record_result "$id" "$rc" "$elapsed" "$log" "$note" "$warn" "$leak" "$timed" "$p"
   rs_remove_slot_dir "$dir"
   RS_SLOT_ID[$slot]=""; RS_SLOT_DIR[$slot]=""
 }
@@ -663,6 +665,8 @@ rs_main() {
       --json-out=*) RS_JSON_OUT="${1#--json-out=}"; shift ;;
       --groups-file) [ $# -ge 2 ] || rs_die "--groups-file needs a path"; RS_GROUPS_FILE="$2"; shift 2 ;;
       --groups-file=*) RS_GROUPS_FILE="${1#--groups-file=}"; shift ;;
+      --lock-wait) [ $# -ge 2 ] || rs_die "--lock-wait needs a value"; RS_LOCK_WAIT_MS=$(rs_parse_ms "$2" 0 3600000) || rs_die "--lock-wait needs ms from 0 to 3600000 (got '$2')"; shift 2 ;;
+      --suite-timeout-ms) [ $# -ge 2 ] || rs_die "--suite-timeout-ms needs a value"; RS_SUITE_TIMEOUT_S=$(rs_parse_ms "$2" 1 86400000 1000) || rs_die "--suite-timeout-ms needs ms from 1 to 86400000 (got '$2')"; shift 2 ;;
       --check-groups) RS_CHECK_GROUPS=1; shift ;;
       --root) [ $# -ge 2 ] || rs_die "--root needs a directory"; RS_ROOT="$2"; shift 2 ;;
       -h|--help) sed -n '2,30p' "$RS_SELF"; exit 0 ;;
