@@ -24,7 +24,57 @@ RS_SLOT_ID=()
 RS_SLOT_START=()
 RS_SLOT_LOG=()
 RS_SLOT_DIR=()
+RS_SLOT_TIMED=()
 RS_LAST_PGID=""
+RS_LOCK_WAIT_MS=0        # --lock-wait: ceiling for waiting on a held runner lock (0 = refuse at once)
+RS_SUITE_TIMEOUT_S=""    # --suite-timeout-ms as ceil seconds; empty = no watchdog
+RS_LOCK_WAITED_MS=0
+RS_LOCK_T0=0
+RS_LOCK_DEADLINE=0
+
+# Wire contract (spec 027 slice 3): option state and check states written into the --json-out file.
+RS_JSON_OUT=""
+RS_GROUPS_FILE=""
+RS_CHECK_RECON="not_selected"
+RS_CHECK_LEARN="not_selected"
+RS_CHECK_PHASES="not_selected"
+
+# rs_set_check <recon|learn|phases> <state> — records one post-check state for the --json-out file.
+rs_set_check() {
+  case "$1" in
+    recon) RS_CHECK_RECON="$2" ;;
+    learn) RS_CHECK_LEARN="$2" ;;
+    phases) RS_CHECK_PHASES="$2" ;;
+  esac
+}
+
+# rs_check_json_out <path> — empty is fine. Else: absolute, not existing (not even as a symlink), and the
+# parent is a directory owned by the user and not group- or world-writable. Prints the reason, returns 1.
+rs_check_json_out() {
+  local f="${1:-}" parent
+  [ -n "$f" ] || return 0
+  case "$f" in /*) ;; *) echo "run-suites: --json-out must be an absolute path: $f" >&2; return 1 ;; esac
+  if [ -e "$f" ] || [ -L "$f" ]; then echo "run-suites: --json-out target already exists: $f" >&2; return 1; fi
+  parent="$(dirname "$f")"
+  if [ ! -d "$parent" ] || [ -L "$parent" ] || [ ! -O "$parent" ]; then
+    echo "run-suites: --json-out parent is not a directory owned by the current user: $parent" >&2; return 1
+  fi
+  if [ -n "$(find "$parent" -maxdepth 0 \( -perm -020 -o -perm -002 \) 2>/dev/null)" ]; then
+    echo "run-suites: --json-out parent is group- or world-writable: $parent" >&2; return 1
+  fi
+  return 0
+}
+
+# rs_check_groups_file <path> — empty is fine. Else: not combined with --check-groups, absolute, a regular
+# file, not a symlink. Prints the reason, returns 1.
+rs_check_groups_file() {
+  local f="${1:-}"
+  [ -n "$f" ] || return 0
+  if [ "${RS_CHECK_GROUPS:-0}" -eq 1 ]; then echo "run-suites: --groups-file cannot be combined with --check-groups" >&2; return 1; fi
+  case "$f" in /*) ;; *) echo "run-suites: --groups-file must be an absolute path: $f" >&2; return 1 ;; esac
+  if [ -L "$f" ] || [ ! -f "$f" ]; then echo "run-suites: --groups-file is not a regular file (or is a symlink): $f" >&2; return 1; fi
+  return 0
+}
 
 # rs_is_posint <value> — 0 when value is a decimal integer >= 1 with at most 4 digits.
 rs_is_posint() {
@@ -32,6 +82,21 @@ rs_is_posint() {
   [ "${#1}" -le 4 ] || return 1
   [ "$((10#$1))" -ge 1 ]
 }
+
+# rs_is_ms <value> <max> — 0 when value is a decimal integer 0..max with at most 8 digits.
+rs_is_ms() {
+  case "${1:-}" in ''|*[!0-9]*) return 1 ;; esac
+  [ "${#1}" -le 8 ] && [ "$((10#$1))" -le "$2" ]
+}
+
+# rs_parse_ms <value> <min> <max> [div] — prints ceil(value/div) (div default 1); 1 = invalid or below min.
+rs_parse_ms() {
+  rs_is_ms "$1" "$3" && [ "$((10#$1))" -ge "$2" ] || return 1
+  printf '%s\n' "$(( (10#$1 + ${4:-1} - 1) / ${4:-1} ))"
+}
+
+# rs_now_ms — wall clock in ms from node (no date +%N: BSD date lacks it).
+rs_now_ms() { node -e 'process.stdout.write(String(Date.now()))'; }
 
 # rs_default_workers <getconf-out> <sysctl-out> — pure. Online cores minus 2, clamped 1..6;
 # getconf first, then sysctl, then 2 cores.
@@ -51,7 +116,7 @@ rs_slots_reset() {
   RS_N_SLOTS="$1"
   RS_RUNNING=0
   while [ "$i" -lt "$RS_N_SLOTS" ]; do
-    RS_SLOT_PID[$i]=""; RS_SLOT_ID[$i]=""; RS_SLOT_START[$i]=0; RS_SLOT_LOG[$i]=""; RS_SLOT_DIR[$i]=""
+    RS_SLOT_PID[$i]=""; RS_SLOT_ID[$i]=""; RS_SLOT_START[$i]=0; RS_SLOT_LOG[$i]=""; RS_SLOT_DIR[$i]=""; RS_SLOT_TIMED[$i]=""
     i=$((i + 1))
   done
 }
@@ -61,12 +126,14 @@ rs_slots_reset() {
 # (the group leader's pid, from $!); it cannot print it, because a command substitution would make
 # the worker a child of a subshell and `wait` could no longer collect its status.
 rs_spawn_worker() {
-  local id="$1" log="$2" home="$3" vault="$4" drop_real="-u A1_SUITE_REAL_VAULT"
+  local id="$1" log="$2" home="$3" vault="$4" drop_real="-u A1_SUITE_REAL_VAULT" vl=()
+  # D12: without an outer verify token a worker gets its own verify lock dir under the slot dir.
+  if [ -z "${A1_VERIFY_LOCK_TOKEN:-}" ]; then vl=("A1_VERIFY_LOCK_DIR=${home%/home}/vlock"); fi   # an array: one argument even when TMPDIR holds a space
   # Only the runner's own fixture reads the outer vault path (real-store guard, part 09); no other suite sees it.
   case "$id" in a1-suite-runner/run-tests.sh) drop_real="" ;; esac
   set -m
   # shellcheck disable=SC2086
-  ( cd "$RS_ROOT" && exec env -u A1_VAULT_WRITER_HOST $drop_real A1_HOST_ID=leak A1_VAULT_ROOT="$vault" HOME="$home" \
+  ( cd "$RS_ROOT" && exec env -u A1_VAULT_WRITER_HOST $drop_real A1_HOST_ID=leak A1_VAULT_ROOT="$vault" HOME="$home" ${vl[@]+"${vl[@]}"} \
       bash "_test-fixtures/$id" </dev/null >"$log" 2>&1 ) &
   RS_LAST_PGID=$!
   set +m
@@ -147,8 +214,27 @@ rs_reap() {
   done
 }
 
-# rs_wait_any — one polling step: reap, and sleep a tick when nothing finished.
+# rs_watchdog — per-suite time limit (RS_SUITE_TIMEOUT_S, wall clock via SECONDS): SIGTERM to the whole
+# group at the limit (slot marked timed), SIGKILL at limit + 5 s. Only groups recorded from `$!`.
+rs_watchdog() {
+  local i=0 pid age
+  [ -n "$RS_SUITE_TIMEOUT_S" ] || return 0
+  while [ "$i" -lt "$RS_N_SLOTS" ]; do
+    pid="${RS_SLOT_PID[$i]:-}"
+    if [ -n "$pid" ]; then
+      age=$((SECONDS - ${RS_SLOT_START[$i]}))
+      if [ "$age" -ge "$RS_SUITE_TIMEOUT_S" ] && [ -z "${RS_SLOT_TIMED[$i]:-}" ]; then
+        RS_SLOT_TIMED[$i]=1; kill -TERM -- "-$pid" 2>/dev/null
+      fi
+      if [ "$age" -ge $((RS_SUITE_TIMEOUT_S + 5)) ]; then kill -KILL -- "-$pid" 2>/dev/null; fi
+    fi
+    i=$((i + 1))
+  done
+}
+
+# rs_wait_any — one polling step: watchdog, reap, and sleep a tick when nothing finished.
 rs_wait_any() {
+  rs_watchdog
   rs_reap
   if [ "$RS_REAPED" -eq 0 ] && [ "$RS_RUNNING" -gt 0 ]; then sleep "$RS_POLL_INTERVAL"; fi
 }
@@ -363,7 +449,7 @@ rs_lock_reap_groups() {
 }
 
 # rs_lock_takeover <lockdir> <attempt> — under the takeover guard: re-judge, rename the stale directory
-# away, mkdir, write. 0 = held, 1 = try again, 2 = refused (held by a running runner, or guard stuck).
+# away, mkdir, write. 0 = held, 1 = try again, 2 = refused (guard stuck, foreign), 3 = held by a running runner.
 rs_lock_takeover() {
   local lock="$1" stale holder run
   rs_guard_take "$lock.takeover" || { echo "run-suites: could not take the takeover guard for $lock" >&2; return 2; }
@@ -376,8 +462,7 @@ rs_lock_takeover() {
     holder="$(rs_lock_read_pid "$lock")"; run="$(rs_lock_file_line "$lock/run_id")"
     if rs_lock_is_runner "$holder"; then
       rs_guard_drop "$lock.takeover"
-      echo "run-suites: another run holds the lock $lock (holder PID $holder, run $run); no suite started" >&2
-      return 2
+      return 3   # held by a running runner; the caller words the refusal or waits
     fi
     if ! rs_lock_reap_groups "$lock"; then
       rs_guard_drop "$lock.takeover"
@@ -403,6 +488,27 @@ rs_lock_takeover() {
   return 1
 }
 
+# rs_lock_waited — measured wait for our own lock in ms (D21 a), 0 without a wait.
+rs_lock_waited() {
+  RS_LOCK_WAITED_MS=0
+  if [ "$RS_LOCK_WAIT_MS" -gt 0 ]; then RS_LOCK_WAITED_MS=$(( $(rs_now_ms) - RS_LOCK_T0 )); fi
+}
+
+# rs_lock_busy <lock> <holder> <run> — a running runner holds the lock. 0 = wait (and retry), 2 = give up
+# (message on stderr). Without --lock-wait: the plain refusal; with it: wait until RS_LOCK_DEADLINE.
+rs_lock_busy() {
+  if [ "$RS_LOCK_WAIT_MS" -le 0 ]; then
+    echo "run-suites: another run holds the lock $1 (holder PID $2, run $3); no suite started" >&2; return 2
+  fi
+  if [ "$(rs_now_ms)" -ge "$RS_LOCK_DEADLINE" ]; then
+    echo "run-suites: lock wait of $RS_LOCK_WAIT_MS ms exceeded; another run holds the lock $1 (holder PID $2, run $3); no suite started" >&2; return 2
+  fi
+  if [ -z "${RS_LOCK_ANNOUNCED:-}" ]; then
+    RS_LOCK_ANNOUNCED=1; echo "lock: waiting up to $RS_LOCK_WAIT_MS ms for holder PID $2"
+  fi
+  sleep 0.5
+}
+
 # rs_lock_acquire — 0 = held. 2 = refused or unusable (message on stderr). A fresh path is taken with
 # one atomic mkdir. An existing lock counts as held only when its PID is alive AND is the runner;
 # otherwise it is stale and rs_lock_takeover replaces it.
@@ -414,13 +520,15 @@ rs_lock_acquire() {
     *) echo "run-suites: the lock path $lock is not absolute (A1_SUITE_LOCK_DIR must be an absolute path)" >&2; return 2 ;;
   esac
   [ -n "${RS_RUN_ID:-}" ] || RS_RUN_ID="$(date +%Y%m%d-%H%M%S)-$$"
+  RS_LOCK_WAITED_MS=0
+  if [ "$RS_LOCK_WAIT_MS" -gt 0 ]; then RS_LOCK_T0="$(rs_now_ms)"; RS_LOCK_DEADLINE=$((RS_LOCK_T0 + RS_LOCK_WAIT_MS)); fi
   while [ "$attempt" -lt "$RS_LOCK_ATTEMPTS" ]; do
     attempt=$((attempt + 1))
     if [ -L "$lock" ]; then
       echo "run-suites: lock path $lock is a symbolic link; refusing to use it" >&2; return 2
     fi
     if mkdir "$lock" 2>/dev/null; then
-      if rs_lock_write "$lock" 2>/dev/null; then RS_LOCK_DIR="$lock"; RS_LOCK_HELD=1; return 0; fi
+      if rs_lock_write "$lock" 2>/dev/null; then RS_LOCK_DIR="$lock"; RS_LOCK_HELD=1; rs_lock_waited; return 0; fi
       continue   # never delete here: the path may already hold another runner's lock
     fi
     if [ ! -d "$lock" ]; then
@@ -431,11 +539,16 @@ rs_lock_acquire() {
     fi
     holder="$(rs_lock_read_pid "$lock")"; run="$(rs_lock_file_line "$lock/run_id")"
     if rs_lock_is_runner "$holder"; then
-      echo "run-suites: another run holds the lock $lock (holder PID $holder, run $run); no suite started" >&2
-      return 2
+      rs_lock_busy "$lock" "$holder" "$run" || return 2
+      attempt=$((attempt - 1)); continue
     fi
     rs_lock_takeover "$lock" "$attempt"; rc=$?
-    [ "$rc" -eq 1 ] || return "$rc"
+    if [ "$rc" -eq 3 ]; then
+      holder="$(rs_lock_read_pid "$lock")"; run="$(rs_lock_file_line "$lock/run_id")"
+      rs_lock_busy "$lock" "$holder" "$run" || return 2
+      attempt=$((attempt - 1)); continue
+    fi
+    [ "$rc" -eq 1 ] || { [ "$rc" -ne 0 ] || rs_lock_waited; return "$rc"; }
   done
   echo "run-suites: could not take the lock $lock after $RS_LOCK_ATTEMPTS attempts" >&2
   return 2

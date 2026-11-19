@@ -14,6 +14,9 @@
 unset A1_VAULT_ROOT A1_VAULT_WRITER_HOST A1_HOST_ID
 set -u
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/vlock.sh"
+mk_workdir VL_W vlock
+vlock_private "$VL_W"   # review fix (Reinhard 2): a direct run never waits on the real per-uid lock
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SUITE="$REPO_ROOT/_test-fixtures/a1-metrics"

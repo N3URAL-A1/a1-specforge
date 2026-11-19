@@ -18,6 +18,10 @@ const MERGE_CHECK_HELP = `  a1-tools pr merge-check --pr <n> [--base <ref>] [--b
                   zero_tests, implausible_crash, retry and the --bug path are verdicts of the local run (why: counting_reporter); a base-red suite cleared with --bug
                   needs --no-ci-evidence (CI red stays ci_check_red). --no-ci-evidence does not parse ci_evidence at all.
                   The report carries ci_evidence {used, why, checks}.
+                  Local run (spec 027 slice 3): the base side is lazy (only commands red on head or with a counting reporter run on base) and the suites run through the
+                  BASE sha's runner (suites.runner_source "base", or "none" with suites.runner.fallback when the plan is not eligible); suites.runner and suites.base_run carry the
+                  per-side evidence, suites.lock_wait_ms the time spent waiting for the verify and runner locks. The ci_evidence path takes no lock (lock_wait_ms null).
+                  exit 2 with error lock_timeout means the host is busy (re-run, never red); suite_runner_failed, runner_result_invalid and runner_result_mismatch are runner faults, also exit 2.
                   Exit 0 nothing red; exit 1 reasons[] on stdout: head_mismatch (local HEAD is not the PR head from gh, or the tree is
                   dirty), dispositions_uncommitted (.a1/dispositions.json differs from HEAD: commit and push it), suite_red_on_head,
                   base_red_unreported, bug_unresolved, required_check_red, required_check_pending, flaky_base_grown,

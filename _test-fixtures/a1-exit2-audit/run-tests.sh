@@ -20,6 +20,8 @@ SHARED="$(dirname "$TOOLS")"
 
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
 mk_workdir WORK exit2
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/vlock.sh"
+vlock_private "$WORK"   # review fix (Reinhard 2): a direct run never waits on the real per-uid lock
 export GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0
 
 pass=0; fail=0

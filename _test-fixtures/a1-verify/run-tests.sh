@@ -60,6 +60,8 @@ CORPUS="$REPO_ROOT/_test-fixtures/a1-verify/corpus"
 
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
 mk_workdir WORK a1-verify
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/vlock.sh"
+vlock_private "$WORK"   # review fix (Reinhard 2): a direct run never waits on the real per-uid lock
 
 export GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0
 export A1_FX_CORPUS="$CORPUS"
@@ -779,6 +781,12 @@ check "D4 A1_VAULT_ROOT / A1_VAULT_WRITER_HOST / A1_HOST_ID are set in the owner
 . "$(dirname "${BASH_SOURCE[0]}")/cases-affected-map.sh"
 . "$(dirname "${BASH_SOURCE[0]}")/cases-timeout.sh"
 . "$(dirname "${BASH_SOURCE[0]}")/cases-mapreal.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/cases-lazy.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/cases-lock.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/cases-runner-contract.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/cases-runner-path.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/cases-runner-retry.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/cases-assert-deletions.sh"
 
 echo "a1-verify: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

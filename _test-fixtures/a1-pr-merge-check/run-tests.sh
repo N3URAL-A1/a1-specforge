@@ -48,6 +48,8 @@ REAL_SPEC="$REPO_ROOT/_test-fixtures/a1-vault-cockpit/spec-drift/005-vault-first
 
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/tmp.sh" || exit 2
 mk_workdir WORK fx-merge-check
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/vlock.sh"
+vlock_private "$WORK"   # review fix (Reinhard 2): a direct run never waits on the real per-uid lock
 export GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0 HOME="$WORK/home"
 mkdir -p "$HOME" "$WORK/bin"
 
@@ -676,6 +678,9 @@ expect "CEW4 every record of CEW1-3 has an integer duration_ms" "true|true|true"
 . "$(dirname "${BASH_SOURCE[0]}")/cases-host.sh"
 . "$(dirname "${BASH_SOURCE[0]}")/cases-envred.sh"
 . "$(dirname "${BASH_SOURCE[0]}")/cases-unchanged.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/cases-lazy.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/cases-lock.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/cases-runner.sh"
 
 echo "a1-pr-merge-check: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

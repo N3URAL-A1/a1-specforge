@@ -20,6 +20,8 @@ const { loadEntries, entriesAt, clearedFingerprints, fingerprintOf, isSelfReview
 
 const hostLib = require('./verify-host.cjs');
 const affectedLib = require('./verify-affected.cjs');
+const lockLib = require('./verify-lock.cjs');
+const runnerLib = require('./verify-runner-path.cjs');
 
 const { VerifyError } = vb;
 
@@ -35,7 +37,9 @@ const NPM_PLACEHOLDER_RE = /no test specified/i;
 const KILL_GRACE_MS = 10 * 1000;
 const GROUP_RUNNER_FLAG = '--group-runner';
 // Vault variables never reach a suite: 18 suites forgot `unset A1_VAULT_ROOT` and leaked fixture paths into the real vault.
-const SUITE_ENV_DROP = Object.freeze(['A1_VAULT_ROOT', 'A1_VAULT_WRITER_HOST', 'A1_HOST_ID']);
+// A1_VERIFY_LOCK_TOKEN must never join this list: nested `verify run` calls rely on it to skip the lock wait (spec 027 FR-018).
+// A1_VERIFY_SPAWN_LOG (SEC-7) is a test seam of THIS process: a suite or a nested run must not inherit a path that is appended to.
+const SUITE_ENV_DROP = Object.freeze(['A1_VAULT_ROOT', 'A1_VAULT_WRITER_HOST', 'A1_HOST_ID', 'A1_VERIFY_SPAWN_LOG']);
 
 function readJsonFile(file, what) {
   let st;
@@ -244,7 +248,8 @@ function groupRunnerMain() {
   const spec = JSON.parse(fs.readFileSync(0, 'utf8'));
   const emit = (o) => emitExit(0, JSON.stringify(o), '');
   const fd = fs.openSync(spec.stdoutFile, 'w');
-  const child = spawn(spec.argv[0], spec.argv.slice(1), { cwd: spec.cwd, env: suiteEnv(process.env), shell: false, detached: true, stdio: ['ignore', fd, 'ignore'] });
+  const errFd = typeof spec.stderrFile === 'string' ? fs.openSync(spec.stderrFile, 'w') : 'ignore';
+  const child = spawn(spec.argv[0], spec.argv.slice(1), { cwd: spec.cwd, env: suiteEnv(process.env), shell: false, detached: true, stdio: ['ignore', fd, errFd] });
   let timedOut = false;
   // SEC-10: the group dies on EVERY way out (timeout, normal exit, spawn error, a signal to this runner),
   // not only on timeout - a suite that returns 0 and leaves a background child must not leave it running.
@@ -259,18 +264,27 @@ function groupRunnerMain() {
   child.on('exit', (status, signal) => { clearTimeout(timer); emit({ status, signal, timedOut }); });
 }
 
-function spawnGroup(argv, cwd, stdoutFile, timeoutMs) {
-  const spec = JSON.stringify({ argv, cwd, stdoutFile, timeoutMs });
-  const r = spawnSync(process.execPath, [__filename, GROUP_RUNNER_FLAG], { input: spec, shell: false, encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], timeout: timeoutMs + KILL_GRACE_MS, killSignal: 'SIGKILL' });
+function spawnGroup(argv, cwd, stdoutFile, timeoutMs, env, stderrFile) {
+  const spec = JSON.stringify({ argv, cwd, stdoutFile, timeoutMs, ...(stderrFile ? { stderrFile } : {}) });
+  const r = spawnSync(process.execPath, [__filename, GROUP_RUNNER_FLAG], { input: spec, shell: false, encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], timeout: timeoutMs + KILL_GRACE_MS, killSignal: 'SIGKILL', ...(env ? { env } : {}) });
   try { return JSON.parse(r.stdout); } catch (_e) { return { spawnError: true }; }
 }
 
-function runCommand(cmd, cwd, tmp, label) {
+const SPAWN_LOG_ENV = 'A1_VERIFY_SPAWN_LOG';
+
+/** Test seam (spec 027 FR-011): with an absolute path in A1_VERIFY_SPAWN_LOG, one `<label>\t<id>` line per spawned command. */
+function noteSpawn(label, id) {
+  const file = process.env[SPAWN_LOG_ENV];
+  if (typeof file === 'string' && path.isAbsolute(file)) fs.appendFileSync(file, `${label}\t${id}\n`);
+}
+
+function runCommand(cmd, cwd, tmp, label, env) {
   const reportFile = path.join(tmp, `report-${label}`);
   const stdoutFile = path.join(tmp, `stdout-${label}`);
   const argv = rep.injectFlags(cmd.kind, cmd.argv, reportFile, cmd.viaScript);
   const t0 = process.hrtime.bigint();
-  const r = spawnGroup(argv, cwd, stdoutFile, cmd.timeoutMs);
+  noteSpawn(label, cmd.id);
+  const r = spawnGroup(argv, cwd, stdoutFile, cmd.timeoutMs, env);
   const durationMs = Math.round(Number(process.hrtime.bigint() - t0) / 1e6);
   // FR-041: a command that cannot start (unknown runner) is an error of the tool, never a verdict.
   if (r.spawnError === true) throw new VerifyError('spawn_failed', `cannot start ${JSON.stringify(cmd.argv.join(' ').slice(0, 200))} (unknown runner or not executable) in ${path.basename(cwd)}`);
@@ -292,6 +306,7 @@ function commandReason(r, touchesSource) {
     if (r.failed === 0 || (r.signal !== null && r.failed === null)) return 'implausible_crash';
     return r.signal !== null ? 'signal' : 'command_failed';
   }
+  if (typeof r.leak_note === 'string' && r.leak_note !== '') return 'leak_note';
   if (r.failed !== null && r.failed > 0) return 'reported_failures';
   if (r.passed !== null && r.passed + r.failed === 0 && touchesSource) return 'zero_tests';
   return null;
@@ -340,10 +355,10 @@ function overall(commands, noTestsReason, excused = new Set()) {
 }
 
 /** Base side (FR-015): { ids: Map<commandId, Set>, cache } from the cache or a git-archive snapshot of baseSha. */
-function runBaseSide(project, plan, baseSha, hash, touches, tmp, noCache) {
+function runBaseSide(project, plan, baseSha, hash, touches, tmp, noCache, env) {
   const cached = noCache ? null : vb.readCache(project, baseSha, hash, plan.commands);
   const results = cached || vb.withSnapshot(project, baseSha, (dir) => Object.fromEntries(plan.commands.map((c, i) => [c.id, {
-    raw: c.file && !fs.existsSync(path.join(dir, c.file)) ? { absent: true } : runCommand(c, dir, tmp, `b${i}`),
+    raw: c.file && !fs.existsSync(path.join(dir, c.file)) ? { absent: true } : runCommand(c, dir, tmp, `b${i}`, env),
   }])));
   if (!cached && !noCache) vb.writeCache(project, baseSha, hash, results);
   const ids = new Map(plan.commands.map((c) => [c.id, results[c.id].raw.absent ? new Set() : vb.idSet(finishCommand(results[c.id].raw, touches))]));
@@ -360,10 +375,10 @@ function runHeadSide(project, plan, head, hash, ctx) {
   let ranLive = false;
   const settled = plan.commands.map((c, i) => {
     const entry = cached ? cached[c.id] : null;
-    const raw = entry ? { ...entry.raw, duration_ms: null } : (ranLive = true, runCommand(c, ctx.cwd, ctx.tmp, `h${i}`)); // FR-002: a cache hit has no duration (null, never 0)
+    const raw = entry ? { ...entry.raw, duration_ms: null } : (ranLive = true, runCommand(c, ctx.cwd, ctx.tmp, `h${i}`, ctx.env)); // FR-002: a cache hit has no duration (null, never 0)
     results[c.id] = { raw, retry: entry && entry.retry ? { ...entry.retry, duration_ms: null } : null };
     const retry = () => {
-      if (!results[c.id].retry) { ranLive = true; results[c.id] = { raw, retry: runCommand(c, ctx.cwd, ctx.tmp, `r${i}`) }; }
+      if (!results[c.id].retry) { ranLive = true; results[c.id] = { raw, retry: runCommand(c, ctx.cwd, ctx.tmp, `r${i}`, ctx.env) }; }
       return finishCommand(results[c.id].retry, ctx.touches);
     };
     const done = vb.settle(finishCommand(raw, ctx.touches), retry, ctx.baseIds ? (ctx.baseIds.get(c.id) || new Set()) : null, plan.flakyBase);
@@ -374,6 +389,109 @@ function runHeadSide(project, plan, head, hash, ctx) {
   const stillClean = clean && vb.dirtyPaths(statusPaths(project)).length === 0;
   if (stillClean && ranLive) vb.writeCache(project, head, hash, results);
   return { settled, cache: ctx.noCache ? 'off' : (cached ? (ranLive ? 'partial' : 'hit') : (clean ? 'miss' : 'dirty')) };
+}
+
+/**
+ * Lazy order (spec 027 FR-011, merge-check only): head first runs, then the base side only for commands red on head or with a
+ * counting reporter, then settle (retry after the base comparison). Same settled records as the eager order: `settle` reads
+ * baseIds only for a red first run, `applySkipIncrease` only counting reporters.
+ * @returns {{settled: object[], cache: string, base: object|null, baseMs: number|null, baseRan: string[]}}
+ */
+function lazyHeadSide(project, basePlan, headPlan, baseSha, ctx) {
+  const firsts = headPlan.commands.map((c, i) => runCommand(c, ctx.cwd, ctx.tmp, `h${i}`, ctx.env));
+  const finished = firsts.map((raw) => finishCommand(raw, ctx.touches));
+  const red = new Set(headPlan.commands.filter((c, i) => finished[i].reason !== null).map((c) => c.id));
+  const need = basePlan.commands.filter((c) => red.has(c.id) || c.kind !== 'none');
+  const tBase = process.hrtime.bigint();
+  const base = need.length > 0 ? runBaseSide(project, { ...basePlan, commands: need }, baseSha, null, ctx.touches, ctx.tmp, true, ctx.env) : null;
+  const baseMs = base ? Math.round(Number(process.hrtime.bigint() - tBase) / 1e6) : null;
+  const settled = headPlan.commands.map((c, i) => {
+    let retryRaw = null;
+    const retry = () => { retryRaw = runCommand(c, ctx.cwd, ctx.tmp, `r${i}`, ctx.env); return finishCommand(retryRaw, ctx.touches); };
+    const done = vb.settle(finished[i], retry, base ? (base.ids.get(c.id) || new Set()) : new Set(), headPlan.flakyBase);
+    return { ...done, duration_ms: typeof firsts[i].duration_ms === 'number' ? firsts[i].duration_ms : null, retry_duration_ms: retryRaw && typeof retryRaw.duration_ms === 'number' ? retryRaw.duration_ms : null };
+  });
+  return { settled, cache: 'off', base, baseMs, baseRan: need.filter((c) => !c.file || gitRaw(project, ['cat-file', '-e', `${baseSha}:${c.file}`]) !== null).map((c) => c.id) };   // same present-at-base rule as the runner path (a file absent at base did not run)
+}
+
+const sideRecord = (ids, res) => ({ requested: ids.length, exit: res.exit, ms: res.ms, lock_wait_ms: res.lockWaitMs, checks_skipped: res.checksSkipped, summary_notes: res.summaryNotes });
+
+/**
+ * Lazy order through the base runner (spec 027 FR-013, D9): head side, then base for the D2 ids that exist at base, then one serial
+ * retry call for every retryable head command; `settle` gets the prefetched retry. Same settled shape as lazyHeadSide.
+ * @param {{tmp: string, touches: boolean, cwd: string, env: object, lockWaitMs: number}} ctx env = the runner env (D9); lockWaitMs = verify lock wait so far
+ * @param {{dir: string}} rp the prepared runner
+ * @returns {{settled: object[], cache: string, base: object|null, baseMs: number|null, baseRan: string[], runnerWaitMs: number, runner: {fallback: null, why: null, contract: number, sides: object}}}
+ */
+function runnerSides(project, basePlan, headPlan, baseSha, ctx, rp) {
+  let waited = 0;
+  const timeoutMs = headPlan.commands[0].timeoutMs;
+  const deps = { spawnGroup, noteSpawn };
+  const call = (side, root, ids, workers) => {
+    const left = Math.max(0, lockLib.lockCeilingMs(process.env) - ctx.lockWaitMs - waited);   // 0 = the runner refuses at once only when its lock is held
+    const res = runnerLib.runSide({ runnerDir: rp.dir, intact: rp.intact, root, ids, side, workers, env: ctx.env, tmp: ctx.tmp, timeoutMs, lockWaitMs: left, deps });
+    waited += res.lockWaitMs;
+    return res;
+  };
+  const headIds = headPlan.commands.map((c) => c.id);
+  const head = call('head', ctx.cwd, headIds);
+  const finished = headPlan.commands.map((c) => finishCommand(head.records.get(c.id), ctx.touches));
+  const red = new Set(headPlan.commands.filter((c, i) => finished[i].reason !== null).map((c) => c.id));
+  const need = basePlan.commands.filter((c) => red.has(c.id) || c.kind !== 'none');
+  const present = need.filter((c) => gitRaw(project, ['cat-file', '-e', `${baseSha}:${c.id}`]) !== null);
+  const tBase = process.hrtime.bigint();
+  const baseRes = present.length > 0 ? vb.withSnapshot(project, baseSha, (dir) => call('base', dir, present.map((c) => c.id)), 'base') : null;
+  const base = need.length > 0 ? {
+    ids: new Map(need.map((c) => [c.id, baseRes && baseRes.records.has(c.id) ? vb.idSet(finishCommand(baseRes.records.get(c.id), ctx.touches)) : new Set()])),
+    skipped: new Map(need.map((c) => [c.id, null])),
+    durations: new Map(need.map((c) => [c.id, baseRes && baseRes.records.has(c.id) ? baseRes.records.get(c.id).duration_ms : null])),
+    cache: 'off',
+  } : null;
+  const baseMs = base ? Math.round(Number(process.hrtime.bigint() - tBase) / 1e6) : null;
+  const baseOf = (c) => (base ? (base.ids.get(c.id) || new Set()) : new Set());
+  const retryIds = headPlan.commands.filter((c, i) => vb.isRetryable(finished[i], baseOf(c))).map((c) => c.id);
+  const retryRes = retryIds.length > 0 ? call('retry', ctx.cwd, retryIds, 1) : null;
+  const settled = headPlan.commands.map((c, i) => {
+    let retryRaw = null;
+    const retry = () => { retryRaw = retryRes.records.get(c.id); return finishCommand(retryRaw, ctx.touches); };
+    const done = vb.settle(finished[i], retry, baseOf(c), headPlan.flakyBase);
+    const first = head.records.get(c.id);
+    return { ...done, duration_ms: first.duration_ms, retry_duration_ms: retryRaw ? retryRaw.duration_ms : null };
+  });
+  const sides = { head: sideRecord(headIds, head), base: baseRes ? sideRecord(present.map((c) => c.id), baseRes) : null, retry: retryRes ? sideRecord(retryIds, retryRes) : null };
+  return { settled, cache: 'off', base, baseMs, baseRan: present.map((c) => c.id), runnerWaitMs: waited, runner: { fallback: null, why: null, contract: 1, sides } };
+}
+
+const FALLBACK_WHY = Object.freeze({ base_copy_missing: 'the base commit has no runner files', no_contract: 'the base runner does not answer the contract line' });
+
+/**
+ * Side selection of the lazy order: through the base runner when `ctx.useRunner` and the plan allows it (D4, D5), else the serial path.
+ * The prepared runner copy is released here, so its temp dir is gone when runVerify returns (audit m6).
+ * @returns {object} lazyHeadSide's shape, plus `runner` and `runnerWaitMs` when ctx.useRunner
+ */
+function selectSides(project, timed, headTimed, baseSha, head, ctx) {
+  return vb.withSnapshot(project, head, (cwd) => {
+    const c = { ...ctx, cwd, env: ctx.useRunner ? ctx.envSuite : ctx.env };
+    const serial = (fallback, why) => ({ ...lazyHeadSide(project, timed, headTimed, baseSha, { ...c, env: ctx.env }), runnerWaitMs: 0, runner: { fallback, why, contract: null, sides: null } });
+    if (!ctx.useRunner) return lazyHeadSide(project, timed, headTimed, baseSha, c);
+    const el = headTimed.commands.length === 0 ? { ok: false, why: 'no commands' } : runnerLib.eligibility(timed, headTimed.commands);
+    if (!el.ok) return serial('not_eligible', el.why);
+    const rp = runnerLib.prepareRunner(project, baseSha, ctx.envSuite);
+    if (!rp.ok) return serial(rp.why, FALLBACK_WHY[rp.why]);
+    try { return runnerSides(project, timed, headTimed, baseSha, c, rp); } finally { rp.release(); }
+  }, 'head');
+}
+
+/** Eager order (base side first, then head with inline settle): the order of every run but merge-check's. */
+function eagerSides(project, timed, headTimed, ids, ctx) {
+  const tBase = process.hrtime.bigint();
+  const base = ids.compareBase ? runBaseSide(project, timed, ids.baseSha, ids.baseHash, ctx.touches, ctx.tmp, ctx.noCache, ctx.env) : null;
+  const runHead = (cwd) => runHeadSide(project, headTimed, ids.head, ids.hash, { tmp: ctx.tmp, touches: ctx.touches, baseIds: base ? base.ids : null, cwd, noCache: ctx.noCache, env: ctx.env });
+  const baseMs = base ? Math.round(Number(process.hrtime.bigint() - tBase) / 1e6) : null;
+  const tHead = process.hrtime.bigint();
+  // --base: HEAD runs from a git-archive snapshot like the base side, so git-ignored local files cannot change the verdict.
+  const side = ids.withBase ? vb.withSnapshot(project, ids.head, runHead, 'head') : runHead(project);
+  return { base, side, baseMs, headMs: Math.round(Number(process.hrtime.bigint() - tHead) / 1e6), baseRan: null };
 }
 
 /** Fingerprints of the committed `skip_increase` dispositions; an unreadable store is a config error (exit 2). */
@@ -488,7 +606,7 @@ function headCommands(project, plan, headSha_) {
 const pairs = (commands, key) => commands.flatMap((c) => c[key].map((id) => ({ command: c.id, id })));
 
 /**
- * @param {{project:string, base?:string, affected?:boolean (run the measured subset, spec 027 FR-006; never with base), timeoutMs?:number, noCache?:boolean, host?:{platform?:string, probeTimeoutMs?:number, spawn?:Function}}} opts host: test injection of the platform / probe;
+ * @param {{project:string, base?:string, affected?:boolean (run the measured subset, spec 027 FR-006; never with base), timeoutMs?:number, noCache?:boolean, lazyBase?:boolean (merge-check only; needs noCache and base, spec 027 FR-011), runner?:boolean (lazy path only: run suites through the base runner, FR-013), host?:{platform?:string, probeTimeoutMs?:number, spawn?:Function}}} opts host: test injection of the platform / probe;
  *   noCache: never read or write the
  *   sha + command-hash result cache (merge-check sets it: a cache file is writable by the code under test)
  * @returns {object} the verify_run record; throws VerifyError (exit 2)
@@ -519,18 +637,27 @@ function runVerify(opts) {
   const headTimed = { ...timed, commands: withTimeout(headSet.commands) };
   const hash = vb.commandHash(headTimed.commands, vb.envDigest((n) => readLockfile(project, n)));
   const baseHash = baseSha ? vb.commandHash(timed.commands, vb.envDigest((n) => gitRaw(project, ['show', `${baseSha}:${n}`]))) : hash;
+  let lock;
+  try { lock = lockLib.acquireVerifyLock({ env: process.env }); } catch (e) {
+    if (e instanceof lockLib.LockError) throw new VerifyError(e.reason, e.message);
+    throw e;
+  }
+  const runEnv = { ...process.env, A1_VERIFY_LOCK_TOKEN: lock.token };
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'a1-verify-'));
   const release = vb.cleanupOnExit(tmp);
   const cleanBefore = head !== null && vb.dirtyPaths(statusPaths(project)).length === 0;
   try {
-    const tBase = process.hrtime.bigint();
-    const base = sel.compareBase ? runBaseSide(project, timed, baseSha, baseHash, touches, tmp, opts.noCache === true) : null;
-    const runHead = (cwd) => runHeadSide(project, headTimed, head, hash, { tmp, touches, baseIds: base ? base.ids : null, cwd, noCache: opts.noCache === true });
-    const baseMs = base ? msSince(tBase) : null;
-    const tHead = process.hrtime.bigint();
-    // --base: HEAD runs from a git-archive snapshot like the base side, so git-ignored local files cannot change the verdict.
-    const side = opts.base !== undefined ? vb.withSnapshot(project, head, runHead, 'head') : runHead(project);
-    const headMs = msSince(tHead);
+    const noCache = opts.noCache === true;
+    const lazy = opts.lazyBase === true && noCache && sel.compareBase;
+    let sides;
+    if (lazy) {
+      const tHead = process.hrtime.bigint();
+      const lz = selectSides(project, timed, headTimed, baseSha, head, { tmp, touches, env: runEnv, envSuite: suiteEnv(runEnv), useRunner: opts.runner === true, lockWaitMs: lock.waitedMs });
+      sides = { base: lz.base, side: lz, baseMs: lz.baseMs, headMs: msSince(tHead) - (lz.baseMs || 0), baseRan: lz.baseRan, runner: lz.runner || null, runnerWaitMs: lz.runnerWaitMs || 0 };
+    } else {
+      sides = eagerSides(project, timed, headTimed, { compareBase: sel.compareBase, baseSha, baseHash, head, hash, withBase: opts.base !== undefined }, { tmp, touches, noCache, env: runEnv });
+    }
+    const { base, side, baseMs, headMs } = sides;
     const cleanAfter = head !== null && vb.dirtyPaths(statusPaths(project)).length === 0;
     const skipped = base ? vb.applySkipIncrease(side.settled, base.skipped, skipIncreaseDispositions(project)) : side.settled;
     const settled = skipped.map((c) => ({ ...c, base_duration_ms: base ? base.durations.get(c.id) ?? null : null }));
@@ -547,12 +674,16 @@ function runVerify(opts) {
       scope: opts.affected === true ? 'affected' : 'full', ...affectedRec,
       ...withReasons(overall(settled, plan.noTestsReason, env.excused), extra), host: hostLib.hostRecord(opts.host), skipped_on_host: plan.skipped, ...(hints.length > 0 ? { hints } : {}), ...(env.envRed.length > 0 ? { env_red: env.envRed } : {}), ...(env.warnings.length > 0 ? { warnings: env.warnings } : {}), source: plan.source, head_sha: head, config_digest: configDigest, base_sha: baseSha, tree_clean: head === null ? null : (cleanBefore && cleanAfter),
       touches_source: touches, changed_files: changed.length, flaky: pairs(side.settled, 'flaky_ids'), pre_existing_red: pairs(side.settled, 'pre_existing_red_ids'),
-      cache: { head: side.cache, base: base ? base.cache : 'none' }, ...(configChanged ? { config_changed: configChanged } : {}), ...(removed ? { suite_removed: removed } : {}), commands: settled,
+      cache: { head: side.cache, base: base ? base.cache : (lazy ? 'off' : 'none') }, ...(configChanged ? { config_changed: configChanged } : {}), ...(removed ? { suite_removed: removed } : {}), commands: settled,
+      ...(lazy ? { base_run: { mode: 'lazy', ran: sides.baseRan, of: timed.commands.length } } : {}),
+      ...(sides.runner ? { runner_source: sides.runner.fallback === null ? 'base' : 'none', runner: sides.runner } : {}),
+      lock: lock.mode, lock_wait_ms: lock.waitedMs + (sides.runnerWaitMs || 0),
       duration_ms: { head: headMs, base: baseMs, total: msSince(tTotal) },
     };
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
     release();
+    lock.release();
   }
 }
 

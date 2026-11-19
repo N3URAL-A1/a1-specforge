@@ -270,7 +270,7 @@ before any merge; `pr merge-check` runs the suites itself, so a deferred gate ne
 ```bash
 node <repo>/_shared/a1-tools.cjs verify run --project <dir> --affected --phase <spec-id>; RC=$?
 echo "verify run exit=$RC"
-if [ $RC -ne 0 ]; then echo "STOP: gate-1-build red (verdict fail or no test command)"; fi
+if [ $RC -eq 2 ]; then echo "STOP: gate-1-build not run (exit 2: error lock_timeout = another local verify run held the CLI lock past 15 min, host busy, re-run, not red; any other error = usage or config)"; elif [ $RC -ne 0 ]; then echo "STOP: gate-1-build red (verdict fail, exit $RC)"; fi
 ```
 
 Reading the `verify run` record (spec 028): name every `skipped_on_host` id in the wave report and never count a skipped id as a pass (it did not run on this host); name every `env_red` entry (a known environment-red suite, excused on this platform only, never on a head-only red) and every `env_red_stale` warning (`warnings[]`: the entry is green or names no command, remove it from `.a1/verify.json`); copy each `hints` line into the report. `skipped_on_host`, `env_red_stale` and `hints` do not change the exit code; an `env_red` entry takes its id out of the verdict on this platform (under `--base` only when the id is red on base and head), and a run where zero commands ran fails with `all_commands_skipped_on_host`. None of this adds a step.
