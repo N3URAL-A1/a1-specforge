@@ -21,6 +21,7 @@ const { loadEntries, entriesAt, clearedFingerprints, fingerprintOf, isSelfReview
 const hostLib = require('./verify-host.cjs');
 const affectedLib = require('./verify-affected.cjs');
 const lockLib = require('./verify-lock.cjs');
+const runnerLib = require('./verify-runner-path.cjs');
 
 const { VerifyError } = vb;
 
@@ -304,6 +305,7 @@ function commandReason(r, touchesSource) {
     if (r.failed === 0 || (r.signal !== null && r.failed === null)) return 'implausible_crash';
     return r.signal !== null ? 'signal' : 'command_failed';
   }
+  if (typeof r.leak_note === 'string' && r.leak_note !== '') return 'leak_note';
   if (r.failed !== null && r.failed > 0) return 'reported_failures';
   if (r.passed !== null && r.passed + r.failed === 0 && touchesSource) return 'zero_tests';
   return null;
@@ -409,6 +411,74 @@ function lazyHeadSide(project, basePlan, headPlan, baseSha, ctx) {
     return { ...done, duration_ms: typeof firsts[i].duration_ms === 'number' ? firsts[i].duration_ms : null, retry_duration_ms: retryRaw && typeof retryRaw.duration_ms === 'number' ? retryRaw.duration_ms : null };
   });
   return { settled, cache: 'off', base, baseMs, baseRan: need.map((c) => c.id) };
+}
+
+const sideRecord = (ids, res) => ({ requested: ids.length, exit: res.exit, ms: res.ms, lock_wait_ms: res.lockWaitMs, checks_skipped: res.checksSkipped, summary_notes: res.summaryNotes });
+
+/**
+ * Lazy order through the base runner (spec 027 FR-013, D9): head side, then base for the D2 ids that exist at base, then one serial
+ * retry call for every retryable head command; `settle` gets the prefetched retry. Same settled shape as lazyHeadSide.
+ * @param {{tmp: string, touches: boolean, cwd: string, env: object, lockWaitMs: number}} ctx env = the runner env (D9); lockWaitMs = verify lock wait so far
+ * @param {{dir: string}} rp the prepared runner
+ * @returns {{settled: object[], cache: string, base: object|null, baseMs: number|null, baseRan: string[], runnerWaitMs: number, runner: {fallback: null, why: null, contract: number, sides: object}}}
+ */
+function runnerSides(project, basePlan, headPlan, baseSha, ctx, rp) {
+  let waited = 0;
+  const timeoutMs = headPlan.commands[0].timeoutMs;
+  const deps = { spawnGroup, noteSpawn };
+  const call = (side, root, ids, workers) => {
+    const left = Math.max(0, lockLib.lockCeilingMs(process.env) - ctx.lockWaitMs - waited);
+    const res = runnerLib.runSide({ runnerDir: rp.dir, root, ids, side, workers, env: ctx.env, tmp: ctx.tmp, timeoutMs, lockWaitMs: left, deps });
+    waited += res.lockWaitMs;
+    return res;
+  };
+  const headIds = headPlan.commands.map((c) => c.id);
+  const head = call('head', ctx.cwd, headIds);
+  const finished = headPlan.commands.map((c) => finishCommand(head.records.get(c.id), ctx.touches));
+  const red = new Set(headPlan.commands.filter((c, i) => finished[i].reason !== null).map((c) => c.id));
+  const need = basePlan.commands.filter((c) => red.has(c.id) || c.kind !== 'none');
+  const present = need.filter((c) => gitRaw(project, ['cat-file', '-e', `${baseSha}:${c.id}`]) !== null);
+  const tBase = process.hrtime.bigint();
+  const baseRes = present.length > 0 ? vb.withSnapshot(project, baseSha, (dir) => call('base', dir, present.map((c) => c.id)), 'base') : null;
+  const base = need.length > 0 ? {
+    ids: new Map(need.map((c) => [c.id, baseRes && baseRes.records.has(c.id) ? vb.idSet(finishCommand(baseRes.records.get(c.id), ctx.touches)) : new Set()])),
+    skipped: new Map(need.map((c) => [c.id, null])),
+    durations: new Map(need.map((c) => [c.id, baseRes && baseRes.records.has(c.id) ? baseRes.records.get(c.id).duration_ms : null])),
+    cache: 'off',
+  } : null;
+  const baseMs = base ? Math.round(Number(process.hrtime.bigint() - tBase) / 1e6) : null;
+  const baseOf = (c) => (base ? (base.ids.get(c.id) || new Set()) : new Set());
+  const retryIds = headPlan.commands.filter((c, i) => vb.isRetryable(finished[i], baseOf(c))).map((c) => c.id);
+  const retryRes = retryIds.length > 0 ? call('retry', ctx.cwd, retryIds, 1) : null;
+  const settled = headPlan.commands.map((c, i) => {
+    let retryRaw = null;
+    const retry = () => { retryRaw = retryRes.records.get(c.id); return finishCommand(retryRaw, ctx.touches); };
+    const done = vb.settle(finished[i], retry, baseOf(c), headPlan.flakyBase);
+    const first = head.records.get(c.id);
+    return { ...done, duration_ms: first.duration_ms, retry_duration_ms: retryRaw ? retryRaw.duration_ms : null };
+  });
+  const sides = { head: sideRecord(headIds, head), base: baseRes ? sideRecord(present.map((c) => c.id), baseRes) : null, retry: retryRes ? sideRecord(retryIds, retryRes) : null };
+  return { settled, cache: 'off', base, baseMs, baseRan: present.map((c) => c.id), runnerWaitMs: waited, runner: { fallback: null, why: null, contract: 1, sides } };
+}
+
+const FALLBACK_WHY = Object.freeze({ base_copy_missing: 'the base commit has no runner files', no_contract: 'the base runner does not answer the contract line' });
+
+/**
+ * Side selection of the lazy order: through the base runner when `ctx.useRunner` and the plan allows it (D4, D5), else the serial path.
+ * The prepared runner copy is released here, so its temp dir is gone when runVerify returns (audit m6).
+ * @returns {object} lazyHeadSide's shape, plus `runner` and `runnerWaitMs` when ctx.useRunner
+ */
+function selectSides(project, timed, headTimed, baseSha, head, ctx) {
+  return vb.withSnapshot(project, head, (cwd) => {
+    const c = { ...ctx, cwd, env: ctx.useRunner ? ctx.envSuite : ctx.env };
+    const serial = (fallback, why) => ({ ...lazyHeadSide(project, timed, headTimed, baseSha, { ...c, env: ctx.env }), runnerWaitMs: 0, runner: { fallback, why, contract: null, sides: null } });
+    if (!ctx.useRunner) return lazyHeadSide(project, timed, headTimed, baseSha, c);
+    const el = headTimed.commands.length === 0 ? { ok: false, why: 'no commands' } : runnerLib.eligibility(timed, headTimed.commands);
+    if (!el.ok) return serial('not_eligible', el.why);
+    const rp = runnerLib.prepareRunner(project, baseSha, ctx.envSuite);
+    if (!rp.ok) return serial(rp.why, FALLBACK_WHY[rp.why]);
+    try { return runnerSides(project, timed, headTimed, baseSha, c, rp); } finally { rp.release(); }
+  }, 'head');
 }
 
 /** Eager order (base side first, then head with inline settle): the order of every run but merge-check's. */
@@ -535,7 +605,7 @@ function headCommands(project, plan, headSha_) {
 const pairs = (commands, key) => commands.flatMap((c) => c[key].map((id) => ({ command: c.id, id })));
 
 /**
- * @param {{project:string, base?:string, affected?:boolean (run the measured subset, spec 027 FR-006; never with base), timeoutMs?:number, noCache?:boolean, lazyBase?:boolean (merge-check only; needs noCache and base, spec 027 FR-011), host?:{platform?:string, probeTimeoutMs?:number, spawn?:Function}}} opts host: test injection of the platform / probe;
+ * @param {{project:string, base?:string, affected?:boolean (run the measured subset, spec 027 FR-006; never with base), timeoutMs?:number, noCache?:boolean, lazyBase?:boolean (merge-check only; needs noCache and base, spec 027 FR-011), runner?:boolean (lazy path only: run suites through the base runner, FR-013), host?:{platform?:string, probeTimeoutMs?:number, spawn?:Function}}} opts host: test injection of the platform / probe;
  *   noCache: never read or write the
  *   sha + command-hash result cache (merge-check sets it: a cache file is writable by the code under test)
  * @returns {object} the verify_run record; throws VerifyError (exit 2)
@@ -581,8 +651,8 @@ function runVerify(opts) {
     let sides;
     if (lazy) {
       const tHead = process.hrtime.bigint();
-      const lz = vb.withSnapshot(project, head, (cwd) => lazyHeadSide(project, timed, headTimed, baseSha, { tmp, touches, cwd, env: runEnv }), 'head');
-      sides = { base: lz.base, side: lz, baseMs: lz.baseMs, headMs: msSince(tHead) - (lz.baseMs || 0), baseRan: lz.baseRan };
+      const lz = selectSides(project, timed, headTimed, baseSha, head, { tmp, touches, env: runEnv, envSuite: suiteEnv(runEnv), useRunner: opts.runner === true, lockWaitMs: lock.waitedMs });
+      sides = { base: lz.base, side: lz, baseMs: lz.baseMs, headMs: msSince(tHead) - (lz.baseMs || 0), baseRan: lz.baseRan, runner: lz.runner || null, runnerWaitMs: lz.runnerWaitMs || 0 };
     } else {
       sides = eagerSides(project, timed, headTimed, { compareBase: sel.compareBase, baseSha, baseHash, head, hash, withBase: opts.base !== undefined }, { tmp, touches, noCache, env: runEnv });
     }
@@ -605,7 +675,8 @@ function runVerify(opts) {
       touches_source: touches, changed_files: changed.length, flaky: pairs(side.settled, 'flaky_ids'), pre_existing_red: pairs(side.settled, 'pre_existing_red_ids'),
       cache: { head: side.cache, base: base ? base.cache : (lazy ? 'off' : 'none') }, ...(configChanged ? { config_changed: configChanged } : {}), ...(removed ? { suite_removed: removed } : {}), commands: settled,
       ...(lazy ? { base_run: { mode: 'lazy', ran: sides.baseRan, of: timed.commands.length } } : {}),
-      lock: lock.mode, lock_wait_ms: lock.waitedMs,
+      ...(sides.runner ? { runner_source: sides.runner.fallback === null ? 'base' : 'none', runner: sides.runner } : {}),
+      lock: lock.mode, lock_wait_ms: lock.waitedMs + (sides.runnerWaitMs || 0),
       duration_ms: { head: headMs, base: baseMs, total: msSince(tTotal) },
     };
   } finally {
