@@ -237,7 +237,7 @@ function mergeCheck(opts) {
   const headMoved = ci.used && prHeadSha(opts.pr, opts.project) !== guards.prHead; // TOCTOU: CI was read for a head that is no longer the PR head
   const record = ci.used
     ? { verdict: 'ci_evidence', cache: null, pre_existing_red: [], flaky: [], config_changed: null, suite_removed: null, head_sha: guards.prHead, commands: [], host: null, skipped_on_host: null, hints: ciHostHints(opts.project) }
-    : runVerify({ project: opts.project, base: baseRef, noCache: true, lazyBase: true });
+    : runVerify({ project: opts.project, base: baseRef, noCache: true, lazyBase: true, runner: true });
   const checks = requiredChecks(opts.pr, opts.project);
   const bugOk = opts.bug !== undefined && bugResolves(opts, baseSha);
   const reasons = [
@@ -253,6 +253,7 @@ function mergeCheck(opts) {
     ok: reasons.length === 0, pr: Number(opts.pr), base: baseRef, base_sha: baseSha, head_sha: record.head_sha, gh_bin: ghBinMode(), reasons,
     suites: {
       lock_wait_ms: typeof record.lock_wait_ms === 'number' ? record.lock_wait_ms : null,
+      runner_source: record.runner_source || null, runner: record.runner || null, base_run: record.base_run || null,
       verdict: record.verdict, cache: record.cache, pre_existing_red: record.pre_existing_red, flaky: record.flaky, config_changed: record.config_changed || null, suite_removed: record.suite_removed || null,
       host: record.host || null, skipped_on_host: record.skipped_on_host || null, ...(record.hints && record.hints.length > 0 ? { hints: record.hints } : {}),
       ...(record.env_red && record.env_red.length > 0 ? { env_red: record.env_red } : {}), ...(record.warnings && record.warnings.length > 0 ? { warnings: record.warnings } : {}),
