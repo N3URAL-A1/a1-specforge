@@ -220,3 +220,29 @@ Wave 9 gate: verify run --affected --phase 027-lean-pipeline-s3: verdict pass, 6
 - RED (before): `bash bin/run-suites.sh --workers 1 a1-verify/run-tests.sh` printed the warning, "ended 6 leftover processes".
 - Fix: the timer traps TERM and kills its own sleep. Same pattern elsewhere in this slice's shell files: 0 (grep of `( sleep N;` over `git diff --name-only a40a85f HEAD -- '*.sh'`).
 - GREEN (after): same command, rc 0, 527 passed, no warning.
+
+## Review fixes — Reinhard (2 major, 7 minor, 3 nit) and Samuel (7 minor), round 1
+Completed: 2026-11-19. One commit per finding group; each case RED-proved against the unfixed code, then GREEN.
+
+| Finding | Commit | Test | RED proof |
+|---|---|---|---|
+| R1 = SEC-3 signal name for rc > 128 | 38fe5b2 | Part 17 J9a/J9b, RP16/RP16b | J9a red (`[null,"SIG"]` before), RP16 red (runner_result_invalid before); J9b/RP16b green before and after: exit 130 stays SIGINT |
+| R2 private verify lock in direct runs | beb3302 | LKP1-LKP4 (cases-lock.sh) | head call removed: LKP1, LKP2, LKP3 red |
+| SEC-2 hardened git env for `git archive` | 5dea8a1 | RP17, RP17c | production line reverted: RP17b, RP17c red |
+| SEC-1 base runner copy rewritten by head | 3ca2763 | RP18, RP18b, RP18c | check disabled: RP18, RP18b red |
+| SEC-4 `$vl` quoting | 71bb8af | Part 21 RV1a/RV1b | old line restored: RV1a, RV1b red |
+| minor: `check-assert-deletions.sh` from a subdirectory | 90b0ee6 | AD6 | old script: AD6 red |
+| minor: lock wait budget used up | ab48855 | RP19, RP19b | old code: RP19, RP19b red |
+| minor: WD1d tautology | 350e2ff | WD1d | report.sh emitting SIGUSR1: WD1d red |
+| minor writeOwner, SEC-6, nit exit listener | 81b9507 | LKR1-LKR4 | old verify-lock.cjs: all four red |
+| SEC-7 spawn log env | 2a66071 | LZ8, LZ8b | old SUITE_ENV_DROP: LZ8 red |
+| minor `base_run.ran` serial filter | 4276af8 | LZ9, LZ9b | NO RED PATH: both paths read the plan off the base tree, so the filter changes nothing in practice. Test is a regression pin |
+| GNU `sed -i '2i'` in RP18 (found by the full run, a1-vault-fallback L1b) | see git log | RP18 | a1-vault-fallback L1b red before, green after |
+
+### Notes
+- R1 reader/runner consistency: a shell cannot tell a real SIGINT kill from a deliberate `exit 130` (both are rc 130), so the writer reports 130 as SIGINT. Both paths give verdict fail; only the reason label can differ (runner path: signal/implausible_crash, serial path: command_failed). D8 (verdict unchanged) holds. 255 and RTMIN+n are plain exit codes now.
+- R2 suites changed (all that spawn `verify run` or `pr merge-check` as a real call, found by grep): a1-verify, a1-pr-merge-check, a1-metrics (part 06), a1-probe (part 03), a1-exit2-audit. Shared helper `_test-fixtures/lib/vlock.sh`. FR-012: in the two probe dirs only run-tests.sh heads got added lines; helpers in files new in this phase (cases-lock, cases-lazy, cases-runner) were edited. `check-assert-deletions.sh --base a40a85f`: deleted=0.
+- WD1d is not an FR-012 deletion: the old line asserted that a string containing the actual value contained the actual value, so it could not fail. It lives in a1-suite-runner, which the numstat probe (a1-verify, a1-pr-merge-check) does not cover; the replacement is a real check (SIGTERM or SIGKILL).
+- SEC-1 outcome: exit 2 `runner_result_invalid` ("the base runner copy changed before the <side> call"). Comparison by blob id (`git ls-tree` at the base sha against `git hash-object --no-filters` of the four files, both with the pinned git env), no re-extraction.
+- SEC-2: `verify-base.cjs` `extractSnapshot` got the same one-line env change (RP17c).
+- Not fixed: item 14 (runVerify 75 lines, optional): its locals are shared across the whole body, an extraction is not cheap or safe. SEC-5 and the TMPDIR-versus-/tmp split of the two lock paths: spec-mandated, go to the PR text as known limits. SEC-1 residual for the PR text: no process-group escape is needed for a head suite to rewrite the copy; the new check closes the window between calls, not the window inside a call.

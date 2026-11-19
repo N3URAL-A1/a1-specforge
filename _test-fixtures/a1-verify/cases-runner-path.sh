@@ -153,7 +153,7 @@ rp17_snap="$(node -e 'const vb=require(process.argv[1]); const d=vb.extractSnaps
 # RP18 (review fix, SEC-1): a head suite that rewrites the base runner copy between the calls: the base call must not run it
 mkdir -p "$RPW/rp18-tmp"; rm -f "$RPW/mark18"
 cat > "$RPW/rp18-evil.sh" <<'EVIL'
-for d in "$A1_FX_RTMP"/a1-verify-runner-*; do sed -i '2i touch "$A1_FX_MARK"' "$d/bin/run-suites.sh"; done
+for d in "$A1_FX_RTMP"/a1-verify-runner-*; do f="$d/bin/run-suites.sh"; { head -n 1 "$f"; echo 'touch "$A1_FX_MARK"'; tail -n +2 "$f"; } > "$f.new"; mv "$f.new" "$f"; done
 EVIL
 rp_repo rp18 : 'printf "#!/usr/bin/env bash\necho \"s: 1 passed, 0 failed\"\nbash \"\$A1_FX_EVIL\"\nexit 1\n" > _test-fixtures/s2/run-tests.sh'
 export A1_FX_MARK="$RPW/mark18" A1_FX_RTMP="$RPW/rp18-tmp" A1_FX_EVIL="$RPW/rp18-evil.sh"; RP_TMPDIR="$RPW/rp18-tmp" rp_run "$P" rp18
