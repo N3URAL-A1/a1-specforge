@@ -149,11 +149,14 @@ rs_print_failures() {
 # with flag wx and mode 0600 through <file>.tmp.<pid>, then renamed. Single writer; the reader is
 # readRunnerResult in _shared/lib/verify-runner-path.cjs. Returns 1 (message on stderr) when it cannot write.
 rs_write_json_out() {
-  local i=0 rc sig tsv="$RS_TMP/results.tsv" ec
+  local i=0 rc sig tsv="$RS_TMP/results.tsv" ec name
   : > "$tsv" || { echo "run-suites: cannot write --json-out $RS_JSON_OUT" >&2; return 1; }
   while [ "$i" -lt "$RS_N_RES" ]; do
     rc="${RS_RES_RC[$i]}"; sig=""; ec="$rc"
-    if [ "$rc" -gt 128 ]; then ec=""; sig="SIG$(kill -l "$((rc - 128))" 2>/dev/null)"; fi
+    if [ "$rc" -gt 128 ]; then   # a signal only when kill -l names it plainly (255 and RTMIN+n stay a plain exit code)
+      name="$(kill -l "$((rc - 128))" 2>/dev/null)"
+      if [[ "$name" =~ ^[A-Z0-9]+$ ]]; then ec=""; sig="SIG$name"; fi
+    fi
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "${RS_RES_ID[$i]}" "$ec" "$sig" "${RS_RES_TIMED[$i]}" "${RS_RES_SEC[$i]}" \
       "${RS_RES_LEAK[$i]}" "${RS_RES_SUMNOTE[$i]}" >> "$tsv"
     i=$((i + 1))

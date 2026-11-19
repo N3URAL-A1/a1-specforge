@@ -128,4 +128,10 @@ unset A1_FX_OUT
 mkdir -p "$RPW/rp15-tmp"; rp_repo rp15; RP_TMPDIR="$RPW/rp15-tmp" rp_run "$P" rp15
 check "RP15 green run: pass, runner_source base, no a1-verify-runner-* dir left when runVerify returns" 0 'j.verdict+"|"+j.runner_source+"|"+j.leftover_runner_dirs.length' "pass|base|0"
 
+# RP16 (review fix, Reinhard 1 / SEC-3): a suite that exits 255 (no signal name) or a deliberate 130 is a failed suite, not an invalid runner result
+rp_repo rp16 : 'printf "#!/usr/bin/env bash\necho \"s: 1 passed, 0 failed\"\nexit 255\n" > _test-fixtures/s2/run-tests.sh'; rp_run "$P" rp16
+check "RP16 real runner, suite exit 255: verdict fail, command_failed (not runner_result_invalid)" 0 'j.verdict+"|"+j.commands.find(c=>c.id.includes("s2")).reason' "fail|command_failed"
+rp_repo rp16b : 'printf "#!/usr/bin/env bash\necho \"s: 1 passed, 0 failed\"\nexit 130\n" > _test-fixtures/s2/run-tests.sh'; rp_run "$P" rp16b
+check "RP16b real runner, suite exit 130: verdict fail (the reason label may be signal-based)" 0 'j.verdict' "fail"
+
 lk_leak_end RP

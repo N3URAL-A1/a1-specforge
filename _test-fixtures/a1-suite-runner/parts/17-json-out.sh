@@ -63,3 +63,12 @@ assert_eq "J7 subset true and the two ids" "$(jo_get "$W_JO/sub.json" '[j.subset
 plant_suite "$T_JO" kill/run-tests.sh 'kill -KILL $$'
 rs_run "$T_JO" kill/run-tests.sh --json-out "$W_JO/kill.json"
 assert_eq "J8 killed suite: exit_code null, signal SIGKILL" "$(jo_get "$W_JO/kill.json" '[j.results[0].exit_code,j.results[0].signal]')" '[null,"SIGKILL"]'
+
+# J9 (review fix, Reinhard 1 / SEC-3): an exit code above 128 is a signal only when kill -l names it plainly.
+# 255 has no name (the old code wrote "SIG" and the reader rejected the file); 130 stays SIGINT (a shell cannot tell it from a real kill).
+plant_suite "$T_JO" e255/run-tests.sh 'echo "e: 0 passed, 1 failed"; exit 255'
+rs_run "$T_JO" e255/run-tests.sh --json-out "$W_JO/e255.json"
+assert_eq "J9a exit 255: plain exit_code, no signal" "$(jo_get "$W_JO/e255.json" '[j.results[0].exit_code,j.results[0].signal]')" '[255,null]'
+plant_suite "$T_JO" e130/run-tests.sh 'echo "e: 0 passed, 1 failed"; exit 130'
+rs_run "$T_JO" e130/run-tests.sh --json-out "$W_JO/e130.json"
+assert_eq "J9b exit 130: SIGINT, no exit code" "$(jo_get "$W_JO/e130.json" '[j.results[0].exit_code,j.results[0].signal]')" '[null,"SIGINT"]'
