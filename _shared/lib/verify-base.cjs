@@ -15,6 +15,17 @@ const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { pinnedGitEnv } = require('./xprov-common.cjs');
 const { gitRaw } = require('./verify-check.cjs');
+
+/** pinnedGitEnv for the verify git calls on the user's project: GIT_CONFIG_GLOBAL=/dev/null drops a global safe.directory, so the
+ * project path is pinned as safe (appended after the existing pinned keys; the xprov callers keep the plain pinnedGitEnv). */
+function verifyGitEnv(project) {
+  const env = pinnedGitEnv(process.env);
+  const n = Number(env.GIT_CONFIG_COUNT) || 0;
+  env[`GIT_CONFIG_KEY_${n}`] = 'safe.directory';
+  env[`GIT_CONFIG_VALUE_${n}`] = path.resolve(project);
+  env.GIT_CONFIG_COUNT = String(n + 1);
+  return env;
+}
 const { fingerprintOf } = require('./disposition-store.cjs');
 
 const CACHE_DIR = '.a1/verify-cache';
@@ -91,7 +102,7 @@ function extractSnapshot(project, sha, label = 'base') {
   const tar = path.join(dir, '..', `${path.basename(dir)}.tar`);
   const release = [cleanupOnExit(dir), cleanupOnExit(tar)];
   try {
-    const a = spawnSync('git', ['-C', project, 'archive', '--format=tar', '-o', tar, sha], { shell: false, stdio: 'ignore', timeout: ARCHIVE_TIMEOUT_MS, env: pinnedGitEnv(process.env) });
+    const a = spawnSync('git', ['-C', project, 'archive', '--format=tar', '-o', tar, sha], { shell: false, stdio: 'ignore', timeout: ARCHIVE_TIMEOUT_MS, env: verifyGitEnv(project) });
     if (a.status !== 0) throw new VerifyError('base_unresolved', `git archive of ${sha} failed (object missing in a shallow clone? run: git fetch --unshallow)`);
     try {
       const x = spawnSync('tar', ['-xf', tar, '-C', dir], { shell: false, stdio: 'ignore', timeout: ARCHIVE_TIMEOUT_MS });
@@ -301,6 +312,7 @@ function applySkipIncrease(commands, baseSkipped, cleared) {
 }
 
 module.exports = {
+  verifyGitEnv,
   VerifyError, skipFingerprint, applySkipIncrease, RETRYABLE, NEVER_PRE_EXISTING, canon, CACHE_DIR, CONFIG_FILE, CONFIG_RULE, configChange, envDigest, cleanupOnExit, parseVerifyJson, resolveMergeBase, extractSnapshot, withSnapshot, dirtyPaths, isCodeForReuse, CODE_IN_A1, configDigest, commandHash,
   readCache, writeCache, failingIds, settle, idSet, flakyBaseGrown, isRetryable,
 };

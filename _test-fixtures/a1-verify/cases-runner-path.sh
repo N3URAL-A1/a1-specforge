@@ -162,9 +162,23 @@ check "RP18 head suite rewrites the runner copy: runner_result_invalid (no verdi
 [[ "$(ls "$RPW/rp18-tmp" | grep -c a1-verify-runner-)" == "0" ]] && ok "RP18c the runner copy dir is gone afterwards" || bad "RP18c copy left: $(ls "$RPW/rp18-tmp")"
 unset A1_FX_MARK A1_FX_RTMP A1_FX_EVIL
 
-# RP19 (review fix): a used-up lock wait budget is lock_timeout before the runner call; the runner is never started with --lock-wait 0
+# RP19 (review fix 2): ceiling 0 is valid (range 0..900000). Free runner lock: the run passes (the ~12 ms ps spawn is not a timeout).
 rp_repo rp19; RP_WAIT_MS=0 rp_run "$P" rp19
-check "RP19 lock wait budget 0: lock_timeout (no verdict)" 0 'j.error' "lock_timeout"
-[[ "$(rp_count runner:)" == "0" ]] && ok "RP19b no runner call was made" || bad "RP19b log: $(cat "$RP_LOG")"
+check "RP19 lock wait ceiling 0, no holder: pass (no false lock_timeout)" 0 'j.verdict+"|"+(j.error||"")' "pass|"
+# RP19b: ceiling 0 and a live runner-lock holder: the runner refuses at once, failFromExit maps it to lock_timeout. Bounded: the holder's timer ends its own sleep.
+rp_repo rp19b; mkdir -p "$RPW/rp19b/rlock"
+node -e 'setTimeout(()=>process.exit(0), 30000)' run-suites.sh-fx-holder19 & RP19_PID=$!
+RP19_I=0; while [[ $RP19_I -lt 40 ]]; do [[ "$(ps -o command= -p "$RP19_PID" 2>/dev/null)" == *run-suites.sh-fx-holder19* ]] && break; sleep 0.05; RP19_I=$((RP19_I + 1)); done
+printf '%s\n' "$RP19_PID" > "$RPW/rp19b/rlock/pid.tmp"; mv "$RPW/rp19b/rlock/pid.tmp" "$RPW/rp19b/rlock/pid"
+( s=""; trap 'kill "$s" 2>/dev/null; exit 0' TERM; sleep 60 & s=$!; wait "$s"; kill -KILL "$RP19_PID" 2>/dev/null ) >/dev/null 2>&1 &
+RP19_K=$!
+RP_WAIT_MS=0 rp_run "$P" rp19b
+kill "$RP19_PID" 2>/dev/null; wait "$RP19_PID" 2>/dev/null; kill "$RP19_K" 2>/dev/null; wait "$RP19_K" 2>/dev/null
+check "RP19b lock wait ceiling 0, live runner holder: lock_timeout via the runner refusal" 0 'j.error' "lock_timeout"
+
+# RP20 (review fix 2): the verify git calls pin safe.directory=<project> after the existing pinned keys (GIT_CONFIG_GLOBAL=/dev/null drops a global one;
+# a repo with another owner cannot be built without root, so the env the calls use is asserted instead)
+RP20="$(node -e 'const vb=require(process.argv[1]); const e=vb.verifyGitEnv(process.argv[2]); const n=Number(e.GIT_CONFIG_COUNT); process.stdout.write([e.GIT_CONFIG_GLOBAL, e[`GIT_CONFIG_KEY_${n-1}`], e[`GIT_CONFIG_VALUE_${n-1}`]===process.argv[2], n>1, e[`GIT_CONFIG_KEY_0`]!=="safe.directory"].join("|"))' "$REPO_ROOT/_shared/lib/verify-base.cjs" "$P")"
+[[ "$RP20" == "/dev/null|safe.directory|true|true|true" ]] && ok "RP20 verifyGitEnv: global config still dropped, safe.directory=<project> appended after the existing pins" || bad "RP20 got '$RP20'"
 
 lk_leak_end RP

@@ -9,6 +9,7 @@ set -u
 usage() { echo "usage: check-assert-deletions.sh --base <ref> [dir...]" >&2; exit 2; }
 
 BASE=""
+git rev-parse --git-dir >/dev/null 2>&1 || { echo "not a git repository" >&2; exit 2; }
 if [ "${1:-}" = "--base" ]; then
   [ $# -ge 2 ] || usage
   BASE="$2"; shift 2

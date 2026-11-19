@@ -51,3 +51,7 @@ ad_repo ad6; git -C "$ADR" checkout -q -b topic
 sed -i.bak '2d' "$ADR/_test-fixtures/a1-verify/run-tests.sh"; rm -f "$ADR/_test-fixtures/a1-verify/run-tests.sh.bak"; ad_commit del
 ADOUT="$(cd "$ADR/docs" && bash "$AD_SCRIPT" --base main 2>&1)"; ADRC=$?
 [[ $ADRC -eq 1 && "$ADOUT" == *"deleted=1"* ]] && ok "AD6 run from a subdirectory: the deletion is still found (exit 1)" || bad "AD6 rc=$ADRC out=$ADOUT"
+
+# AD-norepo (review fix 2): outside a git repository the message says so (exit 2), not the usage text
+mkdir -p "$WORK/ad-norepo"; ADNR="$(cd "$WORK/ad-norepo" && GIT_CEILING_DIRECTORIES="$WORK" bash "$AD_SCRIPT" --base main 2>&1)"; ADNRC=$?
+[[ $ADNRC -eq 2 && "$ADNR" == "not a git repository" ]] && ok "AD-norepo outside a git repository: 'not a git repository', exit 2" || bad "AD-norepo rc=$ADNRC out=$ADNR"

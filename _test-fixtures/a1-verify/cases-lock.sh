@@ -131,6 +131,19 @@ if (which === 'writeowner') {   // 9: psCommand throws inside writeOwner, after 
   const out = run(() => L.acquireVerifyLock({ env: env('wo', 300), psCommand: () => { throw new Error('boom'); } }));
   process.stdout.write(`${out}|dir_left=${fs.existsSync(path.join(w, 'wo'))}`);
 }
+if (which === 'foreignowner') {   // 9b: the owner write fails, but the dir now holds ANOTHER run's owner record: the dir stays
+  const dir = path.join(w, 'fo');
+  const out = run(() => L.acquireVerifyLock({ env: env('fo', 300), psCommand: () => {
+    fs.writeFileSync(path.join(dir, 'owner.json'), JSON.stringify({ pid: process.pid, token: 'fedcba9876543210fedcba9876543210', cmd: 'x', started_at: 'x' }));
+    throw new Error('boom');
+  } }));
+  process.stdout.write(`${out}|dir_left=${fs.existsSync(dir)}`);
+}
+if (which === 'pshang') {   // 14: a hung ps is cut by the spawnSync timeout (the fake ps sleeps 15 s; the bound is 3 s)
+  const t0 = Date.now();
+  const out = run(() => { const l = L.acquireVerifyLock({ env: env("ph", 300) }); l.release(); return l.mode; });
+  process.stdout.write(`${out}|fast=${Date.now() - t0 < 9000}`);
+}
 if (which === 'noowner') {   // 10a: a fresh owner-less dir (mtime now) is not stale for takeover even when the loop clock says it is
   fs.mkdirSync(path.join(w, 'no'), { mode: 0o700 });
   const c = clock(Date.now() + 60000);
@@ -155,6 +168,11 @@ LKR
 lkr() { env -u A1_VERIFY_LOCK_TOKEN node "$WORK/lkr.cjs" "$REPO_ROOT/_shared/lib/verify-lock.cjs" "$WORK" "$1" 2>&1; }
 LKR1="$(lkr writeowner)"
 [[ "$LKR1" == "LockError:lock_unusable|dir_left=false" ]] && ok "LKR1 owner write fails after the mkdir: LockError lock_unusable, the dir is removed" || bad "LKR1 got '$LKR1'"
+LKR1b="$(lkr foreignowner)"
+[[ "$LKR1b" == "LockError:lock_unusable|dir_left=true" ]] && ok "LKR1b owner write fails and the dir holds another run's owner record: the dir is kept" || bad "LKR1b got '$LKR1b'"
+mkdir -p "$WORK/fakeps"; printf '#!/bin/sh\nexec sleep 15\n' > "$WORK/fakeps/ps"; chmod +x "$WORK/fakeps/ps"
+LKR1c="$(PATH="$WORK/fakeps:$PATH" lkr pshang)"
+[[ "$LKR1c" == "held|fast=true" ]] && ok "LKR1c a hung ps is cut by the 3 s timeout (empty answer, lock still taken, < 9 s)" || bad "LKR1c got '$LKR1c'"
 LKR2="$(lkr noowner)"
 [[ "$LKR2" == "LockError:lock_timeout|dir_left=true" ]] && ok "LKR2 owner-less dir with a fresh mtime is not taken over (lock_timeout, dir kept)" || bad "LKR2 got '$LKR2'"
 LKR3="$(lkr emptyps)"

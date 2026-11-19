@@ -18,6 +18,7 @@ const { spawnSync } = require('child_process');
 const DEFAULT_WAIT_MS = 900000;
 const POLL_MS = 250;
 const INIT_BOUND_MS = 10000;
+const PS_TIMEOUT_MS = 3000;   // well under INIT_BOUND_MS: a hung ps must not stall the lock
 const GUARD_STALE_MS = 30000;
 const MAX_OWNER_BYTES = 4096;
 const TOKEN_RE = /^[0-9a-f]{32}$/;
@@ -55,7 +56,7 @@ function sleepSync(ms) {
 }
 
 function psCmd(pid) {
-  const r = spawnSync('ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  const r = spawnSync('ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: PS_TIMEOUT_MS });   // a timeout leaves status null: empty = live
   return r.status === 0 && typeof r.stdout === 'string' ? r.stdout.trim() : '';
 }
 
@@ -105,7 +106,8 @@ function tryMkdir(dir, token, psCommand) {
     throw new LockError('lock_unusable', `cannot create ${dir}: ${e.code || e.message}`);
   }
   try { writeOwner(dir, token, psCommand); } catch (e) {
-    fs.rmSync(dir, { recursive: true, force: true });   // never leave an owner-less dir behind (the next run would wait for the init bound)
+    const o = readOwner(dir);   // never leave an owner-less dir behind, but never remove a dir another run has since claimed
+    if (o === null || o.token === token) fs.rmSync(dir, { recursive: true, force: true });
     throw new LockError('lock_unusable', `cannot write the owner record in ${dir}: ${e.code || e.message}`);
   }
   return true;

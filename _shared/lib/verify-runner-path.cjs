@@ -10,7 +10,6 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const vb = require('./verify-base.cjs');
-const { pinnedGitEnv } = require('./xprov-common.cjs');
 
 const { VerifyError } = vb;
 
@@ -22,7 +21,7 @@ const ID_RE = /^_test-fixtures\/[A-Za-z0-9._/-]+$/;
 const SIGNAL_RE = /^SIG[A-Z0-9]+$/;
 const CHECK_NAMES = Object.freeze(['reconcile', 'learnings', 'phases']);
 const CHECK_STATES = Object.freeze(['not_selected', 'skipped_nogit', 'skipped_dirty', 'ok', 'failed']);
-const LOCK_LINE_RE = /^run-suites: lock wait of \d+ ms exceeded/;
+const LOCK_LINE_RE = /^run-suites: (lock wait of \d+ ms exceeded|another run holds the lock )/;   // the second form is the runner's plain refusal under --lock-wait 0
 const PREP_TIMEOUT_MS = 30 * 1000;
 const ARCHIVE_TIMEOUT_MS = 60 * 1000;
 const CEILING_SLACK_MS = 60 * 1000;
@@ -69,7 +68,7 @@ function eligibility(basePlan, headCommands) {
 }
 
 function extractRunnerFiles(project, baseSha, dir) {
-  const a = spawnSync('git', ['-C', project, 'archive', '--format=tar', baseSha, ...RUNNER_FILES], { shell: false, encoding: 'buffer', maxBuffer: 16 * 1024 * 1024, timeout: ARCHIVE_TIMEOUT_MS, env: pinnedGitEnv(process.env) }); // SEC-2: no replace refs, no caller GIT_* redirects
+  const a = spawnSync('git', ['-C', project, 'archive', '--format=tar', baseSha, ...RUNNER_FILES], { shell: false, encoding: 'buffer', maxBuffer: 16 * 1024 * 1024, timeout: ARCHIVE_TIMEOUT_MS, env: vb.verifyGitEnv(project) }); // SEC-2: no replace refs, no caller GIT_* redirects
   if (a.status !== 0) return false;
   const x = spawnSync('tar', ['-xf', '-', '-C', dir], { shell: false, input: a.stdout, stdio: ['pipe', 'ignore', 'ignore'], timeout: ARCHIVE_TIMEOUT_MS });
   return x.status === 0;
@@ -79,7 +78,7 @@ function extractRunnerFiles(project, baseSha, dir) {
  * SEC-1: the blob ids the four runner files have at the base sha (ls-tree, hardened env), as {path: id}; null when git cannot say.
  */
 function baseBlobIds(project, baseSha) {
-  const r = spawnSync('git', ['-C', project, 'ls-tree', '-z', baseSha, '--', ...RUNNER_FILES], { shell: false, encoding: 'utf8', timeout: ARCHIVE_TIMEOUT_MS, env: pinnedGitEnv(process.env) });
+  const r = spawnSync('git', ['-C', project, 'ls-tree', '-z', baseSha, '--', ...RUNNER_FILES], { shell: false, encoding: 'utf8', timeout: ARCHIVE_TIMEOUT_MS, env: vb.verifyGitEnv(project) });
   if (r.status !== 0 || typeof r.stdout !== 'string') return null;
   const ids = {};
   for (const rec of r.stdout.split('\0').filter(Boolean)) {
@@ -100,7 +99,7 @@ function copyIntact(project, dir, expected) {
     try { st = fs.lstatSync(f); } catch (_e) { return false; }
     if (!st.isFile() || st.isSymbolicLink()) return false;
   }
-  const h = spawnSync('git', ['-C', project, 'hash-object', '--no-filters', '--', ...files], { shell: false, encoding: 'utf8', timeout: ARCHIVE_TIMEOUT_MS, env: pinnedGitEnv(process.env) });
+  const h = spawnSync('git', ['-C', project, 'hash-object', '--no-filters', '--', ...files], { shell: false, encoding: 'utf8', timeout: ARCHIVE_TIMEOUT_MS, env: vb.verifyGitEnv(project) });
   if (h.status !== 0 || typeof h.stdout !== 'string') return false;
   const got = h.stdout.split('\n').filter(Boolean);
   return got.length === RUNNER_FILES.length && RUNNER_FILES.every((f, i) => got[i] === expected[f]);
