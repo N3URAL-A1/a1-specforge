@@ -155,3 +155,26 @@ RED-proof 7.1 h (rp.release() removed) -> RP15 red (first attempt: green, becaus
 ### Deviations
 - None against rules 1-4. Choices: `runVerify` stays long (side selection moved to `selectSides`, but the function is still over 50 lines as before; the 50-line aim was not reachable without reshaping unrelated code). `runner` is only recorded on the lazy path; with `opts.runner` but no lazy order the record has no `runner_source`. Fallback `runner` object is `{fallback, why, contract: null, sides: null}`. `runner.sides.<side>.requested` is the id count. `base_run.ran` on the runner path lists the ids actually run on base (ids absent at base are not run). A head plan with no commands falls back as `not_eligible` ("no commands") so the runner is never called without selectors. RP9 uses `A1_FX_RUNNER_SIDES="head retry"` (a green retry would make the result `new_flaky`).
 - Left for Wave 8: merge-check passes `runner: true`; retry-order/watchdog/env-equality proofs; help and registry; the sides' `requested` is a count, not ids.
+
+## Wave 8 — Retry order, watchdog, env equality, lock wait; merge-check wiring and docs
+Completed: 2026-11-19
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| 8.1 merge-check `runner: true`, RR1-RR6, MR1-MR4, help, registry | DONE | 1a6e18e | a1-verify 522/0, a1-pr-merge-check 269/0, a1-cli-output 33/0, a1-gates-lint 90/0, a1-workflow-lint 36/0; deletions vs a40a85f in both FR-012 suite dirs: 0; verify-run.cjs 691 (cap 800), verify-runner-path.cjs 227 (cap 450) |
+
+Tests: `_test-fixtures/a1-verify/cases-runner-retry.sh` (sourced after cases-runner-path.sh; own `rr_run` with a portable 120 s kill bound, `rr_holder` = live fake runner owning A1_SUITE_LOCK_DIR) and `_test-fixtures/a1-pr-merge-check/cases-runner.sh` (own `mr_repo`/`mr_mc`). Every run has its own A1_VERIFY_LOCK_DIR, A1_SUITE_LOCK_DIR and a bounded wait; the token is dropped for the child only (`env -u`) or restored by `lk_token_reset`; both files end with the real-lock leak assert.
+
+RED-proof 8.1 a (retry runner call placed before the base call) -> RR2b red (order runner:head,runner:retry,runner:base). First attempt hit the wrong `const tBase` (lazyHeadSide) and crashed the whole suite; redone against runnerSides.
+RED-proof 8.1 b (--suite-timeout-ms dropped from the runner argv) -> RR1 red (hang runs to the 120 s kill bound)
+RED-proof 8.1 c (base side given an extra env var) -> RR4b red
+RED-proof 8.1 d (`runner: true` removed from mergeCheck) -> MR1, MR2, MR3, MR3b red
+RED-proof 8.1 e (--lock-wait passed as 0) -> RR5, RR5b, RR6, RR6b red
+RED-proof 8.1 f (runner side waits not added to the top-level lock_wait_ms) -> RR5 red
+
+### Deviations
+- [Plan text] `gates lint` has no `--phase` flag (exit 2 usage); ran `node _shared/a1-tools.cjs gates lint` (rc 0, 51 rows, no findings).
+- None against rules 1-4. `runner.sides.<side>.requested` stays an id count; neither the merge-check report nor the proofs need ids. The merge-check report adds `runner_source`, `runner`, `base_run` (null when absent) under `suites`.
+- Docs edits: help-verify.cjs (one paragraph), help-merge-check.cjs (4 lines), gates-registry.md (rows pr-merge-check, gate-1-build, workflow-pipeline-exit); no new gate id.
+
+Wave 8 gates: `bash bin/run-suites.sh` rc 0 (366 s); `verify run --affected --phase 027-lean-pipeline-s3`: verdict pass, 63 commands, red none, lock held, lock_wait_ms 13, total 1706230 ms.
