@@ -211,3 +211,4 @@ Rehearsal (SC-9), aiserver, quiet host (load5 15.55 at start, 8.04 at end, 24 cp
 ### Deviations
 - [Plan text] `gates lint` has no `--phase` flag; ran without it.
 - None against rules 1-4.
+Wave 9 gate: verify run --affected --phase 027-lean-pipeline-s3: verdict pass, 63 commands, lock_wait_ms 13, total 1728075 ms.
