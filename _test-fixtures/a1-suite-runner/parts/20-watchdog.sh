@@ -17,7 +17,8 @@ WD_EL=$((SECONDS - WD_T0))
 assert_eq "WD1a runner exits 1" "$RS_RC" "1"
 if [[ $WD_EL -le 20 ]]; then ok "WD1b ended within 20 s (${WD_EL}s)"; else bad "WD1b ended within 20 s" "took ${WD_EL}s"; fi
 assert_eq "WD1c hung suite: timed_out true, exit_code null" "$(wd_get "$W_WD/a.json" 'j.results.filter(r=>r.id==="hang/run-tests.sh").map(r=>[r.timed_out,r.exit_code])[0]')" '[true,null]'
-assert_contains "WD1d signal is SIGTERM or SIGKILL" "SIGTERM SIGKILL $(wd_get "$W_WD/a.json" 'j.results.find(r=>r.id==="hang/run-tests.sh").signal' | tr -d '"')" "$(wd_get "$W_WD/a.json" 'j.results.find(r=>r.id==="hang/run-tests.sh").signal' | tr -d '"')"
+WD_SIG="$(wd_get "$W_WD/a.json" 'j.results.find(r=>r.id==="hang/run-tests.sh").signal' | tr -d '"')"
+assert_eq "WD1d signal is SIGTERM or SIGKILL" "$([[ "$WD_SIG" == SIGTERM || "$WD_SIG" == SIGKILL ]] && echo yes || echo "no: [$WD_SIG]")" "yes"
 assert_eq "WD3 the fast suite is not timed out" "$(wd_get "$W_WD/a.json" 'j.results.find(r=>r.id==="fast/run-tests.sh").timed_out')" "false"
 assert_contains "WD1e the timed-out note is in the output" "$RS_OUT" "timed out after"
 
