@@ -1,35 +1,3 @@
 {
-  "reservations": [
-    {
-      "type": "code_scope",
-      "paths": [
-        "_shared/lib/verify-run.cjs",
-        "_shared/lib/verify-base.cjs",
-        "_shared/lib/verify-lock.cjs",
-        "_shared/lib/verify-runner-path.cjs",
-        "_shared/lib/pr-merge-check.cjs",
-        "_shared/lib/help-merge-check.cjs",
-        "_shared/lib/help-verify.cjs",
-        "_shared/lib/workflow-lint.cjs",
-        "_shared/lib/workflow-lint-verify.cjs",
-        "_shared/gates-registry.md",
-        "bin/run-suites.sh",
-        "bin/run-suites-proc.sh",
-        "bin/run-suites-report.sh",
-        "bin/check-assert-deletions.sh",
-        "skills/a1-pr-review/workflows/05-merge.md",
-        "skills/a1-new-feature/workflows/06-verify.md",
-        "skills/a1-new-feature/workflows/05-implement.md",
-        "skills/a1-execute/workflows/02-execute.md",
-        "skills/a1-execute/workflows/03-verify.md",
-        "_test-fixtures/a1-verify/**",
-        "_test-fixtures/a1-pr-merge-check/**",
-        "_test-fixtures/a1-suite-runner/**",
-        "_test-fixtures/a1-workflow-lint/**"
-      ],
-      "by": "027-lean-pipeline",
-      "at": "2026-11-19T06:36:55.641Z",
-      "stage": "started"
-    }
-  ]
+  "reservations": []
 }
