@@ -47,3 +47,12 @@ RED-proof 2.1 (c) dead-PID takeover removed -> LK2, LK2b, LK6 red (rc=1)
 RED-proof 2.1 (f) lock acquired at top of mergeCheck -> MLK1, MLK2, MLK3 red (rc=1)
 RED-proof 2.1 (g) lock before resolveCommands -> LK12, LK12b red (plus LK1-LK11 self-deadlock red) (rc=1)
 Six suites rerun: a1-verify 436, a1-pr-merge-check 259, a1-disposition 128, a1-exit2-audit 36, a1-metrics 476, a1-probe 894, all 0 failed. Real lock dir absent afterwards.
+
+### Wave 2 defect: gate-1-build stall of a1-verify under an outer verify run
+Reproduced nested with an outer process that takes the real lock like `verify run` and exports the token (scratchpad outer.cjs): a1-verify stalled after `LZ6`, i.e. at case LZ7.
+Cause: `lz_run` (cases-lazy.sh) ran `unset A1_VERIFY_LOCK_TOKEN` in the suite shell, so LZ7 (CLI `vrun --base --no-cache`, no own lock dir) no longer matched the outer owner and waited on the real lock held by the outer run. Same pattern in `ml_run` (a1-pr-merge-check cases-lazy.sh), `vl_env`/`vl_clear` and `mlk_env`/`mlk_clear`.
+Fix (new lines only): leak-assert.sh keeps the outer token (`lk_token_reset` restores it); the four helpers call it instead of `unset`.
+New assert (`<label> outer A1_VERIFY_LOCK_TOKEN kept in the suite shell`, in lk_leak_end, with a sentinel token when no outer one exists, so it also bites standalone).
+RED-proof: `vl_clear` reverted to `unset ... A1_VERIFY_LOCK_TOKEN` -> `LK a case dropped or changed the outer A1_VERIFY_LOCK_TOKEN` red (rc=1, 20 passed 1 failed).
+Nested (outer holds real lock + token), all six suites green: a1-verify 438 (134 s), a1-pr-merge-check 261, a1-disposition 128, a1-exit2-audit 36, a1-metrics 476, a1-probe 894.
+Gate `verify run --affected --phase 027-lean-pipeline-s3`: verdict pass, 33 commands, red none, lock held, lock_wait_ms 12, total 1592320 ms. Numstat deleted=0.
