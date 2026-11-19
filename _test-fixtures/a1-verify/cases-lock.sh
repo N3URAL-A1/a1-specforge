@@ -40,7 +40,7 @@ if vl_holder 1.5 release; then vrun "$P"; vl_stop
   check "LK1 lock released after 1.5 s: waited, then ran (lock held, lock_wait_ms >= 1000)" 0 'j.verdict+"|"+j.lock+"|"+(j.lock_wait_ms>=1000)' "pass|held|true"
 fi
 
-vl_env lk2; vl_green lk2; mkdir -p "$VL_DIR"; sleep 0 & DEADP=$!; wait "$DEADP"
+vl_env lk2; vl_green lk2; export A1_VERIFY_LOCK_WAIT_MS=3000; mkdir -p "$VL_DIR"; sleep 0 & DEADP=$!; wait "$DEADP"
 node -e 'require("fs").writeFileSync(process.argv[1]+"/owner.json",JSON.stringify({pid:Number(process.argv[2]),token:"0123456789abcdef0123456789abcdef",cmd:"sleep 0",started_at:"x"}))' "$VL_DIR" "$DEADP"
 vrun "$P"
 check "LK2 dead owner PID: taken over without a wait" 0 'j.verdict+"|"+j.lock+"|"+(j.lock_wait_ms<1000)' "pass|held|true"
