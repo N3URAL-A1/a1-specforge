@@ -2,6 +2,7 @@
 // workflow-lint rules for the verify scope split (spec 027 slice 2, FR-007/FR-008).
 //   verify-scope      per-wave `verify run` carries --affected; Verify-step `verify run` never does.
 //   verify-reuse-ban  `verify reuse` stays out of the merge path.
+//   quiet-host-poll   no pgrep-based poll in any fenced block under skills/ (FR-017).
 // No require of workflow-lint.cjs (no cycle): the fence helpers come in as a parameter.
 
 const fs = require('fs');
@@ -24,6 +25,7 @@ const REUSE_BAN_FILES = Object.freeze([
 const VERIFY_RUN_RE = /(?:a1-tools\.cjs|\$\{?A1_TOOLS\}?"?)\s+verify\s+run(?=\s|;|$)/;
 const AFFECTED_RE = /(?:^|\s)--affected(?=\s|;|$)/;
 const REUSE_RE = /verify['",\s]+reuse|verify-reuse/;
+const POLL_RE = /(^|[\s;&|(`$])pgrep(\s|$)/;
 const IGNORED_LINE_RE = /^\s*(?:#|echo\b|printf\b)/;
 
 // skills/ files are always required; agents/ and _shared/lib/ files only when that
@@ -112,7 +114,65 @@ function checkReuseBan(root, isSkillsTree) {
   return { checked, findings };
 }
 
+// Lines inside any ``` or ~~~ fence (any info string); closes on the same marker.
+function fencedLines(content) {
+  const out = [];
+  let marker = null;
+  content.split('\n').forEach((line, i) => {
+    const m = /^\s*(```+|~~~+)/.exec(line);
+    if (marker === null) {
+      if (m) marker = m[1][0];
+    } else if (m && m[1][0] === marker && /^\s*(```+|~~~+)\s*$/.test(line)) {
+      marker = null;
+    } else {
+      out.push({ lineNo: i + 1, text: line });
+    }
+  });
+  return out;
+}
+
+// Every .md under skills/, recursive, symlinks skipped.
+function listSkillMarkdown(root) {
+  const out = [];
+  const walk = (dir) => {
+    let entries = [];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch (_e) {
+      return;
+    }
+    for (const e of entries) {
+      if (e.isSymbolicLink()) continue;
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) walk(full);
+      else if (e.isFile() && e.name.endsWith('.md')) out.push(full);
+    }
+  };
+  walk(path.join(root, 'skills'));
+  return out.sort();
+}
+
+function checkQuietHostPoll(root, isSkillsTree) {
+  if (!isSkillsTree(root)) return { checked: 0, findings: [] };
+  const findings = [];
+  const files = listSkillMarkdown(root);
+  for (const file of files) {
+    const content = readOrNull(file);
+    if (content === null) continue;
+    if (fencedLines(content).some((l) => POLL_RE.test(l.text))) {
+      findings.push({
+        file,
+        rule: 'quiet-host-poll',
+        reason: 'pgrep-based quiet-host poll in a fenced block (spec 027 FR-017: the verify run CLI lock replaces it)',
+      });
+    }
+  }
+  return { checked: files.length, findings };
+}
+
 module.exports = {
+  checkQuietHostPoll,
+  POLL_RE,
   checkVerifyScope,
   checkReuseBan,
   PER_WAVE_FILES,

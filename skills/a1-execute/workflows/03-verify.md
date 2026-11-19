@@ -37,7 +37,7 @@ if [ $RUN_RC -ne 0 ] || [ $CHECK_RC -ne 0 ]; then echo "VERIFICATION.md cannot b
 `verify run` exit 1 (verdict `fail`) or `verify check` exit 1 (PASS without `verify_run`, verdict
 not `pass`, or code changed since `head_sha`) means the verdict is FAIL: set `verdict: FAIL` in
 VERIFICATION.md, list the failing command as a gap, route as FAIL below. Exit 2 (no test command,
-bad config) is a stop: fix the project's `.a1/verify.json`, then re-run. Never edit the
+bad config) is a stop: fix the project's `.a1/verify.json`, then re-run. Exit 2 with `error` `lock_timeout` is not a FAIL and not a config error: another local `verify run` held the CLI lock past 15 minutes (host busy); re-run when it is free. Never edit the
 `verify_run` block by hand.
 
 ## Step 0 — Read `phase_kind` before choosing the build evidence

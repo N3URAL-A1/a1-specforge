@@ -75,9 +75,9 @@ node <repo>/_shared/a1-tools.cjs verify run --project <dir> --out .a1/phases/<sp
 echo "verify run exit=$RUN_RC"
 ```
 
-Start `verify run` under the same quiet-host rule as `a1-pr-review` `workflows/05-merge.md` §5.3 (owner of that rule, including the 15-minute cap and the `host_busy` record).
+`verify run` waits on its CLI lock (at most 15 minutes, `lock_wait_ms` in the record, exit 2 `lock_timeout` after the ceiling). Record the host load and treat a red from a busy host as `a1-pr-review` `workflows/05-merge.md` §5.3 says (owner of that rule).
 
-Exit 1 or 2 stops Phase 6: fix the failing command (or `.a1/verify.json`), re-run. After the
+Exit 1 or 2 stops Phase 6: fix the failing command (or `.a1/verify.json`), re-run. Exit 2 with `error` `lock_timeout` is neither: another local `verify run` held the CLI lock past 15 minutes (host busy); re-run when it is free. After the
 walkthrough result is written to VERIFICATION.md (keep the `verify_run` key), and again before
 any verdict `PASS` is reported:
 
