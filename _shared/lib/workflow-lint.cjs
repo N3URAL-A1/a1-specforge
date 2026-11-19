@@ -404,7 +404,8 @@ function cmdWorkflowLint(argv) {
   const verifyLint = require('./workflow-lint-verify.cjs');
   const verifyScope = verifyLint.checkVerifyScope(root, isSkillsTree, { extractBashFenceLines, joinContinuations });
   const reuseBan = verifyLint.checkReuseBan(root, isSkillsTree);
-  findings = findings.concat(verifyScope.findings, reuseBan.findings);
+  const quietHost = verifyLint.checkQuietHostPoll(root, isSkillsTree);
+  findings = findings.concat(verifyScope.findings, reuseBan.findings, quietHost.findings);
 
   const out = {
     root,
@@ -412,6 +413,7 @@ function cmdWorkflowLint(argv) {
     vault_sync_checked: vaultSync.checked,
     verify_scope_checked: verifyScope.checked,
     reuse_ban_checked: reuseBan.checked,
+    quiet_host_checked: quietHost.checked,
     findings,
   };
   const err = findings.map((f) => formatFinding(f) + '\n').join('');
