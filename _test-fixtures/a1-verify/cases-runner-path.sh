@@ -150,4 +150,16 @@ g "$P" replace "$(g "$P" rev-parse main:src/app.js)" "$(g "$P" hash-object -w "$
 rp17_snap="$(node -e 'const vb=require(process.argv[1]); const d=vb.extractSnapshot(process.argv[2], process.argv[3], "rp17"); process.stdout.write(require("fs").readFileSync(d+"/src/app.js","utf8").trim()); require("fs").rmSync(d,{recursive:true,force:true});' "$REPO_ROOT/_shared/lib/verify-base.cjs" "$P" "$(g "$P" rev-parse main)" 2>&1)"
 [[ "$rp17_snap" == "module.exports = 1;" ]] && ok "RP17c base snapshot ignores a replace ref on src/app.js" || bad "RP17c snapshot content: $rp17_snap"
 
+# RP18 (review fix, SEC-1): a head suite that rewrites the base runner copy between the calls: the base call must not run it
+mkdir -p "$RPW/rp18-tmp"; rm -f "$RPW/mark18"
+cat > "$RPW/rp18-evil.sh" <<'EVIL'
+for d in "$A1_FX_RTMP"/a1-verify-runner-*; do sed -i '2i touch "$A1_FX_MARK"' "$d/bin/run-suites.sh"; done
+EVIL
+rp_repo rp18 : 'printf "#!/usr/bin/env bash\necho \"s: 1 passed, 0 failed\"\nbash \"\$A1_FX_EVIL\"\nexit 1\n" > _test-fixtures/s2/run-tests.sh'
+export A1_FX_MARK="$RPW/mark18" A1_FX_RTMP="$RPW/rp18-tmp" A1_FX_EVIL="$RPW/rp18-evil.sh"; RP_TMPDIR="$RPW/rp18-tmp" rp_run "$P" rp18
+check "RP18 head suite rewrites the runner copy: runner_result_invalid (no verdict)" 0 'j.error' "runner_result_invalid"
+[[ ! -e "$RPW/mark18" ]] && ok "RP18b the rewritten runner copy never ran (marker absent)" || bad "RP18b the rewritten copy ran"
+[[ "$(ls "$RPW/rp18-tmp" | grep -c a1-verify-runner-)" == "0" ]] && ok "RP18c the runner copy dir is gone afterwards" || bad "RP18c copy left: $(ls "$RPW/rp18-tmp")"
+unset A1_FX_MARK A1_FX_RTMP A1_FX_EVIL
+
 lk_leak_end RP

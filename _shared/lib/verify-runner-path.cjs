@@ -76,21 +76,55 @@ function extractRunnerFiles(project, baseSha, dir) {
 }
 
 /**
+ * SEC-1: the blob ids the four runner files have at the base sha (ls-tree, hardened env), as {path: id}; null when git cannot say.
+ */
+function baseBlobIds(project, baseSha) {
+  const r = spawnSync('git', ['-C', project, 'ls-tree', '-z', baseSha, '--', ...RUNNER_FILES], { shell: false, encoding: 'utf8', timeout: ARCHIVE_TIMEOUT_MS, env: pinnedGitEnv(process.env) });
+  if (r.status !== 0 || typeof r.stdout !== 'string') return null;
+  const ids = {};
+  for (const rec of r.stdout.split('\0').filter(Boolean)) {
+    const m = /^100[67][0-9]{2} blob ([0-9a-f]+)\t(.+)$/.exec(rec);
+    if (m) ids[m[2]] = m[1];
+  }
+  return RUNNER_FILES.every((f) => typeof ids[f] === 'string') ? ids : null;
+}
+
+/**
+ * SEC-1: true only while every runner file of `dir` is still a regular file whose content hashes to the base blob id.
+ * Head suites run between the runner calls and could rewrite the copy; this runs before each call.
+ */
+function copyIntact(project, dir, expected) {
+  const files = RUNNER_FILES.map((f) => path.join(dir, f));
+  for (const f of files) {
+    let st;
+    try { st = fs.lstatSync(f); } catch (_e) { return false; }
+    if (!st.isFile() || st.isSymbolicLink()) return false;
+  }
+  const h = spawnSync('git', ['-C', project, 'hash-object', '--no-filters', '--', ...files], { shell: false, encoding: 'utf8', timeout: ARCHIVE_TIMEOUT_MS, env: pinnedGitEnv(process.env) });
+  if (h.status !== 0 || typeof h.stdout !== 'string') return false;
+  const got = h.stdout.split('\n').filter(Boolean);
+  return got.length === RUNNER_FILES.length && RUNNER_FILES.every((f, i) => got[i] === expected[f]);
+}
+
+/**
  * D5: copy the runner from the BASE sha and ask it for the contract line.
  * @param {string} project repo root
  * @param {string} baseSha base commit
  * @param {object} env the runner env (D9)
- * @returns {{ok: true, dir: string, release: () => void} | {ok: false, why: 'base_copy_missing'|'no_contract'}} dir = extracted copy, release removes it
+ * @returns {{ok: true, dir: string, release: () => void, intact: () => boolean} | {ok: false, why: 'base_copy_missing'|'no_contract'}} dir = extracted copy, release removes it, intact = SEC-1 re-check against the base blobs
  */
 function prepareRunner(project, baseSha, env) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'a1-verify-runner-'));
   const unregister = vb.cleanupOnExit(dir);
   const release = () => { fs.rmSync(dir, { recursive: true, force: true }); unregister(); };
   const fail = (why) => { release(); return { ok: false, why }; };
-  if (!extractRunnerFiles(project, baseSha, dir)) return fail('base_copy_missing');
+  const expected = baseBlobIds(project, baseSha);
+  if (expected === null || !extractRunnerFiles(project, baseSha, dir)) return fail('base_copy_missing');
+  const intact = () => copyIntact(project, dir, expected);
+  if (!intact()) return fail('base_copy_missing');
   const r = spawnSync('bash', [path.join(dir, 'bin', 'run-suites.sh'), '--contract'], { cwd: dir, env, shell: false, encoding: 'utf8', timeout: PREP_TIMEOUT_MS, stdio: ['ignore', 'pipe', 'ignore'] });
   if (r.status !== 0 || typeof r.stdout !== 'string' || r.stdout.trim() !== CONTRACT_LINE) return fail('no_contract');
-  return { ok: true, dir, release };
+  return { ok: true, dir, release, intact };
 }
 
 /**
@@ -197,12 +231,13 @@ function failFromExit(exit, tail) {
 
 /**
  * Run one side (head, base or retry) through the runner and return its validated records.
- * @param {{runnerDir: string, root: string, ids: string[], side: 'head'|'base'|'retry', workers?: number, env: object, tmp: string, timeoutMs: number, lockWaitMs: number, deps: {spawnGroup: Function, noteSpawn: Function}}} o
+ * @param {{runnerDir: string, root: string, ids: string[], side: 'head'|'base'|'retry', workers?: number, env: object, tmp: string, timeoutMs: number, lockWaitMs: number, deps: {spawnGroup: Function, noteSpawn: Function}, intact?: () => boolean}} o
  * @returns {{records: Map<string, object>, exit: number, ms: number, lockWaitMs: number, checksSkipped: string[], summaryNotes: {id: string, note: string}[], checks: object}}
  *   records = full id to raw record (D8); lockWaitMs = the runner's measured wait; checksSkipped = `<name>:<state>` for each check that neither ran ok nor was unselected
  */
 function runSide(o) {
-  const { runnerDir, root, ids, side, workers, env, tmp, timeoutMs, lockWaitMs, deps } = o;
+  const { runnerDir, root, ids, side, workers, env, tmp, timeoutMs, lockWaitMs, deps, intact } = o;
+  if (typeof intact === 'function' && !intact()) throw invalid(`the base runner copy changed before the ${side} call`);
   const jsonFile = path.join(tmp, `runner-${side}.json`);
   const outFile = path.join(tmp, `runner-${side}.out`);
   const errFile = path.join(tmp, `runner-${side}.err`);
