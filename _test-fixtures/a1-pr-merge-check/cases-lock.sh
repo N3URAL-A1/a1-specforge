@@ -14,8 +14,8 @@ mlk_holder() {
   node -e 'require("fs").writeFileSync(process.argv[1]+"/owner.json",JSON.stringify({pid:Number(process.argv[2]),token:"0123456789abcdef0123456789abcdef",cmd:process.argv[3],started_at:"x"}))' "$A1_VERIFY_LOCK_DIR" "$MLK_PID" "$cmd"
 }
 mlk_stop() { kill "$MLK_PID" 2>/dev/null; wait "$MLK_PID" 2>/dev/null; return 0; }
-mlk_env() { mkdir -p "$WORK/vl-$1"; export A1_VERIFY_LOCK_DIR="$WORK/vl-$1/lock" A1_VERIFY_LOCK_WAIT_MS=1500; unset A1_VERIFY_LOCK_TOKEN; }
-mlk_clear() { unset A1_VERIFY_LOCK_DIR A1_VERIFY_LOCK_WAIT_MS A1_VERIFY_LOCK_TOKEN; }
+mlk_env() { mkdir -p "$WORK/vl-$1"; export A1_VERIFY_LOCK_DIR="$WORK/vl-$1/lock" A1_VERIFY_LOCK_WAIT_MS=1500; lk_token_reset; }
+mlk_clear() { unset A1_VERIFY_LOCK_DIR A1_VERIFY_LOCK_WAIT_MS; lk_token_reset; }
 
 mlk_env mlk1; ci_pr mlk1
 if mlk_holder; then

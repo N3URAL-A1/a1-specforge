@@ -12,7 +12,7 @@ ml_run() {
   ML_LOG="$WORK/ml-$label.log"; : > "$ML_LOG"
   mkdir -p "$WORK/vl-$label"
   export A1_VERIFY_LOCK_DIR="$WORK/vl-$label/lock" A1_VERIFY_SPAWN_LOG="$ML_LOG"
-  unset A1_VERIFY_LOCK_TOKEN
+  lk_token_reset
   mc "$@"
   unset A1_VERIFY_LOCK_DIR A1_VERIFY_SPAWN_LOG
 }

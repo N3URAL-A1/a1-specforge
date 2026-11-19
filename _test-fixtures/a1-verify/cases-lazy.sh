@@ -15,7 +15,7 @@
 lz_run() {
   LZ_LOG="$WORK/lz-$2.log"; : > "$LZ_LOG"
   mkdir -p "$WORK/vl-$2"
-  unset A1_VERIFY_LOCK_TOKEN
+  lk_token_reset
   OUT="$(cd "$1" && A1_VERIFY_LOCK_DIR="$WORK/vl-$2/lock" A1_VERIFY_SPAWN_LOG="$LZ_LOG" node -e 'const r=require(process.argv[1]); process.stdout.write(JSON.stringify(r.runVerify({project: process.argv[2], base: "main", noCache: true, lazyBase: true})))' "$REPO_ROOT/_shared/lib/verify-run.cjs" "$1" 2>"$WORK/err")"; RC=$?
   ERR="$(cat "$WORK/err")"
 }

@@ -9,6 +9,13 @@ LK_LEAK_LOADED=1
 LK_REAL_VERIFY="$(node -p 'require("os").tmpdir()')/a1-verify-lock-$(id -u)"
 LK_REAL_RUNNER="/tmp/a1-suite-runner-$(id -u)"
 declare -a LK_START_PRESENT=()
+# An outer `verify run` (the gate) exports A1_VERIFY_LOCK_TOKEN and holds the real lock. A case must never drop that token in the suite shell
+# (a later case without its own lock dir would then wait on the outer holder: gate stall 2026-11-19, LZ7). lk_token_reset restores it.
+LK_TOKEN_OUTER_SET="${A1_VERIFY_LOCK_TOKEN+x}"; LK_TOKEN_OUTER="${A1_VERIFY_LOCK_TOKEN-}"
+LK_TOKEN_SENTINEL=""
+lk_token_reset() {
+  if [[ -n "$LK_TOKEN_OUTER_SET" ]]; then export A1_VERIFY_LOCK_TOKEN="$LK_TOKEN_OUTER"; else unset A1_VERIFY_LOCK_TOKEN; fi
+}
 
 # lk_owner_pid <dir> <kind>: verify lock keeps owner.json, runner lock a `pid` file.
 lk_owner_pid() {
@@ -25,6 +32,8 @@ lk_is_mine() {
   return 1
 }
 lk_leak_start() {
+  # with no outer token, a sentinel stands in for it so the end assert can tell whether a case dropped the token
+  if [[ -z "$LK_TOKEN_OUTER_SET" ]]; then LK_TOKEN_SENTINEL=1; LK_TOKEN_OUTER_SET=x; LK_TOKEN_OUTER=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; export A1_VERIFY_LOCK_TOKEN="$LK_TOKEN_OUTER"; fi
   LK_START_PRESENT[0]=0; LK_START_PRESENT[1]=0
   [[ -e "$LK_REAL_VERIFY" || -L "$LK_REAL_VERIFY" ]] && LK_START_PRESENT[0]=1
   [[ -e "$LK_REAL_RUNNER" || -L "$LK_REAL_RUNNER" ]] && LK_START_PRESENT[1]=1
@@ -38,6 +47,8 @@ lk_leak_one() { # <label> <dir> <kind> <start-present>
   else ok "$1 real lock $2 not leaked by this suite"; fi
 }
 lk_leak_end() {
+  [[ "${A1_VERIFY_LOCK_TOKEN-}" == "$LK_TOKEN_OUTER" ]] && ok "$1 outer A1_VERIFY_LOCK_TOKEN kept in the suite shell (no wait on an outer lock)" || bad "$1 a case dropped or changed the outer A1_VERIFY_LOCK_TOKEN"
+  if [[ -n "$LK_TOKEN_SENTINEL" ]]; then unset A1_VERIFY_LOCK_TOKEN; LK_TOKEN_OUTER_SET=""; LK_TOKEN_OUTER=""; LK_TOKEN_SENTINEL=""; fi
   lk_leak_one "$1 verify-lock" "$LK_REAL_VERIFY" verify "${LK_START_PRESENT[0]}"
   lk_leak_one "$1 runner-lock" "$LK_REAL_RUNNER" runner "${LK_START_PRESENT[1]}"
 }
