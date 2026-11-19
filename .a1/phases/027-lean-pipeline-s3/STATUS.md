@@ -212,3 +212,11 @@ Rehearsal (SC-9), aiserver, quiet host (load5 15.55 at start, 8.04 at end, 24 cp
 - [Plan text] `gates lint` has no `--phase` flag; ran without it.
 - None against rules 1-4.
 Wave 9 gate: verify run --affected --phase 027-lean-pipeline-s3: verdict pass, 63 commands, lock_wait_ms 13, total 1728075 ms.
+
+### Post-wave-9 orchestrator fix — leftover timer sleeps in `rr_run`
+
+- Finding: the full run at the Wave 9 head warned "suite a1-verify/run-tests.sh left 6 process(es) running after it finished; the runner ended them". The run at the Wave 7 head had no such line.
+- Root cause: `rr_run` (`_test-fixtures/a1-verify/cases-runner-retry.sh`, Wave 8) starts a timer `( sleep 120; kill -KILL "$pid" )` and stops it with `kill "$kpid"`. That ends the subshell, but its `sleep 120` keeps running in the suite's process group.
+- RED (before): `bash bin/run-suites.sh --workers 1 a1-verify/run-tests.sh` printed the warning, "ended 6 leftover processes".
+- Fix: the timer traps TERM and kills its own sleep. Same pattern elsewhere in this slice's shell files: 0 (grep of `( sleep N;` over `git diff --name-only a40a85f HEAD -- '*.sh'`).
+- GREEN (after): same command, rc 0, 527 passed, no warning.

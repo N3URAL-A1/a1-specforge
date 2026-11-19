@@ -23,7 +23,8 @@ rr_run() {
       catch (e) { if (!(e instanceof r.VerifyError)) throw e; process.stdout.write(JSON.stringify({ error: e.reason, message: e.message })); }' \
     "$REPO_ROOT/_shared/lib/verify-run.cjs" "$1" > "$RRW/$2.out" 2> "$RRW/$2.err" ) &
   pid=$!
-  ( sleep 120; kill -KILL "$pid" 2>/dev/null ) >/dev/null 2>&1 &
+  # the timer ends its own sleep when it is stopped, so no sleep outlives the case
+  ( s=""; trap 'kill "$s" 2>/dev/null; exit 0' TERM; sleep 120 & s=$!; wait "$s"; kill -KILL "$pid" 2>/dev/null ) >/dev/null 2>&1 &
   kpid=$!
   wait "$pid"; RC=$?
   kill "$kpid" 2>/dev/null; wait "$kpid" 2>/dev/null
