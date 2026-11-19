@@ -45,3 +45,9 @@ ad_repo ad5; git -C "$ADR" checkout -q -b topic
 printf 'x\n' > "$ADR/docs/notes.md"; ad_commit outside
 ad_run --base main
 [[ $ADRC -eq 0 && "$ADOUT" == "deleted=0" ]] && ok "AD5 deletion outside the default dirs: exit 0" || bad "AD5 rc=$ADRC out=$ADOUT"
+
+# AD6 (review fix): the default dirs are repo-relative; run from a subdirectory the script must still see the deletion.
+ad_repo ad6; git -C "$ADR" checkout -q -b topic
+sed -i.bak '2d' "$ADR/_test-fixtures/a1-verify/run-tests.sh"; rm -f "$ADR/_test-fixtures/a1-verify/run-tests.sh.bak"; ad_commit del
+ADOUT="$(cd "$ADR/docs" && bash "$AD_SCRIPT" --base main 2>&1)"; ADRC=$?
+[[ $ADRC -eq 1 && "$ADOUT" == *"deleted=1"* ]] && ok "AD6 run from a subdirectory: the deletion is still found (exit 1)" || bad "AD6 rc=$ADRC out=$ADOUT"

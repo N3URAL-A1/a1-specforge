@@ -16,6 +16,8 @@ else
   usage
 fi
 if [ $# -eq 0 ]; then
+  # default dirs are repo-relative: resolve them from the top level, whatever the caller's cwd (a subdirectory gave deleted=0 for nothing)
+  TOP="$(git rev-parse --show-toplevel 2>/dev/null)" && [ -n "$TOP" ] && cd "$TOP" || usage
   set -- _test-fixtures/a1-pr-merge-check _test-fixtures/a1-verify
 fi
 
