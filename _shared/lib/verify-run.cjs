@@ -265,11 +265,20 @@ function spawnGroup(argv, cwd, stdoutFile, timeoutMs) {
   try { return JSON.parse(r.stdout); } catch (_e) { return { spawnError: true }; }
 }
 
+const SPAWN_LOG_ENV = 'A1_VERIFY_SPAWN_LOG';
+
+/** Test seam (spec 027 FR-011): with an absolute path in A1_VERIFY_SPAWN_LOG, one `<label>\t<id>` line per spawned command. */
+function noteSpawn(label, id) {
+  const file = process.env[SPAWN_LOG_ENV];
+  if (typeof file === 'string' && path.isAbsolute(file)) fs.appendFileSync(file, `${label}\t${id}\n`);
+}
+
 function runCommand(cmd, cwd, tmp, label) {
   const reportFile = path.join(tmp, `report-${label}`);
   const stdoutFile = path.join(tmp, `stdout-${label}`);
   const argv = rep.injectFlags(cmd.kind, cmd.argv, reportFile, cmd.viaScript);
   const t0 = process.hrtime.bigint();
+  noteSpawn(label, cmd.id);
   const r = spawnGroup(argv, cwd, stdoutFile, cmd.timeoutMs);
   const durationMs = Math.round(Number(process.hrtime.bigint() - t0) / 1e6);
   // FR-041: a command that cannot start (unknown runner) is an error of the tool, never a verdict.
@@ -374,6 +383,41 @@ function runHeadSide(project, plan, head, hash, ctx) {
   const stillClean = clean && vb.dirtyPaths(statusPaths(project)).length === 0;
   if (stillClean && ranLive) vb.writeCache(project, head, hash, results);
   return { settled, cache: ctx.noCache ? 'off' : (cached ? (ranLive ? 'partial' : 'hit') : (clean ? 'miss' : 'dirty')) };
+}
+
+/**
+ * Lazy order (spec 027 FR-011, merge-check only): head first runs, then the base side only for commands red on head or with a
+ * counting reporter, then settle (retry after the base comparison). Same settled records as the eager order: `settle` reads
+ * baseIds only for a red first run, `applySkipIncrease` only counting reporters.
+ * @returns {{settled: object[], cache: string, base: object|null, baseMs: number|null, baseRan: string[]}}
+ */
+function lazyHeadSide(project, basePlan, headPlan, baseSha, ctx) {
+  const firsts = headPlan.commands.map((c, i) => runCommand(c, ctx.cwd, ctx.tmp, `h${i}`));
+  const finished = firsts.map((raw) => finishCommand(raw, ctx.touches));
+  const red = new Set(headPlan.commands.filter((c, i) => finished[i].reason !== null).map((c) => c.id));
+  const need = basePlan.commands.filter((c) => red.has(c.id) || c.kind !== 'none');
+  const tBase = process.hrtime.bigint();
+  const base = need.length > 0 ? runBaseSide(project, { ...basePlan, commands: need }, baseSha, null, ctx.touches, ctx.tmp, true) : null;
+  const baseMs = base ? Math.round(Number(process.hrtime.bigint() - tBase) / 1e6) : null;
+  const settled = headPlan.commands.map((c, i) => {
+    let retryRaw = null;
+    const retry = () => { retryRaw = runCommand(c, ctx.cwd, ctx.tmp, `r${i}`); return finishCommand(retryRaw, ctx.touches); };
+    const done = vb.settle(finished[i], retry, base ? (base.ids.get(c.id) || new Set()) : new Set(), headPlan.flakyBase);
+    return { ...done, duration_ms: typeof firsts[i].duration_ms === 'number' ? firsts[i].duration_ms : null, retry_duration_ms: retryRaw && typeof retryRaw.duration_ms === 'number' ? retryRaw.duration_ms : null };
+  });
+  return { settled, cache: 'off', base, baseMs, baseRan: need.map((c) => c.id) };
+}
+
+/** Eager order (base side first, then head with inline settle): the order of every run but merge-check's. */
+function eagerSides(project, timed, headTimed, ids, ctx) {
+  const tBase = process.hrtime.bigint();
+  const base = ids.compareBase ? runBaseSide(project, timed, ids.baseSha, ids.baseHash, ctx.touches, ctx.tmp, ctx.noCache) : null;
+  const runHead = (cwd) => runHeadSide(project, headTimed, ids.head, ids.hash, { tmp: ctx.tmp, touches: ctx.touches, baseIds: base ? base.ids : null, cwd, noCache: ctx.noCache });
+  const baseMs = base ? Math.round(Number(process.hrtime.bigint() - tBase) / 1e6) : null;
+  const tHead = process.hrtime.bigint();
+  // --base: HEAD runs from a git-archive snapshot like the base side, so git-ignored local files cannot change the verdict.
+  const side = ids.withBase ? vb.withSnapshot(project, ids.head, runHead, 'head') : runHead(project);
+  return { base, side, baseMs, headMs: Math.round(Number(process.hrtime.bigint() - tHead) / 1e6), baseRan: null };
 }
 
 /** Fingerprints of the committed `skip_increase` dispositions; an unreadable store is a config error (exit 2). */
@@ -488,7 +532,7 @@ function headCommands(project, plan, headSha_) {
 const pairs = (commands, key) => commands.flatMap((c) => c[key].map((id) => ({ command: c.id, id })));
 
 /**
- * @param {{project:string, base?:string, affected?:boolean (run the measured subset, spec 027 FR-006; never with base), timeoutMs?:number, noCache?:boolean, host?:{platform?:string, probeTimeoutMs?:number, spawn?:Function}}} opts host: test injection of the platform / probe;
+ * @param {{project:string, base?:string, affected?:boolean (run the measured subset, spec 027 FR-006; never with base), timeoutMs?:number, noCache?:boolean, lazyBase?:boolean (merge-check only; needs noCache and base, spec 027 FR-011), host?:{platform?:string, probeTimeoutMs?:number, spawn?:Function}}} opts host: test injection of the platform / probe;
  *   noCache: never read or write the
  *   sha + command-hash result cache (merge-check sets it: a cache file is writable by the code under test)
  * @returns {object} the verify_run record; throws VerifyError (exit 2)
@@ -523,14 +567,17 @@ function runVerify(opts) {
   const release = vb.cleanupOnExit(tmp);
   const cleanBefore = head !== null && vb.dirtyPaths(statusPaths(project)).length === 0;
   try {
-    const tBase = process.hrtime.bigint();
-    const base = sel.compareBase ? runBaseSide(project, timed, baseSha, baseHash, touches, tmp, opts.noCache === true) : null;
-    const runHead = (cwd) => runHeadSide(project, headTimed, head, hash, { tmp, touches, baseIds: base ? base.ids : null, cwd, noCache: opts.noCache === true });
-    const baseMs = base ? msSince(tBase) : null;
-    const tHead = process.hrtime.bigint();
-    // --base: HEAD runs from a git-archive snapshot like the base side, so git-ignored local files cannot change the verdict.
-    const side = opts.base !== undefined ? vb.withSnapshot(project, head, runHead, 'head') : runHead(project);
-    const headMs = msSince(tHead);
+    const noCache = opts.noCache === true;
+    const lazy = opts.lazyBase === true && noCache && sel.compareBase;
+    let sides;
+    if (lazy) {
+      const tHead = process.hrtime.bigint();
+      const lz = vb.withSnapshot(project, head, (cwd) => lazyHeadSide(project, timed, headTimed, baseSha, { tmp, touches, cwd }), 'head');
+      sides = { base: lz.base, side: lz, baseMs: lz.baseMs, headMs: msSince(tHead) - (lz.baseMs || 0), baseRan: lz.baseRan };
+    } else {
+      sides = eagerSides(project, timed, headTimed, { compareBase: sel.compareBase, baseSha, baseHash, head, hash, withBase: opts.base !== undefined }, { tmp, touches, noCache });
+    }
+    const { base, side, baseMs, headMs } = sides;
     const cleanAfter = head !== null && vb.dirtyPaths(statusPaths(project)).length === 0;
     const skipped = base ? vb.applySkipIncrease(side.settled, base.skipped, skipIncreaseDispositions(project)) : side.settled;
     const settled = skipped.map((c) => ({ ...c, base_duration_ms: base ? base.durations.get(c.id) ?? null : null }));
@@ -547,7 +594,8 @@ function runVerify(opts) {
       scope: opts.affected === true ? 'affected' : 'full', ...affectedRec,
       ...withReasons(overall(settled, plan.noTestsReason, env.excused), extra), host: hostLib.hostRecord(opts.host), skipped_on_host: plan.skipped, ...(hints.length > 0 ? { hints } : {}), ...(env.envRed.length > 0 ? { env_red: env.envRed } : {}), ...(env.warnings.length > 0 ? { warnings: env.warnings } : {}), source: plan.source, head_sha: head, config_digest: configDigest, base_sha: baseSha, tree_clean: head === null ? null : (cleanBefore && cleanAfter),
       touches_source: touches, changed_files: changed.length, flaky: pairs(side.settled, 'flaky_ids'), pre_existing_red: pairs(side.settled, 'pre_existing_red_ids'),
-      cache: { head: side.cache, base: base ? base.cache : 'none' }, ...(configChanged ? { config_changed: configChanged } : {}), ...(removed ? { suite_removed: removed } : {}), commands: settled,
+      cache: { head: side.cache, base: base ? base.cache : (lazy ? 'off' : 'none') }, ...(configChanged ? { config_changed: configChanged } : {}), ...(removed ? { suite_removed: removed } : {}), commands: settled,
+      ...(lazy ? { base_run: { mode: 'lazy', ran: sides.baseRan, of: timed.commands.length } } : {}),
       duration_ms: { head: headMs, base: baseMs, total: msSince(tTotal) },
     };
   } finally {

@@ -237,7 +237,7 @@ function mergeCheck(opts) {
   const headMoved = ci.used && prHeadSha(opts.pr, opts.project) !== guards.prHead; // TOCTOU: CI was read for a head that is no longer the PR head
   const record = ci.used
     ? { verdict: 'ci_evidence', cache: null, pre_existing_red: [], flaky: [], config_changed: null, suite_removed: null, head_sha: guards.prHead, commands: [], host: null, skipped_on_host: null, hints: ciHostHints(opts.project) }
-    : runVerify({ project: opts.project, base: baseRef, noCache: true });
+    : runVerify({ project: opts.project, base: baseRef, noCache: true, lazyBase: true });
   const checks = requiredChecks(opts.pr, opts.project);
   const bugOk = opts.bug !== undefined && bugResolves(opts, baseSha);
   const reasons = [
