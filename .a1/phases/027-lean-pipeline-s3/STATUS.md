@@ -178,3 +178,36 @@ RED-proof 8.1 f (runner side waits not added to the top-level lock_wait_ms) -> R
 - Docs edits: help-verify.cjs (one paragraph), help-merge-check.cjs (4 lines), gates-registry.md (rows pr-merge-check, gate-1-build, workflow-pipeline-exit); no new gate id.
 
 Wave 8 gates: `bash bin/run-suites.sh` rc 0 (366 s); `verify run --affected --phase 027-lean-pipeline-s3`: verdict pass, 63 commands, red none, lock held, lock_wait_ms 13, total 1706230 ms.
+
+## Wave 9 — FR-012 deletion check, integration, measured rehearsal
+Completed: 2026-11-19
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| 9.1 check-assert-deletions.sh, AD1-AD5, full run | DONE | 008cf32 | AD cases sourced from run-tests.sh |
+| 9.1 action 5/6 LONG-PATH-REHEARSAL.json | DONE | (this STATUS commit) | pass: total 349401 ms |
+
+Action 3 results (all against origin/main = a40a85f):
+- `bash bin/check-assert-deletions.sh --base origin/main` -> `deleted=0`, rc 0
+- `git diff --quiet origin/main -- .a1/verify.json _test-fixtures/suite-groups.json .github/` -> rc 0
+- `bash -n bin/*.sh` -> rc 0
+- `workflow lint --phase 027-lean-pipeline-s3` -> rc 0, `quiet_host_checked` 148, 0 findings
+- `gates lint` (no --phase flag exists) -> rc 0, 51 rows, 0 findings
+- `bash bin/run-suites.sh --check-groups` -> rc 0 (63 suites, 2 ci jobs)
+- verify-base.cjs diff: only the `isRetryable` export; pr-merge-check.cjs diff: the runVerify options plus runner_source, runner, base_run, lock_wait_ms in the suites record
+- V9 cap loop rc 0. Lines: verify-run 691/800, verify-runner-path 227/450, verify-lock 186/300, run-suites.sh 771/800 (775 from the D20 Wave-3 criterion also holds), run-suites-proc 569/600, run-suites-report 176/300, workflow-lint-verify 181/250
+- Full `bash bin/run-suites.sh` -> rc 0, 391 s wall, 0 FAIL; a1-verify 135 s in the parallel run. The runner printed "suite a1-verify/run-tests.sh left 6 process(es) running after it finished; the runner ended them" (warning only; not investigated, no earlier wave logged it).
+
+RED-proof 9.1 a (script sums column 1) -> AD1, AD2 red
+RED-proof 9.1 b (default dirs replaced by `.`) -> AD5 red
+
+Rehearsal (SC-9), aiserver, quiet host (load5 15.55 at start, 8.04 at end, 24 cpus, host_busy false):
+- verdict pass, runner_source base, base_run.ran [] (lazy, of 63), fallback null
+- duration_ms head 349287, base null, total 349401 (limit 900000; serial baseline 2990052 = 8.6x faster)
+- lock_wait_ms 25 (runner head side 14); runner.sides.head.ms 349220; checks_skipped reconcile/learnings/phases :skipped_nogit (planted clone has no git state for them)
+- workers: not in the run record; 6 derived from the default (cores - 2 clamped 1..6)
+- NOT measured: base side and retry side on the runner path (head was green, so lazy order ran no base); a real `pr merge-check` against an open PR (needs a pushed branch and PR; none made). Both stay open for the PR phase.
+
+### Deviations
+- [Plan text] `gates lint` has no `--phase` flag; ran without it.
+- None against rules 1-4.

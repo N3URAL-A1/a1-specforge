@@ -1,0 +1,49 @@
+{
+  "host": "aiserver",
+  "date": "2026-11-19",
+  "base_sha": "008cf3260fc6124218a6d1f6ddd3fc601fbb2214",
+  "head_sha": "bf61dbce2985301135c583fd45e91f813fb49b11",
+  "node": "v24.20.0",
+  "verdict": "pass",
+  "runner_source": "base",
+  "base_run": {
+    "mode": "lazy",
+    "ran": [],
+    "of": 63
+  },
+  "duration_ms": {
+    "head": 349287,
+    "base": null,
+    "total": 349401
+  },
+  "lock_wait_ms": 25,
+  "workers": {
+    "value": 6,
+    "source": "derived, not recorded by the run: A1_SUITE_WORKERS unset, default online cores - 2 clamped 1..6 (24 cores)"
+  },
+  "host_load": {
+    "load5_start": 15.55,
+    "load5_end": 8.04,
+    "cpus": 24,
+    "host_busy": false
+  },
+  "baseline_total_ms": 2990052,
+  "runner": {
+    "sides": {
+      "head": {
+        "ms": 349220,
+        "checks_skipped": [
+          "reconcile:skipped_nogit",
+          "learnings:skipped_nogit",
+          "phases:skipped_nogit"
+        ]
+      },
+      "base": null
+    }
+  },
+  "notes": [
+    "Local clone of the branch head with one extra docs/roadmap.md commit; base = branch head 008cf32 (carries the contract). Nothing pushed, no PR.",
+    "This is the rehearsal of Task 9.1 action 5 only. It is not a real merge-check against an open PR; that stays open for the PR phase.",
+    "Head ran 63 commands green; base_run.ran is [] (lazy), so retry and base sides did not run: the base and retry paths were not exercised by this measurement."
+  ]
+}
