@@ -676,6 +676,8 @@ expect "CEW4 every record of CEW1-3 has an integer duration_ms" "true|true|true"
 . "$(dirname "${BASH_SOURCE[0]}")/cases-host.sh"
 . "$(dirname "${BASH_SOURCE[0]}")/cases-envred.sh"
 . "$(dirname "${BASH_SOURCE[0]}")/cases-unchanged.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/cases-lazy.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/cases-lock.sh"
 
 echo "a1-pr-merge-check: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

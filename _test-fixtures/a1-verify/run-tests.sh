@@ -779,6 +779,8 @@ check "D4 A1_VAULT_ROOT / A1_VAULT_WRITER_HOST / A1_HOST_ID are set in the owner
 . "$(dirname "${BASH_SOURCE[0]}")/cases-affected-map.sh"
 . "$(dirname "${BASH_SOURCE[0]}")/cases-timeout.sh"
 . "$(dirname "${BASH_SOURCE[0]}")/cases-mapreal.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/cases-lazy.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/cases-lock.sh"
 
 echo "a1-verify: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]
