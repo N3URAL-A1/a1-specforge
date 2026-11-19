@@ -301,5 +301,5 @@ function applySkipIncrease(commands, baseSkipped, cleared) {
 
 module.exports = {
   VerifyError, skipFingerprint, applySkipIncrease, RETRYABLE, NEVER_PRE_EXISTING, canon, CACHE_DIR, CONFIG_FILE, CONFIG_RULE, configChange, envDigest, cleanupOnExit, parseVerifyJson, resolveMergeBase, extractSnapshot, withSnapshot, dirtyPaths, isCodeForReuse, CODE_IN_A1, configDigest, commandHash,
-  readCache, writeCache, failingIds, settle, idSet, flakyBaseGrown,
+  readCache, writeCache, failingIds, settle, idSet, flakyBaseGrown, isRetryable,
 };
