@@ -115,3 +115,21 @@ None.
 | verify (waves 1-2) | 1afec81 | full `verify run`: pass, 63 commands, lock held, lock_wait_ms 12; `bin/run-suites.sh`: rc 0, 325 s |
 
 Orchestrator gate finding, wave 2: gate-1-build red (a1-verify SIGKILL at 427 s under an outer lock holder, 113 s standalone). Root cause LZ7 + five helpers unset the outer A1_VERIFY_LOCK_TOKEN; fixed in 70c5299 with a guard assert (RED-proved). Deletions vs slice base a40a85f in both FR-012 suite dirs: 0.
+
+## Wave 6 — Runner-path module: preparation and result reading
+Completed: 2026-11-19
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| 6.1 verify-runner-path.cjs, isRetryable export, RC1-RC10 | DONE | 4afc91c | module 227 lines (cap 450); 46 new asserts; deletions vs a40a85f in both FR-012 suite dirs: 0; full bin/run-suites.sh rc 0 (326 s) |
+
+Tests: `_test-fixtures/a1-verify/cases-runner-contract.sh` (sourced from run-tests.sh) drives `check-runner-contract.cjs` (node, planted repos and JSON files). RC10 (runSide with a fake spawnGroup) is an addition to the plan's RC1-RC9.
+
+RED-proof 6.1 a (set comparison removed) -> RC5b, RC5c, RC5i, RC10g red
+RED-proof 6.1 b (lstat -> stat) -> RC5k red
+RED-proof 6.1 c (exit-1 consistency rule removed) -> RC6a red
+RED-proof 6.1 d (contract compare -> startsWith) -> RC4b red
+RED-proof 6.1 e (cap removed from runnerCeilingMs) -> RC9b red
+
+### Deviations
+- None against rules 1-4. Choices: `readRunnerResult` returns `{results, lockWaitMs, checks}`; `runSide` additionally returns `checks`; top-level and result key sets are exact (the single writer emits exactly those). `commandReason` leak_note branch is left to Wave 7 (its task 7.x lists it); not wired into runVerify or merge-check.
