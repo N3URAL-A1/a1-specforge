@@ -134,4 +134,20 @@ check "RP16 real runner, suite exit 255: verdict fail, command_failed (not runne
 rp_repo rp16b : 'printf "#!/usr/bin/env bash\necho \"s: 1 passed, 0 failed\"\nexit 130\n" > _test-fixtures/s2/run-tests.sh'; rp_run "$P" rp16b
 check "RP16b real runner, suite exit 130: verdict fail (the reason label may be signal-based)" 0 'j.verdict' "fail"
 
+# RP17 (review fix, SEC-2): a replace ref on the base runner blob must not change what is extracted (git archive runs with the hardened git env)
+rp_repo rp17; rm -f "$RPW/mark17"
+rp17_blob="$(g "$P" rev-parse main:bin/run-suites.sh)"
+{ head -n 1 "$P/bin/run-suites.sh"; echo 'touch "$A1_FX_MARK"'; tail -n +2 "$P/bin/run-suites.sh"; } > "$RPW/evil-runner.sh"
+g "$P" replace "$rp17_blob" "$(g "$P" hash-object -w "$RPW/evil-runner.sh")"
+export A1_FX_MARK="$RPW/mark17"; rp_run "$P" rp17
+check "RP17 replace ref on the base runner blob: runner_source base, pass" 0 'j.runner_source+"|"+j.verdict' "base|pass"
+[[ ! -e "$RPW/mark17" ]] && ok "RP17b the replaced (evil) runner did not run (marker absent)" || bad "RP17b the replaced runner ran"
+unset A1_FX_MARK
+
+# RP17c (review fix, SEC-2): the base snapshot (verify-base extractSnapshot) ignores replace refs as well; src/app.js on main is "module.exports = 1;"
+printf 'module.exports = 666;\n' > "$RPW/evil-app.js"
+g "$P" replace "$(g "$P" rev-parse main:src/app.js)" "$(g "$P" hash-object -w "$RPW/evil-app.js")"
+rp17_snap="$(node -e 'const vb=require(process.argv[1]); const d=vb.extractSnapshot(process.argv[2], process.argv[3], "rp17"); process.stdout.write(require("fs").readFileSync(d+"/src/app.js","utf8").trim()); require("fs").rmSync(d,{recursive:true,force:true});' "$REPO_ROOT/_shared/lib/verify-base.cjs" "$P" "$(g "$P" rev-parse main)" 2>&1)"
+[[ "$rp17_snap" == "module.exports = 1;" ]] && ok "RP17c base snapshot ignores a replace ref on src/app.js" || bad "RP17c snapshot content: $rp17_snap"
+
 lk_leak_end RP

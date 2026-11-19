@@ -13,6 +13,7 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
+const { pinnedGitEnv } = require('./xprov-common.cjs');
 const { gitRaw } = require('./verify-check.cjs');
 const { fingerprintOf } = require('./disposition-store.cjs');
 
@@ -90,7 +91,7 @@ function extractSnapshot(project, sha, label = 'base') {
   const tar = path.join(dir, '..', `${path.basename(dir)}.tar`);
   const release = [cleanupOnExit(dir), cleanupOnExit(tar)];
   try {
-    const a = spawnSync('git', ['-C', project, 'archive', '--format=tar', '-o', tar, sha], { shell: false, stdio: 'ignore', timeout: ARCHIVE_TIMEOUT_MS });
+    const a = spawnSync('git', ['-C', project, 'archive', '--format=tar', '-o', tar, sha], { shell: false, stdio: 'ignore', timeout: ARCHIVE_TIMEOUT_MS, env: pinnedGitEnv(process.env) });
     if (a.status !== 0) throw new VerifyError('base_unresolved', `git archive of ${sha} failed (object missing in a shallow clone? run: git fetch --unshallow)`);
     try {
       const x = spawnSync('tar', ['-xf', tar, '-C', dir], { shell: false, stdio: 'ignore', timeout: ARCHIVE_TIMEOUT_MS });

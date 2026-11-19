@@ -10,6 +10,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const vb = require('./verify-base.cjs');
+const { pinnedGitEnv } = require('./xprov-common.cjs');
 
 const { VerifyError } = vb;
 
@@ -68,7 +69,7 @@ function eligibility(basePlan, headCommands) {
 }
 
 function extractRunnerFiles(project, baseSha, dir) {
-  const a = spawnSync('git', ['-C', project, 'archive', '--format=tar', baseSha, ...RUNNER_FILES], { shell: false, encoding: 'buffer', maxBuffer: 16 * 1024 * 1024, timeout: ARCHIVE_TIMEOUT_MS });
+  const a = spawnSync('git', ['-C', project, 'archive', '--format=tar', baseSha, ...RUNNER_FILES], { shell: false, encoding: 'buffer', maxBuffer: 16 * 1024 * 1024, timeout: ARCHIVE_TIMEOUT_MS, env: pinnedGitEnv(process.env) }); // SEC-2: no replace refs, no caller GIT_* redirects
   if (a.status !== 0) return false;
   const x = spawnSync('tar', ['-xf', '-', '-C', dir], { shell: false, input: a.stdout, stdio: ['pipe', 'ignore', 'ignore'], timeout: ARCHIVE_TIMEOUT_MS });
   return x.status === 0;
