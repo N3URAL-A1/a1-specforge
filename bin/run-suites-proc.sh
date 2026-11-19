@@ -26,6 +26,50 @@ RS_SLOT_LOG=()
 RS_SLOT_DIR=()
 RS_LAST_PGID=""
 
+# Wire contract (spec 027 slice 3): option state and check states written into the --json-out file.
+RS_JSON_OUT=""
+RS_GROUPS_FILE=""
+RS_CHECK_RECON="not_selected"
+RS_CHECK_LEARN="not_selected"
+RS_CHECK_PHASES="not_selected"
+
+# rs_set_check <recon|learn|phases> <state> — records one post-check state for the --json-out file.
+rs_set_check() {
+  case "$1" in
+    recon) RS_CHECK_RECON="$2" ;;
+    learn) RS_CHECK_LEARN="$2" ;;
+    phases) RS_CHECK_PHASES="$2" ;;
+  esac
+}
+
+# rs_check_json_out <path> — empty is fine. Else: absolute, not existing (not even as a symlink), and the
+# parent is a directory owned by the user and not group- or world-writable. Prints the reason, returns 1.
+rs_check_json_out() {
+  local f="${1:-}" parent
+  [ -n "$f" ] || return 0
+  case "$f" in /*) ;; *) echo "run-suites: --json-out must be an absolute path: $f" >&2; return 1 ;; esac
+  if [ -e "$f" ] || [ -L "$f" ]; then echo "run-suites: --json-out target already exists: $f" >&2; return 1; fi
+  parent="$(dirname "$f")"
+  if [ ! -d "$parent" ] || [ -L "$parent" ] || [ ! -O "$parent" ]; then
+    echo "run-suites: --json-out parent is not a directory owned by the current user: $parent" >&2; return 1
+  fi
+  if [ -n "$(find "$parent" -maxdepth 0 \( -perm -020 -o -perm -002 \) 2>/dev/null)" ]; then
+    echo "run-suites: --json-out parent is group- or world-writable: $parent" >&2; return 1
+  fi
+  return 0
+}
+
+# rs_check_groups_file <path> — empty is fine. Else: not combined with --check-groups, absolute, a regular
+# file, not a symlink. Prints the reason, returns 1.
+rs_check_groups_file() {
+  local f="${1:-}"
+  [ -n "$f" ] || return 0
+  if [ "${RS_CHECK_GROUPS:-0}" -eq 1 ]; then echo "run-suites: --groups-file cannot be combined with --check-groups" >&2; return 1; fi
+  case "$f" in /*) ;; *) echo "run-suites: --groups-file must be an absolute path: $f" >&2; return 1 ;; esac
+  if [ -L "$f" ] || [ ! -f "$f" ]; then echo "run-suites: --groups-file is not a regular file (or is a symlink): $f" >&2; return 1; fi
+  return 0
+}
+
 # rs_is_posint <value> — 0 when value is a decimal integer >= 1 with at most 4 digits.
 rs_is_posint() {
   case "${1:-}" in ''|*[!0-9]*) return 1 ;; esac

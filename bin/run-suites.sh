@@ -11,6 +11,8 @@
 # literal in .github/workflows/test.yml); it cannot be combined with selectors. --check-groups starts nothing
 # and exits 1 naming the entry when a runner is in zero or two ci_jobs, a path listed in the declaration file
 # no longer exists, or the workflow's `run-suites.sh --job <name>` calls and ci_jobs disagree.
+# --contract prints the wire-contract line and exits 0. --json-out <abs path> writes one JSON result file (the path must
+# not exist; its parent is private). --groups-file <abs path> reads the declaration file from there instead of the root.
 # --locale-native (spec 027 FR-009) skips the `export LC_ALL=C` below and prints one `locale: native` header line.
 # --extra-job <name> runs the suites of ci_extra_jobs.<name> in suite-groups.json (kind snapshot-locale: an id
 # list or "rest"; needs --locale-native and a root without .git; no --job, no selector). snapshot_incompatible
@@ -161,7 +163,7 @@ process.stdout.write(out.join("\n") + (out.length ? "\n" : ""));
 }
 
 rs_load_groups() {
-  local f="$RS_ROOT/_test-fixtures/suite-groups.json" out rc kind a b c
+  local f="$RS_GROUPS_FILE" out rc kind a b c
   [ -f "$f" ] || rs_die "$f: declaration file (suite-groups.json) missing"
   out="$(rs_read_groups "$f" 2>&1)"; rc=$?
   if [ "$rc" -ne 0 ]; then echo "$out" >&2; exit 2; fi
@@ -445,7 +447,7 @@ rs_order() {
 
 # ---- one finished suite: result, leak check, isolation dirs removed ----
 rs_on_suite_done() {
-  local slot="$1" rc="$2" left="${3:-0}" id log dir vault elapsed note="" warn="" leaked st p
+  local slot="$1" rc="$2" left="${3:-0}" id log dir vault elapsed note="" warn="" leaked st p leak=""
   id="${RS_SLOT_ID[$slot]}"; log="${RS_SLOT_LOG[$slot]}"; dir="${RS_SLOT_DIR[$slot]}"
   vault="$dir/vault"
   elapsed=$((SECONDS - ${RS_SLOT_START[$slot]}))
@@ -457,7 +459,7 @@ rs_on_suite_done() {
     if [ "$left" -ge 2 ]; then warn="$warn; some survived SIGKILL"; fi
   fi
   if [ -d "$vault" ] && [ -n "$(ls -A "$vault" 2>/dev/null)" ]; then
-    note="${note:+$note; }wrote into its sentinel vault"
+    leak="wrote into its sentinel vault"; note="${note:+$note; }$leak"
     echo "suite $id left files in its sentinel vault (first $RS_MAX_LEAK_PATHS):"
     leaked="$(find "$vault" -mindepth 1 2>/dev/null | LC_ALL=C sort | head -n "$RS_MAX_LEAK_PATHS")"
     while IFS= read -r p; do
@@ -469,7 +471,7 @@ rs_on_suite_done() {
   st=PASS
   if [ "$rc" -ne 0 ] || [ -n "$note" ]; then st=FAIL; fi
   echo "done: $st $id (${elapsed}s)"
-  rs_record_result "$id" "$rc" "$elapsed" "$log" "$note" "$warn"
+  rs_record_result "$id" "$rc" "$elapsed" "$log" "$note" "$warn" "$leak" 0 "$p"
   rs_remove_slot_dir "$dir"
   RS_SLOT_ID[$slot]=""; RS_SLOT_DIR[$slot]=""
 }
@@ -550,8 +552,8 @@ rs_reconcile_pre() {
 rs_reconcile_post() {
   local left
   case "$RS_RECON_MODE" in
-    nogit) echo "reconcile check skipped: no git work tree at $RS_ROOT" ;;
-    dirty) echo "reconcile check skipped: $RS_RECON_PATH had local edits before the run; left untouched" ;;
+    nogit) echo "reconcile check skipped: no git work tree at $RS_ROOT"; rs_set_check recon skipped_nogit ;;
+    dirty) echo "reconcile check skipped: $RS_RECON_PATH had local edits before the run; left untouched"; rs_set_check recon skipped_dirty ;;
     clean)
       if [ -n "$(rs_recon_porcelain)" ]; then
         if git -C "$RS_ROOT" checkout HEAD -- "$RS_RECON_PATH" >/dev/null 2>&1; then
@@ -562,9 +564,9 @@ rs_reconcile_post() {
       if [ -n "$left" ]; then
         echo "reconcile check FAILED: $RS_RECON_PATH is still modified:"
         printf '%s\n' "$left" | sed 's/^/  /'
-        RS_FAILED=1
+        RS_FAILED=1; rs_set_check recon failed
       else
-        echo "reconcile check: $RS_RECON_PATH is clean"
+        echo "reconcile check: $RS_RECON_PATH is clean"; rs_set_check recon ok
       fi
       ;;
   esac
@@ -593,15 +595,15 @@ rs_learn_pre() {
 }
 rs_learn_post() {
   case "$RS_LEARN_MODE" in
-    nogit) echo "learnings check skipped: $RS_ROOT is not a git top-level directory" ;;
+    nogit) echo "learnings check skipped: $RS_ROOT is not a git top-level directory"; rs_set_check learn skipped_nogit ;;
     check)
       rs_learn_state > "$RS_TMP/learn.after"
       if cmp -s "$RS_TMP/learn.before" "$RS_TMP/learn.after"; then
-        echo "learnings check: $RS_LEARN_PATH unchanged"
+        echo "learnings check: $RS_LEARN_PATH unchanged"; rs_set_check learn ok
       else
         echo "learnings check FAILED: $RS_LEARN_PATH changed during the run (a suite wrote the fallback store):"
         diff "$RS_TMP/learn.before" "$RS_TMP/learn.after" | head -n "$RS_LEARN_FILE_MAX_LINES" | sed 's/^/  /'
-        RS_FAILED=1
+        RS_FAILED=1; rs_set_check learn failed
       fi
       ;;
   esac
@@ -629,15 +631,15 @@ rs_phases_pre() {
 }
 rs_phases_post() {
   case "$RS_PHASES_MODE" in
-    nogit) echo "phases check skipped: $RS_ROOT is not a git top-level directory" ;;
+    nogit) echo "phases check skipped: $RS_ROOT is not a git top-level directory"; rs_set_check phases skipped_nogit ;;
     check)
       rs_phases_state > "$RS_TMP/phases.after"
       if cmp -s "$RS_TMP/phases.before" "$RS_TMP/phases.after"; then
-        echo "phases check: $RS_PHASES_PATH unchanged"
+        echo "phases check: $RS_PHASES_PATH unchanged"; rs_set_check phases ok
       else
         echo "phases check FAILED: $RS_PHASES_PATH changed during the run (a suite or a concurrent process wrote under .a1/phases):"
         diff "$RS_TMP/phases.before" "$RS_TMP/phases.after" | head -n "$RS_PHASES_FILE_MAX_LINES" | sed 's/^/  /'
-        RS_FAILED=1
+        RS_FAILED=1; rs_set_check phases failed
       fi
       ;;
   esac
@@ -656,13 +658,20 @@ rs_main() {
       --extra-job) [ $# -ge 2 ] || rs_die "--extra-job needs an extra job name"; RS_EXTRA_JOB="$2"; shift 2 ;;
       --extra-job=*) RS_EXTRA_JOB="${1#--extra-job=}"; shift ;;
       --locale-native) RS_LOCALE_NATIVE=1; shift ;;
+      --contract) printf '%s-contract 1\n' "a1-suite-runner"; exit 0 ;;  # not one literal: part 06 K2b counts the lock-path literal
+      --json-out) [ $# -ge 2 ] || rs_die "--json-out needs a path"; RS_JSON_OUT="$2"; shift 2 ;;
+      --json-out=*) RS_JSON_OUT="${1#--json-out=}"; shift ;;
+      --groups-file) [ $# -ge 2 ] || rs_die "--groups-file needs a path"; RS_GROUPS_FILE="$2"; shift 2 ;;
+      --groups-file=*) RS_GROUPS_FILE="${1#--groups-file=}"; shift ;;
       --check-groups) RS_CHECK_GROUPS=1; shift ;;
       --root) [ $# -ge 2 ] || rs_die "--root needs a directory"; RS_ROOT="$2"; shift 2 ;;
-      -h|--help) sed -n '2,28p' "$RS_SELF"; exit 0 ;;
+      -h|--help) sed -n '2,30p' "$RS_SELF"; exit 0 ;;
       -*) rs_die "unknown argument: $1" ;;
       *) RS_SELECTORS[${#RS_SELECTORS[@]}]="$1"; shift ;;
     esac
   done
+  rs_check_json_out "$RS_JSON_OUT" || exit 2
+  rs_check_groups_file "$RS_GROUPS_FILE" || exit 2
   if [ -z "$workers" ]; then workers="${A1_SUITE_WORKERS:-}"; fi
   if [ -n "$workers" ] && ! rs_is_posint "$workers"; then
     rs_die "workers must be an integer from 1 to 9999 (got '$workers')"
@@ -671,6 +680,7 @@ rs_main() {
   [ -d "$RS_ROOT/_test-fixtures" ] || rs_die "no _test-fixtures directory under $RS_ROOT"
   RS_ROOT="$(cd "$RS_ROOT" && pwd -P)" || rs_die "cannot resolve $RS_ROOT"
 
+  [ -n "$RS_GROUPS_FILE" ] || RS_GROUPS_FILE="$RS_ROOT/_test-fixtures/suite-groups.json"
   rs_load_groups
   # workers: --workers > A1_SUITE_WORKERS > ci_job_workers of --job > default
   if [ -z "$workers" ] && [ -n "$RS_JOB" ]; then workers="$(rs_job_workers)"; fi
@@ -743,6 +753,7 @@ rs_main() {
 
   rs_print_table
   rs_print_failures
+  if [ -n "$RS_JSON_OUT" ]; then rs_write_json_out "$workers" || RS_FAILED=1; fi
   echo "total wall-clock: $((SECONDS - RS_T0))s"
   i=0
   while [ "$i" -lt "$RS_N_RES" ]; do
