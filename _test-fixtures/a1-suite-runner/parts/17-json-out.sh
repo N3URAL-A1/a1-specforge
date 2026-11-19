@@ -31,7 +31,7 @@ assert_eq "J2d red exit_code" "$(jo_get "$JO" 'j.results.find(r=>r.id==="red/run
 assert_eq "J2e leak note" "$(jo_get "$JO" 'j.results.find(r=>r.id==="leak/run-tests.sh").leak_note')" '"wrote into its sentinel vault"'
 assert_eq "J2f summary note" "$(jo_get "$JO" 'j.results.find(r=>r.id==="nosum/run-tests.sh").summary_note')" '"no assert summary"'
 assert_eq "J2g contract, lock_wait_ms, result count" "$(jo_get "$JO" '[j.contract,j.lock_wait_ms,j.results.length]')" '[1,0,4]'
-assert_eq "J2h file mode is 600" "$(stat -c %a "$JO" 2>/dev/null || stat -f %Lp "$JO")" "600"
+assert_eq "J2h file mode is 600" "$(node -e 'process.stdout.write((require("fs").statSync(process.argv[1]).mode & 0o777).toString(8))' "$JO")" "600"
 assert_eq "J2i no temp file is left behind" "$(ls "$W_JO" | grep -c 'tmp')" "0"
 
 rs_run "$T_JO" --json-out "$JO"
