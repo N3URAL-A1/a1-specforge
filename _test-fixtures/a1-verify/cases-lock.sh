@@ -13,7 +13,7 @@
 
 VL_PID=""; VL_TOKEN=""
 # vl_env <case>: isolated lock dir under $WORK, no inherited token, no wait override
-vl_env() { mkdir -p "$WORK/vl-$1"; VL_DIR="$WORK/vl-$1/lock"; export A1_VERIFY_LOCK_DIR="$VL_DIR"; unset A1_VERIFY_LOCK_TOKEN A1_VERIFY_LOCK_WAIT_MS; }
+vl_env() { mkdir -p "$WORK/vl-$1"; VL_DIR="$WORK/vl-$1/lock"; export A1_VERIFY_LOCK_DIR="$VL_DIR"; unset A1_VERIFY_LOCK_TOKEN; export A1_VERIFY_LOCK_WAIT_MS=5000; }
 vl_clear() { unset A1_VERIFY_LOCK_DIR A1_VERIFY_LOCK_TOKEN A1_VERIFY_LOCK_WAIT_MS; }
 # vl_holder <seconds> [release] [owner-cmd]: live holder process owning $VL_DIR. Polls ps until its command line shows the marker
 # (never reached: bad + return 1), then writes owner.json. With `release` the holder removes the lock dir after the seconds.
