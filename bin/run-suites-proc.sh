@@ -126,14 +126,14 @@ rs_slots_reset() {
 # (the group leader's pid, from $!); it cannot print it, because a command substitution would make
 # the worker a child of a subshell and `wait` could no longer collect its status.
 rs_spawn_worker() {
-  local id="$1" log="$2" home="$3" vault="$4" drop_real="-u A1_SUITE_REAL_VAULT" vl=""
+  local id="$1" log="$2" home="$3" vault="$4" drop_real="-u A1_SUITE_REAL_VAULT" vl=()
   # D12: without an outer verify token a worker gets its own verify lock dir under the slot dir.
-  if [ -z "${A1_VERIFY_LOCK_TOKEN:-}" ]; then vl="A1_VERIFY_LOCK_DIR=${home%/home}/vlock"; fi
+  if [ -z "${A1_VERIFY_LOCK_TOKEN:-}" ]; then vl=("A1_VERIFY_LOCK_DIR=${home%/home}/vlock"); fi   # an array: one argument even when TMPDIR holds a space
   # Only the runner's own fixture reads the outer vault path (real-store guard, part 09); no other suite sees it.
   case "$id" in a1-suite-runner/run-tests.sh) drop_real="" ;; esac
   set -m
   # shellcheck disable=SC2086
-  ( cd "$RS_ROOT" && exec env -u A1_VAULT_WRITER_HOST $drop_real A1_HOST_ID=leak A1_VAULT_ROOT="$vault" HOME="$home" $vl \
+  ( cd "$RS_ROOT" && exec env -u A1_VAULT_WRITER_HOST $drop_real A1_HOST_ID=leak A1_VAULT_ROOT="$vault" HOME="$home" ${vl[@]+"${vl[@]}"} \
       bash "_test-fixtures/$id" </dev/null >"$log" 2>&1 ) &
   RS_LAST_PGID=$!
   set +m
