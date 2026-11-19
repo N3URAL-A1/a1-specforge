@@ -40,3 +40,10 @@ Numstat deletion check: deleted=0 rc=0. verify-run.cjs 620 lines, verify-lock.cj
 - Real-lock leak assert lives in new `_test-fixtures/a1-verify/leak-assert.sh` (sourced by every new case file, both suites; lk_leak_start/lk_leak_end) and was added to Wave 1's cases-lazy.sh files too (no existing assert touched).
 - RED-proof (c), (f), (g): the mutation hangs (900 s default ceiling) so the case is killed at the bound; counted red per the plan rule, case-level attribution only for (a), (b), (d). Killing left one dead-owner real lock dir, which was removed after its owner PID was confirmed dead.
 - Full run-suites.sh gate not run in this lane wave (D12 per-worker lock dir lands in the runner lane, Wave 4); instead all six suites that execute verify run/merge-check were run individually and are green.
+
+### Wave 2 follow-up: attributed RED-proofs (narrowed harness, only cases-lock.sh sourced, git-archive copy)
+Fixture fix (new lines only): every lock case now runs with A1_VERIFY_LOCK_WAIT_MS=5000 by default (vl_env), LK2 with 3000, so a mutation turns into lock_timeout instead of a 900 s hang. Controls without mutation: a1-verify narrowed 20 passed, a1-pr-merge-check narrowed 6 passed.
+RED-proof 2.1 (c) dead-PID takeover removed -> LK2, LK2b, LK6 red (rc=1)
+RED-proof 2.1 (f) lock acquired at top of mergeCheck -> MLK1, MLK2, MLK3 red (rc=1)
+RED-proof 2.1 (g) lock before resolveCommands -> LK12, LK12b red (plus LK1-LK11 self-deadlock red) (rc=1)
+Six suites rerun: a1-verify 436, a1-pr-merge-check 259, a1-disposition 128, a1-exit2-audit 36, a1-metrics 476, a1-probe 894, all 0 failed. Real lock dir absent afterwards.
