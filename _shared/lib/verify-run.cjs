@@ -38,7 +38,8 @@ const KILL_GRACE_MS = 10 * 1000;
 const GROUP_RUNNER_FLAG = '--group-runner';
 // Vault variables never reach a suite: 18 suites forgot `unset A1_VAULT_ROOT` and leaked fixture paths into the real vault.
 // A1_VERIFY_LOCK_TOKEN must never join this list: nested `verify run` calls rely on it to skip the lock wait (spec 027 FR-018).
-const SUITE_ENV_DROP = Object.freeze(['A1_VAULT_ROOT', 'A1_VAULT_WRITER_HOST', 'A1_HOST_ID']);
+// A1_VERIFY_SPAWN_LOG (SEC-7) is a test seam of THIS process: a suite or a nested run must not inherit a path that is appended to.
+const SUITE_ENV_DROP = Object.freeze(['A1_VAULT_ROOT', 'A1_VAULT_WRITER_HOST', 'A1_HOST_ID', 'A1_VERIFY_SPAWN_LOG']);
 
 function readJsonFile(file, what) {
   let st;

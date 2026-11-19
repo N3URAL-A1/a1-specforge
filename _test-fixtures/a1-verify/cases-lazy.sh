@@ -84,4 +84,12 @@ A1_VERIFY_SPAWN_LOG="$LZ_LOG" vrun "$P" --base main --no-cache
 check "LZ7 CLI --base --no-cache: pass, no base_run record (eager)" 0 'j.verdict+"|"+(j.base_run===undefined)' "pass|true"
 [[ "$(lz_count b)" == "2" ]] && ok "LZ7b CLI stays eager: 2 base runs on a green head" || bad "LZ7b log: $(lz_labels)"
 
+# LZ8 (review fix, SEC-7): the suite never sees A1_VERIFY_SPAWN_LOG (it is the outer call's own seam), the outer call still logs
+newproj lz8; stub c1 "printf '%s' \"\${A1_VERIFY_SPAWN_LOG-UNSET}\" > \"$WORK/lz8-env\"; exit 0"
+cfg '{"commands":[{"id":"c1","argv":["./bin/c1"]}]}'; seal
+LZ_LOG="$WORK/lz-lz8.log"; : > "$LZ_LOG"
+A1_VERIFY_SPAWN_LOG="$LZ_LOG" vrun "$P" --no-cache
+[[ "$(cat "$WORK/lz8-env" 2>/dev/null)" == "UNSET" ]] && ok "LZ8 the suite env has no A1_VERIFY_SPAWN_LOG" || bad "LZ8 suite saw '$(cat "$WORK/lz8-env" 2>/dev/null)'"
+[[ "$(lz_count h)" == "1" ]] && ok "LZ8b the outer call still wrote its spawn log line" || bad "LZ8b log: $(lz_labels)"
+
 lk_leak_end LZ
