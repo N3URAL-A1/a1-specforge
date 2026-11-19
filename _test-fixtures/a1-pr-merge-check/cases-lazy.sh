@@ -3,6 +3,7 @@
 #
 # merge-check runs the base side lazily: head first, base only for commands red on head (or with a counting reporter).
 # RED-proof (scratch copy, see STATUS-verify.md): pr-merge-check.cjs `lazyBase: true` removed : ML1 red.
+. "$REPO_ROOT/_test-fixtures/a1-verify/leak-assert.sh"; lk_leak_start
 
 # ml_run <label> <base-exit> <head-exit> [mc args]: new_pr + mc with the spawn seam; sets ML_LOG.
 ml_run() {
@@ -31,3 +32,5 @@ ml_run ml3 1 1
 expect "ML3 red on base and head: exit 1" 1 "$RC"
 expect "ML3b one base run" 1 "$(ml_base)"
 case ",$(reasons)," in *,base_red_unreported,*) ok "ML3c reasons include base_red_unreported" ;; *) bad "ML3c reasons: $(reasons)" ;; esac
+
+lk_leak_end ML

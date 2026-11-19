@@ -9,6 +9,7 @@
 #   (b) verify-run.cjs lazyHeadSide(): `need` = every base command                       : LZ1 red
 #   (c) verify-run.cjs lazyHeadSide(): `need` without the `kind !== 'none'` term         : LZ4, LZ5 red
 #   (e) verify-run.cjs lazyHeadSide(): retry before the base run                         : LZ2 order red
+. "$REPO_ROOT/_test-fixtures/a1-verify/leak-assert.sh"; lk_leak_start
 
 # lz_run <project> <case>: runVerify the merge-check way; sets OUT, RC, ERR; spawn log in $LZ_LOG.
 lz_run() {
@@ -82,3 +83,5 @@ LZ_LOG="$WORK/lz-lz7.log"; : > "$LZ_LOG"
 A1_VERIFY_SPAWN_LOG="$LZ_LOG" vrun "$P" --base main --no-cache
 check "LZ7 CLI --base --no-cache: pass, no base_run record (eager)" 0 'j.verdict+"|"+(j.base_run===undefined)' "pass|true"
 [[ "$(lz_count b)" == "2" ]] && ok "LZ7b CLI stays eager: 2 base runs on a green head" || bad "LZ7b log: $(lz_labels)"
+
+lk_leak_end LZ

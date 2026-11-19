@@ -20,6 +20,7 @@ const { loadEntries, entriesAt, clearedFingerprints, fingerprintOf, isSelfReview
 
 const hostLib = require('./verify-host.cjs');
 const affectedLib = require('./verify-affected.cjs');
+const lockLib = require('./verify-lock.cjs');
 
 const { VerifyError } = vb;
 
@@ -35,6 +36,7 @@ const NPM_PLACEHOLDER_RE = /no test specified/i;
 const KILL_GRACE_MS = 10 * 1000;
 const GROUP_RUNNER_FLAG = '--group-runner';
 // Vault variables never reach a suite: 18 suites forgot `unset A1_VAULT_ROOT` and leaked fixture paths into the real vault.
+// A1_VERIFY_LOCK_TOKEN must never join this list: nested `verify run` calls rely on it to skip the lock wait (spec 027 FR-018).
 const SUITE_ENV_DROP = Object.freeze(['A1_VAULT_ROOT', 'A1_VAULT_WRITER_HOST', 'A1_HOST_ID']);
 
 function readJsonFile(file, what) {
@@ -244,7 +246,8 @@ function groupRunnerMain() {
   const spec = JSON.parse(fs.readFileSync(0, 'utf8'));
   const emit = (o) => emitExit(0, JSON.stringify(o), '');
   const fd = fs.openSync(spec.stdoutFile, 'w');
-  const child = spawn(spec.argv[0], spec.argv.slice(1), { cwd: spec.cwd, env: suiteEnv(process.env), shell: false, detached: true, stdio: ['ignore', fd, 'ignore'] });
+  const errFd = typeof spec.stderrFile === 'string' ? fs.openSync(spec.stderrFile, 'w') : 'ignore';
+  const child = spawn(spec.argv[0], spec.argv.slice(1), { cwd: spec.cwd, env: suiteEnv(process.env), shell: false, detached: true, stdio: ['ignore', fd, errFd] });
   let timedOut = false;
   // SEC-10: the group dies on EVERY way out (timeout, normal exit, spawn error, a signal to this runner),
   // not only on timeout - a suite that returns 0 and leaves a background child must not leave it running.
@@ -259,9 +262,9 @@ function groupRunnerMain() {
   child.on('exit', (status, signal) => { clearTimeout(timer); emit({ status, signal, timedOut }); });
 }
 
-function spawnGroup(argv, cwd, stdoutFile, timeoutMs) {
-  const spec = JSON.stringify({ argv, cwd, stdoutFile, timeoutMs });
-  const r = spawnSync(process.execPath, [__filename, GROUP_RUNNER_FLAG], { input: spec, shell: false, encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], timeout: timeoutMs + KILL_GRACE_MS, killSignal: 'SIGKILL' });
+function spawnGroup(argv, cwd, stdoutFile, timeoutMs, env, stderrFile) {
+  const spec = JSON.stringify({ argv, cwd, stdoutFile, timeoutMs, ...(stderrFile ? { stderrFile } : {}) });
+  const r = spawnSync(process.execPath, [__filename, GROUP_RUNNER_FLAG], { input: spec, shell: false, encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], timeout: timeoutMs + KILL_GRACE_MS, killSignal: 'SIGKILL', ...(env ? { env } : {}) });
   try { return JSON.parse(r.stdout); } catch (_e) { return { spawnError: true }; }
 }
 
@@ -273,13 +276,13 @@ function noteSpawn(label, id) {
   if (typeof file === 'string' && path.isAbsolute(file)) fs.appendFileSync(file, `${label}\t${id}\n`);
 }
 
-function runCommand(cmd, cwd, tmp, label) {
+function runCommand(cmd, cwd, tmp, label, env) {
   const reportFile = path.join(tmp, `report-${label}`);
   const stdoutFile = path.join(tmp, `stdout-${label}`);
   const argv = rep.injectFlags(cmd.kind, cmd.argv, reportFile, cmd.viaScript);
   const t0 = process.hrtime.bigint();
   noteSpawn(label, cmd.id);
-  const r = spawnGroup(argv, cwd, stdoutFile, cmd.timeoutMs);
+  const r = spawnGroup(argv, cwd, stdoutFile, cmd.timeoutMs, env);
   const durationMs = Math.round(Number(process.hrtime.bigint() - t0) / 1e6);
   // FR-041: a command that cannot start (unknown runner) is an error of the tool, never a verdict.
   if (r.spawnError === true) throw new VerifyError('spawn_failed', `cannot start ${JSON.stringify(cmd.argv.join(' ').slice(0, 200))} (unknown runner or not executable) in ${path.basename(cwd)}`);
@@ -349,10 +352,10 @@ function overall(commands, noTestsReason, excused = new Set()) {
 }
 
 /** Base side (FR-015): { ids: Map<commandId, Set>, cache } from the cache or a git-archive snapshot of baseSha. */
-function runBaseSide(project, plan, baseSha, hash, touches, tmp, noCache) {
+function runBaseSide(project, plan, baseSha, hash, touches, tmp, noCache, env) {
   const cached = noCache ? null : vb.readCache(project, baseSha, hash, plan.commands);
   const results = cached || vb.withSnapshot(project, baseSha, (dir) => Object.fromEntries(plan.commands.map((c, i) => [c.id, {
-    raw: c.file && !fs.existsSync(path.join(dir, c.file)) ? { absent: true } : runCommand(c, dir, tmp, `b${i}`),
+    raw: c.file && !fs.existsSync(path.join(dir, c.file)) ? { absent: true } : runCommand(c, dir, tmp, `b${i}`, env),
   }])));
   if (!cached && !noCache) vb.writeCache(project, baseSha, hash, results);
   const ids = new Map(plan.commands.map((c) => [c.id, results[c.id].raw.absent ? new Set() : vb.idSet(finishCommand(results[c.id].raw, touches))]));
@@ -369,10 +372,10 @@ function runHeadSide(project, plan, head, hash, ctx) {
   let ranLive = false;
   const settled = plan.commands.map((c, i) => {
     const entry = cached ? cached[c.id] : null;
-    const raw = entry ? { ...entry.raw, duration_ms: null } : (ranLive = true, runCommand(c, ctx.cwd, ctx.tmp, `h${i}`)); // FR-002: a cache hit has no duration (null, never 0)
+    const raw = entry ? { ...entry.raw, duration_ms: null } : (ranLive = true, runCommand(c, ctx.cwd, ctx.tmp, `h${i}`, ctx.env)); // FR-002: a cache hit has no duration (null, never 0)
     results[c.id] = { raw, retry: entry && entry.retry ? { ...entry.retry, duration_ms: null } : null };
     const retry = () => {
-      if (!results[c.id].retry) { ranLive = true; results[c.id] = { raw, retry: runCommand(c, ctx.cwd, ctx.tmp, `r${i}`) }; }
+      if (!results[c.id].retry) { ranLive = true; results[c.id] = { raw, retry: runCommand(c, ctx.cwd, ctx.tmp, `r${i}`, ctx.env) }; }
       return finishCommand(results[c.id].retry, ctx.touches);
     };
     const done = vb.settle(finishCommand(raw, ctx.touches), retry, ctx.baseIds ? (ctx.baseIds.get(c.id) || new Set()) : null, plan.flakyBase);
@@ -392,16 +395,16 @@ function runHeadSide(project, plan, head, hash, ctx) {
  * @returns {{settled: object[], cache: string, base: object|null, baseMs: number|null, baseRan: string[]}}
  */
 function lazyHeadSide(project, basePlan, headPlan, baseSha, ctx) {
-  const firsts = headPlan.commands.map((c, i) => runCommand(c, ctx.cwd, ctx.tmp, `h${i}`));
+  const firsts = headPlan.commands.map((c, i) => runCommand(c, ctx.cwd, ctx.tmp, `h${i}`, ctx.env));
   const finished = firsts.map((raw) => finishCommand(raw, ctx.touches));
   const red = new Set(headPlan.commands.filter((c, i) => finished[i].reason !== null).map((c) => c.id));
   const need = basePlan.commands.filter((c) => red.has(c.id) || c.kind !== 'none');
   const tBase = process.hrtime.bigint();
-  const base = need.length > 0 ? runBaseSide(project, { ...basePlan, commands: need }, baseSha, null, ctx.touches, ctx.tmp, true) : null;
+  const base = need.length > 0 ? runBaseSide(project, { ...basePlan, commands: need }, baseSha, null, ctx.touches, ctx.tmp, true, ctx.env) : null;
   const baseMs = base ? Math.round(Number(process.hrtime.bigint() - tBase) / 1e6) : null;
   const settled = headPlan.commands.map((c, i) => {
     let retryRaw = null;
-    const retry = () => { retryRaw = runCommand(c, ctx.cwd, ctx.tmp, `r${i}`); return finishCommand(retryRaw, ctx.touches); };
+    const retry = () => { retryRaw = runCommand(c, ctx.cwd, ctx.tmp, `r${i}`, ctx.env); return finishCommand(retryRaw, ctx.touches); };
     const done = vb.settle(finished[i], retry, base ? (base.ids.get(c.id) || new Set()) : new Set(), headPlan.flakyBase);
     return { ...done, duration_ms: typeof firsts[i].duration_ms === 'number' ? firsts[i].duration_ms : null, retry_duration_ms: retryRaw && typeof retryRaw.duration_ms === 'number' ? retryRaw.duration_ms : null };
   });
@@ -411,8 +414,8 @@ function lazyHeadSide(project, basePlan, headPlan, baseSha, ctx) {
 /** Eager order (base side first, then head with inline settle): the order of every run but merge-check's. */
 function eagerSides(project, timed, headTimed, ids, ctx) {
   const tBase = process.hrtime.bigint();
-  const base = ids.compareBase ? runBaseSide(project, timed, ids.baseSha, ids.baseHash, ctx.touches, ctx.tmp, ctx.noCache) : null;
-  const runHead = (cwd) => runHeadSide(project, headTimed, ids.head, ids.hash, { tmp: ctx.tmp, touches: ctx.touches, baseIds: base ? base.ids : null, cwd, noCache: ctx.noCache });
+  const base = ids.compareBase ? runBaseSide(project, timed, ids.baseSha, ids.baseHash, ctx.touches, ctx.tmp, ctx.noCache, ctx.env) : null;
+  const runHead = (cwd) => runHeadSide(project, headTimed, ids.head, ids.hash, { tmp: ctx.tmp, touches: ctx.touches, baseIds: base ? base.ids : null, cwd, noCache: ctx.noCache, env: ctx.env });
   const baseMs = base ? Math.round(Number(process.hrtime.bigint() - tBase) / 1e6) : null;
   const tHead = process.hrtime.bigint();
   // --base: HEAD runs from a git-archive snapshot like the base side, so git-ignored local files cannot change the verdict.
@@ -563,6 +566,12 @@ function runVerify(opts) {
   const headTimed = { ...timed, commands: withTimeout(headSet.commands) };
   const hash = vb.commandHash(headTimed.commands, vb.envDigest((n) => readLockfile(project, n)));
   const baseHash = baseSha ? vb.commandHash(timed.commands, vb.envDigest((n) => gitRaw(project, ['show', `${baseSha}:${n}`]))) : hash;
+  let lock;
+  try { lock = lockLib.acquireVerifyLock({ env: process.env }); } catch (e) {
+    if (e instanceof lockLib.LockError) throw new VerifyError(e.reason, e.message);
+    throw e;
+  }
+  const runEnv = { ...process.env, A1_VERIFY_LOCK_TOKEN: lock.token };
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'a1-verify-'));
   const release = vb.cleanupOnExit(tmp);
   const cleanBefore = head !== null && vb.dirtyPaths(statusPaths(project)).length === 0;
@@ -572,10 +581,10 @@ function runVerify(opts) {
     let sides;
     if (lazy) {
       const tHead = process.hrtime.bigint();
-      const lz = vb.withSnapshot(project, head, (cwd) => lazyHeadSide(project, timed, headTimed, baseSha, { tmp, touches, cwd }), 'head');
+      const lz = vb.withSnapshot(project, head, (cwd) => lazyHeadSide(project, timed, headTimed, baseSha, { tmp, touches, cwd, env: runEnv }), 'head');
       sides = { base: lz.base, side: lz, baseMs: lz.baseMs, headMs: msSince(tHead) - (lz.baseMs || 0), baseRan: lz.baseRan };
     } else {
-      sides = eagerSides(project, timed, headTimed, { compareBase: sel.compareBase, baseSha, baseHash, head, hash, withBase: opts.base !== undefined }, { tmp, touches, noCache });
+      sides = eagerSides(project, timed, headTimed, { compareBase: sel.compareBase, baseSha, baseHash, head, hash, withBase: opts.base !== undefined }, { tmp, touches, noCache, env: runEnv });
     }
     const { base, side, baseMs, headMs } = sides;
     const cleanAfter = head !== null && vb.dirtyPaths(statusPaths(project)).length === 0;
@@ -596,11 +605,13 @@ function runVerify(opts) {
       touches_source: touches, changed_files: changed.length, flaky: pairs(side.settled, 'flaky_ids'), pre_existing_red: pairs(side.settled, 'pre_existing_red_ids'),
       cache: { head: side.cache, base: base ? base.cache : (lazy ? 'off' : 'none') }, ...(configChanged ? { config_changed: configChanged } : {}), ...(removed ? { suite_removed: removed } : {}), commands: settled,
       ...(lazy ? { base_run: { mode: 'lazy', ran: sides.baseRan, of: timed.commands.length } } : {}),
+      lock: lock.mode, lock_wait_ms: lock.waitedMs,
       duration_ms: { head: headMs, base: baseMs, total: msSince(tTotal) },
     };
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
     release();
+    lock.release();
   }
 }
 

@@ -252,6 +252,7 @@ function mergeCheck(opts) {
   const report = {
     ok: reasons.length === 0, pr: Number(opts.pr), base: baseRef, base_sha: baseSha, head_sha: record.head_sha, gh_bin: ghBinMode(), reasons,
     suites: {
+      lock_wait_ms: typeof record.lock_wait_ms === 'number' ? record.lock_wait_ms : null,
       verdict: record.verdict, cache: record.cache, pre_existing_red: record.pre_existing_red, flaky: record.flaky, config_changed: record.config_changed || null, suite_removed: record.suite_removed || null,
       host: record.host || null, skipped_on_host: record.skipped_on_host || null, ...(record.hints && record.hints.length > 0 ? { hints: record.hints } : {}),
       ...(record.env_red && record.env_red.length > 0 ? { env_red: record.env_red } : {}), ...(record.warnings && record.warnings.length > 0 ? { warnings: record.warnings } : {}),
