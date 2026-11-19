@@ -133,3 +133,25 @@ RED-proof 6.1 e (cap removed from runnerCeilingMs) -> RC9b red
 
 ### Deviations
 - None against rules 1-4. Choices: `readRunnerResult` returns `{results, lockWaitMs, checks}`; `runSide` additionally returns `checks`; top-level and result key sets are exact (the single writer emits exactly those). `commandReason` leak_note branch is left to Wave 7 (its task 7.x lists it); not wired into runVerify or merge-check.
+
+## Wave 7 — Runner path inside `runVerify`
+Completed: 2026-11-19
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| 7.1 runnerSides, selectSides, leak_note, runner_source/runner, RP1-RP15 | DONE | d40ef87 | verify-run.cjs 691 lines (cap 800); a1-verify 509/0, a1-pr-merge-check 261/0; deletions vs a40a85f in both FR-012 suite dirs: 0 |
+
+Tests: `_test-fixtures/a1-verify/cases-runner-path.sh` (sourced from run-tests.sh) plus `fake-runner.sh` (same dir; the fake base runner, modes mirror/drop-one/extra/leak-first/red-first/symlink/exit2, applies to the sides in `A1_FX_RUNNER_SIDES`, default head). Every run uses its own `A1_VERIFY_LOCK_DIR`, `A1_SUITE_LOCK_DIR`, `A1_VERIFY_LOCK_WAIT_MS=5000`; the outer token is dropped for the child only (`env -u`), the suite shell keeps it (lk_leak_end asserts it).
+
+RED-proof 7.1 a (prepareRunner replaced by the head snapshot's bin/) -> RP2b, RP3, RP4, RP4b, RP5 red
+RED-proof 7.1 b (--groups-file points at the head root) -> RP3 red
+RED-proof 7.1 c (fallback throws) -> RP4, RP4b, RP5 red
+RED-proof 7.1 d (leak_note branch removed) -> RP7, RP13 red
+RED-proof 7.1 e (runner exit 0 forces all green) -> RP9 red
+RED-proof 7.1 f (base need = every id) -> RP1, RP1b, RP11b red
+RED-proof 7.1 g (D18 stderr mapping removed) -> RP8 red
+RED-proof 7.1 h (rp.release() removed) -> RP15 red (first attempt: green, because cleanupOnExit removes the dir before a shell-side check; the case now lists TMPDIR inside the node process right after runVerify returns)
+
+### Deviations
+- None against rules 1-4. Choices: `runVerify` stays long (side selection moved to `selectSides`, but the function is still over 50 lines as before; the 50-line aim was not reachable without reshaping unrelated code). `runner` is only recorded on the lazy path; with `opts.runner` but no lazy order the record has no `runner_source`. Fallback `runner` object is `{fallback, why, contract: null, sides: null}`. `runner.sides.<side>.requested` is the id count. `base_run.ran` on the runner path lists the ids actually run on base (ids absent at base are not run). A head plan with no commands falls back as `not_eligible` ("no commands") so the runner is never called without selectors. RP9 uses `A1_FX_RUNNER_SIDES="head retry"` (a green retry would make the result `new_flaky`).
+- Left for Wave 8: merge-check passes `runner: true`; retry-order/watchdog/env-equality proofs; help and registry; the sides' `requested` is a count, not ids.
