@@ -18,3 +18,25 @@ Numstat deletion check: deleted=0 rc=0. verify-run.cjs: 609 lines.
 ### Deviations
 - Record cache.base is 'off' (not 'none') on the lazy path even when no base ran, because F1 pins `off|off` for merge-check.
 - New case files export A1_VERIFY_LOCK_DIR per case already (lock module arrives in Wave 2); the real-lock leak assert is deferred to Wave 2 because no lock exists yet.
+
+## Wave 2 - CLI lock
+Completed: 2026-11-19
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| 2.1 verify-lock.cjs, runVerify hook, token export, merge-check field | DONE | a11d057 | a1-verify 436 passed, a1-pr-merge-check 259 passed; a1-disposition, a1-exit2-audit, a1-metrics, a1-probe green |
+
+RED-proof 2.1 (a) token not in runEnv -> LK8, LK11, LK11b red (rc=1)
+RED-proof 2.1 (b) nested branch removed -> LK4, LK11, LK11b red (rc=1)
+RED-proof 2.1 (c) dead-PID takeover removed (+ default ceiling 3 s) -> A1..M3 red because a stale dead-owner lock is no longer taken over (rc=124 at the 170 s bound; first run without the shortened ceiling hung on it)
+RED-proof 2.1 (d) cmd comparison removed -> LK6 red (rc=1)
+RED-proof 2.1 (e) wait loop returns at once -> A1, A1b, A2, A4b, A5, A6 .. red (contended real lock, no wait) (rc=1)
+RED-proof 2.1 (f) lock acquired at top of mergeCheck -> hang (self-deadlock on the held lock), killed at the 400 s bound = red (rc=124); MLK1 itself not reached
+RED-proof 2.1 (g) lock before resolveCommands -> hang/killed at bound = red (rc=124); LK12 not reached in time
+
+Numstat deletion check: deleted=0 rc=0. verify-run.cjs 620 lines, verify-lock.cjs 186 lines.
+
+### Deviations
+- Real-lock leak assert lives in new `_test-fixtures/a1-verify/leak-assert.sh` (sourced by every new case file, both suites; lk_leak_start/lk_leak_end) and was added to Wave 1's cases-lazy.sh files too (no existing assert touched).
+- RED-proof (c), (f), (g): the mutation hangs (900 s default ceiling) so the case is killed at the bound; counted red per the plan rule, case-level attribution only for (a), (b), (d). Killing left one dead-owner real lock dir, which was removed after its owner PID was confirmed dead.
+- Full run-suites.sh gate not run in this lane wave (D12 per-worker lock dir lands in the runner lane, Wave 4); instead all six suites that execute verify run/merge-check were run individually and are green.
