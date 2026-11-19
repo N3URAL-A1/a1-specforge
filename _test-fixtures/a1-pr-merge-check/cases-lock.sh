@@ -15,7 +15,7 @@ mlk_holder() {
 }
 mlk_stop() { kill "$MLK_PID" 2>/dev/null; wait "$MLK_PID" 2>/dev/null; return 0; }
 mlk_env() { mkdir -p "$WORK/vl-$1"; export A1_VERIFY_LOCK_DIR="$WORK/vl-$1/lock" A1_VERIFY_LOCK_WAIT_MS=1500; lk_token_reset; }
-mlk_clear() { unset A1_VERIFY_LOCK_DIR A1_VERIFY_LOCK_WAIT_MS; lk_token_reset; }
+mlk_clear() { vlock_restore; lk_token_reset; }
 
 mlk_env mlk1; ci_pr mlk1
 if mlk_holder; then

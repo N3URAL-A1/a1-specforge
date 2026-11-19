@@ -20,6 +20,8 @@ SHARED="$(dirname "$TOOLS")"
 export GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0
 
 mk_workdir WORK probe
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/vlock.sh"
+vlock_private "$WORK"   # review fix (Reinhard 2): a direct run never waits on the real per-uid lock
 : "${WORK:?}"
 # SEC-11: `probe run` reads only a committed, unmodified .a1/live-probes.yaml. The suite's WORK is one git work tree and
 # probe() commits everything before each call (PROBE_NOCOMMIT=1 skips that, for the cases that need an unreviewed file).

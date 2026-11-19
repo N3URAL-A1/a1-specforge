@@ -14,7 +14,7 @@
 VL_PID=""; VL_TOKEN=""
 # vl_env <case>: isolated lock dir under $WORK, no inherited token, no wait override
 vl_env() { mkdir -p "$WORK/vl-$1"; VL_DIR="$WORK/vl-$1/lock"; export A1_VERIFY_LOCK_DIR="$VL_DIR"; lk_token_reset; export A1_VERIFY_LOCK_WAIT_MS=5000; }
-vl_clear() { unset A1_VERIFY_LOCK_DIR A1_VERIFY_LOCK_WAIT_MS; lk_token_reset; }
+vl_clear() { vlock_restore; lk_token_reset; }
 # vl_holder <seconds> [release] [owner-cmd]: live holder process owning $VL_DIR. Polls ps until its command line shows the marker
 # (never reached: bad + return 1), then writes owner.json. With `release` the holder removes the lock dir after the seconds.
 vl_holder() {
@@ -102,5 +102,22 @@ if vl_holder 60; then t0="$(now_ms)"; vrun "$P"; t1="$(now_ms)"; vl_stop
   [[ $((t1 - t0)) -lt 1500 ]] && ok "LK12b returned without waiting on the lock" || bad "LK12b took $((t1 - t0)) ms"
 fi
 vl_clear
+
+# LKP (review fix, Reinhard 2): a suite run directly (no outer token) must never wait on the real per-uid lock.
+# The harness heads of every suite that spawns verify run / pr merge-check call vlock_private, so the child sees a private dir.
+if [[ -n "${LK_TOKEN_SENTINEL:-}" ]]; then   # leak-assert planted a sentinel token = the suite had no real outer token
+  [[ "${A1_VERIFY_LOCK_DIR:-}" == "$WORK/vlock-private" && "${A1_VERIFY_LOCK_WAIT_MS:-}" == "20000" ]] && ok "LKP1 no outer token: this harness has a private lock dir under \$WORK and a bounded wait" || bad "LKP1 dir='${A1_VERIFY_LOCK_DIR:-}' wait='${A1_VERIFY_LOCK_WAIT_MS:-}'"
+  newproj lkp2; stub ok "printf '%s' \"\${A1_VERIFY_LOCK_DIR:-}\" > \"$WORK/lkp2-dir\"; exit 0"; cfg '{"commands":[{"id":"unit","argv":["./bin/ok"]}]}'; seal
+  vrun "$P"
+  [[ "$(cat "$WORK/lkp2-dir" 2>/dev/null)" == "$WORK/vlock-private" ]] && ok "LKP2 a plain vrun's suite runs under the private lock dir (never the real one)" || bad "LKP2 saw '$(cat "$WORK/lkp2-dir" 2>/dev/null)' err=$ERR"
+else
+  ok "LKP1 outer token present: nested under the outer lock (private dir not used)"; ok "LKP2 outer token present: skipped"
+fi
+LKP3=""; for s in a1-verify a1-pr-merge-check a1-metrics a1-probe a1-exit2-audit; do grep -q 'vlock_private "\$' "$REPO_ROOT/_test-fixtures/$s/run-tests.sh" || LKP3="$LKP3 $s"; done
+[[ -z "$LKP3" ]] && ok "LKP3 all five suites that spawn verify run / merge-check call vlock_private in their harness head" || bad "LKP3 missing in:$LKP3"
+# LKP4: the helper itself: token present -> untouched; no token -> private dir; restore -> back to the head values
+LKP4="$(env -u A1_VERIFY_LOCK_DIR -u A1_VERIFY_LOCK_WAIT_MS -u A1_VERIFY_LOCK_TOKEN bash -c '. "$1"; vlock_private /w; a="$A1_VERIFY_LOCK_DIR"; export A1_VERIFY_LOCK_DIR=/x; vlock_restore; echo "$a $A1_VERIFY_LOCK_DIR"; A1_VERIFY_LOCK_TOKEN=0123456789abcdef0123456789abcdef; unset A1_VERIFY_LOCK_DIR; vlock_private /w; echo "[${A1_VERIFY_LOCK_DIR-unset}]"' _ "$REPO_ROOT/_test-fixtures/lib/vlock.sh")"
+assert_lkp4="$(printf '%s' "$LKP4" | tr '\n' '|')"
+[[ "$assert_lkp4" == "/w/vlock-private /w/vlock-private|[unset]" ]] && ok "LKP4 vlock_private: private dir without a token, untouched with one; vlock_restore returns to it" || bad "LKP4 got '$assert_lkp4'"
 
 lk_leak_end LK

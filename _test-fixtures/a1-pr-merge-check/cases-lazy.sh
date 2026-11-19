@@ -14,7 +14,7 @@ ml_run() {
   export A1_VERIFY_LOCK_DIR="$WORK/vl-$label/lock" A1_VERIFY_SPAWN_LOG="$ML_LOG"
   lk_token_reset
   mc "$@"
-  unset A1_VERIFY_LOCK_DIR A1_VERIFY_SPAWN_LOG
+  vlock_restore; unset A1_VERIFY_SPAWN_LOG
 }
 ml_base() { grep -c '^b' "$ML_LOG" | tr -d ' '; }
 

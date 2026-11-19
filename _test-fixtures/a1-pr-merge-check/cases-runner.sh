@@ -28,7 +28,7 @@ mr_mc() { # mr_mc <label> [mc args]: sets OUT, RC, ERR
   export A1_VERIFY_LOCK_DIR="$MRW/$label/vlock" A1_SUITE_LOCK_DIR="$MRW/$label/rlock" A1_VERIFY_LOCK_WAIT_MS=5000
   lk_token_reset
   mc "$@"
-  unset A1_VERIFY_LOCK_DIR A1_SUITE_LOCK_DIR A1_VERIFY_LOCK_WAIT_MS
+  vlock_restore; unset A1_SUITE_LOCK_DIR
 }
 MR_FAKE='cp "$MRW/fake-runner.sh" bin/run-suites.sh'
 unset A1_FX_RUNNER_MODE A1_FX_RUNNER_SIDES A1_FX_RUNNER_RC A1_FX_RUNNER_ERR
