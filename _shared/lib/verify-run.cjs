@@ -411,7 +411,7 @@ function lazyHeadSide(project, basePlan, headPlan, baseSha, ctx) {
     const done = vb.settle(finished[i], retry, base ? (base.ids.get(c.id) || new Set()) : new Set(), headPlan.flakyBase);
     return { ...done, duration_ms: typeof firsts[i].duration_ms === 'number' ? firsts[i].duration_ms : null, retry_duration_ms: retryRaw && typeof retryRaw.duration_ms === 'number' ? retryRaw.duration_ms : null };
   });
-  return { settled, cache: 'off', base, baseMs, baseRan: need.map((c) => c.id) };
+  return { settled, cache: 'off', base, baseMs, baseRan: need.filter((c) => !c.file || gitRaw(project, ['cat-file', '-e', `${baseSha}:${c.file}`]) !== null).map((c) => c.id) };   // same present-at-base rule as the runner path (a file absent at base did not run)
 }
 
 const sideRecord = (ids, res) => ({ requested: ids.length, exit: res.exit, ms: res.ms, lock_wait_ms: res.lockWaitMs, checks_skipped: res.checksSkipped, summary_notes: res.summaryNotes });

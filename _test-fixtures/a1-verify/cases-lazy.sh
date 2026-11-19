@@ -92,4 +92,11 @@ A1_VERIFY_SPAWN_LOG="$LZ_LOG" vrun "$P" --no-cache
 [[ "$(cat "$WORK/lz8-env" 2>/dev/null)" == "UNSET" ]] && ok "LZ8 the suite env has no A1_VERIFY_SPAWN_LOG" || bad "LZ8 suite saw '$(cat "$WORK/lz8-env" 2>/dev/null)'"
 [[ "$(lz_count h)" == "1" ]] && ok "LZ8b the outer call still wrote its spawn log line" || bad "LZ8b log: $(lz_labels)"
 
+# LZ9 (review fix; regression pin, no red path exists: both paths read the plan off the base tree, so the filter is a no-op in practice): a suite file that exists only on head is not in base_run.ran (serial lazy path, same present-at-base rule as the runner path)
+newproj lz9; mkdir -p "$P/suites/a" "$P/suites/b"; printf 'exit 0\n' > "$P/suites/a/run.sh"; cfg '{"each":"suites/*/run*.sh","argv_prefix":["bash"]}'; seal
+printf 'exit 1\n' > "$P/suites/b/run.sh"; g "$P" add -A; g "$P" commit -q -m "new red suite"
+lz_run "$P" lz9
+check "LZ9 suites/b red on head and absent at base: fail, base_run.ran does not list it" 0 'j.verdict+"|"+JSON.stringify(j.base_run.ran)' "fail|[]"
+[[ "$(lz_count b)" == "0" ]] && ok "LZ9b no base spawn for the absent suite" || bad "LZ9b log: $(lz_labels)"
+
 lk_leak_end LZ
