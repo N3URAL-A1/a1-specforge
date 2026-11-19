@@ -120,4 +120,46 @@ LKP4="$(env -u A1_VERIFY_LOCK_DIR -u A1_VERIFY_LOCK_WAIT_MS -u A1_VERIFY_LOCK_TO
 assert_lkp4="$(printf '%s' "$LKP4" | tr '\n' '|')"
 [[ "$assert_lkp4" == "/w/vlock-private /w/vlock-private|[unset]" ]] && ok "LKP4 vlock_private: private dir without a token, untouched with one; vlock_restore returns to it" || bad "LKP4 got '$assert_lkp4'"
 
+# LKR (review fixes, library level through the acquireVerifyLock seams now / sleepMs / psCommand; no real waiting, own lock dirs).
+cat > "$WORK/lkr.cjs" <<'LKR'
+const fs = require('fs'); const path = require('path');
+const L = require(process.argv[2]); const w = process.argv[3]; const which = process.argv[4];
+const env = (n, wait) => ({ A1_VERIFY_LOCK_DIR: path.join(w, n), A1_VERIFY_LOCK_WAIT_MS: String(wait) });
+const clock = (start) => { let t = start; return { now: () => t, sleepMs: (ms) => { t += ms; } }; };
+const run = (f) => { try { return f(); } catch (e) { return `${e.constructor.name}:${e.reason || e.message}`; } };
+if (which === 'writeowner') {   // 9: psCommand throws inside writeOwner, after the mkdir
+  const out = run(() => L.acquireVerifyLock({ env: env('wo', 300), psCommand: () => { throw new Error('boom'); } }));
+  process.stdout.write(`${out}|dir_left=${fs.existsSync(path.join(w, 'wo'))}`);
+}
+if (which === 'noowner') {   // 10a: a fresh owner-less dir (mtime now) is not stale for takeover even when the loop clock says it is
+  fs.mkdirSync(path.join(w, 'no'), { mode: 0o700 });
+  const c = clock(Date.now() + 60000);
+  const out = run(() => { const l = L.acquireVerifyLock({ env: env('no', 500), ...c }); l.release(); return l.mode; });
+  process.stdout.write(`${out}|dir_left=${fs.existsSync(path.join(w, 'no'))}`);
+}
+if (which === 'emptyps') {   // 10b: a live pid whose ps answer is empty counts as live
+  fs.mkdirSync(path.join(w, 'ps'), { mode: 0o700 });
+  fs.writeFileSync(path.join(w, 'ps', 'owner.json'), JSON.stringify({ pid: process.pid, token: '0123456789abcdef0123456789abcdef', cmd: 'some recorded command', started_at: 'x' }));
+  const c = clock(Date.now());
+  const out = run(() => { const l = L.acquireVerifyLock({ env: env('ps', 500), psCommand: () => '', ...c }); l.release(); return l.mode; });
+  process.stdout.write(out);
+}
+if (which === 'listener') {   // 13: release removes its exit listener
+  const before = process.listenerCount('exit');
+  const l = L.acquireVerifyLock({ env: env('li', 300) });
+  const during = process.listenerCount('exit');
+  l.release();
+  process.stdout.write(`${during - before}|${process.listenerCount('exit') - before}`);
+}
+LKR
+lkr() { env -u A1_VERIFY_LOCK_TOKEN node "$WORK/lkr.cjs" "$REPO_ROOT/_shared/lib/verify-lock.cjs" "$WORK" "$1" 2>&1; }
+LKR1="$(lkr writeowner)"
+[[ "$LKR1" == "LockError:lock_unusable|dir_left=false" ]] && ok "LKR1 owner write fails after the mkdir: LockError lock_unusable, the dir is removed" || bad "LKR1 got '$LKR1'"
+LKR2="$(lkr noowner)"
+[[ "$LKR2" == "LockError:lock_timeout|dir_left=true" ]] && ok "LKR2 owner-less dir with a fresh mtime is not taken over (lock_timeout, dir kept)" || bad "LKR2 got '$LKR2'"
+LKR3="$(lkr emptyps)"
+[[ "$LKR3" == "LockError:lock_timeout" ]] && ok "LKR3 empty ps answer for a live pid: treated as live (lock_timeout)" || bad "LKR3 got '$LKR3'"
+LKR4="$(lkr listener)"
+[[ "$LKR4" == "1|0" ]] && ok "LKR4 the exit listener is added on acquire and removed on release" || bad "LKR4 got '$LKR4'"
+
 lk_leak_end LK

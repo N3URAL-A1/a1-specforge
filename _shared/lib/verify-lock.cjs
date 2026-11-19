@@ -78,7 +78,9 @@ function readOwner(dir) {
 /** PID-reuse proof: the pid is alive AND (when recorded) its command line still equals the recorded one. */
 function ownerLive(o, psCommand) {
   try { process.kill(o.pid, 0); } catch (e) { if (e.code !== 'EPERM') return false; }
-  return o.cmd === '' || psCommand(o.pid) === o.cmd;
+  if (o.cmd === '') return true;
+  const cmd = psCommand(o.pid);
+  return cmd === '' || cmd === o.cmd;   // an empty or failed ps answer is "live": never take a lock over on a guess
 }
 
 function checkDirShape(dir) {
@@ -102,7 +104,10 @@ function tryMkdir(dir, token, psCommand) {
     if (e.code === 'EEXIST') return false;
     throw new LockError('lock_unusable', `cannot create ${dir}: ${e.code || e.message}`);
   }
-  writeOwner(dir, token, psCommand);
+  try { writeOwner(dir, token, psCommand); } catch (e) {
+    fs.rmSync(dir, { recursive: true, force: true });   // never leave an owner-less dir behind (the next run would wait for the init bound)
+    throw new LockError('lock_unusable', `cannot write the owner record in ${dir}: ${e.code || e.message}`);
+  }
   return true;
 }
 
@@ -123,6 +128,10 @@ function takeover(dir, psCommand) {
   try {
     const o = readOwner(dir);
     if (o !== null && ownerLive(o, psCommand)) return false;
+    if (o === null) {   // a missing owner is only stale past the init bound, also under the guard (the owner may be mid-write)
+      const st = lstatOrNull(dir);
+      if (st === null || Date.now() - st.mtimeMs <= INIT_BOUND_MS) return false;
+    }
     const stale = `${dir}.stale-${crypto.randomBytes(4).toString('hex')}`;
     fs.renameSync(dir, stale);
     fs.rmSync(stale, { recursive: true, force: true });
@@ -140,6 +149,7 @@ function makeRelease(dir, token) {
     if (done) return;
     done = true;
     const o = readOwner(dir);
+    process.removeListener('exit', release);
     if (o !== null && o.token === token) fs.rmSync(dir, { recursive: true, force: true });
   };
   process.on('exit', release);
