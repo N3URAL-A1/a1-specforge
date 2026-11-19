@@ -36,7 +36,7 @@ rp_repo() {
 # rp_run <project> <case>: sets OUT (record JSON, or {"error","message"} on VerifyError), RC, ERR; spawn log in $RP_LOG.
 rp_run() {
   RP_LOG="$RPW/$2.log"; : > "$RP_LOG"; mkdir -p "$RPW/$2"
-  OUT="$(cd "$1" && env -u A1_VERIFY_LOCK_TOKEN A1_VERIFY_LOCK_DIR="$RPW/$2/vlock" A1_VERIFY_LOCK_WAIT_MS=5000 A1_SUITE_LOCK_DIR="$RPW/$2/rlock" \
+  OUT="$(cd "$1" && env -u A1_VERIFY_LOCK_TOKEN A1_VERIFY_LOCK_DIR="$RPW/$2/vlock" A1_VERIFY_LOCK_WAIT_MS="${RP_WAIT_MS:-5000}" A1_SUITE_LOCK_DIR="$RPW/$2/rlock" \
     A1_VERIFY_SPAWN_LOG="$RP_LOG" TMPDIR="${RP_TMPDIR:-${TMPDIR:-/tmp}}" node -e '
       const r = require(process.argv[1]);
       try {
@@ -161,5 +161,10 @@ check "RP18 head suite rewrites the runner copy: runner_result_invalid (no verdi
 [[ ! -e "$RPW/mark18" ]] && ok "RP18b the rewritten runner copy never ran (marker absent)" || bad "RP18b the rewritten copy ran"
 [[ "$(ls "$RPW/rp18-tmp" | grep -c a1-verify-runner-)" == "0" ]] && ok "RP18c the runner copy dir is gone afterwards" || bad "RP18c copy left: $(ls "$RPW/rp18-tmp")"
 unset A1_FX_MARK A1_FX_RTMP A1_FX_EVIL
+
+# RP19 (review fix): a used-up lock wait budget is lock_timeout before the runner call; the runner is never started with --lock-wait 0
+rp_repo rp19; RP_WAIT_MS=0 rp_run "$P" rp19
+check "RP19 lock wait budget 0: lock_timeout (no verdict)" 0 'j.error' "lock_timeout"
+[[ "$(rp_count runner:)" == "0" ]] && ok "RP19b no runner call was made" || bad "RP19b log: $(cat "$RP_LOG")"
 
 lk_leak_end RP

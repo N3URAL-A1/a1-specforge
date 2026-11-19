@@ -427,7 +427,8 @@ function runnerSides(project, basePlan, headPlan, baseSha, ctx, rp) {
   const timeoutMs = headPlan.commands[0].timeoutMs;
   const deps = { spawnGroup, noteSpawn };
   const call = (side, root, ids, workers) => {
-    const left = Math.max(0, lockLib.lockCeilingMs(process.env) - ctx.lockWaitMs - waited);
+    const left = lockLib.lockCeilingMs(process.env) - ctx.lockWaitMs - waited;
+    if (left <= 0) throw new VerifyError('lock_timeout', `the lock wait budget is used up before the ${side} runner call (host busy: re-run)`);
     const res = runnerLib.runSide({ runnerDir: rp.dir, intact: rp.intact, root, ids, side, workers, env: ctx.env, tmp: ctx.tmp, timeoutMs, lockWaitMs: left, deps });
     waited += res.lockWaitMs;
     return res;
