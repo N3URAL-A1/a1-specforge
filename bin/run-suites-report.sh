@@ -15,6 +15,9 @@ RS_RES_LOG=()
 RS_RES_NOTE=()
 RS_RES_WARN=()
 RS_RES_CNT=()
+RS_RES_LEAK=()
+RS_RES_TIMED=()
+RS_RES_SUMNOTE=()
 
 RS_NO_SUMMARY_NOTE="no assert summary"
 RS_NOCOUNT_LIST=""
@@ -39,7 +42,7 @@ END { if (got == "") print "n/a"; else print got }
 rs_load_nocount() {
   [ "$RS_NOCOUNT_LOADED" -eq 0 ] || return 0
   RS_NOCOUNT_LOADED=1
-  local f="${RS_ROOT:-.}/_test-fixtures/suite-groups.json" out
+  local f="${RS_GROUPS_FILE:-${RS_ROOT:-.}/_test-fixtures/suite-groups.json}" out
   [ -f "$f" ] || return 0
   out="$(node -e '
 const j = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
@@ -63,7 +66,7 @@ rs_summary_note() {
   return 0
 }
 
-# rs_record_result <identity> <rc> <seconds> <log> <note>
+# rs_record_result <identity> <rc> <seconds> <log> <note> [warn] [leak note] [timed 0/1] [summary note]
 rs_record_result() {
   RS_RES_ID[$RS_N_RES]="$1"
   RS_RES_RC[$RS_N_RES]="$2"
@@ -71,6 +74,9 @@ rs_record_result() {
   RS_RES_LOG[$RS_N_RES]="$4"
   RS_RES_NOTE[$RS_N_RES]="$5"
   RS_RES_WARN[$RS_N_RES]="${6:-}"
+  RS_RES_LEAK[$RS_N_RES]="${7:-}"
+  RS_RES_TIMED[$RS_N_RES]="${8:-0}"
+  RS_RES_SUMNOTE[$RS_N_RES]="${9:-}"
   RS_RES_CNT[$RS_N_RES]="$(rs_parse_count "$4")"
   RS_N_RES=$((RS_N_RES + 1))
 }
@@ -137,4 +143,34 @@ rs_print_failures() {
     i=$((i + 1))
   done
   return 0
+}
+
+# rs_write_json_out <workers> — the D7 wire contract (spec 027 slice 3): one JSON file at $RS_JSON_OUT, created
+# with flag wx and mode 0600 through <file>.tmp.<pid>, then renamed. Single writer; the reader is
+# readRunnerResult in _shared/lib/verify-runner-path.cjs. Returns 1 (message on stderr) when it cannot write.
+rs_write_json_out() {
+  local i=0 rc sig tsv="$RS_TMP/results.tsv" ec
+  : > "$tsv" || { echo "run-suites: cannot write --json-out $RS_JSON_OUT" >&2; return 1; }
+  while [ "$i" -lt "$RS_N_RES" ]; do
+    rc="${RS_RES_RC[$i]}"; sig=""; ec="$rc"
+    if [ "$rc" -gt 128 ]; then ec=""; sig="SIG$(kill -l "$((rc - 128))" 2>/dev/null)"; fi
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "${RS_RES_ID[$i]}" "$ec" "$sig" "${RS_RES_TIMED[$i]}" "${RS_RES_SEC[$i]}" \
+      "${RS_RES_LEAK[$i]}" "${RS_RES_SUMNOTE[$i]}" >> "$tsv"
+    i=$((i + 1))
+  done
+  node -e '
+const fs = require("fs");
+const [tsv, out, root, subset, workers, lockWait, recon, learn, phases] = process.argv.slice(1);
+const results = fs.readFileSync(tsv, "utf8").split("\n").filter(Boolean).map((l) => {
+  const [id, ec, sig, timed, sec, leak, sum] = l.split("\t");
+  return { id, exit_code: ec === "" ? null : Number(ec), signal: sig === "" ? null : sig, timed_out: timed === "1",
+    seconds: Number(sec), leak_note: leak || "", summary_note: sum || "" };
+});
+const doc = { contract: 1, root, subset: subset === "1", workers: Number(workers), lock_wait_ms: Number(lockWait),
+  results, checks: { reconcile: recon, learnings: learn, phases } };
+const tmp = out + ".tmp." + process.pid;
+fs.writeFileSync(tmp, JSON.stringify(doc), { flag: "wx", mode: 0o600 });
+fs.renameSync(tmp, out);
+' "$tsv" "$RS_JSON_OUT" "$RS_ROOT" "$RS_SUBSET" "$1" "${RS_LOCK_WAITED_MS:-0}" "$RS_CHECK_RECON" "$RS_CHECK_LEARN" "$RS_CHECK_PHASES" \
+    || { echo "run-suites: cannot write --json-out $RS_JSON_OUT" >&2; return 1; }
 }
