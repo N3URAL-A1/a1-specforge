@@ -104,21 +104,29 @@ function treeClean(dir) {
   try { return gitSafe(dir, ['status', '--porcelain', '--untracked-files=all']) === ''; } catch (_e) { return false; }
 }
 
+/** True when `dir` lies in the work tree whose log is read: the head and the log must come from one repository. */
+function sameRepo(root, dir) {
+  try {
+    const ctx = gateLog.gitContext(dir);
+    return Boolean(ctx) && fs.realpathSync(ctx.root) === fs.realpathSync(root);
+  } catch (_e) { return false; }
+}
+
 /**
  * Looks for a reusable pass in the gate log of `scope`.
  * @param {{root: string, scope: string, gate: string, hash: string, requireHead: boolean, projectDir: string}} q
- * @returns {{hit: boolean, reason: string}} reason names the miss (no_log, untrusted_log, no_record, not_pass, head_moved, dirty_tree) or `pass`
+ * @returns {{hit: boolean, reason: string}} reason names the miss (no_log, untrusted_log (tracked, symlinked, oversized or broken chain), root_mismatch, no_record, not_pass, head_moved, dirty_tree) or `pass`
  */
 function lookupPass(q) {
-  const file = gateLog.logPathFor(q.root, q.scope);
-  let chain;
-  try { chain = gateLog.verifyChain(file); } catch (_e) { return { hit: false, reason: 'no_log' }; }
-  if (!chain.ok) return { hit: false, reason: 'untrusted_log' };
+  const trusted = gateLog.readTrustedChain(q.root, q.scope);
+  if (!trusted.ok) return { hit: false, reason: trusted.reason };
+  const chain = trusted.chain;
   let last = null;
   for (const r of chain.records) if (r.gate === q.gate && r.input_hash === q.hash) last = r;
   if (!last) return { hit: false, reason: 'no_record' };
   if (last.verdict !== 'pass') return { hit: false, reason: 'not_pass' };
   if (q.requireHead) {
+    if (!sameRepo(q.root, q.projectDir)) return { hit: false, reason: 'root_mismatch' };
     if (last.head_sha !== headOf(q.projectDir)) return { hit: false, reason: 'head_moved' };
     if (!treeClean(q.projectDir)) return { hit: false, reason: 'dirty_tree' };
   }

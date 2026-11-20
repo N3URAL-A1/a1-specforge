@@ -5,7 +5,6 @@
 // appends one gate-log line per call (verdict from the exit code, head_sha from HEAD) and this module only
 // validates the call. review-evidence writes nothing: it answers "did Reinhard already pass this head?".
 
-const fs = require('fs');
 const gateLog = require('./gate-log.cjs');
 const { gitSafe } = require('./git-safe.cjs');
 const { emitExit } = require('./emit-exit.cjs');
@@ -75,13 +74,10 @@ function evidenceCall(rest) {
   try { scope = gateLog.validateScope(flags.phase === undefined ? null : flags.phase); } catch (e) { throw new UsageError('phase_required', e.message); }
   const ctx = gateLog.gitContext(process.cwd());
   if (!ctx) throw new UsageError('not_a_repo', 'not inside a git work tree');
-  const file = gateLog.logPathFor(ctx.root, scope);
   const no = (reason) => emitExit(1, `${JSON.stringify({ ok: false, reason })}\n`, `pr review-evidence: ${reason}\n`);
-  if (!fs.existsSync(file)) return no('no_log');
-  let chain;
-  try { chain = gateLog.verifyChain(file); } catch (_e) { return no('untrusted_log'); }
-  if (!chain.ok) return no('untrusted_log');
-  if (lastVerdictFor(chain.records, head) !== 'pass') return no('no_pass_for_head');
+  const trusted = gateLog.readTrustedChain(ctx.root, scope);
+  if (!trusted.ok) return no(trusted.reason);
+  if (lastVerdictFor(trusted.chain.records, head) !== 'pass') return no('no_pass_for_head');
   return emitExit(0, `${JSON.stringify({ ok: true, gate: GATE, head_sha: head, scope })}\n`, '');
 }
 

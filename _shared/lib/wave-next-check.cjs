@@ -23,11 +23,9 @@ const readText = (file) => { try { return fs.readFileSync(file, 'utf8'); } catch
 
 /** Records of the gate log at or after `since`; null reason when the log is fine. */
 function gateRed({ root, slug, since }) {
-  const file = gateLog.logPathFor(root, slug);
-  if (!fs.existsSync(file)) return stop('gate_red', `no gate log at ${file}`);
-  let chain;
-  try { chain = gateLog.verifyChain(file); } catch (e) { return stop('gate_red', `gate log unreadable: ${e.message}`); }
-  if (!chain.ok) return stop('gate_red', 'gate log chain does not verify');
+  const trusted = gateLog.readTrustedChain(root, slug);
+  if (!trusted.ok) return stop('gate_red', trusted.reason === 'no_log' ? `no gate log at ${gateLog.logPathFor(root, slug)}` : `gate log untrusted: ${trusted.why}`);
+  const chain = trusted.chain;
   const sinceMs = Date.parse(since);
   const recent = chain.records.filter((r) => Date.parse(r.ts) >= sinceMs);
   if (recent.length === 0) return stop('gate_red', `no gate record at or after ${since}`);

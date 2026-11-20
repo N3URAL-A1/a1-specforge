@@ -301,6 +301,46 @@ function shapeProblem(rec) {
   return null;
 }
 
+const MAX_LOG_BYTES = 8 * 1024 * 1024;
+
+/** `git ls-files --error-unmatch`: 0 = tracked, 1 = untracked; anything else is treated as tracked (fail closed). */
+function isTracked(root, file) {
+  const rel = path.relative(root, file);
+  const r = spawnSync('git', ['ls-files', '--error-unmatch', '--', rel], { cwd: root, shell: false, encoding: 'utf8', timeout: GIT_TIMEOUT_MS });
+  return r.status !== 1;
+}
+
+/**
+ * Read a gate log as EVIDENCE (a skip or a stop decision), never as a mere record (SEC-1, SEC-2).
+ * The chain is local tamper-evidence, not authentication, so the file must be what this checkout's own hook wrote:
+ * not tracked by git (a PR branch can commit one with `git add -f`), reached through no symlink, a regular file
+ * of bounded size, and the chain must verify.
+ *
+ * @param {string} root repository work-tree root the log belongs to
+ * @param {string} scope
+ * @returns {{ok: true, chain: Object} | {ok: false, reason: 'no_log'|'untrusted_log', why: string}}
+ */
+function readTrustedChain(root, scope) {
+  const file = logPathFor(root, scope);
+  const bad = (why) => ({ ok: false, reason: 'untrusted_log', why });
+  try { fs.lstatSync(file); } catch (e) {
+    if (e.code === 'ENOENT') {
+      // a missing log is `no_log` only when no parent of it is a symlink either
+      try { assertContained(root, scope, file); } catch (_e) { return bad('symlinked path'); }
+      return { ok: false, reason: 'no_log', why: 'missing' };
+    }
+    return bad(`lstat failed: ${e.code}`);
+  }
+  try { assertContained(root, scope, file); } catch (e) { return bad(e.message); }
+  const st = fs.lstatSync(file);
+  if (!st.isFile()) return bad('not a regular file');
+  if (st.size > MAX_LOG_BYTES) return bad('too_large');
+  if (isTracked(root, file)) return bad('tracked by git');
+  let chain;
+  try { chain = verifyChain(file); } catch (e) { return bad(`unreadable: ${e.message}`); }
+  return chain.ok ? { ok: true, chain } : bad('chain does not verify');
+}
+
 /**
  * Check shape of every line and the hash chain.
  *
@@ -470,6 +510,6 @@ function installGateLog(argv, registryText) {
 module.exports = {
   ZERO_HASH, UNSCOPED, EXCLUDE_PATTERN, SCOPE_RE,
   validateScope, verdictForExit, appendGateLine, verifyChain, matchInvoke, stripPhase,
-  installGateLog, setRecordExtra, gitContext, ensureExcluded, projectDirOf, stealStaleLock, assertContained,
+  installGateLog, readTrustedChain, setRecordExtra, gitContext, ensureExcluded, projectDirOf, stealStaleLock, assertContained,
   acquireLock, releaseLock, currentScope, logPathFor,
 };
