@@ -153,5 +153,21 @@ const nc = (repo) => cli(repo, ['wave', 'next-check', 'ph', '1', '--since', SINC
   check('TL8c GIT_DIR / GIT_WORK_TREE at another repository: a tracked log is still refused', !wasReused(c) && c.rc === 1, `rc=${c.rc} ${c.err}${c.out.slice(0, 200)}`);
 }
 
+// ---- review fix round 4 (R3-m3): a log that grows during the read is read up to the size fstat reported ----
+{
+  const f = path.join(WORK, 'grow.jsonl');
+  fs.writeFileSync(f, 'abcdef\n');
+  const r = gateLog.readCapped(f, () => fs.appendFileSync(f, 'GROWN\n'));
+  check('TL9a growth after fstat: ok, exactly the first st.size bytes', r.text === 'abcdef\n' && !r.why, JSON.stringify(r));
+  const g = path.join(WORK, 'cap.jsonl');
+  fs.writeFileSync(g, Buffer.alloc(8 * 1024 * 1024 + 1, 32));
+  const big = gateLog.readCapped(g);
+  check('TL9b the size cap still holds: over the cap is too_large', big.why === 'too_large', JSON.stringify(big.why));
+  const h = path.join(WORK, 'shrink.jsonl');
+  fs.writeFileSync(h, 'abcdef\n');
+  const sh = gateLog.readCapped(h, () => fs.truncateSync(h, 2));
+  check('TL9c a log truncated during the read is refused, not read short', !!sh.why && sh.text === undefined, JSON.stringify(sh));
+}
+
 eq('TL0 the case file ran to the end', true, true);
 done();

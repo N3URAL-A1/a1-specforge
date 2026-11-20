@@ -352,24 +352,25 @@ function evidencePathProblem(root, scope, file) {
 }
 
 /**
- * Open the log without following a final symlink, check the DESCRIPTOR (regular file, size under the cap) and read at
- * most the cap from it (SEC-9): no path is used between the check and the read.
+ * Open the log without following a final symlink, check the DESCRIPTOR (regular file, size under the cap) and read exactly
+ * the `st.size` bytes it reported from it (SEC-9): no path is used between the check and the read. A log that grows after
+ * the fstat is read up to that size (the appended tail is ignored); one that shrinks is refused. `afterStat` is a test seam.
  * @returns {{text: string} | {why: string}}
  */
-function readCapped(file) {
+function readCapped(file, afterStat) {
   let fd;
   try { fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0) | (fs.constants.O_NONBLOCK || 0)); } catch (e) { return { why: `unreadable: ${e.code}` }; }
   try {
     const st = fs.fstatSync(fd);
     if (!st.isFile()) return { why: 'not a regular file' };
     if (st.size > MAX_LOG_BYTES) return { why: 'too_large' };
-    const buf = Buffer.alloc(st.size + 1);
+    if (typeof afterStat === 'function') afterStat();
+    const buf = Buffer.alloc(st.size);
     let n = 0;
-    for (;;) {
-      const got = fs.readSync(fd, buf, n, buf.length - n, null);
-      if (got === 0) break;
+    while (n < st.size) {
+      const got = fs.readSync(fd, buf, n, st.size - n, null);
+      if (got === 0) return { why: 'changed while reading' };
       n += got;
-      if (n > st.size) return { why: 'changed while reading' };
     }
     return { text: buf.toString('utf8', 0, n) };
   } catch (e) { return { why: `unreadable: ${e.code || e.message}` }; } finally { fs.closeSync(fd); }
@@ -573,5 +574,5 @@ module.exports = {
   ZERO_HASH, UNSCOPED, EXCLUDE_PATTERN, SCOPE_RE,
   validateScope, verdictForExit, appendGateLine, verifyChain, verifyChainText, matchInvoke, stripPhase,
   installGateLog, readTrustedChain, setRecordExtra, gitContext, ensureExcluded, projectDirOf, stealStaleLock, assertContained,
-  acquireLock, releaseLock, currentScope, logPathFor,
+  acquireLock, releaseLock, currentScope, logPathFor, readCapped,
 };
