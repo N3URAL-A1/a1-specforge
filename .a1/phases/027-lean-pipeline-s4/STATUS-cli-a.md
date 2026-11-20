@@ -38,3 +38,44 @@ Suites run (all green): a1-lib-units 556/0, a1-lane-split 10/0, a1-fix-class-swe
 - `realpath-check run --diff-base 808fb8e` exits 1: "detected surfaces needing proof: sql", evidence file missing.
 - Cause: SQL-shaped fixture text in `_test-fixtures/a1-lib-units/cases/reuse-hash.cjs` (planted fix-class-sweep repo files with `INSERT INTO api.` / `SELECT api.insert_` lines, diff lines ~728-734). This is the false-positive class the gate documents under KNOWN LIMITS ("SQL text inside a test assertion").
 - a1-specforge has no database backend, so no real-execution evidence exists to record. No evidence file was written (a fabricated "real run" section would defeat the gate). Recorded as a false positive, gate verdict fail / caught false.
+
+## Wave 2 — Review recorder and wave next-check
+Completed: 2026-11-20
+
+- [x] T2.1 `_shared/lib/pr-review-record.cjs` `PROMPT_RECORDERS` `pr review-record` `pr review-evidence` `caller_spec_id` `_test-fixtures/a1-gates-lint/cases-pr-reinhard.sh` `_test-fixtures/a1-pr-review/cases-review-record.sh`
+- [x] T2.2 `_shared/lib/wave.cjs` `_shared/lib/wave-next-check.cjs` `wave next-check` `nextCheck` `_test-fixtures/a1-lib-units/cases/wave-next-check.cjs`
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| 2.1 | DONE | 4cebf11 | |
+| 2.2 | DONE | fa5731d | |
+
+Caps: `a1-tools.cjs` 786, `pr-review-record.cjs` 98 (200), `wave.cjs` 15 (60), `wave-next-check.cjs` 156 (320), `gates-lint.cjs` 200 (230).
+
+RED-proof 2.1 (a) PROMPT_RECORDERS check removed -> PR1, PR3, PR5, G3, W11f red; `gates lint` rc=1
+RED-proof 2.1 (b) exception keyed on id only (`!== undefined`) -> PR2 red
+RED-proof 2.1 (c) lastVerdictFor takes the first record -> RR5b red (RR5 alone stayed green: one record per sha there; RR5b/RR5c added)
+RED-proof 2.1 (d) head comparison removed -> RR6, RR6b red
+RED-proof 2.1 (e) phase_required check removed -> RR7 red
+RED-proof 2.1 (f) 2.3a call line deleted from the real 02-review.md -> PR1, PR3, G3, W11f red (unwired; PR4 plants the same deletion on a copy and expects the finding)
+RED-proof 2.1 (g) 2.3a written with --head "$HEAD_SHA" -> RV1 red
+RED-proof 2.1 (h) 2.1b trigger dropped from 2.3d prose -> RV3 red
+RED-proof 2.1 (i) P3 commit sentence dropped from 2.3d prose -> RV6 red
+RED-proof 2.2 (a) `ts >= since` filter removed -> NC4 red (NC3 stays green by design: per-gate last verdict is the later pass either way)
+RED-proof 2.2 (b) absent gate log treated as no event -> NC5 red
+RED-proof 2.2 (c) non-JSON observations line skipped -> NC10 red
+RED-proof 2.2 (d) date comparison `>` -> NC11, NC11b red
+RED-proof 2.2 (e) lane lookup returns named -> NC14 red
+RED-proof 2.2 (f) flag ignored -> NC18 red
+RED-proof 2.2 (g) absent observations.jsonl as no event -> NC23, NC23b red
+RED-proof 2.2 (h) absent GOAL.md as no event -> NC24, NC24b red
+RED-proof 2.2 (i) string compare instead of Date.parse -> NC28 red (first version of NC28 stayed green: both paths stop; case now has a second gate with a later pass)
+RED-proof 2.2 (j) wave-0 rule removed -> NC29 red
+RED-proof 2.2 (k) default-path PLAN without lanes treated as wave-plan -> NC31a red
+
+Suites (green): gates-lint 95/0, wave13 10/0, wave14 50/0, a1-pr-review 68/0, a1-lib-units 610/0, a1-cli-output 33/0, a1-workflow-lint 36/0, a1-lane-split 10/0; `gates lint` exit 0. R3b untouched; the two runner diffs against origin/main are one source line each (plus a blank line).
+
+### Deviations
+- Added RR5b/RR5c and tightened NC28 (see RED proofs c and i): the plan's cases did not turn red under the named mutations.
+- PR5: a1-pr-review names `retro validate --gate-log` only in prose, so the case asserts `call_without_phase` is absent (plan's second branch).
+- `wave-next-check.cjs` also imports `parseWaves` from lane-split.cjs (already exported) to find the `## Wave N+1` section.
