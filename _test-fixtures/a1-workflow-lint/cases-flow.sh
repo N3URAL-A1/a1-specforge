@@ -164,3 +164,35 @@ caseFL17() {
   if [[ $a -eq 0 && $b -eq 0 && $c -eq 0 ]]; then ok "FL17 append paragraphs commit their store file"
   else bad "FL17 append commits (02-execute=$a 05-f=$b 05-g=$c)"; fi
 }
+
+# ---------- review fix round 1 (PR #108): m6 and n2 ----------
+# FL18 (m6): a GOAL.md that has `## Decisions needed` but no `## Decisions` heading gets the heading appended (the guard is as strict as the parser).
+flGoalNeeded() { # <phase> : plants a committed GOAL.md with only a "## Decisions needed" heading
+  local d="$FL_WT/.a1/phases/$1"; mkdir -p "$d"
+  printf '# Goal: x\n\n## Decisions needed\n- foo\n' > "$d/GOAL.md"; : > "$d/observations.jsonl"
+  flGit "$FL_WT" add -A; flGit "$FL_WT" commit -q -m seed
+}
+caseFL18() {
+  local rc; flPlant; flGoalNeeded ph; flPhaseBlock; flExec "$FL_T/b.sh" >/dev/null 2>&1; rc=$?
+  if [[ $rc -eq 0 ]] && grep -qE '^##[[:space:]]+Decisions[[:space:]]*$' "$FL_WT/.a1/phases/ph/GOAL.md"; then ok "FL18 02-execute block: '## Decisions needed' does not satisfy the guard, the heading is appended"
+  else bad "FL18 02-execute guard (rc=$rc)"; fi
+}
+caseFL18b() {
+  local rc; flPlant; flGoalNeeded fx-spec
+  flBlock "$FL_IMPL" 'Step 1b' '<dir>' "$FL_WT" '<spec-id>' fx-spec '<spec title>' t > "$FL_T/b.sh"
+  flExec "$FL_T/b.sh" >/dev/null 2>&1; rc=$?
+  if [[ $rc -eq 0 ]] && grep -qE '^##[[:space:]]+Decisions[[:space:]]*$' "$FL_WT/.a1/phases/fx-spec/GOAL.md"; then ok "FL18b 05-implement Step 1b block: same strict guard"
+  else bad "FL18b 05-implement guard (rc=$rc)"; fi
+}
+# FL19 (n2): the documented removal command drops exactly the two union lines, also when they are the only lines.
+caseFL19() {
+  local cmd t a keep='*.bin merge=union' u1='.a1/phases/*/observations.jsonl merge=union' u2='.a1/phases/*/GOAL.md merge=union'
+  mk_workdir t fl19
+  cmd="$(node -e 'const t=require("fs").readFileSync(process.argv[1],"utf8");const m=/`((?:\{ )?grep -v[^`\n]*"\$A\.new" && mv[^`\n]*)`/.exec(t);process.stdout.write(m?m[1]:"")' "$REPO_ROOT/$FL_EX")"
+  a="$t/attributes"; printf '%s\n%s\n%s\n' "$u1" "$keep" "$u2" > "$a"
+  ( A="$a"; eval "$cmd" ) >/dev/null 2>&1; local rc1=$? left1; left1="$(cat "$a")"
+  printf '%s\n%s\n' "$u1" "$u2" > "$a"
+  ( A="$a"; eval "$cmd" ) >/dev/null 2>&1; local rc2=$? left2; left2="$(cat "$a")"
+  if [[ -n "$cmd" && $rc1 -eq 0 && "$left1" == "$keep" && $rc2 -eq 0 && -z "$left2" ]]; then ok "FL19 removal command keeps unrelated lines and also empties a file holding only the union lines"
+  else bad "FL19 removal command (cmd='$cmd' rc1=$rc1 left1='$left1' rc2=$rc2 left2='$left2')"; fi
+}

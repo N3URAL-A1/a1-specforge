@@ -36,7 +36,7 @@ if [ ! -e "$P/GOAL.md" ]; then
 ## Decisions
 A1_GOAL_EOF
 fi
-if ! grep -q '^## Decisions' "$P/GOAL.md"; then printf '\n## Decisions\n' >> "$P/GOAL.md"; fi
+if ! grep -qE '^##[[:space:]]+Decisions[[:space:]]*$' "$P/GOAL.md"; then printf '\n## Decisions\n' >> "$P/GOAL.md"; fi
 A="$(git -C "$WORK_PATH" rev-parse --path-format=absolute --git-common-dir)/info/attributes"; mkdir -p "${A%/*}"
 for L in '.a1/phases/*/observations.jsonl merge=union' '.a1/phases/*/GOAL.md merge=union'; do grep -qxF "$L" "$A" 2>/dev/null || printf '%s\n' "$L" >> "$A"; done
 if [ -n "$(git -C "$WORK_PATH" status --porcelain -- "$P/observations.jsonl" "$P/GOAL.md")" ]; then git -C "$WORK_PATH" add -- "$P/observations.jsonl" "$P/GOAL.md" && git -C "$WORK_PATH" commit -q -m "chore(<phase_name>): event stores" -- "$P/observations.jsonl" "$P/GOAL.md"; RC=$?; if [ "$RC" -ne 0 ]; then echo "STOP: event-store commit exit=$RC"; exit "$RC"; fi; fi
@@ -49,7 +49,7 @@ Multi-lane: run it once in the phase worktree before the lane worktrees branch o
 attribute lets the lane merges keep both sides' appended lines. The two `merge=union` lines stay in `<git-common-dir>/info/attributes`
 (local, never committed, repo-wide for these two append-only paths). On `GOAL.md` a union merge also keeps both sides of a non-append
 edit (for example a changed goal heading). To remove them, delete the two lines from that file:
-`grep -vF 'merge=union' "$A" > "$A.new" && mv "$A.new" "$A"` (with `$A` as set in the block; it also drops any other union line).
+`{ grep -vxF -e '.a1/phases/*/observations.jsonl merge=union' -e '.a1/phases/*/GOAL.md merge=union' "$A" || :; } > "$A.new" && mv "$A.new" "$A"` (with `$A` as set in the block; it drops exactly those two lines and no other).
 
 ## Per-wave loop
 
