@@ -38,13 +38,16 @@ echo "head_sha=$HEAD_SHA"
 (cd "<worktree_path>" && node <repo>/_shared/a1-tools.cjs pr review-evidence --head "$HEAD_SHA" --phase pr-<n>); EV=$?
 echo "review-evidence exit=$EV"
 FH=""
-if [ ! -L "<worktree_path>/.a1-review/findings.json" ] && ! git -C "<worktree_path>" ls-files --error-unmatch -- .a1-review/findings.json >/dev/null 2>&1; then
+if [ -d "<worktree_path>/.a1-review" ] && [ ! -L "<worktree_path>/.a1-review" ] \
+   && [ -f "<worktree_path>/.a1-review/findings.json" ] && [ ! -L "<worktree_path>/.a1-review/findings.json" ] \
+   && git -C "<worktree_path>" ls-files -o -- .a1-review/findings.json | grep -qx '.a1-review/findings.json' \
+   && ! git -C "<worktree_path>" ls-files --error-unmatch -- ':(icase).a1-review/findings.json' >/dev/null 2>&1; then
   FH="$(node -e 'try{process.stdout.write(String(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).head_sha||""))}catch(e){}' "<worktree_path>/.a1-review/findings.json")"
 fi
 if [ "$FH" = "$HEAD_SHA" ]; then echo "findings_head=match"; else echo "findings_head=stale-or-missing"; fi
 ```
 
-Note the printed `head_sha` value as `<head_sha>` for 2.3a and 2.4. Exit 0 **and** `findings_head=match` (the `findings.json` exists, is neither tracked by git nor a symlink, and carries this head's `head_sha`, written by 2.4; a PR branch can commit a findings file, so a tracked one never counts): skip 2.2 and 2.3a for this head, reuse the findings, and run 2.3d. Exit 0 with `findings_head=stale-or-missing` (a restart between 2.3a and 2.4, or a reset to an earlier reviewed head): the saved findings belong to another head, so go on to 2.2 and review this head again. 2.2b still runs; Samuel's spawn is not skipped by this. Exit 1: go on to 2.2 as today. Exit 2: STOP (usage).
+Note the printed `head_sha` value as `<head_sha>` for 2.3a and 2.4. Exit 0 **and** `findings_head=match` (the `findings.json` exists, `.a1-review` and the file are real (no symlink, no submodule), `git ls-files -o` lists the file as untracked, no case-insensitive spelling of it is tracked, and it carries this head's `head_sha`, written by 2.4; a PR branch can commit a findings file, a symlink or a submodule at `.a1-review`, so none of those ever counts): skip 2.2 and 2.3a for this head, reuse the findings, and run 2.3d. Exit 0 with `findings_head=stale-or-missing` (a restart between 2.3a and 2.4, or a reset to an earlier reviewed head): the saved findings belong to another head, so go on to 2.2 and review this head again. 2.2b still runs; Samuel's spawn is not skipped by this. Exit 1: go on to 2.2 as today. Exit 2: STOP (usage).
 
 ### 2.2 Spawn a1-reinhard-reviewer via Agent tool
 

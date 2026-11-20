@@ -95,5 +95,32 @@ ln -s "$RVB/real-findings.json" "$RVB/wt/.a1-review/findings.json"
 if rvb_run | grep -qx 'findings_head=stale-or-missing'; then pass_case "RV8f a symlinked findings.json does not match"
 else fail_case "RV8f symlink case: $(rvb_run)"; fi
 rm -f "$RVB/wt/.a1-review/findings.json"
+# RV8g-j (review fix round 3, SEC-8, R-n1): in-repo path tricks around findings.json. Each case plants a fresh work tree whose
+# findings.json carries the matching head_sha and must NOT match.
+rvc_git() { local d="$1"; shift; git -C "$d" -c user.name=fx -c user.email=fx@example.invalid -c commit.gpgsign=false -c core.hooksPath=/dev/null -c protocol.file.allow=always "$@"; }
+rvc_fj() { printf '{"head_sha":"%s","blocker":[],"major":[],"minor":[]}\n' "$(git -C "$1" rev-parse HEAD)"; } # findings text bound to the CURRENT head
+rvc_commit() { rvc_git "$1" add -A -f; rvc_git "$1" commit -q -m attack; }
+# each setup commits its (placeholder) attack first, then writes the findings text for the resulting HEAD into the planted path
+rvc_sym_tracked() { mkdir -p "$1/docs/r"; echo '{}' > "$1/docs/r/findings.json"; ln -s docs/r "$1/.a1-review"; rvc_commit "$1"; rvc_fj "$1" > "$1/docs/r/findings.json"; }
+rvc_sym_untracked() { mkdir -p "$1/elsewhere"; ln -s elsewhere "$1/.a1-review"; rvc_fj "$1" > "$1/elsewhere/findings.json"; }
+rvc_icase() { mkdir -p "$1/.a1-review"; echo '{}' > "$1/.a1-review/FINDINGS.json"; rvc_commit "$1"; rvc_git "$1" config core.ignorecase true; mv "$1/.a1-review/FINDINGS.json" "$1/.a1-review/findings.json"; rvc_fj "$1" > "$1/.a1-review/findings.json"; }
+rvc_submodule() {
+  local s="$RVB/sub-$$"; rm -rf "$s"; mkdir -p "$s"; git -C "$s" init -q -b main 2>/dev/null; echo '{}' > "$s/findings.json"; rvc_git "$s" add -A; rvc_git "$s" commit -q -m s
+  rvc_git "$1" submodule add -q "$s" .a1-review 2>/dev/null; rvc_commit "$1"; rvc_fj "$1" > "$1/.a1-review/findings.json"
+}
+rvc_case() { # $1 = case id, $2 = description, $3 = setup function name (arg: the work tree)
+  local wt="$RVB/wt-$1"; rm -rf "$wt"; mkdir -p "$wt"
+  git -C "$wt" init -q -b main 2>/dev/null
+  rvc_git "$wt" commit -q --allow-empty -m base
+  "$3" "$wt"
+  printf '%s' "$B21B" | sed -e "s#<worktree_path>#$wt#g" -e "s#<repo>#$RVB/repo#g" -e "s#<n>#7#g" > "$RVB/blk-$1.sh"
+  local out; out="$(cd "$RVB" && bash "$RVB/blk-$1.sh" 2>&1)"
+  if printf '%s\n' "$out" | grep -qx 'findings_head=stale-or-missing' && [ "$(grep -c . "$wt/.a1-review/findings.json" 2>/dev/null)" -ge 1 ] && grep -qF "$(git -C "$wt" rev-parse HEAD)" "$wt/.a1-review/findings.json"; then pass_case "$1 $2"
+  else fail_case "$1 $2: $out"; fi
+}
+rvc_case RV8g "a tracked symlink .a1-review -> docs/r does not match" rvc_sym_tracked
+rvc_case RV8h "an untracked symlinked .a1-review directory does not match" rvc_sym_untracked
+rvc_case RV8i "a tracked FINDINGS.json on a case-insensitive checkout does not match" rvc_icase
+rvc_case RV8j "a submodule at .a1-review does not match" rvc_submodule
 if printf '%s' "$S21B" | grep -qF 'findings_head=match'; then pass_case "RV9 the 2.1b prose requires findings_head=match for the skip"
 else fail_case "RV9 2.1b prose does not name findings_head=match"; fi
