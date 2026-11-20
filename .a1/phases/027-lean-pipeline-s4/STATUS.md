@@ -165,3 +165,32 @@ Lane-split re-check (`--imports .`): 0 blockers, 0 findings, imports_checked tru
 - [Rule 3, missing_wiring, not in the plan] The two fenced `wave next-check` calls made existing pins red. Fixes: `wave next-check` added to the new-feature/continue-feature/execute child allowlists (`_shared/lib/intent-sandbox.cjs`, read-only inside the project); a1-intent `05b-child-seal.sh` H7 probes for it (in/out/link), counts new-feature/continue-feature 29, execute 18, reached 95, and the `5b-Pg` git-user set; a1-kritis-profile `inventory.txt` row (excluded) plus pins 29->30, 11+11 -> 11+12 and intent allowlist 28->29. PR B adds more fenced calls to a1-new-feature files (wave checks, feature plan-steps, feature close): the planner should expect the same pins there.
 - The 5.2 orchestrator task is not run.
 - verify run --affected --phase 027-lean-pipeline-s4 (primary CLI, head b6b9f66): verdict pass, rc 0, 63 commands, total 1705532 ms (head 1705468), lock held, lock_wait_ms 13, no failed ids
+
+## Review fix round 1 (PR #108, findings of Reinhard on head 7572000)
+
+Commits: 9ed268a (B1, m1, n1), 19ea91a (M1), 9580443 (M2, m4, m5), 9552aa1 (m3), ba9d892 (m6, n2). Not fixed by order: m2, m7, m8.
+Every fixture was run RED on the unfixed code first (output: lib-units 16 FAIL lines, pr-review 6 FAIL, workflow-lint 3 FAIL), then GREEN after the fix.
+
+| Finding | Fix | RED proof (on the unfixed code) | GREEN |
+|---|---|---|---|
+| B1 untracked files | `treeClean` runs `git status --porcelain --untracked-files=all` (gate log is excluded by gate-log.cjs) | RH20 (lane-split --imports, untracked `src/new.mjs` importing a foreign lane file) reused, rc 0; RH23 (class-sweep --verify, untracked `lib/new-site.ts` with `INSERT INTO api.invoices`) reused, rc 0 | RH20, RH23 pass; the RH7/RH13/RH14/RH15 baselines still reuse |
+| M1 findings bound to head | 2.4 writes `"head_sha": "<head_sha>"`; 2.1b prints `findings_head=match|stale-or-missing`, skip only on `match` | RV7, RV8a-d (stub run of the real 2.1b block, 4 findings states), RV9 red (RV8 first red was a placeholder slip, `<n>` unreplaced; re-proved with the old 02-review.md restored: RV7, RV8a-d, RV9 red) | RV7-RV9 pass |
+| M2 agent shapes | `namesAgent` in wave-next-check.cjs: heading with optional colon plus `- <name>` / `- **<name>**`, or inline `Suggested agent(s): <name>` (also bold). checklist.cjs untouched | NC32 (two real stripped plans, ai-harness/008 and my-smart-home/004, in `_test-fixtures/a1-lib-units/real/`) and NC34 stop:agent_unnamed | NC32-NC35 pass (NC33, NC35 keep the empty-name stop) |
+| m1 closure | unbounded walk with visited set, double-quoted requires accepted | RH21 (depth-3 `status-constants.cjs` edit) and RH22 (double-quoted require) reused | pass |
+| m3 error records | `lastVerdictFor` only counts pass/fail | RR14b pass then a usage error: evidence exit 1 | RR14a-c pass |
+| m4 `wave` field | integer, digits-only string, or absent; anything else on a deviation/blocker stops | NC36a (null), NC36b ("x"), NC36c (1.5) continue | NC36a-f pass |
+| m5 decision rows | any non-blank line under `## Decisions` that is not `- <token>` stops | NC37a-d (plain, `*`, `1.`, `-2026`) continue | NC37a-e pass |
+| m6 grep guard | `grep -qE '^##[[:space:]]+Decisions[[:space:]]*$'` in 02-execute.md and 05-implement.md | FL18, FL18b (`## Decisions needed` only) no heading appended | pass |
+| n1 silent catch | stderr `reuse check failed: <msg>` for errors that are not ReuseMiss/ENOENT | RH24 (tree copy whose `findProjectRoadmap` throws) no stderr line | pass |
+| n2 removal command | `{ grep -vxF -e '<l1>' -e '<l2>' "$A" \|\| :; } > "$A.new" && mv ...` (also works when only the two lines exist) | FL19 (unrelated `*.bin merge=union` line was dropped) | pass |
+
+Pins changed: none. No existing assertion removed. checklist.cjs unchanged (`git diff origin/main` clean). Line counts: reuse-hash.cjs 225, wave-next-check.cjs 193, pr-review-record.cjs 99, a1-tools.cjs 786.
+
+Suites: a1-lib-units 640/0, a1-pr-review 74/0, a1-workflow-lint 60/0, a1-gates-lint run-tests 95/0, run-wave13 10/0, run-wave14 50/0, a1-fix-class-sweep 92/0, a1-lane-split 10/0, a1-kritis-profile 221/0, a1-intent 1125/0.
+
+### Deviations
+- [Rule 3] FL19 uses `eval` on the removal command text extracted from 02-execute.md (test only, the text is the repo's own).
+- The new reuse stderr line (n1) is the only behaviour change visible on the CLI beside the fixes; the facade is untouched.
+
+### Verification (review fix round 1)
+- verify run --affected --phase 027-lean-pipeline-s4 (primary CLI, "head_sha":"ba9d8927f91f20dc3557b0950c7a608cd8f4ca6a"): verdict pass, rc 0, selection full (runner_or_config_changed: _shared/a1-tools.cjs), 63 of 63 selected, not_run []. A concurrent second invocation got lock_timeout (exit 2) while the first held the lock; the first run finished and is the verdict above.
