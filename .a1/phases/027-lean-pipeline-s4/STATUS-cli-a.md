@@ -33,3 +33,8 @@ Suites run (all green): a1-lib-units 556/0, a1-lane-split 10/0, a1-fix-class-swe
 ### Wave 1 follow-up
 - Commit 033c803: first `verify run --affected` (head 373d07b) was red on `a1-metrics` RR17a. Cause: the plan's usage-list edit (`"run", "wave", "probe"`) broke the pin `"metrics", "run", "probe"`. Fixed by placing `"wave"` before `"realpath-check"` (assert untouched). Re-run alone: a1-metrics 476/0.
 - Final `verify run --project <worktree> --affected --phase 027-lean-pipeline-s4` at head 033c803: verdict pass, ok true, 63 commands, exit 0 (head side 1696 s; lock wait 632 s behind flow-a's run).
+
+### Orchestrator gate note, wave 1 (realpath-check)
+- `realpath-check run --diff-base 808fb8e` exits 1: "detected surfaces needing proof: sql", evidence file missing.
+- Cause: SQL-shaped fixture text in `_test-fixtures/a1-lib-units/cases/reuse-hash.cjs` (planted fix-class-sweep repo files with `INSERT INTO api.` / `SELECT api.insert_` lines, diff lines ~728-734). This is the false-positive class the gate documents under KNOWN LIMITS ("SQL text inside a test assertion").
+- a1-specforge has no database backend, so no real-execution evidence exists to record. No evidence file was written (a fabricated "real run" section would defeat the gate). Recorded as a false positive, gate verdict fail / caught false.
