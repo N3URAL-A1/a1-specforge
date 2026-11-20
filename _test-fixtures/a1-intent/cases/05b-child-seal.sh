@@ -593,7 +593,7 @@ w5b_pexpect() {
     "checklist run") PEXPECT="1 write" ;;
     # verify run and fix class-sweep are not on the allowlist since spec 017 review SEC-5 (they spawn non-git processes; owner-side): see 5b-H7g.
     "verify check"|"test-fidelity"|"gates fired") PEXPECT="0 read" ;; # verify check on a file without a PASS claim: ok; test-fidelity on a clean diff: ok
-    "schema-check run"|"quick eligibility"|"plan depth-check") PEXPECT="1 read" ;; # depth-check: the seeded "# Plan" has no Depth Pass -> verdict fail, exit 1
+    "schema-check run"|"quick eligibility"|"plan depth-check"|"wave next-check") PEXPECT="1 read" ;; # wave next-check: the probe has no phase stores -> stop:<reason>, exit 1; # depth-check: the seeded "# Plan" has no Depth Pass -> verdict fail, exit 1
     "code-scope check"|"realpath-check run"|"lane-split check"|"fix find-duplicates"|"fix next-suffix") PEXPECT="0 read" ;;
     "profile resolve"|"profile threat-model-check"|"profile simulate-roles") PEXPECT="0 read" ;;
     "profile ears-check"|"profile simulate-check") PEXPECT="1 read" ;; # the seeded spec has no FR / simulation section -> findings, exit 1
@@ -670,6 +670,9 @@ w5b_pargs() {
     "lane-split check|in") PARGS=(lane-split check --plan docs/PLAN.md) ;;
     "lane-split check|out") PARGS=(lane-split check --plan /etc/hosts) ;;
     "lane-split check|link") PARGS=(lane-split check --plan "$L/PLAN.md") ;;
+    "wave next-check|in") PARGS=(wave next-check p 1 --since 2026-01-01T00:00:00Z --plan docs/PLAN.md) ;;
+    "wave next-check|out") PARGS=(wave next-check p 1 --since 2026-01-01T00:00:00Z --plan /etc/hosts) ;;
+    "wave next-check|link") PARGS=(wave next-check p 1 --since 2026-01-01T00:00:00Z --plan "$L/PLAN.md") ;;
     "plan depth-check|in") PARGS=(plan depth-check --plan docs/PLAN.md) ;;
     "plan depth-check|out") PARGS=(plan depth-check --plan /etc/hosts) ;;
     "plan depth-check|link") PARGS=(plan depth-check --plan "$L/PLAN.md") ;;
@@ -802,10 +805,10 @@ for p_action in new-feature continue-feature plan execute fix stage; do
   done < <(node -e 'console.log(require(process.argv[1] + "/intent-constants.cjs").INTENT_CHILD_ALLOWLIST[process.argv[2]].join("\n"))' "$INTENT_LIB" "$p_action")
   p_counts="$p_counts $p_action=$p_n"
 done
-if [[ "$p_counts" == " new-feature=28 continue-feature=28 plan=6 execute=17 fix=12 stage=1" && "$p_reached" -eq 92 ]]; then ok "5b-Pn every allowlisted subcommand was probed and every in-variant reached its path ($p_counts, reached $p_reached) [FR-041, FR-048]"
-else bad "5b-Pn every allowlisted subcommand was probed and every in-variant reached its path [FR-041, FR-048]" "counts:$p_counts reached $p_reached of 92"; fi
+if [[ "$p_counts" == " new-feature=29 continue-feature=29 plan=6 execute=18 fix=12 stage=1" && "$p_reached" -eq 95 ]]; then ok "5b-Pn every allowlisted subcommand was probed and every in-variant reached its path ($p_counts, reached $p_reached) [FR-041, FR-048]"
+else bad "5b-Pn every allowlisted subcommand was probed and every in-variant reached its path [FR-041, FR-048]" "counts:$p_counts reached $p_reached of 95"; fi
 p_git_set="$(printf '%s\n' $p_git_users | LC_ALL=C sort -u | tr '\n' ' ')"
-if [[ "$p_git_set" == "continue-feature/git_diff continue-feature/git_log continue-feature/git_status continue-feature/quick_eligibility continue-feature/realpath-check_run continue-feature/test-fidelity execute/git_add execute/git_commit execute/git_diff execute/git_log execute/git_status execute/realpath-check_run execute/test-fidelity fix/git_diff fix/git_log fix/git_status fix/quick_eligibility fix/realpath-check_run fix/test-fidelity new-feature/git_diff new-feature/git_log new-feature/git_status new-feature/quick_eligibility new-feature/realpath-check_run new-feature/test-fidelity plan/git_diff plan/git_log plan/git_status " ]]; then ok "5b-Pg the allowlisted subcommands that run git internally all ran it hardened, with no caller variable ($p_git_set) [FR-048]"
+if [[ "$p_git_set" == "continue-feature/git_diff continue-feature/git_log continue-feature/git_status continue-feature/quick_eligibility continue-feature/realpath-check_run continue-feature/test-fidelity continue-feature/wave_next-check execute/git_add execute/git_commit execute/git_diff execute/git_log execute/git_status execute/realpath-check_run execute/test-fidelity execute/wave_next-check fix/git_diff fix/git_log fix/git_status fix/quick_eligibility fix/realpath-check_run fix/test-fidelity new-feature/git_diff new-feature/git_log new-feature/git_status new-feature/quick_eligibility new-feature/realpath-check_run new-feature/test-fidelity new-feature/wave_next-check plan/git_diff plan/git_log plan/git_status " ]]; then ok "5b-Pg the allowlisted subcommands that run git internally all ran it hardened, with no caller variable ($p_git_set) [FR-048]"
 else bad "5b-Pg the allowlisted subcommands that run git internally all ran it hardened, with no caller variable [FR-048]" "got: $p_git_set"; fi
 
 # ---------- H7f (spec 017 Q23): an autonomous child must not clear its own findings ----------

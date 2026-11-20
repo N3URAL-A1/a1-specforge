@@ -3,7 +3,7 @@
 # Three guards:
 #   G  the 12 CLI scenarios equal their goldens from GOLDEN_COMMIT (SC-002:
 #      no-profile behaviour of every touched CLI path stays byte-identical).
-#   I  the call-site inventory recomputes the 29-subcommand grep (22 at plan
+#   I  the call-site inventory recomputes the 30-subcommand grep (22 at plan
 #      time + the 7 `profile` call sites Wave 8 wires in) and asserts
 #      set equality plus the exact count 22 (= 11 covered + 11 excluded).
 #   P  every golden prompt file, stripped of `a1-profile:kritis` blocks,
@@ -122,8 +122,9 @@ caseGMutSpecUpdateStatus
 caseI() {
   # 22 at plan time; Wave 8 added 7 `profile` call sites (resolve, set,
   # ears-check, nfr-inject, threat-model-check, simulate-roles,
-  # simulate-check). Any further growth is a finding, not a count to bump.
-  local recomputed expected_count=29
+  # simulate-check); spec 027 slice 4 added `wave next-check` (the fenced
+  # next-wave check in 05-implement.md). Any further growth is a finding, not a count to bump.
+  local recomputed expected_count=30
   recomputed="$(cd "$REPO_ROOT" && grep -rhoE "a1-tools\.cjs [a-z-]+ [a-z-]+" skills/a1-new-feature | sort -u)"
   local recomputed_count
   recomputed_count="$(printf '%s\n' "$recomputed" | grep -c .)"
@@ -179,10 +180,10 @@ caseI() {
   local covered_count excluded_count
   covered_count="$(grep -c '	covered:' "$GOLDEN/inventory.txt")"
   excluded_count="$(grep -c '	excluded:' "$GOLDEN/inventory.txt")"
-  if [[ "$covered_count" -eq 11 && "$excluded_count" -eq 11 ]]; then
-    ok "I inventory 11+11: $covered_count covered, $excluded_count excluded"
+  if [[ "$covered_count" -eq 11 && "$excluded_count" -eq 12 ]]; then
+    ok "I inventory 11+12: $covered_count covered, $excluded_count excluded (spec 027 slice 4: wave next-check)"
   else
-    bad "I inventory 11+11: got $covered_count covered, $excluded_count excluded (want 11 and 11)"
+    bad "I inventory 11+12: got $covered_count covered, $excluded_count excluded (want 11 and 12)"
   fi
 }
 caseI

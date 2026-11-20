@@ -365,6 +365,7 @@ function formatFinding(f) {
   if (f.rule === 'vault-sync-step') {
     return `finding: ${f.file} — vault-sync-step: ${f.reason}`;
   }
+  if (f.rule) return `finding: ${f.file}${f.line ? ':' + f.line : ''} — ${f.rule}: ${f.reason}`;
   return `finding: ${f.file}:${f.line} — pipeline exit status swallowed: ${f.snippet}`;
 }
 
@@ -406,6 +407,9 @@ function cmdWorkflowLint(argv) {
   const reuseBan = verifyLint.checkReuseBan(root, isSkillsTree);
   const quietHost = verifyLint.checkQuietHostPoll(root, isSkillsTree);
   findings = findings.concat(verifyScope.findings, reuseBan.findings, quietHost.findings);
+  const flowLint = require('./workflow-lint-flow.cjs');
+  const early = flowLint.checkEarlyReview(root, isSkillsTree), checkpoint = flowLint.checkWaveCheckpoint(root, isSkillsTree), prConfirm = flowLint.checkPrConfirmation(root, isSkillsTree);
+  findings = findings.concat(early.findings, checkpoint.findings, prConfirm.findings);
 
   const out = {
     root,
@@ -414,6 +418,7 @@ function cmdWorkflowLint(argv) {
     verify_scope_checked: verifyScope.checked,
     reuse_ban_checked: reuseBan.checked,
     quiet_host_checked: quietHost.checked,
+    flow_checked: early.checked + checkpoint.checked + prConfirm.checked,
     findings,
   };
   const err = findings.map((f) => formatFinding(f) + '\n').join('');

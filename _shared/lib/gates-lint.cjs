@@ -32,6 +32,8 @@ const { extractBashFenceLines, joinContinuations } = require('./workflow-lint.cj
 
 const SKILL_NAME_RE = /^[a-z0-9][a-z0-9-]*$/;
 const MAX_WORKFLOW_FILE_BYTES = 2 * 1024 * 1024;
+/** Prompt rows allowed to name one recorder command (spec 027 D3). Any other prompt/human row with a command stays a finding. */
+const PROMPT_RECORDERS = Object.freeze({ 'pr-reinhard': 'pr review-record' });
 
 function escapeRe(text) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -118,7 +120,7 @@ function gradeRow(row, today) {
   if (ex.expired) f('exemption_expired', `unwired_until=${row.exemption.until} is before ${today} (${row.exemption.reason})`);
   const hardClass = row.class === 'deterministic' && row.enforcement === 'blocking';
   if (hardClass && (row.kind === 'none') && !ex.active) f('blocking_unwired', 'deterministic + blocking row has invoke none');
-  if ((row.class === 'prompt' || row.class === 'human') && row.kind === 'command') {
+  if ((row.class === 'prompt' || row.class === 'human') && row.kind === 'command' && PROMPT_RECORDERS[row.id] !== row.subcommand) {
     f('prompt_names_command', `${row.class} row names subcommand ${row.subcommand}`);
   }
   return out;

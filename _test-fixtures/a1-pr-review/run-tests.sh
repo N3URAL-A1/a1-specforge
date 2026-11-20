@@ -356,6 +356,8 @@ if [ "$rc" = "0" ] && [ "$(wc -l < "$RRT/log")" = "2" ] && sed -n 2p "$RRT/log" 
 rc="$(rr_run '$(touch PWNED)')"
 if [ -z "$(find "$RRT" -name PWNED)" ] && [ "$(wc -l < "$RRT/log")" = "2" ] && sed -n 2p "$RRT/log" | grep -qF -- '--scope $(touch PWNED)'; then pass_case "RR-guard: a \$(touch PWNED) phase value is not executed (no PWNED file, passed on literally)"; else fail_case "RR-guard: command substitution case rc=$rc found=$(find "$RRT" -name PWNED) log=$(cat "$RRT/log")"; fi
 
+. "$FIXTURE_DIR/cases-review-record.sh"
+
 echo ""
 echo "a1-pr-review: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]
