@@ -207,6 +207,27 @@ const cl = (repo, vault, extra, scope) => cli(repo, ['checklist', 'run', 'demo/0
   check('RH18 a roadmap-only edit runs the gate', !wasReused(g), g.err);
 }
 {
+  // RH25 (review fix m2): check 11 reads the spec the roadmap entry's spec_path names; when that is not the hashed spec, the call is not reusable.
+  const repo = repoWith({ 'README.md': 'x\n' });
+  const vault = planVault();
+  fs.mkdirSync(path.join(vault, 'project', 'demo', 'product'), { recursive: true });
+  const rmFile = path.join(vault, 'project', 'demo', 'product', 'ROADMAP.md');
+  const withSpecPath = (rel) => RM_FM('planned').replace('    status: planned', `    status: planned\n    spec_path: ${rel}`);
+  fs.writeFileSync(rmFile, withSpecPath(SPEC_REL));
+  cl(repo, vault, []);
+  const same = cl(repo, vault, []);
+  check('RH25 baseline: a spec_path naming the hashed spec is reused', wasReused(same), same.err + same.out.slice(0, 200));
+  const OTHER_REL = path.join('project', 'demo', 'spec', 'other.md');
+  fs.copyFileSync(path.join(vault, SPEC_REL), path.join(vault, OTHER_REL));
+  fs.writeFileSync(rmFile, withSpecPath(OTHER_REL));
+  cl(repo, vault, []);
+  const second = cl(repo, vault, []);
+  check('RH25 a spec_path naming another file is not reusable (second identical call runs)', !wasReused(second), second.err + second.out.slice(0, 200));
+  fs.appendFileSync(path.join(vault, OTHER_REL), '\n<!-- edit -->\n');
+  const third = cl(repo, vault, []);
+  check('RH25 an edit of the other spec runs the gate', !wasReused(third), third.err);
+}
+{
   const repo = repoWith({ 'README.md': 'x\n' });
   const vault = planVault();
   const f1 = cli(repo, ['checklist', 'run', 'demo/001-login', '--phase', 'p'], { A1_VAULT_ROOT: vault });

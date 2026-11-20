@@ -205,6 +205,21 @@ function parseChecklistCall(rest) {
 }
 
 /**
+ * Check 11 reads the spec a roadmap entry's `spec_path` names. When that resolves to a file other than the hashed
+ * spec, the file is an input the key does not cover: the call is not reusable (m2).
+ * @throws {ReuseMiss} spec_path_elsewhere
+ */
+function assertSpecIsHashed(rm, t, specPath, vaultRoot) {
+  const feats = rm && rm.fm && Array.isArray(rm.fm.features) ? rm.fm.features : [];
+  const entry = feats.find((f) => f && f.id === t.feature);
+  if (!entry || typeof entry.spec_path !== 'string' || entry.spec_path.trim() === '') return;
+  const res = require('./spec-coherence.cjs').resolveSpecFile(entry, vaultRoot, t.slug);
+  let hashed = null;
+  try { hashed = fs.realpathSync(specPath); } catch (_e) { /* compared as null below */ }
+  if (!res.abs || res.abs !== hashed) throw new ReuseMiss('spec_path_elsewhere');
+}
+
+/**
  * Facade entry of `checklist run`: reuses a gate-4.5 pass or calls `runner(rest)` unchanged.
  * Inputs are the spec, the wave plan and the roadmap check 11 reads (never looser than FR-020).
  * @param {string[]} rest @param {function(string[]): *} runner the real `cmdChecklistRun`
@@ -220,6 +235,7 @@ function checklistRunWithReuse(rest, runner) {
       const rm = require('./spec-coherence.cjs').findProjectRoadmap(t.slug, { vaultRoot: io.vaultRoot(), quiet: true });
       const files = [{ label: 'spec', path: spec }, { label: 'wave-plan', path: plan }];
       if (rm && rm.file) files.push({ label: 'roadmap', path: rm.file });
+      assertSpecIsHashed(rm, t, spec, io.vaultRoot());
       const args = { target: `${t.slug}/${t.feature}`, only: '9,10,11', format: 'json', roadmap: rm && rm.file ? 'file' : 'roadmap:none' };
       if (tryReuse({ gate: 'gate-4.5-fr-consistency', files, args }).reused) return undefined;
     } catch (e) {
