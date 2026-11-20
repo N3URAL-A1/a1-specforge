@@ -25,3 +25,32 @@ Completed: 2026-11-20
 ### Deviations
 - [Rule 3 spirit] a1-execute SKILL.md: besides frontmatter and "Checkpoint per lane", also changed the "Checkpoint protocol" section, routing item 4 and the hard rule "Never skip the checkpoint" so the file does not contradict the new behaviour. No suite pins this text (grepped).
 - 05-implement.md Step 3 stop block keeps the old proposal quote; the "Step 2 Size-S" text unchanged.
+
+## Wave 4 — Lint module for FR-019/021/022
+Completed: 2026-11-20
+
+- [x] T4.1 `_shared/lib/workflow-lint-flow.cjs` `checkWaveCheckpoint` `checkPrConfirmation` `checkEarlyReview` `_test-fixtures/a1-workflow-lint/cases-flow.sh` — ef1a9ad
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| 4.1 | DONE | ef1a9ad | module 108 lines; 54 pass in a1-workflow-lint (18 new: FL1-FL17 + FL12b); a1-cli-output 33 pass |
+
+### RED-proof (each: mutate, run a1-workflow-lint, observe FAIL, restore)
+- (a) stop-block tracking removed (skip never true): FL1, FL3-FL11 red (incl. FL5).
+- (b) `Are you sure` dropped from the D9 list: FL8 red.
+- (c) 06-verify dropped from `checkEarlyReview`: FL3 red (also FL1, FL9 via checked 4).
+- (d) `Spawn a1-reinhard-reviewer` restored in real 06-verify.md: FL1 and FL3 red (verify-early-review on the real file).
+- (e) `yes / no / adjust draft` restored in real 03-draft.md: FL1 red (pr-confirmation).
+- (f) `Wait for user input before starting next wave.` restored outside a stop block in real 02-execute.md: FL1 red (wave-checkpoint).
+- (g) `Once the user confirms` dropped from the D8 list: FL11 red.
+- (h) commit line removed from the 02-execute Phase-start block: FL12, FL12b, FL13 red (untracked files) and FL16 red (git exit 128, worktree remove refuses).
+- (i) `merge=union` loop removed: FL15 red (second merge exit 1).
+- (j) heredoc replaced by `printf '# Goal: %s...' '<phase_goal>'`: FL12, FL12b, FL13, FL16 red (rc=2, apostrophe breaks the quote).
+- (k) commit command dropped from 05-implement Step 4 (g): FL17 red (05-g=1).
+- FL12b: old `CHANGED` guard (commit only when this run created GOAL.md) restored in the 02-execute block: FL12b red (rc1=1, rc2=0, no new commit, files left staged).
+All files restored after each proof (skills via git checkout, module from a copy); suite green again afterwards.
+
+### Deviations
+- None against the plan. FL17 regexes allow text after the path (`; RC=$?`). The `wave-checkpoint` rule is green on the Wave 3 text (stop blocks enclose the prompts), FL1 proves it.
+- PLAN.md status boxes are not edited by the lane (PLAN.md is the planner's file); boxes are ticked here. workflow-lint.cjs untouched (hook line is Wave 5).
+- Process slip: the first RED script run had an unset scratch variable, so restores failed and the mutations accumulated. Detected from the output, module and skill files restored, RED proofs re-run cleanly via the index. No mutation was committed (suite green, git diff of the commit reviewed by suite).
