@@ -408,6 +408,7 @@ caseW16() {
 . "$(dirname "${BASH_SOURCE[0]}")/cases-verify-scope.sh"
 . "$(dirname "${BASH_SOURCE[0]}")/cases-quiet-host.sh"
 . "$(dirname "${BASH_SOURCE[0]}")/cases-flow.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/cases-flow-cli.sh"
 
 caseW1; caseW2; caseW3; caseW4; caseW5; caseW6; caseW7; caseW8; caseW9; caseW10
 caseW11; caseW12; caseW13; caseW14; caseW15; caseW16
@@ -415,6 +416,7 @@ caseVS1; caseVS2; caseVS3; caseVS4; caseVS5; caseVS6; caseVS7; caseVS8
 caseQH1; caseQH2; caseQH3; caseQH4; caseQH5; caseQH6; caseQH7
 caseFL1; caseFL2; caseFL3; caseFL4; caseFL5; caseFL6; caseFL7; caseFL8; caseFL9; caseFL10; caseFL11
 caseFL12; caseFL12b; caseFL13; caseFL14; caseFL15; caseFL16; caseFL17
+caseFC1; caseFC2; caseFC3
 
 printf '%s\n' "${results[@]}"
 echo "----"

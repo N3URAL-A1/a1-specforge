@@ -566,7 +566,7 @@ RED-proof:
 - 12 RED-proof lines are logged.
 
 **Status box:**
-- [ ] T1.1 `_shared/lib/reuse-hash.cjs` `currentScope` `checklistRunWithReuse` `toolClosure` `frontmatterOf` `_shared/lib/help-lean.cjs` `_test-fixtures/a1-lib-units/cases/reuse-hash.cjs` `_test-fixtures/a1-lib-units/cases/help-lean.cjs`
+- [x] T1.1 `_shared/lib/reuse-hash.cjs` `currentScope` `checklistRunWithReuse` `toolClosure` `frontmatterOf` `_shared/lib/help-lean.cjs` `_test-fixtures/a1-lib-units/cases/reuse-hash.cjs` `_test-fixtures/a1-lib-units/cases/help-lean.cjs`
 
 **Covers:** SC-3, SC-6
 
@@ -743,7 +743,7 @@ RED-proof:
 - The listed suites exit 0, and `calls=15`.
 
 **Status box:**
-- [ ] T3.1 `skills/a1-new-feature/workflows/06-verify.md` `caller_spec_id`
+- [x] T3.1 `skills/a1-new-feature/workflows/06-verify.md` `caller_spec_id`
 
 **Covers:** SC-2
 
@@ -765,7 +765,7 @@ RED-proof: deferred to Task 4.1 (cases FL7-FL9).
 - a1-pr-review exits 0.
 
 **Status box:**
-- [ ] T3.2 `skills/a1-pr-review/workflows/03-draft.md` `skills/a1-pr-review/workflows/04-submit.md`
+- [x] T3.2 `skills/a1-pr-review/workflows/03-draft.md` `skills/a1-pr-review/workflows/04-submit.md`
 
 **Covers:** SC-5
 
@@ -835,7 +835,7 @@ RED-proof: deferred to Task 4.1 (cases FL4-FL6, FL11, FL12-FL17).
 - `grep -c "<<'A1_GOAL_EOF'"` and `grep -c 'merge=union'` print ≥ 1 for each of the two files, and `grep -c "printf '# Goal"` prints 0 for each (m3).
 
 **Status box:**
-- [ ] T3.3 `wave next-check` `<!-- a1:stop -->` `Phase start` `Step 1b` `A1_GOAL_EOF` `merge=union` `skills/a1-execute/workflows/02-execute.md` `skills/a1-new-feature/workflows/05-implement.md` `skills/a1-execute/SKILL.md`
+- [x] T3.3 `wave next-check` `<!-- a1:stop -->` `Phase start` `Step 1b` `A1_GOAL_EOF` `merge=union` `skills/a1-execute/workflows/02-execute.md` `skills/a1-new-feature/workflows/05-implement.md` `skills/a1-execute/SKILL.md`
 
 **Covers:** SC-4
 
@@ -892,7 +892,7 @@ RED-proof:
 - 11 RED-proof lines are logged in `STATUS-flow-a.md`.
 
 **Status box:**
-- [ ] T4.1 `_shared/lib/workflow-lint-flow.cjs` `checkWaveCheckpoint` `checkPrConfirmation` `checkEarlyReview` `_test-fixtures/a1-workflow-lint/cases-flow.sh`
+- [x] T4.1 `_shared/lib/workflow-lint-flow.cjs` `checkWaveCheckpoint` `checkPrConfirmation` `checkEarlyReview` `_test-fixtures/a1-workflow-lint/cases-flow.sh`
 
 **Covers:** SC-2, SC-4, SC-5
 
@@ -941,7 +941,7 @@ RED-proof:
 - Every status box of Tasks 1.1-4.1 is `[x]`, and `node _shared/a1-tools.cjs phantom check .a1/phases/027-lean-pipeline-s4/PLAN.md` reports no phantom for them.
 
 **Status box:**
-- [ ] T5.1 `flow_checked` `a1-tools.cjs wave next-check` `_test-fixtures/a1-workflow-lint/cases-flow-cli.sh` ADR note PR A
+- [x] T5.1 `flow_checked` `a1-tools.cjs wave next-check` `_test-fixtures/a1-workflow-lint/cases-flow-cli.sh` ADR note PR A
 
 **Covers:** SC-4, SC-6
 

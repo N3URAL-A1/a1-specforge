@@ -115,7 +115,10 @@ Before Wave 1 run `wave next-check <spec-id> 0 --since <precondition_start> --pr
 (wave 0 checks only that Wave 1 names an agent; the preconditions above stop on their own exit codes). Before Wave N+1 run it with
 `<N>` and `--since <wave_start>`. Add `--checkpoint-each-wave` when the owner started the run with it.
 
-<!-- a1:next-check-block (Task 5.1) -->
+```bash
+NEXT="$(node <repo>/_shared/a1-tools.cjs wave next-check <spec-id> <N> --since <wave_start> --project <dir> --plan <wave-plan path>)"; RC=$?
+echo "wave next-check: $NEXT (exit $RC)"
+```
 
 - `continue` (exit 0) → dispatch the suggested agent(s) at once, no question.
 - `stop:<reason>` (exit 1) → the stop block below.

@@ -276,7 +276,10 @@ Vault mirror: <✓ synced | ⚠ sync exit <RC> | – no vault root>
 Then run `wave next-check <phase_name> <N> --since <wave_start> --project "$WORK_PATH"` (block below; add `--checkpoint-each-wave`
 when the owner started the run with it).
 
-<!-- a1:next-check-block (Task 5.1) -->
+```bash
+NEXT="$(node <repo>/_shared/a1-tools.cjs wave next-check <phase_name> <N> --since <wave_start> --project "$WORK_PATH")"; RC=$?
+echo "wave next-check: $NEXT (exit $RC)"
+```
 
 - `continue` (exit 0) → start Wave N+1 at once, no question.
 - `stop:<reason>` (exit 1) → the stop block below.

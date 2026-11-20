@@ -220,19 +220,20 @@ const INTENT_FLAG_ONLY_GROUPS = Object.freeze(['test-fidelity']);
 const SELF_CHECKS = ['verify check', 'test-fidelity'];
 // Spec 017 review (retro wiring): `gates fired --log <file>` only reads a gate log inside the project and prints YAML.
 const GATES_READ = ['gates fired'];
+// Spec 027 slice 4: `wave next-check` reads PLAN.md, GOAL.md, observations.jsonl and the phase gate log inside the project and prints one word.
 const NEW_FEATURE_ALLOW = Object.freeze([
   'check reservations', 'checklist run', 'code-scope check', 'code-scope claim', 'code-scope release', 'code-scope stage',
   'plan depth-check', 'product feature-init', 'product stage', 'profile ears-check', 'profile nfr-inject', 'profile resolve',
   'profile set', 'profile simulate-check', 'profile simulate-roles', 'profile threat-model-check',
   'quick eligibility', 'realpath-check run', 'schema-check run',
-  'spec init', 'spec set-size', 'spec update-status', ...SELF_CHECKS, ...GATES_READ, ...GIT_READ,
+  'spec init', 'spec set-size', 'spec update-status', 'wave next-check', ...SELF_CHECKS, ...GATES_READ, ...GIT_READ,
 ]);
 const INTENT_CHILD_ALLOWLIST = Object.freeze({
   'new-feature': NEW_FEATURE_ALLOW,
   'continue-feature': NEW_FEATURE_ALLOW,
   plan: Object.freeze(['lane-split check', 'plan depth-check', ...GATES_READ, ...GIT_READ]),
   execute: Object.freeze([
-    ...WRITE_SCOPE, 'lane-split check', 'product audit-set', 'product stage', 'realpath-check run', 'schema-check run',
+    ...WRITE_SCOPE, 'lane-split check', 'product audit-set', 'product stage', 'realpath-check run', 'schema-check run', 'wave next-check',
     ...SELF_CHECKS, ...GATES_READ, 'git add', 'git commit', ...GIT_READ,
   ]),
   fix: Object.freeze([

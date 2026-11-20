@@ -141,3 +141,26 @@ All files restored after each proof (skills via git checkout, module from a copy
 - None against the plan. FL17 regexes allow text after the path (`; RC=$?`). The `wave-checkpoint` rule is green on the Wave 3 text (stop blocks enclose the prompts), FL1 proves it.
 - PLAN.md status boxes are not edited by the lane (PLAN.md is the planner's file); boxes are ticked here. workflow-lint.cjs untouched (hook line is Wave 5).
 - Process slip: the first RED script run had an unset scratch variable, so restores failed and the mutations accumulated. Detected from the output, module and skill files restored, RED proofs re-run cleanly via the index. No mutation was committed (suite green, git diff of the commit reviewed by suite).
+
+## Wave 5 — PR A integration (Task 5.1)
+Completed: 2026-11-20
+
+- [x] T5.1 `flow_checked` `a1-tools.cjs wave next-check` `_test-fixtures/a1-workflow-lint/cases-flow-cli.sh` ADR note PR A
+
+Lane-split re-check (`--imports .`): 0 blockers, 0 findings, imports_checked true. PLAN.md boxes ticked for T1.1, T3.1-T3.3, T4.1, T5.1 (T2.x were already ticked).
+
+### Verification
+- gates lint rc 0; workflow lint --phase 027-lean-pipeline-s4 rc 0; check-wave11-callsites `calls=15`; run-wave13 rc 0; run-wave14 rc 0
+- V14 caps loop rc 0; `git diff --quiet origin/main` for verify.json/suite-groups/.github rc 0, for checklist.cjs + new-feature SKILL.md rc 0; `run-suites.sh --check-groups` rc 0
+- a1-workflow-lint 57 pass (FC1-FC3 new); a1-kritis-profile 221 pass; a1-intent 1125 pass
+
+### RED-proof
+- RED-proof 5.1 (a) hook lines removed from workflow-lint.cjs -> FC1, FC2 red (a1-workflow-lint 55 pass, 2 fail)
+- RED-proof 5.1 (b) `--since` -> `--from` on the 02-execute next-check line -> check-callsite-flags.cjs red (rc=1, "wave next-check: flag --from is not accepted by the real command")
+- RED-proof kritis inventory row removed -> "I inventory set equality" and "I inventory 11+12" red
+- RED-proof `wave next-check` removed from NEW_FEATURE_ALLOW -> kritis "I intent allowlist" red (28 vs 29); the old pins were red on the new tree before the fix (H7a: unclassified `wave next-check`; kritis I count 30 vs 29)
+
+### Deviations
+- [Rule 1] `formatFinding` in workflow-lint.cjs printed every non-vault-sync finding as "pipeline exit status swallowed: undefined", so FC2 could not see `wave-checkpoint` (verify-scope findings had the same flaw). It now prints `<rule>: <reason>` for any finding with a rule; the vault-sync-step format is unchanged.
+- [Rule 3, missing_wiring, not in the plan] The two fenced `wave next-check` calls made existing pins red. Fixes: `wave next-check` added to the new-feature/continue-feature/execute child allowlists (`_shared/lib/intent-sandbox.cjs`, read-only inside the project); a1-intent `05b-child-seal.sh` H7 probes for it (in/out/link), counts new-feature/continue-feature 29, execute 18, reached 95, and the `5b-Pg` git-user set; a1-kritis-profile `inventory.txt` row (excluded) plus pins 29->30, 11+11 -> 11+12 and intent allowlist 28->29. PR B adds more fenced calls to a1-new-feature files (wave checks, feature plan-steps, feature close): the planner should expect the same pins there.
+- The 5.2 orchestrator task is not run.
