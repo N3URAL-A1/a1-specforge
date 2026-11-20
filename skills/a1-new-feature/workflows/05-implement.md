@@ -68,11 +68,13 @@ staged files). `<dir>` is the feature worktree, the same `<dir>` the wave gates 
 `<spec title>` is substituted as one line inside the quoted heredoc, so quotes, `$(...)` and backticks stay literal. The orchestrator
 strips all newlines from the title first (a title line equal to `A1_GOAL_EOF` would close the heredoc early) and checks `<spec-id>`
 against `^[A-Za-z0-9_][A-Za-z0-9._-]*$` before running the block; a spec id that fails the check is a STOP. The block repeats the check
-on the single-quoted `SPEC_ID` value (`STOP: bad spec id`, exit 2).
+on the `SPEC_ID` value, which it reads through a quoted heredoc (`A1_SPEC_EOF`; single quotes alone let `x'$(...)'` run at the assignment) and the orchestrator strips all newlines from the id too (`STOP: bad spec id`, exit 2).
 
 ```bash
 WORK_PATH="<dir>"
-SPEC_ID='<spec-id>'
+IFS= read -r SPEC_ID <<'A1_SPEC_EOF'
+<spec-id>
+A1_SPEC_EOF
 case "$SPEC_ID" in ""|[!A-Za-z0-9_]*|*[!A-Za-z0-9._-]*) echo "STOP: bad spec id"; exit 2;; esac
 P="$WORK_PATH/.a1/phases/$SPEC_ID"; mkdir -p "$P"
 if [ ! -e "$P/observations.jsonl" ]; then : > "$P/observations.jsonl"; fi

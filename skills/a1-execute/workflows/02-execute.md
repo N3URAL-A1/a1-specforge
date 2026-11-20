@@ -27,11 +27,15 @@ the two files, not by what it created itself: after a failed commit (a pre-commi
 `<phase_goal>` is substituted as one line inside the quoted heredoc, so quotes, `$(...)` and backticks stay literal. The orchestrator
 strips all newlines from the goal first (a goal line equal to `A1_GOAL_EOF` would close the heredoc early) and checks `<phase_name>`
 against `^[A-Za-z0-9_][A-Za-z0-9._-]*$` before running the block; a name that fails the check is a STOP, not a value to repair. The
-block repeats the check on the single-quoted `PHASE` value (`STOP: bad phase name`, exit 2), so a name that slipped through never
-reaches a path or a commit message.
+block repeats the check on the `PHASE` value, which it reads through a quoted heredoc (`A1_PHASE_EOF`): single quotes alone are not
+enough, because a name holding a single quote (`x'$(...)'`) ends the quoting and runs at the assignment, before the guard. The orchestrator
+strips all newlines from the name too (a name line equal to `A1_PHASE_EOF` would close the heredoc early). A bad value is
+`STOP: bad phase name`, exit 2, so a name that slipped through never reaches a path or a commit message.
 
 ```bash
-PHASE='<phase_name>'
+IFS= read -r PHASE <<'A1_PHASE_EOF'
+<phase_name>
+A1_PHASE_EOF
 case "$PHASE" in ""|[!A-Za-z0-9_]*|*[!A-Za-z0-9._-]*) echo "STOP: bad phase name"; exit 2;; esac
 P="$WORK_PATH/.a1/phases/$PHASE"; mkdir -p "$P"
 if [ ! -e "$P/observations.jsonl" ]; then : > "$P/observations.jsonl"; fi

@@ -198,27 +198,28 @@ caseFL19() {
 }
 
 # ---------- review fix round 2 (PR #108): SEC-4 ----------
-# FL20: the phase name / spec id is validated in the block itself (the value is placed in single quotes, so $(...) never runs
-# before the guard); an invalid value stops with exit 2 and creates nothing.
+# FL20: the phase name / spec id is validated in the block itself; the value is read through a QUOTED heredoc (round 3, SEC-7:
+# single quotes were not enough, a value holding a single quote such as x'$(touch PWNED)' ended the quoting and ran at the
+# assignment, before the guard). An invalid value stops with exit 2 and creates nothing.
 caseFL20() {
   local bad_ok=1 v rc made pw; flPlant
-  for v in '$(touch PWNED)' 'a b' '../x' '-lead' 'a;b' '.hid'; do
+  for v in '$(touch PWNED)' 'a b' '../x' '-lead' 'a;b' '.hid' "x'\$(touch PWNED)'" "x'\`touch PWNED\`'"; do
     flBlock "$FL_EX" 'Phase start' '<phase_name>' "$v" '<phase_goal>' g > "$FL_T/b.sh"
     flExec "$FL_T/b.sh" >/dev/null 2>&1; rc=$?
     made="$(find "$FL_WT/.a1" -mindepth 2 2>/dev/null | head -n 1)"; pw="$(find "$FL_T" -name PWNED | head -n 1)"
     if [[ $rc -ne 2 || -n "$made" || -n "$pw" ]]; then bad_ok=0; bad "FL20 02-execute block accepted phase name '$v' (rc=$rc made='$made' pw='$pw')"; fi
   done
-  if [[ $bad_ok -eq 1 ]]; then ok "FL20 02-execute block: six invalid phase names exit 2, create nothing, run nothing"; fi
+  if [[ $bad_ok -eq 1 ]]; then ok "FL20 02-execute block: eight invalid phase names exit 2, create nothing, run nothing"; fi
 }
 caseFL20b() {
   local bad_ok=1 v rc made pw; flPlant
-  for v in '$(touch PWNED)' 'a b' '../x' 'x`y`'; do
+  for v in '$(touch PWNED)' 'a b' '../x' 'x`y`' "x'\$(touch PWNED)'" "x'\`touch PWNED\`'"; do
     flBlock "$FL_IMPL" 'Step 1b' '<dir>' "$FL_WT" '<spec-id>' "$v" '<spec title>' t > "$FL_T/b.sh"
     flExec "$FL_T/b.sh" >/dev/null 2>&1; rc=$?
     made="$(find "$FL_WT/.a1" -mindepth 2 2>/dev/null | head -n 1)"; pw="$(find "$FL_T" -name PWNED | head -n 1)"
     if [[ $rc -ne 2 || -n "$made" || -n "$pw" ]]; then bad_ok=0; bad "FL20b 05-implement Step 1b accepted spec id '$v' (rc=$rc made='$made' pw='$pw')"; fi
   done
-  if [[ $bad_ok -eq 1 ]]; then ok "FL20b 05-implement Step 1b: four invalid spec ids exit 2, create nothing, run nothing"; fi
+  if [[ $bad_ok -eq 1 ]]; then ok "FL20b 05-implement Step 1b: six invalid spec ids exit 2, create nothing, run nothing"; fi
 }
 caseFL20c() {
   local f a=0 b=0
