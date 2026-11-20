@@ -14,20 +14,14 @@ All waves in the wave-plan are marked `⟶ status: done`. Spec status is `implem
 The E2E test from Step 5b (Phase 5) is green. The production URL or preview URL from the last
 deploy is known — if not, run `vercel ls` and note the URL.
 
-## Step 0 — Full-diff code review BEFORE the walkthrough
+## Step 0 — Code review happens once, in a1-pr-review
 
-Spawn `a1-reinhard-reviewer` over the full feature diff (all waves,
-`git diff main...<feature-branch>`) BEFORE starting the scenario walkthrough.
-Fix MAJOR+ findings (as a rework commit) before proceeding.
+The full-diff review runs in `a1-pr-review` `workflows/02-review.md`, once per head sha
+(`pr review-evidence` / `pr review-record`); a fix round makes a new head and runs it again.
+Phase 6 spawns no reviewer of its own (spec 027 FR-019).
 
-Why this order: in three consecutive features (pro-orc 001/003/004, 2026-07)
-the review caught real functional bugs — broken path resolution, a
-section-parsing loop swallowing the next section, cross-feature palette
-duplication — that hundreds of green per-wave tests and the walkthrough itself
-missed; where the review ran only AFTER a PASS verdict, the fix cost a full
-verify-rework round. This review satisfies the Lifecycle Completion Gate's
-`review` stage — do not run a second full review after the walkthrough unless
-the walkthrough forced code changes.
+Why a full-diff review at all: in three consecutive features (2026-07) it caught real functional bugs that
+hundreds of green per-wave tests and the walkthrough missed, and that review still runs before any merge.
 
 ## Step 0.5 — Live-URL Reachability Check
 
@@ -244,16 +238,10 @@ The spec does not move to `done` on Phase 6 passing alone. Drive the
 remaining lifecycle-stage transitions in order (see SKILL.md's Lifecycle
 Completion Gate), each after its own confirmation:
 
-1. **Review** — normally already done in Step 0 above (pre-walkthrough
-   review); record the stage transition once it has confirmed the
-   implementation:
-   ```bash
-   node <repo>/_shared/a1-tools.cjs code-scope stage --by <spec-id> --set review
-   ```
-2. **Verify** — once this Phase 6 walkthrough is all-green (this step):
-   ```bash
-   node <repo>/_shared/a1-tools.cjs code-scope stage --by <spec-id> --set verify
-   ```
+1. **Review** and **Verify** are recorded by `a1-pr-review` `workflows/02-review.md` step 2.3d, after the
+   `pr-reinhard` pass record (or on its same-head skip path), in that order. The walkthrough is all-green
+   before the hand-off, so both conditions hold there. Phase 6 runs no `code-scope stage` call before the
+   hand-off. (SKILL.md's Lifecycle table stays as written: its Review row still holds.)
 3. **Merge** — after the pre-merge check below and the PR's squash merge into
    `main` (`a1-pr-review`, verified via `gh pr view --json state,mergedAt`):
    ```bash
@@ -329,7 +317,7 @@ git -C <repo> ls-tree origin/main automation/db/migrations/ | grep -E '<your-new
 
 Only after a clean rebase or merge + no number collision + green build on the rebased or merged tree do you hand
 the branch to `a1-pr-review`, which makes its first push (`_shared/push-cadence.md` P1).
-The hand-off carries the worktree and branch; `a1-pr-review` reviews the diff (Reinhard always, Samuel on security surface). No cross-provider gate runs on code.
+The hand-off carries the worktree and branch and the spec id as `caller_spec_id` (`a1-pr-review` 2.3d reads it); `a1-pr-review` reviews the diff (Reinhard always, Samuel on security surface). No cross-provider gate runs on code.
 
 Tell the user:
 

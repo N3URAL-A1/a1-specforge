@@ -5,8 +5,7 @@ to `pr-open`. This phase is terminal.
 
 ## Pre-flight
 
-User must have confirmed in Phase 3. If unclear, ask again:
-> "Are you sure you want to create the PR now? (yes / no)"
+Phase 3 hands over without a confirmation (FR-022).
 
 ### 4.1 Check `gh` auth
 
@@ -71,8 +70,6 @@ a1-pr-review is complete. Registry status: `pr-open`.
 - `gh pr create` fails (e.g. existing PR for branch): show error, do
   NOT mark registry. Suggest `gh pr view` to inspect.
 - Push rejected: do not auto-force. Ask user.
-- User aborts at confirm: registry stays `reviewed`. Draft remains on
-  disk for later submission.
 
 ## Retro (mandatory, every run)
 
