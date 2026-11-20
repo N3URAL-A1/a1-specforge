@@ -57,3 +57,32 @@ else fail_case "RV5c rc=$rc log=$(cat "$RVT/log")"; fi
 rc="$(rv_run '$(touch PWNED)')"
 if [ -z "$(find "$RVT" -name PWNED)" ] && [ "$(grep -c 'code-scope stage' "$RVT/log")" = "0" ]; then pass_case "RV5d a \$(touch PWNED) value is not executed (no PWNED file, no matching reservation, no stage call)"
 else fail_case "RV5d rc=$rc found=$(find "$RVT" -name PWNED) log=$(cat "$RVT/log")"; fi
+
+# ---- review fix round 1 (PR #108, M1): findings.json is bound to the head it was written for ----
+S24="$(sec "$REV" '### 2.4')"
+if printf '%s' "$S24" | grep -qF '"head_sha": "<head_sha>"'; then pass_case "RV7 2.4 writes head_sha into findings.json"
+else fail_case "RV7 2.4 does not name the head_sha field of findings.json"; fi
+# RV8 stub run of the 2.1b block: stale / missing / matching findings head
+mk_workdir RVB rv-bind; mkdir -p "$RVB/repo/_shared" "$RVB/wt/.a1-review"
+cat > "$RVB/repo/_shared/a1-tools.cjs" <<'STUB'
+process.exit(0);
+STUB
+git -C "$RVB/wt" init -q -b main 2>/dev/null
+git -C "$RVB/wt" -c user.name=fx -c user.email=fx@example.invalid -c commit.gpgsign=false -c core.hooksPath=/dev/null commit -q --allow-empty -m base
+RVB_HEAD="$(git -C "$RVB/wt" rev-parse HEAD)"
+printf '%s' "$B21B" | sed -e "s#<worktree_path>#$RVB/wt#g" -e "s#<repo>#$RVB/repo#g" -e "s#<n>#7#g" > "$RVB/blk.sh"
+rvb_run() { (cd "$RVB" && bash "$RVB/blk.sh" 2>&1); }
+printf '{"head_sha":"%s","blocker":[],"major":[],"minor":[]}\n' "$RVB_HEAD" > "$RVB/wt/.a1-review/findings.json"
+if rvb_run | grep -qx 'findings_head=match'; then pass_case "RV8a findings.json head_sha equals HEAD: findings_head=match"
+else fail_case "RV8a match case: $(rvb_run)"; fi
+printf '{"head_sha":"%040d","blocker":[],"major":[],"minor":[]}\n' 0 > "$RVB/wt/.a1-review/findings.json"
+if rvb_run | grep -qx 'findings_head=stale-or-missing'; then pass_case "RV8b findings.json of another head: findings_head=stale-or-missing"
+else fail_case "RV8b stale case: $(rvb_run)"; fi
+printf '{"blocker":[],"major":[],"minor":[]}\n' > "$RVB/wt/.a1-review/findings.json"
+if rvb_run | grep -qx 'findings_head=stale-or-missing'; then pass_case "RV8c findings.json without head_sha: stale-or-missing"
+else fail_case "RV8c no-head case: $(rvb_run)"; fi
+rm -f "$RVB/wt/.a1-review/findings.json"
+if rvb_run | grep -qx 'findings_head=stale-or-missing'; then pass_case "RV8d no findings.json: stale-or-missing"
+else fail_case "RV8d missing file case: $(rvb_run)"; fi
+if printf '%s' "$S21B" | grep -qF 'findings_head=match'; then pass_case "RV9 the 2.1b prose requires findings_head=match for the skip"
+else fail_case "RV9 2.1b prose does not name findings_head=match"; fi

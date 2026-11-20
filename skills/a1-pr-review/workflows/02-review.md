@@ -37,9 +37,11 @@ if [ "$RC" -ne 0 ]; then echo "STOP: rev-parse exit=$RC"; exit "$RC"; fi
 echo "head_sha=$HEAD_SHA"
 (cd "<worktree_path>" && node <repo>/_shared/a1-tools.cjs pr review-evidence --head "$HEAD_SHA" --phase pr-<n>); EV=$?
 echo "review-evidence exit=$EV"
+FH="$(node -e 'try{process.stdout.write(String(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).head_sha||""))}catch(e){}' "<worktree_path>/.a1-review/findings.json")"
+if [ "$FH" = "$HEAD_SHA" ]; then echo "findings_head=match"; else echo "findings_head=stale-or-missing"; fi
 ```
 
-Note the printed `head_sha` value as `<head_sha>` for 2.3a. Exit 0 **and** `<worktree_path>/.a1-review/findings.json` exists: skip 2.2 and 2.3a for this head, reuse the findings, and run 2.3d. 2.2b still runs; Samuel's spawn is not skipped by this. Exit 1: go on to 2.2 as today. Exit 2: STOP (usage).
+Note the printed `head_sha` value as `<head_sha>` for 2.3a and 2.4. Exit 0 **and** `findings_head=match` (the `findings.json` exists and carries this head's `head_sha`, written by 2.4): skip 2.2 and 2.3a for this head, reuse the findings, and run 2.3d. Exit 0 with `findings_head=stale-or-missing` (a restart between 2.3a and 2.4, or a reset to an earlier reviewed head): the saved findings belong to another head, so go on to 2.2 and review this head again. 2.2b still runs; Samuel's spawn is not skipped by this. Exit 1: go on to 2.2 as today. Exit 2: STOP (usage).
 
 ### 2.2 Spawn a1-reinhard-reviewer via Agent tool
 
@@ -178,6 +180,7 @@ Without a reservation (a1-execute phase, a1-fix, a standalone review) the block 
 ### 2.4 Persist findings
 
 Write ONE `findings.json` to `<worktree_path>/.a1-review/findings.json` (atomic: write to `.tmp`, then `mv`) holding the findings of both reviewers.
+The file carries a top-level `"head_sha": "<head_sha>"` (the sha printed by 2.1b, written in the same atomic write): 2.1b reuses the findings only when it equals the current head.
 Every finding carries a `source` field: `"reinhard"` for a finding from 2.3, `"samuel"` for a finding of the 2.2b review (when it ran).
 The arrays stay `blocker`, `major`, `minor`, so `pr findings-summary` counts both sources. BLOCKER and MAJOR of either source follow the same
 fix-then-merge rule: every one is fixed before `workflows/05-merge.md` 5.4 runs `gh pr merge`. Findings of the two reviewers that name the
