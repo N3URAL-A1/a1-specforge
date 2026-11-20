@@ -1,8 +1,8 @@
 ---
 name: a1-execute
 description: >
-  Wave-by-wave execution of an existing PLAN.md with mandatory user-checkpoint between waves
-  and final goal-backward verification. State lives in `.a1/phases/<name>/STATUS.md`; a
+  Wave-by-wave execution of an existing PLAN.md: waves continue on their own while `wave next-check`
+  prints continue; a stop reason or `--checkpoint-each-wave` asks the owner. Ends with final goal-backward verification. State lives in `.a1/phases/<name>/STATUS.md`; a
   VERIFICATION.md captures the verdict. MUST trigger when the user says: "execute plan"
   (alias: "plan ausführen"), "execute phase" (alias: "phase ausführen"), "a1-execute",
   "start implementing" (alias: "implementieren starten"), "start execution", "run the plan",
@@ -72,10 +72,10 @@ block) and never yields `verdict: pass`.
 After each wave:
 1. Show wave completion summary (tasks done, deviations)
 2. Run `git status` to confirm commits
-3. **Pause for user confirmation** before next wave (default behavior)
-4. User can say "continue" / "weiter" to proceed or "stop" to halt
+3. Run `wave next-check`: `continue` starts the next wave at once; `stop:<reason>` (or `--checkpoint-each-wave`) pauses for the owner
+4. At a stop the owner can say "continue" / "weiter" to proceed or "stop" to halt
 
-This prevents runaway execution — the user stays in control wave by wave.
+This prevents runaway execution — the gates, the deviation and decision stores and the plan decide whether a wave may follow on its own, and the owner decides at every stop reason (spec 027 FR-021).
 
 ## State tracking
 
@@ -190,12 +190,13 @@ N lanes = N worktrees, same rules as N phases, no new convention.
    there is no code to read, so it was only ever asked the question it could not
    answer. Check `imports_checked` in the output before trusting a PASS.
 2. **Claim each lane's scope separately** (`a1-tools.cjs code-scope`), branch
-   `feature/<phase-slug>-<lane-id>`. STOP on overlap — never "just this once".
+   `feature/<phase-slug>-<lane-id>`; each lane branches off the phase branch, after Phase start
+   (`workflows/02-execute.md`), so it inherits the tracked event stores. STOP on overlap — never "just this once".
 3. **One executor per lane**, spawned concurrently, each with `$WORK_PATH` set
    to its own worktree and a `**Lane:**` line in its brief.
 4. **Status per lane** — `STATUS-<lane-id>.md`. Never one shared STATUS.md:
    concurrent appends interleave, or produce N copies of which N-1 die at merge.
-5. **Checkpoint per lane**, not one global checkpoint — a blocked storage lane
+5. **`wave next-check` per lane**, not one global checkpoint — a blocked storage lane
    must not hold up a green runtime lane.
 6. **Stage transitions exactly once, in the primary checkout, after the last
    lane merges.** The docs/product HARD RULE above mutates shared state; N lanes
@@ -217,14 +218,14 @@ rejects it inside a lane, and that rejection is not to be worked around.
 1. Ask for: project path + phase name (or detect from `.a1/phases/`)
 2. Read PLAN.md — confirm wave count and goal with user
 3. Execute waves one at a time via a1-erik-executor
-4. Checkpoint after each wave — wait for user confirmation
+4. After each wave run `wave next-check` — continue on `continue`, ask the owner on a stop reason
 5. After all waves: run a1-victor-verifier
 6. If PARTIAL/FAIL: show gaps, ask if user wants targeted re-execution
 
 ## Hard rules
 
 - Never execute a wave in the primary checkout — Isolation Gate first (`_shared/parallel-spec-isolation.md`)
-- Never skip the checkpoint between waves (multi-lane: per lane, not one global checkpoint)
+- Never skip `wave next-check` between waves (multi-lane: per lane, not one global check); never continue past a `stop:<reason>` without the owner
 - Never start a lane whose `lane-split check` exits non-zero; never run a cutover or contract wave as a lane
 - Always show the diff summary after each wave (`git log --oneline -5`)
 - If a wave is BLOCKED (a1-erik-executor reports blocked tasks), surface to user before continuing
