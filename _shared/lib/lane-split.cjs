@@ -324,6 +324,17 @@ function cmdLaneSplitCheck(args) {
     process.exit(2);
   }
 
+  // Spec 027 FR-020: an identical plan (and, with --imports, the same clean HEAD) reuses the last pass.
+  let importsRoot = null;
+  try { importsRoot = flags.imports ? fs.realpathSync(flags.imports) : null; } catch (_e) { /* keeps today's error path */ }
+  const reuse = require('./reuse-hash.cjs').tryReuse({
+    gate: 'lane-split', files: [{ label: 'plan', path: planPath }],
+    args: { imports: importsRoot || (flags.imports ? 'missing' : null) },
+    requireHead: Boolean(flags.imports), projectDir: importsRoot || process.cwd(),
+    out: { imports_checked: Boolean(flags.imports) },
+  });
+  if (reuse.reused) return undefined;
+
   const text = fs.readFileSync(planPath, 'utf8');
   const { declared, lanes, sequentialAfter } = parseLanes(frontmatterOf(text));
   const findings = [];
@@ -480,4 +491,4 @@ function cmdLaneSplitCheck(args) {
   return emitExit(blockers === 0 ? 0 : 1, JSON.stringify(out, null, 2) + '\n', '');
 }
 
-module.exports = { cmdLaneSplitCheck, parseLanes, parseWaves, isCutoverWave, declaredDeps };
+module.exports = { cmdLaneSplitCheck, frontmatterOf, parseLanes, parseWaves, isCutoverWave, declaredDeps };

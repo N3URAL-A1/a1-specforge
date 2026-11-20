@@ -55,6 +55,7 @@ const KEY_NOTE_MAX = 40;
 
 // Request-scoped enough for a CLI process: set only after the hook installed, taken and reset in the exit handler.
 let hookInstalled = false;
+let hookScope = null;
 let pendingExtra = null;
 
 /**
@@ -92,6 +93,14 @@ function setRecordExtra(fields) {
   if (!hookInstalled) return { active: false, accepted: [], rejected };
   pendingExtra = Object.freeze({ ...(pendingExtra || {}), ...accepted });
   return { active: true, accepted: Object.keys(accepted), rejected };
+}
+
+/**
+ * The `--phase` scope the hook stripped for this process (spec 027 D6); null without `--phase` or without the hook.
+ * @returns {string|null}
+ */
+function currentScope() {
+  return hookInstalled ? hookScope : null;
 }
 
 function inputError(msg) {
@@ -445,6 +454,7 @@ function installGateLog(argv, registryText) {
   const dir = projectDirOf(stripped.argv);
   const startedAt = new Date().toISOString();
   const t0 = process.hrtime.bigint();
+  hookScope = stripped.scope;
   hookInstalled = true;
   process.on('exit', (code) => {
     const durationMs = Number((process.hrtime.bigint() - t0) / 1000000n);
@@ -461,5 +471,5 @@ module.exports = {
   ZERO_HASH, UNSCOPED, EXCLUDE_PATTERN, SCOPE_RE,
   validateScope, verdictForExit, appendGateLine, verifyChain, matchInvoke, stripPhase,
   installGateLog, setRecordExtra, gitContext, ensureExcluded, projectDirOf, stealStaleLock, assertContained,
-  acquireLock, releaseLock,
+  acquireLock, releaseLock, currentScope, logPathFor,
 };

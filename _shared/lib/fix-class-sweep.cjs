@@ -322,14 +322,37 @@ function emit(body, code) {
   process.exitCode = code;
 }
 
+/** Spec 027 FR-020 (D6): the reuse key of a `--verify` call; the bug file is the input, the code tree is HEAD-bound. */
+function reuseCall(o, bugPath) {
+  let diffBase = null;
+  if (o.diffBase) {
+    const r = spawnSync('git', ['-C', o.project, 'rev-parse', '--verify', `${o.diffBase}^{commit}`], { encoding: 'utf8', shell: false });
+    diffBase = r.status === 0 ? String(r.stdout).trim() : `unresolved:${o.diffBase}`;
+  }
+  let projectReal = o.project;
+  try { projectReal = fs.realpathSync(o.project); } catch (_e) { /* the run reports the bad project */ }
+  return {
+    gate: 'fix-class-sweep', files: [{ label: 'bug', path: bugPath }],
+    args: { project: projectReal, guards: [...o.guards].sort(), diff_base: diffBase },
+    requireHead: true, projectDir: o.project,
+  };
+}
+
 /** @param {string|undefined} _sub @param {string[]} rest */
 function cmdFixClassSweep(_sub, rest) {
+  let sweepReuse = null;
   try {
     const o = parseArgs(rest);
     const bugPath = resolveVaultPath(o.bug);
     if (!fs.existsSync(bugPath)) throw internal(`bug file not found: ${bugPath}`);
+    if (o.mode === 'verify') {
+      sweepReuse = reuseCall(o, bugPath);
+      if (require('./reuse-hash.cjs').tryReuse(sweepReuse).reused) return undefined;
+    }
     emit(o.mode === 'record' ? doRecord(bugPath, o.project) : doVerify(bugPath, o.project, o.guards, o.diffBase), 0);
+    if (sweepReuse) require('./reuse-hash.cjs').setPostRunHash(sweepReuse);
   } catch (e) {
+    if (sweepReuse) require('./reuse-hash.cjs').setPostRunHash(sweepReuse);
     if (e instanceof SweepError && e.kind === 'refuse') return emit({ ok: false, reason: e.reason, message: e.message, ...e.extra }, 1);
     process.stderr.write(`fix class-sweep: ${e && e.message ? e.message : String(e)}\n`);
     process.exitCode = 2;
