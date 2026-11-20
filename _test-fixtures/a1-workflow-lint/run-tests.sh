@@ -416,7 +416,7 @@ caseVS1; caseVS2; caseVS3; caseVS4; caseVS5; caseVS6; caseVS7; caseVS8
 caseQH1; caseQH2; caseQH3; caseQH4; caseQH5; caseQH6; caseQH7
 caseFL1; caseFL2; caseFL3; caseFL4; caseFL5; caseFL6; caseFL7; caseFL8; caseFL9; caseFL10; caseFL11
 caseFL12; caseFL12b; caseFL13; caseFL14; caseFL15; caseFL16; caseFL17
-caseFL18; caseFL18b; caseFL19
+caseFL18; caseFL18b; caseFL19; caseFL20; caseFL20b; caseFL20c
 caseFC1; caseFC2; caseFC3
 
 printf '%s\n' "${results[@]}"

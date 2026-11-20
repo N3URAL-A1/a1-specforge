@@ -196,3 +196,35 @@ caseFL19() {
   if [[ -n "$cmd" && $rc1 -eq 0 && "$left1" == "$keep" && $rc2 -eq 0 && -z "$left2" ]]; then ok "FL19 removal command keeps unrelated lines and also empties a file holding only the union lines"
   else bad "FL19 removal command (cmd='$cmd' rc1=$rc1 left1='$left1' rc2=$rc2 left2='$left2')"; fi
 }
+
+# ---------- review fix round 2 (PR #108): SEC-4 ----------
+# FL20: the phase name / spec id is validated in the block itself (the value is placed in single quotes, so $(...) never runs
+# before the guard); an invalid value stops with exit 2 and creates nothing.
+caseFL20() {
+  local bad_ok=1 v rc made pw; flPlant
+  for v in '$(touch PWNED)' 'a b' '../x' '-lead' 'a;b' '.hid'; do
+    flBlock "$FL_EX" 'Phase start' '<phase_name>' "$v" '<phase_goal>' g > "$FL_T/b.sh"
+    flExec "$FL_T/b.sh" >/dev/null 2>&1; rc=$?
+    made="$(find "$FL_WT/.a1" -mindepth 2 2>/dev/null | head -n 1)"; pw="$(find "$FL_T" -name PWNED | head -n 1)"
+    if [[ $rc -ne 2 || -n "$made" || -n "$pw" ]]; then bad_ok=0; bad "FL20 02-execute block accepted phase name '$v' (rc=$rc made='$made' pw='$pw')"; fi
+  done
+  if [[ $bad_ok -eq 1 ]]; then ok "FL20 02-execute block: six invalid phase names exit 2, create nothing, run nothing"; fi
+}
+caseFL20b() {
+  local bad_ok=1 v rc made pw; flPlant
+  for v in '$(touch PWNED)' 'a b' '../x' 'x`y`'; do
+    flBlock "$FL_IMPL" 'Step 1b' '<dir>' "$FL_WT" '<spec-id>' "$v" '<spec title>' t > "$FL_T/b.sh"
+    flExec "$FL_T/b.sh" >/dev/null 2>&1; rc=$?
+    made="$(find "$FL_WT/.a1" -mindepth 2 2>/dev/null | head -n 1)"; pw="$(find "$FL_T" -name PWNED | head -n 1)"
+    if [[ $rc -ne 2 || -n "$made" || -n "$pw" ]]; then bad_ok=0; bad "FL20b 05-implement Step 1b accepted spec id '$v' (rc=$rc made='$made' pw='$pw')"; fi
+  done
+  if [[ $bad_ok -eq 1 ]]; then ok "FL20b 05-implement Step 1b: four invalid spec ids exit 2, create nothing, run nothing"; fi
+}
+caseFL20c() {
+  local f a=0 b=0
+  for f in "$FL_EX" "$FL_IMPL"; do
+    grep -qF '^[A-Za-z0-9_][A-Za-z0-9._-]*$' "$REPO_ROOT/$f" && grep -qiE 'strip(s)? (all )?newlines' "$REPO_ROOT/$f" || { [[ $f == "$FL_EX" ]] && a=1 || b=1; }
+  done
+  if [[ $a -eq 0 && $b -eq 0 ]]; then ok "FL20c both blocks' prose mandates the name regex and newline stripping"
+  else bad "FL20c prose mandate missing (02-execute=$a 05-implement=$b)"; fi
+}

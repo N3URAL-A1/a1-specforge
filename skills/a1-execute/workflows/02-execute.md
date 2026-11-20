@@ -24,10 +24,16 @@ The event stores of this phase are `.a1/phases/<phase_name>/observations.jsonl` 
 missing, registers the union merge for both paths and commits what it created or changed, so neither the commit-landed gate nor the
 worktree exit meets an untracked store, and a missing store later means the run broke. It decides about the commit by the git state of
 the two files, not by what it created itself: after a failed commit (a pre-commit hook, an index lock) a re-run commits the staged files.
-`<phase_goal>` is substituted as one line inside the quoted heredoc, so quotes, `$(...)` and backticks stay literal.
+`<phase_goal>` is substituted as one line inside the quoted heredoc, so quotes, `$(...)` and backticks stay literal. The orchestrator
+strips all newlines from the goal first (a goal line equal to `A1_GOAL_EOF` would close the heredoc early) and checks `<phase_name>`
+against `^[A-Za-z0-9_][A-Za-z0-9._-]*$` before running the block; a name that fails the check is a STOP, not a value to repair. The
+block repeats the check on the single-quoted `PHASE` value (`STOP: bad phase name`, exit 2), so a name that slipped through never
+reaches a path or a commit message.
 
 ```bash
-P="$WORK_PATH/.a1/phases/<phase_name>"; mkdir -p "$P"
+PHASE='<phase_name>'
+case "$PHASE" in ""|[!A-Za-z0-9_]*|*[!A-Za-z0-9._-]*) echo "STOP: bad phase name"; exit 2;; esac
+P="$WORK_PATH/.a1/phases/$PHASE"; mkdir -p "$P"
 if [ ! -e "$P/observations.jsonl" ]; then : > "$P/observations.jsonl"; fi
 if [ ! -e "$P/GOAL.md" ]; then
   cat > "$P/GOAL.md" <<'A1_GOAL_EOF'
@@ -39,7 +45,7 @@ fi
 if ! grep -qE '^##[[:space:]]+Decisions[[:space:]]*$' "$P/GOAL.md"; then printf '\n## Decisions\n' >> "$P/GOAL.md"; fi
 A="$(git -C "$WORK_PATH" rev-parse --path-format=absolute --git-common-dir)/info/attributes"; mkdir -p "${A%/*}"
 for L in '.a1/phases/*/observations.jsonl merge=union' '.a1/phases/*/GOAL.md merge=union'; do grep -qxF "$L" "$A" 2>/dev/null || printf '%s\n' "$L" >> "$A"; done
-if [ -n "$(git -C "$WORK_PATH" status --porcelain -- "$P/observations.jsonl" "$P/GOAL.md")" ]; then git -C "$WORK_PATH" add -- "$P/observations.jsonl" "$P/GOAL.md" && git -C "$WORK_PATH" commit -q -m "chore(<phase_name>): event stores" -- "$P/observations.jsonl" "$P/GOAL.md"; RC=$?; if [ "$RC" -ne 0 ]; then echo "STOP: event-store commit exit=$RC"; exit "$RC"; fi; fi
+if [ -n "$(git -C "$WORK_PATH" status --porcelain -- "$P/observations.jsonl" "$P/GOAL.md")" ]; then git -C "$WORK_PATH" add -- "$P/observations.jsonl" "$P/GOAL.md" && git -C "$WORK_PATH" commit -q -m "chore($PHASE): event stores" -- "$P/observations.jsonl" "$P/GOAL.md"; RC=$?; if [ "$RC" -ne 0 ]; then echo "STOP: event-store commit exit=$RC"; exit "$RC"; fi; fi
 echo "event stores ready: $P"
 ```
 
@@ -47,7 +53,7 @@ On `STOP: event-store commit exit=<n>`: fix the cause (hook output above, a held
 
 Multi-lane: run it once in the phase worktree before the lane worktrees branch off; the lanes inherit the tracked stores, and the union
 attribute lets the lane merges keep both sides' appended lines. The two `merge=union` lines stay in `<git-common-dir>/info/attributes`
-(local, never committed, repo-wide for these two append-only paths). On `GOAL.md` a union merge also keeps both sides of a non-append
+(local, never committed, repo-wide for these two append-only paths: it applies to every worktree and every branch merge of this repository, so a merge of a foreign branch also unions the `GOAL.md` Decisions rows and `observations.jsonl` lines of that branch instead of conflicting). On `GOAL.md` a union merge also keeps both sides of a non-append
 edit (for example a changed goal heading). To remove them, delete the two lines from that file:
 `{ grep -vxF -e '.a1/phases/*/observations.jsonl merge=union' -e '.a1/phases/*/GOAL.md merge=union' "$A" || :; } > "$A.new" && mv "$A.new" "$A"` (with `$A` as set in the block; it drops exactly those two lines and no other).
 

@@ -65,11 +65,16 @@ node <repo>/_shared/a1-tools.cjs spec update-status \
 missing (owner decision 2026-11-20, "missing source = stop"). This block creates what is missing, registers the union merge for both
 paths and commits what it created or changed (decided by the git state of the two files, so a re-run after a failed commit commits the
 staged files). `<dir>` is the feature worktree, the same `<dir>` the wave gates pass as `--project`. The stores ride in the feature PR.
-`<spec title>` is substituted as one line inside the quoted heredoc, so quotes, `$(...)` and backticks stay literal.
+`<spec title>` is substituted as one line inside the quoted heredoc, so quotes, `$(...)` and backticks stay literal. The orchestrator
+strips all newlines from the title first (a title line equal to `A1_GOAL_EOF` would close the heredoc early) and checks `<spec-id>`
+against `^[A-Za-z0-9_][A-Za-z0-9._-]*$` before running the block; a spec id that fails the check is a STOP. The block repeats the check
+on the single-quoted `SPEC_ID` value (`STOP: bad spec id`, exit 2).
 
 ```bash
 WORK_PATH="<dir>"
-P="$WORK_PATH/.a1/phases/<spec-id>"; mkdir -p "$P"
+SPEC_ID='<spec-id>'
+case "$SPEC_ID" in ""|[!A-Za-z0-9_]*|*[!A-Za-z0-9._-]*) echo "STOP: bad spec id"; exit 2;; esac
+P="$WORK_PATH/.a1/phases/$SPEC_ID"; mkdir -p "$P"
 if [ ! -e "$P/observations.jsonl" ]; then : > "$P/observations.jsonl"; fi
 if [ ! -e "$P/GOAL.md" ]; then
   cat > "$P/GOAL.md" <<'A1_GOAL_EOF'
@@ -81,13 +86,13 @@ fi
 if ! grep -qE '^##[[:space:]]+Decisions[[:space:]]*$' "$P/GOAL.md"; then printf '\n## Decisions\n' >> "$P/GOAL.md"; fi
 A="$(git -C "$WORK_PATH" rev-parse --path-format=absolute --git-common-dir)/info/attributes"; mkdir -p "${A%/*}"
 for L in '.a1/phases/*/observations.jsonl merge=union' '.a1/phases/*/GOAL.md merge=union'; do grep -qxF "$L" "$A" 2>/dev/null || printf '%s\n' "$L" >> "$A"; done
-if [ -n "$(git -C "$WORK_PATH" status --porcelain -- "$P/observations.jsonl" "$P/GOAL.md")" ]; then git -C "$WORK_PATH" add -- "$P/observations.jsonl" "$P/GOAL.md" && git -C "$WORK_PATH" commit -q -m "chore(<spec-id>): event stores" -- "$P/observations.jsonl" "$P/GOAL.md"; RC=$?; if [ "$RC" -ne 0 ]; then echo "STOP: event-store commit exit=$RC"; exit "$RC"; fi; fi
+if [ -n "$(git -C "$WORK_PATH" status --porcelain -- "$P/observations.jsonl" "$P/GOAL.md")" ]; then git -C "$WORK_PATH" add -- "$P/observations.jsonl" "$P/GOAL.md" && git -C "$WORK_PATH" commit -q -m "chore($SPEC_ID): event stores" -- "$P/observations.jsonl" "$P/GOAL.md"; RC=$?; if [ "$RC" -ne 0 ]; then echo "STOP: event-store commit exit=$RC"; exit "$RC"; fi; fi
 echo "event stores ready: $P"
 ```
 
 On `STOP: event-store commit exit=<n>`: fix the cause (hook output above, a held `.git/index.lock`), then run the block again.
 The two `merge=union` lines stay in `<git-common-dir>/info/attributes` (local, never committed, repo-wide for these two append-only
-paths); to remove them delete those two lines from that file.
+paths: it applies to every worktree and branch merge of this repository, so a merge of a foreign branch also unions its `GOAL.md` Decisions rows); to remove them delete those two lines from that file.
 
 ## Step 2 — Read the wave-plan and pick the next wave
 
