@@ -24,6 +24,9 @@ const CHECKPOINT_MARKERS = Object.freeze([
   'Continue to next wave or stop',
   'Once the user confirms',
 ]);
+// Reworded prompts a marker list cannot enumerate: "? [y", "? [yes" and a "proceed ... ?" question.
+const CHECKPOINT_PATTERNS = Object.freeze([/\?\s*\[(y|yes)/i, /\bproceed\b.*\?/i]);
+const STOP_BLOCK_MAX_LINES = 25;
 const STOP_OPEN = '<!-- a1:stop -->';
 const STOP_CLOSE = '<!-- /a1:stop -->';
 
@@ -80,6 +83,17 @@ function checkEarlyReview(root, isSkillsTree) {
     flagMarkers(lines, EARLY_REVIEW_MARKERS, add));
 }
 
+// A stop block is the one allowed prompt; a long one hides a whole workflow inside it.
+function flagLongStopBlocks(lines, add) {
+  let openAt = -1;
+  lines.forEach((text, i) => {
+    if (text.includes(STOP_CLOSE)) {
+      if (openAt >= 0 && i - openAt - 1 > STOP_BLOCK_MAX_LINES) add(openAt + 1, `stop block has ${i - openAt - 1} lines (limit ${STOP_BLOCK_MAX_LINES})`);
+      openAt = -1;
+    } else if (text.includes(STOP_OPEN) && openAt < 0) openAt = i;
+  });
+}
+
 /**
  * @returns {{checked: number, findings: Array<{file: string, rule: string, line: number, reason: string}>}}
  */
@@ -93,6 +107,11 @@ function checkWaveCheckpoint(root, isSkillsTree) {
       inside[i] = openAt >= 0;
     });
     flagMarkers(lines, CHECKPOINT_MARKERS, add, (i) => inside[i]);
+    lines.forEach((text, i) => {
+      const re = !inside[i] && !CHECKPOINT_MARKERS.some((m) => text.includes(m)) && CHECKPOINT_PATTERNS.find((p) => p.test(text)); // a marker hit already counts this line
+      if (re) add(i + 1, `prompt pattern ${re} is not allowed outside an <!-- a1:stop --> block`);
+    });
+    flagLongStopBlocks(lines, add);
     if (openAt >= 0) add(openAt + 1, 'unclosed <!-- a1:stop --> block');
   });
 }

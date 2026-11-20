@@ -30,3 +30,43 @@ caseFC3() {
   else bad "FC3 counters ($keys)"; fi
   rm -rf "${work:?}"
 }
+
+# FC4-FC6 (review fix round 2, m8): generic prompt patterns for the two wave files, and a size limit for stop blocks.
+fcPlant() { # <relative file> <text to append>: echoes "<rc>|<stderr>" of workflow lint on a real copy with the text appended
+  local work err rc
+  work="$(copySkills)"
+  printf '%s' "$2" >> "$work/$1"
+  err="$(node "$TOOLS" workflow lint --root "$work" 2>&1 >/dev/null)"; rc=$?
+  printf '%s|%s' "$rc" "$err"
+  rm -rf "${work:?}"
+}
+caseFC4() {
+  local r f bad_f=""
+  for f in skills/a1-execute/workflows/02-execute.md skills/a1-new-feature/workflows/05-implement.md; do
+    r="$(fcPlant "$f" $'\nReady for wave 3? [yes / no]\n')"
+    [[ "$r" == 1\|*wave-checkpoint* ]] || bad_f="$bad_f $f(${r:0:80})"
+  done
+  if [[ -z "$bad_f" ]]; then ok "FC4 a reworded '? [yes / no]' prompt outside a stop block is flagged in both wave files"
+  else bad "FC4 generic [y pattern missed:$bad_f"; fi
+}
+caseFC5() {
+  local r f bad_f=""
+  for f in skills/a1-execute/workflows/02-execute.md skills/a1-new-feature/workflows/05-implement.md; do
+    r="$(fcPlant "$f" $'\nShall we proceed with wave 3?\n')"
+    [[ "$r" == 1\|*wave-checkpoint* ]] || bad_f="$bad_f $f(${r:0:80})"
+  done
+  if [[ -z "$bad_f" ]]; then ok "FC5 a 'proceed ... ?' question outside a stop block is flagged in both wave files"
+  else bad "FC5 generic proceed pattern missed:$bad_f"; fi
+}
+caseFC6() {
+  local r f bad_f="" body i
+  body=$'\n<!-- a1:stop -->\n'
+  for i in $(seq 1 26); do body="${body}line $i of a long stop block"$'\n'; done
+  body="${body}<!-- /a1:stop -->"$'\n'
+  for f in skills/a1-execute/workflows/02-execute.md skills/a1-new-feature/workflows/05-implement.md; do
+    r="$(fcPlant "$f" "$body")"
+    [[ "$r" == 1\|*wave-checkpoint*25* ]] || bad_f="$bad_f $f(${r:0:100})"
+  done
+  if [[ -z "$bad_f" ]]; then ok "FC6 a stop block of 26 lines is flagged (limit 25) in both wave files"
+  else bad "FC6 long stop block not flagged:$bad_f"; fi
+}
