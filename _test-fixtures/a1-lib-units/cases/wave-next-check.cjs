@@ -138,4 +138,35 @@ expect('NC27 an ISO row after --since: stop:scope_change', plant({ goal: `${GOAL
   expect('NC31b the same file passed with --plan: stop:agent_unnamed', root, 1, stopOf('agent_unnamed'), ['--plan', path.join(root, '.a1', 'phases', SLUG, 'PLAN.md')]);
 }
 
+// ---- review fix round 1 ----
+const REAL = path.join(__dirname, '..', 'real');
+{
+  // NC32 (M2): headings and agent lines as they stand in real vault wave plans (copied, stripped to the needed lines).
+  for (const [name, file] of [['ai-harness/008 inline "**Suggested agent(s):** <name>" under a heading without colon', 'wave-plan-inline-agent-ai-harness-008.md'], ['my-smart-home/004 "### Suggested agent(s):" with colon and bold bullets', 'wave-plan-colon-heading-my-smart-home-004.md']]) {
+    expect(`NC32 real wave plan ${name}: continue`, plant({}), 1, ok, ['--plan', path.join(REAL, file)]);
+  }
+  const bare = path.join(WORK, 'colon-empty.md');
+  fs.writeFileSync(bare, '# Wave plan\n\n## Wave 1: a\n\n### Suggested agent(s):\n\n- **a1-walter-web-developer**\n\n## Wave 2: b\n\n### Suggested agent(s):\n\nTBD later\n');
+  expect('NC33 a colon heading without any name line or inline name: stop:agent_unnamed', plant({}), 1, stopOf('agent_unnamed'), ['--plan', bare]);
+  const plain = path.join(WORK, 'plain-bullet.md');
+  fs.writeFileSync(plain, '# Wave plan\n\n## Wave 1: a\n\n## Wave 2: b\n\n### Suggested agent(s)\n\n- a1-walter-web-developer (Sonnet) for 2a\n');
+  expect('NC34 a non-bold "- <agent-id>" bullet counts: continue', plant({}), 1, ok, ['--plan', plain]);
+  const empty = path.join(WORK, 'inline-empty.md');
+  fs.writeFileSync(empty, '# Wave plan\n\n## Wave 1: a\n\n## Wave 2: b\n\n**Suggested agent(s):**\n');
+  expect('NC35 an inline "**Suggested agent(s):**" with nothing after it: stop:agent_unnamed', plant({}), 1, stopOf('agent_unnamed'), ['--plan', empty]);
+}
+// NC36 (m4): the wave field of a stop-type observation must be an integer or absent.
+expect('NC36a "wave": null on a deviation: stop:deviation', plant({ obs: '{"type":"deviation","wave":null}\n' }), 2, stopOf('deviation'));
+expect('NC36b "wave": "x" on a blocker: stop:deviation', plant({ obs: '{"type":"blocker","wave":"x"}\n' }), 2, stopOf('deviation'));
+expect('NC36c "wave": 1.5 on a deviation: stop:deviation', plant({ obs: '{"type":"deviation","wave":1.5}\n' }), 2, stopOf('deviation'));
+expect('NC36d "wave": "2" (digits as a string) at wave 2: stop:deviation (as before)', plant({ obs: '{"type":"deviation","wave":"2"}\n' }), 2, stopOf('deviation'));
+expect('NC36e "wave": "1" at wave 2: continue (as before)', plant({ obs: '{"type":"deviation","wave":"1"}\n' }), 2, ok);
+expect('NC36f "wave": null on a gap observation: continue', plant({ obs: '{"type":"gap","wave":null}\n' }), 2, ok);
+// NC37 (m5): a non-blank line under ## Decisions that is not a "- <token>" bullet stops.
+expect('NC37a a plain-text decision line: stop:scope_change', plant({ goal: `${GOAL_OK}2026-11-20T11:00:00Z chose x\n` }), 1, stopOf('scope_change'));
+expect('NC37b a "* " bullet: stop:scope_change', plant({ goal: `${GOAL_OK}* 2026-11-20T11:00:00Z chose x\n` }), 1, stopOf('scope_change'));
+expect('NC37c a numbered row: stop:scope_change', plant({ goal: `${GOAL_OK}1. 2026-11-20T11:00:00Z chose x\n` }), 1, stopOf('scope_change'));
+expect('NC37d a "-" row without a space: stop:scope_change', plant({ goal: `${GOAL_OK}-2026-11-20T11:00:00Z chose x\n` }), 1, stopOf('scope_change'));
+expect('NC37e blank lines between old rows stay fine: continue', plant({ goal: `${GOAL_OK}\n- 2026-11-19 — chose x\n\n- 2026-11-20T08:00:00Z — chose y\n` }), 1, ok);
+
 done();

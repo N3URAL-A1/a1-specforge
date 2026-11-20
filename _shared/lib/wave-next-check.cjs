@@ -37,6 +37,13 @@ function gateRed({ root, slug, since }) {
   return red.length ? stop('gate_red', `last verdict red since ${since}: ${red.join(', ')}`) : null;
 }
 
+/** The wave of an observation: undefined means the whole run (null result), digits-only strings count, anything else is invalid. */
+function obsWave(raw) {
+  if (raw === undefined) return null;
+  const n = typeof raw === 'string' && /^\d+$/.test(raw) ? Number(raw) : raw;
+  return Number.isInteger(n) ? n : 'invalid';
+}
+
 function deviation({ root, slug, wave }) {
   const text = readText(path.join(root, '.a1', 'phases', slug, 'observations.jsonl'));
   if (text === null) return stop('deviation', 'source_missing: observations.jsonl');
@@ -45,21 +52,27 @@ function deviation({ root, slug, wave }) {
     let obs;
     try { obs = JSON.parse(lines[i]); } catch (_e) { return stop('deviation', `observations.jsonl line ${i + 1} is not JSON`); }
     if (obs === null || typeof obs !== 'object') return stop('deviation', `observations.jsonl line ${i + 1} is not an object`);
-    const sameWave = obs.wave === undefined || Number(obs.wave) === wave;
-    if (STOP_TYPES.includes(obs.type) && sameWave) return stop('deviation', `${obs.type} observation at line ${i + 1}`);
+    if (!STOP_TYPES.includes(obs.type)) continue;
+    const w = obsWave(obs.wave);
+    if (w === 'invalid') return stop('deviation', `${obs.type} observation at line ${i + 1} has a "wave" that is not an integer`);
+    if (w === null || w === wave) return stop('deviation', `${obs.type} observation at line ${i + 1}`);
   }
   return null;
 }
 
-/** Rows `- <token> ...` under `## Decisions` of GOAL.md. */
+/**
+ * Rows under `## Decisions` of GOAL.md: the first token of each `- <token> ...` bullet; any other non-blank line is
+ * returned as `{ bad: <line> }` (a decision written in another shape must not pass unseen).
+ */
 function decisionRows(text) {
   const lines = text.split('\n');
   const start = lines.findIndex((l) => /^##\s+Decisions\s*$/.test(l));
   if (start === -1) return null;
   const rows = [];
   for (let i = start + 1; i < lines.length && !/^##\s/.test(lines[i]); i++) {
+    if (lines[i].trim() === '') continue;
     const m = /^-\s+(\S+)/.exec(lines[i]);
-    if (m) rows.push(m[1]);
+    rows.push(m ? m[1] : { bad: lines[i] });
   }
   return rows;
 }
@@ -72,6 +85,7 @@ function scopeChange({ root, slug, since }) {
   const sinceMs = Date.parse(since);
   const sinceDay = new Date(sinceMs).toISOString().slice(0, 10);
   for (const token of rows) {
+    if (typeof token !== 'string') return stop('scope_change', `decision line is not a "- <date> ..." bullet: ${JSON.stringify(token.bad.slice(0, 60))}`);
     if (ISO_RE.test(token)) {
       if (Date.parse(token) >= sinceMs) return stop('scope_change', `decision ${token} is at or after ${since}`);
     } else if (DATE_RE.test(token)) {
@@ -91,6 +105,30 @@ function laneAgent(text, next) {
   return lane.agent ? null : stop('agent_unnamed', `lane ${lane.id} (wave ${next}) names no agent`);
 }
 
+const AGENT_NAME_RE = /^[A-Za-z][\w.:@/-]*/;
+const AGENT_HEADING_RE = /^#{2,4}[ \t]+\**Suggested[ \t]+agent\(s\)\**[ \t]*:?\**[ \t]*$/i;
+const AGENT_INLINE_RE = /^[ \t]*[-*]?[ \t]*\**Suggested[ \t]+agent\(s\)\**[ \t]*:\**[ \t]*(.*)$/i;
+
+/**
+ * True when the wave body names an agent: `### Suggested agent(s)` (optional colon) followed by a `- <name>` or
+ * `- **<name>**` bullet before the next heading, or an inline `Suggested agent(s): <name>` (also `**Suggested agent(s):** <name>`).
+ * These are the shapes of the real vault wave plans; checklist check 3 accepts the same tokens anywhere in the wave.
+ */
+function namesAgent(body) {
+  const lines = body.split('\n');
+  let inSection = false;
+  for (const line of lines) {
+    if (/^#{1,6}\s/.test(line)) inSection = AGENT_HEADING_RE.test(line);
+    const inline = AGENT_INLINE_RE.exec(line);
+    if (inline && AGENT_NAME_RE.test(inline[1].replace(/^\**\s*/, ''))) return true;
+    if (inSection) {
+      const b = /^\s*[-*]\s+\**\s*(.*)$/.exec(line);
+      if (b && AGENT_NAME_RE.test(b[1])) return true;
+    }
+  }
+  return false;
+}
+
 function agentUnnamed({ root, slug, wave, plan }) {
   const file = plan || path.join(root, '.a1', 'phases', slug, 'PLAN.md');
   const text = readText(file);
@@ -102,8 +140,7 @@ function agentUnnamed({ root, slug, wave, plan }) {
   if (/^lanes:\s*none\b/im.test(fm)) return null;
   if (/^lanes:/m.test(fm)) return laneAgent(text, next);
   if (!plan) return null;
-  const ok = /^#{2,4}\s+Suggested agent\(s\)\s*$[\s\S]*?^\s*-\s+\*\*[^*\s][^*]*\*\*/m.test(section.body);
-  return ok ? null : stop('agent_unnamed', `wave ${next} has no "### Suggested agent(s)" with a "- **<name>**" line`);
+  return namesAgent(section.body) ? null : stop('agent_unnamed', `wave ${next} names no agent under "Suggested agent(s)" (a "- <name>" line or "Suggested agent(s): <name>")`);
 }
 
 /**
