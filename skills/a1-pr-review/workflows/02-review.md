@@ -172,16 +172,24 @@ Exit 1 is a MAJOR finding in `findings.json` until the block is fixed.
 Runs after a 2.3a exit 0 (`pass`) **and** after a 2.1b exit 0 (the same-head skip path). Never after a recorded `fail`. Only when the caller handed over a `caller_spec_id` that holds a `code_scope` reservation does it advance `review` and then `verify`; each target is skipped when the current stage is at or past it, so a fix round or a restart never tries a backward move.
 
 ```bash
-PHASE='<caller_spec_id>'
+IFS= read -r PHASE <<'A1_PHASE_EOF'
+<caller_spec_id>
+A1_PHASE_EOF
 case "$PHASE" in ""|none|"<"*) echo "SKIP: lifecycle stages, no caller spec id"; exit 0 ;; esac
 SCOPES="$(cd "<repo_root>" && node <repo>/_shared/a1-tools.cjs code-scope list)"; RC=$?
 if [ "$RC" -ne 0 ]; then echo "STOP: code-scope list exit=$RC"; exit "$RC"; fi
+case "$PHASE" in [!A-Za-z0-9_]*|*[!A-Za-z0-9._-]*) echo "STOP: bad spec id"; exit 2 ;; esac
 NEED="$(node -e 'const d=JSON.parse(process.argv[1]);const r=(d.reservations||[]).find((x)=>x.by===process.argv[2]);const O=["started","complete","review","verify","merge","origin-cleanup","done"];const i=r?O.indexOf(r.stage):-1;console.log(i<0?"none":(["review","verify"].filter((t)=>O.indexOf(t)>i).join(" ")||"none"))' "$SCOPES" "$PHASE")"; RC=$?
 if [ "$RC" -ne 0 ]; then echo "STOP: stage lookup exit=$RC"; exit "$RC"; fi
 for S in $NEED; do [ "$S" = none ] && break; (cd "<repo_root>" && node <repo>/_shared/a1-tools.cjs code-scope stage --by "$PHASE" --set "$S"); RC=$?; if [ "$RC" -ne 0 ]; then echo "STOP: code-scope stage $S exit=$RC"; exit "$RC"; fi; done
 ```
 
 Without a reservation (a1-execute phase, a1-fix, a standalone review) the block prints SKIP or runs no stage call. When the block ran a stage call and `.a1/reservations.json` is tracked and differs from HEAD, commit it on the primary checkout's `main` at once and push it with this session step (`_shared/push-cadence.md` P3, "committed immediately, so the tree is never dirty"); `feature close`'s `reservations_commit_pending` covers only its own later changes.
+
+The block reads `caller_spec_id` through a quoted heredoc (`A1_PHASE_EOF`), as `02-execute.md` does for the phase name: single quotes
+would let a value holding a quote (`x'$(...)'`) run at the assignment. The orchestrator strips all newlines from the id and checks it
+against `^[A-Za-z0-9_][A-Za-z0-9._-]*$` before it substitutes it; the block repeats that check (`none` and an unreplaced `<...>` are a
+SKIP, decided first; anything else that fails the check is `STOP: bad spec id`, exit 2).
 
 ### 2.4 Persist findings
 

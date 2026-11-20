@@ -229,3 +229,23 @@ caseFL20c() {
   if [[ $a -eq 0 && $b -eq 0 ]]; then ok "FL20c both blocks' prose mandates the name regex and newline stripping"
   else bad "FL20c prose mandate missing (02-execute=$a 05-implement=$b)"; fi
 }
+
+# ---------- review fix round 4 (PR #108): R3-m1 / SEC-12 ----------
+# FL21: the 02-review 2.3d block reads caller_spec_id through a QUOTED heredoc and guards it with the name regex. `none` and an
+# unreplaced <...> are a SKIP decided before the guard; a value like x'$(touch PWNED)' is a STOP (exit 2) and runs nothing.
+caseFL21() {
+  local bad_ok=1 v rc pw; flPlant
+  mkdir -p "$FL_T/tools/_shared"; printf 'process.stdout.write(JSON.stringify({reservations:[]}));\n' > "$FL_T/tools/_shared/a1-tools.cjs"
+  for v in '$(touch PWNED)' 'a b' '../x' "x'\$(touch PWNED)'" "x'\`touch PWNED\`'" 'a;b' '-lead'; do
+    flBlock skills/a1-pr-review/workflows/02-review.md '### 2.3d' '<caller_spec_id>' "$v" '<repo_root>' "$FL_REPO" '<repo>' "$FL_T/tools" > "$FL_T/b.sh"
+    flExec "$FL_T/b.sh" > "$FL_T/out" 2>&1; rc=$?
+    pw="$(find "$FL_T" "$FL_CWD" -name PWNED | head -n 1)"
+    if [[ $rc -ne 2 || -n "$pw" ]] || ! grep -q '^STOP' "$FL_T/out"; then bad_ok=0; bad "FL21 2.3d accepted spec id '$v' (rc=$rc pw='$pw' out=$(cat "$FL_T/out"))"; fi
+  done
+  for v in none '<caller_spec_id>'; do
+    flBlock skills/a1-pr-review/workflows/02-review.md '### 2.3d' '<caller_spec_id>' "$v" '<repo_root>' "$FL_REPO" '<repo>' "$FL_T/tools" > "$FL_T/b.sh"
+    flExec "$FL_T/b.sh" > "$FL_T/out" 2>&1; rc=$?
+    if [[ $rc -ne 0 ]] || ! grep -q '^SKIP' "$FL_T/out"; then bad_ok=0; bad "FL21 2.3d did not SKIP for '$v' (rc=$rc out=$(cat "$FL_T/out"))"; fi
+  done
+  if [[ $bad_ok -eq 1 ]]; then ok "FL21 02-review 2.3d: seven invalid spec ids STOP (exit 2, nothing run); none and an unreplaced placeholder SKIP"; fi
+}
