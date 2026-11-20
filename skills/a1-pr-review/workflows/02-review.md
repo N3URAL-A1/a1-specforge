@@ -32,7 +32,7 @@ If `main..HEAD` is empty: BLOCKER, no commits to review. Abort.
 Reinhard reviews one head sha once (spec 027 FR-019). Ask whether a `pass` is already recorded for the current head:
 
 ```bash
-HEAD_SHA="$(git -C "<worktree_path>" rev-parse HEAD)"; RC=$?
+HEAD_SHA="$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE git -C "<worktree_path>" rev-parse HEAD)"; RC=$?
 if [ "$RC" -ne 0 ]; then echo "STOP: rev-parse exit=$RC"; exit "$RC"; fi
 echo "head_sha=$HEAD_SHA"
 (cd "<worktree_path>" && node <repo>/_shared/a1-tools.cjs pr review-evidence --head "$HEAD_SHA" --phase pr-<n>); EV=$?
@@ -40,12 +40,14 @@ echo "review-evidence exit=$EV"
 FH=""
 if [ -d "<worktree_path>/.a1-review" ] && [ ! -L "<worktree_path>/.a1-review" ] \
    && [ -f "<worktree_path>/.a1-review/findings.json" ] && [ ! -L "<worktree_path>/.a1-review/findings.json" ] \
-   && git -C "<worktree_path>" ls-files -o -- .a1-review/findings.json | grep -qx '.a1-review/findings.json' \
-   && ! git -C "<worktree_path>" ls-files --error-unmatch -- ':(icase).a1-review/findings.json' >/dev/null 2>&1; then
+   && env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE git -C "<worktree_path>" ls-files -o -- .a1-review/findings.json | grep -qx '.a1-review/findings.json' \
+   && ! env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE git -C "<worktree_path>" ls-files --error-unmatch -- ':(icase).a1-review/findings.json' >/dev/null 2>&1; then
   FH="$(node -e 'try{process.stdout.write(String(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).head_sha||""))}catch(e){}' "<worktree_path>/.a1-review/findings.json")"
 fi
 if [ "$FH" = "$HEAD_SHA" ]; then echo "findings_head=match"; else echo "findings_head=stale-or-missing"; fi
 ```
+
+The git calls of the block run with `env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE`, so an inherited repo-location variable cannot point them at another repository or index (the gate-log reader drops the same variables).
 
 Note the printed `head_sha` value as `<head_sha>` for 2.3a and 2.4. Exit 0 **and** `findings_head=match` (the `findings.json` exists, `.a1-review` and the file are real (no symlink, no submodule), `git ls-files -o` lists the file as untracked, no case-insensitive spelling of it is tracked, and it carries this head's `head_sha`, written by 2.4; a PR branch can commit a findings file, a symlink or a submodule at `.a1-review`, so none of those ever counts): skip 2.2 and 2.3a for this head, reuse the findings, and run 2.3d. Exit 0 with `findings_head=stale-or-missing` (a restart between 2.3a and 2.4, or a reset to an earlier reviewed head): the saved findings belong to another head, so go on to 2.2 and review this head again. 2.2b still runs; Samuel's spawn is not skipped by this. Exit 1: go on to 2.2 as today. Exit 2: STOP (usage).
 
@@ -176,20 +178,20 @@ IFS= read -r PHASE <<'A1_PHASE_EOF'
 <caller_spec_id>
 A1_PHASE_EOF
 case "$PHASE" in ""|none|"<"*) echo "SKIP: lifecycle stages, no caller spec id"; exit 0 ;; esac
+case "$PHASE" in [!A-Za-z0-9_]*|*[!A-Za-z0-9._-]*) echo "STOP: bad spec id"; exit 2 ;; esac
 SCOPES="$(cd "<repo_root>" && node <repo>/_shared/a1-tools.cjs code-scope list)"; RC=$?
 if [ "$RC" -ne 0 ]; then echo "STOP: code-scope list exit=$RC"; exit "$RC"; fi
-case "$PHASE" in [!A-Za-z0-9_]*|*[!A-Za-z0-9._-]*) echo "STOP: bad spec id"; exit 2 ;; esac
 NEED="$(node -e 'const d=JSON.parse(process.argv[1]);const r=(d.reservations||[]).find((x)=>x.by===process.argv[2]);const O=["started","complete","review","verify","merge","origin-cleanup","done"];const i=r?O.indexOf(r.stage):-1;console.log(i<0?"none":(["review","verify"].filter((t)=>O.indexOf(t)>i).join(" ")||"none"))' "$SCOPES" "$PHASE")"; RC=$?
 if [ "$RC" -ne 0 ]; then echo "STOP: stage lookup exit=$RC"; exit "$RC"; fi
 for S in $NEED; do [ "$S" = none ] && break; (cd "<repo_root>" && node <repo>/_shared/a1-tools.cjs code-scope stage --by "$PHASE" --set "$S"); RC=$?; if [ "$RC" -ne 0 ]; then echo "STOP: code-scope stage $S exit=$RC"; exit "$RC"; fi; done
 ```
 
-Without a reservation (a1-execute phase, a1-fix, a standalone review) the block prints SKIP or runs no stage call. When the block ran a stage call and `.a1/reservations.json` is tracked and differs from HEAD, commit it on the primary checkout's `main` at once and push it with this session step (`_shared/push-cadence.md` P3, "committed immediately, so the tree is never dirty"); `feature close`'s `reservations_commit_pending` covers only its own later changes.
-
 The block reads `caller_spec_id` through a quoted heredoc (`A1_PHASE_EOF`), as `02-execute.md` does for the phase name: single quotes
 would let a value holding a quote (`x'$(...)'`) run at the assignment. The orchestrator strips all newlines from the id and checks it
 against `^[A-Za-z0-9_][A-Za-z0-9._-]*$` before it substitutes it; the block repeats that check (`none` and an unreplaced `<...>` are a
 SKIP, decided first; anything else that fails the check is `STOP: bad spec id`, exit 2).
+
+Without a reservation (a1-execute phase, a1-fix, a standalone review) the block prints SKIP or runs no stage call. When the block ran a stage call and `.a1/reservations.json` is tracked and differs from HEAD, commit it on the primary checkout's `main` at once and push it with this session step (`_shared/push-cadence.md` P3, "committed immediately, so the tree is never dirty"); `feature close`'s `reservations_commit_pending` covers only its own later changes.
 
 ### 2.4 Persist findings
 

@@ -33,8 +33,8 @@ function repoWith(files) {
   git(d, 'commit', '-q', '-m', 'base');
   return d;
 }
-function cli(cwd, args) {
-  const r = spawnSync(process.execPath, [TOOLS, ...args], { cwd, env: ENV, encoding: 'utf8', timeout: 20000 });
+function cli(cwd, args, extraEnv) {
+  const r = spawnSync(process.execPath, [TOOLS, ...args], { cwd, env: { ...ENV, ...(extraEnv || {}) }, encoding: 'utf8', timeout: 20000 });
   return { rc: r.status, out: (r.stdout || '').trim(), err: r.stderr || '' };
 }
 const wasReused = (r) => r.err.includes('reused: ') && /"reused":true/.test(r.out);
@@ -136,6 +136,21 @@ const nc = (repo) => cli(repo, ['wave', 'next-check', 'ph', '1', '--since', SINC
   check('TL7 baseline: green untracked log continues', a.rc === 0 && a.out === 'continue', `rc=${a.rc} ${a.out}${a.err}`);
   const b = nc(waveRepo(true));
   check('TL7 a tracked gate log stops (stop:gate_red)', b.rc === 1 && b.out === 'stop:gate_red', `rc=${b.rc} ${b.out}${b.err}`);
+}
+
+// ---- review fix round 4 (R3-m2 / SEC-10): the git calls of the log check ignore the caller's GIT_* repo location ----
+{
+  const legit = forged(false);
+  const a = cli(legit, ['lane-split', 'check', '--plan', 'PLAN.md', '--phase', 'rp'], { GIT_DIR: path.join(legit, '.git') });
+  check('TL8a an absolute GIT_DIR without GIT_WORK_TREE: a legit untracked log is still reused', wasReused(a), `rc=${a.rc} ${a.err}`);
+  const tracked = forged(true);
+  const emptyIdx = path.join(WORK, 'empty-index');
+  fs.rmSync(emptyIdx, { force: true });
+  const b = cli(tracked, ['lane-split', 'check', '--plan', 'PLAN.md', '--phase', 'rp'], { GIT_INDEX_FILE: emptyIdx });
+  check('TL8b GIT_INDEX_FILE at an empty index: a tracked log is still refused (the gate runs, exit 1)', !wasReused(b) && b.rc === 1, `rc=${b.rc} ${b.err}${b.out.slice(0, 200)}`);
+  const other = repoWith({ 'x.txt': 'x\n' });
+  const c = cli(tracked, ['lane-split', 'check', '--plan', 'PLAN.md', '--phase', 'rp'], { GIT_DIR: path.join(other, '.git'), GIT_WORK_TREE: other });
+  check('TL8c GIT_DIR / GIT_WORK_TREE at another repository: a tracked log is still refused', !wasReused(c) && c.rc === 1, `rc=${c.rc} ${c.err}${c.out.slice(0, 200)}`);
 }
 
 eq('TL0 the case file ran to the end', true, true);

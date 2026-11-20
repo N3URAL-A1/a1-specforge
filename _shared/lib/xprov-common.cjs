@@ -265,14 +265,7 @@ const SNAPSHOT_GIT_PINS = Object.freeze([
 /** Variables that can redirect git to other objects, refs, config, attributes, helper programs or a hidden diff (one list:
  * the primary-checkout reads of xprov-allowlist.cjs and the snapshot calls below). pinnedGitEnv goes further and drops
  * EVERY GIT_* variable of the caller. */
-const GIT_ENV_DROP = Object.freeze([
-  'GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_NAMESPACE', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES',
-  'GIT_REPLACE_REF_BASE', 'GIT_SHALLOW_FILE', 'GIT_CONFIG', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM',
-  'GIT_CONFIG_COUNT', 'GIT_CONFIG_PARAMETERS', 'GIT_DIFF_OPTS', 'GIT_EXTERNAL_DIFF',
-  'GIT_ATTR_SOURCE', 'GIT_TEMPLATE_DIR', 'GIT_EXEC_PATH', 'GIT_GRAFT_FILE', 'GIT_NO_REPLACE_OBJECTS',
-  'GIT_DEFAULT_HASH', 'GIT_DEFAULT_REF_FORMAT', 'GIT_QUARANTINE_PATH', 'GIT_CEILING_DIRECTORIES', 'GIT_DISCOVERY_ACROSS_FILESYSTEM',
-  'GIT_LITERAL_PATHSPECS', 'GIT_GLOB_PATHSPECS', 'GIT_NOGLOB_PATHSPECS', 'GIT_ICASE_PATHSPECS'
-]);
+const { GIT_ENV_DROP } = require('./git-env.cjs'); // the list lives in one small module (also used by gate-log.cjs)
 const GIT_VAR_RE = /^GIT_/;
 
 /** `source` (default process.env) as a NEW hermetic env for a git call on a snapshot (spec 014 Wave 10, "Option A"): every

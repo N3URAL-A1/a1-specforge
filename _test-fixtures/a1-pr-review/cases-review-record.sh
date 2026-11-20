@@ -124,3 +124,16 @@ rvc_case RV8i "a tracked FINDINGS.json on a case-insensitive checkout does not m
 rvc_case RV8j "a submodule at .a1-review does not match" rvc_submodule
 if printf '%s' "$S21B" | grep -qF 'findings_head=match'; then pass_case "RV9 the 2.1b prose requires findings_head=match for the skip"
 else fail_case "RV9 2.1b prose does not name findings_head=match"; fi
+
+# RV10 (review fix round 4, R3-m2 / SEC-10): the 2.1b git calls ignore an inherited GIT_DIR / GIT_WORK_TREE / GIT_INDEX_FILE.
+# A GIT_DIR naming another repository would make rev-parse report that repository's head, so the matching findings.json of
+# THIS work tree would read as stale; with the variables unset the block still reports findings_head=match.
+mk_workdir RVD rv-env; mkdir -p "$RVD/repo/_shared" "$RVD/wt/.a1-review" "$RVD/other"
+echo 'process.exit(0);' > "$RVD/repo/_shared/a1-tools.cjs"
+git -C "$RVD/wt" init -q -b main 2>/dev/null; rvc_git "$RVD/wt" commit -q --allow-empty -m base
+git -C "$RVD/other" init -q -b main 2>/dev/null; rvc_git "$RVD/other" commit -q --allow-empty -m other-one; rvc_git "$RVD/other" commit -q --allow-empty -m other-two
+rvc_fj "$RVD/wt" > "$RVD/wt/.a1-review/findings.json"
+printf '%s' "$B21B" | sed -e "s#<worktree_path>#$RVD/wt#g" -e "s#<repo>#$RVD/repo#g" -e "s#<n>#7#g" > "$RVD/blk.sh"
+out="$(cd "$RVD" && GIT_DIR="$RVD/other/.git" GIT_WORK_TREE="$RVD/other" GIT_INDEX_FILE="$RVD/other/.git/index" bash "$RVD/blk.sh" 2>&1)"
+if printf '%s\n' "$out" | grep -qx 'findings_head=match'; then pass_case "RV10 inherited GIT_DIR / GIT_WORK_TREE / GIT_INDEX_FILE do not redirect the 2.1b git calls"
+else fail_case "RV10 env-redirect case: $out"; fi

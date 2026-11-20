@@ -27,6 +27,7 @@ const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { sleepSyncMs } = require('./locks.cjs');
 const { invokeMap } = require('./gate-ids.cjs');
+const { envWithoutGitRedirects } = require('./git-env.cjs');
 
 const ZERO_HASH = '0'.repeat(64);
 const UNSCOPED = '_unscoped';
@@ -303,9 +304,11 @@ function shapeProblem(rec) {
 
 const MAX_LOG_BYTES = 8 * 1024 * 1024;
 
-/** A git call in `cwd`; returns `{status, stdout}`. A spawn failure or timeout has no status (treated as a refusal by the callers). */
+/** A git call in `cwd`; returns `{status, stdout}`. A spawn failure or timeout has no status (treated as a refusal by the callers).
+ * The env is the caller's minus the GIT_* repo-location variables (SEC-10): an inherited GIT_DIR / GIT_INDEX_FILE would make git answer
+ * for another repository or index, so a tracked log could read as untracked. */
 function gitIn(cwd, args) {
-  const r = spawnSync('git', args, { cwd, shell: false, encoding: 'utf8', timeout: GIT_TIMEOUT_MS });
+  const r = spawnSync('git', args, { cwd, shell: false, encoding: 'utf8', timeout: GIT_TIMEOUT_MS, env: envWithoutGitRedirects(process.env) });
   return { status: r.status, stdout: r.stdout || '' };
 }
 
