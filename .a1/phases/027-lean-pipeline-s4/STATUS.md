@@ -206,7 +206,7 @@ Each fixture was run RED on the unfixed code first, then GREEN.
 | SEC-1 addendum findings.json | 2.1b block: `FH` is read only when `findings.json` is not a symlink and `git ls-files --error-unmatch` says untracked | RV8e (tracked, matching head_sha) and RV8f (symlink) printed `findings_head=match` | RV8e, RV8f pass |
 | SEC-2 read containment | same reader: `assertContained` + `lstat` regular file + size cap | TL2 (symlinked phase dir with forged log) and TL3 (symlinked log file) reused, rc 0; TL5 (evidence via symlink) rc 0 | pass; TL6b names the size cap (`why: too_large`), TL6c missing log is `no_log` |
 | SEC-3 ADR | new section "Trust model of the gate log as evidence" in `docs/adr/2026-10-14-gate-invoke-and-log.md` incl. m7; same-user forgery is a named residual risk, "pending owner acceptance", not marked accepted | doc | - |
-| SEC-4 shell injection | both blocks: value in single quotes plus `case` guard (`STOP: bad phase name` / `bad spec id`, exit 2); prose mandates newline stripping and the regex `^[A-Za-z0-9_][A-Za-z0-9._-]*$` | FL20 (six bad names), FL20b (four bad ids) ran the block, created files and (for `$(...)`) created PWNED; FL20c prose missing | FL20, FL20b, FL20c pass; FL12-FL19 unchanged and green |
+| SEC-4 shell injection | both blocks: value in single quotes plus `case` guard (CORRECTED in round 3: single quotes did NOT keep `$(...)` from running before the guard, see SEC-7 below) (`STOP: bad phase name` / `bad spec id`, exit 2); prose mandates newline stripping and the regex `^[A-Za-z0-9_][A-Za-z0-9._-]*$` | FL20 (six bad names), FL20b (four bad ids) ran the block, created files and (for `$(...)`) created PWNED; FL20c prose missing | FL20, FL20b, FL20c pass; FL12-FL19 unchanged and green |
 | SEC-5 union doc | effect (foreign-branch merges also union GOAL.md rows and observations lines) stated next to the removal note in 02-execute.md and 05-implement.md | doc | - |
 | m2 spec_path | `assertSpecIsHashed` in reuse-hash.cjs (uses `resolveSpecFile`, now exported from spec-coherence.cjs): a roadmap `spec_path` that resolves to a file other than the hashed spec is a miss | RH25: identical second call with a spec_path to `other.md` was reused | RH25 (baseline spec_path = hashed spec still reuses; edit of the other file runs) |
 | m8 prompt patterns / block size | `workflow-lint-flow.cjs`: `CHECKPOINT_PATTERNS` (`/\?\s*\[(y\|yes)/i`, `/\bproceed\b.*\?/i`) outside stop blocks (a line already hit by a marker counts once), stop blocks over 25 lines flagged | FC4, FC5, FC6 exit 0 | FC1-FC6 pass. Real tree: stop blocks have 1, 11 and 22 lines (02-execute: 1, 11; 05-implement: 22); none longer than 25, nothing shortened; FC1 real copy exit 0 |
@@ -220,3 +220,27 @@ Pins changed: none. No assertion removed. checklist.cjs unchanged. Line counts: 
 - [Rule 3] `fs` import dropped from pr-review-record.cjs (unused after SEC-1).
 - The size cap of SEC-2 cannot be proven with a valid chain in a fixture (a valid 8 MiB chain is impractical); TL6 pads a log (chain broken anyway) and TL6b asserts the `too_large` reason directly on `readTrustedChain`.
 - SEC-4: `<dir>`/`WORK_PATH` and `<phase_goal>` stay orchestrator-owned; newline stripping of the goal is an instruction only (the shell cannot detect a goal that already closed the heredoc).
+
+## Review fix round 3 (PR #108, Samuel SEC-6..9 and Reinhard R-m1, R-n1 on head 98b4b5a)
+
+Commits: c60b707 (SEC-6, SEC-9), b47a197 (SEC-8, R-n1), fc893a2 (SEC-7), dababf2 (R-m1). Each fixture was run RED on the unfixed code first, then GREEN.
+
+Correction: the round 2 claim "$(...) never runs before the guard" (STATUS SEC-4 row and the FL20 comment) was wrong for a name that holds a single quote: `x'$(touch PWNED)'` gives `PHASE='x'$(touch PWNED)''`, the substitution runs at the assignment. The FL20 comment now says so.
+
+| Finding | Fix | RED proof (unfixed code) | GREEN |
+|---|---|---|---|
+| SEC-6 in-repo path tricks (MAJOR) | `gate-log.cjs` `evidencePathProblem`: `.a1`, `.a1/phases`, `.a1/phases/<scope>` real directories (lstat), `git rev-parse --show-toplevel` of the phase dir realpath-equal to root, realpath(log) equals `<realroot>/.a1/phases/<scope>/gate-log.jsonl`, positive `git ls-files -o -z` hit, `git ls-files --error-unmatch -- ':(icase)<rel>'` must exit 1. ADR sentence rewritten to the real behaviour | new `trusted-log-paths.cjs`: attacks C, C2, D, D2, E (GATE-LOG.jsonl + ignorecase), E2 (.A1/Phases + ignorecase) x reuse (TP1), `pr review-evidence` (TP2), `wave next-check` (TP3): 18 of 18 FAIL (reused / rc 0 / continue) | 20 of 20 pass |
+| SEC-9 TOCTOU | `readCapped`: open `O_RDONLY\|O_NOFOLLOW\|O_NONBLOCK`, `fstat` the descriptor (regular, size cap), read from the fd, text goes to new `verifyChainText` (`verifyChain(file)` stays for the other callers) | structural (a swap between lstat and read cannot be staged in a fixture); TL1-TL7 unchanged green | pass |
+| SEC-8 findings.json | 2.1b block: `.a1-review` real dir (not symlink), file real, `git ls-files -o` lists it, `:(icase)` error-unmatch fails | RV8g (tracked symlink .a1-review), RV8h (untracked symlink dir), RV8i (tracked FINDINGS.json + ignorecase), RV8j (submodule at .a1-review): 4 of 4 FAIL | RV8a-RV8j pass |
+| R-n1 | covered by SEC-8 (`[ ! -L .a1-review ]`) | RV8h | pass |
+| SEC-7 | both blocks read the value with `IFS= read -r X <<'A1_PHASE_EOF'` / `A1_SPEC_EOF`; prose says single quotes are not enough and the orchestrator strips newlines of the name too | FL20 and FL20b with `x'$(touch PWNED)'` and `` x'`touch PWNED`' ``: 4 of 4 FAIL (PWNED created, rc 0) | FL20 (8 names), FL20b (6 ids), FL20c pass |
+| R-m1 bare agent line | `wave-next-check.cjs` `namesAgent`: the first non-blank non-bullet line under the heading counts when its first token is bold (`**x**`) or hyphenated and not TBD/TBA/TODO/none/n/a. Prose ("TBD later") still stops | NC37 (real copies of a1-office 001 wave 1+2 and 002 wave 1+2): 2 of 2 FAIL | NC37, NC38, NC38b, NC38c, NC33 pass |
+
+Probe `scratchpad/sec108/r5-probe.cjs` against the new code: A untracked forged log still reused (named same-user residual, unchanged); B, C, C2, D, D2, E, E2, F (both flags), H: rc 1 without `reused`; G (hardlink to a tracked file, local only): still reused (same-user, same class as A).
+
+Pins changed: none. No assertion removed. checklist.cjs unchanged. Line counts: a1-tools.cjs 786 (untouched), gate-log.cjs 574, wave-next-check.cjs 205.
+
+### Deviations
+- [Rule 3] `verifyChainText` exported from gate-log.cjs (needed by SEC-9, `verifyChain` keeps its signature).
+- NC33 (a colon heading whose body is "TBD later") stays: R-m1's "first non-blank line" rule is narrowed to bold or hyphenated names so that it still stops.
+- Out of scope, not changed: `skills/a1-pr-review/workflows/05-merge.md` still has `PHASE='<phase_name>'` (single quotes, run record block, not part of this PR's diff); about 200 real vault waves use the singular `**Suggested agent:**` which `namesAgent` does not accept (checklist check 3 behaviour not compared).
