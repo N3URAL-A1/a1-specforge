@@ -43,14 +43,15 @@ function requireHead(flags) {
 }
 
 /**
- * The last record of Reinhard for one head sha decides (a later fail overrides an earlier pass).
+ * The last pass/fail record of Reinhard for one head sha decides (a later fail overrides an earlier pass).
+ * Usage-error records (verdict `error`) are no review result and neither void a pass nor count as one.
  * @param {object[]} records verified gate-log records, oldest first
  * @param {string} sha
- * @returns {'pass'|'fail'|'error'|null}
+ * @returns {'pass'|'fail'|null}
  */
 function lastVerdictFor(records, sha) {
   let found = null;
-  for (const r of records) if (r.gate === GATE && r.head_sha === sha) found = r.verdict;
+  for (const r of records) if (r.gate === GATE && r.head_sha === sha && VERDICTS.includes(r.verdict)) found = r.verdict;
   return found;
 }
 

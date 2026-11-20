@@ -121,4 +121,17 @@ rec(two, st, 'pass');
 rec(two, st, 'pass');
 eq('RR13 two record calls write exactly 2 lines', logOf(two, 'pr-7').length, 2);
 
+// RR14 (review fix m3): a usage-error record (verdict error) at the same sha never voids a pass; an error alone is no pass.
+const er = newRepo();
+const se = git(er, 'rev-parse', 'HEAD');
+rec(er, se, 'pass');
+r = rec(er, se, 'maybe');
+const erLines = logOf(er, 'pr-7');
+check('RR14a the bad-verdict call exits 2 and logs verdict error at the same head', r.rc === 2 && erLines[erLines.length - 1].verdict === 'error' && erLines[erLines.length - 1].head_sha === se, `rc=${r.rc} ${JSON.stringify(erLines.slice(-1))}`);
+eq('RR14b pass then a usage error at the same sha: evidence still exits 0', ev(er, se).rc, 0);
+const er2 = newRepo();
+const se2 = git(er2, 'rev-parse', 'HEAD');
+rec(er2, se2, 'maybe');
+eq('RR14c an error record alone is no pass: evidence exits 1', ev(er2, se2).rc, 1);
+
 done();
