@@ -194,3 +194,29 @@ Suites: a1-lib-units 640/0, a1-pr-review 74/0, a1-workflow-lint 60/0, a1-gates-l
 
 ### Verification (review fix round 1)
 - verify run --affected --phase 027-lean-pipeline-s4 (primary CLI, "head_sha":"ba9d8927f91f20dc3557b0950c7a608cd8f4ca6a"): verdict pass, rc 0, selection full (runner_or_config_changed: _shared/a1-tools.cjs), 63 of 63 selected, not_run []. A concurrent second invocation got lock_timeout (exit 2) while the first held the lock; the first run finished and is the verdict above.
+
+## Review fix round 2 (PR #108, Samuel SEC-1..5 and Reinhard m2, m8 on head 7572000)
+
+Commits: 7d4fdd8 (SEC-1, SEC-2), a43d12f (SEC-1 addendum), dbd966e (SEC-4, SEC-5), fcc9af3 (SEC-3, m7), 660847d (m2), 4f5ae2e (m8).
+Each fixture was run RED on the unfixed code first, then GREEN.
+
+| Finding | Fix | RED proof (unfixed code) | GREEN |
+|---|---|---|---|
+| SEC-1 tracked log authorises a skip | new `gate-log.cjs` `readTrustedChain(root, scope)`: rejects a log that `git ls-files --error-unmatch` reports tracked (or on any git error other than "untracked"), symlinked path, non-regular file, over 8 MiB, broken chain. Used by `lookupPass` (reuse), `pr review-evidence` (`untrusted_log`) and `wave next-check` (`stop:gate_red`). Head-bound reuse also needs the head repo to equal the log repo (`root_mismatch`). | new case file `a1-lib-units/cases/trusted-log.cjs`: TL1 (lane-split, tracked forged pass for a real owns-overlap FAIL: reused, rc 0), TL4 (evidence rc 0), TL7 (`continue`) | TL0-TL7 pass; baselines (the same forged log untracked) still reuse/continue, so the fixtures are sensitive |
+| SEC-1 addendum findings.json | 2.1b block: `FH` is read only when `findings.json` is not a symlink and `git ls-files --error-unmatch` says untracked | RV8e (tracked, matching head_sha) and RV8f (symlink) printed `findings_head=match` | RV8e, RV8f pass |
+| SEC-2 read containment | same reader: `assertContained` + `lstat` regular file + size cap | TL2 (symlinked phase dir with forged log) and TL3 (symlinked log file) reused, rc 0; TL5 (evidence via symlink) rc 0 | pass; TL6b names the size cap (`why: too_large`), TL6c missing log is `no_log` |
+| SEC-3 ADR | new section "Trust model of the gate log as evidence" in `docs/adr/2026-10-14-gate-invoke-and-log.md` incl. m7; same-user forgery is a named residual risk, "pending owner acceptance", not marked accepted | doc | - |
+| SEC-4 shell injection | both blocks: value in single quotes plus `case` guard (`STOP: bad phase name` / `bad spec id`, exit 2); prose mandates newline stripping and the regex `^[A-Za-z0-9_][A-Za-z0-9._-]*$` | FL20 (six bad names), FL20b (four bad ids) ran the block, created files and (for `$(...)`) created PWNED; FL20c prose missing | FL20, FL20b, FL20c pass; FL12-FL19 unchanged and green |
+| SEC-5 union doc | effect (foreign-branch merges also union GOAL.md rows and observations lines) stated next to the removal note in 02-execute.md and 05-implement.md | doc | - |
+| m2 spec_path | `assertSpecIsHashed` in reuse-hash.cjs (uses `resolveSpecFile`, now exported from spec-coherence.cjs): a roadmap `spec_path` that resolves to a file other than the hashed spec is a miss | RH25: identical second call with a spec_path to `other.md` was reused | RH25 (baseline spec_path = hashed spec still reuses; edit of the other file runs) |
+| m8 prompt patterns / block size | `workflow-lint-flow.cjs`: `CHECKPOINT_PATTERNS` (`/\?\s*\[(y\|yes)/i`, `/\bproceed\b.*\?/i`) outside stop blocks (a line already hit by a marker counts once), stop blocks over 25 lines flagged | FC4, FC5, FC6 exit 0 | FC1-FC6 pass. Real tree: stop blocks have 1, 11 and 22 lines (02-execute: 1, 11; 05-implement: 22); none longer than 25, nothing shortened; FC1 real copy exit 0 |
+
+SEC-1 probe (scratchpad `sec108/r3-victim` clone, tracked forged `gate-log.jsonl`, lane-split without `--imports`, a real owns-overlap FAIL): the old forged hash no longer matches any tree (the gate code changed), so the log was re-forged per tree in `sec108/r4-victim`. Old tree (`git archive 624ae13`): `reused: lane-split`, exit 0. Fixed tree: gate runs, `"status": "FAIL"`, exit 1.
+
+Pins changed: none. No assertion removed. checklist.cjs unchanged. Line counts: a1-tools.cjs 786, gate-log.cjs 515, reuse-hash.cjs 249, wave-next-check.cjs, pr-review-record.cjs smaller.
+
+### Deviations
+- [Rule 3] `resolveSpecFile` is now exported from spec-coherence.cjs (needed by m2, no behaviour change).
+- [Rule 3] `fs` import dropped from pr-review-record.cjs (unused after SEC-1).
+- The size cap of SEC-2 cannot be proven with a valid chain in a fixture (a valid 8 MiB chain is impractical); TL6 pads a log (chain broken anyway) and TL6b asserts the `too_large` reason directly on `readTrustedChain`.
+- SEC-4: `<dir>`/`WORK_PATH` and `<phase_goal>` stay orchestrator-owned; newline stripping of the goal is an instruction only (the shell cannot detect a goal that already closed the heredoc).
