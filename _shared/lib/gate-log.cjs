@@ -303,18 +303,80 @@ function shapeProblem(rec) {
 
 const MAX_LOG_BYTES = 8 * 1024 * 1024;
 
-/** `git ls-files --error-unmatch`: 0 = tracked, 1 = untracked; anything else is treated as tracked (fail closed). */
-function isTracked(root, file) {
-  const rel = path.relative(root, file);
-  const r = spawnSync('git', ['ls-files', '--error-unmatch', '--', rel], { cwd: root, shell: false, encoding: 'utf8', timeout: GIT_TIMEOUT_MS });
-  return r.status !== 1;
+/** A git call in `cwd`; returns `{status, stdout}`. A spawn failure or timeout has no status (treated as a refusal by the callers). */
+function gitIn(cwd, args) {
+  const r = spawnSync('git', args, { cwd, shell: false, encoding: 'utf8', timeout: GIT_TIMEOUT_MS });
+  return { status: r.status, stdout: r.stdout || '' };
 }
 
 /**
- * Read a gate log as EVIDENCE (a skip or a stop decision), never as a mere record (SEC-1, SEC-2).
+ * Why the path of a log is not what this checkout's own hook wrote, or null (SEC-6). In-repo path tricks defeat a
+ * plain "is it tracked" test: a tracked symlink on the path makes the file reachable but not itself tracked, a
+ * submodule hides its files from the superproject index, and on a case-insensitive checkout the index may spell the
+ * path in another case. So the path must be positively known as untracked content of THIS repository:
+ *  1. `.a1`, `.a1/phases` and `.a1/phases/<scope>` are real directories (lstat), never symlinks;
+ *  2. the work-tree root git reports for the phase directory is the repository root (no submodule, no embedded repo);
+ *  3. the realpath of the log is exactly <realpath(root)>/.a1/phases/<scope>/gate-log.jsonl;
+ *  4. `git ls-files -o` lists the log (untracked, present) and no case-insensitive match is tracked.
+ * Returns `'missing'` when the log does not exist and nothing on the way to it is suspect.
+ */
+function evidencePathProblem(root, scope, file) {
+  const realRoot = fs.realpathSync(root);
+  let cur = root;
+  for (const seg of ['.a1', 'phases', scope]) {
+    cur = path.join(cur, seg);
+    let st;
+    try { st = fs.lstatSync(cur); } catch (e) { if (e.code === 'ENOENT') return 'missing'; return `lstat failed: ${e.code}`; }
+    if (st.isSymbolicLink()) return `${path.relative(root, cur)} is a symlink`;
+    if (!st.isDirectory()) return `${path.relative(root, cur)} is not a directory`;
+  }
+  let st;
+  try { st = fs.lstatSync(file); } catch (e) { return e.code === 'ENOENT' ? 'missing' : `lstat failed: ${e.code}`; }
+  if (st.isSymbolicLink()) return 'the log file is a symlink';
+  const top = gitIn(path.dirname(file), ['rev-parse', '--show-toplevel']);
+  let realTop = null;
+  try { realTop = top.status === 0 ? fs.realpathSync(top.stdout.trim()) : null; } catch (_e) { realTop = null; }
+  if (realTop !== realRoot) return 'the phase directory belongs to another repository (submodule or embedded repo)';
+  let realFile;
+  try { realFile = fs.realpathSync(file); } catch (_e) { return 'the log does not resolve'; }
+  if (realFile !== path.join(realRoot, '.a1', 'phases', scope, LOG_NAME)) return 'the log resolves to another path';
+  const rel = path.relative(root, file).split(path.sep).join('/');
+  const untracked = gitIn(root, ['ls-files', '-o', '-z', '--', rel]);
+  if (untracked.status !== 0 || !untracked.stdout.split('\0').includes(rel)) return 'git does not list the log as untracked';
+  const tracked = gitIn(root, ['ls-files', '--error-unmatch', '--', `:(icase)${rel}`]);
+  if (tracked.status !== 1) return 'tracked by git';
+  return null;
+}
+
+/**
+ * Open the log without following a final symlink, check the DESCRIPTOR (regular file, size under the cap) and read at
+ * most the cap from it (SEC-9): no path is used between the check and the read.
+ * @returns {{text: string} | {why: string}}
+ */
+function readCapped(file) {
+  let fd;
+  try { fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0) | (fs.constants.O_NONBLOCK || 0)); } catch (e) { return { why: `unreadable: ${e.code}` }; }
+  try {
+    const st = fs.fstatSync(fd);
+    if (!st.isFile()) return { why: 'not a regular file' };
+    if (st.size > MAX_LOG_BYTES) return { why: 'too_large' };
+    const buf = Buffer.alloc(st.size + 1);
+    let n = 0;
+    for (;;) {
+      const got = fs.readSync(fd, buf, n, buf.length - n, null);
+      if (got === 0) break;
+      n += got;
+      if (n > st.size) return { why: 'changed while reading' };
+    }
+    return { text: buf.toString('utf8', 0, n) };
+  } catch (e) { return { why: `unreadable: ${e.code || e.message}` }; } finally { fs.closeSync(fd); }
+}
+
+/**
+ * Read a gate log as EVIDENCE (a skip or a stop decision), never as a mere record (SEC-1, SEC-2, SEC-6, SEC-9).
  * The chain is local tamper-evidence, not authentication, so the file must be what this checkout's own hook wrote:
- * not tracked by git (a PR branch can commit one with `git add -f`), reached through no symlink, a regular file
- * of bounded size, and the chain must verify.
+ * untracked content of this repository reached through no symlink or submodule (`evidencePathProblem`), a regular
+ * file of bounded size read through one descriptor, and the chain must verify.
  *
  * @param {string} root repository work-tree root the log belongs to
  * @param {string} scope
@@ -323,21 +385,14 @@ function isTracked(root, file) {
 function readTrustedChain(root, scope) {
   const file = logPathFor(root, scope);
   const bad = (why) => ({ ok: false, reason: 'untrusted_log', why });
-  try { fs.lstatSync(file); } catch (e) {
-    if (e.code === 'ENOENT') {
-      // a missing log is `no_log` only when no parent of it is a symlink either
-      try { assertContained(root, scope, file); } catch (_e) { return bad('symlinked path'); }
-      return { ok: false, reason: 'no_log', why: 'missing' };
-    }
-    return bad(`lstat failed: ${e.code}`);
-  }
-  try { assertContained(root, scope, file); } catch (e) { return bad(e.message); }
-  const st = fs.lstatSync(file);
-  if (!st.isFile()) return bad('not a regular file');
-  if (st.size > MAX_LOG_BYTES) return bad('too_large');
-  if (isTracked(root, file)) return bad('tracked by git');
+  let problem;
+  try { problem = evidencePathProblem(root, scope, file); } catch (e) { return bad(`path check failed: ${e.message}`); }
+  if (problem === 'missing') return { ok: false, reason: 'no_log', why: 'missing' };
+  if (problem !== null) return bad(problem);
+  const read = readCapped(file);
+  if (read.why) return bad(read.why);
   let chain;
-  try { chain = verifyChain(file); } catch (e) { return bad(`unreadable: ${e.message}`); }
+  try { chain = verifyChainText(read.text); } catch (e) { return bad(`unreadable: ${e.message}`); }
   return chain.ok ? { ok: true, chain } : bad('chain does not verify');
 }
 
@@ -348,7 +403,11 @@ function readTrustedChain(root, scope) {
  * @returns {{ok: boolean, lines: number, records: Object[], problems: {line: number, rule: string, reason: string}[]}}
  */
 function verifyChain(file) {
-  const text = fs.readFileSync(file, 'utf8');
+  return verifyChainText(fs.readFileSync(file, 'utf8'));
+}
+
+/** `verifyChain` over text already read (the evidence reader hands over what it read from one descriptor). */
+function verifyChainText(text) {
   const raw = text.split('\n');
   if (raw[raw.length - 1] === '') raw.pop();
   const problems = [];
@@ -509,7 +568,7 @@ function installGateLog(argv, registryText) {
 
 module.exports = {
   ZERO_HASH, UNSCOPED, EXCLUDE_PATTERN, SCOPE_RE,
-  validateScope, verdictForExit, appendGateLine, verifyChain, matchInvoke, stripPhase,
+  validateScope, verdictForExit, appendGateLine, verifyChain, verifyChainText, matchInvoke, stripPhase,
   installGateLog, readTrustedChain, setRecordExtra, gitContext, ensureExcluded, projectDirOf, stealStaleLock, assertContained,
   acquireLock, releaseLock, currentScope, logPathFor,
 };
