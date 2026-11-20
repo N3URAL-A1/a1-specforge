@@ -79,3 +79,6 @@ Suites (green): gates-lint 95/0, wave13 10/0, wave14 50/0, a1-pr-review 68/0, a1
 - Added RR5b/RR5c and tightened NC28 (see RED proofs c and i): the plan's cases did not turn red under the named mutations.
 - PR5: a1-pr-review names `retro validate --gate-log` only in prose, so the case asserts `call_without_phase` is absent (plan's second branch).
 - `wave-next-check.cjs` also imports `parseWaves` from lane-split.cjs (already exported) to find the `## Wave N+1` section.
+
+### Wave 2 verify
+- `verify run --project <worktree> --affected --phase 027-lean-pipeline-s4` at head bbe8cae: verdict pass, exit 0 (1st attempt `lock_timeout` exit 2 behind flow-a's run, re-run; 2nd attempt head side 1700 s, lock wait 149 s).
