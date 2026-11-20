@@ -489,5 +489,7 @@ WIRED="$(node -e 'const j=JSON.parse(process.argv[1]);const w=j.wired.filter(x=>
 [[ $RC -eq 0 && "$WIRED" == "6:gate-0.6-schema@a1-execute,gate-0.6-schema@a1-new-feature,gate-1-build@a1-execute,gate-1-build@a1-new-feature,test-fidelity@a1-execute,test-fidelity@a1-new-feature" ]] \
   && ok "W11f real tree: gates lint exit 0 and reports the a1-execute and a1-new-feature sides of gate-0.6-schema, gate-1-build, test-fidelity wired (6)" || bad "W11f (rc=$RC wired=$WIRED)"
 
+. "$(dirname "${BASH_SOURCE[0]}")/cases-pr-reinhard.sh"
+
 echo "a1-gates-lint: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]
