@@ -84,5 +84,16 @@ else fail_case "RV8c no-head case: $(rvb_run)"; fi
 rm -f "$RVB/wt/.a1-review/findings.json"
 if rvb_run | grep -qx 'findings_head=stale-or-missing'; then pass_case "RV8d no findings.json: stale-or-missing"
 else fail_case "RV8d missing file case: $(rvb_run)"; fi
+# RV8e/f (review fix round 2, SEC-1 addendum): a findings.json that git tracks (a PR branch can commit one) or that is a symlink never matches
+printf '{"head_sha":"%s","blocker":[],"major":[],"minor":[]}\n' "$RVB_HEAD" > "$RVB/wt/.a1-review/findings.json"
+git -C "$RVB/wt" add -f .a1-review/findings.json
+if rvb_run | grep -qx 'findings_head=stale-or-missing'; then pass_case "RV8e a git-tracked findings.json with the matching head_sha does not match"
+else fail_case "RV8e tracked case: $(rvb_run)"; fi
+git -C "$RVB/wt" rm -q --cached .a1-review/findings.json; rm -f "$RVB/wt/.a1-review/findings.json"
+printf '{"head_sha":"%s","blocker":[],"major":[],"minor":[]}\n' "$RVB_HEAD" > "$RVB/real-findings.json"
+ln -s "$RVB/real-findings.json" "$RVB/wt/.a1-review/findings.json"
+if rvb_run | grep -qx 'findings_head=stale-or-missing'; then pass_case "RV8f a symlinked findings.json does not match"
+else fail_case "RV8f symlink case: $(rvb_run)"; fi
+rm -f "$RVB/wt/.a1-review/findings.json"
 if printf '%s' "$S21B" | grep -qF 'findings_head=match'; then pass_case "RV9 the 2.1b prose requires findings_head=match for the skip"
 else fail_case "RV9 2.1b prose does not name findings_head=match"; fi
