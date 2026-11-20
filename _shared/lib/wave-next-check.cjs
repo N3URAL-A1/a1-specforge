@@ -107,21 +107,35 @@ const AGENT_NAME_RE = /^[A-Za-z][\w.:@/-]*/;
 const AGENT_HEADING_RE = /^#{2,4}[ \t]+\**Suggested[ \t]+agent\(s\)\**[ \t]*:?\**[ \t]*$/i;
 const AGENT_INLINE_RE = /^[ \t]*[-*]?[ \t]*\**Suggested[ \t]+agent\(s\)\**[ \t]*:\**[ \t]*(.*)$/i;
 
+// A bare (non-bullet) agent line, the first non-blank line under the heading: `backend-bernd (Migration-Autor)` or
+// `**backend-bernd** (DB/Migrations...)`. Prose such as "TBD later" is not one: the name must be bold or hyphenated.
+const BARE_BOLD_RE = /^\s*\*\*([A-Za-z][\w.:@/-]*)\*\*(?=[\s(.,;:]|$)/;
+const BARE_HYPHEN_RE = /^\s*([A-Za-z][\w.:@/]*-[\w.:@/-]+)(?=[\s(.,;:]|$)/;
+const PLACEHOLDER_RE = /^(tbd|tba|todo|none|n\/a)$/i;
+
+function bareAgentLine(line) {
+  const m = BARE_BOLD_RE.exec(line) || BARE_HYPHEN_RE.exec(line);
+  return m !== null && !PLACEHOLDER_RE.test(m[1]);
+}
+
 /**
  * True when the wave body names an agent: `### Suggested agent(s)` (optional colon) followed by a `- <name>` or
- * `- **<name>**` bullet before the next heading, or an inline `Suggested agent(s): <name>` (also `**Suggested agent(s):** <name>`).
+ * `- **<name>**` bullet before the next heading, or by a bare first line (`backend-bernd (...)`, `**backend-bernd** (...)`),
+ * or an inline `Suggested agent(s): <name>` (also `**Suggested agent(s):** <name>`).
  * These are the shapes of the real vault wave plans; checklist check 3 accepts the same tokens anywhere in the wave.
  */
 function namesAgent(body) {
   const lines = body.split('\n');
   let inSection = false;
+  let first = false;
   for (const line of lines) {
-    if (/^#{1,6}\s/.test(line)) inSection = AGENT_HEADING_RE.test(line);
+    if (/^#{1,6}\s/.test(line)) { inSection = AGENT_HEADING_RE.test(line); first = inSection; }
     const inline = AGENT_INLINE_RE.exec(line);
     if (inline && AGENT_NAME_RE.test(inline[1].replace(/^\**\s*/, ''))) return true;
     if (inSection) {
       const b = /^\s*[-*]\s+\**\s*(.*)$/.exec(line);
       if (b && AGENT_NAME_RE.test(b[1])) return true;
+      if (first && line.trim() !== '' && !/^#{1,6}\s/.test(line)) { first = false; if (bareAgentLine(line)) return true; }
     }
   }
   return false;

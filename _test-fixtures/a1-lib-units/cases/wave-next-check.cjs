@@ -155,6 +155,21 @@ const REAL = path.join(__dirname, '..', 'real');
   fs.writeFileSync(empty, '# Wave plan\n\n## Wave 1: a\n\n## Wave 2: b\n\n**Suggested agent(s):**\n');
   expect('NC35 an inline "**Suggested agent(s):**" with nothing after it: stop:agent_unnamed', plant({}), 1, stopOf('agent_unnamed'), ['--plan', empty]);
 }
+// NC37 (round 3, R-m1): a bare, non-bullet agent line under `### Suggested agent(s):` as in the real a1-office wave plans (stripped copies).
+for (const [name, file] of [['a1-office/002 "backend-bernd (Migration-Autor)"', 'wave-plan-bare-agent-a1-office-002.md'], ['a1-office/001 "**backend-bernd** (DB/Migrations...). Fallback: walter."', 'wave-plan-bold-bare-agent-a1-office-001.md']]) {
+  expect(`NC37 real wave plan ${name}: continue`, plant({}), 1, ok, ['--plan', path.join(REAL, file)]);
+}
+{
+  const tbd = path.join(WORK, 'bare-tbd.md');
+  fs.writeFileSync(tbd, '# Wave plan\n\n## Wave 1: a\n\n## Wave 2: b\n\n### Suggested agent(s):\nTBD later\n');
+  expect('NC38 a bare line that is prose, not an agent id ("TBD later"): stop:agent_unnamed', plant({}), 1, stopOf('agent_unnamed'), ['--plan', tbd]);
+  const none = path.join(WORK, 'bare-none.md');
+  fs.writeFileSync(none, '# Wave plan\n\n## Wave 1: a\n\n## Wave 2: b\n\n### Suggested agent(s):\n**TBD**\n');
+  expect('NC38b a bold placeholder ("**TBD**"): stop:agent_unnamed', plant({}), 1, stopOf('agent_unnamed'), ['--plan', none]);
+  const later = path.join(WORK, 'bare-later.md');
+  fs.writeFileSync(later, '# Wave plan\n\n## Wave 1: a\n\n## Wave 2: b\n\n### Suggested agent(s):\n\nSee the brief above.\nbackend-bernd (Migration-Autor)\n');
+  expect('NC38c only the FIRST non-blank line of the section counts as a bare agent line: stop:agent_unnamed', plant({}), 1, stopOf('agent_unnamed'), ['--plan', later]);
+}
 // NC36 (m4): the wave field of a stop-type observation must be an integer or absent.
 expect('NC36a "wave": null on a deviation: stop:deviation', plant({ obs: '{"type":"deviation","wave":null}\n' }), 2, stopOf('deviation'));
 expect('NC36b "wave": "x" on a blocker: stop:deviation', plant({ obs: '{"type":"blocker","wave":"x"}\n' }), 2, stopOf('deviation'));
