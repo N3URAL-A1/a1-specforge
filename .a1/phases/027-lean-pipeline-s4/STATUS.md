@@ -244,3 +244,16 @@ Pins changed: none. No assertion removed. checklist.cjs unchanged. Line counts: 
 - [Rule 3] `verifyChainText` exported from gate-log.cjs (needed by SEC-9, `verifyChain` keeps its signature).
 - NC33 (a colon heading whose body is "TBD later") stays: R-m1's "first non-blank line" rule is narrowed to bold or hyphenated names so that it still stops.
 - Out of scope, not changed: `skills/a1-pr-review/workflows/05-merge.md` still has `PHASE='<phase_name>'` (single quotes, run record block, not part of this PR's diff); about 200 real vault waves use the singular `**Suggested agent:**` which `namesAgent` does not accept (checklist check 3 behaviour not compared).
+
+## Review fix round 4 (PR #108, minors only)
+
+| Finding | Fix | RED proof | After |
+|---|---|---|---|
+| R3-m1 / SEC-12 | `02-review.md` 2.3d reads `caller_spec_id` with `IFS= read -r PHASE <<'A1_PHASE_EOF'`; `none` / unreplaced `<...>` SKIP decided first, then `[!A-Za-z0-9_]*\|*[!A-Za-z0-9._-]*` is `STOP: bad spec id`, exit 2; prose names heredoc, newline strip and regex. `05-merge.md` untouched | new FL21 (`x'$(touch PWNED)'`, backtick variant, `a b`, `../x`, `a;b`, `-lead`, `$(...)` + `none` / `<caller_spec_id>`): 7 of 7 invalid ids FAIL (rc 0, PWNED created) | FL21 pass, workflow-lint 67/67 |
+| R3-m2 / SEC-10 | new `_shared/lib/git-env.cjs` (`GIT_ENV_DROP`, `envWithoutGitRedirects`); `xprov-common.cjs` requires it (same list, same export); `gate-log.cjs` `gitIn` spawns git with the stripped env; 2.1b git calls prefixed `env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE` | TL8a (absolute GIT_DIR, legit log reused) FAIL rc=1, TL8b (GIT_INDEX_FILE empty index, tracked log) FAIL (reused), RV10 (GIT_DIR of another repo in 2.1b) FAIL | TL8a-c, RV10 pass, a1-xprov run-tests / -b / -c 1056 / 1793 / 1422 pass |
+| R3-m3 | `readCapped` reads exactly `st.size` bytes, growth after fstat is ignored; a shrink during the read is still refused (`changed while reading`); optional `afterStat` test seam, `readCapped` exported | old code measured: growth after fstat returns `{why:"changed while reading"}` | TL9a (prefix ok), TL9b (cap: over 8 MiB is `too_large`), TL9c (truncate refused) pass |
+
+Line counts: a1-tools.cjs 786 (untouched), gate-log.cjs 578, xprov-common.cjs 366, git-env.cjs 26. No assertion removed.
+
+### Deviations
+- [Rule 3] `readCapped` exported and given an `afterStat` callback (test seam), needed to stage growth after fstat.
