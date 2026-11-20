@@ -130,6 +130,46 @@ const ls = (repo, extra, scope, env, tools) => cli(repo, ['lane-split', 'check',
   check(`RH19 one appended line in a depth-1 require (${depth1}) runs the gate`, Boolean(depth1) && r19.rc === 0 && !wasReused(r19), r19.err);
 }
 
+{
+  // RH20 (review fix B1): an untracked non-ignored lane file is an input of --imports; a pass at the same HEAD must not be reused.
+  const plan = LANE_PLAN.replace('"src/a.mjs"', '"src/a.mjs"\n      - "src/new.mjs"');
+  const repo = repoWith({ ...lsFiles, 'PLAN.md': plan });
+  const a = ls(repo, ['--imports', '.'], 'rp');
+  const b = ls(repo, ['--imports', '.'], 'rp');
+  check('RH20 baseline: --imports passes and is reused at a clean tree', a.rc === 0 && wasReused(b), a.err + b.err);
+  fs.writeFileSync(path.join(repo, 'src', 'new.mjs'), "import { b } from './b.mjs';\nexport const n = b;\n");
+  const c = ls(repo, ['--imports', '.'], 'rp');
+  check('RH20 an untracked lane file that imports a foreign lane file runs the gate (no reuse)', !wasReused(c), c.err + c.out);
+  check('RH20 and the gate reports the cross-lane import (exit 1)', c.rc === 1, `rc=${c.rc} ${c.out.slice(0, 200)}`);
+}
+{
+  // RH21 (review fix m1): the key covers the whole require closure, not two levels; double-quoted requires count.
+  const repo = repoWith(lsFiles);
+  const tree = tmp('tree');
+  fs.cpSync(path.join(LIB, '..'), path.join(tree, '_shared'), { recursive: true });
+  const toolsCopy = path.join(tree, '_shared', 'a1-tools.cjs');
+  ls(repo, [], 'rp', null, toolsCopy);
+  const deep = ls(repo, [], 'rp', null, toolsCopy);
+  check('RH21 baseline: the tree copy reuses', wasReused(deep), deep.err);
+  fs.appendFileSync(path.join(tree, '_shared', 'lib', 'status-constants.cjs'), '\n// RH21 depth-3 edit\n');
+  const r = ls(repo, [], 'rp', null, toolsCopy);
+  check('RH21 an edit of a depth-3 module (status-constants.cjs) runs the gate', r.rc === 0 && !wasReused(r), r.err);
+}
+{
+  const repo = repoWith(lsFiles);
+  const tree = tmp('tree');
+  fs.cpSync(path.join(LIB, '..'), path.join(tree, '_shared'), { recursive: true });
+  const toolsCopy = path.join(tree, '_shared', 'a1-tools.cjs');
+  fs.writeFileSync(path.join(tree, '_shared', 'lib', 'zz-dq.cjs'), "'use strict';\nmodule.exports = 1;\n");
+  fs.appendFileSync(path.join(tree, '_shared', 'lib', 'lane-split.cjs'), '\nconst _dq = require("./zz-dq.cjs");\n');
+  ls(repo, [], 'rp', null, toolsCopy);
+  const same = ls(repo, [], 'rp', null, toolsCopy);
+  check('RH22 baseline: the tree copy with a double-quoted require reuses', wasReused(same), same.err);
+  fs.appendFileSync(path.join(tree, '_shared', 'lib', 'zz-dq.cjs'), '// RH22 edit\n');
+  const r = ls(repo, [], 'rp', null, toolsCopy);
+  check('RH22 an edit of a module required with double quotes runs the gate', r.rc === 0 && !wasReused(r), r.err);
+}
+
 // ---------------- gate 4.5 ----------------
 function planVault() {
   const vault = tmp('vault');
@@ -174,6 +214,23 @@ const cl = (repo, vault, extra, scope) => cli(repo, ['checklist', 'run', 'demo/0
   check('RH12 a full run without --only is never reused', !wasReused(f1) && !wasReused(f2), f2.err);
 }
 
+{
+  // RH24 (review fix n1): an unexpected error in the 4.5 reuse lookup is named on stderr (the gate still runs); a plain miss stays silent.
+  const repo = repoWith({ 'README.md': 'x\n' });
+  const tree = tmp('tree');
+  fs.cpSync(path.join(LIB, '..'), path.join(tree, '_shared'), { recursive: true });
+  const sc = path.join(tree, '_shared', 'lib', 'spec-coherence.cjs');
+  const src = fs.readFileSync(sc, 'utf8');
+  const marker = "  const tiers = [\n    ['cwd'";
+  if (!src.includes(marker)) throw new Error('RH24 marker missing in spec-coherence.cjs');
+  fs.writeFileSync(sc, src.replace(marker, `  throw new Error('RH24 boom');\n${marker}`));
+  const boom = cli(repo, ['checklist', 'run', 'demo/001-login', '--only', '9,10,11', '--phase', 'p'], { A1_VAULT_ROOT: planVault() }, path.join(tree, '_shared', 'a1-tools.cjs'));
+  check('RH24 an unexpected reuse-lookup error is named on stderr ("reuse check failed: ... RH24 boom")', /reuse check failed: .*RH24 boom/.test(boom.err), boom.err.slice(0, 300));
+  const vault = planVault();
+  const miss = cl(repo, vault, []);
+  check('RH24 an ordinary first run prints no "reuse check failed:" line', !/reuse check failed:/.test(miss.err), miss.err.slice(0, 300));
+}
+
 // ---------------- fix class-sweep --verify ----------------
 {
   const REAL = path.join(FIX, 'a1-fix-class-sweep', 'real');
@@ -208,6 +265,15 @@ const cl = (repo, vault, extra, scope) => cli(repo, ['checklist', 'run', 'demo/0
   check('RH15 an uncommitted tracked change runs --verify', v4.rc === 0 && !wasReused(v4), v4.err);
   git(repo, 'commit', '-qam', 'clean');
   sw(['--verify', bug]);
+  // RH23 (review fix B1): an untracked non-ignored file with the pattern is part of the swept set; a pass at this HEAD must not be reused.
+  const w1 = sw(['--verify', bug]);
+  const w2 = sw(['--verify', bug]);
+  check('RH23 baseline: the clean tree --verify passes and is reused', w1.rc === 0 && wasReused(w2), w1.err + w2.err);
+  fs.mkdirSync(path.join(repo, 'lib'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'lib', 'new-site.ts'), 'export const q = "INSERT INTO api.invoices (id) VALUES (1)";\n');
+  const w3 = sw(['--verify', bug]);
+  check('RH23 an untracked file with the pattern runs --verify and it fails (exit 1, no reuse)', !wasReused(w3) && w3.rc === 1, `rc=${w3.rc} ${w3.err}${w3.out.slice(0, 200)}`);
+  fs.rmSync(path.join(repo, 'lib', 'new-site.ts'));
   const v5 = sw(['--verify', bug, '--guard', 'class-sweep:other.ts:0123456789abcdef=tests/old.test.ts']);
   check('RH16 a different --guard set runs (and is refused on its own merits)', !wasReused(v5), v5.err + v5.out.slice(0, 200));
 }

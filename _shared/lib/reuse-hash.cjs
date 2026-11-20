@@ -2,7 +2,7 @@
 
 // Input-hash reuse of three cheap consistency gates (spec 027 FR-020, plan decision D6).
 // A pass is reused only when every declared input, the call arguments and the gate's own code
-// (entry modules plus their local requires, two levels deep) are byte-identical to the call that passed.
+// (entry modules plus the whole closure of their local requires) are byte-identical to the call that passed.
 // The key is an action-cache key: a plugin update that changes the gate must not reuse an old verdict.
 
 const fs = require('fs');
@@ -14,7 +14,6 @@ const { emitExit } = require('./emit-exit.cjs');
 
 const LIB_DIR = __dirname;
 const MAX_INPUT_BYTES = 2 * 1024 * 1024;
-const CLOSURE_DEPTH = 2;
 const SAFE_SEG_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
 const HEX40_RE = /^[0-9a-f]{40}$/;
 
@@ -36,29 +35,28 @@ function sha256(buf) {
   return crypto.createHash('sha256').update(buf).digest('hex');
 }
 
-/** Local requires of one lib file (`./x.cjs` and `path.join(__dirname, 'x.cjs')`). */
+/** Local requires of one lib file (`./x.cjs` in single or double quotes, and `path.join(__dirname, 'x.cjs')`). */
 function localRequires(file) {
   let text = '';
   try { text = fs.readFileSync(path.join(LIB_DIR, file), 'utf8'); } catch (_e) { return []; }
-  return [...text.matchAll(/require\((?:'\.\/([^']+\.cjs)'|path\.join\(__dirname,\s*'([^']+\.cjs)'\))\)/g)].map((m) => m[1] || m[2]);
+  const re = /require\(\s*(?:(['"])\.\/([^'"]+\.cjs)\1|path\.join\(\s*__dirname\s*,\s*(['"])([^'"]+\.cjs)\3\s*\))\s*\)/g;
+  return [...text.matchAll(re)].map((m) => m[2] || m[4]);
 }
 
 /**
- * The entry modules plus their local requires, two levels deep.
+ * The entry modules plus every local require reachable from them (visited set, no depth bound):
+ * an edit of any module the gate can load changes the key.
  * @param {string[]} entries
  * @returns {string[]} sorted, deduplicated file names inside `_shared/lib`
  */
 function toolClosure(entries) {
   const seen = new Set();
-  let layer = [...entries];
-  for (let depth = 0; depth <= CLOSURE_DEPTH && layer.length; depth++) {
-    const next = [];
-    for (const f of layer) {
-      if (seen.has(f)) continue;
-      seen.add(f);
-      next.push(...localRequires(f));
-    }
-    layer = next;
+  const queue = [...entries];
+  while (queue.length) {
+    const f = queue.pop();
+    if (seen.has(f)) continue;
+    seen.add(f);
+    queue.push(...localRequires(f));
   }
   return [...seen].sort();
 }
@@ -97,8 +95,13 @@ function headOf(dir) {
   } catch (_e) { return null; }
 }
 
+/**
+ * True only when `git status` shows nothing: no tracked change and no untracked, non-ignored file.
+ * The three gates read untracked files too (class-sweep scans `ls-files -o`, lane-split reads lane paths from disk),
+ * so an untracked file is an input the head sha does not cover. The gate log itself is excluded by gate-log.cjs.
+ */
 function treeClean(dir) {
-  try { return gitSafe(dir, ['status', '--porcelain', '--untracked-files=no']) === ''; } catch (_e) { return false; }
+  try { return gitSafe(dir, ['status', '--porcelain', '--untracked-files=all']) === ''; } catch (_e) { return false; }
 }
 
 /**
@@ -211,7 +214,10 @@ function checklistRunWithReuse(rest, runner) {
       if (rm && rm.file) files.push({ label: 'roadmap', path: rm.file });
       const args = { target: `${t.slug}/${t.feature}`, only: '9,10,11', format: 'json', roadmap: rm && rm.file ? 'file' : 'roadmap:none' };
       if (tryReuse({ gate: 'gate-4.5-fr-consistency', files, args }).reused) return undefined;
-    } catch (_e) { /* any read problem: the gate runs */ }
+    } catch (e) {
+      // any read problem: the gate runs; a plain miss or a missing file stays silent, anything else is named
+      if (!(e instanceof ReuseMiss) && !(e && e.code === 'ENOENT')) process.stderr.write(`reuse check failed: ${e && e.message ? e.message : e}\n`);
+    }
   }
   return runner(rest);
 }
