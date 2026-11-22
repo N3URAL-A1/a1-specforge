@@ -1,0 +1,34 @@
+{
+  "pr": 108,
+  "head_sha": "96b4a81c5b6bc069cdf920ff9c00a336194d9a9e",
+  "base_sha": "808fb8ed8b85b1d450298220296f606eb9ae52fb",
+  "date": "2026-11-22T21:55:24.850Z",
+  "host": "aiserver",
+  "node": "v24.20.0",
+  "rc": 0,
+  "wall_ms": 379256,
+  "suites": {
+    "verdict": "pass",
+    "runner_source": "base",
+    "duration_ms": 377210,
+    "lock_wait_ms": 27,
+    "base_run": {
+      "mode": "lazy",
+      "ran": [],
+      "of": 63
+    }
+  },
+  "ci_evidence_used": {
+    "used": false,
+    "why": "disabled_by_flag",
+    "checks": []
+  },
+  "host_load": {
+    "load5_start": 2.8,
+    "load5_end": 6.39,
+    "cpus": 24,
+    "host_busy": "absent"
+  },
+  "baseline_total_ms": 2990052,
+  "target_ms": 900000
+}
