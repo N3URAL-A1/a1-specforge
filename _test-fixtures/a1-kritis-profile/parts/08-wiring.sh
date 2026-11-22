@@ -265,10 +265,10 @@ caseWireIntent() {
     res.push("trigger:" + trig.length);
     console.log(res.join(" "));
   ' "$REPO_ROOT/_shared/lib/intent-constants.cjs" 2>&1)"
-  if [[ "$out" == "new-feature:28:0 continue-feature:28:0 trigger:0" ]]; then
+  if [[ "$out" == "new-feature:29:0 continue-feature:29:0 trigger:0" ]]; then
     ok "I intent allowlist: new-feature and continue-feature hold 28 entries incl. all seven profile commands; trigger-check on no allowlist"
   else
-    bad "I intent allowlist: [$out] (expected new-feature:28:0 continue-feature:28:0 trigger:0)"
+    bad "I intent allowlist: [$out] (expected new-feature:29:0 continue-feature:29:0 trigger:0)"
   fi
 }
 caseWireIntent

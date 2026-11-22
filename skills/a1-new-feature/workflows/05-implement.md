@@ -1,10 +1,12 @@
 # Phase 5 — Implement
 
-**Goal:** Walk through the Wave-Plan one wave at a time. For each wave, propose the code
-agent(s) and brief, wait for user confirmation, then dispatch. Track wave completion.
+**Goal:** Walk through the Wave-Plan one wave at a time. For each wave, the skill dispatches the
+suggested agent(s) with the brief and tracks wave completion. Waves continue on their own while
+`wave next-check` prints `continue`; the owner can stop per wave with `--checkpoint-each-wave`, and a stop
+reason asks the owner (spec 027 FR-021).
 
 **Sub-agents:** Code agents per wave (Walter / Bernd / Aik / Felix / Alex / project-specific).
-The skill **proposes**; the user **dispatches**.
+The skill dispatches the agent suggested in the wave plan; the owner can name a different one in a stop block.
 
 **Status transition:** `planned` → `implementing` (on first wave start) → stays `implementing`
 until Phase 6 closes it.
@@ -57,6 +59,43 @@ node <repo>/_shared/a1-tools.cjs spec update-status \
   <spec-path> implementing
 ```
 
+## Step 1b — Event stores (every start)
+
+`wave next-check` reads `observations.jsonl` and `GOAL.md` (with `## Decisions`) under `.a1/phases/<spec-id>/` and stops when either is
+missing (owner decision 2026-11-20, "missing source = stop"). This block creates what is missing, registers the union merge for both
+paths and commits what it created or changed (decided by the git state of the two files, so a re-run after a failed commit commits the
+staged files). `<dir>` is the feature worktree, the same `<dir>` the wave gates pass as `--project`. The stores ride in the feature PR.
+`<spec title>` is substituted as one line inside the quoted heredoc, so quotes, `$(...)` and backticks stay literal. The orchestrator
+strips all newlines from the title first (a title line equal to `A1_GOAL_EOF` would close the heredoc early) and checks `<spec-id>`
+against `^[A-Za-z0-9_][A-Za-z0-9._-]*$` before running the block; a spec id that fails the check is a STOP. The block repeats the check
+on the `SPEC_ID` value, which it reads through a quoted heredoc (`A1_SPEC_EOF`; single quotes alone let `x'$(...)'` run at the assignment) and the orchestrator strips all newlines from the id too (`STOP: bad spec id`, exit 2).
+
+```bash
+WORK_PATH="<dir>"
+IFS= read -r SPEC_ID <<'A1_SPEC_EOF'
+<spec-id>
+A1_SPEC_EOF
+case "$SPEC_ID" in ""|[!A-Za-z0-9_]*|*[!A-Za-z0-9._-]*) echo "STOP: bad spec id"; exit 2;; esac
+P="$WORK_PATH/.a1/phases/$SPEC_ID"; mkdir -p "$P"
+if [ ! -e "$P/observations.jsonl" ]; then : > "$P/observations.jsonl"; fi
+if [ ! -e "$P/GOAL.md" ]; then
+  cat > "$P/GOAL.md" <<'A1_GOAL_EOF'
+# Goal: <spec title>
+
+## Decisions
+A1_GOAL_EOF
+fi
+if ! grep -qE '^##[[:space:]]+Decisions[[:space:]]*$' "$P/GOAL.md"; then printf '\n## Decisions\n' >> "$P/GOAL.md"; fi
+A="$(git -C "$WORK_PATH" rev-parse --path-format=absolute --git-common-dir)/info/attributes"; mkdir -p "${A%/*}"
+for L in '.a1/phases/*/observations.jsonl merge=union' '.a1/phases/*/GOAL.md merge=union'; do grep -qxF "$L" "$A" 2>/dev/null || printf '%s\n' "$L" >> "$A"; done
+if [ -n "$(git -C "$WORK_PATH" status --porcelain -- "$P/observations.jsonl" "$P/GOAL.md")" ]; then git -C "$WORK_PATH" add -- "$P/observations.jsonl" "$P/GOAL.md" && git -C "$WORK_PATH" commit -q -m "chore($SPEC_ID): event stores" -- "$P/observations.jsonl" "$P/GOAL.md"; RC=$?; if [ "$RC" -ne 0 ]; then echo "STOP: event-store commit exit=$RC"; exit "$RC"; fi; fi
+echo "event stores ready: $P"
+```
+
+On `STOP: event-store commit exit=<n>`: fix the cause (hook output above, a held `.git/index.lock`), then run the block again.
+The two `merge=union` lines stay in `<git-common-dir>/info/attributes` (local, never committed, repo-wide for these two append-only
+paths: it applies to every worktree and branch merge of this repository, so a merge of a foreign branch also unions its `GOAL.md` Decisions rows); to remove them delete those two lines from that file.
+
 ## Step 2 — Read the wave-plan and pick the next wave
 
 Read `<plan-path>`. Identify the next wave whose dependencies are satisfied (all earlier
@@ -75,9 +114,25 @@ wave heading after dispatch:
 ## Wave N — <title>  ⟶ status: in-progress / done / failed
 ```
 
-## Step 3 — Propose the agent(s) to the user
+## Step 3 — Next wave and its agent(s)
 
-For the next wave, present:
+Read `### Suggested agent(s)` for Wave N from the wave plan (the brief, FRs and goal come from the same section).
+
+Before Wave 1 run `wave next-check <spec-id> 0 --since <precondition_start> --project <dir> --plan <wave-plan path>`
+(wave 0 checks only that Wave 1 names an agent; the preconditions above stop on their own exit codes). Before Wave N+1 run it with
+`<N>` and `--since <wave_start>`. Add `--checkpoint-each-wave` when the owner started the run with it.
+
+```bash
+NEXT="$(node <repo>/_shared/a1-tools.cjs wave next-check <spec-id> <N> --since <wave_start> --project <dir> --plan <wave-plan path>)"; RC=$?
+echo "wave next-check: $NEXT (exit $RC)"
+```
+
+- `continue` (exit 0) → dispatch the suggested agent(s) at once, no question.
+- `stop:<reason>` (exit 1) → the stop block below.
+- Exit 2 → STOP, fix the call.
+
+<!-- a1:stop -->
+On `stop:<reason>` present the proposal and let the owner decide:
 
 > "**Wave N — <Title>**
 >
@@ -85,15 +140,25 @@ For the next wave, present:
 > FRs: <list>
 > Brief: <short summary>
 >
+> Stop reason: <reason>
 > Suggestion: **<agent-name>** for <sub-task>.
 >
 > Should I dispatch the agent like this, or would you like a different one?"
 
 Wait for user confirmation. Do **not** dispatch automatically.
 
+| Reason | What to do |
+|---|---|
+| `gate_red` | fix the cause and re-run the failed gate call |
+| `deviation` | read `observations.jsonl`; a missing file is itself the stop: recreate it per Step 1b |
+| `scope_change` | confirm the GOAL.md decision; a date-only row stops every wave of its day, rewrite it with an ISO timestamp to clear it |
+| `agent_unnamed` | name the agent in the wave plan (`### Suggested agent(s)`) |
+| `owner_requested` | the owner started the run with `--checkpoint-each-wave` |
+<!-- /a1:stop -->
+
 ## Step 4 — Dispatch
 
-Once the user confirms (or names a different agent), spawn the agent via the Agent tool with
+Spawn the suggested agent (or the agent the owner named in a stop block) via the Agent tool with
 this brief:
 
 > You are <agent-name>. You are working on Wave N from the wave plan at `<plan-path>`.
@@ -123,8 +188,33 @@ this brief:
 >
 > When done: report "Wave N done. <short summary of changes>."
 
-If the wave is parallelizable and the user wants both agents at once, dispatch them in a
+If the wave is parallelizable and the plan names both agents, dispatch them in a
 **single** assistant turn (parallel Task calls).
+
+On dispatch run `date -u +%Y-%m-%dT%H:%M:%SZ` and note the printed value as `<wave_start>` of this wave (substituted literally into the
+`wave next-check` call of Step 3 for Wave N+1).
+
+When the agent's hand-back reports a deviation or "spec unstable", append one line
+`{"ts":"<ISO>","agent":"<agent>","skill":"a1-new-feature","phase":"<spec-id>","wave":<N>,"type":"deviation","severity":"major","msg":"<one sentence>"}`
+to `<dir>/.a1/phases/<spec-id>/observations.jsonl` (the a1-new-feature source of `deviation`), then commit it at once (the agent has
+returned, so no executor runs in that worktree):
+
+```bash
+git -C "<dir>" commit -q -m "chore(<spec-id>): observation wave <N>" -- ".a1/phases/<spec-id>/observations.jsonl"; RC=$?
+if [ "$RC" -ne 0 ]; then echo "STOP: store commit exit=$RC"; fi
+```
+
+**Mid-run decision rule.** When the owner changes a requirement during a wave, append
+`- <ISO-8601 UTC timestamp from date -u +%Y-%m-%dT%H:%M:%SZ> — <decision> — affects: <FR or AC id>` under `## Decisions` in
+`<dir>/.a1/phases/<spec-id>/GOAL.md` before the next wave (the a1-new-feature source of `scope_change`), then commit it, never while the
+wave's agent still runs (index lock):
+
+```bash
+git -C "<dir>" commit -q -m "chore(<spec-id>): decision" -- ".a1/phases/<spec-id>/GOAL.md"; RC=$?
+if [ "$RC" -ne 0 ]; then echo "STOP: store commit exit=$RC"; fi
+```
+
+On `STOP: store commit`: fix the cause (a held `.git/index.lock`, a hook) and commit again. The spec's `## Clarifications` entry follows as today.
 
 ## Step 5 — After the agent reports back: Build + Deploy + Smoke Test (mandatory)
 

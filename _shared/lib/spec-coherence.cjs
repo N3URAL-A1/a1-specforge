@@ -279,6 +279,7 @@ module.exports = {
   checkSpecRoadmapCoherence,
   specStatusSection,
   findProjectRoadmap,
+  resolveSpecFile,
   roadmapHint,
   reconcileCommand,
 };

@@ -99,13 +99,9 @@ PR draft ready. Title + first 20 lines of body:
 <excerpt>
 
 File: <worktree>/.a1-review/pr-draft.md
-
-Should I create the PR now with gh (Phase 4)? (yes / no / adjust draft)
 ```
 
-- "yes" → Phase 4.
-- "no" → stop, registry stays on `reviewed`.
-- "adjust draft" → wait for user edits, then ask again.
+Go to Phase 4 without asking (owner standing rule 2026-09-09, confirmed 2026-11-12; spec 027 FR-022). The review stops (BLOCKER, merge-check red) stay.
 
 ## Failure modes
 

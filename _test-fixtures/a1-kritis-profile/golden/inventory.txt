@@ -4,7 +4,7 @@
 #
 # Updated by Wave 8 (2026-10-29, decision by Robert): the AC's 22 is the
 # count BEFORE the profile wiring. Wave 8 adds exactly 7 `profile` call
-# sites to a1-new-feature, so the live grep now returns 29. The 22
+# sites to a1-new-feature, so the live grep returned 29; spec 027 slice 4 adds `wave next-check` (30). The 22
 # pre-profile rows below are unchanged; the 7 new ones are marked
 # "profile:<part>" with the fixture part that exercises each. Any further
 # growth of this list is still a finding.
@@ -51,3 +51,4 @@ profile nfr-inject	profile:parts/04-nfr.sh
 profile threat-model-check	profile:parts/05-stride.sh
 profile simulate-roles	profile:parts/06-simulate.sh
 profile simulate-check	profile:parts/06-simulate.sh
+wave next-check	excluded:module outside code_scope (wave-next-check.cjs is spec 027 slice 4; the call only reads the wave plan and the phase stores, no profile behaviour)

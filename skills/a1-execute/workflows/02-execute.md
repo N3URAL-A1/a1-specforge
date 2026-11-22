@@ -1,6 +1,6 @@
 # Phase 2: Execute Waves
 
-Execute each wave via a1-erik-executor, with checkpoints between waves.
+Execute each wave via a1-erik-executor. Waves continue on their own while `wave next-check` prints `continue`; a stop reason (or `--checkpoint-each-wave`) asks the owner.
 
 ## Work path (`$WORK_PATH`)
 
@@ -16,6 +16,50 @@ Getting this wrong is silent: `git -C <primary checkout> rev-parse HEAD` in a
 lane run measures a tree the executor never touched, so the commit-landed gate
 below either reports a false "empty" or counts another lane's commits as this
 one's.
+
+## Phase start (once per phase worktree, before the per-wave loop)
+
+The event stores of this phase are `.a1/phases/<phase_name>/observations.jsonl` and `GOAL.md` (with a `## Decisions` heading).
+`wave next-check` stops when either is missing (owner decision 2026-11-20, "missing source = stop"). This block creates what is
+missing, registers the union merge for both paths and commits what it created or changed, so neither the commit-landed gate nor the
+worktree exit meets an untracked store, and a missing store later means the run broke. It decides about the commit by the git state of
+the two files, not by what it created itself: after a failed commit (a pre-commit hook, an index lock) a re-run commits the staged files.
+`<phase_goal>` is substituted as one line inside the quoted heredoc, so quotes, `$(...)` and backticks stay literal. The orchestrator
+strips all newlines from the goal first (a goal line equal to `A1_GOAL_EOF` would close the heredoc early) and checks `<phase_name>`
+against `^[A-Za-z0-9_][A-Za-z0-9._-]*$` before running the block; a name that fails the check is a STOP, not a value to repair. The
+block repeats the check on the `PHASE` value, which it reads through a quoted heredoc (`A1_PHASE_EOF`): single quotes alone are not
+enough, because a name holding a single quote (`x'$(...)'`) ends the quoting and runs at the assignment, before the guard. The orchestrator
+strips all newlines from the name too (a name line equal to `A1_PHASE_EOF` would close the heredoc early). A bad value is
+`STOP: bad phase name`, exit 2, so a name that slipped through never reaches a path or a commit message.
+
+```bash
+IFS= read -r PHASE <<'A1_PHASE_EOF'
+<phase_name>
+A1_PHASE_EOF
+case "$PHASE" in ""|[!A-Za-z0-9_]*|*[!A-Za-z0-9._-]*) echo "STOP: bad phase name"; exit 2;; esac
+P="$WORK_PATH/.a1/phases/$PHASE"; mkdir -p "$P"
+if [ ! -e "$P/observations.jsonl" ]; then : > "$P/observations.jsonl"; fi
+if [ ! -e "$P/GOAL.md" ]; then
+  cat > "$P/GOAL.md" <<'A1_GOAL_EOF'
+# Goal: <phase_goal>
+
+## Decisions
+A1_GOAL_EOF
+fi
+if ! grep -qE '^##[[:space:]]+Decisions[[:space:]]*$' "$P/GOAL.md"; then printf '\n## Decisions\n' >> "$P/GOAL.md"; fi
+A="$(git -C "$WORK_PATH" rev-parse --path-format=absolute --git-common-dir)/info/attributes"; mkdir -p "${A%/*}"
+for L in '.a1/phases/*/observations.jsonl merge=union' '.a1/phases/*/GOAL.md merge=union'; do grep -qxF "$L" "$A" 2>/dev/null || printf '%s\n' "$L" >> "$A"; done
+if [ -n "$(git -C "$WORK_PATH" status --porcelain -- "$P/observations.jsonl" "$P/GOAL.md")" ]; then git -C "$WORK_PATH" add -- "$P/observations.jsonl" "$P/GOAL.md" && git -C "$WORK_PATH" commit -q -m "chore($PHASE): event stores" -- "$P/observations.jsonl" "$P/GOAL.md"; RC=$?; if [ "$RC" -ne 0 ]; then echo "STOP: event-store commit exit=$RC"; exit "$RC"; fi; fi
+echo "event stores ready: $P"
+```
+
+On `STOP: event-store commit exit=<n>`: fix the cause (hook output above, a held `.git/index.lock` of this worktree), then run the block again.
+
+Multi-lane: run it once in the phase worktree before the lane worktrees branch off; the lanes inherit the tracked stores, and the union
+attribute lets the lane merges keep both sides' appended lines. The two `merge=union` lines stay in `<git-common-dir>/info/attributes`
+(local, never committed, repo-wide for these two append-only paths: it applies to every worktree and every branch merge of this repository, so a merge of a foreign branch also unions the `GOAL.md` Decisions rows and `observations.jsonl` lines of that branch instead of conflicting). On `GOAL.md` a union merge also keeps both sides of a non-append
+edit (for example a changed goal heading). To remove them, delete the two lines from that file:
+`{ grep -vxF -e '.a1/phases/*/observations.jsonl merge=union' -e '.a1/phases/*/GOAL.md merge=union' "$A" || :; } > "$A.new" && mv "$A.new" "$A"` (with `$A` as set in the block; it drops exactly those two lines and no other).
 
 ## Per-wave loop
 
@@ -44,6 +88,9 @@ Record the pre-wave HEAD first — step 2b compares against it:
 ```bash
 PRE_WAVE_HEAD=$(git -C "$WORK_PATH" rev-parse HEAD)
 ```
+
+Then run `date -u +%Y-%m-%dT%H:%M:%SZ` and keep the printed value as `<wave_start>` for this wave (shell state does not persist; it is
+substituted literally into the `wave next-check` call in 2c).
 
 ```
 Execute Wave <N> of the plan.
@@ -104,7 +151,9 @@ moving to the checkpoint — see "Audit Auto-Close" below.
 
 **If PARTIAL (some tasks blocked):**
 Show which tasks are blocked and why.
+<!-- a1:stop -->
 Ask: "Wave <N> is partially complete. <N> tasks blocked. Continue to next wave or stop?"
+<!-- /a1:stop -->
 
 **If BLOCKED (wave couldn't start):**
 Surface error to user. Do not continue.
@@ -221,7 +270,7 @@ if [ -n "${A1_VAULT_ROOT:-}" ]; then
 fi
 ```
 
-### 2c. Checkpoint
+### 2c. Wave summary and next-check
 
 Present wave summary:
 ```
@@ -232,20 +281,57 @@ Deviations: <list or "none">
 Vault mirror: <✓ synced | ⚠ sync exit <RC> | – no vault root>
 
 → Next: Wave <N+1> — <name> (<N> tasks)
-Continue? [y to proceed / n to stop]
 ```
+
+Then run `wave next-check <phase_name> <N> --since <wave_start> --project "$WORK_PATH"` (block below; add `--checkpoint-each-wave`
+when the owner started the run with it).
+
+```bash
+NEXT="$(node <repo>/_shared/a1-tools.cjs wave next-check <phase_name> <N> --since <wave_start> --project "$WORK_PATH")"; RC=$?
+echo "wave next-check: $NEXT (exit $RC)"
+```
+
+- `continue` (exit 0) → start Wave N+1 at once, no question.
+- `stop:<reason>` (exit 1) → the stop block below.
+- Exit 2 → STOP, fix the call.
+
+<!-- a1:stop -->
+Stop reasons (`stop:<reason>`):
+
+| Reason | What to do |
+|---|---|
+| `gate_red` | fix the cause and re-run the failed gate call |
+| `deviation` | read `observations.jsonl`; a missing file is itself the stop: recreate it per Phase start |
+| `scope_change` | confirm the GOAL.md decision; a date-only row stops every wave of its day, rewrite it with an ISO timestamp to clear it |
+| `agent_unnamed` | name the agent of the next wave in PLAN.md |
+| `owner_requested` | the owner started the run with `--checkpoint-each-wave` |
+
+Continue? [y to proceed / n to stop]
+<!-- /a1:stop -->
+
+Multi-lane: run `wave next-check` per lane with the lane's own `$WORK_PATH`. A lane's last wave hands over to the lane merge, not to
+Wave N+1, so there only the gate, deviation and decision results count.
 
 **Mid-run decision (before the next wave).** If the user changed a requirement during this
 wave — scope cut, altered success criterion, "do it differently" — append it to
-`.a1/phases/<phase_name>/GOAL.md` under `## Decisions` now:
-`- <date> — <decision> — affects: <success criterion or task id>`. GOAL.md missing (a phase
-planned by `a1-plan` without a roadmap scaffold — 8 of 8 phases in this repo) → create it with
-`# Goal: <phase_goal from the PLAN.md frontmatter>` and the `## Decisions` heading. PLAN.md stays as loaded
+`$WORK_PATH/.a1/phases/<phase_name>/GOAL.md` under `## Decisions` now (where `wave next-check` reads it):
+`- <ISO-8601 UTC timestamp from date -u +%Y-%m-%dT%H:%M:%SZ> — <decision> — affects: <success criterion or task id>`.
+GOAL.md missing: create it per Phase start. PLAN.md stays as loaded
 (its sha is bound by `--expect-sha`); Victor reads `## Decisions` as amendments to the
 success criteria (03-verify.md). A decision that lives only in the chat is verified against
 the old criterion (2026-10-15 captrader 012, 2026-10-08/09 ai-net M1-P1/P2).
 
-Wait for user input before starting next wave.
+After writing the row, commit it in that worktree at once (the file is tracked since Phase start, so no `git add`):
+
+```bash
+git -C "$WORK_PATH" commit -q -m "chore(<phase_name>): decision" -- ".a1/phases/<phase_name>/GOAL.md"; RC=$?
+if [ "$RC" -ne 0 ]; then echo "STOP: store commit exit=$RC"; fi
+```
+
+On `STOP: store commit`: fix the cause (a held `.git/index.lock`, a hook) and commit again; an uncommitted row blocks the worktree exit.
+Never commit while an executor works in that worktree (index lock): a decision taken during a wave is written and committed
+after the wave's COMPLETE report and the commit-landed gate, before `wave next-check`; its ISO token is the time of the decision.
+Erik's own `observations.jsonl` lines ride in his task commit; Victor's lines (03-verify) ride in the phase's closing commit with VERIFICATION.md.
 
 ## Audit Auto-Close (FR-022, spec `003-product-schema-v1.1-vision-audits`)
 
