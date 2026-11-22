@@ -1,3 +1,52 @@
 {
-  "reservations": []
+  "reservations": [
+    {
+      "type": "code_scope",
+      "paths": [
+        "_shared/a1-tools.cjs",
+        "_shared/lib/wave.cjs",
+        "_shared/lib/wave-checks.cjs",
+        "_shared/lib/feature.cjs",
+        "_shared/lib/feature-plan-steps.cjs",
+        "_shared/lib/feature-close.cjs",
+        "_shared/lib/gates-lint.cjs",
+        "_shared/lib/workflow-lint.cjs",
+        "_shared/lib/workflow-lint-parallel.cjs",
+        "_shared/lib/help-lean.cjs",
+        "docs/adr/2026-10-14-gate-invoke-and-log.md",
+        "skills/a1-plan/SKILL.md",
+        "skills/a1-plan/workflows/01-research.md",
+        "skills/a1-plan/workflows/02-map.md",
+        "skills/a1-plan/workflows/04-audit.md",
+        "skills/a1-execute/workflows/02-execute.md",
+        "skills/a1-execute/workflows/03-verify.md",
+        "skills/a1-new-feature/workflows/05-implement.md",
+        "skills/a1-new-feature/workflows/06-verify.md",
+        "skills/a1-new-feature/SKILL.md",
+        "skills/a1-new-feature/workflows/01-discover.md",
+        "skills/a1-new-feature/workflows/02-specify.md",
+        "skills/a1-new-feature/workflows/03-clarify.md",
+        "skills/a1-new-feature/workflows/04-plan.md",
+        "skills/a1-pr-review/workflows/05-merge.md",
+        "agents/a1-victor-verifier.md",
+        "_test-fixtures/a1-lib-units/cases/**",
+        "_test-fixtures/a1-gates-lint/**",
+        "_test-fixtures/a1-workflow-lint/**",
+        "_test-fixtures/a1-pr-review/**",
+        "_test-fixtures/a1-verify/run-tests.sh",
+        "_test-fixtures/a1-verify/cases-bgverify.sh",
+        "_test-fixtures/a1-kritis-profile/golden/apply-prompts-allowed.cjs",
+        "_test-fixtures/a1-kritis-profile/golden/prompts.allowed-diff",
+        "_test-fixtures/a1-kritis-profile/parts/01-golden.sh",
+        "_test-fixtures/a1-kritis-profile/parts/08-wiring.sh",
+        "_test-fixtures/a1-kritis-profile/parts/09-allowed-delete.sh",
+        "_test-fixtures/a1-kritis-profile/golden/inventory.txt",
+        "_shared/lib/intent-sandbox.cjs",
+        "_test-fixtures/a1-intent/cases/05b-child-seal.sh"
+      ],
+      "by": "027-lean-pipeline",
+      "at": "2026-11-22T22:15:43.292Z",
+      "stage": "started"
+    }
+  ]
 }
