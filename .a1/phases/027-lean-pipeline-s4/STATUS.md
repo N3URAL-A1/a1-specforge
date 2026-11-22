@@ -302,7 +302,7 @@ Completed: 2026-11-23
 | Task | Status | Commit | Notes |
 |---|---|---|---|
 | 7.1 workflows call `wave checks`, `BUNDLES`, W11 pins, BU1-BU4 | ✓ DONE | b1d58b3 | `workflow-lint-parallel.cjs` (T7.2's module) also landed in this commit |
-| 7.2 research-map group, background vault mirror, parallel lint, PG1-PG7 | ✓ DONE | 84948d6 | `workflow-lint.cjs` 443 (cap 445), `workflow-lint-parallel.cjs` 177 (cap 250), `gates-lint.cjs` 207 (cap 230), facade 787 |
+| 7.2 research-map group, background vault mirror, parallel lint, PG1-PG7 | ✓ DONE | 84948d6 | `workflow-lint.cjs` 443 (cap 445), `workflow-lint-parallel.cjs` 184 (cap 250), `gates-lint.cjs` 204 (cap 230), facade 787 |
 
 ### RED proofs (each: one edit, suite run, file restored)
 T7.1:
