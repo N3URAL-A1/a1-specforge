@@ -26,6 +26,33 @@ const LEAN_HELP = `  a1-tools pr review-record --head <sha> --verdict <pass|fail
                   stops for the whole day, rewrite it with an ISO timestamp to clear it); agent_unnamed (the next wave has
                   no named agent: a plan with \`lanes:\` needs an agent per lane, a plan without \`lanes:\` and without --plan
                   is read as \`lanes: none\` (Erik), a wave-plan given with --plan needs "### Suggested agent(s)" per wave).
+  a1-tools wave checks <slug> <wave> --diff-base <ref> [--project <dir>] [--migrations <dir>] [--phase <slug>]
+                  Spec 027 FR-024. Runs the three per-wave gates as children of this CLI, always all three, in this order:
+                  \`realpath-check run\` (gate-0.7-realpath), \`schema-check run\` (gate-0.6-schema, only with --migrations,
+                  else reported as skipped: no_migrations), \`test-fidelity\`. Each child runs with the project dir as its
+                  working directory and gets --phase <slug>, so each writes its own gate-log line into the project's log.
+                  --phase, when given, must equal <slug>. stdout: {"ok","slug","wave","checks":[{"gate","argv","exit",...}]}.
+                  Exit 2 when any child exited 2 or timed out (10 minutes each), else 1 when any exited non-zero, else 0.
+  a1-tools feature plan-steps <spec-path>
+                  Spec 027 FR-025. Prints the step list of a feature run for the spec's size (frontmatter S, M or L):
+                  {"spec","size","steps":[{"id","kind","agent|gate","model","phase","when?","resume?"}],"spawns","gates"}.
+                  steps[] holds every fixed and every conditional step; a step with "when" runs when its phase workflow
+                  finds that condition true. "spawns" counts the unconditional spawns. No size in the spec: exit 1 no_size.
+                  Exit 2 usage error.
+  a1-tools feature close --by <spec-id> --pr <n> [--repo <dir>] [--spec <path>] [--worktree <id>]
+                  Spec 027 FR-026. Closes a feature after its PR merged. Run it from the primary checkout (a linked worktree
+                  exits 1 run_from_worktree). Steps in order, each skipped when already done: check the PR is MERGED and its
+                  remote branch gone; record every gate-log scope of the worktree (run record), then \`worktree exit --mode
+                  discard\`; advance the reservation stages and \`code-scope release --by <spec-id>\`; set the spec to done;
+                  \`git fetch --prune\` and sweep local branches. A failed step exits 1 {"ok":false,"reason","step"} and runs
+                  nothing after it. Branch sweep: a branch is deleted when a merged PR's head equals its tip, or when it has no
+                  diff against origin/<base> (rule (b): this also deletes non-PR branches whose tip the base already contains,
+                  no commit is lost); everything else is listed in kept[]. The command commits nothing: when
+                  .a1/reservations.json is tracked and changed it prints \`reservations_commit_pending\` for the caller to commit.
+                  gh is taken from the A1_GH_BIN seam (default gh; an override is named on stderr).
+                  Exit 0 ok / 1 failed step / 2 usage error (--pr must be 1-7 digits, --by a safe scope name).
+  a1-tools feature close --cleanup-only [--repo <dir>]
+                  Spec 027 FR-026. Runs only the branch sweep and the fetch --prune of \`feature close\`.
 
   Input-hash reuse (spec 027 FR-020): \`checklist run <slug>/<feature> --only 9,10,11\`, \`lane-split check\` and
                   \`fix class-sweep --verify\` reuse the last pass when the input hash is unchanged. The key covers the
