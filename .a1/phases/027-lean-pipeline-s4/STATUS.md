@@ -292,3 +292,6 @@ T6.2:
 - `realpath-check` SQL-shaped fixture text false positive: not hit in this wave (planted SQL is meant to be detected).
 
 `verify run --affected --no-cache --phase 027-lean-pipeline-s4` on head d2780b8: verdict pass, selection full (`runner_or_config_changed`, because the facade changed), 63 of 63 commands, 0 timed out, flaky [] and pre_existing_red []. Wall time about 29 minutes on the aiserver.
+
+### Orchestrator gate note, wave 6 (realpath-check)
+- `realpath-check run --diff-base 987c9f6` exits 1 (rls, sql): planted migration fixtures in `_test-fixtures/a1-lib-units/cases/wave-checks.cjs` (WC2/WC4 copy `a1-schema-check/fail-no-rls`). Same documented false-positive class as wave 1; repo has no DB backend, no evidence file written.
