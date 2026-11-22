@@ -295,3 +295,42 @@ T6.2:
 
 ### Orchestrator gate note, wave 6 (realpath-check)
 - `realpath-check run --diff-base 987c9f6` exits 1 (rls, sql): planted migration fixtures in `_test-fixtures/a1-lib-units/cases/wave-checks.cjs` (WC2/WC4 copy `a1-schema-check/fail-no-rls`). Same documented false-positive class as wave 1; repo has no DB backend, no evidence file written.
+
+## PR B / Wave 7 — `wave checks` wiring and parallel groups
+Completed: 2026-11-23
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| 7.1 workflows call `wave checks`, `BUNDLES`, W11 pins, BU1-BU4 | ✓ DONE | b1d58b3 | `workflow-lint-parallel.cjs` (T7.2's module) also landed in this commit |
+| 7.2 research-map group, background vault mirror, parallel lint, PG1-PG7 | ✓ DONE | 84948d6 | `workflow-lint.cjs` 443 (cap 445), `workflow-lint-parallel.cjs` 177 (cap 250), `gates-lint.cjs` 207 (cap 230), facade 787 |
+
+### RED proofs (each: one edit, suite run, file restored)
+T7.1:
+- (a) `BUNDLES` lookup removed from `findCalls` -> G3, W11f, PR3, BU1, BU3 red (5 fails).
+- (b) bundle list without `test-fidelity` -> G3, W11f, PR3, BU1, BU3, BU4 red. BU2 stays green: with test-fidelity out of the list, "removed line gives unwired for all three" is true either way; BU1 and BU4 carry the proof (plan said BU2, measured otherwise).
+- (c) W11a: old pin `calls=15` on the new tree -> red (`calls=11`).
+- (c) W11b, W11c, W11e: the old mutations (test-fidelity forms) on the new tree -> red (all print `calls=11`, no match). The new mutations are green and flag `missing --phase <spec-id>`, `unknown flag --base`, `02-execute.md: wave checks expected 1 call(s), found 0`.
+- a1-kritis-profile inventory: first run on the new tree red (`re-grepped 28 subcommands, expected 30`, set-equality red) -> pin updated.
+- a1-intent H7a, H7c: first run on the new tree red (`unclassified: wave checks` in new-feature, continue-feature, execute) -> exclusion added.
+
+T7.2:
+- (a) single-member check removed -> PG2 red.
+- (b) dependent check removed -> PG3 red.
+- (c) `&` test removed -> PG4 red.
+- (extra) join=yes check removed -> PG5 red; orphan-join check removed -> PG6 red.
+- (d) dashboard pin: inner `dashboard build` line swapped one line down in 04-audit.md -> a1-dashboard 05.26 red (`bad sync=3 ws=false wd=false ...`).
+
+### Pin changes (each with the red run above)
+- `check-wave11-callsites.cjs`: FLAGS/`CMD_RE`/FILES for `wave checks`. W11a 15 -> 11, W11b/c/e re-aimed at the `wave checks` line, W11d/W11f byte-unchanged. Measured-red comment block extended.
+- a1-intent H7a/H7c: `_shared/lib/intent-sandbox.cjs` gets `WAVE_CHECKS` exclusion (new-feature, continue-feature, execute). Call classified as a WRITE (one gate-log line per child) that spawns node children, so it is excluded like `verify run` (SEC-5, owner-side). `05b-child-seal.sh` needed no edit (floor counts only, H7c control still names `fix: worktree gc`).
+- a1-kritis-profile: `golden/inventory.txt` drops `realpath-check run`, `schema-check run`, `test-fidelity --diff-base`, adds `wave checks` (excluded); `parts/01-golden.sh` 30 -> 28 subcommands, excluded 12 -> 10 (label `11+10`). No assertion removed.
+- `gates lint`: `wave checks` line counts as a call of its three gates (`call_without_phase` applies).
+- No change to `08-wiring.sh`.
+
+### Results
+`a1-gates-lint` run-tests 99/0 (BU1-BU4 incl.), run-wave13 10/0, run-wave14 50/0, `check-wave11-callsites` `calls=11`, `gates lint` exit 0, `a1-workflow-lint` 74/0 (PG1-PG7), `workflow lint --phase 027-lean-pipeline-s4` exit 0 (`parallel_checked` 2, `background_checked` 1), `a1-kritis-profile` 221/0, `a1-intent` 1125/0, `a1-dashboard`, `a1-retro-validate`, `a1-xprov` (shard a incl. part 06, shard b incl. part 36), `a1-lib-units`, `a1-pr-merge-check`, `product-schema-v11`, `install-sync` all rc 0. `grep -c RESEARCH.md 02-map.md` = 0; `a1:parallel group=research-map` sums to 2.
+
+### Deviations
+- Intent child cannot run `wave checks` (spawn guard, exit 77). 02-execute.md and 05-implement.md carry a one-line note: record "wave checks: deferred to owner". Effect: an intent execute child no longer runs the realpath/schema/fidelity gates itself; the owner must run `wave checks` before merge. The plan named no sandbox change: decision for the orchestrator/Pablo whether to allowlist `wave checks` after a measured spawn-guard check.
+- BU2 does not go red under RED-proof (b) (see above).
+- Prose in 01-research.md/02-map.md avoids the literal marker string and `RESEARCH.md` so the plan's done-when greps hold (2 markers, 0 RESEARCH.md in 02-map.md).

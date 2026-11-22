@@ -1118,7 +1118,7 @@ RED-proof:
 - 6 RED-proof lines are logged.
 
 **Status box:**
-- [ ] T7.1 `BUNDLES` `wave checks` `check-wave11-callsites.cjs` `_test-fixtures/a1-gates-lint/cases-bundle.sh`
+- [x] T7.1 `BUNDLES` `wave checks` `check-wave11-callsites.cjs` `_test-fixtures/a1-gates-lint/cases-bundle.sh`
 
 **Covers:** SC-8
 
@@ -1162,7 +1162,7 @@ RED-proof:
 - 4 RED-proof lines are logged.
 
 **Status box:**
-- [ ] T7.2 `a1:parallel group=research-map` `_shared/lib/workflow-lint-parallel.cjs` `parallel_checked` `_test-fixtures/a1-workflow-lint/cases-parallel.sh`
+- [x] T7.2 `a1:parallel group=research-map` `_shared/lib/workflow-lint-parallel.cjs` `parallel_checked` `_test-fixtures/a1-workflow-lint/cases-parallel.sh`
 
 **Covers:** SC-7
 
