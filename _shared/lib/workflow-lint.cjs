@@ -407,9 +407,12 @@ function cmdWorkflowLint(argv) {
   const reuseBan = verifyLint.checkReuseBan(root, isSkillsTree);
   const quietHost = verifyLint.checkQuietHostPoll(root, isSkillsTree);
   findings = findings.concat(verifyScope.findings, reuseBan.findings, quietHost.findings);
+  const parLint = require('./workflow-lint-parallel.cjs');
   const flowLint = require('./workflow-lint-flow.cjs');
   const early = flowLint.checkEarlyReview(root, isSkillsTree), checkpoint = flowLint.checkWaveCheckpoint(root, isSkillsTree), prConfirm = flowLint.checkPrConfirmation(root, isSkillsTree);
   findings = findings.concat(early.findings, checkpoint.findings, prConfirm.findings);
+  const par = parLint.checkParallelGroups(root, isSkillsTree), bg = parLint.checkBackgroundMarkers(root, isSkillsTree);
+  findings = findings.concat(par.findings, bg.findings);
 
   const out = {
     root,
@@ -419,6 +422,8 @@ function cmdWorkflowLint(argv) {
     reuse_ban_checked: reuseBan.checked,
     quiet_host_checked: quietHost.checked,
     flow_checked: early.checked + checkpoint.checked + prConfirm.checked,
+    parallel_checked: par.checked,
+    background_checked: bg.checked,
     findings,
   };
   const err = findings.map((f) => formatFinding(f) + '\n').join('');

@@ -409,6 +409,7 @@ caseW16() {
 . "$(dirname "${BASH_SOURCE[0]}")/cases-quiet-host.sh"
 . "$(dirname "${BASH_SOURCE[0]}")/cases-flow.sh"
 . "$(dirname "${BASH_SOURCE[0]}")/cases-flow-cli.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/cases-parallel.sh"
 
 caseW1; caseW2; caseW3; caseW4; caseW5; caseW6; caseW7; caseW8; caseW9; caseW10
 caseW11; caseW12; caseW13; caseW14; caseW15; caseW16
@@ -418,6 +419,7 @@ caseFL1; caseFL2; caseFL3; caseFL4; caseFL5; caseFL6; caseFL7; caseFL8; caseFL9;
 caseFL12; caseFL12b; caseFL13; caseFL14; caseFL15; caseFL16; caseFL17
 caseFL18; caseFL18b; caseFL19; caseFL20; caseFL20b; caseFL20c; caseFL21
 caseFC1; caseFC2; caseFC3; caseFC4; caseFC5; caseFC6
+casePG1; casePG2; casePG3; casePG4; casePG5; casePG6; casePG7
 
 printf '%s\n' "${results[@]}"
 echo "----"
