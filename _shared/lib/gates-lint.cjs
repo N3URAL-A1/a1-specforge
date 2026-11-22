@@ -34,6 +34,9 @@ const SKILL_NAME_RE = /^[a-z0-9][a-z0-9-]*$/;
 const MAX_WORKFLOW_FILE_BYTES = 2 * 1024 * 1024;
 /** Prompt rows allowed to name one recorder command (spec 027 D3). Any other prompt/human row with a command stays a finding. */
 const PROMPT_RECORDERS = Object.freeze({ 'pr-reinhard': 'pr review-record' });
+/** Bundle commands that run registry gates as children (spec 027 D12). A call line of the bundle counts as a call of each listed gate.
+ *  Second copy of wave-checks.cjs CHILD_GATES (no require edge); case BU4 asserts both are equal. */
+const BUNDLES = Object.freeze({ 'wave checks': ['realpath-check run', 'schema-check run', 'test-fidelity'] });
 
 function escapeRe(text) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -73,15 +76,16 @@ function readIfSmall(file) {
   }
 }
 
-/** Matching `{file, line}` call sites of `subcommand` in the given files. */
+/** Matching `{file, line}` call sites of `subcommand` in the given files, bundle command lines included (D12). */
 function findCalls(files, subcommand) {
-  const re = callRegex(subcommand);
+  const res = [callRegex(subcommand)];
+  for (const [bundle, list] of Object.entries(BUNDLES)) if (list.includes(subcommand)) res.push(callRegex(bundle));
   const hits = [];
   for (const file of files) {
     const content = readIfSmall(file);
     if (content === null) continue;
     for (const l of joinContinuations(extractBashFenceLines(content))) {
-      if (isCallLine(l.text) && re.test(l.text)) hits.push({ file, line: l.lineNo, text: l.text });
+      if (isCallLine(l.text) && res.some((re) => re.test(l.text))) hits.push({ file, line: l.lineNo, text: l.text });
     }
   }
   return hits;
@@ -197,4 +201,4 @@ function lintGates({ registryText, skillsRoot, today }) {
   return { rows: rows.length, wired, exemptions, findings };
 }
 
-module.exports = { lintGates, callRegex, skillFiles, findCalls };
+module.exports = { lintGates, callRegex, skillFiles, findCalls, BUNDLES };

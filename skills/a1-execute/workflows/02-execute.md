@@ -161,29 +161,21 @@ Surface error to user. Do not continue.
 ### 2b-g. Per-wave deterministic gates (spec 017)
 
 Runs once per wave in the COMPLETE branch, after the commit-landed gate and before
-2b-v. Each call carries `--phase <phase_name>` (the gate-log scope) and its exit code is
+2b-v. The call carries `--phase <phase_name>` (the gate-log scope) and its exit code is
 tested. **Any non-zero exit stops the wave**: no 2b-v, no 2c checkpoint, no next wave. Fix
-the cause and re-run the failed call. Calls run in this order:
+the cause and re-run the call. The calls run in this order:
 
 ```bash
-node <repo>/_shared/a1-tools.cjs realpath-check run --diff-base "$PRE_WAVE_HEAD" --project "$WORK_PATH" --phase <phase_name>; RC=$?
-echo "realpath-check exit=$RC"
-if [ $RC -ne 0 ]; then echo "STOP: realpath-check red, wave not signed off (needs .a1/realpath-evidence.md)"; fi
+node <repo>/_shared/a1-tools.cjs wave checks <phase_name> <N> --diff-base "$PRE_WAVE_HEAD" --project "$WORK_PATH" --phase <phase_name>; RC=$?
+echo "wave checks exit=$RC"
+if [ $RC -ne 0 ]; then echo "STOP: wave checks red (checks[] above: gate, exit)"; fi
 ```
 
-Migration waves only (the diff adds or changes SQL migrations); skip this block otherwise:
-
-```bash
-node <repo>/_shared/a1-tools.cjs schema-check run --migrations "$WORK_PATH/<migrations dir>" --phase <phase_name>; RC=$?
-echo "schema-check exit=$RC"
-if [ $RC -ne 0 ]; then echo "STOP: schema-check red, wave not signed off"; fi
-```
-
-```bash
-node <repo>/_shared/a1-tools.cjs test-fidelity --diff-base "$PRE_WAVE_HEAD" --project "$WORK_PATH" --phase <phase_name>; RC=$?
-echo "test-fidelity exit=$RC"
-if [ $RC -ne 0 ]; then echo "STOP: test-fidelity red (findings as JSON above)"; fi
-```
+`wave checks` runs the three registry gates `gate-0.7-realpath` (needs `.a1/realpath-evidence.md` when it is red),
+`gate-0.6-schema` and `test-fidelity` as children, one gate-log line each, and reports every child's exit in
+`checks[]` even when an earlier one failed. On a migration wave (the diff adds or changes SQL migrations) add
+`--migrations "$WORK_PATH/<migrations dir>"` before `--phase`; without it the schema check is skipped and
+reported as skipped. Intent child (`A1_INTENT_CHILD=1`): `wave checks` starts node child processes, which the child's spawn guard refuses (exit 77, `wave checks` is excluded like `verify run`); record "wave checks: deferred to owner" in the wave report. The owner runs it before any merge.
 
 Exit 1 of `test-fidelity` lists tests that mock the subject, are skipped, return early or do not
 run in CI. Re-dispatch the executor to fix the test. The only other way out is a recorded

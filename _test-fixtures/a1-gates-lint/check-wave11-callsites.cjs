@@ -16,17 +16,18 @@ const FLAGS = {
   'realpath-check run': ['diff-base', 'project', 'evidence', 'real-markers', 'json', 'phase'],
   'schema-check run': ['migrations', 'tables', 'trigger-pattern', 'json', 'phase'],
   'lane-split check': ['plan', 'imports', 'phase'],
+  'wave checks': ['diff-base', 'project', 'migrations', 'phase'],
 };
 // file -> [command, expected --phase placeholder, expected call count]
 const FILES = {
-  'skills/a1-execute/workflows/02-execute.md': ['<phase_name>', { 'realpath-check run': 1, 'schema-check run': 1, 'test-fidelity': 1, 'verify run': 1 }],
+  'skills/a1-execute/workflows/02-execute.md': ['<phase_name>', { 'wave checks': 1, 'verify run': 1 }],
   'skills/a1-execute/workflows/03-verify.md': ['<phase_name>', { 'verify run': 1, 'verify check': 1 }],
   'skills/a1-execute/SKILL.md': ['<phase_name>', { 'lane-split check': 1 }],
-  'skills/a1-new-feature/workflows/05-implement.md': ['<spec-id>', { 'schema-check run': 1, 'realpath-check run': 1, 'test-fidelity': 1, 'verify run': 1 }],
+  'skills/a1-new-feature/workflows/05-implement.md': ['<spec-id>', { 'wave checks': 1, 'verify run': 1 }],
   'skills/a1-new-feature/workflows/06-verify.md': ['<spec-id>', { 'verify run': 1, 'verify check': 1 }],
   'agents/a1-victor-verifier.md': ['<phase>', { 'verify run': 1, 'verify check': 1 }],
 };
-const CMD_RE = /(?:a1-tools\.cjs|\$A1_TOOLS"?)\s+(verify\s+run|verify\s+check|test-fidelity|realpath-check\s+run|schema-check\s+run|lane-split\s+check)(?=\s|$)/;
+const CMD_RE = /(?:a1-tools\.cjs|\$A1_TOOLS"?)\s+(verify\s+run|verify\s+check|test-fidelity|realpath-check\s+run|schema-check\s+run|lane-split\s+check|wave\s+checks)(?=\s|$)/;
 
 const problems = [];
 let calls = 0;

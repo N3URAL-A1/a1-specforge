@@ -297,53 +297,22 @@ surfaces 6–8.
 second record/screen, do NOT patch the instance — `grep` for the root surface and fix all
 sites at once. Three identical data-corrections in a row means you skipped this gate.
 
-**Gate 0.6 — Schema check (waves with DB migrations only)**
+**Gates 0.6-0.8 — `wave checks`**
 
-For waves that add or change migrations, run the deterministic pre-gate before wave
-sign-off (checks: audit trigger per table, RLS enabled, FK type match):
-
-```bash
-node <repo>/_shared/a1-tools.cjs schema-check run --migrations <dir> --phase <spec-id>; RC=$?
-echo "schema-check exit=$RC"
-if [ $RC -ne 0 ]; then echo "STOP: schema-check red, wave not signed off"; fi
-```
-
-Exit 1 = wave not signed off. Semantic checks (enum completeness, expand→migrate→contract)
-stay in the 04-plan.md migration checklist.
-
-**Gate 0.7 — Real-path proof (waves touching SQL / RLS / external HTTP only)**
-
-If this wave's diff touches a SQL query, an RLS policy, or an external HTTP call, mocked tests
-are not evidence — they routinely color broken code green. Before wave sign-off, run the
-deterministic real-path check:
+One call runs the three per-wave gates (each writes its own gate-log line, and every child's exit is reported in `checks[]`):
 
 ```bash
-node <repo>/_shared/a1-tools.cjs realpath-check run \
-  --diff-base <wave-start-ref> --project <dir> --phase <spec-id>; RC=$?
-echo "realpath-check exit=$RC"
-if [ $RC -ne 0 ]; then echo "STOP: realpath-check red, wave not signed off"; fi
+node <repo>/_shared/a1-tools.cjs wave checks <spec-id> <N> --diff-base <wave-start-ref> --project <dir> --phase <spec-id>; RC=$?
+echo "wave checks exit=$RC"
+if [ $RC -ne 0 ]; then echo "STOP: wave checks red (checks[] above: gate, exit)"; fi
 ```
 
-The check scans the wave diff for SQL shapes (statements, clause lines, driver calls; not English words) and external fetch signatures, and requires the executor to have produced
-`.a1/realpath-evidence.md` — one entry per touched surface category (SQL, RLS, external HTTP)
-containing the command run AND its real (non-mock) output. **Exit 1 = wave NOT signed off.**
+Exit non-zero = wave not signed off. On a wave with DB migrations add `--migrations <dir>` before `--phase`.
+Intent child (`A1_INTENT_CHILD=1`): `wave checks` starts node child processes, which the spawn guard refuses (exit 77); record "wave checks: deferred to owner" in the wave report.
 
-Rationale: `mock_tests_hide_sql_bugs` has recurred 3× — most damagingly an hourly-rate crash
-that shipped behind 23 green tests because none hit the real DB path. This gate kills that class
-structurally instead of by prompt appeal.
-
-**Gate 0.8 — Test fidelity (every wave)**
-
-Green tests that mock the changed code, are skipped, return early or do not run in CI prove
-nothing. Scan the tests this wave added or changed:
-
-```bash
-node <repo>/_shared/a1-tools.cjs test-fidelity --diff-base <wave-start-ref> --project <dir> --phase <spec-id>; RC=$?
-echo "test-fidelity exit=$RC"
-if [ $RC -ne 0 ]; then echo "STOP: test-fidelity red (findings as JSON above)"; fi
-```
-
-Exit 1 = wave not signed off: the agent fixes the tests. The only other way out is a recorded
+- Gate 0.6 (`schema-check`, migration waves only): audit trigger per table, RLS enabled, FK type match. Semantic checks (enum completeness, expand→migrate→contract) stay in the 04-plan.md migration checklist.
+- Gate 0.7 (`realpath-check`): a diff with SQL shapes, an RLS policy or an external HTTP call needs `.a1/realpath-evidence.md` — one entry per touched surface category, with the command run AND its real (non-mock) output. Mocked tests are not evidence (`mock_tests_hide_sql_bugs` recurred 3×).
+- Gate 0.8 (`test-fidelity`): tests this wave added or changed that mock the changed code, are skipped, return early or do not run in CI prove nothing. The agent fixes the tests. The only other way out is a recorded
 `disposition add --kind fidelity ... --reason <why> --by <agent>`; Reinhard reviews it at PR
 review. There is no skip flag.
 The merge step of a1-pr-review runs this scan once more on the final head (`05-merge.md` 5.3).

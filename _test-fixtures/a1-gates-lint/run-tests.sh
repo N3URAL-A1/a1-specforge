@@ -465,31 +465,37 @@ MATCH="$(node -e '
 #   05-implement.md verify run call line deleted                  -> W11a
 #   06-verify.md / 03-verify.md verify check call line deleted    -> W11a (each)
 #   a1-victor-verifier.md verify check call line deleted          -> W11a
+# Re-pinned 2026-11-23 (spec 027 slice 4 wave 7, `wave checks` replaces the three per-wave calls):
+#   old calls=15 pin on the new tree prints calls=11                          -> W11a red
+#   05-implement.md wave checks `--phase <spec-id>` dropped                   -> W11b
+#   02-execute.md wave checks `--diff-base` -> `--base`                       -> W11c
+#   02-execute.md wave checks line deleted                                    -> W11e
 # W11b-W11e plant their own defect in a copy and need the real files green first.
 W11CHK="$REPO_ROOT/_test-fixtures/a1-gates-lint/check-wave11-callsites.cjs"
 W11FILES="skills/a1-execute/workflows/02-execute.md skills/a1-execute/workflows/03-verify.md skills/a1-execute/SKILL.md skills/a1-new-feature/workflows/05-implement.md skills/a1-new-feature/workflows/06-verify.md agents/a1-victor-verifier.md"
 OUT="$(node "$W11CHK" "$REPO_ROOT" 2>&1)"; RC=$?
-[[ $RC -eq 0 && "$OUT" == "calls=15" ]] && ok "W11a real call sites: 15 calls, known flags, --phase scope, exit code captured" || bad "W11a ($OUT)"
+[[ $RC -eq 0 && "$OUT" == "calls=11" ]] && ok "W11a real call sites: 11 calls, known flags, --phase scope, exit code captured" || bad "W11a ($OUT)"
 w11_mutate() { # w11_mutate <file> <python-ish js edit on s>
   rm -rf "${WORK:?}/w11"; mkdir -p "$WORK/w11"
   for f in $W11FILES; do mkdir -p "$WORK/w11/$(dirname "$f")"; cp "$REPO_ROOT/$f" "$WORK/w11/$f"; done
   plant "$WORK/w11/$1" "$WORK/w11/$1" "$2"
   W11OUT="$(node "$W11CHK" "$WORK/w11" 2>&1)"; W11RC=$?
 }
-w11_mutate skills/a1-new-feature/workflows/05-implement.md 's = s.replace(/(test-fidelity [^\n]*) --phase <spec-id>/, "$1");'
-[[ $W11RC -eq 1 && "$W11OUT" == *"05-implement.md"*"missing --phase <spec-id>"* ]] && ok "W11b --phase dropped from a1-new-feature test-fidelity call: flagged" || bad "W11b ($W11OUT)"
-w11_mutate skills/a1-execute/workflows/02-execute.md 's = s.replace("test-fidelity --diff-base", "test-fidelity --base");'
-[[ $W11RC -eq 1 && "$W11OUT" == *"unknown flag --base"* ]] && ok "W11c wrong flag on test-fidelity: flagged" || bad "W11c ($W11OUT)"
+w11_mutate skills/a1-new-feature/workflows/05-implement.md 's = s.replace(/(wave checks [^\n]*) --phase <spec-id>/, "$1");'
+[[ $W11RC -eq 1 && "$W11OUT" == *"05-implement.md"*"missing --phase <spec-id>"* ]] && ok "W11b --phase dropped from a1-new-feature wave checks call: flagged" || bad "W11b ($W11OUT)"
+w11_mutate skills/a1-execute/workflows/02-execute.md 's = s.replace("--diff-base \"$PRE_WAVE_HEAD\"", "--base \"$PRE_WAVE_HEAD\"");'
+[[ $W11RC -eq 1 && "$W11OUT" == *"unknown flag --base"* ]] && ok "W11c wrong flag on wave checks: flagged" || bad "W11c ($W11OUT)"
 w11_mutate skills/a1-new-feature/workflows/06-verify.md 's = s.replace(/^node [^\n]*verify check[^\n]*$/m, "");'
 [[ $W11RC -eq 1 && "$W11OUT" == *"verify check expected 1 call(s), found 0"* ]] && ok "W11d verify check call removed from 06-verify: flagged" || bad "W11d ($W11OUT)"
-w11_mutate skills/a1-execute/workflows/02-execute.md 's = s.replace(/^node [^\n]*test-fidelity[^\n]*$/m, "");'
-[[ $W11RC -eq 1 && "$W11OUT" == *"02-execute.md: test-fidelity expected 1 call(s), found 0"* ]] && ok "W11e test-fidelity call removed from 02-execute: flagged" || bad "W11e ($W11OUT)"
+w11_mutate skills/a1-execute/workflows/02-execute.md 's = s.replace(/^node [^\n]*wave checks[^\n]*$/m, "");'
+[[ $W11RC -eq 1 && "$W11OUT" == *"02-execute.md: wave checks expected 1 call(s), found 0"* ]] && ok "W11e wave checks call removed from 02-execute: flagged" || bad "W11e ($W11OUT)"
 run_lint
 WIRED="$(node -e 'const j=JSON.parse(process.argv[1]);const w=j.wired.filter(x=>["gate-0.6-schema","gate-1-build","test-fidelity"].includes(x.gate)&&["a1-execute","a1-new-feature"].includes(x.skill));process.stdout.write(w.length+":"+w.map(x=>x.gate+"@"+x.skill).sort().join(","))' "$OUT")"
 [[ $RC -eq 0 && "$WIRED" == "6:gate-0.6-schema@a1-execute,gate-0.6-schema@a1-new-feature,gate-1-build@a1-execute,gate-1-build@a1-new-feature,test-fidelity@a1-execute,test-fidelity@a1-new-feature" ]] \
   && ok "W11f real tree: gates lint exit 0 and reports the a1-execute and a1-new-feature sides of gate-0.6-schema, gate-1-build, test-fidelity wired (6)" || bad "W11f (rc=$RC wired=$WIRED)"
 
 . "$(dirname "${BASH_SOURCE[0]}")/cases-pr-reinhard.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/cases-bundle.sh"
 
 echo "a1-gates-lint: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]
