@@ -257,3 +257,38 @@ Line counts: a1-tools.cjs 786 (untouched), gate-log.cjs 578, xprov-common.cjs 36
 
 ### Deviations
 - [Rule 3] `readCapped` exported and given an `afterStat` callback (test seam), needed to stage growth after fstat.
+
+## PR B / Wave 6 — `wave checks`, `feature plan-steps`, PR B help
+Completed: 2026-11-22
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| 6.1 `wave checks` | ✓ DONE | 7a5a58c | `wave-checks.cjs` 91 lines; WC1-WC7 (28 checks) in `a1-lib-units/cases/wave-checks.cjs` |
+| 6.2 `feature plan-steps`, `feature` group, PR B help | ✓ DONE | d2780b8 | `feature.cjs` 15, `feature-plan-steps.cjs` 74, `help-lean.cjs` 65 lines; facade 786 -> 787; PS0-PS13 (22 checks) |
+
+### RED proofs (each: one edit, `a1-lib-units/run-tests.sh`, file restored)
+T6.1:
+- (a) stop after the first failing child -> WC2 `test-fidelity still ran` and WC4 `all three reported` red.
+- (b) exit from the last child only -> WC2 exit 1 and WC4 exit 1 red (rc 0).
+- (c) `--phase` not passed to children -> WC1 and WC4 log-line cases red (`untrusted:no_log`, lines went to `_unscoped`).
+- (d) children without `cwd` -> WC4 `gate-0.6-schema line in the project log` red (line landed in the cwd's repo).
+
+T6.2:
+- (a) `vincente-wave-plan` sizes ALL -> PS1 counts and PS2 red.
+- (b) merged Rene model `sonnet` -> PS3 red.
+- (c) `gate-c-ac-dryrun` removed from S -> PS4 (both) red.
+- (d) gate id typo `scope-claims` -> PS7 red.
+- (e) `tobi-audit` sizes ALL -> PS2 and PS12 red.
+- (f) `feature close` blocks removed from `LEAN_HELP` -> help-lean H2 (two lines) and H3 red.
+
+### Results
+- `a1-lib-units` 735/0, `a1-exit2-audit` 36/0, `a1-cli-output` 33/0, `a1-gates-lint` run-wave13 10/0 and run-wave14 50/0.
+- Pins changed: none (no fenced `a1-tools.cjs` call was added in this wave, so the a1-intent H7a allowlists and the kritis golden inventory stay for Waves 7 and 9). No assertion removed. `checklist.cjs` unchanged. Caps: `a1-tools.cjs` 787 (limit 787), all new modules under their D18 caps.
+
+### Deviations
+- WC3 plants a synthetic skipped test (`it.skip`), not a copy of a real one: the real postmortem test in `a1-test-fidelity/real` carries SQL and RLS shapes, which turns realpath-check red too and breaks the expected "realpath green". The SQL for WC2 and WC4 is a copy of the real `a1-schema-check/fail-no-rls` migration.
+- No `.a1/fidelity.json` was copied (the plan names one under `a1-test-fidelity/`, none exists there): the default test globs scan `tests/*.test.ts`, so WC3 needs none.
+- `wave.cjs` usage text now lists `wave checks` beside `wave next-check`; `wave checks` reports `timedOut` per child in addition to the D11 fields.
+- `realpath-check` SQL-shaped fixture text false positive: not hit in this wave (planted SQL is meant to be detected).
+
+`verify run --affected --no-cache --phase 027-lean-pipeline-s4` on head d2780b8: verdict pass, selection full (`runner_or_config_changed`, because the facade changed), 63 of 63 commands, 0 timed out, flaky [] and pre_existing_red []. Wall time about 29 minutes on the aiserver.

@@ -1025,7 +1025,7 @@ RED-proof:
 - 4 RED-proof lines are logged.
 
 **Status box:**
-- [ ] T6.1 `_shared/lib/wave-checks.cjs` `wave checks` `runChecks` `CHILD_GATES` `_test-fixtures/a1-lib-units/cases/wave-checks.cjs`
+- [x] T6.1 `_shared/lib/wave-checks.cjs` `wave checks` `runChecks` `CHILD_GATES` `_test-fixtures/a1-lib-units/cases/wave-checks.cjs`
 
 **Covers:** SC-8
 
@@ -1069,7 +1069,7 @@ RED-proof:
 - 6 RED-proof lines are logged.
 
 **Status box:**
-- [ ] T6.2 `_shared/lib/feature.cjs` `_shared/lib/feature-plan-steps.cjs` `feature plan-steps` `stepsFor` `help-lean.cjs` `_test-fixtures/a1-lib-units/cases/feature-plan-steps.cjs`
+- [x] T6.2 `_shared/lib/feature.cjs` `_shared/lib/feature-plan-steps.cjs` `feature plan-steps` `stepsFor` `help-lean.cjs` `_test-fixtures/a1-lib-units/cases/feature-plan-steps.cjs`
 
 **Covers:** SC-9
 
