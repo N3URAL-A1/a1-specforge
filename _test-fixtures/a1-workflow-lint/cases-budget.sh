@@ -147,3 +147,9 @@ caseBG15() {
   bgRun "$w" --root "$w" --write
   if [[ $BG_RC -eq 2 && ! -e "$w/skills/reading-budget.json" ]]; then ok "BG15e --write out of scope: exit 2, no file created"; else bad "BG15e (rc=$BG_RC)"; fi
 }
+# CLI1: the facade routes `workflow budget`; on the real tree it exits 0 with scope "in" (spec 027 slice 5, Task 10.2).
+caseCLI1() {
+  local out rc
+  out="$(cd "$REPO_ROOT" && env -u A1_VAULT_ROOT node "$TOOLS" workflow budget 2>/dev/null)"; rc=$?
+  if [[ $rc -eq 0 && "$(bgJs "$out" 'j.scope')" == "in" ]]; then ok "CLI1 workflow budget via the facade: exit 0, scope in"; else bad "CLI1 (rc=$rc out=${out:0:200})"; fi
+}

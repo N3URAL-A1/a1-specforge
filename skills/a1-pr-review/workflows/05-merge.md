@@ -78,11 +78,15 @@ Preflight, before the long run (each miss costs a full re-run of 10+ minutes; ru
 On a host new to this project, run the host check of a1-new-feature `workflows/06-verify.md` Step 0.6 first (owner of that check).
 
 ```bash
+node <repo>/_shared/a1-tools.cjs workflow budget --base "$(git merge-base origin/<base> HEAD)"; RC=$?
+if [ "$RC" -ne 0 ]; then echo "STOP: workflow budget exit=$RC (1 = a skill over budget or a raised entry without a budget-raise: trailer, 2 = base not resolvable), no merge"; exit "$RC"; fi
 node <repo>/_shared/a1-tools.cjs test-fidelity --diff-base "$(git merge-base origin/<base> HEAD)" --phase pr-<n>; RC=$?
 if [ "$RC" -ne 0 ]; then echo "STOP: test-fidelity exit=$RC, no merge. Read status: findings -> findings[] (rule, file, line); no_scan -> hint and test_like."; exit "$RC"; fi
 node <repo>/_shared/a1-tools.cjs pr merge-check --pr <n> --phase pr-<n>; RC=$?
 if [ "$RC" -ne 0 ]; then echo "STOP: pr merge-check exit=$RC, no merge. Read reasons[] on stdout."; exit "$RC"; fi
 ```
+
+In a repository without `skills/` or without `_shared/a1-tools.cjs` (every consumer repo) `workflow budget` prints `scope: "out"` and exits 0, so this STOP fires only for a1-specforge itself.
 
 Exit 1 names every red reason in `reasons[]`. Fix the cause and run 5.1 to 5.3 again; never merge around it.
 
@@ -95,15 +99,41 @@ that commit or refuses, so a push between the check and the merge cannot slip in
 gh pr merge <n> --squash --match-head-commit <head_sha>
 ```
 
-No `--delete-branch`: run from a worktree it removes the folder behind the registry or fails locally after the remote merge.
+No `--delete-branch`: run from a worktree it removes the folder behind the registry or fails locally after the remote merge. <!-- lint-allow: forbidden-example -->
 Then verify it landed (`gh pr view <n> --json state,mergedAt`), sync the primary checkout's `main`
 with `_shared/push-cadence.md` P3 (never a bare `git pull`) and advance the registry
 (`a1-tools pr mark-status`). Close out in this order; the gate logs are gitignored and go with the worktree:
 
-1. Retros, each with `retro validate --gate-log`, from inside the worktree: the retro of this skill (one retro, written
-   now, after the merge, see `04-submit.md` Retro) and the caller's retro (a1-new-feature `workflows/06-verify.md` Step 6, written now;
-   a1-fix: already written in `workflows/04-verify.md` Step 2b before the handoff, only check that its entry is present, do not append it again).
-   The caller's retro validates against both logs of the run: `--gate-log <caller phase log> --gate-log .a1/phases/pr-<n>/gate-log.jsonl` (the flag repeats; the same file twice counts once).
+1. Retros, each with `retro validate --gate-log`, from inside the worktree. When a caller handed over a spec id or phase, a1-pr-review writes no retro of
+   its own: `feature close` records the machine retro, and the caller's prose retro is written only on the decision below. a1-pr-review on its own (no
+   caller) writes the retro of `04-submit.md` Retro now, after the merge. With a `caller_spec_id` (the input declared in `workflows/02-review.md`: the spec id
+   when the caller is a1-new-feature, else `none`) run this block. It reads `<caller_spec_id>` and `<issue_tags>` (`none`, or comma-separated tags a-z 0-9 _ -
+   that name problems of the run) through quoted heredocs and prints the decision:
+
+```bash
+{ IFS= read -r SPEC_ID; if IFS= read -r EXTRA; then echo "STOP: bad spec id (more than one line)"; exit 2; fi; } <<'A1_SPEC_EOF'
+<caller_spec_id>
+A1_SPEC_EOF
+{ IFS= read -r ISSUES; if IFS= read -r EXTRA; then echo "STOP: bad issue tags (more than one line)"; exit 2; fi; } <<'A1_ISSUES_EOF'
+<issue_tags>
+A1_ISSUES_EOF
+ISSUES_ARG=""
+case "$ISSUES" in
+  ""|none|"<"*) ;;
+  [!a-z0-9]*|*[!a-z0-9_,-]*) echo "STOP: bad issue tags"; exit 2 ;;
+  *) ISSUES_ARG="--issues $ISSUES" ;;
+esac
+case "$SPEC_ID" in ""|none|"<"*) echo "SKIP: no caller spec id, no retro decision"; exit 0 ;; esac
+case "$SPEC_ID" in [!A-Za-z0-9_]*|*[!A-Za-z0-9._-]*) echo "STOP: bad spec id"; exit 2 ;; esac
+RD="$(mktemp)"
+(cd "<repo_root>" && node <repo>/_shared/a1-tools.cjs feature close --check-only --by "$SPEC_ID" --pr <n> $ISSUES_ARG) > "$RD"; RC=$?
+if [ "$RC" -ne 0 ]; then echo "STOP: feature close --check-only exit=$RC, no retro decision"; exit "$RC"; fi
+node -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).retro||{};console.log("prose_required="+r.prose_required);console.log("reasons="+JSON.stringify(r.reasons||[]))' "$RD"
+```
+
+   Exit ≠ 0 is STOP. When `prose_required` is true, write the caller's prose retro now, from inside the worktree, per a1-new-feature `workflows/retro-prose.md`, validated against
+   both logs (`--gate-log <caller phase log> --gate-log .a1/phases/pr-<n>/gate-log.jsonl`; the flag repeats, the same file twice counts once). When it is false, write none.
+   a1-fix caller: its retro is already written in `workflows/04-verify.md` Step 2b before the handoff; only check that its entry is present, do not append it again.
 2. Run record (the worktree exit deletes the gate logs):
 
 Persist the run record (spec 027 FR-035). `run record` keeps scope, head sha, last verdict, `caught` and summed durations per gate in the learning store, once per scope and PR. Exit 1 (no learning store, no or untrusted gate log) does not stop the close-out: report it. Exit 2 is STOP before the worktree exit. Set `PHASE` to the phase name the caller handed over (a1-new-feature spec id, a1-execute phase); when a1-pr-review runs on its own, set it to `none`. The block reads the value through a quoted heredoc (`A1_PHASE_EOF`): single quotes would let a value holding a quote (`x'$(...)'`) run at the assignment. The orchestrator strips all newlines from the value first; the block repeats the check as far as the transport allows: a second body line before the terminator (a newline after a harmless first line, an empty second line) is `STOP: bad phase name`, exit 2, before any later line runs. A value that contains the terminator itself (`ok`, a line `A1_PHASE_EOF`, then a command) closes the heredoc early and the command runs; the block cannot see it. Only the orchestrator's rule to strip all newlines stops that case, a prompt-level control that is inherent to heredoc transport (known limit, pinned by CB4d). The block skips the second call for an empty value, `none` or an unreplaced placeholder, and ends with `STOP: bad phase name` (exit 2, the worktree stays) for any other value outside `^[A-Za-z0-9_][A-Za-z0-9._-]*$`.
@@ -134,7 +164,16 @@ esac
 A1_SPEC_EOF
 case "$SPEC_ID" in ""|none|"<"*) echo "SKIP: feature close, no caller spec id (items 4 and 5 apply)"; exit 0 ;; esac
 case "$SPEC_ID" in [!A-Za-z0-9_]*|*[!A-Za-z0-9._-]*) echo "STOP: bad spec id"; exit 2 ;; esac
-(cd "<repo_root>" && node <repo>/_shared/a1-tools.cjs feature close --check-only --by "$SPEC_ID" --pr <n>); RC=$?
+{ IFS= read -r ISSUES; if IFS= read -r EXTRA; then echo "STOP: bad issue tags (more than one line)"; exit 2; fi; } <<'A1_ISSUES_EOF'
+<issue_tags>
+A1_ISSUES_EOF
+ISSUES_ARG=""
+case "$ISSUES" in
+  ""|none|"<"*) ;;
+  [!a-z0-9]*|*[!a-z0-9_,-]*) echo "STOP: bad issue tags"; exit 2 ;;
+  *) ISSUES_ARG="--issues $ISSUES" ;;
+esac
+(cd "<repo_root>" && node <repo>/_shared/a1-tools.cjs feature close --check-only --by "$SPEC_ID" --pr <n> $ISSUES_ARG); RC=$?
 if [ "$RC" -ne 0 ]; then echo "STOP: feature close --check-only exit=$RC, no remote delete, no close-out"; exit "$RC"; fi
 STATE="$(gh pr view <n> --json state --jq .state)"; RC=$?
 if [ "$RC" -ne 0 ]; then echo "STOP: gh pr view exit=$RC, no close-out"; exit "$RC"; fi
@@ -156,7 +195,7 @@ if [ "$STATE" = MERGED ] && [ -n "$REMOTE_OID" ]; then
     if [ "$RC" -ne 0 ]; then echo "STOP: remote branch delete exit=$RC, no close-out"; exit "$RC"; fi
   fi
 fi
-(cd "<repo_root>" && node <repo>/_shared/a1-tools.cjs feature close --by "$SPEC_ID" --pr <n>); RC=$?
+(cd "<repo_root>" && node <repo>/_shared/a1-tools.cjs feature close --by "$SPEC_ID" --pr <n> $ISSUES_ARG); RC=$?
 if [ "$RC" -ne 0 ]; then echo "STOP: feature close exit=$RC"; exit "$RC"; fi
 ```
 

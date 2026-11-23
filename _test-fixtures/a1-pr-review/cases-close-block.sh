@@ -8,7 +8,7 @@
 #   the "<"* arm removed from the F `case`     -> CB2 (the placeholder run calls the stub)
 #   the run record block back to PHASE='<phase_name>' -> FLR (the quote breaks out and runs the substitution)
 
-FB="$(bj 'b.find(x=>/feature close/.test(x))')"
+FB="$(bj 'b.find(x=>/feature close/.test(x)&&!/prose_required/.test(x))')"
 if printf '%s' "$FB" | grep -qF 'feature close --by "$SPEC_ID" --pr <n>' && printf '%s' "$FB" | grep -qF 'RC=$?' \
    && printf '%s' "$FB" | grep -qF 'echo "STOP: feature close exit=$RC"; exit "$RC"' && printf '%s' "$FB" | grep -qE 'case "\$SPEC_ID" in ""\|none\|"<"\*\)'; then
   pass_case "CB1 the F block carries feature close --by \"\$SPEC_ID\" --pr <n>, RC=\$?, exit \"\$RC\" and a case that skips none"

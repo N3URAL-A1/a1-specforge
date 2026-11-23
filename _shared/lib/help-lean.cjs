@@ -63,6 +63,15 @@ const LEAN_HELP = `  a1-tools pr review-record --head <sha> --verdict <pass|fail
   a1-tools feature close --cleanup-only [--repo <dir>]
                   Spec 027 FR-026. Runs only the branch sweep and the fetch --prune of \`feature close\`.
 
+  a1-tools workflow budget [--root <dir>] [--write] [--base <ref>]
+                  Spec 027 slice 5 FR-027. Counts the default reading path of every skill: SKILL.md plus each workflows/*.md
+                  whose first line is not a conditional header, in newline characters (wc -l). Without flags it checks every
+                  skill against skills/reading-budget.json (finding budget_exceeded:<skill>, budget_file_missing). --write
+                  writes the file from the measured sizes (atomic, keys sorted). --base <ref> is the ratchet: a skill whose
+                  budget entry grew against <ref> needs a \`budget-raise: <skill>\` trailer in <ref>..HEAD, else finding
+                  budget_raised:<skill>. A root without skills/ or without _shared/a1-tools.cjs prints scope "out" and exits 0.
+                  Exit 0 clean / 1 finding / 2 usage, git or I/O error (base_unresolved, base_budget_invalid).
+
   Input-hash reuse (spec 027 FR-020): \`checklist run <slug>/<feature> --only 9,10,11\`, \`lane-split check\` and
                   \`fix class-sweep --verify\` reuse the last pass when the input hash is unchanged. The key covers the
                   gate's inputs (spec and wave plan and roadmap; the plan; the bug file), the call arguments and the gate
