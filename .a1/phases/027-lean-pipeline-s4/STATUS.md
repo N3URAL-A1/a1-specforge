@@ -484,3 +484,5 @@ Base HEAD e0f4bb0. Gap 1 (MAJOR) fixed with variant (b); the intent sandbox is u
 
 ### Results (own runs on this tree)
 a1-workflow-lint 76/0, a1-gates-lint 102/0 (3 runs), run-wave13 10/0, run-wave14 50/0, a1-intent 1128/0, a1-kritis-profile 225/0, a1-verify 562/0, a1-lib-units 786/0, a1-pr-review 88/0, a1-dashboard 423/0, a1-pr-merge-check 269/0; `gates lint` rc 0; `workflow lint` rc 0; `calls=15`.
+
+`verify run --project <worktree> --affected --no-cache --phase 027-lean-pipeline-s4` on head b978f46: verdict pass, scope affected, 63 of 63 commands exit 0, 0 timed out, flaky [], pre_existing_red [], skipped_on_host [].
