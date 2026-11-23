@@ -412,6 +412,7 @@ function cmdWorkflowLint(argv) {
   findings = findings.concat(early.findings, checkpoint.findings, prConfirm.findings);
   const par = parLint.checkParallelGroups(root, isSkillsTree), bg = parLint.checkBackgroundMarkers(root, isSkillsTree);
   findings = findings.concat(par.findings, bg.findings);
+  const rp = require('./workflow-lint-read.cjs').checkReadingPath(root, { extractBashFenceLines, VAULT_SYNC_CALL_RE }); findings = findings.concat(rp.findings);
 
   const out = {
     root,
@@ -423,6 +424,7 @@ function cmdWorkflowLint(argv) {
     flow_checked: early.checked + checkpoint.checked + prConfirm.checked,
     parallel_checked: par.checked,
     background_checked: bg.checked,
+    reading_path: rp.checked,
     findings,
   };
   const err = findings.map((f) => formatFinding(f) + '\n').join('');

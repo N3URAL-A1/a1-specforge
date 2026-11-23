@@ -445,6 +445,7 @@ caseBG13; caseBG14; caseBG15; caseCLI1
 caseRD1; caseRD2; caseRD3; caseRD4; caseRD5; caseRD6; caseRD7; caseRD8; caseRD9
 caseFB1; caseFB2; caseFB3; caseFB4; caseFB5; caseFB6
 caseSP1; caseSP2; caseSP3; caseSP4; caseSP5; caseVR1
+caseRP0; caseRP1; caseRP2; caseRP3; caseRP4; caseRP5; caseRP6; caseRP7; caseRP8
 
 printf '%s\n' "${results[@]}"
 echo "----"

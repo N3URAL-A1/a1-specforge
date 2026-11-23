@@ -140,3 +140,75 @@ caseSP5() { local w f; rdTree w
 caseVR1() { local got
   got="$(node -e 'const r=require(process.argv[1]).VAULT_SYNC_CALL_RE;process.stdout.write(r instanceof RegExp?String(r):"not-a-regexp")' "$RD_LINT" 2>&1)"
   if [[ "$got" == "$VSRE_LIT" ]]; then ok "VR1 exported VAULT_SYNC_CALL_RE equals the lane literal"; else bad "VR1 (got '$got', want '$VSRE_LIT')"; fi; }
+
+# ---------- RP0-RP8: the reading-path rules hooked into `workflow lint` (spec 027 slice 5, Task 11.1) ----------
+# Measured red (scratch copy, one edit each, suite run, file restored):
+#   the hook line removed from workflow-lint.cjs                       -> RP0, RP8
+#   the hook passes only { extractBashFenceLines } (revision 2 form)    -> RP0 (checkReadingPath throws A1_INPUT)
+#   one budget entry lowered by 1                                       -> RP3
+#   reading_path.budget_skills reported as a literal                    -> RP0 (counted by the case from the tree)
+# rpLint <root>: RP_OUT, RP_RC from `workflow lint --root <root>` (no vault).
+rpLint() { RP_OUT="$(cd "$1" && env -u A1_VAULT_ROOT node "$TOOLS" workflow lint --root "$1" 2>/dev/null)"; RP_RC=$?; }
+# rpOptIn <root>: opt the copied tree in to the budget check (D12a): an empty _shared/a1-tools.cjs.
+rpOptIn() { mkdir -p "$1/_shared"; : > "$1/_shared/a1-tools.cjs"; }
+# rpRules <json>: sorted "rule,rule" of every finding.
+rpRules() { bgJs "$1" 'j.findings.map(f=>f.rule).sort().join()'; }
+rpBudgetJson() { (cd "$REPO_ROOT" && env -u A1_VAULT_ROOT node "$TOOLS" workflow budget 2>/dev/null); }
+
+caseRP0() {
+  local want got; want="$(cd "$REPO_ROOT" && ls skills/*/SKILL.md | wc -l | tr -d ' ')"
+  rpLint "$REPO_ROOT"; got="$(bgJs "$RP_OUT" 'j.reading_path.budget_skills')"
+  if [[ $RP_RC -eq 0 && "$got" == "$want" && "$want" -gt 0 ]]; then ok "RP0 real tree: workflow lint exit 0, reading_path.budget_skills == $want SKILL.md files"
+  else bad "RP0 (rc=$RP_RC got='$got' want='$want' rules='$(rpRules "$RP_OUT" 2>&1 | head -c 200)')"; fi
+}
+caseRP1() {
+  local j missing=""; j="$(rpBudgetJson)"
+  for f in skills/a1-new-feature/workflows/kritis.md skills/a1-new-feature/workflows/retro-prose.md skills/a1-execute/workflows/multi-lane.md skills/a1-plan/workflows/04b-xprov-review.md; do
+    [[ "$(bgJs "$j" "j.skills.some(s=>(s.conditional||[]).includes('$f'))")" == "true" ]] || missing+=" $f"
+  done
+  if [[ -z "$missing" ]]; then ok "RP1 workflow budget lists the four conditional files by path"; else bad "RP1 missing:$missing"; fi
+}
+caseRP2() {
+  local n; n="$(bgJs "$(rpBudgetJson)" 'j.skills.find(s=>s.skill==="a1-new-feature").lines')"
+  if [[ "$n" =~ ^[0-9]+$ && "$n" -lt 2378 ]]; then ok "RP2 a1-new-feature default path is $n lines (below the SC-006 bound 2378)"; else bad "RP2 a1-new-feature lines '$n' (want < 2378)"; fi
+}
+caseRP3() {
+  local over; over="$(bgJs "$(rpBudgetJson)" 'j.skills.filter(s=>s.budget===null||s.lines>s.budget).map(s=>s.skill).join()')"
+  if [[ -z "$over" ]]; then ok "RP3 every skill's measured lines are at most its budget"; else bad "RP3 red: over ${over}"; fi
+}
+caseRP4() {
+  local w; w="$(copySkills)"; rpOptIn "$w"; printf 'one more line\n' >> "$w/skills/a1-new-feature/SKILL.md"
+  rpLint "$w"
+  if [[ $RP_RC -eq 1 && "$(bgJs "$RP_OUT" 'j.findings.filter(f=>f.rule==="budget_exceeded"&&f.file.endsWith("skills/a1-new-feature")).length')" == "1" ]]; then ok "RP4 one appended line in a1-new-feature SKILL.md: exit 1, budget_exceeded for a1-new-feature"
+  else bad "RP4 (rc=$RP_RC rules=$(rpRules "$RP_OUT"))"; fi
+}
+caseRP5() {
+  local w; w="$(copySkills)"; printf '\nRun git worktree add by hand.\n' >> "$w/skills/a1-fix/SKILL.md"
+  rpLint "$w"
+  if [[ $RP_RC -eq 1 && "$(rpRules "$RP_OUT")" == "forbidden_command" ]]; then ok "RP5 an unmarked worktree add line in a1-fix SKILL.md: exit 1, forbidden_command"
+  else bad "RP5 (rc=$RP_RC rules=$(rpRules "$RP_OUT"))"; fi
+}
+caseRP6() {
+  local w f; w="$(copySkills)"; f="$w/skills/a1-plan/workflows/04-audit.md"
+  awk 'NR==3{print; print "See 04b-xprov-review.md for the review."; next} {print}' "$f" > "$f.new" && mv "$f.new" "$f"
+  rpLint "$w"
+  if [[ $RP_RC -eq 1 && "$(rpRules "$RP_OUT")" == "conditional_ref_untriggered" ]]; then ok "RP6 04-audit names 04b-xprov-review.md above the permit fence: exit 1, conditional_ref_untriggered"
+  else bad "RP6 (rc=$RP_RC rules=$(rpRules "$RP_OUT"))"; fi
+}
+caseRP7() {
+  local w; w="$(copySkills)"
+  printf '\n```bash\nnode <repo>/_shared/a1-tools.cjs retro validate --entry x\n```\n' >> "$w/skills/a1-new-feature/workflows/06-verify.md"
+  rpLint "$w"
+  # Documents that no lint rule owns SC-9: the planted fence passes (exit 0); RP7b below is what guards the real tree.
+  if [[ $RP_RC -eq 0 && "$(grep -c 'retro validate' "$w/skills/a1-new-feature/workflows/06-verify.md")" == "1" ]]; then ok "RP7 a retro validate fence back in 06-verify: lint exit 0 (no rule), grep -c 1"
+  else bad "RP7 (rc=$RP_RC rules=$(rpRules "$RP_OUT"))"; fi
+  local n; n="$(grep -c 'retro validate' "$REPO_ROOT/skills/a1-new-feature/workflows/06-verify.md")"
+  if [[ "$n" == "0" ]]; then ok "RP7b real tree: grep -c 'retro validate' 06-verify.md is 0"; else bad "RP7b 06-verify.md holds $n retro validate lines"; fi
+}
+caseRP8() {
+  local w; w="$(copySkills)"
+  printf '\n```bash\nnode <repo>/_shared/a1-tools.cjs vault sync x --phases\n```\n' >> "$w/skills/a1-execute/workflows/02-execute.md"
+  rpLint "$w"
+  if [[ $RP_RC -eq 1 && "$(bgJs "$RP_OUT" 'j.findings.filter(f=>f.rule==="sync_per_wave").length')" == "1" && "$(rpRules "$RP_OUT")" == "sync_per_wave" ]]; then ok "RP8 per-wave vault sync fence in 02-execute.md: exit 1, exactly one sync_per_wave finding (CLI form of W12)"
+  else bad "RP8 (rc=$RP_RC rules=$(rpRules "$RP_OUT"))"; fi
+}

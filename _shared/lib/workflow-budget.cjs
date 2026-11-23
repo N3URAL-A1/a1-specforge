@@ -103,7 +103,7 @@ function cmdWorkflowBudget(argv) {
   }
   const chk = checkBudget(root);
   const bud = readBudget(root);
-  out.skills = skills.map((s) => ({ skill: s.name, lines: s.lines, budget: bud.ok && bud.budgets[s.name] !== undefined ? bud.budgets[s.name] : null }));
+  out.skills = skills.map((s) => ({ skill: s.name, lines: s.lines, budget: bud.ok && bud.budgets[s.name] !== undefined ? bud.budgets[s.name] : null, conditional: s.conditional.map((c) => c.file) }));
   out.findings = chk.findings;
   if (hasBase) {
     const rat = baseRatchet(root, flags.base, bud.ok ? bud.budgets : {});
