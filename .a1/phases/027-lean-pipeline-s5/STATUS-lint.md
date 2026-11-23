@@ -40,3 +40,6 @@ None. Both waves touch only new files plus run-tests.sh (owned).
 
 ### Deviations
 None. Notes: `finding.rule` for the ratchet is `budget_raised:<skill>`; `raised` in the CLI JSON lists every skill whose entry grew against the base (findings only for those without the trailer); a base budget file that is not valid schema 1 exits 2 `base_budget_invalid`.
+
+### Wave 2 verify
+`verify run --affected --no-cache` on head 46964fb (code commit 9f5dc58): verdict pass, 0 flaky, 0 pre-existing red. Two earlier attempts and a third with A1_VERIFY_LOCK_WAIT_MS=900000 first ended `lock_timeout` (exit 2, lock held by another lane's verify, retro lane PID 654705): host busy, not red. The pass came on the fourth start, after ~35 min. (A1_VERIFY_LOCK_WAIT_MS accepts at most 900000.)
