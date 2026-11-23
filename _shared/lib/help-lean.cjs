@@ -39,17 +39,20 @@ const LEAN_HELP = `  a1-tools pr review-record --head <sha> --verdict <pass|fail
                   steps[] holds every fixed and every conditional step; a step with "when" runs when its phase workflow
                   finds that condition true. "spawns" counts the unconditional spawns. No size in the spec: exit 1 no_size.
                   Exit 2 usage error.
-  a1-tools feature close --by <spec-id> --pr <n> [--repo <dir>] [--spec <path>] [--worktree <id>]
+  a1-tools feature close --by <spec-id> --pr <n> [--repo <dir>] [--spec <path>] [--worktree <id>] [--check-only]
                   Spec 027 FR-026. Closes a feature after its PR merged. Run it from the primary checkout (a linked worktree
                   exits 1 run_from_worktree). Steps in order, each skipped when already done: check the PR is MERGED and its
                   remote branch gone; record every gate-log scope of the worktree (run record), then \`worktree exit --mode
                   discard\`; advance the reservation stages and \`code-scope release --by <spec-id>\`; set the spec to done;
                   \`git fetch --prune\` and sweep local branches. A failed step exits 1 {"ok":false,"reason","step"} and runs
-                  nothing after it. Branch sweep: a branch is deleted when a merged PR's head equals its tip, or when it has no
-                  diff against origin/<base> (rule (b): this also deletes non-PR branches whose tip the base already contains,
-                  no commit is lost); everything else is listed in kept[]. The command commits nothing: when
+                  nothing after it. Branch sweep: a branch is deleted (compare-and-swap on its tip) when its tip is an ancestor of
+                  origin/<base> (this also deletes non-PR branches the base already contains, no commit is lost) or when a merged
+                  PR's head equals its tip; everything else is listed in kept[] (commit+revert and empty-commit branches too).
+                  The default branch and the PR base are never deleted. --check-only runs only the refusals that change nothing
+                  (spec file, PR MERGED, branch name, worktree match) and exits 0 without touching state. The command commits nothing: when
                   .a1/reservations.json is tracked and changed it prints \`reservations_commit_pending\` for the caller to commit.
-                  gh is taken from the A1_GH_BIN seam (default gh; an override is named on stderr).
+                  gh is taken from the A1_GH_BIN seam (default gh; an override must be an absolute path, is named on stderr and as
+                  gh_bin in the JSON, and its merged-PR verdicts only keep unless A1_FEATURE_CLOSE_TEST=1 is set by a fixture).
                   Exit 0 ok / 1 failed step / 2 usage error (--pr must be 1-7 digits, --by a safe scope name).
   a1-tools feature close --cleanup-only [--repo <dir>]
                   Spec 027 FR-026. Runs only the branch sweep and the fetch --prune of \`feature close\`.

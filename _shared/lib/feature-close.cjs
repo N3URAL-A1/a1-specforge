@@ -1,9 +1,14 @@
 'use strict';
 
 // `feature close` (spec 027 FR-026, plan D16): the idempotent close of a feature after its PR merged. It deletes local
-// branches and exits a worktree, so it fails closed: it deletes only what is proven merged (a merged PR whose head equals
-// the local tip, or an empty diff against origin/<base>), never a branch with unmerged commits (those go to kept[]), and
-// it stops at the first failed step. Every child is an argv-only process (no shell); git runs without GIT_* redirects.
+// branches and exits a worktree, so it fails closed: it deletes only what is proven merged (the branch tip is an ancestor of
+// origin/<base>, or a merged PR whose head equals the local tip), never a branch with unmerged commits (those go to kept[]),
+// and it stops at the first failed step. The refusals before the first state change (spec file, PR state, remote branch,
+// worktree match) run before anything is touched; later refusals (a dirty worktree at the exit, a failed stage) stop the run
+// part-way and a second call resumes it (the steps are idempotent). `--check-only` runs only the refusals that need no state
+// change. Every child is an argv-only process (no shell); git runs without GIT_* redirects. A1_GH_BIN replaces gh for the
+// fixtures: it must be absolute, is reported (`gh_bin: "override"`), and its merged-PR verdicts delete only when the fixture
+// marker A1_FEATURE_CLOSE_TEST=1 is set; otherwise only the git-provable ancestry rule deletes.
 // Shared state is never committed here (push-cadence P3): a tracked, changed .a1/reservations.json is only reported.
 
 const fs = require('fs');
@@ -21,7 +26,7 @@ const FACADE = path.join(__dirname, '..', 'a1-tools.cjs');
 const PR_RE = /^[1-9][0-9]{0,6}$/;
 const ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const STAGES = Object.freeze(['started', 'complete', 'review', 'verify', 'merge', 'origin-cleanup', 'done']);
-const USAGE = 'a1-tools feature close --by <spec-id> --pr <n> [--repo <dir>] [--spec <path>] [--worktree <id>] | feature close --cleanup-only [--repo <dir>]';
+const USAGE = 'a1-tools feature close --by <spec-id> --pr <n> [--repo <dir>] [--spec <path>] [--worktree <id>] [--check-only] | feature close --cleanup-only [--repo <dir>]';
 
 class CloseError extends Error {
   constructor(reason, step, detail) { super(detail || reason); this.reason = reason; this.step = step; this.detail = detail || ''; }
@@ -40,19 +45,26 @@ function child(bin, args, cwd) {
   return { code: r.status === null ? 127 : r.status, out: r.stdout || '', err: (r.stderr || '') + (r.error ? String(r.error.message) : '') };
 }
 const cli = (repo, args) => child(process.execPath, [FACADE, ...args], repo);
-const ghBin = () => process.env.A1_GH_BIN || 'gh';
+const ghOverride = () => typeof process.env.A1_GH_BIN === 'string' && process.env.A1_GH_BIN !== '';
+const ghBin = () => (ghOverride() ? process.env.A1_GH_BIN : 'gh');
 const gh = (repo, args) => child(ghBin(), args, repo);
-const validBranch = (b, repo) => typeof b === 'string' && b !== '' && git(repo, ['check-ref-format', '--branch', b]).code === 0;
+/** A merged-PR verdict deletes only from the real gh, or from a fixture gh that the fixture marker names. */
+const ghTrusted = () => !ghOverride() || process.env.A1_FEATURE_CLOSE_TEST === '1';
+const safeText = (v) => String(v).replace(/[\u0000-\u001f\u007f]/g, '?');
+/** A local branch name: valid as refs/heads/<name> (so `@{-1}` and the like are not expanded), no leading dash. */
+const validBranch = (b, repo) => typeof b === 'string' && b !== '' && !b.startsWith('-') && git(repo, ['check-ref-format', `refs/heads/${b}`]).code === 0;
 
 function parseJson(text, reason, step) {
   try { return JSON.parse(text); } catch (_e) { throw new CloseError(reason, step, `unparseable output: ${String(text).slice(0, 120)}`); }
 }
 
-/** @returns {{by:string|null,pr:number|null,repo:string,spec:string|null,worktree:string|null,cleanupOnly:boolean}} @throws UsageError */
+/** @returns {{by:string|null,pr:number|null,repo:string,spec:string|null,worktree:string|null,cleanupOnly:boolean,checkOnly:boolean}} @throws UsageError */
 function parseArgs(rest) {
-  const f = parseFlags(rest, { by: 'value', pr: 'value', repo: 'value', spec: 'value', worktree: 'value', 'cleanup-only': 'bool' });
+  const f = parseFlags(rest, { by: 'value', pr: 'value', repo: 'value', spec: 'value', worktree: 'value', 'cleanup-only': 'bool', 'check-only': 'bool' });
   if (f._.length > 0) throw new UsageError(`unexpected argument ${JSON.stringify(String(f._[0]).slice(0, 60))}`);
   const clean = f['cleanup-only'] === true;
+  const checkOnly = f['check-only'] === true;
+  if (clean && checkOnly) throw new UsageError('--cleanup-only and --check-only exclude each other');
   if (clean && (f.by !== undefined || f.pr !== undefined || f.spec !== undefined || f.worktree !== undefined)) throw new UsageError('--cleanup-only takes only --repo');
   if (!clean) {
     if (typeof f.by !== 'string' || !SCOPE_RE.test(f.by) || f.by.includes('..')) throw new UsageError('--by must be a safe spec id (letters, digits, . _ -)');
@@ -65,7 +77,7 @@ function parseArgs(rest) {
   let isDir = false;
   try { isDir = fs.statSync(repo).isDirectory(); } catch (_e) { /* not there */ }
   if (!isDir) throw new UsageError('--repo is not an existing directory');
-  return { by: clean ? null : f.by, pr: clean ? null : Number(f.pr), repo: path.resolve(repo), spec: f.spec === undefined ? null : f.spec, worktree: f.worktree === undefined ? null : f.worktree, cleanupOnly: clean };
+  return { by: clean ? null : f.by, pr: clean ? null : Number(f.pr), repo: path.resolve(repo), spec: f.spec === undefined ? null : f.spec, worktree: f.worktree === undefined ? null : f.worktree, cleanupOnly: clean, checkOnly };
 }
 
 /** Step 1: the git toplevel of --repo, which must be a primary checkout. @returns {string} */
@@ -157,11 +169,12 @@ function advanceStages(ctx) {
   const res = reservation(ctx);
   if (!res) return ctx.steps.push({ step: 'stages', result: 'skipped' });
   let moved = false;
+  let stage = res.stage;
   for (const target of ['merge', 'origin-cleanup']) {
-    if (STAGES.indexOf(res.stage) >= STAGES.indexOf(target)) continue;
+    if (STAGES.indexOf(stage) >= STAGES.indexOf(target)) continue;
     const r = cli(ctx.repo, ['code-scope', 'stage', '--by', ctx.opts.by, '--set', target]);
     if (r.code !== 0) throw new CloseError('step_failed', 'stages', `code-scope stage ${target}: ${r.err.trim().slice(0, 200)}`);
-    res.stage = target; moved = true;
+    stage = target; moved = true;
   }
   return ctx.steps.push({ step: 'stages', result: moved ? 'done' : 'skipped' });
 }
@@ -184,16 +197,25 @@ function closeSpec(ctx) {
   return ctx.steps.push({ step: 'spec', result: 'done' });
 }
 
-function baseBranch(ctx) {
-  if (ctx.base) return ctx.base;
+/** The local default branch(es) to protect: origin/HEAD when it resolves, else main and master (a name that is absent is harmless). */
+function defaultBranches(ctx) {
   const r = git(ctx.repo, ['symbolic-ref', '--short', '-q', 'refs/remotes/origin/HEAD']);
-  const name = r.code === 0 ? r.out.replace(/^origin\//, '') : 'main';
-  return validBranch(name, ctx.repo) ? name : 'main';
+  const name = r.code === 0 ? r.out.replace(/^origin\//, '') : '';
+  return name !== '' && validBranch(name, ctx.repo) ? [name] : ['main', 'master'];
 }
 
-/** Branches that are never candidates: the current one, the base, and any branch checked out in a worktree. */
-function protectedBranches(ctx, base) {
-  const keep = new Set([base]);
+const hasRef = (ctx, ref) => git(ctx.repo, ['rev-parse', '--verify', '--quiet', ref]).code === 0;
+
+/** The branch the ancestry rule measures against: the PR base, else the first default branch that exists on origin. */
+function baseBranch(ctx, defaults) {
+  if (ctx.base) return ctx.base;
+  return defaults.find((n) => hasRef(ctx, `refs/remotes/origin/${n}`)) || defaults[0];
+}
+
+/** Branches that are never candidates: the default branch(es), the PR base, the current one, and any branch checked out in a worktree. */
+function protectedBranches(ctx, defaults) {
+  const keep = new Set(defaults);
+  if (ctx.base) keep.add(ctx.base);
   const cur = git(ctx.repo, ['symbolic-ref', '--short', '-q', 'HEAD']);
   if (cur.code === 0) keep.add(cur.out);
   const wt = git(ctx.repo, ['worktree', 'list', '--porcelain']);
@@ -202,23 +224,38 @@ function protectedBranches(ctx, base) {
   return keep;
 }
 
-/** Decide one candidate: {delete:true} only when proven merged, else {delete:false, reason}. */
+/**
+ * Decide one candidate: {del:true} only when proven merged, else {del:false, reason}. Rule (b) is git ancestry (the tip is
+ * contained in origin/<base>): a commit+revert or an --allow-empty branch has an empty diff but is not contained, so it is kept.
+ * A fresh branch with no commits has its tip on the base, is contained, and loses nothing when deleted.
+ */
 function judge(ctx, base, branch, tip) {
   const r = gh(ctx.repo, ['pr', 'list', '--state', 'merged', '--head', branch, '--json', 'headRefOid']);
   if (r.code !== 0) throw new CloseError('gh_failed', 'sweep', `gh pr list ${branch}: ${r.err.trim().slice(0, 200)}`);
   const merged = parseJson(r.out, 'gh_failed', 'sweep');
-  if (Array.isArray(merged) && merged.some((e) => e && e.headRefOid === tip)) return { del: true };
-  const hasBase = git(ctx.repo, ['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${base}`]).code === 0;
-  if (hasBase && git(ctx.repo, ['diff', '--quiet', `origin/${base}...refs/heads/${branch}`]).code === 0) return { del: true };
-  return { del: false, reason: Array.isArray(merged) && merged.length > 0 ? 'tip_differs' : 'unmerged_commits' };
+  const list = Array.isArray(merged) ? merged : [];
+  if (hasRef(ctx, `refs/remotes/origin/${base}`) && git(ctx.repo, ['merge-base', '--is-ancestor', `refs/heads/${branch}`, `refs/remotes/origin/${base}`]).code === 0) return { del: true };
+  if (list.some((e) => e && e.headRefOid === tip)) return ghTrusted() ? { del: true } : { del: false, reason: 'gh_override' };
+  return { del: false, reason: list.length > 0 ? 'tip_differs' : 'unmerged_commits' };
+}
+
+/** Delete one branch by compare-and-swap on the judged tip. @returns {boolean} false when the tip moved since the verdict */
+function deleteAtTip(ctx, branch, tip) {
+  const d = git(ctx.repo, ['update-ref', '-d', `refs/heads/${branch}`, tip]);
+  if (d.code === 0) { git(ctx.repo, ['config', '--remove-section', `branch.${branch}`]); return true; }
+  const now = git(ctx.repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]);
+  if (now.code === 0 && now.out !== tip) return false;
+  if (now.code !== 0) return true;
+  throw new CloseError('git_failed', 'sweep', `git update-ref -d ${branch}: ${d.err.slice(0, 200)}`);
 }
 
 /** Step 10: fetch --prune, then the branch sweep. All verdicts first (a gh failure deletes nothing), then the deletions. */
 function sweepBranches(ctx) {
   const f = git(ctx.repo, ['fetch', '--prune', 'origin']);
   if (f.code !== 0) throw new CloseError('git_failed', 'sweep', `git fetch --prune: ${f.err.slice(0, 200)}`);
-  const base = baseBranch(ctx);
-  const keep = protectedBranches(ctx, base);
+  const defaults = defaultBranches(ctx);
+  const base = baseBranch(ctx, defaults);
+  const keep = protectedBranches(ctx, defaults);
   const refs = git(ctx.repo, ['for-each-ref', '--format=%(refname)%09%(objectname)', 'refs/heads']);
   if (refs.code !== 0) throw new CloseError('git_failed', 'sweep', refs.err.slice(0, 200));
   const verdicts = [];
@@ -226,13 +263,12 @@ function sweepBranches(ctx) {
     const [ref, tip] = line.split('\t');
     const branch = ref.slice('refs/heads/'.length);
     if (keep.has(branch) || !validBranch(branch, ctx.repo)) continue;
-    verdicts.push({ branch, ...judge(ctx, base, branch, tip) });
+    verdicts.push({ branch, tip, ...judge(ctx, base, branch, tip) });
   }
   for (const v of verdicts) {
     if (!v.del) { ctx.kept.push({ branch: v.branch, reason: v.reason }); continue; }
-    const d = git(ctx.repo, ['branch', '-D', v.branch]);
-    if (d.code !== 0) throw new CloseError('git_failed', 'sweep', `git branch -D ${v.branch}: ${d.err.slice(0, 200)}`);
-    ctx.deleted.push(v.branch);
+    if (deleteAtTip(ctx, v.branch, v.tip)) ctx.deleted.push(v.branch);
+    else ctx.kept.push({ branch: v.branch, reason: 'tip_moved' });
   }
   ctx.steps.push({ step: 'sweep', result: ctx.deleted.length ? 'done' : 'skipped' });
 }
@@ -252,16 +288,18 @@ function pendingSharedState(ctx) {
 /** @param {object} opts parsed arguments @returns {{ok, mode, steps, deleted, kept, warnings, reservations_commit_pending}} */
 function closeFeature(opts) {
   const ctx = { opts, repo: null, specPath: null, head: null, base: null, entry: null, steps: [], warnings: [], deleted: [], kept: [], pending: null };
+  const mode = opts.cleanupOnly ? 'cleanup-only' : opts.checkOnly ? 'check-only' : 'close';
+  const extra = ghOverride() ? { gh_bin: 'override' } : {};
   try {
     ctx.repo = resolveRepo(opts.repo);
     if (!opts.cleanupOnly) resolveSpec(ctx);
-    const plan = opts.cleanupOnly ? [sweepBranches] : [checkPr, checkRemote, findWorktree, recordRuns, exitWorktree, advanceStages, releaseScope, closeSpec, sweepBranches, pendingSharedState];
+    const plan = opts.cleanupOnly ? [sweepBranches] : opts.checkOnly ? [checkPr, findWorktree] : [checkPr, checkRemote, findWorktree, recordRuns, exitWorktree, advanceStages, releaseScope, closeSpec, sweepBranches, pendingSharedState];
     for (const step of plan) step(ctx);
   } catch (e) {
     if (!(e instanceof CloseError)) throw e;
-    return { ok: false, reason: e.reason, step: e.step, detail: e.detail, mode: opts.cleanupOnly ? 'cleanup-only' : 'close', steps: ctx.steps, deleted: ctx.deleted, kept: ctx.kept, warnings: ctx.warnings };
+    return { ok: false, reason: e.reason, step: e.step, detail: e.detail, mode, ...extra, steps: ctx.steps, deleted: ctx.deleted, kept: ctx.kept, warnings: ctx.warnings };
   }
-  const out = { ok: true, mode: opts.cleanupOnly ? 'cleanup-only' : 'close', pr: opts.pr, spec: ctx.specPath, steps: ctx.steps, deleted: ctx.deleted, kept: ctx.kept, warnings: ctx.warnings };
+  const out = { ok: true, mode, ...extra, pr: opts.pr, spec: ctx.specPath, steps: ctx.steps, deleted: ctx.deleted, kept: ctx.kept, warnings: ctx.warnings };
   if (ctx.pending) out.reservations_commit_pending = ctx.pending;
   return out;
 }
@@ -274,7 +312,8 @@ function cmdFeatureClose(rest) {
     if (!(e instanceof UsageError)) throw e;
     return emitExit(2, '', `feature close: ${e.message}\nusage: ${USAGE}\n`);
   }
-  const notes = process.env.A1_GH_BIN ? `feature close: gh binary override A1_GH_BIN=${process.env.A1_GH_BIN}\n` : '';
+  if (ghOverride() && !path.isAbsolute(process.env.A1_GH_BIN)) return emitExit(2, '', `feature close: A1_GH_BIN must be an absolute path (got ${safeText(process.env.A1_GH_BIN).slice(0, 120)})\n`);
+  const notes = ghOverride() ? `feature close: gh binary override A1_GH_BIN=${safeText(process.env.A1_GH_BIN)}\n` : '';
   const out = closeFeature(opts);
   if (out.ok && out.reservations_commit_pending) {
     return emitExit(0, `${JSON.stringify(out)}\n`, `${notes}feature close: commit ${out.reservations_commit_pending} on main (push-cadence P3 finish step)\n`);

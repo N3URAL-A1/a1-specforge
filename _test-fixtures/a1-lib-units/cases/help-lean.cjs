@@ -19,7 +19,7 @@ const USAGE = [
   '  a1-tools wave next-check <slug> <wave> --since <iso> [--project <dir>] [--plan <file>] [--checkpoint-each-wave]',
   '  a1-tools wave checks <slug> <wave> --diff-base <ref> [--project <dir>] [--migrations <dir>] [--phase <slug>]',
   '  a1-tools feature plan-steps <spec-path>',
-  '  a1-tools feature close --by <spec-id> --pr <n> [--repo <dir>] [--spec <path>] [--worktree <id>]',
+  '  a1-tools feature close --by <spec-id> --pr <n> [--repo <dir>] [--spec <path>] [--worktree <id>] [--check-only]',
   '  a1-tools feature close --cleanup-only [--repo <dir>]',
 ];
 

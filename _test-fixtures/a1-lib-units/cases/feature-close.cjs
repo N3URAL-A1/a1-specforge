@@ -38,6 +38,7 @@ const FAKE_GH = [
   '#!/usr/bin/env node', "const fs = require('fs');", "const st = JSON.parse(fs.readFileSync(process.env.FAKE_GH_STATE, 'utf8'));", 'const a = process.argv.slice(2);',
   "if (a[0] === 'pr' && a[1] === 'view') { const v = st.view[a[2]]; if (!v) { process.stderr.write('no pull request\\n'); process.exit(1); } process.stdout.write(JSON.stringify(v)); process.exit(0); }",
   "if (a[0] === 'pr' && a[1] === 'list') {",
+  "  const mv = st.move; if (mv && a[a.indexOf('--head') + 1] === mv.when_head) require('child_process').spawnSync('git', ['-C', mv.repo, 'update-ref', 'refs/heads/' + mv.branch, mv.to]);",
   "  if (st.list_fail || a[a.indexOf('--state') + 1] !== 'merged') { process.stderr.write('gh: list failed\\n'); process.exit(1); }",
   "  process.stdout.write(JSON.stringify(st.merged[a[a.indexOf('--head') + 1]] || [])); process.exit(0); }",
   'process.exit(1);', '',
@@ -61,7 +62,7 @@ function build(name, o = {}) {
     root, A: path.join(root, 'proj-a'), origin: path.join(root, 'origin.git'), B: path.join(root, 'proj-b'),
     reg: path.join(root, 'registry.json'), spec: path.join(root, 'vault', 'project', 'proj-a', 'spec', `${SPEC_ID}.md`), state: path.join(root, 'gh-state.json'),
   };
-  t.env = { ...BASE_ENV, A1_WORKTREE_REGISTRY: t.reg, A1_VAULT_ROOT: path.join(root, 'vault'), A1_GH_BIN: path.join(root, 'gh.cjs'), FAKE_GH_STATE: t.state };
+  t.env = { ...BASE_ENV, A1_WORKTREE_REGISTRY: t.reg, A1_VAULT_ROOT: path.join(root, 'vault'), A1_GH_BIN: path.join(root, 'gh.cjs'), A1_FEATURE_CLOSE_TEST: '1', FAKE_GH_STATE: t.state };
   fs.mkdirSync(path.join(root, 'vault', 'pattern', 'a1-learnings'), { recursive: true });
   fs.mkdirSync(path.dirname(t.spec), { recursive: true });
   fs.writeFileSync(t.spec, SPEC_TEXT);
@@ -196,7 +197,7 @@ const stepResult = (j, name) => (j.steps.find((s) => s.step === name) || {}).res
 // FC12 hostile and malformed arguments exit 2.
 {
   const t = build('fc12');
-  const bad = [['--by', '../x', '--pr', '7'], ['--by', SPEC_ID, '--pr', '0'], ['--by', SPEC_ID, '--pr', '12345678'], ['--by', SPEC_ID, '--pr', '7; rm -rf x'], ['--by', SPEC_ID], ['--cleanup-only', '--by', SPEC_ID], [...ARGS, '--worktree', '../../etc'], [...ARGS, 'extra']];
+  const bad = [['--by', '../x', '--pr', '7'], ['--by', SPEC_ID, '--pr', '0'], ['--by', SPEC_ID, '--pr', '12345678'], ['--by', SPEC_ID, '--pr', '7; rm -rf x'], ['--by', SPEC_ID], ['--cleanup-only', '--by', SPEC_ID], ['--cleanup-only', '--check-only'], [...ARGS, '--worktree', '../../etc'], [...ARGS, 'extra']];
   const rcs = bad.map((a) => close(t, a).rc);
   eq('FC12 every bad argument list exits 2', rcs, bad.map(() => 2));
 }
@@ -245,6 +246,91 @@ const stepResult = (j, name) => (j.steps.find((s) => s.step === name) || {}).res
   check('FC17 exit 0, stdout names reservations_commit_pending', r.rc === 0 && r.json && r.json.reservations_commit_pending === '.a1/reservations.json', `rc=${r.rc} out=${r.out} err=${r.err}`);
   eq('FC17 git status lists exactly that file (trimmed), HEAD unchanged', [git(t.A, 'status', '--porcelain'), git(t.A, 'rev-parse', 'HEAD')], ['M .a1/reservations.json', headBefore]);
   check('FC17 stderr carries the one-line hint', /feature close: commit \.a1\/reservations\.json on main/.test(r.err), r.err);
+}
+
+// FC18 (review fix round 1, SEC-1): rule (b) is git ancestry (tip contained in origin/<base>), never an empty three-dot diff.
+// A commit+revert branch and an --allow-empty-commit branch have an empty diff against the base but unmerged commits: kept.
+// A fresh branch with no commits has its tip on main (an ancestor of the base): deleting it loses nothing, so it is deleted.
+{
+  const t = build('fc18');
+  git(t.A, 'checkout', '-q', '-b', 'reverted'); commit(t.A, 'r.txt', 'r\n'); git(t.A, 'rm', '-q', 'r.txt'); git(t.A, 'commit', '-q', '-m', 'revert r'); git(t.A, 'checkout', '-q', 'main');
+  git(t.A, 'checkout', '-q', '-b', 'emptied'); git(t.A, 'commit', '-q', '--allow-empty', '-m', 'empty work'); git(t.A, 'checkout', '-q', 'main');
+  git(t.A, 'branch', 'fresh', 'main');
+  git(t.A, 'checkout', '-q', '-b', 'cur', 'main');
+  const r = close(t, ARGS);
+  const kept = (b) => ((r.json && r.json.kept) || []).find((k) => k.branch === b);
+  check('FC18 exit 0', r.rc === 0 && r.json && r.json.ok, `rc=${r.rc} out=${r.out} err=${r.err}`);
+  check('FC18 commit+revert branch is kept unmerged_commits and exists', kept('reverted') && kept('reverted').reason === 'unmerged_commits' && hasBranch(t, 'reverted'), r.out);
+  check('FC18 --allow-empty commit branch is kept unmerged_commits and exists', kept('emptied') && kept('emptied').reason === 'unmerged_commits' && hasBranch(t, 'emptied'), r.out);
+  check('FC18 a fresh branch whose tip is on main (an ancestor of the base) is deleted', r.json && r.json.deleted.includes('fresh') && !hasBranch(t, 'fresh'), r.out);
+}
+
+// FC19 (R-MAJOR): the local default branch survives a PR whose base is another branch.
+{
+  const t = build('fc19'); t.gh.view[7].baseRefName = 'develop'; t.saveGh();
+  git(t.A, 'push', '-q', 'origin', 'main:develop'); git(t.A, 'fetch', '-q', 'origin');
+  git(t.A, 'checkout', '-q', '-b', 'cur', 'main');
+  const r = close(t, ARGS);
+  check('FC19 exit 0, main exists and is not in deleted[] (base develop)', r.rc === 0 && r.json && r.json.ok && hasBranch(t, 'main') && !r.json.deleted.includes('main'), `rc=${r.rc} out=${r.out} err=${r.err}`);
+}
+
+// FC20 (SEC-5): under an A1_GH_BIN override without the test marker a merged-PR verdict (rule a) only keeps; the JSON says so.
+{
+  const t = build('fc20');
+  git(t.A, 'checkout', '-q', '-b', 'pr-a'); const aTip = commit(t.A, 'a.txt', 'a\n'); git(t.A, 'checkout', '-q', 'main');
+  git(t.A, 'branch', 'anc', 'main');
+  t.gh.merged['pr-a'] = [{ headRefOid: aTip }]; t.saveGh();
+  delete t.env.A1_FEATURE_CLOSE_TEST;
+  const r = close(t, ARGS);
+  const kept = (b) => ((r.json && r.json.kept) || []).find((k) => k.branch === b);
+  check('FC20 exit 0, gh_bin override reported', r.rc === 0 && r.json && r.json.gh_bin === 'override', `rc=${r.rc} out=${r.out} err=${r.err}`);
+  check('FC20 merged-PR branch kept (gh_override), git-provable ancestor still deleted', kept('pr-a') && kept('pr-a').reason === 'gh_override' && hasBranch(t, 'pr-a') && r.json.deleted.includes('anc') && !hasBranch(t, 'anc'), r.out);
+}
+// FC20b a relative A1_GH_BIN is refused (exit 2) before anything runs.
+{
+  const t = build('fc20b'); t.env.A1_GH_BIN = 'gh.cjs';
+  const before = files(t);
+  const r = close(t, ARGS);
+  check('FC20b relative A1_GH_BIN exits 2, files unchanged', r.rc === 2 && JSON.stringify(before) === JSON.stringify(files(t)) && /absolute/.test(r.err), `rc=${r.rc} err=${r.err}`);
+}
+
+// FC21 (SEC-6): the delete is a compare-and-swap on the judged tip; a tip that moved between verdict and delete is kept tip_moved.
+{
+  const t = build('fc21');
+  git(t.A, 'branch', 'aaa', 'main');
+  git(t.A, 'checkout', '-q', '-b', 'zzz', 'main'); const moved = commit(t.A, 'z.txt', 'z\n'); git(t.A, 'checkout', '-q', 'main');
+  git(t.A, 'checkout', '-q', '-b', 'cur', 'main');
+  t.gh.move = { when_head: 'zzz', repo: t.A, branch: 'aaa', to: moved }; t.saveGh();
+  const r = close(t, ARGS);
+  const kept = (b) => ((r.json && r.json.kept) || []).find((k) => k.branch === b);
+  check('FC21 exit 0, aaa (tip moved after the verdict) kept tip_moved, still at the new tip', r.rc === 0 && kept('aaa') && kept('aaa').reason === 'tip_moved' && git(t.A, 'rev-parse', 'refs/heads/aaa') === moved, `rc=${r.rc} out=${r.out} err=${r.err}`);
+}
+
+// FC22 (SEC-7): the head branch name is checked as refs/heads/<name>: @{-1} and a leading dash are refused.
+{
+  for (const bad of ['@{-1}', '-x']) {
+    const t = build('fc22'); git(t.A, 'checkout', '-q', '-b', 'prev'); git(t.A, 'checkout', '-q', 'main');
+    t.gh.view[7].headRefName = bad; t.saveGh();
+    const before = files(t);
+    const r = close(t, ARGS);
+    check(`FC22 headRefName ${bad}: exit 1 bad_branch_name, nothing changed`, r.rc === 1 && r.json && r.json.reason === 'bad_branch_name' && JSON.stringify(before) === JSON.stringify(files(t)), `rc=${r.rc} out=${r.out}`);
+    fs.rmSync(t.root, { recursive: true, force: true });
+  }
+}
+
+// FC23 (SEC-4): --check-only runs the refusals (spec, PR merged, branch name, worktree match) and changes nothing; it does not
+// require the remote branch to be gone (the caller deletes it afterwards).
+{
+  const t = build('fc23'); git(t.wt, 'push', '-q', 'origin', 'feature/feat');
+  const before = files(t);
+  const r = close(t, [...ARGS, '--check-only']);
+  check('FC23 exit 0 mode check-only with the remote branch still present, files byte-equal, worktree still there', r.rc === 0 && r.json && r.json.ok && r.json.mode === 'check-only' && JSON.stringify(before) === JSON.stringify(files(t)) && exists(t.wt) && hasBranch(t, 'feature/feat'), `rc=${r.rc} out=${r.out} err=${r.err}`);
+  t.gh.view[7].state = 'OPEN'; t.saveGh();
+  const r2 = close(t, [...ARGS, '--check-only']);
+  check('FC23 an OPEN PR: exit 1 pr_not_merged', r2.rc === 1 && r2.json && r2.json.reason === 'pr_not_merged', `rc=${r2.rc} out=${r2.out}`);
+  fs.rmSync(t.spec);
+  const r3 = close(t, [...ARGS, '--check-only']);
+  check('FC23 a missing spec: exit 1 spec_not_found', r3.rc === 1 && r3.json && r3.json.reason === 'spec_not_found', `rc=${r3.rc} out=${r3.out}`);
 }
 
 // FC-help `--help` prints the usage only (stdout, exit 0), no error line before it.
