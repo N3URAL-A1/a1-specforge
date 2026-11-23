@@ -9,11 +9,11 @@
 //
 // Measured red 2026-11-23 (scratch copy of feature-close.cjs, one edit each, this file run):
 //   the MERGED check removed                                   -> FC3
-//   delete-all candidates (judge always {del:true})            -> FC6, FC7, FC8, FC13
+//   delete-all candidates (judge always {del:true})            -> FC6, FC7, FC8
 //   the tip comparison removed (any merged PR entry deletes)   -> FC8
 //   worktree exit moved after stages/release/spec              -> FC5
 //   --force-discard added to the exit call                     -> FC5
-//   the checked-out-worktree exclusion removed                 -> FC9
+//   the checked-out-worktree exclusion removed                 -> FC6 (git refuses that delete, exit 1)
 //   the spec-done skip removed                                 -> FC2
 //   recordRuns records only pr-<n> and the spec id             -> FC16
 //   pendingSharedState removed                                 -> FC17

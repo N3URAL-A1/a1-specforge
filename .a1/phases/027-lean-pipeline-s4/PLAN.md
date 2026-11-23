@@ -1220,7 +1220,7 @@ RED-proof:
 - 8 RED-proof lines are logged.
 
 **Status box:**
-- [ ] T8.1 `a1:background id=verify-bg` `a1:join id=verify-bg` `verify_rc` `agents/a1-victor-verifier.md` `_test-fixtures/a1-verify/cases-bgverify.sh` `_test-fixtures/a1-workflow-lint/cases-verify-bg.sh`
+- [x] T8.1 `a1:background id=verify-bg` `a1:join id=verify-bg` `verify_rc` `agents/a1-victor-verifier.md` `_test-fixtures/a1-verify/cases-bgverify.sh` `_test-fixtures/a1-workflow-lint/cases-verify-bg.sh`
 
 **Covers:** SC-8
 
@@ -1278,7 +1278,7 @@ RED-proof:
 - 9 RED-proof lines are logged.
 
 **Status box:**
-- [ ] T8.2 `_shared/lib/feature-close.cjs` `feature close` `--cleanup-only` `closeFeature` `reservations_commit_pending` `_test-fixtures/a1-lib-units/cases/feature-close.cjs`
+- [x] T8.2 `_shared/lib/feature-close.cjs` `feature close` `--cleanup-only` `closeFeature` `reservations_commit_pending` `_test-fixtures/a1-lib-units/cases/feature-close.cjs`
 
 **Covers:** SC-10
 

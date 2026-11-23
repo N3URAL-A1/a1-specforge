@@ -336,3 +336,48 @@ T7.2:
 - Prose in 01-research.md/02-map.md avoids the literal marker string and `RESEARCH.md` so the plan's done-when greps hold (2 markers, 0 RESEARCH.md in 02-map.md).
 
 `verify run --affected --no-cache --phase 027-lean-pipeline-s4` on head 0486c48: verdict pass, selection full (`runner_or_config_changed`, facade in the diff), 63 of 63 commands, 0 timed out, flaky [] and pre_existing_red [], skipped_on_host []. Wall time about 28 minutes.
+
+## PR B / Wave 8 — Background verify and `feature close`
+Completed: 2026-11-23
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| 8.1 background `verify run` in both Verify workflows, Victor wait rule, VS3 pin, W11 `calls=13`, VB1-VB2, BV0-BV5 | ✓ DONE | 0d1a43c | |
+| 8.2 `feature close` (`feature-close.cjs`, 285 lines), FC1-FC17 | ✓ DONE | 91422cf | `feature.cjs` 16 lines, facade still 787 |
+
+### RED proofs (each: one edit on a `git archive HEAD` scratch copy, suite or case file run, file restored)
+T8.1:
+- (a) `--affected` on the background line with the OLD VS3 address -> 2 verify-scope findings (VB1 expects exactly 1 on the new address, which gives 1) -> red as planned.
+- (b) join marker removed -> `workflow lint` finding `background-start@03-verify.md`.
+- (c) `RC=$?` removed from the background line -> `check-wave11-callsites.cjs` prints `03-verify.md:27 verify run: exit code not captured`.
+- (d) BV1 with `--no-cache` on the foreground run -> BV1 red (`cache` `off`).
+- (e) `--path-format=absolute` dropped from the start fence -> BV1b, BV2b, BV4, BV5 red (marker dir `.git/a1-verify-bg/fx` is relative, lands in the cwd repo).
+- (f) old VS3 on the new tree -> `VS3 03-verify.md ... sum='5 2 2 0 ...'` and the same for 06-verify.md (2 findings each).
+- (g) new VS3 address with the foreground `--out` line removed -> 0 verify-scope findings (red).
+- (h) old W11a pin `calls=11` on the new tree -> the checker prints `calls=13`.
+- (j) extra: both pid liveness lines removed from the join fence -> BV4 red (join runs into its bound, no `died`). With only the `kill -0` line removed BV4 stays green, because the `comm` check also reports a dead pid: the two checks cover each other.
+T8.2 (mutations in `feature-close.cjs`, `cases/feature-close.cjs` run):
+- (a) MERGED check removed -> FC3 red. (b) delete-all candidates -> FC6, FC7, FC8 red. (c) tip comparison removed -> FC8 red. (d) worktree exit moved after stages/release/spec -> FC5 red. (e) `--force-discard` on the exit call -> FC5 red. (f) checked-out exclusion removed -> FC6 red (git refuses to delete that branch, exit 1; FC9's own asserts stay green because the branch survives). (g) spec-done skip removed -> FC2 red. (h) `recordRuns` limited to `pr-<n>` and the spec id -> FC16 red. (i) `pendingSharedState` removed -> FC17 red.
+
+### Pin changes
+- `check-wave11-callsites.cjs` FILES: `03-verify.md` and `06-verify.md` `{ 'verify run': 2, 'verify check': 1 }`; W11a `calls=11` -> `calls=13` (comment block extended).
+- `cases-verify-scope.sh` VS3 rows for 03-verify.md and 06-verify.md: sed address `/a1-tools.cjs verify run/` -> `/a1-tools.cjs verify run.*--out/` (exactly those two lines); the Victor row is unchanged.
+- `cases-parallel.sh` PG1-PG7: expected `background_checked` count 1 -> 3 (the two new `verify-bg` markers), PG5 2 -> 4. Not in the plan's pin table: these are this slice's own wave 7 cases and the count is the only change.
+- a1-intent H7a/H7c, `05b-child-seal.sh`, a1-kritis-profile inventory and counts: NO red in this wave. The new fenced call is `verify run`, a command both allowlists already classify (write, excluded), and `feature close` is not named in any skill text yet (Task 9.2). They turn red in Wave 9; the classification for `feature close` is a WRITE (deletes branches, exits worktrees, edits registry, reservations and spec).
+
+### Results
+a1-verify 562/0, a1-workflow-lint 76/0, a1-gates-lint run-tests 99/0, run-wave13 and run-wave14 rc 0, a1-pr-review, a1-probe, a1-retro-validate, a1-dashboard, a1-intent (1125), a1-kritis-profile 221/0 rc 0 (run before 8.2 for intent), a1-lib-units 766/0, a1-code-scope 123/0, a1-worktree 166/0, a1-exit2-audit 36/0, a1-cli-output 33/0. Caps: facade 787, `feature-close.cjs` 285 (cap 420), `grep -c "shell: true\|execSync(\|git commit"` = 0.
+
+### Security notes (`feature close`, `verify-bg`; for the Samuel review of PR B)
+- `feature close` deletes only after step 2 proves the PR MERGED and step 3 proves the remote branch gone. Branch sweep: all verdicts first, deletions after, any gh failure deletes nothing. Rule (a) needs a merged PR entry whose `headRefOid` equals the local tip; rule (b) needs an empty `origin/<base>...<branch>` diff. Everything else goes to `kept[]`.
+- Never a candidate: the current branch, the base, any branch checked out in a worktree. Branch names are checked with `git check-ref-format --branch`; refs are passed qualified (`refs/heads/...`).
+- The registry entry must be of this repository, its branch must equal the merged PR head, and its path must not be the primary checkout (`worktree_mismatch`). Exit is `--mode discard`, never `--force-discard`.
+- Every child runs without shell. git and CLI children get `envWithoutGitRedirects()`; `--by`, `--pr`, `--worktree` are validated before any child runs; gh comes from `A1_GH_BIN` (named on stderr).
+- Background verify: marker dir under the git common dir (outside the work tree), mode 700, symlinked marker root refused, name validated against the scope regex; the pid is trusted only while `kill -0` works, the process belongs to the current user and its command is a shell or node (the recorded pid is the subshell that runs the node child, so the plan's "node process" check reads `bash`/`sh` here). Nothing in the workflow kills a pid.
+
+### Deviations
+- The plan's join and Victor wait loop test only `[ -f rc ]`; added the pid liveness check (user + command + `kill -0`) the lead asked for, so a dead background run costs seconds, not the 60-minute bound. The Victor fence also validates `verify_rc` (absolute, `a1-verify-bg` path, no `..`).
+- Start fences read `<phase_name>`/`<spec-id>`/`<dir>` through quoted heredocs with the scope-regex guard; the `--phase <placeholder>` on the call line stays a raw placeholder because `check-wave11-callsites.cjs` requires that literal (the guard validated the same value).
+- 06-verify.md: the start and the join sit next to each other in Step 0.6 (there is no agent spawn before the foreground run in that file), so the overlap there is small; 03-verify.md overlaps the whole Victor run.
+- `feature close` runs git through `gitSafe` with `env: envWithoutGitRedirects()` (gitSafe passes opts to execFileSync). The kept reason `pr_not_merged` of D16 is unused in the sweep (it queries only `--state merged`); a closed PR's branch is reported `unmerged_commits`.
+- FC fixtures use real `worktree prepare/enter` and real `phantom check --phase` gate logs instead of a hand-written registry entry (more faithful than the plan's "copied entry").
