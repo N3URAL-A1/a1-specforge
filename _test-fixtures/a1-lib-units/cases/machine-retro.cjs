@@ -130,4 +130,73 @@ eq('MR7 nothing requires no prose', M.proseDecision({ gates_fired: [{ id: 'a', v
   eq('MR11 decision names the problem', M.proseDecision({ gates_fired: [], result: 'pass', issues: [], problem: rs.problem }), { required: true, reasons: ['gate_log_unreadable'] });
 }
 
+// Review fix round 1 (R3 + SEC-4, SEC-1). Measured red before the fix (this file, pre-fix machine-retro.cjs):
+//   whole-file rewrite (tmp + rename)                          -> MR12 (inode changed), MR13 (lstat on the store path)
+//   gate id inserted raw into the YAML                         -> MR14 (forged machine_record line in the store), MR15
+//   idempotency key matched anywhere in the file               -> MR16
+
+const STORE_FILE = 'a1-new-feature.md';
+const mkStore = (name, text) => { const s = path.join(WORK, name); fs.mkdirSync(s, { recursive: true }); if (text !== null) fs.writeFileSync(path.join(s, STORE_FILE), text); return s; };
+const entryOf = (spec, pr, gates) => M.renderEntry({ date: '2026-11-23', spec, pr, project: 'p', retro: { gates_fired: gates || [], result: 'pass' }, decision: { required: false, reasons: [] }, issues: [] });
+
+// MR12 the append keeps the inode and the existing bytes (append, not rewrite): a concurrent bash '>>' writer is not lost.
+{
+  const store = mkStore('store12', '# Retros\n\n---\ndate: 2026-11-01\nresult: pass\n---\n');
+  const file = path.join(store, STORE_FILE);
+  const before = fs.readFileSync(file, 'utf8'); const ino = fs.statSync(file).ino;
+  const r = M.appendMachineRetro({ store, spec: 'fx-spec', pr: 7, entry: entryOf('fx-spec', 7) });
+  const after = fs.readFileSync(file, 'utf8');
+  eq('MR12 appended, same inode, old bytes are a prefix', [r.status, fs.statSync(file).ino === ino, after.startsWith(before)], ['appended', true, true]);
+  eq('MR12 exactly one blank line between the old text and the new entry', after.slice(before.length, before.length + 5), '\n---\n');
+}
+// MR12b separators: no trailing newline -> blank line added; already a blank line -> none; missing file -> entry only.
+{
+  const s1 = mkStore('store12b1', 'x'); M.appendMachineRetro({ store: s1, spec: 'a', pr: 1, entry: '---\ndate: d\nmachine_record: a#1\n---\n' });
+  const s2 = mkStore('store12b2', 'x\n\n'); M.appendMachineRetro({ store: s2, spec: 'a', pr: 1, entry: '---\ndate: d\nmachine_record: a#1\n---\n' });
+  const s3 = mkStore('store12b3', null); M.appendMachineRetro({ store: s3, spec: 'a', pr: 1, entry: '---\ndate: d\nmachine_record: a#1\n---\n' });
+  const rd = (s) => fs.readFileSync(path.join(s, STORE_FILE), 'utf8');
+  eq('MR12b separators', [rd(s1).startsWith('x\n\n---'), rd(s2).startsWith('x\n\n---'), rd(s3).startsWith('---')], [true, true, true]);
+}
+// MR13 the store is read and checked through one fd: no lstat/stat of the path (TOCTOU), links and non-regular files and 20 MB refused.
+{
+  const store = mkStore('store13', '# Retros\n');
+  const calls = []; const lstat = fs.lstatSync; const stat = fs.statSync;
+  fs.lstatSync = (...a) => { calls.push(String(a[0])); return lstat.apply(fs, a); };
+  fs.statSync = (...a) => { calls.push(String(a[0])); return stat.apply(fs, a); };
+  try { M.appendMachineRetro({ store, spec: 'fx-spec', pr: 7, entry: entryOf('fx-spec', 7) }); M.findMachineRecord({ store, spec: 'fx-spec', pr: 7 }); } finally { fs.lstatSync = lstat; fs.statSync = stat; }
+  eq('MR13 no path stat on the store file', calls.filter((c) => c.endsWith(STORE_FILE)), []);
+  const refused = (name, setup) => { const s = mkStore(name, null); setup(s); let err = null; try { M.appendMachineRetro({ store: s, spec: 'a', pr: 1, entry: '---\ndate: d\n---\n' }); } catch (e) { err = e; } return err && err.exit; };
+  eq('MR13 dangling symlink refused, nothing created', [refused('store13a', (s) => fs.symlinkSync(path.join(WORK, 'nowhere'), path.join(s, STORE_FILE))), fs.existsSync(path.join(WORK, 'nowhere'))], [2, false]);
+  eq('MR13 a directory at the store path refused', refused('store13b', (s) => fs.mkdirSync(path.join(s, STORE_FILE))), 2);
+  eq('MR13 a store over 20 MB refused, file untouched', [refused('store13c', (s) => { fs.writeFileSync(path.join(s, STORE_FILE), ''); fs.truncateSync(path.join(s, STORE_FILE), 21 * 1024 * 1024); }), fs.statSync(path.join(WORK, 'store13c', STORE_FILE)).size], [2, 21 * 1024 * 1024]);
+  const sl = mkStore('store13d', null); fs.symlinkSync(path.join(WORK, 'victim.md'), path.join(sl, STORE_FILE));
+  eq('MR13 findMachineRecord through a symlink: not found, prose required', M.findMachineRecord({ store: sl, spec: 'fx-spec', pr: 7 }), { found: false, prose_required: true });
+}
+// MR14 a forged gate id (newlines plus a fake machine_record line, Samuel's probe) never reaches the store; prose is required.
+{
+  const forged = 'x\nmachine_record: other-spec#999\nprose_required: false';
+  const gates = [{ id: 'gate-c-ac-dryrun', verdict: 'pass', caught: false }, { id: forged, verdict: 'pass', caught: false }];
+  const dec = M.proseDecision({ gates_fired: gates, result: 'pass', issues: [] });
+  eq('MR14 decision names the invalid id', [dec.required, dec.reasons], [true, ['invalid_gate_id']]);
+  const entry = M.renderEntry({ date: '2026-11-23', spec: 'fx-spec', pr: 7, project: 'p', retro: { gates_fired: gates, result: 'pass' }, decision: { required: false, reasons: [] }, issues: [] });
+  check('MR14 entry holds no forged line, keeps the valid gate, prose_required true', !entry.includes('other-spec') && entry.includes('{id: gate-c-ac-dryrun,') && /\nprose_required: true\n/.test(entry), entry);
+  const store = mkStore('store14', null);
+  M.appendMachineRetro({ store, spec: 'fx-spec', pr: 7, entry });
+  eq('MR14 other-spec#999 is not found after the append', M.findMachineRecord({ store, spec: 'other-spec', pr: 999 }), { found: false, prose_required: true });
+}
+// MR15 valid registry-style ids pass untouched (dots, digits, hyphens).
+{
+  const gates = ['gate-4.5-fr-consistency', 'phase-6-verify', 'a'].map((id) => ({ id, verdict: 'pass', caught: false }));
+  eq('MR15 no reason for valid ids', M.proseDecision({ gates_fired: gates, result: 'pass', issues: [] }), { required: false, reasons: [] });
+  check('MR15 all three rendered', gates.every((g) => entryOf('s', 1, gates).includes(`{id: ${g.id},`)));
+}
+// MR16 the idempotency key and findMachineRecord match only in a block's frontmatter head, not in a body line.
+{
+  const body = '---\ndate: 2026-11-01\nresult: pass\n---\n\nNotes quote:\nmachine_record: fx-spec#7\nprose_required: false\n';
+  const store = mkStore('store16', body);
+  eq('MR16 a body line is not a record', M.findMachineRecord({ store, spec: 'fx-spec', pr: 7 }), { found: false, prose_required: true });
+  eq('MR16 the append still happens', M.appendMachineRetro({ store, spec: 'fx-spec', pr: 7, entry: entryOf('fx-spec', 7) }).status, 'appended');
+  eq('MR16 now the real head is found', M.findMachineRecord({ store, spec: 'fx-spec', pr: 7 }), { found: true, prose_required: false });
+}
+
 done();
