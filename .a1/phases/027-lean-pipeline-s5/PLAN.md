@@ -824,7 +824,7 @@ Each reading is written by Task 13.1 into the spec `## Clarifications` as "propo
 
 **Done when:** every suite named in action 5 passes, or the deferred-pin rule records the red; PR1-PR6 are green; `gates lint` exits 0.
 **Status box:**
-- [ ] T6.1 `04-audit.md` permit step `04b-xprov-review.md` ≤ 80 PR1-PR6
+- [x] T6.1 `04-audit.md` permit step `04b-xprov-review.md` ≤ 80 PR1-PR6
 
 **Covers:** SC-3, SC-4
 
