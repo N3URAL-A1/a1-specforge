@@ -334,3 +334,5 @@ T7.2:
 - Intent child cannot run `wave checks` (spawn guard, exit 77). 02-execute.md and 05-implement.md carry a one-line note: record "wave checks: deferred to owner". Effect: an intent execute child no longer runs the realpath/schema/fidelity gates itself; the owner must run `wave checks` before merge. The plan named no sandbox change: decision for the orchestrator/Pablo whether to allowlist `wave checks` after a measured spawn-guard check.
 - BU2 does not go red under RED-proof (b) (see above).
 - Prose in 01-research.md/02-map.md avoids the literal marker string and `RESEARCH.md` so the plan's done-when greps hold (2 markers, 0 RESEARCH.md in 02-map.md).
+
+`verify run --affected --no-cache --phase 027-lean-pipeline-s4` on head 0486c48: verdict pass, selection full (`runner_or_config_changed`, facade in the diff), 63 of 63 commands, 0 timed out, flaky [] and pre_existing_red [], skipped_on_host []. Wall time about 28 minutes.
