@@ -9,7 +9,7 @@
 //   proseDecision ignores `caught`                              -> MR4
 //   no machine_record idempotency check                         -> MR8
 //   retro-* scopes kept in readScopes                           -> MR10
-//   gates_fired item without `caught`                           -> MR3
+//   gates_fired item without `caught`                           -> MR3 (item-format assert; retro validate itself still exits 0)
 
 const fs = require('fs');
 const path = require('path');
@@ -76,6 +76,7 @@ const TWO = {
   spawnSync('git', ['init', '-q'], { cwd, env: ENV });
   const r = spawnSync(process.execPath, [TOOLS, 'retro', 'validate', file, '--gate-log', logOf(root, 's'), '--gate-log', logOf(root, 'pr-7'), '--phase', 'retro-mr'], { cwd, env: ENV, encoding: 'utf8' });
   check('MR3 retro validate exit 0 on the rendered entry', r.status === 0, `rc=${r.status} out=${r.stdout} err=${r.stderr}`);
+  check('MR3 gates_fired items carry verdict and caught (retro validate alone does not require caught)', entry.includes('\n  - {id: test-fidelity, verdict: pass, caught: true}\n') && entry.includes('\n  - {id: pr-merge-check, verdict: pass, caught: false}\n'), entry);
   check('MR3 entry has the machine keys', /\nkind: machine\n/.test(entry) && /\nmachine_record: fx-spec#7\n/.test(entry) && /\nissues: \[\]\n/.test(entry) && /\nprose_required: true\n/.test(entry), entry);
 }
 
