@@ -381,3 +381,5 @@ a1-verify 562/0, a1-workflow-lint 76/0, a1-gates-lint run-tests 99/0, run-wave13
 - 06-verify.md: the start and the join sit next to each other in Step 0.6 (there is no agent spawn before the foreground run in that file), so the overlap there is small; 03-verify.md overlaps the whole Victor run.
 - `feature close` runs git through `gitSafe` with `env: envWithoutGitRedirects()` (gitSafe passes opts to execFileSync). The kept reason `pr_not_merged` of D16 is unused in the sweep (it queries only `--state merged`); a closed PR's branch is reported `unmerged_commits`.
 - FC fixtures use real `worktree prepare/enter` and real `phantom check --phase` gate logs instead of a hand-written registry entry (more faithful than the plan's "copied entry").
+
+`verify run --affected --no-cache --phase 027-lean-pipeline-s4` on head c2db3b3: verdict pass, 63 of 63 commands, 0 timed out, flaky [] and pre_existing_red [], skipped_on_host []. Wall time about 29 minutes.
