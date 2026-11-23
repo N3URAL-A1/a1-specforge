@@ -309,3 +309,17 @@ Verify gate (Wave 11): head c62e8bb, verdict pass, `scope: affected`, selection 
 - Block T / block F both read `<issue_tags>` through their own heredoc guard (block F also passes `$ISSUES_ARG` to `--check-only` and the real call). The CB `FB` finder now skips block T (`/prose_required/`), because T also contains `feature close`.
 - A stray `git stash` + `git checkout 16a858f -- .` ran by mistake in this session (one line of an exploration command). Nothing was lost: the stash was empty and `git reset --hard HEAD` restored the committed tree (HEAD a4cc812 at that time, no uncommitted work existed).
 - Slack note (D12 / audit R2-m3): not built; stays a Task 13.1 item.
+
+---
+
+## Wave 12 — action 1 (orchestrator, head d15fce2)
+
+- `gates lint` rc=0; `workflow lint --phase 027-lean-pipeline-s5` rc=0; `check-wave11-callsites.cjs .` calls=15
+- `run-wave13.sh` rc=0; `run-wave14.sh` rc=0
+- V13 caps loop rc=0; V14 frozen-files diff rc=0
+- `lane-split check` rc=0, with `--imports .` rc=0
+- `bash bin/run-suites.sh --check-groups` rc=0; `bash bin/run-suites.sh` rc=0 (362 s)
+- `workflow budget` rc=0: 18/18 skills `lines == budget` (RP3b); RP2b a1-new-feature 2355
+- `verify run` (Victor, `--out VERIFICATION.md`): pass, 63/63, 28 min
+- Owner `wave checks` whole phase (`--diff-base 599d1ad`): rc=0 (realpath 0, test-fidelity 0, schema n/a)
+- Victor: PASS. SC-3, SC-4, SC-5 boxes ticked on Victor's evidence (lane executors had not ticked them); SC-7 stays open for its post-merge part (Task 13.1); SC-11 ticked.
