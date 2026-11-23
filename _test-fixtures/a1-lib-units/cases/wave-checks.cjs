@@ -118,4 +118,13 @@ const README = { 'README.md': 'wave\n' };
   check('WC7 realpath and test-fidelity exit 2, schema skipped', byGate(r, 'gate-0.7-realpath').exit === 2 && byGate(r, 'test-fidelity').exit === 2 && byGate(r, 'gate-0.6-schema').skipped === 'no_migrations', JSON.stringify(r.json));
 }
 
+// WC8 `--help` prints the usage only (stdout, exit 0), no error line before it.
+{
+  const cwd = fs.mkdtempSync(path.join(WORK, 'cwd-'));
+  for (const flag of ['--help', '-h']) {
+    const r = spawnSync(process.execPath, [TOOLS, 'wave', 'checks', flag], { cwd, env: ENV, encoding: 'utf8', timeout: 60000 });
+    check(`WC8 wave checks ${flag}: exit 0, usage on stdout, stderr empty`, r.status === 0 && /^usage: a1-tools wave checks /.test(r.stdout) && r.stderr === '', `rc=${r.status} out=${r.stdout} err=${r.stderr}`);
+  }
+}
+
 done();

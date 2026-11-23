@@ -268,6 +268,7 @@ function closeFeature(opts) {
 
 /** @param {string[]} rest */
 function cmdFeatureClose(rest) {
+  if (rest.length === 1 && (rest[0] === '--help' || rest[0] === '-h')) return emitExit(0, `usage: ${USAGE}\n`, '');
   let opts;
   try { opts = parseArgs(rest); } catch (e) {
     if (!(e instanceof UsageError)) throw e;

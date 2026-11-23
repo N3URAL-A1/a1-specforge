@@ -75,6 +75,7 @@ function exitOf(checks) {
 
 /** @param {string[]} rest */
 function cmdWaveChecks(rest) {
+  if (rest.length === 1 && (rest[0] === '--help' || rest[0] === '-h')) return emitExit(0, `usage: ${USAGE}\n`, '');
   let args;
   try { args = parseArgs(rest); } catch (e) {
     if (!(e instanceof UsageError) && !(e && e.code === 'A1_INPUT')) throw e;

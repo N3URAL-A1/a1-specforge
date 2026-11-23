@@ -247,4 +247,12 @@ const stepResult = (j, name) => (j.steps.find((s) => s.step === name) || {}).res
   check('FC17 stderr carries the one-line hint', /feature close: commit \.a1\/reservations\.json on main/.test(r.err), r.err);
 }
 
+// FC-help `--help` prints the usage only (stdout, exit 0), no error line before it.
+{
+  for (const flag of ['--help', '-h']) {
+    const r = tools(WORK, BASE_ENV, ['feature', 'close', flag]);
+    check(`FC-help feature close ${flag}: exit 0, usage on stdout, stderr empty`, r.status === 0 && /^usage: a1-tools feature close /.test(r.stdout) && r.stderr === '', `rc=${r.status} out=${r.stdout} err=${r.stderr}`);
+  }
+}
+
 done();
