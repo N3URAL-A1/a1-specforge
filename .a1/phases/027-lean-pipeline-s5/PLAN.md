@@ -867,7 +867,7 @@ Each reading is written by Task 13.1 into the spec `## Clarifications` as "propo
 
 **Done when:** a1-kritis-profile passes with K5-K7 green and only the listed pin changes; the other suites of action 6 pass; `git diff c6b10a2 -- _test-fixtures/a1-kritis-profile/golden/prompts/` is empty.
 **Status box:**
-- [ ] T7.1 `kritis.md` SKILL.md cuts `prompts.allowed-diff` K5-K7
+- [x] T7.1 `kritis.md` SKILL.md cuts `prompts.allowed-diff` K5-K7
 
 **Covers:** SC-2, SC-7, SC-8
 
