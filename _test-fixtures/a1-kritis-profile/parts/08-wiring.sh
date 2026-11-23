@@ -165,7 +165,7 @@ caseWireDiscipline() {
       d="$(grep '^>' "$work/d" | grep -v '^> *$' | sed 's/^> \{0,1\}//' | LC_ALL=C sort)"
       want_d="$(awk -F'\t' '$1 == "SKILL.md" && $3 == "line" && $4 != "" { print $4 }' "$HERE/golden/prompts.allowed-diff" | LC_ALL=C sort)"
       if [[ -n "$want_rm" && -n "$want_d" && "$rm_d" == "$want_rm" && "$d" == "$want_d" ]]; then
-        ok "D $rel: removed and added non-blank lines equal the SKILL.md gone/line rows of prompts.allowed-diff as multisets (kritis block, Marketing Gate, Isolation body, S-table out; pointers in)"
+        ok "D $rel: removed and added non-blank lines equal the SKILL.md gone/line rows of prompts.allowed-diff as multisets (Marketing Gate, Isolation body, S-table out; pointers in)"
       else
         bad "D $rel: removed=[$rm_d] added=[$d] (expected the SKILL.md gone rows removed and the SKILL.md line rows added, as multisets)"
       fi
