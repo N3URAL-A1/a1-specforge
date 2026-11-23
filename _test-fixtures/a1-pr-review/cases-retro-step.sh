@@ -3,7 +3,7 @@
 # Measured red (one edit each on a scratch copy of 05-merge.md, suite run):
 #   block T placed after the run record block              -> RS1 (and the order case)
 #   the second `read` of the <issue_tags> guard removed      -> RS2
-#   the `RD="$(mktemp)"` line removed                        -> RS2b
+#   the `RD=` temp-file line removed                         -> RS2b
 #   `--by "$SPEC_ID"` replaced by a raw `--by <caller_spec_id>` -> RS5
 
 TB="$(bj 'b.find(x=>/prose_required/.test(x))')"
@@ -32,7 +32,7 @@ rc="$(rs_run fx-spec "$(printf 'a\ntouch PWNED')")"
 if [ "$rc" = "2" ] && [ ! -s "$RST/log" ] && [ -z "$(find "$RST" -name PWNED)" ] && grep -q 'STOP: bad issue tags' "$RST/out"; then pass_case "RS2 a two-line <issue_tags> value: STOP bad issue tags, exit 2, the stub never ran"
 else fail_case "RS2 rc=$rc log=$(cat "$RST/log") out=$(cat "$RST/out")"; fi
 # RS2b RD is defined on a line before its first use.
-if [ "$(printf '%s\n' "$TB" | awk '/RD="\$\(mktemp\)"/{d=NR} /"\$RD"/&&!/RD="\$\(mktemp\)"/{if(!u)u=NR} END{print (d>0&&u>d)?"ok":"bad:"d","u}')" = "ok" ]; then pass_case "RS2b block T defines RD=\"\$(mktemp)\" before the first \"\$RD\""
+if [ "$(printf '%s\n' "$TB" | awk '/^RD="\$\(mk[a-z]+\)"/{d=NR} /"\$RD"/&&!/^RD=/{if(!u)u=NR} END{print (d>0&&u>d)?"ok":"bad:"d","u}')" = "ok" ]; then pass_case "RS2b block T defines RD from a temp file before the first \"\$RD\""
 else fail_case "RS2b RD definition order in block T"; fi
 # RS3 `none` passes no --issues; a tag list is passed through; the decision is printed.
 rc="$(rs_run fx-spec none)"
