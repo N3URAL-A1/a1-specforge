@@ -721,7 +721,7 @@ Each reading is written by Task 13.1 into the spec `## Clarifications` as "propo
 
 **Done when:** a1-xprov passes with HT1-HT10 green; P13 is still green; `help-xprov.cjs` at most 620, `help-xprov-consent.cjs` at most 260, `help-xprov-topics.cjs` at most 220, `xprov.cjs` at most 460 lines; the HT10 longest prose-line value (at most 140) and command-line value (at most 150) are recorded in `STATUS-xprov.md`.
 **Status box:**
-- [ ] T5.1 `xprov --help <topic>` `help-xprov-topics.cjs` `XPROV_TOPICS_CONSENT` `XPROV_TOPICS_MAIN` HT1-HT10
+- [x] T5.1 `xprov --help <topic>` `help-xprov-topics.cjs` `XPROV_TOPICS_CONSENT` `XPROV_TOPICS_MAIN` HT1-HT10
 
 **Covers:** SC-4
 
@@ -769,7 +769,7 @@ Each reading is written by Task 13.1 into the spec `## Clarifications` as "propo
 
 **Done when:** a1-xprov passes (all shards, part 29 OB1-OB9 unchanged) with OL1-OL11 green; `wc -l < _shared/lib/xprov-run.cjs` prints at most 918; `xprov-observe.cjs` at most 210 and `xprov-gate.cjs` at most 740.
 **Status box:**
-- [ ] T5.2 `optin-logs.cjs` `A1_KEEP_REVIEW_LOGS` `check-optin-readers.cjs` `recovery` `compactRecovery` OL1-OL11
+- [x] T5.2 `optin-logs.cjs` `A1_KEEP_REVIEW_LOGS` `check-optin-readers.cjs` `recovery` `compactRecovery` OL1-OL11
 
 **Covers:** SC-10
 
