@@ -135,3 +135,8 @@ caseSP5() { local w f; rdTree w
     mkdir -p "$w/$(dirname "$f")"; cp "$REPO_ROOT/$f" "$w/$f"
   done
   rdCheck SP5 "copies of the real files: no sync finding (anchored regexes)" "$w" ""; }
+
+# VR1: the lane literal VSRE_LIT cannot drift from the single source (workflow-lint.cjs export, D11).
+caseVR1() { local got
+  got="$(node -e 'const r=require(process.argv[1]).VAULT_SYNC_CALL_RE;process.stdout.write(r instanceof RegExp?String(r):"not-a-regexp")' "$RD_LINT" 2>&1)"
+  if [[ "$got" == "$VSRE_LIT" ]]; then ok "VR1 exported VAULT_SYNC_CALL_RE equals the lane literal"; else bad "VR1 (got '$got', want '$VSRE_LIT')"; fi; }

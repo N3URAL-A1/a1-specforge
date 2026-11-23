@@ -39,7 +39,7 @@ Audit this PLAN.md for quality and coverage gaps. Write AUDIT.md.
   `--slug <slug>` instead of the positional slug, in the `vault sync` line (phases
   only) and in the `dashboard build` line alike. Anything 04b
   writes into the phase directory is picked up by the next sync (a1-execute
-  step 2b-v). The step is skipped silently when `A1_VAULT_ROOT` is not set
+  `03-verify.md`, at phase end). The step is skipped silently when `A1_VAULT_ROOT` is not set
   (tier repo-local), and a failed sync never blocks the pipeline. It runs in the
   background before the permit step and 04b: neither waits for it, and its warnings appear in the
   log file named on stdout:

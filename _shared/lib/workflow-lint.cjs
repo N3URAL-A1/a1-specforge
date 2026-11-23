@@ -243,17 +243,16 @@ function listWorkflowFiles(root) {
 // Scope: the rule applies only when --root is an a1 skills tree, i.e. when
 // `skills/a1-plan/` or `skills/a1-execute/` exists. The pipeline-exit fixtures
 // (W1-W5, W9, W10) scan synthetic roots holding a single fake skill; demanding
-// the three files there would turn every one of them red for a reason that
+// the two files there would turn every one of them red for a reason that
 // has nothing to do with what they test. Deleting a whole required file (or
 // its fence) inside a real skills tree is still caught — the owning skill
 // directory is present. `vault_sync_checked` reports how many files the rule
-// examined (3 on a skills tree, 0 otherwise), so a scope check that silently
-// matches nothing is visible in the JSON (fixture W11 asserts 3).
+// examined (2 on a skills tree, 0 otherwise), so a scope check that silently
+// matches nothing is visible in the JSON (fixture W11 asserts 2).
 // ---------------------------------------------------------------------------
 
 const REQUIRED_VAULT_SYNC_FILES = Object.freeze([
   'skills/a1-plan/workflows/04-audit.md',
-  'skills/a1-execute/workflows/02-execute.md',
   'skills/a1-execute/workflows/03-verify.md',
 ]);
 
@@ -440,4 +439,5 @@ module.exports = {
   listWorkflowFiles,
   checkVaultSyncSteps,
   REQUIRED_VAULT_SYNC_FILES,
+  VAULT_SYNC_CALL_RE,
 };

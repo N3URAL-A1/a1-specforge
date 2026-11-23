@@ -193,12 +193,12 @@ wired36() {
 }
 caseT10() {
   local ex="$REPO_ROOT/skills/a1-execute/workflows/02-execute.md" b4="$REPO_ROOT/skills/a1-plan/workflows/04b-xprov-review.md" sec
-  sec="$(secs36 "$ex" '^### 2b-d\.' '^### 2b-v\.')"
+  sec="$(secs36 "$ex" '^### 2b-d\.' '^### 2c\.')"
   assert_eq "T10 02-execute 2b-d runs inside cd \"\$WORK_PATH\", stops with exit \"\$RC\" and exit 2, has no break" "$(wired36 "$sec")" "cd:1 exit_rc:1 exit2:1 break:0"
   sec="$(secs36 "$b4" '^## Step 1b' '^## Step 2 ')"
   assert_eq "T10 04b step 1b stops with exit \"\$RC\" and exit 2, has no break" "$(wired36 "$sec")" "cd:0 exit_rc:1 exit2:1 break:0"
   # RED: the same check on a copy with the cd line removed, and on one with the break back in, must report it
-  sec="$(secs36 "$ex" '^### 2b-d\.' '^### 2b-v\.' | grep -v 'cd "\$WORK_PATH"')"
+  sec="$(secs36 "$ex" '^### 2b-d\.' '^### 2c\.' | grep -v 'cd "\$WORK_PATH"')"
   assert_eq "T10 RED: without the cd line the check reports cd:0" "$(wired36 "$sec")" "cd:0 exit_rc:1 exit2:1 break:0"
   sec="$(secs36 "$b4" '^## Step 1b' '^## Step 2 ' | sed 's/exit 2; fi/break; fi/')"
   assert_eq "T10 RED: with a break back in, the check reports break:1" "$(wired36 "$sec")" "cd:0 exit_rc:1 exit2:1 break:1"

@@ -93,13 +93,14 @@ WF_PLAN="$SKILLS/a1-plan/workflows/04-audit.md"
 WF_EXEC="$SKILLS/a1-execute/workflows/02-execute.md"
 WF_VERIFY="$SKILLS/a1-execute/workflows/03-verify.md"
 sites="$(grep -rn 'dashboard build <project-slug>' "$SKILLS" | sed 's/:.*//' | sort | tr '\n' ' ')"
-expect "05.24 exactly three call sites, in 04-audit, 02-execute, 03-verify" \
-  "$WF_EXEC $WF_VERIFY $WF_PLAN " "$sites"
-expect "05.25 call-site count over skills/ (count 3)" "3" "$(grep -rn 'dashboard build <project-slug>' "$SKILLS" | wc -l | tr -d ' ')"
+# spec 027 slice 5: the per-wave site in 02-execute is gone (sync once at phase end); two call sites remain.
+expect "05.24 exactly two call sites, in 04-audit and 03-verify" \
+  "$WF_VERIFY $WF_PLAN " "$sites"
+expect "05.25 call-site count over skills/ (count 2)" "2" "$(grep -rn 'dashboard build <project-slug>' "$SKILLS" | wc -l | tr -d ' ')"
 expect "05.26 04-audit: directly after its vault sync warn, same guard, warn-and-continue" "ok" "$(callsite_check "$WF_PLAN")"
-expect "05.27 02-execute: same" "ok" "$(callsite_check "$WF_EXEC")"
+expect "05.27 02-execute: no dashboard build call site (count 0)" "0" "$(grep -c 'dashboard build' "$WF_EXEC")"
 expect "05.28 03-verify: same" "ok" "$(callsite_check "$WF_VERIFY")"
-expect_has "05.29 02-execute runs the build from \$WORK_PATH" "$(grep 'dashboard build <project-slug>' "$WF_EXEC")" '(cd "$WORK_PATH" &&'
+expect "05.29 02-execute: no vault sync call (per-wave mirror removed, count 0)" "0" "$(grep -c 'vault sync' "$WF_EXEC")"
 expect "05.30 no call site passes --phase (not a gate; count 0)" "0" "$(grep -rn 'dashboard build <project-slug>' "$SKILLS" | grep -c -- '--phase')"
 # mutation control: the checker turns red when the warn line is dropped (RED proof for the order case)
 grep -v 'dashboard build exit=' "$WF_VERIFY" > "$WORK/verify-mut.md"
@@ -167,7 +168,7 @@ fi
 # RED before the fix: the prose told roadmap-less repos to pass --slug without saying the dashboard step takes
 # it too (the CLI rejected the flag); the progress line printed any `generated:` text, doubled `head`, and
 # printed an empty "(generated )" for a note without the key.
-for wf in skills/a1-execute/workflows/02-execute.md skills/a1-execute/workflows/03-verify.md skills/a1-plan/workflows/04-audit.md; do
+for wf in skills/a1-execute/workflows/03-verify.md skills/a1-plan/workflows/04-audit.md; do
   para="$(node -e '
     const t = require("fs").readFileSync(process.argv[1], "utf8").split(/\n\s*\n/);
     const hit = t.filter((p) => p.includes("--slug <slug>"));
