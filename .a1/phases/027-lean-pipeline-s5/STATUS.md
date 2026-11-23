@@ -323,3 +323,32 @@ Verify gate (Wave 11): head c62e8bb, verdict pass, `scope: affected`, selection 
 - `verify run` (Victor, `--out VERIFICATION.md`): pass, 63/63, 28 min
 - Owner `wave checks` whole phase (`--diff-base 599d1ad`): rc=0 (realpath 0, test-fidelity 0, schema n/a)
 - Victor: PASS. SC-3, SC-4, SC-5 boxes ticked on Victor's evidence (lane executors had not ticked them); SC-7 stays open for its post-merge part (Task 13.1); SC-11 ticked.
+
+---
+
+## Review fix round 1 (PR #115, head bde25ca)
+
+| Item | Status | Commit | RED proof |
+|---|---|---|---|
+| R2 + SEC-3 issue_tags declared, strip rule, CB4d scope | DONE | e408f2a | RS7a/b, RS8a/b red before |
+| R5 bash issue-tag case vs ISSUES_RE | DONE | e408f2a | RS9 (4 cases) and CB5a (3 cases) red before; length and count stay with the CLI, RS9b pins the CLI exit 2 |
+| R6 mktemp files removed | DONE | 1dfec7c | RS10a/b/c red before (one file left per path) |
+| R3 + SEC-4 O_APPEND on one O_NOFOLLOW fd, fstat | DONE | 202e390 | MR12 (inode changed), MR13 (path stat) red before |
+| SEC-1 gate id validation, key in frontmatter head only | DONE | 202e390 | MR14, MR16 red before (other-spec#999 found:true); after: found:false |
+| R4 T10 fenced lines only | DONE | 8934f16 | mutation (loop exit 2 -> break): exit2:1 before, exit2:0 break:1 after |
+| NIT 08-wiring D message | DONE | ebbf874 | n/a |
+| R1 double count of gates_fired | FOLLOW-UP | - | see below |
+
+### R1 follow-up (not fixable inside the slice-5 code_scope)
+Measured with `retro validate`: a prose retro without `gates_fired` and with `machine_record: <spec>#<n>` is accepted (exit 0) without `--gate-log`. With `--gate-log` (which retro-prose.md and the pin L12 require) it exits 1 `missing_blocking_fail` whenever the run's log holds a blocking fail, because the retro does not name the gate. Exact change needed, out of scope:
+1. `_shared/lib/retro-validate.cjs` / `retro-gatelog.cjs`: skip `missing_blocking_fail` (and the id checks) for a retro that carries `machine_record: <spec>#<n>` and no `gates_fired`.
+2. then `skills/a1-new-feature/workflows/retro-prose.md` step 6a drops `gates_fired` and adds `machine_record`;
+3. `skills/a1-evolve/workflows/02-cluster.md`: dedupe by `machine_record` (count a run once).
+Until then a run needing prose leaves two entries with `gates_fired`.
+
+Other follow-ups (skipped as briefed): SEC-2, SEC-5, kritis.md stale "above this block" NIT.
+
+### Gates on head ebbf874
+- `workflow budget --write`: no change after the last skills edit; RP3b: 18 skills, 0 mismatches `lines == budget`, a1-new-feature 2355, findings 0. RP0-RP3 run in the a1-workflow-lint suite (run-suites).
+- `gates lint` rc=0; `workflow lint --phase 027-lean-pipeline-s5` findings []; wave11 callsites calls=15; `check-assert-deletions --base 599d1ad` deleted=0; `test-fidelity --diff-base bde25ca` not_applicable (0 scanned); `realpath-check` PASS.
+- Caps: facade 788 (<=790), workflow-lint.cjs 445 (<=445), machine-retro.cjs 179 (<=220), feature-close.cjs 390 (<=420).
