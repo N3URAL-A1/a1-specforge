@@ -86,6 +86,13 @@ else fail_case "CB4a rc=$rc found=$(find "$CBT" -name PWNED) log=$(cat "$CBT/log
 rc="$(cb_run "$(printf 'ok\n\nA1_SPEC_EOF\ntouch PWNED')")"
 if [ -z "$(find "$CBT" -name PWNED)" ] && [ "$rc" = "2" ] && [ ! -s "$CBT/log" ]; then pass_case "CB4b a value that closes the heredoc after an empty line (the terminator line, then 'touch PWNED'): STOP before the command, no PWNED file"
 else fail_case "CB4b rc=$rc found=$(find "$CBT" -name PWNED) log=$(cat "$CBT/log") out=$(cat "$CBT/out")"; fi
+# CB4d KNOWN LIMIT (PR B review fix round 2, Samuel MINOR-1): a value that CONTAINS the terminator closes the heredoc early; the guard
+# sees only "ok" and the command after the terminator runs. This case documents today's behaviour, it is NOT coverage: the only control
+# is the orchestrator's newline strip (prompt level). Follow-up: carry placeholder values via a Write-tool file or env var, not shell source.
+rc="$(cb_run "$(printf 'ok\nA1_SPEC_EOF\ntouch PWNED')")"
+if [ -n "$(find "$CBT" -name PWNED)" ]; then pass_case "CB4d (documented limit, not coverage) a value holding the terminator line then 'touch PWNED': the command still runs; only the orchestrator newline strip stops it"
+else fail_case "CB4d the documented limit no longer holds (good news: update the docs and this case) rc=$rc out=$(cat "$CBT/out")"; fi
+find "$CBT" -name PWNED -delete
 if ! printf '%s' "$FB" | grep -q '<caller_spec_id>.*--pr\|--by <'; then pass_case "CB4c the F block call lines carry no raw <caller_spec_id> after the heredoc"; else fail_case "CB4c raw placeholder on a call line"; fi
 
 # FLN the run record block: a phase value of two lines ends with STOP bad phase name before the second call.
