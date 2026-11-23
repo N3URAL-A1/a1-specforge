@@ -58,7 +58,8 @@ const { REGISTRY_PATH, LANE_RE, DETAIL_MAX_CHARS, inputError, clip, parsePositiv
 const { permitCheck, permitHint, STATES: PERMIT_STATES } = require('./xprov-permit.cjs');
 const { preflight, resolveTool } = require('./xprov-preflight.cjs');
 const { snapshot, cleanupSnapshot, storedInputHashes, INPUTS_SUFFIX, INPUT_FILES } = require('./xprov-snapshot.cjs');
-const { observe, MODEL_RE, runsCounted } = require('./xprov-observe.cjs');
+const { observe, MODEL_RE, runsCounted, compactRecovery } = require('./xprov-observe.cjs');
+const { keepReviewLogs } = require('./optin-logs.cjs');
 const HC = require('./xprov-hit-cover.cjs');
 const R = require('./xprov-recover.cjs');
 const WV = require('./xprov-waivers.cjs');
@@ -354,6 +355,7 @@ function stepObserve(ctx, out, entry, state) {
 }
 
 function appendLog(ctx, out, snapState, state) {
+  if (!keepReviewLogs()) return; // spec 027 FR-032: the review log is opt-in (A1_KEEP_REVIEW_LOGS=1)
   const file = path.join(ctx.phaseDir, LOG_FILE);
   const existing = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : LOG_HEADER;
   const none = C.oneLine;
@@ -542,7 +544,7 @@ function ownerHandoffs(out) {
 /** The four run fields of the observation line (FR-035). `codex_runs` is 1 only for the first line of a gate target that reached the runner: rounds, retries and delta runs collapse (FR-022). */
 function runFields(ctx, state, out) {
   const first = state.runnerCalls > 0 && runsCounted({ repoRoot: ctx.root, phase: ctx.phase, gate: ctx.gate, wave: ctx.wave, lane: ctx.lane }) === 0;
-  return { gate: ctx.gate, ownerHandoffs: ownerHandoffs(out), codexRuns: first ? 1 : 0, abortReason: out.verdict === X.VERDICTS.FAIL && out.reason ? out.reason : null, recovered: R.recovered(state.recovery) };
+  return { gate: ctx.gate, ownerHandoffs: ownerHandoffs(out), codexRuns: first ? 1 : 0, abortReason: out.verdict === X.VERDICTS.FAIL && out.reason ? out.reason : null, recovered: R.recovered(state.recovery), ...(state.recovery.length ? { recovery: compactRecovery(state.recovery) } : {}) };
 }
 
 /** One observation per gate run that got past placement and permit (the paths that write nothing by FR-012/FR-020 append nothing). */

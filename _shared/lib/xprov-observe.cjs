@@ -74,7 +74,26 @@ function validateMsg(msg) {
   return m;
 }
 
-/** The spec 016 FR-035 run fields, each only when given: gate id, owner hand-offs (0..99), codex runs (0|1), abort reason (a reason code or null), recovered (boolean). */
+const RECOVERY_ACTIONS = Object.freeze(['runner_retry', 'blocked_retry', 'base_recomputed', 'preflight_repair']); // the four xprov-recover.cjs actions
+/** Strict check of the optional `recovery` list (spec 027 D9): at most 8 items {action, ok, attempts?, fallback?}, nothing else; throws A1_INPUT. */
+function recoveryOf(list) {
+  const ok = Array.isArray(list) && list.length <= 8 && list.every((it) => it !== null && typeof it === 'object' && !Array.isArray(it)
+    && Object.keys(it).every((k) => ['action', 'ok', 'attempts', 'fallback'].includes(k)) && RECOVERY_ACTIONS.includes(it.action) && typeof it.ok === 'boolean'
+    && (it.attempts === undefined || (Number.isInteger(it.attempts) && it.attempts >= 0 && it.attempts <= 9)) && (it.fallback === undefined || typeof it.fallback === 'boolean'));
+  if (!ok) throw inputError(`recovery must be at most 8 items {action: ${RECOVERY_ACTIONS.join('|')}, ok: boolean, attempts?: 0..9, fallback?: boolean}`);
+  return list.map((it) => Object.freeze({ ...it }));
+}
+
+/** Pure and total, never throws (the gate calls it outside a try): reduces the gate's recovery records to what `recoveryOf` accepts; unknown actions are
+ * dropped, no cause, error text or path survives, at most 8 items, `attempts` is the attempt count capped at 9.
+ * @returns {{action: string, ok: boolean, attempts?: number, fallback?: boolean}[]} */
+function compactRecovery(list) {
+  if (!Array.isArray(list)) return [];
+  return list.filter((it) => it !== null && typeof it === 'object' && RECOVERY_ACTIONS.includes(it.action)).slice(0, 8).map((it) => ({ action: it.action, ok: it.ok === true,
+    ...(Array.isArray(it.attempts) ? { attempts: Math.min(it.attempts.length, 9) } : {}), ...(typeof it.fallback === 'boolean' ? { fallback: it.fallback } : {}) }));
+}
+
+/** The spec 016 FR-035 run fields, each only when given: gate id, owner hand-offs (0..99), codex runs (0|1), abort reason (a reason code or null), recovered (boolean), and (spec 027 D9) recovery, the compact self-repair list (see `recoveryOf`). */
 function runFieldsOf(o) {
   const out = {};
   if (o.gate !== undefined) out.gate = oneOf(o.gate, xprov.GATE_ID_LIST, 'gate');
@@ -85,6 +104,7 @@ function runFieldsOf(o) {
     if (typeof o.recovered !== 'boolean') throw inputError('--recovered must be true or false');
     out.recovered = o.recovered;
   }
+  if (o.recovery !== undefined) out.recovery = recoveryOf(o.recovery);
   return out;
 }
 
@@ -185,4 +205,4 @@ function cmdXprovObserve(args) {
   return finish(r, xprov.EXIT_PASS);
 }
 
-module.exports = { EXTERNAL_AGENT, AGENT_RE, MODEL_RE, TYPES, SEVERITIES, PATTERNS, validateAgent, buildObservation, observe, runsCounted, cmdXprovObserve };
+module.exports = { compactRecovery, EXTERNAL_AGENT, AGENT_RE, MODEL_RE, TYPES, SEVERITIES, PATTERNS, validateAgent, buildObservation, observe, runsCounted, cmdXprovObserve };
