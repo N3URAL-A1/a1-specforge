@@ -64,3 +64,43 @@ cp "$REPO_ROOT/skills/a1-execute/workflows/02-execute.md" "$WORK/bu5b/skills/a1-
 bu_tree bu5c
 plant "$REPO_ROOT/skills/a1-new-feature/workflows/06-verify.md" "$WORK/bu5c/skills/a1-new-feature/workflows/06-verify.md" 's = s.split("\n").filter(l=>!/a1-tools\.cjs wave checks/.test(l)).join("\n");'
 [[ "$(node -e "$BU5_JS" "$WORK/bu5c" 2>&1)" == "missing:skills/a1-new-feature/workflows/06-verify.md" ]] && ok "BU5c owner step removed from a1-new-feature 06-verify.md while 05-implement.md keeps the note: flagged" || bad "BU5c ($(node -e "$BU5_JS" "$WORK/bu5c" 2>&1))"
+
+# BU6 (PR B review fix round 1, SEC-2, SEC-3, R-m2): the two owner `wave checks` blocks are RUN against stubs (a1-tools.cjs and git
+# on PATH, the real fenced block text from the real skills/ file). Measured red 2026-11-23 on the pre-fix files (git stash of skills/):
+#   BU6a two-line value runs past the guard (rc=0)          BU6b red checks do not exit (rc=0)
+#   BU6c an intent child runs the call                      (BU6d is the clean-value control: green before and after)
+BU6_DIR="$WORK/bu6"; rm -rf "$BU6_DIR"; mkdir -p "$BU6_DIR/repo/_shared" "$BU6_DIR/bin"
+cat > "$BU6_DIR/repo/_shared/a1-tools.cjs" <<'STUB'
+require("fs").appendFileSync(process.env.BU6_LOG, process.argv.slice(2).join(" ") + "\n");
+process.exit(Number(process.env.BU6_RC || 0));
+STUB
+printf '#!/bin/sh\necho abc123\n' > "$BU6_DIR/bin/git"; chmod +x "$BU6_DIR/bin/git"
+# $1 = skills file, $2 = value for <phase_name>/<spec-id> (may hold a newline); extracts the fenced block with the owner wave checks line
+bu6_block() {
+  node -e '
+    const fs = require("fs"); const [file, out, val, repo] = process.argv.slice(1);
+    const blocks = [...fs.readFileSync(file, "utf8").matchAll(/```bash\n([\s\S]*?)\n```/g)].map((m) => m[1]);
+    const b = blocks.find((x) => /wave checks .* --diff-base "\$PHASE_BASE"/.test(x));
+    if (!b) { console.error("no owner block"); process.exit(1); }
+    fs.writeFileSync(out, b.split("<phase_name>").join(val).split("<spec-id>").join(val).split("<dir>").join("/work").split("<repo>").join(repo));' "$1" "$BU6_DIR/blk.sh" "$2" "$BU6_DIR/repo"
+}
+bu6_run() { # $1 file, $2 value, remaining env via the caller
+  bu6_block "$1" "$2" || { echo "noblock"; return; }
+  : > "$BU6_DIR/log"; rm -f "$BU6_DIR/PWNED"
+  (cd "$BU6_DIR" && PATH="$BU6_DIR/bin:$PATH" BU6_LOG="$BU6_DIR/log" WORK_PATH=/work bash "$BU6_DIR/blk.sh" > "$BU6_DIR/out" 2>&1); echo $?
+}
+for BU6_F in skills/a1-execute/workflows/03-verify.md skills/a1-new-feature/workflows/06-verify.md; do
+  BU6_N="$(basename "$(dirname "$(dirname "$BU6_F")")")"
+  rc="$(bu6_run "$REPO_ROOT/$BU6_F" "$(printf 'ok\ntouch PWNED')")"
+  [[ "$rc" == "2" && ! -s "$BU6_DIR/log" && ! -e "$BU6_DIR/PWNED" ]] && ok "BU6a $BU6_N: a value 'ok' + newline + 'touch PWNED' stops (exit 2), the stub never ran, no PWNED" || bad "BU6a $BU6_N rc=$rc log=$(cat "$BU6_DIR/log") out=$(cat "$BU6_DIR/out")"
+  rc="$(bu6_run "$REPO_ROOT/$BU6_F" "$(printf 'ok\n\nA1_PHASE_EOF\nA1_SPEC_EOF\ntouch PWNED')")"
+  [[ "$rc" == "2" && ! -s "$BU6_DIR/log" && ! -e "$BU6_DIR/PWNED" && -z "$(find "$BU6_DIR" -name PWNED)" ]] && ok "BU6a2 $BU6_N: an empty line then the terminators then 'touch PWNED' stops (exit 2), no PWNED" || bad "BU6a2 $BU6_N rc=$rc log=$(cat "$BU6_DIR/log") found=$(find "$BU6_DIR" -name PWNED)"
+  rc="$(BU6_RC=1 bu6_run "$REPO_ROOT/$BU6_F" fx-ph)"
+  [[ "$rc" == "1" ]] && grep -q 'STOP: wave checks red' "$BU6_DIR/out" && ok "BU6b $BU6_N: red wave checks (stub exit 1) ends the block with exit 1" || bad "BU6b $BU6_N rc=$rc out=$(cat "$BU6_DIR/out")"
+  rc="$(A1_INTENT_CHILD=1 bu6_run "$REPO_ROOT/$BU6_F" fx-ph)"
+  [[ "$rc" == "0" && ! -s "$BU6_DIR/log" ]] && grep -q 'wave checks: deferred to owner' "$BU6_DIR/out" && ok "BU6c $BU6_N: an intent child stops with the deferral note, the stub never ran" || bad "BU6c $BU6_N rc=$rc log=$(cat "$BU6_DIR/log") out=$(cat "$BU6_DIR/out")"
+  rc="$(bu6_run "$REPO_ROOT/$BU6_F" fx-ph)"
+  [[ "$rc" == "0" && "$(cat "$BU6_DIR/log")" == 'wave checks fx-ph 0 --diff-base abc123 --project /work --phase fx-ph' ]] && ok "BU6d $BU6_N: a clean value runs the call with the quoted variable as scope and --phase" || bad "BU6d $BU6_N rc=$rc log=$(cat "$BU6_DIR/log") out=$(cat "$BU6_DIR/out")"
+done
+# BU6e the backstop of the intent-child hand-off: 05-merge.md keeps its whole-diff test-fidelity scan with fail-closed exit handling.
+if grep -qE 'a1-tools\.cjs test-fidelity --diff-base "\$\(git merge-base origin/<base> HEAD\)" --phase pr-<n>; RC=\$\?$' "$REPO_ROOT/skills/a1-pr-review/workflows/05-merge.md" && grep -qF 'STOP: test-fidelity exit=$RC, no merge' "$REPO_ROOT/skills/a1-pr-review/workflows/05-merge.md"; then ok "BU6e 05-merge.md keeps the whole-diff test-fidelity scan before the merge (backstop for the deferred owner step)"; else bad "BU6e 05-merge.md test-fidelity scan missing or not fail-closed"; fi

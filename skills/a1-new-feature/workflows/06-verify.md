@@ -54,21 +54,25 @@ note would let a missing or misplaced note skip the gate silently. The base is t
 `05-merge.md` uses for its `test-fidelity` scan. `<N>` is `0`: the call covers the whole feature, not one wave. On a feature whose diff
 adds or changes SQL migrations add `--migrations <dir>/<migrations dir>` before `--phase`, as in Phase 5. Any non-zero exit **stops**
 Phase 6: fix the cause, re-run this call. The block reads `<spec-id>` and `<dir>` through quoted heredocs and checks both.
+A red check ends the block with that exit code (`exit "$RC"`). An intent child that reaches this step stops right after the input checks, records
+"wave checks: deferred to owner" and hands the step to the owner. The owner-side `test-fidelity` scan of `a1-pr-review` `05-merge.md` (whole PR diff, `--phase pr-<n>`) is the
+backstop that a skipped owner step cannot ship an unscanned test. Both lines are pinned (`BU6` in a1-gates-lint).
 
 ```bash
-IFS= read -r SPEC_ID <<'A1_SPEC_EOF'
+{ IFS= read -r SPEC_ID; if IFS= read -r EXTRA; then echo "STOP: bad spec id (more than one line)"; exit 2; fi; } <<'A1_SPEC_EOF'
 <spec-id>
 A1_SPEC_EOF
-IFS= read -r WORK_PATH <<'A1_DIR_EOF'
+{ IFS= read -r WORK_PATH; if IFS= read -r EXTRA; then echo "STOP: bad project dir (more than one line)"; exit 2; fi; } <<'A1_DIR_EOF'
 <dir>
 A1_DIR_EOF
 case "$SPEC_ID" in ""|[!A-Za-z0-9_]*|*[!A-Za-z0-9._-]*) echo "STOP: bad spec id"; exit 2;; esac
 case "$WORK_PATH" in /*) ;; *) echo "STOP: project dir must be absolute"; exit 2;; esac
+if [ "${A1_INTENT_CHILD:-}" = 1 ]; then echo "wave checks: deferred to owner (an intent child cannot start node children; stop here, the owner runs this step)"; exit 0; fi
 PHASE_BASE="$(git -C "$WORK_PATH" merge-base origin/main HEAD)"; RC=$?
 if [ "$RC" -ne 0 ] || [ -z "$PHASE_BASE" ]; then echo "STOP: no merge-base with origin/main exit=$RC"; exit 1; fi
-node <repo>/_shared/a1-tools.cjs wave checks <spec-id> 0 --diff-base "$PHASE_BASE" --project "$WORK_PATH" --phase <spec-id>; RC=$?
+node <repo>/_shared/a1-tools.cjs wave checks "$SPEC_ID" 0 --diff-base "$PHASE_BASE" --project "$WORK_PATH" --phase "$SPEC_ID"; RC=$?
 echo "wave checks (owner, whole feature) exit=$RC"
-if [ $RC -ne 0 ]; then echo "STOP: wave checks red (checks[] above: gate, exit)"; fi
+if [ $RC -ne 0 ]; then echo "STOP: wave checks red (checks[] above: gate, exit)"; exit "$RC"; fi
 ```
 
 ## Step 0.6 — Build/test evidence (`verify run`, then `verify check`)
@@ -95,10 +99,10 @@ owns. The orchestrator strips all newlines from both values first. A start that 
 
 <!-- a1:background id=verify-bg join=yes -->
 ```bash
-IFS= read -r SPEC_ID <<'A1_SPEC_EOF'
+{ IFS= read -r SPEC_ID; if IFS= read -r EXTRA; then echo "STOP: bad spec id (more than one line)"; exit 2; fi; } <<'A1_SPEC_EOF'
 <spec-id>
 A1_SPEC_EOF
-IFS= read -r WORK_PATH <<'A1_DIR_EOF'
+{ IFS= read -r WORK_PATH; if IFS= read -r EXTRA; then echo "STOP: bad project dir (more than one line)"; exit 2; fi; } <<'A1_DIR_EOF'
 <dir>
 A1_DIR_EOF
 case "$SPEC_ID" in ""|[!A-Za-z0-9_]*|*[!A-Za-z0-9._-]*) echo "STOP: bad spec id"; exit 2;; esac
@@ -108,7 +112,7 @@ if [ "$RC" -ne 0 ] || [ -z "$GC" ]; then echo "STOP: no git common dir exit=$RC"
 if [ -L "$GC/a1-verify-bg" ]; then echo "STOP: $GC/a1-verify-bg is a symlink"; exit 1; fi
 VBG="$GC/a1-verify-bg/$SPEC_ID"
 rm -rf "$VBG" && mkdir -p "$VBG" && chmod 700 "$VBG" || { echo "STOP: cannot prepare $VBG"; exit 1; }
-( node <repo>/_shared/a1-tools.cjs verify run --project "$WORK_PATH" --phase <spec-id> > "$VBG/report.json"; RC=$?; echo "$RC" > "$VBG/rc.tmp" && mv "$VBG/rc.tmp" "$VBG/rc" ) > /dev/null 2>"$VBG/stderr.txt" & echo "$!" > "$VBG/pid"
+( node <repo>/_shared/a1-tools.cjs verify run --project "$WORK_PATH" --phase "$SPEC_ID" > "$VBG/report.json"; RC=$?; echo "$RC" > "$VBG/rc.tmp" && mv "$VBG/rc.tmp" "$VBG/rc" ) > /dev/null 2>"$VBG/stderr.txt" & echo "$!" > "$VBG/pid"
 echo "verify_report=$VBG/report.json verify_rc=$VBG/rc"
 ```
 
@@ -119,10 +123,10 @@ verdict: the foreground run below always runs.
 
 <!-- a1:join id=verify-bg -->
 ```bash
-IFS= read -r SPEC_ID <<'A1_SPEC_EOF'
+{ IFS= read -r SPEC_ID; if IFS= read -r EXTRA; then echo "STOP: bad spec id (more than one line)"; exit 2; fi; } <<'A1_SPEC_EOF'
 <spec-id>
 A1_SPEC_EOF
-IFS= read -r WORK_PATH <<'A1_DIR_EOF'
+{ IFS= read -r WORK_PATH; if IFS= read -r EXTRA; then echo "STOP: bad project dir (more than one line)"; exit 2; fi; } <<'A1_DIR_EOF'
 <dir>
 A1_DIR_EOF
 case "$SPEC_ID" in ""|[!A-Za-z0-9_]*|*[!A-Za-z0-9._-]*) echo "STOP: bad spec id"; exit 2;; esac

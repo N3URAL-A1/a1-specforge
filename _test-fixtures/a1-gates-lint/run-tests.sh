@@ -474,6 +474,9 @@ MATCH="$(node -e '
 #   old calls=11 pin on the new tree prints calls=13                          -> W11a red
 # Re-pinned 2026-11-23 (Victor fix round, owner-side `wave checks` step in 03-verify.md and 06-verify.md):
 #   old calls=13 pin on the new tree prints calls=15                          -> W11a red
+# Re-pinned 2026-11-23 (PR B review fix round 1, SEC-2): the call lines after the heredoc guard carry `--phase "$PHASE"` / `"$SPEC_ID"`:
+#   W11a red on the new tree before check-wave11-callsites.cjs accepted the quoted variable (03-verify.md:27 missing --phase <phase_name>)
+#   W11g (new) a foreign variable `--phase "$OTHER"` on that call line                    -> flagged (the pin did not just go lax)
 # W11b-W11e plant their own defect in a copy and need the real files green first.
 W11CHK="$REPO_ROOT/_test-fixtures/a1-gates-lint/check-wave11-callsites.cjs"
 W11FILES="skills/a1-execute/workflows/02-execute.md skills/a1-execute/workflows/03-verify.md skills/a1-execute/SKILL.md skills/a1-new-feature/workflows/05-implement.md skills/a1-new-feature/workflows/06-verify.md agents/a1-victor-verifier.md"
@@ -493,6 +496,8 @@ w11_mutate skills/a1-new-feature/workflows/06-verify.md 's = s.replace(/^node [^
 [[ $W11RC -eq 1 && "$W11OUT" == *"verify check expected 1 call(s), found 0"* ]] && ok "W11d verify check call removed from 06-verify: flagged" || bad "W11d ($W11OUT)"
 w11_mutate skills/a1-execute/workflows/02-execute.md 's = s.replace(/^node [^\n]*wave checks[^\n]*$/m, "");'
 [[ $W11RC -eq 1 && "$W11OUT" == *"02-execute.md: wave checks expected 1 call(s), found 0"* ]] && ok "W11e wave checks call removed from 02-execute: flagged" || bad "W11e ($W11OUT)"
+w11_mutate skills/a1-execute/workflows/03-verify.md 's = s.replace(/(wave checks [^\n]*) --phase "\$PHASE"/, "$1 --phase \"$OTHER\"");'
+[[ $W11RC -eq 1 && "$W11OUT" == *"03-verify.md"*"missing --phase <phase_name>"* ]] && ok "W11g a foreign variable as the --phase value of the owner wave checks call: flagged" || bad "W11g ($W11OUT)"
 run_lint
 WIRED="$(node -e 'const j=JSON.parse(process.argv[1]);const w=j.wired.filter(x=>["gate-0.6-schema","gate-1-build","test-fidelity"].includes(x.gate)&&["a1-execute","a1-new-feature"].includes(x.skill));process.stdout.write(w.length+":"+w.map(x=>x.gate+"@"+x.skill).sort().join(","))' "$OUT")"
 [[ $RC -eq 0 && "$WIRED" == "6:gate-0.6-schema@a1-execute,gate-0.6-schema@a1-new-feature,gate-1-build@a1-execute,gate-1-build@a1-new-feature,test-fidelity@a1-execute,test-fidelity@a1-new-feature" ]] \

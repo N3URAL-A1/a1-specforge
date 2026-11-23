@@ -106,13 +106,13 @@ with `_shared/push-cadence.md` P3 (never a bare `git pull`) and advance the regi
    The caller's retro validates against both logs of the run: `--gate-log <caller phase log> --gate-log .a1/phases/pr-<n>/gate-log.jsonl` (the flag repeats; the same file twice counts once).
 2. Run record (the worktree exit deletes the gate logs):
 
-Persist the run record (spec 027 FR-035). `run record` keeps scope, head sha, last verdict, `caught` and summed durations per gate in the learning store, once per scope and PR. Exit 1 (no learning store, no or untrusted gate log) does not stop the close-out: report it. Exit 2 is STOP before the worktree exit. Set `PHASE` to the phase name the caller handed over (a1-new-feature spec id, a1-execute phase); when a1-pr-review runs on its own, set it to `none`. The block reads the value through a quoted heredoc (`A1_PHASE_EOF`): single quotes would let a value holding a quote (`x'$(...)'`) run at the assignment. The orchestrator strips all newlines from the value first. The block skips the second call for an empty value, `none` or an unreplaced placeholder, and ends with `STOP: bad phase name` (exit 2, the worktree stays) for any other value outside `^[A-Za-z0-9_][A-Za-z0-9._-]*$`.
+Persist the run record (spec 027 FR-035). `run record` keeps scope, head sha, last verdict, `caught` and summed durations per gate in the learning store, once per scope and PR. Exit 1 (no learning store, no or untrusted gate log) does not stop the close-out: report it. Exit 2 is STOP before the worktree exit. Set `PHASE` to the phase name the caller handed over (a1-new-feature spec id, a1-execute phase); when a1-pr-review runs on its own, set it to `none`. The block reads the value through a quoted heredoc (`A1_PHASE_EOF`): single quotes would let a value holding a quote (`x'$(...)'`) run at the assignment. The orchestrator strips all newlines from the value first; the block repeats the check: a value of more than one line (a newline after a harmless first line, or a line equal to `A1_PHASE_EOF`) is `STOP: bad phase name`, exit 2, before any later line runs. The block skips the second call for an empty value, `none` or an unreplaced placeholder, and ends with `STOP: bad phase name` (exit 2, the worktree stays) for any other value outside `^[A-Za-z0-9_][A-Za-z0-9._-]*$`.
 
 ```bash
 node <repo>/_shared/a1-tools.cjs run record --repo "<worktree_path>" --scope pr-<n> --pr <n>; RC=$?
 if [ "$RC" -eq 2 ]; then echo "STOP: run record pr-<n> exit=2, worktree stays"; exit 2; fi
 if [ "$RC" -ne 0 ]; then echo "WARN: run record pr-<n> exit=$RC, durations not persisted"; fi
-IFS= read -r PHASE <<'A1_PHASE_EOF'
+{ IFS= read -r PHASE; if IFS= read -r EXTRA; then echo "STOP: bad phase name (more than one line)"; exit 2; fi; } <<'A1_PHASE_EOF'
 <phase_name>
 A1_PHASE_EOF
 case "$PHASE" in
@@ -129,26 +129,41 @@ esac
    non-zero exit.
 
 ```bash
-IFS= read -r SPEC_ID <<'A1_SPEC_EOF'
+{ IFS= read -r SPEC_ID; if IFS= read -r EXTRA; then echo "STOP: bad spec id (more than one line)"; exit 2; fi; } <<'A1_SPEC_EOF'
 <caller_spec_id>
 A1_SPEC_EOF
 case "$SPEC_ID" in ""|none|"<"*) echo "SKIP: feature close, no caller spec id (items 4 and 5 apply)"; exit 0 ;; esac
 case "$SPEC_ID" in [!A-Za-z0-9_]*|*[!A-Za-z0-9._-]*) echo "STOP: bad spec id"; exit 2 ;; esac
+(cd "<repo_root>" && node <repo>/_shared/a1-tools.cjs feature close --check-only --by "$SPEC_ID" --pr <n>); RC=$?
+if [ "$RC" -ne 0 ]; then echo "STOP: feature close --check-only exit=$RC, no remote delete, no close-out"; exit "$RC"; fi
 STATE="$(gh pr view <n> --json state --jq .state)"; RC=$?
 if [ "$RC" -ne 0 ]; then echo "STOP: gh pr view exit=$RC, no close-out"; exit "$RC"; fi
 BRANCH="$(gh pr view <n> --json headRefName --jq .headRefName)"; RC=$?
 if [ "$RC" -ne 0 ]; then echo "STOP: gh pr view exit=$RC, no close-out"; exit "$RC"; fi
-git check-ref-format --branch "$BRANCH" >/dev/null; RC=$?
+OID="$(gh pr view <n> --json headRefOid --jq .headRefOid)"; RC=$?
+if [ "$RC" -ne 0 ]; then echo "STOP: gh pr view exit=$RC, no close-out"; exit "$RC"; fi
+FORK="$(gh pr view <n> --json isCrossRepository --jq .isCrossRepository)"; RC=$?
+if [ "$RC" -ne 0 ]; then echo "STOP: gh pr view exit=$RC, no close-out"; exit "$RC"; fi
+case "$BRANCH" in -*) echo "STOP: bad branch name, no close-out"; exit 2 ;; esac
+git check-ref-format "refs/heads/$BRANCH" >/dev/null; RC=$?
 if [ "$RC" -ne 0 ]; then echo "STOP: bad branch name, no close-out"; exit 2; fi
-if [ "$STATE" = MERGED ] && [ -n "$(git -C "<repo_root>" ls-remote --heads origin "$BRANCH")" ]; then
-  git -C "<repo_root>" push origin --delete "$BRANCH"; RC=$?
-  if [ "$RC" -ne 0 ]; then echo "STOP: remote branch delete exit=$RC, no close-out"; exit "$RC"; fi
+REMOTE_OID="$(git -C "<repo_root>" ls-remote --heads origin "refs/heads/$BRANCH" | awk '{print $1}')"
+if [ "$STATE" = MERGED ] && [ -n "$REMOTE_OID" ]; then
+  if [ "$FORK" != false ]; then echo "WARN: PR head is not in this repository (fork), remote delete skipped"
+  elif [ "$REMOTE_OID" != "$OID" ]; then echo "WARN: origin has $BRANCH at $REMOTE_OID but the merged PR head was $OID, remote delete skipped"
+  else
+    git -C "<repo_root>" push --force-with-lease="refs/heads/$BRANCH:$OID" origin --delete "refs/heads/$BRANCH"; RC=$?
+    if [ "$RC" -ne 0 ]; then echo "STOP: remote branch delete exit=$RC, no close-out"; exit "$RC"; fi
+  fi
 fi
 (cd "<repo_root>" && node <repo>/_shared/a1-tools.cjs feature close --by "$SPEC_ID" --pr <n>); RC=$?
 if [ "$RC" -ne 0 ]; then echo "STOP: feature close exit=$RC"; exit "$RC"; fi
 ```
 
-The remote delete runs only for a MERGED PR (the merged-PR delete `a1-worktree` 03-exit Step 4.5 already allows without asking); `feature close` itself
+The block first runs `feature close --check-only` (the refusals that change nothing: spec file, PR MERGED, branch name, worktree match), so a refusal
+stops the run before the remote delete; a dirty worktree is only found at the worktree exit, after the delete (the delete is of a merged PR's own branch and is
+what `a1-worktree` 03-exit Step 4.5 allows anyway). The remote delete runs only for a MERGED PR from this repository (`isCrossRepository` is `false`) whose
+`headRefOid` equals the tip `ls-remote` shows (a branch that moved after the merge is left, with a WARN) and carries a lease on that tip; `feature close` itself
 refuses while the remote branch exists or the PR is not MERGED. It exits the worktree (plain `discard`), advances `merge` and `origin-cleanup`, releases the
 scope and sets the spec `done`; a second call is a no-op. When its output names `reservations_commit_pending`, commit `.a1/reservations.json` on the
 primary checkout's `main` and push it as the finish step of `_shared/push-cadence.md` P3 (protected `main`: chore PR `chore/<spec-id>-finish`, then the

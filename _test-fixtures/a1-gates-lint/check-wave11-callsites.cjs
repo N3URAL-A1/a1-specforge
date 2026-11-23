@@ -18,7 +18,10 @@ const FLAGS = {
   'lane-split check': ['plan', 'imports', 'phase'],
   'wave checks': ['diff-base', 'project', 'migrations', 'phase'],
 };
-// file -> [command, expected --phase placeholder, expected call count]
+// file -> [expected --phase placeholder, expected call counts]. A call line after a quoted-heredoc guard may carry the guarded
+// variable instead (`--phase "$PHASE"` / `"$SPEC_ID"`, PR B review fix round 1: the raw placeholder after the guard re-opens the
+// injection the guard closes); QUOTED_VAR names the one variable a file may use, and nothing else but the placeholder passes.
+const QUOTED_VAR = { 'skills/a1-execute/workflows/03-verify.md': '"$PHASE"', 'skills/a1-new-feature/workflows/06-verify.md': '"$SPEC_ID"' };
 const FILES = {
   'skills/a1-execute/workflows/02-execute.md': ['<phase_name>', { 'wave checks': 1, 'verify run': 1 }],
   'skills/a1-execute/workflows/03-verify.md': ['<phase_name>', { 'wave checks': 1, 'verify run': 2, 'verify check': 1 }],
@@ -42,7 +45,8 @@ for (const [rel, [phase, want]] of Object.entries(FILES)) {
     calls += 1;
     const flags = [...l.text.matchAll(/\s--([a-z][a-z-]*)/g)].map((x) => x[1]);
     for (const f of flags) if (!FLAGS[cmd].includes(f)) problems.push(`${rel}:${l.lineNo} ${cmd}: unknown flag --${f}`);
-    if (cmd !== 'verify check' && !l.text.includes(`--phase ${phase}`)) problems.push(`${rel}:${l.lineNo} ${cmd}: missing --phase ${phase}`);
+    const okPhase = [phase, QUOTED_VAR[rel]].filter(Boolean).some((v) => new RegExp(`--phase ${v.replace(/[$"]/g, '\\$&')}(?=\\s|;|$)`).test(l.text));
+    if (cmd !== 'verify check' && !okPhase) problems.push(`${rel}:${l.lineNo} ${cmd}: missing --phase ${phase}`);
     if (cmd !== 'lane-split check' && !/RC=\$\?/.test(l.text)) problems.push(`${rel}:${l.lineNo} ${cmd}: exit code not captured`);
   }
   for (const [cmd, n] of Object.entries(want)) {

@@ -12,17 +12,21 @@ condition on the note would let a missing or misplaced note skip the gate silent
 same base `05-merge.md` uses for its `test-fidelity` scan. `<N>` is `0` here: the call covers the whole phase, not one wave. On a phase
 whose diff adds or changes SQL migrations add `--migrations "$WORK_PATH/<migrations dir>"` before `--phase`, as at 2b-g.
 Any non-zero exit **stops** Phase 3 (no Victor, no `verify run`): fix the cause, re-run this call. `$WORK_PATH` is the phase worktree.
+A red check ends the block with that exit code (`exit "$RC"`). An intent child that reaches this step stops right after the input checks, records
+"wave checks: deferred to owner" and hands the step to the owner. The owner-side `test-fidelity` scan of `05-merge.md` (5.2, whole PR diff, `--phase pr-<n>`) is the
+backstop that a skipped owner step cannot ship an unscanned test. Both lines are pinned (`BU6` in a1-gates-lint).
 
 ```bash
-IFS= read -r PHASE <<'A1_PHASE_EOF'
+{ IFS= read -r PHASE; if IFS= read -r EXTRA; then echo "STOP: bad phase name (more than one line)"; exit 2; fi; } <<'A1_PHASE_EOF'
 <phase_name>
 A1_PHASE_EOF
 case "$PHASE" in ""|[!A-Za-z0-9_]*|*[!A-Za-z0-9._-]*) echo "STOP: bad phase name"; exit 2;; esac
+if [ "${A1_INTENT_CHILD:-}" = 1 ]; then echo "wave checks: deferred to owner (an intent child cannot start node children; stop here, the owner runs this step)"; exit 0; fi
 PHASE_BASE="$(git -C "$WORK_PATH" merge-base origin/main HEAD)"; RC=$?
 if [ "$RC" -ne 0 ] || [ -z "$PHASE_BASE" ]; then echo "STOP: no merge-base with origin/main exit=$RC"; exit 1; fi
-node <repo>/_shared/a1-tools.cjs wave checks <phase_name> 0 --diff-base "$PHASE_BASE" --project "$WORK_PATH" --phase <phase_name>; RC=$?
+node <repo>/_shared/a1-tools.cjs wave checks "$PHASE" 0 --diff-base "$PHASE_BASE" --project "$WORK_PATH" --phase "$PHASE"; RC=$?
 echo "wave checks (owner, whole phase) exit=$RC"
-if [ $RC -ne 0 ]; then echo "STOP: wave checks red (checks[] above: gate, exit)"; fi
+if [ $RC -ne 0 ]; then echo "STOP: wave checks red (checks[] above: gate, exit)"; exit "$RC"; fi
 ```
 
 ## Step 0.2 — Start `verify run` in the background (spec 027 FR-024)
@@ -38,7 +42,7 @@ directory it owns before it starts. The orchestrator strips all newlines from th
 
 <!-- a1:background id=verify-bg join=yes -->
 ```bash
-IFS= read -r PHASE <<'A1_PHASE_EOF'
+{ IFS= read -r PHASE; if IFS= read -r EXTRA; then echo "STOP: bad phase name (more than one line)"; exit 2; fi; } <<'A1_PHASE_EOF'
 <phase_name>
 A1_PHASE_EOF
 case "$PHASE" in ""|[!A-Za-z0-9_]*|*[!A-Za-z0-9._-]*) echo "STOP: bad phase name"; exit 2;; esac
@@ -47,7 +51,7 @@ if [ "$RC" -ne 0 ] || [ -z "$GC" ]; then echo "STOP: no git common dir exit=$RC"
 if [ -L "$GC/a1-verify-bg" ]; then echo "STOP: $GC/a1-verify-bg is a symlink"; exit 1; fi
 VBG="$GC/a1-verify-bg/$PHASE"
 rm -rf "$VBG" && mkdir -p "$VBG" && chmod 700 "$VBG" || { echo "STOP: cannot prepare $VBG"; exit 1; }
-( node <repo>/_shared/a1-tools.cjs verify run --project "$WORK_PATH" --phase <phase_name> > "$VBG/report.json"; RC=$?; echo "$RC" > "$VBG/rc.tmp" && mv "$VBG/rc.tmp" "$VBG/rc" ) > /dev/null 2>"$VBG/stderr.txt" & echo "$!" > "$VBG/pid"
+( node <repo>/_shared/a1-tools.cjs verify run --project "$WORK_PATH" --phase "$PHASE" > "$VBG/report.json"; RC=$?; echo "$RC" > "$VBG/rc.tmp" && mv "$VBG/rc.tmp" "$VBG/rc" ) > /dev/null 2>"$VBG/stderr.txt" & echo "$!" > "$VBG/pid"
 echo "verify_report=$VBG/report.json verify_rc=$VBG/rc"
 ```
 
@@ -84,7 +88,7 @@ recorded pid counts as alive only while `kill -0` succeeds, the process belongs 
 
 <!-- a1:join id=verify-bg -->
 ```bash
-IFS= read -r PHASE <<'A1_PHASE_EOF'
+{ IFS= read -r PHASE; if IFS= read -r EXTRA; then echo "STOP: bad phase name (more than one line)"; exit 2; fi; } <<'A1_PHASE_EOF'
 <phase_name>
 A1_PHASE_EOF
 case "$PHASE" in ""|[!A-Za-z0-9_]*|*[!A-Za-z0-9._-]*) echo "STOP: bad phase name"; exit 2;; esac

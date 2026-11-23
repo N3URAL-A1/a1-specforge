@@ -33,7 +33,7 @@ strips all newlines from the name too (a name line equal to `A1_PHASE_EOF` would
 `STOP: bad phase name`, exit 2, so a name that slipped through never reaches a path or a commit message.
 
 ```bash
-IFS= read -r PHASE <<'A1_PHASE_EOF'
+{ IFS= read -r PHASE; if IFS= read -r EXTRA; then echo "STOP: bad phase name (more than one line)"; exit 2; fi; } <<'A1_PHASE_EOF'
 <phase_name>
 A1_PHASE_EOF
 case "$PHASE" in ""|[!A-Za-z0-9_]*|*[!A-Za-z0-9._-]*) echo "STOP: bad phase name"; exit 2;; esac

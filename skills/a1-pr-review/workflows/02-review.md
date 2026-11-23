@@ -174,7 +174,7 @@ Exit 1 is a MAJOR finding in `findings.json` until the block is fixed.
 Runs after a 2.3a exit 0 (`pass`) **and** after a 2.1b exit 0 (the same-head skip path). Never after a recorded `fail`. Only when the caller handed over a `caller_spec_id` that holds a `code_scope` reservation does it advance `review` and then `verify`; each target is skipped when the current stage is at or past it, so a fix round or a restart never tries a backward move.
 
 ```bash
-IFS= read -r PHASE <<'A1_PHASE_EOF'
+{ IFS= read -r PHASE; if IFS= read -r EXTRA; then echo "STOP: bad spec id (more than one line)"; exit 2; fi; } <<'A1_PHASE_EOF'
 <caller_spec_id>
 A1_PHASE_EOF
 case "$PHASE" in ""|none|"<"*) echo "SKIP: lifecycle stages, no caller spec id"; exit 0 ;; esac

@@ -72,7 +72,7 @@ on the `SPEC_ID` value, which it reads through a quoted heredoc (`A1_SPEC_EOF`; 
 
 ```bash
 WORK_PATH="<dir>"
-IFS= read -r SPEC_ID <<'A1_SPEC_EOF'
+{ IFS= read -r SPEC_ID; if IFS= read -r EXTRA; then echo "STOP: bad spec id (more than one line)"; exit 2; fi; } <<'A1_SPEC_EOF'
 <spec-id>
 A1_SPEC_EOF
 case "$SPEC_ID" in ""|[!A-Za-z0-9_]*|*[!A-Za-z0-9._-]*) echo "STOP: bad spec id"; exit 2;; esac
