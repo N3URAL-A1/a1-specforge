@@ -485,7 +485,7 @@ caseV8() {
     "$REPO_ROOT/_shared/retro-template.md"
     "$REPO_ROOT/skills/a1-execute/workflows/03-verify.md"
     "$REPO_ROOT/skills/a1-fix/workflows/04-verify.md"
-    "$REPO_ROOT/skills/a1-new-feature/workflows/06-verify.md"
+    "$REPO_ROOT/skills/a1-new-feature/workflows/retro-prose.md"
     "$REPO_ROOT/skills/a1-evolve/workflows/04-apply.md"
   )
   local all_have_invocation=true
@@ -867,7 +867,7 @@ lp_validate "$GL_WORK/lp-bad.md" r; lp_validate "$GL_WORK/lp-ok.md" r
 # L12 the five retro call sites carry the whole chain in ONE fenced block: gates fired -> retro validate --gate-log --phase retro-<scope>
 WIRING="$(node -e '
   const fs=require("fs"), path=require("path"); const root=process.argv[1];
-  const files=["skills/a1-execute/workflows/03-verify.md","skills/a1-fix/workflows/04-verify.md","skills/a1-new-feature/workflows/06-verify.md","skills/a1-plan/workflows/04-audit.md","skills/a1-evolve/workflows/04-apply.md","_shared/retro-template.md"];
+  const files=["skills/a1-execute/workflows/03-verify.md","skills/a1-fix/workflows/04-verify.md","skills/a1-new-feature/workflows/retro-prose.md","skills/a1-plan/workflows/04-audit.md","skills/a1-evolve/workflows/04-apply.md","_shared/retro-template.md"];
   const out=[];
   for (const f of files) {
     const t=fs.readFileSync(path.join(root,f),"utf8");
@@ -876,7 +876,7 @@ WIRING="$(node -e '
     out.push(f.split("/").slice(-1)[0]+":"+blocks.length+"/"+good.length);
   }
   process.stdout.write(out.join(" "));' "$REPO_ROOT")"
-[[ "$WIRING" == "03-verify.md:1/1 04-verify.md:1/1 06-verify.md:1/1 04-audit.md:1/1 04-apply.md:1/1 retro-template.md:1/1" ]] && ok "L12 each of the 5 skill call sites and the template: one retro-validate block, all with gates fired + --gate-log + --phase retro-<scope>" || bad "L12 ($WIRING)"
+[[ "$WIRING" == "03-verify.md:1/1 04-verify.md:1/1 retro-prose.md:1/1 04-audit.md:1/1 04-apply.md:1/1 retro-template.md:1/1" ]] && ok "L12 each of the 5 skill call sites and the template: one retro-validate block, all with gates fired + --gate-log + --phase retro-<scope>" || bad "L12 ($WIRING)"
 
 
 # L13 spec 028 FR-016 (wave 2): several --gate-log values are read together (a run that crossed two scopes).
