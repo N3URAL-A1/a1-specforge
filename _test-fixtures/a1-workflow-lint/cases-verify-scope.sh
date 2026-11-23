@@ -50,8 +50,8 @@ caseVS2() {
 }
 
 caseVS3() {
-  vsOneFinding VS3 skills/a1-execute/workflows/03-verify.md '/a1-tools.cjs verify run/s/verify run/verify run --affected/' 'Verify-step verify run with --affected'
-  vsOneFinding VS3 skills/a1-new-feature/workflows/06-verify.md '/a1-tools.cjs verify run/s/verify run/verify run --affected/' 'Verify-step verify run with --affected'
+  vsOneFinding VS3 skills/a1-execute/workflows/03-verify.md '/a1-tools.cjs verify run.*--out/s/verify run/verify run --affected/' 'Verify-step verify run with --affected'
+  vsOneFinding VS3 skills/a1-new-feature/workflows/06-verify.md '/a1-tools.cjs verify run.*--out/s/verify run/verify run --affected/' 'Verify-step verify run with --affected'
   vsOneFinding VS3 agents/a1-victor-verifier.md '/A1_TOOLS" verify run/s/verify run/verify run --affected/' 'Verify-step verify run with --affected'
 }
 

@@ -2,6 +2,36 @@
 
 Spawn a1-victor-verifier to validate the completed work.
 
+## Step 0.2 — Start `verify run` in the background (spec 027 FR-024)
+
+Start the build/test run before Victor, so it runs while he reads the plan and the code. The run writes no `VERIFICATION.md`
+(no `--out`: Victor's file would race with it) and carries no `--affected` (a Verify-step run covers the whole set). Victor's own
+`verify run --out` then finds the cached result (same sha, same commands) and waits on no lock.
+
+The marker directory lies in the git common dir (`--path-format=absolute` makes it absolute from any cwd, in a main checkout too),
+outside the work tree, so repo content cannot write or commit into it. The block validates `<phase_name>` against
+`^[A-Za-z0-9_][A-Za-z0-9._-]*$` (read through a quoted heredoc, as `02-execute.md` does), refuses a symlinked marker root, and empties the
+directory it owns before it starts. The orchestrator strips all newlines from the name first. `$WORK_PATH` is the phase worktree.
+
+<!-- a1:background id=verify-bg join=yes -->
+```bash
+IFS= read -r PHASE <<'A1_PHASE_EOF'
+<phase_name>
+A1_PHASE_EOF
+case "$PHASE" in ""|[!A-Za-z0-9_]*|*[!A-Za-z0-9._-]*) echo "STOP: bad phase name"; exit 2;; esac
+GC="$(git -C "$WORK_PATH" rev-parse --path-format=absolute --git-common-dir)"; RC=$?
+if [ "$RC" -ne 0 ] || [ -z "$GC" ]; then echo "STOP: no git common dir exit=$RC"; exit 1; fi
+if [ -L "$GC/a1-verify-bg" ]; then echo "STOP: $GC/a1-verify-bg is a symlink"; exit 1; fi
+VBG="$GC/a1-verify-bg/$PHASE"
+rm -rf "$VBG" && mkdir -p "$VBG" && chmod 700 "$VBG" || { echo "STOP: cannot prepare $VBG"; exit 1; }
+( node <repo>/_shared/a1-tools.cjs verify run --project "$WORK_PATH" --phase <phase_name> > "$VBG/report.json"; RC=$?; echo "$RC" > "$VBG/rc.tmp" && mv "$VBG/rc.tmp" "$VBG/rc" ) > /dev/null 2>"$VBG/stderr.txt" & echo "$!" > "$VBG/pid"
+echo "verify_report=$VBG/report.json verify_rc=$VBG/rc"
+```
+
+Put the two printed paths into Victor's brief (`verify_report:`, `verify_rc:`). A start that prints `STOP:` leaves Victor's brief without
+them: he then runs `verify run --out` directly, as before. Never `pgrep` for the process and never `wait` on its pid (a later Bash
+call is not the parent shell): the join below reads the files.
+
 ## Prompt template
 
 ```
@@ -18,9 +48,33 @@ Verify that the phase goal was achieved.
 </files_to_read>
 
 **Output path:** .a1/phases/<phase_name>/VERIFICATION.md
+verify_report: <VBG>/report.json
+verify_rc: <VBG>/rc
 ```
 
 ## After Victor returns: build/test evidence (spec 017, gate `gate-1-build`)
+
+Join the background run first (`<!-- a1:join id=verify-bg -->` below). The wait is bounded (240 checks, 15 s apart, 60 minutes). The
+recorded pid counts as alive only while `kill -0` succeeds, the process belongs to the current user and its command is a shell or node
+(the recorded pid is the subshell that runs the node child); a dead process without an `rc` file ends the wait with
+`background verify died`. Neither case is a verdict: the foreground `verify run --out` below always runs and is the evidence.
+
+<!-- a1:join id=verify-bg -->
+```bash
+IFS= read -r PHASE <<'A1_PHASE_EOF'
+<phase_name>
+A1_PHASE_EOF
+case "$PHASE" in ""|[!A-Za-z0-9_]*|*[!A-Za-z0-9._-]*) echo "STOP: bad phase name"; exit 2;; esac
+VBG="$(git -C "$WORK_PATH" rev-parse --path-format=absolute --git-common-dir)/a1-verify-bg/$PHASE"
+i=0; while [ ! -f "$VBG/rc" ] && [ $i -lt 240 ]; do
+  BP="$(cat "$VBG/pid" 2>/dev/null)"
+  case "$BP" in ""|*[!0-9]*) echo "background verify died (no valid pid)"; break;; esac
+  if ! kill -0 "$BP" 2>/dev/null || [ "$(ps -o uid= -p "$BP" | tr -d ' ')" != "$(id -u)" ]; then [ -f "$VBG/rc" ] || echo "background verify died"; break; fi
+  case "$(ps -o comm= -p "$BP" 2>/dev/null)" in bash|sh|dash|zsh|ksh|node|MainThread) ;; *) [ -f "$VBG/rc" ] || echo "background verify died (pid not ours)"; break;; esac
+  sleep 15; i=$((i+1))
+done
+if [ -f "$VBG/rc" ]; then echo "background verify rc=$(cat "$VBG/rc")"; elif [ $i -ge 240 ]; then echo "WARN: background verify not finished after 60 min, running verify run directly"; fi
+```
 
 Victor's build/test evidence is the `verify_run` record in the VERIFICATION.md frontmatter, written
 only by `verify run --out`. Re-run it (served from the sha + command cache when nothing changed)

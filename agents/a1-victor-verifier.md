@@ -81,6 +81,27 @@ Check that the artifact is actually connected:
 Build, type-check and test evidence comes from the CLI, never from `npm test | tail`. Resolve
 `$A1_TOOLS` as in Step 4.5, then:
 
+**Background run (spec 027 FR-024).** Only when your brief names `verify_rc`: the orchestrator already started `verify run` for this
+tree and writes its exit code to that file when it ends. Wait for the file before your own `verify run --out` below, so the call is
+served from the cache and waits on no lock. The wait is bounded (240 checks, 15 s apart, 60 minutes) and stops early when the recorded
+pid (`pid` beside `verify_rc`) is no longer a live process of the current user. Without `verify_rc` in the brief, skip this block. The
+`verify run --out` and `verify check` calls below stay as they are; a missing result only means you run `verify run --out` directly.
+
+```bash
+IFS= read -r RCF <<'A1_RC_EOF'
+<verify_rc>
+A1_RC_EOF
+case "$RCF" in *..*) echo "STOP: bad verify_rc"; exit 2;; /*/a1-verify-bg/*/rc) ;; *) echo "STOP: bad verify_rc"; exit 2;; esac
+PIDF="${RCF%/rc}/pid"; i=0
+while [ ! -f "$RCF" ] && [ $i -lt 240 ]; do
+  BP="$(cat "$PIDF" 2>/dev/null)"
+  case "$BP" in ""|*[!0-9]*) echo "WARN: background verify has no valid pid, running verify run directly"; break;; esac
+  if ! kill -0 "$BP" 2>/dev/null || [ "$(ps -o uid= -p "$BP" | tr -d ' ')" != "$(id -u)" ]; then [ -f "$RCF" ] || echo "WARN: background verify died, running verify run directly"; break; fi
+  sleep 15; i=$((i+1))
+done
+if [ -f "$RCF" ]; then echo "background verify rc=$(cat "$RCF")"; elif [ $i -ge 240 ]; then echo "WARN: background verify not finished after 60 min, running verify run directly"; fi
+```
+
 ```bash
 node "$A1_TOOLS" verify run --out ".a1/phases/<phase>/VERIFICATION.md" --phase <phase>; RC=$?
 echo "verify run exit=$RC"
