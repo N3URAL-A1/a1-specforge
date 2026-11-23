@@ -412,6 +412,7 @@ caseW16() {
 . "$(dirname "${BASH_SOURCE[0]}")/cases-parallel.sh"
 . "$(dirname "${BASH_SOURCE[0]}")/cases-verify-bg.sh"
 . "$(dirname "${BASH_SOURCE[0]}")/cases-budget.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/cases-read.sh"
 
 caseW1; caseW2; caseW3; caseW4; caseW5; caseW6; caseW7; caseW8; caseW9; caseW10
 caseW11; caseW12; caseW13; caseW14; caseW15; caseW16
@@ -425,6 +426,9 @@ casePG1; casePG2; casePG3; casePG4; casePG5; casePG6; casePG7
 caseVB1; caseVB2
 caseBG1; caseBG2; caseBG3; caseBG4; caseBG5; caseBG6; caseBG7; caseBG8; caseBG9; caseBG10; caseBG11; caseBG12
 caseBG13; caseBG14; caseBG15
+caseRD1; caseRD2; caseRD3; caseRD4; caseRD5; caseRD6; caseRD7; caseRD8; caseRD9
+caseFB1; caseFB2; caseFB3; caseFB4; caseFB5; caseFB6
+caseSP1; caseSP2; caseSP3; caseSP4; caseSP5
 
 printf '%s\n' "${results[@]}"
 echo "----"
