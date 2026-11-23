@@ -461,3 +461,26 @@ Status boxes T6.1-T9.2: all `[x]` (0 open). `phantom check .a1/phases/027-lean-p
 
 ### Open owner/planner item (AUDIT m6, from Wave 9)
 The field-owner row "`observations.jsonl` deviation/blocker lines" names a1-erik-executor and the session. Victor's observation lines (his `observations.jsonl` writes during verify) have no row. Pablo/Wave 10 should add Victor as a writer of observation lines, or state that Victor writes none. PLAN.md rows stay as written.
+
+## PR B / Victor fix round
+Base HEAD e0f4bb0. Gap 1 (MAJOR) fixed with variant (b); the intent sandbox is unchanged.
+
+- Owner step: `skills/a1-execute/workflows/03-verify.md` Step 0.1 (before the background `verify run` and Victor) and `skills/a1-new-feature/workflows/06-verify.md` Step 0.55 (before Step 0.6). Both run `wave checks <slug> 0 --diff-base "$PHASE_BASE" --project "$WORK_PATH" --phase <slug>` with `PHASE_BASE=$(git merge-base origin/main HEAD)`, the base `05-merge.md` uses for its `test-fidelity` scan. All three child gates run. Non-zero exit STOPs. Placeholders go through quoted heredocs plus the regex guard. `<wave>` is `0` (the CLI needs an integer; the call covers the whole phase).
+- Decision: unconditional, not conditional on the deferral note. Reasons: idempotent (a re-run only appends gate-log lines), seconds of cost next to `verify run`, and a grep condition would skip the gate silently when the note never reaches a STATUS file. The writer texts in 02-execute.md and 05-implement.md now name the consumer step.
+- Migrations: the step does not pass `--migrations` by default (text says to add it for a migration phase, as at 2b-g); schema-check reports `skipped` otherwise.
+
+### Pin changes (each with a red run)
+| Pin | Change | Red run |
+|---|---|---|
+| W11a (`check-wave11-callsites.cjs`) | `calls=13` -> `calls=15`, FILES expects `wave checks: 1` in 03-verify.md and 06-verify.md | old pin on the new tree: `W11a (calls=15)` FAIL |
+| BU2 (`cases-bundle.sh`) | plant removes the `wave checks` line from both a1-execute files (03-verify.md now also wires the three gates) | with only 02-execute.md edited: `BU2 ... rc=0 want=1` FAIL |
+| BU5a-c (new, `cases-bundle.sh`) | every file that carries "wave checks: deferred to owner" needs its paired owner file to hold a fenced `wave checks ... --diff-base "$PHASE_BASE" ... RC=$?` line | owner line deleted from the real 03-verify.md: `W11a`, `BU5a`, `BU5c` FAIL; BU5b/BU5c plant the same removal in a copy and expect the finding |
+| VS3, a1-intent H7a, kritis inventory/counts, gates-lint BUNDLES wiring | no change needed; suites green (VS3 targets `verify run.*--out`, which the new step does not touch; BUNDLES unchanged, W11f/BU1/BU4 green) | n/a |
+
+### Minors
+- `cases-bundle.sh` header: "-> BU2 red" corrected to "BU1, BU3, BU4 carry the proof (BU2 stays green: it removes the call lines, not the list)".
+- `wave checks --help|-h` and `feature close --help|-h`: usage on stdout, exit 0, no error line (one guard line in each of `wave-checks.cjs`, `feature-close.cjs`). Cases WC8 and FC-help; red before the change (`rc=2 ... --phase value is not a safe scope name`, `unexpected argument`).
+- Caps: facade 787/800 (unchanged), `wave-checks.cjs` 92, `feature-close.cjs` 286.
+
+### Results (own runs on this tree)
+a1-workflow-lint 76/0, a1-gates-lint 102/0 (3 runs), run-wave13 10/0, run-wave14 50/0, a1-intent 1128/0, a1-kritis-profile 225/0, a1-verify 562/0, a1-lib-units 786/0, a1-pr-review 88/0, a1-dashboard 423/0, a1-pr-merge-check 269/0; `gates lint` rc 0; `workflow lint` rc 0; `calls=15`.
