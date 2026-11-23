@@ -910,7 +910,7 @@ Each reading is written by Task 13.1 into the spec `## Clarifications` as "propo
 
 **Done when:** the suites of action 4 pass; `grep -c 'retro validate' skills/a1-new-feature/workflows/06-verify.md` prints 0; the measured a1-new-feature default path (`node -e` call of `measureSkills` from the lint lane is not available here, so use `cat skills/a1-new-feature/SKILL.md skills/a1-new-feature/workflows/0*.md | wc -l`) is at most 2360, recorded in STATUS-cuts.md.
 **Status box:**
-- [ ] T8.1 `retro-prose.md` Step 6 stub 06-verify compressions V8 L12
+- [x] T8.1 `retro-prose.md` Step 6 stub 06-verify compressions V8 L12
 
 **Covers:** SC-2, SC-9
 
@@ -945,7 +945,7 @@ Each reading is written by Task 13.1 into the spec `## Clarifications` as "propo
 
 **Done when:** the suites of action 7 pass; the action 6 grep is empty; `multi-lane.md` exists with its header.
 **Status box:**
-- [ ] T9.1 `multi-lane.md` Isolation pointers allow markers a1-pr-review :336 pin
+- [x] T9.1 `multi-lane.md` Isolation pointers allow markers a1-pr-review :336 pin
 
 **Covers:** SC-5, SC-8
 
