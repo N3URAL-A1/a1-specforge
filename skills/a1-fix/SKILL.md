@@ -153,17 +153,12 @@ for "it's just a one-liner". (XS-eligible fixes are diverted before this gate
 is ever reached — see Phase 0a above; everything that reaches this point goes
 through the worktree unconditionally.) The flow:
 
-1. **Create the worktree** (delegate to the `a1-worktree` skill, or inline):
-   ```bash
-   git -C <repo> fetch origin main
-   git -C <repo> worktree add ../a1-worktrees/fix-<bug-slug> -b fix/<bug-slug> origin/main
-   ```
-   All subsequent edits, builds, and tests happen inside that worktree path —
-   never in the primary checkout.
+1. Create the worktree with the `a1-worktree` skill (`prepare`, then `enter`), slug `fix-<bug-slug>`, branch `fix/<bug-slug>`.
+   All subsequent edits, builds, and tests happen inside that worktree path — never in the primary checkout.
 2. **Work the fix** there (Phases 1–4). Build + test must be GREEN in the worktree.
 3. **Merge via PR** only after GREEN: hand the worktree to `a1-pr-review`
    (`a1-worktree exit --mode handoff`). It pushes the branch, opens the PR,
-   runs the review, and squash-merges (`gh pr merge <n> --squash`; no `--delete-branch`, see a1-pr-review 05-merge 5.4).
+   runs the review, and squash-merges (`gh pr merge <n> --squash`; no `--delete-branch`, see a1-pr-review 05-merge 5.4). <!-- lint-allow: forbidden-example -->
    No local merge into `main`, no `git push origin main`.
    The fix diff is reviewed in `a1-pr-review` by Reinhard (and Samuel on security surface); no cross-provider gate runs on code.
    If `origin/main` is broken (build fails for reasons unrelated to your fix):

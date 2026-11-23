@@ -326,8 +326,8 @@ Completion Gate), each after its own confirmation:
    before the hand-off, so both conditions hold there. Phase 6 runs no `code-scope stage` call before the
    hand-off. (SKILL.md's Lifecycle table stays as written: its Review row still holds.)
 3. **Merge** — after the pre-merge check below and the PR's squash merge into `main` (`a1-pr-review`, verified via
-   `gh pr view --json state,mergedAt`), and after the retros (this skill's Step 6 incl. `retro validate --gate-log`, and the `a1-pr-review`
-   retro: the gate logs are gitignored (FR-008) and are deleted with the worktree), `a1-pr-review` `workflows/05-merge.md` 5.4 item 3 runs
+   `gh pr view --json state,mergedAt`), and after the close-out retro decision (a1-pr-review 05-merge item 1; `feature close` writes the machine record;
+   the gate logs are gitignored (FR-008) and are deleted with the worktree), `a1-pr-review` `workflows/05-merge.md` 5.4 item 3 runs
    `feature close --by <spec-id> --pr <n>` (the F block, spec 027 FR-026). One call does steps 3, 4 and 5: it refuses unless the PR is MERGED and the
    remote branch is gone, exits the worktree, advances `merge` and `origin-cleanup`, releases the scope reservation and sets the spec `done`. This
    skill runs no `code-scope stage --set merge`, `--set origin-cleanup`, `code-scope release` or `spec update-status ... done` call of its own.
@@ -351,38 +351,20 @@ Completion Gate), each after its own confirmation:
 4. **Origin cleanup** — done by the `feature close` call of step 3 (the remote branch is checked gone there).
 5. **Done** — done by the same call (scope released, spec `done`).
 
-The helper:
-- appends `phase: implement, completed: <iso>` and `phase: verify, completed: <iso>` to
-  `phase_history`,
-- clears `verify_failures` to `[]`.
-
 ### Pre-merge check — rebase + migration-number collision (do this BEFORE merging to main)
 
-The feature branch was cut from `origin/main` at the START of Phase 5. By the time Verify
-passes, a PARALLEL feature may have merged to `main` and claimed the same migration numbers
-or touched the same shared files. Merging naively then either reverts their work or ships two
-migrations with the same number (runner breaks). Before the PR is opened:
-
+A parallel feature may have merged to `main` since Phase 5 started and claimed the same migration numbers or shared files. Before the PR is opened:
 ```bash
 git -C <repo> fetch origin main
-# 1. Is the branch behind origin/main?
 git -C <repo> log --oneline <feature-branch>..origin/main        # non-empty → rebase needed
-# 2. Migration-number collision? Compare your new migration numbers against origin/main's:
-git -C <repo> ls-tree origin/main automation/db/migrations/ | grep -E '<your-new-numbers>'
+git -C <repo> ls-tree origin/main automation/db/migrations/ | grep -E '<your-new-numbers>'   # collision check
 ```
 
-- If behind: `git rebase origin/main` while the branch is still unpushed; once it is pushed, use
-  `git merge origin/main` instead (no force push; `_shared/push-cadence.md` P1 rule 2). Resolve
-  conflicts (keep BOTH sides for additive files like a capability manifest or a shared route's
-  imports — never drop the other feature's lines).
-- If migration numbers collide: renumber YOUR migrations (up + down + every in-file and in-code
-  comment reference) to the next free numbers AFTER origin/main's highest. Re-run the dry-run.
-- "main looks build-red after pull": first rebuild gitignored package `dist/` (`pnpm --filter <pkg> build`)
-  before concluding main is broken — a stale local build masquerades as a red main.
+- Behind: `git rebase origin/main` while the branch is unpushed; once pushed use `git merge origin/main` (no force push; `_shared/push-cadence.md` P1 rule 2). Keep BOTH sides of additive files (capability manifest, shared route imports).
+- Colliding migration numbers: renumber YOUR migrations (up + down + in-file and in-code references) after origin/main's highest; re-run the dry-run.
+- "main looks build-red": first rebuild gitignored package `dist/` (`pnpm --filter <pkg> build`) before concluding main is broken.
 
-Only after a clean rebase or merge + no number collision + green build on the rebased or merged tree do you hand
-the branch to `a1-pr-review`, which makes its first push (`_shared/push-cadence.md` P1).
-The hand-off carries the worktree and branch and the spec id as `caller_spec_id` (`a1-pr-review` 2.3d reads it); `a1-pr-review` reviews the diff (Reinhard always, Samuel on security surface). No cross-provider gate runs on code.
+Hand off to `a1-pr-review` (first push, P1) only after a clean rebase or merge, no number collision, a green build; it carries worktree, branch and `caller_spec_id` (2.3d reads it). Reinhard always, Samuel on security surface. No cross-provider gate runs on code.
 
 Tell the user:
 
@@ -391,132 +373,38 @@ Tell the user:
 
 ### One or more scenarios failed
 
-Write the failures into the spec frontmatter via the helper. The helper accepts a JSON file
-containing the failure entries via `--verify-failures-file <path>`:
+Write the failures to a temp JSON file and pass it to the helper, which validates the schema and writes `verify_failures` atomically; status stays `implementing`:
 
 ```bash
-# 1. Write the failures to a temp JSON file:
 cat > /tmp/verify-failures.json <<EOF
 [
   { "story": "US-001-1", "scenario": "user adds new entry", "expected": "...", "actual": "...", "timestamp": "..." }
 ]
 EOF
-
-# 2. Pass the file path to the helper:
 node <repo>/_shared/a1-tools.cjs spec update-status \
   <spec-path> implementing --verify-failures-file /tmp/verify-failures.json
 ```
 
-The helper reads the JSON file, validates the schema, and writes the entries into the
-`verify_failures` frontmatter array atomically.
-
-Status stays `implementing`. Tell the user:
-
-> "Phase 6 found N points that don't match. Would you like to:
-> a) Send these back to the code agents as bugs (re-run Phase 5 for affected waves)?
-> b) Open the spec, if the expectation itself was wrong (back to Phase 2/3)?"
-
+Tell the user: "Phase 6 found N points that don't match. a) Send them back to the code agents as bugs (re-run Phase 5 for the affected waves)? b) Open the spec, if the expectation itself was wrong (back to Phase 2/3)?"
 Do not advance to `done` until all failures are resolved and a re-verify is green.
 
 ## Step 5.5 — Docs-drift lane (report-only, spawn a1-diana-docs)
 
-After the verdict is applied and **before** the Retro, spawn `a1-diana-docs`
-via the `Agent` tool with this brief (wired M12, decision doc 7.4 candidate
-3a — mirrors how Samuel is an always-on lane in a1-analyze):
+After the verdict is applied and **before** the retro decision, spawn `a1-diana-docs` via the `Agent` tool with this brief (wired M12):
 
-> Diana, the feature `<###>-<feature-slug>` just shipped (spec:
-> `<spec-path>`, verification verdict: `<pass|partial>`). Check the project's
-> user-facing docs for drift introduced by this feature: README sections,
-> API docs, user guides, onboarding steps that this feature's changes make
-> stale or incomplete. Return a short report as TEXT (write NO files):
-> per finding — doc path, what is stale, one-line suggested fix. If nothing
-> drifted, say so explicitly.
+> Diana, the feature `<###>-<feature-slug>` just shipped (spec: `<spec-path>`, verification verdict: `<pass|partial>`).
+> Check the project's user-facing docs for drift introduced by this feature: README sections, API docs, user guides,
+> onboarding steps that its changes make stale or incomplete. Return a short report as TEXT (write NO files):
+> per finding — doc path, what is stale, one-line suggested fix. If nothing drifted, say so explicitly.
 
-Rules:
+- **Report-only.** Findings go to the user; they do NOT block the lifecycle gate and do NOT auto-trigger edits. The user decides whether Diana applies doc updates.
+- Skip only when the run has no user-facing surface at all (pure internal refactor); say that you skipped it and why.
 
-- **Report-only.** Diana's findings go to the user; they do NOT block the
-  lifecycle gate and do NOT auto-trigger edits. The user decides whether to
-  have Diana apply doc updates as a follow-up.
-- Skip this lane only when the run has no user-facing surface at all (pure
-  internal refactor) — say that you skipped it and why.
+## Step 6 — Retro
 
-## Step 6 — Retro (MANDATORY, every run — this closes the self-learning loop)
-
-After every Phase 6 run — PASS, PARTIAL, or FAIL — write one retro entry **before you tell
-the user the feature is done**, per `_shared/retro-template.md` (entry format + write
-targets: learning store first, dev cache best-effort), with skill = `a1-new-feature`.
-This is not optional — without it `a1-evolve` is blind and the skills stop improving.
-A long run is exactly when the most learnings exist; that is when it is most tempting
-to skip and most costly to.
-
-### Step 6a — Additional fields beyond the base schema
-
-```
-spec: <###>-<feature-slug>
-result: <pass|partial|fail>
-waves_total: <N>
-bugs_found_in_verify: <N>
-bug_classes: [<from: missing_wiring, wrong_behavior_vs_spec, deployment_incomplete, schema_flaw, regression, spec_omission, gate_friction, agent_self_report_false, parallel_collision>]
-gate_that_caught_most: <Gate 0|Gate 1|Gate 2|Gate 3|Phase 6|none>
-phase_that_produced_most_bugs: <discover|specify|clarify|plan|implement|verify>
-gates_fired:
-  - {id: <slug>, verdict: <pass|fail>, caught: <true|false>}
-```
-
-**`gates_fired` is required** (not the free-text `gate_that_caught_most` alone —
-that one stays for continuity but a1-evolve cannot score it). List every gate
-this run actually passed through, using ids verbatim from
-`_shared/gates-registry.md`. For a standard feature run that is typically:
-
-```yaml
-gates_fired:
-  - {id: gate-c-ac-dryrun,        verdict: pass, caught: false}
-  - {id: gate-4.5-fr-consistency, verdict: pass, caught: false}
-  - {id: check-reservations,      verdict: pass, caught: false}
-  - {id: phase-6-verify,          verdict: pass, caught: true}
-```
-
-`caught: true` marks the gate that surfaced a real problem — at most a few per
-run, often none. This is what lets a1-evolve tell a gate that earns its cost
-from one that has never caught anything in 10+ runs.
-
-Use the `bug_classes` tags consistently — they feed `patterns.md` clustering.
-A run with zero bugs is still useful data — write the entry with
-`bugs_found_in_verify: 0` and `one_line_learning: no failures`.
-
-Before appending this retro, validate the `gates_fired` block — full
-contract and exit codes in `_shared/retro-template.md`, which is the owner
-of this instruction:
-
-```bash
-GATE_LOG=".a1/phases/<spec-id>/gate-log.jsonl"
-node <repo>/_shared/a1-tools.cjs gates fired --log "$GATE_LOG"; RC=$?
-if [ $RC -ne 0 ]; then echo "gate log unreadable or broken (exit $RC) - fix it before the entry counts"; exit $RC; fi
-node <repo>/_shared/a1-tools.cjs retro validate "$RETRO_FILE" --gate-log "$GATE_LOG" --phase retro-<spec-id>; RC=$?
-if [ $RC -ne 0 ]; then echo "fix the gates_fired block above before the entry counts"; exit $RC; fi
-```
-
-### Step 6b — Threshold check
-
-Count entries in the **learning store** (not the dev cache — plugin installs
-have no cache):
-
-```bash
-VAULT="${A1_VAULT_ROOT:-$(git rev-parse --show-toplevel)/.a1/learnings}"
-ENTRY_COUNT=$(grep -c "^date:" "$VAULT/pattern/a1-learnings/a1-new-feature.md" 2>/dev/null || echo 0)
-```
-If `$ENTRY_COUNT` is a multiple of 5:
-> "5 new a1-new-feature learnings accumulated in the learning store. Run `a1-evolve`?"
+`feature close` writes the machine retro record at close-out (spec 027 FR-031).
+A prose retro is written only when `a1-pr-review` 05-merge item 1 reports that one is due.
 
 ## Optional — Tobi audit
 
-If the user wants a deeper audit before declaring done, spawn `a1-tobi-tester` with this
-brief:
-
-> Tobi, do a final audit on the spec `<spec-path>` and the code implemented under the
-> wave plan `<plan-path>`. Cross-cutting check: Vision (does it fit the product?),
-> UX (is the user flow coherent?), Architecture (clean separation?), Compliance
-> (data protection, security, project-specific rules). Output as BLOCKER / MAJOR / MINOR.
-
-Tobi findings do NOT automatically become verify_failures — the user decides whether a finding
-triggers a bug back to Phase 5 or goes to the backlog.
+On request, spawn `a1-tobi-tester` to audit `<spec-path>` and `<plan-path>` on four axes (Vision, UX, Architecture, Compliance), output BLOCKER / MAJOR / MINOR. Findings are not `verify_failures` automatically; the user decides: bug back to Phase 5 or backlog.

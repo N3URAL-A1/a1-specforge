@@ -35,6 +35,7 @@ SKILL.md	md	line	  "a1-new-feature", "erstelle eine Spezifikation" (German alias
 SKILL.md	md	insert-after	`a1-roadmap`'s SKILL.md.
 SKILL.md	md	line	
 SKILL.md	md	line	**Profile resolve (every run, before Phase 1).** Run `node <repo>/_shared/a1-tools.cjs profile resolve [--profile <name>] --repo-root <repo> [--spec <path>]`; exit 1 or 2 stops the run. When the printed `profile` is `kritis`, the blocks marked `a1-profile:kritis` apply to this run; otherwise ignore them.
+SKILL.md	md	line	When it prints `kritis`, read `workflows/kritis.md` before Phase 1 and apply it to this run.
 #
 # Spec 024-ux-studio (a1-ux-studio, Wave 7) — pure insertions, no golden line touched:
 # (1) SKILL.md: `  - Skill` in allowed-tools (FR-015: the main session invokes the studio via the Skill tool).
@@ -131,3 +132,83 @@ SKILL.md	md	line	commits `.a1/reservations.json` (push-cadence P3). A second cal
 SKILL.md	md	line	and `feature close --cleanup-only` cleans branches in other clones.
 02-specify.md	md	insert-after	formality is never dropped.
 02-specify.md	md	line	On S, Step 1 below is skipped: the one Rene spawn of `01-discover.md` Step 3b already wrote the mini-spec; run the `spec set-size` block above and Steps 2-3 (spec 027 FR-025).
+#
+# Spec 027 slice 5 (FR-029/FR-030, 2026-11-23): SKILL.md loses the kritis block (moved byte-identical to workflows/kritis.md,
+# one pointer line after the resolve line), the Marketing Gate (one pointer line after the Lifecycle section), the Isolation Gate body (three lines) and gains one hard-rule line.
+# Each delete-after is listed before its insert-after on the same anchor.
+SKILL.md	md	delete-after	in the phase flow.
+SKILL.md	md	gone	
+SKILL.md	md	gone	## Marketing Gate (after `done` — customer-visible features only)
+SKILL.md	md	gone	
+SKILL.md	md	gone	A feature that reached `done` is not automatically known to the public landing. Before the run
+SKILL.md	md	gone	ends, decide once whether it belongs there. Applies **only** to projects whose product is
+SKILL.md	md	gone	A1//office (`n3ural-platform`); skip silently for every other project.
+SKILL.md	md	gone	
+SKILL.md	md	gone	Ask these five questions (do not delegate the judgement, answer them from the spec and
+SKILL.md	md	gone	the acceptance record — VERIFICATION.md when a phase folder exists, otherwise the spec
+SKILL.md	md	gone	frontmatter: `status: done` + `verify_failures: []`):
+SKILL.md	md	gone	
+SKILL.md	md	gone	1. Would a customer notice this **without an explanation**?
+SKILL.md	md	gone	2. Is it usable **at no extra cost** in the customer's existing tier?
+SKILL.md	md	gone	3. Is it **live in production** — not merely merged? (Deployed image contains the merge commit.)
+SKILL.md	md	gone	4. Does it change **what the customer can delegate**, or how reliably?
+SKILL.md	md	gone	5. Is the claim true **without an asterisk** (no "planned", "in preparation", "provided that")?
+SKILL.md	md	gone	
+SKILL.md	md	gone	**Any "no" → stop here.** Note the failing criterion in one line and end the run. Internal
+SKILL.md	md	gone	refactorings, migrations, test infrastructure, bug fixes and compliance work are never
+SKILL.md	md	gone	customer-visible in this sense — do not even ask the user.
+SKILL.md	md	gone	
+SKILL.md	md	gone	**All five "yes" → hand off** (do not write landing files from this skill):
+SKILL.md	md	gone	
+SKILL.md	md	gone	    Skill: a1-landing-feature
+SKILL.md	md	gone	    Args: --spec "project/<slug>/spec/<###>-<feature-slug>.md" --phase "<phase-dir>"
+SKILL.md	md	gone	
+SKILL.md	md	gone	`a1-landing-feature` owns the landing repo end to end (register via `product` CLI, bilingual
+SKILL.md	md	gone	copy, Bertram voice review, `pnpm build`, branch + PR, subagent review, merge). This skill does
+SKILL.md	md	gone	not edit `a1-office-landing` itself. Report in German what was merged — the user does not
+SKILL.md	md	gone	review PRs (see `a1-pr-review` hand-offs).
+SKILL.md	md	gone	
+SKILL.md	md	insert-after	in the phase flow.
+SKILL.md	md	line	
+SKILL.md	md	line	After `done`, a customer-visible A1//office feature goes to the global skill `a1-landing-feature`, which asks the publication questions.
+SKILL.md	md	line	
+SKILL.md	md	delete-after	## Isolation Gate (HARD RULE — before Phase 5 Implement)
+SKILL.md	md	gone	
+SKILL.md	md	gone	No feature code is written in the primary checkout. Before the first wave of
+SKILL.md	md	gone	Phase 5, the feature MUST be moved into its own git worktree on a fresh branch off
+SKILL.md	md	gone	`main`. This prevents the parallel-session corruption class: two sessions editing
+SKILL.md	md	gone	the same working tree overwrite each other's files and push half-finished work
+SKILL.md	md	gone	(e.g. a referenced type that was never committed) to `main`, leaving it build-red.
+SKILL.md	md	gone	
+SKILL.md	md	gone	1. **Create the worktree** (delegate to the `a1-worktree` skill, or inline):
+SKILL.md	md	gone	   ```bash
+SKILL.md	md	gone	   git -C <repo> fetch origin main
+SKILL.md	md	gone	   git -C <repo> worktree add ../a1-worktrees/<feature-slug> -b feature/<feature-slug> origin/main
+SKILL.md	md	gone	   ```
+SKILL.md	md	gone	   Every wave's edits, builds, and tests happen inside that worktree path.
+SKILL.md	md	gone	2. **Implement wave by wave** there. After each wave, build + tests must be GREEN
+SKILL.md	md	gone	   in the worktree before the next wave.
+SKILL.md	md	gone	3. **Merge via PR** only after the final wave is GREEN (typically after Phase 6
+SKILL.md	md	gone	   Verify passes): hand the worktree to `a1-pr-review`
+SKILL.md	md	gone	   (`a1-worktree exit --mode handoff`). It pushes the branch, opens the PR, runs
+SKILL.md	md	gone	   the review, and squash-merges (`gh pr merge <n> --squash --delete-branch`). No
+SKILL.md	md	gone	   local merge into `main`, no `git push origin main`.
+SKILL.md	md	gone	   If `origin/main` no longer builds for reasons unrelated to this feature:
+SKILL.md	md	gone	   STOP, do NOT layer on top, report to Robert.
+SKILL.md	md	gone	4. **Tear down** the worktree: done by `a1-pr-review` after the merge — do not
+SKILL.md	md	gone	   exit it a second time here.
+SKILL.md	md	gone	
+SKILL.md	md	gone	**Never** cherry-pick commits onto a fresh main branch as a merge workaround.
+SKILL.md	md	gone	**Never** push a build-red `main`. **Never** edit the primary checkout mid-feature
+SKILL.md	md	gone	while another session may hold it.
+SKILL.md	md	gone	
+SKILL.md	md	gone	When the branch and the shared-state files are pushed:
+SKILL.md	md	gone	`_shared/push-cadence.md`. Full cross-skill convention incl. scope-claim order:
+SKILL.md	md	gone	`_shared/parallel-spec-isolation.md`.
+SKILL.md	md	insert-after	## Isolation Gate (HARD RULE — before Phase 5 Implement)
+SKILL.md	md	line	
+SKILL.md	md	line	No feature code in the primary checkout: create the worktree with the `a1-worktree` skill before Wave 1 (never a raw git command).
+SKILL.md	md	line	Push, PR, squash merge and teardown run in `a1-pr-review` (`skills/a1-pr-review/workflows/05-merge.md`, then `feature close`).
+SKILL.md	md	line	Full convention, scope-claim order and push cadence: `_shared/parallel-spec-isolation.md`.
+SKILL.md	md	insert-after	  are GREEN. Never cherry-pick as a merge workaround. Never push a build-red `main`.
+SKILL.md	md	line	- If `origin/main` is red for reasons unrelated to this feature: STOP, do not layer on top, report to Robert.

@@ -332,12 +332,12 @@ nb="$(node -e '
   console.log(n+":"+bad);' "$MRG")"
 if [ "${nb#*:}" = "0" ] && [ "${nb%%:*}" -ge 1 ]; then pass_case "05-merge non-bash fences (${nb%%:*}) contain neither the merge command nor exit"
 else fail_case "05-merge non-bash fences: count:bad = $nb (want >=1 fence, 0 bad)"; fi
-# No stale squash command with --delete-branch in skills/ or _shared/*.md. Excluded on purpose:
-#   skills/a1-new-feature/SKILL.md - held by the 006-specforge-kritis-profile code-scope claim; follow-up: change it to
-#   the form without --delete-branch once 006 releases the claim, then drop this exclusion.
+# No stale squash command with --delete-branch in skills/ or _shared/*.md.
 #   _test-fixtures/a1-gates-lint/corpus/ is not scanned (static corpus copies).
-stale="$(grep -rIl -e '--squash --delete-branch' "$SK" "$(dirname "$SK")"/_shared/*.md 2>/dev/null | grep -v 'skills/a1-new-feature/SKILL.md$' || true)"
-if [ -z "$stale" ]; then pass_case "no stale squash merge command with --delete-branch in skills/ and _shared/*.md (a1-new-feature/SKILL.md excluded: 006 claim)"
+#   Spec 027 slice 5: the a1-new-feature Isolation cut removed the last hit, so the exclusion of
+#   skills/a1-new-feature/SKILL.md is gone.
+stale="$(grep -rIl -e '--squash --delete-branch' "$SK" "$(dirname "$SK")"/_shared/*.md 2>/dev/null || true)"
+if [ -z "$stale" ]; then pass_case "no stale squash merge command with --delete-branch in skills/ and _shared/*.md"
 else fail_case "stale squash merge command with --delete-branch in: $stale"; fi
 
 # ---------- spec 027 FR-035: run record guard (RR-guard) ----------
