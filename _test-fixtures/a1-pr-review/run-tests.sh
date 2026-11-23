@@ -261,9 +261,10 @@ HAND="$(awk '/^## Hand-offs/{f=1} f' "$SK/a1-pr-review/SKILL.md")"
 # spec 027 FR-035: run record block after the merge and the retros, before the worktree exit (review R1)
 RR_POS="$(node -e 'const t=require("fs").readFileSync(process.argv[1],"utf8");const i=(re)=>t.search(re);const r=i(/^1\. Retros, each with/m),b=i(/^node .*run record /m),w=i(/^\d\. `a1-worktree` exit `discard`/m);process.stdout.write(r>0&&r<b&&b<w?"ok":"bad:"+[r,b,w].join(","))' "$MRG")"
 if [ "$RR_POS" = "ok" ]; then pass_case "run record block sits after the retros step and before the worktree exit step"; else fail_case "run record block position: $RR_POS (want retros < run record < worktree exit)"; fi
-if [ "$(bj 'b.length')" = "6" ]; then pass_case "05-merge.md has exactly 6 fenced bash blocks (count)"; else fail_case "05-merge.md fenced bash blocks: $(bj 'b.length') (want 6)"; fi
-order="$(bj 'b.map(x=>/disposition review/.test(x)?"D":/product validate --spec-status --require-vault/.test(x)?"C":/pr merge-check/.test(x)?"M":/^gh pr merge /m.test(x)?"G":/run record/.test(x)?"R":/probe run/.test(x)?"P":"?").join("")')"
-if [ "$order" = "DCMGRP" ]; then pass_case "block order: disposition review, coherence (--require-vault), merge-check, gh pr merge, run record, live probes"; else fail_case "05-merge.md block order is '$order' (want DCMGRP)"; fi
+# spec 027 FR-026 (Task 9.2): the feature close block F sits between the run record and the live probes: 7 blocks, DCMGRFP.
+if [ "$(bj 'b.length')" = "7" ]; then pass_case "05-merge.md has exactly 7 fenced bash blocks (count, incl. the feature close block F)"; else fail_case "05-merge.md fenced bash blocks: $(bj 'b.length') (want 7)"; fi
+order="$(bj 'b.map(x=>/disposition review/.test(x)?"D":/product validate --spec-status --require-vault/.test(x)?"C":/pr merge-check/.test(x)?"M":/^gh pr merge /m.test(x)?"G":/run record/.test(x)?"R":/probe run/.test(x)?"P":/feature close/.test(x)?"F":"?").join("")')"
+if [ "$order" = "DCMGRFP" ]; then pass_case "block order: disposition review, coherence (--require-vault), merge-check, gh pr merge, run record, feature close (F), live probes"; else fail_case "05-merge.md block order is '$order' (want DCMGRFP)"; fi
 if [ "$(bj 'b.filter(x=>/gh pr merge/.test(x)).length')" = "1" ] && [ "$(bj 'b.findIndex(x=>/gh pr merge/.test(x))')" = "3" ]; then
   pass_case "no gh pr merge before the three checks: exactly one merge command, in the fourth block (the probe block follows it)"
 else fail_case "gh pr merge appears outside the fourth fenced block"; fi
@@ -353,10 +354,13 @@ rc="$(rr_run "")"
 if [ "$rc" = "0" ] && grep -q 'SKIP: run record' "$RRT/out" && [ "$(wc -l < "$RRT/log")" = "1" ] && grep -q -- '--scope pr-7' "$RRT/log"; then pass_case "RR-guard: unreplaced <phase_name> skips the second call (stub ran once, --scope pr-7)"; else fail_case "RR-guard: placeholder case rc=$rc log=$(cat "$RRT/log")"; fi
 rc="$(rr_run fx-phase)"
 if [ "$rc" = "0" ] && [ "$(wc -l < "$RRT/log")" = "2" ] && sed -n 2p "$RRT/log" | grep -q -- '--scope fx-phase'; then pass_case "RR-guard: a real phase name runs the second call with --scope fx-phase"; else fail_case "RR-guard: phase case rc=$rc log=$(cat "$RRT/log")"; fi
+# spec 027 Task 9.2: the phase value is now read through a quoted heredoc and checked against the scope regex, so a hostile value
+# is refused (STOP, exit 2) before the second call instead of being passed on literally; the premise "not executed" stays.
 rc="$(rr_run '$(touch PWNED)')"
-if [ -z "$(find "$RRT" -name PWNED)" ] && [ "$(wc -l < "$RRT/log")" = "2" ] && sed -n 2p "$RRT/log" | grep -qF -- '--scope $(touch PWNED)'; then pass_case "RR-guard: a \$(touch PWNED) phase value is not executed (no PWNED file, passed on literally)"; else fail_case "RR-guard: command substitution case rc=$rc found=$(find "$RRT" -name PWNED) log=$(cat "$RRT/log")"; fi
+if [ -z "$(find "$RRT" -name PWNED)" ] && [ "$rc" = "2" ] && [ "$(wc -l < "$RRT/log")" = "1" ] && grep -q 'STOP: bad phase name' "$RRT/out"; then pass_case "RR-guard: a \$(touch PWNED) phase value is not executed (no PWNED file, refused with STOP before the second call)"; else fail_case "RR-guard: command substitution case rc=$rc found=$(find "$RRT" -name PWNED) log=$(cat "$RRT/log")"; fi
 
 . "$FIXTURE_DIR/cases-review-record.sh"
+. "$FIXTURE_DIR/cases-close-block.sh"
 
 echo ""
 echo "a1-pr-review: $pass passed, $fail failed"

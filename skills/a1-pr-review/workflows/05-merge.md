@@ -106,25 +106,58 @@ with `_shared/push-cadence.md` P3 (never a bare `git pull`) and advance the regi
    The caller's retro validates against both logs of the run: `--gate-log <caller phase log> --gate-log .a1/phases/pr-<n>/gate-log.jsonl` (the flag repeats; the same file twice counts once).
 2. Run record (the worktree exit deletes the gate logs):
 
-Persist the run record (spec 027 FR-035). `run record` keeps scope, head sha, last verdict, `caught` and summed durations per gate in the learning store, once per scope and PR. Exit 1 (no learning store, no or untrusted gate log) does not stop the close-out: report it. Exit 2 is STOP before the worktree exit. Set `PHASE` to the phase name the caller handed over (a1-new-feature spec id, a1-execute phase); when a1-pr-review runs on its own, set it to `none`. The block skips the second call for an empty value, `none` or an unreplaced placeholder.
+Persist the run record (spec 027 FR-035). `run record` keeps scope, head sha, last verdict, `caught` and summed durations per gate in the learning store, once per scope and PR. Exit 1 (no learning store, no or untrusted gate log) does not stop the close-out: report it. Exit 2 is STOP before the worktree exit. Set `PHASE` to the phase name the caller handed over (a1-new-feature spec id, a1-execute phase); when a1-pr-review runs on its own, set it to `none`. The block reads the value through a quoted heredoc (`A1_PHASE_EOF`): single quotes would let a value holding a quote (`x'$(...)'`) run at the assignment. The orchestrator strips all newlines from the value first. The block skips the second call for an empty value, `none` or an unreplaced placeholder, and ends with `STOP: bad phase name` (exit 2, the worktree stays) for any other value outside `^[A-Za-z0-9_][A-Za-z0-9._-]*$`.
 
 ```bash
 node <repo>/_shared/a1-tools.cjs run record --repo "<worktree_path>" --scope pr-<n> --pr <n>; RC=$?
 if [ "$RC" -eq 2 ]; then echo "STOP: run record pr-<n> exit=2, worktree stays"; exit 2; fi
 if [ "$RC" -ne 0 ]; then echo "WARN: run record pr-<n> exit=$RC, durations not persisted"; fi
-PHASE='<phase_name>'
+IFS= read -r PHASE <<'A1_PHASE_EOF'
+<phase_name>
+A1_PHASE_EOF
 case "$PHASE" in
   ""|none|"<"*) echo "SKIP: run record, no caller phase handed over" ;;
+  [!A-Za-z0-9_]*|*[!A-Za-z0-9._-]*) echo "STOP: bad phase name, worktree stays"; exit 2 ;;
   *) node <repo>/_shared/a1-tools.cjs run record --repo "<worktree_path>" --scope "$PHASE" --pr <n>; RC=$?
      if [ "$RC" -eq 2 ]; then echo "STOP: run record $PHASE exit=2, worktree stays"; exit 2; fi
      if [ "$RC" -ne 0 ]; then echo "WARN: run record $PHASE exit=$RC, durations not persisted"; fi ;;
 esac
 ```
 
-3. `a1-worktree` exit `discard`, then origin cleanup (03-exit Step 4.5 deletes the remote branch). Both need no
+3. `feature close` (spec 027 FR-026), for a caller that handed over a `caller_spec_id` (the input declared in `workflows/02-review.md`: the spec id
+   when the caller is a1-new-feature, else `none`). It runs after the run record because it exits the worktree. The block ends the run on a
+   non-zero exit.
+
+```bash
+IFS= read -r SPEC_ID <<'A1_SPEC_EOF'
+<caller_spec_id>
+A1_SPEC_EOF
+case "$SPEC_ID" in ""|none|"<"*) echo "SKIP: feature close, no caller spec id (items 4 and 5 apply)"; exit 0 ;; esac
+case "$SPEC_ID" in [!A-Za-z0-9_]*|*[!A-Za-z0-9._-]*) echo "STOP: bad spec id"; exit 2 ;; esac
+STATE="$(gh pr view <n> --json state --jq .state)"; RC=$?
+if [ "$RC" -ne 0 ]; then echo "STOP: gh pr view exit=$RC, no close-out"; exit "$RC"; fi
+BRANCH="$(gh pr view <n> --json headRefName --jq .headRefName)"; RC=$?
+if [ "$RC" -ne 0 ]; then echo "STOP: gh pr view exit=$RC, no close-out"; exit "$RC"; fi
+git check-ref-format --branch "$BRANCH" >/dev/null; RC=$?
+if [ "$RC" -ne 0 ]; then echo "STOP: bad branch name, no close-out"; exit 2; fi
+if [ "$STATE" = MERGED ] && [ -n "$(git -C "<repo_root>" ls-remote --heads origin "$BRANCH")" ]; then
+  git -C "<repo_root>" push origin --delete "$BRANCH"; RC=$?
+  if [ "$RC" -ne 0 ]; then echo "STOP: remote branch delete exit=$RC, no close-out"; exit "$RC"; fi
+fi
+(cd "<repo_root>" && node <repo>/_shared/a1-tools.cjs feature close --by "$SPEC_ID" --pr <n>); RC=$?
+if [ "$RC" -ne 0 ]; then echo "STOP: feature close exit=$RC"; exit "$RC"; fi
+```
+
+The remote delete runs only for a MERGED PR (the merged-PR delete `a1-worktree` 03-exit Step 4.5 already allows without asking); `feature close` itself
+refuses while the remote branch exists or the PR is not MERGED. It exits the worktree (plain `discard`), advances `merge` and `origin-cleanup`, releases the
+scope and sets the spec `done`; a second call is a no-op. When its output names `reservations_commit_pending`, commit `.a1/reservations.json` on the
+primary checkout's `main` and push it as the finish step of `_shared/push-cadence.md` P3 (protected `main`: chore PR `chore/<spec-id>-finish`, then the
+reset/rebase rule there). `feature close` commits nothing itself. The orchestrator strips all newlines from the spec id before it substitutes it; the block repeats the check (`none` and an unreplaced `<...>` are a SKIP, decided first).
+
+4. `a1-worktree` exit `discard`, then origin cleanup (03-exit Step 4.5 deletes the remote branch). Both need no
    confirmation when the PR is merged and a plain `discard` (no `--force-discard`) passes: the CLI verifies the
-   branch content is on `origin/<base>` and the tree is clean (03-exit Step 4). If it refuses, confirm.
-4. The caller's remaining lifecycle stages (a1-new-feature `workflows/06-verify.md` §5 steps 3-5).
+   branch content is on `origin/<base>` and the tree is clean (03-exit Step 4). If it refuses, confirm. Only for callers without a spec id; with one, item 3 (`feature close`) already did this.
+5. The caller's remaining stages are done by `feature close` (item 3).
 
 The merge ends the PR, not the feature. Report what was merged and which findings there were.
 Production deploys and migrations on a production database still need the user's word.

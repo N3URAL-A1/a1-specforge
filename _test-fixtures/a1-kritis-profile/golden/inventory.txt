@@ -4,7 +4,7 @@
 #
 # Updated by Wave 8 (2026-10-29, decision by Robert): the AC's 22 is the
 # count BEFORE the profile wiring. Wave 8 adds exactly 7 `profile` call
-# sites to a1-new-feature, so the live grep returned 29; spec 027 slice 4 adds `wave next-check` (30); slice 4 PR B replaces the `realpath-check run`, `schema-check run` and `test-fidelity --diff-base` rows by one `wave checks` row (28); slice 4 PR B adds `feature plan-steps` (29). The 22
+# sites to a1-new-feature, so the live grep returned 29; spec 027 slice 4 adds `wave next-check` (30); slice 4 PR B replaces the `realpath-check run`, `schema-check run` and `test-fidelity --diff-base` rows by one `wave checks` row (28); slice 4 PR B adds `feature plan-steps` (29) and drops `code-scope release` (28; 06-verify.md leaves the close-out to `feature close`, called from a1-pr-review 05-merge.md, so the skill no longer names it; the golden scenario code-scope-release stays). The 22
 # pre-profile rows below are unchanged; the 7 new ones are marked
 # "profile:<part>" with the fixture part that exercises each. Any further
 # growth of this list is still a finding.
@@ -23,7 +23,6 @@ checklist run	covered:checklist-run
 check reservations	covered:check-reservations-claim
 code-scope check	excluded:module outside code_scope (code-scope.cjs check subcommand not touched by this spec)
 code-scope claim	covered:code-scope-claim
-code-scope release	covered:code-scope-release
 code-scope stage	covered:code-scope-stage
 cost run	excluded:module outside code_scope (cost.cjs not touched by this spec)
 gates fired	excluded:module outside code_scope (gates-cli.cjs fired subcommand not touched by this spec)

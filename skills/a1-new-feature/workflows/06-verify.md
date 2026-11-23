@@ -294,17 +294,20 @@ Completion Gate), each after its own confirmation:
    `pr-reinhard` pass record (or on its same-head skip path), in that order. The walkthrough is all-green
    before the hand-off, so both conditions hold there. Phase 6 runs no `code-scope stage` call before the
    hand-off. (SKILL.md's Lifecycle table stays as written: its Review row still holds.)
-3. **Merge** — after the pre-merge check below and the PR's squash merge into
-   `main` (`a1-pr-review`, verified via `gh pr view --json state,mergedAt`):
-   ```bash
-   node <repo>/_shared/a1-tools.cjs code-scope stage --by <spec-id> --set merge
-   ```
+3. **Merge** — after the pre-merge check below and the PR's squash merge into `main` (`a1-pr-review`, verified via
+   `gh pr view --json state,mergedAt`), and after the retros (this skill's Step 6 incl. `retro validate --gate-log`, and the `a1-pr-review`
+   retro: the gate logs are gitignored (FR-008) and are deleted with the worktree), `a1-pr-review` `workflows/05-merge.md` 5.4 item 3 runs
+   `feature close --by <spec-id> --pr <n>` (the F block, spec 027 FR-026). One call does steps 3, 4 and 5: it refuses unless the PR is MERGED and the
+   remote branch is gone, exits the worktree, advances `merge` and `origin-cleanup`, releases the scope reservation and sets the spec `done`. This
+   skill runs no `code-scope stage --set merge`, `--set origin-cleanup`, `code-scope release` or `spec update-status ... done` call of its own.
+   When the output names `reservations_commit_pending`, commit `.a1/reservations.json` as 05-merge.md says.
+
    **Live probes (spec 020, gate `live-probes`)** — after the merge is confirmed and the deploy of the merged `main` is
-   live, before step 4. Measures the merged effect from outside with the probes in `.a1/live-probes.yaml` (owner-side only;
+   live, after the close-out call. Measures the merged effect from outside with the probes in `.a1/live-probes.yaml` (owner-side only;
    an intent child is refused with exit 77). `<dir>` is a checkout of the merged `main` with `origin` fetched: `probe run`
    reads the probe file from the git blob and refuses an uncommitted, modified, local-only or unreviewed one (exit 2,
    `probes_file_uncommitted`, `probes_no_reviewed_ref`, `probes_file_unreviewed`). Exit 1 or 2 stops the run: the feature is not verified live; fix
-   the cause, do not advance to step 4. A probe-file change goes through a new PR (merge-check blocks it as
+   the cause; the merge and the close-out stay done. A probe-file change goes through a new PR (merge-check blocks it as
    `probes_config_changed`), never through an edit of the working tree.
    ```bash
    node <repo>/_shared/a1-tools.cjs probe run --project <dir> --phase <spec-id> --wait 120; RC=$?
@@ -314,29 +317,8 @@ Completion Gate), each after its own confirmation:
    section of `.a1/phases/<spec-id>/VERIFICATION.md`. A `no_probes` result is reported as "not verified live (no_probes)",
    never as "verified live".
 
-4. **Origin cleanup** — after the feature branch's remote copy is deleted
-   (via `a1-worktree`'s Exit workflow, Step 4.5). **Hard gate — verify the
-   remote branch is actually gone before advancing:**
-   ```bash
-   git -C <repo> ls-remote --heads origin <feature-branch>
-   ```
-   Non-empty output → the remote branch still exists → **refuse** to set
-   `origin-cleanup` or `done`. Order after the merge (`a1-pr-review` `workflows/05-merge.md` 5.4):
-   first the retros from inside the worktree, this skill's Step 6 (incl. `retro validate --gate-log`)
-   and the `a1-pr-review` retro, because the gate logs are gitignored (FR-008) and are deleted with the
-   worktree. Only then go run `a1-worktree` exit (discard mode; after the squash merge a plain `discard` succeeds
-   when the content is on `origin/<base>` and the tree is clean, and the remote delete needs no
-   confirmation when the PR is merged, see its Step 4) to delete the remote branch,
-   then re-check. Only once empty:
-   ```bash
-   node <repo>/_shared/a1-tools.cjs code-scope stage --by <spec-id> --set origin-cleanup
-   ```
-5. **Done** — only after all four transitions above are confirmed, release
-   the scope reservation (frees it for other features) and close the spec:
-   ```bash
-   node <repo>/_shared/a1-tools.cjs code-scope release --by <spec-id>
-   node <repo>/_shared/a1-tools.cjs spec update-status <spec-path> done
-   ```
+4. **Origin cleanup** — done by the `feature close` call of step 3 (the remote branch is checked gone there).
+5. **Done** — done by the same call (scope released, spec `done`).
 
 The helper:
 - appends `phase: implement, completed: <iso>` and `phase: verify, completed: <iso>` to
