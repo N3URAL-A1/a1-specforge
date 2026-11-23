@@ -60,3 +60,7 @@ None. No suite outside the lane's files went red that needed a deferred edit (th
 ## Deviations
 - Unlisted pin: kritis R mutation (above). Name it in the PR text.
 - Per-wave verify gate: a lock_timeout (another lane held /tmp/a1-verify-lock-1000 for more than 900000 ms) on Wave 7; see the verify lines below.
+
+## Per-wave verify gate
+`verify run --affected --no-cache` was started three times (after Wave 7, and twice on the Wave 9 head, with A1_VERIFY_LOCK_WAIT_MS=900000, the maximum). Each attempt ended `lock_timeout` after 900000 ms: other lanes held /tmp/a1-verify-lock-1000 (PIDs 2842475, 4131093, 654705). The gate did not run, so there is no verdict. The suites it would cover were run directly instead (lists above, all green on the head). The orchestrator should re-run the gate on this lane's head when the host is quiet.
+Fast gates on the Wave 9 head against 599d1ad: check-assert-deletions deleted=0; test-fidelity status clean (0 findings); realpath-check PASS; `workflow lint --root . --phase 027-lean-pipeline-s5` ran without a finding line in the tail.
