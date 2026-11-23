@@ -118,6 +118,14 @@ const README = { 'README.md': 'wave\n' };
   check('WC7 realpath and test-fidelity exit 2, schema skipped', byGate(r, 'gate-0.7-realpath').exit === 2 && byGate(r, 'test-fidelity').exit === 2 && byGate(r, 'gate-0.6-schema').skipped === 'no_migrations', JSON.stringify(r.json));
 }
 
+// WC7b (PR B review fix round 1): a failing child keeps BOTH tails; stderr no longer hides behind a non-empty stdout.
+{
+  const root = plant(README);
+  const r = wc(root, [SLUG, '1', '--diff-base', 'nope', '--project', root, '--phase', SLUG]);
+  const c = byGate(r, 'test-fidelity');
+  check('WC7b the failing child carries stdout_tail and stderr_tail, stderr_tail names the bad ref', typeof c.stdout_tail === 'string' && typeof c.stderr_tail === 'string' && /nope/.test(c.stderr_tail), JSON.stringify(c));
+}
+
 // WC8 `--help` prints the usage only (stdout, exit 0), no error line before it.
 {
   const cwd = fs.mkdtempSync(path.join(WORK, 'cwd-'));

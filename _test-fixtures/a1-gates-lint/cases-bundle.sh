@@ -25,7 +25,7 @@ bu_tree bu2
 plant "$REPO_ROOT/$BU_FILE" "$WORK/bu2/$BU_FILE" 's = s.split("\n").filter(l=>!/a1-tools\.cjs wave checks/.test(l)).join("\n");'
 plant "$REPO_ROOT/skills/a1-execute/workflows/03-verify.md" "$WORK/bu2/skills/a1-execute/workflows/03-verify.md" 's = s.split("\n").filter(l=>!/a1-tools\.cjs wave checks/.test(l)).join("\n");'
 run_lint --root "$WORK/bu2" --registry "$BU_REG"
-check "BU2 the wave checks line removed from 02-execute.md: unwired for gate-0.6-schema, gate-0.7-realpath and test-fidelity at a1-execute" 1 \
+check "BU2 the wave checks line removed from both a1-execute files (02-execute.md and 03-verify.md): unwired for gate-0.6-schema, gate-0.7-realpath and test-fidelity at a1-execute" 1 \
   "$BU_JS_UNWIRED" "gate-0.6-schema,gate-0.7-realpath,test-fidelity"
 
 bu_tree bu3

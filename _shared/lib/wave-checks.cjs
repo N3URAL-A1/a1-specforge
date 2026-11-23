@@ -42,12 +42,12 @@ const tail = (s) => String(s || '').slice(-TAIL_BYTES);
 function spawnChild(argv, cwd) {
   const r = spawnSync(process.execPath, [FACADE, ...argv], { cwd, env: process.env, encoding: 'utf8', timeout: CHILD_TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024 });
   const timedOut = r.error && r.error.code === 'ETIMEDOUT';
-  return { exit: r.status === null ? null : r.status, timedOut: Boolean(timedOut), stdout_tail: tail(r.stdout || r.stderr) };
+  return { exit: r.status === null ? null : r.status, timedOut: Boolean(timedOut), stdout_tail: tail(r.stdout), stderr_tail: tail(r.stderr) };
 }
 
 /**
  * @param {{slug: string, project: string, diffBase: string, migrations?: string|null}} opts
- * @returns {{ok: boolean, checks: Array<{gate: string, argv: string[], exit: number|null, skipped?: string}>}}
+ * @returns {{checks: Array<{gate: string, argv: string[], exit: number|null, skipped?: string}>}}
  */
 function runChecks(opts) {
   const { slug, project, diffBase, migrations } = opts;
@@ -61,9 +61,7 @@ function runChecks(opts) {
     if (!argvs[key]) return { gate, argv: [], exit: null, skipped: 'no_migrations' };
     return { gate, argv: argvs[key], ...spawnChild(argvs[key], project) };
   });
-  const bad = checks.filter((c) => !c.skipped);
-  const ok = bad.every((c) => c.exit === 0);
-  return { ok, checks };
+  return { checks };
 }
 
 /** @param {Array<{exit: number|null, timedOut?: boolean, skipped?: string}>} checks */
