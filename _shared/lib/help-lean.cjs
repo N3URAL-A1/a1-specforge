@@ -39,10 +39,12 @@ const LEAN_HELP = `  a1-tools pr review-record --head <sha> --verdict <pass|fail
                   steps[] holds every fixed and every conditional step; a step with "when" runs when its phase workflow
                   finds that condition true. "spawns" counts the unconditional spawns. No size in the spec: exit 1 no_size.
                   Exit 2 usage error.
-  a1-tools feature close --by <spec-id> --pr <n> [--repo <dir>] [--spec <path>] [--worktree <id>] [--check-only]
+  a1-tools feature close --by <spec-id> --pr <n> [--repo <dir>] [--spec <path>] [--worktree <id>] [--check-only] [--issues <tags>]
                   Spec 027 FR-026. Closes a feature after its PR merged. Run it from the primary checkout (a linked worktree
                   exits 1 run_from_worktree). Steps in order, each skipped when already done: check the PR is MERGED and its
-                  remote branch gone; record every gate-log scope of the worktree (run record), then \`worktree exit --mode
+                  remote branch gone; record every gate-log scope of the worktree (run record); append one machine record
+                  per PR to <learning store>/a1-new-feature.md (spec 027 FR-031: gates_fired from the merged gate logs of every
+                  scope except retro-*; no store = warning, an unsafe store path = step_failed before the exit); then \`worktree exit --mode
                   discard\`; advance the reservation stages and \`code-scope release --by <spec-id>\`; set the spec to done;
                   \`git fetch --prune\` and sweep local branches. A failed step exits 1 {"ok":false,"reason","step"} and runs
                   nothing after it. Branch sweep: a branch is deleted (compare-and-swap on its tip) when its tip is an ancestor of
@@ -51,6 +53,10 @@ const LEAN_HELP = `  a1-tools pr review-record --head <sha> --verdict <pass|fail
                   The default branch and the PR base are never deleted. --check-only runs only the refusals that change nothing
                   (spec file, PR MERGED, branch name, worktree match) and exits 0 without touching state. The command commits nothing: when
                   .a1/reservations.json is tracked and changed it prints \`reservations_commit_pending\` for the caller to commit.
+                  Output carries \`retro\` {gates_fired, result, prose_required, reasons} in both modes: prose_required is true when a gate
+                  caught something (caught:<id>), the result is fail (result:fail), --issues <tags> names an issue (issues; 1-20 comma-
+                  separated tags a-z 0-9 _ -, not with --cleanup-only), a gate log is unreadable (gate_log_unreadable) or no record
+                  exists (no_record). --check-only reads the worktree logs, or the stored record once the worktree is gone.
                   gh is taken from the A1_GH_BIN seam (default gh; an override must be an absolute path, is named on stderr and as
                   gh_bin in the JSON, and its merged-PR verdicts only keep unless A1_FEATURE_CLOSE_TEST=1 is set by a fixture).
                   Exit 0 ok / 1 failed step / 2 usage error (--pr must be 1-7 digits, --by a safe scope name).

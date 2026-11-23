@@ -629,7 +629,7 @@ Each reading is written by Task 13.1 into the spec `## Clarifications` as "propo
 
 **Done when:** a1-lib-units passes with MR1-MR11 green; both modules are within their caps.
 **Status box:**
-- [ ] T3.1 `machine-retro.cjs` `mergeByTs` MR1-MR11
+- [x] T3.1 `machine-retro.cjs` `mergeByTs` MR1-MR11
 
 **Covers:** SC-9
 
@@ -674,7 +674,7 @@ Each reading is written by Task 13.1 into the spec `## Clarifications` as "propo
 
 **Done when:** a1-lib-units passes (FC1-FC26 unchanged, FR1-FR8 new); `feature-close.cjs` is at most 420 lines and `help-lean.cjs` at most 140.
 **Status box:**
-- [ ] T4.1 `feature close --issues` `machineRetro` `decideRetro` FR1-FR8 `help-lean.cjs`
+- [x] T4.1 `feature close --issues` `machineRetro` `decideRetro` FR1-FR8 `help-lean.cjs`
 
 **Covers:** SC-9
 

@@ -121,4 +121,4 @@ function firedYaml(records) {
   return `gates_fired:\n${items.join('\n')}\n`;
 }
 
-module.exports = { checkRetroAgainstLog, firedYaml, readGateLog, isLegacy, retroVerdict, lastVerdicts, gatesFired };
+module.exports = { checkRetroAgainstLog, firedYaml, readGateLog, isLegacy, retroVerdict, lastVerdicts, gatesFired, mergeByTs };
