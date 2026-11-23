@@ -73,6 +73,8 @@ cd "$SUITE_ROOT" || exit 2
 export GIT_CEILING_DIRECTORIES="$(dirname "$SUITE_ROOT_REAL")"
 if git -C "$SUITE_ROOT" rev-parse --git-dir >/dev/null 2>&1; then echo "FAIL  harness: $SUITE_ROOT is inside a git repository despite GIT_CEILING_DIRECTORIES; refusing to run" >&2; exit 2; fi
 export HOME="$SUITE_ROOT/home"; mkdir -p "$HOME/.codex"
+# spec 027 FR-032: the PLAN-REVIEW-LOG.md is opt-in; the suite's log asserts run with it; part 40 proves default-off
+export A1_KEEP_REVIEW_LOGS=1
 printf '{"fixture":true}\n' > "$HOME/.codex/auth.json"; chmod 600 "$HOME/.codex/auth.json"
 
 EXPECTED_RUNNER_SHA256="962dfdfe5d67b75eb73ec7c38b9186e6e6e0ca96a68d4ec82595305d8f737c8c"

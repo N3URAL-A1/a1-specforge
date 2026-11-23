@@ -593,7 +593,7 @@ function rolesOf(resultPath) {
 }
 
 function appendLog(ctx, entry) {
-  if (ctx.noLog) return null;
+  if (ctx.noLog || !require('./optin-logs.cjs').keepReviewLogs()) return null; // spec 027 FR-032: the log is opt-in
   const file = path.join(ctx.phaseDir, LOG_FILE);
   const existing = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : LOG_HEADER;
   const lines = [
