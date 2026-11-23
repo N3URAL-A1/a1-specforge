@@ -218,10 +218,16 @@ function protectedBranches(ctx, defaults) {
   if (ctx.base) keep.add(ctx.base);
   const cur = git(ctx.repo, ['symbolic-ref', '--short', '-q', 'HEAD']);
   if (cur.code === 0) keep.add(cur.out);
+  for (const n of ['main', 'master']) if (hasRef(ctx, `refs/heads/${n}`)) keep.add(n); // always, even when origin/HEAD names another branch
+  for (const b of checkedOutBranches(ctx)) keep.add(b);
+  return keep;
+}
+
+/** Every local branch checked out in some worktree, read fresh from `git worktree list --porcelain`. */
+function checkedOutBranches(ctx) {
   const wt = git(ctx.repo, ['worktree', 'list', '--porcelain']);
   if (wt.code !== 0) throw new CloseError('git_failed', 'sweep', wt.err.slice(0, 200));
-  for (const line of wt.out.split('\n')) if (line.startsWith('branch refs/heads/')) keep.add(line.slice('branch refs/heads/'.length));
-  return keep;
+  return wt.out.split('\n').filter((l) => l.startsWith('branch refs/heads/')).map((l) => l.slice('branch refs/heads/'.length));
 }
 
 /**
@@ -239,13 +245,18 @@ function judge(ctx, base, branch, tip) {
   return { del: false, reason: list.length > 0 ? 'tip_differs' : 'unmerged_commits' };
 }
 
-/** Delete one branch by compare-and-swap on the judged tip. @returns {boolean} false when the tip moved since the verdict */
+/**
+ * Delete one branch by compare-and-swap on the judged tip, after a fresh worktree check (`update-ref -d` has no checked-out
+ * refusal of its own). @returns {'deleted'|'tip_moved'|'checked_out'|'already_gone'}
+ */
 function deleteAtTip(ctx, branch, tip) {
+  const dropConfig = () => git(ctx.repo, ['config', '--remove-section', `branch.${branch}`]);
+  if (checkedOutBranches(ctx).includes(branch)) return 'checked_out';
   const d = git(ctx.repo, ['update-ref', '-d', `refs/heads/${branch}`, tip]);
-  if (d.code === 0) { git(ctx.repo, ['config', '--remove-section', `branch.${branch}`]); return true; }
+  if (d.code === 0) { dropConfig(); return 'deleted'; }
   const now = git(ctx.repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]);
-  if (now.code === 0 && now.out !== tip) return false;
-  if (now.code !== 0) return true;
+  if (now.code === 0 && now.out !== tip) return 'tip_moved';
+  if (now.code !== 0) { dropConfig(); return 'already_gone'; } // someone else removed the ref: a leftover branch.<name> section goes too
   throw new CloseError('git_failed', 'sweep', `git update-ref -d ${branch}: ${d.err.slice(0, 200)}`);
 }
 
@@ -267,8 +278,9 @@ function sweepBranches(ctx) {
   }
   for (const v of verdicts) {
     if (!v.del) { ctx.kept.push({ branch: v.branch, reason: v.reason }); continue; }
-    if (deleteAtTip(ctx, v.branch, v.tip)) ctx.deleted.push(v.branch);
-    else ctx.kept.push({ branch: v.branch, reason: 'tip_moved' });
+    const outcome = deleteAtTip(ctx, v.branch, v.tip);
+    if (outcome === 'deleted') ctx.deleted.push(v.branch);
+    else ctx.kept.push({ branch: v.branch, reason: outcome });
   }
   ctx.steps.push({ step: 'sweep', result: ctx.deleted.length ? 'done' : 'skipped' });
 }

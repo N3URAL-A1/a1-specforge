@@ -39,6 +39,7 @@ const FAKE_GH = [
   "if (a[0] === 'pr' && a[1] === 'view') { const v = st.view[a[2]]; if (!v) { process.stderr.write('no pull request\\n'); process.exit(1); } process.stdout.write(JSON.stringify(v)); process.exit(0); }",
   "if (a[0] === 'pr' && a[1] === 'list') {",
   "  const mv = st.move; if (mv && a[a.indexOf('--head') + 1] === mv.when_head) require('child_process').spawnSync('git', ['-C', mv.repo, 'update-ref', 'refs/heads/' + mv.branch, mv.to]);",
+  "  const ex = st.exec; if (ex && a[a.indexOf('--head') + 1] === ex.when_head) require('child_process').spawnSync('git', ['-C', ex.repo, ...ex.argv]);",
   "  if (st.list_fail || a[a.indexOf('--state') + 1] !== 'merged') { process.stderr.write('gh: list failed\\n'); process.exit(1); }",
   "  process.stdout.write(JSON.stringify(st.merged[a[a.indexOf('--head') + 1]] || [])); process.exit(0); }",
   'process.exit(1);', '',
@@ -304,6 +305,46 @@ const stepResult = (j, name) => (j.steps.find((s) => s.step === name) || {}).res
   const r = close(t, ARGS);
   const kept = (b) => ((r.json && r.json.kept) || []).find((k) => k.branch === b);
   check('FC21 exit 0, aaa (tip moved after the verdict) kept tip_moved, still at the new tip', r.rc === 0 && kept('aaa') && kept('aaa').reason === 'tip_moved' && git(t.A, 'rev-parse', 'refs/heads/aaa') === moved, `rc=${r.rc} out=${r.out} err=${r.err}`);
+}
+
+// FC24 (review fix round 2, Samuel MINOR-3): a worktree that appears on a candidate between verdict and delete (the fake gh adds it while it
+// answers the LAST verdict) is re-read right before the delete: the branch is kept `checked_out`, never ref-deleted under a live worktree.
+// RED on the old code (update-ref -d has no checked-out refusal): aaa deleted.
+{
+  const t = build('fc24');
+  git(t.A, 'branch', 'aaa', 'main');
+  git(t.A, 'checkout', '-q', '-b', 'zzz', 'main'); commit(t.A, 'z.txt', 'z\n'); git(t.A, 'checkout', '-q', 'main');
+  git(t.A, 'checkout', '-q', '-b', 'cur', 'main');
+  t.gh.exec = { when_head: 'zzz', repo: t.A, argv: ['worktree', 'add', '-q', path.join(t.root, 'late-wt'), 'aaa'] }; t.saveGh();
+  const r = close(t, ARGS);
+  const kept = (b) => ((r.json && r.json.kept) || []).find((k) => k.branch === b);
+  check('FC24 exit 0, aaa (worktree appeared after the verdict) kept checked_out, still exists, not in deleted', r.rc === 0 && kept('aaa') && kept('aaa').reason === 'checked_out' && hasBranch(t, 'aaa') && !r.json.deleted.includes('aaa'), `rc=${r.rc} out=${r.out} err=${r.err}`);
+}
+
+// FC25 (Reinhard NIT): a ref somebody else removed after the verdict is reported `already_gone` (kept list), not `deleted`, and its
+// leftover branch.<name> config section is removed too. RED on the old code: aaa listed in deleted, no already_gone entry.
+{
+  const t = build('fc25');
+  git(t.A, 'branch', 'aaa', 'main'); git(t.A, 'config', 'branch.aaa.remote', 'origin'); git(t.A, 'config', 'branch.aaa.merge', 'refs/heads/aaa');
+  git(t.A, 'checkout', '-q', '-b', 'zzz', 'main'); commit(t.A, 'z.txt', 'z\n'); git(t.A, 'checkout', '-q', 'main');
+  git(t.A, 'checkout', '-q', '-b', 'cur', 'main');
+  t.gh.exec = { when_head: 'zzz', repo: t.A, argv: ['update-ref', '-d', 'refs/heads/aaa'] }; t.saveGh();
+  const r = close(t, ARGS);
+  const kept = (b) => ((r.json && r.json.kept) || []).find((k) => k.branch === b);
+  check('FC25 exit 0, aaa reported already_gone (not deleted), branch config section gone', r.rc === 0 && kept('aaa') && kept('aaa').reason === 'already_gone' && !r.json.deleted.includes('aaa') && !hasBranch(t, 'aaa') && !gitOk(t.A, 'config', '--get', 'branch.aaa.remote'), `rc=${r.rc} out=${r.out} err=${r.err}`);
+}
+
+// FC26 (Reinhard NIT): main and master stay protected when origin/HEAD resolves to another branch (develop). RED on the old code:
+// the fresh master and main (both ancestors of origin/develop) are deleted.
+{
+  const t = build('fc26'); t.gh.view[7].baseRefName = 'develop'; t.saveGh();
+  git(t.A, 'push', '-q', 'origin', 'main:develop'); git(t.A, 'fetch', '-q', 'origin');
+  git(t.A, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/develop');
+  git(t.A, 'branch', 'master', 'main');
+  git(t.A, 'checkout', '-q', '-b', 'cur', 'main');
+  const r = close(t, ARGS);
+  const kept = (b) => ((r.json && r.json.kept) || []).find((k) => k.branch === b);
+  check('FC26 exit 0, main and master exist and are neither deleted nor kept-listed (origin/HEAD = develop)', r.rc === 0 && r.json && r.json.ok && hasBranch(t, 'main') && hasBranch(t, 'master') && !r.json.deleted.includes('main') && !r.json.deleted.includes('master') && !kept('main') && !kept('master'), `rc=${r.rc} out=${r.out} err=${r.err}`);
 }
 
 // FC22 (SEC-7): the head branch name is checked as refs/heads/<name>: @{-1} and a leading dash are refused.
