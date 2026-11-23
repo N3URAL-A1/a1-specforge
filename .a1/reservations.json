@@ -1,3 +1,53 @@
 {
-  "reservations": []
+  "reservations": [
+    {
+      "type": "code_scope",
+      "paths": [
+        "_shared/lib/workflow-lint-budget.cjs",
+        "_shared/lib/workflow-budget.cjs",
+        "_shared/lib/workflow-lint-read.cjs",
+        "_test-fixtures/a1-workflow-lint/",
+        "_shared/lib/machine-retro.cjs",
+        "_shared/lib/feature-close.cjs",
+        "_shared/lib/retro-gatelog.cjs",
+        "_shared/lib/help-lean.cjs",
+        "_test-fixtures/a1-lib-units/cases/",
+        "_shared/lib/xprov.cjs",
+        "_shared/lib/help-xprov.cjs",
+        "_shared/lib/help-xprov-consent.cjs",
+        "_shared/lib/help-xprov-topics.cjs",
+        "_shared/lib/optin-logs.cjs",
+        "_shared/lib/xprov-run.cjs",
+        "_shared/lib/xprov-gate.cjs",
+        "_shared/lib/xprov-observe.cjs",
+        "bin/check-optin-readers.cjs",
+        "_test-fixtures/a1-xprov/",
+        "skills/a1-plan/",
+        "skills/a1-execute/",
+        "skills/a1-new-feature/",
+        "skills/a1-fix/SKILL.md",
+        "skills/a1-quick/SKILL.md",
+        "skills/a1-pr-review/",
+        "_test-fixtures/a1-kritis-profile/",
+        "_test-fixtures/a1-retro-validate/",
+        "_test-fixtures/a1-intent/",
+        "_test-fixtures/a1-quick/",
+        "_test-fixtures/a1-pr-review/",
+        "_shared/a1-tools.cjs",
+        "_shared/lib/workflow-lint.cjs",
+        "skills/reading-budget.json",
+        "_test-fixtures/a1-gates-lint/",
+        "_test-fixtures/a1-dashboard/parts/05-wiring.sh",
+        "docs/adr/2026-11-23-reading-budget-and-conditional-load.md",
+        "_test-fixtures/CONVENTIONS.md",
+        "_test-fixtures/a1-ux-studio/",
+        "_test-fixtures/a1-metrics/parts/04-audit.sh",
+        "_test-fixtures/a1-verify/cases-envred.sh",
+        "_test-fixtures/a1-probe/parts/06-wiring.sh"
+      ],
+      "by": "027-lean-pipeline",
+      "at": "2026-11-23T06:44:37.078Z",
+      "stage": "started"
+    }
+  ]
 }
