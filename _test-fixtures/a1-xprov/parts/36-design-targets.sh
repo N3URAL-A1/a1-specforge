@@ -185,9 +185,10 @@ caseT9() {
 
 # secs36 <file> <start-heading-regex> <end-heading-regex> — the lines of a markdown section, start line included, end line excluded
 secs36() { S36="$2" E36="$3" awk '$0 ~ ENVIRON["S36"] { on = 1; print; next } on && $0 ~ ENVIRON["E36"] { exit } on { print }' "$1"; }
-# wired36 <section-text> — cd:<0|1> exit_rc:<0|1> exit2:<0|1> break:<0|1> (1 = at least one line carries it)
+# wired36 <section-text> — (fenced lines of the section only) cd:<0|1> exit_rc:<0|1> exit2:<0|1> break:<0|1> (1 = at least one line carries it)
 wired36() {
   local k out=""
+  set -- "$(awk '/^[[:space:]]*```/ { on = !on; next } on { print }' <<<"$1")"   # fenced lines only: prose that names exit 2 or break counts for nothing
   for k in 'cd "\$WORK_PATH"' 'exit "\$RC"' 'exit 2' '\bbreak\b'; do out+="$([[ "$(grep -c -- "$k" <<<"$1")" -gt 0 ]] && echo 1 || echo 0)"; done
   printf 'cd:%s exit_rc:%s exit2:%s break:%s' "${out:0:1}" "${out:1:1}" "${out:2:1}" "${out:3:1}"
 }
@@ -201,7 +202,7 @@ caseT10() {
   sec="$(secs36 "$ex" '^### 2b-d\.' '^### 2c\.' | grep -v 'cd "\$WORK_PATH"')"
   assert_eq "T10 RED: without the cd line the check reports cd:0" "$(wired36 "$sec")" "cd:0 exit_rc:1 exit2:1 break:0"
   sec="$(secs36 "$b4" '^## Step 1b' '^## Step 2 ' | sed 's/exit 2; fi/break; fi/')"
-  assert_eq "T10 RED: with a break back in, the check reports break:1" "$(wired36 "$sec")" "cd:0 exit_rc:1 exit2:1 break:1"
+  assert_eq "T10 RED: with a break back in, the check reports break:1 and exit2:0 (the prose that names exit 2 does not count)" "$(wired36 "$sec")" "cd:0 exit_rc:1 exit2:0 break:1"
 }
 
 # ---------- mutants: ONE production change each, on a tree copy; the outcome of the probe must differ from the clean tree's ----------
