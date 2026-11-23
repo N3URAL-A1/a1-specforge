@@ -22,10 +22,10 @@ Suites after Wave 7 (all green): a1-kritis-profile 228, a1-ux-studio 407, a1-int
 ## Wave 8 — 06-verify: retro-prose.md and compressions
 | Task | Status | Commit | Notes |
 |---|---|---|---|
-| 8.1 | DONE | 70f3c59 | retro-prose.md (63 lines), 06-verify.md 522 -> 411, Step 6 stub, listed compressions, 2(g) reflow; V8/L12 re-pinned |
+| 8.1 | DONE | 70f3c59 | retro-prose.md (63 lines), 06-verify.md 522 -> 410, Step 6 stub, listed compressions, 2(g) reflow; V8/L12 re-pinned |
 
-`grep -c 'retro validate' 06-verify.md` = 0. a1-new-feature default path (SKILL.md + 00-06 workflows): `cat skills/a1-new-feature/SKILL.md skills/a1-new-feature/workflows/0*.md | wc -l` = 2356 (target at most 2360; SC-006 below 2378). 06-verify wc -l 411 (cap 412), no line over 300 characters.
-Pre-merge check 14 lines, failure path 16, Diana 12 (heading to last bullet), Tobi 3.
+`grep -c 'retro validate' 06-verify.md` = 0. a1-new-feature default path (SKILL.md + 00-06 workflows): `cat skills/a1-new-feature/SKILL.md skills/a1-new-feature/workflows/0*.md | wc -l` = 2355 (target at most 2360; SC-006 below 2378). 06-verify wc -l 410 (cap 412), no line over 300 characters.
+Pre-merge check 14 text lines, failure path 16, Diana 12 (heading to last bullet), Tobi 3.
 
 RED-proof 8.1 a old V8/L12 lists on the new tree -> V8 and L12 red (`06-verify.md:0/0`), measured before the re-pin (rc=1)
 RED-proof 8.1 b `| cat` after the validate line in retro-prose.md -> V8 red (piped=retro-prose.md) and L12 `retro-prose.md:1/0` red (rc=1)
@@ -49,7 +49,7 @@ Suites after Wave 9 (all green): same list as Wave 7, plus a1-gates-lint 117 and
 ## SC-006 arithmetic (lines, `wc -l`)
 | Skill | c6b10a2 | now (default path) | Note |
 |---|---|---|---|
-| a1-new-feature | 2560 | 2356 | SKILL.md 461 -> 368, 06-verify 522 -> 411; kritis.md 40 and retro-prose.md 63 are conditional |
+| a1-new-feature | 2560 | 2355 | SKILL.md 461 -> 368, 06-verify 522 -> 410; kritis.md 40 and retro-prose.md 63 are conditional |
 | a1-execute | 1121 | 1090 | SKILL.md 234 -> 203; multi-lane.md 39 conditional |
 | a1-fix | 1183 | 1178 | SKILL.md 272 -> 267 |
 | a1-quick, a1-pr-review | unchanged | unchanged | markers appended to existing lines |

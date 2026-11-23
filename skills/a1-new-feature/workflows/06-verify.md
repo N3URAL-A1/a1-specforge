@@ -364,8 +364,7 @@ git -C <repo> ls-tree origin/main automation/db/migrations/ | grep -E '<your-new
 - Colliding migration numbers: renumber YOUR migrations (up + down + in-file and in-code references) after origin/main's highest; re-run the dry-run.
 - "main looks build-red": first rebuild gitignored package `dist/` (`pnpm --filter <pkg> build`) before concluding main is broken.
 
-Hand the branch to `a1-pr-review` (its first push, P1) only after a clean rebase or merge, no number collision and a green build.
-The hand-off carries the worktree, branch and the spec id as `caller_spec_id` (`a1-pr-review` 2.3d reads it); Reinhard always, Samuel on security surface. No cross-provider gate runs on code.
+Hand off to `a1-pr-review` (first push, P1) only after a clean rebase or merge, no number collision, a green build; it carries worktree, branch and `caller_spec_id` (2.3d reads it). Reinhard always, Samuel on security surface. No cross-provider gate runs on code.
 
 Tell the user:
 
