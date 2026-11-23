@@ -527,7 +527,7 @@ Each reading is written by Task 13.1 into the spec `## Clarifications` as "propo
 
 **Done when:** a1-workflow-lint passes, with BG1-BG15 present and green; both modules are within their caps; a1-cli-output passes.
 **Status box:**
-- [ ] T1.1 `workflow-lint-budget.cjs` `workflow-budget.cjs` BG1-BG15
+- [x] T1.1 `workflow-lint-budget.cjs` `workflow-budget.cjs` BG1-BG15
 
 **Covers:** SC-1
 
@@ -581,7 +581,7 @@ Each reading is written by Task 13.1 into the spec `## Clarifications` as "propo
 
 **Done when:** a1-workflow-lint passes with RD1-RD9, FB1-FB6 and SP1-SP5 green; the module is within its cap; a1-cli-output passes.
 **Status box:**
-- [ ] T2.1 `workflow-lint-read.cjs` RD1-RD9 FB1-FB6 SP1-SP5
+- [x] T2.1 `workflow-lint-read.cjs` RD1-RD9 FB1-FB6 SP1-SP5
 
 
 **Covers:** SC-6, SC-8, SC-10
