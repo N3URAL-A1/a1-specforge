@@ -383,3 +383,55 @@ a1-verify 562/0, a1-workflow-lint 76/0, a1-gates-lint run-tests 99/0, run-wave13
 - FC fixtures use real `worktree prepare/enter` and real `phantom check --phase` gate logs instead of a hand-written registry entry (more faithful than the plan's "copied entry").
 
 `verify run --affected --no-cache --phase 027-lean-pipeline-s4` on head c2db3b3: verdict pass, 63 of 63 commands, 0 timed out, flaky [] and pre_existing_red [], skipped_on_host []. Wall time about 29 minutes.
+
+## PR B / Wave 9 — S path in SKILL.md and the phase workflows, `feature close` in the skill text
+Completed: 2026-11-23
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| 9.1 SKILL.md S path from `plan-steps`, 01-04 workflows, kritis `delete-after`, K1-K4, SP1-SP5 | ✓ DONE | 2b39106 | |
+| 9.2 05-merge F block + heredoc PHASE, 06-verify pointer, DCMGRFP, CB1-CB2e, FLR | ✓ DONE | a259369 | |
+
+### RED proofs (each: one edit on a scratch copy of the working tree, suite or case file run)
+T9.1:
+- (a) old `prompts.allowed-diff` on the new tree -> `P SKILL.md`, `P 02-specify.md`, `P 03-clarify.md` red (plus P-allowed and both D rows, 6 fails).
+- (b) old `08-wiring.sh` (old D SKILL.md branch, old 03-clarify count, no 02-specify branch) on the new tree -> `D skills/a1-new-feature/SKILL.md: removed=10 added=24` red (and D 02-specify, D 03-clarify, I intent allowlist).
+- (c) `gone`-row comparison removed from `delete-after` -> K1 red (`exit 0, expected 3`).
+- (d) S-table row restored in SKILL.md -> `P SKILL.md` and `D SKILL.md` red.
+- (e) old D 03-clarify count `37` -> `D .../03-clarify.md: removed=0 added=38` red.
+- (f) D without the 02-specify branch -> `D .../02-specify.md: removed=0 added=1` red.
+- (g) 02-specify inserted line reworded -> `P 02-specify.md` and `D .../02-specify.md` red.
+- (h) 03-clarify inserted line deleted -> `P 03-clarify.md` and `D .../03-clarify.md: added=37` red.
+- (i) old `**Size-S fast path:**` paragraph restored in 04-plan.md -> SP1 (2 asserts) and SP5 red.
+- (j) `resume` dropped from `rene-discover-specify-clarify` -> SP5 (resume list) and PS3 red.
+- (k) `apply-prompts-allowed.cjs` writes the current text as the applied golden -> K4 red.
+- (extra) intent: `feature close` exclusion removed -> `5b-H7m` red (the only fail in the 5b-only run).
+- (extra) kritis inventory: the first run on the new tree was red (`re-grepped 29 subcommands, expected 28`, set equality names `feature plan-steps`); intent: 5b-P/5b-Pn red for `feature plan-steps` until its probe args were added (first with a vault-relative path: exit 2 ENOENT, then `docs/PLAN.md`).
+T9.2:
+- (a) final `exit "$RC"` of the F block removed -> CB1 red (CB1 first only looked for `exit "$RC"` anywhere in the block and stayed green; tightened to the STOP line of the `feature close` call, then red).
+- (b) F before G -> order case `DCMFGRP` red (+ 3 further pins on `b[3]`).
+- (c) old pin (HEAD `run-tests.sh`) on the new tree -> `fenced bash blocks: 7 (want 6)`, `block order is 'DCMGR?P'`, and the old RR-guard third assert red.
+- (d) new pin with the F block removed -> `fenced bash blocks: 6 (want 7)`, `block order is 'DCMGRP' (want DCMGRFP)`, CB1/CB2 red.
+- (e) `"<"*` arm removed from the F `case` -> CB1 and CB2a red (the placeholder run ends `STOP: bad spec id`).
+- (f) run record block back to `PHASE='<phase_name>'` -> FLR red (PWNED file written, rc 0).
+
+### Pin changes
+- kritis: `apply-prompts-allowed.cjs` new op `delete-after` + `gone`; `prompts.allowed-diff` (SKILL.md delete + two inserts, 02-specify pair, 03-clarify pair before the first existing row); `01-golden.sh` P-allowed simulation (sed range delete, `r FILE` inserts written out literally); `08-wiring.sh` D SKILL.md branch (non-blank removed and added lines compared in order, blank lines NOT pinned: GNU diff measured 10 removed / 24 added, Apple differs; audit m4), D 03-clarify `37`->`38`, new D 02-specify branch, I intent allowlist 29->30; `09-allowed-delete.sh` K1-K4.
+- kritis `inventory.txt` + `01-golden.sh` counts: +`feature plan-steps` (excluded; 29, 11+11), then -`code-scope release` (06-verify.md no longer names it; 28, 10+11). The inventory never names `a1-tools.cjs feature close` in skills/a1-new-feature (the SKILL.md and 06-verify text name it without the prefix), so `feature close` needs no inventory row.
+- a1-intent: `feature plan-steps` on `NEW_FEATURE_ALLOW` (reads the spec frontmatter, no write, no child); `feature close` is a WRITE and sits in the exclusions of new-feature, continue-feature and execute (`FEATURE_CLOSE`), never on an allowlist; `05b-child-seal.sh` gets the `feature plan-steps` probe args and `PEXPECT`, `5b-Pn` counts 29->30 and 95->97, new `5b-H7m`.
+- a1-pr-review `run-tests.sh`: block count 6->7, classifier `F`, `DCMGRP`->`DCMGRFP`, case titles; `b[3]`, MH9a and RR_POS untouched.
+- **RR-guard third assert (not in the plan's pin table):** `PHASE='<phase_name>'` in the run record block became `IFS= read -r PHASE <<'A1_PHASE_EOF'` plus the scope-regex guard (lead's carry-over). A hostile value such as `$(touch PWNED)` is now refused (`STOP: bad phase name`, exit 2, the first call already ran) instead of being passed on literally, so the old assert (2 log lines) cannot hold. Its premise "not executed, no PWNED file" is kept; it now expects rc 2, 1 log line and the STOP text. Old assert on the new tree is red (RED (c)). New `FLR` runs `x'$(touch PWNED)'` -> STOP, no file.
+
+### Results
+a1-kritis-profile 225/0, a1-lib-units 782/0, a1-pr-review 88/0, a1-probe 894/0, a1-intent (5b part alone 218/0 after the fixes; the full run before them had only the three `feature plan-steps` probe fails). Other suites and the verify run: see the end of this section.
+
+### Deviations
+- Rule 3: the 05b probe harness, the kritis intent-allowlist count and the kritis inventory needed deliberate pin updates for `feature plan-steps` (not in the plan's pin table; the plan listed only `feature close`, which no skill text names with `a1-tools.cjs`).
+- The kritis inventory lost `code-scope release` (06-verify.md items 4-5 now point to `feature close`); counts 11+11 -> 10+11, total 28.
+- 06-verify.md keeps the headings `3. **Merge**`, `4. **Origin cleanup**` and `5. **Done**` (a1-probe D1 pins step 3 and step 4 positions around the probe block); items 4 and 5 are one-line pointers to the single `feature close` call.
+- The F block reads the PR head branch in-block (`gh pr view <n> --json headRefName`) and checks it with `git check-ref-format --branch` instead of substituting a `<branch>` placeholder into double quotes (a branch name may hold `$(...)` without spaces). The plan text named `<branch>`.
+- m2 (round 3): the 04-plan fallback reads "no agent id or Rene declines". m3: the 03-clarify S line names the Step 3 marker loop, 3.5-1, 3.5-2 and the kritis jumps; the allowed-diff row moved in the same commit. m4: the D branch pins no blank-line count.
+- m6 note (field owners, PLAN.md rows stay as written): the row "`observations.jsonl` deviation/blocker lines" names a1-erik-executor and the session; Victor's observation lines (his `observations.jsonl` writes during verify) are not in that row. Pablo/Wave 10 should add Victor as a writer of observation lines, or state that Victor writes none.
+
+`verify run --affected --no-cache --phase 027-lean-pipeline-s4` on head a259369: verdict pass, selection full (`runner_or_config_changed`, facade in the diff), 63 of 63 commands, 0 timed out, flaky [] and pre_existing_red [], skipped_on_host []. Wall time about 29 minutes (02:17 to 02:46). That run covers a1-intent (full), a1-ux-studio, a1-workflow-lint, a1-gates-lint, a1-pr-merge-check, a1-lib-units, a1-verify and the others on the final tree.
+Caps: facade 787/800; no module added.

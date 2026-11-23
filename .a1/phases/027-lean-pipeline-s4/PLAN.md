@@ -1350,7 +1350,7 @@ RED-proof:
 - 11 RED-proof lines are logged.
 
 **Status box:**
-- [ ] T9.1 `feature plan-steps` `skills/a1-new-feature/SKILL.md` `delete-after` `prompts.allowed-diff` `_test-fixtures/a1-kritis-profile/parts/09-allowed-delete.sh` `skills/a1-new-feature/workflows/01-discover.md` `skills/a1-new-feature/workflows/02-specify.md` `skills/a1-new-feature/workflows/03-clarify.md` `skills/a1-new-feature/workflows/04-plan.md` `_test-fixtures/a1-lib-units/cases/s-path-text.cjs`
+- [x] T9.1 `feature plan-steps` `skills/a1-new-feature/SKILL.md` `delete-after` `prompts.allowed-diff` `_test-fixtures/a1-kritis-profile/parts/09-allowed-delete.sh` `skills/a1-new-feature/workflows/01-discover.md` `skills/a1-new-feature/workflows/02-specify.md` `skills/a1-new-feature/workflows/03-clarify.md` `skills/a1-new-feature/workflows/04-plan.md` `_test-fixtures/a1-lib-units/cases/s-path-text.cjs`
 
 **Covers:** SC-9, SC-10
 
@@ -1379,7 +1379,7 @@ RED-proof:
 - 5 RED-proof lines are logged.
 
 **Status box:**
-- [ ] T9.2 `feature close` `DCMGRFP` `skills/a1-pr-review/workflows/05-merge.md` `_test-fixtures/a1-pr-review/cases-close-block.sh`
+- [x] T9.2 `feature close` `DCMGRFP` `skills/a1-pr-review/workflows/05-merge.md` `_test-fixtures/a1-pr-review/cases-close-block.sh`
 
 **Covers:** SC-10
 
