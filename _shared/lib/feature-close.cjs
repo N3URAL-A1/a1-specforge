@@ -358,7 +358,7 @@ function closeFeature(opts) {
     if (!opts.cleanupOnly) resolveSpec(ctx);
     const plan = opts.cleanupOnly ? [sweepBranches] : opts.checkOnly ? [checkPr, findWorktree, decideRetro] : [checkPr, checkRemote, findWorktree, recordRuns, machineRetro, exitWorktree, advanceStages, releaseScope, closeSpec, sweepBranches, pendingSharedState];
     for (const step of plan) step(ctx);
-    if (!opts.cleanupOnly && !ctx.retro) decideRetro(ctx); // a close run with no worktree left reads the stored record
+    if (!opts.cleanupOnly && !opts.checkOnly && !ctx.retro) decideRetro(ctx); // a close run with no worktree left reads the stored record
   } catch (e) {
     if (!(e instanceof CloseError)) throw e;
     return { ok: false, reason: e.reason, step: e.step, detail: e.detail, mode, ...extra, steps: ctx.steps, deleted: ctx.deleted, kept: ctx.kept, warnings: ctx.warnings };
