@@ -129,8 +129,9 @@ case "$SPEC_ID" in ""|none|"<"*) echo "SKIP: no caller spec id, no retro decisio
 case "$SPEC_ID" in [!A-Za-z0-9_]*|*[!A-Za-z0-9._-]*) echo "STOP: bad spec id"; exit 2 ;; esac
 RD="$(mktemp)"
 (cd "<repo_root>" && node <repo>/_shared/a1-tools.cjs feature close --check-only --by "$SPEC_ID" --pr <n> $ISSUES_ARG) > "$RD"; RC=$?
-if [ "$RC" -ne 0 ]; then echo "STOP: feature close --check-only exit=$RC, no retro decision"; exit "$RC"; fi
+if [ "$RC" -ne 0 ]; then rm -f "$RD"; echo "STOP: feature close --check-only exit=$RC, no retro decision"; exit "$RC"; fi
 node -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).retro||{};console.log("prose_required="+r.prose_required);console.log("reasons="+JSON.stringify(r.reasons||[]))' "$RD"
+rm -f "$RD"
 ```
 
    Exit ≠ 0 is STOP. When `prose_required` is true, write the caller's prose retro now, from inside the worktree, per a1-new-feature `workflows/retro-prose.md`, validated against

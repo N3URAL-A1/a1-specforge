@@ -87,3 +87,19 @@ for v in "$L42" "$N21"; do
   $CLI feature close --check-only --by fx-spec --pr 7 --issues "$v" >/dev/null 2>&1; rc=$?
   if [ "$rc" = "2" ]; then pass_case "RS9b the CLI refuses issue tags of ${#v} characters with exit 2"; else fail_case "RS9b CLI rc=$rc for ${#v} characters"; fi
 done
+
+# RS10 (review fix round 1, R6) block T removes its RD temp file on the success path and on the check-only failure path (stub run
+# with TMPDIR pointing at an empty directory); the 04-audit.md permit-state block removes PC_OUT after the read.
+# Measured red before the fix: one file was left in TMPDIR on each path.
+mkdir -p "$RST/tmpd"
+rs_tmp() { # $1 = RS_RC (stub exit code for --check-only) ; prints the count of files left in TMPDIR
+  rm -rf "$RST/tmpd"; mkdir -p "$RST/tmpd"
+  printf '%s' "$TB" | sed -e "s#<repo_root>#$RST/rr#g" -e "s#<repo>#$RST/repo#g" -e "s#<n>#7#g" -e "s#<caller_spec_id>#fx-spec#g" -e "s#<issue_tags>#none#g" > "$RST/blk-tmp.sh"
+  (cd "$RST" && TMPDIR="$RST/tmpd" RS_LOG="$RST/log" RS_EXIT="$1" bash "$RST/blk-tmp.sh" > "$RST/out" 2>&1)
+  find "$RST/tmpd" -type f | wc -l | tr -d ' '
+}
+sed -i.bak 's#^require("fs").appendFileSync#if (process.env.RS_EXIT \&\& process.argv.includes("--check-only")) process.exit(Number(process.env.RS_EXIT));\nrequire("fs").appendFileSync#' "$RST/repo/_shared/a1-tools.cjs"
+if [ "$(rs_tmp "")" = "0" ]; then pass_case "RS10a block T leaves no temp file after a successful decision"; else fail_case "RS10a temp file left on the success path"; fi
+if [ "$(rs_tmp 3)" = "0" ] && grep -q 'STOP: feature close --check-only exit=3' "$RST/out"; then pass_case "RS10b block T leaves no temp file when --check-only fails"; else fail_case "RS10b temp file left on the failure path: $(cat "$RST/out")"; fi
+if node -e 'const t=require("fs").readFileSync(process.argv[1],"utf8");const i=t.indexOf("PC_OUT=\"$(mktemp)\"");const e=t.indexOf("```",i);const b=t.slice(i,e);process.exit(i>0&&/\nrm -f "\$PC_OUT"|\n *rm -f "\$PC_OUT"/.test(b)&&b.indexOf("rm -f")>b.indexOf("readFileSync")?0:1)' "$SK/a1-plan/workflows/04-audit.md"; then pass_case "RS10c the 04-audit.md permit-state block removes PC_OUT after the read"
+else fail_case "RS10c PC_OUT is never removed"; fi

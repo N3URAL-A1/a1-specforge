@@ -66,6 +66,7 @@ Audit this PLAN.md for quality and coverage gaps. Write AUDIT.md.
   PC_OUT="$(mktemp)"
   node <repo>/_shared/a1-tools.cjs xprov permit-check > "$PC_OUT"; RC=$?
   STATE="$(node -e 'try{process.stdout.write(String(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).state||"unknown"))}catch(e){process.stdout.write("unreadable")}' "$PC_OUT")"
+  rm -f "$PC_OUT"
   echo "xprov permit-check exit=$RC state=$STATE"
   ```
 
