@@ -1025,7 +1025,7 @@ RED-proof:
 - 4 RED-proof lines are logged.
 
 **Status box:**
-- [ ] T6.1 `_shared/lib/wave-checks.cjs` `wave checks` `runChecks` `CHILD_GATES` `_test-fixtures/a1-lib-units/cases/wave-checks.cjs`
+- [x] T6.1 `_shared/lib/wave-checks.cjs` `wave checks` `runChecks` `CHILD_GATES` `_test-fixtures/a1-lib-units/cases/wave-checks.cjs`
 
 **Covers:** SC-8
 
@@ -1069,7 +1069,7 @@ RED-proof:
 - 6 RED-proof lines are logged.
 
 **Status box:**
-- [ ] T6.2 `_shared/lib/feature.cjs` `_shared/lib/feature-plan-steps.cjs` `feature plan-steps` `stepsFor` `help-lean.cjs` `_test-fixtures/a1-lib-units/cases/feature-plan-steps.cjs`
+- [x] T6.2 `_shared/lib/feature.cjs` `_shared/lib/feature-plan-steps.cjs` `feature plan-steps` `stepsFor` `help-lean.cjs` `_test-fixtures/a1-lib-units/cases/feature-plan-steps.cjs`
 
 **Covers:** SC-9
 
@@ -1118,7 +1118,7 @@ RED-proof:
 - 6 RED-proof lines are logged.
 
 **Status box:**
-- [ ] T7.1 `BUNDLES` `wave checks` `check-wave11-callsites.cjs` `_test-fixtures/a1-gates-lint/cases-bundle.sh`
+- [x] T7.1 `BUNDLES` `wave checks` `check-wave11-callsites.cjs` `_test-fixtures/a1-gates-lint/cases-bundle.sh`
 
 **Covers:** SC-8
 
@@ -1162,7 +1162,7 @@ RED-proof:
 - 4 RED-proof lines are logged.
 
 **Status box:**
-- [ ] T7.2 `a1:parallel group=research-map` `_shared/lib/workflow-lint-parallel.cjs` `parallel_checked` `_test-fixtures/a1-workflow-lint/cases-parallel.sh`
+- [x] T7.2 `a1:parallel group=research-map` `_shared/lib/workflow-lint-parallel.cjs` `parallel_checked` `_test-fixtures/a1-workflow-lint/cases-parallel.sh`
 
 **Covers:** SC-7
 
@@ -1220,7 +1220,7 @@ RED-proof:
 - 8 RED-proof lines are logged.
 
 **Status box:**
-- [ ] T8.1 `a1:background id=verify-bg` `a1:join id=verify-bg` `verify_rc` `agents/a1-victor-verifier.md` `_test-fixtures/a1-verify/cases-bgverify.sh` `_test-fixtures/a1-workflow-lint/cases-verify-bg.sh`
+- [x] T8.1 `a1:background id=verify-bg` `a1:join id=verify-bg` `verify_rc` `agents/a1-victor-verifier.md` `_test-fixtures/a1-verify/cases-bgverify.sh` `_test-fixtures/a1-workflow-lint/cases-verify-bg.sh`
 
 **Covers:** SC-8
 
@@ -1278,7 +1278,7 @@ RED-proof:
 - 9 RED-proof lines are logged.
 
 **Status box:**
-- [ ] T8.2 `_shared/lib/feature-close.cjs` `feature close` `--cleanup-only` `closeFeature` `reservations_commit_pending` `_test-fixtures/a1-lib-units/cases/feature-close.cjs`
+- [x] T8.2 `_shared/lib/feature-close.cjs` `feature close` `--cleanup-only` `closeFeature` `reservations_commit_pending` `_test-fixtures/a1-lib-units/cases/feature-close.cjs`
 
 **Covers:** SC-10
 
@@ -1350,7 +1350,7 @@ RED-proof:
 - 11 RED-proof lines are logged.
 
 **Status box:**
-- [ ] T9.1 `feature plan-steps` `skills/a1-new-feature/SKILL.md` `delete-after` `prompts.allowed-diff` `_test-fixtures/a1-kritis-profile/parts/09-allowed-delete.sh` `skills/a1-new-feature/workflows/01-discover.md` `skills/a1-new-feature/workflows/02-specify.md` `skills/a1-new-feature/workflows/03-clarify.md` `skills/a1-new-feature/workflows/04-plan.md` `_test-fixtures/a1-lib-units/cases/s-path-text.cjs`
+- [x] T9.1 `feature plan-steps` `skills/a1-new-feature/SKILL.md` `delete-after` `prompts.allowed-diff` `_test-fixtures/a1-kritis-profile/parts/09-allowed-delete.sh` `skills/a1-new-feature/workflows/01-discover.md` `skills/a1-new-feature/workflows/02-specify.md` `skills/a1-new-feature/workflows/03-clarify.md` `skills/a1-new-feature/workflows/04-plan.md` `_test-fixtures/a1-lib-units/cases/s-path-text.cjs`
 
 **Covers:** SC-9, SC-10
 
@@ -1379,7 +1379,7 @@ RED-proof:
 - 5 RED-proof lines are logged.
 
 **Status box:**
-- [ ] T9.2 `feature close` `DCMGRFP` `skills/a1-pr-review/workflows/05-merge.md` `_test-fixtures/a1-pr-review/cases-close-block.sh`
+- [x] T9.2 `feature close` `DCMGRFP` `skills/a1-pr-review/workflows/05-merge.md` `_test-fixtures/a1-pr-review/cases-close-block.sh`
 
 **Covers:** SC-10
 
@@ -1410,7 +1410,7 @@ RED-proof: none new (the help moved to Task 6.2; every PR B case is RED-proved i
 - Every status box of Tasks 6.1-9.2 is `[x]`, and `phantom check` reports no phantom for them.
 
 **Status box:**
-- [ ] T10.1 `BUNDLES` ADR note PR B green
+- [x] T10.1 `BUNDLES` ADR note PR B green
 
 **Covers:** SC-11
 

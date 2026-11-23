@@ -220,12 +220,13 @@ const INTENT_FLAG_ONLY_GROUPS = Object.freeze(['test-fidelity']);
 const SELF_CHECKS = ['verify check', 'test-fidelity'];
 // Spec 017 review (retro wiring): `gates fired --log <file>` only reads a gate log inside the project and prints YAML.
 const GATES_READ = ['gates fired'];
+// Spec 027 slice 4 PR B: `feature plan-steps` reads the spec frontmatter (`size`) and prints the step table (no write, no child process).
 // Spec 027 slice 4: `wave next-check` reads PLAN.md, GOAL.md, observations.jsonl and the phase gate log inside the project and prints one word.
 const NEW_FEATURE_ALLOW = Object.freeze([
   'check reservations', 'checklist run', 'code-scope check', 'code-scope claim', 'code-scope release', 'code-scope stage',
   'plan depth-check', 'product feature-init', 'product stage', 'profile ears-check', 'profile nfr-inject', 'profile resolve',
   'profile set', 'profile simulate-check', 'profile simulate-roles', 'profile threat-model-check',
-  'quick eligibility', 'realpath-check run', 'schema-check run',
+  'feature plan-steps', 'quick eligibility', 'realpath-check run', 'schema-check run',
   'spec init', 'spec set-size', 'spec update-status', 'wave next-check', ...SELF_CHECKS, ...GATES_READ, ...GIT_READ,
 ]);
 const INTENT_CHILD_ALLOWLIST = Object.freeze({
@@ -271,6 +272,10 @@ const ROW_R = 'row R (progress) has no Bash';
 const OWN_FINDINGS = 'an autonomous child must not clear its own findings (reviewed human or reviewer decision)';
 const DISPOSITIONS = Object.freeze({ 'disposition add': OWN_FINDINGS, 'disposition review': OWN_FINDINGS });
 const SPAWNS_PROCESSES = 'spawns non-git processes; runs owner-side (SEC-5)';
+// Spec 027 slice 4 PR B: `wave checks` runs the realpath, schema and test-fidelity gates as node children of the facade and writes their gate-log lines (a write).
+const WAVE_CHECKS = 'spawns the three per-wave gates as node child processes (a write: one gate-log line each); runs owner-side (SEC-5, as verify run)';
+// Spec 027 slice 4 PR B: `feature close` is a WRITE: it deletes local branches, exits the worktree, edits the registry, the scope reservation and the spec, and runs git/gh children. Owner-side only, never on the allowlist.
+const FEATURE_CLOSE = 'deletes branches, exits the worktree, edits the registry, the reservation and the spec, and spawns gh and git children; runs owner-side after the merge (spec 027 FR-026)';
 const DASHBOARD = 'writes the generated vault note project/<slug>/dashboard.md; vault writes run owner-side on the writer host (spec 021)';
 const NETWORK = 'opens outbound network connections to declared hosts; runs owner-side after the merge (spec 020 FR-018)';
 const NEW_FEATURE_EXCLUDED = Object.freeze({
@@ -279,6 +284,8 @@ const NEW_FEATURE_EXCLUDED = Object.freeze({
   'vault link-hub': VAULT_WIDE,
   ...DISPOSITIONS,
   'verify run': SPAWNS_PROCESSES,
+  'wave checks': WAVE_CHECKS,
+  'feature close': FEATURE_CLOSE,
   'probe run': NETWORK,
   'vault writer': 'reads and sets the hub writer declaration (a1_writer_host), a hub note outside project/<slug>/ that only a human sets (spec 010 FR-038)',
 });
@@ -287,7 +294,7 @@ const INTENT_CHILD_EXCLUSIONS = Object.freeze({
   'continue-feature': NEW_FEATURE_EXCLUDED,
   plan: Object.freeze({ ...DISPOSITIONS, 'dashboard build': DASHBOARD, 'retro validate': OUTSIDE_STORE, 'vault sync': VAULT_WIDE, 'xprov consent': XPROV_CONSENT, 'xprov design-targets': XPROV_DESIGN_TARGETS, 'xprov dispose': XPROV_DISPOSE, 'xprov gate': XPROV, 'xprov permit-check': XPROV_CONSENT, 'xprov waive': XPROV }),
   execute: Object.freeze({
-    ...DISPOSITIONS, 'cost run': TRANSCRIPTS, 'dashboard build': DASHBOARD, 'retro validate': OUTSIDE_STORE, 'vault sync': VAULT_WIDE, 'verify run': SPAWNS_PROCESSES,
+    ...DISPOSITIONS, 'cost run': TRANSCRIPTS, 'dashboard build': DASHBOARD, 'retro validate': OUTSIDE_STORE, 'vault sync': VAULT_WIDE, 'verify run': SPAWNS_PROCESSES, 'wave checks': WAVE_CHECKS, 'feature close': FEATURE_CLOSE,
     'xprov consent': XPROV_CONSENT, 'xprov design-targets': XPROV_DESIGN_TARGETS, 'xprov dispose': XPROV_DISPOSE, 'xprov gate': XPROV, 'xprov load-check': XPROV_STORE, 'xprov permit-check': XPROV_CONSENT, 'xprov waive': XPROV,
   }),
   fix: Object.freeze({

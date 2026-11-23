@@ -787,6 +787,7 @@ check "D4 A1_VAULT_ROOT / A1_VAULT_WRITER_HOST / A1_HOST_ID are set in the owner
 . "$(dirname "${BASH_SOURCE[0]}")/cases-runner-path.sh"
 . "$(dirname "${BASH_SOURCE[0]}")/cases-runner-retry.sh"
 . "$(dirname "${BASH_SOURCE[0]}")/cases-assert-deletions.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/cases-bgverify.sh"
 
 echo "a1-verify: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

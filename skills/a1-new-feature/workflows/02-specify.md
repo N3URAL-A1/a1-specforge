@@ -16,6 +16,7 @@ node <repo>/_shared/a1-tools.cjs spec set-size \
 On `size: S`, Rene's brief below shrinks accordingly (mini-spec: 1–2 FRs with
 ACs, compressed sections) — see SKILL.md "Size triage & fast path". FR/SC/AC
 formality is never dropped.
+On S, Step 1 below is skipped: the one Rene spawn of `01-discover.md` Step 3b already wrote the mini-spec; run the `spec set-size` block above and Steps 2-3 (spec 027 FR-025).
 
 **Sub-agent:** Rene (`~/.claude/agents/a1-rene-requirement-engineer.md`).
 

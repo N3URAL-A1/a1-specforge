@@ -40,9 +40,14 @@ Audit this PLAN.md for quality and coverage gaps. Write AUDIT.md.
   only) and in the `dashboard build` line alike. Anything 04b
   writes into the phase directory is picked up by the next sync (a1-execute
   step 2b-v). The step is skipped silently when `A1_VAULT_ROOT` is not set
-  (tier repo-local), and a failed sync never blocks the pipeline:
+  (tier repo-local), and a failed sync never blocks the pipeline. It runs in the
+  background before 04b: 04b does not wait for it, and its warnings appear in the
+  log file named on stdout:
 
+  <!-- a1:background id=vault-mirror join=no -->
   ```bash
+  VMIRROR_LOG="$(mktemp)"
+  (
   if [ -n "${A1_VAULT_ROOT:-}" ]; then
     VSYNC_OUT="$(mktemp)"
     node <repo>/_shared/a1-tools.cjs vault sync <project-slug> --phases > "$VSYNC_OUT"; RC=$?
@@ -50,6 +55,8 @@ Audit this PLAN.md for quality and coverage gaps. Write AUDIT.md.
     node <repo>/_shared/a1-tools.cjs dashboard build <project-slug> >/dev/null; RC=$?
     if [ $RC -ne 0 ]; then echo "⚠ dashboard build exit=$RC — dashboard not refreshed, continuing"; fi
   fi
+  ) > "$VMIRROR_LOG" 2>&1 &
+  echo "vault mirror runs in the background, log: $VMIRROR_LOG"
   ```
 
 ### If verdict is FAIL

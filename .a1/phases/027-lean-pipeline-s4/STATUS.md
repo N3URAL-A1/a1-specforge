@@ -257,3 +257,276 @@ Line counts: a1-tools.cjs 786 (untouched), gate-log.cjs 578, xprov-common.cjs 36
 
 ### Deviations
 - [Rule 3] `readCapped` exported and given an `afterStat` callback (test seam), needed to stage growth after fstat.
+
+## PR B / Wave 6 — `wave checks`, `feature plan-steps`, PR B help
+Completed: 2026-11-22
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| 6.1 `wave checks` | ✓ DONE | 7a5a58c | `wave-checks.cjs` 91 lines; WC1-WC7 (28 checks) in `a1-lib-units/cases/wave-checks.cjs` |
+| 6.2 `feature plan-steps`, `feature` group, PR B help | ✓ DONE | d2780b8 | `feature.cjs` 15, `feature-plan-steps.cjs` 74, `help-lean.cjs` 65 lines; facade 786 -> 787; PS0-PS13 (22 checks) |
+
+### RED proofs (each: one edit, `a1-lib-units/run-tests.sh`, file restored)
+T6.1:
+- (a) stop after the first failing child -> WC2 `test-fidelity still ran` and WC4 `all three reported` red.
+- (b) exit from the last child only -> WC2 exit 1 and WC4 exit 1 red (rc 0).
+- (c) `--phase` not passed to children -> WC1 and WC4 log-line cases red (`untrusted:no_log`, lines went to `_unscoped`).
+- (d) children without `cwd` -> WC4 `gate-0.6-schema line in the project log` red (line landed in the cwd's repo).
+
+T6.2:
+- (a) `vincente-wave-plan` sizes ALL -> PS1 counts and PS2 red.
+- (b) merged Rene model `sonnet` -> PS3 red.
+- (c) `gate-c-ac-dryrun` removed from S -> PS4 (both) red.
+- (d) gate id typo `scope-claims` -> PS7 red.
+- (e) `tobi-audit` sizes ALL -> PS2 and PS12 red.
+- (f) `feature close` blocks removed from `LEAN_HELP` -> help-lean H2 (two lines) and H3 red.
+
+### Results
+- `a1-lib-units` 735/0, `a1-exit2-audit` 36/0, `a1-cli-output` 33/0, `a1-gates-lint` run-wave13 10/0 and run-wave14 50/0.
+- Pins changed: none (no fenced `a1-tools.cjs` call was added in this wave, so the a1-intent H7a allowlists and the kritis golden inventory stay for Waves 7 and 9). No assertion removed. `checklist.cjs` unchanged. Caps: `a1-tools.cjs` 787 (limit 787), all new modules under their D18 caps.
+
+### Deviations
+- WC3 plants a synthetic skipped test (`it.skip`), not a copy of a real one: the real postmortem test in `a1-test-fidelity/real` carries SQL and RLS shapes, which turns realpath-check red too and breaks the expected "realpath green". The SQL for WC2 and WC4 is a copy of the real `a1-schema-check/fail-no-rls` migration.
+- No `.a1/fidelity.json` was copied (the plan names one under `a1-test-fidelity/`, none exists there): the default test globs scan `tests/*.test.ts`, so WC3 needs none.
+- `wave.cjs` usage text now lists `wave checks` beside `wave next-check`; `wave checks` reports `timedOut` per child in addition to the D11 fields.
+- `realpath-check` SQL-shaped fixture text false positive: not hit in this wave (planted SQL is meant to be detected).
+
+`verify run --affected --no-cache --phase 027-lean-pipeline-s4` on head d2780b8: verdict pass, selection full (`runner_or_config_changed`, because the facade changed), 63 of 63 commands, 0 timed out, flaky [] and pre_existing_red []. Wall time about 29 minutes on the aiserver.
+
+### Orchestrator gate note, wave 6 (realpath-check)
+- `realpath-check run --diff-base 987c9f6` exits 1 (rls, sql): planted migration fixtures in `_test-fixtures/a1-lib-units/cases/wave-checks.cjs` (WC2/WC4 copy `a1-schema-check/fail-no-rls`). Same documented false-positive class as wave 1; repo has no DB backend, no evidence file written.
+
+## PR B / Wave 7 — `wave checks` wiring and parallel groups
+Completed: 2026-11-23
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| 7.1 workflows call `wave checks`, `BUNDLES`, W11 pins, BU1-BU4 | ✓ DONE | b1d58b3 | `workflow-lint-parallel.cjs` (T7.2's module) also landed in this commit |
+| 7.2 research-map group, background vault mirror, parallel lint, PG1-PG7 | ✓ DONE | 84948d6 | `workflow-lint.cjs` 443 (cap 445), `workflow-lint-parallel.cjs` 184 (cap 250), `gates-lint.cjs` 204 (cap 230), facade 787 |
+
+### RED proofs (each: one edit, suite run, file restored)
+T7.1:
+- (a) `BUNDLES` lookup removed from `findCalls` -> G3, W11f, PR3, BU1, BU3 red (5 fails).
+- (b) bundle list without `test-fidelity` -> G3, W11f, PR3, BU1, BU3, BU4 red. BU2 stays green: with test-fidelity out of the list, "removed line gives unwired for all three" is true either way; BU1 and BU4 carry the proof (plan said BU2, measured otherwise).
+- (c) W11a: old pin `calls=15` on the new tree -> red (`calls=11`).
+- (c) W11b, W11c, W11e: the old mutations (test-fidelity forms) on the new tree -> red (all print `calls=11`, no match). The new mutations are green and flag `missing --phase <spec-id>`, `unknown flag --base`, `02-execute.md: wave checks expected 1 call(s), found 0`.
+- a1-kritis-profile inventory: first run on the new tree red (`re-grepped 28 subcommands, expected 30`, set-equality red) -> pin updated.
+- a1-intent H7a, H7c: first run on the new tree red (`unclassified: wave checks` in new-feature, continue-feature, execute) -> exclusion added.
+
+T7.2:
+- (a) single-member check removed -> PG2 red.
+- (b) dependent check removed -> PG3 red.
+- (c) `&` test removed -> PG4 red.
+- (extra) join=yes check removed -> PG5 red; orphan-join check removed -> PG6 red.
+- (d) dashboard pin: inner `dashboard build` line swapped one line down in 04-audit.md -> a1-dashboard 05.26 red (`bad sync=3 ws=false wd=false ...`).
+
+### Pin changes (each with the red run above)
+- `check-wave11-callsites.cjs`: FLAGS/`CMD_RE`/FILES for `wave checks`. W11a 15 -> 11, W11b/c/e re-aimed at the `wave checks` line, W11d/W11f byte-unchanged. Measured-red comment block extended.
+- a1-intent H7a/H7c: `_shared/lib/intent-sandbox.cjs` gets `WAVE_CHECKS` exclusion (new-feature, continue-feature, execute). Call classified as a WRITE (one gate-log line per child) that spawns node children, so it is excluded like `verify run` (SEC-5, owner-side). `05b-child-seal.sh` needed no edit (floor counts only, H7c control still names `fix: worktree gc`).
+- a1-kritis-profile: `golden/inventory.txt` drops `realpath-check run`, `schema-check run`, `test-fidelity --diff-base`, adds `wave checks` (excluded); `parts/01-golden.sh` 30 -> 28 subcommands, excluded 12 -> 10 (label `11+10`). No assertion removed.
+- `gates lint`: `wave checks` line counts as a call of its three gates (`call_without_phase` applies).
+- No change to `08-wiring.sh`.
+
+### Results
+`a1-gates-lint` run-tests 99/0 (BU1-BU4 incl.), run-wave13 10/0, run-wave14 50/0, `check-wave11-callsites` `calls=11`, `gates lint` exit 0, `a1-workflow-lint` 74/0 (PG1-PG7), `workflow lint --phase 027-lean-pipeline-s4` exit 0 (`parallel_checked` 2, `background_checked` 1), `a1-kritis-profile` 221/0, `a1-intent` 1125/0, `a1-dashboard`, `a1-retro-validate`, `a1-xprov` (shard a incl. part 06, shard b incl. part 36), `a1-lib-units`, `a1-pr-merge-check`, `product-schema-v11`, `install-sync` all rc 0. `grep -c RESEARCH.md 02-map.md` = 0; `a1:parallel group=research-map` sums to 2.
+
+### Deviations
+- Intent child cannot run `wave checks` (spawn guard, exit 77). 02-execute.md and 05-implement.md carry a one-line note: record "wave checks: deferred to owner". Effect: an intent execute child no longer runs the realpath/schema/fidelity gates itself; the owner must run `wave checks` before merge. The plan named no sandbox change: decision for the orchestrator/Pablo whether to allowlist `wave checks` after a measured spawn-guard check.
+- BU2 does not go red under RED-proof (b) (see above).
+- Prose in 01-research.md/02-map.md avoids the literal marker string and `RESEARCH.md` so the plan's done-when greps hold (2 markers, 0 RESEARCH.md in 02-map.md).
+
+`verify run --affected --no-cache --phase 027-lean-pipeline-s4` on head 0486c48: verdict pass, selection full (`runner_or_config_changed`, facade in the diff), 63 of 63 commands, 0 timed out, flaky [] and pre_existing_red [], skipped_on_host []. Wall time about 28 minutes.
+
+## PR B / Wave 8 — Background verify and `feature close`
+Completed: 2026-11-23
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| 8.1 background `verify run` in both Verify workflows, Victor wait rule, VS3 pin, W11 `calls=13`, VB1-VB2, BV0-BV5 | ✓ DONE | 0d1a43c | |
+| 8.2 `feature close` (`feature-close.cjs`, 285 lines), FC1-FC17 | ✓ DONE | 91422cf | `feature.cjs` 16 lines, facade still 787 |
+
+### RED proofs (each: one edit on a `git archive HEAD` scratch copy, suite or case file run, file restored)
+T8.1:
+- (a) `--affected` on the background line with the OLD VS3 address -> 2 verify-scope findings (VB1 expects exactly 1 on the new address, which gives 1) -> red as planned.
+- (b) join marker removed -> `workflow lint` finding `background-start@03-verify.md`.
+- (c) `RC=$?` removed from the background line -> `check-wave11-callsites.cjs` prints `03-verify.md:27 verify run: exit code not captured`.
+- (d) BV1 with `--no-cache` on the foreground run -> BV1 red (`cache` `off`).
+- (e) `--path-format=absolute` dropped from the start fence -> BV1b, BV2b, BV4, BV5 red (marker dir `.git/a1-verify-bg/fx` is relative, lands in the cwd repo).
+- (f) old VS3 on the new tree -> `VS3 03-verify.md ... sum='5 2 2 0 ...'` and the same for 06-verify.md (2 findings each).
+- (g) new VS3 address with the foreground `--out` line removed -> 0 verify-scope findings (red).
+- (h) old W11a pin `calls=11` on the new tree -> the checker prints `calls=13`.
+- (j) extra: both pid liveness lines removed from the join fence -> BV4 red (join runs into its bound, no `died`). With only the `kill -0` line removed BV4 stays green, because the `comm` check also reports a dead pid: the two checks cover each other.
+T8.2 (mutations in `feature-close.cjs`, `cases/feature-close.cjs` run):
+- (a) MERGED check removed -> FC3 red. (b) delete-all candidates -> FC6, FC7, FC8 red. (c) tip comparison removed -> FC8 red. (d) worktree exit moved after stages/release/spec -> FC5 red. (e) `--force-discard` on the exit call -> FC5 red. (f) checked-out exclusion removed -> FC6 red (git refuses to delete that branch, exit 1; FC9's own asserts stay green because the branch survives). (g) spec-done skip removed -> FC2 red. (h) `recordRuns` limited to `pr-<n>` and the spec id -> FC16 red. (i) `pendingSharedState` removed -> FC17 red.
+
+### Pin changes
+- `check-wave11-callsites.cjs` FILES: `03-verify.md` and `06-verify.md` `{ 'verify run': 2, 'verify check': 1 }`; W11a `calls=11` -> `calls=13` (comment block extended).
+- `cases-verify-scope.sh` VS3 rows for 03-verify.md and 06-verify.md: sed address `/a1-tools.cjs verify run/` -> `/a1-tools.cjs verify run.*--out/` (exactly those two lines); the Victor row is unchanged.
+- `cases-parallel.sh` PG1-PG7: expected `background_checked` count 1 -> 3 (the two new `verify-bg` markers), PG5 2 -> 4. Not in the plan's pin table: these are this slice's own wave 7 cases and the count is the only change.
+- a1-intent H7a/H7c, `05b-child-seal.sh`, a1-kritis-profile inventory and counts: NO red in this wave. The new fenced call is `verify run`, a command both allowlists already classify (write, excluded), and `feature close` is not named in any skill text yet (Task 9.2). They turn red in Wave 9; the classification for `feature close` is a WRITE (deletes branches, exits worktrees, edits registry, reservations and spec).
+
+### Results
+a1-verify 562/0, a1-workflow-lint 76/0, a1-gates-lint run-tests 99/0, run-wave13 and run-wave14 rc 0, a1-pr-review, a1-probe, a1-retro-validate, a1-dashboard, a1-intent (1125), a1-kritis-profile 221/0 rc 0 (run before 8.2 for intent), a1-lib-units 766/0, a1-code-scope 123/0, a1-worktree 166/0, a1-exit2-audit 36/0, a1-cli-output 33/0. Caps: facade 787, `feature-close.cjs` 285 (cap 420), `grep -c "shell: true\|execSync(\|git commit"` = 0.
+
+### Security notes (`feature close`, `verify-bg`; for the Samuel review of PR B)
+- `feature close` deletes only after step 2 proves the PR MERGED and step 3 proves the remote branch gone. Branch sweep: all verdicts first, deletions after, any gh failure deletes nothing. Rule (a) needs a merged PR entry whose `headRefOid` equals the local tip; rule (b) needs an empty `origin/<base>...<branch>` diff. Everything else goes to `kept[]`.
+- Never a candidate: the current branch, the base, any branch checked out in a worktree. Branch names are checked with `git check-ref-format --branch`; refs are passed qualified (`refs/heads/...`).
+- The registry entry must be of this repository, its branch must equal the merged PR head, and its path must not be the primary checkout (`worktree_mismatch`). Exit is `--mode discard`, never `--force-discard`.
+- Every child runs without shell. git and CLI children get `envWithoutGitRedirects()`; `--by`, `--pr`, `--worktree` are validated before any child runs; gh comes from `A1_GH_BIN` (named on stderr).
+- Background verify: marker dir under the git common dir (outside the work tree), mode 700, symlinked marker root refused, name validated against the scope regex; the pid is trusted only while `kill -0` works, the process belongs to the current user and its command is a shell or node (the recorded pid is the subshell that runs the node child, so the plan's "node process" check reads `bash`/`sh` here). Nothing in the workflow kills a pid.
+
+### Deviations
+- The plan's join and Victor wait loop test only `[ -f rc ]`; added the pid liveness check (user + command + `kill -0`) the lead asked for, so a dead background run costs seconds, not the 60-minute bound. The Victor fence also validates `verify_rc` (absolute, `a1-verify-bg` path, no `..`).
+- Start fences read `<phase_name>`/`<spec-id>`/`<dir>` through quoted heredocs with the scope-regex guard; the `--phase <placeholder>` on the call line stays a raw placeholder because `check-wave11-callsites.cjs` requires that literal (the guard validated the same value).
+- 06-verify.md: the start and the join sit next to each other in Step 0.6 (there is no agent spawn before the foreground run in that file), so the overlap there is small; 03-verify.md overlaps the whole Victor run.
+- `feature close` runs git through `gitSafe` with `env: envWithoutGitRedirects()` (gitSafe passes opts to execFileSync). The kept reason `pr_not_merged` of D16 is unused in the sweep (it queries only `--state merged`); a closed PR's branch is reported `unmerged_commits`.
+- FC fixtures use real `worktree prepare/enter` and real `phantom check --phase` gate logs instead of a hand-written registry entry (more faithful than the plan's "copied entry").
+
+`verify run --affected --no-cache --phase 027-lean-pipeline-s4` on head c2db3b3: verdict pass, 63 of 63 commands, 0 timed out, flaky [] and pre_existing_red [], skipped_on_host []. Wall time about 29 minutes.
+
+## PR B / Wave 9 — S path in SKILL.md and the phase workflows, `feature close` in the skill text
+Completed: 2026-11-23
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| 9.1 SKILL.md S path from `plan-steps`, 01-04 workflows, kritis `delete-after`, K1-K4, SP1-SP5 | ✓ DONE | 2b39106 | |
+| 9.2 05-merge F block + heredoc PHASE, 06-verify pointer, DCMGRFP, CB1-CB2e, FLR | ✓ DONE | a259369 | |
+
+### RED proofs (each: one edit on a scratch copy of the working tree, suite or case file run)
+T9.1:
+- (a) old `prompts.allowed-diff` on the new tree -> `P SKILL.md`, `P 02-specify.md`, `P 03-clarify.md` red (plus P-allowed and both D rows, 6 fails).
+- (b) old `08-wiring.sh` (old D SKILL.md branch, old 03-clarify count, no 02-specify branch) on the new tree -> `D skills/a1-new-feature/SKILL.md: removed=10 added=24` red (and D 02-specify, D 03-clarify, I intent allowlist).
+- (c) `gone`-row comparison removed from `delete-after` -> K1 red (`exit 0, expected 3`).
+- (d) S-table row restored in SKILL.md -> `P SKILL.md` and `D SKILL.md` red.
+- (e) old D 03-clarify count `37` -> `D .../03-clarify.md: removed=0 added=38` red.
+- (f) D without the 02-specify branch -> `D .../02-specify.md: removed=0 added=1` red.
+- (g) 02-specify inserted line reworded -> `P 02-specify.md` and `D .../02-specify.md` red.
+- (h) 03-clarify inserted line deleted -> `P 03-clarify.md` and `D .../03-clarify.md: added=37` red.
+- (i) old `**Size-S fast path:**` paragraph restored in 04-plan.md -> SP1 (2 asserts) and SP5 red.
+- (j) `resume` dropped from `rene-discover-specify-clarify` -> SP5 (resume list) and PS3 red.
+- (k) `apply-prompts-allowed.cjs` writes the current text as the applied golden -> K4 red.
+- (extra) intent: `feature close` exclusion removed -> `5b-H7m` red (the only fail in the 5b-only run).
+- (extra) kritis inventory: the first run on the new tree was red (`re-grepped 29 subcommands, expected 28`, set equality names `feature plan-steps`); intent: 5b-P/5b-Pn red for `feature plan-steps` until its probe args were added (first with a vault-relative path: exit 2 ENOENT, then `docs/PLAN.md`).
+T9.2:
+- (a) final `exit "$RC"` of the F block removed -> CB1 red (CB1 first only looked for `exit "$RC"` anywhere in the block and stayed green; tightened to the STOP line of the `feature close` call, then red).
+- (b) F before G -> order case `DCMFGRP` red (+ 3 further pins on `b[3]`).
+- (c) old pin (HEAD `run-tests.sh`) on the new tree -> `fenced bash blocks: 7 (want 6)`, `block order is 'DCMGR?P'`, and the old RR-guard third assert red.
+- (d) new pin with the F block removed -> `fenced bash blocks: 6 (want 7)`, `block order is 'DCMGRP' (want DCMGRFP)`, CB1/CB2 red.
+- (e) `"<"*` arm removed from the F `case` -> CB1 and CB2a red (the placeholder run ends `STOP: bad spec id`).
+- (f) run record block back to `PHASE='<phase_name>'` -> FLR red (PWNED file written, rc 0).
+
+### Pin changes
+- kritis: `apply-prompts-allowed.cjs` new op `delete-after` + `gone`; `prompts.allowed-diff` (SKILL.md delete + two inserts, 02-specify pair, 03-clarify pair before the first existing row); `01-golden.sh` P-allowed simulation (sed range delete, `r FILE` inserts written out literally); `08-wiring.sh` D SKILL.md branch (non-blank removed and added lines compared in order, blank lines NOT pinned: GNU diff measured 10 removed / 24 added, Apple differs; audit m4), D 03-clarify `37`->`38`, new D 02-specify branch, I intent allowlist 29->30; `09-allowed-delete.sh` K1-K4.
+- kritis `inventory.txt` + `01-golden.sh` counts: +`feature plan-steps` (excluded; 29, 11+11), then -`code-scope release` (06-verify.md no longer names it; 28, 10+11). The inventory never names `a1-tools.cjs feature close` in skills/a1-new-feature (the SKILL.md and 06-verify text name it without the prefix), so `feature close` needs no inventory row.
+- a1-intent: `feature plan-steps` on `NEW_FEATURE_ALLOW` (reads the spec frontmatter, no write, no child); `feature close` is a WRITE and sits in the exclusions of new-feature, continue-feature and execute (`FEATURE_CLOSE`), never on an allowlist; `05b-child-seal.sh` gets the `feature plan-steps` probe args and `PEXPECT`, `5b-Pn` counts 29->30 and 95->97, new `5b-H7m`.
+- a1-pr-review `run-tests.sh`: block count 6->7, classifier `F`, `DCMGRP`->`DCMGRFP`, case titles; `b[3]`, MH9a and RR_POS untouched.
+- **RR-guard third assert (not in the plan's pin table):** `PHASE='<phase_name>'` in the run record block became `IFS= read -r PHASE <<'A1_PHASE_EOF'` plus the scope-regex guard (lead's carry-over). A hostile value such as `$(touch PWNED)` is now refused (`STOP: bad phase name`, exit 2, the first call already ran) instead of being passed on literally, so the old assert (2 log lines) cannot hold. Its premise "not executed, no PWNED file" is kept; it now expects rc 2, 1 log line and the STOP text. Old assert on the new tree is red (RED (c)). New `FLR` runs `x'$(touch PWNED)'` -> STOP, no file.
+
+### Results
+a1-kritis-profile 225/0, a1-lib-units 782/0, a1-pr-review 88/0, a1-probe 894/0, a1-intent (5b part alone 218/0 after the fixes; the full run before them had only the three `feature plan-steps` probe fails). Other suites and the verify run: see the end of this section.
+
+### Deviations
+- Rule 3: the 05b probe harness, the kritis intent-allowlist count and the kritis inventory needed deliberate pin updates for `feature plan-steps` (not in the plan's pin table; the plan listed only `feature close`, which no skill text names with `a1-tools.cjs`).
+- The kritis inventory lost `code-scope release` (06-verify.md items 4-5 now point to `feature close`); counts 11+11 -> 10+11, total 28.
+- 06-verify.md keeps the headings `3. **Merge**`, `4. **Origin cleanup**` and `5. **Done**` (a1-probe D1 pins step 3 and step 4 positions around the probe block); items 4 and 5 are one-line pointers to the single `feature close` call.
+- The F block reads the PR head branch in-block (`gh pr view <n> --json headRefName`) and checks it with `git check-ref-format --branch` instead of substituting a `<branch>` placeholder into double quotes (a branch name may hold `$(...)` without spaces). The plan text named `<branch>`.
+- m2 (round 3): the 04-plan fallback reads "no agent id or Rene declines". m3: the 03-clarify S line names the Step 3 marker loop, 3.5-1, 3.5-2 and the kritis jumps; the allowed-diff row moved in the same commit. m4: the D branch pins no blank-line count.
+- m6 note (field owners, PLAN.md rows stay as written): the row "`observations.jsonl` deviation/blocker lines" names a1-erik-executor and the session; Victor's observation lines (his `observations.jsonl` writes during verify) are not in that row. Pablo/Wave 10 should add Victor as a writer of observation lines, or state that Victor writes none.
+
+`verify run --affected --no-cache --phase 027-lean-pipeline-s4` on head a259369: verdict pass, selection full (`runner_or_config_changed`, facade in the diff), 63 of 63 commands, 0 timed out, flaky [] and pre_existing_red [], skipped_on_host []. Wall time about 29 minutes (02:17 to 02:46). That run covers a1-intent (full), a1-ux-studio, a1-workflow-lint, a1-gates-lint, a1-pr-merge-check, a1-lib-units, a1-verify and the others on the final tree.
+Caps: facade 787/800; no module added.
+
+## PR B / Wave 10 (T10.1)
+Pre-wave HEAD 39c96b3, host load before: `0.42 0.87 0.82` (run 1 start `0.39 0.86 0.82`), after run 2: `1.33 2.69 2.11`.
+
+ADR `docs/adr/2026-10-14-gate-invoke-and-log.md`: section `## 2026-11-23 — Bundle alias (spec 027 FR-024)` appended. The trust-model section and its "not accepted, pending owner decision" text are untouched.
+
+| Command | Exit |
+|---|---|
+| `gates lint` | 0 (findings []) |
+| `workflow lint --phase 027-lean-pipeline-s4` | 0 (flow 5, parallel 2, background 3, findings []) |
+| `check-wave11-callsites.cjs .` | 0, `calls=13` |
+| `run-wave13.sh` | 0 (10 passed, 0 failed) |
+| `run-wave14.sh` | 0 (50 passed, 0 failed) |
+| V14 caps loop (A + B caps) | **rc=1**: `cap: _shared/lib/gate-log.cjs` (578 lines, cap 480); every other file within cap, `checklist.cjs` unchanged |
+| frozen-files diff (`.a1/verify.json`, `suite-groups.json`, `.github/`) vs origin/main | 0 |
+| `checklist.cjs` diff vs origin/main | 0 |
+| `run-suites.sh --check-groups` | 0 |
+| `run-suites.sh` run 1 | rc=1: all 63 suites PASS (358 s); `phases check FAILED`: my own concurrent `phantom check` / `workflow lint` wrote `gate-log.jsonl` lines under `.a1/phases` during the run (self-inflicted) |
+| `run-suites.sh` run 2 (nothing else running) | **0**: 63 of 63 PASS, 357 s, `phases check: .a1/phases unchanged` |
+
+Cap finding: `gate-log.cjs` is 578 lines on this branch and on origin/main alike (`git diff origin/main` empty, so PR B did not change it). The V14 cap 480 (and the 475 recorded in Wave 5 caps) predates the R3 review-fix rounds that grew the file in PR A (e7fdac6). Not a PR B regression; the plan's cap needs a decision (raise the cap in the plan or split the module). Left open for the orchestrator/planner.
+
+Status boxes T6.1-T9.2: all `[x]` (0 open). `phantom check .a1/phases/027-lean-pipeline-s4/PLAN.md --since origin/main`: 15 of 16 clean, 1 phantom = T3.2 (03-draft.md/04-submit.md), a PR A task already merged into origin/main, so it has no diff in the PR B range. With a wider range (`--since 39c96b3~30`) the result is `clean`, 16 checked, no phantoms. No phantom for T6.1-T9.2.
+
+### Open owner/planner item (AUDIT m6, from Wave 9)
+The field-owner row "`observations.jsonl` deviation/blocker lines" names a1-erik-executor and the session. Victor's observation lines (his `observations.jsonl` writes during verify) have no row. Pablo/Wave 10 should add Victor as a writer of observation lines, or state that Victor writes none. PLAN.md rows stay as written.
+
+## PR B / Victor fix round
+Base HEAD e0f4bb0. Gap 1 (MAJOR) fixed with variant (b); the intent sandbox is unchanged.
+
+- Owner step: `skills/a1-execute/workflows/03-verify.md` Step 0.1 (before the background `verify run` and Victor) and `skills/a1-new-feature/workflows/06-verify.md` Step 0.55 (before Step 0.6). Both run `wave checks <slug> 0 --diff-base "$PHASE_BASE" --project "$WORK_PATH" --phase <slug>` with `PHASE_BASE=$(git merge-base origin/main HEAD)`, the base `05-merge.md` uses for its `test-fidelity` scan. All three child gates run. Non-zero exit STOPs. Placeholders go through quoted heredocs plus the regex guard. `<wave>` is `0` (the CLI needs an integer; the call covers the whole phase).
+- Decision: unconditional, not conditional on the deferral note. Reasons: idempotent (a re-run only appends gate-log lines), seconds of cost next to `verify run`, and a grep condition would skip the gate silently when the note never reaches a STATUS file. The writer texts in 02-execute.md and 05-implement.md now name the consumer step.
+- Migrations: the step does not pass `--migrations` by default (text says to add it for a migration phase, as at 2b-g); schema-check reports `skipped` otherwise.
+
+### Pin changes (each with a red run)
+| Pin | Change | Red run |
+|---|---|---|
+| W11a (`check-wave11-callsites.cjs`) | `calls=13` -> `calls=15`, FILES expects `wave checks: 1` in 03-verify.md and 06-verify.md | old pin on the new tree: `W11a (calls=15)` FAIL |
+| BU2 (`cases-bundle.sh`) | plant removes the `wave checks` line from both a1-execute files (03-verify.md now also wires the three gates) | with only 02-execute.md edited: `BU2 ... rc=0 want=1` FAIL |
+| BU5a-c (new, `cases-bundle.sh`) | every file that carries "wave checks: deferred to owner" needs its paired owner file to hold a fenced `wave checks ... --diff-base "$PHASE_BASE" ... RC=$?` line | owner line deleted from the real 03-verify.md: `W11a`, `BU5a`, `BU5c` FAIL; BU5b/BU5c plant the same removal in a copy and expect the finding |
+| VS3, a1-intent H7a, kritis inventory/counts, gates-lint BUNDLES wiring | no change needed; suites green (VS3 targets `verify run.*--out`, which the new step does not touch; BUNDLES unchanged, W11f/BU1/BU4 green) | n/a |
+
+### Minors
+- `cases-bundle.sh` header: "-> BU2 red" corrected to "BU1, BU3, BU4 carry the proof (BU2 stays green: it removes the call lines, not the list)".
+- `wave checks --help|-h` and `feature close --help|-h`: usage on stdout, exit 0, no error line (one guard line in each of `wave-checks.cjs`, `feature-close.cjs`). Cases WC8 and FC-help; red before the change (`rc=2 ... --phase value is not a safe scope name`, `unexpected argument`).
+- Caps: facade 787/800 (unchanged), `wave-checks.cjs` 92, `feature-close.cjs` 286.
+
+### Results (own runs on this tree)
+a1-workflow-lint 76/0, a1-gates-lint 102/0 (3 runs), run-wave13 10/0, run-wave14 50/0, a1-intent 1128/0, a1-kritis-profile 225/0, a1-verify 562/0, a1-lib-units 786/0, a1-pr-review 88/0, a1-dashboard 423/0, a1-pr-merge-check 269/0; `gates lint` rc 0; `workflow lint` rc 0; `calls=15`.
+
+`verify run --project <worktree> --affected --no-cache --phase 027-lean-pipeline-s4` on head b978f46: verdict pass, scope affected, 63 of 63 commands exit 0, 0 timed out, flaky [], pre_existing_red [], skipped_on_host [].
+
+## PR B / review fix round 1
+Base HEAD da459b3 (PR #112). Commits: 16620ee (lib), 9ba4a4b (workflow blocks + pins), ec570cb (NITs). RED proof = the new case run on the pre-fix code, then green.
+
+| Finding | Commit | RED proof (old code, new case) |
+|---|---|---|
+| SEC-1 / R-m4 rule (b) = `merge-base --is-ancestor refs/heads/<b> refs/remotes/origin/<base>` | 16620ee | FC18: commit+revert and `--allow-empty` branches were in deleted[] (`"deleted":["emptied","fresh","reverted"]`), now kept[] unmerged_commits. A fresh branch whose tip is on main is an ancestor of the base: deleting it loses nothing, so FC18 asserts it IS deleted. Samuel's repro rebuilt in `scratchpad/fc2` (commit+revert, empty-commit, fresh branch): new code prints `deleted:["fresh"], kept:[emp, real, rev]` |
+| R-MAJOR default branch protected (origin/HEAD, else main+master) plus PR base | 16620ee | FC19 (base `develop`, `origin/develop` contains main): old `"deleted":["main"]`; now main survives |
+| SEC-2 / R-m1 second heredoc line rejected; call lines use "$PHASE"/"$SPEC_ID"; W11 accepts that form | 9ba4a4b | CB4a/CB4b (05-merge F block: CB4b old run created PWNED), FLN (run record), BU6a/BU6a2 for 03-verify and 06-verify (old: rc=0, `wave checks ok` ran, PWNED created). W11a was red on the new tree until the checker accepted the quoted variable (`03-verify.md:27 missing --phase <phase_name>`); W11g new (foreign `"$OTHER"` flagged). (Correction, round 2: the guard catches a SECOND body line before the terminator, not a value that contains the terminator itself; see the round 2 section.) Guard form: `{ IFS= read -r V; if IFS= read -r EXTRA; then STOP; fi; } <<'EOF'`, stricter than the brief's `-z "$EXTRA"`: an EMPTY second line (value `ok` + blank line + terminator + command) must also stop, since the heredoc ends at the terminator and the command after it would run. Applied to every quoted-heredoc read in 02-review, 02-execute, 05-implement, 03-verify (3), 06-verify (6), 05-merge (2) |
+| SEC-3 owner step exits on red | 9ba4a4b | BU6b (both files): old rc=0 after "STOP: wave checks red" |
+| R-m2 intent child at both owner steps | 9ba4a4b | BU6c (old: the stub ran). Backstop chosen: the existing `test-fidelity --diff-base ... --phase pr-<n>` scan of the whole PR diff in 05-merge 5.2 (fail-closed, owner side), pinned as BU6e. Cheapest robust: a runtime gate-log check would need new tooling in the merge path and a1-intent cannot run the owner step by design; a pinned existing scan costs one grep and cannot be deleted silently. realpath-check and schema-check have no merge-time backstop (they ran per wave outside intent children); noted, not changed |
+| SEC-4 remote delete only after checks, for a same-repo PR at the PR head | 16620ee, 9ba4a4b | lib: `feature close --check-only` (spec file, PR MERGED, branch name, worktree match; FC23). 05-merge F block runs it first; delete only if `isCrossRepository == false` and `ls-remote` oid == `headRefOid`, via `push --force-with-lease=refs/heads/<b>:<oid>` (checked with real git: stale lease rejected, right lease deletes). CB3a (oid mismatch), CB3b (fork), CB3c (check-only refuses -> no push, real call never ran) were red on the old block (push seen). Not checkable without state change: a dirty worktree is only found at the worktree exit, after the delete; documented in 05-merge.md |
+| SEC-5 / R-m3 A1_GH_BIN | 16620ee | FC20: old code deleted the merged-PR-verdict branch under override; now kept[] `gh_override`, JSON `gh_bin:"override"`. FC20b relative path -> exit 2 (old exit 1). Printed value sanitized. Test marker `A1_FEATURE_CLOSE_TEST=1` (set only in the FC fixture env) re-enables rule (a) so FC1/FC10 still exercise it; documented in the header and help-lean |
+| SEC-6 compare-and-swap delete | 16620ee | FC21: the fake gh moves `aaa` between verdict and delete; old: `deleted:["aaa"]`; now kept[] `tip_moved`, tip unchanged. `git config --remove-section branch.<b>` runs best-effort after the delete (what `branch -D` did) |
+| SEC-7 `check-ref-format refs/heads/<b>` | 16620ee, 9ba4a4b | FC22: headRefName `@{-1}` was accepted (old: ok:true, deleted [prev]); now bad_branch_name. Leading dash refused in lib and F block (CB3d: old rc=0) |
+| NIT res.stage mutation | 16620ee | local variable `stage`; behaviour covered by FC1/FC14 (green before and after) |
+| NIT "refuses before anything has changed" | 16620ee | header comment reworded: refusals before the first state change run first, later refusals (dirty worktree at the exit) stop part-way and a second call resumes. PLAN D16 row left as is (note only): the sentence at PLAN line 57 overstates for the dirty-worktree case |
+| NIT BU2 title | ec570cb | title now "removed from both a1-execute files (02-execute.md and 03-verify.md)" |
+| NIT wave-checks stdout/stderr | ec570cb | WC7b: old child entry had no `stderr_tail`; now `stdout_tail` and `stderr_tail`. Unused `ok` and `bad` dropped from runChecks |
+
+### Pin cascade
+W11 (red then re-pinned, W11g new), BU6a-e (new, red on the old skills), CB/FLN (new, red). VS3: no change (targets `verify run.*--out`). a1-intent H7a and kritis inventory/counts: no change needed, suites green (they do not read these block texts). Changed existing assertions (strengthened, none deleted): CB2b now expects the check-only line first and the real call second; CB2c/CB2e expect `refs/heads/<b>` and the leased push; help-lean H-case usage line carries `[--check-only]`.
+
+### Deviations
+- Extra guard coverage beyond the listed blocks: the same two-line read guard on 02-review.md 2.3d, 02-execute.md and 05-implement.md blocks (same residual gap).
+- Not done (outside the list): the per-wave "STOP: wave checks red" lines in 02-execute.md and 05-implement.md still have no `exit "$RC"`; they sit inside the wave flow where the prose stops the wave. Report to planner if wanted.
+- Caps: facade 787 (unchanged), feature-close.cjs 325.
+
+
+## PR B / review fix round 2 (minors only)
+
+| Finding | Commit | RED proof |
+|---|---|---|
+| m1 / Samuel MINOR-1 heredoc guard doc over-claim | b68e2a8 | `05-merge.md` now says: the guard catches a second body line before the terminator; a value holding the terminator (`ok`, `A1_PHASE_EOF`, command) closes the heredoc early and the command runs; only the orchestrator newline strip stops it (prompt-level, inherent to heredoc transport). New CB4d asserts today's behaviour (PWNED is created) and is labelled "documented limit, not coverage". The other sentences (02-execute, 05-implement, 02-review) only claim the orchestrator strip or the regex, which hold; SEC-2 row above annotated. |
+| MINOR-2 per-wave `wave checks` raw placeholders | 0a44d3e | `02-execute.md` 2b-g and `05-implement.md` gates 0.6-0.8 carry the two-line guard and `"$PHASE"` / `"$SPEC_ID"` (and `"$WORK_PATH"`). `check-wave11-callsites.cjs` now flags the raw placeholder on those lines: old tree prints `02-execute.md:169 ... raw placeholder <phase_name>` and `05-implement.md:305 ... raw placeholder <spec-id>`. New W11h, W11i (raw placeholder back), W11j (foreign variable); W11b and BU3 plants re-pointed at the quoted form. |
+| MINOR-3 `update-ref -d` skips checked-out refusal | 990c29c | `deleteAtTip` re-reads `git worktree list --porcelain` right before each delete; kept reason `checked_out`. FC24 (fake gh adds a worktree on the candidate while it answers the last verdict): old lib deleted `aaa`, FAIL. |
+| NIT `already_gone` reported as deleted | 990c29c | distinct kept entry `already_gone`; the `branch.<name>` config cleanup runs in that path too. FC25: old lib listed `aaa` in `deleted`, FAIL. |
+| NIT defaultBranches protects only origin/HEAD | 990c29c | `protectedBranches` always adds local `main` and `master`. FC26 (origin/HEAD = develop, base develop): old lib deleted `main` and `master`, FAIL. |
+
+### Follow-up (not in this PR)
+- Carry placeholder values via a Write-tool file or an env var instead of shell source. That removes the heredoc-terminator limit instead of documenting it.
+
+### Caps
+feature-close.cjs 337 (limit 800), facade unchanged (787).

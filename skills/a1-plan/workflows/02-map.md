@@ -10,11 +10,16 @@ Spawn `a1-marco-mapper` to map the codebase structure relevant to this phase.
 
 ## Prompt template
 
+Marco runs in the same turn as Rico (group `research-map`, see `01-research.md`), so his prompt names no Phase 1 output file. Pablo still reads the Phase 1 research file and MAP.md.
+
+<!-- a1:parallel group=research-map -->
+
 ```
 Map the codebase for this planning task and write MAP.md.
 
 <files_to_read>
-- .a1/phases/<phase_name>/RESEARCH.md
+- ./CLAUDE.md (if exists)
+- <spec_path> (if provided by user)
 </files_to_read>
 
 **Task context:** <phase_goal>

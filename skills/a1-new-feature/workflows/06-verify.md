@@ -44,6 +44,37 @@ process's `cwd` matches the checkout under test before trusting any result — a
 stale server manufactures false bug evidence.
 See `_shared/agent-lessons.md#verify-stale-server`.
 
+## Step 0.55 — Owner-side `wave checks` over the whole feature diff (spec 027 FR-024, Victor fix round)
+
+An intent child (`A1_INTENT_CHILD=1`) cannot run `wave checks` (its spawn guard refuses node children, exit 77), so its wave reports carry
+"wave checks: deferred to owner" and `realpath-check`, `schema-check` and `test-fidelity` have not run on that path. This step is the
+consumer of that note: it runs the bundle once over the whole feature diff before the build run, with all three child gates. It runs
+**unconditionally**: it is idempotent (a re-run only appends gate-log lines), costs seconds next to `verify run`, and a condition on the
+note would let a missing or misplaced note skip the gate silently. The base is the merge-base with `origin/main`, the same base
+`05-merge.md` uses for its `test-fidelity` scan. `<N>` is `0`: the call covers the whole feature, not one wave. On a feature whose diff
+adds or changes SQL migrations add `--migrations <dir>/<migrations dir>` before `--phase`, as in Phase 5. Any non-zero exit **stops**
+Phase 6: fix the cause, re-run this call. The block reads `<spec-id>` and `<dir>` through quoted heredocs and checks both.
+A red check ends the block with that exit code (`exit "$RC"`). An intent child that reaches this step stops right after the input checks, records
+"wave checks: deferred to owner" and hands the step to the owner. The owner-side `test-fidelity` scan of `a1-pr-review` `05-merge.md` (whole PR diff, `--phase pr-<n>`) is the
+backstop that a skipped owner step cannot ship an unscanned test. Both lines are pinned (`BU6` in a1-gates-lint).
+
+```bash
+{ IFS= read -r SPEC_ID; if IFS= read -r EXTRA; then echo "STOP: bad spec id (more than one line)"; exit 2; fi; } <<'A1_SPEC_EOF'
+<spec-id>
+A1_SPEC_EOF
+{ IFS= read -r WORK_PATH; if IFS= read -r EXTRA; then echo "STOP: bad project dir (more than one line)"; exit 2; fi; } <<'A1_DIR_EOF'
+<dir>
+A1_DIR_EOF
+case "$SPEC_ID" in ""|[!A-Za-z0-9_]*|*[!A-Za-z0-9._-]*) echo "STOP: bad spec id"; exit 2;; esac
+case "$WORK_PATH" in /*) ;; *) echo "STOP: project dir must be absolute"; exit 2;; esac
+if [ "${A1_INTENT_CHILD:-}" = 1 ]; then echo "wave checks: deferred to owner (an intent child cannot start node children; stop here, the owner runs this step)"; exit 0; fi
+PHASE_BASE="$(git -C "$WORK_PATH" merge-base origin/main HEAD)"; RC=$?
+if [ "$RC" -ne 0 ] || [ -z "$PHASE_BASE" ]; then echo "STOP: no merge-base with origin/main exit=$RC"; exit 1; fi
+node <repo>/_shared/a1-tools.cjs wave checks "$SPEC_ID" 0 --diff-base "$PHASE_BASE" --project "$WORK_PATH" --phase "$SPEC_ID"; RC=$?
+echo "wave checks (owner, whole feature) exit=$RC"
+if [ $RC -ne 0 ]; then echo "STOP: wave checks red (checks[] above: gate, exit)"; exit "$RC"; fi
+```
+
 ## Step 0.6 — Build/test evidence (`verify run`, then `verify check`)
 
 On a host that has not run this project's gates yet (new machine, after a handover, fresh worktree), check the host first:
@@ -57,6 +88,58 @@ echo "$BINS" | grep '^HOST:'
 for b in $(echo "$BINS" | grep -v '^HOST:' | sort -u); do
   command -v -- "$b" >/dev/null || echo "HOST: $b not on PATH"
 done
+```
+
+Start the build/test run in the background now, before the walkthrough and before any agent (Diana, Tobi) is spawned (spec 027 FR-024).
+It writes no `VERIFICATION.md` (no `--out`) and carries no `--affected`. The marker directory lies in the git common dir, outside the work
+tree, so repo content cannot write or commit into it. The block reads `<spec-id>` and `<dir>` through quoted heredocs, checks the id
+against `^[A-Za-z0-9_][A-Za-z0-9._-]*$` and the directory for an absolute path, refuses a symlinked marker root and empties the directory it
+owns. The orchestrator strips all newlines from both values first. A start that prints `STOP:` is not a verdict: the foreground
+`verify run --out` below runs as before. Never `pgrep` for the process and never `wait` on its pid; the join below reads the files.
+
+<!-- a1:background id=verify-bg join=yes -->
+```bash
+{ IFS= read -r SPEC_ID; if IFS= read -r EXTRA; then echo "STOP: bad spec id (more than one line)"; exit 2; fi; } <<'A1_SPEC_EOF'
+<spec-id>
+A1_SPEC_EOF
+{ IFS= read -r WORK_PATH; if IFS= read -r EXTRA; then echo "STOP: bad project dir (more than one line)"; exit 2; fi; } <<'A1_DIR_EOF'
+<dir>
+A1_DIR_EOF
+case "$SPEC_ID" in ""|[!A-Za-z0-9_]*|*[!A-Za-z0-9._-]*) echo "STOP: bad spec id"; exit 2;; esac
+case "$WORK_PATH" in /*) ;; *) echo "STOP: project dir must be absolute"; exit 2;; esac
+GC="$(git -C "$WORK_PATH" rev-parse --path-format=absolute --git-common-dir)"; RC=$?
+if [ "$RC" -ne 0 ] || [ -z "$GC" ]; then echo "STOP: no git common dir exit=$RC"; exit 1; fi
+if [ -L "$GC/a1-verify-bg" ]; then echo "STOP: $GC/a1-verify-bg is a symlink"; exit 1; fi
+VBG="$GC/a1-verify-bg/$SPEC_ID"
+rm -rf "$VBG" && mkdir -p "$VBG" && chmod 700 "$VBG" || { echo "STOP: cannot prepare $VBG"; exit 1; }
+( node <repo>/_shared/a1-tools.cjs verify run --project "$WORK_PATH" --phase "$SPEC_ID" > "$VBG/report.json"; RC=$?; echo "$RC" > "$VBG/rc.tmp" && mv "$VBG/rc.tmp" "$VBG/rc" ) > /dev/null 2>"$VBG/stderr.txt" & echo "$!" > "$VBG/pid"
+echo "verify_report=$VBG/report.json verify_rc=$VBG/rc"
+```
+
+Join before the foreground run (`<!-- a1:join id=verify-bg -->`). The wait is bounded (240 checks, 15 s apart, 60 minutes). The recorded pid counts
+as alive only while `kill -0` succeeds, the process belongs to the current user and its command is a shell or node (the recorded pid is
+the subshell that runs the node child). A dead process without an `rc` file ends the wait with `background verify died`. Neither case is a
+verdict: the foreground run below always runs.
+
+<!-- a1:join id=verify-bg -->
+```bash
+{ IFS= read -r SPEC_ID; if IFS= read -r EXTRA; then echo "STOP: bad spec id (more than one line)"; exit 2; fi; } <<'A1_SPEC_EOF'
+<spec-id>
+A1_SPEC_EOF
+{ IFS= read -r WORK_PATH; if IFS= read -r EXTRA; then echo "STOP: bad project dir (more than one line)"; exit 2; fi; } <<'A1_DIR_EOF'
+<dir>
+A1_DIR_EOF
+case "$SPEC_ID" in ""|[!A-Za-z0-9_]*|*[!A-Za-z0-9._-]*) echo "STOP: bad spec id"; exit 2;; esac
+case "$WORK_PATH" in /*) ;; *) echo "STOP: project dir must be absolute"; exit 2;; esac
+VBG="$(git -C "$WORK_PATH" rev-parse --path-format=absolute --git-common-dir)/a1-verify-bg/$SPEC_ID"
+i=0; while [ ! -f "$VBG/rc" ] && [ $i -lt 240 ]; do
+  BP="$(cat "$VBG/pid" 2>/dev/null)"
+  case "$BP" in ""|*[!0-9]*) echo "background verify died (no valid pid)"; break;; esac
+  if ! kill -0 "$BP" 2>/dev/null || [ "$(ps -o uid= -p "$BP" | tr -d ' ')" != "$(id -u)" ]; then [ -f "$VBG/rc" ] || echo "background verify died"; break; fi
+  case "$(ps -o comm= -p "$BP" 2>/dev/null)" in bash|sh|dash|zsh|ksh|node|MainThread) ;; *) [ -f "$VBG/rc" ] || echo "background verify died (pid not ours)"; break;; esac
+  sleep 15; i=$((i+1))
+done
+if [ -f "$VBG/rc" ]; then echo "background verify rc=$(cat "$VBG/rc")"; elif [ $i -ge 240 ]; then echo "WARN: background verify not finished after 60 min, running verify run directly"; fi
 ```
 
 Before the walkthrough, record the build and test result in the spec's VERIFICATION.md (path:
@@ -242,17 +325,20 @@ Completion Gate), each after its own confirmation:
    `pr-reinhard` pass record (or on its same-head skip path), in that order. The walkthrough is all-green
    before the hand-off, so both conditions hold there. Phase 6 runs no `code-scope stage` call before the
    hand-off. (SKILL.md's Lifecycle table stays as written: its Review row still holds.)
-3. **Merge** — after the pre-merge check below and the PR's squash merge into
-   `main` (`a1-pr-review`, verified via `gh pr view --json state,mergedAt`):
-   ```bash
-   node <repo>/_shared/a1-tools.cjs code-scope stage --by <spec-id> --set merge
-   ```
+3. **Merge** — after the pre-merge check below and the PR's squash merge into `main` (`a1-pr-review`, verified via
+   `gh pr view --json state,mergedAt`), and after the retros (this skill's Step 6 incl. `retro validate --gate-log`, and the `a1-pr-review`
+   retro: the gate logs are gitignored (FR-008) and are deleted with the worktree), `a1-pr-review` `workflows/05-merge.md` 5.4 item 3 runs
+   `feature close --by <spec-id> --pr <n>` (the F block, spec 027 FR-026). One call does steps 3, 4 and 5: it refuses unless the PR is MERGED and the
+   remote branch is gone, exits the worktree, advances `merge` and `origin-cleanup`, releases the scope reservation and sets the spec `done`. This
+   skill runs no `code-scope stage --set merge`, `--set origin-cleanup`, `code-scope release` or `spec update-status ... done` call of its own.
+   When the output names `reservations_commit_pending`, commit `.a1/reservations.json` as 05-merge.md says.
+
    **Live probes (spec 020, gate `live-probes`)** — after the merge is confirmed and the deploy of the merged `main` is
-   live, before step 4. Measures the merged effect from outside with the probes in `.a1/live-probes.yaml` (owner-side only;
+   live, after the close-out call. Measures the merged effect from outside with the probes in `.a1/live-probes.yaml` (owner-side only;
    an intent child is refused with exit 77). `<dir>` is a checkout of the merged `main` with `origin` fetched: `probe run`
    reads the probe file from the git blob and refuses an uncommitted, modified, local-only or unreviewed one (exit 2,
    `probes_file_uncommitted`, `probes_no_reviewed_ref`, `probes_file_unreviewed`). Exit 1 or 2 stops the run: the feature is not verified live; fix
-   the cause, do not advance to step 4. A probe-file change goes through a new PR (merge-check blocks it as
+   the cause; the merge and the close-out stay done. A probe-file change goes through a new PR (merge-check blocks it as
    `probes_config_changed`), never through an edit of the working tree.
    ```bash
    node <repo>/_shared/a1-tools.cjs probe run --project <dir> --phase <spec-id> --wait 120; RC=$?
@@ -262,29 +348,8 @@ Completion Gate), each after its own confirmation:
    section of `.a1/phases/<spec-id>/VERIFICATION.md`. A `no_probes` result is reported as "not verified live (no_probes)",
    never as "verified live".
 
-4. **Origin cleanup** — after the feature branch's remote copy is deleted
-   (via `a1-worktree`'s Exit workflow, Step 4.5). **Hard gate — verify the
-   remote branch is actually gone before advancing:**
-   ```bash
-   git -C <repo> ls-remote --heads origin <feature-branch>
-   ```
-   Non-empty output → the remote branch still exists → **refuse** to set
-   `origin-cleanup` or `done`. Order after the merge (`a1-pr-review` `workflows/05-merge.md` 5.4):
-   first the retros from inside the worktree, this skill's Step 6 (incl. `retro validate --gate-log`)
-   and the `a1-pr-review` retro, because the gate logs are gitignored (FR-008) and are deleted with the
-   worktree. Only then go run `a1-worktree` exit (discard mode; after the squash merge a plain `discard` succeeds
-   when the content is on `origin/<base>` and the tree is clean, and the remote delete needs no
-   confirmation when the PR is merged, see its Step 4) to delete the remote branch,
-   then re-check. Only once empty:
-   ```bash
-   node <repo>/_shared/a1-tools.cjs code-scope stage --by <spec-id> --set origin-cleanup
-   ```
-5. **Done** — only after all four transitions above are confirmed, release
-   the scope reservation (frees it for other features) and close the spec:
-   ```bash
-   node <repo>/_shared/a1-tools.cjs code-scope release --by <spec-id>
-   node <repo>/_shared/a1-tools.cjs spec update-status <spec-path> done
-   ```
+4. **Origin cleanup** — done by the `feature close` call of step 3 (the remote branch is checked gone there).
+5. **Done** — done by the same call (scope released, spec `done`).
 
 The helper:
 - appends `phase: implement, completed: <iso>` and `phase: verify, completed: <iso>` to

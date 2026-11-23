@@ -748,6 +748,7 @@ function main() {
       return;
     } else if (group === 'run') { require(path.join(__dirname, 'lib', 'run-record.cjs')).cmdRun(sub, rest); return;
     } else if (group === 'wave') { require(path.join(__dirname, 'lib', 'wave.cjs')).cmdWave(sub, rest); return;
+    } else if (group === 'feature') { require(path.join(__dirname, 'lib', 'feature.cjs')).cmdFeature(sub, rest); return;
     } else if (group === 'probe') {
       // Spec 020-live-probes, Wave 1: lib/probe.cjs owns `probe run` and every exit code (0 / 1 / 2). Lazy
       // require: the network module is loaded only after the probe file parsed.
@@ -771,7 +772,7 @@ function main() {
       require(path.join(__dirname, 'lib', 'intent-git.cjs')).cmdGit(sub, rest);
       return;
     } else {
-      usage(`unknown command group: ${group} (expected "spec", "fix", "analyze", "check", "checklist", "constitution", "worktree", "pr", "phantom", "reconcile", "modernize", "schema-check", "cost", "pack", "product", "quick", "learnings", "retro", "workflow", "gates", "verify", "test-fidelity", "disposition", "intent", "metrics", "run", "probe", "dashboard", "profile", "git", "wave", or "realpath-check"). fix supports: next-suffix, update-status, list, find-duplicates, integrity-check, init-postmortem, validate-postmortem, count-postmortems-since, update-promote-state, write-suggestion. Spec 018 adds: fix validate-postmortem, metrics escaped, metrics cost. Spec 020 adds: probe run. Spec 021 adds: dashboard build. Spec 006 adds: profile resolve, profile set, profile ears-check, profile nfr-inject, profile threat-model-check, profile simulate-roles, profile simulate-check, profile trigger-check. Spec 027 adds: run record, metrics phase-time. Spec 027 slice 4 adds: pr review-record, pr review-evidence, wave next-check`);
+      usage(`unknown command group: ${group} (expected "spec", "fix", "analyze", "check", "checklist", "constitution", "worktree", "pr", "phantom", "reconcile", "modernize", "schema-check", "cost", "pack", "product", "quick", "learnings", "retro", "workflow", "gates", "verify", "test-fidelity", "disposition", "intent", "metrics", "run", "probe", "dashboard", "profile", "git", "wave", "feature", or "realpath-check"). fix supports: next-suffix, update-status, list, find-duplicates, integrity-check, init-postmortem, validate-postmortem, count-postmortems-since, update-promote-state, write-suggestion. Spec 018 adds: fix validate-postmortem, metrics escaped, metrics cost. Spec 020 adds: probe run. Spec 021 adds: dashboard build. Spec 006 adds: profile resolve, profile set, profile ears-check, profile nfr-inject, profile threat-model-check, profile simulate-roles, profile simulate-check, profile trigger-check. Spec 027 adds: run record, metrics phase-time. Spec 027 slice 4 adds: pr review-record, pr review-evidence, wave next-check, wave checks, feature plan-steps, feature close`);
     }
   } catch (e) {
     // Input-validation errors (e.g. path-traversal guard) are user errors,

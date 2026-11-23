@@ -3,7 +3,7 @@
 # Three guards:
 #   G  the 12 CLI scenarios equal their goldens from GOLDEN_COMMIT (SC-002:
 #      no-profile behaviour of every touched CLI path stays byte-identical).
-#   I  the call-site inventory recomputes the 30-subcommand grep (22 at plan
+#   I  the call-site inventory recomputes the 28-subcommand grep (22 at plan
 #      time + the 7 `profile` call sites Wave 8 wires in) and asserts
 #      set equality plus the exact count 22 (= 11 covered + 11 excluded).
 #   P  every golden prompt file, stripped of `a1-profile:kritis` blocks,
@@ -124,7 +124,7 @@ caseI() {
   # ears-check, nfr-inject, threat-model-check, simulate-roles,
   # simulate-check); spec 027 slice 4 added `wave next-check` (the fenced
   # next-wave check in 05-implement.md). Any further growth is a finding, not a count to bump.
-  local recomputed expected_count=30
+  local recomputed expected_count=28
   recomputed="$(cd "$REPO_ROOT" && grep -rhoE "a1-tools\.cjs [a-z-]+ [a-z-]+" skills/a1-new-feature | sort -u)"
   local recomputed_count
   recomputed_count="$(printf '%s\n' "$recomputed" | grep -c .)"
@@ -180,10 +180,10 @@ caseI() {
   local covered_count excluded_count
   covered_count="$(grep -c '	covered:' "$GOLDEN/inventory.txt")"
   excluded_count="$(grep -c '	excluded:' "$GOLDEN/inventory.txt")"
-  if [[ "$covered_count" -eq 11 && "$excluded_count" -eq 12 ]]; then
-    ok "I inventory 11+12: $covered_count covered, $excluded_count excluded (spec 027 slice 4: wave next-check)"
+  if [[ "$covered_count" -eq 10 && "$excluded_count" -eq 11 ]]; then
+    ok "I inventory 10+11: $covered_count covered, $excluded_count excluded (spec 027 slice 4: wave next-check, wave checks replaces three rows; PR B: feature plan-steps added, code-scope release dropped for feature close)"
   else
-    bad "I inventory 11+12: got $covered_count covered, $excluded_count excluded (want 11 and 12)"
+    bad "I inventory 10+11: got $covered_count covered, $excluded_count excluded (want 10 and 11)"
   fi
 }
 caseI
@@ -276,6 +276,39 @@ Single definition (it supersedes the example): `workflows/00-roadmap-gate.md`, s
 | Projects using the Vodafone brand design system | `vf-brand` (`~/.claude/skills/vf-brand`) |' \
     "$work/simulated-current.stripped" >"$work/simulated-current.024"
   mv "$work/simulated-current.024" "$work/simulated-current.stripped"
+  # Spec 027 slice 4 (FR-025/FR-026): the S-path table (the 12 lines after `loud when triaging.`) is
+  # deleted and replaced by the plan-steps pointer, and the Completion Gate gains the feature-close
+  # paragraph. Written out literally (not read from prompts.allowed-diff). `r FILE` is the portable
+  # way to insert multi-line text with blank lines (GNU and BSD sed).
+  cat >"$work/ins-steps.txt" <<'A1_INS_EOF'
+
+At the end of triage (before Phase 1 for a clear S, otherwise after Discover)
+run `node <repo>/_shared/a1-tools.cjs feature plan-steps <spec-path>` and
+follow its `steps[]`. The list holds every fixed step and every conditional
+step; a step with `when` runs when its phase workflow finds that condition
+true. On S that is one Rene spawn on the reasoning tier (opus) for
+Discover+Specify+Clarify, resumed via `SendMessage` for Gate C's dispatch and
+for the single-wave plan (its `resume` list): no Vincente, no Diana, no Tobi.
+Gate C, Gate 4.5, Scope-Claim, Isolation and the pr-review Reinhard run at
+every size. When Rene's discovery shows the feature is not S, set
+`spec set-size` and re-run `plan-steps`.
+
+A1_INS_EOF
+  cat >"$work/ins-close.txt" <<'A1_INS_EOF'
+
+After the merge, `feature close --by <spec-id> --pr <n>` (called from
+`a1-pr-review` `workflows/05-merge.md`) checks that the PR is MERGED and the
+remote branch is gone, records every gate-log scope, exits the worktree,
+advances `merge` and `origin-cleanup`, releases the scope and sets the spec
+`done`. When its output names `reservations_commit_pending`, the skill then
+commits `.a1/reservations.json` (push-cadence P3). A second call is a no-op,
+and `feature close --cleanup-only` cleans branches in other clones.
+A1_INS_EOF
+  sed -e '/^loud when triaging\.$/,+12{/^loud when triaging\.$/!d;}' \
+    "$work/simulated-current.stripped" >"$work/simulated-current.s1"
+  sed -e "/^loud when triaging\\.\$/r $work/ins-steps.txt" \
+      -e "/^transition\\.\$/r $work/ins-close.txt" \
+    "$work/simulated-current.s1" >"$work/simulated-current.stripped"
   cp "$GOLDEN/prompts/SKILL.md" "$work/golden.body"
   if ! node "$GOLDEN/apply-prompts-allowed.cjs" "$GOLDEN/prompts.allowed-diff" "SKILL.md" \
        "$work/golden.body" "$work/simulated-current.stripped" "$work/golden.applied" "$work/current.applied" 2>"$work/apply.err"; then

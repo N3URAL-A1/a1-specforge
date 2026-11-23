@@ -90,7 +90,7 @@ The phase directory is created automatically. Phase names are kebab-case from th
 
 1. Ask for: project path (default: current directory) + phase name/goal
 2. Create `.a1/phases/<name>/` if not exists
-3. Run Phase 1 → 2 → 3 → 4 → 4b in sequence (each phase needs the previous output)
+3. Run Phase 1 and 2 together (parallel group research-map, one turn), then 3 → 4 → 4b in sequence
 4. If AUDIT fails → Phase 3 (revision mode) → Phase 4 (re-audit)
 5. If Phase 4b returns `fail-with-findings` → Phase 3 (revision mode, external
    findings) → Phase 4 → Phase 4b with `--round 2` (max 2 rounds)

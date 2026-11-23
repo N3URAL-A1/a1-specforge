@@ -48,6 +48,7 @@ navigation context carry) and scan only those. Skip Step 2b (UX mockups)
 unless the user asks for variants. Steps 3, 3.5 (Gate C) and 4 run
 **unchanged** — Gate C is cheap and catches the nav/context bug class
 regardless of size.
+On S the one Rene spawn of `01-discover.md` Step 3b already ran this 3-category scan: skip Step 2 (no second Rene spawn); Gate C's 3.5-1 dispatch and every jump back to Step 2 (the Step 3 marker loop, a 3.5-2 loop-back, the kritis jumps) resume that Rene via `SendMessage` (spec 027 FR-025).
 
 ## Step 2 — Spawn Rene with the Clarify brief (model: the pinned reasoning-tier model)
 
