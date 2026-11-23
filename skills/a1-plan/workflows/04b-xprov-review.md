@@ -29,7 +29,7 @@ Read these fields from `$GATE_OUT` (a real run always emits them). The driver ha
 node -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); for (const k of ["verdict","enforcement","reason","findings_path","xreview_path","result_path","next"]) console.log(k+"="+JSON.stringify(r[k]===undefined?null:r[k]))' "$GATE_OUT"
 ```
 ## Step 1b — Design review (design-review-xprov)
-Spec 025 FR-013. ADRs under `docs/adr/` and documents under `docs/architecture/` that PLAN.md names get one gate call per file after Step 1 has routed; a code path never enters this loop (row `design-review-xprov`, `warning`). No question is asked here; only exit 2 stops.
+Spec 025 FR-013. ADRs under `docs/adr/` and documents under `docs/architecture/` that PLAN.md names get one gate call per file after Step 1 has routed; a code path never enters this loop (row `design-review-xprov`, `warning`). No question is asked here; only a usage error stops the block.
 ```bash
 XREVIEW_DIR=".a1/phases/<phase_name>/xreview"
 mkdir -p "$XREVIEW_DIR"
