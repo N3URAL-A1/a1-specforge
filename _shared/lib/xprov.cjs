@@ -25,6 +25,8 @@
 // human-only approve), two reasons, the reason_detail values and the allowlist
 // constants — spec amendment, same kind of exception.
 //
+// Documented exception to the freeze (spec 027 slice 5, 2026-11-23): the `--help <topic>` branch of cmdXprov, a help dispatch, no subcommand change.
+//
 // The "not implemented yet (planned wave N)" branch below — like normalize's
 // "filter module missing" and "gc skipped" branches — is kept ON PURPOSE after
 // every wave shipped: it is the guard against a partial plugin installation (a
@@ -407,6 +409,11 @@ function usageExit(msg) {
  * and for modules that have not shipped yet; everything else is delegated to
  * the module's command function, which owns its own exit code and stdout. */
 function cmdXprov(sub, args) {
+  if ((sub === '--help' || sub === '-h') && Array.isArray(args) && args.length === 1) {
+    const topics = { ...require('./help-xprov-consent.cjs').XPROV_TOPICS_CONSENT, ...require('./help-xprov-topics.cjs').XPROV_TOPICS_MAIN };
+    if (!Object.prototype.hasOwnProperty.call(topics, args[0])) return usageExit(`unknown help topic ${JSON.stringify(describeSub(args[0]))}; topics: ${Object.keys(topics).join(', ')}`);
+    return require('./emit-exit.cjs').emitExit(EXIT_PASS, `${topics[args[0]]}\n`, '');
+  }
   if (sub === undefined || sub === '' || sub === '--help' || sub === '-h') {
     return usageExit('<sub> is required');
   }

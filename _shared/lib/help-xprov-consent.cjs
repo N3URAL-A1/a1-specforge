@@ -152,4 +152,68 @@ const CONSENT_HELP = `    consent question|ensure|record|revoke  --kind consent|
                   and self-hosted sessions; \`claude plugin disable\` and the /plugin UI.
                   Exit: 0 ok · 1 refused (stdout JSON \`reason\`) · 2 usage error.`;
 
-module.exports = { CONSENT_HELP };
+// spec 027 slice 5 (FR-028, D5): the consent and waiver text of a1-plan 04b, moved here and printed by `a1-tools xprov --help <topic>`.
+// Topic format: two-space indent, prose wrapped at 120, no prose line over 140; command lines are never wrapped.
+const XPROV_TOPICS_CONSENT = Object.freeze({
+  consent: `  3. **Ask once.** Only after the gate call returned \`reason: external_review_not_permitted\` and only if this session
+     can ask the owner (the AskUserQuestion tool exists; this is not a headless run, a CI run or a subagent) and this
+     phase has not asked yet, print the canonical question — never write it yourself:
+       node <repo>/_shared/a1-tools.cjs xprov consent question --kind consent --phase <phase_name> > "$XREVIEW_DIR/consent-question.json"; RC=$?
+       echo "xprov consent question exit=$RC"
+     Exit 0: put exactly the printed \`header\`, \`question\` and \`labels\` (No label first, one question, no \`answers\`
+     field) with AskUserQuestion. The plugin hook denies any other text. If the printed \`classification\` is \`customer\`,
+     do not ask: a1-ludwig-legal decides (rule \`xprov-codex.md\` step 4), continue Reinhard-only. Exit 1
+     (\`already_asked_this_scope\`, \`asked_store_unusable\`, \`asked_store_full\` …): do not ask, do not retry, do not run
+     \`consent revoke\` to ask again — the code refuses a second question in this phase. Continue Reinhard-only.
+  4. **Record the answer** right after AskUserQuestion returned:
+       node <repo>/_shared/a1-tools.cjs xprov consent record --kind consent > "$XREVIEW_DIR/consent-record.last-run.json"; RC=$?
+       echo "xprov consent record exit=$RC"
+     Exit 0 with \`decision: yes\`: run Step 1 once more; the repository now has a permit. Exit 0 with \`decision: no\`: the
+     owner denied it (an owner-chat denial); Reinhard-only. Exit 1 (no answer reached the hook, a free-text answer, an
+     unanswered question): nothing is recorded and nothing goes to Codex; Reinhard-only. An unanswered question is not
+     repeated in this phase.
+  5. **Headless or no AskUserQuestion** (CI, subagent, \`claude -p\`): no question, no consent. Print one line — \`ℹ No
+     Codex permit and no chat to ask: Reinhard-only review.\` — and continue with the \`not_applicable\` row of Step 2. An
+     intent run (\`a1-tools intent\`, headless child) allows none of \`xprov permit-check\`, \`xprov consent\` or \`xprov
+     gate\`: a refusal of such a call by the sandbox (exit 77, permission denied) is final. Do not retry it and do not
+     look for another way; take this same branch (notice line, Reinhard-only, continue).
+  6. Never run a terminal-only owner command (\`xprov permit\`, \`xprov waive\`, \`xprov allowlist approve\`) and never write
+     \`.a1/xprov.json\` or \`~/.a1-xprov/\` yourself; the owner answers in chat, the commands above record it.`,
+  waiver: `  A waiver is a decision, and it is the owner's: asked in chat, at most once per phase, only for a gate that failed. It
+  is not a pass. Order: report first, then ask. Nothing here is executed on a guess; every command prints or checks what
+  the owner sees.
+  1. **Report the failure.** Print the Step 2 halt block (gate, \`reason\`, \`details\`) before any question.
+  2. **Ask once.** Only if this session can ask the owner (AskUserQuestion exists; not headless, not CI, not a subagent)
+     and this phase has not asked for a waiver yet:
+       XREVIEW_DIR=".a1/phases/<phase_name>/xreview"
+       mkdir -p "$XREVIEW_DIR"
+       node <repo>/_shared/a1-tools.cjs xprov consent question --kind waiver --phase <phase_name> > "$XREVIEW_DIR/waiver-question.last-run.json"; RC=$?
+       echo "xprov consent question (waiver) exit=$RC"
+     Exit 0: put exactly the printed \`header\` (\`xprov-Waiver\`), \`question\` and \`labels\` with AskUserQuestion. The
+     question lists every gate target that is failed right now, read by the command from the run records, not from you;
+     the yes covers exactly those targets. Exit 1 (for example no failed target): do not ask. Do not change the text, do
+     not add targets.
+  3. **Record the answer** with the same flags, right after AskUserQuestion returned:
+       node <repo>/_shared/a1-tools.cjs xprov consent ensure --kind waiver --phase <phase_name> > "$XREVIEW_DIR/waiver-ensure.last-run.json"; RC=$?
+       echo "xprov consent ensure (waiver) exit=$RC"
+     Exit 0 (an answer is ready): run \`xprov consent waive --phase <phase_name>\` with the same capture pattern. It
+     writes one waiver record per listed target only against the owner's yes (\`by: owner-chat\`); load-check then accepts
+     it while PLAN.md keeps its sha256. A No, free text, no answer, or a target that changed after the question (new
+     PLAN.md sha) writes nothing: the gate stays failed, halt per Step 2, and the question is not repeated in this
+     phase. \`xreview/index.json\` and a \`## Waiver\` section in XREVIEW.md carry a mirror without authority; never
+     \`verdict: pass\`.
+  4. **Allowlist question (changed-line secret hits).** When the scan stopped the gate because a secret-pattern hit sits
+     in a changed line and the owner's scan record \`<snap-basename>\` exists, ask once per scan the same way with \`xprov
+     consent question --kind allowlist --scan <snap-basename>\` (header \`xprov-Allowlist\`, masked excerpts, one approval
+     per listed blob) and \`xprov consent allowlist --scan <snap-basename>\` after the answer. No, no answer or no chat:
+     nothing is approved and nothing goes to Codex. Close the target with \`xprov dispose --phase <phase_name> --gate
+     plan-review-xprov --secret-declined <snap-basename>\` a1 checks that the scan record for this repo and this exact
+     HEAD exists and writes the marker; the target ends \`not_applicable\` / \`secret_declined\` and the Reinhard review is
+     the only review.
+  5. **Headless or no AskUserQuestion:** no question. The gate stays failed; halt per Step 2.
+  6. The terminal commands (\`xprov waive\`, \`xprov permit\`, \`xprov allowlist approve\`) stay the owner's own; no agent
+     runs them or writes \`~/.a1-xprov/\`. No \`bash\` block in any skill contains \`xprov waive\` — fixture R7 greps for
+     exactly that. Record \`xprov_waived\` in the retro when a waiver exists (Step 4).`,
+});
+
+module.exports = { CONSENT_HELP, XPROV_TOPICS_CONSENT };
