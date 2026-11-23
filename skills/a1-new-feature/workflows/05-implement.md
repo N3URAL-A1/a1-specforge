@@ -302,7 +302,15 @@ sites at once. Three identical data-corrections in a row means you skipped this 
 One call runs the three per-wave gates (each writes its own gate-log line, and every child's exit is reported in `checks[]`):
 
 ```bash
-node <repo>/_shared/a1-tools.cjs wave checks <spec-id> <N> --diff-base <wave-start-ref> --project <dir> --phase <spec-id>; RC=$?
+{ IFS= read -r SPEC_ID; if IFS= read -r EXTRA; then echo "STOP: bad spec id (more than one line)"; exit 2; fi; } <<'A1_SPEC_EOF'
+<spec-id>
+A1_SPEC_EOF
+{ IFS= read -r WORK_PATH; if IFS= read -r EXTRA; then echo "STOP: bad project dir (more than one line)"; exit 2; fi; } <<'A1_DIR_EOF'
+<dir>
+A1_DIR_EOF
+case "$SPEC_ID" in ""|[!A-Za-z0-9_]*|*[!A-Za-z0-9._-]*) echo "STOP: bad spec id"; exit 2;; esac
+case "$WORK_PATH" in /*) ;; *) echo "STOP: project dir must be absolute"; exit 2;; esac
+node <repo>/_shared/a1-tools.cjs wave checks "$SPEC_ID" <N> --diff-base <wave-start-ref> --project "$WORK_PATH" --phase "$SPEC_ID"; RC=$?
 echo "wave checks exit=$RC"
 if [ $RC -ne 0 ]; then echo "STOP: wave checks red (checks[] above: gate, exit)"; fi
 ```

@@ -29,7 +29,7 @@ check "BU2 the wave checks line removed from both a1-execute files (02-execute.m
   "$BU_JS_UNWIRED" "gate-0.6-schema,gate-0.7-realpath,test-fidelity"
 
 bu_tree bu3
-plant "$REPO_ROOT/$BU_FILE" "$WORK/bu3/$BU_FILE" 's = s.replace(/(a1-tools\.cjs wave checks [^\n]*?) --phase <phase_name>/, "$1");'
+plant "$REPO_ROOT/$BU_FILE" "$WORK/bu3/$BU_FILE" 's = s.replace(/(a1-tools\.cjs wave checks [^\n]*?) --phase "\$PHASE"/, "$1");'
 run_lint --root "$WORK/bu3" --registry "$BU_REG"
 # Measured 2026-11-23: a1-execute wires `retro validate --gate-log` in 03-verify.md (fenced), so the rule fires per child gate.
 check "BU3 --phase removed from the wave checks line (a1-execute wires retro validate --gate-log): call_without_phase for the three gates" 1 \

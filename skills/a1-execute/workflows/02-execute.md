@@ -166,7 +166,11 @@ tested. **Any non-zero exit stops the wave**: no 2b-v, no 2c checkpoint, no next
 the cause and re-run the call. The calls run in this order:
 
 ```bash
-node <repo>/_shared/a1-tools.cjs wave checks <phase_name> <N> --diff-base "$PRE_WAVE_HEAD" --project "$WORK_PATH" --phase <phase_name>; RC=$?
+{ IFS= read -r PHASE; if IFS= read -r EXTRA; then echo "STOP: bad phase name (more than one line)"; exit 2; fi; } <<'A1_PHASE_EOF'
+<phase_name>
+A1_PHASE_EOF
+case "$PHASE" in ""|[!A-Za-z0-9_]*|*[!A-Za-z0-9._-]*) echo "STOP: bad phase name"; exit 2;; esac
+node <repo>/_shared/a1-tools.cjs wave checks "$PHASE" <N> --diff-base "$PRE_WAVE_HEAD" --project "$WORK_PATH" --phase "$PHASE"; RC=$?
 echo "wave checks exit=$RC"
 if [ $RC -ne 0 ]; then echo "STOP: wave checks red (checks[] above: gate, exit)"; fi
 ```
