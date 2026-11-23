@@ -1410,7 +1410,7 @@ RED-proof: none new (the help moved to Task 6.2; every PR B case is RED-proved i
 - Every status box of Tasks 6.1-9.2 is `[x]`, and `phantom check` reports no phantom for them.
 
 **Status box:**
-- [ ] T10.1 `BUNDLES` ADR note PR B green
+- [x] T10.1 `BUNDLES` ADR note PR B green
 
 **Covers:** SC-11
 

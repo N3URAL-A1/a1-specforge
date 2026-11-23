@@ -435,3 +435,29 @@ a1-kritis-profile 225/0, a1-lib-units 782/0, a1-pr-review 88/0, a1-probe 894/0, 
 
 `verify run --affected --no-cache --phase 027-lean-pipeline-s4` on head a259369: verdict pass, selection full (`runner_or_config_changed`, facade in the diff), 63 of 63 commands, 0 timed out, flaky [] and pre_existing_red [], skipped_on_host []. Wall time about 29 minutes (02:17 to 02:46). That run covers a1-intent (full), a1-ux-studio, a1-workflow-lint, a1-gates-lint, a1-pr-merge-check, a1-lib-units, a1-verify and the others on the final tree.
 Caps: facade 787/800; no module added.
+
+## PR B / Wave 10 (T10.1)
+Pre-wave HEAD 39c96b3, host load before: `0.42 0.87 0.82` (run 1 start `0.39 0.86 0.82`), after run 2: `1.33 2.69 2.11`.
+
+ADR `docs/adr/2026-10-14-gate-invoke-and-log.md`: section `## 2026-11-23 — Bundle alias (spec 027 FR-024)` appended. The trust-model section and its "not accepted, pending owner decision" text are untouched.
+
+| Command | Exit |
+|---|---|
+| `gates lint` | 0 (findings []) |
+| `workflow lint --phase 027-lean-pipeline-s4` | 0 (flow 5, parallel 2, background 3, findings []) |
+| `check-wave11-callsites.cjs .` | 0, `calls=13` |
+| `run-wave13.sh` | 0 (10 passed, 0 failed) |
+| `run-wave14.sh` | 0 (50 passed, 0 failed) |
+| V14 caps loop (A + B caps) | **rc=1**: `cap: _shared/lib/gate-log.cjs` (578 lines, cap 480); every other file within cap, `checklist.cjs` unchanged |
+| frozen-files diff (`.a1/verify.json`, `suite-groups.json`, `.github/`) vs origin/main | 0 |
+| `checklist.cjs` diff vs origin/main | 0 |
+| `run-suites.sh --check-groups` | 0 |
+| `run-suites.sh` run 1 | rc=1: all 63 suites PASS (358 s); `phases check FAILED`: my own concurrent `phantom check` / `workflow lint` wrote `gate-log.jsonl` lines under `.a1/phases` during the run (self-inflicted) |
+| `run-suites.sh` run 2 (nothing else running) | **0**: 63 of 63 PASS, 357 s, `phases check: .a1/phases unchanged` |
+
+Cap finding: `gate-log.cjs` is 578 lines on this branch and on origin/main alike (`git diff origin/main` empty, so PR B did not change it). The V14 cap 480 (and the 475 recorded in Wave 5 caps) predates the R3 review-fix rounds that grew the file in PR A (e7fdac6). Not a PR B regression; the plan's cap needs a decision (raise the cap in the plan or split the module). Left open for the orchestrator/planner.
+
+Status boxes T6.1-T9.2: all `[x]` (0 open). `phantom check .a1/phases/027-lean-pipeline-s4/PLAN.md --since origin/main`: 15 of 16 clean, 1 phantom = T3.2 (03-draft.md/04-submit.md), a PR A task already merged into origin/main, so it has no diff in the PR B range. With a wider range (`--since 39c96b3~30`) the result is `clean`, 16 checked, no phantoms. No phantom for T6.1-T9.2.
+
+### Open owner/planner item (AUDIT m6, from Wave 9)
+The field-owner row "`observations.jsonl` deviation/blocker lines" names a1-erik-executor and the session. Victor's observation lines (his `observations.jsonl` writes during verify) have no row. Pablo/Wave 10 should add Victor as a writer of observation lines, or state that Victor writes none. PLAN.md rows stay as written.
