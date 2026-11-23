@@ -449,16 +449,16 @@ Each reading is written by Task 13.1 into the spec `## Clarifications` as "propo
 | `--issues <tags>` | the orchestrator at 05-merge (heredoc-guarded) | `feature close` | D6 |
 
 ## Success Criteria
-- [ ] SC-1 (FR-027): `skills/reading-budget.json` lists every skill (18 at `c6b10a2`) with the achieved sizes. `workflow lint` on the real tree exits 0 with `reading_path.budget_skills` equal to the number of `skills/*/SKILL.md` files. Planted trees: over budget → exit 1 naming the skill; under → 0; missing entry → 1; unknown entry → 1; invalid file → 1; file without final newline counted like `wc -l`. `workflow budget --base`: raised entry without trailer → 1, with trailer → 0, lowered → 0, unresolvable base → 2, base without file → 0 with `base.budget == "absent"`. A copied `skills/` tree without `_shared/a1-tools.cjs` gets no budget check (D12a). A root without `skills/` or without the facade (a consumer repo) gets `scope: "out"` and exit 0 from `workflow budget`, also with `--base` (BG15).
-- [ ] SC-2 (SC-006): on the PR head, `workflow budget` reports a1-new-feature at most 2360 (below 2378), and every skill's budget equals its measured size (one-time evidence line RP3b in STATUS.md on the final head; the permanent suite rule is `lines <= budget`, D12).
+- [x] SC-1 (FR-027): `skills/reading-budget.json` lists every skill (18 at `c6b10a2`) with the achieved sizes. `workflow lint` on the real tree exits 0 with `reading_path.budget_skills` equal to the number of `skills/*/SKILL.md` files. Planted trees: over budget → exit 1 naming the skill; under → 0; missing entry → 1; unknown entry → 1; invalid file → 1; file without final newline counted like `wc -l`. `workflow budget --base`: raised entry without trailer → 1, with trailer → 0, lowered → 0, unresolvable base → 2, base without file → 0 with `base.budget == "absent"`. A copied `skills/` tree without `_shared/a1-tools.cjs` gets no budget check (D12a). A root without `skills/` or without the facade (a consumer repo) gets `scope: "out"` and exit 0 from `workflow budget`, also with `--base` (BG15).
+- [x] SC-2 (SC-006): on the PR head, `workflow budget` reports a1-new-feature at most 2360 (below 2378), and every skill's budget equals its measured size (one-time evidence line RP3b in STATUS.md on the final head; the permanent suite rule is `lines <= budget`, D12).
 - [ ] SC-3 (FR-028a, US-027-10 first scenario): `04-audit.md` holds one fenced `xprov permit-check` step before the 04b reference. The `denied` branch prints one notice line and does not reference 04b. Every other state loads 04b. Exit 77 takes the denied branch. On a planted denied repo, `xprov load-check` accepts a plan that never ran 04b.
 - [ ] SC-4 (FR-028b): `04b-xprov-review.md` starts with the conditional header, has at most 80 lines, no line over 300 characters, at most 13 000 bytes, and every D5 must-keep string. `xprov --help consent|waiver|routing|edge-cases` exit 0, each printing its moved text; an unknown topic exits 2.
 - [ ] SC-5 (FR-028c): `skills/a1-execute/workflows/multi-lane.md` starts with `trigger=lane-split check` and holds the moved steps 2-7 plus the lane rules. SKILL.md keeps the `lane-split check` fence (W11 count 1) and one pointer after it.
-- [ ] SC-6 (FR-028 lint): planted correct reference → 0; reference before the trigger, in another section, or naming a file with a duplicate basename → 1; malformed header → 1. The real tree passes.
+- [x] SC-6 (FR-028 lint): planted correct reference → 0; reference before the trigger, in another section, or naming a file with a duplicate basename → 1; malformed header → 1. The real tree passes.
 - [ ] SC-7 (FR-029): `kritis.md` lines 2-40 are byte-identical to `SKILL.md` 150-188 at `c6b10a2`. `SKILL.md` has no `a1-profile:kritis` marker, no `Marketing Gate` heading, and exactly one line naming `a1-landing-feature`. a1-kritis-profile is green with only the listed pin changes. After the merge, the global skill carries the five questions on this host and on the Mac, or the Mac copy is a named open item in the hub (Task 13.1).
-- [ ] SC-8 (FR-030): the new-feature Isolation section body is three lines naming the three targets. The rule flags planted `git -C <repo> worktree add`, `worktree  add` and `--delete-branch` lines and passes marked lines and `skills/a1-worktree/`. On the real tree, the regex outside `a1-worktree` matches only marked lines (5) and `workflow lint` passes.
-- [ ] SC-9 (FR-031, SC-009, US-027-11): a planted two-scope run gives the expected `gates_fired`, and the entry passes `retro validate --gate-log <a> --gate-log <b>`. The decision function is true for each of the three triggers and false for the none case. A pass chain with nothing caught writes one machine entry and `prose_required: false`; a chain with a fail record gives `true`. A second `feature close` adds no entry. 05-merge item 1 runs the decision before the run record. 06-verify Step 6 holds no `retro validate`. a1-pr-review writes no own retro with a caller.
-- [ ] SC-10 (FR-032): `02-execute.md` holds no `vault sync`/`dashboard build` fence. `04-audit.md` and `03-verify.md` hold one each. `cost run` appears once in each of the three closing files and nowhere else. The planted placement cases flag each violation. A default `xprov gate` run in a permitted planted repo writes no `PLAN-REVIEW-LOG.md`; with `A1_KEEP_REVIEW_LOGS=1` it writes it. `check-optin-readers --name PLAN-REVIEW-LOG.md` exits 0; a planted agent line naming it exits 1; `--name .last-run.json` exits 1 listing 04b and 01-load. A default gate run with a self-repair writes no `PLAN-REVIEW-LOG.md` and its observation line carries `recovery` (D9).
+- [x] SC-8 (FR-030): the new-feature Isolation section body is three lines naming the three targets. The rule flags planted `git -C <repo> worktree add`, `worktree  add` and `--delete-branch` lines and passes marked lines and `skills/a1-worktree/`. On the real tree, the regex outside `a1-worktree` matches only marked lines (5) and `workflow lint` passes.
+- [x] SC-9 (FR-031, SC-009, US-027-11): a planted two-scope run gives the expected `gates_fired`, and the entry passes `retro validate --gate-log <a> --gate-log <b>`. The decision function is true for each of the three triggers and false for the none case. A pass chain with nothing caught writes one machine entry and `prose_required: false`; a chain with a fail record gives `true`. A second `feature close` adds no entry. 05-merge item 1 runs the decision before the run record. 06-verify Step 6 holds no `retro validate`. a1-pr-review writes no own retro with a caller.
+- [x] SC-10 (FR-032): `02-execute.md` holds no `vault sync`/`dashboard build` fence. `04-audit.md` and `03-verify.md` hold one each. `cost run` appears once in each of the three closing files and nowhere else. The planted placement cases flag each violation. A default `xprov gate` run in a permitted planted repo writes no `PLAN-REVIEW-LOG.md`; with `A1_KEEP_REVIEW_LOGS=1` it writes it. `check-optin-readers --name PLAN-REVIEW-LOG.md` exits 0; a planted agent line naming it exits 1; `--name .last-run.json` exits 1 listing 04b and 01-load. A default gate run with a self-repair writes no `PLAN-REVIEW-LOG.md` and its observation line carries `recovery` (D9).
 - [ ] SC-11 (keep-list, caps, frozen files):
   - `gates lint` exit 0, `workflow lint` exit 0, `bash bin/run-suites.sh` exit 0;
   - facade at most 790 lines, `workflow-lint.cjs` at most 445, `xprov-run.cjs` at most 918, the other caps of V13;
@@ -980,7 +980,7 @@ Each reading is written by Task 13.1 into the spec `## Clarifications` as "propo
 
 **Done when:** the suites of action 7 pass (W12 and VR1 green at module level, no CLI hook needed); `node -e 'process.exit(require("./_shared/lib/workflow-lint.cjs").VAULT_SYNC_CALL_RE instanceof RegExp?0:1)'` exits 0; `wc -l < _shared/lib/workflow-lint.cjs` prints 443; `grep -c 'vault sync\|dashboard build' skills/a1-execute/workflows/02-execute.md` prints 0; `skills/reading-budget.json` has one entry per `skills/*/SKILL.md` (18 at `c6b10a2`).
 **Status box:**
-- [ ] T10.1 02-execute 2b-v removed `REQUIRED_VAULT_SYNC_FILES` `VAULT_SYNC_CALL_RE` export W11 W12 VR1 05.24 `reading-budget.json`
+- [x] T10.1 02-execute 2b-v removed `REQUIRED_VAULT_SYNC_FILES` `VAULT_SYNC_CALL_RE` export W11 W12 VR1 05.24 `reading-budget.json`
 
 **Covers:** SC-10, SC-1
 
@@ -1036,7 +1036,7 @@ Each reading is written by Task 13.1 into the spec `## Clarifications` as "propo
 
 **Done when:** the suites of action 8 pass, with RS1-RS6, RS2b and CLI1 green; `skills/reading-budget.json` is committed in the same commit as the 05-merge/04-submit edits; `wc -l < _shared/a1-tools.cjs` prints at most 790.
 **Status box:**
-- [ ] T10.2 05-merge block T `workflow budget --base` 04-submit fold facade `help-lean.cjs` `reading-budget.json` rewrite RS1-RS6 CLI1
+- [x] T10.2 05-merge block T `workflow budget --base` 04-submit fold facade `help-lean.cjs` `reading-budget.json` rewrite RS1-RS6 CLI1
 
 **Covers:** SC-1, SC-9
 
@@ -1086,7 +1086,7 @@ Each reading is written by Task 13.1 into the spec `## Clarifications` as "propo
 
 If a1-new-feature is above 2360 but below 2378: record the margin and continue. At 2378 or more: STOP and apply the reserve cuts (a1-new-feature 06-verify Step 5.5 "Rules" bullets → one line each; 05-implement Gate 0.5 rationale paragraph → one line). Then re-run `node _shared/a1-tools.cjs workflow budget --write`, commit `skills/reading-budget.json` with the cuts (audit R2-m4), re-run RP0-RP3 and re-record the RP2b and RP3b lines, then re-measure. If the target is still missed, the Answers fallback applies: ratchet at the achieved size, and record the shortfall (measured value, margin) in `STATUS.md` under `fallback:`. Task 13.1 writes it as a proposed spec Clarification and a hub item; the PR text names it.
 **Status box:**
-- [ ] T11.1 `checkReadingPath` hook `reading-budget.json` final RP0-RP8 RP7b SC-006
+- [x] T11.1 `checkReadingPath` hook `reading-budget.json` final RP0-RP8 RP7b SC-006
 
 
 **Covers:** SC-1, SC-2, SC-6, SC-8, SC-10
@@ -1109,7 +1109,7 @@ If a1-new-feature is above 2360 but below 2378: record the margin and continue. 
 
 **Done when:** both files exist and contain those sections; `bash bin/verify-install-sync.sh` exits 0.
 **Status box:**
-- [ ] T11.3 ADR `2026-11-23-reading-budget-and-conditional-load.md` CONVENTIONS note
+- [x] T11.3 ADR `2026-11-23-reading-budget-and-conditional-load.md` CONVENTIONS note
 
 **Covers:** SC-11
 

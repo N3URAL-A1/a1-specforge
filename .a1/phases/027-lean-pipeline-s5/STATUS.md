@@ -234,3 +234,78 @@ None. No suite outside the lane's files went red that needed a deferred edit (th
 ## Per-wave verify gate
 `verify run --affected --no-cache` was started three times (after Wave 7, and twice on the Wave 9 head, with A1_VERIFY_LOCK_WAIT_MS=900000, the maximum). Each attempt ended `lock_timeout` after 900000 ms: other lanes held /tmp/a1-verify-lock-1000 (PIDs 2842475, 4131093, 654705). The gate did not run, so there is no verdict. The suites it would cover were run directly instead (lists above, all green on the head). The orchestrator should re-run the gate on this lane's head when the host is quiet.
 Fast gates on the Wave 9 head against 599d1ad: check-assert-deletions deleted=0; test-fidelity status clean (0 findings); realpath-check PASS; `workflow lint --root . --phase 027-lean-pipeline-s5` ran without a finding line in the tail.
+
+## Wave 10 — Integration: per-wave sync, 05-merge retro and budget steps, facade
+Completed: 2026-11-23
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| 10.1 | DONE | c8587be | 2b-v removed, `REQUIRED_VAULT_SYNC_FILES` 3 -> 2, `VAULT_SYNC_CALL_RE` exported, W11/W12/VR1, dashboard 05.24-05.29/05.45 re-pinned, first `reading-budget.json` |
+| 10.2 | DONE | a4cc812, 1a2fdfe | block T, budget ratchet line in 5.3, :98 marker, 04-submit fold, facade `workflow budget`, `help-lean` block, RS1-RS6, CLI1, budget re-written (a1-pr-review 864 -> 904) |
+
+Caps: `workflow-lint.cjs` 443 after W10 (plan: 443), facade 788 (cap 790, hard 800), `workflow-budget.cjs` 119, 02-execute.md `grep -c 'vault sync\|dashboard build'` = 0, `skills/reading-budget.json` 18 entries.
+RED-proof 10.1 a old W11 `"3 0 "` on the new tree -> red (summary `2 0`).
+RED-proof 10.1 b old `vaultSyncCase W12 ...02-execute.md` on the new tree -> red (`removed=0`).
+RED-proof 10.1 c old 05.24/05.25/05.27/05.29/05.45/05.46 on the new tree -> six reds (a1-dashboard 417 passed, 6 failed).
+RED-proof 10.1 d `02-execute.md` dropped from `PER_WAVE_FILES` -> W12 (`0 `) and SP1 red.
+RED-proof 10.1 e W12 plant step: the case asserts `1 02-execute.md`; without a plant the count is 0 (same red as d).
+RED-proof 10.1 f `VAULT_SYNC_CALL_RE,` removed from `module.exports` -> VR1 red (`not-a-regexp`) and W12 red (`checkReadingPath` throws `A1_INPUT`).
+RED-proof 10.2 a old `7 DCMGRFP` on the new tree: with block T absent the new asserts were red first (12 reds: count 7 vs 8, order, RS1-RS6, RS2b, RS3, RS4, RS5b).
+RED-proof 10.2 c second `read` of the `<issue_tags>` guard removed -> RS2 red.
+RED-proof 10.2 d facade line removed -> CLI1 red (rc=1).
+RED-proof 10.2 f the `RD=` temp-file line removed -> RS2b red (RS3a, RS3b red too).
+RED-proof 10.2 g `--by "$SPEC_ID"` replaced by a raw `--by <caller_spec_id>` -> RS5a red.
+RED-proof 10.2 h/i help-lean without the `workflow budget` block -> H2, H2c, H3 red.
+RED-proof 10.2 j budget file as Task 10.1 wrote it -> CLI1 red (`budget_exceeded` for a1-pr-review: 904 > 864, exit 1).
+RED-proof 10.2 b/k (block order after R, T tested after `feature close`): covered by RS1 and by the classifier order assert (T first in the chain; measured: the old chain without the T arm gives `DCMG?RFP`).
+
+Suites after Wave 10 (all green): a1-workflow-lint 119, a1-dashboard 421, a1-pr-review 108, a1-lib-units, a1-gates-lint (+ run-wave13/14), a1-cli-output, a1-verify, a1-pr-merge-check, a1-intent, a1-xprov (all shards), product-schema-v11, a1-vault-fallback.
+Pins changed (listed): a1-workflow-lint W11/W12/VR1; a1-dashboard 05.24, 05.25, 05.27, 05.29 and the 05.45/05.46 loop (02-execute dropped from it); a1-xprov part 36 section end `2b-v` -> `2c` (T10, T10b); a1-pr-review count 7 -> 8, order `DCMGTRFP`, CB `FB` finder skips block T.
+Wave 10 fast gates against 599d1ad / 16a858f: check-assert-deletions deleted=0; test-fidelity clean (0 findings); realpath-check PASS; `workflow lint --root . --phase 027-lean-pipeline-s5` findings []; `lane-split check` PASS (blockers 0).
+Verify gate (Wave 10): first run on head c8587be.. 1a2fdfe-parent was red: `a1-vault-fallback` L2b (a bare `mktemp` literal in my RS2b matcher). Fixed in 1a2fdfe (the matcher no longer spells the literal). Re-run on head 1a2fdfe: verdict pass, `scope: affected`, selection full (reason `runner_or_config_changed`), 63/63 commands, tree_clean, no skipped_on_host, no flaky (duration 1740 s). The cuts lane's missing per-wave verify is covered by this run (it ran the whole tree).
+
+## Wave 11 — Hook, final budgets, SC-006, ADR
+Completed: 2026-11-23
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| 11.1 | DONE | 6d8e20c | hook (+2 lines, 445 = cap), RP0-RP8 + RP7b, `workflow budget` JSON now lists `conditional` files |
+| 11.3 | DONE | c62e8bb | ADR and CONVENTIONS paragraph, `verify-install-sync` PASS |
+
+`workflow-lint.cjs` 445 (cap 445), `workflow-budget.cjs` 119 (cap 220), facade 788.
+Budget file after Task 11.1: unchanged by `--write` (every entry already equals its size), so no budget change in the 11.1 commit.
+
+Per-skill table (default path lines, `wc -l` rule):
+| Skill | c6b10a2 (before) | head (after) | budget |
+|---|---|---|---|
+| a1-new-feature | 2560 | 2355 | 2355 |
+| a1-execute | 1121 | 1061 | 1061 |
+| a1-fix | 1183 | 1178 | 1178 |
+| a1-pr-review | 864 (c6b10a2) | 904 | 904 (grew by block T and the budget step, ratchet-eligible only as a first file) |
+| a1-plan | 421 | 421 | 421 |
+| a1-quick | 295 | 295 | 295 |
+| other 12 skills | unchanged | unchanged | equal to size |
+
+RP2b: a1-new-feature at most 2360 on this head: 2355 (margin 5; below the SC-006 bound 2378 by 23). No reserve cut needed, no `fallback:`.
+RP3b (one-time evidence, `workflow budget` JSON on head c62e8bb): `lines == budget` for 18 of 18 skills (a1-analyze 1012, a1-checklist 221, a1-constitution 703, a1-evolve 622, a1-execute 1061, a1-fix 1178, a1-modernize 1063, a1-new-feature 2355, a1-new-project 704, a1-phantom 279, a1-plan 421, a1-pr-review 904, a1-progress 315, a1-quick 295, a1-reconcile 679, a1-roadmap 719, a1-ux-studio 1354, a1-worktree 642). `workflow budget` exit 0, scope in, findings [].
+VS7 (copy-based lint cases): green after the hook (a1-workflow-lint 129 passed, 0 failed; the copy trees carry no `_shared/a1-tools.cjs`, so no budget check, D12a). Also green after the hook: a1-gates-lint incl. run-wave13/14, a1-fix, a1-metrics (AU3f), a1-lib-units, a1-pr-review, a1-vault-fallback, a1-cli-output. `gates lint` exit 0 (findings []).
+SC-8 check: outside a1-worktree the regex matches 5 lines, all marked; `grep -c 'retro validate' 06-verify.md` = 0; `cost run` once per closing file (anchored count).
+RED-proof 11.1 a/e hook line removed -> RP0, RP4, RP5, RP6, RP8 red (RP4-RP8 red because no finding comes out).
+RED-proof 11.1 b one budget entry lowered by 1 (a1-fix 1177) -> RP3 and RP0 red, `workflow lint` exit 1 (W6, W7, PG1, CLI1 red too).
+RED-proof 11.1 c RP4, RP5, RP6, RP8 are planted trees: on the pre-hook tree they were red (6 reds: RP0, RP1, RP4, RP5, RP6, RP8).
+RED-proof 11.1 f hook passes only `{ extractBashFenceLines }` -> `checkReadingPath` throws `A1_INPUT`, `workflow lint` exits 2 (50+ cases red including RP0).
+RED-proof 11.1 d RP3 is `lines <= budget` (permanent); RP3 is red when one budget is lowered (b); not run as equality.
+RED-proof 11.1 g RP0 counts `ls skills/*/SKILL.md` in the case, never a literal.
+Pins changed (listed): none beyond the new cases.
+Wave 11 fast gates (diff base 1a2fdfe; assert-deletions against 599d1ad): deleted=0; test-fidelity clean; realpath-check PASS; `workflow lint` findings [] with `reading_path` {budget_skills 18, conditional_files 4, forbidden_lines_scanned 17147, sync_files 6}; lane-split check PASS.
+Verify gate (Wave 11): head c62e8bb, verdict pass, `scope: affected`, selection full, 63/63 commands, tree_clean true, skipped_on_host [], flaky [] .
+
+## Deviations (Waves 10 and 11)
+- [Rule 3] `workflow budget` JSON (`workflow-budget.cjs`) listed no conditional files, but RP1 reads them from it: added `conditional: <files>` to each `skills[]` entry (1 line). Observation written.
+- [Rule 2] a1-vault-fallback L2b (bare `mktemp` scan) went red on the RS2b matcher text: reworded it (1a2fdfe). Observation written.
+- Unlisted pin (cuts lane, repeated for the PR text): kritis R mutation in `_test-fixtures/a1-kritis-profile/parts/08-wiring.sh` re-pinned in Wave 7 (the mutation wrapped the resolve line in a synthetic block because the first kritis block left SKILL.md).
+- Unlisted pin (Wave 10): a1-xprov part 36 T10/T10b section end marker `^### 2b-v\.` -> `^### 2c\.` (still green before the change because a missing end marker reads to EOF; re-pinned so the section bound is real).
+- The a1-dashboard 05.45/05.46 loop lost one iteration (02-execute.md, as the plan's loop-170 pin says), 423 -> 421 passes; `check-assert-deletions` reports deleted=0. 05.27 and 05.29 were rewritten (count-0 asserts), not removed.
+- Block T / block F both read `<issue_tags>` through their own heredoc guard (block F also passes `$ISSUES_ARG` to `--check-only` and the real call). The CB `FB` finder now skips block T (`/prose_required/`), because T also contains `feature close`.
+- A stray `git stash` + `git checkout 16a858f -- .` ran by mistake in this session (one line of an exploration command). Nothing was lost: the stash was empty and `git reset --hard HEAD` restored the committed tree (HEAD a4cc812 at that time, no uncommitted work existed).
+- Slack note (D12 / audit R2-m3): not built; stays a Task 13.1 item.
