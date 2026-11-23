@@ -107,8 +107,10 @@ with `_shared/push-cadence.md` P3 (never a bare `git pull`) and advance the regi
 1. Retros, each with `retro validate --gate-log`, from inside the worktree. When a caller handed over a spec id or phase, a1-pr-review writes no retro of
    its own: `feature close` records the machine retro, and the caller's prose retro is written only on the decision below. a1-pr-review on its own (no
    caller) writes the retro of `04-submit.md` Retro now, after the merge. With a `caller_spec_id` (the input declared in `workflows/02-review.md`: the spec id
-   when the caller is a1-new-feature, else `none`) run this block. It reads `<caller_spec_id>` and `<issue_tags>` (`none`, or comma-separated tags a-z 0-9 _ -
-   that name problems of the run) through quoted heredocs and prints the decision:
+   when the caller is a1-new-feature, else `none`) run this block. It reads `<caller_spec_id>` and `<issue_tags>` (the input declared in `workflows/02-review.md`: `none`, or comma-separated tags a-z 0-9 _ -
+   that name problems of the run) through quoted heredocs and prints the decision. The orchestrator strips all newlines from both values before it substitutes them
+   (a value that holds the heredoc terminator is the known limit of the phase-name block below, pinned by CB4d). The `case` rejects the structure ISSUES_RE rejects (leading, trailing or doubled comma,
+   a tag starting with `_` or `-`); tag length (41) and count (20) are checked only by the CLI, which exits 2 before any decision or remote delete:
 
 ```bash
 { IFS= read -r SPEC_ID; if IFS= read -r EXTRA; then echo "STOP: bad spec id (more than one line)"; exit 2; fi; } <<'A1_SPEC_EOF'
@@ -120,7 +122,7 @@ A1_ISSUES_EOF
 ISSUES_ARG=""
 case "$ISSUES" in
   ""|none|"<"*) ;;
-  [!a-z0-9]*|*[!a-z0-9_,-]*) echo "STOP: bad issue tags"; exit 2 ;;
+  [!a-z0-9]*|*[!a-z0-9_,-]*|*,|*,,*|*,[!a-z0-9]*) echo "STOP: bad issue tags"; exit 2 ;;
   *) ISSUES_ARG="--issues $ISSUES" ;;
 esac
 case "$SPEC_ID" in ""|none|"<"*) echo "SKIP: no caller spec id, no retro decision"; exit 0 ;; esac
@@ -156,7 +158,8 @@ esac
 
 3. `feature close` (spec 027 FR-026), for a caller that handed over a `caller_spec_id` (the input declared in `workflows/02-review.md`: the spec id
    when the caller is a1-new-feature, else `none`). It runs after the run record because it exits the worktree. The block ends the run on a
-   non-zero exit.
+   non-zero exit. The orchestrator strips all newlines from `<caller_spec_id>` and `<issue_tags>` before it substitutes them (the known limit of
+   block T applies, pinned by CB4d); the CLI `--check-only` call, before the remote delete, is the only check of tag length and count.
 
 ```bash
 { IFS= read -r SPEC_ID; if IFS= read -r EXTRA; then echo "STOP: bad spec id (more than one line)"; exit 2; fi; } <<'A1_SPEC_EOF'
@@ -170,7 +173,7 @@ A1_ISSUES_EOF
 ISSUES_ARG=""
 case "$ISSUES" in
   ""|none|"<"*) ;;
-  [!a-z0-9]*|*[!a-z0-9_,-]*) echo "STOP: bad issue tags"; exit 2 ;;
+  [!a-z0-9]*|*[!a-z0-9_,-]*|*,|*,,*|*,[!a-z0-9]*) echo "STOP: bad issue tags"; exit 2 ;;
   *) ISSUES_ARG="--issues $ISSUES" ;;
 esac
 (cd "<repo_root>" && node <repo>/_shared/a1-tools.cjs feature close --check-only --by "$SPEC_ID" --pr <n> $ISSUES_ARG); RC=$?

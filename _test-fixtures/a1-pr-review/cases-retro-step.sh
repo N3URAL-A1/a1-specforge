@@ -59,3 +59,31 @@ if printf '%s' "$BUDGET_LINE" | grep -q 'workflow budget --base' && [ -z "$bad5"
 # RS6 exactly one block holds prose_required, and block T holds none of the other blocks' signatures (classifier precedence).
 if [ "$(bj 'b.filter(x=>/prose_required/.test(x)).length')" = "1" ] && ! printf '%s' "$TB" | grep -qE 'disposition review|run record|probe run|pr merge-check'; then pass_case "RS6 one block holds prose_required and it holds no other block's signature"
 else fail_case "RS6 prose_required block count or signature overlap"; fi
+
+# RS7 (review fix round 1, R2/SEC-3) `issue_tags` is a declared input of 02-review.md, with the default none, and a1-new-feature's
+# hand-off line carries it next to caller_spec_id. Measured red before the fix: neither file named it.
+if node -e 'const fs=require("fs");const t=fs.readFileSync(process.argv[1],"utf8");const s=t.slice(t.indexOf("## Inputs"),t.indexOf("## Steps"));process.exit(/^- `issue_tags`.*none/m.test(s)?0:1)' "$SK/a1-pr-review/workflows/02-review.md"; then pass_case "RS7a 02-review.md Inputs declares issue_tags with the default none"
+else fail_case "RS7a issue_tags not declared in 02-review.md Inputs"; fi
+if grep -q 'caller_spec_id`.*issue_tags\|issue_tags.*caller_spec_id' "$SK/a1-new-feature/workflows/06-verify.md"; then pass_case "RS7b the a1-new-feature hand-off line carries issue_tags next to caller_spec_id"
+else fail_case "RS7b hand-off line lacks issue_tags"; fi
+# RS8 the text before block T (item 1) and before block F (item 3) names the orchestrator newline strip for both placeholders.
+rs8() { node -e 'const t=require("fs").readFileSync(process.argv[1],"utf8");const a=t.indexOf(process.argv[2]);const e=t.indexOf("```bash",a);const s=t.slice(a,e);process.exit(/strips all newlines/.test(s)&&s.includes("<issue_tags>")&&s.includes("<caller_spec_id>")?0:1)' "$MRG" "$1"; }
+if rs8 '1. Retros, each with'; then pass_case "RS8a the item 1 text names the newline strip for <issue_tags> and <caller_spec_id>"; else fail_case "RS8a item 1 strip rule incomplete"; fi
+if rs8 '3. `feature close`'; then pass_case "RS8b the item 3 text names the newline strip for <issue_tags> and <caller_spec_id>"; else fail_case "RS8b item 3 strip rule incomplete"; fi
+# RS9 the bash case for <issue_tags> rejects what ISSUES_RE rejects in structure: trailing or leading comma, empty tag, tag starting with _ or -.
+for v in 'a,' ',a' 'a,,b' 'a,_b' 'a,-b' '-a' '_a' 'a b' 'A'; do
+  rc="$(RS_PROSE=1 rs_run fx-spec "$v")"
+  if [ "$rc" = "2" ] && [ ! -s "$RST/log" ] && grep -q 'STOP: bad issue tags' "$RST/out"; then pass_case "RS9 issue tags '$v': STOP bad issue tags before any call"
+  else fail_case "RS9 issue tags '$v' rc=$rc log=$(cat "$RST/log")"; fi
+done
+for v in 'a' 'a-b,c_d' 'a-,b_,c9'; do
+  rc="$(RS_PROSE=1 rs_run fx-spec "$v")"
+  if [ "$rc" = "0" ] && [ "$(cat "$RST/log")" = "feature close --check-only --by fx-spec --pr 7 --issues $v" ]; then pass_case "RS9 issue tags '$v' accepted and passed through"
+  else fail_case "RS9 issue tags '$v' rc=$rc log=$(cat "$RST/log")"; fi
+done
+# RS9b length and count are the CLI's check (ISSUES_RE): the real CLI refuses a 42-char tag and 21 tags with exit 2 before any work.
+L42="$(printf 'a%.0s' $(seq 1 42))"; N21="$(printf 'a,%.0s' $(seq 1 20))a"
+for v in "$L42" "$N21"; do
+  $CLI feature close --check-only --by fx-spec --pr 7 --issues "$v" >/dev/null 2>&1; rc=$?
+  if [ "$rc" = "2" ]; then pass_case "RS9b the CLI refuses issue tags of ${#v} characters with exit 2"; else fail_case "RS9b CLI rc=$rc for ${#v} characters"; fi
+done

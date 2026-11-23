@@ -102,3 +102,20 @@ node -e 'const fs=require("fs");fs.writeFileSync(process.argv[2],fs.readFileSync
 : > "$RRT/log"; (cd "$RRT" && RR_LOG="$RRT/log" bash "$RRT/blk.sh" > "$RRT/out" 2>&1); rc=$?
 if [ -z "$(find "$RRT" -name PWNED)" ] && [ "$rc" = "2" ] && [ "$(wc -l < "$RRT/log")" = "1" ] && grep -q 'STOP: bad phase name' "$RRT/out"; then pass_case "FLN a phase value 'ok' + newline + 'touch PWNED': STOP bad phase name, no PWNED file, one stub call only"
 else fail_case "FLN rc=$rc found=$(find "$RRT" -name PWNED) log=$(cat "$RRT/log") out=$(cat "$RRT/out")"; fi
+
+# CB5 (review fix round 1, R5): the F block's bash case for <issue_tags> rejects what ISSUES_RE rejects in structure (trailing or
+# leading comma, empty tag, a tag starting with _ or -), STOP before the check-only call; a valid list is passed to both calls.
+cb_tags() { # $1 = issue_tags value
+  printf '%s' "$FB" | sed -e "s#<repo_root>#$CBT/rr#g" -e "s#<repo>#$CBT/repo#g" -e "s#<n>#7#g" -e "s#<caller_spec_id>#fx-spec#g" > "$CBT/blk0.sh"
+  node -e 'const fs=require("fs");fs.writeFileSync(process.argv[2],fs.readFileSync(process.argv[1],"utf8").split("<issue_tags>").join(process.argv[3]))' "$CBT/blk0.sh" "$CBT/blk.sh" "$1"
+  : > "$CBT/log"; : > "$CBT/gitlog"
+  (cd "$CBT" && PATH="$CBT/bin:$PATH" CB_LOG="$CBT/log" CB_GITLOG="$CBT/gitlog" bash "$CBT/blk.sh" > "$CBT/out" 2>&1); echo $?
+}
+for v in 'a,' ',a' 'a,,b' 'a,_b' 'a,-b' '-a' '_a'; do
+  rc="$(cb_tags "$v")"
+  if [ "$rc" = "2" ] && [ ! -s "$CBT/log" ] && grep -q 'STOP: bad issue tags' "$CBT/out"; then pass_case "CB5a F block issue tags '$v': STOP bad issue tags before the check-only call"
+  else fail_case "CB5a F block issue tags '$v' rc=$rc log=$(cat "$CBT/log")"; fi
+done
+rc="$(cb_tags 'a-,b_,c9')"
+if [ "$rc" = "0" ] && [ "$(sed -n 1p "$CBT/log")" = "feature close --check-only --by fx-spec --pr 7 --issues a-,b_,c9" ] && [ "$(sed -n 2p "$CBT/log")" = "feature close --by fx-spec --pr 7 --issues a-,b_,c9" ]; then pass_case "CB5b F block issue tags a-,b_,c9: passed to both calls"
+else fail_case "CB5b rc=$rc log=$(cat "$CBT/log")"; fi
