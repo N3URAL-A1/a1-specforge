@@ -44,6 +44,33 @@ process's `cwd` matches the checkout under test before trusting any result — a
 stale server manufactures false bug evidence.
 See `_shared/agent-lessons.md#verify-stale-server`.
 
+## Step 0.55 — Owner-side `wave checks` over the whole feature diff (spec 027 FR-024, Victor fix round)
+
+An intent child (`A1_INTENT_CHILD=1`) cannot run `wave checks` (its spawn guard refuses node children, exit 77), so its wave reports carry
+"wave checks: deferred to owner" and `realpath-check`, `schema-check` and `test-fidelity` have not run on that path. This step is the
+consumer of that note: it runs the bundle once over the whole feature diff before the build run, with all three child gates. It runs
+**unconditionally**: it is idempotent (a re-run only appends gate-log lines), costs seconds next to `verify run`, and a condition on the
+note would let a missing or misplaced note skip the gate silently. The base is the merge-base with `origin/main`, the same base
+`05-merge.md` uses for its `test-fidelity` scan. `<N>` is `0`: the call covers the whole feature, not one wave. On a feature whose diff
+adds or changes SQL migrations add `--migrations <dir>/<migrations dir>` before `--phase`, as in Phase 5. Any non-zero exit **stops**
+Phase 6: fix the cause, re-run this call. The block reads `<spec-id>` and `<dir>` through quoted heredocs and checks both.
+
+```bash
+IFS= read -r SPEC_ID <<'A1_SPEC_EOF'
+<spec-id>
+A1_SPEC_EOF
+IFS= read -r WORK_PATH <<'A1_DIR_EOF'
+<dir>
+A1_DIR_EOF
+case "$SPEC_ID" in ""|[!A-Za-z0-9_]*|*[!A-Za-z0-9._-]*) echo "STOP: bad spec id"; exit 2;; esac
+case "$WORK_PATH" in /*) ;; *) echo "STOP: project dir must be absolute"; exit 2;; esac
+PHASE_BASE="$(git -C "$WORK_PATH" merge-base origin/main HEAD)"; RC=$?
+if [ "$RC" -ne 0 ] || [ -z "$PHASE_BASE" ]; then echo "STOP: no merge-base with origin/main exit=$RC"; exit 1; fi
+node <repo>/_shared/a1-tools.cjs wave checks <spec-id> 0 --diff-base "$PHASE_BASE" --project "$WORK_PATH" --phase <spec-id>; RC=$?
+echo "wave checks (owner, whole feature) exit=$RC"
+if [ $RC -ne 0 ]; then echo "STOP: wave checks red (checks[] above: gate, exit)"; fi
+```
+
 ## Step 0.6 — Build/test evidence (`verify run`, then `verify check`)
 
 On a host that has not run this project's gates yet (new machine, after a handover, fresh worktree), check the host first:

@@ -472,11 +472,13 @@ MATCH="$(node -e '
 #   02-execute.md wave checks line deleted                                    -> W11e
 # Re-pinned 2026-11-23 (spec 027 slice 4 wave 8, the background `verify run` start line in 03-verify.md and 06-verify.md):
 #   old calls=11 pin on the new tree prints calls=13                          -> W11a red
+# Re-pinned 2026-11-23 (Victor fix round, owner-side `wave checks` step in 03-verify.md and 06-verify.md):
+#   old calls=13 pin on the new tree prints calls=15                          -> W11a red
 # W11b-W11e plant their own defect in a copy and need the real files green first.
 W11CHK="$REPO_ROOT/_test-fixtures/a1-gates-lint/check-wave11-callsites.cjs"
 W11FILES="skills/a1-execute/workflows/02-execute.md skills/a1-execute/workflows/03-verify.md skills/a1-execute/SKILL.md skills/a1-new-feature/workflows/05-implement.md skills/a1-new-feature/workflows/06-verify.md agents/a1-victor-verifier.md"
 OUT="$(node "$W11CHK" "$REPO_ROOT" 2>&1)"; RC=$?
-[[ $RC -eq 0 && "$OUT" == "calls=13" ]] && ok "W11a real call sites: 13 calls, known flags, --phase scope, exit code captured" || bad "W11a ($OUT)"
+[[ $RC -eq 0 && "$OUT" == "calls=15" ]] && ok "W11a real call sites: 15 calls, known flags, --phase scope, exit code captured" || bad "W11a ($OUT)"
 w11_mutate() { # w11_mutate <file> <python-ish js edit on s>
   rm -rf "${WORK:?}/w11"; mkdir -p "$WORK/w11"
   for f in $W11FILES; do mkdir -p "$WORK/w11/$(dirname "$f")"; cp "$REPO_ROOT/$f" "$WORK/w11/$f"; done

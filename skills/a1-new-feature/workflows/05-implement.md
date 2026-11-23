@@ -308,7 +308,7 @@ if [ $RC -ne 0 ]; then echo "STOP: wave checks red (checks[] above: gate, exit)"
 ```
 
 Exit non-zero = wave not signed off. On a wave with DB migrations add `--migrations <dir>` before `--phase`.
-Intent child (`A1_INTENT_CHILD=1`): `wave checks` starts node child processes, which the spawn guard refuses (exit 77); record "wave checks: deferred to owner" in the wave report.
+Intent child (`A1_INTENT_CHILD=1`): `wave checks` starts node child processes, which the spawn guard refuses (exit 77); record "wave checks: deferred to owner" in the wave report. The owner runs it over the whole feature diff in `06-verify.md` Step 0.55, before the build run and before any merge.
 
 - Gate 0.6 (`schema-check`, migration waves only): audit trigger per table, RLS enabled, FK type match. Semantic checks (enum completeness, expand→migrate→contract) stay in the 04-plan.md migration checklist.
 - Gate 0.7 (`realpath-check`): a diff with SQL shapes, an RLS policy or an external HTTP call needs `.a1/realpath-evidence.md` — one entry per touched surface category, with the command run AND its real (non-mock) output. Mocked tests are not evidence (`mock_tests_hide_sql_bugs` recurred 3×).

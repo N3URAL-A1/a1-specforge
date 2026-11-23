@@ -2,6 +2,29 @@
 
 Spawn a1-victor-verifier to validate the completed work.
 
+## Step 0.1 — Owner-side `wave checks` over the whole phase (spec 027 FR-024, Victor fix round)
+
+An intent child (`A1_INTENT_CHILD=1`) cannot run `wave checks` (its spawn guard refuses node children, exit 77), so its wave reports carry
+"wave checks: deferred to owner" and `realpath-check`, `schema-check` and `test-fidelity` have not run on that path. This step is the
+consumer of that note: it runs the bundle once over the whole phase diff before Victor and before the build run, with all three child
+gates. It runs **unconditionally**: it is idempotent (a re-run only appends gate-log lines), costs seconds next to `verify run`, and a
+condition on the note would let a missing or misplaced note skip the gate silently. The base is the merge-base with `origin/main`, the
+same base `05-merge.md` uses for its `test-fidelity` scan. `<N>` is `0` here: the call covers the whole phase, not one wave. On a phase
+whose diff adds or changes SQL migrations add `--migrations "$WORK_PATH/<migrations dir>"` before `--phase`, as at 2b-g.
+Any non-zero exit **stops** Phase 3 (no Victor, no `verify run`): fix the cause, re-run this call. `$WORK_PATH` is the phase worktree.
+
+```bash
+IFS= read -r PHASE <<'A1_PHASE_EOF'
+<phase_name>
+A1_PHASE_EOF
+case "$PHASE" in ""|[!A-Za-z0-9_]*|*[!A-Za-z0-9._-]*) echo "STOP: bad phase name"; exit 2;; esac
+PHASE_BASE="$(git -C "$WORK_PATH" merge-base origin/main HEAD)"; RC=$?
+if [ "$RC" -ne 0 ] || [ -z "$PHASE_BASE" ]; then echo "STOP: no merge-base with origin/main exit=$RC"; exit 1; fi
+node <repo>/_shared/a1-tools.cjs wave checks <phase_name> 0 --diff-base "$PHASE_BASE" --project "$WORK_PATH" --phase <phase_name>; RC=$?
+echo "wave checks (owner, whole phase) exit=$RC"
+if [ $RC -ne 0 ]; then echo "STOP: wave checks red (checks[] above: gate, exit)"; fi
+```
+
 ## Step 0.2 — Start `verify run` in the background (spec 027 FR-024)
 
 Start the build/test run before Victor, so it runs while he reads the plan and the code. The run writes no `VERIFICATION.md`

@@ -175,7 +175,7 @@ if [ $RC -ne 0 ]; then echo "STOP: wave checks red (checks[] above: gate, exit)"
 `gate-0.6-schema` and `test-fidelity` as children, one gate-log line each, and reports every child's exit in
 `checks[]` even when an earlier one failed. On a migration wave (the diff adds or changes SQL migrations) add
 `--migrations "$WORK_PATH/<migrations dir>"` before `--phase`; without it the schema check is skipped and
-reported as skipped. Intent child (`A1_INTENT_CHILD=1`): `wave checks` starts node child processes, which the child's spawn guard refuses (exit 77, `wave checks` is excluded like `verify run`); record "wave checks: deferred to owner" in the wave report. The owner runs it before any merge.
+reported as skipped. Intent child (`A1_INTENT_CHILD=1`): `wave checks` starts node child processes, which the child's spawn guard refuses (exit 77, `wave checks` is excluded like `verify run`); record "wave checks: deferred to owner" in the wave report. The owner runs it over the whole phase diff in `03-verify.md` Step 0.1, before Victor and before any merge.
 
 Exit 1 of `test-fidelity` lists tests that mock the subject, are skipped, return early or do not
 run in CI. Re-dispatch the executor to fix the test. The only other way out is a recorded
