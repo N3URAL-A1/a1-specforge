@@ -47,6 +47,8 @@ SKILL.md	md	insert-after	same id used for `code-scope stage`/`release` in the Co
 SKILL.md	md	line	Single definition (it supersedes the example): `workflows/00-roadmap-gate.md`, section `<spec-id>`.
 SKILL.md	md	insert-after	| Projects using n3ural design system | `n3urala1-design` (`~/.claude/skills/n3urala1-design`) |
 SKILL.md	md	line	| Projects using the Vodafone brand design system | `vf-brand` (`~/.claude/skills/vf-brand`) |
+03-clarify.md	md	insert-after	regardless of size.
+03-clarify.md	md	line	On S the one Rene spawn of `01-discover.md` Step 3b already ran this 3-category scan: skip Step 2 (no second Rene spawn); Gate C's 3.5-1 dispatch and every jump back to Step 2 (the Step 3 marker loop, a 3.5-2 loop-back, the kritis jumps) resume that Rene via `SendMessage` (spec 027 FR-025).
 03-clarify.md	md	insert-after	> - Phase 3 ends only when ALL markers are gone (0 remaining).
 03-clarify.md	md	line	> - If `AskUserQuestion` is unavailable in this run: return a numbered question queue and stop; the orchestrator asks and
 03-clarify.md	md	line	>   resumes you (`01-discover.md` Step 3, question relay).
@@ -86,3 +88,46 @@ SKILL.md	md	line	| Projects using the Vodafone brand design system | `vf-brand` 
 03-clarify.md	md	line	**Fallback:** if the studio is unavailable (skill not installed, or it stops
 03-clarify.md	md	line	because `A1_VAULT_ROOT` is unset), tell the user why and run 2b-3 with ASCII
 03-clarify.md	md	line	wireframes as before.
+#
+# Spec 027 slice 4 (FR-025/FR-026, audit round 2 M2, 2026-11-23): SKILL.md replaces the S-path table
+# ("What shrinks on the S path", 12 lines) with the `feature plan-steps` pointer (delete-after + insert-after on the
+# same anchor, delete first) and gains the `feature close` paragraph in the Lifecycle Completion Gate;
+# 02-specify.md and 03-clarify.md each gain one line that skips their Rene spawn on S (one Rene spawn, FR-025).
+# The 03-clarify.md pair sits directly before the first existing 03-clarify.md row, because the new line is above both older insertions.
+SKILL.md	md	delete-after	loud when triaging.
+SKILL.md	md	gone	
+SKILL.md	md	gone	**What shrinks on the S path:**
+SKILL.md	md	gone	
+SKILL.md	md	gone	| Phase | Full run (M/L) | Size-S run |
+SKILL.md	md	gone	|---|---|---|
+SKILL.md	md	gone	| 1+2 Discover/Specify | Rene interview + full spec | Combined mini-spec: 1–2 FRs with ACs (FRs stay mandatory — Gate 4.5 checks them) |
+SKILL.md	md	gone	| 3 Clarify | 12-category proactive scan, UX mockups, Gate C | The 3 sharpest categories for this feature; mockups only on request; **Gate C runs unchanged** |
+SKILL.md	md	gone	| 4 Plan | Multi-wave plan | Single-wave plan (one wave, all FRs) |
+SKILL.md	md	gone	| 4.5 Consistency Gate | runs | **runs unchanged** |
+SKILL.md	md	gone	| 5 Implement | Checkpoint per wave | One wave → one closing checkpoint |
+SKILL.md	md	gone	| 6 Verify | Full scenario matrix + edge-case spot checks | Every AC once + project regression suite; edge-case spot check reduced to the single riskiest case. Retro stays mandatory |
+SKILL.md	md	gone	
+SKILL.md	md	insert-after	loud when triaging.
+SKILL.md	md	line	
+SKILL.md	md	line	At the end of triage (before Phase 1 for a clear S, otherwise after Discover)
+SKILL.md	md	line	run `node <repo>/_shared/a1-tools.cjs feature plan-steps <spec-path>` and
+SKILL.md	md	line	follow its `steps[]`. The list holds every fixed step and every conditional
+SKILL.md	md	line	step; a step with `when` runs when its phase workflow finds that condition
+SKILL.md	md	line	true. On S that is one Rene spawn on the reasoning tier (opus) for
+SKILL.md	md	line	Discover+Specify+Clarify, resumed via `SendMessage` for Gate C's dispatch and
+SKILL.md	md	line	for the single-wave plan (its `resume` list): no Vincente, no Diana, no Tobi.
+SKILL.md	md	line	Gate C, Gate 4.5, Scope-Claim, Isolation and the pr-review Reinhard run at
+SKILL.md	md	line	every size. When Rene's discovery shows the feature is not S, set
+SKILL.md	md	line	`spec set-size` and re-run `plan-steps`.
+SKILL.md	md	line	
+SKILL.md	md	insert-after	transition.
+SKILL.md	md	line	
+SKILL.md	md	line	After the merge, `feature close --by <spec-id> --pr <n>` (called from
+SKILL.md	md	line	`a1-pr-review` `workflows/05-merge.md`) checks that the PR is MERGED and the
+SKILL.md	md	line	remote branch is gone, records every gate-log scope, exits the worktree,
+SKILL.md	md	line	advances `merge` and `origin-cleanup`, releases the scope and sets the spec
+SKILL.md	md	line	`done`. When its output names `reservations_commit_pending`, the skill then
+SKILL.md	md	line	commits `.a1/reservations.json` (push-cadence P3). A second call is a no-op,
+SKILL.md	md	line	and `feature close --cleanup-only` cleans branches in other clones.
+02-specify.md	md	insert-after	formality is never dropped.
+02-specify.md	md	line	On S, Step 1 below is skipped: the one Rene spawn of `01-discover.md` Step 3b already wrote the mini-spec; run the `spec set-size` block above and Steps 2-3 (spec 027 FR-025).

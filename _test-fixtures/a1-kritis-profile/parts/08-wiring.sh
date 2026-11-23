@@ -20,7 +20,7 @@
 #   G  both gate rows registered, `gates lint` exit 0, no call_without_phase,
 #      both gates wired (2 and 1 calls).  Red: drop a registry row; remove
 #      --phase from the 04.5 ears-check call.
-#   I  intent allowlist: 28 entries for new-feature and continue-feature,
+#   I  intent allowlist: 30 entries for new-feature and continue-feature,
 #      the seven profile commands in, `profile trigger-check` on none.
 #      Red: remove `profile set`; add `profile trigger-check`.
 #   E  scripted chain resolve -> set -> resolve -> nfr-inject -> ears-check
@@ -134,7 +134,7 @@ caseWireNoStub
 
 # ---------- D: block discipline against the golden commit ----------
 caseWireDiscipline() {
-  local work entry rel d lt gt want_d
+  local work entry rel d lt gt want_d want_steps want_close want_n
   mk_workdir work "w8-disc"
   for entry in "${WIRE_SIX[@]}"; do
     rel="${entry%%:*}"
@@ -151,15 +151,68 @@ caseWireDiscipline() {
       # puts it first, Apple diff last. So the non-blank lines are compared in
       # order and the blank line is counted on its own.
       d="$(grep '^>' "$work/d" | grep -v '^> *$')"
-      local blanks; blanks="$(grep -c '^> *$' "$work/d")"
+      # Spec 027 slice 4 (FR-025/FR-026, 2026-11-23): the S-path table (9 non-blank + 1 blank line)
+      # is replaced by the plan-steps pointer (10 lines) and the Completion Gate gains the
+      # feature-close paragraph (7 lines). Blank lines are NOT pinned here: GNU diff and Apple diff
+      # anchor on shared blank lines differently (measured GNU: 10 removed, 24 added; Apple differs),
+      # and the exact blank layout is pinned by P (byte compare with prompts.allowed-diff). The
+      # non-blank lines are compared in order, removed and added alike.
+      local rm_d want_rm; rm_d="$(grep '^<' "$work/d" | grep -v '^< *$')"
+      want_rm="$(cat <<'A1_RM_EOF'
+< **What shrinks on the S path:**
+< | Phase | Full run (M/L) | Size-S run |
+< |---|---|---|
+< | 1+2 Discover/Specify | Rene interview + full spec | Combined mini-spec: 1–2 FRs with ACs (FRs stay mandatory — Gate 4.5 checks them) |
+< | 3 Clarify | 12-category proactive scan, UX mockups, Gate C | The 3 sharpest categories for this feature; mockups only on request; **Gate C runs unchanged** |
+< | 4 Plan | Multi-wave plan | Single-wave plan (one wave, all FRs) |
+< | 4.5 Consistency Gate | runs | **runs unchanged** |
+< | 5 Implement | Checkpoint per wave | One wave → one closing checkpoint |
+< | 6 Verify | Full scenario matrix + edge-case spot checks | Every AC once + project regression suite; edge-case spot check reduced to the single riskiest case. Retro stays mandatory |
+A1_RM_EOF
+)"
+      want_steps="$(cat <<'A1_ADD_EOF'
+> At the end of triage (before Phase 1 for a clear S, otherwise after Discover)
+> run `node <repo>/_shared/a1-tools.cjs feature plan-steps <spec-path>` and
+> follow its `steps[]`. The list holds every fixed step and every conditional
+> step; a step with `when` runs when its phase workflow finds that condition
+> true. On S that is one Rene spawn on the reasoning tier (opus) for
+> Discover+Specify+Clarify, resumed via `SendMessage` for Gate C's dispatch and
+> for the single-wave plan (its `resume` list): no Vincente, no Diana, no Tobi.
+> Gate C, Gate 4.5, Scope-Claim, Isolation and the pr-review Reinhard run at
+> every size. When Rene's discovery shows the feature is not S, set
+> `spec set-size` and re-run `plan-steps`.
+A1_ADD_EOF
+)"
+      want_close="$(cat <<'A1_ADD_EOF'
+> After the merge, `feature close --by <spec-id> --pr <n>` (called from
+> `a1-pr-review` `workflows/05-merge.md`) checks that the PR is MERGED and the
+> remote branch is gone, records every gate-log scope, exits the worktree,
+> advances `merge` and `origin-cleanup`, releases the scope and sets the spec
+> `done`. When its output names `reservations_commit_pending`, the skill then
+> commits `.a1/reservations.json` (push-cadence P3). A second call is a no-op,
+> and `feature close --cleanup-only` cleans branches in other clones.
+A1_ADD_EOF
+)"
       # Spec 024 (a1-ux-studio, W7) adds two more pure insertions here (see prompts.allowed-diff):
       # the `  - Skill` allowed-tools line and the vf-brand design-system row. In file order the
-      # added lines are: alias, Skill, resolve, vf-brand row.
-      want_d="> $WIRE_ALIAS"$'\n'">   - Skill"$'\n'"> $WIRE_RESOLVE"$'\n'"> Single definition (it supersedes the example): \`workflows/00-roadmap-gate.md\`, section \`<spec-id>\`."$'\n'"> | Projects using the Vodafone brand design system | \`vf-brand\` (\`~/.claude/skills/vf-brand\`) |"
-      if [[ "$lt" == "0" && "$gt" == "6" && "$blanks" == "1" && "$d" == "$want_d" ]]; then
-        ok "D $rel: stripped text differs from golden by exactly the German alias line, the unguarded resolve line (+ its blank) the spec-id pointer line and the two spec-024 insertions"
+      # added non-blank lines are: alias, Skill, the plan-steps pointer, resolve, the spec-id
+      # pointer, the feature-close paragraph, vf-brand row.
+      want_d="> $WIRE_ALIAS"$'\n'">   - Skill"$'\n'"$want_steps"$'\n'"> $WIRE_RESOLVE"$'\n'"> Single definition (it supersedes the example): \`workflows/00-roadmap-gate.md\`, section \`<spec-id>\`."$'\n'"$want_close"$'\n'"> | Projects using the Vodafone brand design system | \`vf-brand\` (\`~/.claude/skills/vf-brand\`) |"
+      if [[ "$rm_d" == "$want_rm" && "$d" == "$want_d" ]]; then
+        ok "D $rel: stripped text differs from golden by exactly the nine deleted S-table lines and the added alias, Skill, plan-steps pointer (10), resolve, spec-id pointer, feature-close paragraph (7) and vf-brand lines (blank lines left to P)"
       else
-        bad "D $rel: removed=$lt added=$gt lines=[$d] (expected 0 removed, 6 added = alias, Skill, blank, resolve line, spec-id pointer, vf-brand row)"
+        bad "D $rel: removed=[$rm_d] added=[$d] (expected the nine S-table lines removed; alias, Skill, plan-steps 10 lines, resolve, spec-id pointer, feature-close 7 lines, vf-brand row added)"
+      fi
+    elif [[ "$rel" == "skills/a1-new-feature/workflows/02-specify.md" ]]; then
+      # Spec 027 slice 4 (FR-025): one inserted line that skips Step 1 on S. 0 removed; the added
+      # lines equal the 02-specify.md rows of prompts.allowed-diff in order (P proves the position).
+      d="$(grep '^>' "$work/d" | sed 's/^> \{0,1\}//')"
+      want_d="$(awk -F'\t' '$1 == "02-specify.md" && $3 == "line" { print $4 }' "$HERE/golden/prompts.allowed-diff")"
+      want_n="$(printf '%s\n' "$want_d" | grep -c .)"
+      if [[ "$lt" == "0" && "$gt" == "$want_n" && "$d" == "$want_d" ]]; then
+        ok "D $rel: stripped text differs from golden by exactly the $want_n spec-027 S-path line (0 removed)"
+      else
+        bad "D $rel: removed=$lt added=$gt vs golden (expected 0 removed and the 02-specify.md rows of prompts.allowed-diff added)"
       fi
     elif [[ "$rel" == "skills/a1-new-feature/workflows/03-clarify.md" ]]; then
       # Spec 024 (a1-ux-studio, W7): sub-step 2b-2a, a pure insertion of 35 lines. The added text
@@ -170,10 +223,10 @@ caseWireDiscipline() {
       want_d="$(awk -F'\t' '$1 == "03-clarify.md" && $3 == "line" && $4 != "" { print $4 }' "$HERE/golden/prompts.allowed-diff")"
       local want_blanks; want_blanks="$(awk -F'\t' '$1 == "03-clarify.md" && $3 == "line" && $4 == "" { n++ } END { print n + 0 }' "$HERE/golden/prompts.allowed-diff")"
       blanks="$(grep -c '^> *$' "$work/d")"
-      if [[ "$lt" == "0" && "$gt" == "37" && "$blanks" == "$want_blanks" && "$d" == "$want_d" ]]; then
-        ok "D $rel: stripped text differs from golden by exactly the 35 spec-024 sub-step 2b-2a lines and the 2 question-relay brief lines (0 removed)"
+      if [[ "$lt" == "0" && "$gt" == "38" && "$blanks" == "$want_blanks" && "$d" == "$want_d" ]]; then
+        ok "D $rel: stripped text differs from golden by exactly the 35 spec-024 sub-step 2b-2a lines, the 2 question-relay brief lines and the 1 spec-027 S-path line (0 removed)"
       else
-        bad "D $rel: removed=$lt added=$gt vs golden (expected 0 removed, the 35 lines of the spec-024 2b-2a sub-step plus the 2 relay lines)"
+        bad "D $rel: removed=$lt added=$gt vs golden (expected 0 removed, the 35 lines of the spec-024 2b-2a sub-step plus the 2 relay lines plus the 1 spec-027 S-path line)"
       fi
     else
       if [[ "$lt" == "0" && "$gt" == "0" ]]; then ok "D $rel: stripped text identical to golden (0 lines differ)"; else bad "D $rel: removed=$lt added=$gt vs golden"; fi
@@ -265,10 +318,10 @@ caseWireIntent() {
     res.push("trigger:" + trig.length);
     console.log(res.join(" "));
   ' "$REPO_ROOT/_shared/lib/intent-constants.cjs" 2>&1)"
-  if [[ "$out" == "new-feature:29:0 continue-feature:29:0 trigger:0" ]]; then
-    ok "I intent allowlist: new-feature and continue-feature hold 28 entries incl. all seven profile commands; trigger-check on no allowlist"
+  if [[ "$out" == "new-feature:30:0 continue-feature:30:0 trigger:0" ]]; then
+    ok "I intent allowlist: new-feature and continue-feature hold 30 entries (spec 027 PR B: feature plan-steps) incl. all seven profile commands; trigger-check on no allowlist"
   else
-    bad "I intent allowlist: [$out] (expected new-feature:29:0 continue-feature:29:0 trigger:0)"
+    bad "I intent allowlist: [$out] (expected new-feature:30:0 continue-feature:30:0 trigger:0)"
   fi
 }
 caseWireIntent

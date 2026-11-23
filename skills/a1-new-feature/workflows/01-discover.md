@@ -137,10 +137,18 @@ and its consequence in one sentence, e.g.:
 Accept an override in either direction without discussion. Phase 2 writes the
 final class to the spec frontmatter (`size:`) via the template fill-in.
 
-**Size-S shortcut for Steps 3–4:** on S, Rene's Discovery + Specify briefs
-may be combined into one pass producing the mini-spec directly (1–2 FRs with
-ACs) — the ten Discovery sections may be compressed to the ones with content,
-but FR/AC formality is never dropped (Gate 4.5 and Gate C depend on it).
+**Size-S path (one Rene spawn, spec 027 FR-025):** on S, Step 3 spawns Rene
+once with `model: "opus"` (reasoning tier, owner decision 2026-11-20) and one
+combined brief: the Discovery brief; the Specify brief of `02-specify.md`
+Step 1 (mini-spec: 1–2 FRs with ACs; FR/AC formality is never dropped, Gate
+4.5 and Gate C depend on it); and the Clarify work of `03-clarify.md` (the 3
+sharpest categories of its Size-S fast path, its Step 2 approach and hard
+rules, at most 2 questions per turn, the question relay of Step 3 above).
+Keep this spawn's agent id: Gate C's dispatch (`03-clarify.md` 3.5-1), a
+3.5-2 loop-back and the single-wave plan (`04-plan.md` Step 1) resume it via
+`SendMessage`, never a new spawn. The orchestrator still runs every non-spawn
+step unchanged: `02-specify.md`'s `spec set-size` block and its Steps 2–3,
+and `03-clarify.md` Steps 3, 3.5 (Gate C) and 4.
 
 ## Step 4 — Confirm completion
 

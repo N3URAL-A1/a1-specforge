@@ -3,7 +3,7 @@
 **Goal:** Convert the clarified spec into a Wave-Plan (sequenced, parallelizable implementation
 units with explicit code-agent assignments and dependencies).
 
-**Sub-agent:** Vincente (`a1-vincente-vibe-optimizer`).
+**Sub-agent:** Vincente (`a1-vincente-vibe-optimizer`). Size M/L only; on S see Step 1.
 
 **Status transition:** `clarified` → `planned`.
 
@@ -21,13 +21,21 @@ plan_path = project/<project-slug>/plans/<###>-<feature-slug>-wave-plan.md
 `<###>` is the same sequence number as the spec. If `project/<slug>/plans/` does not exist,
 create it (use Bash with the absolute vault root).
 
-**Size-S fast path:** when the spec frontmatter says `size: S`, instruct
-Vincente (in the brief below) to produce a **single-wave plan** — one wave
-carrying all FRs, one Suggested-agent line, no dependency graph. Everything
-else about the plan format is unchanged so Gate 4.5 and a1-checklist parse it
-identically.
+**Size-S fast path (no Vincente, spec 027 FR-025):** on `size: S`, skip Step 2.
+The single-wave plan is written by the one Rene spawn of `01-discover.md`
+Step 3b, resumed via `SendMessage` with `<plan-path>` and this format:
+frontmatter with `code_scope`; the coverage matrix above the first wave
+heading; a `## Depth Pass` section (rules in `<repo>/_shared/depth-pass.md`);
+exactly one `## Wave 1` with one `**FRs covered:**` line naming every FR; a
+`### Suggested agent(s)` heading followed by one `- **<agent>**` line; no
+dependency graph. When the resume is not possible (no agent id) or Rene
+declines, the session writes the plan itself in the same format. Step 3
+(depth-check, scope dry-run, status update) and the hand-off checks run
+unchanged, so Gate 4.5 and `wave next-check` read it like a Vincente plan.
 
 ## Step 2 — Spawn Vincente with the Plan brief (model: the pinned reasoning-tier model)
+
+Size M/L only (S: the Step 1 fast path).
 
 Use the **Agent** tool with `subagent_type: "a1-vincente-vibe-optimizer"` and
 `model: "opus"` to spawn Vincente with this brief:

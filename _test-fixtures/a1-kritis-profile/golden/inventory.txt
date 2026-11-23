@@ -4,7 +4,7 @@
 #
 # Updated by Wave 8 (2026-10-29, decision by Robert): the AC's 22 is the
 # count BEFORE the profile wiring. Wave 8 adds exactly 7 `profile` call
-# sites to a1-new-feature, so the live grep returned 29; spec 027 slice 4 adds `wave next-check` (30); slice 4 PR B replaces the `realpath-check run`, `schema-check run` and `test-fidelity --diff-base` rows by one `wave checks` row (28). The 22
+# sites to a1-new-feature, so the live grep returned 29; spec 027 slice 4 adds `wave next-check` (30); slice 4 PR B replaces the `realpath-check run`, `schema-check run` and `test-fidelity --diff-base` rows by one `wave checks` row (28); slice 4 PR B adds `feature plan-steps` (29). The 22
 # pre-profile rows below are unchanged; the 7 new ones are marked
 # "profile:<part>" with the fixture part that exercises each. Any further
 # growth of this list is still a finding.
@@ -48,3 +48,4 @@ profile simulate-roles	profile:parts/06-simulate.sh
 profile simulate-check	profile:parts/06-simulate.sh
 wave next-check	excluded:module outside code_scope (wave-next-check.cjs is spec 027 slice 4; the call only reads the wave plan and the phase stores, no profile behaviour)
 wave checks	excluded:module outside code_scope (wave-checks.cjs is spec 027 slice 4 PR B; the call runs the realpath, schema and test-fidelity gates as children, a write: one gate-log line each; replaces three rows of the 22 pre-profile list, no profile behaviour)
+feature plan-steps	excluded:module outside code_scope (feature-plan-steps.cjs is spec 027 slice 4 PR B; the call only reads the spec frontmatter size and prints the step table, no profile behaviour)

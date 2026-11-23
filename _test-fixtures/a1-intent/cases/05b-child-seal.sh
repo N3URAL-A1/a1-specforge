@@ -593,7 +593,7 @@ w5b_pexpect() {
     "checklist run") PEXPECT="1 write" ;;
     # verify run and fix class-sweep are not on the allowlist since spec 017 review SEC-5 (they spawn non-git processes; owner-side): see 5b-H7g.
     "verify check"|"test-fidelity"|"gates fired") PEXPECT="0 read" ;; # verify check on a file without a PASS claim: ok; test-fidelity on a clean diff: ok
-    "schema-check run"|"quick eligibility"|"plan depth-check"|"wave next-check") PEXPECT="1 read" ;; # wave next-check: the probe has no phase stores -> stop:<reason>, exit 1; # depth-check: the seeded "# Plan" has no Depth Pass -> verdict fail, exit 1
+    "schema-check run"|"quick eligibility"|"plan depth-check"|"wave next-check"|"feature plan-steps") PEXPECT="1 read" ;; # wave next-check: the probe has no phase stores -> stop:<reason>, exit 1; # depth-check: the seeded "# Plan" has no Depth Pass -> verdict fail, exit 1; # feature plan-steps (spec 027 PR B): the seeded docs/PLAN.md has no size frontmatter -> no_size, exit 1
     "code-scope check"|"realpath-check run"|"lane-split check"|"fix find-duplicates"|"fix next-suffix") PEXPECT="0 read" ;;
     "profile resolve"|"profile threat-model-check"|"profile simulate-roles") PEXPECT="0 read" ;;
     "profile ears-check"|"profile simulate-check") PEXPECT="1 read" ;; # the seeded spec has no FR / simulation section -> findings, exit 1
@@ -673,6 +673,9 @@ w5b_pargs() {
     "wave next-check|in") PARGS=(wave next-check p 1 --since 2026-01-01T00:00:00Z --plan docs/PLAN.md) ;;
     "wave next-check|out") PARGS=(wave next-check p 1 --since 2026-01-01T00:00:00Z --plan /etc/hosts) ;;
     "wave next-check|link") PARGS=(wave next-check p 1 --since 2026-01-01T00:00:00Z --plan "$L/PLAN.md") ;;
+    "feature plan-steps|in") PARGS=(feature plan-steps docs/PLAN.md) ;;
+    "feature plan-steps|out") PARGS=(feature plan-steps /etc/hosts) ;;
+    "feature plan-steps|link") PARGS=(feature plan-steps "$L/PLAN.md") ;;
     "plan depth-check|in") PARGS=(plan depth-check --plan docs/PLAN.md) ;;
     "plan depth-check|out") PARGS=(plan depth-check --plan /etc/hosts) ;;
     "plan depth-check|link") PARGS=(plan depth-check --plan "$L/PLAN.md") ;;
@@ -805,8 +808,8 @@ for p_action in new-feature continue-feature plan execute fix stage; do
   done < <(node -e 'console.log(require(process.argv[1] + "/intent-constants.cjs").INTENT_CHILD_ALLOWLIST[process.argv[2]].join("\n"))' "$INTENT_LIB" "$p_action")
   p_counts="$p_counts $p_action=$p_n"
 done
-if [[ "$p_counts" == " new-feature=29 continue-feature=29 plan=6 execute=18 fix=12 stage=1" && "$p_reached" -eq 95 ]]; then ok "5b-Pn every allowlisted subcommand was probed and every in-variant reached its path ($p_counts, reached $p_reached) [FR-041, FR-048]"
-else bad "5b-Pn every allowlisted subcommand was probed and every in-variant reached its path [FR-041, FR-048]" "counts:$p_counts reached $p_reached of 95"; fi
+if [[ "$p_counts" == " new-feature=30 continue-feature=30 plan=6 execute=18 fix=12 stage=1" && "$p_reached" -eq 97 ]]; then ok "5b-Pn every allowlisted subcommand was probed and every in-variant reached its path ($p_counts, reached $p_reached) [FR-041, FR-048]"
+else bad "5b-Pn every allowlisted subcommand was probed and every in-variant reached its path [FR-041, FR-048]" "counts:$p_counts reached $p_reached of 97"; fi
 p_git_set="$(printf '%s\n' $p_git_users | LC_ALL=C sort -u | tr '\n' ' ')"
 if [[ "$p_git_set" == "continue-feature/git_diff continue-feature/git_log continue-feature/git_status continue-feature/quick_eligibility continue-feature/realpath-check_run continue-feature/test-fidelity continue-feature/wave_next-check execute/git_add execute/git_commit execute/git_diff execute/git_log execute/git_status execute/realpath-check_run execute/test-fidelity execute/wave_next-check fix/git_diff fix/git_log fix/git_status fix/quick_eligibility fix/realpath-check_run fix/test-fidelity new-feature/git_diff new-feature/git_log new-feature/git_status new-feature/quick_eligibility new-feature/realpath-check_run new-feature/test-fidelity new-feature/wave_next-check plan/git_diff plan/git_log plan/git_status " ]]; then ok "5b-Pg the allowlisted subcommands that run git internally all ran it hardened, with no caller variable ($p_git_set) [FR-048]"
 else bad "5b-Pg the allowlisted subcommands that run git internally all ran it hardened, with no caller variable [FR-048]" "got: $p_git_set"; fi
@@ -855,6 +858,25 @@ h7g_excl="$(node -e '
   console.log(noted + "/" + noAllow);' "$INTENT_LIB" 2>&1)"
 if [[ -z "$h7g_bad" && "$h7g_n" -eq 14 && "$h7g_excl" == "4/0" ]]; then ok "5b-H7g verify run and fix class-sweep: refused 77 for 7 actions (14 calls), reason recorded for 4 action/command pairs, on no allowlist ($h7g_excl) [FR-041, spec 017 review SEC-5]"
 else bad "5b-H7g verify run and fix class-sweep: refused 77 for every action, reason recorded, on no allowlist [FR-041, spec 017 review SEC-5]" "calls $h7g_n; bad:$h7g_bad; noted/allow $h7g_excl"; fi
+
+# ---------- H7m (spec 027 slice 4 PR B, FR-026): feature close is a WRITE -> owner-side ----------
+# `feature close` deletes local branches, exits the worktree, edits the registry, the reservation and the spec, and spawns gh
+# and git children. It is refused with 77 for every action, is on no allowlist, and the actions that run a skill naming it
+# (new-feature, continue-feature, execute) record the reason in INTENT_CHILD_EXCLUSIONS (refused AND classified).
+w5b_probe_sandbox h7m
+h7m_bad=""
+h7m_n=0
+for h7m_action in new-feature continue-feature plan execute fix stage progress; do
+  h7m_n=$((h7m_n + 1)); child "$h7m_action" real-proj feature close --by 011-x --pr 7
+  [[ "$RC" -eq 77 ]] || h7m_bad="$h7m_bad $h7m_action/feature-close=$RC"
+done
+h7m_excl="$(node -e '
+  const C = require(process.argv[1] + "/intent-constants.cjs");
+  const noAllow = Object.keys(C.INTENT_CHILD_ALLOWLIST).filter((a) => C.INTENT_CHILD_ALLOWLIST[a].includes("feature close")).length;
+  const noted = ["new-feature", "continue-feature", "execute"].filter((a) => /deletes branches, exits the worktree/.test(C.INTENT_CHILD_EXCLUSIONS[a]["feature close"] || "")).length;
+  console.log(noted + "/" + noAllow);' "$INTENT_LIB" 2>&1)"
+if [[ -z "$h7m_bad" && "$h7m_n" -eq 7 && "$h7m_excl" == "3/0" ]]; then ok "5b-H7m feature close: refused 77 for 7 actions, reason recorded for 3 actions, on no allowlist ($h7m_excl) [FR-041, spec 027 FR-026]"
+else bad "5b-H7m feature close: refused 77 for every action, reason recorded, on no allowlist [FR-041, spec 027 FR-026]" "calls $h7m_n; bad:$h7m_bad; noted/allow $h7m_excl"; fi
 
 # ---------- L: `..` or `.` behind a missing segment, per path flag (MAJOR-1) ----------
 # nonexist/../lnk/x names the link target once Node normalizes it; the check

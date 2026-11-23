@@ -107,16 +107,16 @@ The user can override the triage in either direction at any point ("treat as
 small" / "run the full pipeline") — say the class and its consequence out
 loud when triaging.
 
-**What shrinks on the S path:**
-
-| Phase | Full run (M/L) | Size-S run |
-|---|---|---|
-| 1+2 Discover/Specify | Rene interview + full spec | Combined mini-spec: 1–2 FRs with ACs (FRs stay mandatory — Gate 4.5 checks them) |
-| 3 Clarify | 12-category proactive scan, UX mockups, Gate C | The 3 sharpest categories for this feature; mockups only on request; **Gate C runs unchanged** |
-| 4 Plan | Multi-wave plan | Single-wave plan (one wave, all FRs) |
-| 4.5 Consistency Gate | runs | **runs unchanged** |
-| 5 Implement | Checkpoint per wave | One wave → one closing checkpoint |
-| 6 Verify | Full scenario matrix + edge-case spot checks | Every AC once + project regression suite; edge-case spot check reduced to the single riskiest case. Retro stays mandatory |
+At the end of triage (before Phase 1 for a clear S, otherwise after Discover)
+run `node <repo>/_shared/a1-tools.cjs feature plan-steps <spec-path>` and
+follow its `steps[]`. The list holds every fixed step and every conditional
+step; a step with `when` runs when its phase workflow finds that condition
+true. On S that is one Rene spawn on the reasoning tier (opus) for
+Discover+Specify+Clarify, resumed via `SendMessage` for Gate C's dispatch and
+for the single-wave plan (its `resume` list): no Vincente, no Diana, no Tobi.
+Gate C, Gate 4.5, Scope-Claim, Isolation and the pr-review Reinhard run at
+every size. When Rene's discovery shows the feature is not S, set
+`spec set-size` and re-run `plan-steps`.
 
 M and L both run the full structure; the distinction only calibrates the
 Clarify question budget (M: focus on the categories the feature plausibly
@@ -293,6 +293,14 @@ Non-empty output → the remote branch still exists → **refuse** to advance to
 4.5) to delete the remote branch first. Only empty output (or an explicit,
 confirmed `git push origin --delete` having just run) permits the
 transition.
+
+After the merge, `feature close --by <spec-id> --pr <n>` (called from
+`a1-pr-review` `workflows/05-merge.md`) checks that the PR is MERGED and the
+remote branch is gone, records every gate-log scope, exits the worktree,
+advances `merge` and `origin-cleanup`, releases the scope and sets the spec
+`done`. When its output names `reservations_commit_pending`, the skill then
+commits `.a1/reservations.json` (push-cadence P3). A second call is a no-op,
+and `feature close --cleanup-only` cleans branches in other clones.
 
 Each transition needs an explicit confirmation signal (a passing gate, a
 user "yes", a green build) — never advance the stage speculatively "because
