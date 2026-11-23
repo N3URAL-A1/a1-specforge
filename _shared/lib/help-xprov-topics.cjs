@@ -68,7 +68,10 @@ const XPROV_TOPICS_MAIN = Object.freeze({
   retro records \`verdict: fail\` with the issue tag \`xprov_disposed\`. Exit 1 with \`refused: blocker_open\` keeps the hard
   stop (only an owner waiver leads on); \`refused: undisposed\` names the ids without a usable line: fix the file once, or
   the target goes to the per-phase waiver question (\`xprov --help waiver\`). Any other refusal: surface it, do not retry
-  blindly. Without the file or with a BLOCKER, surface \`round_cap\` to the user as a stop.`,
+  blindly. Without the file or with a BLOCKER, surface \`round_cap\` to the user as a stop.
+  Design review (Phase 4b Step 1b): a secret hit in a design file is not a \`not_applicable\` row. \`design-review-xprov\` has no
+  dispose round (\`dispose\` accepts only \`plan-review-xprov\`), so the run ends \`fail\` with reason \`secret_in_snapshot\`,
+  which is the warning row (enforcement \`warning\`).`,
   'edge-cases': `  - **Exit 2 (usage / module not shipped).** No stdout JSON. Do not route; fix the call or install the plugin version
     that ships \`xprov-gate.cjs\`.
   - **\`tripwire\`, \`secret_in_snapshot\`, \`secret_in_output\`, \`quarantined\`.** The result was discarded by design;

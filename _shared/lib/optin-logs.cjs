@@ -34,10 +34,9 @@ const MENTIONS_ALLOWED = Object.freeze([
   entry('_shared/lib/xprov-gate-nopermit.cjs', 'carries no a1 write: no PLAN-REVIEW-LOG.md entry', 'comment'),
   entry('_shared/lib/help-xprov.cjs', 'PLAN-REVIEW-LOG.md, .a1/xprov.json (permit record)', 'file list in the help text'),
   entry('_shared/lib/help-xprov-topics.cjs', 'with \\`A1_KEEP_REVIEW_LOGS=1\\`, in the log entry of \\`PLAN-REVIEW-LOG.md\\`', 'edge-cases topic, opt-in stated on the line'),
-  entry('skills/a1-plan/SKILL.md', '`xreview/index.json`, PLAN-REVIEW-LOG.md |', 'phase table output cell'),
-  entry('skills/a1-plan/SKILL.md', '├── PLAN-REVIEW-LOG.md    (Phase 4b, append-only)', 'tree listing'),
-  entry('skills/a1-plan/workflows/04b-xprov-review.md', '`.a1/phases/<phase_name>/PLAN-REVIEW-LOG.md`', 'driver writes it'),
-  entry('skills/a1-plan/workflows/04b-xprov-review.md', 'log entry of `PLAN-REVIEW-LOG.md`: a `runner_failed`', 'moves to the edge-cases topic in Task 6.1'),
+  entry('skills/a1-plan/SKILL.md', '`PLAN-REVIEW-LOG.md` (only with `A1_KEEP_REVIEW_LOGS=1`) |', 'phase table output cell, opt-in stated on the line'),
+  entry('skills/a1-plan/SKILL.md', '├── PLAN-REVIEW-LOG.md    (Phase 4b, append-only, only with `A1_KEEP_REVIEW_LOGS=1`)', 'tree listing, opt-in stated on the line'),
+  entry('skills/a1-plan/workflows/04b-xprov-review.md', 'with `A1_KEEP_REVIEW_LOGS=1` it also appends to `.a1/phases/<phase_name>/PLAN-REVIEW-LOG.md`', 'driver writes it, opt-in stated on the line'),
 ]);
 
 module.exports = { OPTIN_ENV, OPTIN_FILES, MENTIONS_ALLOWED, keepReviewLogs };
